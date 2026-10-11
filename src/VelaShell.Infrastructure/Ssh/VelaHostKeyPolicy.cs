@@ -32,11 +32,15 @@ namespace VelaShell.Infrastructure.Ssh;
 /// <param name="settings">安全设置(首次是否确认、变更是否阻断)。</param>
 /// <param name="prompt">指纹确认弹窗;为 <see langword="null" /> 时走不问的两条默认。</param>
 /// <param name="alerts">安全告警。</param>
+/// <param name="automaticReconnect">
+/// 这是断线后的自动重连(<see cref="ConnectionInfo.IsAutomaticReconnect" />):本该弹窗问的一律拒绝,不弹。
+/// </param>
 internal sealed class VelaHostKeyPolicy(
     IHostKeyService hostKey,
     ISettingsService? settings,
     IHostKeyPrompt? prompt,
-    ISecurityAlertService? alerts) : IHostKeyPolicy, IHostKeyTypePreference, IHostKeyRotationPolicy
+    ISecurityAlertService? alerts,
+    bool automaticReconnect = false) : IHostKeyPolicy, IHostKeyTypePreference, IHostKeyRotationPolicy
 {
     /// <inheritdoc />
     /// <remarks>
@@ -199,6 +203,21 @@ internal sealed class VelaHostKeyPolicy(
         bool firstSeen = verification == HostKeyVerification.Unknown;
         bool askUser = prompt is not null
                        && (firstSeen ? security.ConfirmFirstFingerprint : !security.BlockOnFingerprintChange);
+
+        // 自动重连没有人在等:本该弹窗问的,直接拒绝(见 ConnectionInfo.IsAutomaticReconnect)。
+        // 不问的那两条默认不受影响 —— 用户关掉了「首次连接确认」时照旧按 TOFU 记下,「变更即阻断」照旧阻断。
+        // 照样记一笔安全告警:指纹变了却没有人看到弹窗,审计里至少要留下这件事。
+        if (askUser && automaticReconnect)
+        {
+            string blocked = Strings.Format("Msg_HostKeyAutoReconnectBlocked", target, fingerprint);
+            if (alerts is not null)
+            {
+                await alerts.RaiseAsync("hostkey-rejected", blocked).ConfigureAwait(false);
+            }
+            return verification == HostKeyVerification.Changed
+                ? SshHostKeyVerdict.RejectChanged(blocked)
+                : SshHostKeyVerdict.Reject(blocked);
+        }
 
         HostKeyDecision decision = askUser
             ? await prompt!.DecideAsync(host, port, keyType, fingerprint, verification, knownFingerprint, context.Key.RandomArt)

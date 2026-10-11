@@ -18,13 +18,13 @@ public sealed class ReconnectPolicyTests
     public void ADroppedRemoteSessionReconnects() =>
         Assert.IsTrue(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
 
     [TestMethod]
     public void TheGlobalSwitchWins() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: false, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
 
     /// <summary>用户自己点了断开的不碰。</summary>
     /// <remarks>那是明确的意图,自动连回去等于跟用户较劲。</remarks>
@@ -32,7 +32,7 @@ public sealed class ReconnectPolicyTests
     public void AManualDisconnectIsRespected() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: true,
-            userRequestedDisconnect: true, isLocalShell: false, remoteShellExited: false));
+            userRequestedDisconnect: true, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
 
     /// <summary>本地终端不自动重开。</summary>
     /// <remarks>shell 退出(<c>exit</c>)是用户意图,自动拉起会没完没了。</remarks>
@@ -40,7 +40,7 @@ public sealed class ReconnectPolicyTests
     public void ALocalShellIsNeverRelaunched() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: true, remoteShellExited: false));
+            userRequestedDisconnect: false, isLocalShell: true, remoteShellExited: false, hostKeyRejected: false));
 
     /// <summary>在远端敲 <c>exit</c> 退出的不碰(#383)。</summary>
     /// <remarks>
@@ -51,13 +51,24 @@ public sealed class ReconnectPolicyTests
     public void ARemoteShellThatExitedIsNotDraggedBack() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: true));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: true, hostKeyRejected: false));
+
+    /// <summary>上一次重连败在主机指纹上的不碰。</summary>
+    /// <remarks>
+    /// 再试多少次结果都一样:用户拒绝过的照样被拒,变更被阻断的照样阻断,自动重连时又不弹窗问人。
+    /// 接着自动试只会每隔几秒刷一条同样的失败 —— 而在没有这一条之前,每试一次就再弹一遍指纹确认框。
+    /// </remarks>
+    [TestMethod]
+    public void AHostKeyRejectionStopsAutoReconnect() =>
+        Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
+            autoReconnectEnabled: true, isDisconnected: true,
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: true));
 
     [TestMethod]
     public void AStillConnectedSessionIsLeftAlone() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: false,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
 
     [TestMethod]
     public void AttemptsRunOutAtTheConfiguredLimit()
@@ -182,6 +193,6 @@ public sealed class ReconnectPolicyTests
             userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false));
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: false, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
     }
 }

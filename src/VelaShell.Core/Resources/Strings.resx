@@ -1641,6 +1641,9 @@ Paste anyway?</value>
   <data name="Msg_HostKeyRejected" xml:space="preserve">
     <value>Host key {1} of {0} was not trusted; the connection was aborted.</value>
   </data>
+  <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
+    <value>Auto-reconnect to {0} stopped: host key {1} needs your confirmation, and auto-reconnect never asks. Reconnect manually to check the fingerprint.</value>
+  </data>
   <data name="Msg_ImportFailed" xml:space="preserve">
     <value>Import failed: {0}</value>
   </data>

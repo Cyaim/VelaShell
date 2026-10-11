@@ -16,6 +16,13 @@ public class VelaSshClientException(string message, Exception? innerException = 
 /// <summary>无法建立或维持 SSH 会话(网络中断、服务器关闭连接等)。</summary>
 public class VelaSshConnectionException(string message, Exception? innerException = null) : VelaSshClientException(message, innerException);
 
+/// <summary>主机指纹没有通过信任判定(用户拒绝、变更被阻断,或自动重连时没法问人)。</summary>
+/// <remarks>
+/// 单独一类,是因为自动重连要据此停下:这一类失败再试多少次结果都一样,只有用户手动重连、在弹窗里核对过才可能过。
+/// 重协商途中换了主机密钥不在此列 —— 那是已经连上的会话被断开,仍是 <see cref="VelaSshConnectionException" />。
+/// </remarks>
+public class VelaSshHostKeyRejectedException(string message, Exception? innerException = null) : VelaSshConnectionException(message, innerException);
+
 /// <summary>身份认证失败(用户名/密码/密钥错误)。</summary>
 public class VelaSshAuthenticationException(string message, Exception? innerException = null) : VelaSshClientException(message, innerException);
 

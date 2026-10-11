@@ -78,7 +78,7 @@ public sealed class ConnectionWorkflowService(
         try
         {
             SshSession session = await _sshConnectionService
-                                       .ConnectAsync(await BuildConnectionInfoAsync(profile, cancellationToken).ConfigureAwait(false), cancellationToken)
+                                       .ConnectAsync(await BuildConnectionInfoAsync(profile, automaticReconnect: false, cancellationToken).ConfigureAwait(false), cancellationToken)
                                        .ConfigureAwait(false);
             await _sshConnectionService.DisconnectAsync(session.SessionId, cancellationToken).ConfigureAwait(false);
             return new(true);
@@ -90,7 +90,14 @@ public sealed class ConnectionWorkflowService(
     }
 
     /// <summary>连接指定配置:成功后更新最近连接时间并持久化,同时记录连接历史与审计。</summary>
-    public async Task<SshSession> ConnectProfileAsync(SessionProfile profile, CancellationToken cancellationToken = default)
+    public Task<SshSession> ConnectProfileAsync(SessionProfile profile, CancellationToken cancellationToken = default) =>
+        ConnectProfileCoreAsync(profile, automaticReconnect: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<SshSession> ReconnectProfileAutomaticallyAsync(SessionProfile profile, CancellationToken cancellationToken = default) =>
+        ConnectProfileCoreAsync(profile, automaticReconnect: true, cancellationToken);
+
+    private async Task<SshSession> ConnectProfileCoreAsync(SessionProfile profile, bool automaticReconnect, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ValidateProfile(profile);
@@ -99,7 +106,9 @@ public sealed class ConnectionWorkflowService(
         try
         {
             session = await _sshConnectionService
-                            .ConnectAsync(await BuildConnectionInfoAsync(profile, cancellationToken).ConfigureAwait(false), cancellationToken)
+                            .ConnectAsync(
+                                await BuildConnectionInfoAsync(profile, automaticReconnect, cancellationToken).ConfigureAwait(false),
+                                cancellationToken)
                             .ConfigureAwait(false);
         }
         catch
@@ -212,13 +221,14 @@ public sealed class ConnectionWorkflowService(
     /// 把配置解析成连接信息;JumpHostProfileId 链递归展开为嵌套 JumpHost
     /// (最多 5 跳,带环检测)。跳板配置必须已保存凭据(或引用共享凭据),否则该跳认证会失败。
     /// </summary>
-    private async Task<ConnectionInfo> BuildConnectionInfoAsync(SessionProfile profile, CancellationToken cancellationToken)
+    private async Task<ConnectionInfo> BuildConnectionInfoAsync(SessionProfile profile, bool automaticReconnect, CancellationToken cancellationToken)
     {
         var visited = new HashSet<Guid> { profile.Id };
-        return await BuildChainAsync(profile, visited, 0, cancellationToken).ConfigureAwait(false);
+        return await BuildChainAsync(profile, visited, 0, automaticReconnect, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<ConnectionInfo> BuildChainAsync(SessionProfile profile, HashSet<Guid> visited, int depth, CancellationToken cancellationToken)
+    private async Task<ConnectionInfo> BuildChainAsync(
+        SessionProfile profile, HashSet<Guid> visited, int depth, bool automaticReconnect, CancellationToken cancellationToken)
     {
         // 每一跳各自解析自己引用的凭据(#550);解析出的明文只进 ConnectionInfo,不回写配置。
         SessionProfile effective = await ResolveHopCredentialAsync(profile, depth, cancellationToken).ConfigureAwait(false);
@@ -234,7 +244,7 @@ public sealed class ConnectionWorkflowService(
                 throw new InvalidOperationException(Strings.Get("Svc_JumpChainLoop"));
             }
             SessionProfile jumpProfile = await _sessionRepository.GetSessionAsync(jumpId).ConfigureAwait(false) ?? throw new InvalidOperationException(Strings.Get("Svc_JumpHostMissing"));
-            jump = await BuildChainAsync(jumpProfile, visited, depth + 1, cancellationToken).ConfigureAwait(false);
+            jump = await BuildChainAsync(jumpProfile, visited, depth + 1, automaticReconnect, cancellationToken).ConfigureAwait(false);
         }
         return new()
         {
@@ -249,7 +259,9 @@ public sealed class ConnectionWorkflowService(
             // 会话级保活覆盖(F-06);null = 跟随全局。跳板链上每一跳各带各的。
             KeepAliveSeconds = effective.Terminal?.KeepAliveSeconds,
             Ssh = effective.Ssh?.Clone(),
-            JumpHost = jump
+            JumpHost = jump,
+            // 一条链共用一个主机指纹策略(由最外层这一跳决定),每一跳都标上只是让每份 ConnectionInfo 自己说得清。
+            IsAutomaticReconnect = automaticReconnect
         };
     }
 

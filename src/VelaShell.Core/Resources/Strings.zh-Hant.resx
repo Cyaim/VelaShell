@@ -1750,6 +1750,9 @@
   <data name="Msg_HostKeyRejected" xml:space="preserve">
     <value>未信任 {0} 的主機金鑰 {1}，連線已中止。</value>
   </data>
+  <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
+    <value>已停止自動重新連線 {0}：主機金鑰 {1} 需要你確認，而自動重新連線不會彈出視窗詢問。請手動重新連線，在彈出的視窗裡核對指紋。</value>
+  </data>
   <data name="Msg_ImportFailed" xml:space="preserve">
     <value>匯入失敗:{0}</value>
   </data>

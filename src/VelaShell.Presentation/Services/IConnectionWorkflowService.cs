@@ -37,6 +37,12 @@ public interface IConnectionWorkflowService
     /// <summary>按指定配置建立 SSH 连接,返回已连接的会话。</summary>
     Task<SshSession> ConnectProfileAsync(SessionProfile profile, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 断线后的自动重连:同 <see cref="ConnectProfileAsync" />,但主机指纹要人裁决时直接拒绝、不弹窗
+    /// (<see cref="ConnectionInfo.IsAutomaticReconnect" />)。被拒时抛 <see cref="VelaShell.Core.Ssh.VelaSshHostKeyRejectedException" />。
+    /// </summary>
+    Task<SshSession> ReconnectProfileAutomaticallyAsync(SessionProfile profile, CancellationToken cancellationToken = default);
+
     /// <summary>断开指定会话。</summary>
     Task DisconnectAsync(Guid sessionId, CancellationToken cancellationToken = default);
 }

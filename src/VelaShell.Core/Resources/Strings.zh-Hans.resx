@@ -1750,6 +1750,9 @@
   <data name="Msg_HostKeyRejected" xml:space="preserve">
     <value>未信任 {0} 的主机密钥 {1}，连接已中止。</value>
   </data>
+  <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
+    <value>已停止自动重连 {0}：主机密钥 {1} 需要你确认，而自动重连不会弹窗询问。请手动重新连接，在弹出的窗口里核对指纹。</value>
+  </data>
   <data name="Msg_ImportFailed" xml:space="preserve">
     <value>导入失败:{0}</value>
   </data>

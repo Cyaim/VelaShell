@@ -1,9 +1,11 @@
+using System.Collections.Concurrent;
 using NSubstitute;
 using ReactiveUI;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
+using VelaShell.Core.Ssh;
 using VelaShell.Presentation.Services;
 using VelaShell.ViewModels;
 
@@ -26,7 +28,7 @@ public class TunnelPanelViewModelTests
         // 面板以服务器为中心:后台连接器直接返回固定会话,存活检查恒真。
         _vm = new(_workflowService,
             () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
-            (_, _) => Task.FromResult(_sessionId),
+            (_, _, _) => Task.FromResult(_sessionId),
             _ => true,
             _ => Task.CompletedTask);
         _vm.Servers.Add(_server);
@@ -114,6 +116,96 @@ public class TunnelPanelViewModelTests
 
         Assert.AreEqual(1, Volatile.Read(ref attempts), "退避窗口内不该重复重拨。");
         Assert.IsNotNull(vm.ErrorMessage, "失败原因要让用户看得到。");
+    }
+
+    /// <summary>
+    /// 自动恢复按「没人在场」连(主机指纹要人裁决时直接拒绝、不弹窗);败在指纹上就停下,不再一遍遍试 ——
+    /// 再试多少次结果都一样,而在自动恢复不弹窗之前,每试一次就弹一遍确认框。
+    /// 面板外也要报一声:只有用户手动启动、在弹窗里核对过,这些隧道才回得来。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task RefreshLiveState_HostKeyRejected_StopsAutoReconnect()
+    {
+        bool alive = true;
+        bool keyChanged = false;
+        int attempts = 0;
+        int automaticAttempts = 0;
+        ConcurrentQueue<string> reported = [];
+        TunnelPanelViewModel vm = CreateVm(() => alive, (_, automatic) =>
+        {
+            if (!keyChanged)
+            {
+                return Task.FromResult(_sessionId);
+            }
+            Interlocked.Increment(ref attempts);
+            if (automatic)
+            {
+                Interlocked.Increment(ref automaticAttempts);
+            }
+            return Task.FromException<Guid>(new VelaSshHostKeyRejectedException("指纹要人确认"));
+        }, reported.Enqueue);
+        await SeedTunnelAsync(vm, autoReconnect: true);
+
+        alive = false;
+        keyChanged = true;
+        vm.RefreshLiveState();
+        await WaitForAsync(() => !reported.IsEmpty);
+
+        // 指纹被拒不记退避:没有那道拦截的话,紧接着的这几拍会马上再去试。
+        vm.RefreshLiveState();
+        vm.RefreshLiveState();
+        await Task.Delay(150);
+
+        Assert.AreEqual(1, Volatile.Read(ref attempts), "败在指纹上之后不该再自动重拨。");
+        Assert.AreEqual(1, Volatile.Read(ref automaticAttempts), "自动恢复要按「没人在场」连。");
+        Assert.HasCount(1, reported, "面板外也要报一声。");
+    }
+
+    /// <summary>用户手动启动(按「有人在场」连、会弹窗问他)、连上之后,这台的自动恢复照常恢复。</summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task StartTunnel_AfterHostKeyRejection_ResumesAutoReconnect()
+    {
+        bool alive = true;
+        bool keyChanged = false;
+        int automaticAttempts = 0;
+        bool? manualWasAutomatic = null;
+        TunnelPanelViewModel vm = CreateVm(() => alive, (_, automatic) =>
+        {
+            if (automatic)
+            {
+                Interlocked.Increment(ref automaticAttempts);
+            }
+            if (keyChanged)
+            {
+                return Task.FromException<Guid>(new VelaSshHostKeyRejectedException("指纹要人确认"));
+            }
+            if (!automatic)
+            {
+                manualWasAutomatic = false;
+            }
+            alive = true;
+            return Task.FromResult(_sessionId);
+        }, _ => { });
+        await SeedTunnelAsync(vm, autoReconnect: true);
+        TunnelItemViewModel tunnel = vm.Tunnels[0];
+
+        alive = false;
+        keyChanged = true;
+        vm.RefreshLiveState();
+        await WaitForAsync(() => Volatile.Read(ref automaticAttempts) == 1 && !tunnel.IsBusy);
+
+        // 用户在弹窗里核对过、接受了:手动启动连上。
+        keyChanged = false;
+        manualWasAutomatic = null;
+        await vm.StartTunnelCommand.Execute(tunnel.Id).FirstAsync();
+        Assert.IsFalse(manualWasAutomatic, "手动启动要按「有人在场」连 —— 那一次会弹窗。");
+
+        // 之后再掉线,自动恢复照常。
+        alive = false;
+        vm.RefreshLiveState();
+        await WaitForAsync(() => Volatile.Read(ref automaticAttempts) == 2);
     }
 
     /// <summary>
@@ -326,13 +418,21 @@ public class TunnelPanelViewModelTests
     }
 
     /// <summary>装一个独立的面板,便于用例自己控制会话存活与重拨结果。</summary>
-    private TunnelPanelViewModel CreateVm(Func<bool> isAlive, Func<SessionProfile, Task<Guid>> connector)
+    private TunnelPanelViewModel CreateVm(Func<bool> isAlive, Func<SessionProfile, Task<Guid>> connector) =>
+        CreateVm(isAlive, (profile, _) => connector(profile));
+
+    /// <param name="isAlive">后台会话是否还活着。</param>
+    /// <param name="connector">后台连接;第二个参数 = 这是不是断线后的自动恢复。</param>
+    /// <param name="errorReporter">面板外的错误提示出口。</param>
+    private TunnelPanelViewModel CreateVm(
+        Func<bool> isAlive, Func<SessionProfile, bool, Task<Guid>> connector, Action<string>? errorReporter = null)
     {
         var vm = new TunnelPanelViewModel(_workflowService,
             () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
-            (profile, _) => connector(profile),
+            (profile, automaticReconnect, _) => connector(profile, automaticReconnect),
             _ => isAlive(),
-            _ => Task.CompletedTask);
+            _ => Task.CompletedTask,
+            errorReporter: errorReporter);
         vm.Servers.Add(_server);
         vm.SelectedServer = _server;
         return vm;
@@ -837,7 +937,7 @@ public class TunnelPanelViewModelTests
         int dials = 0;
         TunnelPanelViewModel vm = new(_workflowService,
             () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
-            (_, _) =>
+            (_, _, _) =>
             {
                 dials++;
                 return Task.FromResult(_sessionId);
@@ -865,7 +965,7 @@ public class TunnelPanelViewModelTests
         List<string> errors = [];
         TunnelPanelViewModel vm = new(_workflowService,
             () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
-            (_, _) => Task.FromException<Guid>(new InvalidOperationException("host down")),
+            (_, _, _) => Task.FromException<Guid>(new InvalidOperationException("host down")),
             _ => true,
             _ => Task.CompletedTask,
             store,
@@ -899,7 +999,7 @@ public class TunnelPanelViewModelTests
         List<Guid> disconnected = [];
         TunnelPanelViewModel vm = new(_workflowService,
             () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
-            (_, _) => Task.FromResult(_sessionId),
+            (_, _, _) => Task.FromResult(_sessionId),
             _ => true,
             id =>
             {
@@ -1013,7 +1113,7 @@ public class TunnelPanelViewModelTests
     {
         var vm = new TunnelPanelViewModel(_workflowService,
             () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
-            (_, _) => Task.FromResult(_sessionId),
+            (_, _, _) => Task.FromResult(_sessionId),
             _ => true,
             _ => Task.CompletedTask,
             store,
@@ -1138,7 +1238,7 @@ public class TunnelPanelViewModelTests
         TunnelPanelViewModel vm = new(
             _workflowService,
             () => Task.FromResult<IReadOnlyList<SessionProfile>>([sftp, ssh, ftp, plugin]),
-            (_, _) => Task.FromResult(_sessionId),
+            (_, _, _) => Task.FromResult(_sessionId),
             _ => true,
             _ => Task.CompletedTask);
 
@@ -1160,7 +1260,7 @@ public class TunnelPanelViewModelTests
         TunnelPanelViewModel vm = new(
             _workflowService,
             () => Task.FromResult<IReadOnlyList<SessionProfile>>([ssh, ftp]),
-            (_, _) => Task.FromResult(_sessionId),
+            (_, _, _) => Task.FromResult(_sessionId),
             _ => true,
             _ => Task.CompletedTask);
 

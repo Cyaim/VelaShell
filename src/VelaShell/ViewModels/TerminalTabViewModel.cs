@@ -382,6 +382,13 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
     /// </remarks>
     public bool RemoteShellExited { get; private set; }
 
+    /// <summary>
+    /// true = 上一次重连败在主机指纹上(用户在弹窗里拒绝、变更被阻断,或自动重连时没法问人),
+    /// 自动重连不介入 —— 再试多少次都一样,只有用户手动重连、在弹窗里核对过才可能过。
+    /// 手动重连开始时、重新挂载传输时复位。
+    /// </summary>
+    public bool HostKeyRejected { get; private set; }
+
     /// <summary>本标签在状态栏显示的连接摘要,例如 "SSH • root@host:22"。</summary>
     public string ConnectionSummary { get; init; } = string.Empty;
 
@@ -810,6 +817,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
     {
         UserRequestedDisconnect = false;
         RemoteShellExited = false;
+        HostKeyRejected = false;
         ShellStream = shellStream;
         var bridge = new SshTerminalBridge(TerminalEmulator, shellStream);
         bridge.Closed += OnBridgeClosed;
@@ -939,6 +947,17 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         UserRequestedDisconnect = true;
         MarkDisconnected();
     }
+
+    /// <summary>重连败在主机指纹上:标为连接失败,并停掉自动重连(见 <see cref="HostKeyRejected" />)。</summary>
+    /// <param name="reason">覆盖层上显示的失败原因。</param>
+    public void MarkHostKeyRejected(string reason)
+    {
+        HostKeyRejected = true;
+        MarkDisconnected(reason);
+    }
+
+    /// <summary>用户手动重连:上一次败在主机指纹上的那条不再拦着自动重连(这一次会弹窗问他)。</summary>
+    public void ClearHostKeyRejected() => HostKeyRejected = false;
 
     /// <summary>
     /// 将标签切换到断开状态并通知监听者(幂等)。

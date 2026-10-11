@@ -72,12 +72,15 @@ internal static class SshInterop
     /// <remarks>
     /// 超时单独分出来,是因为主窗口的自动重连只该对这一类生效:
     /// 「连不上」值得再试一次,「认证不过」再试一百次也一样。
+    /// 主机指纹被拒同理单独分出来:自动重连据此停下,等用户手动重连、在弹窗里核对。
     /// </remarks>
     private static VelaSshClientException TranslateConnect(SshConnectException ex) =>
         ex.Reason switch
         {
             SshFailureReason.Timeout or SshFailureReason.TcpTimeout or SshFailureReason.KeepAliveTimeout =>
                 new VelaSshOperationTimeoutException(Localize(ex), ex),
+            SshFailureReason.HostKeyRejected or SshFailureReason.HostKeyChanged =>
+                new VelaSshHostKeyRejectedException(Localize(ex), ex),
             _ => new VelaSshConnectionException(Localize(ex), ex),
         };
 
