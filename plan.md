@@ -2529,3 +2529,42 @@ XAML 加载)—— Avalonia 窗口最早也只能在这 3.5 s 之后出现,恰�
 另有 1 条 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 失败 —— Docker 靶机上的 `vela-dash` 接受了 X11 转发,与用例预期的「拒绝」对不上,
 与本次改动无关。行为与设置项的文档在 [velashell-docs#110](https://github.com/VelaShellLabs/velashell-docs/pull/110)
 (交互与界面规格 §14.5、设置审计第十三批,中英同步),与宿主 PR 互相引用。
+
+## ✅ 192. 2026-10-10 内置 X 服务端:gnome-calculator 拖动后冻住、下拉菜单黑边、操作卡(用户需求)
+
+**起因**:用户反馈远端 Ubuntu(内网)上的 `gnome-calculator`(GTK 4)操作卡、移动窗口后冻住一阵才能继续、模式下拉菜单有一圈很宽的黑边,
+问是不是我们代码的问题,以及高延迟网络会卡成什么样。
+
+**怎么量的**:在 X 连接外面包一层统计(逐条请求 / 事件计数、回复到下一条请求的间隔,可以人为给两个方向各加一段延迟),
+Docker 里的 Ubuntu 24.04 跑 gnome-calculator,直连与经 VelaShell.Ssh 的 X11 转发各量一遍;宿主一侧用 `scripts/xserver/host-demo` 起真的原生窗口,
+容器里的 xdotool 经 XTEST 点开菜单、截屏核对。结论:三个现象两个是我们的,一个主要在客户端。
+
+**一、拖动后冻住(库的缺陷)**:宿主拖动原生窗口时每个 WM_MOVE 都 `MoveTopLevel`,服务端每次都发一组 ConfigureNotify(真实的、根窗口监听者的、
+ICCCM 合成的);GTK 每组要做五次同步往返(TranslateCoordinates ×3、GetGeometry ×2),按到达的先后一条条处理。往返 20 毫秒时拖一秒(60 步),
+松手后程序还冻 8.9 秒。改成**按客户端处理的进度合并**(`X11Server.TopLevels.cs` 的 `StartMoveBarrier` / `ReleaseMoveBarrier`):
+交出一次移动之后,窗口声明了 `_NET_WM_PING` 就紧跟一条 ping,pong 回来(客户端按序处理事件,说明前面的移动都处理完了)或 2 秒到点才交下一个位置;
+没声明的两次之间至少隔 50 毫秒;等的期间只记最新的位置,快照照宿主的位置给(别的属性一变不会把正在拖的原生窗口拉回去),
+客户端自己挪窗口时没交出去的位置作废。同样的拖动:往返 20 毫秒时只交 4 次、松手后 0.6 秒处理完;直连时客户端跟得上,120 个位置照常全交。
+
+**二、下拉菜单黑边(库的取舍)**:GTK 4 的弹出菜单不论有没有合成管理器都按 ARGB 视觉画、四周留二十来像素 alpha 为 0 的阴影区,
+再用 SHAPE 的输入形状只圈出菜单本体(277×232 的窗口,输入形状是 x 23–254、y 22–207 的圆角面板)。合成管理器关着(默认)时快照的 `HasAlpha` 为假,
+宿主把 alpha 补成 0xFF,阴影区就成了黑边。改成**输入形状只占窗口一部分的 ARGB 窗口照 alpha 显示**(`HasAlphaOnHost`):客户端自己声明了边缘不是窗口的一部分;
+没设输入形状(清屏 alpha 为 0 的 GL 程序)或盖满整个窗口的仍按不透明。宿主不用改 —— 形状变化时本来就重新套透明度、整窗重取像素。
+真实宿主截图核对:菜单带柔和阴影,黑边没了;拖动之后再打开,菜单位置正确。没有选「默认打开合成管理器」:那会让所有 ARGB 窗口都多一层系统合成,
+GL 程序又会透出后面。
+
+**三、操作卡(主要在客户端)**:GTK 4 默认 GL,经 SSH 退到 llvmpipe,每帧把整窗(384×512)约 786 KB 用 PutImage 发过来:点一下按钮 29 MB、
+打开模式下拉菜单 11 MB;`GSK_RENDERER=cairo` 时分别是 0.15 MB 与 3.6 MB。宿主新增 `Core/XServer/RemoteGtkRenderer`,开着 X11 转发的会话
+(不论显示交给哪个 X 服务端)连接后与 `XMODIFIERS` 同一句静默注入 `GSK_RENDERER=cairo`(已经设了的不动,`MainWindowViewModel.X11EnvironmentScript`)。
+另外 GTK 4 的 X11 后端每画一帧都重算顶层尺寸(GetGeometry、TranslateCoordinates、读 `_NET_WORKAREA` / `_NET_CURRENT_DESKTOP`、写 `WM_NORMAL_HINTS`),
+一帧约 16 次同步往返,对任何 X 服务端都一样,服务端省不掉:局域网上影响不大,几十毫秒的链路上 GTK 4 动画会掉到每秒几帧。
+我们自己的链路(SSH 库 + 连接器 + 服务端)一次往返的额外开销中位 0.47 毫秒,SSH 通道窗口是自适应的(256 KB 起、最大 64 MB),都不是瓶颈。
+
+**关于换用别的 C# X 服务端**:用户问有没有更成熟的 C# 开源 X 服务端可以参考或直接用。X 服务端按净室规程不读别家源码;上面三个问题两个是本库
+的行为、改掉即可,第三个在客户端,换哪个 X 服务端(VcXsrv、MobaXterm、Xorg)都一样,所以不换。
+
+**验证**:新增 `EwmhTests` 四条(声明 ping 的等 pong、中间位置不交;没声明的按间隔合并;客户端自己挪窗口作废拖动位置;拖动期间改标题不报几何)、
+`ShapeTests` 一条(输入形状只圈一部分的 ARGB 窗口 `HasAlpha` 为真,盖满 / 24 位的为假)、`MainWindowSshFeatureTests` 一条(`GSK_RENDERER` 注入的条件与写法)。
+`VelaShell.XServer.Tests` 552 通过 / 9 跳过(仅 Linux),真实互操作 27 / 27、无 `[SKIP]`;`MainWindowSshFeatureTests` 20 / 20,`VelaShell.Tests` 全量 1988 通过 / 0 失败。
+文档:velashell-docs 中英镜像的 X Server 架构(§6、§7「拖动时的移动按客户端处理的进度合并」「合成管理器」、§10 决策记录)、排障(第二节与「已修的缺陷」)、
+宿主交互规格同步更新,在 [velashell-docs#111](https://github.com/VelaShellLabs/velashell-docs/pull/111),与宿主 PR 互相引用。
