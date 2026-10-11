@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2026 VelaShell Labs
 //
-// 被测规格: velashell-docs/zh/ssh/spec/01-transport-framing.md §3（收包）、§4（发包与合并）
+// 被测规格: velashell-docs/zh/ssh/spec/01-transport-framing.md §3（收包）、§4（发包与合并、释放）
 //           velashell-docs/zh/ssh/spec/02-version-exchange.md（行式 IO 与互操作）
 //
 // 这一层跑在**真实的双工管道**上（InMemoryTransport），不是对着假对象断言 ——
 // 所以它同时验证了「分帧 + Pipelines 的 AdvanceTo 用法」这条最容易卡死的路径。
 
+using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using VelaShell.Ssh.Crypto;
 using VelaShell.Ssh.Diagnostics;
@@ -483,6 +485,202 @@ public sealed class SshPacketTransportTests
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
         public override void SetLength(long value) => throw new NotSupportedException();
+    }
+
+    // ------------------------------------------------------------ 释放时还有读写在途（spec/01 §4「释放」）
+
+    [TestMethod]
+    public async Task 释放时还停在读里_读缓冲等那次读退出了才还回内存池()
+    {
+        // 宿主 CI 上一条握手用例读到被截短的 KEXINIT：上一条用例的服务端还停在读里，传输就被释放、读缓冲还回了池，
+        // 那次读随后把数据写进了下一条用例刚租到的同一个数组。
+        GatedStream stream = new();
+        SshPacketTransport transport = new(stream, ownsStream: false);
+        Task<SshInboundPacket> pending = transport.ReadPacketAsync().AsTask();
+        byte[] handedOut = await stream.ReadBuffer.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        ValueTask dispose = transport.DisposeAsync();
+        Assert.IsTrue(dispose.IsCompleted, "释放不该等一个不理会取消的读");
+        await dispose;
+
+        // 紧接着在同一个线程上租同样大小的数组：曾经租到的正是那次读手里的那一个。
+        byte[] rented = ArrayPool<byte>.Shared.Rent(handedOut.Length);
+        try
+        {
+            Assert.AreNotSame(handedOut, rented, "在途的读还攥着的缓冲不能先还回池里");
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+
+        // 那次读这时才拿到数据：它照常结束（这几个字节不是合法的报文），结束时由它收尾。
+        stream.ReleaseRead([0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0, 0]);
+        await Assert.ThrowsExactlyAsync<SshFrameFormatException>(async () => await pending.WaitAsync(TimeSpan.FromSeconds(5)));
+        await Assert.ThrowsExactlyAsync<ObjectDisposedException>(async () => await transport.ReadPacketAsync());
+    }
+
+    [TestMethod]
+    public async Task 释放时还在刷出_写缓冲等那次刷出退出了才还回内存池()
+    {
+        // 写端同理：刷到一半时还回去，底层流照样从里面读 —— 发出去的就是别人的数据。
+        GatedStream stream = new();
+        SshPacketTransport transport = new(stream, ownsStream: false);
+        transport.WritePacket([2, 1, 2, 3]);
+        Task<System.IO.Pipelines.FlushResult> flush = transport.FlushAsync().AsTask();
+        byte[] handedOut = await stream.WriteBuffer.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        ValueTask dispose = transport.DisposeAsync();
+        Assert.IsTrue(dispose.IsCompleted, "释放不该等一次不理会取消的刷出");
+        await dispose;
+
+        byte[] rented = ArrayPool<byte>.Shared.Rent(handedOut.Length);
+        try
+        {
+            Assert.AreNotSame(handedOut, rented, "在途的刷出还攥着的缓冲不能先还回池里");
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+
+        stream.ReleaseWrite();
+        await flush.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.ThrowsExactly<ObjectDisposedException>(() => transport.WritePacket([2]));
+    }
+
+    [TestMethod]
+    public async Task 释放时还停在读里_接收套件等那次读退出了才释放()
+    {
+        // 当场释放接收套件（清零密钥），在途的那次解密就会算出一个假的 MAC 错误。
+        GatedStream stream = new();
+        SshPacketTransport transport = new(stream, ownsStream: false);
+        DisposalTrackingSuite suite = new();
+        transport.SetReceiveCipherSuite(suite, resetSequenceNumber: false);
+        Task<SshInboundPacket> pending = transport.ReadPacketAsync().AsTask();
+        await stream.ReadBuffer.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await transport.DisposeAsync();
+        Assert.IsFalse(suite.IsDisposed, "读还在途，接收套件不能先释放");
+
+        ArrayBufferWriter<byte> frame = new();
+        using (PlaintextCipherSuite sealer = new())
+        {
+            sealer.Seal([2, 1, 2, 3], sequenceNumber: 0, frame);
+        }
+        stream.ReleaseRead(frame.WrittenSpan.ToArray());
+        SshInboundPacket packet = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreSequenceEqual(new byte[] { 2, 1, 2, 3 }, packet.Payload.ToArray(), "已经到达的那一帧照常交出");
+        Assert.IsTrue(suite.IsDisposed, "那次读退出时收尾");
+    }
+
+    [TestMethod]
+    public async Task 释放时还停在读里_理会取消的流上那次读以已释放退出()
+    {
+        (InMemoryDuplexStream a, InMemoryDuplexStream b) = InMemoryTransport.CreatePair();
+        await using (a)
+        {
+            SshPacketTransport transport = new(b);
+            ValueTask<SshInboundPacket> pending = transport.ReadPacketAsync();
+            Assert.IsFalse(pending.IsCompleted, "还没有数据，读应当挂着");
+
+            await transport.DisposeAsync();
+
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(
+                async () => await pending.AsTask().WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+    }
+
+    /// <summary>
+    /// 读写都先把手里的缓冲交出来、等放行再动它 —— 把「底层流已经拿到缓冲、还没用完」这段时间拉长。
+    /// 不理会取消（Windows 上 ProxyCommand 的匿名管道就是这样），释放只能等它自己结束。
+    /// </summary>
+    private sealed class GatedStream : Stream
+    {
+        private readonly TaskCompletionSource<byte[]> _readData = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _writeRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>读的时候交出来的缓冲所在的数组。</summary>
+        public TaskCompletionSource<byte[]> ReadBuffer { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>写的时候交出来的缓冲所在的数组。</summary>
+        public TaskCompletionSource<byte[]> WriteBuffer { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void ReleaseRead(byte[] data) => _readData.TrySetResult(data);
+
+        public void ReleaseWrite() => _writeRelease.TrySetResult();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ReadBuffer.TrySetResult(ArrayOf(buffer));
+            byte[] data = await _readData.Task;
+            data.CopyTo(buffer.Span);
+            return data.Length;
+        }
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            WriteBuffer.TrySetResult(ArrayOf(buffer));
+            await _writeRelease.Task;
+        }
+
+        private static byte[] ArrayOf(ReadOnlyMemory<byte> memory) =>
+            MemoryMarshal.TryGetArray(memory, out ArraySegment<byte> segment)
+                ? segment.Array!
+                : throw new InvalidOperationException("缓冲不在数组里，这条用例比较不了。");
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public override bool CanRead => true;
+
+        public override bool CanWrite => true;
+
+        public override bool CanSeek => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+    }
+
+    /// <summary>明文套件，外加记下自己有没有被释放。</summary>
+    private sealed class DisposalTrackingSuite : ISshCipherSuite
+    {
+        private readonly PlaintextCipherSuite _inner = new();
+
+        public bool IsDisposed { get; private set; }
+
+        public CipherSuiteShape Shape => _inner.Shape;
+
+        public void Seal(ReadOnlySpan<byte> payload, uint sequenceNumber, IBufferWriter<byte> output) =>
+            _inner.Seal(payload, sequenceNumber, output);
+
+        public SshOpenStatus TryOpen(
+            ReadOnlySequence<byte> input, uint sequenceNumber, int maxPacketLength, IBufferWriter<byte> payload, out long consumed) =>
+            _inner.TryOpen(input, sequenceNumber, maxPacketLength, payload, out consumed);
+
+        public void Dispose() => IsDisposed = true;
     }
 
     [TestMethod]

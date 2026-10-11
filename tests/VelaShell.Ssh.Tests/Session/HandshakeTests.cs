@@ -42,16 +42,28 @@ public sealed class HandshakeTests
         // 串行跑会在第一个 KEXINIT 上就死锁。
         Task<TestSshServerHandshake> serverTask = server.HandshakeAsync(cts.Token);
 
-        SshVersionExchangeResult versions =
-            await SshVersionExchange.ExchangeAsync(clientTransport, cancellationToken: cts.Token);
+        SshKeyExchangeResult clientResult;
+        try
+        {
+            SshVersionExchangeResult versions =
+                await SshVersionExchange.ExchangeAsync(clientTransport, cancellationToken: cts.Token);
 
-        SshKeyExchangeRunner runner = new(
-            clientTransport,
-            clientAlgorithms ?? SshAlgorithmSet.Default,
-            policy ?? new DangerousAcceptAnyHostKeyPolicy());
+            SshKeyExchangeRunner runner = new(
+                clientTransport,
+                clientAlgorithms ?? SshAlgorithmSet.Default,
+                policy ?? new DangerousAcceptAnyHostKeyPolicy());
 
-        SshKeyExchangeResult clientResult =
-            await runner.RunAsync(versions, "test.invalid", 22, cancellationToken: cts.Token);
+            clientResult = await runner.RunAsync(versions, "test.invalid", 22, cancellationToken: cts.Token);
+        }
+        catch
+        {
+            // 客户端这边失败了（拒绝主机密钥、协商不成……）：先关掉客户端，服务端那一侧随之读到连接断开、收工，
+            // 等它收完再把客户端的异常交出去。曾经直接交出去，await using 拆掉的是一个还停在读里的服务端
+            // （velashell-docs/zh/ssh/spec/01 §4「释放」）。
+            await clientTransport.DisposeAsync();
+            await WaitForServerToStopAsync(serverTask);
+            throw;
+        }
 
         TestSshServerHandshake serverResult = await serverTask;
 
@@ -61,6 +73,19 @@ public sealed class HandshakeTests
         }
 
         return (clientResult, serverResult);
+    }
+
+    /// <summary>等服务端那一侧收工。客户端先走了，它失败是意料之中的。</summary>
+    private static async Task WaitForServerToStopAsync(Task serverTask)
+    {
+        try
+        {
+            await serverTask.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch (Exception)
+        {
+            // 同上。
+        }
     }
 
     // ------------------------------------------------------------ 主路径
