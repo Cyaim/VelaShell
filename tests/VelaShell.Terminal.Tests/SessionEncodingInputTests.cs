@@ -18,7 +18,7 @@ namespace VelaShell.Terminal.Tests;
 public class SessionEncodingInputTests
 {
     /// <summary>全程序集共用的 headless 会话(见 HeadlessTestSession:每类各起一个时,拆除会互相踩)。</summary>
-    private static Avalonia.Headless.HeadlessUnitTestSession _session => HeadlessTestSession.Current;
+    private static Avalonia.Headless.HeadlessUnitTestSession Session => HeadlessTestSession.Current;
 
     [ClassInitialize]
     public static void RegisterCodePages(TestContext _) =>
@@ -26,7 +26,7 @@ public class SessionEncodingInputTests
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
     private static void OnUi(Action action) =>
-        _session
+        Session
             .Dispatch(
                 () =>
                 {
@@ -153,6 +153,6 @@ public class SessionEncodingInputTests
 
             control.WriteTextInput("😀");
 
-            Assert.AreSequenceEqual(new byte[] { 0x3F, 0x3F }, sent);
+            Assert.AreSequenceEqual("??"u8.ToArray(), sent);
         });
 }

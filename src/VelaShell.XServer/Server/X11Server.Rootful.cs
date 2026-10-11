@@ -21,9 +21,6 @@ namespace VelaShell.XServer;
 
 public sealed partial class X11Server
 {
-    /// <summary>单窗口模式下整块屏幕的句柄;rootless(默认)为 null。</summary>
-    private XTopLevelWindow? _screenHandle;
-
     /// <summary>拼好、还没交给宿主的屏幕区域(根坐标)。在像素锁里攒,放锁之后交。</summary>
     private readonly List<XRect> _screenDamage = [];
 
@@ -42,21 +39,21 @@ public sealed partial class X11Server
     /// (<see cref="IX11ServerHost.TopLevelDamaged" />)、注入指针(坐标就是根坐标)、显示光标;缩放它就是改屏幕尺寸(客户端收到 RANDR 通知)。
     /// 移动、关闭、改状态、给焦点对它都不起作用 —— 那些归远端的窗口管理器。其余顶层不再单独交给宿主。
     /// </summary>
-    public XTopLevelWindow? Screen => _screenHandle;
+    public XTopLevelWindow? Screen { get; private set; }
 
     /// <summary>单窗口模式。</summary>
-    private bool Rootful => _screenHandle is not null;
+    private bool Rootful => Screen is not null;
 
     /// <summary>构造时:单窗口模式给根窗口一块缓冲、建屏幕句柄,铺上背景。要在占窗口管理器 / XSETTINGS / 托盘的选区之前调。</summary>
     private void InitRootful()
     {
-        if (!_options.Rootful)
+        if (!Options.Rootful)
         {
             return;
         }
         Root.Buffer = new PixelBuffer(Root.Width, Root.Height, 24);
         _host.DropWindowManagerRequests = true;
-        _screenHandle = new XTopLevelWindow(Root, _pixelGate, this) { Snapshot = ScreenSnapshot(new XTopLevelSnapshot()) };
+        Screen = new XTopLevelWindow(Root, _pixelGate, this) { Snapshot = ScreenSnapshot(new XTopLevelSnapshot()) };
         _composedBackground = (Root.BackgroundPixel, Root.BackgroundTile?.Buffer);
         ComposeScreen(Root.Buffer.Bounds);
     }
@@ -76,7 +73,7 @@ public sealed partial class X11Server
     /// <summary>屏幕尺寸变了(<see cref="ApplyScreenLayout" />):缓冲跟着改、整屏重拼,告诉宿主新尺寸。</summary>
     private void OnRootfulScreenResized()
     {
-        if (_screenHandle is not { } screen || Root.Buffer is not { } buffer)
+        if (Screen is not { } screen || Root.Buffer is not { } buffer)
         {
             return;
         }
@@ -98,7 +95,7 @@ public sealed partial class X11Server
     /// </summary>
     private void ComposeScreenBatch()
     {
-        if (_screenHandle is null || Root.Buffer is not { } screen)
+        if (Screen is null || Root.Buffer is not { } screen)
         {
             return;
         }
@@ -137,7 +134,7 @@ public sealed partial class X11Server
     /// <summary>放锁之后:把拼好的屏幕区域交给宿主。</summary>
     private void FlushScreenDamage()
     {
-        if (_screenHandle is not { } screen || _screenDamage.Count == 0)
+        if (Screen is not { } screen || _screenDamage.Count == 0)
         {
             return;
         }
@@ -169,7 +166,7 @@ public sealed partial class X11Server
     /// </summary>
     private static void DiffLayers(List<ScreenLayer> before, List<ScreenLayer> after, Region dirty)
     {
-        Dictionary<XWindow, int> oldIndex = new(before.Count);
+        Dictionary<XWindow, int> oldIndex = [with(before.Count)];
         for (int i = 0; i < before.Count; i++)
         {
             oldIndex[before[i].Window] = i;

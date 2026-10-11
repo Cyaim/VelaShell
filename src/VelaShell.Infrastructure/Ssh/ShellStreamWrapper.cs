@@ -9,24 +9,18 @@ namespace VelaShell.Infrastructure.Ssh;
 /// <summary>
 /// 将 <see cref="SshShell" /> 适配到 <see cref="IShellStreamWrapper" />。
 /// </summary>
-public sealed class ShellStreamWrapper : IShellStreamWrapper
+/// <remarks>用一条已经打开的交互式 shell 构造。</remarks>
+/// <param name="shell">已经打开的 shell。</param>
+/// <param name="notices">打开时附带的提示(转发开没开成),见 <see cref="IShellStreamWrapper.Notices" />。</param>
+public sealed class ShellStreamWrapper(SshShell shell, IReadOnlyList<ShellStreamNotice>? notices = null) : IShellStreamWrapper
 {
-    private readonly SshShell _shell;
+    private readonly SshShell _shell = shell ?? throw new ArgumentNullException(nameof(shell));
     private volatile bool _disposed;
     private volatile bool _channelClosed;
     private bool _readEof;
 
-    /// <summary>用一条已经打开的交互式 shell 构造。</summary>
-    /// <param name="shell">已经打开的 shell。</param>
-    /// <param name="notices">打开时附带的提示(转发开没开成),见 <see cref="IShellStreamWrapper.Notices" />。</param>
-    public ShellStreamWrapper(SshShell shell, IReadOnlyList<ShellStreamNotice>? notices = null)
-    {
-        _shell = shell ?? throw new ArgumentNullException(nameof(shell));
-        Notices = notices ?? [];
-    }
-
     /// <inheritdoc />
-    public IReadOnlyList<ShellStreamNotice> Notices { get; }
+    public IReadOnlyList<ShellStreamNotice> Notices { get; } = notices ?? [];
 
     /// <summary>读端发出 EOF 前始终保持可读(读返回 0 表示 EOF)。</summary>
     public bool CanRead => !_disposed && !_readEof;

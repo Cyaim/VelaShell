@@ -16,6 +16,8 @@ namespace VelaShell.Core.Tests.Models;
 [TestCategory("DataStore")]
 public class AccentDefaultsTests
 {
+    private static readonly JsonSerializerOptions CamelCaseJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
     [TestMethod]
     public void FreshSettings_FollowTheTheme()
     {
@@ -28,8 +30,7 @@ public class AccentDefaultsTests
     public void AStoredAccent_IsKeptAsIs()
     {
         // 存量配置里写着的色值分不清是用户选的还是旧出厂值,一律照旧生效
-        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        AppSettings reloaded = JsonSerializer.Deserialize<AppSettings>("""{"accentColor":"#E91E63"}""", options)!;
+        AppSettings reloaded = JsonSerializer.Deserialize<AppSettings>("""{"accentColor":"#E91E63"}""", CamelCaseJson)!;
         reloaded.Normalize();
 
         Assert.AreEqual("#E91E63", reloaded.AccentColor);

@@ -87,12 +87,10 @@ public sealed class KeyboardControlTests
         server.InjectKey(XKeycodes.A, pressed: true, repeat: true);
         server.InjectKey(XKeycodes.A, pressed: false);
 
-        CollectionAssert.AreEqual(
-            new List<(byte, byte)> { (KeyPress, 38), (KeyRelease, 38), (KeyPress, 38), (KeyRelease, 38), (KeyPress, 38), (KeyRelease, 38) },
-            await KeyEventsAsync(plain), "协议:自动重复的键交替产生 KeyPress 与 KeyRelease");
-        CollectionAssert.AreEqual(
-            new List<(byte, byte)> { (KeyPress, 38), (KeyPress, 38), (KeyPress, 38), (KeyRelease, 38) },
-            await KeyEventsAsync(detectable), "XKB Detectable Autorepeat:只在真的松开时收到 KeyRelease");
+        Assert.AreSequenceEqual(
+            new List<(byte, byte)> { (KeyPress, 38), (KeyRelease, 38), (KeyPress, 38), (KeyRelease, 38), (KeyPress, 38), (KeyRelease, 38) }, await KeyEventsAsync(plain), "协议:自动重复的键交替产生 KeyPress 与 KeyRelease");
+        Assert.AreSequenceEqual(
+            new List<(byte, byte)> { (KeyPress, 38), (KeyPress, 38), (KeyPress, 38), (KeyRelease, 38) }, await KeyEventsAsync(detectable), "XKB Detectable Autorepeat:只在真的松开时收到 KeyRelease");
 
         List<(int Type, uint Flags)> xiEvents = [];
         for (int i = 0; i < 4; i++)
@@ -100,8 +98,7 @@ public sealed class KeyboardControlTests
             XMessage e = await xi2.NextAsync(m => m.EventCode == GenericEvent && m.Bytes[1] == xi && m.U16(8) is 2 or 3);
             xiEvents.Add((e.U16(8), e.U32(56)));
         }
-        CollectionAssert.AreEqual(new List<(int, uint)> { (2, 0), (2, 1u << 16), (2, 1u << 16), (3, 0) }, xiEvents,
-            "XI2:重复的 KeyPress 带 KeyRepeat,中间没有 KeyRelease");
+        Assert.AreSequenceEqual(new List<(int, uint)> { (2, 0), (2, 1u << 16), (2, 1u << 16), (3, 0) }, xiEvents, "XI2:重复的 KeyPress 带 KeyRepeat,中间没有 KeyRelease");
     }
 
     [TestMethod]
@@ -180,7 +177,7 @@ public sealed class KeyboardControlTests
 
         XMessage map = await c.RequestAsync(117, 0);
         Assert.AreEqual(9, map.Bytes[1], "GetPointerMapping 与 XI 一样报 9 个按钮");
-        CollectionAssert.AreEqual(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 }, map.Bytes[32..41]);
+        Assert.AreSequenceEqual(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 }, map.Bytes[32..41]);
 
         // xmodmap -e "pointer = 3 2 1":xmodmap 自己把后面的按钮补成恒等,长度与 GetPointerMapping 一致。
         XMessage set = await c.RequestAsync(116, 9, b => b.Bytes([3, 2, 1, 4, 5, 6, 7, 8, 9]));
@@ -256,7 +253,7 @@ public sealed class KeyboardControlTests
         XMessage ctrl = await c.RequestAsync(101, 0, b => b.U8(XKeycodes.ControlLeft).U8(1).U16(0));
         Assert.AreEqual(0xffe5u, ctrl.U32(32), "左 Ctrl 仍是 Caps_Lock");
         XMessage after = await c.RequestAsync(119, 0);
-        CollectionAssert.AreEqual(swapped, after.Bytes[32..(32 + (8 * after.Bytes[1]))], "修饰键表原样");
+        Assert.AreSequenceEqual(swapped, after.Bytes[32..(32 + (8 * after.Bytes[1]))], "修饰键表原样");
 
         server.SetKeymap(Us(altGr: true));           // 换成有 AltGr 的布局:右 Alt 从 Mod1 挪到 Mod5,别的不动
         await c.SyncAsync();
@@ -291,7 +288,7 @@ public sealed class KeyboardControlTests
         await c.SyncAsync();
         XMessage busy = await c.RequestAsync(118, (byte)per, b => b.Bytes(swapped));
         Assert.AreEqual(1, busy.Bytes[1], "Busy");
-        CollectionAssert.AreEqual(map, (await c.RequestAsync(119, 0)).Bytes[32..(32 + (8 * per))], "修饰键表没变");
+        Assert.AreSequenceEqual(map, (await c.RequestAsync(119, 0)).Bytes[32..(32 + (8 * per))], "修饰键表没变");
         server.InjectKey(XKeycodes.ControlLeft, pressed: false);
         await c.SyncAsync();
         XMessage ok = await c.RequestAsync(118, (byte)per, b => b.Bytes(swapped));
@@ -351,13 +348,12 @@ public sealed class KeyboardControlTests
         byte borrowed = mapping.Bytes[5];
         Assert.AreEqual(1, mapping.Bytes[6]);
         Assert.AreEqual(0x01004E2Du, await KeysymAsync(c, borrowed), "U+4E2D 的 Unicode 键值");
-        CollectionAssert.AreEqual(
-            new List<(byte, byte)> { (KeyPress, 38), (KeyRelease, 38), (KeyPress, borrowed), (KeyRelease, borrowed), (KeyPress, 36), (KeyRelease, 36) },
-            await KeyEventsAsync(c), "a 按键位表里的 a 键;换行按 Return");
+        Assert.AreSequenceEqual(
+            new List<(byte, byte)> { (KeyPress, 38), (KeyRelease, 38), (KeyPress, borrowed), (KeyRelease, borrowed), (KeyPress, 36), (KeyRelease, 36) }, await KeyEventsAsync(c), "a 按键位表里的 a 键;换行按 Return");
 
         // 再输入同一个字:用同一个键码,不再发 MappingNotify;控制字符不输入。
         server.InjectText("\u0007中");
-        CollectionAssert.AreEqual(new List<(byte, byte)> { (KeyPress, borrowed), (KeyRelease, borrowed) }, await KeyEventsAsync(c));
+        Assert.AreSequenceEqual(new List<(byte, byte)> { (KeyPress, borrowed), (KeyRelease, borrowed) }, await KeyEventsAsync(c));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => c.NextAsync(m => !m.IsReply && !m.IsError && m.EventCode == 34, timeoutMs: 100));
         Assert.ThrowsExactly<ArgumentException>(() => server.InjectText(new string('x', X11Server.MaxInjectedTextLength + 1)));
     }
@@ -423,8 +419,7 @@ public sealed class KeyboardControlTests
         server.InjectText("é\r\n");
         XMessage mapping = await c.NextEventAsync(34);
         byte borrowed = mapping.Bytes[5];
-        CollectionAssert.AreEqual(new List<(byte, byte)> { (KeyPress, borrowed), (KeyRelease, borrowed), (KeyPress, 36), (KeyRelease, 36) },
-            await KeyEventsAsync(c), "CR LF 是一个换行");
+        Assert.AreSequenceEqual(new List<(byte, byte)> { (KeyPress, borrowed), (KeyRelease, borrowed), (KeyPress, 36), (KeyRelease, 36) }, await KeyEventsAsync(c), "CR LF 是一个换行");
         // GetMap:只要键码 borrowed 的键值。
         XMessage map = await c.RequestAsync(xkb, 8, b => b.U16(UseCoreKbd).U16(0).U16(0x2).U8(0).U8(0).U8(borrowed).U8(1).Bytes(new byte[14]));
         Assert.AreEqual(2, map.Bytes[40], "ALPHABETIC");
@@ -469,7 +464,7 @@ public sealed class KeyboardControlTests
         XMessage revealed = await untrusted.NextEventAsync(34);
         Assert.AreEqual(borrowed, revealed.Bytes[5], "输入给它自己:告诉它这个键码变了");
         Assert.AreEqual(0x01004E2Du, await KeysymAsync(untrusted, borrowed));
-        CollectionAssert.AreEqual(new List<(byte, byte)> { (KeyPress, borrowed), (KeyRelease, borrowed) }, await KeyEventsAsync(untrusted));
+        Assert.AreSequenceEqual(new List<(byte, byte)> { (KeyPress, borrowed), (KeyRelease, borrowed) }, await KeyEventsAsync(untrusted));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => trusted.NextEventAsync(34, timeoutMs: 100), "受信客户端早就知道,不再通知");
     }
 
@@ -497,7 +492,7 @@ public sealed class KeyboardControlTests
         server.InjectText("中");
         server.InjectKey(38, pressed: true);
         server.InjectKey(38, pressed: false);
-        CollectionAssert.AreEqual(new List<(byte, byte)> { (KeyPress, 38), (KeyRelease, 38) }, await KeyEventsAsync(c));
+        Assert.AreSequenceEqual(new List<(byte, byte)> { (KeyPress, 38), (KeyRelease, 38) }, await KeyEventsAsync(c));
         Assert.IsNotEmpty(await ServerLog.WaitForAsync(log, l => l.Contains("no keycode can be borrowed", StringComparison.Ordinal)), "记一行日志");
     }
 }

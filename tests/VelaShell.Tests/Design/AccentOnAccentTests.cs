@@ -37,7 +37,7 @@ public sealed class AccentOnAccentTests
         foreach (string file in Directory.EnumerateFiles(viewsRoot, "*.axaml", SearchOption.AllDirectories))
         {
             string relative = Path.GetRelativePath(viewsRoot, file).Replace('\\', '/');
-            XDocument document = XDocument.Load(file, LoadOptions.SetLineInfo);
+            var document = XDocument.Load(file, LoadOptions.SetLineInfo);
             foreach (XElement fill in document.Descendants().Where(e => (string?)e.Attribute("Background") == AccentFill))
             {
                 foreach (XElement ink in fill.Descendants().Where(e => AccentInk.Contains((string?)e.Attribute("Foreground"))))

@@ -115,7 +115,7 @@ public sealed partial class ShellHistoryScrubShellTests
         string[] output = RunInteractiveRaw(histControl, [.. lines, "HISTTIMEFORMAT= history"]);
         return [.. output
             .Select(StripEscapes)
-            .Select(line => Regex.Match(line, @"^\s*\d+\s+(?<cmd>.*)$"))
+            .Select(line => HistoryLine().Match(line))
             .Where(m => m.Success)
             .Select(m => m.Groups["cmd"].Value.TrimEnd())];
     }
@@ -138,6 +138,10 @@ public sealed partial class ShellHistoryScrubShellTests
     /// <summary>一条 OSC:<c>ESC ]</c> 开头,BEL 或 ST(<c>ESC \</c>)收尾。</summary>
     [GeneratedRegex("\e\\][^\a\e]*(?:\a|\e\\\\)")]
     private static partial Regex OscSequence();
+
+    /// <summary><c>history</c> 输出的一行:序号、空白、命令。</summary>
+    [GeneratedRegex(@"^\s*\d+\s+(?<cmd>.*)$")]
+    private static partial Regex HistoryLine();
 
     private static string[] RunInteractiveRaw(string? histControl, params string[] lines)
     {

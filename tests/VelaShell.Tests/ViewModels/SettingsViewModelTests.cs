@@ -7,8 +7,8 @@ using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Services;
 using VelaShell.Core.Ssh;
-using VelaShell.ViewModels;
 using VelaShell.Services;
+using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
 
@@ -31,12 +31,9 @@ public class SettingsViewModelTests
     [TestCategory("Update")]
     [DataRow(true)]
     [DataRow(false)]
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "Linux update behavior requires Linux.")]
     public async Task LinuxUpdate_OpensReleasePageWithoutDownloading(bool writable)
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            Assert.Inconclusive("Linux update behavior requires Linux.");
-        }
         IUpdateService updates = Substitute.For<IUpdateService>();
         updates.CheckForUpdateAsync().Returns(true);
         updates.AvailableVersion.Returns("2.0.0-beta.1");
@@ -63,12 +60,9 @@ public class SettingsViewModelTests
 
     [TestMethod]
     [TestCategory("Update")]
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "Linux update behavior requires Linux.")]
     public async Task LinuxUpdate_BrowserFailureLeavesManualDownloadAddress()
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            Assert.Inconclusive("Linux update behavior requires Linux.");
-        }
         IUpdateService updates = Substitute.For<IUpdateService>();
         updates.CheckForUpdateAsync().Returns(true);
         updates.AvailableVersion.Returns("2.0.0");

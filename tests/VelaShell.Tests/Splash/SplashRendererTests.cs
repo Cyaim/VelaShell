@@ -31,7 +31,7 @@ public sealed class SplashRendererTests
     [DynamicData(nameof(StyleAndTheme))]
     public void EveryStyle_RendersInEveryTheme(string style, string theme)
     {
-        SplashPalette palette = SplashPalette.Resolve(theme, null, systemPrefersDark: true);
+        var palette = SplashPalette.Resolve(theme, null, systemPrefersDark: true);
         using SplashRenderer renderer = CreateRenderer(style, palette);
         SplashSimulation simulation = new();
 
@@ -50,7 +50,7 @@ public sealed class SplashRendererTests
     [TestMethod]
     public void NoneAndUnknownStyles_FallBackToClassic()
     {
-        SplashPalette palette = SplashPalette.Resolve("dark", null, true);
+        var palette = SplashPalette.Resolve("dark", null, true);
         using SplashRenderer none = CreateRenderer(SplashStyles.None, palette);
         using SplashRenderer unknown = CreateRenderer("hologram", palette);
 
@@ -65,7 +65,7 @@ public sealed class SplashRendererTests
     {
         // 设置页换样式时是「先建新的、再放旧的」。Skia 对同一个原生字体只给一个托管包装,
         // 两个渲染器拿到的是同一个 SKTypeface 实例:旧的那边若把它释放了,新的就跟着画错字或直接崩。
-        SplashPalette palette = SplashPalette.Resolve("dark", null, true);
+        var palette = SplashPalette.Resolve("dark", null, true);
         SplashFrame frame = new SplashSimulation().At(2000);
         using SKBitmap expected = RenderIsolated("terminal", palette, frame);
 
@@ -87,7 +87,7 @@ public sealed class SplashRendererTests
         Assert.AreEqual(SplashPalette.From(UiThemeCatalog.DefaultLight, null), SplashPalette.Resolve("system", null, false));
         Assert.AreEqual(SplashPalette.From(UiThemeCatalog.DefaultDark, null), SplashPalette.Resolve("no-such-theme", "", true));
 
-        SplashPalette custom = SplashPalette.Resolve("nord", "#FF8800", true);
+        var custom = SplashPalette.Resolve("nord", "#FF8800", true);
         Assert.AreEqual(new SKColor(0xFF, 0x88, 0x00), custom.Accent);
         Assert.AreEqual(SplashPalette.Resolve("nord", null, true).Accent, SplashPalette.Resolve("nord", "not a color", true).Accent);
     }
@@ -119,11 +119,11 @@ public sealed class SplashRendererTests
         try
         {
             CultureInfo.CurrentUICulture = new CultureInfo(culture);
-            SplashStrings strings = SplashStrings.Load();
+            var strings = SplashStrings.Load();
 
             string[] all = [.. strings.Stages, .. strings.MascotLines, strings.Starting, strings.Ready, strings.Tagline,
                             strings.ConstellationName, strings.MascotHello, strings.MascotReady];
-            Assert.IsFalse(all.Any(s => s.StartsWith("Splash_", StringComparison.Ordinal)), "有文案没取到,显示成了键名。");
+            Assert.DoesNotContain(s => s.StartsWith("Splash_", StringComparison.Ordinal), all, "有文案没取到,显示成了键名。");
             Assert.StartsWith("v", strings.Version);
         }
         finally

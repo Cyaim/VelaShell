@@ -239,13 +239,9 @@ public sealed class AvaloniaXServerHostUiTests
     /// (macOS 14 起在别的线程上调会断言失败、整个进程退出),测试线程不是主线程,所以 macOS 上不在这里真取。
     /// </summary>
     [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.OSX, IgnoreMessage = "macOS 的 TIS 接口只能在主线程上调,宿主在 UI 线程上调用")]
     public void HostKeymap_BuildsFromTheCurrentSystemLayout()
     {
-        if (OperatingSystem.IsMacOS())
-        {
-            Assert.Inconclusive("macOS 的 TIS 接口只能在主线程上调,宿主在 UI 线程上调用");
-            return;
-        }
         HostKeymapResult? keymap = OperatingSystem.IsWindows() ? WindowsKeymap.Build(WindowsKeymap.CurrentLayout())
             : OperatingSystem.IsLinux() ? LinuxKeymap.Build(ownDisplay: -1)
             : null;
@@ -620,7 +616,7 @@ public sealed class AvaloniaXServerHostUiTests
         await SendAsync(client, 1, 24, w => w.U32(visible).U32(root).I16(10).I16(10).U16(60).U16(40).U16(0).U16(1).U32(0).U32(0));
         await SendAsync(client, 8, 0, w => w.U32(visible));
         await WaitForAsync(() => host.Windows.FirstOrDefault(w => w.Handle.Id == visible));   // 之前映射的 InputOnly 那个也处理过了
-        Assert.IsFalse(host.Windows.Any(w => w.Handle.Id == invisible));
+        Assert.DoesNotContain(w => w.Handle.Id == invisible, host.Windows);
 
         XNativeWindow[] all = [.. host.Windows];
         host.Detach();
@@ -770,7 +766,7 @@ public sealed class AvaloniaXServerHostUiTests
         await SendAsync(client, 1, 24, w => w.U32(window).U32(root).I16(0).I16(0).U16(60).U16(40).U16(0).U16(1).U32(0).U32(0));
         await SendAsync(client, 8, 0, w => w.U32(window));
         XNativeWindow native = await WaitForAsync(() => host.Windows.FirstOrDefault());
-        Assert.Contains(Avalonia.Controls.WindowTransparencyLevel.None, native.TransparencyLevelHint.ToArray());
+        Assert.Contains(Avalonia.Controls.WindowTransparencyLevel.None, [.. native.TransparencyLevelHint]);
 
         await SendAsync(client, 18, 0, w => w.U32(window).U32(opacity).U32(6).U8(32).Zero(3).U32(1).U32(0x80000000));   // CARDINAL 一半
         await WaitForAsync(() => native.TransparencyLevelHint.Contains(Avalonia.Controls.WindowTransparencyLevel.Transparent) ? native : null);
@@ -821,7 +817,7 @@ public sealed class AvaloniaXServerHostUiTests
         await Task.Delay(100);
         Dispatcher.UIThread.RunJobs();
         Assert.IsTrue(fresh.IsVisible, "新服务端的窗口没被旧回调关掉");
-        Assert.IsFalse(host.Windows.Any(w => ReferenceEquals(w.Handle, stale)), "旧句柄没有原生窗口");
+        Assert.DoesNotContain(w => ReferenceEquals(w.Handle, stale), host.Windows, "旧句柄没有原生窗口");
         host.Detach();
     });
 
@@ -879,12 +875,12 @@ public sealed class AvaloniaXServerHostUiTests
         await SendAsync(client, 1, 24, w => w.U32(editor).U32(root).I16(10).I16(10).U16(60).U16(40).U16(0).U16(1).U32(0).U32(0));
         await SendAsync(client, 8, 0, w => w.U32(editor));
         XNativeWindow shown = await WaitForAsync(() => host.Windows.FirstOrDefault(w => w.Handle.Id == editor));
-        Assert.IsFalse(host.Windows.Any(w => w.Handle.Id == icons), "桌面窗口没有原生窗口");
+        Assert.DoesNotContain(w => w.Handle.Id == icons, host.Windows, "桌面窗口没有原生窗口");
 
         // 映射之后改成桌面:收掉;再改回普通:重新显示。
         await SendAsync(client, 18, 0, w => w.U32(editor).U32(type).U32(4).U8(32).Zero(3).U32(1).U32(desktop));
         await WaitForAsync(() => !shown.IsVisible ? shown : null);
-        Assert.IsFalse(host.Windows.Any(w => w.Handle.Id == editor));
+        Assert.DoesNotContain(w => w.Handle.Id == editor, host.Windows);
         await SendAsync(client, 18, 0, w => w.U32(editor).U32(type).U32(4).U8(32).Zero(3).U32(1).U32(normal));
         await WaitForAsync(() => host.Windows.FirstOrDefault(w => w.Handle.Id == editor && w.IsVisible));
         host.Detach();
@@ -1007,7 +1003,7 @@ public sealed class AvaloniaXServerHostUiTests
         await WaitForAsync(() => Keys().Length >= 6 ? native : null);
         await Task.Delay(100);
         Dispatcher.UIThread.RunJobs();
-        CollectionAssert.AreEqual(new byte[] { 2, 3, 2, 3, 2, 3 }, Keys());
+        Assert.AreSequenceEqual(new byte[] { 2, 3, 2, 3, 2, 3 }, Keys());
 
         native.CloseByHost();
         host.Detach();
@@ -1049,28 +1045,28 @@ public sealed class AvaloniaXServerHostUiTests
         native.KeyTextInput("a");
         native.KeyReleaseQwerty(PhysicalKey.A, RawInputModifiers.None);
         await SettleAsync();
-        CollectionAssert.AreEqual(new byte[] { 2, 3 }, Seen(), "a 只按了一次");
+        Assert.AreSequenceEqual(new byte[] { 2, 3 }, Seen(), "a 只按了一次");
 
         // 输入法在组字:键归输入法,上屏的字经 InjectText 来 —— MappingNotify,然后按下、松开。
         native.KeyPress(Key.ImeProcessed, RawInputModifiers.None, PhysicalKey.N, null);
         native.KeyRelease(Key.ImeProcessed, RawInputModifiers.None, PhysicalKey.N, null);
         native.KeyTextInput("中");
         await SettleAsync();
-        CollectionAssert.AreEqual(new byte[] { 2, 3, 34, 2, 3 }, Seen(), "组字的 N 不转交;上屏的字借键码输入");
+        Assert.AreSequenceEqual(new byte[] { 2, 3, 34, 2, 3 }, Seen(), "组字的 N 不转交;上屏的字借键码输入");
 
         // 不出字的键(方向键)之后输入法上屏的字照样输入。
         native.KeyPressQwerty(PhysicalKey.ArrowLeft, RawInputModifiers.None);
         native.KeyReleaseQwerty(PhysicalKey.ArrowLeft, RawInputModifiers.None);
         native.KeyTextInput("中");
         await SettleAsync();
-        CollectionAssert.AreEqual(new byte[] { 2, 3, 34, 2, 3, 2, 3, 2, 3 }, Seen(), "同一个字不再改键位表");
+        Assert.AreSequenceEqual(new byte[] { 2, 3, 34, 2, 3, 2, 3, 2, 3 }, Seen(), "同一个字不再改键位表");
 
         // 按着 Shift 时输入法上屏的字(有的中文输入法按 Shift 把拼音原样上屏)照样输入:修饰键不出字,原先被当成 Shift 打出的字吞掉。
         native.KeyPressQwerty(PhysicalKey.ShiftLeft, RawInputModifiers.None);
         native.KeyTextInput("文");
         native.KeyReleaseQwerty(PhysicalKey.ShiftLeft, RawInputModifiers.Shift);
         await SettleAsync();
-        CollectionAssert.AreEqual(new byte[] { 2, 3, 34, 2, 3, 2, 3, 2, 3, 2, 34, 2, 3, 3 }, Seen(), "Shift、上屏的字、Shift 松开");
+        Assert.AreSequenceEqual(new byte[] { 2, 3, 34, 2, 3, 2, 3, 2, 3, 2, 34, 2, 3, 3 }, Seen(), "Shift、上屏的字、Shift 松开");
 
         // 一个键报来两个字(Windows 上死键后跟拼不上的字母:「´」「x」):都是这个键的,原先第二个又输入了一遍。
         native.KeyPressQwerty(PhysicalKey.X, RawInputModifiers.None);
@@ -1352,11 +1348,11 @@ public sealed class AvaloniaXServerHostUiTests
         await SendAsync(client, 8, 0, w => w.U32(idBase | 1));
         await WaitForAsync(() => host.Windows.FirstOrDefault(w => w.IsVisible), "窗口显示出来");
 
-        async Task TickAsync(int count)
+        static async Task TickAsync(int count)
         {
             for (int i = 0; i < count; i++)
             {
-                Avalonia.Headless.AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick();
                 Dispatcher.UIThread.RunJobs();
                 await Task.Delay(5);
             }
@@ -1442,7 +1438,7 @@ public sealed class AvaloniaXServerHostUiTests
         Assert.IsEmpty(events.Where(e => e is 4 or 5), "半格:还没攒够");
         native.MouseWheel(new Point(10, 10), new Vector(0, 0.5), RawInputModifiers.None);
         await WaitForAsync(() => events.Count(e => e is 4 or 5) >= 2 ? native : null);
-        CollectionAssert.AreEqual(new byte[] { 4, 5 }, events.Where(e => e is 4 or 5).ToArray(), "一次按下、一次松开");
+        Assert.AreSequenceEqual(new byte[] { 4, 5 }, [.. events.Where(e => e is 4 or 5)], "一次按下、一次松开");
 
         native.CloseByHost();
         host.Detach();
@@ -1563,7 +1559,7 @@ public sealed class AvaloniaXServerHostUiTests
             native.KeyPressQwerty(PhysicalKey.C, RawInputModifiers.Meta);       // Cmd+C:AppKit 不发它的 KeyUp
             native.KeyReleaseQwerty(PhysicalKey.MetaLeft, RawInputModifiers.None);
             await WaitForAsync(() => Keys().Length >= 4 ? native : null);
-            CollectionAssert.AreEqual(new byte[] { 2, 2, 3, 3 }, Keys(), "Command 与 C 都松开了");
+            Assert.AreSequenceEqual(new byte[] { 2, 2, 3, 3 }, Keys(), "Command 与 C 都松开了");
 
             native.CloseByHost();
             host.Detach();

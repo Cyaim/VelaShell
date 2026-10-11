@@ -117,9 +117,12 @@ public sealed record ProviderCatalogEntry(
         provider.AllowSystemMessages = Quirks.AllowSystemMessages;
         provider.UnsupportedParameters = Quirks.UnsupportedParameters;
         foreach (AiModelConfig model in provider.Models)
+        {
             model.LastFetchedSpec = new ModelSpec(model.Model, model.Name, model.MaxInputTokens, model.MaxTokens,
                 model.InputPricePerMillion, model.OutputPricePerMillion, model.CachedInputPricePerMillion,
                 model.SupportsReasoning);
+        }
+
         return provider;
     }
 }

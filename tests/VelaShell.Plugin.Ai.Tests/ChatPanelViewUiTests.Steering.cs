@@ -1,7 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
-using AvaloniaEdit;
 using Avalonia.VisualTree;
+using AvaloniaEdit;
 using VelaShell.Plugin.Ai.Auth;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
@@ -219,17 +219,22 @@ public sealed partial class ChatPanelViewUiTests
             original.Auth = AuthMethod.Subscription;
             original.OAuth = new OAuthConfig
             {
-                Credential = OAuthCredential.AccessToken, TokenUrl = "https://auth.example/token", ClientId = "test"
+                Credential = OAuthCredential.AccessToken,
+                TokenUrl = "https://auth.example/token",
+                ClientId = "test"
             };
             AiProvider next = StubProvider("backup", backup.BaseUrl, "m");
             var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
             await store.SaveTokensAsync(original.Id, new OAuthTokens
             {
-                AccessToken = "expired", RefreshToken = "refresh", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+                AccessToken = "expired",
+                RefreshToken = "refresh",
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
             });
             await store.SaveAsync(new AiSettings
             {
-                Providers = failover ? [original, next] : [original], ActiveModelId = original.Models[0].Id,
+                Providers = failover ? [original, next] : [original],
+                ActiveModelId = original.Models[0].Id,
                 FailoverChain = failover ? [new FailoverEntry { ModelId = next.Models[0].Id }] : [],
                 SuggestFollowUps = false
             });
@@ -268,7 +273,10 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.Contains("STEERING_MARKER", backup.Requests[1], "备用正式请求也须保留送达上下文");
                     Assert.AreEqual(next.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
                 }
-                else Assert.IsEmpty(backup.Requests);
+                else
+                {
+                    Assert.IsEmpty(backup.Requests);
+                }
             }
             finally { refresh.Release(); first.Release(); panel.Detach(); window.Close(); }
         });

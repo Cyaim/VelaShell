@@ -336,7 +336,7 @@ public sealed class OAuthClientTests
     [DataRow("not-json")]
     public async Task DeviceCode_Other429RepliesKeepHttpFailure(string body)
     {
-        var stub = new OAuthStub().Json(body, HttpStatusCode.TooManyRequests);
+        OAuthStub stub = new OAuthStub().Json(body, HttpStatusCode.TooManyRequests);
         using var http = new HttpClient(stub);
         var client = new OAuthClient(http) { Delay = (_, _) => Task.CompletedTask };
         var grant = new DeviceCodeGrant("dc", "code", "https://auth.example/verify", null,
@@ -353,7 +353,7 @@ public sealed class OAuthClientTests
     [DataRow("not-json")]
     public async Task DeviceCode_Other428RepliesKeepHttpFailure(string body)
     {
-        var stub = new OAuthStub().Json(body, HttpStatusCode.PreconditionRequired);
+        OAuthStub stub = new OAuthStub().Json(body, HttpStatusCode.PreconditionRequired);
         using var http = new HttpClient(stub);
         var client = new OAuthClient(http) { Delay = (_, _) => Task.CompletedTask };
         var grant = new DeviceCodeGrant("dc", "code", "https://auth.example/verify", null,
@@ -367,7 +367,7 @@ public sealed class OAuthClientTests
     [TestMethod]
     public async Task Refresh_428PendingRemainsHttpFailure()
     {
-        var stub = new OAuthStub().Json("""{"error":"authorization_pending"}""", HttpStatusCode.PreconditionRequired);
+        OAuthStub stub = new OAuthStub().Json("""{"error":"authorization_pending"}""", HttpStatusCode.PreconditionRequired);
         using var http = new HttpClient(stub);
         HttpRequestException error = await Assert.ThrowsExactlyAsync<HttpRequestException>(() =>
             new OAuthClient(http).RefreshAsync(Standard(), new OAuthTokens { AccessToken = "old", RefreshToken = "rt" }));
@@ -377,7 +377,7 @@ public sealed class OAuthClientTests
     [TestMethod]
     public async Task Refresh_429SlowDownRemainsHttpFailure()
     {
-        var stub = new OAuthStub().Json("""{"error":"slow_down"}""", HttpStatusCode.TooManyRequests);
+        OAuthStub stub = new OAuthStub().Json("""{"error":"slow_down"}""", HttpStatusCode.TooManyRequests);
         using var http = new HttpClient(stub);
         HttpRequestException error = await Assert.ThrowsExactlyAsync<HttpRequestException>(() =>
             new OAuthClient(http).RefreshAsync(Standard(), new OAuthTokens { AccessToken = "old", RefreshToken = "rt" }));

@@ -20,13 +20,9 @@ public sealed partial class ShmTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "MIT-SHM 只在 Linux 上提供")]
     public async Task 经Unix套接字的客户端用共享内存搬像素_别的客户端看不见这个扩展()
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            Assert.Inconclusive("MIT-SHM 只在 Linux 上提供");
-            return;
-        }
         string path = Path.Combine(Path.GetTempPath(), $"vx-shm-{Guid.NewGuid():N}.sock");
         await using X11Server server = new(new X11ServerOptions { ListenTcp = false, UnixSocketPath = path });
         await server.StartAsync();
@@ -113,13 +109,9 @@ public sealed partial class ShmTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "MIT-SHM 只在 Linux 上提供")]
     public async Task QueryVersion回服务端的有效uid与gid()
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            Assert.Inconclusive("MIT-SHM 只在 Linux 上提供");
-            return;
-        }
         // 规范:uid / gid 是服务端的有效 uid / gid(客户端据此决定段的权限给谁);原先一律回 0。
         string path = Path.Combine(Path.GetTempPath(), $"vx-shm-{Guid.NewGuid():N}.sock");
         await using X11Server server = new(new X11ServerOptions { ListenTcp = false, UnixSocketPath = path });
@@ -133,13 +125,9 @@ public sealed partial class ShmTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "MIT-SHM 只在 Linux 上提供")]
     public async Task 反复Attach错的shmid时每秒失败几次之后不再整读段表_过了这一秒照常()
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            Assert.Inconclusive("MIT-SHM 只在 Linux 上提供");
-            return;
-        }
         // 原先每条 Attach 都整读、整份拆分一遍 /proc/sysvipc/shm:一串错的 shmid 就能持续占着执行线程。
         string path = Path.Combine(Path.GetTempPath(), $"vx-shm-{Guid.NewGuid():N}.sock");
         await using X11Server server = new(new X11ServerOptions { ListenTcp = false, UnixSocketPath = path });

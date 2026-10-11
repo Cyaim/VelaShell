@@ -20,6 +20,7 @@ namespace VelaShell.Ssh.Tests.Auth;
 [TestClass]
 [TestCategory("Keys")]
 [SupportedOSPlatform("windows")]
+[OSCondition(OperatingSystems.Windows, IgnoreMessage = "CNG 只在 Windows 上。")]
 public sealed class CngSignerTests
 {
     [SupportedOSPlatform("windows")]
@@ -50,12 +51,6 @@ public sealed class CngSignerTests
     [TestMethod]
     public async Task 不可导出的钥照样签得出能验过的名()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("CNG 只在 Windows 上。");
-            return;
-        }
-
         byte[] data = Encoding.UTF8.GetBytes("交给密钥库签的数据");
         foreach ((CngAlgorithm algorithm, int? bits, string expected) in new[]
                  {
@@ -88,12 +83,6 @@ public sealed class CngSignerTests
     [TestMethod]
     public void 找不到或不能签名的钥当场报()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("CNG 只在 Windows 上。");
-            return;
-        }
-
         Assert.AreEqual(SshFailureReason.KeyFileUnreadable,
             Assert.ThrowsExactly<SshPrivateKeyException>(() => CngSshSigner.Open($"vela-missing-{Guid.NewGuid():N}")).Reason);
 

@@ -51,15 +51,15 @@ public sealed partial class OpenSshInteropTests
     private static SshAlgorithmSet Only(string kex) => SshAlgorithmSet.Default with { KeyExchange = [kex] };
 
     /// <summary>重协商一次，等它做完，交回这一次谈成的密钥交换算法。</summary>
-    private static async Task<string> RekeyOnceAsync(SshConnection connection)
+    private static async Task<string> RekeyOnceAsync(SshConnection connection, CancellationToken cancellationToken = default)
     {
         TaskCompletionSource<string> done = new(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnRekeyed(object? sender, SshRekeyEventArgs e) => done.TrySetResult(e.Algorithms.KeyExchange);
         connection.Rekeyed += OnRekeyed;
         try
         {
-            await connection.StartRekeyAsync();
-            return await done.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            await connection.StartRekeyAsync(cancellationToken);
+            return await done.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
         }
         finally
         {
@@ -90,17 +90,19 @@ public sealed partial class OpenSshInteropTests
     /// 定长的 <c>K_CL</c> 写错（照 §3.3 的习惯去掉前导零）就会在这里冒出签名失败（spec/03 §3.7.7 第 3 条）。
     /// </summary>
     [TestMethod]
-    [Timeout(300_000)]
+    [Timeout(300_000, CooperativeCancellation = true)]
     [DataRow(SshAlgorithmNames.MlKem768Nistp256Sha256)]
     [DataRow(SshAlgorithmNames.MlKem1024Nistp384Sha384)]
     public async Task 面向FIPS的后量子混合连续交换一千二百次(string kex)
     {
+        // 到点时测试框架取消这个令牌,只等方法自己收尾:连接与每一轮重协商都得看着它,否则超时就停不下来。
+        CancellationToken token = TestContext.CancellationToken;
         await RequirePqServerAsync();
-        await using SshConnection connection = await SshConnection.ConnectAsync(PqOptions(PqPort, Only(kex)));
+        await using SshConnection connection = await SshConnection.ConnectAsync(PqOptions(PqPort, Only(kex)), token);
 
         for (int i = 0; i < 1200; i++)
         {
-            Assert.AreEqual(kex, await RekeyOnceAsync(connection), $"第 {i + 1} 次重协商");
+            Assert.AreEqual(kex, await RekeyOnceAsync(connection, token), $"第 {i + 1} 次重协商");
         }
         Assert.AreEqual(0, (await connection.RunAsync("true")).ExitCode);
     }

@@ -523,6 +523,12 @@ dotnet_diagnostic.CA1863.severity = none
 # 数组/Span 以避免拷贝(终端网格、协议缓冲)。
 dotnet_diagnostic.CA1819.severity = none
 
+# RXUISG0016「把属性换成 [Reactive] 的通知属性」—— ReactiveUI 源生成器对 ReactiveObject 上
+# 每个普通属性都提一次。本仓库被它点名的几乎全是不需要通知的:视图注入的回调(Func / Action)、
+# init 属性、排序用的分数等内部状态。换成通知属性只是白白多一次 PropertyChanged,
+# 真要绑定到界面的属性已经逐个写成 RaiseAndSetIfChanged。
+dotnet_diagnostic.RXUISG0016.severity = none
+
 # ---- Win32 互操作结构体 ------------------------------------------------------
 
 # STARTUPINFOEX / PROCESS_INFORMATION 的字段名(cb、lpReserved、dwX、hProcess…)与 WM_* 消息常量
@@ -537,5 +543,5 @@ dotnet_diagnostic.IDE1006.severity = none
 # Assert.AreSequenceEqual(new[] { "a", "b" }, actual) 就该这么写 —— 把期望值搬到类字段上,
 # 读的人要来回跳才能知道这条断言在比什么,而"重复调用重复分配"在只跑一次的用例里不存在。
 dotnet_diagnostic.CA1861.severity = none
-# 测试里的命名更自由(headless 会话助手 `_session` 属性、下划线分隔的用例名),只提示不告警。
+# 测试里的命名更自由(中文、下划线分隔的用例名),只提示不告警。
 dotnet_diagnostic.IDE1006.severity = suggestion

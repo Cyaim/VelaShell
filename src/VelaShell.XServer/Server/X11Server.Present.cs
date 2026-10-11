@@ -67,8 +67,6 @@ public sealed partial class X11Server
 
     private ulong _frameOriginMsc;
 
-    private double _frameTicks = System.Diagnostics.Stopwatch.Frequency / 60.0;
-
     /// <summary>宿主最近几帧之间的间隔(tick),取最短的当帧间隔:宿主跳帧时间隔是整数倍,最短的那个才是真实的刷新周期。</summary>
     private readonly long[] _hostFrameGaps = new long[32];
 
@@ -81,13 +79,13 @@ public sealed partial class X11Server
     private bool _frameClockReported;
 
     /// <summary>当前每帧多少 tick(测试看换算出来的刷新率用)。</summary>
-    internal double FrameIntervalTicks => _frameTicks;
+    internal double FrameIntervalTicks { get; private set; } = System.Diagnostics.Stopwatch.Frequency / 60.0;
 
     /// <summary>当前帧号:从最近一次对齐的那一帧起,按帧间隔推算。</summary>
     private ulong CurrentMsc => MscAt(_clock.ElapsedTicks);
 
     private ulong MscAt(long ticks) =>
-        ticks <= _frameOriginTicks ? _frameOriginMsc : _frameOriginMsc + (ulong)((ticks - _frameOriginTicks) / _frameTicks);
+        ticks <= _frameOriginTicks ? _frameOriginMsc : _frameOriginMsc + (ulong)((ticks - _frameOriginTicks) / FrameIntervalTicks);
 
     /// <summary>
     /// 宿主的合成器画了一帧(<see cref="NotifyHostFrame" />):这一刻对齐成一帧的开始 —— 过了半帧算下一帧,帧号只增不减 ——
@@ -108,12 +106,12 @@ public sealed partial class X11Server
         }
         _lastHostFrameTicks = ticks;
         ulong msc = MscAt(ticks);
-        double into = (ticks - _frameOriginTicks) / _frameTicks;
+        double into = (ticks - _frameOriginTicks) / FrameIntervalTicks;
         bool pastHalf = ticks > _frameOriginTicks && into - Math.Floor(into) > 0.5;
         (_frameOriginMsc, _frameOriginTicks) = (pastHalf ? msc + 1 : msc, ticks);
         if (_hostFrameGapCount > 0)
         {
-            _frameTicks = _hostFrameGaps.AsSpan(0, _hostFrameGapCount).ToArray().Min();
+            FrameIntervalTicks = _hostFrameGaps.AsSpan(0, _hostFrameGapCount).ToArray().Min();
         }
         RunReadyPresents();
     }
@@ -280,7 +278,7 @@ public sealed partial class X11Server
         {
             return 1;
         }
-        double startTicks = _frameOriginTicks + ((msc - _frameOriginMsc) * _frameTicks);
+        double startTicks = _frameOriginTicks + ((msc - _frameOriginMsc) * FrameIntervalTicks);
         double remaining = startTicks - _clock.ElapsedTicks;
         if (remaining <= 0)
         {
@@ -300,13 +298,13 @@ public sealed partial class X11Server
         double ticks = ust * frequency / 1_000_000;
         if (!isTime)
         {
-            return (ulong)Math.Min(ulong.MaxValue, ticks / _frameTicks);
+            return (ulong)Math.Min(ulong.MaxValue, ticks / FrameIntervalTicks);
         }
         if (ticks <= _frameOriginTicks)
         {
             return _frameOriginMsc;
         }
-        double frames = Math.Ceiling((ticks - _frameOriginTicks) / _frameTicks);
+        double frames = Math.Ceiling((ticks - _frameOriginTicks) / FrameIntervalTicks);
         return frames >= ulong.MaxValue - _frameOriginMsc ? ulong.MaxValue : _frameOriginMsc + (ulong)frames;
     }
 

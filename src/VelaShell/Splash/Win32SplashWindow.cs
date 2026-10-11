@@ -76,10 +76,10 @@ internal sealed unsafe class Win32SplashWindow : IDisposable
 
         // 放在鼠标所在的那块屏幕上:用户在哪块屏幕上点的图标,就在哪块屏幕上给反馈。
         POINT cursor;
-        GetCursorPos(&cursor);
+        _ = GetCursorPos(&cursor);
         nint monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
         MONITORINFO info = new() { CbSize = (uint)sizeof(MONITORINFO) };
-        GetMonitorInfoW(monitor, &info);
+        _ = GetMonitorInfoW(monitor, &info);
         uint dpiX = 96, dpiY = 96;
         if (GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY) != 0 || dpiX == 0)
         {
@@ -130,7 +130,7 @@ internal sealed unsafe class Win32SplashWindow : IDisposable
         _memoryDc = CreateCompatibleDC(screenDc);
         void* bits;
         _dib = CreateDIBSection(screenDc, &header, DIB_RGB_COLORS, &bits, 0, 0);
-        ReleaseDC(0, screenDc);
+        _ = ReleaseDC(0, screenDc);
         if (_dib == 0)
         {
             throw new InvalidOperationException("CreateDIBSection failed.");
@@ -156,18 +156,18 @@ internal sealed unsafe class Win32SplashWindow : IDisposable
     public void Run()
     {
         Present();
-        ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
+        _ = ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
         SetTimer(_hwnd, TimerId, 15, 0);
         MSG message;
         while (GetMessageW(&message, 0, 0, 0) > 0)
         {
-            TranslateMessage(&message);
+            _ = TranslateMessage(&message);
             DispatchMessageW(&message);
         }
     }
 
     /// <summary>请求关闭(开始淡出)。可在任意线程调用;窗口已销毁时无效。</summary>
-    public void RequestClose() => PostMessageW(_hwnd, WmRequestClose, 0, 0);
+    public void RequestClose() => _ = PostMessageW(_hwnd, WmRequestClose, 0, 0);
 
     /// <inheritdoc />
     public void Dispose()
@@ -179,7 +179,7 @@ internal sealed unsafe class Win32SplashWindow : IDisposable
         _disposed = true;
         if (!_destroyed)
         {
-            DestroyWindow(_hwnd);
+            _ = DestroyWindow(_hwnd);
         }
         // 一行自诊断:画面开了多久、画了多少帧、每帧多贵。启动慢的报告里有它,就能看出画面本身拖没拖后腿。
         Trace.WriteLine(string.Create(CultureInfo.InvariantCulture,
@@ -187,15 +187,15 @@ internal sealed unsafe class Win32SplashWindow : IDisposable
             + $"frames={_frameCount} render avg={(_frameCount == 0 ? 0 : _renderMsTotal / _frameCount):0.0} ms max={_renderMsMax:0.0} ms"));
         _surface.Dispose();
         SelectObject(_memoryDc, _previousBitmap);
-        DeleteObject(_dib);
-        DeleteDC(_memoryDc);
+        _ = DeleteObject(_dib);
+        _ = DeleteDC(_memoryDc);
         if (_bigIcon != 0)
         {
-            DestroyIcon(_bigIcon);
+            _ = DestroyIcon(_bigIcon);
         }
         if (_smallIcon != 0)
         {
-            DestroyIcon(_smallIcon);
+            _ = DestroyIcon(_smallIcon);
         }
         UnregisterClassW(ClassName, GetModuleHandleW(0));
         if (ReferenceEquals(_current, this))
@@ -213,7 +213,7 @@ internal sealed unsafe class Win32SplashWindow : IDisposable
             double fadeOut = 1 - Stopwatch.GetElapsedTime(_closingAt).TotalMilliseconds / FadeOutMs;
             if (fadeOut <= 0)
             {
-                DestroyWindow(_hwnd);
+                _ = DestroyWindow(_hwnd);
                 return;
             }
             opacity = Math.Min(opacity, fadeOut);
@@ -239,7 +239,7 @@ internal sealed unsafe class Win32SplashWindow : IDisposable
             SourceConstantAlpha = (byte)Math.Round(opacity * 255),
             AlphaFormat = AC_SRC_ALPHA
         };
-        UpdateLayeredWindow(_hwnd, 0, &position, &size, _memoryDc, &source, 0, &blend, ULW_ALPHA);
+        _ = UpdateLayeredWindow(_hwnd, 0, &position, &size, _memoryDc, &source, 0, &blend, ULW_ALPHA);
 
         double renderMs = Stopwatch.GetElapsedTime(renderStart).TotalMilliseconds;
         _frameCount++;
@@ -283,7 +283,7 @@ internal sealed unsafe class Win32SplashWindow : IDisposable
                         return 0;
                     case WM_DESTROY:
                         self._destroyed = true;
-                        KillTimer(hwnd, TimerId);
+                        _ = KillTimer(hwnd, TimerId);
                         PostQuitMessage(0);
                         return 0;
                 }
@@ -294,7 +294,7 @@ internal sealed unsafe class Win32SplashWindow : IDisposable
             // 异常绝不能穿过非托管边界(那会直接终止进程):记一笔、收掉画面。
             // 画不出来的画面留着只会每 15 ms 再失败一次,而启动本身不受它影响。
             Trace.WriteLine($"[Splash] Window procedure failed, closing the splash screen: {ex}");
-            DestroyWindow(hwnd);
+            _ = DestroyWindow(hwnd);
             return 0;
         }
         return DefWindowProcW(hwnd, message, wParam, lParam);

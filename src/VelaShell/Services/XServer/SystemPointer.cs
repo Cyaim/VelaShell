@@ -76,22 +76,22 @@ internal static partial class SystemPointer
 
     // ------------------------------------------------------------------ Linux(X11 桌面)
 
-    private static nint s_display;
-    private static bool s_displayTried;
+    private static nint _display;
+    private static bool _displayTried;
 
     private static bool LinuxWarp(int x, int y)
     {
-        if (!s_displayTried)
+        if (!_displayTried)
         {
-            s_displayTried = true;
-            s_display = Environment.GetEnvironmentVariable("DISPLAY") is { Length: > 0 } ? XOpenDisplay(0) : 0;
+            _displayTried = true;
+            _display = Environment.GetEnvironmentVariable("DISPLAY") is { Length: > 0 } ? XOpenDisplay(0) : 0;
         }
-        if (s_display == 0)
+        if (_display == 0)
         {
             return false;
         }
-        XWarpPointer(s_display, 0, XDefaultRootWindow(s_display), 0, 0, 0, 0, x, y);
-        XFlush(s_display);
+        _ = XWarpPointer(_display, 0, XDefaultRootWindow(_display), 0, 0, 0, 0, x, y);
+        _ = XFlush(_display);
         return true;
     }
 

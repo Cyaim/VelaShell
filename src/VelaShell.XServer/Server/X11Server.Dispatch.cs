@@ -93,7 +93,7 @@ public sealed partial class X11Server
             case XOpcode.CreateWindow: CreateWindow(c, r); break;
             case XOpcode.ChangeWindowAttributes: ChangeWindowAttributes(c, r); break;
             case XOpcode.GetWindowAttributes: GetWindowAttributes(c, r); break;
-            case XOpcode.DestroyWindow: DestroyWindow(c, r); break;
+            case XOpcode.DestroyWindow: DestroyWindow(r); break;
             case XOpcode.DestroySubwindows: DestroySubwindows(r); break;
             case XOpcode.ChangeSaveSet: ChangeSaveSet(c, r); break;
             case XOpcode.ReparentWindow: ReparentWindow(c, r); break;
@@ -189,7 +189,7 @@ public sealed partial class X11Server
             case XOpcode.QueryBestSize: QueryBestSize(c, r); break;
             case XOpcode.QueryExtension: QueryExtension(c, r); break;
             case XOpcode.ListExtensions: ListExtensions(c); break;
-            case XOpcode.ChangeKeyboardMapping: DenyUntrusted(c); ChangeKeyboardMapping(c, r); break;
+            case XOpcode.ChangeKeyboardMapping: DenyUntrusted(c); ChangeKeyboardMapping(r); break;
             case XOpcode.GetKeyboardMapping: GetKeyboardMapping(c, r); break;
             case XOpcode.ChangeKeyboardControl: DenyUntrusted(c); ChangeKeyboardControl(r); break;
             case XOpcode.GetKeyboardControl: GetKeyboardControl(c); break;

@@ -21,9 +21,13 @@ public sealed class SubscriptionProviderTests
         using var http = new HttpClient(endpoint);
         using var context = new TestPluginContext();
         var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
-        var provider = new AiProvider { BaseUrl = "https://api.example", Auth = AuthMethod.Subscription,
+        var provider = new AiProvider
+        {
+            BaseUrl = "https://api.example",
+            Auth = AuthMethod.Subscription,
             OAuth = new OAuthConfig { TokenUrl = "https://auth.example/token", Credential = OAuthCredential.AccessToken },
-            Models = [new AiModelConfig { Model = "m" }] };
+            Models = [new AiModelConfig { Model = "m" }]
+        };
         await store.SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "old", RefreshToken = "refresh", ExpiresAt = DateTimeOffset.UtcNow });
         Task<ProviderCredential> pending = store.ResolveCredentialAsync(new ResolvedModel(provider, provider.Models[0]));
         await endpoint.Started.Task;
@@ -42,7 +46,7 @@ public sealed class SubscriptionProviderTests
             Started.TrySetResult();
             await Release.Task.WaitAsync(token);
             return new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest)
-                { Content = new StringContent("{\"error\":\"invalid_grant\"}") };
+            { Content = new StringContent("{\"error\":\"invalid_grant\"}") };
         }
     }
 
@@ -51,13 +55,22 @@ public sealed class SubscriptionProviderTests
     {
         using var context = new TestPluginContext();
         var store = new AiSettingsStore(context);
-        var provider = new AiProvider { BaseUrl = "https://api.example", Auth = AuthMethod.Subscription,
-            OAuth = new OAuthConfig { Credential = OAuthCredential.AccessToken }, Models = [new AiModelConfig { Model = "m" }] };
-        await store.SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "old", RefreshToken = "refresh",
-            Account = "same display", ExpiresAt = DateTimeOffset.UtcNow });
-        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var gate = (SemaphoreSlim)(typeof(AiSettingsStore).GetField("_refreshGate", flags)?.GetValue(store)
-            ?? typeof(AiSettingsStore).GetProperty("_refreshGate", flags)!.GetValue(store))!;
+        var provider = new AiProvider
+        {
+            BaseUrl = "https://api.example",
+            Auth = AuthMethod.Subscription,
+            OAuth = new OAuthConfig { Credential = OAuthCredential.AccessToken },
+            Models = [new AiModelConfig { Model = "m" }]
+        };
+        await store.SaveTokensAsync(provider.Id, new OAuthTokens
+        {
+            AccessToken = "old",
+            RefreshToken = "refresh",
+            Account = "same display",
+            ExpiresAt = DateTimeOffset.UtcNow
+        });
+        BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var gate = (SemaphoreSlim)typeof(AiSettingsStore).GetProperty("RefreshGate", flags)!.GetValue(store)!;
         await gate.WaitAsync();
         Task<ProviderCredential> pending;
         try

@@ -16,33 +16,25 @@ namespace VelaShell.Ssh.Diagnostics;
 /// 列出来会把几个真正可用的算法淹没在十几行里。过滤在使用者一侧做，库照常给全量。
 /// </para>
 /// </remarks>
-public sealed class SshNegotiationException : SshConnectException
+/// <remarks>创建一个协商失败异常。</remarks>
+public sealed class SshNegotiationException(
+    SshNegotiationCategory category,
+    IReadOnlyList<string> offeredByPeer,
+    IReadOnlyList<string> offeredByUs,
+    string peerVersion) : SshConnectException(SshFailureReason.NegotiationFailed, SshPhase.KeyExchange, BuildMessage(category, offeredByPeer, offeredByUs))
 {
-    /// <summary>创建一个协商失败异常。</summary>
-    public SshNegotiationException(
-        SshNegotiationCategory category,
-        IReadOnlyList<string> offeredByPeer,
-        IReadOnlyList<string> offeredByUs,
-        string peerVersion)
-        : base(SshFailureReason.NegotiationFailed, SshPhase.KeyExchange, BuildMessage(category, offeredByPeer, offeredByUs))
-    {
-        Category = category;
-        OfferedByPeer = offeredByPeer;
-        OfferedByUs = offeredByUs;
-        PeerVersion = peerVersion;
-    }
 
     /// <summary>哪一类算法没有交集。</summary>
-    public SshNegotiationCategory Category { get; }
+    public SshNegotiationCategory Category { get; } = category;
 
     /// <summary>对端在 KEXINIT 里给出的该类名单，原样。</summary>
-    public IReadOnlyList<string> OfferedByPeer { get; }
+    public IReadOnlyList<string> OfferedByPeer { get; } = offeredByPeer;
 
     /// <summary>我们发出去的该类名单，原样。</summary>
-    public IReadOnlyList<string> OfferedByUs { get; }
+    public IReadOnlyList<string> OfferedByUs { get; } = offeredByUs;
 
     /// <summary>对端的版本标识串，例如 <c>SSH-2.0-OpenSSH_9.6p1</c>。</summary>
-    public string PeerVersion { get; }
+    public string PeerVersion { get; } = peerVersion;
 
     private static string BuildMessage(
         SshNegotiationCategory category, IReadOnlyList<string> peer, IReadOnlyList<string> ours) =>

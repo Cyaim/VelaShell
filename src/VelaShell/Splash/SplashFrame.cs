@@ -153,7 +153,7 @@ internal sealed class SplashProgressTracker
     internal static SplashStage[] Compute(IReadOnlyList<double?> marks, double nowMs)
     {
         int count = SplashFrame.StageCount;
-        var ends = new double?[count];
+        double?[] ends = new double?[count];
         double? earliestLater = null;
         for (int i = count - 1; i >= 0; i--)
         {
@@ -228,7 +228,7 @@ internal sealed class SplashSimulation
     /// <returns>这一帧的状态。</returns>
     public SplashFrame At(double t)
     {
-        var marks = new double?[SplashFrame.StageCount];
+        double?[] marks = new double?[SplashFrame.StageCount];
         double end = DurationsMs[0];
         marks[0] = end;
         for (int i = 1; i < DurationsMs.Length; i++)

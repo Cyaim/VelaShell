@@ -90,7 +90,7 @@ public sealed class RealClientTests
     /// </summary>
     [TestMethod]
     [Timeout(120_000, CooperativeCancellation = true)]
-    public async Task xclip复制的PNG交给宿主_宿主给的PNG用xclip取得回来()
+    public async Task Xclip复制的PNG交给宿主_宿主给的PNG用xclip取得回来()
     {
         if (ShouldSkip())
         {
@@ -111,7 +111,7 @@ public sealed class RealClientTests
             $"echo {Convert.ToBase64String(copied)} | base64 -d > /tmp/a.png && xclip -selection clipboard -t image/png -i /tmp/a.png && sleep 2");
         Assert.AreEqual(0, exit, output);
         await host.WaitForAsync(() => host.ClipboardContent is { Png.IsEmpty: false });
-        CollectionAssert.AreEqual(copied, host.ClipboardContent!.Png.ToArray());
+        Assert.AreSequenceEqual(copied, host.ClipboardContent!.Png.ToArray());
 
         byte[] given = [0x89, (byte)'P', (byte)'N', (byte)'G', 13, 10, 26, 10, .. RandomNumberGenerator.GetBytes(400_000)];   // 大于 INCR 的分块
         server.SetClipboard(new XClipboardContent { Text = "图注", Png = given });
@@ -122,7 +122,7 @@ public sealed class RealClientTests
         string[] parts = output.Split("----8<----");
         Assert.Contains("image/png", parts[0]);
         Assert.Contains("UTF8_STRING", parts[0]);
-        CollectionAssert.AreEqual(given, Convert.FromBase64String(parts[1].Trim()));
+        Assert.AreSequenceEqual(given, Convert.FromBase64String(parts[1].Trim()));
     }
 
     /// <summary>
@@ -174,7 +174,7 @@ public sealed class RealClientTests
     /// <summary>平滑滚动(xs_plan F6):libXi 解得出指针设备的两个滚动轴与 ScrollClass(xinput list --long 列出「Scroll info」)。</summary>
     [TestMethod]
     [Timeout(120_000, CooperativeCancellation = true)]
-    public async Task xinput看得到指针的两个滚动轴()
+    public async Task Xinput看得到指针的两个滚动轴()
     {
         if (ShouldSkip())
         {
@@ -196,7 +196,7 @@ public sealed class RealClientTests
 
     [TestMethod]
     [Timeout(120_000, CooperativeCancellation = true)]
-    public async Task xdpyinfo连上并看到VelaShell这块屏幕()
+    public async Task Xdpyinfo连上并看到VelaShell这块屏幕()
     {
         if (ShouldSkip())
         {
@@ -217,7 +217,7 @@ public sealed class RealClientTests
 
     [TestMethod]
     [Timeout(120_000, CooperativeCancellation = true)]
-    public async Task glxinfo的直接与间接两条路径()
+    public async Task Glxinfo的直接与间接两条路径()
     {
         if (ShouldSkip())
         {
@@ -244,7 +244,7 @@ public sealed class RealClientTests
     /// </summary>
     [TestMethod]
     [Timeout(120_000, CooperativeCancellation = true)]
-    public async Task glxgears要多重采样也拿得到配置_服务端列出libglvnd扩展()
+    public async Task Glxgears要多重采样也拿得到配置_服务端列出libglvnd扩展()
     {
         if (ShouldSkip())
         {
@@ -366,7 +366,7 @@ public sealed class RealClientTests
             Assert.DoesNotContain("EXT SECURITY", output);
             Assert.Contains("ROOT-DENIED", output, "xwd -root 截不了屏");
             Assert.IsGreaterThan(1, pixels.Distinct().Count(), "xeyes 照常画出来");
-            Assert.IsTrue(clients.Any(c => c.Trust == XClientTrust.Untrusted && c.TopLevels.Count > 0), "画窗口的是非受信客户端");
+            Assert.Contains(c => c.Trust == XClientTrust.Untrusted && c.TopLevels.Count > 0, clients, "画窗口的是非受信客户端");
         }
     }
 
@@ -504,7 +504,7 @@ public sealed class RealClientTests
     /// </summary>
     [TestMethod]
     [Timeout(180_000, CooperativeCancellation = true)]
-    public async Task xterm经XIM连上_宿主上屏的中文经XIM_COMMIT进到shell()
+    public async Task Xterm经XIM连上_宿主上屏的中文经XIM_COMMIT进到shell()
     {
         if (ShouldSkip())
         {

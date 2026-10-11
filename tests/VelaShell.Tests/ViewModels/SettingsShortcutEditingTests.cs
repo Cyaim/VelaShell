@@ -241,6 +241,6 @@ public sealed class SettingsShortcutEditingTests
 
         vm.ShortcutFilter = "Ctrl+Shift+J";
 
-        Assert.IsTrue(vm.FilteredShortcutGroups.SelectMany(group => group.FilteredItems).Contains(palette));
+        Assert.Contains(palette, vm.FilteredShortcutGroups.SelectMany(group => group.FilteredItems));
     }
 }

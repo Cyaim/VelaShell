@@ -151,7 +151,7 @@ public sealed class GlxTests
         List<Dictionary<uint, uint>> multisample = [.. all.Where(cfg => cfg[100000] == 1)];   // GLX_SAMPLE_BUFFERS
         Assert.HasCount(2, multisample);
         Assert.IsTrue(multisample.All(cfg => cfg[100001] == 4 && cfg[5] == 1), "4 倍、双缓冲");   // GLX_SAMPLES、GLX_DOUBLEBUFFER
-        CollectionAssert.AreEquivalent(new uint[] { 24, 32 }, multisample.Select(cfg => cfg[2]).ToArray(), "24 / 32 位各一个");   // GLX_BUFFER_SIZE
+        Assert.AreSequenceEqual(new uint[] { 24, 32 }, [.. multisample.Select(cfg => cfg[2])], SequenceOrder.InAnyOrder, "24 / 32 位各一个");   // GLX_BUFFER_SIZE
 
         uint window = c.NewId();
         await c.SendAsync(1, 24, b => b.U32(window).U32(c.RootWindow).I16(0).I16(0).U16(10).U16(10).U16(0).U16(1).U32(0).U32(0));
@@ -1102,7 +1102,7 @@ public sealed class GlxTests
         Assert.AreEqual(0u, SurfacePixel(surface, 1, 0), "奇数列不画");
         Assert.AreEqual(0u, SurfacePixel(surface, 0, 1), "奇数行不画");
         Assert.AreEqual(0xFF0000u, SurfacePixel(surface, 6, 6));
-        CollectionAssert.AreEqual(pattern, gl.PolygonStippleBytes(lsbFirst: true));
+        Assert.AreSequenceEqual(pattern, gl.PolygonStippleBytes(lsbFirst: true));
     }
 
     /// <summary>
@@ -1453,10 +1453,10 @@ public sealed class GlxTests
         Assert.AreEqual(0xFF0000u, SurfacePixel(surface, 8, 8), "曲线中点在原点:视口中央");
 
         Gl.GlContext.GlValue order = gl.GetMap(map1Vertex3, 0x0A01)!.Value;
-        CollectionAssert.AreEqual(new double[] { 3 }, order.Values);
-        CollectionAssert.AreEqual(new double[] { 2, 4 }, gl.GetMap(map1Vertex3, 0x0A02)!.Value.Values);
-        CollectionAssert.AreEqual(new double[] { -1, -1, 0, 0, 1, 0, 1, -1, 0 }, gl.GetMap(map1Vertex3, 0x0A00)!.Value.Values);
-        CollectionAssert.AreEqual(new double[] { 1 }, gl.GetMap(map2Vertex3, 0x0A01)!.Value.Values.Take(1).ToArray(), "没定义过的图:order 1 的常量图");
+        Assert.AreSequenceEqual([3], order.Values);
+        Assert.AreSequenceEqual([2, 4], gl.GetMap(map1Vertex3, 0x0A02)!.Value.Values);
+        Assert.AreSequenceEqual([-1, -1, 0, 0, 1, 0, 1, -1, 0], gl.GetMap(map1Vertex3, 0x0A00)!.Value.Values);
+        Assert.AreSequenceEqual([1], [.. gl.GetMap(map2Vertex3, 0x0A01)!.Value.Values.Take(1)], "没定义过的图:order 1 的常量图");
 
         Run(gl, 144, b => F(b.U32(map1Vertex3), 0, 0).I32(1).Bytes(new byte[12]));    // u1 = u2
         Assert.AreEqual(0x0501u, gl.GetError());
@@ -1482,7 +1482,7 @@ public sealed class GlxTests
         Assert.AreEqual(0u, gl.GetError());
         uint lit = SurfacePixel(surface, 8, 8);
         Assert.IsGreaterThan(0x80u, lit >> 16, $"整片铺满视口,被正面光照亮(漫反射 0.8):法线朝 +z(实得 {lit:X6};法线反了只剩环境光 0x0A)");
-        CollectionAssert.AreEqual(new double[] { 4, 4 }, gl.Query(0x0DD3)!.Value.Values, "MAP2_GRID_SEGMENTS");
+        Assert.AreSequenceEqual([4, 4], gl.Query(0x0DD3)!.Value.Values, "MAP2_GRID_SEGMENTS");
     }
 
     [TestMethod]
@@ -1801,7 +1801,7 @@ public sealed class GlxTests
         Assert.AreEqual(2, (int)done.U32(8), "两条命中记录");
         uint n = done.U32(12);
         uint[] data = [.. Enumerable.Range(0, (int)n).Select(i => done.U32(32 + (4 * i)))];
-        CollectionAssert.AreEqual(new uint[]
+        Assert.AreSequenceEqual(new uint[]
         {
             1, Gl.GlContext.DepthValue(0.25f), Gl.GlContext.DepthValue(0.75f), 7,   // 窗口 z = (z + 1) / 2
             2, uint.MaxValue, uint.MaxValue, 9, 10,
@@ -1833,7 +1833,7 @@ public sealed class GlxTests
         Run(gl, 70, b => F(b, 0, 0, 0));
         Run(gl, 23);
         Assert.AreEqual(-1, gl.RenderMode(0x1C00, out uint[] data), "记录写不下:−1");
-        CollectionAssert.AreEqual(new uint[] { 64, Gl.GlContext.DepthValue(0.5f), Gl.GlContext.DepthValue(0.5f), 0, 1 }, data, "能写多少写多少");
+        Assert.AreSequenceEqual(new uint[] { 64, Gl.GlContext.DepthValue(0.5f), Gl.GlContext.DepthValue(0.5f), 0, 1 }, data, "能写多少写多少");
         Assert.AreEqual(0, gl.NameStackDepth, "RenderMode 清空名字栈");
     }
 }

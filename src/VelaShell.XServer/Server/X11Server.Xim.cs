@@ -22,21 +22,18 @@ public sealed partial class X11Server
     /// <summary>XIM 选区 <c>@server=名字</c> 的属主窗口(服务端自己的窗口,不进窗口树)。</summary>
     internal const uint XimServerWindowId = 0x47;
 
-    /// <summary>当 XIM 输入法服务端时的状态(<see cref="X11ServerOptions.InputMethodName" />);没开为 null。</summary>
-    private XimServer? _xim;
-
-    /// <summary>XIM 输入法服务端(测试看它的内部状态用)。</summary>
-    internal XimServer? Xim => _xim;
+    /// <summary>当 XIM 输入法服务端时的状态(<see cref="X11ServerOptions.InputMethodName" />);没开为 null。测试也看它的内部状态。</summary>
+    internal XimServer? Xim { get; private set; }
 
     /// <summary>开着 <see cref="X11ServerOptions.InputMethodName" /> 时占住 <c>@server=名字</c>、把它加进根窗口的 XIM_SERVERS(已有的照留)。</summary>
     private void InitXim()
     {
-        if (_options.InputMethodName is not { } name)
+        if (Options.InputMethodName is not { } name)
         {
             return;
         }
-        _xim = new XimServer(this, name);
-        _selections[new SelectionSlot(_xim.SelectionAtom, null)] = (_xim.ServerWindow, null, 0);
+        Xim = new XimServer(this, name);
+        _selections[new SelectionSlot(Xim.SelectionAtom, null)] = (Xim.ServerWindow, null, 0);
         uint servers = Intern("XIM_SERVERS");
         List<uint> atoms = [];
         if (Root.Properties.GetValueOrDefault(servers) is { Type: XAtom.Atom, Format: 32 } existing)
@@ -46,9 +43,9 @@ public sealed partial class X11Server
                 atoms.Add(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(existing.Data[i..]));
             }
         }
-        if (!atoms.Contains(_xim.SelectionAtom))
+        if (!atoms.Contains(Xim.SelectionAtom))
         {
-            atoms.Add(_xim.SelectionAtom);
+            atoms.Add(Xim.SelectionAtom);
         }
         StoreServerProperty(Root, servers, new XProperty(XAtom.Atom, 32, AtomList([.. atoms])));
     }
@@ -95,7 +92,7 @@ public sealed partial class X11Server
     /// </summary>
     private bool CommitThroughXim(string text)
     {
-        if (_xim is not { } xim)
+        if (Xim is not { } xim)
         {
             return false;
         }
@@ -175,7 +172,7 @@ public sealed partial class X11Server
     /// </summary>
     internal (XTopLevelWindow Handle, int X, int Y)? LocateInTopLevel(XWindow window)
     {
-        if (_screenHandle is { } screen)
+        if (Screen is { } screen)
         {
             (int x, int y) = window.AbsoluteInner();
             return (screen, x, y);
@@ -192,5 +189,5 @@ public sealed partial class X11Server
     internal void ReportInputMethodFocus(XInputMethodFocus? focus) => _host.InputMethodFocusChanged(focus);
 
     /// <summary>当前报给客户端的 DPI(估插入点的行高用)。</summary>
-    internal int ScreenDpi => _dpi;
+    internal int ScreenDpi { get; private set; }
 }

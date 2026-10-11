@@ -147,7 +147,7 @@ public sealed class SessionImportPlannerTests
     [TestMethod]
     public void NewSessions_KeepTheFileId_WhenItIsFree_AndGetANewOneOnCollision()
     {
-        Guid shared = Guid.NewGuid();
+        var shared = Guid.NewGuid();
         string csv = $"id,name,host\n{shared},first,10.0.0.1\n{shared},second,10.0.0.2\n";
 
         SessionImportWriteSet writes = Write(Plan(Csv(csv)));
@@ -214,7 +214,7 @@ public sealed class SessionImportPlannerTests
         Assert.AreEqual(fileA.Id, alpha.Id, "新建的分组沿用文件里的 Id");
         Assert.AreEqual(6, alpha.SortOrder, "新分组接在已有分组之后");
         Assert.AreEqual(7, zeta.SortOrder, "彼此之间按文件里的先后");
-        Assert.AreSequenceEqual(new[] { writes.Sessions.Single(s => s.Name == "a").Id }, alpha.Sessions.ToArray());
+        Assert.AreSequenceEqual([writes.Sessions.Single(s => s.Name == "a").Id], [.. alpha.Sessions]);
     }
 
     [TestMethod]
@@ -286,7 +286,7 @@ public sealed class SessionImportPlannerTests
         Assert.AreEqual("keep these notes", written.Notes);
         Assert.AreEqual("GBK", written.Terminal!.Encoding, "终端设置是 CSV 表达不了的东西,导回来不能被冲掉");
         Assert.IsTrue(written.Ssh!.Compression);
-        Assert.AreSequenceEqual(new[] { "prod" }, written.Tags.ToArray());
+        Assert.AreSequenceEqual(["prod"], [.. written.Tags]);
         Assert.AreEqual(group.Id, written.GroupId, "没有 group 列就不动分组");
     }
 
@@ -361,7 +361,7 @@ public sealed class SessionImportPlannerTests
 
         SessionImportWriteSet writes = Write(Plan(Csv(csv), [localJump, twin1, twin2]));
 
-        Dictionary<string, SessionProfile> byName = writes.Sessions.ToDictionary(static s => s.Name);
+        var byName = writes.Sessions.ToDictionary(static s => s.Name);
         Assert.AreEqual(byName["file-jump"].Id, byName["a"].JumpHostProfileId, "跳板写在后面也接得上");
         Assert.AreEqual(localJump.Id, byName["b"].JumpHostProfileId, "文件里没有就找本机同名的(不区分大小写)");
         Assert.IsNull(byName["c"].JumpHostProfileId);
@@ -377,7 +377,7 @@ public sealed class SessionImportPlannerTests
 
         SessionImportWriteSet writes = Write(Plan(Csv(csv)));
 
-        Dictionary<string, SessionProfile> byName = writes.Sessions.ToDictionary(static s => s.Name);
+        var byName = writes.Sessions.ToDictionary(static s => s.Name);
         Assert.IsTrue(byName["a"].JumpHostProfileId is null || byName["b"].JumpHostProfileId is null, "a→b→a 必须断开一环");
         Assert.IsFalse(byName["a"].JumpHostProfileId is null && byName["b"].JumpHostProfileId is null, "只断一环,另一条照旧");
         Assert.AreEqual(byName["a"].Id, byName["c"].JumpHostProfileId, "不在环上的不受影响");
@@ -424,7 +424,7 @@ public sealed class SessionImportPlannerTests
 
         SessionImportWriteSet writes = Write(Plan(document, credentials: [localById, localByName]));
 
-        Dictionary<string, SessionProfile> byName = writes.Sessions.ToDictionary(static s => s.Name);
+        var byName = writes.Sessions.ToDictionary(static s => s.Name);
         Assert.IsTrue(byName["a"].CredentialSource!.TryGetSharedId(out Guid aId) && aId == localById.Id);
         Assert.IsTrue(byName["b"].CredentialSource!.TryGetSharedId(out Guid bId) && bId == localByName.Id);
         SharedCredential created = writes.SharedCredentials.Single();
@@ -487,8 +487,8 @@ public sealed class SessionImportPlannerTests
     [TestMethod]
     public void CsvJumpHost_AmbiguousLocalName_FallsBackToTheTargetsCurrentJumpHost()
     {
-        var bastion = Session("bastion", "203.0.113.1");
-        var twin = Session("bastion", "203.0.113.2");
+        SessionProfile bastion = Session("bastion", "203.0.113.1");
+        SessionProfile twin = Session("bastion", "203.0.113.2");
         SessionProfile local = Session("web", "10.0.0.1");
         local.JumpHostProfileId = twin.Id;
 
@@ -505,9 +505,9 @@ public sealed class SessionImportPlannerTests
     {
         var missing = new SharedCredential { Id = Guid.NewGuid(), Name = "synced without passphrase" };
         var complete = new SharedCredential { Id = Guid.NewGuid(), Name = "complete", Password = "local" };
-        var fileMissing = missing.Clone();
+        SharedCredential fileMissing = missing.Clone();
         fileMissing.Password = "from-file";
-        var fileComplete = complete.Clone();
+        SharedCredential fileComplete = complete.Clone();
         fileComplete.Password = "file-should-not-win";
         SessionProfile a = Session("a", "10.0.0.1");
         a.CredentialSource = CredentialReference.ForShared(missing.Id);

@@ -20,12 +20,12 @@ public sealed partial class X11Server
     private readonly List<(Socket Socket, string? File)> _unixListeners = [];
 
     /// <summary>Unix 套接字的路径:选项给了就用它,否则 Windows 以外默认 /tmp/.X11-unix/X{N};空字符串 = 不监听。</summary>
-    private string? UnixSocketPath => _options.UnixSocketPath switch
+    private string? UnixSocketPath => Options.UnixSocketPath switch
     {
         "" => null,
         { } path => path,
         null when OperatingSystem.IsWindows() => null,
-        null => $"/tmp/.X11-unix/X{_options.DisplayNumber}",
+        null => $"/tmp/.X11-unix/X{Options.DisplayNumber}",
     };
 
     /// <summary>
@@ -96,7 +96,7 @@ public sealed partial class X11Server
     /// <summary>记一行「名字被占、这个显示号不能用」,返回要抛的异常。</summary>
     private SocketException NameTaken(string endpoint, string why)
     {
-        Log($"Unix socket {EndpointText(endpoint)} is taken ({why}): display :{_options.DisplayNumber} is unusable");
+        Log($"Unix socket {EndpointText(endpoint)} is taken ({why}): display :{Options.DisplayNumber} is unusable");
         return new SocketException((int)SocketError.AddressAlreadyInUse);
     }
 
@@ -186,13 +186,13 @@ public sealed partial class X11Server
     }
 
     [LibraryImport("libc", EntryPoint = "statx", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
-    private static unsafe partial int StatX(int directoryFd, string path, int flags, uint mask, byte* buffer);
+    private static partial int StatX(int directoryFd, string path, int flags, uint mask, byte* buffer);
 
     [LibraryImport("libc", EntryPoint = "lstat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
-    private static unsafe partial int LStatDarwin(string path, byte* buffer);
+    private static partial int LStatDarwin(string path, byte* buffer);
 
     [LibraryImport("libc", EntryPoint = "lstat$INODE64", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
-    private static unsafe partial int LStatInode64(string path, byte* buffer);
+    private static partial int LStatInode64(string path, byte* buffer);
 
     /// <summary>
     /// 这个 Unix 套接字文件后面有没有进程在听。限时 300 毫秒:Linux 上对 backlog 已满的 AF_UNIX 流套接字做阻塞 connect 会一直等 ——
@@ -424,11 +424,11 @@ public sealed partial class X11Server
     /// </summary>
     private void ClaimDisplayLock()
     {
-        if (OperatingSystem.IsWindows() || !(ListensOnTcp || _options.UnixSocketPath is null))
+        if (OperatingSystem.IsWindows() || !(ListensOnTcp || Options.UnixSocketPath is null))
         {
             return;
         }
-        string path = $"/tmp/.X{_options.DisplayNumber}-lock";
+        string path = $"/tmp/.X{Options.DisplayNumber}-lock";
         for (int attempt = 0; attempt < 2; attempt++)
         {
             try
@@ -495,7 +495,7 @@ public sealed partial class X11Server
 
     private SocketException DisplayTaken(string lockPath, string why)
     {
-        Log($"display :{_options.DisplayNumber} is unusable: {lockPath} {why}");
+        Log($"display :{Options.DisplayNumber} is unusable: {lockPath} {why}");
         return new SocketException((int)SocketError.AddressAlreadyInUse);
     }
 

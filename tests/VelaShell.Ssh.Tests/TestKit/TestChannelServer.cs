@@ -345,15 +345,16 @@ internal sealed class TestChannelObservation
 }
 
 /// <summary>测试服务端的连接协议侧。</summary>
-internal sealed class TestChannelServer : IDisposable
+/// <remarks>在一条已完成认证的传输上建立连接协议服务端。</remarks>
+internal sealed class TestChannelServer(SshPacketTransport transport, TestChannelScript? script = null) : IDisposable
 {
     private const int MaxField = 256 * 1024;
 
-    private readonly SshPacketTransport _transport;
+    private readonly SshPacketTransport _transport = transport;
 
     /// <summary>按 <see cref="TestChannelScript.DropConnectionOnTunnelOpen"/> 断掉了连接：主循环就此收工。</summary>
     private bool _dropped;
-    private readonly TestChannelScript _script;
+    private readonly TestChannelScript _script = script ?? new TestChannelScript();
 
     /// <summary>本端（服务端）给通道的编号 → 客户端的编号。</summary>
     private readonly Dictionary<uint, uint> _peerIds = [];
@@ -402,13 +403,6 @@ internal sealed class TestChannelServer : IDisposable
 
     /// <summary>每条通道的出站字节流（处理器 → 客户端）。</summary>
     private readonly Dictionary<uint, Pipe> _channelOutput = [];
-
-    /// <summary>在一条已完成认证的传输上建立连接协议服务端。</summary>
-    public TestChannelServer(SshPacketTransport transport, TestChannelScript? script = null)
-    {
-        _transport = transport;
-        _script = script ?? new TestChannelScript();
-    }
 
     /// <summary>服务端这一侧观察到的事实。</summary>
     public TestChannelObservation Observation { get; } = new();

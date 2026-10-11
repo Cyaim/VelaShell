@@ -22,22 +22,22 @@ public sealed class SshConfigAlgorithmTests
     [TestMethod]
     public void 四种写法()
     {
-        const SshAlgorithmCategory Cipher = SshAlgorithmCategory.Encryption;
+        const SshAlgorithmCategory cipher = SshAlgorithmCategory.Encryption;
         string[] defaults = [SshAlgorithmNames.Aes256Gcm, SshAlgorithmNames.ChaCha20Poly1305, SshAlgorithmNames.Aes128Ctr];
 
         Assert.AreSequenceEqual(
             [SshAlgorithmNames.Aes256Gcm, SshAlgorithmNames.ChaCha20Poly1305, SshAlgorithmNames.Aes128Ctr, SshAlgorithmNames.Aes256Ctr],
-            [.. SshAlgorithmSpec.Apply(Cipher, $"+{SshAlgorithmNames.Aes256Ctr},{SshAlgorithmNames.Aes128Ctr}", defaults)]);
+            [.. SshAlgorithmSpec.Apply(cipher, $"+{SshAlgorithmNames.Aes256Ctr},{SshAlgorithmNames.Aes128Ctr}", defaults)]);
         Assert.AreSequenceEqual(
             [SshAlgorithmNames.Aes128Ctr, SshAlgorithmNames.Aes256Gcm, SshAlgorithmNames.ChaCha20Poly1305],
-            [.. SshAlgorithmSpec.Apply(Cipher, $"^{SshAlgorithmNames.Aes128Ctr}", defaults)]);
+            [.. SshAlgorithmSpec.Apply(cipher, $"^{SshAlgorithmNames.Aes128Ctr}", defaults)]);
         Assert.AreSequenceEqual(
             [SshAlgorithmNames.Aes256Gcm, SshAlgorithmNames.Aes128Ctr],
-            [.. SshAlgorithmSpec.Apply(Cipher, "-chacha20*", defaults)]);
+            [.. SshAlgorithmSpec.Apply(cipher, "-chacha20*", defaults)]);
         Assert.AreSequenceEqual(
             [SshAlgorithmNames.Aes128Ctr],
-            [.. SshAlgorithmSpec.Apply(Cipher, $"{SshAlgorithmNames.Aes128Ctr}, {SshAlgorithmNames.Aes128Ctr}", defaults)]);
-        Assert.AreSame(Defaults, SshAlgorithmSpec.Apply(Cipher, "  ", Defaults), "空白 = 原样用默认");
+            [.. SshAlgorithmSpec.Apply(cipher, $"{SshAlgorithmNames.Aes128Ctr}, {SshAlgorithmNames.Aes128Ctr}", defaults)]);
+        Assert.AreSame(Defaults, SshAlgorithmSpec.Apply(cipher, "  ", Defaults), "空白 = 原样用默认");
     }
 
     /// <summary>写错的四种：没名字、不认识、认得却没实现、删完不剩；拼错的删除项同样报（不然什么都没删掉）。</summary>
@@ -76,13 +76,13 @@ public sealed class SshConfigAlgorithmTests
         SshConnectionOptions old = await SshConfigFile.CreateConnectionOptionsAsync(blocks, "old");
         Assert.AreEqual(SshAlgorithmNames.DiffieHellmanGroupExchangeSha256, old.Algorithms.KeyExchange[0]);
         Assert.DoesNotContain(SshAlgorithmNames.ChaCha20Poly1305, old.Algorithms.EncryptionClientToServer);
-        Assert.AreSequenceEqual(old.Algorithms.EncryptionClientToServer.ToArray(), old.Algorithms.EncryptionServerToClient.ToArray());
-        Assert.AreSequenceEqual([SshAlgorithmNames.HmacSha256], old.Algorithms.MacServerToClient.ToArray());
+        Assert.AreSequenceEqual([.. old.Algorithms.EncryptionClientToServer], [.. old.Algorithms.EncryptionServerToClient]);
+        Assert.AreSequenceEqual([SshAlgorithmNames.HmacSha256], [.. old.Algorithms.MacServerToClient]);
         Assert.AreEqual(SshAlgorithmNames.SshRsa, old.Algorithms.HostKey[^1]);
         Assert.IsTrue(old.AllowSha1RsaSignatures);
 
         SshConnectionOptions fresh = await SshConfigFile.CreateConnectionOptionsAsync(blocks, "new");
-        Assert.AreSequenceEqual(SshAlgorithmSet.Default.KeyExchange.ToArray(), fresh.Algorithms.KeyExchange.ToArray());
+        Assert.AreSequenceEqual([.. SshAlgorithmSet.Default.KeyExchange], [.. fresh.Algorithms.KeyExchange]);
         Assert.IsFalse(fresh.AllowSha1RsaSignatures);
     }
 
@@ -98,7 +98,7 @@ public sealed class SshConfigAlgorithmTests
         SshConnectException failure = await Assert.ThrowsAsync<SshConnectException>(
             async () => await SshConfigFile.CreateConnectionOptionsAsync(blocks, "legacy"));
         Assert.AreEqual(SshFailureReason.InvalidConfiguration, failure.Reason);
-        StringAssert.Contains(failure.Message, "legacy");
+        Assert.Contains("legacy", failure.Message);
         Assert.IsInstanceOfType<SshAlgorithmSpecException>(failure.InnerException);
     }
 }

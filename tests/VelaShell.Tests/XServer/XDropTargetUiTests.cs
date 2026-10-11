@@ -1,5 +1,3 @@
-using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.Text;
 using Avalonia;
 using Avalonia.Headless;
@@ -34,9 +32,9 @@ public sealed class XDropTargetUiTests
         Assert.AreEqual("file:///tmp/velashell-drop-1/a%20b%23.txt", XDropTarget.RemoteFileUri("/tmp/velashell-drop-1/a b#.txt"));
         Assert.AreEqual("file:///tmp/%E4%B8%AD.txt", XDropTarget.RemoteFileUri("/tmp/中.txt"));
         Dictionary<string, ReadOnlyMemory<byte>> text = XDropTarget.TextData("é中");
-        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes("é中"), text["UTF8_STRING"].ToArray());
-        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes("é中"), text["text/plain;charset=utf-8"].ToArray());
-        CollectionAssert.AreEqual(new byte[] { 0xE9, (byte)'?' }, text["text/plain"].ToArray(), "XDND 的 text/plain 默认 Latin-1");
+        Assert.AreSequenceEqual(Encoding.UTF8.GetBytes("é中"), text["UTF8_STRING"].ToArray());
+        Assert.AreSequenceEqual(Encoding.UTF8.GetBytes("é中"), text["text/plain;charset=utf-8"].ToArray());
+        Assert.AreSequenceEqual(new byte[] { 0xE9, (byte)'?' }, text["text/plain"].ToArray(), "XDND 的 text/plain 默认 Latin-1");
     }
 
     [TestMethod]

@@ -62,7 +62,7 @@ public class SessionTreeMultiSelectionTests
 
         _vm.ToggleMultiSelection(Node(_beta));
 
-        Assert.AreSequenceEqual([Node(_alpha), Node(_beta)], _vm.MultiSelection.ToArray());
+        Assert.AreSequenceEqual([Node(_alpha), Node(_beta)], [.. _vm.MultiSelection]);
         Assert.IsTrue(Node(_alpha).IsMultiMarked);
         Assert.IsTrue(Node(_beta).IsMultiMarked);
         Assert.AreSame(Node(_beta), _vm.SelectedNode, "选中项落在最后点的那条上。");
@@ -78,7 +78,7 @@ public class SessionTreeMultiSelectionTests
 
         _vm.ToggleMultiSelection(Node(_gamma));
 
-        Assert.AreSequenceEqual([Node(_alpha), Node(_beta), Node(_gamma)], _vm.MultiSelection.ToArray(),
+        Assert.AreSequenceEqual([Node(_alpha), Node(_beta), Node(_gamma)], [.. _vm.MultiSelection],
             "#524 时第三条会把最早那条顶掉;多选之后一直往里加");
         Assert.IsTrue(_vm.HasMultiSelection);
         Assert.IsFalse(_vm.IsPairSelected);
@@ -140,7 +140,7 @@ public class SessionTreeMultiSelectionTests
 
         _vm.ExtendSelectionTo(Node(_loose), additive: false);
 
-        Assert.AreSequenceEqual([Node(_beta), Node(_bucket), Node(_gamma), Node(_loose)], _vm.MultiSelection.ToArray());
+        Assert.AreSequenceEqual([Node(_beta), Node(_bucket), Node(_gamma), Node(_loose)], [.. _vm.MultiSelection]);
         Assert.AreSame(Node(_loose), _vm.SelectedNode);
         Assert.IsFalse(GroupNode.IsMultiMarked);
     }
@@ -152,7 +152,7 @@ public class SessionTreeMultiSelectionTests
 
         _vm.ExtendSelectionTo(Node(_alpha), additive: false);
 
-        Assert.AreSequenceEqual([Node(_gamma), Node(_bucket), Node(_beta), Node(_alpha)], _vm.MultiSelection.ToArray(),
+        Assert.AreSequenceEqual([Node(_gamma), Node(_bucket), Node(_beta), Node(_alpha)], [.. _vm.MultiSelection],
             "起点在前:从哪一行开始选的,那一行就是「先选的」");
     }
 
@@ -164,7 +164,7 @@ public class SessionTreeMultiSelectionTests
 
         _vm.ExtendSelectionTo(Node(_beta), additive: false);
 
-        Assert.AreSequenceEqual([Node(_alpha), Node(_beta)], _vm.MultiSelection.ToArray(), "Shift 再点一次是换一个终点,起点不动");
+        Assert.AreSequenceEqual([Node(_alpha), Node(_beta)], [.. _vm.MultiSelection], "Shift 再点一次是换一个终点,起点不动");
     }
 
     [TestMethod]
@@ -175,8 +175,7 @@ public class SessionTreeMultiSelectionTests
 
         _vm.ExtendSelectionTo(Node(_gamma), additive: true);
 
-        CollectionAssert.AreEquivalent(new[] { Node(_alpha), Node(_loose), Node(_gamma) }, _vm.MultiSelection.ToArray(),
-            "起点是最近一次 Ctrl 加选的 loose,往上选到 gamma;原先的 alpha 留着");
+        Assert.AreSequenceEqual([Node(_alpha), Node(_loose), Node(_gamma)], [.. _vm.MultiSelection], SequenceOrder.InAnyOrder, "起点是最近一次 Ctrl 加选的 loose,往上选到 gamma;原先的 alpha 留着");
     }
 
     [TestMethod]
@@ -190,7 +189,7 @@ public class SessionTreeMultiSelectionTests
         _vm.StartSelectionAt(Node(_gamma)); // 视图在普通单击时调它
         _vm.ExtendSelectionTo(Node(_loose), additive: false);
 
-        Assert.AreSequenceEqual([Node(_gamma), Node(_loose)], _vm.MultiSelection.ToArray(), "从刚单击的 gamma 选起,而不是更早的 alpha");
+        Assert.AreSequenceEqual([Node(_gamma), Node(_loose)], [.. _vm.MultiSelection], "从刚单击的 gamma 选起,而不是更早的 alpha");
     }
 
     [TestMethod]
@@ -297,7 +296,7 @@ public class SessionTreeMultiSelectionTests
         await _vm.OpenSelectedCommand.Execute().FirstAsync();
 
         Assert.IsNotNull(raised);
-        Assert.AreSequenceEqual(new[] { _alpha, _gamma, _loose }, raised.ToArray(), "按树上从上到下的顺序打开,标签就按这个顺序排");
+        Assert.AreSequenceEqual([_alpha, _gamma, _loose], [.. raised], "按树上从上到下的顺序打开,标签就按这个顺序排");
     }
 
     [TestMethod]
@@ -344,7 +343,7 @@ public class SessionTreeMultiSelectionTests
         {
             await _repository.Received(1).DeleteSessionAsync(profile.Id);
         }
-        Assert.IsFalse(_vm.Rows.Any(row => !row.IsGroup));
+        Assert.DoesNotContain(row => !row.IsGroup, _vm.Rows);
         Assert.IsTrue(_vm.HasNoSessions);
         Assert.IsEmpty(_vm.MultiSelection);
     }
@@ -358,7 +357,7 @@ public class SessionTreeMultiSelectionTests
 
         await _vm.MoveSelectionToGroupCommand.Execute(ungrouped).FirstAsync();
 
-        Assert.IsFalse(_vm.Nodes.Any(n => n.IsGroup), "源分组被挪空,按老规矩连分组一起删掉");
+        Assert.DoesNotContain(n => n.IsGroup, _vm.Nodes, "源分组被挪空,按老规矩连分组一起删掉");
         await _repository.Received(1).DeleteGroupAsync(_group.Id);
         Assert.IsTrue(new[] { _alpha, _beta, _bucket, _gamma }.All(p => p.GroupId is null));
     }
@@ -376,8 +375,8 @@ public class SessionTreeMultiSelectionTests
         await _vm.BatchEditCommand.Execute().FirstAsync();
         await _vm.ExportSelectedCommand.Execute().FirstAsync();
 
-        Assert.AreSequenceEqual(new[] { _alpha, _beta }, edited!.ToArray());
-        Assert.AreSequenceEqual(new[] { _alpha.Id, _beta.Id }, exported!.ProfileIds.ToArray());
+        Assert.AreSequenceEqual([_alpha, _beta], [.. edited!]);
+        Assert.AreSequenceEqual([_alpha.Id, _beta.Id], [.. exported!.ProfileIds]);
         Assert.IsNull(exported.GroupName);
     }
 }

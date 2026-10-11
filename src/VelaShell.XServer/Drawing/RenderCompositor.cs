@@ -457,7 +457,6 @@ internal static class RenderCompositor
         static uint ToByte(uint n) => (Math.Min(n, Cube) + (Square / 2)) / Square;
     }
 
-
     /// <summary>
     /// 可分离的混合函数乘上 αs·αd:αs·αd·B(cs, cd),单位 1/65025。参数是 8 位的 Cs ≤ αs、Cd ≤ αd(αs、αd 都不为 0),
     /// cs = Cs / αs、cd = Cd / αd 代进 B 之后整理成整数式;带除法的(颜色减淡 / 加深、柔光)四舍五入,
@@ -466,31 +465,31 @@ internal static class RenderCompositor
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint SeparableTerm(byte op, uint s, uint a, uint d, uint e)
     {
-        switch (op)
+        return op switch
         {
-            case 0x30:   // Multiply:cs·cd
-                return s * d;
-            case 0x31:   // Screen:cs + cd − cs·cd
-                return (s * e) + (d * a) - (s * d);
-            case 0x32:   // Overlay = HardLight(cd, cs)
-                return HardLight(2 * d <= e, s, a, d, e);
-            case 0x33:   // Darken:min(cs, cd)
-                return Math.Min(s * e, d * a);
-            case 0x34:   // Lighten:max(cs, cd)
-                return Math.Max(s * e, d * a);
-            case 0x35:   // ColorDodge:cd = 0 → 0;cs = 1 → 1;否则 min(1, cd / (1 − cs))
-                return d == 0 ? 0 : s >= a ? a * e : Math.Min(a * e, ((a * a * d) + ((a - s) / 2)) / (a - s));
-            case 0x36:   // ColorBurn:cd = 1 → 1;cs = 0 → 0;否则 1 − min(1, (1 − cd) / cs)
-                return d >= e ? a * e : s == 0 ? 0 : (a * e) - Math.Min(a * e, ((a * a * (e - d)) + (s / 2)) / s);
-            case 0x37:   // HardLight:cs ≤ 0.5 → 2·cs·cd;否则 Screen(cd, 2·cs − 1)
-                return HardLight(2 * s <= a, s, a, d, e);
-            case 0x38:   // SoftLight
-                return SoftLight(s, a, d, e);
-            case 0x39:   // Difference:|cs − cd|
-                return (uint)Math.Abs((int)(s * e) - (int)(d * a));
-            default:     // Exclusion:cs + cd − 2·cs·cd
-                return (s * e) + (d * a) - (2 * s * d);
-        }
+            // Multiply:cs·cd
+            0x30 => s * d,
+            // Screen:cs + cd − cs·cd
+            0x31 => (s * e) + (d * a) - (s * d),
+            // Overlay = HardLight(cd, cs)
+            0x32 => HardLight(2 * d <= e, s, a, d, e),
+            // Darken:min(cs, cd)
+            0x33 => Math.Min(s * e, d * a),
+            // Lighten:max(cs, cd)
+            0x34 => Math.Max(s * e, d * a),
+            // ColorDodge:cd = 0 → 0;cs = 1 → 1;否则 min(1, cd / (1 − cs))
+            0x35 => d == 0 ? 0 : s >= a ? a * e : Math.Min(a * e, ((a * a * d) + ((a - s) / 2)) / (a - s)),
+            // ColorBurn:cd = 1 → 1;cs = 0 → 0;否则 1 − min(1, (1 − cd) / cs)
+            0x36 => d >= e ? a * e : s == 0 ? 0 : (a * e) - Math.Min(a * e, ((a * a * (e - d)) + (s / 2)) / s),
+            // HardLight:cs ≤ 0.5 → 2·cs·cd;否则 Screen(cd, 2·cs − 1)
+            0x37 => HardLight(2 * s <= a, s, a, d, e),
+            // SoftLight
+            0x38 => SoftLight(s, a, d, e),
+            // Difference:|cs − cd|
+            0x39 => (uint)Math.Abs((int)(s * e) - (int)(d * a)),
+            // Exclusion:cs + cd − 2·cs·cd
+            _ => (s * e) + (d * a) - (2 * s * d),
+        };
 
         // HardLight:low 时 2·cs·cd,否则 cd + (2·cs − 1) − cd·(2·cs − 1)(Overlay 把 cs、cd 对调,两段的式子都对称)。
         // 两段都算出来再挑,不用分支(哪一段取决于每个像素的颜色,分支猜不准)。
@@ -555,14 +554,14 @@ internal static class RenderCompositor
     private static (long R, long G, long B) HslBlend(byte op, (long R, long G, long B) cs, (long R, long G, long B) cd, long k)
     {
         // 数量级:k 与各颜色至多 255³,乘 100 之后约 1.7 × 10⁹;ClipColor 里两两相乘至多约 5.5 × 10¹⁸,不超过 long。
-        (long R, long G, long B) c = op switch
+        (long red, long green, long blue) = op switch
         {
             0x3B => SetLum(SetSat(cs, Sat(cd)), Lum(cd), k),   // HSLHue
             0x3C => SetLum(SetSat(cd, Sat(cs)), Lum(cd), k),   // HSLSaturation
             0x3D => SetLum(cs, Lum(cd), k),                    // HSLColor
             _ => SetLum(cd, Lum(cs), k),                       // HSLLuminosity
         };
-        return (RoundDiv(c.R, 100), RoundDiv(c.G, 100), RoundDiv(c.B, 100));
+        return (RoundDiv(red, 100), RoundDiv(green, 100), RoundDiv(blue, 100));
 
         // 亮度 × 100。
         static long Lum((long R, long G, long B) c) => (30 * c.R) + (59 * c.G) + (11 * c.B);
@@ -924,20 +923,14 @@ internal static class RenderCompositor
 /// 把梯形 / 三角形光栅化成覆盖率(0–1)。每个像素行分 <see cref="SubRows" /> 条子扫描线,
 /// 每条子扫描线上按精确的水平重叠长度累加 —— 水平方向是解析的,垂直方向是 16 级采样。
 /// </summary>
-internal sealed class CoverageMask
+internal sealed class CoverageMask(XRect bounds)
 {
     private const int SubRows = 16;
 
-    public CoverageMask(XRect bounds)
-    {
-        Bounds = bounds;
-        Alpha = new float[Math.Max(0, bounds.Width * bounds.Height)];
-    }
-
     /// <summary>覆盖的范围(目标可绘对象坐标)。</summary>
-    public XRect Bounds { get; }
+    public XRect Bounds { get; } = bounds;
 
-    public float[] Alpha { get; }
+    public float[] Alpha { get; } = new float[Math.Max(0, bounds.Width * bounds.Height)];
 
     /// <summary>一条直线(两点式)在高度 y 处的 x。</summary>
     public readonly record struct Line(double X1, double Y1, double X2, double Y2)

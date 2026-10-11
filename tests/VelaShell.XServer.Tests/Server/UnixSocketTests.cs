@@ -139,13 +139,9 @@ public sealed partial class UnixSocketTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "抽象命名空间只有 Linux 有")]
     public async Task 抽象名被别人bind了_这个显示号不能用_套接字文件也不建()
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            Assert.Inconclusive("抽象命名空间只有 Linux 有");
-            return;
-        }
         // 攻击者先 bind 抽象名、不 listen:原先我们的抽象名开不了只记一行,套接字文件与 TCP 照样开、Display 照样是 :N;
         // 它随后再 listen,Xlib / XCB 对 :N 先试抽象名,cookie 就交到了它手上。
         string path = Path.Combine(Path.GetTempPath(), $"vx-{Guid.NewGuid():N}.sock");
@@ -219,13 +215,9 @@ public sealed partial class UnixSocketTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "IPC 命名空间只有 Linux 有")]
     public void MITSHM只给同一个IPC命名空间里的对端_核对不了算不同()
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            Assert.Inconclusive("IPC 命名空间只有 Linux 有");
-            return;
-        }
         // 把 /tmp/.X11-unix 挂进容器后,容器里同一个 uid 的进程给的 shmid 按服务端的命名空间解释 —— 读写的是宿主这边的段。
         Assert.IsTrue(X11Server.SameIpcNamespace(Environment.ProcessId));
         Assert.IsFalse(X11Server.SameIpcNamespace(0), "SO_PEERCRED 的 pid 为 0:对端在别的 pid 命名空间里,看不见");
@@ -233,13 +225,9 @@ public sealed partial class UnixSocketTests
     }
 
     [TestMethod]
-    public async Task fd用完时接受循环不退出_放出来之后照常接新连接()
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "按 RLIMIT_NOFILE 把 fd 用完只在 Linux 上做")]
+    public async Task Fd用完时接受循环不退出_放出来之后照常接新连接()
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            Assert.Inconclusive("按 RLIMIT_NOFILE 把 fd 用完只在 Linux 上做");
-            return;
-        }
         // 原先接受循环遇到任何 SocketException 就永久退出:fd 用完(EMFILE)是暂时的,本机 X 程序却从此再也连不进来。
         string path = Path.Combine(Path.GetTempPath(), $"vx-{Guid.NewGuid():N}.sock");
         await using X11Server server = new(new X11ServerOptions { ListenTcp = false, UnixSocketPath = path });
@@ -296,13 +284,9 @@ public sealed partial class UnixSocketTests
     private static partial int SetRLimit(int resource, in RLimit limit);
 
     [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "/tmp/.X{N}-lock 是类 Unix 上的约定")]
     public async Task 持有显示号锁文件_别的服务端持着时这个号不能用_残留的锁清掉重建()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("/tmp/.X{N}-lock 是类 Unix 上的约定");
-            return;
-        }
         // Xvfb、xvfb-run -a 挑显示号时只看 /tmp/.X{N}-lock:原先不建,它们会挑中我们的号;我们也不看,会挑中它们的号。
         int display = FreeDisplayNumber();
         string lockPath = $"/tmp/.X{display}-lock";
@@ -320,7 +304,7 @@ public sealed partial class UnixSocketTests
             Assert.IsFalse(File.Exists(lockPath), "收工时删掉");
 
             // 持有者已经不在了:残留,删掉重建。
-            using System.Diagnostics.Process gone = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("true"))!;
+            using System.Diagnostics.Process gone = Process.Start(new System.Diagnostics.ProcessStartInfo("true"))!;
             await gone.WaitForExitAsync();
             File.WriteAllText(lockPath, $"{gone.Id,10}\n");
             await using X11Server third = new(new X11ServerOptions { DisplayNumber = display, ListenTcp = false });

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2026 VelaShell Labs
 
+// 与 test.runsettings 的 <Parallelize> 同一组值(那边写了为什么只给 2 个 worker);写在这里是让 MSTEST0001 看得见。
+[assembly: Parallelize(Workers = 2, Scope = ExecutionScope.MethodLevel)]
+
 namespace VelaShell.Ssh.Tests;
 
 /// <summary>全程序集的测试会话:抬线程池下限。</summary>
@@ -19,15 +22,13 @@ namespace VelaShell.Ssh.Tests;
 /// </para>
 /// </remarks>
 [TestClass]
-public class TestSession
+public static class TestSession
 {
     /// <summary>并行下限:3 核的 runner 上也给到 16 条;核多的机器按核数的 4 倍给。</summary>
     private static int Floor => Math.Max(16, Environment.ProcessorCount * 4);
 
     [AssemblyInitialize]
-    public static void Init(TestContext _)
-    {
+    public static void Init(TestContext _) =>
         // 工作线程与 I/O 完成端口都抬:内存传输、管道与临时文件都会用到后者。
         ThreadPool.SetMinThreads(Floor, Floor);
-    }
 }

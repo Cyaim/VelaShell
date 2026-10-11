@@ -31,7 +31,7 @@ public sealed class VelaHostKeyPolicyTests
 
         VelaHostKeyPolicy preference = new(store, settings: null, prompt: null, alerts: null);
 
-        Assert.AreSequenceEqual(["ssh-ed25519", "ssh-rsa"], (await preference.GetKnownKeyTypesAsync("old.example", 22)).ToArray());
+        Assert.AreSequenceEqual(["ssh-ed25519", "ssh-rsa"], [.. (await preference.GetKnownKeyTypesAsync("old.example", 22))]);
     }
 
     /// <summary>
@@ -48,7 +48,7 @@ public sealed class VelaHostKeyPolicyTests
 
         VelaHostKeyPolicy policy = new(store, settings: null, prompt: null, alerts);
         Assert.IsTrue(policy.AllowHostKeyUpdates);
-        Assert.AreSequenceEqual(["bareBase64Fingerprint"], (await policy.GetKnownHostKeyFingerprintsAsync("rot.example", 22)).ToArray());
+        Assert.AreSequenceEqual(["bareBase64Fingerprint"], [.. (await policy.GetKnownHostKeyFingerprintsAsync("rot.example", 22))]);
 
         using var fresh = InMemorySshSigner.GenerateEd25519();
         await policy.RecordHostKeysAsync("rot.example", 22, [fresh.PublicKey]);
@@ -74,7 +74,7 @@ public sealed class VelaHostKeyPolicyTests
 
         IReadOnlyList<string> forgotten = await policy.ForgetHostKeysAsync("rot.example", 22, ["SHA256:staleRsa"]);
 
-        Assert.AreSequenceEqual(["staleRsa"], forgotten.ToArray());
+        Assert.AreSequenceEqual(["staleRsa"], [.. forgotten]);
         await store.Received(1).RemoveKnownHostAsync("rot.example", 22, "ssh-rsa", Arg.Any<CancellationToken>());
         await store.DidNotReceive().RemoveKnownHostAsync("rot.example", 22, "ssh-ed25519", Arg.Any<CancellationToken>());
         await alerts.Received(1).RaiseAsync("hostkey-forgotten", Arg.Is<string>(m => m.Contains("staleRsa")), Arg.Any<object?>());

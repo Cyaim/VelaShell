@@ -642,7 +642,7 @@ public sealed partial class X11Server
     /// 这个客户端看不到 XTEST、收不到原始按键、不能改设备层级:非受信客户端(SECURITY),或者受
     /// <see cref="X11ServerOptions.RestrictForwardedClients" /> 限制的(经 SSH 转发进来、且开了限制)。
     /// </summary>
-    private bool IsRestricted(XClient client) => client.Untrusted || (_options.RestrictForwardedClients && client.Forwarded);
+    private bool IsRestricted(XClient client) => client.Untrusted || (Options.RestrictForwardedClients && client.Forwarded);
 
     /// <summary>XI_PropertyEvent(evtype 12):给在根窗口上选了它的客户端。what:0 删除、1 新建、2 修改。</summary>
     private void SendXiPropertyEvent(ushort id, uint property, byte what)

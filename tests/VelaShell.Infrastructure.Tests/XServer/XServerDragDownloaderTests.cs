@@ -70,7 +70,7 @@ public sealed class XServerDragDownloaderTests
         Assert.HasCount(3, local, "远端已经不存在的跳过");
         string directory = Path.GetDirectoryName(local[0])!;
         Assert.AreEqual(_root, Path.GetDirectoryName(directory), "每次一个新的子目录");
-        Assert.AreSequenceEqual([Path.Combine(directory, "a.txt"), Path.Combine(directory, "dir"), Path.Combine(directory, "a (2).txt")], local.ToArray(), "同名的加序号");
+        Assert.AreSequenceEqual([Path.Combine(directory, "a.txt"), Path.Combine(directory, "dir"), Path.Combine(directory, "a (2).txt")], [.. local], "同名的加序号");
         Assert.IsTrue(Directory.Exists(Path.Combine(directory, "dir", "sub")), "目录照样建出来");
         await sftp.Received(1).DownloadFileAsync(box.SessionId, "/home/joe/a.txt", Path.Combine(directory, "a.txt"), null, 0, Arg.Any<CancellationToken>());
         await sftp.Received(1).DownloadFileAsync(box.SessionId, "/srv/a.txt", Path.Combine(directory, "a (2).txt"), null, 0, Arg.Any<CancellationToken>());

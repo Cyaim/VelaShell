@@ -107,7 +107,7 @@ public sealed class XdndTests
         Assert.AreEqual(property, notify.U32(20));
         XMessage value = await c.RequestAsync(20, 1, b => b.U32(window).U32(property).U32(0).U32(0).U32(1000));
         Assert.AreEqual(atoms.UriList, value.U32(8));
-        CollectionAssert.AreEqual(uris, value.Bytes.AsSpan(32, (int)value.U32(16)).ToArray());
+        Assert.AreSequenceEqual(uris, value.Bytes.AsSpan(32, (int)value.U32(16)).ToArray());
 
         // 用完了:XdndFinished 之后数据丢掉,再要就是 None。
         await ReplyAsync(c, source, atoms.Finished, window, 1, l2: atoms.Copy);

@@ -1544,7 +1544,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 ComboBox combo = Find<ComboBox>(panel, "ProviderCombo");
-                CollectionAssert.AreEqual(new[] { "Routin·gpt-5.5" }, combo.Items.Cast<object>().ToArray());
+                Assert.AreSequenceEqual(["Routin·gpt-5.5"], combo.Items.Cast<object>().ToArray());
                 TextBlock shown = combo.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == "Routin·gpt-5.5");
                 Assert.AreEqual(Avalonia.Media.TextTrimming.CharacterEllipsis, shown.TextTrimming, "选中框里的长名字要收成省略号");
 
@@ -1553,7 +1553,7 @@ public sealed partial class ChatPanelViewUiTests
                 live.Providers.Add(other);
                 typeof(ChatPanelView).GetMethod("ReloadProviderCombo",
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(panel, null);
-                CollectionAssert.AreEqual(new[] { "Routin·gpt-5.5", "Other·gpt-5.5" }, combo.Items.Cast<object>().ToArray());
+                Assert.AreSequenceEqual(["Routin·gpt-5.5", "Other·gpt-5.5"], combo.Items.Cast<object>().ToArray());
             }
             finally
             {

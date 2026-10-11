@@ -91,7 +91,7 @@ public sealed class AgentManagementTests
         SshAgentException refused = await Assert.ThrowsAsync<SshAgentException>(
             async () => await rig.Client.RemoveAllIdentitiesAsync(rig.Token));
         Assert.AreEqual(Diagnostics.SshFailureReason.AgentRefused, refused.Reason);
-        StringAssert.Contains(refused.Message, "锁定");
+        Assert.Contains("锁定", refused.Message);
 
         Assert.IsFalse(await rig.Client.UnlockAsync("猜一个", rig.Token));
         Assert.IsTrue(await rig.Client.UnlockAsync("离开座位", rig.Token));
@@ -122,16 +122,16 @@ public sealed class AgentManagementTests
     [TestMethod]
     public void 默认端点在OpenSSH_agent不在时找当前用户的Pageant()
     {
-        const string OpenSsh = @"\\.\pipe\openssh-ssh-agent";
-        const string Pageant = @"\\.\pipe\pageant.joe.0123abcd";
+        const string openSsh = @"\\.\pipe\openssh-ssh-agent";
+        const string pageant = @"\\.\pipe\pageant.joe.0123abcd";
 
-        Assert.AreEqual(Pageant, SshAgentClient.DefaultEndpointFor(true, null, () => [@"\\.\pipe\other", Pageant], "joe"));
-        Assert.AreEqual(Pageant, SshAgentClient.DefaultEndpointFor(true, null, () => [Pageant], "JOE"), "用户名不分大小写");
-        Assert.AreEqual(OpenSsh, SshAgentClient.DefaultEndpointFor(true, null, () => [OpenSsh, Pageant], "joe"));
-        Assert.AreEqual(OpenSsh, SshAgentClient.DefaultEndpointFor(true, null, () => [@"\\.\pipe\pageant.alice.99"], "joe"));
-        Assert.AreEqual(OpenSsh, SshAgentClient.DefaultEndpointFor(true, null, () => [], "joe"));
-        Assert.AreEqual(@"\\.\pipe\agent-1password", SshAgentClient.DefaultEndpointFor(true, @"\\.\pipe\agent-1password", () => [Pageant], "joe"));
-        Assert.AreEqual("/run/agent.sock", SshAgentClient.DefaultEndpointFor(false, "/run/agent.sock", () => [Pageant], "joe"));
+        Assert.AreEqual(pageant, SshAgentClient.DefaultEndpointFor(true, null, () => [@"\\.\pipe\other", pageant], "joe"));
+        Assert.AreEqual(pageant, SshAgentClient.DefaultEndpointFor(true, null, () => [pageant], "JOE"), "用户名不分大小写");
+        Assert.AreEqual(openSsh, SshAgentClient.DefaultEndpointFor(true, null, () => [openSsh, pageant], "joe"));
+        Assert.AreEqual(openSsh, SshAgentClient.DefaultEndpointFor(true, null, () => [@"\\.\pipe\pageant.alice.99"], "joe"));
+        Assert.AreEqual(openSsh, SshAgentClient.DefaultEndpointFor(true, null, () => [], "joe"));
+        Assert.AreEqual(@"\\.\pipe\agent-1password", SshAgentClient.DefaultEndpointFor(true, @"\\.\pipe\agent-1password", () => [pageant], "joe"));
+        Assert.AreEqual("/run/agent.sock", SshAgentClient.DefaultEndpointFor(false, "/run/agent.sock", () => [pageant], "joe"));
     }
 
     /// <summary>〔AGENTS 4.3〕交来的流按 <c>ownsStream</c> 决定释放不释放；不给标签时端点名是中性的占位，不是一句界面语言。</summary>

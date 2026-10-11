@@ -179,9 +179,9 @@ public partial class MainWindow : Window
         _keymapService = ShortcutKeymapService.Resolve();
         if (_keymapService is { } keymapService)
         {
-            void onKeymapChanged(ShortcutKeymap keymap) => RunOnUiThread(() => ApplyKeymap(keymap));
-            keymapService.Changed += onKeymapChanged;
-            Closed += (_, _) => keymapService.Changed -= onKeymapChanged;
+            void OnKeymapChanged(ShortcutKeymap keymap) => RunOnUiThread(() => ApplyKeymap(keymap));
+            keymapService.Changed += OnKeymapChanged;
+            Closed += (_, _) => keymapService.Changed -= OnKeymapChanged;
         }
         // 窗格移焦(Alt+方向)必须走隧道阶段的**有条件**拦截,不能进 Window.KeyBindings:
         // 后者由 KeyboardDevice 在路由事件分发之前无条件匹配,一旦登记就永远从终端手里抢走 ——

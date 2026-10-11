@@ -14,13 +14,13 @@ namespace VelaShell.Terminal.Tests;
 public sealed class FastWheelScrollTests
 {
     /// <summary>全程序集共用的 headless 会话(见 HeadlessTestSession:每类各起一个时,拆除会互相踩)。</summary>
-    private static HeadlessUnitTestSession _session => HeadlessTestSession.Current;
+    private static HeadlessUnitTestSession Session => HeadlessTestSession.Current;
 
     [TestMethod]
     public void AltWheel_ScrollsFiveTimesFartherThanPlainWheel()
     {
         (int plain, int fast) result = default;
-        _session
+        Session
             .Dispatch(
                 () =>
                 {

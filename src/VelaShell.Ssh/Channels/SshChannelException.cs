@@ -14,26 +14,20 @@ namespace VelaShell.Ssh.Channels;
 /// 一条通道打不开或出错，不得影响会话或其它通道。
 /// 所以这条异常从通道的方法里抛出来，而**会话仍然可用**。
 /// </remarks>
-public sealed class SshChannelException : SshException
+/// <remarks>创建一个通道异常。</remarks>
+public sealed class SshChannelException(
+    SshFailureReason reason,
+    string message,
+    SshChannelOpenFailureReason? openFailureReason = null,
+    string? peerDescription = null,
+    Exception? innerException = null) : SshException(reason, SshPhase.Open, message, innerException)
 {
-    /// <summary>创建一个通道异常。</summary>
-    public SshChannelException(
-        SshFailureReason reason,
-        string message,
-        SshChannelOpenFailureReason? openFailureReason = null,
-        string? peerDescription = null,
-        Exception? innerException = null)
-        : base(reason, SshPhase.Open, message, innerException)
-    {
-        OpenFailureReason = openFailureReason;
-        PeerDescription = peerDescription;
-    }
 
     /// <summary>对端给的 <c>CHANNEL_OPEN_FAILURE</c> 原因码。</summary>
-    public SshChannelOpenFailureReason? OpenFailureReason { get; }
+    public SshChannelOpenFailureReason? OpenFailureReason { get; } = openFailureReason;
 
     /// <summary>对端给的说明文字。<b>不可信文本</b>，展示时按不可信内容处理。</summary>
-    public string? PeerDescription { get; }
+    public string? PeerDescription { get; } = peerDescription;
 
     /// <summary>
     /// 把一个 <c>CHANNEL_OPEN_FAILURE</c> 翻成一句能照着做事的话。

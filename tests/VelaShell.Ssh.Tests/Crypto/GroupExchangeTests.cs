@@ -120,14 +120,14 @@ public sealed class GroupExchangeTests
             DHStandardGroups.rfc3526_1536.P.ToByteArrayUnsigned(), DHStandardGroups.rfc3526_1536.G.ToByteArrayUnsigned());
 
         Assert.AreEqual(SshFailureReason.NegotiationFailed, failure.Reason);
-        StringAssert.Contains(failure.Message, "1536");
+        Assert.Contains("1536", failure.Message);
     }
 
     /// <summary>
     /// 两个大素数之积（2560 位、奇数、没有小因子）：便宜的检查全过，只有 Miller-Rabin 认得出它是合数（ProtocolError）。
     /// </summary>
     [TestMethod]
-    public async Task p不是素数不接()
+    public async Task P不是素数不接()
     {
         byte[] composite = DHStandardGroups.rfc3526_1536.P.Multiply(DHStandardGroups.rfc2409_1024.P).ToByteArrayUnsigned();
 
@@ -135,7 +135,7 @@ public sealed class GroupExchangeTests
 
         Assert.IsInstanceOfType<SshKeyExchangeException>(failure);
         Assert.AreEqual(SshFailureReason.ProtocolError, failure.Reason);
-        StringAssert.Contains(failure.Message, "不是素数");
+        Assert.Contains("不是素数", failure.Message);
     }
 
     /// <summary>生成元为 1：<c>g^x</c> 恒为 1，共享密钥由对端说了算（ProtocolError）。</summary>
@@ -146,7 +146,7 @@ public sealed class GroupExchangeTests
             DHStandardGroups.rfc3526_3072.P.ToByteArrayUnsigned(), [1]);
 
         Assert.AreEqual(SshFailureReason.ProtocolError, failure.Reason);
-        StringAssert.Contains(failure.Message, "生成元");
+        Assert.Contains("生成元", failure.Message);
     }
 
     /// <summary>重协商同样走群交换：多一轮之后新密钥照样对得上，连接继续可用。</summary>
@@ -194,8 +194,8 @@ public sealed class GroupExchangeTests
             0, 0, 0, 1, 0x02,                                      // mpint g
             0, 0, 0, 1, 0x05, 0, 0, 0, 1, 0x06, 0, 0, 0, 1, 0x07,
         ];
-        CollectionAssert.AreEqual(
+        Assert.AreSequenceEqual(
             System.Security.Cryptography.SHA256.HashData(expectedInput), Compute(new SshGroupExchangeHashInput(2048, 3072, 8192, p, g)));
-        CollectionAssert.AreNotEqual(Compute(null), Compute(new SshGroupExchangeHashInput(2048, 3072, 8192, p, g)));
+        Assert.AreNotSequenceEqual(Compute(null), Compute(new SshGroupExchangeHashInput(2048, 3072, 8192, p, g)));
     }
 }

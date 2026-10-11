@@ -47,16 +47,16 @@ internal static class RenderSimd
         }
         ReadOnlySpan<byte> s = MemoryMarshal.AsBytes(source);
         Span<byte> d = MemoryMarshal.AsBytes(destination);
-        Vector128<uint> alphaMask = Vector128.Create(keep);
+        var alphaMask = Vector128.Create(keep);
         for (int i = 0; i < n; i += 4)
         {
-            Vector128<byte> src = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(s), (nuint)(i * 4));
+            var src = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(s), (nuint)(i * 4));
             if (!mask.IsEmpty)
             {
-                Vector128<uint> m = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(mask), (nuint)i);
+                var m = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(mask), (nuint)i);
                 src = MultiplyDiv255(src, ((m >>> 24) * 0x01010101u).AsByte());
             }
-            Vector128<byte> dst = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(d), (nuint)(i * 4));
+            var dst = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(d), (nuint)(i * 4));
             Vector128<byte> alpha = SpreadAlpha(src);
             Vector128<byte> inv = Vector128<byte>.AllBitsSet - alpha;
             Vector128<byte> blended = (AddScaled(src, dst, inv).AsUInt32() & alphaMask).AsByte();
@@ -77,7 +77,7 @@ internal static class RenderSimd
         int n = Math.Min(mask.Length, destination.Length) & ~3;
         Span<byte> d = MemoryMarshal.AsBytes(destination);
         Vector128<byte> c = Vector128.Create(color).AsByte();
-        Vector128<uint> alphaMask = Vector128.Create(dstAlpha ? 0xFFFFFFFFu : 0x00FFFFFFu);
+        var alphaMask = Vector128.Create(dstAlpha ? 0xFFFFFFFFu : 0x00FFFFFFu);
         for (int i = 0; i < n; i += 4)
         {
             uint m4 = Unsafe.ReadUnaligned<uint>(ref Unsafe.AsRef(in mask[i]));
@@ -87,7 +87,7 @@ internal static class RenderSimd
             }
             // 每个像素的遮罩字节铺满它的四个通道:放进各自的 32 位通道再乘 0x01010101。
             Vector128<byte> m = (Vector128.Create((uint)mask[i], mask[i + 1], mask[i + 2], mask[i + 3]) * 0x01010101u).AsByte();
-            Vector128<byte> dst = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(d), (nuint)(i * 4));
+            var dst = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(d), (nuint)(i * 4));
             Vector128<byte> cm = MultiplyDiv255(c, m);   // alpha 字节上是 a = Div255(αc·m)
             Vector128<byte> inv = Vector128<byte>.AllBitsSet - SpreadAlpha(cm);
             Vector128<byte> blended = (AddScaled(cm, dst, inv).AsUInt32() & alphaMask).AsByte();
@@ -111,17 +111,17 @@ internal static class RenderSimd
         }
         ReadOnlySpan<byte> s = MemoryMarshal.AsBytes(source);
         Span<byte> d = MemoryMarshal.AsBytes(destination);
-        Vector128<uint> keepMask = Vector128.Create(keep);
+        var keepMask = Vector128.Create(keep);
         Vector128<byte> one = Vector128<byte>.AllBitsSet;
         for (int i = 0; i < n; i += 4)
         {
-            Vector128<byte> src = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(s), (nuint)(i * 4));
+            var src = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(s), (nuint)(i * 4));
             if (!mask.IsEmpty)
             {
-                Vector128<uint> m = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(mask), (nuint)i);
+                var m = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(mask), (nuint)i);
                 src = MultiplyDiv255(src, ((m >>> 24) * 0x01010101u).AsByte());
             }
-            Vector128<byte> dst = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(d), (nuint)(i * 4));
+            var dst = Vector128.LoadUnsafe(ref MemoryMarshal.GetReference(d), (nuint)(i * 4));
             // AddScaled 乘 255:Div255(d·255) 恰好是 d,于是 = min(s + d, 255)。
             (AddScaled(src, dst, one).AsUInt32() & keepMask).AsByte().StoreUnsafe(ref MemoryMarshal.GetReference(d), (nuint)(i * 4));
         }
@@ -135,9 +135,9 @@ internal static class RenderSimd
         (Vector128<ushort> aLo, Vector128<ushort> aHi) = Vector128.Widen(a);
         (Vector128<ushort> bLo, Vector128<ushort> bHi) = Vector128.Widen(b);
         (Vector128<ushort> kLo, Vector128<ushort> kHi) = Vector128.Widen(k);
-        Vector128<ushort> max = Vector128.Create((ushort)255);
-        Vector128<ushort> lo = Vector128.Min(aLo + Div255(bLo * kLo), max);
-        Vector128<ushort> hi = Vector128.Min(aHi + Div255(bHi * kHi), max);
+        var max = Vector128.Create((ushort)255);
+        var lo = Vector128.Min(aLo + Div255(bLo * kLo), max);
+        var hi = Vector128.Min(aHi + Div255(bHi * kHi), max);
         return Vector128.Narrow(lo, hi);
     }
 

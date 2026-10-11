@@ -273,7 +273,7 @@ public sealed partial class X11Server
         }
         if (change.Layout != KeyboardLayout)
         {
-            _keyboardLayout = change.Layout;
+            KeyboardLayout = change.Layout;
             PublishXkbRulesNames();
         }
         if (last >= 0)
@@ -1166,7 +1166,7 @@ public sealed partial class X11Server
         UpdateActiveWindow(old, focus);
         GenerateFocusEvents(old, focus, KeyboardGrab is null ? FocusModeNormal : FocusModeWhileGrabbed);
         SyncFocusedSessionClipboard();   // 换到了另一个会话:它那一份剪贴板若比最新的旧,服务端替宿主占有
-        _xim?.Refresh();                 // 宿主的输入法跟着焦点换输入上下文
+        Xim?.Refresh();                 // 宿主的输入法跟着焦点换输入上下文
     }
 
     /// <summary>焦点事件的 mode(协议附录 B「FocusIn」)。</summary>
@@ -1794,7 +1794,7 @@ public sealed partial class X11Server
         });
     }
 
-    private void ChangeKeyboardMapping(XClient c, XRequestReader r)
+    private void ChangeKeyboardMapping(XRequestReader r)
     {
         byte count = r.Data;
         byte first = r.U8();

@@ -21,8 +21,8 @@ public sealed class SshServerBannersTests
         IReadOnlyList<ShellStreamNotice> notices = banners.TakeNotices();
 
         Assert.AreSequenceEqual(
-            new[] { "Authorized use only.", "All activity is logged.", "Your password will expire in 3 days." },
-            notices.Select(n => n.Text).ToArray());
+            ["Authorized use only.", "All activity is logged.", "Your password will expire in 3 days."],
+            [.. notices.Select(n => n.Text)]);
         Assert.DoesNotContain(n => n.IsWarning, notices);
     }
 
@@ -52,7 +52,7 @@ public sealed class SshServerBannersTests
         string text = banners.TakeNotices().Single().Text;
 
         Assert.DoesNotContain(c => char.IsControl(c) || c == '\u202E', text, $"残留控制字符:{text}");
-        StringAssert.Contains(text, "Welcome");
+        Assert.Contains("Welcome", text);
     }
 
     [TestMethod]

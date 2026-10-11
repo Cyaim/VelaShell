@@ -129,14 +129,24 @@ public sealed class ModelsDevCatalog(IPluginContext context)
             int fallbackContext = contextTokens > 0 ? contextTokens : 128000;
             if (own.TryGetValue(id, out ModelSpec? exact))
             {
-                described.Add(exact with { Id = id, ContextTokens = exact.ContextTokens > 0 ? exact.ContextTokens : fallbackContext,
-                    DefaultContextWindow = exact.ContextTokens <= 0 && contextTokens <= 0 });
+                described.Add(exact with
+                {
+                    Id = id,
+                    ContextTokens = exact.ContextTokens > 0 ? exact.ContextTokens : fallbackContext,
+                    DefaultContextWindow = exact.ContextTokens <= 0 && contextTokens <= 0
+                });
                 continue;
             }
             described.Add(FindAnywhere(id) is { } loose
-                ? loose with { Id = id, ContextTokens = loose.ContextTokens > 0 ? loose.ContextTokens : fallbackContext,
+                ? loose with
+                {
+                    Id = id,
+                    ContextTokens = loose.ContextTokens > 0 ? loose.ContextTokens : fallbackContext,
                     DefaultContextWindow = loose.ContextTokens <= 0 && contextTokens <= 0,
-                    InputPrice = 0, OutputPrice = 0, CachedInputPrice = 0 }
+                    InputPrice = 0,
+                    OutputPrice = 0,
+                    CachedInputPrice = 0
+                }
                 : new ModelSpec(id, id, fallbackContext, 0, 0, 0, 0, false,
                     DefaultContextWindow: contextTokens <= 0));
         }
@@ -475,14 +485,14 @@ public sealed class ModelsDevCatalog(IPluginContext context)
         ArgumentNullException.ThrowIfNull(spec);
         ModelSpec? previous = model.LastFetchedSpec ?? (newModel ? spec : null);
         if (previous is null) return;
-        bool identifier = newModel || model.Model == previous!.Id;
-        bool input = newModel || !model.ContextWindowIsManual && model.MaxInputTokens == previous!.ContextTokens
+        bool identifier = newModel || model.Model == previous.Id;
+        bool input = newModel || !model.ContextWindowIsManual && model.MaxInputTokens == previous.ContextTokens
             && (!spec.DefaultContextWindow || model.DefaultContextWindow == true);
-        bool output = newModel || model.MaxTokens == previous!.OutputTokens;
-        bool priceIn = newModel || model.InputPricePerMillion == previous!.InputPrice;
-        bool priceOut = newModel || model.OutputPricePerMillion == previous!.OutputPrice;
-        bool priceCached = newModel || model.CachedInputPricePerMillion == previous!.CachedInputPrice;
-        bool reasoning = newModel || model.SupportsReasoning == previous!.Reasoning;
+        bool output = newModel || model.MaxTokens == previous.OutputTokens;
+        bool priceIn = newModel || model.InputPricePerMillion == previous.InputPrice;
+        bool priceOut = newModel || model.OutputPricePerMillion == previous.OutputPrice;
+        bool priceCached = newModel || model.CachedInputPricePerMillion == previous.CachedInputPrice;
+        bool reasoning = newModel || model.SupportsReasoning == previous.Reasoning;
         if (identifier) model.Model = spec.Id;
         if (input && spec.ContextTokens > 0)
         {
@@ -490,27 +500,35 @@ public sealed class ModelsDevCatalog(IPluginContext context)
             model.MaxInputTokens = spec.ContextTokens;
             if (newModel || changed || !spec.DefaultContextWindow) model.DefaultContextWindow = spec.DefaultContextWindow;
         }
-        else if (newModel && model.MaxInputTokens == 128000) model.DefaultContextWindow = true;
+        else if (newModel && model.MaxInputTokens == 128000)
+        {
+            model.DefaultContextWindow = true;
+        }
+
         if (output && spec.OutputTokens > 0) model.MaxTokens = spec.OutputTokens;
         if (priceIn && spec.InputPrice > 0) model.InputPricePerMillion = spec.InputPrice;
         if (priceOut && spec.OutputPrice > 0) model.OutputPricePerMillion = spec.OutputPrice;
         if (priceCached && spec.CachedInputPrice > 0) model.CachedInputPricePerMillion = spec.CachedInputPrice;
         if (reasoning) model.SupportsReasoning = spec.Reasoning;
-        if (!newModel && (!identifier || model.Model == previous!.Id)
+        if (!newModel && (!identifier || model.Model == previous.Id)
             && (!input || model.MaxInputTokens == previous.ContextTokens)
             && (!input || (model.DefaultContextWindow == true) == previous.DefaultContextWindow)
             && (!output || model.MaxTokens == previous.OutputTokens)
             && (!priceIn || model.InputPricePerMillion == previous.InputPrice)
             && (!priceOut || model.OutputPricePerMillion == previous.OutputPrice)
             && (!priceCached || model.CachedInputPricePerMillion == previous.CachedInputPrice)
-            && (!reasoning || model.SupportsReasoning == previous.Reasoning)) return;
-        model.LastFetchedSpec = new ModelSpec(identifier ? model.Model : previous!.Id, spec.Name,
-            input ? model.MaxInputTokens : previous!.ContextTokens,
-            output ? model.MaxTokens : previous!.OutputTokens,
-            priceIn ? model.InputPricePerMillion : previous!.InputPrice,
-            priceOut ? model.OutputPricePerMillion : previous!.OutputPrice,
-            priceCached ? model.CachedInputPricePerMillion : previous!.CachedInputPrice,
-            reasoning ? model.SupportsReasoning : previous!.Reasoning,
+            && (!reasoning || model.SupportsReasoning == previous.Reasoning))
+        {
+            return;
+        }
+
+        model.LastFetchedSpec = new ModelSpec(identifier ? model.Model : previous.Id, spec.Name,
+            input ? model.MaxInputTokens : previous.ContextTokens,
+            output ? model.MaxTokens : previous.OutputTokens,
+            priceIn ? model.InputPricePerMillion : previous.InputPrice,
+            priceOut ? model.OutputPricePerMillion : previous.OutputPrice,
+            priceCached ? model.CachedInputPricePerMillion : previous.CachedInputPrice,
+            reasoning ? model.SupportsReasoning : previous.Reasoning,
             input ? model.DefaultContextWindow == true : previous.DefaultContextWindow);
     }
 

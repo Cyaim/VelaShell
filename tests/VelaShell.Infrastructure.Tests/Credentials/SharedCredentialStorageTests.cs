@@ -74,7 +74,7 @@ public sealed class SharedCredentialStorageTests : IDisposable
         await repo.SaveAsync(new SharedCredential { Name = "Alpha", Password = "a" });
 
         List<SharedCredential> all = await repo.GetAllAsync();
-        CollectionAssert.AreEqual(new[] { "Alpha", "beta" }, all.Select(c => c.Name).ToArray());
+        Assert.AreSequenceEqual(["Alpha", "beta"], [.. all.Select(c => c.Name)]);
 
         await repo.DeleteAsync(beta.Id);
 

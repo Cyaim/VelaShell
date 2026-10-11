@@ -244,7 +244,7 @@ internal sealed record HttpConnectDialer(SshEndPoint Proxy) : ISshTransportDiale
     }
 
     /// <summary>代理的应答进消息之前：截短，并清掉控制字符（见 <see cref="Diagnostics.PeerText"/>）。</summary>
-    private static string Truncate(string text) => Diagnostics.PeerText.Sanitize(text, 200);
+    private static string Truncate(string text) => PeerText.Sanitize(text, 200);
 }
 
 /// <summary>先吐出一段已经读到的字节，再接着读底层流。</summary>

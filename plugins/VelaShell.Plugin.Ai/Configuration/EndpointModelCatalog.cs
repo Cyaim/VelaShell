@@ -172,11 +172,11 @@ internal static class EndpointModelCatalog
                         && item.TryGetProperty("context_length", out JsonElement length)
                         && length.ValueKind == JsonValueKind.Number && length.TryGetInt32(out int value) && value > 0
                             ? value : 0;
-                    if (!models.TryGetValue(id, out var existing)) models.Add(id, (id, contextTokens));
+                    if (!models.TryGetValue(id, out (string Id, int ContextTokens) existing)) models.Add(id, (id, contextTokens));
                     else if (existing.ContextTokens == 0 && contextTokens > 0) models[id] = (existing.Id, contextTokens);
                 }
             }
-            return models.Values.ToArray();
+            return [.. models.Values];
         }
     }
 

@@ -59,7 +59,7 @@ public sealed class CursorTests
         Assert.AreEqual((2, 2), (image.U16(12), image.U16(14)), "原先一律 1×1 的透明像素");
         Assert.AreEqual((1, 1), (image.U16(16), image.U16(18)), "热点");
         uint[] pixels = [.. Enumerable.Range(0, 4).Select(i => image.U32(32 + (i * 4)))];
-        CollectionAssert.AreEqual(new[] { 0xFFFF0000u, 0xFF0000FFu, 0xFF0000FFu, 0xFFFF0000u }, pixels);
+        Assert.AreSequenceEqual([0xFFFF0000u, 0xFF0000FFu, 0xFF0000FFu, 0xFFFF0000u], pixels);
 
         XMessage named = await c.RequestAsync(xfixes, 25);   // GetCursorImageAndName
         Assert.AreEqual(2, named.U16(12));
@@ -76,7 +76,7 @@ public sealed class CursorTests
     }
 
     [TestMethod]
-    public async Task nil2字体的空白字形光标是隐形指针_别的字体的字形烙成图像_cursor字体照旧按形状()
+    public async Task Nil2字体的空白字形光标是隐形指针_别的字体的字形烙成图像_cursor字体照旧按形状()
     {
         using RecordingHost host = new();
         await using X11Server server = new(host: host);
@@ -112,7 +112,7 @@ public sealed class CursorTests
     }
 
     [TestMethod]
-    public async Task cursor字体的字形光标有真实的位图_GetCursorImage给出_没有对应系统光标的字形交给宿主图像()
+    public async Task Cursor字体的字形光标有真实的位图_GetCursorImage给出_没有对应系统光标的字形交给宿主图像()
     {
         using RecordingHost host = new();
         await using X11Server server = new(host: host);
@@ -148,10 +148,10 @@ public sealed class CursorTests
     }
 
     [TestMethod]
-    public void cursor字体是XOrg的cursor位图字体_字形与掩码成对()
+    public void Cursor字体是XOrg的cursor位图字体_字形与掩码成对()
     {
         XFont font = FontCatalog.Open("cursor")!;
-        Assert.AreEqual(154, font.Glyphs.Count, "cursorfont 的 0–153:偶数是形状、奇数是它的掩码");
+        Assert.HasCount(154, font.Glyphs, "cursorfont 的 0–153:偶数是形状、奇数是它的掩码");
         XGlyph xterm = font.Glyphs[152];
         Assert.AreEqual((7, 14), (xterm.BitmapWidth, xterm.BitmapHeight));
         Assert.IsTrue(xterm.IsSet(3, 5), "I 形的竖线");

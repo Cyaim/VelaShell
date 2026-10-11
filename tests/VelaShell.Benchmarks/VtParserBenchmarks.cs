@@ -39,8 +39,7 @@ public class VtParserBenchmarks
     private byte[] _ansi = [];
     private byte[] _cjk = [];
 
-    /// <summary>终端几何:80×24 是最常见的默认值。</summary>
-    [Params(80)]
+    /// <summary>终端几何:80×24 是最常见的默认值(只测这一种宽度,所以不标 <c>[Params]</c>)。</summary>
     public int Columns { get; set; } = 80;
 
     /// <summary>

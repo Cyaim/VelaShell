@@ -345,7 +345,7 @@ public sealed class ChannelTests
     }
 
     [TestMethod]
-    public async Task stdin积压时远端退出_挂起的写入会返回而不是永远等下去()
+    public async Task Stdin积压时远端退出_挂起的写入会返回而不是永远等下去()
     {
         // 远端不读 stdin（窗口不回补），收到第一个包就退出。此时本端 stdin 管道里还压着
         // 一大截，写入方的 FlushAsync 正卡在背压上 —— 通道关了，它必须被放出来。
@@ -1000,7 +1000,7 @@ public sealed class ChannelTests
             (byte)SshTerminalModeOpcode.Utf8Input, 0, 0, 0, 1,
             (byte)SshTerminalModeOpcode.EndOfOptions,
         ];
-        CollectionAssert.AreEqual(expected, modes.Encode());
+        Assert.AreSequenceEqual(expected, modes.Encode());
     }
 
     /// <summary>窗口策略按值比较（曾经是 class，同样的两个策略比较结果是「不等」）；<c>default</c> 设不进通道选项。</summary>
@@ -1417,7 +1417,7 @@ public sealed class ChannelTests
     /// 曾经它只以通用的 PeerRequest 出现，使用者得自己解载荷。
     /// </summary>
     [TestMethod]
-    public async Task xon_xoff类型化成流控事件()
+    public async Task Xon_xoff类型化成流控事件()
     {
         await using Harness harness = await Harness.StartAsync(new TestChannelScript { XonXoffBeforeExit = [true, false, true], ExitCode = 0 });
         await using SshCommand command = await harness.Connection.ExecuteAsync("流控", cancellationToken: harness.Token);
@@ -1433,7 +1433,7 @@ public sealed class ChannelTests
             }
         }
 
-        Assert.AreSequenceEqual(new[] { true, false, true }, seen.ToArray());
+        Assert.AreSequenceEqual([true, false, true], [.. seen]);
         Assert.IsTrue(command.Channel.ClientMayDoFlowControl);
     }
 
@@ -2083,7 +2083,7 @@ SshProtocolNames.KeepAliveOpenSsh, harness.ChannelServer.Observation.GlobalReque
     {
         string marker = Guid.NewGuid().ToString("N");
         List<Exception> unobserved = [];
-        void handler(object? _, UnobservedTaskExceptionEventArgs e)
+        void OnUnobserved(object? _, UnobservedTaskExceptionEventArgs e)
         {
             if (e.Exception.InnerExceptions.Any(x => x is SshChannelException { PeerDescription: { } said } && said == marker))
             {
@@ -2097,7 +2097,7 @@ SshProtocolNames.KeepAliveOpenSsh, harness.ChannelServer.Observation.GlobalReque
         TaskCompletionSource never = new(TaskCreationOptions.RunContinuationsAsynchronously);
         await using Harness harness = await Harness.StartAsync(new TestChannelScript { HoldOpenConfirmationUntil = never.Task });
 
-        TaskScheduler.UnobservedTaskException += handler;
+        TaskScheduler.UnobservedTaskException += OnUnobserved;
         try
         {
             await CancelThenRejectAsync(harness, marker);
@@ -2109,7 +2109,7 @@ SshProtocolNames.KeepAliveOpenSsh, harness.ChannelServer.Observation.GlobalReque
         }
         finally
         {
-            TaskScheduler.UnobservedTaskException -= handler;
+            TaskScheduler.UnobservedTaskException -= OnUnobserved;
             never.SetResult();
         }
 

@@ -20,14 +20,15 @@ namespace VelaShell.Plugin.Ai.Tests;
 /// </para>
 /// </remarks>
 [TestClass]
-public sealed class ThemeTokenUsageTests
+public sealed partial class ThemeTokenUsageTests
 {
     /// <summary><c>{DynamicResource Key}</c> / <c>{StaticResource Key}</c>。</summary>
-    private static readonly Regex Used = new(@"\{(?:Dynamic|Static)Resource\s+([A-Za-z0-9._]+)\s*\}",
-        RegexOptions.Compiled);
+    [GeneratedRegex(@"\{(?:Dynamic|Static)Resource\s+([A-Za-z0-9._]+)\s*\}")]
+    private static partial Regex Used { get; }
 
     /// <summary>XAML 里的 <c>x:Key="Key"</c>。</summary>
-    private static readonly Regex DefinedInXaml = new(@"x:Key=""([A-Za-z0-9._]+)""", RegexOptions.Compiled);
+    [GeneratedRegex(@"x:Key=""([A-Za-z0-9._]+)""")]
+    private static partial Regex DefinedInXaml { get; }
 
     /// <summary>
     /// C# 里运行时塞进去的键(如 <c>Resources["AiCopyTip"] = …</c>)。
@@ -36,10 +37,27 @@ public sealed class ThemeTokenUsageTests
     /// 本地化的提示文案就是这么给的:XAML 里引用一个键,构造时按当前语言把值填进
     /// <c>Resources</c>。它们同样是"有定义"的键,漏算就会把好代码判成红。
     /// </remarks>
-    private static readonly Regex DefinedInCode = new(@"Resources\[""([A-Za-z0-9._]+)""\]", RegexOptions.Compiled);
+    [GeneratedRegex(@"Resources\[""([A-Za-z0-9._]+)""\]")]
+    private static partial Regex DefinedInCode { get; }
 
     /// <summary>XML 注释。里面的示例代码不算引用。</summary>
-    private static readonly Regex Comments = new("<!--.*?-->", RegexOptions.Compiled | RegexOptions.Singleline);
+    [GeneratedRegex("<!--.*?-->", RegexOptions.Singleline)]
+    private static partial Regex Comments { get; }
+
+    /// <summary>宿主的字号令牌 <c>VelaFontSize*</c>。</summary>
+    [GeneratedRegex(@"\bVelaFontSize[0-9_]+\b")]
+    private static partial Regex FontSizeToken { get; }
+
+    /// <summary>一个 <c>&lt;Button&gt;</c> / <c>&lt;CheckBox&gt;</c> 开始标签(可以跨行)。</summary>
+    [GeneratedRegex(@"<(?:Button|CheckBox)\b[^>]*>", RegexOptions.Singleline)]
+    private static partial Regex ButtonOrCheckBoxTag { get; }
+
+    /// <summary>协作接入页样式表里的那两个 class。</summary>
+    [GeneratedRegex(@"Classes=""(host|primary)""")]
+    private static partial Regex HostOrPrimaryClass { get; }
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace { get; }
 
     /// <summary>从测试程序集往上找到仓库根(带 <c>VelaShell.slnx</c> 的那一层)。</summary>
     /// <remarks>
@@ -164,7 +182,7 @@ public sealed class ThemeTokenUsageTests
                      .Where(f => f.EndsWith(".axaml", StringComparison.Ordinal) || f.EndsWith(".cs", StringComparison.Ordinal)))
         {
             string text = Comments.Replace(File.ReadAllText(file), "");
-            foreach (Match match in Regex.Matches(text, @"\bVelaFontSize[0-9_]+\b"))
+            foreach (Match match in FontSizeToken.Matches(text))
             {
                 string key = match.Value;
                 Assert.Contains(key, defined, $"{Path.GetFileName(file)}: {key} is not a host font token");
@@ -202,10 +220,10 @@ public sealed class ThemeTokenUsageTests
 
         List<string> bare =
         [
-            .. Regex.Matches(text, @"<(?:Button|CheckBox)\b[^>]*>", RegexOptions.Singleline)
+            .. ButtonOrCheckBoxTag.Matches(text)
                     .Select(m => m.Value)
-                    .Where(e => !Regex.IsMatch(e, @"Classes=""(host|primary)"""))
-                    .Select(e => Regex.Replace(e, @"\s+", " ").Trim())
+                    .Where(e => !HostOrPrimaryClass.IsMatch(e))
+                    .Select(e => Whitespace.Replace(e, " ").Trim())
         ];
 
         Assert.IsEmpty(bare,

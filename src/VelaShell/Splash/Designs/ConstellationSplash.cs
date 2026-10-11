@@ -76,30 +76,31 @@ internal sealed class ConstellationSplash : SplashDesign
             {
                 continue;
             }
-            var from = Stars[k];
-            var to = Stars[(k + 1) % n];
-            canvas.DrawLine(from.X, from.Y,
-                            (float)(from.X + (to.X - from.X) * part),
-                            (float)(from.Y + (to.Y - from.Y) * part), _line);
+
+            (float fromX, float fromY, _, _, _) = Stars[k];
+            (float toX, float toY, _, _, _) = Stars[(k + 1) % n];
+            canvas.DrawLine(fromX, fromY,
+                            (float)(fromX + (toX - fromX) * part),
+                            (float)(fromY + (toY - fromY) * part), _line);
         }
 
         // 主星:进度越过它的门槛后在几十毫秒内亮起(半径、颜色、光晕一起过渡),亮了再标名字。
         for (int k = 0; k < n; k++)
         {
-            var star = Stars[k];
+            (float x, float y, string name, float dx, float dy) = Stars[k];
             double lit = frame.IsDone ? 1 : Math.Clamp((progress - (double)k / n) * n * 4 + (k == 0 ? 1 : 0), 0, 1);
             if (lit > 0)
             {
                 _glow.Color = WithOpacity(Palette.Accent, 0.55 * lit);
-                canvas.DrawCircle(star.X, star.Y, 5, _glow);
+                canvas.DrawCircle(x, y, 5, _glow);
                 Fill.Color = WithOpacity(Palette.Accent, (frame.IsDone ? 0.3 : 0.18) * lit);
-                canvas.DrawCircle(star.X, star.Y, 7.5f, Fill);
+                canvas.DrawCircle(x, y, 7.5f, Fill);
             }
             Fill.Color = Mix(Palette.TextMuted, Palette.Accent, lit);
-            canvas.DrawCircle(star.X, star.Y, (float)(2 + 1.5 * lit), Fill);
+            canvas.DrawCircle(x, y, (float)(2 + 1.5 * lit), Fill);
             if (lit > 0)
             {
-                Resources.Mono.Draw(canvas, star.Name, star.X + star.Dx, star.Y + star.Dy, 10,
+                Resources.Mono.Draw(canvas, name, x + dx, y + dy, 10,
                                     WithOpacity(Palette.TextTertiary, 0.9 * lit), lineHeight: 13);
             }
         }

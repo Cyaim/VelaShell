@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
 using VelaShell.Plugin.Ai.Configuration;
-using VelaShell.PluginSdk.Testing;
 using VelaShell.PluginSdk.Storage;
+using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
@@ -20,7 +20,9 @@ public sealed class AiSettingsStoreTests
         using var failing = new ErrorStub(System.Net.HttpStatusCode.ServiceUnavailable);
         var provider = new AiProvider
         {
-            BaseUrl = failing.BaseUrl, DefaultProtocol = protocol, Models = [new AiModelConfig { Model = "m" }]
+            BaseUrl = failing.BaseUrl,
+            DefaultProtocol = protocol,
+            Models = [new AiModelConfig { Model = "m" }]
         };
         var settings = new AiSettings { Providers = [provider] };
         var store = new AiSettingsStore(context);
@@ -35,7 +37,7 @@ public sealed class AiSettingsStoreTests
             await Assert.ThrowsAsync<Exception>(() => oneShot.GetResponseAsync("hi"));
         }
         int oneShotRequests = failing.Requests;
-        Assert.IsTrue(oneShotRequests > 1, $"一次性请求应由 SDK 重试;实际 {oneShotRequests} 次");
+        Assert.IsGreaterThan(1, oneShotRequests, $"一次性请求应由 SDK 重试;实际 {oneShotRequests} 次");
 
         // 聊天回路与逐槽探活自己按槽计数:同一个池子上关掉 SDK 隐式重试,一次失败只打一次 HTTP
         using (IChatClient counted = store.CreateClient(model, ProviderCredential.Key("key-a"), callerCountsRetries: true))
@@ -267,9 +269,14 @@ public sealed class AiSettingsStoreTests
         bool subscription = operation is "create-oauth" or "relogin" or "tokens" or "clear-tokens";
         var model = new AiModelConfig { Model = "old-model", HasOwnApiKey = operation is "model-form" or "delete-model" or "delete-model-token" };
         string slot = Guid.NewGuid().ToString("N");
-        var provider = new AiProvider { BaseUrl = oldHost.BaseUrl, Models = [model], AdditionalApiKeyIds = [slot],
+        var provider = new AiProvider
+        {
+            BaseUrl = oldHost.BaseUrl,
+            Models = [model],
+            AdditionalApiKeyIds = [slot],
             Auth = subscription ? AuthMethod.Subscription : AuthMethod.ApiKey,
-            OAuth = subscription ? new OAuthConfig { Credential = OAuthCredential.AccessToken } : null };
+            OAuth = subscription ? new OAuthConfig { Credential = OAuthCredential.AccessToken } : null
+        };
         var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
         await store.SaveAsync(settings);
         await context.Secrets.SetAsync("apikey:" + provider.Id, "primary-old");
@@ -284,8 +291,13 @@ public sealed class AiSettingsStoreTests
         string expected = System.Text.Json.JsonSerializer.Serialize(provider);
         AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
         draft.BaseUrl = newHost.BaseUrl;
-        var created = new AiProvider { BaseUrl = newHost.BaseUrl, Models = [new AiModelConfig { Model = "new-model" }],
-            Auth = subscription ? AuthMethod.Subscription : AuthMethod.ApiKey, OAuth = subscription ? new OAuthConfig() : null };
+        var created = new AiProvider
+        {
+            BaseUrl = newHost.BaseUrl,
+            Models = [new AiModelConfig { Model = "new-model" }],
+            Auth = subscription ? AuthMethod.Subscription : AuthMethod.ApiKey,
+            OAuth = subscription ? new OAuthConfig() : null
+        };
         var newTokens = new OAuthTokens { AccessToken = "token-new", AccountId = "new-account" };
         string modelExpected = System.Text.Json.JsonSerializer.Serialize(model);
         AiModelConfig modelDraft = System.Text.Json.JsonSerializer.Deserialize<AiModelConfig>(modelExpected)!;
@@ -321,9 +333,14 @@ public sealed class AiSettingsStoreTests
         Assert.IsNull(await context.Secrets.GetAsync("apikey:" + created.Id));
         Assert.IsNull(await context.Secrets.GetAsync("oauth:" + created.Id));
         foreach (string name in secrets.MutationNames)
+        {
             if (name != "apikey:" + provider.Id && name != "apikey:" + model.Id
                 && name != "apikey:" + slot && name != "oauth:" + provider.Id && name != "oauth:" + model.Id)
+            {
                 Assert.IsNull(await context.Secrets.GetAsync(name), "新增槽或账号失败不能留下未提交机密");
+            }
+        }
+
         Assert.AreEqual("primary-old", await new AiSettingsStore(context).GetApiKeyAsync(provider.Id));
         Assert.AreEqual("token-old", (await new AiSettingsStore(context).GetTokensAsync(provider.Id))?.AccessToken);
         Assert.AreEqual(0L, store.ProviderConfigurationVersion(provider));
@@ -340,7 +357,7 @@ public sealed class AiSettingsStoreTests
     {
         public bool FailNextMutation { get; set; }
         public int SkipMutationsBeforeFailure { get; set; }
-        public HashSet<string> MutationNames { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> MutationNames { get; } = [with(StringComparer.Ordinal)];
         public int Mutations { get; private set; }
         public Task<string?> GetAsync(string name, CancellationToken cancellationToken = default) => inner.GetAsync(name, cancellationToken);
         public async Task SetAsync(string name, string value, CancellationToken cancellationToken = default)
@@ -585,7 +602,9 @@ public sealed class AiSettingsStoreTests
         var remaining = new AiProvider { Models = [new AiModelConfig { Model = "remaining" }] };
         var live = new AiSettings
         {
-            Providers = [provider, remaining], ActiveModelId = model.Id, ActiveProviderId = provider.Id,
+            Providers = [provider, remaining],
+            ActiveModelId = model.Id,
+            ActiveProviderId = provider.Id,
             FailoverChain = [new FailoverEntry { ModelId = model.Id }, new FailoverEntry { ModelId = remaining.Models[0].Id }]
         };
         await store.AddProviderApiKeyAsync(live, provider, "primary");
@@ -615,7 +634,7 @@ public sealed class AiSettingsStoreTests
         Assert.AreSame(model, provider.Models[0]);
         Assert.AreEqual(epoch, store.ProviderConfigurationVersion(provider));
         Assert.AreEqual(login, store.TokenLoginVersion(provider.Id));
-        foreach (var original in originals) Assert.AreEqual(original.Value, await context.Secrets.GetAsync(original.Key), original.Key);
+        foreach (KeyValuePair<string, string?> original in originals) Assert.AreEqual(original.Value, await context.Secrets.GetAsync(original.Key), original.Key);
         Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id));
         Assert.AreEqual("supplementary", await store.GetApiKeyAsync(extra));
         Assert.AreEqual("model-key", await store.GetApiKeyAsync(model.Id));
@@ -881,16 +900,16 @@ public sealed class AiSettingsStoreTests
         await store.AddProviderApiKeyAsync(settings, provider, "key-a");
         string selectedId = await store.AddProviderApiKeyAsync(settings, provider, "key-b");
         ResolvedModel target = settings.FindModel(provider.Models[0].Id)!;
-        var selected = await store.ResolveCredentialWithKeyIdAsync(target, keyId: selectedId);
+        (ProviderCredential selectedCredential, _) = await store.ResolveCredentialWithKeyIdAsync(target, keyId: selectedId);
         long epoch = store.ProviderConfigurationVersion(provider), selection = provider.ActiveApiKeySelectionEpoch;
         provider.ActiveApiKeyId = selectedId;
         provider.BalanceApiKeys = true;
         await store.SaveAsync(settings);
         Assert.AreEqual(epoch, store.ProviderConfigurationVersion(provider), "成功粘槽不能使该轮已固定凭据的正文和建议失效");
         Assert.AreNotEqual(selection, provider.ActiveApiKeySelectionEpoch, "选槽并发仍由独立代际裁决");
-        var checkedCredential = await store.ResolveCredentialWithKeyIdAsync(target, keyId: selectedId);
-        Assert.AreEqual(selected.Credential.Value, checkedCredential.Credential.Value);
-        using IChatClient client = store.CreateClient(target, checkedCredential.Credential);
+        (ProviderCredential checkedCredential, _) = await store.ResolveCredentialWithKeyIdAsync(target, keyId: selectedId);
+        Assert.AreEqual(selectedCredential.Value, checkedCredential.Value);
+        using IChatClient client = store.CreateClient(target, checkedCredential);
         await foreach (ChatResponseUpdate _ in client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "fixed-slot-follow-up")])) { }
         Assert.AreEqual("Bearer key-b", host.Authorizations.Single());
         Assert.Contains("fixed-slot-follow-up", host.Requests.Single());
@@ -910,7 +929,8 @@ public sealed class AiSettingsStoreTests
         var store = new AiSettingsStore(context);
         var provider = new AiProvider
         {
-            BaseUrl = host.BaseUrl, Auth = AuthMethod.Subscription,
+            BaseUrl = host.BaseUrl,
+            Auth = AuthMethod.Subscription,
             OAuth = new OAuthConfig { Credential = OAuthCredential.AccessToken, ExtraHeaders = "chatgpt-account-id: {account_id}" },
             Models = [new AiModelConfig { Model = "m" }]
         };
@@ -963,7 +983,9 @@ public sealed class AiSettingsStoreTests
         await store.SaveAsync(settings);
         Assert.AreEqual(0L, store.ProviderConfigurationVersion(provider), "名字、价格、活跃模型和面板设置不是请求配置");
         if (materialise)
+        {
             ModelsDevCatalog.Materialise(provider, [new ModelSpec("m", "模型显示名", 8000, 4000, 3, 4, 1, false)]);
+        }
         else
         {
             model.MaxTokens = 4000;
@@ -1029,7 +1051,8 @@ public sealed class AiSettingsStoreTests
         AiSettings live = await store.LoadAsync();
         var draft = new AiProvider
         {
-            BaseUrl = "https://custom.example", Models = [new AiModelConfig { Model = "m" }],
+            BaseUrl = "https://custom.example",
+            Models = [new AiModelConfig { Model = "m" }],
             Auth = subscription ? AuthMethod.Subscription : AuthMethod.ApiKey,
             OAuth = subscription ? new OAuthConfig { TokenUrl = "https://issuer.example/token" } : null
         };
@@ -1064,7 +1087,9 @@ public sealed class AiSettingsStoreTests
         var store = new AiSettingsStore(context);
         var provider = new AiProvider
         {
-            Name = "old account", BaseUrl = "https://old.example", Auth = AuthMethod.Subscription,
+            Name = "old account",
+            BaseUrl = "https://old.example",
+            Auth = AuthMethod.Subscription,
             OAuth = new OAuthConfig { TokenUrl = "https://issuer.example/token" },
             Models = [new AiModelConfig { Model = "m" }]
         };
@@ -1174,7 +1199,7 @@ public sealed class AiSettingsStoreTests
         Assert.AreEqual("确认后再保存", saved.SystemPrompt);
         Assert.AreEqual(66, saved.PanelWidthPercent);
         Assert.AreEqual(98765, saved.WebSearch.MaxFetchChars);
-        CollectionAssert.AreEqual(new[] { slot }, saved.Providers[0].AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([slot], saved.Providers[0].AdditionalApiKeyIds);
     }
 
     [TestMethod]
@@ -1188,7 +1213,8 @@ public sealed class AiSettingsStoreTests
         AiSettings live = await store.LoadAsync();
         var draft = new AiProvider
         {
-            BaseUrl = "https://custom.example", Models = [new AiModelConfig { Model = "m" }],
+            BaseUrl = "https://custom.example",
+            Models = [new AiModelConfig { Model = "m" }],
             Auth = subscription ? AuthMethod.Subscription : AuthMethod.ApiKey,
             OAuth = subscription ? new OAuthConfig { TokenUrl = "https://issuer.example/token" } : null
         };
@@ -1256,7 +1282,7 @@ public sealed class AiSettingsStoreTests
         await store.SaveGlobalSettingsAsync(settings, draft);
         Assert.AreSame(provider, settings.Providers[0]);
         Assert.AreEqual(4321, settings.WebSearch.MaxFetchChars);
-        CollectionAssert.AreEqual(new[] { extra }, provider.AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([extra], provider.AdditionalApiKeyIds);
         Assert.AreEqual(provider.Models[0].Id, settings.FailoverChain.Single().ModelId);
         draft.WebSearch.AllowedPrivateHosts = "";
         draft.FailoverChain.Clear();
@@ -1265,7 +1291,7 @@ public sealed class AiSettingsStoreTests
         await store.SaveAsync(settings);
         AiSettings saved = await store.LoadAsync();
         Assert.AreEqual(provider.BaseUrl, saved.Providers[0].BaseUrl);
-        CollectionAssert.AreEqual(new[] { extra }, saved.Providers[0].AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([extra], saved.Providers[0].AdditionalApiKeyIds);
         Assert.AreEqual(4321, saved.WebSearch.MaxFetchChars);
         Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id));
         Assert.AreEqual("extra", await store.GetApiKeyAsync(extra));
@@ -1302,7 +1328,7 @@ public sealed class AiSettingsStoreTests
         settings.SystemPrompt = "并发草稿不能丢失";
         storage.Release.TrySetResult();
         await Assert.ThrowsAsync<AiSettingsStore.ApiKeySlotChangedException>(() => pending);
-        CollectionAssert.AreEqual(new[] { existing }, provider.AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([existing], provider.AdditionalApiKeyIds);
         Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id));
         Assert.AreEqual("extra", await store.GetApiKeyAsync(existing));
         await Commit();
@@ -1314,7 +1340,7 @@ public sealed class AiSettingsStoreTests
         Assert.AreEqual(operation == 2 ? "https://draft.example" : "https://original.example", saved.Providers[0].BaseUrl);
         Assert.AreEqual(operation == 2 ? "updated" : "primary", await store.GetApiKeyAsync(provider.Id));
         Assert.AreEqual(operation == 1 ? null : "extra", await store.GetApiKeyAsync(existing));
-        Assert.AreEqual(operation == 0 ? 2 : operation == 1 ? 0 : 1, saved.Providers[0].AdditionalApiKeyIds.Count);
+        Assert.HasCount(operation == 0 ? 2 : operation == 1 ? 0 : 1, saved.Providers[0].AdditionalApiKeyIds);
     }
 
     [TestMethod]
@@ -1354,14 +1380,14 @@ public sealed class AiSettingsStoreTests
         stale.SystemPrompt = "保留未提交草稿";
         await Assert.ThrowsAsync<AiSettingsStore.ApiKeySlotChangedException>(() => storeB.SaveAsync(stale));
         Assert.AreEqual("保留未提交草稿", stale.SystemPrompt);
-        Assert.AreEqual(remove ? 1 : 0, stale.Providers[0].AdditionalApiKeyIds.Count);
+        Assert.HasCount(remove ? 1 : 0, stale.Providers[0].AdditionalApiKeyIds);
         string promptDraft = stale.SystemPrompt!;
         AiProvider kept = stale.Providers[0];
         await storeB.ReloadIntoAsync(stale);
         AiSettings saved = stale;
         Assert.AreSame(kept, saved.Providers[0]);
         Assert.AreEqual(63, saved.PanelWidthPercent);
-        Assert.AreEqual(remove ? 0 : 1, saved.Providers[0].AdditionalApiKeyIds.Count);
+        Assert.HasCount(remove ? 0 : 1, saved.Providers[0].AdditionalApiKeyIds);
         Assert.AreEqual(remove ? null : "extra", await storeB.GetApiKeyAsync(slot!));
         saved.SystemPrompt = promptDraft;
         await storeB.SaveAsync(saved);
@@ -1494,7 +1520,7 @@ public sealed class AiSettingsStoreTests
         string extra = await store.AddProviderApiKeyAsync(settings, provider, "extra");
         provider.ActiveApiKeyId = extra;
         await store.SaveAsync(settings);
-        var chatStore = secondStore ? new AiSettingsStore(context) : store;
+        AiSettingsStore chatStore = secondStore ? new AiSettingsStore(context) : store;
         storage.Hold = true;
         if (balanceFirst) provider.BalanceApiKeys = true;
         else settings.PanelWidthPercent = 61;
@@ -1511,7 +1537,7 @@ public sealed class AiSettingsStoreTests
         Assert.AreEqual(61, persisted.PanelWidthPercent, "迟到的均摊快照不能覆盖聊天活字段");
         Assert.AreEqual(settings.ActiveModelId, persisted.ActiveModelId);
         Assert.AreEqual(extra, persisted.Providers[0].ActiveApiKeyId);
-        CollectionAssert.AreEqual(new[] { extra }, persisted.Providers[0].AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([extra], persisted.Providers[0].AdditionalApiKeyIds);
         Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id));
         Assert.AreEqual("extra", await store.GetApiKeyAsync(extra));
     }
@@ -1540,8 +1566,7 @@ public sealed class AiSettingsStoreTests
 
         AiProvider persisted = (await new AiSettingsStore(context).LoadAsync()).Providers[0];
         Assert.AreEqual(provider.BaseUrl, persisted.BaseUrl, "较旧的普通保存不能覆盖成功提交的地址");
-        CollectionAssert.AreEqual(provider.AdditionalApiKeyIds, persisted.AdditionalApiKeyIds,
-            "较旧的普通保存不能清掉已成功提交的补充槽");
+        Assert.AreSequenceEqual(provider.AdditionalApiKeyIds, persisted.AdditionalApiKeyIds, "较旧的普通保存不能清掉已成功提交的补充槽");
         if (providerForm)
         {
             Assert.AreEqual("https://updated.example", persisted.BaseUrl);
@@ -1577,7 +1602,7 @@ public sealed class AiSettingsStoreTests
         await concurrent;
         await Assert.ThrowsAsync<IOException>(() => pending);
         AiSettings persisted = await store.LoadAsync();
-        CollectionAssert.AreEqual(new[] { existing }, persisted.Providers[0].AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([existing], persisted.Providers[0].AdditionalApiKeyIds);
         Assert.AreEqual("extra", await store.GetApiKeyAsync(existing));
         Assert.AreEqual("concurrent global save", persisted.SystemPrompt);
     }
@@ -1621,7 +1646,7 @@ public sealed class AiSettingsStoreTests
         await Assert.ThrowsAsync<AiSettingsStore.ApiKeySlotChangedException>(() =>
             store.AddProviderApiKeyAsync(secondPanel, secondPanel.Providers[0], "stale-panel-key"));
         AiSettings saved = await store.LoadAsync();
-        CollectionAssert.AreEqual(new[] { added }, saved.Providers[0].AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([added], saved.Providers[0].AdditionalApiKeyIds);
         Assert.AreEqual("first-panel-key", await store.GetApiKeyAsync(added));
         Assert.IsEmpty(secondPanel.Providers[0].AdditionalApiKeyIds);
     }
@@ -1685,7 +1710,7 @@ public sealed class AiSettingsStoreTests
         await Assert.ThrowsAsync<IOException>(() => store.ReplaceProviderApiKeyAsync(settings, provider, b, "new"));
         await Assert.ThrowsAsync<IOException>(() => store.RemoveProviderApiKeyAsync(settings, provider, b));
         await Assert.ThrowsAsync<IOException>(() => store.RemoveProviderApiKeyAsync(settings, provider, provider.Id));
-        CollectionAssert.AreEqual(new[] { b, c }, provider.AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([b, c], provider.AdditionalApiKeyIds);
         Assert.AreEqual(b, provider.ActiveApiKeyId);
         Assert.AreEqual("a", await store.GetApiKeyAsync(provider.Id));
         Assert.AreEqual("b", await new AiSettingsStore(context).GetApiKeyAsync(b));
@@ -1754,7 +1779,7 @@ public sealed class AiSettingsStoreTests
         provider.ActiveApiKeyId = extra;
         await store.SaveAsync(settings);
         var model = new ResolvedModel(provider, config);
-        var selected = await store.ResolveCredentialWithKeyIdAsync(model);
+        (ProviderCredential Credential, string? KeyId) selected = await store.ResolveCredentialWithKeyIdAsync(model);
         Assert.AreEqual(extra, selected.KeyId);
         Assert.AreEqual("additional", selected.Credential.Value);
         await store.SetApiKeyAsync(other.Id, "must-not-leak");
@@ -1818,7 +1843,7 @@ public sealed class AiSettingsStoreTests
         Assert.DoesNotContain("key-b-new", json.GetRawText());
         await store.RemoveProviderApiKeyAsync(settings, provider, b);
         Assert.IsNull(provider.ActiveApiKeyId);
-        CollectionAssert.AreEqual(new[] { c }, provider.AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([c], provider.AdditionalApiKeyIds);
         Assert.IsNull(await store.GetApiKeyAsync(b));
         await store.RemoveProviderApiKeyAsync(settings, provider, provider.Id);
         Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
@@ -2020,7 +2045,7 @@ public sealed class AiSettingsStoreTests
         await store.SaveAsync(loaded).WaitAsync(TimeSpan.FromSeconds(15));
         AiSettings afterEdit = await store.LoadAsync();
         Assert.AreEqual("迁移后普通保存", afterEdit.SystemPrompt);
-        CollectionAssert.AreEqual(new[] { added }, afterEdit.Providers[0].AdditionalApiKeyIds);
+        Assert.AreSequenceEqual([added], afterEdit.Providers[0].AdditionalApiKeyIds);
         Assert.AreEqual("migration-extra", await store.GetApiKeyAsync(added));
     }
 

@@ -47,10 +47,10 @@ public sealed class DiagnosticsTests
         Assert.AreEqual(3, (await c.NextAsync(m => m.IsError)).Detail);
         await c.SyncAsync();
 
-        Assert.IsTrue(seen.Contains(("velashell.xserver.connections.refused", 1.0, "authorization")), "被拒的连接");
-        Assert.IsTrue(seen.Contains(("velashell.xserver.clients.active", 1.0, null)), "连着的客户端");
-        Assert.IsTrue(seen.Contains(("velashell.xserver.protocol.errors", 1.0, "Window")), "协议错误");
-        Assert.IsTrue(seen.Any(m => m.Name == "velashell.xserver.work.duration" && m.Value >= 0), "每项工作的耗时");
+        Assert.Contains(("velashell.xserver.connections.refused", 1.0, (string?)"authorization"), seen, "被拒的连接");
+        Assert.Contains(("velashell.xserver.clients.active", 1.0, null), seen, "连着的客户端");
+        Assert.Contains(("velashell.xserver.protocol.errors", 1.0, (string?)"Window"), seen, "协议错误");
+        Assert.Contains(m => m.Name == "velashell.xserver.work.duration" && m.Value >= 0, seen, "每项工作的耗时");
     }
 
     /// <summary>
@@ -73,9 +73,9 @@ public sealed class DiagnosticsTests
         {
             await Task.Delay(50);
         }
-        Assert.IsTrue(log.Any(line => line.StartsWith("watchdog: host or timer", StringComparison.Ordinal)), "还在卡着的时候就记了:" + string.Join(" | ", log));
+        Assert.Contains(line => line.StartsWith("watchdog: host or timer", StringComparison.Ordinal), log, "还在卡着的时候就记了:" + string.Join(" | ", log));
         await c.SyncAsync();   // 等它做完
-        Assert.AreEqual(1, log.Count(line => line.StartsWith("watchdog:", StringComparison.Ordinal)), "同一项只记一次");
-        Assert.IsTrue(seen.Contains(("velashell.xserver.work.stalled", 1.0, null)), "计入仪表");
+        Assert.ContainsSingle(line => line.StartsWith("watchdog:", StringComparison.Ordinal), log, "同一项只记一次");
+        Assert.Contains(("velashell.xserver.work.stalled", 1.0, null), seen, "计入仪表");
     }
 }

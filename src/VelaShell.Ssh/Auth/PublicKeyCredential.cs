@@ -17,23 +17,18 @@ namespace VelaShell.Ssh.Auth;
 /// 私钥从哪来由 <see cref="ISshSigner"/> 决定：文件、ssh-agent、PKCS#11、HSM、
 /// 云密钥服务 —— <b>私钥可以从不进程内</b>。
 /// </remarks>
-public sealed class PublicKeyCredential : SshCredential
+/// <remarks>用一个签名器构造。</remarks>
+/// <param name="signer">签名器。</param>
+/// <param name="label">给使用者看的标签（如私钥文件路径）。</param>
+public sealed class PublicKeyCredential(ISshSigner signer, string? label = null) : SshCredential
 {
-    /// <summary>用一个签名器构造。</summary>
-    /// <param name="signer">签名器。</param>
-    /// <param name="label">给使用者看的标签（如私钥文件路径）。</param>
-    public PublicKeyCredential(ISshSigner signer, string? label = null)
-    {
-        Signer = signer ?? throw new ArgumentNullException(nameof(signer));
-        Label = label ?? $"publickey ({signer.PublicKey.KeyType})";
-    }
 
     /// <inheritdoc />
     public override string MethodName => SshProtocolNames.AuthPublicKey;
 
     /// <inheritdoc />
-    public override string Label { get; }
+    public override string Label { get; } = label ?? $"publickey ({signer.PublicKey.KeyType})";
 
     /// <summary>签名器。</summary>
-    public ISshSigner Signer { get; }
+    public ISshSigner Signer { get; } = signer ?? throw new ArgumentNullException(nameof(signer));
 }

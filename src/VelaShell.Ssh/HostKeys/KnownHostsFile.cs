@@ -459,7 +459,7 @@ public static class KnownHostsFile
         if (!IsRecordableHost(host))
         {
             throw new ArgumentException(
-                $"主机名 {Diagnostics.PeerText.Sanitize(host)} 里有 known_hosts 里另有含义的字符（, * ? ! [ ] # 空白、控制字符，或开头的 @ |），" +
+                $"主机名 {PeerText.Sanitize(host)} 里有 known_hosts 里另有含义的字符（, * ? ! [ ] # 空白、控制字符，或开头的 @ |），" +
                 "写进去这一行的意思就变了。", nameof(host));
         }
 

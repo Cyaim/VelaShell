@@ -520,7 +520,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
     private List<SessionProfile> MultiSelectionProfiles() =>
     [
         .. _multiSelection
-            .OrderBy(node => Rows.IndexOf(node))
+            .OrderBy(Rows.IndexOf)
             .Select(node => _sessionCache.GetValueOrDefault(node.Id))
             .OfType<SessionProfile>()
     ];
@@ -1431,7 +1431,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
     {
         try
         {
-            StringComparer natural = StringComparer.Create(System.Globalization.CultureInfo.CurrentCulture,
+            var natural = StringComparer.Create(System.Globalization.CultureInfo.CurrentCulture,
                 System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.NumericOrdering);
             // 有的平台创建时不报、比较时才报:先比一次,别让排序做到一半抛出来。
             _ = natural.Compare("2", "10");

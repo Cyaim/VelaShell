@@ -21,14 +21,10 @@ namespace VelaShell.Ssh.Forwarding;
 /// <see cref="SshFailureReason.LimitExceeded"/>、<see cref="SshFailureReason.ProtocolError"/>。
 /// </para>
 /// </remarks>
-public sealed class SshForwardException : SshException
+/// <remarks>创建一个转发异常。</remarks>
+/// <param name="reason">失败的分类。</param>
+/// <param name="message">诊断消息。</param>
+/// <param name="innerException">内部异常。</param>
+public sealed class SshForwardException(SshFailureReason reason, string message, Exception? innerException = null) : SshException(reason, SshPhase.Open, message, innerException)
 {
-    /// <summary>创建一个转发异常。</summary>
-    /// <param name="reason">失败的分类。</param>
-    /// <param name="message">诊断消息。</param>
-    /// <param name="innerException">内部异常。</param>
-    public SshForwardException(SshFailureReason reason, string message, Exception? innerException = null)
-        : base(reason, SshPhase.Open, message, innerException)
-    {
-    }
 }

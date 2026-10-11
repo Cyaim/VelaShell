@@ -5,10 +5,9 @@ using Avalonia.Controls;
 using Avalonia.VisualTree;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
-using VelaShell.PluginSdk;
-using VelaShell.PluginSdk.Testing;
 using VelaShell.PluginSdk.Secrets;
 using VelaShell.PluginSdk.Storage;
+using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
@@ -36,7 +35,7 @@ public sealed partial class ChatPanelViewUiTests
             provider.Models[0].MaxInputTokens = 128000;
             provider.Models[0].DefaultContextWindow = defaultWindow;
             await new AiSettingsStore(context).SaveAsync(new AiSettings
-                { Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false });
+            { Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
@@ -48,7 +47,7 @@ public sealed partial class ChatPanelViewUiTests
                 else if (defaultWindow is null) Assert.Contains(beforeLoc["ContextWindowUnverifiedHint"], before);
                 else Assert.DoesNotContain(beforeLoc["ContextWindowDefaultHint"], before);
                 Assert.AreEqual(defaultWindow == false ? "" : beforeLoc[defaultWindow == true ? "ContextWindowDefaultHint" : "ContextWindowUnverifiedHint"],
-                    Avalonia.Automation.AutomationProperties.GetHelpText(modelPicker));
+                    AutomationProperties.GetHelpText(modelPicker));
                 panel.SendExternal("show context usage");
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                     && (ToolTip.GetTip(Find<TextBlock>(panel, "UsageText"))?.ToString() ?? "").Contains("Conversation total: in 5 / out 2")));
@@ -79,7 +78,8 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("pool", endpoint.BaseUrl, "m");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
                 FailoverChain = [new() { ModelId = provider.Models[0].Id }]
             });
             await store.SetApiKeyAsync(provider.Id, "old-key");
@@ -98,7 +98,7 @@ public sealed partial class ChatPanelViewUiTests
                 GlobalSettingsView view = await OpenGlobalViewAsync(context, panel);
                 host = Host(view);
                 if (!beforeWindow) await otherStore.SetApiKeyAsync(provider.Id, "new-key");
-                Assert.IsTrue(store.ProviderConfigurationVersion(liveProvider) > requestVersion,
+                Assert.IsGreaterThan(requestVersion, store.ProviderConfigurationVersion(liveProvider),
                     "直接写 Key 在重载前已推进活对象代次");
                 // 纯显示刷新不得提前认可新 Key 的代次、吞掉父健康表仍持有的旧失败。
                 typeof(ChatPanelView).GetMethod("RefreshProviderViews",
@@ -158,7 +158,8 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider third = StubProvider("C", c.BaseUrl, "c");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second, third], ActiveModelId = first.Models[0].Id,
+                Providers = [first, second, third],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = [new() { ModelId = first.Models[0].Id }, new() { ModelId = second.Models[0].Id }]
             });
             await store.SetApiKeyAsync(first.Id, "key-a");
@@ -206,12 +207,16 @@ public sealed partial class ChatPanelViewUiTests
                     "挂起A期间链已替换为C，A返回不能再向旧链B发真实付费探活");
                 Assert.IsEmpty(c.Requests, "回载新链不是用户请求探测新链");
                 Assert.IsTrue(health.IsCooling(third.Models[0].Id), "旧批次不能改写新链C的健康证据");
-                if (!completed && changeChain) Assert.IsTrue(health.IsCooling(first.Models[0].Id),
+                if (!completed && changeChain)
+                {
+                    Assert.IsTrue(health.IsCooling(first.Models[0].Id),
                     "取消后的迟到A成功也不能发布旧Observation");
+                }
+
                 Assert.AreEqual(changeChain ? "" : loc.F("FailoverProbeDone", 2, 0), summary.Text);
                 var results = (System.Collections.IDictionary)typeof(GlobalSettingsView).GetField("_probeResults",
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
-                Assert.AreEqual(changeChain ? 0 : 2, results.Count);
+                Assert.HasCount(changeChain ? 0 : 2, results);
             }
             finally { a.Release(); host?.Close(); panel.Detach(); window.Close(); }
         });
@@ -235,8 +240,10 @@ public sealed partial class ChatPanelViewUiTests
             provider.Models.Add(new AiModelConfig { Model = "m2" });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
-                SystemPrompt = "original prompt", FailoverChain = [new() { ModelId = provider.Models[0].Id }]
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SystemPrompt = "original prompt",
+                FailoverChain = [new() { ModelId = provider.Models[0].Id }]
             });
             await store.SetApiKeyAsync(provider.Id, "primary-key");
             (Window window, ChatPanelView panel) = await ShowAsync(context);
@@ -301,8 +308,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual(requestChanged ? healthVersion + 1 : healthVersion, health.Version);
                 AiSettings saved = await store.LoadAsync();
                 Assert.AreEqual("explicit prompt draft", saved.SystemPrompt);
-                CollectionAssert.AreEqual(other.FailoverChain.Select(entry => entry.ModelId).ToArray(),
-                    saved.FailoverChain.Select(entry => entry.ModelId).ToArray());
+                Assert.AreSequenceEqual([.. other.FailoverChain.Select(entry => entry.ModelId)], [.. saved.FailoverChain.Select(entry => entry.ModelId)]);
             }
             finally { settingsHost?.Close(); host?.Close(); panel.Detach(); window.Close(); }
         });
@@ -322,8 +328,9 @@ public sealed partial class ChatPanelViewUiTests
             provider.Models.Add(new AiModelConfig { Model = "c" });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[1].Id,
-                FailoverChain = provider.Models.Select(model => new FailoverEntry { ModelId = model.Id }).ToList()
+                Providers = [provider],
+                ActiveModelId = provider.Models[1].Id,
+                FailoverChain = [.. provider.Models.Select(model => new FailoverEntry { ModelId = model.Id })]
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
@@ -335,7 +342,7 @@ public sealed partial class ChatPanelViewUiTests
                 AiSettings live = PanelSettings(panel);
                 await store.DeleteModelAsync(live, live.Providers[0], live.Providers[0].Models[0]);
                 view.RefreshFromProviders();
-                CollectionAssert.AreEqual(reorder ? new[] { "c", "b" } : new[] { "b", "c" }, RowLabels(view));
+                Assert.AreSequenceEqual(reorder ? ["c", "b"] : ["b", "c"], RowLabels(view));
                 var otherStore = new AiSettingsStore(context);
                 AiSettings other = await otherStore.LoadAsync();
                 var added = new AiModelConfig { Model = "external-new" };
@@ -348,15 +355,15 @@ public sealed partial class ChatPanelViewUiTests
                 var loc = new Loc("en");
                 RaiseClick(save);
                 Assert.IsTrue(await WaitForAsync(() => save.IsEnabled && status.Text == $"{loc["Error"]}: {loc["SetupConfigChanged"]}"));
-                string[] expected = reorder ? new[] { provider.Models[2].Id, provider.Models[1].Id } : new[] { added.Id };
-                string[] rows = view.GetVisualDescendants().OfType<Border>()
-                    .Where(row => row.Name == "FailoverRow").Select(row => (string)row.Tag!).ToArray();
-                CollectionAssert.AreEqual(expected, rows, "自动删除不能伪装用户编辑；真实重排也不能被外部链覆盖");
+                string[] expected = reorder ? [provider.Models[2].Id, provider.Models[1].Id] : [added.Id];
+                string[] rows = [.. view.GetVisualDescendants().OfType<Border>()
+                    .Where(row => row.Name == "FailoverRow").Select(row => (string)row.Tag!)];
+                Assert.AreSequenceEqual(expected, rows, "自动删除不能伪装用户编辑；真实重排也不能被外部链覆盖");
                 Assert.AreEqual(added.Id, live.FailoverChain.Single().ModelId, "冲突恢复不提前发布用户重排");
                 RaiseClick(save);
                 Assert.IsTrue(await WaitForAsync(() => save.IsEnabled && status.Text == loc["Saved"]));
                 AiSettings saved = await store.LoadAsync();
-                CollectionAssert.AreEqual(expected, saved.FailoverChain.Select(entry => entry.ModelId).ToArray());
+                Assert.AreSequenceEqual(expected, [.. saved.FailoverChain.Select(entry => entry.ModelId)]);
                 Assert.AreEqual("explicit prompt draft", saved.SystemPrompt);
             }
             finally { host?.Close(); panel.Detach(); window.Close(); }
@@ -379,8 +386,10 @@ public sealed partial class ChatPanelViewUiTests
             provider.Models.Add(new AiModelConfig { Model = "removed-model" });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
-                SystemPrompt = "original prompt", CompactContext = true,
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SystemPrompt = "original prompt",
+                CompactContext = true,
                 WebSearch = new WebSearchOptions { SearxngBaseUrl = "https://original.example", MaxFetchChars = 12345 }
             });
             await store.SetApiKeyAsync(provider.Id, "original-key");
@@ -433,7 +442,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreSame(kept, live.Providers[0]);
                 Assert.AreEqual("external prompt", live.SystemPrompt);
                 Assert.AreEqual("explicit prompt draft", prompt.Text);
-                Assert.AreEqual(false, FindIn<CheckBox>(view, "CompactContextCheck").IsChecked);
+                Assert.IsFalse(FindIn<CheckBox>(view, "CompactContextCheck").IsChecked);
                 Assert.AreEqual("https://external.example", FindIn<TextBox>(view, "WebSearxUrlBox").Text);
                 Assert.AreEqual("latest provider", live.Providers[0].Name);
                 Button reboundRemove = NamedButtons(view, "FailoverRemoveButton").Single();
@@ -453,7 +462,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual(65, saved.PanelWidthPercent);
                 Assert.AreEqual("terminal_write", saved.DisabledBuiltinTools);
                 Assert.AreEqual(provider.Models[0].Id, saved.FailoverChain.Single().ModelId);
-                CollectionAssert.AreEqual(new[] { slot }, saved.Providers[0].AdditionalApiKeyIds);
+                Assert.AreSequenceEqual([slot], saved.Providers[0].AdditionalApiKeyIds);
                 Assert.AreEqual("external-key", await store.GetApiKeyAsync(slot));
             }
             finally { settingsHost?.Close(); host?.Close(); panel.Detach(); window.Close(); }
@@ -476,9 +485,13 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("pool", "http://127.0.0.1:1/v1", "m");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
-                SystemPrompt = "original prompt", CompactContext = false, SuggestFollowUps = true,
-                PanelWidthPercent = 37, DisabledBuiltinTools = "web_fetch",
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SystemPrompt = "original prompt",
+                CompactContext = false,
+                SuggestFollowUps = true,
+                PanelWidthPercent = 37,
+                DisabledBuiltinTools = "web_fetch",
                 WebSearch = new WebSearchOptions { SearxngBaseUrl = "https://original.example", MaxResults = 9, MaxFetchChars = 234567 }
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
@@ -553,7 +566,9 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("pool", "http://127.0.0.1:1/v1", "m");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id, SystemPrompt = "original prompt"
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SystemPrompt = "original prompt"
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
@@ -609,8 +624,10 @@ public sealed partial class ChatPanelViewUiTests
             provider.Models.Add(new AiModelConfig { Model = "m2" });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
-                SystemPrompt = "original prompt", PanelWidthPercent = 37,
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SystemPrompt = "original prompt",
+                PanelWidthPercent = 37,
                 WebSearch = new WebSearchOptions { MaxFetchChars = 12345 }
             });
             await store.SetApiKeyAsync(provider.Id, "primary-key");
@@ -678,13 +695,13 @@ public sealed partial class ChatPanelViewUiTests
                 void AssertDraftB()
                 {
                     Assert.AreEqual("later B", prompt.Text);
-                    Assert.AreEqual(false, compact.IsChecked);
-                    Assert.AreEqual(true, followUps.IsChecked);
-                    Assert.AreEqual(false, web.IsChecked);
+                    Assert.IsFalse(compact.IsChecked);
+                    Assert.IsTrue(followUps.IsChecked);
+                    Assert.IsFalse(web.IsChecked);
                     Assert.AreEqual("https://later.example", url.Text);
                     Assert.AreEqual("7", max.Text);
-                    Assert.AreEqual(false, native.IsChecked);
-                    Assert.AreEqual(false, privateNetwork.IsChecked);
+                    Assert.IsFalse(native.IsChecked);
+                    Assert.IsFalse(privateNetwork.IsChecked);
                     Assert.AreEqual("later.internal", hosts.Text);
                     Assert.AreEqual(provider.Models[1].Id, FindIn<Border>(view, "FailoverRow").Tag);
                     Assert.IsTrue(NamedButtons(view, "FailoverRemoveButton").Single().IsFocused);
@@ -758,8 +775,10 @@ public sealed partial class ChatPanelViewUiTests
             provider.Models.Add(new AiModelConfig { Model = "m2" });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
-                SystemPrompt = "original", CompactContext = true,
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SystemPrompt = "original",
+                CompactContext = true,
                 FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
@@ -796,9 +815,9 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => save.IsEnabled
                     && status.Text == $"{loc["Error"]}: {loc["SetupConfigChanged"]}"));
                 Assert.AreEqual("typed during reload", prompt.Text);
-                Assert.AreEqual(true, FindIn<CheckBox>(view, "WebEnabledCheck").IsChecked);
+                Assert.IsTrue(FindIn<CheckBox>(view, "WebEnabledCheck").IsChecked);
                 Assert.AreEqual("new.internal", FindIn<TextBox>(view, "WebAllowedHostsBox").Text);
-                Assert.AreEqual(false, FindIn<CheckBox>(view, "CompactContextCheck").IsChecked);
+                Assert.IsFalse(FindIn<CheckBox>(view, "CompactContextCheck").IsChecked);
                 Assert.AreEqual("https://external.example", FindIn<TextBox>(view, "WebSearxUrlBox").Text);
                 Assert.AreEqual(provider.Models[1].Id, FindIn<Border>(view, "FailoverRow").Tag);
                 Assert.IsTrue(NamedButtons(view, "FailoverRemoveButton").Single().IsFocused);
@@ -827,9 +846,14 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             var first = new AiModelConfig
             {
-                Name = "original A", Model = "old-a", HasOwnApiKey = true,
-                BaseUrlOverride = "https://old-model.example", Temperature = 0.2f,
-                TopP = 0.3f, StopSequences = "old-stop", SystemPrompt = "old-model-prompt"
+                Name = "original A",
+                Model = "old-a",
+                HasOwnApiKey = true,
+                BaseUrlOverride = "https://old-model.example",
+                Temperature = 0.2f,
+                TopP = 0.3f,
+                StopSequences = "old-stop",
+                SystemPrompt = "old-model-prompt"
             };
             var second = new AiModelConfig { Name = "B", Model = "model-b" };
             var provider = new AiProvider { Name = "owner", BaseUrl = "https://provider.example", Models = [first, second], ModelsExpanded = true };
@@ -856,7 +880,10 @@ public sealed partial class ChatPanelViewUiTests
                 FindIn<TextBox>(global, "SystemPromptBox").Text = "keep global draft";
                 var external = new AiSettingsStore(context);
                 AiSettings newer = await external.LoadAsync();
-                if (removed) newer.Providers[0].Models.RemoveAt(0);
+                if (removed)
+                {
+                    newer.Providers[0].Models.RemoveAt(0);
+                }
                 else
                 {
                     AiModelConfig latest = newer.Providers[0].Models[0];
@@ -914,11 +941,11 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.AreEqual("latest-a", modelSettings.GetControl<TextBox>("ModelBox").Text);
                     Assert.AreEqual("latest-a", modelSettings.GetControl<ComboBox>("ModelPickCombo").SelectedItem);
                     Assert.AreEqual((int)ChatProtocol.AnthropicMessages + 1, modelSettings.GetControl<ComboBox>("ProtocolCombo").SelectedIndex);
-                    Assert.AreEqual(true, modelSettings.GetControl<CheckBox>("OwnKeyCheck").IsChecked);
+                    Assert.IsTrue(modelSettings.GetControl<CheckBox>("OwnKeyCheck").IsChecked);
                     Assert.AreEqual("https://latest-model.example", modelSettings.GetControl<TextBox>("BaseUrlBox").Text);
                     Assert.AreEqual("65000", modelSettings.GetControl<TextBox>("MaxInputTokensBox").Text);
                     Assert.AreEqual((int)ReasoningLevel.High, modelSettings.GetControl<ComboBox>("ReasoningCombo").SelectedIndex);
-                    Assert.AreEqual(false, modelSettings.GetControl<CheckBox>("PromptCacheCheck").IsChecked);
+                    Assert.IsFalse(modelSettings.GetControl<CheckBox>("PromptCacheCheck").IsChecked);
                     Assert.AreEqual(0.7f.ToString(), modelSettings.GetControl<TextBox>("TemperatureBox").Text);
                     Assert.AreEqual(0.8f.ToString(), modelSettings.GetControl<TextBox>("TopPBox").Text);
                     Assert.AreEqual("latest-stop", modelSettings.GetControl<TextBox>("StopBox").Text);
@@ -1021,7 +1048,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsFalse(health.IsCooling(provider.Models[0].Id), "一把 Key 的鉴权失败不能跳过仍有备用 Key 的整个模型");
                 Assert.IsTrue(health.IsKeyCooling(provider.Id));
                 Assert.IsFalse(health.IsKeyCooling(b));
-                CollectionAssert.AreEqual(new[] { "Bearer key-a" }, endpoint.Requests.Select(request => request.Auth).ToArray());
+                Assert.AreSequenceEqual(["Bearer key-a"], endpoint.Requests.Select(request => request.Auth).ToArray());
             }
             finally { window.Close(); }
         });
@@ -1054,7 +1081,10 @@ public sealed partial class ChatPanelViewUiTests
                 RaiseClick(probe);
                 TextBlock result = FindIn<TextBlock>(view, "FailoverRowStatus");
                 Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count == 1 && probe.IsEnabled && result.IsVisible));
-                if (replaceSecret) await store.ReplaceProviderApiKeyAsync(settings, provider, provider.Id, "replacement");
+                if (replaceSecret)
+                {
+                    await store.ReplaceProviderApiKeyAsync(settings, provider, provider.Id, "replacement");
+                }
                 else { provider.ActiveApiKeyId = b; await store.SaveAsync(settings); }
                 Assert.AreEqual(0, health.Version, "不靠全局清证据掩盖 active 切换");
                 Assert.IsTrue(await WaitForAsync(() => !result.IsVisible), "心跳必须撤掉属于旧 active/旧 Secret 的绿灯");
@@ -1096,7 +1126,8 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("pool", endpoint.BaseUrl, "m");
             var settings = new AiSettings
             {
-                Providers = [provider], FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
+                Providers = [provider],
+                FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
             };
             await store.AddProviderApiKeyAsync(settings, provider, "key-a");
             string backup = await store.AddProviderApiKeyAsync(settings, provider, "key-b");
@@ -1118,7 +1149,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => probe.IsEnabled && endpoint.Requests.Count == 1
                     && summary.Text == loc.F("FailoverProbeDone", 1, 0)));
                 Assert.AreEqual("Bearer key-a", endpoint.Requests.Single().Auth);
-                Assert.AreEqual(1, results.Count);
+                Assert.HasCount(1, results);
 
                 health.Record(provider.Models[0].Id, ok: false);
                 view.ApplyLoc();
@@ -1130,14 +1161,14 @@ public sealed partial class ChatPanelViewUiTests
                 if (changeVersion) health.Clear();
                 else provider.ActiveApiKeyId = backup;
                 loc.Switch(locale); view.ApplyLoc();
-                Assert.AreEqual(0, results.Count, "语言重建立即移除旧 active 或旧健康代际的结果");
+                Assert.IsEmpty(results, "语言重建立即移除旧 active 或旧健康代际的结果");
                 Assert.AreEqual("", summary.Text, "结果和批次汇总必须在同一个失效入口撤掉");
                 TextBlock row = FindIn<TextBlock>(view, "FailoverRowStatus");
                 if (changeVersion) Assert.IsFalse(row.IsVisible);
                 else Assert.AreEqual(loc["DotCooling"], row.Text);
                 Assert.IsTrue(NamedButtons(view, "FailoverRemoveButton").Single().IsFocused);
                 await PumpAsync(250);
-                Assert.AreEqual(0, results.Count);
+                Assert.IsEmpty(results);
                 Assert.AreEqual("", summary.Text, "心跳没有剩余结果可复验时也不能留下永久旧汇总");
                 Assert.HasCount(1, endpoint.Requests, "语言重建与心跳复验都不能重放真实探活请求");
                 Assert.IsTrue(NamedButtons(view, "FailoverRemoveButton").Single().IsFocused);
@@ -1197,7 +1228,8 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             var settings = new AiSettings
             {
-                Providers = [provider], FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
+                Providers = [provider],
+                FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
             };
             await store.SaveAsync(settings);
             var health = new ProviderHealth();
@@ -1216,7 +1248,7 @@ public sealed partial class ChatPanelViewUiTests
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                 RaiseClick(probe);
                 Assert.IsTrue(await WaitForAsync(() => probe.IsEnabled && status.IsVisible));
-                Assert.AreEqual(1, results.Count);
+                Assert.HasCount(1, results);
                 Assert.IsTrue(status.Text!.StartsWith(loc["DotFailed"], StringComparison.Ordinal));
                 Assert.IsFalse(health.IsCooling(provider.Models[0].Id));
                 Assert.IsFalse(health.IsKeyCooling(provider.Id));
@@ -1241,7 +1273,7 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.IsTrue(NamedButtons(view, "FailoverRemoveButton")[0].IsFocused);
                 }
                 await PumpAsync(250);
-                Assert.AreEqual(0, results.Count, "后续心跳不能恢复旧active的失败证据");
+                Assert.IsEmpty(results, "后续心跳不能恢复旧active的失败证据");
                 Assert.IsFalse(FindIn<TextBlock>(view, "FailoverRowStatus").IsVisible);
                 RaiseClick(probe);
                 Assert.IsTrue(await WaitForAsync(() => probe.IsEnabled && endpoint.Requests.Count == 1));
@@ -1280,7 +1312,8 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("pool", endpoint.BaseUrl, "m");
             var settings = new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
             };
             await store.SetApiKeyAsync(provider.Id, "key-a");
@@ -1440,8 +1473,7 @@ public sealed partial class ChatPanelViewUiTests
                 {
                     loc.Switch(locale);
                     view.ApplyLoc();
-                    statuses = view.GetVisualDescendants().OfType<TextBlock>()
-                        .Where(block => block.Name == "FailoverRowStatus").ToList();
+                    statuses = [.. view.GetVisualDescendants().OfType<TextBlock>().Where(block => block.Name == "FailoverRowStatus")];
                     for (int i = 0; i < statuses.Count; i++)
                     {
                         Assert.IsTrue(statuses[i].IsVisible, "键盘用户无需悬停即可看到状态和时间");
@@ -1461,9 +1493,9 @@ public sealed partial class ChatPanelViewUiTests
                         .Where(control => control.Name == "FailoverRow"))
                     {
                         var grid = (Grid)row.Child!;
-                        var dot = grid.Children.OfType<Avalonia.Controls.Shapes.Path>().Single();
+                        Avalonia.Controls.Shapes.Path dot = grid.Children.OfType<Avalonia.Controls.Shapes.Path>().Single();
                         Button up = grid.Children.OfType<Button>().Single(button => button.Name == "FailoverUpButton");
-                        Assert.IsTrue(dot.Bounds.Right + dot.StrokeThickness / 2 < up.Bounds.Left,
+                        Assert.IsLessThan(up.Bounds.Left, dot.Bounds.Right + dot.StrokeThickness / 2,
                             $"{width}: 真实检测结果描边必须与行尾按钮分离，不被按钮边界遮挡");
                     }
                 }

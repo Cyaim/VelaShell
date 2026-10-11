@@ -25,7 +25,7 @@ public sealed class SessionArchiveBuilderTests
 
         Assert.AreEqual(2, selection.RequestedCount, "不存在的 Id 忽略");
         Assert.AreEqual(3, selection.DependencyCount);
-        CollectionAssert.AreEquivalent(new[] { "app", "inner", "outer", "loop-a", "loop-b" }, selection.Sessions.Select(static s => s.Name).ToArray());
+        Assert.AreSequenceEqual(["app", "inner", "outer", "loop-a", "loop-b"], [.. selection.Sessions.Select(static s => s.Name)], SequenceOrder.InAnyOrder);
     }
 
     [TestMethod]
@@ -43,7 +43,7 @@ public sealed class SessionArchiveBuilderTests
 
         IReadOnlyList<SessionProfile> ordered = SessionArchiveBuilder.Order(sessions, [second, first]);
 
-        Assert.AreSequenceEqual(new[] { "A", "b", "z", "loose" }, ordered.Select(static s => s.Name).ToArray());
+        Assert.AreSequenceEqual(["A", "b", "z", "loose"], [.. ordered.Select(static s => s.Name)]);
     }
 
     [TestMethod]

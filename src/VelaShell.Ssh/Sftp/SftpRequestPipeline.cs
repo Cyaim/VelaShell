@@ -160,9 +160,9 @@ internal sealed class SftpRequestPipeline : IAsyncDisposable
         }
 
         // 〔velashell-docs/zh/ssh/spec/08 §7〕管线深度的实际取值（velashell.ssh.sftp.inflight）。
-        if (_channel.MetricsHost is { } metricsHost && Diagnostics.SshMetrics.SftpInFlight.Enabled)
+        if (_channel.MetricsHost is { } metricsHost && SshMetrics.SftpInFlight.Enabled)
         {
-            Diagnostics.SshMetrics.SftpInFlight.Record(inFlight, Diagnostics.SshMetrics.HostTag(metricsHost));
+            SshMetrics.SftpInFlight.Record(inFlight, SshMetrics.HostTag(metricsHost));
         }
 
         bool sent = false;

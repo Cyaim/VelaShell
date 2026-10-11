@@ -776,7 +776,7 @@ public sealed class SshConfigTests
                 User "a # b"
             """, "x");
 
-        Assert.AreSequenceEqual(["~/.ssh/id_#work"], config.IdentityFiles.ToArray());
+        Assert.AreSequenceEqual(["~/.ssh/id_#work"], [.. config.IdentityFiles]);
         Assert.AreEqual(2222, config.Port);
         Assert.AreEqual("a # b", config.User, "引号里的 # 不是注释");
     }

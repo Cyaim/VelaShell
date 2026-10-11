@@ -1722,8 +1722,8 @@ internal sealed class Rasterizer
             double d = Math.Sqrt((ux * ux) + (uy * uy));
             if (d <= 1e-9 * (Rx + Ry))
             {
-                (double X, double Y) q = Point(Rx, Ry, Angle(i == 0 ? 1 : N - 1));
-                (ux, uy) = i == 0 ? (q.X - p.X, q.Y - p.Y) : (p.X - q.X, p.Y - q.Y);
+                (double adjacentX, double adjacentY) = Point(Rx, Ry, Angle(i == 0 ? 1 : N - 1));
+                (ux, uy) = i == 0 ? (adjacentX - p.X, adjacentY - p.Y) : (p.X - adjacentX, p.Y - adjacentY);
                 d = Math.Sqrt((ux * ux) + (uy * uy));
             }
             d = d > 0 ? d : 1;
@@ -1798,7 +1798,6 @@ internal sealed class Rasterizer
         WideDash dash = dashed ? StartWideDash() : default;
         // 虚线的走位:inRun = 正在一个偶数段里(可能是从上一条弧接过来的);路径起点上的偶数段要不要端帽,得看最后一个偶数段是否也碰到终点(接缝)。
         bool inRun = false, firstRunAtStart = false, lastRunAtEnd = false;
-        double runStart = 0;
         List<Polygon>? startCap = null;
         int solidSeen = 0, evenSeen = 0;
         long vertices = 0;
@@ -1836,7 +1835,7 @@ internal sealed class Rasterizer
             {
                 List<Polygon> on = even!;
                 double total = arc.Total, s = 0;
-                runStart = 0;   // 从上一条弧接过来的偶数段,在这条弧上从起点量
+                double runStart = 0;
                 while (total - s > 1e-9)
                 {
                     WorkBudget.Charge(1);
@@ -1996,8 +1995,8 @@ internal sealed class Rasterizer
         int direction = 0;
         for (int i = i0 + 1; i <= i1 + 1; i++)
         {
-            (double X, double Y) p = i <= i1 ? arc.Center[i] : to;
-            double along = vertical ? p.Y : p.X;
+            (double x, double y) = i <= i1 ? arc.Center[i] : to;
+            double along = vertical ? y : x;
             int step = Math.Sign(along - previous);
             if (step != 0 && direction != 0 && step != direction)
             {

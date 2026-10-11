@@ -2614,3 +2614,44 @@ rsa-sha2-512 / rsa-sha2-256 各跑一遍,清单保留全部算法、只把要测
 整个解决方案 Debug 构建 0 警告。
 
 文档:velashell-docs 中英镜像的 SSH 规格 01 §6、05 §4.3、架构 §11.2.28,宿主交互规格的「断开连接状态」「隧道」「主机指纹确认」。
+
+## ✅ 194. 2026-10-11 清掉全部编译警告与 IDE 提示(用户需求)
+
+**起因**:用户要求把编译警告和 IDE 错误列表里的提示(如 `AiSettingsStore.cs` 的「IDE1006 缺少前缀 _」)全部清掉。普通构建只有 4 条;
+打开 `EnforceCodeStyleInBuild` 全量重编、把各工程诊断写进 SARIF 之后是 740 条「消息」级提示,另有 49 条命名问题只在 IDE 里报
+(`src/`、`plugins/` 没给 IDE1006 设构建级别,临时加一条才能在构建里列出来)。复现办法:
+`dotnet build VelaShell.slnx --no-incremental -p:EnforceCodeStyleInBuild=true "-p:ErrorLog=obj/x.sarif%2Cversion=2.1"`,再汇总各工程 `obj/x.sarif` 里没被抑制的结果。
+
+**有现成修复器的**(`dotnet format analyzers/style --diagnostics …`,两轮,修复器跳过的十几处手改):MSTest 4 的断言迁移
+(MSTEST0068 / 0037 / 0046:`CollectionAssert` / `StringAssert` → `Assert.AreSequenceEqual` / `Contains` / `HasCount` / `IsGreaterThan` 等;
+`CollectionAssert.AreEquivalent` 换成带 `SequenceOrder.InAnyOrder` 的那个重载,不计顺序的语义不变)、集合表达式、多余的 `!` 与 `unsafe`、
+lambda 简化、`field` 访问器、测试里的 `GeneratedRegex`。修复器的产物逐处看过,改掉了不该照收的:自动属性丢掉的字段注释补回去;
+`IdleMilliseconds` 被改成「赋时间戳、读毫秒数」的半自动属性,改回 `LastActivity` 自动属性 + 计算属性;`SearchValues` 字段叫 `s_myChars`,
+改成 `QuoteTriggers`;「方法可以为同步」被改成返回 `Task.CompletedTask`,改成 `void`。
+
+**手改的**:
+- 命名(IDE1006):`AiSettingsStore` 里私有嵌套类的字段 `internal` → `public`(类本身私有,可见性不变;`ProviderEpoch.Value` 被
+  `Interlocked` / `Volatile` 按引用用着,只能是字段),`_keyCache` 这类私有属性去掉下划线;Code Cleanup 拆解出来的大写局部变量
+  (`Credential` / `KeyId` 等)按拆解前的变量名改成 `latestCredential` / `latestKeyId`;非 readonly 的静态字段 `s_x` → `_x`、
+  static readonly 改 PascalCase;局部函数改 PascalCase;测试里的局部常量改 camelCase、`_session` 属性改 `Session`。
+  测试方法名开头是小写英文的(47 个)首字母改大写,`S_REPLY…` 前面加「服务端回的」(否则被当成 `s_` 前缀)。
+  其中两个在前面几节出现过:`ppk截断到任意位置只报私钥异常` → `Ppk截断到任意位置只报私钥异常`,
+  `sftp_server起不来时报出退出码与它的stderr` → `Sftp_server起不来时报出退出码与它的stderr`。
+- CA1068(`CancellationToken` 放最后):`AiSettingsStore.ResolveCredential*`、`HealthProbe.ProbeAsync`、`ModelPull.RunAsync`
+  与 `ChatPanelView` 的三个私有方法。调用点原来按位置传令牌的改成 `cancellationToken:` 具名实参;挪位之后按位置传的都会编译失败,不会悄悄绑错。
+- CA1806:`Win32SplashWindow` / `SystemPointer` 忽略的原生返回值写成 `_ =`。IDE0060:XServer 两个处理器去掉用不着的 `XClient`,
+  `OnWindowDeactivated` 去掉用不着的参数,当委托用的方法参数改成弃元。
+- 两处误报照现场处理:`ShortcutsPage.Recorder_GestureCaptured` 是 XAML 引用的(参数不是 `EventArgs`,IDE0051 认不出),加 `SuppressMessage`
+  并写明理由;`ChatPanelView` 的 `_suggestionTask` 只写不读(IDE0052),但测试经反射读它,改成 `internal` 属性 `SuggestionTask`,测试直接读。
+- MSTest:9 个工程显式写 `[assembly: DoNotParallelize]`(它们本来就按 MSTest 的默认串行跑,MSTEST0001 要求写出来);Ssh.Tests 写与
+  `test.runsettings` 同值的 `[assembly: Parallelize(Workers = 2, Scope = MethodLevel)]`。写出来之后 MSTEST0074 指出两条用例在方法级并行下
+  改进程环境变量 —— runsettings 开并行以来一直如此,是潜在的竞态,加了 `[ResourceLock(WellKnownResources.EnvironmentVariables)]`。
+  按平台 `Assert.Inconclusive` 早退的 20 处换成 `[OSCondition(…, IgnoreMessage = 原说明)]`(都是「未执行」,跳过数不变);
+  断言写在 `catch` 里的、`Assert.Throws` 里多条语句的,改成先记下结果、在 `catch` 外断言 / 抽出辅助方法;只挂 `[AssemblyInitialize]` 的会话类改 `static`;
+  后量子那条 300 秒的互操作用例改协作取消,连接与每轮重协商都看 `TestContext.CancellationToken`(否则到点停不下来)。
+- 配置:`.editorconfig` 关掉 RXUISG0016(ReactiveUI 源生成器对 `ReactiveObject` 上每个普通属性都建议换通知属性;被点名的 75 个几乎全是
+  视图注入的回调、`init` 属性与排序分数,不需要通知)。NSubstitute 配桩 `When(c => c.DisposeAsync())` 的 CA2012 用 `#pragma` 带理由抑制。
+
+**验证**:上面那条命令全量重编:0 警告、0 提示(含临时打开的 IDE1006)。`dotnet test VelaShell.slnx`:各工程通过 / 跳过数与 §193 相同
+(Ssh.Tests 1359 / 61,Infrastructure.Tests 678 / 5,VelaShell.Tests 1992 / 11,XServer.Tests 552 / 9,Plugin.Ai.Tests 1464,其余全过);
+Core.Tests 794 通过 / 10 跳过 / 1 失败,失败的是 §193 记过的 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`(本机靶机容器过旧)。

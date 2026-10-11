@@ -31,7 +31,7 @@ public sealed partial class X11Server
 
     private void InitMonitors()
     {
-        _monitors = NormalizeMonitors(_options.Monitors, Root.Width, Root.Height, "options");
+        _monitors = NormalizeMonitors(Options.Monitors, Root.Width, Root.Height, "options");
         AssignMonitorSlots();
     }
 
@@ -146,7 +146,7 @@ public sealed partial class X11Server
     /// <summary>根窗口的物理尺寸(毫米):按 DPI 换算。</summary>
     private (int Width, int Height) ScreenMillimeters() => (ToMillimeters(Root.Width), ToMillimeters(Root.Height));
 
-    private int ToMillimeters(int pixels) => (int)Math.Round(pixels * 25.4 / (_dpi > 0 ? _dpi : _options.Dpi));
+    private int ToMillimeters(int pixels) => (int)Math.Round(pixels * 25.4 / (ScreenDpi > 0 ? ScreenDpi : Options.Dpi));
 
     private (int Width, int Height) MonitorMillimeters(XMonitor m) =>
         (m.WidthMillimeters > 0 ? m.WidthMillimeters : ToMillimeters(m.Width), m.HeightMillimeters > 0 ? m.HeightMillimeters : ToMillimeters(m.Height));

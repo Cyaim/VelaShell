@@ -274,7 +274,7 @@ public sealed class ColorPickerFieldUiTests
                 Assert.AreEqual(viewModel.Appearance.TerminalForeground, fields[1].Value);
                 Assert.HasCount(16, fields[1].Swatches!);
                 Assert.AreSequenceEqual(
-                    viewModel.Appearance.AnsiNormal.Concat(viewModel.Appearance.AnsiBright).ToList(), fields[1].Swatches!.ToList());
+                    viewModel.Appearance.AnsiNormal.Concat(viewModel.Appearance.AnsiBright).ToList(), [.. fields[1].Swatches!]);
 
                 fields[2].Value = "#101010";
                 Assert.AreEqual("#101010", viewModel.Appearance.TerminalBackground);

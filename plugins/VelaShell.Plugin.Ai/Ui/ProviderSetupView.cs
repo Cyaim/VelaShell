@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -8,7 +9,6 @@ using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Avalonia.Threading;
-using System.Text.Json;
 using VelaShell.Plugin.Ai.Auth;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.PluginSdk;
@@ -88,7 +88,6 @@ public sealed class ProviderSetupView : UserControl
     // 展开后绑定实际显示的实例;设置页可指定旧账号,目录初次展开默认最近一份。
     private string? _focusedProviderId;
 
-
     /// <summary>正在跑的那次登录 —— 「取消」按的就是它,窗口关掉也要一并取消。</summary>
     private CancellationTokenSource? _login;
 
@@ -100,7 +99,6 @@ public sealed class ProviderSetupView : UserControl
     private bool _addingKey;
     private string? _addingKeyProviderId;
     private CancellationTokenSource? _keyDraftCancellation;
-
 
     /// <summary>供应商增删改完了(参数是它的 id);设置页据此重建左栏并选中。</summary>
     public event Action<string>? ProviderChanged;
@@ -458,7 +456,10 @@ public sealed class ProviderSetupView : UserControl
         keyInput.PropertyChanged += (_, change) =>
         {
             if (change.Property == TextBox.TextProperty && ReferenceEquals(keyInput, _keyBox)
-                && !_keyPrefilling) _keyEdited = true;
+                && !_keyPrefilling)
+            {
+                _keyEdited = true;
+            }
         };
         _modelPickerRow = null;
         _modelPicker = null;
@@ -1057,8 +1058,6 @@ public sealed class ProviderSetupView : UserControl
         if (_scopesBox.Text == opened.Scopes) _scopesBox.Text = latest.Scopes;
     }
 
-
-
     /// <summary>API Key 开启空的槽草稿;OAuth 开启独立账号草稿。</summary>
     private void StartAnother(Row row)
     {
@@ -1263,7 +1262,7 @@ public sealed class ProviderSetupView : UserControl
             StoreResponses = source.StoreResponses,
             AllowSystemMessages = source.AllowSystemMessages,
             UnsupportedParameters = source.UnsupportedParameters,
-            Models = [.. source.Models.Select(m => CloneModel(m))]
+            Models = [.. source.Models.Select(CloneModel)]
         };
 
         // 保留协议与请求参数;清除旧账号的模型专属端点和机密继承标记。
@@ -1386,7 +1385,6 @@ public sealed class ProviderSetupView : UserControl
         await PullModelsAsync(entry, provider).ConfigureAwait(true);
     }
 
-
     // OAuth 身份不能只看 origin:同 host 的 /tenant-a 与 /tenant-b 也会签不同凭据。
     private static bool SameOAuthIssuer(string? a, string? b)
         => string.Equals(a, b, StringComparison.Ordinal);
@@ -1402,7 +1400,11 @@ public sealed class ProviderSetupView : UserControl
             && SameOAuthIssuer(previous.Auth, current.Auth)
             && SameOAuthIssuer(previous.Device, current.Device)
             && SameOAuthIssuer(previous.Token, current.Token)
-            && SameOAuthIssuer(previous.Client, current.Client)) return;
+            && SameOAuthIssuer(previous.Client, current.Client))
+        {
+            return;
+        }
+
         _scopesForOrigin = current;
         _scopesBox.Text = "";
     }
@@ -1629,7 +1631,10 @@ public sealed class ProviderSetupView : UserControl
                 foreach (string id in changedModels) _health!.Invalidate(id);
             if (baseline is not null && ReferenceEquals(_primary, baselinePrimary)
                 && _providerFormBaseline == baselineJson)
+            {
                 _providerFormBaseline = JsonSerializer.Serialize(baseline);
+            }
+
             ModelsChanged?.Invoke();
             // 重新展开或起草同址克隆时,只更新型号候选,不覆写未保存字段。
             if (ShowsCandidates()) UpdateModelPicker(provider);
@@ -1682,7 +1687,9 @@ public sealed class ProviderSetupView : UserControl
                     target.Models.Add(JsonSerializer.Deserialize<AiModelConfig>(json)!);
                     if (baseline is not null && opened is null
                         && !baseline.Models.Any(model => string.Equals(model.Model, pulled.Model, StringComparison.OrdinalIgnoreCase)))
+                    {
                         baseline.Models.Add(JsonSerializer.Deserialize<AiModelConfig>(json)!);
+                    }
                 }
                 continue;
             }
@@ -1737,7 +1744,9 @@ public sealed class ProviderSetupView : UserControl
                 current.DefaultContextWindow = pulled.DefaultContextWindow;
                 if (opened is not null && openedInput == original.MaxInputTokens
                     && opened.DefaultContextWindow == original.DefaultContextWindow)
+                {
                     opened.DefaultContextWindow = pulled.DefaultContextWindow;
+                }
             }
             if (original.LastFetchedSpec is { } previous && pulled.LastFetchedSpec is { } fetched
                 && current.LastFetchedSpec == previous)
@@ -1754,10 +1763,12 @@ public sealed class ProviderSetupView : UserControl
                 if (opened?.LastFetchedSpec == previous) opened.LastFetchedSpec = current.LastFetchedSpec;
             }
             if (current.Model != model || current.MaxInputTokens != input || current.MaxTokens != output
-                || current.SupportsReasoning != reasoning) changedModels?.Add(current.Id);
+                || current.SupportsReasoning != reasoning)
+            {
+                changedModels?.Add(current.Id);
+            }
         }
     }
-
 
     /// <summary>把表单里的值搬进供应商对象。没摆出来的控件带的就是目录出厂值,照读即可。</summary>
     private void ApplyForm(AiProvider provider, ProviderCatalogEntry entry)
@@ -1766,15 +1777,12 @@ public sealed class ProviderSetupView : UserControl
         if (_addingAnother && !string.Equals(provider.BaseUrl, _baseUrlBox.Text?.Trim() ?? "", StringComparison.Ordinal))
         {
             provider.AvailableModels.Clear(); // 克隆的新地址不沿用源服务器的模型清单
-            if (_modelPickerRow is not null)
-            {
-                _modelPickerRow.IsVisible = false;
-            }
+            _modelPickerRow?.IsVisible = false;
         }
         provider.BaseUrl = _baseUrlBox.Text?.Trim() ?? "";
         if (ProtocolSelectable(entry) && _protocolCombo.SelectedIndex >= 0)
         {
-            ChatProtocol selected = (ChatProtocol)_protocolCombo.SelectedIndex;
+            var selected = (ChatProtocol)_protocolCombo.SelectedIndex;
             // 下拉显示的是首模型的**生效**协议(见 BuildDetail 处的初始化):与生效值一致
             // 就什么都没改;不一致才是用户动了它 —— 此时清掉首模型的覆盖、把新值落成默认,
             // 让实际请求跟随刚选定的显示值。拿"等于旧默认值"当条件会漏掉"覆盖与默认不同"

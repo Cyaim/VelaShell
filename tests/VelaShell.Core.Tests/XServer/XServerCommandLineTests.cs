@@ -52,7 +52,7 @@ public class XServerCommandLineTests
         IReadOnlyList<string> args = XServerCommandLine.Build(
             new XServerOptions { Clipboard = false, CopyOnSelection = true }, 0);
 
-        CollectionAssert.Contains(args.ToList(), "-noclipboard");
+        Assert.Contains("-noclipboard", args.ToList());
         Assert.DoesNotContain("-primary", args.ToList());
         Assert.DoesNotContain("-noprimary", args.ToList());
     }
@@ -70,11 +70,11 @@ public class XServerCommandLineTests
         }, 0);
 
         List<string> list = [.. args];
-        CollectionAssert.Contains(list, "-noprimary");
-        CollectionAssert.Contains(list, "-keyhook");
-        CollectionAssert.Contains(list, "-nowgl");
-        CollectionAssert.Contains(list, "-trayicon");
-        CollectionAssert.Contains(list, "-ac");
+        Assert.Contains("-noprimary", list);
+        Assert.Contains("-keyhook", list);
+        Assert.Contains("-nowgl", list);
+        Assert.Contains("-trayicon", list);
+        Assert.Contains("-ac", list);
     }
 
     /// <summary>「自动」布局不传 -xkblayout(VcXsrv 自己跟随 Windows);填了就成对出现。</summary>

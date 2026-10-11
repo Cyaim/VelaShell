@@ -30,27 +30,19 @@ internal class XProtocolError(XErrorCode code, uint badValue = 0)
 /// ⚠️ <b>字节序是逐连接的</b>,由连接建立时第一个字节决定('B' 大端 / 'l' 小端);
 /// 只按本机字节序解析的症状是「某些客户端能连,某些连不上」。
 /// </remarks>
-internal sealed class XRequestReader
+/// <param name="data">放着这条请求的缓冲(可以是池里租来的、比请求长的数组)。</param>
+/// <param name="length">请求的长度:只读前这么多字节,后面的是缓冲里别的东西。</param>
+/// <param name="bigEndian">客户端是不是大端。</param>
+internal sealed class XRequestReader(byte[] data, int length, bool bigEndian)
 {
-    private readonly byte[] _data;
-    private readonly bool _bigEndian;
-    private int _pos;
+    private readonly byte[] _data = data;
+    private readonly bool _bigEndian = bigEndian;
+    private int _pos = 4;
 
     /// <param name="data">整条请求(含 4 字节头;BIG-REQUESTS 的扩展长度已剥掉)。</param>
     /// <param name="bigEndian">客户端是不是大端。</param>
     public XRequestReader(byte[] data, bool bigEndian) : this(data, data.Length, bigEndian)
     {
-    }
-
-    /// <param name="data">放着这条请求的缓冲(可以是池里租来的、比请求长的数组)。</param>
-    /// <param name="length">请求的长度:只读前这么多字节,后面的是缓冲里别的东西。</param>
-    /// <param name="bigEndian">客户端是不是大端。</param>
-    public XRequestReader(byte[] data, int length, bool bigEndian)
-    {
-        _data = data;
-        Length = length;
-        _bigEndian = bigEndian;
-        _pos = 4;
     }
 
     /// <summary>主操作码。</summary>
@@ -75,7 +67,7 @@ internal sealed class XRequestReader
     public int Remaining => Length - _pos;
 
     /// <summary>整条请求的长度(字节)。</summary>
-    public int Length { get; }
+    public int Length { get; } = length;
 
     private ReadOnlySpan<byte> Take(int count)
     {
@@ -132,16 +124,10 @@ internal sealed class XRequestReader
 }
 
 /// <summary>按客户端字节序组装回复、事件与错误。</summary>
-internal sealed class XWriter
+internal sealed class XWriter(bool bigEndian, int capacity = 32)
 {
-    private byte[] _buffer;
-    private bool _bigEndian;
-
-    public XWriter(bool bigEndian, int capacity = 32)
-    {
-        _bigEndian = bigEndian;
-        _buffer = new byte[Math.Max(32, capacity)];
-    }
+    private byte[] _buffer = new byte[Math.Max(32, capacity)];
+    private bool _bigEndian = bigEndian;
 
     /// <summary>已写的字节数。</summary>
     public int Length { get; private set; }

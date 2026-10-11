@@ -132,8 +132,8 @@ public sealed class SshPublicKeyTests
     public async Task 原生钥第一次验签时才建(string algorithm)
     {
         using VelaShell.Ssh.Auth.InMemorySshSigner signer = algorithm == SshAlgorithmNames.RsaSha256
-            ? VelaShell.Ssh.Auth.InMemorySshSigner.FromRsa(RSA.Create(2048))
-            : VelaShell.Ssh.Auth.InMemorySshSigner.FromEcdsa(ECDsa.Create(ECCurve.NamedCurves.nistP256));
+            ? Ssh.Auth.InMemorySshSigner.FromRsa(RSA.Create(2048))
+            : Ssh.Auth.InMemorySshSigner.FromEcdsa(ECDsa.Create(ECCurve.NamedCurves.nistP256));
         byte[] data = RandomNumberGenerator.GetBytes(32);
         byte[] signature = await signer.SignAsync(data, algorithm);
 
@@ -173,8 +173,8 @@ public sealed class SshPublicKeyTests
         var key = SshPublicKey.Decode(Blob(w =>
         {
             WriteString(w, SshAlgorithmNames.SshRsa);
-            WriteMpint(w, rsa.ExportParameters(false).Exponent!);
-            WriteMpint(w, rsa.ExportParameters(false).Modulus!);
+            WriteMpint(w, rsa.ExportParameters(false).Exponent);
+            WriteMpint(w, rsa.ExportParameters(false).Modulus);
         }));
 
         byte[] blob = Blob(w =>

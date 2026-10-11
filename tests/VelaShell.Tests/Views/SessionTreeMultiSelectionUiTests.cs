@@ -94,7 +94,7 @@ public class SessionTreeMultiSelectionUiTests
             Click(window, alpha, MouseButton.Left, RawInputModifiers.None);
             Click(window, gamma, MouseButton.Left, RawInputModifiers.Shift);
 
-            Assert.AreSequenceEqual(new[] { "alpha", "beta", "gamma" }, viewModel.MultiSelection.Select(static n => n.Name).ToArray(),
+            Assert.AreSequenceEqual(["alpha", "beta", "gamma"], [.. viewModel.MultiSelection.Select(static n => n.Name)],
                 "Shift 单击选中起点到这一行之间的全部行,不能被列表改回单选。");
             Assert.IsTrue(Row(view, "beta").Classes.Contains("multimarked"));
 

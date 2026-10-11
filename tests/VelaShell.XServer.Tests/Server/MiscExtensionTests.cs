@@ -145,7 +145,7 @@ public sealed class MiscExtensionTests
         await SuspendAsync(player, true);   // 嵌套两次
         await player.SyncAsync();
         await host.WaitForAsync(() => !host.SaverSuspensions.IsEmpty);
-        CollectionAssert.AreEqual(new[] { true }, host.SaverSuspensions.ToArray(), "第一次挂起报一次");
+        Assert.AreSequenceEqual([true], [.. host.SaverSuspensions], "第一次挂起报一次");
         await SuspendAsync(other, false);    // 别的客户端恢复不了
         await SuspendAsync(player, false);   // 还剩一层
         await other.SyncAsync();
@@ -153,7 +153,7 @@ public sealed class MiscExtensionTests
         Assert.HasCount(1, host.SaverSuspensions);
         await player.DisposeAsync();         // 挂着的客户端断开:作废
         await host.WaitForAsync(() => host.SaverSuspensions.Count >= 2);
-        CollectionAssert.AreEqual(new[] { true, false }, host.SaverSuspensions.ToArray());
+        Assert.AreSequenceEqual([true, false], [.. host.SaverSuspensions]);
 
         await other.SendAsync(115, 0);       // ForceScreenSaver(Reset)
         await other.SendAsync(115, 0);
@@ -320,7 +320,7 @@ public sealed class MiscExtensionTests
         List<(uint Client, uint Mask, uint[] Value)> all = Ids(await local.RequestAsync(xres, 4, b => b.U32(1).U32(0).U32(0)));   // 全部客户端、全部方法
         Assert.HasCount(3, all, "本机客户端:ClientXid + pid;另一个只有 ClientXid");
         (uint _, uint _, uint[] pid) = all.Single(id => id.Mask == 2);
-        CollectionAssert.AreEqual(new uint[] { 4321 }, pid);
+        Assert.AreSequenceEqual(new uint[] { 4321 }, pid);
 
         List<(uint Client, uint Mask, uint[] Value)> onlyPid = Ids(await local.RequestAsync(xres, 4, b => b.U32(1).U32(0).U32(2)));
         Assert.HasCount(1, onlyPid);

@@ -16,16 +16,14 @@ namespace VelaShell.XServer;
 
 public sealed partial class X11Server
 {
-    private XFont? _defaultFont;
-
     /// <summary>GC 没设字体时用的服务端默认字体(协议没指定是哪个;X.Org 惯例是 fixed)。</summary>
-    private XFont DefaultFont => _defaultFont ??= FontCatalog.Open("fixed") ?? throw new InvalidOperationException("内置字体 fixed 缺失。");
+    private XFont DefaultFont => field ??= FontCatalog.Open("fixed") ?? throw new InvalidOperationException("内置字体 fixed 缺失。");
 
     /// <summary>在等字体在后台建好的客户端:触发的那条请求与它之后的请求都暂存在这里,建好之后按原顺序放回。</summary>
     private readonly Dictionary<XClient, List<WorkItem>> _fontLoads = [];
 
     /// <summary>已经等过一次字体、放回来的请求(按缓冲认):再跑到时直接执行,不再查 —— 建不出来的字体不会让它一直暂存。</summary>
-    private readonly HashSet<byte[]> _fontsPrepared = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<byte[]> _fontsPrepared = [with(ReferenceEqualityComparer.Instance)];
 
     /// <summary>这些名字要用到、还没建好的字体(<see cref="FontCatalog.Unprepared" />);测试可以换掉。</summary>
     internal Func<IEnumerable<string>, int, List<string>> UnpreparedFonts { get; set; } = FontCatalog.Unprepared;
@@ -64,13 +62,13 @@ public sealed partial class X11Server
                 r.Skip(4);
                 int length = r.U16();
                 r.Skip(2);
-                fonts = UnpreparedFonts([r.String8(length)], _dpi);
+                fonts = UnpreparedFonts([r.String8(length)], ScreenDpi);
             }
             else
             {
                 int max = r.U16();
                 int length = r.U16();
-                fonts = UnpreparedFonts(FontCatalog.Match(r.String8(length), max), _dpi);
+                fonts = UnpreparedFonts(FontCatalog.Match(r.String8(length), max), ScreenDpi);
             }
         }
         catch (XProtocolError)
@@ -119,7 +117,7 @@ public sealed partial class X11Server
         int length = r.U16();
         r.Skip(2);
         string name = r.String8(length);
-        XFont? font = FontCatalog.Open(name, _dpi);
+        XFont? font = FontCatalog.Open(name, ScreenDpi);
         if (font is null)
         {
             if (ShouldLogFrequent())
@@ -230,7 +228,7 @@ public sealed partial class X11Server
         List<string> names = FontCatalog.Match(pattern, max);
         for (int i = 0; i < names.Count; i++)
         {
-            if (FontCatalog.Open(names[i], _dpi) is not { } font)
+            if (FontCatalog.Open(names[i], ScreenDpi) is not { } font)
             {
                 continue;
             }

@@ -285,7 +285,7 @@ public sealed class XimTests
         uint servers = await InternAsync(c, "XIM_SERVERS");
         byte[] list = await GetPropertyAsync(c, c.RootWindow, servers, type: 4);
         uint selection = await InternAsync(c, "@server=velashell");
-        Assert.IsTrue(Enumerable.Range(0, list.Length / 4).Any(i => BinaryPrimitives.ReadUInt32LittleEndian(list.AsSpan(i * 4)) == selection),
+        Assert.Contains(i => BinaryPrimitives.ReadUInt32LittleEndian(list.AsSpan(i * 4)) == selection, Enumerable.Range(0, list.Length / 4),
             "XIM_SERVERS 里有 @server=velashell");
 
         uint requestor = c.NewId();
@@ -297,7 +297,7 @@ public sealed class XimTests
             XMessage notify = await c.NextEventAsync(SelectionNotify);
             Assert.AreEqual(atom, notify.U32(20), $"{target} 转换成功");
             string value = Encoding.Latin1.GetString(await GetPropertyAsync(c, requestor, atom, type: atom, delete: true));
-            StringAssert.StartsWith(value, expected);
+            Assert.StartsWith(expected, value);
             if (target == "LOCALES")
             {
                 string[] locales = value["@locale=".Length..].Split(',');
@@ -324,7 +324,7 @@ public sealed class XimTests
         server.FocusTopLevel(handle);
         XimClient x = await XimClient.ConnectAsync(c);
         await x.HandshakeAsync();
-        (ushort im, var attrs, var imAttrs) = await x.OpenAsync();
+        (ushort im, Dictionary<string, (ushort Id, ushort Type)>? attrs, Dictionary<string, ushort>? imAttrs) = await x.OpenAsync();
         CollectionAssert.IsSubsetOf(new[] { "inputStyle", "clientWindow", "focusWindow", "filterEvents", "preeditAttributes", "statusAttributes",
             "spotLocation", "lineSpace", "fontSet", "separatorofNestedList" }, attrs.Keys.ToArray());
         Assert.AreEqual((ushort)0x7FFF, attrs["preeditAttributes"].Type, "嵌套属性的类型");
@@ -380,7 +380,7 @@ public sealed class XimTests
         byte[] commit = await x.ExpectAsync(XimCommit);
         Assert.AreEqual((im, ic, (ushort)0x0002), (x.U16(commit, 0), x.U16(commit, 2), x.U16(commit, 4)), "XLookupChars,不要求同步");
         byte[] expected = [0x1B, (byte)'%', (byte)'G', .. Encoding.UTF8.GetBytes("你好"), 0x1B, (byte)'%', (byte)'@'];
-        CollectionAssert.AreEqual(expected, commit.AsSpan(8, x.U16(commit, 6)).ToArray());
+        Assert.AreSequenceEqual(expected, commit.AsSpan(8, x.U16(commit, 6)).ToArray());
 
         // 换行照常按回车键;前后的字各一次 COMMIT。整个过程不改键位表。
         server.InjectText("a\r\nb");
@@ -403,7 +403,7 @@ public sealed class XimTests
         server.FocusTopLevel(handle);
         XimClient x = await XimClient.ConnectAsync(c);
         await x.HandshakeAsync();
-        (ushort im, var attrs, _) = await x.OpenAsync();
+        (ushort im, Dictionary<string, (ushort Id, ushort Type)>? attrs, _) = await x.OpenAsync();
         ushort ic = await CreateIcAsync(x, im, attrs, PreeditPosition | StatusNothing, window,
             preedit: n => Attribute(n, attrs["spotLocation"].Id, PointBytes(5, 20, x.BigEndian)));
         await x.SendAsync(XimSetIcFocus, b => b.U16(im).U16(ic));
@@ -430,7 +430,7 @@ public sealed class XimTests
         server.FocusTopLevel(handle);
         XimClient x = await XimClient.ConnectAsync(c);
         await x.HandshakeAsync();
-        (ushort im, var attrs, _) = await x.OpenAsync();
+        (ushort im, Dictionary<string, (ushort Id, ushort Type)>? attrs, _) = await x.OpenAsync();
         ushort ic = await CreateIcAsync(x, im, attrs, PreeditNothing | StatusNothing, window);
         await x.SendAsync(XimSetIcFocus, b => b.U16(im).U16(ic));
         await host.WaitForAsync(() => host.InputMethodFocus is not null);
@@ -460,7 +460,7 @@ public sealed class XimTests
         server.FocusTopLevel(handle);
         XimClient x = await XimClient.ConnectAsync(c);
         await x.HandshakeAsync();
-        (ushort im, var attrs, _) = await x.OpenAsync();
+        (ushort im, Dictionary<string, (ushort Id, ushort Type)>? attrs, _) = await x.OpenAsync();
         ushort ic = await CreateIcAsync(x, im, attrs, PreeditCallbacks | StatusNothing, window);
         await x.SendAsync(XimSetIcFocus, b => b.U16(im).U16(ic));
         await host.WaitForAsync(() => host.InputMethodFocus is not null);
@@ -487,7 +487,7 @@ public sealed class XimTests
         Assert.AreEqual(13, x.U16(error, 6), "BadProtocol:还没 XIM_CONNECT");
 
         await x.HandshakeAsync();
-        (ushort im, var attrs, _) = await x.OpenAsync();
+        (ushort im, Dictionary<string, (ushort Id, ushort Type)>? attrs, _) = await x.OpenAsync();
         XTestClient.Body list = new(x.BigEndian);
         Attribute(list, attrs["inputStyle"].Id, U32Bytes(0x0101, x.BigEndian));   // PreeditArea | StatusArea:不支持
         Attribute(list, attrs["clientWindow"].Id, U32Bytes(window, x.BigEndian));
@@ -506,7 +506,7 @@ public sealed class XimTests
         (uint window, _) = await TopLevelAsync(c, host);
         XimClient x = await XimClient.ConnectAsync(c);
         await x.HandshakeAsync();
-        (ushort im, var attrs, _) = await x.OpenAsync("ja_JP.UTF-8");
+        (ushort im, Dictionary<string, (ushort Id, ushort Type)>? attrs, _) = await x.OpenAsync("ja_JP.UTF-8");
 
         // 拆成多条 ClientMessage(_XIM_MOREDATA … _XIM_PROTOCOL)发 XIM_CREATE_IC。
         XTestClient.Body list = new(x.BigEndian);

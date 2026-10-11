@@ -149,7 +149,10 @@ public sealed class SseStub : IDisposable
         byte[] firstStreamed = firstStreamContent is null ? streamed : Encoding.UTF8.GetBytes(
             "data: " + JsonSerializer.Serialize(new
             {
-                id = "1", @object = "chat.completion.chunk", created = 1, model = "m",
+                id = "1",
+                @object = "chat.completion.chunk",
+                created = 1,
+                model = "m",
                 choices = new[] { new { index = 0, delta = new { content = firstStreamContent }, finish_reason = "stop" } }
             }) + "\n\ndata: [DONE]\n\n");
         byte[]? firstPlain = holdOnlyFirst ? Encoding.UTF8.GetBytes(CompletionJson(firstJsonContent ?? "")) : null;
@@ -169,125 +172,125 @@ public sealed class SseStub : IDisposable
                     HttpListenerContext context = await _listener.GetContextAsync();
                     try
                     {
-                    string body;
-                    using (var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8))
-                    {
-                        body = await reader.ReadToEndAsync(_shutdown.Token);
-                    }
-                    lock (_gate)
-                    {
-                        _bodies.Add(body);
-                        _authorizations.Add(context.Request.Headers["Authorization"]);
-                        _accountIds.Add(context.Request.Headers["chatgpt-account-id"]);
-                    }
-                    _request.TrySetResult(body);
-                    bool wantsStream = body.Contains("\"stream\":true", StringComparison.Ordinal);
-                    bool firstStream = wantsStream && receivedStreams++ == skipFirstStreams;
-                    if (firstStream && holdFirstStream)
-                    {
-                        Task reply = Task.Run(async () =>
+                        string body;
+                        using (var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8))
                         {
-                            try
-                            {
-                                await _released.Task;
-                                context.Response.ContentType = "text/event-stream";
-                                context.Response.ContentLength64 = firstStreamed.Length;
-                                await context.Response.OutputStream.WriteAsync(firstStreamed);
-                                context.Response.Close();
-                            }
-                            catch (Exception)
-                            {
-                                // 监听器被 Dispose 时挂起的首个流式请求无需再回复
-                            }
-                        });
-                        lock (_gate) { _heldReplies.Add(reply); }
-                        continue;
-                    }
-                    if (!wantsStream && !heldNonStream && (holdOnlyFirst || holdFirstNonStream))
-                    {
-                        heldNonStream = true;
-                        Task reply = Task.Run(async () =>
+                            body = await reader.ReadToEndAsync(_shutdown.Token);
+                        }
+                        lock (_gate)
                         {
-                            try
-                            {
-                                await _released.Task;
-                                context.Response.ContentType = "application/json";
-                                byte[] heldReply = firstPlain ?? plain;
-                                context.Response.ContentLength64 = heldReply.Length;
-                                await context.Response.OutputStream.WriteAsync(heldReply);
-                                context.Response.Close();
-                            }
-                            catch (Exception)
-                            {
-                                // 监听器被 Dispose 时挂起的首个请求无需再回复
-                            }
-                        });
-                        lock (_gate) { _heldReplies.Add(reply); }
-                        continue;
-                    }
-                    if (hold)
-                    {
-                        // 放行是一次性的:放开之后本轮与后续请求都照常走
-                        // (排队那句作为下一轮发出去时,不该再被挡一次)。
-                        await _released.Task;
-                    }
-                    if (delay > TimeSpan.Zero)
-                    {
-                        await Task.Delay(delay, _shutdown.Token);
-                    }
-                    if (!wantsStream)
-                    {
-                        byte[] reply = nonStreamingReply is null
-                            ? plain
-                            : Encoding.UTF8.GetBytes(CompletionJson(nonStreamingReply(body)));
-                        context.Response.ContentType = "application/json";
-                        context.Response.ContentLength64 = reply.Length;
-                        await context.Response.OutputStream.WriteAsync(reply);
-                        context.Response.Close();
-                        continue;
-                    }
-                    context.Response.ContentType = "text/event-stream";
-                    if ((firstStream && firstStreamContent is not null) || (chunkDelay <= TimeSpan.Zero && !holdAfterFirstChunk && !abortAfterFirstChunk))
-                    {
-                        byte[] reply = firstStream ? firstStreamed : streamed;
-                        context.Response.ContentLength64 = reply.Length;
-                        await context.Response.OutputStream.WriteAsync(reply);
-                        context.Response.Close();
-                        continue;
-                    }
-                    // 逐事件下发:不能给 ContentLength,得走分块传输,而且每块都要 Flush,
-                    // 否则全被缓冲到最后一起吐出去,等于没有分块。
-                    context.Response.SendChunked = true;
-                    bool aborted = false;
-                    bool firstChunk = true;
-                    foreach (byte[] chunk in chunks)
-                    {
-                        await context.Response.OutputStream.WriteAsync(chunk);
-                        await context.Response.OutputStream.FlushAsync();
-                        if (firstChunk)
+                            _bodies.Add(body);
+                            _authorizations.Add(context.Request.Headers["Authorization"]);
+                            _accountIds.Add(context.Request.Headers["chatgpt-account-id"]);
+                        }
+                        _request.TrySetResult(body);
+                        bool wantsStream = body.Contains("\"stream\":true", StringComparison.Ordinal);
+                        bool firstStream = wantsStream && receivedStreams++ == skipFirstStreams;
+                        if (firstStream && holdFirstStream)
                         {
-                            firstChunk = false;
-                            _firstChunkFlushed.TrySetResult();
-                            if (holdAfterFirstChunk || abortAfterFirstChunk)
+                            var reply = Task.Run(async () =>
                             {
-                                await _released.Task;
+                                try
+                                {
+                                    await _released.Task;
+                                    context.Response.ContentType = "text/event-stream";
+                                    context.Response.ContentLength64 = firstStreamed.Length;
+                                    await context.Response.OutputStream.WriteAsync(firstStreamed);
+                                    context.Response.Close();
+                                }
+                                catch (Exception)
+                                {
+                                    // 监听器被 Dispose 时挂起的首个流式请求无需再回复
+                                }
+                            });
+                            lock (_gate) { _heldReplies.Add(reply); }
+                            continue;
+                        }
+                        if (!wantsStream && !heldNonStream && (holdOnlyFirst || holdFirstNonStream))
+                        {
+                            heldNonStream = true;
+                            var reply = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await _released.Task;
+                                    context.Response.ContentType = "application/json";
+                                    byte[] heldReply = firstPlain ?? plain;
+                                    context.Response.ContentLength64 = heldReply.Length;
+                                    await context.Response.OutputStream.WriteAsync(heldReply);
+                                    context.Response.Close();
+                                }
+                                catch (Exception)
+                                {
+                                    // 监听器被 Dispose 时挂起的首个请求无需再回复
+                                }
+                            });
+                            lock (_gate) { _heldReplies.Add(reply); }
+                            continue;
+                        }
+                        if (hold)
+                        {
+                            // 放行是一次性的:放开之后本轮与后续请求都照常走
+                            // (排队那句作为下一轮发出去时,不该再被挡一次)。
+                            await _released.Task;
+                        }
+                        if (delay > TimeSpan.Zero)
+                        {
+                            await Task.Delay(delay, _shutdown.Token);
+                        }
+                        if (!wantsStream)
+                        {
+                            byte[] reply = nonStreamingReply is null
+                                ? plain
+                                : Encoding.UTF8.GetBytes(CompletionJson(nonStreamingReply(body)));
+                            context.Response.ContentType = "application/json";
+                            context.Response.ContentLength64 = reply.Length;
+                            await context.Response.OutputStream.WriteAsync(reply);
+                            context.Response.Close();
+                            continue;
+                        }
+                        context.Response.ContentType = "text/event-stream";
+                        if ((firstStream && firstStreamContent is not null) || (chunkDelay <= TimeSpan.Zero && !holdAfterFirstChunk && !abortAfterFirstChunk))
+                        {
+                            byte[] reply = firstStream ? firstStreamed : streamed;
+                            context.Response.ContentLength64 = reply.Length;
+                            await context.Response.OutputStream.WriteAsync(reply);
+                            context.Response.Close();
+                            continue;
+                        }
+                        // 逐事件下发:不能给 ContentLength,得走分块传输,而且每块都要 Flush,
+                        // 否则全被缓冲到最后一起吐出去,等于没有分块。
+                        context.Response.SendChunked = true;
+                        bool aborted = false;
+                        bool firstChunk = true;
+                        foreach (byte[] chunk in chunks)
+                        {
+                            await context.Response.OutputStream.WriteAsync(chunk);
+                            await context.Response.OutputStream.FlushAsync();
+                            if (firstChunk)
+                            {
+                                firstChunk = false;
+                                _firstChunkFlushed.TrySetResult();
+                                if (holdAfterFirstChunk || abortAfterFirstChunk)
+                                {
+                                    await _released.Task;
+                                }
+                                if (abortAfterFirstChunk)
+                                {
+                                    context.Response.Abort();
+                                    aborted = true;
+                                    break;
+                                }
                             }
-                            if (abortAfterFirstChunk)
+                            if (chunkDelay > TimeSpan.Zero)
                             {
-                                context.Response.Abort();
-                                aborted = true;
-                                break;
+                                await Task.Delay(chunkDelay, _shutdown.Token);
                             }
                         }
-                        if (chunkDelay > TimeSpan.Zero)
+                        if (!aborted)
                         {
-                            await Task.Delay(chunkDelay, _shutdown.Token);
+                            context.Response.Close();
                         }
-                    }
-                    if (!aborted)
-                    {
-                        context.Response.Close();
-                    }
                     }
                     catch (Exception ex) when (ex is IOException or HttpListenerException or ObjectDisposedException
                         || ex is OperationCanceledException && _shutdown.IsCancellationRequested)

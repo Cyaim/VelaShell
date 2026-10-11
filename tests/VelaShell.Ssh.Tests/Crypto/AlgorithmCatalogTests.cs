@@ -42,7 +42,7 @@ public sealed class AlgorithmCatalogTests
         SshAlgorithmSet legacy = SshAlgorithmSet.Default.WithLegacyInterop();
         IReadOnlyList<string> kex = SshAlgorithmCatalog.Implemented(SshAlgorithmCategory.KeyExchange);
 
-        Assert.AreSequenceEqual(SshAlgorithmSet.Default.KeyExchange.ToArray(), kex.Take(SshAlgorithmSet.Default.KeyExchange.Count).ToArray());
+        Assert.AreSequenceEqual([.. SshAlgorithmSet.Default.KeyExchange], [.. kex.Take(SshAlgorithmSet.Default.KeyExchange.Count)]);
         Assert.IsTrue(legacy.HostKey.All(a => SshAlgorithmCatalog.IsImplemented(SshAlgorithmCategory.HostKey, a)));
         Assert.IsTrue(legacy.MacClientToServer.All(a => SshAlgorithmCatalog.IsImplemented(SshAlgorithmCategory.Mac, a)));
         Assert.IsTrue(SshAlgorithmCatalog.IsImplemented(SshAlgorithmCategory.Compression, SshAlgorithmNames.ZlibOpenSsh));
@@ -59,7 +59,7 @@ public sealed class AlgorithmCatalogTests
         string[] forbidden = ["25519", "chacha20", "sntrup", "ssh-rsa", "sha1", "-cbc", "zlib"];
         foreach (string algorithm in all)
         {
-            Assert.IsFalse(forbidden.Any(f => algorithm.Contains(f, StringComparison.Ordinal)), $"不认可的算法混进来了：{algorithm}");
+            Assert.DoesNotContain(f => algorithm.Contains(f, StringComparison.Ordinal), forbidden, $"不认可的算法混进来了：{algorithm}");
         }
         Assert.IsTrue(fips.HostKey.All(a => SshAlgorithmCatalog.IsImplemented(SshAlgorithmCategory.HostKey, a)));
     }
@@ -71,7 +71,7 @@ public sealed class AlgorithmCatalogTests
         {
             IReadOnlyList<string> unimplemented = SshAlgorithmCatalog.KnownUnimplemented(category);
             Assert.IsNotEmpty(unimplemented, category.ToString());
-            Assert.IsFalse(unimplemented.Any(n => SshAlgorithmCatalog.IsImplemented(category, n)), category.ToString());
+            Assert.DoesNotContain(n => SshAlgorithmCatalog.IsImplemented(category, n), unimplemented, category.ToString());
         }
 
         Assert.IsFalse(SshKeyExchangeFactory.IsSupported("diffie-hellman-group1-sha1"));

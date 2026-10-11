@@ -15,28 +15,21 @@ namespace VelaShell.Ssh.Auth;
 /// 而那两件事的下一步完全不同。
 /// </para>
 /// </remarks>
-public sealed class SshAuthenticationException : SshException
+/// <remarks>创建一个认证失败异常。</remarks>
+public sealed class SshAuthenticationException(
+    SshFailureReason reason,
+    string message,
+    IReadOnlyList<SshAuthAttempt> attempts,
+    IReadOnlyList<string> serverOffered,
+    bool partialSuccessAchieved = false,
+    Exception? innerException = null) : SshException(reason, SshPhase.Authenticating, message, innerException)
 {
-    /// <summary>创建一个认证失败异常。</summary>
-    public SshAuthenticationException(
-        SshFailureReason reason,
-        string message,
-        IReadOnlyList<SshAuthAttempt> attempts,
-        IReadOnlyList<string> serverOffered,
-        bool partialSuccessAchieved = false,
-        Exception? innerException = null)
-        : base(reason, SshPhase.Authenticating, message, innerException)
-    {
-        Attempts = attempts;
-        ServerOffered = serverOffered;
-        PartialSuccessAchieved = partialSuccessAchieved;
-    }
 
     /// <summary>逐条尝试记录，含「因服务端不接受而跳过」的那些。</summary>
-    public IReadOnlyList<SshAuthAttempt> Attempts { get; }
+    public IReadOnlyList<SshAuthAttempt> Attempts { get; } = attempts;
 
     /// <summary>服务端最后给出的可继续方法列表。</summary>
-    public IReadOnlyList<string> ServerOffered { get; }
+    public IReadOnlyList<string> ServerOffered { get; } = serverOffered;
 
     /// <summary>
     /// 过程中是否有过部分成功。
@@ -46,7 +39,7 @@ public sealed class SshAuthenticationException : SshException
     /// 这与「一关都没过」对用户是完全不同的信息，
     /// 值得在界面上说成「第一步通过了，但还需要 X」。
     /// </remarks>
-    public bool PartialSuccessAchieved { get; }
+    public bool PartialSuccessAchieved { get; } = partialSuccessAchieved;
 
     /// <summary>把尝试记录拼成多行人话，用于诊断面板。</summary>
     public string DescribeAttempts() =>

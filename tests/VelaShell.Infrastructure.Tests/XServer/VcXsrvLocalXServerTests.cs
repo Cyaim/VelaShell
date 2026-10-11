@@ -93,12 +93,9 @@ public class VcXsrvLocalXServerTests
 
     /// <summary>手动启动时找不到:要给出能照着做的原因(填的路径不存在)。</summary>
     [TestMethod]
+    [OSCondition(OperatingSystems.Windows, IgnoreMessage = "本机 X Server 只在 Windows 上启用。")]
     public async Task Start_ConfiguredPathMissing_FailsWithReason()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("本机 X Server 只在 Windows 上启用。");
-        }
         string missing = Path.Combine(Path.GetTempPath(), "no-such-dir", "vcxsrv.exe");
         using VcXsrvLocalXServer server = new(Settings(new XServerOptions { ExecutablePath = missing }), InUse());
 
@@ -112,12 +109,9 @@ public class VcXsrvLocalXServerTests
 
     /// <summary>固定显示号被占用:启动前就报出来,不去拉一个注定起不来的 VcXsrv。</summary>
     [TestMethod]
+    [OSCondition(OperatingSystems.Windows, IgnoreMessage = "本机 X Server 只在 Windows 上启用。")]
     public async Task Start_FixedDisplayInUse_FailsBeforeLaunching()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("本机 X Server 只在 Windows 上启用。");
-        }
         string fake = Path.GetTempFileName();
         try
         {
@@ -137,12 +131,9 @@ public class VcXsrvLocalXServerTests
     }
 
     [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "只在非 Windows 平台上验证。")]
     public async Task NonWindows_IsUnsupportedAndNeverTakesOver()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("只在非 Windows 平台上验证。");
-        }
         using VcXsrvLocalXServer server = new(Settings(new XServerOptions()), InUse());
 
         Assert.IsFalse(server.IsSupported);

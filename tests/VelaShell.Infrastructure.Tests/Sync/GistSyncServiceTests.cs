@@ -95,7 +95,7 @@ public sealed class GistSyncServiceTests
         Assert.DoesNotContain("plaintext-pass", content, "未加密载荷不得带凭据的明文密码");
         Assert.DoesNotContain("plaintext-phrase", content);
         SyncEnvelope envelope = System.Text.Json.JsonSerializer.Deserialize<SyncEnvelope>(
-            content, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+            content, System.Text.Json.JsonSerializerOptions.Web)!;
         Assert.AreEqual(3, envelope.SchemaVersion, "用到共享凭据的载荷要让不认识它的旧客户端拒收");
         Assert.AreEqual(3, envelope.Payload!.SchemaVersion);
     }
@@ -142,7 +142,7 @@ public sealed class GistSyncServiceTests
         Assert.IsTrue(result.Success, result.Message);
         await credentials.Received(1).SaveAsync(Arg.Is<SharedCredential>(c =>
             c.Id == id && c.Name == "renamed" && c.Password == "local-pass" && c.PrivateKeyPassphrase == "local-phrase"));
-        CollectionAssert.AreEqual(new[] { "credential", "profile" }, order);
+        Assert.AreSequenceEqual(["credential", "profile"], order);
     }
 
     [TestMethod]

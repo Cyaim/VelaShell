@@ -1139,10 +1139,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         {
             return;
         }
-        if (tunnel is not null)
-        {
-            tunnel.IsStopping = true;
-        }
+        tunnel?.IsStopping = true;
         try
         {
             ErrorMessage = null;
@@ -1160,10 +1157,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         }
         finally
         {
-            if (tunnel is not null)
-            {
-                tunnel.IsStopping = false;
-            }
+            tunnel?.IsStopping = false;
         }
     }
 

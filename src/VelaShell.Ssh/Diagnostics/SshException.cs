@@ -18,21 +18,15 @@ namespace VelaShell.Ssh.Diagnostics;
 /// 会在库改动一个字的措辞时静默失效 —— 而那种代码没有任何办法察觉自己已经坏了。
 /// </para>
 /// </remarks>
-public abstract class SshException : Exception
+/// <remarks>用给定原因、阶段与消息创建异常。</remarks>
+public abstract class SshException(SshFailureReason reason, SshPhase phase, string message, Exception? innerException = null) : Exception(message, innerException)
 {
-    /// <summary>用给定原因、阶段与消息创建异常。</summary>
-    protected SshException(SshFailureReason reason, SshPhase phase, string message, Exception? innerException = null)
-        : base(message, innerException)
-    {
-        Reason = reason;
-        Phase = phase;
-    }
 
     /// <summary>失败的分类。</summary>
-    public SshFailureReason Reason { get; }
+    public SshFailureReason Reason { get; } = reason;
 
     /// <summary>在哪一步失败的。</summary>
-    public SshPhase Phase { get; }
+    public SshPhase Phase { get; } = phase;
 
     /// <summary>
     /// 这个失败是否**可能**因为重试而消失。

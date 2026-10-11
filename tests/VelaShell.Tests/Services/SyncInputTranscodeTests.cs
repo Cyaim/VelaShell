@@ -61,6 +61,6 @@ public sealed class SyncInputTranscodeTests
 
         byte[] toBig5 = SyncInputCoordinator.Transcode(fromGbk, Gbk, Encoding.GetEncoding("Big5"));
 
-        Assert.AreSequenceEqual(new byte[] { 0x3F, 0x3F }, toBig5);
+        Assert.AreSequenceEqual("??"u8.ToArray(), toBig5);
     }
 }

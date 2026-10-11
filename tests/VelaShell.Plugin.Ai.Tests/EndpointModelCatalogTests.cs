@@ -116,20 +116,20 @@ public sealed class EndpointModelCatalogTests
     [TestMethod]
     public void Parse_ReadsTheOpenAiShape()
     {
-        var ids = EndpointModelCatalog.Parse("""
+        IReadOnlyList<(string Id, int ContextTokens)> ids = EndpointModelCatalog.Parse("""
             {"object":"list","data":[
               {"id":"gpt-5","object":"model","created":1,"owned_by":"openai"},
               {"id":"gpt-4o-audio-preview","object":"model","created":2,"owned_by":"openai"}
             ]}
             """);
 
-        Assert.AreSequenceEqual(["gpt-4o-audio-preview", "gpt-5"], ids.Select(model => model.Id).ToArray());
+        Assert.AreSequenceEqual(["gpt-4o-audio-preview", "gpt-5"], [.. ids.Select(model => model.Id)]);
     }
 
     [TestMethod]
     public void Parse_ReadsTheAnthropicShape()
     {
-        var ids = EndpointModelCatalog.Parse("""
+        IReadOnlyList<(string Id, int ContextTokens)> ids = EndpointModelCatalog.Parse("""
             {"data":[{"type":"model","id":"claude-sonnet-4","display_name":"Claude Sonnet 4"}],
              "has_more":false}
             """);
@@ -145,28 +145,28 @@ public sealed class EndpointModelCatalogTests
     [TestMethod]
     public void Parse_ReadsTheOllamaShape()
     {
-        var ids = EndpointModelCatalog.Parse("""
+        IReadOnlyList<(string Id, int ContextTokens)> ids = EndpointModelCatalog.Parse("""
             {"models":[{"name":"llama3.1:8b","size":1},{"name":"qwen3:14b","size":2}]}
             """);
 
-        Assert.AreSequenceEqual(["llama3.1:8b", "qwen3:14b"], ids.Select(model => model.Id).ToArray());
+        Assert.AreSequenceEqual(["llama3.1:8b", "qwen3:14b"], [.. ids.Select(model => model.Id)]);
     }
 
     [TestMethod]
     public void Parse_DeduplicatesAndSorts()
     {
-        var ids = EndpointModelCatalog.Parse("""
+        IReadOnlyList<(string Id, int ContextTokens)> ids = EndpointModelCatalog.Parse("""
             {"data":[{"id":"b"},{"id":"a"},{"id":"B"}]}
             """);
 
-        Assert.AreSequenceEqual(["a", "b"], ids.Select(model => model.Id).ToArray());
+        Assert.AreSequenceEqual(["a", "b"], [.. ids.Select(model => model.Id)]);
     }
 
     [TestMethod]
     public void Parse_DropsTheModelsThatCannotChat()
     {
         // /models 把一家的全部模型都报上来,包括向量、语音、画图、审核那些
-        var ids = EndpointModelCatalog.Parse("""
+        IReadOnlyList<(string Id, int ContextTokens)> ids = EndpointModelCatalog.Parse("""
             {"data":[
               {"id":"gpt-5"},
               {"id":"text-embedding-3-large"},
@@ -186,7 +186,7 @@ public sealed class EndpointModelCatalogTests
     public void Parse_DoesNotOverReach()
     {
         // 宁可漏筛也不误筛:误筛一个,用户在下拉里永远找不到它,而且不会有任何提示
-        var ids = EndpointModelCatalog.Parse("""
+        IReadOnlyList<(string Id, int ContextTokens)> ids = EndpointModelCatalog.Parse("""
             {"data":[{"id":"gpt-4o-audio-preview"},{"id":"gemini-2.5-pro-vision"},{"id":"pixtral-large"}]}
             """);
 
@@ -212,20 +212,20 @@ public sealed class EndpointModelCatalogTests
     [DataRow("2147483648", 0)]
     public void Parse_ReadsOnlyValidPositiveContextLengths(string value, int expected)
     {
-        var model = EndpointModelCatalog.Parse("{\"data\":[{\"id\":\"private-model\",\"context_length\":" + value + "}]}").Single();
-        Assert.AreEqual("private-model", model.Id);
-        Assert.AreEqual(expected, model.ContextTokens);
+        (string id, int contextTokens) = EndpointModelCatalog.Parse("{\"data\":[{\"id\":\"private-model\",\"context_length\":" + value + "}]}").Single();
+        Assert.AreEqual("private-model", id);
+        Assert.AreEqual(expected, contextTokens);
     }
 
     [TestMethod]
     public void Parse_DuplicateIdKeepsOriginalSpellingAndFillsMissingWindow()
     {
-        var model = EndpointModelCatalog.Parse("""
+        (string id, int contextTokens) = EndpointModelCatalog.Parse("""
             {"data":[{"id":"Private-model"},{"id":"PRIVATE-MODEL","context_length":65536},
                      {"id":"private-model","context_length":0}]}
             """).Single();
-        Assert.AreEqual("Private-model", model.Id);
-        Assert.AreEqual(65536, model.ContextTokens);
+        Assert.AreEqual("Private-model", id);
+        Assert.AreEqual(65536, contextTokens);
     }
 
     // ---- 发请求 ----

@@ -329,7 +329,7 @@ public sealed partial class X11Server
 
     // ------------------------------------------------------------------ 销毁
 
-    private void DestroyWindow(XClient c, XRequestReader r) => Destroy(Window(r.U32()));
+    private void DestroyWindow(XRequestReader r) => Destroy(Window(r.U32()));
 
     /// <summary>协议「DestroySubwindows」:对每个子窗口做一次 DestroyWindow,按堆叠次序从下到上(原先从上到下)。</summary>
     private void DestroySubwindows(XRequestReader r)
@@ -395,7 +395,7 @@ public sealed partial class X11Server
         }
         CleanupEwmh(window);
         CleanupSystemTray(window);
-        _xim?.WindowDestroyed(window);
+        Xim?.WindowDestroyed(window);
         CleanupOutgoingDrag(window);
         foreach ((SelectionSlot slot, (XWindow Window, XClient? Client, uint Time) owner) in _selections.ToArray())
         {

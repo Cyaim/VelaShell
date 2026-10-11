@@ -77,7 +77,7 @@ internal static partial class XDisplayProbe
 
     [LibraryImport("iphlpapi.dll")]
     [SupportedOSPlatform("windows")]
-    private static unsafe partial uint GetExtendedTcpTable(byte* table, ref uint size, [MarshalAs(UnmanagedType.Bool)] bool order,
+    private static partial uint GetExtendedTcpTable(byte* table, ref uint size, [MarshalAs(UnmanagedType.Bool)] bool order,
         uint family, int tableClass, uint reserved);
 
     [LibraryImport("kernel32.dll")]
@@ -117,7 +117,7 @@ internal static partial class XDisplayProbe
             {
                 return true;   // 读不出是谁持着:当作有人用
             }
-            using System.Diagnostics.Process holder = System.Diagnostics.Process.GetProcessById(pid);
+            using var holder = System.Diagnostics.Process.GetProcessById(pid);
             return !holder.HasExited;
         }
         catch (ArgumentException)

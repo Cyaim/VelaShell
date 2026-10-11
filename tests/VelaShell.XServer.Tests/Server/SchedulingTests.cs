@@ -30,7 +30,7 @@ public sealed class SchedulingTests
         Task heavyDone = heavy.SyncAsync();
         await Task.Delay(20);   // 让它们都排进去
 
-        Stopwatch waited = Stopwatch.StartNew();
+        var waited = Stopwatch.StartNew();
         await light.SyncAsync();
         waited.Stop();
         bool heavyFinishedFirst = heavyDone.IsCompleted;

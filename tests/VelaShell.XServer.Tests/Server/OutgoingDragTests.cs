@@ -130,7 +130,7 @@ public sealed class OutgoingDragTests
 
         await host.WaitForAsync(() => !host.OutgoingDrags.IsEmpty);
         Assert.IsTrue(host.OutgoingDrags.TryPeek(out XOutgoingDrag? drag));
-        CollectionAssert.AreEqual(new[] { "file:///home/u/a.txt", "file:///home/u/b%20c.txt" }, drag.Uris.ToArray());
+        Assert.AreSequenceEqual(["file:///home/u/a.txt", "file:///home/u/b%20c.txt"], [.. drag.Uris]);
         Assert.AreEqual("中文", drag.Text);
         Assert.AreEqual("user@host:22", drag.ClientLabel);
         Assert.AreEqual((100, 200), (drag.RootX, drag.RootY));
@@ -244,7 +244,7 @@ public sealed class OutgoingDragTests
             await Task.Delay(100);
         }
         Assert.AreEqual(0u, await ChildAtAsync(c, 300, 300), "拖动结束:撤掉了");
-        Assert.IsTrue(tree.U16(16) >= 2, "垫着时 QueryTree 列得出它");
+        Assert.IsGreaterThanOrEqualTo(2, tree.U16(16), "垫着时 QueryTree 列得出它");
     }
 
     [TestMethod]

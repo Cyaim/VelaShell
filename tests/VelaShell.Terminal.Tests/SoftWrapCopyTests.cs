@@ -18,7 +18,7 @@ namespace VelaShell.Terminal.Tests;
 public sealed class SoftWrapCopyTests
 {
     /// <summary>全程序集共用的 headless 会话(见 HeadlessTestSession:每类各起一个时,拆除会互相踩)。</summary>
-    private static HeadlessUnitTestSession _session => HeadlessTestSession.Current;
+    private static HeadlessUnitTestSession Session => HeadlessTestSession.Current;
 
     private const string Base64Chars =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -110,7 +110,7 @@ public sealed class SoftWrapCopyTests
 
                 // 块选是矩形:逐行取同一段列区间,不按逻辑行拼。
                 Assert.AreEqual(
-                    text[..3] + "\n" + text.Substring(cols, 3),
+                    string.Concat(text.AsSpan(0, 3), "\n", text.AsSpan(cols, 3)),
                     control.GetSelectedText()
                 );
             }
@@ -170,7 +170,7 @@ public sealed class SoftWrapCopyTests
 
     /// <summary>在空的 headless 终端上跑一段交互;内容由用例在布局定下列宽之后再灌。</summary>
     private static void RunOnTerminal(Action<Window, VelaTerminalControl> body) =>
-        _session
+        Session
             .Dispatch(
                 () =>
                 {

@@ -19,6 +19,7 @@
 //     两个方向都只与键盘焦点所在的会话来往,跨会话的复制粘贴经宿主的剪贴板中转。
 
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using VelaShell.XServer.Protocol;
 using VelaShell.XServer.Server;
@@ -39,23 +40,30 @@ public sealed partial class X11Server
     /// </summary>
     private XClipboardContent _hostContent = new();
 
-    /// <summary>文本的 UTF-8 / Latin-1 / COMPOUND_TEXT 编码与 HTML 的 UTF-8:第一次有人要时编一次,之后各次 ConvertSelection 共用。</summary>
-    private byte[]? _hostClipboardUtf8, _hostClipboardLatin1, _hostClipboardCompound, _hostHtmlUtf8;
+    /// <summary>
+    /// 文本的 COMPOUND_TEXT 编码与 HTML 的 UTF-8:第一次有人要时编一次,之后各次 ConvertSelection 共用
+    /// (UTF-8 / Latin-1 两种编码同样如此,见 <see cref="HostClipboardUtf8" />、<see cref="HostClipboardLatin1" />)。
+    /// </summary>
+    private byte[]? _hostClipboardCompound, _hostHtmlUtf8;
 
     private void SetHostClipboard(XClipboardContent content)
     {
         _hostContent = content;
-        _hostClipboardUtf8 = null;
-        _hostClipboardLatin1 = null;
+        HostClipboardUtf8 = null;
+        HostClipboardLatin1 = null;
         _hostClipboardCompound = null;
         _hostHtmlUtf8 = null;
     }
 
     private string HostClipboardText => _hostContent.Text ?? "";
 
-    private byte[] HostClipboardUtf8 => _hostClipboardUtf8 ??= Encoding.UTF8.GetBytes(HostClipboardText);
+    /// <summary>文本的 UTF-8 编码:第一次有人要时编一次;宿主换了剪贴板内容时置 null。</summary>
+    [AllowNull]
+    private byte[] HostClipboardUtf8 { get => field ??= Encoding.UTF8.GetBytes(HostClipboardText); set; }
 
-    private byte[] HostClipboardLatin1 => _hostClipboardLatin1 ??= Encoding.Latin1.GetBytes(HostClipboardText);
+    /// <summary>文本的 Latin-1 编码,同 <see cref="HostClipboardUtf8" />。</summary>
+    [AllowNull]
+    private byte[] HostClipboardLatin1 { get => field ??= Encoding.Latin1.GetBytes(HostClipboardText); set; }
 
     /// <summary>最近一次交给宿主的内容 —— 宿主把它(或其中几种格式)写回来时不再抢选区(防回声)。</summary>
     private XClipboardContent? _lastDelivered;
@@ -157,7 +165,7 @@ public sealed partial class X11Server
     /// 跨会话的复制粘贴经宿主的剪贴板中转(见 <see cref="SyncFocusedSessionClipboard" />)。其余选区(窗口管理器、XSETTINGS、拖放……)照协议全显示共享。
     /// </summary>
     private bool IsIsolatedSelection(uint atom) =>
-        _options.ClipboardFollowsFocus && (atom == XAtom.Primary || atom == XAtom.Secondary || atom == Intern("CLIPBOARD"));
+        Options.ClipboardFollowsFocus && (atom == XAtom.Primary || atom == XAtom.Secondary || atom == Intern("CLIPBOARD"));
 
     /// <summary>这个客户端眼里的那一份选区。</summary>
     private SelectionSlot SlotOf(uint atom, XClient client) => new(atom, IsIsolatedSelection(atom) ? SessionOf(client) : null);
@@ -176,7 +184,7 @@ public sealed partial class X11Server
     /// 这个客户端此刻能不能与宿主的剪贴板来往(<see cref="X11ServerOptions.ClipboardFollowsFocus" />):它属于键盘焦点所在的会话
     /// (与焦点窗口的客户端连接名相同;本机程序同属一个会话)。
     /// </summary>
-    private bool InFocusedSession(XClient client) => !_options.ClipboardFollowsFocus || FocusedSession() == SessionOf(client);
+    private bool InFocusedSession(XClient client) => !Options.ClipboardFollowsFocus || FocusedSession() == SessionOf(client);
 
     // ------------------------------------------------------------------ 宿主 → X
 
@@ -195,7 +203,7 @@ public sealed partial class X11Server
     /// <summary>宿主的剪贴板有了新内容(见 <see cref="SetClipboard" />):服务端替宿主在焦点所在的会话里占有 CLIPBOARD(有文本时连同 PRIMARY)。</summary>
     private void ApplyClipboardContent(XClipboardContent content)
     {
-        if (!_options.SyncClipboard || content.IsEmpty || IsEcho(content))
+        if (!Options.SyncClipboard || content.IsEmpty || IsEcho(content))
         {
             return;   // 宿主把我们刚给的写回来了
         }
@@ -210,12 +218,12 @@ public sealed partial class X11Server
     /// </summary>
     private void SyncFocusedSessionClipboard()
     {
-        if (!_options.SyncClipboard || _clipboardStamp == 0)
+        if (!Options.SyncClipboard || _clipboardStamp == 0)
         {
             return;
         }
-        string? session = _options.ClipboardFollowsFocus ? FocusedSession() : null;
-        if (_options.ClipboardFollowsFocus && session is null)
+        string? session = Options.ClipboardFollowsFocus ? FocusedSession() : null;
+        if (Options.ClipboardFollowsFocus && session is null)
         {
             return;   // 没有 X 窗口有焦点:等用户回到某个会话再交
         }
@@ -273,7 +281,7 @@ public sealed partial class X11Server
         {
             TakeSelectionForHost(slot);
         }
-        else if (_options.CompositingManager && !Rootful && slot.Atom == Intern("_NET_WM_CM_S0") && !_selections.ContainsKey(slot))
+        else if (Options.CompositingManager && !Rootful && slot.Atom == Intern("_NET_WM_CM_S0") && !_selections.ContainsKey(slot))
         {
             RetakeCompositingManagerSelection(slot);
         }
@@ -296,7 +304,7 @@ public sealed partial class X11Server
     }
 
     private bool IsSyncedSelection(uint selection) =>
-        _options.SyncClipboard && (selection == Intern("CLIPBOARD") || (_options.SyncPrimary && selection == XAtom.Primary));
+        Options.SyncClipboard && (selection == Intern("CLIPBOARD") || (Options.SyncPrimary && selection == XAtom.Primary));
 
     // ------------------------------------------------------------------ 服务端当属主
 
@@ -743,7 +751,7 @@ public sealed partial class X11Server
     /// </summary>
     private void InitClipboardManager()
     {
-        if (_options.SyncClipboard)
+        if (Options.SyncClipboard)
         {
             _selections[new SelectionSlot(Intern("CLIPBOARD_MANAGER"), null)] = (SelectionWindow, null, 0);
         }

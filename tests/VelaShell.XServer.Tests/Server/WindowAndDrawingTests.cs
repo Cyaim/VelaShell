@@ -215,8 +215,8 @@ public sealed class WindowAndDrawingTests
             byte[] fallback = await DrawAsync(image, 0, 0);       // default-char 是 0
             byte[] letter = await DrawAsync(image, 0, (byte)'A');
             byte[] outOfRange = await DrawAsync(image, 1, (byte)'A');   // 0x0141:单字节字体里没有
-            CollectionAssert.AreNotEqual(letter, fallback);
-            CollectionAssert.AreEqual(fallback, outOfRange, $"{(image ? "ImageText16" : "PolyText16")}:原先丢掉 byte1,画成了 A");
+            Assert.AreNotSequenceEqual(letter, fallback);
+            Assert.AreSequenceEqual(fallback, outOfRange, $"{(image ? "ImageText16" : "PolyText16")}:原先丢掉 byte1,画成了 A");
         }
     }
 
@@ -407,7 +407,7 @@ public sealed class WindowAndDrawingTests
         gate.SetResult();
         XMessage reply = await query;
         Assert.IsTrue(reply.IsReply, "建好之后按原顺序执行:OpenFont 在先,QueryFont 拿得到字体");
-        CollectionAssert.AreEqual(new[] { "fixed" }, prepared);
+        Assert.AreSequenceEqual(["fixed"], prepared);
 
         // 建不出来(后台抛异常)也放回去照常执行,不会一直等。
         server.PrepareFonts = (_, _) => Task.FromException(new InvalidDataException("坏数据"));
@@ -428,13 +428,13 @@ public sealed class WindowAndDrawingTests
         {
             names.Add(Encoding.Latin1.GetString(reply.Bytes, offset + 1, reply.Bytes[offset]));
         }
-        CollectionAssert.AreEqual(new[]
-        {
+        Assert.AreSequenceEqual(
+        [
             "-misc-fixed-medium-r-normal--13-120-75-75-c-70-iso10646-1",      // 7x13
             "-misc-fixed-medium-r-normal--13-120-75-75-c-80-iso10646-1",      // 8x13
             "-misc-fixed-medium-r-normal-ja-13-120-75-75-c-120-iso10646-1",   // 12x13ja
             "-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso10646-1",   // 6x13(fixed)
-        }, names);
+        ], names);
 
         // 只给一个的时候也是按序第一个;max 截断。
         XMessage one = await c.RequestAsync(49, 0, b => b.U16(1).U16((ushort)pattern.Length).Bytes(Encoding.Latin1.GetBytes(pattern)));
@@ -531,7 +531,7 @@ public sealed class WindowAndDrawingTests
         await c.SendAsync(25, 0, b => b.U32(c.RootWindow).U32(0x180000)
             .U8(33).U8(32).U16(0).U32(c.RootWindow).U32(protocols).U32(ping).U32(request.U32(16)).U32(win).U32(0).U32(0));
         await Task.Delay(400);
-        Assert.IsFalse(host.Requests.OfType<XNotRespondingRequest>().Any(), "回了 ping 就不报");
+        Assert.IsEmpty(host.Requests.OfType<XNotRespondingRequest>(), "回了 ping 就不报");
 
         // 第二次:程序卡住了,不回 —— 时限一过请宿主处理。
         server.CloseTopLevel(handle);
@@ -545,7 +545,7 @@ public sealed class WindowAndDrawingTests
 
         server.KillTopLevelClient(handle);   // 用户确认强制结束
         await host.WaitForAsync(() => !host.Mapped.ContainsKey(win));
-        Assert.IsFalse((await server.GetClientsAsync()).Any(i => i.Label == "joe@build:22"));
+        Assert.DoesNotContain(i => i.Label == "joe@build:22", await server.GetClientsAsync());
     }
 
     [TestMethod]

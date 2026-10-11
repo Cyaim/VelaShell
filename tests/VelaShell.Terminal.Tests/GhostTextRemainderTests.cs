@@ -13,7 +13,7 @@ namespace VelaShell.Terminal.Tests;
 public sealed class GhostTextRemainderTests
 {
     /// <summary>全程序集共用的 headless 会话(见 HeadlessTestSession:每类各起一个时,拆除会互相踩)。</summary>
-    private static Avalonia.Headless.HeadlessUnitTestSession _session => HeadlessTestSession.Current;
+    private static Avalonia.Headless.HeadlessUnitTestSession Session => HeadlessTestSession.Current;
 
     /// <summary>CSI CUB:把光标左移 n 格,用来构造"光标右侧还有内容"的屏幕状态。</summary>
     private static string CursorBack(int n) => $"\u001b[{n}D";
@@ -21,7 +21,7 @@ public sealed class GhostTextRemainderTests
     private static string? RemainderAfter(string echoed, string full)
     {
         string? result = null;
-        _session
+        Session
             .Dispatch(
                 () =>
                 {
@@ -89,7 +89,7 @@ public sealed class GhostTextRemainderTests
     public void NoSuggestionSet_ReturnsNull()
     {
         string? result = "sentinel";
-        _session
+        Session
             .Dispatch(
                 () =>
                 {

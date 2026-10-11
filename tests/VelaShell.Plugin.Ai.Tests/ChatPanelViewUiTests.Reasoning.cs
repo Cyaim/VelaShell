@@ -30,7 +30,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         await new AiSettingsStore(context).SaveAsync(new AiSettings
         {
-            Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false
+            Providers = [provider],
+            ActiveModelId = provider.Models[0].Id,
+            SuggestFollowUps = false
         });
         (Window window, ChatPanelView panel) = await ShowAsync(context);
         return (window, panel, Find<ComboBox>(panel, "ReasoningCombo"));
@@ -477,9 +479,11 @@ public sealed partial class ChatPanelViewUiTests
             provider.BaseUrl = target.BaseUrl;
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
                 McpServers = [new McpServerConfig { Name = "held", Transport = McpTransportType.Http,
-                    Url = mcp.BaseUrl + "/mcp" }], SuggestFollowUps = false
+                    Url = mcp.BaseUrl + "/mcp" }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
@@ -517,7 +521,6 @@ public sealed partial class ChatPanelViewUiTests
             }
         });
     }
-
 }
 
 /// <summary>临时档位在模型层的语义(与界面无关,单独测)。</summary>

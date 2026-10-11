@@ -91,7 +91,7 @@ public sealed class XAuthorityInteropTests
 
     [TestMethod]
     [Timeout(300_000, CooperativeCancellation = true)]
-    public async Task xauth列得出我们登记的那条_两边改写都留着对方的记录()
+    public async Task Xauth列得出我们登记的那条_两边改写都留着对方的记录()
     {
         if (ShouldSkip())
         {

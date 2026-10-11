@@ -16,7 +16,7 @@ namespace VelaShell.Terminal.Tests;
 public sealed class PtySizeReportingUiTests
 {
     /// <summary>全程序集共用的 headless 会话(见 HeadlessTestSession)。</summary>
-    private static HeadlessUnitTestSession _session => HeadlessTestSession.Current;
+    private static HeadlessUnitTestSession Session => HeadlessTestSession.Current;
 
     [TestMethod]
     public void CurrentPtySize_CarriesTheGridsPixelSize()
@@ -137,7 +137,7 @@ public sealed class PtySizeReportingUiTests
     }
 
     private static void OnUi(Action body) =>
-        _session
+        Session
             .Dispatch(
                 () =>
                 {

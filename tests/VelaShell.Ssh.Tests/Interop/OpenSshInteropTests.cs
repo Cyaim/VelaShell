@@ -48,6 +48,9 @@ namespace VelaShell.Ssh.Tests.Interop;
 [DoNotParallelize]
 public sealed partial class OpenSshInteropTests
 {
+    /// <summary>MSTest 注入;带协作取消的 <c>[Timeout]</c> 到点时取消它的 <see cref="TestContext.CancellationToken" />。</summary>
+    public TestContext TestContext { get; set; } = null!;
+
     private static string Host =>
         Environment.GetEnvironmentVariable("VELASHELL_SSH_INTEROP_HOST") ?? "127.0.0.1";
 
@@ -89,7 +92,7 @@ public sealed partial class OpenSshInteropTests
 
     private static IReadOnlyList<SshCredential> DefaultCredentials() =>
         KeyOnlySigner.Value is { } signer
-            ? [new PublicKeyCredential(signer, KeyPath!)]
+            ? [new PublicKeyCredential(signer, KeyPath)]
             : [new PasswordCredential(Password)];
 
     private static SshConnectionOptions Options(
@@ -166,7 +169,7 @@ public sealed partial class OpenSshInteropTests
             SshAlgorithmNames.Curve25519Sha256, SshAlgorithmNames.EcdhSha2Nistp256, SshAlgorithmNames.EcdhSha2Nistp384,
             SshAlgorithmNames.EcdhSha2Nistp521,
         ];
-        Assert.IsFalse(unsupported.Any(u => required.Any(r => u.StartsWith(r + "：", StringComparison.Ordinal))),
+        Assert.DoesNotContain(u => required.Any(r => u.StartsWith(r + "：", StringComparison.Ordinal)), unsupported,
             "OpenSSH 默认就支持的密钥交换谈不成：" + Environment.NewLine + string.Join(Environment.NewLine, unsupported));
 
         Console.WriteLine(unsupported.Count == 0
@@ -371,14 +374,19 @@ public sealed partial class OpenSshInteropTests
             HostKey = [hostKeyAlgorithm, .. SshAlgorithmSet.Default.HostKey.Where(a => a != hostKeyAlgorithm)],
         };
 
-        SshConnection connection;
+        SshConnection? connection = null;
+        string? refusal = null;
         try
         {
             connection = await SshConnection.ConnectAsync(Options(preferred));
         }
         catch (SshNegotiationException ex)
         {
-            Assert.Inconclusive($"服务端没有能用 {hostKeyAlgorithm} 的主机密钥：{ex.Message}");
+            refusal = ex.Message;
+        }
+        if (connection is null)
+        {
+            Assert.Inconclusive($"服务端没有能用 {hostKeyAlgorithm} 的主机密钥：{refusal}");
             return;
         }
 
@@ -757,8 +765,8 @@ public sealed partial class OpenSshInteropTests
 
         SftpIdNames names = await sftp.LookupUserAndGroupNamesAsync([0, uid, 4_242_424], [0, gid, 4_242_424]);
 
-        Assert.AreSequenceEqual(new string?[] { "root", me[2], null }, names.UserNames.ToArray());
-        Assert.AreSequenceEqual(new string?[] { "root", me[3], null }, names.GroupNames.ToArray());
+        Assert.AreSequenceEqual(["root", me[2], null], [.. names.UserNames]);
+        Assert.AreSequenceEqual(["root", me[3], null], [.. names.GroupNames]);
     }
 
     /// <summary>服务端内复制（copy-data）：真 OpenSSH 上复制出来的文件与源的 sha256 一致。</summary>
@@ -1510,7 +1518,7 @@ public sealed partial class OpenSshInteropTests
             SshHostKeyUpdate third = await ConnectAndAwaitRotationAsync(
                 new KnownHostsPolicy(knownHosts) { UnknownHost = UnknownHostBehavior.AcceptAndPersist, AllowHostKeyUpdates = true });
             Assert.IsNull(third.Skipped, third.Skipped);
-            Assert.AreSequenceEqual([retiredKey.Sha256Fingerprint], third.RemovedFingerprints.ToArray());
+            Assert.AreSequenceEqual([retiredKey.Sha256Fingerprint], [.. third.RemovedFingerprints]);
             Assert.AreSequenceEqual(lines, await File.ReadAllLinesAsync(knownHosts));
         }
         finally
@@ -1544,7 +1552,7 @@ public sealed partial class OpenSshInteropTests
             return;
         }
 
-        string name = Auth.CngSignerTests.CreateKey(System.Security.Cryptography.CngAlgorithm.Rsa, 3072);
+        string name = Auth.CngSignerTests.CreateKey(CngAlgorithm.Rsa, 3072);
         await using SshConnection admin = await SshConnection.ConnectAsync(Options());
         string marker = $"vela-cng-{Guid.NewGuid():N}";
         try

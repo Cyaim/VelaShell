@@ -6,6 +6,9 @@ using VelaShell.Plugin.Ai.Tests;
 
 [assembly: AvaloniaTestApplication(typeof(ChatPanelHeadlessApp))]
 
+// headless UI 测试共用同一条 UI 线程,并行只会让工作项互相等那条线程;一直是串行跑的,这里显式写出来(MSTEST0001)。
+[assembly: DoNotParallelize]
+
 namespace VelaShell.Plugin.Ai.Tests;
 
 /// <summary>

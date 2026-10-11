@@ -18,7 +18,7 @@ namespace VelaShell.Terminal.Tests;
 public sealed class MultiRegionSelectionTests
 {
     /// <summary>全程序集共用的 headless 会话(见 HeadlessTestSession:每类各起一个时,拆除会互相踩)。</summary>
-    private static HeadlessUnitTestSession _session => HeadlessTestSession.Current;
+    private static HeadlessUnitTestSession Session => HeadlessTestSession.Current;
 
     private const string Sample = "abcdefgh\r\nijklmnop\r\nqrstuvwx";
 
@@ -132,7 +132,7 @@ public sealed class MultiRegionSelectionTests
 
     /// <summary>在带 3 行样本文本的 headless 终端上跑一段交互。</summary>
     private static void RunOnTerminal(Action<Window, VelaTerminalControl> body) =>
-        _session
+        Session
             .Dispatch(
                 () =>
                 {

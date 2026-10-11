@@ -23,8 +23,8 @@ public partial class ChatPanelView
     /// 发送前调用:接近窗口就先把早期对话折成摘要。
     /// 网络失败仍回落裁剪;固定槽或身份失效、取消则抛给整轮收尾,禁止继续发送历史。
     /// </summary>
-    private async Task CompactIfNeededAsync(ResolvedModel provider, CancellationToken cancellationToken,
-        Func<CancellationToken, Task<IChatClient>> getVerifiedClient)
+    private async Task CompactIfNeededAsync(ResolvedModel provider,
+        Func<CancellationToken, Task<IChatClient>> getVerifiedClient, CancellationToken cancellationToken)
     {
         if (!_settings.CompactContext
             || !ContextCompactor.ShouldCompact(History, SummarizedThrough, ContextSummary,

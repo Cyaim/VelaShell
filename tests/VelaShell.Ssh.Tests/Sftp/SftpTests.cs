@@ -222,14 +222,14 @@ public sealed class SftpTests
         });
 
         Assert.IsTrue(harness.Sftp.Capabilities.RawExtensions.ContainsKey("echo@vendor.example"));
-        CollectionAssert.AreEqual(new byte[] { 3, 2, 1 }, await harness.Sftp.SendExtendedAsync("echo@vendor.example", new byte[] { 1, 2, 3 }, harness.Token));
+        Assert.AreSequenceEqual(new byte[] { 3, 2, 1 }, await harness.Sftp.SendExtendedAsync("echo@vendor.example", new byte[] { 1, 2, 3 }, harness.Token));
         Assert.IsEmpty(await harness.Sftp.SendExtendedAsync("ack@vendor.example", ReadOnlyMemory<byte>.Empty, harness.Token));
 
         SftpException failed = await Assert.ThrowsAsync<SftpException>(
             async () => await harness.Sftp.SendExtendedAsync("fail@vendor.example", "x"u8.ToArray(), harness.Token));
         Assert.AreEqual(SftpStatusCode.Failure, failed.StatusCode);
         Assert.AreEqual(SftpOperation.Extension, failed.Operation);
-        StringAssert.Contains(failed.Message, "fail@vendor.example");
+        Assert.Contains("fail@vendor.example", failed.Message);
 
         SftpException unknown = await Assert.ThrowsAsync<SftpException>(
             async () => await harness.Sftp.SendExtendedAsync("nope@vendor.example", ReadOnlyMemory<byte>.Empty, harness.Token));
@@ -238,7 +238,7 @@ public sealed class SftpTests
         lock (seen)
         {
             Assert.AreEqual("echo@vendor.example", seen[0].Name);
-            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, seen[0].Request);
+            Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, seen[0].Request);
         }
 
         // 用过之后流水线照常：别的请求不受影响。
@@ -298,7 +298,7 @@ public sealed class SftpTests
     }
 
     [TestMethod]
-    public async Task sftp_server一直不回VERSION时握手超时()
+    public async Task Sftp_server一直不回VERSION时握手超时()
     {
         // 登录 shell 的启动文件卡住时 sftp-server 永远不会回 VERSION；曾经只靠调用方的令牌，没给就一直挂着。
         // 只把原因码带出来：异常对象经 InnerException（WaitAsync 抛的 TaskCanceledException）一路引用着等 VERSION 的那个任务，
@@ -372,7 +372,7 @@ public sealed class SftpTests
     /// 带上退出码与它在 stderr 上说的话（清洗过）；曾经报「通道在还有在途请求时就关闭了」，两样都丢了。
     /// </summary>
     [TestMethod]
-    public async Task sftp_server起不来时报出退出码与它的stderr()
+    public async Task Sftp_server起不来时报出退出码与它的stderr()
     {
         SftpUnavailableException error = await Assert.ThrowsExactlyAsync<SftpUnavailableException>(
             async () => await Harness.StartAsync(channelScript: script => script with
@@ -413,7 +413,7 @@ public sealed class SftpTests
     }
 
     [TestMethod]
-    public async Task session通道没开成时原样报ChannelOpenFailed_不改写成没有sftp子系统()
+    public async Task Session通道没开成时原样报ChannelOpenFailed_不改写成没有sftp子系统()
     {
         // 服务端 MaxSessions 满了、管理上禁止：用户不该被引去改一个本来没问题的 sshd_config，
         // 也不该丢了「稍后可以重试」这个信息。
@@ -665,8 +665,8 @@ public sealed class SftpTests
     [TestMethod]
     public async Task 每次写的长度不是块的整数倍时凑满整块再发()
     {
-        const int Chunk = 256 * 1024;
-        byte[] payload = new byte[10 * Chunk];
+        const int chunk = 256 * 1024;
+        byte[] payload = new byte[10 * chunk];
         Random.Shared.NextBytes(payload);
 
         await using Harness harness = await Harness.StartAsync();
@@ -678,7 +678,7 @@ public sealed class SftpTests
         {
             for (int i = 0; i < 10; i++)
             {
-                await stream.WriteAsync(payload.AsMemory(i * Chunk, Chunk), harness.Token);
+                await stream.WriteAsync(payload.AsMemory(i * chunk, chunk), harness.Token);
             }
         }
 
@@ -911,7 +911,7 @@ public sealed class SftpTests
     // ------------------------------------------------------------ 目录
 
     [TestMethod]
-    public async Task sftp_server退出之后IsConnected变假_Closed带出原因()
+    public async Task Sftp_server退出之后IsConnected变假_Closed带出原因()
     {
         // sftp-server 崩溃、服务端按 ChannelTimeout 关掉闲置通道：这个对象不会自己恢复，
         // 使用者得知道它死了、丢掉重建 —— 曾经没有这个信号，宿主的文件面板一直坏到整条连接重连。
@@ -1247,7 +1247,7 @@ public sealed class SftpTests
             entries.Add(entry);
         }
 
-        Assert.AreSequenceEqual(new[] { "ok.txt" }, entries.Select(e => e.Name).ToArray());
+        Assert.AreSequenceEqual(["ok.txt"], [.. entries.Select(e => e.Name)]);
         Assert.AreEqual(5, harness.Sftp.MalformedEntriesSkipped, "「.」「..」是按选项过滤的，不算不合法");
     }
 
@@ -1395,7 +1395,7 @@ public sealed class SftpTests
         await stream.SetLengthAsync(block, harness.Token);
 
         Assert.AreEqual(block, stream.DurableLength);
-        Assert.AreEqual(block, harness.SftpServer.Nodes["/home/joe/t.bin"].Content.Count);
+        Assert.HasCount(block, harness.SftpServer.Nodes["/home/joe/t.bin"].Content);
     }
 
     [TestMethod]
@@ -1430,7 +1430,7 @@ public sealed class SftpTests
             entries.Add(entry);
         }
 
-        Assert.AreSequenceEqual(new[] { "ok.txt" }, entries.Select(e => e.Name).ToArray());
+        Assert.AreSequenceEqual(["ok.txt"], [.. entries.Select(e => e.Name)]);
     }
 
     [TestMethod]
@@ -1675,8 +1675,8 @@ public sealed class SftpTests
 
         SftpIdNames names = await harness.Sftp.LookupUserAndGroupNamesAsync([1000, 7, 0], [100], harness.Token);
 
-        Assert.AreSequenceEqual(new string?[] { "joe", null, "root" }, names.UserNames.ToArray());
-        Assert.AreSequenceEqual(new string?[] { "users" }, names.GroupNames.ToArray());
+        Assert.AreSequenceEqual(["joe", null, "root"], [.. names.UserNames]);
+        Assert.AreSequenceEqual(["users"], [.. names.GroupNames]);
     }
 
     /// <summary>回的名字比问的 id 少：对端的错，报格式不对，而不是把名字错位地安到别的 id 上。</summary>
@@ -1724,7 +1724,7 @@ public sealed class SftpTests
 
         Assert.AreSequenceEqual(content, await harness.Sftp.ReadAllBytesAsync("/home/joe/dst.bin", harness.Token));
         Assert.AreEqual(3, harness.SftpServer.CopyDataRequests, "10000 字节按 4096 一段是三段");
-        Assert.AreSequenceEqual(new long[] { 4096, 8192, 10_000 }, reported.ToArray());
+        Assert.AreSequenceEqual([4096, 8192, 10_000], [.. reported]);
         Assert.AreEqual(0b111_101_000u, (await harness.Sftp.GetAttributesAsync("/home/joe/dst.bin", harness.Token)).PermissionBits);
     }
 

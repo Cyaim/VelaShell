@@ -117,7 +117,7 @@ vm.SshKexAlgorithmsTip);
 
         vm.SshLegacyAlgorithms = true;
 
-        CollectionAssert.Contains(changed, nameof(ConnectionProfileViewModel.SshKexAlgorithmsTip));
+        Assert.Contains(nameof(ConnectionProfileViewModel.SshKexAlgorithmsTip), changed);
         Assert.Contains(string.Join(", ", SshAlgorithmPreferences.Defaults(SshAlgorithmKind.KeyExchange, legacy: true)),
 vm.SshKexAlgorithmsTip,
             "放开之后 group14-sha1 已经在默认里了");

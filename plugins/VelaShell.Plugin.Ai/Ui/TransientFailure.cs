@@ -1,10 +1,8 @@
-namespace VelaShell.Plugin.Ai.Ui;
-
-using System.Net;
 using Anthropic.Exceptions;
-using AnthropicErrorType = Anthropic.Models.ErrorType;
 using VelaShell.Plugin.Ai.Configuration;
+using AnthropicErrorType = Anthropic.Models.ErrorType;
 
+namespace VelaShell.Plugin.Ai.Ui;
 /// <summary>发送准备期间配置已失效;只可换用其他已验证接入,不能原地重试。</summary>
 internal sealed class ProviderConfigurationChangedException() : InvalidOperationException(
     "Provider configuration changed; refusing to send an unverified request.");
@@ -61,8 +59,11 @@ public static class TransientFailure
                 // 流式中途的 error 事件:HTTP 200 早已回过,overloaded_error 正是 529 的流式形态。
                 // SDK 抛的是不带状态码的 AnthropicSseException,只能按错误类型判 ——
                 // 不认的话,故障转移最该接手的"过载"反而原地报错
-                case AnthropicSseException { ErrorType: AnthropicErrorType.OverloadedError or AnthropicErrorType.ApiError
-                    or AnthropicErrorType.RateLimitError or AnthropicErrorType.TimeoutError }:
+                case AnthropicSseException
+                {
+                    ErrorType: AnthropicErrorType.OverloadedError or AnthropicErrorType.ApiError
+                    or AnthropicErrorType.RateLimitError or AnthropicErrorType.TimeoutError
+                }:
                     return true;
                 // 没状态码 = 压根没连上(DNS/拒绝/断连),抖一下就好
                 case HttpRequestException:
@@ -89,7 +90,7 @@ public static class TransientFailure
                     return false;
                 case HttpRequestException { StatusCode: { } status }:
                     return (int)status is 401 or 403 or 429;
-                case AnthropicApiException { StatusCode: { } apiStatus } when (int)apiStatus != 0:
+                case AnthropicApiException { StatusCode: { } apiStatus } when apiStatus != 0:
                     return (int)apiStatus is 401 or 403 or 429;
                 case System.ClientModel.ClientResultException { Status: > 0 } result:
                     return result.Status is 401 or 403 or 429;
@@ -119,7 +120,7 @@ public static class TransientFailure
         {
             if (current is HttpRequestException { StatusCode: { } status })
                 return (int)status is 401 or 403 or 408 or 429 or >= 500 and < 600;
-            if (current is AnthropicApiException { StatusCode: { } apiStatus } && (int)apiStatus != 0)
+            if (current is AnthropicApiException { StatusCode: { } apiStatus } && apiStatus != 0)
                 return (int)apiStatus is 401 or 403 or 408 or 429 or >= 500 and < 600;
             if (current is System.ClientModel.ClientResultException { Status: > 0 } result)
                 return result.Status is 401 or 403 or 408 or 429 or >= 500 and < 600;

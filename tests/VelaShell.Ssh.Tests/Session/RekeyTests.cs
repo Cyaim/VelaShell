@@ -278,7 +278,7 @@ public sealed class RekeyTests
 
         byte[] sent = host.Channels.Observation.LastClientInitiatedKexInit
             ?? throw new AssertFailedException("服务端没记到客户端发起的 KEXINIT。");
-        Assert.AreSequenceEqual([SshAlgorithmNames.SshEd25519], SshKexInitMessage.Decode(sent).ServerHostKeyAlgorithms.ToArray());
+        Assert.AreSequenceEqual([SshAlgorithmNames.SshEd25519], [.. SshKexInitMessage.Decode(sent).ServerHostKeyAlgorithms]);
     }
 
     /// <summary>

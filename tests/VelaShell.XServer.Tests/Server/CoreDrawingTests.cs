@@ -227,8 +227,8 @@ public sealed class CoreDrawingTests
         Assert.AreEqual(16u * 1 / 4, image.U32(4), "回复长度 = 16 字节");
         byte[] data = image.Bytes[32..48];
         byte[] plane = [0x01, 0, 0, 0, 0x00, 0x02, 0, 0];   // (0,0) 在第 0 行最低位;(9,1) 在第 1 行第 2 个字节的第 1 位
-        CollectionAssert.AreEqual(plane, data[..8], "第 23 位平面(高位在前)");
-        CollectionAssert.AreEqual(plane, data[8..], "第 0 位平面");
+        Assert.AreSequenceEqual(plane, data[..8], "第 23 位平面(高位在前)");
+        Assert.AreSequenceEqual(plane, data[8..], "第 0 位平面");
     }
 
     private static async Task<uint> PixmapAsync(XTestClient c, uint drawable, byte depth, ushort width, ushort height)

@@ -99,7 +99,7 @@ public sealed class NistHybridKeyExchangeTests
     [DataRow(P256, 1)]
     [DataRow(P384, -1)]
     [DataRow(P384, 1)]
-    public void S_REPLY长度不对时在解封装之前就拒绝(string name, int delta)
+    public void 服务端回的S_REPLY长度不对时在解封装之前就拒绝(string name, int delta)
     {
         (HybridKeyExchange client, byte[] reply) = Exchange(name);
         using (client)
@@ -180,13 +180,13 @@ public sealed class NistHybridKeyExchangeTests
     {
         IReadOnlyList<string> defaults = SshAlgorithmSet.Default.KeyExchange;
         Assert.AreSequenceEqual(
-            new[] { SshAlgorithmNames.MlKem768X25519Sha256, P256, P384, SshAlgorithmNames.Sntrup761X25519Sha512 },
-            defaults.Take(4).ToArray(),
+            [SshAlgorithmNames.MlKem768X25519Sha256, P256, P384, SshAlgorithmNames.Sntrup761X25519Sha512],
+            [.. defaults.Take(4)],
             "X25519 那种之后、sntrup761 之前，768 在前");
 
         Assert.AreSequenceEqual(
-            new[] { P256, P384, SshAlgorithmNames.EcdhSha2Nistp256 },
-            SshAlgorithmSet.FipsApprovedOnly.KeyExchange.Take(3).ToArray(),
+            [P256, P384, SshAlgorithmNames.EcdhSha2Nistp256],
+            [.. SshAlgorithmSet.FipsApprovedOnly.KeyExchange.Take(3)],
             "FIPS 清单里排最前，然后才是不带后量子的 ECDH");
 
         Assert.IsTrue(SshKeyExchangeFactory.IsSupported(P256) && SshKeyExchangeFactory.IsSupported(P384));

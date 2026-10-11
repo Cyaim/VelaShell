@@ -14,6 +14,8 @@ namespace VelaShell.Core.Tests.Models;
 [TestCategory("DataStore")]
 public class LanguageDefaultsTests
 {
+    private static readonly JsonSerializerOptions CamelCaseJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
     [TestMethod]
     public void FreshSettings_FollowTheSystem() =>
         Assert.AreEqual(string.Empty, new AppSettings().Language);
@@ -22,8 +24,7 @@ public class LanguageDefaultsTests
     public void AStoredLanguage_IsKeptAsIs()
     {
         // 存量配置里写着的语言分不清是用户选的还是旧出厂值,一律照旧生效
-        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        AppSettings reloaded = JsonSerializer.Deserialize<AppSettings>("""{"language":"zh-CN"}""", options)!;
+        AppSettings reloaded = JsonSerializer.Deserialize<AppSettings>("""{"language":"zh-CN"}""", CamelCaseJson)!;
         reloaded.Normalize();
 
         Assert.AreEqual("zh-CN", reloaded.Language);

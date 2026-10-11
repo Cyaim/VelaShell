@@ -289,7 +289,7 @@ public sealed class SessionArchiveJsonTests
 
         string json = SessionArchiveJson.Serialize(archive, Passphrase);
 
-        using JsonDocument parsed = JsonDocument.Parse(json);
+        using var parsed = JsonDocument.Parse(json);
         Assert.IsFalse(parsed.RootElement.TryGetProperty("secrets", out _));
     }
 }

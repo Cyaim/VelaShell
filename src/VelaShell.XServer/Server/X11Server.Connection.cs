@@ -60,16 +60,16 @@ public sealed partial class X11Server
     // ------------------------------------------------------------------ TCP
 
     /// <summary>这次要不要听 TCP:<see cref="X11ServerOptions.ListenTcp" /> 没给时看配没配 cookie(零值取安全值)。</summary>
-    private bool ListensOnTcp => _options.ListenTcp ?? _cookie is not null;
+    private bool ListensOnTcp => Options.ListenTcp ?? _cookie is not null;
 
     private void StartTcpListener()
     {
         if (_cookie is null)
         {
-            Log($"listening on TCP {_options.ListenAddress}:{6000 + _options.DisplayNumber} without a cookie: "
+            Log($"listening on TCP {Options.ListenAddress}:{6000 + Options.DisplayNumber} without a cookie: "
                 + "any local user can connect, read windows and inject input");
         }
-        TcpListener listener = new(_options.ListenAddress, 6000 + _options.DisplayNumber);
+        TcpListener listener = new(Options.ListenAddress, 6000 + Options.DisplayNumber);
         if (OperatingSystem.IsWindows())
         {
             // SO_EXCLUSIVEADDRUSE:没设的话,同一个用户的别的进程(包括低完整性的)用 SO_REUSEADDR 绑更具体的地址照样绑得上 ——
@@ -541,7 +541,7 @@ public sealed partial class X11Server
     /// <summary>连接建立成功回复:一块屏幕、深度 24 的 TrueColor 视觉(外加深度 32 与深度 1)。</summary>
     private byte[] BuildSetupReply(XClient client)
     {
-        byte[] vendor = XWire.Latin1.GetBytes(_options.Vendor);
+        byte[] vendor = XWire.Latin1.GetBytes(Options.Vendor);
         XWriter w = client.Writer(256);
         w.U8(1).U8(0).U16(11).U16(0).U16(0);        // success、主版本 11、次版本 0、长度(回填)
         w.U32(12101000);                             // release-number

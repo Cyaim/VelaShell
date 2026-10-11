@@ -19,14 +19,15 @@ namespace VelaShell.Tests.Design;
 /// </remarks>
 [TestClass]
 [TestCategory("Design")]
-public sealed class NoColorLiteralsTests
+public sealed partial class NoColorLiteralsTests
 {
     /// <summary>裸的十六进制色值:#RGB 六位或带 alpha 八位。</summary>
-    private static readonly Regex ColorLiteral = new(
-        @"#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?\b", RegexOptions.Compiled);
+    [GeneratedRegex(@"#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?\b")]
+    private static partial Regex ColorLiteral { get; }
 
     /// <summary>XAML 注释(设计说明里引用色号是正当的,不该被判违规)。</summary>
-    private static readonly Regex XamlComment = new(@"<!--.*?-->", RegexOptions.Compiled | RegexOptions.Singleline);
+    [GeneratedRegex(@"<!--.*?-->", RegexOptions.Singleline)]
+    private static partial Regex XamlComment { get; }
 
     /// <summary>
     /// 允许保留字面量的地方,以及为什么。

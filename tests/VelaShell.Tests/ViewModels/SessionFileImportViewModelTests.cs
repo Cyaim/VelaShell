@@ -1,6 +1,5 @@
 using NSubstitute;
 using ReactiveUI.Primitives;
-using VelaShell.Core.Credentials;
 using VelaShell.Core.Import;
 using VelaShell.Core.Models;
 using VelaShell.Security;

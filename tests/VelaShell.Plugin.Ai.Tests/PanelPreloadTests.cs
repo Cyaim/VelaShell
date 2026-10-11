@@ -9,7 +9,7 @@ namespace VelaShell.Plugin.Ai.Tests;
 [TestClass]
 public sealed class PanelPreloadTests
 {
-    private static readonly HashSet<string> Platform = new(StringComparer.OrdinalIgnoreCase) { "System.Runtime", "Avalonia.Base" };
+    private static readonly HashSet<string> Platform = [with(StringComparer.OrdinalIgnoreCase), "System.Runtime", "Avalonia.Base"];
 
     private static string? Private(AssemblyName name)
         => name.Name == "CSharpMath.Rendering" ? @"plugins\velashell-ai\CSharpMath.Rendering.dll" : null;

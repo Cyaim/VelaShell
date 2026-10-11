@@ -149,7 +149,7 @@ public sealed class RegionTests
         List<XRect> dots = [.. Enumerable.Range(0, Region.MaxRects + 1).Select(i => new XRect(i * 2, 0, 1, 1))];
         var tooMany = Region.FromRects(dots);
         Assert.IsTrue(tooMany.Saturated);
-        Assert.AreSequenceEqual([new XRect(0, 0, (Region.MaxRects * 2) + 1, 1)], tooMany.Rects.ToArray());
+        Assert.AreSequenceEqual([new XRect(0, 0, (Region.MaxRects * 2) + 1, 1)], [.. tooMany.Rects]);
 
         // 横条减竖条:结果是一张网格,块数是两边的乘积。
         var bars = Region.FromRects(Enumerable.Range(0, 200).Select(i => new XRect(0, i * 2, 400, 1)));

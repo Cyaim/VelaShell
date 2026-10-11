@@ -197,7 +197,7 @@ public sealed class SftpRequestPipelineTests
     /// <remarks>
     /// sftp-server 一起来就退出时，收包循环一开跑就收工，可能抢在 <c>ConnectAsync</c> 走到 <c>WaitForVersionAsync</c> 之前。
     /// 曾经收工只结算「已经有人在等」的 VERSION，晚来的那个等满 30 秒的握手时限 —— CI 上
-    /// <c>sftp_server起不来时报出退出码与它的stderr</c> 在机器忙时就这样撞上 30 秒的用例时限。
+    /// <c>Sftp_server起不来时报出退出码与它的stderr</c> 在机器忙时就这样撞上 30 秒的用例时限。
     /// 这里先等收工、再去等 VERSION，把那个竞态的输家固定下来。
     /// </remarks>
     [TestMethod]

@@ -122,7 +122,7 @@ public class GutterLayoutTests
         int box = g.FoldBoxSize(cellH);
         Assert.AreEqual(expected, box);
         Assert.AreEqual(1, box % 2, "边长取奇数,± 才有单像素中心。");
-        Assert.IsLessThanOrEqualTo(g.FoldWidth - 2, (double)box, "方框左右至少各给折叠列留 1px。");
+        Assert.IsLessThanOrEqualTo(g.FoldWidth - 2, box, "方框左右至少各给折叠列留 1px。");
     }
 
     [TestMethod]
@@ -131,7 +131,7 @@ public class GutterLayoutTests
         // 极小字号 + 大行高:行高算出的边长放不进列宽时让位给列宽,仍保持奇数。
         var g = new GutterLayout(3.6, false, false, showFold: true, blank: false);
         int box = g.FoldBoxSize(30);
-        Assert.IsLessThanOrEqualTo(g.FoldWidth - 2, (double)box);
+        Assert.IsLessThanOrEqualTo(g.FoldWidth - 2, box);
         Assert.AreEqual(1, box % 2);
     }
 }

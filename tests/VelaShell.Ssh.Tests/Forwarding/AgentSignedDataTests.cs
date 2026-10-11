@@ -68,7 +68,7 @@ public sealed class AgentSignedDataTests
     }
 
     [TestMethod]
-    public void hostbound方法的目的主机取自签名输入本身()
+    public void Hostbound方法的目的主机取自签名输入本身()
     {
         using var key = InMemorySshSigner.GenerateEd25519();
         using var host = InMemorySshSigner.GenerateEd25519();

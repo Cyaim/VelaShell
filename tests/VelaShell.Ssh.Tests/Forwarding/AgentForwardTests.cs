@@ -777,7 +777,7 @@ public sealed class AgentForwardTests
     }
 
     [TestMethod]
-    public async Task agent不支持会话声明时照常转发()
+    public async Task Agent不支持会话声明时照常转发()
     {
         await using Harness harness = await Harness.StartAsync();
         harness.Agent.DeclarationReply = TestDeclarationReply.Reject;
@@ -795,7 +795,7 @@ public sealed class AgentForwardTests
     }
 
     [TestMethod]
-    public async Task agent因为会话声明断开时重连一次不再声明()
+    public async Task Agent因为会话声明断开时重连一次不再声明()
     {
         // 个别 agent 收到不认识的报文就断。远端不能为一个可有可无的扩展付出「agent 不可用」的代价。
         await using Harness harness = await Harness.StartAsync();

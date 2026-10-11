@@ -13,7 +13,7 @@ namespace VelaShell.Infrastructure.Tests.Ssh;
 public sealed class AgentCredentialsErrorTests
 {
     [TestMethod]
-    public async Task agent列不出钥时提示按原因码本地化()
+    public async Task Agent列不出钥时提示按原因码本地化()
     {
         (InMemoryDuplexStream ours, InMemoryDuplexStream theirs) = InMemoryTransport.CreatePair();
         var server = Task.Run(async () =>

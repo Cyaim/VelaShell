@@ -12,7 +12,6 @@ using VelaShell.Controls;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Services;
-using VelaShell.Services;
 using VelaShell.Splash;
 using VelaShell.ViewModels;
 using SettingsView = VelaShell.Views.SettingsView;
@@ -29,10 +28,7 @@ public sealed class SplashPreviewUiTests
     private static HeadlessUnitTestSession _session = null!;
 
     [ClassInitialize]
-    public static void Init(TestContext _)
-    {
-        _session = HeadlessUnitTestSession.GetOrStartForAssembly(typeof(SplashPreviewUiTests).Assembly);
-    }
+    public static void Init(TestContext _) => _session = HeadlessUnitTestSession.GetOrStartForAssembly(typeof(SplashPreviewUiTests).Assembly);
 
     [TestMethod]
     [DataRow("classic", "dark")]
@@ -59,7 +55,7 @@ public sealed class SplashPreviewUiTests
             Assert.IsNotNull(frame);
             SaveForReview(frame, $"splash-preview-{style}-{theme}.png");
 
-            SplashPalette palette = SplashPalette.Resolve(theme, null, systemPrefersDark: true);
+            var palette = SplashPalette.Resolve(theme, null, systemPrefersDark: true);
             SKColor expected = style is SplashStyles.Terminal or SplashStyles.Prompt ? palette.Terminal : palette.Page;
             (byte r, byte g, byte b) = PixelAt(frame, (int)preview.Bounds.X + 3, (int)preview.Bounds.Y + 170);
             int distance = Math.Abs(r - expected.Red) + Math.Abs(g - expected.Green) + Math.Abs(b - expected.Blue);

@@ -141,7 +141,7 @@ public sealed class SshInteropTests
         Exception? translated = SshInterop.Translate(original);
 
         Assert.IsInstanceOfType<VelaSshAuthenticationException>(translated);
-        Assert.Contains("id_ed25519", translated!.Message,
+        Assert.Contains("id_ed25519", translated.Message,
             "逐条尝试记录必须进到消息里 —— 它是用户唯一能据以判断下一步的东西");
         Assert.StartsWith(Strings.Format("SshErr_AuthExhausted", "publickey, keyboard-interactive"), translated.Message,
             "主句按原因码用界面语言说,带上服务端接受的方法");
@@ -188,7 +188,7 @@ public sealed class SshInteropTests
         Exception? translated = SshInterop.Translate(original);
 
         Assert.IsInstanceOfType<VelaSshConnectionException>(translated);
-        Assert.Contains("aes128-ctr", translated!.Message, "对端提供了什么必须说出来");
+        Assert.Contains("aes128-ctr", translated.Message, "对端提供了什么必须说出来");
         Assert.Contains("aes256-gcm@openssh.com", translated.Message, "本端支持什么也必须说出来");
         Assert.Contains("OpenSSH_7.4", translated.Message, "对端版本串是判断「这台设备太老」的依据");
     }
@@ -325,7 +325,7 @@ public sealed class SshInteropTests
             new SftpException(SftpStatusCode.Failure, "Disk quota exceeded", "/home/joe/big.bin", SftpOperation.Write));
 
         Assert.IsInstanceOfType<VelaSftpOperationException>(translated);
-        Assert.Contains("Disk quota exceeded", translated!.Message);
+        Assert.Contains("Disk quota exceeded", translated.Message);
     }
 
     /// <summary>
@@ -365,7 +365,7 @@ public sealed class SshInteropTests
         Exception? translated = SshInterop.Translate(original);
 
         Assert.IsInstanceOfType<VelaSshAuthenticationException>(translated);
-        Assert.StartsWith(Strings.Get("SshErr_KeyPassphraseIncorrect"), translated!.Message);
+        Assert.StartsWith(Strings.Get("SshErr_KeyPassphraseIncorrect"), translated.Message);
         Assert.Contains("[KeyPassphraseIncorrect @ None]", translated.Message, "原因码尾巴不翻译,跨语言一致才好搜");
         Assert.AreSame(original, translated.InnerException);
     }
@@ -390,6 +390,6 @@ public sealed class SshInteropTests
             new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, "私钥格式不对(~/.ssh/id_broken)。"));
 
         Assert.IsInstanceOfType<VelaSshAuthenticationException>(translated);
-        Assert.Contains("id_broken", translated!.Message);
+        Assert.Contains("id_broken", translated.Message);
     }
 }

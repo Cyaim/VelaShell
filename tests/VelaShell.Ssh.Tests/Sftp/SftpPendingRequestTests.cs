@@ -92,7 +92,7 @@ public sealed class SftpPendingRequestTests
     {
         string marker = Guid.NewGuid().ToString("N");
         List<Exception> unobserved = [];
-        void handler(object? _, UnobservedTaskExceptionEventArgs e)
+        void OnUnobserved(object? _, UnobservedTaskExceptionEventArgs e)
         {
             if (e.Exception.InnerExceptions.Any(x => x.Message == marker))
             {
@@ -103,7 +103,7 @@ public sealed class SftpPendingRequestTests
             }
         }
 
-        TaskScheduler.UnobservedTaskException += handler;
+        TaskScheduler.UnobservedTaskException += OnUnobserved;
         try
         {
             FailThenAbandon(marker);
@@ -115,7 +115,7 @@ public sealed class SftpPendingRequestTests
         }
         finally
         {
-            TaskScheduler.UnobservedTaskException -= handler;
+            TaskScheduler.UnobservedTaskException -= OnUnobserved;
         }
 
         Assert.IsEmpty(unobserved, "放弃的一方要接手看一眼这个故障");

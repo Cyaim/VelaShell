@@ -94,7 +94,7 @@ internal static class SplashScreen
             {
                 return;
             }
-            StartupAppearance appearance = StartupAppearance.Read(new VelaShellStoragePaths().StartupAppearanceFile);
+            var appearance = StartupAppearance.Read(new VelaShellStoragePaths().StartupAppearanceFile);
             if (appearance.SplashStyle == SplashStyles.None)
             {
                 return;
@@ -112,8 +112,8 @@ internal static class SplashScreen
             Thread.CurrentThread.CurrentUICulture = culture;
             SplashNative.SetThreadDpiAwarenessContext(SplashNative.DpiAwarenessPerMonitorV2);
 
-            SplashPalette palette = SplashPalette.Resolve(appearance.Theme, appearance.Accent, SystemPrefersDark());
-            using SplashRenderer renderer = SplashRenderer.Create(appearance.SplashStyle, palette, SplashStrings.Load(), SplashResources.Create(culture));
+            var palette = SplashPalette.Resolve(appearance.Theme, appearance.Accent, SystemPrefersDark());
+            using var renderer = SplashRenderer.Create(appearance.SplashStyle, palette, SplashStrings.Load(), SplashResources.Create(culture));
             double shownAt = StartupTrace.Elapsed.TotalMilliseconds;
             using Win32SplashWindow window = new(renderer, () => tracker.Snapshot(StartupTrace.Elapsed.TotalMilliseconds, shownAt));
             lock (Gate)

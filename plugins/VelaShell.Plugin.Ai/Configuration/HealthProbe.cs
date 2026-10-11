@@ -1,6 +1,6 @@
-using Microsoft.Extensions.AI;
-using System.Text;
 using System.Globalization;
+using System.Text;
+using Microsoft.Extensions.AI;
 
 namespace VelaShell.Plugin.Ai.Configuration;
 
@@ -29,17 +29,17 @@ public static class HealthProbe
     public static Task<(Exception? Error, string Text)> ProbeAsync(
         AiSettingsStore store, ResolvedModel model, string? apiKeyOverride = null,
         CancellationToken cancellationToken = default)
-        => ProbeCoreAsync(store, model, null, apiKeyOverride, cancellationToken, null);
+        => ProbeCoreAsync(store, model, null, apiKeyOverride, null, cancellationToken);
 
     /// <summary>故障转移使用已固定的凭据探活;已收到的用量在调用上下文收尾时结算一次(包括失败和取消)。</summary>
     internal static Task<(Exception? Error, string Text)> ProbeAsync(
         AiSettingsStore store, ResolvedModel model, ProviderCredential credential,
-        CancellationToken cancellationToken = default, Action<UsageDetails>? usageCallback = null)
-        => ProbeCoreAsync(store, model, credential, null, cancellationToken, usageCallback);
+        Action<UsageDetails>? usageCallback = null, CancellationToken cancellationToken = default)
+        => ProbeCoreAsync(store, model, credential, null, usageCallback, cancellationToken);
 
     private static async Task<(Exception? Error, string Text)> ProbeCoreAsync(
         AiSettingsStore store, ResolvedModel model, ProviderCredential? credential,
-        string? apiKeyOverride, CancellationToken cancellationToken, Action<UsageDetails>? usageCallback)
+        string? apiKeyOverride, Action<UsageDetails>? usageCallback, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(model);
@@ -119,10 +119,15 @@ public static class HealthProbe
     private static bool HasVisibleText(string text)
     {
         foreach (Rune rune in text.EnumerateRunes())
+        {
             if (rune.Value is not (0x115F or 0x1160 or 0x2800 or 0x3164 or 0xFFA0)
                 && !Rune.IsWhiteSpace(rune) && Rune.GetUnicodeCategory(rune) is not UnicodeCategory.Control and not UnicodeCategory.Format
                 and not UnicodeCategory.NonSpacingMark and not UnicodeCategory.SpacingCombiningMark and not UnicodeCategory.EnclosingMark)
+            {
                 return true;
+            }
+        }
+
         return false;
     }
 

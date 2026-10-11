@@ -42,7 +42,7 @@ public partial class GlobalSettingsView : UserControl
     /// <summary>手动探活的结果(键 = 模型 id):行尾那盏灯的依据,不落盘。</summary>
     private sealed record ProbeResult(bool Ok, DateTime At, string? KeyId, string? ActiveKeyId,
         ProviderCredential? Credential, int Version);
-    private readonly Dictionary<string, ProbeResult> _probeResults = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ProbeResult> _probeResults = [with(StringComparer.Ordinal)];
     private bool _attached;
     private bool _checkingProbeResults;
 
@@ -55,8 +55,7 @@ public partial class GlobalSettingsView : UserControl
     private string[] _displayedChain = [];
     private (string Id, AiProvider Provider, long Version)[] _confirmedProviderRequests = [];
 
-    private void ConfirmProviderRequests() => _confirmedProviderRequests = _settings.Providers
-        .Select(provider => (provider.Id, provider, _store.ProviderConfigurationVersion(provider))).ToArray();
+    private void ConfirmProviderRequests() => _confirmedProviderRequests = [.. _settings.Providers.Select(provider => (provider.Id, provider, _store.ProviderConfigurationVersion(provider)))];
 
     private Dictionary<Control, object?> CaptureForm() => new Control[]
     {
@@ -105,7 +104,7 @@ public partial class GlobalSettingsView : UserControl
                     && ReferenceEquals(provider, previous.Provider)
                     && _store.ProviderConfigurationVersion(provider) == previous.Version));
         // Reload 等待期间仍允许编辑；重填之前才读取当前草稿。
-        Dictionary<Control, object?> dirty = CaptureForm()
+        var dirty = CaptureForm()
             .Where(field => !_loadedForm.TryGetValue(field.Key, out object? loaded) || !Equals(loaded, field.Value))
             .ToDictionary(field => field.Key, field => field.Value);
         bool chainEdited = !_chain.Select(entry => entry.ModelId).SequenceEqual(_loadedChain);
@@ -121,7 +120,7 @@ public partial class GlobalSettingsView : UserControl
             _chain.Clear();
             _chain.AddRange(_settings.FailoverChain.Select(entry => new FailoverEntry { ModelId = entry.ModelId }));
         }
-        _loadedChain = _settings.FailoverChain.Select(entry => entry.ModelId).ToArray();
+        _loadedChain = [.. _settings.FailoverChain.Select(entry => entry.ModelId)];
         RefreshFromProviders(requestChanged);
         _onSettingsReloaded(requestChanged);
         StatusText.Text = $"{_loc["Error"]}: {_loc["SetupConfigChanged"]}";
@@ -148,7 +147,7 @@ public partial class GlobalSettingsView : UserControl
 
         ShowSavedForm();
         _loadedForm = CaptureForm();
-        _loadedChain = _chain.Select(entry => entry.ModelId).ToArray();
+        _loadedChain = [.. _chain.Select(entry => entry.ModelId)];
 
         WebEnabledCheck.IsCheckedChanged += (_, _) => UpdateWebVisibility();
         FailoverAddButton.Click += (_, _) => AddFailover();
@@ -251,7 +250,7 @@ public partial class GlobalSettingsView : UserControl
         }
         _chain.RemoveAll(e => _settings.FindModel(e.ModelId) is null);
         // 自动剔除死 ID 不是用户编辑；只同步这些删除，不吸收其它窗口的新链。
-        _loadedChain = _loadedChain.Where(id => _settings.FindModel(id) is not null).ToArray();
+        _loadedChain = [.. _loadedChain.Where(id => _settings.FindModel(id) is not null)];
         RebuildFailover();
     }
 
@@ -264,7 +263,7 @@ public partial class GlobalSettingsView : UserControl
             InvalidateProbeProgress();
             foreach (string id in _probeResults.Keys.Where(id => _chain.All(entry => entry.ModelId != id)).ToArray())
                 _probeResults.Remove(id);
-            _displayedChain = _chain.Select(entry => entry.ModelId).ToArray();
+            _displayedChain = [.. _chain.Select(entry => entry.ModelId)];
         }
         RebuildFailoverRows();
         bool prefix = _settings.Providers.Count > 1;
@@ -396,12 +395,12 @@ public partial class GlobalSettingsView : UserControl
             IsVisible = false
         };
         var description = new StackPanel { Children = { label, status } };
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto") };
+        var grid = new Grid { ColumnDefinitions = [with("Auto,*,Auto,Auto,Auto,Auto")] };
         grid.Children.Add(number);
         Grid.SetColumn(description, 1);
         grid.Children.Add(description);
 
-        var dot = BuildProbeDot(model, status);
+        Avalonia.Controls.Shapes.Path dot = BuildProbeDot(model, status);
         _rowIndicators.Add((dot, status));
         Grid.SetColumn(dot, 2);
         grid.Children.Add(dot);
@@ -458,7 +457,7 @@ public partial class GlobalSettingsView : UserControl
     /// </summary>
     private void RefreshProbeDot((Avalonia.Controls.Shapes.Path Dot, TextBlock Status) indicator, ResolvedModel? model)
     {
-        var (dot, status) = indicator;
+        (Avalonia.Controls.Shapes.Path? dot, TextBlock? status) = indicator;
         bool? passed = null;
         string? tip = null;
         if (model is not null)
@@ -466,7 +465,10 @@ public partial class GlobalSettingsView : UserControl
             if (_probeResults.TryGetValue(model.Id, out ProbeResult? stale)
                 && (stale.Version != (_health?.Version ?? 0)
                     || stale.ActiveKeyId != model.Provider.ActiveApiKeyId))
+            {
                 InvalidateProbeResults(model.Id);
+            }
+
             if (_probeResults.TryGetValue(model.Id, out ProbeResult? result))
             {
                 passed = result.Ok;
@@ -485,7 +487,7 @@ public partial class GlobalSettingsView : UserControl
             dot.IsVisible = true;
             dot[!Avalonia.Controls.Shapes.Path.DataProperty] = new DynamicResourceExtension(
                 ok ? "AiIcon.circle-check" : "AiIcon.circle-x");
-            dot[!Avalonia.Controls.Shapes.Path.StrokeProperty] = new DynamicResourceExtension(
+            dot[!Avalonia.Controls.Shapes.Shape.StrokeProperty] = new DynamicResourceExtension(
                 ok ? "VelaStatusConnected" : "VelaError");
             ToolTip.SetTip(dot, tip);
         }
@@ -509,7 +511,7 @@ public partial class GlobalSettingsView : UserControl
             StrokeJoin = PenLineJoin.Round
         };
         icon[!Avalonia.Controls.Shapes.Path.DataProperty] = new DynamicResourceExtension(iconKey);
-        icon[!Avalonia.Controls.Shapes.Path.StrokeProperty] = new DynamicResourceExtension("VelaTextSecondary");
+        icon[!Avalonia.Controls.Shapes.Shape.StrokeProperty] = new DynamicResourceExtension("VelaTextSecondary");
         var button = new Button
         {
             Name = name,
@@ -594,8 +596,8 @@ public partial class GlobalSettingsView : UserControl
                 Exception? error;
                 try
                 {
-                    selected = await _store.ResolveCredentialWithKeyIdAsync(model, token);
-                    (error, _) = await HealthProbe.ProbeAsync(_store, model, selected.Value.Credential, token);
+                    selected = await _store.ResolveCredentialWithKeyIdAsync(model, cancellationToken: token);
+                    (error, _) = await HealthProbe.ProbeAsync(_store, model, selected.Value.Credential, cancellationToken: token);
                 }
                 // 只有本批次的令牌才算"取消";令牌刷新撞上 HttpClient 超时抛的 TaskCanceledException
                 // 是这一行不通,不能冒到外层把整批悄悄收掉、让状态行停在「正在检测」
@@ -607,22 +609,27 @@ public partial class GlobalSettingsView : UserControl
                 if (fresh is null || fresh.Model != modelName || fresh.BaseUrl != endpoint
                     || fresh.Protocol != protocol || fresh.ApiKeyOwnerId != ownerId
                     || fresh.Provider.ActiveApiKeyId != activeKeyId || (_health?.Version ?? 0) != healthEvidence)
+                {
                     continue;
+                }
+
                 if (selected is { } sent)
                 {
                     try
                     {
-                        var current = await _store.ResolveCredentialWithKeyIdAsync(fresh, token, refreshTokens: false);
+                        (ProviderCredential currentCredential, string? currentKeyId) = await _store.ResolveCredentialWithKeyIdAsync(fresh, refreshTokens: false, cancellationToken: token);
                         token.ThrowIfCancellationRequested();
-                        if (current.KeyId != sent.KeyId
-                            || !string.Equals(current.Credential.Value, sent.Credential.Value, StringComparison.Ordinal)
-                            || current.Credential.IsBearerToken != sent.Credential.IsBearerToken
-                            || current.Credential.BaseUrl != sent.Credential.BaseUrl
-                            || !(current.Credential.Headers ?? []).SequenceEqual(sent.Credential.Headers ?? [])
+                        if (currentKeyId != sent.KeyId
+                            || !string.Equals(currentCredential.Value, sent.Credential.Value, StringComparison.Ordinal)
+                            || currentCredential.IsBearerToken != sent.Credential.IsBearerToken
+                            || currentCredential.BaseUrl != sent.Credential.BaseUrl
+                            || !(currentCredential.Headers ?? []).SequenceEqual(sent.Credential.Headers ?? [])
                             || _settings.FindModel(model.Id) is not { } verified || verified.Model != modelName
                             || verified.BaseUrl != endpoint || verified.Protocol != protocol || verified.ApiKeyOwnerId != ownerId
                             || verified.Provider.ActiveApiKeyId != activeKeyId || (_health?.Version ?? 0) != healthEvidence)
+                        {
                             continue; // active 槽或 Key 已变:旧行灯和旧模型健康都丢弃。
+                        }
                     }
                     catch (Exception) when (!token.IsCancellationRequested) { continue; }
                 }
@@ -638,7 +645,10 @@ public partial class GlobalSettingsView : UserControl
                         if (ok || !TransientFailure.IsApiKeyFailure(error))
                             _health?.Record(model.Id, ok, healthEvidence, observationId);
                     }
-                    else _health?.Record(model.Id, ok, healthEvidence, observationId);
+                    else
+                    {
+                        _health?.Record(model.Id, ok, healthEvidence, observationId);
+                    }
                 }
                 if (ok)
                 {
@@ -711,11 +721,11 @@ public partial class GlobalSettingsView : UserControl
                 {
                     try
                     {
-                        var current = await _store.ResolveCredentialWithKeyIdAsync(model!, refreshTokens: false);
-                        matches = current.KeyId == result.KeyId && current.Credential.Value == sent.Value
-                            && current.Credential.IsBearerToken == sent.IsBearerToken
-                            && current.Credential.BaseUrl == sent.BaseUrl
-                            && (current.Credential.Headers ?? []).SequenceEqual(sent.Headers ?? [])
+                        (ProviderCredential currentCredential, string? currentKeyId) = await _store.ResolveCredentialWithKeyIdAsync(model!, refreshTokens: false);
+                        matches = currentKeyId == result.KeyId && currentCredential.Value == sent.Value
+                            && currentCredential.IsBearerToken == sent.IsBearerToken
+                            && currentCredential.BaseUrl == sent.BaseUrl
+                            && (currentCredential.Headers ?? []).SequenceEqual(sent.Headers ?? [])
                             && _settings.FindModel(id) is { } verified
                             && verified.Provider.ActiveApiKeyId == result.ActiveKeyId
                             && result.Version == (_health?.Version ?? 0);
@@ -779,7 +789,7 @@ public partial class GlobalSettingsView : UserControl
             WebMaxResultsBox.Text = draft.WebSearch.MaxResults.ToString();
             // 只把本次提交的 UI 快照记为基线;等待落盘期间仍允许用户继续编辑下一份草稿。
             Dictionary<Control, object?> submittedForm = CaptureForm();
-            string[] submittedChain = draft.FailoverChain.Select(entry => entry.ModelId).ToArray();
+            string[] submittedChain = [.. draft.FailoverChain.Select(entry => entry.ModelId)];
             // 回调以分离快照落盘且仅发布这些全局字段;失败时共享设置和本页编辑态都保持原样。
             await _persist(draft);
             _loadedForm = submittedForm;

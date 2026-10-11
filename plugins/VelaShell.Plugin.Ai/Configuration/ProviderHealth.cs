@@ -28,10 +28,10 @@ public sealed class ProviderHealth
     /// "刚才失败过"这个事实不因时钟怎么拨而改变。<see cref="Environment.TickCount64" />
     /// 只会随开机时间前进,回拨免疫。
     /// </remarks>
-    private readonly Dictionary<(bool IsKey, string Id), long> _failedAt = new();
+    private readonly Dictionary<(bool IsKey, string Id), long> _failedAt = [];
 
     /// <summary>模型与 Key 槽分开记录接受的证据序号,成功也保留以挡住迟到旧失败。</summary>
-    private readonly Dictionary<(bool IsKey, string Id), long> _latestObservation = new();
+    private readonly Dictionary<(bool IsKey, string Id), long> _latestObservation = [];
     private long _observationId;
     private readonly Lock _gate = new();
 
@@ -81,7 +81,7 @@ public sealed class ProviderHealth
         {
             return;
         }
-        var id = (isKey, modelId);
+        (bool isKey, string modelId) id = (isKey, modelId);
         lock (_gate)
         {
             if (evidenceVersion is { } version && version != _version)
@@ -137,7 +137,7 @@ public sealed class ProviderHealth
         if (string.IsNullOrEmpty(modelId)) return;
         lock (_gate)
         {
-            var id = (isKey, modelId);
+            (bool isKey, string modelId) id = (isKey, modelId);
             _failedAt.Remove(id);
             _latestObservation[id] = ++_observationId;
         }

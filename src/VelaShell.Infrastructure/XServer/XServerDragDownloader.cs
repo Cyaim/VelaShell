@@ -60,7 +60,7 @@ public sealed class SftpXServerDragDownloader(ISshConnectionService connections,
         string directory = Path.Combine(Root, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         List<string> local = [];
-        HashSet<string> names = new(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        HashSet<string> names = [with(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)];
         foreach (string remote in remotePaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -88,7 +88,7 @@ public sealed class SftpXServerDragDownloader(ISshConnectionService connections,
     private async Task DownloadDirectoryAsync(Guid id, string remote, string local, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(local);
-        HashSet<string> names = new(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        HashSet<string> names = [with(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)];
         foreach (RemoteFileInfo entry in await _sftp.ListDirectoryAsync(id, remote, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();

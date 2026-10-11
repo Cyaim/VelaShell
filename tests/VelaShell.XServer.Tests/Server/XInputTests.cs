@@ -326,10 +326,10 @@ public sealed class XInputTests
         server.InjectKey(XKeycodes.A, pressed: true);
 
         XMessage first = await NextXiAsync(c, xi, 2), second = await NextXiAsync(c, xi, 2);
-        CollectionAssert.AreEquivalent(new ushort[] { 5, 3 }, new[] { first.U16(10), second.U16(10) }, "从键盘、主键盘各一份(原先只有主设备那份)");
+        Assert.AreSequenceEqual(new ushort[] { 5, 3 }, [first.U16(10), second.U16(10)], SequenceOrder.InAnyOrder, "从键盘、主键盘各一份(原先只有主设备那份)");
         Assert.AreEqual(top, first.U32(24), "do-not-propagate 只截断核心事件,XI2 照样传到顶层");
         XMessage raw1 = await NextXiAsync(c, xi, 13), raw2 = await NextXiAsync(c, xi, 13);
-        CollectionAssert.AreEquivalent(new ushort[] { 5, 3 }, new[] { raw1.U16(10), raw2.U16(10) }, "原始事件也是各一份");
+        Assert.AreSequenceEqual(new ushort[] { 5, 3 }, [raw1.U16(10), raw2.U16(10)], SequenceOrder.InAnyOrder, "原始事件也是各一份");
         await Assert.ThrowsAsync<OperationCanceledException>(() => core.NextEventAsync(2, timeoutMs: 100), "核心事件被子窗口的 do-not-propagate 截断");
     }
 
@@ -421,7 +421,7 @@ public sealed class XInputTests
         server.SetScreenLayout(2560, 1440);
 
         List<XMessage> changed = [await NextXiAsync(c, xi, 1), await NextXiAsync(c, xi, 1)];
-        CollectionAssert.AreEquivalent(new ushort[] { 2, 4 }, changed.Select(e => e.U16(10)).ToArray(), "主指针与从指针各一条");
+        Assert.AreSequenceEqual(new ushort[] { 2, 4 }, [.. changed.Select(e => e.U16(10))], SequenceOrder.InAnyOrder, "主指针与从指针各一条");
         XMessage e = changed[0];
         Assert.AreEqual(7, e.U16(16), "num_classes:按钮、Abs X / Y、两个滚动轴、两个 ScrollClass");
         Assert.AreEqual(2, e.Bytes[20], "reason = DeviceChange");
@@ -455,11 +455,10 @@ public sealed class XInputTests
         byte xi = await XiAsync(c);
         XMessage slave = await c.RequestAsync(xi, 48, b => b.U16(4).U16(0));
         List<(ushort Type, int Offset)> classes = Classes(slave);
-        CollectionAssert.AreEqual(new ushort[] { 1, 2, 2, 2, 2, 3, 3 }, classes.Select(k => k.Type).ToArray(), "按钮、四个轴、两个 ScrollClass");
+        Assert.AreSequenceEqual(new ushort[] { 1, 2, 2, 2, 2, 3, 3 }, [.. classes.Select(k => k.Type)], "按钮、四个轴、两个 ScrollClass");
         (ushort, ushort, uint, double)[] scroll = [.. classes.Where(k => k.Type == 3)
             .Select(k => (slave.U16(k.Offset + 6), slave.U16(k.Offset + 8), slave.U32(k.Offset + 12), Fp3232(slave, k.Offset + 16)))];
-        CollectionAssert.AreEqual(new (ushort, ushort, uint, double)[] { (2, 2, 2u, 1.0), (3, 1, 2u, 1.0) }, scroll,
-            "轴 2 水平、轴 3 垂直,Preferred,一格 = 1.0");
+        Assert.AreSequenceEqual(new (ushort, ushort, uint, double)[] { (2, 2, 2u, 1.0), (3, 1, 2u, 1.0) }, scroll, "轴 2 水平、轴 3 垂直,Preferred,一格 = 1.0");
         int vertical = classes[4].Offset;
         Assert.AreEqual(0, slave.Bytes[vertical + 40], "滚动轴是相对模式");
     }

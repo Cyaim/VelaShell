@@ -51,8 +51,8 @@ public sealed partial class X11Server
     /// <summary>注册顺序(清理钩子按这个顺序调)。</summary>
     private readonly List<Extension> _extensionList = [];
 
-    /// <summary>GLX 扩展(测试看它的内部状态用)。</summary>
-    internal GlxExtension Glx => _glx;
+    /// <summary>GLX 扩展(自成一体的一个类;别的扩展还是 partial 文件)。测试也看它的内部状态。</summary>
+    internal GlxExtension Glx { get; }
 
     private void InitExtensions()
     {
@@ -149,16 +149,16 @@ public sealed partial class X11Server
             ErrorCount = 5,
             ClientClosed = CleanupXInput,
         });
-        Register(new Extension("GLX", GlxMajor, _glx.Handle)
+        Register(new Extension("GLX", GlxMajor, Glx.Handle)
         {
             FirstEvent = GlxEventBase,
             EventCount = 1,
             FirstError = GlxErrorBase,
             ErrorCount = 14,
-            ClientClosed = _glx.CleanupClient,
-            WindowDestroyed = _glx.CleanupWindow,
-            PixmapFreed = _glx.CleanupPixmap,
-            ResourceFreed = _glx.ResourceFreed,
+            ClientClosed = Glx.CleanupClient,
+            WindowDestroyed = Glx.CleanupWindow,
+            PixmapFreed = Glx.CleanupPixmap,
+            ResourceFreed = Glx.ResourceFreed,
         });
         if (ShmSupported)
         {

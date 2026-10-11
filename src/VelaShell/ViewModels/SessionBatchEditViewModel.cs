@@ -94,19 +94,19 @@ public sealed class SessionBatchEditViewModel : ReactiveObject
     public string Summary => Strings.Format("BatchEdit_SummaryFmt", _targets.Count);
 
     /// <summary>是否改用户名。</summary>
-    public bool ChangeUsername { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public bool ChangeUsername { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>新用户名。</summary>
-    public string Username { get => field; set { this.RaiseAndSetIfChanged(ref field, value ?? string.Empty); RaiseChanged(); } } = string.Empty;
+    public string Username { get; set { this.RaiseAndSetIfChanged(ref field, value ?? string.Empty); RaiseChanged(); } } = string.Empty;
 
     /// <summary>是否改端口。</summary>
-    public bool ChangePort { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public bool ChangePort { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>新端口。</summary>
-    public decimal? Port { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public decimal? Port { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>是否改认证。</summary>
-    public bool ChangeAuth { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public bool ChangeAuth { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>改成哪种认证。</summary>
     public SessionBatchAuthKind AuthKind
@@ -142,28 +142,28 @@ public sealed class SessionBatchEditViewModel : ReactiveObject
     public bool HasCredentials => CredentialOptions.Count > 0;
 
     /// <summary>选中的共享凭据。</summary>
-    public SessionBatchCredentialOption? SelectedCredential { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public SessionBatchCredentialOption? SelectedCredential { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>密码(可以留空,连接时再问)。</summary>
-    public SecureString? Password { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public SecureString? Password { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>是否明文显示密码。</summary>
-    public bool ShowPassword { get => field; set => this.RaiseAndSetIfChanged(ref field, value); }
+    public bool ShowPassword { get; set => this.RaiseAndSetIfChanged(ref field, value); }
 
     /// <summary>私钥文件路径。</summary>
-    public string? PrivateKeyPath { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public string? PrivateKeyPath { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>私钥口令。</summary>
-    public string? PrivateKeyPassphrase { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public string? PrivateKeyPassphrase { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>是否改跳板机。</summary>
-    public bool ChangeJumpHost { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public bool ChangeJumpHost { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>跳板机候选:直连 + 本机的 SSH 连接(不含正在改的这批)。</summary>
     public IReadOnlyList<SessionBatchJumpOption> JumpHostOptions { get; }
 
     /// <summary>选中的跳板机。</summary>
-    public SessionBatchJumpOption? SelectedJumpHost { get => field; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
+    public SessionBatchJumpOption? SelectedJumpHost { get; set { this.RaiseAndSetIfChanged(ref field, value); RaiseChanged(); } }
 
     /// <summary>有没有勾任何一项。</summary>
     public bool HasAnyChange => ChangeUsername || ChangePort || ChangeAuth || ChangeJumpHost;
@@ -199,7 +199,7 @@ public sealed class SessionBatchEditViewModel : ReactiveObject
     }
 
     /// <summary>是否正在保存。</summary>
-    public bool IsBusy { get => field; private set => this.RaiseAndSetIfChanged(ref field, value); }
+    public bool IsBusy { get; private set => this.RaiseAndSetIfChanged(ref field, value); }
 
     /// <summary>应用;没有任何改动时结果为 null。</summary>
     public ReactiveCommand<RxVoid, SessionBatchEditOutcome?> ApplyCommand { get; }
@@ -234,7 +234,7 @@ public sealed class SessionBatchEditViewModel : ReactiveObject
     public bool HasWritten { get; private set; }
 
     /// <summary>保存失败时的说明;对话框留着,用户可以再点一次。</summary>
-    public string? ErrorMessage { get => field; private set => this.RaiseAndSetIfChanged(ref field, value); }
+    public string? ErrorMessage { get; private set => this.RaiseAndSetIfChanged(ref field, value); }
 
     private async Task<SessionBatchEditOutcome?> ApplyAsync()
     {

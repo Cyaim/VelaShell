@@ -75,7 +75,7 @@ public sealed class SshConfigForwardTests
         {
             SshConnectException failure = Assert.ThrowsExactly<SshConnectException>(() => SshConfigForward.Parse(kind, value), value);
             Assert.AreEqual(SshFailureReason.InvalidConfiguration, failure.Reason);
-            StringAssert.Contains(failure.Message, value);
+            Assert.Contains(value, failure.Message);
         }
     }
 

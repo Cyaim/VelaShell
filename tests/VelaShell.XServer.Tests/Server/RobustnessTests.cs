@@ -87,13 +87,9 @@ public sealed class RobustnessTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Windows, IgnoreMessage = "SO_EXCLUSIVEADDRUSE 是 Windows 的语义;别的系统上 SO_REUSEADDR 本来就绑不上正在听的端口")]
     public async Task Windows上TCP监听独占端口_别的进程用SO_REUSEADDR抢不走()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("SO_EXCLUSIVEADDRUSE 是 Windows 的语义;别的系统上 SO_REUSEADDR 本来就绑不上正在听的端口");
-            return;
-        }
         int display = 0;
         for (int n = Random.Shared.Next(1000, 9000); display == 0; n++)
         {
@@ -199,7 +195,7 @@ public sealed class RobustnessTests
         await clientSide.FlushAsync();
         await Task.Delay(300);   // 等服务端读完这条请求、执行、回出去
         IReadOnlyList<XClientInfo> clients = await server.GetClientsAsync();
-        Assert.AreEqual(1, clients.Count, "大回复还在写的时候,紧跟着的请求没有被当成积压");
+        Assert.HasCount(1, clients, "大回复还在写的时候,紧跟着的请求没有被当成积压");
 
         await clientSide.DisposeAsync();
         await serverSide.DisposeAsync();
@@ -535,7 +531,7 @@ public sealed class RobustnessTests
         Assert.IsNotEmpty(fontLines);
         foreach (string line in fontLines)
         {
-            Assert.IsFalse(line.Any(ch => ch < 0x20), "日志行里没有换行、ESC 之类的控制字符");
+            Assert.DoesNotContain(ch => ch < 0x20, line, "日志行里没有换行、ESC 之类的控制字符");
             Assert.Contains(@"\x0A", line, "控制字符写成转义");
             Assert.IsLessThan(700, line.Length, "客户端给的长字符串截断了");
         }
@@ -860,7 +856,7 @@ public sealed class RobustnessTests
 
         server.BreakGrabs();
         Assert.IsTrue((await other.NextAsync(m => m.IsReply && m.Sequence == waiting)).IsReply);
-        Assert.IsFalse((await server.GetClientsAsync()).Any(c => c.HoldsServerGrab), "解除之后没有持有者");
+        Assert.DoesNotContain(c => c.HoldsServerGrab, await server.GetClientsAsync(), "解除之后没有持有者");
     }
 
     [TestMethod]

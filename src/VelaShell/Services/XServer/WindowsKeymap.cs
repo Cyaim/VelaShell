@@ -85,5 +85,5 @@ internal static partial class WindowsKeymap
     private static partial uint MapVirtualKeyExW(uint code, uint mapType, nint layout);
 
     [LibraryImport("user32.dll")]
-    private static unsafe partial int ToUnicodeEx(uint vk, uint scancode, byte* keyState, char* buffer, int bufferSize, uint flags, nint layout);
+    private static partial int ToUnicodeEx(uint vk, uint scancode, byte* keyState, char* buffer, int bufferSize, uint flags, nint layout);
 }

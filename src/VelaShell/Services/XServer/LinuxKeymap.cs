@@ -148,7 +148,7 @@ internal static partial class LinuxKeymap
     }
 
     [LibraryImport(Xcb, StringMarshalling = StringMarshalling.Utf8)]
-    private static unsafe partial nint xcb_connect(string? displayName, int* screen);
+    private static partial nint xcb_connect(string? displayName, int* screen);
 
     [LibraryImport(Xcb)]
     private static partial int xcb_connection_has_error(nint connection);
@@ -157,7 +157,7 @@ internal static partial class LinuxKeymap
     private static partial void xcb_disconnect(nint connection);
 
     [LibraryImport(XkbCommonX11)]
-    private static unsafe partial int xkb_x11_setup_xkb_extension(nint connection, ushort major, ushort minor, int flags,
+    private static partial int xkb_x11_setup_xkb_extension(nint connection, ushort major, ushort minor, int flags,
         ushort* majorOut, ushort* minorOut, byte* baseEvent, byte* baseError);
 
     [LibraryImport(XkbCommonX11)]
@@ -185,7 +185,7 @@ internal static partial class LinuxKeymap
     private static partial uint xkb_state_serialize_layout(nint state, uint components);
 
     [LibraryImport(XkbCommon)]
-    private static unsafe partial int xkb_keymap_key_get_syms_by_level(nint keymap, uint key, uint layout, uint level, uint** symsOut);
+    private static partial int xkb_keymap_key_get_syms_by_level(nint keymap, uint key, uint layout, uint level, uint** symsOut);
 }
 
 /// <summary>桌面键盘此刻的样子:按当前布局算出的键位表,与锁定键(CapsLock、NumLock)的状态。</summary>

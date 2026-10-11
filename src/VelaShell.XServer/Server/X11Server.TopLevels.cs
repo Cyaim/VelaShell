@@ -153,7 +153,7 @@ public sealed partial class X11Server
     /// 客户端自己声明了「这一圈不是窗口的一部分」,照 alpha 显示它;画不透明的 GL 程序不设输入形状,仍按不透明显示。
     /// </summary>
     private bool HasAlphaOnHost(XWindow top, IReadOnlyList<XRect>? inputShape) =>
-        top.Depth == 32 && (IsTrayEmbedder(top) || (!Rootful && (_options.CompositingManager || CoversPart(inputShape, top))));
+        top.Depth == 32 && (IsTrayEmbedder(top) || (!Rootful && (Options.CompositingManager || CoversPart(inputShape, top))));
 
     /// <summary>输入形状(已经裁到窗口里)只占窗口的一部分:四周有客户端声明为「不接收输入」的地方。</summary>
     private static bool CoversPart(IReadOnlyList<XRect>? inputShape, XWindow top)

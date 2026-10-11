@@ -9,10 +9,7 @@ public sealed class StartupAppearanceTests
     private string _directory = "";
 
     [TestInitialize]
-    public void Setup()
-    {
-        _directory = Path.Combine(Path.GetTempPath(), "velashell-startup-appearance-" + Guid.NewGuid().ToString("N"));
-    }
+    public void Setup() => _directory = Path.Combine(Path.GetTempPath(), "velashell-startup-appearance-" + Guid.NewGuid().ToString("N"));
 
     [TestCleanup]
     public void Cleanup()
@@ -56,15 +53,12 @@ public sealed class StartupAppearanceTests
     [DataRow("")]
     [DataRow("not a mirror file at all")]
     [DataRow("=\n==\n\0\0")]
-    public void Parse_GarbageFallsBackToDefault(string? text)
-    {
-        Assert.AreEqual(StartupAppearance.Default, StartupAppearance.Parse(text));
-    }
+    public void Parse_GarbageFallsBackToDefault(string? text) => Assert.AreEqual(StartupAppearance.Default, StartupAppearance.Parse(text));
 
     [TestMethod]
     public void Parse_FillsMissingKeysFromDefaultAndNormalizesStyle()
     {
-        StartupAppearance parsed = StartupAppearance.Parse("splash=hologram\r\ntheme= light \r\nfuture=whatever\r\n");
+        var parsed = StartupAppearance.Parse("splash=hologram\r\ntheme= light \r\nfuture=whatever\r\n");
 
         Assert.AreEqual("light", parsed.Theme);
         Assert.AreEqual(StartupAppearance.Default.Language, parsed.Language);
@@ -76,17 +70,14 @@ public sealed class StartupAppearanceTests
     {
         StartupAppearance sneaky = new("dark\nsplash=none", "", "", SplashStyles.Terminal);
 
-        StartupAppearance parsed = StartupAppearance.Parse(sneaky.Serialize());
+        var parsed = StartupAppearance.Parse(sneaky.Serialize());
 
         Assert.AreEqual(SplashStyles.Terminal, parsed.SplashStyle);
         Assert.AreEqual("dark splash=none", parsed.Theme);
     }
 
     [TestMethod]
-    public void Read_MissingFileGivesDefault()
-    {
-        Assert.AreEqual(StartupAppearance.Default, StartupAppearance.Read(Path.Combine(_directory, "nope.appearance")));
-    }
+    public void Read_MissingFileGivesDefault() => Assert.AreEqual(StartupAppearance.Default, StartupAppearance.Read(Path.Combine(_directory, "nope.appearance")));
 
     [TestMethod]
     public void Mirror_WritesFileAndSkipsUnchangedContent()

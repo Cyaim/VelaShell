@@ -20,7 +20,7 @@ namespace VelaShell.Terminal.Tests;
 [TestCategory("Mouse")]
 public sealed class AlternateScrollTests
 {
-    private static HeadlessUnitTestSession _session => HeadlessTestSession.Current;
+    private static HeadlessUnitTestSession Session => HeadlessTestSession.Current;
 
     /// <summary>进入备用屏(?1049h)并收集滚轮产生的输入字节。</summary>
     private static byte[] WheelOnAlternateScreen(
@@ -29,7 +29,7 @@ public sealed class AlternateScrollTests
         bool enabled = true)
     {
         byte[] captured = [];
-        _session.Dispatch(() =>
+        Session.Dispatch(() =>
         {
             var control = new VelaTerminalControl { AlternateScrollEnabled = enabled };
             var window = new Window { Width = 640, Height = 360, Content = control };
@@ -118,7 +118,7 @@ public sealed class AlternateScrollTests
     public void MainScreen_StillScrollsTheLocalScrollback()
     {
         int offset = 0;
-        _session.Dispatch(() =>
+        Session.Dispatch(() =>
         {
             var control = new VelaTerminalControl();
             var window = new Window { Width = 640, Height = 360, Content = control };
