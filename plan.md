@@ -2655,3 +2655,31 @@ lambda 简化、`field` 访问器、测试里的 `GeneratedRegex`。修复器的
 **验证**:上面那条命令全量重编:0 警告、0 提示(含临时打开的 IDE1006)。`dotnet test VelaShell.slnx`:各工程通过 / 跳过数与 §193 相同
 (Ssh.Tests 1359 / 61,Infrastructure.Tests 678 / 5,VelaShell.Tests 1992 / 11,XServer.Tests 552 / 9,Plugin.Ai.Tests 1464,其余全过);
 Core.Tests 794 通过 / 10 跳过 / 1 失败,失败的是 §193 记过的 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`(本机靶机容器过旧)。
+
+## ✅ 195. 2026-10-11 SSH 库:释放传输时还有读写在途,缓冲等它们退出了才还(CI 偶发失败的根因,用户需求)
+
+**起因**:#607 的 macOS CI 上 `HandshakeTests.策略返回未填的裁决时按拒绝处理` 失败:客户端读到的服务端 KEXINIT 被截短
+(读到第三个算法清单时载荷只剩 9 字节)。同一提交 Ubuntu / Windows 都过,本机按 3 核反复跑 25 轮复现不了。
+
+**根因**:`SshPacketTransport.DisposeAsync` 当场完成 reader / writer。.NET 的 `StreamPipeReader` 完成时把 64 KB 的读缓冲还回
+`ArrayPool<byte>.Shared`,而另一个任务还停在读里 —— 底层流那次读手里攥着这块内存,数据一到照写,写进的是别人刚租走的数组。
+测试里:上一条用例「主机密钥策略拒绝时带出它给的原因」客户端拒绝主机密钥后抛异常,`HandshakeAsync` 没等服务端那一侧就
+`await using` 释放,服务端还在等 NEWKEYS 的那次读成了孤儿;下一条用例的传输租到同一个数组(trx 里两条用例前后紧挨,没有并行重叠)。
+写端同理:刷到一半时还回去,发出去的可能是别人的数据。生产里连接释放时收发循环到点没退出(Windows 上 ProxyCommand 的匿名管道)
+也走这条路。§171 记的「每次运行从长尾里冒出别的」,可能有一部分就是它。
+
+**改法**(规格先行:velashell-docs `zh/ssh/spec/01` §4「释放」、`spec/05` §4.4,架构 §11.2.29):
+- 新增 `Transport/TransportSideLifetime`:传输一端的在途调用计数,由最后离开的那一方收尾。`SshPacketTransport` 的读端
+  (`ReadPacketAsync`、`ReadRawLineAsync`、换接收套件 / 解压器)与写端(`WritePacket`、`FlushAsync`、`WriteLineAsync`、换发送套件 / 压缩器)各一个。
+- `DisposeAsync`:没有调用在途的一端当场收尾;有的只取消挂起的读 / 刷出、不等,由那次调用退出时收尾。被取消的读以
+  `ObjectDisposedException` 退出(读循环原来不看 `IsCanceled`,内存传输上释放之后那次读一直不返回)。密码套件与压缩器跟着各自那一端释放 ——
+  原来当场清零接收套件的密钥,在途的那次解密会算出一个假的 MAC 错误。
+- 测试:`HandshakeTests.HandshakeAsync` 在客户端失败时先关客户端、等服务端那一侧收工,再把异常交出去。
+
+**验证**:`SshPacketTransportTests` 新增四条(底层流先交出缓冲、等放行再读写):释放后在同一线程上租同样大小的数组,租到的不是在途读 /
+刷出手里的那一个;在途的读退出之前接收套件不释放;能理会取消的流上挂起的读以「已释放」退出。四条在修复前的实现上全部失败
+(前两条租到的正是同一个数组,最后一条那次读一直不返回)。全量:构建 0 警告(`-warnaserror` + `EnforceCodeStyleInBuild`),IDE 提示 0;
+`VelaShell.Ssh.Tests` 1363 通过 / 61 跳过,其余工程与 §194 相同;Core.Tests 仍只有 §193 记过的
+`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`(本机靶机容器过旧)。
+
+文档:velashell-docs 中英镜像的 SSH 规格 01 §4、05 §4.4,架构 §11.2.29。
