@@ -3128,8 +3128,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <summary>
     /// 探一句对端是<b>哪一种</b> shell(#305),据此决定注入
     /// <see cref="ShellIntegrationScript" /> 里的哪一段目录上报脚本,或者干脆不注入。
-    /// 「上报终端工作目录」关着时直接返回 <see cref="RemoteShellKind.Unknown" /> ——
-    /// 连探针那条 exec 通道都不开,守住"关掉就一个字节都不发"的承诺(#286)。
+    /// 「上报终端工作目录」关着、也没有给 X 程序的环境变量要注入(见 <see cref="X11EnvironmentScript" />)时直接返回
+    /// <see cref="RemoteShellKind.Unknown" /> —— 连探针那条 exec 通道都不开,守住"关掉就一个字节都不发"的承诺(#286)。
     /// 结果按主机缓存,只有每台机器的首次连接付这次往返。
     /// </summary>
     /// <remarks>
@@ -3143,7 +3143,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         AppSettings settings,
         CancellationToken cancellationToken
     ) =>
-        settings.TerminalBehavior.ReportWorkingDirectory || WantsInputMethodEnvironment(settings, profile)
+        settings.TerminalBehavior.ReportWorkingDirectory || WantsInputMethodEnvironment(settings, profile) || WantsRendererEnvironment(profile)
             ? RemoteShellProbe.DetectAsync(
                 client,
                 RemoteShellProbe.CacheKey(profile?.Host, profile?.Port ?? 22, profile?.Username),
@@ -3219,7 +3219,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 用户自己配的"连接后执行命令"不受它影响 —— 那是用户明确要求执行的东西,
     /// 对端是什么 shell 由用户自己负责。
     /// </param>
-    /// <param name="profile">本次连接的配置:X11 转发经内置 X Server 时连同 <c>XMODIFIERS</c> 一起注入(见 <see cref="InputMethodEnvironmentScript" />)。</param>
+    /// <param name="profile">本次连接的配置:开着 X11 转发时连同给 X 程序的环境变量一起注入(<c>XMODIFIERS</c>、<c>GSK_RENDERER</c>,见 <see cref="X11EnvironmentScript" />)。</param>
     /// <remarks>
     /// <para>
     /// <b>钩子与用户命令分两条发,钩子那条带「注入窗口」</b>(把注入<b>引发的</b>输出也一并扣住,
@@ -3244,12 +3244,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     )
     {
         string script = WorkingDirectoryScript(settings, shellKind);
-        string environment = InputMethodEnvironmentScript(settings, profile, shellKind);
+        string environment = X11EnvironmentScript(settings, profile, shellKind);
         if (script.Length > 0 || environment.Length > 0)
         {
             // 装载排在哨兵之前(可能炸,而用户没敲过这一行,凭什么为它的报错买单);
             // 末尾那次上报排在哨兵之后(必须让仿真器看见,否则文件浏览器要等到用户第一次 cd)。
-            // XMODIFIERS 那一句也藏在哨兵之前,与目录钩子同一行发出,不多占一个提示符周期。
+            // 给 X 程序的那几句环境变量(XMODIFIERS、GSK_RENDERER)也藏在哨兵之前,与目录钩子同一行发出,不多占一个提示符周期。
             string hidden = environment.Length == 0 ? script : script.Length == 0 ? environment : environment + "; " + script;
             tab.SendShellIntegration(hidden, script.Length > 0 ? ShellIntegrationScript.FunctionName : string.Empty);
         }
@@ -3274,6 +3274,23 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// </summary>
     internal static string InputMethodEnvironmentScript(AppSettings settings, SessionProfile? profile, RemoteShellKind shellKind) =>
         WantsInputMethodEnvironment(settings, profile) ? XServerInputMethod.ShellExport(shellKind) : string.Empty;
+
+    /// <summary>
+    /// 这个会话开着 X11 转发(不论显示交给哪个 X 服务端):远端的 GTK 4 程序默认用 GL,经 SSH 只能退到 llvmpipe、每帧把整窗像素发过来,
+    /// 连接后注入 <c>GSK_RENDERER=cairo</c>(见 <see cref="RemoteGtkRenderer" />)。
+    /// </summary>
+    internal static bool WantsRendererEnvironment(SessionProfile? profile) => profile?.Ssh is { X11Forwarding: true };
+
+    /// <summary>
+    /// 连接后为 X 程序注入的环境变量:<c>XMODIFIERS</c>(见 <see cref="InputMethodEnvironmentScript" />)与 <c>GSK_RENDERER</c>
+    /// (见 <see cref="RemoteGtkRenderer" />),各自已经设了的不动;都不该注入、探不出 shell 种类时为空串。
+    /// </summary>
+    internal static string X11EnvironmentScript(AppSettings settings, SessionProfile? profile, RemoteShellKind shellKind)
+    {
+        string inputMethod = InputMethodEnvironmentScript(settings, profile, shellKind);
+        string renderer = WantsRendererEnvironment(profile) ? RemoteGtkRenderer.ShellExport(shellKind) : string.Empty;
+        return inputMethod.Length == 0 ? renderer : renderer.Length == 0 ? inputMethod : inputMethod + "; " + renderer;
+    }
 
     /// <summary>
     /// 本次该注入的目录上报脚本:开关关着、或探不出 shell 种类时一律返回空串

@@ -511,6 +511,138 @@ public sealed class EwmhTests
         Assert.IsFalse(host.Log.Skip(logBefore).Any(e => e.StartsWith($"changed {top:x}", StringComparison.Ordinal)), "宿主自己挪的,不回报");
     }
 
+    /// <summary>建一个选了 StructureNotify 的顶层,<paramref name="declarePing" /> 时在 WM_PROTOCOLS 里声明 _NET_WM_PING,映射。返回窗口、句柄与 _NET_WM_PING 原子。</summary>
+    private static async Task<(uint Window, XTopLevelWindow Handle, uint Ping)> MapMovableAsync(XTestClient c, RecordingHost host, bool declarePing)
+    {
+        uint top = await CreateTopAsync(c);
+        uint protocols = (await c.RequestAsync(16, 0, b => b.U16(12).U16(0).Bytes(Encoding.Latin1.GetBytes("WM_PROTOCOLS")))).U32(8);
+        uint ping = (await c.RequestAsync(16, 0, b => b.U16(12).U16(0).Bytes(Encoding.Latin1.GetBytes("_NET_WM_PING")))).U32(8);
+        if (declarePing)
+        {
+            await SetCard32Async(c, top, protocols, 4, ping);   // ATOM
+        }
+        await c.SendAsync(2, 0, b => b.U32(top).U32(0x800).U32(0x20000));   // StructureNotify
+        await c.SendAsync(8, 0, b => b.U32(top));
+        await host.WaitForAsync(() => host.Mapped.ContainsKey(top));
+        return (top, host.Mapped[top], ping);
+    }
+
+    /// <summary>窗口自己收到的 ConfigureNotify 一对(真实的与合成的),返回位置。</summary>
+    private static async Task<(int X, int Y)> NextMoveAsync(XTestClient c, uint top, int timeoutMs = 5000)
+    {
+        XMessage real = await c.NextAsync(m => !m.IsReply && !m.IsError && m.EventCode == 22 && (m.Kind & 0x80) == 0 && m.U32(4) == top, timeoutMs);
+        XMessage synthetic = await c.NextAsync(m => !m.IsReply && !m.IsError && m.EventCode == 22 && (m.Kind & 0x80) != 0 && m.U32(4) == top, timeoutMs);
+        Assert.AreEqual((real.I16(16), real.I16(18)), (synthetic.I16(16), synthetic.I16(18)));
+        return (real.I16(16), real.I16(18));
+    }
+
+    private static async Task AssertNoMoveAsync(XTestClient c, uint top, int waitMs, string because)
+    {
+        await c.SyncAsync();
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => c.NextAsync(m => !m.IsReply && !m.IsError && m.EventCode == 22 && m.U32(4) == top, waitMs), because);
+    }
+
+    private static Task<ushort> PongAsync(XTestClient c, uint ping, XMessage request) =>
+        c.SendAsync(25, 0, b => b.U32(c.RootWindow).U32(0x180000)   // 原样发回根窗口(SubstructureNotify | SubstructureRedirect)
+            .U8(33).U8(32).U16(0).U32(c.RootWindow).U32(request.U32(8)).U32(ping).U32(request.U32(16)).U32(request.U32(20)).U32(0).U32(0));
+
+    [TestMethod]
+    public async Task 宿主拖动窗口时_客户端回pong之前只记最新位置_中间位置不交_回了再交最后一个()
+    {
+        using RecordingHost host = new();
+        await using X11Server server = new(host: host);
+        await using XTestClient c = await XTestClient.ConnectAsync(server);
+        (uint top, XTopLevelWindow handle, uint ping) = await MapMovableAsync(c, host, declarePing: true);
+        int logBefore = host.Log.Count;
+
+        server.MoveTopLevel(handle, 10, 10);
+        Assert.AreEqual((10, 10), await NextMoveAsync(c, top), "第一次移动当场交出");
+        XMessage request = await c.NextAsync(m => !m.IsReply && !m.IsError && m.EventCode == 33 && m.U32(12) == ping);
+        Assert.AreEqual(top, request.U32(20), "移动之后紧跟一条 ping:客户端按序处理事件,回了 pong 就处理完了那次移动");
+
+        server.MoveTopLevel(handle, 20, 20);
+        server.MoveTopLevel(handle, 30, 30);
+        server.MoveTopLevel(handle, 40, 40);
+        await AssertNoMoveAsync(c, top, 300, "pong 回来之前不再交 —— 原先每个中间位置都发一组 ConfigureNotify,GTK 每组要做几次往返");
+        Assert.AreEqual((40, 40), (handle.Snapshot.X, handle.Snapshot.Y), "快照跟着原生窗口(宿主的位置),不会被拉回去");
+
+        await PongAsync(c, ping, request);
+        Assert.AreEqual((40, 40), await NextMoveAsync(c, top), "回了 pong:只交最后的位置,20 与 30 从没交过");
+        XMessage again = await c.NextAsync(m => !m.IsReply && !m.IsError && m.EventCode == 33 && m.U32(12) == ping);
+        Assert.AreNotEqual(request.U32(16), again.U32(16), "下一道屏障的 ping 时间戳不同");
+
+        await PongAsync(c, ping, again);
+        await AssertNoMoveAsync(c, top, 200, "期间没有新位置:不再交");
+        server.MoveTopLevel(handle, 50, 60);
+        Assert.AreEqual((50, 60), await NextMoveAsync(c, top), "屏障放开之后的移动又当场交出");
+        await c.SyncAsync();
+        Assert.IsFalse(host.Log.Skip(logBefore).Any(e => e.StartsWith($"changed {top:x}", StringComparison.Ordinal)), "宿主自己挪的,一次也不回报");
+    }
+
+    [TestMethod]
+    public async Task 宿主拖动没声明NET_WM_PING的窗口_按最短间隔合并_最后的位置照样交到()
+    {
+        using RecordingHost host = new();
+        await using X11Server server = new(host: host);
+        server.MoveInterval = TimeSpan.FromMilliseconds(300);
+        await using XTestClient c = await XTestClient.ConnectAsync(server);
+        (uint top, XTopLevelWindow handle, _) = await MapMovableAsync(c, host, declarePing: false);
+
+        server.MoveTopLevel(handle, 10, 10);
+        Assert.AreEqual((10, 10), await NextMoveAsync(c, top));
+        server.MoveTopLevel(handle, 20, 20);
+        server.MoveTopLevel(handle, 30, 30);
+        await AssertNoMoveAsync(c, top, 100, "间隔没到");
+        Assert.AreEqual((30, 30), await NextMoveAsync(c, top), "间隔到了交最后的位置");
+        await c.SyncAsync();
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => c.NextAsync(m => !m.IsReply && !m.IsError && m.EventCode == 33, 100), "没声明 _NET_WM_PING 的窗口不收 ping");
+    }
+
+    [TestMethod]
+    public async Task 拖动期间客户端自己挪了窗口_宿主没交出去的位置作废_以客户端的为准()
+    {
+        using RecordingHost host = new();
+        await using X11Server server = new(host: host);
+        await using XTestClient c = await XTestClient.ConnectAsync(server);
+        (uint top, XTopLevelWindow handle, uint ping) = await MapMovableAsync(c, host, declarePing: true);
+
+        server.MoveTopLevel(handle, 10, 10);
+        await NextMoveAsync(c, top);
+        XMessage request = await c.NextAsync(m => !m.IsReply && !m.IsError && m.EventCode == 33 && m.U32(12) == ping);
+        server.MoveTopLevel(handle, 50, 50);
+        await c.SendAsync(12, 0, b => b.U32(top).U16(0x3).U16(0).U32(200).U32(100));   // ConfigureWindow x / y
+        XMessage own = await c.NextAsync(m => !m.IsReply && !m.IsError && m.EventCode == 22 && m.U32(4) == top);
+        Assert.AreEqual((200, 100), (own.I16(16), own.I16(18)));
+        await host.WaitForAsync(() => handle.Snapshot.X == 200);
+        Assert.AreEqual(100, handle.Snapshot.Y, "快照报客户端要的位置,宿主据此把原生窗口挪过去");
+
+        await PongAsync(c, ping, request);
+        await AssertNoMoveAsync(c, top, 200, "宿主那个 (50, 50) 已经作废,不再交");
+    }
+
+    [TestMethod]
+    public async Task 拖动期间窗口的别的属性变了_快照的位置仍是宿主的_不把原生窗口拉回旧位置()
+    {
+        using RecordingHost host = new();
+        await using X11Server server = new(host: host);
+        await using XTestClient c = await XTestClient.ConnectAsync(server);
+        (uint top, XTopLevelWindow handle, _) = await MapMovableAsync(c, host, declarePing: true);
+        server.MoveTopLevel(handle, 10, 10);
+        await NextMoveAsync(c, top);
+        server.MoveTopLevel(handle, 70, 80);
+        await c.SyncAsync();
+        int logBefore = host.Log.Count;
+
+        byte[] title = Encoding.Latin1.GetBytes("renamed");
+        await c.SendAsync(18, 0, b => b.U32(top).U32(39).U32(31).U8(8).U8(0).U8(0).U8(0).U32((uint)title.Length).Bytes(title).Pad());   // WM_NAME
+        await host.WaitForAsync(() => handle.Snapshot.Title == "renamed");
+        Assert.AreEqual((70, 80), (handle.Snapshot.X, handle.Snapshot.Y));
+        string change = host.Log.Skip(logBefore).Single(e => e.StartsWith($"changed {top:x}", StringComparison.Ordinal));
+        Assert.IsFalse(change.Contains("Geometry", StringComparison.Ordinal), "只报标题;原先快照按 X 窗口的旧位置重建,宿主会把正在拖的窗口拉回去");
+    }
+
     [TestMethod]
     public async Task 弹出菜单抓着指针时用户点别的X窗口_按下送到抓取方_菜单关得掉()
     {

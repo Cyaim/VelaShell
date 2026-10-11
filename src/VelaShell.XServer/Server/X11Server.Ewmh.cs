@@ -519,6 +519,10 @@ public sealed partial class X11Server
                             break;
                         }
                     }
+                    if (move)
+                    {
+                        DropPendingMove(top);   // 客户端要的位置为准,宿主还没交出去的拖动位置作废
+                    }
                     if (move && (x != top.X || y != top.Y))
                     {
                         top.PositionRequested = !top.Mapped;
