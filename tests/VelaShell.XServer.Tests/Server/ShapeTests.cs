@@ -104,6 +104,42 @@ public sealed class ShapeTests
         Assert.AreNotSame(first, handle.Snapshot.InputShape);
     }
 
+    /// <summary>
+    /// 没有合成管理器时 ARGB 窗口按不透明显示,但输入形状只圈出一部分的除外:GTK 4 的弹出菜单不论有没有合成管理器都在四周画 alpha 为 0 的阴影区、
+    /// 输入形状只圈菜单本体,按不透明显示就是一圈黑边(gnome-calculator 的模式下拉菜单实测)。
+    /// </summary>
+    [TestMethod]
+    public async Task 没有合成管理器时_输入形状只圈出一部分的ARGB窗口按alpha显示_其余ARGB窗口仍不透明()
+    {
+        using RecordingHost host = new();
+        await using X11Server server = new(host: host);
+        await using XTestClient c = await XTestClient.ConnectAsync(server);
+        byte major = await ShapeMajorAsync(c);
+        uint popup = c.NewId();
+        await c.SendAsync(1, 32, b => b.U32(popup).U32(c.RootWindow).I16(0).I16(0).U16(60).U16(40).U16(0).U16(1).U32(0x22)   // 深度 32、ARGB 视觉
+            .U32(0x200).U32(1));   // override-redirect
+        await c.SendAsync(8, 0, b => b.U32(popup));
+        await host.WaitForAsync(() => host.Mapped.ContainsKey(popup));
+        XTopLevelWindow handle = host.Mapped[popup];
+        Assert.IsFalse(handle.Snapshot.HasAlpha, "没有合成管理器:X 显示 ARGB 窗口不看 alpha(GL 程序清屏的 alpha 是 0)");
+
+        // 输入形状只圈中间(GTK 的菜单本体),四周是不接收输入的阴影区。
+        await c.SendAsync(major, 1, b => b.U8(0).U8(2).U8(0).U8(0).U32(popup).I16(0).I16(0).I16(10).I16(8).U16(40).U16(24));
+        await host.WaitForAsync(() => handle.Snapshot.InputShape is not null);
+        Assert.IsTrue(handle.Snapshot.HasAlpha, "客户端声明了四周不是窗口的一部分:照 alpha 显示,不再是一圈黑边");
+
+        // 输入形状盖满整个窗口:没有声明为不接收输入的地方,仍按不透明。
+        await c.SendAsync(major, 1, b => b.U8(0).U8(2).U8(0).U8(0).U32(popup).I16(0).I16(0).I16(0).I16(0).U16(60).U16(40));
+        await host.WaitForAsync(() => handle.Snapshot.InputShape is [{ Width: 60, Height: 40 }]);
+        Assert.IsFalse(handle.Snapshot.HasAlpha);
+
+        // 24 位的窗口有没有输入形状都不透明(像素里没有 alpha)。
+        (uint plain, XTopLevelWindow plainHandle) = await MapTopAsync(c, host, 0x000000);
+        await c.SendAsync(major, 1, b => b.U8(0).U8(2).U8(0).U8(0).U32(plain).I16(0).I16(0).I16(10).I16(8).U16(20).U16(10));
+        await host.WaitForAsync(() => plainHandle.Snapshot.InputShape is not null);
+        Assert.IsFalse(plainHandle.Snapshot.HasAlpha);
+    }
+
     [TestMethod]
     public async Task 顶层改输入形状不重画_边界形状变大只Expose新露出来的部分()
     {

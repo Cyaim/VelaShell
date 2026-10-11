@@ -117,10 +117,11 @@ public sealed partial class X11Server
             inputShape = previous.InputShape;
         }
 
+        (int x, int y) = PendingMove(top) ?? (top.X, top.Y);   // 宿主拖着、还没交给客户端的位置:原生窗口已经在那儿了
         XTopLevelSnapshot snapshot = previous with
         {
-            X = top.X,
-            Y = top.Y,
+            X = x,
+            Y = y,
             Width = top.Width,
             Height = top.Height,
             BorderWidth = top.BorderWidth,
@@ -134,7 +135,7 @@ public sealed partial class X11Server
             ClientId = top.Owner?.Index ?? 0,
             // 托盘图标的嵌入窗口是服务端的,来源取停靠进来的那个图标所属的连接(宿主据此在提示里标出来源)。
             ClientLabel = top.Owner?.Label ?? TrayIconOwnerLabel(top),
-            HasAlpha = HasAlphaOnHost(top),
+            HasAlpha = HasAlphaOnHost(top, inputShape),
             InputOnly = top.IsInputOnly,
             Shape = shape,
             InputShape = inputShape,
@@ -147,9 +148,27 @@ public sealed partial class X11Server
     /// 单窗口模式下不当)—— 没有合成管理器时 X 显示 ARGB 窗口不看 alpha。原先只看深度:设置关着(默认)时,要了 8 位 alpha 的 GL 程序
     /// (GLFW 默认就要,只拿得到 ARGB 视觉)清屏的 alpha 是 0,整个窗口透出后面的东西,还白付了系统合成的开销。
     /// 托盘图标例外:托盘管理器就是服务端自己,ARGB 图标本来就是要透明的。
+    /// 输入形状只占窗口一部分的 ARGB 窗口也例外:GTK 4 不论有没有合成管理器,弹出菜单(GtkPopover)都按 ARGB 视觉画、四周留二十来像素
+    /// alpha 为 0 的阴影区,再用 SHAPE 的输入形状只圈出菜单本体 —— 不看 alpha 的话,那一圈在宿主上是一道黑边(gnome-calculator 的模式下拉菜单实测)。
+    /// 客户端自己声明了「这一圈不是窗口的一部分」,照 alpha 显示它;画不透明的 GL 程序不设输入形状,仍按不透明显示。
     /// </summary>
-    private bool HasAlphaOnHost(XWindow top) =>
-        top.Depth == 32 && (IsTrayEmbedder(top) || (_options.CompositingManager && !Rootful));
+    private bool HasAlphaOnHost(XWindow top, IReadOnlyList<XRect>? inputShape) =>
+        top.Depth == 32 && (IsTrayEmbedder(top) || (!Rootful && (_options.CompositingManager || CoversPart(inputShape, top))));
+
+    /// <summary>输入形状(已经裁到窗口里)只占窗口的一部分:四周有客户端声明为「不接收输入」的地方。</summary>
+    private static bool CoversPart(IReadOnlyList<XRect>? inputShape, XWindow top)
+    {
+        if (inputShape is null)
+        {
+            return false;
+        }
+        long area = 0;
+        foreach (XRect r in inputShape)
+        {
+            area += (long)r.Width * r.Height;   // 区域的矩形互不重叠(按 y 分带)
+        }
+        return area < (long)top.Width * top.Height;
+    }
 
     /// <summary>两份快照之间哪几组字段不同;不属于前几组的字段一律算 <see cref="XTopLevelChanges.Hints" />。</summary>
     private static XTopLevelChanges Diff(XTopLevelSnapshot a, XTopLevelSnapshot b)
@@ -291,11 +310,21 @@ public sealed partial class X11Server
     /// 根窗口上选了 SubstructureNotify 的都收到)、Present 的 ConfigureNotify、重算指针所在的窗口;再按 ICCCM §4.1.5 补一条合成的
     /// ConfigureNotify(根坐标)。原先只发合成的那条,根窗口上的监听者收不到,指针所在的窗口也不重算。
     /// 宿主按重力摆好了客户端请求的位置(<see cref="XTopLevelSnapshot.NeedsPlacement" />)也走这里,之后不再要摆。
+    /// 客户端还没处理完上一次移动时只记下最新的位置,等它处理完再交(见 <see cref="StartMoveBarrier" />)。
     /// </summary>
     private void ApplyMove(XWindow top, int x, int y)
     {
         bool placed = top.PositionRequested;
         top.PositionRequested = false;
+        if (_moveBarriers.TryGetValue(top, out MoveBarrier? barrier))
+        {
+            barrier.Pending = (x, y);
+            if (_topLevelHandles.TryGetValue(top, out XTopLevelWindow? waiting))
+            {
+                waiting.Snapshot = waiting.Snapshot with { X = x, Y = y, NeedsPlacement = false };   // 宿主自己挪的,不再回报
+            }
+            return;
+        }
         if (top.X == x && top.Y == y)
         {
             if (placed && _topLevelHandles.TryGetValue(top, out XTopLevelWindow? same))
@@ -304,6 +333,13 @@ public sealed partial class X11Server
             }
             return;
         }
+        DeliverMove(top, x, y);
+        StartMoveBarrier(top);
+    }
+
+    /// <summary>真的把顶层挪到 (<paramref name="x" />, <paramref name="y" />):真实的 ConfigureNotify,再补 ICCCM §4.1.5 的合成事件。</summary>
+    private void DeliverMove(XWindow top, int x, int y)
+    {
         if (_topLevelHandles.TryGetValue(top, out XTopLevelWindow? handle))
         {
             // 宿主自己挪的,不再回报(快照先改好,Configure 比不出变化)
@@ -323,6 +359,81 @@ public sealed partial class X11Server
             Configure(top, top.X, top.Y, width, height, top.BorderWidth, null, -1);
         }
     }
+
+    // ------------------------------------------------------------------ 宿主移动的流量控制
+
+    /// <summary>宿主挪过、客户端还没处理完那次移动的顶层 → 屏障(见 <see cref="StartMoveBarrier" />)。</summary>
+    private readonly Dictionary<XWindow, MoveBarrier> _moveBarriers = [];
+
+    /// <summary>一次移动交出去之后等客户端处理完:<see cref="Pending" /> 是这期间宿主报来的最新位置,<see cref="PingTime" /> 是随移动发的 ping(0 = 没发)。</summary>
+    private sealed class MoveBarrier
+    {
+        public (int X, int Y)? Pending;
+        public uint PingTime;
+    }
+
+    /// <summary>上一个移动屏障用的 ping 时间戳:同一毫秒里的两次移动也要分得开。</summary>
+    private uint _lastMovePing;
+
+    /// <summary>ping 迟迟不回(客户端卡住、忙)时,过了这么久照样交下一次移动(测试可以调短)。</summary>
+    internal TimeSpan MovePingTimeout { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>没声明 <c>_NET_WM_PING</c> 的窗口,两次移动之间至少隔这么久(测试可以调)。</summary>
+    internal TimeSpan MoveInterval { get; set; } = TimeSpan.FromMilliseconds(50);
+
+    /// <summary>
+    /// 宿主拖动原生窗口时每秒报几十上百次位置(Windows 每个 WM_MOVE 一次),原先每次都发一组 ConfigureNotify。GTK 处理一次移动要做几次
+    /// 同步往返(gnome-calculator 实测每次五次:真实的那条两次 TranslateCoordinates 与一次 GetGeometry,合成的那条 GetGeometry 与
+    /// TranslateCoordinates 各一次),而客户端按到达的先后一条条处理:往返 20 毫秒时拖一秒,松手之后程序还要冻住近九秒才处理完。
+    /// 现在交出一次移动之后先等客户端处理完 —— 窗口声明了 <c>_NET_WM_PING</c> 就随移动发一条 ping(EWMH「_NET_WM_PING」),客户端按序处理事件,
+    /// 回了 pong 就说明它前面的 ConfigureNotify 都处理完了;没声明的至少隔 <see cref="MoveInterval" />。等的期间宿主再报的位置只记最新的一个,
+    /// 屏障放开时有新位置才交。链路越慢,中间位置交得越稀,松手后至多再处理一次。X 窗口在这期间停在上一次交出的位置 ——
+    /// 什么时候真的挪 X 窗口本来就由窗口管理器决定,协议上与一个只在松手时才挪窗口的窗口管理器无异。
+    /// </summary>
+    private void StartMoveBarrier(XWindow top)
+    {
+        MoveBarrier barrier = new();
+        _moveBarriers[top] = barrier;
+        uint ping = Intern("_NET_WM_PING");
+        TimeSpan wait = MoveInterval;
+        if (top.Owner is { Closed: false } owner && !IsRetained(owner) && SupportsProtocol(top, ping))
+        {
+            uint time = Now;
+            time = barrier.PingTime = time > _lastMovePing && time != 0 ? time : _lastMovePing + 1;
+            _lastMovePing = time;
+            owner.Event(XEventCode.ClientMessage, 32, w => w.U32(top.Id).U32(_wmProtocolsAtom).U32(ping).U32(time).U32(top.Id).Zero(8), sent: true);
+            wait = MovePingTimeout;
+        }
+        _ = DelayThenPostAsync((uint)wait.TotalMilliseconds, () => ReleaseMoveBarrier(top, barrier), _lifetime.Token);
+    }
+
+    /// <summary>客户端处理完了上一次移动(pong 到了或等到了时限):期间宿主又报了新位置就交出去,开始下一道屏障。</summary>
+    private void ReleaseMoveBarrier(XWindow top, MoveBarrier barrier)
+    {
+        if (!_moveBarriers.TryGetValue(top, out MoveBarrier? current) || !ReferenceEquals(current, barrier))
+        {
+            return;   // 已经放开过(pong 与时限都会来),或窗口已经不是顶层
+        }
+        _moveBarriers.Remove(top);
+        if (barrier.Pending is { } pending && (pending.X != top.X || pending.Y != top.Y) && _topLevelHandles.ContainsKey(top))
+        {
+            DeliverMove(top, pending.X, pending.Y);
+            StartMoveBarrier(top);
+        }
+    }
+
+    /// <summary>客户端自己挪了顶层(ConfigureWindow、<c>_NET_MOVERESIZE_WINDOW</c>):宿主还没交出去的拖动位置作废,以客户端要的为准。</summary>
+    private void DropPendingMove(XWindow top)
+    {
+        if (_moveBarriers.TryGetValue(top, out MoveBarrier? barrier))
+        {
+            barrier.Pending = null;
+        }
+    }
+
+    /// <summary>宿主报来、还没交出去的位置(快照照它给,免得别的属性一变就把原生窗口拉回旧位置);没有为 null。</summary>
+    private (int X, int Y)? PendingMove(XWindow top) =>
+        _moveBarriers.TryGetValue(top, out MoveBarrier? barrier) ? barrier.Pending : null;
 
     // ------------------------------------------------------------------ _NET_WM_SYNC_REQUEST
 
@@ -398,6 +509,7 @@ public sealed partial class X11Server
     {
         _redrawSyncs.Remove(window);
         _redrawSerials.Remove(window);
+        _moveBarriers.Remove(window);   // 还没交出去的拖动位置也不再交
     }
 
     private void EndRedrawSync(XWindow top)
@@ -468,9 +580,17 @@ public sealed partial class X11Server
     /// <summary>客户端回了 ping:发回根窗口的 ClientMessage,data[1] 是时间戳、data[2] 是它的窗口。</summary>
     private void OnPong(uint time, uint windowId)
     {
-        if (Lookup<XWindow>(windowId) is { } window && _pendingPings.TryGetValue(window, out uint sent) && sent == time)
+        if (Lookup<XWindow>(windowId) is not { } window)
+        {
+            return;
+        }
+        if (_pendingPings.TryGetValue(window, out uint sent) && sent == time)
         {
             _pendingPings.Remove(window);
+        }
+        if (_moveBarriers.TryGetValue(window, out MoveBarrier? barrier) && barrier.PingTime == time)
+        {
+            ReleaseMoveBarrier(window, barrier);   // 随移动发的 ping 回来了:那次移动处理完了
         }
     }
 

@@ -734,6 +734,10 @@ public sealed partial class X11Server
         {
             RequireBufferMemory(window, width, height);   // 缓冲要跟着变大:先核账(xs_plan X-2)
         }
+        if (window.IsTopLevel && (mask & (ushort)(XConfigMask.X | XConfigMask.Y)) != 0)
+        {
+            DropPendingMove(window);   // 客户端自己要的位置为准,宿主还没交出去的拖动位置作废
+        }
         if (window.IsTopLevel && (x != window.X || y != window.Y))
         {
             window.PositionRequested = true;   // 客户端自己给的位置:宿主按重力摆外框(ICCCM §4.1.5,见 XTopLevelSnapshot.NeedsPlacement)
