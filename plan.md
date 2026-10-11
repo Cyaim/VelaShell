@@ -2683,3 +2683,38 @@ Core.Tests 794 通过 / 10 跳过 / 1 失败,失败的是 §193 记过的 `X11_R
 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`(本机靶机容器过旧)。
 
 文档:velashell-docs 中英镜像的 SSH 规格 01 §4、05 §4.4,架构 §11.2.29。
+
+## ✅ 196. 2026-10-11 AI 插件:HttpListener 的接收循环停机时丢唤醒(macOS CI 上 UI 测试整组挂住的根因,用户需求)
+
+**起因**:#608 的 macOS CI 测试步骤跑了 55 分钟还没结束(平时整个作业 7–8 分钟)。取消后看日志:解决方案其余测试 17:34 已全部跑完
+(含 `VelaShell.Ssh.Tests`),挂住的是 `run-tests.sh` 在后台另起的 `ChatPanelViewUiTests` 组(平时 4–4.5 分钟、283 条)——
+另两组 UI 用例交了 trx,只有它没有。同一提交 Ubuntu / Windows 都过;过去 100 次 CI,macOS 最长 27 分钟,第一次见。
+
+**根因**:.NET 托管实现的 `HttpListener`(macOS / Linux;Windows 走 HTTP.sys,没有这段代码)关监听与取请求之间有一个丢唤醒的窗口:
+`BeginGetContext` 只读一眼状态(不拿内部锁)就把等待项排进队列;`Close` 先清理(把队列里**已有**的等待项以异常结束、清空),
+最后才在 finally 里把状态改成「已关」。夹在这两步之间进来的那次 accept 排在清空之后,永远不完成。
+测试桩 `SseStub` / `ErrorStub` 的 `Dispose` 先取消(挂起的应答被唤醒,服务循环马上回头再 accept)、再关监听,然后**在 UI 线程上同步**等
+服务循环退出(`_server.GetAwaiter().GetResult()`,10-09 随「多 key 与故障转移」加入)—— 撞上窗口,UI 线程就永远堵在 `Dispose` 里,
+整组用例停住;CI 没有挂起上限,作业要等满 6 小时。
+同一机制在生产代码里还有两处:`McpEndpoint.StopCoreAsync` 先取消、关监听,再不限时地等接收循环 —— 停 MCP 服务可能永远挂住
+(还占着 `_reloadGate`);`WeComChannel.RunAsync` 特意靠「令牌一取消就关监听」来唤醒 accept,而 `ChannelHub.StopAsync` 不限时地等它 ——
+停企业微信渠道同样可能挂住。
+
+**改法**:
+- 新增 `Interop/HttpListenerExtensions.AcceptAsync(listener, token)`:`GetContextAsync().WaitAsync(token)`,停机或监听已关时返回 `null`。
+  退出由令牌决定,不押在监听会不会完成那次 accept 上;放弃掉的 accept 若随关监听以异常收场,在这里观察掉。
+  Windows 上关到一半时取请求报的是 `InvalidOperationException`(「先调 Start()」),监听已不在监听状态时同样当作已关 —— 新用例在 Windows 上第一次跑就撞到了它。
+- `McpEndpoint`、`WeComChannel` 的接收循环改用它;`WeComChannel` 删掉「取消即关监听」的注册,监听由 finally 关。
+- 测试:`SseStub`、`ErrorStub`、`ProviderSetupViewUiTests.DeviceLoginEndpoint` 与五处收尾时要等服务循环的内联服务改用它(先取消、再关监听);
+  `SseStub`、`ErrorStub`、`TruncatedSseStub`、`DeviceLoginEndpoint` 改成只实现 `IAsyncDisposable`,收摊不再在 UI 线程上同步地等,
+  269 处 `using` 改成 `await using`。只关监听、不等服务循环的桩(`HeldStreamingReply`、`KeyAuthStub` 等)不受影响,没动。
+
+**验证**:
+- 在 WSL 的 Debian 上用自包含的 linux-x64 程序(原样编译仓库里那份 `HttpListenerExtensions.cs`)照桩的收摊顺序跑:
+  直接 `await GetContextAsync()` 的写法 1400 轮挂住 5 轮,走 `AcceptAsync` 的 3000 轮 0 轮。
+- 新增 `HttpListenerExtensionsTests` 四条:接到请求;只取消令牌、监听还开着也返回 `null`;已关的监听返回 `null`;
+  照桩的收摊顺序跑 200 轮,每轮接收循环都退出。
+- AI 插件测试全量(本机 Windows,含三组 UI 用例)全过;构建 0 警告(`-warnaserror` + `EnforceCodeStyleInBuild`)。
+- #608 的 macOS 作业重跑 7 分钟通过 —— 那只说明这次没撞上,不作修复的依据。
+
+文档:不涉及。velashell-docs 只写了 MCP 服务 / 企业微信回调只绑 `127.0.0.1` 这类对外行为,停止的内部机制没有成文,对外行为不变。
