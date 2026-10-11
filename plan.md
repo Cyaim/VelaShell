@@ -2568,3 +2568,49 @@ GL 程序又会透出后面。
 `VelaShell.XServer.Tests` 552 通过 / 9 跳过(仅 Linux),真实互操作 27 / 27、无 `[SKIP]`;`MainWindowSshFeatureTests` 20 / 20,`VelaShell.Tests` 全量 1988 通过 / 0 失败。
 文档:velashell-docs 中英镜像的 X Server 架构(§6、§7「拖动时的移动按客户端处理的进度合并」「合成管理器」、§10 决策记录)、排障(第二节与「已修的缺陷」)、
 宿主交互规格同步更新,在 [velashell-docs#111](https://github.com/VelaShellLabs/velashell-docs/pull/111),与宿主 PR 互相引用。
+
+## ✅ 193. 2026-10-10 SSH 库:zlib 流结束标记、关闭后写 stdin、HMAC 的 Verify、重协商互操作四处修补;宿主自动重连不再弹主机指纹确认框(用户需求)
+
+**起因**:复查 SSH 库的几处边界行为与 .NET 11 的新 API 用法时找出下面四处,另有一处在宿主(自动重连遇到主机指纹时怎么办),
+用户拍板五处一起做。来龙去脉记在 velashell-docs 的 SSH 架构 §11.2.28。
+
+**一、zlib 流结束标记(库)**:对端在载荷里写了 zlib 的流结束标记时,带标记的那个报文照常收下,错到下一帧才报一句「解压失败」。
+拿 .NET 11 RC1 的 `ZLibDecoder` 实测:标记处返回 `Done`,之后一个字节都不再收。`ZlibCompressor.Decompress` 见到 `Done` 当场断开(`ProtocolError`)——
+SSH 的压缩流不会结束,OpenSSH 的解压遇到流结束同样是致命错误。
+
+**二、通道关闭之后的 stdin 写(库)**:管道自己的 writer 要等 reader 完成才报「完成」,而 reader 归 stdin 泵,泵在通道收尾之后才在线程池上退出。
+于是调用方已经看到关闭(`WaitAsync` 返回)之后,紧接着的写照常返回、数据被悄悄丢掉:命令退出后马上写 stdin,300 轮里 275 轮如此。
+线上从没多发(那一帧在入队时就被拦下)。新增 internal 的 `Channels/StandardInputWriter`:交给调用方的 `StandardInput` 先问通道还收不收
+(`SshChannel.AcceptsInput`:本端开始关闭、任一方向的 CLOSE 已入队、或通道已收尾含断线),不收了当场返回 `IsCompleted`,通道流因此当场抛 `IOException`。
+
+**三、重协商的互操作覆盖(库的测试)**:服务端发起的重协商只对真 sshd 跑过默认谈成的 ed25519。新增互操作用例按 ed25519 / ecdsa-sha2-nistp256 /
+rsa-sha2-512 / rsa-sha2-256 各跑一遍,清单保留全部算法、只把要测的排到最前,重协商时的收窄是从完整清单里收。
+
+**四、`HMAC*.Verify`(库,.NET 11 新 API)**:hashed known_hosts 与 `.ppk` 的 MAC 比对改用 `HMACSHA1.Verify` / `HMACSHA256.Verify`
+(反射看过 IL,内部就是 `FixedTimeEquals`)。它遇到长度不对的散列抛 `ArgumentException` 而不是返回 false:`KnownHostsFile.MatchesHashed` 先查长度
+(坏行当成对不上),`.ppk` 的 MAC 长度在 `EnsureComplete` 里早已核过。
+
+**五、自动重连不弹主机指纹确认框(宿主)**:睡眠唤醒后所有标签一起重连、隧道按退避一直重拨时,服务器换了钥就会弹「主机信任」模态框 ——
+多半没人在屏幕前,几个标签叠出一摞框,裁决时限又是无限,重连一直挂着;隧道最长每 5 分钟弹一次。用户的决定:**自动重连直接拒绝**。
+- `ConnectionInfo.IsAutomaticReconnect` → `SshConnectionAssembler` → `VelaHostKeyPolicy(automaticReconnect)`:本该弹框问的一律拒绝(变了按 `HostKeyChanged`、
+  没见过按 `HostKeyRejected`),文案 `Msg_HostKeyAutoReconnectBlocked`(五份 resx),照样记一条安全告警 `hostkey-rejected`;不问的两条默认
+  (关着首次确认时 TOFU、开着变更阻断时阻断)不变。一条跳板链共用一个策略,每一跳都按它办。凭据登录框、动态码框不在此列。
+- `IConnectionWorkflowService.ReconnectProfileAutomaticallyAsync`;`MainWindowViewModel.AutoReconnectTabAsync`(倒计时到点、`ReconnectAllAfterResume`)与
+  隧道面板的自动恢复走它,手动「重新连接」、改代理后的重试、程序启动时的自启隧道仍走 `ConnectProfileAsync`(会弹框)。
+- 指纹被拒(含用户在框里拒绝)不再自动重试:`SshInterop` 把 `HostKeyRejected` / `HostKeyChanged` 译成新的 `VelaSshHostKeyRejectedException`;
+  标签记 `TerminalTabViewModel.HostKeyRejected`(`ReconnectPolicy.ShouldReconnect` 多了这一条),手动重连开始时与挂上传输时复位;
+  隧道面板记 `_hostKeyRejectedProfiles`,不进退避、右下角报一声,手动启动连上后解除。曾经用户在框里拒绝之后,自动重连过几秒又弹同一个框。
+
+**验证**:新增 `CompressionTests` 一条(BCL 的 `ZLibEncoder` 当对端写结束标记)、`KnownHostsTests` 四条(散列 0/19/21/32 字节)、
+`ChannelTests` 一条两行(命令退出后马上写,连跑 20 轮;旧的两条去掉了轮询,改成第一次写就断言)、互操作四条(每种主机密钥算法的服务端发起重协商)、
+`VelaHostKeyPolicyTests` 三条、`ConnectionWorkflowServiceTests` 两条、`ReconnectPolicyTests` 一条、`TunnelPanelViewModelTests` 两条、`MainWindowSshFeatureTests` 一条。
+去掉修复的反证:zlib 那条、stdin 那条(两行)、隧道「败在指纹上不再重拨」那条都会失败。
+全量:`VelaShell.Ssh.Tests` 1359 通过 / 61 跳过(不带互操作环境);起好 `Start-TestServer.ps1 -X11` 之后互操作 61 条 60 通过、1 条跳过
+(`目的地约束对真agent_经转发逐跳放行`:那台靶机连不到 compose 网络里的 `velashell-test-shells`,环境所致);
+`VelaShell.Tests` 1992 / 11 跳过,`Infrastructure.Tests` 678 / 5,`Presentation.Tests` 86,`XServer.Tests` 552 / 9,`Plugin.Ai.Tests` 1464,其余工程全过。
+`VelaShell.Core.Tests` 795 通过、5 失败,都与本次无关:4 条 `KeyboardInteractiveIntegrationTests` 是互操作靶机占了 compose 里 `ssh-2fa` 的 2224 端口
+(收掉靶机后照常按「靶机不可达」跳过);`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 是本机的 `velashell-test-shells` 容器建于 2026-09-22,
+早于给 `vela-dash` 关 X11 的 b7e55d43,容器里没有那段 `Match`(`docker compose -f docker-compose.test.yml up -d --build ssh-shells` 重建即可)。
+整个解决方案 Debug 构建 0 警告。
+
+文档:velashell-docs 中英镜像的 SSH 规格 01 §6、05 §4.3、架构 §11.2.28,宿主交互规格的「断开连接状态」「隧道」「主机指纹确认」。
