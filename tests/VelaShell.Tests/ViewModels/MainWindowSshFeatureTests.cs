@@ -115,6 +115,31 @@ public sealed class MainWindowSshFeatureTests
         Assert.IsFalse(MainWindowViewModel.WantsInputMethodEnvironment(settings, forwarding), "用的是 VcXsrv");
     }
 
+    /// <summary>
+    /// 开着 X11 转发就注入 <c>GSK_RENDERER=cairo</c>(已经设了的不动),不论显示交给哪个 X 服务端:GTK 4 默认的 GL 经 SSH 只能退到 llvmpipe、
+    /// 每帧把整窗像素发过来(gnome-calculator 点一下按钮 29 MB,cairo 0.15 MB)。与 <c>XMODIFIERS</c> 拼在同一句里;没开 X11 转发一个字节都不发。
+    /// </summary>
+    [TestMethod]
+    public void X11EnvironmentScript_AddsGtkCairoRendererWheneverX11IsForwarded()
+    {
+        AppSettings settings = new();
+        SessionProfile forwarding = new() { Ssh = new SshSessionOptions { X11Forwarding = true } };
+
+        Assert.AreEqual("[ -n \"${XMODIFIERS-}\" ] || export XMODIFIERS=@im=velashell; [ -n \"${GSK_RENDERER-}\" ] || export GSK_RENDERER=cairo",
+            MainWindowViewModel.X11EnvironmentScript(settings, forwarding, RemoteShellKind.Bash));
+        Assert.AreEqual("set -q XMODIFIERS; or set -gx XMODIFIERS @im=velashell; set -q GSK_RENDERER; or set -gx GSK_RENDERER cairo",
+            MainWindowViewModel.X11EnvironmentScript(settings, forwarding, RemoteShellKind.Fish));
+        Assert.IsEmpty(MainWindowViewModel.X11EnvironmentScript(settings, forwarding, RemoteShellKind.NonPosix), "cmd.exe / PowerShell 不注入");
+
+        settings.XServer.UseHostInputMethod = false;
+        Assert.AreEqual("[ -n \"${GSK_RENDERER-}\" ] || export GSK_RENDERER=cairo",
+            MainWindowViewModel.X11EnvironmentScript(settings, forwarding, RemoteShellKind.Zsh), "不用本机输入法也照样请 GTK 4 用 cairo");
+        SessionProfile external = new() { Ssh = new SshSessionOptions { X11Forwarding = true, X11Display = "localhost:0.0" } };
+        Assert.IsTrue(MainWindowViewModel.WantsRendererEnvironment(external), "显示交给别的 X 服务端时一样经 SSH 送整窗像素");
+        Assert.IsFalse(MainWindowViewModel.WantsRendererEnvironment(new SessionProfile()), "没开 X11 转发");
+        Assert.IsEmpty(MainWindowViewModel.X11EnvironmentScript(settings, new SessionProfile(), RemoteShellKind.Bash));
+    }
+
     [TestMethod]
     public async Task ConnectProfileAsync_AddsTerminalTab_AndUpdatesStatusBar()
     {
