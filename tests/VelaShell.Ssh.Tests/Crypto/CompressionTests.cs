@@ -4,6 +4,7 @@
 // 被测规格: RFC 4253 §6.2;OpenSSH PROTOCOL 的 zlib@openssh.com
 
 using System.Buffers;
+using System.IO.Compression;
 using System.Text;
 using VelaShell.Ssh.Crypto;
 using VelaShell.Ssh.Diagnostics;
@@ -138,6 +139,32 @@ public sealed class CompressionTests
                 new ReadOnlySequence<byte>(compressed.WrittenMemory), output, maxOutputLength: 64 * 1024));
 
         Assert.Contains("压缩炸弹", error.Message);
+    }
+
+    /// <summary>
+    /// 〔spec/01 §六〕SSH 的压缩流不会结束。对端在载荷里写了 zlib 的流结束标记：<b>这一报文</b>当场报错，
+    /// 而不是收下它、到下一帧才因为解码器已经结束报一句看不出缘由的「解压失败」。
+    /// </summary>
+    [TestMethod]
+    public void 对端结束了zlib流就在那一报文当场报错()
+    {
+        using ZlibCompressor receiver = new();
+        using ZLibEncoder peer = new(6);
+        byte[] buffer = new byte[4096];
+
+        // 第一个报文照常：压完同步 flush。
+        peer.Compress("第一个报文"u8, buffer, out _, out int written, isFinalBlock: false);
+        peer.Flush(buffer.AsSpan(written), out int flushed);
+        ArrayBufferWriter<byte> first = new();
+        receiver.Decompress(new ReadOnlySequence<byte>(buffer.AsMemory(0, written + flushed)), first, 64 * 1024);
+        Assert.AreEqual("第一个报文", Encoding.UTF8.GetString(first.WrittenSpan), "前提：同步 flush 的报文照常解开");
+
+        // 第二个报文带着流结束标记。
+        peer.Compress("第二个报文"u8, buffer, out _, out int final, isFinalBlock: true);
+        SshProtocolException error = Assert.ThrowsExactly<SshProtocolException>(
+            () => receiver.Decompress(new ReadOnlySequence<byte>(buffer.AsMemory(0, final)), new ArrayBufferWriter<byte>(), 64 * 1024));
+
+        Assert.Contains("流结束标记", error.Message);
     }
 
     [TestMethod]

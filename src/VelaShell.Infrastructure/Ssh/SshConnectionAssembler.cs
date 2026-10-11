@@ -69,10 +69,10 @@ internal static class SshConnectionAssembler
     {
         ArgumentNullException.ThrowIfNull(info);
 
-        // 链上每一跳共用同一个策略实例 —— 跳板与终点走同一套信任判定。
+        // 链上每一跳共用同一个策略实例 —— 跳板与终点走同一套信任判定,自动重连时也一起不弹窗。
         IHostKeyPolicy policy = hostKey is null
             ? new DangerousAcceptAnyHostKeyPolicy()
-            : new VelaHostKeyPolicy(hostKey, settings, prompt, alerts);
+            : new VelaHostKeyPolicy(hostKey, settings, prompt, alerts, info.IsAutomaticReconnect);
 
         TimeSpan connectTimeout = ConnectTimeout(settings);
         SshServerBanners banners = new();

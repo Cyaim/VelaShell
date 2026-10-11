@@ -1876,8 +1876,13 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     public event EventHandler<string>? ExternalUrlRequested;
 
     /// <summary>为隧道面板后台建立 SSH 连接:不开终端标签,凭据缺失时走登录验证弹窗。</summary>
+    /// <remarks>
+    /// <paramref name="automaticReconnect" /> = 断线后的自动恢复:主机指纹要人裁决时直接拒绝、不弹窗
+    /// (<see cref="ConnectionInfo.IsAutomaticReconnect" />)。凭据缺失时的登录框照旧 —— 那一条有它自己的退避。
+    /// </remarks>
     private async Task<Guid> ConnectTunnelHostAsync(
         SessionProfile profile,
+        bool automaticReconnect,
         CancellationToken cancellationToken
     )
     {
@@ -1895,10 +1900,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 updated
                 ?? throw new InvalidOperationException(Strings.Get("Msg_AuthPromptCancelled"));
         }
-        SshSession session = await _connectionWorkflowService.ConnectProfileAsync(
-            current,
-            cancellationToken
-        );
+        SshSession session = automaticReconnect
+            ? await _connectionWorkflowService.ReconnectProfileAutomaticallyAsync(current, cancellationToken)
+            : await _connectionWorkflowService.ConnectProfileAsync(current, cancellationToken);
         return session.SessionId;
     }
 
@@ -2658,9 +2662,24 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 仅重建传输层。由已断开标签上的 Enter / Ctrl+R 触发(或在 exit/reboot 后),
     /// 省去用户打开新标签的操作(#19)。
     /// </summary>
-    public async Task ReconnectTabAsync(
+    public Task ReconnectTabAsync(
         TerminalTabViewModel tab,
         CancellationToken cancellationToken = default
+    ) =>
+        ReconnectTabCoreAsync(tab, automatic: false, cancellationToken);
+
+    /// <summary>
+    /// 断线后的自动重连(倒计时到点、睡眠唤醒后的批量重连):同 <see cref="ReconnectTabAsync" />,
+    /// 但主机指纹要人裁决时直接拒绝、不弹窗(<see cref="ConnectionInfo.IsAutomaticReconnect" />)——
+    /// 这时多半没有人在屏幕前,唤醒后一起重连的几个标签还会叠出一摞没人点的模态框。
+    /// </summary>
+    private Task AutoReconnectTabAsync(TerminalTabViewModel tab) =>
+        ReconnectTabCoreAsync(tab, automatic: true, CancellationToken.None);
+
+    private async Task ReconnectTabCoreAsync(
+        TerminalTabViewModel tab,
+        bool automatic,
+        CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(tab);
@@ -2719,10 +2738,14 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 : new();
             _latestSettings = settings;
             TerminalType terminalType = TerminalTypeExtensions.FromTermName(SessionTerminalSettings.TerminalType(tab.Profile, settings));
-            SshSession session = await _connectionWorkflowService.ConnectProfileAsync(
-                tab.Profile,
-                reconnectToken
-            );
+            if (!automatic)
+            {
+                // 用户手动重连:这一次会弹窗问他,上一次败在指纹上的那条不再拦着之后的自动重连。
+                tab.ClearHostKeyRejected();
+            }
+            SshSession session = automatic
+                ? await _connectionWorkflowService.ReconnectProfileAutomaticallyAsync(tab.Profile, reconnectToken)
+                : await _connectionWorkflowService.ConnectProfileAsync(tab.Profile, reconnectToken);
             established = session;
             ISshClientWrapper client =
                 _sshConnectionService.GetClient(session.SessionId)
@@ -2777,6 +2800,14 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             // 在动态码框上点了取消:按用户主动断开处理 —— 否则自动重连过几秒又来弹同一个框。
             LastConnectionError = null;
             tab.MarkDisconnectedByUser();
+        }
+        catch (VelaSshHostKeyRejectedException ex)
+        {
+            // 主机指纹没过(用户拒绝、变更被阻断,或自动重连时没法问人):再自动试多少次结果都一样 ——
+            // 停掉自动重连,等用户手动重连、在弹窗里核对。曾经接着自动试,每试一次就再弹一遍指纹确认框。
+            LastConnectionError = DescribeConnectionError(ex, tab.Profile);
+            Toasts.Error(LastConnectionError);
+            tab.MarkHostKeyRejected(LastConnectionError);
         }
         catch (Exception ex)
         {
@@ -2997,10 +3028,11 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     tab.ConnectionStatus == SessionStatus.Disconnected,
                     tab.UserRequestedDisconnect,
                     tab.LocalShell is not null,
-                    tab.RemoteShellExited))
+                    tab.RemoteShellExited,
+                    tab.HostKeyRejected))
             {
                 tab.ResetReconnectAttempts();
-                _ = ReconnectTabAsync(tab);
+                _ = AutoReconnectTabAsync(tab);
             }
         }
     }
@@ -3049,7 +3081,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                    isDisconnected: true,
                    tab.UserRequestedDisconnect,
                    tab.LocalShell is not null,
-                   tab.RemoteShellExited);
+                   tab.RemoteShellExited,
+                   tab.HostKeyRejected);
         if (autoReconnectApplies)
         {
             tab.MaxReconnectAttempts = maxRetries; // 全部自动重连路径共用同一权威值(设置审计 C-02)
@@ -3107,18 +3140,20 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             {
                 // 等待期间用户可能已手动重连、关掉标签、主动断开,
                 // 或者(重连成功后)在远端敲了 exit —— 后者同样不该再被拉回来。
+                // 手动重连在弹窗里拒绝了指纹的,同样不再自动试。
                 if (
                     tab
                         is
                     {
                         ConnectionStatus: SessionStatus.Disconnected,
                         UserRequestedDisconnect: false,
-                        RemoteShellExited: false
+                        RemoteShellExited: false,
+                        HostKeyRejected: false
                     }
                     && TerminalTabs.Contains(tab)
                 )
                 {
-                    _ = ReconnectTabAsync(tab);
+                    _ = AutoReconnectTabAsync(tab);
                 }
             },
             TimeSpan.FromSeconds(delaySeconds)

@@ -348,6 +348,62 @@ public sealed partial class OpenSshInteropTests
         Assert.IsTrue(connection.IsAlive);
     }
 
+    /// <summary>
+    /// 每一种主机密钥算法各跑一遍服务端发起的重协商（velashell-docs/zh/ssh/spec/03 §8.4）：钉住首次的主机密钥，
+    /// 重协商只提议与它同类型的算法。曾经对着真 sshd 只跑过默认谈成的 ed25519 ——
+    /// RSA 的两种签名算法（同一把钥、两个算法名）与 ECDSA 走的是另外的收窄与验签路径。
+    /// </summary>
+    /// <remarks>
+    /// 清单保留全部算法，只把要测的那个排到最前：服务端照客户端的顺序挑，重协商时的收窄才是从一份完整的清单里收。
+    /// 服务端没有这种主机密钥（谈不成）时报 Inconclusive。
+    /// </remarks>
+    [TestMethod]
+    [DataRow(SshAlgorithmNames.SshEd25519)]
+    [DataRow(SshAlgorithmNames.EcdsaSha2Nistp256)]
+    [DataRow(SshAlgorithmNames.RsaSha512)]
+    [DataRow(SshAlgorithmNames.RsaSha256)]
+    public async Task 每种主机密钥算法下服务端发起的重协商都照常收发(string hostKeyAlgorithm)
+    {
+        RequireServer();
+
+        SshAlgorithmSet preferred = SshAlgorithmSet.Default with
+        {
+            HostKey = [hostKeyAlgorithm, .. SshAlgorithmSet.Default.HostKey.Where(a => a != hostKeyAlgorithm)],
+        };
+
+        SshConnection connection;
+        try
+        {
+            connection = await SshConnection.ConnectAsync(Options(preferred));
+        }
+        catch (SshNegotiationException ex)
+        {
+            Assert.Inconclusive($"服务端没有能用 {hostKeyAlgorithm} 的主机密钥：{ex.Message}");
+            return;
+        }
+
+        await using (connection)
+        {
+            if (connection.Algorithms.HostKey != hostKeyAlgorithm)
+            {
+                Assert.Inconclusive($"服务端没有 {hostKeyAlgorithm} 的主机密钥，谈成的是 {connection.Algorithms.HostKey}。");
+            }
+
+            // 3 MiB 随机数据，base64 之后 4 MiB，越过服务端的 RekeyLimit（1M）好几次。
+            SshCommandResult bulk = await connection.RunAsync("head -c 3145728 /dev/urandom | base64 -w0");
+            Assert.AreEqual(0, bulk.ExitCode, bulk.StandardError);
+            Assert.AreEqual(4 * 1024 * 1024, bulk.StandardOutput.Length);
+            Assert.IsTrue(bulk.StandardOutput.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '/'), "换钥前后的数据要一字节不差");
+
+            if (connection.RekeyCount == 0)
+            {
+                Assert.Inconclusive("服务端一次重协商都没发起 —— 它没配 RekeyLimit，换钥这一段没跑到。");
+            }
+            Assert.AreEqual(hostKeyAlgorithm, connection.Algorithms.HostKey, "重协商之后谈成的仍是同一个主机密钥算法");
+            Assert.AreEqual(0, (await connection.RunAsync("true")).ExitCode, "重协商之后照常可用");
+        }
+    }
+
     [TestMethod]
     public async Task 公钥认证能与OpenSSH对上()
     {

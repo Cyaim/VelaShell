@@ -59,6 +59,37 @@ public sealed class ConnectionWorkflowServiceTests
         Assert.AreEqual("boom", result.ErrorMessage);
     }
 
+    /// <summary>
+    /// 自动重连按「没人在场」连:跳板链上每一跳都标上(主机指纹要人裁决时直接拒绝、不弹窗);
+    /// 普通连接一跳也不标 —— 标错了的话,首次连接的指纹确认框就再也弹不出来。
+    /// </summary>
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task ConnectionInfo_IsMarkedAsAutomaticReconnect_OnlyForAutomaticReconnect(bool automatic)
+    {
+        ConnectionWorkflowService service = CreateService();
+        SessionProfile jump = CreateProfile("bastion");
+        SessionProfile target = CreateProfile("web-01");
+        target.JumpHostProfileId = jump.Id;
+        _sessionRepository.GetSessionAsync(jump.Id).Returns(jump);
+        ConnectionInfo? connected = null;
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns(call =>
+                             {
+                                 connected = (ConnectionInfo)call[0];
+                                 return new SshSession { ConnectionInfo = connected, Status = SessionStatus.Connected };
+                             });
+
+        _ = automatic
+            ? await service.ReconnectProfileAutomaticallyAsync(target)
+            : await service.ConnectProfileAsync(target);
+
+        Assert.IsNotNull(connected);
+        Assert.AreEqual(automatic, connected.IsAutomaticReconnect);
+        Assert.AreEqual(automatic, connected.JumpHost?.IsAutomaticReconnect);
+    }
+
     [TestMethod]
     public async Task GetSavedProfilesAsync_ReturnsSortedProfiles()
     {

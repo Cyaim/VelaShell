@@ -397,6 +397,68 @@ public sealed class MainWindowSshFeatureTests
         Assert.AreSame(tab, vm.TerminalTabs.First());
     }
 
+    /// <summary>
+    /// 重连败在主机指纹上:标签记下来,自动重连不再介入(<see cref="TerminalTabViewModel.HostKeyRejected" />)——
+    /// 再试多少次结果都一样,而在这之前每试一次就再弹一遍指纹确认框。用户手动重连、连上之后解除。
+    /// </summary>
+    [TestMethod]
+    public async Task ReconnectTabAsync_HostKeyRejected_BlocksAutoReconnectUntilAManualReconnectSucceeds()
+    {
+        IConnectionWorkflowService? workflow = Substitute.For<IConnectionWorkflowService>();
+        ISshConnectionService? sshConnectionService = Substitute.For<ISshConnectionService>();
+        ISshClientWrapper? sshClient = Substitute.For<ISshClientWrapper>();
+        IShellStreamWrapper? shellStream = Substitute.For<IShellStreamWrapper>();
+        shellStream.CanRead.Returns(true);
+        shellStream.ReadAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                   .Returns(new TaskCompletionSource<int>().Task);
+        ITerminalEmulator? terminal = FakeTerminal.Emulator();
+        var profile = new SessionProfile
+        {
+            Name = "Prod",
+            Host = "prod.example.com",
+            Port = 22,
+            Username = "root",
+            AuthMethod = AuthMethod.Password,
+            Password = "secret"
+        };
+        var session = new SshSession
+        {
+            SessionId = Guid.NewGuid(),
+            ConnectionInfo = new()
+            {
+                Host = profile.Host,
+                Port = profile.Port,
+                Username = profile.Username,
+                AuthMethod = profile.AuthMethod,
+                Password = profile.Password
+            },
+            Status = SessionStatus.Connected
+        };
+        workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>()).Returns(session);
+        sshConnectionService.GetClient(session.SessionId).Returns(sshClient);
+        sshClient.CreateShellStreamAsync("xterm-256color", 120, 32, 0, 0, 4096, Arg.Any<IReadOnlyDictionary<TerminalMode, uint>?>(), Arg.Any<CancellationToken>()).Returns(shellStream);
+        var vm = new MainWindowViewModel(workflow, sshConnectionService, () => terminal);
+        TerminalTabViewModel? tab = await vm.TryConnectProfileAsync(profile);
+        Assert.IsNotNull(tab);
+        tab.MarkDisconnected();
+
+        // 服务器换了钥,用户在弹窗里拒绝了。
+        workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<SshSession>(new VelaSshHostKeyRejectedException("指纹被拒")));
+        await vm.ReconnectTabAsync(tab);
+
+        Assert.AreEqual(SessionStatus.Disconnected, tab.ConnectionStatus);
+        Assert.IsTrue(tab.HasConnectionError);
+        Assert.IsTrue(tab.HostKeyRejected, "败在指纹上的标签不该再被自动重连。");
+
+        // 用户核对过、接受了:手动重连连上,自动重连照常。
+        workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>()).Returns(session);
+        await vm.ReconnectTabAsync(tab);
+
+        Assert.AreEqual(SessionStatus.Connected, tab.ConnectionStatus);
+        Assert.IsFalse(tab.HostKeyRejected);
+    }
+
     [TestMethod]
     public async Task ReconnectTabAsync_WhenAlreadyConnected_IsNoOp()
     {

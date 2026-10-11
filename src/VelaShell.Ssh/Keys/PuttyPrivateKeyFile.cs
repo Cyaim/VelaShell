@@ -499,14 +499,15 @@ internal static class PuttyPrivateKeyFile
             writer.WriteString(file.PrivateBlob.AsSpan(0, length));
 
             // MAC 的输入里有明文私钥区：直接在缓冲上算，不再 ToArray 出一份副本；算完连缓冲一起清零。
-            byte[] actual = file.Version == 3
-                ? HMACSHA256.HashData(macKey, buffer.WrittenSpan)
+            // MAC 的长度 EnsureComplete 已经核过 —— Verify 遇到长度不对的散列会抛 ArgumentException，而不是返回 false。
+            bool matches = file.Version == 3
+                ? HMACSHA256.Verify(macKey, buffer.WrittenSpan, file.Mac)
 #pragma warning disable CA5350 // .ppk v2 的 MAC 由格式规定就是 HMAC-SHA1
-                : HMACSHA1.HashData(macKey, buffer.WrittenSpan);
+                : HMACSHA1.Verify(macKey, buffer.WrittenSpan, file.Mac);
 #pragma warning restore CA5350
             buffer.Clear();
 
-            if (CryptographicOperations.FixedTimeEquals(actual, file.Mac))
+            if (matches)
             {
                 return;
             }

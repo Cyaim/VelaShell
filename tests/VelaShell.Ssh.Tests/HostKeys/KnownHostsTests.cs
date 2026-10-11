@@ -273,6 +273,35 @@ public sealed class KnownHostsTests
     }
 
     /// <summary>
+    /// 散列不是 20 字节（截断、手改过）的散列行就是对不上，不抛 ——
+    /// <see cref="HMACSHA1.Verify(byte[], byte[], byte[])"/> 遇到长度不对的散列会抛 <see cref="ArgumentException"/>，
+    /// 一行坏掉的记录不能让整个查找失败。
+    /// </summary>
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(19)]
+    [DataRow(21)]
+    [DataRow(32)]
+    public void 散列长度不对的散列行当成对不上(int hashLength)
+    {
+        SshPublicKey key = MakeKey();
+        byte[] salt = RandomNumberGenerator.GetBytes(20);
+
+#pragma warning disable CA5350 // 格式由 OpenSSH 规定就是 HMAC-SHA1
+        byte[] full = HMACSHA1.HashData(salt, Encoding.UTF8.GetBytes("secret.example.com"));
+#pragma warning restore CA5350
+        byte[] hash = new byte[hashLength];
+        full.AsSpan(0, Math.Min(hashLength, full.Length)).CopyTo(hash);
+
+        string hashedHost = string.Create(
+            CultureInfo.InvariantCulture,
+            $"|1|{Convert.ToBase64String(salt)}|{Convert.ToBase64String(hash)}");
+        IReadOnlyList<KnownHostEntry> entries = KnownHostsFile.Parse(Line(hashedHost, key));
+
+        Assert.AreEqual(KnownHostStatus.Unknown, KnownHostsFile.Lookup(entries, "secret.example.com", 22, key).Status);
+    }
+
+    /// <summary>
     /// OpenSSH 先把主机名小写化再散列。用户填的是大写时也要对得上 ——
     /// 曾经对不上就是「没见过」：有中间人时，本该报「密钥变了」的连接成了「新主机，要信任吗」。
     /// </summary>

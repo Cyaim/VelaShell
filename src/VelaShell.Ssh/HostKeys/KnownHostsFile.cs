@@ -417,11 +417,15 @@ public static class KnownHostsFile
             byte[] salt = Convert.FromBase64String(parts[2]);
             byte[] expected = Convert.FromBase64String(parts[3]);
 
-#pragma warning disable CA5350 // known_hosts 的散列形式由 OpenSSH 规定就是 HMAC-SHA1，换不得
-            byte[] actual = HMACSHA1.HashData(salt, Encoding.UTF8.GetBytes(host));
-#pragma warning restore CA5350
+            // Verify 只收长度恰好是 HMAC-SHA1 输出的散列，别的长度它抛 ArgumentException —— 这样的行就是对不上。
+            if (expected.Length != HMACSHA1.HashSizeInBytes)
+            {
+                return false;
+            }
 
-            return CryptographicOperations.FixedTimeEquals(actual, expected);
+#pragma warning disable CA5350 // known_hosts 的散列形式由 OpenSSH 规定就是 HMAC-SHA1，换不得
+            return HMACSHA1.Verify(salt, Encoding.UTF8.GetBytes(host), expected);
+#pragma warning restore CA5350
         }
         catch (FormatException)
         {

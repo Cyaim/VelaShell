@@ -30,6 +30,8 @@ public static class ReconnectPolicy
     /// **退不掉**:exit 之后标签自己又连上了(#383)。</item>
     /// <item><b>本地终端不自动重开</b> —— shell 退出(<c>exit</c>)是用户意图,
     /// 自动拉起会没完没了。</item>
+    /// <item><b>上一次重连败在主机指纹上的不碰</b> —— 再试多少次结果都一样,
+    /// 自动重连时又不弹窗问人(<c>ConnectionInfo.IsAutomaticReconnect</c>);等用户手动重连、在弹窗里核对。</item>
     /// </list>
     /// <para>
     /// 反过来,只有"没人要它结束"的断开才该救:掉线、超时、服务端崩溃。
@@ -40,18 +42,21 @@ public static class ReconnectPolicy
     /// <param name="userRequestedDisconnect">是不是用户主动断开的。</param>
     /// <param name="isLocalShell">是不是本地终端。</param>
     /// <param name="remoteShellExited">远端 shell 是不是自己正常退出的。</param>
+    /// <param name="hostKeyRejected">上一次重连是不是败在主机指纹上。</param>
     /// <returns>符合条件时为 true。</returns>
     public static bool ShouldReconnect(
         bool autoReconnectEnabled,
         bool isDisconnected,
         bool userRequestedDisconnect,
         bool isLocalShell,
-        bool remoteShellExited) =>
+        bool remoteShellExited,
+        bool hostKeyRejected) =>
         autoReconnectEnabled
         && isDisconnected
         && !userRequestedDisconnect
         && !isLocalShell
-        && !remoteShellExited;
+        && !remoteShellExited
+        && !hostKeyRejected;
 
     /// <summary>
     /// 代理设置刚被改过,这条会话该不该被自动重连一次。

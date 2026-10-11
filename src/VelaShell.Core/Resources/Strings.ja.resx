@@ -1394,6 +1394,9 @@
   <data name="Msg_HostKeyRejected" xml:space="preserve">
     <value>{0} のホストキー {1} は信頼されませんでした。接続を中止しました。</value>
   </data>
+  <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
+    <value>{0} への自動再接続を停止しました。ホストキー {1} の確認が必要ですが、自動再接続では確認ダイアログを表示しません。手動で再接続し、表示されるダイアログでフィンガープリントを確認してください。</value>
+  </data>
   <data name="Msg_ImportFailed" xml:space="preserve">
     <value>インポートに失敗しました: {0}</value>
   </data>

@@ -7,6 +7,7 @@ using ReactiveUI.Primitives;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
+using VelaShell.Core.Ssh;
 using VelaShell.Presentation.Services;
 
 namespace VelaShell.ViewModels;
@@ -26,7 +27,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
 
     private const string PanelPositionId = "tunnel-panel";
 
-    private readonly Func<SessionProfile, CancellationToken, Task<Guid>>? _backgroundConnector;
+    /// <summary>后台建立到某台服务器的连接;第二个参数 = 这是断线后的自动恢复(主机指纹要人裁决时直接拒绝,不弹窗)。</summary>
+    private readonly Func<SessionProfile, bool, CancellationToken, Task<Guid>>? _backgroundConnector;
 
     private readonly IAppDataStore? _dataStore;
 
@@ -51,6 +53,15 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
 
     /// <summary>自动恢复的下次可尝试时刻(退避窗口)。</summary>
     private readonly Dictionary<Guid, DateTime> _autoReconnectNotBefore = [];
+
+    /// <summary>
+    /// 上一次连接败在主机指纹上的服务器:不再自动恢复,等用户手动启动隧道(那一次会弹窗问他)、连上之后才解除。
+    /// </summary>
+    /// <remarks>
+    /// 退避只是拉长间隔,指纹的事再试多少次结果都一样 —— 而在自动恢复不弹窗之前,每试一次就弹一遍确认框,
+    /// 最长每 5 分钟一次,一直弹到有人去点。
+    /// </remarks>
+    private readonly HashSet<Guid> _hostKeyRejectedProfiles = [];
 
     private readonly Lock _deletingTunnelIdsGate = new();
 
@@ -81,7 +92,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     public TunnelPanelViewModel(
         ITunnelWorkflowService workflowService,
         Func<Task<IReadOnlyList<SessionProfile>>>? savedProfilesProvider = null,
-        Func<SessionProfile, CancellationToken, Task<Guid>>? backgroundConnector = null,
+        Func<SessionProfile, bool, CancellationToken, Task<Guid>>? backgroundConnector = null,
         Func<Guid, bool>? isSessionAlive = null,
         Func<Guid, Task>? sessionDisconnector = null,
         IAppDataStore? dataStore = null,
@@ -514,7 +525,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             Guid sessionId;
             try
             {
-                sessionId = await EnsureSessionAsync(profile, CancellationToken.None).ConfigureAwait(true);
+                sessionId = await EnsureSessionAsync(profile, automaticReconnect: false, CancellationToken.None).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -622,7 +633,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     }
 
     /// <summary>取得(或后台建立)到指定服务器的隧道连接。</summary>
-    private async Task<Guid> EnsureSessionAsync(SessionProfile profile, CancellationToken ct)
+    /// <param name="profile">服务器。</param>
+    /// <param name="automaticReconnect">这是断线后的自动恢复:主机指纹要人裁决时直接拒绝,不弹窗。</param>
+    /// <param name="ct">取消令牌。</param>
+    private async Task<Guid> EnsureSessionAsync(SessionProfile profile, bool automaticReconnect, CancellationToken ct)
     {
         if (ResolveLiveSession(profile.Id) is { } alive)
         {
@@ -636,9 +650,16 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         RefreshServerStatus();
         try
         {
-            Guid sessionId = await _backgroundConnector(profile, ct);
+            Guid sessionId = await _backgroundConnector(profile, automaticReconnect, ct);
             _hostSessions[profile.Id] = sessionId;
+            _hostKeyRejectedProfiles.Remove(profile.Id);
             return sessionId;
+        }
+        catch (VelaSshHostKeyRejectedException)
+        {
+            // 用户在弹窗里拒绝了,或者自动恢复时没法问人:之后不再自动恢复这台,等用户手动启动。
+            _hostKeyRejectedProfiles.Add(profile.Id);
+            throw;
         }
         finally
         {
@@ -807,6 +828,11 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             {
                 continue;
             }
+            // 败在主机指纹上的不再自动试(见 _hostKeyRejectedProfiles)。
+            if (_hostKeyRejectedProfiles.Contains(profileId))
+            {
+                continue;
+            }
             if (!items.Any(IsAutoReconnectCandidate))
             {
                 continue;
@@ -848,7 +874,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             {
                 RefreshServerStatus();
             }
-            Guid sessionId = await EnsureSessionAsync(profile, CancellationToken.None).ConfigureAwait(true);
+            Guid sessionId = await EnsureSessionAsync(profile, automaticReconnect: true, CancellationToken.None).ConfigureAwait(true);
             foreach (TunnelItemViewModel tunnel in pending.Where(items.Contains))
             {
                 // 服务侧还留着停止状态的旧记录,先清掉再重建,避免列表里越积越多。
@@ -865,6 +891,16 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             if (isSelected)
             {
                 ErrorMessage = null;
+            }
+        }
+        catch (VelaSshHostKeyRejectedException ex)
+        {
+            // 自动恢复到此为止(EnsureSessionAsync 已把这台记进 _hostKeyRejectedProfiles)。
+            // 不管当前选中的是不是这台都报一声:只有用户手动启动、在弹窗里核对过指纹,这些隧道才回得来。
+            _errorReporter?.Invoke(FriendlyError(ex));
+            if (isSelected)
+            {
+                ErrorMessage = FriendlyError(ex);
             }
         }
         catch (Exception ex)
@@ -1027,7 +1063,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
                 await _workflowService.RemoveTunnelAsync(editingId, ct).ConfigureAwait(true);
                 if (wasActive)
                 {
-                    Guid sessionId = await EnsureSessionAsync(server, ct).ConfigureAwait(true);
+                    Guid sessionId = await EnsureSessionAsync(server, automaticReconnect: false, ct).ConfigureAwait(true);
                     TunnelInfo result = await _workflowService.CreateTunnelAsync(sessionId, config, ct).ConfigureAwait(true);
                     ReplaceOrAdd(index, new(result));
                 }
@@ -1048,7 +1084,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             }
             else
             {
-                Guid sessionId = await EnsureSessionAsync(server, ct).ConfigureAwait(true);
+                Guid sessionId = await EnsureSessionAsync(server, automaticReconnect: false, ct).ConfigureAwait(true);
                 TunnelInfo result = await _workflowService.CreateTunnelAsync(sessionId, config, ct).ConfigureAwait(true);
                 Tunnels.Add(new(result));
             }
@@ -1150,7 +1186,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             ErrorMessage = null;
             // 服务侧还留着停止状态的旧记录,先清掉再重建,避免列表里越积越多。
             await _workflowService.RemoveTunnelAsync(tunnelId, ct).ConfigureAwait(true);
-            Guid sessionId = await EnsureSessionAsync(server, ct).ConfigureAwait(true);
+            Guid sessionId = await EnsureSessionAsync(server, automaticReconnect: false, ct).ConfigureAwait(true);
             TunnelInfo result = await _workflowService.CreateTunnelAsync(sessionId, existing.Config, ct).ConfigureAwait(true);
             int index = Tunnels.IndexOf(existing);
             ReplaceOrAdd(index, new(result));
