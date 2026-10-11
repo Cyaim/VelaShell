@@ -17,7 +17,7 @@ public sealed class AiSettingsStoreTests
     public async Task KeyPool_OnlyCallersThatCountRetriesLoseSdkRetries(ChatProtocol protocol)
     {
         using var context = new TestPluginContext();
-        using var failing = new ErrorStub(System.Net.HttpStatusCode.ServiceUnavailable);
+        await using var failing = new ErrorStub(System.Net.HttpStatusCode.ServiceUnavailable);
         var provider = new AiProvider
         {
             BaseUrl = failing.BaseUrl,
@@ -56,8 +56,8 @@ public sealed class AiSettingsStoreTests
     [DataRow("model-reference")]
     public async Task CatalogueCommit_HeldJsonPublishesOnlySavedModelsAndRejectsPendingConsumers(string outcome)
     {
-        using var oldHost = new SseStub(GuardReplySse);
-        using var newHost = new SseStub(GuardReplySse);
+        await using var oldHost = new SseStub(GuardReplySse);
+        await using var newHost = new SseStub(GuardReplySse);
         var storage = new FailingStorage(new InMemoryStorage());
         using var secretSource = new TestPluginContext();
         var secrets = new MutateThenFailSecrets(secretSource.Secrets);
@@ -145,8 +145,8 @@ public sealed class AiSettingsStoreTests
     [TestMethod]
     public async Task CatalogueCommit_IndependentStaleBaselineCannotAbsorbOrPublishFailedCatalogue()
     {
-        using var oldHost = new SseStub(GuardReplySse);
-        using var newHost = new SseStub(GuardReplySse);
+        await using var oldHost = new SseStub(GuardReplySse);
+        await using var newHost = new SseStub(GuardReplySse);
         using var context = new TestPluginContext();
         var store = new AiSettingsStore(context);
         var provider = new AiProvider { BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "old-model" }] };
@@ -260,8 +260,8 @@ public sealed class AiSettingsStoreTests
     [DataRow("delete-model-token")]
     public async Task SecretMutationThenThrow_RestoresRawEntryCacheAndEpochBeforeRealConsumers(string operation)
     {
-        using var oldHost = new SseStub(GuardReplySse);
-        using var newHost = new SseStub(GuardReplySse);
+        await using var oldHost = new SseStub(GuardReplySse);
+        await using var newHost = new SseStub(GuardReplySse);
         using var source = new TestPluginContext();
         var secrets = new MutateThenFailSecrets(source.Secrets);
         using var context = new TestPluginContext { Secrets = secrets };
@@ -407,8 +407,8 @@ public sealed class AiSettingsStoreTests
     [DataRow(true)]
     public async Task Review_IndependentSavedHostCannotReceiveNewProviderOrModelCredential(bool ownKey)
     {
-        using var oldHost = new SseStub(GuardReplySse);
-        using var newHost = new SseStub(GuardReplySse);
+        await using var oldHost = new SseStub(GuardReplySse);
+        await using var newHost = new SseStub(GuardReplySse);
         using var context = new TestPluginContext();
         var store = new AiSettingsStore(context);
         AiSettings initial = await store.LoadAsync();
@@ -450,7 +450,7 @@ public sealed class AiSettingsStoreTests
     [TestMethod]
     public async Task Review_StandaloneHealthProbeStillWorksButSavedClonesAndUncommittedEndpointsDoNot()
     {
-        using var host = new SseStub(GuardReplySse);
+        await using var host = new SseStub(GuardReplySse);
         using var context = new TestPluginContext();
         var store = new AiSettingsStore(context);
         var model = new AiModelConfig { Model = "m" };
@@ -480,7 +480,7 @@ public sealed class AiSettingsStoreTests
     public async Task Review_ColdDeletionRejectsReadersAndLateRawReadsCannotPoisonRestoredCredentials(
         bool modelOnly, bool ownKey, string outcome)
     {
-        using var host = new SseStub(GuardReplySse);
+        await using var host = new SseStub(GuardReplySse);
         var storage = new FailingStorage(new InMemoryStorage());
         using var source = new TestPluginContext();
         var secrets = new DeleteFailingSecrets(source.Secrets);
@@ -892,7 +892,7 @@ public sealed class AiSettingsStoreTests
     [TestMethod]
     public async Task Review_CommittedStickySlotAndBalanceKeepFixedCredentialSecurityEpochValid()
     {
-        using var host = new SseStub(GuardReplySse);
+        await using var host = new SseStub(GuardReplySse);
         using var context = new TestPluginContext();
         var store = new AiSettingsStore(context);
         var provider = new AiProvider { BaseUrl = host.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
@@ -922,7 +922,7 @@ public sealed class AiSettingsStoreTests
     [DataRow(true, true)]
     public async Task Review_FailedOrCancelledTokenClearKeepsOriginalAccountAndPendingBodyUsable(bool directDelete, bool cancel)
     {
-        using var host = new SseStub(GuardReplySse);
+        await using var host = new SseStub(GuardReplySse);
         using var source = new TestPluginContext();
         var secrets = new DeleteFailingSecrets(source.Secrets);
         using var context = new TestPluginContext { Secrets = secrets };

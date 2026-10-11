@@ -92,7 +92,7 @@ public sealed class PromptCacheTests
     [TestMethod]
     public async Task Markers_ReachTheWire_AsCacheControlBlocks()
     {
-        using var stub = new SseStub("""
+        await using var stub = new SseStub("""
         event: message_start
         data: {"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","model":"m","content":[],"stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}
 

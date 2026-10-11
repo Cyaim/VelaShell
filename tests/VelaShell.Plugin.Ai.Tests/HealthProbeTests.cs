@@ -47,7 +47,7 @@ public sealed class HealthProbeTests
     [DataRow("👨‍👩‍👧‍👦", true)]
     public async Task Review_ProbeRequiresVisibleReply(string reply, bool alive)
     {
-        using var stub = new SseStub(OpenAiStream(reply));
+        await using var stub = new SseStub(OpenAiStream(reply));
         using var context = new TestPluginContext();
         (Exception? error, string? text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
         if (alive)
@@ -65,7 +65,7 @@ public sealed class HealthProbeTests
     [TestMethod]
     public async Task ErrorEndpoint_DisconnectedUploadDoesNotStopNextRequest()
     {
-        using var endpoint = new ErrorStub(HttpStatusCode.Unauthorized);
+        await using var endpoint = new ErrorStub(HttpStatusCode.Unauthorized);
         var uri = new Uri(endpoint.BaseUrl);
         using (var disconnected = new TcpClient())
         {
@@ -90,7 +90,7 @@ public sealed class HealthProbeTests
     [TestMethod]
     public async Task LiveEndpointPassesAndReturnsTheEcho()
     {
-        using var stub = new SseStub(OpenAiStream("OK"));
+        await using var stub = new SseStub(OpenAiStream("OK"));
         using var context = new TestPluginContext();
 
         (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
@@ -110,7 +110,7 @@ public sealed class HealthProbeTests
             data: {"id":"probe","object":"chat.completion.chunk","created":1,"model":"probe-model","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":2}}}
 
             """ + "\n\n" + OpenAiStream(empty ? "" : "OK");
-        using var stub = new SseStub(sse);
+        await using var stub = new SseStub(sse);
         using var context = new TestPluginContext();
         int calls = 0;
         UsageDetails? received = null;
@@ -131,7 +131,7 @@ public sealed class HealthProbeTests
     [TestMethod]
     public async Task FixedCredentialProbe_AnthropicSplitUsageUsesNativeAggregation()
     {
-        using var stub = new SseStub(AnthropicReply);
+        await using var stub = new SseStub(AnthropicReply);
         using var context = new TestPluginContext();
         ResolvedModel model = ModelFor(stub.BaseUrl, ChatProtocol.AnthropicMessages);
         int calls = 0;
@@ -149,7 +149,7 @@ public sealed class HealthProbeTests
     [TestMethod]
     public async Task FixedCredentialProbe_DoesNotInventUnreportedUsage()
     {
-        using var stub = new SseStub(OpenAiStream("OK"));
+        await using var stub = new SseStub(OpenAiStream("OK"));
         using var context = new TestPluginContext();
         int calls = 0;
         (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl),
@@ -196,7 +196,7 @@ public sealed class HealthProbeTests
     [DataRow("data: {\"id\":\"probe\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"probe-model\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":\"正在思考\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")]
     public async Task StreamsWithoutATextAnswerAreNotAlive(string sse)
     {
-        using var stub = new SseStub(sse, jsonContent: "OK");
+        await using var stub = new SseStub(sse, jsonContent: "OK");
         using var context = new TestPluginContext();
 
         (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
@@ -208,7 +208,7 @@ public sealed class HealthProbeTests
     [TestMethod]
     public async Task WhitespaceOnlyStreamIsNotAlive()
     {
-        using var stub = new SseStub(OpenAiStream(" \t\r\n "), jsonContent: "OK");
+        await using var stub = new SseStub(OpenAiStream(" \t\r\n "), jsonContent: "OK");
         using var context = new TestPluginContext();
 
         (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
@@ -222,7 +222,7 @@ public sealed class HealthProbeTests
     {
         string sse = OpenAiStream(" O").Replace("\"finish_reason\":\"stop\"", "\"finish_reason\":null", StringComparison.Ordinal)
             .Replace("data: [DONE]\n\n", "", StringComparison.Ordinal) + OpenAiStream("K ");
-        using var stub = new SseStub(sse);
+        await using var stub = new SseStub(sse);
         using var context = new TestPluginContext();
         (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl))
             .WaitAsync(TimeSpan.FromSeconds(5));
@@ -237,7 +237,7 @@ public sealed class HealthProbeTests
     {
         string sse = OpenAiStream(" O").Replace("\"finish_reason\":\"stop\"", "\"finish_reason\":null", StringComparison.Ordinal)
             .Replace("data: [DONE]\n\n", "", StringComparison.Ordinal) + OpenAiStream("K ");
-        using var stub = new SseStub(sse, holdAfterFirstChunk: true);
+        await using var stub = new SseStub(sse, holdAfterFirstChunk: true);
         using var context = new TestPluginContext();
         using var cancellation = new CancellationTokenSource();
         using IChatClient client = new AiSettingsStore(context).CreateClient(ModelFor(stub.BaseUrl), ProviderCredential.Key(null));
@@ -273,7 +273,7 @@ public sealed class HealthProbeTests
     [TestMethod]
     public async Task RealSdk_TruncatedStreamYieldsUsageBeforeTransportFailure()
     {
-        using var stub = new TruncatedSseStub("""
+        await using var stub = new TruncatedSseStub("""
             data: {"id":"probe","object":"chat.completion.chunk","created":1,"model":"probe-model","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}
 
             """);
@@ -292,7 +292,7 @@ public sealed class HealthProbeTests
     [TestMethod]
     public async Task UserCancellationWhileAwaitingAStreamIsNotAHealthFailure()
     {
-        using var stub = new SseStub(OpenAiStream("OK"), hold: true);
+        await using var stub = new SseStub(OpenAiStream("OK"), hold: true);
         using var context = new TestPluginContext();
         using var cancellation = new CancellationTokenSource();
         Task<(Exception? Error, string Text)> probe = HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl),
@@ -312,7 +312,7 @@ public sealed class HealthProbeTests
     [TestMethod]
     public async Task RejectedEndpointIsNotAlive()
     {
-        using var stub = new ErrorStub();
+        await using var stub = new ErrorStub();
         using var context = new TestPluginContext();
 
         (Exception? error, string _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
@@ -378,7 +378,7 @@ public sealed class HealthProbeTests
     {
         // 有的后端(内置 Codex)拒绝 max_output_tokens 字段。探活不带上正式请求那套端点怪癖,
         // 一个能正常聊天的接入就会被自己的「测试 / 全部检测 / 切换前探测」误判成不可用。
-        using var stub = new SseStub(OpenAiStream("OK"));
+        await using var stub = new SseStub(OpenAiStream("OK"));
         using var context = new TestPluginContext();
         var provider = new AiProvider
         {

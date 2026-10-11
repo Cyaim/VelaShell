@@ -63,7 +63,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub(SlowReply, hold: true);
+            await using var stub = new SseStub(SlowReply, hold: true);
             using var context = new TestPluginContext();
             (Window window, ChatPanelView panel) = await ShowWithStubAsync(context, stub);
             try
@@ -119,7 +119,7 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             // 挂住不回:这一轮要被按停,回应压根不需要来
-            using var stub = new SseStub(SlowReply, hold: true);
+            await using var stub = new SseStub(SlowReply, hold: true);
             using var context = new TestPluginContext();
             (Window window, ChatPanelView panel) = await ShowWithStubAsync(context, stub);
             try
@@ -160,7 +160,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub(SlowReply, hold: true);
+            await using var stub = new SseStub(SlowReply, hold: true);
             using var context = new TestPluginContext();
             (Window window, ChatPanelView panel) = await ShowWithStubAsync(context, stub);
             try
@@ -209,9 +209,9 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             const string whitespace = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" \\t\\n \"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
-            using var first = new SseStub(failover ? whitespace : SlowReply,
+            await using var first = new SseStub(failover ? whitespace : SlowReply,
                 holdFirstStream: true, firstStreamContent: " \t\n ");
-            using var backup = new SseStub(SlowReply, firstStreamContent: "OK");
+            await using var backup = new SseStub(SlowReply, firstStreamContent: "OK");
             using var refresh = new HeldCredentialRefresh();
             using var http = new HttpClient(refresh);
             using var context = new TestPluginContext();

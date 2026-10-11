@@ -107,7 +107,7 @@ public sealed partial class ChatPanelViewUiTests
                 ? (401, "{\"error\":{\"message\":\"auth\"}}") : auth == "Bearer key-b"
                     ? (probeStatus, probeStatus == 200 ? "data: [DONE]\n\n" : "{\"error\":{\"message\":\"upstream\"}}")
                     : (200, LifecycleAnswer));
-            using var backupEndpoint = new SseStub(LifecycleAnswer);
+            await using var backupEndpoint = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider provider = StubProvider("pool", endpoint.BaseUrl, "m");
@@ -150,8 +150,8 @@ public sealed partial class ChatPanelViewUiTests
             string delta = thinking ? "\"reasoning_content\":\"已经思考\"" : "\"content\":\"已经回答\"";
             string stream = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{" + delta
                 + "},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n";
-            using var endpoint = new SseStub(stream, abortAfterFirstChunk: true);
-            using var backupEndpoint = new SseStub(LifecycleAnswer);
+            await using var endpoint = new SseStub(stream, abortAfterFirstChunk: true);
+            await using var backupEndpoint = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider provider = StubProvider("pool", endpoint.BaseUrl, "m");
@@ -333,7 +333,7 @@ public sealed partial class ChatPanelViewUiTests
         {
             using var endpoint = new KeyAuthStub((_, _) => (status, status == 200
                 ? "data: [DONE]\n\n" : "{\"error\":{\"message\":\"model error\"}}"));
-            using var backupEndpoint = new SseStub(LifecycleAnswer);
+            await using var backupEndpoint = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider first = StubProvider("pool", endpoint.BaseUrl, "m");
@@ -465,7 +465,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var home = new SseStub(LifecycleAnswer);
+            await using var home = new SseStub(LifecycleAnswer);
             using var endpoint = new KeyAuthStub((_, _) => (401, "{\"error\":{\"message\":\"auth\"}}"));
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
@@ -500,8 +500,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var healthy = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var healthy = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"来自第二家。"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -559,8 +559,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var healthy = new SseStub(ProbeAccountingAnswer);
+            await using var broken = new ErrorStub();
+            await using var healthy = new SseStub(ProbeAccountingAnswer);
             var storage = new HeldSettingsStorage(new InMemoryStorage());
             using var context = new TestPluginContext { Storage = storage };
             AiProvider first = StubProvider("broken", broken.BaseUrl, "m");
@@ -602,18 +602,18 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
+            await using var broken = new ErrorStub();
             const string usageOnly = """
                 data: {"id":"probe","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}
 
                 data: [DONE]
 
                 """;
-            using SseStub? empty = disconnect ? null : new SseStub(usageOnly);
+            await using SseStub? empty = disconnect ? null : new SseStub(usageOnly);
             // 探活只在结束时回调用量,没有首帧观察接口。完整首 HTTP chunk 后用 FIN 截断,
             // TCP 保证数据先于 EOF 到达,不会像 Flush 后 RST 那样丢掉尚未解析的用量。
-            using TruncatedSseStub? truncated = disconnect ? new TruncatedSseStub(usageOnly) : null;
-            using var healthy = new SseStub(ProbeAccountingAnswer);
+            await using TruncatedSseStub? truncated = disconnect ? new TruncatedSseStub(usageOnly) : null;
+            await using var healthy = new SseStub(ProbeAccountingAnswer);
             using var context = new TestPluginContext();
             AiProvider first = StubProvider("broken", broken.BaseUrl, "m");
             AiProvider second = StubProvider("empty", empty?.BaseUrl ?? truncated!.BaseUrl, "m");
@@ -649,8 +649,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var healthy = new SseStub(ProbeAccountingAnswer, holdFirstStream: true);
+            await using var broken = new ErrorStub();
+            await using var healthy = new SseStub(ProbeAccountingAnswer, holdFirstStream: true);
             using var context = new TestPluginContext();
             context.FakeSessions.AddConnected(host: "10.0.0.1", username: "root");
             context.FakeSessions.AddConnected(host: "10.0.0.2", username: "root");
@@ -723,7 +723,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub(ProbeAccountingAnswer);
+            await using var endpoint = new SseStub(ProbeAccountingAnswer);
             using var context = new TestPluginContext();
             AiProvider provider = StubProvider("probe", endpoint.BaseUrl, "m");
             var model = new ResolvedModel(provider, provider.Models[0]);
@@ -760,7 +760,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
+            await using var broken = new ErrorStub();
             using var target = new HeldStreamingReply();
             using var context = new TestPluginContext();
             AiProvider first = StubProvider("alpha", broken.BaseUrl, "a");
@@ -824,9 +824,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var unprobeable = new ErrorStub();
-            using var answering = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var unprobeable = new ErrorStub();
+            await using var answering = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"已接管"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -870,8 +870,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new SseStub("", hold: true);
-            using var answering = new SseStub("""
+            await using var broken = new SseStub("", hold: true);
+            await using var answering = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"备用回答"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -919,16 +919,16 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var heldB = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var heldB = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
                 data: [DONE]
 
 
                 """, holdAfterFirstChunk: true, firstStreamContent: "OK");
-            using var healthyB = new SseStub(LifecycleAnswer, jsonContent: "OK");
-            using var healthyC = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var healthyB = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var healthyC = new SseStub(LifecycleAnswer, jsonContent: "OK");
             using var context = new TestPluginContext();
             context.FakeSessions.AddConnected(host: "10.0.0.1", username: "root");
             context.FakeSessions.AddConnected(host: "10.0.0.2", username: "root");
@@ -1003,8 +1003,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var answering = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var answering = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"后台回答"},"finish_reason":"stop"}]}
 
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":80,"completion_tokens":2,"total_tokens":82}}
@@ -1093,14 +1093,14 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var heldBackup = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var heldBackup = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
                 data: [DONE]
 
                 """, holdAfterFirstChunk: true, firstStreamContent: "OK");
-            using var answering = new SseStub("""
+            await using var answering = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"前台回答"},"finish_reason":"stop"}]}
 
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":80,"completion_tokens":2,"total_tokens":82}}
@@ -1200,8 +1200,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var target = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var target = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"回答成功"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -1271,8 +1271,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var healthy = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var healthy = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"来自第二家。"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -1341,15 +1341,15 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var oldTarget = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var oldTarget = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"经新密钥重探后回答"},"finish_reason":"stop"}]}
 
                 data: [DONE]
 
 
                 """, jsonContent: "OK", hold: true);
-            using var newTarget = new SseStub("""
+            await using var newTarget = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"新站回答"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -1418,8 +1418,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var target = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var target = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"正常回答"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -1494,8 +1494,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var target = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var target = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"新能力已启用"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -1568,8 +1568,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var target = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var target = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"new-model","choices":[{"index":0,"delta":{"content":"新型号回答"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -1641,10 +1641,10 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var oldTarget = new SseStub(LifecycleAnswer, hold: true);
-            using var secondTarget = new SseStub(LifecycleAnswer, hold: true);
-            using var thirdTarget = new SseStub(LifecycleAnswer);
+            await using var broken = new ErrorStub();
+            await using var oldTarget = new SseStub(LifecycleAnswer, hold: true);
+            await using var secondTarget = new SseStub(LifecycleAnswer, hold: true);
+            await using var thirdTarget = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             AiProvider first = StubProvider("alpha", broken.BaseUrl, "m");
             AiProvider second = StubProvider("beta", oldTarget.BaseUrl, "m");
@@ -1718,9 +1718,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var oldTarget = new SseStub(LifecycleAnswer, hold: true);
-            using var newTarget = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var oldTarget = new SseStub(LifecycleAnswer, hold: true);
+            await using var newTarget = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"订阅端点回答"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -1807,14 +1807,14 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"已回答"},"finish_reason":"stop"}]}
 
                 data: [DONE]
 
 
                 """, jsonContent: "摘要", holdFirstNonStream: true);
-            using var newTarget = new SseStub("""
+            await using var newTarget = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"来自新端点"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -1974,8 +1974,8 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             using var summaryGate = new ManualResetEventSlim();
-            using var broken = new ErrorStub();
-            using var oldTarget = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var oldTarget = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"旧站答复"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -1989,7 +1989,7 @@ public sealed partial class ChatPanelViewUiTests
                 }
                 return "OK";
             });
-            using var renewedTarget = new SseStub("""
+            await using var renewedTarget = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"续期后答复"},"finish_reason":"stop"}]}
 
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":13,"completion_tokens":4,"total_tokens":17}}
@@ -2102,11 +2102,11 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new SseStub("data: [DONE]\n\n", holdFirstStream: true, firstStreamContent: "");
-            using var oldTarget = new SseStub(LifecycleAnswer, jsonContent: "摘要", holdFirstNonStream: true);
-            using var newTarget = new SseStub(LifecycleAnswer);
-            using var healthy = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
-            using var mcp = new SseStub("", hold: true);
+            await using var broken = new SseStub("data: [DONE]\n\n", holdFirstStream: true, firstStreamContent: "");
+            await using var oldTarget = new SseStub(LifecycleAnswer, jsonContent: "摘要", holdFirstNonStream: true);
+            await using var newTarget = new SseStub(LifecycleAnswer);
+            await using var healthy = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
+            await using var mcp = new SseStub("", hold: true);
             using var context = new TestPluginContext();
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
             AiProvider a = StubProvider("a", broken.BaseUrl, "m");
@@ -2233,14 +2233,14 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var mcp = new SseStub("", hold: true);
-            using var oldTarget = new SseStub("""
+            await using var mcp = new SseStub("", hold: true);
+            await using var oldTarget = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"历史答复"},"finish_reason":"stop"}]}
 
                 data: [DONE]
 
                 """, jsonContent: "摘要");
-            using var newTarget = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var newTarget = new SseStub(LifecycleAnswer, jsonContent: "OK");
             using var context = new TestPluginContext();
             AiProvider provider = StubProvider("account", oldTarget.BaseUrl, "m", maxInputTokens: 40);
             provider.Models[0].MaxTokens = 1;
@@ -2308,14 +2308,14 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var oldTarget = new SseStub("""
+            await using var oldTarget = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"已经回答"},"finish_reason":"stop"}]}
 
                 data: [DONE]
 
 
                 """, jsonContent: "OK", hold: true);
-            using var newTarget = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var newTarget = new SseStub(LifecycleAnswer, jsonContent: "OK");
             using var context = new TestPluginContext();
             AiProvider provider = StubProvider("alpha", oldTarget.BaseUrl, "m");
             var store = new AiSettingsStore(context);
@@ -2449,7 +2449,7 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var stub = new SseStub(LifecycleAnswer, hold: true);
+            await using var stub = new SseStub(LifecycleAnswer, hold: true);
             AiProvider provider = StubProvider("only", stub.BaseUrl, "m1");
             var settings = new AiSettings
             {
@@ -2641,7 +2641,7 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var stub = new SseStub(LifecycleAnswer, hold: true); // 挂住:让进度行停在"正在检测"
+            await using var stub = new SseStub(LifecycleAnswer, hold: true); // 挂住:让进度行停在"正在检测"
             var provider = new AiProvider
             {
                 Name = "one",
@@ -2687,7 +2687,7 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var stub = new SseStub(LifecycleAnswer, holdFirstStream: true,
+            await using var stub = new SseStub(LifecycleAnswer, holdFirstStream: true,
                 firstStreamContent: "old result");
             AiProvider provider = StubProvider("only", stub.BaseUrl, "m1");
             var settings = new AiSettings
@@ -2749,7 +2749,7 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var healthy = new SseStub(LifecycleAnswer);
+            await using var healthy = new SseStub(LifecycleAnswer);
             using var tokenHttp = new HttpClient(new RefreshTimeoutHandler());
             var signedIn = new AiProvider
             {
@@ -2813,8 +2813,8 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var fast = new SseStub(LifecycleAnswer);
-            using var held = new SseStub(LifecycleAnswer, hold: true);
+            await using var fast = new SseStub(LifecycleAnswer);
+            await using var held = new SseStub(LifecycleAnswer, hold: true);
             AiProvider first = StubProvider("first", fast.BaseUrl, "a");
             first.Models[0].Name = "m1";
             AiProvider second = StubProvider("second", held.BaseUrl, "b");
@@ -2866,8 +2866,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var healthy = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var healthy = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"来自第二家。"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -2923,8 +2923,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var healthy = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var healthy = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"来自第二家。"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -2986,8 +2986,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var candidate = new SseStub(LifecycleAnswer, hold: true);
+            await using var broken = new ErrorStub();
+            await using var candidate = new SseStub(LifecycleAnswer, hold: true);
             using var context = new TestPluginContext();
             AiProvider first = StubProvider("first", broken.BaseUrl, "m");
             AiProvider second = StubProvider("candidate", candidate.BaseUrl, "m");
@@ -3035,8 +3035,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var foreign = new SseStub(LifecycleAnswer);
-            using var backup = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
+            await using var foreign = new SseStub(LifecycleAnswer);
+            await using var backup = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
             using var context = new TestPluginContext();
             AiProvider first = ProviderCatalog.Find("openrouter")!.CreateProvider();
             first.BaseUrl = foreign.BaseUrl;
@@ -3093,14 +3093,14 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var empty = new SseStub("""
+            await using var empty = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":" \t\n "},"finish_reason":"stop"}]}
 
                 data: [DONE]
 
 
                 """);
-            using var backup = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
+            await using var backup = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
             using var context = new TestPluginContext();
             AiProvider first = StubProvider("empty", empty.BaseUrl, "m");
             AiProvider second = StubProvider("backup", backup.BaseUrl, "m");
@@ -3135,7 +3135,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var warm = new SseStub("""
+            await using var warm = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"历史回答"},"finish_reason":"stop"}]}
 
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60}}
@@ -3144,14 +3144,14 @@ public sealed partial class ChatPanelViewUiTests
 
 
                 """);
-            using var failed = new SseStub("""
+            await using var failed = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}
 
                 data: [DONE]
 
 
                 """);
-            using var backup = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
+            await using var backup = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
             using var context = new TestPluginContext();
             AiProvider history = StubProvider("history", warm.BaseUrl, "m", maxInputTokens: 100);
             AiProvider original = StubProvider("failed", failed.BaseUrl, "m", maxInputTokens: 100);
@@ -3190,8 +3190,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var empty = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var empty = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}
@@ -3200,7 +3200,7 @@ public sealed partial class ChatPanelViewUiTests
 
 
                 """, firstStreamContent: "OK");
-            using var answering = new SseStub("""
+            await using var answering = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"第三站回答"},"finish_reason":"stop"}]}
 
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16}}
@@ -3253,8 +3253,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var empty = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var empty = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -3326,7 +3326,7 @@ public sealed partial class ChatPanelViewUiTests
     public async Task RawReasoningReplayBoundary_UsesRealOpenAiStreamingUpdates(string reasoning, bool meaningful)
     {
         string delta = System.Text.Json.JsonSerializer.Serialize(new { role = "assistant", reasoning });
-        using var stub = new SseStub(
+        await using var stub = new SseStub(
             $"data: {{\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{{\"index\":0,\"delta\":{delta},\"finish_reason\":\"stop\"}}]}}\n\ndata: [DONE]\n\n");
         var openAi = new OpenAI.OpenAIClient(new System.ClientModel.ApiKeyCredential("k"),
             new OpenAI.OpenAIClientOptions { Endpoint = new Uri(stub.BaseUrl) });
@@ -3349,11 +3349,11 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new SseStub("""
+            await using var broken = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
                 """, chunkDelay: TimeSpan.FromMilliseconds(80), abortAfterFirstChunk: true);
-            using var healthy = new SseStub("""
+            await using var healthy = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"备用站接管成功"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -3401,12 +3401,12 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var original = new SseStub("""
+            await using var original = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"partial-response"},"finish_reason":null}]}
 
                 """, chunkDelay: TimeSpan.FromMilliseconds(1), abortAfterFirstChunk: true, holdAfterFirstChunk: true);
-            using var moved = new SseStub(LifecycleAnswer);
-            using var backup = new SseStub(LifecycleAnswer);
+            await using var moved = new SseStub(LifecycleAnswer);
+            await using var backup = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
             AiProvider a = StubProvider("a", original.BaseUrl, "m");
@@ -3458,8 +3458,8 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             using var original = new HeldStreamingReply(toolBeforeFailure: true);
-            using var moved = new SseStub(LifecycleAnswer);
-            using var backup = new SseStub(LifecycleAnswer);
+            await using var moved = new SseStub(LifecycleAnswer);
+            await using var backup = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
             context.FakeSessions.AddConnected();

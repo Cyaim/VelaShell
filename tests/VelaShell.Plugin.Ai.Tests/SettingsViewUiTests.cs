@@ -28,8 +28,8 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            using var original = new SseStub(ProbeAnswerSse);
-            using var draftHost = new SseStub(ProbeAnswerSse);
+            await using var original = new SseStub(ProbeAnswerSse);
+            await using var draftHost = new SseStub(ProbeAnswerSse);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             var model = new AiModelConfig { Model = "m", HasOwnApiKey = savedOwnKey };
@@ -533,7 +533,7 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub(ProbeAnswerSse);
+            await using var endpoint = new SseStub(ProbeAnswerSse);
             using var source = new TestPluginContext();
             var secrets = new KeySettingsSecrets(source.Secrets);
             using var context = new TestPluginContext { Secrets = secrets };
@@ -577,8 +577,8 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            using var oldHost = new SseStub(ProbeAnswerSse);
-            using var newHost = new SseStub(ProbeAnswerSse);
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             var model = new AiModelConfig { Model = "m", HasOwnApiKey = action == "own" };
@@ -776,8 +776,8 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            using var oldEndpoint = new SseStub(ProbeAnswerSse);
-            using var newEndpoint = new SseStub(ProbeAnswerSse);
+            await using var oldEndpoint = new SseStub(ProbeAnswerSse);
+            await using var newEndpoint = new SseStub(ProbeAnswerSse);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             var initial = new AiSettings
@@ -839,7 +839,7 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub(ProbeAnswerSse);
+            await using var endpoint = new SseStub(ProbeAnswerSse);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             var model = new AiModelConfig { Model = "m", HasOwnApiKey = ownKey, Temperature = 0.2f };
@@ -1160,7 +1160,7 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub(ProbeAnswerSse);
+            await using var endpoint = new SseStub(ProbeAnswerSse);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
@@ -1283,8 +1283,8 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            using var original = new SseStub(ProbeAnswerSse);
-            using var changed = new SseStub(ProbeAnswerSse);
+            await using var original = new SseStub(ProbeAnswerSse);
+            await using var changed = new SseStub(ProbeAnswerSse);
             using var source = new TestPluginContext();
             var provider = new AiProvider { BaseUrl = original.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
             var settings = new AiSettings { Providers = [provider] };
@@ -1862,8 +1862,8 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var held = new SseStub("", jsonContent: "", hold: true); // 空回复 = 探活失败,且被挂住
-            using var quick = new SseStub(ProbeAnswerSse);
+            await using var held = new SseStub("", jsonContent: "", hold: true); // 空回复 = 探活失败,且被挂住
+            await using var quick = new SseStub(ProbeAnswerSse);
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
@@ -1932,7 +1932,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var held = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "");
+            await using var held = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "");
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
@@ -1998,7 +1998,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub("""
+            await using var endpoint = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m1","choices":[{"index":0,"delta":{"content":"聊天答复"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -2070,7 +2070,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub(ProbeAnswerSse, hold: true);
+            await using var endpoint = new SseStub(ProbeAnswerSse, hold: true);
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
@@ -2330,8 +2330,8 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var held = new SseStub("", jsonContent: "", hold: true); // m1 的端点:挂住,放行后回空 = 失败
-            using var quick = new SseStub(ProbeAnswerSse);
+            await using var held = new SseStub("", jsonContent: "", hold: true); // m1 的端点:挂住,放行后回空 = 失败
+            await using var quick = new SseStub(ProbeAnswerSse);
             var m1 = new AiModelConfig { Model = "m1" };
             var m2 = new AiModelConfig { Model = "m2", BaseUrlOverride = quick.BaseUrl };
             var provider = new AiProvider
@@ -2406,8 +2406,8 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var oldEndpoint = new SseStub("", jsonContent: "", hold: true);
-            using var newEndpoint = new SseStub(ProbeAnswerSse);
+            await using var oldEndpoint = new SseStub("", jsonContent: "", hold: true);
+            await using var newEndpoint = new SseStub(ProbeAnswerSse);
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
@@ -2483,7 +2483,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "");
+            await using var endpoint = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "");
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
@@ -2533,7 +2533,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub("", jsonContent: "", hold: true);
+            await using var endpoint = new SseStub("", jsonContent: "", hold: true);
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
@@ -2580,7 +2580,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub(ProbeAnswerSse);
+            await using var endpoint = new SseStub(ProbeAnswerSse);
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
@@ -2715,7 +2715,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             // 目录规格不参与本例:端点拒绝后应保留原模型,仍显示手动重试入口。
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
-            using var endpoint = new ErrorStub();
+            await using var endpoint = new ErrorStub();
             AiProvider provider = ProviderCatalog.Custom.CreateProvider();
             provider.Name = "original account";
             provider.BaseUrl = "";
@@ -2900,7 +2900,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub("", holdFirstStream: true, firstStreamContent: "");
+            await using var endpoint = new SseStub("", holdFirstStream: true, firstStreamContent: "");
             var model = new AiModelConfig { Model = "m1", Reasoning = ReasoningLevel.High };
             var provider = new AiProvider
             {
@@ -3202,7 +3202,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub("", holdFirstStream: true, firstStreamContent: "");
+            await using var endpoint = new SseStub("", holdFirstStream: true, firstStreamContent: "");
             var model = new AiModelConfig { Model = "m1", Temperature = 0.25f, TopP = 0.5f, StopSequences = "stop-one\nstop-two" };
             var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
@@ -4076,7 +4076,7 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            using var context = new TestPluginContext(); using var endpoint = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext(); await using var endpoint = new SseStub(ProbeAnswerSse);
             var model = new AiModelConfig { Model = "own", HasOwnApiKey = true, BaseUrlOverride = endpoint.BaseUrl };
             var provider = new AiProvider { BaseUrl = "https://provider.example", Models = [model] };
             var settings = new AiSettings { Providers = [provider] }; var store = new AiSettingsStore(context);
@@ -4267,7 +4267,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var same = new SseStub(ProbeAnswerSse); using var other = new SseStub(ProbeAnswerSse);
+            await using var same = new SseStub(ProbeAnswerSse); await using var other = new SseStub(ProbeAnswerSse);
             var a = new AiModelConfig { Model = "m1", Name = "duplicate" };
             var b = new AiModelConfig { Model = "m2", Name = "duplicate" };
             var cross = new AiModelConfig { Model = "m3", BaseUrlOverride = other.BaseUrl };
@@ -4444,7 +4444,7 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            using var context = new TestPluginContext(); using var endpoint = new SseStub("");
+            using var context = new TestPluginContext(); await using var endpoint = new SseStub("");
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider] }; var store = new AiSettingsStore(context);

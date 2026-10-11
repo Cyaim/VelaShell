@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using VelaShell.Plugin.Ai.Interop;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
@@ -9,7 +10,8 @@ namespace VelaShell.Plugin.Ai.Tests;
 /// 用来通过真实 HTTP 触发瞬时故障或 401/403 鉴权失败的有限重试与故障转移,
 /// 不替代发生在发送请求之前的 OAuth 地址护栏。
 /// </summary>
-public sealed class ErrorStub : IDisposable
+/// <remarks>只实现 <see cref="IAsyncDisposable" />:收摊要等服务循环退出,不在 UI 线程上同步地等(见 <see cref="SseStub" />)。</remarks>
+public sealed class ErrorStub : IAsyncDisposable
 {
     private readonly HttpListener _listener;
     private readonly CancellationTokenSource _shutdown = new();
@@ -80,7 +82,11 @@ public sealed class ErrorStub : IDisposable
             {
                 while (true)
                 {
-                    HttpListenerContext context = await _listener.GetContextAsync();
+                    // Dispose 要同步等这个循环退出:收摊靠令牌唤醒 accept,不靠关监听(见 HttpListenerExtensions.AcceptAsync)。
+                    if (await _listener.AcceptAsync(_shutdown.Token) is not { } context)
+                    {
+                        break;
+                    }
                     try
                     {
                         // 请求体照读再回:不读直接关,客户端那头可能拿到连接层错误而不是 401
@@ -123,14 +129,14 @@ public sealed class ErrorStub : IDisposable
         });
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _shutdown.Cancel();
         _readingBody.TrySetCanceled();
         _requestFailure.TrySetCanceled();
         _listener.Close();
-        _server.GetAwaiter().GetResult();
+        await _server;
         _shutdown.Dispose();
     }
 }

@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
+using VelaShell.Plugin.Ai.Interop;
 using VelaShell.PluginSdk;
 
 namespace VelaShell.Plugin.Ai.Bridge.Channels.WeCom;
@@ -69,23 +70,14 @@ internal sealed class WeComChannel(
         context.Log.Info(
             $"Bridge: {Label} listening for WeCom callbacks on http://127.0.0.1:{config.WebhookPort}{config.WebhookPath} " +
             "(put a tunnel or reverse proxy in front of it).");
-        // 停机靠关监听来唤醒 accept,而不是 WaitAsync(token)。后者只是**放弃等待**:
-        // GetContextAsync 那个任务还挂在监听上,随后 finally 里的 Close 会让它以
-        // HttpListenerException 收场 —— 一个没人观察的任务异常;而 WaitAsync 自己抛出的
-        // TaskCanceledException 又不在下面的 catch 里,得一路穿到 ChannelHub 才被吃掉。
-        // 关监听则让 accept 自己以 HttpListenerException 返回,正好落进已有的分支。
-        await using CancellationTokenRegistration stopping =
-            cancellationToken.Register(static state => ((HttpListener)state!).Close(), listener);
+        // ⚠️ 停机由令牌唤醒 accept,不再靠「令牌一取消就关监听」:macOS / Linux 上关监听唤醒不了恰好正要进来的那次
+        //    accept,它永远不完成,这里就永远不返回 —— ChannelHub.StopAsync 是先取消、再不限时地等这个循环的,停渠道就跟着挂住。
+        //    放弃掉的 accept 的异常与取消都在 AcceptAsync 里收掉了,监听由下面的 finally 关。
         try
         {
             while (listener.IsListening && !cancellationToken.IsCancellationRequested)
             {
-                HttpListenerContext http;
-                try
-                {
-                    http = await listener.GetContextAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException)
+                if (await listener.AcceptAsync(cancellationToken).ConfigureAwait(false) is not { } http)
                 {
                     return;
                 }

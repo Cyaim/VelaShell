@@ -29,9 +29,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var history = new SseStub(LifecycleAnswer);
-            using var broken = new SseStub("data: [DONE]\n\n", holdFirstStream: true, firstStreamContent: "");
-            using var backup = new SseStub(LifecycleAnswer, jsonContent: "background-summary", holdFirstNonStream: true);
+            await using var history = new SseStub(LifecycleAnswer);
+            await using var broken = new SseStub("data: [DONE]\n\n", holdFirstStream: true, firstStreamContent: "");
+            await using var backup = new SseStub(LifecycleAnswer, jsonContent: "background-summary", holdFirstNonStream: true);
             using var context = new TestPluginContext();
             context.FakeSessions.AddConnected(host: "10.0.0.1", username: "root");
             context.FakeSessions.AddConnected(host: "10.0.0.2", username: "root");
@@ -399,9 +399,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var original = new SseStub(LifecycleAnswer, jsonContent: "OK");
-            using var denied = new ErrorStub();
-            using var backup = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var original = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var denied = new ErrorStub();
+            await using var backup = new SseStub(LifecycleAnswer, jsonContent: "OK");
             using var refresh = new FailedCredentialRefresh(refreshStatus);
             using var http = new HttpClient(refresh);
             using var context = new TestPluginContext();
@@ -488,9 +488,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var original = new SseStub(LifecycleAnswer);
-            using var moved = new SseStub(LifecycleAnswer);
-            using var backup = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
+            await using var original = new SseStub(LifecycleAnswer);
+            await using var moved = new SseStub(LifecycleAnswer);
+            await using var backup = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
             using var refresh = new HeldCredentialRefresh();
             using var http = new HttpClient(refresh);
             using var context = new TestPluginContext();
@@ -572,9 +572,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var forbidden = new SseStub(LifecycleAnswer, jsonContent: "OK");
-            using var healthy = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var broken = new ErrorStub();
+            await using var forbidden = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var healthy = new SseStub(LifecycleAnswer, jsonContent: "OK");
             using var context = new TestPluginContext();
             AiProvider a = StubProvider("a", broken.BaseUrl, "m");
             AiProvider b = StubProvider("b", forbidden.BaseUrl, "m");
@@ -673,7 +673,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var target = new SseStub(LifecycleAnswer,
+            await using var target = new SseStub(LifecycleAnswer,
                 jsonContent: "接下来检查什么\n如何定位错误\n怎样验证修复", holdAfterFirstChunk: true);
             string payload = changedAccount
                 ? "{\"access_token\":\"new-token\",\"expires_in\":3600,\"id_token\":\"e30."
@@ -748,8 +748,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var target = new SseStub(LifecycleAnswer, jsonContent: "下一步检查什么");
-            using var forbidden = new SseStub(LifecycleAnswer, jsonContent: "不应收到旧历史");
+            await using var target = new SseStub(LifecycleAnswer, jsonContent: "下一步检查什么");
+            await using var forbidden = new SseStub(LifecycleAnswer, jsonContent: "不应收到旧历史");
             string payload = change == "changed-account"
                 ? "{\"access_token\":\"new-token\",\"expires_in\":3600,\"id_token\":\"e30."
                     + Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"account_id\":\"other-account\"}")).TrimEnd('=') + ".x\"}"
@@ -856,9 +856,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var candidate = new SseStub(LifecycleAnswer, jsonContent: "CANDIDATE_SUGGESTION", holdFirstNonStream: true);
-            using var other = new SseStub(LifecycleAnswer, jsonContent: "OTHER_SESSION_SUGGESTION");
+            await using var broken = new ErrorStub();
+            await using var candidate = new SseStub(LifecycleAnswer, jsonContent: "CANDIDATE_SUGGESTION", holdFirstNonStream: true);
+            await using var other = new SseStub(LifecycleAnswer, jsonContent: "OTHER_SESSION_SUGGESTION");
             using var context = new TestPluginContext();
             context.FakeSessions.AddConnected(host: "10.0.0.1", username: "root");
             context.FakeSessions.AddConnected(host: "10.0.0.2", username: "root");
@@ -953,7 +953,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var target = new SseStub("""
+            await using var target = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"正在回答"},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}
 
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
@@ -994,9 +994,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
+            await using var broken = new ErrorStub();
             using var backup = new HeldStreamingReply();
-            using var unused = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var unused = new SseStub(LifecycleAnswer, jsonContent: "OK");
             using var context = new TestPluginContext();
             AiProvider c = StubProvider("c", unused.BaseUrl, "m");
             AiProvider a = StubProvider("a", broken.BaseUrl, "m");
@@ -1040,14 +1040,14 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var first = new SseStub("""
+            await using var first = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
                 """, chunkDelay: TimeSpan.FromMilliseconds(1), abortAfterFirstChunk: true, holdAfterFirstChunk: true);
-            using var oldBackup = new SseStub(LifecycleAnswer, jsonContent: "OK");
-            using var renewedBackup = new ErrorStub(HttpStatusCode.TooManyRequests);
-            using var healthy = new SseStub(LifecycleAnswer, jsonContent: "OK");
-            using var mcp = new SseStub("", hold: true);
+            await using var oldBackup = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var renewedBackup = new ErrorStub(HttpStatusCode.TooManyRequests);
+            await using var healthy = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var mcp = new SseStub("", hold: true);
             using var context = new TestPluginContext();
             AiProvider a = StubProvider("a", first.BaseUrl, "m");
             AiProvider b = StubProvider("b", oldBackup.BaseUrl, "m");
@@ -1109,8 +1109,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var target = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var broken = new ErrorStub();
+            await using var target = new SseStub(LifecycleAnswer, jsonContent: "OK");
             using var refresh = new RotatingCredentialRefresh();
             using var http = new HttpClient(refresh);
             using var context = new TestPluginContext();
@@ -1164,15 +1164,15 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var backup = new SseStub("""
+            await using var broken = new ErrorStub();
+            await using var backup = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"半截回答"},"finish_reason":null}]}
 
                 data: [DONE]
 
 
                 """, holdAfterFirstChunk: true, firstStreamContent: "OK");
-            using var unused = new SseStub(LifecycleAnswer, jsonContent: "OK");
+            await using var unused = new SseStub(LifecycleAnswer, jsonContent: "OK");
             ITimeSeriesApi timeSeries = DispatchProxy.Create<ITimeSeriesApi, DelayedHistoryApi>();
             var gate = (DelayedHistoryApi)timeSeries;
             gate.Inner = new InMemoryTimeSeries();

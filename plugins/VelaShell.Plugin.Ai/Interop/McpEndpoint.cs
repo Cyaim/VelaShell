@@ -178,14 +178,10 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
     {
         while (!cancellationToken.IsCancellationRequested && listener.IsListening)
         {
-            HttpListenerContext http;
-            try
+            // 停端点是先取消、再关监听、再等这个循环:等待本身得听令牌,只靠关监听唤醒会丢(见 AcceptAsync)
+            if (await listener.AcceptAsync(cancellationToken).ConfigureAwait(false) is not { } http)
             {
-                http = await listener.GetContextAsync().ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException)
-            {
-                return; // 监听被关掉了
+                return; // 停端点了,或者监听被关掉了
             }
             // 一次请求一个任务:tools/call 可能跑几十秒(一条远程命令),不能占着 accept 循环。
             // 任务要**登记**下来:停端点时得等它们收完,不能把监听一关就当结束了。

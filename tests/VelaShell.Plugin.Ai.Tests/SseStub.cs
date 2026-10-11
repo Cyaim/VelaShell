@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using VelaShell.Plugin.Ai.Interop;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
@@ -10,7 +11,11 @@ namespace VelaShell.Plugin.Ai.Tests;
 /// 用它把"报文长这样 → 界面该显示什么"整条链路真跑一遍(真 SDK、真适配器、真解析),
 /// 比拿构造好的 <c>ChatResponseUpdate</c> 断言可信得多 —— 各家协议的坑都在解析这一段。
 /// </summary>
-public sealed class SseStub : IDisposable
+/// <remarks>
+/// 只实现 <see cref="IAsyncDisposable" />:收摊要等服务循环与挂起的应答都退出,而 UI 用例的释放跑在 headless 的 UI 线程上 ——
+/// 同步地等(曾经的 <c>Dispose</c>)会把那条线程堵死,循环一旦退不出来,整组用例就跟着停住。
+/// </remarks>
+public sealed class SseStub : IAsyncDisposable
 {
     private readonly HttpListener _listener;
     private readonly CancellationTokenSource _shutdown = new();
@@ -169,7 +174,13 @@ public sealed class SseStub : IDisposable
             {
                 while (true)
                 {
-                    HttpListenerContext context = await _listener.GetContextAsync();
+                    // Dispose 要同步等这个循环退出,所以收摊靠令牌唤醒 accept,不靠关监听:
+                    // macOS / Linux 上关监听唤醒不了恰好正要进来的那次 accept(见 HttpListenerExtensions.AcceptAsync),
+                    // 曾经因此把 UI 线程堵在 Dispose 里,整组 UI 测试挂住。
+                    if (await _listener.AcceptAsync(_shutdown.Token) is not { } context)
+                    {
+                        break;
+                    }
                     try
                     {
                         string body;
@@ -327,7 +338,7 @@ public sealed class SseStub : IDisposable
            + "},\"finish_reason\":\"stop\"}],"
            + "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}";
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _shutdown.Cancel();
@@ -335,16 +346,16 @@ public sealed class SseStub : IDisposable
         _firstChunkFlushed.TrySetCanceled();
         _released.TrySetCanceled();
         _listener.Close();
-        _server.GetAwaiter().GetResult();
+        await _server;
         Task[] replies;
         lock (_gate) { replies = [.. _heldReplies]; }
-        Task.WhenAll(replies).GetAwaiter().GetResult();
+        await Task.WhenAll(replies);
         _shutdown.Dispose();
     }
 }
 
 /// <summary>用 FIN 截断 chunked SSE:完整首事件先到达,随后缺失终结块触发真实 HTTP 断流。</summary>
-internal sealed class TruncatedSseStub : IDisposable
+internal sealed class TruncatedSseStub : IAsyncDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _shutdown = new();
@@ -414,12 +425,12 @@ internal sealed class TruncatedSseStub : IDisposable
         });
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _shutdown.Cancel();
         _listener.Stop();
-        _server.GetAwaiter().GetResult();
+        await _server;
         _shutdown.Dispose();
     }
 }

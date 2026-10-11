@@ -47,7 +47,7 @@ public sealed class BridgeEndpointQuirksTests
     private static async Task<string> WireBodyAsync(BridgeSettings bridge)
     {
         using var context = new TestPluginContext();
-        using var stub = new SseStub("", jsonContent: "{}");
+        await using var stub = new SseStub("", jsonContent: "{}");
         var store = new AiSettingsStore(context);
         AiProvider provider = CodexPointedAt(stub.BaseUrl);
         await store.SaveAsync(new AiSettings

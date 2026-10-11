@@ -11,6 +11,7 @@ using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using VelaShell.Plugin.Ai.Configuration;
+using VelaShell.Plugin.Ai.Interop;
 using VelaShell.Plugin.Ai.Ui;
 using VelaShell.PluginSdk.Secrets;
 using VelaShell.PluginSdk.Storage;
@@ -169,8 +170,8 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var mcp = new SseStub("", hold: true);
-            using var endpoint = new SseStub(KeySaveProbeSse);
+            await using var mcp = new SseStub("", hold: true);
+            await using var endpoint = new SseStub(KeySaveProbeSse);
             using var context = new TestPluginContext();
             EnsureFreshModelCache(context);
             var store = new AiSettingsStore(context);
@@ -476,12 +477,13 @@ public sealed class ProviderSetupViewUiTests
         public Task<bool> DeleteAsync(string name, CancellationToken cancellationToken = default)
             => inner.DeleteAsync(name, cancellationToken);
     }
-    private sealed class DeviceLoginEndpoint : IDisposable
+    /// <remarks>只实现 <see cref="IAsyncDisposable" />:收摊要等服务循环退出,不在 UI 线程上同步地等(见 <see cref="SseStub" />)。</remarks>
+    private sealed class DeviceLoginEndpoint : IAsyncDisposable
     {
         private readonly HttpListener _listener;
         private readonly Task _serving;
         private int _requests;
-        private int _stopping;
+        private readonly CancellationTokenSource _stopping = new();
         private readonly List<string> _bodies = [];
         public string BaseUrl { get; }
         public int Requests => Volatile.Read(ref _requests);
@@ -496,18 +498,11 @@ public sealed class ProviderSetupViewUiTests
 
         private async Task ServeAsync()
         {
-            while (Volatile.Read(ref _stopping) == 0 && _listener.IsListening)
+            while (!_stopping.IsCancellationRequested && _listener.IsListening)
             {
-                HttpListenerContext request;
-                try
-                {
-                    request = await _listener.GetContextAsync().ConfigureAwait(false);
-                }
-                catch (HttpListenerException ex) when (Volatile.Read(ref _stopping) != 0 && ex.ErrorCode == 995)
-                {
-                    return; // 仅吸收显式 Close 中止的待接收操作,不捕获处理请求时的故障。
-                }
-                catch (ObjectDisposedException) when (Volatile.Read(ref _stopping) != 0)
+                // Dispose 要同步等这个循环退出:收摊靠令牌唤醒 accept,不靠关监听(见 HttpListenerExtensions.AcceptAsync)。
+                // 只有 accept 这一步的收摊被吸收,处理请求时的故障照常冒出去。
+                if (await _listener.AcceptAsync(_stopping.Token).ConfigureAwait(false) is not { } request)
                 {
                     return;
                 }
@@ -525,11 +520,12 @@ public sealed class ProviderSetupViewUiTests
             }
         }
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
-            Volatile.Write(ref _stopping, 1);
+            _stopping.Cancel();
             _listener.Close();
-            _serving.GetAwaiter().GetResult();
+            await _serving;
+            _stopping.Dispose();
         }
     }
 
@@ -693,7 +689,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub("");
+            await using var endpoint = new SseStub("");
             (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
                 await ShowAsync(context, focus: "deepseek");
             try
@@ -806,7 +802,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub("");
+            await using var endpoint = new SseStub("");
             (Window window, ProviderSetupView view, AiSettings settings, _) = await ShowAsync(context, focus: "ollama");
             try
             {
@@ -976,7 +972,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub("");
+            await using var endpoint = new SseStub("");
             (Window window, ProviderSetupView view, AiSettings settings, _) =
                 await ShowAsync(context, focus: "openai");
             try
@@ -1039,7 +1035,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub("");
+            await using var endpoint = new SseStub("");
             AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
             provider.BaseUrl = endpoint.BaseUrl + "/v1";
             string modelId = provider.Models[0].Id;
@@ -1129,7 +1125,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub("");
+            await using var endpoint = new SseStub("");
             (Window window, ProviderSetupView view, AiSettings settings, _) =
                 await ShowAsync(context, focus: "custom-openai");
             try
@@ -1219,7 +1215,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("data: [DONE]\n\n", jsonContent: "[]", hold: true);
+            await using var stub = new SseStub("data: [DONE]\n\n", jsonContent: "[]", hold: true);
             using var context = new TestPluginContext();
             (Window window, ProviderSetupView view, AiSettings settings, _) =
                 await ShowAsync(context, focus: "custom-openai");
@@ -1311,8 +1307,8 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var original = new SseStub(KeySaveProbeSse);
-            using var changed = new SseStub(KeySaveProbeSse);
+            await using var original = new SseStub(KeySaveProbeSse);
+            await using var changed = new SseStub(KeySaveProbeSse);
             using var secretSource = new TestPluginContext();
             var secrets = new KeySaveSecrets(secretSource.Secrets);
             var storage = new KeySaveStorage(new InMemoryStorage());
@@ -1389,8 +1385,8 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var original = new SseStub(KeySaveProbeSse);
-            using var changed = new SseStub(KeySaveProbeSse);
+            await using var original = new SseStub(KeySaveProbeSse);
+            await using var changed = new SseStub(KeySaveProbeSse);
             using var context = new TestPluginContext();
             AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
             provider.BaseUrl = original.BaseUrl + "/v1";
@@ -1431,7 +1427,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub(KeySaveProbeSse);
+            await using var endpoint = new SseStub(KeySaveProbeSse);
             AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
             provider.Name = "opened-name";
             provider.BaseUrl = endpoint.BaseUrl + "/v1";
@@ -1473,7 +1469,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            using var endpoint = new SseStub(KeySaveProbeSse);
+            await using var endpoint = new SseStub(KeySaveProbeSse);
             AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
             provider.BaseUrl = endpoint.BaseUrl + "/v1";
             provider.Models[0].Model = "m";
@@ -1618,6 +1614,7 @@ public sealed class ProviderSetupViewUiTests
         {
             using var oldModels = new HeldModelsEndpoint();
             using HttpListener auth = StartListener(out string authUrl);
+            using var stopAuth = new CancellationTokenSource();
             var secondDevice = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var serveAuth = Task.Run(async () =>
             {
@@ -1625,7 +1622,11 @@ public sealed class ProviderSetupViewUiTests
                 {
                     for (int requestNumber = 1; ; requestNumber++)
                     {
-                        HttpListenerContext request = await auth.GetContextAsync();
+                        // 收尾要等这个循环退出:靠令牌唤醒 accept,不靠关监听(见 HttpListenerExtensions.AcceptAsync)
+                        if (await auth.AcceptAsync(stopAuth.Token) is not { } request)
+                        {
+                            return;
+                        }
                         string json = requestNumber switch
                         {
                             1 => """{"device_code":"dc-1","user_code":"CODE-ONE","verification_uri":"","interval":1}""",
@@ -1705,6 +1706,7 @@ public sealed class ProviderSetupViewUiTests
                 await firstPulled.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 await WaitForEnabledAsync(Find<Button>(view, "SetupPrimaryButton"));
                 window.Close();
+                stopAuth.Cancel();
                 auth.Close();
                 await serveAuth.WaitAsync(TimeSpan.FromSeconds(5));
             }
@@ -1716,7 +1718,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var models = new SseStub("", hold: true);
+            await using var models = new SseStub("", hold: true);
             using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             string authUrl = $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}";
@@ -1842,9 +1844,9 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var oldEndpoint = new SseStub("data: [DONE]\n\n");
-            using var thirdEndpoint = new SseStub("data: [DONE]\n\n");
-            using var newEndpoint = new SseStub("data: [DONE]\n\n");
+            await using var oldEndpoint = new SseStub("data: [DONE]\n\n");
+            await using var thirdEndpoint = new SseStub("data: [DONE]\n\n");
+            await using var newEndpoint = new SseStub("data: [DONE]\n\n");
             using var context = new TestPluginContext();
             AiProvider first = ProviderCatalog.Find("custom-oauth")!.CreateProvider();
             first.BaseUrl = oldEndpoint.BaseUrl + "/v1";
@@ -2039,7 +2041,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var relay = new SseStub("", hold: true);
+            await using var relay = new SseStub("", hold: true);
             using var context = new TestPluginContext();
             AiProvider official = ProviderCatalog.Find(catalogId)!.CreateProvider();
             await new AiSettingsStore(context).SaveTokensAsync(official.Id,
@@ -2183,6 +2185,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using HttpListener listener = StartListener(out string url);
+            using var stopServer = new CancellationTokenSource();
             var modelsRequest = new TaskCompletionSource<(string? Key, string? Auth)>(TaskCreationOptions.RunContinuationsAsynchronously);
             var server = Task.Run(async () =>
             {
@@ -2196,7 +2199,11 @@ public sealed class ProviderSetupViewUiTests
                     ];
                     for (int i = 0; i < replies.Length; i++)
                     {
-                        HttpListenerContext request = await listener.GetContextAsync();
+                        // 收尾要等这个循环退出:靠令牌唤醒 accept,不靠关监听(见 HttpListenerExtensions.AcceptAsync)
+                        if (await listener.AcceptAsync(stopServer.Token) is not { } request)
+                        {
+                            return;
+                        }
                         if (i == 2)
                         {
                             modelsRequest.TrySetResult((request.Request.Headers["X-Old-Key"],
@@ -2252,6 +2259,7 @@ public sealed class ProviderSetupViewUiTests
             {
                 view.CancelPendingLogin();
                 window.Close();
+                stopServer.Cancel();
                 listener.Close();
                 await server.WaitAsync(TimeSpan.FromSeconds(5));
             }
@@ -2265,7 +2273,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub("");
+            await using var endpoint = new SseStub("");
             using var context = new TestPluginContext();
             AiProvider survivor = ProviderCatalog.Find("deepseek")!.CreateProvider();
             survivor.Name = "survivor";
@@ -2326,7 +2334,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub("");
+            await using var endpoint = new SseStub("");
             using var context = new TestPluginContext();
             AiProvider survivor = ProviderCatalog.Find("deepseek")!.CreateProvider();
             survivor.Name = "survivor";
@@ -2422,8 +2430,9 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var models = new SseStub("", hold: true);
+            await using var models = new SseStub("", hold: true);
             using HttpListener auth = StartListener(out string authUrl);
+            using var stopAuth = new CancellationTokenSource();
             var exchanging = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var exchange = Task.Run(async () =>
@@ -2437,7 +2446,11 @@ public sealed class ProviderSetupViewUiTests
                     ];
                     for (int i = 0; i < replies.Length; i++)
                     {
-                        HttpListenerContext request = await auth.GetContextAsync();
+                        // 收尾要等这个循环退出:靠令牌唤醒 accept,不靠关监听(见 HttpListenerExtensions.AcceptAsync)
+                        if (await auth.AcceptAsync(stopAuth.Token) is not { } request)
+                        {
+                            return;
+                        }
                         if (i == 1)
                         {
                             exchanging.TrySetResult();
@@ -2496,6 +2509,7 @@ public sealed class ProviderSetupViewUiTests
                 view.CancelPendingLogin();
                 models.Release();
                 window.Close();
+                stopAuth.Cancel();
                 auth.Close();
                 await exchange.WaitAsync(TimeSpan.FromSeconds(5));
             }
@@ -2572,7 +2586,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using var endpoint = new HeldModelsEndpoint();
-            using var savedEndpoint = new SseStub(KeySaveProbeSse);
+            await using var savedEndpoint = new SseStub(KeySaveProbeSse);
             using var context = new TestPluginContext();
             AiProvider source = ProviderCatalog.Find("custom-openai")!.CreateProvider();
             source.BaseUrl = endpoint.BaseUrl + "/v1";
@@ -2767,8 +2781,9 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var models = new SseStub("");
+            await using var models = new SseStub("");
             using HttpListener auth = StartListener(out string authUrl);
+            using var stopAuth = new CancellationTokenSource();
             var exchange = Task.Run(async () =>
             {
                 try
@@ -2779,7 +2794,11 @@ public sealed class ProviderSetupViewUiTests
                         """{"access_token":"at-first-new","expires_in":3600}"""
                     })
                     {
-                        HttpListenerContext request = await auth.GetContextAsync();
+                        // 收尾要等这个循环退出:靠令牌唤醒 accept,不靠关监听(见 HttpListenerExtensions.AcceptAsync)
+                        if (await auth.AcceptAsync(stopAuth.Token) is not { } request)
+                        {
+                            return;
+                        }
                         byte[] body = Encoding.UTF8.GetBytes(reply);
                         request.Response.ContentType = "application/json";
                         request.Response.ContentLength64 = body.Length;
@@ -2827,6 +2846,7 @@ public sealed class ProviderSetupViewUiTests
                 view.CancelPendingLogin();
                 models.Release();
                 window.Close();
+                stopAuth.Cancel();
                 auth.Close();
                 await exchange.WaitAsync(TimeSpan.FromSeconds(5));
             }
@@ -2841,7 +2861,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub(KeySaveProbeSse);
+            await using var endpoint = new SseStub(KeySaveProbeSse);
             using var secretSource = new TestPluginContext();
             var secrets = new KeySaveSecrets(secretSource.Secrets);
             var storage = new KeySaveStorage(new InMemoryStorage());
@@ -2914,8 +2934,8 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub(KeySaveProbeSse);
-            using var authorization = new DeviceLoginEndpoint();
+            await using var endpoint = new SseStub(KeySaveProbeSse);
+            await using var authorization = new DeviceLoginEndpoint();
             using var secretSource = new TestPluginContext();
             var secrets = new KeySaveSecrets(secretSource.Secrets);
             var storage = new KeySaveStorage(new InMemoryStorage());
@@ -3023,10 +3043,15 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using HttpListener listener = StartListener(out string url);
+            using var stopServer = new CancellationTokenSource();
             var captured = new TaskCompletionSource<(string Body, string? Header)>(TaskCreationOptions.RunContinuationsAsynchronously);
             var server = Task.Run(async () =>
             {
-                HttpListenerContext request = await listener.GetContextAsync();
+                // 收尾要等它退出:靠令牌唤醒 accept,不靠关监听(见 HttpListenerExtensions.AcceptAsync)
+                if (await listener.AcceptAsync(stopServer.Token) is not { } request)
+                {
+                    return;
+                }
                 using var reader = new StreamReader(request.Request.InputStream);
                 string body = await reader.ReadToEndAsync();
                 captured.TrySetResult((body, request.Request.Headers["X-Old-Key"]));
@@ -3060,7 +3085,7 @@ public sealed class ProviderSetupViewUiTests
             }
             finally
             {
-                view.CancelPendingLogin(); window.Close(); listener.Close();
+                view.CancelPendingLogin(); window.Close(); stopServer.Cancel(); listener.Close();
                 try { await server; }
                 catch (ObjectDisposedException) when (!listener.IsListening) { }
                 catch (HttpListenerException) when (!listener.IsListening) { }
@@ -3076,7 +3101,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub(KeySaveProbeSse);
+            await using var endpoint = new SseStub(KeySaveProbeSse);
             using var context = new TestPluginContext();
             AiProvider opened = ProviderCatalog.Find("custom-openai")!.CreateProvider();
             opened.Name = "opened-name";
@@ -3159,7 +3184,7 @@ public sealed class ProviderSetupViewUiTests
         OnUi(async () =>
         {
             using var catalogue = new HeldModelsEndpoint();
-            using var endpoint = new SseStub(KeySaveProbeSse);
+            await using var endpoint = new SseStub(KeySaveProbeSse);
             using var context = new TestPluginContext();
             AiProvider source = ProviderCatalog.Find("custom-openai")!.CreateProvider();
             source.BaseUrl = catalogue.BaseUrl + "/v1";
@@ -3249,8 +3274,8 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var original = new SseStub(KeySaveProbeSse);
-            using var latest = new SseStub(KeySaveProbeSse);
+            await using var original = new SseStub(KeySaveProbeSse);
+            await using var latest = new SseStub(KeySaveProbeSse);
             using var context = new TestPluginContext();
             AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
             provider.Name = "opened-name";
@@ -3309,10 +3334,10 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var original = new SseStub(KeySaveProbeSse);
-            using var latest = new SseStub(KeySaveProbeSse);
-            using var oldIssuer = new DeviceLoginEndpoint();
-            using var newIssuer = new DeviceLoginEndpoint();
+            await using var original = new SseStub(KeySaveProbeSse);
+            await using var latest = new SseStub(KeySaveProbeSse);
+            await using var oldIssuer = new DeviceLoginEndpoint();
+            await using var newIssuer = new DeviceLoginEndpoint();
             using var context = new TestPluginContext();
             AiProvider provider = ProviderCatalog.Find("custom-oauth")!.CreateProvider();
             provider.Name = "opened account";
@@ -3394,7 +3419,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub(KeySaveProbeSse);
+            await using var endpoint = new SseStub(KeySaveProbeSse);
             using var secretSource = new TestPluginContext();
             var secrets = new KeySaveSecrets(secretSource.Secrets) { Hold = true };
             using var context = new TestPluginContext { Secrets = secrets };
@@ -3502,7 +3527,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var issuer = new DeviceLoginEndpoint();
+            await using var issuer = new DeviceLoginEndpoint();
             using var context = new TestPluginContext();
             AiProvider provider = ProviderCatalog.Find("custom-oauth")!.CreateProvider();
             provider.BaseUrl = issuer.BaseUrl + "/v1";
@@ -3551,7 +3576,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub("");
+            await using var endpoint = new SseStub("");
             var storage = new KeySaveStorage(new InMemoryStorage());
             using var context = new TestPluginContext { Storage = storage };
             AiProvider displayed = ProviderCatalog.Find("custom-openai")!.CreateProvider();
@@ -3612,7 +3637,7 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub("");
+            await using var endpoint = new SseStub("");
             var storage = new KeySaveStorage(new InMemoryStorage());
             using var context = new TestPluginContext { Storage = storage };
             AiProvider seed = ProviderCatalog.Find("custom-openai")!.CreateProvider();
@@ -3729,8 +3754,8 @@ public sealed class ProviderSetupViewUiTests
     {
         OnUi(async () =>
         {
-            using var issuer = new DeviceLoginEndpoint();
-            using var models = new SseStub("");
+            await using var issuer = new DeviceLoginEndpoint();
+            await using var models = new SseStub("");
             var storage = new KeySaveStorage(new InMemoryStorage());
             using var context = new TestPluginContext { Storage = storage };
             AiProvider source = ProviderCatalog.Find("custom-oauth")!.CreateProvider();

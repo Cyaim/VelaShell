@@ -33,6 +33,7 @@ namespace VelaShell.Ssh.Transport;
 /// </para>
 /// <para>
 /// <b>不是线程安全的。</b>读由收包泵独占，写由发包泵独占，两者可以并发。
+/// 释放可以与读写并发：哪一端还有调用在途，就由那次调用退出时收尾（<see cref="TransportSideLifetime"/>）。
 /// </para>
 /// </remarks>
 internal sealed class SshPacketTransport : IAsyncDisposable
@@ -74,6 +75,15 @@ internal sealed class SshPacketTransport : IAsyncDisposable
     private readonly ArrayBufferWriter<byte> _receiveCompressionBuffer = new(4096);
     private bool _disposed;
 
+    /// <summary>
+    /// 读端：<see cref="ReadPacketAsync"/>、<see cref="ReadRawLineAsync"/> 与换接收方向的套件 / 解压器。
+    /// 收尾时释放接收方向的套件与解压器、完成 <see cref="_reader"/>（velashell-docs/zh/ssh/spec/01 §4「释放」）。
+    /// </summary>
+    private readonly TransportSideLifetime _readSide;
+
+    /// <summary>写端：<see cref="WritePacket"/>、<see cref="FlushAsync"/>、<see cref="WriteLineAsync"/> 与换发送方向的套件 / 压缩器。</summary>
+    private readonly TransportSideLifetime _writeSide;
+
     /// <summary>在给定的双工字节流上建立传输。</summary>
     /// <param name="stream">底层流，通常来自 <see cref="ISshTransportDialer"/>。</param>
     /// <param name="ownsStream">释放本对象时是否一并释放 <paramref name="stream"/>。</param>
@@ -92,6 +102,9 @@ internal sealed class SshPacketTransport : IAsyncDisposable
         _reader = PipeReader.Create(_counting, new StreamPipeReaderOptions(
             bufferSize: 64 * 1024, minimumReadSize: 4096, leaveOpen: true));
         _writer = PipeWriter.Create(_counting, new StreamPipeWriterOptions(leaveOpen: true));
+
+        _readSide = new TransportSideLifetime(this, CloseReadSide);
+        _writeSide = new TransportSideLifetime(this, CloseWriteSide);
     }
 
     /// <summary>度量的 <c>host</c> 标签；<see langword="null"/>（单独用传输的测试）时不记度量。</summary>
@@ -222,45 +235,62 @@ internal sealed class SshPacketTransport : IAsyncDisposable
     /// </remarks>
     internal async ValueTask<byte[]?> ReadRawLineAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        while (true)
+        _readSide.Enter();
+        try
         {
-            ReadResult result = await _reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-            ReadOnlySequence<byte> buffer = result.Buffer;
-
-            SequencePosition? newline = buffer.PositionOf((byte)'\n');
-            if (newline is not null)
+            while (true)
             {
-                // 〔RFC 4253 §4.2〕255 字节**含行尾**。line 到 \n 为止（不含 \n），所以上限是 254 ——
-                // 曾经写成 > 255，含 CRLF 共 256 字节的行能过。
-                ReadOnlySequence<byte> line = buffer.Slice(0, newline.Value);
-                if (line.Length + 1 > MaxIdentificationLineBytes)
+                ReadResult result = await _reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                ThrowIfCanceledByDispose(result);
+                ReadOnlySequence<byte> buffer = result.Buffer;
+
+                SequencePosition? newline = buffer.PositionOf((byte)'\n');
+                if (newline is not null)
+                {
+                    // 〔RFC 4253 §4.2〕255 字节**含行尾**。line 到 \n 为止（不含 \n），所以上限是 254 ——
+                    // 曾经写成 > 255，含 CRLF 共 256 字节的行能过。
+                    ReadOnlySequence<byte> line = buffer.Slice(0, newline.Value);
+                    if (line.Length + 1 > MaxIdentificationLineBytes)
+                    {
+                        _reader.AdvanceTo(buffer.Start, buffer.End);
+                        throw new SshFrameFormatException(
+                            $"标识串行（含行尾）超过 {MaxIdentificationLineBytes} 字节（收到 {line.Length + 1}）。");
+                    }
+
+                    byte[] raw = StripCarriageReturn(line);
+                    _reader.AdvanceTo(buffer.GetPosition(1, newline.Value));
+                    return raw;
+                }
+
+                if (buffer.Length >= MaxIdentificationLineBytes)
                 {
                     _reader.AdvanceTo(buffer.Start, buffer.End);
                     throw new SshFrameFormatException(
-                        $"标识串行（含行尾）超过 {MaxIdentificationLineBytes} 字节（收到 {line.Length + 1}）。");
+                        $"标识串行超过 {MaxIdentificationLineBytes} 字节仍未见换行。");
                 }
 
-                byte[] raw = StripCarriageReturn(line);
-                _reader.AdvanceTo(buffer.GetPosition(1, newline.Value));
-                return raw;
-            }
+                if (result.IsCompleted)
+                {
+                    _reader.AdvanceTo(buffer.Start, buffer.End);
+                    return null;
+                }
 
-            if (buffer.Length >= MaxIdentificationLineBytes)
-            {
                 _reader.AdvanceTo(buffer.Start, buffer.End);
-                throw new SshFrameFormatException(
-                    $"标识串行超过 {MaxIdentificationLineBytes} 字节仍未见换行。");
             }
+        }
+        finally
+        {
+            _readSide.Exit();
+        }
+    }
 
-            if (result.IsCompleted)
-            {
-                _reader.AdvanceTo(buffer.Start, buffer.End);
-                return null;
-            }
-
-            _reader.AdvanceTo(buffer.Start, buffer.End);
+    /// <summary>挂起的读被取消了 —— 只有释放会这么做（<see cref="DisposeAsync"/>），这次读就以「已释放」退出。</summary>
+    private void ThrowIfCanceledByDispose(in ReadResult result)
+    {
+        if (result.IsCanceled)
+        {
+            _reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+            throw new ObjectDisposedException(nameof(SshPacketTransport), "传输已释放，挂起的读被取消。");
         }
     }
 
@@ -268,23 +298,30 @@ internal sealed class SshPacketTransport : IAsyncDisposable
     /// <remarks>标识串必须是可打印 US-ASCII（RFC 4253 §4.2）。</remarks>
     public async ValueTask WriteLineAsync(string line, CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(line);
-
-        int byteCount = Encoding.ASCII.GetByteCount(line) + 2;
-        if (byteCount > MaxIdentificationLineBytes)
+        _writeSide.Enter();
+        try
         {
-            throw new ArgumentException(
-                $"标识串含行尾不得超过 {MaxIdentificationLineBytes} 字节。", nameof(line));
+            ArgumentNullException.ThrowIfNull(line);
+
+            int byteCount = Encoding.ASCII.GetByteCount(line) + 2;
+            if (byteCount > MaxIdentificationLineBytes)
+            {
+                throw new ArgumentException(
+                    $"标识串含行尾不得超过 {MaxIdentificationLineBytes} 字节。", nameof(line));
+            }
+
+            Span<byte> span = _writer.GetSpan(byteCount)[..byteCount];
+            int written = Encoding.ASCII.GetBytes(line, span);
+            span[written] = (byte)'\r';
+            span[written + 1] = (byte)'\n';
+            _writer.Advance(byteCount);
+
+            await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        Span<byte> span = _writer.GetSpan(byteCount)[..byteCount];
-        int written = Encoding.ASCII.GetBytes(line, span);
-        span[written] = (byte)'\r';
-        span[written + 1] = (byte)'\n';
-        _writer.Advance(byteCount);
-
-        await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        finally
+        {
+            _writeSide.Exit();
+        }
     }
 
     /// <summary>一行的原始字节，顺带去掉行尾的 CR（见 <see cref="ReadLineAsync"/> 的互操作说明）。</summary>
@@ -308,86 +345,93 @@ internal sealed class SshPacketTransport : IAsyncDisposable
     /// </remarks>
     public async ValueTask<SshInboundPacket> ReadPacketAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        while (true)
+        _readSide.Enter();
+        try
         {
-            ReadResult result = await _reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-            ReadOnlySequence<byte> buffer = result.Buffer;
-
-            if (!buffer.IsEmpty)
+            while (true)
             {
-                if (_receivePacketsUnderKey >= MaxPacketsPerKey)
-                {
-                    _reader.AdvanceTo(buffer.Start, buffer.End);
-                    throw SequenceExhausted("接收");
-                }
+                ReadResult result = await _reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                ThrowIfCanceledByDispose(result);
+                ReadOnlySequence<byte> buffer = result.Buffer;
 
-                _payloadBuffer.ResetWrittenCount();
-                SshOpenStatus status;
-                try
+                if (!buffer.IsEmpty)
                 {
-                    status = _receiveSuite.TryOpen(
-                        buffer, ReceiveSequenceNumber, MaxPacketLength, _payloadBuffer, out long consumed);
+                    if (_receivePacketsUnderKey >= MaxPacketsPerKey)
+                    {
+                        _reader.AdvanceTo(buffer.Start, buffer.End);
+                        throw SequenceExhausted("接收");
+                    }
+
+                    _payloadBuffer.ResetWrittenCount();
+                    SshOpenStatus status;
+                    try
+                    {
+                        status = _receiveSuite.TryOpen(
+                            buffer, ReceiveSequenceNumber, MaxPacketLength, _payloadBuffer, out long consumed);
+
+                        if (status == SshOpenStatus.Opened)
+                        {
+                            _reader.AdvanceTo(buffer.GetPosition(consumed));
+                            // 序号在**成功取出一帧之后**才推进，与密码套件的约定一致。
+                            ReceiveSequenceNumber = unchecked(ReceiveSequenceNumber + 1);
+                            Interlocked.Increment(ref _packetsReceived);
+                            Interlocked.Increment(ref _receivePacketsUnderKey);
+                            if (_metricsHostTag is { } hostTag)
+                            {
+                                Diagnostics.SshMetrics.Packets.Add(1, hostTag, Diagnostics.SshMetrics.DirectionReceived);
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // 解析失败时也要把 reader 交还，否则 Dispose 会挂住。
+                        _reader.AdvanceTo(buffer.Start, buffer.End);
+                        throw;
+                    }
 
                     if (status == SshOpenStatus.Opened)
                     {
-                        _reader.AdvanceTo(buffer.GetPosition(consumed));
-                        // 序号在**成功取出一帧之后**才推进，与密码套件的约定一致。
-                        ReceiveSequenceNumber = unchecked(ReceiveSequenceNumber + 1);
-                        Interlocked.Increment(ref _packetsReceived);
-                        Interlocked.Increment(ref _receivePacketsUnderKey);
-                        if (_metricsHostTag is { } hostTag)
+                        // 解密在前，解压在后 —— 顺序反了什么都对不上（发送侧是先压后加密）。
+                        //
+                        // ⚠️ 解压放在上面那个 try **外面**：reader 在那里已经 AdvanceTo 过了。
+                        //    曾经放在里面，解压一失败（压缩炸弹、坏的 zlib 流），catch 就再 AdvanceTo 一次，
+                        //    真正的原因被「PipeReader 已经越过这个位置」的 InvalidOperationException 盖掉。
+                        ReadOnlyMemory<byte> payload = _receiveCompressor.IsActive
+                            ? DecompressPayload(_payloadBuffer.WrittenMemory)
+                            : _payloadBuffer.WrittenMemory;
+
+                        // 〔velashell-docs/zh/ssh/spec/01 §5〕载荷为空的报文在协议里不存在（每个报文至少有一个消息编号字节）：
+                        // 在帧层就拒收，不让它带着一个「取不出消息编号」的载荷往上走。
+                        if (payload.IsEmpty)
                         {
-                            Diagnostics.SshMetrics.Packets.Add(1, hostTag, Diagnostics.SshMetrics.DirectionReceived);
+                            throw new SshFrameFormatException("报文载荷为空，没有消息编号。");
                         }
+                        if (PacketTap is { } tap)
+                        {
+                            Tap(tap, Diagnostics.PacketDirection.Inbound, payload.Span, unchecked(ReceiveSequenceNumber - 1));
+                        }
+                        return new SshInboundPacket(payload);
                     }
                 }
-                catch
+
+                if (result.IsCompleted)
                 {
-                    // 解析失败时也要把 reader 交还，否则 Dispose 会挂住。
                     _reader.AdvanceTo(buffer.Start, buffer.End);
-                    throw;
+                    if (buffer.IsEmpty)
+                    {
+                        return SshInboundPacket.EndOfStream;   // 帧边界上的干净关闭
+                    }
+                    throw new SshFrameFormatException("对端在报文中途关闭了连接。") { PeerClosedMidPacket = true };
                 }
 
-                if (status == SshOpenStatus.Opened)
-                {
-                    // 解密在前，解压在后 —— 顺序反了什么都对不上（发送侧是先压后加密）。
-                    //
-                    // ⚠️ 解压放在上面那个 try **外面**：reader 在那里已经 AdvanceTo 过了。
-                    //    曾经放在里面，解压一失败（压缩炸弹、坏的 zlib 流），catch 就再 AdvanceTo 一次，
-                    //    真正的原因被「PipeReader 已经越过这个位置」的 InvalidOperationException 盖掉。
-                    ReadOnlyMemory<byte> payload = _receiveCompressor.IsActive
-                        ? DecompressPayload(_payloadBuffer.WrittenMemory)
-                        : _payloadBuffer.WrittenMemory;
-
-                    // 〔velashell-docs/zh/ssh/spec/01 §5〕载荷为空的报文在协议里不存在（每个报文至少有一个消息编号字节）：
-                    // 在帧层就拒收，不让它带着一个「取不出消息编号」的载荷往上走。
-                    if (payload.IsEmpty)
-                    {
-                        throw new SshFrameFormatException("报文载荷为空，没有消息编号。");
-                    }
-                    if (PacketTap is { } tap)
-                    {
-                        Tap(tap, Diagnostics.PacketDirection.Inbound, payload.Span, unchecked(ReceiveSequenceNumber - 1));
-                    }
-                    return new SshInboundPacket(payload);
-                }
-            }
-
-            if (result.IsCompleted)
-            {
+                // 数据不足：consumed = start（什么都没消费）、examined = end（已经看到这里）。
+                // 两个参数给错会让 PipeReader 要么丢数据，要么不再等新数据（表现为卡死）。
                 _reader.AdvanceTo(buffer.Start, buffer.End);
-                if (buffer.IsEmpty)
-                {
-                    return SshInboundPacket.EndOfStream;   // 帧边界上的干净关闭
-                }
-                throw new SshFrameFormatException("对端在报文中途关闭了连接。") { PeerClosedMidPacket = true };
             }
-
-            // 数据不足：consumed = start（什么都没消费）、examined = end（已经看到这里）。
-            // 两个参数给错会让 PipeReader 要么丢数据，要么不再等新数据（表现为卡死）。
-            _reader.AdvanceTo(buffer.Start, buffer.End);
+        }
+        finally
+        {
+            _readSide.Exit();
         }
     }
 
@@ -405,32 +449,39 @@ internal sealed class SshPacketTransport : IAsyncDisposable
         {
             Tap(tap, Diagnostics.PacketDirection.Outbound, payload, SendSequenceNumber);
         }
-        ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (_sendPacketsUnderKey >= MaxPacketsPerKey)
+        _writeSide.Enter();
+        try
         {
-            throw SequenceExhausted("发送");
-        }
+            if (_sendPacketsUnderKey >= MaxPacketsPerKey)
+            {
+                throw SequenceExhausted("发送");
+            }
 
-        // **先压缩，再加密。**反过来的话压缩器面对的是密文 ——
-        // 密文没有可压缩性，压出来只会更长，而且会泄漏明文的统计特征。
-        if (_sendCompressor.IsActive)
-        {
-            _sendCompressionBuffer.ResetWrittenCount();
-            _sendCompressor.Compress(payload, _sendCompressionBuffer);
-            _sendSuite.Seal(_sendCompressionBuffer.WrittenSpan, SendSequenceNumber, _writer);
-        }
-        else
-        {
-            _sendSuite.Seal(payload, SendSequenceNumber, _writer);
-        }
+            // **先压缩，再加密。**反过来的话压缩器面对的是密文 ——
+            // 密文没有可压缩性，压出来只会更长，而且会泄漏明文的统计特征。
+            if (_sendCompressor.IsActive)
+            {
+                _sendCompressionBuffer.ResetWrittenCount();
+                _sendCompressor.Compress(payload, _sendCompressionBuffer);
+                _sendSuite.Seal(_sendCompressionBuffer.WrittenSpan, SendSequenceNumber, _writer);
+            }
+            else
+            {
+                _sendSuite.Seal(payload, SendSequenceNumber, _writer);
+            }
 
-        SendSequenceNumber = unchecked(SendSequenceNumber + 1);
-        Interlocked.Increment(ref _packetsSent);
-        Interlocked.Increment(ref _sendPacketsUnderKey);
-        if (_metricsHostTag is { } hostTag)
+            SendSequenceNumber = unchecked(SendSequenceNumber + 1);
+            Interlocked.Increment(ref _packetsSent);
+            Interlocked.Increment(ref _sendPacketsUnderKey);
+            if (_metricsHostTag is { } hostTag)
+            {
+                Diagnostics.SshMetrics.Packets.Add(1, hostTag, Diagnostics.SshMetrics.DirectionSent);
+            }
+        }
+        finally
         {
-            Diagnostics.SshMetrics.Packets.Add(1, hostTag, Diagnostics.SshMetrics.DirectionSent);
+            _writeSide.Exit();
         }
     }
 
@@ -456,33 +507,53 @@ internal sealed class SshPacketTransport : IAsyncDisposable
     public void SetSendCompressor(ISshCompressor compressor)
     {
         ArgumentNullException.ThrowIfNull(compressor);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (!ReferenceEquals(_sendCompressor, NoCompression.Instance))
+        _writeSide.Enter();
+        try
         {
-            _sendCompressor.Dispose();
+            if (!ReferenceEquals(_sendCompressor, NoCompression.Instance))
+            {
+                _sendCompressor.Dispose();
+            }
+            _sendCompressor = compressor;
         }
-        _sendCompressor = compressor;
+        finally
+        {
+            _writeSide.Exit();
+        }
     }
 
     /// <summary>换掉接收方向的压缩器。</summary>
     public void SetReceiveCompressor(ISshCompressor compressor)
     {
         ArgumentNullException.ThrowIfNull(compressor);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (!ReferenceEquals(_receiveCompressor, NoCompression.Instance))
+        _readSide.Enter();
+        try
         {
-            _receiveCompressor.Dispose();
+            if (!ReferenceEquals(_receiveCompressor, NoCompression.Instance))
+            {
+                _receiveCompressor.Dispose();
+            }
+            _receiveCompressor = compressor;
         }
-        _receiveCompressor = compressor;
+        finally
+        {
+            _readSide.Exit();
+        }
     }
 
     /// <summary>把已写入的报文刷到底层流。</summary>
+    /// <remarks>刷到一半时传输被释放：这次刷出被取消、照常返回（<see cref="FlushResult.IsCanceled"/>），下一次写报「已释放」。</remarks>
     public async ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        return await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        _writeSide.Enter();
+        try
+        {
+            return await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeSide.Exit();
+        }
     }
 
     // ------------------------------------------------------------ 密钥切换
@@ -498,14 +569,20 @@ internal sealed class SshPacketTransport : IAsyncDisposable
     public void SetReceiveCipherSuite(ISshCipherSuite suite, bool resetSequenceNumber)
     {
         ArgumentNullException.ThrowIfNull(suite);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        _receiveSuite.Dispose();
-        _receiveSuite = suite;
-        Volatile.Write(ref _receivePacketsUnderKey, 0);
-        if (resetSequenceNumber)
+        _readSide.Enter();
+        try
         {
-            ReceiveSequenceNumber = 0;
+            _receiveSuite.Dispose();
+            _receiveSuite = suite;
+            Volatile.Write(ref _receivePacketsUnderKey, 0);
+            if (resetSequenceNumber)
+            {
+                ReceiveSequenceNumber = 0;
+            }
+        }
+        finally
+        {
+            _readSide.Exit();
         }
     }
 
@@ -519,18 +596,28 @@ internal sealed class SshPacketTransport : IAsyncDisposable
     public void SetSendCipherSuite(ISshCipherSuite suite, bool resetSequenceNumber)
     {
         ArgumentNullException.ThrowIfNull(suite);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        _sendSuite.Dispose();
-        _sendSuite = suite;
-        Volatile.Write(ref _sendPacketsUnderKey, 0);
-        if (resetSequenceNumber)
+        _writeSide.Enter();
+        try
         {
-            SendSequenceNumber = 0;
+            _sendSuite.Dispose();
+            _sendSuite = suite;
+            Volatile.Write(ref _sendPacketsUnderKey, 0);
+            if (resetSequenceNumber)
+            {
+                SendSequenceNumber = 0;
+            }
+        }
+        finally
+        {
+            _writeSide.Exit();
         }
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 哪一端还有调用在途，这里只取消它挂起的读 / 刷出、<b>不等</b>它；那一端由在途的调用退出时收尾
+    /// （velashell-docs/zh/ssh/spec/01 §4「释放」）。不等是因为底层流不一定理会取消，而释放常跑在错误路径的收尾里。
+    /// </remarks>
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
@@ -539,58 +626,88 @@ internal sealed class SshPacketTransport : IAsyncDisposable
         }
         _disposed = true;
 
-        _receiveSuite.Dispose();
-        _sendSuite.Dispose();
-
-        if (!ReferenceEquals(_receiveCompressor, NoCompression.Instance))
+        // ⚠️ 曾经在这里当场完成 reader / writer。两端的缓冲是从共享内存池租的、完成时还回去 ——
+        //    另一个任务若还停在读里，底层流那次读手里攥着那块 64 KB，数据一到照写，写进的是别人刚租走的数组
+        //    （宿主 CI 上一条握手用例读到被截短的 KEXINIT：上一条用例的服务端还在等 NEWKEYS，那次读写了进来）。
+        //    写端同理：刷到一半时还回去，底层流照样从里面读 —— 发出去的就是别人的数据。
+        //    接收套件也一样：当场清零密钥，在途的那次解密会算出一个假的 MAC 错误。
+        if (!_readSide.Close())
         {
-            _receiveCompressor.Dispose();
+            CancelQuietly(_reader.CancelPendingRead);
         }
-        if (!ReferenceEquals(_sendCompressor, NoCompression.Instance))
+        if (!_writeSide.Close())
         {
-            _sendCompressor.Dispose();
-        }
-
-        // 释放路径**不抛异常**。
-        //
-        // PipeWriter.CompleteAsync 会尝试把待发数据刷出去，而这时对端往往已经走了
-        // （连接失败、对方先断、测试收尾）—— 刷不出去是常态，不是异常情况。
-        // 让它抛出去的后果是：每一条 `await using` 的错误路径都会被一个次要的
-        // IOException 盖住真正的失败原因。
-        //
-        // 对端已经没了，待发数据本来也无处可去，这里没有任何补救动作可做。
-        try
-        {
-            await _reader.CompleteAsync().ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            // 同上。
-        }
-
-        try
-        {
-            // ⚠️ **带着异常完成，不再往流上写。**不带异常的 CompleteAsync 会把缓冲里剩下的字节刷出去 ——
-            //    而剩下的只可能是一次被取消的 flush 丢下的（正常路径上每一帧都显式 flush 过）。
-            //    那次 flush 被取消，多半正是因为对端不读了（TCP 零窗口、半开的链路）：
-            //    这里再去写，就是在释放路径上等一个永远不来的对端，直到 TCP 自己放弃（十几分钟）。
-            await _writer.CompleteAsync(new ObjectDisposedException(nameof(SshPacketTransport))).ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            // 同上。
+            CancelQuietly(_writer.CancelPendingFlush);
         }
 
         if (_ownsStream)
         {
+            // 关掉底层流：不理会取消的读写（Windows 上 ProxyCommand 的匿名管道）也随之结束，它们的收尾才轮得到。
             try
             {
                 await _stream.DisposeAsync().ConfigureAwait(false);
             }
             catch (Exception)
             {
-                // 同上。
+                // 释放路径不抛，见 CloseReadSide。
             }
+        }
+    }
+
+    /// <summary>取消挂起的读 / 刷出。在途的调用可能恰好刚退出、已经收了尾 —— 那就没什么可取消的了。</summary>
+    private static void CancelQuietly(Action cancel)
+    {
+        try
+        {
+            cancel();
+        }
+        catch (Exception)
+        {
+            // 同上。
+        }
+    }
+
+    /// <summary>读端收尾：接收方向的套件与解压器，以及 <see cref="_reader"/>（它的缓冲还回内存池）。</summary>
+    private void CloseReadSide()
+    {
+        _receiveSuite.Dispose();
+        if (!ReferenceEquals(_receiveCompressor, NoCompression.Instance))
+        {
+            _receiveCompressor.Dispose();
+        }
+
+        // 释放路径**不抛异常**：它通常跑在某条错误路径的收尾里（或者是在途的那次读写的 finally），
+        // 这时冒出来的次要异常只会盖住真正的失败原因。
+        try
+        {
+            _reader.Complete();
+        }
+        catch (Exception)
+        {
+            // 同上。
+        }
+    }
+
+    /// <summary>写端收尾：发送方向的套件与压缩器，以及 <see cref="_writer"/>。</summary>
+    private void CloseWriteSide()
+    {
+        _sendSuite.Dispose();
+        if (!ReferenceEquals(_sendCompressor, NoCompression.Instance))
+        {
+            _sendCompressor.Dispose();
+        }
+
+        try
+        {
+            // ⚠️ **带着异常完成，不再往流上写。**不带异常的完成会把缓冲里剩下的字节刷出去 ——
+            //    而剩下的只可能是一次被取消的 flush 丢下的（正常路径上每一帧都显式 flush 过）。
+            //    那次 flush 被取消，多半正是因为对端不读了（TCP 零窗口、半开的链路）：
+            //    这里再去写，就是在释放路径上等一个永远不来的对端，直到 TCP 自己放弃（十几分钟）。
+            _writer.Complete(new ObjectDisposedException(nameof(SshPacketTransport)));
+        }
+        catch (Exception)
+        {
+            // 同 CloseReadSide。
         }
     }
 }
