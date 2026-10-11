@@ -60,13 +60,13 @@ public static class ModelPull
     /// <param name="apiKeyOverride">设置页表单里还没保存的那把 Key;null = 用已存的。</param>
     /// <param name="force">用户明确点了「拉取模型」—— 这时还拿七天前的规格缓存糊弄他就没意义了。</param>
     /// <param name="health">可选共享健康记录；只使本次规格应用真正改变的模型请求配置失效。</param>
-    /// <param name="cancellationToken">取消。</param>
     /// <param name="materialiseInto">可选分离的规格草稿;网络请求仍使用 provider 的当前地址和固定凭据。</param>
     /// <param name="catalogueHttp">可选索引传输客户端,由调用方管理生命周期；不承载端点凭据或模型列表请求。</param>
+    /// <param name="cancellationToken">取消。</param>
     public static async Task<ModelPullResult> RunAsync(AiProvider provider, string? modelsDevId,
         ModelsDevCatalog catalogue, AiSettingsStore store, string? apiKeyOverride = null, bool force = false,
-        ProviderHealth? health = null, CancellationToken cancellationToken = default, AiProvider? materialiseInto = null,
-        HttpClient? catalogueHttp = null)
+        ProviderHealth? health = null, AiProvider? materialiseInto = null, HttpClient? catalogueHttp = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(catalogue);
@@ -96,11 +96,10 @@ public static class ModelPull
                 (model, model.Model, model.MaxInputTokens, model.MaxTokens, model.SupportsReasoning)).ToArray();
         target.AvailableModels = [.. specs.Select(s => s.Id)];
         int total = ModelsDevCatalog.Materialise(target, specs);
-        foreach ((AiModelConfig Config, string Model, int InputTokens, int OutputTokens, bool? Reasoning) in before)
+        foreach ((AiModelConfig model, string previousModel, int previousInputTokens, int previousOutputTokens, bool? previousReasoning) in before)
         {
-            AiModelConfig model = Config;
-            if (model.Model != Model || model.MaxInputTokens != InputTokens
-                || model.MaxTokens != OutputTokens || model.SupportsReasoning != Reasoning)
+            if (model.Model != previousModel || model.MaxInputTokens != previousInputTokens
+                || model.MaxTokens != previousOutputTokens || model.SupportsReasoning != previousReasoning)
             {
                 health!.Invalidate(model.Id);
             }

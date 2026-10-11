@@ -85,7 +85,7 @@ public sealed class SecurityKeyTests
 
     /// <summary>agent 里的安全密钥：列得出来（原来直接跳过），当凭据出示时用 sk 的签名算法名。</summary>
     [TestMethod]
-    public async Task agent里的安全密钥列得出来也能当凭据()
+    public async Task Agent里的安全密钥列得出来也能当凭据()
     {
         TestAgent agent = new();
         using var ed = InMemorySshSigner.GenerateEd25519();

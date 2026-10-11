@@ -285,7 +285,7 @@ public sealed class XimTests
         uint servers = await InternAsync(c, "XIM_SERVERS");
         byte[] list = await GetPropertyAsync(c, c.RootWindow, servers, type: 4);
         uint selection = await InternAsync(c, "@server=velashell");
-        Assert.IsTrue(Enumerable.Range(0, list.Length / 4).Any(i => BinaryPrimitives.ReadUInt32LittleEndian(list.AsSpan(i * 4)) == selection),
+        Assert.Contains(i => BinaryPrimitives.ReadUInt32LittleEndian(list.AsSpan(i * 4)) == selection, Enumerable.Range(0, list.Length / 4),
             "XIM_SERVERS 里有 @server=velashell");
 
         uint requestor = c.NewId();
@@ -297,7 +297,7 @@ public sealed class XimTests
             XMessage notify = await c.NextEventAsync(SelectionNotify);
             Assert.AreEqual(atom, notify.U32(20), $"{target} 转换成功");
             string value = Encoding.Latin1.GetString(await GetPropertyAsync(c, requestor, atom, type: atom, delete: true));
-            StringAssert.StartsWith(value, expected);
+            Assert.StartsWith(expected, value);
             if (target == "LOCALES")
             {
                 string[] locales = value["@locale=".Length..].Split(',');
@@ -380,7 +380,7 @@ public sealed class XimTests
         byte[] commit = await x.ExpectAsync(XimCommit);
         Assert.AreEqual((im, ic, (ushort)0x0002), (x.U16(commit, 0), x.U16(commit, 2), x.U16(commit, 4)), "XLookupChars,不要求同步");
         byte[] expected = [0x1B, (byte)'%', (byte)'G', .. Encoding.UTF8.GetBytes("你好"), 0x1B, (byte)'%', (byte)'@'];
-        CollectionAssert.AreEqual(expected, commit.AsSpan(8, x.U16(commit, 6)).ToArray());
+        Assert.AreSequenceEqual(expected, commit.AsSpan(8, x.U16(commit, 6)).ToArray());
 
         // 换行照常按回车键;前后的字各一次 COMMIT。整个过程不改键位表。
         server.InjectText("a\r\nb");

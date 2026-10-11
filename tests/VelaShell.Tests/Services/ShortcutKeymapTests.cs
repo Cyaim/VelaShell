@@ -79,14 +79,13 @@ public sealed class ShortcutKeymapTests
     {
         ShortcutKeymap keymap = ShortcutKeymap.Default;
 
-        CollectionAssert.AreEqual(new[] { "Ctrl", "," }, keymap.Keycaps("app.settings"));
-        CollectionAssert.AreEqual(new[] { "Ctrl", "=" }, keymap.Keycaps("view.zoom.in"));
-        CollectionAssert.AreEqual(new[] { "Ctrl", "-" }, keymap.Keycaps("view.zoom.out"));
-        CollectionAssert.AreEqual(new[] { "Ctrl", "0" }, keymap.Keycaps("view.zoom.reset"));
-        CollectionAssert.AreEqual(new[] { "Ctrl", "Alt", "3" }, keymap.Keycaps("tab.goto.3"));
-        CollectionAssert.AreEqual(new[] { "Ctrl", "Shift", "Tab" }, keymap.Keycaps("tab.prev"));
-        CollectionAssert.AreEqual(new[] { "Ctrl", "Shift", "Alt", "Cmd", "Esc" },
-                                  ShortcutGestures.Keycaps(G("Ctrl+Shift+Alt+Meta+Escape"), isMacOS: true));
+        Assert.AreSequenceEqual(["Ctrl", ","], keymap.Keycaps("app.settings"));
+        Assert.AreSequenceEqual(["Ctrl", "="], keymap.Keycaps("view.zoom.in"));
+        Assert.AreSequenceEqual(["Ctrl", "-"], keymap.Keycaps("view.zoom.out"));
+        Assert.AreSequenceEqual(["Ctrl", "0"], keymap.Keycaps("view.zoom.reset"));
+        Assert.AreSequenceEqual(["Ctrl", "Alt", "3"], keymap.Keycaps("tab.goto.3"));
+        Assert.AreSequenceEqual(["Ctrl", "Shift", "Tab"], keymap.Keycaps("tab.prev"));
+        Assert.AreSequenceEqual(["Ctrl", "Shift", "Alt", "Cmd", "Esc"], ShortcutGestures.Keycaps(G("Ctrl+Shift+Alt+Meta+Escape"), isMacOS: true));
     }
 
     /// <summary>
@@ -159,7 +158,7 @@ public sealed class ShortcutKeymapTests
 
         Assert.IsNull(keymap.GestureFor("session.close"));
         Assert.IsTrue(keymap.IsCustomized("session.close"));
-        Assert.IsFalse(keymap.Bound(ShortcutScope.Window).Any(pair => pair.Binding.Id == "session.close"));
+        Assert.DoesNotContain(pair => pair.Binding.Id == "session.close", keymap.Bound(ShortcutScope.Window));
         Assert.IsNull(keymap.Owner(G("Ctrl+W")));
         Assert.IsEmpty(keymap.Keycaps("session.close"));
     }
@@ -194,7 +193,7 @@ public sealed class ShortcutKeymapTests
 
         Assert.AreEqual("app.palette", keymap.Owner(G("Ctrl+W"))?.Id);
         Assert.IsNull(keymap.GestureFor("session.close"));
-        Assert.AreEqual(1, keymap.Bound(ShortcutScope.Window).Count(pair => ShortcutGestures.AreSame(pair.Gesture, G("Ctrl+W"))));
+        Assert.ContainsSingle(pair => ShortcutGestures.AreSame(pair.Gesture, G("Ctrl+W")), keymap.Bound(ShortcutScope.Window));
     }
 
     /// <summary>两条改动撞在一起(只可能是手改的):按出厂表顺序先到先得,后一条解绑。</summary>
@@ -252,8 +251,8 @@ public sealed class ShortcutKeymapTests
     [TestMethod]
     public void TerminalBytesLost_AsksTheEncoder()
     {
-        CollectionAssert.AreEqual(new byte[] { 0x0B }, ShortcutGestures.TerminalBytesLost(G("Ctrl+K")));
-        CollectionAssert.AreEqual(new byte[] { 0x1F }, ShortcutGestures.TerminalBytesLost(G("Ctrl+OemMinus")));
+        Assert.AreSequenceEqual(new byte[] { 0x0B }, ShortcutGestures.TerminalBytesLost(G("Ctrl+K")));
+        Assert.AreSequenceEqual(new byte[] { 0x1F }, ShortcutGestures.TerminalBytesLost(G("Ctrl+OemMinus")));
         Assert.IsNotNull(ShortcutGestures.TerminalBytesLost(G("F5")));
         Assert.IsNotNull(ShortcutGestures.TerminalBytesLost(G("Ctrl+Up")), "Ctrl+方向是 CSI 1;5A,不带 Ctrl 的那一按发的不一样。");
 
@@ -274,15 +273,15 @@ public sealed class ShortcutKeymapTests
         ShortcutKeymap keymap = ShortcutKeymap.Default;
 
         string palette = keymap.TerminalWarning("app.palette")!;
-        StringAssert.Contains(palette, "^P");
-        StringAssert.Contains(palette, "Ctrl+Shift+P");
+        Assert.Contains("^P", palette);
+        Assert.Contains("Ctrl+Shift+P", palette);
 
         // Ctrl+Shift+W 被「关闭全部标签」占着:没有别的按法可发 ^W。
         string close = keymap.TerminalWarning("session.close")!;
-        StringAssert.Contains(close, "^W");
+        Assert.Contains("^W", close);
         Assert.IsFalse(close.Contains("Ctrl+Shift+W", StringComparison.Ordinal), close);
         // 把它解绑之后,Ctrl+Shift+W 就能发 ^W 了。
-        StringAssert.Contains(Keymap(("session.close.all", "")).TerminalWarning("session.close")!, "Ctrl+Shift+W");
+        Assert.Contains("Ctrl+Shift+W", Keymap(("session.close.all", "")).TerminalWarning("session.close")!);
 
         Assert.IsNull(keymap.TerminalWarning("split.horizontal"));
         Assert.IsNull(Keymap(("session.close", "")).TerminalWarning("session.close"), "解绑了就不抢键。");

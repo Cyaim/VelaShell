@@ -23,15 +23,17 @@ public sealed class SshDataReaderTests
     /// <summary>断言在给定字节上执行动作会抛出 wire 格式错误。</summary>
     /// <remarks>
     /// <see cref="SshDataReader"/> 是 <c>ref struct</c>，**不能被 lambda 捕获**（CS8175）。
-    /// 所以 reader 必须在 lambda 内部新建 —— 这个 helper 就是为了不把这件事
+    /// 所以 reader 必须在 lambda 里面现建（见 <see cref="RunOnNewReader" />）—— 这个 helper 就是为了不把这件事
     /// 在八个用例里各写一遍。
     /// </remarks>
     private static void AssertWireError(byte[] bytes, ReaderAction action) =>
-        Assert.ThrowsExactly<SshWireFormatException>(() =>
-        {
-            var reader = new SshDataReader(new ReadOnlySequence<byte>(bytes));
-            action(ref reader);
-        });
+        Assert.ThrowsExactly<SshWireFormatException>(() => RunOnNewReader(bytes, action));
+
+    private static void RunOnNewReader(byte[] bytes, ReaderAction action)
+    {
+        var reader = new SshDataReader(new ReadOnlySequence<byte>(bytes));
+        action(ref reader);
+    }
 
     /// <summary>把字节切成多段，用来验证跨段读取（真实的 PipeReader 经常给多段序列）。</summary>
     private static ReadOnlySequence<byte> Segmented(byte[] bytes, int chunk)
@@ -118,18 +120,18 @@ public sealed class SshDataReaderTests
     [TestMethod]
     public void String_超过上限时抛出() =>
         // 上限是**必须**给的参数：规格里没有「这个字段不会太大」这种理由。
-        AssertWireError([0, 0, 0, 100], (ref SshDataReader r) => r.ReadString(maxLength: 10));
+        AssertWireError([0, 0, 0, 100], (ref r) => r.ReadString(maxLength: 10));
 
     [TestMethod]
     public void String_长度字段撒谎时抛出而不是预分配()
     {
         // 声称 1 GiB 但后面只有 2 字节。按长度预分配的实现在这里会当场吃掉 1 GiB。
         AssertWireError([0x40, 0x00, 0x00, 0x00, 0x61, 0x62],
-            (ref SshDataReader r) => r.ReadString(maxLength: int.MaxValue));
+            (ref r) => r.ReadString(maxLength: int.MaxValue));
     }
 
     [TestMethod]
-    public void String_截断时抛出() => AssertWireError([0, 0, 0, 10, (byte)'a'], (ref SshDataReader r) => r.ReadString(64));
+    public void String_截断时抛出() => AssertWireError([0, 0, 0, 10, (byte)'a'], (ref r) => r.ReadString(64));
 
     // -------------------------------------------------------------- utf8 解码
 
@@ -148,7 +150,7 @@ public sealed class SshDataReaderTests
     {
         // 用户名与算法名参与协议判定与签名输入，解码失败必须视为协议错误。
         AssertWireError([0, 0, 0, 2, 0xFF, 0xFE],
-            (ref SshDataReader r) => r.ReadUtf8String(64, strict: true));
+            (ref r) => r.ReadUtf8String(64, strict: true));
     }
 
     [TestMethod]
@@ -186,7 +188,7 @@ public sealed class SshDataReaderTests
     public void Mpint_负数被拒绝() =>
         // 负数在 SSH 里没有正当用途。接受它只会让一个被篡改的字段
         // 悄悄变成一个巨大的正数。
-        AssertWireError([0, 0, 0, 1, 0x80], (ref SshDataReader r) => r.ReadMpint(64));
+        AssertWireError([0, 0, 0, 1, 0x80], (ref r) => r.ReadMpint(64));
 
     [TestMethod]
     public void Mpint_写了再读能还原()
@@ -234,7 +236,7 @@ public sealed class SshDataReaderTests
     public void NameList_含非可打印字节时抛出()
     {
         AssertWireError([0, 0, 0, 3, (byte)'a', 0x00, (byte)'b'],
-            (ref SshDataReader r) => r.ReadNameList(1024));
+            (ref r) => r.ReadNameList(1024));
     }
 
     [TestMethod]
@@ -253,7 +255,7 @@ public sealed class SshDataReaderTests
     {
         // 多出来的字节意味着我们对这个报文的理解有误。
         // 沉默地忽略它们，会让一个真实的解析错误永远不被发现。
-        AssertWireError([0, 0, 0, 0, 0xAA], (ref SshDataReader r) =>
+        AssertWireError([0, 0, 0, 0, 0xAA], (ref r) =>
         {
             _ = r.ReadUInt32();
             r.ExpectEnd("TestMessage");
@@ -272,6 +274,6 @@ public sealed class SshDataReaderTests
     public void 消息编号不符时抛出()
     {
         AssertWireError([(byte)SshMessageNumber.ChannelData],
-            (ref SshDataReader r) => r.ReadMessageNumber(SshMessageNumber.ChannelClose));
+            (ref r) => r.ReadMessageNumber(SshMessageNumber.ChannelClose));
     }
 }

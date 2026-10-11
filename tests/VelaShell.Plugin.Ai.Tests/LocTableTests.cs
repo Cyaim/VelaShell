@@ -14,8 +14,12 @@ namespace VelaShell.Plugin.Ai.Tests;
 /// 插件这份表同样需要一个守门的。
 /// </remarks>
 [TestClass]
-public sealed class LocTableTests
+public sealed partial class LocTableTests
 {
+    /// <summary>LocTable 源码里一条登记的开头:<c>["Key"] =</c>。</summary>
+    [GeneratedRegex(@"^\s*\[""([A-Za-z0-9]+)""\]\s*=", RegexOptions.Multiline)]
+    private static partial Regex TableEntry { get; }
+
     private static Dictionary<string, string[]> Table()
     {
         FieldInfo field = typeof(Loc).GetField("Table", BindingFlags.NonPublic | BindingFlags.Static)
@@ -80,7 +84,7 @@ public sealed class LocTableTests
         string source = LocSourcePath();
         List<string> duplicates =
         [
-            .. Regex.Matches(File.ReadAllText(source), @"^\s*\[""([A-Za-z0-9]+)""\]\s*=", RegexOptions.Multiline)
+            .. TableEntry.Matches(File.ReadAllText(source))
                     .Select(m => m.Groups[1].Value)
                     .GroupBy(k => k, StringComparer.Ordinal)
                     .Where(g => g.Count() > 1)

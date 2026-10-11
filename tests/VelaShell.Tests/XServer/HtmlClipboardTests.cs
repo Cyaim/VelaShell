@@ -14,13 +14,13 @@ public sealed class HtmlClipboardTests
         const string html = "<b>表格</b> café";
         byte[] data = HtmlClipboard.Encode(html, windows: true);
         string text = Encoding.UTF8.GetString(data);
-        StringAssert.StartsWith(text, "Version:0.9\r\nStartHTML:");
+        Assert.StartsWith("Version:0.9\r\nStartHTML:", text);
         int start = int.Parse(text.Split("StartFragment:")[1][..10], System.Globalization.CultureInfo.InvariantCulture);
         int end = int.Parse(text.Split("EndFragment:")[1][..10], System.Globalization.CultureInfo.InvariantCulture);
         Assert.AreEqual(html, Encoding.UTF8.GetString(data, start, end - start), "偏移按 UTF-8 字节算");
         Assert.AreEqual(html, HtmlClipboard.Decode(data, windows: true));
         int startHtml = int.Parse(text.Split("StartHTML:")[1][..10], System.Globalization.CultureInfo.InvariantCulture);
-        StringAssert.StartsWith(Encoding.UTF8.GetString(data, startHtml, data.Length - startHtml), "<html><body><!--StartFragment-->");
+        Assert.StartsWith("<html><body><!--StartFragment-->", Encoding.UTF8.GetString(data, startHtml, data.Length - startHtml));
     }
 
     [TestMethod]

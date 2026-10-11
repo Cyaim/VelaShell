@@ -22,7 +22,9 @@ public partial class ChatPanelView
     private const int MaxSuggestionChars = 42;
 
     private CancellationTokenSource? _suggestCts;
-    private Task? _suggestionTask;
+
+    /// <summary>最近一轮的后续提问建议任务(还没起过为 null);测试据此等整个建议链路收尾。</summary>
+    internal Task? SuggestionTask { get; private set; }
 
     private void ClearSuggestions()
     {
@@ -73,7 +75,7 @@ public partial class ChatPanelView
     private Task SuggestFollowUpsAsync(ResolvedModel provider, string userText, string replyText,
         ProviderCredential credential, string conversationId, string sentModel,
         OAuthAccountSnapshot? verifiedAccount, long verifiedProviderVersion, string? selectedKeyId = null)
-        => _suggestionTask = GenerateFollowUpsAsync(provider, userText, replyText, credential,
+        => SuggestionTask = GenerateFollowUpsAsync(provider, userText, replyText, credential,
             conversationId, sentModel, verifiedAccount, verifiedProviderVersion, selectedKeyId);
 
     private async Task GenerateFollowUpsAsync(ResolvedModel provider, string userText, string replyText,
@@ -105,24 +107,23 @@ public partial class ChatPanelView
             {
                 return;
             }
-            (ProviderCredential Credential, string? KeyId) = await _store.ResolveCredentialWithKeyIdAsync(provider, token,
-                refreshTokens: false, keyId: selectedKeyId);
-            OAuthAccountSnapshot? latestAccount = await CaptureOAuthAccountAsync(provider, Credential, token);
+            (ProviderCredential latestCredential, string? latestKeyId) = await _store.ResolveCredentialWithKeyIdAsync(provider,
+                refreshTokens: false, keyId: selectedKeyId, cancellationToken: token);
+            OAuthAccountSnapshot? latestAccount = await CaptureOAuthAccountAsync(provider, latestCredential, token);
             bool SameSource(ProviderCredential candidate, OAuthAccountSnapshot? account)
                 => SameOAuthAccount(verifiedAccount, account)
                     && (SameCredential(credential, candidate)
                         || SameRenewingAccount(credential, candidate, verifiedAccount, account, provider));
             // 先验证原账号、issuer、目标与固定槽,再允许同账号续期,不额外探活。
-            if (KeyId != selectedKeyId || !SameSource(Credential, latestAccount)
-                || !await StillVerifiedAsync(provider, Credential, token, sentModel, selectedKeyId, verifiedProviderVersion)
+            if (latestKeyId != selectedKeyId || !SameSource(latestCredential, latestAccount)
+                || !await StillVerifiedAsync(provider, latestCredential, token, sentModel, selectedKeyId, verifiedProviderVersion)
                 || !IsCurrent())
             {
                 return;
             }
-            (ProviderCredential Credential, string? KeyId) renewed = await _store.ResolveCredentialWithKeyIdAsync(provider, token, keyId: selectedKeyId);
-            ProviderCredential refreshed = renewed.Credential;
+            (ProviderCredential refreshed, string? renewedKeyId) = await _store.ResolveCredentialWithKeyIdAsync(provider, keyId: selectedKeyId, cancellationToken: token);
             OAuthAccountSnapshot? after = await CaptureOAuthAccountAsync(provider, refreshed, token);
-            if (renewed.KeyId != selectedKeyId || !SameSource(refreshed, after)
+            if (renewedKeyId != selectedKeyId || !SameSource(refreshed, after)
                 || !await StillVerifiedAsync(provider, refreshed, token, sentModel, selectedKeyId, verifiedProviderVersion)
                 || !SameOAuthAccount(after, await CaptureOAuthAccountAsync(provider, refreshed, token)) || !IsCurrent())
             {

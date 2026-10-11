@@ -186,7 +186,7 @@ public sealed partial class ChatPanelViewUiTests
                     .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 Assert.IsTrue(await WaitForAsync(() => saves == 2));
                 Assert.IsFalse(health.IsCooling(modelId), "下一次真实配置保存仍须清除共享冷却");
-                Assert.IsTrue(health.Version > evidenceVersion);
+                Assert.IsGreaterThan(evidenceVersion, health.Version);
                 Assert.AreEqual("saved configuration", (await store.LoadAsync()).Providers.Single().Name);
                 Assert.AreEqual("sk-second", await store.GetApiKeyAsync(provider.Id));
                 await secondPull.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -1145,9 +1145,9 @@ public sealed partial class ChatPanelViewUiTests
                 await PumpAsync();
                 panel.SendExternal("合法的短期令牌应能发送");
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
-                Assert.IsTrue(refresh.Count > 0, "过期令牌确实通过 OAuth 刷新");
+                Assert.IsGreaterThan(0, refresh.Count, "过期令牌确实通过 OAuth 刷新");
                 int formal = target.Requests.ToList().FindLastIndex(body => body.Contains("\"stream\":true", StringComparison.Ordinal));
-                Assert.IsTrue(formal >= 0, "复验不能无限旋转 60 秒令牌而拒绝正式流");
+                Assert.IsGreaterThanOrEqualTo(0, formal, "复验不能无限旋转 60 秒令牌而拒绝正式流");
                 Assert.AreEqual("Bearer " + (await store.GetTokensAsync(provider.Id))!.AccessToken,
                     target.Authorizations[formal], "正式流使用当前落库旋转令牌");
                 Assert.IsNotEmpty(AnswerRenderers(Find<StackPanel>(panel, "MessagesPanel")));
@@ -1215,7 +1215,7 @@ public sealed partial class ChatPanelViewUiTests
                 await history.InitAsync();
                 IReadOnlyList<ChatSessionSummary> sessions = await history.ListSessionsAsync();
                 IReadOnlyList<ChatEntry> entries = await history.LoadAsync(sessions.Single().Id);
-                Assert.IsTrue(entries.Any(entry => entry.Role == "assistant" && entry.Text == "半截回答"),
+                Assert.Contains(entry => entry.Role == "assistant" && entry.Text == "半截回答", entries,
                     "面板关闭不应阻止已消费正文的历史结算");
                 Assert.IsEmpty(unused.Requests, "新选择不应重放已出正文的旧请求");
             }
@@ -1227,8 +1227,7 @@ public sealed partial class ChatPanelViewUiTests
         });
     }
 
-    private static Task? SuggestionTask(ChatPanelView panel)
-        => (Task?)typeof(ChatPanelView).GetField("_suggestionTask", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(panel);
+    private static Task? SuggestionTask(ChatPanelView panel) => panel.SuggestionTask;
 
     private static async Task FinishSuggestionsAsync(Task task)
     {

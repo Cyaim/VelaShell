@@ -23,7 +23,6 @@ namespace VelaShell.XServer;
 public sealed partial class X11Server
 {
     private ActiveGrab? _pointerGrab;
-    private ActiveGrab? _keyboardGrab;
 
     /// <summary>
     /// 冻着指针的那些抓取(空 = 没冻)。一个设备可以同时被指针抓取与键盘抓取冻着(协议「AllowEvents」:两个都放开才继续处理);
@@ -168,7 +167,7 @@ public sealed partial class X11Server
     private uint LastGrabTimeOf(XClient client)
     {
         uint last = 0;
-        foreach (ActiveGrab? grab in (ReadOnlySpan<ActiveGrab?>)[_pointerGrab, _keyboardGrab])
+        foreach (ActiveGrab? grab in (ReadOnlySpan<ActiveGrab?>)[_pointerGrab, KeyboardGrab])
         {
             if (grab is not null && ReferenceEquals(grab.Client, client) && (last == 0 || unchecked((int)(grab.Time - last)) > 0))
             {
@@ -188,11 +187,11 @@ public sealed partial class X11Server
     /// </summary>
     private ActiveGrab? KeyboardGrab
     {
-        get => _keyboardGrab;
+        get;
         set
         {
-            ActiveGrab? old = _keyboardGrab;
-            _keyboardGrab = value;
+            ActiveGrab? old = field;
+            field = value;
             if (ReferenceEquals(old, value))
             {
                 return;

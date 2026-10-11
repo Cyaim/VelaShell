@@ -43,7 +43,7 @@ public sealed class XScreenWindowUiTests
         XNativeWindow screen = await XTestWire.WaitForAsync(() => host.Windows.SingleOrDefault());
         Assert.IsTrue(screen.IsScreen);
         Assert.AreSame(server.Screen, screen.Handle);
-        StringAssert.Contains(screen.Title, ":" + server.DisplayNumber);
+        Assert.Contains(":" + server.DisplayNumber, screen.Title);
         Assert.AreEqual(WindowDecorations.Full, screen.WindowDecorations);
 
         (InMemoryDuplexStream serverSide, InMemoryDuplexStream client) = InMemoryTransport.CreatePair();
@@ -121,7 +121,7 @@ public sealed class XScreenWindowUiTests
         }, host);
         await host.AttachAsync(server, CancellationToken.None);
         XNativeWindow screen = await XTestWire.WaitForAsync(() => host.Windows.SingleOrDefault());
-        StringAssert.Contains(screen.Title, "alice@a:22", "屏幕窗口的标题写会话的来历");
+        Assert.Contains("alice@a:22", screen.Title, "屏幕窗口的标题写会话的来历");
 
         screen.Close();
         await XTestWire.WaitForAsync(() => requested == 1 ? screen : null);

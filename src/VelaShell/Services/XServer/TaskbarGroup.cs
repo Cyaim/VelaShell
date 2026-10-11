@@ -107,5 +107,5 @@ internal static partial class TaskbarGroup
 
     [SupportedOSPlatform("windows")]
     [LibraryImport("shell32.dll")]
-    private static unsafe partial int SHGetPropertyStoreForWindow(nint hwnd, Guid* iid, out nint store);
+    private static partial int SHGetPropertyStoreForWindow(nint hwnd, Guid* iid, out nint store);
 }

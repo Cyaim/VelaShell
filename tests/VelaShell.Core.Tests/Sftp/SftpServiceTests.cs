@@ -135,7 +135,9 @@ public class SftpServiceTests
         await _sftpService.GetWorkingDirectoryAsync(_sessionId);
 
         var disposed = new TaskCompletionSource();
+#pragma warning disable CA2012 // NSubstitute 的配桩写法:调 DisposeAsync() 只是指名要配的成员,替身交回的 ValueTask 没人等
         _sftpClient.When(c => c.DisposeAsync()).Do(_ => disposed.TrySetResult());
+#pragma warning restore CA2012
 
         _connectionService.SessionDisconnected += Raise.Event<Action<SshSession>>(_session);
 

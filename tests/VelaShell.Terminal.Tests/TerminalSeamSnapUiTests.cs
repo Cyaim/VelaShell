@@ -21,7 +21,7 @@ namespace VelaShell.Terminal.Tests;
 public class TerminalSeamSnapUiTests
 {
     /// <summary>全程序集共用的 headless 会话(见 HeadlessTestSession:每类各起一个时,拆除会互相踩)。</summary>
-    private static HeadlessUnitTestSession _session => HeadlessTestSession.Current;
+    private static HeadlessUnitTestSession Session => HeadlessTestSession.Current;
 
     private const double FractionalScale = 1.25;
     private const double Padding = 5;
@@ -33,7 +33,7 @@ public class TerminalSeamSnapUiTests
     private static readonly List<Window> OpenWindows = [];
 
     private static void OnUi(Action body) =>
-        _session.Dispatch(() =>
+        Session.Dispatch(() =>
         {
             try
             {

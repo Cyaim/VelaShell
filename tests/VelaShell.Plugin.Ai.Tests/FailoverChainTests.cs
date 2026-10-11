@@ -39,7 +39,7 @@ public sealed class FailoverChainTests
         var settings = new AiSettings { Providers = [provider] };
         List<ResolvedModel> candidates = settings.FailoverCandidates(Resolved(settings, "a"));
         if (ownKey || otherEndpoint || otherProtocol)
-            CollectionAssert.AreEqual(new[] { "b" }, candidates.Select(model => model.Id).ToArray());
+            Assert.AreSequenceEqual(["b"], [.. candidates.Select(model => model.Id)]);
         else Assert.IsEmpty(candidates, "同端点、同协议、同凭据的重复模型不是备用接入");
         settings.FailoverChain = [new FailoverEntry { ModelId = "b" }];
         Assert.AreEqual("b", settings.FailoverCandidates(Resolved(settings, "a")).Single().Id,
@@ -57,8 +57,7 @@ public sealed class FailoverChainTests
         provider.BaseUrl = "https://api.example.com/v1";
         provider.Models[1].BaseUrlOverride = endpoint;
         var settings = new AiSettings { Providers = [provider] };
-        CollectionAssert.AreEqual(independent ? new[] { "b" } : Array.Empty<string>(),
-            settings.FailoverCandidates(Resolved(settings, "a")).Select(model => model.Id).ToArray());
+        Assert.AreSequenceEqual(independent ? ["b"] : [], [.. settings.FailoverCandidates(Resolved(settings, "a")).Select(model => model.Id)]);
     }
 
     [TestMethod]
@@ -73,7 +72,7 @@ public sealed class FailoverChainTests
         var settings = new AiSettings { Providers = [provider] };
         Assert.IsEmpty(settings.FailoverCandidates(Resolved(settings, "a")));
         provider.Models[1].BaseUrlOverride = "https://api.example.com/other";
-        CollectionAssert.AreEqual(new[] { "b" }, settings.FailoverCandidates(Resolved(settings, "a")).Select(model => model.Id).ToArray());
+        Assert.AreSequenceEqual(["b"], [.. settings.FailoverCandidates(Resolved(settings, "a")).Select(model => model.Id)]);
     }
 
     [TestMethod]

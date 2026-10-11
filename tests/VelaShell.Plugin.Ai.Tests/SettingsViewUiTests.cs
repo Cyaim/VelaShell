@@ -19,7 +19,7 @@ namespace VelaShell.Plugin.Ai.Tests;
 /// </summary>
 [TestClass]
 [TestCategory("Plugins")]
-public sealed class SettingsViewUiTests
+public sealed partial class SettingsViewUiTests
 {
     [TestMethod]
     [DataRow(false)]
@@ -94,7 +94,7 @@ public sealed class SettingsViewUiTests
                 Click(view.GetControl<Button>("SaveButton"));
                 await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc["Saved"]);
                 model = (await store.LoadAsync()).Providers.Single().Models.Single();
-                Assert.AreEqual(false, model.DefaultContextWindow);
+                Assert.IsFalse(model.DefaultContextWindow);
                 Assert.AreEqual(65536, model.MaxInputTokens);
                 input.Text = "128000";
                 Click(view.GetControl<Button>("SaveButton"));
@@ -241,7 +241,7 @@ public sealed class SettingsViewUiTests
                 AiModelConfig saved = (await store.LoadAsync()).Providers.Single().Models.Single();
                 Assert.AreEqual(128000, saved.MaxInputTokens);
                 Assert.IsTrue(saved.ContextWindowIsManual);
-                Assert.AreEqual(false, saved.DefaultContextWindow);
+                Assert.IsFalse(saved.DefaultContextWindow);
             }
             finally { secrets.Release(); window.Close(); }
         });
@@ -388,7 +388,7 @@ public sealed class SettingsViewUiTests
                 Assert.AreEqual("latest draft during write", saved.Name);
                 Assert.AreEqual(128000, saved.MaxInputTokens);
                 Assert.IsTrue(saved.ContextWindowIsManual);
-                Assert.AreEqual(false, saved.DefaultContextWindow);
+                Assert.IsFalse(saved.DefaultContextWindow);
             }
             finally { storage.WriteRelease.TrySetResult(); window.Close(); }
         });
@@ -471,7 +471,7 @@ public sealed class SettingsViewUiTests
                 {
                     Assert.AreEqual(262144, provider.Models.Single().MaxInputTokens);
                     Assert.AreEqual(262144, persisted.Models.Single().MaxInputTokens);
-                    CollectionAssert.AreEqual(new[] { "private-atomic-settings-pull" }, provider.AvailableModels);
+                    Assert.AreSequenceEqual(["private-atomic-settings-pull"], provider.AvailableModels);
                     Assert.IsFalse(health.IsCooling(model.Id));
                     Assert.AreEqual(1, notifications);
                 }
@@ -482,7 +482,7 @@ public sealed class SettingsViewUiTests
                 await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc["Saved"]);
                 AiModelConfig saved = (await store.LoadAsync()).Providers.Single().Models.Single();
                 Assert.AreEqual(128000, saved.MaxInputTokens);
-                Assert.AreEqual(false, saved.DefaultContextWindow);
+                Assert.IsFalse(saved.DefaultContextWindow);
                 Assert.IsTrue(saved.ContextWindowIsManual);
             }
             finally { endpoint.Release(); storage.WriteRelease.TrySetResult(); window.Close(); }
@@ -521,7 +521,7 @@ public sealed class SettingsViewUiTests
                 AiModelConfig saved = (await store.LoadAsync()).Providers.Single().Models.Single();
                 Assert.AreEqual("known-model", saved.Model);
                 Assert.AreEqual(128000, saved.MaxInputTokens);
-                Assert.AreEqual(false, saved.DefaultContextWindow);
+                Assert.IsFalse(saved.DefaultContextWindow);
                 Assert.DoesNotContain(loc["ContextWindowDefaultHint"], ToolTip.GetTip(view.GetControl<TextBox>("MaxInputTokensBox"))?.ToString() ?? "");
             }
             finally { window.Close(); }
@@ -823,7 +823,7 @@ public sealed class SettingsViewUiTests
                 Assert.AreEqual(0.6f, saved.Providers[0].Models[0].Temperature);
                 Assert.AreEqual(67, saved.PanelWidthPercent);
                 Assert.AreEqual(54321, saved.WebSearch.MaxFetchChars);
-                CollectionAssert.AreEqual(new[] { added }, saved.Providers[0].AdditionalApiKeyIds);
+                Assert.AreSequenceEqual([added], saved.Providers[0].AdditionalApiKeyIds);
                 await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
                 Assert.IsEmpty(oldEndpoint.Requests);
                 Assert.AreEqual("Bearer confirmed-key", newEndpoint.Authorizations.Single());
@@ -995,7 +995,7 @@ public sealed class SettingsViewUiTests
                 Assert.AreEqual(navigateAway ? "B latest draft" : "B", saved.Models[1].Name);
                 Assert.AreEqual(4321, saved.Models[navigateAway ? 1 : 0].MaxTokens);
                 Assert.IsTrue(saved.Models[navigateAway ? 1 : 0].ContextWindowIsManual);
-                Assert.AreEqual(false, saved.Models[navigateAway ? 1 : 0].DefaultContextWindow);
+                Assert.IsFalse(saved.Models[navigateAway ? 1 : 0].DefaultContextWindow);
                 Assert.AreEqual(navigateAway ? "latest-own-key" : "latest key draft", await store.GetApiKeyAsync(first.Id));
             }
             finally { secrets.Release(); window.Close(); }
@@ -1131,7 +1131,7 @@ public sealed class SettingsViewUiTests
                     {
                         Assert.AreEqual("4321", view.GetControl<TextBox>("MaxTokensBox").Text);
                         Assert.AreEqual(0.7f.ToString(), view.GetControl<TextBox>("TemperatureBox").Text);
-                        Assert.AreEqual(true, view.GetControl<CheckBox>("OwnKeyCheck").IsChecked);
+                        Assert.IsTrue(view.GetControl<CheckBox>("OwnKeyCheck").IsChecked);
                     }
                     Assert.IsTrue(name.IsFocused);
                 }
@@ -1228,7 +1228,7 @@ public sealed class SettingsViewUiTests
                 Assert.IsTrue(persisted.Providers[0].BalanceApiKeys, "聊天旧快照不能抹掉设置页的均摊选择");
                 Assert.AreEqual(61, persisted.PanelWidthPercent, "设置页旧快照不能抹掉聊天面板宽度");
                 Assert.AreEqual(extra, persisted.Providers[0].ActiveApiKeyId);
-                CollectionAssert.AreEqual(new[] { extra }, persisted.Providers[0].AdditionalApiKeyIds);
+                Assert.AreSequenceEqual([extra], persisted.Providers[0].AdditionalApiKeyIds);
                 Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id));
                 Assert.AreEqual("extra", await store.GetApiKeyAsync(extra));
             }
@@ -2243,7 +2243,7 @@ public sealed class SettingsViewUiTests
                 Assert.AreEqual(draftMode > 0 ? 12.34 : 4, saved.InputPricePerMillion);
                 Assert.AreEqual(draftMode == 1 ? 23.45 : 6, saved.OutputPricePerMillion);
                 Assert.AreEqual(draftMode == 1 ? 3.45 : 2, saved.CachedInputPricePerMillion);
-                Assert.AreEqual(true, saved.SupportsReasoning, "Materialise 更新的能力没有对应表单,保存不能回退它");
+                Assert.IsTrue(saved.SupportsReasoning, "Materialise 更新的能力没有对应表单,保存不能回退它");
             }
             finally { window.Close(); }
         });
@@ -2777,7 +2777,7 @@ public sealed class SettingsViewUiTests
                 AiProvider persisted = (await store.LoadAsync()).Providers.Single();
                 Assert.AreEqual(savedName, persisted.Name);
                 Assert.AreEqual(endpoint.BaseUrl, persisted.BaseUrl);
-                Assert.IsTrue(endpoint.Requests > 0, "目录保存后确实尝试过自动拉取");
+                Assert.IsGreaterThan(0, endpoint.Requests, "目录保存后确实尝试过自动拉取");
                 Assert.IsEmpty(persisted.AvailableModels, "拒绝请求不能伪造成功的型号清单");
                 Assert.AreEqual(savedName, editor.GetControl<TextBlock>("BreadcrumbText").Text);
                 Assert.IsTrue(editor.GetControl<Control>("PullModelsPanel").IsVisible);
@@ -3221,8 +3221,7 @@ public sealed class SettingsViewUiTests
                 {
                     Assert.AreEqual(0.25f, body.RootElement.GetProperty("temperature").GetSingle());
                     Assert.AreEqual(0.5f, body.RootElement.GetProperty("top_p").GetSingle());
-                    CollectionAssert.AreEqual(new[] { "stop-one", "stop-two" },
-                        body.RootElement.GetProperty("stop").EnumerateArray().Select(s => s.GetString()!).ToArray());
+                    Assert.AreSequenceEqual(["stop-one", "stop-two"], [.. body.RootElement.GetProperty("stop").EnumerateArray().Select(s => s.GetString()!)]);
                 }
                 view.GetControl<TextBox>(changedBox).Text = newValue;
                 view.GetControl<Button>("SaveButton").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
@@ -3666,7 +3665,7 @@ public sealed class SettingsViewUiTests
                 Assert.AreEqual(model.Id, choice.GetType().GetProperty("Id")!.GetValue(choice));
                 picker.SelectedItem = choice;
                 await WaitUntilAsync(() => button.Content?.ToString() == loc["SetupKeysProbeAll"]);
-                CollectionAssert.AreEqual(new[] { "Bearer key-a", "Bearer key-b", "Bearer key-c" }, endpoint.Requests.Select(r => r.Auth).ToArray());
+                Assert.AreSequenceEqual(["Bearer key-a", "Bearer key-b", "Bearer key-c"], endpoint.Requests.Select(r => r.Auth).ToArray());
                 Assert.IsTrue(endpoint.Requests.All(r => r.Body.Contains("\"model\":\"batch-model\"", StringComparison.Ordinal)
                     && r.Body.Contains("Reply with exactly:", StringComparison.Ordinal)));
                 Assert.Contains(loc.F("SetupKeyPassed", "batch-model", "").TrimEnd(), KeyControl<TextBlock>(view, provider.Id, "ProviderKeyStatus").Text!);
@@ -3821,9 +3820,9 @@ public sealed class SettingsViewUiTests
                 {
                     loc.Switch(language); view.ApplyLoc();
                     string status = KeyControl<TextBlock>(view, b, "ProviderKeyStatus").Text ?? "";
-                    string clock = System.Text.RegularExpressions.Regex.Match(status, @"\d{2}:\d{2}$").Value;
+                    string clock = TrailingClock().Match(status).Value;
                     Assert.AreEqual(loc.F("SetupKeyFailed", "m2", clock), status);
-                    Assert.AreEqual(1, endpoint.Requests.Count, "换语言只重新格式化证据，不重测");
+                    Assert.HasCount(1, endpoint.Requests, "换语言只重新格式化证据，不重测");
                 }
                 loc.Switch("zh-CN"); view.ApplyLoc();
                 Assert.IsFalse(health.IsCooling(m2.Id));
@@ -4471,4 +4470,8 @@ public sealed class SettingsViewUiTests
             finally { window.Close(); }
         });
     }
+
+    /// <summary>状态行末尾的 <c>HH:mm</c>。</summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"\d{2}:\d{2}$")]
+    private static partial System.Text.RegularExpressions.Regex TrailingClock();
 }

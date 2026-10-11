@@ -65,8 +65,8 @@ public sealed class SnippetsPageDragTests
             Assert.AreSame(next, group.Commands[3]);
             Assert.IsFalse(Indicator(page).IsVisible);
             Assert.IsNull(page.DropTarget);
-            Assert.IsFalse(
-                page.GetVisualDescendants().OfType<Border>().Any(b => b.Classes.Contains("dragging")),
+            Assert.DoesNotContain(
+                b => b.Classes.Contains("dragging"), page.GetVisualDescendants().OfType<Border>(),
                 "松手后不该有残留的变淡"
             );
         });

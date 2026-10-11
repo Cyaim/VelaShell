@@ -176,7 +176,7 @@ internal static class EndpointModelCatalog
                     else if (existing.ContextTokens == 0 && contextTokens > 0) models[id] = (existing.Id, contextTokens);
                 }
             }
-            return models.Values.ToArray();
+            return [.. models.Values];
         }
     }
 

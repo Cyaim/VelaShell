@@ -690,20 +690,20 @@ public sealed class ModelsDevCatalogTests
         ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("private-model", 0)]));
         AiModelConfig model = provider.Models.Single();
         Assert.AreEqual(128000, model.MaxInputTokens);
-        Assert.AreEqual(true, model.DefaultContextWindow);
+        Assert.IsTrue(model.DefaultContextWindow);
         var store = new AiSettingsStore(context);
         await store.SaveAsync(new AiSettings { Providers = [provider] });
         AiSettings saved = await store.LoadAsync();
         provider = saved.Providers.Single();
-        Assert.AreEqual(true, provider.Models.Single().DefaultContextWindow);
+        Assert.IsTrue(provider.Models.Single().DefaultContextWindow);
         ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("private-model", 128000)]));
         model = provider.Models.Single();
         Assert.AreEqual(128000, model.MaxInputTokens, "数值相同也必须更新来源,不能持续误报默认值");
-        Assert.AreEqual(false, model.DefaultContextWindow);
+        Assert.IsFalse(model.DefaultContextWindow);
         await store.SaveAsync(saved);
-        Assert.AreEqual(false, (await store.LoadAsync()).Providers.Single().Models.Single().DefaultContextWindow);
+        Assert.IsFalse((await store.LoadAsync()).Providers.Single().Models.Single().DefaultContextWindow);
         ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("private-model", 0)]));
-        Assert.AreEqual(false, model.DefaultContextWindow, "规格暂时缺失不应抹掉该已获取数值的来源");
+        Assert.IsFalse(model.DefaultContextWindow, "规格暂时缺失不应抹掉该已获取数值的来源");
     }
 
     [TestMethod]
@@ -743,7 +743,7 @@ public sealed class ModelsDevCatalogTests
         provider = (await store.LoadAsync()).Providers.Single();
         ModelsDevCatalog.Materialise(provider, catalogue.Describe(null, [("private-model", 0)]));
         Assert.AreEqual(window, provider.Models.Single().MaxInputTokens);
-        Assert.AreEqual(false, provider.Models.Single().DefaultContextWindow);
+        Assert.IsFalse(provider.Models.Single().DefaultContextWindow);
         ModelsDevCatalog.Materialise(provider, catalogue.Describe(null, [("private-model", window * 2)]));
         Assert.AreEqual(window * 2, provider.Models.Single().MaxInputTokens, "下次真实容量仍可更新未手改的自动值");
     }

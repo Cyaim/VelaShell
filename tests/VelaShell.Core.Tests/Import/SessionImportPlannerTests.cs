@@ -214,7 +214,7 @@ public sealed class SessionImportPlannerTests
         Assert.AreEqual(fileA.Id, alpha.Id, "新建的分组沿用文件里的 Id");
         Assert.AreEqual(6, alpha.SortOrder, "新分组接在已有分组之后");
         Assert.AreEqual(7, zeta.SortOrder, "彼此之间按文件里的先后");
-        Assert.AreSequenceEqual(new[] { writes.Sessions.Single(s => s.Name == "a").Id }, [.. alpha.Sessions]);
+        Assert.AreSequenceEqual([writes.Sessions.Single(s => s.Name == "a").Id], [.. alpha.Sessions]);
     }
 
     [TestMethod]
@@ -286,7 +286,7 @@ public sealed class SessionImportPlannerTests
         Assert.AreEqual("keep these notes", written.Notes);
         Assert.AreEqual("GBK", written.Terminal!.Encoding, "终端设置是 CSV 表达不了的东西,导回来不能被冲掉");
         Assert.IsTrue(written.Ssh!.Compression);
-        Assert.AreSequenceEqual(new[] { "prod" }, [.. written.Tags]);
+        Assert.AreSequenceEqual(["prod"], [.. written.Tags]);
         Assert.AreEqual(group.Id, written.GroupId, "没有 group 列就不动分组");
     }
 

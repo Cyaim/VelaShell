@@ -63,7 +63,7 @@ public sealed class WindowStructureTests
         Assert.AreEqual(frame, request.U32(4), "parent");
         Assert.AreEqual(red, request.U32(8), "被挡着的最低的那个(原先总挪最低的 alone)");
         Assert.AreEqual(0, request.Bytes[16], "place = Top");
-        CollectionAssert.AreEqual(new[] { alone, red, blue }, await QueryChildrenAsync(c, frame), "改道:不再处理");
+        Assert.AreSequenceEqual([alone, red, blue], await QueryChildrenAsync(c, frame), "改道:不再处理");
         await SelectInputAsync(wm, frame, 0);
         await wm.SyncAsync();
 
@@ -73,7 +73,7 @@ public sealed class WindowStructureTests
         XMessage notify = await c.NextEventAsync(CirculateNotify);
         Assert.AreEqual(blue, notify.U32(8));
         Assert.AreEqual(1, notify.Bytes[16], "place = Bottom");
-        CollectionAssert.AreEqual(new[] { blue, alone, red }, await QueryChildrenAsync(c, frame));
+        Assert.AreSequenceEqual([blue, alone, red], await QueryChildrenAsync(c, frame));
         await c.SyncAsync();
         Assert.AreEqual(0xFF0000u, Pixel(30, 10), "原先 red 露出来的部分还留着 blue 的旧像素");
         Assert.AreEqual(0x0000FFu, Pixel(50, 10), "blue 没被挡的部分照旧");
@@ -138,15 +138,15 @@ public sealed class WindowStructureTests
         Assert.AreEqual(2, (await c.NextAsync(m => m.IsError)).Detail, "stack-mode 5:BadValue(原先截成一个字节照用)");
 
         await StackAsync(far, 2);   // TopIf:没有兄弟挡着它 → 不动(原先按 Above 抬到最上)
-        CollectionAssert.AreEqual(new[] { low, high, far }, await QueryChildrenAsync(c, parent));
+        Assert.AreSequenceEqual([low, high, far], await QueryChildrenAsync(c, parent));
         await StackAsync(low, 2);   // TopIf:high 挡着它 → 最上
-        CollectionAssert.AreEqual(new[] { high, far, low }, await QueryChildrenAsync(c, parent));
+        Assert.AreSequenceEqual([high, far, low], await QueryChildrenAsync(c, parent));
         await StackAsync(far, 3);   // BottomIf:它谁也不挡 → 不动(原先按 Below 压到最下)
-        CollectionAssert.AreEqual(new[] { high, far, low }, await QueryChildrenAsync(c, parent));
+        Assert.AreSequenceEqual([high, far, low], await QueryChildrenAsync(c, parent));
         await StackAsync(low, 4, high);   // Opposite + 兄弟:low 挡着 high → 最下
-        CollectionAssert.AreEqual(new[] { low, high, far }, await QueryChildrenAsync(c, parent));
+        Assert.AreSequenceEqual([low, high, far], await QueryChildrenAsync(c, parent));
         await StackAsync(low, 4, far);    // Opposite + 不相交的兄弟:不动
-        CollectionAssert.AreEqual(new[] { low, high, far }, await QueryChildrenAsync(c, parent));
+        Assert.AreSequenceEqual([low, high, far], await QueryChildrenAsync(c, parent));
     }
 
     [TestMethod]
@@ -301,6 +301,6 @@ public sealed class WindowStructureTests
         await c.SendAsync(5, 0, b => b.U32(parent));   // DestroySubwindows
         uint[] order = [(await c.NextEventAsync(DestroyNotify)).U32(8), (await c.NextEventAsync(DestroyNotify)).U32(8),
             (await c.NextEventAsync(DestroyNotify)).U32(8)];
-        CollectionAssert.AreEqual(new[] { bottom, middle, top }, order, "协议「DestroySubwindows」:从下到上(原先从上到下)");
+        Assert.AreSequenceEqual([bottom, middle, top], order, "协议「DestroySubwindows」:从下到上(原先从上到下)");
     }
 }

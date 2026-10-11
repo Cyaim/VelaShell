@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -60,6 +61,8 @@ public partial class ShortcutsPage : UserControl
         }
     }
 
+    [SuppressMessage("CodeQuality", "IDE0051:Remove unused private members",
+        Justification = "XAML 里录键框的 GestureCaptured 事件引用它;参数不是 EventArgs,分析器认不出是事件处理器。")]
     private void Recorder_GestureCaptured(object? sender, KeyGesture gesture)
     {
         if (ItemOf(sender) is { } item)

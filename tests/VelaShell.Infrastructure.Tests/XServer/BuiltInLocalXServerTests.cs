@@ -150,8 +150,8 @@ public class BuiltInLocalXServerTests
         await using Stream untrusted = await resolution.Connector!(new XServerChannelSource("user@host:22", Trusted: false), CancellationToken.None);
         await using Stream trusted = await resolution.Connector!(new XServerChannelSource("user@host:22"), CancellationToken.None);
 
-        CollectionAssert.DoesNotContain(await ListExtensionsAsync(untrusted), "XTEST");
-        CollectionAssert.Contains(await ListExtensionsAsync(trusted), "XTEST");
+        Assert.DoesNotContain("XTEST", await ListExtensionsAsync(untrusted));
+        Assert.Contains("XTEST", await ListExtensionsAsync(trusted));
 
         static async Task<List<string>> ListExtensionsAsync(Stream stream)
         {
@@ -219,7 +219,7 @@ public class BuiltInLocalXServerTests
         // X 程序清单(F3)把各个显示上的程序一并列出,按键断开的是对的那个显示上的那个程序。
         IReadOnlyList<XServerClient> clients = await server.GetClientsAsync();
         Assert.HasCount(4, clients);
-        Assert.AreEqual(4, clients.Select(c => c.Key).Distinct().Count(), "不同显示上编号相同的程序,键也不同");
+        Assert.HasCount(4, clients.Select(c => c.Key).Distinct(), "不同显示上编号相同的程序,键也不同");
         XServerClient bobClient = clients.Single(c => c.Source == "bob@b:22");
         server.DisconnectClient(bobClient.Key);
         X11Server bobServer = instances.Single(i => i.Label == "bob@b:22").Server;
@@ -304,7 +304,7 @@ public class BuiltInLocalXServerTests
             }
 
             Assert.AreEqual(XServerState.Running, server.State, "X Server 照旧运行");
-            CollectionAssert.AreEquivalent(new[] { null, "bob@b:22" }, server.Instances.Select(i => i.Label).ToList(), "只收掉 alice 的显示");
+            Assert.AreSequenceEqual([null, "bob@b:22"], server.Instances.Select(i => i.Label).ToList(), SequenceOrder.InAnyOrder, "只收掉 alice 的显示");
             Assert.AreEqual(1, aliceHost.Detaches);
             Assert.AreEqual(0, aliceHost.SessionCloseSubscribers, "收掉时摘下处理器");
             Assert.IsTrue(hosts.Where(h => !ReferenceEquals(h, aliceHost)).All(h => h.Detaches == 0));
@@ -650,7 +650,7 @@ public class BuiltInLocalXServerTests
             Assert.AreEqual(XAuthority.FamilyLocal, entry.Family);
             Assert.AreEqual(Dns.GetHostName(), Encoding.ASCII.GetString(entry.Address.Span));
             Assert.AreEqual("10", entry.DisplayNumber);
-            Assert.AreEqual(16, entry.Data.Length);
+            Assert.HasCount(16, entry.Data);
 
             using (TcpClient anonymous = new())
             {

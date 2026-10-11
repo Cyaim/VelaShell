@@ -273,7 +273,7 @@ internal sealed class SplashFace : IDisposable
                 current.Clear();
             }
             currentFace = face;
-            current.Append(rune.ToString());
+            current.Append(rune);
         }
         if (currentFace is not null && current.Length > 0)
         {

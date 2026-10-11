@@ -32,7 +32,7 @@ public sealed class SshServerBanners
     private readonly List<string> _texts = [];
 
     /// <summary>当成 <c>SshConnectionOptions.BannerHandler</c> 用。</summary>
-    public ValueTask OnBannerAsync(string text, CancellationToken cancellationToken)
+    public ValueTask OnBannerAsync(string text, CancellationToken _)
     {
         lock (_texts)
         {

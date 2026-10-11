@@ -189,7 +189,7 @@ public sealed class TerminalBridgeFloodTests
     }
 
     [TestMethod]
-    public async Task DisposeReleasesAReadLoopWaitingOnBackpressure()
+    public void DisposeReleasesAReadLoopWaitingOnBackpressure()
     {
         // 读线程可能正等在背压闸上。关标签时若不放行它,Dispose 会白等满 2 秒超时。
         ITerminalEmulator emulator = Substitute.For<ITerminalEmulator>();

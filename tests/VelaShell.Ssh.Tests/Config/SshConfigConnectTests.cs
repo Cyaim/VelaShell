@@ -586,6 +586,7 @@ public sealed class SshConfigConnectTests
     }
 
     [TestMethod]
+    [ResourceLock(WellKnownResources.EnvironmentVariables)]
     public void ForwardAgent的四种写法()
     {
         // ssh_config(5)：yes / no / agent 套接字路径 / $环境变量。曾经只认 yes，写了路径的配置被当成 no。

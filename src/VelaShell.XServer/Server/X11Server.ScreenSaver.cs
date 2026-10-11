@@ -22,8 +22,6 @@ public sealed partial class X11Server
     private short _saverInterval;
     private byte _saverPreferBlanking = 1;
     private byte _saverAllowExposures = 1;
-    private uint _lastActivity;
-
     private readonly Dictionary<XClient, uint> _saverSelections = [];
 
     /// <summary>用户有了输入(宿主注入、XTEST、宿主报的本机活动 <see cref="NoteUserActivity" />):空闲计时归零。</summary>
@@ -31,14 +29,17 @@ public sealed partial class X11Server
     {
         // 指针每动一下都会走到这里:只有真有触发器挂在 IDLETIME 上时才求值(否则什么都不会因此成立)。
         bool watched = NoteIdleReset(IdleMilliseconds);
-        _lastActivity = Now;
+        LastActivity = Now;
         if (watched)
         {
             EvaluateSync();   // IDLETIME 归零:等它负向跨越的报警器此刻触发
         }
     }
 
-    private uint IdleMilliseconds => unchecked(Now - _lastActivity);
+    /// <summary>最近一次用户输入的时刻(<see cref="Now" /> 的毫秒计数)。</summary>
+    private uint LastActivity { get; set; }
+
+    private uint IdleMilliseconds => unchecked(Now - LastActivity);
 
     // ------------------------------------------------------------------ 核心协议
 

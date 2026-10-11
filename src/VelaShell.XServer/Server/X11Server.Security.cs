@@ -352,7 +352,7 @@ public sealed partial class X11Server
     private bool IgnoredPropertyWrite(XWindow window, uint property) =>
         RequesterUntrusted && window.Owner is null
         && !(ReferenceEquals(window, _selectionWindow) && AtomName(property) is { } name && name.StartsWith("_VELASHELL_", StringComparison.Ordinal))
-        && !(_xim?.OwnsWindow(window) == true && !ReferenceEquals(window, _xim.ServerWindow));
+        && !(Xim?.OwnsWindow(window) == true && !ReferenceEquals(window, Xim.ServerWindow));
 
     /// <summary>
     /// 非受信客户端在服务端的窗口上改属性:只许 event-mask 一项、值只含 StructureNotify 与 PropertyChange(规范例外 3.g)——

@@ -457,7 +457,7 @@ public sealed partial class X11Server
                     ServeXdndSelection(c, requestor, selection, target, property, time, owner.Time);
                     return;
                 }
-                if (_xim is { } xim && selection == xim.SelectionAtom)
+                if (Xim is { } xim && selection == xim.SelectionAtom)
                 {
                     ServeXimSelection(c, requestor, selection, target, property, time, owner.Time);   // 输入法服务端:LOCALES / TRANSPORT
                     return;
@@ -519,14 +519,14 @@ public sealed partial class X11Server
             return;   // 非受信客户端经 PointerWindow / InputFocus 往受信客户端的窗口发:不投递(SECURITY 不许它指名那个窗口)
         }
         // XIM 的通信窗口、拖出用的 XDND 代理窗口收的是协议消息,非受信的程序也照常用(输入法、往本机拖东西不泄露别人的东西)。
-        bool protocolWindow = _xim?.OwnsWindow(target) == true || IsOutgoingDragWindow(target);
+        bool protocolWindow = Xim?.OwnsWindow(target) == true || IsOutgoingDragWindow(target);
         if (!protocolWindow && !(ReferenceEquals(target, _selectionWindow) && code == XEventCode.SelectionNotify))   // 选区属主回给服务端的 SelectionNotify 照收
         {
             CheckUntrustedSendEvent(target, propagate, mask, code);
         }
         if (protocolWindow)
         {
-            if (_xim is { } xim && xim.OwnsWindow(target))
+            if (Xim is { } xim && xim.OwnsWindow(target))
             {
                 xim.OnClientMessage(c, target, raw, c.BigEndian);   // _XIM_XCONNECT / _XIM_PROTOCOL / _XIM_MOREDATA
             }

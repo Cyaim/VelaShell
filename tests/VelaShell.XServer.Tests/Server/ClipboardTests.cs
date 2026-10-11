@@ -100,8 +100,8 @@ public sealed class ClipboardTests
         await c.NextEventAsync(SelectionNotify);
         XMessage list = await c.RequestAsync(20, 1, b => b.U32(window).U32(prop).U32(0).U32(0).U32(1000));
         uint[] atoms = [.. Enumerable.Range(0, (int)list.U32(16)).Select(i => list.U32(32 + (i * 4)))];
-        CollectionAssert.Contains(atoms, utf8);
-        CollectionAssert.Contains(atoms, 31u, "STRING");
+        Assert.Contains(utf8, atoms);
+        Assert.Contains(31u, atoms, "STRING");
     }
 
     [TestMethod]
@@ -167,7 +167,7 @@ public sealed class ClipboardTests
         Assert.AreEqual(bogus, error.U32(4));
         XMessage list = await c.RequestAsync(21, 0, b => b.U32(c.RootWindow));   // ListProperties
         uint[] atoms = [.. Enumerable.Range(0, list.U16(8)).Select(i => list.U32(32 + (i * 4)))];
-        CollectionAssert.DoesNotContain(atoms, bogus, "原先服务端拿它当属性名写到根窗口上,之后 xprop -root 收到 BadAtom");
+        Assert.DoesNotContain(bogus, atoms, "原先服务端拿它当属性名写到根窗口上,之后 xprop -root 收到 BadAtom");
     }
 
     [TestMethod]
@@ -236,8 +236,8 @@ public sealed class ClipboardTests
         await c.NextEventAsync(SelectionNotify);
         XMessage offered = await GetAsync(list);
         uint[] atoms = [.. Enumerable.Range(0, (int)offered.U32(16)).Select(i => offered.U32(32 + (i * 4)))];
-        CollectionAssert.Contains(atoms, multiple, "ICCCM §2.6.2 要求属主支持 MULTIPLE");
-        CollectionAssert.Contains(atoms, compound);
+        Assert.Contains(multiple, atoms, "ICCCM §2.6.2 要求属主支持 MULTIPLE");
+        Assert.Contains(compound, atoms);
 
         // MULTIPLE:三对 —— UTF8_STRING、不支持的 image/png、COMPOUND_TEXT。
         await c.SendAsync(18, 0, b => b.U32(window).U32(list).U32(pair).U8(32).U8(0).U8(0).U8(0).U32(6)
@@ -433,10 +433,10 @@ public sealed class ClipboardTests
         await c.SyncAsync();
         XMessage value = await c.RequestAsync(20, 0, b => b.U32(c.RootWindow).U32(resources).U32(0).U32(0).U32(100000));
         string merged = Encoding.Latin1.GetString(value.Bytes, 32, (int)value.U32(16));
-        StringAssert.Contains(merged, "XTerm*background:\tblack\n", "原先换一次 DPI 整份覆盖,用户的资源全丢");
-        StringAssert.Contains(merged, "Emacs.font:\tfixed\\\n-misc\n", "续行跟着它那一条走");
-        StringAssert.Contains(merged, "*faceName:\tMonospace\n");
-        StringAssert.Contains(merged, "Xft.dpi:\t144\n");
+        Assert.Contains("XTerm*background:\tblack\n", merged, "原先换一次 DPI 整份覆盖,用户的资源全丢");
+        Assert.Contains("Emacs.font:\tfixed\\\n-misc\n", merged, "续行跟着它那一条走");
+        Assert.Contains("*faceName:\tMonospace\n", merged);
+        Assert.Contains("Xft.dpi:\t144\n", merged);
         Assert.DoesNotContain("Xft.dpi:\t120", merged, "服务端管的那几项换成新值,不留重复的旧值");
         Assert.AreEqual(1, merged.Split("Xft.antialias:").Length - 1);
     }
@@ -697,12 +697,12 @@ public sealed class ClipboardTests
             asked.Add(request.U32(20));
             await AnswerAsync(c, request, type, data);
         }
-        CollectionAssert.AreEqual(new[] { utf8, html, png }, asked, "文本、HTML、图片依次要");
+        Assert.AreSequenceEqual([utf8, html, png], asked, "文本、HTML、图片依次要");
         await host.WaitForAsync(() => host.ClipboardContent is not null);
         XClipboardContent content = host.ClipboardContent!;
         Assert.AreEqual("表格", content.Text);
         Assert.AreEqual("<b>表格</b>", content.Html);
-        CollectionAssert.AreEqual(FakePng, content.Png.ToArray());
+        Assert.AreSequenceEqual(FakePng, content.Png.ToArray());
         Assert.AreEqual("表格", host.Clipboard, "只认文本的宿主照样收到文本");
     }
 
@@ -730,12 +730,12 @@ public sealed class ClipboardTests
         }
         (_, _, byte[] list) = await ConvertAsync(targets);
         uint[] atoms = [.. Enumerable.Range(0, list.Length / 4).Select(i => BitConverter.ToUInt32(list, i * 4))];
-        CollectionAssert.Contains(atoms, html);
-        CollectionAssert.Contains(atoms, png);
-        CollectionAssert.DoesNotContain(atoms, utf8, "没有文本就不列文本的目标");
+        Assert.Contains(html, atoms);
+        Assert.Contains(png, atoms);
+        Assert.DoesNotContain(utf8, atoms, "没有文本就不列文本的目标");
         (uint property, uint type, byte[] data) = await ConvertAsync(png);
         Assert.AreEqual(png, type);
-        CollectionAssert.AreEqual(FakePng, data);
+        Assert.AreSequenceEqual(FakePng, data);
         Assert.AreEqual(0u, (await ConvertAsync(utf8)).Property, "没有文本:UTF8_STRING 拒绝");
         Assert.ThrowsExactly<ArgumentException>(() => server.SetClipboard(new XClipboardContent()));
     }

@@ -66,7 +66,7 @@ internal static partial class Win32WindowChrome
             return;
         }
         window.Closed += (_, _) => SystemCommands.Remove(window);
-        Win32Properties.AddWndProcHookCallback(window, (nint _, uint msg, nint wParam, nint _, ref bool handled) =>
+        Win32Properties.AddWndProcHookCallback(window, (_, msg, wParam, _, ref handled) =>
         {
             handled |= msg == WmSysCommand && SystemCommands.TryGetValue(window, out Func<uint, bool>? h) && h((uint)wParam & 0xFFF0);
             return 0;

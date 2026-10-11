@@ -173,8 +173,8 @@ public sealed class SshPublicKeyTests
         var key = SshPublicKey.Decode(Blob(w =>
         {
             WriteString(w, SshAlgorithmNames.SshRsa);
-            WriteMpint(w, rsa.ExportParameters(false).Exponent!);
-            WriteMpint(w, rsa.ExportParameters(false).Modulus!);
+            WriteMpint(w, rsa.ExportParameters(false).Exponent);
+            WriteMpint(w, rsa.ExportParameters(false).Modulus);
         }));
 
         byte[] blob = Blob(w =>

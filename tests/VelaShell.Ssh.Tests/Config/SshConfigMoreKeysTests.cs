@@ -218,6 +218,7 @@ public sealed class SshConfigMoreKeysTests
     }
 
     [TestMethod]
+    [ResourceLock(WellKnownResources.EnvironmentVariables)]
     public void 会话的环境变量与远端命令()
     {
         string variable = $"VELA_SENDENV_{Guid.NewGuid():N}"[..24].ToUpperInvariant();

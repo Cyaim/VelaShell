@@ -78,10 +78,10 @@ internal sealed class ConstellationSplash : SplashDesign
             }
 
             (float fromX, float fromY, _, _, _) = Stars[k];
-            (float X, float Y, string Name, float Dx, float Dy) to = Stars[(k + 1) % n];
+            (float toX, float toY, _, _, _) = Stars[(k + 1) % n];
             canvas.DrawLine(fromX, fromY,
-                            (float)(fromX + (to.X - fromX) * part),
-                            (float)(fromY + (to.Y - fromY) * part), _line);
+                            (float)(fromX + (toX - fromX) * part),
+                            (float)(fromY + (toY - fromY) * part), _line);
         }
 
         // 主星:进度越过它的门槛后在几十毫秒内亮起(半径、颜色、光晕一起过渡),亮了再标名字。

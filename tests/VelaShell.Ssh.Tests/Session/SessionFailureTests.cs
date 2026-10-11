@@ -914,8 +914,8 @@ public sealed class SessionFailureTests
     {
         await using var peer = RawPeer.Start();
 
-        const int Window = SshWindowPolicy.AbsoluteMinimumBytes;
-        SshChannelOptions options = SshChannelOptions.Default with { WindowPolicy = SshWindowPolicy.Fixed(Window) };
+        const int window = SshWindowPolicy.AbsoluteMinimumBytes;
+        SshChannelOptions options = SshChannelOptions.Default with { WindowPolicy = SshWindowPolicy.Fixed(window) };
 
         Task<SshChannel> opening = peer.Connection
             .OpenSessionChannelAsync(options, peer.Token).AsTask();
@@ -923,10 +923,10 @@ public sealed class SessionFailureTests
         await using SshChannel channel = await opening;
 
         // 对端把整个窗口发满。
-        byte[] data = new byte[9 + Window];
+        byte[] data = new byte[9 + window];
         data[0] = (byte)SshMessageNumber.ChannelData;
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(1), clientId);
-        BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(5), Window);
+        BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(5), window);
         await peer.SendAsync(data);
 
         // 消费者只读一点点就不要了。
@@ -936,7 +936,7 @@ public sealed class SessionFailureTests
 
         byte[] adjust = await peer.ReadUntilAsync(SshMessageNumber.ChannelWindowAdjust);
         Assert.IsGreaterThanOrEqualTo(
-            (uint)(Window / 2), BinaryPrimitives.ReadUInt32BigEndian(adjust.AsSpan(5)),
+            (uint)(window / 2), BinaryPrimitives.ReadUInt32BigEndian(adjust.AsSpan(5)),
             "没读的那部分没有回补");
     }
 }

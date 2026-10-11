@@ -44,8 +44,8 @@ public class KeyboardInteractivePromptDialogUiTests
 
                 Assert.AreEqual("Duo", dialog.Title);
                 string[] texts = [.. dialog.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text ?? "")];
-                CollectionAssert.Contains(texts, "root@bastion:22", "要看得出是哪台机器在要动态码");
-                CollectionAssert.Contains(texts, "Choose a method");
+                Assert.Contains("root@bastion:22", texts, "要看得出是哪台机器在要动态码");
+                Assert.Contains("Choose a method", texts);
 
                 TextBox[] inputs = Inputs(dialog);
                 Assert.HasCount(2, inputs);

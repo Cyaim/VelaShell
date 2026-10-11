@@ -20,14 +20,13 @@ namespace VelaShell.XServer;
 
 public sealed partial class X11Server
 {
-    private int _dpi;
     private int _scale = 1;
     private uint _xsettingsSerial;
 
     private void InitXSettings()
     {
-        _dpi = _options.Dpi;
-        _scale = _options.ScaleFactor;
+        ScreenDpi = Options.Dpi;
+        _scale = Options.ScaleFactor;
         if (!Rootful)   // 单窗口模式:XSETTINGS 归远端桌面的设置守护进程(xfsettingsd、gsd-xsettings)
         {
             _selections[new SelectionSlot(Intern("_XSETTINGS_S0"), null)] = (SelectionWindow, null, 0);
@@ -38,8 +37,8 @@ public sealed partial class X11Server
     /// <summary>宿主的 DPI / 缩放变了(见 <see cref="SetDisplayScale" />):重新发布 XSETTINGS 与 RESOURCE_MANAGER。</summary>
     private void ApplyDisplayScale(int dpi, int scale)
     {
-        bool dpiChanged = dpi != _dpi;
-        _dpi = dpi;
+        bool dpiChanged = dpi != ScreenDpi;
+        ScreenDpi = dpi;
         _scale = scale;
         PublishDisplaySettings();
         if (dpiChanged)
@@ -59,7 +58,7 @@ public sealed partial class X11Server
         SendPropertyNotify(SelectionWindow, settings, deleted: false);
 
         uint resources = Intern("RESOURCE_MANAGER");
-        string text = $"Xft.dpi:\t{_dpi}\nXft.antialias:\t1\nXft.hinting:\t1\nXft.hintstyle:\thintslight\nXft.rgba:\tnone\n";
+        string text = $"Xft.dpi:\t{ScreenDpi}\nXft.antialias:\t1\nXft.hinting:\t1\nXft.hintstyle:\thintslight\nXft.rgba:\tnone\n";
         if (Root.Properties.GetValueOrDefault(resources) is { Format: 8 } existing)
         {
             text = MergeResources(XWire.Latin1.GetString(existing.Data), text);
@@ -121,15 +120,15 @@ public sealed partial class X11Server
         AddU32(data, _xsettingsSerial);
         List<(string Name, object Value)> items =
         [
-            ("Xft/DPI", _dpi * 1024),
+            ("Xft/DPI", ScreenDpi * 1024),
             ("Xft/Antialias", 1),
             ("Xft/Hinting", 1),
             ("Xft/HintStyle", "hintslight"),
             ("Xft/RGBA", "none"),
             ("Gdk/WindowScalingFactor", _scale),
-            ("Gdk/UnscaledDPI", _dpi * 1024 / _scale),
+            ("Gdk/UnscaledDPI", ScreenDpi * 1024 / _scale),
         ];
-        if (_options.InputMethodName is not null)
+        if (Options.InputMethodName is not null)
         {
             // 服务端当着 XIM 输入法服务端:请 GTK 2/3 用 XIM 输入模块(环境变量 GTK_IM_MODULE 设了的照它)。没有 XMODIFIERS 时
             // Xlib 用本地的组合键处理,与 GTK 自己的简单输入法一样能打字。

@@ -227,13 +227,15 @@ public sealed class InMemoryTransportTests
         await using (b)
         {
             await a.DisposeAsync();
-            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(async () =>
-            {
-                // 读取结果要用上：丢弃 ReadAsync 的返回值正是 CA2022 要防的那个经典 bug，
-                // 而且这里用上它还能给出一句有用的失败消息。
-                int read = await a.ReadAsync(new byte[16]);
-                Assert.Fail($"应当抛出 ObjectDisposedException，却读到了 {read} 字节。");
-            });
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => ReadAfterDisposeAsync(a));
+        }
+
+        static async Task ReadAfterDisposeAsync(InMemoryDuplexStream stream)
+        {
+            // 读取结果要用上：丢弃 ReadAsync 的返回值正是 CA2022 要防的那个经典 bug，
+            // 而且这里用上它还能给出一句有用的失败消息。
+            int read = await stream.ReadAsync(new byte[16]);
+            Assert.Fail($"应当抛出 ObjectDisposedException，却读到了 {read} 字节。");
         }
     }
 

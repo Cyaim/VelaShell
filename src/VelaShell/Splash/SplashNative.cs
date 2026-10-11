@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 namespace VelaShell.Splash;
 
 /// <summary>启动画面窗口用到的 Win32 API。只在 Windows 上调用。</summary>
-internal static unsafe partial class SplashNative
+internal static partial class SplashNative
 {
     public const uint WS_POPUP = 0x80000000;
     public const uint WS_EX_LAYERED = 0x00080000;

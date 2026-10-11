@@ -178,7 +178,7 @@ public sealed class LocalPortForwarder : PortForwarder
         _targetSocketPath = targetSocketPath;
         _createdSocketPath = options.ListenSocketPath;
         ConfigureRateLimit(options.MaxBytesPerSecond);
-        BoundEndPoints = Array.AsReadOnly([.. listeners.Select(listener => listener.LocalEndPoint!)]);
+        BoundEndPoints = Array.AsReadOnly([.. listeners.Select(listener => listener.LocalEndPoint)]);
         BoundEndPoint = BoundEndPoints[0];
         _connectionSlots = new SemaphoreSlim(options.MaxConnections, options.MaxConnections);
     }

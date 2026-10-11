@@ -23,12 +23,12 @@ public sealed class AgentConnectTests
     [TestMethod]
     public void 默认端点在Windows上认命名管道形式的SSH_AUTH_SOCK()
     {
-        const string OpenSshPipe = @"\\.\pipe\openssh-ssh-agent";
+        const string openSshPipe = @"\\.\pipe\openssh-ssh-agent";
 
         Assert.AreEqual(@"\\.\pipe\agent-1password", SshAgentClient.DefaultEndpointFor(windows: true, @"\\.\pipe\agent-1password"));
         Assert.AreEqual(@"\\.\PIPE\keepassxc", SshAgentClient.DefaultEndpointFor(windows: true, @"\\.\PIPE\keepassxc"));
-        Assert.AreEqual(OpenSshPipe, SshAgentClient.DefaultEndpointFor(windows: true, "/tmp/ssh-XXXX/agent.123"));
-        Assert.AreEqual(OpenSshPipe, SshAgentClient.DefaultEndpointFor(windows: true, null));
+        Assert.AreEqual(openSshPipe, SshAgentClient.DefaultEndpointFor(windows: true, "/tmp/ssh-XXXX/agent.123"));
+        Assert.AreEqual(openSshPipe, SshAgentClient.DefaultEndpointFor(windows: true, null));
         Assert.AreEqual("/run/user/1000/agent.sock", SshAgentClient.DefaultEndpointFor(windows: false, "/run/user/1000/agent.sock"));
         Assert.IsNull(SshAgentClient.DefaultEndpointFor(windows: false, null));
     }
@@ -57,13 +57,9 @@ public sealed class AgentConnectTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Windows, IgnoreMessage = "只在 Windows 上走命名管道。")]
     public async Task 命名管道不存在时在时限内报没在跑而不是一直等()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("只在 Windows 上走命名管道。");
-        }
-
         // 不带时限的管道连接会一直重试到管道出现 —— 曾经 agent 转发那一路就是这样，
         // 服务没起时远端的 ssh / git 一直挂到 shell 关掉。
         string pipe = $@"\\.\pipe\velashell-no-agent-{Guid.NewGuid():N}";

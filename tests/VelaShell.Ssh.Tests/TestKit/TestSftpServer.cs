@@ -585,7 +585,7 @@ internal sealed class TestSftpServer
         if (!_holdUsed && _options.HoldReadReplyAtOffset == offset)
         {
             _holdUsed = true;
-            _heldRead = (offset, reply!);
+            _heldRead = (offset, reply);
             return null;
         }
 

@@ -596,8 +596,8 @@ public partial class GlobalSettingsView : UserControl
                 Exception? error;
                 try
                 {
-                    selected = await _store.ResolveCredentialWithKeyIdAsync(model, token);
-                    (error, _) = await HealthProbe.ProbeAsync(_store, model, selected.Value.Credential, token);
+                    selected = await _store.ResolveCredentialWithKeyIdAsync(model, cancellationToken: token);
+                    (error, _) = await HealthProbe.ProbeAsync(_store, model, selected.Value.Credential, cancellationToken: token);
                 }
                 // 只有本批次的令牌才算"取消";令牌刷新撞上 HttpClient 超时抛的 TaskCanceledException
                 // 是这一行不通,不能冒到外层把整批悄悄收掉、让状态行停在「正在检测」
@@ -617,13 +617,13 @@ public partial class GlobalSettingsView : UserControl
                 {
                     try
                     {
-                        (ProviderCredential Credential, string? KeyId) = await _store.ResolveCredentialWithKeyIdAsync(fresh, token, refreshTokens: false);
+                        (ProviderCredential currentCredential, string? currentKeyId) = await _store.ResolveCredentialWithKeyIdAsync(fresh, refreshTokens: false, cancellationToken: token);
                         token.ThrowIfCancellationRequested();
-                        if (KeyId != sent.KeyId
-                            || !string.Equals(Credential.Value, sent.Credential.Value, StringComparison.Ordinal)
-                            || Credential.IsBearerToken != sent.Credential.IsBearerToken
-                            || Credential.BaseUrl != sent.Credential.BaseUrl
-                            || !(Credential.Headers ?? []).SequenceEqual(sent.Credential.Headers ?? [])
+                        if (currentKeyId != sent.KeyId
+                            || !string.Equals(currentCredential.Value, sent.Credential.Value, StringComparison.Ordinal)
+                            || currentCredential.IsBearerToken != sent.Credential.IsBearerToken
+                            || currentCredential.BaseUrl != sent.Credential.BaseUrl
+                            || !(currentCredential.Headers ?? []).SequenceEqual(sent.Credential.Headers ?? [])
                             || _settings.FindModel(model.Id) is not { } verified || verified.Model != modelName
                             || verified.BaseUrl != endpoint || verified.Protocol != protocol || verified.ApiKeyOwnerId != ownerId
                             || verified.Provider.ActiveApiKeyId != activeKeyId || (_health?.Version ?? 0) != healthEvidence)
@@ -721,11 +721,11 @@ public partial class GlobalSettingsView : UserControl
                 {
                     try
                     {
-                        (ProviderCredential Credential, string? KeyId) = await _store.ResolveCredentialWithKeyIdAsync(model!, refreshTokens: false);
-                        matches = KeyId == result.KeyId && Credential.Value == sent.Value
-                            && Credential.IsBearerToken == sent.IsBearerToken
-                            && Credential.BaseUrl == sent.BaseUrl
-                            && (Credential.Headers ?? []).SequenceEqual(sent.Headers ?? [])
+                        (ProviderCredential currentCredential, string? currentKeyId) = await _store.ResolveCredentialWithKeyIdAsync(model!, refreshTokens: false);
+                        matches = currentKeyId == result.KeyId && currentCredential.Value == sent.Value
+                            && currentCredential.IsBearerToken == sent.IsBearerToken
+                            && currentCredential.BaseUrl == sent.BaseUrl
+                            && (currentCredential.Headers ?? []).SequenceEqual(sent.Headers ?? [])
                             && _settings.FindModel(id) is { } verified
                             && verified.Provider.ActiveApiKeyId == result.ActiveKeyId
                             && result.Version == (_health?.Version ?? 0);

@@ -361,13 +361,13 @@ public sealed class HandshakeTests
     {
         // 回调只能返回一个裁决，原因得由它自己带上 ——
         // 否则用户拿到的只有一句「不受信任的对端」，不知道该去哪操作。
-        const string Reason = "这台机器的指纹不在公司白名单里，请联系管理员。";
+        const string reason = "这台机器的指纹不在公司白名单里，请联系管理员。";
 
         SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
-            async () => await HandshakeAsync(policy: new RejectingPolicy(Reason)));
+            async () => await HandshakeAsync(policy: new RejectingPolicy(reason)));
 
         Assert.AreEqual(SshFailureReason.HostKeyRejected, ex.Reason);
-        Assert.AreEqual(Reason, ex.Message);
+        Assert.AreEqual(reason, ex.Message);
     }
 
     [TestMethod]
@@ -384,13 +384,13 @@ public sealed class HandshakeTests
     [TestMethod]
     public async Task 策略判定密钥变了时以HostKeyChanged拒绝()
     {
-        const string Message = "指纹变了。";
+        const string message = "指纹变了。";
 
         SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
-            async () => await HandshakeAsync(policy: new FixedVerdictPolicy(SshHostKeyVerdict.RejectChanged(Message))));
+            async () => await HandshakeAsync(policy: new FixedVerdictPolicy(SshHostKeyVerdict.RejectChanged(message))));
 
         Assert.AreEqual(SshFailureReason.HostKeyChanged, ex.Reason);
-        Assert.AreEqual(Message, ex.Message);
+        Assert.AreEqual(message, ex.Message);
     }
 
     [TestMethod]

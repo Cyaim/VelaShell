@@ -120,17 +120,17 @@ public class SshSessionFeaturesTests
     public void X11_LocalServerConnector_ForItsOwnDisplay_TrustedOrNot()
     {
         List<ShellStreamNotice> notices = [];
-        static ValueTask<Stream> connector(CancellationToken _) => ValueTask.FromResult<Stream>(new MemoryStream());
+        static ValueTask<Stream> Connector(CancellationToken _) => ValueTask.FromResult<Stream>(new MemoryStream());
 
         X11ForwardOptions? trusted = SshForwardingOptions.X11(
-            new SshSessionOptions { X11Forwarding = true, X11Trusted = true }, notices, "localhost:10.0", connector);
+            new SshSessionOptions { X11Forwarding = true, X11Trusted = true }, notices, "localhost:10.0", Connector);
         X11ForwardOptions? untrusted = SshForwardingOptions.X11(
-            new SshSessionOptions { X11Forwarding = true, X11Trusted = false }, notices, "localhost:10.0", connector);
+            new SshSessionOptions { X11Forwarding = true, X11Trusted = false }, notices, "localhost:10.0", Connector);
         X11ForwardOptions? explicitDisplay = SshForwardingOptions.X11(
-            new SshSessionOptions { X11Forwarding = true, X11Trusted = true, X11Display = "localhost:3" }, notices, "localhost:10.0", connector);
+            new SshSessionOptions { X11Forwarding = true, X11Trusted = true, X11Display = "localhost:3" }, notices, "localhost:10.0", Connector);
 
-        Assert.AreSame(connector, trusted?.LocalConnector);
-        Assert.AreSame(connector, untrusted?.LocalConnector, "非受信同样经连接器");
+        Assert.AreSame(Connector, trusted?.LocalConnector);
+        Assert.AreSame(Connector, untrusted?.LocalConnector, "非受信同样经连接器");
         Assert.IsFalse(untrusted!.IsTrusted);
         Assert.IsEmpty(notices, "开得起来,不再提示");
         Assert.IsNull(explicitDisplay?.LocalConnector, "用户指定的显示与本机 X Server 无关");
@@ -306,7 +306,7 @@ public class SshSessionFeaturesTests
         AgentSignRequest shown = prompt.LastRequest!;
         Assert.AreEqual("git", shown.LoginUser);
         Assert.AreEqual(github.PublicKey.Sha256Fingerprint, shown.DestinationFingerprint);
-        Assert.AreSequenceEqual(new[] { "github.com", "10.0.0.9:2222" }, [.. shown.DestinationHosts]);
+        Assert.AreSequenceEqual(["github.com", "10.0.0.9:2222"], [.. shown.DestinationHosts]);
         Assert.IsNull(shown.SignatureNamespace);
     }
 

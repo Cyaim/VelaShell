@@ -53,7 +53,7 @@ public class SessionTransferDialogsUiTests
             Assert.AreEqual(export.Bounds.Height, cancel.Bounds.Height, "同一条动作条上的按钮要等高");
             Assert.IsTrue(export.IsEnabled);
 
-            Assert.IsFalse(PassphraseBoxes(window).Any(static box => box.IsEffectivelyVisible), "没勾敏感信息时不出现口令框");
+            Assert.DoesNotContain(static box => box.IsEffectivelyVisible, PassphraseBoxes(window), "没勾敏感信息时不出现口令框");
             viewModel.IncludeSecrets = true;
             Dispatcher.UIThread.RunJobs();
             Assert.HasCount(2, PassphraseBoxes(window).Where(static box => box.IsEffectivelyVisible).ToList());

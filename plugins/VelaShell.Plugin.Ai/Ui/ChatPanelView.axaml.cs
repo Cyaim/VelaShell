@@ -1516,7 +1516,7 @@ public partial class ChatPanelView : UserControl
                 RequestAutoScroll();
             }
 
-            void recordProbeUsage(UsageDetails usage) => RecordUsage(usage, isContext: false);
+            void RecordProbeUsage(UsageDetails usage) => RecordUsage(usage, isContext: false);
             // 已选 Key 槽保持固定;MCP/摘要等待后订阅续期和思考能力变化仍须重新证明。
             async Task<bool> RefreshBeforeSendAsync()
             {
@@ -1527,13 +1527,12 @@ public partial class ChatPanelView : UserControl
                 {
                     throw new ProviderConfigurationChangedException();
                 }
-                (ProviderCredential Credential, string? KeyId) = await _store.ResolveCredentialWithKeyIdAsync(current, token, keyId: selectedKeyId);
-                ProviderCredential latest = Credential;
+                (ProviderCredential latest, string? latestKeyId) = await _store.ResolveCredentialWithKeyIdAsync(current, keyId: selectedKeyId, cancellationToken: token);
                 OAuthAccountSnapshot? latestAccount = await CaptureOAuthAccountAsync(current, latest, token);
                 bool renewal = SameRenewingAccount(verifiedCredential, latest, verifiedAccount, latestAccount, current);
                 if (!SameOAuthAccount(verifiedAccount, latestAccount) || (!SameCredential(verifiedCredential, latest) && !renewal))
                     throw new ProviderConfigurationChangedException();
-                bool stillVerified = KeyId == selectedKeyId && SameCredential(verifiedCredential, latest)
+                bool stillVerified = latestKeyId == selectedKeyId && SameCredential(verifiedCredential, latest)
                     && await StillVerifiedAsync(current, verifiedCredential, token, verifiedModel, selectedKeyId, verifiedProviderVersion);
                 ResolvedModel? latestModel = _settings.FindModel(current.Id);
                 if (stillVerified && latestModel is not null
@@ -1563,7 +1562,7 @@ public partial class ChatPanelView : UserControl
                     verifiedVersion = _health.Version;
                     verifiedObservation = _health.BeginObservation();
                     SetStatus(_loc.F("FailoverProbing", current.Name));
-                    (Exception? probeError, _) = await HealthProbe.ProbeAsync(_store, current, latest, token, recordProbeUsage);
+                    (Exception? probeError, _) = await HealthProbe.ProbeAsync(_store, current, latest, RecordProbeUsage, token);
                     if (probeError is not null)
                     {
                         throw probeError;
@@ -1595,13 +1594,13 @@ public partial class ChatPanelView : UserControl
                     throw new ProviderConfigurationChangedException();
                 }
 
-                (ProviderCredential Credential, string? KeyId) = await _store.ResolveCredentialWithKeyIdAsync(current, cancellationToken, keyId: selectedKeyId);
-                OAuthAccountSnapshot? account = await CaptureOAuthAccountAsync(current, Credential, cancellationToken);
-                bool renewed = !SameCredential(verifiedCredential, Credential);
-                if (KeyId != selectedKeyId || !SameOAuthAccount(verifiedAccount, account)
-                    || (renewed && !SameRenewingAccount(verifiedCredential, Credential, verifiedAccount, account, current))
-                    || !await StillVerifiedAsync(current, Credential, cancellationToken, verifiedModel, selectedKeyId, verifiedProviderVersion)
-                    || !SameOAuthAccount(account, await CaptureOAuthAccountAsync(current, Credential, cancellationToken)))
+                (ProviderCredential latestCredential, string? latestKeyId) = await _store.ResolveCredentialWithKeyIdAsync(current, keyId: selectedKeyId, cancellationToken: cancellationToken);
+                OAuthAccountSnapshot? account = await CaptureOAuthAccountAsync(current, latestCredential, cancellationToken);
+                bool renewed = !SameCredential(verifiedCredential, latestCredential);
+                if (latestKeyId != selectedKeyId || !SameOAuthAccount(verifiedAccount, account)
+                    || (renewed && !SameRenewingAccount(verifiedCredential, latestCredential, verifiedAccount, account, current))
+                    || !await StillVerifiedAsync(current, latestCredential, cancellationToken, verifiedModel, selectedKeyId, verifiedProviderVersion)
+                    || !SameOAuthAccount(account, await CaptureOAuthAccountAsync(current, latestCredential, cancellationToken)))
                 {
                     throw new ProviderConfigurationChangedException();
                 }
@@ -1610,13 +1609,13 @@ public partial class ChatPanelView : UserControl
                 if (hop > 0 && renewed)
                 {
                     string oldEndpoint = string.IsNullOrWhiteSpace(verifiedCredential.BaseUrl) ? current.BaseUrl : verifiedCredential.BaseUrl;
-                    string newEndpoint = string.IsNullOrWhiteSpace(Credential.BaseUrl) ? current.BaseUrl : Credential.BaseUrl;
+                    string newEndpoint = string.IsNullOrWhiteSpace(latestCredential.BaseUrl) ? current.BaseUrl : latestCredential.BaseUrl;
                     // 最后发送护栏不重新授权目的地；下一站必须先经过正常候选探活。
                     if (!string.Equals(oldEndpoint, newEndpoint, StringComparison.Ordinal))
                         throw new ProviderConfigurationChangedException();
                 }
-                if (renewed) Steering!.ReplaceInnerClient(_store.CreateClient(current, Credential, callerCountsRetries: true));
-                verifiedCredential = Credential;
+                if (renewed) Steering!.ReplaceInnerClient(_store.CreateClient(current, latestCredential, callerCountsRetries: true));
+                verifiedCredential = latestCredential;
                 verifiedAccount = account;
                 ApiKeyTurnState? state = keyStates.GetValueOrDefault(current.Provider.Id);
                 if (formal && selectedKeyId is { } firstKey && state is { Balance: true, CursorAdvanced: false })
@@ -1736,9 +1735,9 @@ public partial class ChatPanelView : UserControl
                         throw new ProviderConfigurationChangedException();
                     }
                     OAuthAccountSnapshot issuerBeforeResolve = CaptureOAuthIssuer(current.Provider);
-                    (ProviderCredential Credential, string? KeyId) = await SelectFirstApiKeyAsync(current, keyStates.GetValueOrDefault(current.Provider.Id), automatic: false, token)
+                    (ProviderCredential initialCredential, string? initialKeyId) = await SelectFirstApiKeyAsync(current, keyStates.GetValueOrDefault(current.Provider.Id), automatic: false, token)
                         ?? throw new ProviderConfigurationChangedException();
-                    if (Credential.IsBearerToken && CaptureOAuthIssuer(current.Provider) != issuerBeforeResolve)
+                    if (initialCredential.IsBearerToken && CaptureOAuthIssuer(current.Provider) != issuerBeforeResolve)
                         throw new ProviderConfigurationChangedException();
                     if (_store.ProviderConfigurationVersion(current.Provider) != verifiedProviderVersion)
                         throw new ProviderConfigurationChangedException();
@@ -1747,9 +1746,9 @@ public partial class ChatPanelView : UserControl
                     {
                         throw new ProviderConfigurationChangedException();
                     }
-                    verifiedCredential = Credential;
+                    verifiedCredential = initialCredential;
                     verifiedAccount = await CaptureOAuthAccountAsync(current, verifiedCredential, token);
-                    selectedKeyId = KeyId;
+                    selectedKeyId = initialKeyId;
                     credentialReady = true;
                 }
 
@@ -1852,11 +1851,11 @@ public partial class ChatPanelView : UserControl
                     AiSettingsStore.ApplyReasoning(options, current);
                     AiSettingsStore.ApplyEndpointQuirks(options, current);
                 }
-                await CompactIfNeededAsync(current, token, async cancellationToken =>
+                await CompactIfNeededAsync(current, async cancellationToken =>
                 {
                     await VerifyFixedRequestAsync(cancellationToken);
                     return Steering!.RequestClient;
-                });
+                }, token);
                 // 装配上下文:摘要 + 近几轮原文,按窗口裁剪并把相邻同角色的消息并起来(见 ContextBuilder)
                 RequestContext request = ContextBuilder.Build(
                     BuildSystemPrompt(current, mode, nativeSearch), History, current.MaxInputTokens, current.MaxTokens,
@@ -1961,7 +1960,7 @@ public partial class ChatPanelView : UserControl
                             if (_store.ProviderConfigurationVersion(current.Provider) != verifiedProviderVersion)
                                 throw new ProviderConfigurationChangedException();
                             (ProviderCredential Credential, string ProbedModel, string? KeyId, long ProviderVersion)? nextKey = await ProbeApiKeysAsync(current, turnOverride,
-                                keyStates.GetValueOrDefault(current.Provider.Id), null, token, recordProbeUsage, verifiedProviderVersion);
+                                keyStates.GetValueOrDefault(current.Provider.Id), null, RecordProbeUsage, verifiedProviderVersion, token);
                             if (nextKey is { } replacement)
                             {
                                 if (replacement.ProviderVersion != verifiedProviderVersion)
@@ -1988,7 +1987,7 @@ public partial class ChatPanelView : UserControl
                     // 只比 id 认不出"选到 C 又选回 A/B"这种改了等于没改的手动操作。
                     long epochBeforeProbe = _selectionEpoch;
                     (ResolvedModel Model, ProviderCredential Credential, string ProbedModel, string? KeyId, long ProviderVersion)? nextStop =
-                        await PickNextAsync(current, turnOverride, triedThisTurn, keyStates, token, recordProbeUsage);
+                        await PickNextAsync(current, turnOverride, triedThisTurn, keyStates, RecordProbeUsage, token);
                     if (nextStop is null)
                     {
                         throw; // 候选配置失效不是首站401/429的新诊断;原错误和取消各自保留。
@@ -2203,12 +2202,12 @@ public partial class ChatPanelView : UserControl
     /// <param name="triedThisTurn">本轮已经试挂过的站 id(含 <paramref name="failed" /> 自己)——
     /// 候选整轮排除,免得冷却过期后又排回原地打转的上家。</param>
     /// <param name="keyStates">本回合固定的供应商槽顺序、开关和已试槽。</param>
-    /// <param name="token">取消令牌(探测超时之外的整轮取消也走它)。</param>
     /// <param name="recordProbeUsage">只累加所属会话的探测费用，不改变正文上下文占窗读数。</param>
+    /// <param name="token">取消令牌(探测超时之外的整轮取消也走它)。</param>
     /// <returns>探通的模型、固定凭据、实际型号和槽 ID;整链不可用时返回 null。</returns>
     private async Task<(ResolvedModel Model, ProviderCredential Credential, string ProbedModel, string? KeyId, long ProviderVersion)?> PickNextAsync(
         ResolvedModel failed, ReasoningLevel? turnOverride, HashSet<string> triedThisTurn,
-        Dictionary<string, ApiKeyTurnState> keyStates, CancellationToken token, Action<UsageDetails> recordProbeUsage)
+        Dictionary<string, ApiKeyTurnState> keyStates, Action<UsageDetails> recordProbeUsage, CancellationToken token)
     {
         ResolvedModel WithTurn(ResolvedModel m)
             => m.WithReasoning(m.ReasoningAdjustable ? turnOverride : ReasoningLevel.Default);
@@ -2235,7 +2234,7 @@ public partial class ChatPanelView : UserControl
                         throw new ProviderConfigurationChangedException();
                     probedCredential = first.Value.Credential;
                     probedAccount = await CaptureOAuthAccountAsync(target, first.Value.Credential, token);
-                    (ProviderCredential Credential, string ProbedModel, string? KeyId, long ProviderVersion)? result = await ProbeApiKeysAsync(target, turnOverride, state, first, token, recordProbeUsage, candidateProviderVersion);
+                    (ProviderCredential Credential, string ProbedModel, string? KeyId, long ProviderVersion)? result = await ProbeApiKeysAsync(target, turnOverride, state, first, recordProbeUsage, candidateProviderVersion, token);
                     if (result is not null)
                     {
                         OAuthAccountSnapshot? afterProbe = await CaptureOAuthAccountAsync(target, result.Value.Credential, token);
@@ -2253,7 +2252,7 @@ public partial class ChatPanelView : UserControl
                     {
                         try
                         {
-                            ProviderCredential latest = await _store.ResolveCredentialAsync(fresh, token, refreshTokens: false);
+                            ProviderCredential latest = await _store.ResolveCredentialAsync(fresh, refreshTokens: false, cancellationToken: token);
                             OAuthAccountSnapshot? account = await CaptureOAuthAccountAsync(fresh, latest, token);
                             if (!SameOAuthAccount(probedAccount, account) || (!SameCredential(previous, latest)
                                 && !SameRenewingAccount(previous, latest, probedAccount, account, target)))
@@ -2292,7 +2291,7 @@ public partial class ChatPanelView : UserControl
         ResolvedModel model, ApiKeyTurnState? state, bool automatic, CancellationToken token)
     {
         if (state is null || !CanPoolApiKeys(model))
-            return await _store.ResolveCredentialWithKeyIdAsync(model, token);
+            return await _store.ResolveCredentialWithKeyIdAsync(model, cancellationToken: token);
         HashSet<string> tried = state.TriedFor(model.Id);
         int start = 0;
         if (state.Balance && _lastFirstApiKey.TryGetValue(model.Provider.Id, out string? last))
@@ -2317,14 +2316,14 @@ public partial class ChatPanelView : UserControl
                     continue;
                 try
                 {
-                    (ProviderCredential Credential, string? KeyId) credential = await _store.ResolveCredentialWithKeyIdAsync(model, token, keyId: id);
+                    (ProviderCredential Credential, string? KeyId) credential = await _store.ResolveCredentialWithKeyIdAsync(model, keyId: id, cancellationToken: token);
                     tried.Add(id);
                     return credential;
                 }
                 catch (AiSettingsStore.ApiKeySlotChangedException) { tried.Add(id); }
             }
         }
-        (ProviderCredential Credential, string? KeyId) fallback = await _store.ResolveCredentialWithKeyIdAsync(model, token);
+        (ProviderCredential Credential, string? KeyId) fallback = await _store.ResolveCredentialWithKeyIdAsync(model, cancellationToken: token);
         if (fallback.KeyId is null) return fallback; // 本地无鉴权模型仍沿用原行为。
         if (!state.Slots.Contains(fallback.KeyId, StringComparer.Ordinal))
             throw new ProviderConfigurationChangedException();
@@ -2339,7 +2338,7 @@ public partial class ChatPanelView : UserControl
         foreach (string id in state.Slots)
         {
             if (!tried.Add(id) || _health.IsKeyCooling(id)) continue;
-            try { return await _store.ResolveCredentialWithKeyIdAsync(model, token, keyId: id); }
+            try { return await _store.ResolveCredentialWithKeyIdAsync(model, keyId: id, cancellationToken: token); }
             catch (AiSettingsStore.ApiKeySlotChangedException) { }
         }
         return null;
@@ -2348,8 +2347,8 @@ public partial class ChatPanelView : UserControl
     /// <summary>只有槽的鉴权/额度失败才继续试同模型的下一槽;其它失败直接结束该模型。</summary>
     private async Task<(ProviderCredential Credential, string ProbedModel, string? KeyId, long ProviderVersion)?> ProbeApiKeysAsync(
         ResolvedModel target, ReasoningLevel? turnOverride, ApiKeyTurnState? state,
-        (ProviderCredential Credential, string? KeyId)? first, CancellationToken token, Action<UsageDetails> recordProbeUsage,
-        long providerVersion)
+        (ProviderCredential Credential, string? KeyId)? first, Action<UsageDetails> recordProbeUsage, long providerVersion,
+        CancellationToken token)
     {
         (ProviderCredential Credential, string? KeyId)? selected = first ?? await NextApiKeyAsync(target, state, token);
         while (selected is { } attempt)
@@ -2363,7 +2362,7 @@ public partial class ChatPanelView : UserControl
                 && reasoning == fresh.WithReasoning(fresh.ReasoningAdjustable ? turnOverride : ReasoningLevel.Default).Reasoning;
             if (!await StillVerifiedAsync(target, attempt.Credential, token, probedModel, attempt.KeyId, providerVersion) || !SameReasoning())
                 throw new ProviderConfigurationChangedException();
-            (Exception? error, _) = await HealthProbe.ProbeAsync(_store, target, attempt.Credential, token, recordProbeUsage);
+            (Exception? error, _) = await HealthProbe.ProbeAsync(_store, target, attempt.Credential, recordProbeUsage, token);
             if (!await StillVerifiedAsync(target, attempt.Credential, token, probedModel, attempt.KeyId, providerVersion)
                 || !SameReasoning() || _health.Version != version)
             {
@@ -2403,12 +2402,12 @@ public partial class ChatPanelView : UserControl
         try
         {
             ResolvedModel fresh = _settings.FindModel(target.Id)!;
-            (ProviderCredential Credential, string? KeyId) = await _store.ResolveCredentialWithKeyIdAsync(fresh, token, refreshTokens: false, keyId: selectedKeyId);
+            (ProviderCredential currentCredential, string? currentKeyId) = await _store.ResolveCredentialWithKeyIdAsync(fresh, refreshTokens: false, keyId: selectedKeyId, cancellationToken: token);
             token.ThrowIfCancellationRequested();
             return (probedModel is null || string.Equals(probedModel, target.Model, StringComparison.Ordinal))
                 && SameEndpoint(target, _settings.FindModel(target.Id))
                 && (providerVersion is null || _store.ProviderConfigurationVersion(target.Provider) == providerVersion)
-                && KeyId == selectedKeyId && SameCredential(credential, Credential);
+                && currentKeyId == selectedKeyId && SameCredential(credential, currentCredential);
         }
         catch (AiSettingsStore.ApiKeySlotChangedException) { return false; }
     }

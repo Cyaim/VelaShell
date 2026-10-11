@@ -45,6 +45,9 @@ public static class SessionCsv
     /// <summary>以单引号开头即被 Excel 当作文本的那几个「公式起始字符」。</summary>
     private const string FormulaLeads = "=+-@\t\r";
 
+    /// <summary>字段里出现就得加引号的字符:三种分隔符、引号与换行。</summary>
+    private static readonly System.Buffers.SearchValues<char> QuoteTriggers = System.Buffers.SearchValues.Create(",\"\r\n;\t");
+
     /// <summary>
     /// 把导出内容写成 CSV(不含 BOM,编码见 <see cref="SessionFileText.EncodeCsv" />)。机密一律不写。
     /// </summary>
@@ -515,7 +518,7 @@ public static class SessionCsv
     private static string Quote(string value)
     {
         bool needs = value.Length > 0
-                     && (value.AsSpan().IndexOfAny(",\"\r\n;\t") >= 0
+                     && (value.AsSpan().IndexOfAny(QuoteTriggers) >= 0
                          || char.IsWhiteSpace(value[0])
                          || char.IsWhiteSpace(value[^1]));
         return needs ? "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"" : value;

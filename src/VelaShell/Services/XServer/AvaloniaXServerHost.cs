@@ -127,11 +127,11 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     /// 当前附着着的宿主:本机活动上报给它们的服务端(见 <see cref="HookLocalActivity" />)。开了「每个 SSH 会话一个显示」时不止一个。
     /// 整份替换(写时复制),读的一方不加锁。
     /// </summary>
-    private static volatile AvaloniaXServerHost[] s_attached = [];
+    private static volatile AvaloniaXServerHost[] _attached = [];
 
-    private static readonly Lock s_attachedGate = new();
+    private static readonly Lock AttachedGate = new();
 
-    private static bool s_activityHooked;
+    private static bool _activityHooked;
 
     /// <summary>
     /// 用户在 VelaShell 自己的任何窗口里按键、点击、滚动、移动鼠标时告诉服务端(<see cref="X11Server.NoteUserActivity" />):
@@ -140,11 +140,11 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     /// </summary>
     private static void HookLocalActivity()
     {
-        if (s_activityHooked)
+        if (_activityHooked)
         {
             return;
         }
-        s_activityHooked = true;
+        _activityHooked = true;
         InputElement.KeyDownEvent.AddClassHandler<TopLevel>((_, _) => ReportLocalActivity(), RoutingStrategies.Tunnel, handledEventsToo: true);
         InputElement.PointerPressedEvent.AddClassHandler<TopLevel>((_, _) => ReportLocalActivity(), RoutingStrategies.Tunnel, handledEventsToo: true);
         InputElement.PointerMovedEvent.AddClassHandler<TopLevel>((_, _) => ReportLocalActivity(), RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -153,7 +153,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
 
     private static void ReportLocalActivity()
     {
-        foreach (AvaloniaXServerHost host in s_attached)
+        foreach (AvaloniaXServerHost host in _attached)
         {
             host._server?.NoteUserActivity();
         }
@@ -163,9 +163,9 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     public async Task AttachAsync(X11Server server, CancellationToken cancellationToken)
     {
         _server = server;
-        lock (s_attachedGate)
+        lock (AttachedGate)
         {
-            s_attached = [.. s_attached.Where(h => !ReferenceEquals(h, this)), this];
+            _attached = [.. _attached.Where(h => !ReferenceEquals(h, this)), this];
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -218,9 +218,9 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     public void Detach()
     {
         _server = null;
-        lock (s_attachedGate)
+        lock (AttachedGate)
         {
-            s_attached = [.. s_attached.Where(h => !ReferenceEquals(h, this))];
+            _attached = [.. _attached.Where(h => !ReferenceEquals(h, this))];
         }
         Dispatcher.UIThread.Post(() =>
         {
@@ -1054,7 +1054,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     }
 
     /// <summary>图片的指纹:尺寸加像素的 SHA-256(同一张图从系统剪贴板读两次,指纹相同)。</summary>
-    internal static unsafe string ImageFingerprint(Bitmap bitmap)
+    internal static string ImageFingerprint(Bitmap bitmap)
     {
         PixelSize size = bitmap.PixelSize;
         int stride = size.Width * 4;
@@ -1223,7 +1223,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     /// 都是新的一个 —— 原先记在实例上,停了再开 X Server 就全忘了。位置记系统桌面坐标而不是根坐标:左边插拔显示器时根原点会挪,
     /// 按根坐标记的位置整体错开一块屏幕。
     /// </summary>
-    private static readonly Dictionary<(string Class, string Instance, string Role), RememberedPlacement> s_placements = [];
+    private static readonly Dictionary<(string Class, string Instance, string Role), RememberedPlacement> Placements = [];
 
     /// <summary>最多记这么多个程序(多了丢最早记的)。</summary>
     private const int MaxRememberedPlacements = 256;
@@ -1242,15 +1242,15 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
         {
             return;
         }
-        if (!s_placements.ContainsKey(key) && s_placements.Count >= MaxRememberedPlacements)
+        if (!Placements.ContainsKey(key) && Placements.Count >= MaxRememberedPlacements)
         {
-            s_placements.Remove(s_placements.Keys.First());
+            Placements.Remove(Placements.Keys.First());
         }
-        s_placements[key] = new RememberedPlacement(native.Position.X, native.Position.Y, s.Width, s.Height);
+        Placements[key] = new RememberedPlacement(native.Position.X, native.Position.Y, s.Width, s.Height);
     }
 
     /// <summary>记住的位置清空(测试用:各条用例之间不互相影响)。</summary>
-    internal static void ForgetPlacements() => s_placements.Clear();
+    internal static void ForgetPlacements() => Placements.Clear();
 
     /// <summary>
     /// 没给位置的窗口摆回这个程序上次关掉时的位置 —— 原先每次打开 xterm 都跳到屏幕正中。同一个程序已经开着一个窗口时不摆
@@ -1261,7 +1261,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     private bool RestorePlacement(XTopLevelWindow handle, XNativeWindow window)
     {
         XTopLevelSnapshot s = handle.Snapshot;
-        if (PlacementKey(s) is not { } key || !s_placements.TryGetValue(key, out RememberedPlacement? remembered)
+        if (PlacementKey(s) is not { } key || !Placements.TryGetValue(key, out RememberedPlacement? remembered)
             || _windows.Values.Any(w => !ReferenceEquals(w, window) && PlacementKey(w.Handle.Snapshot) == key))
         {
             return false;
@@ -1365,7 +1365,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     }
 
     /// <summary>某个 X 窗口不再活动:如果活动窗口也不是别的 X 窗口,X 这边就没有焦点。</summary>
-    public void OnWindowDeactivated(XNativeWindow window) => Dispatcher.UIThread.Post(() =>
+    public void OnWindowDeactivated() => Dispatcher.UIThread.Post(() =>
     {
         if (_server is { } server && !_windows.Values.Any(w => w.IsActive))
         {

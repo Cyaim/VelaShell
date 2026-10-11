@@ -77,7 +77,7 @@ public sealed class ProtocolTests
     }
 
     [TestMethod]
-    public async Task cookie太短构造时就拒绝_构造之后改调用方的数组不影响授权()
+    public async Task Cookie太短构造时就拒绝_构造之后改调用方的数组不影响授权()
     {
         // 空数组曾让任何带空数据的 MIT-MAGIC-COOKIE-1 都通过(FixedTimeEquals([], []) 为真),比不配还宽,远端也进得来。
         Assert.ThrowsExactly<ArgumentException>(() => new X11Server(new X11ServerOptions { AuthorizationCookie = [] }));

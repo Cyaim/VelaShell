@@ -54,8 +54,6 @@ public sealed partial class X11Server : IAsyncDisposable
     internal const uint RootVisualId = 0x00000021;
     internal const uint ArgbVisualId = 0x00000022;
 
-    private readonly X11ServerOptions _options;
-
     /// <summary>
     /// 构造时拷下来的 <see cref="X11ServerOptions.AuthorizationCookie" />:选项只持有调用方数组的引用,原先构造之后调用方改了那个数组,授权跟着变。
     /// </summary>
@@ -76,9 +74,6 @@ public sealed partial class X11Server : IAsyncDisposable
     /// <summary>像素锁与宿主的让行计数(见 <see cref="PixelGate" />)。</summary>
     private readonly PixelGate _pixelGate = new();
 
-    /// <summary>GLX 扩展(自成一体的一个类;别的扩展还是 partial 文件)。</summary>
-    private readonly GlxExtension _glx;
-
     private readonly Task _loopTask;
     private int _started;
     private int _disposed;
@@ -93,9 +88,9 @@ public sealed partial class X11Server : IAsyncDisposable
     /// <exception cref="ArgumentException">选项不合法(见 <see cref="X11ServerOptions" /> 各项的取值范围)。</exception>
     public X11Server(X11ServerOptions? options = null, IX11ServerHost? host = null)
     {
-        _options = options ?? new X11ServerOptions();
-        _options.Validate();
-        _cookie = _options.AuthorizationCookie?.ToArray();
+        Options = options ?? new X11ServerOptions();
+        Options.Validate();
+        _cookie = Options.AuthorizationCookie?.ToArray();
         _host = new DeferredHost(host ?? NullHost.Instance, Log);
         Root = CreateRootWindow();
         _resources[Root.Id] = Root;
@@ -104,7 +99,7 @@ public sealed partial class X11Server : IAsyncDisposable
         InitRootful();
         _resources[DefaultColormapId] = new XColormap(DefaultColormapId, null, RootVisualId);
         InitAtoms();
-        _glx = new GlxExtension(this);
+        Glx = new GlxExtension(this);
         InitExtensions();
         InitXSettings();
         InitSystemTray();
@@ -120,7 +115,7 @@ public sealed partial class X11Server : IAsyncDisposable
     }
 
     /// <summary>显示号 N(<see cref="X11ServerOptions.DisplayNumber" />)。</summary>
-    public int DisplayNumber => _options.DisplayNumber;
+    public int DisplayNumber => Options.DisplayNumber;
 
     /// <summary>
     /// 给本机 X 客户端用的 <c>DISPLAY</c>:在 Unix 套接字上监听时是 <c>:N</c>(走套接字,MIT-SHM 可用),
@@ -133,7 +128,7 @@ public sealed partial class X11Server : IAsyncDisposable
 
     internal XWindow Root { get; }
 
-    internal X11ServerOptions Options => _options;
+    internal X11ServerOptions Options { get; }
 
     /// <summary>服务端时间(毫秒,32 位回绕)—— 事件里的 time 字段。</summary>
     internal uint Now => unchecked((uint)_clock.ElapsedMilliseconds);
@@ -554,7 +549,7 @@ public sealed partial class X11Server : IAsyncDisposable
         }
         ArgumentOutOfRangeException.ThrowIfNegative(caret);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(caret, text.Length);
-        Post(null, () => _xim?.Preedit(text, caret));
+        Post(null, () => Xim?.Preedit(text, caret));
     }
 
     /// <summary>
@@ -640,7 +635,7 @@ public sealed partial class X11Server : IAsyncDisposable
         CheckSize(height, nameof(height));
         Post(null, () =>
         {
-            if (ReferenceEquals(window, _screenHandle))
+            if (ReferenceEquals(window, Screen))
             {
                 ApplyScreenResize(width, height);   // 单窗口模式:缩放屏幕窗口就是改屏幕尺寸
             }
@@ -876,12 +871,12 @@ public sealed partial class X11Server : IAsyncDisposable
             : null;
 
     /// <summary>注入输入的落点:普通顶层同 <see cref="LiveTopLevel" />;单窗口模式的屏幕句柄是根窗口(坐标就是根坐标)。只在执行线程上调。</summary>
-    private XWindow? InputTarget(XTopLevelWindow handle) => ReferenceEquals(handle, _screenHandle) ? Root : LiveTopLevel(handle);
+    private XWindow? InputTarget(XTopLevelWindow handle) => ReferenceEquals(handle, Screen) ? Root : LiveTopLevel(handle);
 
     /// <summary>当前监听着的传输对应的 DISPLAY(见 <see cref="Display" />)。</summary>
     private string? DisplayAddress()
     {
-        int n = _options.DisplayNumber;
+        int n = Options.DisplayNumber;
         if (_unixListeners.Count != 0)
         {
             return $":{n}";
@@ -890,7 +885,7 @@ public sealed partial class X11Server : IAsyncDisposable
         {
             return null;
         }
-        IPAddress address = _options.ListenAddress;
+        IPAddress address = Options.ListenAddress;
         bool anyOrLoopback = IPAddress.IsLoopback(address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any);
         return $"{(anyOrLoopback ? "localhost" : address.ToString())}:{n}.0";
     }

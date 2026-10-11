@@ -92,7 +92,7 @@ public sealed class RootfulTests
         Assert.AreEqual(0xFF0000u, Pixel(screen, 15, 15), "A 的内区从 (12, 12) 起");
         Assert.AreEqual(0xFFFF00u, Pixel(screen, 35, 25), "B 在上面");
         await host.WaitForAsync(() => !host.DamageRects.IsEmpty);
-        Assert.IsTrue(host.DamageRects.Any(r => r.Contains(35, 25)), "宿主收到屏幕坐标的损伤");
+        Assert.Contains(r => r.Contains(35, 25), host.DamageRects, "宿主收到屏幕坐标的损伤");
 
         await c.SendAsync(12, 0, b => b.U32(a).U16(0x40).U16(0).U32(0));   // ConfigureWindow stack-mode Above:把 A 抬上来
         await c.SyncAsync();

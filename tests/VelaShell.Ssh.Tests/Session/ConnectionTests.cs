@@ -642,7 +642,7 @@ public sealed class ConnectionTests
 
     /// <summary>本库的 known_hosts 写不进去时同样放行，失败是带原因码的 <see cref="SshConnectException"/>。</summary>
     [TestMethod]
-    public async Task known_hosts写不进去时连接照常并记下原因()
+    public async Task Known_hosts写不进去时连接照常并记下原因()
     {
         await using FakeServer server = new();
 
@@ -680,7 +680,7 @@ public sealed class ConnectionTests
 
     /// <summary>known_hosts 读不出来：没法判断认不认识这台主机，连接不放行，报存储失败、不可重试。</summary>
     [TestMethod]
-    public async Task known_hosts读不出来时连接不放行()
+    public async Task Known_hosts读不出来时连接不放行()
     {
         await using FakeServer server = new();
         string path = Path.Combine(Path.GetTempPath(), $"kh-{Guid.NewGuid():N}");

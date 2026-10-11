@@ -241,8 +241,8 @@ public sealed class InMemorySshSigner : ISshSigner, IDisposable
         {
             // blob 里的类型串**永远是 ssh-rsa**，与签名算法无关（RFC 8332 的不对称）。
             w.WriteUtf8String(SshAlgorithmNames.SshRsa);
-            w.WriteMpint(p.Exponent!);
-            w.WriteMpint(p.Modulus!);
+            w.WriteMpint(p.Exponent);
+            w.WriteMpint(p.Modulus);
         });
 
         // 三个都列出来,按偏好排序。SHA-1 的 ssh-rsa 排在最后,并且

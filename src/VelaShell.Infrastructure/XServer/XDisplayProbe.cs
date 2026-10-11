@@ -77,7 +77,7 @@ internal static partial class XDisplayProbe
 
     [LibraryImport("iphlpapi.dll")]
     [SupportedOSPlatform("windows")]
-    private static unsafe partial uint GetExtendedTcpTable(byte* table, ref uint size, [MarshalAs(UnmanagedType.Bool)] bool order,
+    private static partial uint GetExtendedTcpTable(byte* table, ref uint size, [MarshalAs(UnmanagedType.Bool)] bool order,
         uint family, int tableClass, uint reserved);
 
     [LibraryImport("kernel32.dll")]

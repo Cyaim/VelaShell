@@ -58,7 +58,7 @@ public sealed class EwmhTests
         uint moveresize = await InternAsync(c, "_NET_WM_MOVERESIZE");
         XMessage list = await c.RequestAsync(20, 0, b => b.U32(c.RootWindow).U32(supported).U32(0).U32(0).U32(100));
         uint[] atoms = [.. Enumerable.Range(0, (int)list.U32(16)).Select(i => list.U32(32 + (i * 4)))];
-        CollectionAssert.Contains(atoms, moveresize);
+        Assert.Contains(moveresize, atoms);
 
         uint workarea = await InternAsync(c, "_NET_WORKAREA");
         XMessage area = await c.RequestAsync(20, 0, b => b.U32(c.RootWindow).U32(workarea).U32(0).U32(0).U32(4));
@@ -283,7 +283,7 @@ public sealed class EwmhTests
         await c.SyncAsync();
         XMessage p = await c.RequestAsync(20, 0, b => b.U32(top).U32(netWmState).U32(0).U32(0).U32(10));
         uint[] atoms = [.. Enumerable.Range(0, (int)p.U32(16)).Select(i => p.U32(32 + (i * 4)))];
-        CollectionAssert.Contains(atoms, fullscreen);
+        Assert.Contains(fullscreen, atoms);
         await host.WaitForAsync(() => (host.Mapped[top].Snapshot.States & XWindowStates.Fullscreen) != 0);
     }
 
@@ -465,7 +465,7 @@ public sealed class EwmhTests
         Assert.AreEqual(popup, (await c.RequestAsync(43, 0)).U32(8));
         Assert.AreEqual(second, (await c.RequestAsync(20, 0, b => b.U32(c.RootWindow).U32(active).U32(0).U32(0).U32(1))).U32(32),
             "原先活动窗口挪到弹层上,主窗口画成非活动的样子");
-        Assert.IsTrue((host.Mapped[second].Snapshot.States & XWindowStates.Focused) != 0);
+        Assert.IsTrue(host.Mapped[second].Snapshot.States.HasFlag(XWindowStates.Focused));
 
         // 最小化之后取消映射(withdraw):_NET_WM_STATE 与 _NET_WM_DESKTOP 删掉;重新映射不再带着过期的 Hidden。
         server.SetTopLevelStates(host.Mapped[first], XWindowStates.Hidden);
@@ -508,7 +508,7 @@ public sealed class EwmhTests
         Assert.AreEqual(0, real.Bytes[0] & 0x80);
         Assert.AreEqual(0x80, synthetic.Bytes[0] & 0x80, "ICCCM §4.1.5 的合成事件跟在后面");
         await c.SyncAsync();
-        Assert.IsFalse(host.Log.Skip(logBefore).Any(e => e.StartsWith($"changed {top:x}", StringComparison.Ordinal)), "宿主自己挪的,不回报");
+        Assert.DoesNotContain(e => e.StartsWith($"changed {top:x}", StringComparison.Ordinal), host.Log.Skip(logBefore), "宿主自己挪的,不回报");
     }
 
     /// <summary>建一个选了 StructureNotify 的顶层,<paramref name="declarePing" /> 时在 WM_PROTOCOLS 里声明 _NET_WM_PING,映射。返回窗口、句柄与 _NET_WM_PING 原子。</summary>
@@ -577,7 +577,7 @@ public sealed class EwmhTests
         server.MoveTopLevel(handle, 50, 60);
         Assert.AreEqual((50, 60), await NextMoveAsync(c, top), "屏障放开之后的移动又当场交出");
         await c.SyncAsync();
-        Assert.IsFalse(host.Log.Skip(logBefore).Any(e => e.StartsWith($"changed {top:x}", StringComparison.Ordinal)), "宿主自己挪的,一次也不回报");
+        Assert.DoesNotContain(e => e.StartsWith($"changed {top:x}", StringComparison.Ordinal), host.Log.Skip(logBefore), "宿主自己挪的,一次也不回报");
     }
 
     [TestMethod]
@@ -775,7 +775,7 @@ public sealed class EwmhTests
         // A 对 WM_TAKE_FOCUS 的回应经 SSH 才到:时间戳早于宿主换焦点的时间,不生效。
         await c.SendAsync(42, 1, x => x.U32(a).U32(stamp));
         Assert.AreEqual(b, await FocusAsync(), "原先不看时间戳,焦点被拉回 A,而宿主上亮着的是 B");
-        Assert.IsFalse(host.Requests.OfType<XFocusRequest>().Any());
+        Assert.IsEmpty(host.Requests.OfType<XFocusRequest>());
 
         await c.SendAsync(42, 3, x => x.U32(a).U32(0));   // revert-to 只有 None / PointerRoot / Parent
         Assert.AreEqual(2, (await c.NextAsync(m => m.IsError)).Detail, "BadValue");

@@ -92,8 +92,7 @@ public class SessionBatchEditViewModelTests
 
         List<Guid?> ids = [.. vm.JumpHostOptions.Select(static o => o.Id)];
         Assert.IsNull(ids[0], "第一项是直连");
-        CollectionAssert.AreEquivalent(new Guid?[] { null, _bastion.Id }, ids.ToArray(),
-            "要改的这几条自己不能当跳板,FTP 与插件协议也不能");
+        Assert.AreSequenceEqual([null, _bastion.Id], [.. ids], SequenceOrder.InAnyOrder, "要改的这几条自己不能当跳板,FTP 与插件协议也不能");
     }
 
     [TestMethod]

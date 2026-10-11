@@ -25,6 +25,7 @@ public sealed class MalformedKeyInputTests
     private static void OnlyThrows<TExpected>(Action parse, string what)
         where TExpected : Exception
     {
+        Exception? leaked = null;
         try
         {
             parse();
@@ -34,7 +35,11 @@ public sealed class MalformedKeyInputTests
         }
         catch (Exception ex)
         {
-            Assert.Fail($"{what}：漏出了 {ex.GetType().FullName}：{ex.Message}");
+            leaked = ex;
+        }
+        if (leaked is not null)
+        {
+            Assert.Fail($"{what}：漏出了 {leaked.GetType().FullName}：{leaked.Message}");
         }
     }
 
@@ -81,7 +86,7 @@ public sealed class MalformedKeyInputTests
     [TestMethod]
     [DataRow("putty-ed25519-v2-lo.ppk")]
     [DataRow("putty-ed25519-v3-hi-enc.ppk")]
-    public void ppk截断到任意位置只报私钥异常(string name)
+    public void Ppk截断到任意位置只报私钥异常(string name)
     {
         string text = Fixture(name);
 
@@ -94,7 +99,7 @@ public sealed class MalformedKeyInputTests
     }
 
     [TestMethod]
-    public void ppk各段里是随机内容时只报私钥异常()
+    public void Ppk各段里是随机内容时只报私钥异常()
     {
         string text = Fixture("putty-ed25519-v2-lo.ppk");
         string[] lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');

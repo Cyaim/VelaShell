@@ -42,7 +42,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("首发坏 Key,然后探活健康 Key");
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
-                CollectionAssert.AreEqual(new[] { "Bearer key-a", "Bearer key-b", "Bearer key-b" }, endpoint.Requests.Select(r => r.Auth).ToArray());
+                Assert.AreSequenceEqual(["Bearer key-a", "Bearer key-b", "Bearer key-b"], endpoint.Requests.Select(r => r.Auth).ToArray());
                 Assert.AreEqual(second, (await store.LoadAsync()).Providers[0].ActiveApiKeyId);
                 PanelHealth(panel).RecordKey(provider.Id, true);
                 panel.SendExternal("探活 B 不能吞掉下一轮应使用的 B");
@@ -129,7 +129,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("B 探活的模型故障不能误诊整个 Key 池");
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
-                CollectionAssert.AreEqual(new[] { "Bearer key-a", "Bearer key-b" }, endpoint.Requests.Select(r => r.Auth).ToArray());
+                Assert.AreSequenceEqual(["Bearer key-a", "Bearer key-b"], endpoint.Requests.Select(r => r.Auth).ToArray());
                 Assert.HasCount(2, backupEndpoint.Requests);
                 Assert.IsTrue(PanelHealth(panel).IsCooling(provider.Models[0].Id));
                 Assert.IsTrue(PanelHealth(panel).IsKeyCooling(provider.Id));
@@ -224,7 +224,7 @@ public sealed partial class ChatPanelViewUiTests
                 string[] expected = status == 429
                     ? ["Bearer key-a", "Bearer key-a", "Bearer key-b", "Bearer key-b"]
                     : ["Bearer key-a", "Bearer key-b", "Bearer key-b"];
-                CollectionAssert.AreEqual(expected, endpoint.Requests.Select(r => r.Auth).ToArray());
+                Assert.AreSequenceEqual(expected, endpoint.Requests.Select(r => r.Auth).ToArray());
                 Assert.Contains("Reply with exactly:", endpoint.Requests[^2].Body, "下一槽固定凭据先探活");
                 Assert.DoesNotContain("Reply with exactly:", endpoint.Requests[^1].Body, "探活后才正式发送同一条用户消息");
                 AiSettings reloaded = await store.LoadAsync();
@@ -240,7 +240,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("下一轮粘住健康 Key");
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 2));
-                Assert.AreEqual(expected.Length + 1, endpoint.Requests.Count);
+                Assert.HasCount(expected.Length + 1, endpoint.Requests);
                 Assert.AreEqual("Bearer key-b", endpoint.Requests[^1].Auth);
             }
             finally { panel.Detach(); window.Close(); }
@@ -269,8 +269,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("Answer then offer a next question");
                 Assert.IsTrue(await WaitForAsync(() => Find<WrapPanel>(panel, "SuggestionBar").GetVisualDescendants()
                     .OfType<TextBlock>().Any(block => block.Text == "Next question?")));
-                CollectionAssert.AreEqual(new[] { "Bearer key-a", "Bearer key-b", "Bearer key-b", "Bearer key-b" },
-                    endpoint.Requests.Select(request => request.Auth).ToArray());
+                Assert.AreSequenceEqual(["Bearer key-a", "Bearer key-b", "Bearer key-b", "Bearer key-b"], endpoint.Requests.Select(request => request.Auth).ToArray());
                 Assert.Contains("Suggest ", endpoint.Requests[^1].Body);
                 Assert.AreEqual(second, (await store.LoadAsync()).Providers[0].ActiveApiKeyId);
                 Assert.Contains("Conversation total: in 22 / out 10", ToolTip.GetTip(Find<TextBlock>(panel, "UsageText")) as string ?? "");
@@ -308,8 +307,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("全池失败才换模型");
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
-                CollectionAssert.AreEqual(new[] { "Bearer key-a", "Bearer key-b", "Bearer key-c", "Bearer key-d", "Bearer key-d" },
-                    endpoint.Requests.Select(r => r.Auth).ToArray());
+                Assert.AreSequenceEqual(["Bearer key-a", "Bearer key-b", "Bearer key-c", "Bearer key-d", "Bearer key-d"], endpoint.Requests.Select(r => r.Auth).ToArray());
                 ProviderHealth health = PanelHealth(panel);
                 Assert.IsTrue(health.IsKeyCooling(first.Id));
                 Assert.IsTrue(health.IsKeyCooling(b));
@@ -386,8 +384,8 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 // 用户逐 Key 手测不推进聊天均摊游标。
-                (ProviderCredential Credential, string? KeyId) = await store.ResolveCredentialWithKeyIdAsync(settings.FindModel(provider.Models[0].Id)!, keyId: second);
-                Assert.IsNull((await HealthProbe.ProbeAsync(store, settings.FindModel(provider.Models[0].Id)!, Credential)).Error);
+                (ProviderCredential manualCredential, _) = await store.ResolveCredentialWithKeyIdAsync(settings.FindModel(provider.Models[0].Id)!, keyId: second);
+                Assert.IsNull((await HealthProbe.ProbeAsync(store, settings.FindModel(provider.Models[0].Id)!, manualCredential)).Error);
                 for (int turn = 1; turn <= 3; turn++)
                 {
                     panel.SendExternal("均摊第" + turn + "轮");
@@ -396,8 +394,8 @@ public sealed partial class ChatPanelViewUiTests
                         && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == count));
                 }
                 (string? Auth, string Body)[] formal = [.. endpoint.Requests.Where(r => !r.Body.Contains("Reply with exactly:", StringComparison.Ordinal))];
-                CollectionAssert.AreEqual(new[] { "Bearer key-a", "Bearer key-b", "Bearer key-a" }, formal.Select(r => r.Auth).ToArray());
-                Assert.AreEqual(4, endpoint.Requests.Count, "手测一次 + 三轮正式流,无额外付费探活");
+                Assert.AreSequenceEqual(["Bearer key-a", "Bearer key-b", "Bearer key-a"], formal.Select(r => r.Auth).ToArray());
+                Assert.HasCount(4, endpoint.Requests, "手测一次 + 三轮正式流,无额外付费探活");
                 Assert.AreEqual(second, (await store.LoadAsync()).Providers[0].ActiveApiKeyId);
                 AiSettings live = PanelSettings(panel);
                 live.Providers[0].BalanceApiKeys = false;
@@ -544,9 +542,9 @@ public sealed partial class ChatPanelViewUiTests
                 AiSettings reloaded = await new AiSettingsStore(context).LoadAsync();
                 Assert.AreEqual(second.Models[0].Id, reloaded.ActiveModelId,
                     "粘住:成功那家落盘,下次默认走它");
-                Assert.IsTrue(healthy.Requests.Count >= 2,
+                Assert.IsGreaterThanOrEqualTo(2, healthy.Requests.Count,
                     $"切换前探活一次 + 正式一轮都该打到第二家(实际 {healthy.Requests.Count})");
-                Assert.IsTrue(broken.Requests >= 1, "第一家至少被试过一次");
+                Assert.IsGreaterThanOrEqualTo(1, broken.Requests, "第一家至少被试过一次");
             }
             finally
             {
@@ -1466,7 +1464,7 @@ public sealed partial class ChatPanelViewUiTests
                     && !Find<Button>(panel, "StopButton").IsVisible), "能力保存后旧回合应安全结束,不得重探新配置");
                 Assert.HasCount(1, target.Requests, "旧回合只允许已经发出的 High 探活");
                 Assert.Contains("reasoning_effort", target.Requests[0], "原先探活须按开跑时的 High");
-                Assert.IsTrue(messages.GetVisualDescendants().OfType<Border>().Any(card => card.Classes.Contains("errorCard")));
+                Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                 Assert.AreEqual(first.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
 
                 Find<ComboBox>(panel, "ReasoningCombo").SelectedIndex = (int)ReasoningLevel.High;
@@ -1540,7 +1538,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1
                     && !Find<Button>(panel, "StopButton").IsVisible), "能力保存后旧回合不获准重探或发送");
                 Assert.HasCount(1, target.Requests, "旧回合只保留原先无 High 的探活");
-                Assert.IsTrue(messages.GetVisualDescendants().OfType<Border>().Any(card => card.Classes.Contains("errorCard")));
+                Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                 Assert.AreEqual(first.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
 
                 Find<ComboBox>(panel, "ReasoningCombo").SelectedIndex = (int)ReasoningLevel.High;
@@ -1614,7 +1612,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1
                     && !Find<Button>(panel, "StopButton").IsVisible), "型号保存后旧回合应拒绝新配置并安全结束");
                 Assert.HasCount(1, target.Requests, "旧回合只允许已发出的旧型号探活,不得发新型号探活或历史");
-                Assert.IsTrue(messages.GetVisualDescendants().OfType<Border>().Any(card => card.Classes.Contains("errorCard")));
+                Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                 Assert.AreEqual(first.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
 
                 panel.SendExternal("新用户回合请用已保存的新型号回答");
@@ -1688,7 +1686,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.HasCount(1, oldTarget.Requests, "旧站仅收到保存前已发出的探活");
                 Assert.IsEmpty(secondTarget.Requests, "第一次地址保存也不得授权旧回合重探第二站");
                 Assert.IsEmpty(thirdTarget.Requests, "第二次地址保存不得授权旧回合向第三站发探活或历史");
-                Assert.IsTrue(messages.GetVisualDescendants().OfType<Border>().Any(card => card.Classes.Contains("errorCard")));
+                Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                 Assert.AreEqual(first.Models[0].Id, (await new AiSettingsStore(context).LoadAsync()).ActiveModelId);
 
                 panel.SendExternal("新用户回合使用最终保存的第三站");
@@ -1767,7 +1765,7 @@ public sealed partial class ChatPanelViewUiTests
                 if (moveEndpoint)
                 {
                     Assert.HasCount(1, oldTarget.Requests, "地址移动后旧端点仅保留原令牌的已发探活");
-                    Assert.IsTrue(messages.GetVisualDescendants().OfType<Border>().Any(card => card.Classes.Contains("errorCard")));
+                    Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                     Assert.AreEqual(first.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
 
                     panel.SendExternal("新用户回合使用更新后的订阅端点");
@@ -1936,7 +1934,7 @@ public sealed partial class ChatPanelViewUiTests
                 if (change is "moved" or "config" or "model")
                 {
                     Assert.IsEmpty(newTarget.Requests, "保存请求变更或同账号令牌移到不可信来源都不授权旧回合发送");
-                    Assert.IsTrue(messages.GetVisualDescendants().OfType<Border>().Any(card => card.Classes.Contains("errorCard")));
+                    Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                 }
                 else
                 {
@@ -1950,7 +1948,7 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count >= 6
                         && !Find<Button>(panel, "StopButton").IsVisible));
                     Assert.HasCount(summaryIndex + 1, stub.Requests, "新的用户回合不能带新令牌回到旧端点");
-                    Assert.IsTrue(newTarget.Requests.Any(body => body.Contains("\"stream\":true", StringComparison.Ordinal)),
+                    Assert.Contains(body => body.Contains("\"stream\":true", StringComparison.Ordinal), newTarget.Requests,
                         "新用户回合才可向新端点发送正式消息");
                     Assert.IsTrue(newTarget.Authorizations.All(value => value == "Bearer new-token"));
                     Assert.AreEqual("来自新端点", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
@@ -2051,7 +2049,7 @@ public sealed partial class ChatPanelViewUiTests
                 if (moveEndpoint)
                 {
                     Assert.HasCount(6, oldTarget.Requests, "旧站只有四次历史流、一次探活和一次摘要,不再接收第五轮正式流");
-                    Assert.IsTrue(messages.GetVisualDescendants().OfType<Border>().Any(card => card.Classes.Contains("errorCard")));
+                    Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                     Assert.AreEqual(first.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
 
                     panel.SendExternal("新回合");
@@ -2203,7 +2201,7 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.Contains("private-fifth-turn", healthy.Requests[1]);
                     Assert.AreSequenceEqual(["Bearer c-key", "Bearer c-key"], healthy.Authorizations);
                     Assert.AreEqual("回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
-                    Assert.IsFalse(messages.GetVisualDescendants().OfType<Border>().Any(card => card.Classes.Contains("errorCard")));
+                    Assert.DoesNotContain(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                     Assert.AreEqual(c.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
                     var history = new ChatHistoryStore(context);
                     await history.InitAsync();
@@ -2392,7 +2390,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 await PumpAsync(5);
                 StackPanel rows = FindIn<StackPanel>(view, "FailoverRowsHost");
-                Assert.HasCount(0, rows.Children, "空链起步:切换走自动发现");
+                Assert.IsEmpty(rows.Children, "空链起步:切换走自动发现");
                 Button probeAll = FindIn<Button>(view, "FailoverProbeAllButton");
                 Assert.IsFalse(probeAll.IsEnabled, "空链没有探测目标,按钮不应可点击却无反馈");
 
@@ -3338,8 +3336,8 @@ public sealed partial class ChatPanelViewUiTests
         {
             updates.Add(update);
         }
-        Assert.IsTrue(updates.Any(update => ReasoningPeek.IsBlank(update)
-            && ReasoningPeek.TryRead(update.RawRepresentation, out string recovered) && recovered == reasoning),
+        Assert.Contains(update => ReasoningPeek.IsBlank(update)
+            && ReasoningPeek.TryRead(update.RawRepresentation, out string recovered) && recovered == reasoning, updates,
             "前提:真实 SDK raw update 的 reasoning 确实被读取，不用伪造 RawRepresentation");
         Assert.AreEqual(meaningful, ChatPanelView.HasMeaningfulOutput(updates),
             "raw 思考纯空白可重放，真实思考禁止重放");
@@ -3381,7 +3379,7 @@ public sealed partial class ChatPanelViewUiTests
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0
                     && healthy.Requests.Count >= 2), "真实断流后应重试并由备用站探活接管");
-                Assert.IsTrue(broken.Requests.Count >= 2, "真实流式请求断了,至少原地重试一次");
+                Assert.IsGreaterThanOrEqualTo(2, broken.Requests.Count, "真实流式请求断了,至少原地重试一次");
                 Assert.Contains("\"stream\":true", broken.Requests[0], "故障发生在流式正文,不是连接之前");
                 Assert.AreEqual(second.Models[0].Id, (await new AiSettingsStore(context).LoadAsync()).ActiveModelId,
                     "备用站接管且被粘住");
@@ -3507,8 +3505,8 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsEmpty(moved.Requests, "已产生工具副作用的旧轮次不得发送给新配置");
                 Assert.IsEmpty(backup.Requests, "有工具副作用就连备用站探活也不得开始");
                 Assert.AreEqual(a.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
-                Assert.IsTrue(Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants()
-                    .OfType<Border>().Any(card => card.Classes.Contains("errorCard")));
+                Assert.Contains(card => card.Classes.Contains("errorCard"), Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants()
+                    .OfType<Border>());
             }
             finally { original.Release(); host?.Close(); panel.Detach(); window.Close(); }
         });

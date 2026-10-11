@@ -147,7 +147,7 @@ public sealed class ResourceQuotaTests
         await c.SendAsync(53, 24, b => b.U32(c.NewId()).U32(c.RootWindow).U16(100).U16(100));
         await c.SendAsync(18, 0, b => b.U32(window).U32(39).U32(31).U8(8).U8(0).U8(0).U8(0).U32(1000).Bytes(new byte[1000]));
         await c.SyncAsync();
-        Assert.IsTrue(await server.InvokeAsync(() => server.MemoryInUse) > baseline + (300 * 200 * 4));
+        Assert.IsGreaterThan(baseline + (300 * 200 * 4), await server.InvokeAsync(() => server.MemoryInUse));
 
         await c.DisposeAsync();
         await using XTestClient other = await XTestClient.ConnectAsync(server);

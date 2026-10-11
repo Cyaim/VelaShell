@@ -466,13 +466,13 @@ public sealed class SyncGrabTests
             await Task.Delay(10);
         }
         XMessage keymap = await c.RequestAsync(44, 0);   // QueryKeymap
-        Assert.IsFalse(keymap.Bytes[8..40].Any(b => b != 0), "解冻之后没有键一直按着");
+        Assert.DoesNotContain(b => b != 0, keymap.Bytes[8..40], "解冻之后没有键一直按着");
     }
 
     [TestMethod]
     public async Task 抓取期间Enter与Leave只报给抓取方_激活与解除时发Grab与Ungrab模式的crossing()
     {
-        const byte EnterNotify = 7, LeaveNotify = 8;
+        const byte enterNotify = 7, leaveNotify = 8;
         const uint enterLeave = 0x10 | 0x20;
         using RecordingHost host = new();
         await using X11Server server = new(host: host);
@@ -490,34 +490,34 @@ public sealed class SyncGrabTests
         uint t = await MapAtAsync(0), u = await MapAtAsync(300);
         await b.SendAsync(2, 0, w => w.U32(u).U32(0x800).U32(enterLeave));   // B 也在 U 上选了 Enter / Leave
         server.InjectPointerMotion(host.Mapped[t], 5, 5);
-        await DrainAsync(a, EnterNotify, LeaveNotify);
-        await DrainAsync(b, EnterNotify, LeaveNotify);
+        await DrainAsync(a, enterNotify, leaveNotify);
+        await DrainAsync(b, enterNotify, leaveNotify);
 
         // A 在 U 上抓指针(owner-events False,抓取掩码 Enter | Leave):就像指针从 T 瞬移到 U,mode = Grab;只报抓取窗口 U 上的。
         await a.RequestAsync(26, 0, w => w.U32(u).U16((ushort)enterLeave).U8(Asynchronous).U8(Asynchronous).U32(0).U32(0).U32(0));
-        List<XMessage> grabbed = await DrainAsync(a, EnterNotify, LeaveNotify);
+        List<XMessage> grabbed = await DrainAsync(a, enterNotify, leaveNotify);
         Assert.HasCount(1, grabbed, "只有抓取窗口上的那一个");
-        Assert.AreEqual(EnterNotify, grabbed[0].EventCode);
+        Assert.AreEqual(enterNotify, grabbed[0].EventCode);
         Assert.AreEqual(u, grabbed[0].U32(12));
         Assert.AreEqual(1, grabbed[0].Bytes[30], "mode = Grab");
 
         server.InjectPointerMotion(host.Mapped[u], 5, 5);   // 真的挪进 U:照常的 crossing,但只报给抓取方
-        Assert.AreEqual(EnterNotify, (await DrainAsync(a, EnterNotify, LeaveNotify)).Single().EventCode);
-        Assert.IsEmpty(await DrainAsync(b, EnterNotify, LeaveNotify), "抓取期间别的客户端收不到");
+        Assert.AreEqual(enterNotify, (await DrainAsync(a, enterNotify, leaveNotify)).Single().EventCode);
+        Assert.IsEmpty(await DrainAsync(b, enterNotify, leaveNotify), "抓取期间别的客户端收不到");
 
         server.InjectPointerMotion(host.Mapped[t], 5, 5);
-        await DrainAsync(a, EnterNotify, LeaveNotify);
+        await DrainAsync(a, enterNotify, leaveNotify);
         await a.SendAsync(27, 0, w => w.U32(0));             // UngrabPointer:就像指针从 U 瞬移回 T,mode = Ungrab,照常报给所有人
-        List<XMessage> released = await DrainAsync(b, EnterNotify, LeaveNotify);
+        List<XMessage> released = await DrainAsync(b, enterNotify, leaveNotify);
         Assert.HasCount(1, released);
-        Assert.AreEqual(LeaveNotify, released[0].EventCode);
+        Assert.AreEqual(leaveNotify, released[0].EventCode);
         Assert.AreEqual(2, released[0].Bytes[30], "mode = Ungrab");
     }
 
     [TestMethod]
     public async Task 自动抓取也发Grab与Ungrab模式的crossing_在A里按下拖到B松开_B收到Ungrab的Enter()
     {
-        const byte EnterNotify = 7, LeaveNotify = 8;
+        const byte enterNotify = 7, leaveNotify = 8;
         const uint enterLeave = 0x10 | 0x20, buttons = 0x4 | 0x8;
         using RecordingHost host = new();
         await using X11Server server = new(host: host);
@@ -538,29 +538,29 @@ public sealed class SyncGrabTests
         await a.SendAsync(1, 0, w => w.U32(child).U32(t).I16(10).I16(10).U16(30).U16(30).U16(0).U16(1).U32(0).U32(0x800).U32(enterLeave));
         await a.SendAsync(8, 0, w => w.U32(child));
         server.InjectPointerMotion(host.Mapped[t], 20, 20);
-        await DrainAsync(a, EnterNotify, LeaveNotify);
-        await DrainAsync(b, EnterNotify, LeaveNotify);
+        await DrainAsync(a, enterNotify, leaveNotify);
+        await DrainAsync(b, enterNotify, leaveNotify);
 
         // 激活:就像指针从子窗口瞬移到 T,mode = Grab,在 ButtonPress 之前;只报抓取窗口 T 上的。
         server.InjectPointerButton(host.Mapped[t], 20, 20, 1, pressed: true);
-        List<XMessage> pressed = await DrainAsync(a, EnterNotify, LeaveNotify, ButtonPress);
-        CollectionAssert.AreEqual(new[] { EnterNotify, ButtonPress }, pressed.Select(m => m.EventCode).ToArray());
+        List<XMessage> pressed = await DrainAsync(a, enterNotify, leaveNotify, ButtonPress);
+        Assert.AreSequenceEqual([enterNotify, ButtonPress], [.. pressed.Select(m => m.EventCode)]);
         Assert.AreEqual(t, pressed[0].U32(12));
         Assert.AreEqual(1, pressed[0].Bytes[30], "mode = Grab");
 
         server.InjectPointerMotion(host.Mapped[u], 5, 5);   // 按着拖进 B 的窗口:抓取期间 B 收不到 Enter
-        await DrainAsync(a, EnterNotify, LeaveNotify);     // 抓取方照常收到离开 T 的 Normal crossing
-        Assert.IsEmpty(await DrainAsync(b, EnterNotify, LeaveNotify));
+        await DrainAsync(a, enterNotify, leaveNotify);     // 抓取方照常收到离开 T 的 Normal crossing
+        Assert.IsEmpty(await DrainAsync(b, enterNotify, leaveNotify));
 
         // 解除:ButtonRelease 之后,就像指针从 T 瞬移到它实际所在的 U,mode = Ungrab,照常报给所有人。
         server.InjectPointerButton(host.Mapped[u], 5, 5, 1, pressed: false);
-        List<XMessage> released = await DrainAsync(b, EnterNotify, LeaveNotify);
+        List<XMessage> released = await DrainAsync(b, enterNotify, leaveNotify);
         Assert.HasCount(1, released, "原先自动抓取解除时不发,B 一直不知道指针在它里面");
-        Assert.AreEqual(EnterNotify, released[0].EventCode);
+        Assert.AreEqual(enterNotify, released[0].EventCode);
         Assert.AreEqual(u, released[0].U32(12));
         Assert.AreEqual(2, released[0].Bytes[30], "mode = Ungrab");
-        List<XMessage> owner = await DrainAsync(a, ButtonRelease, LeaveNotify);
-        CollectionAssert.AreEqual(new[] { ButtonRelease, LeaveNotify }, owner.Select(m => m.EventCode).ToArray(), "Ungrab 的 crossing 在 ButtonRelease 之后");
+        List<XMessage> owner = await DrainAsync(a, ButtonRelease, leaveNotify);
+        Assert.AreSequenceEqual([ButtonRelease, leaveNotify], [.. owner.Select(m => m.EventCode)], "Ungrab 的 crossing 在 ButtonRelease 之后");
     }
 
     [TestMethod]

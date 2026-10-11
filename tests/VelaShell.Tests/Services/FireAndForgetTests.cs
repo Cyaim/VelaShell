@@ -14,7 +14,7 @@ namespace VelaShell.Tests.Services;
 /// </remarks>
 [TestClass]
 [TestCategory("Design")]
-public sealed class FireAndForgetTests
+public sealed partial class FireAndForgetTests
 {
     /// <summary>把一段 <c>Trace</c> 输出收集起来。</summary>
     private sealed class TraceCapture : TraceListener
@@ -114,7 +114,6 @@ public sealed class FireAndForgetTests
     [TestMethod]
     public void NoBareAsyncVoidRemainsInProductionCode()
     {
-        Regex pattern = new(@"\basync\s+void\b", RegexOptions.Compiled);
         string[] allowed =
         [
             Path.Combine("VelaShell", "Services", "FireAndForget.cs"),
@@ -136,7 +135,7 @@ public sealed class FireAndForgetTests
             for (int i = 0; i < lines.Length; i++)
             {
                 // 跳过文档注释里提到 async void 的地方。
-                if (!lines[i].TrimStart().StartsWith("///", StringComparison.Ordinal) && pattern.IsMatch(lines[i]))
+                if (!lines[i].TrimStart().StartsWith("///", StringComparison.Ordinal) && AsyncVoid.IsMatch(lines[i]))
                 {
                     offenders.Add($"{relative}:{i + 1}  {lines[i].Trim()}");
                 }
@@ -148,6 +147,9 @@ public sealed class FireAndForgetTests
             + $"请改为 FireAndForget.Run(async () => …):{Environment.NewLine}"
             + string.Join(Environment.NewLine, offenders));
     }
+
+    [GeneratedRegex(@"\basync\s+void\b")]
+    private static partial Regex AsyncVoid { get; }
 
     private static string RepoRoot()
     {

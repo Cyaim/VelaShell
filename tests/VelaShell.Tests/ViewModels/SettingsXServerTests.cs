@@ -109,7 +109,7 @@ public class SettingsXServerTests
         vm.XServerEngineIndex = 1;
         Assert.AreEqual(XServerEngines.VcXsrv, vm.XServer.Engine);
         Assert.AreEqual(OperatingSystem.IsWindows(), vm.XServerUsesVcXsrv, "VcXsrv 只在 Windows 上生效");
-        CollectionAssert.Contains(raised, nameof(SettingsViewModel.XServerUsesVcXsrv));
+        Assert.Contains(nameof(SettingsViewModel.XServerUsesVcXsrv), raised);
 
         vm.XServerEngineIndex = 0;
         Assert.AreEqual(XServerEngines.BuiltIn, vm.XServer.Engine);
@@ -127,7 +127,7 @@ public class SettingsXServerTests
         Assert.StartsWith("vcxsrv.exe :" + Core.Resources.Strings.Get("SetXServer_DisplayAuto") + " ", vm.XServerCommandPreview);
         vm.XServer.KeyHook = true;
 
-        CollectionAssert.Contains(raised, nameof(SettingsViewModel.XServerCommandPreview));
+        Assert.Contains(nameof(SettingsViewModel.XServerCommandPreview), raised);
         Assert.Contains("-keyhook", vm.XServerCommandPreview);
 
         vm.XServer.ExtraArguments = "-logfile \"C:\\my logs\\x.log\"";

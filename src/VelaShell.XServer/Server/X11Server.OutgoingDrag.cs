@@ -79,7 +79,7 @@ public sealed partial class X11Server
     /// <summary>开着拖出时建代理窗口、让根窗口的 XdndProxy 指向它(单窗口模式不建:根窗口是远端桌面的)。</summary>
     private void InitOutgoingDrags()
     {
-        if (!_options.AcceptOutgoingDrags || Rootful)
+        if (!Options.AcceptOutgoingDrags || Rootful)
         {
             return;
         }

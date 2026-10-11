@@ -88,7 +88,7 @@ public sealed partial class X11Server
     /// </summary>
     internal void Log(string message)
     {
-        if (_options.Log is not { } log)
+        if (Options.Log is not { } log)
         {
             return;
         }
@@ -110,7 +110,7 @@ public sealed partial class X11Server
     /// <summary>放锁之后:把持锁期间攒下的日志交给宿主。</summary>
     private void FlushLog()
     {
-        if (_pendingLog.Count == 0 || _options.Log is not { } log)
+        if (_pendingLog.Count == 0 || Options.Log is not { } log)
         {
             return;
         }
@@ -152,7 +152,7 @@ public sealed partial class X11Server
     /// </summary>
     private bool ShouldLogFrequent()
     {
-        if (_options.Log is null)
+        if (Options.Log is null)
         {
             return false;
         }

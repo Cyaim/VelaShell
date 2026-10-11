@@ -87,8 +87,8 @@ internal sealed class EcdhKeyExchange : ISshKeyExchange
 
         // X/Y 可能短于坐标长度（前导零被省略），必须**右对齐**补零。
         // 左对齐会产出一个完全不同的点，而对端只会报一句「协商失败」。
-        CopyRightAligned(parameters.Q.X!, point.AsSpan(1, CoordinateBytes));
-        CopyRightAligned(parameters.Q.Y!, point.AsSpan(1 + CoordinateBytes, CoordinateBytes));
+        CopyRightAligned(parameters.Q.X, point.AsSpan(1, CoordinateBytes));
+        CopyRightAligned(parameters.Q.Y, point.AsSpan(1 + CoordinateBytes, CoordinateBytes));
         return point;
     }
 

@@ -2,6 +2,9 @@ using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Themes.Fluent;
 
+// headless 渲染测试共用同一条 UI 线程(与 VelaShell.Terminal.Tests 同理),不并行。
+[assembly: DoNotParallelize]
+
 namespace VelaShell.Terminal.RenderTests;
 
 /// <summary>
@@ -12,7 +15,7 @@ namespace VelaShell.Terminal.RenderTests;
 /// </para>
 /// </summary>
 [TestClass]
-public class SkiaTestSession
+public static class SkiaTestSession
 {
     private static HeadlessUnitTestSession? _shared;
 

@@ -9,12 +9,13 @@ namespace VelaShell.Core.Tests.Models;
 [TestCategory("XServer")]
 public class XServerOptionsNormalizeTests
 {
+    private static readonly JsonSerializerOptions CaseInsensitiveJson = new() { PropertyNameCaseInsensitive = true };
+
     /// <summary>老配置里没有 XServer 这一节:反序列化后是默认值,不是 null。</summary>
     [TestMethod]
     public void LegacyConfig_WithoutSection_GetsDefaults()
     {
-        AppSettings settings = JsonSerializer.Deserialize<AppSettings>("""{"language":"en"}""",
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        AppSettings settings = JsonSerializer.Deserialize<AppSettings>("""{"language":"en"}""", CaseInsensitiveJson)!;
 
         settings.Normalize();
 

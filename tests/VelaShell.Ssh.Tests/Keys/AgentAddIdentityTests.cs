@@ -132,7 +132,7 @@ public sealed class AgentAddIdentityTests
     }
 
     [TestMethod]
-    public async Task agent拒绝时抛SshAgentException()
+    public async Task Agent拒绝时抛SshAgentException()
     {
         await using Rig rig = new();
         rig.Agent.RejectAdditions = true;

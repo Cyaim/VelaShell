@@ -20,7 +20,7 @@ public sealed class ChannelInterleavingTests
     /// 每一轮探测开完关完，shell 都必须照常有来有回。
     /// </summary>
     [TestMethod]
-    public async Task exec通道反复开关之后交互shell照常有回显()
+    public async Task Exec通道反复开关之后交互shell照常有回显()
     {
         await using TestSshServerHost host = await TestSshServerHost.StartAsync(new TestChannelScript
         {

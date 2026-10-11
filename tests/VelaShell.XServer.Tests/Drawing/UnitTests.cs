@@ -76,17 +76,17 @@ public sealed class UnitTests
     {
         // lw = 1 的水平线 y = 10 画在第 10 行(原先在 row + 0.5 采样,画到了第 9 行)。
         PixelBuffer one = Draw(r => r.PolyLine([(2, 10), (12, 10)]), gc => gc.LineWidth = 1);
-        CollectionAssert.AreEqual(new[] { 10 }, LitRows(one));
+        Assert.AreSequenceEqual([10], LitRows(one));
         Assert.AreEqual(10, one.Pixels.Count(p => p == 7), "CapButt:左闭右开,x = 2..11");
 
         PixelBuffer three = Draw(r => r.PolyLine([(2, 10), (12, 10)]), gc => gc.LineWidth = 3);
-        CollectionAssert.AreEqual(new[] { 9, 10, 11 }, LitRows(three));
+        Assert.AreSequenceEqual([9, 10, 11], LitRows(three));
 
         // 同一个矩形边框,lw = 0 与 lw = 1 画在同一批像素上(原先错开一像素)。
         (int, int)[] outline = [(5, 5), (10, 5), (10, 10), (5, 10), (5, 5)];
         PixelBuffer thin = Draw(r => r.PolyLine(outline, closed: true));
         PixelBuffer wide = Draw(r => r.PolyLine(outline, closed: true), gc => gc.LineWidth = 1);
-        CollectionAssert.AreEqual(thin.Pixels.ToArray(), wide.Pixels.ToArray());
+        Assert.AreSequenceEqual([.. thin.Pixels], [.. wide.Pixels]);
 
         // 三角形 (0,0)(10,0)(0,10):第 y 行是 x ∈ [0, 10 − y),共 10 + 9 + … + 1 = 55 个像素(原先 45)。
         PixelBuffer triangle = Draw(r => r.FillPolygons([[(0.0, 0.0), (10.0, 0.0), (0.0, 10.0)]], winding: false));
@@ -181,7 +181,7 @@ public sealed class UnitTests
         Assert.IsTrue(a.IsSet(9, 0));
         Assert.IsTrue(a.IsSet(0, 1) && a.IsSet(9, 1) && !a.IsSet(5, 1));
         XGlyph shape = font.Glyphs[7];   // ENCODING -1 7:第二个数是字形号(cursor 字体这样编号)
-        CollectionAssert.AreEqual(new byte[] { 0xE0 }, shape.Bits, "宽 3:宽度以外多出的位清零");
+        Assert.AreSequenceEqual(new byte[] { 0xE0 }, shape.Bits, "宽 3:宽度以外多出的位清零");
     }
 
     [TestMethod]
@@ -232,10 +232,10 @@ public sealed class UnitTests
         Windowing.XProperty b = a.Append("cd"u8, null);
         Windowing.XProperty c = b.Append("ef"u8, null);
         Windowing.XProperty fork = b.Append("XY"u8, null);   // 从旧版本接着写:不能改到 c
-        CollectionAssert.AreEqual("ab"u8.ToArray(), a.Data.ToArray());
-        CollectionAssert.AreEqual("abcd"u8.ToArray(), b.Data.ToArray());
-        CollectionAssert.AreEqual("abcdef"u8.ToArray(), c.Data.ToArray());
-        CollectionAssert.AreEqual("abcdXY"u8.ToArray(), fork.Data.ToArray());
+        Assert.AreSequenceEqual("ab"u8.ToArray(), a.Data.ToArray());
+        Assert.AreSequenceEqual("abcd"u8.ToArray(), b.Data.ToArray());
+        Assert.AreSequenceEqual("abcdef"u8.ToArray(), c.Data.ToArray());
+        Assert.AreSequenceEqual("abcdXY"u8.ToArray(), fork.Data.ToArray());
         Assert.AreEqual(31u, fork.Type);
     }
 }

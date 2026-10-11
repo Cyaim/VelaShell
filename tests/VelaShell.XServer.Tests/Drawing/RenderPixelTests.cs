@@ -390,7 +390,7 @@ public sealed class RenderPixelTests
     }
 
     [TestMethod]
-    public void a8目标的全部运算走整数_与浮点只差取整()
+    public void A8目标的全部运算走整数_与浮点只差取整()
     {
         const int size = 24;
         Random random = new(81);
@@ -441,7 +441,7 @@ public sealed class RenderPixelTests
     /// 双线性与渐变的源在浮点版里没量化,整数路径先量化成 8 位(差半级),放宽到 2。
     /// </summary>
     [TestMethod]
-    public void a8r8g8b8与x8r8g8b8目标的PorterDuff与Disjoint和Conjoint走整数_与浮点只差取整()
+    public void A8r8g8b8与x8r8g8b8目标的PorterDuff与Disjoint和Conjoint走整数_与浮点只差取整()
     {
         const int size = 24;
         Random random = new(37);
@@ -509,7 +509,7 @@ public sealed class RenderPixelTests
     /// 不是整数算法的误差:这四种把同一批取样先量化成 8 位再交给浮点版(<see cref="Quantized" />),要求只差 1。
     /// </summary>
     [TestMethod]
-    public void a8r8g8b8与x8r8g8b8目标的PDF混合模式走整数_与浮点只差取整()
+    public void A8r8g8b8与x8r8g8b8目标的PDF混合模式走整数_与浮点只差取整()
     {
         const int size = 24;
         Random random = new(53);
@@ -678,7 +678,7 @@ public sealed class RenderPixelTests
     /// 不到半级的像素上不同。
     /// </summary>
     [TestMethod]
-    public void a1目标的全部运算走整数_与浮点逐位相同()
+    public void A1目标的全部运算走整数_与浮点逐位相同()
     {
         const int size = 24;
         Random random = new(19);
@@ -770,10 +770,10 @@ public sealed class RenderPixelTests
             {
                 source.FetchRow8888(needed.X, y, expected);
                 detached.FetchRow8888(needed.X, y, actual);
-                CollectionAssert.AreEqual(expected, actual, $"第 {round} 组 {needed} 第 {y} 行(repeat {source.Repeat}、双线性 {source.Bilinear})");
+                Assert.AreSequenceEqual(expected, actual, $"第 {round} 组 {needed} 第 {y} 行(repeat {source.Repeat}、双线性 {source.Bilinear})");
                 source.FetchRow(needed.X, y, expectedF);
                 detached.FetchRow(needed.X, y, actualF);
-                CollectionAssert.AreEqual(expectedF, actualF, $"第 {round} 组 {needed} 第 {y} 行(浮点)");
+                Assert.AreSequenceEqual(expectedF, actualF, $"第 {round} 组 {needed} 第 {y} 行(浮点)");
             }
         }
 

@@ -2,6 +2,9 @@ using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Themes.Fluent;
 
+// headless UI 测试共用同一条 UI 线程(见下面 HeadlessTestSession 的说明),并行只会让工作项互相等那条线程。
+[assembly: DoNotParallelize]
+
 namespace VelaShell.Terminal.Tests;
 
 /// <summary>
@@ -12,8 +15,8 @@ namespace VelaShell.Terminal.Tests;
 /// <b>为什么是每程序集一个,而不是每测试类一个。</b>本项目的 12 个 headless UI 测试类原先
 /// 各自 <c>StartNew</c> + <c>Dispose</c> 一个会话,拆除时偶发在 <c>[ClassCleanup]</c> 里抛
 /// <see cref="NullReferenceException" />。改成全程序集一个之后,建立与拆除各只发生一次,
-/// 命中率大幅下降,顺带也省掉了 11 次 Avalonia 应用启动。各测试类保留 <c>_session</c> 这个
-/// 名字(指向本类),故用法不变。
+/// 命中率大幅下降,顺带也省掉了 11 次 Avalonia 应用启动。各测试类经自己的 <c>Session</c> 属性
+/// 指向本类,故用法不变。
 /// </para>
 /// <para>
 /// <b>但那条 NRE 不是"多个会话互相拆台"。</b>真正的来源在 Avalonia 12.1.2 的
@@ -30,7 +33,7 @@ namespace VelaShell.Terminal.Tests;
 /// </para>
 /// </remarks>
 [TestClass]
-public class HeadlessTestSession
+public static class HeadlessTestSession
 {
     private static HeadlessUnitTestSession? _shared;
 

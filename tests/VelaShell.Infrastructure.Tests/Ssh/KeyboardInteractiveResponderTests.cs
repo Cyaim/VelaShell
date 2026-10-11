@@ -142,7 +142,7 @@ public sealed class KeyboardInteractiveResponderTests
         Assert.AreEqual(Target, asked.Target);
         Assert.AreEqual(Strings.Get("SshPwdChange_Title"), asked.Name);
         Assert.AreSequenceEqual(
-            new[] { new KeyboardInteractiveField(Strings.Get("SshPwdChange_NewPassword"), false), new KeyboardInteractiveField(Strings.Get("SshPwdChange_ConfirmPassword"), false) },
+            [new KeyboardInteractiveField(Strings.Get("SshPwdChange_NewPassword"), false), new KeyboardInteractiveField(Strings.Get("SshPwdChange_ConfirmPassword"), false)],
             [.. asked.Fields]);
         Assert.StartsWith(Strings.Get("SshPwdChange_Required"), asked.Instruction);
         Assert.Contains("Your password has expired.", asked.Instruction);
@@ -233,7 +233,7 @@ public sealed class KeyboardInteractiveResponderTests
         Assert.AreEqual("Bank?", asked.Name);
         Assert.StartsWith("line1\nline2 ", asked.Instruction);
         Assert.AreEqual(2048, asked.Instruction.Length);
-        StringAssert.EndsWith(asked.Instruction, "…");
+        Assert.EndsWith("…", asked.Instruction);
     }
 
     [TestMethod]

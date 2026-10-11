@@ -40,6 +40,8 @@ public sealed class SshAgentKeyLoaderTests
 
         public ValueTask<SshAgentClient> ConnectAsync(CancellationToken cancellationToken)
         {
+            // 令牌只管「连」这一步(同真的连接);连上之后就交给连接自己的生命周期。
+            cancellationToken.ThrowIfCancellationRequested();
             (InMemoryDuplexStream ours, InMemoryDuplexStream theirs) = InMemoryTransport.CreatePair();
             // 服务端跟着连接走,不跟着调用方的令牌走:客户端释放时流会读到结尾。
             _ = Task.Run(() => ServeAsync(theirs, CancellationToken.None), CancellationToken.None);

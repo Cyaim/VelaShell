@@ -186,19 +186,19 @@ public sealed class HostApiTests
         await using XTestClient c = await XTestClient.ConnectAsync(server);
         uint top = await MapTopAsync(c, host);
         XTopLevelWindow window = host.Mapped[top];
-        static void ignore(ReadOnlySpan<uint> _1, int _2, int _3) { }
+        static void Ignore(ReadOnlySpan<uint> _1, int _2, int _3) { }
 
         await c.SendAsync(10, 0, b => b.U32(top));   // UnmapWindow
         await host.WaitForAsync(() => !window.Snapshot.IsMapped);
-        Assert.IsTrue(window.ReadPixels(ignore), "文档:取消映射不算没有缓冲");
+        Assert.IsTrue(window.ReadPixels(Ignore), "文档:取消映射不算没有缓冲");
         Assert.AreEqual((60, 40), window.CopyPixels(new uint[60 * 40]));
 
         uint parent = c.NewId();
         await c.SendAsync(1, 0, b => b.U32(parent).U32(c.RootWindow).I16(0).I16(0).U16(10).U16(10).U16(0).U16(1).U32(0).U32(0));
         await c.SendAsync(7, 0, b => b.U32(top).U32(parent).I16(0).I16(0));   // ReparentWindow:不再是顶层
         await c.SyncAsync();
-        Assert.IsFalse(window.ReadPixels(ignore));
-        Assert.AreEqual(XPixelReadResult.NoBuffer, window.TryReadPixels(ignore, TimeSpan.FromSeconds(1)));
+        Assert.IsFalse(window.ReadPixels(Ignore));
+        Assert.AreEqual(XPixelReadResult.NoBuffer, window.TryReadPixels(Ignore, TimeSpan.FromSeconds(1)));
         Assert.AreEqual((0, 0), window.CopyPixels(new uint[1]));
     }
 

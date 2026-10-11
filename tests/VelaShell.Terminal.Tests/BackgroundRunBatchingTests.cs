@@ -25,10 +25,10 @@ namespace VelaShell.Terminal.Tests;
 [TestCategory("BackgroundBatching")]
 public class BackgroundRunBatchingTests
 {
-    private static HeadlessUnitTestSession _session => HeadlessTestSession.Current;
+    private static HeadlessUnitTestSession Session => HeadlessTestSession.Current;
 
     private static void OnUi(Action body) =>
-        _session.Dispatch(() =>
+        Session.Dispatch(() =>
         {
             body();
             return Task.CompletedTask;

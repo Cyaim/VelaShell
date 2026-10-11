@@ -48,19 +48,29 @@ public sealed class SshCertificateIntegrationTests
             Assert.Inconclusive(
                 "证书靶机资产缺失。把 VELASHELL_CERT_LAB 指向含 id_ed25519 / id_ed25519-cert.pub 的目录。");
         }
+        if (!CertServerListening())
+        {
+            Assert.Inconclusive($"证书靶机未监听 {TestHost}:{CertPort}。");
+        }
+    }
+
+    /// <summary>两秒内连得上靶机的端口。</summary>
+    private static bool CertServerListening()
+    {
         try
         {
             using var probe = new TcpClient();
             IAsyncResult pending = probe.BeginConnect(TestHost, CertPort, null, null);
             if (!pending.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(2)))
             {
-                Assert.Inconclusive($"证书靶机未监听 {TestHost}:{CertPort}。");
+                return false;
             }
             probe.EndConnect(pending);
+            return true;
         }
         catch (SocketException)
         {
-            Assert.Inconclusive($"证书靶机未监听 {TestHost}:{CertPort}。");
+            return false;
         }
     }
 

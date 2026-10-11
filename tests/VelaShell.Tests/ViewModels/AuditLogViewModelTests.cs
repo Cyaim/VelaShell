@@ -88,7 +88,7 @@ public sealed class AuditLogViewModelTests
 
         await vm.LoadAsync(TestContext.CancellationToken);
 
-        StringAssert.EndsWith(vm.Status, Strings.Format("AuditLog_Truncated", AuditLogViewModel.MaxRows));
+        Assert.EndsWith(Strings.Format("AuditLog_Truncated", AuditLogViewModel.MaxRows), vm.Status);
     }
 
     [TestMethod]

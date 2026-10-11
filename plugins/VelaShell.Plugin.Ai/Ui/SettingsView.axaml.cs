@@ -1799,7 +1799,7 @@ public partial class SettingsView : UserControl
         {
             // 主槽测跨源模型时解析器不认它是槽请求(KeyId 为 null):那边的成败说明的是覆盖地址,
             // 不是这把 Key 在供应商自己源上的状态,不能拿去冷却或解冻 Key 槽(与 TestAsync 同一裁决)
-            (ProviderCredential credential, string? slotId) = await _store.ResolveCredentialWithKeyIdAsync(live, token, keyId: row.Id);
+            (ProviderCredential credential, string? slotId) = await _store.ResolveCredentialWithKeyIdAsync(live, keyId: row.Id, cancellationToken: token);
             if (credential.Value != row.Key) throw new AiSettingsStore.ApiKeySlotChangedException();
             if (string.IsNullOrWhiteSpace(credential.Value)
                 || !await StillSavedKeyProbeAsync(row, modelId, snapshot, credential, editorRun, run, version, token))
@@ -1807,7 +1807,7 @@ public partial class SettingsView : UserControl
                 return;
             }
 
-            (Exception? error, _) = await HealthProbe.ProbeAsync(_store, candidate, credential, token);
+            (Exception? error, _) = await HealthProbe.ProbeAsync(_store, candidate, credential, cancellationToken: token);
             token.ThrowIfCancellationRequested();
             if (!await StillSavedKeyProbeAsync(row, modelId, snapshot, credential, editorRun, run, version, token)) return;
             if (error is AiSettingsStore.ApiKeySlotChangedException) throw error;
@@ -1855,7 +1855,7 @@ public partial class SettingsView : UserControl
             return false;
         }
 
-        (ProviderCredential now, string? _) = await _store.ResolveCredentialWithKeyIdAsync(saved, token, refreshTokens: false, keyId: row.Id);
+        (ProviderCredential now, string? _) = await _store.ResolveCredentialWithKeyIdAsync(saved, refreshTokens: false, keyId: row.Id, cancellationToken: token);
         return !token.IsCancellationRequested && probeRun == row.ProbeRun && KeyRowCurrent(row, editorRun)
             && version == (_health?.Version ?? 0) && snapshot == KeyRequestSnapshot.Capture(saved)
             && credential == now;

@@ -60,10 +60,8 @@ public sealed class OptionValidationTests
         source["C"] = "3";
         source["A"] = "changed";
 
-        CollectionAssert.AreEqual(
-            new[] { new KeyValuePair<string, string>("B", "2"), new KeyValuePair<string, string>("A", "1") },
-            options.Environment.ToArray(),
-            "复制时保留原来的顺序，之后的改动不影响");
+        Assert.AreSequenceEqual(
+            [new KeyValuePair<string, string>("B", "2"), new KeyValuePair<string, string>("A", "1")], [.. options.Environment], "复制时保留原来的顺序，之后的改动不影响");
         Assert.ThrowsExactly<ArgumentNullException>(() => new SshCommandOptions { Environment = null! });
     }
 
@@ -78,7 +76,7 @@ public sealed class OptionValidationTests
         SshAlgorithmSet set = SshAlgorithmSet.Default with { KeyExchange = kex };
         kex.Add("diffie-hellman-group1-sha1");
 
-        Assert.AreSequenceEqual(new[] { "curve25519-sha256" }, [.. set.KeyExchange]);
+        Assert.AreSequenceEqual(["curve25519-sha256"], [.. set.KeyExchange]);
         Assert.IsNotInstanceOfType<string[]>(SshAlgorithmSet.Default.EncryptionClientToServer, "下转型就能改默认清单");
         Assert.IsNotInstanceOfType<List<string>>(set.KeyExchange);
         Assert.ThrowsExactly<ArgumentNullException>(() => SshAlgorithmSet.Default with { HostKey = null! });
@@ -105,7 +103,7 @@ public sealed class OptionValidationTests
         AgentForwardOptions options = new() { AllowedKeys = keys };
         keys.Add(second.PublicKey);
 
-        Assert.HasCount(1, options.AllowedKeys!);
+        Assert.HasCount(1, options.AllowedKeys);
         Assert.IsNull(new AgentForwardOptions { AllowedKeys = null }.AllowedKeys, "null 仍然表示不限");
     }
 

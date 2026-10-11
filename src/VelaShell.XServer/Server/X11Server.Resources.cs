@@ -73,11 +73,8 @@ public sealed partial class X11Server
     /// <summary>每个资源的固定开销:对象本身、资源表的一项。也给「建几百万个小资源」的客户端设了个底。</summary>
     internal const long ResourceOverheadBytes = 64;
 
-    /// <summary>全部客户端名下的内存合计(字节)。</summary>
-    private long _memoryInUse;
-
-    /// <summary>当前记在账上的内存合计(诊断与测试用)。</summary>
-    internal long MemoryInUse => _memoryInUse;
+    /// <summary>全部客户端名下记在账上的内存合计(字节);诊断与测试也看它。</summary>
+    internal long MemoryInUse { get; private set; }
 
     /// <summary>资源进资源表时记的字节数:固定开销,外加它独占的像素 / 区域。顶层窗口的缓冲另算(会变,见 <see cref="SyncBufferCharge" />)。</summary>
     private static long Footprint(XResource resource) => ResourceOverheadBytes + resource switch
@@ -97,7 +94,7 @@ public sealed partial class X11Server
     /// <summary>记 <paramref name="bytes" /> 在 <paramref name="client" /> 名下记得下不(每客户端与全局两道上限)。服务端自己的(null)不记账。</summary>
     internal bool CanCharge(XClient? client, long bytes) =>
         bytes <= 0 || client is null
-        || (client.MemoryInUse + bytes <= _options.MaxClientMemory && _memoryInUse + bytes <= _options.MaxTotalMemory);
+        || (client.MemoryInUse + bytes <= Options.MaxClientMemory && MemoryInUse + bytes <= Options.MaxTotalMemory);
 
     /// <summary>记账;超出上限抛 Alloc(<paramref name="force" /> 时照记不抛:宿主发起的变化,比如用户拖大了原生窗口)。</summary>
     internal void ChargeMemory(XClient? client, long bytes, bool force = false)
@@ -111,7 +108,7 @@ public sealed partial class X11Server
             throw new XProtocolError(XErrorCode.Alloc);
         }
         client.MemoryInUse += bytes;
-        _memoryInUse += bytes;
+        MemoryInUse += bytes;
     }
 
     internal void RefundMemory(XClient? client, long bytes)
@@ -121,7 +118,7 @@ public sealed partial class X11Server
             return;
         }
         client.MemoryInUse -= bytes;
-        _memoryInUse -= bytes;
+        MemoryInUse -= bytes;
     }
 
     /// <summary>客户端的请求要分配 <paramref name="bytes" />:先看记得下不,记不下回 Alloc —— 在分配之前,出错的请求不产生任何效果。</summary>
@@ -191,8 +188,8 @@ public sealed partial class X11Server
 
     private XWindow CreateRootWindow() => new(RootWindowId, null, null)
     {
-        Width = _options.ScreenWidth,
-        Height = _options.ScreenHeight,
+        Width = Options.ScreenWidth,
+        Height = Options.ScreenHeight,
         Depth = 24,
         Visual = RootVisualId,
         Colormap = DefaultColormapId,

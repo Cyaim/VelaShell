@@ -117,7 +117,7 @@ public sealed class HealthProbeTests
         // Probe 没有逐帧回调;这里只验证结束契约,不把 Request/Flush 假称为已消费首帧。
         (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl),
             ProviderCredential.Key(null), usageCallback: usage => { calls++; received = usage; }).WaitAsync(TimeSpan.FromSeconds(5));
-        if (empty) Assert.IsInstanceOfType(error, typeof(HealthProbe.EmptyReplyException));
+        if (empty) Assert.IsInstanceOfType<HealthProbe.EmptyReplyException>(error);
         else Assert.IsNull(error, error?.ToString());
         Assert.AreEqual(empty ? "" : "OK", text);
         Assert.AreEqual(1, calls, "成功和空白失败都只在结束时结算一次");
@@ -201,7 +201,7 @@ public sealed class HealthProbeTests
 
         (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
 
-        Assert.IsInstanceOfType(error, typeof(HealthProbe.EmptyReplyException));
+        Assert.IsInstanceOfType<HealthProbe.EmptyReplyException>(error);
         Assert.AreEqual("", text);
     }
 
@@ -213,7 +213,7 @@ public sealed class HealthProbeTests
 
         (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
 
-        Assert.IsInstanceOfType(error, typeof(HealthProbe.EmptyReplyException));
+        Assert.IsInstanceOfType<HealthProbe.EmptyReplyException>(error);
         Assert.AreEqual("", text);
     }
 
@@ -335,8 +335,7 @@ public sealed class HealthProbeTests
         model.Config.StopSequences = stopSequences;
         (Exception? error, string? text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), model);
 
-        Assert.IsInstanceOfType(error, typeof(HealthProbe.EmptyReplyException),
-            "空回复不能判通过");
+        Assert.IsInstanceOfType<HealthProbe.EmptyReplyException>(error, "空回复不能判通过");
         Assert.AreEqual("", text);
     }
 
@@ -367,8 +366,7 @@ public sealed class HealthProbeTests
         using var request = JsonDocument.Parse(await endpoint.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(5)));
         string[] sentStops = [.. request.RootElement.GetProperty("stop").EnumerateArray().Select(stop => stop.GetString()!)];
 
-        CollectionAssert.AreEqual(stopSequences.Split('\n'), sentStops,
-            "探测必须原样下发正式停止词,不能靠删除参数通过");
+        Assert.AreSequenceEqual(stopSequences.Split('\n'), sentStops, "探测必须原样下发正式停止词,不能靠删除参数通过");
         Assert.IsNull(error, error?.ToString());
         string prompt = request.RootElement.GetProperty("messages").EnumerateArray().Last().GetProperty("content").GetString()!;
         Assert.AreEqual(prompt["Reply with exactly: ".Length..], text,

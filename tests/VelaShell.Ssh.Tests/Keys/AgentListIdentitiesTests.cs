@@ -78,7 +78,7 @@ public sealed class AgentListIdentitiesTests
     [TestMethod]
     [DataRow(new byte[] { 12, 0, 0 }, DisplayName = "身份列表:计数只有半截")]
     [DataRow(new byte[] { 12, 0, 0, 0, 1, 0, 0, 0, 9, 1, 2 }, DisplayName = "身份列表:公钥 blob 被截断")]
-    public async Task agent回了畸形的身份列表时报SshAgentException(byte[] reply)
+    public async Task Agent回了畸形的身份列表时报SshAgentException(byte[] reply)
     {
         // 曾经让解析层的 internal 异常原样漏出去：宿主只接 SshAgentException，那就一路漏到了界面上。
         SshAgentException error = await Assert.ThrowsExactlyAsync<SshAgentException>(
@@ -95,7 +95,7 @@ public sealed class AgentListIdentitiesTests
     [DataRow(new byte[0], true, DisplayName = "签名:空报文")]
     [DataRow(new byte[] { 12, 0, 0, 0, 0 }, true, DisplayName = "签名:回了身份列表")]
     [DataRow(new byte[] { 6 }, true, DisplayName = "签名:回了 SUCCESS")]
-    public async Task agent回了空报文或类型不对时报SshAgentException(byte[] reply, bool sign)
+    public async Task Agent回了空报文或类型不对时报SshAgentException(byte[] reply, bool sign)
     {
         await Assert.ThrowsExactlyAsync<SshAgentException>(
             async () => await WithScriptedReplyAsync(reply, client => sign
@@ -104,7 +104,7 @@ public sealed class AgentListIdentitiesTests
     }
 
     [TestMethod]
-    public async Task agent回了畸形的签名应答时报SshAgentException()
+    public async Task Agent回了畸形的签名应答时报SshAgentException()
     {
         byte[] reply = [14, 0, 0, 0, 50, 1];   // SIGN_RESPONSE，签名 blob 声称 50 字节、只有 1 个
 
@@ -119,7 +119,7 @@ public sealed class AgentListIdentitiesTests
     /// 用户只看到 Permission denied，「不许 SHA-1」的意图也被绕过）。
     /// </summary>
     [TestMethod]
-    public async Task agent签名的算法与请求的不一致时不交出去()
+    public async Task Agent签名的算法与请求的不一致时不交出去()
     {
         byte[] reply = SignResponse("ssh-rsa");
 
@@ -132,7 +132,7 @@ public sealed class AgentListIdentitiesTests
 
     /// <summary>证书的签名算法名不带证书后缀：请求 rsa-sha2-512-cert-v01 时回 rsa-sha2-512 是对的。</summary>
     [TestMethod]
-    public async Task agent签名的算法与请求一致时照常交出()
+    public async Task Agent签名的算法与请求一致时照常交出()
     {
         byte[] reply = SignResponse("rsa-sha2-512");
         byte[]? signature = null;

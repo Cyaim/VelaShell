@@ -196,13 +196,13 @@ public sealed class XServerToggleViewModelTests
         vm.ShowGrabStall(new XServerGrabStallNotice("1:4", 4, "XTerm", "user@stuck:22", TimeSpan.FromSeconds(10)));
         ToastViewModel toast = toasts.Toasts.Single();
         Assert.AreEqual(ToastSeverity.Warning, toast.Severity);
-        StringAssert.Contains(toast.Message, "XTerm");
-        StringAssert.Contains(toast.Message, "user@stuck:22");
+        Assert.Contains("XTerm", toast.Message);
+        Assert.Contains("user@stuck:22", toast.Message);
         Assert.IsNotNull(toast.ActionLabel);
 
         vm.ShowGrabStall(new XServerGrabStallNotice("1:4", 4, "XTerm", "user@stuck:22", TimeSpan.FromSeconds(70)));
         Assert.AreSame(toast, toasts.Toasts.Single(), "同一个程序再报一次:就地更新那一条");
-        StringAssert.Contains(toast.Message, "70");
+        Assert.Contains("70", toast.Message);
 
         toast.Action!.Invoke();
         server.Received(1).DisconnectClient("1:4");

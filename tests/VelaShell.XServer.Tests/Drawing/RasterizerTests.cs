@@ -94,7 +94,7 @@ public sealed class RasterizerTests
             PixelBuffer expected = new(Size, Size, 24);
             int index = 0, remaining = 0;
             ReferenceLine(expected, clip, x1, y1, x2, y2, drawLast, null, ref index, ref remaining);
-            CollectionAssert.AreEqual(expected.Pixels, actual.Pixels, $"第 {round} 条:({x1},{y1})–({x2},{y2}) drawLast={drawLast}");
+            Assert.AreSequenceEqual(expected.Pixels, actual.Pixels, $"第 {round} 条:({x1},{y1})–({x2},{y2}) drawLast={drawLast}");
         }
     }
 
@@ -124,7 +124,7 @@ public sealed class RasterizerTests
                 ReferenceLine(expected, clip, x, y, nx, ny, drawLast, dashes, ref index, ref remaining);
                 (x, y) = (nx, ny);
             }
-            CollectionAssert.AreEqual(expected.Pixels, actual.Pixels, $"第 {round} 组");
+            Assert.AreSequenceEqual(expected.Pixels, actual.Pixels, $"第 {round} 组");
         }
     }
 
@@ -207,7 +207,7 @@ public sealed class RasterizerTests
                 }
             }
             expected = next;
-            CollectionAssert.AreEqual(expected, Snapshot(buffer), $"第 {round} 次:{width}×{height}");
+            Assert.AreSequenceEqual(expected, Snapshot(buffer), $"第 {round} 次:{width}×{height}");
             // 偶尔画一笔,让内容不只是初始值。
             buffer.Pixels[random.Next(width * height)] = (uint)round;
             expected = Snapshot(buffer);
@@ -301,7 +301,7 @@ public sealed class RasterizerTests
             PixelBuffer solid = Stroke(gc, r => r.PolyLine(points, closed));
             gc.LineStyle = 2;
             PixelBuffer dashed = Stroke(gc, r => r.PolyLine(points, closed));
-            CollectionAssert.AreEqual(solid.Pixels, dashed.Pixels, $"第 {round} 条:{string.Join(" ", points)} closed={closed} lw={gc.LineWidth}");
+            Assert.AreSequenceEqual(solid.Pixels, dashed.Pixels, $"第 {round} 条:{string.Join(" ", points)} closed={closed} lw={gc.LineWidth}");
         }
     }
 
@@ -473,7 +473,7 @@ public sealed class RasterizerTests
             PixelBuffer closed = Stroke(gc, r => r.PolyArc([CornerB, LowerHalf, CornerA]), size: 80);
             Assert.AreEqual(9, OutsideCorner(closed), $"cap-style {cap}:接缝处是 Miter 接头");
             first ??= closed;
-            CollectionAssert.AreEqual(first.Pixels, closed.Pixels, $"cap-style {cap}");
+            Assert.AreSequenceEqual(first.Pixels, closed.Pixels, $"cap-style {cap}");
         }
 
         // 同一个椭圆的四段 90° 弧拼成整圈:与一条 360° 的弧逐个像素相同,没有端帽(lw = 20 时四个接点上的 Projecting 端帽会伸出环带),
@@ -481,7 +481,7 @@ public sealed class RasterizerTests
         (int X, int Y, int W, int H, int A1, int A2)[] quarters = [.. Enumerable.Range(0, 4).Select(k => (10, 10, 50, 30, k * 90 * 64, 90 * 64))];
         XGc wide = new(1, null, 24) { Foreground = 1, LineWidth = 20, CapStyle = 3 };
         PixelBuffer whole = Stroke(wide, r => r.PolyArc([(10, 10, 50, 30, 0, 360 * 64)]), size: 80);
-        CollectionAssert.AreEqual(whole.Pixels, Stroke(wide, r => r.PolyArc(quarters), size: 80).Pixels, "四段拼成的整圈");
+        Assert.AreSequenceEqual(whole.Pixels, Stroke(wide, r => r.PolyArc(quarters), size: 80).Pixels, "四段拼成的整圈");
         Assert.AreEqual((0u, 1u), (whole.Get(69, 16), Stroke(wide, r => EachAlone(r, quarters), size: 80).Get(69, 16)), "各自加端帽时 0° 处伸出 Projecting 端帽");
     }
 
@@ -506,12 +506,11 @@ public sealed class RasterizerTests
             gc.Function = 6;
             (int X, int Y, int W, int H, int A1, int A2) first = CircleArc(30, 30, 20, 0, 90);
             PixelBuffer halves = Stroke(gc, r => r.PolyArc([first, CircleArc(30, 30, 20, 90, 90)]));
-            CollectionAssert.AreEqual(Stroke(gc, r => r.PolyArc([CircleArc(30, 30, 20, 0, 180)])).Pixels, halves.Pixels, $"lw = {lw}:同一个圆上的两段");
+            Assert.AreSequenceEqual(Stroke(gc, r => r.PolyArc([CircleArc(30, 30, 20, 0, 180)])).Pixels, halves.Pixels, $"lw = {lw}:同一个圆上的两段");
 
             // 第二段往下挪一个像素就不相接了:各画各的,第二段从 dash-offset 重新开始。
             (int X, int Y, int W, int H, int A1, int A2) moved = CircleArc(30, 31, 20, 90, 90);
-            CollectionAssert.AreEqual(Stroke(gc, r => EachAlone(r, first, moved)).Pixels, Stroke(gc, r => r.PolyArc([first, moved])).Pixels,
-                $"lw = {lw}:不相接");
+            Assert.AreSequenceEqual(Stroke(gc, r => EachAlone(r, first, moved)).Pixels, Stroke(gc, r => r.PolyArc([first, moved])).Pixels, $"lw = {lw}:不相接");
         }
 
         // [x0, x1) × [y0, y1) 里画了的像素数。
@@ -549,8 +548,7 @@ public sealed class RasterizerTests
                     PixelBuffer copy = Stroke(gc, r => r.PolyArc(chain), size: 80);
                     gc.Function = 6;
                     PixelBuffer xor = Stroke(gc, r => r.PolyArc(chain), size: 80);
-                    CollectionAssert.AreEqual(copy.Pixels, xor.Pixels,
-                        $"{chain.Length} 条弧,lw = {lw},cap {gc.CapStyle},join {gc.JoinStyle},line-style {gc.LineStyle}");
+                    Assert.AreSequenceEqual(copy.Pixels, xor.Pixels, $"{chain.Length} 条弧,lw = {lw},cap {gc.CapStyle},join {gc.JoinStyle},line-style {gc.LineStyle}");
                 }
             }
         }
@@ -588,10 +586,10 @@ public sealed class RasterizerTests
             string what = $"第 {round} 串:{string.Join(" ", chain)} lw={gc.LineWidth} join={gc.JoinStyle} cap={gc.CapStyle}";
             PixelBuffer solid = Stroke(gc, r => r.PolyArc(chain));
             gc.Function = 3;
-            CollectionAssert.AreEqual(Stroke(gc, r => r.PolyArc(chain)).Pixels, solid.Pixels, $"{what}:GXxor 下有像素画了两次");
+            Assert.AreSequenceEqual(Stroke(gc, r => r.PolyArc(chain)).Pixels, solid.Pixels, $"{what}:GXxor 下有像素画了两次");
             gc.Function = 6;
             gc.LineStyle = 2;
-            CollectionAssert.AreEqual(solid.Pixels, Stroke(gc, r => r.PolyArc(chain)).Pixels, $"{what}:DoubleDash 与 Solid 不同");
+            Assert.AreSequenceEqual(solid.Pixels, Stroke(gc, r => r.PolyArc(chain)).Pixels, $"{what}:DoubleDash 与 Solid 不同");
         }
 
         // 圆上角度 a(0° / 90° / 180° / 270°)处的点相对圆心的偏移(y 朝下)。
@@ -673,7 +671,7 @@ public sealed class RasterizerTests
         XGc xor = new(1, null, 24) { Foreground = 0xFFFFFF, Function = 6, LineWidth = 8, JoinStyle = 1, CapStyle = 2 };
         PixelBuffer once = Stroke(xor, r => r.PolyArc([a, b]), size: 80);
         xor.Function = 3;
-        CollectionAssert.AreEqual(Stroke(xor, r => r.PolyArc([a, b]), size: 80).Pixels, once.Pixels);
+        Assert.AreSequenceEqual(Stroke(xor, r => r.PolyArc([a, b]), size: 80).Pixels, once.Pixels);
     }
 
     [TestMethod]
@@ -685,13 +683,13 @@ public sealed class RasterizerTests
         PixelBuffer mixed = Stroke(gc, r => r.PolyArc([CornerA, CornerB, Loose]), size: 80);
         Assert.AreEqual(3, OutsideCorner(mixed), "A 与 B 相接");
         Assert.AreEqual(1u, mixed.Get(70, 32), "G 起点的 Projecting 端帽(G 从 (70,30) 往上走,端帽朝下伸)");
-        CollectionAssert.AreEqual(Stroke(gc, r => { r.PolyArc([CornerA, CornerB]); r.PolyArc([Loose]); }, size: 80).Pixels, mixed.Pixels);
+        Assert.AreSequenceEqual(Stroke(gc, r => { r.PolyArc([CornerA, CornerB]); r.PolyArc([Loose]); }, size: 80).Pixels, mixed.Pixels);
 
         // E 的外接框 (30,10,40,41):圆心 (50,30.5),起点 (30,30.5) 与 A 的终点 (30,30) 正好差半个像素 —— 不算重合,各自加端帽。
         (int X, int Y, int W, int H, int A1, int A2) e = (30, 10, 40, 41, 180 * 64, 90 * 64);
         PixelBuffer halfApart = Stroke(gc, r => r.PolyArc([CornerA, e]), size: 80);
         Assert.AreEqual(9, OutsideCorner(halfApart), "A 终点的 Projecting 端帽");
-        CollectionAssert.AreEqual(Stroke(gc, r => EachAlone(r, CornerA, e), size: 80).Pixels, halfApart.Pixels);
+        Assert.AreSequenceEqual(Stroke(gc, r => EachAlone(r, CornerA, e), size: 80).Pixels, halfApart.Pixels);
     }
 
     [TestMethod]
@@ -701,7 +699,7 @@ public sealed class RasterizerTests
         XGc gc = new(1, null, 24) { Foreground = 1, LineWidth = 7, JoinStyle = 2, CapStyle = 3 };
         PixelBuffer wrapped = Stroke(gc, r => r.PolyArc([CornerB, Loose, CornerA]), size: 80);
         Assert.AreEqual(3, OutsideCorner(wrapped));
-        CollectionAssert.AreEqual(Stroke(gc, r => { r.PolyArc([CornerA, CornerB]); r.PolyArc([Loose]); }, size: 80).Pixels, wrapped.Pixels);
+        Assert.AreSequenceEqual(Stroke(gc, r => { r.PolyArc([CornerA, CornerB]); r.PolyArc([Loose]); }, size: 80).Pixels, wrapped.Pixels);
     }
 
     [TestMethod]
@@ -710,9 +708,8 @@ public sealed class RasterizerTests
         // 宽为 0 的弧从 (10,50) 走到 (10,10),高为 0 的弧再从 (10,10) 走到 (50,10):两条扁弧就是这条折线,
         // 虚线的相位要跨过接点接着走(扁弧在 ArcStroke 里另走一支)。
         XGc thin = new(1, null, 24) { Foreground = 1, LineStyle = 1, Dashes = [7, 5], DashOffset = 3 };
-        CollectionAssert.AreEqual(
-            Stroke(thin, r => r.PolyLine([(10, 50), (10, 10), (50, 10)])).Pixels,
-            Stroke(thin, r => r.PolyArc([(10, 10, 0, 40, -90 * 64, 180 * 64), (10, 10, 40, 0, 180 * 64, -180 * 64)])).Pixels);
+        Assert.AreSequenceEqual(
+            Stroke(thin, r => r.PolyLine([(10, 50), (10, 10), (50, 10)])).Pixels, Stroke(thin, r => r.PolyArc([(10, 10, 0, 40, -90 * 64, 180 * 64), (10, 10, 40, 0, 180 * 64, -180 * 64)])).Pixels);
     }
 
     [TestMethod]
@@ -725,10 +722,8 @@ public sealed class RasterizerTests
             {
                 XGc gc = new(1, null, 24) { Foreground = 1, LineWidth = lw, CapStyle = cap };
                 // 宽为 0:从 (20,50) 往上走到 (20,10);高为 0:从 (10,30) 往右走到 (50,30)(顺时针的半圈,180° → 0°)。
-                CollectionAssert.AreEqual(Stroke(gc, r => r.PolyLine([(20, 50), (20, 10)])).Pixels,
-                    Stroke(gc, r => r.Arc(20, 10, 0, 40, -90 * 64, 180 * 64)).Pixels, $"lw = {lw}、cap = {cap}:竖线");
-                CollectionAssert.AreEqual(Stroke(gc, r => r.PolyLine([(10, 30), (50, 30)])).Pixels,
-                    Stroke(gc, r => r.Arc(10, 30, 40, 0, 180 * 64, -180 * 64)).Pixels, $"lw = {lw}、cap = {cap}:横线");
+                Assert.AreSequenceEqual(Stroke(gc, r => r.PolyLine([(20, 50), (20, 10)])).Pixels, Stroke(gc, r => r.Arc(20, 10, 0, 40, -90 * 64, 180 * 64)).Pixels, $"lw = {lw}、cap = {cap}:竖线");
+                Assert.AreSequenceEqual(Stroke(gc, r => r.PolyLine([(10, 30), (50, 30)])).Pixels, Stroke(gc, r => r.Arc(10, 30, 40, 0, 180 * 64, -180 * 64)).Pixels, $"lw = {lw}、cap = {cap}:横线");
             }
         }
 
@@ -736,8 +731,7 @@ public sealed class RasterizerTests
         foreach (byte join in new byte[] { 0, 1, 2 })
         {
             XGc gc = new(1, null, 24) { Foreground = 1, LineWidth = 7, JoinStyle = join, CapStyle = 3 };
-            CollectionAssert.AreEqual(Stroke(gc, r => r.PolyLine([(10, 50), (10, 10), (50, 10)])).Pixels,
-                Stroke(gc, r => r.PolyArc([(10, 10, 0, 40, -90 * 64, 180 * 64), (10, 10, 40, 0, 180 * 64, -180 * 64)])).Pixels, $"join = {join}");
+            Assert.AreSequenceEqual(Stroke(gc, r => r.PolyLine([(10, 50), (10, 10), (50, 10)])).Pixels, Stroke(gc, r => r.PolyArc([(10, 10, 0, 40, -90 * 64, 180 * 64), (10, 10, 40, 0, 180 * 64, -180 * 64)])).Pixels, $"join = {join}");
         }
     }
 
@@ -751,7 +745,7 @@ public sealed class RasterizerTests
         foreach (byte cap in new byte[] { 1, 2, 3 })
         {
             XGc gc = new(1, null, 24) { Foreground = 1, LineWidth = 6, CapStyle = cap };
-            CollectionAssert.AreEqual(expected.Pixels, Stroke(gc, r => r.Arc(20, 10, 0, 40, 0, 360 * 64)).Pixels, $"cap = {cap}");
+            Assert.AreSequenceEqual(expected.Pixels, Stroke(gc, r => r.Arc(20, 10, 0, 40, 0, 360 * 64)).Pixels, $"cap = {cap}");
         }
 
         // 半圈 0° → 180°:从中点上到 (20,10) 折返、回到中点。上头是半个圆,两端都在中点、Butt 端帽齐着中点 —— 中点以下什么都没有。

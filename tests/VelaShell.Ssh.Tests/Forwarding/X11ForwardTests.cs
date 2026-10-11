@@ -26,7 +26,7 @@ namespace VelaShell.Ssh.Tests.Forwarding;
 public sealed class X11ForwardTests
 {
     /// <summary>本机真实的 cookie —— 它**绝不该**出现在发给服务端的报文里。</summary>
-    private static readonly byte[] _realCookie =
+    private static readonly byte[] RealCookie =
         [0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
 
     [TestMethod]
@@ -46,13 +46,13 @@ public sealed class X11ForwardTests
 
         // **真 cookie 一个字节都不该出现在线上。**
         Assert.AreNotEqual(
-            Convert.ToHexStringLower(_realCookie), request.AuthCookieHex,
+            Convert.ToHexStringLower(RealCookie), request.AuthCookieHex,
             "发给服务端的必须是假 cookie");
 
         // 而且它确实是个合法的十六进制 cookie（不是原始字节被当成文本）。
         byte[] sent = Convert.FromHexString(request.AuthCookieHex);
         Assert.HasCount(16, sent);
-        Assert.AreNotSequenceEqual(_realCookie, sent);
+        Assert.AreNotSequenceEqual(RealCookie, sent);
     }
 
     [TestMethod]
@@ -103,7 +103,7 @@ public sealed class X11ForwardTests
             "落到 X server 上的应当是一个完整的建立报文");
 
         Assert.AreSequenceEqual(
-            _realCookie, parsed.ProtocolData, "转给本机 X server 的必须是**真** cookie —— 假的那个 X server 不认");
+            RealCookie, parsed.ProtocolData, "转给本机 X server 的必须是**真** cookie —— 假的那个 X server 不认");
 
         Assert.AreEqual(1, forwarder.AcceptedChannels);
         Assert.AreEqual(0, forwarder.RejectedChannels);
@@ -631,7 +631,7 @@ public sealed class X11ForwardTests
     }
 
     [TestMethod]
-    public void xauth的显示名保留主机与套接字路径()
+    public void Xauth的显示名保留主机与套接字路径()
     {
         Assert.AreEqual(":0", X11Display.Parse(":0").XAuthName);
         Assert.AreEqual(":0", X11Display.Parse("unix:0").XAuthName);
@@ -763,7 +763,7 @@ public sealed class X11ForwardTests
             // 那是对的行为，但会让这条用例验不到 cookie 替换。
             WriteBlock(buffer, []);                       // display number（通配）
             WriteBlock(buffer, Encoding.ASCII.GetBytes(XAuthority.MitMagicCookie1));
-            WriteBlock(buffer, _realCookie);
+            WriteBlock(buffer, RealCookie);
 
             File.WriteAllBytes(path, buffer.WrittenSpan.ToArray());
             return path;

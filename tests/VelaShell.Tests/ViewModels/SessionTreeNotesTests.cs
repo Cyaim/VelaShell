@@ -110,7 +110,7 @@ public class SessionTreeNotesTests
 
         node.Notes = "新备注";
 
-        CollectionAssert.Contains(raised, nameof(SessionTreeNodeViewModel.NotesTip));
+        Assert.Contains(nameof(SessionTreeNodeViewModel.NotesTip), raised);
         Assert.AreEqual("新备注", node.NotesTip);
     }
 

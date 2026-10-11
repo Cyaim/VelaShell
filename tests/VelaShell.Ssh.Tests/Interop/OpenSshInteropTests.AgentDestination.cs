@@ -196,12 +196,13 @@ public sealed partial class OpenSshInteropTests
             Assert.Inconclusive("这台机器不支持 Unix 套接字。");
         }
 
-        const string ShellsHost = "velashell-test-shells", ShellsUser = "vela-bash";
+        const string shellsHost = "velashell-test-shells", shellsUser = "vela-bash";
         using var key = InMemorySshSigner.GenerateEd25519();
-        SshConnection shells;
+        SshConnection? shells = null;
+        string? unreachable = null;
         try
         {
-            shells = await SshConnection.ConnectAsync(new SshConnectionOptions(ShellsUser, Host, 2223)
+            shells = await SshConnection.ConnectAsync(new SshConnectionOptions(shellsUser, Host, 2223)
             {
                 HostKeyPolicy = new DangerousAcceptAnyHostKeyPolicy(),
                 Credentials = [new PasswordCredential("velapass")],
@@ -210,7 +211,11 @@ public sealed partial class OpenSshInteropTests
         }
         catch (SshException ex)
         {
-            Assert.Inconclusive($"多 shell 靶子（本机 2223）连不上：{ex.Message}");
+            unreachable = ex.Message;
+        }
+        if (shells is null)
+        {
+            Assert.Inconclusive($"多 shell 靶子（本机 2223）连不上：{unreachable}");
             return;
         }
 
@@ -225,9 +230,9 @@ public sealed partial class OpenSshInteropTests
                 await using SshConnection admin = await SshConnection.ConnectAsync(Options());
                 await using RemoteAgent remote = await RemoteAgent.StartAsync(admin);
                 SshAgentHopHost a = await remote.ScanAsync("127.0.0.1", InnerPort);
-                if (await remote.TryScanAsync(ShellsHost, InnerPort) is not { } b)
+                if (await remote.TryScanAsync(shellsHost, InnerPort) is not { } b)
                 {
-                    Assert.Inconclusive($"从这台服务端连不到 {ShellsHost}（不在 docker-compose.test.yml 的同一个网络里）。");
+                    Assert.Inconclusive($"从这台服务端连不到 {shellsHost}（不在 docker-compose.test.yml 的同一个网络里）。");
                     return;
                 }
 
@@ -241,13 +246,13 @@ public sealed partial class OpenSshInteropTests
                     await using SshConnection toA = await SshConnection.ConnectAsync(Options());
                     return await toA.RunAsync(
                         "ssh-add -l; ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes " +
-                        $"-o LogLevel=ERROR -p {InnerPort} {ShellsUser}@{ShellsHost} 'echo 到了B'",
+                        $"-o LogLevel=ERROR -p {InnerPort} {shellsUser}@{shellsHost} 'echo 到了B'",
                         new SshCommandOptions { AgentForwarding = new AgentForwardOptions { AgentEndpoint = localSocket } });
                 }
 
                 await adder.AddIdentityAsync(key, "vela-rd", new SshAgentKeyConstraints
                 {
-                    AllowedHops = [new SshAgentHop(a), new SshAgentHop(b, userName: ShellsUser, via: a)],
+                    AllowedHops = [new SshAgentHop(a), new SshAgentHop(b, userName: shellsUser, via: a)],
                 });
                 SshCommandResult both = await HopAsync();
                 Assert.Contains(key.PublicKey.Sha256Fingerprint, both.StandardOutput, "有一跳以 A 为起点：A 上列得出");

@@ -51,10 +51,8 @@ public sealed class ShortcutKeyBindingsUiTests
                 Press(window, Key.W, PhysicalKey.W, RawInputModifiers.Control);
                 Press(window, Key.B, PhysicalKey.B, RawInputModifiers.Control);
 
-                CollectionAssert.AreEqual(new[] { "app.palette", "view.sidebar" }, executed,
-                                          "改过的 Ctrl+Shift+P 与出厂的 Ctrl+B 照常触发。");
-                CollectionAssert.AreEqual(new[] { Key.P, Key.W }, probe.Received,
-                                          "改走的 Ctrl+P 与解绑的 Ctrl+W 原样到达焦点控件(终端)。");
+                Assert.AreSequenceEqual(["app.palette", "view.sidebar"], executed, "改过的 Ctrl+Shift+P 与出厂的 Ctrl+B 照常触发。");
+                Assert.AreSequenceEqual([Key.P, Key.W], probe.Received, "改走的 Ctrl+P 与解绑的 Ctrl+W 原样到达焦点控件(终端)。");
             }
             finally
             {
@@ -77,8 +75,8 @@ public sealed class ShortcutKeyBindingsUiTests
             ShortcutKeyBindings.Apply(window.KeyBindings,
                                       new(new Dictionary<string, string> { ["session.close"] = "" }, isMacOS: false), command);
 
-            Assert.AreEqual(defaults - 1, window.KeyBindings.Count);
-            Assert.IsFalse(window.KeyBindings.Any(binding => binding.Gesture is { Key: Key.W, KeyModifiers: KeyModifiers.Control }));
+            Assert.HasCount(defaults - 1, window.KeyBindings);
+            Assert.DoesNotContain(binding => binding.Gesture is { Key: Key.W, KeyModifiers: KeyModifiers.Control }, window.KeyBindings);
         }, CancellationToken.None).GetAwaiter().GetResult();
     }
 

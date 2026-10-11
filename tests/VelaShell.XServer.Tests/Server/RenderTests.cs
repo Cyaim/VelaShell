@@ -207,9 +207,9 @@ public sealed class RenderTests
 
         // 同一张 a8 像素图上建 N 张 picture,依次把上一张的 alpha-map 设成下一张。每一步新挂上的那张都还没有
         // alpha-map,ChangePicture 都接受;合成时若顺着链往下解,每一环一层递归,栈溢出在 .NET 里接不住,整个进程会崩。
-        const int Links = 100_000;
+        const int links = 100_000;
         uint previous = source;
-        for (int i = 0; i < Links; i++)
+        for (int i = 0; i < links; i++)
         {
             uint next = c.NewId();
             uint link = previous;

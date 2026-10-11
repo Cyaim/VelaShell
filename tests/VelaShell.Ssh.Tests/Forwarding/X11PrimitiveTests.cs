@@ -91,7 +91,7 @@ public sealed class X11PrimitiveTests
     }
 
     [TestMethod]
-    public void localhost显示只走回环TCP_不试任何本机套接字()
+    public void Localhost显示只走回环TCP_不试任何本机套接字()
     {
         // 嵌套 ssh -X 时 sshd 给的是 DISPLAY=localhost:10 —— 按 X 的约定就是 TCP 6010。
         // 去试 Linux 抽象套接字的话，同机的别的用户抢先绑上 @/tmp/.X11-unix/X10 就能收到真 cookie。
@@ -175,7 +175,7 @@ public sealed class X11PrimitiveTests
     }
 
     [TestMethod]
-    public void cookie为空的记录跳过_接着找后面有效的那条()
+    public void Cookie为空的记录跳过_接着找后面有效的那条()
     {
         // 空 cookie 开不了任何门：拿它当真 cookie 换进建立报文，后面那条有效的就被它挡住了。
         byte[] cookie = [1, 2, 3, 4];

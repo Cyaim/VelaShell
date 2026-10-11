@@ -107,7 +107,7 @@ public sealed class RenderSimdTests
                     ScalarCombine(over, source[i], withMask ? mask[i] : null, destination[i], dstAlpha, depthMask))];
                 int done = over ? RenderSimd.OverRow(source, mask, destination, keep) : RenderSimd.AddRow(source, mask, destination, keep);
                 Assert.AreEqual(n & ~3, done);
-                CollectionAssert.AreEqual(expected[..done], destination[..done], $"第 {round} 轮");
+                Assert.AreSequenceEqual(expected[..done], destination[..done], $"第 {round} 轮");
             }
         }
     }
@@ -137,7 +137,7 @@ public sealed class RenderSimdTests
             uint[] expected = [.. source.Zip(destination, (s, d) => ScalarOverImage(s, d, dstAlpha))];
             int done = RenderSimd.OverImageRow(source, destination, dstAlpha);
             Assert.AreEqual(n & ~3, done);
-            CollectionAssert.AreEqual(expected[..done], destination[..done], $"第 {round} 轮");
+            Assert.AreSequenceEqual(expected[..done], destination[..done], $"第 {round} 轮");
         }
     }
 
@@ -164,7 +164,7 @@ public sealed class RenderSimdTests
             uint[] expected = [.. mask.Zip(destination, (m, d) => ScalarOverSolidMask(color, m, d, dstAlpha))];
             int done = RenderSimd.OverSolidMaskRow(color, mask, destination, dstAlpha);
             Assert.AreEqual(n & ~3, done);
-            CollectionAssert.AreEqual(expected[..done], destination[..done], $"第 {round} 轮,颜色 {color:X8}");
+            Assert.AreSequenceEqual(expected[..done], destination[..done], $"第 {round} 轮,颜色 {color:X8}");
         }
     }
 }

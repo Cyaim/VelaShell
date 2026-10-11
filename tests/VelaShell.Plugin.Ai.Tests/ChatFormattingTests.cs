@@ -187,7 +187,7 @@ public sealed class TransientFailureTests
     [DataRow(Anthropic.Models.ErrorType.AuthenticationError, false)]
     public void AnthropicInStreamErrorsAreJudgedByType(Anthropic.Models.ErrorType type, bool transient)
     {
-        var error = new Anthropic.Exceptions.AnthropicSseException("stream error", null!) { ErrorType = type };
+        var error = new Anthropic.Exceptions.AnthropicSseException("stream error", null) { ErrorType = type };
         Assert.AreEqual(transient, TransientFailure.IsTransient(error));
         Assert.AreEqual(transient, TransientFailure.IsWorthSwitching(error));
     }

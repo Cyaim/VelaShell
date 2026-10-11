@@ -1088,7 +1088,7 @@ public sealed class ProviderSetupViewUiTests
             (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
                 await ShowAsync(context, new AiSettings { Providers = [source] }, focus: "custom-openai");
             BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-            var gate = (SemaphoreSlim)typeof(AiSettingsStore).GetProperty("_providerKeyGate", flags)!.GetValue(store)!;
+            var gate = (SemaphoreSlim)typeof(AiSettingsStore).GetProperty("ProviderKeyGate", flags)!.GetValue(store)!;
             await gate.WaitAsync();
             bool released = false;
             try
@@ -1763,12 +1763,17 @@ public sealed class ProviderSetupViewUiTests
                 Click(Find<Button>(view, "SetupAddAnotherButton"));
                 await PumpAsync(20);
                 Click(Find<Button>(view, "SetupPrimaryButton"));
+                bool arrived = true;
                 try
                 {
                     await auth.WaitAsync(TimeSpan.FromSeconds(30));
                     await models.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(30));
                 }
                 catch (TimeoutException)
+                {
+                    arrived = false;
+                }
+                if (!arrived)
                 {
                     Assert.Fail($"设备码登录或模型拉取未抵达本地端点: {Find<TextBlock>(view, "SetupProgressText").Text}");
                 }
@@ -1819,11 +1824,11 @@ public sealed class ProviderSetupViewUiTests
                 await PumpAsync(20);
 
                 List<string> boxes = VisibleBoxes(view);
-                Assert.IsTrue(boxes.Contains("SetupClientIdBox"),
+                Assert.Contains("SetupClientIdBox", boxes,
                     "新建态要能填 ClientId(review⑥#3)");
-                Assert.IsTrue(boxes.Contains("SetupAuthUrlBox"),
+                Assert.Contains("SetupAuthUrlBox", boxes,
                     "新建态要能填授权端点(review⑥#3)");
-                Assert.IsTrue(boxes.Contains("SetupTokenUrlBox"),
+                Assert.Contains("SetupTokenUrlBox", boxes,
                     "新建态要能填令牌端点(review⑥#3)");
             }
             finally
@@ -2889,7 +2894,7 @@ public sealed class ProviderSetupViewUiTests
                 (Exception? error, _) = await HealthProbe.ProbeAsync(store, new ResolvedModel(created, created.Models[0]));
                 Assert.IsNull(error, error?.ToString());
                 Assert.IsTrue(endpoint.Authorizations.All(header => header == "Bearer sk-new"));
-                Assert.IsTrue(endpoint.Requests.Any(body => body.Contains("\"model\":\"my-retry-model\"", StringComparison.Ordinal)));
+                Assert.Contains(body => body.Contains("\"model\":\"my-retry-model\"", StringComparison.Ordinal), endpoint.Requests);
             }
             finally { window.Close(); }
         });
@@ -3047,9 +3052,9 @@ public sealed class ProviderSetupViewUiTests
                 provider.OAuth.TokenUrl = url + "/tenant-b/token";
                 await PumpAsync();
                 Click(Find<Button>(view, "SetupPrimaryButton"));
-                (string Body, string? Header) = await captured.Task.WaitAsync(TimeSpan.FromSeconds(10));
-                Assert.IsNull(Header, "共享实例的新地址不得授权旧表单隐藏头");
-                Assert.DoesNotContain("tenant-a-secret", Body);
+                (string body, string? header) = await captured.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                Assert.IsNull(header, "共享实例的新地址不得授权旧表单隐藏头");
+                Assert.DoesNotContain("tenant-a-secret", body);
                 await WaitForEnabledAsync(Find<Button>(view, "SetupPrimaryButton"));
                 Assert.IsNull(await store.GetTokensAsync(provider.Id));
             }
@@ -3422,7 +3427,7 @@ public sealed class ProviderSetupViewUiTests
                 await store.SaveAsync(external);
                 int requests = endpoint.Requests.Count;
                 await ClickPrimaryAsync(view);
-                Assert.AreEqual(requests, endpoint.Requests.Count, "冲突不能自动提交或继续模型请求");
+                Assert.HasCount(requests, endpoint.Requests, "冲突不能自动提交或继续模型请求");
                 Assert.AreEqual("external-name", name.Text,
                     "上次已保存且未继续编辑的原始输入即使含空格也必须跟随外部值");
                 Assert.AreEqual("sk-later-draft", key.Text);

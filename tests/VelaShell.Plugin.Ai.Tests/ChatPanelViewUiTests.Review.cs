@@ -372,7 +372,7 @@ public sealed partial class ChatPanelViewUiTests
                 if (change == "renew")
                 {
                     Assert.Contains("executed-once", await target.ContinuationRequest);
-                    CollectionAssert.AreEqual(new[] { "Bearer old-token", "Bearer new-token" }, target.Authorizations.ToArray());
+                    Assert.AreSequenceEqual(["Bearer old-token", "Bearer new-token"], target.Authorizations.ToArray());
                     Assert.AreEqual("备用站回答", AnswerRenderers(Find<StackPanel>(panel, "MessagesPanel")).Single().MarkdownBuilder.ToString());
                 }
                 Assert.AreEqual(provider.Models[0].Id, (await store.LoadAsync()).ActiveModelId);

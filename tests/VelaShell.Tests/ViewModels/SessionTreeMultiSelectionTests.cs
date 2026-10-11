@@ -175,8 +175,7 @@ public class SessionTreeMultiSelectionTests
 
         _vm.ExtendSelectionTo(Node(_gamma), additive: true);
 
-        CollectionAssert.AreEquivalent(new[] { Node(_alpha), Node(_loose), Node(_gamma) }, _vm.MultiSelection.ToArray(),
-            "起点是最近一次 Ctrl 加选的 loose,往上选到 gamma;原先的 alpha 留着");
+        Assert.AreSequenceEqual([Node(_alpha), Node(_loose), Node(_gamma)], [.. _vm.MultiSelection], SequenceOrder.InAnyOrder, "起点是最近一次 Ctrl 加选的 loose,往上选到 gamma;原先的 alpha 留着");
     }
 
     [TestMethod]
@@ -297,7 +296,7 @@ public class SessionTreeMultiSelectionTests
         await _vm.OpenSelectedCommand.Execute().FirstAsync();
 
         Assert.IsNotNull(raised);
-        Assert.AreSequenceEqual(new[] { _alpha, _gamma, _loose }, [.. raised], "按树上从上到下的顺序打开,标签就按这个顺序排");
+        Assert.AreSequenceEqual([_alpha, _gamma, _loose], [.. raised], "按树上从上到下的顺序打开,标签就按这个顺序排");
     }
 
     [TestMethod]
@@ -344,7 +343,7 @@ public class SessionTreeMultiSelectionTests
         {
             await _repository.Received(1).DeleteSessionAsync(profile.Id);
         }
-        Assert.IsFalse(_vm.Rows.Any(row => !row.IsGroup));
+        Assert.DoesNotContain(row => !row.IsGroup, _vm.Rows);
         Assert.IsTrue(_vm.HasNoSessions);
         Assert.IsEmpty(_vm.MultiSelection);
     }
@@ -358,7 +357,7 @@ public class SessionTreeMultiSelectionTests
 
         await _vm.MoveSelectionToGroupCommand.Execute(ungrouped).FirstAsync();
 
-        Assert.IsFalse(_vm.Nodes.Any(n => n.IsGroup), "源分组被挪空,按老规矩连分组一起删掉");
+        Assert.DoesNotContain(n => n.IsGroup, _vm.Nodes, "源分组被挪空,按老规矩连分组一起删掉");
         await _repository.Received(1).DeleteGroupAsync(_group.Id);
         Assert.IsTrue(new[] { _alpha, _beta, _bucket, _gamma }.All(p => p.GroupId is null));
     }
@@ -376,8 +375,8 @@ public class SessionTreeMultiSelectionTests
         await _vm.BatchEditCommand.Execute().FirstAsync();
         await _vm.ExportSelectedCommand.Execute().FirstAsync();
 
-        Assert.AreSequenceEqual(new[] { _alpha, _beta }, [.. edited!]);
-        Assert.AreSequenceEqual(new[] { _alpha.Id, _beta.Id }, [.. exported!.ProfileIds]);
+        Assert.AreSequenceEqual([_alpha, _beta], [.. edited!]);
+        Assert.AreSequenceEqual([_alpha.Id, _beta.Id], [.. exported!.ProfileIds]);
         Assert.IsNull(exported.GroupName);
     }
 }

@@ -29,7 +29,7 @@ public sealed class PingTests
             await Task.Delay(10, host.Token);
         }
         Assert.IsTrue(host.Connection.PeerSupportsPing, "认证之后的 EXT_INFO 里宣告了 ping@openssh.com");
-        CollectionAssert.AreEqual(data, host.Channels.Observation.Pongs.Single(), "PONG 原样带回数据");
+        Assert.AreSequenceEqual(data, host.Channels.Observation.Pongs.Single(), "PONG 原样带回数据");
 
         TimeSpan rtt = await host.Connection.MeasureRoundTripAsync(host.Token);
         Assert.IsGreaterThan(TimeSpan.Zero, rtt);

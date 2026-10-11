@@ -174,7 +174,7 @@ public sealed class AgentDestinationConstraintTests
     [TestMethod]
     [DataRow((byte)5)]
     [DataRow((byte)28)]
-    public async Task agent拒绝目的地约束时抛AgentRefused且不重试(byte reply)
+    public async Task Agent拒绝目的地约束时抛AgentRefused且不重试(byte reply)
     {
         await using Rig rig = new();
         rig.Agent.RejectAdditions = true;
@@ -310,13 +310,13 @@ public sealed class AgentDestinationConstraintTests
 
         SshAgentHopHost host = SshAgentHopHost.FromKnownHosts(entries, "Host-C")!;
         Assert.AreEqual("host-c", host.Name, "转小写、不带端口");
-        Assert.AreSequenceEqual(new[] { plain, hashed, wildcard }, [.. host.HostKeys],
+        Assert.AreSequenceEqual([plain, hashed, wildcard], [.. host.HostKeys],
             "取反对上的整行不算；吊销的剔掉（不论排在前后）；重复的、认不得的、证书跳过");
-        Assert.AreSequenceEqual(new[] { ca }, [.. host.CertificateAuthorities]);
+        Assert.AreSequenceEqual([ca], [.. host.CertificateAuthorities]);
 
         SshAgentHopHost onPort = SshAgentHopHost.FromKnownHosts(entries, "host-c", 2222)!;
         Assert.AreEqual("host-c", onPort.Name);
-        Assert.AreSequenceEqual(new[] { otherPort }, [.. onPort.HostKeys], "端口不是 22 时只认 [host]:port");
+        Assert.AreSequenceEqual([otherPort], [.. onPort.HostKeys], "端口不是 22 时只认 [host]:port");
 
         Assert.IsNull(SshAgentHopHost.FromKnownHosts(entries, "nowhere"), "找不到就交回 null，由调用方叫使用者先连一次");
         Assert.IsNull(SshAgentHopHost.FromKnownHosts(KnownHostsFile.Parse("@revoked " + Line("solo", revoked) + "\n" + Line("solo", revoked)), "solo"),
@@ -387,7 +387,7 @@ public sealed class AgentDestinationConstraintTests
             TestSessionDeclaration[] declarations = [.. agent.Declarations];
             Assert.HasCount(2, declarations);
             Assert.AreEqual(expectedConnections, declarations[1].Connection, "后一个会话的声明落在重开的连接上");
-            Assert.HasCount(0, await client.ListIdentitiesAsync(cts.Token), "之后照常能用");
+            Assert.IsEmpty(await client.ListIdentitiesAsync(cts.Token), "之后照常能用");
         }
         finally
         {

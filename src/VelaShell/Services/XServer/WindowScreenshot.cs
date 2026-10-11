@@ -58,7 +58,7 @@ internal static class WindowScreenshot
         return bitmap;
     }
 
-    private static unsafe Span<byte> FrameRow(ILockedFramebuffer frame, int y, int length) =>
+    private static Span<byte> FrameRow(ILockedFramebuffer frame, int y, int length) =>
         new((byte*)frame.Address + ((long)y * frame.RowBytes), length);
 
     /// <summary>形状(SHAPE 的边界形状)以外清成全透明。</summary>

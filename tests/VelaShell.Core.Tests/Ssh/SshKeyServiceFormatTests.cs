@@ -74,7 +74,7 @@ public class SshKeyServiceFormatTests
 
             Assert.AreEqual("ED25519", info.Type);
             Assert.StartsWith("ssh-ed25519 ", info.PublicKeyLine);
-            byte[] pubBlob = Convert.FromBase64String(info.PublicKeyLine!.Split(' ')[1]);
+            byte[] pubBlob = Convert.FromBase64String(info.PublicKeyLine.Split(' ')[1]);
 
             byte[] inner = UnwrapOpenSshPrivateKey(await File.ReadAllTextAsync(info.PrivateKeyPath));
             int offset = 0;

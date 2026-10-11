@@ -123,7 +123,7 @@ public sealed class SplashRendererTests
 
             string[] all = [.. strings.Stages, .. strings.MascotLines, strings.Starting, strings.Ready, strings.Tagline,
                             strings.ConstellationName, strings.MascotHello, strings.MascotReady];
-            Assert.IsFalse(all.Any(s => s.StartsWith("Splash_", StringComparison.Ordinal)), "有文案没取到,显示成了键名。");
+            Assert.DoesNotContain(s => s.StartsWith("Splash_", StringComparison.Ordinal), all, "有文案没取到,显示成了键名。");
             Assert.StartsWith("v", strings.Version);
         }
         finally

@@ -70,8 +70,7 @@ public sealed class SubscriptionProviderTests
             ExpiresAt = DateTimeOffset.UtcNow
         });
         BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var gate = (SemaphoreSlim)(typeof(AiSettingsStore).GetField("_refreshGate", flags)?.GetValue(store)
-            ?? typeof(AiSettingsStore).GetProperty("_refreshGate", flags)!.GetValue(store))!;
+        var gate = (SemaphoreSlim)typeof(AiSettingsStore).GetProperty("RefreshGate", flags)!.GetValue(store)!;
         await gate.WaitAsync();
         Task<ProviderCredential> pending;
         try

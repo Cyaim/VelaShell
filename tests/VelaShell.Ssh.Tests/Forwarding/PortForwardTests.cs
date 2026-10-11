@@ -250,11 +250,13 @@ public sealed class PortForwardTests
     /// 转发器要是给了一个 FIN，读会正常结束、这里抛断言失败。
     /// </remarks>
     private static Task<SocketException> ConnectAndExpectResetAsync(Socket client, EndPoint endPoint, CancellationToken cancellationToken) =>
-        Assert.ThrowsExactlyAsync<SocketException>(async () =>
-        {
-            await client.ConnectAsync(endPoint, cancellationToken);
-            await ReadAllAsync(client, new byte[16], cancellationToken);
-        });
+        Assert.ThrowsExactlyAsync<SocketException>(() => ConnectAndReadAllAsync(client, endPoint, cancellationToken));
+
+    private static async Task ConnectAndReadAllAsync(Socket client, EndPoint endPoint, CancellationToken cancellationToken)
+    {
+        await client.ConnectAsync(endPoint, cancellationToken);
+        await ReadAllAsync(client, new byte[16], cancellationToken);
+    }
 
     /// <summary>
     /// 〔Q5〕默认同时听 127.0.0.1 与 ::1（同一个端口）：先试 ::1 的客户端也连得上；同端口的 IPv6 环回被别的进程占着时不起这个转发，
@@ -273,7 +275,7 @@ public sealed class PortForwardTests
         {
             int port = ((IPEndPoint)forwarder.BoundEndPoint!).Port;
             Assert.AreSequenceEqual(
-                new EndPoint[] { new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port) },
+                [new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port)],
                 [.. forwarder.BoundEndPoints]);
 
             using Socket client = new(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
@@ -1601,7 +1603,7 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
         string tooLong = Path.Combine(Path.GetTempPath(), new string('x', 120) + ".sock");
         SshForwardException longPath = Assert.ThrowsExactly<SshForwardException>(() => LocalPortForwarder.Start(
             harness.Connection, "h", 1, new LocalPortForwardOptions { ListenSocketPath = tooLong }));
-        StringAssert.Contains(longPath.Message, "太长");
+        Assert.Contains("太长", longPath.Message);
     }
 
     // ------------------------------------------------------------ 计量与限速
@@ -1692,12 +1694,12 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
     public async Task 配置里的转发起不来时按ExitOnForwardFailure处理()
     {
         await using Harness harness = await Harness.StartAsync(new TestChannelScript());
-        const string Forwards = """
+        const string forwards = """
                 LocalForward 127.0.0.1:0 db.internal:5432
                 RemoteForward 0 localhost:22
             """;
 
-        SshHostConfig lenient = SshConfigFile.Resolve(SshConfigFile.Parse("Host h\n" + Forwards), "h");
+        SshHostConfig lenient = SshConfigFile.Resolve(SshConfigFile.Parse("Host h\n" + forwards), "h");
         List<string> failed = [];
         IReadOnlyList<PortForwarder> started = await SshConfigFile.StartForwardsAsync(
             harness.Connection, lenient, (forward, _) => failed.Add(forward.Line), harness.Token);
@@ -1705,10 +1707,10 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
         Assert.AreSequenceEqual(["0 localhost:22"], [.. failed]);
         await started[0].DisposeAsync();
 
-        SshHostConfig strict = SshConfigFile.Resolve(SshConfigFile.Parse("Host h\n    ExitOnForwardFailure yes\n" + Forwards), "h");
+        SshHostConfig strict = SshConfigFile.Resolve(SshConfigFile.Parse("Host h\n    ExitOnForwardFailure yes\n" + forwards), "h");
         SshForwardException failure = await Assert.ThrowsAsync<SshForwardException>(
             async () => await SshConfigFile.StartForwardsAsync(harness.Connection, strict, cancellationToken: harness.Token));
         Assert.AreEqual(SshFailureReason.ForwardSetupFailed, failure.Reason);
-        StringAssert.Contains(failure.Message, "0 localhost:22");
+        Assert.Contains("0 localhost:22", failure.Message);
     }
 }

@@ -364,7 +364,7 @@ public sealed class XNativeWindow : Window
     /// <summary>这个窗口此刻留着的图像光标数(测试用)。</summary>
     internal int ImageCursorCount => _imageCursors.Count;
 
-    private static unsafe Cursor CreateImageCursor(XCursorImage image)
+    private static Cursor CreateImageCursor(XCursorImage image)
     {
         // 预乘的 0xAARRGGBB 按小端字节序就是预乘的 BGRA:逐行拷进位图。
         WriteableBitmap bitmap = new(new PixelSize(image.Width, image.Height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
@@ -577,7 +577,7 @@ public sealed class XNativeWindow : Window
         // 组着字切走了:叠画的预编辑收掉(只有 Win32 会替我们清,macOS / Linux 上原先留着一个过期的组字框盖在 X 窗口上);
         // 经 XIM 按 on-the-spot 连着的程序那边画的预编辑也一并擦掉。
         SetPreedit(null, null);
-        _host.OnWindowDeactivated(this);
+        _host.OnWindowDeactivated();
     }
 
     /// <summary>X 那边还按着的按钮一律松开(在最后一次指针位置)。失去捕获、窗口失活时调:之后的松开不会再送到这个窗口。</summary>
@@ -1459,7 +1459,7 @@ public sealed class XNativeWindow : Window
             }
         }
 
-        private static unsafe void CopyPart(ReadOnlySpan<uint> pixels, int width, XRect part, XRect tile, ILockedFramebuffer frame,
+        private static void CopyPart(ReadOnlySpan<uint> pixels, int width, XRect part, XRect tile, ILockedFramebuffer frame,
             bool opaque, IReadOnlyList<XRect>? shape)
         {
             int rowPixels = frame.RowBytes / 4;

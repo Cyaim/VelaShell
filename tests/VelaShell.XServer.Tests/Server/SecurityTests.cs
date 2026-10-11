@@ -90,10 +90,10 @@ public sealed class SecurityTests
             Assert.IsNull(await QueryAsync(untrusted, insecure), $"{insecure} 对非受信客户端不可见");
         }
         List<string> names = await ListExtensionsAsync(untrusted);
-        CollectionAssert.DoesNotContain(names, "XTEST");
-        CollectionAssert.Contains(names, "RENDER");
-        CollectionAssert.Contains(names, "XInputExtension");
-        CollectionAssert.Contains(await ListExtensionsAsync(trusted), "XTEST");
+        Assert.DoesNotContain("XTEST", names);
+        Assert.Contains("RENDER", names);
+        Assert.Contains("XInputExtension", names);
+        Assert.Contains("XTEST", await ListExtensionsAsync(trusted));
 
         // 猜到了主操作码也用不了:Request 错误(规范「Extension Security」)。
         XMessage guessed = await untrusted.RequestAsync(major, 0, b => b.U16(1).U16(0));
@@ -237,8 +237,8 @@ public sealed class SecurityTests
         XMessage list = await untrusted.RequestAsync(21, 0, b => b.U32(root));
         int count = list.U16(8);
         List<uint> atoms = [.. Enumerable.Range(0, count).Select(i => list.U32(32 + (4 * i)))];
-        CollectionAssert.DoesNotContain(atoms, 9u, "ListProperties 不列");
-        CollectionAssert.Contains(atoms, await InternAsync(trusted, "RESOURCE_MANAGER"), "共用的属性照常看得见");
+        Assert.DoesNotContain(9u, atoms, "ListProperties 不列");
+        Assert.Contains(await InternAsync(trusted, "RESOURCE_MANAGER"), atoms, "共用的属性照常看得见");
 
         // 改 / 删根窗口上的属性:当作 NoOperation,不报错。
         uint mine = await InternAsync(untrusted, "UNTRUSTED_WAS_HERE");

@@ -751,10 +751,11 @@ public sealed partial class X11Server
         }
     }
 
-    /// <summary>根窗口的 _XKB_RULES_NAMES:setxkbmap 等工具从这里读当前的 rules / model / layout / variant / options。</summary>
-    private string? _keyboardLayout;
-
-    private string KeyboardLayout => _keyboardLayout ?? _options.KeyboardLayout;
+    /// <summary>
+    /// 根窗口的 _XKB_RULES_NAMES:setxkbmap 等工具从这里读当前的 rules / model / layout / variant / options。
+    /// 宿主没换过键位表时取 <see cref="X11ServerOptions.KeyboardLayout" />。
+    /// </summary>
+    private string KeyboardLayout { get => field ?? Options.KeyboardLayout; set; }
 
     private void PublishXkbRulesNames()
     {

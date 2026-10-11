@@ -339,7 +339,7 @@ public sealed class SharedCredentialUiTests
         await vm.CheckMatchingCommand.Execute().FirstAsync();
         SharedCredentialEditResult result = await vm.SaveCommand.Execute().FirstAsync();
 
-        CollectionAssert.AreEqual(new[] { same.Id }, result.Users.ToArray());
+        Assert.AreSequenceEqual([same.Id], [.. result.Users]);
         Assert.AreEqual(Strings.Format("SharedCred_MatchResult", 1), vm.MatchStatus);
     }
 
@@ -388,7 +388,7 @@ public sealed class SharedCredentialUiTests
 
         SharedCredentialEditResult result = await vm.SaveCommand.Execute().FirstAsync();
 
-        CollectionAssert.AreEqual(new[] { user.Id }, result.Users.ToArray());
+        Assert.AreSequenceEqual([user.Id], [.. result.Users]);
     }
 
     // ———— 设置页 ————

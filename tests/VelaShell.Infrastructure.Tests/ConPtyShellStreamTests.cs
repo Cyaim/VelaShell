@@ -19,12 +19,12 @@ namespace VelaShell.Infrastructure.Tests;
 [TestClass]
 [TestCategory("ConPty")]
 [SupportedOSPlatform(nameof(OSPlatform.Windows))]
+[OSCondition(OperatingSystems.Windows)]
 public class ConPtyShellStreamTests
 {
     /// <summary>挂载正常:conhost 的 VT 握手序列经输出管道到达我们这侧。</summary>
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
-    [OSCondition(OperatingSystems.Windows)]
     public async Task ConPty_SpawnsShell_DeliversConhostHandshake()
     {
         await using var stream = ConPtyShellStream.Start("cmd.exe", workingDirectory: null, columns: 80, rows: 25);
@@ -46,7 +46,6 @@ public class ConPtyShellStreamTests
     /// </remarks>
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
-    [OSCondition(OperatingSystems.Windows)]
     public async Task ConPty_WhenChildExitsOnItsOwn_ReadSideSignalsEof()
     {
         await using var stream = ConPtyShellStream.Start("cmd.exe /c exit", workingDirectory: null, columns: 80, rows: 25);
@@ -58,7 +57,6 @@ public class ConPtyShellStreamTests
     }
 
     [TestMethod]
-    [OSCondition(OperatingSystems.Windows)]
     public async Task ConPty_Dispose_KillsProcess_AndIsIdempotent()
     {
         var stream = ConPtyShellStream.Start("cmd.exe", workingDirectory: null, columns: 80, rows: 25);

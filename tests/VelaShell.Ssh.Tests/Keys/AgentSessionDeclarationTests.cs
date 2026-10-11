@@ -53,7 +53,7 @@ public sealed class AgentSessionDeclarationTests
     }
 
     [TestMethod]
-    public async Task agent回FAILURE时交回false且后面照常能用()
+    public async Task Agent回FAILURE时交回false且后面照常能用()
     {
         TestAgent agent = new() { DeclarationReply = TestDeclarationReply.Reject };
         using var key = InMemorySshSigner.GenerateEd25519();

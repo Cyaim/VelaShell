@@ -201,7 +201,7 @@ public sealed class AuthenticationTests
         AuthRun run = await RunAsync([credential], new TestAuthPolicy { AcceptPassword = "hunter2", RequestPasswordChange = true });
 
         Assert.AreEqual(SshProtocolNames.AuthPassword, run.Succeeded.Method);
-        Assert.AreSequenceEqual(new[] { ("hunter2", "correct horse") }, run.Observation.PasswordChanges);
+        Assert.AreSequenceEqual([("hunter2", "correct horse")], run.Observation.PasswordChanges);
         Assert.HasCount(1, asked);
         Assert.AreEqual("你的密码已过期。", asked[0].Prompt);
         Assert.AreEqual(1, asked[0].Attempt);
@@ -225,9 +225,9 @@ public sealed class AuthenticationTests
             [credential], new TestAuthPolicy { AcceptPassword = "hunter2", RequestPasswordChange = true, RejectNewPasswords = 1 });
 
         Assert.AreEqual(SshProtocolNames.AuthPassword, run.Succeeded.Method);
-        Assert.AreSequenceEqual(new[] { 1, 2 }, [.. asked.Select(a => a.Attempt)]);
+        Assert.AreSequenceEqual([1, 2], [.. asked.Select(a => a.Attempt)]);
         Assert.AreEqual("新密码太简单。", asked[1].Prompt);
-        Assert.AreSequenceEqual(new[] { ("hunter2", "123"), ("hunter2", "correct horse") }, run.Observation.PasswordChanges);
+        Assert.AreSequenceEqual([("hunter2", "123"), ("hunter2", "correct horse")], run.Observation.PasswordChanges);
     }
 
     /// <summary>服务端一直不接受：最多问 <see cref="PasswordCredential.MaxNewPasswordAttempts"/> 次，然后报「要先改密码」。</summary>
@@ -472,7 +472,7 @@ public sealed class AuthenticationTests
     }
 
     [TestMethod]
-    public async Task agent里的钥签名之前先向agent声明会话()
+    public async Task Agent里的钥签名之前先向agent声明会话()
     {
         // 〔spec/04 §4.1、spec/07 §7.4〕不声明的话 agent 执行不了 ssh-add -h 给钥加的目的地约束。
         TestAgent agent = new();
@@ -506,7 +506,7 @@ public sealed class AuthenticationTests
     }
 
     [TestMethod]
-    public async Task agent不支持会话声明时照常签名认证()
+    public async Task Agent不支持会话声明时照常签名认证()
     {
         TestAgent agent = new() { DeclarationReply = TestDeclarationReply.Reject };
         using var key = InMemorySshSigner.GenerateEd25519();
@@ -534,7 +534,7 @@ public sealed class AuthenticationTests
     }
 
     [TestMethod]
-    public async Task agent拒签时记成跳过并继续试下一条()
+    public async Task Agent拒签时记成跳过并继续试下一条()
     {
         using var good = InMemorySshSigner.GenerateEd25519();
 
@@ -1250,7 +1250,7 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
 
         Assert.AreEqual(SshProtocolNames.AuthPassword, run.Succeeded.Method);
         Assert.AreSequenceEqual(["未经授权的访问将被记录。", "第二条横幅。"], received);
-        Assert.AreSequenceEqual(received, run.Succeeded.Banner.ToArray());
+        Assert.AreSequenceEqual(received, [.. run.Succeeded.Banner]);
     }
 
     /// <summary>

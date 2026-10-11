@@ -82,7 +82,7 @@ public sealed partial class X11Server
 
     private void InitEwmh()
     {
-        if (_options.CompositingManager && !Rootful)
+        if (Options.CompositingManager && !Rootful)
         {
             // 合成管理器的管理器选区:工具包据此用 ARGB 视觉画半透明窗口与阴影(宿主显示带 alpha 的窗口)。
             // 单窗口模式下归远端的窗口管理器(xfwm4、compiz 自带合成器);服务端拼屏幕时照样按 alpha 叠。
@@ -132,14 +132,14 @@ public sealed partial class X11Server
         ];
         supported.AddRange(NetWmStates.Select(s => s.Atom));
         supported.AddRange(NetWmTypes.Select(t => t.Atom));
-        if (_options.ClientSideShadows)
+        if (Options.ClientSideShadows)
         {
             supported.Add("_GTK_FRAME_EXTENTS");
         }
         SetProperty(Root, Intern("_NET_SUPPORTED"), atom, [.. supported.Select(Intern)]);
         SetProperty(Root, Intern("_NET_SUPPORTING_WM_CHECK"), window, [check.Id]);
         SetProperty(check, Intern("_NET_SUPPORTING_WM_CHECK"), window, [check.Id]);
-        check.Properties[Intern("_NET_WM_NAME")] = new XProperty(Intern("UTF8_STRING"), 8, Encoding.UTF8.GetBytes(_options.WindowManagerName));
+        check.Properties[Intern("_NET_WM_NAME")] = new XProperty(Intern("UTF8_STRING"), 8, Encoding.UTF8.GetBytes(Options.WindowManagerName));
         // ICCCM §2.8:窗口管理器占有 WM_S0(屏幕 0 的管理器选区)。与根窗口的 SubstructureRedirect 一起,远端误跑的窗口管理器
         // 一看就知道已经有窗口管理器了(真实桌面上就是这样)。
         _selections[new SelectionSlot(Intern("WM_S0"), null)] = (check, null, 0);

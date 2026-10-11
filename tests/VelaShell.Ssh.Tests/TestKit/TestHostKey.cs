@@ -218,8 +218,8 @@ internal abstract class TestHostKey : IDisposable
                 {
                     // blob 里的类型串**永远是 ssh-rsa**，与签名算法无关。
                     w.String(SshAlgorithmNames.SshRsa);
-                    w.Mpint(p.Exponent!);
-                    w.Mpint(p.Modulus!);
+                    w.Mpint(p.Exponent);
+                    w.Mpint(p.Modulus);
                 });
             }
         }

@@ -26,7 +26,7 @@ public sealed class SftpNameCodecTests
 
             string name = SftpNameCodec.Utf8.Decode(bytes);
 
-            CollectionAssert.AreEqual(bytes, SftpNameCodec.Utf8.Encode(name), $"第 {round} 轮：{Convert.ToHexString(bytes)}");
+            Assert.AreSequenceEqual(bytes, SftpNameCodec.Utf8.Encode(name), $"第 {round} 轮：{Convert.ToHexString(bytes)}");
         }
     }
 
@@ -39,7 +39,7 @@ public sealed class SftpNameCodecTests
         byte[] bytes = Encoding.UTF8.GetBytes(name);
 
         Assert.AreEqual(name, SftpNameCodec.Utf8.Decode(bytes));
-        CollectionAssert.AreEqual(bytes, SftpNameCodec.Utf8.Encode(name));
+        Assert.AreSequenceEqual(bytes, SftpNameCodec.Utf8.Encode(name));
     }
 
     [TestMethod]
@@ -60,7 +60,7 @@ public sealed class SftpNameCodecTests
         var codec = SftpNameCodec.For(Encoding.Latin1);
 
         Assert.AreEqual("café", codec.Decode(latin1));
-        CollectionAssert.AreEqual(latin1, codec.Encode("café"));
+        Assert.AreSequenceEqual(latin1, codec.Encode("café"));
         Assert.AreSame(SftpNameCodec.Utf8, SftpNameCodec.For(Encoding.UTF8), "选 UTF-8 就是默认那一个（带无损转义）");
     }
 }

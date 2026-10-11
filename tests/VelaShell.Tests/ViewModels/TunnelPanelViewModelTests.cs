@@ -1015,7 +1015,7 @@ public class TunnelPanelViewModelTests
         // 端口取的是这条隧道自己的 5432,不是表单里默认的 27017。
         Assert.AreEqual(Strings.Format("Msg_TunnelAutoStartFailed", "pg", _server.Name,
             Strings.Format("Msg_LocalPortInUse", 5432u)), errors[0]);
-        CollectionAssert.AreEqual(new[] { _sessionId }, disconnected);
+        Assert.AreSequenceEqual([_sessionId], disconnected);
     }
 
     /// <summary>「程序启动时自动建立」随隧道配置往返:新建时写进配置、编辑时填回表单、取消后回到默认的不勾。</summary>

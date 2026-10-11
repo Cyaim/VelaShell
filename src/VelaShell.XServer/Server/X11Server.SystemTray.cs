@@ -40,7 +40,7 @@ public sealed partial class X11Server
     /// <summary>开着托盘时占住管理器选区、写托盘管理器的属性(在 <see cref="InitXSettings" /> 之后调)。</summary>
     private void InitSystemTray()
     {
-        if (!_options.SystemTray || Rootful)   // 单窗口模式:托盘归远端桌面的面板
+        if (!Options.SystemTray || Rootful)   // 单窗口模式:托盘归远端桌面的面板
         {
             return;
         }
@@ -62,7 +62,7 @@ public sealed partial class X11Server
     /// </summary>
     private bool OnSystemTrayClientMessage(byte[] raw, bool bigEndian)
     {
-        if ((raw[0] & 0x7F) != XEventCode.ClientMessage || raw[1] != 32 || !_options.SystemTray)
+        if ((raw[0] & 0x7F) != XEventCode.ClientMessage || raw[1] != 32 || !Options.SystemTray)
         {
             return false;
         }
@@ -89,7 +89,7 @@ public sealed partial class X11Server
         {
             return;
         }
-        int size = _options.SystemTrayIconSize;
+        int size = Options.SystemTrayIconSize;
         uint id = NextTrayEmbedderId();
         XWindow embedder = new(id, null, Root)
         {

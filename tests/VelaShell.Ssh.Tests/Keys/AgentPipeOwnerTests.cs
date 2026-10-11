@@ -49,13 +49,9 @@ public sealed class AgentPipeOwnerTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Windows, IgnoreMessage = "只在 Windows 上走命名管道。")]
     public async Task 同一用户建的管道agent照常能连()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("只在 Windows 上走命名管道。");
-        }
-
         // 属主检查不能把正常的 agent 挡在外面：同一用户建的管道，属主就是当前用户
         // （提权的进程则是 Administrators）。
         string name = $"velashell-test-agent-{Guid.NewGuid():N}";

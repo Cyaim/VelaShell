@@ -89,7 +89,7 @@ public sealed class XkbTests
         Assert.AreEqual(2, keys[0].Type, "Unicode 键值的 ф Ф 是 ALPHABETIC");
         Assert.AreEqual(2, keys[1].Type, "传统键值的 Cyrillic_ef / EF 是 ALPHABETIC");
         Assert.AreEqual(2, keys[2].Type, "单列的 Greek_alpha 是 ALPHABETIC");
-        CollectionAssert.AreEqual(new uint[] { 0x7e1, 0x7c1 }, keys[2].Syms, "按核心规则展开成 alpha、ALPHA");
+        Assert.AreSequenceEqual(new uint[] { 0x7e1, 0x7c1 }, keys[2].Syms, "按核心规则展开成 alpha、ALPHA");
     }
 
     [TestMethod]
@@ -228,7 +228,7 @@ public sealed class XkbTests
         XMessage modifiers = await c.RequestAsync(119, 0);
         int per = modifiers.Bytes[1];
         byte[] control = modifiers.Bytes.AsSpan(32 + (2 * per), per).ToArray();
-        CollectionAssert.Contains(control, (byte)37, "键码 37 在 Control 行");
+        Assert.Contains((byte)37, control, "键码 37 在 Control 行");
     }
 
     [TestMethod]

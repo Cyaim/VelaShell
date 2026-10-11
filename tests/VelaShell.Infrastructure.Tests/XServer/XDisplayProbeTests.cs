@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.Versioning;
 using VelaShell.Core.XServer;
 using VelaShell.Infrastructure.XServer;
 
@@ -11,13 +12,10 @@ namespace VelaShell.Infrastructure.Tests.XServer;
 public class XDisplayProbeTests
 {
     [TestMethod]
+    [OSCondition(OperatingSystems.Windows, IgnoreMessage = "按会话核对属主只在 Windows 上做(TCP 端口全机共享)")]
+    [SupportedOSPlatform("windows")]
     public void TcpListenerOfThisProcess_IsInThisSession_AndNoListenerIsNot()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("按会话核对属主只在 Windows 上做(TCP 端口全机共享)");
-            return;
-        }
         using TcpListener listener = new(IPAddress.Loopback, 0);
         listener.Start();
         int display = ((IPEndPoint)listener.LocalEndpoint).Port - XServerCommandLine.TcpPort(0);
@@ -32,13 +30,9 @@ public class XDisplayProbeTests
     /// 原先只看套接字有没有人听,只开 TCP、只开抽象名的服务端与 xvfb-run 占着的号,自动选号会挑中。
     /// </summary>
     [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "显示号锁是类 Unix 上的约定")]
     public void DisplayLock_HeldByALiveProcessOrUnreadable_IsInUse_StaleOrMissingIsNot()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Inconclusive("显示号锁是类 Unix 上的约定");
-            return;
-        }
         string directory = Directory.CreateTempSubdirectory("vx-lock-").FullName;
         try
         {
