@@ -438,21 +438,13 @@ public sealed class ChannelTests
         SshChannel channel = await harness.Connection.OpenSessionChannelAsync(null, harness.Token);
         await channel.DisposeAsync();
 
-        // 泵在后台收尾（取消在线程池上执行），收尾之前写进去的只是进了本地管道。
-        FlushResult result = default;
-        for (int i = 0; i < 200 && !result.IsCompleted; i++)
-        {
-            result = await channel.StandardInput.WriteAsync(new byte[16], harness.Token);
-            if (!result.IsCompleted)
-            {
-                await Task.Delay(10, harness.Token);
-            }
-        }
+        // 〔spec/05 §4.3〕**第一次**写就拿到「完成」—— 不必等 stdin 泵在后台收尾。
+        FlushResult result = await channel.StandardInput.WriteAsync(new byte[16], harness.Token);
 
         Assert.IsTrue(result.IsCompleted);
     }
 
-    /// <summary>通道流（<c>AsStream</c> 那一条）兑现它承诺的 <see cref="IOException"/>。</summary>
+    /// <summary>通道流（<c>AsStream</c> 那一条）兑现它承诺的 <see cref="IOException"/>，而且是关了之后的第一次写。</summary>
     [TestMethod]
     public async Task 通道关闭之后写通道流抛IOException()
     {
@@ -462,14 +454,40 @@ public sealed class ChannelTests
         await using SshChannelStream stream = new(channel, ownsChannel: false);
         await channel.DisposeAsync();
 
-        await Assert.ThrowsExactlyAsync<IOException>(async () =>
+        await Assert.ThrowsExactlyAsync<IOException>(async () => await stream.WriteAsync(new byte[16], harness.Token));
+    }
+
+    /// <summary>
+    /// 〔spec/05 §4.3〕对端关的通道也一样：命令退出、<c>WaitAsync</c> 返回（调用方看到了关闭）之后，紧接着的写<b>当场</b>报完成 /
+    /// 抛 <see cref="IOException"/>。曾经要等 stdin 泵在线程池上收尾，这之前的写照常返回，数据进了本地管道再被悄悄丢掉。
+    /// </summary>
+    /// <remarks>
+    /// 那是一个竞争窗口，单跑一次未必撞上，所以连跑多轮：修之前本机 300 轮里有 275 轮的写照常返回。
+    /// </remarks>
+    [TestMethod]
+    [DataRow(false, DisplayName = "StandardInput")]
+    [DataRow(true, DisplayName = "通道流")]
+    public async Task 命令退出之后马上写stdin当场报关闭(bool viaStream)
+    {
+        for (int round = 0; round < 20; round++)
         {
-            for (int i = 0; i < 200; i++)
+            await using Harness harness = await Harness.StartAsync(new TestChannelScript { ExitCode = 0 });
+
+            await using SshCommand command = await harness.Connection.ExecuteAsync("exit 0", cancellationToken: harness.Token);
+            Assert.AreEqual(0, (await command.WaitAsync(harness.Token)).ExitCode, "前提：命令结束、通道已关");
+
+            if (viaStream)
             {
-                await stream.WriteAsync(new byte[16], harness.Token);
-                await Task.Delay(10, harness.Token);
+                await using SshChannelStream stream = new(command.Channel, ownsChannel: false);
+                await Assert.ThrowsExactlyAsync<IOException>(
+                    async () => await stream.WriteAsync(new byte[1], harness.Token), $"第 {round} 轮");
             }
-        });
+            else
+            {
+                FlushResult result = await command.StandardInput.WriteAsync(new byte[1], harness.Token);
+                Assert.IsTrue(result.IsCompleted, $"第 {round} 轮");
+            }
+        }
     }
 
     [TestMethod]

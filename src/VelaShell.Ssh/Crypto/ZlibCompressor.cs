@@ -188,6 +188,14 @@ internal sealed class ZlibCompressor : ISshCompressor
                     throw DecompressionFailure(ex);
                 }
 
+                // 〔velashell-docs/zh/ssh/spec/01 §六〕SSH 的压缩流永远不结束（RFC 4253 §6.2：上下文从一个报文传到下一个，
+                // 每个报文末尾只 flush）。解码器报告流结束，说明对端在载荷里写了 zlib 的结束标记 —— 当场断开。
+                // 曾经照常收下这一报文：之后的报文解码器一个字节都不肯再收，错到下一帧才报一句看不出缘由的「解压失败」。
+                if (status == OperationStatus.Done)
+                {
+                    throw new SshProtocolException(SshPhase.Open, "对端结束了 zlib 流（载荷里出现了流结束标记）—— SSH 的压缩流不会结束。");
+                }
+
                 if (status == OperationStatus.InvalidData)
                 {
                     throw DecompressionFailure();

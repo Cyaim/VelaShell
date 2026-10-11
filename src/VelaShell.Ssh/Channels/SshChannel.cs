@@ -207,7 +207,7 @@ public sealed class SshChannel : IAsyncDisposable
         StandardOutput = _stdoutReader = new WindowedPipeReader(_stdoutPipe.Reader, NoteReaderConsumed, _stateLock);
         _stderrReader = _stderrPipe is null ? null : new WindowedPipeReader(_stderrPipe.Reader, NoteReaderConsumed, _stateLock);
         StandardError = _stderrReader ?? (PipeReader)new EmptyPipeReader();
-        StandardInput = _stdinPipe.Writer;
+        StandardInput = new StandardInputWriter(_stdinPipe.Writer, AcceptsInput);
     }
 
     /// <summary>我们给这条通道的编号。</summary>
@@ -305,8 +305,9 @@ public sealed class SshChannel : IAsyncDisposable
     /// 已写入的内容冲干净之后发 <c>CHANNEL_EOF</c>。要等 EOF 真正入队再往下走，用 <see cref="SendEofAsync"/>。
     /// </para>
     /// <para>
-    /// 通道关了之后，<c>FlushAsync</c> / <c>WriteAsync</c> 返回 <see cref="FlushResult.IsCompleted"/> 为真（<see cref="PipeWriter"/>
-    /// 表达「读的一方不要了」的惯用法），不抛异常。这个 writer 归调用方：库不替它完成。
+    /// 通道关了之后（本端开始关闭、任一方向的 CLOSE 已经入队、或者连接断了），<c>FlushAsync</c> / <c>WriteAsync</c>
+    /// <b>当场</b>返回 <see cref="FlushResult.IsCompleted"/> 为真（<see cref="PipeWriter"/> 表达「读的一方不要了」的惯用法），
+    /// 写进来的不再发出，不抛异常。这个 writer 归调用方：库不替它完成。
     /// </para>
     /// </remarks>
     public PipeWriter StandardInput { get; }
@@ -493,6 +494,21 @@ public sealed class SshChannel : IAsyncDisposable
         lock (_stateLock)
         {
             return !_closeSent;
+        }
+    }
+
+    /// <summary>
+    /// stdin 还收不收：本端开始关闭、任一方向的 CLOSE 已经入队、或者通道已经收尾（含连接断了）之后就不收了。
+    /// </summary>
+    /// <remarks>
+    /// 交给调用方的 <see cref="StandardInput"/> 写之前问它（见 <see cref="StandardInputWriter"/>）。
+    /// 只看 <c>_closeSent</c> 不够：连接断了时通道直接收尾，一个 CLOSE 也没发。
+    /// </remarks>
+    private bool AcceptsInput()
+    {
+        lock (_stateLock)
+        {
+            return !_closeSent && _state is not (SshChannelState.Closing or SshChannelState.Closed);
         }
     }
 
