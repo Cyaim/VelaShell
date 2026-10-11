@@ -108,7 +108,7 @@ public sealed class ContextCompactorTests
     [TestMethod]
     public async Task CompactAsync_AsksTheModel_AndReturnsTheDigest()
     {
-        using var stub = new SseStub("", jsonContent: "【摘要】用户在排查 web-01 的磁盘告警,已确认 /dev/sda1 用满 98%,尚未定位大文件。");
+        await using var stub = new SseStub("", jsonContent: "【摘要】用户在排查 web-01 的磁盘告警,已确认 /dev/sda1 用满 98%,尚未定位大文件。");
         var openAi = new OpenAIClient(new ApiKeyCredential("k"), new OpenAIClientOptions { Endpoint = new Uri(stub.BaseUrl) });
         List<ChatMessage> history = Conversation(10, 100);
 
@@ -130,7 +130,7 @@ public sealed class ContextCompactorTests
     [TestMethod]
     public async Task CompactAsync_WithAnEmptyReply_ReportsFailure()
     {
-        using var stub = new SseStub("", jsonContent: "   ");
+        await using var stub = new SseStub("", jsonContent: "   ");
         var openAi = new OpenAIClient(new ApiKeyCredential("k"), new OpenAIClientOptions { Endpoint = new Uri(stub.BaseUrl) });
 
         CompactionResult? result = await ContextCompactor.CompactAsync(

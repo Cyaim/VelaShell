@@ -21,7 +21,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var endpoint = new SseStub("""
+            await using var endpoint = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"reply"},"finish_reason":null}]}
 
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}
@@ -148,9 +148,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var a = new SseStub(LifecycleAnswer, holdFirstStream: !completed, firstStreamContent: "OK");
-            using var b = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
-            using var c = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
+            await using var a = new SseStub(LifecycleAnswer, holdFirstStream: !completed, firstStreamContent: "OK");
+            await using var b = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
+            await using var c = new SseStub(LifecycleAnswer, firstStreamContent: "OK");
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider first = StubProvider("A", a.BaseUrl, "a");
@@ -1432,8 +1432,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var healthy = new SseStub("", firstStreamContent: "OK");
+            await using var broken = new ErrorStub();
+            await using var healthy = new SseStub("", firstStreamContent: "OK");
             using var context = new TestPluginContext();
             AiProvider first = StubProvider("外包", broken.BaseUrl, "global.deepseek-v4.1-flash-sg-with-long-model-name");
             AiProvider second = StubProvider("WinClaw", healthy.BaseUrl, "Qwen3.6-35b-a3b-nvfp4-with-long-model-name");

@@ -25,8 +25,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var mcp = new SseStub("", hold: true);
-            using var target = new SseStub(LifecycleAnswer);
+            await using var mcp = new SseStub("", hold: true);
+            await using var target = new SseStub(LifecycleAnswer);
             using var refreshHttp = new HttpClient(new OAuthStub().Json("{\"access_token\":\"new-token\",\"expires_in\":3600}"));
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
@@ -116,8 +116,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var mcp = new SseStub("", hold: true);
-            using var target = new SseStub(LifecycleAnswer);
+            await using var mcp = new SseStub("", hold: true);
+            await using var target = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider provider = StubProvider("original", target.BaseUrl, "m");
@@ -156,7 +156,7 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             using var target = new KeyAuthStub((auth, _) => auth == "Bearer a" ? (401, "{\"error\":{\"message\":\"auth\"}}") : (200, LifecycleAnswer), "Bearer a", holdFirstRequest: true);
-            using var other = new SseStub(LifecycleAnswer);
+            await using var other = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider provider = StubProvider("pool", target.BaseUrl, "m");
@@ -192,9 +192,9 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var mcp = new SseStub("", hold: true);
-            using var target = new SseStub(LifecycleAnswer);
-            using var otherEndpoint = new SseStub(LifecycleAnswer);
+            await using var mcp = new SseStub("", hold: true);
+            await using var target = new SseStub(LifecycleAnswer);
+            await using var otherEndpoint = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider provider = StubProvider("original", target.BaseUrl, "m");
@@ -253,8 +253,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var broken = new ErrorStub();
-            using var target = new SseStub(LifecycleAnswer, hold: true);
+            await using var broken = new ErrorStub();
+            await using var target = new SseStub(LifecycleAnswer, hold: true);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider first = StubProvider("first", broken.BaseUrl, "m");
@@ -312,7 +312,7 @@ public sealed partial class ChatPanelViewUiTests
             using var toolGate = new ManualResetEventSlim();
             var toolStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             using var target = new HeldStreamingReply(toolBeforeFailure: true, successfulContinuation: true);
-            using var backup = new SseStub(LifecycleAnswer);
+            await using var backup = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
             context.FakeSessions.AddConnected();
@@ -473,8 +473,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var first = new SseStub(LifecycleAnswer);
-            using var next = new SseStub(LifecycleAnswer);
+            await using var first = new SseStub(LifecycleAnswer);
+            await using var next = new SseStub(LifecycleAnswer);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider provider = StubProvider("first", first.BaseUrl, "m");
@@ -526,7 +526,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var target = new SseStub(LifecycleAnswer, jsonContent: "摘要");
+            await using var target = new SseStub(LifecycleAnswer, jsonContent: "摘要");
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             AiProvider provider = StubProvider("fixed", target.BaseUrl, "m", maxInputTokens: 40);

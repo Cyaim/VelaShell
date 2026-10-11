@@ -15,7 +15,7 @@ public sealed class ReasoningPeekTests
 {
     private static async Task<List<ChatResponseUpdate>> StreamAsync(string sse)
     {
-        using var stub = new SseStub(sse);
+        await using var stub = new SseStub(sse);
         var openAi = new OpenAIClient(new ApiKeyCredential("k"), new OpenAIClientOptions { Endpoint = new Uri(stub.BaseUrl) });
         IChatClient client = openAi.GetChatClient("m").AsIChatClient();
         List<ChatResponseUpdate> updates = [];

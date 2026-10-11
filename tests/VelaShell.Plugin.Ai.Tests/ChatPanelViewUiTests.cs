@@ -589,7 +589,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"好的。"},"finish_reason":"stop"}]}
 
             data: [DONE]
@@ -637,7 +637,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}
 
             data: [DONE]
@@ -695,7 +695,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"先看看磁盘"}}]}
 
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"reasoning_content":",再看看服务"}}]}
@@ -765,7 +765,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","reasoning":"先看看磁盘"}}]}
 
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"reasoning":",再看看服务"}}]}
@@ -820,7 +820,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"结论是没问题。"},"finish_reason":"stop"}]}
 
             data: [DONE]
@@ -865,7 +865,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"先看看磁盘"}}]}
 
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"结论是没问题。"},"finish_reason":"stop"}]}
@@ -948,7 +948,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}
 
             data: [DONE]
@@ -1004,7 +1004,7 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             // 聊天走流式;"给几条后续提问"那一问是非流式的,由 jsonContent 回它
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"磁盘看着还行。"},"finish_reason":"stop"}]}
 
             data: [DONE]
@@ -1053,7 +1053,7 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             // prompt_tokens 含 cached_tokens(OpenAI 口径):1000 里命中 800
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}
 
             data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":50,"total_tokens":1050,"prompt_tokens_details":{"cached_tokens":800}}}

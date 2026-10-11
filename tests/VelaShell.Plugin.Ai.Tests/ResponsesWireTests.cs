@@ -31,7 +31,7 @@ public sealed class ResponsesWireTests
     /// <summary>把消息发出去并抓回请求体(假端点回的不是 Responses 报文,解析失败无所谓)。</summary>
     private static async Task<string> WireBodyAsync(List<ChatMessage> messages, ChatOptions options)
     {
-        using var stub = new SseStub("", jsonContent: "{}");
+        await using var stub = new SseStub("", jsonContent: "{}");
         try
         {
             await Client(stub.BaseUrl).GetResponseAsync(messages, options);

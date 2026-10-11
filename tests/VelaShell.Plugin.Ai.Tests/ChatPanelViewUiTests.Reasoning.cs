@@ -371,7 +371,7 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var stub = new SseStub("""
+            await using var stub = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"好的"},"finish_reason":"stop"}]}
 
                 data: [DONE]
@@ -467,8 +467,8 @@ public sealed partial class ChatPanelViewUiTests
     {
         OnUi(async () =>
         {
-            using var mcp = new SseStub("", hold: true);
-            using var target = new SseStub("""
+            await using var mcp = new SseStub("", hold: true);
+            await using var target = new SseStub("""
                 data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m1","choices":[{"index":0,"delta":{"content":"已回答"},"finish_reason":"stop"}]}
 
                 data: [DONE]
