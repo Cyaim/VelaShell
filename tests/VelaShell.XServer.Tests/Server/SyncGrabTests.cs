@@ -380,7 +380,7 @@ public sealed class SyncGrabTests
 
         await c.SendAsync(35, 6, b => b.U32(0));   // AllowEvents AsyncBoth
         List<XMessage> events = await DrainAsync(c, KeyPress, KeyRelease, MotionNotify);
-        Assert.AreSequenceEqual([KeyPress, MotionNotify, KeyRelease], events.Select(e => e.EventCode).ToArray(), "按键、移动、松开:按到达的先后,不是两个设备各走各的");
+        Assert.AreSequenceEqual([KeyPress, MotionNotify, KeyRelease], [.. events.Select(e => e.EventCode)], "按键、移动、松开:按到达的先后,不是两个设备各走各的");
 
         // 再冻上,宿主不停地移动:排着的事件有上限。
         await c.RequestAsync(26, 0, b => b.U32(top).U16(0x40).U8(Synchronous).U8(Asynchronous).U32(0).U32(0).U32(0));

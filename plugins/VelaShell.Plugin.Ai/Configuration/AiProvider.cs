@@ -107,15 +107,14 @@ public sealed class AiProvider
     /// <summary>成功故障转移后粘住的槽;null 表示主槽。</summary>
     public string? ActiveApiKeyId
     {
-        get => _activeApiKeyId;
+        get;
         set
         {
-            if (_activeApiKeyId == value) return;
-            _activeApiKeyId = value;
+            if (field == value) return;
+            field = value;
             ActiveApiKeySelectionEpoch++;
         }
     }
-    private string? _activeApiKeyId;
 
     /// <summary>当前实例的槽选择代次;切走再切回也使旧回合失去写回所有权。</summary>
     [JsonIgnore]
@@ -577,7 +576,7 @@ public sealed class AiSettings
     {
         ArgumentNullException.ThrowIfNull(failed);
         List<ResolvedModel> all = ResolveModels();
-        HashSet<string> excluded = new(StringComparer.Ordinal) { failed.Id };
+        HashSet<string> excluded = [with(StringComparer.Ordinal), failed.Id];
         if (triedBefore is not null)
         {
             excluded.UnionWith(triedBefore);
@@ -588,7 +587,7 @@ public sealed class AiSettings
         // 链里只要还有一个活条目就仍按链走:那是用户的排布,被排除后为空 = 就地停下。
         if (FailoverChain.All(entry => FindModel(entry.ModelId) is null))
         {
-            return all
+            return [.. all
                 .Where(m => !excluded.Contains(m.Id)
                             && (m.ApiKeyOwnerId != failed.ApiKeyOwnerId || m.Protocol != failed.Protocol
                                 || !SameRequestEndpoint(m.BaseUrl, failed.BaseUrl, m.Protocol))
@@ -596,8 +595,7 @@ public sealed class AiSettings
                             && !catalog.StartsWith("custom-", StringComparison.OrdinalIgnoreCase)
                             && !string.Equals(catalog, "azure-openai", StringComparison.OrdinalIgnoreCase)
                             && string.Equals(m.Provider.CatalogId, catalog, StringComparison.OrdinalIgnoreCase)
-                            && string.Equals(m.Model, failed.Model, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+                            && string.Equals(m.Model, failed.Model, StringComparison.OrdinalIgnoreCase))];
         }
 
         var ordered = new List<ResolvedModel>();

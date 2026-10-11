@@ -18,7 +18,7 @@ namespace VelaShell.XServer.Server;
 /// 除 <see cref="Output" /> 之外的状态只在执行线程上读写。发给客户端的字节进 <see cref="Output" />,
 /// 由连接的写出任务写到套接字 —— 执行线程从不在套接字上阻塞。
 /// </remarks>
-internal sealed class XClient : IDisposable
+internal sealed class XClient(int index, bool bigEndian) : IDisposable
 {
     /// <summary>每个客户端可用的资源 ID 位(21 位,约 200 万个)。</summary>
     public const uint ResourceMask = 0x001FFFFF;
@@ -42,21 +42,14 @@ internal sealed class XClient : IDisposable
     private long _pendingRequestBytes;
     private TaskCompletionSource? _requestBytesWaiter;
 
-    public XClient(int index, bool bigEndian)
-    {
-        Index = index;
-        ResourceBase = (uint)index << 21;
-        BigEndian = bigEndian;
-    }
-
-    public int Index { get; }
+    public int Index { get; } = index;
 
     /// <summary>宿主给这条连接起的名字(<see cref="X11Server.ServeAuthenticatedAsync(System.IO.Stream, string?, System.Threading.CancellationToken)" />);没给为 null。</summary>
     public string? Label { get; init; }
 
-    public uint ResourceBase { get; }
+    public uint ResourceBase { get; } = (uint)index << 21;
 
-    public bool BigEndian { get; }
+    public bool BigEndian { get; } = bigEndian;
 
     /// <summary>最近处理完的请求序号(低 16 位)。事件与错误都带它。</summary>
     public ushort Sequence { get; set; }

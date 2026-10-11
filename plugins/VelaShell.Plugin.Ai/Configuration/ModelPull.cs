@@ -96,12 +96,14 @@ public static class ModelPull
                 (model, model.Model, model.MaxInputTokens, model.MaxTokens, model.SupportsReasoning)).ToArray();
         target.AvailableModels = [.. specs.Select(s => s.Id)];
         int total = ModelsDevCatalog.Materialise(target, specs);
-        foreach (var previous in before)
+        foreach ((AiModelConfig Config, string Model, int InputTokens, int OutputTokens, bool? Reasoning) in before)
         {
-            AiModelConfig model = previous.Config;
-            if (model.Model != previous.Model || model.MaxInputTokens != previous.InputTokens
-                || model.MaxTokens != previous.OutputTokens || model.SupportsReasoning != previous.Reasoning)
+            AiModelConfig model = Config;
+            if (model.Model != Model || model.MaxInputTokens != InputTokens
+                || model.MaxTokens != OutputTokens || model.SupportsReasoning != Reasoning)
+            {
                 health!.Invalidate(model.Id);
+            }
         }
         // 展开状态交回自动判断:用户上次表态时面对的是另一份清单(往往是出厂那一条),
         // 而这一拉可能就是三百个 —— 拿旧决定套新长度,左栏一进去就是滚不到底的长龙。

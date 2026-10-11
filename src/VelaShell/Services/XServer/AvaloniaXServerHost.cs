@@ -519,7 +519,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     public bool UsesHostInputMethod { get; private set; } = true;
 
     /// <summary>把原生窗口归进任务栏的一组(null = 清掉);测试换成记录用的。见 <see cref="Services.XServer.TaskbarGroup" />。</summary>
-    internal Func<Window, string?, bool> GroupWindow { get; set; } = Services.XServer.TaskbarGroup.Apply;
+    internal Func<Window, string?, bool> GroupWindow { get; set; } = TaskbarGroup.Apply;
 
     /// <inheritdoc />
     /// <remarks>

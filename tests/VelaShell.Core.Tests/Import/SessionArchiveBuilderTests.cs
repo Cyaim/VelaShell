@@ -43,7 +43,7 @@ public sealed class SessionArchiveBuilderTests
 
         IReadOnlyList<SessionProfile> ordered = SessionArchiveBuilder.Order(sessions, [second, first]);
 
-        Assert.AreSequenceEqual(new[] { "A", "b", "z", "loose" }, ordered.Select(static s => s.Name).ToArray());
+        Assert.AreSequenceEqual(new[] { "A", "b", "z", "loose" }, [.. ordered.Select(static s => s.Name)]);
     }
 
     [TestMethod]

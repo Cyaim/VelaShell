@@ -322,7 +322,7 @@ public sealed class ToolPickerView : UserControl
             Content = _loc["RefreshTools"],
             Height = 26,
             Padding = new Avalonia.Thickness(12, 0),
-            [!TemplatedControl.FontSizeProperty] = new DynamicResourceExtension("VelaFontSize11"),
+            [!FontSizeProperty] = new DynamicResourceExtension("VelaFontSize11"),
             VerticalAlignment = VerticalAlignment.Center
         };
         refresh[!ThemeProperty] = new DynamicResourceExtension("VelaOutlineButtonTheme");

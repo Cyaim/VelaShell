@@ -122,7 +122,7 @@ public sealed class AlgorithmNegotiationTests
         ArrayBufferWriter<byte> rekey = new();
         SshKexInitMessage.Encode(custom, includeIndicators: false, rekey);
         Assert.AreSequenceEqual(
-            [SshAlgorithmNames.Curve25519Sha256], SshKexInitMessage.Decode(rekey.WrittenMemory).KeyExchangeAlgorithms.ToArray());
+            [SshAlgorithmNames.Curve25519Sha256], [.. SshKexInitMessage.Decode(rekey.WrittenMemory).KeyExchangeAlgorithms]);
     }
 
     // ------------------------------------------------------------ 协商规则

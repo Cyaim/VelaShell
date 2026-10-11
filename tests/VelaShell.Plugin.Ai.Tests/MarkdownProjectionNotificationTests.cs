@@ -1,6 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Headless;
-using Avalonia.Threading;
 using LiveMarkdown.Avalonia;
 
 namespace VelaShell.Plugin.Ai.Tests;

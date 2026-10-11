@@ -114,7 +114,9 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider backup = StubProvider("backup", backupEndpoint.BaseUrl, "m");
             var settings = new AiSettings
             {
-                Providers = [provider, backup], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false,
+                Providers = [provider, backup],
+                ActiveModelId = provider.Models[0].Id,
+                SuggestFollowUps = false,
                 FailoverChain = [new FailoverEntry { ModelId = backup.Models[0].Id }]
             };
             await store.SetApiKeyAsync(provider.Id, "key-a");
@@ -156,7 +158,9 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider backup = StubProvider("backup", backupEndpoint.BaseUrl, "m");
             var settings = new AiSettings
             {
-                Providers = [provider, backup], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false,
+                Providers = [provider, backup],
+                ActiveModelId = provider.Models[0].Id,
+                SuggestFollowUps = false,
                 FailoverChain = [new FailoverEntry { ModelId = backup.Models[0].Id }]
             };
             await store.SetApiKeyAsync(provider.Id, "key-a");
@@ -288,7 +292,9 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider backup = StubProvider("backup", endpoint.BaseUrl, "m2");
             var settings = new AiSettings
             {
-                Providers = [first, backup], ActiveModelId = first.Models[0].Id, SuggestFollowUps = false,
+                Providers = [first, backup],
+                ActiveModelId = first.Models[0].Id,
+                SuggestFollowUps = false,
                 FailoverChain = [new FailoverEntry { ModelId = backup.Models[0].Id }]
             };
             await store.SetApiKeyAsync(first.Id, "key-a");
@@ -336,7 +342,9 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider backup = StubProvider("backup", backupEndpoint.BaseUrl, "m");
             var settings = new AiSettings
             {
-                Providers = [first, backup], ActiveModelId = first.Models[0].Id, SuggestFollowUps = false,
+                Providers = [first, backup],
+                ActiveModelId = first.Models[0].Id,
+                SuggestFollowUps = false,
                 FailoverChain = [new FailoverEntry { ModelId = backup.Models[0].Id }]
             };
             await store.SetApiKeyAsync(first.Id, "key-a");
@@ -378,8 +386,8 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 // 用户逐 Key 手测不推进聊天均摊游标。
-                var manual = await store.ResolveCredentialWithKeyIdAsync(settings.FindModel(provider.Models[0].Id)!, keyId: second);
-                Assert.IsNull((await HealthProbe.ProbeAsync(store, settings.FindModel(provider.Models[0].Id)!, manual.Credential)).Error);
+                (ProviderCredential Credential, string? KeyId) = await store.ResolveCredentialWithKeyIdAsync(settings.FindModel(provider.Models[0].Id)!, keyId: second);
+                Assert.IsNull((await HealthProbe.ProbeAsync(store, settings.FindModel(provider.Models[0].Id)!, Credential)).Error);
                 for (int turn = 1; turn <= 3; turn++)
                 {
                     panel.SendExternal("均摊第" + turn + "轮");
@@ -387,7 +395,7 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                         && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == count));
                 }
-                var formal = endpoint.Requests.Where(r => !r.Body.Contains("Reply with exactly:", StringComparison.Ordinal)).ToArray();
+                (string? Auth, string Body)[] formal = [.. endpoint.Requests.Where(r => !r.Body.Contains("Reply with exactly:", StringComparison.Ordinal))];
                 CollectionAssert.AreEqual(new[] { "Bearer key-a", "Bearer key-b", "Bearer key-a" }, formal.Select(r => r.Auth).ToArray());
                 Assert.AreEqual(4, endpoint.Requests.Count, "手测一次 + 三轮正式流,无额外付费探活");
                 Assert.AreEqual(second, (await store.LoadAsync()).Providers[0].ActiveApiKeyId);
@@ -427,13 +435,20 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => endpoint.Held.Task.IsCompleted));
                 Assert.Contains("Reply with exactly:", endpoint.Requests[^1].Body);
                 AiSettings live = PanelSettings(panel);
-                if (change == "replace") await store.ReplaceProviderApiKeyAsync(live, live.Providers[0], second, "key-new");
+                if (change == "replace")
+                {
+                    await store.ReplaceProviderApiKeyAsync(live, live.Providers[0], second, "key-new");
+                }
                 else if (change == "remove")
                 {
                     await store.RemoveProviderApiKeyAsync(live, live.Providers[0], second);
                     await store.AddProviderApiKeyAsync(live, live.Providers[0], "key-b");
                 }
-                else Click(panel, "StopButton");
+                else
+                {
+                    Click(panel, "StopButton");
+                }
+
                 endpoint.Release();
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
                 Assert.HasCount(2, endpoint.Requests, "已试的槽改值/删除,或用户取消后绝不隐式改用另一槽发送历史");
@@ -554,8 +569,10 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider second = StubProvider("backup", healthy.BaseUrl, "m", maxInputTokens: 100);
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             storage.TargetModelId = second.Models[0].Id;
             (Window window, ChatPanelView panel) = await ShowAsync(context);
@@ -594,10 +611,10 @@ public sealed partial class ChatPanelViewUiTests
                 data: [DONE]
 
                 """;
-            using var empty = disconnect ? null : new SseStub(usageOnly);
+            using SseStub? empty = disconnect ? null : new SseStub(usageOnly);
             // 探活只在结束时回调用量,没有首帧观察接口。完整首 HTTP chunk 后用 FIN 截断,
             // TCP 保证数据先于 EOF 到达,不会像 Flush 后 RST 那样丢掉尚未解析的用量。
-            using var truncated = disconnect ? new TruncatedSseStub(usageOnly) : null;
+            using TruncatedSseStub? truncated = disconnect ? new TruncatedSseStub(usageOnly) : null;
             using var healthy = new SseStub(ProbeAccountingAnswer);
             using var context = new TestPluginContext();
             AiProvider first = StubProvider("broken", broken.BaseUrl, "m");
@@ -605,7 +622,8 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider third = StubProvider("backup", healthy.BaseUrl, "m", maxInputTokens: 100);
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, second, third], ActiveModelId = first.Models[0].Id,
+                Providers = [first, second, third],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }, new FailoverEntry { ModelId = third.Models[0].Id }],
                 SuggestFollowUps = false
             });
@@ -642,8 +660,10 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider second = StubProvider("backup", healthy.BaseUrl, "m", maxInputTokens: 100);
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -662,7 +682,11 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                         && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 }
-                else sessions.SelectedIndex = 1;
+                else
+                {
+                    sessions.SelectedIndex = 1;
+                }
+
                 healthy.Release();
                 Assert.IsTrue(await WaitForAsync(() => reset
                     ? !Find<Button>(panel, "StopButton").IsVisible
@@ -687,7 +711,10 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.Contains("Conversation total: in 22 / out 10", ToolTip.GetTip(usage) as string ?? "",
                         "切回发起会话，必须看到探活和正式流各一次的真实累计");
                 }
-                else Assert.HasCount(2, healthy.Requests, "重置取消旧探活，备用站只有旧探活与新会话的正式流");
+                else
+                {
+                    Assert.HasCount(2, healthy.Requests, "重置取消旧探活，备用站只有旧探活与新会话的正式流");
+                }
             }
             finally { healthy.Release(); panel.Detach(); window.Close(); }
         });
@@ -743,7 +770,8 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
                 SuggestFollowUps = false
             });
@@ -812,9 +840,11 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider c = StubProvider("c", answering.BaseUrl, "m");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [a, b, c], ActiveModelId = a.Models[0].Id,
+                Providers = [a, b, c],
+                ActiveModelId = a.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id },
-                                 new FailoverEntry { ModelId = c.Models[0].Id }], SuggestFollowUps = false
+                                 new FailoverEntry { ModelId = c.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -856,8 +886,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b, c], ActiveModelId = a.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }], SuggestFollowUps = false
+                Providers = [a, b, c],
+                ActiveModelId = a.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -909,7 +941,8 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b, c], ActiveModelId = a.Models[0].Id,
+                Providers = [a, b, c],
+                ActiveModelId = a.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }, new FailoverEntry { ModelId = c.Models[0].Id }],
                 SuggestFollowUps = false
             });
@@ -991,8 +1024,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b, c], ActiveModelId = b.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }], SuggestFollowUps = false
+                Providers = [a, b, c],
+                ActiveModelId = b.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -1085,8 +1120,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b, c], ActiveModelId = c.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }], SuggestFollowUps = false
+                Providers = [a, b, c],
+                ActiveModelId = c.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -1159,7 +1196,6 @@ public sealed partial class ChatPanelViewUiTests
             => inner.GetKeysAsync(cancellationToken);
     }
 
-
     /// <summary>同模型的旧探活迟到失败,不得盖过另一会话稍后发出且已答通的正式请求。</summary>
     [TestMethod]
     public void ConcurrentConversations_LateProbeFailureDoesNotCoolAnsweredModel()
@@ -1181,8 +1217,10 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider second = StubProvider("beta", target.BaseUrl, "m");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -1327,7 +1365,8 @@ public sealed partial class ChatPanelViewUiTests
             await store.SetApiKeyAsync(second.Id, "old-key");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
                 SuggestFollowUps = false
             });
@@ -1395,8 +1434,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
@@ -1469,8 +1510,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
@@ -1541,7 +1584,8 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
                 SuggestFollowUps = false
             });
@@ -1608,8 +1652,10 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider second = StubProvider("beta", oldTarget.BaseUrl, "m");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
@@ -1692,8 +1738,10 @@ public sealed partial class ChatPanelViewUiTests
             await store.SaveTokensAsync(second.Id, new OAuthTokens { AccessToken = "old-token", BaseUrl = oldTarget.BaseUrl, AccountId = "same-account" });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             var panel = new ChatPanelView(context, store); // 同一登录管理器更新令牌,真实 UI 的订阅登录路径
             var window = new Window { Width = 800, Height = 600, Content = panel };
@@ -1706,7 +1754,8 @@ public sealed partial class ChatPanelViewUiTests
                 await store.SaveTokensAsync(second.Id,
                     new OAuthTokens
                     {
-                        AccessToken = "new-token", BaseUrl = moveEndpoint ? newTarget.BaseUrl : oldTarget.BaseUrl,
+                        AccessToken = "new-token",
+                        BaseUrl = moveEndpoint ? newTarget.BaseUrl : oldTarget.BaseUrl,
                         AccountId = "same-account"
                     });
                 oldTarget.Release();
@@ -1775,7 +1824,7 @@ public sealed partial class ChatPanelViewUiTests
 
                 """);
             using var context = new TestPluginContext();
-            var oauth = new OAuthStub().Json("""{"access_token":"new-token","expires_in":3600}""");
+            OAuthStub oauth = new OAuthStub().Json("""{"access_token":"new-token","expires_in":3600}""");
             using var http = new HttpClient(oauth);
             var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
             AiProvider first = StubProvider("alpha", stub.BaseUrl, change == "model" ? "m1" : "m", maxInputTokens: 40);
@@ -1784,16 +1833,22 @@ public sealed partial class ChatPanelViewUiTests
             first.OAuth = new OAuthConfig
             {
                 Credential = OAuthCredential.AccessToken,
-                TokenUrl = "https://auth.example/token", ClientId = "test"
+                TokenUrl = "https://auth.example/token",
+                ClientId = "test"
             };
             AiProvider unrelated = StubProvider("beta", "http://127.0.0.1:1/v1", "m");
             await store.SaveTokensAsync(first.Id, new OAuthTokens
             {
-                AccessToken = "old-token", RefreshToken = "refresh", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), AccountId = "same-account"
+                AccessToken = "old-token",
+                RefreshToken = "refresh",
+                ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                AccountId = "same-account"
             });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, unrelated], ActiveModelId = first.Models[0].Id, SuggestFollowUps = false
+                Providers = [first, unrelated],
+                ActiveModelId = first.Models[0].Id,
+                SuggestFollowUps = false
             });
             var panel = new ChatPanelView(context, store);
             var window = new Window { Width = 800, Height = 600, Content = panel };
@@ -1826,15 +1881,21 @@ public sealed partial class ChatPanelViewUiTests
                     // 摘要等待期间令牌进入续期窗:下一次 ResolveCredentialAsync 必须真走 OAuth 刷新。
                     await store.SaveTokensAsync(first.Id, new OAuthTokens
                     {
-                        AccessToken = "old-token", RefreshToken = "refresh", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(20), AccountId = "same-account"
+                        AccessToken = "old-token",
+                        RefreshToken = "refresh",
+                        ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(20),
+                        AccountId = "same-account"
                     });
                 }
                 else if (change == "moved")
                 {
                     await store.SaveTokensAsync(first.Id, new OAuthTokens
                     {
-                        AccessToken = "new-token", RefreshToken = "refresh", BaseUrl = newTarget.BaseUrl,
-                        ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), AccountId = "same-account"
+                        AccessToken = "new-token",
+                        RefreshToken = "refresh",
+                        BaseUrl = newTarget.BaseUrl,
+                        ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                        AccountId = "same-account"
                     });
                 }
                 else
@@ -1948,8 +2009,10 @@ public sealed partial class ChatPanelViewUiTests
             await store.SaveTokensAsync(second.Id, new OAuthTokens { AccessToken = "old", BaseUrl = oldTarget.BaseUrl, AccountId = "same-account" });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = second.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = second.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             var panel = new ChatPanelView(context, store);
             var window = new Window { Width = 800, Height = 600, Content = panel };
@@ -1971,7 +2034,8 @@ public sealed partial class ChatPanelViewUiTests
                 await store.SaveTokensAsync(second.Id,
                     new OAuthTokens
                     {
-                        AccessToken = "renewed", BaseUrl = moveEndpoint ? renewedTarget.BaseUrl : oldTarget.BaseUrl,
+                        AccessToken = "renewed",
+                        BaseUrl = moveEndpoint ? renewedTarget.BaseUrl : oldTarget.BaseUrl,
                         AccountId = "same-account"
                     });
                 summaryGate.Set();
@@ -2056,7 +2120,8 @@ public sealed partial class ChatPanelViewUiTests
             await store.SetApiKeyAsync(c.Id, "c-key");
             await store.SaveAsync(new AiSettings
             {
-                Providers = useBackup ? [a, b, c] : [a, b], ActiveModelId = b.Models[0].Id,
+                Providers = useBackup ? [a, b, c] : [a, b],
+                ActiveModelId = b.Models[0].Id,
                 FailoverChain = useBackup
                     ? [new FailoverEntry { ModelId = b.Models[0].Id }, new FailoverEntry { ModelId = c.Models[0].Id }]
                     : [new FailoverEntry { ModelId = b.Models[0].Id }],
@@ -2185,7 +2250,8 @@ public sealed partial class ChatPanelViewUiTests
             await store.SetApiKeyAsync(provider.Id, "old-key");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
                 McpServers = [new McpServerConfig { Name = "held", Transport = McpTransportType.Http, Url = mcp.BaseUrl + "/mcp" }],
                 SuggestFollowUps = false
             });
@@ -2256,8 +2322,12 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("alpha", oldTarget.BaseUrl, "m");
             var store = new AiSettingsStore(context);
             await store.SetApiKeyAsync(provider.Id, "old-key");
-            await store.SaveAsync(new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id,
-                SuggestFollowUps = true });
+            await store.SaveAsync(new AiSettings
+            {
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SuggestFollowUps = true
+            });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
             try
@@ -2385,7 +2455,8 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("only", stub.BaseUrl, "m1");
             var settings = new AiSettings
             {
-                Providers = [provider], FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
+                Providers = [provider],
+                FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
             };
             var loc = new Loc("en");
             var view = new GlobalSettingsView(context, new AiSettingsStore(context), settings, loc,
@@ -2544,7 +2615,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 await PumpAsync(5);
-                var dot = FindIn<Avalonia.Controls.Shapes.Path>(view, "FailoverRowDot");
+                Avalonia.Controls.Shapes.Path dot = FindIn<Avalonia.Controls.Shapes.Path>(view, "FailoverRowDot");
                 Assert.HasCount(1, FindIn<StackPanel>(view, "FailoverRowsHost").Children, "前提:链上有一行");
                 Assert.IsFalse(dot.IsVisible, "没测过也没冷却:灯是灭的");
 
@@ -2623,7 +2694,8 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("only", stub.BaseUrl, "m1");
             var settings = new AiSettings
             {
-                Providers = [provider], FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
+                Providers = [provider],
+                FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }]
             };
             var view = new GlobalSettingsView(context, new AiSettingsStore(context), settings, new Loc("en"),
                 _ => Task.CompletedTask, _ => { });
@@ -2683,11 +2755,15 @@ public sealed partial class ChatPanelViewUiTests
             using var tokenHttp = new HttpClient(new RefreshTimeoutHandler());
             var signedIn = new AiProvider
             {
-                Name = "signed-in", BaseUrl = healthy.BaseUrl, DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
+                Name = "signed-in",
+                BaseUrl = healthy.BaseUrl,
+                DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
                 Auth = AuthMethod.Subscription,
                 OAuth = new OAuthConfig
                 {
-                    Flow = OAuthFlow.AuthorizationCodePkce, TokenUrl = "https://auth.example/token", ClientId = "vela-client"
+                    Flow = OAuthFlow.AuthorizationCodePkce,
+                    TokenUrl = "https://auth.example/token",
+                    ClientId = "vela-client"
                 },
                 Models = [new AiModelConfig { Name = "m1", Model = "a" }]
             };
@@ -2696,7 +2772,9 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(tokenHttp) };
             await store.SaveTokensAsync(signedIn.Id, new OAuthTokens
             {
-                AccessToken = "expiring", RefreshToken = "rt", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(20)
+                AccessToken = "expiring",
+                RefreshToken = "rt",
+                ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(20)
             });
             var settings = new AiSettings
             {
@@ -2779,7 +2857,6 @@ public sealed partial class ChatPanelViewUiTests
             }
         });
     }
-
 
     /// <summary>
     /// 开跑时选的思考档位是<b>快照</b>:第一家 401、按链换到第二家,这一轮仍按开跑时的档位走 ——
@@ -2919,8 +2996,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -2969,7 +3048,8 @@ public sealed partial class ChatPanelViewUiTests
             await store.SetApiKeyAsync(second.Id, "backup-key");
             await store.SaveAsync(new AiSettings
             {
-                Providers = useBackup ? [first, second] : [first], ActiveModelId = first.Models[0].Id,
+                Providers = useBackup ? [first, second] : [first],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = useBackup ? [new FailoverEntry { ModelId = second.Models[0].Id }] : [],
                 SuggestFollowUps = false
             });
@@ -3029,8 +3109,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }], SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -3079,8 +3161,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [history, original, next], ActiveModelId = history.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = next.Models[0].Id }], SuggestFollowUps = false
+                Providers = [history, original, next],
+                ActiveModelId = history.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = next.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -3133,7 +3217,8 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second, third], ActiveModelId = first.Models[0].Id,
+                Providers = [first, second, third],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id },
                                  new FailoverEntry { ModelId = third.Models[0].Id }],
                 SuggestFollowUps = false
@@ -3184,7 +3269,8 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
                 SuggestFollowUps = false
             });
@@ -3259,7 +3345,6 @@ public sealed partial class ChatPanelViewUiTests
             "raw 思考纯空白可重放，真实思考禁止重放");
     }
 
-
     /// <summary>真 SSE 断流后备用站接管;首帧 role 的分类由上面的纯判定测试确定性证明。</summary>
     [TestMethod]
     public void RoleOnlyFrameThenBrokenStream_TransfersToHealthyStation()
@@ -3282,7 +3367,8 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider second = StubProvider("beta", healthy.BaseUrl, "m");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id,
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }],
                 SuggestFollowUps = false
             });
@@ -3331,8 +3417,10 @@ public sealed partial class ChatPanelViewUiTests
             await store.SetApiKeyAsync(a.Id, "old-key");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b], ActiveModelId = a.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }], SuggestFollowUps = false
+                Providers = [a, b],
+                ActiveModelId = a.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
@@ -3384,8 +3472,12 @@ public sealed partial class ChatPanelViewUiTests
             await store.SetApiKeyAsync(a.Id, "old-key");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b], ActiveModelId = a.Models[0].Id, Mode = ChatMode.Agent, Approval = ApprovalMode.Bypass,
-                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }], SuggestFollowUps = false
+                Providers = [a, b],
+                ActiveModelId = a.Models[0].Id,
+                Mode = ChatMode.Agent,
+                Approval = ApprovalMode.Bypass,
+                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }],
+                SuggestFollowUps = false
             });
             AiSettings pool = await store.LoadAsync();
             await store.AddProviderApiKeyAsync(pool, pool.Providers[0], "spare-key");

@@ -230,7 +230,7 @@ public sealed class FailoverChainTests
     public async Task ChainSurvivesSaveAndLoad()
     {
         using var context = new TestPluginContext();
-        var provider = Provider("p", null, ("a", "m"));
+        AiProvider provider = Provider("p", null, ("a", "m"));
         var settings = new AiSettings
         {
             Providers = [provider],

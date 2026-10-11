@@ -19,29 +19,23 @@ namespace VelaShell.Ssh.Auth;
 /// 堡垒机上的 Google Authenticator、Duo、RSA SecurID 都走它。
 /// 服务端可以来回问任意多轮，每轮任意多条提示。
 /// </remarks>
-public sealed class KeyboardInteractiveCredential : SshCredential
+/// <remarks>用一个应答回调构造。</remarks>
+/// <param name="responder">
+/// 收到一轮询问时被调用，返回与 <see cref="SshKeyboardChallenge.Prompts"/>
+/// <b>条数完全相等</b>的答案（纯展示轮返回空列表）。
+/// </param>
+/// <param name="label">给使用者看的标签,进认证尝试记录。</param>
+public sealed class KeyboardInteractiveCredential(
+    Func<SshKeyboardChallenge, CancellationToken, ValueTask<IReadOnlyList<string>>> responder,
+    string? label = null) : SshCredential
 {
-    private readonly Func<SshKeyboardChallenge, CancellationToken, ValueTask<IReadOnlyList<string>>> _responder;
-
-    /// <summary>用一个应答回调构造。</summary>
-    /// <param name="responder">
-    /// 收到一轮询问时被调用，返回与 <see cref="SshKeyboardChallenge.Prompts"/>
-    /// <b>条数完全相等</b>的答案（纯展示轮返回空列表）。
-    /// </param>
-    /// <param name="label">给使用者看的标签,进认证尝试记录。</param>
-    public KeyboardInteractiveCredential(
-        Func<SshKeyboardChallenge, CancellationToken, ValueTask<IReadOnlyList<string>>> responder,
-        string? label = null)
-    {
-        _responder = responder ?? throw new ArgumentNullException(nameof(responder));
-        Label = label ?? "keyboard-interactive";
-    }
+    private readonly Func<SshKeyboardChallenge, CancellationToken, ValueTask<IReadOnlyList<string>>> _responder = responder ?? throw new ArgumentNullException(nameof(responder));
 
     /// <inheritdoc />
     public override string MethodName => SshProtocolNames.AuthKeyboardInteractive;
 
     /// <inheritdoc />
-    public override string Label { get; }
+    public override string Label { get; } = label ?? "keyboard-interactive";
 
     /// <summary>应答一轮询问。</summary>
     public ValueTask<IReadOnlyList<string>> RespondAsync(

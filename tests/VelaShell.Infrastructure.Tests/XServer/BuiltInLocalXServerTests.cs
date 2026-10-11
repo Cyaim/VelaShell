@@ -255,7 +255,10 @@ public class BuiltInLocalXServerTests
     {
         (BuiltInLocalXServer server, List<RecordingHost> hosts) = CreatePerSession(new XServerOptions
         {
-            DisplayPerSession = true, UseHostInputMethod = inputMethod, ShowWindowSource = windowSource, KeyboardLayout = "de",
+            DisplayPerSession = true,
+            UseHostInputMethod = inputMethod,
+            ShowWindowSource = windowSource,
+            KeyboardLayout = "de",
         });
         await using (server)
         {
@@ -472,7 +475,7 @@ public class BuiltInLocalXServerTests
         await stream.ReadExactlyAsync(head).AsTask().WaitAsync(TimeSpan.FromSeconds(5));
         await stream.ReadExactlyAsync(new byte[BitConverter.ToUInt16(head, 6) * 4]).AsTask().WaitAsync(TimeSpan.FromSeconds(5));
 
-        byte[] name = Encoding.ASCII.GetBytes("@server=" + VelaShell.Core.XServer.XServerInputMethod.Name);   // 17 字节,补到 20
+        byte[] name = Encoding.ASCII.GetBytes("@server=" + XServerInputMethod.Name);   // 17 字节,补到 20
         List<byte> intern = [16, 0, (byte)(2 + ((name.Length + 3) / 4)), 0, (byte)name.Length, 0, 0, 0];
         intern.AddRange(name);
         intern.AddRange(new byte[((name.Length + 3) & ~3) - name.Length]);

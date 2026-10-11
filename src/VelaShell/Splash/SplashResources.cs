@@ -145,7 +145,7 @@ internal sealed class SplashFace : IDisposable
     private readonly string[] _bcp47;
     private readonly Dictionary<int, SKTypeface> _fallbacks = [];
     private readonly Dictionary<(SKTypeface Typeface, float Size), SKFont> _fonts = [];
-    private readonly Dictionary<string, (SKTypeface Typeface, string Text)[]> _runs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (SKTypeface Typeface, string Text)[]> _runs = [with(StringComparer.Ordinal)];
     private readonly SKPaint _paint = new() { IsAntialias = true };
 
     /// <summary>按首个可用的字族创建;一个都没有时用系统默认字体。</summary>
@@ -160,7 +160,7 @@ internal sealed class SplashFace : IDisposable
         foreach (string family in families)
         {
             // 系统里没有这个字族时拿到的是默认字体(共享实例,不释放,见类型注释)。
-            SKTypeface candidate = SKTypeface.FromFamilyName(family, style);
+            var candidate = SKTypeface.FromFamilyName(family, style);
             if (string.Equals(candidate.FamilyName, family, StringComparison.OrdinalIgnoreCase))
             {
                 chosen = candidate;

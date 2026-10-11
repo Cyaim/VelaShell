@@ -114,7 +114,7 @@ public sealed class AgentAddIdentityTests
             rig.Token);
 
         Assert.AreEqual((byte)25, rig.Agent.LastAddMessageType);
-        Assert.AreSequenceEqual(new byte[] { 1, 2 }, rig.Agent.LastConstraints.ToArray());
+        Assert.AreSequenceEqual(new byte[] { 1, 2 }, [.. rig.Agent.LastConstraints]);
         Assert.AreEqual(91u, rig.Agent.LastLifetimeSeconds, "不足一秒向上取整，不能把有效期截短");
     }
 

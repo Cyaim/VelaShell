@@ -78,7 +78,7 @@ public sealed class OptionValidationTests
         SshAlgorithmSet set = SshAlgorithmSet.Default with { KeyExchange = kex };
         kex.Add("diffie-hellman-group1-sha1");
 
-        Assert.AreSequenceEqual(new[] { "curve25519-sha256" }, set.KeyExchange.ToArray());
+        Assert.AreSequenceEqual(new[] { "curve25519-sha256" }, [.. set.KeyExchange]);
         Assert.IsNotInstanceOfType<string[]>(SshAlgorithmSet.Default.EncryptionClientToServer, "下转型就能改默认清单");
         Assert.IsNotInstanceOfType<List<string>>(set.KeyExchange);
         Assert.ThrowsExactly<ArgumentNullException>(() => SshAlgorithmSet.Default with { HostKey = null! });

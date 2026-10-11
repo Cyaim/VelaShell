@@ -56,7 +56,7 @@ public sealed class XServerToggleViewModelTests
         XServerToggleViewModel vm = new(server, toasts) { ConfirmStopAsync = n => { asked.Add(n); return Task.FromResult(answer); } };
 
         await vm.ToggleCommand.Execute().FirstAsync();
-        Assert.AreSequenceEqual([3], asked.ToArray(), "说清会断开几个");
+        Assert.AreSequenceEqual([3], [.. asked], "说清会断开几个");
         await server.DidNotReceive().StopAsync();
 
         answer = true;
@@ -165,7 +165,7 @@ public sealed class XServerToggleViewModelTests
         XServerClientItemViewModel row = vm.Clients.Single();
 
         await vm.DisconnectCommand.Execute(row).FirstAsync();
-        Assert.AreSequenceEqual(["XTerm"], asked.ToArray());
+        Assert.AreSequenceEqual(["XTerm"], [.. asked]);
         server.DidNotReceive().DisconnectClient(Arg.Any<string>());
 
         answer = true;

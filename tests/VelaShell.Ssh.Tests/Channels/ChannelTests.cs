@@ -1433,7 +1433,7 @@ public sealed class ChannelTests
             }
         }
 
-        Assert.AreSequenceEqual(new[] { true, false, true }, seen.ToArray());
+        Assert.AreSequenceEqual(new[] { true, false, true }, [.. seen]);
         Assert.IsTrue(command.Channel.ClientMayDoFlowControl);
     }
 

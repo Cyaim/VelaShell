@@ -82,7 +82,7 @@ public sealed class BrushTransitionFromTransparentTests
     /// <summary>扫一份 axaml,返回「行号  说明」形式的问题清单。</summary>
     private static List<string> Scan(string xaml)
     {
-        XDocument document = XDocument.Parse(xaml, LoadOptions.SetLineInfo);
+        var document = XDocument.Parse(xaml, LoadOptions.SetLineInfo);
         List<string> findings = [];
         foreach (XElement transition in document.Descendants().Where(element => element.Name.LocalName == "BrushTransition"))
         {
@@ -111,7 +111,7 @@ public sealed class BrushTransitionFromTransparentTests
         || (element.Name.LocalName == "Setter" && element.Attribute("Property")?.Value == "Transitions");
 
     private static string? LastSegment(string? property) =>
-        property is null ? null : property[(property.LastIndexOf('.') + 1)..];
+        property?[(property.LastIndexOf('.') + 1)..];
 
     private static bool IsTransparent(string? value) =>
         string.Equals(value?.Trim(), "Transparent", StringComparison.OrdinalIgnoreCase)

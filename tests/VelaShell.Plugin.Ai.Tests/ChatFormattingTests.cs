@@ -330,9 +330,9 @@ public sealed class TransientFailureTests
         var inner = new HttpRequestException("auth", null, System.Net.HttpStatusCode.Unauthorized);
         Assert.IsFalse(TransientFailure.IsApiKeyFailure(new HttpRequestException("parameters", inner, System.Net.HttpStatusCode.BadRequest)));
         Assert.IsFalse(TransientFailure.IsApiKeyFailure(new Anthropic.Exceptions.AnthropicApiException("model", inner)
-            { StatusCode = System.Net.HttpStatusCode.NotFound, ResponseBody = "" }));
+        { StatusCode = System.Net.HttpStatusCode.NotFound, ResponseBody = "" }));
         Assert.IsTrue(TransientFailure.IsApiKeyFailure(new Anthropic.Exceptions.AnthropicApiException("transport", inner)
-            { StatusCode = 0, ResponseBody = "" }));
+        { StatusCode = 0, ResponseBody = "" }));
         Assert.IsFalse(TransientFailure.IsApiKeyFailure(new HttpRequestException("offline")));
         Assert.IsFalse(TransientFailure.IsApiKeyFailure(new TimeoutException()));
         Assert.IsFalse(TransientFailure.IsApiKeyFailure(new HealthProbe.EmptyReplyException()));

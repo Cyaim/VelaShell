@@ -111,7 +111,7 @@ public sealed class MainWindowSshFeatureTests
         settings.XServer.UseHostInputMethod = false;
         Assert.IsFalse(MainWindowViewModel.WantsInputMethodEnvironment(settings, forwarding), "不用本机输入法");
         settings.XServer.UseHostInputMethod = true;
-        settings.XServer.Engine = VelaShell.Core.XServer.XServerEngines.VcXsrv;
+        settings.XServer.Engine = Core.XServer.XServerEngines.VcXsrv;
         Assert.IsFalse(MainWindowViewModel.WantsInputMethodEnvironment(settings, forwarding), "用的是 VcXsrv");
     }
 

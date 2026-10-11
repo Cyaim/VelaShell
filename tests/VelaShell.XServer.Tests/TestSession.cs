@@ -23,9 +23,7 @@ public class TestSession
     private static int Floor => Math.Max(16, Environment.ProcessorCount * 4);
 
     [AssemblyInitialize]
-    public static void Init(TestContext _)
-    {
+    public static void Init(TestContext _) =>
         // 工作线程与 I/O 完成端口都抬:内存管道、Unix 套接字与临时文件都会用到后者。
         ThreadPool.SetMinThreads(Floor, Floor);
-    }
 }

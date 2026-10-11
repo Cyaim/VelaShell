@@ -6,13 +6,9 @@
 namespace VelaShell.Ssh.Diagnostics;
 
 /// <summary>建连阶段的失败（拨号、版本交换、协商、主机密钥）。</summary>
-public class SshConnectException : SshException
+/// <remarks>用给定原因、阶段与消息创建异常。</remarks>
+public class SshConnectException(SshFailureReason reason, SshPhase phase, string message, Exception? innerException = null) : SshException(reason, phase, message, innerException)
 {
-    /// <summary>用给定原因、阶段与消息创建异常。</summary>
-    public SshConnectException(SshFailureReason reason, SshPhase phase, string message, Exception? innerException = null)
-        : base(reason, phase, message, innerException)
-    {
-    }
 
     /// <summary>
     /// 链路上每一跳的结果（代理、跳板、最终目标）。

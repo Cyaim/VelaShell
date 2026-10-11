@@ -15,14 +15,10 @@ namespace VelaShell.Ssh.Keys;
 /// <see cref="SshFailureReason.AgentUnavailable"/>、<see cref="SshFailureReason.AgentRefused"/>、<see cref="SshFailureReason.ProtocolError"/>、
 /// <see cref="SshFailureReason.LimitExceeded"/>。
 /// </remarks>
-public sealed class SshAgentException : SshException
+/// <remarks>创建一个 agent 异常。</remarks>
+/// <param name="reason">失败的分类。</param>
+/// <param name="message">诊断消息。</param>
+/// <param name="innerException">内部异常。</param>
+public sealed class SshAgentException(SshFailureReason reason, string message, Exception? innerException = null) : SshException(reason, SshPhase.Authenticating, message, innerException)
 {
-    /// <summary>创建一个 agent 异常。</summary>
-    /// <param name="reason">失败的分类。</param>
-    /// <param name="message">诊断消息。</param>
-    /// <param name="innerException">内部异常。</param>
-    public SshAgentException(SshFailureReason reason, string message, Exception? innerException = null)
-        : base(reason, SshPhase.Authenticating, message, innerException)
-    {
-    }
 }

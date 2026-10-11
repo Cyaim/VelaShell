@@ -7,12 +7,11 @@
 namespace VelaShell.XServer.Resources;
 
 /// <summary>图形上下文(GC)。默认值逐项照 CreateGC 一节。</summary>
-internal sealed class XGc : XResource
+internal sealed class XGc(uint id, Server.XClient? owner, byte depth) : XResource(id, owner)
 {
-    public XGc(uint id, Server.XClient? owner, byte depth) : base(id, owner) => Depth = depth;
 
     /// <summary>创建时所基于的可绘对象深度 —— GC 只能用在同深度的可绘对象上(否则 BadMatch)。</summary>
-    public byte Depth { get; }
+    public byte Depth { get; } = depth;
 
     /// <summary>光栅操作,0–15;默认 GXcopy(3)。</summary>
     public byte Function { get; set; } = 3;

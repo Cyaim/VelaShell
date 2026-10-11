@@ -62,7 +62,7 @@ public sealed class SftpXServerDropUploader(ISshConnectionService connections, I
         await _sftp.CreateDirectoryAsync(id, directory, cancellationToken).ConfigureAwait(false);
         await _sftp.SetPermissionsAsync(id, directory, 700, cancellationToken).ConfigureAwait(false);   // chmod 记法(见 ISftpService)
         List<string> remote = [];
-        HashSet<string> names = new(StringComparer.Ordinal);
+        HashSet<string> names = [with(StringComparer.Ordinal)];
         foreach (string local in localPaths)
         {
             string name = UniqueName(names, Path.GetFileName(local.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));

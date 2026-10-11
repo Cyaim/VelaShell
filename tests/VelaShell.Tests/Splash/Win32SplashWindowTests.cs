@@ -30,7 +30,7 @@ public sealed class Win32SplashWindowTests
             {
                 SplashNative.SetThreadDpiAwarenessContext(SplashNative.DpiAwarenessPerMonitorV2);
                 SplashSimulation simulation = new();
-                using SplashRenderer renderer = SplashRenderer.Create(
+                using var renderer = SplashRenderer.Create(
                     "terminal", SplashPalette.Resolve("dark", null, true), SplashStrings.Load(),
                     SplashResources.Create(CultureInfo.GetCultureInfo("en-US")));
                 using Win32SplashWindow window = new(renderer, () =>
@@ -47,7 +47,8 @@ public sealed class Win32SplashWindowTests
                 failure = ex;
                 ready.Set();
             }
-        }) { IsBackground = true };
+        })
+        { IsBackground = true };
         thread.Start();
 
         Assert.IsTrue(ready.Wait(TimeSpan.FromSeconds(10)), "窗口没建起来。");

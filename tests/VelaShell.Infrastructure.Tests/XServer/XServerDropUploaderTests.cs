@@ -52,7 +52,7 @@ public sealed class XServerDropUploaderTests
         Assert.HasCount(3, remote, "已经不存在的跳过");
         string directory = remote[0][..remote[0].LastIndexOf('/')];
         StringAssert.StartsWith(directory, "/tmp/velashell-drop-");
-        Assert.AreSequenceEqual([$"{directory}/a.txt", $"{directory}/dir", $"{directory}/a (2).txt"], remote.ToArray(), "同名的加序号");
+        Assert.AreSequenceEqual([$"{directory}/a.txt", $"{directory}/dir", $"{directory}/a (2).txt"], [.. remote], "同名的加序号");
         await sftp.Received(1).CreateDirectoryAsync(box.SessionId, directory, Arg.Any<CancellationToken>());
         await sftp.Received(1).SetPermissionsAsync(box.SessionId, directory, 700, Arg.Any<CancellationToken>());
         await sftp.Received(1).UploadFileAsync(box.SessionId, a, $"{directory}/a.txt", null, 0, Arg.Any<CancellationToken>());

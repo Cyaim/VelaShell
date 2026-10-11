@@ -1,13 +1,12 @@
+using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
-using Avalonia.Media;
 using Avalonia.Markup.Xaml.MarkupExtensions;
+using Avalonia.Media;
 using Avalonia.Threading;
-using System.Text.Json;
-using Microsoft.Extensions.AI;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.PluginSdk;
 
@@ -762,7 +761,11 @@ public partial class SettingsView : UserControl
                     await RefreshProviderKeyRowsAsync(provider, run);
                 }
                 if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider) || SelectedModel is not null
-                    || !_settings.Providers.Contains(provider)) return;
+                    || !_settings.Providers.Contains(provider))
+                {
+                    return;
+                }
+
                 if (provider.Models.Count == 0)
                 {
                     StatusText.Text = _loc["NoModels"];
@@ -971,7 +974,11 @@ public partial class SettingsView : UserControl
             }
             if (!_settings.Providers.Contains(provider) || provider.BaseUrl != before.BaseUrl
                 || provider.DefaultProtocol != before.DefaultProtocol || provider.Auth != before.Auth
-                || provider.CatalogId != before.CatalogId) return;
+                || provider.CatalogId != before.CatalogId)
+            {
+                return;
+            }
+
             string expected = JsonSerializer.Serialize(provider);
             AiProvider draft = JsonSerializer.Deserialize<AiProvider>(expected)!;
             List<string>? changedModels = _health is null ? null : [];
@@ -1038,7 +1045,11 @@ public partial class SettingsView : UserControl
     {
         await pending;
         if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider) || SelectedModel is not null
-            || !_settings.Providers.Contains(provider)) return;
+            || !_settings.Providers.Contains(provider))
+        {
+            return;
+        }
+
         if (ProviderNameBox.Text == _loadedProviderName) ProviderNameBox.Text = provider.Name;
         if (ProviderBaseUrlBox.Text == _loadedProviderUrl) ProviderBaseUrlBox.Text = provider.BaseUrl;
         if (ProviderProtocolCombo.SelectedIndex == _loadedProviderProtocol)
@@ -1110,19 +1121,33 @@ public partial class SettingsView : UserControl
 
     private static ResolvedModel FreezeProbeModel(ResolvedModel model) => new(new AiProvider
     {
-        Id = model.Provider.Id, Name = model.Provider.Name, BaseUrl = model.Provider.BaseUrl,
-        DefaultProtocol = model.Protocol, CatalogId = model.Provider.CatalogId,
-        Auth = model.Provider.Auth, OAuth = model.Provider.OAuth,
-        AdditionalApiKeyIds = [.. model.Provider.AdditionalApiKeyIds], ActiveApiKeyId = model.Provider.ActiveApiKeyId,
-        StoreResponses = model.Provider.StoreResponses, AllowSystemMessages = model.Provider.AllowSystemMessages,
+        Id = model.Provider.Id,
+        Name = model.Provider.Name,
+        BaseUrl = model.Provider.BaseUrl,
+        DefaultProtocol = model.Protocol,
+        CatalogId = model.Provider.CatalogId,
+        Auth = model.Provider.Auth,
+        OAuth = model.Provider.OAuth,
+        AdditionalApiKeyIds = [.. model.Provider.AdditionalApiKeyIds],
+        ActiveApiKeyId = model.Provider.ActiveApiKeyId,
+        StoreResponses = model.Provider.StoreResponses,
+        AllowSystemMessages = model.Provider.AllowSystemMessages,
         UnsupportedParameters = model.Provider.UnsupportedParameters
     }, new AiModelConfig
     {
-        Id = model.Id, Name = model.Name, Model = model.Model, Protocol = model.Protocol,
+        Id = model.Id,
+        Name = model.Name,
+        Model = model.Model,
+        Protocol = model.Protocol,
         BaseUrlOverride = model.BaseUrl,
-        HasOwnApiKey = model.Config.HasOwnApiKey, MaxTokens = model.MaxTokens,
-        MaxInputTokens = model.MaxInputTokens, Reasoning = model.Reasoning, PromptCaching = model.PromptCaching,
-        Temperature = model.Temperature, TopP = model.TopP, StopSequences = model.StopSequences,
+        HasOwnApiKey = model.Config.HasOwnApiKey,
+        MaxTokens = model.MaxTokens,
+        MaxInputTokens = model.MaxInputTokens,
+        Reasoning = model.Reasoning,
+        PromptCaching = model.PromptCaching,
+        Temperature = model.Temperature,
+        TopP = model.TopP,
+        StopSequences = model.StopSequences,
         SystemPrompt = model.SystemPrompt
     });
 
@@ -1154,7 +1179,11 @@ public partial class SettingsView : UserControl
         }
         if (token.IsCancellationRequested || refresh != _keyRowsRun || run != _editorRun
             || !ReferenceEquals(SelectedProvider, provider) || SelectedModel is not null
-            || !_settings.Providers.Contains(provider) || provider.Auth != AuthMethod.ApiKey) return;
+            || !_settings.Providers.Contains(provider) || provider.Auth != AuthMethod.ApiKey)
+        {
+            return;
+        }
+
         foreach (ProviderKeyRowState stale in _keyRows.Where(row => keys.All(key => key.Id != row.Id)).ToArray())
         {
             CancelKeyProbe(stale);
@@ -1211,50 +1240,67 @@ public partial class SettingsView : UserControl
         row.Label[!TextBlock.FontFamilyProperty] = new DynamicResourceExtension("VelaUiMonoFont");
         row.Reveal = new Button
         {
-            Name = "ProviderKeyRevealButton", Tag = row.Id, Content = row.Label,
+            Name = "ProviderKeyRevealButton",
+            Tag = row.Id,
+            Content = row.Label,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left, MinWidth = 0, Padding = new Thickness(0)
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            MinWidth = 0,
+            Padding = new Thickness(0)
         };
         row.Reveal[!ThemeProperty] = new DynamicResourceExtension("VelaOutlineButtonTheme");
         row.Reveal.Click += (_, _) => { row.Revealed = !row.Revealed; ApplyKeyRowLoc(row); };
         row.Status = new TextBlock
         {
-            Name = "ProviderKeyStatus", TextWrapping = TextWrapping.Wrap,
-            TextTrimming = TextTrimming.CharacterEllipsis, Classes = { "dim" }
+            Name = "ProviderKeyStatus",
+            TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Classes = { "dim" }
         };
         row.Dot = new Avalonia.Controls.Shapes.Path
         {
-            Name = "ProviderKeyStatusIcon", Width = 13, Height = 13, Stretch = Stretch.Uniform,
-            StrokeThickness = 2, StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round,
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(4, 0, 8, 0)
+            Name = "ProviderKeyStatusIcon",
+            Width = 13,
+            Height = 13,
+            Stretch = Stretch.Uniform,
+            StrokeThickness = 2,
+            StrokeLineCap = PenLineCap.Round,
+            StrokeJoin = PenLineJoin.Round,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 8, 0)
         };
         row.Probe = ProviderRowIconButton("ProviderKeyProbeButton", "AiIcon.heart-pulse",
             (_, _) => OpenKeyModelPicker(row));
         row.Edit = ProviderRowIconButton("ProviderKeyEditButton", "AiIcon.pencil", (_, _) => BeginKeyEdit(row));
         row.Remove = ProviderRowIconButton("ProviderKeyRemoveButton", "AiIcon.minus", (_, _) => _ = RemoveProviderKeyAsync(row));
-        var line = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto") };
+        var line = new Grid { ColumnDefinitions = [with("*,Auto,Auto,Auto,Auto")] };
         line.Children.Add(row.Reveal);
         Grid.SetColumn(row.Dot, 1); line.Children.Add(row.Dot);
         Grid.SetColumn(row.Probe, 2); line.Children.Add(row.Probe);
         Grid.SetColumn(row.Edit, 3); line.Children.Add(row.Edit);
         Grid.SetColumn(row.Remove, 4); line.Children.Add(row.Remove);
         row.EditBox = new TextBox { Name = "ProviderKeyEditBox", Tag = row.Id, PasswordChar = '●' };
-        row.EditBox[!TextBox.FontFamilyProperty] = new DynamicResourceExtension("VelaUiMonoFont");
+        row.EditBox[!FontFamilyProperty] = new DynamicResourceExtension("VelaUiMonoFont");
         row.Cancel = new Button { Name = "ProviderKeyEditCancelButton", Tag = row.Id, MinHeight = 26 };
         row.Cancel[!ThemeProperty] = new DynamicResourceExtension("VelaOutlineButtonTheme");
         row.Cancel.Click += (_, _) => CancelKeyEdit(row);
-        var editLine = new Grid { ColumnDefinitions = new ColumnDefinitions("*,6,Auto") };
+        var editLine = new Grid { ColumnDefinitions = [with("*,6,Auto")] };
         editLine.Children.Add(row.EditBox);
         Grid.SetColumn(row.Cancel, 2); editLine.Children.Add(row.Cancel);
         row.EditPanel = new StackPanel { IsVisible = false, Children = { editLine } };
         row.Picker = new ComboBox
         {
-            Name = "ProviderKeyModelPicker", Tag = row.Id, IsVisible = false,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch, SelectedIndex = -1
+            Name = "ProviderKeyModelPicker",
+            Tag = row.Id,
+            IsVisible = false,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            SelectedIndex = -1
         };
         row.Host = new Border
         {
-            Name = "ProviderKeyRow", Tag = row.Id, Padding = new Thickness(4, 4),
+            Name = "ProviderKeyRow",
+            Tag = row.Id,
+            Padding = new Thickness(4, 4),
             Child = new StackPanel { Spacing = 4, Children = { line, row.Status, row.EditPanel, row.Picker } }
         };
     }
@@ -1263,15 +1309,24 @@ public partial class SettingsView : UserControl
     {
         var icon = new Avalonia.Controls.Shapes.Path
         {
-            Width = 24, Height = 24, Stretch = Stretch.None, StrokeThickness = 2,
-            StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round
+            Width = 24,
+            Height = 24,
+            Stretch = Stretch.None,
+            StrokeThickness = 2,
+            StrokeLineCap = PenLineCap.Round,
+            StrokeJoin = PenLineJoin.Round
         };
         icon[!Avalonia.Controls.Shapes.Path.DataProperty] = new DynamicResourceExtension(iconKey);
-        icon[!Avalonia.Controls.Shapes.Path.StrokeProperty] = new DynamicResourceExtension("VelaTextSecondary");
+        icon[!Avalonia.Controls.Shapes.Shape.StrokeProperty] = new DynamicResourceExtension("VelaTextSecondary");
         var button = new Button
         {
-            Name = name, Classes = { "host" }, Content = new Viewbox { Width = 11, Height = 11, Child = icon }, Margin = new Thickness(2, 0),
-            Width = 26, Height = 26, Padding = new Thickness(0),
+            Name = name,
+            Classes = { "host" },
+            Content = new Viewbox { Width = 11, Height = 11, Child = icon },
+            Margin = new Thickness(2, 0),
+            Width = 26,
+            Height = 26,
+            Padding = new Thickness(0),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
         };
         button.Click += action;
@@ -1289,10 +1344,10 @@ public partial class SettingsView : UserControl
         var models = row.Provider.Models.Where(model => KeyModelEligible(row, model)).ToList();
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (AiModelConfig model in models) counts[model.DisplayName] = counts.GetValueOrDefault(model.DisplayName) + 1;
-        return models.Select(model => new KeyModelChoice(model.Id,
+        return [.. models.Select(model => new KeyModelChoice(model.Id,
             counts[model.DisplayName] > 1
                 ? $"{model.DisplayName} · {model.Id[..Math.Min(8, model.Id.Length)]}"
-                : model.DisplayName)).ToList();
+                : model.DisplayName))];
     }
     private static bool KeyModelEligible(ProviderKeyRowState row, AiModelConfig model)
         => !model.HasOwnApiKey && !string.IsNullOrWhiteSpace(model.Model)
@@ -1306,7 +1361,6 @@ public partial class SettingsView : UserControl
             if (KeyModelEligible(row, model)) return true;
         return false;
     }
-
 
     private string? CurrentProviderKeyId(AiProvider provider)
     {
@@ -1344,18 +1398,28 @@ public partial class SettingsView : UserControl
         if (row.CheckingModelId is { } checkingId && (_settings.FindModel(checkingId) is not { } checkingModel
             || row.CheckingVersion != (_health?.Version ?? 0)
             || !KeyModelEligible(row, checkingModel.Config)
-            || row.CheckingRequest != KeyRequestSnapshot.Capture(checkingModel))) CancelKeyProbe(row);
+            || row.CheckingRequest != KeyRequestSnapshot.Capture(checkingModel)))
+        {
+            CancelKeyProbe(row);
+        }
+
         if (row.Result is { } result)
         {
             ResolvedModel? live = _settings.FindModel(result.ModelId);
             if (result.Version != (_health?.Version ?? 0) || live is null
                 || !ReferenceEquals(live.Provider, row.Provider) || live.Config.HasOwnApiKey
                 || !KeyModelEligible(row, live.Config)
-                || result.Request != KeyRequestSnapshot.Capture(live)) row.Result = null;
+                || result.Request != KeyRequestSnapshot.Capture(live))
+            {
+                row.Result = null;
+            }
         }
         string text, brush = "VelaTextMuted", icon = "AiIcon.key-untested";
         string? detail = null;
-        if (string.IsNullOrWhiteSpace(row.Key)) text = _loc["StatusNeedsKey"];
+        if (string.IsNullOrWhiteSpace(row.Key))
+        {
+            text = _loc["StatusNeedsKey"];
+        }
         else if (row.CheckingModelId is { } checking)
         {
             text = _loc.F("SetupKeyChecking", _settings.FindModel(checking)?.Name ?? checking);
@@ -1369,16 +1433,23 @@ public partial class SettingsView : UserControl
             icon = last.Ok ? "AiIcon.circle-check" : "AiIcon.circle-x";
             detail = last.Error is null ? null : KeyErrorText(last.Error);
         }
-        else if (!HasKeyModels(row)) text = _loc["SetupKeyNoModel"];
+        else if (!HasKeyModels(row))
+        {
+            text = _loc["SetupKeyNoModel"];
+        }
         else if (_health?.IsKeyCooling(row.Id) == true)
         {
             text = _loc["DotCooling"]; brush = "VelaError"; icon = "AiIcon.circle-x";
         }
-        else text = _loc["SetupKeyUntested"];
+        else
+        {
+            text = _loc["SetupKeyUntested"];
+        }
+
         row.Status.Text = text;
         row.Status[!TextBlock.ForegroundProperty] = new DynamicResourceExtension(brush);
         row.Dot[!Avalonia.Controls.Shapes.Path.DataProperty] = new DynamicResourceExtension(icon);
-        row.Dot[!Avalonia.Controls.Shapes.Path.StrokeProperty] = new DynamicResourceExtension(brush);
+        row.Dot[!Avalonia.Controls.Shapes.Shape.StrokeProperty] = new DynamicResourceExtension(brush);
         SetKeyActionName(row.Status, detail is null ? text : $"{text}\n{detail}");
         ToolTip.SetTip(row.Dot, detail is null ? text : $"{text}\n{detail}");
     }
@@ -1514,7 +1585,11 @@ public partial class SettingsView : UserControl
     private async Task SaveBalanceAsync()
     {
         if (_settingBalance || _loadingEditor || _keyMutation || SelectedModel is not null
-            || SelectedProvider is not { Auth: AuthMethod.ApiKey } provider || !_settings.Providers.Contains(provider)) return;
+            || SelectedProvider is not { Auth: AuthMethod.ApiKey } provider || !_settings.Providers.Contains(provider))
+        {
+            return;
+        }
+
         bool previous = provider.BalanceApiKeys, value = BalanceApiKeysCheck.IsChecked == true;
         if (previous == value) return;
         int run = _editorRun;
@@ -1562,9 +1637,9 @@ public partial class SettingsView : UserControl
     }
 
     private List<KeyModelChoice> AllKeysModelChoices()
-        => _keyRows.Count == 0 ? [] : KeyModelChoices(_keyRows[0])
+        => _keyRows.Count == 0 ? [] : [.. KeyModelChoices(_keyRows[0])
             .Where(choice => _keyRows[0].Provider.Models.Find(model => model.Id == choice.Id) is { } model
-                && AllKeysCanUse(model)).ToList();
+                && AllKeysCanUse(model))];
 
     private void RefreshAllKeysProbeControls()
     {
@@ -1605,17 +1680,25 @@ public partial class SettingsView : UserControl
     private async Task ProbeAllProviderKeysAsync(string modelId)
     {
         if (_allKeyProbeCts is not null || _keyMutation || SelectedModel is not null
-            || SelectedProvider is not { Auth: AuthMethod.ApiKey } provider) return;
+            || SelectedProvider is not { Auth: AuthMethod.ApiKey } provider)
+        {
+            return;
+        }
+
         if (HasInvalidKeyRows()) { RefreshAllKeysProbeControls(); return; }
         if (ProviderDraftDirty(provider)) { StatusText.Text = _loc["SetupSaveProviderFirst"]; return; }
         if (_settings.FindModel(modelId) is not { } model || !ReferenceEquals(model.Provider, provider)
-            || _keyRows.Count == 0 || _keyRows.Any(row => !KeyModelEligible(row, model.Config))) return;
+            || _keyRows.Count == 0 || _keyRows.Any(row => !KeyModelEligible(row, model.Config)))
+        {
+            return;
+        }
+
         int editorRun = _editorRun, version = _health?.Version ?? 0;
-        KeyRequestSnapshot snapshot = KeyRequestSnapshot.Capture(model);
-        var rows = _keyRows.Select(row => (Row: row, Key: row.Key)).ToArray();
+        var snapshot = KeyRequestSnapshot.Capture(model);
+        (ProviderKeyRowState Row, string Key)[] rows = [.. _keyRows.Select(row => (Row: row, row.Key))];
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(_keyEditorCts.Token);
         _allKeyProbeCts = cts;
-        foreach (var (row, _) in rows)
+        foreach ((ProviderKeyRowState? row, string _) in rows)
         {
             CancelKeyProbe(row);
             row.Picker.IsVisible = false;
@@ -1625,12 +1708,16 @@ public partial class SettingsView : UserControl
         try
         {
             // ponytail: 顺序探测避免同时突发请求；确有等待压力时再增加有界并发。
-            foreach (var (row, _) in rows)
+            foreach ((ProviderKeyRowState? row, string _) in rows)
             {
                 if (cts.IsCancellationRequested || _keyMutation || ProviderDraftDirty(provider)
                     || version != (_health?.Version ?? 0) || _keyRows.Count != rows.Length
                     || rows.Any(entry => !KeyRowCurrent(entry.Row, editorRun) || entry.Row.Key != entry.Key)
-                    || _settings.FindModel(modelId) is not { } live || snapshot != KeyRequestSnapshot.Capture(live)) break;
+                    || _settings.FindModel(modelId) is not { } live || snapshot != KeyRequestSnapshot.Capture(live))
+                {
+                    break;
+                }
+
                 await ProbeProviderKeyAsync(row, modelId, cts.Token);
             }
         }
@@ -1690,7 +1777,11 @@ public partial class SettingsView : UserControl
             return;
         }
         if (_settings.FindModel(modelId) is not { } live || !ReferenceEquals(live.Provider, row.Provider)
-            || !KeyModelEligible(row, live.Config)) return;
+            || !KeyModelEligible(row, live.Config))
+        {
+            return;
+        }
+
         CancelKeyProbe(row);
         int run = row.ProbeRun;
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_keyEditorCts.Token, batchToken);
@@ -1698,7 +1789,7 @@ public partial class SettingsView : UserControl
         CancellationToken token = cts.Token;
         row.CheckingModelId = modelId;
         ResolvedModel candidate = FreezeProbeModel(live);
-        KeyRequestSnapshot snapshot = KeyRequestSnapshot.Capture(live);
+        var snapshot = KeyRequestSnapshot.Capture(live);
         int version = _health?.Version ?? 0;
         row.CheckingRequest = snapshot;
         row.CheckingVersion = version;
@@ -1708,10 +1799,14 @@ public partial class SettingsView : UserControl
         {
             // 主槽测跨源模型时解析器不认它是槽请求(KeyId 为 null):那边的成败说明的是覆盖地址,
             // 不是这把 Key 在供应商自己源上的状态,不能拿去冷却或解冻 Key 槽(与 TestAsync 同一裁决)
-            var (credential, slotId) = await _store.ResolveCredentialWithKeyIdAsync(live, token, keyId: row.Id);
+            (ProviderCredential credential, string? slotId) = await _store.ResolveCredentialWithKeyIdAsync(live, token, keyId: row.Id);
             if (credential.Value != row.Key) throw new AiSettingsStore.ApiKeySlotChangedException();
             if (string.IsNullOrWhiteSpace(credential.Value)
-                || !await StillSavedKeyProbeAsync(row, modelId, snapshot, credential, editorRun, run, version, token)) return;
+                || !await StillSavedKeyProbeAsync(row, modelId, snapshot, credential, editorRun, run, version, token))
+            {
+                return;
+            }
+
             (Exception? error, _) = await HealthProbe.ProbeAsync(_store, candidate, credential, token);
             token.ThrowIfCancellationRequested();
             if (!await StillSavedKeyProbeAsync(row, modelId, snapshot, credential, editorRun, run, version, token)) return;
@@ -1755,8 +1850,12 @@ public partial class SettingsView : UserControl
             || version != (_health?.Version ?? 0) || _settings.FindModel(modelId) is not { } saved
             || !ReferenceEquals(saved.Provider, row.Provider) || saved.Config.HasOwnApiKey
             || snapshot != KeyRequestSnapshot.Capture(saved)
-            || !KeyModelEligible(row, saved.Config)) return false;
-        var (now, _) = await _store.ResolveCredentialWithKeyIdAsync(saved, token, refreshTokens: false, keyId: row.Id);
+            || !KeyModelEligible(row, saved.Config))
+        {
+            return false;
+        }
+
+        (ProviderCredential now, string? _) = await _store.ResolveCredentialWithKeyIdAsync(saved, token, refreshTokens: false, keyId: row.Id);
         return !token.IsCancellationRequested && probeRun == row.ProbeRun && KeyRowCurrent(row, editorRun)
             && version == (_health?.Version ?? 0) && snapshot == KeyRequestSnapshot.Capture(saved)
             && credential == now;
@@ -1784,7 +1883,9 @@ public partial class SettingsView : UserControl
         RefreshAllKeysProbeControls();
         if (!_refreshingKeyRowsOnTick && !_loadingEditor && SelectedModel is null
             && SelectedProvider is { Auth: AuthMethod.ApiKey } provider)
+        {
             _ = RefreshKeyRowsOnTickAsync(provider, _editorRun);
+        }
     }
     private async Task RefreshKeyRowsOnTickAsync(AiProvider provider, int run)
     {
@@ -1795,12 +1896,11 @@ public partial class SettingsView : UserControl
         finally { _refreshingKeyRowsOnTick = false; }
     }
 
-
     /// <inheritdoc />
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _keyLightTimer?.Stop();
-        if (_keyLightTimer is not null) _keyLightTimer.Tick -= OnKeyLightTick;
+        _keyLightTimer?.Tick -= OnKeyLightTick;
         CancelAllKeysProbe();
         ProviderAllKeysModelPicker.IsVisible = false;
         _keyEditorCts.Cancel();
@@ -1815,7 +1915,6 @@ public partial class SettingsView : UserControl
         base.OnDetachedFromVisualTree(e);
     }
 
-
     private async Task MergeSavedModelAsync(AiProvider provider, AiModelConfig model, int run, Task pending)
     {
         bool Current() => run == _editorRun && ReferenceEquals(SelectedProvider, provider)
@@ -1826,7 +1925,7 @@ public partial class SettingsView : UserControl
         string key = model.HasOwnApiKey ? await _store.GetApiKeyAsync(model.Id) ?? "" : "";
         if (!Current()) return;
         // 两次等待都结束后再读取本页最新输入，未编辑字段从当前保存模型重填。
-        Dictionary<Control, object?> dirty = CaptureModelForm()
+        var dirty = CaptureModelForm()
             .Where(field => field.Key == MaxInputTokensBox && _windowEdited
                 || !_loadedModelForm.TryGetValue(field.Key, out object? loaded) || !Equals(loaded, field.Value))
             .ToDictionary(field => field.Key, field => field.Value);
@@ -1856,7 +1955,10 @@ public partial class SettingsView : UserControl
                 id => string.Equals(id, ModelBox.Text, StringComparison.OrdinalIgnoreCase));
             if (windowSpec is not null && windowSpec.Id == ModelBox.Text
                 && int.TryParse(MaxInputTokensBox.Text, out int window) && windowSpec.ContextTokens == window)
+            {
                 _windowSpecDraft = windowSpec;
+            }
+
             _windowEdited = windowEdited;
             UpdateContextWindowHint();
         }
@@ -1992,7 +2094,11 @@ public partial class SettingsView : UserControl
             string? expectedKey = liveModel.HasOwnApiKey ? string.IsNullOrEmpty(_loadedKey) ? null : _loadedKey
                 : await _store.GetApiKeyAsync(liveModel.Id);
             if (run != _editorRun || !ReferenceEquals(SelectedProvider, item.Provider)
-                || !ReferenceEquals(SelectedModel, liveModel)) return;
+                || !ReferenceEquals(SelectedModel, liveModel))
+            {
+                return;
+            }
+
             await _store.SaveModelFormAsync(_settings, item.Provider, liveModel, model, expectedModel,
                 submittedKey, expectedKey);
             _onProvidersChanged();
@@ -2044,12 +2150,23 @@ public partial class SettingsView : UserControl
             {
                 string? currentKey = await _store.GetApiKeyAsync(draft!.Id);
                 if (run != _editorRun || !ReferenceEquals(_keyDraft, draft)
-                    || !KeyRowCurrent(draft, run)) return;
+                    || !KeyRowCurrent(draft, run))
+                {
+                    return;
+                }
+
                 if (draft.OriginalUrl != provider.BaseUrl || draft.OriginalProtocol != provider.DefaultProtocol
-                    || draft.OriginalKey != (currentKey ?? "")) throw new AiSettingsStore.ApiKeySlotChangedException();
+                    || draft.OriginalKey != (currentKey ?? ""))
+                {
+                    throw new AiSettingsStore.ApiKeySlotChangedException();
+                }
             }
             if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)
-                || SelectedModel is not null || !_settings.Providers.Contains(provider)) return;
+                || SelectedModel is not null || !_settings.Providers.Contains(provider))
+            {
+                return;
+            }
+
             if (provider.Auth == AuthMethod.ApiKey)
             {
                 string expected = JsonSerializer.Serialize(provider);
@@ -2100,10 +2217,12 @@ public partial class SettingsView : UserControl
             _savingKeyRow = null;
             SetKeyMutation(false);
             if (draftFocus is not null && run == _editorRun && ReferenceEquals(SelectedProvider, provider)
-                && ReferenceEquals(_keyDraft, draft)) draftFocus.Focus();
+                && ReferenceEquals(_keyDraft, draft))
+            {
+                draftFocus.Focus();
+            }
         }
     }
-
 
     // ---- 删除 ----
 
@@ -2226,7 +2345,8 @@ public partial class SettingsView : UserControl
                 // 订阅登录那家的凭据不在表单里,靠 Id 去机密存储取(见 ResolveCredentialAsync)
                 Auth = provider.Auth,
                 OAuth = provider.OAuth,
-                AdditionalApiKeyIds = [.. provider.AdditionalApiKeyIds], ActiveApiKeyId = provider.ActiveApiKeyId
+                AdditionalApiKeyIds = [.. provider.AdditionalApiKeyIds],
+                ActiveApiKeyId = provider.ActiveApiKeyId
             };
             AiModelConfig first = provider.Models[0];
             apiKeyOverride = first.HasOwnApiKey || provider.Auth == AuthMethod.Subscription
@@ -2258,7 +2378,11 @@ public partial class SettingsView : UserControl
             compareId = first.Id; // 同上:拿哪份落库来比,探活跑完再定(见 SameAsSavedAsync)
         }
         if (apiKeyOverride is null && !candidate.Config.HasOwnApiKey && provider.Auth == AuthMethod.ApiKey
-            && !AiSettingsStore.SameOrigin(candidate.BaseUrl, provider.BaseUrl)) requestedKeyId = provider.Id;
+            && !AiSettingsStore.SameOrigin(candidate.BaseUrl, provider.BaseUrl))
+        {
+            requestedKeyId = provider.Id;
+        }
+
         candidate = FreezeProbeModel(candidate);
         ResolvedModel? savedCredentialModel = _settings.FindModel(compareId);
         KeyRequestSnapshot? savedRequest = savedCredentialModel is null ? null : KeyRequestSnapshot.Capture(savedCredentialModel);
@@ -2274,7 +2398,7 @@ public partial class SettingsView : UserControl
         long observationId = _health?.BeginObservation() ?? 0;
         // 请求和健康裁决必须共用同一份凭据:解析订阅令牌可能触发刷新,
         // 再让探活自行解析一次会把 A 的快照与实际发出的 B 错配。
-        var sent = (protocol: candidate.Protocol, baseUrl: candidate.BaseUrl,
+        (ChatProtocol protocol, string baseUrl, string model, int maxTokens, ReasoningLevel reasoning, float? temperature, float? topP, string stop, string keyOwner) sent = (protocol: candidate.Protocol, baseUrl: candidate.BaseUrl,
             model: candidate.Model, maxTokens: candidate.MaxTokens, reasoning: candidate.Reasoning,
             temperature: candidate.Temperature, topP: candidate.TopP, stop: candidate.StopSequences,
             keyOwner: candidate.ApiKeyOwnerId);
@@ -2294,9 +2418,11 @@ public partial class SettingsView : UserControl
                         && AiSettingsStore.SameOrigin(candidate.BaseUrl, provider.BaseUrl) ? provider.Id : null;
                 }
                 else
+                {
                     (sentCredential, sentKeyId) = candidate.Config.HasOwnApiKey == saved.Config.HasOwnApiKey
                         ? await _store.ResolveCredentialWithKeyIdAsync(saved)
                         : await _store.ResolveProviderCredentialWithKeyIdAsync(provider);
+                }
             }
             else
             {
@@ -2305,7 +2431,9 @@ public partial class SettingsView : UserControl
             }
             if (_store.ProviderConfigurationVersion(provider) != savedProviderVersion
                 || savedRequest != KeyRequestSnapshot.Capture(new ResolvedModel(provider, saved.Config)))
+            {
                 throw new AiSettingsStore.ApiKeySlotChangedException();
+            }
         }
         catch (AiSettingsStore.ApiKeySlotChangedException)
         {
@@ -2361,7 +2489,9 @@ public partial class SettingsView : UserControl
             if (sameAsSaved)
             {
                 if (sentKeyId is not null && TransientFailure.IsApiKeyFailure(error))
+                {
                     _health?.RecordKey(sentKeyId, false, healthEvidence, observationId);
+                }
                 else
                 {
                     // 测通了就把这把 Key 的冷却一起解掉(逐 Key 检测与聊天回路都这么做),
@@ -2450,7 +2580,7 @@ public partial class SettingsView : UserControl
             // 令牌文本即使不变,刷新后的端点或账号头也可能指向另一份接入。
             try
             {
-                var (now, nowKeyId) = await _store.ResolveCredentialWithKeyIdAsync(saved, refreshTokens: false);
+                (ProviderCredential now, string? nowKeyId) = await _store.ResolveCredentialWithKeyIdAsync(saved, refreshTokens: false);
                 if (nowKeyId != sentKeyId) return false;
                 return string.Equals(sentCredential.Value, now.Value, StringComparison.Ordinal)
                     && sentCredential.IsBearerToken == now.IsBearerToken

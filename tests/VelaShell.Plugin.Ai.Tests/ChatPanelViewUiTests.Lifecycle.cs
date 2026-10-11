@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Reflection;
+using System.Text;
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
@@ -41,9 +41,11 @@ public sealed partial class ChatPanelViewUiTests
             small.Models[0].MaxTokens = 1;
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [original, failed, small], ActiveModelId = original.Models[0].Id,
+                Providers = [original, failed, small],
+                ActiveModelId = original.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = small.Models[0].Id }],
-                CompactContext = true, SuggestFollowUps = false
+                CompactContext = true,
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -122,7 +124,9 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = modelId, SuggestFollowUps = false
+                Providers = [provider],
+                ActiveModelId = modelId,
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? settingsHost = null, catalogHost = null;
@@ -164,7 +168,7 @@ public sealed partial class ChatPanelViewUiTests
                 await pulled.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 Assert.IsTrue(await WaitForAsync(() => CatalogControl<Button>("SetupPrimaryButton").IsEnabled));
                 ComboBox picker = CatalogControl<ComboBox>("SetupModelPicker");
-                Assert.Contains("configured-model", picker.ItemsSource!.Cast<string>().ToArray(),
+                Assert.Contains("configured-model", [.. picker.ItemsSource!.Cast<string>()],
                     "真实目录窗口必须展示晚到的型号清单");
                 AiProvider persisted = (await store.LoadAsync()).Providers.Single();
                 Assert.AreEqual(provider.Id, persisted.Id);
@@ -406,17 +410,23 @@ public sealed partial class ChatPanelViewUiTests
             a.Auth = AuthMethod.Subscription;
             a.OAuth = new OAuthConfig
             {
-                Credential = OAuthCredential.AccessToken, TokenUrl = "https://auth.example/token", ClientId = "test"
+                Credential = OAuthCredential.AccessToken,
+                TokenUrl = "https://auth.example/token",
+                ClientId = "test"
             };
             var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
             await store.SaveTokensAsync(a.Id, new OAuthTokens
             {
-                AccessToken = "expired", RefreshToken = "refresh", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+                AccessToken = "expired",
+                RefreshToken = "refresh",
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
             });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b], ActiveModelId = a.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }], SuggestFollowUps = false
+                Providers = [a, b],
+                ActiveModelId = a.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }],
+                SuggestFollowUps = false
             });
             var panel = new ChatPanelView(context, store);
             var window = new Window { Width = 800, Height = 600, Content = panel };
@@ -490,17 +500,23 @@ public sealed partial class ChatPanelViewUiTests
             a.Auth = AuthMethod.Subscription;
             a.OAuth = new OAuthConfig
             {
-                Credential = OAuthCredential.AccessToken, TokenUrl = "https://auth.example/token", ClientId = "test"
+                Credential = OAuthCredential.AccessToken,
+                TokenUrl = "https://auth.example/token",
+                ClientId = "test"
             };
             var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
             await store.SaveTokensAsync(a.Id, new OAuthTokens
             {
-                AccessToken = "old-token", RefreshToken = "refresh", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+                AccessToken = "old-token",
+                RefreshToken = "refresh",
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
             });
             await store.SaveAsync(new AiSettings
             {
-                Providers = useBackup ? [a, b] : [a], ActiveModelId = a.Models[0].Id,
-                FailoverChain = useBackup ? [new FailoverEntry { ModelId = b.Models[0].Id }] : [], SuggestFollowUps = false
+                Providers = useBackup ? [a, b] : [a],
+                ActiveModelId = a.Models[0].Id,
+                FailoverChain = useBackup ? [new FailoverEntry { ModelId = b.Models[0].Id }] : [],
+                SuggestFollowUps = false
             });
             var panel = new ChatPanelView(context, store);
             var window = new Window { Width = 800, Height = 600, Content = panel };
@@ -570,7 +586,8 @@ public sealed partial class ChatPanelViewUiTests
             await store.SaveTokensAsync(b.Id, new OAuthTokens { AccessToken = "must-not-leak" });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b, c], ActiveModelId = a.Models[0].Id,
+                Providers = [a, b, c],
+                ActiveModelId = a.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }, new FailoverEntry { ModelId = c.Models[0].Id }],
                 SuggestFollowUps = false
             });
@@ -603,12 +620,16 @@ public sealed partial class ChatPanelViewUiTests
             provider.Auth = AuthMethod.Subscription;
             provider.OAuth = new OAuthConfig
             {
-                Credential = OAuthCredential.AccessToken, TokenUrl = "https://auth.example/token", ClientId = "test"
+                Credential = OAuthCredential.AccessToken,
+                TokenUrl = "https://auth.example/token",
+                ClientId = "test"
             };
             var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
             await store.SaveTokensAsync(provider.Id, new OAuthTokens
             {
-                AccessToken = "same-token", RefreshToken = "refresh", AccountId = "original-account",
+                AccessToken = "same-token",
+                RefreshToken = "refresh",
+                AccountId = "original-account",
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
             });
             await store.SaveAsync(new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id });
@@ -622,7 +643,9 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => target.StreamRequest.IsCompleted));
                 await store.SaveTokensAsync(provider.Id, new OAuthTokens
                 {
-                    AccessToken = "same-token", RefreshToken = "refresh", AccountId = "original-account",
+                    AccessToken = "same-token",
+                    RefreshToken = "refresh",
+                    AccountId = "original-account",
                     ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(20)
                 });
                 target.Release();
@@ -664,13 +687,17 @@ public sealed partial class ChatPanelViewUiTests
             provider.Auth = AuthMethod.Subscription;
             provider.OAuth = new OAuthConfig
             {
-                Credential = OAuthCredential.AccessToken, TokenUrl = "https://auth.example/token", ClientId = "test",
+                Credential = OAuthCredential.AccessToken,
+                TokenUrl = "https://auth.example/token",
+                ClientId = "test",
                 AccountIdClaim = "account_id"
             };
             var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
             var tokens = new OAuthTokens
             {
-                AccessToken = "old-token", RefreshToken = "refresh", AccountId = "original-account",
+                AccessToken = "old-token",
+                RefreshToken = "refresh",
+                AccountId = "original-account",
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
             };
             await store.SaveTokensAsync(provider.Id, tokens);
@@ -737,13 +764,17 @@ public sealed partial class ChatPanelViewUiTests
             provider.Auth = AuthMethod.Subscription;
             provider.OAuth = new OAuthConfig
             {
-                Credential = OAuthCredential.AccessToken, TokenUrl = "https://auth.example/token", ClientId = "test",
+                Credential = OAuthCredential.AccessToken,
+                TokenUrl = "https://auth.example/token",
+                ClientId = "test",
                 AccountIdClaim = "account_id"
             };
             var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
             await store.SaveTokensAsync(provider.Id, new OAuthTokens
             {
-                AccessToken = "old-token", RefreshToken = "refresh", AccountId = "original-account",
+                AccessToken = "old-token",
+                RefreshToken = "refresh",
+                AccountId = "original-account",
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
             });
             await store.SaveAsync(new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id });
@@ -759,7 +790,9 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsNull(SuggestionTask(panel), "建议尚未启动,不能把建议自己刷新 token 当成并发旋转回归");
                 await store.SaveTokensAsync(provider.Id, new OAuthTokens
                 {
-                    AccessToken = "old-token", RefreshToken = "refresh", AccountId = "original-account",
+                    AccessToken = "old-token",
+                    RefreshToken = "refresh",
+                    AccountId = "original-account",
                     ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(20)
                 });
                 var otherStore = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
@@ -775,7 +808,9 @@ public sealed partial class ChatPanelViewUiTests
                 {
                     await otherStore.SaveTokensAsync(provider.Id, new OAuthTokens
                     {
-                        AccessToken = "new-token", AccountId = "original-account", BaseUrl = forbidden.BaseUrl,
+                        AccessToken = "new-token",
+                        AccountId = "original-account",
+                        BaseUrl = forbidden.BaseUrl,
                         ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
                     });
                 }
@@ -835,7 +870,8 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider next = StubProvider("other", other.BaseUrl, "other-model");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, backup, next], ActiveModelId = first.Models[0].Id,
+                Providers = [first, backup, next],
+                ActiveModelId = first.Models[0].Id,
                 FailoverChain = [new FailoverEntry { ModelId = backup.Models[0].Id }]
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
@@ -930,7 +966,9 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("stream", target.BaseUrl, "m");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -966,8 +1004,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [c, a, b], ActiveModelId = a.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }], SuggestFollowUps = false
+                Providers = [c, a, b],
+                ActiveModelId = a.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
@@ -1018,7 +1058,9 @@ public sealed partial class ChatPanelViewUiTests
             await store.SaveTokensAsync(b.Id, new OAuthTokens { AccessToken = "old", BaseUrl = oldBackup.BaseUrl, AccountId = "same-account" });
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b, c], ActiveModelId = a.Models[0].Id, Mode = ChatMode.Agent,
+                Providers = [a, b, c],
+                ActiveModelId = a.Models[0].Id,
+                Mode = ChatMode.Agent,
                 FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }, new FailoverEntry { ModelId = c.Models[0].Id }],
                 SuggestFollowUps = false
             });
@@ -1077,12 +1119,16 @@ public sealed partial class ChatPanelViewUiTests
             provider.Auth = AuthMethod.Subscription;
             provider.OAuth = new OAuthConfig
             {
-                Credential = OAuthCredential.AccessToken, TokenUrl = "https://auth.example/token", ClientId = "test"
+                Credential = OAuthCredential.AccessToken,
+                TokenUrl = "https://auth.example/token",
+                ClientId = "test"
             };
             var store = new AiSettingsStore(context) { TokenClient = new OAuthClient(http) };
             await store.SaveTokensAsync(provider.Id, new OAuthTokens
             {
-                AccessToken = "expired", RefreshToken = "refresh", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+                AccessToken = "expired",
+                RefreshToken = "refresh",
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1)
             });
             await store.SaveAsync(new AiSettings
             {
@@ -1137,8 +1183,10 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(new AiSettings
             {
-                Providers = [a, b, c], ActiveModelId = a.Models[0].Id,
-                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }], SuggestFollowUps = false
+                Providers = [a, b, c],
+                ActiveModelId = a.Models[0].Id,
+                FailoverChain = [new FailoverEntry { ModelId = b.Models[0].Id }],
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? reopenedWindow = null;
@@ -1165,8 +1213,8 @@ public sealed partial class ChatPanelViewUiTests
                 if (reopened is not null) Assert.AreEqual(2, Find<ComboBox>(reopened, "ProviderCombo").SelectedIndex);
                 var history = new ChatHistoryStore(context);
                 await history.InitAsync();
-                var sessions = await history.ListSessionsAsync();
-                var entries = await history.LoadAsync(sessions.Single().Id);
+                IReadOnlyList<ChatSessionSummary> sessions = await history.ListSessionsAsync();
+                IReadOnlyList<ChatEntry> entries = await history.LoadAsync(sessions.Single().Id);
                 Assert.IsTrue(entries.Any(entry => entry.Role == "assistant" && entry.Text == "半截回答"),
                     "面板关闭不应阻止已消费正文的历史结算");
                 Assert.IsEmpty(unused.Requests, "新选择不应重放已出正文的旧请求");
@@ -1218,7 +1266,7 @@ public sealed partial class ChatPanelViewUiTests
         {
             ITimeSeries inner = await opening;
             if (inner.Name != "chat_messages") return inner;
-            ITimeSeries proxy = DispatchProxy.Create<ITimeSeries, DelayedHistorySeries>();
+            ITimeSeries proxy = Create<ITimeSeries, DelayedHistorySeries>();
             var wrapper = (DelayedHistorySeries)proxy;
             wrapper.Inner = inner;
             wrapper.Gate = this;

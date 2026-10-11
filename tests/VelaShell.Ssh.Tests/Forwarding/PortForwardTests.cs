@@ -274,7 +274,7 @@ public sealed class PortForwardTests
             int port = ((IPEndPoint)forwarder.BoundEndPoint!).Port;
             Assert.AreSequenceEqual(
                 new EndPoint[] { new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port) },
-                forwarder.BoundEndPoints.ToArray());
+                [.. forwarder.BoundEndPoints]);
 
             using Socket client = new(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
             await client.ConnectAsync(new IPEndPoint(IPAddress.IPv6Loopback, port), harness.Token);
@@ -1421,7 +1421,7 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
 
         lock (errors)
         {
-            Assert.AreSequenceEqual([ForwardErrorReason.TargetNotPermitted, ForwardErrorReason.TargetNotPermitted], errors.ToArray());
+            Assert.AreSequenceEqual([ForwardErrorReason.TargetNotPermitted, ForwardErrorReason.TargetNotPermitted], [.. errors]);
         }
     }
 
@@ -1531,7 +1531,7 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
 
         lock (targets)
         {
-            Assert.AreSequenceEqual(["/var/run/docker.sock"], targets.ToArray());
+            Assert.AreSequenceEqual(["/var/run/docker.sock"], [.. targets]);
         }
     }
 
@@ -1561,7 +1561,7 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
             Assert.AreEqual("psql", await EchoThroughAsync(client, "psql", harness.Token));
             lock (targets)
             {
-                Assert.AreSequenceEqual(["db.internal:5432"], targets.ToArray());
+                Assert.AreSequenceEqual(["db.internal:5432"], [.. targets]);
             }
         }
         finally
@@ -1586,7 +1586,7 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
         {
             SshForwardException exists = Assert.ThrowsExactly<SshForwardException>(() => LocalPortForwarder.Start(
                 harness.Connection, "h", 1, new LocalPortForwardOptions { ListenSocketPath = path }));
-            Assert.AreEqual(Diagnostics.SshFailureReason.ForwardBindFailed, exists.Reason);
+            Assert.AreEqual(SshFailureReason.ForwardBindFailed, exists.Reason);
             Assert.AreEqual("someone else's", await File.ReadAllTextAsync(path, harness.Token));
 
             await using var replaced = LocalPortForwarder.Start(
@@ -1702,13 +1702,13 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
         IReadOnlyList<PortForwarder> started = await SshConfigFile.StartForwardsAsync(
             harness.Connection, lenient, (forward, _) => failed.Add(forward.Line), harness.Token);
         Assert.HasCount(1, started);
-        Assert.AreSequenceEqual(["0 localhost:22"], failed.ToArray());
+        Assert.AreSequenceEqual(["0 localhost:22"], [.. failed]);
         await started[0].DisposeAsync();
 
         SshHostConfig strict = SshConfigFile.Resolve(SshConfigFile.Parse("Host h\n    ExitOnForwardFailure yes\n" + Forwards), "h");
         SshForwardException failure = await Assert.ThrowsAsync<SshForwardException>(
             async () => await SshConfigFile.StartForwardsAsync(harness.Connection, strict, cancellationToken: harness.Token));
-        Assert.AreEqual(Diagnostics.SshFailureReason.ForwardSetupFailed, failure.Reason);
+        Assert.AreEqual(SshFailureReason.ForwardSetupFailed, failure.Reason);
         StringAssert.Contains(failure.Message, "0 localhost:22");
     }
 }

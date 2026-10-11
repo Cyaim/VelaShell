@@ -15,14 +15,10 @@ namespace VelaShell.Ssh.Keys;
 /// <see cref="SshFailureReason.KeyFormatInvalid"/>、<see cref="SshFailureReason.KeyMismatch"/>（与私钥不是一对、
 /// 拿主机证书去登录）、<see cref="SshFailureReason.Unsupported"/>。
 /// </remarks>
-public sealed class SshCertificateException : SshException
+/// <remarks>创建一个证书异常。</remarks>
+/// <param name="reason">失败的分类。</param>
+/// <param name="message">诊断消息。</param>
+/// <param name="innerException">内部异常。</param>
+public sealed class SshCertificateException(SshFailureReason reason, string message, Exception? innerException = null) : SshException(reason, SshPhase.None, message, innerException)
 {
-    /// <summary>创建一个证书异常。</summary>
-    /// <param name="reason">失败的分类。</param>
-    /// <param name="message">诊断消息。</param>
-    /// <param name="innerException">内部异常。</param>
-    public SshCertificateException(SshFailureReason reason, string message, Exception? innerException = null)
-        : base(reason, SshPhase.None, message, innerException)
-    {
-    }
 }

@@ -48,11 +48,8 @@ public sealed class XNativeWindow : Window
     private XWindowStates _reportedStates;
     private WindowState _resizeState = WindowState.Normal;
 
-    /// <summary>原生窗口已经显示出来(<c>Opened</c>):外框尺寸量得到了,摆好的位置才报回服务端。</summary>
-    private bool _opened;
-
     /// <summary>已经显示出来过(位置是真的摆好的,宿主据此记住它)。</summary>
-    internal bool HasOpened => _opened;
+    internal bool HasOpened { get; private set; }
 
     /// <summary>窗口在任务栏上归进的组(按 X 程序的类名,见 <see cref="Services.XServer.TaskbarGroup" />);没归组为 null。</summary>
     internal string? TaskbarGroup { get; set; }
@@ -119,7 +116,7 @@ public sealed class XNativeWindow : Window
         Activated += (_, _) => _host.OnWindowActivated(this);
         Deactivated += (_, _) => OnDeactivated();
         ScalingChanged += (_, _) => ApplyGeometry();
-        Opened += (_, _) => { _opened = true; UpdateFrameExtents(); ApplyGeometry(); UpdateRegion(Handle.Snapshot); _surface.Start(); ApplySizeOnOpen(); };
+        Opened += (_, _) => { HasOpened = true; UpdateFrameExtents(); ApplyGeometry(); UpdateRegion(Handle.Snapshot); _surface.Start(); ApplySizeOnOpen(); };
         // 本机的文本、文件拖进 X 程序(F16):服务端替宿主扮演 XDND 的源,见 XDropTarget。
         XDropTarget.Attach(this, _surface, handle, () => Server, ToPixels, host.DropUploader, AvaloniaXServerHost.NotifyUser);
         WindowSystemMenu.Attach(this, () => Screenshot(WindowScreenshot.CopyAsync), () => Screenshot(WindowScreenshot.SaveAsync));
@@ -167,7 +164,7 @@ public sealed class XNativeWindow : Window
     /// </summary>
     internal static string WithSource(string? label, string title, bool showSource) =>
         showSource && !string.IsNullOrEmpty(label)
-            ? VelaShell.Core.Resources.Strings.Format("XServer_WindowTitleWithSource", Isolate(label), Isolate(title))
+            ? Core.Resources.Strings.Format("XServer_WindowTitleWithSource", Isolate(label), Isolate(title))
             : title;
 
     private static string Isolate(string text) => "⁨" + text + "⁩";
@@ -265,7 +262,7 @@ public sealed class XNativeWindow : Window
                         : s.PlaceInFrame(FrameExtents);
                     (x, y) = (Math.Clamp(x, short.MinValue, short.MaxValue), Math.Clamp(y, short.MinValue, short.MaxValue));
                 }
-                if (_opened && !ReferenceEquals(_placedFor, s) && Server is { } server)
+                if (HasOpened && !ReferenceEquals(_placedFor, s) && Server is { } server)
                 {
                     _placedFor = s;
                     _placement = ((s.X, s.Y), (x, y));
@@ -284,7 +281,7 @@ public sealed class XNativeWindow : Window
     /// <summary>原生窗口此刻的内容区尺寸与位置报给服务端(与快照不同时):系统定几何(最大化 / 全屏)时客户端改不动它。</summary>
     private void PushNativeGeometry()
     {
-        if (!_opened || Server is not { } server)
+        if (!HasOpened || Server is not { } server)
         {
             return;
         }
@@ -515,7 +512,7 @@ public sealed class XNativeWindow : Window
     private void OnMovedByUser()
     {
         // 显示出来之前外框尺寸还不知道,算出来的位置不对(位置等 Opened 之后由 ApplyGeometry 摆好再报)。屏幕窗口的位置与 X 无关。
-        if (_applying || !_opened || IsScreen || Server is not { } server || WindowState is WindowState.Minimized)
+        if (_applying || !HasOpened || IsScreen || Server is not { } server || WindowState is WindowState.Minimized)
         {
             return;
         }
@@ -603,7 +600,7 @@ public sealed class XNativeWindow : Window
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == WindowStateProperty && _opened)
+        if (change.Property == WindowStateProperty && HasOpened)
         {
             ReportStates();
         }
@@ -649,7 +646,7 @@ public sealed class XNativeWindow : Window
     private void UpdateRegion(XTopLevelSnapshot s)
     {
         IReadOnlyList<XRect>? shape = WindowDecorations == WindowDecorations.None ? s.Shape : null;
-        if (_opened && !ReferenceEquals(shape, _regionShape))
+        if (HasOpened && !ReferenceEquals(shape, _regionShape))
         {
             _regionShape = shape;
             WindowRegion.Apply(this, shape);
@@ -1099,7 +1096,7 @@ public sealed class XNativeWindow : Window
             }
             if (_heldButtons.Count == 0)
             {
-                AvaloniaXServerHost.NotifyUser(VelaShell.Core.Resources.Strings.Get("XServer_DragOutReleased"), false);
+                AvaloniaXServerHost.NotifyUser(Core.Resources.Strings.Get("XServer_DragOutReleased"), false);
                 return;
             }
             started = _nativeDragging = true;

@@ -70,7 +70,7 @@ public sealed class BuiltInLocalXServer : ILocalXServer, IAsyncDisposable, IDisp
     private AppXServerOptions? _runningOptions;
 
     /// <summary>按会话分出来的显示(键是会话对象,按引用比);值是建它的任务。只在 <see cref="_stateLock" /> 里改字典。</summary>
-    private readonly Dictionary<object, Task<SessionDisplay>> _sessionDisplays = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<object, Task<SessionDisplay>> _sessionDisplays = [with(ReferenceEqualityComparer.Instance)];
 
     /// <summary>下一个实例的编号(共用的那个是 0):客户端清单用它与客户端编号合成键,收掉的实例的编号不再复用。</summary>
     private int _nextInstanceIndex = 1;

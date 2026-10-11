@@ -1247,7 +1247,7 @@ public sealed class SftpTests
             entries.Add(entry);
         }
 
-        Assert.AreSequenceEqual(new[] { "ok.txt" }, entries.Select(e => e.Name).ToArray());
+        Assert.AreSequenceEqual(new[] { "ok.txt" }, [.. entries.Select(e => e.Name)]);
         Assert.AreEqual(5, harness.Sftp.MalformedEntriesSkipped, "「.」「..」是按选项过滤的，不算不合法");
     }
 
@@ -1430,7 +1430,7 @@ public sealed class SftpTests
             entries.Add(entry);
         }
 
-        Assert.AreSequenceEqual(new[] { "ok.txt" }, entries.Select(e => e.Name).ToArray());
+        Assert.AreSequenceEqual(new[] { "ok.txt" }, [.. entries.Select(e => e.Name)]);
     }
 
     [TestMethod]
@@ -1675,8 +1675,8 @@ public sealed class SftpTests
 
         SftpIdNames names = await harness.Sftp.LookupUserAndGroupNamesAsync([1000, 7, 0], [100], harness.Token);
 
-        Assert.AreSequenceEqual(new string?[] { "joe", null, "root" }, names.UserNames.ToArray());
-        Assert.AreSequenceEqual(new string?[] { "users" }, names.GroupNames.ToArray());
+        Assert.AreSequenceEqual(new string?[] { "joe", null, "root" }, [.. names.UserNames]);
+        Assert.AreSequenceEqual(new string?[] { "users" }, [.. names.GroupNames]);
     }
 
     /// <summary>回的名字比问的 id 少：对端的错，报格式不对，而不是把名字错位地安到别的 id 上。</summary>
@@ -1724,7 +1724,7 @@ public sealed class SftpTests
 
         Assert.AreSequenceEqual(content, await harness.Sftp.ReadAllBytesAsync("/home/joe/dst.bin", harness.Token));
         Assert.AreEqual(3, harness.SftpServer.CopyDataRequests, "10000 字节按 4096 一段是三段");
-        Assert.AreSequenceEqual(new long[] { 4096, 8192, 10_000 }, reported.ToArray());
+        Assert.AreSequenceEqual(new long[] { 4096, 8192, 10_000 }, [.. reported]);
         Assert.AreEqual(0b111_101_000u, (await harness.Sftp.GetAttributesAsync("/home/joe/dst.bin", harness.Token)).PermissionBits);
     }
 

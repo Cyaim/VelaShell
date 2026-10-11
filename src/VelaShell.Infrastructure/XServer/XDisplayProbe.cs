@@ -117,7 +117,7 @@ internal static partial class XDisplayProbe
             {
                 return true;   // 读不出是谁持着:当作有人用
             }
-            using System.Diagnostics.Process holder = System.Diagnostics.Process.GetProcessById(pid);
+            using var holder = System.Diagnostics.Process.GetProcessById(pid);
             return !holder.HasExited;
         }
         catch (ArgumentException)

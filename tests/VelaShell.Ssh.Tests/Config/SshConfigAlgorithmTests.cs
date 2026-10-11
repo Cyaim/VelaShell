@@ -76,13 +76,13 @@ public sealed class SshConfigAlgorithmTests
         SshConnectionOptions old = await SshConfigFile.CreateConnectionOptionsAsync(blocks, "old");
         Assert.AreEqual(SshAlgorithmNames.DiffieHellmanGroupExchangeSha256, old.Algorithms.KeyExchange[0]);
         Assert.DoesNotContain(SshAlgorithmNames.ChaCha20Poly1305, old.Algorithms.EncryptionClientToServer);
-        Assert.AreSequenceEqual(old.Algorithms.EncryptionClientToServer.ToArray(), old.Algorithms.EncryptionServerToClient.ToArray());
-        Assert.AreSequenceEqual([SshAlgorithmNames.HmacSha256], old.Algorithms.MacServerToClient.ToArray());
+        Assert.AreSequenceEqual([.. old.Algorithms.EncryptionClientToServer], [.. old.Algorithms.EncryptionServerToClient]);
+        Assert.AreSequenceEqual([SshAlgorithmNames.HmacSha256], [.. old.Algorithms.MacServerToClient]);
         Assert.AreEqual(SshAlgorithmNames.SshRsa, old.Algorithms.HostKey[^1]);
         Assert.IsTrue(old.AllowSha1RsaSignatures);
 
         SshConnectionOptions fresh = await SshConfigFile.CreateConnectionOptionsAsync(blocks, "new");
-        Assert.AreSequenceEqual(SshAlgorithmSet.Default.KeyExchange.ToArray(), fresh.Algorithms.KeyExchange.ToArray());
+        Assert.AreSequenceEqual([.. SshAlgorithmSet.Default.KeyExchange], [.. fresh.Algorithms.KeyExchange]);
         Assert.IsFalse(fresh.AllowSha1RsaSignatures);
     }
 

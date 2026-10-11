@@ -320,7 +320,7 @@ public sealed partial class UnixSocketTests
             Assert.IsFalse(File.Exists(lockPath), "收工时删掉");
 
             // 持有者已经不在了:残留,删掉重建。
-            using System.Diagnostics.Process gone = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("true"))!;
+            using System.Diagnostics.Process gone = Process.Start(new System.Diagnostics.ProcessStartInfo("true"))!;
             await gone.WaitForExitAsync();
             File.WriteAllText(lockPath, $"{gone.Id,10}\n");
             await using X11Server third = new(new X11ServerOptions { DisplayNumber = display, ListenTcp = false });

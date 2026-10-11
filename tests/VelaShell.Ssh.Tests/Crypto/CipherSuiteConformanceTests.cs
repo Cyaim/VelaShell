@@ -127,7 +127,7 @@ public sealed class CipherSuiteConformanceTests
         byte[] DecryptWithReference(byte[] frame)
         {
             // EtM：长度字段是明文，加密区紧跟其后。
-            int packetLength = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(frame);
+            int packetLength = BinaryPrimitives.ReadInt32BigEndian(frame);
             byte[] region = frame[4..(4 + packetLength)];
 
             for (int offset = 0; offset < region.Length; offset += 16)

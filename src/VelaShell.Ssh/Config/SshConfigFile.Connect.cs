@@ -642,7 +642,7 @@ public static partial class SshConfigFile
     {
         try
         {
-            return System.Net.Dns.GetHostName();
+            return Dns.GetHostName();
         }
         catch (System.Net.Sockets.SocketException)
         {

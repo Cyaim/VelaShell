@@ -25,7 +25,7 @@ public sealed partial class X11Server
     private readonly Dictionary<XClient, List<WorkItem>> _fontLoads = [];
 
     /// <summary>已经等过一次字体、放回来的请求(按缓冲认):再跑到时直接执行,不再查 —— 建不出来的字体不会让它一直暂存。</summary>
-    private readonly HashSet<byte[]> _fontsPrepared = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<byte[]> _fontsPrepared = [with(ReferenceEqualityComparer.Instance)];
 
     /// <summary>这些名字要用到、还没建好的字体(<see cref="FontCatalog.Unprepared" />);测试可以换掉。</summary>
     internal Func<IEnumerable<string>, int, List<string>> UnpreparedFonts { get; set; } = FontCatalog.Unprepared;

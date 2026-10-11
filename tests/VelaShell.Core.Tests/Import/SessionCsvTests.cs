@@ -60,7 +60,7 @@ public sealed class SessionCsvTests
         Assert.AreEqual(@"C:\keys\id_ed25519", readWeb.Profile.PrivateKeyPath);
         Assert.AreEqual("生产, 主机房", readWeb.GroupName);
         Assert.AreEqual("bastion", readWeb.JumpHostReference, "跳板按名称写,人看得懂");
-        Assert.AreSequenceEqual(new[] { "web", "nginx" }, readWeb.Profile.Tags.ToArray());
+        Assert.AreSequenceEqual(new[] { "web", "nginx" }, [.. readWeb.Profile.Tags]);
         Assert.AreEqual("第一行\n第二行, 带逗号", readWeb.Profile.Notes);
         SessionImportCandidate readFtp = document.Candidates[2];
         Assert.AreEqual(ConnectionType.FTP, readFtp.Profile.ConnectionType);

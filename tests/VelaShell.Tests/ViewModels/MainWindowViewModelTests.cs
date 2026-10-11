@@ -90,7 +90,7 @@ public class MainWindowViewModelTests
             "SFTP file manager command must be wired so the panel can be opened."
         );
         // 键位归键位表管(设置里可改):命令面板显示的是键位表当前生效的那一个。
-        Assert.AreEqual("Ctrl+Shift+F", VelaShell.Services.ShortcutKeymap.Default.HintFor(command.Id, command.Shortcut));
+        Assert.AreEqual("Ctrl+Shift+F", ShortcutKeymap.Default.HintFor(command.Id, command.Shortcut));
     }
 
     /// <summary>「发送 Break」登记在命令面板里;没有活动的 SSH 会话时点不动(本地终端、插件终端的流不支持它)。</summary>

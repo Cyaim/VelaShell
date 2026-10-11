@@ -95,11 +95,11 @@ internal struct GlCaps
 }
 
 /// <summary>一个光源的参数(光照计算用眼坐标:位置与聚光方向在设定时按当时的模型视图矩阵变换)。</summary>
-internal sealed class GlLight
+internal sealed class GlLight(int index)
 {
     public Vector4 Ambient = new(0, 0, 0, 1);
-    public Vector4 Diffuse;
-    public Vector4 Specular;
+    public Vector4 Diffuse = index == 0 ? Vector4.One : new Vector4(0, 0, 0, 1);
+    public Vector4 Specular = index == 0 ? Vector4.One : new Vector4(0, 0, 0, 1);
     public Vector4 Position = new(0, 0, 1, 0);
     public Vector3 SpotDirection = new(0, 0, -1);
     public float SpotExponent;
@@ -107,12 +107,6 @@ internal sealed class GlLight
     public float ConstantAttenuation = 1;
     public float LinearAttenuation;
     public float QuadraticAttenuation;
-
-    public GlLight(int index)
-    {
-        Diffuse = index == 0 ? Vector4.One : new Vector4(0, 0, 0, 1);
-        Specular = index == 0 ? Vector4.One : new Vector4(0, 0, 0, 1);
-    }
 
     public GlLight Clone() => (GlLight)MemberwiseClone();
 }

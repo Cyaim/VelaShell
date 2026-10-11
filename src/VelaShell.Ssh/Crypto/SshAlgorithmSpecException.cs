@@ -24,29 +24,22 @@ public enum SshAlgorithmSpecProblem
 }
 
 /// <summary>算法清单写法不成立（<see cref="SshAlgorithmSpec.Apply"/>）。</summary>
-public sealed class SshAlgorithmSpecException : ArgumentException
+/// <remarks>创建一个异常。</remarks>
+public sealed class SshAlgorithmSpecException(SshAlgorithmCategory category, SshAlgorithmSpecProblem problem, string? name) : ArgumentException(problem switch
 {
-    /// <summary>创建一个异常。</summary>
-    public SshAlgorithmSpecException(SshAlgorithmCategory category, SshAlgorithmSpecProblem problem, string? name)
-        : base(problem switch
-        {
-            SshAlgorithmSpecProblem.Empty => $"{category} 的清单里没有任何名字。",
-            SshAlgorithmSpecProblem.Unimplemented => $"{category} 里的 {name} 本库没有实现（写进去也谈不成）。",
-            SshAlgorithmSpecProblem.NothingLeft => $"{category} 的清单删完一个不剩。",
-            _ => $"{category} 里不认识 {name}。",
-        })
-    {
-        Category = category;
-        Problem = problem;
-        Name = name;
-    }
+    SshAlgorithmSpecProblem.Empty => $"{category} 的清单里没有任何名字。",
+    SshAlgorithmSpecProblem.Unimplemented => $"{category} 里的 {name} 本库没有实现（写进去也谈不成）。",
+    SshAlgorithmSpecProblem.NothingLeft => $"{category} 的清单删完一个不剩。",
+    _ => $"{category} 里不认识 {name}。",
+})
+{
 
     /// <summary>哪一类。</summary>
-    public SshAlgorithmCategory Category { get; }
+    public SshAlgorithmCategory Category { get; } = category;
 
     /// <summary>哪里不成立。</summary>
-    public SshAlgorithmSpecProblem Problem { get; }
+    public SshAlgorithmSpecProblem Problem { get; } = problem;
 
     /// <summary>出问题的那个名字（<see cref="SshAlgorithmSpecProblem.Unknown"/> / <see cref="SshAlgorithmSpecProblem.Unimplemented"/> 时）。</summary>
-    public string? Name { get; }
+    public string? Name { get; } = name;
 }

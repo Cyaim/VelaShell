@@ -251,8 +251,8 @@ public class DualSftpDocumentViewModelTests
 
         await Assert.ThrowsExactlyAsync<IOException>(() => vm.CloseAsync());
 
-        Assert.AreSequenceEqual([Left, Right], disconnected, Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "一条断开失败不能让另一条留着没人关。");
-        Assert.AreSequenceEqual([Left, Right], vm.SessionIds.ToArray());
+        Assert.AreSequenceEqual([Left, Right], disconnected, SequenceOrder.InAnyOrder, "一条断开失败不能让另一条留着没人关。");
+        Assert.AreSequenceEqual([Left, Right], [.. vm.SessionIds]);
         Assert.AreEqual("alpha ⇄ beta", vm.Title);
     }
 
@@ -304,8 +304,8 @@ public class DualSftpDocumentViewModelTests
 
         await vm.CompareDirectoriesCommand.Execute().FirstAsync();
 
-        Assert.AreSequenceEqual(["only-left.txt", "newer.txt"], vm.LeftFiles.SelectedFiles.Select(f => f.Name).ToArray(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
-        Assert.AreSequenceEqual(["only-right.txt"], vm.RightFiles.SelectedFiles.Select(f => f.Name).ToArray(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(["only-left.txt", "newer.txt"], [.. vm.LeftFiles.SelectedFiles.Select(f => f.Name)], SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(["only-right.txt"], [.. vm.RightFiles.SelectedFiles.Select(f => f.Name)], SequenceOrder.InAnyOrder);
         Assert.IsNotNull(vm.CompareSummary);
         await vm.CloseAsync();
     }

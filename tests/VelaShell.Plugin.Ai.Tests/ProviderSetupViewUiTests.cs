@@ -1,3 +1,7 @@
+using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
+using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -6,14 +10,11 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
-using VelaShell.PluginSdk.Testing;
 using VelaShell.PluginSdk.Secrets;
 using VelaShell.PluginSdk.Storage;
+using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
@@ -63,7 +64,7 @@ public sealed class ProviderSetupViewUiTests
             health.RecordKey(source.Id, false);
             (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
                 await ShowAsync(context, new AiSettings { Providers = [source], ActiveModelId = model.Id }, "custom-openai", health);
-            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            const System.Reflection.BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
             int notifications = 0;
             view.ModelsChanged += () => notifications++;
             Task? pull = null;
@@ -175,9 +176,14 @@ public sealed class ProviderSetupViewUiTests
             var store = new AiSettingsStore(context);
             var provider = new AiProvider { BaseUrl = endpoint.BaseUrl + "/v1", Models = [new AiModelConfig { Model = "m", MaxInputTokens = 128000 }] };
             await store.SetApiKeyAsync(provider.Id, "sk-original");
-            await store.SaveAsync(new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id,
-                Mode = ChatMode.Agent, SuggestFollowUps = false,
-                McpServers = [new McpServerConfig { Name = "held", Transport = McpTransportType.Http, Url = mcp.BaseUrl + "/mcp" }] });
+            await store.SaveAsync(new AiSettings
+            {
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                Mode = ChatMode.Agent,
+                SuggestFollowUps = false,
+                McpServers = [new McpServerConfig { Name = "held", Transport = McpTransportType.Http, Url = mcp.BaseUrl + "/mcp" }]
+            });
             var panel = new ChatPanelView(context, store);
             var window = new Window { Width = 800, Height = 600, Content = panel };
             window.Show();
@@ -187,7 +193,7 @@ public sealed class ProviderSetupViewUiTests
                 panel.SendExternal("private-history-before-catalogue");
                 await mcp.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(15));
                 var live = (AiSettings)typeof(ChatPanelView).GetField("_settings",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(panel)!;
+                    BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(panel)!;
                 AiProvider owner = live.Providers.Single();
                 AiModelConfig model = owner.Models.Single();
                 long epoch = store.ProviderConfigurationVersion(owner);
@@ -202,8 +208,8 @@ public sealed class ProviderSetupViewUiTests
                 Assert.AreEqual(epoch + (requestChanged ? 1 : 0), store.ProviderConfigurationVersion(owner));
                 mcp.Release();
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(40));
-                var busy = typeof(ChatPanelView).GetProperty("Busy",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                PropertyInfo busy = typeof(ChatPanelView).GetProperty("Busy",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!;
                 while ((bool)busy.GetValue(panel)!)
                 {
                     await Task.Delay(5, timeout.Token);
@@ -234,10 +240,7 @@ public sealed class ProviderSetupViewUiTests
     [DataRow("https://", "https://", false)]
     [DataRow("mailto:ops", "mailto:ops", false)]
     [DataRow("urn:example:test", "urn:example:test", false)]
-    public void SameOrigin_NormalizesIdnaWithoutRelaxingDestinationBoundaries(string? left, string? right, bool expected)
-    {
-        Assert.AreEqual(expected, AiSettingsStore.SameOrigin(left, right));
-    }
+    public void SameOrigin_NormalizesIdnaWithoutRelaxingDestinationBoundaries(string? left, string? right, bool expected) => Assert.AreEqual(expected, AiSettingsStore.SameOrigin(left, right));
 
     [TestMethod]
     [DataRow("https://bücher.example/tenant-a", "https://xn--bcher-kva.example/tenant-a", false)]
@@ -247,8 +250,8 @@ public sealed class ProviderSetupViewUiTests
     [DataRow("https://example.test/tenant-a", "https://example.test/tenant-a", true)]
     public void SameOAuthIssuer_StillRequiresTheCompleteUnchangedString(string left, string right, bool expected)
     {
-        var method = typeof(ProviderSetupView).GetMethod("SameOAuthIssuer",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        MethodInfo method = typeof(ProviderSetupView).GetMethod("SameOAuthIssuer",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
         Assert.AreEqual(expected, (bool)method.Invoke(null, [left, right])!);
     }
 
@@ -529,7 +532,6 @@ public sealed class ProviderSetupViewUiTests
             _serving.GetAwaiter().GetResult();
         }
     }
-
 
     private static async Task ClickVisibleAsync(Window window, Button button)
     {
@@ -1085,7 +1087,7 @@ public sealed class ProviderSetupViewUiTests
             await context.Secrets.SetAsync($"apikey:{source.Id}", "sk-source");
             (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
                 await ShowAsync(context, new AiSettings { Providers = [source] }, focus: "custom-openai");
-            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
             var gate = (SemaphoreSlim)typeof(AiSettingsStore).GetProperty("_providerKeyGate", flags)!.GetValue(store)!;
             await gate.WaitAsync();
             bool released = false;
@@ -1096,7 +1098,7 @@ public sealed class ProviderSetupViewUiTests
                 object row = ((System.Collections.IEnumerable)typeof(ProviderSetupView)
                     .GetField("_cards", flags)!.GetValue(view)!).Cast<object>().Single(item =>
                         ((ProviderCatalogEntry)item.GetType().GetProperty("Entry")!.GetValue(item)!).Id == "custom-openai");
-                Task saving = (Task)typeof(ProviderSetupView).GetMethod("PrimaryAsync", flags)!.Invoke(view, [row])!;
+                var saving = (Task)typeof(ProviderSetupView).GetMethod("PrimaryAsync", flags)!.Invoke(view, [row])!;
                 Assert.IsFalse(Find<Button>(view, "SetupPrimaryButton").IsEnabled);
                 if (action == "cancel") Click(Find<Button>(view, "SetupSecondaryButton"));
                 else if (action == "collapse") await ClickRowAsync(window, view, "custom-openai");
@@ -1104,7 +1106,7 @@ public sealed class ProviderSetupViewUiTests
                 await saving.WaitAsync(TimeSpan.FromSeconds(10));
                 gate.Release();
                 released = true;
-                Task<string?> baseline = (Task<string?>)typeof(ProviderSetupView)
+                var baseline = (Task<string?>)typeof(ProviderSetupView)
                     .GetField("_primaryKeyBaseline", flags)!.GetValue(view)!;
                 await baseline.WaitAsync(TimeSpan.FromSeconds(10));
                 Assert.HasCount(1, settings.Providers);
@@ -1240,8 +1242,6 @@ public sealed class ProviderSetupViewUiTests
             }
         });
     }
-
-
 
     [TestMethod]
     [DataRow("")]
@@ -1611,16 +1611,15 @@ public sealed class ProviderSetupViewUiTests
         });
     }
 
-
     [TestMethod]
     public void EarlierPrimaryCompletion_CannotResetANewerDeviceLoginOrEnableThirdLogin()
     {
         OnUi(async () =>
         {
             using var oldModels = new HeldModelsEndpoint();
-            using var auth = StartListener(out string authUrl);
+            using HttpListener auth = StartListener(out string authUrl);
             var secondDevice = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            Task serveAuth = Task.Run(async () =>
+            var serveAuth = Task.Run(async () =>
             {
                 try
                 {
@@ -1721,7 +1720,7 @@ public sealed class ProviderSetupViewUiTests
             using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             string authUrl = $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}";
-            Task auth = Task.Run(async () =>
+            var auth = Task.Run(async () =>
             {
                 string[] replies =
                 [
@@ -1792,11 +1791,6 @@ public sealed class ProviderSetupViewUiTests
             }
         });
     }
-
-
-
-
-
 
     /// <summary>
     /// 四样齐全(BaseUrl / ClientId / 授权与令牌端点)的 OAuth 订阅接入,编辑态没什么可填,
@@ -1990,7 +1984,7 @@ public sealed class ProviderSetupViewUiTests
                 await PumpAsync(20);
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = localUrl + (changed is "api" or "api-path" ? "/api" : "/v1");
                 await PumpAsync(20);
-                Find<TextBox>(view, "SetupClientIdBox").Text = changed == "client-id" || changed is "api" ? "cid-new" : "cid-old";
+                Find<TextBox>(view, "SetupClientIdBox").Text = changed is "client-id" or "api" ? "cid-new" : "cid-old";
                 Find<TextBox>(view, "SetupDeviceUrlBox").Text = localUrl + "/device";
                 Find<TextBox>(view, "SetupTokenUrlBox").Text = localUrl + "/token";
                 Find<TextBox>(view, "SetupAuthUrlBox").Text = localUrl + "/authorize";
@@ -2178,7 +2172,6 @@ public sealed class ProviderSetupViewUiTests
         });
     }
 
-
     [TestMethod]
     public void NewTenantOAuthLogin_DoesNotSendClonedAuthorizationHeadersToItsModelEndpoint()
     {
@@ -2186,7 +2179,7 @@ public sealed class ProviderSetupViewUiTests
         {
             using HttpListener listener = StartListener(out string url);
             var modelsRequest = new TaskCompletionSource<(string? Key, string? Auth)>(TaskCreationOptions.RunContinuationsAsynchronously);
-            Task server = Task.Run(async () =>
+            var server = Task.Run(async () =>
             {
                 try
                 {
@@ -2199,8 +2192,12 @@ public sealed class ProviderSetupViewUiTests
                     for (int i = 0; i < replies.Length; i++)
                     {
                         HttpListenerContext request = await listener.GetContextAsync();
-                        if (i == 2) modelsRequest.TrySetResult((request.Request.Headers["X-Old-Key"],
+                        if (i == 2)
+                        {
+                            modelsRequest.TrySetResult((request.Request.Headers["X-Old-Key"],
                             request.Request.Headers["Authorization"]));
+                        }
+
                         byte[] payload = Encoding.UTF8.GetBytes(replies[i]);
                         request.Response.ContentType = "application/json";
                         request.Response.ContentLength64 = payload.Length;
@@ -2424,7 +2421,7 @@ public sealed class ProviderSetupViewUiTests
             using HttpListener auth = StartListener(out string authUrl);
             var exchanging = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            Task exchange = Task.Run(async () =>
+            var exchange = Task.Run(async () =>
             {
                 try
                 {
@@ -2564,7 +2561,6 @@ public sealed class ProviderSetupViewUiTests
         });
     }
 
-
     [TestMethod]
     public void LateModelPull_ReopenedInstance_RefreshesChoicesWithoutReplacingDraft()
     {
@@ -2582,7 +2578,7 @@ public sealed class ProviderSetupViewUiTests
             Task saving = Task.CompletedTask;
             try
             {
-                var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+                BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
                 object row = ((System.Collections.IEnumerable)typeof(ProviderSetupView).GetField("_cards", flags)!.GetValue(view)!)
                     .Cast<object>().Single(card => ((ProviderCatalogEntry)card.GetType().GetProperty("Entry")!.GetValue(card)!).Id == "custom-openai");
                 saving = (Task)typeof(ProviderSetupView).GetMethod("PrimaryAsync", flags)!.Invoke(view, [row])!;
@@ -2684,7 +2680,7 @@ public sealed class ProviderSetupViewUiTests
                 primary.IsEnabled = another.IsEnabled = true;
                 Click(primary);
                 Click(another);
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
                 await ((Task)typeof(ProviderSetupView).GetMethod("AddOrSaveKeyAsync", flags)!
                     .Invoke(view, [ProviderCatalog.Find("deepseek")!])!).WaitAsync(TimeSpan.FromSeconds(10));
                 Assert.AreEqual("survivor", survivor.Name);
@@ -2710,7 +2706,10 @@ public sealed class ProviderSetupViewUiTests
                     Assert.IsFalse(primary.IsEnabled);
                     Assert.IsFalse(another.IsEnabled);
                 }
-                else Assert.AreNotSame(primary, Find<Button>(view, "SetupPrimaryButton"));
+                else
+                {
+                    Assert.AreNotSame(primary, Find<Button>(view, "SetupPrimaryButton"));
+                }
             }
             finally { storage.Release.TrySetResult(); window.Close(); }
         });
@@ -2765,7 +2764,7 @@ public sealed class ProviderSetupViewUiTests
         {
             using var models = new SseStub("");
             using HttpListener auth = StartListener(out string authUrl);
-            Task exchange = Task.Run(async () =>
+            var exchange = Task.Run(async () =>
             {
                 try
                 {
@@ -2855,7 +2854,7 @@ public sealed class ProviderSetupViewUiTests
                 Find<TextBox>(view, "SetupModelBox").Text = "my-retry-model";
                 TextBox key = Find<TextBox>(view, "SetupKeyBox");
                 key.Text = "sk-new";
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
                 string draftId = ((AiProvider)typeof(ProviderSetupView).GetField("_newProviderDraft", flags)!.GetValue(view)!).Id;
                 if (failure == "conflict")
                 {
@@ -2885,7 +2884,7 @@ public sealed class ProviderSetupViewUiTests
                 Assert.AreEqual(survivor.Models[0].Id, settings.ActiveModelId);
                 Assert.AreEqual(1, notifications);
                 if (failure == "conflict") Assert.AreEqual("external prompt", settings.SystemPrompt);
-                var savedJson = await context.Storage.GetAsync<System.Text.Json.JsonElement>("settings");
+                System.Text.Json.JsonElement savedJson = await context.Storage.GetAsync<System.Text.Json.JsonElement>("settings");
                 Assert.IsFalse(savedJson.GetRawText().Contains("sk-new", StringComparison.Ordinal), "API Key不得进入JSON");
                 (Exception? error, _) = await HealthProbe.ProbeAsync(store, new ResolvedModel(created, created.Models[0]));
                 Assert.IsNull(error, error?.ToString());
@@ -2928,8 +2927,12 @@ public sealed class ProviderSetupViewUiTests
                 Providers = mode == "new" ? [] : [source],
                 ActiveModelId = mode == "new" ? null : source.Models[0].Id
             };
-            if (mode != "new") await new AiSettingsStore(context).SaveTokensAsync(source.Id,
+            if (mode != "new")
+            {
+                await new AiSettingsStore(context).SaveTokensAsync(source.Id,
                 new OAuthTokens { AccessToken = "at-old", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1) });
+            }
+
             (Window window, ProviderSetupView view, _, AiSettingsStore store) = await ShowAsync(context, settings, "custom-oauth");
             int notifications = 0;
             view.ProviderChanged += _ => notifications++;
@@ -2952,7 +2955,7 @@ public sealed class ProviderSetupViewUiTests
                     Find<TextBox>(view, "SetupNameBox").Text = expectedName;
                     model!.Text = expectedModel;
                 }
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
                 string draftId = mode == "relogin" ? source.Id
                     : ((AiProvider)typeof(ProviderSetupView).GetField("_newProviderDraft", flags)!.GetValue(view)!).Id;
                 if (failure == "conflict")
@@ -2998,7 +3001,7 @@ public sealed class ProviderSetupViewUiTests
                 Assert.AreEqual("at-new", (await store.GetTokensAsync(saved.Id))?.AccessToken);
                 Assert.AreEqual(1, notifications);
                 if (failure == "conflict") Assert.AreEqual("external prompt", settings.SystemPrompt);
-                var savedJson = await context.Storage.GetAsync<System.Text.Json.JsonElement>("settings");
+                System.Text.Json.JsonElement savedJson = await context.Storage.GetAsync<System.Text.Json.JsonElement>("settings");
                 Assert.IsFalse(savedJson.GetRawText().Contains("at-new", StringComparison.Ordinal), "OAuth令牌不得进入JSON");
                 (Exception? error, _) = await HealthProbe.ProbeAsync(store, new ResolvedModel(saved, saved.Models[0]));
                 Assert.IsNull(error, error?.ToString());
@@ -3016,7 +3019,7 @@ public sealed class ProviderSetupViewUiTests
         {
             using HttpListener listener = StartListener(out string url);
             var captured = new TaskCompletionSource<(string Body, string? Header)>(TaskCreationOptions.RunContinuationsAsynchronously);
-            Task server = Task.Run(async () =>
+            var server = Task.Run(async () =>
             {
                 HttpListenerContext request = await listener.GetContextAsync();
                 using var reader = new StreamReader(request.Request.InputStream);
@@ -3044,9 +3047,9 @@ public sealed class ProviderSetupViewUiTests
                 provider.OAuth.TokenUrl = url + "/tenant-b/token";
                 await PumpAsync();
                 Click(Find<Button>(view, "SetupPrimaryButton"));
-                var request = await captured.Task.WaitAsync(TimeSpan.FromSeconds(10));
-                Assert.IsNull(request.Header, "共享实例的新地址不得授权旧表单隐藏头");
-                Assert.DoesNotContain("tenant-a-secret", request.Body);
+                (string Body, string? Header) = await captured.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                Assert.IsNull(Header, "共享实例的新地址不得授权旧表单隐藏头");
+                Assert.DoesNotContain("tenant-a-secret", Body);
                 await WaitForEnabledAsync(Find<Button>(view, "SetupPrimaryButton"));
                 Assert.IsNull(await store.GetTokensAsync(provider.Id));
             }
@@ -3095,8 +3098,11 @@ public sealed class ProviderSetupViewUiTests
                 external.SystemPrompt = "external global prompt";
                 await store.SaveAsync(external);
                 if (mode == "replacement")
+                {
                     settings.Providers[0] = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(
                         System.Text.Json.JsonSerializer.Serialize(opened))!;
+                }
+
                 AiProvider current = settings.Providers.Single();
                 AiModelConfig currentModel = current.Models[0];
                 await ClickPrimaryAsync(view);
@@ -3129,8 +3135,11 @@ public sealed class ProviderSetupViewUiTests
                 Assert.IsNull(error, error?.ToString());
                 Assert.AreEqual("Bearer sk-original", endpoint.Authorizations[^1]);
                 Assert.Contains("\"model\":\"my-draft-model\"", endpoint.Requests[^1]);
-                if (mode == "replacement") Assert.AreEqual("opened-model", opened.Models[0].Model,
+                if (mode == "replacement")
+                {
+                    Assert.AreEqual("opened-model", opened.Models[0].Model,
                     "旧引用不能偷偷重新绑定到另一份live实例");
+                }
             }
             finally { window.Close(); }
         });
@@ -3161,7 +3170,7 @@ public sealed class ProviderSetupViewUiTests
             Task? saving = null;
             try
             {
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
                 object row = ((System.Collections.IEnumerable)typeof(ProviderSetupView)
                     .GetField("_cards", flags)!.GetValue(view)!).Cast<object>().Single(item =>
                         ((ProviderCatalogEntry)item.GetType().GetProperty("Entry")!.GetValue(item)!).Id == "custom-openai");
@@ -3183,8 +3192,12 @@ public sealed class ProviderSetupViewUiTests
                 Assert.AreEqual("my-draft-name", name.Text);
                 Assert.AreEqual("my-draft-model", model.Text);
                 Assert.Contains("old-model", source.AvailableModels);
-                if (field == "matching-model") Assert.HasCount(1, source.Models.Where(item => item.Model == "old-model").ToArray(),
+                if (field == "matching-model")
+                {
+                    Assert.HasCount(1, source.Models.Where(item => item.Model == "old-model").ToArray(),
                     "等待目录期间已添加或改名为该型号,不能再生成同型号配置");
+                }
+
                 if (field != "protocol") Assert.AreEqual(externalModel, source.Models[0].Model);
                 else Assert.AreEqual(ChatProtocol.AnthropicMessages, source.Models[0].Protocol);
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = endpoint.BaseUrl + "/v1";
@@ -3305,8 +3318,12 @@ public sealed class ProviderSetupViewUiTests
             provider.OAuth.DeviceCodeUrl = dirtyIssuer ? "" : oldIssuer.BaseUrl + "/device";
             provider.OAuth.TokenUrl = oldIssuer.BaseUrl + "/token";
             provider.OAuth.Scopes = "old-scope";
-            if (!dirtyIssuer) await new AiSettingsStore(context).SaveTokensAsync(provider.Id,
+            if (!dirtyIssuer)
+            {
+                await new AiSettingsStore(context).SaveTokensAsync(provider.Id,
                 new OAuthTokens { AccessToken = "at-old", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1) });
+            }
+
             (Window window, ProviderSetupView view, _, AiSettingsStore store) =
                 await ShowAsync(context, new AiSettings { Providers = [provider] }, "custom-oauth");
             try
@@ -3562,7 +3579,7 @@ public sealed class ProviderSetupViewUiTests
                 Assert.IsEmpty(latest.AdditionalApiKeyIds);
                 Assert.AreEqual(1, notifications);
                 Assert.AreEqual("Cancel", Find<Button>(view, "SetupSecondaryButton").Content);
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
                 var cancellation = (CancellationTokenSource)typeof(ProviderSetupView)
                     .GetField("_keyDraftCancellation", flags)!.GetValue(view)!;
                 Assert.IsFalse(cancellation.IsCancellationRequested);
@@ -3770,5 +3787,4 @@ public sealed class ProviderSetupViewUiTests
             finally { storage.Release.TrySetResult(); view.CancelPendingLogin(); window.Close(); }
         });
     }
-
 }

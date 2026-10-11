@@ -80,7 +80,7 @@ public partial class ChatPanelView
         ProviderCredential credential, string conversationId, string sentModel,
         OAuthAccountSnapshot? verifiedAccount, long verifiedProviderVersion, string? selectedKeyId)
     {
-        var conversation = Cur;
+        Conversation conversation = Cur;
         if (!_settings.SuggestFollowUps || replyText.Trim().Length == 0
             || conversation.ConversationId != conversationId || !IsForeground || Busy)
         {
@@ -105,21 +105,21 @@ public partial class ChatPanelView
             {
                 return;
             }
-            var latest = await _store.ResolveCredentialWithKeyIdAsync(provider, token,
+            (ProviderCredential Credential, string? KeyId) = await _store.ResolveCredentialWithKeyIdAsync(provider, token,
                 refreshTokens: false, keyId: selectedKeyId);
-            OAuthAccountSnapshot? latestAccount = await CaptureOAuthAccountAsync(provider, latest.Credential, token);
+            OAuthAccountSnapshot? latestAccount = await CaptureOAuthAccountAsync(provider, Credential, token);
             bool SameSource(ProviderCredential candidate, OAuthAccountSnapshot? account)
                 => SameOAuthAccount(verifiedAccount, account)
                     && (SameCredential(credential, candidate)
                         || SameRenewingAccount(credential, candidate, verifiedAccount, account, provider));
             // 先验证原账号、issuer、目标与固定槽,再允许同账号续期,不额外探活。
-            if (latest.KeyId != selectedKeyId || !SameSource(latest.Credential, latestAccount)
-                || !await StillVerifiedAsync(provider, latest.Credential, token, sentModel, selectedKeyId, verifiedProviderVersion)
+            if (KeyId != selectedKeyId || !SameSource(Credential, latestAccount)
+                || !await StillVerifiedAsync(provider, Credential, token, sentModel, selectedKeyId, verifiedProviderVersion)
                 || !IsCurrent())
             {
                 return;
             }
-            var renewed = await _store.ResolveCredentialWithKeyIdAsync(provider, token, keyId: selectedKeyId);
+            (ProviderCredential Credential, string? KeyId) renewed = await _store.ResolveCredentialWithKeyIdAsync(provider, token, keyId: selectedKeyId);
             ProviderCredential refreshed = renewed.Credential;
             OAuthAccountSnapshot? after = await CaptureOAuthAccountAsync(provider, refreshed, token);
             if (renewed.KeyId != selectedKeyId || !SameSource(refreshed, after)

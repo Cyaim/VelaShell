@@ -14,16 +14,12 @@ namespace VelaShell.Ssh.Keys;
 /// <see cref="SshFailureReason.KeyPassphraseIncorrect"/>、<see cref="SshFailureReason.Unsupported"/>。
 /// 读私钥发生在连接之外，所以阶段是 <see cref="SshPhase.None"/>。
 /// </remarks>
-public sealed class SshPrivateKeyException : SshException
+/// <remarks>创建一个私钥读取异常。</remarks>
+/// <param name="reason">失败的分类。</param>
+/// <param name="message">诊断消息。</param>
+/// <param name="innerException">内部异常。</param>
+public sealed class SshPrivateKeyException(SshFailureReason reason, string message, Exception? innerException = null) : SshException(reason, SshPhase.None, message, innerException)
 {
-    /// <summary>创建一个私钥读取异常。</summary>
-    /// <param name="reason">失败的分类。</param>
-    /// <param name="message">诊断消息。</param>
-    /// <param name="innerException">内部异常。</param>
-    public SshPrivateKeyException(SshFailureReason reason, string message, Exception? innerException = null)
-        : base(reason, SshPhase.None, message, innerException)
-    {
-    }
 
     /// <summary>是不是口令的问题（没给，或者给错了）—— 调用方据此再问一次口令。</summary>
     public bool NeedsPassphrase =>

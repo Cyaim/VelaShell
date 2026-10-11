@@ -339,7 +339,7 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
             async () => await ConnectAsync(new SshJumpDialer(jump.Options with { Credentials = [new PasswordCredential("wrong")] })));
 
         Assert.IsNotEmpty(ex.Attempts, "尝试记录要留在最外层");
-        Assert.Contains(VelaShell.Ssh.Protocol.SshProtocolNames.AuthPassword, ex.ServerOffered);
+        Assert.Contains(Ssh.Protocol.SshProtocolNames.AuthPassword, ex.ServerOffered);
         Assert.Contains("跳板", ex.Message);
         Assert.Contains("jump.example", ex.Message);
     }

@@ -1,6 +1,6 @@
-using Microsoft.Extensions.AI;
-using System.Text;
 using System.Globalization;
+using System.Text;
+using Microsoft.Extensions.AI;
 
 namespace VelaShell.Plugin.Ai.Configuration;
 
@@ -119,10 +119,15 @@ public static class HealthProbe
     private static bool HasVisibleText(string text)
     {
         foreach (Rune rune in text.EnumerateRunes())
+        {
             if (rune.Value is not (0x115F or 0x1160 or 0x2800 or 0x3164 or 0xFFA0)
                 && !Rune.IsWhiteSpace(rune) && Rune.GetUnicodeCategory(rune) is not UnicodeCategory.Control and not UnicodeCategory.Format
                 and not UnicodeCategory.NonSpacingMark and not UnicodeCategory.SpacingCombiningMark and not UnicodeCategory.EnclosingMark)
+            {
                 return true;
+            }
+        }
+
         return false;
     }
 

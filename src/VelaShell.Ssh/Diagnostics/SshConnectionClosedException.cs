@@ -6,13 +6,9 @@
 namespace VelaShell.Ssh.Diagnostics;
 
 /// <summary>连接已断开。</summary>
-public sealed class SshConnectionClosedException : SshException
+/// <remarks>创建一个连接已断异常。</remarks>
+public sealed class SshConnectionClosedException(SshFailureReason reason, SshPhase phase, string message, Exception? innerException = null) : SshException(reason, phase, message, innerException)
 {
-    /// <summary>创建一个连接已断异常。</summary>
-    public SshConnectionClosedException(SshFailureReason reason, SshPhase phase, string message, Exception? innerException = null)
-        : base(reason, phase, message, innerException)
-    {
-    }
 
     /// <summary>收到 <c>SSH_MSG_DISCONNECT</c> 时对端给出的原因码。</summary>
     public SshDisconnectReason? DisconnectReason { get; init; }

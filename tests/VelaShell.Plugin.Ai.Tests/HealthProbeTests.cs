@@ -49,7 +49,7 @@ public sealed class HealthProbeTests
     {
         using var stub = new SseStub(OpenAiStream(reply));
         using var context = new TestPluginContext();
-        var (error, text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
+        (Exception? error, string? text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
         if (alive)
         {
             Assert.IsNull(error);
@@ -81,7 +81,7 @@ public sealed class HealthProbeTests
         Assert.IsTrue(failure is IOException or HttpListenerException or ObjectDisposedException, failure.ToString());
         Assert.AreEqual(0, endpoint.Requests, "真实断连异常发生在未完成 body 的读取阶段,不是下一请求的响应阶段");
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        using var response = await client.PostAsync(endpoint.BaseUrl, new StringContent("{}"));
+        using HttpResponseMessage response = await client.PostAsync(endpoint.BaseUrl, new StringContent("{}"));
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("invalid_api_key", await response.Content.ReadAsStringAsync());
         Assert.AreEqual(1, endpoint.Requests, "只统计随后真正读完并返回 401 的请求");
@@ -315,7 +315,7 @@ public sealed class HealthProbeTests
         using var stub = new ErrorStub();
         using var context = new TestPluginContext();
 
-        var (error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
+        (Exception? error, string _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(stub.BaseUrl));
 
         Assert.IsNotNull(error, "401 的端点不算活的 —— 那正是要绕开它的时候");
     }
@@ -333,7 +333,7 @@ public sealed class HealthProbeTests
 
         ResolvedModel model = ModelFor(stub.BaseUrl);
         model.Config.StopSequences = stopSequences;
-        var (error, text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), model);
+        (Exception? error, string? text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), model);
 
         Assert.IsInstanceOfType(error, typeof(HealthProbe.EmptyReplyException),
             "空回复不能判通过");
@@ -346,10 +346,7 @@ public sealed class HealthProbeTests
     [DataRow("K")]
     [DataRow("O\nK\n!\n\"\n#\n$\n%")]
     [DataRow("END\nDONE\nhello world\n你好")]
-    public async Task ProbeAnswerAvoidsSavedStopSequencesWithoutRemovingThem(string stopSequences)
-    {
-        await AssertStopSafeProbeAsync(stopSequences);
-    }
+    public async Task ProbeAnswerAvoidsSavedStopSequencesWithoutRemovingThem(string stopSequences) => await AssertStopSafeProbeAsync(stopSequences);
 
     [TestMethod]
     public async Task ProbeAnswerAvoidsStopsCoveringEveryPrintableAsciiCharacter()
@@ -368,7 +365,7 @@ public sealed class HealthProbeTests
 
         (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), model);
         using var request = JsonDocument.Parse(await endpoint.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(5)));
-        string[] sentStops = request.RootElement.GetProperty("stop").EnumerateArray().Select(stop => stop.GetString()!).ToArray();
+        string[] sentStops = [.. request.RootElement.GetProperty("stop").EnumerateArray().Select(stop => stop.GetString()!)];
 
         CollectionAssert.AreEqual(stopSequences.Split('\n'), sentStops,
             "探测必须原样下发正式停止词,不能靠删除参数通过");
@@ -485,7 +482,7 @@ public sealed class HealthProbeTests
 
         (Exception? error, string text) = await HealthProbe.ProbeAsync(
             new AiSettingsStore(context), new ResolvedModel(provider, provider.Models[0]), apiKeyOverride: "test-key");
-        using JsonDocument sent = JsonDocument.Parse(await endpoint.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(5)));
+        using var sent = JsonDocument.Parse(await endpoint.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(5)));
 
         Assert.AreEqual(1024, sent.RootElement.GetProperty("thinking").GetProperty("budget_tokens").GetInt32());
         Assert.AreEqual(2048, sent.RootElement.GetProperty("max_tokens").GetInt32(),
@@ -520,7 +517,10 @@ public sealed class HealthProbeTests
     private static string OpenAiStream(string text)
         => "data: " + JsonSerializer.Serialize(new
         {
-            id = "probe", @object = "chat.completion.chunk", created = 1, model = "probe-model",
+            id = "probe",
+            @object = "chat.completion.chunk",
+            created = 1,
+            model = "probe-model",
             choices = new[] { new { index = 0, delta = new { content = text }, finish_reason = "stop" } }
         }) + "\n\ndata: [DONE]\n\n";
 
@@ -589,7 +589,7 @@ public sealed class HealthProbeTests
                     using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
                     string body = await reader.ReadToEndAsync();
                     _request.TrySetResult(body);
-                    using JsonDocument request = JsonDocument.Parse(body);
+                    using var request = JsonDocument.Parse(body);
                     (HttpStatusCode status, string reply) = respond(request.RootElement);
                     byte[] bytes = Encoding.UTF8.GetBytes(reply);
                     context.Response.StatusCode = (int)status;
@@ -609,5 +609,4 @@ public sealed class HealthProbeTests
 
         public void Dispose() => _listener.Close();
     }
-
 }

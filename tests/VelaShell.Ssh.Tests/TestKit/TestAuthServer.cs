@@ -156,26 +156,19 @@ internal sealed class TestAuthObservation
 }
 
 /// <summary>测试服务端的认证侧。</summary>
-internal sealed class TestAuthServer
+/// <remarks>在一条已完成密钥交换的传输上建立认证服务端。</remarks>
+internal sealed class TestAuthServer(SshPacketTransport transport, byte[] sessionId, TestAuthPolicy? policy = null)
 {
     private const int MaxField = 256 * 1024;
 
-    private readonly SshPacketTransport _transport;
-    private readonly byte[] _sessionId;
-    private readonly TestAuthPolicy _policy;
+    private readonly SshPacketTransport _transport = transport;
+    private readonly byte[] _sessionId = sessionId;
+    private readonly TestAuthPolicy _policy = policy ?? new TestAuthPolicy();
     // string 的默认相等比较器就是序数比较。
     private readonly HashSet<string> _passed = [];
 
     /// <summary>这一轮请求服务端已经自己回过报文了，外层不要再补一个 FAILURE。</summary>
     private bool _alreadyAnswered;
-
-    /// <summary>在一条已完成密钥交换的传输上建立认证服务端。</summary>
-    public TestAuthServer(SshPacketTransport transport, byte[] sessionId, TestAuthPolicy? policy = null)
-    {
-        _transport = transport;
-        _sessionId = sessionId;
-        _policy = policy ?? new TestAuthPolicy();
-    }
 
     /// <summary>服务端这一侧观察到的事实。</summary>
     public TestAuthObservation Observation { get; } = new();

@@ -172,7 +172,7 @@ public sealed class SftpPipelineDepthTests
         await harness.Sftp.WriteAllBytesAsync("/home/joe/up.bin", payload, cancellationToken: harness.Token);
 
         Assert.IsGreaterThan(0, harness.Sftp.PipelineDepthIncreases, "单个流上传时深度没有长大");
-        Assert.AreSequenceEqual(payload, harness.SftpServer.Nodes["/home/joe/up.bin"].Content.ToArray(), "数据要一字节不差");
+        Assert.AreSequenceEqual(payload, [.. harness.SftpServer.Nodes["/home/joe/up.bin"].Content], "数据要一字节不差");
     }
 
     [TestMethod]

@@ -89,7 +89,7 @@ internal static class SftpWire
             }
         }
 
-        string text = Diagnostics.PeerText.Sanitize(System.Text.Encoding.ASCII.GetString(lengthBytes));
+        string text = PeerText.Sanitize(System.Text.Encoding.ASCII.GetString(lengthBytes));
         return $"开头的字节「{text}」是可打印文字：多半是服务端登录 shell 的启动文件（.bashrc 之类）往 stdout 输出了文字，" +
             "把 sftp 子系统的输出打乱了。让启动文件在非交互的会话里不输出任何东西。";
     }

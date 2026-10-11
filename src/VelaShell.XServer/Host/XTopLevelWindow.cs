@@ -54,11 +54,9 @@ public sealed class XTopLevelWindow
     /// </summary>
     public bool AwaitingRedraw
     {
-        get => Volatile.Read(ref _awaitingRedraw);
-        internal set => Volatile.Write(ref _awaitingRedraw, value);
+        get => Volatile.Read(ref field);
+        internal set => Volatile.Write(ref field, value);
     }
-
-    private bool _awaitingRedraw;
 
     /// <summary>
     /// 当前的属性快照。服务端在执行线程上整份替换它(引用赋值是原子的),可以在任意线程上读;

@@ -290,7 +290,7 @@ public sealed class RenderPixelTests
             for (int x = 0; x < dst.Width; x++)
             {
                 Argb sc = s[x];
-                Argb sa = Argb.Gray(sc.A);
+                var sa = Argb.Gray(sc.A);
                 if (mask is not null)
                 {
                     Argb mc = m[x];
@@ -647,7 +647,7 @@ public sealed class RenderPixelTests
     /// </summary>
     private static ArraySource Quantized(RenderSource source, int size)
     {
-        Argb[] pixels = new Argb[size * size];
+        var pixels = new Argb[size * size];
         uint[] row = new uint[size];
         for (int y = 0; y < size; y++)
         {

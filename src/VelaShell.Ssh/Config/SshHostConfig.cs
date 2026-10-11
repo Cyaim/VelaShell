@@ -140,7 +140,7 @@ public sealed class SshHostConfig
             .Where(static p => !p.StartsWith('-'))];
         if (patterns.Length > 0)
         {
-            foreach (System.Collections.DictionaryEntry variable in System.Environment.GetEnvironmentVariables())
+            foreach (System.Collections.DictionaryEntry variable in Environment.GetEnvironmentVariables())
             {
                 if (variable.Key is string name && variable.Value is string value
                     && patterns.Any(p => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(p, name, ignoreCase: true)))
@@ -417,15 +417,15 @@ public sealed class SshHostConfig
         string? value = First("PermitRemoteOpen");
         if (value is null || value.Trim().Equals("any", StringComparison.OrdinalIgnoreCase))
         {
-            return Forwarding.RemoteOpenPolicy.Any;
+            return RemoteOpenPolicy.Any;
         }
         if (value.Trim().Equals("none", StringComparison.OrdinalIgnoreCase))
         {
-            return Forwarding.RemoteOpenPolicy.None;
+            return RemoteOpenPolicy.None;
         }
         try
         {
-            return Forwarding.RemoteOpenPolicy.Allow(value.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries));
+            return RemoteOpenPolicy.Allow(value.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries));
         }
         catch (ArgumentException ex)
         {

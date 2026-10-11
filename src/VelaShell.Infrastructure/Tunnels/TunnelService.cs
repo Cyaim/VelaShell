@@ -328,7 +328,7 @@ public class TunnelService(
         {
             if (e is VelaShell.Ssh.Diagnostics.SshException ssh)
             {
-                return VelaShell.Infrastructure.Ssh.SshInterop.Localize(ssh);
+                return Ssh.SshInterop.Localize(ssh);
             }
         }
         return ex.Message;

@@ -89,7 +89,7 @@ public sealed class HostKeyRotationTests
         {
             await announcement.Task.WaitAsync(lifetime.Token);
             TimeSpan budget = expectUpdate ? UpdateBudget : NoUpdateBudget;
-            Stopwatch waited = Stopwatch.StartNew();
+            var waited = Stopwatch.StartNew();
             while (connection.LastHostKeyUpdate is null && waited.Elapsed < budget)
             {
                 await Task.Delay(10, TestContext.CancellationToken);
@@ -169,7 +169,7 @@ public sealed class HostKeyRotationTests
         Assert.IsNotNull(rotated);
         Assert.IsNull(rotated.Skipped, rotated.Skipped);
         Assert.AreSequenceEqual([ecdsa.KeyType], [.. rotated.Added.Select(k => k.KeyType)]);
-        Assert.AreSequenceEqual([rsaKey.Sha256Fingerprint], rotated.RemovedFingerprints.ToArray());
+        Assert.AreSequenceEqual([rsaKey.Sha256Fingerprint], [.. rotated.RemovedFingerprints]);
         string[] lines = await File.ReadAllLinesAsync(rig.KnownHosts, TestContext.CancellationToken);
         Assert.HasCount(2, lines);
         Assert.IsFalse(lines.Any(l => l.Contains(Convert.ToBase64String(rsaKey.Blob.Span), StringComparison.Ordinal)));
@@ -178,7 +178,7 @@ public sealed class HostKeyRotationTests
         SshHostKeyUpdate? shrunk = await ConnectAsync(policy, ed25519, [ed25519]);
         Assert.IsNotNull(shrunk);
         Assert.IsEmpty(shrunk.Added);
-        Assert.AreSequenceEqual([ecdsaKey.Sha256Fingerprint], shrunk.RemovedFingerprints.ToArray());
+        Assert.AreSequenceEqual([ecdsaKey.Sha256Fingerprint], [.. shrunk.RemovedFingerprints]);
         Assert.HasCount(1, await File.ReadAllLinesAsync(rig.KnownHosts, TestContext.CancellationToken));
     }
 

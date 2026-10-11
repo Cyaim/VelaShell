@@ -6,10 +6,7 @@ namespace VelaShell.Core.Tests.Models;
 public sealed class SplashStylesTests
 {
     [TestMethod]
-    public void FactoryDefault_IsClassic()
-    {
-        Assert.AreEqual(SplashStyles.Classic, new AppSettings().Appearance.SplashStyle);
-    }
+    public void FactoryDefault_IsClassic() => Assert.AreEqual(SplashStyles.Classic, new AppSettings().Appearance.SplashStyle);
 
     [TestMethod]
     public void All_PutsClassicFirstAndNoneLast()
@@ -30,10 +27,7 @@ public sealed class SplashStylesTests
     [DataRow("", "classic")]
     [DataRow(null, "classic")]
     [DataRow("aurora", "classic")]
-    public void Normalize_KeepsKnownStylesAndFallsBackToClassic(string? value, string expected)
-    {
-        Assert.AreEqual(expected, SplashStyles.Normalize(value));
-    }
+    public void Normalize_KeepsKnownStylesAndFallsBackToClassic(string? value, string expected) => Assert.AreEqual(expected, SplashStyles.Normalize(value));
 
     [TestMethod]
     public void AppSettingsNormalize_ResetsUnknownStyle()

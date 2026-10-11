@@ -33,7 +33,11 @@ public sealed class XScreenWindowUiTests
         host.UseWindowMode(XServerWindowModes.Windowed);
         await using X11Server server = new(new X11ServerOptions
         {
-            ListenTcp = false, UnixSocketPath = "", Rootful = true, ScreenWidth = 400, ScreenHeight = 300,
+            ListenTcp = false,
+            UnixSocketPath = "",
+            Rootful = true,
+            ScreenWidth = 400,
+            ScreenHeight = 300,
         }, host);
         await host.AttachAsync(server, CancellationToken.None);
         XNativeWindow screen = await XTestWire.WaitForAsync(() => host.Windows.SingleOrDefault());
@@ -109,7 +113,11 @@ public sealed class XScreenWindowUiTests
         };
         await using X11Server server = new(new X11ServerOptions
         {
-            ListenTcp = false, UnixSocketPath = "", Rootful = true, ScreenWidth = 400, ScreenHeight = 300,
+            ListenTcp = false,
+            UnixSocketPath = "",
+            Rootful = true,
+            ScreenWidth = 400,
+            ScreenHeight = 300,
         }, host);
         await host.AttachAsync(server, CancellationToken.None);
         XNativeWindow screen = await XTestWire.WaitForAsync(() => host.Windows.SingleOrDefault());

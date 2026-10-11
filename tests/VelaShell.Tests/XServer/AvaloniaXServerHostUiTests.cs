@@ -770,7 +770,7 @@ public sealed class AvaloniaXServerHostUiTests
         await SendAsync(client, 1, 24, w => w.U32(window).U32(root).I16(0).I16(0).U16(60).U16(40).U16(0).U16(1).U32(0).U32(0));
         await SendAsync(client, 8, 0, w => w.U32(window));
         XNativeWindow native = await WaitForAsync(() => host.Windows.FirstOrDefault());
-        Assert.Contains(Avalonia.Controls.WindowTransparencyLevel.None, native.TransparencyLevelHint.ToArray());
+        Assert.Contains(Avalonia.Controls.WindowTransparencyLevel.None, [.. native.TransparencyLevelHint]);
 
         await SendAsync(client, 18, 0, w => w.U32(window).U32(opacity).U32(6).U8(32).Zero(3).U32(1).U32(0x80000000));   // CARDINAL 一半
         await WaitForAsync(() => native.TransparencyLevelHint.Contains(Avalonia.Controls.WindowTransparencyLevel.Transparent) ? native : null);
@@ -1352,11 +1352,11 @@ public sealed class AvaloniaXServerHostUiTests
         await SendAsync(client, 8, 0, w => w.U32(idBase | 1));
         await WaitForAsync(() => host.Windows.FirstOrDefault(w => w.IsVisible), "窗口显示出来");
 
-        async Task TickAsync(int count)
+        static async Task TickAsync(int count)
         {
             for (int i = 0; i < count; i++)
             {
-                Avalonia.Headless.AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick();
                 Dispatcher.UIThread.RunJobs();
                 await Task.Delay(5);
             }

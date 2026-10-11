@@ -53,12 +53,12 @@ public class SessionTreeGroupOperationsTests
 
         await _vm.MoveGroupDownCommand.Execute().FirstAsync();
 
-        Assert.AreSequenceEqual(new[] { "机房 2", "机房 10", "Alpha" }, GroupOrder().ToArray());
+        Assert.AreSequenceEqual(new[] { "机房 2", "机房 10", "Alpha" }, [.. GroupOrder()]);
         Assert.AreSequenceEqual(new[] { "机房 2", "机房 10", "Alpha" },
-            _vm.GroupNodes.Where(static n => n.Id != Guid.Empty).Select(static n => n.Name).ToArray(),
+            [.. _vm.GroupNodes.Where(static n => n.Id != Guid.Empty).Select(static n => n.Name)],
             "「移动到分组」子菜单跟着变");
         Assert.AreEqual(Guid.Empty, _vm.GroupNodes[^1].Id, "「未分组」落点一直在最后");
-        Assert.AreSequenceEqual(new[] { 1, 0, 2 }, _groups.Select(static g => g.SortOrder).ToArray(),
+        Assert.AreSequenceEqual(new[] { 1, 0, 2 }, [.. _groups.Select(static g => g.SortOrder)],
             "落库的序号重编成连续的 0、1、2(原先是 0、4、9)");
         Assert.AreEqual(0, Group("机房 2").GroupColorIndex, "文件夹图标的轮换配色跟着位置走");
         Assert.IsTrue(_vm.Rows.IndexOf(Group("机房 2")) < _vm.Rows.IndexOf(Group("机房 10")), "界面绑的行也跟着变");
@@ -110,8 +110,8 @@ public class SessionTreeGroupOperationsTests
         List<string> order = GroupOrder();
         Assert.IsTrue(order.IndexOf("机房 2") < order.IndexOf("机房 10"), "数字按数值比:「机房 2」在「机房 10」前面");
         await _repository.ReceivedWithAnyArgs().SaveGroupAsync(default!);
-        Assert.AreSequenceEqual(Enumerable.Range(0, 3).ToArray(),
-            _groups.OrderBy(static g => g.SortOrder).Select(static g => g.SortOrder).ToArray());
+        Assert.AreSequenceEqual([.. Enumerable.Range(0, 3)],
+            [.. _groups.OrderBy(static g => g.SortOrder).Select(static g => g.SortOrder)]);
     }
 
     [TestMethod]
@@ -123,7 +123,7 @@ public class SessionTreeGroupOperationsTests
 
         await _vm.OpenGroupCommand.Execute().FirstAsync();
 
-        Assert.AreSequenceEqual(new[] { "web-1", "web-2" }, raised!.Select(static p => p.Name).ToArray());
+        Assert.AreSequenceEqual(new[] { "web-1", "web-2" }, [.. raised!.Select(static p => p.Name)]);
     }
 
     [TestMethod]

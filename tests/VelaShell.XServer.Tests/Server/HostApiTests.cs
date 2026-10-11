@@ -406,7 +406,7 @@ public sealed class HostApiTests
         Assert.AreEqual(16 / 9.0, s.MaxAspect, 1e-9);
         Assert.AreEqual(leader, s.WindowGroup!.Id);
         Assert.AreEqual(new XFrameExtents(0, 0, 30, 0), s.Strut);
-        Assert.AreSequenceEqual([new XRect(0, 0, 10, 10)], s.InputShape!.ToArray());
+        Assert.AreSequenceEqual([new XRect(0, 0, 10, 10)], [.. s.InputShape!]);
         Assert.IsNull(s.Shape, "边界形状没设");
     }
 
@@ -665,7 +665,7 @@ public sealed class HostApiTests
             bells++;
             await Task.Delay(150);   // 两次响铃之间至少隔 100 毫秒(节流)
         }
-        Assert.AreSequenceEqual(["bell 50", "bell 100", "bell 25"], host.Log.Where(e => e.StartsWith("bell", StringComparison.Ordinal)).ToArray());
+        Assert.AreSequenceEqual(["bell 50", "bell 100", "bell 25"], [.. host.Log.Where(e => e.StartsWith("bell", StringComparison.Ordinal))]);
 
         XMessage error = await c.RequestAsync(104, 101);
         Assert.IsTrue(error.IsError, "−100…100 以外是 BadValue");

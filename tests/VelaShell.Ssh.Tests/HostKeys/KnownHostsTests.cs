@@ -512,7 +512,7 @@ public sealed class KnownHostsTests
         Assert.AreEqual(KnownHostStatus.OtherKeyTypesKnown, lookup.Status);
         Assert.HasCount(1, lookup.ConflictingEntries);
         Assert.AreSequenceEqual(
-            ["ssh-ed25519"], KnownHostsFile.KnownKeyTypes(entries, "example.com", 22).ToArray());
+            ["ssh-ed25519"], [.. KnownHostsFile.KnownKeyTypes(entries, "example.com", 22)]);
     }
 
     [TestMethod]
@@ -545,8 +545,8 @@ public sealed class KnownHostsTests
 
         // 协商以客户端顺序为准：已知类型排在前面，正常的服务端就谈成它。
         Assert.AreSequenceEqual(
-            [Ssh.Protocol.SshAlgorithmNames.RsaSha512, Ssh.Protocol.SshAlgorithmNames.RsaSha256], preferred.HostKey.Take(2).ToArray(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
-        Assert.AreSequenceEqual(SshAlgorithmSet.Default.HostKey.ToArray(), preferred.HostKey.ToArray(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "只调顺序，不增删");
+            [Ssh.Protocol.SshAlgorithmNames.RsaSha512, Ssh.Protocol.SshAlgorithmNames.RsaSha256], [.. preferred.HostKey.Take(2)], SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual([.. SshAlgorithmSet.Default.HostKey], [.. preferred.HostKey], SequenceOrder.InAnyOrder, "只调顺序，不增删");
     }
 
     // ------------------------------------------------------------ 取反与追加
@@ -686,7 +686,7 @@ public sealed class KnownHostsTests
             IReadOnlyList<string> removed = await KnownHostsFile.RemoveHostKeysAsync("example.com", 22, path: path);
 
             Assert.AreSequenceEqual(
-                new[] { k1, k2, k3, k7 }.Select(k => k.Sha256Fingerprint).ToArray(), removed.ToArray());
+                [.. new[] { k1, k2, k3, k7 }.Select(k => k.Sha256Fingerprint)], [.. removed]);
             Assert.AreEqual(
                 "# 注释\r\n" +
                 Line("10.0.0.5", k2) + "\n" +
@@ -717,7 +717,7 @@ public sealed class KnownHostsTests
             string bare = k1.Sha256Fingerprint["SHA256:".Length..] + "=";
             IReadOnlyList<string> removed = await KnownHostsFile.RemoveHostKeysAsync("example.com", 2222, [bare], path);
 
-            Assert.AreSequenceEqual([k1.Sha256Fingerprint], removed.ToArray());
+            Assert.AreSequenceEqual([k1.Sha256Fingerprint], [.. removed]);
             Assert.AreEqual(Line("[example.com]:2222", k2) + "\n" + Line("example.com", k1) + "\n", await File.ReadAllTextAsync(path));
         }
         finally
@@ -773,8 +773,8 @@ public sealed class KnownHostsTests
                 },
                 CancellationToken.None);
 
-            Assert.AreSequenceEqual([1, 2], attempts.ToArray());
-            Assert.AreSequenceEqual([old.Sha256Fingerprint], removed.ToArray());
+            Assert.AreSequenceEqual([1, 2], [.. attempts]);
+            Assert.AreSequenceEqual([old.Sha256Fingerprint], [.. removed]);
             IReadOnlyList<KnownHostEntry> entries = KnownHostsFile.Parse(await File.ReadAllTextAsync(path));
             Assert.AreEqual(KnownHostStatus.Known, KnownHostsFile.Lookup(entries, "late.example", 22, late).Status);
             Assert.AreEqual(KnownHostStatus.Unknown, KnownHostsFile.Lookup(entries, "example.com", 22, old).Status);
@@ -797,7 +797,7 @@ public sealed class KnownHostsTests
             KnownHostsPolicy policy = new(path);
             Assert.AreEqual(SshFailureReason.HostKeyChanged, (await policy.EvaluateAsync(Context("example.com", 22, current))).Reason);
 
-            Assert.AreSequenceEqual([old.Sha256Fingerprint], (await policy.RemoveHostKeysAsync("example.com", 22)).ToArray());
+            Assert.AreSequenceEqual([old.Sha256Fingerprint], [.. (await policy.RemoveHostKeysAsync("example.com", 22))]);
 
             SshHostKeyVerdict after = await policy.EvaluateAsync(Context("example.com", 22, current));
             Assert.AreNotEqual(SshFailureReason.HostKeyChanged, after.Reason);

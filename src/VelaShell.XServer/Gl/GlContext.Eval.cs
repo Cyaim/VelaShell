@@ -337,7 +337,7 @@ internal sealed partial class GlContext
         {
             (qu, qv) = (new Vector3(pu.X, pu.Y, pu.Z), new Vector3(pv.X, pv.Y, pv.Z));
         }
-        Vector3 m = Vector3.Cross(qu, qv);
+        var m = Vector3.Cross(qu, qv);
         float length = m.Length();
         return length > 0 ? m / length : m;
     }

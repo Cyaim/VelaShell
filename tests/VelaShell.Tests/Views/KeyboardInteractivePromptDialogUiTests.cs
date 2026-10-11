@@ -59,7 +59,7 @@ public class KeyboardInteractivePromptDialogUiTests
                 Dispatcher.UIThread.RunJobs();
 
                 Assert.IsTrue(pending.IsCompletedSuccessfully);
-                Assert.AreSequenceEqual(["1", "123456"], pending.Result!.ToArray());
+                Assert.AreSequenceEqual(["1", "123456"], [.. pending.Result!]);
             }
             finally
             {

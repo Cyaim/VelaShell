@@ -7,8 +7,8 @@ using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Services;
 using VelaShell.Core.Ssh;
-using VelaShell.ViewModels;
 using VelaShell.Services;
+using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
 

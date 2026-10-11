@@ -105,26 +105,19 @@ internal sealed class SplashRenderer : IDisposable
 /// 一套启动画面样式的画法。坐标为 600 × 340 的逻辑单位,背景要自己铺满,描边色交给
 /// <see cref="BorderColor" />,由 <see cref="SplashRenderer" /> 统一描。
 /// </summary>
-internal abstract class SplashDesign : IDisposable
+/// <remarks>构造。</remarks>
+internal abstract class SplashDesign(SplashPalette palette, SplashStrings strings, SplashResources resources) : IDisposable
 {
     private readonly Dictionary<(SKImage Image, int Width, int Height), SKImage> _scaled = [];
 
-    /// <summary>构造。</summary>
-    protected SplashDesign(SplashPalette palette, SplashStrings strings, SplashResources resources)
-    {
-        Palette = palette;
-        Text = strings;
-        Resources = resources;
-    }
-
     /// <summary>配色。</summary>
-    protected SplashPalette Palette { get; }
+    protected SplashPalette Palette { get; } = palette;
 
     /// <summary>文案。</summary>
-    protected SplashStrings Text { get; }
+    protected SplashStrings Text { get; } = strings;
 
     /// <summary>字体与图片。</summary>
-    protected SplashResources Resources { get; }
+    protected SplashResources Resources { get; } = resources;
 
     /// <summary>通用填充画笔(抗锯齿)。用前设好颜色;改了别的属性要自己复原。</summary>
     protected SKPaint Fill { get; } = new() { IsAntialias = true, Style = SKPaintStyle.Fill };

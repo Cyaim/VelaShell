@@ -3,7 +3,6 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using Avalonia.Platform;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Styling;
@@ -140,7 +139,7 @@ public sealed class SplashPreview : Control
         SplashRenderer? next = null;
         try
         {
-            SplashPalette palette = SplashPalette.Resolve(ThemeId, AccentColor, ActualThemeVariant != ThemeVariant.Light);
+            var palette = SplashPalette.Resolve(ThemeId, AccentColor, ActualThemeVariant != ThemeVariant.Light);
             next = SplashRenderer.Create(SplashStyle ?? "", palette, SplashStrings.Load(), SplashResources.Create(CultureInfo.CurrentUICulture));
         }
         catch (Exception ex)

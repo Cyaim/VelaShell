@@ -225,7 +225,7 @@ public sealed class AuthenticationTests
             [credential], new TestAuthPolicy { AcceptPassword = "hunter2", RequestPasswordChange = true, RejectNewPasswords = 1 });
 
         Assert.AreEqual(SshProtocolNames.AuthPassword, run.Succeeded.Method);
-        Assert.AreSequenceEqual(new[] { 1, 2 }, asked.Select(a => a.Attempt).ToArray());
+        Assert.AreSequenceEqual(new[] { 1, 2 }, [.. asked.Select(a => a.Attempt)]);
         Assert.AreEqual("新密码太简单。", asked[1].Prompt);
         Assert.AreSequenceEqual(new[] { ("hunter2", "123"), ("hunter2", "correct horse") }, run.Observation.PasswordChanges);
     }
@@ -632,7 +632,7 @@ SshAlgorithmNames.RsaSha256, [.. run.Succeeded.ServerSignatureAlgorithms]);
             });
 
         Assert.AreEqual(SshProtocolNames.AuthPassword, run.Succeeded.Method);
-        Assert.AreSequenceEqual([SshAlgorithmNames.RsaSha256], run.Succeeded.ServerSignatureAlgorithms.ToArray());
+        Assert.AreSequenceEqual([SshAlgorithmNames.RsaSha256], [.. run.Succeeded.ServerSignatureAlgorithms]);
     }
 
     [TestMethod]

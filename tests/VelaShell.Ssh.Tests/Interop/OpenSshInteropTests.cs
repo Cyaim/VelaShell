@@ -757,8 +757,8 @@ public sealed partial class OpenSshInteropTests
 
         SftpIdNames names = await sftp.LookupUserAndGroupNamesAsync([0, uid, 4_242_424], [0, gid, 4_242_424]);
 
-        Assert.AreSequenceEqual(new string?[] { "root", me[2], null }, names.UserNames.ToArray());
-        Assert.AreSequenceEqual(new string?[] { "root", me[3], null }, names.GroupNames.ToArray());
+        Assert.AreSequenceEqual(new string?[] { "root", me[2], null }, [.. names.UserNames]);
+        Assert.AreSequenceEqual(new string?[] { "root", me[3], null }, [.. names.GroupNames]);
     }
 
     /// <summary>服务端内复制（copy-data）：真 OpenSSH 上复制出来的文件与源的 sha256 一致。</summary>
@@ -1510,7 +1510,7 @@ public sealed partial class OpenSshInteropTests
             SshHostKeyUpdate third = await ConnectAndAwaitRotationAsync(
                 new KnownHostsPolicy(knownHosts) { UnknownHost = UnknownHostBehavior.AcceptAndPersist, AllowHostKeyUpdates = true });
             Assert.IsNull(third.Skipped, third.Skipped);
-            Assert.AreSequenceEqual([retiredKey.Sha256Fingerprint], third.RemovedFingerprints.ToArray());
+            Assert.AreSequenceEqual([retiredKey.Sha256Fingerprint], [.. third.RemovedFingerprints]);
             Assert.AreSequenceEqual(lines, await File.ReadAllLinesAsync(knownHosts));
         }
         finally
@@ -1544,7 +1544,7 @@ public sealed partial class OpenSshInteropTests
             return;
         }
 
-        string name = Auth.CngSignerTests.CreateKey(System.Security.Cryptography.CngAlgorithm.Rsa, 3072);
+        string name = Auth.CngSignerTests.CreateKey(CngAlgorithm.Rsa, 3072);
         await using SshConnection admin = await SshConnection.ConnectAsync(Options());
         string marker = $"vela-cng-{Guid.NewGuid():N}";
         try

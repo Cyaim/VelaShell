@@ -47,7 +47,7 @@ public sealed class SshConfigMoreKeysTests
 #pragma warning disable CA5350 // %C 由 ssh_config(5) 规定就是 SHA-1
         string hash = Convert.ToHexStringLower(SHA1.HashData(Encoding.UTF8.GetBytes(local + "real.example" + "2200" + "deploy")));
 #pragma warning restore CA5350
-        Assert.AreSequenceEqual([$"/certs/{hash}"], config.ExpandCertificateFiles().ToArray());
+        Assert.AreSequenceEqual([$"/certs/{hash}"], [.. config.ExpandCertificateFiles()]);
     }
 
     /// <summary>
@@ -73,7 +73,7 @@ public sealed class SshConfigMoreKeysTests
         Assert.HasCount(2, keys);
         Assert.IsInstanceOfType<SshCertificateSigner>(keys[0].Signer, "证书排在前面");
         Assert.IsInstanceOfType<InMemorySshSigner>(keys[1].Signer);
-        Assert.AreSequenceEqual(["cert-rsa-cert.pub"], skipped.ToArray(), "这张证书证的钥没读出来，报给调用方");
+        Assert.AreSequenceEqual(["cert-rsa-cert.pub"], [.. skipped], "这张证书证的钥没读出来，报给调用方");
     }
 
     /// <summary>ConnectionAttempts：拨号器包一层，失败了隔一会儿再试，第三次连上；只有一次时不包。</summary>
@@ -145,7 +145,7 @@ public sealed class SshConfigMoreKeysTests
         SshHostConfig a = SshConfigFile.Resolve(blocks, "a");
         Assert.AreEqual(System.Net.Sockets.AddressFamily.InterNetwork, a.AddressFamily);
         Assert.AreEqual("shared-box", a.HostKeyAlias);
-        Assert.AreSequenceEqual([global], a.GlobalKnownHostsFiles.ToArray());
+        Assert.AreSequenceEqual([global], [.. a.GlobalKnownHostsFiles]);
         Assert.IsFalse(a.TryGetIdentityAgent(out _), "IdentityAgent none：不用 agent");
         Assert.IsTrue(SshConfigFile.Resolve(blocks, "b").TryGetIdentityAgent(out string? agent));
         Assert.IsTrue(agent!.EndsWith("agent.sock", StringComparison.Ordinal) && !agent.StartsWith('~'), agent);
@@ -155,10 +155,10 @@ public sealed class SshConfigMoreKeysTests
         SshConnectionOptions options = await SshConfigFile.CreateConnectionOptionsAsync(blocks, "a");
         var dialer = (TcpTransportDialer)options.Dialer;
         Assert.AreEqual(System.Net.Sockets.AddressFamily.InterNetwork, dialer.AddressFamily);
-        Assert.AreSequenceEqual([System.Net.IPAddress.Parse("127.0.0.2")], dialer.LocalAddresses.ToArray());
+        Assert.AreSequenceEqual([System.Net.IPAddress.Parse("127.0.0.2")], [.. dialer.LocalAddresses]);
         var alias = (HostKeyAliasPolicy)options.HostKeyPolicy;
         Assert.AreEqual("shared-box", alias.Alias);
-        Assert.AreSequenceEqual([global], ((KnownHostsPolicy)alias.Inner).GlobalKnownHostsFiles.ToArray());
+        Assert.AreSequenceEqual([global], [.. ((KnownHostsPolicy)alias.Inner).GlobalKnownHostsFiles]);
 
         Assert.AreEqual(SshFailureReason.InvalidConfiguration, (await Assert.ThrowsExactlyAsync<SshConnectException>(
             async () => await SshConfigFile.CreateConnectionOptionsAsync(blocks, "c"))).Reason);
@@ -243,7 +243,7 @@ public sealed class SshConfigMoreKeysTests
                 Environment = new Dictionary<string, string> { ["ONLY"] = "me" },
                 Command = "htop",
             });
-            Assert.AreSequenceEqual(["ONLY"], explicitTemplate.Environment.Keys.ToArray());
+            Assert.AreSequenceEqual(["ONLY"], [.. explicitTemplate.Environment.Keys]);
             Assert.AreEqual("htop", explicitTemplate.Command);
         }
         finally

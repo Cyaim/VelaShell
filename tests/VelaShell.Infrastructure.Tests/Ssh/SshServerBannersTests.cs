@@ -22,7 +22,7 @@ public sealed class SshServerBannersTests
 
         Assert.AreSequenceEqual(
             new[] { "Authorized use only.", "All activity is logged.", "Your password will expire in 3 days." },
-            notices.Select(n => n.Text).ToArray());
+            [.. notices.Select(n => n.Text)]);
         Assert.DoesNotContain(n => n.IsWarning, notices);
     }
 

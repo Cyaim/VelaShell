@@ -470,7 +470,7 @@ public sealed partial class X11Server : IAsyncDisposable
         CheckCoordinate(x, nameof(x));
         CheckCoordinate(y, nameof(y));
         ArgumentNullException.ThrowIfNull(data);
-        Dictionary<string, ReadOnlyMemory<byte>> copy = data.ToDictionary(p => p.Key, p => (ReadOnlyMemory<byte>)p.Value.ToArray());
+        var copy = data.ToDictionary(p => p.Key, p => (ReadOnlyMemory<byte>)p.Value.ToArray());
         Post(null, () =>
         {
             if (InputTarget(window) is { } top)

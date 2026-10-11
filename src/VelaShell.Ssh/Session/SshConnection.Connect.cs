@@ -321,7 +321,7 @@ public sealed partial class SshConnection
             throw new SshConnectionClosedException(
                 SshFailureReason.ClosedByPeer, phase, $"连 {options.EndPoint} 时对端在一个报文中途断开（{phase}）。", ex);
         }
-        catch (Exception ex) when (ex is Crypto.SshFrameFormatException or Protocol.SshWireFormatException)
+        catch (Exception ex) when (ex is SshFrameFormatException or SshWireFormatException)
         {
             await TrySendHandshakeDisconnectAsync(transport, phase, ex).ConfigureAwait(false);
             await DisposeQuietlyAsync(transport, stream).ConfigureAwait(false);

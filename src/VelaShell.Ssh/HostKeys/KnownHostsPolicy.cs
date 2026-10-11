@@ -20,24 +20,18 @@ namespace VelaShell.Ssh.HostKeys;
 /// 停下来想一想的地方。异常消息里会指出是文件的第几行。
 /// </para>
 /// </remarks>
-public sealed class KnownHostsPolicy : IHostKeyPolicy, IHostKeyTypePreference, IHostKeyRotationPolicy
+/// <remarks>用给定的 <c>known_hosts</c> 路径构造。</remarks>
+/// <param name="path"><c>known_hosts</c> 路径；<see langword="null"/> 表示用默认路径。</param>
+/// <param name="askUnknownHost">
+/// 没见过这台主机时问使用者。返回 <see langword="true"/> 表示信任并记下来。
+/// </param>
+public sealed class KnownHostsPolicy(
+    string? path = null,
+    Func<SshHostKeyContext, CancellationToken, ValueTask<bool>>? askUnknownHost = null) : IHostKeyPolicy, IHostKeyTypePreference, IHostKeyRotationPolicy
 {
-    private readonly string _path;
-    private readonly Func<SshHostKeyContext, CancellationToken, ValueTask<bool>>? _askUnknownHost;
+    private readonly string _path = path ?? KnownHostsFile.DefaultPath;
+    private readonly Func<SshHostKeyContext, CancellationToken, ValueTask<bool>>? _askUnknownHost = askUnknownHost;
     private IReadOnlyList<KnownHostEntry>? _cache;
-
-    /// <summary>用给定的 <c>known_hosts</c> 路径构造。</summary>
-    /// <param name="path"><c>known_hosts</c> 路径；<see langword="null"/> 表示用默认路径。</param>
-    /// <param name="askUnknownHost">
-    /// 没见过这台主机时问使用者。返回 <see langword="true"/> 表示信任并记下来。
-    /// </param>
-    public KnownHostsPolicy(
-        string? path = null,
-        Func<SshHostKeyContext, CancellationToken, ValueTask<bool>>? askUnknownHost = null)
-    {
-        _path = path ?? KnownHostsFile.DefaultPath;
-        _askUnknownHost = askUnknownHost;
-    }
 
     /// <summary>不读也不写任何文件：每台主机都当成没见过，接受了也不记（<c>UserKnownHostsFile none</c> / <c>/dev/null</c>）。</summary>
     /// <param name="askUnknownHost">没见过这台主机时问使用者。只在 <paramref name="unknownHost"/> 是 <see cref="UnknownHostBehavior.Ask"/> 时能给。</param>

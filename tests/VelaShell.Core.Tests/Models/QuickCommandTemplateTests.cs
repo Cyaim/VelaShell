@@ -20,7 +20,7 @@ public class QuickCommandTemplateTests
 
         Assert.IsTrue(template.HasVariables);
         Assert.AreSequenceEqual(
-            [new QuickCommandVariable("svc", ""), new QuickCommandVariable("lines", "200"), new QuickCommandVariable("since", "today")], template.Variables.ToArray());
+            [new QuickCommandVariable("svc", ""), new QuickCommandVariable("lines", "200"), new QuickCommandVariable("since", "today")], [.. template.Variables]);
     }
 
     [TestMethod]
@@ -29,7 +29,7 @@ public class QuickCommandTemplateTests
         var template = QuickCommandTemplate.Parse("cp {{file}} {{file}}.bak && ls {{dir}} {{dir=/tmp}}");
 
         Assert.AreSequenceEqual(
-            [new QuickCommandVariable("file", ""), new QuickCommandVariable("dir", "/tmp")], template.Variables.ToArray());
+            [new QuickCommandVariable("file", ""), new QuickCommandVariable("dir", "/tmp")], [.. template.Variables]);
     }
 
     [TestMethod]
@@ -53,7 +53,7 @@ public class QuickCommandTemplateTests
     {
         var template = QuickCommandTemplate.Parse("kubectl logs {{pod-name}} -n {{命名空间=default}}");
 
-        Assert.AreSequenceEqual(["pod-name", "命名空间"], template.Variables.Select(v => v.Name).ToArray());
+        Assert.AreSequenceEqual(["pod-name", "命名空间"], [.. template.Variables.Select(v => v.Name)]);
     }
 
     [TestMethod]

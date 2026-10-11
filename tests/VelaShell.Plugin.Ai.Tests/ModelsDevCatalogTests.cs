@@ -609,8 +609,11 @@ public sealed class ModelsDevCatalogTests
         ModelsDevCatalog.Materialise(automatic, [spec]);
         ModelsDevCatalog.Materialise(automatic, [spec with { ContextTokens = 262144 }]);
         Assert.AreEqual(262144, automatic.Models.Single().MaxInputTokens);
-        var legacy = new AiProvider { Models = [new AiModelConfig { Model = spec.Id, MaxInputTokens = 128000,
-            MaxTokens = 1024, InputPricePerMillion = 7 }] };
+        var legacy = new AiProvider
+        {
+            Models = [new AiModelConfig { Model = spec.Id, MaxInputTokens = 128000,
+            MaxTokens = 1024, InputPricePerMillion = 7 }]
+        };
         ModelsDevCatalog.Materialise(legacy, [spec]);
         Assert.AreEqual(128000, legacy.Models.Single().MaxInputTokens, "没有来源标记的旧值,包括128000,均不猜成自动值");
         Assert.AreEqual(1024, legacy.Models.Single().MaxTokens);
@@ -642,7 +645,7 @@ public sealed class ModelsDevCatalogTests
         AiModelConfig model = provider.Models.Single();
         if (edited) model.SupportsReasoning = false;
         ModelsDevCatalog.Materialise(provider, [new ModelSpec(model.Model, model.Model, 800000, 16384, 0, 0, 0, true)]);
-        Assert.AreEqual(edited ? false : true, model.SupportsReasoning);
+        Assert.AreEqual(!edited, model.SupportsReasoning);
         Assert.AreEqual(800000, model.MaxInputTokens, "未编辑的自动窗口仍可填入目录新值");
     }
 

@@ -3,13 +3,13 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
-using Avalonia.Threading;
 using Avalonia.LogicalTree;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
-using VelaShell.PluginSdk.Testing;
 using VelaShell.PluginSdk.Secrets;
+using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
@@ -165,7 +165,11 @@ public sealed class SettingsViewUiTests
                     input.Text = "128000"; // 同一拍删/重填，不能依赖延后 TextChanged。
                     Assert.DoesNotContain(loc["ContextWindowDefaultHint"], hint.Text!);
                 }
-                else Assert.Contains(loc["ContextWindowDefaultHint"], hint.Text!);
+                else
+                {
+                    Assert.Contains(loc["ContextWindowDefaultHint"], hint.Text!);
+                }
+
                 view.RefreshCatalogModels();
                 await PumpAsync();
                 loc.Switch(language == "en" ? "zh-Hans" : "en"); view.ApplyLoc();
@@ -254,7 +258,9 @@ public sealed class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m" };
             var provider = new AiProvider
             {
-                Name = "original", BaseUrl = "https://same.example", Models = [model],
+                Name = "original",
+                BaseUrl = "https://same.example",
+                Models = [model],
                 Auth = subscriptionFirst ? AuthMethod.Subscription : AuthMethod.ApiKey,
                 OAuth = new OAuthConfig()
             };
@@ -425,8 +431,8 @@ public sealed class SettingsViewUiTests
             window.Show(); await PumpAsync();
             try
             {
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-                Task pulling = (Task)typeof(SettingsView).GetMethod("PullModelsAsync", flags)!.Invoke(view, null)!;
+                System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                var pulling = (Task)typeof(SettingsView).GetMethod("PullModelsAsync", flags)!.Invoke(view, null)!;
                 await WaitUntilAsync(() => endpoint.Requests.Count == 1);
                 Assert.AreEqual("Bearer saved-model-list-key", endpoint.Requests.Single().Auth);
                 Assert.AreEqual(before, System.Text.Json.JsonSerializer.Serialize(provider), "网络期间不可先发布目录");
@@ -586,7 +592,7 @@ public sealed class SettingsViewUiTests
             window.Show(); await PumpAsync();
             try
             {
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
                 view.GetControl<ListBox>("ProvidersList").SelectedIndex = action == "own" ? 1 : 0;
                 await ((Task)typeof(SettingsView).GetField("_editorLoad", flags)!.GetValue(view)!).WaitAsync(TimeSpan.FromSeconds(15));
                 TextBox name = view.GetControl<TextBox>(action == "own" ? "NameBox" : "ProviderNameBox");
@@ -606,8 +612,14 @@ public sealed class SettingsViewUiTests
                     await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == new Loc("en")["SetupConfigChanged"]);
                 }
                 else if (action == "pull")
+                {
                     await ((Task)typeof(SettingsView).GetMethod("PullModelsAsync", flags)!.Invoke(view, null)!).WaitAsync(TimeSpan.FromSeconds(15));
-                else await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                }
+                else
+                {
+                    await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                }
+
                 Assert.AreEqual(new Loc("en")["SetupConfigChanged"], view.GetControl<TextBlock>("StatusText").Text);
                 Assert.AreEqual("retain draft", name.Text);
                 Assert.AreEqual(newHost.BaseUrl, live.Providers[0].BaseUrl);
@@ -641,7 +653,8 @@ public sealed class SettingsViewUiTests
             var provider = new AiProvider { Name = "original", Models = [model] };
             var live = new AiSettings
             {
-                Providers = [provider], ActiveModelId = model.Id,
+                Providers = [provider],
+                ActiveModelId = model.Id,
                 FailoverChain = [new FailoverEntry { ModelId = model.Id }]
             };
             await store.AddProviderApiKeyAsync(live, provider, "primary");
@@ -655,7 +668,7 @@ public sealed class SettingsViewUiTests
             window.Show(); await PumpAsync();
             try
             {
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
                 ListBox list = view.GetControl<ListBox>("ProvidersList");
                 list.SelectedIndex = modelOnly ? 1 : 0;
                 await ((Task)typeof(SettingsView).GetField("_editorLoad", flags)!.GetValue(view)!).WaitAsync(TimeSpan.FromSeconds(15));
@@ -718,7 +731,7 @@ public sealed class SettingsViewUiTests
             window.Show(); await PumpAsync();
             try
             {
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
                 Task Save() => (Task)typeof(SettingsView).GetMethod("SaveAsync", flags)!.Invoke(view, null)!;
                 await ((Task)typeof(SettingsView).GetField("_editorLoad", flags)!.GetValue(view)!).WaitAsync(TimeSpan.FromSeconds(15));
                 view.GetControl<TextBox>("ProviderNameBox").Text = "first draft";
@@ -1122,7 +1135,11 @@ public sealed class SettingsViewUiTests
                     }
                     Assert.IsTrue(name.IsFocused);
                 }
-                else Assert.AreEqual("https://latest-b.example", view.GetControl<TextBox>("ProviderBaseUrlBox").Text);
+                else
+                {
+                    Assert.AreEqual("https://latest-b.example", view.GetControl<TextBox>("ProviderBaseUrlBox").Text);
+                }
+
                 Click(view.GetControl<Button>("SaveButton"));
                 await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == new Loc("en")["Saved"]);
                 AiSettings saved = await store.LoadAsync();
@@ -1997,7 +2014,9 @@ public sealed class SettingsViewUiTests
             };
             var settings = new AiSettings
             {
-                Providers = [provider], ActiveModelId = model.Id, SuggestFollowUps = false
+                Providers = [provider],
+                ActiveModelId = model.Id,
+                SuggestFollowUps = false
             };
             var store = new AiSettingsStore(context);
             await store.SaveAsync(settings);
@@ -2101,7 +2120,7 @@ public sealed class SettingsViewUiTests
             try
             {
                 ListBox list = view.GetControl<ListBox>("ProvidersList");
-                var provider = settings.Providers[0];
+                AiProvider provider = settings.Providers[0];
                 TextBox modelBox = view.GetControl<TextBox>("ModelBox");
                 TextBox priceBox = view.GetControl<TextBox>("PriceInBox");
                 ComboBox picker = view.GetControl<ComboBox>("ModelPickCombo");
@@ -2162,8 +2181,12 @@ public sealed class SettingsViewUiTests
                 """);
             var model = new AiModelConfig
             {
-                Model = "old-model", MaxInputTokens = 10000, MaxTokens = 1000,
-                InputPricePerMillion = 1, OutputPricePerMillion = 2, CachedInputPricePerMillion = 0.5
+                Model = "old-model",
+                MaxInputTokens = 10000,
+                MaxTokens = 1000,
+                InputPricePerMillion = 1,
+                OutputPricePerMillion = 2,
+                CachedInputPricePerMillion = 0.5
             };
             ModelsDevCatalog.Apply(model, new ModelSpec(model.Model, model.Name, model.MaxInputTokens, model.MaxTokens,
                 model.InputPricePerMillion, model.OutputPricePerMillion, model.CachedInputPricePerMillion, null), newModel: true);
@@ -2388,7 +2411,9 @@ public sealed class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
-                Name = "subscription", BaseUrl = oldEndpoint.BaseUrl, Auth = AuthMethod.Subscription,
+                Name = "subscription",
+                BaseUrl = oldEndpoint.BaseUrl,
+                Auth = AuthMethod.Subscription,
                 OAuth = new OAuthConfig { Flow = OAuthFlow.GitHubCopilotDevice, ExchangeUrl = "https://auth.example/exchange" },
                 Models = [model]
             };
@@ -2398,7 +2423,9 @@ public sealed class SettingsViewUiTests
             await store.SaveAsync(settings);
             await store.SaveTokensAsync(provider.Id, new OAuthTokens
             {
-                AccessToken = "same-token", RefreshToken = "long-lived", BaseUrl = oldEndpoint.BaseUrl,
+                AccessToken = "same-token",
+                RefreshToken = "long-lived",
+                BaseUrl = oldEndpoint.BaseUrl,
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
             });
             var view = new SettingsView(context, store, settings, new Loc("en"), () => { }, health);
@@ -2422,7 +2449,9 @@ public sealed class SettingsViewUiTests
                 store.TokenClient = new VelaShell.Plugin.Ai.Auth.OAuthClient(http);
                 await store.SaveTokensAsync(provider.Id, new OAuthTokens
                 {
-                    AccessToken = "same-token", RefreshToken = "long-lived", BaseUrl = oldEndpoint.BaseUrl,
+                    AccessToken = "same-token",
+                    RefreshToken = "long-lived",
+                    BaseUrl = oldEndpoint.BaseUrl,
                     ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(20)
                 });
                 ProviderCredential refreshed = await store.ResolveCredentialAsync(new ResolvedModel(provider, model));
@@ -2458,8 +2487,11 @@ public sealed class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
-                Name = "subscription", BaseUrl = endpoint.BaseUrl, Auth = AuthMethod.Subscription,
-                OAuth = new OAuthConfig { ExtraHeaders = "chatgpt-account-id: {account_id}" }, Models = [model]
+                Name = "subscription",
+                BaseUrl = endpoint.BaseUrl,
+                Auth = AuthMethod.Subscription,
+                OAuth = new OAuthConfig { ExtraHeaders = "chatgpt-account-id: {account_id}" },
+                Models = [model]
             };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             var health = new ProviderHealth();
@@ -2505,8 +2537,10 @@ public sealed class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
-                BaseUrl = endpoint.BaseUrl, Auth = AuthMethod.Subscription,
-                OAuth = new OAuthConfig { Credential = OAuthCredential.AccessToken }, Models = [model]
+                BaseUrl = endpoint.BaseUrl,
+                Auth = AuthMethod.Subscription,
+                OAuth = new OAuthConfig { Credential = OAuthCredential.AccessToken },
+                Models = [model]
             };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             var health = new ProviderHealth();
@@ -2689,7 +2723,9 @@ public sealed class SettingsViewUiTests
             await store.SetApiKeyAsync(provider.Id, "original-key");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SuggestFollowUps = false
             });
             var chat = new ChatPanelView(context, store);
             var chatHost = new Window { Width = 900, Height = 700, Content = chat };
@@ -2747,7 +2783,10 @@ public sealed class SettingsViewUiTests
                 Assert.IsTrue(editor.GetControl<Control>("PullModelsPanel").IsVisible);
                 Assert.AreEqual(dirty ? "unfinished account" : savedName, name.Text);
                 Assert.AreEqual(dirty ? "https://unfinished.example/v1" : endpoint.BaseUrl, address.Text);
-                if (dirty) Assert.AreEqual("unfinished-key", key!.Text);
+                if (dirty)
+                {
+                    Assert.AreEqual("unfinished-key", key!.Text);
+                }
                 else
                 {
                     Button reveal = KeyControl<Button>(editor, provider.Id, "ProviderKeyRevealButton");
@@ -2770,7 +2809,7 @@ public sealed class SettingsViewUiTests
                 var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 void OnChanged(object? sender, Avalonia.AvaloniaPropertyChangedEventArgs args)
                 {
-                    if (args.Property == Button.IsEnabledProperty && button.IsEnabled)
+                    if (args.Property == InputElement.IsEnabledProperty && button.IsEnabled)
                         completed.TrySetResult();
                 }
                 button.PropertyChanged += OnChanged;
@@ -2994,7 +3033,7 @@ public sealed class SettingsViewUiTests
             try
             {
                 await secrets.Started.WaitAsync(TimeSpan.FromSeconds(15));
-                Task saving = (Task)typeof(SettingsView).GetMethod("SaveAsync",
+                var saving = (Task)typeof(SettingsView).GetMethod("SaveAsync",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(view, null)!;
                 Assert.IsFalse(saving.IsCompleted, "保存确实在等首次机密读取");
                 ListBox list = view.GetControl<ListBox>("ProvidersList");
@@ -3178,7 +3217,7 @@ public sealed class SettingsViewUiTests
             {
                 Task oldProbe = StartTestAsync(view);
                 string request = await endpoint.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(15));
-                using (System.Text.Json.JsonDocument body = System.Text.Json.JsonDocument.Parse(request))
+                using (var body = System.Text.Json.JsonDocument.Parse(request))
                 {
                     Assert.AreEqual(0.25f, body.RootElement.GetProperty("temperature").GetSingle());
                     Assert.AreEqual(0.5f, body.RootElement.GetProperty("top_p").GetSingle());
@@ -3209,7 +3248,10 @@ public sealed class SettingsViewUiTests
             Authorization = request.Headers.Authorization?.ToString();
             if (request.Method != HttpMethod.Get || request.RequestUri != new Uri(ModelsDevCatalog.SourceUrl)
                 || request.Headers.Authorization is not null)
+            {
                 throw new InvalidOperationException("Only the unauthenticated public model index may use this transport.");
+            }
+
             request.RequestUri = new Uri(baseUrl + "/api.json");
             return base.SendAsync(request, cancellationToken);
         }
@@ -3325,7 +3367,6 @@ public sealed class SettingsViewUiTests
         .Cast<object>().Single(row => (string?)row.GetType().GetProperty("Id")!.GetValue(row) == keyId);
 
     private static bool IsKeyProbeRunning(object state) => state.GetType().GetProperty("ProbeCts")!.GetValue(state) is not null;
-
 
     private static void SelectKeyModel(SettingsView view, string keyId, string modelId)
     {
@@ -4430,5 +4471,4 @@ public sealed class SettingsViewUiTests
             finally { window.Close(); }
         });
     }
-
 }

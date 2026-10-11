@@ -102,11 +102,9 @@ internal sealed class XProperty
 /// 坐标约定:<see cref="X" />/<see cref="Y" /> 是相对父窗口内区(不含边框)的位置,指的是本窗口<b>外框</b>
 /// (含边框)的左上角 —— 与协议一致。内区原点 = 外框左上角 + 边框宽。
 /// </remarks>
-internal sealed class XWindow : XResource
+internal sealed class XWindow(uint id, XClient? owner, XWindow? parent) : XResource(id, owner)
 {
-    public XWindow(uint id, XClient? owner, XWindow? parent) : base(id, owner) => Parent = parent;
-
-    public XWindow? Parent { get; set; }
+    public XWindow? Parent { get; set; } = parent;
 
     /// <summary>子窗口,<b>从下到上</b>的堆叠顺序(最后一个在最上面)。</summary>
     public List<XWindow> Children { get; } = [];

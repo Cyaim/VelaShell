@@ -47,7 +47,7 @@ public sealed class SessionArchiveServiceTests : IDisposable
     [TestMethod]
     public async Task ExportWithPassphrase_ThenImportElsewhere_BringsEverythingAcross()
     {
-        var (sourceService, sourceSessions, sourceCredentials, sourceStore) = Machine("source");
+        (SessionArchiveService? sourceService, SonnetDbSessionRepository? sourceSessions, SonnetDbSharedCredentialRepository? sourceCredentials, SonnetDbAppDataStore? sourceStore) = Machine("source");
         var group = new ServerGroup { Name = "生产环境", SortOrder = 0 };
         var credential = new SharedCredential { Name = "ops", Username = "ops", Password = "cred-pw" };
         var bastion = new SessionProfile { Name = "bastion", Host = "203.0.113.1", Username = "jump", Password = "bastion-pw", GroupId = group.Id };
@@ -78,7 +78,7 @@ public sealed class SessionArchiveServiceTests : IDisposable
         Assert.IsTrue(file.SecretsIncluded);
         Assert.DoesNotContain("bastion-pw", Encoding.UTF8.GetString(file.Content));
 
-        var (targetService, targetSessions, targetCredentials, targetStore) = Machine("target");
+        (SessionArchiveService? targetService, SonnetDbSessionRepository? targetSessions, SonnetDbSharedCredentialRepository? targetCredentials, SonnetDbAppDataStore? targetStore) = Machine("target");
         SessionImportDocument document = targetService.Parse("backup.json", file.Content);
         Assert.IsTrue(SessionArchiveJson.TryUnlock(document, "correct horse battery"));
         SessionImportPlan plan = await targetService.PlanAsync(document);
@@ -114,7 +114,7 @@ public sealed class SessionArchiveServiceTests : IDisposable
     [TestMethod]
     public async Task CsvRoundTrip_EditedInExcel_OverwritesOnlyTheEditedColumns()
     {
-        var (service, sessions, _, _) = Machine("csv");
+        (SessionArchiveService? service, SonnetDbSessionRepository? sessions, SonnetDbSharedCredentialRepository _, SonnetDbAppDataStore _) = Machine("csv");
         var profile = new SessionProfile
         {
             Name = "switch-01",
@@ -146,7 +146,7 @@ public sealed class SessionArchiveServiceTests : IDisposable
     [TestMethod]
     public async Task Template_ImportsIntoAFreshStore()
     {
-        var (service, sessions, _, _) = Machine("template");
+        (SessionArchiveService? service, SonnetDbSessionRepository? sessions, SonnetDbSharedCredentialRepository _, SonnetDbAppDataStore _) = Machine("template");
 
         SessionImportDocument document = service.Parse("template.csv", service.CreateCsvTemplate());
         SessionFileImportOutcome outcome = await service.ImportAsync(await service.PlanAsync(document), new SessionImportOptions());
@@ -161,7 +161,7 @@ public sealed class SessionArchiveServiceTests : IDisposable
     [TestMethod]
     public void Parse_PicksTheFormatByExtension_ThenByContent()
     {
-        var (service, _, _, _) = Machine("parse");
+        (SessionArchiveService? service, SonnetDbSessionRepository _, SonnetDbSharedCredentialRepository _, SonnetDbAppDataStore _) = Machine("parse");
         byte[] json = Encoding.UTF8.GetBytes("""{ "format": "velashell-sessions", "sessions": [ { "host": "h" } ] }""");
         byte[] csv = Encoding.UTF8.GetBytes("host\nh\n");
 

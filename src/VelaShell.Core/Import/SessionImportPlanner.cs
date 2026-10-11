@@ -322,7 +322,7 @@ public static class SessionImportPlanner
         private readonly Dictionary<Guid, Guid> _idMap = [];
 
         /// <summary>文件里的名称 → 落盘后的 Id;CSV 的跳板列按名称引用。同名取第一条。</summary>
-        private readonly Dictionary<string, Guid> _nameMap = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Guid> _nameMap = [with(StringComparer.OrdinalIgnoreCase)];
 
         private readonly Dictionary<Guid, ServerGroup> _groupsById = plan.ExistingGroups
             .GroupBy(static g => g.Id)
@@ -334,7 +334,7 @@ public static class SessionImportPlanner
             .ToDictionary(static g => g.Key, static g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         /// <summary>要新建的分组(按名称),带一个排序依据:JSON 用文件里的排序序号,CSV 用首次出现的行。</summary>
-        private readonly Dictionary<string, (ServerGroup Group, double Rank)> _newGroups = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, (ServerGroup Group, double Rank)> _newGroups = [with(StringComparer.OrdinalIgnoreCase)];
 
         /// <summary>成员列表要改的已有分组(克隆,不动调用方传进来的对象)。</summary>
         private readonly Dictionary<Guid, ServerGroup> _touchedGroups = [];
@@ -392,11 +392,10 @@ public static class SessionImportPlanner
 
             // 同 Id 的那一行才是本机那条连接本身,它对覆盖目标有优先权:按「主机 + 端口 + 用户名」撞上同一条的别的行
             // 哪怕排在前面也不能抢走它(否则真正的那一行被另存成副本,本机那条却换成了别人的名字和设置)。
-            var overwritten = options.Conflict == SessionImportConflict.Overwrite
-                ? plan.Items
+            HashSet<Guid> overwritten = options.Conflict == SessionImportConflict.Overwrite
+                ? [.. plan.Items
                     .Where(i => i is { Match: SessionImportMatch.SameId, Existing: not null } && Chosen(i.Candidate))
-                    .Select(static i => i.Existing!.Id)
-                    .ToHashSet()
+                    .Select(static i => i.Existing!.Id)]
                 : [];
             var claimedById = new HashSet<Guid>(overwritten);
             List<(SessionImportPlanItem, Guid, SessionProfile?)> writes = [];
@@ -434,7 +433,7 @@ public static class SessionImportPlanner
 
         private Guid NewId()
         {
-            Guid id = Guid.NewGuid();
+            var id = Guid.NewGuid();
             _usedIds.Add(id);
             return id;
         }

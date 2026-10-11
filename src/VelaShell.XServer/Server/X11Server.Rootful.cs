@@ -169,7 +169,7 @@ public sealed partial class X11Server
     /// </summary>
     private static void DiffLayers(List<ScreenLayer> before, List<ScreenLayer> after, Region dirty)
     {
-        Dictionary<XWindow, int> oldIndex = new(before.Count);
+        Dictionary<XWindow, int> oldIndex = [with(before.Count)];
         for (int i = 0; i < before.Count; i++)
         {
             oldIndex[before[i].Window] = i;

@@ -242,7 +242,7 @@ public class SshSessionFeaturesTests
             notices)!;
 
         Assert.AreSequenceEqual(
-            [a.PublicKey.Sha256Fingerprint, b.PublicKey.Sha256Fingerprint], policy.AllowedKeys!.Select(k => k.Sha256Fingerprint).ToArray(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+            [a.PublicKey.Sha256Fingerprint, b.PublicKey.Sha256Fingerprint], [.. policy.AllowedKeys!.Select(k => k.Sha256Fingerprint)], SequenceOrder.InAnyOrder);
         Assert.IsEmpty(notices);
     }
 
@@ -306,7 +306,7 @@ public class SshSessionFeaturesTests
         AgentSignRequest shown = prompt.LastRequest!;
         Assert.AreEqual("git", shown.LoginUser);
         Assert.AreEqual(github.PublicKey.Sha256Fingerprint, shown.DestinationFingerprint);
-        Assert.AreSequenceEqual(new[] { "github.com", "10.0.0.9:2222" }, shown.DestinationHosts.ToArray());
+        Assert.AreSequenceEqual(new[] { "github.com", "10.0.0.9:2222" }, [.. shown.DestinationHosts]);
         Assert.IsNull(shown.SignatureNamespace);
     }
 

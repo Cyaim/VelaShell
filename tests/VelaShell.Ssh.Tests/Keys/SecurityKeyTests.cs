@@ -57,7 +57,7 @@ public sealed class SecurityKeyTests
         Assert.AreEqual(256, sk.KeyBits);
         Assert.IsTrue(sk.IsSecurityKey);
         Assert.AreEqual("ssh:work", sk.SecurityKeyApplication);
-        Assert.AreSequenceEqual([SshAlgorithmNames.SkSshEd25519], sk.SignatureAlgorithms.ToArray());
+        Assert.AreSequenceEqual([SshAlgorithmNames.SkSshEd25519], [.. sk.SignatureAlgorithms]);
         Assert.AreEqual(sk, SshPublicKey.Parse(sk.ToOpenSshFormat()));
         Assert.IsFalse(sk.VerifySignature([0, 0, 0, 0], [1], SshAlgorithmNames.SkSshEd25519));
 
@@ -103,7 +103,7 @@ public sealed class SecurityKeyTests
 
             IReadOnlyList<SshCredential> credentials = await client.GetCredentialsAsync(cts.Token);
             var credential = (PublicKeyCredential)credentials.Single();
-            Assert.AreSequenceEqual([SshAlgorithmNames.SkSshEd25519], credential.Signer.SignatureAlgorithms.ToArray());
+            Assert.AreSequenceEqual([SshAlgorithmNames.SkSshEd25519], [.. credential.Signer.SignatureAlgorithms]);
         }
         await cts.CancelAsync();
         await serving;

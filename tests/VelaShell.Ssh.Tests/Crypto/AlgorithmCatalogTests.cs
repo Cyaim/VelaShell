@@ -42,7 +42,7 @@ public sealed class AlgorithmCatalogTests
         SshAlgorithmSet legacy = SshAlgorithmSet.Default.WithLegacyInterop();
         IReadOnlyList<string> kex = SshAlgorithmCatalog.Implemented(SshAlgorithmCategory.KeyExchange);
 
-        Assert.AreSequenceEqual(SshAlgorithmSet.Default.KeyExchange.ToArray(), kex.Take(SshAlgorithmSet.Default.KeyExchange.Count).ToArray());
+        Assert.AreSequenceEqual([.. SshAlgorithmSet.Default.KeyExchange], [.. kex.Take(SshAlgorithmSet.Default.KeyExchange.Count)]);
         Assert.IsTrue(legacy.HostKey.All(a => SshAlgorithmCatalog.IsImplemented(SshAlgorithmCategory.HostKey, a)));
         Assert.IsTrue(legacy.MacClientToServer.All(a => SshAlgorithmCatalog.IsImplemented(SshAlgorithmCategory.Mac, a)));
         Assert.IsTrue(SshAlgorithmCatalog.IsImplemented(SshAlgorithmCategory.Compression, SshAlgorithmNames.ZlibOpenSsh));

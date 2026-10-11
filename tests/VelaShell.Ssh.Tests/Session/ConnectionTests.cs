@@ -419,7 +419,7 @@ public sealed class ConnectionTests
 
         Assert.StartsWith("SSH-2.0-", connection.PeerVersion);
         Assert.AreEqual("password", connection.AuthenticationMethod);
-        Assert.AreSequenceEqual(["ssh-ed25519", "rsa-sha2-512"], connection.ServerSignatureAlgorithms.ToArray());
+        Assert.AreSequenceEqual(["ssh-ed25519", "rsa-sha2-512"], [.. connection.ServerSignatureAlgorithms]);
 
         SshConnectTimings timings = connection.ConnectTimings;
         Assert.IsTrue(timings.Dialing >= TimeSpan.Zero && timings.VersionExchange >= TimeSpan.Zero
@@ -823,7 +823,7 @@ public sealed class ConnectionTests
 
         await using SshConnection connection = await SshConnection.ConnectAsync(options);
 
-        Assert.AreSequenceEqual(["Authorized use only.", "All activity is monitored."], received.ToArray());
+        Assert.AreSequenceEqual(["Authorized use only.", "All activity is monitored."], [.. received]);
     }
 
     [TestMethod]

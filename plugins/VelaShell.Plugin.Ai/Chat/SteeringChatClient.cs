@@ -34,24 +34,24 @@ internal sealed class SteeringChatClient(
 {
     private readonly Lock _gate = new();
     private readonly List<SteeringMessage> _delivered = [];
-    private IChatClient _requestClient = innerClient;
-    internal IChatClient RequestClient => _requestClient;
+
+    internal IChatClient RequestClient { get; private set; } = innerClient;
 
     /// <summary>同账号续期只替换真实请求客户端,保留工具循环与已送达插话,不重放副作用。</summary>
     internal void ReplaceInnerClient(IChatClient client)
     {
-        IChatClient previous = _requestClient;
-        _requestClient = client;
+        IChatClient previous = RequestClient;
+        RequestClient = client;
         previous.Dispose();
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null)
     {
         ArgumentNullException.ThrowIfNull(serviceType);
-        return serviceKey is null && serviceType.IsInstanceOfType(this) ? this : _requestClient.GetService(serviceType, serviceKey);
+        return serviceKey is null && serviceType.IsInstanceOfType(this) ? this : RequestClient.GetService(serviceType, serviceKey);
     }
 
-    public void Dispose() => _requestClient.Dispose();
+    public void Dispose() => RequestClient.Dispose();
 
     /// <summary>本轮已经送进请求的插话(按送达先后)。</summary>
     public IReadOnlyList<SteeringMessage> Delivered
@@ -70,7 +70,7 @@ internal sealed class SteeringChatClient(
         ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
         if (beforeRequest is not null) await beforeRequest(cancellationToken).ConfigureAwait(false);
-        return await _requestClient.GetResponseAsync(Compose(messages), options, cancellationToken).ConfigureAwait(false);
+        return await RequestClient.GetResponseAsync(Compose(messages), options, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -79,8 +79,11 @@ internal sealed class SteeringChatClient(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (beforeRequest is not null) await beforeRequest(cancellationToken).ConfigureAwait(false);
-        await foreach (ChatResponseUpdate update in _requestClient.GetStreamingResponseAsync(Compose(messages), options, cancellationToken)
-            .ConfigureAwait(false)) yield return update;
+        await foreach (ChatResponseUpdate update in RequestClient.GetStreamingResponseAsync(Compose(messages), options, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            yield return update;
+        }
     }
 
     /// <summary>把队列里的插话并进这一次要发的消息序列。</summary>
