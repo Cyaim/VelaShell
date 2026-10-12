@@ -9,8 +9,10 @@
 >
 > **2026-09-26 精简**：原文 7,200 行，每节压成「做了什么 + 关键决定 + 值得记住的坑」，
 > 删掉了代码对照、测试清单与逐步排查过程。完整原文在 git 历史里（本次精简之前的版本即是）。
-> **节号一律保持不变** —— 代码注释、CI 配置与 `feature-plan.md` 都按「plan.md §NN」引用它们；
-> 两个 §82、两个 §92 是历史上撞号留下的，也照原样保留。
+> **2026-10-13 第二次精简**：此后新写的 §118 – §202 按同一口径压缩（全文 3,000 行 / 440 KB → 1,850 行 / 230 KB），
+> 正文里的「还没做」一律摘进 `feature-plan.md`。精简前的全文：`git show eba8452d:plan.md`。
+> **节号一律保持不变** —— 代码注释、CI 配置、测试、`feature-plan.md` 与 velashell-docs 都按「plan.md §NN」引用它们，
+> 节内的小标签（§71-六、§162 的 Q7、§201 的一至六这类）也照原样；两个 §82、两个 §92 是历史上撞号留下的，照原样保留。
 
 ## 🏷️ 状态标识
 
@@ -54,11 +56,8 @@
 | 10-05 ~ 10-07 | §160 – §166 | SSH 库审查落地、FIPS 混合 KEX、CI SSH 红用例 |
 | 10-07 ~ 10-08 | §167 – §172 | XServer 二次全库审查修复、CI 红用例、Linux 检查更新打开发布页 |
 | 09-22 ~ 10-09 | §173 – §174 | AI 插件:健康检查与故障转移、同供应商多 API Key(#582) |
-| 10-09 | §175 | 新建连接对话框悬停闪烁的真因(#577) |
-| 10-09 | §176 | 终端侧栏分隔线与折叠拆成两个开关、折叠方框加大(#586) |
-| 10-09 | §177 | AI 插件:#582 复审修复(规格多数匹配、设备码 428、批量检测、跨源草稿 Key、一次性请求重试) |
-| 10-09 | §178 | XServer 第二次审查遗留项的收尾(随库带核心字体、cursor 字形光标、PolyArc 接头、RENDER 整数路径) |
-| 10-09 | §179 | CI:AI 插件 UI 用例把每次 CI 拖到 25 分钟以上;SFTP 握手在 sftp-server 一起来就退出时偶尔白等 30 秒 |
+| 10-09 ~ 10-10 | §175 – §193 | 悬停闪烁真因(#577)、侧栏两个开关(#586)、AI 插件复审与修复、XServer 二次审查收尾与第十二节新功能(程序清单、信任级别、拖放、托盘、XIM 桥)、连接导入导出与批量操作(#571)、隧道面板一批修复、启动画面、SSH 库四处修补 |
+| 10-11 ~ 10-13 | §194 – §202 | 清零编译警告、CI 偶发的两处根因、X 程序一打字就退出、上传选择框(路径输入、键入定位、图标视图)、IPv6(#611)、文件栏路径输入与键入定位、X Server 帧率 |
 
 ## 📈 阶段脉络
 
@@ -74,14 +73,16 @@ timeline
     2026-09 上旬 : 协作接入 IM 桥接 + 对外 MCP : 远程编辑回传 : SSH 证书认证 : 目录比较与同步 : 三平台 CI 门禁
     2026-09 中旬 : 冷启动排查 : 出站代理规约 : Ed25519 / ECDSA 密钥
     2026-09 下旬 : Tmds.Ssh → VelaShell.Ssh 并入本仓库 : Agent / X11 转发 : 内置 X 服务端 VelaShell.XServer : 窗口外框跨平台适配
+    2026-09 末 ~ 10 月初 : SFTP 双栏两侧远程 : 新建连接对话框改版 : 快捷键可改 : 共享凭据
+    2026-10 上中旬 : SSH 库审查落地 + FIPS 混合 KEX : XServer 二次审查与新功能 : 连接导入导出与批量操作 : 启动画面 : IPv6 : X Server 帧率 : 上传选择框图标视图
 ```
 
-## 🧭 当前基线（2026-09-26）
+## 🧭 当前基线（2026-10-13）
 
 | 项 | 值 |
 | --- | --- |
 | 发布 | 以 [GitHub Releases](https://github.com/joesdu/VelaShell/releases) 为准。仓库里 `Directory.Build.props` 的 `0.0.1-dev` 是开发期占位，发版由 Release 标签经 `-p:Version` 覆盖 |
-| 测试 | 最近一次全量记录：4800 条，**4761 通过 / 1 失败 / 38 跳过**（2026-09-26，§124；失败的是 Core.Tests 的 X11 靶机用例，本机靶机镜像旧，`main` 上同样失败，同 §116）；`-warnaserror` 下构建零警告 |
+| 测试 | 最近一次全量记录：4800 条，**4761 通过 / 1 失败 / 38 跳过**（2026-09-26，§124；失败的是 Core.Tests 的 X11 靶机用例，本机靶机镜像旧）。之后各节只按改动涉及的测试工程记数（如 2026-10-13 `VelaShell.Tests` 2078 通过 / 19 跳过）；`-warnaserror -p:EnforceCodeStyleInBuild=true` 下构建零警告（§194） |
 | 测试项目 | 11 个 MSTest 项目 + 1 个 BenchmarkDotNet 项目（见 §7） |
 | CI | `ci.yml` 三平台矩阵（windows / ubuntu / macos），push `main` 与全部 PR 触发 |
 | 待办 | 见 [`feature-plan.md`](feature-plan.md) |
@@ -89,22 +90,22 @@ timeline
 ## 📖 1. 技术栈现状
 
 > 版本以 `global.json`、`Directory.Build.props`、`src/Directory.Packages.props`、`tests/Directory.Packages.props` 为准；
-> 下表是 2026-09-26 的快照。
+> 下表是 2026-10-13 的快照。
 
 | 项 | 版本 / 说明 |
 | --- | --- |
 | .NET | **net11.0**（2026-07 由 net10 切入）。`global.json` 钉 `11.0.100-rc.1.26425.128` + `rollForward: latestFeature` + `allowPrerelease`；`Directory.Build.props` 开 `EnablePreviewFeatures`、`runtime-async=on`、`LangVersion=preview` |
-| UI | **Avalonia 12.1.3** · ReactiveUI 24.3.0 / ReactiveUI.Avalonia 12.1.2 |
+| UI | **Avalonia 12.1.4** · ReactiveUI 26.0.1 / ReactiveUI.Avalonia 12.1.6 |
 | 停靠 | **VelaDock**（`src/VelaShell/Docking/`，零第三方停靠依赖，已替换 Dock.Avalonia） |
 | SSH / SFTP | **VelaShell.Ssh**（`src/VelaShell.Ssh`，MIT，全托管 async-first；2026-09-22 替换 Tmds.Ssh，§91；09-23 并入本仓库，§92）。只有 `Infrastructure/Ssh/` 直接用它，异常经 `SshInterop` 翻译。密码学原语走 BCL 与 BouncyCastle 2.7.0 |
 | X11 | **VelaShell.XServer**（`src/VelaShell.XServer`，MIT，可嵌入的 X 服务端，§101 起）；Windows 上可选改拉起 VcXsrv |
 | FTP | **FluentFTP 55.0.0**。⚠️ **不要**引 FluentFTP.GnuTLS —— LGPL-2.1-only，与商业授权冲突 |
-| 持久化 | **SonnetDB.Core 3.1.0**，嵌入式多模型（文档 + 时序），`~/.velashell/sonnetdb`；LiteDB 已移除 |
+| 持久化 | **SonnetDB.Core 4.0.0**，嵌入式多模型（文档 + 时序），`~/.velashell/sonnetdb`；LiteDB 已移除 |
 | IP 归属地 | MaxMind.Db 5.2.0（只是 mmdb 读取库，数据是 DB-IP Lite City，CC BY 4.0） |
-| 插件契约 | **VelaShell.PluginSdk 2.0.5**（nuget.org 包，**不做工程引用**，版本 pin 在 `src/` 与 `tests/` 两份 `Directory.Packages.props`） |
+| 插件契约 | **VelaShell.PluginSdk 2.0.9**（nuget.org 包，**不做工程引用**，版本 pin 在 `src/` 与 `tests/` 两份 `Directory.Packages.props`） |
 | 打包 | 便携 zip / tar.gz（6 RID）+ `.AppImage` / `.deb` / `.rpm` / `.dmg` / MSIX；应用内自更新走 GitHub Releases 的 `latest.json`（Velopack、WiX MSI 均已移除） |
 | 依赖管理 | 集中式包管理（`ManagePackageVersionsCentrally`）+ SourceLink。⚠️ `plugins/` 下的插件**不走**中央包管理，版本写在各自 csproj |
-| 测试 | **MSTest 4.4.1**（已从 xUnit 全量迁移，FluentAssertions 已移除）· Avalonia.Headless 12.1.3 · BenchmarkDotNet 0.16.0-preview.2 |
+| 测试 | **MSTest 4.5.1**（已从 xUnit 全量迁移，FluentAssertions 已移除）· Avalonia.Headless 12.1.4 · BenchmarkDotNet 0.16.0-preview.2 |
 | AI 栈 | Microsoft.Extensions.AI 10.10.0 · ModelContextProtocol.Core 2.2.0 · LiveMarkdown.Avalonia 2.4.3（含 Mermaid / Math / Svg）—— 只在 AI 插件里 |
 
 ## 📖 2. 解决方案分层
@@ -175,8 +176,8 @@ graph RL
 ## ✅ 4. SSH / PTY
 
 - `SshTerminalBridge` 只读循环，**不向 shell 预写 `\n`**（修过「末行提示符重复」）。它的 `DataReceived` 旁路是记录专用的。
-- **PTY 实时改窗**：控件布局时抛 `ITerminalEmulator.PtySizeChanged(cols, rows)` → `TerminalTabViewModel` 后台转发 →
-  `IShellStreamWrapper.Resize` → `Infrastructure/Ssh/ShellStreamWrapper` 发 `window-change`。像素字段目前恒为 0（见 `feature-plan.md`）。
+- **PTY 实时改窗**：控件布局时抛 `ITerminalEmulator.PtySizeChanged`（行列 + 物理像素的 `PtySize`，§125）→ `TerminalTabViewModel` 后台转发 →
+  `IShellStreamWrapper.Resize` → `Infrastructure/Ssh/ShellStreamWrapper` 发 `window-change`。
 - **连接失败不崩**：`MainWindowViewModel.TryConnectProfileAsync` 捕获认证 / 网络 / 超时，映射成本地化提示；
   `Program.cs` 挂了 `UnobservedTaskException` 与 `UnhandledException` 兜底。
 - **连接持久化**：`SonnetDbSessionRepository`（`session_profiles` 集合，密码 AES-256-GCM）；最近连接取 `conn_history` 时序。
@@ -1134,1867 +1135,711 @@ SSH 库此前没有成文的 API 规范，这次写进 `src/VelaShell.Ssh/AGENTS
 
 ## 🚧 118. 2026-09-26 窗口外框跨平台适配：全部窗口按平台走原生机制（用户需求）
 
-**一、问题**：弹窗原是无装饰透明窗 + 卡片 16px 边距里画阴影；Linux 合成器沿整个窗口矩形描边、模糊，边距成了一圈磨砂空白；macOS 上成了没阴影的直角矩形。Windows 的 DWM 什么都不加，所以正常。
-
-**二、做法**：新增 `Views/WindowChrome.cs`（构造时 `WindowChrome.Apply(window, Main / Dialog / Tool)`，按平台设装饰并挂样式类）与 `Themes/WindowChrome.axaml`（卡片外观）。Windows 不变；macOS 用 `Full` / `BorderOnly` + 扩展客户区拿原生红绿灯、圆角与阴影；原生 Wayland 用 `BorderOnly` + 装饰主题 `VelaWaylandWindowDecorations`，经 `set_window_geometry` 告诉合成器真实范围；X11 一律不透明直角。XAML 里写死的外框属性全删（本地值压过样式）；全部窗口标题栏统一 28（设置窗口与消息框例外）。
-
-**三、依据**：逐条对过 Avalonia 12.1.3 源码。当年 `75800523` 在 Windows 上试 `ExtendClientArea` 失败（托管装饰重复画标题与按钮、按钮点不动、`BorderOnly` 丢 `WS_CAPTION`）；这次 Windows 照旧不启用，只在 macOS（原生外框、没有托管装饰层）与 Wayland（本就是客户端装饰）上用。
-
-**四、经过**：试点在 WSLg（实为 X11、无透明）看似无效而撤回；朋友在 macOS 实机测可以，于是推广到全部窗口，定为新窗口的默认做法。
-
-**五、验证**：Windows 普通态 21 扇窗无头截图改前改后逐字节相同；新增 `WindowChromeTests`、`WindowChromeCoverageTests`。macOS 主窗口等已实机验收，其余待验收项登记在 `feature-plan.md`。
+弹窗原是无装饰透明窗 + 卡片 16px 边距里画阴影：Linux 合成器沿整个窗口矩形描边、模糊，边距成了一圈磨砂空白；macOS 上成了没阴影的直角矩形（Windows 的 DWM 什么都不加，所以正常）。
+- **做法**：统一入口 `Views/WindowChrome.cs`（构造时 `WindowChrome.Apply(window, Main / Dialog / Tool)`，按平台设装饰并挂样式类）+ `Themes/WindowChrome.axaml`。Windows 不变；macOS 用 `Full` / `BorderOnly` + 扩展客户区拿原生红绿灯、圆角与阴影；原生 Wayland 用 `BorderOnly` + `VelaWaylandWindowDecorations`，经 `set_window_geometry` 告诉合成器真实范围；X11 一律不透明直角。XAML 里写死的外框属性全删（本地值压过样式）；标题栏统一 28（设置窗口与消息框例外）。
+- Windows 不用扩展客户区：`75800523` 试过失败（托管装饰重复画标题与按钮、按钮点不动、`BorderOnly` 丢 `WS_CAPTION`）。⚠️ 试点在 WSLg（实为 X11、无透明）看似无效而撤回，macOS 实机测可以才推广到全部窗口，定为新窗口的默认做法。剩余实机验收见 feature-plan.md。
 
 ## ✅ 119. 2026-09-26 状态栏：一排条目对齐到同一条中线（用户反馈）
 
-**一、问题**：`TextBlock` 居中的是行框，行框留白取整行字体的最大值，混进中文（回退到 CJK 字体）整行基线就沉下去；内容区高 23 而控件是偶数高，居中落在半像素上。
-
-**二、做法**：新增 `Controls/CapCenteredTextBlock`：按主字体「H」的高度把基线对到中线并对齐物理像素（走 `RenderTransform`，不影响布局），与字体回退无关；尺寸一律取奇数。
-
-**三、验证**：真实 Windows 截图逐列量墨迹落在中线；新增 `StatusBarAlignmentTests`（按几何量断言，与测试机字体无关）。
+**根因**：`TextBlock` 居中的是行框，行框留白取整行字体的最大值，混进中文（回退到 CJK 字体）整行基线就沉下去；内容区高 23 而控件是偶数高，居中落在半像素上。新增 `Controls/CapCenteredTextBlock`：按主字体「H」的高度把基线对到中线并对齐物理像素（走 `RenderTransform`，不影响布局），与字体回退无关；尺寸一律取奇数。
 
 ## ✅ 120. 2026-09-26 标题栏：X Server 按钮挪到功能按钮组最后（用户需求）
 
-按用户要求把 X Server 按钮挪到标题栏功能按钮组最后（紧挨最小化）；只改 `TitleBarView.axaml` 的顺序，velashell-docs `host/交互与界面规格.md` §4A.2 同步。
+按用户要求把 X Server 按钮挪到标题栏功能按钮组最后（紧挨最小化）；只改 `TitleBarView.axaml` 的顺序。文档：velashell-docs `host/交互与界面规格.md` §4A.2。
 
 ## ✅ 121. 2026-09-26 CI：Windows 上反复出现的 IDE0055 —— 工作区一律签出成 LF（用户反馈）
 
-**一、现象**：PR #516 的 windows-latest 报 4 条 IDE0055，ubuntu 通过，本地不报。
-
-**二、原因**：`.gitattributes` 只有 `* text=auto`，Git for Windows 默认 `core.autocrlf=true` 签出 CRLF，而 `.editorconfig` 是 `end_of_line = lf`；Roslyn 在要重建空白的位置（`=>` 与表达式体之间夹注释）按 `end_of_line` 写换行，CRLF 就报。本地不报是 IDE 早把那几行「修」成了 LF。
-
-**三、做法**：`.gitattributes` 改 `* text=auto eol=lf`；`*.ps1` 等写 `!eol`（带 shebang 的脚本在 Linux 上 CRLF 跑不了），`*.cmd` / `*.bat` 定 CRLF；`CONTRIBUTING*.md` 补一句旧工作区要重新签出。
-
-**四、验证**：LF 工作树上跑 CI 同款构建 0 警告、测试无失败。
+PR #516 的 windows-latest 报 4 条 IDE0055，ubuntu 通过，本地不报。**根因**：`.gitattributes` 只有 `* text=auto`，Git for Windows 默认 `core.autocrlf=true` 签出 CRLF，而 `.editorconfig` 是 `end_of_line = lf`；Roslyn 在要重建空白的位置（`=>` 与表达式体之间夹注释）按 `end_of_line` 写换行，CRLF 就报。本地不报是 IDE 早把那几行「修」成了 LF。
+**做法**：`.gitattributes` 改 `* text=auto eol=lf`；`*.ps1` 等写 `!eol`（带 shebang 的脚本在 Linux 上 CRLF 跑不了），`*.cmd` / `*.bat` 定 CRLF；`CONTRIBUTING*.md` 补一句旧工作区要重新签出。
 
 ## ✅ 122. 2026-09-26 CI：修掉 PR #516 上剩下的两条红用例（用户反馈）
 
-§121 之后 CI 剩两条红用例，都与行尾无关，只改测试：
-- macOS：`TunnelPanelUiTests` 的帮助对话框用例写死了 §118 之前的 `WindowDecorations.None`，改为按 `WindowChrome.PlatformOf(dialog)` 取期望值。
-- Windows：`StatusBarViewModelTests.StartUptimeTimer_UpdatesUptimeProperty` 靠真实时钟，runner 忙就红；改注入 `ISequencer`、用 `VirtualClock` 手动推进并断言精确值。
+都与行尾无关，只改测试：macOS 上 `TunnelPanelUiTests` 写死了 §118 之前的 `WindowDecorations.None`，改按 `WindowChrome.PlatformOf(dialog)` 取期望值；Windows 上 `StatusBarViewModelTests` 的运行时长用例靠真实时钟、runner 忙就红，改注入 `ISequencer`、用 `VirtualClock` 手动推进。
 
 ## ✅ 123. 2026-09-26 复制被自动换行折开的长行，粘出来成了好几行（#517）
 
-**一、现象**：`cat` 出一行 RSA 公钥，在终端里选中复制，粘到文件里变成多行；别的终端复制同一段再粘进 VelaShell 没问题，所以坏在复制。
-
-**二、原因**：引擎在自动换行时本就给行打了 `TerminalRow.Wrapped`（改列宽重排靠它），但 `VelaTerminalControl.AppendSpanText` 不看这个标志，每个物理行后面都补一个 `\n`。双击选词、「保存输出到文件」（`GetBufferText`）同样只按物理行走：前者选不全跨行的长词，后者导出的文件同样断行。
-
-**三、做法**：三处都按逻辑行走。线性选区遇到 `Wrapped` 行就接着拼、不断行；折行处显式写入的空格是行中间的内容，不受「去除尾部空格」影响；宽字符在末列放不下、挪到下一行后留在末列的空位不当成空格。块选照旧逐行断开。双击选词在行首 / 行尾沿软换行继续向上 / 向下找；导出缓冲区逐逻辑行去尾空格。
-
-**四、验证**：新增 `SoftWrapCopyTests` 7 条（headless 真事件），其中 5 条在改前的代码上失败；另 2 条（恰好写满一行再显式换行、块选）锁住不该变的行为。`VelaShell.Terminal.Tests` 512 条全过，整个解决方案构建 0 警告。
+**根因**：引擎自动换行时本就给行打了 `TerminalRow.Wrapped`（改列宽重排靠它），但 `VelaTerminalControl.AppendSpanText` 不看，每个物理行后都补 `\n`；双击选词、「保存输出到文件」（`GetBufferText`）同样只按物理行走。
+**做法**：三处都按逻辑行走：线性选区遇 `Wrapped` 行接着拼；折行处显式写入的空格是行中间的内容，不受「去除尾部空格」影响；宽字符挪到下一行后留下的末列空位不当成空格；块选照旧逐行断开；双击选词沿软换行向上 / 向下找。
 
 ## ✅ 124. 2026-09-26 VelaShell.XServer:全库审查的 31 项逐项修掉(用户需求)
 
-§114 审查登记的 31 项(A–E 五组)全部修掉,一项一提交(共 38 个,第 26 项的零碎项分开提),每项配用例、先撤修复确认用例会红;守 `src/VelaShell.XServer/AGENTS.md` 的净室规程。
+§114 登记的 31 项(A–E 五组)全部修掉,一项一提交,每项配用例、先撤修复确认用例会红;守净室规程。
+- **A 卡死与打垮进程**:窗口嵌套限 256 层、每客户端 32768 个,销毁与重画改显式栈;映射只从那棵子树重画(原先 O(d²),256 层的链逐个映射要 8 秒);`DestroyPointerBarrier` 只认指针屏障(原先一个请求就能删掉根窗口);`Region` 按 y 分带线性归并并设块数上限;GLX 的 CallList 计入执行预算、几类绘制参数封顶或裁剪。
+- **B 内存**:未执行请求按字节计(每客户端 32 MB),像素缓冲、属性值、原子、NotifyMSC、GLX 资源全部封顶;XTEST 的 FakeInput 延迟期间挂起该客户端(协议语义,原先每条一个 `Task.Delay`、按下与松开还会乱序)。
+- **C 访问控制**:内置服务端每次启动生成 MIT-MAGIC-COOKIE-1 写进 `.Xauthority`(`XAuthorityFile`,按 xauth 的锁文件约定,停止时只撤自己那一条);Unix 套接字 listen 前设 0600、按 SO_PEERCRED 认本用户;MIT-SHM 重核权限、SendEvent 只放行已登记的事件、日志限速封顶。⚠️ 本机 X 程序经环回 TCP 连进来现在要带 cookie(Xlib 从 `.Xauthority` 自动带,读不到的连不进来)。
+- **D 正确性**:抓取 / 焦点 / crossing 事件按协议补齐;宿主按按钮逐个记按下状态,失去捕获 / 失活时替 X 松开;`FocusTopLevel` 按 ICCCM 输入模型、实现 WM_TAKE_FOCUS;冻结期间设备事件进有上限的队列按序回放。⚠️ XFIXES 多了一个错误码,之后各扩展的错误码顺延一位(客户端经 QueryExtension 取号不受影响,测试里写死的号要跟着改)。
+- **E 性能**:RENDER 在 8888 目标上整数合成(ARGB + a8 遮罩 3.8k → 19.3k 次 / 秒);GLX 单缓冲只拷画过的外接矩形(也不再盖掉窗口里别处 X 画的内容);请求缓冲池化、回复按线程复用写入器(整窗 PutImage CPU 少四成)。⚠️ 这台机器上进程内基准是双峰的(同一份代码能差 1.5 倍,像是线程落在大小核上),前后比较各跑两遍以上。
+- 当时全量 4800 条:4761 通过 / 1 失败 / 38 跳过,失败的是 X11 靶机用例 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`(本机靶机镜像旧,`main` 上同样失败,同 §116)。⚠️ 改测试前先按 CI 的 `dotnet build VelaShell.slnx -c Debug -warnaserror` 构建,否则测试工程的警告到 CI 上才报成错误。
 
-**一、卡死与打垮进程(A 组)**:窗口嵌套限 256 层、每客户端 32768 个,销毁与重画改显式栈;映射 / 取消映射只从那棵子树走起重画(原先从顶层走遍整棵树、每个窗口的可见区域再沿祖先算一遍,映射一个 d 层深的窗口是 O(d²),256 层的链逐个映射要 8 秒,开 PR 之后才发现);`DestroyPointerBarrier` 只认指针屏障(原先对任意 ID 调删除,一个请求就能删掉根窗口),补上 BadBarrier;XIChangeHierarchy 设备 ID 到 255 为止;客户端上限 255;`Region` 改按 y 分带、并 / 交 / 差线性归并,块数上限 16384 加归并预算,客户端要的区域超限回 BadAlloc;GLX 的 CallList 计入执行预算,GenLists / DrawArrays / 线宽 / DrawPixels / CopyPixels / Bitmap 封顶或裁剪。
-
-**二、内存(B 组)**:未执行请求按字节计(每客户端 32 MB);像素缓冲 2²⁶ 像素;属性值 32 MB、客户端建的原子 2¹⁸ 个;XTEST 的 FakeInput 延迟期间挂起该客户端(协议语义,原先每条一个 `Task.Delay`、按下与松开还会乱序)、Present NotifyMSC 每客户端 256 条,断开即取消;GLX 顶点 / 显示列表 / 纹理记账封顶,表面随资源与客户端释放;XC-MISC / X-Resource 的代价封顶。
-
-**三、访问控制(C 组)**:内置服务端每次启动生成 MIT-MAGIC-COOKIE-1,写进 `.Xauthority`(新增 `XAuthorityFile`,按 xauth 的锁文件约定读改写,停止时只撤自己那一条);SSH 连接器改走新增的 `ServeAuthenticatedAsync`;Unix 套接字在 listen 前设 0600,按 SO_PEERCRED 的 uid 认本用户;MIT-SHM 段被别的客户端按 XID 引用时重核权限;SendEvent 只放行核心与已登记扩展的事件;诊断日志放锁之后交出、每秒 50 条,宿主的日志文件每天 64 MB 封顶。⚠️ 本机 X 程序经环回 TCP 连进来现在要带 cookie(Xlib 从 `.Xauthority` 自动带,读不到的连不进来),设置页的说明五语言已同步。
-
-**四、正确性(D 组)**:抓取窗口或 confine-to 不可见时自动解除;焦点事件按协议给 detail、发虚拟事件与 KeymapNotify,抓取激活 / 解除发 Grab / Ungrab 模式的焦点与 crossing,抓取期间 Enter / Leave 只报给抓取方;宿主按按钮逐个记按下状态,失去捕获 / 失活时替 X 松开;`FocusTopLevel` 按 ICCCM 输入模型、实现 WM_TAKE_FOCUS;冻结期间的设备事件并进一个有上限的队列、按到达先后分批回放;CirculateNotify 的 place 写到第 16 字节;MakeCurrent 先备表面再改状态;XKB 锁存、SetMap 键码校验、XI2 的 buttons;零碎 8 项(键盘抓取时的源窗口、CloseDownMode 的 Retain、CopyArea 深度、RENDER 同一缓冲上下重叠、GL_EXT_abgr、RenderLarge 长度、TexSubImage 溢出、RenderMode —— 最后一项对照 GLX 协议规范确认原行为正确,只补注释与用例)。⚠️ XFIXES 多了一个错误码,之后各扩展的错误码顺延一位;客户端经 QueryExtension 取号不受影响,测试里写死的号跟着改了。
-
-**五、性能(E 组)**:RENDER 在 8888 目标上整数合成(线性渐变 Over 4.2k → 7.2k 次 / 秒、ARGB + a8 遮罩 3.8k → 19.3k);GLX 单缓冲每个 Render 请求只拷画过的外接矩形(小三角形 4.2k → 约 46k,也不再盖掉窗口里别处 X 画的内容);请求缓冲池化(`XRequestReader` 自带长度),回复与事件在按线程复用的写入器里拼,指针事件与 GetInputFocus 不分配闭包(整窗 PutImage 1.1k → 1.6k,CPU 少四成);连接建立 30 秒时限。基准脚本加了四个场景与每次请求的分配字节一列。⚠️ 这台机器上进程内基准是双峰的(同一份代码能差 1.5 倍,像是线程落在大小核上),前后比较各跑两遍以上再下结论。
-
-**六、验证**:XServer.Tests 213 条通过,Linux 容器里 Unix 套接字权限与真实 MIT-SHM 的用例也跑过;新增 `XAuthorityFileTests` 与宿主松开按钮的无头用例。全量 4800 条:4761 通过 / 1 失败 / 38 跳过,失败的是 Core.Tests 的 X11 靶机用例 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`,`main` 上同样失败(本机靶机镜像旧,同 §116)。整个解决方案一起跑时 `MiscExtensionTests` 那条 XTEST 延迟用例红过一次:延迟挂着时没法用往返确认 FakeInput 已执行,改为轮询。⚠️ 本地一开始没按 CI 的 `dotnet build VelaShell.slnx -c Debug -warnaserror` 构建,测试工程里四处警告(CS8620 ×3、CA1416)到 PR 的 CI 上才报成错误;改测试之前先用这条命令构建。文档:velashell-docs `xserver/design/architecture.md` §4、§5、§7、§10,补上 §114 欠的「所有 SSH 会话共享一个受信的显示」提醒([velashell-docs#71](https://github.com/VelaShellLabs/velashell-docs/pull/71),两个 PR 互引、一起合)。
+文档:velashell-docs#71(`xserver/design/architecture.md` §4、§5、§7、§10,补上 §114 欠的「所有 SSH 会话共享一个受信的显示」提醒)。
 
 ## ✅ 125. 2026-09-27 SSH PTY 像素尺寸贯通到 `window-change`（`feature-plan.md` 🟢 P3 项）
 
-**一、问题**：`window-change` 的像素字段恒为 0。库这一侧早就不卡（`SshTerminalSize` 四个字段，`pty-req` 与 `window-change` 都照发），卡在宿主：`ITerminalEmulator.PtySizeChanged` 与 `IShellStreamWrapper.Resize` 都只带行列，`ShellStreamWrapper` 只好 `new SshTerminalSize(columns, rows)`。sixel / kitty 图形与按像素排版的 TUI 靠 `ws_xpixel / ws_ypixel` 换算单元格尺寸，拿到 0 就等于「不知道」。
+`window-change` 的像素字段恒为 0：库早就照发 `SshTerminalSize` 四个字段，卡在宿主的 `PtySizeChanged` / `Resize` 只带行列；sixel / kitty 图形与按像素排版的 TUI 靠 `ws_xpixel / ws_ypixel` 换算单元格尺寸。
+- **做法**：`VelaShell.Core.Ssh` 新增 `PtySize`（行列 + 物理像素，0 = 不知道），`ITerminalEmulator` 加 `CurrentPtySize`；SSH 实现带上像素（负数按 0 发：库在构造时会拒绝负数，而这条路即发即忘），ConPTY 与插件流只取行列。
+- **口径**：像素 = 单元格尺寸（DIP）× 行列 × 显示缩放，只算网格本身，不含内边距、侧栏与滚动条（远端拿它除以行列，多算的边就成了误差）。只有像素变了也补报一次（改字号而行列不变、拖到缩放不同的显示器），没变不重复报；`pty-req` 时还没布局、像素为 0，挂流时补推一次覆盖。
+- **不动插件 SDK**：插件视图的 `Resized` 仍是 `Action<int, int>`，经一个具名方法转一道。⚠️ 每次现包 lambda 的话 `-=` 永远摘不掉。
 
-**二、做法**：
-- `VelaShell.Core.Ssh` 新增 `PtySize`（行列 + 物理像素，0 = 不知道）。`PtySizeChanged` 改为 `Action<PtySize>`，`ITerminalEmulator` 加 `CurrentPtySize`；`Resize` 改收 `PtySize`：SSH 实现带上像素（负数按 0 发，库在构造时会拒绝负数，而这条路即发即忘），ConPTY 与插件流只取行列。
-- 像素 = 单元格尺寸（DIP）× 行列 × 显示缩放，只算网格本身，不含内边距、侧栏与滚动条留白（远端拿它除以行列，多算的边就成了误差）。缩放在 UI 线程上缓存一份，`CurrentPtySize` 只读字段，挂流时从哪个线程读都行。
-- 网格没变、只有像素变了也补报一次：改了字号而行列恰好不变（布局走「网格没变」那条路时比对上次报出的尺寸），或拖到缩放不同的显示器（订阅 `TopLevel.ScalingChanged`，挂树 / 离树时随控件换窗口重订）。尺寸没变不重复报。
-- `TerminalTabViewModel` 的尺寸队列改排 `PtySize`；挂流时的补推改读 `CurrentPtySize`，通道打开时 `pty-req` 的像素维持 0（那时还没布局），由这一次覆盖。
-- **不动插件 SDK**：插件视图的 `Resized` 对外仍是 `Action<int, int>`，经一个具名方法转一道，首个订阅者到来时挂、最后一个走时摘 —— 每次现包 lambda 的话 `-=` 永远摘不掉。
-
-**三、验证**：新增 `PtySizeReportingUiTests` 3 条（headless 真控件：当前尺寸带像素、拖大窗口后报出的尺寸像素非零且与新网格一致、只改缩放时正好补报一次且不重复报），把像素宽度改回 0 后三条全红；`TerminalTabViewModelTests` 2 条（挂流补推、控件报出的尺寸原样交给传输）；`ShellStreamWrapperResizeTests` 2 条（像素进 `SshTerminalSize`、负数按 0）；`PluginTerminalViewResizedTests` 1 条（插件收到行列、退订后不再回调）。线上载荷那一段由 `VelaShell.Ssh.Tests` 的「终端尺寸变化发出window_change」覆盖。全量 4809 条：4770 通过 / 1 失败 / 38 跳过，失败的仍是 §124 记过的 X11 靶机用例（本机靶机镜像旧，与本改动无关）；`dotnet build VelaShell.slnx -c Debug -warnaserror --no-incremental` 0 警告。文档：velashell-docs `{zh,en}/host/architecture.md` §9 时序图那一行（[velashell-docs#72](https://github.com/VelaShellLabs/velashell-docs/pull/72)，两个 PR 互引、一起合）。
+文档：velashell-docs#72（中英镜像的 `host/architecture.md` §9）。
 
 ## ✅ 126. 2026-09-27 CI：修掉 PR #522 上两条随调度红的用例（CI 反馈）
 
-两条都与 §125 的改动无关，只改测试：
-- Linux：`FtpSessionStatusTests.ServerGoesAway_TreeDotGoesBackToOffline` 在圆点变绿后立刻拆服务器、再刷新。加一行诊断实测：本机 6 次拆服务器时首次列目录都还没做完，刷新与它撞车（刷新先取消上一次导航，被取消的那次不报错），圆点变不变红就看调度。改为先等 `InitialLoadTask`（同文件第三条用例本来就这么等）；本机连跑 10 次全过，把 `Fault` 里的 `Faulted` 事件去掉时它会红。
-- macOS：`MiscExtensionTests` 的 XTEST 延迟用例按下延迟 150 毫秒、50 毫秒后断言「还没处理」，只留 100 毫秒余量，runner 忙起来 `Task.Delay(50)` 就睡过头。延迟改为 1 秒。
+两条都与 §125 无关，只改测试：Linux 上 `FtpSessionStatusTests` 在圆点变绿后立刻拆服务器再刷新，首次列目录常常还没做完，刷新先取消上一次导航（被取消的那次不报错），红不红看调度，改为先等 `InitialLoadTask`；macOS 上 `MiscExtensionTests` 的 XTEST 延迟用例只留 100 毫秒余量，延迟改为 1 秒。
 
 ## ✅ 127. 2026-09-27 标签条：自动宽度、固定标签页、多行显示（#521）
 
-**一、问题**：开的标签一多，标签条只能靠右端的 `◀ ▶` 与「所有标签页」下拉翻找；每个标签的宽度钉死在标题原宽上，几个长主机名就能把一排占满（#521 附图：十几个标签，最左边那个已经被挤出去一半）。用户要求参考 Visual Studio：标签自动宽度、可以固定（Pin）标签、右键菜单里能切多行显示，并补齐「关闭所有 / 关闭左侧 / 关闭右侧 / 关闭其他」。
+标签一多只能靠 `◀ ▶` 与下拉翻找，宽度钉死在标题原宽上；用户要求参考 Visual Studio。
+- **自动宽度**：排版面板换成 `DockTabPanel`：放不下先把**最宽的那几个**削到同一宽度（VS Code 的 `tabSizing: shrink`，短标签不动），下限 120px，到下限仍放不下才溢出滚动。⚠️ 单排时外层 ScrollViewer 给的是无穷宽，面板改盯视口宽度；封顶宽度取整到整像素，免得小数累加超出半像素把溢出按钮闪出来。
+- **多行显示**：`DockWorkspace.MultiRowTabs`，整个工作区一个开关，只对顶置标签条生效；入口是标签右键菜单与 设置 → 外观 → 窗口（`AppearanceOptions.MultiRowTabs`，默认关）。⚠️ 菜单开在弹出层里、数据上下文是文档，绑不到工作区，改由 `DockTabItemBase` 打开菜单时按名字找到这一项填状态。
+- **固定标签页**：`DockDocument.IsPinned`（改顺序归 `DockWorkspace.SetPinned`），固定的永远排在组最前，移动落点由 `ClampInsertIndex` 收进合法区间，「连接中」占位换真标签时交接固定状态。批量关闭绕开它、中键关不掉，冲着它本人的「关闭」与 `Ctrl+W` 照常；× 换成图钉。与原 Dock 的 Pin（钉到侧边自动隐藏，产品红线）不是一回事，那一条仍不做。固定状态与分屏布局一样不落盘，只活在本次运行里（剩余项见 feature-plan.md）。
+- 五种标签的右键菜单补齐「关闭其他 / 所有 / 左侧 / 右侧」；`DESIGN.md` 早写着「`ScrollIntoView` on activation」却没实现，现在激活标签在下一次布局回调里 `BringIntoView`。
 
-**二、做法**：
-- **自动宽度**：标签条的排版面板由 `StackPanel` 换成新增的 `DockTabPanel`。放得下按标题原宽；放不下先把**最宽的那几个**削到同一宽度（VS Code 的 `tabSizing: shrink`，短标签原样不动），下限 120px，削到下限仍放不下才溢出滚动。单排时外层 ScrollViewer 量内容给的是无穷宽，面板改为盯着它的视口宽度重新量；两种结局（收窄后放得下 / 到下限仍溢出、溢出按钮出现后视口更窄）都是稳态，不会振荡。封顶宽度取整到整像素，免得小数累加超出视口半像素把溢出按钮闪出来。五种标签的模板从一排 `StackPanel` 改成三栏 `Grid`（状态与标识 | 标题 | 右端按钮），只有标题那一栏伸缩、出省略号。
-- **多行显示**：`DockWorkspace.MultiRowTabs`，整个工作区一个开关、所有窗格一起变，只对顶置的标签条生效。开了之后面板换行，每行 35px，标签条随行数长高；激活标签的强调线原先 Y 写死 0，改为取标签所在那一行的顶。入口两个、同一个值：五种标签右键菜单里的勾选项（打开菜单时由 `DockTabItemBase` 按名字找到这一项填状态 —— 菜单开在弹出层里、数据上下文又是文档，绑不到工作区；侧边标签条上置灰），与 设置 → 外观 → 窗口 的开关（新增 `AppearanceOptions.MultiRowTabs`，默认关）。`MainWindowViewModel` 两头对齐：设置 → `ApplyShellPreferences` 铺到布局；布局变了而设置不是这个值才写回，回灌时不会再存一遍。拖放的插入位与插入线改为按行算：先找指针所在那一行、行内比中线，线只画一行高。
-- **固定标签页**：`DockDocument.IsPinned`（setter 只在程序集内，改顺序的事归 `DockWorkspace.SetPinned`）。固定的永远排在组的最前面：固定 = 挪到固定区末尾，取消固定 = 挪到普通区开头；`MoveDocument` / 跨组 `DockTo` 用 `ClampInsertIndex` 把落点收进合法区间，拖拽插入线也画在收过之后的位置；`ReplaceDocument` 把固定状态交给接手的文档（「连接中」占位 → 真标签）。「关闭其他 / 所有 / 左侧 / 右侧」绕开固定标签，中键关不掉它；冲着它本人的「关闭」与 `Ctrl+W` 照常生效。固定标签右端的 × 换成图钉，点一下取消固定；两枚按钮的外观抽成 `DockStyles.axaml` 的 `Button.tab-end`。与原 Dock 的 Pin（钉到侧边自动隐藏，产品红线）不是一回事，那一条仍不做；固定状态与分屏布局一样不落盘（记进 `feature-plan.md` 布局持久化那一项）。
-- **右键菜单**：「关闭其他 / 所有 / 左侧 / 右侧」原本就在终端、SFTP、工作台三种标签上；插件面板标签与「连接中」占位标签缺左侧 / 右侧，这次补齐。五种标签都加了「固定标签页 / 取消固定标签页」（按状态二选一）与「多行显示标签页」。
-- **激活标签滚进可视区**：`DESIGN.md` 早就写着「`ScrollIntoView` on activation」，实际没有实现 —— 从「所有标签页」下拉里挑一个溢出区里的标签，它被激活了却还在视口外。现在激活标签变化（以及标签条换了摆法）后，在下一次布局回调里 `BringIntoView`。
-- 快捷键目录里「标签页 + 中键 = 关闭」加了条件「固定的标签页除外」（`Sc_NoteNotPinned`）。新增本地化键 `Dock_PinTab` / `Dock_UnpinTab` / `Dock_MultiRowTabs` / `SetAppear_MultiRowTabsDesc` / `Sc_NoteNotPinned`，五份 resx 齐。
-
-**三、验证**：新增 `DockPinnedTabsTests` 10 条（固定 / 取消固定的落位、四种批量关闭绕开固定标签、显式关闭照常、组内重排与跨组移动守顺序、`ClampInsertIndex` 同组跨组同一口径、占位换真标签接手固定、`MultiRowTabs` 通知）；`DockTabStripUiTests` 7 条 headless 真控件（收窄只削长标签且不再溢出、标题出省略号而 × 还在；多行换行、标签条按行长高、强调线跟到第三行、切回单行；侧边标签条不受多行影响；固定标签显示图钉、中键不关、点图钉取消固定；右键真点开菜单读到并切换工作区开关、侧边时置灰；激活溢出区的标签滚进视口）；`MainWindowViewModelTests` 1 条（设置铺到布局、菜单切换写回一次、设置页保存回灌不多存）；`ModelSerializationTests` 1 条。原有 `TabStripWheel_ScrollsTabs_OnlyWhenTheyOverflow` 假定标签条从开头起步，而最后加进来的标签是激活的、现在会被滚进视口，改为先激活第一个。像素对照：同一场景（终端 + 两个插件标签，不拥挤）在改前改后各截一帧，等 120ms 的配色过渡走完后两帧 SHA-1 相同 —— 三栏 `Grid` 与原来的 `StackPanel` 在不收窄时逐像素一致（不等过渡走完两帧会差在激活标签标题的前景色上：旧代码在 `Initialize` 里换 `ItemsPanel` 会把标签多建一遍，截帧时过渡进度不同）。`VelaShell.Tests` 1526 通过 / 8 跳过；`VelaShell.Core.Tests` 531 通过 / 1 失败 / 2 跳过，失败的仍是 §124 记过的 X11 靶机用例（本机靶机镜像旧，与本改动无关）。文档：velashell-docs `{zh,en}/host/` 的 交互与界面规格 §4B（§4B.2、§4B.3 与新增 §4B.5）、dock-replacement-plan（产品红线里的 Pin 注明是哪一种）、settings-audit（§9.2 与第八批）、快捷键参考（中键关闭的条件）（[velashell-docs#73](https://github.com/VelaShellLabs/velashell-docs/pull/73)，两个 PR 互引、一起合）。
+文档：velashell-docs#73（中英镜像的 交互与界面规格 §4B、dock-replacement-plan、settings-audit、快捷键参考）。
 
 ## ✅ 128. 2026-09-28 SFTP 双栏支持两侧都是远程(#524)
 
-**一、问题**:独立 SFTP 标签固定是「本地 + 远程」。两台服务器之间搬文件只能先下到本机再传上去,中间还落一次盘;同会话的「复制到」也一样经临时文件(`ISftpService.CopyAsync` 的注释写的是「先下载到内存」,与实现不符,顺手改了)。
+两台服务器之间搬文件原先要先落一次本机盘;同会话「复制到」也经临时文件。
+- **入口**:资源管理器 Ctrl(macOS ⌘)单击组成「双选」,恰好两条、先选的在左,第三条顶掉最早那条;列表控件仍是单选,双选由 `SessionTreeViewModel.DualSelection` 自己记,Ctrl 单击在行的 `PointerPressed` 里置 `Handled`。右键双选里的行在**按下**时换成双选菜单,原菜单一项没改。
+- **连接与文档**:`OpenDualSftpDocumentAsync` 依次连两条,**任一条没连上就整体回滚**;`DualSftpDocument` 两栏各一个 `FileBrowserViewModel`(基类 `SftpDocumentBase`),两条连接归文档所有、关闭一起断,状态灯取较差的一条;启动恢复会话不恢复双栏。
+- **中转**:`ISftpService.UploadStreamAsync` + `Core/Sftp/RemoteRelay`(先 stat 源再开读流喂给目标),`TransferType.Relay` 走原有传输管线,冲突检查同上传。⚠️ **源在开始写之前就读不到时不清理目标** —— 否则「清理半截文件」会删掉用户原有的同名文件。
+- **取消不再被报成「中断,可续传」**:`VelaSftpClientWrapper.UploadAsync` 用 `await using` 包远端流,取消时在途 WRITE 被记成写入失败、关流异常把真正的取消顶掉;改为照发 CLOSE、吞掉关流异常、如实抛 `OperationCanceledException`。⚠️ 这条路径没有自动化用例。
+- **中转断点续传**:口径同上传,源须可 Seek(源是 SFTP 才传续传点),尾部对不上抛 `VelaSftpResumeMismatchException`;FTP 目标交给 FluentFTP 的 Resume。半截文件与上传一致(开着续传就保留)。
+- **比较目录**:两栏当前层按大小与修改时间比较(FTP 按推断出的时间精度);不做 SHA-256,也不提供同步窗口(那套按「本地 ↔ 远端」设计,剩余项见 feature-plan.md)。
+- **否决在 A 上 `scp` / `rsync` 直连 B**:要在 A 上持有 B 的凭据或转发 agent、A 要能直连 B、B 的指纹要在 A 上被信任,失败原因多在第三台机器上,用户无从排查。
+- 插件协议这次挡在外;SDK 新增可选接口 `IProtocolStreamUpload`(只增不改,`apiLevel` 不变,velashell-plugin-sdk#28),宿主接入见 §129。
 
-**二、做法**:
-- **入口**:资源管理器 Ctrl(macOS 上 ⌘ 也认)单击组成「双选」,恰好两条、先选的在左;选满两条再点第三条,最早那条出局、其余顺延;Ctrl 点双选里的一条把它移出,剩一条退回普通单选。列表控件仍是单选 —— 双选由 `SessionTreeViewModel` 自己记(`DualSelection`,不变式:0 或 2 条),Ctrl 单击在行的 `PointerPressed` 里处理并置 `Handled`,不让列表按它的单选规则再改一遍。普通单击、选中挪到双选之外、折叠把其中一条收进去,双选都结束。右键双选里的行,在右键**按下**时把行的 `ContextMenu` 换成资源里那份只有一项的双选菜单,右键别的行再换回原菜单(`ConditionalWeakTable` 记着每行原来那份)——原菜单一项没改。混进插件协议时菜单项置灰,下面一行说明原因。同一条配置不可能被选两次(一条配置在树上只有一个节点)。
-- **连接**:`MainWindowViewModel` 把 SSH 与 FTP 两条「连上一条会话」的循环(缺凭据弹框、认证重试三次、FTPS 证书信任)抽成 `ConnectSshDocumentSessionAsync` / `ConnectFtpDocumentSessionAsync`,单栏的两条打开流程改为调它们,行为不变。`OpenDualSftpDocumentAsync` 依次连两条,**任一条没连上就整体回滚**:已连上的那条断开,失败进占位标签的失败卡片、取消则撤掉占位。占位标签(`ConnectingDocument` 新增可选显示名)写「左 ⇄ 右」。
-- **文档**:新增 `SftpDocumentBase`(标签页外观、关闭收口、退出排空都按它处理)与视图模型的公共面 `ISftpDocumentContent`(标题、状态、全部会话 id、`CloseAsync`);`SftpDocument` 改为派生自它,`SftpDockTabItem` 与 `DockGroupControl` 的模板改绑基类(`ViewModel.Status` → `Content.Status`),关标签时把 `SessionIds` 里的每一条都从树的状态册子上摘掉。新增 `DualSftpDocument` / `DualSftpDocumentViewModel` / `DualSftpDocumentView`:两栏各是一个 `FileBrowserViewModel`,各包一层 `SerializedSftpService`,两条连接都归文档所有、关闭时一起断开(一条断开抛错也不耽误另一条);状态灯取两条中较差的一条;工具条是「比较目录」「复制到右栏 ›」「‹ 复制到左栏」。启动时恢复会话只记单栏文档,双栏不恢复。
-- **中转**:`ISftpService` 新增 `UploadStreamAsync`(从流上传,流归调用方,长度单独给;续传时源必须可 Seek)。SFTP 走与 `UploadFileAsync` 同一条写入路径(限速按上传方向、保留时间戳);FTP 包一层报出已知长度、不可 Seek 的外壳交给 FluentFTP,「服务器忙」重试时源流已被读过又倒不回去就如实报错;插件协议如实抛不支持;路由与串行化各加一行透传。`Core/Sftp/RemoteRelay` 先 stat 源(进度分母、修改时间)再打开读流喂给目标。`TransferType` 新增 `Relay`:`FileBrowserViewModel.DualPeer` 指向另一栏,`ReceiveFromPeerAsync` 递归规划(目录链接口径同下载)后走原有的传输管线,冲突检查与上传同一套(`WritesRemote`),失败可重试。**源在开始写之前就读不到时不清理目标**(`RemoteRelay` 的 `writing` 回调)—— 否则「清理半截文件」会把用户原有的同名文件删掉。拖放:远程行拖拽的载荷里没有会话,`FileBrowserView` 在进程内记下这次拖拽来自哪一栏,只接受恰好是本栏 `DualPeer` 的来源。传输浮窗方向记 `⇄`,传输日志记 `RELAY`(同会话复制原先被记成 `DOWNLOAD`,改为 `COPY`)。
-- **取消不再被报成「中断,可续传」**(实测反馈):`VelaSftpClientWrapper.UploadAsync` 原先用 `await using` 包远端流。取消时在途的 WRITE 带着同一个令牌被记成写入失败,关流随即抛「写入 … 时中断。已连续确认 N 字节,从这里续传即可」,把真正的取消顶掉了(上层看令牌已取消又改判回取消,但异常链与日志里只剩那条)。改为取消时照发 CLOSE、吞掉关流的异常、如实抛 `OperationCanceledException`;真失败仍照原样由关流报出带精确字节数的中断。库本身未改。⚠️ 这条路径没有自动化用例:内存 SFTP 服务端在 `VelaShell.Ssh.Tests` 里,够不着宿主的 Infrastructure,Docker 靶机本机没起。
-- **中转支持断点续传**(用户要求,起因是取消后目标上的半截被清掉,而库的消息却说可以续传):口径与上传相同。`UploadStreamAsync` 加 `resumeOffset`(续传时源必须可 Seek,否则抛 `ArgumentException`);SFTP 把原先只认本地路径的 `ResolveUploadResumeAsync` 拆出一个认流的重载 —— 此刻的远端长度、回退 `ResumeSafetyMargin`、比对尾部,对不上抛 `VelaSftpResumeMismatchException`,没有可续的就把源倒回开头整份重传;FTP 交给 FluentFTP 的 Resume 模式。`RemoteRelay` 只在源流可 Seek(源是 SFTP)时把续传点传下去,FTP 源整份重传。`FileBrowserViewModel` 的续传探测对 Relay 生效(源长度从另一栏那台机器 stat),「目标变了」改名重传时带上源端;清理半截文件回到与上传一致(开着续传就保留),先前「中转一律清理」的特例撤掉。
-- **比较目录**:两栏当前层按大小与修改时间比较,任一栏是 FTP 时按推断出的时间精度;不做 SHA-256,也不提供同步窗口(那套按「本地 ↔ 远端」设计,记进 `feature-plan.md`)。
-- **不做在 A 上 `scp` / `rsync` 直连 B**:要在 A 上持有 B 的凭据或转发 agent、要 A 能直连 B、B 的指纹要在 A 上被信任,失败原因多在第三台机器上,用户无从排查。
-- **插件 SDK**:velashell-plugin-sdk 新增可选接口 `IProtocolStreamUpload`(与 `IProtocolChoiceSource` 同一种兼实现方式,只增不改,`apiLevel` 不变,[velashell-plugin-sdk#28](https://github.com/VelaShellLabs/velashell-plugin-sdk/pull/28)),**未发版**;宿主在发版后接入,记进 `feature-plan.md`。
-
-**三、验证**:新增 `SessionTreeDualSelectionTests` 10 条(配对、第三条顶掉最早的、移出退回单选、分组不参与、选中挪出 / 折叠结束双选、事件按左右顺序、插件协议置灰);`SessionTreeDualSelectionUiTests` 2 条 headless 真指针输入(Ctrl 单击组成双选、右键弹双选菜单且绑到 `OpenDualSftpCommand`、右键别的行换回原菜单、普通单击结束双选),去掉 Ctrl 分支里的 `e.Handled = true` 后两条全红;`DualSftpDocumentViewModelTests` 12 条(文件与目录经 `UploadStreamAsync` 中转、不经本地文件、没有另一栏不动作、跳过策略、源读不到时不删目标、写到一半失败时开着续传就保留 / 关着就清理、目标有半截时从那里续而不弹冲突框、目标已是全长时按冲突处理、关闭时两条都断、同配置被拒、状态取较差、比较目录选中结果);`DualSftpOpenFlowTests` 4 条(两条都连上建出文档且关闭时两条都断、第二条失败 / 取消时第一条被断开且不建文档、同配置被拒);`RemoteRelayTests` 10 条(内容原样搬过去、源不在时不碰目标、源流被释放、SFTP 从流上传不关调用方的流并对齐修改时间、源可 Seek 时传下续传点 / 不可时整份重传、SFTP 从流续传按回退后的安全点接着写、尾部对不上抛不一致、目标不在时倒回源开头整份重传、续传要求源可 Seek)。全量:`VelaShell.Tests` 1519 通过 / 43 跳过,`Core.Tests` 532 / 12,`Infrastructure.Tests` 534 / 4,`Plugin.Ai.Tests` 587,其余工程全过;`dotnet build VelaShell.slnx -c Debug -warnaserror --no-incremental` 0 警告。没在真实的两台服务器上手动跑过中转。文档:velashell-docs `{zh,en}/host/` 的 交互与界面规格(§3、新增 §6.2、§12)、SFTP 双栏与 WinSCP 差距分析(新增第八节)、`{zh,en}/sdk/sdk-reference.md` 版本表([velashell-docs#74](https://github.com/VelaShellLabs/velashell-docs/pull/74),两个 PR 互引、一起合)。
+文档:velashell-docs#74(中英镜像的 交互与界面规格 §3 / §6.2 / §12、SFTP 双栏与 WinSCP 差距分析第八节、sdk-reference 版本表)。
 
 ## ✅ 129. 2026-09-28 插件的文件协议进双栏远程、插件流式上传接线(#524 后续,用户需求)
 
-**一、问题**:§128 把插件协议挡在双栏远程之外,因为插件契约没有从流上传。SDK 2.0.6 发布了可选接口 `IProtocolStreamUpload`,宿主却还一律报不支持;S3 这类对象存储与 SFTP 服务器之间互相倒文件是正经场景。
+SDK 2.0.6 发布了 `IProtocolStreamUpload`,S3 这类对象存储与 SFTP 服务器之间互相倒文件是正经场景。
+- **插件流式上传**:`PluginProtocolFileService.UploadStreamAsync` 在协议兼实现了该接口时转调,否则照旧报不支持;流式下载本来就有(`OpenReadAsync`)。
+- **进双栏**:树只认得连接类型,宿主经 `SessionTreeViewModel.DualSftpFilter` 补判(排掉工作台,不装载插件);终端协议(Telnet…)要激活后才认得出,打开时报「不是文件协议」并回滚另一条。没实现流式上传的插件栏只能作源:往它那边的复制按钮置灰、拖放不接,代码调用报「不能接收」而不是静默。
+- **修 §128 留下的静默覆盖**:续传探测看到「目标比源短」就跳过同名冲突询问,源回不了头(FTP 的数据连接)时 `RemoteRelay` 又悄悄整份重传 —— 那个短文件若是用户自己的另一个同名文件就被覆盖了。改为源不可 Seek 时抛 `VelaSftpResumeMismatchException` 交回同名冲突策略;插件目标被要求续传时(SDK 的流式上传不续传)同样处理。
 
-**二、做法**:
-- **插件流式上传**:`PluginProtocolFileService.UploadStreamAsync` 在协议实现兼实现了 `IProtocolStreamUpload` 时转调它(进度经 `ProgressBridge`),否则照旧抛不支持。流式下载本来就有(`IProtocolFileSystem.OpenReadAsync`)。
-- **资源管理器**:`SessionTreeNodeViewModel.CanOpenInDualSftp` 放开 `ConnectionType.Plugin`;树只认得连接类型,所以宿主经新增的 `SessionTreeViewModel.DualSftpFilter` 补一道判断(`MainWindowViewModel.CanOpenInDualSftp`:插件协议里排掉工作台,同步、不装载插件)。终端协议(Telnet…)要激活后才认得出,打开时报「不是文件协议」并回滚另一条。双选说明文案改为「只有 SSH、SFTP、FTP 与插件的文件协议可以并排打开」。
-- **连接**:把插件协议的连接循环(匿名访问判定、认证重试、证书信任)抽成 `ConnectPluginDocumentSessionAsync`,单栏插件流程改用它,行为不变;双栏经 `ConnectPluginForDualAsync` 先解析协议、只接文件协议,并记下这一栏能否接收流式上传与协议描述。
-- **双栏**:`DualSftpEndpoint` 多了 `Protocol` / `AcceptsStreamedUploads` / `InvokeProtocolAction`。插件栏带协议的右键动作;左栏是插件时标签图标用插件自报的那个。接收不了流式上传的一栏(插件没实现那一面)只能作为源:`FileBrowserViewModel.AcceptsStreamedUploads` 为 false,往它那边的复制按钮置灰、拖放不接,代码调用 `ReceiveFromPeerAsync` 报「不能接收」而不是静默。
-- **修一个 §128 留下的静默覆盖**:续传探测看到「目标比源短」就跳过同名冲突询问;源回不了头(FTP 的数据连接)时 `RemoteRelay` 原先悄悄退回整份重传 —— 若那个短文件其实是用户自己的另一个同名文件,就被不经询问地覆盖了。改为源不可 Seek 时抛 `VelaSftpResumeMismatchException`(新文案 `SftpSvc_ResumeUnverifiable`),交回同名冲突策略,与「核实了但对不上」同一条路;插件目标被要求续传时(SDK 的流式上传不续传)同样处理。目标在抛出之前没被碰过,不会被当成半截文件清掉。
-
-**三、验证**:新增 `PluginProtocolTests` 3 条(转调兼实现了该接口的插件并桥接进度、没实现时报不支持、被要求续传时报核实不了且一个字节不写);`DualSftpOpenFlowTests` 4 条(真注册表 + 真会话服务:能接收的插件栏、只能作源的插件栏及两个方向按钮的可用性、终端协议被拒且 SSH 那条被断开、判断函数放行 SSH 与插件文件协议);`DualSftpDocumentViewModelTests` 2 条(不能接收的一栏按钮置灰且拒绝搬入、插件栏带右键动作);`SessionTreeDualSelectionTests` 改 1 加 1(插件文件协议能进双选、宿主判断能排掉);`RemoteRelayTests` 改 1 加 1(源不可 Seek 被要求续传时报核实不了且不碰目标、不续传时照常流式)。文档:velashell-docs `{zh,en}/host/` 交互与界面规格 §3 / §6.2、SFTP 双栏与 WinSCP 差距分析 8.2,`{zh,en}/sdk/sdk-reference.md` 把 TBD 换成 2.0.6([velashell-docs#75](https://github.com/VelaShellLabs/velashell-docs/pull/75),两个 PR 互引、一起合)。
+文档:velashell-docs#75(中英镜像的 交互与界面规格 §3 / §6.2、差距分析 8.2、sdk-reference 填上 2.0.6)。
 
 ## ✅ 130. 2026-09-29 启动时窗口状态「记住上次」也记住窗口位置(#529)
 
-**一、问题**:Windows 上每次打开,主窗口都在屏幕正中。「记住上次」只记宽高与是否最大化,位置一直交给 XAML 里的 `WindowStartupLocation="CenterScreen"`;`AppState.WindowPosition` 是没人读写的旧模型,没有接上。
+原先只记宽高与是否最大化,位置交给 `CenterScreen`。
+- `AppearanceOptions.LastWindowX` / `LastWindowY`(`int?`,屏幕物理像素,`null` = 没记过);与宽高一样是设备本地字段(Gist 同步推送前清空、拉取时保留本机值)。
+- `Services/MainWindowPlacement` 启动时先核实位置还在某块屏幕的工作区里(标题栏顶边在内、下面留得出 32、横向至少重叠 120 逻辑像素),核实不了照旧居中 —— 拔掉副屏后不会开在屏幕外拖不回来。位置先于最大化摆好,于是最大化到上次那块屏。
+- ⚠️ 关闭那一刻常不在普通态(最大化时 `Position` 是最大化后的左上角,最小化时 Win32 报 (-32000, -32000))。Windows 上位置 / 尺寸 / 状态一变就**投递**一次快照、回调里仍是普通态才记 —— 最大化那次的移动事件到达时状态可能还没改,同步读会记错。X11 与 macOS 保证不了这个顺序,只在普通态下关闭时读当下的值。顺手修:从最小化关闭原先把「最大化」记成 false,现按最小化之前的状态记。
 
-**二、做法**:
-- `AppearanceOptions` 新增 `LastWindowX` / `LastWindowY`(`int?`,屏幕物理像素;`null` = 还没记过,0 是合法坐标)。与宽高一样是设备本地字段:Gist 同步推送前清空、拉取时保留本机值。
-- 新增 `Services/MainWindowPlacement`,宽高与最大化的回写也从 `MainWindow.PersistWindowBounds` 挪进来。启动时 `TryRestorePosition` 先核实记下的位置还在某块屏幕的工作区里:标题栏顶边在工作区内、下面留得出 32、横向与工作区至少重叠 120(逻辑像素,按那块屏的缩放换算)。核实不了就照旧居中 —— 拔掉副屏、换了分辨率之后,窗口不会开在屏幕外拖不回来。位置先于最大化摆好,于是最大化到上次那块屏幕,还原时回到上次的普通态位置。
-- 关闭那一刻常常不在普通态:最大化时 `Position` 是最大化后的左上角,最小化时 Win32 报 (-32000, -32000)。Windows 上平时记普通态的位置与尺寸:`PositionChanged`、`ClientSize`、`WindowState` 一变就投递一次快照,回调里仍是普通态才记 —— 最大化那次的移动事件到达时状态可能还没改过来,同步读会把最大化后的左上角当成普通态。于是「挪到副屏 → 最大化 → 关闭」下次最大化到副屏。X11 的窗口状态经属性变更事件另行通知、macOS 进出全屏带过渡,保证不了这个顺序,那两处只在普通态下关闭时读当下的值,最大化 / 最小化时关闭沿用上次记下的(与原先对尺寸的处理一致)。
-- 顺手修:从最小化关闭(任务栏右键「关闭窗口」)原先把「最大化」记成 false,下次以普通态打开;现在按最小化之前的状态记。
-- 设置项说明 `SetAppear_WindowStateDesc` 五语言改为「应用启动时的窗口大小与位置」。
-
-**三、验证**:新增 `MainWindowPlacementTests` 14 条:可达性判定 7 条(屏幕内、副屏拔掉、顶边出界、贴着底边、侧边只露一截、负坐标的副屏、门槛随缩放)、摆放 2 条(headless 屏幕内改为手动摆放、屏幕外保持居中)、回写 5 条(普通态关闭、挪过之后最大化、最小化关闭、整次都没处于普通态、不跟踪的平台)。把快照改成同步读、去掉「最小化之前的状态」,各有一条变红。本机双屏(2560×1440 两块并排)用 `--data-root` 指向临时目录实跑五轮,全部符合预期:挪到副屏关闭 → 下次开在副屏原处;副屏上挪过再最大化关闭 → 下次在副屏最大化,还原回挪过去的位置;最大化后最小化再关闭 → 下次仍最大化;挪到屏幕外关闭 → 下次居中(另用文件监视确认实跑没碰默认数据根)。macOS / Linux 没有实机跑过。全量:`VelaShell.Tests` 1567 通过 / 16 跳过,`Infrastructure.Tests` 542 / 4,`Core.Tests` 533 / 12;`dotnet build VelaShell.slnx -c Debug -warnaserror` 0 警告。文档:velashell-docs 里只有设置审计提到这一项的名字,没有与行为对不上的描述,不改。
+macOS / Linux 没实机跑过(剩余项见 feature-plan.md)。
 
 ## ✅ 131. 2026-09-29 出厂强调色改为跟随主题(`feature-plan.md` 🟡 P2 项)
 
-**一、问题**:`AppSettings.AccentColor` 出厂是 `#E91E63`,而强调色覆盖的优先级高于主题令牌(`App.ApplyAccent` 遮蔽 `VelaAccent` 三件套)。全新安装下十二套主题各自的强调色(One Dark 的蓝、Nord 的冰青、Gruvbox 的琥珀)都被同一个粉色盖住(§27 记过)。设置页也没有回到主题强调色的入口,只能靠把输入框清空。
-
-**二、做法**:
-- 出厂值改成空串(空 = 不覆盖)。`ThemeService.NormalizeHex` 与 `App.ApplyAccent` 本来就把空值当成「回到当前主题自己的强调色」,运行时一行不用动。
-- **存量配置不迁移**:已经落盘的 `#E91E63` 分不清是用户选的还是旧出厂值,照旧生效。
-- 设置 → 外观 → 主题色:色板前加「跟随主题」按钮(`SetAccentCommand` 传空串);输入框的占位文字也改成「跟随主题」,清空后一眼看得出现在是什么状态。新增本地化键 `SetAppear_AccentFollowTheme`,五份 resx 齐。
-
-**三、验证**:新增 `AccentDefaultsTests` 2 条(新配置跟随主题且落成「无覆盖」、存量色值原样保留)。`VelaShell.Core.Tests` 535 通过 / 12 跳过;`VelaShell.Tests` 里本地化、设置、主题相关的 161 条全过。
+`AppSettings.AccentColor` 出厂是 `#E91E63`,而强调色覆盖优先于主题令牌,全新安装下十二套主题各自的强调色都被同一个粉色盖住(§27 记过)。出厂值改为空串(空 = 不覆盖、跟随主题),运行时一行不用动;**存量配置不迁移**(已落盘的 `#E91E63` 分不清是用户选的还是旧出厂值)。设置 → 外观 → 主题色加「跟随主题」按钮,输入框占位也写「跟随主题」。
 
 ## ✅ 132. 2026-09-29 快捷命令支持变量占位(用户需求)
 
-**一、问题**:快捷命令只有一段固定的 `CommandText`。`kubectl logs -f <pod>`、`journalctl -u <服务> -n 200` 这类每次只差一两个参数的命令,要么存成缺参数的半截、发出去再在终端里补,要么每个参数各存一条。
-
-**二、做法**:
-- **写法**:`{{名字}}` 或 `{{名字=默认值}}`,写在命令正文里 —— `QuickCommand` 的结构不动,Gist 同步与导入导出照旧。解析与替换在 `Core/Models/QuickCommandTemplate`。
-- **别误伤现有的双花括号**:运维命令里本来就有大量 `{{…}}`(`docker inspect -f '{{.State.Status}}'`、kubectl 的 go-template、Ansible 的 `{{ inventory_hostname }}`),所以占位收得很窄:名字只能是字母 / 下划线开头的字母数字下划线连字符,**花括号里不许有空白**;Go 模板的无参动作 `end` / `else` / `break` / `continue` 不算;默认值里不许有花括号与换行。不是占位的一律原样发出。
-- 同名写多处只问一次、用第一个非空的默认值;没填的变量取默认值(没默认值就是空串)。**值里的换行换成空格** —— 快捷命令只发正文不带回车,值里夹一个换行就等于替用户按了回车。
-- **流程**:`QuickCommandExecutionRequest` 多带命令名;`MainWindowViewModel` 收到请求时先解析,没有占位就照旧同步发送;有占位就经窗口注入的 `QuickCommandVariablePrompt` 询问(与 `MultilinePasteConfirmer` 同一种手法,未挂时原样发送),取消则一个字节都不发。弹框期间目标可能断开,发送时再按当下的标签挑一遍。
-- **询问框** `Views/QuickCommandVariablesPrompt`:外壳复用 `MessageDialog.ShowCustomAsync`,每个变量一行(名字 + 预填默认值的输入框,读屏器按变量名念),下方「将发送:」实时预览替换后的整条命令;打开即聚焦第一个输入框,Enter 发送、Esc 取消。
-- 设置 → 快捷命令的新建 / 编辑区,命令输入框下加一行写法说明。新增本地化键 `QuickCmd_VariablesTitle` / `QuickCmd_VariablesPreview` / `QuickCmd_VariablesSend` / `SetSnippets_VariablesHint`,五份 resx 齐。
-- **没覆盖到的**:终端里的命令补全(`CommandSuggestionProvider`)把快捷命令当候选时插入的仍是含占位的原文 —— 补全是按前缀续写正文的,换成替换后的文本会与已键入的前缀对不上。
-
-**三、验证**:新增 `QuickCommandTemplateTests` 13 条(按首次出现排序、同名只问一次且取第一个非空默认值、七种模板语言写法原样不动、非 ASCII 与连字符名字、给值 / 缺值取默认 / Go 动作留在原处、值里的换行压成空格、无占位原样返回);`QuickCommandVariablesFlowTests` 4 条(询问后发替换结果、取消不发也不抢焦点、Go 模板不弹框直接发、弹框期间目标断开就不发);`QuickCommandVariablesPromptUiTests` 2 条 headless 真控件(默认值预填、第一个输入框拿到焦点、预览随输入变、确认返回所填的值;取消返回 null)。把「聚焦第一个输入框」去掉、把发送改回原文,各有一条变红。
+`kubectl logs -f <pod>` 这类每次只差一两个参数的命令,原先只能存半截或每个参数各存一条。
+- **写法**:`{{名字}}` 或 `{{名字=默认值}}` 写在命令正文里,`QuickCommand` 结构不动(同步与导入导出照旧);解析在 `Core/Models/QuickCommandTemplate`。
+- ⚠️ **别误伤现有的双花括号**(`docker inspect -f '{{.State.Status}}'`、go-template、Ansible 的 `{{ inventory_hostname }}`):名字只能是字母 / 下划线开头的字母数字下划线连字符,**花括号里不许有空白**,Go 模板的 `end` / `else` / `break` / `continue` 不算;不是占位的一律原样发出。
+- 同名只问一次、取第一个非空默认值。**值里的换行换成空格** —— 快捷命令不带回车,值里夹换行就等于替用户按了回车。弹框取消则一个字节都不发;弹框期间目标可能断开,发送时按当下的标签再挑一遍。
+- 命令补全插入的仍是含占位的原文 —— 补全按前缀续写,换成替换后的文本会与已键入的前缀对不上。
 
 ## ✅ 133. 2026-09-29 keyboard-interactive 动态码弹框(`feature-plan.md` 🟠 P1 项)
 
-**一、问题**:库早就支持 keyboard-interactive,密码那一路也默认兼答它,但宿主没有「弹框输动态码」的流程。只放行 keyboard-interactive 的 2FA 服务器(PAM + Google Authenticator、Duo、堡垒机 MFA)上完全登不上,失败文案还附着一句已经不成立的「底层 SSH 库未实现该认证方式」,把用户引去反复改密码。库自带的兼答只看形状(一条不回显提示)不看内容,PAM 的 `Verification code:` 也是这个形状 —— 于是密码会被填进验证码那一轮。
+只放行 keyboard-interactive 的 2FA 服务器(PAM + Google Authenticator、Duo、堡垒机 MFA)原先完全登不上,宿主没有弹框流程。⚠️ 库自带的兼答只看形状(一条不回显提示)不看内容,PAM 的 `Verification code:` 也是这个形状 —— 密码会被填进验证码那一轮。
+- **结构**:Core 新增 `IKeyboardInteractivePrompt`(与 `IHostKeyPrompt` 同一模式),界面层 `Views/KeyboardInteractivePromptDialog` 弹框(一次只弹一个,第一行是连接目标);应答在 `Infrastructure/Ssh/KeyboardInteractiveResponder`(每次连接尝试一个)。有界面时每种凭据后面都跟一条 keyboard-interactive、密码凭据的 `AlsoAnswerKeyboardInteractive` 关掉;没有界面时与原先一样。
+- **应答规则**:单条不回显、看起来是口令(含「密码」字样且不带验证码 / OTP / token —— 那要的往往是「口令 + 动态码」拼起来的串)用已有密码**代答一次**,再问就交给用户;其余一律弹框。**私钥 / 证书 / agent 不回退到口令**:口令提示答空串让服务端拒掉,只有验证码才弹框(钥 + 动态码的第二步)。纯展示轮不弹框;对端文字先清洗、限长。
+- **取消** = 「不连了」:库会把它记成「凭据取不到材料」或「认证超时」,所以不改库,应答器记下 `Cancelled`,由装配器改抛 `VelaSshAuthenticationCancelledException`(刻意不派生自 `OperationCanceledException`,否则会被改判成超时)。首连撤标签不报错,重连按用户主动断开(不然自动重连几秒后又弹同一个框)。
+- ⚠️ `SshAgentKeyLoader.TryGetKeyToAdd` 原先按「凭据恰好一条」匹配,多一条后「自动加钥到 agent」会静默失效,改为只看第一条。
+- 测试靶机 `ssh-2fa`(端口 2224,PAM 先口令后 TOTP)。⚠️ 宽松的服务器上兼答没关也看不出来(先失败一次再由应答器连上),要靠 `MaxAuthTries 1` 的 `vela-strict` 账户。
 
-**二、做法**:
-- **契约**:Core 新增 `IKeyboardInteractivePrompt`(`KeyboardInteractiveRequest`:连接目标、服务端标题与说明、若干 `KeyboardInteractiveField`(提示 + 是否回显)),与 `IHostKeyPrompt` 同一模式:基础设施在后台线程等,界面层弹框。
-- **应答**:`Infrastructure/Ssh/KeyboardInteractiveResponder`,每次连接尝试一个。单条不回显、看起来是口令的提示(英中日韩的「密码」字样,且不带验证码 / OTP / token 之类字样 —— 那要的往往是「口令 + 动态码」拼起来的串)用已有的密码**代答一次**,再问一遍口令(改密码流程、或刚才那个不对)就交给用户;其余一律弹框。**私钥 / 证书 / agent 那几路不回退到口令**:单纯的口令提示答空串让服务端拒掉,只有验证码之类才弹框 —— 这是 `AuthenticationMethods publickey,keyboard-interactive`(钥 + 动态码)的第二步;钥被拒之后冒出一个密码框,与「只用用户选的那一种认证方式」相悖。纯展示的一轮(没有提示)不弹框(规格 04 §6.4),说明攒进下一个框里。对端文字先去掉控制字符与双向文本控制符、统一换行、限长(标题 128 / 说明 2048 / 提示 256)再上界面。
-- **装配**:`SshConnectionAssembler.Create` 多一个可选的 `keyboardPrompt`(DI 里取界面层注册的实现)。有界面时每种认证方式的凭据后面都跟一条 keyboard-interactive,密码凭据的 `AlsoAnswerKeyboardInteractive` 关掉;没有界面(headless、测试)时与原先完全一样。`SshAgentKeyLoader.TryGetKeyToAdd` 原先按「凭据恰好一条」匹配,多了这一条之后「自动加钥到 agent」会静默失效,改为只看第一条。
-- **取消**:用户在框上点取消 = 「不连了」。库的契约是应答回调抛的异常记成「凭据取不到材料」、接着以「方法试完了」收场,而调用方没取消的取消会被它当成计时器到点报「认证超时」—— 两条路都说不出「用户不连了」,所以不改库:应答器记下 `Cancelled`,`SshConnectionAssembler.ConnectAsync` 在库报任何失败之后据此改抛新增的 `VelaSshAuthenticationCancelledException`(刻意不派生自 `OperationCanceledException`,否则 `SshConnectionService` 同样会把它改判成超时)。宿主三条路径各认一次:首连撤掉标签、不报错、不再弹凭据框;重连按用户主动断开处理(不然自动重连过几秒又来弹同一个框,新增 `TerminalTabViewModel.MarkDisconnectedByUser`);SFTP 文档连接撤占位。令牌触发(关了正在连的标签、认证两分钟超时)时框当场收起,仍按原来的取消 / 超时口径走。
-- **界面**:`Views/KeyboardInteractivePromptDialog`(外壳复用 `MessageDialog.ShowCustomAsync`):标题取服务端给的名字,没有就是「两步验证」;第一行是连接目标(几条会话同时要码时分得清哪台),下面是说明与每条提示一个输入框,`echo = false` 的遮住,打开即聚焦第一个。`Services/KeyboardInteractivePromptDialogService` 一次只弹一个(与 agent 签名确认同一口径),没有主窗口或弹窗出错按取消处理。
-- 撤掉失败文案里的 `Msg_AuthFailedTwoFactorHint` 及其两处注释;新增 `KbdAuth_Title` / `KbdAuth_Submit` / `KbdAuth_Response` / `SshErr_KbdAuthCancelled`,五份 resx 齐。README 两份的「认证与密钥」一栏补上两步验证。
-- **测试靶机**:`docker-compose.test.yml` 新增 `ssh-2fa`(端口 2224,`tests/fixtures/ssh-2fa`):只开 keyboard-interactive 的 sshd,PAM 先问口令再问 TOTP(种子写死);`vela-otp` 口令 + 动态码、`vela-strict` 同上但 `MaxAuthTries 1`、`vela-keyotp` 钥 + 动态码(钥是同目录**仅供测试**的 `id_ed25519`)。
-
-**三、验证**:新增 `KeyboardInteractiveIntegrationTests` 5 条(真实 OpenSSH + PAM:口令代答、只问动态码且一次尝试就过;错码是认证失败;取消报成取消;钥 + 动态码;没有界面时密码过不了第二因素)—— 把密码凭据的兼答重新打开,`vela-strict` 那条当场变红(宽松的服务器上它会先失败一次再由应答器连上,看不出来;这一条是写完之后按变异结果补的)。`KeyboardInteractiveResponderTests` 13 个方法 25 例(PAM 两轮、第二次问口令交给用户、空密码弹框、三种「口令 + 验证码」提示不代答、非密码认证拒答口令但问验证码、回显与多提示、纯展示轮不弹且说明带到下一框、用户取消 / 令牌触发的区分、条数不符、对端文字清洗、11 种提示文字的判定、包成凭据);`KeyboardInteractiveCancelFlowTests` 3 条(首连取消撤标签且不再弹凭据框、重连取消记为用户断开、重连失败照旧报错);`KeyboardInteractivePromptDialogUiTests` 3 条 headless 真控件(目标与说明可见、按 echo 遮罩、第一个输入框聚焦、按提示顺序交回;取消返回 null;令牌触发时窗口当场收起);`SshCredentialSetupTests` / `SshAgentKeyLoaderTests` 各加一条;两条断言旧文案的用例改掉那句提示。全量:`Core.Tests` 554 通过 / 12 跳过,`Infrastructure.Tests` 567 / 4,`VelaShell.Tests` 1579 / 16,`Presentation.Tests` 69。没在真实的 Duo / RSA SecurID 服务器上试过。
+没在真实的 Duo / RSA SecurID 服务器上试过(剩余项见 feature-plan.md)。
 
 ## ✅ 134. 2026-09-29 算法协商可配:老算法开关 + 自定义算法清单(`feature-plan.md` 🟡 P2 项)
 
-**一、问题**:连老网络设备、老系统(只剩 `diffie-hellman-group14-sha1`、SHA-1 的 `ssh-rsa`、`hmac-sha1`)时谈不成,而宿主没有任何地方能放开 —— 库早就有 `SshAlgorithmSet.WithLegacyInterop()`,协商失败的诊断也能说出「两边各有什么」,只是说完之后用户无处可改。反过来要精确控制的(关掉 chacha20-poly1305 / EtM 缓解 Terrapin、把某个加密提到最前)也没有入口。
-
-**二、做法**:
-- **模型**:`SshSessionOptions` 新增 `LegacyAlgorithms` 与四个自定义清单 `KexAlgorithms` / `HostKeyAlgorithms` / `Ciphers` / `Macs`(字符串,空 = 默认),`IsEmpty` / `Clone` 跟上。配置经 `Clone()` 流到 `ConnectionInfo.Ssh`,跳板链上每一跳各带各的。
-- **清单的写法沿用 OpenSSH `ssh_config`**:`+a,b` 追加到默认之后、`-a,b` 从默认里删掉(可带 `*` / `?` 通配)、`^a,b` 提到最前,不带前缀则整个替换;「默认」指放开老算法之后的那一份。照 `~/.ssh/config` 里那一行抄过来就能用。
-- **`Infrastructure/Ssh/SshAlgorithmPreferences`**:「能写哪些名字」以库实际实现了的为准 —— `SshAlgorithmSet.Default.WithLegacyInterop()` 的四类清单,不在宿主里另抄一份。不认识的名字报「不认识」;OpenSSH 认得、本版没实现的常见名字(CBC、3des、group1、group-exchange、ssh-dss、hmac-md5、umac…)报「本版没有实现」—— 抄过来的配置里最常见的就是 CBC,用户要知道的是「放开也没用」而不是「拼错了」。不带通配的删除项也要是认得的名字(拼错了的删除项什么都删不掉,用户却以为已经关了);删完不剩、只写了前缀都当场报。`SshConnectionAssembler.Algorithms` 改由它出清单;手改过配置文件的坏写法在连接时报成一句 `VelaSshConnectionException`(带类别与原因),而不是库在拨号前抛的 `ArgumentException`。
-- **协商失败的诊断多一行下一步**:对端提供的算法里有本版实现了、只是没放开的,点名并指到连接配置(「允许老算法」或自定义清单);一个都没有时如实说放开也没用(典型是只剩 CBC 的老设备)。
-- **连接对话框**「SSH 连接选项」(SSH 与 SFTP 都有,与压缩同一个显示条件):「允许老算法(连老设备用)」开关 + 说明放开的是哪三个、追加在后;「自定义算法清单」展开四个输入框(等宽字体、占位「默认」、悬停提示此刻的默认清单与另可加的算法,随老算法开关刷新),下方一行写法说明;写错时字段下方报错、保存 / 连接 / 测试三个按钮灰掉(`canExecute` 加一路,连接类型切换时一并重算)。清单收起时不存,与 X11 关着时不存显示地址同一个理由。新增本地化键 14 个(`Profile_SshLegacyAlgorithms*`、`Profile_SshCustomAlgorithms*`、`Profile_SshAlgo*`、`Ssh_AlgoSpec*`、`Ssh_AlgoMismatchEnable` / `Unsupported`),五份 resx 齐;类别名复用协商诊断里的 `Ssh_AlgoKind*`。README 两份的「连接」一栏补上。
-- **测试靶机**:`docker-compose.test.yml` 新增 `ssh-legacy`(端口 2225,`tests/fixtures/ssh-legacy`):把 OpenSSH 收窄成只剩 group14-sha1 / ssh-rsa / hmac-sha1 的「老设备」。
-- **没做的**:`~/.ssh/config` 导入(§58)不映射 `KexAlgorithms` / `Ciphers` 等(它现在连 `Compression`、`ForwardAgent` 都不映射,要一起做);CBC 本库没实现,只剩 CBC 的设备仍连不上。
-
-**三、验证**:新增 `LegacyAlgorithmsIntegrationTests` 3 条(真实「老设备」:默认清单谈不成且诊断点名 group14-sha1 并指到设置;放开老算法后连上且谈成的正是 group14-sha1 / ssh-rsa / hmac-sha1;照 OpenSSH 写法的 `+` 清单连上);`SshAlgorithmPreferencesTests` 16 个方法 18 例(无配置即库默认、老算法追加在后且不含 CBC、`+` 只追加没有的、`-` 删名字与通配、`^` 提前、替换并去重、前缀作用在放开后的默认上、没实现的报没实现、拼错的报不认识(含删除项)、不匹配的通配无妨、删光 / 只写前缀报错、四类清单与压缩一起落进算法集且两个方向一致、坏写法报成可读的连接错误、装配器用它、只设算法的选项不算空且能克隆);`SshInteropTests` 2 条(可放开的点名且不含没实现的、全是没实现的说放开也没用);`ConnectionProfileAlgorithmsTests` 6 条(读回与保存、只开老算法也存、写错时按钮灰掉并说清是哪一类哪个名字、收起时不存也不挡保存、切到 FTP 按钮放开、悬停提示随老算法开关变)。把「连接类型切换时重算错误」那一行去掉,切到 FTP 那条变红。全量:`Core.Tests` 577 通过 / 12 跳过,`Infrastructure.Tests` 567 / 4,`VelaShell.Tests` 1585 / 16。没在真实的 Cisco / 华为设备上试过。
+连老设备(只剩 `diffie-hellman-group14-sha1`、`ssh-rsa`、`hmac-sha1`)谈不成,库早有 `SshAlgorithmSet.WithLegacyInterop()`,宿主却无处放开;要精确控制的(关掉 chacha20-poly1305 / EtM 缓解 Terrapin)也没入口。
+- `SshSessionOptions` 新增 `LegacyAlgorithms` 与 `KexAlgorithms` / `HostKeyAlgorithms` / `Ciphers` / `Macs`(空 = 默认),跳板链每一跳各带各的。连接对话框「SSH 连接选项」里一个开关 + 四个输入框,写错时字段下报错、保存 / 连接 / 测试灰掉。
+- **写法沿用 OpenSSH `ssh_config`**:`+` 追加、`-` 删除(可带通配)、`^` 提前,不带前缀整个替换;「默认」指放开老算法之后的那一份。照 `~/.ssh/config` 抄过来就能用。
+- **`Infrastructure/Ssh/SshAlgorithmPreferences`**:能写哪些名字以库实际实现的为准,不在宿主另抄一份;OpenSSH 认得、本版没实现的(CBC、3des、group1、ssh-dss…)报「本版没有实现」而不是「不认识」—— 抄来的配置里最常见的就是 CBC,用户要知道的是放开也没用。⚠️ 不带通配的删除项也要认得(拼错的删除项什么都删不掉,用户却以为关了)。
+- 协商失败的诊断多一行下一步:对端有本版实现了、只是没放开的就点名并指到连接配置。测试靶机 `ssh-legacy`(端口 2225)。CBC 本库没实现,只剩 CBC 的设备仍连不上;`~/.ssh/config` 导入(§58)不映射算法清单(剩余项见 feature-plan.md)。
 
 ## ✅ 135. 2026-09-29 审计日志查看界面与保留策略(`feature-plan.md` 🟠 P1 两项)
 
-**一、问题**:`audit_log` 一直在写(连接成败、主机指纹的裁决、外部拉起),但 `IAuditLogService.QueryAsync` 在界面层零调用 —— 写了没人看得见;它和 `conn_history` 两张时序表又没有任何保留策略,只增不减。
-
-**二、做法**:
-- **查看**:设置 → 安全审计新增「审计日志」一节,「查看」打开 `Views/AuditLogView`(非模态,外框、标题栏与缩放手柄照录制回放中心)。`ViewModels/AuditLogViewModel` 一次取最近 2000 条(`MaxRows`),筛选在本地做 —— 类别(全部 / 连接 / 安全)、「只看异常」、关键字(事件、类别、会话名、详情,不区分大小写)三者叠加。记录里只有配置 Id,会话名在载入时从会话库对一次,没有 Id 或配置已删的显示 —(详情里的 `用户@主机:端口` 照样看得出是哪台)。动作翻成人话(连接成功 / 连接失败 / 拒绝了主机指纹 / 仅本次信任 / 接受了变更的指纹 / 外部拉起登录),认不出的原样显示;连接失败、拒绝与接受了变更的指纹算「异常」,事件名标红。摘要写共几条、筛出几条,载满 2000 条时注明只载入了最近的;读库失败把原因写在摘要里,不抛。Esc 先清关键字、再关窗口。
-- **保留**:`SecurityOptions.AuditLogRetentionDays`(默认 180 天,1–3650,`Normalize` 钳位,设置页 `NumericUpDown` 同一区间),审计日志与连接历史共用 —— 连接历史就是「最近连接」的底账,比审计留得久没有意义,留得短又会让审计里的会话在侧栏对不上。启动时 `AuditRetention.PruneAsync` 按它删掉更早的记录,与会话日志、录制的过期清理同一时机。两个接口各加 `DeleteOlderThanAsync`。
-- **没有照搬录制那套「暂存 → drop 重建 → 回灌」**:先实测了 SonnetDB 的 `DELETE … WHERE time < @cutoff` —— 按时间删成立,同一条序列里新旧混着的也分得开。审计是逐条的短文本,墓碑占的地方不值得搬一遍数据;而重建那一套在进程死在中途时会丢掉还在保留期内的记录,审计最不该冒这个险。方言不支持时记一笔、原样保留。
-- 新增本地化键 28 个(`SetSecurity_SectionAuditLog` / `AuditLogViewer*` / `OpenAuditLog` / `AuditLogRetention*`、`AuditLog_*`),五份 resx 齐;最大化与缩放手柄的提示复用录制回放中心的 `Recorder_MaximizeTip` / `Recorder_ResizeTip`。README 两份的「数据」一栏补上。
-- **没做的**:导出(CSV)与按时间段筛;审计只记这三类事件,配置增删改、设置变更还没有写进来。
-
-**三、验证**:`SonnetDbPersistenceTests` 加 2 条(真引擎:审计日志按截止时刻删、同一序列里新旧混着的只删旧的;连接历史同理且「最近连接」照常取得到新的);新增 `AuditRetentionTests` 5 例(两张表同一截止时刻、天数小于 1 按 1 天、缺一边跳过一边、默认 180 且钳位到 1–3650);`AuditLogViewModelTests` 5 条(翻译与会话名对照、三种筛选叠加与摘要、载满时注明只载入了最近的、读库失败写进摘要、刷新重读);`AuditLogViewUiTests` 1 条 headless 真控件(行渲染、只有异常那一行挂上 `problem`、筛到没有时列表隐去空状态出现)—— 去掉 `Classes.problem` 绑定它变红。全量:`Core.Tests` 582 通过 / 12 跳过,`Infrastructure.Tests` 569 / 4,`VelaShell.Tests` 1591 / 16,`Plugin.Ai.Tests` 587,`Ssh.Tests` 763 / 22,`Terminal.Tests` 515,`XServer.Tests` 214 / 2,`Presentation.Tests` 69,`Controls.Tests` 13,`RenderTests` 5;`ShellIntegration.Tests` 32 条因 ssh-shells 靶机没起全部跳过(与本改动无关)。
+`audit_log` 一直在写,`IAuditLogService.QueryAsync` 在界面层却零调用;它和 `conn_history` 两张时序表又只增不减。
+- **查看**:设置 → 安全审计 →「查看」打开 `Views/AuditLogView`(非模态)。一次取最近 2000 条,类别、「只看异常」、关键字三者叠加在本地筛;动作翻成人话,连接失败、拒绝与接受了变更的指纹算「异常」标红;读库失败写进摘要不抛。
+- **保留**:`SecurityOptions.AuditLogRetentionDays`(默认 180 天,1–3650),审计日志与连接历史共用 —— 连接历史是「最近连接」的底账,比审计留得久没有意义,留得短又会让审计里的会话在侧栏对不上。启动时 `AuditRetention.PruneAsync` 删掉更早的记录。
+- **没照搬录制那套「暂存 → drop 重建 → 回灌」**:实测 SonnetDB 的 `DELETE … WHERE time < @cutoff` 按时间删成立;审计是逐条短文本,墓碑不值得搬一遍数据,而重建在进程死在中途时会丢掉保留期内的记录,审计最不该冒这个险。方言不支持时原样保留。
+- 导出、按时间段筛与更多事件类型还没做(剩余项见 feature-plan.md)。
 
 ## ✅ 136. 2026-09-29 回放中心与资源监视的动作收进标题栏(用户需求)
 
-**一、问题**:主窗口的全局功能图标排在标题栏里、窗口按钮左边;回放中心(导出 / 刷新 / 清理 / 自动录制)与资源监视(主机标识、暂停)却各在标题栏下面另起一行放文字按钮 —— 标题栏图标按钮的主题 `VelaTitleActionButton` 定义在 `TitleBarView` 内部,别的窗口取不到(任务管理器的注释里写着「跨窗口取不到,这里本地重定义」),§4.2 的规范于是也写成了「放不下的操作按钮放到下一行」。用户要求两扇窗口改成和主窗口一样。
-
-**二、做法**:
-- 主题挪进 `Themes/ButtonThemes.axaml`,改名 `VelaTitleActionButtonTheme`(与另两个共享按钮主题同一命名),主窗口标题栏改用它,外观不变。
-- **回放中心**:标题栏右侧是动作图标组 + 最大化 / 关闭。四个动作改成纯图标(`Icon.download` / `refresh-cw` / `trash-2` / 新增的 Lucide `circle-dot`),悬停提示两行(动作名 + 原来的说明),读屏名称同动作名;自动录制是开关,开着时图标转强调色(与主窗口资源管理器、X Server 同一套写法),提示第一行是当前状态。窗口按钮从「▢ ✕」文字换成与资源监视、任务管理器同规格的 27×27 图标方块,贴住右上角。副标题行只剩说明。
-- **资源监视**:主机标识(连通绿点 / 断开灰点 + 主机名,限宽 260、截断后悬停看全名)与暂停 / 继续(纯图标,暂停中换成强调色的「继续」)收进标题栏,排在最小化前面;副标题行只剩采样说明。原先只给暂停按钮用的 `Button.tool` 样式随之删掉。
-- **双击标题栏最大化不再误伤按钮**:回放中心整条标题栏挂着 `DoubleTapped`,双击手势不管按钮有没有处理按下事件都会冒泡上来 —— 标题栏里多了四个按钮之后,连点两下刷新就会把窗口最大化。处理函数改为落在按钮上的双击不算。今天新加的审计日志窗口同一种写法,一并改了,窗口按钮也换成 27×27 图标方块。
-- `DESIGN.md` §4.2 标题栏一行改为「窗口级动作放标题栏的动作图标组,状态标识可以排在它前面,只有副标题放下一行」,§5.1 补上标题栏图标按钮这个第三种角色。
-
-**三、验证**:新增 `RecordingPlayerTitleBarUiTests` 3 条 headless 真控件(四个动作都在标题栏的动作组里、顺序不变、用共享主题、有悬停提示与读屏名称;自动录制开着时图标是强调色;真指针双击刷新键不最大化、双击标题栏空白处照常最大化 —— 去掉判断那条变红)与 `ResourceMonitorUiTests.TitleBar_CarriesTheHostBadgeAndThePauseToggle`(主机标识与暂停键在标题栏里、用共享主题、主机标识不撑高标题栏、点一下换成强调色的继续);`RecordingPlayerCleanupUiTests` 原先断言清理按钮的文字,改为断言读屏名称与它在标题栏里。用 `VELASHELL_VISUAL_QA_DIR` 各截一帧人眼看过。`VelaShell.Tests` 1595 通过 / 16 跳过,`Controls.Tests` 13。没在 macOS 上看过红绿灯旁的样子。
+回放中心与资源监视原先在标题栏下另起一行放文字按钮 —— 标题栏图标按钮的主题定义在 `TitleBarView` 内部,别的窗口取不到。
+- 主题挪进 `Themes/ButtonThemes.axaml`,改名 `VelaTitleActionButtonTheme`。回放中心四个动作(导出 / 刷新 / 清理 / 自动录制)改纯图标进标题栏动作组,悬停提示两行(动作名 + 说明),自动录制开着时图标转强调色;资源监视的主机标识(限宽 260 截断)与暂停 / 继续收进标题栏。窗口键换 27×27 图标方块贴右上角。
+- ⚠️ 标题栏的 `DoubleTapped` 不管按钮有没有处理按下都会冒泡上来,连点两下刷新就把窗口最大化;改为落在按钮上的双击不算(审计日志窗口一并改)。
+- `DESIGN.md` §4.2 改为「窗口级动作放标题栏的动作图标组,状态标识可以排在它前面,只有副标题放下一行」,§5.1 补标题栏图标按钮这第三种角色。
 
 ## ✅ 137. 2026-09-29 远程编辑与连接诊断的动作也收进标题栏(用户需求,§136 后续)
 
-**一、做法**:
-- **远程编辑**:保存从路径行右边挪进标题栏的动作图标组(`Icon.save`,悬停提示「保存 / Ctrl+S」,读屏名称「保存」),路径行只剩远端路径。原先它是一颗常亮的强调色实心按钮,变成标题栏里的灰色图标之后「该存了」没人提醒 —— 所以**有未保存的改动时图标转强调色**:代码后置在修订号每次变动(键入、装载完成、上传确认)后按 `IsDirty` 挂 / 摘 `dirty` 类,两种颜色都由样式给。⚠️ 图标上不能写本地 `Foreground`:本地值压过样式,`dirty` 那条就再也亮不起来(用例专门钉了这一点,把本地值加回去它变红)。窗口键从 24×24 圆角换成 27×27 方块贴住右上角;双击标题栏里的按钮不再最大化(同 §136)。原先只给保存用的 `Button.dlg-primary`、给窗口键用的 `Button.chrome` 样式删掉。
-- **连接诊断**:导出报告(没报告时禁用)与重新检测(检测中命令不可用,按钮变淡)收进标题栏,目标行只剩诊断目标。关闭键从 24×24 圆角换成 27×27 方块 —— 这是对话框,不挂 `window-caption`,macOS 上照常显示 ×。原先的 `dlg-outline` / `dlg-primary` 样式没人用了,删掉。
-- `DESIGN.md` §4.2 标题栏一行补上这两处,并写明「原先是实心强调色按钮的号召性动作,变成图标后在该做的时候转强调色」。
-
-**二、验证**:`RemoteFileEditorDirtyStateTests` 加一条(保存在标题栏、用共享主题;刚打开是灰色,改一个字转强调色,存上之后变回来);新增 `ConnectionDiagnosticsViewUiTests` 1 条(两个动作在标题栏、顺序与读屏名称、用共享主题、没报告时导出禁用、关闭键 27×27、目标行里只剩那一行字)。两扇窗口各截一帧人眼看过(编辑器干净 / 有改动两帧)。
+远程编辑的保存、连接诊断的导出报告 / 重新检测收进标题栏动作组,窗口键换 27×27 方块(连接诊断是对话框,不挂 `window-caption`,macOS 上照常显示 ×)。保存原是常亮的强调色实心按钮,变成灰图标后没人提醒该存 —— **有未保存的改动时图标转强调色**(按 `IsDirty` 挂 / 摘 `dirty` 类);`DESIGN.md` §4.2 记为通则。⚠️ 图标上不能写本地 `Foreground`:本地值压过样式,`dirty` 那条就再也亮不起来。
 
 ## ✅ 138. 2026-09-29 导入会话、新建连接两个对话框的标题栏按 28 高重排;X11「受信任」对齐(用户需求)
 
-**一、问题**:标题栏统一成 28 高(§118)之后,这两个对话框还是 48 高头部那一套 —— 16px 的 Material 实心图标、14px 标题、24×24 圆角 ×,硬塞进 28 显得又挤又大,× 也不贴角,与别的窗口不是一套。新建连接的高级选项里勾上 X11 转发后,「受信任(-Y)」勾选框靠「贴底 + 底边距 8」去凑本机 X 显示输入框的中线,凑出来高了一截。导入会话的自定义模式下,没找到来源(路径为空)的卡片底部多出一截空行。
-
-**二、做法**:
-- **标题栏**:两个对话框改成与连接诊断(§137)同一规格 —— 15px Lucide 线条图标(导入 `Icon.folder-input`、新建连接 `Icon.plug`,强调色)、13px 标题(放不下时截断)、27×27 关闭键贴住右上角(对话框不挂 `window-caption`,macOS 上照常显示 ×)。内容区、页签、页脚一律没动。
-- **X11 行**:改成两行网格 —— 标签单占一行,输入框与「受信任」同在第二行、各自垂直居中,不再靠边距凑。
-- **导入会话的空行**:来源路径那一行只在「自定义模式 **且** 路径非空」时显示(`MultiBinding` + `BoolConverters.And`)。空文字的 `TextBlock` 照样占一行高,再加上外层 StackPanel 的 6px 间距,就是那截空行。
-- 改之前改之后各截了四帧(导入的自动 / 自定义模式、新建连接的默认 / 高级展开并勾上 X11)人眼对照过。
-
-**三、验证**:新增 `DialogTitleBarAssert`(标题栏 28 高、没有实心 `PathIcon`、标题 13px、关闭键 27×27 且贴住右上角),导入会话与新建连接各一条用它;`ConnectionProfileViewUiTests.X11Trusted_SharesTheDisplayBoxCentreLine`(勾选框与输入框中线差不超过 0.5px);`SessionImportViewUiTests.ASourceWithoutAPath_TakesNoExtraLine`。三处各做了一次变异(勾选框改回贴底 + 边距、标题改回 14px、路径行改回只看模式),对应用例都变红。⚠️ **踩了一次 `AGENTS.md` 写着的坑**:路径那条第一版写成 `Dispatch(async () => …)`,会话没有 `Func<Task>` 重载,拿到的是没人等的 `Task<Task>`,第一个 await 之后的断言全被吞掉 —— 变异跑下去它照样绿,才发现是假绿。改成同步 body(窗口打开即扫描,假服务同步完成)后,变异下它按预期变红。整套跑下来卡死,由此引出 §139。
+- 标题栏统一 28 高(§118)后这两个对话框还是 48 高那套;改成连接诊断(§137)同一规格:15px Lucide 线条图标、13px 标题、27×27 关闭键贴右上角(`DialogTitleBarAssert` 守着)。
+- X11「受信任(-Y)」原先靠「贴底 + 底边距 8」凑输入框中线,高了一截;改两行网格、同行各自垂直居中。
+- 导入会话的空行:空文字的 `TextBlock` 照样占一行高;路径行改为只在「自定义模式 **且** 路径非空」时显示。
+- ⚠️ 一条新用例写成 `Dispatch(async () => …)`,拿到没人等的 `Task<Task>`,变异下照样绿才发现是假绿;整套跑下来又卡死,由此引出 §139。
 
 ## ✅ 139. 2026-09-29 headless UI 测试:await 写法把整套卡死;13 处假绿转真(§138 收尾时发现)
 
-**一、问题**:§138 收尾跑整套 `VelaShell.Tests`,卡在 `AuditLogViewUiTests` 上不动。二分下来与那个类测什么无关:**只要「`async Task` 用例里 `await _session.Dispatch(…)`」排在「`Dispatch(…).GetAwaiter().GetResult()` 写法」的前面就必卡**(XServer 宿主那组后面接 `DialogButtonStyleTests` 一样卡)。挂起转储里 MSTest 执行器的整条栈跑在 headless UI 线程上 —— 会话在 UI 线程上 `TrySetResult`,await 的续体就地跑在那条线程,MSTest 顺势在 UI 线程上开跑下一条;下一条在 UI 线程上阻塞等 UI 线程,死锁。此前整套跑得完(§136 时 1595 通过),应是执行顺序恰好没让两种写法相邻,这几轮加了用例、顺序一变就撞上了。
-顺藤摸瓜又查出同一处的老坑 —— `AGENTS.md` 写过,但没拦住:无返回值的 async lambda 绑到 `Dispatch<Task>`,第一个 await 之后的断言全丢。7 个文件里有 13 处这样写(`PluginPanelUiTests` 5、`PluginThemeTokensTests` 1、`StandaloneSftpDocumentBehaviorTests` 4、`LocalFilePaneViewUiTests` 2、`GlobalTransferConcurrencyTests` 的 `OnUi`)。临时探针(await 之后 `Assert.Fail`)实测照样「通过」。
-
-**二、做法**:
-- 新增 `tests/VelaShell.Tests/TestSupport/HeadlessUi.cs` 的 `RunOnUiAsync`(`Func<Task>` / `Action` 两个重载):内部走带返回值的重载,真正等完用例体,再经 `ContinueWith(…, TaskScheduler.Default)` 在线程池上转一手,await 它的续体就不会落在 UI 线程上。⚠️ `ConfigureAwait(ConfigureAwaitOptions.ForceYielding)` 治不了这个:它只管「任务已经完成」的情形。第一版就是这么写的,探针照样卡死。
-- 7 个文件 21 处 `await _session.Dispatch(…)` 改用它;阻塞写法里 6 处无返回值的 async lambda 补上 `return true;`。`AGENTS.md` 那条 headless 约束补上第二个坑。
-- **转真之后暴露出两条从 7 月 20 日起就没真跑过的用例**:b9d73914 把 `CloseSftpDocumentAsync` 改名为 `CloseSftpDocumentCoreAsync`,而 `StandaloneSftpDocumentBehaviorTests` 里两条「关闭在工作线程上完成」的用例还靠反射取旧名字。拿到 null 之后,它们卡在 `closeStarted` 上,假绿把这件事盖住了。改法:
-  - 方法名改对;取不到时当场抛 `MissingMethodException`,`closeStarted` 加 10 秒上限。
-  - 「会话树回到 UI 线程更新」那条原本是按 §39 之前的设计写的(直接往树上写 Connected)。现在树上的状态由会话账本合并而来,所以改为先像打开文档时那样 `TrackDocumentSession` 登记。
-  - 同一条用例里,把 `RxSchedulers.MainThreadScheduler` 临时换成 `AvaloniaScheduler(Dispatcher.UIThread)`,用完还原。本程序集的 ModuleInit 设的是就地执行,那样验不出「回到 UI 线程」。
-
-**三、验证**:
-- 探针确认了三点:`RunOnUiAsync` 下 await 之后的 `Assert.Fail` 会变红;续体落在线程池上;紧接着的阻塞写法不再卡住。
-- 原先卡住的组合复跑通过:XServer 宿主之后接对话框按钮 / 审计日志。
-- 变异:把产品里 `ScheduleSessionStatusRefresh` 改成就地调用,改写后的那条用例变红;还原后全过。
-- 整套 `VelaShell.Tests` **1601 通过 / 16 跳过**(Docker、发布、zsh / fish、符号链接等按环境早退的),1 分 12 秒跑完。因为用户的 VelaShell 开着、锁住了 `bin/Debug`,编译与测试都输出到 `artifacts/qa-testout`。
+**卡死**:**只要 `async Task` 用例里直接 `await _session.Dispatch(…)` 排在 `Dispatch(…).GetAwaiter().GetResult()` 同步写法前面就必卡** —— 会话在 UI 线程上 `TrySetResult`,await 的续体就地跑在 UI 线程上,MSTest 顺势在 UI 线程上开跑下一条;下一条同步写法在 UI 线程上等 UI 线程,整套卡死。此前跑得完只是执行顺序恰好没让两种写法相邻。
+**假绿**:无返回值的 async lambda 绑到 `Dispatch<Task>`,拿到没人 await 的 `Task<Task>`,第一个 await 之后的断言全丢(`AGENTS.md` 写过但没拦住)。这次查出 7 个文件 13 处;§70 起登记的 11 处这样写的用例,直到这里才改完(复核见 §148)。
+- 新增 `tests/VelaShell.Tests/TestSupport/HeadlessUi.cs` 的 `RunOnUiAsync`(`Func<Task>` / `Action` 两个重载):内部走带返回值的重载真正等完用例体,再经 `ContinueWith(…, TaskScheduler.Default)` 转到线程池,续体不落在 UI 线程。21 处 `await _session.Dispatch(…)` 改用它,6 处无返回值 lambda 补 `return true;`。⚠️ `ConfigureAwait(ConfigureAwaitOptions.ForceYielding)` 治不了:它只管「任务已经完成」的情形,第一版就这么写,照样卡死。
+- ⚠️ 转真后暴露两条 7 月 20 日起没真跑过的用例:b9d73914 把 `CloseSftpDocumentAsync` 改名为 `CloseSftpDocumentCoreAsync`,`StandaloneSftpDocumentBehaviorTests` 还靠反射取旧名、拿到 null 后卡在 `closeStarted` 上,被假绿盖住。改为取不到当场抛 `MissingMethodException`、`closeStarted` 加 10 秒上限;「回到 UI 线程更新」那条按 §39 之后的会话账本设计先 `TrackDocumentSession` 登记,并临时把 `RxSchedulers.MainThreadScheduler` 换成 `AvaloniaScheduler` —— 本程序集 ModuleInit 设的是就地执行,验不出「回到 UI 线程」。
+- ⚠️ 用户的 VelaShell 开着会锁住 `bin/Debug`,编译与测试改输出到 `artifacts/qa-testout`。
 
 ## ✅ 140. 2026-09-29 新建连接、导入会话标题栏与回放中心同一个样子;关闭键悬停的红底不再伸出圆角(用户反馈)
 
-**一、问题**:§137 / §138 把连接诊断、新建连接、导入会话的关闭键换成 27×27 贴角的方块之后,悬停的红底是方的,而卡片是圆角 8 —— 方块的右上角伸出圆角外一截,悬在透明的窗口上。原先的 × 是 24×24 圆角、离角有边距,碰不到圆角,这三张卡片也就一直没写 `ClipToBounds`;其余带窗口键的窗口(回放中心、远程编辑、审计日志……)都写了。用户同时要求这两个对话框改成与回放中心一样的窗口,而不是另起一套「对话框标题栏」。
-
-**二、做法**:
-- 三个对话框的卡片补上 `ClipToBounds="True"`,悬停的红底跟着圆角裁掉。
-- 新建连接、导入会话的标题栏照回放中心:标题靠左,**保留标题前 15px 的线条图标**(§138 加的,与连接诊断一致)。仍是模态、固定尺寸 —— 问过用户,只要外观一致:不加最大化、不能拉伸,外框仍是 `Dialog`(macOS 上不换红绿灯,照常显示 ×)。⚠️ 第一版照着回放中心把图标也去掉了(选项说明里写了,但没单独跟用户确认),用户随即指出图标不该没,加了回来,`FollowsSpec` 改为钉住「标题前有且只有一个 15px 线条图标」。
-- `DESIGN.md` §4.2 标题栏一行改写对话框那半句,并写明「窗口键贴角的窗口,卡片要 `ClipToBounds`」。
-
-**三、验证**:`DialogTitleBarAssert` 新增 `CloseHoverStaysInsideTheRoundedCorner`:按 Windows 的浮起卡片装外框、悬停关闭键、截一帧 —— 方块里离图标远的一点是红的(悬停确实生效),卡片描边内侧右上角的第一个像素(落在方块里、却在圆角外)不能是红的。三个对话框各一条,改之前三条都红。`FollowsSpec` 改为「标题前有且只有一个 15px 线条图标(关闭键的 × 不算)」,图标去掉的那一版上两条都红。`WindowChromeCoverageTests` 的扫描加一条:XAML 里有 `caption-close` 的窗口,卡片必须写 `ClipToBounds="True"`,改之前点出的正是这三个。把右上角放大 8 倍截图人眼看过。整套 `VelaShell.Tests` 1604 通过 / 16 跳过。
+§137 / §138 换成 27×27 贴角关闭键后,方形悬停红底伸出卡片的圆角 8;原先的 × 碰不到圆角,这三张卡片一直没写 `ClipToBounds`。补 `ClipToBounds="True"`,`DESIGN.md` §4.2 写明「窗口键贴角的窗口,卡片要 `ClipToBounds`」,`WindowChromeCoverageTests` 扫 XAML 守着。两个对话框标题栏照回放中心(标题靠左,**保留标题前 15px 线条图标**);问过用户只要外观一致,仍是模态、固定尺寸,外框仍是 `Dialog`。⚠️ 第一版把图标也去掉了(没单独确认),用户指出后加回。
 
 ## ✅ 141. 2026-09-29 界面语言出厂跟随系统,对不上用英文(AppImage 目录收录要求)
 
-**一、问题**:`AppSettings.Language` 出厂是 `zh-CN`,非中文环境下全新安装也是一屏中文。AppImage 目录的收录 PR([AppImage/appimage.github.io#8573](https://github.com/AppImage/appimage.github.io/pull/8573))因此卡住:目录面向全球用户,要求非中文环境(`LANG` / `LC_*`)默认显示英文界面,中文环境照旧中文。
-
-**二、做法**:
-- 出厂值改成空串(空 = 跟随系统)。`LocalizationService.SetLanguage("")` 按系统界面文化折算:沿父文化链在五种界面语言里找,中文按书写体系归到简 / 繁(zh-SG → 简体,zh-HK / zh-MO → 繁体),一个都对不上(德语、法语、`LANG=C` 的不变文化……)就用英文。系统语言由 .NET 取:Windows 是显示语言,Linux 依次看 `LC_ALL` / `LC_MESSAGES` / `LANG`。
-- 系统界面文化在服务构造时快照 —— `SetLanguage` 会改写环境文化,现读 `CurrentUICulture` 的话,从「日本語」切回「跟随系统」就停在日语。
-- **用户选过的语言优先**,运行时照旧直接用它。**存量配置不迁移**:已经落盘的 `zh-CN` 分不清是用户选的还是旧出厂值(窗口状态等好几处会整份回写设置,旧出厂值基本都落了盘),照旧生效,同 §131 的强调色。
-- 设置 → 常规 → 语言:下拉首项加「跟随系统」(`AvailableLanguages` 首项空串),新增本地化键 `SetGeneral_LanguageSystem`,五份 resx 齐。README 两份的「本地化」一行补上默认跟随系统。
-
-**三、验证**:新增 `LanguageDefaultsTests` 2 条(新配置跟随系统、存量 `zh-CN` 原样保留);`LocalizationTests` 加系统文化折算 16 组数据行,以及「跟随系统取构造时的系统文化、不取上一次选的语言」2 条;`SettingsViewModelTests` 加下拉首项 ↔ 空串 1 条。整个解决方案 0 失败:`VelaShell.Core.Tests` 594 通过 / 20 跳过,`VelaShell.Tests` 1605 通过 / 16 跳过(跳过的都是按环境早退的 Docker / 集成用例)。
+出厂 `zh-CN` 让非中文环境全新安装也是中文,卡住 AppImage 目录收录 PR([AppImage/appimage.github.io#8573](https://github.com/AppImage/appimage.github.io/pull/8573))。
+- `AppSettings.Language` 出厂改空串(= 跟随系统):`LocalizationService` 沿父文化链在五种界面语言里找,中文按书写体系归简 / 繁(zh-SG → 简体,zh-HK / zh-MO → 繁体),对不上(德语、法语、`LANG=C` 的不变文化……)用英文。系统语言由 .NET 取:Windows 是显示语言,Linux 依次看 `LC_ALL` / `LC_MESSAGES` / `LANG`。
+- ⚠️ 系统界面文化在服务构造时快照 —— `SetLanguage` 会改写环境文化,现读 `CurrentUICulture` 的话从「日本語」切回「跟随系统」就停在日语。
+- 用户选过的优先;**存量配置不迁移**(已落盘的 `zh-CN` 分不清是用户选的还是旧出厂值,同 §131 的强调色)。语言下拉首项加「跟随系统」。
 
 ## ✅ 142. 2026-09-29 切换界面语言后仍是中文的几处跟着换(用户反馈,§141 后续)
 
-**一、问题**:设置里切到英文,界面上仍有不少文案停在中文:标题栏 X Server 按钮的悬停提示、资源管理器「+」的提示与会话右键的「连接」「删除」、侧栏左下角通知 / 插件 / 设置的提示、Ctrl+P 命令面板里的大部分命令、SFTP 的「上传」与传输记录的提示。两类原因:
-- **XAML 用 `{x:Static res:Strings.X}` 取词**:视图加载时取一次值就定住了。主窗口只加载一次,切了语言它还停在启动时的语言。9 个视图里共 40 处。
-- **C# 侧拼好存着的文案**:命令的标题与分类在 `RegisterCommands()` 注册时就取好了,命令面板照着显示;X Server 按钮的提示只在服务状态变化时重算;会话树的置顶菜单项与状态标签是计算属性,没人发变更通知;「移动到分组」里的「未分组」在建树时取好了名字;状态栏的连接状态只在切标签时重写。
-
-**二、做法**:
-- 40 处 `x:Static` 一律改成 `{loc:Localize 键名}`,不再用的 `xmlns:res` 一并删掉(`MainWindow.axaml` 换成 `xmlns:loc`)。
-- `MainWindowViewModel` 注入 `ILocalizationService`,换语言时 `RefreshLocalizedText()`:重新注册命令(按 id 替换,顺序不变)、`XServerToggleViewModel.RefreshLocalizedText()`、`SessionTreeViewModel.RefreshLocalizedText()`(会话行重发置顶菜单项与状态标签的变更通知、「未分组」改名)、重写状态栏。
-- 按需打开的对话框与窗口(插件管理、回放中心、审计日志……)每次打开都现取文案,不在此列;命令面板的会话条目在每次打开时现建,也不受影响。AI 插件的命令本就在 `LocaleChanged` 时重新注册。
-
-**三、验证**:`LocalizedKeyUsageTests` 新增 `Xaml_TakesStringsThroughLocalize_NotXStatic`,扫 `src` 下全部 XAML,出现 `x:Static …:Strings.` 即失败(改之前列出的正是这 40 处)。`MainWindowViewModelTests` 新增 `LanguageChange_RefreshesTextComposedInCode`:中文下建主窗口视图模型,切英文后命令标题 / 分类、X Server 提示、「未分组」都换成英文,会话行发出置顶菜单项与状态标签的变更通知。
+两类根因:**XAML 用 `{x:Static res:Strings.X}`**,加载时取一次就定住(主窗口只加载一次)—— 9 个视图 40 处改成 `{loc:Localize 键名}`,`LocalizedKeyUsageTests` 扫 XAML 拦 `x:Static`;**C# 侧拼好存着的文案**(命令标题 / 分类、X Server 提示、会话树计算属性、「未分组」、状态栏)—— `MainWindowViewModel` 换语言时 `RefreshLocalizedText()` 重新注册命令(按 id 替换、顺序不变)并刷新各处。按需打开的窗口每次现取文案,不在此列。
 
 ## ✅ 143. 2026-09-29 排查其余不随语言变的文案(用户要求,§142 后续)
 
-**一、问题**:§142 修完用户点名的几处后全库排查,又找出两类:
-- **写死的中文,换语言、重启都不变**:连接诊断窗口的步骤名、副标题、「检测中」、出错标题与整份导出报告(连文件名都是「诊断报告-…」);捐赠页复制后的「已复制」;云同步版本历史的 `TargetNullValue=未知设备`;路由追踪的 TTL 失效提示;本地终端启动失败时内层异常的「无法启动本地 shell」。
-- **C# 侧拼好存着、换语言不重算**:托盘菜单(建托盘图标时拼好的原生菜单);终端行号栏右键菜单(设置保存时下发,而保存先于换语言,永远慢一拍);侧栏最近连接的相对时间与悬停提示;状态栏空闲时的后台任务提示、资源提示与选区字数;消息中心的空列表提示与每条的徽标 / 链接 / 相对时间;隧道面板的服务器状态、表单标题与按钮、各隧道行;终端标签的连接 / 断开覆盖层;设置页主题下拉末项「跟随系统」、X Server 检测状态、云同步「上次同步」。
-
-**二、做法**:
-- 新增 19 个本地化键(`Diag_Report*`、`Diag_RunFailed`、`Diag_StatusChecking`、`Diag_TargetSummary`、`SetDonate_Copied`、`SetSync_UnknownDevice`、`Trace_TtlIgnored`),五份 resx 齐;连接诊断的初始步骤名复用服务里已有的 `DiagSvc_Step*`。云同步的设备名改走新的 `DeviceNameConverter`(绑定属性里套不了 {loc:Localize})。捐赠页「已复制」改用 `SetCurrentValue`,不再把按钮上 {loc:Localize} 的绑定顶掉。本地终端的内层异常改成英文技术细节,外层 `Msg_LocalShellStartFailed` 本来就按界面语言包一句。
-- `SettingsViewModel.SaveAsync` 先换语言再落盘;托盘由 `App` 在换语言时重建菜单;`MainWindowViewModel.RefreshLocalizedText()` 追加最近连接、状态栏、消息中心、隧道面板、终端覆盖层;设置页换语言时重建主题名表、重写「上次同步」。
-- 主题与 X Server 显示号的下拉索引忽略 -1:换语言重建条目时 ComboBox 会把选中项清成 -1 推回来,原先主题会被当成「回到默认」换掉,显示号会被改回「自动」。
-- 不在此列:调试日志(`Trace.WriteLine`)、匹配远端输出的中文关键词(提示词识别、FTP 回复、诊断原因)、调用方会捕获的内部异常;SSH / X 服务端库的中文诊断文本另有 `feature-plan.md` 条目。
-
-**三、验证**:`LocalizedKeyUsageTests` 新增两条守卫 —— `Xaml_HasNoHardcodedChineseText`(XAML 属性值与元素文本不许写死中文,语言下拉的本名除外)与 `Code_HasNoHardcodedChineseText`(C# 字符串字面量不许写死中文;跳过注释、调试日志、分析器豁免理由与正则特性,匹配远端输出的几个文件列了白名单并附理由)。`ConnectionDiagnosticsViewModelTests` 钉住英文界面下的步骤名、副标题与报告不含中文;`SettingsViewModelTests` 钉住「先换语言再落盘」与「主题索引忽略 -1」;`LanguageChange_RefreshesTextComposedInCode` 补状态栏空闲提示。整个解决方案 0 失败:`VelaShell.Core.Tests` 594 通过 / 20 跳过,`VelaShell.Tests` 1612 通过 / 16 跳过。⚠️ 中间踩了一脚:往 resx 里按字母序插键时,zh-Hans / zh-Hant 文件头的样例注释里有 `<data name="Name1">`,16 个键被插进了注释 —— 编译不报错,是 `AllCultures_HaveIdenticalKeySets` 报「zh-Hans 缺失 16 键」才发现的。
+全库排查又找出写死的中文(连接诊断步骤与整份报告、捐赠页、云同步、路由追踪等)与拼好不重算的文案(托盘、终端行号栏菜单、消息中心、隧道面板等),新增 19 个键补齐。云同步设备名改走 `DeviceNameConverter`(绑定属性里套不了 {loc:Localize});⚠️ 捐赠页「已复制」要用 `SetCurrentValue`,否则会把按钮上 {loc:Localize} 的绑定顶掉。
+- ⚠️ 终端行号栏右键菜单永远慢一拍:它在设置保存时下发,而保存先于换语言 —— `SettingsViewModel.SaveAsync` 改为先换语言再落盘。
+- ⚠️ 换语言重建下拉条目时 ComboBox 会把选中项清成 -1 推回来,主题被当成「回到默认」、X Server 显示号被改回「自动」;两处下拉索引忽略 -1。
+- 不在此列:调试日志、匹配远端输出的中文关键词、调用方会捕获的内部异常;SSH / X 服务端库的中文诊断文本(剩余项见 feature-plan.md)。守门:`Xaml_HasNoHardcodedChineseText` / `Code_HasNoHardcodedChineseText`(匹配远端输出的文件列白名单附理由)。
+- ⚠️ 往 resx 按字母序插键时,zh-Hans / zh-Hant 文件头样例注释里有 `<data name="Name1">`,16 个键被插进了注释 —— 编译不报错,靠 `AllCultures_HaveIdenticalKeySets` 才发现。
 
 ## ✅ 144. 2026-09-30 远端文件改属主 / 属组(chown)(`feature-plan.md` 🟢 P3 项)
 
-**一、问题**:属性弹窗里属主、属组只读,`ISftpService` 只有 chmod 没有 chown(velashell-docs 的 WinSCP 差距分析里记为 ❌)。
-
-**二、做法**:
-- **契约**:`ISftpService` 加 `SetOwnerAsync(sessionId, path, owner, group)`(填名称或十进制数字 id,null 表示这一项不改)与 `GetOwnerChoicesAsync`(可选的用户名 / 组名;返回 null 表示后端改不了属主);`ISftpClientWrapper` 加 `ChangeOwnerAsync(path, uid?, gid?)`。
-- **SFTP**:名称翻数字 id 复用列目录显示名称的那张查表(`RemoteIdentityResolver`,每会话一次 `getent passwd` / `group`),查表多记一份名称 → id,同 id 的别名(BSD 的 `toor`)也认。顺序与 `chown` 命令一致:先当名称查,查不到再当数字。两样都不是就抛本地化的 `ArgumentException`(`SftpSvc_UnknownUser` / `SftpSvc_UnknownGroup`),不发请求。纯 SFTP 账号查不到表时候选为空,仍可填数字。
-- **`VelaSftpClientWrapper`**:SFTP v3 的 uid 与 gid 共用一个标志位,只改一项时先 stat 取回另一项再一并 setstat;服务端 stat 时没报 uid/gid 就不写 —— 拿不到的一项会被当成 0,等于把文件交给 root。只用库的公开 `SetAttributesAsync`,`src/VelaShell.Ssh` 没动。
-- **FTP 与插件协议**:FTP 没有改属主的标准命令,SDK 的 `IProtocolFileSystem` 没有这一面;`GetOwnerChoicesAsync` 返回 null,`SetOwnerAsync` 抛 `NotSupportedException`。路由与串行化装饰器透传。
-- **界面**:候选不为 null 时,属性弹窗的属主 / 属组换成可编辑下拉(`MessageDialog` 的 BodyHost 补一条 ComboBox 样式,与输入框同一套令牌),占位文字 `Sftp_OwnerPlaceholder` / `Sftp_GroupPlaceholder`,清空当作不改;否则两行照旧只读。`ShowFileProperties` 改为带回 `FilePropertiesChange`(只带改了的项)。确定后**先 chown 再 chmod**:属主最容易被拒(非 root 只能把属组改成自己所在的组),放前面,被拒时什么都还没改;chown 成了、chmod 被拒时照样刷新列表,错误在刷新之后再写,不被刷新清掉。
-- 不递归、不批量(与 chmod 一致);符号链接改的是它指向的对象。
-
-**三、验证**:`SftpServiceTests` 新增 9 条(名称翻译、只改属组、无查表时的数字 id、名字像数字时名字优先、别名、未知名称不发请求、空操作、候选排序、无查表时给空名单而非 null);`FileBrowserViewModelTests` 新增 5 条(候选透传、候选取不到退回只读、先 chown 再 chmod、chown 被拒不动权限、chmod 被拒仍刷新且保留错误),原有 3 条改用新委托;`SerializedSftpServiceTests` 的透传清单补两项。新增 `SftpOwnerIntegrationTests`(DockerIntegration)对真实 OpenSSH:只改属组时属主原样写回,把属主交给 root 冒出 `VelaSftpPermissionDeniedException` 且文件不动。把「沿用当前值」临时改成写 0 后,该用例报服务端 Permission denied 失败,确认它真跑过、不是早退记为通过。另用 headless 截图核对了弹窗(深 / 浅主题,可编辑 / 只读 / 下拉展开)。整个解决方案:`VelaShell.Core.Tests` 616 通过 / 10 跳过 / 1 失败,`VelaShell.Tests` 1626 通过 / 8 跳过,`VelaShell.Infrastructure.Tests` 569 通过 / 4 跳过,其余全过。唯一的失败 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 与本改动无关:本机的 `velashell-test-shells` 镜像建于 09-22,早于 Dockerfile 里给 `vela-dash` 关 X11 的 `Match` 段(09-23),靶机没按预期拒绝 X11;重建该镜像即可。
+属性弹窗的属主 / 属组可改,**只有 SFTP 支持**;不递归、不批量(与 chmod 一致),符号链接改的是指向的对象。
+- `ISftpService.SetOwnerAsync`(名称或十进制 id,null = 不改)与 `GetOwnerChoicesAsync`(null = 改不了,弹窗照旧只读)。名称翻 id 复用 `RemoteIdentityResolver` 的 `getent` 查表(同 id 的别名如 BSD 的 `toor` 也认),顺序与 `chown` 命令一致:先当名称、再当数字,都不是就不发请求;纯 SFTP 账号查不到表时候选为空,仍可填数字。FTP 没有标准命令、插件 `IProtocolFileSystem` 没这一面,`SetOwnerAsync` 抛 `NotSupportedException`。
+- ⚠️ SFTP v3 的 uid 与 gid 共用一个标志位:只改一项时先 stat 取回另一项一并 setstat;服务端没报 uid/gid 就不写 —— 拿不到的一项会被当成 0,等于把文件交给 root。只用库的公开 `SetAttributesAsync`,`src/VelaShell.Ssh` 没动。
+- **先 chown 再 chmod**:属主最容易被拒(非 root 只能把属组改成自己所在的组),放前面,被拒时什么都还没改;chmod 被拒时照样刷新,错误在刷新之后再写。
 
 ## ✅ 145. 2026-09-30 新建连接对话框改为「左侧协议栏 + 右侧分页表单」(用户需求,设计稿 `VelaShell-zh.pen`「新建连接 v2」)
 
-**一、问题**:对话框是 508 宽的一列到底表单,页脚一个「高级选项」开关管着其余一切。SSH 展开后有三十来行(标签、跳板、认证后命令、六项终端覆盖、压缩、两项算法、agent 转发及其两道收紧、X11),窗口被钳在 768 高里只能一路滚;跳板主机这种决定连不连得上的项也藏在折叠区里。协议是横排页签,插件协议一多就挤出窗口。「连接」按钮是实心强调色,与 DESIGN.md §5.1(主操作用半透明强调药丸)不符。
-
-**二、做法**:
-- **布局**:卡片 760×664 定高(XAML 按 Windows 口径 792×696),标题栏 / 主体 / 反馈条 / 页脚四行;主体左边 188 宽的协议栏,右边是分页页签 + 表单,只有表单区滚动。矮屏上照旧按 `min(768, 工作区 − 48)` 钳高。
-- **协议栏**:「内置」SSH / SFTP / FTP(右侧小字标终端 / 文件)+「插件」一组(数量 + 各插件清单声明的协议,不装载程序集;清单不写形态,所以插件项不标小字、一律插头图标)。底部「获取更多协议…」调主窗口注入的 `ConnectionProfileViewModel.OpenPluginManager` 打开插件管理器(非模态,在那边启用的协议经注册表 `Changed` 当场补进协议栏);没注入时不出现。
-- **分页**:新增 `ConnectionProfileSection`(常规 / 终端 / SSH 选项 / 转发 / 高级)与 `SelectedSection`、`SelectSectionCommand`、`Show*Section`。终端与转发只对 SSH,SSH 选项对 SSH 与 SFTP,高级对 FTP(默认打开路径)与声明了 `IsAdvanced` 字段的插件协议。换协议后当前页不存在就落回常规(`RefreshSectionAvailability`,在 `ConnectionType` 变化与插件字段增减两处调用 —— 切到插件协议那条路不清字段,只靠前者)。选中下划线沿用原先协议页签的滑动实现,改为跟分页页签走。
-- **「高级选项」开关删除**:`IsAdvancedVisible` / `ToggleAdvancedCommand` 去掉。插件字段的行可见性改为「属于当前页且显示条件成立」,「常规」与「高级」两页各用同一个 `PluginFieldRow` 模板画一份。`AdvancedBadge` 改为页签上的字段数(只数眼下适用的,不再是「折叠了几项」的 `+N`)。原先「编辑时有非默认值就自动展开」改为页签旁的圆点:`Is{Terminal,SshOptions,Forwarding,Advanced}SectionModified`,派生通知集中在 `OnOwnPropertyChanged` 按属性名转发。
-- **常规页**分连接目标(Host/Port、跳板 —— 说明收进 ⓘ 悬停)、身份验证(认证方式由下拉改为分段按钮,新增 `SelectAuthMethodCommand`;FTP 在那一格放加密方式)、插件常用字段(节标题「<协议名> 设置」)、整理(显示名称 / 分组 / 标签三栏)。标签颜色输入框左侧加色块预览(`StringToBrushConverter`)。允许老算法、agent 转发标题旁加警示标签。说明文字从 `TextMuted` 换成 `TextTertiary`(前者在 `VelaBgSurface` 上对比度不够读整段)。
-- **页脚**:左边新增连接目标预览 `EndpointPreview`(`user@host:port`,SFTP / FTP 带 scheme,IPv6 加方括号,匿名 FTP 不带用户名);右边测试 / 保存改用 `VelaOutlineButtonTheme`,连接改用 `VelaAccentPillButtonTheme`,同高 28。
-- **样式**:协议项、分页页签、认证分段各用一个窗口内的 `ControlTheme`(自带模板,焦点只在 `:focus-visible` 时画),原先给协议页签手工挂焦点装饰器的那段代码后置删掉。
-- **文案**:新增 16 个键(五份 resx 齐);`Profile_AdvancedOptions`、`Profile_SshFeatures` 改短作页签名(高级 / SSH 选项);四个认证方式键改短作分段按钮(密码 / 密钥 / 证书 / Agent,只有这里用)。
-- DESIGN.md §6.1 那条「SSH/SFTP protocol tabs」改为协议栏与分页页签的动效与焦点口径。
-
-**三、验证**:新增 `ConnectionProfileSectionsTests`(18 例:各协议有哪几页、换协议落回常规 / 页还在就不动、切到插件协议离开 SSH 专属页、选不进不存在的页、圆点在已存配置 / 新建 / 编辑时的亮灭与通知、预览的六种写法与通知、分段按钮、插件管理器入口);`ConnectionProfileViewModelTests` 里依赖折叠开关的 5 条改写成分页口径,新增最后一个高级字段消失时落回常规;UI 测试新增 `SectionTabIndicator_SlidesToSelectedSection`(取代协议页签那条)与 `OnlyTheSelectedSectionIsShown`,其余按新控件名改;`Todo2PixelRegressionTests` 改为按协议栏 SFTP 项的实际边界采样(原先写死的坐标落到了标题栏上)。两处变异:去掉 `ConnectionType` 变化时的落回 → 切插件协议那条变红(内建协议那条因为清字段也会落回,故另加了插件那条);下划线把「转发」错映射到「常规」→ 指示条用例变红。headless 截了七帧(SSH 四页、证书认证测试失败、明文 FTP、亮色)与设计稿对照。整个解决方案:`VelaShell.Tests` 1646 通过 / 8 跳过,`VelaShell.Core.Tests` 616 通过 / 10 跳过 / 1 失败(即 §144 记下的 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`,本机测试镜像过旧,与本改动无关),其余全过。
-
-**四、与设计稿的出入**:FTP 的加密方式放在用户名旁(与 SSH 的认证方式同一格,沿用原实现),而不是设计稿里跳板主机旁;插件字段仍是一行一个、说明写在字段下方(字段是插件声明的,宿主不知道哪两项适合并排),没有照设计稿压成双栏 + ⓘ。
+原先 508 宽一列到底,「高级选项」开关管着其余一切:SSH 展开三十来行,跳板主机这种决定连不连得上的项也藏在折叠区;横排协议页签装不下插件协议。
+- 卡片 760×664 定高,左 188 宽协议栏(「内置」SSH / SFTP / FTP +「插件」一组,取插件清单声明的协议、不装载程序集;底部「获取更多协议…」打开插件管理器,启用的协议当场补进),右侧分页 `ConnectionProfileSection`(常规 / 终端 / SSH 选项 / 转发 / 高级),只有表单区滚动;矮屏照旧按 `min(768, 工作区 − 48)` 钳高。
+- 终端与转发只对 SSH,SSH 选项对 SSH 与 SFTP,高级对 FTP 与声明了 `IsAdvanced` 字段的插件协议。换协议后当前页不存在就落回常规(`RefreshSectionAvailability`);⚠️ 切到插件协议那条路不清字段,只能靠 `ConnectionType` 变化那一处触发。
+- 「高级选项」开关删除,「有非默认值就自动展开」改为页签旁的圆点。认证方式改分段按钮;页脚左边 `EndpointPreview`(`user@host:port`,IPv6 加方括号),连接改用半透明强调药丸(DESIGN.md §5.1)。说明文字换 `TextTertiary`(`TextMuted` 在 `VelaBgSurface` 上对比度不够读整段)。
+- **与设计稿的出入**:FTP 加密方式沿用原位置(用户名旁);插件字段仍一行一个 —— 字段是插件声明的,宿主不知道哪两项适合并排,没压成双栏 + ⓘ。
 
 ## ✅ 146. 2026-10-01 取色器:设置页与连接对话框里挑颜色不再手敲色值(用户需求)
 
-**一、问题**:要人挑颜色的六个地方 —— 设置 → 外观的强调色、终端前景 / 背景 / 光标 / 选区,新建 / 编辑连接「终端」页的标签颜色 —— 都是「色块 + 手敲 `#RRGGBB` 的输入框」。想要一个颜色得先去别处查色号;敲错了,终端四色整套落回出厂色(`TerminalAppearanceMapper` 只认六位),强调色直接不生效。
-
-**二、做法**:
-- **控件库**(`VelaShell.Controls`,无文案、可单测):`ColorSpectrumPad`(饱和度 / 明度面板)与 `HueStrip`(色相条)两个绘制控件,拖动只改值、松手才发 `Committed`,方向键可调(Shift 十倍);`ColorHex` 负责解析(`#RGB` / `#RRGGBB` / `#AARRGGBB`,不认颜色名)与格式化(一律大写 `#RRGGBB`)。HSV 换算用 Avalonia 自带的 `HsvColor` / `Color.ToHsv()`。面板里的白与黑是 HSV 色彩空间本身,不是界面配色,所以不走令牌。
-- **宿主**:`Controls/ColorPickerField`(`Value` 双向绑定的十六进制字符串,外加 `EmptyText` / `ClearText` / `Swatches` / `SwatchesTitle`)。字段长得像输入框:色块 + 色值 + 箭头,没有颜色时空框加一行说明;点开是浮层 —— 面板、色相条、新旧对比色块 + 十六进制框、色板、可选的清除。
-  - **松手才写回**(拖动中只刷浮层预览):强调色一改就要重派生全套主题令牌,终端颜色一改就要重刷所有终端。十六进制框认不出的值不写进设置,框里退回当前颜色。
-  - 色板:终端四色给当前配色方案的 ANSI 16 色(`SettingsViewModel.TerminalSchemeSwatches`,换方案、改调色板时跟着发通知);其余默认用当前主题色板(新增 `ConnectionAccent.PaletteColors()`,即 `VelaAccentPalette0..7`)。与当前颜色相同的一格加粗描边。
-  - 清除只在值允许为空时给:标签颜色的「自动配色」。强调色清回跟随仍走行首的「跟随主题」按钮;终端四色必填,不给。
-  - 状态按 H / S / V 三个数保存,而不是 `HsvColor`:后者把色相 360 折回 0,色相条拖到最右一松手就会跳回最左;灰色色板也保留原来的色相。
-- **替换**:外观页五个输入框(连同旁边的色块)换成 `ColorPickerField`;连接对话框的标签颜色换成它,`Profile_OverrideTabColorPlaceholder` 随之删掉。新增 4 个文案键(`ColorPicker_Tip`、`ColorPicker_ThemePalette`、`ColorPicker_SchemeColors`、`Profile_TabColorAuto`),五份 resx 齐。ANSI 16 色在外观页上仍是只读色块(既有设计),不在此列。
-- DESIGN.md §5.2 补 `ColorPickerField` 一条;两个工程的 README 补上新文件。
-
-**三、验证**:`VelaShell.Controls.Tests` 新增 `ColorPickerPartsTests`(18 例:各种色值写法、拒绝颜色名与残缺值、格式化丢 alpha、面板四角与越界换算、色相条两端的半径余量、属性钳制)。`VelaShell.Tests` 新增 `ColorPickerFieldUiTests`(11 例:字段回显与空态、浮层从当前值起步、点色板写回并标出当前格、没给色板时用主题色板、十六进制框写回 / 回退、键盘调面板写回、拖动只在松手时提交一次(真实鼠标事件)、清除按钮的显隐与清空、连接对话框与外观页确实用上并双向绑定、方案色板随调色板发通知)。变异:拖动过程中也发 `Committed` → 拖动那条变红。headless 截图在深 / 浅两套主题下核对了外观页、连接对话框与浮层。`VelaShell.Controls.Tests` 31 通过,`VelaShell.Tests` 1657 通过 / 8 跳过(含无障碍名字、设置页输入框扫描、颜色字面量、文案键几道门)。
+强调色、终端四色与连接标签颜色六处原是手敲 `#RRGGBB`,敲错时终端四色整套落回出厂色(`TerminalAppearanceMapper` 只认六位)。
+- `VelaShell.Controls` 加 `ColorSpectrumPad` / `HueStrip` 与 `ColorHex`(认 `#RGB` / `#RRGGBB` / `#AARRGGBB`,不认颜色名,输出大写 `#RRGGBB`);宿主 `Controls/ColorPickerField` 是像输入框的字段 + 浮层(面板、色相条、十六进制框、色板)。色板:终端四色给当前配色方案的 ANSI 16 色,其余用主题色板;清除只给值允许为空的。
+- **松手才写回**(拖动中只刷浮层预览):强调色一改要重派生全套主题令牌,终端颜色一改要重刷所有终端。十六进制框认不出的值不写进设置,框里退回当前颜色。
+- ⚠️ 状态按 H / S / V 三个数保存而不是 `HsvColor`:后者把色相 360 折回 0,色相条拖到最右一松手就跳回最左。面板里的白与黑是色彩空间本身,不走令牌。
 
 ## ✅ 147. 2026-10-01 审计日志窗口的筛选条高度与别的工具窗口对齐(用户反馈)
 
-**一、问题**:审计日志窗口筛选条上的类别下拉与关键字框没写尺寸,吃的是 Fluent 默认值(最小高 32、14 号字),比同一排 30 高的刷新按钮还高一截,也比任务管理器、路由追踪工具条上 28 高的筛选框高 —— 看起来「更高一点」。
-
-**二、做法**:`AuditLogView` 的筛选条挂 `filter-bar` 类,下拉与关键字框按任务管理器 / 路由追踪的口径定为 28 高(输入框 11 号字、`Padding 8,0`;下拉 12 号字,11 号比例字体在亮色主题下发糊,同设置页那处说明);刷新按钮从窗口内自定义的 30 高 `dlg-outline` 换成 `VelaOutlineButtonTheme`(DESIGN.md §5.1,28 高),本地那条样式删掉。
-
-**三、验证**:新增 `AuditLogViewUiTests.FilterBar_ControlsShareTheToolbarHeight`(下拉、关键字框、刷新按钮都是 28;改之前实测下拉 32,用例红)。headless 截图核对了深 / 浅主题。
+下拉与关键字框没写尺寸,吃 Fluent 默认(最小高 32),比其它工具窗口的 28 高筛选框高。定为 28 高(下拉 12 号字 —— 11 号比例字体在亮色主题下发糊),刷新按钮换 `VelaOutlineButtonTheme`(DESIGN.md §5.1)。
 
 ## ✅ 148. 2026-10-01 「怎么改都绿」的 UI 用例:复核已修,加守门测试(`feature-plan.md` 🔴 P0 项)
 
-**一、问题**:`feature-plan.md` 还挂着「11 条『怎么改都绿』的 UI 用例」(🔴 P0,出处 §70):无返回值的 async lambda 绑到 `Dispatch<Task>(Func<Task>)`,外层任务在第一个 `await` 就完成,断言异常没人接。实际上 §139 已经把这些全部改完(补 `return true;`,或改用 `TestSupport/HeadlessUi.cs` 的 `RunOnUiAsync`),只是那一条没从 `feature-plan.md` 删掉,复核结论也停在 09-26 的「还是无返回值写法」。另一个问题是:AGENTS.md 早就写着这条约束,却没拦住它长出 11 处 —— 没有东西在机器上守着。
-
-**二、做法**:
-- **复核**:全部测试工程里的 `Dispatch(async` 逐处看 lambda 有没有顶层 `return` 与外层怎么等 —— 32 处全部带返回值并 `GetAwaiter().GetResult()`(另有一处只是 `FtpConnectionFlowTests` 注释里的字样,实际代码走 `Task.Run`);没有「在 async 用例里 `await …Dispatch(…)`」的写法;也没有「非 async lambda 直接返回 `Task`」或传 `…Async` 方法组的变体。
-- **探针**:在点名的四个文件(`PluginPanelUiTests` 5、`PluginThemeTokensTests` 1、`StandaloneSftpDocumentBehaviorTests` 4、`LocalFilePaneViewUiTests` 2)每个异步用例体的最末尾、所有 `await` 之后插 `Assert.Fail("PROBE")`:12 条全红,失败原因都是 PROBE —— 用例体确实跑到底了。探针随后还原。
-- **守门**:新增 `Design/HeadlessDispatchUsageTests`,扫 `tests/` 下全部 `.cs`:`Dispatch(async …)` 的用例体必须有顶层的带值 `return`;不许出现 `await …Dispatch(…)`。扫描前先把注释与字符串字面量抹成空白(行号不变),说明文字里引用这两种写法不算违规,字符串里的大括号也不进配对。扫描器本身带 9 条正反样例(只有内层 lambda 有 `return`、字符串里的 `}`、插值串、注释等),免得守门测试自己也「怎么改都绿」。AGENTS.md 那条 headless 约束补一句由它守门。
-- `feature-plan.md` 删掉这一条(连同只剩它一行的「测试与工程」小节),「建议的下一步」与待办分布的计数随之更新。
-
-**三、验证**:守门测试 10 例通过;变异:把 `PluginThemeTokensTests` 里那句 `return true;` 删掉,守门报 `VelaShell.Tests/Views/PluginThemeTokensTests.cs:20  Dispatch(async …) 的用例体没有返回值`,还原后通过。
+`feature-plan.md` 还挂着 §70 登记的「11 条『怎么改都绿』的 UI 用例」,实际 §139 已全部改完,只是条目没删。更要紧的是 AGENTS.md 早写着这条约束却没拦住它长出 11 处 —— 没有东西在机器上守着。
+- 复核:32 处 `Dispatch(async` 全部带返回值;点名的四个文件逐条在末尾插 `Assert.Fail("PROBE")`,12 条全红,用例体确实跑到底。
+- **守门** `Design/HeadlessDispatchUsageTests` 扫 `tests/` 下全部 `.cs`:`Dispatch(async …)` 的用例体必须有顶层带值 `return`,不许出现 `await …Dispatch(…)`。扫描前把注释与字符串字面量抹成空白;扫描器自带 9 条正反样例,免得守门测试自己也「怎么改都绿」。`feature-plan.md` 删掉这一条。
 
 ## ✅ 149. 2026-10-01 zsh 上的注入行不再写进历史文件(`feature-plan.md` 🟡 P2 项)
 
-**一、问题**:`feature-plan.md` 挂着「非 bash 的 shell 别注入目录上报钩子」:钩子由 `BASH_VERSION` 守卫,在 zsh / dash 上是空操作,却照样占一个提示符周期、在历史里留一整行(§66 的摘历史只对 bash 有效)。复核:这条写于 09-10,前提已被 `0c5ef1aa`(09-16,按 shell 分派重构「跟随终端目录」)推翻 —— 探针早已带回种类(`RemoteShellKind`,就是条目建议的 `${BASH_VERSION:+…}` / `${ZSH_VERSION:+…}` 那一手),zsh 走 `precmd_functions`、dash / ash 走 `PS1`,钩子在它们上面是真的在工作;多出来的提示符也已由 #448 收回。条目建议的「认出 zsh 就跳过注入」如今等于把 zsh 的目录跟随关掉,不做。还成立的只剩历史:zsh 上注入行接的仍是 bash 那段 `history -d` 前缀 —— 两百多字符的空操作,连同钩子整行留在历史里,并随退出写进 `~/.zsh_history`,每连一次攒一行。
-
-**二、做法**:
-- **zsh 能做到哪一步,先在测试容器的 zsh 5.9 上实测**:本会话历史表里的那一条摘不掉 —— zsh 没有 `history -d`,`HIST_IGNORE_SPACE` 与 `zshaddhistory` 在读完一行、执行之前就判完了,同一行里 `setopt` / 装钩子都来不及,`fc` 也不会换掉自己那一行。但 `HISTORY_IGNORE` 是**写盘时**才逐行比对的:默认的退出时写盘(macOS 出厂 `/etc/zshrc` 就是这种)、`APPEND_HISTORY`、`INC_APPEND_HISTORY_TIME` 下注入行都不会写进文件;`INC_APPEND_HISTORY` / `SHARE_HISTORY` 读完一行就写,只漏第一条注入行。配了 `HIST_IGNORE_SPACE`(oh-my-zsh 默认开)的,靠注入行的前导空格,内存与文件都不留。
-- `ShellHistoryScrub` 新增 `ZshCommand`:`ZSH_VERSION` 守卫、`eval '…'` 包裹,把 `*__vela_hist_scrub*` 追加进 `HISTORY_IGNORE` —— 用户原有的模式作为一个分支包进括号照常生效,已含记号就不再追加(一个 shell 里会连着注入好几行)。模式本身写着记号,所以每一条接了这段的注入行都被它自己拦住。
-- 按种类挑前缀收进 `ShellHistoryScrub.For`:zsh → `ZshCommand`;bash / dash / ash / 探不出 → 原 bash 那段(登录 shell 是 sh、`.profile` 里 `exec bash` 的机器上,探针只看得到 sh,这时 bash 那段是唯一真能摘历史的东西 —— 条目里那条「只在正面认出非 bash 时才跳」);fish / 非 POSIX 不接。`Prepend` 改为带种类的 `Prepend(kind, command)`,`SupportedBy` 改由 `For` 推出,`SilentCommand` 直接走它。
-
-**三、验证**:Docker 端到端新增 `OnZsh_TheInjectedLines_DoNotReachTheHistoryFile`(真 sshd + 真 zsh:注入前先设用户自己的 `HISTORY_IGNORE`,注入钩子与一条用户命令后登出,读回历史文件 —— 两条注入行与记号都不在,用户的 `echo kept-1` 在,用户自己忽略的 `echo secret-1` 仍被忽略);变异:zsh 改回接 bash 那段 → 该例红(「钩子那条注入行写进历史文件了」)。`ShellIntegration.Tests` 33 例全部真跑通过。Core 单测补按种类挑前缀(6 例)、zsh 那段的守卫与追加写法、`SilentCommand` 给 zsh 接的是 zsh 那段。`-warnaserror` 全解决方案零警告;`VelaShell.Tests` 1641 通过 / 35 跳过(真 bash 那几条在本机 PATH 上找不到 bash,按环境早退);`VelaShell.Core.Tests` 625 通过 / 1 失败 / 10 跳过,失败的是 X11 靶机用例(本机 `ssh-shells` 镜像旧、缺 `vela-dash` 的 `Match` 段,未改动的代码上同样失败,同基线里记的那条)。velashell-docs 没有写到注入行与命令历史的地方,不涉及文档同步。
+条目原写「非 bash 的 shell 别注入目录上报钩子」,前提已被 `0c5ef1aa`(09-16,按 shell 分派「跟随终端目录」)推翻:zsh / dash 上钩子真在工作,多出的提示符也已由 #448 收回;**「认出 zsh 就跳过注入」等于关掉 zsh 的目录跟随,不做**。还成立的只剩历史:zsh 上注入行接的仍是 bash 的 `history -d` 前缀,整行写进 `~/.zsh_history`。
+- zsh 5.9 实测:本会话历史表里那一条摘不掉(没有 `history -d`,`HIST_IGNORE_SPACE` / `zshaddhistory` 在执行前就判完)。但 `HISTORY_IGNORE` 是**写盘时**逐行比对:`ShellHistoryScrub.ZshCommand` 把 `*__vela_hist_scrub*` 追加进去(保留用户原有模式),每条注入行被自己写着的记号拦住。退出时写盘(macOS 出厂 `/etc/zshrc`)、`APPEND_HISTORY`、`INC_APPEND_HISTORY_TIME` 下注入行都不进文件;⚠️ `INC_APPEND_HISTORY` / `SHARE_HISTORY` 读完一行就写,只漏第一条注入行。配了 `HIST_IGNORE_SPACE`(oh-my-zsh 默认开)的,靠前导空格内存与文件都不留。
+- `ShellHistoryScrub.For` 按种类挑前缀:zsh → zsh 那段;bash / dash / ash / 探不出 → 原 bash 那段(登录 shell 是 sh、`.profile` 里 `exec bash` 时探针只看得到 sh,只在正面认出非 bash 时才跳);fish / 非 POSIX 不接。velashell-docs 没写到注入行与命令历史,不涉及文档同步。
 
 ## ✅ 150. 2026-10-01 侧栏底部的身份名称不再压到右侧按钮(#545)
 
-**一、问题**:侧栏底部栏左侧的「用户@主机」名称一长,就画到右侧的铃铛和插件按钮上(#545 附图:`root@PVE-SyncClipboard`)。那一行是横向 `StackPanel`:它沿排列方向给子元素无限宽,`TextTrimming` 等不到触发,只靠文字上的 `MaxWidth="150"` 兜底;而侧栏默认 260px 时按钮左侧只剩约 114px 给文字,超过十七八个字符就压上去,拖到最窄的 180px 时几乎什么名字都压。
-
-**二、做法**:列了四种处理(尾部省略、中间省略、主机 / 用户双行、身份独占一行)给用户挑,定为尾部省略。那一行改成 `Grid`(`Auto,*`),文字放进 `*` 列、去掉 `MaxWidth`,只拿按钮左边剩下的宽度,放不下就截成尾部省略号;外层网格加 `ColumnSpacing="8"`,名称与按钮之间始终留 8px。完整名称照旧在悬停提示里。
-
-**三、验证**:`SidebarQuickCommandsUiTests` 新增 `LongActiveIdentity_TrimsBeforeFooterButtons`(260 / 180 两种宽度:名称右沿 + 8 不越过按钮左沿、确实截成了省略号、悬停提示是完整名称;改之前实测 260px 下名称画到 191、按钮从 164 开始,180px 下按钮从 84 开始,两例都红)与 `ShortActiveIdentity_IsNotTrimmed`(放得下的名称不截)。velashell-docs `交互与界面规格.md` / `interaction-and-ui-specs.md` §4 底部用户栏原先还写着「头像 + `root`」,一并改成当前身份的实际行为与截断规则。
+根因:那一行是横向 `StackPanel`,沿排列方向给子元素无限宽,`TextTrimming` 永远等不到触发。四种处理里用户定为尾部省略:改成 `Grid`(`Auto,*`),名称与按钮间留 8px,完整名称在悬停提示里。文档:velashell-docs 中英镜像的交互与界面规格 §4 底部用户栏。
 
 ## ✅ 151. 2026-10-03 连接对话框只让有焦点的文本框滚动表单(插件连接表单那次改动撤回后保留的两处修复)
 
-**一、问题**:编辑一条存了口令的连接,口令框落在首屏以下时(矮屏,或插件字段多的协议),对话框一打开表单就被拽下去一百来像素,连接名一栏看不见。根因:文本框被程序赋值时光标跟着挪,`TextPresenter` 随后发一次 BringIntoView —— 不管它有没有焦点 —— 外层的表单区照单全收。
-
-**二、做法**:
-- `ConnectionProfileView` 在表单内容(而不是 `ScrollViewer` 本身 —— 请求冒泡时先到 `ScrollContentPresenter`,挂在外面就拦晚了)上处理 `RequestBringIntoViewEvent`:来自没有键盘焦点的文本框的请求一律吞掉。Tab / 点击进去的那一个照常带进视野。
-- `ConnectionProfileViewModel.CopyToClipboard` 是视图注入的回调,对 ReactiveUI 分析器 RXUISG0016(建议改 `[Reactive]`)按本文件 CA1822 那几处的写法加 `SuppressMessage` 并写明理由。
-- 来历:这两处原是 `7769181d`(插件工作台的连接表单照版式声明排、右侧栏给连接串预览与逐步测试,PR #548)的一部分。MongoDB 插件随后改为像 Docker 面板一样从命令面板打开、自己管理连接,那次改动连同 SDK 2.0.7 的连接对话框契约一并撤回(`f4e6b470`;SDK 侧 velashell-plugin-sdk `06f5800`),`VelaShell.PluginSdk*` 回到 2.0.6;与契约无关的这两处单独留下。
-
-**三、验证**:UI 测试新增 `OpeningWithASavedPassword_LeavesTheFormAtTheTop`(压一块 320 高的矮屏,口令框在首屏以下时表单停在顶上;焦点放进口令框后照常滚过去),修之前红。
+编辑存了口令的连接时,口令框在首屏以下的话表单一打开就被拽下去。根因:文本框被程序赋值时 `TextPresenter` 发 BringIntoView,不管有没有焦点。`ConnectionProfileView` 吞掉没有键盘焦点的文本框的请求;⚠️ 要挂在表单内容上,挂在 `ScrollViewer` 本身就拦晚了(请求先到 `ScrollContentPresenter`)。另一处是 `CopyToClipboard` 的分析器抑制。两处原属 `7769181d`(PR #548,插件工作台的连接表单);MongoDB 插件改为自己管理连接后,那次改动连同 SDK 2.0.7 的连接对话框契约一并撤回(`f4e6b470`;SDK 侧 velashell-plugin-sdk `06f5800`),`VelaShell.PluginSdk*` 回到 2.0.6。
 
 ## ✅ 152. 2026-10-03 连接配置加备注,资源管理器悬停显示(#549)
 
-**一、问题**:#549 要在连接配置里加备注,最好是能换行的文本域,记用途、负责人、注意事项之类。配置上原本只有名称与标签(单行、逗号分隔),一段说明无处可放。用户另要求在资源管理器里悬停一条连接时把备注弹出来。
-
-**二、做法**:
-- `SessionProfile.Notes`(`string?`,null = 没有备注)。仓储与 Gist 同步都是整对象序列化,不用改;`Clone` 补一行(`SessionProfileCloneTests` 的反射比对守着,`FullyPopulated` 一并补上)。明文、不经 `ISecretProtector`:它不是凭据,而且要在悬停提示里直接显示。导入器只新建配置、插件的 `sessions` 能力只读,两边都不会把已有的备注冲掉。
-- 连接对话框「常规」页「整理」一节,三栏下面加一整行备注:`AcceptsReturn` 多行框,`MinHeight` 64 / `MaxHeight` 96(最多约五行,再长在框里滚,不把整页撑高)。对话框没有默认按钮,回车只换行。不分协议。保存时去首尾空白,只剩空白的存 null。框下一行提示:悬停时显示;明文保存、也随云同步上传,口令放在身份验证里。
-- 资源管理器:`SessionTreeNodeViewModel.Notes` / `NotesTip`,建树(`CreateSessionNode`)与 `AddSession` 时从配置带上;会话行整行挂 `ToolTip.Tip="{Binding NotesTip}"`。没写备注是 null,不弹空浮层;超过 12 行或 500 个字符的截断补 `…`,不在代理对中间切 —— 提示框只限宽不限高,一大段粘贴进来的备注会弹出比侧栏还高的浮层。
-- 文案:新增 `Profile_Notes` / `Profile_NotesPlaceholder` / `Profile_NotesHint`,五份 resx 齐。
-
-**三、验证**:`SonnetDbPersistenceTests` 补备注带换行原样落盘、旧文档读回 null;`ConnectionProfileViewModelTests` 补 SSH / SFTP / FTP 三种协议的回显与保存(去首尾空白、保留行内换行)、只剩空白存 null;新增 `SessionTreeNotesTests`(11 例:建树与 `AddSession` 带上备注、分组行与无备注不弹、去首尾空行、按行数 / 字符数截断并补省略号、正好 12 行不截、不切开 emoji、改备注刷新提示);UI 测试 `NotesBox_EnterStartsANewLine_AndDoesNotSubmitTheDialog`(回车在框里换行、不保存不连接;变异:去掉 `AcceptsReturn` → 红)与 `SessionTreeNotesUiTests`(真把指针移上去,有备注的行弹、移开收起、无备注的行不弹)。headless 截图核过对话框里的备注框与截断后的悬停提示。全解决方案零警告零错误;`VelaShell.Tests` 1664 通过 / 35 跳过,`VelaShell.Infrastructure.Tests` 570 通过 / 4 跳过,`VelaShell.Presentation.Tests` 69 通过,`VelaShell.Core.Tests` 625 通过 / 10 跳过 / 1 失败(X11 靶机用例,§144 / §149 记过的那条,本机 `ssh-shells` 镜像旧)。
+- `SessionProfile.Notes`(null = 没有备注),**明文、不经 `ISecretProtector`**:不是凭据,且要在悬停提示里直接显示;也随云同步上传,框下提示口令放在身份验证里。导入器只新建配置、插件 `sessions` 能力只读,都不会冲掉已有备注。
+- 连接对话框「常规」页加多行备注框(64–96 高,对话框无默认按钮,回车只换行;只剩空白的存 null);资源管理器会话行悬停显示,没备注不弹空浮层。超过 12 行或 500 字截断,不在代理对中间切 —— 提示框只限宽不限高,大段备注会弹出比侧栏还高的浮层。
 
 ## ✅ 153. 2026-10-03 编辑连接不再把置顶与最近连接时间清掉
 
-**一、问题**:做 §152 时读 `ConnectionProfileViewModel.BuildProfile` 发现的。保存是按界面字段**新建**一条配置、再由 `SaveProfileAsync` 整条覆盖落盘,而对话框里没有的三项状态没被带回:`IsPinned`(资源管理器右键置顶,#474)、`LastConnectedAt`(「最近连接」按它倒序排)、`AutoStartTunnelIds`。于是编辑一条置顶的连接,哪怕只改个端口,保存后置顶就没了;这条连接在最近连接里也掉到最后。不报任何错。
-
-**二、做法**:视图模型在编辑模式下记下这三项(只读字段),`BuildProfile` 原样带回;隧道 id 列表存副本,不与传进来的配置共享。新建连接三项都是默认值(不置顶、没连过、null)。至此 `SessionProfile` 的每个属性在 `BuildProfile` 里都有着落。
-
-**三、验证**:`ConnectionProfileViewModelTests` 新增 `EditingAProfile_KeepsStateTheDialogDoesNotShow`(置顶 + 最近连接时间 + 两条隧道 id 的配置改端口后保存,三项原样带回、列表是副本),修之前在 `IsPinned` 上红;`NewProfile_IsNotPinnedAndHasNeverConnected`。连接对话框与资源管理器相关用例 217 例通过。velashell-docs 的 §4 本来就写着置顶「只改显示位置、不改数据」,这是缺陷修复,不涉及文档同步。
+`BuildProfile` 按界面字段**新建**一条配置再整条覆盖落盘,对话框里没有的 `IsPinned`(#474)、`LastConnectedAt`、`AutoStartTunnelIds` 没带回 —— 改个端口置顶就没了、最近连接里也掉到最后,不报任何错(做 §152 时发现)。编辑模式下这三项原样带回(隧道 id 列表存副本);至此 `SessionProfile` 每个属性在 `BuildProfile` 里都有着落。属缺陷修复,不涉及文档同步。
 
 ## ✅ 154. 2026-10-03 命令面板不再占 `Ctrl+K`(#551)
 
-**一、问题**:#551:在 nano 里按 `Ctrl+K` 剪切当前行,弹出来的却是命令面板。`Ctrl+K` 是命令面板的别名(另一个是 `Ctrl+P`),登记在 `Window.KeyBindings`。Avalonia 的 `KeyboardDevice` 在分发路由事件**之前**就从焦点元素往上匹配 KeyBindings,命中即 Handled —— 隧道阶段的处理器与终端控件的 `OnKeyDown` 都收不到(headless 实测:按 `Ctrl+K` 只有 KeyBinding 触发;按 `Ctrl+J` 依次走窗口隧道 → 控件 `OnKeyDown`)。于是 `^K` 永远到不了远端:nano 剪切行、bash / zsh 删到行尾、emacs kill-line 一并失灵。
-⚠️ 同样被窗口级键位占掉的还有 `Ctrl+T` / `Ctrl+N` / `Ctrl+W` / `Ctrl+P` / `Ctrl+B` / `Ctrl+-`,`TerminalTabView` 隧道阶段另占 `Ctrl+F`。它们是正经功能的键位,改默认值要动用户的肌肉记忆,这次不动,交给可配置键位。
-
-**二、做法**:
-- 删掉 `MainWindow.axaml` 的 `Ctrl+K` 绑定;`ShortcutCatalog` 全局组只留「命令面板 `Ctrl+P`」一行,`Sc_PaletteAlt` 五份 resx 一起删;命令面板搜索框右侧的键帽徽章改成 `Ctrl+P`;注释、`DESIGN.md` §6.3 与仓库首页、Presentation、AI 插件几份 README 里的「Ctrl+P / Ctrl+K」一并改掉。
-- 守门:`ShortcutCatalogTests.MainWindowKeyBindings_DoNotTakeNewControlCharacters` 扫 `MainWindow.axaml` 的每条 `KeyBinding`:只按 Ctrl、经 `InputEncoder` 编码成单个 C0 控制字节、且这个字节不是键本身就会发的(`Ctrl+Tab` 的 `^I` 单按 Tab 也发),一律报红。判定直接问编码器,与真正发往远端的字节同源。带 Shift 的不算 —— 编码器对 `Ctrl+Shift+字母` 发同一个字节,但不带 Shift 的那一按还在。上面那六条历史遗留列在名单里,**名单只减不增**。
-
-**三、验证**:新用例把 `Ctrl+K` 加回去时红、删掉后绿;`ShortcutCatalogTests`(含与改过的文档逐条比对)与本地化键的几条守卫通过;`VelaShell.Tests` 1694 通过 / 8 跳过。文档同步见 `feature-plan.md`「文档待同步」。
+#551:nano 里按 `Ctrl+K` 剪切行,弹出的却是命令面板。⚠️ 根因:Avalonia 的 `KeyboardDevice` 在分发路由事件**之前**就匹配 KeyBindings,命中即 Handled,终端控件收不到,`^K` 永远到不了远端(nano 剪切行、shell 删到行尾一并失灵)。`Ctrl+K` 只是 `Ctrl+P` 的多余别名,所以删掉不绑,命令面板只留 `Ctrl+P`。同样被占的 `Ctrl+T` / `N` / `W` / `P` / `B` / `-` 与 `Ctrl+F` 是正经功能键位,改默认值要动用户的肌肉记忆,这次不动,交给 §155。
+- 守门 `ShortcutCatalogTests.MainWindowKeyBindings_DoNotTakeNewControlCharacters`:直接问 `InputEncoder`(与真发往远端的字节同源),只按 Ctrl 就编码成单个 C0 控制字节、且不是键本身就会发的(`Ctrl+Tab` 的 `^I`)一律报红;带 Shift 的不算 —— 不带 Shift 的那一按还在。历史遗留名单**只减不增**。文档:velashell-docs#83。
 
 ## ✅ 155. 2026-10-03 快捷键可自定义:改键、解绑、恢复默认(#551,推翻「确认不做」)
 
-**一、问题**:§154 只删了 `Ctrl+K` 这个多余的别名。窗口级键位先于终端控件吃键,出厂的 `Ctrl+N` / `Ctrl+T` / `Ctrl+W` / `Ctrl+P` / `Ctrl+B` / `Ctrl+-` 与终端标签里的 `Ctrl+F` 同样各抢走一个控制字符(bash 删词、tmux 前缀、vim / less 翻页……),而 07-10 定下的「不做自定义键位」(§12-B)让用户撞上了也无计可施 —— #551 的报告者在设置里看到「只读」就停了。任何一套出厂键位都会撞上某个远端程序,说得通的只有让用户自己改、自己解绑。
-
-**二、做法**:
-- **出厂表** `Services/ShortcutKeymap.cs` 的 `ShortcutBindings`:30 条 —— 全局、标签与面板两组里除窗格移焦外的全部,终端组的搜索、清屏与三个字号缩放。每条 = 稳定 id + 命令 id + 出厂手势 + 文案键 + 生效范围(窗口 / 终端标签)。跳标签从「一行区间」拆成 8 条,每条能单独解绑(欧洲键盘布局上 AltGr 就是 Ctrl+Alt)。
-- **键位表** `ShortcutKeymap`(不可变)= 出厂表 + `AppSettings.Shortcuts.Overrides`(id → Avalonia 手势,**空串 = 解绑**,只存改过的,出厂键位日后调整时没改过的人自动跟上)。认不出、不合规则的改动按出厂处理;同一手势只归一条:改过的压过出厂的,两条改动撞车按表序先到先得。`ShortcutKeymapService`(DI 单例)持有生效的那一份,设置保存后换新;主窗口载入设置后补一次。
-- **生效**:`MainWindow.axaml` 里 29 条写死的 `KeyBinding` 全删,改由 `ApplyKeymap` 按键位表整表登记(都指向 `MainWindowViewModel.ShortcutCommand`,参数是命令 id;`tab.next` / `tab.prev` 不进命令面板,在 `ExecuteShortcut` 里单独接),键位表换新就重建。终端内搜索(`TerminalTabView` 隧道阶段)改成按键位表匹配。命令面板右侧的键位提示取键位表里当前生效的那个(同一命令两个键位取先绑着的,全解绑则不显示),命令注册里那批写死的提示随之删掉;不归键位表管的复制、粘贴、重连、窗格移焦照旧用注册时的提示。`KeyboardShortcutService` 不再映射 Ctrl 版本的全局键位 —— 留着的话,解绑 `Ctrl+W` 之后焦点落在标签视图上它照样关标签;只留 macOS 的 Command 别名。
-- **改键的规则**(`ShortcutGestures.Check`):要带 Ctrl / Alt / Meta,不带修饰键的只能 F1–F24;不能占固定键位(复制粘贴、`^C`、跳提示符、删词、断线重连、补全、`Alt+方向`、SFTP 的 `Ctrl+L`,macOS 另有 `Cmd+C` / `Cmd+V`)。撞上别的绑定先问,确认替换后那一条写成解绑;恢复默认时出厂键位被别人占着同样先问;录回出厂键位不留记录。
-- **终端冲突提示**(`ShortcutGestures.TerminalBytesLost` / `ShortcutKeymap.TerminalWarning`):直接问 `InputEncoder` —— 这一按本来会发字节,且去掉 Shift 或 Ctrl 后的那一按发的不一样,就算「抢键」。单个控制字符还会指出没人占用的 `Ctrl+Shift+同一个键`(编码器对它发同一个字节),例如出厂 `Ctrl+P` 提示「要把 ^P 发给远端,请按 Ctrl+Shift+P」。原来写死的「缩小字号会占用 ^_」备注随之撤掉。§154 的守门用例改为扫出厂表、用同一个判定,名单补上 `Ctrl+F`。
-- **设置页**:页名「快捷键参考」→「快捷键」,副标题不再写「只读」。可改的行右侧三个图标按钮(改键 / 解绑 / 恢复默认),改过的键帽用强调色,解绑的显示「未绑定」,会抢键的行下方警示色提示;搜索框旁「全部恢复默认」。录键框 `Controls/ShortcutRecorder`:显示即抢焦点;只按修饰键时只显示已按住的修饰键;每个按键都标 Handled(设置窗口的 Esc 关窗、Tab 移焦都不会在录键时动作);不带修饰键的 Esc 或失焦即取消。改动暂存,保存设置才落盘。
-  ⚠️ 提示行的颜色必须走样式类:`TextBlock.row-desc` 这种带类名的样式按「样式触发」优先级生效,会压过数据模板里直接写在 `TextBlock` 上的 `Foreground`(headless 截图里第一版的警示与报错都是灰的)。
-- 文案 14 个新键,五份 resx 齐;`Cmd_GotoTabN`、`Sc_NoteZoomOutTakesUnitSeparator` 删掉;`Sc_MacNote` 改成「另有一组固定的 Command 键位」;新图标 `Icon.rotate-ccw`。
-- `feature-plan.md`「确认不做」删掉自定义键位那一条;vi 复制模式那条里引用它的理由一并标为失效。
-
-**三、验证**:`ShortcutKeymapTests` 21 例(出厂表 id 与手势不重复、出厂手势过得了改键检查、每条命令真实存在、键帽写法、存储写法往返含 `Key` 的同值别名、改键 / 解绑 / 坏值回落 / 撞车规则、固定键位、编码器判定抢键、冲突提示指出替代按法、命令面板显示生效的键位);`ShortcutKeyBindingsUiTests` 3 例走真实的 Avalonia 按键分发(改过的 `Ctrl+Shift+P` 与出厂的 `Ctrl+B` 触发命令,改走的 `Ctrl+P` 与解绑的 `Ctrl+W` 原样到达焦点控件;整表替换;录键框);`SettingsShortcutEditingTests` 13 例(载入、被拒留在录键状态、撞车先问再替换、取消、解绑与恢复默认、恢复默认撞车先问、全部恢复、保存落盘、改键后搜得到新键位);`ShortcutCatalogTests` 改写(`MainWindow.axaml` 不许写死 KeyBinding、出厂表每条在目录里恰好一次、出厂键位不许新占终端按键、固定键位都在页上);`ShortcutOptionsNormalizeTests` 4 例;`KeyboardShortcutServiceTests` 改为 Ctrl 全局键位归键位表。headless 截图核过暗 / 亮两套主题下的录键、报错、替换确认与冲突提示。`VelaShell.Tests` 1729 通过 / 8 跳过,`VelaShell.Infrastructure.Tests` 570 通过 / 4 跳过,`VelaShell.Presentation.Tests` 69 通过,`VelaShell.Core.Tests` 629 通过 / 10 跳过 / 1 失败(X11 靶机用例,本机 `ssh-shells` 镜像旧,§152 记过的那条)。文档同步见 `feature-plan.md`「文档待同步」。
+§154 只删了 `Ctrl+K` 这个多余的别名,其余出厂键位照样各抢一个控制字符,而 07-10 定下的「不做自定义键位」(§10-B)让用户撞上了也无计可施;任何一套出厂键位都会撞上某个远端程序,说得通的只有让用户自己改、自己解绑。
+- 目录 `ShortcutCatalog` 仍是唯一事实来源;出厂表 `Services/ShortcutKeymap.cs` 的 `ShortcutBindings`(30 条,稳定 id + 命令 id + 出厂手势 + 生效范围),每条在目录里恰好一次。跳标签拆成 8 条各自可解绑(欧洲键盘布局上 AltGr 就是 Ctrl+Alt)。
+- `AppSettings.Shortcuts.Overrides` 只存改过的(**空串 = 解绑**),出厂键位日后调整时没改过的人自动跟上;同一手势只归一条:改过的压过出厂的,两条改动撞车按表序先到先得。
+- `MainWindow.axaml` 写死的 29 条 `KeyBinding` 全删,由 `ApplyKeymap` 按键位表整表登记;**`MainWindow.axaml` 不许再写死 `KeyBinding`**,出厂键位也不许新占 `Ctrl+字母` 这类终端控制字符,两条都由 `ShortcutCatalogTests` 拦着。
+- 改键规则(`ShortcutGestures.Check`):要带修饰键(否则只能 F1–F24),不能占复制粘贴、`^C` 等固定键位;撞车先问。会抢终端按键的行提示替代按法(如「要把 ^P 发给远端,请按 Ctrl+Shift+P」)。
+- ⚠️ `KeyboardShortcutService` 不再映射 Ctrl 版全局键位,否则解绑 `Ctrl+W` 后它照样关标签。⚠️ 带类名的样式(`TextBlock.row-desc`)会压过数据模板里直接写的 `Foreground`,提示行颜色必须走样式类。
+- 设置页「快捷键参考」改名「快捷键」,可改键 / 解绑 / 恢复默认;`feature-plan.md`「确认不做」删掉自定义键位那一条。文档:velashell-docs#83(与 §154 同一个 PR)。
 
 ## ✅ 156. 2026-10-03 CI:文档仓库检出 PR 正文里引用的那个文档 PR(#554 的 CI 红)
 
-**一、问题**:#554 三个平台都只红在 `Doc_ListsEveryCatalogEntry` —— CI 检出的是 velashell-docs 的默认分支,而对应的文档改动(velashell-docs#83)那时还没合。这不是 #554 独有的:改快捷键的代码 PR 按 AGENTS.md 要与文档 PR 一起合,合并之前文档仓库的默认分支必然是旧的,比对用例必然红。(这一次 #83 在 CI 跑完约一分钟后合了,重跑就绿;改流水线是为了下一次。)
-
-**二、做法**:`ci.yml` 在「检出文档仓库」前加一步「定位文档分支」:只在 `pull_request` 事件上跑,从 PR 正文里找 `velashell-docs#NN` 或 `velashell-docs/pull/NN`,逐个用 `gh api` 查,第一个**开着的、来自文档仓库本身**(不检出 fork)的 PR,检出它的 head 分支;都没有就照旧用默认分支。正文是 PR 作者写的任意文本:经环境变量传入、只从里面抽数字,不拼进脚本;查询失败时 gh 打到 stdout 的错误响应不当结果读。这一步 `continue-on-error`,失败就退回默认分支。推送到 `main` 的检查没有 PR 正文、用默认分支,所以两个 PR 先合文档、再合代码 —— 写进了 `CONTRIBUTING.md` / `CONTRIBUTING.en.md`(英文版顺带补上一直漏掉的「比对用例要读到文档仓库」那段,两份都补上 §155 出厂表的说明)。
-
-**三、验证**:把那段脚本原样抽出来在本地跑:#554 的真实正文(引用的 #83 已合并)→ 默认分支;用替身 `gh` 模拟一个开着的文档 PR → 输出它的分支;fork 来的 PR 跳过;不存在的号码静默跳过;正文里塞 `$(...)` 与反引号不会执行。`ci.yml` 用 YamlDotNet 解析过,步骤顺序与 `ref` 都对。
+#554 只红在 `Doc_ListsEveryCatalogEntry`:CI 检出的是 velashell-docs 默认分支,而代码 PR 按 AGENTS.md 要与文档 PR(这次是 velashell-docs#83)一起合,合并之前比对用例必然红。`ci.yml` 在检出文档仓库前加「定位文档分支」:只在 `pull_request` 上跑,从 PR 正文找 `velashell-docs#NN` / `velashell-docs/pull/NN`,第一个**开着且来自文档仓库本身**(不检出 fork)的 PR 就检出它的 head 分支,否则用默认分支(这一步 `continue-on-error`,失败也退回默认分支)。⚠️ 正文是任意文本:经环境变量传入、只抽数字、不拼进脚本。推送到 `main` 没有 PR 正文、用默认分支,所以**先合文档、再合代码**(写进 `CONTRIBUTING.md` / `CONTRIBUTING.en.md`)。
 
 ## ✅ 157. 2026-10-03 共享凭据:多条连接共用一套账号与密码 / 密钥(#550)
 
-**一、问题**:#550:一百台设备用同一套账号,改一次密码就要把一百条连接配置各改一遍(对标 WindTerm 的 OneKey)。凭据是逐条内联在 `SessionProfile` 上的(用户名 / 认证方式 / 密码 / 私钥 / 口令 / 证书),没有「这几条共用一份」的概念。velashell-docs《凭据管理器集成设计》(09-15 定稿、未实施)里的「配置存引用、连接那一刻才解析」正是这件事要的骨架,这次按那套契约把**本机共享凭据**做成第一个凭据来源(方案 D)。
+#550:一百台设备同一套账号,改一次密码要改一百条连接配置(对标 WindTerm 的 OneKey)。按 velashell-docs《凭据管理器集成设计》「配置存引用、连接那一刻才解析」的契约,把**本机共享凭据**做成第一个凭据来源(外部密码管理器见 feature-plan.md)。
 
-**二、做法**:
-- **模型**:`Core/Credentials/` —— `CredentialReference`(来源 id + 条目 id;本机共享凭据的来源 id 是 `shared`)、`SharedCredential`(名称 / 用户名 / 认证方式 / 密码 / 私钥 / 口令 / 证书 / 备注)、`ICredentialProvider` / `ICredentialResolver` / `ResolvedCredential` / `CredentialProviderException`(消息面向用户)、`CredentialMaterial`。`SessionProfile.CredentialSource`(null = 在本配置中填写;老数据零迁移)。仓储 `ISharedCredentialRepository` → `SonnetDbSharedCredentialRepository`,新集合 `shared_credentials`,密码与口令经 `ISecretProtector` 加密(与连接密码同一强度),有 `Changed` 事件。
-- **用户名规则**:连接自己填了用户名就以连接为准(同一套密钥配不同登录名),留空跟着凭据走。设计里那个 `OverrideUsername` 开关因此不要了。
-- **仓储不变量**:带引用的配置,`SonnetDbSessionRepository.Protect` 一律清掉密码 / 私钥 / 口令 / 证书再落盘(插件机密照常加密)。七八条保存路径(拖动分组、复制配置、证书信任、同步拉取、导入…)一处管住。它还撑着另一条规矩:**内存里带引用的配置若有材料,只可能是本次在登录框里手输的** —— 解析时以手输为准(否则用户刚输的新密码会被凭据里那份旧的盖掉),但用户名仍可向凭据去取。
-- **解析**:`CredentialResolver` 按来源 id 找 provider,交回一份填好凭据的副本、不回写原配置 —— 明文不进会话树缓存、`tab.Profile`,重连自然用上凭据的新值。完整性按连接类型判:FTP / 插件协议只认密码类凭据;缺用户名、缺材料各报一条;匿名 FTP 不解析。五个构建点:SSH 工作流 `BuildChainAsync` **每一跳**各自解析(跳板取不到凭据时改抛普通连接错误「跳板 X:…」—— 退回登录框的话问的是目标机的凭据);FTP、插件文件协议、插件终端、插件工作台(含「测试」探针)在 `MainWindowViewModel` 里解析(这几个服务的调用方全在那里)。
-- **连接流程**:带引用的配置一律不先弹登录框(`RequiresCredentials` 等三处);解析失败的 `CredentialProviderException` 与认证被拒同等对待 —— 退回登录框。连接历史 / 审计记实际登录的用户名。
-- **登录框**:引用共享凭据时顶部一条说明(被服务器拒绝 / 本机不完整 / 凭据已不存在),「记住密码」收起,换成「同时更新共享凭据「X」(N 条连接在用)」—— 改完服务器密码,在这里输一次、勾一下,所有引用它的连接一起换上。被拒时默认不勾(可能只是这一台密码不同),不完整时默认勾。输入落到哪由 `SharedCredentialPrompt`(可单测的纯函数)决定。
-- **顺带修掉设计 §3 的 D1 / D3**:登录框原先就地改传入的实例(会话树缓存里那一份),手输、没让记住的密码会跟着拖动分组之类的保存落盘;带引用之后还会让那份手输的旧密码一直压过凭据。改为返回副本;FTP / 插件证书信任后的 `PersistProfileIfSavedAsync` 改走工作流保存(按「记住密码」剥密码);四个文档路径(及双栏)失败卡片的「重新连接」改为捕获最近一次尝试的配置,维持「重试不用重输」。D2(私钥口令不受记住密码控制)、D4(`SshSession.ConnectionInfo` 持有跳板密码)未动。
-- **设置 → 共享凭据**(新页,排在「密钥管理」之后,`SettingsSectionKey.Credentials`):表格列名称 / 用户名 / 认证方式 / 使用中 N 条,本机缺材料的行打警示记号;新建、编辑、删除当场生效,不等设置窗口的「保存」。**删除时把凭据拷回每条引用它的连接**,删完照样能连(确认框里说清这一句)。`FileBrowserView` 里写死的设置页下标 5 改为 `SelectSection(Transfer)` —— 中间插一页,写死的下标就静默错位。
-- **编辑框** `SharedCredentialEditorView`:从连接复制(把已有连接身上那一份搬过来)、名称 / 用户名 / 四种认证方式 / 备注;下半是「使用这条凭据的连接」勾选清单(筛选框;认证方式用不上的连接置灰)和「勾选凭据相同的连接」—— 一键勾出认证材料完全相同、还各存各的连接,迁移已有连接用。挂上时与凭据相同的用户名清掉(跟着凭据走),摘下时把凭据拷回连接。批量操作在 `SharedCredentialService`(Presentation)。
-- **连接配置页**:身份验证一节顶上加「凭据来源」(在本配置中填写 / 各条共享凭据)+「新建…」(用表单里现有的凭据预填编辑框,建好即选中)。选了共享凭据,认证方式、密码、私钥、记住密码收起,用户名框提示「留空则使用凭据中的 X」,下方一行摘要;引用已失效、FTP / 插件配了非密码凭据时报错并禁止保存;切回「在本配置中填写」把凭据拷进表单。顺带修掉一个旧缺陷:切认证方式时没发 `ShowPasswordField` 通知,切到私钥页时口令框会留在原地。
-- **云同步**:载荷加 `sharedCredentials`(随连接配置同步,先于连接落库;没设端到端口令时剥掉密码与口令,拉取时保留本机那一份)。载荷版本:**用到共享凭据时写 3,否则仍写 2** —— 不认识引用的旧客户端会把它当未知字段丢掉、再推回来就从云端抹了,写 3 让旧客户端照章拒收,而没用这个功能的人照旧与旧版本互通。
-- 文案 53 个新键,五份 resx 齐;新图标 `Icon.key-round`(lucide)。外部密码管理器(1Password / Bitwarden / KeePassXC)仍按原设计排在后面,接进同一个解析器。
-
-**三、验证**:Core `CredentialModelTests`(引用往返、老数据为 null、派生状态不落盘、`HasInline` / `NeedsResolution` 判定)与 `SessionProfileCloneTests` 补字段;Infrastructure `SharedCredentialStorageTests`(真实 SonnetDB:密码与口令加密落盘、排序与删除、带引用的配置不落盘任何材料、插件机密照常加密)、`CredentialResolverTests`(13 个用例:不取 / 填副本 / 用户名覆盖 / 手输优先只补用户名 / 不存在 / 来源不可用 / 缺用户名 / 插件可无用户名 / 缺材料 / Agent / FTP 与插件拒私钥 / 匿名 FTP)、`GistSyncServiceTests` 补 4 例(未加密推送剥密码且标版本 3、无共享凭据仍为 2、拉取保留本机密码且凭据先于连接落库、拒收更新的版本);Presentation `ConnectionWorkflowCredentialTests`(明文只进 ConnectionInfo、每一跳各自解析、跳板失败是普通错误且点名那一跳、目标失败原样抛)、`SharedCredentialServiceTests`(挂上 / 不兼容跳过 / 摘下拷回 / 保存时增减与认证方式变更后解除 / 删除拷回 / 计数 / 迁移匹配);App `SharedCredentialUiTests`(登录框四种原因与默认勾选、输入落到副本、勾选更新交回凭据、配置页选中 / 保存引用不带材料 / 清掉相同用户名 / 切回拷回 / FTP 配私钥凭据不可保存 / 引用失效、编辑框校验与字段、迁移匹配、兼容性置灰、设置页计数、带引用不先弹框、解析失败退回登录框)。新增与改动的用例共 69 个;headless 截图核过设置页、编辑框、登录框的说明条与勾选框、连接配置页的凭据来源与 FTP 配私钥凭据时的报错。顺带:`EveryVisibleButtonInTheSettingsWindowHasAName` 抓到新页「新建凭据」按钮(图标 + 文字的内容读屏器读不到)没名字,已补。全解决方案零警告零错误;`VelaShell.Tests` 1752 通过 / 8 跳过,`VelaShell.Infrastructure.Tests` 592 通过 / 4 跳过,`VelaShell.Presentation.Tests` 84 通过,`VelaShell.Core.Tests` 650 通过 / 10 跳过 / 1 失败(X11 靶机用例,§152 记过的那条,干净的 HEAD 上同样失败),其余各测试工程全部通过。文档同步见 `feature-plan.md`「文档待同步」。
+- **契约**:`Core/Credentials/` 的 `CredentialReference`(来源 id + 条目 id,本机为 `shared`)、`ICredentialProvider` / `ICredentialResolver` / `CredentialProviderException`(消息面向用户);`SessionProfile.CredentialSource` 为 null 即在本配置中填写(老数据零迁移);新集合 `shared_credentials`,密码与口令经 `ISecretProtector` 加密。用户名:连接填了以连接为准、留空跟着凭据走(设计里的 `OverrideUsername` 开关不要了)。
+- **仓储不变量**:带引用的配置,`SonnetDbSessionRepository.Protect` 落盘前一律清掉认证材料,七八条保存路径一处管住。由此**内存里带引用的配置若有材料,只可能是本次在登录框里手输的**,解析时以手输为准(否则刚输的新密码会被凭据里的旧值盖掉)。
+- **解析**:`CredentialResolver` 交回填好凭据的副本、不回写原配置 —— 明文不进会话树缓存与 `tab.Profile`。FTP / 插件协议只认密码类凭据。五个构建点:SSH 的 `BuildChainAsync` **每一跳**各自解析(跳板取不到凭据报普通连接错误「跳板 X:…」—— 退回登录框问的是目标机的凭据),FTP 与插件协议在 `MainWindowViewModel` 里解析。
+- **连接流程**:带引用的配置不先弹登录框;**解析失败的 `CredentialProviderException` 与认证被拒同等对待 —— 退回登录框**。框里说明原因,「记住密码」换成「同时更新共享凭据「X」(N 条连接在用)」,被拒时默认不勾(可能只是这一台密码不同)、不完整时默认勾。
+- **顺带修掉设计 §3 的 D1 / D3**:登录框原先就地改会话树缓存里那份实例,手输、没让记住的密码会跟着拖动分组之类的保存落盘 —— 改为返回副本;证书信任后的保存按「记住密码」剥密码。D2 / D4 未动(剩余项见 feature-plan.md)。
+- **界面**:设置 → 共享凭据(**删除时把凭据拷回每条引用它的连接**)、编辑框「勾选凭据相同的连接」(迁移用)、连接配置页「凭据来源」。⚠️ `FileBrowserView` 里写死的设置页下标 5 改为 `SelectSection(Transfer)` —— 中间插一页,写死的下标就静默错位。
+- **云同步**:载荷加 `sharedCredentials`(先于连接落库;没设端到端口令时剥掉密码与口令)。**用到共享凭据时载荷版本写 3,否则仍写 2** —— 旧客户端会把不认识的引用丢掉、推回来就从云端抹了,写 3 让它照章拒收,没用这个功能的人照旧与旧版本互通。文档:velashell-docs#85。
 
 ## ✅ 158. 2026-10-03 快捷命令:内置命令可改可删、多行命令、拖动排序(#555)
 
-**一、问题**:#555 提了四条。① 28 条内置命令写死在 `QuickCommandCatalog`、不落盘,视图模型对它们的写入一律忽略,设置页上也没有编辑 / 删除按钮;内置分组每次装载都被 `Normalize` 按目录重写,同样动不了。② 命令输入框是单行的,长命令只能横着滚。更要紧的是发送:`TrySendCommandText` 把正文原样写进终端,只去掉末尾的换行 —— **中间每个换行都等于按一次回车**,多行命令的前几行当场执行,与「只发不回车」的约定相反(经云同步来的数据本来就可能带换行,这是个已有的隐患)。③ 点击后自动执行:维护者决定**不做**,见 `feature-plan.md`「确认不做」。④ 分组与组内命令没法排序:两边都有 `SortOrder` 字段,但没有任何界面能改,内置的那部分还被目录钉死。
+#555 四条:① 28 条内置命令写死在 `QuickCommandCatalog`、不落盘,改不了也删不了;② 输入框单行,且 ⚠️ `TrySendCommandText` 只去末尾换行 —— **中间每个换行都等于按一次回车**,多行命令的前几行当场执行(云同步来的数据本就可能带换行);③ **点击后自动执行:维护者决定不做**(feature-plan.md「确认不做」);④ 没法排序。
 
-**二、做法**:
-- **覆盖层,不改目录**:删掉的内置命令记进 `QuickCommandData.HiddenBuiltInIds`;改过的存成一条**同标识**的自定义命令,显示时顶替目录里那条(`QuickCommandCatalog.VisibleBuiltIns`,视图模型与命令补全共用)。没动过的内置命令仍跟着界面语言换描述,新版本新增的内置命令也照常出现。删一条改过的内置命令同样记进隐藏清单(用户要的是删掉,不是恢复默认)。原样打开编辑框又原样保存,不留一模一样的副本。隐藏清单里不认识的标识(更新的版本才有的内置命令)原样留着,否则同步回去会把新版本删掉的命令放出来。
-- **恢复**:改过的行多一个「恢复默认」(`Icon.rotate-ccw`);列表上方「恢复内置命令」只在删过或改过时出现,先确认再执行(删掉的回来、改过的还原,自己建的命令不动)。
-- **排序的存法**:内置命令不落盘、没有可存的 `SortOrder`,组内顺序记在分组上 —— `QuickCommandGroup.CommandOrder`(命令标识表,可含内置命令),空表 = 从没排过、按原来的默认顺序;表里没有的(之后新建的、新版本新增的)按默认顺序接在后面。内置分组之间的先后改为沿用存档里的 `SortOrder`,不再被目录盖回去;「未分组」固定垫底。拖完顺手把自定义命令的 `SortOrder` 按位置重写,给不认识顺序表的旧版本看。原地改过的内置命令所在分组会记下顺序 —— 否则重启后它会掉到组里那些内置命令后面;恢复默认时原样那条与它同一个标识,于是回到同一个位置。内置命令拖进别的分组时换成同标识的自定义命令(内置命令的分组由目录定死),恢复默认即回到原分组。
-- `Normalize` 的分组比较改为按标识比、不看列表先后,并把顺序表算进去 —— 「有变化」会把装载结果标成已迁移、进而触发一次云同步,多报一次就是每次启动都同步一次。
-- **云同步**:`QuickCommandSyncData` 加 `HiddenBuiltInIds`,分组的顺序表随分组走,两样都**只加字段、不抬版本**。旧客户端读到时忽略;它再推一次会把隐藏清单与顺序表抹掉 —— 删掉的内置命令重新出现、顺序回到默认,用户写的命令一条不丢(改过的内置命令在旧客户端里与原样那条并排显示)。§157 的共享凭据丢了引用就连不上,所以抬了版本;这里丢的只是偏好,抬版本反而会让没升级的设备整次同步失败,不划算。
-- **多行**:设置页命令输入框改为多行(可回车、自动折行、等宽,最高 220 再框内滚),保存时 `QuickCommandText.Normalize` 把换行统一成 `\n` 并去首尾空白;输入框下多一行说明。侧栏只显示第一行,后面跟「+N 行」,整条在悬停提示里。发送:含换行的走 `WritePasteInput`(括号粘贴),远端开着 ?2004 时 shell 把整段放进命令行等用户回车;`ITerminalEmulator` 新增 `IsBracketedPasteEnabled`,目标里有没开的(那边仍会逐行执行),先弹「发送多行命令」确认框(预览前五行);确认开关沿用「设置 → 终端 → 粘贴时确认多行内容」。只有末尾带换行的不算多行,照旧按键入发送。多行命令不进终端补全(接受一条多行候选等于替用户敲回车)。变量占位与多行可同时出现:先问变量,替换后的整段再走括号粘贴。
-- **拖动排序**(设置 → 代码片段):分组头与每一行最左侧加六点手柄(新图标 `Icon.grip-vertical`),按住拖动;超过 5px 才算拖,拖动中那一行 / 那一组变淡,落点处画一条强调色插入线(命令的插入线从手柄后开始,分组的贯穿整行)。落点按「离指针最近的插入位置」算:命令可以插到任意两行之间、组头下方(= 组首),收起的分组拖到组头上就是放进这一组最前面;分组插在分组之间,「未分组」没有手柄、后面也没有位置。落回原处、拖出列表 40px 以外再松手都等于取消;拖到设置页滚动区上下边缘时自动滚动,越贴边越快。用页内的指针捕获实现,不走系统拖放 —— 落点只在这张列表里,用不着跨窗口的载荷,也就不会把内部标识拖进终端或别的程序。侧栏面板不加手柄(那里点一下就是发送),它与设置页共用同一个视图模型,排好的顺序直接跟过去。**没有键盘替代**:目前只能用鼠标排序。
-- 设置页顺带:点任何一行的铅笔,编辑区自动滚到可见处并聚焦名称框(以前表单在整张列表下面,点了上面的行得自己往下找);删除图标与加载错误提示用的 `VelaStatusError` 是个**不存在的令牌**(v2 分组改版时写下的),删除按钮一直是透明的、只能摸着点 —— 改成 `VelaError`。
-- 文案 8 个新键,五份 resx 齐。
-
-**三、验证**:Core `QuickCommandOverlayTests`(换行统一与去空白、末尾换行不算多行、首行与行数、覆盖层跳过隐藏与改过的、目录标识判定、复制分组时顺序表另起一份);Infrastructure `SonnetDbPersistenceTests` 补 2 例(隐藏清单含不认识的标识、内置分组对调、组内顺序表经落盘与同步导出 / 应用都不丢且不被当成要修复;#555 之前的 v2 文档原样装回、不标迁移);App `QuickCommandsViewModelTests` 改 1 例、补 12 例(删除内置命令重启后仍不出现、恢复全部;原地编辑位置不变且重启后仍在原处、恢复默认回到同一位置;原样保存不留副本;删除改过的不回退原样;恢复全部不动自定义命令;组内拖动内置命令且重启后顺序还在;落回原处不记顺序;拖进别的分组成为覆盖、恢复默认回原分组;自定义命令跨组拖动;分组拖动且「未分组」垫底拖不动;多行换行统一与首行 / +N 行);`QuickCommandMultilineFlowTests` 6 例(开着括号粘贴整段粘贴不问、没开先问取消不发、确认后粘贴、设置里关了确认就不问、只带末尾换行仍按键入发送、变量占位 + 多行);`CommandSuggestionProviderTests` 补 2 例(删掉的不补全、改过的补改后的;多行不进补全);`SnippetsPageDragTests` 6 例走真实指针事件(行拖到别的行后、拖进别的分组成为覆盖、分组拖动、拖出列表取消、没过阈值只是点击、「未分组」手柄不接指针);`SnippetsPageRowActionsTests` 补 1 例(内置命令的行有编辑与删除、改过才出现恢复默认、点它换回原样)。headless 截图核过设置页(手柄、插入线、拖动中变淡、恢复按钮、多行输入框与编辑区自动滚动)与侧栏的「+N 行」,截图里发现了上面那个透明的删除按钮。全解决方案零警告零错误,改动的 C# 文件过了 `dotnet format --verify-no-changes`;`VelaShell.Tests` 1751 通过 / 35 跳过(跳过的全是要真 shell、发布与符号链接环境的用例,新用例无一跳过),`VelaShell.Infrastructure.Tests` 594 通过 / 4 跳过,`VelaShell.Presentation.Tests` 84 通过,`VelaShell.Core.Tests` 676 通过 / 10 跳过 / 1 失败(X11 靶机用例,§152 记过的那条),其余各测试工程全部通过。文档同步见 `feature-plan.md`「文档待同步」。
+- **覆盖层,不改目录**:删掉的内置命令记进 `QuickCommandData.HiddenBuiltInIds`,改过的存成**同标识**的自定义命令、显示时顶替目录那条(`QuickCommandCatalog.VisibleBuiltIns`,与命令补全共用);没动过的仍随界面语言换描述,新版本新增的照常出现。⚠️ 隐藏清单里不认识的标识原样留着,否则同步回去会把新版本删掉的命令放出来。有逐行「恢复默认」与整体「恢复内置命令」。
+- **排序**:内置命令没有可存的 `SortOrder`,组内顺序记在分组上(`QuickCommandGroup.CommandOrder`,空表 = 默认顺序,表外的按默认顺序接在后面);「未分组」固定垫底;拖完顺手重写自定义命令的 `SortOrder` 给旧版本看。⚠️ `Normalize` 的分组比较改为按标识比、算上顺序表 —— 多报一次「有变化」就是每次启动都触发一次云同步。
+- **云同步只加字段、不抬版本**:旧客户端推一次只丢偏好(删掉的内置命令重现、顺序回到默认,用户写的命令一条不丢);§157 丢了引用就连不上所以抬了版本,这里抬版本反而会让没升级的设备整次同步失败。
+- **多行**:输入框改多行,`QuickCommandText.Normalize` 把换行统一成 `\n`、去首尾空白;侧栏只显示首行加「+N 行」。含换行的走括号粘贴(`WritePasteInput`);目标里有没开 ?2004 的(`ITerminalEmulator.IsBracketedPasteEnabled`,那边仍会逐行执行)先弹确认,沿用「粘贴时确认多行内容」开关。只有末尾带换行的不算多行;多行命令不进补全(接受一条多行候选等于替用户敲回车);变量占位先问,替换后整段再粘贴。
+- **拖动排序**(设置 → 代码片段):六点手柄,超过 5px 才算拖,拖出列表 40px 外松手即取消。用页内指针捕获、不走系统拖放 —— 不会把内部标识拖进终端或别的程序。侧栏不加手柄(点一下就是发送)。**没有键盘替代**(剩余项见 feature-plan.md)。
+- ⚠️ 删除图标用的 `VelaStatusError` 是个**不存在的令牌**,删除按钮一直透明,改成 `VelaError`。文档:velashell-docs#86。
 
 ## ✅ 159. 2026-10-03 SSH 库:agent 转发的几处修补(会话声明、连不上不挂死、没开成就不开)
 
-**一、问题**:把 SSH 库的 agent 转发、压缩、端口转发搬运、X11、终端尺寸按规范与实测重新过了一遍。压缩、搬运、X11、终端尺寸没有要改的,问题集中在 agent 转发:
-- **Windows 上本机 agent 没在跑时,远端一碰转发的 agent 就挂死**:转发器连本机 agent 只带取消令牌,命名管道不存在时不带时限的连接会一直重试(scratchpad 实测 10 秒仍挂着),远端的 `ssh` / `git` 挂到 shell 关掉、还占着 8 个名额里的一个。宿主只给认证那一路套了 3 秒。
-- **不做会话声明(`session-bind@openssh.com`)**:`ssh-add -h` 的目的地约束在本库手里不成立。认证时真实的 OpenSSH agent 拒绝替没声明的连接用受约束的钥签名(互操作用例实测,9.9p2)—— 这种钥本库根本用不了;转发时 agent 把远端当成源头机器。spec/04 里 `publickey-hostbound` 那一行从 M5 起一直写着「再看」。
-- **agent 转发没有「没开成就不开」**:宿主在 agent 被拒时去掉它把整个 shell 重开一遍(X11 的 `x11-req` 与 `xauth` 也跟着再跑);`ssh_config` 的 `ForwardAgent yes` 遇到 `AllowAgentForwarding no` 让 shell 起不来。本机 agent 不在时也照样宣告转发,通道先确认再在后台连。
-- 小的两处:`ForwardAgent` 只认 `yes`,写了套接字路径的配置被当成 `no`;`.Xauthority` 里 cookie 为空的条目会挡住后面有效的那条。
+把 agent 转发、压缩、端口转发搬运、X11、终端尺寸按规范与实测重过一遍,只有 agent 转发要改。
 
-**二、做法**:
-- **时限进库**:`SshAgentClient` 连命名管道带 3 秒时限(`PipeConnectTimeout`,认证、加钥、转发共用),到点报新的 `SshFailureReason.AgentNotRunning`;`SSH_AUTH_SOCK` 没设、Unix 套接字不在或没人监听(ENOENT / ECONNREFUSED,Windows AF_UNIX 实测也是后者)同样归它。连不上的套接字顺手释放(以前留给终结器)。宿主 `SshConnectionAssembler` 删掉自己那层 3 秒,`SshInterop.Localize` 把 `AgentNotRunning` 翻成已有的 `SshErr_AgentNotRunning`(`AgentUnavailable` 照旧用原文:它含管道属主不可信等带具体信息的情形)。
-- **转发的建立次序**:请求前先试连本机 agent,连不上不发 `auth-agent-req`;服务端开回 agent 通道时,在 `GetOptionsAsync`(确认之前、后台)连好本机 agent 并声明会话,连不上回 `CHANNEL_OPEN_FAILURE`(描述只写「本机 ssh-agent 不可用」,不外送本机路径)。连好的连接放进一个队列,由随后的 `HandleAsync` 取走、`OnOpenAborted` 关掉 —— 它们连的是同一个 agent、做了同样的声明,可以互换,不必与某条通道对号。
-- **会话声明**:`SshKeyExchangeResult` 记下首次交换的签名,`CreateSessionProof()` 给出 `SshSessionProof`(主机公钥、会话标识、签名;只有首次交换给得出)。`SshAgentClient.DeclareSessionAsync`(internal)发 `SSH_AGENTC_EXTENSION` + `session-bind@openssh.com`;`is_forwarding` 用 `SshAgentConnectionPurpose` 表达而不是布尔,零值是认证(填错时落在「约束钥用不了」一侧)。认证:新的 internal 接口 `ISessionAwareSigner`,agent 签名器与 `SshCertificateSigner`(显式实现,转给内层)实现它,认证器在第一次让它签名之前调用,同一条 agent 连接只声明一次。转发:每条 agent 通道的本机连接先声明再转发;远端那一跳自己的声明照转(只放行这一个扩展,别的仍回 FAILURE)。agent 回 FAILURE 不算失败;个别 agent 收到不认识的报文就断开 —— 自己连上的客户端重开、不再声明,转发器用连接器重连一次。`publickey-hostbound` 决定不做:第一跳不需要,本库永远是第一跳。
-- **失败策略换成枚举**:`X11ForwardOptions.BestEffort`(布尔)→ `ForwardFailureMode { Fail, Continue }`,X11 与 agent 共用(`AgentForwardOptions.FailureMode`,结果对象加 `AgentSetupFailure`);错误计数的原因 `X11SetupSkipped` → `SetupSkipped`。不加「关」这一档、也不做「可空即跟随连接默认」—— 本库不设连接级的转发开关,`null` 已经表示不请求,再加「关」就是两种矛盾的写法(理由写进 spec/07 §7.5.8)。宿主 `SshForwardingOptions` 两项都用 `Continue`,`VelaSshClientWrapper` 删掉 `OpenShellWithFallbackAsync`,shell 一次开成,两项各从结果对象上取原因写黄字。
-- `SshHostConfig.ForwardAgent` 照 `ssh_config(5)` 认 `yes` / `no` / 套接字路径(展开 `~` 与 `%` 记号)/ `$环境变量`(没设则不转发),`ApplyToShell` 带上端点与 `Continue`。`XAuthority.FindCookie` 与 `xauth` 临时文件的兜底都跳过空 cookie。
-- 文档:velashell-docs `zh/` 与 `en/` 的 spec/07(§7.1 重写、新 §7.4、§7.5.7、§7.5.8、§八)、spec/04、05、08、09,getting-started(顺带把早已 internal 的 `AgentForwarder.RequestAsync` 示例换成选项写法),architecture.md §5.10 与新 §11.2.25,以及 host《交互与界面规格》。
-
-**三、验证**:SSH 库 `AgentForwardTests` 补 10 例(连不上不宣告且不留处理器、`Continue` 下连不上 / 被拒都照常开 shell 并交出原因、默认 `Fail` 不开 shell、通道到来时连不上回 OPEN_FAILURE 且名额还回去、转发连接先声明且 `is_forwarding` 为真、签名能用主机公钥验过、远端声明照转在同一条连接上、别的扩展不转、agent 拒绝声明照常转发、agent 因声明断开时重连一次不再声明);`AgentSessionDeclarationTests` 4 例(字段与只发一次、FAILURE 交回 false 后照常可用、经真实 Unix 套接字连上的客户端在断开后重开、扩展名判定);`AgentConnectTests` 3 例(空端点、套接字不存在、命名管道不存在时 3 秒内报 `AgentNotRunning`);`AuthenticationTests` 2 例(签名前声明且 `is_forwarding` 为假、探测没过的钥不声明;agent 拒绝声明照常认证);`SshConfigConnectTests` 1 例(`ForwardAgent` 四种写法)、`X11PrimitiveTests` 1 例(空 cookie 跳过);测试 agent 学会了收声明并用主机公钥验签名。互操作 `会话声明经得起真实OpenSSH_agent的校验且目的地约束生效`(对 `velashell-test-shells`,OpenSSH 9.9p2):真 agent 接受声明、拒绝篡改的签名、声明成别的主机时受 `ssh-add -h` 约束的钥拒签,并记下「不声明时它也拒签」;整组互操作对它跑了一遍,能跑的全部通过。宿主 `SshSessionFeaturesTests` 改 1 例、补 1 例。全解决方案零警告零错误,改动的 C# 文件过了 `dotnet format --verify-no-changes`;`VelaShell.Ssh.Tests` 784 通过 / 22 跳过,`VelaShell.Tests` 1778 通过 / 8 跳过,`VelaShell.Infrastructure.Tests` 594 通过 / 4 跳过,`VelaShell.Presentation.Tests` 84 通过,`VelaShell.Core.Tests` 677 通过 / 10 跳过 / 1 失败(X11 靶机用例:跑着的 `velashell-test-shells` 容器建于 09-23 04:25,早于 Dockerfile 里给 `vela-dash` 加 `X11Forwarding no` 的那次提交,`sshd_config` 里没有那段 `Match`,与本次改动无关;重建靶机即可),其中 Docker 靶机上真 OpenSSH 的 agent 转发用例通过。
+- **连不上不挂死**:Windows 上本机 agent 没跑时,连命名管道只带取消令牌、会一直重试,远端 `ssh` / `git` 挂到 shell 关掉、还占着 8 个名额之一。时限进库:`SshAgentClient` 连管道带 3 秒(`PipeConnectTimeout`),到点报新的 `SshFailureReason.AgentNotRunning`(`SSH_AUTH_SOCK` 没设、套接字不在或没人监听同样归它);宿主删掉自己那层 3 秒。
+- **会话声明(`session-bind@openssh.com`)**:不做则 `ssh-add -h` 的目的地约束不成立 —— 真 OpenSSH agent(9.9p2 实测)拒绝替没声明的连接用受约束的钥签名。`CreateSessionProof()` 取首次交换的证明;认证经 `ISessionAwareSigner` 在首次签名前声明一次,转发时每条 agent 通道先声明再转发、远端那一跳自己的声明照转。`is_forwarding` 用 `SshAgentConnectionPurpose` 表达,零值是认证(填错落在「约束钥用不了」一侧)。`publickey-hostbound` 不做:本库永远是第一跳。
+- **没开成就不开**:以前 agent 被拒时宿主去掉它把整个 shell 重开(`x11-req` 与 `xauth` 也重跑)。现在先试连本机 agent,连不上不发 `auth-agent-req`;服务端开回通道时在确认之前连好,连不上回 `CHANNEL_OPEN_FAILURE`(不外送本机路径)。失败策略换成 X11 与 agent 共用的 `ForwardFailureMode { Fail, Continue }`,不加「关」这一档 —— `null` 已表示不请求,再加就是两种矛盾的写法(spec/07 §7.5.8)。宿主用 `Continue`,删掉 `OpenShellWithFallbackAsync`,shell 一次开成。
+- 小的两处:`ForwardAgent` 照 `ssh_config(5)` 认套接字路径与 `$环境变量`;`.Xauthority` 跳过空 cookie。
+- ⚠️ `Core.Tests` 的 X11 靶机用例失败与改动无关:跑着的 `velashell-test-shells` 容器早于 Dockerfile 给 `vela-dash` 加 `X11Forwarding no` 的那次提交(§161、§164 同)。
+- 文档:velashell-docs 中英 spec/07 / 04 / 05 / 08 / 09、architecture.md §5.10 与 §11.2.25。
 
 ## ✅ 160. 2026-10-05 SSH 库:连接计时器停表时预算已经用完,当场判超时,不再去问
 
-**一、问题**:做了一次净室对照(做法同 velashell-docs architecture.md §11.2.23:独立的分析会话只交回行为描述),对照两件事:建连期间等人的那段时间怎么算进连接超时、重协商时主机密钥怎么验。大部分本库已经有,或者做得更稳妥:裁决期间停表、裁决与认证各有计时器、跳板上的裁决与认证都让外层停表、续表放在 `finally` 里、先验签再问策略、重协商钉住首次的主机密钥并把算法收窄到同一类型(会话中途不会弹窗)、本库没有隐式建连。有问题的只有一处:`SshConnectDeadline` 借 `CancelAfter` 计时,停表时只看令牌取消了没有。到点的回调还排在线程池里没执行时停表,计时器按剩 0 冻住,裁决照样把指纹拿去问用户;用户点完「信任」,一续表就到点,报密钥交换超时。线程池忙的时候,这个窗口不止几毫秒。这个计时器的状态机也没有直接的单元测试。
-
-**二、做法**:
-- `SshConnectDeadline` 改用自己的 `ITimer`(经 `TimeProvider`,默认系统时钟)。停表按实际用掉的时间结账,用完了(含刚好用完)当场取消令牌、判超时;停着表时才跑到的到点回调不作数(账在停表时已经结过);外层照样跟着停,续表时配对。「限不限时」用单独的标志,不看 `_timer` —— 预算很短时回调可能比赋值先跑。
-- `SshKeyExchangeRunner.ApplyHostKeyPolicyAsync` 停表之后先看一眼连接的令牌,到点或调用方已取消就不再去问;`ConnectAsync` 照旧把它报成「密钥交换」这一步的 `Timeout`。
-- `SshConnectionOptions` 加 internal 的 `TimeProvider`(只有测试会换),`ConnectAsync` 交给计时器。
-- 文档:velashell-docs `zh/` 与 `en/` 的 spec/03 §5.3、spec/09 §2.4,architecture.md 新 §11.2.26(含核对过不动的与考虑过不做的:「能不能交互」标志、认证期间停表、重协商换另一把受信任的钥)。
-
-**三、验证**:新 `ConnectDeadlineTests` 13 例,用 `TestKit/ManualTimeProvider`(手动拨的时钟,到点的回调先排队、可以晚些执行,摆得出「到点了、回调还没执行」那一刻):到点、不限时、停表续表、累计扣减不补满、嵌套停表、多余的续表、停表时已经用完 / 刚好用完、到点后停表续表、停着表时调用方取消不算到点、外层跟着停、外层用完时里面停表判外层超时、释放之后不抛。`ConnectionTests` 补 2 例端到端:拨通后把时钟拨过连接超时(回调不执行),策略一次也没被问、报 `Timeout` / `KeyExchange`;拨到还剩 1 秒,照常问一次、照常连上。变异检验:把「停表时用完就判超时」退回旧行为(剩 0 冻住),恰好是瞄准的 4 例变红。全解决方案零警告零错误,改动的 C# 文件过了 `dotnet format --verify-no-changes`;`VelaShell.Ssh.Tests` 799 通过 / 23 跳过(跳过的是要 Docker 靶机或环境变量的互操作用例)。
+净室对照(做法同 architecture.md §11.2.23)建连等人时的计时与重协商的主机密钥验法,多数本库已有。**根因**只有一处:`SshConnectDeadline` 借 `CancelAfter` 计时,停表时只看令牌取消没有;到点回调还排在线程池里时停表,计时器按剩 0 冻住,指纹照样拿去问用户,点完「信任」一续表就报密钥交换超时。改用自己的 `ITimer`(经 `TimeProvider`):停表按实际用时结账,用完(含刚好用完)当场判超时,停表期间才跑到的回调不作数;`ApplyHostKeyPolicyAsync` 停表后先看令牌,到点就不再去问。考虑过不做:「能不能交互」标志、认证期间停表、重协商换另一把受信任的钥。文档:velashell-docs spec/03 §5.3、spec/09 §2.4、architecture.md §11.2.26。
 
 ## ✅ 161. 2026-10-05 ~ 10-06 SSH 库:按全库审查的结论逐条修复与补齐(`ssh_plan.md`)
 
-**一、来由**:2026-10-05 对 `src/VelaShell.Ssh` 做了一次分领域的全库审查(六个只读审查会话按传输与密码学、连接与通道、认证与密钥、转发 / 拨号 / ssh_config、SFTP、公开面与宿主分头读,主会话回到代码逐条复核;全程守净室规程,没有打开任何其它 SSH 实现的源码),结论写成仓库根的 `ssh_plan.md`(未入库的草案):164 条带编号的发现(错误 / 安全 / 规格漂移 / 设计 / 性能)、第七节宿主的 10 处绕路(W1–W10)与 7 条可观测性缺口、第八节 12 条待拍板的质疑决策(Q1–Q12)、第九节 14 条测试缺口(T1–T14)、第十节 42 项可以支持的功能(F1–F42)。照计划逐条修,一条一个本地提交:`dev` 上 253 个(库 216 个、宿主 64 个,有的两边都动),文档集中在 velashell-docs 的 `fix/ssh-review-fixes` 分支(约 180 个提交,`zh/` 与 `en/` 一起改)。每条提交信息里写着它对应哪一条、为什么、怎么验证的;这里只记全貌。
+2026-10-05 对 `src/VelaShell.Ssh` 做分领域的全库审查(六个只读会话分头读、主会话逐条复核,守净室规程),结论写成仓库根未入库的 `ssh_plan.md`:164 条发现、第七节宿主绕路 W1–W10、第八节质疑决策 Q1–Q12、第九节测试缺口 T1–T14、第十节功能 F1–F42。一条一个本地提交(`dev` 上 253 个),文档在 velashell-docs `fix/ssh-review-fixes`。
 
-**二、做了什么**(按批次):
-- **宿主正在踩、会打断整条连接的**:迟到的请求应答不再把整条连接判成协议错误(CH-E1);跳板上等人时外层计时器停表(FW-E1);取消与应答同时到达不再泄漏 SFTP 句柄(SF-E1);单文件传输管线深度能长、宿主续传回退盖住整个窗口(SF-E2 / SF-D7);远程转发建立途中取消撤销监听、释放时等应答有时限(FW-E3 / E4);断网时的 DNS 失败如实归类(FW-E5);宿主信任库交出已记下的钥类型、并按密钥类型分开记(API-H4);「允许老算法」放开 SHA-1 RSA 用户签名并补降级重试(API-H5);入站通道先设好对端号再发确认(CH-E2)。
-- **安全加固**:报文序号回绕成关不掉的硬线;退出状态 / 信号 / EOF 只收第一份;私钥、口令、Ed25519 种子用完清零;`.ppk` 的 MAC 与一致性;known_hosts 的大小写、未知 `@` 标记、主机名字符集;`Include` 总量上限;配置里的 `ProxyCommand` 要调用方批准、`%h` 以 `-` 开头不代入;HTTP CONNECT 校验主机名;命令失败的消息只带清洗过的 stderr 末尾;严格 KEX 的首包;重协商失败不放出暂存数据;PKCS#8 的 KDF 迭代上限。
-- **SFTP 健壮性**:握手与关闭有时限;按 `max-open-handles` 排队;READDIR 补 LSTAT、空批判错、名字不合法的项丢弃;文件名编码无损往返;应答类型核对、扩展属性越界、时间溢出、`NO_SUCH_PATH`;通道存活信号;宿主单开传输通道;sftp-server 没起来时报出退出码与它在 stderr 上说的话(SF-M3)。
-- **异常类型与原因码说真话**:内部异常不再从公开 API 漏出;代理 / 跳板 / ProxyCommand 的失败归到对的那一跳;连不上代理本身有了自己的 `ProxyUnreachable`,宿主不再把它改写成「代理拒绝」(W6);取消与超时分清;宿主按原因码本地化,不解析句子。
-- **规格漂移与协议细节**:失败与释放时发 DISCONNECT;认证期间对端发起的重协商就地做完;重协商时限;max packet 截断与越界;EXT_INFO 只在合法位置收;标识串按原始字节进交换哈希;ML-KEM 走 BCL;GCM / chacha 就地验解;背压与回补按需唤醒;spec/07 标着〔未实现〕的三处(开通道时限与 SOCKS 0x06、`-L` 被拒时重置本机连接、远程转发撞上限报事件)落地;建连路径上 `Match localuser` 照本机用户判。
-- **公开面**(第七节 API-P*,纯重构单独成提交):一个功能一个入口、矛盾参数构造时就抛、集合抄成只读快照、枚举零值、结构化的 `LastRekey`、异常消息去 Markdown;`CipherSuiteShape` 与长度校验合一(TR-D4);SFTP 与这一批新增的文件按「一个类型一个文件」整理(SF-D6);没有理由公开的成员降为 internal(API-P14);布尔开关按 Is / Has / Can / Allow 命名、`Dangerous` 前缀、`Parse` / `TryParse`、「不限时」只写 `InfiniteTimeSpan`、`ownsXxx`、`Default` 命名(API-P15)。
-- **宿主的绕路换成库的能力**(W1–W10):原因码本地化、agent 默认端点、`PeerText`、`IdentityFile` 与 `HostName %h` 的展开、密钥生成交给库、私钥导入由库认格式、横幅进终端、ssh_config 算法清单、连接的结束原因、通道与转发器交出自己的关闭 / 停止原因(W7 / F41)。
-- **可观测性**:报文旁路(`IPacketTap`)、度量(`VelaShell.Ssh` 的 Meter)、往返时间(PING / 保活)、标着 always_display 的 `SSH_MSG_DEBUG` 交给调用方、对端版本 / 认证方法 / server-sig-algs / 各阶段耗时、重协商事件与耗时、开着的通道的快照。
-- **第十节的功能**:GEX、agent 管理与 Pageant、FIDO 安全密钥经 agent、Windows CNG 签名器、主机密钥轮换(库与宿主两侧)、PING 与按键时序混淆、远程动态转发与放行名单、Unix 套接字转发、转发吞吐 / 连接快照 / 限速、SFTP 的 statvfs / expand-path / fsync / copy-data / users-groups-by-id / lsetstat / FSETSTAT / 厂商扩展、TLS 拨号器、BREAK、eow、xon-xoff、带伪终端跑命令、改密码、PKCS#8 Ed25519、私钥生成与写出、指纹图、算法目录、FIPS 清单,以及 ssh_config 的算法清单、转发项、记号、`CertificateFile`、`ConnectionAttempts`、`SetEnv` / `SendEnv` / `RemoteCommand`、`AddressFamily`、`BindAddress` / `BindInterface`、`HostKeyAlias`、`GlobalKnownHostsFile`、`IdentityAgent`。
-- **测试缺口**(T1–T14):KEX / MAC 互操作矩阵、AEAD 独立参照、真 puttygen 样本、畸形输入、收尾竞态(CH-E2 的那一刻用测试钩子摆出来)、恶意对端、跳板计时、ECDH 无效点、SFTP 的链接 / 改名 / 落盘对真 sftp-server。
+- **会打断宿主连接的**:迟到的请求应答不再判成协议错误(CH-E1);跳板上等人时外层停表(FW-E1);取消与应答同时到达不泄漏 SFTP 句柄(SF-E1);入站通道先设好对端号再发确认(CH-E2);信任库按密钥类型分开记(API-H4);「允许老算法」放开 SHA-1 RSA 用户签名并补降级重试(API-H5)。
+- **安全加固**:报文序号回绕成硬线;退出状态 / 信号 / EOF 只收第一份;私钥、口令用完清零;配置里的 `ProxyCommand` 要调用方批准、`%h` 以 `-` 开头不代入;命令失败消息只带清洗过的 stderr 末尾;重协商失败不放出暂存数据;`Include` 总量与 PKCS#8 KDF 迭代设上限。
+- **SFTP 健壮性**:握手与关闭有时限、按 `max-open-handles` 排队、文件名编码无损往返、sftp-server 没起来时报出退出码与 stderr(SF-M3)。
+- **原因码说真话**:内部异常不漏出公开 API;失败归到对的那一跳;连不上代理有了自己的 `ProxyUnreachable`(W6);取消与超时分清;宿主按原因码本地化、不解析句子。
+- **公开面**(API-P*,纯重构单独成提交):一个功能一个入口、矛盾参数构造时就抛、结构化的 `LastRekey`、没理由公开的降为 internal、命名规矩(API-P15)。宿主的绕路(W1–W10)换成库的能力。
+- **可观测性**:报文旁路(`IPacketTap`)、Meter、往返时间(PING / 保活)、always_display 的 `SSH_MSG_DEBUG`、谈成的算法 / 对端版本 / 认证方法 / 各阶段耗时、重协商事件(`Rekeyed`)与耗时、开着的通道的快照。
+- **第十节的功能**:GEX、agent 管理与 Pageant、FIDO 安全密钥经 agent(sk-* 钥,第一阶段)、Windows CNG 签名器、主机密钥轮换、PING 与按键时序混淆(`ObscureKeystrokeTiming`)、远程动态转发与放行名单、Unix 域套接字转发、转发的实时吞吐 / 连接快照 / 限速、TLS 拨号器、SFTP 扩展(statvfs / expand-path / fsync / copy-data 等)、改密码、私钥生成与写出、FIPS 清单,以及 ssh_config 的算法清单、转发项、`CertificateFile`、`HostKeyAlias`、`IdentityAgent` 等。
+- **测试缺口**(T1–T14):KEX / MAC 互操作矩阵、AEAD 独立参照、真 puttygen 样本、畸形输入与恶意对端、收尾竞态等。大多数修复做过变异检验、对真工具黑盒核对过。
 
-**三、没做的**(理由;要做的已记入 `feature-plan.md`):
-- **拍板之后落地**:第八节 Q1、Q4、Q5、Q7、Q8、Q9、Q11、Q12 见 §162(主机密钥轮换「删掉服务端不再出示的旧钥」随 Q4 一起做了);Q2 维持不做(`feature-plan.md`「确认不做」);Q3、Q6、Q10 已随相关条目解决。
-- **有意不做**:SF-P3 小文件并发 FSTAT 与按已知长度收尾(Seek(End) 与下载中变长的文件,提交里写了理由);SF-P4 DATA 应答的那一次复制(要让接收循环直接写进调用方的缓冲,取消之后迟到的应答会写进已经还回去的内存);F16 宿主处理 xon-xoff(真 OpenSSH 不发);ssh_config 的 `RequestTTY`(shell 总带伪终端,不带的跑命令是另一个入口)与记号 `%i`(没有取 uid 的托管接口)。
-- **缺验证环境或硬件**:F7 gssapi-with-mic(要 KDC)、F12 后量子混合 KEX(没有服务端可对照)、F2 第二阶段(直接驱动 FIDO 硬件)、F3 的 PKCS#11 与 Secure Enclave、F4 的 `restrict-destination` 约束(velashell-docs 还没有规格)。
-- **宿主侧还没接的库能力**:连接信息面板(O7)、CNG 签名器、按键时序混淆、报文旁路、转发吞吐与限速、TLS 拨号器、远程动态转发、Unix 套接字转发、ssh_config 转发项的导入;成功建连时经过的每一跳(拨号器只在失败时记跳信息)。
-- **单独排期的纯重构**:拆 `SshConnection` / `SshChannel` 两个上帝类(`feature-plan.md` 已有,CH-D8 列了不能断的耦合点)。
-
-**四、验证**:`VelaShell.Ssh.Tests` 从 822 例(799 通过 / 23 按环境跳过)到 1341 例:不开互操作 1296 通过 / 45 跳过,开互操作(Docker 靶机 OpenSSH 10.3)1333 通过 / 8 跳过(要 X11、压缩重协商之类环境的几条)。大多数修复做过变异检验(把修复退回去,瞄准的用例变红);协议行为对真工具做过黑盒核对:GEX 与重协商、agent 的证书 / 删钥 / 锁、`nc -X 5` 经远程动态转发、Unix 套接字转发到 ssh-agent、`limits@openssh.com`、hostkeys-prove 的签名、sk 钥指纹与 `ssh-keygen -lf` 一致、CNG 不可导出的钥登录、PING / PONG、按键混淆下的真 shell、`HostKeyAlias` 的记法(OpenSSH 10.5 客户端)。全解决方案零警告零错误,改动的 C# 文件过了 `dotnet format --verify-no-changes`;宿主相关的用例(`Core.Tests` / `Infrastructure.Tests` / `VelaShell.Tests` 的 SSH、SFTP、主机密钥、本地化守门)通过。已知:`Core.Tests` 的 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 因靶机镜像建于 Dockerfile 那次改动之前而失败(同 §159,重建靶机即可),与这一批无关。
+**没做的**:Q1、Q4、Q5、Q7、Q8、Q9、Q11、Q12 拍板后见 §162,Q2 维持不做,Q3、Q6、Q10 已随相关条目解决。有意不做:SF-P3 小文件并发 FSTAT(Seek(End) 与下载中变长的文件);SF-P4 省掉 DATA 应答那次复制(取消后迟到的应答会写进已还回去的内存);F16 宿主处理 xon-xoff(真 OpenSSH 不发);`RequestTTY`(shell 总带伪终端)与 `%i`(没有取 uid 的托管接口)。缺环境或硬件的 F7 gssapi-with-mic、F2 第二阶段(直驱 FIDO 硬件)、F3 的 PKCS#11 与 Secure Enclave 记入 feature-plan.md;F12、F4 后来在 §164、§163 落地。**库里落地、宿主还没接**:连接信息面板(O7)、CNG 签名器、按键时序混淆、报文旁路、转发吞吐与限速、TLS 拨号器、远程动态转发、Unix 套接字转发、ssh_config 转发项的导入、成功建连时经过的每一跳(剩余项见 feature-plan.md)。`SshConnection` / `SshChannel` 两个上帝类体量超标,拆分单独排期为纯重构(CH-D8 列了不能断的耦合点)。
 
 ## ✅ 162. 2026-10-06 SSH 库:第八节的质疑决策拍板落地(Q1 / Q4 / Q5 / Q7 / Q8 / Q9 / Q11 / Q12;Q2 维持不做)
 
-**一、来由**:§161 留下 `ssh_plan.md` 第八节的九条质疑决策没动。维护者 2026-10-06 拍板:「除了 Q2 不支持旧的 legacy 外,其他按照推荐内容调整」。照第八节的推荐逐条改,规格先行,一条一个本地提交:`dev` 上 8 个,velashell-docs `fix/ssh-review-fixes` 上 8 个(`zh/` 与 `en/` 一起改)。提交信息里写着每条的理由与验证;这里只记全貌。
+§161 留下的第八节决策,维护者 2026-10-06 拍板「除了 Q2 不支持旧的 legacy 外,其他按照推荐内容调整」;规格先行,每条做过变异检验。
 
-**二、做了什么**:
-- **Q12 SYMLINK 建完回读自检**:建完对 linkPath 做一次 READLINK;那里没有链接、targetPath 上却冒出一条指回 linkPath 的,说明服务端按相反的参数顺序建了 —— 删掉建错的那条、报错。不设开关;服务端不支持 READLINK 时照旧信它。
-- **Q9 服务端回的 SFTP 版本高于 3 时不连**:draft-02 §4 要求回双方较小的那个;回得更大的服务端会按自己的版本说话,按 v3 解析就把属性读错。报 `SftpUnavailableException`(`ProtocolError`),不再「降到 3 继续」。
-- **Q8 SFTP 时间按无符号 32 位**:`SftpFileAttributes.AccessTime` / `ModifyTime` 改成 `uint`,读写都无符号,2038 年之后照常(到 2106 年)。对真 sftp-server 与 OpenSSH `sftp` 客户端黑盒核对过。
-- **Q1 默认不按时长主动重协商**:`SshRekeyPolicy.Default` 只剩 1 GiB / 2³¹ 个报文。黑盒核对 OpenSSH 客户端与服务端的默认都不按时长(`ssh -G` 是 `rekeylimit 0 0`,`sshd_config` 默认 `RekeyLimit default none`),顺手更正了文档里「OpenSSH 默认 1 GiB 或 1 小时」的说法。
-- **Q5 本地与动态转发默认同时听 `127.0.0.1` 与 `::1`**:`LocalPortForwardOptions.BindAddress` 可空,默认是两个环回、同一个端口(`BoundEndPoints`);没有 IPv6 时只听 IPv4;`[::1]` 那个端口被别的进程占着时不起这个转发,IPv4 的监听也不留。ssh_config 与宿主写 `localhost` 时同一口径,宿主的隧道端口预检两个环回都查。
-- **Q4 known_hosts 的改写路径**:平时照旧只追加。「密钥变了」确认后一键删旧记录(`KnownHostsPolicy.RemoveHostKeysAsync`)与主机密钥轮换删旧钥(`IHostKeyRotationPolicy.ForgetHostKeysAsync`,接口默认实现不删)两处才改写,都落到 `KnownHostsFile.RemoveHostKeysAsync`:只动专属于这台主机的记录(散列行整行删,几个名字的行只拿掉这台主机的名字,`@revoked` / `@cert-authority` / 通配行不动),「临时文件 + 原子替换 + 冲突重试」。轮换只在宣告完整、证明全过时才删(`SshHostKeyUpdate.RemovedFingerprints`);宿主信任库按类型删并发安全告警(五份 resx)。对真 sshd 核对:记着一把它没有的钥,连上之后被删掉、别的行一字不动。
-- **Q11 SFTP 顺序读遇到短读只补缺口**:缺口的请求插到队首,后面已发的预读照用、窗口不动;整块在已知长度之内还读不满时,学到服务端实际给的读长度(不低于 4 KiB)。曾经整队作废,对每块都短读的服务端吞吐塌到一块 / RTT。
-- **Q7 终端走交互道**:先核对了「每条通道同一时刻至多一帧数据在发送队列里」(stdin 泵等上一帧刷出去才发下一帧)—— 积压来自很多条通道各排一帧,按通道轮询对单条 FIFO 没有改进。改成交互式通道(`SshChannelOptions.IsInteractive`,`OpenShellAsync` 开的自动是)的报文进交互道,发送泵在窗口回补之后让它与普通队列轮流出队:按键至多等一帧,粘贴大段也不饿死别的通道。一条通道的报文(含接收循环替它回的 CLOSE 与请求应答)全走开通道时定下的那条道,自身顺序不变。
-- **Q2 维持不做**:CBC 不实现,理由记进 `feature-plan.md`「确认不做」。
-- 顺带:CH-E2 的竞态用例偶发失败(断言早于钩子跑完),改成等钩子真的跑完再断言。
-
-**三、验证**:`VelaShell.Ssh.Tests` 1354 例:不开互操作 1308 通过 / 46 跳过,开互操作(Docker 靶机 OpenSSH 10.3)的 46 例 38 通过 / 8 跳过(要另外环境的几条)。每条都做过变异检验:编得过的变异体(把修复退回去,或者绕开关键的那一步)让瞄准的用例变红 —— Q7 的按键在积压之后才上线、Q11 的读两遍与等不到更靠后的请求、Q4 的冲突时丢掉别人刚追加的那一条与宣告不完整时误删、Q5 的只听 IPv4。Q7 改了发送泵,全套连跑三遍没有新的偶发失败。宿主 `Infrastructure.Tests` 625 通过 / 4 跳过,本地化守门通过;全解决方案零警告零错误,改动的 C# 文件过了 `dotnet format --verify-no-changes`。
+- **Q12** SYMLINK 建完对 linkPath 回读 READLINK;发现服务端按相反参数顺序建了,就删掉建错的那条、报错(不支持 READLINK 的服务端照旧信它)。
+- **Q9** 服务端回的 SFTP 版本高于 3 时不连(按 v3 解析会把属性读错),报 `SftpUnavailableException`,不再「降到 3 继续」。
+- **Q8** SFTP 时间按无符号 32 位(`uint`),2038 年之后照常(到 2106 年)。
+- **Q1** `SshRekeyPolicy.Default` 只剩 1 GiB / 2³¹ 个报文、不按时长:黑盒核对 OpenSSH 两端默认都不按时长(`rekeylimit 0 0` / `RekeyLimit default none`);⚠️ 文档里「OpenSSH 默认 1 GiB 或 1 小时」的说法已更正。
+- **Q5** 本地与动态转发默认同时听 `127.0.0.1` 与 `::1`(同一端口,`BoundEndPoints`);没有 IPv6 时只听 IPv4,`[::1]` 那个端口被占则整个转发不起;宿主写 `localhost` 同一口径,隧道端口预检两个环回都查。
+- **Q4** known_hosts 平时只追加;只有「密钥变了」确认后删旧记录与主机密钥轮换删旧钥(`IHostKeyRotationPolicy.ForgetHostKeysAsync`,默认不删)两处改写,都落到 `KnownHostsFile.RemoveHostKeysAsync`:只动专属于这台主机的记录(`@revoked` / `@cert-authority` / 通配行不动),临时文件 + 原子替换 + 冲突重试;轮换只在宣告完整、证明全过时才删。
+- **Q11** SFTP 顺序读遇到短读只补缺口(插到队首,已发的预读照用、窗口不动),并学到服务端实际给的读长度(不低于 4 KiB);曾经整队作废,对每块都短读的服务端吞吐塌到一块 / RTT。
+- **Q7 终端走交互道**:先核对了每条通道同一时刻至多一帧在发送队列里 —— 积压来自很多条通道各排一帧,按通道轮询对单条 FIFO 没有改进。改为交互式通道(`SshChannelOptions.IsInteractive`,`OpenShellAsync` 开的自动是)的报文进交互道 `_interactive`,**发送泵在窗口回补之后让它与普通队列轮流出队**:按键至多等一帧,粘贴大段也不饿死别的通道。一条通道的报文(含接收循环替它回的 CLOSE 与请求应答)全走开通道时定下的那条道,自身顺序不变。
+- **Q2 维持不做**:CBC 不实现(feature-plan.md「确认不做」)。
 
 ## ✅ 163. 2026-10-07 SSH 库:agent 加钥可以带目的地约束(restrict-destination,`ssh-add -h`)
 
-**一、来由**:`ssh_plan.md` 第十节 F4 的最后一块。会话声明(`session-bind@openssh.com`)早就照发(§159),可本库自己往 agent 里加钥时给不出「这把钥只许登这几台」,使用者只能退回命令行。原来卡在 velashell-docs 没有规格 —— 净室规程要求实现依据先成文。这次按两阶段走:一个独立上下文的分析会话读 OpenSSH `PROTOCOL.agent`、RFC 9987(agent 草案的定稿)、设计说明与手册页,对真 `ssh-add` / `ssh-agent` 做黑盒核对,写出 07 §7.3.2;实现只照那一节写。
+`ssh_plan.md` 第十节 F4 的最后一块:会话声明早已照发(§159),但本库往 agent 里加钥时给不出「这把钥只许登这几台」。原来卡在 velashell-docs 没有规格(净室规程要求实现依据先成文);两阶段走:独立的分析会话读 `PROTOCOL.agent`、RFC 9987 并黑盒核对真 `ssh-agent`,写出 spec/07 §7.3.2,实现只照那一节。
 
-**二、做了什么**:
-- `SshAgentKeyConstraints.AllowedHops`(`null` 为不限;空表不当「不限」,1–64 跳);新增 `SshAgentHop`(终点、用户名、经由)与 `SshAgentHopHost`(名字、主机钥、CA 公钥),属性只读、构造时校验、相等按内容。
-- `SshAgentHopHost.FromKnownHosts`:照 `known_hosts` 拼一台主机,匹配与 `KnownHostsFile.Lookup` 同一套规则;`@cert-authority` 进 CA 表;对得上的 `@revoked` 剔掉(这一点故意与 `ssh-add` 不同)。
-- 报文是 255 号扩展约束,四层各包一个 string;**有约束一定发 25** —— 接在 17 后面会被 agent 静默丢掉,钥就成了哪儿都能登。约束编码挪进新的 `SshAgentConstraintWriter`,不再往已经超长的 `SshAgentClient` 里加。
-- 被拒(5 或 28)就是 `AgentRefused`,消息点出目的地约束;绝不去掉约束重试。签名被拒的提示也加上这一条。
-- 一条 agent 连接只替一个会话做认证:由 `ConnectAsync` 连上的客户端在为另一个会话做认证声明之前重开连接 —— 按 ssh_config 的 `ProxyJump` 连时,跳板与目标用的是同一份 agent 凭据。
-- 顺带:主机证书那条互操作用例的原因码对上 `HostKeyChanged`(2026-09-26 起「只记着 CA、出示的证书没人担保」按「变了」拒绝,这条用例只在配了主机证书时跑,一直没跑到)。
-
-**三、验证**:单元测试钉住报文(规格里那个对过 `ssh-add` 的例子 12 / 74 / 98 / 102 / 147,外加带用户名、起点、两把钥、CA)、有约束必发 25、被拒不重试、校验与 `FromKnownHosts` 的规则、重开的条件。对真 OpenSSH 10.3 `ssh-agent` 的互操作用例:放行的主机连得上、用户名可带通配;主机钥或用户名对不上时 agent 拒签;经转发逐跳放行(A 上列得出、登 B 成功,少了 A → B 就都不行;B 是 `docker-compose.test.yml` 的多 shell 靶子);凭 CA 认主机(Start-TestServer.ps1 起的带主机证书的靶机);跳板时不重开确实在目标那一跳被拒,不带约束的钥不受影响。四处变异(不重开、CA 标志写反、只有目的地约束时发 17、不剔吊销的钥)都让瞄准的用例变红。反向用例给 agent 凭据之后配一个口令兜底:让认证整个失败的话,sshd 的 `PerSourcePenalties` 会把来源地址拒掉一阵,连累后面的用例(第一次全套跑时就这样红了两条)。`VelaShell.Ssh.Tests` 开互操作 1363 通过 / 9 跳过;带主机证书的靶机上互操作 46 通过 / 4 跳过;全解决方案零警告零错误。没核对的:Windows 的 OpenSSH agent 与 Pageant 收不收这个约束(要往使用者真在用的 agent 里加钥)。宿主还没接,记进 `feature-plan.md`「SSH 库已有、宿主还没接的能力」。
+- `SshAgentKeyConstraints.AllowedHops`(`null` 为不限,空表不当「不限」,1–64 跳)+ `SshAgentHop` / `SshAgentHopHost`;`SshAgentHopHost.FromKnownHosts` 照 known_hosts 拼主机,对得上的 `@revoked` 剔掉(故意与 `ssh-add` 不同)。
+- ⚠️ **有约束一定发 25** —— 接在 17 后面会被 agent 静默丢掉,钥就成了哪儿都能登。被拒报 `AgentRefused`,**绝不去掉约束重试**。
+- 一条 agent 连接只替一个会话做认证:为另一个会话声明之前重开连接(按 `ProxyJump` 连时跳板与目标用同一份 agent 凭据)。
+- ⚠️ 反向互操作用例要配口令兜底:认证整个失败会触发 sshd 的 `PerSourcePenalties`,把来源地址拒掉一阵、连累后面的用例。宿主还没接(剩余项见 feature-plan.md)。
 
 ## ✅ 164. 2026-10-07 SSH 库:面向 FIPS 的后量子混合密钥交换 `mlkem768nistp256-sha256` / `mlkem1024nistp384-sha384`
 
-**一、来由**:`ssh_plan.md` 第十节 F12。原来卡在验证 —— 交换哈希错一个字节,表现也只是「签名验不过」,手头没有能对照线上格式的服务端。调查找到了靶机:AlmaLinux 10.2(RHEL 10.2 的重建)的 OpenSSH 9.9p1 带着 RHEL 的下游补丁,两种都有;上游 OpenSSH 到 10.6p1 才有 768 那种、默认不开。草案也已定稿为 RFC 10042。按两阶段走:独立的分析会话照 RFC 10042、FIPS 203、SEC 1 写出 velashell-docs 03 §3.7(并对 Alma 的 OpenSSH 抓明文首次交换核对了长度),实现只照那一节。
+`ssh_plan.md` 第十节 F12,原来卡在验证 —— 交换哈希错一个字节,表现也只是「签名验不过」。靶机:AlmaLinux 10.2 的 OpenSSH 9.9p1 带 RHEL 下游补丁、两种都有(上游到 10.6p1 才有 768 那种、默认不开);草案已定稿为 RFC 10042,先写出 velashell-docs spec/03 §3.7,实现只照那一节。
 
-**二、做了什么**:
-- `HybridKeyExchange` 拆成「KEM + 经典」两半:经典那半是 X25519 或 NIST 曲线的 ECDH(点的编码与曲线校验复用 `EcdhKeyExchange`);`K_CL` 是定长的 X 坐标、前导零保留;`K = HASH(K_PQ ‖ K_CL)` 按 `string`;哈希三支各写各的(SHA-384 落进 SHA-512 不报任何错,只是每次都签名失败)。先查总长、再验点、最后解封装;每次交换都是新的临时密钥。
-- ML-KEM 按参数泛化成 768 / 1024,平台支持时走 BCL、否则 BouncyCastle;两条路径互通的用例 1024 也有一条。
-- 清单:默认清单里排在 `mlkem768x25519-sha256` 之后、sntrup761 与不带后量子的椭圆曲线之前 —— 开了 FIPS 策略的服务端不给 X25519,以前只能谈成不带后量子的 `ecdh-sha2-nistp256`;`FipsApprovedOnly` 里排最前。
-- 密钥交换里对端的公开值不合格时以 `KEY_EXCHANGE_FAILED`(3)断开,所有交换方法一律这样(规格的决策;曾经发 2),描述文字另写一句,不借用协商失败的那句。
-- 靶机:`docker-compose.test.yml` 新增 `ssh-pq`(`tests/fixtures/ssh-pq/Dockerfile`),同一个容器里三个 sshd —— FIPS 模式的清单(2226)、只给 1024 那种(2227)、RHEL 的 DEFAULT 策略(2228)。
-- 顺带:`Rekeyed` 事件改在「可以再发起」之后才报。曾经在「在谈」的标记清掉之前就报,订阅者收到事件就再发起一次时被当成空操作吞掉 —— 连续重协商的互操作用例就卡在这里。
-
-**三、验证**:对真服务端:两种各自握手、跑命令、重协商;每种连续交换 1200 次(碰到 X 坐标前导零的概率约 99%);默认清单与 FIPS 清单在三种服务端上谈成的方法与规格一致;经改字节的中继记下线上长度(`C_INIT` 1249 / 1665、`S_REPLY` 1153 / 1665),改 EC 点得 `ProtocolError`、改 KEM 密文得 `HostKeyRejected`。内存里另有反复交换直到碰上前导零的用例,以及各种不合格公开值、断开码 3 的用例。变异检验:去掉前导零(内存用例与 1200 次的互操作用例都红)、SHA-384 落进 SHA-512、断开码退回 2、事件时序退回去,都让瞄准的用例变红。`VelaShell.Ssh.Tests` 开互操作 1396 通过 / 9 跳过;宿主 `Infrastructure.Tests` 625、`VelaShell.Tests` 1792 通过,`Core.Tests` 只有那条靶机镜像过时的 X11 用例失败(同 §159);全解决方案零警告零错误。没做:上游 OpenSSH 10.6 与 Apache MINA SSHD 这两个实现的对照。留给拍板:`FipsApprovedOnly` 的注释说它「与 RHEL 的 FIPS 加密策略对 SSH 放行的一致」,可 RHEL 10.2 的 FIPS 策略还放行 `diffie-hellman-group-exchange-sha256` 与 group18,这份清单没收 —— 说法不完全准。
+- `HybridKeyExchange` 拆成「KEM + 经典 ECDH」两半。⚠️ `K_CL` 是定长的 X 坐标、**前导零保留**(每种连续交换 1200 次,碰上前导零的概率约 99%);⚠️ 哈希三支各写各的(SHA-384 落进 SHA-512 不报任何错,只是每次都签名失败)。ML-KEM 768 / 1024 平台支持时走 BCL、否则 BouncyCastle。
+- 默认清单排在 `mlkem768x25519-sha256` 之后、sntrup761 之前 —— 开了 FIPS 策略的服务端不给 X25519,以前只能谈成不带后量子的 `ecdh-sha2-nistp256`;`FipsApprovedOnly` 里排最前。对端公开值不合格时所有交换方法一律以 `KEY_EXCHANGE_FAILED`(3)断开(曾发 2)。
+- 靶机 `docker-compose.test.yml` 的 `ssh-pq`:三个 sshd(FIPS 清单 2226、只给 1024 的 2227、RHEL DEFAULT 2228)。
+- ⚠️ `Rekeyed` 事件改在「可以再发起」之后才报 —— 以前订阅者收到事件就再发起会被当成空操作吞掉。(剩余项见 feature-plan.md)
 
 ## ✅ 165. 2026-10-07 CI:去掉「VelaShell.Ssh · 压缩严格校验」作业
 
-维护者决定这一项现在不需要在 CI 里跑。`ci.yml` 的 `ssh-checks` 作业删掉 —— 它只做一件事:单开一个进程跑 `scripts/ssh/compression/verify-strict-validation.cs`,验 `System.IO.Compression.UseStrictValidation` 打开时 `zlib@openssh.com` 照常往返(那个 AppContext 开关只能在进程启动时设一次,进不了常规用例)。脚本留着,改动压缩那段代码时手动跑;velashell-docs 架构文档里「CI 里单跑一条」的说法同步改掉([velashell-docs#92](https://github.com/VelaShellLabs/velashell-docs/pull/92))。
+维护者决定这一项现在不需要在 CI 里跑,删掉 `ci.yml` 的 `ssh-checks` 作业:它只单开一个进程跑 `scripts/ssh/compression/verify-strict-validation.cs`,验 `System.IO.Compression.UseStrictValidation` 打开时 `zlib@openssh.com` 照常往返(那个 AppContext 开关只能在进程启动时设一次,进不了常规用例)。脚本留着,改动压缩代码时手动跑。文档:velashell-docs#92。
 
 ## ✅ 166. 2026-10-07 CI:一直红着的几条 SSH 用例
 
-#563 合并前后,CI 的「构建与测试」在三个系统上都红(Windows 在最新一次已经过了)。本机全绿,三条都是 CI 环境才摆得出来的情形:
+#563 合并前后 CI 在三个系统上都红、本机全绿,都是 CI 环境才摆得出的情形:
 
-- **`ppk截断到任意位置只报私钥异常`(v3 加密那个,三个系统)**:每截断一次都先跑一遍 Argon2(v3、参数重)才在 MAC 上发现文件不完整,CI 上超过 30 秒被掐。修在库里:`.ppk` 的结构在派生口令之前就核完 —— `Private-MAC` 在且长度对、各段行数够、加密私钥区是 16 的倍数,不满足当场报 `KeyFormatInvalid`;截断的文件也不再被报成「口令多半不对」。这条用例本机 0.4 秒。
-- **`只连限定的地址族_从指定的本机地址发起`(macOS)**:「整个 127/8 都是环回」只在 Linux 与 Windows 上成立,macOS 的 lo0 默认只有 127.0.0.1,绑 127.0.0.2 报 `AddressNotAvailable`。macOS 上改从 127.0.0.1 发起。
-- **`主机密钥被拒时告诉服务端原因` 与 `服务端公开值不合格时告诉服务端KEY_EXCHANGE_FAILED`(Ubuntu,偶发)**:客户端发了 DISCONNECT 就关连接,机器忙时这发生在测试服务端发自己的 NEWKEYS 之前,服务端写失败直接退出、没读到那条 DISCONNECT。测试服务端写失败时先尽力再读一个报文、记下原因码。在 NEWKEYS 之前人为加 200 ms 延迟能稳定摆出这个次序:改之前失败,改之后全过。
+- **`ppk截断到任意位置只报私钥异常`**:每截断一次都先跑一遍 Argon2 才在 MAC 上发现不完整,CI 上超过 30 秒被掐。修在库里:派生口令之前先核结构(`Private-MAC` 在且长度对、各段行数够、加密私钥区是 16 的倍数),不满足当场报 `KeyFormatInvalid`。
+- ⚠️ **macOS 的 lo0 默认只有 127.0.0.1**:「整个 127/8 都是环回」只在 Linux 与 Windows 上成立,绑 127.0.0.2 报 `AddressNotAvailable`;macOS 上改从 127.0.0.1 发起。
+- **DISCONNECT 原因的两条(Ubuntu,偶发)**:客户端发完 DISCONNECT 就关连接,机器忙时早于测试服务端发 NEWKEYS,服务端写失败直接退出、没读到原因;改为测试服务端写失败时先尽力再读一个报文。
+- **`服务端拒绝隧道时单条连接失败而转发器继续跑`(Ubuntu,偶发)**:转发器的 RST 可能在 `ConnectAsync` 交回之前就到,Linux 上 connect 本身报 `ConnectionReset`;改成「连上并读到被重置为止」两种都认。
 
-- **`服务端拒绝隧道时单条连接失败而转发器继续跑`(Ubuntu,偶发,修上面几条之后的那一轮冒出来)**:内存里的服务端拒得快,转发器重置本机连接的 RST 可能在 `ConnectAsync` 交回之前就到,Linux 上那时 connect 本身报 `ConnectionReset`,用例却只在之后的读里等它。改成「连上并读到被重置为止」,两种都认;转发器要是给了 FIN 照样红(变异检验:关掉 RST 时这条红)。同样写法的「打开通道超时」那条一并改了。
-
-「Code scanning AI findings」那一项是 GitHub 托管的 Copilot 任务,#562 之前就一直失败、日志里只有退出码,不在仓库的 CI 里,没有动。文档同步在 velashell-docs#92(规格 04 的 `.ppk` 决策)。
-全量测试通过(ShellIntegration 32 项按环境早退跳过,属既有行为)。
+「Code scanning AI findings」是 GitHub 托管的 Copilot 任务、不在仓库的 CI 里,没有动。文档:velashell-docs#92(规格 04 的 `.ppk` 决策)。
 
 ## ✅ 167. 2026-10-07 内置 X 服务端:按第二次全库审查的结论逐条修复(`xs_plan.md`)
 
-**一、来由**:2026-10-07 对 `src/VelaShell.XServer` 与宿主的 X Server 做了第二次全库审查(第一次见 §124):分领域读代码、对照 X.Org 协议与扩展规范、ICCCM、EWMH(全程守净室规程,没有打开任何其它 X 服务端或 Mesa 的源码),结论写成仓库根的 `xs_plan.md`(未入库的草案):184 条问题(🔴 9 / 🟠 43 / 🟡 132,分 X、连接 CN、窗口 WN、绘图 DR、输入 IN、GLX GL、宿主 API、客户端兼容 CP 八组)、30 项可以支持的功能(F1–F30)、11 条待拍板的决策(Q1–Q11)、16 条测试缺口(T1–T16)。照计划逐条修,一条一个本地提交:`dev` 上 184 个(183 个带 `xs_plan:` 行,库 165 个、宿主 40 个,有的两边都动)。前 50 条在主会话里修;其余按子系统分给六个并行的会话,各在自己的 git worktree 里做完再 cherry-pick 回 `dev`、手工合冲突。产品层面的取舍按决策表里保守的建议走。文档在 velashell-docs 的 `fix/xserver-review-fixes`([velashell-docs#93](https://github.com/VelaShellLabs/velashell-docs/pull/93),`zh/` 与 `en/` 一起改)。每条提交信息里写着它对应哪一条、为什么、怎么验证的;这里只记全貌。
-
-**二、做了什么**(按领域):
-- **资源与拒绝服务**:每项工作的工作量预算(2²⁸ 单位,扣光回 BadAlloc / GL 的 OUT_OF_MEMORY),持锁超过 250 ms 记日志,宿主限时读像素;每客户端 1 GiB / 全局 2 GiB 的内存账(像素图、属性、字形、DBE、区域、GL 对象与表面);握手阶段至多 32 条、10 秒时限、授权字段 256 字节;宿主回调合并、响铃节流;Retain 客户端至多 16 个;客户端触发的日志转义并限额;GetImage 回复超 256 MB 回 BadAlloc。
-- **安全**:剪贴板跟着键盘焦点所在的会话(`ClipboardFollowsFocus`),PRIMARY 同步默认关(Q3);可以限制经 SSH 转发来的程序用 XTEST、原始按键与设备层级(`RestrictForwardedClients`,默认关,Q5);`_NET_ACTIVE_WINDOW` 防焦点窃取,弹出层只在用户用 X 窗口时置顶;服务端占住根窗口的 SubstructureRedirect 与 `WM_S0`,自己的窗口受保护,save-set 生效;SetSelectionOwner、SetInputFocus 的时间戳规则;Unix 套接字(占用探测限时、名字被占整个显示号不用、目录属主核对、`/tmp/.X{N}-lock`、按对端 uid 授权)、MIT-SHM 只给同一 IPC 命名空间的对端、Windows 上 TCP 独占绑定;`ListenTcp` 默认只在配了 cookie 时开(Q4);cookie 长度;交给宿主的标题去掉控制符与双向控制符;内置引擎下勾掉「受信任」时直说转发开不起来(X-3)。
-- **按协议改对的**:核心绘图在整数坐标采样,宽线与弧的虚线、接头、端帽;CopyArea / CopyPlane / GetImage 读窗口源;GC 参数校验与「出错不产生效果」;SYNC、Present、DAMAGE、DBE、Composite 的语义;XInput2 按 deviceid 存选择、原始事件报设备位置、自动抓取的 crossing、抓取的时间戳与冻结、被动抓取冲突;XKB 的字母类型、自动重复按 X 的语义(Q10)、ChangeKeyboardControl 与 SetPointerMapping 生效;RANDR / XINERAMA;ConfigureWindow 全集、CirculateWindow、VisibilityNotify、win-gravity;剪贴板双向 INCR、MULTIPLE、COMPOUND_TEXT;光标、字体别名;颜色名换成 X.Org 的 `rgb.txt`;GLX 的 create_context、纹理绑定悬空、像素图表面随 FreePixmap 释放、状态命令校验。
-- **宿主当窗口管理器**:快照补齐 ICCCM / Motif / EWMH 提示,外框按重力摆、USPosition 照办;锁定键同步、日韩巴西键盘与 F13–F24;最大化 / 全屏时客户端自己改尺寸推回原生尺寸;InputOnly 与桌面类窗口不开原生窗口;形状以外的点击穿透、窗口透明度、urgency 闪任务栏;对 `_NET_WM_PING` 没有回应时可以强制结束(KillTopLevelClient);停 X Server 前说清会断开几个程序;客户端清单与连接标签(SSH 会话的 `user@host:port`);`BreakGrabs` 等卡住时的恢复手段。
-- **Java**:实测 OpenJDK 17 的窗口管理器判定 —— 占住 `WM_S0` 之后名字不认得就当成会套外框、最大化与改尺寸后不重排 —— `WindowManagerName` 默认改为 `LG3D`(CP-9);互操作镜像加 `default-jdk`,RealClientTests 加 Swing 用例。
-- **性能**:光栅化与 RENDER 的整数路径、平铺按行整段拷、重画时的可见区域不再 O(n²)、被动抓取按 detail 分桶、GL 的三角形光栅与显示列表、交换只拷变化的像素等(前后数字写在各提交里)。
-
-**三、没做的 / 只做了一部分**(要做的已记入 `feature-plan.md`):
-- **新功能**:F1–F30 整体不在这一批(`xs_plan.md` 第五节)。修法要靠新功能的条目只做了库层面的最小修复:卡住时恢复与客户端清单的宿主入口(F3)、宿主光标的 Warp(F8)、屏保 Suspend 转告宿主(F9)、更宽的边缘缩放区(F11)、其余字族(F21)、GL 的选择 / 反馈 / 求值器(F23);点本机窗口或桌面就收起 X 的弹出菜单要全局指针钩子(WN-M7)。
-- **只做了一部分**:PolyArc 连续弧之间的接头(DR-M1);RENDER 的 alpha-map 接受不生效(DR-M4);a1 目标、Disjoint / Conjoint 与混合模式仍走浮点路径(DR-P3);cursor 字体的字形光标没有位图(WN-M5);别的会话仍能看到 SelectionClear 与属主跳变(WN-S11)。
-- **缺验证环境**:分数缩放下最后一列像素可能被裁(API-H13 ❓,各平台待查);macOS 上 Command 组合键收不到 KeyUp 的处理(IN-E19)没有实机;macOS / FreeBSD 的 `getpeereid`(CN-S8)。
-- **审查时新发现、没修**:间接 GLX 选不到单缓冲视觉(GetVisualConfigs 每个视觉只列双缓冲配置,要加单缓冲的 X 视觉)。
-
-**四、验证**:`VelaShell.XServer.Tests` 的测试方法从 199 个到 413 个,426 例通过 / 9 例按平台跳过;开互操作(Docker 里的真实客户端:xterm、xeyes、xclock、xlogo、RENDER 版本、直接与间接 glxgears、Swing)12 例全过、没有 `[SKIP]`。宿主 `VelaShell.Tests` 1811 / 8、`Infrastructure.Tests` 633 / 4、`Ssh.Tests` 1349 / 57、`Core.Tests` 704 通过,只有 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 因靶机镜像建于 Dockerfile 那次改动之前而失败(同 §159、§161,在这一批之前的提交上一样失败)。全解决方案零警告零错误。每条修复的回归用例都在旧代码上确认过失败(引用新 API、旧代码上编不过的除外);只在 Linux 上才有的行为(backlog 满的 AF_UNIX 阻塞 connect、fd 用尽、IPC 命名空间)在 Linux 容器里核对过。合并六个分支时手工合了几处冲突(Map 里 NameWindowPixmap 与 InputOnly、XFIXES 的光标图像、平铺背景、SYNC / Present 的清理钩子拆成「连接断开」与「资源销毁」、Dispatch),并修了三条机器忙时偶发失败的用例。
+第二次全库审查(第一次见 §124,守净室规程)的结论写成仓库根未入库的草案 `xs_plan.md`:184 条问题(🔴 9 / 🟠 43 / 🟡 132,分八组)、可支持的功能 F1–F30、待拍板的决策 Q1–Q11、测试缺口 T1–T16。184 条全部修完,一条一个本地提交;前 50 条在主会话修,其余分给六个并行会话,各在自己的 git worktree 里做完再 cherry-pick 回 `dev`。产品取舍按决策表里保守的建议走。
+- **资源与拒绝服务**:每项工作 2²⁸ 单位的工作量预算,持锁超 250 ms 记日志;每客户端 1 GiB / 全局 2 GiB 的内存账;GetImage 回复超 256 MB 回 BadAlloc。
+- **安全**:剪贴板跟着键盘焦点所在的会话,PRIMARY 同步默认关(Q3);`RestrictForwardedClients` 可限制经 SSH 转发来的程序用 XTEST、原始按键与设备层级(默认关,Q5);`_NET_ACTIVE_WINDOW` 防焦点窃取;Unix 套接字按对端 uid 授权,MIT-SHM 只给同一 IPC 命名空间的对端;`ListenTcp` 默认只在配了 cookie 时开(Q4)。
+- **按协议改对的**:整数坐标采样,宽线与弧的接头、端帽;SYNC、Present、DAMAGE、DBE、Composite 的语义;XInput2 抓取;XKB 自动重复按 X 的语义(Q10);剪贴板双向 INCR;颜色名换成 X.Org 的 `rgb.txt`。
+- **宿主当窗口管理器**:补齐 ICCCM / Motif / EWMH 提示;`_NET_WM_PING` 没有回应时可强制结束;停 X Server 前说清会断开几个程序;客户端清单与 `BreakGrabs` 等卡住时的恢复手段。
+- **Java**:OpenJDK 17 在 `WM_S0` 被占、名字又不认得时当成会套外框,最大化与改尺寸后不重排 —— `WindowManagerName` 默认改为 `LG3D`(CP-9)。
+- F1–F30 整体不在这一批;DR-M1、DR-M4、DR-P3、WN-M5、WN-S11 只做了一部分,另发现间接 GLX 选不到单缓冲视觉 —— 后来补齐,见 §178(剩余项见 feature-plan.md)。合并六个分支时 SYNC / Present 的清理钩子拆成「连接断开」与「资源销毁」。文档:velashell-docs#93(`zh/` 与 `en/` 一起改)。
 
 ## ✅ 168. 2026-10-07 CI:#565 上的两处红
 
-- **`放套接字文件的目录是符号链接或属于别的用户时不开套接字文件`(macOS)**:§167 起配置了要监听、结果一种传输也没开起来时 `StartAsync` 抛 `IOException`。这条用例 `ListenTcp = false`、套接字文件又因目录不可信不开:Linux 上抽象名照样开着,macOS 没有抽象名,按约定就该抛 —— 用例原先当它照常返回。改为 Linux 上照常开起来、别的平台抛 `IOException`;没写成按平台的 `if` 分支,免得打断分析器对前面 Linux / macOS 守卫的推断(CA1416)。库不用改。
-- **`输出读够了告诉OpenSSH_之后的输出丢弃且不会停住`(Ubuntu,偶发;平时 15–28 ms,这次 30 秒被掐)**:真的卡死,是 SSH 库的竞态。`WindowedPipeReader` 收尾时先清点管道里没读的字节、报成已消费(回补窗口),再完成内层读端;两步之间接收循环照样往管道里写,那几包随读端完成一起丢掉、没人回补。机器忙、用户线程恰好在那里被换下时,这段空隙里能进来半个窗口以上,攒着的回补就再也够不到阈值(窗口的一半),对端停在零窗口上,退出状态等不来。修法:读端收尾时先在通道的状态锁里标记 `IsAbandoned`,`TryDeliver` 在同一把锁里看它 —— 之后到的数据走「丢弃并立刻回补」那条路,清点到的就是全部。在清点与完成之间人为睡 20 ms 能稳定摆出来:改之前两例都 30 秒超时,改之后通过。回归用例 `WindowedPipeReaderTests` 在清点回调里(正是那段空隙)模拟接收循环送到一包,把标记挪回清点之后它就红。规格 05 §3.2 / §5.2 说的本来就是「丢弃的数据照常回补」,行为没变,文档不用改。
+- **macOS 上套接字目录不可信的用例**:§167 起配置了要监听、却一种传输都没开起来时 `StartAsync` 抛 `IOException`;macOS 没有抽象名,按约定就该抛 —— 改用例,库不用改;没写成按平台的 `if` 分支,免得打断分析器的平台守卫推断(CA1416)。
+- **SSH 库真竞态**(`输出读够了告诉OpenSSH_之后的输出丢弃且不会停住` 偶发 30 秒被掐):`WindowedPipeReader` 收尾时先清点未读字节报成已消费、再完成读端,两步之间到的包随读端丢掉、没人回补,回补够不到阈值,对端停在零窗口。改为先在通道状态锁里标记 `IsAbandoned`,`TryDeliver` 在同一把锁里看它,之后的数据走「丢弃并立刻回补」。
 
-「GitHub Advanced Security」那一项失败是 Copilot 的月度额度用完(HTTP 402),不在仓库的 CI 里,没有动。
+「GitHub Advanced Security」失败是 Copilot 月度额度用完(HTTP 402),不在仓库的 CI 里。
 
 ## ✅ 169. 2026-10-07 CI:输出队列记帐的飞行窗口把连接判死;ppk 截断用例撞上自己的超时
 
-- **输出队列:单条大回复写出去的途中所到达的每条消息都被当成积压(`XClient.MaxQueuedOutputBytes` 64 MB)**。`PumpOutputAsync` 原先整批写完并 flush 之后才 `NoteWritten`,于是 71 MB 的 GetImage 回复(三块 4K 横排的 `xwd -root` 约 100 MB)在飞行期间一直把计数顶在上限之上 —— 客户端读完它之后紧接着发的那条请求,回它时被 `Send` 判成「客户端不读了」、`Abort()` 掉,回复永远发不出去。[run 37590196560](https://github.com/joesdu/VelaShell/actions/runs/37590196560/job/112689572329) 的 macOS 作业就是这么红的:5.63 秒里约 0.6 秒收完 71 MB,再 5 秒等 `SyncAsync` 超时(`XTestClient.NextAsync` 的默认预算)。3 核 runner 上线程池下限就是核数、注入慢,写出端那个续延排不上队,判死的一侧先跑完 —— 判据是「永久不回」而不是「慢」,机器闲时才赌得赢。**改法**:写出端**一取走就减**,`_queuedBytes` 从此表示「还在通道里、没交给套接字」,语义正是注释原本的意思;保护不变 —— 客户端真不读时写出端堵在写上,后续消息照样在通道里累积到 64 MB 才断。生产上同样受害(回复完 100 MB 之后客户端再发请求就可能被判死)。回归用例 `大回复还在写出去的途中小请求照常排队_不被当成积压判死` 不赌调度:客户端故意不把回复读完,把「还在写」从一瞬间撑成稳态,判据是连接还在不在(旧代码 0 个客户端、新代码 1 个,本机双向验过),所以也不必读完那 71 MB。
-- **`ppk截断到任意位置只报私钥异常` 撞上 Ssh.Tests 自己那份 30 秒全局超时([run 37526852105](https://github.com/joesdu/VelaShell/actions/runs/37526852105))**:不是挂死。逐点量过:493 个字符的加密 .ppk 上只有**一个**截断点(492,整份只差结尾那个换行)会真的走到口令派生 —— Argon2id 8 MB × 55 passes,本机 1.2 秒、CI 上 4.34 秒,3 核 runner 上内存带宽被瓜分时涨到 30 秒以上;其余 492 个截断点都在 20 毫秒以内(结构不全,解析在派生之前就抛)。**改法**:最后一个点不扫 —— 那不算「截断」,是完整文件,由 `PuttyKeyTests` / `EncryptedOpenSshKeyTests` 覆盖(口令对与错各派生一次);截断扫描仍按 3 个字符密扫,本机 1.15 秒 → 14 毫秒。顺带把 `test.runsettings` 里「30 秒还没完就一定是挂了,不会是这台机器慢」那句改掉:CPU 密集的除外。
-- **顺带查清、不用改的**:`只连限定的地址族_从指定的本机地址发起` 在 macOS 上的 `EADDRNOTAVAIL` 不是偶发。`20530d38`(10-06)让这条用例从 127.0.0.2 发起,而 macOS 的 lo0 只配了 127.0.0.1 —— 之后每个 macOS 作业都红(4/4);`b36eaa8d`(10-07)改成 macOS 上从 127.0.0.1 发起,之后全绿。按提交的祖先关系核对过:不含那个兜底的 macOS 运行 4/4 红,含的全绿。
+- **输出队列记帐(真 bug,生产上同样受害)**:`PumpOutputAsync` 整批写完才 `NoteWritten`,71 MB 的 GetImage 回复在飞行期间把计数顶在 `XClient.MaxQueuedOutputBytes`(64 MB)之上,紧接着的请求被 `Send` 判成「客户端不读了」而 `Abort()`。改为写出端**一取走就减**,客户端真不读时照样累积到 64 MB 才断。回归用例让客户端故意不读完,把「还在写」撑成稳态,不赌调度。
+- **ppk 截断用例撞上 30 秒全局超时**:不是挂死 —— 只有截断点 492(只差结尾换行,即完整文件)走到 Argon2id 口令派生,3 核 runner 上内存带宽被瓜分时超 30 秒。最后一点不扫(完整文件另有用例覆盖);`test.runsettings` 的「30 秒还没完就一定是挂了」补上「CPU 密集的除外」。
+- macOS 上 `EADDRNOTAVAIL` 不是偶发:lo0 只配了 127.0.0.1,`b36eaa8d` 已改从 127.0.0.1 发起,不用改。
 
 ## ✅ 170. 2026-10-07 CI:主机密钥轮换的用例等宣告靠轮询,机器忙时就红
 
-- **现象**:[run 37638519269](https://github.com/joesdu/VelaShell/actions/runs/37638519269)(main,合并 #566 之后)的 ubuntu 作业连着两次红,**两次不是同一条**:`宣告不完整时不删旧钥`、`证实了的新钥补记进known_hosts`。同一份提交的 PR run(#566)三个平台全绿;main 与 dev 的树完全相同(`git diff origin/main origin/dev` 为空);三次的 `VelaShell.Ssh.Tests` 都是 55–57 秒 —— 没有整体变慢,是单点抖动。判定为偶发,不是合并引出的回归。
-- **根因**:`HostKeyRotationTests.ConnectAsync` 用「100 × 10 毫秒」轮询 `connection.LastHostKeyUpdate`,是个**固定 1 秒预算**。宣告(`hostkeys-00@openssh.com`)在认证之后才由服务端发出,客户端还要再走一轮证明才给结果;抖动落在这一秒之外时,要么 `update` 直接是 null(`Assert.IsNotNull(first)` 红),要么前一步 TOFU 该补的那把还没落盘就被读了(文件里没有那把 RSA)。就是 §71 那句「固定泵几十毫秒等于赌调度」。
-- **改法**:`TestChannelScript` 加 `HostKeysAnnouncementSent` —— 宣告发出之后打个点;用例等这个**确定事件**,再给客户端 20 秒把它走完(证明 + 写 known_hosts)。**「不会有更新」的那一条**(没打开 `AllowHostKeyUpdates`)没有信号可等,缺席只能等出来,单独给 2 秒并写明:这个方向赌输了是断言变弱(漏判),不是 CI 上红。
-- **验证**:让服务端的宣告迟到 3 秒(临时加的延迟,已撤)撑大窗口 —— **旧写法 5/5 红、新写法 5/5 绿**。全量 `VelaShell.Ssh.Tests` 1351 通过 / 0 失败。
+- **现象**:合并 #566 后 main 的 ubuntu 作业连着两次红,**两次不是同一条**;同一提交的 PR run 全绿,是单点抖动,不是合并引出的回归。
+- **根因**:`HostKeyRotationTests` 用「100 × 10 毫秒」轮询 `LastHostKeyUpdate`,固定 1 秒预算;宣告(`hostkeys-00@openssh.com`)在认证之后才发出、客户端还要再走一轮证明,机器忙时(3 核 runner 上)就赌输(§71「固定泵几十毫秒等于赌调度」)。
+- **改法**:`TestChannelScript` 加 `HostKeysAnnouncementSent`,用例等这个确定事件、再给客户端 20 秒走完;「不会有更新」那条没有信号可等,给 2 秒,赌输只是断言变弱(漏判)。让宣告迟到 3 秒:旧写法 5/5 红、新写法 5/5 绿。
+- 共同的放大器(3 核 runner + 线程池下限 = 核数)在 §171 压下去:测试设置里并行度固定成 2、不再把 3 核挤满,线程池下限抬高。
 
 ## ✅ 171. 2026-10-07 CI:把「3 核 + 线程池下限 = 核数」这个放大器压下去
 
-- **为什么不再逐个修**。§169 / §170 修掉了四处依赖时序的地方(输出队列记帐是真 bug,另三条是用例在赌调度),可每次运行仍从长尾里冒出别的:[run 37638519269](https://github.com/joesdu/VelaShell/actions/runs/37638519269) 的 ubuntu 连着两次红(轮换用例的两条),[run 37644333884](https://github.com/joesdu/VelaShell/actions/runs/37644333884) 的 macOS 又红了另外两条(`sftp_server起不来时报出退出码与它的stderr`、`SendEofAsync被取消EOF照样发出去`)。逐个修是在打地鼠 —— 共同的放大器一直没动。
-- **放大器**:macOS runner 是 3 核;线程池下限默认就是核数,多出来的线程靠「爬坡」注入(每秒一两条);而每条连接要占读端、写出端、执行循环好几个续延,另有约三套程序集同时跑。于是「谁的续延先排上队」全看运气,运气不好的那条用例就红,而且红法不固定。
-- **改了两处**:
-  - `VelaShell.Ssh.Tests` 与 `VelaShell.XServer.Tests` 各加 `TestSession`(`[AssemblyInitialize]`):`ThreadPool.SetMinThreads(max(16, 核数 × 4))`,工作线程与 I/O 完成端口都抬。它只管「线程到得快不快」,**不管并发度,也不改任何断言** —— 该等信号的照等(见 §170)。
-  - `VelaShell.Ssh.Tests` 的 `Parallelize` `Workers` 从 0(= 核数)压到 **2**:不再把 3 核铺满,CPU / 内存带宽密集的用例不再互相挤。
-- **代价(写在这里,免得以后忘了)**:`Workers=2` 让本机(核多)这套从 **10 秒变 60 秒**;CI 上 3 核,预计 55 秒 → 80 秒左右。`test.runsettings` 是 IDE 与 CI 共用的(仓库刻意如此),要本机不受影响得另做区分。
-- **验证**:临时让 `Init` 抛一次,确认 `AssemblyInitialize` 真的会跑(`程序集初始化方法 …TestSession.Init 引发异常`),探针已撤;`VelaShell.Ssh.Tests` 1351 通过、`VelaShell.XServer.Tests` 429 通过、全解决方案 `-warnaserror` 0 警告 0 错误。
+- **为什么不再逐个修**:§169 / §170 修掉四处时序依赖后,长尾里仍冒出别的(如 macOS 上 `sftp_server起不来时报出退出码与它的stderr`)—— 逐个修是打地鼠。**放大器**:macOS runner 3 核,线程池下限默认就是核数,多出的线程靠「爬坡」每秒注入一两条,而每条连接要占读端、写出端、执行循环好几个续延,谁先排上队全看运气,红法不固定。
+- **改法**:`VelaShell.Ssh.Tests` 与 `VelaShell.XServer.Tests` 各加 `TestSession`(`[AssemblyInitialize]`),`ThreadPool.SetMinThreads(max(16, 核数 × 4))` —— 只管线程到得快不快,**不管并发度、不改断言**,该等信号的照等(§170);`VelaShell.Ssh.Tests` 的 `Workers` 从 0(= 核数)压到 **2**。
+- ⚠️ **代价**:本机这套 10 秒变 60 秒(CI 预计 55 → 80 秒左右);`test.runsettings` 是 IDE 与 CI 共用的(剩余项见 feature-plan.md)。
 
 ## ✅ 172. 2026-10-08 Linux:检查更新后打开发布页面供用户下载
 
-- **根因**:Linux 的关于页沿用便携式原地更新流程,系统安装目录不可写时只显示「目录不可写」,没有打开下载页面。
-- **行为**:发现新版本且有当前平台的更新包后,通过 Avalonia 的系统浏览器入口打开 GitHub Releases 发布列表,由用户选择 deb、rpm 或便携包下载并安装。Linux 的 `CanSelfUpdate` 固定为 false,关于页在目录可写判断之前转入手动下载,不下载更新包、不显示「重启并更新」。发布列表兼容预发布版本;提示保留版本号与下载地址,浏览器打不开时仍能手动访问。启动检查仍只投递消息;Windows、macOS 与 Microsoft Store 的更新分支不变。
-- **验证**:更新、本地化键与设置懒加载相关测试 107 通过、0 失败、0 跳过,包括 Linux 可写/不可写分支、浏览器异常、无更新不打开浏览器和切页后浏览器入口仍绑定到设置窗口。五份 resx 同步;中英文规格同步到 velashell-docs。真实桌面浏览器的启动需在 Linux 桌面环境验收。
+Linux 关于页原先沿用便携式原地更新,系统安装目录不可写时只显示「目录不可写」。现在 Linux 的 `CanSelfUpdate` 固定为 false,发现新版本后在目录可写判断之前转入手动下载:经 Avalonia 的系统浏览器入口打开 GitHub Releases 发布列表,由用户选 deb、rpm 或便携包;提示保留版本号与下载地址,浏览器打不开时仍能手动访问。Windows、macOS 与 Microsoft Store 的更新分支不变。中英文规格已同步到 velashell-docs。
 
 ## ✅ 173. 2026-09-22 AI 插件:provider 健康检查 + 请求故障转移(用户定稿)
 
-回答不上来时不再一头撞死:按用户排好的有序链自动换一家继续说,UI 落在全局设置窗口新一节。
-口径全部由用户答完,实现照办,过程中没有改设计。
+回答不上来时按用户排好的有序链自动换一家继续说,UI 落在全局设置窗口新一节;口径全部由用户定。
 
-### 一、口径(用户确认的五条)
-
-1. **候选来源**:`AiSettings.FailoverChain` 非空按链序(可跨供应商跨模型);
-   空则自动发现(同 `CatalogId` + 同 `Model`,Ordinal 忽略大小写,排除失败者)。
-2. **健康 = 被动冷却 + 主动探测**:失败记内存冷却 60s,选下一站先过滤冷却中的;
-   切换前逐个探(15s 超时,极小真请求),探不通的 Record 失败跳过。
+**一、口径(用户确认的五条)**:
+1. **候选来源**:`AiSettings.FailoverChain` 非空按链序(可跨供应商跨模型);空则自动发现(同 `CatalogId` + 同 `Model`,排除失败者)。
+2. **健康 = 被动冷却 + 主动探测**:失败记内存冷却 60s;切换前逐个探(15s 超时,极小真请求),探不通的跳过。
 3. **粘住**:成功切换改写 `ActiveModelId` 并落盘,直到手动切回或它也失败。
-4. **触发**:内层 `StreamRetries=1` 耗尽或 401/403(`IsWorthSwitching`)才切;
-   400 等永久错不切;仅尚未 `HasMeaningfulOutput`(可见正文、思考或工具副作用)才切。
+4. **触发**:内层 `StreamRetries=1` 耗尽或 401/403(`IsWorthSwitching`)才切,400 等永久错不切;已有可见正文、思考或工具副作用(`HasMeaningfulOutput`)就不切。
 5. **不加总开关**(YAGNI):平时一次都触发不了,摆开关是让人多背一个不知道开不开的选项。
 
-### 二、落法
+**二、落法**:`FailoverChain.cs`、`ProviderHealth.cs`(只在内存)、`HealthProbe.cs`,`ChatPanelView.SendAsync` 外层加 hop 循环。设置页「测试」只在表单值与落库一致(`sameAsSaved`)时才记健康 —— 草稿测出来的成败不能污染共享健康记录。
 
-* 新文件全在 Configuration:`FailoverChain.cs`(`FailoverEntry` + `FailoverCandidates`)、
-  `ProviderHealth.cs`(成败计数 + 冷却窗口,只在内存)、`HealthProbe.cs`(真请求探测);
-  `AiProvider.cs` 挂 `AiSettings.FailoverChain`;`TransientFailure.IsWorthSwitching` 在 Ui。
-* `ChatPanelView.SendAsync` 外层加 hop 循环:`AssembleAsync` / `StreamOnceAsync` / `DrainUpdates`
-  抽成局部函数,catch 里 `_health.Record` 失败 → `PickNextAsync`(滤冷却 → 逐个 Probe →
-  死的跳过)→ 改 `ActiveModelId` + 持久化 + `ReloadProviderCombo()`;整链耗尽 `throw;`
-  走原 error 卡。`finally` 回滚条件经复审收紧为
-  `switched && !answered && (cancelled || failed) && ActiveModelId == switchedToId`(见五)。
-* 全局设置 `GlobalSettingsView` 新节:有序行(上下移 / 移除)、添加下拉(只列不在链上的
-  模型)、「检测全部」按钮与状态行;10 个新 loc 键五语齐(`SecFailover` … `FailoverEmpty`)。
-  `SettingsView.TestAsync` 改走 `HealthProbe.ProbeAsync`,且**只在表单值与落库一致**
-  (`sameAsSaved`:协议/地址/模型/上限/Key 归属逐项比,Key 与机密库逐字符比)时才
-  `Record` —— 草稿测出来的成败不能污染共享健康记录。
-
-### 三、两个坑
-
-* **`ReloadProviderCombo` 换 `ItemsSource` 会回放旧下标的 `SelectionChanged`** ——
-  处理器拿它回写 `ActiveModelId`,把刚程序化切过去的那家悄悄顶回原状
-  (集成测试首轮就红在"切换成功却没粘住":`healthyReq=2`、`active` 还是第一家)。
-  修法是 `_syncingProviders` 护罩:回声只刷界面、不回写设置(与 `_syncingReasoning` 同款)。
-  这其实是既有隐患 —— 以前 `ActiveModelId` 只由下拉自己改,所以从没暴露。
-* **401 抛的是 `System.ClientModel.ClientResultException`**,与 `IsWorthSwitching`
-  的类型模式匹配是同一套程序集类型,不能按字符串猜;排查时先用一次性诊断测试
-  把异常类型和 `worth` 打出来,别对着 catch 过滤器空想。
-
-### 四、测试与文档
-
-`FailoverChainTests`(链序 / 自动发现 / 落盘往返)、`ProviderHealthTests`(冷却)、
-`HealthProbeTests`(探测)、`ChatFormattingTests` 里一条只在切换类错误换的单元
-加一条 `StatusBearingHttpRequestsAreJudgedByStatus`(带状态码的 `HttpRequestException`
-按状态码判),headless 集成:401 → 按链切到第二家 → 粘住 + 下拉跟着走;
-`Failover.cs` 另钉全局设置里链的增删与上下移。插件全量 **607 条全绿**,
-整个 `VelaShell.slnx` 退出码 0。
-
-插件 README 新增「故障转移与健康检查」一节;`plan.md` 记本节。
+**三、两个坑**:⚠️ `ReloadProviderCombo` 换 `ItemsSource` 会回放旧下标的 `SelectionChanged`,把刚程序化切过去的那家悄悄顶回原状 —— 加 `_syncingProviders` 护罩,回声只刷界面、不回写设置。⚠️ 401 抛的是 `System.ClientModel.ClientResultException`,按类型匹配,不能按字符串猜。
 
 ## ✅ 174. 2026-10-07 AI 插件:同供应商多 API Key、逐 Key 检测与可选轮流首发
 
-**行为**:目录的 API Key「再添加一个」改为同实例「添加 API Key」,只收空遮罩草稿,不复制供应商/模型或触发模型拉取。OAuth 第二账号仍独立实例。主槽沿用 `apikey:<provider.Id>`,补充槽按 Guid 加密;JSON 仅存 `AdditionalApiKeyIds`、`ActiveApiKeyId` 与默认关闭的 `BalanceApiKeys`,旧配置不迁移、不合并历史实例。
-
-**设置页**:逐 Key 行显示遮罩/显隐、检测状态、心电/铅笔/减号;铅笔先暂存,按页面原保存键与地址、协议同轮提交。添加/二次确认移除即时保存,失败恢复机密、槽顺序和 active;跨窗口编辑源改变后拒绝覆盖。行检测只测已保存槽与端点,点击展开合格模型列表、选择前零 HTTP,选择后真实 SSE 探活,显示型号/时间/通过或失败。未保存地址/协议或该行 Key 不发探活;取消与配置变化后的旧结果不写健康。五语用途名、键盘显隐和焦点保留,水平减号用固定 24×24 图标坐标避免退化为点。
-
-**聊天**:只有未开口且未取消的 401/403/429 才先试同模型下一 Key,429 保留一次原地重试;多槽请求关闭 SDK 隐式重试,避免次数相乘。候选先固定槽探活,换值/删除/出境端点变化后不发送会话历史;Key 专属冷却用现有健康表的 `key:` 前缀,全池失败才冷却模型。非 Key 专属探活失败直接走原模型链,有正文、思考或工具副作用后不重放。成功正式回答在并发归属复验后粘住槽;均摊开启时每轮首发轮转非冷却槽,不改持久 active,关闭后回到开启前的 active,不承诺 HTTP/token/费用均摊。
-
-**安全与兼容**:同一插件上下文的多个 store 共享机密缓存和写事务闸,晚到解密不盖新 Key;编辑提交在闸内复验原机密及已应用的端点。补充 Key 不送模型跨 origin 覆盖地址,主槽保留旧行为;模型自有 Key 与 OAuth 不入池,内置 OAuth 目的地护栏不放宽。无槽模型及订阅续期保留原有一次配置变化重探。全局检测复验 active 槽及字节,桥接和拉模型不自动轮池。
-
-**实际验收**:插件构建 0 警告/0 错误;存储/旧订阅回归 36/36,目录入口及文案回归 100/100,设置界面回归 79/79,Key 故障转移与存储合跑 52/52,固定凭据复验专项 13/13。独立 .NET 消费者装载真实 SettingsView/ChatPanelView,环回 HTTP/SSE 观察到 `A:m1:检测 → B:m2:检测 → A:m1:聊天401 → B:m1:探活 → B:m1:回答 → B:m1:下一轮 → R:m1 → B:m1 → R:m1 → B:m1`；检测不改 active,故障转移粘住 B,开启轮流首发后 R→B→R,关闭后回 B。另一进程装载真实暗色宿主令牌与 Skia,420/900 DIP 光栅图均确认红/绿状态、型号/时间、三枚操作图标及默认未勾的轮流开关无重叠或裁切。本次结果与旧设备轮询回归独立。
-
-**文档**:更新插件工程 README 的入口、逐槽管理、机密归属和故障转移说明;未改变 SDK 契约或外部插件架构/威胁模型文档。
+- **存储**:同实例「添加 API Key」(OAuth 第二账号仍是独立实例);主槽沿用 `apikey:<provider.Id>`,补充槽按 Guid 加密,JSON 只存 `AdditionalApiKeyIds`、`ActiveApiKeyId` 与默认关闭的 `BalanceApiKeys`;旧配置不迁移。
+- **设置页**:逐 Key 行检测只测已保存的槽与端点,选模型前零 HTTP、选后真实 SSE 探活;未保存的地址 / 协议或该行 Key 不发探活。⚠️ 水平减号用固定 24×24 图标坐标,否则退化为点。
+- **聊天**:只有未开口且未取消的 401/403/429 才先试同模型下一把 Key(429 保留一次原地重试);多槽请求关 SDK 隐式重试免得次数相乘(§177 收窄);Key 专属冷却用健康表的 `key:` 前缀,全池失败才冷却模型;非 Key 专属的探活失败直接走原模型链(§173);成功后粘住槽。轮流首发开启时每轮首发轮转非冷却槽、不改持久 active,不承诺 HTTP/token/费用均摊。
+- **安全**:补充 Key 不送往模型跨 origin 覆盖的地址;模型自有 Key 与 OAuth 不入池;换值 / 删除 / 出境端点变化后不发送会话历史。
 
 ## ✅ 175. 2026-10-09 新建连接对话框的悬停闪烁(#577):真因是从 Transparent 起步的画刷过渡
 
-**现象**:新建连接对话框的协议栏项与分区页签,指针一进一出就闪一下亮灰,停稳后反而看不出悬停色。
-#581 去掉了这两处的画刷过渡,当时的解释是「高 DPI 下按钮与图标同时动画,命中区域反复重采样」;
-#587 又把说法改成「各种缩放比例」。代码改对了,解释是错的,本节把它纠正过来。
+#581 去掉协议栏与分区页签的画刷过渡时,把闪烁解释成「高 DPI 下按钮与图标同时动画,命中区域反复重采样」(#587 又改称「各种缩放比例」)—— 代码改对了,解释是错的。**真因**:常态 `Background` / `BorderBrush` 是 `Transparent` 即 `#00FFFFFF`(全透明的**白**),Avalonia 12.1.3 的 `ColorAnimator` 逐通道插值、不预乘,过渡到 `#363948` 途中是半透明的白,叠在卡片上峰值约 `#7E7E86`,进出各闪一次。跟缩放、命中测试无关 —— **100% 缩放下一样复现**(修复前实测峰值 `#77787E` / `#7D7E86`,issue 动图逐帧量色也落在插值曲线上)。
 
-**真因**:两处的常态 `Background` / `BorderBrush` 是 `Transparent`,也就是 `#00FFFFFF` —— 全透明的**白**。
-Avalonia 12.1.3 的 `ColorAnimator.InterpolateCore` 按 A、R、G、B 逐通道插值(RGB 在线性光里插),不做预乘,
-所以从它过渡到 `VelaBgHover`(`#363948`)的途中是半透明的白,叠在 `#343746` 的卡片上算出来峰值约 `#7E7E86`,
-比两头都亮一倍多;120ms 后落到几乎看不出的 `#363948`。进出各闪一次,看上去就是闪烁。
-悬停状态本身从没丢过:issue 动图里光标静止时页签文字一直是悬停色 `#B0B8D6`。跟缩放、命中测试、图标绑定 `Foreground` 都无关。
-
-**怎么确认的**:
-* 把 issue 的动图拆成 128 帧逐帧量色:闪出来的灰(`#484B58`、`#585B67`、`#686B73`、`#797B83`……)
-  都落在按上式算出的插值曲线上(p=0.1 → `#484A57`、0.2 → `#595A67`、0.3 → `#676873`、0.5 → `#7A7B84`)。
-* 本机 100% 缩放、系统光标,用临时数据根(`--data-root`)起真实应用,光标一步跳进 / 跳出页签,尽快采同一像素:
-  修复前(1daa3bbc)进入峰值 `#77787E`、离开峰值 `#7D7E86`,协议栏 SFTP 项 `#777980` / `#76777E`;
-  当前(c7081a16)只有起止两种颜色,直接落值。
-* 全仓其余的 `BrushTransition` 两头都是不透明令牌,或终点是 `#00000000`(透明的黑,只会变暗),没有第二处从透明白起步。
-
-**改动**:
-* 两处继续不挂过渡;`ConnectionProfileView.axaml` 与 `ConnectionProfileViewUiTests` 的注释改成真因。
-* DESIGN.md §6.1 新增「Brush transitions never start or end at `Transparent`」一条,连接对话框那条的理由跟着改。
-* 新增 `Design/BrushTransitionFromTransparentTests`:扫 `src/**/*.axaml`,同一作用域里「某属性挂了 `BrushTransition`」
-  且「同一属性被设成 `Transparent` / `#00FFFFFF`」就报,附扫描器正反样例。把修复前的 `ConnectionProfileView.axaml`
-  放回去,它报出 3 处(协议栏的 `Background`、`BorderBrush`,分区页签的 `Background`)。
-  真要淡入,常态得换成目标色的全透明版(同一 RGB、alpha 为 0),只动 alpha。
-* 停靠标签(五种 `*DockTabItem`)的标签文字恢复 120ms 前景淡变,删掉 `DockTabShells_DoNotAnimateForegroundOnHover`。
-  #581 按「高 DPI 下重绘闪烁」把它一并去掉了,但这里两头都是不透明的文字令牌(`VelaTextTertiary` →
-  `VelaTextSecondary` / `VelaTextPrimary`),插值是单调的、不会过冲,跟 #577 无关;五个文件回到 #581 之前的样子。
+**改动**:两处继续不挂过渡、注释改成真因;DESIGN.md §6.1 新增「Brush transitions never start or end at `Transparent`」,由 `Design/BrushTransitionFromTransparentTests` 扫 axaml 守住。⚠️ 真要淡入,常态得用目标色的全透明版(同一 RGB、alpha 为 0)。停靠标签的文字前景淡变恢复(两头都是不透明令牌、插值单调,与 #577 无关)。
 
 ## ✅ 176. 2026-10-09 侧栏分隔线与折叠拆成两个开关,折叠方框加大(#586)
 
-**现象**:开着折叠时,从左往右拖选整行,按下的位置稍微偏左一点就落到折叠上,上方输出整段被折掉;
-用户只能改成从右往左选。
-
-**原因**:两件事叠在一起。
-* 侧栏那条竖线是折叠列画的,想要线就得开折叠,而大多数人要的只是线。
-* 折叠列的点击区还**借用了右侧的空白间隔**(`GutterLayout.IsFoldColumnHit` 一直算到 `TotalWidth`),
-  那段空白紧贴正文第一列,正好是拖选整行时最容易按下去的地方 ——「间隔」开着反而更容易误折。
-
-**改动**:
-* 新增 `TerminalBehavior.ShowFoldGuideLine`(设置 → 终端「侧栏分隔线」、侧栏右键菜单「分隔线」),
-  与 `ShowFoldMarker` 各自独立。两者共用折叠列、列宽相同,分隔线开着时来回切折叠,正文不会左右跳。
-  只开分隔线时那一列只画线,点击照旧被侧栏吞掉、不会折叠。
-* 一次性迁移(`FoldGuideLineMigrated`):老配置里线跟着折叠走一次,升级后看到的侧栏和以前一样;
-  之后两个开关各听各的。
-* 折叠命中区只认折叠列本身,空白间隔不再算折叠。列宽从 1.6 个单元格加到 2 个,补回点击面积。
-* 方框边长从 7–11px 加到 9–13px(行高 × 0.65,取奇数,且左右至少给列宽各留 1px),
-  算法挪进 `GutterLayout.FoldBoxSize` 单测。
-* 关掉折叠时展开已有的折叠:分隔线开着时侧栏宽度不变,不会再经由重排顺手清掉折叠,
-  不展开的话那段输出就再也找不回来。
-* `GutterOptionsChanged` 多带一位分隔线、`GutterMenuLabels` 多一个标签;五份 resx 各加 3 条。
-
-**测试**:`GutterLayoutTests` 新增空白不算折叠、只开分隔线无折叠命中、切折叠不改侧栏宽度、方框尺寸;
-`GutterFoldUiTests` 新增真实指针点空白 / 只开分隔线时都不折叠、关折叠展开已有折叠、右键菜单五项与上报;
-`AppSettingsNormalizeTests` 覆盖迁移只做一次;`TerminalSettingsApplierTests` 确认两个开关分别落到控件上。
-
-**文档**:velashell-docs `{zh,en}/host/architecture.md` 侧栏一段补上分隔线与折叠的独立开关和点击区。
+**原因**:开着折叠时从左往右拖选整行容易误折 —— 竖线由折叠列画,想要线就得开折叠;折叠点击区还借用了紧贴正文的空白间隔(`GutterLayout.IsFoldColumnHit` 一直算到 `TotalWidth`)。**改动**:新增 `TerminalBehavior.ShowFoldGuideLine`(设置「侧栏分隔线」/ 右键菜单「分隔线」),与 `ShowFoldMarker` 各自独立、共用折叠列与列宽,只开分隔线时点击不折叠;一次性迁移 `FoldGuideLineMigrated` 让老配置的线跟着折叠走一次;命中区只认折叠列,列宽 1.6 → 2 格,方框 7–11px → 9–13px;关掉折叠时展开已有折叠,否则那段输出再也找不回来。文档:velashell-docs `{zh,en}/host/architecture.md`。
 
 ## ✅ 177. 2026-10-09 AI 插件:#582 复审,修掉九处隐藏问题
 
-#582(多 API Key、故障转移与健康检查)合入后分四块复审(设置页、目录与规格匹配、聊天故障转移、全局设置与 OAuth),
-逐条对代码核实后修了下面这些;每条都有先红后绿的回归用例(把源码改动撤回时新用例全红)。
+#582(多 API Key、故障转移与健康检查)合入后分四块复审,修了下面这些,各有先红后绿的回归用例。
+- **规格匹配退回默认窗口(影响最大)**:`ModelsDevCatalog.FindAnywhere` 要求同优先级候选全体一致,否则判歧义、退回 128000 —— 真实 models.dev 缓存里跨供应商重名的 967 个 id 有 670 个被判歧义(含 `gpt-5`、`gpt-4o`)。改为按多数,并列才算歧义。
+- **设备码登录**:Google「还没批」回的是 **428 + `authorization_pending`**,#582 只放过 400/401/403 与 429 + `slow_down`,首次轮询就中断;428 同样按配对的协议态放行。
+- **「检测全部」**:`HttpClient.Timeout` 抛的 `TaskCanceledException` 被当成批次取消;单行旧结果过期会掐掉整批 —— 改为只认本批次令牌的取消,过期只作废那一行。
+- **设置页**:补充槽的草稿 Key 被发往首模型 `BaseUrlOverride` 指向的别家地址;逐 Key 检测丢了槽 id;测通不解 Key 槽冷却;⚠️ `PersistAsync` 丢了 try/catch,`_ = PersistAsync(…)` 的冲突异常无人观察,「添加模型」下次重载悄悄消失。
+- **SDK 重试**:两把以上 Key 就关 SDK 隐式重试,而 IM 桥接等没有换槽重试 —— 加第二把 Key 反而一次 429/5xx 就失败;改为 `callerCountsRetries`,只有聊天回路与逐槽探活传 true。
+- **Anthropic 流内 `overloaded_error`** 抛不带状态码的 `AnthropicSseException`,故障转移接不住;改按 `ErrorType` 判瞬时。
 
-**规格匹配退回默认窗口(影响最大)**:`ModelsDevCatalog.FindAnywhere` 要求同优先级候选的窗口、输出上限、思考能力**全体一致**,
-否则判歧义、退回接口窗口或 128000。用本机真实 models.dev 缓存量过:跨供应商重名的 967 个 id 里 670 个被判歧义,
-`gpt-5`(十二家里一家漏标思考)、`gpt-4o`(一家写 16000、七家写 16384)、`gpt-4.1`、`o3`、`gemini-2.5-pro` 全在里面 ——
-中转站拉回来的 gpt-5 被填成 128000 并藏掉思考档位。改为按多数:窗口取正值里的多数,并列才算歧义;
-同窗口内输出上限取多数、并列取小;思考在标注过的家里过半即认。原有「100000 对 200000 各一家」的歧义用例不变。
-
-**设备码登录**:#582 让 OAuth 先按状态码判错,只放过 400/401/403 与轮询中的 429 + `slow_down`。
-Google 的设备码端点「还没批」回的是 **428 + `authorization_pending`**,第一次轮询就抛 HTTP 异常、登录中断(#582 之前按正文能继续等)。
-428 与 429 同样按配对的协议态放行,其余 428 载荷、普通刷新仍是 HTTP 故障。
-
-**全局设置「检测全部」**:
-* 令牌刷新撞上 `HttpClient.Timeout` 抛的 `TaskCanceledException` 被当成「批次取消」冒到外层,其余行不测、
-  状态行一直停在「正在检测 X…」。行内只认本批次令牌的取消,其余异常记为这一行不通。
-* 单行旧结果过期(聊天把那家粘到另一把 Key、复验时撞上别的窗口正在保存)会调 `_probeCts.Cancel()` 掐掉整批,
-  与 README「只有配置变更或本窗口编辑链才取消批次」不符。改为只作废那一行。
-
-**设置页**:
-* 供应商行「测试」带着补充槽的草稿 Key 时,会把它发往首模型 `BaseUrlOverride` 指向的别家地址 ——
-  其它所有路径(`ResolveCredentialCoreAsync`、`KeyModelEligible`)都不许补充槽出源。改为换一个同源的继承模型来测,
-  没有就提示「没有可使用此 Key 的模型」。
-* 逐 Key 检测丢掉了解析器返回的槽 id:主槽测跨源模型时解析器不认它是槽请求,界面仍拿那边的 401 去冷却主槽、
-  拿那边的成功去解冻主槽。改为按返回的槽 id 记,与 `TestAsync` 同一裁决。
-* `TestAsync` 测通已保存的 Key 只解模型冷却、不解 Key 槽冷却,刚通过的槽仍显示冷却,故障转移照旧绕开它最多 60 秒。
-* `PersistAsync` 在 #582 里丢了 try/catch,而 `SaveAsync` 现在会因基线过期抛冲突;两个调用方都是 `_ = PersistAsync(…)`,
-  异常无人观察,「添加模型」只活在内存里、下次重载悄悄消失。恢复 try/catch,冲突走与其它提交相同的重载恢复并提示。
-
-**一次性请求丢了 SDK 重试**:`CreateClient` 只要供应商有两把以上 Key 就关掉 SDK 隐式重试,
-而 IM 桥接、后续提问、公开的 `CreateClientAsync` 都没有自己的换槽重试 —— 加第二把 Key 反而让机器人碰到一次 429/5xx 就失败。
-改为 `callerCountsRetries` 显式开关,只有聊天回路与逐槽探活传 true。
-
-**Anthropic 流内错误**:HTTP 200 之后流里的 `event: error`(`overloaded_error` 即 529 的流式形态)SDK 抛不带状态码的
-`AnthropicSseException`,三个判别函数都返回 false,故障转移最该接手的「过载」原地报错。按 `ErrorType` 判:
-过载、服务端错、限流、超时算瞬时(也就值得换站)。这条在 #582 之前就存在,但故障转移让它的代价变大了。
-
-另:删掉 #582 留下的孤儿文案键 `ProviderKeyHint`;本文件索引表里 #582 写的 §167 – §179 七行与实际节号对不上
-(§167 – §172 是 XServer/CI/Linux,§175 起被 #577 占用),按实际内容改正,§174 补上 ✅。
-
-**复审提出、这次没改的**(多为设计取舍;`ErrorContent` 与向导型号框两条只按代码推断、未在本机复现;留给维护者定):
-* 单 Key 供应商的模型级 429/403 会冷却整把 Key,同一把 Key 下的兄弟模型在故障转移时不经探活就被跳过。
-* 空链时的自动发现会跨同目录的不同账号重放会话(如企业与个人 Copilot),没有开关。
-* 在 Advanced 里改供应商 Base URL 时补充槽与 `ActiveApiKeyId` 原样保留,下一次请求会把旧中转站的 Key 发往新地址。
-* 删掉 Key #1 后主槽只清机密、界面不再显示空主槽,之后无法再填;跨源模型覆盖只用主槽,会静默变成无 Key 请求。
-* Responses 流里的 `ErrorContent` 被 `HasMeaningfulOutput` 当成有效输出,错误被记成成功回答并解冻冷却。
-* 拉模型后设置向导的型号框不刷新,同一表单里再点保存会把自动填入的型号写回空串。
-* `BareModelId` 会把 `phi4:latest` 这类「型号:标签」剥成 `latest`。
-
-**验证**:插件构建 0 警告 0 错误;`VelaShell.Plugin.Ai.Tests` 全量 1436 通过、0 失败、0 跳过(复审前 1415,新增 21 条用例);
-`HeadlessDispatchUsageTests` 10 通过。把源码改动撤回、只留新用例时,复现缺陷的 13 条全红
-(其余新用例是边界守卫,两边都绿;SDK 重试那 2 条依赖新参数,未参与撤回对照)。
+另:本文件索引表里 #582 写的 §167 – §179 七行与实际节号对不上,已按实际内容改正。复审提出、这次没改的七条留给维护者定(剩余项见 feature-plan.md)。
 
 ## ✅ 178. 2026-10-09 内置 X 服务端:第二次审查只做了一部分的几项补齐(`xs_plan.md`)
 
-**一、来由**:§167 修完第二次全库审查的 184 条之后,有几项只做了一部分。其中选区按会话隔离(WN-S11,311aa29b)、源 picture 的 alpha-map(DR-M4)与间接 GLX 的单缓冲视觉(0da7943d)已在 `dev` 上补齐,`xs_plan.md` 末节记了复核;这一批补其余四项 —— 核心字体(CP-16 / F21,用户选方案 A:随库带位图数据)、cursor 字体的字形光标(WN-M5)、PolyArc 相接弧的接头(DR-M1)、RENDER 剩下的浮点合成(DR-P3),外加真实客户端实测时冒出来的一处持锁过久。分支 `fix/xserver-review-leftovers`,一项一个(或几个)本地提交;DR-M1 与 DR-P3 各交给一个并行的会话,在自己的 git worktree 里做完再 cherry-pick 回来。全程守净室规程:依据只有 X.Org 的协议与 RENDER 规范、BDF 规范、PDF Reference 的混合公式,没有打开任何其它 X 服务端、pixman 或 cairo 的源码。文档在 velashell-docs 的同名分支(`zh/` 与 `en/` 一起改),顺带把 alpha-map 与单缓冲视觉那两处的文档也对上了。
+§167 只做了一部分的几项里,WN-S11、DR-M4 与间接 GLX 的单缓冲视觉已在 `dev` 上补齐;这一批补其余四项(分支 `fix/xserver-review-leftovers`),净室依据为 X.Org 协议与 RENDER 规范、BDF 规范、PDF Reference 的混合公式。
+- **核心字体(CP-16 / F21,用户选方案 A:随库带位图)**(8167b38c):原先只有 5 个裁剪过的 misc-fixed,Motif / Xaw / 不带 Xft 的 Tk 请求 `-adobe-helvetica-*` 一律 BadName,xterm 显示不了中文。现在随库带 X.Org 的 misc-fixed 全套、Adobe 75 / 100 dpi 字族与 GNU Unifont(取 OFL)。方案 A 原文是栅格化 Liberation,改用 X.Org 自己的位图:字体名与度量与真实 X 服务端一致,也不用写栅格化器。由 `scripts/xserver/fonts/build-fonts.cs` 从固定的上游提交生成,233 份字体、压缩后约 5 MB。B&H 的 Lucida 因许可要求附特定声明而没带。
+- **cursor 字体的字形光标有真实位图**(WN-M5):GetCursorImage 给出它(x11vnc、ffmpeg x11grab 原先录到空指针),没有对应系统光标的字形不再一律显示成箭头。
+- **字体在线程池上建、请求暂存**:`xlsfonts -l "*"` 曾在执行线程上持像素锁解析 1.5 秒;现在这个客户端的请求按 SYNC Await 那一套暂存、建好后按序放回。
+- **PolyArc 相接的弧按 join-style 接**(DR-M1):一串宽弧当一条路径,GXxor 下接缝不画两次;单独的弧与原来逐像素相同(20 万组随机对拍)。
+- **RENDER 在 a1 / a8 / 8888 目标上全部 53 种运算走整数**(DR-P3):穷举核对与浮点版最多差 1,原先走浮点的组合快约 2–12 倍。
 
-**二、做了什么**:
-- **核心字体随库带 X.Org 的整套位图字体与 GNU Unifont**(8167b38c):原先只有 5 个裁剪过的 misc-fixed(只留拉丁字母与制表符),Motif / Xaw / 不带 Xft 的 Tk 请求 `-adobe-helvetica-*` 一律 BadName,默认字体的 xterm 显示不了中文。现在带 misc-fixed 全套(含 `12x13ja` / `18x18ja` / `18x18ko` / `k14`)、`cursor`、`nil2`,Adobe 75 / 100 dpi 的 Courier / Helvetica / New Century Schoolbook / Symbol / Times,GNU Unifont 18(取 OFL)。方案 A 原文是把 Liberation 栅格化,改用 X.Org 自己的 Adobe 位图:字体名与度量与真实 X 服务端一致,也不用写栅格化器。数据由 `scripts/xserver/fonts/build-fonts.cs` 从固定的上游提交(Unifont 固定 SHA-256)生成,BDF 逐字节不动、Brotli 压缩,照 X.Org 的目录分 misc / 75dpi / 100dpi,各一份 `fonts.dir`,`fonts.alias` 是原文;ISO10646-1 的字体还以它完整覆盖的单字节字符集出现(ISO8859-2…15、KOI8-R / U,映射表由 .NET 的代码页导出)。233 份字体、1877 个名字,压缩后约 5 MB,Release 的 DLL 多约 4.5 MB。名字表与解析结果整个进程共享;字形位图按行打包(每像素 1 位)。顺带修了 BDF 带引号的数字属性被当成整数(`CHARSET_ENCODING "1"` 在 QueryFont 里回成整数 1,不是原子)。B&H 的 Lucida 因为许可要求附特定声明而没带。`NOTICE.md` 与 XServer 的 `AGENTS.md` 跟着改。
-- **cursor 字体的字形光标有真实的位图**(d7ede105):照协议 CreateGlyphCursor 烙成图像,GetCursorImage 给出它(x11vnc、ffmpeg x11grab 原先录到的指针是空的);有对应系统光标的字形照旧交给系统光标,没有对应的(pencil、gumby、dotbox……)把图像交给宿主,不再一律显示成箭头。
-- **字体在线程池上建,请求暂存**(595869b3):真实客户端实测 `xlsfonts -l "*"` 第一次在执行线程上持着像素锁解析了 1.5 秒(「slow work item: opcode 50 held the pixel lock for 1566 ms」)。现在 OpenFont / ListFontsWithInfo 要用到还没建好的字体时,在线程池上解压、解析,这个客户端的请求按 SYNC Await 那一套暂存、建好后按序放回;别的客户端与宿主照常。
-- **PolyArc 相接的弧按 join-style 接**(678444b5):端点各轴差不到半个像素算相接;相接的一串宽弧当一条路径,接头搭在真实的端面角上,只在两头加端帽,整串一次填(GXxor 下接缝不画两次);同一个椭圆上接着走的几段并成一条(四段 90° 与一条 360° 逐像素相同);虚线跨接点接着走;细弧连成一条折线。单独一条弧与不相接的弧与原来逐像素相同(20 万组随机对拍)。
-- **RENDER 的 a1 / a8 / 8888 目标上全部 53 种运算走整数**(DR-P3,a9249a6c、e22b7952、eefdcf6c、1230c023):a1 / a8 只算 alpha、a1 与浮点版逐位相同;8888 上 Porter-Duff 与 Disjoint / Conjoint(带除法的因子按 1/65025)、PDF 混合模式(不先除出 cs,整理成 8 位整数式;柔光的平方根查表,HSL 两边同乘 αs·αd)、分量 alpha 遮罩(次像素字形)。穷举核对与浮点版最多差 1;原先走浮点的组合快约 2–12 倍(数字在各提交里)。顺带修了浮点版 ClipColor 的 NaN(灰色源在 αd = 0 的目标上做 HSL 模式,颜色成了 0)。r5g6b5、x1r5g5b5、a4 目标仍走浮点。
-
-**三、没做的**(仍在 `feature-plan.md` H 节):点本机窗口或桌面就收起 X 的弹出菜单(WN-M7,要全局指针钩子);F21 以外的新功能(F1–F30);需要实机的 API-H13 / IN-E19 / CN-S8。DR-M1 那个会话另报了一处审查之前就有的问题、没有改:外接框宽或高为 0 的宽弧只画出一半线宽。
-
-**四、验证**:`VelaShell.XServer.Tests` 459 例,450 通过 / 9 例按平台跳过(只在 Linux 上才有的那几条);分支起点是 430 通过。开互操作(重建了带 `default-jdk` 的 `velashell-xclients`)12 例全过、没有 `[SKIP]`。真实客户端另手动核对:`xlsfonts` 列出 1923 个名字;`variable` 解析成 Helvetica Bold 12 磅、属性正确;`xfd -fn cursor` 画出全部光标字形;默认 `fixed` 字体的 UTF-8 xterm 显示中日韩、希腊文、西里尔文、Latin-2 与 €;没有协议错误;`xlsfonts -l "*"` 不再有持锁过久的日志。宿主 `VelaShell.Tests` 与 `Infrastructure.Tests` 里 X Server 相关的用例 41 / 40 通过(1 例按环境跳过)。整个 `VelaShell.slnx`(Debug)与 `VelaShell.XServer`(Release)零警告零错误。`VelaShell.slnx` 的 Release 构建报 NETSDK1150(自包含的 `VelaShell` 引用非自包含的 `VelaShell.PluginHost`),与这一批无关 —— 这一批的工程文件只改了 `VelaShell.XServer.csproj` 的嵌入资源。DR-M1:20 万组随机的单条弧与不相接的弧,与改动前逐像素相同;新用例在旧代码上红。DR-P3:穷举核对(源 alpha × 遮罩 0–255 × 48 种目标像素,有无分量 alpha 各一遍),a1 与浮点版逐位相同、其余最多差 1;每条新用例做过变异检查。
+文档:velashell-docs 同名分支(`zh/` 与 `en/` 一起改)。没改的两处(宽或高为 0 的宽弧、RENDER 在低位深目标上的浮点路径)见 feature-plan.md H。
 
 ## ✅ 179. 2026-10-09 CI:AI 插件的 UI 用例把每次 CI 拖到 25 分钟以上;顺带逮到 SFTP 握手的一个竞态
 
-- **现象**:#582(10-09 04:32 合入)之后,每次 CI 从 6–7 分钟变成 25 分钟以上;macOS 那一项看上去像是永远跑不完,#590、#591 上都被取消过。
-- **原因**:`VelaShell.Plugin.Ai.Tests` 从 587 条加到 1415 条,多是 headless UI 用例。一个进程只有一个 Avalonia UI 线程,这些用例只能串行;macOS 上这一个工程要 22 分 36 秒(Windows 9 分 50 秒、Linux 5 分 27 秒),别的工程都在 2 分钟内跑完。macOS 格外慢,是因为 UI 用例的 `PumpAsync` 按拍数等(`rounds` 次 `Task.Delay(5)` + `RunJobs`),实际等多久看计时器的粒度:同样 60 拍,Linux 0.36 秒、Windows 0.77 秒、macOS 1.55 秒(每拍约 26 ms)。
-- **改了两处**(f48954df):
-  - 6 处 `PumpAsync` 交给 `HeadlessPump.RunAsync`:保证 `rounds × 5 ms` 的真实时间过去、中间照常跑调度器,拍数随计时器粒度自适应;小的拍数至少推 min(rounds, 3) 拍(有的用例拿它在防抖到点之前断言)。Linux 上与原来基本一样,用例本身与各处的拍数没有动。
-  - CI 的测试步骤改成 `scripts/ci/run-tests.sh`:聊天面板、接入向导、设置页三组 UI 用例各起一个 `dotnet test` 进程,与解决方案的其余测试同时跑。每个进程仍只有一个 UI 线程、组内照旧串行;插件没有跨实例的静态状态,`TestPluginContext` 的数据目录每个实例一个,拆开跑不改变用例看到的东西。
-  - 试过给作业加 `timeout-minutes` 兜底,撤了:真卡住时照样烧满时限,省不了额度。
-- **顺带逮到的真 bug**(080da3ba):跑得更挤之后,ubuntu 上 `sftp_server起不来时报出退出码与它的stderr` 撞上 30 秒的用例时限(§171 记过它在 macOS 上也红过一次)。根因是 `SftpRequestPipeline` 的竞态:收包循环一开跑就看到通道关了、调 `Fault`,而 `Fault` 只结算「已经有人在等」的 VERSION;握手晚一步调 `WaitForVersionAsync` 就新建一个再也不会完成的任务,等满 30 秒的握手时限 —— 用户看到「sftp-server 没有回应」,退出码与 stderr 都丢了。现在建任务时流水线已经收工就当场以原因结算;新用例先等收工、再等 VERSION,在旧代码上红。
-- **验证**:本机 `VelaShell.Plugin.Ai.Tests` 1436 条全过、5 分 47 秒(三组单独 163 / 105 / 54 秒),整个测试脚本 170 秒;SFTP 179 条全过。CI run 37931845240(f48954df,竞态修复之前):Windows 8 分 3 秒、macOS **8 分 18 秒**(原来 25 分钟以上)、ubuntu 6 分 32 秒 —— ubuntu 红的就是上面那条竞态,三组 UI 用例三个平台全过。
+- **原因**:`VelaShell.Plugin.Ai.Tests` 从 587 条加到 1415 条,多是只能串行的 headless UI 用例;`PumpAsync` 按拍数等(`Task.Delay(5)`),时长看计时器粒度 —— 同样 60 拍 Linux 0.36 秒、macOS 1.55 秒,macOS 上这一个工程要 22 分 36 秒。
+- **改法**(f48954df):`HeadlessPump.RunAsync` 保证 `rounds × 5 ms` 的真实时间过去;`scripts/ci/run-tests.sh` 把三组 UI 用例各起一个 `dotnet test` 进程并行跑。macOS 降到 8 分 18 秒。试过加 `timeout-minutes` 兜底又撤了:真卡住时照样烧满时限。
+- **顺带的真 bug**(080da3ba):`SftpRequestPipeline` 收包循环先看到通道关了而 `Fault`,`Fault` 只结算已经有人在等的 VERSION,握手晚一步调 `WaitForVersionAsync` 就等满 30 秒,退出码与 stderr 都丢了(§171 记过这条用例在 macOS 上也红过)。现在建任务时流水线已收工就当场以原因结算。
 
 ## ✅ 180. 2026-10-09 连接的导入导出、多选批量操作与分组排序(#571)
 
-**一、问题**:#571 列了六件事 —— 整组打开、多选(批量删除 / 打开)、批量改通用配置(分组、认证、跳板)、批量新建、
-连接的导入导出(导出时让用户决定带不带敏感信息)、分组排序。提 issue 的用户手上两百多台设备,以前在 WindTerm 里是直接改配置文件加的;
-VelaShell 的连接存在 SonnetDB 里,既没有导入导出,资源管理器也只能单选(外加 #524 的 Ctrl 双选,恰好两条)。
+#571 的用户手上两百多台设备;原先连接存在 SonnetDB 里,没有导入导出,资源管理器只能单选(外加 #524 的 Ctrl 双选)。
+- **两种格式**(规则在 `Core/Import/` 的纯函数里,`SessionArchiveService` 只管读写仓储):**JSON**(`SessionArchive`)完整保真,带分组、被引用的共享凭据与隧道,缩进、中文不转义,给人改;**CSV**(`SessionCsv`)固定 15 列、导出即模板,`id` 列导回时精确对上原来那条。导出自动带上选中连接的**跳板主机**(逐级往上),否则到另一台电脑上全是直连。
+- **敏感信息**默认不导;勾上必须设至少 8 个字符的导出口令,机密用 `SyncCrypto`(PBKDF2-SHA256 20 万次 + AES-256-GCM)加密进 `secrets`;没有明文导出密码的选项,CSV 永远不带。⚠️ `SessionArchiveFieldTests` 用反射检查每个属性都已归类(配置 / 机密 / 本机状态),新字段没归类直接红。
+- **CSV 读得宽容**:分隔符与表头别名(含中日韩写法)自动认;编码依次试 BOM → 严格 UTF-8 → 本地 ANSI 代码页(中文 Windows 上 Excel 默认存 GBK);`= + - @` 开头的单元格导出时补单引号防公式注入。
+- **导入规则**(`SessionImportPlanner`):先按 Id、再按「协议 + 主机 + 端口 + 用户名」判重复,跳过(默认)/ 覆盖 / 两条都留;覆盖时 CSV 只改文件里有的列(`password` 空着 = 不改)——「导出 CSV → Excel 改用户名 → 导回去」靠这一条;文件 Id 不冲突就沿用(开着云同步的两台电脑之间仍是同一条);跳板找不到改直连、成环断一环,妥协逐条报出来。
+- **多选**:Ctrl 单击加减、不设上限,Shift 选区间;多选菜单:打开 N 个连接 / 在双栏 SFTP 中打开(恰好两条时)/ 移动到分组 / 批量修改 / 导出所选 / 删除。**整组 / 多选打开**(分组菜单「打开全部连接」、多选菜单「打开 N 个连接」)走 `MainWindowViewModel.OpenProfilesAsync`,最多 6 条同时握手,超过 10 条先确认。
+- **批量修改**:用户名 / 端口 / 认证 / 跳板,勾了才改;协议不支持的跳过并计数(规则抽成 `CredentialCompatibility`),会成环的跳板整批跳过。分组不放进来 —— 多选的「移动到分组」就是改分组。
+- **分组排序**:拖动分组行、「上移 / 下移」、按名称排序(`CompareOptions.NumericOrdering`,「机房 2」在「机房 10」前面);落库时重编 `SortOrder`,顺手修了新建分组按「当前个数」取号会撞号(改为最大值 + 1)。快捷键总表加「资源管理器」一组 —— 列表本身是单选的,这些手势不写进来就没人知道。
+- ⚠️ **评审后补**:导入 / 批量修改的写库异常一律留在对话框里(只接 `IOException` 时别的异常会逃出 `ReactiveCommand` 带走整个应用),失败后关掉时资源管理器重读 —— 否则树里缓存的旧对象会在下次置顶 / 移动分组时把旧值整条写回;覆盖时同 Id 的行优先于按主机撞上的行。
 
-**二、做法**:
-
-* **连接文件**(规则全在 `Core/Import/` 的纯函数里,`Infrastructure/Import/SessionArchiveService` 只管从仓储取数据、把算好的结果写回去,
-  注册为 `ISessionArchiveService`):
-  * 两种格式。**VelaShell JSON**(`SessionArchive`)完整保真:直接序列化 `SessionProfile`,带上所在分组、被引用的共享凭据与隧道;
-    枚举写名字、中文不转义、缩进 —— 给人看、给人改。**CSV**(`SessionCsv`)给 Excel 批量编辑:固定 15 列,导出即模板,
-    带 `id` 列,导回时据此精确对上原来那条。
-  * 导出范围是选中的连接**加上它们的跳板主机**(逐级往上,`SessionArchiveBuilder.Select`):只导出堡垒机后面那批、不带堡垒机,到另一台电脑上全是直连。
-  * **敏感信息**默认不导;勾上必须设至少 8 个字符、两次一致的导出口令,机密整段用 `SyncCrypto`(PBKDF2-SHA256 20 万次 + AES-256-GCM)
-    加密进 `secrets`,其余照常明文。没有「明文导出密码」这个选项;CSV 永远不带。导入时不解锁也能导,只是不带密码。
-    新字段会自动进文件,所以 `SessionArchiveFieldTests` 用反射逐个属性检查归类(配置 / 机密 / 本机状态),新加一个没归类的直接红。
-  * CSV 读得宽容:分隔符(逗号 / 分号 / 制表符)按表头自动认;表头认别名与中日韩写法(`SessionCsvHeaderAliases`,单放一个文件,
-    `Code_HasNoHardcodedChineseText` 只放行这一个文件);编码依次试 BOM → 严格 UTF-8 → 本地 ANSI 代码页
-    (中文 Windows 上 Excel 默认存的是 GBK);`user@host:port` 也拆;以 `= + - @` 开头的单元格导出时补单引号防公式注入、导入时去掉。
-  * **导入规则**(`SessionImportPlanner`):先按 Id、再按「协议 + 主机 + 端口 + 用户名」判重复;重复时跳过(默认)/ 覆盖 / 两条都留。
-    覆盖时 JSON 没带机密就保留本机密码,CSV 只改文件里有的列(`password` 空着 = 不改)—— 「导出 CSV → Excel 改用户名 → 导回去」靠这一条。
-    文件 Id 不冲突就沿用(两台开着云同步的电脑之间导来导去仍是同一条);被跳过的跳板,文件里经它跳的改指本机那一台;
-    分组按 Id → 名称对上,都没有就新建并接在已有分组之后;共享凭据同 Id / 同名沿用本机的、不覆盖;跳板找不到改直连、成环断一环,妥协逐条报出来。
-    落盘顺序凭据 → 分组 → 连接 → 隧道。
-  * 三个入口对话框:`SessionExportView`(格式、敏感信息与口令)、`SessionFileImportView`(预览每一行是新建 / 重复 / 有问题,
-    「重复时」「放到」两个下拉,加密文件的口令框;ListBox 虚拟化,几百行不卡)。资源管理器「更多」菜单:导入连接文件、导出全部连接、
-    保存 CSV 导入模板、从其他工具导入(原有);分组菜单:导出此分组、导入到此分组(「放到」预选这一组);多选菜单:导出所选。
-    这些流程在 `Views/SessionTreeActions`,不再往 `MainWindow` 的代码后台里堆。
-* **多选**:#524 的 Ctrl 双选扩成通用多选 —— Ctrl 单击加减、不设上限(原先第三条会把最早那条顶掉),Shift 单击选区间、Ctrl+Shift 并入;
-  区间按看得见的行算。多选菜单:打开 N 个连接 / 在双栏 SFTP 中打开(恰好两条时才有,先选的在左)/ 移动到分组 / 批量修改 / 导出所选 / 删除 N 个连接(先确认)。
-  `DualSelection*` 改名 `MultiSelection*`,节点的 `DualSelectionOrder` 换成 `IsMultiMarked`;折叠分组时只摘掉被收进去的几条。
-* **整组 / 多选打开**:`MainWindowViewModel.OpenProfilesAsync`,按树上顺序发起、最多 6 条同时握手(恢复会话那处仍一次全发,那里通常只有几条);
-  超过 10 条先确认。
-* **批量修改**(`SessionBatchEdit` + `SessionBatchEditView`):用户名 / 端口 / 认证(共享凭据、密码、私钥、Agent)/ 跳板主机,勾了才改。
-  协议不支持的跳过并计数(FTP 与插件只认密码,规则抽成 `CredentialCompatibility`,`SharedCredentialService.IsCompatible` 改为委托它);
-  跳板只给 SSH / SFTP、会成环的整批跳过;点之前就显示会改几条、跳过几条。分组不放进来:多选的「移动到分组」就是改分组,还带着「分组空了就删」那条规矩。
-* **分组排序**:分组行可拖动(载荷前缀 `VGRP|`,上半截插前、下半截插后,组内会话行算这一组后面,其余排最后;2px accent 插入线 + 幽灵标签),
-  分组菜单加「上移 / 下移」,「更多」菜单加「分组按名称排序」(当前区域规则 + `CompareOptions.NumericOrdering`,「机房 2」在「机房 10」前面)。
-  落库时全部分组的 `SortOrder` 重编成 0、1、2…;顺手修了连接对话框新建分组按「当前个数」取号的问题(序号断开后会和已有分组撞上),改为最大值 + 1。
-  另加「全部折叠 / 全部展开」。
-* 图标新增 `arrow-up` / `arrow-down` / `arrow-down-a-z` / `chevrons-down-up` / `chevrons-up-down` / `file-down` / `file-up` / `file-spreadsheet`(lucide);
-  快捷键总表(`ShortcutCatalog`)新增「资源管理器」一组:Ctrl / Shift 单击多选、拖动连接换分组、拖动分组行排序 —— 列表本身是单选的,这些手势不写进来就没人知道。
-  文案 137 条,五份 resx 齐。
-* **独立评审后补的几处**(都有回归用例):
-  - 覆盖的目标上,同 Id 的行优先于按「主机 + 端口 + 用户名」撞上的行 —— 原先排在前面的冒牌行会抢走本机那条,真正那一行反被另存;
-  - CSV 往返:`auth` 列总是写出(引用共享凭据的也写);凭据 / 跳板名本机重名时,先看重复的那条本机连接现在引用的是哪一条,对得上就认它,不再一律断开;
-    主机一栏拆出来的 `user@` / `:port` 按行算作给了这两列,覆盖时也生效;
-  - 沿用本机共享凭据时,本机缺的密码 / 口令(无端到端口令的云同步拉下来的就是这样)用解锁后的文件补上,已有的不动;
-  - 覆盖会改掉主机、而本机那条存着密码时,预览里那一行提示「本机保存的密码将用于新主机」(被改过的文件也能借此把密码引到别处);
-  - 手写 JSON 里的 `null`(`"host": null`、`"groups": null`、`"version": "1"`)变成行错误或缺省值,不再抛出;
-  - 导入 / 批量修改的写库异常一律留在对话框里显示,不再只接 `IOException`(别的异常会逃出 `ReactiveCommand` 带走整个应用);
-    写库途中对话框关不掉,中途失败后无论重试还是取消,关掉时资源管理器都重读 —— 否则树里缓存的旧对象会在下一次置顶 / 移动分组时把旧值整条写回;
-  - 普通单击已经选中的那一行时也把 Shift 起点挪过去(列表不会再赋一次值,原先起点停在更早的地方)。
-
-**三、验证**:Core 新增 `SessionArchiveFieldTests` / `SessionArchiveJsonTests` / `SessionCsvTests` / `SessionImportPlannerTests` /
-`SessionArchiveBuilderTests` / `SessionBatchEditTests`(73 例);Infrastructure 新增 `SessionArchiveServiceTests`(真 SonnetDB,两台「电脑」各自的库与机器密钥:
-加密导出 → 另一台导入,分组、跳板、共享凭据、隧道、密码都到位,同一份文件再导一次一条不重复;CSV 改用户名后覆盖导回,密码与终端设置保留;模板直接导入);
-宿主新增 `SessionTreeMultiSelectionTests`(由双选测试改写)、`SessionTreeGroupOperationsTests`、`SessionExportViewModelTests`、
-`SessionFileImportViewModelTests`、`SessionBatchEditViewModelTests`,UI 测试 `SessionTreeMultiSelectionUiTests`(真按 Ctrl / Shift 点)、
-`SessionTreeGroupDragUiTests`、`SessionTreeMenusUiTests`(分组菜单与「更多」菜单的每一项都绑到命令上)、`SessionTransferDialogsUiTests`(动作按钮走共享主题、预览行渲染)。headless 截图核过三个对话框与多选菜单;
-第一次截图就拍出导入对话框每行出现两遍(窗口 `Opened` 与调用方各初始化一次),`InitializeAsync` 改为只比对一次并补了用例。
-全解决方案零警告零错误;rebase 到 main 后 Core 769 通过 / 23 跳过,Infrastructure 637 / 4,Presentation 84,宿主 1875 / 19。
-文档同步见 [velashell-docs#103](https://github.com/VelaShellLabs/velashell-docs/pull/103)(`会话导入.md` 第七节、`交互与界面规格.md` §3 / §12 / §6.2、`快捷键参考.md` 新增「资源管理器」一节,中英两边)。
+文档:velashell-docs#103(中英镜像的 `会话导入.md` 第七节、`交互与界面规格.md` §3 / §12、`快捷键参考.md`「资源管理器」一节)。
 
 ## ✅ 181. 2026-10-09 内置 X 服务端:合并本地遗留的草稿 —— alpha-map 长链会把进程带崩、字体就近匹配看平均宽度
 
-**一、来由**:§178 那一批开工前,有两个并行会话在本地 worktree 里起过 DR-M1 / DR-M4 / DR-P3 与 WN-M5 / CP-16 的草稿,中途因额度用尽停下,
-改动一直没提交地留在主工作区。§178 已在 `dev` 上把这几项做完,而且做得更完整(字体用 Brotli 与全套 X.Org / Unifont、PolyArc 同椭圆合并、
-整数 RENDER),草稿逐文件对过一遍:绝大部分与 `dev` 重复或已过时,收进 stash 不再用;挑出 `dev` 上没有的几处补进来。
+§178 开工前两个并行会话留在本地、没提交的草稿(DR-M1 / DR-M4 / DR-P3、WN-M5 / CP-16)逐文件对过:§178 已在 `dev` 上做得更完整,大部分收进 stash 不再用,只补 `dev` 上没有的几处。
+- **alpha-map 只作用一层**(e05c3553):ChangePicture 只核新挂上的那张自己有没有 alpha-map,能接成任意长的链,合成时顺着链每环递归一层,约 6400 环栈溢出。⚠️ .NET 接不住栈溢出、服务端又在宿主进程里 —— 任何能连上的 X 客户端都能把 VelaShell 整个带崩。现在合成只看一层(作 alpha-map 用的那张自己的 alpha-map 不算)。
+- **字体就近匹配一样近时先比平均宽度**(52ce6b57):`FontIndex.NearestSize` 原先按名字先后取,要双宽字体的 13 / 18 像素拿到 7x13 / 9x18;没给 AVERAGE_WIDTH 时不变。
+- 另补测试,`AGENTS.md` 的规范清单补上 XLFD;比对时看到、两边都没做的四处由 §185 处理。
 
-**二、做了什么**:
-- **alpha-map 只作用一层**(e05c3553):ChangePicture 只核新挂上的那张自己有没有 alpha-map,不核 p 是不是已经被别人当 alpha-map 用,
-  先 P1 → P2、再 P2 → P3 …… 能接成任意长的链(成环接不上)。合成时 `SourceOf`、`ReadableIn` 与 `AlphaMapSource` 顺着链每环递归一层,
-  约 6400 环栈溢出(`ReadableIn` 先倒);.NET 接不住栈溢出,服务端在宿主进程里,任何能连上的 X 客户端都能这样把 VelaShell 整个带崩。
-  现在合成时只看一层:作 alpha-map 用的那张自己的 alpha-map 不算,与 ChangePicture 不许挂已有 alpha-map 的那张同一个意思。
-  这是草稿里 `SourceOf(p, withAlphaMap)` 的思路。
-- **字体就近匹配一样近时先比平均宽度**(52ce6b57):`FontIndex.NearestSize` 原先在像素高度一样近时按名字先后取第一个,把平均宽度翻倍要
-  双宽字体的 `-misc-fixed-medium-r-semicondensed--13-120-75-75-c-120-iso10646-1` 拿到 7x13、18 像素的拿到 9x18;随库带的 12x13ja / 18x18ja
-  正是这两个尺寸的双宽字体。现在给了 AVERAGE_WIDTH 时一样近的里面先挑平均宽度最接近的;只在一样近的里面比,没给时与原先完全一样。
-- **补测试**(efb0d666):PolyArc 走真实的请求 68(原先只在光栅化器层面测)、宽或高为 0 的细弧连成虚线与同一条折线逐像素相同、
-  纯色源挂 alpha-map、经别名 `fixed` 打开的字体的 FONT / CHARSET_REGISTRY / CHARSET_ENCODING / FAMILY_NAME。
-- **文档两句**(8d8017f1):XServer `README.md` 的 `Fonts/` 一行对上随库字体的现状;`AGENTS.md` 净室规程第 1 条的规范清单补上 XLFD。
-
-**三、没做的**(记进 `feature-plan.md` H 节):草稿与 `dev` 比对时顺带看到、两边都没做的几处 —— 源 picture 带变换时 alpha-map 按源未变换的坐标取样;
-用磅数要字体时 75 dpi 的总排在前、换算也按 75 dpi;`build-fonts.cs` 对 X.Org 的字体包没有哈希校验;文档说 alpha-map 必须是只有 alpha 的格式、
-否则 BadMatch,代码只核了是像素图、没有核格式。
-
-**四、验证**:`VelaShell.XServer.Tests` 464 例,455 通过 / 9 例按平台跳过(起点 450 通过)。10 万环的 alpha-map 链在改之前测试进程直接栈溢出退出,
-改之后 0.5 秒跑完;双宽字体的两条断言在改之前红。宿主 `VelaShell.Tests` 与 `Infrastructure.Tests` 里 X Server 相关的用例 41 / 40 通过(1 例按环境跳过)。
-文档同步见 [velashell-docs#104](https://github.com/VelaShellLabs/velashell-docs/pull/104)(`xserver/design/architecture.md` §7,中英两边)。
+文档:velashell-docs#104(中英镜像的 `xserver/design/architecture.md` §7)。
 
 ## ✅ 182. 2026-10-09 AI 插件:保存一次之后再也发不出消息;字号与设置窗口整体放大一档
 
-**一、现象**:AI 插件启动后能用,改一下模式/拖一下侧栏宽度之后,调试输出里就开始刷 `ApiKeySlotChangedException`:
-`Persist AI settings failed`(`ValidateSettingsBaselineAsync`)与 `AI request failed — 准备回复时接入配置发生了变化`(`ValidateCredentialScopeAsync`),
-之后每次保存、每次发送都失败,只有重启插件才暂时恢复。
-
-**二、根因**:#582 起设置写入走"基线比对":`WriteSettingsSnapshotAsync` 把 `JsonSerializer.Serialize(settings)` 原文记成基线,
-校验时读回存储、把那个 `JsonElement` 再序列化一遍来比。两种序列化对 `DateTimeOffset` 不一致 —— 对象序列化原样写 `"+08:00"`,
-`JsonElement` 重写时按默认编码器转成 `"\u002B08:00"`。MCP 刷过工具清单(`McpServerConfig.ToolsRefreshedAt`)之后设置里就有一个东八区时间,
-于是第一次保存成功、随后的每次比对都对不上,被当成"配置被别处改了"而拒绝。测试里的存储替身与宿主 SonnetDB 存储都会这样(问题出在序列化本身,不在存储)。
-
-**三、做了什么**:
-- `WriteSettingsSnapshotAsync` 的基线改取 `SavedSettingsJson(snapshot)` —— 与读回比对用的是同一种规范化文本。存量数据不用迁移:
-  `LoadAsync` 本来就按读回的文本记基线,重启后第一次写入起就一致了。
-- 新用例 `Save_TimestampWithPositiveOffset_KeepsBaselineAcrossSaves`:带 `+08:00` 时间的设置连存两次、再取凭据;改之前红在第二次保存。
-- **字号**:插件内全部 `VelaFontSize*` 令牌上调一档(10→11 … 15→16、16→18);字段说明 `TextBlock.hint` 从 10 提到 12,与标签同号,
-  层级靠 Tertiary 颜色拉开。`ToolPickerView` 里五处写死的 `FontSize = 10/11/12` 换成令牌(同样上调一档),跟着宿主的界面字号设置走。
-- **窗口**:模型配置 900×740→1080×860、连接供应商 720×720→860×820、全局设置 640×680→780×800、配置工具 940×680→1100×800、
-  MCP 服务器 900×660→1060×780、协作接入 860×780→1000×880、聊天独立窗口 720×560→820×660。宿主不替插件窗口收边,
-  新增 `Ui/WindowFit.cs` 把设计尺寸夹到所在屏幕工作区以内(四周留 48),拿不到屏幕信息时按设计值原样开。
-
-**四、没动的**:同一段调试输出里成批的 `TaskCanceledException`(位于 `VelaShell.Ssh.dll`)是连接/通道收尾时保活、重协商监视等内部等待被取消,
-库里都已捕获,只是调试器报的首次机会异常,与这次故障无关。
-
-**五、验证**:`VelaShell.Plugin.Ai.Tests` 1437 条全过(5 分 51 秒);新用例在去掉修复后红在第二次保存(`ApiKeySlotChangedException`)。
-另用一个文件式小程序直接走宿主的 `SonnetDbPluginDataStore` 做了一次写入/读回,确认读回文本里的 `+` 被转义、与写入原文不等。
+**根因**:#582 起设置写入走「基线比对」,基线是 `JsonSerializer.Serialize(settings)` 的原文,校验时把读回的 `JsonElement` 再序列化一遍来比。⚠️ 两者对 `DateTimeOffset` 不一致(`"+08:00"` 对 `"\u002B08:00"`):MCP 刷过工具清单后设置里就有东八区时间,第一次保存之后每次保存、每次发送都报 `ApiKeySlotChangedException`。问题出在序列化本身,不在存储。
+**改法**:基线改取 `SavedSettingsJson(snapshot)`,与读回比对同一种规范化文本;存量数据不用迁移(`LoadAsync` 本就按读回的文本记基线)。
+**字号与窗口**:`VelaFontSize*` 令牌整体上调一档,字段说明与标签同号、层级靠 Tertiary 颜色拉开;七个窗口各放大一档。宿主不替插件窗口收边,`Ui/WindowFit.cs` 把设计尺寸夹到屏幕工作区以内(四周留 48)。
+同段输出里成批的 `TaskCanceledException` 是已捕获的首次机会异常,无关。
 
 ## ✅ 183. 2026-10-09 AI 插件:启动预热每次都报 `Preloading 'CSharpMath.Editor' failed`
 
-- **现象**:每次启动,调试输出里一条 `System.IO.FileNotFoundException`(CSharpMath.Editor, Version=1.0.0.0)紧跟一条插件警告
-  `Preloading 'CSharpMath.Editor' failed`。功能上没有影响,公式照常渲染。
-- **原因**:`AiPlugin.PrewarmPanelAssemblies` 从入口程序集沿**元数据引用图**逐个 `LoadFromAssemblyName`。`Sylinko.CSharpMath.Avalonia` 12.0.0
-  这个 fork 包只带了 `CSharpMath` / `CSharpMath.Rendering` / `CSharpMath.Avalonia` 三个 dll,也没声明别的包依赖,
-  而 `CSharpMath.Rendering.dll` 的元数据里引着 `CSharpMath.Editor`(只有公式编辑键盘 `CSharpMath.Rendering.FrontEnd.MathKeyboard`
-  用到 `Editor.MathKeyboard<,>` / `MathListIndex`)。插件只渲染、不编辑,运行期从不碰这个类型,所以从来不缺;
-  预热却照着引用硬装 —— 插件 deps.json 里没有、宿主的可信平台程序集里也没有,只能抛。headless 用例 `MarkdownProjectionNotificationTests`
-  在没有这个 dll 的测试输出目录里渲染 `$E = mc^2$` 一直是绿的,同样说明渲染路径用不到它。
-- **改法**:预热前先按 `PluginAssemblyLoadContext.Load` 的同一套规则判断装不装得到(新的 `AiPlugin.CanResolve`):
-  插件 deps.json 解析得到(另起一个 `AssemblyDependencyResolver`),或者在默认 ALC 的 `TRUSTED_PLATFORM_ASSEMBLIES` 里;
-  两边都没有的只是元数据里的悬空引用,记一条 Debug 跳过,不再去装。拿不到 TPA 清单时不过滤,与原来一样。
-  `catch` 与那条警告保留,真装不动的(损坏、无权限)照旧报。
-- **验证**:新用例 `PanelPreloadTests`(5 条);拿真实插件输出目录模拟走一遍引用图,跳过的只有 `CSharpMath.Editor`,
-  外加 `VelaShell.PluginSdk` / `Avalonia.*` / `AvaloniaEdit` 几个 —— 后者都在宿主 `VelaShell.deps.json` 里,宿主进程的 TPA 有它们,真跑时照常预热。
+功能无影响。`AiPlugin.PrewarmPanelAssemblies` 沿**元数据引用图**逐个硬装,而 fork 包 `Sylinko.CSharpMath.Avalonia` 12.0.0 的 `CSharpMath.Rendering.dll` 引着没随包带的 `CSharpMath.Editor`(只有公式编辑键盘用到;插件只渲染,运行期从不碰)。新的 `AiPlugin.CanResolve` 按 `PluginAssemblyLoadContext.Load` 的同一套规则先判断(插件 deps.json 解析得到,或在默认 ALC 的 `TRUSTED_PLATFORM_ASSEMBLIES` 里),两边都没有的悬空引用记 Debug 跳过;真装不动的(损坏、无权限)照旧警告。
 
 ## ✅ 184. 2026-10-09 AI 插件:模型下拉一律写成"供应商·模型"
 
-- **来由**:用户反馈多家供应商挂同名模型(几家中转站都有 `gpt-5.5`)时下拉里分不清。原先 `ReloadProviderCombo` 只在供应商多于一家时
-  才加 `供应商 · 模型` 前缀,只配一家时只显示模型名。
-- **改法**:聊天面板的模型下拉一律显示 `供应商·模型`(如 `Routin·gpt-5.5`,按用户给的格式,中点两侧不留空格);供应商名为空时退回只显示模型名。
-  前缀让名字变长,下拉的 `MaxWidth` 从 230 放到 300,并给 `ItemTemplate` 一个带 `CharacterEllipsis` 的 `TextBlock`,
-  超长时收成省略号而不是从字中间切断(选中框沿用 `ItemTemplate`,用例里核过)。
-- **没动的**:全局设置里故障转移链的下拉(多于一家时 `供应商 · 模型`)与协作接入页的桥接模型下拉(`供应商 / 模型`)保持原样。
-- **验证**:新用例 `ModelCombo_LabelsEveryModelWithItsProvider`:单供应商带前缀、两家同名模型各自带前缀、选中框文字可省略。`VelaShell.Plugin.Ai.Tests` 1443 条全过(5 分 56 秒)。
+多家供应商挂同名模型(几家中转站都有 `gpt-5.5`)时下拉分不清,原先只在多于一家时才加前缀。现在聊天面板的模型下拉一律 `供应商·模型`(如 `Routin·gpt-5.5`,按用户给的格式,中点两侧不留空格),供应商名为空时退回模型名;`MaxWidth` 230→300,超长用 `CharacterEllipsis` 收成省略号。故障转移链与协作接入页的下拉保持原样。
 
 ## ✅ 185. 2026-10-10 内置 X 服务端:对着 `xs_plan.md` 逐条核对,补完最后几项(用户需求)
 
-**一、来由**:用户要核对第二次全库审查的清单(`xs_plan.md`)是不是全部修完,把剩下能修的修掉。核对的办法:清单里定义的每个条目编号
-(X / CN / WN / DR / IN / GL / API / CP,共 222 个)与 `git log` 里带 `xs_plan:` 行的提交逐个对 —— 191 个有对应的提交;没有的 31 个里,
-7 个是「同 XX」的重复编号(API-H6 = WN-S4、CN-S5 = WN-S7、WN-E15 与 CN-E2 在 Retain 关窗那条提交里一并修了、DR-D1 = X-1、DR-S6 = X-2、
-API-M6 在 IN-S4 里落地),24 个是 CP 一节的指向(指向别处的条目、F1–F30 的新功能或非目标)。§178、§181 记下的剩余项逐项回到代码复核:
-WN-M7 要全局指针钩子(新功能);CN-S8 的 `getpeereid` 已经写好,只缺 macOS / FreeBSD 实机;API-H13、IN-E19 同样要实机。
-能在代码里修的是下面四项,外加测试缺口 T15。分支 `fix/xserver-plan-leftovers`,一项一个本地提交;全程守净室规程,依据只有 X 核心协议
-(「PolyArc」的宽弧边界)、RENDER 规范(「CreatePicture」的 alpha-map、§9)与 XLFD,没有打开任何其它 X 服务端、pixman 或 cairo 的源码。
-文档在 velashell-docs 的同名分支([velashell-docs#105](https://github.com/VelaShellLabs/velashell-docs/pull/105),`zh/` 与 `en/` 一起改)。
-
+**一、核对**:`xs_plan.md` 的 222 个条目编号与带 `xs_plan:` 行的提交逐个对 —— 191 个有对应提交,其余 7 个是「同 XX」的重复编号、24 个是 CP 一节的指向(别处的条目、F1–F30 的新功能或非目标)。§178、§181 的剩余项回到代码复核,能修的是下面四项加测试缺口 T15(分支 `fix/xserver-plan-leftovers`);要全局指针钩子或实机的几项留下。
 **二、做了什么**:
-- **外接框宽或高为 0 的宽弧画满整个线宽**(ed457425):协议只在宽高都不为 0 且不相等时把宽弧的边界交给实现,有一个为 0 时就是与路径相距
-  lw/2 的两条线;原先内边界取「半轴减半个线宽、不小于 0」,缩成中线自己,只画出一侧的半个线宽。现在按线段画:每段单调的走位一个线宽的矩形,
-  在两端之间折返处绕着线段的一头转半圈(补一个直径为线宽的圆)。宽高都不为 0 的弧边界的算法原样,像素不变。
-- **RENDER 的 alpha-map 照规范补全**(de984828):① 源带变换时 drawable 按变换取样、alpha-map 按变换前的坐标取样 —— 现在变换与过滤作用在
-  两者拼好的那张上,alpha-map 本身不变换、不重复;② 原先颜色先按 drawable 的 alpha 除、再乘 alpha-map 的,规范说的只是 alpha 通道被取代,
-  像素一律预乘,写进去再读回来应当是同一个像素 —— 现在只换 alpha 通道,drawable 之外又不重复的像素整个透明;③ 目标的 alpha-map 原先接受但不生效 ——
-  现在写目标的各条路径(Composite、FillRectangles、梯形 / 三角形、字形)经 `CompositeOnto`:请求的这一块拼成临时的 a8r8g8b8 合成,
-  颜色写回 drawable、alpha 写回 alpha-map 并记 DAMAGE,合成器的快路径不用知道 alpha-map;④ 挂了 alpha-map 的源与目标同缓冲时没看出来,
-  逐行合成读到已写过的行 —— 「读不读这块缓冲」「拷出要读的部分」改成 `RenderSource` 的虚方法。另:alpha-map 的范围也限制读写;
-  文档原说「alpha-map 必须是只有 alpha 的格式」与规范不符(规范只要求是像素图),改的是文档。
-- **按磅数要核心字体时按屏幕分辨率挑 75 / 100 dpi**(3030db33):`variable`(`-*-helvetica-bold-r-normal-*-*-120-*-*-*-*-iso8859-1`)这类
-  按磅数要、分辨率留空的名字,原先按名字的先后总取 75 dpi 的那份(12 磅 12 像素),退到最接近的字号时磅数也按 75 dpi 换算 —— 96 dpi 的宿主上
-  Motif / Xaw / Tk 的字偏小。现在 OpenFont / ListFontsWithInfo 带上 `X11ServerOptions.Dpi`:匹配上的里面先挑 RESOLUTION_Y 离它最近的
-  (96 dpi 上是 100 dpi 的 17 像素),换算也按它。给了分辨率或像素高度的名字与原来完全一样。
-- **字体脚本核对 X.Org 字体的内容**(b8ca6d91):`build-fonts.cs` 原先只核对 Unifont 与 OFL。GitLab 现做的归档不保证逐字节稳定,改为对挑出来的
-  文件算摘要(按文件名排序,每个文件一行「文件名 SHA-256」再整体算),五个仓库各固定一个;流程改成全部下载、核对完才动数据目录(原先 Unifont
-  后核对,对不上就留下一个删了一半的 `Fonts/Data`)。
-- **`.Xauthority` 与真实的 xauth 对过**(1ac42bd7,审查的测试缺口 T15):新的 Interop 用例用互操作镜像里的 xauth —— 列得出我们登记的那条、
-  两边改写都留着对方的记录、我们的锁文件名 xauth 认得(看见就重试约 20 秒后放弃)。文件按 base64 经命令行进出容器:这台机器上 Docker Desktop
-  挂本机目录会一直卡住。
-- 顺带:`RenderTests` 的一处 CA1859(558a60e7)。
+- **宽或高为 0 的宽弧画满线宽**(ed457425):原先内边界缩成中线、只画出一侧半个线宽;现在按线段画,折返处补一个直径为线宽的圆。
+- **RENDER 的 alpha-map 照规范补全**(de984828):变换与过滤作用在 drawable 与 alpha-map 拼好的那张上;只换 alpha 通道、像素一律预乘;目标的 alpha-map 原先接受但不生效,现在经 `CompositeOnto` 拼成临时 a8r8g8b8、颜色与 alpha 分别写回;同缓冲判断改成 `RenderSource` 的虚方法。文档原说「必须是只有 alpha 的格式」与规范不符,改的是文档。
+- **按磅数要核心字体时按屏幕分辨率挑 75 / 100 dpi**(3030db33):原先总取 75 dpi,96 dpi 宿主上 Motif / Xaw / Tk 字偏小;现在按 `X11ServerOptions.Dpi` 挑 RESOLUTION_Y 最近的。
+- **字体脚本核对 X.Org 字体**(b8ca6d91):⚠️ GitLab 现做的归档不保证逐字节稳定,改为对挑出的文件按文件名排序算整体摘要;全部核对完才动 `Fonts/Data`。
+- **`.Xauthority` 与真实 xauth 对过**(1ac42bd7,T15)。⚠️ 文件按 base64 经命令行进出容器 —— 这台机器上 Docker Desktop 挂本机目录会一直卡住。
 
-**三、没做的**(都在 `feature-plan.md` H 节):点本机窗口或桌面就收起 X 的弹出菜单(WN-M7,要全局指针钩子);F1–F30 的新功能;要实机核对的
-API-H13 / IN-E19 / CN-S8;互操作靶场扩到 GTK3 / GTK4、浏览器、Motif / Tk / Emacs、桌面会话、托盘与 fcitx5(测试缺口 T16,清单抄进了 H 节)。
-核对时另看到一处、没改:半径小于半个线宽的圆上的一段宽弧,内边界停在圆心,没有穿到对侧(整圆不受影响)。核对完 `xs_plan.md` 删掉:登记的问题都修完了,剩下的都抄进了 `feature-plan.md`;原文(含 F1–F30 的使用场景与评估)在 git 历史里。
-
-**四、验证**:`VelaShell.XServer.Tests` 471 例,462 通过 / 9 例按平台跳过(起点 455 通过);每条新用例在旧代码上确认过红(扁弧 2 条、alpha-map 4 条、
-字体 1 条)。开互操作(`VELASHELL_XSERVER_INTEROP=1`)12 例全过、没有 `[SKIP]`;`Infrastructure.Tests` 的两条 xauth 互操作用例真跑通过。
-字体脚本按固定的摘要重跑到 `Fonts/Data` 的拷贝,生成的数据与仓库里的逐字节相同;固定值不对时报出那一项、输出目录不动。
-`VelaShell.slnx`(Debug)零警告零错误;宿主 `VelaShell.Tests` 与 `Infrastructure.Tests` 里 X Server 相关的用例 41 / 42 通过(1 例按环境跳过)。
+核对完 `xs_plan.md` 删掉:登记的问题都修完了,剩下的抄进 `feature-plan.md` H;原文(含 F1–F30 的使用场景与评估)在 git 历史里。文档:velashell-docs#105(中英镜像)。
 
 ## ✅ 186. 2026-10-09 隧道面板:重开后列表是空的;数量徽标看不见字;放大提亮;启停转圈;可拖动;程序启动时自动建立
 
-**一、重开面板看不到已开的隧道**:开着隧道关掉面板,再打开且仍落在同一台服务器时,列表是空的,要切到别的服务器再切回来才出现。
-宿主关面板只是把它藏起来(`IsTunnelPanelOpen`),下拉框的绑定一直活着;`OpenAsync` 刷新服务器列表时 `Servers.Clear()` 让下拉框把选中项
-回写成 null,`SelectedServer` 照单全收 —— 条目换成了空集合;随后 `LoadServersAsync` 直接改字段选回同一台、`OpenAsync` 再赋值时又因
-「同一个实例」被跳过,条目就一直是空的。改法:重建列表期间(`_isReloadingServers`)不理下拉框回写的选中项;重建完还是同一台
-(仓库给的是新实例)就换上新实例、通知下拉框重新选中,条目按 Id 缓存不必重载;选中的服务器已被删掉则走正常切换,把条目撤下
-(原先这条路径也是只改字段,会留下上一台的条目)。新用例 `TunnelPanelUiTests.Panel_Reopen_KeepsTheSelectedServersTunnels`
-用真实视图走一遍「开 → 加隧道 → 藏 → 再开」,改之前红在 `expected count: 1, actual count: 0`。
+**一、重开后列表空**:关面板只是藏起来,下拉框绑定一直活着;`OpenAsync` 刷新时 `Servers.Clear()` 让下拉框把选中项回写成 null、条目换成空集合,之后选回同一台又因「同一个实例」被跳过。现在重建列表期间(`_isReloadingServers`)不理回写,重建完换上新实例、通知下拉框重选。
+**二、数量徽标看不见字**:三处徽标是 `VelaAccent` 底配 `VelaAccentText` 字,而 `ThemeTokenApplier` 把后者赋成强调色本身。改成 `VelaAccentDim` 底 + `VelaAccent` 字;守门用例 `Design/AccentOnAccentTests` 禁止 `VelaAccent` 底上用这两个令牌作字色。
+**三、放大提亮**:宽 340→380、字号整体大一号,说明文字从 `VelaTextMuted`(暗色主题上约 2.5:1)提到 `VelaTextTertiary`;首行改 DockPanel,放不下时截断名字而不是最右的徽标。
+**四、启停转圈**:`IsStarting` / `IsStopping`(合成 `IsBusy`)期间那格换成 `CircularProgressRing`,编辑、删除禁用。⚠️ 命令本身不并发,但自动恢复(掉线重建)与手动启动是两条路 —— 原先重建途中再点「启动」会把同一本地端口绑两次;现在各入口都先看 `IsBusy`。「端口被占用」改取这条隧道自己的端口。
+**五、可拖动**:接入 `PanelDragHandler` + `IDraggablePanel`,存相对默认锚点的偏移(`ui-layout/tunnel-panel`)。⚠️ 外层 Panel 要铺满整行 —— 父容器只贴着面板时能拖的范围是零。交互规格「位置记忆」早写了隧道面板,此前没实现。
+**六、程序启动时自动建立**:启停状态仍不落盘。`TunnelConfig.AutoStart`(缺字段按 false),第三个勾选框默认不勾、行上多一枚「自启」徽标;`InitializeAsync` 末尾不等待地调 `AutoStartTunnelsAsync`,只给含勾选项的服务器后台拨号,与切换服务器的恢复共用「每台只恢复一次」;失败走右下角错误提示、点名服务器与隧道,互不耽误,一条都没建成时专为它们拨的连接随即断开。
 
-**二、数量徽标的字看不见**:隧道面板标题旁的数量、文件传输浮层的剩余数、消息中心的未读数,都是 `VelaAccent` 实底配 `VelaAccentText` 字,
-而 `ThemeTokenApplier` 把 `VelaAccentText` 直接赋成强调色本身 —— 字和底一个颜色,在所有主题下都只剩一块色斑。三处改成与「创建」药丸
-同一套:`VelaAccentDim` 浅底 + `VelaAccent` 字。新守门用例 `Design/AccentOnAccentTests`:`Views` 下凡是 `Background` 为 `VelaAccent` 的
-元素,子孙的 `Foreground` 不许是 `VelaAccent` / `VelaAccentText`;改之前正好报出这三处。
-
-**三、隧道面板放大、说明文字提亮**(用户反馈字小、看不清):宽 340→380,标题栏 36→40;标题、隧道名、输入框、下拉框、按钮 11→12 号,
-表单标签与隧道行下的说明(路由、端点、状态、流量、错误)10→11 号,类型 / 自动徽标 9→10 号;说明文字从 `VelaTextMuted`
-(暗色默认主题里压在 surface 上只有 2.5:1 上下)提到 `VelaTextTertiary`,路由那行提到 `VelaTextSecondary`;输入控件 26→30 高,
-行内操作键 20→24、图标 10→12,区块内边距 12→14,表单行距 8→10,列表最大高度 240→320。运行中隧道的编辑键是禁用的,
-Fluent 给它铺的灰底在放大后像「被选中」,改成透明底 + 0.4 不透明度。表单标签窄栏放不下时出省略号(英文「Target host (from the server)」
-原先被栏宽硬裁)。首行原是横排 StackPanel(量的是无限宽):名字长、徽标多时被裁掉的是最右那枚徽标;改成左贴的 DockPanel,
-徽标整组靠右停靠、名字填剩下的地方,放不下时截断的是名字(`Panel_LongNameWithAllBadges_TrimsTheNameNotTheBadges`,英文)。
-
-**四、启停途中转圈、不可再点**(用户需求:启停都要等一会儿,怕误触连点):`TunnelItemViewModel` 加 `IsStarting` / `IsStopping`
-(合成 `IsBusy`),以及 `ShowStartButton` / `ShowStopButton` / `CanEdit` / `BusyText`。途中那一格换成 `CircularProgressRing`(状态栏、
-连接中标签用的同一个控件;不是按钮,点不动),编辑、删除同时禁用,状态行写「正在启动隧道…」/「正在停止隧道…」(新键
-`Tunnel_Starting` / `Tunnel_Stopping`);走完换回对应的键,失败时键回到「启动」、原因照旧写在表单下。`StartTunnelAsync` /
-`StopTunnelAsync` / 编辑 / 删除都先看 `IsBusy`:命令本身虽然不并发,但自动恢复(掉线重建)与手动启动是两条路 —— 原先重建途中
-再点「启动」会各建一条,同一个本地端口绑两次。自动恢复现在也把要重建的几条标成启动中,并跳过正在启停的条目。顺带:手动启动失败报
-「端口被占用」时取的是表单里的端口,不是这条隧道自己的(`FriendlyError` 加了端口参数)。
-
-**五、面板可拖动、记住位置**(用户需求:总在右上角,有时挡着要操作的东西):接入文件传输提示与消息中心那套 `PanelDragHandler` +
-`IDraggablePanel` —— 标题栏是手柄(按在帮助 / 关闭键上不起拖),存的是相对默认锚点的偏移(`ui-layout/tunnel-panel`),松手落盘、
-构造时取回,窗口缩小后夹回可视区。`MainWindow.axaml` 里外层 Panel 改为铺满整行、对齐与边距落在视图上(父容器只贴着面板时
-能拖的范围是零,与消息中心同理)。交互规格「位置记忆」一条早写了隧道面板,此前其实没实现。
-
-**六、程序启动时自动建立**(用户需求):启停状态本来就不落盘 —— 持久化的只有 `TunnelConfig`,重启后一律是已停止,这一点不变。
-`TunnelConfig` 加 `AutoStart`(旧数据缺字段按 false),表单在「掉线后自动重连」下面加第三个勾选框「程序启动时自动建立」(默认不勾,
-编辑时填回、取消后复位),勾了的隧道行多一枚描边的「自启」徽标。`MainWindowViewModel.InitializeAsync` 末尾调
-`TunnelPanelViewModel.AutoStartTunnelsAsync`(不等它):逐台读持久化配置,只有含勾选项的服务器才在后台拨号,建好的条目就是之后打开面板
-看到的那份(与切换服务器时的恢复共用「每台只恢复一次」)。失败经新的 `errorReporter` 走右下角错误提示(`Toasts.Error`)——
-连不上服务器(`Msg_TunnelAutoStartConnectFailed`,点名服务器)、某条建不起来(`Msg_TunnelAutoStartFailed`,点名隧道与服务器,
-端口取这条自己的);一台失败不耽误其它,一条失败不耽误同台其余;一条都没建成时专为它们拨的后台连接随即断开。
-面板视图模型从 `OpenTunnelPanel` 里抽出 `EnsureTunnelPanel`,打开面板与启动建隧道用同一份。
-
-**七、验证**:在只含本节改动的 `origin/main` 副本上:`VelaShell.slnx` 构建零警告零错误;`VelaShell.Tests` 1911 例,1900 通过 / 11 例按环境跳过
-(含本节新增的 17 例:重开、徽标守门、启停忙碌态 4 例与 UI 1 例、拖拽 VM 3 例与真实拖拽 UI 1 例、自动建立 5 例、长名字布局 1 例等),
-`Panel_Reopen_…` 与 `AccentOnAccentTests` 在改之前确认过红;`Core.Tests` 769 例与 `Infrastructure.Tests` 639 例(4 例按环境跳过)全过
-(这两项排除了 `DockerIntegration`:开着 Docker 时 `SshSessionFeaturesIntegrationTests.X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`
-会红,是已知问题、与本节无关 —— SSH 靶机镜像建于 Dockerfile 那次改动之前,见 §159、§161、§167,重建测试镜像即可)。
-暗色 / 亮色 / 忙碌态 / 英文长名字截图人工看过。交互规格 §10 同步(velashell-docs,中英两份):尺寸字号、徽标配色、拖拽、启停转圈、
-第三个勾选框、启停状态不落盘与启动时自动建立的失败提示。
+⚠️ 开着 Docker 时 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 会红:SSH 靶机镜像建于 Dockerfile 那次改动之前(§159、§161、§167),重建即可。文档:velashell-docs(中英镜像的交互与界面规格 §10)。
 
 ## ✅ 187. 2026-10-10 内置 X 服务端:草案第十二节的新功能 —— X 程序清单、信任级别与按会话的显示、拖放、托盘、单窗口模式,以及 F4–F30 的其余各项(用户需求)
 
-**一、来由**:`feature-plan.md`「H. 内置 X 服务端」里剩下的三行新功能 —— X 程序清单与强制结束的界面(F3)、按连接给信任级别 / 每个会话一个显示
-(F2 / F1,决策 Q5)、草案第五节的其余功能(F4–F30)。用户要求主会话做 F3,另开两个子会话分别做 F2 / F1 与 F4–F30,都在 `dev` 上、做完一起提交。
-主会话另从 F4–F30 里接了 F12(托盘)、F13(单窗口模式)、F16(拖放)。两个子会话各在自己的 git worktree 里一项一个提交,做完由主会话
-cherry-pick 回 `dev`、手工合冲突(交叉处另有几个衔接提交,见下文)。全程守净室规程:新用到的规范先登记进 `src/VelaShell.XServer/AGENTS.md` §2 纪律 1
-的清单(SECURITY 7.1、XDND 5 与 RFC 2483、System Tray Protocol 0.3 与 XEmbed 0.5、XI 2.1 的平滑滚动,以及子会话补的几份),没有打开任何其它 X 服务端、
-Mesa 或工具包的源码。各项的理由与验证写在提交信息里;这里记全貌。
+**一、分工**:`feature-plan.md` H 剩下的三行新功能:F3、F2 / F1(决策 Q5)、F4–F30。主会话做 F3 并接 F12、F13、F16;两个子会话各在自己的 git worktree 做 F2 / F1 与 F4–F30,一项一个提交,由主会话 cherry-pick 回 `dev`。新用到的规范(SECURITY 7.1、XDND 5、System Tray 0.3 与 XEmbed 0.5、XI 2.1 等)先登记进 `src/VelaShell.XServer/AGENTS.md` 的规范清单。
 
-**二、X 程序清单与强制结束(F3)**:
-- 库:`XClientInfo.HoldsServerGrab`;GrabServer 抓得太久(10 秒起,之后每分钟)新增宿主回调 `ServerGrabStalled(XServerGrabStall)`,
-  经延后队列在放锁之后交出(原先只记日志,宿主与用户都不知道该断开谁)。
-- 宿主:`ILocalXServer` 加 `CanManageClients` / `GetClientsAsync` / `DisconnectClient(key)` / `BreakGrabs` 与 `ServerGrabStalled` 事件。
-  内置引擎给每个程序一个键「第几次启动:哪个实例:客户端编号」—— 停了再开旧键作废,按会话分出来的显示(F1)上编号相同的程序也不会混;
-  清单、断开、解除卡住逐个服务端实例做。标题栏 X Server 按钮在内置引擎运行时打开一个面板(与隧道面板同一套样式、互斥):
-  程序名 / 标题、来源会话、窗口数与内存、保留资源与抓着 GrabServer 的标记,悬停出「断开」(先确认),底部「解除卡住」与「停止」;
-  打开时每 2 秒原地刷新。抓得太久时弹一条警告提示,带「断开它」。外部 VcXsrv 列不出程序,按钮照旧一点开、一点关。
+**二、X 程序清单与强制结束(F3)**:库加 `XClientInfo.HoldsServerGrab`,GrabServer 抓得太久(10 秒起)经回调 `ServerGrabStalled` 在放锁后交给宿主(原先只记日志)。宿主 `ILocalXServer` 加 `GetClientsAsync` / `DisconnectClient(key)` / `BreakGrabs`;键是「第几次启动:哪个实例:客户端编号」,停了再开旧键作废、按会话的显示上也不混。标题栏 X Server 按钮打开面板(与隧道面板同样式、互斥):程序、来源会话、窗口数与内存、GrabServer 标记,悬停「断开」(先确认),底部「解除卡住」「停止」;抓得太久弹警告带「断开它」。外部 VcXsrv 列不出程序。
 
-**三、信任级别(F2)与每个 SSH 会话一个显示(F1)**(子会话 A,三个提交):
-- 库:SECURITY 扩展(Security Extension Specification 7.1)—— 签发 / 撤销 / 到期 MIT-MAGIC-COOKIE-1 授权与 AuthorizationRevoked 事件;
-  `ServeAuthenticatedAsync(stream, label, XClientTrust.Untrusted)` 让宿主直接指明一条连接非受信;`XClientInfo.Trust`。非受信客户端按规范第三章受限:
-  碰不到受信客户端的资源,根窗口只在规范列的请求里可用(另许工具包初始化必发的几样),XTEST / MIT-SCREEN-SAVER / DPMS / X-Resource / Composite /
-  MIT-SHM / SECURITY 看不见,键盘不归它时读到全 0、抓不到、焦点改不动,CUT_BUFFER 隐藏,受信程序的选区回 None,被挡住的 GetImage 填 0。
-  规范第五章编码表与 xauth 实际发的线格式不一致(value-mask 的位置),照协议头,已记进 AGENTS 的规范清单。
-- `ssh -X`:连接器的参数换成 `XServerChannelSource(来历、受信与否、会话、会话断开)`;非受信的通道经连接器以非受信客户端接入、不跑 xauth;
-  SSH 库的 `X11ForwardOptions` 不再把「连接器 + 非受信」当配置矛盾(`Validate()` 连同三处调用删掉);内置引擎没在运行时非受信的通道不再退到本机 TCP
-  (那等于悄悄升成受信);连接对话框里「受信任」的说明改写;`Ssh_X11UntrustedBuiltIn` 删掉。行为规格 `zh/ssh/spec/07` §7.5.9 同步。
-- 「每个 SSH 会话一个显示」(`XServerOptions.DisplayPerSession`,默认关,下次启动生效):带着会话的通道进这个会话自己的、不监听的 `X11Server`,
-  有自己的根窗口、选区与剪贴板;第一条通道时建,会话断开或停服时收掉;至多 32 个,超了连不上(不落回共用的显示)。宿主改成一个服务端一个
-  (`AvaloniaXServerHost` 在 DI 里 Transient),本机活动报给每个附着着的服务端,显示器事件在脱离时摘掉。
+**三、信任级别(F2)与每个 SSH 会话一个显示(F1)**:
+- 库实现 SECURITY 扩展:MIT-MAGIC-COOKIE-1 授权的签发 / 撤销 / 到期,`XClientTrust.Untrusted` 让宿主直接指明非受信。非受信客户端按规范第三章受限(碰不到受信客户端的资源、XTEST 等扩展看不见、键盘不归它时读到全 0、受信程序的选区回 None 等)。⚠️ 规范第五章编码表与 xauth 实际发的线格式不一致(value-mask 的位置),照协议头。
+- `ssh -X` 的非受信通道以非受信客户端接入、不跑 xauth。⚠️ 内置引擎没在运行时不再退到本机 TCP —— 那等于悄悄升成受信。行为规格 `zh/ssh/spec/07` §7.5.9 同步。
+- 「每个 SSH 会话一个显示」(`XServerOptions.DisplayPerSession`,**默认关**,下次启动生效):会话的通道进这个会话自己的、不监听的 `X11Server`(独立的根窗口、选区与剪贴板),会话断开或停服时收掉;至多 32 个,超了连不上、不落回共用的显示。`AvaloniaXServerHost` 改为 Transient,一个服务端一个。
 
-**四、拖放进 X 窗口(F16)**:库替宿主当 XDND 第 5 版的源(`InjectDragOver` / `InjectDragLeave` / `InjectDrop`、`IsDragAccepted`):按 XdndAware /
-XdndProxy 找目标,Enter / Position / Status / Leave / Drop / Finished 带流控,XdndSelection 由服务端供数据。宿主 `XDropTarget` 接上原生窗口的拖放:
-文本按 UTF8_STRING / text/plain 等给;文件经该 X 程序所属 SSH 会话的 SFTP 先传到远端 `/tmp/velashell-drop-<guid>`(权限 700,重名改成「a (2).txt」),
-再以 `text/uri-list` 给;程序不是经 SSH 会话来的时提示用户。当时从 X 程序往本机拖出来没做,已由 §189 补上。
+**四、拖放进 X 窗口(F16)**:库替宿主当 XDND 第 5 版的源(`InjectDrop` 等)。文本按 UTF8_STRING 等给;文件经该程序所属 SSH 会话的 SFTP 传到远端 `/tmp/velashell-drop-<guid>`(权限 700)再以 `text/uri-list` 给,不是经 SSH 会话来的程序提示用户。拖出见 §189。
 
-**五、托盘图标(F12)**:库可选当托盘管理器(`X11ServerOptions.SystemTray`、`SystemTrayIconSize`):占 `_NET_SYSTEM_TRAY_S0`,按 XEmbed 把图标嵌进
-服务端的嵌入窗口(按 `_XEMBED_INFO` 映射、发 XEMBED_EMBEDDED_NOTIFY),经 `SystemTrayIconAdded` / `Removed` 交给宿主,不当普通顶层。宿主 `XTrayIcons`
-把每个图标画成本机托盘里的一个图标(像素随损伤更新,攒 200 毫秒),单击送左键、菜单里可送右键;`TrayIconService` 改成只增删自己的图标,不再整组替换
-(原先会把 X 程序的托盘图标一并抹掉)。气泡消息收下不显示。
+**五、托盘图标(F12)**:库可选当托盘管理器(`X11ServerOptions.SystemTray`,按 XEmbed 嵌入),宿主 `XTrayIcons` 把每个图标画成本机托盘图标,单击送左键、菜单里送右键;`TrayIconService` 改成只增删自己的图标(原先整组替换,会抹掉 X 程序的图标)。气泡消息收下不显示。
 
-**六、单窗口(rootful)模式(F13,决策 Q2)**:库 `X11ServerOptions.Rootful` 与 `X11Server.Screen`:整个根窗口作为一个顶层交给宿主;服务端不当窗口管理器
-(不占 WM_S0、不写 `_NET_SUPPORTED` 这些、根窗口的 SubstructureRedirect 让给客户端、不向宿主提窗口管理器请求),也不当 XSETTINGS 管理器、托盘与合成管理器。
-顶层照旧各有缓冲,每批放锁前把变了的地方(画过的区域;映射 / 位置 / 尺寸 / 形状 / 边框 / 根背景的变化;只换了堆叠次序时只取颠倒了的两个窗口的交集)
-按堆叠次序拼进根窗口的缓冲(背景像素或平铺图、边框、边界形状、深度 32 的预乘叠加);指针、滚动与拖放按根坐标注入;缩放屏幕窗口就是改屏幕尺寸;
-GetImage 读根窗口拿到拼好的屏幕。宿主:设置的「窗口模式」对内置引擎也生效 —— 单个大窗口 / 无标题栏 / 全屏时开一个「X 桌面 :N」窗口
-(按会话分出来的显示写会话的来历),起步是主显示器工作区的八成、居中;关掉它当作停 X Server;指针 Warp / confine 的根坐标换算到这个窗口里。
-互操作镜像加装 twm,新用例实跑:twm 接管、xterm 套进外框、拼进屏幕,零协议错误。§187 当时没做的:直接画在根窗口上的内容不显示(只显示背景);
-远端合成器画在 Composite 叠加窗口上的效果不显示。F5 第二步与 F16 反方向当时也未做,已在 §189 完成。
+**六、单窗口(rootful)模式(F13,决策 Q2)**:`X11ServerOptions.Rootful` 把整个根窗口作为一个顶层交给宿主,服务端不当窗口管理器 / XSETTINGS / 托盘 / 合成管理器。顶层照旧各有缓冲,每批放锁前把变了的地方按堆叠次序拼进根窗口的缓冲;指针、滚动与拖放按根坐标注入。宿主的「窗口模式」对内置引擎也生效:开一个「X 桌面 :N」窗口,关掉它当作停 X Server。互操作镜像加装 twm,实跑零协议错误。
 
-**七、F4–F30 的其余各项**(子会话 B,各一个提交,`xs_plan: Fn` 行标着对应哪一项):
-- **F5 第一步,本机输入法上屏**:库 `InjectText` —— 每个字借一个空键码改成 Unicode 键值再按下松开(键位表里本来就有的直接按),改过的不改回去,
-  空键码用完才挪用最久没用的;宿主的 X 窗口成为本机输入法的客户端(预编辑叠画在窗口里、候选框在最后一次点击处)。设置「X 窗口里用本机输入法」默认开。
-  这部分推翻了「确认不做」里的 XIM 一条 —— 当时只做上屏,XIM 桥仍没做;后续已在 §189 完成。
-- **F6 平滑滚动**:XI 2.1 的两个滚动轴与 ScrollClass,`InjectScroll` 交原样增量,攒够一格再模拟按钮 4–7,反向也模拟。
-- **F8 Warp / confine-to**:回调 `PointerWarped` / `PointerConfinementChanged`(只报抓着指针的、不受限的客户端);宿主在用户用着 X 窗口时挪 / 关系统光标
-  (Windows 与 Linux 的 X11 桌面;macOS、Wayland 不做;单窗口模式下换算到屏幕窗口里)。
-- **F9 屏保协作**:Suspend 按客户端计数、`ScreenSaverSuspensionChanged` / `ScreenSaverReset`;宿主挂起期间抑制本机屏保(只在 Windows 上)。
-- **F10 `_NET_WM_SYNC_REQUEST`**:宿主改尺寸时先发同步请求,`AwaitingRedraw` 期间宿主攒着损伤,`TopLevelRedrawn`(或 300 毫秒到点)时一次显示。
-- **F11 合成管理器**:`CompositingManager` 选项与设置「X 窗口透明与圆角」,默认关;`ClientSideShadows` 仍关(Windows 上透明阴影区接住鼠标)。
-- **F14 / F15 剪贴板**:`XClipboardContent`(文本、HTML、PNG)两个方向都通;服务端当 CLIPBOARD_MANAGER,SAVE_TARGETS 取完才回答。
-- **F17 / F18**:窗口标题前标来源(设置「标出 X 窗口的来源」,默认开);Windows 任务栏按 WM_CLASS 归组、不能固定;按类名 / 实例名 / role 记住上次关掉时的
-  位置与尺寸(只在这次运行里);快照加 `UserSize`。
-- **F20 截图**:Windows 上 X 窗口的系统菜单里「复制截图」「截图另存为…」。录屏没做。
-- **F22**:GLX 两个 4 倍多重采样配置、`GLX_EXT_libglvnd`(VENDOR_NAMES 报 `mesa`)。
-- **F23**:间接 GL 的选择模式、线 / 多边形点画、求值器(反馈模式、mipmap LOD、PixelMap、深度 / 模板 DrawPixels 没做)。
-- **F24**:RENDER 的 Over / Add / 纯色过遮罩用 `Vector128`,与标量版逐位一致(微基准约 2 倍 / 3.7 倍);双线性取样与 GL 光栅化没动。
-- **F25**:Present 的帧号跟着宿主报来的帧节拍(`NotifyHostFrame` / `FrameClockWanted`),一个全局帧时钟。
-- **F27**:`XServerMetrics`(仪表源 `VelaShell.XServer`)与执行线程看门狗(一项超过 5 秒就记一行 `watchdog:`,不等它做完)。
-- **F28**:X-Resource 的 LocalClientPid(Linux SO_PEERCRED、macOS LOCAL_PEERPID,后者没有实机核对)。
-- **F4**:Linux / macOS 上默认只开 Unix 套接字,设置「也开 TCP 端口」默认关(行为变化:经网络连的容器程序要打开它);Windows 照旧开。
-- **执行线程按客户端轮流取工作**(做 F22 的互操作用例时发现:间接 glxgears 排满请求时 xdpyinfo 要等 25 秒):按客户端分队轮流,宿主与计时器那条队优先,
-  现在 1 秒内。
-- 此前就有、只核对的:F21、F26 与 F22 的 create_context。只做了一部分的:F19(各显示器的 DPI 已按各自缩放报;整数放大要全服务端统一的放大倍数,
-  宿主所有根坐标换算都要改,没做)。当时没做的:F5 第二步 XIM 桥与 F16 反向拖出已在 §189 完成;仍没做的是 F7 压感 / 触摸 / 手势、F29 WSL、F30 MIT-SHM 1.2 —— 理由与范围记在 `feature-plan.md` H。
+**七、F4–F30 的其余各项**(子会话 B,`xs_plan: Fn` 行标着对应哪一项):
+- **F5 第一步,本机输入法上屏**:`InjectText` 每个字借一个空键码改成 Unicode 键值再按下松开,改过的不改回;设置「X 窗口里用本机输入法」**默认开**。推翻了「确认不做」里的 XIM 一条,XIM 桥见 §189。
+- **F6** XI 2.1 平滑滚动(攒够一格再模拟按钮 4–7);**F8** Warp / confine-to(宿主挪 / 关系统光标,Windows 与 Linux 的 X11 桌面);**F9** 屏保协作(只在 Windows 上抑制本机屏保);**F10** `_NET_WM_SYNC_REQUEST`(改尺寸时攒着损伤等重画完,至多 300 毫秒)。
+- **F11** 合成管理器,设置「X 窗口透明与圆角」**默认关**;`ClientSideShadows` 仍关(Windows 上透明阴影区接住鼠标)。
+- **F14 / F15** 剪贴板文本、HTML、PNG 双向,服务端当 CLIPBOARD_MANAGER。
+- **F17 / F18** 标题前标来源(设置「标出 X 窗口的来源」,**默认开**);Windows 任务栏按 WM_CLASS 归组;按类名 / 实例名 / role 记住本次运行里关掉时的位置与尺寸。
+- **F20** Windows 上 X 窗口系统菜单里的截图;**F22** GLX 4 倍多重采样配置与 `GLX_EXT_libglvnd`;**F23** 间接 GL 的选择模式、点画、求值器;**F24** RENDER 的 Over / Add / 纯色过遮罩用 `Vector128`(与标量版逐位一致,约 2 倍 / 3.7 倍);**F25** Present 的帧号跟着宿主的帧节拍;**F27** `XServerMetrics` 与执行线程看门狗(超过 5 秒记 `watchdog:`);**F28** X-Resource 的 LocalClientPid。
+- **F4**:Linux / macOS 上默认只开 Unix 套接字,设置「也开 TCP 端口」**默认关**(行为变化:经网络连的容器程序要打开它);Windows 照旧开。
+- **执行线程按客户端轮流取工作**:间接 glxgears 排满请求时 xdpyinfo 要等 25 秒,改成按客户端分队轮流(宿主与计时器的队优先)后在 1 秒内。
+- F21、F26 此前就有;F19 只做了按显示器各自缩放报 DPI。F7、F29、F30 等其余项见 `feature-plan.md` H。
 
-**八、合进来时的衔接**(单独的提交,或改在被合的那个提交里,提交信息里写明):
-- X 程序清单覆盖按会话分出来的显示(F3 × F1,见二);单窗口模式与按会话的显示一起用时,每个会话的屏幕窗口标题写会话的来历(F13 × F1)。
-- 单窗口模式下 `InjectScroll` 原先只认普通顶层,整个 X 桌面里滚不动 —— 改成与指针、拖放一样按根坐标注入(F6 × F13);合成管理器的选区在单窗口模式下
-  也让给远端(F11 × F13);指针 Warp / confine 的根坐标在单窗口模式下换算到屏幕窗口的内容区(F8 × F13)。
-- 截图那个提交触发了两条守门用例:WndProc 钩子只许 `Win32WindowChrome.cs` 注册 —— 给它加了 `AddSystemCommandHandler`,系统菜单改用它;
-  `XNativeWindow.Screenshot` 不用 async void,改走 `FireAndForget.Run`。
-- 几处「两边都留」的冲突合并丢了共用的一行(resx 的 `</data>`、接口的 `{ }`、axaml 的 `</Grid>`、`finally` 被挤到方法外),每合一个就核 resx 的 XML、
-  整个解决方案构建一遍;分析器警告(CA1859、IDE0004、IDE0100)一并清掉。
-- 按客户端轮流取工作之后,连接收尾排在那个客户端自己的队里,`ServeAsync` 返回时不一定已经做了:「断开时取消计时器」那条用例紧接着用宿主那条队看结果,
-  整套并行跑时红过一次,改成轮询到收尾做完(宿主里没有依赖这个先后的地方)。
+**八、合进来时的衔接**:交叉处另做衔接(F3 × F1、F13 × F1,F6 × F13 的滚动按根坐标注入,F11 × F13 选区让给远端,F8 × F13 的坐标换算)。截图撞上两条守门用例:WndProc 钩子只许 `Win32WindowChrome.cs` 注册(加 `AddSystemCommandHandler`)、不许 async void。⚠️ 「两边都留」的冲突合并会丢掉共用的一行(resx 的 `</data>`、`{ }`、`</Grid>`),每合一个就核 resx 的 XML 并整体构建。⚠️ 轮流取工作之后连接收尾排在那个客户端自己的队里,`ServeAsync` 返回时不一定已经做了,测试要等到收尾(同类竞态另见 §188 九)。
 
-**九、验证**:`VelaShell.slnx` 构建零警告零错误。
-各测试项目(整个 `dev`):VelaShell.XServer.Tests 525 通过 / 9 按平台跳过;Infrastructure.Tests 651 / 4;VelaShell.Tests 1932 / 11;
-Ssh.Tests 1352 / 57;Terminal.Tests 527、ShellIntegration.Tests 33、Presentation.Tests 84、Controls.Tests 31、Terminal.RenderTests 5、Plugin.Ai.Tests 1443 全过;
-Core.Tests 781 / 10,只有 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 红 —— 已知问题,SSH 靶机镜像建于 Dockerfile 那次改动之前(§159、§161、§167),
-与本节无关。真实客户端(`VELASHELL_XSERVER_INTEROP=1`,镜像 `velashell-xclients`,本节加装了 twm)23 例全过、没有 `[SKIP]`,其中新加的:
-twm 在单窗口模式下接管、非受信 cookie 与非受信下常见程序、xclip 的 PNG 两个方向、xinput 的滚动轴、`glxgears -samples 4` 与 libglvnd、
-间接 GL 排满请求时 xdpyinfo 照样很快。每项新用例在改之前的代码上红或编不过的情况,写在各自的提交信息里。
-文档在 velashell-docs(中英两份):X Server 架构 §2 / §5 / §6 / §7 / §10、排障、SSH 行为规格 07 §7.5.9 与 SSH 架构、交互与界面规格的 X Server 一节、设置审计第十二批。
+文档:velashell-docs(中英镜像的 X Server 架构、排障、SSH 行为规格 07 §7.5.9 与 SSH 架构、交互与界面规格、设置审计第十二批)。
 
 ## ✅ 188. 2026-10-10 内置 X 服务端:核对 §187 的几项新设置,修掉看到的问题(用户需求)
 
-**一、来由**:§187 做完之后给维护者列了几项要拍板的默认值 —— Linux / macOS 默认不开 TCP 端口(行为变化)、X 窗口里用本机输入法默认开(当时部分推翻
-「XIM 不做」,完整桥接已在 §189 落地)、标出 X 窗口的来源默认开、合成管理器默认关(`ClientSideShadows` 也关)、每个 SSH 会话一个显示默认关 —— 以及 F19 整数倍放大
-是现在按全服务端一个倍数做、还是等按会话的显示各给一个。维护者确认默认值都保持、F19 先等(`feature-plan.md` H 记着),要求再核对一遍
-这几项的实现、把没做完的做完。核对分两路:主会话读宿主一侧(设置 → 引擎 → 宿主的整条链),另开三个只读的审查子会话分别看库里的
-F5 文字输入、F11 合成管理器与 F17 / F18 来源标识、F4 只开 Unix 套接字;审查报的每一条先对着代码核实,不成立的不改(比如「客户端断开时
-合成管理器的选区没人接」—— 三条丢失属主的路径其实都调了 `OnSelectionOwnerLost`,真正缺的只是接回来那一步)。全程守净室规程。
+**一、来由**:§187 的新设置维护者确认默认值都保持 —— Linux / macOS 不开 TCP 端口、本机输入法开、来源标识开、合成管理器关(`ClientSideShadows` 也关)、每个 SSH 会话一个显示关;F19 整数倍放大先等。再核一遍实现:主会话读宿主一侧,三个只读审查子会话看库里的 F5、F11 与 F17 / F18、F4;审查报的每一条先对着代码核实,不成立的不改。
 
-**二、F5 本机输入法上屏(库,`X11Server.TextInput.cs` 重写)**:
-- **挪用键码要空闲 3 秒**(`TextKeyReuseMilliseconds`,原先 200 毫秒):客户端收到通知才去重取键位表,取到的是请求到达那一刻的;慢链路上一段多于
-  空键码数(约 116 个)的字,客户端为前面的字重取时那个键码已经改成了后面的字。考虑过「客户端为它取过一次键位表就可以挪」,不成立 ——
-  它可能在处理到这一轮通知之前就为别的原因取过,之后处理到通知又会再取一次。所以只能靠足够长的时间。键盘被同步抓取冻结着、还有按键排着时
-  也不挪(排着的按下会按改过之后的键值解释);一个可借的键码都没有时丢掉剩下的字、记一行日志(原先每 200 毫秒重试、永远不停)。
-- **按顺序**:宿主注入的字与按键排成一队,前面的字还在等键码时,后来的 `InjectText` 与宿主的 `InjectKey` 排在后面(原先等的那一会儿里按的回车、
-  输入法又上屏的字插到前一段字中间)。
-- **一批一次通知**:一段字先把新借的键码都改好,发一次核心 MappingNotify 与一次只报这几个键的键值的 XKB MapNotify(changed 只有 KeySyms),
-  再依次按下、松开;原先每个新字一轮,而且 MapNotify 报全部 248 个键的全部部分,GTK / Qt / xkbcommon 的客户端每个字重编译一遍键位表。
-  `NotifyKeyboardMappingChanged` / `NotifyXkbMapChanged` 加了按客户端筛选的参数。
-- **大小写**:借来的键在 XKB 里是 ALPHABETIC 类型、两级同一个键值(`XkbKey`),Lock 算作被消耗,CapsLock 开着时 Xlib / xkbcommon 不再把「é」转成「É」;
-  CapsLock 开着时键位表里的字母也借键码(第一列的 a 那时是 A);按着修饰键(NumLock 除外)时一律借键码,原先只看 Shift / Lock。CR LF 只按一次 Return。
-- **非受信客户端**(SECURITY「Keyboard Security」):借来的键码的键值就是用户刚输入的字。键盘事件不送到非受信客户端时,改键位表的通知不发给它们,
-  GetKeyboardMapping、XI 的 GetDeviceKeyMapping、XKB GetMap 里这些键码对它们是 NoSymbol(`KeysymFor`、`XkbKey(keycode, viewer)`);只有输入给非受信程序时
-  用到的键码才让它们看见(补发只给非受信客户端的通知)。原先非受信客户端收到通知、重取键位表就能逐字读出用户在受信程序里输入的字。
-- 宿主(`XNativeWindow`):修饰键不算「出字的键」,按着 Shift 时输入法上屏的字不再被吞(有的中文输入法按 Shift 把拼音原样上屏);一个键报来两个字
-  (Windows 上死键后跟拼不上的字母:「´」「x」)都算这个键的,原先第二个又输入了一遍;输入法正在组字时报来的字是上屏、不吞;窗口失活时清掉叠画的预编辑
-  (原先 macOS / Linux 上留着一个过期的组字框)。
+**二、F5 本机输入法上屏(`X11Server.TextInput.cs` 重写)**:
+- **挪用键码要空闲 3 秒**(原 200 毫秒):⚠️ 客户端收到通知才重取键位表,取到的是请求到达那一刻的;慢链路上一段多于空键码数(约 116 个)的字,前面的字的键码已被改成后面的字。「客户端取过一次键位表就能挪」不成立(它可能为别的原因先取过),只能靠时间;键盘被同步抓取冻结、还有按键排着时也不挪。一个可借的都没有时丢掉剩下的字、记日志(原先每 200 毫秒重试、永不停)。
+- **按顺序**:注入的字与按键排成一队,等键码时按的回车不再插到字中间。
+- **一批一次通知**:先改好全部新借键码,发一次 MappingNotify 与一次只报这几个键的 XKB MapNotify;原先每字一轮、报全部 248 个键,GTK / Qt / xkbcommon 每个字重编译一遍键位表。
+- **大小写**:借来的键是 ALPHABETIC 类型、两级同键值,CapsLock 下不再把「é」转成「É」;按着修饰键(NumLock 除外)一律借键码;CR LF 只按一次 Return。
+- **非受信客户端**:⚠️ 原先它们收到通知、重取键位表就能逐字读出用户在受信程序里输入的字。现在键盘事件不送它们时通知也不发、这些键码对它们是 NoSymbol,只有输入给它们自己时才看得见。
+- 宿主 `XNativeWindow`:按着 Shift 时上屏的字不再被吞;一个键报来两个字(Windows 死键)不重复输入;失活时清掉预编辑。
 
-**三、F11 合成管理器、托盘与来源标识**:
-- **合成管理器关着时 ARGB 窗口按不透明显示**:快照的 `HasAlpha` 只在深度 32、且服务端在当合成管理器(单窗口模式下不当)时为真,托盘图标例外;
-  单窗口模式拼屏幕时深度 32 的窗口只在有合成管理器(远端合成器占着 `_NET_WM_CM_S0`)时按 alpha 叠。原先只看深度:设置关着(默认)时,
-  要了 8 位 alpha 的 GL 程序(GLFW 默认就要,而 GLX 只在 ARGB 视觉上给带 alpha 的配置)清屏 alpha 是 0,整个窗口透出后面的东西 ——
-  正好违背了「默认关」的初衷。
-- **合成管理器的选区接回来**:远端合成器(`xfwm4 --replace` 之类)接走 `_NET_WM_CM_S0` 又退出、或者谁把属主设成 None 时,服务端接回来并按 ICCCM §2.8
-  向根窗口广播 MANAGER。原先之后直到重启都没有合成管理器,设置却还开着。
-- **托盘图标的名字照窗口标题过滤**(`HostText`:限长、去掉控制字符与双向排版控制符,WM_NAME 按类型解码),嵌入窗口的快照 `ClientLabel` 取停靠进来的
-  图标所属的连接;宿主的托盘提示按「标出 X 窗口的来源」在前面写 `user@host:22`(原先远端程序挂一个盾牌图标、提示写「Windows 安全中心」看不出是远端的)。
-- **「标出 X 窗口的来源」立即生效**:`BuiltInLocalXServer` 听设置保存,当场交给每个附着着的宿主(共用的与按会话分出来的),宿主把开着的窗口与托盘提示的
-  标题改过来;之后新建的会话显示也按新的值。原先说明写「对之后打开的窗口生效」,实际要重启 X Server。标题里来源与标题各自包在双向隔离符
-  (FSI … PDI)里 —— 来源取自连接配置、不经服务端过滤,里面的 U+202E 原先能把后面的标题连同分隔符倒过来。「程序无响应」确认框里的名字也按这个写法。
-- **记住窗口位置**改成所有宿主共用一份、记系统桌面坐标:宿主自 §187 起在 DI 里是 Transient(每次启动、每个会话的显示一个),原先记在实例上,
-  停了再开 X Server 就全忘了(注释还写着「宿主是单例」);按根坐标记,左边插拔显示器时根原点挪了,位置整体错开一块屏幕。恢复的条件从
-  「外框与某块工作区有一个像素的交集」改成「标题栏左段上的一点在某块工作区里」。
+**三、F11、托盘与来源标识**:
+- **合成管理器关着时 ARGB 窗口按不透明显示**:`HasAlpha` 只在深度 32 且服务端当合成管理器时为真(托盘图标例外)。⚠️ 原先只看深度:默认关时要了 alpha 的 GL 程序(GLFW 默认就要)清屏 alpha 为 0,整个窗口透出后面 —— 正好违背「默认关」的初衷。
+- 远端合成器接走 `_NET_WM_CM_S0` 又退出、或属主被设成 None 时,服务端接回来并按 ICCCM §2.8 广播 MANAGER。
+- 托盘图标名字照窗口标题过滤,托盘提示前写 `user@host:22`(原先远端程序挂盾牌图标、提示写「Windows 安全中心」)。
+- **「标出 X 窗口的来源」立即生效**(原先要重启 X Server)。⚠️ 来源与标题各自包在双向隔离符(FSI … PDI)里 —— 来源取自连接配置、不经服务端过滤,其中的 U+202E 原先能把标题倒过来。
+- **记住窗口位置**改成所有宿主共用一份、记系统桌面坐标:宿主自 §187 起是 Transient,原先记在实例上,停了再开就全忘;按根坐标记时插拔左边的显示器会整体错开。
 
 **四、F4 只开 Unix 套接字**:
-- **显示地址按实际开着的监听报**(`BuiltInLocalXServer.Display` 改用 `X11Server.Display`):Linux / macOS 上是 `:N`,只有 TCP(Windows)时 `localhost:N.0`。
-  原先一律 `localhost:N.0` —— 不开 TCP 之后,照着启动提示、按钮悬停里的地址设 `DISPLAY` 的本机程序连不上。
-- **Unix 套接字建不起来、TCP 又没开时只服务 SSH 转发**:起一个只经连接器喂流的服务端,启动结果带一条提示(`XServerStartResult.Warning`,新字段;
-  标题栏按钮弹警告提示「本机的 X 程序连不上它……SSH 的 X11 转发照常可用」)。原先整个服务端起不来、连 SSH 转发一并失败 —— macOS 上
-  快速切换用户时 `/tmp/.X11-unix` 归先登录的用户,第二个用户就会碰上;报的还是 VcXsrv 的那句「无法启动 VcXsrv」(改用新的 `XServer_ErrBuiltInStart`)。
-- **设置说明按平台写**:选内置引擎时的说明与显示号一行的说明,Windows 上写 `DISPLAY=localhost:N`,Linux / macOS 上写 `DISPLAY=:N`(新键
-  `SetXServer_BuiltInNoteUnix` / `SetXServer_DisplayNumberDescUnix`,视图模型按平台取);「也开 TCP 端口」的说明写明端口只听 127.0.0.1、
-  桥接网络里的容器连不到(Linux 上改挂 `/tmp/.X11-unix`)—— 原先说「容器里经网络连的程序要打开它」,对 Linux 的桥接网络并不成立。
-- 自动选号时 `/tmp/.X{N}-lock` 由活着的进程持着(或读不出是谁)的号算占用(`XDisplayProbe.IsDisplayLocked`;原先只看套接字,只开 TCP、只开抽象名的
-  服务端与 `xvfb-run` 占着的号要开的时候才撞上、再换号,至多 4 次)。内置引擎停了之后老会话的通道只在 Windows 上退到本机 TCP:别的平台没有 VcXsrv,
-  环回 `6000+N` 上只可能是别的用户的、或者 sshd 自己的 X11 转发端口。
+- 显示地址按实际开着的监听报(Linux / macOS `:N`,只有 TCP 时 `localhost:N.0`);原先一律 `localhost:N.0`,本机程序照提示设 `DISPLAY` 连不上。
+- **Unix 套接字建不起来、TCP 又没开时只服务 SSH 转发**并弹警告(`XServerStartResult.Warning`),原先整个起不来。⚠️ macOS 快速切换用户时 `/tmp/.X11-unix` 归先登录的用户。
+- 设置说明按平台写;「也开 TCP 端口」写明只听 127.0.0.1、桥接网络里的容器连不到(Linux 上改挂 `/tmp/.X11-unix`)。
+- 自动选号把活着的进程持着 `/tmp/.X{N}-lock` 的号算占用。内置引擎停了之后老会话的通道只在 Windows 上退到本机 TCP:⚠️ 别的平台没有 VcXsrv,环回 `6000+N` 上只可能是别的用户或 sshd 自己的 X11 转发端口。
 
-**五、F1 每个 SSH 会话一个显示(宿主)**:
-- 按会话分出来的显示原先只拿到键盘布局与窗口模式,每个会话又是一个新宿主,于是「X 窗口里用本机输入法」「标出 X 窗口的来源」关掉了在会话的显示上
-  照样开着。设置里归宿主管的几项改成共用的与会话的显示走同一处(`ConfigureHost`)。
-- 单窗口模式下关掉某个会话的「X 桌面」窗口只收掉这个会话的显示(`feature-plan.md` H 原先挂着的小尾巴):宿主新增 `IEmbeddedXServerHost.SessionDisplayCloseRequested`,
-  `AvaloniaXServerHost.CloseScreenAsync` 对会话的显示先数连着的程序、有就确认(新键 `XServer_CloseDesktopConfirmTitle` / `…Message`),再报给
-  `BuiltInLocalXServer` 收掉;共用的显示照旧是停 X Server。这个会话之后再开 X 程序时另建一个。
+**五、F1 每个 SSH 会话一个显示(宿主)**:归宿主管的设置改成共用的与会话的显示走同一处(`ConfigureHost`)—— 原先会话的显示只拿到键盘布局与窗口模式,关掉的开关在那里照样开着。单窗口模式下关掉某个会话的「X 桌面」窗口只收掉这个会话的显示(有程序连着先确认);共用的显示照旧是停 X Server。
 
-**六、设置页**:§187 加的五个开关全排在「键盘」一节下面。改成:「X 窗口透明与圆角」「标出 X 窗口的来源」挪到「显示」一节(窗口模式下面),
-「X 窗口里用本机输入法」留在「键盘」,「限制经 SSH 转发来的程序」「每个 SSH 会话一个显示」「也开 TCP 端口」放进新的「安全」一节(新键 `SetXServer_SectionSecurity`,
-只在内置引擎时出现)。「标出来源」「透明与圆角」「也开 TCP 端口」的说明文字跟着行为改了(五份 resx)。
+**六、设置页**:五个开关原先全在「键盘」下;「X 窗口透明与圆角」「标出 X 窗口的来源」挪到「显示」,「X 窗口里用本机输入法」留在「键盘」,「限制经 SSH 转发来的程序」「每个 SSH 会话一个显示」「也开 TCP 端口」进新的「安全」一节(只在内置引擎时出现)。
 
-**七、F19 与没做的**:F19 按维护者的决定先等,没动。核对时看到、这一轮没做的记进 `feature-plan.md` H 新的一行:透明窗口里深度 24 的子窗口 alpha 为 0、
-无装饰透明区域接住鼠标、宿主没用 `InputShape` / `ClientFrameExtents`;防冒充的几处(不透明度下限、自绘标题栏的窗口只在任务栏标来源、映射即激活待核实、
-任务栏分组);按着 Ctrl / Alt 时上屏的字带修饰位、核心协议客户端在 CapsLock 下仍转大写、宿主的输入法判断没在 macOS / Linux 的真实输入法上核对;
-容器要的监听地址选项、macOS 上 XQuartz 的 launchd 显示。
+**七、F19 与没做的**:F19 按维护者的决定先等;核对时看到、这一轮没做的几处(透明窗口、防冒充、本机输入法、TCP 监听地址)记进 `feature-plan.md` H。
 
-**八、验证**:`VelaShell.slnx` 构建零警告零错误。VelaShell.XServer.Tests 530 通过 / 9 按平台跳过;Infrastructure.Tests 658 / 5;VelaShell.Tests 1897 / 47;
-Core.Tests 769 / 23;Presentation.Tests 84、Controls.Tests 31 全过(跳过的都是按环境早退的老用例;本节新加的只有下面说的那一条在 Windows 上跳过)。新用例(在改之前的代码上都红或编不过;会话显示的四条与 xev 那条在旧代码上实际跑过、看着红了):
-- 库:挪用键码要空闲够久、一批一次通知、等的时候宿主的回车排在整段字后面(假时钟);借来的键是 ALPHABETIC、CapsLock 下借键码、CR LF 一次 Return;
-  非受信客户端看不见输入给受信程序的字、输入给它自己时才看得见;一个键码都借不到时丢掉这段字、不卡住后面的按键。
-- 真实客户端(`VELASHELL_XSERVER_INTEROP=1`):xev 收到借来的键码按新键值解释(U4E2D、U6587,一批一次 MappingNotify),CapsLock 开着时仍是 eacute、a ——
-  改之前的代码上 xev 打出的是 Eacute 与 A,每个字一轮通知。互操作 24 例全过、没有 `[SKIP]`(本机的 `velashell-xclients` 镜像建于加装 twm 之前,twm 那条原先一直早退,按 Dockerfile 重建之后实跑)。
-- 宿主:会话的宿主拿到全部宿主设置(三组取值);关掉一个会话的屏幕窗口只收它、这个会话再开时另建(基础设施)与有程序连着时先确认、用户取消就不收(无头 UI);
-  「标出来源」运行中改了当场交给每个宿主、之后的会话显示按新值;来源与标题的双向隔离、运行中改开关当场改标题;按着 Shift 时上屏的字照样输入、一个键报两个字不重复、
-  失活清预编辑;没有 VcXsrv 的平台不退到 TCP;显示号锁(类 Unix 上跑)。macOS 上「Unix 套接字建不起来照样服务 SSH 转发」一条只在没有抽象命名空间的平台上跑,
-  本机(Windows)记 `[SKIP]`。
-文档在 velashell-docs(中英两份):X Server 架构 §5 的快照、§7(按会话的显示、本机输入法上屏、合成管理器、F4、单窗口模式的拼屏、托盘)、M3 与决策记录、
-排障(容器、`localhost:N`、本机程序连不上的提示、四条已修的缺陷)、设置审计第十二批、交互与界面规格(按钮提示、形状与透明、标题与位置、输入法、单窗口模式、
-托盘、本机 X 显示、设置页一行);顺手修了英文文档里十几处 `''`(PowerShell 转义漏出来的)。
+**八、验证**:xev 收到借来的键码按新键值解释、一批一次 MappingNotify,CapsLock 下仍是 eacute(改之前是 Eacute、每字一轮)。⚠️ 本机的 `velashell-xclients` 镜像早于加装 twm,twm 那条一直早退,按 Dockerfile 重建之后才实跑。
 
-**九、CI 上 macOS 那一次红**:PR 的 macOS 任务里 `GlxTests.客户端断开时它的Pbuffer表面随之释放` 红了(断开之后表面数还是 1),与本节的改动无关,
-是 §187「按客户端轮流取工作」之后留下的一类测试竞态(f5ee4a6c 修过同一类的一条):连接收尾排在那个客户端自己的队里、在它还没执行的请求之后,
-`ServeAsync` 返回时不一定做了,宿主那条队的 `InvokeAsync` / `GetClientsAsync` 优先、别的客户端的请求也可能先轮到 —— 慢的机器上就偶尔看到收尾之前的状态。
-测试工具加 `XTestClient.DisconnectAsync(server)`:断开后等客户端清单里这个编号不再是连着的客户端(收尾在一个工作项里做完,看到它没了就说明做完了);
-同样写法的 8 处(GLX 两条、CloseDownMode / Retain 三条、save-set、Retain 模式下关窗、断开时取消计时器)都换过去。新加一条让竞态必然出现的用例
-(断开前往这个客户端的队里排 300 次填满 2000×2000 像素图):旧写法 5 次红 5 次,`DisconnectAsync` 5 次绿 5 次;XServer 整套连跑 3 遍全过。宿主里没有依赖
-「ServeAsync 返回时收尾已做完」的地方。
-重跑之后 Ubuntu 上又红了一条同类的:`GlxTests.第一次用到反馈模式时记一行日志…` 数到 0 行。服务端持锁时记的日志放锁之后才交出去,回复在批次中间
-就写给了客户端,往返一次之后马上数日志会数漏。测试工具加 `ServerLog.WaitForAsync`(等日志里出现要的行,5 秒为限),往返之后数日志的 6 处
-(反馈模式、GLX 表面超限、借不到键码、刷屏限额的补记、字体名转义、持锁过久)都换过去;成批响铃那条先等第一次响铃到了再数上限。
+**九、CI 上的测试竞态**:⚠️ §187 轮流取工作之后,`ServeAsync` 返回时连接收尾不一定做完,慢机器上偶尔看到收尾前的状态(macOS 上 `GlxTests` 的 Pbuffer 没释放)。测试工具加 `XTestClient.DisconnectAsync`(等清单里这个编号不再连着),8 处换过去;必现竞态的用例上旧写法 5 次全红、新写法 5 次全绿。同类:持锁时记的日志放锁后才交出,往返后马上数会数漏 —— 加 `ServerLog.WaitForAsync`(5 秒为限),6 处换过去。宿主里没有依赖这个先后的地方。
+
+文档:velashell-docs(中英镜像的 X Server 架构 §5 / §7、排障、设置审计第十二批、交互与界面规格)。
 
 ## ✅ 189. 2026-10-10 内置 X 服务端:本机输入法的 XIM 桥(F5 第二步,决策 Q1)与从 X 程序往本机拖出来(F16 的另一半)(用户需求)
 
-**一、XIM 服务端(库)**:
-- `X11Server` 在 `InputMethodName` 非空时占住 `@server=名字`,把它加入根窗口的 `XIM_SERVERS`,并提供 `LOCALES` / `TRANSPORT` 转换目标。`LOCALES` 与 `TRANSPORT` 在启动 XIM 时先建好:真实 Xlib 会用 only-if-exists 的 `InternAtom` 查它们,不预先建就认为没有输入法服务端;这是 xterm 互操作才逮到、单元测试没有覆盖的互操作边界。
-- 按 *The Input Method Protocol* 1.0、*The XIM Transport Specification* 0.1 实现 X 传输:短包放 `_XIM_PROTOCOL`,长包写接收方通信窗口的属性再通知,支持 `_XIM_MOREDATA`、两种字节序与 20 字节分界长度。两份规范正文与表格对长包的属性属主、通知格式有冲突,按 Input Method Protocol 附录 D 的表实现,读取时兼容检查发送方窗口。
-- 支持 CONNECT / DISCONNECT / OPEN / CLOSE、编码协商、查询扩展、IM / IC 属性读写、CREATE / DESTROY_IC、焦点、RESET / SYNC / TRIGGER_NOTIFY 与必要错误。协商优先 COMPOUND_TEXT,其次 UTF-8;支持 on-the-spot、over-the-spot、根窗口与无预编辑区风格,不接 off-the-spot。每条连接最多 256 条、每条最多 1024 个输入上下文,包长约 256 KB。
-- 输入上下文建立后发送 `XIM_SET_EVENT_MASK(0,0)`,按键不走 XIM,避免 SSH 上每个键多一个往返。服务端记录最后报告焦点的输入上下文,在顶层焦点与插入点变化时经 `InputMethodFocusChanged` 告诉宿主;`XNSpotLocation` 换成候选窗需要的顶层内光标矩形。`InjectText` 有 XIM 上下文时先结束预编辑、用 XIM_COMMIT 交可见字,换行与制表仍按键;`InjectPreedit` 给 on-the-spot 客户端发 START / DRAW / DONE,按 Unicode 码点计算光标与变更范围,其它风格由宿主叠画。
-- XIM 通信窗口、输入法选区与输入上下文销毁时清焦点和预编辑;XIM 协议窗口的受信写入例外只限对应连接的窗口。`Gtk/IMModule=xim` 只在开启宿主输入法时写入 XSETTINGS,Qt 5/6 与 GTK 4 没有 XIM,仍使用原有借键码路径。
+**一、XIM 服务端(库)**:`X11Server` 在 `InputMethodName` 非空时占住 `@server=名字`、登记进根窗口的 `XIM_SERVERS`,按 Input Method Protocol 1.0 与 XIM Transport Specification 0.1 实现 X 传输;两份规范对长包的属性属主、通知格式有冲突,按 Input Method Protocol 附录 D 的表实现。编码协商优先 COMPOUND_TEXT、其次 UTF-8,不接 off-the-spot。⚠️ `LOCALES` / `TRANSPORT` 要在启动 XIM 时先建好:真实 Xlib 用 only-if-exists 的 `InternAtom` 查它们,不预先建就认为没有输入法服务端(xterm 互操作才逮到)。输入上下文建立后发 `XIM_SET_EVENT_MASK(0,0)`,按键不走 XIM,免得 SSH 上每个键多一个往返;`InjectText` 用 XIM_COMMIT 交可见字,`InjectPreedit` 给 on-the-spot 客户端发预编辑,其它风格由宿主叠画。Qt 5/6 与 GTK 4 没有 XIM,仍走借键码路径。宿主静默注入 `XMODIFIERS=@im=velashell`(保留用户已有值)。
 
-**二、拖出(库与宿主)**:
-- 多窗口模式下服务端把根窗口 `XdndProxy` 指到自己的代理窗口,按 XDND v5 接收 `XdndEnter` / `XdndPosition` / `XdndLeave` / `XdndDrop`,接受 `text/uri-list` 与文字并只声明 `XdndActionCopy`。第一次接受时复用选择取数流程取 URI 或文字,解析后经 `OutgoingDragStarted` 交给宿主;源窗口销毁、离开、取数失败与宿主未及时答复都收尾并阻止旧结果污染新拖动。
-- Java AWT 不查根窗口代理,所以 X 程序拥有 `XdndSelection` 且指针抓取期间,服务端把代理窗口静默垫进根窗口子窗口最底层,补 `WM_STATE` 与 `XdndAware`;源窗口缓存形成后不再看见它。抓取结束后一秒开始每半秒清理,不在 X 窗口之间的拖放链路里留下代理。
-- 宿主收到 URI / 文字后,文字直接建本机 `DataTransfer`;远端文件由相同 SSH 会话的 SFTP 取到 `%TEMP%/velashell-xdrag` 下的隔离目录,目录递归、符号链接目录不跟随、文件名做非法字符与 Windows 保留名处理,一天后在后续拖出时清理。取回期间提示用户保持按键,松开、会话断开或传输失败不启动本机拖放。
-- `XNativeWindow` 只有在按钮仍按住时调用 Avalonia 原生拖放;无论成功、取消还是宿主在中途收到 X 侧结束,都通过 `CompleteOutgoingDrag(drag, dropped)` 把结果交回服务端,再释放被保持的按钮。拖回 X 窗口不接受,所有拖出结果均为复制,远端原件不删除;单窗口模式不接拖出。
+**二、拖出(库与宿主)**:多窗口模式下根窗口的 `XdndProxy` 指到服务端的代理窗口,按 XDND v5 只接 `text/uri-list` 与文字、只声明 `XdndActionCopy`。⚠️ Java AWT 不查根窗口代理:X 程序拥有 `XdndSelection` 且抓着指针时,把代理窗口静默垫进根窗口子窗口最底层,抓取结束后清理,不在 X 窗口之间的拖放链路里留下代理。宿主把远端文件经同一 SSH 会话的 SFTP 取到 `%TEMP%/velashell-xdrag` 下的隔离目录(不跟随符号链接目录、处理 Windows 保留名,一天后清理),取回期间要用户保持按键、松开即不拖;只在按钮仍按住时调 Avalonia 原生拖放,结果经 `CompleteOutgoingDrag(drag, dropped)` 交回服务端。一律复制、远端原件不删;拖回 X 窗口不接受,单窗口模式不接拖出。
 
-**三、宿主接线与验证**:
-- 新增 `XServerInputMethod` 的 `XMODIFIERS=@im=velashell` 静默 shell 注入,保留用户已有值;新增 `XServerOptions.InputMethodName` 与 `AcceptOutgoingDrags`,五份资源文件补齐拖出过程提示。`BuiltInLocalXServer` 默认按宿主输入法设置打开 XIM,多窗口模式打开拖出;`AvaloniaXServerHost` 合并同一批焦点变化并把拖出交给原生拖放。
-- 新增 XIM / XDND 的逐字节与流控单元测试、宿主 UI 测试、SFTP 下载器测试及真实客户端用例。rebase 后最终验证:`VelaShell.XServer.Tests` 547 通过 / 9 跳过(独立连续 9 次全绿),`VelaShell.Tests` 1927 / 20、`VelaShell.Infrastructure.Tests` 663 / 5、`VelaShell.Core.Tests` 778 / 14、`VelaShell.ShellIntegration.Tests` 38 / 0;真实互操作 27 / 27,无 `[SKIP]`,其中 xterm 的 XIM_COMMIT、Swing on-the-spot 预编辑与 Swing 拖出后 `exportDone=COPY` 均通过。
-- 行为与接口的文档已在 velashell-docs 中英镜像的 X Server 架构、排障、宿主交互规格与设置审计中同步;文档 PR [velashell-docs#109](https://github.com/VelaShellLabs/velashell-docs/pull/109) 与本次宿主 PR [VelaShell#600](https://github.com/joesdu/VelaShell/pull/600) 互相引用。实现后已从 `feature-plan.md` H 和「确认不做」移除两项待办。
+文档:velashell-docs#109(中英镜像的 X Server 架构、排障、宿主交互规格与设置审计);宿主 PR VelaShell#600。
 
 ## ✅ 190. 2026-10-10 AI 插件:字号恢复紧凑比例,弱化文字统一 11 号
 
-- 将 AI 插件在上一轮整体放大的字号恢复一档:聊天正文回到 13 号,Markdown 标题、设置表单、工具栏和各窗口文本回到原有层级;窗口设计尺寸与屏幕工作区收边不变。
-- 说明、状态、模型信息等弱化文字不再使用 10 号,统一至少 11 号;全部继续引用 `VelaFontSize*` 动态令牌,随宿主 UI 字号设置缩放。
-- 增加字号令牌回归用例,检查关键样式的紧凑档位、弱化文字下限和临时占位键不会混入源码。
-- 验证:`VelaShell.Plugin.Ai.Tests` 1464 条全过,无跳过;宿主 Debug 构建通过,0 警告 / 0 错误。
+AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,标题、表单、工具栏与各窗口文本回到原有层级,窗口设计尺寸不变;说明、状态、模型信息等弱化文字不再用 10 号,统一至少 11 号。全部引用 `VelaFontSize*` 动态令牌,随宿主 UI 字号缩放;回归用例守住紧凑档位与弱化文字下限。
 
 ## ✅ 191. 2026-10-10 启动画面:五套样式,设置里可选,跟随主题(用户需求)
 
-**起因**:用户反馈「有时候软件启动得较慢,但是没有一个指示的东西,用户还以为软件打不开」,要一个类似 Visual Studio 的启动画面。
-本机的 `[Startup] timeline` 量得很清楚:冷启动首帧 8.1 s,其中 `Main` 之前 2.2 s(运行时与程序集装载)、`Main → DI` 3.5 s(Avalonia 平台初始化 +
-XAML 加载)—— Avalonia 窗口最早也只能在这 3.5 s 之后出现,恰好错过最需要反馈的那一段。
-
-**设计**:先做了一页可动的本地预览(五套方案,可切主题与冷/热启动节奏)给用户挑,用户的决定是五套都做、放进设置让用户选、默认经典。
-五套是:经典(最接近 VS)、终端开机(逐行打出真实阶段与耗时)、船帆座(Vela 星座随进度点亮)、提示符(Logo 的 `>_` 把产品名敲出来)、
-看板娘(原图 + 气泡台词 + 猫爪进度)。规格写进了 DESIGN.md §7.4。
-
-**实现**:
-- `Splash/SplashScreen`:`Program.Main` 拿到单实例锁之后起一条独立线程(默认 MTA),读镜像、建窗口、跑消息循环;`FirstFrameSignal` 到达时淡出,
-  60 s 保险丝;启动中途失败时 `Close(wait: true)` 先收掉画面再弹错误框。非 Windows、选了「不显示」、`VELASHELL_NO_SPLASH=1` 时什么都不做。
-- `Splash/Win32SplashWindow`:`WS_EX_LAYERED` 分层窗口,Skia 直接画进 DIB(预乘 BGRA,零拷贝),`UpdateLayeredWindow` 按逐像素 alpha 贴屏,
-  圆角与投影自己画(Win10/11 一致,投影区点击穿透),淡入 120 ms / 淡出 160 ms;`SW_SHOWNOACTIVATE` 不抢焦点,保留任务栏按钮;
-  线程级 Per-Monitor V2 DPI(不碰进程级设置,Avalonia 之后照常设);窗口过程里的异常收掉画面而不是带走进程。
-- `Splash/SplashFrame`:五个阶段由启动打点宣告结束(Main / DbWarmup 或 Settings / DI / MainWindowViewModel / FirstFrame)。数据库与界面框架并行,
-  阶段结束时刻取「自己及之后任一阶段的点」里最早的那个,耗时单调不为负;进行中的阶段按 `1 − e^(−t/τ)` 估计、封顶 0.95;总进度指数平滑。
-  `StartupTrace` 新增 `MarkRecorded` 事件供它订阅,时间线里多一个 `SplashShown` 点。
-- `Splash/SplashRenderer` + `Designs/`:五套样式只认 600 × 340 的逻辑坐标与 `SplashFrame`;配色取 `UiThemeCatalog` 的种子色 + 强调色覆盖,
-  不出现颜色字面量。字体用系统字体(Segoe UI、Cascadia Mono / Consolas),主字体没有的字(中日韩、盲文转圈符)由 `SplashFace` 逐字回退;
-  图片按画布的像素缩放预先逐级减半缩好并缓存。
-- `Controls/SplashPreview`:设置页的实时预览,经 `ISkiaSharpApiLeaseFeature` 在 Avalonia 的 Skia 画布上跑同一份绘制代码,时间线换成
-  `SplashSimulation`;渲染线程与 UI 线程经一把锁交接渲染器。
-- 设置:`AppearanceOptions.SplashStyle`(`SplashStyles`,出厂 `classic`,`Normalize` 兜底)、外观页「窗口」一节的下拉 + 预览(仅 Windows);
-  五份 resx 补齐 24 个键。数据库开之前要用的主题 / 强调色 / 语言 / 样式镜像进 `~/.velashell/startup.appearance`
-  (`Infrastructure/Persistence/StartupAppearance`,保存设置时写,每次启动按读到的设置对齐一次,内容没变不写)。
-- 资源:Logo 以嵌入资源再编一份(95 KB,Avalonia 起来之前读不到 avares://);看板娘插画近 800 KB,作为松散文件 `splash/mascot.png` 随包分发,
-  选了那一套才读,不让每次冷启动都多扫一遍。
-
-**实测**(Debug,`--data-root` 指向临时目录):热启动 `Main` 115 ms → `SplashShown` 165 ms,首帧 1.9 s;改完代码后的冷启动 `Main` 3.0 s →
-`SplashShown` 3.09 s,首帧 6.0 s,中间画面一直在动。五套样式、亮暗主题、中英文都在真实启动里截图核对过。
-
-**一个没坐实的现象**:接入后的头两次启动(都是改完代码后的首次,且前一个测试实例刚被强杀)9 s / 12 s 内没等到首帧,之后连续十几次
-(含又一次冷启动)都正常;`dotnet-dump` 10.0 读不了 .NET 11 的转储,没拿到栈。为降低风险把画面线程从 STA 改回默认 MTA
-(主线程的 COM 调用不会再被封送过来等它泵消息),并加了一行 `[Splash] style=… open=… frames=… render avg/max` 的自诊断日志。
-再遇到时先看这一行和时间线里的 `SplashShown`。
-
-**验证**:新增 `SplashStylesTests`、`StartupAppearanceTests`、`SplashProgressTests`、`SplashRendererTests`(5 样式 × 5 主题 × 5 个时刻看像素:
-圆角外透明、贴边是主题底色、内容区有墨迹)、`SplashPreviewUiTests`(headless 截帧 + 外观页)、`Win32SplashWindowTests`(真建分层窗口、
-定时器驱动重绘、请求关闭后消息循环退出)。
-在 PR 工作树(只含本节改动,基于 origin/main)里:`VelaShell.Tests` 1986 / 11、`VelaShell.Infrastructure.Tests` 675 / 5、`VelaShell.Core.Tests` 794 / 10,
-另有 1 条 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 失败 —— Docker 靶机上的 `vela-dash` 接受了 X11 转发,与用例预期的「拒绝」对不上,
-与本次改动无关。行为与设置项的文档在 [velashell-docs#110](https://github.com/VelaShellLabs/velashell-docs/pull/110)
-(交互与界面规格 §14.5、设置审计第十三批,中英同步),与宿主 PR 互相引用。
+**起因**:启动慢时没有任何指示,用户以为软件打不开。实测冷启动首帧 8.1 s,其中 `Main` 之前 2.2 s、`Main → DI` 3.5 s(Avalonia 平台初始化 + XAML 加载)—— Avalonia 窗口最早也只能在这之后出现,恰好错过最需要反馈的那一段。
+**设计**:先做可动的预览给用户挑,用户定五套都做、设置里可选、默认经典:经典(最接近 VS)、终端开机、船帆座、提示符、看板娘;规格在 DESIGN.md §7.4。
+**实现**(`Splash/`):`Program.Main` 拿到单实例锁后起独立线程,`Win32SplashWindow`(分层窗口,Skia 画进 DIB,不抢焦点)跑自己的消息循环,`FirstFrameSignal` 到达时淡出,60 s 保险丝;启动中途失败时先收掉画面再弹错误框。进度由启动打点(`StartupTrace.MarkRecorded`)驱动。配色取 `UiThemeCatalog`,不出现颜色字面量;设置页预览 `Controls/SplashPreview` 在 Avalonia 的 Skia 画布上跑同一份绘制代码。设置项 `AppearanceOptions.SplashStyle`(出厂 `classic`,仅 Windows;`VELASHELL_NO_SPLASH=1` 时不显示)。⚠️ 数据库开之前就要用的主题 / 强调色 / 语言 / 样式镜像进 `~/.velashell/startup.appearance`;Logo 另编一份嵌入资源(那时读不到 avares://);看板娘插画近 800 KB,作为松散文件 `splash/mascot.png`,选了那一套才读。
+实测热启动 `Main` 115 ms → `SplashShown` 165 ms,冷启动 `Main` 3.0 s → `SplashShown` 3.09 s。
+⚠️ **没坐实的现象**:接入后头两次启动 9 s / 12 s 内没等到首帧,之后十几次都正常,没拿到栈(`dotnet-dump` 10.0 读不了 .NET 11 的转储)。为降低风险把画面线程从 STA 改回默认 MTA(主线程的 COM 调用不会被封送过来等它泵消息),并加 `[Splash] style=… open=… frames=… render avg/max` 自诊断日志 —— 再遇到时先看这一行和时间线里的 `SplashShown`。
+文档:velashell-docs#110(中英镜像的交互与界面规格 §14.5、设置审计第十三批)。
 
 ## ✅ 192. 2026-10-10 内置 X 服务端:gnome-calculator 拖动后冻住、下拉菜单黑边、操作卡(用户需求)
 
-**起因**:用户反馈远端 Ubuntu(内网)上的 `gnome-calculator`(GTK 4)操作卡、移动窗口后冻住一阵才能继续、模式下拉菜单有一圈很宽的黑边,
-问是不是我们代码的问题,以及高延迟网络会卡成什么样。
-
-**怎么量的**:在 X 连接外面包一层统计(逐条请求 / 事件计数、回复到下一条请求的间隔,可以人为给两个方向各加一段延迟),
-Docker 里的 Ubuntu 24.04 跑 gnome-calculator,直连与经 VelaShell.Ssh 的 X11 转发各量一遍;宿主一侧用 `scripts/xserver/host-demo` 起真的原生窗口,
-容器里的 xdotool 经 XTEST 点开菜单、截屏核对。结论:三个现象两个是我们的,一个主要在客户端。
-
-**一、拖动后冻住(库的缺陷)**:宿主拖动原生窗口时每个 WM_MOVE 都 `MoveTopLevel`,服务端每次都发一组 ConfigureNotify(真实的、根窗口监听者的、
-ICCCM 合成的);GTK 每组要做五次同步往返(TranslateCoordinates ×3、GetGeometry ×2),按到达的先后一条条处理。往返 20 毫秒时拖一秒(60 步),
-松手后程序还冻 8.9 秒。改成**按客户端处理的进度合并**(`X11Server.TopLevels.cs` 的 `StartMoveBarrier` / `ReleaseMoveBarrier`):
-交出一次移动之后,窗口声明了 `_NET_WM_PING` 就紧跟一条 ping,pong 回来(客户端按序处理事件,说明前面的移动都处理完了)或 2 秒到点才交下一个位置;
-没声明的两次之间至少隔 50 毫秒;等的期间只记最新的位置,快照照宿主的位置给(别的属性一变不会把正在拖的原生窗口拉回去),
-客户端自己挪窗口时没交出去的位置作废。同样的拖动:往返 20 毫秒时只交 4 次、松手后 0.6 秒处理完;直连时客户端跟得上,120 个位置照常全交。
-
-**二、下拉菜单黑边(库的取舍)**:GTK 4 的弹出菜单不论有没有合成管理器都按 ARGB 视觉画、四周留二十来像素 alpha 为 0 的阴影区,
-再用 SHAPE 的输入形状只圈出菜单本体(277×232 的窗口,输入形状是 x 23–254、y 22–207 的圆角面板)。合成管理器关着(默认)时快照的 `HasAlpha` 为假,
-宿主把 alpha 补成 0xFF,阴影区就成了黑边。改成**输入形状只占窗口一部分的 ARGB 窗口照 alpha 显示**(`HasAlphaOnHost`):客户端自己声明了边缘不是窗口的一部分;
-没设输入形状(清屏 alpha 为 0 的 GL 程序)或盖满整个窗口的仍按不透明。宿主不用改 —— 形状变化时本来就重新套透明度、整窗重取像素。
-真实宿主截图核对:菜单带柔和阴影,黑边没了;拖动之后再打开,菜单位置正确。没有选「默认打开合成管理器」:那会让所有 ARGB 窗口都多一层系统合成,
-GL 程序又会透出后面。
-
-**三、操作卡(主要在客户端)**:GTK 4 默认 GL,经 SSH 退到 llvmpipe,每帧把整窗(384×512)约 786 KB 用 PutImage 发过来:点一下按钮 29 MB、
-打开模式下拉菜单 11 MB;`GSK_RENDERER=cairo` 时分别是 0.15 MB 与 3.6 MB。宿主新增 `Core/XServer/RemoteGtkRenderer`,开着 X11 转发的会话
-(不论显示交给哪个 X 服务端)连接后与 `XMODIFIERS` 同一句静默注入 `GSK_RENDERER=cairo`(已经设了的不动,`MainWindowViewModel.X11EnvironmentScript`)。
-另外 GTK 4 的 X11 后端每画一帧都重算顶层尺寸(GetGeometry、TranslateCoordinates、读 `_NET_WORKAREA` / `_NET_CURRENT_DESKTOP`、写 `WM_NORMAL_HINTS`),
-一帧约 16 次同步往返,对任何 X 服务端都一样,服务端省不掉:局域网上影响不大,几十毫秒的链路上 GTK 4 动画会掉到每秒几帧。
-我们自己的链路(SSH 库 + 连接器 + 服务端)一次往返的额外开销中位 0.47 毫秒,SSH 通道窗口是自适应的(256 KB 起、最大 64 MB),都不是瓶颈。
-
-**关于换用别的 C# X 服务端**:用户问有没有更成熟的 C# 开源 X 服务端可以参考或直接用。X 服务端按净室规程不读别家源码;上面三个问题两个是本库
-的行为、改掉即可,第三个在客户端,换哪个 X 服务端(VcXsrv、MobaXterm、Xorg)都一样,所以不换。
-
-**验证**:新增 `EwmhTests` 四条(声明 ping 的等 pong、中间位置不交;没声明的按间隔合并;客户端自己挪窗口作废拖动位置;拖动期间改标题不报几何)、
-`ShapeTests` 一条(输入形状只圈一部分的 ARGB 窗口 `HasAlpha` 为真,盖满 / 24 位的为假)、`MainWindowSshFeatureTests` 一条(`GSK_RENDERER` 注入的条件与写法)。
-`VelaShell.XServer.Tests` 552 通过 / 9 跳过(仅 Linux),真实互操作 27 / 27、无 `[SKIP]`;`MainWindowSshFeatureTests` 20 / 20,`VelaShell.Tests` 全量 1988 通过 / 0 失败。
-文档:velashell-docs 中英镜像的 X Server 架构(§6、§7「拖动时的移动按客户端处理的进度合并」「合成管理器」、§10 决策记录)、排障(第二节与「已修的缺陷」)、
-宿主交互规格同步更新,在 [velashell-docs#111](https://github.com/VelaShellLabs/velashell-docs/pull/111),与宿主 PR 互相引用。
+**起因**:远端 `gnome-calculator`(GTK 4)操作卡、拖动窗口后冻住一阵、下拉菜单一圈宽黑边。在 X 连接外包一层统计、Docker 里直连与经 SSH 各量一遍:两个是我们的,一个主要在客户端。
+**一、拖动后冻住(库的缺陷)**:宿主每个 WM_MOVE 都让服务端发一组 ConfigureNotify,GTK 每组做五次同步往返 —— 往返 20 毫秒时拖一秒,松手后还冻 8.9 秒。改为**按客户端处理的进度合并**(`X11Server.TopLevels.cs` 的 `StartMoveBarrier` / `ReleaseMoveBarrier`):交出一次移动后,声明了 `_NET_WM_PING` 的等 pong(最多 2 秒),没声明的至少隔 50 毫秒;期间只记最新位置,客户端自己挪窗口时没交出的位置作废。往返 20 毫秒时同样的拖动只交 4 次、松手后 0.6 秒处理完。
+**二、下拉菜单黑边(库的取舍)**:GTK 4 弹出菜单总按 ARGB 画、四周留 alpha 为 0 的阴影区,再用 SHAPE 输入形状只圈出本体;合成管理器关着(默认)时宿主把 alpha 补成 0xFF,阴影区成了黑边。改成**输入形状只占窗口一部分的 ARGB 窗口照 alpha 显示**(`HasAlphaOnHost`),没设输入形状(清屏 alpha 为 0 的 GL 程序)或盖满整窗的仍按不透明。否决「默认打开合成管理器」:所有 ARGB 窗口都多一层系统合成,GL 程序又会透出后面。
+**三、操作卡(主要在客户端)**:GTK 4 经 SSH 退到 llvmpipe、每帧整窗 PutImage,点一下按钮 29 MB,`GSK_RENDERER=cairo` 时 0.15 MB。宿主新增 `Core/XServer/RemoteGtkRenderer`:开着 X11 转发的会话与 `XMODIFIERS` 同一句静默注入 `GSK_RENDERER=cairo`(已设的不动)。GTK 4 每帧约 16 次同步往返重算顶层尺寸,任何 X 服务端都省不掉,几十毫秒的链路上动画会掉到每秒几帧。
+**换用别的 C# X 服务端**:否决 —— 按净室规程不读别家源码;两个是本库的行为、改掉即可,第三个换哪个 X 服务端(VcXsrv、MobaXterm、Xorg)都一样。
+文档:velashell-docs#111(中英镜像的 X Server 架构 §6、§7、§10,排障与宿主交互规格)。
 
 ## ✅ 193. 2026-10-10 SSH 库:zlib 流结束标记、关闭后写 stdin、HMAC 的 Verify、重协商互操作四处修补;宿主自动重连不再弹主机指纹确认框(用户需求)
 
-**起因**:复查 SSH 库的几处边界行为与 .NET 11 的新 API 用法时找出下面四处,另有一处在宿主(自动重连遇到主机指纹时怎么办),
-用户拍板五处一起做。来龙去脉记在 velashell-docs 的 SSH 架构 §11.2.28。
-
-**一、zlib 流结束标记(库)**:对端在载荷里写了 zlib 的流结束标记时,带标记的那个报文照常收下,错到下一帧才报一句「解压失败」。
-拿 .NET 11 RC1 的 `ZLibDecoder` 实测:标记处返回 `Done`,之后一个字节都不再收。`ZlibCompressor.Decompress` 见到 `Done` 当场断开(`ProtocolError`)——
-SSH 的压缩流不会结束,OpenSSH 的解压遇到流结束同样是致命错误。
-
-**二、通道关闭之后的 stdin 写(库)**:管道自己的 writer 要等 reader 完成才报「完成」,而 reader 归 stdin 泵,泵在通道收尾之后才在线程池上退出。
-于是调用方已经看到关闭(`WaitAsync` 返回)之后,紧接着的写照常返回、数据被悄悄丢掉:命令退出后马上写 stdin,300 轮里 275 轮如此。
-线上从没多发(那一帧在入队时就被拦下)。新增 internal 的 `Channels/StandardInputWriter`:交给调用方的 `StandardInput` 先问通道还收不收
-(`SshChannel.AcceptsInput`:本端开始关闭、任一方向的 CLOSE 已入队、或通道已收尾含断线),不收了当场返回 `IsCompleted`,通道流因此当场抛 `IOException`。
-
-**三、重协商的互操作覆盖(库的测试)**:服务端发起的重协商只对真 sshd 跑过默认谈成的 ed25519。新增互操作用例按 ed25519 / ecdsa-sha2-nistp256 /
-rsa-sha2-512 / rsa-sha2-256 各跑一遍,清单保留全部算法、只把要测的排到最前,重协商时的收窄是从完整清单里收。
-
-**四、`HMAC*.Verify`(库,.NET 11 新 API)**:hashed known_hosts 与 `.ppk` 的 MAC 比对改用 `HMACSHA1.Verify` / `HMACSHA256.Verify`
-(反射看过 IL,内部就是 `FixedTimeEquals`)。它遇到长度不对的散列抛 `ArgumentException` 而不是返回 false:`KnownHostsFile.MatchesHashed` 先查长度
-(坏行当成对不上),`.ppk` 的 MAC 长度在 `EnsureComplete` 里早已核过。
-
-**五、自动重连不弹主机指纹确认框(宿主)**:睡眠唤醒后所有标签一起重连、隧道按退避一直重拨时,服务器换了钥就会弹「主机信任」模态框 ——
-多半没人在屏幕前,几个标签叠出一摞框,裁决时限又是无限,重连一直挂着;隧道最长每 5 分钟弹一次。用户的决定:**自动重连直接拒绝**。
-- `ConnectionInfo.IsAutomaticReconnect` → `SshConnectionAssembler` → `VelaHostKeyPolicy(automaticReconnect)`:本该弹框问的一律拒绝(变了按 `HostKeyChanged`、
-  没见过按 `HostKeyRejected`),文案 `Msg_HostKeyAutoReconnectBlocked`(五份 resx),照样记一条安全告警 `hostkey-rejected`;不问的两条默认
-  (关着首次确认时 TOFU、开着变更阻断时阻断)不变。一条跳板链共用一个策略,每一跳都按它办。凭据登录框、动态码框不在此列。
-- `IConnectionWorkflowService.ReconnectProfileAutomaticallyAsync`;`MainWindowViewModel.AutoReconnectTabAsync`(倒计时到点、`ReconnectAllAfterResume`)与
-  隧道面板的自动恢复走它,手动「重新连接」、改代理后的重试、程序启动时的自启隧道仍走 `ConnectProfileAsync`(会弹框)。
-- 指纹被拒(含用户在框里拒绝)不再自动重试:`SshInterop` 把 `HostKeyRejected` / `HostKeyChanged` 译成新的 `VelaSshHostKeyRejectedException`;
-  标签记 `TerminalTabViewModel.HostKeyRejected`(`ReconnectPolicy.ShouldReconnect` 多了这一条),手动重连开始时与挂上传输时复位;
-  隧道面板记 `_hostKeyRejectedProfiles`,不进退避、右下角报一声,手动启动连上后解除。曾经用户在框里拒绝之后,自动重连过几秒又弹同一个框。
-
-**验证**:新增 `CompressionTests` 一条(BCL 的 `ZLibEncoder` 当对端写结束标记)、`KnownHostsTests` 四条(散列 0/19/21/32 字节)、
-`ChannelTests` 一条两行(命令退出后马上写,连跑 20 轮;旧的两条去掉了轮询,改成第一次写就断言)、互操作四条(每种主机密钥算法的服务端发起重协商)、
-`VelaHostKeyPolicyTests` 三条、`ConnectionWorkflowServiceTests` 两条、`ReconnectPolicyTests` 一条、`TunnelPanelViewModelTests` 两条、`MainWindowSshFeatureTests` 一条。
-去掉修复的反证:zlib 那条、stdin 那条(两行)、隧道「败在指纹上不再重拨」那条都会失败。
-全量:`VelaShell.Ssh.Tests` 1359 通过 / 61 跳过(不带互操作环境);起好 `Start-TestServer.ps1 -X11` 之后互操作 61 条 60 通过、1 条跳过
-(`目的地约束对真agent_经转发逐跳放行`:那台靶机连不到 compose 网络里的 `velashell-test-shells`,环境所致);
-`VelaShell.Tests` 1992 / 11 跳过,`Infrastructure.Tests` 678 / 5,`Presentation.Tests` 86,`XServer.Tests` 552 / 9,`Plugin.Ai.Tests` 1464,其余工程全过。
-`VelaShell.Core.Tests` 795 通过、5 失败,都与本次无关:4 条 `KeyboardInteractiveIntegrationTests` 是互操作靶机占了 compose 里 `ssh-2fa` 的 2224 端口
-(收掉靶机后照常按「靶机不可达」跳过);`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 是本机的 `velashell-test-shells` 容器建于 2026-09-22,
-早于给 `vela-dash` 关 X11 的 b7e55d43,容器里没有那段 `Match`(`docker compose -f docker-compose.test.yml up -d --build ssh-shells` 重建即可)。
-整个解决方案 Debug 构建 0 警告。
-
-文档:velashell-docs 中英镜像的 SSH 规格 01 §6、05 §4.3、架构 §11.2.28,宿主交互规格的「断开连接状态」「隧道」「主机指纹确认」。
+前四处是复查 SSH 库边界行为与 .NET 11 新 API 用法时找出的;来龙去脉在 velashell-docs 的 SSH 架构 §11.2.28。
+**一、zlib 流结束标记**:对端写了流结束标记时,原来错到下一帧才报「解压失败」。.NET 11 的 `ZLibDecoder` 在标记处返回 `Done`;`ZlibCompressor.Decompress` 见到 `Done` 当场以 `ProtocolError` 断开 —— SSH 的压缩流不会结束,OpenSSH 遇到流结束同样是致命错误。
+**二、关闭后写 stdin**:管道的 writer 要等 reader(归 stdin 泵,通道收尾之后才退出)完成才报「完成」,于是调用方已看到关闭之后的写照常返回、数据悄悄丢掉(300 轮 275 轮;线上从没多发)。新增 internal 的 `Channels/StandardInputWriter`:先问 `SshChannel.AcceptsInput`,不收了当场返回 `IsCompleted`,通道流抛 `IOException`。
+**三、重协商互操作**:服务端发起的重协商原只对真 sshd 跑过 ed25519,补上 ecdsa-sha2-nistp256 / rsa-sha2-512 / rsa-sha2-256。
+**四、`HMAC*.Verify`**:hashed known_hosts 与 `.ppk` 的 MAC 比对改用 `HMACSHA1.Verify` / `HMACSHA256.Verify`(内部就是 `FixedTimeEquals`)。⚠️ 长度不对时它抛 `ArgumentException` 而不是返回 false:`KnownHostsFile.MatchesHashed` 先查长度(坏行当成对不上),`.ppk` 的 MAC 长度在 `EnsureComplete` 里早已核过。
+**五、自动重连不弹主机指纹确认框(宿主)**:睡眠唤醒后所有标签一起重连、隧道按退避重拨时,服务器换了钥会叠出一摞裁决时限无限的模态框,重连一直挂着。用户定:**自动重连直接拒绝**。`ConnectionInfo.IsAutomaticReconnect` → `VelaHostKeyPolicy(automaticReconnect)`:本该弹框问的一律拒绝(照记安全告警 `hostkey-rejected`),不问的两条默认(TOFU、变更阻断)不变,跳板链每一跳同一策略;凭据框、动态码框不在此列。倒计时重连、`ReconnectAllAfterResume` 与隧道自动恢复走 `ReconnectProfileAutomaticallyAsync`;手动重连、改代理后的重试、启动时的自启隧道仍会弹框。指纹被拒(含用户在框里拒绝)不再自动重试(标签与隧道各记一笔,手动连上后解除) —— 原来用户拒绝后过几秒又弹同一个框。
+⚠️ 本机环境:互操作靶机与 compose 的 `ssh-2fa` 撞 2224 端口(起着靶机时 `KeyboardInteractiveIntegrationTests` 失败);`velashell-test-shells` 容器早于 b7e55d43 时 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 失败,`docker compose -f docker-compose.test.yml up -d --build ssh-shells` 重建即可。
+文档:velashell-docs(中英镜像的 SSH 规格 01 §6、05 §4.3、架构 §11.2.28,宿主交互规格「断开连接状态」「隧道」「主机指纹确认」)。
 
 ## ✅ 194. 2026-10-11 清掉全部编译警告与 IDE 提示(用户需求)
 
-**起因**:用户要求把编译警告和 IDE 错误列表里的提示(如 `AiSettingsStore.cs` 的「IDE1006 缺少前缀 _」)全部清掉。普通构建只有 4 条;
-打开 `EnforceCodeStyleInBuild` 全量重编、把各工程诊断写进 SARIF 之后是 740 条「消息」级提示,另有 49 条命名问题只在 IDE 里报
-(`src/`、`plugins/` 没给 IDE1006 设构建级别,临时加一条才能在构建里列出来)。复现办法:
-`dotnet build VelaShell.slnx --no-incremental -p:EnforceCodeStyleInBuild=true "-p:ErrorLog=obj/x.sarif%2Cversion=2.1"`,再汇总各工程 `obj/x.sarif` 里没被抑制的结果。
-
-**有现成修复器的**(`dotnet format analyzers/style --diagnostics …`,两轮,修复器跳过的十几处手改):MSTest 4 的断言迁移
-(MSTEST0068 / 0037 / 0046:`CollectionAssert` / `StringAssert` → `Assert.AreSequenceEqual` / `Contains` / `HasCount` / `IsGreaterThan` 等;
-`CollectionAssert.AreEquivalent` 换成带 `SequenceOrder.InAnyOrder` 的那个重载,不计顺序的语义不变)、集合表达式、多余的 `!` 与 `unsafe`、
-lambda 简化、`field` 访问器、测试里的 `GeneratedRegex`。修复器的产物逐处看过,改掉了不该照收的:自动属性丢掉的字段注释补回去;
-`IdleMilliseconds` 被改成「赋时间戳、读毫秒数」的半自动属性,改回 `LastActivity` 自动属性 + 计算属性;`SearchValues` 字段叫 `s_myChars`,
-改成 `QuoteTriggers`;「方法可以为同步」被改成返回 `Task.CompletedTask`,改成 `void`。
-
-**手改的**:
-- 命名(IDE1006):`AiSettingsStore` 里私有嵌套类的字段 `internal` → `public`(类本身私有,可见性不变;`ProviderEpoch.Value` 被
-  `Interlocked` / `Volatile` 按引用用着,只能是字段),`_keyCache` 这类私有属性去掉下划线;Code Cleanup 拆解出来的大写局部变量
-  (`Credential` / `KeyId` 等)按拆解前的变量名改成 `latestCredential` / `latestKeyId`;非 readonly 的静态字段 `s_x` → `_x`、
-  static readonly 改 PascalCase;局部函数改 PascalCase;测试里的局部常量改 camelCase、`_session` 属性改 `Session`。
-  测试方法名开头是小写英文的(47 个)首字母改大写,`S_REPLY…` 前面加「服务端回的」(否则被当成 `s_` 前缀)。
-  其中两个在前面几节出现过:`ppk截断到任意位置只报私钥异常` → `Ppk截断到任意位置只报私钥异常`,
-  `sftp_server起不来时报出退出码与它的stderr` → `Sftp_server起不来时报出退出码与它的stderr`。
-- CA1068(`CancellationToken` 放最后):`AiSettingsStore.ResolveCredential*`、`HealthProbe.ProbeAsync`、`ModelPull.RunAsync`
-  与 `ChatPanelView` 的三个私有方法。调用点原来按位置传令牌的改成 `cancellationToken:` 具名实参;挪位之后按位置传的都会编译失败,不会悄悄绑错。
-- CA1806:`Win32SplashWindow` / `SystemPointer` 忽略的原生返回值写成 `_ =`。IDE0060:XServer 两个处理器去掉用不着的 `XClient`,
-  `OnWindowDeactivated` 去掉用不着的参数,当委托用的方法参数改成弃元。
-- 两处误报照现场处理:`ShortcutsPage.Recorder_GestureCaptured` 是 XAML 引用的(参数不是 `EventArgs`,IDE0051 认不出),加 `SuppressMessage`
-  并写明理由;`ChatPanelView` 的 `_suggestionTask` 只写不读(IDE0052),但测试经反射读它,改成 `internal` 属性 `SuggestionTask`,测试直接读。
-- MSTest:9 个工程显式写 `[assembly: DoNotParallelize]`(它们本来就按 MSTest 的默认串行跑,MSTEST0001 要求写出来);Ssh.Tests 写与
-  `test.runsettings` 同值的 `[assembly: Parallelize(Workers = 2, Scope = MethodLevel)]`。写出来之后 MSTEST0074 指出两条用例在方法级并行下
-  改进程环境变量 —— runsettings 开并行以来一直如此,是潜在的竞态,加了 `[ResourceLock(WellKnownResources.EnvironmentVariables)]`。
-  按平台 `Assert.Inconclusive` 早退的 20 处换成 `[OSCondition(…, IgnoreMessage = 原说明)]`(都是「未执行」,跳过数不变);
-  断言写在 `catch` 里的、`Assert.Throws` 里多条语句的,改成先记下结果、在 `catch` 外断言 / 抽出辅助方法;只挂 `[AssemblyInitialize]` 的会话类改 `static`;
-  后量子那条 300 秒的互操作用例改协作取消,连接与每轮重协商都看 `TestContext.CancellationToken`(否则到点停不下来)。
-- 配置:`.editorconfig` 关掉 RXUISG0016(ReactiveUI 源生成器对 `ReactiveObject` 上每个普通属性都建议换通知属性;被点名的 75 个几乎全是
-  视图注入的回调、`init` 属性与排序分数,不需要通知)。NSubstitute 配桩 `When(c => c.DisposeAsync())` 的 CA2012 用 `#pragma` 带理由抑制。
-
-**验证**:上面那条命令全量重编:0 警告、0 提示(含临时打开的 IDE1006)。`dotnet test VelaShell.slnx`:各工程通过 / 跳过数与 §193 相同
-(Ssh.Tests 1359 / 61,Infrastructure.Tests 678 / 5,VelaShell.Tests 1992 / 11,XServer.Tests 552 / 9,Plugin.Ai.Tests 1464,其余全过);
-Core.Tests 794 通过 / 10 跳过 / 1 失败,失败的是 §193 记过的 `X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`(本机靶机容器过旧)。
+普通构建只有 4 条;打开 `EnforceCodeStyleInBuild` 全量重编、诊断写进 SARIF 后是 740 条消息级提示,另有 49 条命名问题只在 IDE 里报(`src/`、`plugins/` 没给 IDE1006 设构建级别)。复现:`dotnet build VelaShell.slnx --no-incremental -p:EnforceCodeStyleInBuild=true "-p:ErrorLog=obj/x.sarif%2Cversion=2.1"`,再汇总各工程 `obj/x.sarif` 里没被抑制的结果。
+- 修复器(`dotnet format analyzers/style`)做 MSTest 4 断言迁移、集合表达式等。⚠️ 产物要逐处看:它会丢字段注释、造出怪异的半自动属性与 `s_myChars` 这类名字、把「方法可以为同步」改成返回 `Task.CompletedTask`(应为 `void`)。
+- 手改:IDE1006 命名;测试方法名开头是小写英文的 47 个改大写(如 `Ppk截断到任意位置只报私钥异常`、`Sftp_server起不来时报出退出码与它的stderr`;`S_REPLY…` 前加「服务端回的」,免得被当成 `s_` 前缀)。CA1068 把 `CancellationToken` 挪到最后,调用点改具名实参(挪位后按位置传的会编译失败,不会悄悄绑错)。两处误报:XAML 引用的 `ShortcutsPage.Recorder_GestureCaptured` 加带理由的 `SuppressMessage`;测试经反射读的 `_suggestionTask` 改成 `internal` 属性 `SuggestionTask`。
+- MSTest:各工程显式写 `[assembly: DoNotParallelize]`,Ssh.Tests 写与 `test.runsettings` 同值的 `Parallelize(Workers = 2, Scope = MethodLevel)`;⚠️ 写出来之后 MSTEST0074 指出两条用例在方法级并行下改进程环境变量 —— 一直潜伏的竞态,加 `[ResourceLock(WellKnownResources.EnvironmentVariables)]`。按平台 `Assert.Inconclusive` 早退的 20 处换成 `[OSCondition(…)]`。
+- `.editorconfig` 关掉 RXUISG0016(ReactiveUI 对每个普通属性都建议换通知属性,被点名的 75 个几乎都不需要通知)。
 
 ## ✅ 195. 2026-10-11 SSH 库:释放传输时还有读写在途,缓冲等它们退出了才还(CI 偶发失败的根因,用户需求)
 
-**起因**:#607 的 macOS CI 上 `HandshakeTests.策略返回未填的裁决时按拒绝处理` 失败:客户端读到的服务端 KEXINIT 被截短
-(读到第三个算法清单时载荷只剩 9 字节)。同一提交 Ubuntu / Windows 都过,本机按 3 核反复跑 25 轮复现不了。
-
-**根因**:`SshPacketTransport.DisposeAsync` 当场完成 reader / writer。.NET 的 `StreamPipeReader` 完成时把 64 KB 的读缓冲还回
-`ArrayPool<byte>.Shared`,而另一个任务还停在读里 —— 底层流那次读手里攥着这块内存,数据一到照写,写进的是别人刚租走的数组。
-测试里:上一条用例「主机密钥策略拒绝时带出它给的原因」客户端拒绝主机密钥后抛异常,`HandshakeAsync` 没等服务端那一侧就
-`await using` 释放,服务端还在等 NEWKEYS 的那次读成了孤儿;下一条用例的传输租到同一个数组(trx 里两条用例前后紧挨,没有并行重叠)。
-写端同理:刷到一半时还回去,发出去的可能是别人的数据。生产里连接释放时收发循环到点没退出(Windows 上 ProxyCommand 的匿名管道)
-也走这条路。§171 记的「每次运行从长尾里冒出别的」,可能有一部分就是它。
-
-**改法**(规格先行:velashell-docs `zh/ssh/spec/01` §4「释放」、`spec/05` §4.4,架构 §11.2.29):
-- 新增 `Transport/TransportSideLifetime`:传输一端的在途调用计数,由最后离开的那一方收尾。`SshPacketTransport` 的读端
-  (`ReadPacketAsync`、`ReadRawLineAsync`、换接收套件 / 解压器)与写端(`WritePacket`、`FlushAsync`、`WriteLineAsync`、换发送套件 / 压缩器)各一个。
-- `DisposeAsync`:没有调用在途的一端当场收尾;有的只取消挂起的读 / 刷出、不等,由那次调用退出时收尾。被取消的读以
-  `ObjectDisposedException` 退出(读循环原来不看 `IsCanceled`,内存传输上释放之后那次读一直不返回)。密码套件与压缩器跟着各自那一端释放 ——
-  原来当场清零接收套件的密钥,在途的那次解密会算出一个假的 MAC 错误。
-- 测试:`HandshakeTests.HandshakeAsync` 在客户端失败时先关客户端、等服务端那一侧收工,再把异常交出去。
-
-**验证**:`SshPacketTransportTests` 新增四条(底层流先交出缓冲、等放行再读写):释放后在同一线程上租同样大小的数组,租到的不是在途读 /
-刷出手里的那一个;在途的读退出之前接收套件不释放;能理会取消的流上挂起的读以「已释放」退出。四条在修复前的实现上全部失败
-(前两条租到的正是同一个数组,最后一条那次读一直不返回)。全量:构建 0 警告(`-warnaserror` + `EnforceCodeStyleInBuild`),IDE 提示 0;
-`VelaShell.Ssh.Tests` 1363 通过 / 61 跳过,其余工程与 §194 相同;Core.Tests 仍只有 §193 记过的
-`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce`(本机靶机容器过旧)。
-
-文档:velashell-docs 中英镜像的 SSH 规格 01 §4、05 §4.4,架构 §11.2.29。
+**起因**:#607 的 macOS CI 上一条 `HandshakeTests` 读到的服务端 KEXINIT 被截短,别的平台都过、本机复现不了。
+**根因**:`SshPacketTransport.DisposeAsync` 当场完成 reader / writer,`StreamPipeReader` 把 64 KB 读缓冲还回 `ArrayPool<byte>.Shared`,而另一个任务还停在读里 —— 数据一到照写,写进别人刚租走的数组;写端同理。生产里收发循环到点没退出(Windows 上 ProxyCommand 的匿名管道)也走这条路;§171 记的长尾偶发可能有一部分就是它。
+**改法**(规格先行):`Transport/TransportSideLifetime` 给读端、写端各记在途调用,由最后离开的一方收尾;`DisposeAsync` 对有在途调用的一端只取消挂起的读 / 刷出、不等。被取消的读以 `ObjectDisposedException` 退出(读循环原来不看 `IsCanceled`)。⚠️ 密码套件与压缩器跟着各自那一端释放 —— 原来当场清零接收套件的密钥,在途的解密会算出一个假的 MAC 错误。
+文档:velashell-docs(中英镜像的 SSH 规格 01 §4「释放」、05 §4.4,架构 §11.2.29)。
 
 ## ✅ 196. 2026-10-11 AI 插件:HttpListener 的接收循环停机时丢唤醒(macOS CI 上 UI 测试整组挂住的根因,用户需求)
 
-**起因**:#608 的 macOS CI 测试步骤跑了 55 分钟还没结束(平时整个作业 7–8 分钟)。取消后看日志:解决方案其余测试 17:34 已全部跑完
-(含 `VelaShell.Ssh.Tests`),挂住的是 `run-tests.sh` 在后台另起的 `ChatPanelViewUiTests` 组(平时 4–4.5 分钟、283 条)——
-另两组 UI 用例交了 trx,只有它没有。同一提交 Ubuntu / Windows 都过;过去 100 次 CI,macOS 最长 27 分钟,第一次见。
-
-**根因**:.NET 托管实现的 `HttpListener`(macOS / Linux;Windows 走 HTTP.sys,没有这段代码)关监听与取请求之间有一个丢唤醒的窗口:
-`BeginGetContext` 只读一眼状态(不拿内部锁)就把等待项排进队列;`Close` 先清理(把队列里**已有**的等待项以异常结束、清空),
-最后才在 finally 里把状态改成「已关」。夹在这两步之间进来的那次 accept 排在清空之后,永远不完成。
-测试桩 `SseStub` / `ErrorStub` 的 `Dispose` 先取消(挂起的应答被唤醒,服务循环马上回头再 accept)、再关监听,然后**在 UI 线程上同步**等
-服务循环退出(`_server.GetAwaiter().GetResult()`,10-09 随「多 key 与故障转移」加入)—— 撞上窗口,UI 线程就永远堵在 `Dispose` 里,
-整组用例停住;CI 没有挂起上限,作业要等满 6 小时。
-同一机制在生产代码里还有两处:`McpEndpoint.StopCoreAsync` 先取消、关监听,再不限时地等接收循环 —— 停 MCP 服务可能永远挂住
-(还占着 `_reloadGate`);`WeComChannel.RunAsync` 特意靠「令牌一取消就关监听」来唤醒 accept,而 `ChannelHub.StopAsync` 不限时地等它 ——
-停企业微信渠道同样可能挂住。
-
-**改法**:
-- 新增 `Interop/HttpListenerExtensions.AcceptAsync(listener, token)`:`GetContextAsync().WaitAsync(token)`,停机或监听已关时返回 `null`。
-  退出由令牌决定,不押在监听会不会完成那次 accept 上;放弃掉的 accept 若随关监听以异常收场,在这里观察掉。
-  Windows 上关到一半时取请求报的是 `InvalidOperationException`(「先调 Start()」),监听已不在监听状态时同样当作已关 —— 新用例在 Windows 上第一次跑就撞到了它。
-- `McpEndpoint`、`WeComChannel` 的接收循环改用它;`WeComChannel` 删掉「取消即关监听」的注册,监听由 finally 关。
-- 测试:`SseStub`、`ErrorStub`、`ProviderSetupViewUiTests.DeviceLoginEndpoint` 与五处收尾时要等服务循环的内联服务改用它(先取消、再关监听);
-  `SseStub`、`ErrorStub`、`TruncatedSseStub`、`DeviceLoginEndpoint` 改成只实现 `IAsyncDisposable`,收摊不再在 UI 线程上同步地等,
-  269 处 `using` 改成 `await using`。只关监听、不等服务循环的桩(`HeldStreamingReply`、`KeyAuthStub` 等)不受影响,没动。
-
-**验证**:
-- 在 WSL 的 Debian 上用自包含的 linux-x64 程序(原样编译仓库里那份 `HttpListenerExtensions.cs`)照桩的收摊顺序跑:
-  直接 `await GetContextAsync()` 的写法 1400 轮挂住 5 轮,走 `AcceptAsync` 的 3000 轮 0 轮。
-- 新增 `HttpListenerExtensionsTests` 四条:接到请求;只取消令牌、监听还开着也返回 `null`;已关的监听返回 `null`;
-  照桩的收摊顺序跑 200 轮,每轮接收循环都退出。
-- AI 插件测试全量(本机 Windows,含三组 UI 用例)全过;构建 0 警告(`-warnaserror` + `EnforceCodeStyleInBuild`)。
-- #608 的 macOS 作业重跑 7 分钟通过 —— 那只说明这次没撞上,不作修复的依据。
-
-文档:不涉及。velashell-docs 只写了 MCP 服务 / 企业微信回调只绑 `127.0.0.1` 这类对外行为,停止的内部机制没有成文,对外行为不变。
+**起因**:#608 的 macOS CI 测试步骤 55 分钟没结束(平时整个作业 7–8 分钟),挂住的是 `ChatPanelViewUiTests` 那组。
+**根因**:.NET 托管实现的 `HttpListener`(macOS / Linux;Windows 走 HTTP.sys,没有这段代码)有丢唤醒窗口:`BeginGetContext` 不拿锁读一眼状态就把等待项排进队列,`Close` 先清空已有的等待项、最后才把状态改成「已关」,夹在中间进来的那次 accept 永远不完成。测试桩的 `Dispose` 先取消、再关监听,然后**在 UI 线程上同步**等服务循环 —— 撞上就永远堵住。⚠️ 生产里同一机制:停 MCP 服务(`McpEndpoint.StopCoreAsync`,还占着 `_reloadGate`)与停企业微信渠道(`WeComChannel` + `ChannelHub.StopAsync`)都可能永远挂住。
+**改法**:`Interop/HttpListenerExtensions.AcceptAsync(listener, token)` = `GetContextAsync().WaitAsync(token)`,停机或监听已关时返回 `null`,退出由令牌决定;⚠️ Windows 上关到一半时取请求报 `InvalidOperationException`,同样当作已关。`McpEndpoint`、`WeComChannel` 改用它;测试桩改成只实现 `IAsyncDisposable`(269 处改 `await using`)。WSL 的 Debian 上直接 `await GetContextAsync()` 1400 轮挂住 5 轮,`AcceptAsync` 3000 轮 0 轮。
+文档:不涉及(对外行为不变)。
 
 ## ✅ 197. 2026-10-12 内置 X 服务端与 SSH 库:gnome-calculator 一打字就退出;开着压缩时起 GTK 程序整条 SSH 断开(用户反馈)
 
-**起因**:用户在远端 Ubuntu 上 `GDK_BACKEND=x11 gnome-calculator`,往输入框里用本机输入法打「测试」,计算器以 `BadMatch` …… `request_code 93` 的 X 错误退出;
-之后重连 SSH、再起计算器,SSH 连接就断开,每次都这样。本机日志里 client#1 的 #7008 CreateCursor 回了 BadMatch;client#2 / #3 连上 1.4 秒左右就断开,
-没有任何协议错误,SSH 断开的原因没进日志。查下来是两个互不相干的缺陷。
-
-**一、打字就退出(X 服务端)**:GTK 在文本框里打字时把指针藏起来,GDK 的隐形指针(`get_blank_cursor`)是 1×1、深度 1 的像素图同时当 source 与 mask,
-热点 (1, 1),不设错误陷阱。协议要求热点在 source 里,(1, 1) 正好落在右下边界上,`CreateCursor` 回了 BadMatch,GTK 收到没拦下的错误就退出 ——
-敲任何键都会,与中文无关。改成热点落在右边 / 下边的边界线上照收(烙进图像时收回到图里),越过边界的照旧 BadMatch;mask 全为 0 的位图光标与 `nil2`
-的空白字形光标一样,按隐形指针(`Hidden`)交给宿主。RENDER 的 CreateCursor 仍按严格的规则。
-
-**二、开着压缩时 SSH 断开(SSH 库)**:用户这条连接开着压缩。用一个单文件程序搭出整条链路(内置 X 服务端 + 本库的 X11 转发经连接器,与宿主同一条路),
-连 Docker 里的 Ubuntu 24.04(`vs-gtk4-sshd`,OpenSSH 9.6)。开压缩、2 倍缩放、GTK 默认 GL 渲染时,计算器连上 1.4 秒左右连接以
-「读取 string 需要 32768 字节,只剩 32759 字节」断开,与用户日志里的 1.4 秒对得上;不开压缩时正常关闭、`kill -9`、注入中文后再起、断开重连再起都不断。
-根因在 `ZlibCompressor.Decompress`(10-09 换成 .NET 11 的 `ZLibDecoder` 时引入):按「输入喂完」收工,而 OpenSSH 每个报文末尾是部分 flush、只有几个位,
-最后一个匹配的编码读完时整段输入可能都已进了解码器,输出缓冲(16 KiB 一块)恰好在那个匹配中间用满 —— 压着的 9 字节留给了下一个报文。
-改成输入喂完之后,解码器最后一次报 `DestinationTooSmall` 就不喂输入接着取,直到它不再这么报;上限照旧(压着的输出越过上限照样按压缩炸弹断开)。
-本库自己的压缩器做同步 flush、以 `00 00 FF FF` 收尾,输入不会先喂完,所以往返用例一直测不出来。
-
-**验证**:
-- `CursorTests` 新增一条:照 GDK 的请求序列建 1×1、热点 (1, 1) 的光标,照收、宿主拿到 `Hidden`;热点 (2, 1) 照旧 BadMatch。
-  `VelaShell.XServer.Tests` 553 通过 / 9 跳过(仅 Linux)。打字退出在容器的 GTK 4.14 上没能触发(指针没藏起来),按用户日志里的请求序列与 GDK 的源码确认。
-- `CompressionTests` 新增两条:照 RFC 1951 手搭固定哈夫曼编码的流,把最后一个匹配的距离码对齐到报文的最后一个字节(修复前失败,少解 1 字节);
-  解出的长度恰好是 16 KiB 的整数倍或恰好等于上限(5 组)。`VelaShell.Ssh.Tests` 1368 通过 / 61 跳过 / 1 失败 —— 失败的是
-  `PrivateKeyWriteTests.真ssh_keygen读得出本库写的私钥`:本机临时目录的 ACL 带着别的用户组,ssh-keygen 拒读私钥,修复前的提交上一样失败,与本次无关。
-- 复现程序:修复前三次里断两次,修复后四次都不断。两个测试工程 `-warnaserror -p:EnforceCodeStyleInBuild=true` 构建 0 警告。
-
-文档:velashell-docs 中英镜像的 X Server 架构 §7「字体」与排障「已修的缺陷」、SSH 规格 01 §6、SSH 架构 §11.2.30,
-在 [velashell-docs#115](https://github.com/VelaShellLabs/velashell-docs/pull/115),与本 PR 互相引用。
+**起因**:远端 `gnome-calculator` 里用本机输入法打字即以 `BadMatch`(`request_code 93`)退出;之后再起计算器,SSH 每次连上 1.4 秒左右就断开。是两个互不相干的缺陷。
+**一、打字就退出(X 服务端)**:GTK 打字时藏指针,GDK 的隐形指针是 1×1 像素图同时当 source 与 mask、热点 (1, 1)、不设错误陷阱;热点正落在右下边界上,`CreateCursor` 回 BadMatch,GTK 就退出(敲任何键都会,与中文无关)。改为热点落在右边 / 下边边界线上照收,越界的照旧 BadMatch;mask 全为 0 的光标按隐形指针(`Hidden`)交给宿主。RENDER 的 CreateCursor 仍按严格规则。
+**二、开着压缩时 SSH 断开(SSH 库)**:连 OpenSSH 9.6 复现,以「读取 string 需要 32768 字节,只剩 32759 字节」断开。根因在 `ZlibCompressor.Decompress`(10-09 换成 `ZLibDecoder` 时引入)按「输入喂完」收工:OpenSSH 每个报文末尾是只有几个位的部分 flush,输入可能已全进解码器、而 16 KiB 输出缓冲恰在最后一个匹配中间用满,压着的 9 字节留给了下一个报文。改为输入喂完后只要还报 `DestinationTooSmall` 就接着取,上限照旧。⚠️ 本库自己的压缩器以同步 flush(`00 00 FF FF`)收尾,往返用例永远测不出来 —— 回归用例照 RFC 1951 手搭固定哈夫曼编码的流。
+⚠️ 本机 `PrivateKeyWriteTests.真ssh_keygen读得出本库写的私钥` 失败与改动无关:`%TEMP%` 的 ACL 带着别的用户组,Windows 版 ssh-keygen 拒读私钥。
+文档:velashell-docs#115(中英镜像的 X Server 架构 §7「字体」与排障「已修的缺陷」、SSH 规格 01 §6、SSH 架构 §11.2.30)。
 
 ## ✅ 198. 2026-10-12 上传选择框:路径栏能直接输入;敲文件名开头即定位(用户需求)
 
-**起因**:上传选择框(`LocalPathPickerDialog`)的路径栏只有面包屑,要去 `D:\Books\123\35` 得先在下拉框里切盘、再一级级点;
-一百个文件里找 `fxyc.txt` 只能滚着找。用户要的是资源管理器那两样:地址栏能敲路径,列表里敲名字开头就跳过去。
-
-**一、路径栏直接输入**:手势与远端浏览器的路径栏(#226)一致 —— 面包屑末尾的铅笔按钮、点面包屑后面的空白(资源管理器地址栏同款)或 `Ctrl+L`
-切成输入框,预填并全选当前路径;回车跳转、Esc / 失焦取消。逻辑在 `LocalFilePaneViewModel`(`BeginPathEdit` / `CommitPathEditAsync` /
-`ResolvePathInput`):认两头的双引号(资源管理器「复制为路径」会带上)、`%VAR%`、`~` / `~/…`、相对**当前目录**的路径与 `..`;
-只写盘符的 `D:` 当作 `D:\`(按 Windows 的规矩它是「D 盘上的当前目录」);用双参的 `Path.GetFullPath`,相对路径绝不落到进程工作目录上。
-输入的是文件时进它所在的目录并选中它,再按一次回车就是上传。跳转失败时输入框不收、文本不动,红条显示原因。
-回车与 Esc 都在输入框上就地标成已处理:漏到窗口上,回车会触发默认的「上传」按钮把列表里选着的东西直接传走,Esc 会把整个选择框关掉。
-
-**二、键入定位**(`Views/TypeAheadSelection` 接线 + `Views/TypeAheadSearch` 纯逻辑):键入挂在整个窗口上收(焦点停在按钮上、刚打开谁都没焦点时也能用),
-路径框与下拉框自己处理的键入不碰。规则照资源管理器:1 秒内连敲的字符攒成一个前缀;只敲一个字符时从当前项的下一项找起、到底绕回,
-所以连按同一个字母会在同字母开头的项之间轮转;多个字符时从当前项本身找起(敲 `f`、`fx`、`fxy` 时当前项还对得上就不动);
-快速连按同一个字母又没有以它开头的项时退化成按首字母轮转。不分大小写,`..` 不参与。定位到的项单独选中、滚进视口、焦点跟过去。
-没用 Avalonia 自带的 `IsTextSearchEnabled`:它总从第一项找起、不轮转、不滚动、焦点不跟,一百个文件里定位到第八十个,选中了也看不见。
-选择框底部的提示文案补了一句「直接键入名称即可定位」,快捷键目录在「SFTP 文件管理器」组登记了这一条(仅上传选择框)。
-
-**三、列表里的回车**:定位到之后按回车本该就是「上传」,实际什么也不发生 —— `ListBoxItem` 自己把回车标成已处理,默认按钮收不到
-(点选一行再按回车也一直是这样)。列表上以 `handledEventsToo` 收回车,规矩与双击一致:只选着一个文件夹(含 `..`)时进去、焦点给新列表的第一行;
-选着文件或多项时确认上传。快捷键目录同组登记「进入选中的文件夹(选着文件或多项时回车即上传)」。
-
-**验证**:
-- `TypeAheadSearchTests` 12 条钉住匹配规则(前缀收窄、轮转、绕回、超时重来、开头空格与控制字符不算、输入法整词上屏)。
-- `LocalFilePaneViewModelTests` 新增 11 条:跳目录、跳文件并选中、跳失败留在输入态、空白即取消、引号 / 相对路径 / `~` / 环境变量 / 盘符的解析。
-- `LocalPathPickerKeyboardUiTests` 10 条在真窗口里派发键入、按键与点击:96 行的列表里敲 `fxyc` 逐字落到预期的行、最后一行滚进视口且焦点在它上面;
-  连按 f 轮转;定位替换掉原有多选;定位到文件夹后回车进去而不是上传;
-  `Ctrl+L` 后输入框获焦、在里面打字不触发定位;输入目录回车跳转而选择框不被提交(先选着一项让「上传」可按);
-  输入带引号的文件路径回车后选中并滚到它、再回车即确认;路径框里的 Esc 只收输入框、再按一次才关;点面包屑按钮不切输入框、点后面的空白才切。
-  去掉输入框上回车 / Esc 的「已处理」标记,对应两条用例即失败。
-- `VelaShell.Tests` 2017 通过 / 19 跳过(按环境),其中 `ShortcutCatalogTests.Doc_ListsEveryCatalogEntry` 用 `VELASHELL_DOCS_DIR` 指向文档分支真跑过;
-  应用与测试工程 `-warnaserror -p:EnforceCodeStyleInBuild=true` 构建 0 警告。
-
-**CI 上暴露的两处测试问题**(PR 第一轮 CI,Ubuntu / macOS 红):
-- `CommittingAFilePath_OpensItsFolder_AndSelectsTheFile` 输入的是 `FXYC.txt`:假文件系统不分大小写、认了这个文件,视图模型按平台比较文件名,
-  Linux / macOS 上选不中。用例改为按实际大小写输入(Windows 本机测不出来)。
-- `GlxTests.双缓冲交换只拷与窗口里不一样的那一块…` 偶发「第二帧损伤成了整窗(2400 像素)」,与本次改动无关、之前也潜伏着:映射窗口本身记一块整窗损伤,
-  第一次交换之后「等有损伤」一上来就成立;回复在执行一批请求的中途就发出,损伤要等这一批放锁之后才交 —— 交换、Sync 与下一个 GetImage
-  落进同一批时,用例清得比第一帧的损伤到得早,它被算进了第二帧。改为映射后先清、第一次交换后等整窗的损伤都到了再清。
-  用临时探针(执行线程每条请求后停 20 毫秒、批预算放到 2 秒)稳定复现:旧用例三次全挂、每次都是 2400 像素,新用例三次全过;探针已撤。
-  `VelaShell.XServer.Tests` 553 通过 / 9 跳过。
-
-文档:velashell-docs 中英镜像的「交互与界面规格」§6(上传选择框)与「快捷键参考」SFTP 文件管理器一节,
-在 [velashell-docs#116](https://github.com/VelaShellLabs/velashell-docs/pull/116),与本 PR 互相引用。
+上传选择框(`LocalPathPickerDialog`)照资源管理器补上两样。
+**一、路径栏直接输入**:手势与远端浏览器的路径栏(#226)一致 —— 铅笔按钮、点面包屑后面的空白或 `Ctrl+L` 切成输入框,回车跳转、Esc / 失焦取消。`LocalFilePaneViewModel.ResolvePathInput` 认两头的双引号、`%VAR%`、`~`、相对**当前目录**的路径与 `..`;只写 `D:` 当作 `D:\`;用双参的 `Path.GetFullPath`,相对路径绝不落到进程工作目录。输入的是文件时进它所在目录并选中它。⚠️ 回车与 Esc 必须在输入框上就地标成已处理:漏到窗口上,回车会触发默认的「上传」把选着的东西传走,Esc 会关掉整个选择框。
+**二、键入定位**(`Views/TypeAheadSelection` 接线 + `Views/TypeAheadSearch` 纯逻辑):挂在整个窗口上收。规则照资源管理器:1 秒内连敲攒成一个前缀;单个字符从当前项的下一项找起、到底绕回(连按同一字母即在同字母开头的项间轮转),多个字符从当前项本身找起;不分大小写,`..` 不参与;定位到的项单独选中、滚进视口、焦点跟过去。否决 Avalonia 自带的 `IsTextSearchEnabled`:总从第一项找起、不轮转、不滚动、焦点不跟。
+**三、列表里的回车**:⚠️ `ListBoxItem` 自己把回车标成已处理,默认按钮收不到;列表上以 `handledEventsToo` 收回车,规矩同双击:只选着一个文件夹(含 `..`)时进去,选着文件或多项时确认上传。
+⚠️ CI 暴露的测试坑:假文件系统不分大小写而视图模型按平台比较文件名,输入 `FXYC.txt` 在 Linux / macOS 上选不中。顺带修 `GlxTests` 双缓冲交换用例的旧偶发:回复在一批请求中途就发出、损伤要放锁后才交,映射窗口的整窗损伤被算进了第二帧。
+文档:velashell-docs#116(中英镜像的「交互与界面规格」§6 与「快捷键参考」SFTP 文件管理器一节)。
 
 ## ✅ 199. 2026-10-12 IPv6 主机地址:编辑器、命令行拉起、导入与各处显示统一认 IPv6(#611,用户反馈)
 
-**起因**:用户在 macOS 上给连接填 IPv6 地址,报 `Can not parse port number from 'tzraeq@xxxx:xxxx:x:xxx::xxxx:xxxx'.`
-
-**根因**:那句报错出自 1.6.0 之前的底层库(Tmds.Ssh)。那时宿主把 `$"{用户名}@{主机}"` 拼成一个串交给库去拆,裸 IPv6 里的冒号被当成端口分隔符,
-最后一段读不成端口就报错(`tzraeq@` 来自用户名栏,地址本身填在主机栏)。1.6.0 换成 VelaShell.Ssh 之后,主机与端口分开传
-(`SshConnectionAssembler`:`new SshConnectionOptions(用户名, 主机, 端口)`),TCP 拨号先按 IP 字面量解析,**裸 IPv6 直连已经能用**。
-但顺着链路查下来,还有这几处不认 IPv6:
-- **命令行 / `ssh://` 拉起**(`XshellLaunchParser`)按最后一个冒号拆端口:最后一段全是数字时(`2001:db8:0:1::10:20`)读成另一个地址的 20 端口,
-  **不报错、连到了别处**;`ssh://2001:db8::1` 读成主机 `2001:db8:`、端口 1。
-- **SSH 库的目标串**(`SshConnectionOptions("joe@2001:db8::1")`)同样按最后一个冒号拆,报「端口不合法」。宿主不走这个入口;同库的 `ParseJumpSpec` 一直是对的。
-- **主机栏写成 `[2001:db8::1]` / `[2001:db8::1]:2222`** 的原样存下:直连碰巧能通(`IPAddress.TryParse` 认方括号),但方括号后面的端口被默默丢掉;
-  经跳板时 `direct-tcpip` 把方括号原样发给服务端;主机密钥与裸地址记成两台;库的端点显示成 `[[…]]:22`;页脚预览是 `root@[[2001:db8::1]:2222]:22`。
-- **CSV 导入**不带端口的 `[v6]` 留着方括号。
-- 界面与消息里拼 `host:port` 的二十来处不加方括号,`2001:db8::1:22` 读不出哪段是端口。
-
+**根因**:用户报的 `Can not parse port number from 'tzraeq@xxxx:…'` 出自 1.6.0 之前的 Tmds.Ssh(宿主拼 `用户名@主机` 交给库拆,IPv6 的冒号被当成端口分隔符)。换成 VelaShell.Ssh 后主机与端口分开传,**裸 IPv6 直连已经能用**;但还有几处不认:命令行 / `ssh://` 拉起(`XshellLaunchParser`)按最后一个冒号拆,`2001:db8:0:1::10:20` 读成另一个地址的 20 端口,**不报错、连到了别处**;库的目标串 `SshConnectionOptions(string)` 同样;主机栏写 `[v6]:port` 时端口被默默丢掉、方括号经跳板原样发给服务端、主机密钥与裸地址记成两台;拼 `host:port` 的二十来处不加方括号。
 **改法**:
-- Core 新增 `Net/HostAddress`:`TrySplit`(`host` / `host:port` / `[v6]` / `[v6]:port`;不带方括号又有不止一个冒号的整段是主机、不拆端口,
-  与 OpenSSH 同一个口径)、`Normalize`(去掉包住整个地址的方括号)、`Bracket` / `FormatEndPoint` / `FormatTarget`(IPv6 加方括号)。
-  **配置里一律存不带方括号的裸地址。**「含冒号就是 IPv6」与库的 `SshEndPoint` 同一个判断;不用 `IPAddress.TryParse`:
-  Windows 上它认不出按网卡名写的 zone id(`fe80::1%en0`),还会把 `[::1]:2222` 里的端口丢掉。
-- **连接编辑器**:保存 / 测试 / 页脚预览按「去掉方括号、方括号后面的端口取代端口栏」算;方括号写坏了(不闭合、后面不是 `:端口`)
-  在栏下提示(新增 `Profile_ErrHostBrackets`,五语言)、三个按钮灰着。只认方括号这一种写法 —— 串口协议的主机栏装设备名,插件协议的主机写法由插件定。
-- **拉起**:`XshellLaunchParser` 改用 `HostAddress.TrySplit`(zone id 的 `%25` 还原照旧);`.xsh` 的主机去方括号;确认弹窗的目标加方括号。
-- **导入**:CSV、JSON 存档、ssh_config / Xshell / WinSCP(`SessionImportWriter`)都去方括号。CSV「对应那一栏空着才拆」的规矩不变。
-- **连接时兜底**(早先存下的配置):跳板链每一跳(`ConnectionWorkflowService`)、FTP(`FtpConnectionInfo`)、
-  端口转发的目标主机与远程转发的监听地址(`LibraryPortForwardHandle`;插件经跳板的那条隧道也走这里)。
-- **显示**:确认弹窗、认证 / 键盘交互框、主机指纹框与「已信任主机」列表(新增 `HostBracketConverter`)、标签页覆盖层、SFTP 文档、
-  连接诊断、隧道列表、共享凭据、最近连接、导入预览、审计详情、主机密钥告警与几条错误消息,一律经 `HostAddress`。
-  X11 拖放按连接名找会话的两处(`VelaSshClientWrapper` 的 `target` 与 `SftpXServerDropUploader.LabelOf`)一起换,保持同一个写法。
-- **刻意不动**:持久化的键(主机密钥的文档 Id、最近连接的键、外部拉起的信任判据 `TrustKey`)与 `HostTrustOnceCache`、`RemoteShellProbe.CacheKey` ——
-  端口在最后一个冒号之后,本来就没有歧义;改写法等于让已存的记录全部对不上。结构化日志的模板也不动。
-- **SSH 库**:`SshConnectionOptions(string)` 不带方括号又有不止一个冒号的,整段是地址、端口取 22。
+- Core 新增 `Net/HostAddress`(`TrySplit` / `Normalize` / `FormatEndPoint` 等):不带方括号又有不止一个冒号的整段是主机、不拆端口,与 OpenSSH 同一个口径;库的 `SshConnectionOptions(string)` 照此改。**配置里一律存不带方括号的裸地址。**⚠️ 不用 `IPAddress.TryParse` 判断:Windows 上它认不出按网卡名写的 zone id(`fe80::1%en0`),还会丢掉 `[::1]:2222` 里的端口;改用与库的 `SshEndPoint` 同一个「含冒号就是 IPv6」。
+- 编辑器按「去掉方括号、方括号后的端口取代端口栏」保存,写坏了在栏下提示、按钮灰着;拉起与各类导入都去方括号;早先存下的配置在连接时兜底(跳板每一跳、FTP、端口转发);显示一律经 `HostAddress`(`HostBracketConverter`)。⚠️ X11 拖放按连接名找会话的两处(`VelaSshClientWrapper` 的 `target` 与 `SftpXServerDropUploader.LabelOf`)要同一个写法。
+- **刻意不动**持久化的键(主机密钥的文档 Id、最近连接的键、外部拉起的 `TrustKey`)与几处缓存键:端口在最后一个冒号之后本来没有歧义,改写法等于让已存的记录全部对不上。
 
-**验证**:
-- `HostAddressTests` 6 条(32 组数据):各种写法的拆分、写坏的方括号、#611 那个最后一段全是数字的地址不被切、规整不碰串口设备名、拼了再拆回得来。
-- `XshellLaunchParserTests` 新增 6 组:`ssh://tzraeq@2001:db8:0:1::10:20`、不带 scheme 的、`ssh://2001:db8::1`、`::1`、口令里带 `@` 加 zone id 的,
-  全是整段主机、默认端口,确认弹窗的目标带方括号;裸 IPv6 配 `-p` 取那个端口。改动之前前三组连到了别的主机 / 端口上。
-- `ConnectionProfile*Tests` 新增 15 组:裸地址 / zone id / `[v6]` / `[v6]:port` 合法,四种写坏的方括号报错且保存按钮灰着;
-  保存出来的主机不带方括号、`[v6]:port` 的端口取代端口栏、名称兜底也用裸地址;页脚预览不再套两层方括号。
-- `SessionCsvTests`:不带端口的 `[v6]`、`user@[v6]` 配端口栏、最后一段全是数字的裸 IPv6。
-- `ConnectionTests.目标串的各种写法`:库的目标串认不带方括号的 IPv6。
-- **真实对端**:`Start-TestServer.ps1` 起 OpenSSH(容器端口同时发布在 `0.0.0.0` 与 `[::]`),`VELASHELL_SSH_INTEROP_HOST` 分别设成
-  `127.0.0.1` 与 `::1` 跑整组 `Interop`:两边都是 46 通过 / 15 跳过(按环境),连接、认证、SFTP、转发、重协商、agent 都走真的 IPv6 环回。
-  头一轮 `::1` 挂了两条主机证书用例 —— 脚本只给主机证书签了 `127.0.0.1,localhost`,库照规矩拒了(消息里的端点正确显示成 `[::1]:2299`);
-  脚本的主机证书主体补上 `::1` 之后全过。
-- 全部测试工程:除 `PrivateKeyWriteTests.真ssh_keygen读得出本库写的私钥` 外全过(`VelaShell.Tests` 2004 通过 / 47 跳过,`Core` 818 / 23,
-  `Infrastructure` 684 / 5,`Ssh` 1368 / 61,其余工程全过)。那一条挂在本机 `%TEMP%` 的权限上(多了一个 `CodexSandboxUsers` 组,
-  Windows 版 `ssh-keygen` 拒读私钥),与本次改动无关。解决方案 Debug 构建 0 警告。
-
-文档:velashell-docs 中英镜像的「交互与界面规格」(连接目标一节)、「Xshell 兼容登录」、「会话导入」(CSV 的 `host` 列)与 SSH 库的「上手」(目标串写法),
-在 [velashell-docs#117](https://github.com/VelaShellLabs/velashell-docs/pull/117),与本 PR 互相引用。
-
-**CI 上暴露的测试问题**(PR 第一轮 CI,Ubuntu 红一条,与本次改动无关、之前也潜伏着):
-- `AvaloniaXServerHostUiTests.NativeResizeWithoutUserReason_IsReportedToTheServer` 偶发「The calling thread cannot access this object because a different thread owns it」,
-  抛在 headless 起平台的半路(`EnsureIsolatedApplication` → `DefaultRenderLoop.Add` → `VerifyAccess`),用例体一行都没跑。
-  根因在宿主:Linux 上激活 X 窗口时在后台读桌面的键位表(2026-10-07 起;只有 Linux 读),读完的续体跑在线程池上、去读静态的 `Dispatcher.UIThread`。
-  Avalonia 12.1.4 的 headless 隔离在两条 UI 用例之间把 `s_uiThread` 置空,下一条起平台时才在会话线程上重建;`UIThread` 在 `s_uiThread` 为空时
-  **由哪条线程读就在哪条线程上新建一个、并把它认作 UI 调度器** —— 续体正好落在这个空当里,下一条 UI 用例起平台就失败。
-  改为在 UI 线程上取下调度器、续体投回这一个;投给已经收工的调度器是空操作(那一轮的服务端早就不在了)。
-  用临时探针稳定复现:读键盘改成各平台都读(随机 1–60 毫秒)、续体在投递之前连读 300 毫秒静态的 `UIThread`,
-  旧写法三次全挂(每次 49 条里 32 条、栈与 CI 一致),新写法(续体只碰取下来的那个调度器)三次全过;探针已撤。全仓再没有别处在线程池续体里读它。
-- 顺手:`HostAddressTests` 一处多余的转换(IDE0004)。先前的严格构建是增量的、没重跑那个工程的分析器,`--no-incremental` 重跑才报出来;现在 0 警告。
+真实对端 `::1` 跑整组 `Interop` 与 `127.0.0.1` 结果一致(`Start-TestServer.ps1` 的主机证书主体补上了 `::1`)。
+⚠️ CI 暴露的旧坑:`AvaloniaXServerHostUiTests` 偶发跨线程访问异常。根因在宿主:Linux 上激活 X 窗口时后台读键位表,续体在线程池上读静态的 `Dispatcher.UIThread`;Avalonia 12.1.4 的 headless 隔离在两条用例之间把 `s_uiThread` 置空,此时**由哪条线程读就在哪条线程上新建一个、并认作 UI 调度器**。改为在 UI 线程上取下调度器、续体投回这一个。
+文档:velashell-docs#117(中英镜像的「交互与界面规格」连接目标一节、「Xshell 兼容登录」、「会话导入」与 SSH 库「上手」)。
 
 ## ✅ 200. 2026-10-12 SFTP / FTP 文件栏:本地栏的路径栏能直接输入;本地栏与远端栏都能敲文件名开头定位、回车进文件夹(用户需求)
 
-**起因**:§198 给上传选择框加了路径输入与键入定位,双栏文档的本地栏、远端栏(含双远端栏与终端侧边栏的文件浏览器)还没有。
-
-**一、本地栏的路径栏**:上传选择框里的路径栏抽成共用控件 `Views/LocalPathBar`(面包屑、铅笔、输入框,回车 / Esc / 失焦的处理与「输入框收起」事件),
-选择框与 `LocalFilePaneView` 都用它,逻辑仍在 `LocalFilePaneViewModel`(§198)。`Ctrl+L` 由宿主在自己身上以隧道登记 ——
-选择框是整个窗口,本地栏只管焦点在本地栏里的时候,焦点在远端栏时由远端栏自己的路径栏接。输入框收起后焦点回到列表(`ListBoxFocus.FocusSelectedOrFirstRow`)。
-
-**二、两栏的键入定位**:`TypeAheadSelection` 接到 `LocalFilePaneView` 与 `FileBrowserView` 上,范围是这一栏自己(终端、另一栏里的键入不归它管)。
-接的时候测出两个让它「进了目录就不灵」的问题,都修了:
-- 进了别的目录接着敲,前缀还带着进目录之前敲的字(敲 `sub`、双击进去、1 秒内再敲 `in`,找的是 `subin`)。资源管理器换了目录就从头攒 ——
-  `TypeAheadSelection` 在列表的行整批变化时清掉前缀。上传选择框同样受益。
-- 行整批换掉(进目录、刷新、后台自动刷新)时,焦点所在的那一行跟着被拆掉,键盘焦点没了着落,敲字落不到这一栏。
-  `ListBoxFocus.KeepFocusAcrossReloads`:列表失去焦点、而焦点也没去别处(没在终端、另一栏、输入框上)时,把焦点还给视口里的一整行 ——
-  选中的行整行可见就给它,否则给最上面那一整行;**不滚动**(只露半行的不给,获焦会把它滚进来;最初给「实现出来的最上面一行」,
-  测出刷新后被拽上去 27 像素)。窗口没激活时不动。
-
-**三、两栏里的回车进文件夹**:`ListBoxItem` 自己把回车标成已处理(§198),两栏的列表上以 `handledEventsToo` 收回车:只选着一个文件夹(含 `..`)时
-走与双击同一个 `ActivateCommand` 进去,焦点由 `KeepFocusAcrossReloads` 留在新列表上,接着就能敲字定位;文件上的回车不做事 ——
-远端双击文件是下载并打开,不该被一个顺手的回车触发。
-
-**快捷键目录**:「定位到名称以所敲字母开头的项」与「进入选中的文件夹」都去掉「仅上传选择框」的限定(后者的标签也去掉「选着文件或多项时回车即上传」——
-选择框里那是确认对话框,已由对话框一组的「触发默认按钮」一条覆盖),随之没人用的 `Sc_NoteUploadPicker` 从五份 resx 删掉。
-
-**验证**:
-- `FilePaneKeyboardUiTests` 14 条:本地栏敲 `fxyc` 定位、滚进视口、焦点跟过去;进了目录接着敲还能定位(去掉焦点保持即失败,前缀不清空也失败);
-  刷新后焦点留在列表且滚动位置不变;`Ctrl+L` 后输入框获焦、在里面打字不触发定位、回车跳转后焦点回到列表;输入文件路径即选中;
-  路径框里的 Esc 不冒到窗口上;点面包屑后的空白切成输入框;回车进文件夹、文件上的回车不做事。远端栏敲 `fxyc` 定位、连按 f 轮转、
-  进了目录(双击或回车)接着敲还能定位、文件上的回车不做事;焦点不在这一栏时敲字不定位。
-- 上传选择框的 10 条用例原样通过(路径栏换成共用控件之后)。`VelaShell.Tests` 2046 通过 / 19 跳过(按环境),
-  `ShortcutCatalogTests.Doc_ListsEveryCatalogEntry` 对着文档分支真跑过;应用与测试工程 `-warnaserror -p:EnforceCodeStyleInBuild=true` 构建 0 警告。
-
-文档:velashell-docs 中英镜像的「交互与界面规格」§6(文件列表的交互)与「快捷键参考」SFTP 文件管理器一节,
-在 [velashell-docs#118](https://github.com/VelaShellLabs/velashell-docs/pull/118),与本 PR 互相引用。
+§198 的路径输入与键入定位推广到双栏文档的本地栏、远端栏(含终端侧边栏的文件浏览器)。
+**一、本地栏的路径栏**:抽成共用控件 `Views/LocalPathBar`。`Ctrl+L` 由宿主在自己身上以隧道登记 —— 选择框管整个窗口,本地栏只管焦点在本栏时,焦点在远端栏时由它自己的路径栏接。
+**二、两栏的键入定位**:`TypeAheadSelection` 接到 `LocalFilePaneView` 与 `FileBrowserView`,范围只在本栏。修了两个「进了目录就不灵」的问题:⚠️ 前缀还带着进目录前敲的字 —— 列表行整批变化时清掉前缀;⚠️ 行整批换掉时焦点所在行被拆、键盘焦点没了着落 —— `ListBoxFocus.KeepFocusAcrossReloads` 把焦点还给视口里的一整行,**不滚动**(最初给「实现出来的最上面一行」,刷新后被拽上去 27 像素)。
+**三、回车进文件夹**:只选着一个文件夹(含 `..`)时走与双击同一个 `ActivateCommand`;文件上的回车不做事 —— 远端双击文件是下载并打开,不该被一个顺手的回车触发。
+文档:velashell-docs#118(中英镜像的「交互与界面规格」§6 与「快捷键参考」SFTP 文件管理器一节)。
 
 ## ✅ 201. 2026-10-12 内置 X Server 的帧率与跟手程度:搭测量台、修 SSH 自适应窗口、宿主保温避开 Avalonia 的渲染停顿、RANDR 报真实刷新率(用户需求)
 
-**起因**:用户觉得内置 X Server「各方面都比较完善了,但刷新率和跟手感不太好」,要求用 Docker 测试、调试、验证能不能做到高帧率低延迟。
-
-**一、测量台**(`scripts/xserver/perf/`):
-- 镜像 `velashell-xperf`:`xprobe.c`(Xlib 写的探针 —— 指针跟随画方块、按键整窗换色、整窗 PutImage + XSync 的动画并报帧率)、glxgears、x11perf、xterm、
-  GTK 3 / 4 的演示程序,外加 sshd(`dp` / `testpass`、开 X11 转发)与 tc(netem)。
-- `perf.cs`:内置服务端 + 真实的 `AvaloniaXServerHost`(`--headless` 换成每 16.7 毫秒取一次像素的模拟宿主)。容器经 Docker 直连自带的监听,
-  或 `--ssh` 起 sshd 容器、经 VelaShell.Ssh 的 X11 转发与连接器接进来(与宿主同一条路;`--netem "delay 15ms"` 模拟链路、`--compress` 开压缩)。
-  一层包装宿主给每批损伤打时间戳;直接往服务端注入指针 / 按键,量到服务端报出那块损伤为止;订阅宿主一侧新加的仪表源
-  `VelaShell.XServer.Host`(`XServerHostMetrics`:每秒取几帧像素、让帧数、损伤报出到像素进位图的延迟、取像素的耗时)与执行线程的忙碌时间;
-  另报 UI 线程的派发延迟(真实输入先经 UI 线程)、「损伤→进位图」超过 50 毫秒的每一次。
-- **一定要用 Release 量**:先用 Debug 的 host-demo 量,glxgears 1280×720 只有 40 帧,Release 是 227 帧。
-
-**二、Docker 直连(服务端 + 宿主本身)已经够快**,不是瓶颈:注入到损伤 p50 0.4 毫秒、p99 2 毫秒以内(指针跟随、按键、xterm 回显);
-整窗动画 1280×720 客户端 340–400 帧、1920×1080 139 帧,宿主每秒取满 60 帧(本机 2560×1440@60 Hz),执行线程忙 9–12%,
-取一次 1080p 整窗像素 p50 1.4 毫秒;GTK 4 `frames` 与 GTK 3 `pixbufs` 都稳在 60 帧;UI 线程派发延迟在 1080p 整窗动画下最长 2.6 毫秒。
-零星更新时损伤到像素进位图 0.1 毫秒;持续动画时最早那批要等到下一帧(p50 15.5 毫秒,就是一帧)。
-
-**三、经 SSH 的 X11 转发只有 9 帧:SSH 库的自适应窗口长不上去**(修在 `src/VelaShell.Ssh`,velashell-docs `zh/ssh/spec/05-connection.md` §3.3、
-`zh/ssh/design/architecture.md` §11.2.31):同一个整窗动画经 SSH(本机 Docker 里的 sshd,不加延迟、不压缩)9.2 帧、glxgears 9 帧。
-会话通道的裸吞吐只有 29–59 MB/s,窗口一直停在 256 KiB;固定 2 MiB 时 190 MB/s、8 MiB 时 675 MB/s —— 吞吐被窗口 / RTT 封住
-(Docker Desktop 端口转发的有效往返约 8 毫秒)。扩窗的判据只认「见底」(到包时剩余 ≤ 1/8):回补在半窗处就发出去,对端空等那笔额度的往返里
-账上的剩余已经被它涨回去了,窗口有好几个报文、数据陆续到达时永远到不了 1/8。改为「见底」之外认「空等」:读空之后等下一包的最长一段
-占最近两轮的 1/4 以上(等带宽时只占「报文 / 窗口」,256 KiB 窗口里 1/8),4 个报文以上的窗口才用,扩过一次上一轮的空档作废。
-测试:链路模拟加了只限带宽的数据方向,新增「数据陆续到达时窗口照样会长大」(修复前停在 256 KiB);判据抽成只吃给定时刻的 `CreditIdleDetector`,`CreditIdleDetectorTests` 6 条按到达序列逐拍核对(匀速不算、成批算、没读空不算、窗口太小不算、扩后作废、头两轮不判)。
-起初「带宽才是瓶颈时窗口不白长」也走链路模拟,在 macOS 的 CI 上失败(窗口长到 768 KiB):模拟器按计划时刻推下一次允许发送的时间,计时器醒晚了就把积压的一口气补发,
-「匀速到达」成了「成批到、批间空着」,判据照规矩认成空等 —— 测到的不是它想测的东西,改成上面的确定性用例;
-`AdaptiveWindowTests` 13 条与 `CreditIdleDetectorTests` 6 条全过,SSH 库 1437 条(1375 通过 / 61 跳过)只有 `真ssh_keygen读得出本库写的私钥` 失败 —— 本机临时目录继承了一个沙箱用户组的权限,
-Windows 的 ssh-keygen 拒读私钥文件,与本改动无关。**修复后经 SSH:整窗动画 64.5 帧、glxgears 60.8 帧**(与把窗口固定成 8 MiB 时一样),
-GTK 4 `frames` 60 帧、损伤到进位图 p50 从 10.3 毫秒降到 3.6 毫秒。加 15 毫秒单向延迟(netem)时注入到损伤 p50 16 毫秒 —— 我们这一侧只多 1 毫秒;
-整窗动画降到 24 帧、GTK 4 `frames` 39 帧,那是客户端每帧的同步往返(XSync、GTK 4 每帧重算顶层尺寸)乘以链路延迟,服务端省不掉。
-
-**四、偶发的「卡一下」在 Avalonia,宿主给 X 窗口保温**(`Views/XServer/XNativeWindow.cs` 的 `XSurface.KeepWarm` / `Warm`):
-零星刷新时每隔十几到几十秒,「损伤→进位图」有一次 400–490 毫秒的停顿。期间 UI 线程空着(Input 优先级的派发探针最长 1.8 毫秒)、
-另一条线程循环 `DwmFlush` 也没有空档;临时加的追踪显示是提交给合成器的那一批 ~450 毫秒才处理完,停顿当时抓的转储里
-Avalonia 的渲染计时器线程(`WinUiCompositorConnection.RunLoop`)停在 `GetMessage`,等系统合成器确认上一次提交。与 X 无关 ——
-一个只按 20–40 毫秒改一段文字的纯 Avalonia 12.1.4 程序同样会(3 分钟 4 次);WinUI 合成、DirectComposition、低延迟 DXGI 交换链都会,
-AngleEgl + RedirectionSurface 3 分钟 1 次,Wgl + RedirectionSurface 0 次;关掉 Windows 的节能限速不变。**每帧都有东西画时 3 分钟 10776 帧一次也不会**:
-触发的是「连着出帧之后转成空拍」那一次的确认。打字节奏(两键间隔 80–600 毫秒)下纯 Avalonia 程序 879 键停 9 次(最长 281 毫秒);
-「保温」300 毫秒反而停 26 次(转空拍的次数多了),1 秒 0 次。
-宿主改为:X 窗口被激活、指针移进来,或用户在里面按键、动指针、按按钮、滚动、经输入法上屏或改预编辑时,这个窗口保温 2 秒 —— 没有新损伤的帧也 `InvalidateVisual` 一次
-(不碰像素锁、不传纹理),渲染循环每拍都有东西画。窗口激活与指针移进来当场转起来(程序重画完焦点、光标就闲下来,第一个键正落在转空拍之后);按键这类输入只把保温往后延,回应照常先画、画完接着保温 —— 抢先空画一帧的话,闲了几秒之后的第一个键要排在它后面(实测 p50 从 0.4 毫秒变成 14 毫秒,而闲得够久时本来也不会撞上停顿,80 次 0 次)。只按用户输入保温、不按损伤:
-光标闪烁、时钟这类程序自己的刷新没人在等,按它们保温只会让窗口一直 60 帧地重画。代价是保温期间新来的损伤排到下一拍(平均晚一帧左右)。
-`perf.cs` 在 Avalonia 宿主模式下照真实的路注入(投到 UI 线程上、经反射调 `Warm`),`--no-warm` 关掉保温做对照。
-整个应用(终端打字回显、对话框)同样会撞上这个停顿,记进 `feature-plan.md`(应用级保温 / 换渲染组合 / 报给上游)。
-
-**五、RANDR 报真实的刷新率**(`Services/XServer/DisplayRefreshRate.cs`):宿主原先没填 `XMonitor.RefreshRate`,一律报 60,GTK、Qt、浏览器
-在 120 / 144 Hz 的屏上也只画 60 帧。Windows 上经 `Screen.TryGetPlatformHandle()` 的 HMONITOR 取设备名、`EnumDisplaySettingsW` 读当前显示模式;
-单窗口模式那一台也带上主显示器的刷新率。macOS / Linux 仍报 60(记进 `feature-plan.md`)。
-
-**六、宿主一侧的计量**(`Services/XServer/XServerHostMetrics.cs`,仪表源 `VelaShell.XServer.Host`):`frames`、`frames.busy`、`damage.latency`
-(`TopLevelDamaged` 记下这批损伤最早报来的时刻,一路带到 `XSurface`)、`read.duration`。没人订阅时不记;窗口打开之前攒的损伤不算延迟。
-
-**验证**(本机 Windows 11、2560×1440@60 Hz、Intel 核显;Docker Desktop;Release):
-- 保温的 A/B(真实宿主、Docker 直连、打字节奏 80–600 毫秒、各 600 键):不保温时 `xprobe key` 停 5 次(64–154 毫秒,p99 48.5)、
-  xterm 回显停 5 次(56–214 毫秒,p99 41.6);保温 2 秒时两者都 0 次,最长 17.3 / 16.8 毫秒,损伤到进位图 p50 从 0.2 升到 8.3–8.6 毫秒(排到下一拍)。
-- 全部改动合起来经 SSH(本机 Docker 的 sshd,真实宿主):按键与 xterm 回显(打字节奏、各 300 键)注入到损伤 p50 1.0–1.1 毫秒,损伤到进位图最长 17 毫秒 ——
-  只有 xterm 开测时窗口闲着之后的第一个键 258 毫秒(之后加了「窗口激活、指针移进来也保温」);整窗动画 1280×720 64.7 帧、glxgears 59.3 帧、
-  GTK 4 `frames` 60 帧(修复前 9.2 / 9.0 帧);开 zlib 压缩时整窗动画 64.6 帧、glxgears 55.3 帧。
-- `dotnet build VelaShell.slnx --no-incremental -warnaserror -p:EnforceCodeStyleInBuild=true` 0 警告。`VelaShell.Tests` 2065 条:仪表描述原先写了中文,
-  被 `Code_HasNoHardcodedChineseText` 拦下,改成英文后与 X Server 相关的 81 条全过;`VelaShell.XServer.Tests` 553 通过 / 9 跳过(按环境);
-  `VelaShell.Ssh.Tests` 只有上面那条环境造成的 `真ssh_keygen读得出本库写的私钥`。
-- 闲了 2.5–4 秒之后的第一个键(Docker 直连,`--gap 2500-4000`):不保温 80 键 0 次停顿 —— 循环已完全停下时第一次输入不会撞上;
-  起初按键也当场转起来,保温组 0 次停顿但损伤到进位图 p50 14 毫秒(先空画了一帧),改为只有激活与移进来当场转起来之后 p50 0.4 毫秒;
-  改后打字节奏 `xprobe key` 与 xterm 各 400 键 0 次停顿,最长 18.7 / 19.0 毫秒。`perf.cs` 每次按键前把 X 焦点还给目标窗口
-  (测的这几分钟里本机前台一换,宿主会清掉 X 焦点,按键就没了去处)。
-
-文档:velashell-docs 中英镜像的 `ssh/spec/05-connection.md` §3.3、`ssh/design/architecture.md`(§5.5、§7、性能表、§11.2.31)、
-`xserver/design/architecture.md`(§9 测量台、§10 排查记录)、`xserver/troubleshooting.md`(「操作卡」),在 [velashell-docs#119](https://github.com/VelaShellLabs/velashell-docs/pull/119),与本 PR 互相引用。
+用户觉得内置 X Server 刷新率和跟手感不太好,要求用 Docker 测试、调试、验证能不能做到高帧率低延迟。
+**一、测量台**(`scripts/xserver/perf/`):镜像 `velashell-xperf`(Xlib 探针 `xprobe.c`、glxgears、GTK 演示、sshd、netem);`perf.cs` 起内置服务端 + 真实的 `AvaloniaXServerHost`,直连或 `--ssh` 经 X11 转发接入,注入指针 / 按键、量到损伤报出为止。⚠️ **一定要用 Release 量**:Debug 下 glxgears 1280×720 只有 40 帧,Release 227 帧。
+**二、Docker 直连(服务端 + 宿主本身)已经够快**,不是瓶颈:注入到损伤 p50 0.4 毫秒,宿主每秒取满 60 帧。
+**三、经 SSH 的 X11 转发只有 9 帧:SSH 库的自适应窗口长不上去**(`src/VelaShell.Ssh`,velashell-docs `ssh/spec/05-connection.md` §3.3、架构 §11.2.31):通道窗口一直停在 256 KiB(裸吞吐 29–59 MB/s,固定 8 MiB 时 675 MB/s)。扩窗只认「见底」(到包时剩余 ≤ 1/8),而回补在半窗处就发出,数据陆续到达时永远到不了 1/8。改为再认「**空等**」:读空之后等下一包的最长一段占最近两轮的 1/4 以上(只等带宽时只占「报文 / 窗口」),4 个报文以上的窗口才用,扩过一次上一轮的空档作废(`CreditIdleDetector`)。⚠️ 别用链路模拟测「带宽是瓶颈时窗口不白长」:macOS CI 上模拟器的计时器醒晚了会成批补发,判据照规矩认成空等 —— 改成按到达序列逐拍核对的确定性用例。修复后经 SSH 整窗动画 64.5 帧、glxgears 60.8 帧;加 15 毫秒单向延迟时我们这一侧只多 1 毫秒,帧率再降是客户端每帧的同步往返,服务端省不掉。
+**四、偶发的「卡一下」在 Avalonia,宿主给 X 窗口保温**(`XNativeWindow.cs` 的 `XSurface.KeepWarm` / `Warm`):Windows 上零星刷新时每隔十几到几十秒有一次 400–490 毫秒的停顿 —— Avalonia 的渲染计时器线程(`WinUiCompositorConnection.RunLoop`)停在 `GetMessage` 等系统合成器确认上一次提交。与 X 无关:纯 Avalonia 12.1.4 程序同样会;WinUI 合成、DirectComposition、低延迟 DXGI 交换链都会,AngleEgl + RedirectionSurface 3 分钟 1 次,Wgl + RedirectionSurface 0 次。**每帧都有东西画时 3 分钟 10776 帧一次也不会**:触发的是「连着出帧之后转成空拍」那一次的确认。宿主改为:窗口激活、指针移进来,或用户在里面输入(按键、指针、滚动、输入法)时保温 2 秒 —— 没有新损伤的帧也 `InvalidateVisual`(不碰像素锁、不传纹理)。激活与移进来当场转起来;按键只把保温往后延(抢先空画一帧会让闲了几秒后的第一个键 p50 从 0.4 毫秒变成 14 毫秒)。⚠️ 保温 300 毫秒反而更糟(转空拍的次数多了),1 秒 0 次;只按用户输入保温、不按损伤 —— 光标闪烁、时钟这类刷新没人在等,按它们保温只会一直 60 帧重画。代价是保温期间新损伤平均晚一帧左右。真实宿主打字节奏 `xprobe key` 与 xterm 回显各 600 键:不保温各停 5 次(最长 214 毫秒),保温 2 秒都是 0 次。整个应用同样会撞上这个停顿(剩余项见 feature-plan.md)。
+**五、RANDR 报真实的刷新率**(`Services/XServer/DisplayRefreshRate.cs`):原先一律报 60,120 / 144 Hz 的屏上 GTK、Qt、浏览器也只画 60 帧。Windows 上经 HMONITOR 用 `EnumDisplaySettingsW` 读当前显示模式;目前只 Windows,macOS / Linux 仍报 60(剩余项见 feature-plan.md)。
+**六、宿主一侧的计量**(`Services/XServer/XServerHostMetrics.cs`,仪表源 `VelaShell.XServer.Host`):`frames`、`frames.busy`、`damage.latency`(`TopLevelDamaged` 记下这批损伤最早报来的时刻,一路带到 `XSurface`)、`read.duration`。没人订阅时不记;窗口打开之前攒的损伤不算延迟。
+文档:velashell-docs#119(中英镜像的 SSH 规格 05 §3.3、SSH 架构 §5.5 / §7 / 性能表 / §11.2.31、X Server 架构 §9 测量台 / §10 排查记录、排障「操作卡」)。
 
 ## ✅ 202. 2026-10-13 上传选择框:窗口放大、可拖边缩放;右上角切换列表 / 图标视图(用户需求)
 
-**起因**:上传选择框 672×552 偏小,而且在 Windows 上根本拖不动边框(对话框没挂缩放抓取区);用户要资源管理器「中等图标」那样的显示,
-切换做成 Linux 文件管理器头栏常见的「列表 | 网格」分段按钮,放在右上角。
-
-**一、窗口**:默认 920×640、最小 560×380,挂上与工具窗口同一套 `ResizeGrips`(`WindowChrome.Apply` 的第三个参数),四边四角可拖;
-打开时按工作区夹一次(同设置窗口的 `FitIntoWorkArea`)。尺寸与视图在关窗时记进 `WindowLayoutStore`(键 `uploadPicker`,所有会话共用一条;
-`WindowLayout` 加了可空的 `View`,其余窗口不传),`PickAsync` 打开前读回。
-
-**二、视图切换器**:标题栏右上角、关闭键左边,两段 `RadioButton`(`list` | `layout-grid`,lucide `list` 字形新加进 `Icons.axaml`)连成一个分段控件,
-选中段 `VelaAccentDim` 底 + `VelaAccent` 图标(与目录同步窗口的选项分段同一条规则),键盘焦点只在 `:focus-visible` 时描边。切换后焦点回到列表。
-
-**三、图标视图**:新增 `Views/VirtualizingTilePanel`(虚拟化的等尺寸格子面板,只为视口附近的项建容器)与纯几何 `Views/TileGridMath`。
-两种视图**共用这一个面板**:列表是 `ItemWidth=NaN`(一格占满整行、行高 28),图标是 108×96(`ListBox.tiles` 样式给)—— 切换只换项模板与 `tiles` 类。
-- 没在两种视图间换 `ItemsPanel`:反编译 Avalonia 12.1.4 看到,换面板时 `VirtualizingPanel.Detach` 只清掉可视子项,旧容器还挂在列表的逻辑子项里,来回切会越攒越多。
-- 没用 `WrapPanel`:它不虚拟化,几千项的目录(System32、node_modules)会一次建出几千套控件。
-- 容器的创建、回收与「键盘焦点所在的容器滚出视口时留着不回收」照 `VirtualizingStackPanel` 的规矩,ListBox 的选择、`ScrollIntoView` 与键入定位照常可用。
-  方向键(`GetControl`)按格子走:←/→ 逐格、到行尾接下一行,↑/↓ 整行、列不变(正下方没有格子但下面还有一行时落到最后一项),PageUp/PageDown 一屏,Home/End 首尾。
-  列表视图的 PageUp/PageDown 因此从「只滚动」变成「移动选中项」(资源管理器同款);←/→ 在列表里仍不动。
-- 一格:40px 图标在上、名称最多两行(超出省略号);文件图标上印大写扩展名(`LocalFileEntry.ExtensionLabel`,不超过 4 个字符,没有或更长时不印 —— 截断的比不写更误导);
-  大小与修改时间进悬停提示。选中 / 悬停是 4px 圆角块,格子间留 2px;悬停样式排在选中样式之前(同优先级后写的赢)。
-- 框选:`MarqueeSelection` 发现列表的面板是 `VirtualizingTilePanel` 时,改由面板按二维几何给出命中项(按下时记下面板在列表里的位置,
-  之后的点加上滚过的距离换算到内容坐标 —— 自动滚动时偏移刚改、布局还没跟上,去问面板的实时位置拿到的是旧的)。远端栏、本地栏仍走原来的按行判定。
-
-**验证**:
-- `TileGridMathTests` 18 条(每行格数、可见范围、二维框选含最后一行没排满与最后一列右边的空白、方向键的去向)、`LocalFileEntryTests` 8 条(扩展名标签)。
-- `LocalPathPickerIconViewUiTests` 6 条在真窗口里:点切换器切到图标再切回(格子二维排开、列头收起、选中不丢、切回后行高 28);切完焦点回列表且不顺带选中;
-  图标视图里框选得到 2×2 四格而不是两整行;→ ↓ ↑ 按格子与整行走;键入 `fxyc` 把视口外那一格实现出来、滚进视口、焦点跟过去;文件夹格子上回车进去。
-- 列表视图换成新面板后,原有的 `LocalPathPickerMarqueeUiTests`、`LocalPathPickerKeyboardUiTests` 原样通过。
-- `VelaShell.Tests` 2078 通过 / 19 跳过(按环境);应用与测试工程 `-warnaserror -p:EnforceCodeStyleInBuild=true` 构建 0 警告。
-- 无头渲染两种视图的截图核对外观:100px 宽的格子把 `archive.tar.gz` 的最后一个字母挤到第二行,格子因此定为 108px(默认尺寸下仍是一行 8 格)。
-
-文档:velashell-docs 中英镜像的「交互与界面规格」§6「上传选择框」,在 [velashell-docs#120](https://github.com/VelaShellLabs/velashell-docs/pull/120),与本 PR 互相引用。
+**起因**:672×552 偏小,Windows 上拖不动边框(对话框没挂缩放抓取区);用户要资源管理器「中等图标」那样的显示,切换做成 Linux 文件管理器头栏常见的「列表 | 网格」分段按钮。
+**一、窗口**:默认 920×640、最小 560×380,挂上与工具窗口同一套 `ResizeGrips`;尺寸与视图关窗时记进 `WindowLayoutStore`(键 `uploadPicker`,所有会话共用一条)。
+**二、视图切换器**:标题栏右上角、关闭键左边的两段分段控件(选中段 `VelaAccentDim` 底 + `VelaAccent` 图标)。
+**三、图标视图**:新增虚拟化的等尺寸格子面板 `Views/VirtualizingTilePanel` 与纯几何 `Views/TileGridMath`,两种视图**共用这一个面板**(列表 `ItemWidth=NaN`、行高 28,图标 108×96),切换只换项模板与 `tiles` 类。
+- ⚠️ 不在两种视图间换 `ItemsPanel`:Avalonia 12.1.4 换面板时 `VirtualizingPanel.Detach` 只清可视子项,旧容器还挂在逻辑子项里,来回切越攒越多。不用 `WrapPanel`:它不虚拟化,几千项的目录会一次建出几千套控件。
+- 方向键按格子走;列表视图的 PageUp/PageDown 因此从「只滚动」变成「移动选中项」(资源管理器同款)。
+- 文件图标上印大写扩展名(不超过 4 个字符,更长时不印 —— 截断的比不写更误导);格宽定 108px,100px 时 `archive.tar.gz` 的最后一个字母挤到第二行。⚠️ 悬停样式要排在选中样式之前(同优先级后写的赢)。
+- 框选:`MarqueeSelection` 遇到格子面板时由面板按二维几何给命中项;⚠️ 点要加上滚过的距离换算到内容坐标 —— 自动滚动时偏移刚改、布局还没跟上,问面板的实时位置拿到的是旧的。远端栏、本地栏仍按行判定。
+文档:velashell-docs#120(中英镜像的「交互与界面规格」§6「上传选择框」)。

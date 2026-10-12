@@ -6,11 +6,11 @@
 > 两份文件的分工是硬的：一件事做完了，就从这里删掉、去 `plan.md` 补一节；
 > 一件事还没做，就不要在 `plan.md` 里留 TODO。
 >
-> 最近复核：**2026-09-26**。逐条对着 `src/` 核过：四个 P0 开关仍然零消费者、
-> `SessionProfile.Tags` 仍无人读。2026-10-01 单独复核了「11 条『怎么改都绿』的 UI 用例」：
-> 早在 `plan.md` §139 就已修完（这里漏删），探针确认后删除，并加了守门测试（§148）。
-> 已完成的条目（✅）一律移出本文件，
-> 它们的来龙去脉在 `plan.md` 对应小节；「SSH 压缩开关」核实已在 `plan.md` §92 接线，一并删除。
+> 最近复核：**2026-10-13**。逐条对着 `src/`、`velashell-plugins` 与 velashell-docs 核过：四个 P0 开关仍然零消费者；
+> `SessionProfile.Tags` 只有编辑框与导入导出（§180）在读，过滤与命令面板仍不用；SSH 库 §161 那一批能力宿主仍一处没接。
+> 这次删掉的：「三个第一方插件填图标」（`velashell-plugins` 里 Redis / S3 / 串口都已画上 `PluginIcon`）；
+> 「三、文档待同步」里对应 PR 已合并的 29 行（velashell-docs #35 / #70 – #119 与两条本地分支的改动都已进 main）。
+> 新增的条目来自 `plan.md` §118 – §202 精简时摘出的遗留项，以及上传选择框图标视图（§202）的顺延。
 >
 > **全文分三部分，读法不同**：
 >
@@ -31,18 +31,19 @@
 
 ## 🎯 建议的下一步
 
-按「杠杆 ÷ 成本」排，下面这件最值得先动（内置 X 服务端全库审查的 31 项已在 `plan.md` §124 修完、第二次审查的 184 条已在 §167 修完；keyboard-interactive 动态码界面、算法协商可配已在 §133、§134 落地；「怎么改都绿」的 UI 用例已在 §139 修完、§148 加了守门）：
+按「杠杆 ÷ 成本」排，下面三件最值得先动：
 
-1. **录制与日志的输出脱敏**（🟠 P1）—— `cat .env`、`kubectl get secret` 的输出正原样落盘，是现实风险。
+1. **AI 插件：改 Base URL 后旧 Key 发往新地址**（🟠 P1，一、插件生态）—— 用户的 Key 会发给他没打算给的服务器，改动只在一处。
+2. **录制与日志的输出脱敏**（🟠 P1，二、E）—— `cat .env`、`kubectl get secret` 的输出正原样落盘，是现实风险。
+3. **SSH 断开原因进日志 + 一键导出诊断包**（🟡 P2 / 🟠 P1，二、F）—— 报障时最缺的两样，成本都低，前者做完后者顺带受益。
 
 ## 📊 待办分布
 
 | 部分 | 🔴 P0 | 🟠 P1 | 🟡 P2 | 🟢 P3 | 合计 |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| 一、欠账 | 4 | 2 | 9 | 9 | **24** |
-| 二、路线图 | — | 6 | 16 | 17 | **39** |
-| 三、文档待同步 | — | — | — | — | **37** |
-
+| 一、欠账 | 4 | 3 | 14 | 16 | **37** |
+| 二、路线图 | — | 6 | 17 | 32 | **55** |
+| 三、文档待同步 | — | — | — | — | **9** |
 
 ---
 
@@ -67,13 +68,15 @@
 | :---: | :---: | --- | --- | --- |
 | 🚧 | 🟠 P1 | **配置导出的选择性与脱敏** | 导出 / 导入是全量 `AppSettings` 序列化 + 整体覆盖。⚠️ **含 Security / Proxy 等敏感块，代理密码是明文** | 分类勾选 + 敏感块默认排除（或强制加密）。跨设备迁移已有 Gist 云同步（§13-C），这条的价值是**别把明文代理密码写进一个随手分享的文件** |
 | ⏳ | 🟡 P2 | **密钥管理的三处小缺口** | 导入不校验私钥有效性；删除无二次确认；导出未做（已信任主机同样只能删不能导） | 各自独立的小改动，一批做掉 |
+| ⏳ | 🟡 P2 | **审计日志补全** | 只记连接成败、主机指纹裁决、外部拉起三类（`plan.md` §135）；配置增删改、设置变更、共享凭据的改动（一次换掉 N 条连接的登录材料，§157）都没进。查看器没有导出与按时间段筛 | 补这几类事件；查看器加 CSV 导出与时间段筛选，行上可直接打开对应的连接配置（记录里已带配置 Id） |
 | ⏳ | 🟢 P3 | **导入与外部启动不产出证书字段** | SSH 证书认证已落地（`plan.md` §63），但 PuTTY / Xshell / `ssh://` 导入与外部拉起都只认密码 / 私钥 | 先扩各自的解析器，再映射到 `AuthMethod.Certificate` |
 
 ### 🗂️ 会话与工作区
 
 | 状态 | 优先级 | 项 | 现状 | 要做什么 |
 | :---: | :---: | --- | --- | --- |
-| ⏳ | 🟡 P2 | **会话标签（Tags）存了不生效** | `SessionProfile.Tags` 能编辑（`ConnectionProfileViewModel`），但全仓没有任何地方消费它 | 会话树加过滤框、命令面板按 tag 匹配（`PaletteScorer` 现成） |
+| ⏳ | 🟡 P2 | **会话标签（Tags）存了不生效** | `SessionProfile.Tags` 能编辑（`ConnectionProfileViewModel`），导入导出也带着它（`plan.md` §180），但会话树与命令面板都不读；连接备注（§152）同样只能悬停时看到 | 会话树加过滤框、命令面板按 tag 与备注匹配（`PaletteScorer` 现成） |
+| ⏳ | 🟢 P3 | **命令补全插入的快捷命令不展开占位** | 快捷命令支持 `{{名字}}` 占位（`plan.md` §132），但终端命令补全（`CommandSuggestionProvider`）把它当候选时插入的仍是含占位的原文 | 选中带占位的候选时走同一个询问框；顺带让询问框记住上一次填的值（pod 名、服务名常连着重复用） |
 | ⏳ | 🟢 P3 | **外部拉起的 `-newtab` 标签名没用上** | Xshell 兼容登录里 `-newtab` 带的标签名目前**只是被忽略**，没有拿去当标签页标题（`plan.md` §84） | 给 `ExternalLaunchRequest` 加字段，并一路穿过单实例转发的那份 JSON |
 
 ### 📁 文件传输
@@ -91,16 +94,18 @@
 
 | 状态 | 优先级 | 项 | 现状 | 要做什么 |
 | :---: | :---: | --- | --- | --- |
-| ⏳ | 🟡 P2 | **拆 SSH 库的两个上帝类** | `SshConnection` 约 4,000 行（六个文件，`SshConnection.cs` 自己约 1,970 行）、`SshChannel` 约 1,720 行，远过 `src/VelaShell.Ssh/AGENTS.md` 4.4 的 800 行（`plan.md` §117、§161） | 拆成 internal 协作者而不是更多 partial：`SshChannel` 的收发窗口与 stdin 泵、`SshConnection` 的收包分发与全局请求账本。**纯重构，单独开 PR**，`VelaShell.Ssh.Tests` 与互操作用例是安全网。⚠️ 拆的时候这几处耦合不能断（2026-10-05 审查的备忘）：①入队锁里的 admit 回调跨两个类 —— `MayStillSend` / `TryCommitClose` / `OnClose` / 账本 `Register` 必须与 `TryWriteFrame` 在同一把 `_enqueueLock` 里，不能拆成「先查后发」，也不能变异步；②锁顺序 `_enqueueLock` → 连接 `_stateLock` → 通道 `_stateLock`，`ReleaseId` 先放通道锁再进连接锁，新协作者不许持通道锁入队；③`FinishClose` 的步骤顺序：锁内改状态 → 事件 → 关账 → 管道 → stdin → 唤醒闸门 → `CancelAsync`；④接收分发会被重入（重协商期间 `RekeyKexTransport.ReadPacketAsync` 回调 `DispatchAsync`），拆出去后仍要能在 KEX 中被调用，且只许投递、不许等发送；⑤预算是两本账：连接的 `_windowBudgetUsed` 归连接锁，通道的 `_budgetCharged` / `_idReleased` 归通道锁，「先申请 → 通道锁里确认 → 失败回滚」三步要保持；⑥`_priority` 只在 `_enqueueLock` 下写、泵每次先读它（回补不越过 CLOSE 与闸门的前提）；交互道 `_interactive` 同样在锁里写，一条通道的帧（含接收循环替它回的 CLOSE 与请求应答）全走开通道时定下的那条道，泵在回补之后让它与普通队列轮流（`plan.md` §162 的 Q7）；⑦`WouldSendNow` 与 `Admit` 必须在泵线程上连续调用 |
-| ⏳ | 🟡 P2 | **SSH 连接信息面板** | 库已经交出这条连接谈成的算法、主机密钥、会话 ID、对端版本、认证方法与 server-sig-algs、各阶段耗时、往返时间、重协商次数 / 起因 / 耗时（`Rekeyed` 事件）、收发字节、开着的通道快照（`plan.md` §161），宿主一处都没显示 —— 排障时用户只能看连接诊断重新探一遍 | 会话标签的上下文菜单或状态栏点开一个只读面板，按块摆：对端、协商结果、认证、计时、通道列表（类型、开了多久、字节数）。令牌照 `DESIGN.md`，文案五份 resx；数据全在库的只读属性上，不新开探测 |
-| ⏳ | 🟡 P2 | **SSH 库已有、宿主还没接的能力** | `plan.md` §161 那一批在库里落地、宿主还没用上：Windows CNG 签名器（证书存储 / TPM / 智能卡里不可导出的钥）、按键时序混淆（`ObscureKeystrokeTiming`）、报文旁路（`IPacketTap`）、转发的实时吞吐 / 连接快照 / 限速、TLS 拨号器、远程动态转发（`-R` 不给目标）与放行名单、Unix 域套接字转发、ssh_config 转发项与 `IdentityAgent` 的导入；agent 加钥的目的地约束（`AllowedHops`，`plan.md` §163） | 逐项接：CNG 进密钥选择（「系统密钥库」一类）；按键混淆作为连接的高级选项（默认关，说明带宽代价）；报文旁路接进连接诊断的协议轨迹；隧道面板显示速率与连接列表、可设限速；TLS 进代理设置；隧道类型加「远程动态」「Unix 套接字」；会话导入带上转发项。每项都要五份 resx 与交互规格 |
+| ⏳ | 🟡 P2 | **拆 SSH 库的两个上帝类** | `SshConnection` 约 4,850 行（`Session/SshConnection*.cs`，`SshConnection.cs` 自己约 1,980 行）、`SshChannel` 约 1,760 行（2026-10-13 量），远过 `src/VelaShell.Ssh/AGENTS.md` 4.4 的 800 行（`plan.md` §117、§161） | 拆成 internal 协作者而不是更多 partial：`SshChannel` 的收发窗口与 stdin 泵、`SshConnection` 的收包分发与全局请求账本。**纯重构，单独开 PR**，`VelaShell.Ssh.Tests` 与互操作用例是安全网。⚠️ 拆的时候这几处耦合不能断（2026-10-05 审查的备忘）：①入队锁里的 admit 回调跨两个类 —— `MayStillSend` / `TryCommitClose` / `OnClose` / 账本 `Register` 必须与 `TryWriteFrame` 在同一把 `_enqueueLock` 里，不能拆成「先查后发」，也不能变异步；②锁顺序 `_enqueueLock` → 连接 `_stateLock` → 通道 `_stateLock`，`ReleaseId` 先放通道锁再进连接锁，新协作者不许持通道锁入队；③`FinishClose` 的步骤顺序：锁内改状态 → 事件 → 关账 → 管道 → stdin → 唤醒闸门 → `CancelAsync`；④接收分发会被重入（重协商期间 `RekeyKexTransport.ReadPacketAsync` 回调 `DispatchAsync`），拆出去后仍要能在 KEX 中被调用，且只许投递、不许等发送；⑤预算是两本账：连接的 `_windowBudgetUsed` 归连接锁，通道的 `_budgetCharged` / `_idReleased` 归通道锁，「先申请 → 通道锁里确认 → 失败回滚」三步要保持；⑥`_priority` 只在 `_enqueueLock` 下写、泵每次先读它（回补不越过 CLOSE 与闸门的前提）；交互道 `_interactive` 同样在锁里写，一条通道的帧（含接收循环替它回的 CLOSE 与请求应答）全走开通道时定下的那条道，泵在回补之后让它与普通队列轮流（`plan.md` §162 的 Q7）；⑦`WouldSendNow` 与 `Admit` 必须在泵线程上连续调用 |
+| ⏳ | 🟡 P2 | **SSH 连接信息面板** | 库已经交出这条连接谈成的算法、主机密钥、会话 ID、对端版本、认证方法与 server-sig-algs、各阶段耗时、往返时间、重协商次数 / 起因 / 耗时（`Rekeyed` 事件）、收发字节、开着的通道快照（`plan.md` §161），宿主一处都没显示 —— 排障时用户只能看连接诊断重新探一遍。成功建连时经过的每一跳也没记（拨号器只在失败时记跳信息） | 会话标签的上下文菜单或状态栏点开一个只读面板，按块摆：对端、协商结果、认证、计时、通道列表（类型、开了多久、字节数）。令牌照 `DESIGN.md`，文案五份 resx；数据全在库的只读属性上，不新开探测 |
+| ⏳ | 🟡 P2 | **SSH 库已有、宿主还没接的能力** | `plan.md` §161 那一批在库里落地、宿主还没用上：Windows CNG 签名器（证书存储 / TPM / 智能卡里不可导出的钥）、按键时序混淆（`ObscureKeystrokeTiming`）、报文旁路（`IPacketTap`）、转发的实时吞吐 / 连接快照 / 限速、TLS 拨号器、远程动态转发（`-R` 不给目标）与放行名单、Unix 域套接字转发、ssh_config 转发项与 `IdentityAgent` 的导入；agent 加钥的目的地约束（`AllowedHops`，`plan.md` §163） | 逐项接：CNG 进密钥选择（「系统密钥库」一类）；按键混淆作为连接的高级选项（默认关，说明带宽代价）；报文旁路接进连接诊断的协议轨迹；隧道面板显示速率与连接列表、可设限速；TLS 进代理设置；隧道类型加「远程动态」「Unix 套接字」；会话导入带上转发项。每项都要五份 resx 与交互规格。⚠️ 接 `AllowedHops` 之前先核对 Windows 的 OpenSSH agent 与 Pageant 收不收目的地约束（§163 没核） |
+| ⏳ | 🟢 P3 | **FIPS 预设的口径** | `FipsApprovedOnly` 的注释说它与 RHEL 的 FIPS 加密策略对 SSH 放行的一致，不完全准：RHEL 10.2 的策略还放行 `diffie-hellman-group-exchange-sha256` 与 group18，清单没收（`plan.md` §164）；混合 KEX 也还没与 OpenSSH 10.6、Apache MINA SSHD 对照过 | 维护者拍板：清单补上这两项，或注释改成「比 RHEL 更严」；再补两份实现的互操作核对 |
 | ⏳ | 🟡 P2 | **SSH 库剩余中文诊断文本的界面本地化** | 英 / 日 / 韩界面仍会看到库的中文原文：认证逐条尝试记录（`SshAuthAttempt.ToString` / `Detail`）、`SshChannelException` 的建议、`KnownHostLookup.CertificateProblem`、带路径 / 指纹 / 端口的私钥与证书消息（`plan.md` §117） | **先在库里补结构化出处**（`Detail` 的种类、证书问题的枚举），宿主 `SshInterop` 再按枚举出五语言文案 —— 不在宿主里解析句子（`AGENTS.md` 4.5） |
 
 ### 🪟 窗口与外观
 
 | 状态 | 优先级 | 项 | 现状 | 要做什么 |
 | :---: | :---: | --- | --- | --- |
-| 🚧 | 🟠 P1 | **跨平台实机验收** | 全部弹窗与独立窗口已按平台走原生机制（`plan.md` §118，`Views/WindowChrome.cs`）。macOS 上主窗口、设置窗口与消息框已实机验收；**非模态窗口的红绿灯没在 Mac 上看过**；Linux 只在 WSLg 里跑过（Weston 缺 `xdg_wm_base` ≥ 3，Wayland 起不来，测到的只是 X11 分支）。内置 X 服务端的 macOS「自动」键盘布局也只经过 CI 编译与平台无关的单测（`plan.md` §109） | ①**macOS**：任务管理器 / 资源监视 / 插件管理等独立窗口的红绿灯可用、自绘窗口按钮已隐藏、左侧让位宽度合适（`Themes/WindowChrome.axaml` 的 `traffic-light-spacer`，现为 60）、红绿灯与标题同一条中线、最大化 / 全屏后卡片铺满；X 服务端「自动」布局跟随系统输入法切换。②**Linux 原生 Wayland**（GNOME / KDE / Hyprland 任一）：弹窗外圈消失、阴影圆角描边与 Windows 一致、拖动与边缘缩放、背景模糊只在卡片范围内（取决于合成器，记下即可）、`Width` / `Height` 确实不含装饰（不对就改 `WindowChrome.SizeReduction` / `OuterFrameSize`）。③**Linux X11**：不透明矩形、没有外圈、自绘抓取区能缩放。④隔离插件的窗口（`PluginHostShellWindow`）同上各看一眼 |
+| 🚧 | 🟠 P1 | **跨平台实机验收** | 全部弹窗与独立窗口已按平台走原生机制（`plan.md` §118，`Views/WindowChrome.cs`）。macOS 上主窗口、设置窗口与消息框已实机验收；**非模态窗口的红绿灯没在 Mac 上看过**；Linux 只在 WSLg 里跑过（Weston 缺 `xdg_wm_base` ≥ 3，Wayland 起不来，测到的只是 X11 分支）。内置 X 服务端的 macOS「自动」键盘布局也只经过 CI 编译与平台无关的单测（`plan.md` §109） | ①**macOS**：任务管理器 / 资源监视 / 插件管理等独立窗口的红绿灯可用、自绘窗口按钮已隐藏、左侧让位宽度合适（`Themes/WindowChrome.axaml` 的 `traffic-light-spacer`，现为 60）、红绿灯与标题同一条中线、最大化 / 全屏后卡片铺满；X 服务端「自动」布局跟随系统输入法切换。②**Linux 原生 Wayland**（GNOME / KDE / Hyprland 任一）：弹窗外圈消失、阴影圆角描边与 Windows 一致、拖动与边缘缩放、背景模糊只在卡片范围内（取决于合成器，记下即可）、`Width` / `Height` 确实不含装饰（不对就改 `WindowChrome.SizeReduction` / `OuterFrameSize`）。③**Linux X11**：不透明矩形、没有外圈、自绘抓取区能缩放。④隔离插件的窗口（`PluginHostShellWindow`）同上各看一眼。⑤散在各节、同样只差实机的：窗口位置记忆在 macOS / Linux（§130）、回放中心等标题栏动作组排在红绿灯旁的样子（§136）、Linux 检查更新后真实桌面浏览器打开发布页（§172）；非窗口类的：动态码对真实的 Duo / RSA SecurID（§133）、老算法与自定义清单对真实的 Cisco / 华为设备（§134）、远程 ⇄ 远程中转在两台真服务器之间（§128） |
+| 🚧 | 🟡 P2 | **启动画面偶发首帧不出** | 启动画面接入后头两次启动 9 s / 12 s 内没等到首帧（`plan.md` §191），根因没坐实、没拿到栈；只做了降风险（STA 改 MTA）并加了自诊断日志 | 再遇到时先看日志时间线里的 `SplashShown`，拿栈再定；在那之前别把它当已修 |
 | ⏳ | 🟢 P3 | **设计稿的两处残留** | Logo 有一个 `enabled:false` 的残留图标；文件列表「修改时间」列无固定宽度 | 小到可以顺手做掉 |
 | 💡 | 🟢 P3 | **选区上的前景守卫改成「保色相」** | 选区底抬亮之后，ANSI 前景与选区底亮度差低于 `MinForegroundDelta`（0.18）的格子会被 `ReadableForeground` 换成兜底的纯白 / 纯黑 —— 选中一段就把 `ls --color` 的配色抹掉（`plan.md` §59，当时两害相权取了「一眼看得出选中了」） | 守卫改成保色相、只调明度，再对着具名主题跑一遍对比度尺子 |
 
@@ -108,10 +113,24 @@
 
 | 状态 | 优先级 | 项 | 现状 | 要做什么 |
 | :---: | :---: | --- | --- | --- |
+| ⏳ | 🟠 P1 | **AI 插件：改 Base URL 后旧 Key 发往新地址** | #582 复审提出、没改（`plan.md` §177）：在「高级」里改供应商的 Base URL 时，补充槽与 `ActiveApiKeyId` 原样保留，下一次请求会把旧中转站的 Key 发给新地址 | 改地址时清空（或要求重填）这家供应商的全部 Key；有凭据外泄的一面，优先于下一行 |
+| ⏳ | 🟡 P2 | **AI 插件：#582 复审的其余六条** | 同出 §177、留给维护者定：①单 Key 供应商的模型级 429 / 403 冷却整把 Key，兄弟模型故障转移时不探活就被跳过；②空链时的自动发现会跨同目录的不同账号重放会话（企业与个人 Copilot），没有开关；③删掉 Key #1 后主槽只清机密、界面不再显示空主槽，之后填不回去，跨源模型覆盖只用主槽，会静默变成无 Key 请求；④Responses 流里的 `ErrorContent` 被 `HasMeaningfulOutput` 当成有效输出（错误记成成功并解冻冷却，只按代码推断）；⑤拉模型后设置向导的型号框不刷新，再点保存会把自动填入的型号写回空串（只按代码推断）；⑥`BareModelId` 把 `phi4:latest` 这类剥成 `latest` | 逐条先复现再改；④⑤先补用例证实。顺带：故障转移或换 Key 发生时在聊天记录里留一条可见提示（切换会粘住并落盘，用户不知道后续请求换了供应商与计费归属） |
 | ⏳ | 🟡 P2 | **四套版本比较口径** | `PluginManager.IsOlder`（丢掉预发布后缀）、`UpdateVersion`（完整 SemVer 子集）、CLI 的 `VersionOrder`、市场的 `SemVerComparer`（后两者按序数比预发布）—— `1.0.0-beta.10` 与 `1.0.0-beta.2` 谁新，四边能给出不同答案。更新路径已显式选用 `UpdateVersion`，**但那是绕不是修** | 把 `UpdateVersion` 抬进 `VelaShell.PluginSdk`，宿主 / CLI / 市场三边共用。⚠️ 要发 SDK，按 `AGENTS.md` 的版本纪律走 |
 | ⏳ | 🟡 P2 | **对外 MCP 的带外审批** | 对外 MCP 走 `AgentToolbox` 产出工具，那条路上没有审批界面，「询问」模式等于一律拒绝写操作 —— 这是刻意的（`plan.md` §33-四） | 可选增强：审批推到 IM 渠道或桌面通知，用户放行后再执行 |
-| ⏳ | 🟢 P3 | **三个第一方插件填图标** | 宿主侧已完成（`plan.md` §69，SDK 2.0.4 起有 `PluginIcon`），**宿主一行都不用再动**；`velashell-plugins` 里三个插件画的仍是通用插头 | 抬包到 SDK 2.0.4+；串口用 lucide `usb-c-port`（`M6 12h12 M6 8h12a4 4 0 0 1 0 8H6a4 4 0 0 1 0-8Z`），Redis 用品牌 logo（`PluginIcon.Filled(path, 1030)`），S3 用云或桶的描边字形 |
 | 💡 | 🟢 P3 | **插件更新检查的响应缓存** | 市场没装 OutputCache，`/api/plugins/latest` 每次都真查库；目前只在打开插件管理页时问一次，量很小 | 装 OutputCache + `ETag`，按 ids 组合缓存几分钟。**等真有量了再做**，别为不存在的负载先加一层缓存 |
+
+### 🧪 测试与本机环境
+
+> 这几条在 `plan.md` 里被一节节重复记成「与本次无关」，攒在这里一次清掉。它们不影响产品，影响的是「红了到底是不是我改坏的」这个判断。
+
+| 状态 | 优先级 | 项 | 现状 | 要做什么 |
+| :---: | :---: | --- | --- | --- |
+| ⏳ | 🟡 P2 | **SSH 靶机镜像过旧，X11 用例本机一直红** | 本机的 `velashell-test-shells` 建于 Dockerfile 给 `vela-dash` 关 X11 之前，`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 因此一直失败（`plan.md` §144、§159、§167、§186 都记过） | 重建镜像；更稳的是让用例先认镜像版本（标签或探针），旧了就 `[SKIP]` 并说明要重建，而不是红 |
+| ⏳ | 🟡 P2 | **互操作靶机与 compose 的 `ssh-2fa` 抢 2224 端口** | 两者同时起着时 `KeyboardInteractiveIntegrationTests` 失败；`目的地约束对真agent_经转发逐跳放行` 因靶机连不到 compose 网络而一直跳过（§193） | 给互操作靶机换端口或让它加入同一个 compose 网络 |
+| ⏳ | 🟢 P3 | **临时目录的 ACL 让 `ssh-keygen` 拒读私钥** | 临时目录带着别的用户组时，`PrivateKeyWriteTests.真ssh_keygen读得出本库写的私钥` 失败（§197、§199、§201 都记过） | 用例自己创建一个只有当前用户可读的私有目录，不依赖 `%TEMP%` 的 ACL |
+| ⏳ | 🟢 P3 | **`test.runsettings` 的 `Workers=2` 拖慢本机** | 为 3 核 runner 定的并行度（§171）让本机 `Ssh.Tests` 从 10 秒变 60 秒；文件是 IDE 与 CI 共用的 | CI 单独传参（或单独一份 runsettings），本机恢复默认并行 |
+| ⏳ | 🟢 P3 | **Release 构建报 NETSDK1150** | 自包含的 `VelaShell` 引用了非自包含的 `VelaShell.PluginHost`（§178 看到、判为无关没处理） | 核对发布流水线是否受影响，再决定改引用方式还是显式压掉 |
+| ⏳ | 🟢 P3 | **GitHub 的「Code scanning AI findings」一直失败** | GitHub 托管的 Copilot 任务，#562 之前就红、日志只有退出码，不在仓库的 CI 里（§166） | 在仓库设置里关掉或修好，别让 PR 上常驻一个红叉 |
 
 ---
 
@@ -168,10 +187,12 @@
 | :---: | :---: | --- | --- | --- |
 | ⏳ | 🟠 P1 | **布局持久化与命名布局模板** | Royal TS / mRemoteNG / Tabby | 「打开这一组机器并按这个分屏排好」。单独恢复上次布局意义不大（文档即活动会话），**同一套序列化做成命名模板价值大得多**：VelaDock 的模型层是纯 INPC、本来就可单测可序列化，缺的是 `布局节点 ↔ profileId` 映射、自定义 document 还原器与一个模板列表；「恢复会话」顺带就有了。标签的固定状态（`DockDocument.IsPinned`，`plan.md` §127）眼下只活在本次运行里，做这项时一起存 |
 | 🚧 | 🟡 P2 | **按会话自定义标签页图标** | Xshell / Termius | 按协议的默认图标已完成（`plan.md` §68，`Services/ConnectionIcon`）。还差「像挑颜色一样挑图标」：`TerminalOverrides` 加一个图标 id。⚠️ `SessionProfile` 是**逐字段手写拷贝**，新增字段要把几处拷贝都补上（`plan.md` §37 列了名单，漏抄不报错、重开软件字段就没了） |
-| ⏳ | 🟡 P2 | **整组批量下发命令** | MobaXterm | 整组 / 多选批量**连接**已在 `plan.md` §176 落地（资源管理器分组菜单「打开全部连接」、多选菜单「打开 N 个连接」）。剩下的是对一组机器批量下发命令：同步输入的频道模型（`SyncInputCoordinator`）已经是对等广播，「打开这一组并把它们拉进同一个频道」是自然延伸 |
+| ⏳ | 🟡 P2 | **整组批量下发命令** | MobaXterm | 整组 / 多选批量**连接**已在 `plan.md` §180 落地（资源管理器分组菜单「打开全部连接」、多选菜单「打开 N 个连接」）。剩下的是对一组机器批量下发命令：同步输入的频道模型（`SyncInputCoordinator`）已经是对等广播，「打开这一组并把它们拉进同一个频道」是自然延伸 |
 | ⏳ | 🟢 P3 | **标签条上的「+」新建按钮** | Windows Terminal / Chrome | 分屏后「在这一格里新开会话」目前只能靠 `Ctrl+T`（`plan.md` §64 后它已落到活动窗格）。⚠️ 卡点在**分层**：`Docking/` 不认识「会话」，要么 `DockWorkspaceControl` 抛 `NewTabRequested(group)` 由宿主接，要么注入回调 —— **别让停靠层直接 new 一个终端** |
 | ⏳ | 🟢 P3 | **纵排标签条的溢出控件** | — | 标签条停到左 / 右侧时，溢出三连钮由 `WidthOverflowConverter` 按宽度判定，因而永不出现；`ScrollLeft/Right_Click` 也只动 `Offset.X`。做的时候连转换器一起改成按轴取值 |
 | 💡 | 🟢 P3 | **会话健康巡检面板** | — | 对已保存配置定期探活（复用 `ConnectionDiagnosticsService` 的四步诊断），出一张「哪几台连不上」的表。**别做成定时外呼** —— 由用户显式开启，理由见 `PRIVACY.md` |
+| 💡 | 🟢 P3 | **隧道自动建立失败的提示带「重试」** | — | 「程序启动时自动建立」失败现在只弹右下角错误提示（`plan.md` §186），用户得打开面板、切到那台服务器再手动启动。提示上直接给重试，成本很低 |
+| 💡 | 🟢 P3 | **非模态工具窗口记住位置** | — | `WindowLayoutStore` 只记尺寸（§130 的位置记忆只管主窗口）。审计日志、回放中心、任务管理器这几扇窗多屏用户每次都要重新摆；`MainWindowPlacement` 的「位置还在某块屏工作区里」核实可以直接复用 |
 | 💡 | 🟢 P3 | **运维编排中心** | — | 设计帧 `bR5c4` 已出，代码零实现，是设计稿里最后一个未落地的面板。有了 AI Agent 与协作接入之后，「编排」的形态可能和当初画的不一样，**先重新界定范围** |
 
 ### C. 文件与传输
@@ -180,6 +201,7 @@
 | :---: | :---: | --- | --- | --- |
 | ⏳ | 🟡 P2 | **传输队列持久化** | — | [失败重试](#-p0--存了但不生效的开关)的前提。落点：SonnetDB 文档集合加一份队列快照，和 `recordings` 同样的形状 |
 | ⏳ | 🟡 P2 | **远端搜索（find / grep）** | MobaXterm / WindTerm | 复用 `RemoteExec` 通道跑 `find` / `grep`，结果进一个可点击的列表 —— 一条 exec 就够，不必自己遍历目录。注意 `RemoteShellProbe` 的 POSIX 判定：Windows 远端要老实说「不支持」而不是发命令（`plan.md` §18-B/E 的教训） |
+| 💡 | 🟢 P3 | **文件栏的图标视图与缩略图** | Windows 资源管理器 / Nautilus | 上传选择框已有「列表 \| 图标」两种视图（`plan.md` §202，`Views/VirtualizingTilePanel` 两种视图共用一个虚拟化面板）。顺着推：①双栏文档的本地栏、远端栏也给图标视图（§200 已把选择框的路径输入与键入定位推广到两栏，同一条路）；②本地图片的缩略图（只为视口里的格子后台解码、按尺寸封顶、可取消）；③按扩展名的字形（压缩包、图片、代码、密钥……，现在只印扩展名）。远端缩略图要先下载，**别做** |
 
 ### D. 连接与协议
 
@@ -187,6 +209,7 @@
 | :---: | :---: | --- | --- | --- |
 | 💡 | 🟢 P3 | **SecureCRT 风格的斜杠命令行** | SecureCRT | 外部拉起目前只认 Xshell 的调用约定（`plan.md` §84–85），`/SSH2 /L root /PASSWORD pw host` 被整条忽略。**先确认有没有真实调用方** —— 这层兼容的存在理由是「堡垒机客户端已经在发」，不是补齐对标表；没人发的写法接进来只是多一条攻击面。⚠️ `/` 开头的 token 与 Unix 路径、Avalonia 自己的参数会撞 |
 | 💡 | 🟢 P3 | **更多协议插件** | — | RDP / VNC / Kubernetes exec / 数据库客户端。这正是 `Protocols` + `Workspaces` 能力面存在的意义，宿主一行不用改。**优先级交给插件市场的真实下载量决定** |
+| 💡 | 🟢 P3 | **协商失败时一键「允许老算法并重连」** | — | 诊断已能点名「对端有、本版实现了只是没放开」的算法并指到连接配置（`plan.md` §134）；直接给按钮少一次翻对话框找开关。⚠️ 只放开诊断点名的那几个，别顺手把整组老算法都打开 |
 
 ### E. 安全与合规
 
@@ -196,7 +219,8 @@
 | 🚧 | 🟠 P1 | **插件发布者的信任根** | VS Code / JetBrains | 已有：验签 + 发布者连续性（`plan.md` §57，钉住首装的公钥，换钥 / 去签名要用户看过两个指纹再点头）；市场 `GET /api/plugins/latest` 给出每版的发布者指纹、宿主有只读客户端 `IPluginMarketClient`，**更新路径**已拿它比对（`plan.md` §71）。⚠️ 但这仍是 TOFU：`velashell-identity` 是 OIDC 账号服务，不是公钥注册表。真要闭合，缺一份**由发布者身份背书**的 id ↔ 公钥映射（市场把上传者 `sub` 与公钥绑定并可对外验证），且**装包路径也去查它**。外呼仍只在打开插件管理页时发生，别改成开机外呼（`PRIVACY.md`） |
 | 🚧 | 🟡 P2 | **凭据管理器集成** | Termius | **设计已定稿**（velashell-docs [`zh/host/凭据管理器集成设计.md`](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/host/凭据管理器集成设计.md)，v3）。**已落地第一个凭据来源：本机共享凭据**（`plan.md` §157，#550）—— `CredentialReference` / `ICredentialProvider` / `ICredentialResolver` 契约、仓储不变量、五个构建点接线、解析失败退回登录框，以及设计 §3 的 D1 / D3。**还差外部保险库**：1Password / Bitwarden / KeePassXC 三家 CLI（`CliCredentialRunner`、解锁口令内存 TTL 缓存、`ICredentialUnlockPrompt`），届时给解析补上交互 / 非交互之分（自动重连不许弹解锁框，设计 §5.7）与单次尝试缓存，`CredentialReference` 再加 `Scope` 等字段（JSON 省略 null，零迁移）。⚠️ `ISecretProtector` **不是**那层抽象（它管加密不管来源，见设计 §1）。外部保险库的私钥走 SSH Agent。系统密钥链 provider 等 [`系统密钥链与sudo凭据填充可行性调研.md`](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/host/系统密钥链与sudo凭据填充可行性调研.md) 里 `IMasterKeyStore` 的 P/Invoke 层。设计 §3 的 D2（私钥口令不受「记住密码」控制）、D4（`SshSession.ConnectionInfo` 持有每一跳的密码）仍在；§16 另有 11 项待确认决策 |
 | ⏳ | 🟡 P2 | **主机证书（宿主侧）** | OpenSSH `@cert-authority` | **SSH 库已支持**（`plan.md` §113，velashell-docs `ssh/spec/03-key-exchange.md` §5.5）。宿主还用不上：`VelaHostKeyPolicy` 走自己的信任库（`IHostKeyService`），没有「受信 CA」的概念；证书目前按里面那把钥当普通主机密钥处理，默认算法清单里证书又排在后面，实际谈不成证书。要接：①信任库能存受信的主机 CA（手动添加，或从 `~/.ssh/known_hosts` 读 `@cert-authority`）；②`VelaHostKeyPolicy` 已实现 `IHostKeyTypePreference`（交出已记下的钥的类型，`ssh_plan.md` API-H4），还要在有对上的 CA 时把证书算法排前；③裁决时先用 `OpenSshCertificate.CheckHostCertificate` 验证书，CA 管的主机出示没有担保的钥**不退回 TOFU**（规格 §5.5 第 4 条）；④弹窗与设置页文案，五份 resx |
-| ⏳ | 🟡 P2 | **与 OpenSSH 互通：known_hosts 与 `~/.ssh/config`** | 各家都有 | known_hosts 现在只能在设置里看和删，导入 / 导出之后与命令行 ssh 共用一份信任基线（顺带喂给上一行的 `@cert-authority`）。`~/.ssh/config` 的导入已有（`plan.md` §58），反向的**导出**是同一条线 |
+| ⏳ | 🟡 P2 | **与 OpenSSH 互通：known_hosts 与 `~/.ssh/config`** | 各家都有 | known_hosts 现在只能在设置里看和删，导入 / 导出之后与命令行 ssh 共用一份信任基线（顺带喂给上一行的 `@cert-authority`）。`~/.ssh/config` 的导入已有（`plan.md` §58），反向的**导出**是同一条线。导入本身也还缺：不映射 `KexAlgorithms` / `Ciphers` / `MACs`（§134 的自定义算法清单现成）、`Compression`、`ForwardAgent` |
+| 💡 | 🟢 P3 | **共享凭据改完后批量试连** | — | #550 的场景是一百台同账号：改了共享凭据（`plan.md` §157）之后对引用它的连接逐台试一次认证、列出被拒的那几台，不必等逐台连接时登录框才暴露哪一台密码不同。⚠️ 这是一次批量外呼，由用户显式点开 |
 | 💡 | 🟡 P2 | **团队共享配置（只读策略分发）** | Termius / Xshell 企业版 | 「运维组长发一份机器清单，组员只读订阅」。Gist 云同步的载荷格式与版本回溯现成，差的是**方向**：现在是「我的多设备漫游」，团队要的是「一处发布、多处只读」。⚠️ 这条会把产品推向企业形态，**先想清楚商业授权边界再动手** |
 | 💡 | 🟢 P3 | **FIDO 安全密钥直连硬件（第二阶段）** | OpenSSH `ssh-sk-helper` | 第一阶段（经 agent 用 `sk-ssh-ed25519` / `sk-ecdsa-sha2-nistp256`）已落地（`plan.md` §161）。第二阶段直接驱动硬件：Windows 走 `webauthn.dll`，其余平台要 libfido2 —— 新依赖要过 `src/VelaShell.Ssh/AGENTS.md` 3.3 的许可审查；还要有一把真钥做验证 |
 | 💡 | 🟢 P3 | **PKCS#11 与 macOS Secure Enclave 签名器** | OpenSSH `PKCS11Provider` | Windows 的 CNG 签名器已落地（`plan.md` §161），同一个 `ISshSigner` 形状。PKCS#11 要按平台加载厂商的 `.so` / `.dll`（P/Invoke，零反射照守）；Secure Enclave 要 macOS 的 Security 框架。都要真硬件验证 |
@@ -207,9 +231,10 @@
 | 状态 | 优先级 | 项 | 架构落点 |
 | :---: | :---: | --- | --- |
 | ⏳ | 🟠 P1 | **一键导出诊断包** | 支持成本最低的一项投资。崩溃已落地在 `DiagnosticLog.WriteCrash`，但用户报障时仍要被教着去翻目录。做成「关于页一个按钮 → 收集日志 + 版本 + 平台 + 已装插件清单 → 打成一个包」。⚠️ **先脱敏再打包**（主机名、用户名、路径），**只在本地落盘、不自动上传** |
-| ⏳ | 🟡 P2 | **启动时间与内存的回归门禁** | `VelaShell.Benchmarks` 刻意不进 CI（BDN 的抖动当门禁只会天天误报）。折中：不比毫秒数，钉**结构性指标** —— 启动路径上的分配次数、冷启动跨过的模块数；`StartupTrace` / `StartupWarmup` 已在采点 |
+| ⏳ | 🟡 P2 | **启动时间与内存的回归门禁** | `VelaShell.Benchmarks` 刻意不进 CI（BDN 的抖动当门禁只会天天误报）。折中：不比毫秒数，钉**结构性指标** —— 启动路径上的分配次数、冷启动跨过的模块数；`StartupTrace` / `StartupWarmup` 已在采点。同一类还有两处：内置 X Server 的帧率（`scripts/xserver/perf` 测量台，§201 的自适应窗口问题让经 SSH 只有 9 帧却一直没人发现）可以定期跑出基线；CI 按测试工程记耗时、明显变慢时报出来（§179 的 AI 插件一个工程 22 分钟，等整体拖到 25 分钟以上才被发现） |
+| ⏳ | 🟡 P2 | **SSH 断开原因写进本机日志** | §197 里 SSH 整条断开的原因没进日志，只能另搭单文件程序复现才看到「只剩 32759 字节」。断开时把库给的原因（`SshFailureReason`、对端的断开码与描述）写进诊断日志，诊断包（上面那条）也就带上了 |
 | ⏳ | 🟡 P2 | **长时会话的内存与句柄基线** | 隧道有计量、终端积压有高水位、scrollback 有上限 —— 三条边界各自都在，**但没有「挂 24 小时会怎样」的端到端证据**。做一个长跑冒烟（放 nightly，不进 PR 门禁） |
-| 💡 | 🟢 P3 | **无障碍（屏幕阅读器）** | 全仓只有二十来处 `AutomationProperties`。对「键盘优先」的产品落差比看上去大，但补齐是**跨全部视图**的工作量，先评估真实诉求 |
+| 💡 | 🟢 P3 | **无障碍（屏幕阅读器）** | 全仓只有二十来处 `AutomationProperties`。对「键盘优先」的产品落差比看上去大，但补齐是**跨全部视图**的工作量，先评估真实诉求。已知一处只能用鼠标的：快捷命令的拖动排序没有键盘替代（`plan.md` §158） |
 
 ### G. 生态与分发
 
@@ -220,6 +245,8 @@
 | ⏳ | 🟡 P2 | **能力域补口：`localFs` / `net`** | `STATUS.md` 列为未开口。有了它插件才能做「本地文件 ↔ 远端」（如 DockerPanel 把容器里的文件拖到桌面）。⚠️ 开口就是**权限面变大**，必须同步进 `PluginPermissionGate` 的逐项授权，apiLevel 只增不改 |
 | ⏳ | 🟡 P2 | **插件往消息中心发通知** | SDK 的 `IUiApi` 只有 `ShowPanelAsync`，插件发不了通知；宿主侧的接口形状已按这个用途定好（`plan.md` §20）。要开放得改 velashell-plugin-sdk + 扩展隔离进程 IPC + 走 SDK 发版流程，是独立一批。⚠️ 消息中心只收「要留存、可回看」的东西，插件通知同样守这条边界 |
 | 💡 | 🟡 P2 | **插件互调 / 插件间事件** | AI 插件能调 DockerPanel 的能力，「让 agent 帮我看看那个容器为什么起不来」就通了。**先想清楚权限模型再设计接口** —— 插件 A 借 B 的手绕过自己没拿到的授权，是这类设计最容易出的洞 |
+| 💡 | 🟢 P3 | **Linux 检查更新直接给对应安装包** | 现在只打开整页发布列表（`plan.md` §172），用户要自己在 deb / rpm / AppImage / 便携包里挑。按当前的安装方式给出那一个资产的下载链接 |
+| 💡 | 🟢 P3 | **启动画面支持 macOS / Linux** | 启动画面只在 Windows 10 1607+ 上有（`Splash/SplashScreen.cs`，§191）；「Avalonia 窗口要等平台初始化与 XAML 加载完才出现」与平台无关。先等上面「启动画面偶发首帧不出」坐实，再往别的平台推 |
 
 ### H. 内置 X 服务端
 
@@ -233,10 +260,12 @@
 | 💡 | 🟢 P3 | **WSL 与 MIT-SHM 1.2**(F29 / F30) | WSL 的程序自动用上内置 X Server(要一个装着 WSL 的环境来测);MIT-SHM 1.2 的 fd 传递只有 Linux 的 Unix 套接字上才有,现有的 TCP 容器环境测不了 |
 | 💡 | 🟢 P3 | **新功能各平台补齐与小尾巴** | 指针 Warp / confine 在 macOS 上没做、Wayland 不许(F8);屏保协作只在 Windows 上(macOS 的 IOPMAssertion、Linux 的 org.freedesktop.ScreenSaver 要 D-Bus 客户端,F9);合成管理器默认关,带 alpha 的窗口在 Windows 上的合成开销要实机量过再说(F11;新设置的默认值 —— 输入法开、来源标识开、合成管理器关、Linux / macOS 的 TCP 端口关、每个 SSH 会话一个显示关 —— 维护者 2026-10-10 确认保持);截图只在 Windows 的系统菜单里有入口、录屏没做(F20);Present 只有一个全局帧时钟(F25);托盘的气泡消息收下不显示(F12);单窗口模式下直接画在根窗口上的内容、远端合成器画在叠加窗口上的效果不显示(F13);SECURITY 的 XC-QUERY-SECURITY-1 与 Application Group(只为早已没人用的 X 防火墙代理);「每个 SSH 会话一个显示」要下次启动才生效(F1);macOS 的 LOCAL_PEERPID 没有实机核对(F28) |
 | 💡 | 🟢 P3 | **核对新设置时看到、这一轮没做的**(`plan.md` §188) | **透明窗口(F11,只在打开「X 窗口透明与圆角」时)**:深度 32 的顶层里嵌着深度 24 的子窗口(`--wid` 嵌的 mpv、GtkSocket)时,子窗口写进 32 位缓冲的像素 alpha 是 0,宿主按预乘 ARGB 显示成叠加 —— 要在每条写入路径(光栅化、PutImage / CopyArea、RENDER、背景与边框、GLX、Present、SHM)给深度 24 的窗口补上不透明的 alpha;Windows 上无装饰的透明区域照样接住鼠标(要按 alpha 或输入形状回 `WM_NCHITTEST`),宿主也还没用快照里的 `InputShape` 与 `ClientFrameExtents`。**防冒充**:无装饰与 override-redirect 窗口的不透明度下限只有 0.05;自己画标题栏的窗口没有系统标题栏,来源只在任务栏上看得到(可考虑宿主画的来源条或任务栏角标);新窗口映射时激活的规则要再核一遍(审查说映射即激活,与排障文档写的「不能自己跳到前台」对不上,没核实);不同主机上的同名程序在任务栏归成一组,映射之后改了类名不重算;`_NET_WM_VISIBLE_NAME` 没写。**本机输入法剩余核对(F5)**:按着 Ctrl / Alt 时上屏的字照样带着修饰位(程序可能当成快捷键);只认核心协议的老客户端在 CapsLock 下仍转大写;宿主「这个键自己打出的字不重复输入」的判断没在 macOS / Linux(IBus、fcitx)的真实输入法上核对(那两个后端组字时是不是一律报 ImeProcessed)。**TCP 端口(F4)**:桥接网络里的容器要的「监听地址」选项没做;macOS 上 `DISPLAY` 指向 XQuartz 的 launchd 套接字而 XQuartz 没在跑时,自动选号可能占了 :0(没法在净室规程下核对 XQuartz 的行为) |
-| ⏳ | 🟢 P3 | **审查留下的部分完成项** | 点本机窗口或桌面就收起 X 的弹出菜单(WN-M7):要全局指针钩子,各平台各写一份。另有 §185 核对时看到的一处:半径小于半个线宽的圆上的一段宽弧,内边界停在圆心、没有穿到对侧(协议对圆要求理想边界,整圆不受影响;椭圆由实现决定,不算) |
+| ⏳ | 🟢 P3 | **审查留下的部分完成项** | 点本机窗口或桌面就收起 X 的弹出菜单(WN-M7):要全局指针钩子,各平台各写一份。另有 §185 核对时看到的一处:半径小于半个线宽的圆上的一段宽弧,内边界停在圆心、没有穿到对侧(协议对圆要求理想边界,整圆不受影响;椭圆由实现决定,不算)。§178 看到、没改的两处:外接框宽或高为 0 的宽弧只画出一半线宽(审查之前就有);RENDER 在 r5g6b5、x1r5g5b5、a4 目标上仍走浮点路径 |
+| ⏳ | 🟢 P3 | **拖进 X 窗口的远端临时目录不清理** | 往 X 程序里拖本机文件时传到远端的 `/tmp/velashell-drop-<随机串>/`(0700,`XServerDropUploader`,§187)没有任何地方删,长期使用会在远端 `/tmp` 堆积。拖放会话结束(或断开)时删掉;删不掉也别报错 |
+| 💡 | 🟢 P3 | **X 程序清单显示信任级别** | 库里已有 `XClientInfo.Trust`(§187),面板列了来源会话、窗口数、内存与 GrabServer 标记,唯独没列受信 / 非受信 —— 用户判断「该断开谁」时最关心的正是它 |
 | 💡 | 🟢 P3 | **互操作靶场扩充**(审查的测试缺口 T16) | 真实客户端现在只覆盖 x11-apps、xterm、xdpyinfo、glxgears 与 Swing。现有镜像保持轻量、留在 CI,另建一个 heavy 镜像手动或每晚跑,断言沿用「零 `: Bad` 日志 + 画出了东西」再加专项:GTK3(`gtk-3-examples`、`zenity`、`meld`:拖放、剪贴板、弹出层、自绘标题栏的边缘缩放)、GTK4(`gtk-4-examples`、`gnome-calculator`:`GSK_RENDERER=gl` 与 `cairo` 都零错误)、GTK2(`gimp`)、Qt(`wireshark`)、浏览器(`firefox-esr`、`chromium --disable-gpu`:剪贴板提供哪些格式)、Motif / Xaw / Tk / Emacs(`ddd`、`xfig`、`gnuplot-x11`、`gitk`、`emacs-lucid`:核心字体告警、中文与西里尔文)、桌面会话(`xserver-xephyr`、`openbox`、`xfwm4`、`xfdesktop4`:窗口管理器要以「已有窗口管理器」退出,桌面类窗口不开原生窗口)、托盘(`stalonetray`、`yad --notification`)、中日韩输入(`fcitx5`)、办公(`libreoffice-calc`:富格式剪贴板、启动时恢复最大化) |
-| 💡 | 🟠 P1 | **整个应用的渲染停顿**(`plan.md` §201 的三) | Windows 上 Avalonia 零星刷新时每隔十几到几十秒停 400–490 毫秒(渲染计时器空拍之后等系统合成器确认上一次提交),终端打字回显、对话框一样会撞上;X 窗口已经靠「保温」避开。可选:①应用级保温(有输入或刷新之后让渲染循环每帧都有东西画一小段时间);②换渲染组合 —— 3 分钟实测 AngleEgl + WinUI 合成(默认)停 4 次、AngleEgl + RedirectionSurface 停 1 次、Wgl + RedirectionSurface 0 次,但换后端牵涉透明效果、驱动兼容与内存,要实机评估;③把最小复现报给 Avalonia 上游(复现程序:纯 Avalonia、改一段文字、量 `RequestAnimationFrame` 回调的延迟) |
-| 💡 | 🟢 P3 | **RANDR 的刷新率在 macOS / Linux 上**(`plan.md` §201 的四) | Windows 已按显示器句柄读当前显示模式;macOS(`CGDisplayModeGetRefreshRate`)、Linux(桌面 X 显示的 RANDR / Wayland 输出的 mode)仍报 60,高刷屏上远端程序只画 60 帧 |
+| 💡 | 🟠 P1 | **整个应用的渲染停顿**(`plan.md` §201 的四) | Windows 上 Avalonia 零星刷新时每隔十几到几十秒停 400–490 毫秒(渲染计时器空拍之后等系统合成器确认上一次提交),终端打字回显、对话框一样会撞上;X 窗口已经靠「保温」避开。可选:①应用级保温(有输入或刷新之后让渲染循环每帧都有东西画一小段时间);②换渲染组合 —— 3 分钟实测 AngleEgl + WinUI 合成(默认)停 4 次、AngleEgl + RedirectionSurface 停 1 次、Wgl + RedirectionSurface 0 次,但换后端牵涉透明效果、驱动兼容与内存,要实机评估;③把最小复现报给 Avalonia 上游(复现程序:纯 Avalonia、改一段文字、量 `RequestAnimationFrame` 回调的延迟) |
+| 💡 | 🟢 P3 | **RANDR 的刷新率在 macOS / Linux 上**(`plan.md` §201 的五) | Windows 已按显示器句柄读当前显示模式;macOS(`CGDisplayModeGetRefreshRate`)、Linux(桌面 X 显示的 RANDR / Wayland 输出的 mode)仍报 60,高刷屏上远端程序只画 60 帧 |
 | 💡 | 🟢 P3 | **需要实机核对的** | 分数缩放下最后一列像素可能被裁(API-H13);macOS 上 Command 组合键收不到 KeyUp 时的处理(IN-E19);macOS / FreeBSD 经 `getpeereid` 取对端 uid(CN-S8) |
 
 ---
@@ -248,43 +277,14 @@
 
 | 出处 | 要改什么 | 进度 |
 | --- | --- | --- |
-| `plan.md` §201 X Server 的帧率与跟手程度 | `{zh,en}/ssh/spec/05-connection.md` §3.3:扩窗认「空等」;`{zh,en}/ssh/design/architecture.md` §5.5、§7 表、性能表、§11.2.31;`{zh,en}/xserver/design/architecture.md` §9 测量台、§10 排查记录;`{zh,en}/xserver/troubleshooting.md`「操作卡」 | [velashell-docs#119](https://github.com/VelaShellLabs/velashell-docs/pull/119) 已开,与宿主 PR 一起合 |
-| `plan.md` §189 本机输入法的 XIM 桥与 X 程序拖出 | `{zh,en}/xserver/design/architecture.md`、`troubleshooting.md`:XIM 协议 / 传输 / 插入点 / 预编辑、XMODIFIERS、XDND 根代理与 Java 拖放捕获器、文件取回与收尾;`{zh,en}/host/交互与界面规格.md`:候选框 / on-the-spot / 拖出文件与临时目录;`{zh,en}/host/settings-audit.md`:本机输入法开关的 XIM 行 | [velashell-docs#109](https://github.com/VelaShellLabs/velashell-docs/pull/109) 已开,与宿主 [VelaShell#600](https://github.com/joesdu/VelaShell/pull/600) 互相引用 |
-| `plan.md` §185 第二次审查清单的最后一轮收尾 | `{zh,en}/xserver/design/architecture.md`:§6 扁弧按线段画满线宽;§7 字体按屏幕分辨率挑 75 / 100 dpi、RENDER 的 alpha-map(只换 alpha 通道、跟着变换、目标上生效,删掉「必须是只有 alpha 的格式」);§2 字体脚本核对摘要;里程碑记下这一轮 | [velashell-docs#105](https://github.com/VelaShellLabs/velashell-docs/pull/105) 已开,与宿主 PR 一起合 |
-| `plan.md` §180 连接导入导出、多选与分组排序（#571） | `{zh,en}/host/会话导入.md` 新增第七节（JSON / CSV 两种格式、导出口令加密、CSV 列与读法、重复与写入规则）、第六节补一条、标题注明；`{zh,en}/host/交互与界面规格.md` §3（「更多」菜单、Ctrl 双选改为 Ctrl / Shift 多选、分组拖动排序）、§6.2 的入口说法、§12（多选菜单、分组菜单、新增 §12.1 批量修改对话框）；`{zh,en}/host/快捷键参考.md` 新增「资源管理器」一节（Ctrl / Shift 单击多选、拖动连接换分组、拖动分组行排序）；`SFTP双栏与WinSCP差距分析.md` 的交叉引用；`host/README.md` 与根 README 的索引 | [velashell-docs#103](https://github.com/VelaShellLabs/velashell-docs/pull/103) 已开，与宿主 PR 一起合 |
-| `plan.md` §118 窗口外框 | `{zh,en}/host/architecture.md` §5「窗口壳」的 ⚠️ 限定为 Win32、新增「各平台的外框」；`交互与界面规格.md` §2 补 macOS 红绿灯与各平台外框；`design-specs.md` 补 macOS 红绿灯；标题栏统一 28 的口径（设置窗口与消息框保持 48 的例外） | [velashell-docs#70](https://github.com/VelaShellLabs/velashell-docs/pull/70) 已开，与宿主 PR 一起合；实机验收后改掉 architecture 里「验收」那一段 |
-| `plan.md` §74 / §75 目录比较与同步 | `SFTP双栏与WinSCP差距分析.md`（C1 改已实现、新增第七节）与 `交互与界面规格.md` §6（文档工具条、同步窗口、保持远端最新、SHA-256 优先比较） | [velashell-docs#35](https://github.com/VelaShellLabs/velashell-docs/pull/35) **待合入** |
-| `plan.md` §82 #474 | `交互与界面规格.md` 资源管理器补**置顶**与 SFTP 路径栏的**复制当前路径**；`设置项审计.md` 补 `General.CollapseGroupsByDefault`、`Transfer.UseRecursiveDeleteCommand`（写明只对有 exec 通道的 SSH 会话生效、失败自动回退、没有逐条进度） | 已在 `docs/474-explorer-sftp` 分支改好（中英各 3 个文件），**待开 PR** |
-| `plan.md` §164 面向 FIPS 的后量子混合密钥交换 | `ssh/spec/03-key-exchange.md` §3.7（新的一节，含对 AlmaLinux 10.2 OpenSSH 的核对结果）、§8.1、§九；`ssh/spec/00-overview.md` 的算法表、默认清单顺序与 FIPS 预设；`ssh/spec/08-failures.md` §6 的断开原因码（中英两边） | [velashell-docs#91](https://github.com/VelaShellLabs/velashell-docs/pull/91) 已开，与宿主 [#563](https://github.com/joesdu/VelaShell/pull/563) 一起合 |
-| `plan.md` §163 agent 加钥的目的地约束 | `ssh/spec/07-forwarding.md` §7.3.2（新的一节，含对真 agent 的核对结果）、§7.3 的约束表与 §7.4 的指引；`ssh/getting-started.md` 的用法示例，以及「证书加钥暂不支持」这句过时的话（中英两边） | [velashell-docs#90](https://github.com/VelaShellLabs/velashell-docs/pull/90) 已开，与宿主 [#563](https://github.com/joesdu/VelaShell/pull/563) 一起合（§161 / §162 的那一批已随 [velashell-docs#89](https://github.com/VelaShellLabs/velashell-docs/pull/89) 合并） |
-| `plan.md` §117 SSH 库 API 整改 | `ssh/getting-started.md` 示例改用新公开面；`ssh/design/architecture.md` §6、§8 对上代码；`ssh/spec/08-failures.md` 补新增的 `SshFailureReason` 值与 `SshHostKeyVerdict.Reason` | 已在 `fix/ssh-api-cleanup` 分支备好（本地工作树，未提交），**待开 PR** |
-| `plan.md` §129 插件文件协议进双栏（#524 后续） | `交互与界面规格.md` §3（能进双选的类型）、§6.2（插件栏、续传核实不了按冲突处理）；`SFTP双栏与WinSCP差距分析.md` 8.2；`sdk/sdk-reference.md` 版本表把 `IProtocolStreamUpload` 那行的 TBD 换成 2.0.6。中英两棵树都改了 | [velashell-docs#75](https://github.com/VelaShellLabs/velashell-docs/pull/75) 已开，与宿主 PR 一起合 |
-| `plan.md` §125 PTY 像素尺寸 | `{zh,en}/host/architecture.md` §9 连接时序图：`PtySizeChanged(cols,rows)` 那一行改成带物理像素、落到 `window-change` | [velashell-docs#72](https://github.com/VelaShellLabs/velashell-docs/pull/72) 已开，与宿主 PR 一起合 |
-| `plan.md` §63 SSH 证书认证 | `zh/host/架构设计.md:37` 与 `交互与界面规格.md:451`（及英文镜像 `architecture-design.md:37`、`interaction-and-ui-specs.md:463`）的认证方式口径还停在「密码 / 私钥」。要写：证书 + 私钥是**两件套**、选完证书按 `-cert.pub` 自动补私钥、**证书路径留空是硬错** | 未开始 |
-| `plan.md` §86 / §87 密钥生成 | `交互与界面规格.md` 密钥管理页：工具栏多了算法下拉（Ed25519 默认 / ECDSA 256·384·521 / RSA 4096，位数刻意不给选），自动命名随算法走（`velashell_ed25519` 等，重名加 `_2`）；`架构设计.md` 若有「只能生成 RSA」一并改 | 未开始 |
+| `plan.md` §118 窗口外框 | 平台外框的文档已随 velashell-docs#70 合入；剩下的是**实机验收之后**把 `{zh,en}/host/architecture.md` 里「验收」那一段改成实测结论 | 等「跨平台实机验收」（一、窗口与外观） |
+| `plan.md` §63 SSH 证书认证 | 交互规格的认证方式已有「证书」一段，还缺两条细则：选完证书按 `-cert.pub` 自动补私钥、**证书路径留空是硬错**；`zh/host/架构设计.md:37` 与 `en/host/architecture-design.md:37` 的能力表仍写「密码 / 私钥认证」 | 未开始 |
+| `plan.md` §86 / §87 密钥生成 | 交互规格已写「生成 Ed25519 / ECDSA / RSA」；还缺：工具栏算法下拉（Ed25519 默认 / ECDSA 256·384·521 / RSA 4096，位数刻意不给选）、自动命名随算法走（`velashell_ed25519` 等，重名加 `_2`） | 未开始 |
 | `plan.md` §51 远程编辑 | `host/` 补：双击 / 「打开」/「使用默认编辑器打开」三个入口的语义差别、自动回传规则、`双击文件时` / `编辑后自动上传` 两个设置项、`~/.velashell/logs/remote-edit.log` 诊断日志 | 未开始 |
 | `plan.md` §57 发布者连续性 | `cli/cli.md` 与 `templates/dev-guide.md` 补「旁装钉不住发布者，宿主无从拦截冒名的覆盖安装」；`交互与界面规格.md` 补管理页那行指纹与换发布者的确认框 | 未开始（`plugins/STATUS.md` 那一格已改准） |
 | 插件管理页 | `交互与界面规格.md` **从头到尾没有插件管理窗口这一节** —— 按 §10 / §11 浮层规格的写法补：窗口尺寸、工具条、列表行结构（状态色点、发布者指纹）、行内操作的显隐条件、检查更新 / 全部更新 / 「宿主太旧」提示。⚠️ 是新写一节，别塞进别的 PR 顺手做 | 未开始 |
 | `plan.md` §68 标签页协议图标 | `交互与界面规格.md` 补标签条图标口径（SSH / 文件协议 / 插件协议三种字形，本地终端不画）。SDK 的三个图标字段写进 `sdk/sdk-reference.md` | 未开始 |
-| `plan.md` §65 防空闲 | 连接对话框「防空闲（秒）」：按间隔往 PTY 送一个 `NUL`、只在真空闲时发、**只按会话没有全局开关**（刻意的） | 未开始 |
 | `plan.md` §61 回滚行数 | 调小**当场生效**，超出的历史立刻裁掉、不可恢复；只作用于主屏，全屏程序的备用屏恒无回滚 | 未开始 |
-| `plan.md` §124 内置 X 服务端全库审查修复 | `{zh,en}/xserver/design/architecture.md`：§5 线程模型补未执行请求的字节预算、日志放锁之后交出并限流、请求缓冲池化；§7 授权改写（启动时生成 cookie 并写进 `.Xauthority`、Unix 套接字 0600 与对端 uid、SSH 连接器走 `ServeAuthenticatedAsync`）并补各项资源上限与连接建立时限；§10 决策记录。连同 §114 欠下的设计层面提醒：所有 SSH 会话共享一个受信的显示，一台被攻破的远端机能看到、也能操作别的会话里的 X 程序 | [velashell-docs#71](https://github.com/VelaShellLabs/velashell-docs/pull/71) 已开，与宿主 PR 一起合 |
-| `plan.md` §131 出厂强调色 | `{zh,en}/host/交互与界面规格.md` §14 外观页那一行：强调色出厂跟随主题，色板前有「跟随主题」按钮 | [velashell-docs#76](https://github.com/VelaShellLabs/velashell-docs/pull/76) 已开（宿主 #531 已合，#532 待合） |
-| `plan.md` §132 快捷命令变量占位 | `{zh,en}/host/交互与界面规格.md` 快捷命令（侧栏面板与设置页）补：`{{名字}}` / `{{名字=默认值}}` 写法、发送前的询问框与实时预览、哪些双花括号不算占位（花括号内有空白、`.` 开头、Go 模板的 `end` / `else` 等）、值里的换行压成空格 | [velashell-docs#76](https://github.com/VelaShellLabs/velashell-docs/pull/76) 已开（宿主 #531 已合，#532 待合） |
-| `plan.md` §133 keyboard-interactive 动态码框 | `{zh,en}/host/交互与界面规格.md` 补动态码框：何时弹（只有服务端问验证码之类才弹，口令提示用已存的密码代答一次）、非密码认证不回退到口令、纯展示轮不弹、取消 = 不连了（首连撤标签 / 重连记为用户断开）、按 echo 遮罩；`{zh,en}/host/architecture.md` 的认证装配补 `IKeyboardInteractivePrompt` | [velashell-docs#76](https://github.com/VelaShellLabs/velashell-docs/pull/76) 已开（宿主 #531 已合，#532 待合） |
-| `plan.md` §134 算法协商可配 | `{zh,en}/host/交互与界面规格.md` 连接对话框「SSH 连接选项」补：「允许老算法」开关（放开哪三个、追加在后）、自定义算法清单（四类、OpenSSH 写法、悬停看默认与另可加、写错时保存灰掉）；协商失败文案多出的那一行（可放开的算法 / 放开也没用）；`settings-audit` 若逐项列了 `SshSessionOptions` 的字段一并补上 | [velashell-docs#76](https://github.com/VelaShellLabs/velashell-docs/pull/76) 已开（宿主 #531 已合，#532 待合） |
-| `plan.md` §135 审计日志查看与保留 | `{zh,en}/host/交互与界面规格.md` 安全审计页补「审计日志」一节（查看按钮、保留天数）与审计日志窗口（筛选条、列、异常标红、只载入最近 2000 条）；`settings-audit.md` 补 `Security.AuditLogRetentionDays`（默认 180、1–3650、同时管 `conn_history`、只在启动时清理） | [velashell-docs#76](https://github.com/VelaShellLabs/velashell-docs/pull/76) 已开（宿主 #531 已合，#532 待合） |
-| `plan.md` §136 动作收进标题栏 | `{zh,en}/host/交互与界面规格.md` 第 89 行一带（全部窗口标题栏统一 28 那条）：资源监视的主机标识与暂停、回放中心的导出 / 刷新 / 清理 / 自动录制已收进标题栏的动作图标组，下面一行只剩副标题；远程编辑的保存（有未保存改动时转强调色）与连接诊断的导出报告 / 重新检测同样收进标题栏（§137），这两扇窗口的第二行只剩远端路径 / 诊断目标；`NceE6` 回放中心那条的「顶栏」措辞对上 | [velashell-docs#76](https://github.com/VelaShellLabs/velashell-docs/pull/76) 已开（宿主 #531 已合，#532 待合） |
-| `plan.md` §138 / §140 对话框标题栏 | `{zh,en}/host/交互与界面规格.md` 导入会话与新建连接两个对话框：标题栏与回放中心等独立窗口同一个样子（标题靠左、13px，前面一个 15px 线条图标；27×27 关闭键贴住右上角，悬停的红底随卡片圆角裁掉；仍是固定尺寸的模态框，不放最大化）；新建连接高级选项的 X11 一行改为标签单占一行、显示输入框与「受信任（-Y）」同在第二行各自居中 | [velashell-docs#76](https://github.com/VelaShellLabs/velashell-docs/pull/76) 已开（宿主 #531 已合，#532 待合） |
-| `plan.md` §144 远端文件 chown | `{zh,en}/host/SFTP双栏与WinSCP差距分析.md` 3.2 的 chown 一行改成已实现（仅 SFTP、不递归不批量），第五节路线图第 13 条划掉 chown；`{zh,en}/host/交互与界面规格.md` 文件浏览器右键菜单的「权限 chmod」改为「属性」，并补属性弹窗一条（属主 / 属组可编辑下拉、候选来源、数字 id、清空即不改、先 chown 再 chmod、FTP 与插件协议只读） | [velashell-docs#78](https://github.com/VelaShellLabs/velashell-docs/pull/78) 已开，与宿主 #539 一起合 |
-| `plan.md` §141 界面语言跟随系统 | `{zh,en}/host/settings-audit.md` §9.2「常规 · 语言」一行：`Language` 出厂为空 = 跟随系统，系统语言对不上五种界面语言时用英文，设置里选过的语言优先；下拉首项为「跟随系统」 | [velashell-docs#77](https://github.com/VelaShellLabs/velashell-docs/pull/77) 已开，与宿主 #537 一起合 |
-| `plan.md` §145 新建连接对话框改版 | `{zh,en}/host/交互与界面规格.md` §13.1 重写结构部分（协议栏、分页页签与出现条件表、页签圆点与字段数、常规页分节、认证分段按钮、反馈条、页脚目标预览；「高级选项」相关各条改指到对应页）；`{zh,en}/host/design-specs.md` 新建连接宽 500 → 760；`zh/host/架构设计.md` 与 `en/host/architecture-design.md` 设计稿对照表那一行；`zh/host/S3协议插件化设计.md`、`zh/host/Redis客户端插件化调研与设计.md`、`zh/templates/dev-guide.md` 三处「收进高级选项折叠」改为「放到高级页」。⚠️ `en/templates/dev-guide.md` 本来就没有 `IsAdvanced` 那一段（旧漂移），没补 | [velashell-docs#79](https://github.com/VelaShellLabs/velashell-docs/pull/79) 已开，与宿主 #540 一起合 |
-| `plan.md` §146 取色器 | `{zh,en}/host/交互与界面规格.md` 新增 §14.3「取色器」（字段外观、浮层构成、键盘步长、十六进制框只认十六进制且认不出不写回、两种色板来源、清除按钮只在可为空处给、松手才写回、写出 `#RRGGBB`），§13.1 标签颜色与 §14 外观页那两处改指到它；`{zh,en}/host/settings-audit.md` 外观行的展示规则补一句 | [velashell-docs#80](https://github.com/VelaShellLabs/velashell-docs/pull/80) 已开，与宿主 #542 一起合 |
-| `plan.md` §152 连接备注（#549） | `{zh,en}/host/交互与界面规格.md` §13.1「整理」补备注一行（多行、回车换行、最多约五行高再长框内滚、去首尾空白、明文且随云同步上传）；§4 资源管理器补悬停显示备注（整行、无备注不弹、12 行 / 500 字符截断） | [velashell-docs#82](https://github.com/VelaShellLabs/velashell-docs/pull/82) 已开，与宿主 #553 一起合 |
-| `plan.md` §154 命令面板不再占 `Ctrl+K`（#551） | `{zh,en}/host/快捷键参考.md` 全局表只留命令面板 `Ctrl+P` 一行，表下补一句为什么不绑 `Ctrl+K`；`{zh,en}/host/交互与界面规格.md` §8 标题与搜索框键帽徽章、§4A 那条实现变更备注、键位总表；`{zh,en}/host/architecture.md` 与 `{zh,en}/templates/dev-guide.md` 里的「Ctrl+P / Ctrl+K」 | [velashell-docs#83](https://github.com/VelaShellLabs/velashell-docs/pull/83) 已开（与 §155 同一个 PR），与宿主 #554 一起合 |
-| `plan.md` §155 快捷键可自定义（#551） | `{zh,en}/host/快捷键参考.md`（`keyboard-shortcuts.md`）：开头说明表里是出厂键位；维护约定换成新的守门用例；「绑定都写在哪」与「平台差异」改写；新增「自定义键位」一节（可改范围、怎么改、规则、终端冲突提示、`shortcuts.overrides` 存储与绑定 id 表）；跳标签拆成 8 行；删掉早已不存在的「过滤会话 `Ctrl+Shift+E`」一行；英文版补上一直漏掉的关闭全部标签、跳标签、清屏与三个字号缩放。`{zh,en}/host/settings-audit.md`：C-10 / A-08 改为已完成，§6 / §9.2 两行与阶段勾选项对上，补「第十批」整改记录。`{zh,en}/host/交互与界面规格.md`：设计稿对照表的快捷键行、§8 命令面板右侧键位跟随当前键位、§16 标题与跳标签那一行。`zh/host/架构设计.md` / `en/host/architecture-design.md`：「明确不做清单」删掉自定义快捷键并注明推翻 | [velashell-docs#83](https://github.com/VelaShellLabs/velashell-docs/pull/83) 已开，与宿主 #554 一起合 |
-| `plan.md` §157 共享凭据（#550） | `zh/host/凭据管理器集成设计.md` 升 v3：内置共享凭据已落地、与 v2 决策的出入（用户名规则取代 `OverrideUsername`、`ResolvedCredential` 带认证方式与私钥、解析交回副本、跳板失败不退回登录框、同步载荷版本 3）、阶段 0a 的 D1 / D3 勾掉；`{zh,en}/host/交互与界面规格.md`：设置页加「共享凭据」、§13.1 身份验证补「凭据来源」、登录框补共享凭据说明条与「同时更新共享凭据」；`zh/host/架构设计.md` / `en/host/architecture-design.md` 与 `{zh,en}/host/architecture.md`：SonnetDB 集合补 `shared_credentials`、连接时序图补「带引用的配置连接时才解析」；`{zh,en}/host/README.md` 那篇设计文档的一行简介 | [velashell-docs#85](https://github.com/VelaShellLabs/velashell-docs/pull/85) 已开，与宿主 PR 一起合 |
-| `plan.md` §158 快捷命令覆盖层、多行与拖动排序（#555） | `{zh,en}/host/交互与界面规格.md` §14 设置页表「代码片段」一行，新增 §14.4（内置命令可改可删、恢复默认与恢复内置命令；多行命令走括号粘贴、远端没开时先确认、沿用多行粘贴确认开关、不进补全；拖动排序的手柄、插入线、落点规则、「未分组」垫底、拖出列表取消、自动滚动、**没有键盘替代**；侧栏只显示首行加「+N 行」）；`{zh,en}/host/architecture.md` 快捷命令仓储那段补覆盖层与组内顺序表的存法、同步只加字段不抬版本 | [velashell-docs#86](https://github.com/VelaShellLabs/velashell-docs/pull/86) 已开，与宿主 PR 一起合 |
 | `en/` 树 | `zh/` 有 **8 篇** `en/` 里没有：Redis 调研、S3 两篇、系统密钥链调研、凭据管理器集成设计、三份 `release-process.md`。缺口已在 `en/host/README.md` 与根 README 逐篇列出（不再是静默漂移），翻译本身仍欠着 | 未开始 |
 
 ---
