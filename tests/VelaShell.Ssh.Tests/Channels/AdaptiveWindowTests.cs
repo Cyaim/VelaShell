@@ -417,28 +417,10 @@ public sealed class AdaptiveWindowTests
         Assert.AreEqual(payload, m.Bytes, "数据要一字节不差地收完");
         Assert.IsGreaterThan(window, m.FinalWindow,
             $"窗口（{window}）小于带宽时延积（800 KB），对端一窗一窗地空等回补 —— 窗口应当长上去，实际停在 {m.FinalWindow}");
-    }
 
-    [TestMethod]
-    public async Task 带宽才是瓶颈时窗口不白长()
-    {
-        // 与上一条相反：往返只有 1 ms、带宽 2 MB/s，带宽时延积 2 KB，256 KiB 的窗口绰绰有余。
-        // 数据一包一包匀速到达、读的一方每包之间都读空了在等 —— 但那是在等带宽，不是在等额度，扩窗换不来吞吐。
-        LinkCharacteristics link = new(TimeSpan.FromMilliseconds(1));
-        // 带宽取得低：两轮（256 KiB）约 130 ms、一包间隔 16 ms，机器忙时调度卡上一下（要 30 多毫秒才够 1/4）也不至于被当成空等额度。
-        LinkCharacteristics dataLink = new(TimeSpan.Zero, 2_000_000);
-
-        const int window = SshWindowPolicy.DefaultInitialBytes;
-        const int payload = 1536 * 1024;
-
-        Measurement m = await MeasureAsync(
-            link,
-            SshWindowPolicy.Adaptive(minimumBytes: window, maximumBytes: window * 16),
-            payload,
-            dataLink: dataLink);
-
-        Assert.AreEqual(payload, m.Bytes, "数据要一字节不差地收完");
-        Assert.AreEqual(window, m.FinalWindow, "带宽才是瓶颈时，窗口不该往上翻");
+        // 反过来「带宽才是瓶颈时窗口不白长」不在这里测：要靠模拟器匀速放行，而它在计时器醒晚时把积压的一口气补发
+        // （按计划时刻推下一次允许发送的时间，免得抖动累加），macOS 的 CI 上数据真的成批到了，窗口照规矩长上去。
+        // 那一半按给定的到达序列核对判据本身，见 CreditIdleDetectorTests。这一条不怕抖动：抖动只会多出空档。
     }
 
     [TestMethod]
