@@ -9,6 +9,7 @@
 //   行为规格:      velashell-docs/zh/ssh/spec/05-connection.md §1、§3、§4、§5
 
 using System.Buffers;
+using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Threading.Channels;
 using VelaShell.Ssh.Protocol;
@@ -126,6 +127,21 @@ public sealed class SshChannel : IAsyncDisposable
 
     /// <summary>收到过数据了（第一包到来之前读的一方本来就空着，那不算「等」）。</summary>
     private bool _receivedAnyData;
+
+    /// <summary>上一包数据到达的时刻（<see cref="Stopwatch.GetTimestamp"/>；只有接收循环碰）。</summary>
+    private long _lastArrivalAt;
+
+    /// <summary>
+    /// 这一轮里读的一方读空之后、等下一包等得最长的一段（<see cref="Stopwatch"/> 刻度）。
+    /// 接收循环往大里写，回补泵每轮取走清零（见 <see cref="ResizeWindowIfNeeded"/> 的「空等」）。
+    /// </summary>
+    private long _roundLongestWait;
+
+    /// <summary>上一轮的最长空等；扩过一次窗口就作废（只有回补泵碰）。</summary>
+    private long _previousRoundLongestWait;
+
+    /// <summary>最近两次回补的时刻（只有回补泵碰；0 = 还没有）。</summary>
+    private long _lastAdjustAt, _adjustBeforeLastAt;
 
     private SshChannelState _state = SshChannelState.Opening;
 
@@ -1294,16 +1310,61 @@ public sealed class SshChannel : IAsyncDisposable
     /// </remarks>
     private void NoteWindowPressure()
     {
+        long now = Stopwatch.GetTimestamp();
         if (_receivedAnyData && Interlocked.Read(ref _unreadBytes) <= 0)
         {
             Volatile.Write(ref _adjustsSinceStarved, 0);
+            NoteIdleWait(now - _lastArrivalAt);
         }
         _receivedAnyData = true;
+        _lastArrivalAt = now;
 
         if (_receiveWindow.Remaining <= (uint)(_receiveWindow.Size / 8))
         {
             _windowWasExhausted = true;
         }
+    }
+
+    /// <summary>读的一方读空之后等了 <paramref name="waited"/>（<see cref="Stopwatch"/> 刻度）才来下一包：留住这一轮最长的一段。</summary>
+    private void NoteIdleWait(long waited)
+    {
+        long longest = Volatile.Read(ref _roundLongestWait);
+        while (waited > longest)
+        {
+            long seen = Interlocked.CompareExchange(ref _roundLongestWait, waited, longest);
+            if (seen == longest)
+            {
+                return;
+            }
+            longest = seen;   // 回补泵刚取走清零，或者别的写入抢先：按新值再比
+        }
+    }
+
+    /// <summary>
+    /// 这一轮读的一方有没有<b>空等</b>额度：这一轮与上一轮里最长的一段空等，占两轮时长（上上次回补到这一次）的 1/4 以上。
+    /// 每次回补调一次（顺带把这一轮的记录挪成「上一轮」）。窗口不到 4 个报文时恒为 false —— 那时只认见底。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 〔velashell-docs/zh/ssh/spec/05 §3.3〕窗口有好几个报文、数据按带宽一包一包陆续到达时，「见底」看不出窗口是瓶颈：
+    /// 回补在半个窗口处就发出去，对端空等这笔额度的那一个往返里，账上的剩余已经被它涨回去了，到不了 1/8。
+    /// 曾经只认见底：Docker 的端口转发（有效往返约 8 ms）上窗口停在 256 KiB，SSH 只有 30 MB/s。
+    /// </para>
+    /// <para>
+    /// 分得清「等额度」与「等带宽」的是节奏：等额度时数据成批到、批与批之间空着接近一个往返；等带宽时匀速到，
+    /// 最长的空档只是一个报文的传输时间，占两轮（一个窗口）的「报文 / 窗口」—— 4 个报文以上的窗口里不到 1/4。
+    /// </para>
+    /// </remarks>
+    private bool IdledForCredit(int window)
+    {
+        long now = Stopwatch.GetTimestamp();
+        long thisRound = Interlocked.Exchange(ref _roundLongestWait, 0);
+        long longest = Math.Max(thisRound, _previousRoundLongestWait);
+        long span = _adjustBeforeLastAt == 0 ? 0 : now - _adjustBeforeLastAt;
+        _previousRoundLongestWait = thisRound;
+        _adjustBeforeLastAt = _lastAdjustAt;
+        _lastAdjustAt = now;
+        return window >= 4 * ReceiveMaxPacketBytes && span > 0 && longest * 4 >= span;
     }
 
     /// <summary>读的一方读走了这么多（经 <see cref="WindowedPipeReader"/>）。</summary>
@@ -1322,8 +1383,8 @@ public sealed class SshChannel : IAsyncDisposable
     /// 所以窗口要能长到带宽时延积那么大。
     /// </para>
     /// <para>
-    /// <b>判据是「窗口有没有被吃到见底」</b>，不是「两次回补隔了多久」。
-    /// 后者在局域网上永远成立，会让窗口一路涨到上限白占内存 ——
+    /// <b>判据是「窗口有没有吃紧」</b>（被吃到见底，或者读的一方空等额度，见 <see cref="IdledForCredit"/>），
+    /// 不是「两次回补隔了多久」。后者在局域网上永远成立，会让窗口一路涨到上限白占内存 ——
     /// 而那条链路上窗口根本不是瓶颈。
     /// </para>
     /// <para>
@@ -1347,7 +1408,10 @@ public sealed class SshChannel : IAsyncDisposable
         Interlocked.CompareExchange(ref _adjustsSinceStarved, Math.Min(sinceStarved + 1, int.MaxValue / 2), sinceStarved);
         bool starvedLately = sinceStarved <= 1;
 
-        if (_windowWasExhausted)
+        // 吃紧：见底，或者读的一方空等了额度（见 IdledForCredit）。它每轮都得调（顺带把这一轮的记录挪成「上一轮」），
+        // 所以先单独调，不放进会短路的条件里。
+        bool idled = IdledForCredit(current);
+        if (idled || _windowWasExhausted)
         {
             _windowWasExhausted = false;
             _idleRounds = 0;
@@ -1373,6 +1437,7 @@ public sealed class SshChannel : IAsyncDisposable
 
             _receiveWindow.Resize(grown);
             RecordWindow(grown);
+            _previousRoundLongestWait = 0;   // 再扩要有新一轮的空等作证：一段空档不连扩两回
             return grown - current;
         }
 

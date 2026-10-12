@@ -52,8 +52,16 @@ public sealed class AdaptiveWindowTests
 
         public CancellationToken Token => _cts.Token;
 
+        /// <param name="link">客户端这一侧的链路：我们的回补晚多久到对端。</param>
+        /// <param name="script">服务端那条通道的剧本。</param>
+        /// <param name="limits">会话限额。</param>
+        /// <param name="dataLink">
+        /// 服务端这一侧的链路（只用带宽、时延为 0，免得 RTT 翻倍）：数据按报文一包一包陆续到达，而不是整窗同时到。
+        /// 真实链路上就是这样 —— 一窗数据要花「窗口 / 带宽」才流完，回补泵在这期间早就把下一笔额度发出去了。
+        /// </param>
         public static async Task<Harness> StartAsync(
-            LinkCharacteristics link, TestChannelScript script, SshConnectionLimits? limits = null)
+            LinkCharacteristics link, TestChannelScript script, SshConnectionLimits? limits = null,
+            LinkCharacteristics? dataLink = null)
         {
             (InMemoryDuplexStream rawClient, InMemoryDuplexStream rawServer) =
                 InMemoryTransport.CreatePair(new InMemoryTransportOptions
@@ -68,7 +76,7 @@ public sealed class AdaptiveWindowTests
             // 而我们要的是「一个方向 OneWayLatency」这个语义。
             DelayedStream clientStream = new(rawClient, link);
 
-            TestSshServer server = new(rawServer);
+            TestSshServer server = dataLink is { } data ? new(new DelayedStream(rawServer, data)) : new(rawServer);
             SshPacketTransport clientTransport = new(clientStream);
             CancellationTokenSource cts = new(TimeSpan.FromSeconds(60));
 
@@ -130,7 +138,8 @@ public sealed class AdaptiveWindowTests
         SshWindowPolicy policy,
         int payloadSize,
         SshConnectionLimits? limits = null,
-        TimeSpan consumePause = default)
+        TimeSpan consumePause = default,
+        LinkCharacteristics? dataLink = null)
     {
         byte[] payload = new byte[payloadSize];
 
@@ -142,7 +151,8 @@ public sealed class AdaptiveWindowTests
                 ExitCode = 0,
                 MaxPacket = 32 * 1024,
             },
-            limits);
+            limits,
+            dataLink);
 
         SshCommandOptions options = new()
         {
@@ -382,6 +392,53 @@ public sealed class AdaptiveWindowTests
         Assert.IsGreaterThan(
             window, finalWindow,
             $"自适应窗口应当从 {window} 长上去，实际停在 {finalWindow}");
+    }
+
+    [TestMethod]
+    public async Task 数据陆续到达时窗口照样会长大()
+    {
+        // 回归用例。上面那条里窗口只有一个报文大（32 KiB），每来一包剩余就归零，「见底」一眼就看得出。
+        // 窗口有好几个报文、数据按带宽一包一包陆续到达时（真实链路都是这样），回补泵在一窗数据还没流完时
+        // 就把下一笔额度发了出去：对端在空等那笔额度，我们账上的剩余窗口却因为它涨回去了，永远到不了 1/8。
+        // 曾经只看「剩余 ≤ 1/8」：窗口停在 256 KiB，Docker 端口转发（有效往返 ~8 ms）上的 SSH 只有 30 MB/s，
+        // 经它的 X11 转发整窗动画只有 9 帧（固定 8 MiB 窗口时 60 帧）。
+        LinkCharacteristics link = new(TimeSpan.FromMilliseconds(20));
+        LinkCharacteristics dataLink = new(TimeSpan.Zero, 40_000_000);   // 带宽时延积 40 MB/s × 20 ms = 800 KB
+
+        const int window = SshWindowPolicy.DefaultInitialBytes;   // 256 KiB = 8 个报文
+        const int payload = 6 * 1024 * 1024;
+
+        Measurement m = await MeasureAsync(
+            link,
+            SshWindowPolicy.Adaptive(minimumBytes: window, maximumBytes: window * 16),
+            payload,
+            dataLink: dataLink);
+
+        Assert.AreEqual(payload, m.Bytes, "数据要一字节不差地收完");
+        Assert.IsGreaterThan(window, m.FinalWindow,
+            $"窗口（{window}）小于带宽时延积（800 KB），对端一窗一窗地空等回补 —— 窗口应当长上去，实际停在 {m.FinalWindow}");
+    }
+
+    [TestMethod]
+    public async Task 带宽才是瓶颈时窗口不白长()
+    {
+        // 与上一条相反：往返只有 1 ms、带宽 2 MB/s，带宽时延积 2 KB，256 KiB 的窗口绰绰有余。
+        // 数据一包一包匀速到达、读的一方每包之间都读空了在等 —— 但那是在等带宽，不是在等额度，扩窗换不来吞吐。
+        LinkCharacteristics link = new(TimeSpan.FromMilliseconds(1));
+        // 带宽取得低：两轮（256 KiB）约 130 ms、一包间隔 16 ms，机器忙时调度卡上一下（要 30 多毫秒才够 1/4）也不至于被当成空等额度。
+        LinkCharacteristics dataLink = new(TimeSpan.Zero, 2_000_000);
+
+        const int window = SshWindowPolicy.DefaultInitialBytes;
+        const int payload = 1536 * 1024;
+
+        Measurement m = await MeasureAsync(
+            link,
+            SshWindowPolicy.Adaptive(minimumBytes: window, maximumBytes: window * 16),
+            payload,
+            dataLink: dataLink);
+
+        Assert.AreEqual(payload, m.Bytes, "数据要一字节不差地收完");
+        Assert.AreEqual(window, m.FinalWindow, "带宽才是瓶颈时，窗口不该往上翻");
     }
 
     [TestMethod]
