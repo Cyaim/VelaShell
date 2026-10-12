@@ -2794,3 +2794,67 @@ Core.Tests 794 通过 / 10 跳过 / 1 失败,失败的是 §193 记过的 `X11_R
 
 文档:velashell-docs 中英镜像的「交互与界面规格」§6(上传选择框)与「快捷键参考」SFTP 文件管理器一节,
 在 [velashell-docs#116](https://github.com/VelaShellLabs/velashell-docs/pull/116),与本 PR 互相引用。
+
+## ✅ 199. 2026-10-12 IPv6 主机地址:编辑器、命令行拉起、导入与各处显示统一认 IPv6(#611,用户反馈)
+
+**起因**:用户在 macOS 上给连接填 IPv6 地址,报 `Can not parse port number from 'tzraeq@xxxx:xxxx:x:xxx::xxxx:xxxx'.`
+
+**根因**:那句报错出自 1.6.0 之前的底层库(Tmds.Ssh)。那时宿主把 `$"{用户名}@{主机}"` 拼成一个串交给库去拆,裸 IPv6 里的冒号被当成端口分隔符,
+最后一段读不成端口就报错(`tzraeq@` 来自用户名栏,地址本身填在主机栏)。1.6.0 换成 VelaShell.Ssh 之后,主机与端口分开传
+(`SshConnectionAssembler`:`new SshConnectionOptions(用户名, 主机, 端口)`),TCP 拨号先按 IP 字面量解析,**裸 IPv6 直连已经能用**。
+但顺着链路查下来,还有这几处不认 IPv6:
+- **命令行 / `ssh://` 拉起**(`XshellLaunchParser`)按最后一个冒号拆端口:最后一段全是数字时(`2001:db8:0:1::10:20`)读成另一个地址的 20 端口,
+  **不报错、连到了别处**;`ssh://2001:db8::1` 读成主机 `2001:db8:`、端口 1。
+- **SSH 库的目标串**(`SshConnectionOptions("joe@2001:db8::1")`)同样按最后一个冒号拆,报「端口不合法」。宿主不走这个入口;同库的 `ParseJumpSpec` 一直是对的。
+- **主机栏写成 `[2001:db8::1]` / `[2001:db8::1]:2222`** 的原样存下:直连碰巧能通(`IPAddress.TryParse` 认方括号),但方括号后面的端口被默默丢掉;
+  经跳板时 `direct-tcpip` 把方括号原样发给服务端;主机密钥与裸地址记成两台;库的端点显示成 `[[…]]:22`;页脚预览是 `root@[[2001:db8::1]:2222]:22`。
+- **CSV 导入**不带端口的 `[v6]` 留着方括号。
+- 界面与消息里拼 `host:port` 的二十来处不加方括号,`2001:db8::1:22` 读不出哪段是端口。
+
+**改法**:
+- Core 新增 `Net/HostAddress`:`TrySplit`(`host` / `host:port` / `[v6]` / `[v6]:port`;不带方括号又有不止一个冒号的整段是主机、不拆端口,
+  与 OpenSSH 同一个口径)、`Normalize`(去掉包住整个地址的方括号)、`Bracket` / `FormatEndPoint` / `FormatTarget`(IPv6 加方括号)。
+  **配置里一律存不带方括号的裸地址。**「含冒号就是 IPv6」与库的 `SshEndPoint` 同一个判断;不用 `IPAddress.TryParse`:
+  Windows 上它认不出按网卡名写的 zone id(`fe80::1%en0`),还会把 `[::1]:2222` 里的端口丢掉。
+- **连接编辑器**:保存 / 测试 / 页脚预览按「去掉方括号、方括号后面的端口取代端口栏」算;方括号写坏了(不闭合、后面不是 `:端口`)
+  在栏下提示(新增 `Profile_ErrHostBrackets`,五语言)、三个按钮灰着。只认方括号这一种写法 —— 串口协议的主机栏装设备名,插件协议的主机写法由插件定。
+- **拉起**:`XshellLaunchParser` 改用 `HostAddress.TrySplit`(zone id 的 `%25` 还原照旧);`.xsh` 的主机去方括号;确认弹窗的目标加方括号。
+- **导入**:CSV、JSON 存档、ssh_config / Xshell / WinSCP(`SessionImportWriter`)都去方括号。CSV「对应那一栏空着才拆」的规矩不变。
+- **连接时兜底**(早先存下的配置):跳板链每一跳(`ConnectionWorkflowService`)、FTP(`FtpConnectionInfo`)、
+  端口转发的目标主机与远程转发的监听地址(`LibraryPortForwardHandle`;插件经跳板的那条隧道也走这里)。
+- **显示**:确认弹窗、认证 / 键盘交互框、主机指纹框与「已信任主机」列表(新增 `HostBracketConverter`)、标签页覆盖层、SFTP 文档、
+  连接诊断、隧道列表、共享凭据、最近连接、导入预览、审计详情、主机密钥告警与几条错误消息,一律经 `HostAddress`。
+  X11 拖放按连接名找会话的两处(`VelaSshClientWrapper` 的 `target` 与 `SftpXServerDropUploader.LabelOf`)一起换,保持同一个写法。
+- **刻意不动**:持久化的键(主机密钥的文档 Id、最近连接的键、外部拉起的信任判据 `TrustKey`)与 `HostTrustOnceCache`、`RemoteShellProbe.CacheKey` ——
+  端口在最后一个冒号之后,本来就没有歧义;改写法等于让已存的记录全部对不上。结构化日志的模板也不动。
+- **SSH 库**:`SshConnectionOptions(string)` 不带方括号又有不止一个冒号的,整段是地址、端口取 22。
+
+**验证**:
+- `HostAddressTests` 6 条(32 组数据):各种写法的拆分、写坏的方括号、#611 那个最后一段全是数字的地址不被切、规整不碰串口设备名、拼了再拆回得来。
+- `XshellLaunchParserTests` 新增 6 组:`ssh://tzraeq@2001:db8:0:1::10:20`、不带 scheme 的、`ssh://2001:db8::1`、`::1`、口令里带 `@` 加 zone id 的,
+  全是整段主机、默认端口,确认弹窗的目标带方括号;裸 IPv6 配 `-p` 取那个端口。改动之前前三组连到了别的主机 / 端口上。
+- `ConnectionProfile*Tests` 新增 15 组:裸地址 / zone id / `[v6]` / `[v6]:port` 合法,四种写坏的方括号报错且保存按钮灰着;
+  保存出来的主机不带方括号、`[v6]:port` 的端口取代端口栏、名称兜底也用裸地址;页脚预览不再套两层方括号。
+- `SessionCsvTests`:不带端口的 `[v6]`、`user@[v6]` 配端口栏、最后一段全是数字的裸 IPv6。
+- `ConnectionTests.目标串的各种写法`:库的目标串认不带方括号的 IPv6。
+- **真实对端**:`Start-TestServer.ps1` 起 OpenSSH(容器端口同时发布在 `0.0.0.0` 与 `[::]`),`VELASHELL_SSH_INTEROP_HOST` 分别设成
+  `127.0.0.1` 与 `::1` 跑整组 `Interop`:两边都是 46 通过 / 15 跳过(按环境),连接、认证、SFTP、转发、重协商、agent 都走真的 IPv6 环回。
+  头一轮 `::1` 挂了两条主机证书用例 —— 脚本只给主机证书签了 `127.0.0.1,localhost`,库照规矩拒了(消息里的端点正确显示成 `[::1]:2299`);
+  脚本的主机证书主体补上 `::1` 之后全过。
+- 全部测试工程:除 `PrivateKeyWriteTests.真ssh_keygen读得出本库写的私钥` 外全过(`VelaShell.Tests` 2004 通过 / 47 跳过,`Core` 818 / 23,
+  `Infrastructure` 684 / 5,`Ssh` 1368 / 61,其余工程全过)。那一条挂在本机 `%TEMP%` 的权限上(多了一个 `CodexSandboxUsers` 组,
+  Windows 版 `ssh-keygen` 拒读私钥),与本次改动无关。解决方案 Debug 构建 0 警告。
+
+文档:velashell-docs 中英镜像的「交互与界面规格」(连接目标一节)、「Xshell 兼容登录」、「会话导入」(CSV 的 `host` 列)与 SSH 库的「上手」(目标串写法),
+在 [velashell-docs#117](https://github.com/VelaShellLabs/velashell-docs/pull/117),与本 PR 互相引用。
+
+**CI 上暴露的测试问题**(PR 第一轮 CI,Ubuntu 红一条,与本次改动无关、之前也潜伏着):
+- `AvaloniaXServerHostUiTests.NativeResizeWithoutUserReason_IsReportedToTheServer` 偶发「The calling thread cannot access this object because a different thread owns it」,
+  抛在 headless 起平台的半路(`EnsureIsolatedApplication` → `DefaultRenderLoop.Add` → `VerifyAccess`),用例体一行都没跑。
+  根因在宿主:Linux 上激活 X 窗口时在后台读桌面的键位表(2026-10-07 起;只有 Linux 读),读完的续体跑在线程池上、去读静态的 `Dispatcher.UIThread`。
+  Avalonia 12.1.4 的 headless 隔离在两条 UI 用例之间把 `s_uiThread` 置空,下一条起平台时才在会话线程上重建;`UIThread` 在 `s_uiThread` 为空时
+  **由哪条线程读就在哪条线程上新建一个、并把它认作 UI 调度器** —— 续体正好落在这个空当里,下一条 UI 用例起平台就失败。
+  改为在 UI 线程上取下调度器、续体投回这一个;投给已经收工的调度器是空操作(那一轮的服务端早就不在了)。
+  用临时探针稳定复现:读键盘改成各平台都读(随机 1–60 毫秒)、续体在投递之前连读 300 毫秒静态的 `UIThread`,
+  旧写法三次全挂(每次 49 条里 32 条、栈与 CI 一致),新写法(续体只碰取下来的那个调度器)三次全过;探针已撤。全仓再没有别处在线程池续体里读它。
+- 顺手:`HostAddressTests` 一处多余的转换(IDE0004)。先前的严格构建是增量的、没重跑那个工程的分析器,`--no-incremental` 重跑才报出来;现在 0 警告。

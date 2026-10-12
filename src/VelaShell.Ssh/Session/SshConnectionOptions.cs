@@ -18,7 +18,7 @@ public sealed record SshConnectionOptions
     /// <summary>用 <c>user@host:port</c> 形式构造。</summary>
     /// <param name="target">
     /// 形如 <c>root@10.0.0.1:22</c>、<c>joe@example.com</c>、<c>example.com</c>。
-    /// IPv6 要写成 <c>joe@[::1]:22</c>。
+    /// IPv6 带端口要写成 <c>joe@[::1]:22</c>；不带方括号的 IPv6（<c>joe@2001:db8::1</c>）整段是地址，端口取 22。
     /// </param>
     public SshConnectionOptions(string target)
     {
@@ -210,8 +210,10 @@ public sealed record SshConnectionOptions
             return (user, address, tail.StartsWith(':') ? ParsePort(tail[1..], target) : 22);
         }
 
-        int colon = rest.LastIndexOf(':');
-        return colon < 0
+        // 不带方括号又有不止一个冒号的，整段是 IPv6 地址、端口取默认（与 ParseJumpSpec 同一个口径）。
+        // 曾经按最后一个冒号拆：joe@2001:db8::1 报「端口 “1” 不合法」，joe@2001:db8::1:22 被读成另一个地址的 22 端口。
+        int colon = rest.IndexOf(':', StringComparison.Ordinal);
+        return colon < 0 || colon != rest.LastIndexOf(':')
             ? (user, rest, 22)
             : (user, rest[..colon], ParsePort(rest[(colon + 1)..], target));
     }

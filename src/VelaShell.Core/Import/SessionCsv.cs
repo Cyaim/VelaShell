@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 
 namespace VelaShell.Core.Import;
@@ -287,6 +288,8 @@ public static class SessionCsv
             portText = embeddedPort;
             rowColumns |= SessionCsvColumns.Port;
         }
+        // 不带端口的 [2001:db8::1] 上面不拆,方括号在这里去掉:配置里存裸地址(见 HostAddress)。
+        host = HostAddress.Normalize(host);
         if (host.Length == 0)
         {
             errors.Add(Strings.Get("SessImport_ErrNoHost"));

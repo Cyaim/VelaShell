@@ -16,6 +16,7 @@ using VelaShell.Core.Diagnostics;
 using VelaShell.Core.Ftp;
 using VelaShell.Core.Localization;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Notifications;
 using VelaShell.Core.Processes;
 using VelaShell.Core.Protocols;
@@ -889,7 +890,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             return;
         }
         string label = string.IsNullOrWhiteSpace(profile.Name)
-                           ? $"{profile.Host}:{profile.Port}"
+                           ? HostAddress.FormatEndPoint(profile.Host, profile.Port)
                            : profile.Name;
         ProcessManagerRequested?.Invoke(tab.SessionId, label);
     }
@@ -911,7 +912,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             return;
         }
         string label = string.IsNullOrWhiteSpace(profile.Name)
-                           ? $"{profile.Host}:{profile.Port}"
+                           ? HostAddress.FormatEndPoint(profile.Host, profile.Port)
                            : profile.Name;
         ResourceMonitorRequested?.Invoke(tab.SessionId, label);
     }
@@ -1622,7 +1623,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             return;
         }
         string label = string.IsNullOrWhiteSpace(profile.Name)
-                           ? $"{profile.Host}:{profile.Port}"
+                           ? HostAddress.FormatEndPoint(profile.Host, profile.Port)
                            : profile.Name;
         // 目标不用用户再抄一遍 IP —— 这正是内建追踪相对 mtr 的意义。
         TraceRouteRequested?.Invoke(profile.Host, label);
@@ -5399,9 +5400,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         // 那时不能拼出 "@127.0.0.1:6379" 这种前面缺了一截的目标。
         string target = string.IsNullOrWhiteSpace(profile.Host)
             ? profile.Name
-            : string.IsNullOrWhiteSpace(profile.Username)
-                ? $"{profile.Host}:{profile.Port}"
-                : $"{profile.Username}@{profile.Host}:{profile.Port}";
+            : HostAddress.FormatTarget(string.IsNullOrWhiteSpace(profile.Username) ? null : profile.Username, profile.Host, profile.Port);
         // 消息里已经是可读的原因了 —— 不再需要从 "The connection could not be established - …"
         // 这种前缀里切一段出来。那段解析是上一版底层库逼出来的:它把原因码声明成 internal,
         // 只能按消息前缀猜,而上游改一次措辞就静默失效。现在原因是强类型的

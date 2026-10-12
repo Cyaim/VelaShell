@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Docking.Controls;
 using VelaShell.Docking.Model;
@@ -106,7 +107,7 @@ public sealed class PluginWorkspaceDocument : DockDocument, IDockViewProvider
     public TabIcon? TabIcon { get; }
 
     /// <summary>显示连接详情的提示文本。</summary>
-    public string ConnectionTooltip => $"{Title} · {TypeName} · {Profile.Host}:{Profile.Port}";
+    public string ConnectionTooltip => $"{Title} · {TypeName} · {HostAddress.FormatEndPoint(Profile.Host, Profile.Port)}";
 
     /// <summary>
     /// 创建停靠内容:向插件索取控件。

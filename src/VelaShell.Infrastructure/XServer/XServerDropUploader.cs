@@ -1,5 +1,6 @@
 using System.Globalization;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Sftp;
 using VelaShell.Core.Ssh;
 
@@ -39,9 +40,8 @@ public sealed class SftpXServerDropUploader(ISshConnectionService connections, I
     private readonly ISshConnectionService _connections = connections ?? throw new ArgumentNullException(nameof(connections));
     private readonly ISftpService _sftp = sftp ?? throw new ArgumentNullException(nameof(sftp));
 
-    /// <summary>连接器给连接起的名字(与 SSH 包装器的 <c>target</c> 同一个写法)。</summary>
-    internal static string LabelOf(ConnectionInfo info) =>
-        $"{info.Username}@{info.Host}:{info.Port.ToString(CultureInfo.InvariantCulture)}";
+    /// <summary>连接器给连接起的名字(与 SSH 包装器的 <c>target</c> 同一个写法:<see cref="HostAddress.FormatTarget" />,IPv6 带方括号)。</summary>
+    internal static string LabelOf(ConnectionInfo info) => HostAddress.FormatTarget(info.Username, info.Host, info.Port);
 
     private SshSession? SessionFor(string clientLabel) =>
         _connections.Sessions.FirstOrDefault(s => s.Status == SessionStatus.Connected && LabelOf(s.ConnectionInfo) == clientLabel);

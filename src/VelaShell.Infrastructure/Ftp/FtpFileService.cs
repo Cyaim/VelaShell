@@ -746,7 +746,7 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
         {
             return translated;
         }
-        string via = $" (via {(route.Kind == ProxyKind.Socks5 ? "socks5" : "http")} {route.Host}:{route.Port} → {info.Host}:{info.Port})";
+        string via = $" (via {(route.Kind == ProxyKind.Socks5 ? "socks5" : "http")} {HostAddress.FormatEndPoint(route.Host, route.Port)} → {HostAddress.FormatEndPoint(info.Host, info.Port)})";
         // FTP :21 经 HTTP CONNECT 同样常被代理软件限制(只放行 80/443),直指换 SOCKS5/直连。
         string hint = route.Kind == ProxyKind.Http
             ? " If the proxy refuses CONNECT, switch Proxy to socks5 or none for TUN."

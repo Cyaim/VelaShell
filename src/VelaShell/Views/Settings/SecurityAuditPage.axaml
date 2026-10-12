@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:VelaShell.ViewModels"
+             xmlns:conv="using:VelaShell.Converters"
              xmlns:models="using:VelaShell.Core.Models"
              xmlns:loc="using:VelaShell.Localization"
              x:Class="VelaShell.Views.Settings.SecurityAuditPage"
@@ -109,7 +110,7 @@
                       <TextBlock FontSize="{DynamicResource VelaFontSize12}" FontWeight="Medium"
                                  Foreground="{DynamicResource VelaTextPrimary}"
                                  IsVisible="{Binding !$parent[ItemsControl].((vm:SettingsViewModel)DataContext).MaskKnownHostAddresses}">
-                        <Run Text="{Binding Host}" /><Run Text=":" /><Run Text="{Binding Port}" />
+                        <Run Text="{Binding Host, Converter={x:Static conv:HostBracketConverter.Instance}}" /><Run Text=":" /><Run Text="{Binding Port}" />
                       </TextBlock>
                       <TextBlock FontSize="{DynamicResource VelaFontSize12}" FontWeight="Medium"
                                  Foreground="{DynamicResource VelaTextPrimary}"

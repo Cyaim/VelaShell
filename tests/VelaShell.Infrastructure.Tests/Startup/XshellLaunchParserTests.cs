@@ -261,6 +261,31 @@ public class XshellLaunchParserTests
     }
 
     [TestMethod]
+    [DataRow("ssh://tzraeq@2001:db8:0:1::10:20", "tzraeq", "2001:db8:0:1::10:20")]
+    [DataRow("tzraeq@2001:db8:0:1::10:20", "tzraeq", "2001:db8:0:1::10:20")]
+    [DataRow("ssh://2001:db8::1", "", "2001:db8::1")]
+    [DataRow("::1", "", "::1")]
+    [DataRow("ssh://ops:p@ss@fe80::1%25en0", "ops", "fe80::1%en0")]
+    public void Parse_UnbracketedIPv6_IsTheWholeHost_AndThePortIsTheDefault(string url, string user, string host)
+    {
+        // #611:曾经按最后一个冒号拆,最后一段全是数字时被当成端口 —— 2001:db8:0:1::10:20 连成了
+        // 2001:db8:0:1::10 的 20 端口,不报错;ssh://2001:db8::1 更是连到了主机「2001:db8:」的 1 端口。
+        ExternalLaunchRequest request = XshellLaunchParser.TryParse(["-url", url])!;
+
+        Assert.AreEqual((user, host, 22), (request.Username, request.Host, request.Port));
+        Assert.AreEqual(user.Length > 0 ? $"{user}@[{host}]:22" : $"[{host}]:22", request.DisplayTarget,
+            "确认弹窗上的目标要加方括号,否则读不出哪段是端口");
+    }
+
+    [TestMethod]
+    public void Parse_UnbracketedIPv6_TakesThePortFromTheOption()
+    {
+        ExternalLaunchRequest request = XshellLaunchParser.TryParse(["-url", "root@2001:db8::1", "-p", "2222"])!;
+
+        Assert.AreEqual(("2001:db8::1", 2222), (request.Host, request.Port));
+    }
+
+    [TestMethod]
     public void Parse_ExplicitOptions_OverrideUrlFields()
     {
         ExternalLaunchRequest request = XshellLaunchParser.TryParse(

@@ -155,6 +155,20 @@ public sealed class SessionCsvTests
         Assert.AreEqual("fe80::1", rows[3].Profile.Host, "裸 IPv6 有多个冒号,不能拆");
     }
 
+    /// <summary>不带端口的 <c>[v6]</c> 也去掉方括号:配置里存裸地址(#611)。曾经原样存进去,经跳板时发给服务端就解析不了。</summary>
+    [TestMethod]
+    public void Read_StripsBracketsFromAnIpv6HostWithoutAPort()
+    {
+        const string csv = "host,username,port\n[2001:db8::1],,\nroot@[2001:db8::2],,2200\n2001:db8:0:1::10:20,tzraeq,\n";
+
+        IReadOnlyList<SessionImportCandidate> rows = SessionCsv.Read("x.csv", csv).Candidates;
+
+        Assert.AreEqual(("2001:db8::1", 22), (rows[0].Profile.Host, rows[0].Profile.Port));
+        Assert.AreEqual(("2001:db8::2", "root", 2200), (rows[1].Profile.Host, rows[1].Profile.Username, rows[1].Profile.Port));
+        Assert.AreEqual(("2001:db8:0:1::10:20", 22), (rows[2].Profile.Host, rows[2].Profile.Port), "最后一段全是数字也不当端口");
+        Assert.IsTrue(rows.All(row => row.Errors.Count == 0));
+    }
+
     [TestMethod]
     public void Read_FillsDefaults_ByProtocol()
     {

@@ -1974,6 +1974,9 @@ Paste anyway?</value>
   <data name="Profile_ErrHostRequired" xml:space="preserve">
     <value>Host is required</value>
   </data>
+  <data name="Profile_ErrHostBrackets" xml:space="preserve">
+    <value>Malformed brackets: write [2001:db8::1] or [2001:db8::1]:2222</value>
+  </data>
   <data name="Profile_ErrPortRange" xml:space="preserve">
     <value>Port must be between 1 and 65535</value>
   </data>

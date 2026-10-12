@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Ssh;
 
 namespace VelaShell.Infrastructure.Ssh;
@@ -229,7 +230,7 @@ public class SshConnectionService(
         {
             await DisposeQuietlyAsync(client).ConfigureAwait(false);
             session.Status = SessionStatus.Error;
-            session.ErrorMessage = $"Connection to {connectionInfo.Host}:{connectionInfo.Port} was cancelled.";
+            session.ErrorMessage = $"Connection to {HostAddress.FormatEndPoint(connectionInfo.Host, connectionInfo.Port)} was cancelled.";
             lock (_sessionsGate)
             {
                 _sessions.Remove(session);
@@ -246,7 +247,7 @@ public class SshConnectionService(
         {
             await DisposeQuietlyAsync(client).ConfigureAwait(false);
             session.Status = SessionStatus.Error;
-            session.ErrorMessage = $"Connection to {connectionInfo.Host}:{connectionInfo.Port} timed out. Please check the host and port, then retry.";
+            session.ErrorMessage = $"Connection to {HostAddress.FormatEndPoint(connectionInfo.Host, connectionInfo.Port)} timed out. Please check the host and port, then retry.";
             lock (_sessionsGate)
             {
                 _sessions.Remove(session);

@@ -288,7 +288,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 主体写 127.0.0.1 与 localhost：用例按这两个名字连。
-& ssh-keygen -s $hostCaPath -h -I 'velashell-interop-host' -n '127.0.0.1,localhost' -V '-5m:+52w' $hostKeyPub
+& ssh-keygen -s $hostCaPath -h -I 'velashell-interop-host' -n '127.0.0.1,localhost,::1' -V '-5m:+52w' $hostKeyPub
 if ($LASTEXITCODE -ne 0) {
     throw '签发主机证书失败。'
 }

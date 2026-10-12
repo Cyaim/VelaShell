@@ -1,6 +1,7 @@
 using VelaShell.Core.Data;
 using VelaShell.Core.Import;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 
 namespace VelaShell.Infrastructure.Import;
 
@@ -45,7 +46,8 @@ internal static class SessionImportWriter
             {
                 ConnectionType = item.ConnectionType,
                 Name = item.Name,
-                Host = item.Host,
+                // 来源里写成 [2001:db8::1] 的去掉方括号:配置里存裸地址(见 HostAddress)。
+                Host = HostAddress.Normalize(item.Host),
                 Port = item.Port,
                 Username = item.Username,
                 AuthMethod = usesKey ? AuthMethod.PrivateKey : AuthMethod.Password,

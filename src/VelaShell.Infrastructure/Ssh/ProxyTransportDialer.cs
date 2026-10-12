@@ -130,7 +130,7 @@ internal sealed class ProxyTransportDialer(IProxyResolver? proxyResolver) : ISsh
     /// </remarks>
     private static string DescribeProxyFailure(ProxyRoute route, string host, int port, Exception error)
     {
-        string via = $" (via {(route.Kind == ProxyKind.Socks5 ? "socks5" : "http")} {route.Host}:{route.Port} → {host}:{port})";
+        string via = $" (via {(route.Kind == ProxyKind.Socks5 ? "socks5" : "http")} {HostAddress.FormatEndPoint(route.Host, route.Port)} → {HostAddress.FormatEndPoint(host, port)})";
         if (error is SshConnectException { Reason: SshFailureReason.ProxyAuthRequired or SshFailureReason.ProxyAuthFailed } auth)
         {
             return Strings.Get(auth.Reason == SshFailureReason.ProxyAuthFailed ? "Msg_ProxyAuthFailed" : "SshErr_ProxyAuthRequired") + via;

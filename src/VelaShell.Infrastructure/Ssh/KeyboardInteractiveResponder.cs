@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Ssh.Auth;
@@ -36,7 +37,7 @@ internal sealed partial class KeyboardInteractiveResponder(IKeyboardInteractiveP
 
     /// <summary>按连接信息建应答器:密码认证把它的密码交给应答器代答口令提示,其余认证方式不代答。</summary>
     public static KeyboardInteractiveResponder For(Core.Models.ConnectionInfo info, IKeyboardInteractivePrompt prompt) =>
-        new(prompt, $"{info.Username}@{info.Host}:{info.Port}",
+        new(prompt, HostAddress.FormatTarget(info.Username, info.Host, info.Port),
             info.AuthMethod == Core.Models.AuthMethod.Password ? info.Password ?? "" : null);
 
     /// <summary>包成库的凭据。</summary>

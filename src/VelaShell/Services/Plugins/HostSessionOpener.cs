@@ -1,6 +1,6 @@
-using System.Globalization;
 using Avalonia.Threading;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Plugins;
 using VelaShell.ViewModels;
@@ -93,9 +93,7 @@ internal sealed class HostSessionOpener(
     /// </remarks>
     private static string Describe(SessionProfile profile)
     {
-        string address = string.IsNullOrWhiteSpace(profile.Username)
-            ? string.Create(CultureInfo.InvariantCulture, $"{profile.Host}:{profile.Port}")
-            : string.Create(CultureInfo.InvariantCulture, $"{profile.Username}@{profile.Host}:{profile.Port}");
+        string address = HostAddress.FormatTarget(string.IsNullOrWhiteSpace(profile.Username) ? null : profile.Username, profile.Host, profile.Port);
         return string.IsNullOrWhiteSpace(profile.Name) ? address : $"{profile.Name} ({address})";
     }
 }

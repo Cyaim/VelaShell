@@ -2,6 +2,7 @@ using System.Security;
 using ReactiveUI;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 
 namespace VelaShell.ViewModels;
@@ -162,9 +163,8 @@ public class AuthenticationDialogViewModel : ReactiveObject
     {
         get
         {
-            string target = string.IsNullOrWhiteSpace(Username)
-                                ? $"{field}:{_port}"
-                                : $"{Username}@{field}:{_port}";
+            // IPv6 加方括号,否则 ::1:22 读不出哪段是端口。
+            string target = HostAddress.FormatTarget(string.IsNullOrWhiteSpace(Username) ? null : Username, field, _port);
             return Step == 1 ? Strings.Format("Auth_ConnectingTo", target) : target;
         }
     }

@@ -2,6 +2,7 @@ using Avalonia.Threading;
 using ReactiveUI;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Presentation.ViewModels;
@@ -552,7 +553,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
     /// </summary>
     private string OverlayHostLabel =>
         Profile is { } p
-            ? string.IsNullOrWhiteSpace(p.Name) ? $"{p.Host}:{p.Port}" : p.Name
+            ? string.IsNullOrWhiteSpace(p.Name) ? HostAddress.FormatEndPoint(p.Host, p.Port) : p.Name
             : LocalShell is { } shell && !string.IsNullOrWhiteSpace(shell.Name)
                 ? shell.Name
                 : Title;

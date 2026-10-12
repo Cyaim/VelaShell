@@ -161,6 +161,16 @@ public sealed class ConnectionProfileSectionsTests
         Assert.AreEqual("root@[fe80::1]:22",
             new ConnectionProfileViewModel { Host = "fe80::1", Username = "root", Port = 22 }.EndpointPreview);
 
+    /// <summary>
+    /// 主机栏里已经带着方括号的(从别处抄来的 <c>[v6]:port</c>)不再套一层;方括号后面的端口就是要连的端口,
+    /// 预览照实显示 —— 曾经显示成 <c>root@[2001:db8::1]:2222:22</c>(#611)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("[2001:db8::1]", "root@[2001:db8::1]:22")]
+    [DataRow(" [2001:db8::1]:2222 ", "root@[2001:db8::1]:2222")]
+    public void EndpointPreview_HonoursABracketedHost(string host, string expected) =>
+        Assert.AreEqual(expected, new ConnectionProfileViewModel { Host = host, Username = "root", Port = 22 }.EndpointPreview);
+
     [TestMethod]
     public void EndpointPreview_CarriesTheSchemeForFileProtocols()
     {

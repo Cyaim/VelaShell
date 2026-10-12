@@ -1,6 +1,7 @@
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 
@@ -175,7 +176,7 @@ public sealed class ConnectionWorkflowService(
                     Category = "connection",
                     Action = success ? "connect" : "connect-failed",
                     ProfileId = profile.Id,
-                    Detail = $"{username}@{profile.Host}:{profile.Port}"
+                    Detail = HostAddress.FormatTarget(username, profile.Host, profile.Port)
                 }).ConfigureAwait(false);
             }
             catch
@@ -248,7 +249,8 @@ public sealed class ConnectionWorkflowService(
         }
         return new()
         {
-            Host = effective.Host,
+            // 早先存下的配置里可能还是 [2001:db8::1]:去掉方括号再交出去(见 HostAddress)。
+            Host = HostAddress.Normalize(effective.Host),
             Port = effective.Port,
             Username = effective.Username,
             AuthMethod = effective.AuthMethod,

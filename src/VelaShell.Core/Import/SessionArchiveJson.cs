@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Sync;
 
@@ -308,7 +309,8 @@ public static class SessionArchiveJson
         profile.LastConnectedAt = null;
         // 手写的文件里可能有 "host": null 这种写法:反序列化会把不可空的字符串 / 列表设成 null,
         // 后面一碰就是空引用,整份文件跟着读不了。在这里一律兜成空值,让它落到「主机为空」这条行级错误上。
-        profile.Host = (profile.Host ?? string.Empty).Trim();
+        // 带方括号的 IPv6(手写的文件里常见)顺手去掉方括号:配置里存裸地址(见 HostAddress)。
+        profile.Host = HostAddress.Normalize(profile.Host);
         profile.Username = (profile.Username ?? string.Empty).Trim();
         profile.Name ??= string.Empty;
         profile.Tags ??= [];

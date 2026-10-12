@@ -1,4 +1,5 @@
 using System.Net;
+using VelaShell.Core.Net;
 using VelaShell.Core.Ssh;
 using VelaShell.Ssh.Diagnostics;
 using VelaShell.Ssh.Forwarding;
@@ -81,16 +82,20 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(request);
 
+        // 写成 [::1] 的 IPv6 去掉方括号:目标主机与远程转发的监听地址都原样发给服务端,带着方括号它解析不了(#611)。
+        string boundHost = HostAddress.Normalize(request.BoundHost);
+        string targetHost = HostAddress.Normalize(request.TargetHost);
+
         PortForwarder forwarder = request.Kind switch
         {
             PortForwardKind.Local => LocalPortForwarder.Start(
-                connection, request.TargetHost!, (int)request.TargetPort!, LocalOptions(request)),
+                connection, targetHost, (int)request.TargetPort!, LocalOptions(boundHost, request.BoundPort)),
 
-            PortForwardKind.Dynamic => LocalPortForwarder.StartDynamic(connection, LocalOptions(request)),
+            PortForwardKind.Dynamic => LocalPortForwarder.StartDynamic(connection, LocalOptions(boundHost, request.BoundPort)),
 
             PortForwardKind.Remote => await RemotePortForwarder.StartAsync(
-                connection, ResolveOutboundHost(request.TargetHost!), (int)request.TargetPort!,
-                new RemotePortForwardOptions { BindAddress = request.BoundHost, BindPort = (int)request.BoundPort },
+                connection, ResolveOutboundHost(targetHost), (int)request.TargetPort!,
+                new RemotePortForwardOptions { BindAddress = boundHost, BindPort = (int)request.BoundPort },
                 cancellationToken).ConfigureAwait(false),
 
             _ => throw new ArgumentOutOfRangeException(
@@ -100,10 +105,10 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
         return new(forwarder);
     }
 
-    private static LocalPortForwardOptions LocalOptions(PortForwardRequest request) => new()
+    private static LocalPortForwardOptions LocalOptions(string boundHost, uint boundPort) => new()
     {
-        BindAddress = ParseBindAddress(request.BoundHost),
-        BindPort = (int)request.BoundPort,
+        BindAddress = ParseBindAddress(boundHost),
+        BindPort = (int)boundPort,
     };
 
     /// <summary>把配置里的监听主机翻译成绑定地址(<c>0.0.0.0</c> / <c>*</c> 表示所有接口)。</summary>

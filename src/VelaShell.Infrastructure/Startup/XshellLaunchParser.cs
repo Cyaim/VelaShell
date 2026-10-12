@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Infrastructure.Import;
 
 namespace VelaShell.Infrastructure.Startup;
@@ -238,7 +239,7 @@ public static class XshellLaunchParser
             Scheme = scheme.Length == 0 ? "ssh" : scheme,
             ConnectionType = type,
             IsSupported = supported,
-            Host = parsed.Host.Trim(),
+            Host = HostAddress.Normalize(parsed.Host),
             Port = parsed.Port > 0 ? parsed.Port : defaultPort,
             Username = parsed.UserName?.Trim() ?? string.Empty,
             PrivateKeyPath = string.IsNullOrWhiteSpace(parsed.UserKey) ? null : parsed.UserKey.Trim(),
@@ -345,35 +346,19 @@ public static class XshellLaunchParser
     }
 
     /// <summary>
-    /// 切分 <c>host[:port]</c>,兼容 IPv6 的 <c>[::1]:22</c> 写法。IPv6 的 zone id 按 RFC 6874
-    /// 在 URL 里是转义过的(<c>[fe80::1%25eth0]</c>),这里还原成套接字要的 <c>fe80::1%eth0</c>。
+    /// 切分 <c>host[:port]</c>(拆法见 <see cref="HostAddress.TrySplit" />);没写端口时 <paramref name="port" /> 为 0。
+    /// IPv6 的 zone id 按 RFC 6874 在 URL 里是转义过的(<c>[fe80::1%25eth0]</c>),这里还原成套接字要的 <c>fe80::1%eth0</c>。
     /// </summary>
+    /// <remarks>
+    /// 不带方括号的 IPv6 整段是主机(#611)。曾经按最后一个冒号拆:<c>ssh://u@2001:db8:0:1::10:20</c>
+    /// 读成主机 <c>2001:db8:0:1::10</c>、端口 20,不报错,连到别处去了。
+    /// </remarks>
     private static bool TrySplitHostPort(string authority, out string host, out int port)
     {
-        host = authority.Trim();
-        port = 0;
-        if (host.StartsWith('['))
-        {
-            int close = host.IndexOf(']', StringComparison.Ordinal);
-            if (close < 0)
-            {
-                return false;
-            }
-            string bracketed = DecodeZoneId(host[1..close]);
-            string rest = host[(close + 1)..];
-            host = bracketed;
-            return rest.Length == 0
-                   || (rest[0] == ':' && int.TryParse(rest[1..], NumberStyles.Integer, CultureInfo.InvariantCulture, out port));
-        }
-        int colon = host.LastIndexOf(':');
-        if (colon >= 0
-            && int.TryParse(host[(colon + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
-        {
-            port = parsed;
-            host = host[..colon];
-        }
+        bool split = HostAddress.TrySplit(authority, out host, out int? parsed);
         host = DecodeZoneId(host);
-        return true;
+        port = parsed ?? 0;
+        return split;
     }
 
     /// <summary>把 IPv6 zone id 的 <c>%25</c> 还原成 <c>%</c>;不是 IPv6 就原样返回。</summary>

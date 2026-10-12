@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using ReactiveUI;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Presentation.Services;
 
@@ -124,7 +125,7 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
     public string TargetSummary => Strings.Format(
         "Diag_TargetSummary",
         _profile.Name is { Length: > 0 } n ? n : _profile.Host,
-        $"{_profile.Username}@{_profile.Host}:{_profile.Port}");
+        HostAddress.FormatTarget(_profile.Username, _profile.Host, _profile.Port));
 
     /// <summary>诊断步骤集合(DNS、TCP、SSH、认证),供步骤面板绑定。</summary>
     public ObservableCollection<DiagnosticStepItemViewModel> Steps { get; }
@@ -232,7 +233,7 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
         var builder = new StringBuilder();
         builder.AppendLine(Strings.Get("Diag_ReportTitle"));
         builder.AppendLine(Strings.Format("Diag_ReportGeneratedAt", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)));
-        builder.AppendLine(Strings.Format("Diag_ReportTarget", $"{_profile.Name} ({_profile.Username}@{_profile.Host}:{_profile.Port})"));
+        builder.AppendLine(Strings.Format("Diag_ReportTarget", $"{_profile.Name} ({HostAddress.FormatTarget(_profile.Username, _profile.Host, _profile.Port)})"));
         if (_profile.JumpHostProfileId is not null)
         {
             builder.AppendLine(Strings.Get("Diag_ReportViaJump"));

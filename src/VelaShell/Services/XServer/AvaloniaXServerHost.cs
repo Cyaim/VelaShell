@@ -479,8 +479,12 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
             return;
         }
         int display = server.DisplayNumber;
+        // 调度器在 UI 线程上取下来,读完投回这一个。续体跑在线程池上:那时再读静态的 Dispatcher.UIThread,撞上 headless 单测
+        // 两条用例之间调度器被重置、还没重建的空当,就在线程池线程上新建了一个「UI 调度器」,下一条 UI 用例起平台时 VerifyAccess 失败
+        // (Linux CI 偶发 —— 只有 Linux 在后台读)。投给已经收工的调度器是空操作:那一轮的服务端早就不在了,结果本来也不该交。
+        Dispatcher ui = Dispatcher.UIThread;
         Task<DesktopKeyboard?> read = Task.Run(() => reader(display));
-        _desktopRead = read.ContinueWith(done => Dispatcher.UIThread.Post(() => OnDesktopRead(server, done)), TaskScheduler.Default);
+        _desktopRead = read.ContinueWith(done => ui.Post(() => OnDesktopRead(server, done)), TaskScheduler.Default);
     }
 
     private void OnDesktopRead(X11Server server, Task<DesktopKeyboard?> read)

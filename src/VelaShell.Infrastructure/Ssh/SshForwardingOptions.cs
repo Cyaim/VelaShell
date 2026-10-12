@@ -1,4 +1,5 @@
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Ssh.Forwarding;
@@ -255,7 +256,7 @@ internal static class SshForwardingOptions
             [
                 .. known
                     .Where(h => string.Equals(h.Fingerprint, fingerprint, StringComparison.Ordinal))
-                    .Select(h => h.Port == 22 ? h.Host : $"{h.Host}:{h.Port}")
+                    .Select(h => h.Port == 22 ? h.Host : HostAddress.FormatEndPoint(h.Host, h.Port))
                     .Distinct(StringComparer.Ordinal),
             ];
         }
