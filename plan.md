@@ -2718,3 +2718,33 @@ Core.Tests 794 通过 / 10 跳过 / 1 失败,失败的是 §193 记过的 `X11_R
 - #608 的 macOS 作业重跑 7 分钟通过 —— 那只说明这次没撞上,不作修复的依据。
 
 文档:不涉及。velashell-docs 只写了 MCP 服务 / 企业微信回调只绑 `127.0.0.1` 这类对外行为,停止的内部机制没有成文,对外行为不变。
+
+## ✅ 197. 2026-10-12 内置 X 服务端与 SSH 库:gnome-calculator 一打字就退出;开着压缩时起 GTK 程序整条 SSH 断开(用户反馈)
+
+**起因**:用户在远端 Ubuntu 上 `GDK_BACKEND=x11 gnome-calculator`,往输入框里用本机输入法打「测试」,计算器以 `BadMatch` …… `request_code 93` 的 X 错误退出;
+之后重连 SSH、再起计算器,SSH 连接就断开,每次都这样。本机日志里 client#1 的 #7008 CreateCursor 回了 BadMatch;client#2 / #3 连上 1.4 秒左右就断开,
+没有任何协议错误,SSH 断开的原因没进日志。查下来是两个互不相干的缺陷。
+
+**一、打字就退出(X 服务端)**:GTK 在文本框里打字时把指针藏起来,GDK 的隐形指针(`get_blank_cursor`)是 1×1、深度 1 的像素图同时当 source 与 mask,
+热点 (1, 1),不设错误陷阱。协议要求热点在 source 里,(1, 1) 正好落在右下边界上,`CreateCursor` 回了 BadMatch,GTK 收到没拦下的错误就退出 ——
+敲任何键都会,与中文无关。改成热点落在右边 / 下边的边界线上照收(烙进图像时收回到图里),越过边界的照旧 BadMatch;mask 全为 0 的位图光标与 `nil2`
+的空白字形光标一样,按隐形指针(`Hidden`)交给宿主。RENDER 的 CreateCursor 仍按严格的规则。
+
+**二、开着压缩时 SSH 断开(SSH 库)**:用户这条连接开着压缩。用一个单文件程序搭出整条链路(内置 X 服务端 + 本库的 X11 转发经连接器,与宿主同一条路),
+连 Docker 里的 Ubuntu 24.04(`vs-gtk4-sshd`,OpenSSH 9.6)。开压缩、2 倍缩放、GTK 默认 GL 渲染时,计算器连上 1.4 秒左右连接以
+「读取 string 需要 32768 字节,只剩 32759 字节」断开,与用户日志里的 1.4 秒对得上;不开压缩时正常关闭、`kill -9`、注入中文后再起、断开重连再起都不断。
+根因在 `ZlibCompressor.Decompress`(10-09 换成 .NET 11 的 `ZLibDecoder` 时引入):按「输入喂完」收工,而 OpenSSH 每个报文末尾是部分 flush、只有几个位,
+最后一个匹配的编码读完时整段输入可能都已进了解码器,输出缓冲(16 KiB 一块)恰好在那个匹配中间用满 —— 压着的 9 字节留给了下一个报文。
+改成输入喂完之后,解码器最后一次报 `DestinationTooSmall` 就不喂输入接着取,直到它不再这么报;上限照旧(压着的输出越过上限照样按压缩炸弹断开)。
+本库自己的压缩器做同步 flush、以 `00 00 FF FF` 收尾,输入不会先喂完,所以往返用例一直测不出来。
+
+**验证**:
+- `CursorTests` 新增一条:照 GDK 的请求序列建 1×1、热点 (1, 1) 的光标,照收、宿主拿到 `Hidden`;热点 (2, 1) 照旧 BadMatch。
+  `VelaShell.XServer.Tests` 553 通过 / 9 跳过(仅 Linux)。打字退出在容器的 GTK 4.14 上没能触发(指针没藏起来),按用户日志里的请求序列与 GDK 的源码确认。
+- `CompressionTests` 新增两条:照 RFC 1951 手搭固定哈夫曼编码的流,把最后一个匹配的距离码对齐到报文的最后一个字节(修复前失败,少解 1 字节);
+  解出的长度恰好是 16 KiB 的整数倍或恰好等于上限(5 组)。`VelaShell.Ssh.Tests` 1368 通过 / 61 跳过 / 1 失败 —— 失败的是
+  `PrivateKeyWriteTests.真ssh_keygen读得出本库写的私钥`:本机临时目录的 ACL 带着别的用户组,ssh-keygen 拒读私钥,修复前的提交上一样失败,与本次无关。
+- 复现程序:修复前三次里断两次,修复后四次都不断。两个测试工程 `-warnaserror -p:EnforceCodeStyleInBuild=true` 构建 0 警告。
+
+文档:velashell-docs 中英镜像的 X Server 架构 §7「字体」与排障「已修的缺陷」、SSH 规格 01 §6、SSH 架构 §11.2.30,
+在 [velashell-docs#115](https://github.com/VelaShellLabs/velashell-docs/pull/115),与本 PR 互相引用。
