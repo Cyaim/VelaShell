@@ -76,6 +76,30 @@ public sealed class CursorTests
     }
 
     [TestMethod]
+    public async Task GDK的隐形指针_热点在1x1像素图的边界上_照收不回BadMatch_交给宿主隐形指针()
+    {
+        using RecordingHost host = new();
+        await using X11Server server = new(host: host);
+        await using XTestClient c = await XTestClient.ConnectAsync(server);
+
+        // gdk/x11 的 get_blank_cursor:1×1 深度 1 的像素图(清成 0)同时当 source 与 mask,热点 (1, 1),不设错误陷阱。
+        // 原先回 BadMatch,GTK 程序在文本框里敲第一个键(GtkText 藏起指针)就因 X 错误退出。
+        uint bitmap = c.NewId(), blank = c.NewId();
+        await c.SendAsync(53, 1, b => b.U32(bitmap).U32(c.RootWindow).U16(1).U16(1));
+        await c.SendAsync(93, 0, b => b.U32(blank).U32(bitmap).U32(bitmap)
+            .U16(0).U16(0).U16(0).U16(0).U16(0).U16(0).U16(1).U16(1));
+        await PointAtCursorAsync(c, host, server, blank);   // 光标没建成的话,建窗口就是 BadCursor、等不到映射
+        await host.WaitForAsync(() => host.Cursor?.Shape == XCursorShape.Hidden);
+        Assert.IsNull(host.Cursor!.Image, "mask 全 0:一个像素也不显示,按隐形指针交给宿主");
+
+        // 越过边界的照旧 BadMatch。
+        XMessage error = await c.RequestAsync(93, 0, b => b.U32(c.NewId()).U32(bitmap).U32(bitmap)
+            .U16(0).U16(0).U16(0).U16(0).U16(0).U16(0).U16(2).U16(1));
+        Assert.IsTrue(error.IsError);
+        Assert.AreEqual(8, error.Detail, "热点在 source 外:BadMatch");
+    }
+
+    [TestMethod]
     public async Task Nil2字体的空白字形光标是隐形指针_别的字体的字形烙成图像_cursor字体照旧按形状()
     {
         using RecordingHost host = new();

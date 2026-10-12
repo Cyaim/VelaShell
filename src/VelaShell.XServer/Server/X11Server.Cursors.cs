@@ -4,7 +4,8 @@
 // 规范依据(AGENTS.md §2 纪律 1):
 //   X Window System Protocol, X Version 11 —— 「CreateGlyphCursor」(源与掩码字形的原点重合、即热点;没有掩码时整个源字形都显示;
 //   字形没定义回 BadValue)、「CreateCursor」(source / mask 是深度 1 的像素图,mask 与 source 同尺寸;
-//   mask 为 None 时整个 source 都显示;source 为 1 的像素用前景色、0 用背景色;热点必须落在 source 里,否则 BadMatch)、
+//   mask 为 None 时整个 source 都显示;source 为 1 的像素用前景色、0 用背景色;热点必须落在 source 里,否则 BadMatch ——
+//   右边与下边的边界线也放行,GDK 的隐形指针就落在那里,见 CreateCursor)、
 //   「FreeCursor」「QueryBestSize」;Xlib 附录 B「X Font Cursors」(cursor 字体的字形号与名字)
 //   The X Rendering Extension, Version 0.11 —— 「CreateCursor」(ARGB 光标取 picture 的像素,预乘 alpha)
 //   X Fixes Extension —— §7「Cursor Names」(SetCursorName / GetCursorName)
@@ -46,14 +47,21 @@ public sealed partial class X11Server
             throw new XProtocolError(XErrorCode.Match);
         }
         ushort fr = r.U16(), fg = r.U16(), fb = r.U16(), br = r.U16(), bg = r.U16(), bb = r.U16();
-        short x = r.I16(), y = r.I16();
-        if (!source.Buffer.Bounds.Contains(x, y))
+        ushort x = r.U16(), y = r.U16();   // 编码里是 CARD16
+        // 热点要落在 source 里,但右边与下边的边界线也放行(x == 宽、y == 高):GDK 的隐形指针(GtkText 打字时藏起指针用的 "none")
+        // 是 1×1 的像素图配热点 (1, 1),而且不设错误陷阱 —— 回 BadMatch 的话,GTK 程序在文本框里敲下第一个键就因 X 错误退出。
+        // 烙进图像的热点收回到图里。
+        if (x > source.Width || y > source.Height)
         {
             throw new XProtocolError(XErrorCode.Match);
         }
+        XCursorImage? image = BitmapCursorImage(source.Buffer, mask?.Buffer, PixelOf(fr, fg, fb), PixelOf(br, bg, bb),
+            Math.Min(x, source.Width - 1), Math.Min(y, source.Height - 1));
+        bool blank = image is not null && !image.Pixels.Span.ContainsAnyExcept(0u);
         AddResource(c, new XCursorResource(id, c)
         {
-            Image = BitmapCursorImage(source.Buffer, mask?.Buffer, PixelOf(fr, fg, fb), PixelOf(br, bg, bb), x, y),
+            Image = blank ? null : image,
+            Blank = blank,   // mask 全为 0:一个像素也不显示,与 nil2 字体的字形光标一样按隐形指针交给宿主
         });
     }
 
