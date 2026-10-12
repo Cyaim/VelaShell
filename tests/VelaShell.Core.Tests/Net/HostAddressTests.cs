@@ -87,7 +87,7 @@ public sealed class HostAddressTests
         foreach (string host in new[] { "2001:db8::1", "fe80::1%eth0", "10.0.0.1", "example.com" })
         {
             Assert.IsTrue(HostAddress.TrySplit(HostAddress.FormatEndPoint(host, 2222), out string back, out int? port));
-            Assert.AreEqual((host, (int?)2222), (back, port));
+            Assert.AreEqual((host, 2222), (back, port));
         }
     }
 }
