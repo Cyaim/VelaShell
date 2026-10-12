@@ -333,8 +333,8 @@ public static class ShortcutCatalog
                     Item("Sc_CommitPath", ["Enter"]),
                     Item("Sc_CancelPath", ["Esc"]),
                     Item("Sc_OpenEntry", [K("Sc_KeyDoubleClick")]),
-                    Item("Sc_TypeToLocate", [K("Sc_KeyTypeName")], "Sc_NoteUploadPicker"),
-                    Item("Sc_EnterSelectedFolder", ["Enter"], "Sc_NoteUploadPicker"),
+                    Item("Sc_TypeToLocate", [K("Sc_KeyTypeName")]),
+                    Item("Sc_EnterSelectedFolder", ["Enter"]),
                 ]
             ),
             Group("Sc_GroupFileOperations",

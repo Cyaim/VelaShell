@@ -125,6 +125,14 @@ public partial class FileBrowserView : UserControl
             // 跨面板拖拽发起(行 → 本地面板)。
             fileList.AddHandler(PointerMovedEvent, OnRemoteDragPointerMoved);
             fileList.AddHandler(PointerReleasedEvent, OnRemoteDragPointerReleased, RoutingStrategies.Bubble, true);
+
+            // 键入定位:焦点在这一栏里时直接敲文件名开头几个字母就选中它,资源管理器同款。
+            // 挂在这个视图自己身上:双栏的另一栏、终端都不受影响;路径输入框里的键入它不碰。
+            TypeAheadSelection.Attach(fileList, this, item => item is RemoteFileInfoViewModel { IsParentEntry: false } file ? file.Name : null);
+
+            // 回车进文件夹。ListBoxItem 自己把回车标成已处理,所以连已处理的也收。
+            fileList.AddHandler(KeyDownEvent, OnFileListKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
+            fileList.KeepFocusAcrossReloads();
         }
         AddHandler(PointerMovedEvent, OnColumnSplitterPointerMoved, RoutingStrategies.Tunnel);
         AddHandler(PointerReleasedEvent, OnColumnSplitterReleased, RoutingStrategies.Tunnel);
@@ -375,6 +383,26 @@ public partial class FileBrowserView : UserControl
             return;
         }
         vm.ActivateCommand.Execute(row).Subscribe(_ => { }, _ => { });
+    }
+
+    /// <summary>
+    /// 列表里的回车:只选着一个文件夹(含 "..")时进去,与双击一样;进去之后焦点留在列表里,接着就能敲字定位。
+    /// 文件上的回车不做事 —— 双击文件是下载并打开,不该被一个顺手的回车触发。
+    /// </summary>
+    private void OnFileListKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter
+            || e.KeyModifiers != KeyModifiers.None
+            || DataContext is not FileBrowserViewModel vm
+            || (e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) is not null)
+        {
+            return;
+        }
+        if (vm.SelectedFiles is [{ IsDirectory: true } folder])
+        {
+            e.Handled = true;
+            vm.ActivateCommand.Execute(folder).Subscribe(_ => { }, _ => { });
+        }
     }
 
     /// <summary>用平台默认处理程序打开已下载的本地文件。</summary>

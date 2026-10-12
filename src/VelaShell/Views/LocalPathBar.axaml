@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:VelaShell.ViewModels"
+             xmlns:loc="using:VelaShell.Localization"
+             xmlns:pc="using:VelaShell.Controls.Controls"
+             mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="36"
+             x:Class="VelaShell.Views.LocalPathBar"
+             x:DataType="vm:LocalFilePaneViewModel">
+
+  <!-- 本地路径栏:面包屑(默认)与输入框在同一位置互斥切换,手势与远端浏览器的路径栏(#226)一致。
+       上传选择框与 SFTP / FTP 文档的本地栏共用这一份;Button.crumb、Button.toolbar-btn 的样式由宿主给。
+       面包屑后面的空白也能点:点一下就切成输入框(资源管理器地址栏同款),面包屑按钮自己吃掉点击,不会误切。 -->
+  <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+    <pc:LucideIcon Width="13" Height="13" Margin="0,0,6,0" Data="{StaticResource Icon.hard-drive}"
+                   Foreground="{DynamicResource VelaTextTertiary}" VerticalAlignment="Center" />
+    <Panel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+      <Border Name="PathCrumbArea" Background="Transparent" ClipToBounds="True"
+              IsVisible="{Binding !IsPathEditing}"
+              PointerPressed="OnPathAreaPointerPressed">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Classes="crumb" Content="{Binding RootBreadcrumbLabel}"
+                  Command="{Binding NavigateToCommand}"
+                  CommandParameter="{Binding RootBreadcrumbPath}" />
+          <ItemsControl ItemsSource="{Binding Breadcrumbs}" VerticalAlignment="Center">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:LocalBreadcrumbSegment">
+                <StackPanel Orientation="Horizontal">
+                  <Button Classes="crumb" Content="{Binding Name}"
+                          Command="{Binding $parent[ItemsControl].((vm:LocalFilePaneViewModel)DataContext).NavigateToCommand}"
+                          CommandParameter="{Binding Path}" />
+                  <TextBlock Text="{Binding $parent[ItemsControl].((vm:LocalFilePaneViewModel)DataContext).PathSeparator}"
+                             Foreground="{DynamicResource VelaTextMuted}"
+                             FontFamily="{DynamicResource VelaUiMonoFont}"
+                             FontSize="{DynamicResource VelaFontSize11}" VerticalAlignment="Center" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Button Classes="toolbar-btn" Width="24" Height="24" Padding="0" Margin="8,0,0,0"
+                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                  Command="{Binding BeginPathEditCommand}"
+                  ToolTip.Tip="{loc:Localize Sftp_EditPath}"
+                  AutomationProperties.Name="{loc:Localize Sftp_EditPath}">
+            <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.pencil}"
+                           Foreground="{DynamicResource VelaTextTertiary}" />
+          </Button>
+        </StackPanel>
+      </Border>
+      <!-- 回车提交、Esc 取消、失焦取消,均在代码后置(OnPathEditKeyDown / OnPathEditLostFocus)。 -->
+      <TextBox Name="PathEditBox"
+               IsVisible="{Binding IsPathEditing}"
+               Text="{Binding PathEditText}"
+               PlaceholderText="{loc:Localize Sftp_PathInputHint}"
+               Height="22" Padding="6,0" VerticalAlignment="Center"
+               VerticalContentAlignment="Center"
+               FontFamily="{DynamicResource VelaUiMonoFont}"
+               FontSize="{DynamicResource VelaFontSize11}"
+               KeyDown="OnPathEditKeyDown"
+               LostFocus="OnPathEditLostFocus" />
+    </Panel>
+  </Grid>
+</UserControl>

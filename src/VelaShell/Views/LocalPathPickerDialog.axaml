@@ -5,6 +5,7 @@
         xmlns:vm="using:VelaShell.ViewModels"
         xmlns:loc="using:VelaShell.Localization"
         xmlns:pc="using:VelaShell.Controls.Controls"
+        xmlns:views="using:VelaShell.Views"
         mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="520"
         x:Class="VelaShell.Views.LocalPathPickerDialog"
         x:DataType="vm:LocalFilePaneViewModel"
@@ -128,63 +129,7 @@
       <Border DockPanel.Dock="Top" Height="36" Padding="16,0"
               BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
         <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-          <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
-            <pc:LucideIcon Width="13" Height="13" Margin="0,0,6,0" Data="{StaticResource Icon.hard-drive}"
-                           Foreground="{DynamicResource VelaTextTertiary}" VerticalAlignment="Center" />
-            <!-- 路径区:面包屑(默认)与输入框在同一位置互斥切换,手势与远端浏览器的路径栏一致。
-                 面包屑后面的空白也能点:点一下就切成输入框,资源管理器地址栏同款;
-                 面包屑按钮自己吃掉点击,不会误切。 -->
-            <Panel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
-              <Border Name="PathCrumbArea" Background="Transparent" ClipToBounds="True"
-                      IsVisible="{Binding !IsPathEditing}"
-                      PointerPressed="OnPathAreaPointerPressed">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                  <Button Classes="crumb" Content="{Binding RootBreadcrumbLabel}"
-                          Command="{Binding NavigateToCommand}"
-                          CommandParameter="{Binding RootBreadcrumbPath}" />
-                  <ItemsControl ItemsSource="{Binding Breadcrumbs}" VerticalAlignment="Center">
-                    <ItemsControl.ItemsPanel>
-                      <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal" />
-                      </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="vm:LocalBreadcrumbSegment">
-                        <StackPanel Orientation="Horizontal">
-                          <Button Classes="crumb" Content="{Binding Name}"
-                                  Command="{Binding $parent[ItemsControl].((vm:LocalFilePaneViewModel)DataContext).NavigateToCommand}"
-                                  CommandParameter="{Binding Path}" />
-                          <TextBlock Text="{Binding $parent[ItemsControl].((vm:LocalFilePaneViewModel)DataContext).PathSeparator}"
-                                     Foreground="{DynamicResource VelaTextMuted}"
-                                     FontFamily="{DynamicResource VelaUiMonoFont}"
-                                     FontSize="{DynamicResource VelaFontSize11}" VerticalAlignment="Center" />
-                        </StackPanel>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                  <Button Classes="toolbar-btn" Width="24" Height="24" Padding="0" Margin="8,0,0,0"
-                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                          Command="{Binding BeginPathEditCommand}"
-                          ToolTip.Tip="{loc:Localize Sftp_EditPath}"
-                          AutomationProperties.Name="{loc:Localize Sftp_EditPath}">
-                    <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.pencil}"
-                                   Foreground="{DynamicResource VelaTextTertiary}" />
-                  </Button>
-                </StackPanel>
-              </Border>
-              <!-- 回车提交、Esc 取消、失焦取消,均在代码后置(OnPathEditKeyDown / OnPathEditLostFocus)。 -->
-              <TextBox Name="PathEditBox"
-                       IsVisible="{Binding IsPathEditing}"
-                       Text="{Binding PathEditText}"
-                       PlaceholderText="{loc:Localize Sftp_PathInputHint}"
-                       Height="22" Padding="6,0" VerticalAlignment="Center"
-                       VerticalContentAlignment="Center"
-                       FontFamily="{DynamicResource VelaUiMonoFont}"
-                       FontSize="{DynamicResource VelaFontSize11}"
-                       KeyDown="OnPathEditKeyDown"
-                       LostFocus="OnPathEditLostFocus" />
-            </Panel>
-          </Grid>
+          <views:LocalPathBar x:Name="PathBar" VerticalAlignment="Center" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
             <ComboBox MinHeight="0" Height="22" Padding="6,0" FontSize="{DynamicResource VelaFontSize12}"
                       ItemsSource="{Binding Roots}" SelectedItem="{Binding SelectedRoot, Mode=OneWay}"

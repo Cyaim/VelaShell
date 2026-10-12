@@ -5,6 +5,7 @@
              xmlns:vm="using:VelaShell.ViewModels"
              xmlns:loc="using:VelaShell.Localization"
              xmlns:pc="using:VelaShell.Controls.Controls"
+             xmlns:views="using:VelaShell.Views"
              mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="400"
              x:Class="VelaShell.Views.LocalFilePaneView"
              x:DataType="vm:LocalFilePaneViewModel">
@@ -67,36 +68,8 @@
               BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
         <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
           <Grid Grid.Column="0" VerticalAlignment="Center">
-            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" ClipToBounds="True">
-              <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.hard-drive}"
-                             Foreground="{DynamicResource VelaTextTertiary}" VerticalAlignment="Center" />
-              <!-- 可点击面包屑分段,风格与远端 FileBrowserView 一致 -->
-              <StackPanel Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
-                <Button Classes="crumb" Content="{Binding RootBreadcrumbLabel}"
-                        Command="{Binding NavigateToCommand}"
-                        CommandParameter="{Binding RootBreadcrumbPath}" />
-                <ItemsControl ItemsSource="{Binding Breadcrumbs}" VerticalAlignment="Center">
-                  <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                      <StackPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:LocalBreadcrumbSegment">
-                      <StackPanel Orientation="Horizontal">
-                        <Button Classes="crumb" Content="{Binding Name}"
-                                Command="{Binding $parent[ItemsControl].((vm:LocalFilePaneViewModel)DataContext).NavigateToCommand}"
-                                CommandParameter="{Binding Path}" />
-                <TextBlock Text="{Binding $parent[ItemsControl].((vm:LocalFilePaneViewModel)DataContext).PathSeparator}"
-                           Foreground="{DynamicResource VelaTextMuted}"
-                           FontFamily="{DynamicResource VelaUiMonoFont}"
-                           FontSize="{DynamicResource VelaFontSize11}" VerticalAlignment="Center" />
-                      </StackPanel>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-            </StackPanel>
+            <!-- 面包屑与手动输入路径(铅笔 / 点面包屑后的空白 / Ctrl+L),与上传选择框共用一份,风格与远端 FileBrowserView 一致 -->
+            <views:LocalPathBar x:Name="PathBar" VerticalAlignment="Center" />
             <ProgressBar Width="54" Height="3" Margin="12,0"
                          HorizontalAlignment="Left" IsIndeterminate="True"
                          VerticalAlignment="Center"
