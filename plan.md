@@ -2847,3 +2847,14 @@ Core.Tests 794 通过 / 10 跳过 / 1 失败,失败的是 §193 记过的 `X11_R
 
 文档:velashell-docs 中英镜像的「交互与界面规格」(连接目标一节)、「Xshell 兼容登录」、「会话导入」(CSV 的 `host` 列)与 SSH 库的「上手」(目标串写法),
 在 [velashell-docs#117](https://github.com/VelaShellLabs/velashell-docs/pull/117),与本 PR 互相引用。
+
+**CI 上暴露的测试问题**(PR 第一轮 CI,Ubuntu 红一条,与本次改动无关、之前也潜伏着):
+- `AvaloniaXServerHostUiTests.NativeResizeWithoutUserReason_IsReportedToTheServer` 偶发「The calling thread cannot access this object because a different thread owns it」,
+  抛在 headless 起平台的半路(`EnsureIsolatedApplication` → `DefaultRenderLoop.Add` → `VerifyAccess`),用例体一行都没跑。
+  根因在宿主:Linux 上激活 X 窗口时在后台读桌面的键位表(2026-10-07 起;只有 Linux 读),读完的续体跑在线程池上、去读静态的 `Dispatcher.UIThread`。
+  Avalonia 12.1.4 的 headless 隔离在两条 UI 用例之间把 `s_uiThread` 置空,下一条起平台时才在会话线程上重建;`UIThread` 在 `s_uiThread` 为空时
+  **由哪条线程读就在哪条线程上新建一个、并把它认作 UI 调度器** —— 续体正好落在这个空当里,下一条 UI 用例起平台就失败。
+  改为在 UI 线程上取下调度器、续体投回这一个;投给已经收工的调度器是空操作(那一轮的服务端早就不在了)。
+  用临时探针稳定复现:读键盘改成各平台都读(随机 1–60 毫秒)、续体在投递之前连读 300 毫秒静态的 `UIThread`,
+  旧写法三次全挂(每次 49 条里 32 条、栈与 CI 一致),新写法(续体只碰取下来的那个调度器)三次全过;探针已撤。全仓再没有别处在线程池续体里读它。
+- 顺手:`HostAddressTests` 一处多余的转换(IDE0004)。先前的严格构建是增量的、没重跑那个工程的分析器,`--no-incremental` 重跑才报出来;现在 0 警告。
