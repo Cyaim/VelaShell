@@ -9,6 +9,7 @@
 //   行为规格:      velashell-docs/zh/ssh/spec/05-connection.md §1、§3、§4、§5
 
 using System.Buffers;
+using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Threading.Channels;
 using VelaShell.Ssh.Protocol;
@@ -126,6 +127,9 @@ public sealed class SshChannel : IAsyncDisposable
 
     /// <summary>收到过数据了（第一包到来之前读的一方本来就空着，那不算「等」）。</summary>
     private bool _receivedAnyData;
+
+    /// <summary>「空等」判据（见 <see cref="CreditIdleDetector"/>）：接收循环报到达，回补泵每轮判一次。</summary>
+    private readonly CreditIdleDetector _creditIdle = new();
 
     private SshChannelState _state = SshChannelState.Opening;
 
@@ -1294,10 +1298,12 @@ public sealed class SshChannel : IAsyncDisposable
     /// </remarks>
     private void NoteWindowPressure()
     {
-        if (_receivedAnyData && Interlocked.Read(ref _unreadBytes) <= 0)
+        bool drained = _receivedAnyData && Interlocked.Read(ref _unreadBytes) <= 0;
+        if (drained)
         {
             Volatile.Write(ref _adjustsSinceStarved, 0);
         }
+        _creditIdle.NoteArrival(Stopwatch.GetTimestamp(), drained);
         _receivedAnyData = true;
 
         if (_receiveWindow.Remaining <= (uint)(_receiveWindow.Size / 8))
@@ -1322,8 +1328,8 @@ public sealed class SshChannel : IAsyncDisposable
     /// 所以窗口要能长到带宽时延积那么大。
     /// </para>
     /// <para>
-    /// <b>判据是「窗口有没有被吃到见底」</b>，不是「两次回补隔了多久」。
-    /// 后者在局域网上永远成立，会让窗口一路涨到上限白占内存 ——
+    /// <b>判据是「窗口有没有吃紧」</b>（被吃到见底，或者读的一方空等额度，见 <see cref="CreditIdleDetector"/>），
+    /// 不是「两次回补隔了多久」。后者在局域网上永远成立，会让窗口一路涨到上限白占内存 ——
     /// 而那条链路上窗口根本不是瓶颈。
     /// </para>
     /// <para>
@@ -1347,7 +1353,10 @@ public sealed class SshChannel : IAsyncDisposable
         Interlocked.CompareExchange(ref _adjustsSinceStarved, Math.Min(sinceStarved + 1, int.MaxValue / 2), sinceStarved);
         bool starvedLately = sinceStarved <= 1;
 
-        if (_windowWasExhausted)
+        // 吃紧：见底，或者读的一方空等了额度（见 CreditIdleDetector）。它每轮都得调（顺带把这一轮的记录挪成「上一轮」），
+        // 所以先单独调，不放进会短路的条件里。
+        bool idled = _creditIdle.EndRound(Stopwatch.GetTimestamp(), eligible: current >= 4 * ReceiveMaxPacketBytes);
+        if (idled || _windowWasExhausted)
         {
             _windowWasExhausted = false;
             _idleRounds = 0;
@@ -1373,6 +1382,7 @@ public sealed class SshChannel : IAsyncDisposable
 
             _receiveWindow.Resize(grown);
             RecordWindow(grown);
+            _creditIdle.Discard();   // 再扩要有新一轮的空等作证：一段空档不连扩两回
             return grown - current;
         }
 
