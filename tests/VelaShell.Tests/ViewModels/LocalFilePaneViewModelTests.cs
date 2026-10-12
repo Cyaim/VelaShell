@@ -498,7 +498,8 @@ public sealed class LocalFilePaneViewModelTests
         using var vm = new LocalFilePaneViewModel(new TransferOptions(), BooksTree(), new FakeLocalRootProvider());
         await vm.NavigateToAsync(FakeRoot);
         vm.BeginPathEdit();
-        vm.PathEditText = Fake("Books", "123", "35", "FXYC.txt");
+        // 大小写照抄:Linux / macOS 上文件名分大小写(视图模型按平台比较),这个假文件系统却一概不分。
+        vm.PathEditText = Fake("Books", "123", "35", "fxyc.txt");
 
         await vm.CommitPathEditAsync();
 
