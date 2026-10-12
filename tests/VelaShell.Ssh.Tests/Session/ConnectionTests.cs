@@ -144,7 +144,7 @@ public sealed class ConnectionTests
         Assert.AreEqual("example.com", noPort.Host);
         Assert.AreEqual(22, noPort.Port);
 
-        // IPv6 必须写方括号 —— 不然冒号分不清是地址还是端口。
+        // IPv6 带端口必须写方括号 —— 不然冒号分不清是地址还是端口。
         SshConnectionOptions ipv6 = new("joe@[fe80::1]:2222");
         Assert.AreEqual("fe80::1", ipv6.Host);
         Assert.AreEqual(2222, ipv6.Port);
@@ -152,6 +152,16 @@ public sealed class ConnectionTests
         SshConnectionOptions ipv6NoPort = new("joe@[::1]");
         Assert.AreEqual("::1", ipv6NoPort.Host);
         Assert.AreEqual(22, ipv6NoPort.Port);
+
+        // 不带方括号的 IPv6 整段是地址：最后一段全是数字也不当端口（#611）。
+        SshConnectionOptions bare = new("tzraeq@2001:db8:0:1::10:20");
+        Assert.AreEqual("tzraeq", bare.UserName);
+        Assert.AreEqual("2001:db8:0:1::10:20", bare.Host);
+        Assert.AreEqual(22, bare.Port);
+
+        SshConnectionOptions bareLetters = new("joe@fe80::abcd");
+        Assert.AreEqual("fe80::abcd", bareLetters.Host);
+        Assert.AreEqual(22, bareLetters.Port);
     }
 
     [TestMethod]
