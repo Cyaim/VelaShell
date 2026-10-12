@@ -24,6 +24,7 @@
 | `tests/VelaShell.XServer.Tests/` | 单元测试(内存双工流 + 逐字节的测试客户端)与 `[TestCategory("Interop")]` 真实客户端用例 |
 | `scripts/xserver/interop/` | 互操作靶场:`Dockerfile`(x11-apps / xterm / xdpyinfo / xclip / xdotool / x11-xkb-utils / xinput / mesa-utils)、`run-server.cs`(起服务端、存 PNG、注入输入)、`Run-Client.ps1` |
 | `scripts/xserver/bench/` | 吞吐基准 `bench.cs`(进程内经内存管道;改热路径前后各跑一次) |
+| `scripts/xserver/perf/` | 帧率与跟手程度:`perf.cs`(内置服务端 + 真实的 Avalonia 宿主,或 `--headless` 的模拟宿主;Docker 直连或 `--ssh` 经本仓库的 SSH 库 X11 转发,可加 `--netem` 延迟、`--compress`)、`Dockerfile`(镜像 `velashell-xperf`:`xprobe.c` 指针跟随 / 按键 / 整窗动画、glxgears、x11perf、xterm、GTK 3 / 4 演示、sshd)。报注入到损伤、损伤到像素进位图的延迟分布、宿主每秒取几帧、客户端帧率;宿主一侧的数来自仪表源 `VelaShell.XServer.Host` |
 | `scripts/xserver/host-demo/` | `demo.cs`:内置服务端 + 宿主的 Avalonia 窗口(不经主程序、不碰用户设置),外加一个把容器连接转成本机连接的转发 —— 手动看原生窗口的行为 |
 | `scripts/xserver/fonts/` | `build-fonts.cs`:从固定的上游提交重新生成 `Fonts/Data`(字体原样、Brotli 压缩、fonts.dir、字符集映射表、许可原文) |
 
