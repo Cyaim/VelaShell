@@ -2893,3 +2893,72 @@ Core.Tests 794 通过 / 10 跳过 / 1 失败,失败的是 §193 记过的 `X11_R
 
 文档:velashell-docs 中英镜像的「交互与界面规格」§6(文件列表的交互)与「快捷键参考」SFTP 文件管理器一节,
 在 [velashell-docs#118](https://github.com/VelaShellLabs/velashell-docs/pull/118),与本 PR 互相引用。
+
+## ✅ 201. 2026-10-12 内置 X Server 的帧率与跟手程度:搭测量台、修 SSH 自适应窗口、宿主保温避开 Avalonia 的渲染停顿、RANDR 报真实刷新率(用户需求)
+
+**起因**:用户觉得内置 X Server「各方面都比较完善了,但刷新率和跟手感不太好」,要求用 Docker 测试、调试、验证能不能做到高帧率低延迟。
+
+**一、测量台**(`scripts/xserver/perf/`):
+- 镜像 `velashell-xperf`:`xprobe.c`(Xlib 写的探针 —— 指针跟随画方块、按键整窗换色、整窗 PutImage + XSync 的动画并报帧率)、glxgears、x11perf、xterm、
+  GTK 3 / 4 的演示程序,外加 sshd(`dp` / `testpass`、开 X11 转发)与 tc(netem)。
+- `perf.cs`:内置服务端 + 真实的 `AvaloniaXServerHost`(`--headless` 换成每 16.7 毫秒取一次像素的模拟宿主)。容器经 Docker 直连自带的监听,
+  或 `--ssh` 起 sshd 容器、经 VelaShell.Ssh 的 X11 转发与连接器接进来(与宿主同一条路;`--netem "delay 15ms"` 模拟链路、`--compress` 开压缩)。
+  一层包装宿主给每批损伤打时间戳;直接往服务端注入指针 / 按键,量到服务端报出那块损伤为止;订阅宿主一侧新加的仪表源
+  `VelaShell.XServer.Host`(`XServerHostMetrics`:每秒取几帧像素、让帧数、损伤报出到像素进位图的延迟、取像素的耗时)与执行线程的忙碌时间;
+  另报 UI 线程的派发延迟(真实输入先经 UI 线程)、「损伤→进位图」超过 50 毫秒的每一次。
+- **一定要用 Release 量**:先用 Debug 的 host-demo 量,glxgears 1280×720 只有 40 帧,Release 是 227 帧。
+
+**二、Docker 直连(服务端 + 宿主本身)已经够快**,不是瓶颈:注入到损伤 p50 0.4 毫秒、p99 2 毫秒以内(指针跟随、按键、xterm 回显);
+整窗动画 1280×720 客户端 340–400 帧、1920×1080 139 帧,宿主每秒取满 60 帧(本机 2560×1440@60 Hz),执行线程忙 9–12%,
+取一次 1080p 整窗像素 p50 1.4 毫秒;GTK 4 `frames` 与 GTK 3 `pixbufs` 都稳在 60 帧;UI 线程派发延迟在 1080p 整窗动画下最长 2.6 毫秒。
+零星更新时损伤到像素进位图 0.1 毫秒;持续动画时最早那批要等到下一帧(p50 15.5 毫秒,就是一帧)。
+
+**三、经 SSH 的 X11 转发只有 9 帧:SSH 库的自适应窗口长不上去**(修在 `src/VelaShell.Ssh`,velashell-docs `zh/ssh/spec/05-connection.md` §3.3、
+`zh/ssh/design/architecture.md` §11.2.31):同一个整窗动画经 SSH(本机 Docker 里的 sshd,不加延迟、不压缩)9.2 帧、glxgears 9 帧。
+会话通道的裸吞吐只有 29–59 MB/s,窗口一直停在 256 KiB;固定 2 MiB 时 190 MB/s、8 MiB 时 675 MB/s —— 吞吐被窗口 / RTT 封住
+(Docker Desktop 端口转发的有效往返约 8 毫秒)。扩窗的判据只认「见底」(到包时剩余 ≤ 1/8):回补在半窗处就发出去,对端空等那笔额度的往返里
+账上的剩余已经被它涨回去了,窗口有好几个报文、数据陆续到达时永远到不了 1/8。改为「见底」之外认「空等」:读空之后等下一包的最长一段
+占最近两轮的 1/4 以上(等带宽时只占「报文 / 窗口」,256 KiB 窗口里 1/8),4 个报文以上的窗口才用,扩过一次上一轮的空档作废。
+测试:链路模拟加了只限带宽的数据方向,新增「数据陆续到达时窗口照样会长大」(修复前停在 256 KiB)与「带宽才是瓶颈时窗口不白长」;
+`AdaptiveWindowTests` 14 条连跑 5 遍全过,SSH 库 1432 条只有 `真ssh_keygen读得出本库写的私钥` 失败 —— 本机临时目录继承了一个沙箱用户组的权限,
+Windows 的 ssh-keygen 拒读私钥文件,与本改动无关。**修复后经 SSH:整窗动画 64.5 帧、glxgears 60.8 帧**(与把窗口固定成 8 MiB 时一样),
+GTK 4 `frames` 60 帧、损伤到进位图 p50 从 10.3 毫秒降到 3.6 毫秒。加 15 毫秒单向延迟(netem)时注入到损伤 p50 16 毫秒 —— 我们这一侧只多 1 毫秒;
+整窗动画降到 24 帧、GTK 4 `frames` 39 帧,那是客户端每帧的同步往返(XSync、GTK 4 每帧重算顶层尺寸)乘以链路延迟,服务端省不掉。
+
+**四、偶发的「卡一下」在 Avalonia,宿主给 X 窗口保温**(`Views/XServer/XNativeWindow.cs` 的 `XSurface.KeepWarm` / `Warm`):
+零星刷新时每隔十几到几十秒,「损伤→进位图」有一次 400–490 毫秒的停顿。期间 UI 线程空着(Input 优先级的派发探针最长 1.8 毫秒)、
+另一条线程循环 `DwmFlush` 也没有空档;临时加的追踪显示是提交给合成器的那一批 ~450 毫秒才处理完,停顿当时抓的转储里
+Avalonia 的渲染计时器线程(`WinUiCompositorConnection.RunLoop`)停在 `GetMessage`,等系统合成器确认上一次提交。与 X 无关 ——
+一个只按 20–40 毫秒改一段文字的纯 Avalonia 12.1.4 程序同样会(3 分钟 4 次);WinUI 合成、DirectComposition、低延迟 DXGI 交换链都会,
+AngleEgl + RedirectionSurface 3 分钟 1 次,Wgl + RedirectionSurface 0 次;关掉 Windows 的节能限速不变。**每帧都有东西画时 3 分钟 10776 帧一次也不会**:
+触发的是「连着出帧之后转成空拍」那一次的确认。打字节奏(两键间隔 80–600 毫秒)下纯 Avalonia 程序 879 键停 9 次(最长 281 毫秒);
+「保温」300 毫秒反而停 26 次(转空拍的次数多了),1 秒 0 次。
+宿主改为:X 窗口被激活、指针移进来,或用户在里面按键、动指针、按按钮、滚动、经输入法上屏或改预编辑时,这个窗口保温 2 秒 —— 没有新损伤的帧也 `InvalidateVisual` 一次
+(不碰像素锁、不传纹理),渲染循环每拍都有东西画。窗口激活与指针移进来当场转起来(程序重画完焦点、光标就闲下来,第一个键正落在转空拍之后);按键这类输入只把保温往后延,回应照常先画、画完接着保温 —— 抢先空画一帧的话,闲了几秒之后的第一个键要排在它后面(实测 p50 从 0.4 毫秒变成 14 毫秒,而闲得够久时本来也不会撞上停顿,80 次 0 次)。只按用户输入保温、不按损伤:
+光标闪烁、时钟这类程序自己的刷新没人在等,按它们保温只会让窗口一直 60 帧地重画。代价是保温期间新来的损伤排到下一拍(平均晚一帧左右)。
+`perf.cs` 在 Avalonia 宿主模式下照真实的路注入(投到 UI 线程上、经反射调 `Warm`),`--no-warm` 关掉保温做对照。
+整个应用(终端打字回显、对话框)同样会撞上这个停顿,记进 `feature-plan.md`(应用级保温 / 换渲染组合 / 报给上游)。
+
+**五、RANDR 报真实的刷新率**(`Services/XServer/DisplayRefreshRate.cs`):宿主原先没填 `XMonitor.RefreshRate`,一律报 60,GTK、Qt、浏览器
+在 120 / 144 Hz 的屏上也只画 60 帧。Windows 上经 `Screen.TryGetPlatformHandle()` 的 HMONITOR 取设备名、`EnumDisplaySettingsW` 读当前显示模式;
+单窗口模式那一台也带上主显示器的刷新率。macOS / Linux 仍报 60(记进 `feature-plan.md`)。
+
+**六、宿主一侧的计量**(`Services/XServer/XServerHostMetrics.cs`,仪表源 `VelaShell.XServer.Host`):`frames`、`frames.busy`、`damage.latency`
+(`TopLevelDamaged` 记下这批损伤最早报来的时刻,一路带到 `XSurface`)、`read.duration`。没人订阅时不记;窗口打开之前攒的损伤不算延迟。
+
+**验证**(本机 Windows 11、2560×1440@60 Hz、Intel 核显;Docker Desktop;Release):
+- 保温的 A/B(真实宿主、Docker 直连、打字节奏 80–600 毫秒、各 600 键):不保温时 `xprobe key` 停 5 次(64–154 毫秒,p99 48.5)、
+  xterm 回显停 5 次(56–214 毫秒,p99 41.6);保温 2 秒时两者都 0 次,最长 17.3 / 16.8 毫秒,损伤到进位图 p50 从 0.2 升到 8.3–8.6 毫秒(排到下一拍)。
+- 全部改动合起来经 SSH(本机 Docker 的 sshd,真实宿主):按键与 xterm 回显(打字节奏、各 300 键)注入到损伤 p50 1.0–1.1 毫秒,损伤到进位图最长 17 毫秒 ——
+  只有 xterm 开测时窗口闲着之后的第一个键 258 毫秒(之后加了「窗口激活、指针移进来也保温」);整窗动画 1280×720 64.7 帧、glxgears 59.3 帧、
+  GTK 4 `frames` 60 帧(修复前 9.2 / 9.0 帧);开 zlib 压缩时整窗动画 64.6 帧、glxgears 55.3 帧。
+- `dotnet build VelaShell.slnx --no-incremental -warnaserror -p:EnforceCodeStyleInBuild=true` 0 警告。`VelaShell.Tests` 2065 条:仪表描述原先写了中文,
+  被 `Code_HasNoHardcodedChineseText` 拦下,改成英文后与 X Server 相关的 81 条全过;`VelaShell.XServer.Tests` 553 通过 / 9 跳过(按环境);
+  `VelaShell.Ssh.Tests` 只有上面那条环境造成的 `真ssh_keygen读得出本库写的私钥`。
+- 闲了 2.5–4 秒之后的第一个键(Docker 直连,`--gap 2500-4000`):不保温 80 键 0 次停顿 —— 循环已完全停下时第一次输入不会撞上;
+  起初按键也当场转起来,保温组 0 次停顿但损伤到进位图 p50 14 毫秒(先空画了一帧),改为只有激活与移进来当场转起来之后 p50 0.4 毫秒;
+  改后打字节奏 `xprobe key` 与 xterm 各 400 键 0 次停顿,最长 18.7 / 19.0 毫秒。`perf.cs` 每次按键前把 X 焦点还给目标窗口
+  (测的这几分钟里本机前台一换,宿主会清掉 X 焦点,按键就没了去处)。
+
+文档:velashell-docs 中英镜像的 `ssh/spec/05-connection.md` §3.3、`ssh/design/architecture.md`(§5.5、§7、性能表、§11.2.31)、
+`xserver/design/architecture.md`(§9 测量台、§10 排查记录)、`xserver/troubleshooting.md`(「操作卡」),在 [velashell-docs#119](https://github.com/VelaShellLabs/velashell-docs/pull/119),与本 PR 互相引用。
