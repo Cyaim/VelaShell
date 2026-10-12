@@ -35,7 +35,8 @@ internal sealed class TypeAheadSelection
     /// </summary>
     /// <param name="list">要定位的列表。</param>
     /// <param name="scope">
-    /// 在哪里收键入。传整个窗口:焦点停在按钮上、或窗口刚打开谁都没焦点时,敲字也该能定位。
+    /// 在哪里收键入。对话框传整个窗口:焦点停在按钮上、或窗口刚打开谁都没焦点时,敲字也该能定位。
+    /// 嵌在主窗口里的文件栏传它自己:终端、另一栏里的键入不归它管。
     /// </param>
     /// <param name="nameOf">数据项的名字;返回 null 的项不参与匹配(用来排除合成的 ".." 行)。</param>
     public static void Attach(ListBox list, InputElement scope, Func<object, string?> nameOf)
@@ -44,6 +45,9 @@ internal sealed class TypeAheadSelection
 
         // 只收没被处理过的键入:路径输入框、下拉框自己的键入搜索都会把事件标成已处理。
         scope.AddHandler(InputElement.TextInputEvent, typeAhead.OnTextInput);
+
+        // 行整批换了(进了别的目录、刷新)就从头攒:敲 sub、双击进去、再敲 in,找的是 in 而不是 subin。
+        list.Items.CollectionChanged += (_, _) => typeAhead._search.Reset();
     }
 
     private void OnTextInput(object? sender, TextInputEventArgs e)

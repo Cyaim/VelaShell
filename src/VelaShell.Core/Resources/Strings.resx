@@ -4839,8 +4839,7 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
   <data name="Sc_OpenEntry" xml:space="preserve"><value>Open the selected file or folder</value></data>
   <data name="Sc_TypeToLocate" xml:space="preserve"><value>Jump to the item whose name starts with what you type</value></data>
   <data name="Sc_KeyTypeName" xml:space="preserve"><value>Type the name</value></data>
-  <data name="Sc_NoteUploadPicker" xml:space="preserve"><value>Upload picker only</value></data>
-  <data name="Sc_EnterSelectedFolder" xml:space="preserve"><value>Open the selected folder (with files or several items selected, Enter uploads them)</value></data>
+  <data name="Sc_EnterSelectedFolder" xml:space="preserve"><value>Open the selected folder</value></data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>Close the editor</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>Refresh the process list</value></data>
   <data name="Sc_EndTask" xml:space="preserve"><value>End the selected process</value></data>

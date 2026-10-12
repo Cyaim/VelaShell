@@ -5212,11 +5212,8 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Sc_KeyTypeName" xml:space="preserve">
     <value>键入名称开头</value>
   </data>
-  <data name="Sc_NoteUploadPicker" xml:space="preserve">
-    <value>仅上传选择框</value>
-  </data>
   <data name="Sc_EnterSelectedFolder" xml:space="preserve">
-    <value>进入选中的文件夹(选着文件或多项时回车即上传)</value>
+    <value>进入选中的文件夹</value>
   </data>
   <data name="Sc_CloseEditor" xml:space="preserve">
     <value>关闭编辑器</value>

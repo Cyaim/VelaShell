@@ -46,6 +46,9 @@ internal sealed class TypeAheadSearch(TimeProvider? timeProvider = null)
         return _term.ToString();
     }
 
+    /// <summary>丢掉攒下的前缀,下一次键入从头开始(换了目录时用:接着敲的是新目录里的名字)。</summary>
+    public void Reset() => _term.Clear();
+
     /// <summary>
     /// 在 <paramref name="names" /> 里为前缀 <paramref name="term" /> 找该选中的下标,没有匹配时返回 -1。
     /// 名字为 null 的项(如合成的 ".." 行)永远不参与匹配;比较不分大小写。

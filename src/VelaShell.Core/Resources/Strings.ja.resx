@@ -4834,8 +4834,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sc_OpenEntry" xml:space="preserve"><value>選択したファイル/フォルダーを開く</value></data>
   <data name="Sc_TypeToLocate" xml:space="preserve"><value>入力した文字で始まる項目へ移動</value></data>
   <data name="Sc_KeyTypeName" xml:space="preserve"><value>名前の先頭を入力</value></data>
-  <data name="Sc_NoteUploadPicker" xml:space="preserve"><value>アップロード選択ダイアログのみ</value></data>
-  <data name="Sc_EnterSelectedFolder" xml:space="preserve"><value>選択したフォルダーを開く(ファイルや複数項目を選択中は Enter でアップロード)</value></data>
+  <data name="Sc_EnterSelectedFolder" xml:space="preserve"><value>選択したフォルダーを開く</value></data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>エディターを閉じる</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>プロセス一覧を更新</value></data>
   <data name="Sc_EndTask" xml:space="preserve"><value>選択したプロセスを終了</value></data>

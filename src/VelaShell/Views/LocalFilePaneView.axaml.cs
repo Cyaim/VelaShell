@@ -61,6 +61,29 @@ public partial class LocalFilePaneView : UserControl
             fileList.AddHandler(PointerMovedEvent, OnLocalDragPointerMoved);
             fileList.AddHandler(PointerReleasedEvent, OnLocalDragPointerReleased, RoutingStrategies.Bubble, true);
         }
+
+        // 键入定位:焦点在本地栏里时直接敲文件名开头几个字母就选中它,资源管理器同款。
+        // 挂在本地栏自己身上,不碰远端栏与终端的键入。
+        TypeAheadSelection.Attach(FileList, this, item => item is LocalFileEntry { IsParentEntry: false } entry ? entry.Name : null);
+        FileList.KeepFocusAcrossReloads();
+
+        // 回车进文件夹。ListBoxItem 自己把回车标成已处理,所以连已处理的也收。
+        FileList.AddHandler(KeyDownEvent, OnFileListKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
+
+        // 手动输入路径(路径栏见 LocalPathBar)。Ctrl+L 走隧道,免得先被文件列表的键盘导航吃掉;
+        // 登记在本地栏上,焦点在远端栏时由远端栏自己的 Ctrl+L 接。输入框收起后焦点回到列表。
+        AddHandler(KeyDownEvent, OnLocalPaneKeyDownTunnel, RoutingStrategies.Tunnel);
+        PathBar.EditFinished += (_, _) => FileList.FocusSelectedOrFirstRow();
+    }
+
+    private void OnLocalPaneKeyDownTunnel(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control)
+            && DataContext is LocalFilePaneViewModel vm)
+        {
+            vm.BeginPathEdit();
+            e.Handled = true;
+        }
     }
 
     private void OnRootSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -99,6 +122,26 @@ public partial class LocalFilePaneView : UserControl
         if (DataContext is LocalFilePaneViewModel vm && sender is ListBox list && list.SelectedItem is LocalFileEntry entry)
         {
             vm.ActivateCommand.Execute(entry).Subscribe();
+        }
+    }
+
+    /// <summary>
+    /// 列表里的回车:只选着一个文件夹(含 "..")时进去,与双击一样;进去之后焦点留在列表里,接着就能敲字定位。
+    /// 文件上的回车不做事。
+    /// </summary>
+    private void OnFileListKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter
+            || e.KeyModifiers != KeyModifiers.None
+            || DataContext is not LocalFilePaneViewModel vm
+            || (e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) is not null)
+        {
+            return;
+        }
+        if (vm.SelectedEntries is [{ IsDirectory: true } folder])
+        {
+            e.Handled = true;
+            vm.ActivateCommand.Execute(folder).Subscribe();
         }
     }
 
