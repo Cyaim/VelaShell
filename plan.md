@@ -2783,5 +2783,14 @@ Core.Tests 794 通过 / 10 跳过 / 1 失败,失败的是 §193 记过的 `X11_R
 - `VelaShell.Tests` 2017 通过 / 19 跳过(按环境),其中 `ShortcutCatalogTests.Doc_ListsEveryCatalogEntry` 用 `VELASHELL_DOCS_DIR` 指向文档分支真跑过;
   应用与测试工程 `-warnaserror -p:EnforceCodeStyleInBuild=true` 构建 0 警告。
 
+**CI 上暴露的两处测试问题**(PR 第一轮 CI,Ubuntu / macOS 红):
+- `CommittingAFilePath_OpensItsFolder_AndSelectsTheFile` 输入的是 `FXYC.txt`:假文件系统不分大小写、认了这个文件,视图模型按平台比较文件名,
+  Linux / macOS 上选不中。用例改为按实际大小写输入(Windows 本机测不出来)。
+- `GlxTests.双缓冲交换只拷与窗口里不一样的那一块…` 偶发「第二帧损伤成了整窗(2400 像素)」,与本次改动无关、之前也潜伏着:映射窗口本身记一块整窗损伤,
+  第一次交换之后「等有损伤」一上来就成立;回复在执行一批请求的中途就发出,损伤要等这一批放锁之后才交 —— 交换、Sync 与下一个 GetImage
+  落进同一批时,用例清得比第一帧的损伤到得早,它被算进了第二帧。改为映射后先清、第一次交换后等整窗的损伤都到了再清。
+  用临时探针(执行线程每条请求后停 20 毫秒、批预算放到 2 秒)稳定复现:旧用例三次全挂、每次都是 2400 像素,新用例三次全过;探针已撤。
+  `VelaShell.XServer.Tests` 553 通过 / 9 跳过。
+
 文档:velashell-docs 中英镜像的「交互与界面规格」§6(上传选择框)与「快捷键参考」SFTP 文件管理器一节,
 在 [velashell-docs#116](https://github.com/VelaShellLabs/velashell-docs/pull/116),与本 PR 互相引用。
