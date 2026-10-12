@@ -54,6 +54,10 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     private readonly Action _deliverDamage;
     private Dictionary<XTopLevelWindow, List<XRect>> _incomingDamage = [];
     private Dictionary<XTopLevelWindow, List<XRect>> _deliveringDamage = [];
+
+    /// <summary>每个窗口攒着的损伤里最早一批报来的时刻(<see cref="Stopwatch.GetTimestamp" />),量损伤到上屏的延迟用(<see cref="XServerHostMetrics" />)。</summary>
+    private Dictionary<XTopLevelWindow, long> _incomingSince = [];
+    private Dictionary<XTopLevelWindow, long> _deliveringSince = [];
     private bool _damagePosted;
 
     /// <summary>新建一个宿主;经 <see cref="AttachAsync" /> 接到服务端上。</summary>
@@ -294,7 +298,8 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
             : ((int)(primary.WorkingArea.Width * 0.8), (int)(primary.WorkingArea.Height * 0.8));
         width = Math.Clamp(width, 1, X11ServerOptions.MaxScreenSize);
         height = Math.Clamp(height, 1, X11ServerOptions.MaxScreenSize);
-        server.SetScreenLayout(width, height);
+        // 与不给显示器时服务端自己补的那一台相同,只多报主显示器的刷新率(远端的桌面与程序按它定帧节奏)
+        server.SetScreenLayout(width, height, [new XMonitor(0, 0, width, height) { Primary = true, RefreshRate = DisplayRefreshRate.Of(primary) ?? 60 }]);
         double scaling = primary.Scaling;
         server.SetDisplayScale(Math.Max(1, (int)Math.Round(96 * scaling)), scaling >= 2 ? (int)Math.Floor(scaling) : 1);
     }
@@ -378,6 +383,8 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
             {
                 Name = string.IsNullOrWhiteSpace(screen.DisplayName) ? $"SCREEN-{i + 1}" : screen.DisplayName,
                 Primary = screen.IsPrimary,
+                // GTK、Qt、浏览器按 RANDR 报的刷新率定帧节奏:原先一律 60,高刷屏上远端程序也只画 60 帧
+                RefreshRate = DisplayRefreshRate.Of(screen) ?? 60,
                 WidthMillimeters = (int)Math.Round(b.Width / dpi * 25.4),
                 HeightMillimeters = (int)Math.Round(b.Height / dpi * 25.4),
                 WorkArea = work.Width > 0 && work.Height > 0 && work != b
@@ -695,6 +702,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
             {
                 _incomingDamage[window] = rects = [];
             }
+            _incomingSince.TryAdd(window, Stopwatch.GetTimestamp());
             rects.AddRange(damage);
             if (rects.Count > MaxQueuedDamageRects)
             {
@@ -720,9 +728,11 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     private void DeliverDamage()
     {
         Dictionary<XTopLevelWindow, List<XRect>> batch;
+        Dictionary<XTopLevelWindow, long> since;
         lock (_damageGate)
         {
             (batch, _incomingDamage, _deliveringDamage) = (_incomingDamage, _deliveringDamage, _incomingDamage);
+            (since, _incomingSince, _deliveringSince) = (_incomingSince, _deliveringSince, _incomingSince);
             _damagePosted = false;
         }
         foreach ((XTopLevelWindow handle, List<XRect> rects) in batch)
@@ -734,11 +744,12 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
             }
             if (_windows.TryGetValue(handle, out XNativeWindow? native))
             {
+                long reported = since.GetValueOrDefault(handle, Stopwatch.GetTimestamp());
                 if (_heldDamage.Remove(handle, out List<XRect>? held))
                 {
-                    native.AddDamage(held);
+                    native.AddDamage(held, reported);
                 }
-                native.AddDamage(rects);
+                native.AddDamage(rects, reported);
             }
             else
             {
@@ -746,6 +757,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
             }
         }
         batch.Clear();
+        since.Clear();
     }
 
     /// <summary>等客户端重画完(_NET_WM_SYNC_REQUEST,xs_plan F10)期间攒着没显示的损伤;UI 线程上用。</summary>
@@ -781,7 +793,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     {
         if (_heldDamage.Remove(window, out List<XRect>? held) && _windows.TryGetValue(window, out XNativeWindow? native))
         {
-            native.AddDamage(held);
+            native.AddDamage(held, Stopwatch.GetTimestamp());   // 有意攒着的,延迟从放出来时算
         }
     });
 

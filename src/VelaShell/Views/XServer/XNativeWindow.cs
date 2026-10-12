@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -113,7 +114,11 @@ public sealed class XNativeWindow : Window
         PositionChanged += (_, _) => OnMovedByUser();
         Resized += OnResized;
         AddHandler(TextInputMethodClientRequestedEvent, OnTextInputMethodClientRequested);
-        Activated += (_, _) => _host.OnWindowActivated(this);
+        Activated += (_, _) =>
+        {
+            _host.OnWindowActivated(this);
+            _surface.Warm(start: true);   // 切回来多半接着就要打字:先让渲染循环转起来,第一个键不撞上空拍(见 XSurface.KeepWarm)
+        };
         Deactivated += (_, _) => OnDeactivated();
         ScalingChanged += (_, _) => ApplyGeometry();
         Opened += (_, _) => { HasOpened = true; UpdateFrameExtents(); ApplyGeometry(); UpdateRegion(Handle.Snapshot); _surface.Start(); ApplySizeOnOpen(); };
@@ -295,8 +300,8 @@ public sealed class XNativeWindow : Window
         OnMovedByUser();
     }
 
-    /// <summary>有内容画进来了(顶层内区坐标的矩形):下一帧取这几块像素。</summary>
-    public void AddDamage(IReadOnlyList<XRect> damage) => _surface.AddDamage(damage);
+    /// <summary>有内容画进来了(顶层内区坐标的矩形):下一帧取这几块像素。<paramref name="reported" /> 是服务端报出它的时刻(量延迟用)。</summary>
+    public void AddDamage(IReadOnlyList<XRect> damage, long reported) => _surface.AddDamage(damage, reported);
 
     /// <summary>服务端要求的光标:有图像(位图 / ARGB 光标)就显示图像,否则按形状选系统光标。</summary>
     public void ApplyCursor(XCursor cursor)
@@ -759,6 +764,7 @@ public sealed class XNativeWindow : Window
         (int x, int y) = ToPixels(e.GetPosition(_surface));
         _lastPointer = (x, y);
         Server?.InjectPointerMotion(Handle, x, y);
+        _surface.Warm();   // 程序跟着指针重画:别让渲染循环在这时候空拍(见 XSurface.KeepWarm)
     }
 
     /// <inheritdoc />
@@ -786,6 +792,7 @@ public sealed class XNativeWindow : Window
         _lastClick = e.GetPosition(_surface);
         _imeClient?.NotifyCursorMoved();
         Server?.InjectPointerButton(Handle, x, y, button, pressed: true);
+        _surface.Warm();
         e.Handled = true;
     }
 
@@ -823,8 +830,16 @@ public sealed class XNativeWindow : Window
         if (double.IsFinite(dx) && double.IsFinite(dy) && (dx != 0 || dy != 0))
         {
             server.InjectScroll(Handle, x, y, dx, dy);
+            _surface.Warm();
         }
         e.Handled = true;
+    }
+
+    /// <inheritdoc />
+    protected override void OnPointerEntered(PointerEventArgs e)
+    {
+        base.OnPointerEntered(e);
+        _surface.Warm(start: true);   // 指针移进来,接下来多半要在这里操作(见 XSurface.KeepWarm)
     }
 
     /// <inheritdoc />
@@ -877,6 +892,7 @@ public sealed class XNativeWindow : Window
             _pressedWithCommand.Add(keycode);
         }
         Server?.InjectKey(keycode, pressed: true, repeat);
+        _surface.Warm();
         // 修饰键不出字:按着 Shift 时输入法上屏的字(有的中文输入法按 Shift 把拼音原样上屏)原先被当成 Shift 打出来的字吞掉。
         _keyTextPending = !IsModifierKey(e.PhysicalKey);
         e.Handled = true;
@@ -971,6 +987,7 @@ public sealed class XNativeWindow : Window
                 length--;   // 不把一个代理对切成两半
             }
             server.InjectText(e.Text.Substring(at, length));
+            _surface.Warm();
             at += length;
         }
         e.Handled = true;
@@ -991,6 +1008,7 @@ public sealed class XNativeWindow : Window
                 value = value[..X11Server.MaxInjectedTextLength];
             }
             server.InjectPreedit(value, Math.Clamp(caret ?? value.Length, 0, value.Length));
+            _surface.Warm();
         }
         _surface.InvalidateVisual();
     }
@@ -1242,6 +1260,28 @@ public sealed class XNativeWindow : Window
         /// <summary>ReadPixels 回调发现缓冲尺寸与位图不符时,记下新尺寸。</summary>
         private (int Width, int Height)? _resizeTo;
 
+        /// <summary>
+        /// 保温:窗口被激活、指针移进来,或用户在里面按键、动指针、点击、滚动之后这么久之内,没有新损伤的帧也让控件重画一次(内容不变),
+        /// 渲染循环不出现空拍。激活与移进来是为了第一个键:闲了一阵之后的第一次输入,保温还没起来就照样会撞上。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Windows 上 Avalonia 的渲染计时器每一拍都要等系统合成器确认上一次提交;连着出了几帧之后转成空拍(什么也没画)的那一次,
+        /// 确认偶尔要几百毫秒才来,这期间交过去的新一帧一直没人处理 —— 打字回显、拖动、指针跟随每隔一阵就「卡一下」。
+        /// 同一个纯 Avalonia 程序一样会;每帧都有东西画时一次也不会(scripts/xserver/perf 的排查,plan.md §201)。
+        /// </para>
+        /// <para>
+        /// 所以保温要盖过两次操作之间的间隔(实测打字节奏下保温 300 毫秒反而更糟 —— 「连着出帧转空拍」更多了;1 秒归零)。
+        /// 闲得够久之后的第一次输入不会撞上(循环已经完全停下),所以只有窗口激活、指针移进来当场转起来,见 <see cref="Warm" />。
+        /// 只按用户输入保温、不按损伤:光标闪烁、时钟这类程序自己的刷新没人在等,按它们保温只会让窗口一直 60 帧地重画。
+        /// 代价是保温期间新来的损伤要排到下一拍,平均晚一帧左右。
+        /// </para>
+        /// </remarks>
+        internal static TimeSpan KeepWarm { get; set; } = TimeSpan.FromSeconds(2);
+
+        /// <summary>保温到什么时候(<see cref="Stopwatch.GetTimestamp" />;0 = 不保温)。</summary>
+        private long _warmUntil;
+
         public XSurface(XNativeWindow owner, XTopLevelWindow handle)
         {
             _owner = owner;
@@ -1252,9 +1292,16 @@ public sealed class XNativeWindow : Window
             RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.None);
         }
 
+        /// <summary>攒着没取的损伤里最早一批由服务端报出的时刻(0 = 没有),见 <see cref="XServerHostMetrics.DamageLatency" />。</summary>
+        private long _damageSince;
+
         /// <summary>服务端报来的损伤(顶层内区坐标):下一帧取这些矩形。</summary>
-        public void AddDamage(IReadOnlyList<XRect> rects)
+        public void AddDamage(IReadOnlyList<XRect> rects, long reported)
         {
+            if (_damageSince == 0 || reported < _damageSince)
+            {
+                _damageSince = reported;
+            }
             if (!_fullDamage)
             {
                 _damage.AddRange(rects);
@@ -1272,10 +1319,30 @@ public sealed class XNativeWindow : Window
             RequestFrame();
         }
 
+        /// <summary>
+        /// 保温到此刻之后 <see cref="KeepWarm" />(见它的说明)。<paramref name="start" /> 为真时当场转起来(窗口激活、指针移进来:
+        /// 程序跟着重画一下焦点、光标就闲下来,用户的第一个键正落在「连着出帧转空拍」之后);按键、动指针这类输入不必 ——
+        /// 它们的回应来了照常先画(循环闲着时当场就画),画完再接着保温。抢先空画一帧,回应反倒要排在它后面(实测闲了几秒之后的第一个键
+        /// 从 0.4 毫秒变成 14 毫秒;闲得够久时本来也不会撞上停顿)。
+        /// </summary>
+        public void Warm(bool start = false)
+        {
+            if (KeepWarm <= TimeSpan.Zero)
+            {
+                return;
+            }
+            _warmUntil = Stopwatch.GetTimestamp() + (long)(KeepWarm.TotalSeconds * Stopwatch.Frequency);
+            if (start)
+            {
+                RequestFrame();
+            }
+        }
+
         /// <summary>原生窗口显示出来了:开始按帧取像素(先整窗取一次)。显示之前攒着的损伤都包含在这一次里。</summary>
         public void Start()
         {
             _started = true;
+            _damageSince = 0;   // 显示之前攒着的那些等的是窗口打开,不算损伤到上屏的延迟
             InvalidateAll();
         }
 
@@ -1324,6 +1391,16 @@ public sealed class XNativeWindow : Window
             {
                 return;
             }
+            if (!_fullDamage && _damage.Count == 0)
+            {
+                // 没有新损伤,只是保温的一帧(见 KeepWarm):重画一次,不碰像素锁
+                if (Stopwatch.GetTimestamp() < _warmUntil)
+                {
+                    InvalidateVisual();
+                    RequestFrame();
+                }
+                return;
+            }
             // 一般一趟就取完;缓冲尺寸与位图不符时按新尺寸重建位图、整窗再取。尺寸一直在变(拖动缩放中)就留到下一帧。
             for (int attempt = 0; attempt < 3; attempt++)
             {
@@ -1334,6 +1411,7 @@ public sealed class XNativeWindow : Window
                 }
                 LockDamagedTiles();
                 XPixelReadResult read;
+                long started = Stopwatch.GetTimestamp();
                 try
                 {
                     // 限时拿像素锁:服务端正在执行一条慢请求时跳过这一帧(损伤留着,下一帧再取),UI 线程不陪着等。
@@ -1343,8 +1421,13 @@ public sealed class XNativeWindow : Window
                 {
                     UnlockTiles();
                 }
+                if (XServerHostMetrics.ReadDuration.Enabled)
+                {
+                    XServerHostMetrics.ReadDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                }
                 if (read == XPixelReadResult.Busy)
                 {
+                    XServerHostMetrics.BusyFrames.Add(1);
                     break;
                 }
                 if (read == XPixelReadResult.NoBuffer)
@@ -1361,6 +1444,16 @@ public sealed class XNativeWindow : Window
                 _fullDamage = false;
                 _damage.Clear();
                 InvalidateVisual();
+                XServerHostMetrics.Frames.Add(1);
+                if (_damageSince != 0 && XServerHostMetrics.DamageLatency.Enabled)
+                {
+                    XServerHostMetrics.DamageLatency.Record(Stopwatch.GetElapsedTime(_damageSince).TotalMilliseconds);
+                }
+                _damageSince = 0;
+                if (Stopwatch.GetTimestamp() < _warmUntil)
+                {
+                    RequestFrame();   // 还在保温:下一帧接着出画面(有新损伤就是取像素的那一帧)
+                }
                 return;
             }
             RequestFrame();
