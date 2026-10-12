@@ -931,7 +931,7 @@
     <value>選擇要上傳的檔案與資料夾</value>
   </data>
   <data name="Sftp_PickUploadHint" xml:space="preserve">
-    <value>選擇檔案與資料夾 —— 兩者可以一起選</value>
+    <value>選擇檔案與資料夾 —— 兩者可以一起選;直接輸入名稱即可定位</value>
   </data>
   <data name="Sftp_PickUploadSelected" xml:space="preserve">
     <value>已選 {0} 個檔案、{1} 個資料夾</value>
@@ -5202,6 +5202,18 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Sc_OpenEntry" xml:space="preserve">
     <value>開啟選取的檔案或資料夾</value>
+  </data>
+  <data name="Sc_TypeToLocate" xml:space="preserve">
+    <value>定位到名稱以所輸入字母開頭的項目</value>
+  </data>
+  <data name="Sc_KeyTypeName" xml:space="preserve">
+    <value>輸入名稱開頭</value>
+  </data>
+  <data name="Sc_NoteUploadPicker" xml:space="preserve">
+    <value>僅上傳選擇框</value>
+  </data>
+  <data name="Sc_EnterSelectedFolder" xml:space="preserve">
+    <value>進入選取的資料夾(選取檔案或多個項目時按 Enter 即上傳)</value>
   </data>
   <data name="Sc_CloseEditor" xml:space="preserve">
     <value>關閉編輯器</value>
