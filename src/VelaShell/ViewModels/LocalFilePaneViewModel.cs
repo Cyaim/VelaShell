@@ -48,6 +48,9 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         NewFolderCommand = ReactiveCommand.CreateFromTask(() => NewFolderAsync(_lifetime.Token));
         OpenItemCommand = ReactiveCommand.CreateFromTask<LocalFileEntry>(entry => OpenItemAsync(entry, _lifetime.Token));
         SortCommand = ReactiveCommand.Create<string>(ToggleSort);
+        BeginPathEditCommand = ReactiveCommand.Create(BeginPathEdit);
+        CancelPathEditCommand = ReactiveCommand.Create(CancelPathEdit);
+        CommitPathEditCommand = ReactiveCommand.CreateFromTask(() => CommitPathEditAsync(_lifetime.Token));
     }
 
     /// <summary>可见的本地行,包含文件系统根之外的一个合成父目录行。</summary>
@@ -338,6 +341,148 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         string.IsNullOrEmpty(CurrentPath)
             ? LoadInitialAsync(cancellationToken)
             : NavigateToAsync(CurrentPath, cancellationToken);
+
+    // ---- 手动输入路径 ----
+    //
+    // 面包屑只能沿着已经列出来的目录一级级点:去 D:\Books\123\35 要先在下拉框里切盘、再点三下,
+    // 手里明明有现成的路径(资源管理器地址栏里复制来的)却用不上。所以路径栏要能直接敲、直接贴 ——
+    // 与远端浏览器的路径栏(#226)同一套手势:铅笔按钮或 Ctrl+L 切成输入框,回车跳转,Esc / 失焦取消。
+
+    /// <summary>路径栏是否处于手动输入态;为 true 时视图用输入框替换面包屑。</summary>
+    public bool IsPathEditing
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>手动输入态下输入框里的文本。</summary>
+    public string PathEditText
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = string.Empty;
+
+    /// <summary>切入手动输入态。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> BeginPathEditCommand { get; }
+
+    /// <summary>放弃手动输入,退回面包屑。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> CancelPathEditCommand { get; }
+
+    /// <summary>提交手动输入的路径并导航。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> CommitPathEditCommand { get; }
+
+    /// <summary>进入手动输入态时触发,供视图聚焦输入框并全选文本。</summary>
+    public event EventHandler? PathEditActivated;
+
+    /// <summary>切入手动输入态,输入框预填当前路径。</summary>
+    public void BeginPathEdit()
+    {
+        if (IsPathEditing)
+        {
+            return;
+        }
+        PathEditText = CurrentPath;
+        IsPathEditing = true;
+        PathEditActivated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>放弃手动输入。</summary>
+    public void CancelPathEdit() => IsPathEditing = false;
+
+    /// <summary>
+    /// 跳到输入的路径。输入的是文件时进它所在的目录并选中它 —— 资源管理器「复制为路径」拷出来的
+    /// 往往就是文件,贴进来回车就选好了,再一回车就能传。
+    /// </summary>
+    public async Task CommitPathEditAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsPathEditing)
+        {
+            return;
+        }
+
+        string? target;
+        try
+        {
+            target = ResolvePathInput(PathEditText, CurrentPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            ErrorMessage = ex.Message;
+            return;
+        }
+        if (target is null)
+        {
+            IsPathEditing = false;
+            return;
+        }
+
+        string? fileName = null;
+        string directory = target;
+        if (await _fileSystem.GetFileSizeAsync(target, cancellationToken) >= 0)
+        {
+            fileName = Path.GetFileName(target);
+            directory = ParentOf(target);
+        }
+
+        // 输错路径是手动输入的常态。导航失败(ErrorMessage 非空)时保持输入态、不动已输入的文本,
+        // 让用户就地改一个字再按回车;成功才退回面包屑。
+        await NavigateToAsync(directory, cancellationToken);
+        if (ErrorMessage is not null)
+        {
+            return;
+        }
+        IsPathEditing = false;
+
+        if (fileName is not null
+            && Entries.FirstOrDefault(entry => !entry.IsParentEntry && string.Equals(entry.Name, fileName, PathComparison)) is { } file)
+        {
+            SelectedEntries.Clear();
+            SelectedEntries.Add(file);
+        }
+    }
+
+    /// <summary>
+    /// 把路径栏里的文本解析成绝对路径;只有空白时返回 null。
+    /// </summary>
+    /// <remarks>
+    /// 认这几种写法:两头的双引号(资源管理器「复制为路径」会带上)、<c>%VAR%</c> 环境变量、
+    /// <c>~</c> / <c>~/…</c> 开头的家目录、相对路径(相对<b>当前目录</b>,所以 <c>..</c>、子目录名都能用)。
+    /// 只写一个盘符的 <c>D:</c> 当作 <c>D:\</c> —— 按 Windows 的规矩它是「D 盘上的当前目录」,
+    /// 但没人在地址栏里敲 D: 是想要那个。
+    /// </remarks>
+    /// <param name="input">输入框里的原文。</param>
+    /// <param name="currentDirectory">当前目录,相对路径以它为基准;为空时用用户主目录。</param>
+    internal static string? ResolvePathInput(string? input, string currentDirectory)
+    {
+        string value = (input ?? string.Empty).Trim();
+        if (value.Length >= 2 && value[0] == '"' && value[^1] == '"')
+        {
+            value = value[1..^1].Trim();
+        }
+        if (value.Length == 0)
+        {
+            return null;
+        }
+
+        value = Environment.ExpandEnvironmentVariables(value);
+        string home = UserPathResolver.Home;
+        if (value == "~")
+        {
+            value = home;
+        }
+        else if (value.StartsWith("~/", StringComparison.Ordinal) || value.StartsWith("~\\", StringComparison.Ordinal))
+        {
+            value = Path.Combine(home, value[2..].TrimStart('/', '\\'));
+        }
+
+        if (OperatingSystem.IsWindows() && value.Length == 2 && char.IsAsciiLetter(value[0]) && value[1] == ':')
+        {
+            value += Path.DirectorySeparatorChar;
+        }
+
+        // 双参重载:相对路径只认给定的基准,绝不落到进程工作目录上。
+        return Path.GetFullPath(value, string.IsNullOrEmpty(currentDirectory) ? home : currentDirectory);
+    }
 
     // ---- 目录变化自动刷新 ----
 

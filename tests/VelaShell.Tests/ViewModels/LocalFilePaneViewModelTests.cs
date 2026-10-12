@@ -437,6 +437,172 @@ public sealed class LocalFilePaneViewModelTests
         Assert.IsFalse(LocalPathSafety.TryResolveDestination(root.Path, "linked", out _));
     }
 
+    // ---- 手动输入路径 ----
+    //
+    // 上传选择器的路径栏:敲(或贴)一条路径回车直达,不必在面包屑里一级级点。
+
+    /// <summary>测试用的虚拟目录树根;只经过 FakeLocalFileSystem,不碰磁盘。</summary>
+    private static readonly string FakeRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "vela-fake-local"));
+
+    private static string Fake(params string[] parts) => Path.Combine([FakeRoot, .. parts]);
+
+    /// <summary>FakeRoot\Books\123\35 下有 fxyc.txt 与子目录 deeper,FakeRoot 下有 Books。</summary>
+    private static FakeLocalFileSystem BooksTree()
+    {
+        var fs = new FakeLocalFileSystem();
+        fs.SetChildren(FakeRoot, new LocalFileSystemEntry("Books", Fake("Books"), true, 0, DateTime.UtcNow));
+        fs.SetChildren(
+            Fake("Books", "123", "35"),
+            new LocalFileSystemEntry("deeper", Fake("Books", "123", "35", "deeper"), true, 0, DateTime.UtcNow),
+            new LocalFileSystemEntry("abc.txt", Fake("Books", "123", "35", "abc.txt"), false, 3, DateTime.UtcNow),
+            new LocalFileSystemEntry("fxyc.txt", Fake("Books", "123", "35", "fxyc.txt"), false, 4, DateTime.UtcNow)
+        );
+        return fs;
+    }
+
+    [TestMethod]
+    public async Task BeginPathEdit_PrefillsTheCurrentPath_AndAsksTheViewToFocusTheBox()
+    {
+        using var vm = new LocalFilePaneViewModel(new TransferOptions(), BooksTree(), new FakeLocalRootProvider());
+        await vm.NavigateToAsync(FakeRoot);
+        int activated = 0;
+        vm.PathEditActivated += (_, _) => activated++;
+
+        vm.BeginPathEdit();
+        vm.BeginPathEdit();
+
+        Assert.IsTrue(vm.IsPathEditing);
+        Assert.AreEqual(FakeRoot, vm.PathEditText);
+        Assert.AreEqual(1, activated, "已在输入态时再进一次不该重置文本、也不该再抢一次焦点。");
+    }
+
+    [TestMethod]
+    public async Task CommittingADirectory_NavigatesThere_AndLeavesEditMode()
+    {
+        using var vm = new LocalFilePaneViewModel(new TransferOptions(), BooksTree(), new FakeLocalRootProvider());
+        await vm.NavigateToAsync(FakeRoot);
+        vm.BeginPathEdit();
+        vm.PathEditText = Fake("Books", "123", "35");
+
+        await vm.CommitPathEditAsync();
+
+        Assert.AreEqual(Fake("Books", "123", "35"), vm.CurrentPath);
+        Assert.IsFalse(vm.IsPathEditing);
+        Assert.IsNull(vm.ErrorMessage);
+        Assert.IsEmpty(vm.SelectedEntries, "进目录不该顺手选中什么。");
+    }
+
+    [TestMethod]
+    public async Task CommittingAFilePath_OpensItsFolder_AndSelectsTheFile()
+    {
+        using var vm = new LocalFilePaneViewModel(new TransferOptions(), BooksTree(), new FakeLocalRootProvider());
+        await vm.NavigateToAsync(FakeRoot);
+        vm.BeginPathEdit();
+        // 大小写照抄:Linux / macOS 上文件名分大小写(视图模型按平台比较),这个假文件系统却一概不分。
+        vm.PathEditText = Fake("Books", "123", "35", "fxyc.txt");
+
+        await vm.CommitPathEditAsync();
+
+        Assert.AreEqual(Fake("Books", "123", "35"), vm.CurrentPath);
+        Assert.IsFalse(vm.IsPathEditing);
+        Assert.AreSequenceEqual(["fxyc.txt"], vm.SelectedEntries.Select(entry => entry.Name).ToArray());
+    }
+
+    [TestMethod]
+    public async Task CommittingAMissingPath_StaysInEditMode_WithTheTextKept()
+    {
+        FakeLocalFileSystem fs = BooksTree();
+        fs.MissingDirectories.Add(Fake("Books", "123", "36"));
+        using var vm = new LocalFilePaneViewModel(new TransferOptions(), fs, new FakeLocalRootProvider());
+        await vm.NavigateToAsync(FakeRoot);
+        vm.BeginPathEdit();
+        vm.PathEditText = Fake("Books", "123", "36");
+
+        await vm.CommitPathEditAsync();
+
+        Assert.IsTrue(vm.IsPathEditing, "输错了要能就地改一个字再回车,不能把输入框收掉。");
+        Assert.AreEqual(Fake("Books", "123", "36"), vm.PathEditText);
+        Assert.AreEqual(FakeRoot, vm.CurrentPath, "导航失败时留在原目录。");
+        Assert.IsNotNull(vm.ErrorMessage);
+    }
+
+    [TestMethod]
+    public async Task CommittingBlank_JustLeavesEditMode()
+    {
+        FakeLocalFileSystem fs = BooksTree();
+        using var vm = new LocalFilePaneViewModel(new TransferOptions(), fs, new FakeLocalRootProvider());
+        await vm.NavigateToAsync(FakeRoot);
+        int enumerated = fs.EnumeratedPaths.Count;
+        vm.BeginPathEdit();
+        vm.PathEditText = "   ";
+
+        await vm.CommitPathEditAsync();
+
+        Assert.IsFalse(vm.IsPathEditing);
+        Assert.AreEqual(enumerated, fs.EnumeratedPaths.Count, "空白不该触发任何列举。");
+    }
+
+    [TestMethod]
+    public void ResolvePathInput_StripsTheQuotesThatExplorersCopyAsPathAdds()
+    {
+        Assert.AreEqual(Fake("Books", "123"), LocalFilePaneViewModel.ResolvePathInput($"  \"{Fake("Books", "123")}\"  ", FakeRoot));
+    }
+
+    [TestMethod]
+    public void ResolvePathInput_ResolvesRelativePathsAgainstTheCurrentDirectory()
+    {
+        string current = Fake("Books", "123");
+
+        Assert.AreEqual(Fake("Books", "123", "35"), LocalFilePaneViewModel.ResolvePathInput("35", current));
+        Assert.AreEqual(Fake("Books"), LocalFilePaneViewModel.ResolvePathInput("..", current));
+    }
+
+    [TestMethod]
+    public void ResolvePathInput_ExpandsTheHomeDirectory()
+    {
+        string home = UserPathResolver.Home;
+
+        Assert.AreEqual(Path.GetFullPath(home), LocalFilePaneViewModel.ResolvePathInput("~", FakeRoot));
+        Assert.AreEqual(Path.GetFullPath(Path.Combine(home, "Docs")), LocalFilePaneViewModel.ResolvePathInput("~/Docs", FakeRoot));
+    }
+
+    [TestMethod]
+    public void ResolvePathInput_ExpandsEnvironmentVariables()
+    {
+        const string name = "VELA_PICKER_PATH_TEST";
+        Environment.SetEnvironmentVariable(name, Fake("Books"));
+        try
+        {
+            Assert.AreEqual(Fake("Books", "123"), LocalFilePaneViewModel.ResolvePathInput($"%{name}%{Path.DirectorySeparatorChar}123", FakeRoot));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(name, null);
+        }
+    }
+
+    [TestMethod]
+    public void ResolvePathInput_TreatsABareDriveLetterAsTheDriveRoot()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("盘符只在 Windows 上有意义。");
+            return;
+        }
+
+        // 按 Windows 的规矩 "D:" 是「D 盘上的当前目录」;当前就在 D 盘深处时尤其容易原地不动。
+        Assert.AreEqual(@"D:\", LocalFilePaneViewModel.ResolvePathInput("D:", @"D:\Books\123"));
+        Assert.AreEqual(@"E:\", LocalFilePaneViewModel.ResolvePathInput("E:", @"C:\Users"));
+    }
+
+    [TestMethod]
+    public void ResolvePathInput_ReturnsNullForBlankInput()
+    {
+        Assert.IsNull(LocalFilePaneViewModel.ResolvePathInput("  ", FakeRoot));
+        Assert.IsNull(LocalFilePaneViewModel.ResolvePathInput("\"\"", FakeRoot));
+        Assert.IsNull(LocalFilePaneViewModel.ResolvePathInput(null, FakeRoot));
+    }
+
     private sealed class TempDirectory : IDisposable
     {
         public TempDirectory()
@@ -477,8 +643,16 @@ public sealed class LocalFilePaneViewModelTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             EnumeratedPaths.Add(path);
+            if (MissingDirectories.Contains(path))
+            {
+                return Task.FromException<IReadOnlyList<LocalFileSystemEntry>>(
+                    new DirectoryNotFoundException($"Could not find a part of the path '{path}'."));
+            }
             return Task.FromResult(_children.GetValueOrDefault(path, []));
         }
+
+        /// <summary>列举时报"目录不存在"的路径。</summary>
+        public HashSet<string> MissingDirectories { get; } = [with(StringComparer.OrdinalIgnoreCase)];
 
         public Task DeleteFileAsync(string path, CancellationToken cancellationToken)
         {
@@ -510,7 +684,10 @@ public sealed class LocalFilePaneViewModelTests
         public Task<long> GetFileSizeAsync(string path, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(-1L);
+            LocalFileSystemEntry? file = _children.Values
+                .SelectMany(children => children)
+                .FirstOrDefault(entry => !entry.IsDirectory && string.Equals(entry.FullPath, path, StringComparison.OrdinalIgnoreCase));
+            return Task.FromResult(file?.SizeBytes ?? -1L);
         }
 
         public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)

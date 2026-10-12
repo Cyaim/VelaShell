@@ -1646,6 +1646,10 @@ public sealed class GlxTests
         byte glx = await GlxAsync(c);
         uint window = await MapWindowAsync(c, host);
         (_, uint tag) = await CurrentAsync(c, glx, window);
+
+        // 映射本身记了一块整窗的损伤,MakeCurrent 回来时它已经交到宿主(那一批放锁之后才轮到 MakeCurrent),这里先清掉。
+        // 不清的话,下面「等有损伤」一上来就成立,根本没等到第一次交换的那份。
+        host.DamageRects.Clear();
         Commands Frame(float x) => new Commands()
             .Add(130, b => F(b, 0, 0, 1, 1)).Add(127, b => b.U32(ColorBit))                                     // 整个后缓冲清成蓝
             .Add(8, b => F(b, 1, 0, 0)).Add(4, b => b.U32(Triangles))
@@ -1654,7 +1658,11 @@ public sealed class GlxTests
         await RenderAsync(c, glx, tag, Frame(0));
         await c.SendAsync(glx, 11, b => b.U32(tag).U32(window));
         await c.SyncAsync();
-        await host.WaitForAsync(() => !host.DamageRects.IsEmpty);
+
+        // 第一帧把整个窗口从黑换成蓝底红三角,损伤是整窗:等它整份交到宿主再清。只等回复不够 —— 回复在执行一批请求的中途
+        // 就发出去了,损伤要等这一批放锁之后才交;交换、Sync 与下一个 GetImage 落进同一批时,清得比这份损伤到得早,
+        // 它就被算进了第二帧(CI 上偶发:第二帧「损伤」成了整窗)。
+        await host.WaitForAsync(() => host.DamageRects.Sum(r => (long)r.Width * r.Height) >= (long)Width * Height);
         Assert.AreEqual(0xFF0000u, await PixelAsync(c, window, 32, 18));
         host.DamageRects.Clear();
 
