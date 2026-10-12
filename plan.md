@@ -2964,3 +2964,37 @@ AngleEgl + RedirectionSurface 3 分钟 1 次,Wgl + RedirectionSurface 0 次;关�
 
 文档:velashell-docs 中英镜像的 `ssh/spec/05-connection.md` §3.3、`ssh/design/architecture.md`(§5.5、§7、性能表、§11.2.31)、
 `xserver/design/architecture.md`(§9 测量台、§10 排查记录)、`xserver/troubleshooting.md`(「操作卡」),在 [velashell-docs#119](https://github.com/VelaShellLabs/velashell-docs/pull/119),与本 PR 互相引用。
+
+## ✅ 202. 2026-10-13 上传选择框:窗口放大、可拖边缩放;右上角切换列表 / 图标视图(用户需求)
+
+**起因**:上传选择框 672×552 偏小,而且在 Windows 上根本拖不动边框(对话框没挂缩放抓取区);用户要资源管理器「中等图标」那样的显示,
+切换做成 Linux 文件管理器头栏常见的「列表 | 网格」分段按钮,放在右上角。
+
+**一、窗口**:默认 920×640、最小 560×380,挂上与工具窗口同一套 `ResizeGrips`(`WindowChrome.Apply` 的第三个参数),四边四角可拖;
+打开时按工作区夹一次(同设置窗口的 `FitIntoWorkArea`)。尺寸与视图在关窗时记进 `WindowLayoutStore`(键 `uploadPicker`,所有会话共用一条;
+`WindowLayout` 加了可空的 `View`,其余窗口不传),`PickAsync` 打开前读回。
+
+**二、视图切换器**:标题栏右上角、关闭键左边,两段 `RadioButton`(`list` | `layout-grid`,lucide `list` 字形新加进 `Icons.axaml`)连成一个分段控件,
+选中段 `VelaAccentDim` 底 + `VelaAccent` 图标(与目录同步窗口的选项分段同一条规则),键盘焦点只在 `:focus-visible` 时描边。切换后焦点回到列表。
+
+**三、图标视图**:新增 `Views/VirtualizingTilePanel`(虚拟化的等尺寸格子面板,只为视口附近的项建容器)与纯几何 `Views/TileGridMath`。
+两种视图**共用这一个面板**:列表是 `ItemWidth=NaN`(一格占满整行、行高 28),图标是 108×96(`ListBox.tiles` 样式给)—— 切换只换项模板与 `tiles` 类。
+- 没在两种视图间换 `ItemsPanel`:反编译 Avalonia 12.1.4 看到,换面板时 `VirtualizingPanel.Detach` 只清掉可视子项,旧容器还挂在列表的逻辑子项里,来回切会越攒越多。
+- 没用 `WrapPanel`:它不虚拟化,几千项的目录(System32、node_modules)会一次建出几千套控件。
+- 容器的创建、回收与「键盘焦点所在的容器滚出视口时留着不回收」照 `VirtualizingStackPanel` 的规矩,ListBox 的选择、`ScrollIntoView` 与键入定位照常可用。
+  方向键(`GetControl`)按格子走:←/→ 逐格、到行尾接下一行,↑/↓ 整行、列不变(正下方没有格子但下面还有一行时落到最后一项),PageUp/PageDown 一屏,Home/End 首尾。
+  列表视图的 PageUp/PageDown 因此从「只滚动」变成「移动选中项」(资源管理器同款);←/→ 在列表里仍不动。
+- 一格:40px 图标在上、名称最多两行(超出省略号);文件图标上印大写扩展名(`LocalFileEntry.ExtensionLabel`,不超过 4 个字符,没有或更长时不印 —— 截断的比不写更误导);
+  大小与修改时间进悬停提示。选中 / 悬停是 4px 圆角块,格子间留 2px;悬停样式排在选中样式之前(同优先级后写的赢)。
+- 框选:`MarqueeSelection` 发现列表的面板是 `VirtualizingTilePanel` 时,改由面板按二维几何给出命中项(按下时记下面板在列表里的位置,
+  之后的点加上滚过的距离换算到内容坐标 —— 自动滚动时偏移刚改、布局还没跟上,去问面板的实时位置拿到的是旧的)。远端栏、本地栏仍走原来的按行判定。
+
+**验证**:
+- `TileGridMathTests` 18 条(每行格数、可见范围、二维框选含最后一行没排满与最后一列右边的空白、方向键的去向)、`LocalFileEntryTests` 8 条(扩展名标签)。
+- `LocalPathPickerIconViewUiTests` 6 条在真窗口里:点切换器切到图标再切回(格子二维排开、列头收起、选中不丢、切回后行高 28);切完焦点回列表且不顺带选中;
+  图标视图里框选得到 2×2 四格而不是两整行;→ ↓ ↑ 按格子与整行走;键入 `fxyc` 把视口外那一格实现出来、滚进视口、焦点跟过去;文件夹格子上回车进去。
+- 列表视图换成新面板后,原有的 `LocalPathPickerMarqueeUiTests`、`LocalPathPickerKeyboardUiTests` 原样通过。
+- `VelaShell.Tests` 2078 通过 / 19 跳过(按环境);应用与测试工程 `-warnaserror -p:EnforceCodeStyleInBuild=true` 构建 0 警告。
+- 无头渲染两种视图的截图核对外观:100px 宽的格子把 `archive.tar.gz` 的最后一个字母挤到第二行,格子因此定为 108px(默认尺寸下仍是一行 8 格)。
+
+文档:velashell-docs 中英镜像的「交互与界面规格」§6「上传选择框」,在 [velashell-docs#120](https://github.com/VelaShellLabs/velashell-docs/pull/120),与本 PR 互相引用。

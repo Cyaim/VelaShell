@@ -14,6 +14,9 @@ public sealed class WindowLayout
 
     /// <summary>关闭时是否处于最大化。</summary>
     public bool Maximized { get; set; }
+
+    /// <summary>窗口里内容的视图形态(上传选择框:<c>List</c> / <c>Icons</c>);没有视图之分的窗口留空。</summary>
+    public string? View { get; set; }
 }
 
 /// <summary>
@@ -48,14 +51,15 @@ public sealed class WindowLayoutStore(IAppDataStore? store)
     /// <summary>把窗口当前的几何信息写回存储;失败静默忽略。</summary>
     /// <param name="key">窗口标识。</param>
     /// <param name="window">要记录的窗口。</param>
-    public async Task SaveAsync(string key, Window window)
+    /// <param name="view">窗口里内容的视图形态(见 <see cref="WindowLayout.View" />);没有就不传。</param>
+    public async Task SaveAsync(string key, Window window, string? view = null)
     {
         ArgumentNullException.ThrowIfNull(window);
         if (store is null)
         {
             return;
         }
-        WindowLayout layout = new() { Maximized = window.WindowState == WindowState.Maximized };
+        WindowLayout layout = new() { Maximized = window.WindowState == WindowState.Maximized, View = view };
         if (window.WindowState == WindowState.Normal)
         {
             layout.Width = window.Width;

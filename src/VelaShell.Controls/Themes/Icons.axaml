@@ -115,6 +115,7 @@
   <StreamGeometry x:Key="Icon.microchip">M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4Z M9 9h6v6H9Z M9 1v2 M15 1v2 M9 21v2 M15 21v2 M1 9h2 M1 15h2 M21 9h2 M21 15h2</StreamGeometry>
   <StreamGeometry x:Key="Icon.grid-3x3">M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z M3 9h18 M3 15h18 M9 3v18 M15 3v18</StreamGeometry>
   <StreamGeometry x:Key="Icon.layers">M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z M2 12l8.58 3.91a2 2 0 0 0 1.66 0L21 12 M2 17l8.58 3.91a2 2 0 0 0 1.66 0L21 17</StreamGeometry>
+  <StreamGeometry x:Key="Icon.list">M3 6h.01 M3 12h.01 M3 18h.01 M8 6h13 M8 12h13 M8 18h13</StreamGeometry>
   <StreamGeometry x:Key="Icon.list-ordered">M10 6h11 M10 12h11 M10 18h11 M4 6h1v4 M4 10h2 M6 18H4c0-1 2-2 2-3s-1-1.5-2-1</StreamGeometry>
   <StreamGeometry x:Key="Icon.network">M9 2h6v6H9Z M2 16h6v6H2Z M16 16h6v6h-6Z M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3 M12 12V8</StreamGeometry>
   <StreamGeometry x:Key="Icon.pause">M6 4h4v16H6Z M14 4h4v16h-4Z</StreamGeometry>

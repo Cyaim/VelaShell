@@ -872,6 +872,12 @@
   <data name="Sftp_PickUploadSelected" xml:space="preserve">
     <value>{0} file(s), {1} folder(s) selected</value>
   </data>
+  <data name="Sftp_PickerListView" xml:space="preserve">
+    <value>List view</value>
+  </data>
+  <data name="Sftp_PickerIconView" xml:space="preserve">
+    <value>Icon view</value>
+  </data>
   <data name="Sftp_GoUp" xml:space="preserve">
     <value>Go up</value>
   </data>

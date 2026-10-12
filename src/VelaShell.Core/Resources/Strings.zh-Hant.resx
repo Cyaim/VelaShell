@@ -936,6 +936,12 @@
   <data name="Sftp_PickUploadSelected" xml:space="preserve">
     <value>已選 {0} 個檔案、{1} 個資料夾</value>
   </data>
+  <data name="Sftp_PickerListView" xml:space="preserve">
+    <value>清單檢視</value>
+  </data>
+  <data name="Sftp_PickerIconView" xml:space="preserve">
+    <value>圖示檢視</value>
+  </data>
   <data name="Sftp_GoUp" xml:space="preserve">
     <value>上一層</value>
   </data>

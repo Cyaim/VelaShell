@@ -3726,6 +3726,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sftp_PickUploadSelected" xml:space="preserve">
     <value>ファイル {0} 個、フォルダー {1} 個を選択中</value>
   </data>
+  <data name="Sftp_PickerListView" xml:space="preserve">
+    <value>リスト表示</value>
+  </data>
+  <data name="Sftp_PickerIconView" xml:space="preserve">
+    <value>アイコン表示</value>
+  </data>
   <data name="Sftp_GoUp" xml:space="preserve">
     <value>上の階層へ</value>
   </data>

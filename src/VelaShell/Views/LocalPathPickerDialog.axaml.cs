@@ -1,12 +1,28 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.ViewModels;
+using WindowLayout = VelaShell.Services.WindowLayout;
+using WindowLayoutStore = VelaShell.Services.WindowLayoutStore;
 
 namespace VelaShell.Views;
+
+/// <summary>上传选择框文件列表的视图形态。</summary>
+public enum LocalPickerView
+{
+    /// <summary>列表(详细信息):一行一项,带大小与修改时间两列。</summary>
+    List,
+
+    /// <summary>图标(资源管理器「中等图标」):格子从左到右排,大图标在上、名字在下。</summary>
+    Icons
+}
 
 /// <summary>
 /// 上传用的本地路径选择器:文件与文件夹在同一个列表里,可混选、可多选。
@@ -31,7 +47,7 @@ public partial class LocalPathPickerDialog : Window
     internal LocalPathPickerDialog(LocalFilePaneViewModel viewModel, bool loadInitial)
     {
         InitializeComponent();
-        WindowChrome.Apply(this, WindowChromeKind.Dialog);
+        WindowChrome.Apply(this, WindowChromeKind.Dialog, ResizeGrips);
         ViewModel = viewModel;
         DataContext = ViewModel;
         ViewModel.SelectedEntries.CollectionChanged += (_, _) => UpdateSelectionSummary();
@@ -39,6 +55,7 @@ public partial class LocalPathPickerDialog : Window
 
         // 框选。这里的行不发起拖放,不存在"拖行 = 拖文件"的歧义,所以放开从行上起框 ——
         // 行是撑满整行宽的,只准从空白起框等于文件一多就用不上,正是最需要它的时候。
+        // 图标视图同理从格子上也能起框;框中哪些格子由格子面板按二维几何算(见 MarqueeSelection.SweptIndices)。
         _marquee = MarqueeSelection.Attach(
             FileList,
             Marquee,
@@ -64,9 +81,35 @@ public partial class LocalPathPickerDialog : Window
         }
     }
 
+    /// <summary>尺寸与视图记在 windowLayout 里的键(见 <see cref="WindowLayoutStore" />)。</summary>
+    private const string LayoutKey = "uploadPicker";
+
     private LocalFilePaneViewModel ViewModel { get; }
 
     private readonly MarqueeSelection _marquee;
+
+    /// <summary>
+    /// 文件列表的视图形态。两种视图共用一个格子面板(<see cref="VirtualizingTilePanel" />),
+    /// 切换只换项模板与列表上的 <c>tiles</c> 类(格子尺寸由样式给);选中集在视图模型里,切换前后不变。
+    /// </summary>
+    internal LocalPickerView View
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+            field = value;
+            bool icons = value == LocalPickerView.Icons;
+            FileList.Classes.Set("tiles", icons);
+            FileList.ItemTemplate = (IDataTemplate)Resources[icons ? "TileTemplate" : "RowTemplate"]!;
+            ColumnHeader.IsVisible = !icons;
+            ListViewButton.IsChecked = !icons;
+            IconViewButton.IsChecked = icons;
+        }
+    } = LocalPickerView.List;
 
     /// <summary>关窗时务必收起框选,否则自动滚动的计时器会拽着已关闭的窗口继续跑。</summary>
     protected override void OnClosed(EventArgs e)
@@ -76,12 +119,53 @@ public partial class LocalPathPickerDialog : Window
     }
 
     /// <summary>
+    /// 默认尺寸是按 1080p 定的;小屏(1366×768 的笔记本、高缩放)放不下,打开时按工作区夹一次,并摆回中央。
+    /// </summary>
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+        FitIntoWorkArea();
+    }
+
+    /// <summary>
     /// 打开选择器,返回用户选中的本地路径(文件与文件夹混合);取消则返回空列表。
+    /// 上次调过的尺寸与选过的视图照旧(所有会话共用一条记录)。
     /// </summary>
     public static async Task<IReadOnlyList<string>> PickAsync(Window owner, TransferOptions transferOptions)
     {
         var dialog = new LocalPathPickerDialog(transferOptions);
+        if ((Application.Current as App)?.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
+        {
+            WindowLayout? layout = await layoutStore.LoadAsync(LayoutKey);
+            WindowLayoutStore.Apply(dialog, layout);
+            if (Enum.TryParse(layout?.View, out LocalPickerView view))
+            {
+                dialog.View = view;
+            }
+            dialog.Closing += (_, _) => _ = layoutStore.SaveAsync(LayoutKey, dialog, dialog.View.ToString());
+        }
         return await dialog.ShowDialog<IReadOnlyList<string>?>(owner) ?? [];
+    }
+
+    /// <summary>
+    /// 视图切换器(右上角的「列表 | 图标」分段)。两段是一组 RadioButton,点中的那段触发这里;
+    /// 被挤掉的那段也会来一次(IsChecked 变 false),不理它。
+    /// </summary>
+    private void OnViewSwitchChanged(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not RadioButton { IsChecked: true } button)
+        {
+            return;
+        }
+        LocalPickerView view = button == IconViewButton ? LocalPickerView.Icons : LocalPickerView.List;
+        if (view == View)
+        {
+            return;
+        }
+        View = view;
+
+        // 焦点回到列表(容器整批重建完再给):点完切换器接着按方向键、敲字定位,走的是文件而不是切换器。
+        Dispatcher.UIThread.Post(FocusList, DispatcherPriority.Loaded);
     }
 
     /// <summary>当前选中的真实条目(排除合成的 ".." 行)。</summary>
@@ -202,5 +286,49 @@ public partial class LocalPathPickerDialog : Window
         {
             this.BeginWindowMoveDrag(e);
         }
+    }
+
+    /// <summary>缩放抓取区。只认左键:系统 sizing 模态循环只在左键弹起时退出(#116)。</summary>
+    private void ResizeEdge_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+        if (WindowState == WindowState.Normal
+            && sender is Border { Tag: string tag }
+            && Enum.TryParse(tag, out WindowEdge edge))
+        {
+            BeginResizeDrag(edge, e);
+        }
+    }
+
+    private void FitIntoWorkArea()
+    {
+        if ((Screens.ScreenFromWindow(this) ?? Screens.Primary) is not { } screen)
+        {
+            return;
+        }
+        // WorkingArea 是物理像素,而窗口尺寸按 DIP 计 —— 高 DPI 下不换算就会算出一个"看起来放得下"的假结论。
+        double scaling = screen.Scaling > 0 ? screen.Scaling : 1.0;
+        // Wayland 的阴影与描边画在 Width/Height 之外,要一起算进去;其它平台窗口尺寸就是全部。
+        double frame = WindowChrome.OuterFrameSize(this);
+        double availableWidth = (screen.WorkingArea.Width / scaling) - frame;
+        double availableHeight = (screen.WorkingArea.Height / scaling) - frame;
+
+        // 留一点余量,免得正好顶到工作区边缘(某些桌面环境的自动隐藏面板会占掉几像素)。
+        const double margin = 16;
+        double width = Math.Clamp(Width, MinWidth, Math.Max(MinWidth, availableWidth - margin));
+        double height = Math.Clamp(Height, MinHeight, Math.Max(MinHeight, availableHeight - margin));
+        if (Math.Abs(width - Width) < 0.5 && Math.Abs(height - Height) < 0.5)
+        {
+            return; // 放得下,保持 CenterOwner 定好的位置。
+        }
+        Width = width;
+        Height = height;
+        // 尺寸变了,CenterOwner 算出来的位置就不再居中(还可能把标题栏顶出屏幕外)。
+        Position = new PixelPoint(
+            screen.WorkingArea.X + (int)Math.Max(0, (screen.WorkingArea.Width - (width * scaling)) / 2),
+            screen.WorkingArea.Y + (int)Math.Max(0, (screen.WorkingArea.Height - (height * scaling)) / 2));
     }
 }

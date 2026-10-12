@@ -25,6 +25,24 @@ public sealed record LocalFileEntry(
     /// <summary>供未来本地面板视图使用的图标键。</summary>
     public string Icon => IsDirectory ? "folder" : "file";
 
+    /// <summary>
+    /// 图标视图里印在文件图标上的扩展名(大写、不带点,如 <c>PFX</c>)。目录、没有扩展名、
+    /// 扩展名超过 4 个字符(<c>.bashrc</c> 这类点文件整个名字都算扩展名)时为空 ——
+    /// 图标上只放得下四个字符,截断的扩展名比不写更误导。
+    /// </summary>
+    public string ExtensionLabel
+    {
+        get
+        {
+            if (!IsRegularFile)
+            {
+                return string.Empty;
+            }
+            string extension = Path.GetExtension(Name);
+            return extension.Length is > 1 and <= 5 ? extension[1..].ToUpperInvariant() : string.Empty;
+        }
+    }
+
     /// <summary>可读大小;目录与合成父目录没有文件大小。</summary>
     public string FormattedSize => IsDirectory ? string.Empty : FormatSize(SizeBytes);
 

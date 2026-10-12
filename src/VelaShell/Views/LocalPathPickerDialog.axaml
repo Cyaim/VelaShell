@@ -6,18 +6,122 @@
         xmlns:loc="using:VelaShell.Localization"
         xmlns:pc="using:VelaShell.Controls.Controls"
         xmlns:views="using:VelaShell.Views"
-        mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="520"
+        mc:Ignorable="d" d:DesignWidth="920" d:DesignHeight="640"
         x:Class="VelaShell.Views.LocalPathPickerDialog"
         x:DataType="vm:LocalFilePaneViewModel"
         Title="{loc:Localize Sftp_PickUploadTitle}"
-        Width="672" Height="552"
-        MinWidth="420" MinHeight="320"
+        Width="920" Height="640"
+        MinWidth="560" MinHeight="380"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner">
 
   <!-- 上传选择器。系统对话框在 Windows/Linux 上只能"要么文件、要么文件夹",上传因此
        长期被拆成两个菜单项;这个应用内选择器把两者放进同一个列表,混选多选一次搞定。
-       外观沿用 MessageDialog/TunnelHelpDialog 那套无边框圆角弹窗规格。 -->
+       外观沿用 MessageDialog/TunnelHelpDialog 那套无边框圆角弹窗规格,但可以拖边缩放(四周的 ResizeGrips),
+       尺寸与视图(列表 / 图标)记在 windowLayout 里,下次照旧。 -->
+
+  <Window.Resources>
+    <!-- 列表视图的一行。 -->
+    <DataTemplate x:Key="RowTemplate" x:DataType="vm:LocalFileEntry">
+      <Border Classes="file-row" Classes.parent="{Binding IsParentEntry}" Height="28" Padding="16,0"
+              BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="*,90,130">
+          <Grid Classes="dnd-surface" ColumnDefinitions="Auto,*" MinWidth="0" ClipToBounds="True" VerticalAlignment="Center">
+            <pc:LucideIcon Width="13" Height="13" Margin="0,0,7,0"
+                           Data="{StaticResource Icon.folder}" Foreground="{DynamicResource VelaFileFolderIcon}"
+                           IsVisible="{Binding IsRegularDirectory}" />
+            <pc:LucideIcon Width="13" Height="13" Margin="0,0,7,0"
+                           Data="{StaticResource Icon.file}" Foreground="{DynamicResource VelaTextTertiary}"
+                           IsVisible="{Binding IsRegularFile}" />
+            <pc:LucideIcon Width="13" Height="13" Margin="0,0,7,0"
+                           Data="{StaticResource Icon.corner-left-up}" Foreground="{DynamicResource VelaTextTertiary}"
+                           IsVisible="{Binding IsParentEntry}" />
+            <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontFamily="{DynamicResource VelaUiMonoFont}"
+                       FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextSecondary}"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          </Grid>
+          <TextBlock Classes="dnd-surface" Grid.Column="1" Text="{Binding FormattedSize}" FontFamily="{DynamicResource VelaUiMonoFont}"
+                     FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextTertiary}" VerticalAlignment="Center" />
+          <TextBlock Classes="dnd-surface" Grid.Column="2" Text="{Binding FormattedModifiedTime}" FontFamily="{DynamicResource VelaUiMonoFont}"
+                     FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextTertiary}" VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <!-- 图标视图的一格(资源管理器「中等图标」):40px 图标在上、名字在下最多两行。
+         文件图标上印着扩展名 —— 格子里没有类型列,一屏同一个图标分不出谁是谁;
+         大小与修改时间放进悬停提示,它们原本在列表的两列里。 -->
+    <DataTemplate x:Key="TileTemplate" x:DataType="vm:LocalFileEntry">
+      <StackPanel Classes="file-tile" Spacing="5" Margin="3,9,3,4" Background="Transparent">
+        <ToolTip.Tip>
+          <StackPanel Spacing="2" MaxWidth="360">
+            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding FormattedSize}"
+                       IsVisible="{Binding FormattedSize, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <TextBlock Text="{Binding FormattedModifiedTime}"
+                       IsVisible="{Binding FormattedModifiedTime, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+        </ToolTip.Tip>
+        <Panel Width="40" Height="40" HorizontalAlignment="Center">
+          <pc:LucideIcon Width="40" Height="40"
+                         Data="{StaticResource Icon.folder}" Foreground="{DynamicResource VelaFileFolderIcon}"
+                         IsVisible="{Binding IsRegularDirectory}" />
+          <pc:LucideIcon Width="40" Height="40"
+                         Data="{StaticResource Icon.file}" Foreground="{DynamicResource VelaTextTertiary}"
+                         IsVisible="{Binding IsRegularFile}" />
+          <!-- 落在 file 字形的纸面中下部(纸面中心比图标中心低约 4px,再往下让开右上角的折角)。 -->
+          <TextBlock Text="{Binding ExtensionLabel}" IsVisible="{Binding IsRegularFile}"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,12,0,0"
+                     FontFamily="{DynamicResource VelaUiMonoFont}" FontSize="{DynamicResource VelaFontSize8}"
+                     FontWeight="Bold" Foreground="{DynamicResource VelaTextSecondary}" />
+          <pc:LucideIcon Width="32" Height="32"
+                         Data="{StaticResource Icon.corner-left-up}" Foreground="{DynamicResource VelaTextTertiary}"
+                         IsVisible="{Binding IsParentEntry}" />
+        </Panel>
+        <TextBlock Text="{Binding DisplayName}" HorizontalAlignment="Center" TextAlignment="Center"
+                   TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                   FontFamily="{DynamicResource VelaUiMonoFont}" FontSize="{DynamicResource VelaFontSize11}"
+                   Foreground="{DynamicResource VelaTextSecondary}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <!-- 视图切换器的一段(Nautilus 头栏那种分段按钮):选中的一段 VelaAccentDim 底 + VelaAccent 图标,
+         与目录同步窗口的选项分段同一条半透明药丸规则(DESIGN.md §5.1)。用 RadioButton:两段互斥,
+         点已选中的那段不会把它点掉,读屏也念得出「已选中」。 -->
+    <ControlTheme x:Key="ViewSwitchSegmentTheme" TargetType="RadioButton">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}">
+            <ContentPresenter Content="{TemplateBinding Content}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover">
+        <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+        <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+      </Style>
+      <Style Selector="^:checked">
+        <Setter Property="Background" Value="{DynamicResource VelaAccentDim}" />
+        <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+      </Style>
+      <!-- 焦点记号只给键盘导航:鼠标点完一段后描边一直挂着,看起来像卡住的高亮。 -->
+      <Style Selector="^:focus-visible">
+        <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+      </Style>
+    </ControlTheme>
+  </Window.Resources>
 
   <Window.Styles>
     <Style Selector="Border.file-row:pointerover">
@@ -30,6 +134,23 @@
       <Setter Property="Padding" Value="0" />
       <Setter Property="Margin" Value="0" />
       <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <!-- 图标视图:格子尺寸由面板给(列表时面板默认一格占满整行、行高 28);格子之间留 2px 缝,
+         选中 / 悬停的底色收成圆角块。悬停这条必须排在下面两条「选中」之前 —— 同等优先级时后写的赢,
+         否则鼠标停在选中的格子上会把选中色盖掉。 -->
+    <Style Selector="ListBox.tiles">
+      <Setter Property="Padding" Value="8,6" />
+    </Style>
+    <Style Selector="ListBox.tiles views|VirtualizingTilePanel">
+      <Setter Property="ItemWidth" Value="108" />
+      <Setter Property="ItemHeight" Value="96" />
+    </Style>
+    <Style Selector="ListBox.tiles ListBoxItem">
+      <Setter Property="Margin" Value="2" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="ListBox.tiles ListBoxItem:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
     </Style>
     <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource VelaBgActive}" />
@@ -68,17 +189,18 @@
     </Style>
   </Window.Styles>
 
+  <Panel>
   <!-- 外边距是投影的画布:此前这里没有外边距,投影整个被窗口边缘裁掉,等于没画(#171)。 -->
   <Border Classes="window-card" Background="{DynamicResource VelaBgSurface}"
           BorderBrush="{DynamicResource VelaBorderSecondary}">
     <DockPanel>
 
-      <!-- 标题栏(可拖动) -->
+      <!-- 标题栏(可拖动);右上角是视图切换器与关闭键。 -->
       <Border Name="TitleBar" DockPanel.Dock="Top" Classes="window-titlebar" Padding="16,0"
               Background="Transparent"
               PointerPressed="OnTitleBarPointerPressed"
               BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
-        <Grid ColumnDefinitions="Auto,*,Auto">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
           <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
             <pc:LucideIcon Width="14" Height="14" Data="{StaticResource Icon.upload}"
                            Foreground="{DynamicResource VelaAccent}" />
@@ -86,7 +208,29 @@
                        Foreground="{DynamicResource VelaTextPrimary}"
                        FontSize="{DynamicResource VelaFontSize12}" FontWeight="SemiBold" VerticalAlignment="Center" />
           </StackPanel>
-          <Button Grid.Column="2" Classes="toolbar-btn" Width="24" Height="24" Padding="0"
+          <Border Grid.Column="2" Height="22" Margin="0,0,8,0" VerticalAlignment="Center"
+                  CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource VelaBorderSecondary}">
+            <StackPanel Orientation="Horizontal">
+              <RadioButton Name="ListViewButton" Theme="{StaticResource ViewSwitchSegmentTheme}"
+                           CornerRadius="3,0,0,3" IsChecked="True"
+                           IsCheckedChanged="OnViewSwitchChanged"
+                           ToolTip.Tip="{loc:Localize Sftp_PickerListView}" ToolTip.Placement="Bottom"
+                           AutomationProperties.Name="{loc:Localize Sftp_PickerListView}">
+                <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.list}"
+                               Foreground="{Binding $parent[RadioButton].Foreground}" />
+              </RadioButton>
+              <Rectangle Width="1" Fill="{DynamicResource VelaBorderSecondary}" />
+              <RadioButton Name="IconViewButton" Theme="{StaticResource ViewSwitchSegmentTheme}"
+                           CornerRadius="0,3,3,0"
+                           IsCheckedChanged="OnViewSwitchChanged"
+                           ToolTip.Tip="{loc:Localize Sftp_PickerIconView}" ToolTip.Placement="Bottom"
+                           AutomationProperties.Name="{loc:Localize Sftp_PickerIconView}">
+                <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.layout-grid}"
+                               Foreground="{Binding $parent[RadioButton].Foreground}" />
+              </RadioButton>
+            </StackPanel>
+          </Border>
+          <Button Grid.Column="3" Classes="toolbar-btn" Width="24" Height="24" Padding="0"
                   Click="OnCancelClick"
                   ToolTip.Tip="{loc:Localize Cancel}"
                   ToolTip.Placement="Top">
@@ -158,8 +302,8 @@
         </Grid>
       </Border>
 
-      <!-- 列头 -->
-      <Border DockPanel.Dock="Top" Height="26" Padding="16,0"
+      <!-- 列头(只在列表视图里有) -->
+      <Border Name="ColumnHeader" DockPanel.Dock="Top" Height="26" Padding="16,0"
               Background="{DynamicResource VelaBgContentHeader}"
               BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
         <Grid ColumnDefinitions="*,90,130">
@@ -182,38 +326,19 @@
       </Border>
 
       <!-- 文件与文件夹同列表混选:这正是系统对话框做不到、也是拆成两个菜单项的原因。
-           列表外面套一层 Panel,是为了在它上面叠一个框选矩形(见 Marquee)。 -->
+           列表外面套一层 Panel,是为了在它上面叠一个框选矩形(见 Marquee)。
+           两种视图共用一个格子面板(见 VirtualizingTilePanel):切视图只换项模板与 tiles 类。 -->
       <Panel>
       <ListBox Name="FileList" ItemsSource="{Binding Entries}" SelectedItems="{Binding SelectedEntries}"
                SelectionMode="Multiple" Background="Transparent" BorderThickness="0"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ItemTemplate="{StaticResource RowTemplate}"
                DoubleTapped="OnFileDoubleTapped">
-        <ListBox.ItemTemplate>
-          <DataTemplate x:DataType="vm:LocalFileEntry">
-            <Border Classes="file-row" Classes.parent="{Binding IsParentEntry}" Height="28" Padding="16,0"
-                    BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
-                <Grid ColumnDefinitions="*,90,130">
-                <Grid Classes="dnd-surface" ColumnDefinitions="Auto,*" MinWidth="0" ClipToBounds="True" VerticalAlignment="Center">
-                  <pc:LucideIcon Width="13" Height="13" Margin="0,0,7,0"
-                                 Data="{StaticResource Icon.folder}" Foreground="{DynamicResource VelaFileFolderIcon}"
-                                 IsVisible="{Binding IsRegularDirectory}" />
-                  <pc:LucideIcon Width="13" Height="13" Margin="0,0,7,0"
-                                 Data="{StaticResource Icon.file}" Foreground="{DynamicResource VelaTextTertiary}"
-                                 IsVisible="{Binding IsRegularFile}" />
-                  <pc:LucideIcon Width="13" Height="13" Margin="0,0,7,0"
-                                 Data="{StaticResource Icon.corner-left-up}" Foreground="{DynamicResource VelaTextTertiary}"
-                                 IsVisible="{Binding IsParentEntry}" />
-                  <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontFamily="{DynamicResource VelaUiMonoFont}"
-                             FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextSecondary}"
-                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                </Grid>
-                <TextBlock Classes="dnd-surface" Grid.Column="1" Text="{Binding FormattedSize}" FontFamily="{DynamicResource VelaUiMonoFont}"
-                           FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextTertiary}" VerticalAlignment="Center" />
-                <TextBlock Classes="dnd-surface" Grid.Column="2" Text="{Binding FormattedModifiedTime}" FontFamily="{DynamicResource VelaUiMonoFont}"
-                           FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextTertiary}" VerticalAlignment="Center" />
-              </Grid>
-            </Border>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
+        <ListBox.ItemsPanel>
+          <ItemsPanelTemplate>
+            <views:VirtualizingTilePanel />
+          </ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
       </ListBox>
 
         <!-- 框选矩形。IsHitTestVisible=False:它盖在列表上,不能把指针事件吃掉。
@@ -226,4 +351,18 @@
       </Panel>
     </DockPanel>
   </Border>
+
+  <!-- 缩放抓取区:铺在卡片外那圈 16px 投影留白上(厚度随卡片形态由 ResizeGripLayout 调)。
+       macOS 与 Wayland 由系统外框缩放,WindowChrome 会把这一层藏起来。 -->
+  <Panel x:Name="ResizeGrips" ZIndex="200">
+    <Border Tag="North" Height="16" VerticalAlignment="Top" Margin="22,0" Background="Transparent" Cursor="TopSide" PointerPressed="ResizeEdge_PointerPressed" />
+    <Border Tag="South" Height="16" VerticalAlignment="Bottom" Margin="22,0" Background="Transparent" Cursor="BottomSide" PointerPressed="ResizeEdge_PointerPressed" />
+    <Border Tag="West" Width="16" HorizontalAlignment="Left" Margin="0,22" Background="Transparent" Cursor="LeftSide" PointerPressed="ResizeEdge_PointerPressed" />
+    <Border Tag="East" Width="16" HorizontalAlignment="Right" Margin="0,22" Background="Transparent" Cursor="RightSide" PointerPressed="ResizeEdge_PointerPressed" />
+    <Border Tag="NorthWest" Width="22" Height="22" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" Cursor="TopLeftCorner" PointerPressed="ResizeEdge_PointerPressed" />
+    <Border Tag="NorthEast" Width="22" Height="22" HorizontalAlignment="Right" VerticalAlignment="Top" Background="Transparent" Cursor="TopRightCorner" PointerPressed="ResizeEdge_PointerPressed" />
+    <Border Tag="SouthWest" Width="22" Height="22" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomLeftCorner" PointerPressed="ResizeEdge_PointerPressed" />
+    <Border Tag="SouthEast" Width="22" Height="22" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomRightCorner" PointerPressed="ResizeEdge_PointerPressed" />
+  </Panel>
+  </Panel>
 </Window>

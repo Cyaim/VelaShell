@@ -11,7 +11,7 @@ namespace VelaShell.Views;
 /// <summary>
 /// 给 <see cref="ListBox" /> 加上资源管理器式的框选:按住左键拖出矩形,划过的行成片选中。
 /// <para>
-/// 几何在 <see cref="MarqueeSelectionMath" />(可脱离 UI 单测),这里只管接线:指针事件、
+/// 几何在 <see cref="MarqueeSelectionMath" /> 与(格子面板的)<see cref="TileGridMath" />(都可脱离 UI 单测),这里只管接线:指针事件、
 /// 矩形绘制、选中集同步、拖出边界时的自动滚动。
 /// </para>
 /// <para>
@@ -38,6 +38,9 @@ internal sealed class MarqueeSelection
     private bool _active;
     private Point _origin;
     private double _originOffset;
+
+    /// <summary>按下时面板左上角在列表坐标里的位置(格子面板用,见 <see cref="SweptIndices" />)。</summary>
+    private Point _panelOrigin;
 
     private DispatcherTimer? _autoScroll;
     private double _autoScrollDelta;
@@ -117,6 +120,7 @@ internal sealed class MarqueeSelection
         _pointerDown = true;
         _origin = e.GetPosition(_list);
         _originOffset = ScrollOffsetY;
+        _panelOrigin = _list.ItemsPanelRoot?.TranslatePoint(default, _list) ?? default;
         _baseSelection.Clear();
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
@@ -258,24 +262,43 @@ internal sealed class MarqueeSelection
         _overlay.Width = Math.Max(right - left, 0);
         _overlay.Height = Math.Max(bottom - top, 0);
 
-        // 命中判定走内容坐标(视口坐标 + 滚动偏移),这样滚动过程中已划过的行不会掉出来。
+        ApplySelection(SweptIndices(current));
+    }
+
+    /// <summary>
+    /// 矩形覆盖到的项下标。命中判定走内容坐标(视口坐标 + 滚动偏移),这样滚动过程中已划过的行不会掉出来。
+    /// </summary>
+    private IEnumerable<int> SweptIndices(Point current)
+    {
+        double scrolled = ScrollOffsetY - _originOffset;
+
+        // 格子面板(上传选择框的图标 / 列表两种视图)横竖都要看:几何由面板按下标给出。
+        // 换算到面板坐标用按下那一刻记下的面板位置加上之后滚过的距离 —— 自动滚动时偏移刚改、
+        // 布局还没跟上,这时去问面板的实时位置拿到的是旧的。
+        if (_list.ItemsPanelRoot is VirtualizingTilePanel tiles)
+        {
+            return tiles.IndicesInRect(
+                new(_origin.X - _panelOrigin.X, _origin.Y - _panelOrigin.Y),
+                new(current.X - _panelOrigin.X, current.Y - _panelOrigin.Y + scrolled));
+        }
+
         (int first, int last) = MarqueeSelectionMath.RowsInBand(
             _origin.Y + _originOffset,
             current.Y + ScrollOffsetY,
             RowHeight(),
             _list.ItemCount
         );
-        ApplySelection(first, last);
+        return first < 0 ? [] : Enumerable.Range(first, last - first + 1);
     }
 
-    private void ApplySelection(int first, int last)
+    private void ApplySelection(IEnumerable<int> indices)
     {
         if (_list.SelectedItems is not { } selection)
         {
             return;
         }
         var swept = new List<object>();
-        for (int i = first; i >= 0 && i <= last; i++)
+        foreach (int i in indices)
         {
             object? item = _list.ItemsView[i];
             if (item is not null && _canSelect(item))
