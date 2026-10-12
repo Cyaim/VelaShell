@@ -131,6 +131,7 @@ internal sealed class ZlibCompressor : ISshCompressor
 
         _decoder ??= new ZLibDecoder();
         long total = 0;
+        OperationStatus status = OperationStatus.NeedMoreData;
 
         foreach (ReadOnlyMemory<byte> segment in payload)
         {
@@ -139,79 +140,97 @@ internal sealed class ZlibCompressor : ISshCompressor
 
             while (consumedInSegment < source.Length)
             {
-                long remaining = maxOutputLength - total;
-                bool directOutput = remaining > 0;
+                status = DecompressStep(source[consumedInSegment..], output, maxOutputLength, ref total, out int consumed);
+                consumedInSegment += consumed;
+            }
+        }
 
-                OperationStatus status;
-                int consumed;
-                int written;
-                try
-                {
-                    if (directOutput)
-                    {
-                        int chunkSize = source.Length >= OutputChunkSize ? LargeOutputChunkSize : OutputChunkSize;
-                        int sizeHint = (int)Math.Min(chunkSize, remaining);
-                        Span<byte> destination = output.GetSpan(sizeHint)[..sizeHint];
-                        status = _decoder.Decompress(source[consumedInSegment..], destination, out consumed, out written);
-                    }
-                    else
-                    {
-                        // 允许解码器把没有输出的 flush 尾部消费掉；如果它产生了
-                        // 一个字节，则在写入调用方 writer 之前立刻拦截压缩炸弹。
-                        status = DecompressWithLimitProbe(source[consumedInSegment..], out consumed, out written);
-                    }
+        // 输入吃完了，最后一次却是因为输出缓冲用满才停下的：解码器手里可能还压着输出，接着取，直到它不再说「缓冲不够」。
+        // OpenSSH 每个报文之后做的是 partial flush，报文末尾只有几个位的空块（不像同步 flush 以字节对齐的 00 00 FF FF 收尾）：
+        // 最后一个匹配的编码一读完，整段输入就可能都进了解码器，而那个匹配还没复制完。曾经「输入吃完」就收工 ——
+        // 压着的几个字节留到下一个报文开头才吐出来，这一报文短了、下一报文全部错位，整条连接以协议错误断开
+        // （X11 转发的 GTK 程序一画大窗口就断）。
+        while (status == OperationStatus.DestinationTooSmall)
+        {
+            status = DecompressStep([], output, maxOutputLength, ref total, out _);
+        }
+    }
 
-                    if ((uint)consumed > (uint)(source.Length - consumedInSegment) || (uint)written > (uint)(directOutput ? Math.Min(LargeOutputChunkSize, remaining) : 1))
-                    {
-                        throw new SshProtocolException(SshPhase.Open, "zlib 解码器返回了无效的字节计数。");
-                    }
+    /// <summary>喂一次解码器：<paramref name="source"/> 可以为空（只取解码器压着的输出）。</summary>
+    /// <returns>解码器报的状态；流结束、数据坏了、超过上限都在这里抛。</returns>
+    private OperationStatus DecompressStep(
+        ReadOnlySpan<byte> source, IBufferWriter<byte> output, int maxOutputLength, ref long total, out int consumed)
+    {
+        long remaining = maxOutputLength - total;
+        bool directOutput = remaining > 0;
 
-                    if (written != 0)
-                    {
-                        if (!directOutput || total + written > maxOutputLength)
-                        {
-                            throw BombLimit(maxOutputLength);
-                        }
+        OperationStatus status;
+        int written;
+        try
+        {
+            if (directOutput)
+            {
+                int chunkSize = source.Length >= OutputChunkSize ? LargeOutputChunkSize : OutputChunkSize;
+                int sizeHint = (int)Math.Min(chunkSize, remaining);
+                Span<byte> destination = output.GetSpan(sizeHint)[..sizeHint];
+                status = _decoder!.Decompress(source, destination, out consumed, out written);
+            }
+            else
+            {
+                // 允许解码器把没有输出的 flush 尾部消费掉；如果它产生了
+                // 一个字节，则在写入调用方 writer 之前立刻拦截压缩炸弹。
+                status = DecompressWithLimitProbe(source, out consumed, out written);
+            }
 
-                        output.Advance(written);
-                        total += written;
-                    }
+            if ((uint)consumed > (uint)source.Length || (uint)written > (uint)(directOutput ? Math.Min(LargeOutputChunkSize, remaining) : 1))
+            {
+                throw new SshProtocolException(SshPhase.Open, "zlib 解码器返回了无效的字节计数。");
+            }
 
-                    consumedInSegment += consumed;
-                }
-                catch (SshProtocolException)
-                {
-                    throw;
-                }
-                catch (Exception ex) when (ex is InvalidDataException or IOException)
-                {
-                    throw DecompressionFailure(ex);
-                }
-
-                // 〔velashell-docs/zh/ssh/spec/01 §六〕SSH 的压缩流永远不结束（RFC 4253 §6.2：上下文从一个报文传到下一个，
-                // 每个报文末尾只 flush）。解码器报告流结束，说明对端在载荷里写了 zlib 的结束标记 —— 当场断开。
-                // 曾经照常收下这一报文：之后的报文解码器一个字节都不肯再收，错到下一帧才报一句看不出缘由的「解压失败」。
-                if (status == OperationStatus.Done)
-                {
-                    throw new SshProtocolException(SshPhase.Open, "对端结束了 zlib 流（载荷里出现了流结束标记）—— SSH 的压缩流不会结束。");
-                }
-
-                if (status == OperationStatus.InvalidData)
-                {
-                    throw DecompressionFailure();
-                }
-
-                if (status == OperationStatus.DestinationTooSmall && consumed == 0 && written == 0)
+            if (written != 0)
+            {
+                if (!directOutput || total + written > maxOutputLength)
                 {
                     throw BombLimit(maxOutputLength);
                 }
 
-                if (consumed == 0 && written == 0 && status != OperationStatus.NeedMoreData)
-                {
-                    throw DecompressionFailure();
-                }
+                output.Advance(written);
+                total += written;
             }
         }
+        catch (SshProtocolException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException)
+        {
+            throw DecompressionFailure(ex);
+        }
+
+        // 〔velashell-docs/zh/ssh/spec/01 §六〕SSH 的压缩流永远不结束（RFC 4253 §6.2：上下文从一个报文传到下一个，
+        // 每个报文末尾只 flush）。解码器报告流结束，说明对端在载荷里写了 zlib 的结束标记 —— 当场断开。
+        // 曾经照常收下这一报文：之后的报文解码器一个字节都不肯再收，错到下一帧才报一句看不出缘由的「解压失败」。
+        if (status == OperationStatus.Done)
+        {
+            throw new SshProtocolException(SshPhase.Open, "对端结束了 zlib 流（载荷里出现了流结束标记）—— SSH 的压缩流不会结束。");
+        }
+
+        if (status == OperationStatus.InvalidData)
+        {
+            throw DecompressionFailure();
+        }
+
+        if (status == OperationStatus.DestinationTooSmall && consumed == 0 && written == 0)
+        {
+            throw BombLimit(maxOutputLength);
+        }
+
+        if (consumed == 0 && written == 0 && status != OperationStatus.NeedMoreData)
+        {
+            throw DecompressionFailure();
+        }
+
+        return status;
     }
 
     /// <inheritdoc />
