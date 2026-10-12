@@ -11,6 +11,7 @@ using ReactiveUI.SourceGenerators;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Plugins.Protocols;
@@ -325,7 +326,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 algorithmsError is null &&
                 // 选了一条用不上的共享凭据(FTP 配了私钥凭据):存下去就是一条注定连不上的配置。
                 credentialSourceError is null &&
-                !string.IsNullOrWhiteSpace(host) &&
+                IsHostWellFormed(host) &&
                 (!string.IsNullOrWhiteSpace(username) ||
                  // 共享凭据自带用户名时,连接自己可以不填(#550)。
                  usernameFromCredential ||
@@ -721,9 +722,36 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     // 这几条把原因写在字段下方。注意它们只负责"说清楚",按钮的可用性判定仍在
     // 构造函数里那条 canExecute 上,不在这里重复一遍逻辑。
 
-    /// <summary>主机为空时的提示;没问题为 null。</summary>
+    /// <summary>主机为空、或方括号写法不成立时的提示;没问题为 null。</summary>
     public string? HostError =>
-        string.IsNullOrWhiteSpace(Host) ? Strings.Get("Profile_ErrHostRequired") : null;
+        string.IsNullOrWhiteSpace(Host) ? Strings.Get("Profile_ErrHostRequired")
+        : !IsHostWellFormed(Host) ? Strings.Get("Profile_ErrHostBrackets")
+        : null;
+
+    /// <summary>主机栏能不能用:非空;以 <c>[</c> 开头的必须是完整的 <c>[IPv6]</c> 或 <c>[IPv6]:端口</c>。</summary>
+    private static bool IsHostWellFormed(string? host)
+    {
+        string value = host?.Trim() ?? string.Empty;
+        return value.Length > 0 && (!value.StartsWith('[') || HostAddress.TrySplit(value, out _, out _));
+    }
+
+    /// <summary>
+    /// 实际要连的主机与端口。主机栏写成 <c>[2001:db8::1]</c> / <c>[2001:db8::1]:2222</c> 的(从别处抄来的常是这样),
+    /// 去掉方括号,方括号后面的端口取代端口栏(#611);配置里存裸地址(见 <see cref="HostAddress" />)。
+    /// </summary>
+    /// <remarks>
+    /// 只认方括号这一种写法,别的原样(去两端空白):主机栏在串口协议下装的是设备名,插件协议的主机写法由插件定;
+    /// 不带方括号的 IPv6 本来就是裸地址,不用动。
+    /// </remarks>
+    private (string Host, int Port) EffectiveEndpoint()
+    {
+        string host = _host.Trim();
+        if (host.StartsWith('[') && HostAddress.TrySplit(host, out string bare, out int? port))
+        {
+            return (bare, ShowPortField && port is { } explicitPort ? explicitPort : _port);
+        }
+        return (host, _port);
+    }
 
     /// <summary>端口越界时的提示;没问题为 null。</summary>
     public string? PortError =>
@@ -1289,7 +1317,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     {
         get
         {
-            string host = _host.Trim();
+            (string host, int port) = EffectiveEndpoint();
             if (host.Length == 0)
             {
                 return string.Empty;
@@ -1297,15 +1325,9 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             bool showsUser = ShowCredentialFields && !(IsFtpSelected && _ftpAnonymous);
             string user = showsUser ? _username.Trim() : string.Empty;
             // IPv6 字面量带端口要加方括号,否则 ::1:22 读不出哪段是端口。
-            if (ShowPortField && host.Contains(':', StringComparison.Ordinal) && !host.StartsWith('['))
-            {
-                host = $"[{host}]";
-            }
-            string target = user.Length > 0 ? $"{user}@{host}" : host;
-            if (ShowPortField)
-            {
-                target = string.Create(CultureInfo.InvariantCulture, $"{target}:{_port}");
-            }
+            string target = ShowPortField
+                ? HostAddress.FormatTarget(user, host, port)
+                : user.Length > 0 ? $"{user}@{host}" : host;
             return ConnectionType switch
             {
                 ConnectionType.SFTP => "sftp://" + target,
@@ -2013,7 +2035,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 {
                     _sshSessionChoices.Add(new(
                         profile.Id.ToString("N"),
-                        $"{profile.Name} ({profile.Host}:{profile.Port})"));
+                        $"{profile.Name} ({HostAddress.FormatEndPoint(profile.Host, profile.Port)})"));
                 }
                 JumpHostOptions.Add(new(profile.Id, profile.Name));
             }
@@ -2147,7 +2169,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private SessionProfile BuildProfile()
     {
         // 显示名称留空时用 user@host 兜底,保证列表/标签页有可读名称。
-        string name = string.IsNullOrWhiteSpace(Name) ? $"{Username}@{Host}" : Name.Trim();
+        string name = string.IsNullOrWhiteSpace(Name) ? $"{Username}@{EffectiveEndpoint().Host}" : Name.Trim();
         string? postAuthCommand = SupportsPostAuthCommand && _postAuthCommand?.Trim() is { Length: > 0 } trimmed
             ? trimmed
             : null;
@@ -2167,13 +2189,14 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     private SessionProfile BuildProfileCore(string name, string? postAuthCommand)
     {
+        (string host, int port) = EffectiveEndpoint();
         return new()
         {
             Id = _profileId,
             ConnectionType = ConnectionType,
             Name = name,
-            Host = Host.Trim(),
-            Port = Port,
+            Host = host,
+            Port = port,
             Username = Username.Trim(),
             AuthMethod = AuthMethod,
             Password = SecureStringConvert.ToPlaintext(Password),

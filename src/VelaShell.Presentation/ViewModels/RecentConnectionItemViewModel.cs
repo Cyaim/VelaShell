@@ -1,4 +1,5 @@
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 
 namespace VelaShell.Presentation.ViewModels;
@@ -20,7 +21,7 @@ public sealed class RecentConnectionItemViewModel(RecentConnectionEntry entry)
     public string RelativeTime { get; } = FormatRelativeTime(entry.ConnectedAt);
 
     /// <summary>悬停提示保留 user@host:port,列表本身不再显示该形式。</summary>
-    public string Tooltip { get; } = $"{entry.Username}@{entry.Host}:{entry.Port}\n{Strings.Get("Svc_DoubleClickToConnect")}";
+    public string Tooltip { get; } = $"{HostAddress.FormatTarget(entry.Username, entry.Host, entry.Port)}\n{Strings.Get("Svc_DoubleClickToConnect")}";
 
     private static string FormatRelativeTime(DateTimeOffset timestamp, DateTimeOffset? now = null)
     {

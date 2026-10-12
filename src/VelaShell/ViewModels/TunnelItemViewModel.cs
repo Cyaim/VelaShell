@@ -1,5 +1,6 @@
 using ReactiveUI;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 
 namespace VelaShell.ViewModels;
@@ -49,9 +50,9 @@ public class TunnelItemViewModel(TunnelInfo tunnelInfo) : ReactiveObject
     /// <summary>语义路由描述:从角色视角描述转发方向与端点。</summary>
     public string DisplayRoute => TunnelType switch
     {
-        TunnelType.RemoteForward => Strings.Format("Tunnel_RouteRemote", LocalHost, LocalPort, RemotePort),
-        TunnelType.DynamicForward => Strings.Format("Tunnel_RouteDynamic", LocalHost, LocalPort),
-        _ => Strings.Format("Tunnel_RouteLocal", LocalHost, LocalPort, RemoteHost, RemotePort)
+        TunnelType.RemoteForward => Strings.Format("Tunnel_RouteRemote", HostAddress.Bracket(LocalHost), LocalPort, RemotePort),
+        TunnelType.DynamicForward => Strings.Format("Tunnel_RouteDynamic", HostAddress.Bracket(LocalHost), LocalPort),
+        _ => Strings.Format("Tunnel_RouteLocal", HostAddress.Bracket(LocalHost), LocalPort, HostAddress.Bracket(RemoteHost), RemotePort)
     };
 
     /// <summary>类型标签(本地化徽标:Local/Remote/Dynamic)。</summary>
@@ -65,9 +66,9 @@ public class TunnelItemViewModel(TunnelInfo tunnelInfo) : ReactiveObject
     /// <summary>精确端点摘要(紧凑等宽):本地转发为本地→远端,远程转发颠倒顺序,动态仅显示SOCKS5端点。</summary>
     public string EndpointSummary => TunnelType switch
     {
-        TunnelType.RemoteForward => $"{RemoteHost}:{RemotePort} → {LocalHost}:{LocalPort}",
-        TunnelType.DynamicForward => $"{LocalHost}:{LocalPort} (SOCKS5)",
-        _ => $"{LocalHost}:{LocalPort} → {RemoteHost}:{RemotePort}"
+        TunnelType.RemoteForward => $"{HostAddress.Bracket(RemoteHost)}:{RemotePort} → {HostAddress.Bracket(LocalHost)}:{LocalPort}",
+        TunnelType.DynamicForward => $"{HostAddress.Bracket(LocalHost)}:{LocalPort} (SOCKS5)",
+        _ => $"{HostAddress.Bracket(LocalHost)}:{LocalPort} → {HostAddress.Bracket(RemoteHost)}:{RemotePort}"
     };
 
     /// <summary>

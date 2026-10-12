@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 
 namespace VelaShell.Presentation.Services;
@@ -132,7 +133,7 @@ public sealed class ConnectionDiagnosticsService(
                 {
                     Status = DiagnosticStepStatus.Success,
                     ElapsedMs = stopwatch.ElapsedMilliseconds,
-                    Detail = $"{address}:{entry.Port}"
+                    Detail = HostAddress.FormatEndPoint(address.ToString(), entry.Port)
                 });
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -146,7 +147,7 @@ public sealed class ConnectionDiagnosticsService(
                 });
                 string tcpFailedTitle = Strings.Get("DiagSvc_TcpFailed");
                 issueTitle ??= tcpFailedTitle;
-                issueDescription ??= Strings.Format("DiagSvc_TcpFailedDesc", entry.Host, entry.Port, reason);
+                issueDescription ??= Strings.Format("DiagSvc_TcpFailedDesc", HostAddress.Bracket(entry.Host), entry.Port, reason);
                 if (issueTitle == tcpFailedTitle)
                 {
                     suggestions.Add(Strings.Format("DiagSvc_SuggestCheckPort", entry.Port));
@@ -183,8 +184,8 @@ public sealed class ConnectionDiagnosticsService(
                         string notSshTitle = Strings.Get("DiagSvc_NotSshPort");
                         issueTitle ??= notSshTitle;
                         issueDescription ??= banner is null
-                                                 ? Strings.Format("DiagSvc_NoBannerDesc", entry.Host, entry.Port, BannerTimeout.TotalSeconds.ToString("0"))
-                                                 : Strings.Format("DiagSvc_NonSshDesc", entry.Host, entry.Port, Trim(banner));
+                                                 ? Strings.Format("DiagSvc_NoBannerDesc", HostAddress.Bracket(entry.Host), entry.Port, BannerTimeout.TotalSeconds.ToString("0"))
+                                                 : Strings.Format("DiagSvc_NonSshDesc", HostAddress.Bracket(entry.Host), entry.Port, Trim(banner));
                         if (issueTitle == notSshTitle)
                         {
                             suggestions.Add(Strings.Format("DiagSvc_SuggestDefaultPort", entry.Port));

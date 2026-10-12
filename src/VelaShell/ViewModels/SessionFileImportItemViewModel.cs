@@ -1,6 +1,7 @@
 using ReactiveUI;
 using VelaShell.Core.Import;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 
 namespace VelaShell.ViewModels;
@@ -45,8 +46,7 @@ public sealed class SessionFileImportItemViewModel : ReactiveObject
         get
         {
             SessionProfile profile = Candidate.Profile;
-            string target = profile.Host.Contains(':', StringComparison.Ordinal) ? $"[{profile.Host}]" : profile.Host;
-            return profile.Username.Length > 0 ? $"{profile.Username}@{target}:{profile.Port}" : $"{target}:{profile.Port}";
+            return HostAddress.FormatTarget(profile.Username, profile.Host, profile.Port);
         }
     }
 

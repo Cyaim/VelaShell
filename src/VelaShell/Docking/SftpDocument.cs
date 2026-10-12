@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Media;
+using VelaShell.Core.Net;
 using VelaShell.Services;
 using VelaShell.ViewModels;
 using VelaShell.Views;
@@ -37,7 +38,7 @@ public sealed class SftpDocument : SftpDocumentBase
 
     /// <summary>显示连接详情与配置信息的提示文本。</summary>
     public override string ConnectionTooltip =>
-        $"{Title} · SFTP · {ViewModel.Profile.Username}@{ViewModel.Profile.Host}:{ViewModel.Profile.Port}";
+        $"{Title} · SFTP · {HostAddress.FormatTarget(ViewModel.Profile.Username, ViewModel.Profile.Host, ViewModel.Profile.Port)}";
 
     /// <summary>创建用于停靠的 SFTP 文档视图。</summary>
     public override Control CreateView() => new SftpDocumentView { DataContext = ViewModel };

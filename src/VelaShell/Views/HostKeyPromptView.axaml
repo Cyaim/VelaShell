@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:VelaShell.ViewModels"
+        xmlns:conv="using:VelaShell.Converters"
         xmlns:pc="using:VelaShell.Controls.Controls"
         xmlns:loc="using:VelaShell.Localization"
         mc:Ignorable="d" d:DesignWidth="484" d:DesignHeight="400"
@@ -146,7 +147,7 @@
             <Grid ColumnDefinitions="100,*">
               <TextBlock Grid.Column="0" Classes="info-label" Text="{loc:Localize Host}" />
               <TextBlock Grid.Column="1" Classes="info-value">
-                <Run Text="{Binding Host}" /><Run Text=":" /><Run Text="{Binding Port}" />
+                <Run Text="{Binding Host, Converter={x:Static conv:HostBracketConverter.Instance}}" /><Run Text=":" /><Run Text="{Binding Port}" />
               </TextBlock>
             </Grid>
 

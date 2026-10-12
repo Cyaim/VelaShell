@@ -1,5 +1,6 @@
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Persistence;
@@ -101,7 +102,7 @@ internal sealed class VelaHostKeyPolicy(
         string host, int port, IReadOnlyList<SshPublicKey> keys, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(keys);
-        string target = port == 22 ? host : $"{host}:{port}";
+        string target = port == 22 ? host : HostAddress.FormatEndPoint(host, port);
         foreach (SshPublicKey key in keys)
         {
             await hostKey.TrustHostKeyAsync(host, port, key.PlainKeyType, key.Sha256Fingerprint, cancellationToken).ConfigureAwait(false);
@@ -122,7 +123,7 @@ internal sealed class VelaHostKeyPolicy(
         string host, int port, IReadOnlyList<string> fingerprints, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(fingerprints);
-        string target = port == 22 ? host : $"{host}:{port}";
+        string target = port == 22 ? host : HostAddress.FormatEndPoint(host, port);
         IReadOnlyList<KnownHost> known = await hostKey.FindKnownHostKeysAsync(host, port, cancellationToken).ConfigureAwait(false);
         List<string> forgotten = [];
         foreach (IGrouping<string, KnownHost> type in known.GroupBy(entry => entry.KeyType, StringComparer.Ordinal))

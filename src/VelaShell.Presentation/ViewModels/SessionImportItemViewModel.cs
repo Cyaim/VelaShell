@@ -1,5 +1,6 @@
 using ReactiveUI;
 using VelaShell.Core.Import;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 
 namespace VelaShell.Presentation.ViewModels;
@@ -31,8 +32,8 @@ public sealed class SessionImportItemViewModel : ReactiveObject
     /// <summary>连接目标(<c>user@host:port</c> 或 <c>host:port</c>)。</summary>
     public string Endpoint =>
         Source.Username.Length > 0
-            ? $"{Source.Username}@{Source.Host}:{Source.Port}"
-            : $"{Source.Host}:{Source.Port}";
+            ? HostAddress.FormatTarget(Source.Username, Source.Host, Source.Port)
+            : HostAddress.FormatEndPoint(Source.Host, Source.Port);
 
     /// <summary>协议标签(SSH / SFTP,或不支持时的原始协议名)。</summary>
     public string Protocol => Source.Protocol.ToUpperInvariant();

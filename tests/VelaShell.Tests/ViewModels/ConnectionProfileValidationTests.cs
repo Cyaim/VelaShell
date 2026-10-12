@@ -40,6 +40,27 @@ public sealed class ConnectionProfileValidationTests
         Assert.IsNotNull(vm.HostError);
     }
 
+    /// <summary>
+    /// IPv6 的几种写法都是合法主机(#611);方括号写坏了就当场说、按钮灰着 ——
+    /// 存下去要到连接那一刻才以一句「DNS 查不到」报出来,看不出是方括号的事。
+    /// </summary>
+    [TestMethod]
+    [DataRow("2001:db8:0:1::10:20", true)]
+    [DataRow("fe80::1%en0", true)]
+    [DataRow("[2001:db8::1]", true)]
+    [DataRow("[2001:db8::1]:2222", true)]
+    [DataRow("[2001:db8::1", false)]
+    [DataRow("[2001:db8::1]:", false)]
+    [DataRow("[2001:db8::1]2222", false)]
+    [DataRow("[]", false)]
+    public async Task Ipv6Host_IsAccepted_UnlessTheBracketsAreMalformed(string host, bool ok)
+    {
+        var vm = new ConnectionProfileViewModel { Host = host, Username = "root" };
+
+        Assert.AreEqual(ok, vm.HostError is null, vm.HostError);
+        Assert.AreEqual(ok, await vm.SaveCommand.CanExecute.FirstAsync());
+    }
+
     [TestMethod]
     public void PortOutsideTheValidRange_ReportsAnError()
     {

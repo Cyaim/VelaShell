@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 
 namespace VelaShell.Infrastructure.Startup;
 
@@ -75,10 +76,9 @@ public sealed class ExternalLaunchRequest
     public string TrustKey =>
         $"{Scheme.ToLowerInvariant()}://{Username}@{Host.ToLowerInvariant()}:{Port}";
 
-    /// <summary>给人看的目标(<c>user@host:port</c>);没有用户名时省掉前缀。</summary>
+    /// <summary>给人看的目标(<c>user@host:port</c>,IPv6 加方括号);没有用户名时省掉前缀。</summary>
     [JsonIgnore]
-    public string DisplayTarget =>
-        Username.Length > 0 ? $"{Username}@{Host}:{Port}" : $"{Host}:{Port}";
+    public string DisplayTarget => HostAddress.FormatTarget(Username, Host, Port);
 
     /// <summary>诊断用的字符串。**刻意不含密码**:这条随时可能被 Trace 抄进日志文件。</summary>
     public override string ToString() =>

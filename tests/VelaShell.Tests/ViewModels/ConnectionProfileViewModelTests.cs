@@ -50,6 +50,27 @@ public sealed class ConnectionProfileViewModelTests
         Assert.AreEqual(3, saved.PostAuthCommandDelaySeconds);
     }
 
+    /// <summary>
+    /// IPv6 主机(#611):配置里存不带方括号的裸地址;主机栏写成 <c>[v6]:port</c> 的,端口取方括号后面那个。
+    /// 方括号带进配置的话,经跳板时会原样发给服务端,主机密钥也与裸地址记成两台。
+    /// </summary>
+    [TestMethod]
+    [DataRow("2001:db8:0:1::10:20", 22, "2001:db8:0:1::10:20", 22)]
+    [DataRow(" [2001:db8::1] ", 22, "2001:db8::1", 22)]
+    [DataRow("[2001:db8::1]:2222", 22, "2001:db8::1", 2222)]
+    [DataRow("[fe80::1%en0]:2200", 2222, "fe80::1%en0", 2200)]
+    [DataRow("example.com", 2222, "example.com", 2222)]
+    public async Task Ipv6Host_IsSavedWithoutBrackets(string host, int port, string savedHost, int savedPort)
+    {
+        var vm = new ConnectionProfileViewModel { Host = host, Port = port, Username = "tzraeq" };
+
+        SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
+
+        Assert.IsNotNull(saved);
+        Assert.AreEqual((savedHost, savedPort), (saved.Host, saved.Port));
+        Assert.AreEqual($"tzraeq@{savedHost}", saved.Name, "名称留空时的兜底也用去掉方括号的地址");
+    }
+
     /// <summary>只有空格的命令等于没配:存下去会让 <c>SendSilentCommand</c> 每次连接多敲一个回车。</summary>
     [TestMethod]
     public async Task PostAuthCommand_WhenBlank_IsSavedAsNull()

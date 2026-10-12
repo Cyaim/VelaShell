@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Media;
+using VelaShell.Core.Net;
 using VelaShell.Services;
 using VelaShell.ViewModels;
 using VelaShell.Views;
@@ -43,5 +44,5 @@ public sealed class DualSftpDocument : SftpDocumentBase
     public override Control CreateView() => new DualSftpDocumentView { DataContext = ViewModel };
 
     private static string Describe(Core.Models.SessionProfile profile) =>
-        $"{profile.Username}@{profile.Host}:{profile.Port}";
+        HostAddress.FormatTarget(profile.Username, profile.Host, profile.Port);
 }

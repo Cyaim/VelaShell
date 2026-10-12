@@ -4,6 +4,7 @@ using ReactiveUI;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Presentation.Services;
 using VelaShell.Security;
@@ -26,8 +27,8 @@ public sealed class SharedCredentialUserItem : ReactiveObject
         Profile = profile;
         IsChecked = isChecked;
         Detail = string.IsNullOrWhiteSpace(profile.Username)
-            ? $"{profile.Host}:{profile.Port} · {SharedCredentialEditorViewModel.TypeLabel(profile)}"
-            : $"{profile.Username}@{profile.Host}:{profile.Port} · {SharedCredentialEditorViewModel.TypeLabel(profile)}";
+            ? $"{HostAddress.FormatEndPoint(profile.Host, profile.Port)} · {SharedCredentialEditorViewModel.TypeLabel(profile)}"
+            : $"{HostAddress.FormatTarget(profile.Username, profile.Host, profile.Port)} · {SharedCredentialEditorViewModel.TypeLabel(profile)}";
     }
 
     /// <summary>这一行对应的连接配置。</summary>

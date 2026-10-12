@@ -1,4 +1,5 @@
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 
 namespace VelaShell.Core.Ftp;
 
@@ -44,7 +45,7 @@ public sealed class FtpConnectionInfo
         ArgumentNullException.ThrowIfNull(profile);
         return new()
         {
-            Host = profile.Host.Trim(),
+            Host = HostAddress.Normalize(profile.Host),
             Port = profile.Port > 0 ? profile.Port : FtpSettings.DefaultPort,
             Username = profile.Username.Trim(),
             Password = profile.Password,

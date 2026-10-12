@@ -1,4 +1,5 @@
 ﻿using VelaShell.Infrastructure.Plugins.Protocols;
+using VelaShell.Core.Net;
 using VelaShell.PluginSdk;
 using VelaShell.PluginSdk.Logging;
 using VelaShell.PluginSdk.Workspaces;
@@ -77,7 +78,7 @@ internal sealed class WorkspacesCapability(string pluginId, PluginProtocolRegist
         {
             throw new ArgumentException($"Proposed port {proposal.Port} is out of range.", nameof(proposal));
         }
-        log.Info($"Proposing a '{proposal.WorkspaceId}' connection to {proposal.Host}:{proposal.Port}.");
+        log.Info($"Proposing a '{proposal.WorkspaceId}' connection to {HostAddress.FormatEndPoint(proposal.Host, proposal.Port)}.");
         return registry.ProposeConnectionAsync(proposal);
     }
 
