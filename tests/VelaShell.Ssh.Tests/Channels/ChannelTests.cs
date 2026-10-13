@@ -12,6 +12,7 @@
 //   · **exit-status 与 exit-signal 二选一，且都可能不来**。所以 ExitCode 是 int?。
 
 using System.Buffers;
+using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.Text;
 using VelaShell.Ssh.Auth;
@@ -1877,16 +1878,34 @@ SshProtocolNames.KeepAliveOpenSsh, harness.ChannelServer.Observation.GlobalReque
     [TestMethod]
     public async Task SendEofAsync被取消EOF照样发出去()
     {
-        await using Harness harness = await Harness.StartAsync(new TestChannelScript { CloseAfterScript = false, ExitCode = null });
+        const int payloadLength = 256 * 1024;
+        await using Harness harness = await Harness.StartAsync(new TestChannelScript
+        {
+            InitialWindow = 32 * 1024,
+            WithholdWindowAdjust = true,
+            CloseAfterScript = false,
+            ExitCode = null,
+        });
         SshChannel channel = await harness.Connection.OpenSessionChannelAsync(null, harness.Token);
 
-        // 写进一大段（超过对端的初始窗口），让泵在 SendEofAsync 等它的时候还有活要干。
-        await channel.StandardInput.WriteAsync(new byte[256 * 1024], harness.Token);
+        // 让服务端先吃满窗口并停止回补，再取消 SendEofAsync；不靠调度碰运气。
+        channel.StandardInput.Write(new byte[payloadLength]);
+        ValueTask<FlushResult> flush = channel.StandardInput.FlushAsync(harness.Token);
+        await WaitUntilAsync(
+            () => harness.ChannelServer.Observation.StandardInput.Count >= 32 * 1024, harness.Token);
+        channel.StandardInput.CancelPendingFlush();
+        await flush;
 
         using CancellationTokenSource cancelled = new();
         await cancelled.CancelAsync();
         await Assert.ThrowsAsync<OperationCanceledException>(async () => await channel.SendEofAsync(cancelled.Token));
 
+        // 取消只影响等待者；放开剩余窗口之后，stdin 泵仍应冲完数据并发 EOF。
+        byte[] windowAdjust = new byte[9];
+        windowAdjust[0] = (byte)SshMessageNumber.ChannelWindowAdjust;
+        BinaryPrimitives.WriteUInt32BigEndian(windowAdjust.AsSpan(1), channel.LocalId);
+        BinaryPrimitives.WriteUInt32BigEndian(windowAdjust.AsSpan(5), payloadLength);
+        await harness.ChannelServer.SendRawAsync(windowAdjust, harness.Token);
         await WaitUntilAsync(() => harness.ChannelServer.Observation.ReceivedEof, harness.Token);
         await channel.DisposeAsync();
     }
