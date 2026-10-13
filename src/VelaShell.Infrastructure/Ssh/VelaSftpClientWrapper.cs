@@ -145,11 +145,16 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
                     input.Seek(resumeOffset, SeekOrigin.Begin);
                 }
 
-                await CopyAsync(input, remote, resumeOffset, uploadCallback, ct).ConfigureAwait(false);
+                // 报的是**对端已确认**的字节数(DurableLength),不是交给流的字节数:流水线写入的 WriteAsync
+                // 只等一个写槽就返回,单个流最多能有 MaxUnconfirmedWriteBytes(默认自适应深度上限 256 × 255 KiB ≈ 64 MiB)
+                // 还没确认。例如约 70 MiB 的文件,按交出去的算可能迅速显示 90% 多、几十上百 MB/s,
+                // 然后在下面的 Flush 里等这 64 MiB 按真实带宽排空。写槽是确认腾出来的,每次写返回时采样确认水位。
+                Action<ulong>? confirmed = uploadCallback is null ? null : _ => uploadCallback((ulong)remote.DurableLength);
+                await CopyAsync(input, remote, resumeOffset, confirmed, ct).ConfigureAwait(false);
 
                 // **必须显式冲一次再关。** 流水线写入在 Flush 之前还有在途请求,
                 // 不等它们落地就关,表现是「上传显示完成,远端文件尾部却缺字节」。
-                await remote.FlushAsync(ct).ConfigureAwait(false);
+                await FlushReportingAsync(remote, uploadCallback, ct).ConfigureAwait(false);
 
                 // 关闭之前用同一个句柄设修改时间(FSETSTAT,一次往返)。访问时间取「现在」:
                 // 新写的文件本来就是这个值,事后 STAT 取回来的也是它。尽力而为 —— 个别服务端禁 setstat。
@@ -249,6 +254,53 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
     private sealed class CopyProgress(Action<ulong> callback) : IProgress<long>
     {
         public void Report(long value) => callback((ulong)value);
+    }
+
+    /// <summary>冲写排空在途写入期间多久报一次已确认的字节数。</summary>
+    private static readonly TimeSpan FlushProgressInterval = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>
+    /// 冲写(等全部在途写入确认),等的同时按 <see cref="FlushProgressInterval" /> 报已确认的字节数。
+    /// </summary>
+    /// <remarks>
+    /// 读完源文件之后最多还有一整个在途窗口没确认(见 UploadAsync 里的说明),慢链路上要排十几秒到一分钟 ——
+    /// 这段时间里没有写可等,不另外报的话进度条就停在那儿不动,直到 Flush 返回才一下跳到 100%。
+    /// </remarks>
+    private static async Task FlushReportingAsync(SftpFileStream remote, Action<ulong>? progress, CancellationToken ct)
+    {
+        if (progress is null)
+        {
+            await remote.FlushAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
+        using var waiting = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Task flush = remote.FlushAsync(waiting.Token);
+        try
+        {
+            // 定时器不带 ct:取消时 FlushAsync 自己会以取消结束,这里不必另外醒。
+            while (await Task.WhenAny(flush, Task.Delay(FlushProgressInterval, CancellationToken.None)).ConfigureAwait(false) != flush)
+            {
+                progress((ulong)remote.DurableLength);
+            }
+            await flush.ConfigureAwait(false);
+            progress((ulong)remote.DurableLength);
+        }
+        catch
+        {
+            // 回调也可能抛错:停止这一层的等待并观察 flush,不能遗留一个无人观察的故障任务。
+            // 取消等待不取消已上线的 WRITE;外层仍按流的关闭期限排空并归还句柄。
+            await waiting.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await flush.ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // 原因仍是上面的失败(或取消),这里只观察冲写任务的收尾。
+            }
+            throw;
+        }
     }
 
     /// <summary>关一个写到一半、已经不打算要了的远端流:CLOSE 照发,关流报的错不再往外抛。</summary>

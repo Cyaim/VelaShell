@@ -49,6 +49,8 @@ public interface ISftpClientWrapper : IAsyncDisposable
 
     /// <summary>
     /// 异步将输入流的内容上传到指定远端路径,并可通过回调报告上传进度。
+    /// 回调报告从文件开头连续收到服务端 WRITE 成功确认的字节数,不是本地缓冲/流水线已入队的字节数。
+    /// 全部字节确认后仍可能等待时间戳、fsync 或 CLOSE;调用成功返回才表示上传任务成功。
     /// </summary>
     Task UploadAsync(Stream input, string path, Action<ulong>? uploadCallback = null, CancellationToken cancellationToken = default);
 
@@ -180,7 +182,7 @@ public interface ISftpClientWrapper : IAsyncDisposable
 
     /// <summary>
     /// 将流上传到远端路径,写入前先定位到 <paramref name="resumeOffset"/> 字节处。
-    /// 用于断点续传上传。
+    /// 用于断点续传上传。进度回调采用包含可信续传前缀的绝对累计坐标,确认与收尾语义同普通上传。
     /// </summary>
     Task UploadAsync(Stream input, string path, long resumeOffset, Action<ulong>? uploadCallback = null, CancellationToken cancellationToken = default);
 
