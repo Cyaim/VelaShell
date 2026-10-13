@@ -262,6 +262,12 @@
   <data name="Monitor_GpuClock" xml:space="preserve">
     <value>Core / memory clock</value>
   </data>
+  <data name="Monitor_GpuClientScope" xml:space="preserve">
+    <value>Visible DRM clients only</value>
+  </data>
+  <data name="Monitor_GpuScope" xml:space="preserve">
+    <value>Utilization scope</value>
+  </data>
   <data name="Monitor_GpuCount" xml:space="preserve">
     <value>{0} GPUs</value>
   </data>

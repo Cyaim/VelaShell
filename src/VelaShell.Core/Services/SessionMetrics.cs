@@ -207,6 +207,30 @@ public sealed partial class SessionMetrics
     /// <summary>占用 GPU 的计算进程;无 GPU 时为空。</summary>
     public IReadOnlyList<GpuProcess> GpuProcesses { get; private set; } = [];
 
+    /// <summary>DRM GPU 引擎累计计数;由采集服务连续采样后转换成利用率。</summary>
+    public IReadOnlyList<GpuUsageCounter> GpuUsageCounters { get; private set; } = [];
+
+    /// <summary>用相邻两次 DRM fdinfo 采样计算 GPU 利用率。</summary>
+    public void ApplyGpuUsage(IReadOnlyList<GpuUsageCounter> previous, double seconds)
+    {
+        if (seconds <= 0 || GpuUsageCounters.Count == 0 || previous.Count == 0)
+        {
+            return;
+        }
+        var old = previous.ToDictionary(c => c.Card, StringComparer.Ordinal);
+        Gpus = Gpus.Select(gpu =>
+        {
+            if (gpu.Card.Length == 0 || gpu.BusyNanoseconds is not { } current ||
+                !old.TryGetValue(gpu.Card, out GpuUsageCounter? before) || current < before.BusyNanoseconds)
+            {
+                return gpu;
+            }
+            double utilization = Math.Clamp(
+                (current - before.BusyNanoseconds) * 100.0 / (seconds * 1_000_000_000.0), 0, 100);
+            return gpu with { UtilPercent = utilization };
+        }).ToArray();
+    }
+
     /// <summary>按常驻内存排序的进程 Top;未采集进程段时为空。</summary>
     public IReadOnlyList<ProcessUsage> TopByMemory { get; private set; } = [];
 

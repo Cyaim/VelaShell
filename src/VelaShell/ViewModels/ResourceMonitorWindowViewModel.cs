@@ -1073,6 +1073,10 @@ public sealed class ResourceMonitorWindowViewModel : ReactiveObject, IDisposable
             row.UtilText = Format(gpu.UtilPercent, MetricFormat.Percent);
             row.MemPercent = gpu.MemPercent ?? 0;
             row.MemTotalBytes = gpu.MemTotalBytes ?? 0;
+            row.MemoryTitle = gpu.MemoryKind == GpuMemoryKind.SharedSystem
+                ? Strings.Get("Monitor_Memory")
+                : Strings.Get("Monitor_Vram");
+            row.ScopeText = gpu.ClientScopedUtil ? Strings.Get("Monitor_GpuClientScope") : "";
             row.MemText = gpu.MemUsedBytes is { } used && gpu.MemTotalBytes is { } total
                               ? $"{MetricFormat.Bytes(used)} / {MetricFormat.Bytes(total)}"
                               : NotAvailable;
@@ -1103,8 +1107,12 @@ public sealed class ResourceMonitorWindowViewModel : ReactiveObject, IDisposable
             // 数据中心卡没有风扇、虚拟化卡没有时钟,一排"—"既占地方又什么都没说。
             List<KeyValueRow> gpuDetails = [];
             AddGpu("Monitor_GpuVendor", VendorLabel(gpu.Vendor));
-            AddGpu("Monitor_GpuDriver",
-                gpu.Vendor == GpuVendor.Nvidia && _static?.GpuDriver is { Length: > 0 } d ? d : "");
+            AddGpu("Monitor_GpuScope", row.ScopeText);
+            AddGpu("Monitor_GpuDriver", gpu.Driver.Length > 0
+                ? gpu.Driver
+                : gpu.Vendor == GpuVendor.Nvidia && _static?.GpuDriver is { Length: > 0 } nvidiaDriver
+                    ? nvidiaDriver
+                    : _static?.GpuCards.FirstOrDefault(c => c.Card == gpu.Card)?.Driver ?? "");
             AddGpu("Monitor_GpuClock", (gpu.ClockMhz, gpu.MemClockMhz) switch
             {
                 ({ } core, { } mem) => $"{core} / {mem} MHz",
@@ -1114,7 +1122,7 @@ public sealed class ResourceMonitorWindowViewModel : ReactiveObject, IDisposable
             AddGpu("Monitor_GpuPower", row.PowerText);
             AddGpu("Monitor_GpuTemp", row.TempText);
             AddGpu("Monitor_GpuFan", Format(gpu.FanPercent, f => $"{f}%"));
-            AddGpu("Monitor_GpuMemory", row.MemText);
+            AddGpu(gpu.MemoryKind == GpuMemoryKind.SharedSystem ? "Monitor_Memory" : "Monitor_GpuMemory", row.MemText);
             row.Details = gpuDetails;
 
             void AddGpu(string key, string value)
@@ -1143,6 +1151,10 @@ public sealed class ResourceMonitorWindowViewModel : ReactiveObject, IDisposable
             GpuCardRow row = EnsureGpu(nextIndex++, label);
             row.Name = label;
             row.Vendor = card.Vendor;
+            row.MemoryTitle = card.Vendor == GpuVendor.Intel
+                ? Strings.Get("Monitor_Memory")
+                : Strings.Get("Monitor_Vram");
+            row.ScopeText = "";
             row.HasUtil = false;
             row.UtilPercent = 0;
             row.UtilText = NotAvailable;
@@ -1172,7 +1184,9 @@ public sealed class ResourceMonitorWindowViewModel : ReactiveObject, IDisposable
         {
             SelectGpu(Gpus[0]);
         }
-        NavGpuSub = Strings.Format("Monitor_NavGpu", SelectedGpu.UtilPercent, Gpus.Count);
+        NavGpuSub = SelectedGpu.HasUtil
+            ? Strings.Format("Monitor_NavGpu", SelectedGpu.UtilPercent, Gpus.Count)
+            : Strings.Get("Monitor_MetricUnavailable");
 
         Merge(GpuProcesses, m.GpuProcesses.Select(p => new GpuProcessRow(
             p.GpuIndex >= 0 ? p.GpuIndex.ToString(CultureInfo.InvariantCulture) : "--",
@@ -1488,7 +1502,7 @@ public sealed class ResourceMonitorWindowViewModel : ReactiveObject, IDisposable
 
     private static string FormatGhz(double mhz) => (mhz / 1000).ToString("F2", CultureInfo.InvariantCulture);
 
-    /// <summary>指标不可用时的占位符。Intel 核显没有利用率、数据中心卡没有风扇,一律显示它。</summary>
+    /// <summary>指标不可用时的占位符。没有可访问的 DRM/PMU 计数、或驱动不提供该指标时显示它。</summary>
     private const string NotAvailable = "—";
 
     /// <summary>把可空指标格式化为文本;为 null 时返回占位符。</summary>
