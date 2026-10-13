@@ -41,7 +41,7 @@ public partial class GlobalSettingsView : UserControl
 
     /// <summary>手动探活的结果(键 = 模型 id):行尾那盏灯的依据,不落盘。</summary>
     private sealed record ProbeResult(bool Ok, DateTime At, string? KeyId, string? ActiveKeyId,
-        ProviderCredential? Credential, int Version);
+        ProviderCredential? Credential, int Version, Exception? Error);
     private readonly Dictionary<string, ProbeResult> _probeResults = [with(StringComparer.Ordinal)];
     private bool _attached;
     private bool _checkingProbeResults;
@@ -460,6 +460,7 @@ public partial class GlobalSettingsView : UserControl
         (Avalonia.Controls.Shapes.Path? dot, TextBlock? status) = indicator;
         bool? passed = null;
         string? tip = null;
+        string? detail = null;
         if (model is not null)
         {
             if (_probeResults.TryGetValue(model.Id, out ProbeResult? stale)
@@ -473,6 +474,12 @@ public partial class GlobalSettingsView : UserControl
             {
                 passed = result.Ok;
                 tip = $"{_loc[result.Ok ? "DotPassed" : "DotFailed"]} · {result.At:HH:mm}";
+                if (result.Error is { } error)
+                {
+                    detail = Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"], _loc["ErrorEndpointNotFound"]);
+                    if (result.Credential is { Value: { } secret } && !string.IsNullOrWhiteSpace(secret))
+                        detail = detail.Replace(secret, "●●●●", StringComparison.Ordinal);
+                }
             }
             else if (_health is { } health && health.IsCooling(model.Id))
             {
@@ -481,6 +488,9 @@ public partial class GlobalSettingsView : UserControl
             }
         }
         status.Text = tip;
+        if (detail is not null) tip += $"\n{detail}";
+        ToolTip.SetTip(status, tip);
+        Avalonia.Automation.AutomationProperties.SetName(status, tip);
         status.IsVisible = passed.HasValue;
         if (passed is { } ok)
         {
@@ -635,7 +645,7 @@ public partial class GlobalSettingsView : UserControl
                 }
                 bool ok = error is null;
                 _probeResults[model.Id] = new ProbeResult(ok, DateTime.Now, selected?.KeyId,
-                    activeKeyId, selected?.Credential, healthEvidence);
+                    activeKeyId, selected?.Credential, healthEvidence, error);
                 if (selected is { } observed)
                 {
                     if (observed.KeyId is { } keyId)

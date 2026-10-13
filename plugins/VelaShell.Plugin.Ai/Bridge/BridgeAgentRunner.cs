@@ -210,7 +210,7 @@ public sealed class BridgeAgentRunner(
                 // 人第一反应会去查飞书的凭证 —— 而这条 401 来自模型服务商,两者差着十万八千里。
                 // ApiErrorText 顺带把 Anthropic 那种"只有一句 Status Code"的异常展开成服务端原话。
                 throw new InvalidOperationException(
-                    $"{modelLabel}: {ApiErrorText.Describe(ex)}", ex);
+                    $"{modelLabel}: {ApiErrorText.Describe(ex, notFoundHint: loc["ErrorEndpointNotFound"])}", ex);
             }
 
             var response = updates.ToChatResponse();
