@@ -3726,6 +3726,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Sftp_PickUploadSelected" xml:space="preserve">
     <value>파일 {0}개, 폴더 {1}개 선택됨</value>
   </data>
+  <data name="Sftp_PickerListView" xml:space="preserve">
+    <value>목록 보기</value>
+  </data>
+  <data name="Sftp_PickerIconView" xml:space="preserve">
+    <value>아이콘 보기</value>
+  </data>
   <data name="Sftp_GoUp" xml:space="preserve">
     <value>상위 폴더로</value>
   </data>
