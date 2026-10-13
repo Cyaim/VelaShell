@@ -83,7 +83,7 @@
 
 | 状态 | 优先级 | 项 | 现状 | 要做什么 |
 | :---: | :---: | --- | --- | --- |
-| 🚧 | 🟡 P2 | **SFTP 双栏与 WinSCP 的剩余差距** | 逐项清单在 velashell-docs 的 [`SFTP双栏与WinSCP差距分析.md`](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/host/SFTP双栏与WinSCP差距分析.md) | ⚠️ 那份文档把差距分成「接线债 / 能力缺失 / 架构级缺失」三类，**别混在一起排期** —— 接线债是几小时，架构级是几周 |
+| 🚧 | 🟡 P2 | **SFTP 双栏与 WinSCP 的剩余差距（收藏已完成）** | 目录收藏已于 2026-10-14 完成：按连接保存本地目录 ↔ 远程目录配对，支持新增、应用、编辑、删除与持久化；剩余逐项清单在 velashell-docs 的 [`SFTP双栏与WinSCP差距分析.md`](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/host/SFTP双栏与WinSCP差距分析.md) | ⚠️ 继续按「接线债 / 能力缺失 / 架构级缺失」分类排期；不要把已完成的目录收藏重新排入待办 |
 | ⏳ | 🟢 P3 | **插件协议的文件能力补口** | 插件协议上：符号链接如实抛不支持（SDK 的 `RemoteFileEntry` 没有链接字段）；设不了远端修改时间，双向同步会把刚上传的文件判成远端较新；算不了服务器端摘要（`plan.md` §72、§74、§75） | 一次性扩 SDK 契约（链接字段、`SetLastWriteTime`、摘要）。⚠️ 要发 SDK，按 `AGENTS.md` 的版本纪律走，别自己定版本号 |
 | ⏳ | 🟢 P3 | **「远程 + 远程」双栏的同步窗口** | 双栏远程文档只有「比较目录」（按大小与修改时间，不做 SHA-256），没有「同步…」与「保持远端最新」（`plan.md` §128） | `DirectorySyncViewModel` / `DirectorySyncRunner` 全是「本地路径 + Upload/Download」的语义，要做成两端对称（两边都用 `DirectoryTreeScanner.ScanRemoteAsync`、动作换成两个方向的 Relay）；「保持远端最新」靠监视本地文件系统，双远程下没有意义，不做。等有人要再排 |
 | ⏳ | 🟢 P3 | **目录同步：FTP 时区偏移** | FTP 服务器与本机不在同一时区时，按修改时间比较会整体错位（WinSCP 在会话设置里有这一项） | 连接配置加时区偏移，比较器按偏移换算。同步选项本身**刻意不持久化**（只在文档标签内记住），别顺手加设置项 |

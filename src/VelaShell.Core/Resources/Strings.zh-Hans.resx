@@ -7490,4 +7490,30 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Splash_MascotReady" xml:space="preserve">
     <value>准备好啦,我们出发!</value>
   </data>
+  <data name="Bookmark_Add" xml:space="preserve"><value>收藏当前目录</value></data>
+  <data name="Bookmark_AddTip" xml:space="preserve"><value>将当前本地和远程目录保存为收藏</value></data>
+  <data name="Bookmark_List" xml:space="preserve"><value>目录收藏</value></data>
+  <data name="Bookmark_ListTip" xml:space="preserve"><value>打开已保存的目录收藏</value></data>
+  <data name="Bookmark_Manage" xml:space="preserve"><value>管理收藏</value></data>
+  <data name="Bookmark_ManageHint" xml:space="preserve"><value>收藏保存在此连接中。目录暂时不可用时，收藏仍会保留。</value></data>
+  <data name="Bookmark_NoItems" xml:space="preserve"><value>暂无目录收藏。</value></data>
+  <data name="Bookmark_MenuEntry" xml:space="preserve"><value>{0}&#xA;{1} ↔ {2}</value></data>
+  <data name="Bookmark_EditMenu" xml:space="preserve"><value>编辑“{0}”</value></data>
+  <data name="Bookmark_DeleteMenu" xml:space="preserve"><value>删除“{0}”</value></data>
+  <data name="Bookmark_Apply" xml:space="preserve"><value>应用</value></data>
+  <data name="Bookmark_AddTitle" xml:space="preserve"><value>添加目录收藏</value></data>
+  <data name="Bookmark_EditTitle" xml:space="preserve"><value>编辑目录收藏</value></data>
+  <data name="Bookmark_DeleteTitle" xml:space="preserve"><value>删除收藏</value></data>
+  <data name="Bookmark_DeleteMessage" xml:space="preserve"><value>确定删除收藏“{0}”吗？不会修改本地或远程目录。</value></data>
+  <data name="Bookmark_Name" xml:space="preserve"><value>名称</value></data>
+  <data name="Bookmark_LocalPath" xml:space="preserve"><value>本地目录</value></data>
+  <data name="Bookmark_RemotePath" xml:space="preserve"><value>远程目录</value></data>
+  <data name="Bookmark_RootName" xml:space="preserve"><value>远程根目录</value></data>
+  <data name="Bookmark_Duplicate" xml:space="preserve"><value>相同的本地目录和远程目录已经存在收藏。</value></data>
+  <data name="Bookmark_NotFound" xml:space="preserve"><value>收藏已不存在。</value></data>
+  <data name="Bookmark_SaveFailed" xml:space="preserve"><value>收藏保存失败，已撤销本次修改。</value></data>
+  <data name="Bookmark_InvalidName" xml:space="preserve"><value>请输入 1–200 个字符的收藏名称。</value></data>
+  <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>请输入有效的本地目录路径。</value></data>
+  <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>请输入有效的远程目录路径。</value></data>
+  <data name="Bookmark_PathTooLong" xml:space="preserve"><value>本地或远程路径过长。</value></data>
 </root>

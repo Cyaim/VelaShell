@@ -59,7 +59,16 @@ public sealed class SessionProfileCloneTests
                 KeepAliveSeconds = 15,
                 AntiIdleSeconds = 120
             },
-            AutoStartTunnelIds = [Guid.NewGuid(), Guid.NewGuid()]
+            AutoStartTunnelIds = [Guid.NewGuid(), Guid.NewGuid()],
+            DirectoryBookmarks =
+            [
+                new()
+                {
+                    Name = "release",
+                    LocalPath = @"C:\\work\\site",
+                    RemotePath = "/srv/site"
+                }
+            ]
         };
 
     [TestMethod]
@@ -108,16 +117,20 @@ public sealed class SessionProfileCloneTests
         Assert.AreNotSame(source.PluginSecrets, copy.PluginSecrets);
         Assert.AreNotSame(source.Terminal, copy.Terminal);
         Assert.AreNotSame(source.AutoStartTunnelIds, copy.AutoStartTunnelIds);
+        Assert.AreNotSame(source.DirectoryBookmarks, copy.DirectoryBookmarks);
+        Assert.AreNotSame(source.DirectoryBookmarks[0], copy.DirectoryBookmarks[0]);
 
         copy.Tags.Add("touched");
         copy.PluginSettings!["region"] = "changed";
         copy.Terminal!.Encoding = "Big5";
         copy.AutoStartTunnelIds!.Clear();
+        copy.DirectoryBookmarks[0].Name = "changed";
 
         Assert.HasCount(2, source.Tags);
         Assert.AreEqual("cn-north-1", source.PluginSettings!["region"]);
         Assert.AreEqual("GBK", source.Terminal!.Encoding);
         Assert.HasCount(2, source.AutoStartTunnelIds!);
+        Assert.AreEqual("release", source.DirectoryBookmarks[0].Name);
     }
 
     [TestMethod]
@@ -142,7 +155,10 @@ public sealed class SessionProfileCloneTests
         // 集合按元素比:List/Dictionary 的 Equals 是引用相等,直接比会把每个集合属性都报成"没拷"。
         if (a is IEnumerable left and not string && b is IEnumerable right)
         {
-            return left.Cast<object>().SequenceEqual(right.Cast<object>());
+            object[] leftItems = [.. left.Cast<object>()];
+            object[] rightItems = [.. right.Cast<object>()];
+            return leftItems.Length == rightItems.Length
+                && leftItems.Zip(rightItems).All(pair => ValueEquals(pair.First, pair.Second));
         }
         // FtpSettings / TerminalOverrides 是普通类(引用相等),逐属性下探一层。
         if (a.GetType() is { IsClass: true } type && type != typeof(string) && !type.IsValueType)

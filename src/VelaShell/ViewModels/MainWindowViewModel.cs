@@ -4028,7 +4028,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 _sftpService,
                 settings.Transfer,
                 FileTransfer,
-                QueryDefaultEditorPathAsync));
+                QueryDefaultEditorPathAsync,
+                PersistProfileIfSavedAsync));
         ui.HandOver(document);
         // 与 FTP 同理:连接续体可能落在后台线程上,树节点是绑定属性,必须回主线程再改。
         TrackDocumentSession(connection.SessionId, connection.Profile.Id, SessionStatus.Connected);
@@ -4259,7 +4260,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 _sftpService,
                 settings.Transfer,
                 FileTransfer,
-                QueryDefaultEditorPathAsync));
+                QueryDefaultEditorPathAsync,
+                PersistProfileIfSavedAsync));
         ui.HandOver(document);
         TrackDocumentSession(connection.SessionId, profile.Id, SessionStatus.Connected);
         return document;
@@ -4537,7 +4539,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             _sftpService,
             settings.Transfer,
             FileTransfer,
-            QueryDefaultEditorPathAsync);
+            QueryDefaultEditorPathAsync,
+            PersistProfileIfSavedAsync);
         // 协议专属的右键菜单项:声明式,按下右键那一帧就能画出来。
         if (descriptor is { Actions.Count: > 0 })
         {
@@ -5332,17 +5335,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 把配置写回仓储(仅对**已保存**的配置;「最近连接」重建的临时配置只在本次连接内有效)。
     /// 目前的用途是记住用户刚刚信任的服务器证书指纹,FTPS 与插件协议共用。
     /// </summary>
-    private async Task PersistProfileIfSavedAsync(SessionProfile profile)
+    private async Task<bool> PersistProfileIfSavedAsync(SessionProfile profile)
     {
         if (_sessionRepository is null)
         {
-            return;
+            return true;
         }
         try
         {
             if (await _sessionRepository.GetSessionAsync(profile.Id).ConfigureAwait(true) is null)
             {
-                return;
+                return true;
             }
             // 经工作流保存:登录框交回来的副本可能带着用户这次手输、却没让记住的密码,
             // 工作流会按「记住密码」把它剥掉 —— 直接落仓储等于替用户记住了他明确不让记的东西。
@@ -5354,10 +5357,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             {
                 await _sessionRepository.SaveSessionAsync(profile).ConfigureAwait(true);
             }
+            return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
         {
-            // 信任指纹没落盘不影响本次连接,下次会再问一遍。
+            // 信任指纹或目录收藏没落盘不影响本次连接,下次会再问一遍。
+            return false;
         }
     }
 

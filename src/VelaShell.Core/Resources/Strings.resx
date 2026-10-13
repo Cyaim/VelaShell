@@ -7030,4 +7030,30 @@ Send anyway?</value>
   <data name="Splash_MascotReady" xml:space="preserve">
     <value>All set, let's go!</value>
   </data>
+  <data name="Bookmark_Add" xml:space="preserve"><value>Save current directories</value></data>
+  <data name="Bookmark_AddTip" xml:space="preserve"><value>Save the current local and remote directories as a bookmark</value></data>
+  <data name="Bookmark_List" xml:space="preserve"><value>Bookmarks</value></data>
+  <data name="Bookmark_ListTip" xml:space="preserve"><value>Open saved directory bookmarks</value></data>
+  <data name="Bookmark_Manage" xml:space="preserve"><value>Manage bookmarks</value></data>
+  <data name="Bookmark_ManageHint" xml:space="preserve"><value>Bookmarks are stored with this connection and can be kept even when a directory is temporarily unavailable.</value></data>
+  <data name="Bookmark_NoItems" xml:space="preserve"><value>No directory bookmarks.</value></data>
+  <data name="Bookmark_MenuEntry" xml:space="preserve"><value>{0}&#xA;{1} ↔ {2}</value></data>
+  <data name="Bookmark_EditMenu" xml:space="preserve"><value>Edit “{0}”</value></data>
+  <data name="Bookmark_DeleteMenu" xml:space="preserve"><value>Delete “{0}”</value></data>
+  <data name="Bookmark_Apply" xml:space="preserve"><value>Apply</value></data>
+  <data name="Bookmark_AddTitle" xml:space="preserve"><value>Add directory bookmark</value></data>
+  <data name="Bookmark_EditTitle" xml:space="preserve"><value>Edit directory bookmark</value></data>
+  <data name="Bookmark_DeleteTitle" xml:space="preserve"><value>Delete bookmark</value></data>
+  <data name="Bookmark_DeleteMessage" xml:space="preserve"><value>Delete the bookmark “{0}”? The local and remote directories will not be changed.</value></data>
+  <data name="Bookmark_Name" xml:space="preserve"><value>Name</value></data>
+  <data name="Bookmark_LocalPath" xml:space="preserve"><value>Local directory</value></data>
+  <data name="Bookmark_RemotePath" xml:space="preserve"><value>Remote directory</value></data>
+  <data name="Bookmark_RootName" xml:space="preserve"><value>Remote root</value></data>
+  <data name="Bookmark_Duplicate" xml:space="preserve"><value>A bookmark with the same local and remote directories already exists.</value></data>
+  <data name="Bookmark_NotFound" xml:space="preserve"><value>The bookmark no longer exists.</value></data>
+  <data name="Bookmark_SaveFailed" xml:space="preserve"><value>The bookmark could not be saved. The change was undone.</value></data>
+  <data name="Bookmark_InvalidName" xml:space="preserve"><value>Enter a bookmark name of 1–200 characters.</value></data>
+  <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>Enter a valid local directory path.</value></data>
+  <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>Enter a valid remote directory path.</value></data>
+  <data name="Bookmark_PathTooLong" xml:space="preserve"><value>The local or remote path is too long.</value></data>
 </root>

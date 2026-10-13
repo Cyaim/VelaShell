@@ -59,14 +59,40 @@
                 <TextBlock Text="{loc:Localize Sync_SynchronizeEllipsis}" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
+            <Button x:Name="AddBookmarkButton" Classes="doc-tool"
+                    Command="{Binding AddBookmarkCommand}"
+                    ToolTip.Tip="{loc:Localize Bookmark_AddTip}"
+                    AutomationProperties.Name="{loc:Localize Bookmark_Add}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.star}"
+                               Foreground="{DynamicResource VelaAccent}" VerticalAlignment="Center" />
+                <TextBlock Text="{loc:Localize Bookmark_Add}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="BookmarkListButton" Classes="doc-tool"
+                    Click="OnBookmarkListClick"
+                    ToolTip.Tip="{loc:Localize Bookmark_ListTip}"
+                    AutomationProperties.Name="{loc:Localize Bookmark_List}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.list}"
+                               Foreground="{DynamicResource VelaAccent}" VerticalAlignment="Center" />
+                <TextBlock Text="{loc:Localize Bookmark_List}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
           </StackPanel>
-          <TextBlock Grid.Column="1" Margin="16,0,0,0"
-                     Text="{Binding CompareSummary}"
-                     IsVisible="{Binding CompareSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                     Foreground="{DynamicResource VelaTextTertiary}"
-                     FontSize="{DynamicResource VelaFontSize11}"
-                     HorizontalAlignment="Right" VerticalAlignment="Center"
-                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Grid.Column="1" Margin="16,0,0,0" Spacing="2"
+                      HorizontalAlignment="Right" VerticalAlignment="Center">
+            <TextBlock Text="{Binding CompareSummary}"
+                       IsVisible="{Binding CompareSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource VelaTextTertiary}"
+                       FontSize="{DynamicResource VelaFontSize11}"
+                       HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding BookmarkErrorMessage}"
+                       IsVisible="{Binding BookmarkErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource VelaError}"
+                       FontSize="{DynamicResource VelaFontSize10}"
+                       HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
         </Grid>
       </Border>
       <Grid MinWidth="564">

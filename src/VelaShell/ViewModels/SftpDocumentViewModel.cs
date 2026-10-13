@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using ReactiveUI;
 using ReactiveUI.Primitives;
@@ -17,6 +18,8 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     private readonly CancellationTokenSource _lifetime = new();
     private Task? _closeTask;
     private readonly Lock _closeSync = new();
+    private readonly Func<SessionProfile, Task<bool>>? _persistProfileAsync;
+    private readonly SemaphoreSlim _bookmarkGate = new(1, 1);
 
     /// <summary>初始化 SFTP 文档视图模型,并开始加载本地/远程文件树。</summary>
     /// <param name="profile">用于建立连接的会话配置。</param>
@@ -30,6 +33,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     /// 是两个各自 new 出来的 <see cref="FileBrowserViewModel" />,宿主回调不会自动继承——
     /// 漏传这一个会让右键「使用默认编辑器打开」误报“未配置”(明明已配置)。
     /// </param>
+    /// <param name="persistProfileAsync">按连接配置的持久化回调;临时连接可不提供。</param>
     public SftpDocumentViewModel(
         SessionProfile profile,
         SshSession session,
@@ -37,14 +41,16 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         ISftpService sftpService,
         TransferOptions transferOptions,
         FileTransferViewModel? transferSink = null,
-        Func<Task<string?>>? getDefaultEditorPath = null)
+        Func<Task<string?>>? getDefaultEditorPath = null,
+        Func<SessionProfile, Task<bool>>? persistProfileAsync = null)
         : this(profile,
                (session ?? throw new ArgumentNullException(nameof(session))).SessionId,
                (workflow ?? throw new ArgumentNullException(nameof(workflow))).DisconnectAsync,
                sftpService,
                transferOptions,
                transferSink,
-               getDefaultEditorPath)
+               getDefaultEditorPath,
+               persistProfileAsync)
     {
         Session = session;
         // 标签页状态灯读的是 Status,而它的真值住在 SshSession 上 —— 转发一次属性变更,
@@ -65,6 +71,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     /// <param name="transferOptions">设置 → 文件传输 的选项快照。</param>
     /// <param name="transferSink">承载本文档所发起传输的浮动传输组件;为 null 时不上报进度。</param>
     /// <param name="getDefaultEditorPath">解析「默认编辑器」的回调。</param>
+    /// <param name="persistProfileAsync">按连接配置的持久化回调;临时连接可不提供。</param>
     public SftpDocumentViewModel(
         SessionProfile profile,
         Guid sessionId,
@@ -72,9 +79,13 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         ISftpService sftpService,
         TransferOptions transferOptions,
         FileTransferViewModel? transferSink = null,
-        Func<Task<string?>>? getDefaultEditorPath = null)
+        Func<Task<string?>>? getDefaultEditorPath = null,
+        Func<SessionProfile, Task<bool>>? persistProfileAsync = null)
     {
         Profile = profile ?? throw new ArgumentNullException(nameof(profile));
+        _persistProfileAsync = persistProfileAsync;
+        Profile.DirectoryBookmarks ??= [];
+        RebuildBookmarks();
         _disconnectAsync = disconnectAsync ?? throw new ArgumentNullException(nameof(disconnectAsync));
         _serializedSftp = new SerializedSftpService(sftpService ?? throw new ArgumentNullException(nameof(sftpService)), sessionId);
         SessionId = sessionId;
@@ -102,6 +113,10 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         LocalFiles.ConfirmDelete = message => ConfirmLocalDelete?.Invoke(message) ?? Task.FromResult(false);
         CompareDirectoriesCommand = ReactiveCommand.CreateFromTask(CompareDirectoriesAsync);
         OpenSyncCommand = ReactiveCommand.CreateFromTask(OpenSyncAsync);
+        AddBookmarkCommand = ReactiveCommand.CreateFromTask(AddBookmarkAsync);
+        ApplyBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(ApplyBookmarkAsync);
+        EditBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(EditBookmarkAsync);
+        DeleteBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(DeleteBookmarkAsync);
         LocalFiles.PropertyChanged += OnPanePropertyChanged;
         RemoteFiles.PropertyChanged += OnPanePropertyChanged;
         InitialLoadTask = LoadAsync();
@@ -112,6 +127,40 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
 
     /// <summary>打开目录同步窗口(同一文档只开一个,再点就把它提到前面)。</summary>
     public ReactiveCommand<RxVoid, RxVoid> OpenSyncCommand { get; }
+
+    /// <summary>保存当前本地与远程目录配对。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> AddBookmarkCommand { get; }
+
+    /// <summary>应用一条目录收藏,同时导航本地与远程两栏。</summary>
+    public ReactiveCommand<DirectoryBookmarkViewModel, RxVoid> ApplyBookmarkCommand { get; }
+
+    /// <summary>编辑一条目录收藏。</summary>
+    public ReactiveCommand<DirectoryBookmarkViewModel, RxVoid> EditBookmarkCommand { get; }
+
+    /// <summary>删除一条目录收藏。</summary>
+    public ReactiveCommand<DirectoryBookmarkViewModel, RxVoid> DeleteBookmarkCommand { get; }
+
+    /// <summary>本连接下的目录收藏,按用户保存顺序排列。</summary>
+    public ObservableCollection<DirectoryBookmarkViewModel> Bookmarks { get; } = [];
+
+    /// <summary>是否至少有一条收藏。</summary>
+    public bool HasBookmarks => Bookmarks.Count > 0;
+
+    /// <summary>收藏操作失败时显示在文档工具条上的错误。</summary>
+    public string? BookmarkErrorMessage
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>由视图显示收藏编辑器,取消时返回 null。</summary>
+    public Func<RemoteDirectoryBookmark, Task<RemoteDirectoryBookmark?>>? EditBookmarkDialog { get; set; }
+
+    /// <summary>由视图显示收藏管理窗口。</summary>
+    public Func<Task>? ShowBookmarkManager { get; set; }
+
+    /// <summary>由视图确认收藏删除。</summary>
+    public Func<string, Task<bool>>? ConfirmBookmarkDelete { get; set; }
 
     /// <summary>上次「比较目录」的结论;任一栏换了目录就清掉,免得它描述的已经不是眼前这两个目录。</summary>
     public string? CompareSummary
@@ -276,6 +325,285 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         await LocalFiles.RefreshAsync(_lifetime.Token);
         await RemoteFiles.RefreshSilentlyAsync();
     }
+
+    /// <summary>打开新增收藏编辑器并保存用户确认的结果。</summary>
+    public async Task AddBookmarkAsync()
+    {
+        if (EditBookmarkDialog is null)
+        {
+            return;
+        }
+
+        await _bookmarkGate.WaitAsync(_lifetime.Token);
+        try
+        {
+            BookmarkErrorMessage = null;
+            RemoteDirectoryBookmark seed = new()
+            {
+                Id = Guid.Empty,
+                Name = DefaultBookmarkName(RemoteFiles.CurrentPath),
+                LocalPath = LocalFiles.CurrentPath,
+                RemotePath = RemoteFiles.CurrentPath,
+            };
+            RemoteDirectoryBookmark? edited = await EditBookmarkDialog(seed);
+            if (edited is not null)
+            {
+                await AddOrUpdateBookmarkAsync(edited, existingId: null);
+            }
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            _bookmarkGate.Release();
+        }
+    }
+
+    /// <summary>同时导航两栏到一条收藏;两侧失败互不回滚。</summary>
+    public async Task ApplyBookmarkAsync(DirectoryBookmarkViewModel? item)
+    {
+        if (item is null || !TryNormalizeBookmark(item.Snapshot, out RemoteDirectoryBookmark bookmark))
+        {
+            return;
+        }
+
+        BookmarkErrorMessage = null;
+        try
+        {
+            await Task.WhenAll(
+                LocalFiles.NavigateToAsync(bookmark.LocalPath, _lifetime.Token),
+                RemoteFiles.NavigateToAsync(bookmark.RemotePath, _lifetime.Token));
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            // 两个面板通常会把列举错误写入各自的 ErrorMessage;这里只兜底处理
+            // 路径格式或本地权限在导航入口就抛出的情况。
+            BookmarkErrorMessage = ex.Message;
+        }
+    }
+
+    /// <summary>打开编辑器,成功后替换原收藏并持久化。</summary>
+    public async Task EditBookmarkAsync(DirectoryBookmarkViewModel? item)
+    {
+        if (item is null || EditBookmarkDialog is null)
+        {
+            return;
+        }
+
+        await _bookmarkGate.WaitAsync(_lifetime.Token);
+        try
+        {
+            BookmarkErrorMessage = null;
+            RemoteDirectoryBookmark? edited = await EditBookmarkDialog(item.Snapshot);
+            if (edited is not null)
+            {
+                await AddOrUpdateBookmarkAsync(edited, item.Id);
+            }
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            _bookmarkGate.Release();
+        }
+    }
+
+    /// <summary>确认后删除收藏;路径本身不会被删除。</summary>
+    public async Task DeleteBookmarkAsync(DirectoryBookmarkViewModel? item)
+    {
+        if (item is null || ConfirmBookmarkDelete is null)
+        {
+            return;
+        }
+
+        await _bookmarkGate.WaitAsync(_lifetime.Token);
+        try
+        {
+            BookmarkErrorMessage = null;
+            if (!await ConfirmBookmarkDelete(item.Name))
+            {
+                return;
+            }
+
+            List<RemoteDirectoryBookmark> before = SnapshotBookmarks();
+            Profile.DirectoryBookmarks.RemoveAll(bookmark => bookmark.Id == item.Id);
+            RebuildBookmarks();
+            if (!await PersistBookmarksAsync())
+            {
+                RestoreBookmarks(before);
+                BookmarkErrorMessage = Strings.Get("Bookmark_SaveFailed");
+            }
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            _bookmarkGate.Release();
+        }
+    }
+
+    private async Task AddOrUpdateBookmarkAsync(RemoteDirectoryBookmark input, Guid? existingId)
+    {
+        if (!TryNormalizeBookmark(input, out RemoteDirectoryBookmark normalized))
+        {
+            return;
+        }
+
+        DirectoryBookmarkViewModel? duplicate = Bookmarks.FirstOrDefault(item =>
+            item.Id != existingId
+            && PathsEqual(item.LocalPath, normalized.LocalPath)
+            && string.Equals(item.RemotePath, normalized.RemotePath, StringComparison.Ordinal));
+        if (duplicate is not null)
+        {
+            BookmarkErrorMessage = Strings.Get("Bookmark_Duplicate");
+            return;
+        }
+
+        List<RemoteDirectoryBookmark> before = SnapshotBookmarks();
+        if (existingId is { } id)
+        {
+            RemoteDirectoryBookmark? existing = Profile.DirectoryBookmarks.FirstOrDefault(bookmark => bookmark.Id == id);
+            if (existing is null)
+            {
+                BookmarkErrorMessage = Strings.Get("Bookmark_NotFound");
+                return;
+            }
+            normalized.Id = id;
+            int index = Profile.DirectoryBookmarks.IndexOf(existing);
+            Profile.DirectoryBookmarks[index] = normalized;
+        }
+        else
+        {
+            Profile.DirectoryBookmarks.Add(normalized);
+        }
+
+        RebuildBookmarks();
+        if (!await PersistBookmarksAsync())
+        {
+            RestoreBookmarks(before);
+            BookmarkErrorMessage = Strings.Get("Bookmark_SaveFailed");
+        }
+    }
+
+    private bool TryNormalizeBookmark(RemoteDirectoryBookmark input, out RemoteDirectoryBookmark normalized)
+    {
+        normalized = new RemoteDirectoryBookmark();
+        string name = input.Name.Trim();
+        if (name.Length is 0 or > RemoteDirectoryBookmark.MaxNameLength)
+        {
+            BookmarkErrorMessage = Strings.Get("Bookmark_InvalidName");
+            return false;
+        }
+
+        string? localPath;
+        try
+        {
+            localPath = LocalFilePaneViewModel.ResolvePathInput(input.LocalPath, LocalFiles.CurrentPath);
+            if (localPath is null)
+            {
+                BookmarkErrorMessage = Strings.Get("Bookmark_InvalidLocalPath");
+                return false;
+            }
+            localPath = RemoteDirectoryBookmark.NormalizeLocalPath(localPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+        {
+            BookmarkErrorMessage = Strings.Get("Bookmark_InvalidLocalPath");
+            return false;
+        }
+
+        string? remotePath = RemotePathInput.Normalize(input.RemotePath, RemoteFiles.CurrentPath, homePath: null);
+        if (remotePath is null)
+        {
+            BookmarkErrorMessage = Strings.Get("Bookmark_InvalidRemotePath");
+            return false;
+        }
+
+        try
+        {
+            remotePath = RemoteDirectoryBookmark.NormalizeRemotePath(remotePath);
+        }
+        catch (ArgumentException)
+        {
+            BookmarkErrorMessage = Strings.Get("Bookmark_InvalidRemotePath");
+            return false;
+        }
+
+        if (localPath.Length > RemoteDirectoryBookmark.MaxPathLength
+            || remotePath.Length > RemoteDirectoryBookmark.MaxPathLength)
+        {
+            BookmarkErrorMessage = Strings.Get("Bookmark_PathTooLong");
+            return false;
+        }
+
+        normalized = new RemoteDirectoryBookmark
+        {
+            Id = input.Id == Guid.Empty ? Guid.NewGuid() : input.Id,
+            Name = name,
+            LocalPath = localPath,
+            RemotePath = remotePath,
+        };
+        return true;
+    }
+
+    private async Task<bool> PersistBookmarksAsync()
+    {
+        if (_persistProfileAsync is null)
+        {
+            // 临时连接没有持久化边界,但本次文档内的修改仍然有效。
+            return true;
+        }
+
+        try
+        {
+            return await _persistProfileAsync(Profile);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private List<RemoteDirectoryBookmark> SnapshotBookmarks() =>
+        [.. (Profile.DirectoryBookmarks ?? []).Select(static bookmark => bookmark.Clone())];
+
+    private void RestoreBookmarks(IEnumerable<RemoteDirectoryBookmark> bookmarks)
+    {
+        Profile.DirectoryBookmarks = [.. bookmarks.Select(static bookmark => bookmark.Clone())];
+        RebuildBookmarks();
+    }
+
+    private void RebuildBookmarks()
+    {
+        Bookmarks.Clear();
+        foreach (RemoteDirectoryBookmark bookmark in Profile.DirectoryBookmarks ?? [])
+        {
+            Bookmarks.Add(new DirectoryBookmarkViewModel(bookmark));
+        }
+        this.RaisePropertyChanged(nameof(HasBookmarks));
+    }
+
+    private static string DefaultBookmarkName(string remotePath)
+    {
+        string trimmed = remotePath.TrimEnd('/');
+        if (trimmed.Length == 0)
+        {
+            return Strings.Get("Bookmark_RootName");
+        }
+        int slash = trimmed.LastIndexOf('/');
+        return trimmed[(slash + 1)..];
+    }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(left, right, OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal);
 
     private void OnPanePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

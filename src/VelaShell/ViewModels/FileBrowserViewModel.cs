@@ -1307,7 +1307,8 @@ public class FileBrowserViewModel : ReactiveObject
                 : " ▲"
             : string.Empty;
 
-    private async Task NavigateToAsync(string path, CancellationToken ct = default)
+    /// <summary>导航到指定绝对路径的目录(面包屑点击等)。失败时保留原目录。</summary>
+    public async Task NavigateToAsync(string path, CancellationToken ct = default)
     {
         using LifetimeScope lifetime = LinkToLifetime(ct);
         long navigationVersion = Interlocked.Increment(ref _navigationVersion);
