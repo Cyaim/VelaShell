@@ -84,7 +84,7 @@ public enum GpuVendor
     /// <summary>AMD:走 amdgpu 的 DRM sysfs(利用率/显存/温度/功耗齐全)。</summary>
     Amd,
 
-    /// <summary>Intel:走 i915/xe 的 DRM sysfs(通常只有频率与功耗,利用率需 root 跑 PMU)。</summary>
+    /// <summary>Intel:优先读取 i915/xe DRM 客户端计数,没有权限时退回可用的 sysfs 读数。</summary>
     Intel,
 
     /// <summary>
@@ -93,6 +93,24 @@ public enum GpuVendor
     /// </summary>
     Virtual
 }
+
+/// <summary>GPU 内存的物理口径。</summary>
+public enum GpuMemoryKind
+{
+    /// <summary>独立显卡上的专用显存。</summary>
+    Dedicated,
+
+    /// <summary>核显从系统内存中按需分配的共享内存。</summary>
+    SharedSystem,
+
+    /// <summary>驱动没有提供可识别的内存口径。</summary>
+    Unknown
+}
+
+/// <summary>一张 DRM 卡的累计 GPU 引擎忙碌时间。</summary>
+/// <param name="Card">DRM 卡名(如 card1)。</param>
+/// <param name="BusyNanoseconds">可见客户端、所有引擎的累计忙碌纳秒数。</param>
+public sealed record GpuUsageCounter(string Card, long BusyNanoseconds);
 
 /// <summary>
 /// 一张 GPU 的实时读数。数值一律可空 —— 不同厂商暴露的指标差别很大
@@ -106,8 +124,8 @@ public enum GpuVendor
 /// <param name="Card">DRM 卡名(如 card0);NVIDIA 经 nvidia-smi 取得时为空。</param>
 /// <param name="UtilPercent">计算利用率 0-100。</param>
 /// <param name="MemUtilPercent">显存带宽利用率 0-100(仅 NVIDIA)。</param>
-/// <param name="MemUsedBytes">已用显存(字节)。</param>
-/// <param name="MemTotalBytes">显存总量(字节)。</param>
+/// <param name="MemUsedBytes">已用专用显存,或核显 DRM 缓冲区驻留的系统内存(字节)。</param>
+/// <param name="MemTotalBytes">专用显存总量,或核显采用的系统内存总量(字节)。</param>
 /// <param name="TemperatureC">核心温度(摄氏度)。</param>
 /// <param name="PowerWatts">当前功耗(瓦)。</param>
 /// <param name="PowerLimitWatts">功耗上限(瓦)。</param>
@@ -131,7 +149,19 @@ public sealed record GpuDevice(
     int? ClockMhz,
     int? MemClockMhz)
 {
-    /// <summary>显存使用率(0-100);拿不到显存总量时为 null。</summary>
+    /// <summary>显存/共享内存的物理口径。</summary>
+    public GpuMemoryKind MemoryKind { get; init; } = GpuMemoryKind.Unknown;
+
+    /// <summary>由 DRM 客户端 fdinfo 读取的累计引擎忙碌时间。</summary>
+    public long? BusyNanoseconds { get; init; }
+
+    /// <summary>已绑定的内核驱动名。</summary>
+    public string Driver { get; init; } = "";
+
+    /// <summary>利用率是否只覆盖当前用户可见的 DRM 客户端。</summary>
+    public bool ClientScopedUtil { get; init; }
+
+    /// <summary>内存使用率(0-100);拿不到可比较的总量时为 null。</summary>
     public double? MemPercent =>
         MemTotalBytes is > 0 && MemUsedBytes is { } used ? used * 100.0 / MemTotalBytes.Value : null;
 }

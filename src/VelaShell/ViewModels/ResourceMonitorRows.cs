@@ -280,7 +280,7 @@ public sealed class GpuProcessRow(string gpuText, int pid, string name, string m
     }
 }
 
-/// <summary>一张 GPU 的卡片行:每张卡自带利用率与显存的历史曲线。</summary>
+/// <summary>一张 GPU 的卡片行:每张卡自带利用率与内存的历史曲线。</summary>
 public sealed class GpuCardRow(int index, string name) : ReactiveObject
 {
     /// <summary>GPU 序号。</summary>
@@ -307,7 +307,7 @@ public sealed class GpuCardRow(int index, string name) : ReactiveObject
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    /// <summary>该卡是否提供计算利用率;Intel 核显没有,界面据此隐藏利用率曲线。</summary>
+    /// <summary>该卡是否提供计算利用率;没有可访问的 DRM/PMU 计数时界面隐藏利用率曲线。</summary>
     public bool HasUtil
     {
         get;
@@ -328,15 +328,29 @@ public sealed class GpuCardRow(int index, string name) : ReactiveObject
         set => this.RaiseAndSetIfChanged(ref field, value);
     } = "--";
 
-    /// <summary>显存使用率(0-100)。</summary>
+    /// <summary>利用率和内存探针的权限范围提示。</summary>
+    public string ScopeText
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "";
+
+    /// <summary>内存使用率(0-100)。</summary>
     public double MemPercent
     {
         get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    /// <summary>显存 “已用 / 总量” 文本。</summary>
+    /// <summary>内存 “已用 / 总量” 文本。</summary>
     public string MemText
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "--";
+
+    /// <summary>内存卡片标题;核显显示系统内存,独立显卡显示显存。</summary>
+    public string MemoryTitle
     {
         get;
         set => this.RaiseAndSetIfChanged(ref field, value);

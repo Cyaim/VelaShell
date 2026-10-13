@@ -36,10 +36,9 @@ namespace VelaShell.Plugin.Ai.Ui;
 /// (缺什么显什么),写成模板反倒要为这套规则再造一层状态。
 /// </para>
 /// <para>
-/// <b>同一家允许加多份</b>(换个 Key、换种协议、登另一个账号都算):已有至少一份时展开区里
-/// 多一枚「再添加一个」,按下表单就地转入新建态 —— 底稿拷最近一份、机密不跟过来,
-/// 主按钮变回「添加」。作用在单个实例上的改与移除,这一页只对<b>最近一份</b>生效,
-/// 更早那些去设置页左栏管(那边本来就是逐实例的表单)。
+/// <b>同一家允许加多份</b>:「新建提供商」选择已有类型时拷最近一份配置,
+/// 实例与模型使用新 id、机密不跟过来;「管理登录」仍编辑指定实例。
+/// 已有实例里的「添加 API Key」只加密钥槽,「添加另一个账号」创建独立 OAuth 实例。
 /// </para>
 /// </remarks>
 public sealed class ProviderSetupView : UserControl
@@ -87,15 +86,15 @@ public sealed class ProviderSetupView : UserControl
     private string? _openId;
     // 展开后绑定实际显示的实例;设置页可指定旧账号,目录初次展开默认最近一份。
     private string? _focusedProviderId;
+    private bool _creatingProvider;
 
     /// <summary>正在跑的那次登录 —— 「取消」按的就是它,窗口关掉也要一并取消。</summary>
     private CancellationTokenSource? _login;
 
     /// <summary>
-    /// OAuth「添加另一个账号」的独立实例草稿;收起或落库后清除。
+    /// 新建供应商或 OAuth「添加另一个账号」的独立实例草稿;收起或落库后清除。
     /// </summary>
     private bool _addingAnother;
-    private string? _cloneSourceId;
     private bool _addingKey;
     private string? _addingKeyProviderId;
     private CancellationTokenSource? _keyDraftCancellation;
@@ -120,6 +119,7 @@ public sealed class ProviderSetupView : UserControl
         _settings = settings;
         _loc = loc;
         _health = health;
+        _creatingProvider = focusCatalogId is null;
         _models = new ModelsDevCatalog(context);
         DetachedFromVisualTree += (_, _) => CancelPendingLogin();
 
@@ -169,6 +169,14 @@ public sealed class ProviderSetupView : UserControl
         _login = null;
     }
 
+    /// <summary>复用目录窗口时回到新建入口,不继续编辑上一次选中的实例。</summary>
+    public void StartNewProvider()
+    {
+        Collapse();
+        _focusedProviderId = null;
+        _creatingProvider = true;
+    }
+
     /// <summary>
     /// 展开目录里的某一条并滚到眼前;传 null / 认不出的 id 就什么都不做。
     /// </summary>
@@ -190,6 +198,7 @@ public sealed class ProviderSetupView : UserControl
             {
                 continue;
             }
+            _creatingProvider = false;
             _focusedProviderId = _settings.Providers.Any(p => p.Id == providerId && p.CatalogId == catalogId)
                 ? providerId : null;
             Expand(row);
@@ -326,7 +335,7 @@ public sealed class ProviderSetupView : UserControl
             return;
         }
         _focusedProviderId = null;
-        Expand(row);
+        Expand(row, startAnother: _creatingProvider);
     }
 
     private bool IsConnected(ProviderCatalogEntry entry)
@@ -344,7 +353,6 @@ public sealed class ProviderSetupView : UserControl
         _addingAnother = false;
         _addingKey = false;
         _addingKeyProviderId = null;
-        _cloneSourceId = null;
         _newProviderDraft = null;
         foreach (Row row in _cards)
         {
@@ -426,13 +434,11 @@ public sealed class ProviderSetupView : UserControl
             keyPanel.Children.Add(BuildActions(row, existing, Missing.None, adding: true));
             return keyPanel;
         }
-        // 「再添加一个」按下后:表单起草的是一个还没落库的新实例 —— 底稿拷最近一份
-        // (配置照搬、实例与模型全换新 id),机密不跟过来(它们按 id 存,新 id 天然取不到)。
+        // 新实例只以首模型作为表单底稿;完整模型清单属于原实例,新凭据必须重新拉取。
         bool adding = existing is not null && _addingAnother;
         AiProvider draft = existing is not null && adding
             ? CloneForAnother(existing)
             : existing ?? entry.CreateProvider();
-        _cloneSourceId = adding ? existing?.Id : null;
         _providerFormBaseline = JsonSerializer.Serialize(draft);
         _newProviderDraft = existing is null || adding ? draft : null;
         _primaryKeyId = existing is not null && !adding ? existing.Id : null;
@@ -542,7 +548,7 @@ public sealed class ProviderSetupView : UserControl
         }
         panel.Children.Add(BuildActions(row, existing, missing, adding));
 
-        if (existing is not null && !entry.IsSubscription)
+        if (existing is not null && !adding && !entry.IsSubscription)
         {
             _primaryKeyBaseline = LoadKeyAsync(existing, _keyBox);
         }
@@ -695,13 +701,14 @@ public sealed class ProviderSetupView : UserControl
         // 而不是回去翻文档把 id 一个字一个字敲对
         _modelPickerRow = new StackPanel { IsVisible = false };
         body.Children.Add(_modelPickerRow);
-        if (Existing(entry) is { } source)
+        if ((_newProviderDraft ?? Existing(entry)) is { } source)
         {
             UpdateModelPicker(source);
             TextBox addressBox = _baseUrlBox;
             addressBox.TextChanged += (_, _) =>
             {
-                if (ReferenceEquals(addressBox, _baseUrlBox)) UpdateModelPicker(source);
+                if (ReferenceEquals(addressBox, _baseUrlBox) && (_newProviderDraft ?? Existing(entry)) is { } current)
+                    UpdateModelPicker(current);
             };
         }
         body.Children.Add(Label(_loc["Model"]));
@@ -1178,6 +1185,11 @@ public sealed class ProviderSetupView : UserControl
         }
         if (_addingAnother || _addingKey || _newProviderDraft is not null)
         {
+            if (_creatingProvider)
+            {
+                StartNewProvider();
+                return;
+            }
             // 放弃这次「再添加一个」,表单回到编辑最近一份
             _addingAnother = false;
             if (Existing(row.Entry) is null) _focusedProviderId = null;
@@ -1246,7 +1258,7 @@ public sealed class ProviderSetupView : UserControl
         }
     }
 
-    /// <summary>OAuth 第二账号沿用接入配置,但使用独立供应商和模型 ID,不复制机密。</summary>
+    /// <summary>新供应商沿用接入配置与首模型底稿,不复制模型清单或机密。</summary>
     private AiProvider CloneForAnother(AiProvider source)
     {
         return new AiProvider
@@ -1257,12 +1269,10 @@ public sealed class ProviderSetupView : UserControl
             Auth = source.Auth,
             CatalogId = source.CatalogId,
             OAuth = source.OAuth?.Clone(),
-            AvailableModels = [.. source.AvailableModels],
-            ModelsExpanded = source.ModelsExpanded,
             StoreResponses = source.StoreResponses,
             AllowSystemMessages = source.AllowSystemMessages,
             UnsupportedParameters = source.UnsupportedParameters,
-            Models = [.. source.Models.Select(CloneModel)]
+            Models = source.Models.Count > 0 ? [CloneModel(source.Models[0])] : []
         };
 
         // 保留协议与请求参数;清除旧账号的模型专属端点和机密继承标记。
@@ -1313,14 +1323,14 @@ public sealed class ProviderSetupView : UserControl
     private async Task AddOrSaveKeyAsync(ProviderCatalogEntry entry)
     {
         AiProvider? existing = _newProviderDraft is null ? Existing(entry) : null;
-        if (_focusedProviderId is not null && existing is null)
+        if (_focusedProviderId is not null && Existing(entry) is null)
         {
             _progress.Text = _loc["SetupSourceRemoved"];
             return;
         }
         TextBox keyBox = _keyBox;
         bool OwnsForm() => _openId == entry.Id && ReferenceEquals(keyBox, _keyBox)
-            && !_addingKey && !_addingAnother && !ReferenceEquals(_primary, _removingPrimary);
+            && !_addingKey && !ReferenceEquals(_primary, _removingPrimary);
         if (!OwnsForm()) return;
         bool created = existing is null;
         string expectedProviderJson = _providerFormBaseline!;
@@ -1347,6 +1357,8 @@ public sealed class ProviderSetupView : UserControl
             committedKey = string.IsNullOrWhiteSpace(key) ? null : key;
             if (OwnsForm())
             {
+                _creatingProvider = false;
+                _addingAnother = false;
                 _newProviderDraft = null;
                 _focusedProviderId = provider.Id;
                 _secondary.Content = _loc["SetupRemove"];
@@ -1532,6 +1544,7 @@ public sealed class ProviderSetupView : UserControl
                     cancellationToken: cancellation.Token).ConfigureAwait(true);
                 if (ReferenceEquals(_secondary, loginSecondary))
                 {
+                    _creatingProvider = false;
                     _focusedProviderId = provider.Id;
                     _addingAnother = false;
                     _newProviderDraft = null;
@@ -1594,9 +1607,9 @@ public sealed class ProviderSetupView : UserControl
         AiProvider before = JsonSerializer.Deserialize<AiProvider>(providerJson)!;
         AiProvider catalogue = JsonSerializer.Deserialize<AiProvider>(providerJson)!;
         bool OwnsForm() => ReferenceEquals(_progress, progress) && ReferenceEquals(Existing(entry), provider);
-        bool ShowsCandidates() => !_addingKey && _openId == entry.Id && ReferenceEquals(Existing(entry), provider)
-            && string.Equals(requestedBaseUrl, _baseUrlBox.Text?.Trim(), StringComparison.Ordinal)
-            && (!_addingAnother || _cloneSourceId == provider.Id);
+        bool ShowsCandidates() => !_addingKey && !_addingAnother && _openId == entry.Id
+            && ReferenceEquals(Existing(entry), provider)
+            && string.Equals(requestedBaseUrl, _baseUrlBox.Text?.Trim(), StringComparison.Ordinal);
         bool committingCatalogue = false;
         try
         {
@@ -1636,7 +1649,7 @@ public sealed class ProviderSetupView : UserControl
             }
 
             ModelsChanged?.Invoke();
-            // 重新展开或起草同址克隆时,只更新型号候选,不覆写未保存字段。
+            // 只更新正在编辑的这一实例的候选,不覆写未保存字段或新实例草稿。
             if (ShowsCandidates()) UpdateModelPicker(provider);
             if (OwnsForm() && !_addingAnother) progress.Text = _loc.F("ModelsPulled", added);
         }
@@ -1673,6 +1686,18 @@ public sealed class ProviderSetupView : UserControl
             target.ModelsExpanded = catalogue.ModelsExpanded;
             if (baseline is not null && baseline.ModelsExpanded == before.ModelsExpanded)
                 baseline.ModelsExpanded = catalogue.ModelsExpanded;
+        }
+        // 端点已移除的自动模型只在整条配置仍等于请求前快照时删除,保留网络期间的编辑。
+        foreach (AiModelConfig original in before.Models)
+        {
+            if (catalogue.Models.Any(model => model.Id == original.Id)) continue;
+            AiModelConfig? current = target.Models.Find(model => model.Id == original.Id);
+            string originalJson = JsonSerializer.Serialize(original);
+            if (current is null || JsonSerializer.Serialize(current) != originalJson) continue;
+            target.Models.Remove(current);
+            changedModels?.Add(current.Id);
+            AiModelConfig? opened = baseline?.Models.Find(model => model.Id == original.Id);
+            if (opened is not null && JsonSerializer.Serialize(opened) == originalJson) baseline!.Models.Remove(opened);
         }
         foreach (AiModelConfig pulled in catalogue.Models)
         {
@@ -1774,11 +1799,6 @@ public sealed class ProviderSetupView : UserControl
     private void ApplyForm(AiProvider provider, ProviderCatalogEntry entry)
     {
         provider.Name = string.IsNullOrWhiteSpace(_nameBox.Text) ? entry.Name : _nameBox.Text.Trim();
-        if (_addingAnother && !string.Equals(provider.BaseUrl, _baseUrlBox.Text?.Trim() ?? "", StringComparison.Ordinal))
-        {
-            provider.AvailableModels.Clear(); // 克隆的新地址不沿用源服务器的模型清单
-            _modelPickerRow?.IsVisible = false;
-        }
         provider.BaseUrl = _baseUrlBox.Text?.Trim() ?? "";
         if (ProtocolSelectable(entry) && _protocolCombo.SelectedIndex >= 0)
         {

@@ -318,6 +318,12 @@
   <data name="Monitor_GpuClock" xml:space="preserve">
     <value>核心 / 显存时钟</value>
   </data>
+  <data name="Monitor_GpuClientScope" xml:space="preserve">
+    <value>仅统计可见 DRM 客户端</value>
+  </data>
+  <data name="Monitor_GpuScope" xml:space="preserve">
+    <value>利用率范围</value>
+  </data>
   <data name="Monitor_GpuCount" xml:space="preserve">
     <value>{0} 卡 GPU</value>
   </data>

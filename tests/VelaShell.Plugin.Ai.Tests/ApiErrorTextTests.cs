@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using VelaShell.Plugin.Ai.Chat;
+using VelaShell.Plugin.Ai.Configuration;
+using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
@@ -17,6 +19,50 @@ namespace VelaShell.Plugin.Ai.Tests;
 public sealed class ApiErrorTextTests
 {
     private const string Hint = "check your proxy";
+
+    [TestMethod]
+    [DataRow(ChatProtocol.OpenAiResponses)]
+    [DataRow(ChatProtocol.OpenAiChatCompletions)]
+    [DataRow(ChatProtocol.AnthropicMessages)]
+    public async Task NotFound_FromRealSdkResponseAddsGuidanceAndKeepsServerDetails(ChatProtocol protocol)
+    {
+        await using var endpoint = new ErrorStub(HttpStatusCode.NotFound);
+        using var context = new TestPluginContext();
+        var model = new ResolvedModel(new AiProvider { BaseUrl = endpoint.BaseUrl, DefaultProtocol = protocol },
+            new AiModelConfig { Model = "missing-model" });
+        (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), model, "test-key");
+        Assert.IsNotNull(error);
+        const string guidance = "check the endpoint and protocol";
+        string text = ApiErrorText.Describe(new InvalidOperationException("wrapper", error), Hint, guidance);
+        Assert.StartsWith(guidance, text);
+        Assert.Contains("invalid_api_key", text, "404 不能证明 Key 有效或无效,必须保留服务端自己的解释");
+        Assert.DoesNotContain(Hint, text, "HTTP 404 不应被解释成网络不可达");
+        Assert.AreEqual(1, endpoint.Requests, "改善提示不能暗中改协议或重试");
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(401)]
+    [DataRow(403)]
+    [DataRow(404)]
+    [DataRow(429)]
+    [DataRow(500)]
+    public void NotFoundGuidance_UsesStructuredStatusRatherThanMessage(int status)
+    {
+        var error = new HttpRequestException("body mentions 404", null, status == 0 ? null : (HttpStatusCode)status);
+        const string guidance = "check the endpoint and protocol";
+        string text = ApiErrorText.Describe(error, notFoundHint: guidance);
+        Assert.AreEqual(status == 404, text.StartsWith(guidance, StringComparison.Ordinal));
+        Assert.Contains(error.Message, text);
+    }
+
+    [TestMethod]
+    public void NotFoundGuidance_RespectsOuterHttpStatus()
+    {
+        var inner = new HttpRequestException("earlier request", null, HttpStatusCode.NotFound);
+        var error = new HttpRequestException("current request", inner, HttpStatusCode.Unauthorized);
+        Assert.AreEqual("current request", ApiErrorText.Describe(error, notFoundHint: "check the endpoint"));
+    }
 
     [TestMethod]
     public void ConnectionRefused_CountsAsUnreachable()
