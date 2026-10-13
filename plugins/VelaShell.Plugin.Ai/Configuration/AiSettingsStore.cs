@@ -339,6 +339,9 @@ public sealed class AiSettingsStore(IPluginContext context)
             string liveJson = JsonSerializer.Serialize(settings);
             AiSettings detached = JsonSerializer.Deserialize<AiSettings>(liveJson)!;
             detached.Providers[settings.Providers.IndexOf(provider)] = frozen;
+            detached.FailoverChain.RemoveAll(entry => detached.FindModel(entry.ModelId) is null);
+            if (detached.FindModel(detached.ActiveModelId) is null)
+                detached.ActiveModelId = frozen.Models.FirstOrDefault()?.Id ?? detached.ResolveModels().FirstOrDefault()?.Id;
             _providerKeys.Updating[provider.Id] = 0;
             await WriteSettingsSnapshotAsync(settings, JsonSerializer.Serialize(detached), cancellationToken).ConfigureAwait(false);
             settingsWritten = true;
@@ -350,6 +353,8 @@ public sealed class AiSettingsStore(IPluginContext context)
             }
 
             CopyProvider(provider, frozen);
+            settings.ActiveModelId = detached.ActiveModelId;
+            settings.FailoverChain = detached.FailoverChain;
             PublishProviderRequests(settings, detached);
         }
         catch

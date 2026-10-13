@@ -87,14 +87,15 @@ public partial class ChatPanelView
     /// 两件事的信息密度完全不同 —— 目录要留出说明和状态灯的地方,
     /// 挤进设置页那条 220 宽的侧栏里就只剩一列名字了(那正是它取代的东西)。
     /// </remarks>
-    /// <param name="focusProviderId">要操作的实例 id;null 停在目录列表。</param>
+    /// <param name="focusProviderId">要编辑的实例 id;null 打开新建供应商目录。</param>
     private void OpenProviderCatalogDialog(string? focusProviderId)
     {
         AiProvider? focused = _settings.Providers.Find(p => p.Id == focusProviderId);
         string? catalogId = focused?.CatalogId;
         if (Activate(_catalogPanel))
         {
-            _catalogView?.FocusEntry(catalogId, focused?.Id);
+            if (focusProviderId is null) _catalogView?.StartNewProvider();
+            else _catalogView?.FocusEntry(catalogId, focused?.Id);
             return;
         }
         _ = OpenAsync(

@@ -95,10 +95,16 @@ public static class ModelPull
             health is null ? [] : target.Models.Select(model =>
                 (model, model.Model, model.MaxInputTokens, model.MaxTokens, model.SupportsReasoning)).ToArray();
         target.AvailableModels = [.. specs.Select(s => s.Id)];
-        int total = ModelsDevCatalog.Materialise(target, specs);
+        ModelsDevCatalog.Materialise(target, specs);
+        if (models.Count > 0)
+        {
+            // 公共目录不能证明实例已下架某个型号;只有实例端点的清单可清理自动配置。
+            var listed = new HashSet<string>(target.AvailableModels, StringComparer.OrdinalIgnoreCase);
+            target.Models.RemoveAll(model => !listed.Contains(model.Model) && IsUnmodifiedAutomatic(model));
+        }
         foreach ((AiModelConfig model, string previousModel, int previousInputTokens, int previousOutputTokens, bool? previousReasoning) in before)
         {
-            if (model.Model != previousModel || model.MaxInputTokens != previousInputTokens
+            if (!target.Models.Contains(model) || model.Model != previousModel || model.MaxInputTokens != previousInputTokens
                 || model.MaxTokens != previousOutputTokens || model.SupportsReasoning != previousReasoning)
             {
                 health!.Invalidate(model.Id);
@@ -108,8 +114,21 @@ public static class ModelPull
         // 而这一拉可能就是三百个 —— 拿旧决定套新长度,左栏一进去就是滚不到底的长龙。
         // 见 AiProvider.ModelsExpanded 与设置页的 AutoCollapseFrom。
         target.ModelsExpanded = null;
-        return new ModelPullResult(models.Count > 0 ? ModelSource.Endpoint : ModelSource.Catalogue, specs.Count, total);
+        return new ModelPullResult(models.Count > 0 ? ModelSource.Endpoint : ModelSource.Catalogue, specs.Count, target.Models.Count);
     }
+
+    // 缺少来源或任何用户定制时都保留,不把手动模型误判为过期目录项。
+    private static bool IsUnmodifiedAutomatic(AiModelConfig model)
+        => model.LastFetchedSpec is { } spec && model.Model == spec.Id
+            && model.Name.Length == 0 && model.Protocol is null && !model.HasOwnApiKey
+            && string.IsNullOrEmpty(model.BaseUrlOverride) && !model.ContextWindowIsManual
+            && model.MaxInputTokens == spec.ContextTokens && model.MaxTokens == spec.OutputTokens
+            && model.InputPricePerMillion == spec.InputPrice && model.OutputPricePerMillion == spec.OutputPrice
+            && model.CachedInputPricePerMillion == spec.CachedInputPrice && model.SupportsReasoning == spec.Reasoning
+            && model.DefaultContextWindow == spec.DefaultContextWindow
+            && model.PromptCaching && model.Temperature is null && model.TopP is null
+            && model.StopSequences.Length == 0 && string.IsNullOrEmpty(model.SystemPrompt)
+            && model.Reasoning == ReasoningLevel.Default;
 
     /// <summary>问端点要清单;问不到(没这条接口、没网、401)一律返回空,由调用方回落。</summary>
     private static async Task<IReadOnlyList<(string Id, int ContextTokens)>> ListAsync(AiProvider provider, AiSettingsStore store,

@@ -2106,7 +2106,7 @@ public partial class ChatPanelView : UserControl
                 AiSettingsStore.BuiltinOAuthHostMismatchException => _loc["SetupBuiltinOAuthHostMismatch"],
                 ProviderConfigurationChangedException => _loc["ErrorProviderChanged"],
                 AiSettingsStore.ApiKeySlotChangedException => _loc["ErrorProviderChanged"],
-                _ => ApiErrorText.Describe(ex, _loc["ErrorUnreachable"])
+                _ => ApiErrorText.Describe(ex, _loc["ErrorUnreachable"], _loc["ErrorEndpointNotFound"])
             };
             _context.Log.Error($"AI request failed. — {detail}", ex);
             // 失败不再当成一段 Markdown 追加进正文:它不是模型说的话,混排会让人分不清
