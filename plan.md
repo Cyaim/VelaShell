@@ -1843,3 +1843,13 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - 文件图标上印大写扩展名(不超过 4 个字符,更长时不印 —— 截断的比不写更误导);格宽定 108px,100px 时 `archive.tar.gz` 的最后一个字母挤到第二行。⚠️ 悬停样式要排在选中样式之前(同优先级后写的赢)。
 - 框选:`MarqueeSelection` 遇到格子面板时由面板按二维几何给命中项;⚠️ 点要加上滚过的距离换算到内容坐标 —— 自动滚动时偏移刚改、布局还没跟上,问面板的实时位置拿到的是旧的。远端栏、本地栏仍按行判定。
 文档:velashell-docs#120(中英镜像的「交互与界面规格」§6「上传选择框」)。
+
+## ✅ 203. 2026-10-13 AI 插件:OpenAI Responses 的工具循环不再拿 previous_response_id 续接 —— 中转站上 Agent 一调工具就 400(用户反馈)
+
+**现象**:自定义供应商 Routin(`https://api.routin.ai/v1`,Responses 协议)反复报 `HTTP 400 (invalid_request_error: invalid_request_error) OpenAI response error: {"error":{"message":"Upstream rejected the request",…}}`。
+**根因**:逐项打真端点排查(单发 `max_output_tokens=256000`、内置 `web_search`、函数工具、system 角色、`store` 都是 200;流里的 `codex.rate_limits` 事件说明它背后是 ChatGPT 的 Codex 后端)。出错的是工具结果那一步:M.E.AI 的 Responses 适配器在请求没写 `store:false` 时把 response id 当成 `ConversationId` 交上来,`FunctionInvokingChatClient` 于是第二步只发 `previous_response_id` + `function_call_output`;上游没存上一步,回 `previous_response_id is not available for this user`。自定义供应商的 `StoreResponses` 默认 true(不发 `store`),所以**接中转站的 Agent 模式只要模型调一次工具,这一轮就挂**;目录里的 Codex 订阅关了 store,一直没撞上。
+**改法**:
+- 新增 `Chat/StatelessResponsesChatClient`,在 `AiSettingsStore.CreateClient` 的 Responses 分支包在适配器外面,抹掉响应上的 `ConversationId`:工具循环和其它协议一样自己攒历史、每步整段重发。聊天面板、IM 桥接、探活、压缩都走这一处。`store` 字段本身不动。真端点核对:不抹 400;抹掉 200,开思考(medium / detailed)同样 200。
+- `SteeringChatClient` 不再按「消息里还有没有系统提示词」猜循环是不是只发了增量,已送达的插话每步都补齐。⚠️ 那个判据在 Codex 那条路上本来就是错的:系统提示词挪进了 `instructions`,消息里没有 system,插过的话从第二步起就丢了。
+- 回归:`ResponsesWireTests.ToolLoop_ResendsTheWholeHistory_InsteadOfChainingOnAStoredResponse` 经真实的 `CreateClient` 打本地桩(去掉包装层时它红,请求体正是 `previous_response_id` + 工具输出);`SteeringTests` 的「服务端存着会话就不补」换成「没有系统提示词也照样补」。
+文档:无需改动(velashell-docs 没有描述过这条续接行为);插件 README「端点怪癖」一节补了一段。

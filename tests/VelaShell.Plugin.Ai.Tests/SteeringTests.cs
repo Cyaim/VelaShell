@@ -115,24 +115,27 @@ public sealed class SteeringTests
     }
 
     /// <summary>
-    /// 服务端替我们存着会话时(OpenAI Responses 那条路),循环只把"这一步新增的"发下来 ——
-    /// 已送达的插话服务端已经有了,再补一遍就是重复。判据是这份消息里还有没有系统提示词。
+    /// 系统提示词不在消息里的时候(Codex 那条路把它挪进了 <c>instructions</c>),
+    /// 之前送过的插话照样要跟着重发。
     /// </summary>
+    /// <remarks>
+    /// 曾经拿"消息里还有没有系统提示词"去猜循环是不是只发了增量(以为那是服务端替我们存着会话),
+    /// 结果 Codex 那条路一猜就错:插过的话从第二步起就从上下文里消失了。
+    /// 现在每条协议的循环都整份重发(Responses 也不续接,见 <c>StatelessResponsesChatClient</c>),不再猜。
+    /// </remarks>
     [TestMethod]
-    public async Task WithServerSideHistory_DeliveredInterjectionsAreNotResent()
+    public async Task WithoutASystemMessage_DeliveredInterjectionsAreStillResent()
     {
         var queue = new SteeringQueue();
         var inner = new ScriptedChatClient([Text("一")], [Text("二")]);
         using var steering = new SteeringChatClient(inner, queue);
+        List<ChatMessage> context = [new(ChatRole.User, "把日志翻一遍")];
 
         queue.Enqueue(Note("补充条件"));
-        _ = await steering.GetResponseAsync(Context());
+        _ = await steering.GetResponseAsync(context);
+        _ = await steering.GetResponseAsync(context);
 
-        // 第二步只带这一步新增的(连系统提示词都不在里头)
-        List<ChatMessage> delta = [new(ChatRole.Assistant, "上一步说了点什么")];
-        _ = await steering.GetResponseAsync(delta);
-
-        Assert.HasCount(1, inner.Requests[1], "服务端已经有那句补充了,不该再发一遍");
+        Assert.Contains("补充条件", inner.Requests[1][^1].Text, "第二步仍要看得到那句补充");
     }
 
     [TestMethod]
