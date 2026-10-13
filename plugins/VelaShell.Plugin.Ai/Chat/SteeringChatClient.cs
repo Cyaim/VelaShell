@@ -97,12 +97,12 @@ internal sealed class SteeringChatClient(
             _delivered.AddRange(fresh);
             carried = [.. _delivered];
         }
-        // 循环把上下文<b>整份</b>重发时(绝大多数情况),之前送过的插话也得跟着重发 ——
+        // 循环每一步都把上下文<b>整份</b>重发,之前送过的插话也得跟着重发 ——
         // 那份历史是循环自己攒的,它并不知道我们往里加过东西,不补就等于说过的话下一步就没了。
-        // 而服务端替我们存着会话时(OpenAI Responses 那条路),循环只把"这一步新增的"发下来
-        // (连系统提示词都不在里头),已送达的插话服务端已经有了,再补一遍就是重复。
-        bool fullHistory = outgoing.Exists(message => message.Role == ChatRole.System);
-        foreach (SteeringMessage item in fullHistory ? carried : fresh)
+        // (OpenAI Responses 那条路也不例外:它不拿 previous_response_id 续接,见 StatelessResponsesChatClient。
+        // 曾经按"消息里还有没有系统提示词"猜循环是不是只发了增量,而 Codex 那条路的系统提示词挪进了
+        // instructions,消息里本来就没有 —— 一猜就错,插过的话从第二步起就丢了。)
+        foreach (SteeringMessage item in carried)
         {
             Append(outgoing, item.Message);
         }

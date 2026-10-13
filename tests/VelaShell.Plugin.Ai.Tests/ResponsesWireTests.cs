@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using VelaShell.Plugin.Ai.Configuration;
+using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
@@ -205,5 +206,65 @@ public sealed class ResponsesWireTests
         // 提示词一个字都没少,只是换了位置
         Assert.Contains("SYSTEM_MARKER", body, $"实际请求体:{body}");
         Assert.Contains("\"instructions\"", body, $"实际请求体:{body}");
+    }
+
+    /// <summary>每一步都让模型调一次 <c>peek</c> 的 Responses 流(response id 是真的会被拿去续接的那种)。</summary>
+    private const string FunctionCallSse =
+        """
+        event: response.created
+        data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_stub","object":"response","created_at":1,"status":"in_progress","model":"m","output":[]}}
+
+        event: response.output_item.done
+        data: {"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"peek","arguments":"{}","status":"completed"}}
+
+        event: response.completed
+        data: {"type":"response.completed","sequence_number":2,"response":{"id":"resp_stub","object":"response","created_at":1,"status":"completed","model":"m","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"peek","arguments":"{}","status":"completed"}]}}
+
+
+        """;
+
+    /// <summary>
+    /// 工具结果那一步<b>整段重发</b>历史,不带 <c>previous_response_id</c>。
+    /// </summary>
+    /// <remarks>
+    /// 真机上那个 400:自定义的中转站(Routin,背后是 ChatGPT 的 Codex 后端)没关 <c>store</c>,
+    /// 适配器就把 response id 当会话 id 交上来,循环第二步只发 <c>previous_response_id</c> + 工具输出 ——
+    /// 上游没存上一步,回 <c>previous_response_id is not available for this user</c> /
+    /// <c>Upstream rejected the request</c>。Agent 模式下模型一调工具就挂。
+    /// 走 <see cref="AiSettingsStore.CreateClient" /> 而不是裸 SDK:要守住的是插件实际发出去的东西。
+    /// </remarks>
+    [TestMethod]
+    public async Task ToolLoop_ResendsTheWholeHistory_InsteadOfChainingOnAStoredResponse()
+    {
+        await using var stub = new SseStub(FunctionCallSse);
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var relay = new AiProvider
+        {
+            Name = "relay",
+            BaseUrl = stub.BaseUrl,
+            DefaultProtocol = ChatProtocol.OpenAiResponses,
+            Models = [new AiModelConfig { Model = "m" }]
+        };
+        Assert.IsTrue(EndpointQuirks.Of(relay).StoreResponses, "前提:自定义供应商默认不关 store —— 正是真机上那一家的配置");
+        using IChatClient client = store.CreateClient(new ResolvedModel(relay, relay.Models[0]), ProviderCredential.Key("k"))
+            .AsBuilder()
+            .UseFunctionInvocation(configure: c => c.MaximumIterationsPerRequest = 1)
+            .Build();
+        var options = new ChatOptions { Tools = [AIFunctionFactory.Create(() => "TOOL_OUTPUT", "peek")] };
+
+        await foreach (ChatResponseUpdate _ in client.GetStreamingResponseAsync(
+                           [new ChatMessage(ChatRole.System, "SYSTEM_MARKER"), new ChatMessage(ChatRole.User, "看看")], options))
+        {
+        }
+
+        IReadOnlyList<string> requests = stub.Requests;
+        Assert.IsGreaterThanOrEqualTo(2, requests.Count, "循环该跑到工具结果那一步");
+        string followUp = requests[1];
+        Assert.DoesNotContain("previous_response_id", followUp,
+            $"续接要服务端存着上一步,中转站背后的上游多半没存。实际请求体:{followUp}");
+        Assert.Contains("SYSTEM_MARKER", followUp, $"第二步该带着整段历史。实际请求体:{followUp}");
+        Assert.Contains("\"function_call\"", followUp, $"模型那次调用也得在历史里。实际请求体:{followUp}");
+        Assert.Contains("TOOL_OUTPUT", followUp, $"实际请求体:{followUp}");
     }
 }

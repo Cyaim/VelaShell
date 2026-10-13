@@ -314,6 +314,13 @@ GitHub Copilot 这三条走的是这一路 —— 因为**没有第二条路**:�
   `ResponsesApiRequest` 字段白名单。以后谁往请求里多加一个 Codex 不收的字段,**会在 CI 红**,
   而不是在用户机器上 400 —— 这一轮就是靠一来一回的 400 才定位到的,不该有第二轮。
 
+**工具循环不靠服务端记着上一步**(`Chat/StatelessResponsesChatClient.cs`,包在 Responses 适配器外面):
+请求没写 `store:false` 时,M.E.AI 会把 response id 当成会话 id,函数调用循环的第二步就只发
+`previous_response_id` + 工具输出。中转站背后的上游(比如按号池分发的 Codex 后端)多半没存上一步,
+于是 Agent 模式下模型一调工具就 400(`previous_response_id is not available for this user` /
+`Upstream rejected the request`)。插件本来就自己管历史,所以把那个 id 抹掉,让循环每步整段重发;
+`store` 怎么发仍归上表的 `StoreResponses` 管。
+
 **中转站的 SSE 会洗一遍**(`Chat/SseRepairHandler.cs`,挂在 `AnthropicClient.Handlers` 上):
 有些中转站按 OpenAI 的习惯在 Anthropic 流末尾补一行 `data: DONE`,而 Anthropic 协议里没有这东西
 (它以 `message_stop` 收尾),SDK 又对每个 `data:` 行无条件反序列化 —— 整轮回复会在最后一刻炸成
