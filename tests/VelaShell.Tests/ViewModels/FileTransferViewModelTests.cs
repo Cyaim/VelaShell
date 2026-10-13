@@ -121,11 +121,39 @@ public class FileTransferViewModelTests
     [TestMethod]
     [TestCategory("FileTransfer")]
     [DataRow(0, "0 B/s")]
+    [DataRow(0.1, "0 B/s")]
+    [DataRow(0.5, "0 B/s")]
+    [DataRow(0.999, "0 B/s")]
+    [DataRow(1, "1 B/s")]
     [DataRow(512, "512 B/s")]
     [DataRow(1_230, "1.2 KB/s")]
     [DataRow(3_670_016, "3.5 MB/s")]
     [DataRow(1_181_116_006, "1.1 GB/s")]
     public void SpeedFormatting_ReturnsHumanReadable(double bytesPerSecond, string expected) => Assert.AreEqual(expected, TransferItemViewModel.FormatSpeed(bytesPerSecond));
+
+    [TestMethod]
+    [TestCategory("FileTransfer")]
+    public void ProgressUpdate_SubByteSpeed_DoesNotLoseTheFinalFrame()
+    {
+        _vm.AddTransfer(CreateTask(status: TransferStatus.InProgress));
+        TransferItemViewModel item = _vm.Transfers[0];
+
+        item.UpdateProgress(new TransferProgress
+        {
+            FileName = "file.txt",
+            BytesTransferred = 101,
+            TotalBytes = 101,
+            Percentage = 100,
+            SpeedBytesPerSecond = 0.5,
+            EstimatedTimeRemaining = TimeSpan.Zero
+        });
+
+        Assert.AreEqual(100, item.Progress);
+        Assert.AreEqual(101L, item.TransferredBytes);
+        Assert.AreEqual(101L, item.TotalSize);
+        Assert.AreEqual("0 B/s", item.Speed);
+        Assert.AreEqual(TransferStatus.InProgress, item.Status, "字节完成不能替代任务收尾成功。");
+    }
 
     [TestMethod]
     [TestCategory("FileTransfer")]

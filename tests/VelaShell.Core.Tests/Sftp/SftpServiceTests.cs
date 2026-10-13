@@ -781,6 +781,133 @@ public class SftpServiceTests
     }
 
     [TestMethod]
+    [DataRow(false, "success")]
+    [DataRow(true, "success")]
+    [DataRow(false, "failure")]
+    [DataRow(true, "failure")]
+    [DataRow(false, "cancel")]
+    [DataRow(true, "cancel")]
+    public async Task Upload_LastAckIsVisibleBeforeClose_AndDoesNotHideCloseOutcome(bool streamed, string outcome)
+    {
+        string localPath = Path.GetTempFileName();
+        await File.WriteAllBytesAsync(localPath, new byte[100]);
+        await using var source = new MemoryStream(new byte[100]);
+        using var cancellation = new CancellationTokenSource();
+        var closing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reports = new List<TransferProgress>();
+        const string remotePath = "/home/user/close.bin";
+        _sftpClient.UploadAsync(Arg.Any<Stream>(), remotePath, Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                Action<ulong> callback = call.Arg<Action<ulong>>();
+                callback(99);
+                callback(100); // 同一时间片内最后的 ACK,然后还要等待 fsync / CLOSE。
+                return closing.Task;
+            });
+        try
+        {
+            var progress = new SynchronousProgress<TransferProgress>(reports.Add);
+            Task upload = streamed
+                ? _sftpService.UploadStreamAsync(_sessionId, source, remotePath, 100, progress: progress, cancellationToken: cancellation.Token)
+                : _sftpService.UploadFileAsync(_sessionId, localPath, remotePath, progress, cancellationToken: cancellation.Token);
+
+            Assert.IsFalse(upload.IsCompleted, "字节确认不能提前完成上传任务。");
+            Assert.AreEqual(100L, reports[^1].BytesTransferred, "最后 ACK 不得被 100ms 节流吞掉。");
+            Assert.AreEqual(100, reports[^1].Percentage);
+            int beforeClose = reports.Count;
+
+            switch (outcome)
+            {
+                case "failure":
+                    closing.SetException(new VelaSshClientException("close failed"));
+                    await Assert.ThrowsExactlyAsync<VelaSshClientException>(() => upload);
+                    Assert.HasCount(beforeClose, reports, "失败不得追加任务成功的收尾帧。");
+                    break;
+                case "cancel":
+                    cancellation.Cancel();
+                    closing.SetCanceled(cancellation.Token);
+                    await Assert.ThrowsExactlyAsync<TaskCanceledException>(() => upload);
+                    Assert.HasCount(beforeClose, reports);
+                    break;
+                default:
+                    closing.SetResult();
+                    await upload;
+                    Assert.AreEqual(100, reports[^1].Percentage);
+                    break;
+            }
+            Assert.IsTrue(source.CanRead, "流上传不拥有调用方的源流。");
+        }
+        finally
+        {
+            closing.TrySetResult();
+            File.Delete(localPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task Upload_FailureBeforeLastAck_DoesNotInvent100Percent()
+    {
+        await using var source = new MemoryStream(new byte[100]);
+        var reports = new List<TransferProgress>();
+        _sftpClient.UploadAsync(Arg.Any<Stream>(), "/partial.bin", Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.Arg<Action<ulong>>()(60);
+                return Task.FromException(new VelaSftpTransferInterruptedException("interrupted", 60));
+            });
+
+        await Assert.ThrowsExactlyAsync<VelaSftpTransferInterruptedException>(() =>
+            _sftpService.UploadStreamAsync(_sessionId, source, "/partial.bin", 100,
+                progress: new SynchronousProgress<TransferProgress>(reports.Add)));
+
+        Assert.AreEqual(60L, reports[^1].BytesTransferred);
+        Assert.IsFalse(reports.Any(p => p.Percentage == 100));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Upload_ResumeSpeedUsesTheVerifiedOffset(bool streamed)
+    {
+        byte[] content = CreatePattern(200_000);
+        string localPath = Path.GetTempFileName();
+        await File.WriteAllBytesAsync(localPath, content);
+        await using var source = new MemoryStream(content, false);
+        const long remoteLength = 120_000;
+        const string remotePath = "/home/user/speed.bin";
+        var reports = new List<TransferProgress>();
+        _sftpClient.GetFileSizeAsync(remotePath, Arg.Any<CancellationToken>()).Returns(remoteLength);
+        _sftpClient.OpenAsync(remotePath, FileMode.Open, FileAccess.Read, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream>(new MemoryStream(content[..(int)remoteLength], false)));
+        _sftpClient.UploadAsync(Arg.Any<Stream>(), remotePath, remoteLength, Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(150);
+                call.Arg<Action<ulong>>()(remoteLength);
+            });
+        try
+        {
+            var progress = new SynchronousProgress<TransferProgress>(reports.Add);
+            if (streamed)
+            {
+                await _sftpService.UploadStreamAsync(_sessionId, source, remotePath, content.Length,
+                    progress: progress, resumeOffset: 50_000);
+            }
+            else
+            {
+                await _sftpService.UploadFileAsync(_sessionId, localPath, remotePath, progress, resumeOffset: 50_000);
+            }
+            Assert.AreEqual(remoteLength, reports[0].BytesTransferred);
+            Assert.AreEqual(60, reports[0].Percentage);
+            Assert.AreEqual(0d, reports[0].SpeedBytesPerSecond, "必须扣除核实后的 120000,而非调用方过时的 50000。");
+        }
+        finally
+        {
+            File.Delete(localPath);
+        }
+    }
+
+    [TestMethod]
     public async Task GetFileInfoAsync_ReturnsFileInformation()
     {
         // Arrange
@@ -1444,6 +1571,52 @@ public class SftpServiceTests
         Assert.Contains("CanSeek", ex.Message);
 
         File.Delete(localPath);
+    }
+
+    [TestMethod]
+    public async Task Download_ResumeSpeedExcludesTheVerifiedLocalPrefix()
+    {
+        const int prefix = 190_000;
+        byte[] content = CreatePattern(prefix + 1_000);
+        string localPath = Path.GetTempFileName();
+        await File.WriteAllBytesAsync(localPath, content[..prefix]);
+        const string remotePath = "/home/user/download-speed.bin";
+        var reports = new List<TransferProgress>();
+        _sftpClient.GetEntryAsync(remotePath, Arg.Any<CancellationToken>())
+            .Returns(new SftpEntry { Name = "download-speed.bin", FullName = remotePath, Length = content.Length });
+        int opened = 0;
+        _sftpClient.OpenAsync(remotePath, FileMode.Open, FileAccess.Read, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream>(++opened == 1
+                ? new MemoryStream(content, false)
+                : new DelayedReadStream(content)));
+        try
+        {
+            await _sftpService.DownloadFileAsync(_sessionId, remotePath, localPath,
+                new SynchronousProgress<TransferProgress>(reports.Add), resumeOffset: 50_000);
+
+            Assert.AreEqual(2, opened, "核实和续写必须都走到,不能回落整份下载。");
+            Assert.AreEqual(content.LongLength, reports[^1].BytesTransferred);
+            Assert.AreEqual(100, reports[^1].Percentage);
+            Assert.IsGreaterThan(0d, reports[0].SpeedBytesPerSecond);
+            Assert.IsLessThan(20_000d, reports[0].SpeedBytesPerSecond, "只下载 1000 字节,不应把已有的 190000 字节计入速度。");
+            CollectionAssert.AreEqual(content, await File.ReadAllBytesAsync(localPath));
+        }
+        finally
+        {
+            File.Delete(localPath);
+        }
+    }
+
+    private sealed class DelayedReadStream(byte[] content) : MemoryStream(content, false)
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(150, cancellationToken);
+            return await base.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            await ReadAsync(buffer.AsMemory(offset, count), cancellationToken);
     }
 
     /// <summary>模拟"打开选项没开 Seekable"的远端流:能读,但不能定位。</summary>

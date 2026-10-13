@@ -104,6 +104,26 @@ public class SftpService : ISftpService
                 ? client.UploadAsync(input, remotePath, resumeOffset, onBytes, cancellationToken)
                 : client.UploadAsync(input, remotePath, onBytes, cancellationToken);
 
+    /// <summary>字节全部确认的那一拍绕过节流;任务成功仍由上传调用(含 fsync / CLOSE)决定。</summary>
+    private static Action<ulong>? UploadProgressCallback(TransferProgressThrottle reporter, long totalBytes)
+    {
+        if (!reporter.IsEnabled)
+        {
+            return null;
+        }
+        return bytes =>
+        {
+            if ((long)bytes == totalBytes)
+            {
+                reporter.ReportFinal((long)bytes);
+            }
+            else
+            {
+                reporter.Report((long)bytes);
+            }
+        };
+    }
+
     /// <summary>将本地文件上传到远端路径,可选限速与进度回报,支持断点续传(resumeOffset > 0 时追加上传)。</summary>
     public async Task UploadFileAsync(Guid sessionId,
         string localPath,
@@ -116,8 +136,6 @@ public class SftpService : ISftpService
         var fileInfo = new FileInfo(localPath);
         long totalBytes = fileInfo.Length;
         string fileName = Path.GetFileName(localPath);
-        var reporter = new TransferProgressThrottle(progress, fileName, totalBytes);
-        Action<ulong>? onBytes = reporter.IsEnabled ? bytes => reporter.Report((long)bytes) : null;
         (long uploadBps, _, bool preserveTimestamps, bool fsync) = await GetTransferTuningAsync().ConfigureAwait(false);
 
         // 以此刻的远端状态重新核实续传起点;核实不通过会抛错,核实为"无可续"则整份重传。
@@ -126,6 +144,10 @@ public class SftpService : ISftpService
         {
             resumeOffset = await ResolveUploadResumeAsync(client, remotePath, localPath, totalBytes, durable, cancellationToken).ConfigureAwait(false);
         }
+
+        // 起点核实完才开始计时、才知道从哪儿算速度(见 TransferProgressThrottle 的 startBytes)。
+        var reporter = new TransferProgressThrottle(progress, fileName, totalBytes, resumeOffset);
+        Action<ulong>? onBytes = UploadProgressCallback(reporter, totalBytes);
 
         // 续传与全新上传只差一个偏移量参数,其余(限速包装、收尾上报)完全一致。
         Stream source = OpenLocalRead(localPath);
@@ -184,8 +206,6 @@ public class SftpService : ISftpService
             throw new ArgumentException("Resuming a streamed upload needs a seekable source.", nameof(source));
         }
         ISftpClientWrapper client = await GetTransferClientAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        var reporter = new TransferProgressThrottle(progress, GetUnixFileName(remotePath), length);
-        Action<ulong>? onBytes = reporter.IsEnabled ? bytes => reporter.Report((long)bytes) : null;
         (long uploadBps, _, bool preserveTimestamps, bool fsync) = await GetTransferTuningAsync().ConfigureAwait(false);
 
         long? durable = TakeDurableHint(sessionId, remotePath);
@@ -198,6 +218,8 @@ public class SftpService : ISftpService
                 source.Seek(0, SeekOrigin.Begin);
             }
         }
+        var reporter = new TransferProgressThrottle(progress, GetUnixFileName(remotePath), length, resumeOffset);
+        Action<ulong>? onBytes = UploadProgressCallback(reporter, length);
 
         // 限速包装刻意不释放:它自己不持有任何资源,而释放它会连带关掉调用方的源流 ——
         // 流归调用方(契约如此),它还要在 await using 里自己收尾。
@@ -237,7 +259,6 @@ public class SftpService : ISftpService
         string fileName = GetUnixFileName(remotePath);
         RemoteFileInfo fileInfo = await GetFileInfoAsync(sessionId, remotePath, cancellationToken).ConfigureAwait(false);
         long totalBytes = fileInfo.Size;
-        var reporter = new TransferProgressThrottle(progress, fileName, totalBytes);
         (_, long downloadBps, bool preserveTimestamps, _) = await GetTransferTuningAsync().ConfigureAwait(false);
 
         // 以此刻本地残留文件的实际长度重新核实续传起点(理由同上传侧)。
@@ -245,6 +266,7 @@ public class SftpService : ISftpService
         {
             resumeOffset = await ResolveDownloadResumeAsync(client, remotePath, localPath, totalBytes, cancellationToken).ConfigureAwait(false);
         }
+        var reporter = new TransferProgressThrottle(progress, fileName, totalBytes, resumeOffset);
 
         if (resumeOffset > 0)
         {
