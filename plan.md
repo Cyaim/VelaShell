@@ -57,7 +57,7 @@
 | 10-07 ~ 10-08 | §167 – §172 | XServer 二次全库审查修复、CI 红用例、Linux 检查更新打开发布页 |
 | 09-22 ~ 10-09 | §173 – §174 | AI 插件:健康检查与故障转移、同供应商多 API Key(#582) |
 | 10-09 ~ 10-10 | §175 – §193 | 悬停闪烁真因(#577)、侧栏两个开关(#586)、AI 插件复审与修复、XServer 二次审查收尾与第十二节新功能(程序清单、信任级别、拖放、托盘、XIM 桥)、连接导入导出与批量操作(#571)、隧道面板一批修复、启动画面、SSH 库四处修补 |
-| 10-11 ~ 10-13 | §194 – §203 | 清零编译警告、CI 偶发的两处根因、X 程序一打字就退出、上传选择框(路径输入、键入定位、图标视图)、IPv6(#611)、文件栏路径输入与键入定位、X Server 帧率、SFTP 确认进度与续传测速 |
+| 10-11 ~ 10-13 | §194 – §204 | 清零编译警告、CI 偶发的两处根因、X 程序一打字就退出、上传选择框(路径输入、键入定位、图标视图)、IPv6(#611)、文件栏路径输入与键入定位、X Server 帧率、Responses 工具循环、SFTP 确认进度与续传测速 |
 
 ## 📈 阶段脉络
 
@@ -1844,7 +1844,17 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - 框选:`MarqueeSelection` 遇到格子面板时由面板按二维几何给命中项;⚠️ 点要加上滚过的距离换算到内容坐标 —— 自动滚动时偏移刚改、布局还没跟上,问面板的实时位置拿到的是旧的。远端栏、本地栏仍按行判定。
 文档:velashell-docs#120(中英镜像的「交互与界面规格」§6「上传选择框」)。
 
-## ✅ 203. 2026-10-13 SFTP 传输进度与速度:按远端确认计量,排空时继续更新(用户反馈)
+## ✅ 203. 2026-10-13 AI 插件:OpenAI Responses 的工具循环不再拿 previous_response_id 续接 —— 中转站上 Agent 一调工具就 400(用户反馈)
+
+**现象**:自定义供应商 Routin(`https://api.routin.ai/v1`,Responses 协议)反复报 `HTTP 400 (invalid_request_error: invalid_request_error) OpenAI response error: {"error":{"message":"Upstream rejected the request",…}}`。
+**根因**:逐项打真端点排查(单发 `max_output_tokens=256000`、内置 `web_search`、函数工具、system 角色、`store` 都是 200;流里的 `codex.rate_limits` 事件说明它背后是 ChatGPT 的 Codex 后端)。出错的是工具结果那一步:M.E.AI 的 Responses 适配器在请求没写 `store:false` 时把 response id 当成 `ConversationId` 交上来,`FunctionInvokingChatClient` 于是第二步只发 `previous_response_id` + `function_call_output`;上游没存上一步,回 `previous_response_id is not available for this user`。自定义供应商的 `StoreResponses` 默认 true(不发 `store`),所以**接中转站的 Agent 模式只要模型调一次工具,这一轮就挂**;目录里的 Codex 订阅关了 store,一直没撞上。
+**改法**:
+- 新增 `Chat/StatelessResponsesChatClient`,在 `AiSettingsStore.CreateClient` 的 Responses 分支包在适配器外面,抹掉响应上的 `ConversationId`:工具循环和其它协议一样自己攒历史、每步整段重发。聊天面板、IM 桥接、探活、压缩都走这一处。`store` 字段本身不动。真端点核对:不抹 400;抹掉 200,开思考(medium / detailed)同样 200。
+- `SteeringChatClient` 不再按「消息里还有没有系统提示词」猜循环是不是只发了增量,已送达的插话每步都补齐。⚠️ 那个判据在 Codex 那条路上本来就是错的:系统提示词挪进了 `instructions`,消息里没有 system,插过的话从第二步起就丢了。
+- 回归:`ResponsesWireTests.ToolLoop_ResendsTheWholeHistory_InsteadOfChainingOnAStoredResponse` 经真实的 `CreateClient` 打本地桩(去掉包装层时它红,请求体正是 `previous_response_id` + 工具输出);`SteeringTests` 的「服务端存着会话就不补」换成「没有系统提示词也照样补」。
+文档:无需改动(velashell-docs 没有描述过这条续接行为);插件 README「端点怪癖」一节补了一段。
+
+## ✅ 204. 2026-10-13 SFTP 传输进度与速度:按远端确认计量,排空时继续更新(用户反馈)
 
 **起因**:慢链路上传时进度迅速升到 90% 多、速度虚高,之后在 90% / 99% 长时间不动。
 **改法**:宿主上传包装层按 `DurableLength`(从开头连续收到 WRITE 成功确认的字节数)上报,不把本地攒块或流水线入队量当完成量;源读完后的 `Flush` 等待期间每 200ms 采样。SFTP 上传 / 下载续传先核实起点再开始计时,百分比保留已有前缀、平均速度只算本次新增字节。最后 ACK 到齐时绕过 100ms 节流,100% 只表达字节确认完成,任务成功仍等可选 fsync / CLOSE;回调抛错时停止等待并观察冲写任务,已上线 WRITE 仍按流的关闭期限排空。UI 修正低于 1 B/s 时单位索引为负导致整帧进度丢失。
