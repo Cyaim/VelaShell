@@ -751,7 +751,11 @@ public sealed class SftpTests
                     server.AddFile($"/home/joe/f{i}.txt", new byte[i * 10]);
                 }
             }, // 服务端故意把应答倒着发
-            new TestSftpOptions { ShuffleResponses = true });
+            new TestSftpOptions
+            {
+                ShuffleResponses = true,
+                DelayStatReplies = TimeSpan.FromMilliseconds(50),
+            });
 
         // 一口气发出去，不逐个等 —— 这才有多个在途请求可供打乱。
         Task<SftpFileAttributes>[] stats =

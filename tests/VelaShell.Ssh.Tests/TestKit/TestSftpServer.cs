@@ -150,6 +150,10 @@ internal sealed record TestSftpOptions
     /// <remarks>模拟慢盘、网络文件系统：客户端在等句柄时取消了，句柄晚到。</remarks>
     public TimeSpan DelayOpenReplies { get; init; }
 
+    /// <summary><c>STAT</c> / <c>LSTAT</c> 的应答等这么久才发。</summary>
+    /// <remarks>让并发请求在测试服务端形成一批，稳定地覆盖应答乱序。</remarks>
+    public TimeSpan DelayStatReplies { get; init; }
+
     /// <summary>对 <c>OPEN</c> 回一个 DATA —— 模拟一个应答类型对不上请求的服务端。</summary>
     public bool WrongOpenReply { get; init; }
 
@@ -309,12 +313,14 @@ internal sealed class TestSftpServer
 
                 List<byte[]> replies = [];
                 bool delayReplies = false;
+                bool delayStatReplies = false;
                 bool delayWriteReplies = false;
                 bool delayCloseReplies = false;
                 while (SftpWire.TryReadFrame(ref buffer, out SftpFrame frame))
                 {
                     delayCloseReplies |= frame.Type is SftpMessageType.Close;
                     delayReplies |= frame.Type is SftpMessageType.Open or SftpMessageType.OpenDir;
+                    delayStatReplies |= frame.Type is SftpMessageType.Stat or SftpMessageType.LStat;
                     delayWriteReplies |= frame.Type is SftpMessageType.Write;
                     byte[]? reply = Handle(frame);
                     replies.AddRange(_released);
@@ -331,6 +337,10 @@ internal sealed class TestSftpServer
                 if (delayReplies && _options.DelayOpenReplies > TimeSpan.Zero)
                 {
                     await Task.Delay(_options.DelayOpenReplies, cancellationToken);
+                }
+                if (delayStatReplies && _options.DelayStatReplies > TimeSpan.Zero)
+                {
+                    await Task.Delay(_options.DelayStatReplies, cancellationToken);
                 }
                 if (delayWriteReplies && _options.DelayWriteReplies > TimeSpan.Zero)
                 {
