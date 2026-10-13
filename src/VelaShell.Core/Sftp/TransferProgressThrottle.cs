@@ -6,8 +6,8 @@ namespace VelaShell.Core.Sftp;
 /// <summary>
 /// 传输进度节流器。
 /// <para>
-/// 底层传输库按分块(SFTP 约 32KB、S3 按分片内的读缓冲)触发进度回调,一个 7.7GB 的文件
-/// 会产生二十多万次回调。上层的 <see cref="Progress{T}" /> 是在 UI 线程上构造的,每次 Report
+/// 底层传输库按分块触发进度回调(SFTP 按搬运块采样确认水位、S3 按分片内的读缓冲),大文件
+/// 会产生大量回调。上层的 <see cref="Progress{T}" /> 是在 UI 线程上构造的,每次 Report
 /// 都会 Post 一个工作项到 Avalonia 调度器,并在其中触发多个 PropertyChanged + 字符串格式化。
 /// 网络产出速度远高于 UI 线程的消费速度,队列只增不减 —— 表现就是传到 1GB 左右界面
 /// 长时间卡死、随后又"追上"继续。这里在源头按时间片收敛上报频率。
@@ -24,7 +24,12 @@ namespace VelaShell.Core.Sftp;
 /// <param name="sink">进度接收方;为 null 时整条链路短路。</param>
 /// <param name="fileName">展示用的文件名。</param>
 /// <param name="totalBytes">文件总字节数;为 0 时百分比恒为 0。</param>
-public sealed class TransferProgressThrottle(IProgress<TransferProgress>? sink, string fileName, long totalBytes)
+/// <param name="startBytes">
+/// 这一次是从哪里接着传的(续传起点)。进度照常从它算起,速度只算这一次真正传的部分 ——
+/// 曾经把起点也算成「这段时间传的」,续传一开始速度就显示成「已有字节 ÷ 0.1 秒」,几百 MB/s 起跳。
+/// </param>
+public sealed class TransferProgressThrottle(
+    IProgress<TransferProgress>? sink, string fileName, long totalBytes, long startBytes = 0)
 {
     /// <summary>两次上报之间的最小间隔:每秒最多刷新 10 次界面,足够顺滑且成本可忽略。</summary>
     private const long MinIntervalMs = 100;
@@ -103,7 +108,8 @@ public sealed class TransferProgressThrottle(IProgress<TransferProgress>? sink, 
     private void Emit(long bytesTransferred, long elapsedMs)
     {
         double elapsedSeconds = elapsedMs / 1000d;
-        double speed = elapsedSeconds > 0 ? bytesTransferred / elapsedSeconds : 0;
+        long moved = Math.Max(0, bytesTransferred - startBytes);
+        double speed = elapsedSeconds > 0 ? moved / elapsedSeconds : 0;
         long remainingBytes = totalBytes - bytesTransferred;
         TimeSpan estimatedTimeRemaining = speed > 0 && remainingBytes > 0
                                               ? TimeSpan.FromSeconds(remainingBytes / speed)

@@ -236,7 +236,7 @@ public class TransferItemViewModel : ReactiveObject
         }
         string[] units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
         int i = (int)Math.Floor(Math.Log(bytesPerSecond, 1024));
-        i = Math.Min(i, units.Length - 1);
+        i = Math.Clamp(i, 0, units.Length - 1);
         double value = bytesPerSecond / Math.Pow(1024, i);
         return i == 0
                    ? $"{(int)value} {units[0]}"
