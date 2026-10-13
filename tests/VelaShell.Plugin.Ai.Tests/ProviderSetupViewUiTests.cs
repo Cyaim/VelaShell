@@ -389,6 +389,7 @@ public sealed class ProviderSetupViewUiTests
         private readonly string _response;
         public string BaseUrl { get; }
         public Task Requested => _requested.Task;
+        public string? Authorization { get; private set; }
 
         public HeldModelsEndpoint(string host = "127.0.0.1", string? response = null)
         {
@@ -403,6 +404,7 @@ public sealed class ProviderSetupViewUiTests
             try
             {
                 HttpListenerContext request = await _listener.GetContextAsync();
+                Authorization = request.Request.Headers["Authorization"];
                 _requested.TrySetResult();
                 await _released.Task;
                 byte[] payload = Encoding.UTF8.GetBytes(_response);
@@ -1026,6 +1028,207 @@ public sealed class ProviderSetupViewUiTests
             {
                 window.Close();
             }
+        });
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void NewProvider_WithExistingType_SavesIndependentCloneAndKeepsSource(bool reuseWindow)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            await using var endpoint = new SseStub("", jsonContent: "[]");
+            AiProvider first = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            AiProvider source = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            source.Name = "relay";
+            source.BaseUrl = endpoint.BaseUrl + "/v1";
+            source.Models[0].Model = "configured-model";
+            source.Models[0].Temperature = 0.35f;
+            source.AdditionalApiKeyIds = ["source-extra"];
+            await context.Secrets.SetAsync($"apikey:{source.Id}", "sk-source");
+            await context.Secrets.SetAsync("apikey:source-extra", "sk-extra");
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [first, source], ActiveModelId = source.Models[0].Id });
+            string sourceJson = System.Text.Json.JsonSerializer.Serialize(source);
+            try
+            {
+                if (reuseWindow)
+                {
+                    view.FocusEntry(source.CatalogId, source.Id);
+                    Find<TextBox>(view, "SetupNameBox").Text = "discarded-edit";
+                    view.StartNewProvider();
+                }
+                await ClickRowAsync(window, view, "custom-openai");
+                Find<ToggleButton>(view, "SetupAdvancedToggle").IsChecked = true;
+                Assert.AreEqual("relay 2", Find<TextBox>(view, "SetupNameBox").Text);
+                Assert.AreEqual(source.BaseUrl, Find<TextBox>(view, "SetupBaseUrlBox").Text);
+                Assert.AreEqual("configured-model", Find<TextBox>(view, "SetupModelBox").Text);
+                Assert.IsTrue(string.IsNullOrEmpty(Find<TextBox>(view, "SetupKeyBox").Text));
+                Assert.IsFalse(Find<Button>(view, "SetupPullButton").IsVisible);
+                Assert.IsFalse(Find<Button>(view, "SetupAddAnotherButton").IsVisible);
+                Find<TextBox>(view, "SetupNameBox").Text = "new-relay";
+                Find<TextBox>(view, "SetupModelBox").Text = "new-model";
+                Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
+                await ClickPrimaryAsync(view);
+
+                Assert.HasCount(3, settings.Providers);
+                AiProvider created = settings.Providers.Single(p => p.Name == "new-relay");
+                Assert.AreNotEqual(source.Id, created.Id);
+                Assert.AreNotEqual(source.Models[0].Id, created.Models[0].Id);
+                Assert.AreEqual("new-model", created.Models[0].Model);
+                Assert.AreEqual(source.Models[0].Temperature, created.Models[0].Temperature);
+                Assert.IsEmpty(created.AdditionalApiKeyIds);
+                Assert.AreEqual("sk-new", await store.GetApiKeyAsync(created.Id));
+                Assert.AreEqual("sk-source", await store.GetApiKeyAsync(source.Id));
+                Assert.AreEqual("sk-extra", await store.GetApiKeyAsync("source-extra"));
+                Assert.AreEqual(sourceJson, System.Text.Json.JsonSerializer.Serialize(source));
+                Assert.AreEqual(source.Models[0].Id, settings.ActiveModelId);
+                Assert.AreEqual("Bearer sk-new", endpoint.Authorizations.Single());
+
+                Find<TextBox>(view, "SetupNameBox").Text = "saved-again";
+                await ClickPrimaryAsync(view);
+                AiSettings persisted = await store.LoadAsync();
+                Assert.HasCount(3, persisted.Providers, "创建完成后再次保存只能编辑新实例");
+                Assert.AreEqual("saved-again", persisted.Providers.Single(p => p.Id == created.Id).Name);
+                Assert.AreEqual(sourceJson, System.Text.Json.JsonSerializer.Serialize(persisted.Providers.Single(p => p.Id == source.Id)));
+                Click(Find<Button>(view, "SetupAddAnotherButton"));
+                Find<TextBox>(view, "SetupKeyBox").Text = "sk-cancelled";
+                Click(Find<Button>(view, "SetupSecondaryButton"));
+                Assert.AreEqual("saved-again", Find<TextBox>(view, "SetupNameBox").Text);
+                Assert.IsEmpty(created.AdditionalApiKeyIds);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void NewProvider_ModelListsStayWithTheirInstance(bool sameAddress)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            using var endpoint = new HeldModelsEndpoint(response: """{"data":[{"id":"new-only"},{"id":"shared"}]}""");
+            endpoint.Release();
+            AiProvider source = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            source.BaseUrl = endpoint.BaseUrl + (sameAddress ? "/v1" : "/old/v1");
+            var catalog = new ModelsDevCatalog(context);
+            ModelsDevCatalog.Materialise(source, catalog.Describe(null, [("old-first", 0), ("old-only", 0), ("shared", 0)]));
+            source.AvailableModels = ["old-first", "old-only", "shared"];
+            await context.Secrets.SetAsync($"apikey:{source.Id}", "sk-source");
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [source], ActiveModelId = source.Models[0].Id });
+            string sourceJson = System.Text.Json.JsonSerializer.Serialize(source);
+            try
+            {
+                await ClickRowAsync(window, view, "custom-openai");
+                Find<ToggleButton>(view, "SetupAdvancedToggle").IsChecked = true;
+                Assert.IsNull(FindOrNull<ComboBox>(view, "SetupModelPicker"), "同地址但不同 Key 也不能借用旧实例候选");
+                Find<TextBox>(view, "SetupBaseUrlBox").Text = endpoint.BaseUrl + "/v1";
+                Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
+                await ClickPrimaryAsync(view);
+
+                AiProvider created = settings.Providers.Single(provider => provider.Id != source.Id);
+                Assert.AreSequenceEqual(["new-only", "shared"], created.AvailableModels);
+                Assert.AreSequenceEqual(["new-only", "shared"], created.Models.Select(model => model.Model).ToArray());
+                Assert.AreSequenceEqual(created.AvailableModels, Find<ComboBox>(view, "SetupModelPicker").Items.Cast<string>().ToArray());
+                Assert.AreEqual("Bearer sk-new", endpoint.Authorization);
+                Assert.AreEqual(sourceJson, System.Text.Json.JsonSerializer.Serialize(source));
+                AiSettings persisted = await store.LoadAsync();
+                Assert.AreSequenceEqual(["new-only", "shared"], persisted.Providers.Single(provider => provider.Id == created.Id).Models.Select(model => model.Model).ToArray());
+                Assert.AreEqual(sourceJson, System.Text.Json.JsonSerializer.Serialize(persisted.Providers.Single(provider => provider.Id == source.Id)));
+                view.FocusEntry(source.CatalogId, source.Id);
+                Find<ToggleButton>(view, "SetupAdvancedToggle").IsChecked = true;
+                Assert.AreSequenceEqual(source.AvailableModels, Find<ComboBox>(view, "SetupModelPicker").Items.Cast<string>().ToArray());
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void PullModels_ReplacesForeignAutomaticModelsButKeepsManualAndConcurrentEdits(bool editDuringPull)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            using var endpoint = new HeldModelsEndpoint(response: """{"data":[{"id":"local-model"}]}""");
+            AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            provider.BaseUrl = endpoint.BaseUrl + "/v1";
+            var catalog = new ModelsDevCatalog(context);
+            ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("local-model", 0), ("foreign-model", 0), ("tuned-model", 0)]));
+            AiModelConfig foreign = provider.Models.Single(model => model.Model == "foreign-model");
+            provider.Models.Single(model => model.Model == "tuned-model").SystemPrompt = "keep tuned model";
+            provider.Models.Add(new AiModelConfig { Model = "manual-model" });
+            AiProvider other = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            ModelsDevCatalog.Materialise(other, catalog.Describe(null, [("other-model", 0)]));
+            string otherJson = System.Text.Json.JsonSerializer.Serialize(other);
+            await context.Secrets.SetAsync($"apikey:{provider.Id}", "sk-instance");
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings
+                {
+                    Providers = [provider, other], ActiveModelId = foreign.Id,
+                    FailoverChain = [new FailoverEntry { ModelId = foreign.Id }, new FailoverEntry { ModelId = other.Models[0].Id }]
+                });
+            try
+            {
+                view.FocusEntry(provider.CatalogId, provider.Id);
+                Button primary = Find<Button>(view, "SetupPrimaryButton");
+                Click(primary);
+                await endpoint.Requested.WaitAsync(TimeSpan.FromSeconds(10));
+                if (editDuringPull)
+                {
+                    foreign.SystemPrompt = "saved while fetching";
+                    await store.SaveAsync(settings);
+                }
+                endpoint.Release();
+                await WaitForEnabledAsync(primary);
+                string[] expected = editDuringPull
+                    ? ["local-model", "foreign-model", "tuned-model", "manual-model"]
+                    : ["local-model", "tuned-model", "manual-model"];
+                Assert.AreSequenceEqual(expected, provider.Models.Select(model => model.Model).ToArray());
+                Assert.AreSequenceEqual(["local-model"], provider.AvailableModels);
+                Assert.AreEqual(editDuringPull ? foreign.Id : provider.Models[0].Id, settings.ActiveModelId);
+                Assert.AreEqual(editDuringPull, settings.FailoverChain.Any(entry => entry.ModelId == foreign.Id));
+                AiSettings persisted = await store.LoadAsync();
+                Assert.AreSequenceEqual(expected, persisted.Providers.Single(item => item.Id == provider.Id).Models.Select(model => model.Model).ToArray());
+                Assert.AreEqual(settings.ActiveModelId, persisted.ActiveModelId);
+                Assert.AreEqual(otherJson, System.Text.Json.JsonSerializer.Serialize(persisted.Providers.Single(item => item.Id == other.Id)));
+            }
+            finally { endpoint.Release(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    [DataRow("custom-openai")]
+    [DataRow("custom-oauth")]
+    public void NewProvider_CancelAndReselectNeverReturnsToEditingSource(string catalogId)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            AiProvider source = ProviderCatalog.Find(catalogId)!.CreateProvider();
+            source.Name = "original";
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [source] });
+            string original = System.Text.Json.JsonSerializer.Serialize(source);
+            try
+            {
+                await ClickRowAsync(window, view, catalogId);
+                Find<TextBox>(view, "SetupNameBox").Text = "cancelled";
+                Click(Find<Button>(view, "SetupSecondaryButton"));
+                Assert.IsNull(FindOrNull<Button>(view, "SetupPrimaryButton"));
+                await ClickRowAsync(window, view, catalogId);
+                Assert.AreEqual("original 2", Find<TextBox>(view, "SetupNameBox").Text);
+                Assert.IsFalse(Find<Button>(view, "SetupAddAnotherButton").IsVisible);
+                Assert.AreEqual(original, System.Text.Json.JsonSerializer.Serialize(settings.Providers.Single()));
+                Assert.AreEqual(original, System.Text.Json.JsonSerializer.Serialize((await store.LoadAsync()).Providers.Single()));
+            }
+            finally { window.Close(); }
         });
     }
 
@@ -2289,7 +2492,7 @@ public sealed class ProviderSetupViewUiTests
                 await store.SetApiKeyAsync(survivor.Models[0].Id, "sk-survivor-model");
                 await store.SetApiKeyAsync(displayed.Id, "sk-displayed");
                 await view.RefreshStatusAsync();
-                await ClickRowAsync(window, view, "deepseek");
+                view.FocusEntry("deepseek", displayed.Id);
                 Assert.AreEqual("displayed-latest", Find<TextBox>(view, "SetupNameBox").Text);
                 Find<TextBox>(view, "SetupNameBox").Text = "stale-form";
                 Find<TextBox>(view, "SetupKeyBox").Text = "sk-stale";
@@ -2360,7 +2563,7 @@ public sealed class ProviderSetupViewUiTests
                 }
                 await store.SetApiKeyAsync(displayed.Id, "sk-displayed");
                 await view.RefreshStatusAsync();
-                await ClickRowAsync(window, view, "deepseek");
+                view.FocusEntry("deepseek", displayed.Id);
                 TextBox oldName = Find<TextBox>(view, "SetupNameBox");
                 Assert.AreEqual("displayed-latest", oldName.Text);
                 oldName.Text = "removed-unsaved";
@@ -2480,7 +2683,7 @@ public sealed class ProviderSetupViewUiTests
             {
                 await store.SaveTokensAsync(survivor.Id, new OAuthTokens { AccessToken = "at-survivor" });
                 await view.RefreshStatusAsync();
-                await ClickRowAsync(window, view, "custom-oauth");
+                view.FocusEntry("custom-oauth", displayed.Id);
                 if (clone) Click(Find<Button>(view, "SetupAddAnotherButton"));
                 Button primary = Find<Button>(view, "SetupPrimaryButton");
                 Click(primary);

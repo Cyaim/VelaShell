@@ -56,9 +56,27 @@ public static class ApiErrorText
     /// <param name="unreachableHint">
     /// 判定为"根本没连上"时补在后面的一句提示(由界面按当前语言给;为空则不补)。
     /// </param>
-    public static string Describe(Exception exception, string? unreachableHint = null)
+    /// <param name="notFoundHint">模型请求返回 HTTP 404 时置于原始详情之前的本地化排查提示。</param>
+    public static string Describe(Exception exception, string? unreachableHint = null, string? notFoundHint = null)
     {
         ArgumentNullException.ThrowIfNull(exception);
+        if (!string.IsNullOrEmpty(notFoundHint))
+        {
+            // 只认结构化状态码,不把正文里提到的「404」当作本次请求的状态。
+            for (Exception? current = exception; current is not null; current = current.InnerException)
+            {
+                int? status = current switch
+                {
+                    ClientResultException result => result.Status,
+                    AnthropicApiException anthropic => (int?)anthropic.StatusCode,
+                    HttpRequestException http => (int?)http.StatusCode,
+                    _ => null
+                };
+                if (status is not > 0) continue;
+                if (status == 404) return $"{notFoundHint}\n\n{Describe(current)}";
+                break;
+            }
+        }
         if (!string.IsNullOrEmpty(unreachableHint) && IsUnreachable(exception))
         {
             return $"{Innermost(exception).Message} — {unreachableHint}";

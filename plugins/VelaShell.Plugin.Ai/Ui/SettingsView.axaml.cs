@@ -1460,7 +1460,7 @@ public partial class SettingsView : UserControl
         {
             HealthProbe.EmptyReplyException => _loc["ProbeEmptyReply"],
             AiSettingsStore.ApiKeySlotChangedException => _loc["SetupConfigChanged"],
-            _ => Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"])
+            _ => Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"], _loc["ErrorEndpointNotFound"])
         };
         foreach (ProviderKeyRowState row in _keyRows)
             if (!string.IsNullOrWhiteSpace(row.Key)) detail = detail.Replace(row.Key, "●●●●", StringComparison.Ordinal);
@@ -2469,7 +2469,7 @@ public partial class SettingsView : UserControl
                 {
                     string detail = error is HealthProbe.EmptyReplyException
                         ? _loc["ProbeEmptyReply"]
-                        : Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"]);
+                        : Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"], _loc["ErrorEndpointNotFound"]);
                     if (rowSelected)
                     {
                         StatusText.Text = _loc.F("TestFail", detail);
