@@ -77,9 +77,13 @@ public sealed partial class X11Server : IAsyncDisposable
     private readonly Task _loopTask;
     private int _started;
     private int _disposed;
+    private Task? _disposeTask;
 
     /// <summary>StartAsync 开监听与 DisposeAsync 收监听互斥(两边同时跑时开起来的监听没人收)。</summary>
     private readonly Lock _listenGate = new();
+
+    /// <summary>让并发的 DisposeAsync 调用拿到同一个收尾任务,而不是只等 Completion 信号。</summary>
+    private readonly Lock _disposeGate = new();
 
     /// <summary>收工做完(<see cref="Completion" />);第二个调 DisposeAsync 的等它。</summary>
     private readonly TaskCompletionSource _shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -281,13 +285,21 @@ public sealed partial class X11Server : IAsyncDisposable
     /// (先脱离、再释放服务端)。之后句柄的 <see cref="XTopLevelWindow.IsAlive" /> 都是 false,再用它们调服务端的方法会被忽略或抛
     /// <see cref="ObjectDisposedException" />(ServeAsync 一族、StartAsync)。
     /// </remarks>
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        lock (_disposeGate)
         {
-            await _shutdown.Task.ConfigureAwait(false);   // 第二个调用者等第一个收完
-            return;
+            if (_disposeTask is null)
+            {
+                Interlocked.Exchange(ref _disposed, 1);
+                _disposeTask = DisposeCoreAsync();
+            }
+            return new ValueTask(_disposeTask);
         }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
         try
         {
             await ShutdownAsync().ConfigureAwait(false);

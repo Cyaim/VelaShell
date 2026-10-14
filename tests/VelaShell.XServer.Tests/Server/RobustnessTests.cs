@@ -326,8 +326,7 @@ public sealed class RobustnessTests
                 Assert.AreEqual(0, refused.SetupReply[0], "编号用完:连接建立失败,而不是卡住");
             }
 
-            await clients[0].DisposeAsync();
-            await clients[0].ServerTask.WaitAsync(TimeSpan.FromSeconds(3));
+            await clients[0].DisconnectAsync(server);
             clients.RemoveAt(0);
             XTestClient again = await XTestClient.ConnectAsync(server);
             clients.Add(again);

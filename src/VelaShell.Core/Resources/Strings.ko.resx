@@ -784,6 +784,12 @@
   <data name="Monitor_GpuClock" xml:space="preserve">
     <value>코어 / 메모리 클럭</value>
   </data>
+  <data name="Monitor_GpuClientScope" xml:space="preserve">
+    <value>보이는 DRM 클라이언트만</value>
+  </data>
+  <data name="Monitor_GpuScope" xml:space="preserve">
+    <value>사용률 범위</value>
+  </data>
   <data name="Monitor_GpuCount" xml:space="preserve">
     <value>GPU {0}개</value>
   </data>

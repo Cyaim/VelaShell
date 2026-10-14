@@ -784,6 +784,12 @@
   <data name="Monitor_GpuClock" xml:space="preserve">
     <value>コア / メモリクロック</value>
   </data>
+  <data name="Monitor_GpuClientScope" xml:space="preserve">
+    <value>表示可能な DRM クライアントのみ</value>
+  </data>
+  <data name="Monitor_GpuScope" xml:space="preserve">
+    <value>利用率の範囲</value>
+  </data>
   <data name="Monitor_GpuCount" xml:space="preserve">
     <value>GPU {0} 枚</value>
   </data>

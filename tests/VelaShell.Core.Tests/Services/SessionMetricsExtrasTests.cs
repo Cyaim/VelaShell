@@ -183,6 +183,45 @@ public partial class SessionMetricsExtrasTests
     }
 
     [TestMethod]
+    public void Parse_IntelDrmStats_UsesSharedSystemMemoryAndKeepsCounter()
+    {
+        const string output =
+            "__P__\n8\n__M__\n17179869184 4509715660\n" +
+            "__GS__\ncard1|0x8086||||45000||||Arrow Lake-S Intel Graphics|0000:00:02.0|i915\n" +
+            "__GI__\ncard1|3000000000|2147483648|1073741824|2\n";
+
+        SessionMetrics metrics = SessionMetrics.Parse(output)!;
+        GpuDevice gpu = metrics.Gpus.Single();
+
+        Assert.AreEqual(GpuVendor.Intel, gpu.Vendor);
+        Assert.AreEqual(GpuMemoryKind.SharedSystem, gpu.MemoryKind);
+        Assert.AreEqual(1073741824L, gpu.MemUsedBytes);
+        Assert.AreEqual(17179869184L, gpu.MemTotalBytes);
+        Assert.AreEqual(3000000000L, gpu.BusyNanoseconds);
+        Assert.AreEqual("i915", gpu.Driver);
+        Assert.IsTrue(gpu.ClientScopedUtil);
+        Assert.AreEqual(3000000000L, metrics.GpuUsageCounters.Single().BusyNanoseconds);
+    }
+
+    [TestMethod]
+    public void ApplyGpuUsage_DiffsDrmCounterInsteadOfDisplayingZero()
+    {
+        const string prefix =
+            "__P__\n8\n__M__\n17179869184 4509715660\n" +
+            "__GS__\ncard1|0x8086||||||||Arrow Lake-S Intel Graphics|0000:00:02.0|i915\n";
+        SessionMetrics previous = SessionMetrics.Parse(prefix + "__GI__\ncard1|1000000000|||1\n")!;
+        SessionMetrics current = SessionMetrics.Parse(prefix + "__GI__\ncard1|1500000000|||1\n")!;
+
+        current.ApplyGpuUsage(previous.GpuUsageCounters, 1);
+
+        Assert.AreEqual(50.0, current.Gpus.Single().UtilPercent!.Value, 0.001);
+        // 利用率必须有上限,即使多个引擎的忙碌计数合计超过墙钟时间。
+        current = SessionMetrics.Parse(prefix + "__GI__\ncard1|3000000000|||1\n")!;
+        current.ApplyGpuUsage(previous.GpuUsageCounters, 1);
+        Assert.AreEqual(100.0, current.Gpus.Single().UtilPercent!.Value, 0.001);
+    }
+
+    [TestMethod]
     public void Parse_SysfsOnly_KeepsNvidiaCardsWhenSmiMissing()
     {
         // 装了开源 nouveau / 没装 nvidia-smi 的机器:sysfs 里的 NVIDIA 卡仍要列出来。
@@ -302,6 +341,7 @@ public partial class SessionMetricsExtrasTests
         Assert.Contains("__MI__", full);
         Assert.Contains("__IO__", full);
         Assert.Contains("nvidia-smi", full);
+        Assert.Contains("__GI__", full);
         Assert.Contains("--sort=-rss", full);
         // 进程表与它的共享/换出补充段必须取同样多的行,否则后半截进程永远配不上那两列。
         Assert.AreEqual(2, full.Split("head -n 20").Length - 1, "进程段与 /proc 补充段的行数不一致。");

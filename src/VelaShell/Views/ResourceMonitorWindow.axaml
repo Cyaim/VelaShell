@@ -599,7 +599,7 @@
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <pc:LucideIcon Width="14" Height="14" Data="{StaticResource Icon.layers}"
                                        Foreground="{DynamicResource VelaShellCyan}" VerticalAlignment="Center" />
-                        <TextBlock Text="{loc:Localize Monitor_Vram}" Classes="card-title" />
+                        <TextBlock Text="{Binding SelectedGpu.MemoryTitle}" Classes="card-title" />
                       </StackPanel>
                       <TextBlock Grid.Column="1" Text="{Binding SelectedGpu.MemPercentText}" Classes="card-value"
                                  Foreground="{DynamicResource VelaShellCyan}" />
@@ -1045,7 +1045,7 @@
                           <TextBlock Classes="axis onplot" Text="100%" HorizontalAlignment="Left" VerticalAlignment="Top" />
                           <TextBlock Classes="axis onplot" Text="{loc:Localize Monitor_Now}"
                                      HorizontalAlignment="Right" VerticalAlignment="Bottom" />
-                          <!-- Intel 核显没有 gpu_busy_percent:说清楚是"这块卡不提供",不是"占用为 0"。 -->
+                          <!-- 未拿到 DRM/PMU 计数时明确显示不可用,而不是把缺失值画成 0。 -->
                           <TextBlock Text="{loc:Localize Monitor_MetricUnavailable}" Classes="card-sub"
                                      HorizontalAlignment="Center" VerticalAlignment="Center"
                                      IsVisible="{Binding !SelectedGpu.HasUtil}" />
@@ -1059,7 +1059,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="6">
                           <pc:LucideIcon Width="14" Height="14" Data="{StaticResource Icon.layers}"
                                          Foreground="{DynamicResource VelaShellCyan}" VerticalAlignment="Center" />
-                          <TextBlock Text="{loc:Localize Monitor_Vram}" Classes="card-title" />
+                          <TextBlock Text="{Binding SelectedGpu.MemoryTitle}" Classes="card-title" />
                         </StackPanel>
                         <TextBlock Grid.Column="1" Text="{Binding SelectedGpu.MemText}" Classes="card-value"
                                    Foreground="{DynamicResource VelaShellCyan}" />
@@ -1120,7 +1120,7 @@
                         <TextBlock Text="{loc:Localize Monitor_ColProcess}" Classes="col" />
                         <TextBlock Grid.Column="1" Text="{loc:Localize Monitor_Gpu}" Classes="col" TextAlignment="Right" />
                         <TextBlock Grid.Column="2" Text="PID" Classes="col" TextAlignment="Right" />
-                        <TextBlock Grid.Column="3" Text="{loc:Localize Monitor_Vram}" Classes="col" TextAlignment="Right" />
+                        <TextBlock Grid.Column="3" Text="{Binding SelectedGpu.MemoryTitle}" Classes="col" TextAlignment="Right" />
                       </Grid>
                       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <ItemsControl Margin="0,0,20,0" ItemsSource="{Binding GpuProcesses}">

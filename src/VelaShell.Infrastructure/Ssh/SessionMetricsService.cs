@@ -170,6 +170,11 @@ public sealed class SessionMetricsService : ISessionMetricsService, IDisposable
                 metrics.Cpu = BuildBreakdown(metrics.CpuStatColumns, prev.CpuColumns, deltaTotal);
             }
 
+            if (metrics.GpuUsageCounters.Count > 0 && prev.GpuUsageCounters.Count > 0 && seconds > 0.2)
+            {
+                metrics.ApplyGpuUsage(prev.GpuUsageCounters, seconds);
+            }
+
             // 每核心占用:与上一采样按核名对齐做差分(状态栏 CPU 提示逐核显示)。
             if (metrics.CoreCounters.Count > 0 && prev.Cores.Count > 0)
             {
@@ -259,13 +264,13 @@ public sealed class SessionMetricsService : ISessionMetricsService, IDisposable
                 metrics.ConnectionRates = connectionRates;
             }
         }
-        if (metrics.HasCpuCounters || metrics.HasNetCounters)
+        if (metrics.HasCpuCounters || metrics.HasNetCounters || metrics.GpuUsageCounters.Count > 0)
         {
             _lastSamples[(sessionId, scope)] = new(metrics.CpuTotalJiffies, metrics.CpuIdleJiffies,
                 metrics.NetRxTotalBytes, metrics.NetTxTotalBytes, now,
                 metrics.CoreCounters, metrics.NicCounters,
                 metrics.CpuStatColumns, metrics.DiskIoCounters, metrics.ContextSwitches,
-                metrics.Connections);
+                metrics.Connections, metrics.GpuUsageCounters);
         }
     }
 
@@ -300,5 +305,6 @@ public sealed class SessionMetricsService : ISessionMetricsService, IDisposable
         IReadOnlyList<long> CpuColumns,
         IReadOnlyList<DiskIoCounter> DiskIo,
         long ContextSwitches,
-        IReadOnlyList<ConnectionCounter> Connections);
+        IReadOnlyList<ConnectionCounter> Connections,
+        IReadOnlyList<GpuUsageCounter> GpuUsageCounters);
 }
