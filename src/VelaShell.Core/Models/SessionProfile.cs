@@ -206,6 +206,11 @@ public class SessionProfile
     /// </remarks>
     public List<Guid>? AutoStartTunnelIds { get; set; }
 
+    /// <summary>
+    /// 本连接的本地目录 ↔ 远程目录收藏。旧配置没有此字段时按空集合处理。
+    /// </summary>
+    public List<RemoteDirectoryBookmark> DirectoryBookmarks { get; set; } = [];
+
     /// <summary>返回协议专属设置的深拷贝(两个字典各一份);源为 null 时返回 null。</summary>
     /// <param name="source">源字典。</param>
     /// <returns>深拷贝,或 null。</returns>
@@ -258,6 +263,7 @@ public class SessionProfile
             PluginSecrets = CloneSettings(PluginSecrets),
             Terminal = Terminal?.Clone(),
             Ssh = Ssh?.Clone(),
-            AutoStartTunnelIds = AutoStartTunnelIds is null ? null : [.. AutoStartTunnelIds]
+            AutoStartTunnelIds = AutoStartTunnelIds is null ? null : [.. AutoStartTunnelIds],
+            DirectoryBookmarks = [.. (DirectoryBookmarks ?? []).Select(static bookmark => bookmark.Clone())]
         };
 }

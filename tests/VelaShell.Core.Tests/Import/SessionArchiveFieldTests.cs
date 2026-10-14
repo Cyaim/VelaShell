@@ -28,7 +28,7 @@ public sealed class SessionArchiveFieldTests
         nameof(SessionProfile.JumpHostProfileId), nameof(SessionProfile.PostAuthCommand),
         nameof(SessionProfile.PostAuthCommandDelaySeconds), nameof(SessionProfile.Ftp), nameof(SessionProfile.PluginProtocolId),
         nameof(SessionProfile.PluginSettings), nameof(SessionProfile.Terminal), nameof(SessionProfile.Ssh),
-        nameof(SessionProfile.AutoStartTunnelIds)
+        nameof(SessionProfile.AutoStartTunnelIds), nameof(SessionProfile.DirectoryBookmarks)
     ];
 
     /// <summary>机密:不导出,或只进加密段。</summary>

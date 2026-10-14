@@ -7031,4 +7031,30 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Splash_MascotReady" xml:space="preserve">
     <value>준비 끝, 출발!</value>
   </data>
+  <data name="Bookmark_Add" xml:space="preserve"><value>현재 디렉터리 저장</value></data>
+  <data name="Bookmark_AddTip" xml:space="preserve"><value>현재 로컬 및 원격 디렉터리를 책갈피로 저장</value></data>
+  <data name="Bookmark_List" xml:space="preserve"><value>디렉터리 책갈피</value></data>
+  <data name="Bookmark_ListTip" xml:space="preserve"><value>저장한 디렉터리 책갈피 열기</value></data>
+  <data name="Bookmark_Manage" xml:space="preserve"><value>책갈피 관리</value></data>
+  <data name="Bookmark_ManageHint" xml:space="preserve"><value>책갈피는 이 연결에 저장됩니다. 디렉터리를 일시적으로 사용할 수 없어도 유지됩니다.</value></data>
+  <data name="Bookmark_NoItems" xml:space="preserve"><value>디렉터리 책갈피가 없습니다.</value></data>
+  <data name="Bookmark_MenuEntry" xml:space="preserve"><value>{0}&#xA;{1} ↔ {2}</value></data>
+  <data name="Bookmark_EditMenu" xml:space="preserve"><value>“{0}” 편집</value></data>
+  <data name="Bookmark_DeleteMenu" xml:space="preserve"><value>“{0}” 삭제</value></data>
+  <data name="Bookmark_Apply" xml:space="preserve"><value>적용</value></data>
+  <data name="Bookmark_AddTitle" xml:space="preserve"><value>디렉터리 책갈피 추가</value></data>
+  <data name="Bookmark_EditTitle" xml:space="preserve"><value>디렉터리 책갈피 편집</value></data>
+  <data name="Bookmark_DeleteTitle" xml:space="preserve"><value>책갈피 삭제</value></data>
+  <data name="Bookmark_DeleteMessage" xml:space="preserve"><value>“{0}” 책갈피를 삭제하시겠습니까? 로컬 및 원격 디렉터리는 변경되지 않습니다.</value></data>
+  <data name="Bookmark_Name" xml:space="preserve"><value>이름</value></data>
+  <data name="Bookmark_LocalPath" xml:space="preserve"><value>로컬 디렉터리</value></data>
+  <data name="Bookmark_RemotePath" xml:space="preserve"><value>원격 디렉터리</value></data>
+  <data name="Bookmark_RootName" xml:space="preserve"><value>원격 루트</value></data>
+  <data name="Bookmark_Duplicate" xml:space="preserve"><value>같은 로컬 및 원격 디렉터리의 책갈피가 이미 있습니다.</value></data>
+  <data name="Bookmark_NotFound" xml:space="preserve"><value>책갈피가 더 이상 존재하지 않습니다.</value></data>
+  <data name="Bookmark_SaveFailed" xml:space="preserve"><value>책갈피를 저장하지 못해 변경 내용을 되돌렸습니다.</value></data>
+  <data name="Bookmark_InvalidName" xml:space="preserve"><value>1~200자의 책갈피 이름을 입력하세요.</value></data>
+  <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>올바른 로컬 디렉터리 경로를 입력하세요.</value></data>
+  <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>올바른 원격 디렉터리 경로를 입력하세요.</value></data>
+  <data name="Bookmark_PathTooLong" xml:space="preserve"><value>로컬 또는 원격 경로가 너무 깁니다.</value></data>
 </root>

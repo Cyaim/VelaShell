@@ -7031,4 +7031,30 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Splash_MascotReady" xml:space="preserve">
     <value>準備OK、行こう!</value>
   </data>
+  <data name="Bookmark_Add" xml:space="preserve"><value>現在のディレクトリをブックマーク</value></data>
+  <data name="Bookmark_AddTip" xml:space="preserve"><value>現在のローカルとリモートのディレクトリをブックマークに保存</value></data>
+  <data name="Bookmark_List" xml:space="preserve"><value>ディレクトリのブックマーク</value></data>
+  <data name="Bookmark_ListTip" xml:space="preserve"><value>保存したディレクトリのブックマークを開く</value></data>
+  <data name="Bookmark_Manage" xml:space="preserve"><value>ブックマークの管理</value></data>
+  <data name="Bookmark_ManageHint" xml:space="preserve"><value>ブックマークはこの接続に保存されます。ディレクトリが一時的に利用できなくても保持されます。</value></data>
+  <data name="Bookmark_NoItems" xml:space="preserve"><value>ディレクトリのブックマークはありません。</value></data>
+  <data name="Bookmark_MenuEntry" xml:space="preserve"><value>{0}&#xA;{1} ↔ {2}</value></data>
+  <data name="Bookmark_EditMenu" xml:space="preserve"><value>「{0}」を編集</value></data>
+  <data name="Bookmark_DeleteMenu" xml:space="preserve"><value>「{0}」を削除</value></data>
+  <data name="Bookmark_Apply" xml:space="preserve"><value>適用</value></data>
+  <data name="Bookmark_AddTitle" xml:space="preserve"><value>ディレクトリのブックマークを追加</value></data>
+  <data name="Bookmark_EditTitle" xml:space="preserve"><value>ディレクトリのブックマークを編集</value></data>
+  <data name="Bookmark_DeleteTitle" xml:space="preserve"><value>ブックマークを削除</value></data>
+  <data name="Bookmark_DeleteMessage" xml:space="preserve"><value>ブックマーク「{0}」を削除しますか？ローカルとリモートのディレクトリは変更されません。</value></data>
+  <data name="Bookmark_Name" xml:space="preserve"><value>名前</value></data>
+  <data name="Bookmark_LocalPath" xml:space="preserve"><value>ローカルディレクトリ</value></data>
+  <data name="Bookmark_RemotePath" xml:space="preserve"><value>リモートディレクトリ</value></data>
+  <data name="Bookmark_RootName" xml:space="preserve"><value>リモートルート</value></data>
+  <data name="Bookmark_Duplicate" xml:space="preserve"><value>同じローカルとリモートのディレクトリのブックマークが既にあります。</value></data>
+  <data name="Bookmark_NotFound" xml:space="preserve"><value>ブックマークは既に存在しません。</value></data>
+  <data name="Bookmark_SaveFailed" xml:space="preserve"><value>ブックマークを保存できなかったため、変更を元に戻しました。</value></data>
+  <data name="Bookmark_InvalidName" xml:space="preserve"><value>1～200文字のブックマーク名を入力してください。</value></data>
+  <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>有効なローカルディレクトリパスを入力してください。</value></data>
+  <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>有効なリモートディレクトリパスを入力してください。</value></data>
+  <data name="Bookmark_PathTooLong" xml:space="preserve"><value>ローカルまたはリモートのパスが長すぎます。</value></data>
 </root>
