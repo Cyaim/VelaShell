@@ -1,4 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using VelaShell.Services.Update;
 
 namespace VelaShell.Tests.Services;
