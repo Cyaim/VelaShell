@@ -53,6 +53,16 @@
     <File Path="scripts/xserver/interop/Run-Client.ps1" />
     <File Path="scripts/xserver/interop/run-server.cs" />
   </Folder>
+  <Folder Name="/mascot/">
+    <File Path="mascot/cat-emblem.svg" />
+    <File Path="mascot/character-sheet.png" />
+    <File Path="mascot/chibi-hug.png" />
+    <File Path="mascot/chibi-laptop.png" />
+    <File Path="mascot/chibi-wave.png" />
+    <File Path="mascot/chibi.png" />
+    <File Path="mascot/key-visual.png" />
+    <File Path="mascot/README.md" />
+  </Folder>
   <Folder Name="/plugins/">
     <File Path="plugins/Directory.Build.props" />
     <File Path="plugins/Directory.Build.targets" />
