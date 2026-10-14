@@ -15,13 +15,13 @@
     <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
     <PackageVersion Include="ReactiveUI.Avalonia" Version="12.1.6" />
     <!-- Microsoft.Extensions -->
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0-rc.2.26504.105" />
     <!-- 其它 -->
     <PackageVersion Include="ReactiveUI" Version="26.0.1" />
     <!-- MMDB 读取器(Apache 2.0)。只是格式读取库,不绑定 MaxMind 的数据 ——
          我们配的是 DB-IP Lite City(CC BY 4.0),同一格式。 -->
     <PackageVersion Include="MaxMind.Db" Version="5.2.0" />
-    <PackageVersion Include="SonnetDB.Core" Version="4.0.0" />
+    <PackageVersion Include="SonnetDB.Core" Version="4.5.0-preview.ef266.5" />
     <!-- BouncyCastle(MIT 改写版许可,与商业授权不冲突)。只有 VelaShell.Ssh 一个使用者:
          BCL 缺失的密码学原语(raw ChaCha20、Poly1305、Ed25519、X25519、sntrup761、Argon2id…),
          是那个库唯一的运行时依赖。宿主的密钥生成(SshKeyService)曾经直接拿它现造 Ed25519,
@@ -38,8 +38,8 @@
          本仓库 plugins/ 下的插件(AI)不走中央包版本管理
          (根目录没有 Directory.Packages.props),依赖版本写在各自的 csproj 里。 -->
     <PackageVersion Include="VelaShell.PluginSdk" Version="2.0.9" />
-    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="11.0.0-rc.2.26504.105" />
     <!-- 构建期工具:SourceLink(见 src/Directory.Build.props) -->
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="11.0.100-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="11.0.100-rc.2.26504.105" />
   </ItemGroup>
 </Project>
