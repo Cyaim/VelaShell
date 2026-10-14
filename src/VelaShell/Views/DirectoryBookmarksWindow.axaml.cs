@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using FireAndForget = VelaShell.Services.FireAndForget;
 using VelaShell.ViewModels;
 
 namespace VelaShell.Views;
@@ -37,45 +38,45 @@ public partial class DirectoryBookmarksWindow : Window
 
     private void UpdateEmptyState() => EmptyText.IsVisible = _viewModel is { HasBookmarks: false };
 
-    private async void OnAddClick(object? sender, RoutedEventArgs e)
+    private void OnAddClick(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
         if (_viewModel is not null)
         {
             await _viewModel.AddBookmarkAsync();
         }
-    }
+    });
 
-    private async void OnApplyClick(object? sender, RoutedEventArgs e)
+    private void OnApplyClick(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
         if (_viewModel is not null && sender is Control { DataContext: DirectoryBookmarkViewModel item })
         {
             await _viewModel.ApplyBookmarkAsync(item);
         }
-    }
+    });
 
-    private async void OnEditClick(object? sender, RoutedEventArgs e)
+    private void OnEditClick(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
         if (_viewModel is not null && sender is Control { DataContext: DirectoryBookmarkViewModel item })
         {
             await _viewModel.EditBookmarkAsync(item);
         }
-    }
+    });
 
-    private async void OnDeleteClick(object? sender, RoutedEventArgs e)
+    private void OnDeleteClick(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
         if (_viewModel is not null && sender is Control { DataContext: DirectoryBookmarkViewModel item })
         {
             await _viewModel.DeleteBookmarkAsync(item);
         }
-    }
+    });
 
-    private async void OnBookmarkDoubleTapped(object? sender, TappedEventArgs e)
+    private void OnBookmarkDoubleTapped(object? sender, TappedEventArgs e) => FireAndForget.Run(async () =>
     {
         if (_viewModel is not null && BookmarkList.SelectedItem is DirectoryBookmarkViewModel item)
         {
             await _viewModel.ApplyBookmarkAsync(item);
         }
-    }
+    });
 
     private void OnCloseClick(object? sender, RoutedEventArgs e) => this.PostClose();
 
