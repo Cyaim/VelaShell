@@ -81,8 +81,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: global.json
+        # with:
+        #   global-json-file: global.json
       - name: Restore strong-name key
         shell: pwsh
         run: |
@@ -125,8 +125,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: global.json
+        # with:
+        #   global-json-file: global.json
       - name: Restore strong-name key
         shell: pwsh
         run: |
@@ -155,8 +155,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: global.json
+        # with:
+        #   global-json-file: global.json
       - name: Restore strong-name key
         # openssl 在 Linux/macOS 上解码行为一致(避开 GNU/BSD base64 -d/-D 差异)
         run: echo "$SNK_B64" | openssl base64 -A -d > src/VelaShell.snk
@@ -283,8 +283,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: global.json
+        # with:
+        #   global-json-file: global.json
       - name: Restore strong-name key
         # openssl 在 Linux/macOS 上解码行为一致(避开 GNU/BSD base64 -d/-D 差异)
         run: echo "$SNK_B64" | openssl base64 -A -d > src/VelaShell.snk

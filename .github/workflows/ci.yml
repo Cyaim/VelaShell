@@ -138,8 +138,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends "${missing[@]}"
 
       - uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: VelaShell/global.json
+        # with:
+        #   global-json-file: VelaShell/global.json
 
       - name: 构建
         working-directory: VelaShell

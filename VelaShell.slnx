@@ -18,7 +18,6 @@
     <File Path="DESIGN.md" />
     <File Path="Directory.Build.props" />
     <File Path="feature-plan.md" />
-    <File Path="global.json" />
     <File Path="LICENSE" />
     <File Path="LICENSE-COMMERCIAL.md" />
     <File Path="plan.md" />
