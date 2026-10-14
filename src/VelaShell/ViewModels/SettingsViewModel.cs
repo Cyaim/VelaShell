@@ -21,6 +21,7 @@ using VelaShell.Infrastructure.Ssh;
 using VelaShell.Presentation.Services;
 using VelaShell.Presentation.ViewModels;
 using VelaShell.Services;
+using VelaShell.Services.Update;
 
 namespace VelaShell.ViewModels;
 
@@ -896,12 +897,54 @@ public partial class SettingsViewModel : ReactiveObject
         }
         try
         {
-            UpdateStatus = Strings.Format("SetAbout_Downloading", 0);
+            UpdateDownloadTracker tracker = new();
+            bool downloadEnded = false;
+
+            // 下载期间的心跳。下载线程只在收到新字节时才汇报,网络一慢一卡就没有任何回调,
+            // 界面会永远停在最后一个速度值上——分不清"慢"和"已经不动了"。定时 tick 一次,
+            // 让速率归零、停滞时长长起来,停滞到超过 UpdateDownloadTracker.StallThreshold
+            // 就换成带提示的文案。
+            async Task HeartbeatAsync(CancellationToken cancellationToken)
+            {
+                using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(500));
+                try
+                {
+                    while (await timer.WaitForNextTickAsync(cancellationToken) && !downloadEnded)
+                    {
+                        tracker.Tick();
+                        UpdateStatus = FormatDownloadStatus(tracker);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // 下载已收尾,心跳随之停止;状态文案由调用方接着写。
+                }
+            }
+
+            UpdateStatus = FormatDownloadStatus(tracker);
+            using CancellationTokenSource heartbeatStop = new();
+            Task heartbeat = HeartbeatAsync(heartbeatStop.Token);
             // Progress 在 UI 线程创建,回调自动回到 UI 线程,可安全更新绑定属性。
-            Progress<int> progress = new(p =>
-                UpdateStatus = Strings.Format("SetAbout_Downloading", p)
-            );
-            await _updateService.DownloadUpdateAsync(progress);
+            // 它是投递而非直呼:下载刚结束时还排在队列里的汇报,不能把「已就绪,可重启」
+            // 那条状态又盖回「正在下载」。
+            Progress<UpdateDownloadProgress> progress = new(p =>
+            {
+                if (!downloadEnded)
+                {
+                    tracker.Report(p);
+                    UpdateStatus = FormatDownloadStatus(tracker);
+                }
+            });
+            try
+            {
+                await _updateService.DownloadUpdateAsync(progress);
+            }
+            finally
+            {
+                downloadEnded = true;
+                await heartbeatStop.CancelAsync();
+                await heartbeat;
+            }
         }
         catch
         {
@@ -914,6 +957,24 @@ public partial class SettingsViewModel : ReactiveObject
             _updateService.AvailableVersion ?? string.Empty
         );
     }
+
+    /// <summary>把下载进度拼成"百分比 · 已下载/总量 · 速率"的状态文本;停滞时改用停滞文案。</summary>
+    /// <param name="tracker">本次下载的进度快照器。</param>
+    /// <returns>可直接显示的状态文本。</returns>
+    private static string FormatDownloadStatus(UpdateDownloadTracker tracker) =>
+        tracker.IsStalled
+            ? Strings.Format(
+                "SetAbout_DownloadStalled",
+                tracker.Percent,
+                TransferItemViewModel.FormatBytes(tracker.BytesDownloaded),
+                TransferItemViewModel.FormatBytes(tracker.TotalBytes),
+                TransferItemViewModel.FormatTimeRemaining(tracker.StalledFor))
+            : Strings.Format(
+                "SetAbout_DownloadingSpeed",
+                tracker.Percent,
+                TransferItemViewModel.FormatBytes(tracker.BytesDownloaded),
+                TransferItemViewModel.FormatBytes(tracker.TotalBytes),
+                TransferItemViewModel.FormatSpeed(tracker.BytesPerSecond));
 
     /// <summary>清除历史记录的状态提示文本。</summary>
     public string ClearHistoryStatus

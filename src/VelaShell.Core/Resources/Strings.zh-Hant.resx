@@ -1942,8 +1942,11 @@
   <data name="SetAbout_UpdateAvailableManual" xml:space="preserve">
     <value>發現新版本 {0},但目前安裝位置無法自動更新(目錄不可寫),請前往專案發佈頁手動下載最新版本。</value>
   </data>
-  <data name="SetAbout_Downloading" xml:space="preserve">
-    <value>正在下載更新… {0}%</value>
+  <data name="SetAbout_DownloadingSpeed" xml:space="preserve">
+    <value>正在下載更新… {0}% · {1}/{2} · {3}</value>
+  </data>
+  <data name="SetAbout_DownloadStalled" xml:space="preserve">
+    <value>正在下載更新… {0}% · {1}/{2} · 已 {3} 沒有收到資料,連線可能已經中斷</value>
   </data>
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>下載失敗,請稍後重試。</value>

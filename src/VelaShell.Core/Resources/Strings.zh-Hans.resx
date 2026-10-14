@@ -1942,8 +1942,11 @@
   <data name="SetAbout_UpdateAvailableManual" xml:space="preserve">
     <value>发现新版本 {0},但当前安装位置无法自动更新(目录不可写),请前往项目发布页手动下载最新版本。</value>
   </data>
-  <data name="SetAbout_Downloading" xml:space="preserve">
-    <value>正在下载更新… {0}%</value>
+  <data name="SetAbout_DownloadingSpeed" xml:space="preserve">
+    <value>正在下载更新… {0}% · {1}/{2} · {3}</value>
+  </data>
+  <data name="SetAbout_DownloadStalled" xml:space="preserve">
+    <value>正在下载更新… {0}% · {1}/{2} · 已 {3} 没有收到数据,连接可能已经中断</value>
   </data>
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>下载失败,请稍后重试。</value>

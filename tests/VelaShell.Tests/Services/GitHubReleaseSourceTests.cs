@@ -58,6 +58,34 @@ public class GitHubReleaseSourceTests : IDisposable
 
     [TestMethod]
     [TestCategory("Update")]
+    public async Task DownloadAssetAsync_ReportsBytesAndTotalAlongsidePercent()
+    {
+        byte[] payload = Encoding.ASCII.GetBytes(string.Join('-', Enumerable.Range(0, 200_000)));
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ => FullResponse(payload)));
+        List<UpdateDownloadProgress> reports = [];
+
+        await source.DownloadAssetAsync(
+            CreateManifest("pkg.zip", payload.Length),
+            Asset(payload.Length),
+            Path.Combine(_dir, "pkg.zip"),
+            new ByteProgress(reports.Add));
+
+        Assert.IsTrue(reports.Count > 0);
+        // 收尾必须是「已下满整包」的快照,界面据此从速率切到可重启状态。
+        UpdateDownloadProgress last = reports[^1];
+        Assert.AreEqual(100, last.Percent);
+        Assert.AreEqual(payload.LongLength, last.BytesDownloaded);
+        Assert.AreEqual(payload.LongLength, last.TotalBytes);
+        Assert.IsTrue(
+            reports.All(r => r.TotalBytes == payload.LongLength),
+            "每条汇报都要带得上整包字节数,界面才能显示「已下载/总量」。");
+        Assert.IsTrue(
+            reports.Select(r => r.BytesDownloaded).SequenceEqual(reports.Select(r => r.BytesDownloaded).Order()),
+            "字节数只能单调不减。");
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
     public async Task DownloadAssetAsync_WithPartial_SendsRangeAndAppends()
     {
         byte[] payload = Encoding.ASCII.GetBytes("0123456789");
@@ -264,8 +292,14 @@ public class GitHubReleaseSourceTests : IDisposable
             Task.FromResult(responder(request));
     }
 
-    private sealed class SynchronousProgress(Action<int> handler) : IProgress<int>
+    private sealed class SynchronousProgress(Action<int> handler) : IProgress<UpdateDownloadProgress>
     {
-        public void Report(int value) => handler(value);
+        public void Report(UpdateDownloadProgress value) => handler(value.Percent);
+    }
+
+    /// <summary>收整条快照的同步进度器(百分比进度器只留 Percent,看不到字节与速率)。</summary>
+    private sealed class ByteProgress(Action<UpdateDownloadProgress> handler) : IProgress<UpdateDownloadProgress>
+    {
+        public void Report(UpdateDownloadProgress value) => handler(value);
     }
 }

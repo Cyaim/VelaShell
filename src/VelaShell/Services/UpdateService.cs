@@ -122,7 +122,7 @@ public class UpdateService : IUpdateService
     /// 产物名带版本号与 RID,过期残留按名清理。校验优先采用下载过程中流式算出的
     /// 哈希(更新源返回),免去落盘后重读;源没给哈希时才读文件校验兜底。
     /// </summary>
-    public async Task DownloadUpdateAsync(IProgress<int>? progress = null)
+    public async Task DownloadUpdateAsync(IProgress<UpdateDownloadProgress>? progress = null)
     {
         if (_manifest == null || _asset == null)
         {
@@ -153,7 +153,7 @@ public class UpdateService : IUpdateService
             if (await IsChecksumValidAsync(archivePath, _asset.Sha256))
             {
                 _downloadedArchivePath = archivePath;
-                progress?.Report(100);
+                progress?.Report(UpdateDownloadProgress.Completed(_asset.Size));
                 return;
             }
             File.Delete(archivePath);

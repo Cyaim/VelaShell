@@ -8,6 +8,7 @@ using VelaShell.Core.Resources;
 using VelaShell.Core.Services;
 using VelaShell.Core.Ssh;
 using VelaShell.Services;
+using VelaShell.Services.Update;
 using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
@@ -54,7 +55,7 @@ public class SettingsViewModelTests
         Assert.Contains("2.0.0-beta.1", vm.UpdateStatus);
         Assert.IsFalse(vm.UpdateReady);
         _ = updates.DidNotReceive().CanSelfUpdate;
-        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<IProgress<int>>());
+        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<IProgress<UpdateDownloadProgress>>());
         updates.DidNotReceive().ApplyUpdateAndRestart();
     }
 
@@ -75,7 +76,7 @@ public class SettingsViewModelTests
 
         Assert.Contains("https://github.com/joesdu/VelaShell/releases", vm.UpdateStatus);
         Assert.IsFalse(vm.UpdateReady);
-        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<IProgress<int>>());
+        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<IProgress<UpdateDownloadProgress>>());
     }
 
     [TestMethod]

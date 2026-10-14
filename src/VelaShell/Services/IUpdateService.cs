@@ -34,8 +34,11 @@ public interface IUpdateService
     /// <summary>清掉 <see cref="LastUpdateError" /> 的失败记录(用户重新尝试更新时调用)。</summary>
     void ClearUpdateError();
 
-    /// <summary>下载已检测到的更新包并校验完整性,可通过 <paramref name="progress"/> 汇报下载进度百分比。</summary>
-    Task DownloadUpdateAsync(IProgress<int>? progress = null);
+    /// <summary>
+    /// 下载已检测到的更新包并校验完整性,可通过 <paramref name="progress"/> 汇报已下载字节、
+    /// 整包字节与当前速率(见 <see cref="Update.UpdateDownloadProgress" />)。
+    /// </summary>
+    Task DownloadUpdateAsync(IProgress<Update.UpdateDownloadProgress>? progress = null);
 
     /// <summary>应用已下载的更新并重启应用。</summary>
     void ApplyUpdateAndRestart();
