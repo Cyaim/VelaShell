@@ -112,6 +112,12 @@ public sealed class GitHubReleaseSource : IUpdateSource
 
     private const int CopyBufferSize = 81920;
 
+    /// <summary>
+    /// 两次进度汇报之间的最短间隔(毫秒)。百分比变了随时报;百分比没变时也按这个节奏
+    /// 补报一次,好让界面上的速率保持新鲜。
+    /// </summary>
+    private const long MinReportIntervalMilliseconds = 250;
+
     /// <inheritdoc />
     /// <remarks>
     /// 流式写盘 + HTTP Range 断点续传,SHA-256 边下边算(返回值即整包哈希,调用方
@@ -125,7 +131,7 @@ public sealed class GitHubReleaseSource : IUpdateSource
         UpdateManifest manifest,
         UpdateAsset asset,
         string destinationPath,
-        IProgress<int>? progress = null,
+        IProgress<UpdateDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         string url = $"https://github.com/{_owner}/{_repo}/releases/download/"
@@ -156,7 +162,7 @@ public sealed class GitHubReleaseSource : IUpdateSource
         UpdateAsset asset,
         string destinationPath,
         string partialPath,
-        IProgress<int>? progress,
+        IProgress<UpdateDownloadProgress>? progress,
         CancellationToken cancellationToken)
     {
         long resumeFrom = File.Exists(partialPath) ? new FileInfo(partialPath).Length : 0;
@@ -175,6 +181,7 @@ public sealed class GitHubReleaseSource : IUpdateSource
             response = await SendDownloadRequestAsync(url, 0, cancellationToken);
         }
         string hash;
+        long total = 0;
         using (response)
         {
             response.EnsureSuccessStatusCode();
@@ -189,34 +196,41 @@ public sealed class GitHubReleaseSource : IUpdateSource
                 // 续传:已落盘的前缀要先进哈希,这次读盘换来的是整包不必重下。
                 await HashExistingPrefixAsync(partialPath, resumeFrom, sha, cancellationToken);
             }
-            long total = resumeFrom + (response.Content.Headers.ContentLength ?? Math.Max(asset.Size - resumeFrom, 0));
+            long totalBytes = resumeFrom + (response.Content.Headers.ContentLength ?? Math.Max(asset.Size - resumeFrom, 0));
+            total = totalBytes;
             await using Stream source = await response.Content.ReadAsStreamAsync(cancellationToken);
             await using FileStream target = new(
                 partialPath, resumed ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None,
                 CopyBufferSize, useAsync: true);
             byte[] buffer = new byte[CopyBufferSize];
             long copied = resumeFrom;
-            int lastPercent = -1;
+            DownloadRateMeter meter = new();
+            int lastReportedPercent = -1;
+            long lastReportAt = 0;
             int read;
             while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
             {
                 await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 sha.AppendData(buffer, 0, read);
                 copied += read;
-                if (total > 0 && progress != null)
+                if (totalBytes > 0 && progress != null)
                 {
-                    int percent = (int)(copied * 100 / total);
-                    if (percent != lastPercent)
+                    int percent = (int)Math.Clamp(copied * 100 / totalBytes, 0, 100);
+                    // 百分比不变也照样每隔一小段时间报一次:用户要看的是速率,
+                    // 而慢速下载的百分比能几十秒不动,不按时间报就永远看不到速度。
+                    long now = Environment.TickCount64;
+                    if (percent != lastReportedPercent || now - lastReportAt >= MinReportIntervalMilliseconds)
                     {
-                        lastPercent = percent;
-                        progress.Report(Math.Min(percent, 100));
+                        lastReportedPercent = percent;
+                        lastReportAt = now;
+                        progress.Report(new UpdateDownloadProgress(copied, totalBytes, meter.Sample(copied)));
                     }
                 }
             }
             hash = Convert.ToHexStringLower(sha.GetHashAndReset());
         }
         File.Move(partialPath, destinationPath, true);
-        progress?.Report(100);
+        progress?.Report(UpdateDownloadProgress.Completed(total > 0 ? total : asset.Size));
         return hash;
     }
 
@@ -230,7 +244,7 @@ public sealed class GitHubReleaseSource : IUpdateSource
         string destinationPath,
         string partialPath,
         string metaPath,
-        IProgress<int>? progress,
+        IProgress<UpdateDownloadProgress>? progress,
         CancellationToken cancellationToken)
     {
         List<DownloadSegment> segments = LoadOrCreateSegments(asset, partialPath, metaPath);
@@ -243,7 +257,9 @@ public sealed class GitHubReleaseSource : IUpdateSource
         }
 
         object gate = new();
+        DownloadRateMeter meter = new();
         int lastPercent = -1;
+        long lastReportAt = 0;
         long saveWatermark = segments.Sum(s => s.Done);
         bool rangeUnsupported = false;
         using SemaphoreSlim hashSignal = new(0);
@@ -267,20 +283,22 @@ public sealed class GitHubReleaseSource : IUpdateSource
             {
                 return;
             }
-            int percent = (int)(doneTotal * 100 / asset.Size);
-            bool changed = false;
+            int percent = (int)Math.Clamp(doneTotal * 100 / asset.Size, 0, 100);
+            double speed;
             lock (gate)
             {
-                if (percent != lastPercent)
+                // 百分比不变也按时间报:速率才是"还在下 / 卡住了"的判据,
+                // 而慢速下载的百分比可以几十秒纹丝不动。
+                long now = Environment.TickCount64;
+                if (percent == lastPercent && now - lastReportAt < MinReportIntervalMilliseconds)
                 {
-                    lastPercent = percent;
-                    changed = true;
+                    return;
                 }
+                lastPercent = percent;
+                lastReportAt = now;
+                speed = meter.Sample(doneTotal);
             }
-            if (changed)
-            {
-                progress.Report(Math.Min(percent, 100));
-            }
+            progress.Report(new UpdateDownloadProgress(doneTotal, asset.Size, speed));
         }
 
         async Task DownloadSegment(DownloadSegment segment)
@@ -363,7 +381,7 @@ public sealed class GitHubReleaseSource : IUpdateSource
             string hash = await hashTask;
             TryDelete(metaPath);
             File.Move(partialPath, destinationPath, true);
-            progress?.Report(100);
+            progress?.Report(UpdateDownloadProgress.Completed(asset.Size));
             return hash;
         }
         catch (Exception ex)

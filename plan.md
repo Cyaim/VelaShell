@@ -1910,3 +1910,31 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - **适用范围**:单栏本地 ↔ 远程文档共用 SFTP / FTP / FTPS / 插件文件协议;双远程配对、访问历史、分组与快捷键仍属于 `feature-plan.md` 的后续范围。
 - **验证**:Core 模型、旧 JSON 兼容、配置深拷贝、路径规整与五份资源测试通过;`dotnet build VelaShell.slnx --no-restore` 通过。
 文档:已同步更新 velashell-docs 中英镜像的「SFTP 双栏与 WinSCP 差距分析」与「交互与界面规格」（待两个仓库分别提交）。
+
+## 209. 2026-10-14 更新下载:状态行显示速率,停滞另有提示
+
+**问题**:关于页下载更新时状态行只显示 `正在下载更新… 42%`。网络慢的时候百分比能几十秒不动,
+用户分不清「还在下,只是慢」和「已经卡死」。
+
+- **进度链路换类型**:`IProgress<int>` → `IProgress<UpdateDownloadProgress>`(已下载字节、整包字节、
+  当前速率;`Percent` 由字节数算出)。`IUpdateSource.DownloadAssetAsync`、`IUpdateService.DownloadUpdateAsync`
+  一并换掉;`UpdateService` 的「复用已下载包」分支上报 `UpdateDownloadProgress.Completed`。
+- **速率用滑动窗口,不用全程均值**:`DownloadRateMeter` 以 3 秒为窗,基线钉在「最近一次收到字节」的
+  时刻,窗口走完就地滚动。前段快后段慢时全程均值既不解释「现在慢」也不解释「刚才快」。时钟由构造参数
+  注入,测试瞬间跑完整个时间窗。整窗零增益、且距上次收到字节已过一窗时速率归零。
+- **汇报按时间兜底**:`GitHubReleaseSource` 原来只在百分比变化时汇报,现在百分比不变时每 250ms 也补报一次
+  —— 用户要看的是速率,而慢速下载的百分比能几十秒纹丝不动。单连接与分段并发两条路径共用同一套节流。
+- **心跳让停滞显形**:下载线程只在收到新字节时才汇报,网络一卡就没有任何回调,界面只能停在最后一个速度值上。
+  `SettingsViewModel` 在下载期间起一条 500ms 的 `PeriodicTimer` 心跳,驱动 `UpdateDownloadTracker.Tick`:
+  速率保鲜期 1 秒,过了归零;连续 10 秒没有任何新字节则 `IsStalled`,状态行换成带提示的文案。下载结束
+  (`downloadEnded`)后不再接受排队中的迟到汇报,「已就绪,可重启」不会被盖回「正在下载」。
+- **文案与布局**:删掉只带百分比的 `SetAbout_Downloading`,换成 `SetAbout_DownloadingSpeed` 与
+  `SetAbout_DownloadStalled`(五份 resx 齐)。状态行从按钮行里挪出来独占一行并开 `TextWrapping` ——
+  带速率与停滞提示的文本很长,挤在按钮行里会被截断,也会把按钮挤出可视区。字节 / 速率 / 停滞时长的
+  格式化直接复用 `TransferItemViewModel` 里已有的 `FormatBytes` / `FormatSpeed` / `FormatTimeRemaining`。
+- **验证**:新增 `DownloadRateMeterTests`(假时钟:首调只立基线、窗口内折算、窗口滚动后能掉到 0、
+  滚窗瞬间不闪 0、慢速报非零)与 `UpdateDownloadTrackerTests`(字节单调不减、未知总量百分比为 0、
+  心跳把过期速率清零、新字节撤销停滞判定);`GitHubReleaseSourceTests` 加一条,断言每条汇报都带得上
+  整包字节数且字节单调不减。`VelaShell.Tests` 全量 2069 通过 / 46 跳过;五份 resx 齐套由
+  `LocalizedKeyUsageTests` / `UnusedLocalizedKeyTests` 守住。
+- **文档**:同步到 velashell-docs `zh|en/host/消息中心与资讯源.md`(message-center-and-feed.md)

@@ -121,9 +121,12 @@
       <!-- 排障入口:发布版的 Trace 与崩溃记录都落在这个目录里,反馈问题时直接捞。 -->
       <Button Classes="dlg-outline" Content="{loc:Localize SetAbout_OpenLogs}"
               Command="{Binding OpenLogsDirectoryCommand}" />
-      <TextBlock Classes="row-desc" Text="{Binding UpdateStatus}" VerticalAlignment="Center"
-                 IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     </StackPanel>
+
+    <!-- 更新状态独占一行:下载中的状态带「百分比 · 已下载/总量 · 速率」,甚至可能再带一段
+         停滞提示,挤在按钮行里既会被截断,也会把按钮挤出可视区。 -->
+    <TextBlock Classes="row-desc" Text="{Binding UpdateStatus}" TextWrapping="Wrap"
+               IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
     <Border Classes="sep" />
 

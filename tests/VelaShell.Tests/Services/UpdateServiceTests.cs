@@ -358,9 +358,9 @@ public class UpdateServiceTests : IDisposable
     public void ImplementsIUpdateService() => Assert.IsInstanceOfType<IUpdateService>(CreateService());
 
     /// <summary>同步回调的进度器(Progress&lt;T&gt; 经同步上下文投递,测试里改用直呼)。</summary>
-    private sealed class SynchronousProgress(Action<int> handler) : IProgress<int>
+    private sealed class SynchronousProgress(Action<int> handler) : IProgress<UpdateDownloadProgress>
     {
-        public void Report(int value) => handler(value);
+        public void Report(UpdateDownloadProgress value) => handler(value.Percent);
     }
 
     private sealed class FakeUpdateSource : IUpdateSource
@@ -385,12 +385,13 @@ public class UpdateServiceTests : IDisposable
             UpdateManifest manifest,
             UpdateAsset asset,
             string destinationPath,
-            IProgress<int>? progress = null,
+            IProgress<UpdateDownloadProgress>? progress = null,
             CancellationToken cancellationToken = default)
         {
             DownloadCalls++;
-            await File.WriteAllBytesAsync(destinationPath, AssetBytes ?? [], cancellationToken);
-            progress?.Report(100);
+            byte[] bytes = AssetBytes ?? [];
+            await File.WriteAllBytesAsync(destinationPath, bytes, cancellationToken);
+            progress?.Report(UpdateDownloadProgress.Completed(bytes.LongLength));
             // 不返回流式哈希,覆盖 UpdateService 读文件校验的兜底路径。
             return null;
         }
