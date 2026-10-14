@@ -47,6 +47,14 @@ fluffy white cat tail with black ribbon and gold bell, clean line art, soft cel 
 pastel palette of teal, black, white, mint and pink, pure white background
 ```
 
+```text
+这是软件的 Logo。
+现在开发者期望你能生成一张日式二次元可爱风吉祥物。
+元素特征是 猫娘。
+整体是可爱、明亮、治愈、活泼的主题。
+服装配色可以参考软件 Logo 配色。
+```
+
 | 用途 | 场景 |
 | --- | --- |
 | 贴纸 · 点赞 | `giving a thumbs up and winking, sparkles around, sticker style with white outline` |
