@@ -10,25 +10,23 @@ namespace VelaShell.Services.Update;
 /// 窗口起点不动、分子为 0,速率自然落到 0 —— 这正是"下载已经停住"要显示的数。
 /// 线程安全:分段并发下载时多个段共用一个实例。
 /// </remarks>
-internal sealed class DownloadRateMeter
+/// <remarks>创建速率计。</remarks>
+/// <param name="clock">
+/// 取当前时刻(毫秒)的委托;不传则用 <see cref="Environment.TickCount64" />。
+/// 测试注入假时钟即可在瞬间内跑完整个时间窗。
+/// </param>
+internal sealed class DownloadRateMeter(Func<long>? clock = null)
 {
     /// <summary>速率统计窗口。3 秒:短到能跟上网络的忽快忽慢,长到不被单次 TCP 窗口抖动带偏。</summary>
     internal const long WindowMilliseconds = 3000;
 
     private readonly Lock _gate = new();
-    private readonly Func<long> _clock;
+    private readonly Func<long> _clock = clock ?? (static () => Environment.TickCount64);
     private long _windowStartAt;
     private long _windowStartBytes;
     private long _lastBytes;
     private long _lastDataAt;
     private double _lastRate;
-
-    /// <summary>创建速率计。</summary>
-    /// <param name="clock">
-    /// 取当前时刻(毫秒)的委托;不传则用 <see cref="Environment.TickCount64" />。
-    /// 测试注入假时钟即可在瞬间内跑完整个时间窗。
-    /// </param>
-    public DownloadRateMeter(Func<long>? clock = null) => _clock = clock ?? (static () => Environment.TickCount64);
 
     /// <summary>喂入累计已下载字节数,返回当前速率(字节/秒)。</summary>
     /// <param name="bytesDownloaded">到目前为止累计下载的字节数,含断点续传时此前已落盘的部分。</param>

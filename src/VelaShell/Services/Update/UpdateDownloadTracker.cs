@@ -9,7 +9,15 @@ namespace VelaShell.Services.Update;
 /// 界面只能停在最后一个速率值上,用户分不清"慢"和"已经不动了"。所以这里额外提供一个
 /// 由界面心跳驱动的 <see cref="Tick" />:它不产生新数据,只让速率归零、把停滞时长顶出来。
 /// </remarks>
-public sealed class UpdateDownloadTracker
+/// <remarks>创建进度快照器。</remarks>
+/// <param name="stallThreshold">
+/// 判定停滞所需的时长;不传则用 <see cref="StallThreshold" />。测试用短阈值,
+/// 免得为了验证停滞真的去等十秒。
+/// </param>
+/// <param name="speedFreshness">
+/// 速率保鲜期;不传则用 <see cref="SpeedFreshness" />。
+/// </param>
+public sealed class UpdateDownloadTracker(TimeSpan? stallThreshold = null, TimeSpan? speedFreshness = null)
 {
     /// <summary>连续这么久没有新字节就算停滞,界面改用停滞文案。</summary>
     public static readonly TimeSpan StallThreshold = TimeSpan.FromSeconds(10);
@@ -20,41 +28,24 @@ public sealed class UpdateDownloadTracker
     /// </summary>
     public static readonly TimeSpan SpeedFreshness = TimeSpan.FromSeconds(1);
 
-    private readonly TimeSpan _stallThreshold;
-    private readonly TimeSpan _speedFreshness;
-    private long _bytesDownloaded;
-    private long _totalBytes;
-    private double _bytesPerSecond;
+    private readonly TimeSpan _stallThreshold = stallThreshold ?? StallThreshold;
+    private readonly TimeSpan _speedFreshness = speedFreshness ?? SpeedFreshness;
     private DateTime _lastAdvancedAt = DateTime.UtcNow;
     private DateTime _lastSpeedAt = DateTime.UtcNow;
 
-    /// <summary>创建进度快照器。</summary>
-    /// <param name="stallThreshold">
-    /// 判定停滞所需的时长;不传则用 <see cref="StallThreshold" />。测试用短阈值,
-    /// 免得为了验证停滞真的去等十秒。
-    /// </param>
-    /// <param name="speedFreshness">
-    /// 速率保鲜期;不传则用 <see cref="SpeedFreshness" />。
-    /// </param>
-    public UpdateDownloadTracker(TimeSpan? stallThreshold = null, TimeSpan? speedFreshness = null)
-    {
-        _stallThreshold = stallThreshold ?? StallThreshold;
-        _speedFreshness = speedFreshness ?? SpeedFreshness;
-    }
-
     /// <summary>已下载字节数。</summary>
-    public long BytesDownloaded => _bytesDownloaded;
+    public long BytesDownloaded { get; private set; }
 
     /// <summary>整包字节数;未知时为 0。</summary>
-    public long TotalBytes => _totalBytes;
+    public long TotalBytes { get; private set; }
 
     /// <summary>已完成百分比(0–100);总量未知时为 0。</summary>
-    public int Percent => _totalBytes > 0
-        ? (int)Math.Clamp(_bytesDownloaded * 100 / _totalBytes, 0, 100)
+    public int Percent => TotalBytes > 0
+        ? (int)Math.Clamp(BytesDownloaded * 100 / TotalBytes, 0, 100)
         : 0;
 
     /// <summary>当前速率(字节/秒);长时间没有新速率时为 0。</summary>
-    public double BytesPerSecond => _bytesPerSecond;
+    public double BytesPerSecond { get; private set; }
 
     /// <summary>距离上一次收到新字节过去了多久。</summary>
     public TimeSpan StalledFor => DateTime.UtcNow - _lastAdvancedAt;
@@ -66,18 +57,18 @@ public sealed class UpdateDownloadTracker
     /// <param name="progress">下载源给出的进度快照。</param>
     public void Report(UpdateDownloadProgress progress)
     {
-        if (progress.BytesDownloaded > _bytesDownloaded)
+        if (progress.BytesDownloaded > BytesDownloaded)
         {
-            _bytesDownloaded = progress.BytesDownloaded;
+            BytesDownloaded = progress.BytesDownloaded;
             _lastAdvancedAt = DateTime.UtcNow;
         }
         if (progress.TotalBytes > 0)
         {
-            _totalBytes = progress.TotalBytes;
+            TotalBytes = progress.TotalBytes;
         }
         if (progress.BytesPerSecond > 0)
         {
-            _bytesPerSecond = progress.BytesPerSecond;
+            BytesPerSecond = progress.BytesPerSecond;
             _lastSpeedAt = DateTime.UtcNow;
         }
     }
@@ -89,7 +80,7 @@ public sealed class UpdateDownloadTracker
     {
         if (DateTime.UtcNow - _lastSpeedAt >= _speedFreshness)
         {
-            _bytesPerSecond = 0;
+            BytesPerSecond = 0;
         }
     }
 }
