@@ -47,6 +47,12 @@ public static partial class InteractivePromptDetector
     public static bool IsSecretPrompt(string line, string typed) =>
         IsSecretPromptCore(StripEcho(line, typed));
 
+    /// <summary>仅供共享密码入口使用的保守识别;不把私钥口令或验证码当成登录密码。</summary>
+    public static bool IsPasswordFillPrompt(string line) => PasswordFillPromptRegex().IsMatch(line.Trim());
+
+    [GeneratedRegex(@"^(?:password|passwd|enter password|请输入密码|密码|(?:\[sudo\]\s+)?password for [^:\r\n]+|[^\s:'\""$>#]+(?:@[^\s:'\""$>#]+)?['’]s password)[:：]\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PasswordFillPromptRegex();
+
     /// <summary>剥掉光标行末尾已回显的输入,只留下程序打印的提示部分。</summary>
     private static string StripEcho(string line, string typed)
     {

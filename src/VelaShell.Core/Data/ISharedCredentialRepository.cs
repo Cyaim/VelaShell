@@ -16,6 +16,12 @@ public interface ISharedCredentialRepository
     /// <summary>返回全部共享凭据,按名称排序。</summary>
     Task<List<SharedCredential>> GetAllAsync();
 
+    /// <summary>返回不含秘密且无需解密的凭据摘要,按名称排序。</summary>
+    Task<List<SharedCredentialMetadata>> ListMetadataAsync();
+
+    /// <summary>只读取密码认证凭据的密码;不存在或不适用时返回 null,无法解密时抛出 CryptographicException。</summary>
+    Task<string?> GetPasswordAsync(Guid id);
+
     /// <summary>按 Id 取一条;不存在时返回 <c>null</c>。</summary>
     Task<SharedCredential?> GetAsync(Guid id);
 

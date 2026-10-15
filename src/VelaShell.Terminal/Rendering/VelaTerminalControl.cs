@@ -127,6 +127,72 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     /// <summary>每个绝对缓冲行的搜索区间;当前命中项以不同色调着色。</summary>
     private Dictionary<int, List<(int Start, int End, bool Current)>>? _searchHighlights;
 
+    // 选区匹配只是一层视觉标记,不能变成真实多选区或覆盖 Ctrl+F 的命中状态。
+    private string? _selectionMatchQuery;
+    private IReadOnlyList<BufferSearchHit> _selectionMatches = [];
+    private Dictionary<int, List<BufferSearchHit>>? _selectionMatchRows;
+    private bool _selectionMatchesDirty;
+    private int _selectionMatchScreenGeneration;
+
+    internal IReadOnlyList<BufferSearchHit> SelectionMatchesForTest => _selectionMatches;
+    internal int SelectionMatchRefreshCountForTest { get; private set; }
+
+    private void ClearSelectionMatches()
+    {
+        _selectionMatchQuery = null;
+        _selectionMatches = [];
+        _selectionMatchRows = null;
+        _selectionMatchesDirty = false;
+        _selectionMatchScreenGeneration = 0;
+    }
+
+    private void CommitSelectionMatches()
+    {
+        ClearSelectionMatches();
+        List<SelectionSpan> spans = SelectionSpans();
+        if (spans.Count != 1 || spans[0] is not { Block: false } span
+            || span.Start.Row != span.End.Row)
+        {
+            return;
+        }
+        TerminalScreen screen = Emulator.Screen;
+        TerminalRow line = screen.ViewLine(span.Start.Row);
+        (int from, int to) = TerminalSelectionMath.RowSpan((span.Start, span.End), false, span.Start.Row, line.Columns);
+        var text = new StringBuilder();
+        for (int col = from; col < to; col++)
+        {
+            line[col].AppendText(text);
+        }
+        string query = text.ToString();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return;
+        }
+        _selectionMatchQuery = query;
+        _selectionMatchScreenGeneration = Emulator.ScreenGeneration;
+        _selectionMatchesDirty = true;
+    }
+
+    private void RefreshSelectionMatches(TerminalScreen screen)
+    {
+        if (!_selectionMatchesDirty || _selectionMatchQuery is null)
+        {
+            return;
+        }
+        _selectionMatchesDirty = false;
+        SelectionMatchRefreshCountForTest++;
+        _selectionMatches = BufferSearch.FindVisible(screen, _selectionMatchQuery, _screenToAbs);
+        _selectionMatchRows = [];
+        foreach (BufferSearchHit hit in _selectionMatches)
+        {
+            if (!_selectionMatchRows.TryGetValue(hit.Row, out List<BufferSearchHit>? row))
+            {
+                _selectionMatchRows[hit.Row] = row = [];
+            }
+            row.Add(hit);
+        }
+    }
+
     private bool _selecting;
 
     // 本次选区是否为 Alt+拖拽的矩形块选(#128)。与 Windows Terminal 一致:按下鼠标那一刻由 Alt
@@ -541,6 +607,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
                 return;
             }
             _scrollOffset = clamped;
+            _selectionMatchesDirty = true;
             InvalidateTerminal();
             ScrollChanged?.Invoke();
         }
@@ -660,7 +727,11 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     }
 
     /// <summary>把程序生成的字节当作用户输入发送往 PTY。</summary>
-    public void WriteInput(byte[] data) => SendTypedInput(data);
+    public void WriteInput(byte[] data)
+    {
+        SendTypedInput(data);
+        AfterProgrammaticInput();
+    }
 
     /// <inheritdoc />
     public void WriteTextInput(string text)
@@ -817,6 +888,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     /// <summary>解除模拟器事件订阅并停止光标闪烁计时器。</summary>
     public void Dispose()
     {
+        ClearSelectionMatches();
         Emulator.Updated -= OnEmulatorUpdated;
         Emulator.Bell -= OnBell;
         Emulator.ClipboardWriteRequested -= OnRemoteClipboardWrite;
@@ -1111,6 +1183,11 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
 
     private void ApplyOutputUpdate()
     {
+        if (_selectionMatchQuery is not null && _selectionMatchScreenGeneration != Emulator.ScreenGeneration)
+        {
+            ClearSelection();
+        }
+        _selectionMatchesDirty = true;
         ReconcileGridWithLayout();
         // 仅在已处于底部时才跟随输出;否则保持用户的历史
         // 视图固定不动,以免后台输出把其拽回下方(修复 #15)—— 除非
@@ -1135,7 +1212,14 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
             ScrollChanged?.Invoke();
         }
         _imeClient?.NotifyCursorMoved();
+        OutputUpdated?.Invoke();
     }
+
+    /// <summary>输出已在 UI 线程合批应用;订阅者可读取当前光标行,不必解析原始字节。</summary>
+    public event Action? OutputUpdated;
+
+    /// <summary>当前主/备用屏切换代次,包含一次输出批次内的往返。</summary>
+    public int ScreenGeneration => Emulator.ScreenGeneration;
 
     /// <summary>
     /// 为操作系统输入法提供一个锚定在终端光标处的客户端,使 IME
@@ -1336,6 +1420,11 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
             return;
         }
         bool wasComposing = PreeditTextForTest is not null;
+        if (!wasComposing && next is not null)
+        {
+            ClearSelection();
+            InvalidateTerminal();
+        }
         PreeditTextForTest = next;
         _preeditCaretIndex = caretIndex;
         _preeditGlyphs = null; // 文本变了,缓存的逐字形塑形随之作废。
@@ -2046,6 +2135,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         // 计算本帧「屏幕行 → 绝对缓冲行」映射(_screenToAbs):无折叠时即连续 topAbsolute+sr(与原行为一致),
         // 有折叠时跳过被隐藏的行。侧栏、正文、光标、命中测试全部复用该映射,确保三者对齐。
         BuildScreenRowMap(screen, rows);
+        RefreshSelectionMatches(screen);
         List<SelectionSpan> spans = SelectionSpans();
 
         // 行号/时间侧栏在正文左侧:先画侧栏,再把正文(含光标、选区)整体右移一个侧栏宽度绘制,
@@ -2770,6 +2860,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         {
             return false;
         }
+        ClearSelectionMatches();
         _extraSelections.Clear();
         _selectionAnchor = (block.OutputStart, 0);
         // 终点取末行的行尾:选区按 (行, 列) 定界,给足列宽才能把最后一行整行圈进去。
@@ -2786,6 +2877,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
 
     private void AfterFoldChange()
     {
+        _selectionMatchesDirty = true;
         InvalidateTerminal();
         ScrollChanged?.Invoke();
     }
@@ -2892,8 +2984,11 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         // 本行的搜索命中区间同样逐行取一次:原先每一格都要在字典里 TryGetValue 一遍。
         List<(int start, int end, bool current)>? rowSearchSpans = null;
         _ = _searchHighlights?.TryGetValue(absoluteRow, out rowSearchSpans);
+        List<BufferSearchHit>? rowSelectionMatches = null;
+        _ = _selectionMatchRows?.TryGetValue(absoluteRow, out rowSelectionMatches);
         // 整行有没有 OSC 8 链接逐行问一次:绝大多数行没有,格子循环里连数组都不必碰。
         bool hasLinks = line.HasLinks;
+        int selectionMatchIndex = 0;
         int col = 0;
         while (col < cols)
         {
@@ -2911,6 +3006,19 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
             if (inverse)
             {
                 (fg, bg) = (bg, fg);
+            }
+            if (rowSelectionMatches is not null)
+            {
+                while (selectionMatchIndex < rowSelectionMatches.Count
+                    && col >= rowSelectionMatches[selectionMatchIndex].StartCol + rowSelectionMatches[selectionMatchIndex].Length)
+                {
+                    selectionMatchIndex++;
+                }
+                if (selectionMatchIndex < rowSelectionMatches.Count
+                    && col >= rowSelectionMatches[selectionMatchIndex].StartCol)
+                {
+                    bg = palette.SearchMatchBackground;
+                }
             }
             if (IsSelectedColumn(rowSpans, col))
             {
@@ -3396,6 +3504,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     /// </summary>
     public void ShowHit(BufferSearchHit hit)
     {
+        ClearSelectionMatches();
         _extraSelections.Clear(); // 命中高亮是"整个选区换成这一处",不与既有多段并存
         _selectionAnchor = (hit.Row, hit.StartCol);
         _selectionCaret = (hit.Row, hit.StartCol + hit.Length);
@@ -3723,6 +3832,8 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         }
         if (props.IsLeftButtonPressed)
         {
+            ClearSelectionMatches();
+            InvalidateTerminal();
             // 双击选择整个单词(设置 → 终端 → 选择与复制)。
             // 按住 Ctrl+Shift 双击则是"再添一个词",已有各段留着。
             if (e.ClickCount == 2 && DoubleClickSelectsWord)
@@ -3864,6 +3975,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         _selectionCaret = (endRow, end);
         _selecting = false;
         _blockSelection = false;
+        CommitSelectionMatches();
         InvalidateTerminal();
         if (CopyOnSelect)
         {
@@ -4104,6 +4216,8 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
             return;
         }
         _selecting = false;
+        CommitSelectionMatches();
+        InvalidateTerminal();
         // 选中即复制:松开非空选区即复制它,因此用户永远不需要复制快捷键(设计 §8)。
         // 普通点击选区为空,相当于无操作。
         if (CopyOnSelect)
@@ -4234,7 +4348,14 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
             : 1;
         int delta = (int)(e.Delta.Y * WheelScrollLines * multiplier);
         int maxOffset = Emulator.Screen.ScrollbackCount;
-        _scrollOffset = Math.Clamp(_scrollOffset + delta, 0, maxOffset);
+        int nextOffset = Math.Clamp(_scrollOffset + delta, 0, maxOffset);
+        if (nextOffset == _scrollOffset)
+        {
+            e.Handled = true;
+            return;
+        }
+        _scrollOffset = nextOffset;
+        _selectionMatchesDirty = true;
         InvalidateTerminal();
         ScrollChanged?.Invoke();
         e.Handled = true;
@@ -4285,6 +4406,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
 
     private void ClearSelection()
     {
+        ClearSelectionMatches();
         _extraSelections.Clear();
         _selectionAnchor = null;
         _selectionCaret = null;

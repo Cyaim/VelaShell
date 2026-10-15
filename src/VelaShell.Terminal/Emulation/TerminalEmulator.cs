@@ -89,6 +89,9 @@ public sealed class TerminalEmulator : IVtActions
     /// <summary>当前生效的屏幕缓冲区(主屏或备用屏)。</summary>
     public TerminalScreen Screen { get; private set; }
 
+    // 输出合批可能在一次 Updated 前切入又退出备用屏,仅比较当前 Screen 引用会漏掉这次变化。
+    internal int ScreenGeneration { get; private set; }
+
     /// <summary>主屏保留的最大回滚行数(设置 → 终端 → 回滚行数)。</summary>
     /// <remarks>
     /// <b>读写的恒是主屏,与此刻是否在备用屏无关。</b>备用屏的容量恒为 0 且不可配 ——
@@ -1454,6 +1457,7 @@ public sealed class TerminalEmulator : IVtActions
         {
             return;
         }
+        ScreenGeneration++;
         // 备用屏整块换掉,在途的提示符行不再属于当前缓冲区(退出备用屏时它还会被整个丢弃)。
         // 攥着它等于给一条已经不在场的行记退出码。
         _promptRow = null;

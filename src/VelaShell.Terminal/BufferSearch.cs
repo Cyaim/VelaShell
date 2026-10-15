@@ -28,7 +28,16 @@ public static class BufferSearch
     /// <param name="screen">要搜索的终端缓冲区。</param>
     /// <param name="query">要搜索的纯文本。</param>
     /// <returns>全部命中,以绝对行/字符坐标表示,按缓冲区顺序排列。</returns>
-    public static IReadOnlyList<BufferSearchHit> FindAll(TerminalScreen screen, string query)
+    public static IReadOnlyList<BufferSearchHit> FindAll(TerminalScreen screen, string query) =>
+        FindCore(screen, query, [], allRows: true);
+
+    /// <summary>只搜索给定的可见绝对行;-1 表示视口中的空行。</summary>
+    internal static IReadOnlyList<BufferSearchHit> FindVisible(
+        TerminalScreen screen, string query, ReadOnlySpan<int> visibleRows) =>
+        FindCore(screen, query, visibleRows, allRows: false);
+
+    private static List<BufferSearchHit> FindCore(
+        TerminalScreen screen, string query, ReadOnlySpan<int> visibleRows, bool allRows)
     {
         if (string.IsNullOrEmpty(query))
         {
@@ -45,8 +54,14 @@ public static class BufferSearch
         // 与 buffer 等长的列映射:第 i 个字符来自第几屏幕列。命中是按字符找到的,
         // 而高亮与选区按列画,两者之间必须有一次显式换算(见 BufferSearchHit)。
         int[] columnOfChar = new int[buffer.Length];
-        for (int row = 0; row < totalRows; row++)
+        int count = allRows ? totalRows : visibleRows.Length;
+        for (int i = 0; i < count; i++)
         {
+            int row = allRows ? i : visibleRows[i];
+            if (row < 0 || row >= totalRows)
+            {
+                continue;
+            }
             TerminalRow line = screen.ViewLine(row);
             int length;
             while ((length = line.CopyTextTo(buffer, columnOfChar)) < 0)

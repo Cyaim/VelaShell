@@ -41,6 +41,11 @@ public class SshTerminalBridge : IAsyncDisposable
     });
 
     private readonly Task _writeTask;
+    private readonly Lock _outboundGate = new();
+    private long _inputGeneration;
+
+    /// <summary>出站输入代次,也包含不触发 TypedInput 的同步输入和程序注入。</summary>
+    public long InputGeneration => Interlocked.Read(ref _inputGeneration);
 
     /// <summary>
     /// 出站队列元素:待发载荷 + 可选的排空信号(仅测试探针使用,写循环处理到该元素
@@ -435,6 +440,25 @@ public class SshTerminalBridge : IAsyncDisposable
             return;
         }
         EnqueueOutbound(data);
+    }
+
+    /// <summary>仅当此前没有其他输入入队时提交敏感输入;检查与入队在同一锁内完成。</summary>
+    public bool TrySendRaw(byte[] data, long expectedInputGeneration)
+    {
+        lock (_outboundGate)
+        {
+            if (_disposed || !_shellStream.CanWrite || _inputGeneration != expectedInputGeneration)
+            {
+                return false;
+            }
+            _antiIdle.NoteActivity();
+            if (!_writeQueue.Writer.TryWrite(new(data, null)))
+            {
+                return false;
+            }
+            Interlocked.Increment(ref _inputGeneration);
+            return true;
+        }
     }
 
     /// <summary>
@@ -891,8 +915,14 @@ public class SshTerminalBridge : IAsyncDisposable
     /// </remarks>
     private void EnqueueOutbound(byte[] data)
     {
-        _antiIdle.NoteActivity();
-        _writeQueue.Writer.TryWrite(new(data, null));
+        lock (_outboundGate)
+        {
+            _antiIdle.NoteActivity();
+            if (_writeQueue.Writer.TryWrite(new(data, null)))
+            {
+                Interlocked.Increment(ref _inputGeneration);
+            }
+        }
     }
 
     /// <summary>

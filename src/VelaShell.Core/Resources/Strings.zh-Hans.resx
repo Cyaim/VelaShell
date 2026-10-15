@@ -7534,6 +7534,16 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Sudo_Retry" xml:space="preserve"><value>上次密码未被接受，请重试。</value></data>
   <data name="Sudo_NoStorage" xml:space="preserve"><value>密码仅发送给此主机，不保存，也不提供给插件或 AI。</value></data>
   <data name="Sudo_Submit" xml:space="preserve"><value>认证</value></data>
+  <data name="PasswordFill_Title" xml:space="preserve"><value>填入共享密码</value></data>
+  <data name="PasswordFill_Hint" xml:space="preserve"><value>选择共享密码填入…</value></data>
+  <data name="PasswordFill_Search" xml:space="preserve"><value>搜索凭据名称或用户名</value></data>
+  <data name="PasswordFill_Confirm" xml:space="preserve"><value>仅填入，不回车</value></data>
+  <data name="PasswordFill_Warning" xml:space="preserve"><value>仅向此会话填入所选密码，不发送回车。远端程序可能回显密码，使其进入屏幕、日志或录制。请确认信任当前提示后再填入。</value></data>
+  <data name="PasswordFill_Empty" xml:space="preserve"><value>没有匹配的共享密码凭据。可在“设置 → 共享凭据”中添加密码凭据。</value></data>
+  <data name="PasswordFill_ReadFailed" xml:space="preserve"><value>无法读取或解密凭据，未发送任何内容。</value></data>
+  <data name="PasswordFill_Expired" xml:space="preserve"><value>会话或输入上下文已变化，未发送任何内容。请关闭后重新打开选择器。</value></data>
+  <data name="PasswordFill_Unavailable" xml:space="preserve"><value>此凭据已删除或不再具有可用密码，未发送任何内容。</value></data>
+  <data name="PasswordFill_Invalid" xml:space="preserve"><value>密码包含控制字符或无法使用当前会话编码表示，未发送任何内容。</value></data>
   <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
   <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>使用本机已登录的 Tailscale 身份与远端系统用户名，无需 SSH 密码或密钥；服务器可能要求浏览器验证。</value></data>
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH 使用本机 Tailscale 身份，不能保存为共享凭据。</value></data>

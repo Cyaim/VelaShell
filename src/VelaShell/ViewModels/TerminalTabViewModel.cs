@@ -442,6 +442,8 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
     /// <summary>连接 shell 流与终端模拟器的桥接器;未连接时为 null。</summary>
     public SshTerminalBridge? Bridge { get; private set; }
 
+    internal long ConnectionGeneration { get; private set; }
+
     /// <summary>
     /// 本标签的连接状态。赋值时同步 <see cref="IsConnected" />、在连接成功时清除错误,
     /// 并刷新失败/断开覆盖层的可见性与文案。
@@ -451,6 +453,10 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         get => base.ConnectionStatus;
         set
         {
+            if (base.ConnectionStatus != value)
+            {
+                ConnectionGeneration++;
+            }
             base.ConnectionStatus = value;
             IsConnected = value == SessionStatus.Connected;
 
@@ -615,6 +621,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
             return;
         }
         _disposed = true;
+        ConnectionGeneration++;
         // 「已复制」回执的定时器可能还挂着:不取消的话它会在标签消失之后才回调。
         _copyFeedbackReset?.Dispose();
         _copyFeedbackReset = null;
@@ -828,6 +835,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         bridge.Closed += OnBridgeClosed;
         ApplyAntiIdle(bridge);
         Bridge = bridge;
+        ConnectionGeneration++;
         _started = false;
 
         // 通道以固定的默认网格(120×32)打开。到此时控件通常已经布局到真实视口,
@@ -879,6 +887,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         }
         bridge.Closed -= OnBridgeClosed;
         Bridge = null;
+        ConnectionGeneration++;
         ShellStream = null;
         _started = false;
 

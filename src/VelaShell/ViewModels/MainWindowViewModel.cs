@@ -1022,6 +1022,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 Icon: "Icon.search"
             )
         );
+        Commands.Register(new(
+            "terminal.fillSharedPassword", Strings.Get("PasswordFill_Title"), Strings.Get("CmdCat_Session"),
+            () => SharedPasswordFillRequested?.Invoke(this, EventArgs.Empty),
+            () => ActiveTerminalTab is { IsConnected: true, Bridge: not null }, Icon: "Icon.key-round"));
         // 隧道独立于终端会话(后台自动连接),无活动标签也可用。
         Commands.Register(
             new(
@@ -1653,6 +1657,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 用户通过菜单/面板请求终端内搜索时触发;窗口将其转发到活动终端视图的搜索栏(§5.3)。
     /// </summary>
     public event EventHandler? TerminalSearchRequested;
+
+    /// <summary>主动打开当前会话的共享密码选择器。</summary>
+    public event EventHandler? SharedPasswordFillRequested;
 
     /// <summary>请求视图聚焦当前活动终端。</summary>
     public event EventHandler? TerminalFocusRequested;
