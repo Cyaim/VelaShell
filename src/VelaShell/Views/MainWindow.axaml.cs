@@ -1596,7 +1596,8 @@ public partial class MainWindow : Window
 
         SharedCredential? credential = null;
         SharedCredentialPromptContext? sharedContext = null;
-        if (SharedCredentialService.SharedCredentialIdOf(profile) is { } credentialId
+        if (profile.AuthMethod != AuthMethod.Tailscale
+            && SharedCredentialService.SharedCredentialIdOf(profile) is { } credentialId
             && services?.GetService<ISharedCredentialRepository>() is { } credentials
             && services.GetService<SharedCredentialService>() is { } credentialService)
         {
@@ -1612,21 +1613,8 @@ public partial class MainWindow : Window
             }
         }
 
-        // 凭据还在且这次没手输过:框上默认选凭据的认证方式、填凭据的私钥路径。
-        bool fromCredential = credential is not null && !CredentialMaterial.HasInline(profile);
-        var viewModel = new AuthenticationDialogViewModel(
-            profile.Host,
-            profile.Port,
-            SharedCredentialPrompt.InitialUsername(profile, credential),
-            knownFingerprint,
-            fromCredential ? credential!.AuthMethod : profile.AuthMethod,
-            sharedContext
-        );
-        if (fromCredential && credential!.AuthMethod is AuthMethod.PrivateKey or AuthMethod.Certificate)
-        {
-            viewModel.PrivateKeyPath = credential.PrivateKeyPath;
-            viewModel.CertificatePath = credential.CertificatePath;
-        }
+        AuthenticationDialogViewModel viewModel = SharedCredentialPrompt.CreateDialog(
+            profile, credential, knownFingerprint, sharedContext);
         var dialog = new AuthenticationDialogView { DataContext = viewModel };
         AuthenticationResult? result = await dialog.ShowDialog<AuthenticationResult?>(this);
         if (result is null)

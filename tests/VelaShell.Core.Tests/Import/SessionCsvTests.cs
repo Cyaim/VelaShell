@@ -294,4 +294,59 @@ public sealed class SessionCsvTests
 
         Assert.AreSequenceEqual(new byte[] { 0xEF, 0xBB, 0xBF }, bytes[..3], "没有 BOM,Excel 会按本地代码页打开,中文全成乱码");
     }
+
+    [TestMethod]
+    [DataRow(ConnectionType.SSH)]
+    [DataRow(ConnectionType.SFTP)]
+    public void Tailscale_RoundTripDiscardsStaleMaterialsAndCredential(ConnectionType type)
+    {
+        var credential = new SharedCredential { Name = "stale-shared" };
+        var jump = new SessionProfile { Name = "jump", Host = "jump" };
+        var profile = new SessionProfile
+        {
+            Name = "tail", Host = "tail", Username = "deploy", ConnectionType = type,
+            AuthMethod = AuthMethod.Tailscale, Password = "stale-password", PrivateKeyPath = "/stale-key",
+            PrivateKeyPassphrase = "stale-phrase", CertificatePath = "/stale-cert", RememberPassword = true,
+            CredentialSource = CredentialReference.ForShared(credential.Id), JumpHostProfileId = jump.Id
+        };
+
+        string csv = SessionCsv.Write(new SessionArchive { Sessions = [profile, jump], SharedCredentials = [credential] });
+        SessionImportCandidate candidate = SessionCsv.Read("tail.csv", csv).Candidates[0];
+
+        Assert.Contains("tailscale", csv);
+        foreach (string material in (string[])["stale-password", "/stale-key", "stale-phrase", "/stale-cert", "stale-shared"])
+        {
+            Assert.DoesNotContain(material, csv);
+        }
+        Assert.IsTrue(candidate.IsValid);
+        Assert.AreEqual(AuthMethod.Tailscale, candidate.Profile.AuthMethod);
+        Assert.AreEqual(type, candidate.Profile.ConnectionType);
+        Assert.AreEqual("deploy", candidate.Profile.Username);
+        Assert.AreEqual("jump", candidate.JumpHostReference);
+        Assert.IsNull(candidate.CredentialReference);
+        Assert.IsNull(candidate.Profile.PrivateKeyPath);
+        Assert.IsNull(candidate.Profile.CertificatePath);
+        Assert.AreEqual("stale-password", profile.Password, "导出不修改源配置");
+    }
+
+    [TestMethod]
+    [DataRow("ssh", true)]
+    [DataRow("sftp", true)]
+    [DataRow("ftp", false)]
+    [DataRow("plugin:velashell.s3", false)]
+    public void Tailscale_OverridesCredentialColumnButStillChecksProtocol(string protocol, bool valid)
+    {
+        SessionImportCandidate candidate = SessionCsv.Read("tail.csv",
+            $"host,port,protocol,username,auth,password,private_key,certificate,credential\ntail,22,{protocol},deploy,TAILSCALE,old,/old-key,/old-cert,missing\n").Candidates.Single();
+
+        Assert.AreEqual(valid, candidate.IsValid);
+        Assert.AreEqual(AuthMethod.Tailscale, candidate.Profile.AuthMethod);
+        Assert.IsNull(candidate.CredentialReference);
+        Assert.IsNull(candidate.Profile.CredentialSource);
+        Assert.IsNull(candidate.Profile.Password);
+        Assert.IsNull(candidate.Profile.PrivateKeyPath);
+        Assert.IsNull(candidate.Profile.PrivateKeyPassphrase);
+        Assert.IsNull(candidate.Profile.CertificatePath);
+        Assert.IsFalse(candidate.Profile.RememberPassword);
+    }
 }

@@ -134,4 +134,74 @@ public class SessionBatchEditViewModelTests
         await _repository.Received(1).SaveSessionAsync(Arg.Is<SessionProfile>(p => p.Id == _ftp.Id && p.JumpHostProfileId == null));
         Assert.AreEqual("root", _a.Username, "保存的是副本,传进来的对象不动");
     }
+
+    [TestMethod]
+    public async Task Tailscale_ClearsOldSecretsAndReference_AndSkipsNonSshTargets()
+    {
+        _a.CredentialSource = CredentialReference.ForShared(_keyCredential.Id);
+        _a.Password = "old-password";
+        _a.PrivateKeyPath = "/old-key";
+        _a.PrivateKeyPassphrase = "old-passphrase";
+        _a.CertificatePath = "/old-cert";
+        _a.RememberPassword = true;
+        var sftp = new SessionProfile { Name = "sftp", Host = "files", Username = "ops", ConnectionType = ConnectionType.SFTP };
+        SessionBatchEditViewModel vm = Create(_a, sftp, _ftp, _redis);
+        vm.ChangeAuth = true;
+        vm.SelectedCredential = vm.CredentialOptions.Single();
+        vm.Password = SecureStringConvert.FromPlaintext("hidden-password");
+        vm.PrivateKeyPath = "/hidden-key";
+        vm.PrivateKeyPassphrase = "hidden-passphrase";
+        var raised = new List<string>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName ?? string.Empty);
+
+        await vm.SelectAuthKindCommand.Execute(SessionBatchAuthKind.Tailscale).FirstAsync();
+
+        Assert.IsTrue(vm.IsTailscaleAuth);
+        Assert.IsFalse(vm.IsPasswordAuth);
+        Assert.IsFalse(vm.IsKeyAuth);
+        Assert.IsFalse(vm.IsAgentAuth);
+        Assert.IsFalse(vm.IsSharedCredentialAuth);
+        Assert.Contains(nameof(SessionBatchEditViewModel.IsTailscaleAuth), raised);
+        Assert.IsNull(vm.ValidationError);
+        Assert.IsTrue(await vm.ApplyCommand.CanExecute.FirstAsync());
+        Assert.IsNull(vm.BuildEdit().Auth!.Credential);
+        Assert.IsNull(vm.BuildEdit().Auth!.Password);
+        List<SessionProfile> saved = [];
+        _repository.SaveSessionAsync(Arg.Do<SessionProfile>(saved.Add)).Returns(Task.CompletedTask);
+
+        SessionBatchEditOutcome? outcome = await vm.ApplyCommand.Execute().FirstAsync();
+
+        Assert.IsNotNull(outcome);
+        Assert.AreEqual(2, outcome.Changed);
+        Assert.AreEqual(2, outcome.AuthSkipped);
+        Assert.HasCount(2, saved);
+        foreach (SessionProfile profile in saved)
+        {
+            Assert.AreEqual(AuthMethod.Tailscale, profile.AuthMethod);
+            Assert.IsNull(profile.CredentialSource);
+            Assert.IsFalse(CredentialMaterial.HasInline(profile));
+            Assert.IsNull(profile.Password);
+            Assert.IsNull(profile.PrivateKeyPath);
+            Assert.IsNull(profile.PrivateKeyPassphrase);
+            Assert.IsNull(profile.CertificatePath);
+            Assert.IsFalse(profile.RememberPassword);
+        }
+        Assert.AreEqual("root", saved.Single(p => p.Id == _a.Id).Username);
+        Assert.AreEqual("ops", saved.Single(p => p.Id == sftp.Id).Username);
+        Assert.AreEqual("old-password", _a.Password, "原配置不被批量编辑就地改写");
+    }
+
+    [TestMethod]
+    public async Task TailscaleSharedEntry_IsRejectedInsteadOfAppliedAsSharedCredential()
+    {
+        var credential = new SharedCredential { Name = "invalid", AuthMethod = AuthMethod.Tailscale };
+        var vm = new SessionBatchEditViewModel([_a], [_a], [credential], _repository)
+        {
+            ChangeAuth = true
+        };
+        vm.SelectedCredential = vm.CredentialOptions.Single();
+
+        Assert.AreEqual(Strings.Get("SharedCred_ErrTailscaleUnsupported"), vm.ValidationError);
+        Assert.IsFalse(await vm.ApplyCommand.CanExecute.FirstAsync());
+    }
 }

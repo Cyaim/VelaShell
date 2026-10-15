@@ -32,6 +32,8 @@ public static class ReconnectPolicy
     /// 自动拉起会没完没了。</item>
     /// <item><b>上一次重连败在主机指纹上的不碰</b> —— 再试多少次结果都一样,
     /// 自动重连时又不弹窗问人(<c>ConnectionInfo.IsAutomaticReconnect</c>);等用户手动重连、在弹窗里核对。</item>
+    /// <item><b>认证需要人工处理的不碰</b> —— 授权被拒或需要浏览器验证时暂停后台尝试;
+    /// 用户显式重连仍可尝试当前服务端策略,只有成功挂载传输才解除暂停。</item>
     /// </list>
     /// <para>
     /// 反过来,只有"没人要它结束"的断开才该救:掉线、超时、服务端崩溃。
@@ -43,6 +45,7 @@ public static class ReconnectPolicy
     /// <param name="isLocalShell">是不是本地终端。</param>
     /// <param name="remoteShellExited">远端 shell 是不是自己正常退出的。</param>
     /// <param name="hostKeyRejected">上一次重连是不是败在主机指纹上。</param>
+    /// <param name="authenticationRequiresUserAction">认证是否需要用户手动处理。</param>
     /// <returns>符合条件时为 true。</returns>
     public static bool ShouldReconnect(
         bool autoReconnectEnabled,
@@ -50,13 +53,15 @@ public static class ReconnectPolicy
         bool userRequestedDisconnect,
         bool isLocalShell,
         bool remoteShellExited,
-        bool hostKeyRejected) =>
+        bool hostKeyRejected,
+        bool authenticationRequiresUserAction) =>
         autoReconnectEnabled
         && isDisconnected
         && !userRequestedDisconnect
         && !isLocalShell
         && !remoteShellExited
-        && !hostKeyRejected;
+        && !hostKeyRejected
+        && !authenticationRequiresUserAction;
 
     /// <summary>
     /// 代理设置刚被改过,这条会话该不该被自动重连一次。
@@ -78,6 +83,8 @@ public static class ReconnectPolicy
     /// </para>
     /// <para>
     /// 用户主动断开、远端 exit、本地终端一律不碰,理由同 <see cref="ShouldReconnect" />。
+    /// 认证暂停同样保留:改代理不等于用户已完成当前 SSH 认证跳要求的验证。
+    /// 暂停只属于当前标签,不是服务器 accept/check 模式或批准状态的缓存。
     /// </para>
     /// </remarks>
     /// <param name="isDisconnected">当前是否处于断开状态。</param>
@@ -85,18 +92,21 @@ public static class ReconnectPolicy
     /// <param name="userRequestedDisconnect">是不是用户主动断开的。</param>
     /// <param name="isLocalShell">是不是本地终端(不看代理设置)。</param>
     /// <param name="remoteShellExited">远端 shell 是不是自己正常退出的。</param>
+    /// <param name="authenticationRequiresUserAction">认证是否需要用户手动处理。</param>
     /// <returns>符合条件时为 true。</returns>
     public static bool ShouldReconnectAfterProxyChange(
         bool isDisconnected,
         bool hasConnectionError,
         bool userRequestedDisconnect,
         bool isLocalShell,
-        bool remoteShellExited) =>
+        bool remoteShellExited,
+        bool authenticationRequiresUserAction) =>
         isDisconnected
         && hasConnectionError
         && !userRequestedDisconnect
         && !isLocalShell
-        && !remoteShellExited;
+        && !remoteShellExited
+        && !authenticationRequiresUserAction;
 
     /// <summary>
     /// 还能不能再试一次。

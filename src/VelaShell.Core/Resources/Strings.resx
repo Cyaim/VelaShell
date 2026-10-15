@@ -7074,4 +7074,21 @@ Send anyway?</value>
   <data name="Sudo_Retry" xml:space="preserve"><value>The previous password was not accepted. Try again.</value></data>
   <data name="Sudo_NoStorage" xml:space="preserve"><value>The password is sent only to this host. It is not saved or shared with the plugin or AI.</value></data>
   <data name="Sudo_Submit" xml:space="preserve"><value>Authenticate</value></data>
+  <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
+  <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>Use the signed-in Tailscale identity and the remote system username. No SSH password or key is required; the server may request browser verification.</value></data>
+  <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH uses this device's Tailscale identity and cannot be stored as a shared credential.</value></data>
+  <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH verification</value></data>
+  <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>The server requires identity verification. Open the link in your browser. This connection will continue automatically when the server approves it.</value></data>
+  <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>Open browser</value></data>
+  <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>Copy link</value></data>
+  <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH verification link hidden]</value></data>
+  <data name="Ssh_TailscaleCheckOpenFailed" xml:space="preserve"><value>Could not open the browser. Copy the link or try again.</value></data>
+  <data name="Ssh_TailscaleCheckCopyFailed" xml:space="preserve"><value>Could not copy the link. Select and copy it manually.</value></data>
+  <data name="SshErr_TailscaleCheckCancelled" xml:space="preserve"><value>Tailscale SSH verification was cancelled.</value></data>
+  <data name="SshErr_TailscaleRejected" xml:space="preserve"><value>Tailscale SSH authorization was rejected. Check the remote system username and tailnet SSH policy.</value></data>
+  <data name="SshErr_TailscaleCheckTimeout" xml:space="preserve"><value>Timed out waiting for Tailscale SSH browser verification. Reconnect manually to try again.</value></data>
+  <data name="SshErr_TailscaleAuthTimeout" xml:space="preserve"><value>Tailscale SSH authentication timed out.</value></data>
+  <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH requires identity verification. Reconnect manually.</value></data>
+  <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>The Tailscale SSH verification window is unavailable. Reconnect when the main window is open.</value></data>
+  <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>Tailscale SSH verification could not continue because the server rejected or ended authentication.</value></data>
 </root>

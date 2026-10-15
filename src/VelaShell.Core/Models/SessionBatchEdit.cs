@@ -15,7 +15,10 @@ public enum SessionBatchAuthKind
     PrivateKey,
 
     /// <summary>本机 ssh-agent。</summary>
-    Agent
+    Agent,
+
+    /// <summary>本机 Tailscale 身份。</summary>
+    Tailscale
 }
 
 /// <summary>批量修改里的认证一项。</summary>
@@ -42,6 +45,7 @@ public sealed class SessionBatchAuth
         SessionBatchAuthKind.SharedCredential => Credential?.AuthMethod ?? AuthMethod.Password,
         SessionBatchAuthKind.PrivateKey => AuthMethod.PrivateKey,
         SessionBatchAuthKind.Agent => AuthMethod.Agent,
+        SessionBatchAuthKind.Tailscale => AuthMethod.Tailscale,
         _ => AuthMethod.Password
     };
 }
@@ -107,7 +111,8 @@ public sealed class SessionBatchEdit
             }
             if (Auth is { } auth)
             {
-                if (CredentialCompatibility.Supports(profile, auth.Method))
+                if (auth is not { Kind: SessionBatchAuthKind.SharedCredential, Method: AuthMethod.Tailscale }
+                    && CredentialCompatibility.Supports(profile, auth.Method))
                 {
                     ApplyAuth(profile, auth);
                     changed = true;
@@ -169,7 +174,11 @@ public sealed class SessionBatchEdit
                 profile.CredentialSource = null;
                 profile.AuthMethod = AuthMethod.Agent;
                 break;
+            case SessionBatchAuthKind.Tailscale:
+                profile.AuthMethod = AuthMethod.Tailscale;
+                break;
         }
+        CredentialMaterial.ClearTailscaleCredentials(profile);
     }
 
     /// <summary>从 <paramref name="start" /> 沿跳板链往上走,会不会走到这批连接里的任何一条(含它自己就在这批里)。</summary>

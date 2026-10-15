@@ -134,6 +134,7 @@ public sealed class SonnetDbSessionRepository(SonnetDbEngine engine, ISecretProt
         // Clone 已经把全部字段深拷贝了(它是唯一的拷贝口径,加字段只改那一处);
         // 这里只覆盖需要加密的三项。原先这里是逐字段手写的,每加一个字段就得记得回来补一行。
         SessionProfile copy = profile.Clone();
+        CredentialMaterial.ClearTailscaleCredentials(copy);
         if (copy.CredentialSource is not null)
         {
             // 引用了凭据的配置,认证材料一律不落盘(#550)。放在仓储而不是各个调用方:
@@ -175,6 +176,7 @@ public sealed class SonnetDbSessionRepository(SonnetDbEngine engine, ISecretProt
 
     private SessionProfile Unprotect(SessionProfile profile)
     {
+        CredentialMaterial.ClearTailscaleCredentials(profile);
         profile.Password = _protector.Unprotect(profile.Password);
         profile.PrivateKeyPassphrase = _protector.Unprotect(profile.PrivateKeyPassphrase);
         profile.PluginSecrets = MapSecrets(profile.PluginSecrets, _protector.Unprotect);

@@ -81,6 +81,9 @@ internal sealed record TestAuthPolicy
     /// </summary>
     public IReadOnlyList<string> BannersBeforeSuccess { get; init; } = [];
 
+    /// <summary>横幅发出后、成功前等待外部批准；返回 false 时拒绝这次请求。</summary>
+    public Func<CancellationToken, Task<bool>>? BeforeSuccess { get; init; }
+
     /// <summary>紧挨着 <c>USERAUTH_SUCCESS</c> 之前再发一个 <c>EXT_INFO</c>（RFC 8308 §2.4 的第二个合法位置）。</summary>
     public IReadOnlyList<string>? ExtInfoBeforeSuccess { get; init; }
 
@@ -287,6 +290,12 @@ internal sealed class TestAuthServer(SshPacketTransport transport, byte[] sessio
         foreach (string banner in _policy.BannersBeforeSuccess)
         {
             await SendBannerAsync(banner, cancellationToken);
+        }
+
+        if (_policy.BeforeSuccess is { } beforeSuccess && !await beforeSuccess(cancellationToken))
+        {
+            await SendFailureAsync(partialSuccess: false, cancellationToken);
+            return false;
         }
 
         if (_policy.ExtInfoBeforeSuccess is { } lateExtInfo)
@@ -626,7 +635,7 @@ internal sealed class TestAuthServer(SshPacketTransport transport, byte[] sessio
         await transport.FlushAsync(cancellationToken);
     }
 
-    private async Task SendBannerAsync(string text, CancellationToken cancellationToken)
+    internal async Task SendBannerAsync(string text, CancellationToken cancellationToken)
     {
         ArrayBufferWriter<byte> buffer = new();
         SshDataWriter w = new(buffer);

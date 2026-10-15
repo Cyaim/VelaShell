@@ -147,6 +147,82 @@ public sealed class StandaloneSftpDocumentBehaviorTests
 
     [TestMethod]
     [TestCategory("Sftp")]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
+    public async Task TailscaleAuthenticationFailureOrCancellation_ClosesSingleAndDualAttemptsWithoutShellOrPasswordRetry(bool dual, bool cancelled)
+    {
+        await _session.RunOnUiAsync(async () =>
+        {
+            var workflow = Substitute.For<IConnectionWorkflowService>();
+            var ssh = Substitute.For<ISshConnectionService>();
+            var client = Substitute.For<ISshClientWrapper>();
+            var sftp = Substitute.For<ISftpService>();
+            SessionProfile left = CreateSftpProfile();
+            SessionProfile tail = CreateSftpProfile();
+            tail.Host = "tail";
+            tail.Username = "ops";
+            tail.AuthMethod = AuthMethod.Tailscale;
+            tail.Password = null;
+            SshSession leftSession = CreateSession();
+            workflow.ConnectProfileAsync(left, Arg.Any<CancellationToken>()).Returns(leftSession);
+            string reason = "ops@tail:22: 当前认证跳需要浏览器验证";
+            Exception failure = cancelled
+                ? new VelaSshAuthenticationCancelledException("cancelled")
+                : new VelaSshTailscaleAuthenticationException(reason);
+            workflow.ConnectProfileAsync(tail, Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<SshSession>(failure));
+            ssh.GetClient(Arg.Any<Guid>()).Returns(client);
+            int terminalCreations = 0;
+            var vm = new MainWindowViewModel(workflow, ssh, () =>
+            {
+                terminalCreations++;
+                return FakeTerminal.Emulator();
+            }, sftpService: sftp);
+            int prompts = 0;
+            vm.InteractiveAuthenticator = candidate =>
+            {
+                prompts++;
+                return Task.FromResult<SessionProfile?>(candidate);
+            };
+
+            if (dual)
+            {
+                Assert.IsNull(await vm.OpenDualSftpDocumentAsync(left, tail));
+                await workflow.Received(1).DisconnectAsync(leftSession.SessionId, CancellationToken.None);
+            }
+            else
+            {
+                Assert.IsNull(await vm.OpenSftpDocumentForProfileAsync(tail));
+            }
+
+            Assert.AreEqual(0, prompts);
+            Assert.AreEqual(0, terminalCreations);
+            Assert.IsEmpty(vm.TerminalTabs);
+            await workflow.Received(1).ConnectProfileAsync(tail, Arg.Any<CancellationToken>());
+            await client.DidNotReceive().CreateShellStreamAsync(
+                Arg.Any<string>(), Arg.Any<uint>(), Arg.Any<uint>(), Arg.Any<uint>(), Arg.Any<uint>(), Arg.Any<int>(),
+                Arg.Any<IReadOnlyDictionary<TerminalMode, uint>?>(), Arg.Any<CancellationToken>());
+            await sftp.DidNotReceive().GetWorkingDirectoryAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+            if (cancelled)
+            {
+                Assert.IsNull(vm.LastConnectionError);
+                Assert.IsEmpty(vm.Layout.AllDocuments());
+            }
+            else
+            {
+                ConnectingDocument placeholder = vm.Layout.AllDocuments().OfType<ConnectingDocument>().Single();
+                Assert.IsTrue(placeholder.HasError);
+                Assert.IsFalse(placeholder.IsConnecting);
+                Assert.AreEqual(reason, placeholder.OverlayDetail);
+                Assert.AreEqual(reason, vm.LastConnectionError);
+            }
+        });
+    }
+
+    [TestMethod]
+    [TestCategory("Sftp")]
     public async Task OpenSftpCommand_SftpProfile_RaisesStandaloneOpenRequest()
     {
         ISessionRepository repository = Substitute.For<ISessionRepository>();

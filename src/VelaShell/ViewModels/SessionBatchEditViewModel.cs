@@ -119,6 +119,7 @@ public sealed class SessionBatchEditViewModel : ReactiveObject
             this.RaisePropertyChanged(nameof(IsPasswordAuth));
             this.RaisePropertyChanged(nameof(IsKeyAuth));
             this.RaisePropertyChanged(nameof(IsAgentAuth));
+            this.RaisePropertyChanged(nameof(IsTailscaleAuth));
             RaiseChanged();
         }
     } = SessionBatchAuthKind.SharedCredential;
@@ -134,6 +135,9 @@ public sealed class SessionBatchEditViewModel : ReactiveObject
 
     /// <summary>是否选了 SSH Agent。</summary>
     public bool IsAgentAuth => AuthKind == SessionBatchAuthKind.Agent;
+
+    /// <summary>是否选了 Tailscale SSH。</summary>
+    public bool IsTailscaleAuth => AuthKind == SessionBatchAuthKind.Tailscale;
 
     /// <summary>本机的共享凭据。</summary>
     public IReadOnlyList<SessionBatchCredentialOption> CredentialOptions { get; }
@@ -172,6 +176,8 @@ public sealed class SessionBatchEditViewModel : ReactiveObject
     public string? ValidationError =>
         ChangePort && Port is not (>= 1 and <= 65535) ? Strings.Get("BatchEdit_BadPort")
         : ChangeAuth && IsSharedCredentialAuth && SelectedCredential is null ? Strings.Get("BatchEdit_PickCredential")
+        : ChangeAuth && IsSharedCredentialAuth && SelectedCredential?.Credential.AuthMethod == AuthMethod.Tailscale
+            ? Strings.Get("SharedCred_ErrTailscaleUnsupported")
         : ChangeAuth && IsKeyAuth && string.IsNullOrWhiteSpace(PrivateKeyPath) ? Strings.Get("BatchEdit_PickKey")
         : null;
 
@@ -220,10 +226,10 @@ public sealed class SessionBatchEditViewModel : ReactiveObject
                 ? new SessionBatchAuth
                 {
                     Kind = AuthKind,
-                    Credential = SelectedCredential?.Credential,
-                    Password = SecureStringConvert.ToPlaintext(Password),
-                    PrivateKeyPath = PrivateKeyPath,
-                    PrivateKeyPassphrase = PrivateKeyPassphrase
+                    Credential = IsTailscaleAuth ? null : SelectedCredential?.Credential,
+                    Password = IsTailscaleAuth ? null : SecureStringConvert.ToPlaintext(Password),
+                    PrivateKeyPath = IsTailscaleAuth ? null : PrivateKeyPath,
+                    PrivateKeyPassphrase = IsTailscaleAuth ? null : PrivateKeyPassphrase
                 }
                 : null,
             ChangeJumpHost = ChangeJumpHost,

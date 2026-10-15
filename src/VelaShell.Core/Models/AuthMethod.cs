@@ -38,5 +38,8 @@ public enum AuthMethod
     /// 私钥从不进入本进程,配置里也不存任何凭据 —— 签名由 agent 代做。
     /// agent 里有几把钥就逐把试,直到服务端接受。
     /// </remarks>
-    Agent
+    Agent,
+
+    /// <summary>使用本机已登录的 Tailscale 身份,不提供 SSH 密码或密钥。</summary>
+    Tailscale = 4
 }

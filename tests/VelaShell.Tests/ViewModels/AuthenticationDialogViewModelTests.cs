@@ -113,4 +113,73 @@ public sealed class AuthenticationDialogViewModelTests
         Assert.AreEqual("pp", result.PrivateKeyPassphrase);
         Assert.IsNull(result.Password);
     }
+
+    [TestMethod]
+    [DataRow(AuthMethod.Password, 0)]
+    [DataRow(AuthMethod.Certificate, 1)]
+    [DataRow(AuthMethod.PrivateKey, 2)]
+    [DataRow(AuthMethod.Tailscale, 3)]
+    public void InitialMethod_MapsUiIndicesExplicitly(AuthMethod method, int index)
+    {
+        var vm = new AuthenticationDialogViewModel("h", 22, "ops", initialMethod: method);
+
+        Assert.AreEqual(index, vm.MethodIndex);
+        Assert.AreEqual(method == AuthMethod.Tailscale, vm.IsTailscaleMethod);
+    }
+
+    [TestMethod]
+    public async Task Tailscale_RequiresOnlyOwnUsername_AndReturnsNoCredentialMaterial()
+    {
+        var vm = new AuthenticationDialogViewModel("h", 22, initialMethod: AuthMethod.Tailscale,
+            sharedCredential: new("switches", 2, SharedCredentialPromptReason.Incomplete))
+        {
+            Password = SecureStringConvert.FromPlaintext("stale-password"),
+            PrivateKeyPath = "/stale-key",
+            PrivateKeyPassphrase = "stale-passphrase",
+            CertificatePath = "/stale-cert",
+            RememberPassword = true,
+            UpdateSharedCredential = true
+        };
+
+        Assert.IsFalse(await vm.NextCommand.CanExecute.FirstAsync());
+        Assert.IsFalse(await vm.LoginCommand.CanExecute.FirstAsync());
+        Assert.IsFalse(vm.IsPasswordMethod);
+        Assert.IsFalse(vm.ShowsKeyFields);
+        Assert.IsFalse(vm.ShowRememberPassword);
+        Assert.IsFalse(vm.CanUpdateSharedCredential);
+        Assert.IsFalse(vm.HasSharedCredentialNotice);
+
+        vm.Username = " ops ";
+        await vm.NextCommand.Execute().FirstAsync();
+        Assert.IsTrue(vm.IsStep2);
+        Assert.IsTrue(await vm.LoginCommand.CanExecute.FirstAsync());
+        AuthenticationResult result = await vm.LoginCommand.Execute().FirstAsync();
+
+        Assert.AreEqual("ops", result.Username);
+        Assert.AreEqual(AuthMethod.Tailscale, result.AuthMethod);
+        Assert.IsNull(result.Password);
+        Assert.IsNull(result.PrivateKeyPath);
+        Assert.IsNull(result.PrivateKeyPassphrase);
+        Assert.IsNull(result.CertificatePath);
+        Assert.IsFalse(result.RememberPassword);
+        Assert.IsFalse(result.UpdateSharedCredential);
+
+        vm.Username = " ";
+        Assert.IsFalse(await vm.LoginCommand.CanExecute.FirstAsync());
+    }
+
+    [TestMethod]
+    public async Task SelectingTailscale_AndReturningToPassword_RestoresNormalCredentialRequirements()
+    {
+        var vm = new AuthenticationDialogViewModel("h", 22, "ops");
+        await vm.SelectTailscaleCommand.Execute().FirstAsync();
+
+        Assert.IsTrue(vm.IsTailscaleMethod);
+        Assert.IsTrue(await vm.LoginCommand.CanExecute.FirstAsync());
+
+        await vm.SelectPasswordCommand.Execute().FirstAsync();
+        Assert.IsFalse(vm.IsTailscaleMethod);
+        Assert.IsTrue(vm.ShowRememberPassword);
+        Assert.IsFalse(await vm.LoginCommand.CanExecute.FirstAsync());
+    }
 }

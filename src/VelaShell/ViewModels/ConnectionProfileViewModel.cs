@@ -282,6 +282,13 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 IsPasswordAuth = method == AuthMethod.Password;
                 IsKeyAuth = method == AuthMethod.PrivateKey;
                 IsCertAuth = method == AuthMethod.Certificate;
+                if (method == AuthMethod.Tailscale)
+                {
+                    _credentialSource = null;
+                    _selectedCredentialSource = CredentialSources[0];
+                    this.RaisePropertyChanged(nameof(SelectedCredentialSource));
+                }
+                this.RaisePropertyChanged(nameof(IsTailscaleAuth));
                 this.RaisePropertyChanged(nameof(ShowsPrivateKeyFields));
                 this.RaisePropertyChanged(nameof(IsAgentAuth));
                 // 口令框也跟着认证方式显隐 —— 原先漏发了这一条,切到私钥页时口令框会留在原地。
@@ -662,7 +669,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         }
     }
 
-    /// <summary>认证方式(密码 / 私钥 / 证书);变更时同步刷新 <see cref="AuthMethodIndex" /> 与两条路径校验。</summary>
+    /// <summary>认证方式;变更时同步刷新 <see cref="AuthMethodIndex" /> 与两条路径校验。</summary>
     public AuthMethod AuthMethod
     {
         get => _authMethod;
@@ -675,7 +682,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         }
     }
 
-    /// <summary>认证方式的序号(0=密码,1=私钥,2=证书,3=Agent),即枚举值本身。</summary>
+    /// <summary>认证方式的序号(0=密码,1=私钥,2=证书,3=Agent,4=Tailscale),即枚举值本身。</summary>
     /// <remarks>
     /// 序号与 <see cref="Core.Models.AuthMethod" /> 的枚举值一一对应,所以这里就是一次强转。
     /// 越界值(手改过的配置文件)落回密码认证 —— 与从前那句"非 1 即 0"的兜底口径一致。
@@ -961,7 +968,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         set
         {
             // ComboBox 在 ItemsSource 重建的瞬间会回写一个 null,不能让它把引用清掉。
-            if (value is null || ReferenceEquals(value, _selectedCredentialSource))
+            if (value is null || ReferenceEquals(value, _selectedCredentialSource)
+                || (IsTailscaleAuth && value.Reference is not null))
             {
                 return;
             }
@@ -996,7 +1004,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     /// <summary>这种连接用不用得上凭据来源:匿名 FTP 与无凭据协议(Telnet)用不上。</summary>
     /// <remarks>与仓储在不在无关 —— 没有仓储只是选不了,已有的引用照样要存回去。</remarks>
-    private bool CredentialSourceApplies => ShowCredentialFields && !(IsFtpSelected && FtpAnonymous);
+    private bool CredentialSourceApplies => ShowCredentialFields && !IsTailscaleAuth && !(IsFtpSelected && FtpAnonymous);
 
     /// <summary>认证方式分段按钮是否显示:用共享凭据时认证方式由凭据决定。</summary>
     public bool ShowAuthMethodSelector => RequiresSshAuth && !UsesSharedCredential;
@@ -1010,9 +1018,12 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// <summary>Agent 认证那行说明是否显示:用共享凭据时不显示。</summary>
     public bool ShowAgentHint => IsAgentAuth && !UsesSharedCredential;
 
+    /// <summary>Tailscale SSH 使用本机身份,只需要远端系统用户名。</summary>
+    public bool ShowTailscaleHint => RequiresSshAuth && IsTailscaleAuth;
+
     /// <summary>选中的共享凭据自带用户名:这时连接自己的用户名可以留空。</summary>
     public bool SharedCredentialProvidesUsername =>
-        UsesSharedCredential && _selectedCredentialSource.Credential is { Username.Length: > 0 };
+        !IsTailscaleAuth && UsesSharedCredential && _selectedCredentialSource.Credential is { Username.Length: > 0 };
 
     /// <summary>用户名框的占位提示:跟着凭据走时写明会用哪个用户名。</summary>
     public string UsernamePlaceholder => SharedCredentialProvidesUsername
@@ -1028,6 +1039,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 AuthMethod.PrivateKey => Strings.Get("Profile_KeyAuth"),
                 AuthMethod.Certificate => Strings.Get("Profile_CertAuth"),
                 AuthMethod.Agent => Strings.Get("Profile_AgentAuth"),
+                AuthMethod.Tailscale => Strings.Get("Profile_TailscaleAuth"),
                 _ => Strings.Get("Profile_PasswordAuth")
             })
         : null;
@@ -1047,6 +1059,10 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             {
                 // 下拉还没加载出来时不报:那一刻不知道它在不在。
                 return _sharedCredentialsLoaded ? Strings.Get("Profile_ErrCredMissing") : null;
+            }
+            if (credential.AuthMethod == AuthMethod.Tailscale)
+            {
+                return Strings.Get("SharedCred_ErrTailscaleUnsupported");
             }
             return ConnectionType is ConnectionType.FTP or ConnectionType.Plugin && credential.AuthMethod != AuthMethod.Password
                 ? Strings.Get("Profile_ErrCredNotPassword")
@@ -1138,6 +1154,10 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     private void CopyCredentialIntoForm(SharedCredential credential)
     {
+        if (credential.AuthMethod == AuthMethod.Tailscale)
+        {
+            return;
+        }
         if (string.IsNullOrWhiteSpace(Username))
         {
             Username = credential.Username;
@@ -1158,6 +1178,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         this.RaisePropertyChanged(nameof(ShowInlinePassword));
         this.RaisePropertyChanged(nameof(ShowInlineKeyFields));
         this.RaisePropertyChanged(nameof(ShowAgentHint));
+        this.RaisePropertyChanged(nameof(ShowTailscaleHint));
         this.RaisePropertyChanged(nameof(SharedCredentialProvidesUsername));
         this.RaisePropertyChanged(nameof(UsernamePlaceholder));
         this.RaisePropertyChanged(nameof(SharedCredentialSummary));
@@ -1479,6 +1500,9 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     /// <summary>当前是否选了 SSH Agent 认证;控制那一行说明的可见性。</summary>
     public bool IsAgentAuth => AuthMethod == AuthMethod.Agent;
+
+    /// <summary>当前是否选了 Tailscale SSH 认证。</summary>
+    public bool IsTailscaleAuth => AuthMethod == AuthMethod.Tailscale;
 
     /// <summary>认证方式分段按钮:点哪段切到哪种认证。</summary>
     public ReactiveCommand<AuthMethod, RxVoid> SelectAuthMethodCommand { get; }
@@ -2184,6 +2208,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             // 测出来的根本不是共享凭据。
             CredentialMaterial.ClearInline(profile);
         }
+        CredentialMaterial.ClearTailscaleCredentials(profile);
         return profile;
     }
 
@@ -2199,7 +2224,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             Port = port,
             Username = Username.Trim(),
             AuthMethod = AuthMethod,
-            Password = SecureStringConvert.ToPlaintext(Password),
+            Password = IsTailscaleAuth ? null : SecureStringConvert.ToPlaintext(Password),
             RememberPassword = RememberPassword,
             PrivateKeyPath = PrivateKeyPath,
             PrivateKeyPassphrase = PrivateKeyPassphrase,
@@ -2777,15 +2802,12 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     }
 
     /// <summary>
-    /// FTP 与插件协议既没有私钥认证也没有证书认证:切过去时把认证方式落回口令。
-    /// 不做这一步,表单会停在一个用不上的私钥页,而那时认证方式下拉恰好是隐藏的 ——
-    /// 界面上再没有任何途径把它切回来,保存下去的却仍是 PrivateKey。
+    /// FTP 与插件协议只认密码:切过去时把其它 SSH 认证方式落回口令。
+    /// 认证分段在这些协议下隐藏,不能留在一个用户无法切回的认证页。
     /// </summary>
     private void NormalizeAuthMethodForProtocol()
     {
-        // 判的是 ShowsPrivateKeyFields 而不是 IsKeyAuth:证书认证掉进的是同一个坑,
-        // 而且比私钥那页更难自救 —— 它还多一个同样切不回来的证书字段。
-        if (!RequiresSshAuth && ShowsPrivateKeyFields)
+        if (!RequiresSshAuth && AuthMethod != AuthMethod.Password)
         {
             AuthMethodIndex = 0;
         }

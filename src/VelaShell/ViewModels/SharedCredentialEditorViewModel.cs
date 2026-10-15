@@ -274,6 +274,7 @@ public sealed class SharedCredentialEditorViewModel : ReactiveObject
     /// </remarks>
     public string? SecretError => AuthMethod switch
     {
+        AuthMethod.Tailscale => Strings.Get("SharedCred_ErrTailscaleUnsupported"),
         AuthMethod.Password when Password is not { Length: > 0 } => Strings.Get("SharedCred_ErrPasswordRequired"),
         AuthMethod.PrivateKey when string.IsNullOrWhiteSpace(PrivateKeyPath) => Strings.Get("SharedCred_ErrKeyRequired"),
         AuthMethod.Certificate when string.IsNullOrWhiteSpace(CertificatePath) => Strings.Get("Profile_ErrCertRequired"),

@@ -27,6 +27,10 @@ public static class SharedCredentialPrompt
         {
             reason = SharedCredentialPromptReason.Missing;
         }
+        else if (credential.AuthMethod == AuthMethod.Tailscale)
+        {
+            reason = SharedCredentialPromptReason.Unsupported;
+        }
         else if (CredentialMaterial.HasInline(profile))
         {
             // 用户这次手输的又被拒了:原因用户自己清楚,不再复述。
@@ -51,9 +55,28 @@ public static class SharedCredentialPrompt
     /// <param name="credential">它引用的共享凭据;没有或已删除时为 null。</param>
     /// <returns>用户名。</returns>
     public static string InitialUsername(SessionProfile profile, SharedCredential? credential) =>
-        string.IsNullOrWhiteSpace(profile.Username) && credential is not null
+        profile.AuthMethod != AuthMethod.Tailscale && string.IsNullOrWhiteSpace(profile.Username)
+            && credential is { AuthMethod: not AuthMethod.Tailscale }
             ? credential.Username
             : profile.Username;
+
+    internal static AuthenticationDialogViewModel CreateDialog(
+        SessionProfile profile, SharedCredential? credential, string? knownFingerprint,
+        SharedCredentialPromptContext? sharedContext)
+    {
+        bool fromCredential = profile.AuthMethod != AuthMethod.Tailscale
+                              && credential is { AuthMethod: not AuthMethod.Tailscale }
+                              && !CredentialMaterial.HasInline(profile);
+        var viewModel = new AuthenticationDialogViewModel(profile.Host, profile.Port,
+            InitialUsername(profile, credential), knownFingerprint,
+            fromCredential ? credential!.AuthMethod : profile.AuthMethod, sharedContext);
+        if (fromCredential && credential!.AuthMethod is AuthMethod.PrivateKey or AuthMethod.Certificate)
+        {
+            viewModel.PrivateKeyPath = credential.PrivateKeyPath;
+            viewModel.CertificatePath = credential.CertificatePath;
+        }
+        return viewModel;
+    }
 
     /// <summary>
     /// 把登录框的输入落成这一次连接用的配置副本;勾了「同时更新共享凭据」时另给出要存回的凭据。
@@ -84,8 +107,17 @@ public static class SharedCredentialPrompt
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(result);
         SessionProfile copy = profile.Clone();
-        bool update = credential is not null && result.UpdateSharedCredential;
-        bool inheritsUsername = credential is not null && string.IsNullOrWhiteSpace(profile.Username);
+        if (result.AuthMethod == AuthMethod.Tailscale)
+        {
+            copy.AuthMethod = AuthMethod.Tailscale;
+            copy.Username = result.Username;
+            CredentialMaterial.ClearTailscaleCredentials(copy);
+            updatedCredential = null;
+            return copy;
+        }
+        bool update = credential is { AuthMethod: not AuthMethod.Tailscale } && result.UpdateSharedCredential;
+        bool inheritsUsername = credential is { AuthMethod: not AuthMethod.Tailscale }
+                                && string.IsNullOrWhiteSpace(profile.Username);
         if (!inheritsUsername
             || !(update || string.Equals(result.Username, credential!.Username, StringComparison.Ordinal)))
         {

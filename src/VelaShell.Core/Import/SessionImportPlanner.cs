@@ -62,7 +62,6 @@ public static class SessionImportPlanner
             .ToDictionary(static g => g.Key, static g => g.OrderBy(static s => s.Name, StringComparer.OrdinalIgnoreCase).ToList());
         var fileIds = document.Candidates.Where(static c => c.HasFileId).Select(static c => c.Profile.Id).ToHashSet();
         var fileNames = document.Candidates.Select(static c => c.Profile.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var fileCredentialIds = document.SharedCredentials.Select(static c => c.Id).ToHashSet();
         var credentialIds = existingCredentials.Select(static c => c.Id).ToHashSet();
 
         List<SessionImportPlanItem> items = [];
@@ -87,7 +86,7 @@ public static class SessionImportPlanner
             var item = new SessionImportPlanItem { Candidate = candidate, Existing = existing, Match = match };
             if (candidate.IsValid)
             {
-                AddReferenceWarnings(item, document.Format, fileIds, fileNames, fileCredentialIds, credentialIds,
+                AddReferenceWarnings(item, document.Format, fileIds, fileNames, document.SharedCredentials, credentialIds,
                     existingSessions, existingCredentials, byId);
                 AddHostChangeWarning(item);
             }
@@ -119,7 +118,7 @@ public static class SessionImportPlanner
         SessionFileFormat format,
         HashSet<Guid> fileIds,
         HashSet<string> fileNames,
-        HashSet<Guid> fileCredentialIds,
+        IReadOnlyList<SharedCredential> fileCredentials,
         HashSet<Guid> credentialIds,
         IReadOnlyList<SessionProfile> existingSessions,
         IReadOnlyList<SharedCredential> existingCredentials,
@@ -128,12 +127,21 @@ public static class SessionImportPlanner
         SessionImportCandidate candidate = item.Candidate;
         if (format == SessionFileFormat.Json)
         {
-            if (candidate.Profile.CredentialSource is { } reference
-                && reference.TryGetSharedId(out Guid credentialId)
-                && !fileCredentialIds.Contains(credentialId)
-                && !credentialIds.Contains(credentialId))
+            if (candidate.Profile.AuthMethod != AuthMethod.Tailscale
+                && candidate.Profile.CredentialSource is { } reference
+                && reference.TryGetSharedId(out Guid credentialId))
             {
-                item.Warnings.Add(Strings.Get("SessImport_WarnCredentialMissing"));
+                SharedCredential? file = fileCredentials.FirstOrDefault(c => c.Id == credentialId);
+                SharedCredential? local = existingCredentials.FirstOrDefault(c => c.Id == credentialId)
+                    ?? (file is null ? null : existingCredentials.FirstOrDefault(c => NameEquals(c.Name, file.Name)));
+                if (file?.AuthMethod == AuthMethod.Tailscale || local?.AuthMethod == AuthMethod.Tailscale)
+                {
+                    item.Warnings.Add(Strings.Get("SharedCred_ErrTailscaleUnsupported"));
+                }
+                else if (file is null && local is null)
+                {
+                    item.Warnings.Add(Strings.Get("SessImport_WarnCredentialMissing"));
+                }
             }
             if (candidate.Profile.JumpHostProfileId is { } jump && !fileIds.Contains(jump) && !byId.ContainsKey(jump))
             {
@@ -142,11 +150,20 @@ public static class SessionImportPlanner
             return;
         }
 
-        if (candidate.CredentialReference is { } credential
-            && !(Guid.TryParse(credential, out Guid id) && credentialIds.Contains(id))
-            && MatchCredentialByName(credential, item.Existing, existingCredentials, out bool credentialAmbiguous) is null)
+        if (candidate.Profile.AuthMethod != AuthMethod.Tailscale && candidate.CredentialReference is { } credential)
         {
-            item.Warnings.Add(Strings.Format(credentialAmbiguous ? "SessImport_WarnCredentialAmbiguous" : "SessImport_WarnCredentialNotFound", credential));
+            bool credentialAmbiguous = false;
+            Guid? resolved = Guid.TryParse(credential, out Guid id) && credentialIds.Contains(id)
+                ? id
+                : MatchCredentialByName(credential, item.Existing, existingCredentials, out credentialAmbiguous);
+            if (resolved is { } found && existingCredentials.First(c => c.Id == found).AuthMethod == AuthMethod.Tailscale)
+            {
+                item.Warnings.Add(Strings.Get("SharedCred_ErrTailscaleUnsupported"));
+            }
+            else if (resolved is null)
+            {
+                item.Warnings.Add(Strings.Format(credentialAmbiguous ? "SessImport_WarnCredentialAmbiguous" : "SessImport_WarnCredentialNotFound", credential));
+            }
         }
         if (candidate.JumpHostReference is { } jumpReference)
         {
@@ -309,6 +326,7 @@ public static class SessionImportPlanner
         {
             target.Notes = source.Notes;
         }
+        CredentialMaterial.ClearTailscaleCredentials(target);
     }
 
     /// <summary>一次 <see cref="BuildWrites" /> 的工作状态。拆成一个类只是为了不把十几个局部变量在方法之间传来传去。</summary>
@@ -484,7 +502,11 @@ public static class SessionImportPlanner
                 }
             }
 
-            ResolveCredential(candidate, profile, target, item.Existing);
+            CredentialMaterial.ClearTailscaleCredentials(profile);
+            if (profile.AuthMethod != AuthMethod.Tailscale)
+            {
+                ResolveCredential(candidate, profile, target, item.Existing);
+            }
             ResolveJumpHost(candidate, profile, target, item.Existing);
             return profile;
         }
@@ -563,6 +585,12 @@ public static class SessionImportPlanner
                 Guid? local = Guid.TryParse(reference, out Guid id) && _credentialsById.ContainsKey(id)
                     ? id
                     : MatchCredentialByName(reference, hint, plan.ExistingCredentials, out ambiguous);
+                if (local is { } csvCredentialId && _credentialsById[csvCredentialId].AuthMethod == AuthMethod.Tailscale)
+                {
+                    profile.CredentialSource = null;
+                    Warn(profile, Strings.Get("SharedCred_ErrTailscaleUnsupported"));
+                    return;
+                }
                 profile.CredentialSource = local is { } found ? CredentialReference.ForShared(found) : null;
                 if (local is null)
                 {
@@ -575,31 +603,41 @@ public static class SessionImportPlanner
             {
                 return; // 没有引用,或是别的来源的引用(外部密码管理器):原样保留。
             }
-            Guid? resolved = ResolveFileCredential(fileCredentialId);
+            Guid? resolved = ResolveFileCredential(fileCredentialId, out bool unsupported);
             profile.CredentialSource = resolved is { } localId ? CredentialReference.ForShared(localId) : null;
             if (resolved is null)
             {
-                Warn(profile, Strings.Get("SessImport_WarnCredentialMissing"));
+                Warn(profile, Strings.Get(unsupported ? "SharedCred_ErrTailscaleUnsupported" : "SessImport_WarnCredentialMissing"));
             }
         }
 
         /// <summary>
         /// 文件里的共享凭据落到本机哪一条:同 Id 的、同名的沿用本机那条(不覆盖),都没有才新建。
         /// </summary>
-        private Guid? ResolveFileCredential(Guid fileId)
+        private Guid? ResolveFileCredential(Guid fileId, out bool unsupported)
         {
+            SharedCredential? fileCredential = plan.Document.SharedCredentials.FirstOrDefault(c => c.Id == fileId);
+            unsupported = fileCredential?.AuthMethod == AuthMethod.Tailscale;
+            if (unsupported)
+            {
+                return null;
+            }
             if (_credentialMap.TryGetValue(fileId, out Guid? cached))
             {
                 return cached;
             }
             Guid? result = null;
-            SharedCredential? fileCredential = plan.Document.SharedCredentials.FirstOrDefault(c => c.Id == fileId);
             SharedCredential? local = _credentialsById.GetValueOrDefault(fileId)
                 ?? (fileCredential is null
                     ? null
                     : plan.ExistingCredentials
                         .OrderBy(static c => c.Name, StringComparer.OrdinalIgnoreCase)
                         .FirstOrDefault(c => NameEquals(c.Name, fileCredential.Name)));
+            if (local?.AuthMethod == AuthMethod.Tailscale)
+            {
+                unsupported = true;
+                return null;
+            }
             if (local is not null)
             {
                 FillMissingSecrets(local, fileCredential);

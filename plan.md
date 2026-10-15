@@ -1938,3 +1938,13 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
   整包字节数且字节单调不减。`VelaShell.Tests` 全量 2069 通过 / 46 跳过;五份 resx 齐套由
   `LocalizedKeyUsageTests` / `UnusedLocalizedKeyTests` 守住。
 - **文档**:同步到 velashell-docs `zh|en/host/消息中心与资讯源.md`(message-center-and-feed.md)
+
+## 210. 2026-10-14 Tailscale SSH：none 认证、手动 check 与运行期间策略切换
+
+- **认证与数据边界**：`AuthMethod.Tailscale=4` 末尾追加，旧枚举值不变。配置、补用户名登录与批量认证提供 Tailscale SSH；只使用远端系统用户名，不准备密码、私钥、证书、Agent 或键盘交互材料。统一 `ClearTailscaleCredentials` 覆盖 resolver、仓储、CSV/JSON 导入导出和批量覆盖，清掉旧秘密与共享引用；共享凭据不支持此方式。主机指纹、代理与跳板策略不变。
+- **check 生命周期与安全**：每次实际认证跳创建独立 AttemptId、取消与窗口生命周期。只处理 USERAUTH_BANNER 的合法官方 HTTPS 链接，普通 banner、前导行与 DEBUG 在进入缓存前脱敏；专属异常不带原始服务端链。owned 非模态等待窗只在用户点击时打开浏览器，允许复制、取消/Esc/关闭；显示/更新立即返回，SUCCESS 继续原握手并结束窗口，无「我已验证」按钮。
+- **动态策略与恢复**：accept/check 由服务器当前应答决定，不保存模式、批准结果、checkPeriod 或链接；同一配置/进程可在连续握手中经历 accept→check→accept。等待中更新 URI 使用同一窗口，旧动作不串到其它尝试；现有连接由服务器决定是否终止。终端/SFTP 的当前跳失败不进入目标密码重试，终端和隧道认证暂停阻止唤醒、旧倒计时、代理变更与刷新反复触发验证；手动尝试始终允许，成功才解除。隧道先完成认证再移除旧服务记录，取消保留定义。
+- **已执行验证**：步骤1 Core 114、Infrastructure 57、宿主 123 项；步骤2真实环回协议/动态握手/URI 66、banner 8、headless 等待窗 10 项；步骤3消费者 211 项全部通过，无跳过。Debug 全解构建成功；全量回归 7848 通过、163 跳过、1 失败：`PrivateKeyWriteTests.真ssh_keygen读得出本库写的私钥` 被 Windows OpenSSH 因临时文件继承的 UNKNOWN SID ACL 过宽拒绝。未修改无关权限或测试；TestContext 的环境早退未计作互操作验收。
+- **桌面与真实服务边界**：隔离数据启动实际应用，核对五段认证选择及材料显隐；原生等待窗检查英文暗色、中文亮色实际截图与读屏名称，显示不等待验证、程序性 End 收窗且不触发用户取消。窗口输入用明确的演示链接，不是实际 Tailscale 登录。实施初期 Linux peer 的 TCP22 与 tailnet ping 无响应，未进入该轮认证；后续用户已明确确认实际桌面运行连接 Tailscale 测试通过，据此记录实际连接通过，不再把旧节点不可达作为当前阻塞。该确认不扩大为未逐项记录的 check/MFA、管理面板热变、checkPeriod 或撤销权限测试均已验收，也不用协议模拟冒充真实策略验收。
+- **文档**：中英文「交互与界面规格」及「会话导入」已同步，相对链接检查通过；[velashell-docs PR #125](https://github.com/VelaShellLabs/velashell-docs/pull/125)。`feature-plan.md` 无对应 Tailscale 待办条目，保持不变。
+
