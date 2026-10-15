@@ -380,9 +380,9 @@ public sealed class ConnectionProfileViewModelTests
         Assert.IsFalse(vm.HasNoAgentForwardKeyChoices);
     }
 
-    /// <summary>SSH Agent 认证排在下拉末尾(枚举值即下标),选中后密码与私钥字段都不再出现。</summary>
+    /// <summary>SSH Agent 保持枚举值 3,选中后密码与私钥字段都不再出现。</summary>
     [TestMethod]
-    public async Task AgentAuth_IsTheLastDropdownItem_AndNeedsNoCredentialFields()
+    public async Task AgentAuth_KeepsItsEnumIndex_AndNeedsNoCredentialFields()
     {
         var vm = new ConnectionProfileViewModel { Host = "h", Username = "u", AuthMethodIndex = 3 };
 

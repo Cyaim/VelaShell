@@ -292,4 +292,43 @@ public sealed class SessionArchiveJsonTests
         using var parsed = JsonDocument.Parse(json);
         Assert.IsFalse(parsed.RootElement.TryGetProperty("secrets", out _));
     }
+
+    [TestMethod]
+    public void Tailscale_ExportAndEncryptedPayloadDiscardStaleSshMaterials()
+    {
+        var tail = new SessionProfile
+        {
+            Name = "tail", Host = "tail", Username = "deploy", AuthMethod = AuthMethod.Tailscale,
+            Password = "stale-password", PrivateKeyPath = "/stale-key", PrivateKeyPassphrase = "stale-phrase",
+            CertificatePath = "/stale-cert", CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
+            RememberPassword = true, JumpHostProfileId = Guid.NewGuid()
+        };
+        var ordinary = new SessionProfile { Name = "password", Host = "ordinary", Password = "keep-secret" };
+        var archive = new SessionArchive { Sessions = [tail, ordinary] };
+
+        Assert.AreEqual(1, SessionArchiveJson.CountSecrets(archive));
+        string json = SessionArchiveJson.Serialize(archive, Passphrase);
+        Assert.Contains("\"authMethod\": \"tailscale\"", json);
+        Assert.DoesNotContain("/stale-key", json);
+        Assert.DoesNotContain("/stale-cert", json);
+        SessionImportDocument document = SessionArchiveJson.Read("tail.json", json);
+        Assert.IsTrue(SessionArchiveJson.TryUnlock(document, Passphrase));
+        SessionProfile restored = document.Candidates.Single(c => c.Profile.Id == tail.Id).Profile;
+
+        Assert.AreEqual(AuthMethod.Tailscale, restored.AuthMethod);
+        Assert.AreEqual("deploy", restored.Username);
+        Assert.AreEqual(tail.JumpHostProfileId, restored.JumpHostProfileId);
+        Assert.IsNull(restored.CredentialSource);
+        Assert.IsNull(restored.Password);
+        Assert.IsNull(restored.PrivateKeyPath);
+        Assert.IsNull(restored.PrivateKeyPassphrase);
+        Assert.IsNull(restored.CertificatePath);
+        Assert.IsFalse(restored.RememberPassword);
+        Assert.AreEqual("keep-secret", document.Candidates.Single(c => c.Profile.Id == ordinary.Id).Profile.Password);
+        Assert.AreEqual("stale-password", tail.Password);
+        Assert.IsNotNull(tail.CredentialSource);
+
+        string numeric = json.Replace("\"authMethod\": \"tailscale\"", "\"authMethod\": 4", StringComparison.Ordinal);
+        Assert.AreEqual(AuthMethod.Tailscale, SessionArchiveJson.Read("numeric.json", numeric).Candidates[0].Profile.AuthMethod);
+    }
 }

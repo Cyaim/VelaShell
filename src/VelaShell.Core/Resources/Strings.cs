@@ -325,4 +325,84 @@ public static class Strings
 
     /// <summary>终端重连操作的引导提示文案。</summary>
     public static string TerminalReconnectHint => ResourceManager.GetString(nameof(TerminalReconnectHint), CultureInfo.CurrentUICulture) ?? nameof(TerminalReconnectHint);
+
+    // 插件请求以 root 执行命令
+    /// <summary>以 root 执行命令的对话框标题。</summary>
+    public static string Sudo_Title => ResourceManager.GetString(nameof(Sudo_Title), CultureInfo.CurrentUICulture) ?? nameof(Sudo_Title);
+
+    /// <summary>请求来源插件(含占位符)。</summary>
+    public static string Sudo_Source => ResourceManager.GetString(nameof(Sudo_Source), CultureInfo.CurrentUICulture) ?? nameof(Sudo_Source);
+
+    /// <summary>命令执行目标(含占位符)。</summary>
+    public static string Sudo_Target => ResourceManager.GetString(nameof(Sudo_Target), CultureInfo.CurrentUICulture) ?? nameof(Sudo_Target);
+
+    /// <summary>整条命令将以 root 执行的警告。</summary>
+    public static string Sudo_RootWarning => ResourceManager.GetString(nameof(Sudo_RootWarning), CultureInfo.CurrentUICulture) ?? nameof(Sudo_RootWarning);
+
+    /// <summary>批准 root 命令的按钮文案。</summary>
+    public static string Sudo_Approve => ResourceManager.GetString(nameof(Sudo_Approve), CultureInfo.CurrentUICulture) ?? nameof(Sudo_Approve);
+
+    /// <summary>sudo 密码输入项标签。</summary>
+    public static string Sudo_Password => ResourceManager.GetString(nameof(Sudo_Password), CultureInfo.CurrentUICulture) ?? nameof(Sudo_Password);
+
+    /// <summary>密码未被接受、请重试的提示。</summary>
+    public static string Sudo_Retry => ResourceManager.GetString(nameof(Sudo_Retry), CultureInfo.CurrentUICulture) ?? nameof(Sudo_Retry);
+
+    /// <summary>密码只发给当前主机、不保存的说明。</summary>
+    public static string Sudo_NoStorage => ResourceManager.GetString(nameof(Sudo_NoStorage), CultureInfo.CurrentUICulture) ?? nameof(Sudo_NoStorage);
+
+    /// <summary>提交 sudo 认证的按钮文案。</summary>
+    public static string Sudo_Submit => ResourceManager.GetString(nameof(Sudo_Submit), CultureInfo.CurrentUICulture) ?? nameof(Sudo_Submit);
+
+    // Tailscale SSH
+    /// <summary>Tailscale SSH 认证方式名称。</summary>
+    public static string Profile_TailscaleAuth => ResourceManager.GetString(nameof(Profile_TailscaleAuth), CultureInfo.CurrentUICulture) ?? nameof(Profile_TailscaleAuth);
+
+    /// <summary>Tailscale SSH 只使用本机身份与远端用户名的说明。</summary>
+    public static string Profile_TailscaleAuthHint => ResourceManager.GetString(nameof(Profile_TailscaleAuthHint), CultureInfo.CurrentUICulture) ?? nameof(Profile_TailscaleAuthHint);
+
+    /// <summary>Tailscale SSH 不能保存为共享凭据的错误。</summary>
+    public static string SharedCred_ErrTailscaleUnsupported => ResourceManager.GetString(nameof(SharedCred_ErrTailscaleUnsupported), CultureInfo.CurrentUICulture) ?? nameof(SharedCred_ErrTailscaleUnsupported);
+
+    /// <summary>Tailscale SSH 浏览器验证窗口标题。</summary>
+    public static string Ssh_TailscaleCheckTitle => ResourceManager.GetString(nameof(Ssh_TailscaleCheckTitle), CultureInfo.CurrentUICulture) ?? nameof(Ssh_TailscaleCheckTitle);
+
+    /// <summary>等待服务器批准浏览器验证的说明。</summary>
+    public static string Ssh_TailscaleCheckWaiting => ResourceManager.GetString(nameof(Ssh_TailscaleCheckWaiting), CultureInfo.CurrentUICulture) ?? nameof(Ssh_TailscaleCheckWaiting);
+
+    /// <summary>打开验证链接的按钮文案。</summary>
+    public static string Ssh_TailscaleCheckOpenBrowser => ResourceManager.GetString(nameof(Ssh_TailscaleCheckOpenBrowser), CultureInfo.CurrentUICulture) ?? nameof(Ssh_TailscaleCheckOpenBrowser);
+
+    /// <summary>复制验证链接的按钮文案。</summary>
+    public static string Ssh_TailscaleCheckCopyLink => ResourceManager.GetString(nameof(Ssh_TailscaleCheckCopyLink), CultureInfo.CurrentUICulture) ?? nameof(Ssh_TailscaleCheckCopyLink);
+
+    /// <summary>横幅里隐藏验证链接后的替代文案。</summary>
+    public static string Ssh_TailscaleCheckNotice => ResourceManager.GetString(nameof(Ssh_TailscaleCheckNotice), CultureInfo.CurrentUICulture) ?? nameof(Ssh_TailscaleCheckNotice);
+
+    /// <summary>无法打开浏览器时的提示。</summary>
+    public static string Ssh_TailscaleCheckOpenFailed => ResourceManager.GetString(nameof(Ssh_TailscaleCheckOpenFailed), CultureInfo.CurrentUICulture) ?? nameof(Ssh_TailscaleCheckOpenFailed);
+
+    /// <summary>无法复制验证链接时的提示。</summary>
+    public static string Ssh_TailscaleCheckCopyFailed => ResourceManager.GetString(nameof(Ssh_TailscaleCheckCopyFailed), CultureInfo.CurrentUICulture) ?? nameof(Ssh_TailscaleCheckCopyFailed);
+
+    /// <summary>用户取消 Tailscale SSH 验证的错误。</summary>
+    public static string SshErr_TailscaleCheckCancelled => ResourceManager.GetString(nameof(SshErr_TailscaleCheckCancelled), CultureInfo.CurrentUICulture) ?? nameof(SshErr_TailscaleCheckCancelled);
+
+    /// <summary>Tailscale SSH 授权被拒绝的错误。</summary>
+    public static string SshErr_TailscaleRejected => ResourceManager.GetString(nameof(SshErr_TailscaleRejected), CultureInfo.CurrentUICulture) ?? nameof(SshErr_TailscaleRejected);
+
+    /// <summary>等待浏览器验证超时的错误。</summary>
+    public static string SshErr_TailscaleCheckTimeout => ResourceManager.GetString(nameof(SshErr_TailscaleCheckTimeout), CultureInfo.CurrentUICulture) ?? nameof(SshErr_TailscaleCheckTimeout);
+
+    /// <summary>Tailscale SSH 认证超时的错误。</summary>
+    public static string SshErr_TailscaleAuthTimeout => ResourceManager.GetString(nameof(SshErr_TailscaleAuthTimeout), CultureInfo.CurrentUICulture) ?? nameof(SshErr_TailscaleAuthTimeout);
+
+    /// <summary>自动重连遇到身份复核、需要手动重连的错误。</summary>
+    public static string SshErr_TailscaleCheckRequired => ResourceManager.GetString(nameof(SshErr_TailscaleCheckRequired), CultureInfo.CurrentUICulture) ?? nameof(SshErr_TailscaleCheckRequired);
+
+    /// <summary>无法显示验证窗口的错误。</summary>
+    public static string SshErr_TailscaleCheckUiUnavailable => ResourceManager.GetString(nameof(SshErr_TailscaleCheckUiUnavailable), CultureInfo.CurrentUICulture) ?? nameof(SshErr_TailscaleCheckUiUnavailable);
+
+    /// <summary>服务器结束认证、验证无法继续的错误。</summary>
+    public static string SshErr_TailscaleCheckFailed => ResourceManager.GetString(nameof(SshErr_TailscaleCheckFailed), CultureInfo.CurrentUICulture) ?? nameof(SshErr_TailscaleCheckFailed);
 }

@@ -74,7 +74,7 @@ public static class SessionCsv
         AppendRow(builder, Header);
         foreach (SessionProfile session in archive.Sessions)
         {
-            string credential = session.CredentialSource is { } reference
+            string credential = session.AuthMethod != AuthMethod.Tailscale && session.CredentialSource is { } reference
                                 && reference.TryGetSharedId(out Guid credentialId)
                                 && credentialNames.TryGetValue(credentialId, out string? credentialName)
                 ? credentialName
@@ -98,8 +98,8 @@ public static class SessionCsv
                 // (改了名、本机重名)时导回去的连接还是原来的认证方式,而不是被推断成密码。
                 FormatAuth(session.AuthMethod),
                 string.Empty,
-                session.PrivateKeyPath ?? string.Empty,
-                session.CertificatePath ?? string.Empty,
+                session.AuthMethod == AuthMethod.Tailscale ? string.Empty : session.PrivateKeyPath ?? string.Empty,
+                session.AuthMethod == AuthMethod.Tailscale ? string.Empty : session.CertificatePath ?? string.Empty,
                 credential,
                 jumpHost,
                 string.Join(';', session.Tags),
@@ -220,6 +220,7 @@ public static class SessionCsv
         AuthMethod.PrivateKey => "key",
         AuthMethod.Certificate => "certificate",
         AuthMethod.Agent => "agent",
+        AuthMethod.Tailscale => "tailscale",
         _ => "password"
     };
 
@@ -342,7 +343,12 @@ public static class SessionCsv
         }
         profile.AuthMethod = method;
         string credential = Cell(SessionCsvColumns.Credential);
-        // 用共享凭据时认证方式由凭据决定,这一栏写了什么都不作数,也就不必拿它去卡协议。
+        // Tailscale 使用本机身份,credential 列不能覆盖它,也不能绕过协议兼容检查。
+        if (method == AuthMethod.Tailscale)
+        {
+            credential = string.Empty;
+        }
+        // 其它认证引用共享凭据时,认证方式由凭据决定。
         if (credential.Length == 0
             && !CredentialCompatibility.Supports(type, method, anonymousFtp: false))
         {
@@ -358,6 +364,7 @@ public static class SessionCsv
             profile.Password = password;
             profile.RememberPassword = true;
         }
+        CredentialMaterial.ClearTailscaleCredentials(profile);
 
         profile.Tags = [.. Cell(SessionCsvColumns.Tags)
             .Split([';', ',', '|', '，', '；'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -451,6 +458,9 @@ public static class SessionCsv
                 return true;
             case "agent" or "sshagent":
                 method = AuthMethod.Agent;
+                return true;
+            case "tailscale":
+                method = AuthMethod.Tailscale;
                 return true;
             default:
                 method = AuthMethod.Password;

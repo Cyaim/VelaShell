@@ -154,11 +154,12 @@ public static class InfrastructureServiceCollectionExtensions
             IHostKeyPrompt? prompt = sp.GetService<IHostKeyPrompt>();
             IAgentSignPrompt? agentPrompt = sp.GetService<IAgentSignPrompt>();
             IKeyboardInteractivePrompt? keyboardPrompt = sp.GetService<IKeyboardInteractivePrompt>();
+            Func<TailscaleSshCheckNotification, Task>? tailscaleCheckPrompt = sp.GetService<Func<TailscaleSshCheckNotification, Task>>();
             ISecurityAlertService? alerts = sp.GetService<ISecurityAlertService>();
             IProxyResolver proxyResolver = sp.GetRequiredService<IProxyResolver>();
             ILocalXServer? xServer = sp.GetService<ILocalXServer>();
             return new SshConnectionService(ci =>
-                CreateSshClientWrapper(ci, hostKey, settings, prompt, alerts, proxyResolver, xServer, agentPrompt, keyboardPrompt));
+                CreateSshClientWrapper(ci, hostKey, settings, prompt, alerts, proxyResolver, xServer, agentPrompt, keyboardPrompt, tailscaleCheckPrompt));
         });
 
         // SFTP service
@@ -285,10 +286,11 @@ public static class InfrastructureServiceCollectionExtensions
         VelaConnectionInfo ci, IHostKeyService? hostKey, ISettingsService? settings,
         IHostKeyPrompt? prompt, ISecurityAlertService? alerts, IProxyResolver? proxyResolver = null,
         ILocalXServer? xServer = null, IAgentSignPrompt? agentPrompt = null,
-        IKeyboardInteractivePrompt? keyboardPrompt = null)
+        IKeyboardInteractivePrompt? keyboardPrompt = null,
+        Func<TailscaleSshCheckNotification, Task>? tailscaleCheckPrompt = null)
     {
         SshConnectionAssembler.Assembled assembled =
-            SshConnectionAssembler.Create(ci, hostKey, settings, prompt, alerts, proxyResolver, keyboardPrompt);
+            SshConnectionAssembler.Create(ci, hostKey, settings, prompt, alerts, proxyResolver, keyboardPrompt, tailscaleCheckPrompt);
 
         return new VelaSshClientWrapper(
             assembled.Connect, assembled.ConnectTimeout, ci.Ssh,

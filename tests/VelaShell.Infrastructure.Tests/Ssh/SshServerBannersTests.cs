@@ -56,6 +56,58 @@ public sealed class SshServerBannersTests
     }
 
     [TestMethod]
+    [DataRow("Banner")]
+    [DataRow("DEBUG")]
+    [DataRow("PreAuth")]
+    public async Task 未知认证类型的横幅与DEBUG和前导行都先脱敏再缓存展示(string source)
+    {
+        // Banner 与 always_display DEBUG 都接到 OnBannerAsync；缓存不知道连接是否使用 Tailscale 认证。
+        string[] candidates =
+        [
+            "https://login.tailscale.com/a/sensitive-token?state=sensitive-query",
+            "https://login\u3002tailscale.com/a/sensitive-token?state=sensitive-query",
+            "https://ｌｏｇｉｎ.ｔａｉｌｓｃａｌｅ.ｃｏｍ/a/sensitive-token?state=sensitive-query",
+            "http://login\u3002tailscale.com/a/sensitive-token?state=sensitive-query",
+            "https://sub.login\u3002tailscale.com/a/sensitive-token?state=sensitive-query",
+            "http://login.tailscale.com/a/sensitive-token?state=sensitive-query",
+            "https://login.tailscale.com.evil.example/a/sensitive-token?state=sensitive-query",
+            "https://login.tailscale.com:444/a/sensitive-token?state=sensitive-query",
+            "https://login.tailscale.com/a/sensitive-token\u202Esuffix?state=sensitive-query",
+            "https://login.tailscale.com/a/sensitive-token\\suffix?state=sensitive-query",
+            "https://login.tailscale.com/a/sensitive-token?state=" + new string('x', SshServerBanners.MaxLineLength * 2)
+                + "sensitive-query"
+        ];
+        foreach (string candidate in candidates)
+        {
+            SshServerBanners banners = new();
+            string[] lines =
+            [
+                "Authorized use only.",
+                "Verify (" + candidate + ") and https://login.tailscale.com/a/second-secret?state=second-query",
+                "All activity is logged. https://example.com/help?topic=ssh"
+            ];
+            if (source == "PreAuth")
+            {
+                await banners.OnPreAuthBannerAsync(lines, CancellationToken.None);
+            }
+            else
+            {
+                await banners.OnBannerAsync(string.Join('\n', lines), CancellationToken.None);
+            }
+
+            string text = string.Join('\n', banners.TakeNotices().Select(n => n.Text));
+
+            Assert.DoesNotContain("sensitive-token", text);
+            Assert.DoesNotContain("sensitive-query", text);
+            Assert.DoesNotContain("second-secret", text);
+            Assert.DoesNotContain("second-query", text);
+            Assert.Contains("Authorized use only.", text);
+            Assert.Contains("All activity is logged.", text);
+            Assert.Contains("https://example.com/help?topic=ssh", text);
+        }
+    }
+
+    [TestMethod]
     public async Task 只交出一次_之后再开的shell不重复显示()
     {
         SshServerBanners banners = new();

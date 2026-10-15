@@ -20,6 +20,12 @@ public sealed class CredentialResolver(IEnumerable<ICredentialProvider> provider
     public async Task<SessionProfile> ResolveAsync(SessionProfile profile, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(profile);
+        if (profile.AuthMethod == AuthMethod.Tailscale)
+        {
+            SessionProfile copy = profile.Clone();
+            CredentialMaterial.ClearTailscaleCredentials(copy);
+            return copy;
+        }
         // 本次在登录框里手输过的材料优先于引用(否则用户刚输的新密码会被引用里那份旧的盖掉)。
         // 但用户名可能仍要向引用去取:连接自己没填、一直跟着凭据走的那种 —— 登录框不会为了
         // 一次手输就把它钉在连接上(那会悄悄把"跟着凭据走"变成"覆盖")。
@@ -37,6 +43,13 @@ public sealed class CredentialResolver(IEnumerable<ICredentialProvider> provider
                                            reference.ProviderId,
                                            Strings.Format("Cred_Failure_ProviderDisabled", reference.ProviderId));
         ResolvedCredential resolved = await provider.ResolveAsync(reference, cancellationToken).ConfigureAwait(false);
+        if (resolved.AuthMethod == AuthMethod.Tailscale)
+        {
+            throw new CredentialProviderException(
+                CredentialFailure.UnsupportedAuthMethod,
+                provider.Id,
+                Strings.Get("SharedCred_ErrTailscaleUnsupported"));
+        }
 
         // FTP 与插件协议只有「用户名 + 口令」这一种登录:把私钥交给它们,发出去的是一个空口令。
         if (!inline

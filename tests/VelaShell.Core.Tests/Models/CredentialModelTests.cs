@@ -121,6 +121,7 @@ public sealed class CredentialModelTests
     [DataRow(AuthMethod.Certificate, null, "/k", null, false)]
     [DataRow(AuthMethod.Certificate, null, "/k", "/c", true)]
     [DataRow(AuthMethod.Agent, "pw", "/k", "/c", false)]
+    [DataRow(AuthMethod.Tailscale, "pw", "/k", "/c", false)]
     public void HasInline_LooksAtTheMaterialOfTheChosenMethod(AuthMethod method, string? password, string? key, string? cert, bool expected)
     {
         var profile = new SessionProfile { AuthMethod = method, Password = password, PrivateKeyPath = key, CertificatePath = cert };
@@ -159,5 +160,55 @@ public sealed class CredentialModelTests
         Assert.IsNull(profile.PrivateKeyPath);
         Assert.IsNull(profile.PrivateKeyPassphrase);
         Assert.IsNull(profile.CertificatePath);
+    }
+
+    [TestMethod]
+    [DataRow(AuthMethod.Password, 0)]
+    [DataRow(AuthMethod.PrivateKey, 1)]
+    [DataRow(AuthMethod.Certificate, 2)]
+    [DataRow(AuthMethod.Agent, 3)]
+    [DataRow(AuthMethod.Tailscale, 4)]
+    public void AuthMethod_PreservesStoredNumbers(AuthMethod method, int number)
+    {
+        SessionProfile profile = JsonSerializer.Deserialize<SessionProfile>($$"""{"authMethod":{{number}}}""", Options)!;
+
+        Assert.AreEqual(method, profile.AuthMethod);
+        Assert.AreEqual(number, (int)method);
+    }
+
+    [TestMethod]
+    [DataRow(AuthMethod.Password)]
+    [DataRow(AuthMethod.PrivateKey)]
+    [DataRow(AuthMethod.Certificate)]
+    [DataRow(AuthMethod.Agent)]
+    [DataRow(AuthMethod.Tailscale)]
+    public void ClearTailscaleCredentials_OnlyClearsTailscale(AuthMethod method)
+    {
+        var profile = new SessionProfile
+        {
+            Username = "ops", AuthMethod = method, ConnectionType = ConnectionType.SFTP,
+            Password = "pw", PrivateKeyPath = "/k", PrivateKeyPassphrase = "phrase", CertificatePath = "/c",
+            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()), RememberPassword = true,
+            JumpHostProfileId = Guid.NewGuid(), Port = 2222
+        };
+        SessionProfile original = profile.Clone();
+
+        CredentialMaterial.ClearTailscaleCredentials(profile);
+
+        Assert.AreEqual(original.Username, profile.Username);
+        Assert.AreEqual(original.AuthMethod, profile.AuthMethod);
+        Assert.AreEqual(original.JumpHostProfileId, profile.JumpHostProfileId);
+        Assert.AreEqual(ConnectionType.SFTP, profile.ConnectionType);
+        Assert.AreEqual(2222, profile.Port);
+        bool tailscale = method == AuthMethod.Tailscale;
+        Assert.AreEqual(tailscale ? null : original.Password, profile.Password);
+        Assert.AreEqual(tailscale ? null : original.PrivateKeyPath, profile.PrivateKeyPath);
+        Assert.AreEqual(tailscale ? null : original.PrivateKeyPassphrase, profile.PrivateKeyPassphrase);
+        Assert.AreEqual(tailscale ? null : original.CertificatePath, profile.CertificatePath);
+        Assert.AreEqual(tailscale ? null : original.CredentialSource, profile.CredentialSource);
+        Assert.AreEqual(!tailscale, profile.RememberPassword);
+        Assert.AreEqual(method == AuthMethod.Agent, CredentialMaterial.NeedsResolution(profile));
+        original.AuthMethod = AuthMethod.Tailscale;
+        Assert.IsFalse(CredentialMaterial.NeedsResolution(original), "隐藏引用不能让 Tailscale 去取共享凭据");
     }
 }

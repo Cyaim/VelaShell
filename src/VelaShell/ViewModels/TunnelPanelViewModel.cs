@@ -63,6 +63,9 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     /// </remarks>
     private readonly HashSet<Guid> _hostKeyRejectedProfiles = [];
 
+    /// <summary>认证需要用户处理或已取消的服务器:手动连接成功后才恢复后台重建。</summary>
+    private readonly HashSet<Guid> _authenticationBlockedProfiles = [];
+
     private readonly Lock _deletingTunnelIdsGate = new();
 
     private readonly DispatcherTimer? _liveTimer;
@@ -475,7 +478,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     /// 重启后一律是已停止,等用户手动启动。
     /// </para>
     /// <para>
-    /// 连不上服务器、端口被占、凭据提示被取消……一律经 <c>errorReporter</c> 报到右下角的错误提示:
+    /// 连不上服务器、端口被占等失败经 <c>errorReporter</c> 报到右下角的错误提示;用户取消认证则安静结束。
     /// 这时面板多半没开,写进表单下面没人看得见。一台服务器失败不耽误其它服务器;
     /// 同一台上一条建不起来也不耽误其余几条。从不抛出(调用方不等它)。
     /// </para>
@@ -494,6 +497,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             {
                 await AutoStartProfileAsync(profile).ConfigureAwait(true);
             }
+            catch (VelaSshAuthenticationCancelledException)
+            {
+                // 用户取消认证,不作为启动失败报告。
+            }
             catch (Exception ex)
             {
                 _errorReporter?.Invoke(Strings.Format("Msg_TunnelAutoStartConnectFailed", profile.Name, FriendlyError(ex)));
@@ -511,6 +518,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         }
         // 与切到这台服务器时同一份恢复(每台只恢复一次):之后打开面板,看到的就是这里建好的条目。
         await RestorePersistedTunnelsAsync(profile.Id, items).ConfigureAwait(true);
+        if (_authenticationBlockedProfiles.Contains(profile.Id))
+        {
+            return;
+        }
         List<TunnelItemViewModel> pending = [.. items.Where(t => t is { AutoStart: true, IsActive: false, IsBusy: false })];
         if (pending.Count == 0)
         {
@@ -526,6 +537,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             try
             {
                 sessionId = await EnsureSessionAsync(profile, automaticReconnect: false, CancellationToken.None).ConfigureAwait(true);
+            }
+            catch (VelaSshAuthenticationCancelledException)
+            {
+                return;
             }
             catch (Exception ex)
             {
@@ -544,6 +559,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
                         items[index] = new(result);
                     }
                     anyStarted = true;
+                }
+                catch (VelaSshAuthenticationCancelledException)
+                {
+                    return;
                 }
                 catch (Exception ex)
                 {
@@ -653,7 +672,18 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             Guid sessionId = await _backgroundConnector(profile, automaticReconnect, ct);
             _hostSessions[profile.Id] = sessionId;
             _hostKeyRejectedProfiles.Remove(profile.Id);
+            _authenticationBlockedProfiles.Remove(profile.Id);
             return sessionId;
+        }
+        catch (Exception ex) when (ex is VelaSshTailscaleAuthenticationException or VelaSshAuthenticationCancelledException)
+        {
+            _authenticationBlockedProfiles.Add(profile.Id);
+            throw;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _authenticationBlockedProfiles.Add(profile.Id);
+            throw;
         }
         catch (VelaSshHostKeyRejectedException)
         {
@@ -828,8 +858,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             {
                 continue;
             }
-            // 败在主机指纹上的不再自动试(见 _hostKeyRejectedProfiles)。
-            if (_hostKeyRejectedProfiles.Contains(profileId))
+            // 指纹或认证需要用户处理时,仅显式手动连接可以再试。
+            if (_hostKeyRejectedProfiles.Contains(profileId) || _authenticationBlockedProfiles.Contains(profileId))
             {
                 continue;
             }
@@ -891,6 +921,18 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             if (isSelected)
             {
                 ErrorMessage = null;
+            }
+        }
+        catch (VelaSshAuthenticationCancelledException)
+        {
+            // EnsureSessionAsync 已暂停这台服务器的自动恢复;取消不报错也不进入退避。
+        }
+        catch (VelaSshTailscaleAuthenticationException ex)
+        {
+            _errorReporter?.Invoke(ex.Message);
+            if (isSelected)
+            {
+                ErrorMessage = ex.Message;
             }
         }
         catch (VelaSshHostKeyRejectedException ex)
@@ -1051,24 +1093,28 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         {
             return;
         }
+        TunnelItemViewModel? existing = null;
         try
         {
             ErrorMessage = null;
             TunnelConfig config = BuildConfig();
             if (_editingTunnelId is { } editingId)
             {
-                TunnelItemViewModel? existing = Tunnels.FirstOrDefault(t => t.Id == editingId);
+                existing = Tunnels.FirstOrDefault(t => t.Id == editingId);
                 int index = existing is null ? -1 : Tunnels.IndexOf(existing);
                 bool wasActive = existing?.IsActive ?? true;
-                await _workflowService.RemoveTunnelAsync(editingId, ct).ConfigureAwait(true);
                 if (wasActive)
                 {
+                    existing?.IsStarting = true;
                     Guid sessionId = await EnsureSessionAsync(server, automaticReconnect: false, ct).ConfigureAwait(true);
+                    ct.ThrowIfCancellationRequested();
+                    await _workflowService.RemoveTunnelAsync(editingId, ct).ConfigureAwait(true);
                     TunnelInfo result = await _workflowService.CreateTunnelAsync(sessionId, config, ct).ConfigureAwait(true);
                     ReplaceOrAdd(index, new(result));
                 }
                 else
                 {
+                    await _workflowService.RemoveTunnelAsync(editingId, ct).ConfigureAwait(true);
                     // 停止状态下编辑:只更新配置,不自动拉起。
                     var stopped = new TunnelInfo
                     {
@@ -1091,9 +1137,21 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             PersistTunnels(server.Id);
             ResetForm();
         }
+        catch (VelaSshAuthenticationCancelledException)
+        {
+            // 留在当前表单和旧条目上,用户可以手动重试。
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 调用方取消同样保留表单、存储配置和服务侧旧记录。
+        }
         catch (Exception ex)
         {
             ErrorMessage = FriendlyError(ex);
+        }
+        finally
+        {
+            existing?.IsStarting = false;
         }
     }
 
@@ -1178,12 +1236,21 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         try
         {
             ErrorMessage = null;
-            // 服务侧还留着停止状态的旧记录,先清掉再重建,避免列表里越积越多。
-            await _workflowService.RemoveTunnelAsync(tunnelId, ct).ConfigureAwait(true);
             Guid sessionId = await EnsureSessionAsync(server, automaticReconnect: false, ct).ConfigureAwait(true);
+            ct.ThrowIfCancellationRequested();
+            // 认证成功后才清除服务侧旧记录;取消认证仍保留可重试的隧道定义。
+            await _workflowService.RemoveTunnelAsync(tunnelId, ct).ConfigureAwait(true);
             TunnelInfo result = await _workflowService.CreateTunnelAsync(sessionId, existing.Config, ct).ConfigureAwait(true);
             int index = Tunnels.IndexOf(existing);
             ReplaceOrAdd(index, new(result));
+        }
+        catch (VelaSshAuthenticationCancelledException)
+        {
+            // 取消认证不报连接失败,旧条目由 finally 复位后可再次启动。
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 调用方取消不报错,也不移除旧隧道定义。
         }
         catch (Exception ex)
         {
@@ -1258,6 +1325,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     private string FriendlyError(Exception ex, uint? localPort = null) =>
         ex switch
         {
+            VelaSshTailscaleAuthenticationException => ex.Message,
             OperationCanceledException => Strings.Get("Msg_OperationCancelled"),
             InvalidOperationException when ex.Message.Contains("not connected", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
                 => Strings.Get("Msg_ServerConnectionUnavailable"),

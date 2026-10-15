@@ -311,7 +311,8 @@ public sealed class ConnectionWorkflowService(
                                 || (profile.ConnectionType == ConnectionType.FTP && profile.Ftp?.Anonymous == true);
         // 引用共享凭据的配置:用户名可以留给凭据提供,认证材料要到连接那一刻才取 ——
         // 这两样在这里都查不了,缺了由解析器报出具体原因(#550)。
-        if (!anonymousAllowed && profile.CredentialSource is null && string.IsNullOrWhiteSpace(profile.Username))
+        if (!anonymousAllowed && (profile.CredentialSource is null || profile.AuthMethod == AuthMethod.Tailscale)
+            && string.IsNullOrWhiteSpace(profile.Username))
         {
             throw new ArgumentException(Strings.Get("Svc_UsernameRequired"), nameof(profile));
         }

@@ -44,6 +44,7 @@ public static class SessionArchiveJson
     {
         ArgumentNullException.ThrowIfNull(profile);
         SessionProfile copy = profile.Clone();
+        CredentialMaterial.ClearTailscaleCredentials(copy);
         if (copy.CredentialSource is not null)
         {
             CredentialMaterial.ClearInline(copy);
@@ -381,8 +382,8 @@ public static class SessionArchiveJson
     private static SessionSecretValues SecretsOf(SessionProfile profile) =>
         new()
         {
-            Password = NullIfEmpty(profile.Password),
-            PrivateKeyPassphrase = NullIfEmpty(profile.PrivateKeyPassphrase),
+            Password = profile.AuthMethod == AuthMethod.Tailscale ? null : NullIfEmpty(profile.Password),
+            PrivateKeyPassphrase = profile.AuthMethod == AuthMethod.Tailscale ? null : NullIfEmpty(profile.PrivateKeyPassphrase),
             PluginSecrets = profile.PluginSecrets is { Count: > 0 } secrets ? SessionProfile.CloneSettings(secrets) : null
         };
 

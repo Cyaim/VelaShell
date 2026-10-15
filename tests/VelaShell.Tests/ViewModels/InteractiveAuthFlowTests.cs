@@ -1,8 +1,11 @@
+using Avalonia.Headless;
 using NSubstitute;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Docking;
 using VelaShell.Presentation.Services;
+using VelaShell.Tests.TestSupport;
 using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
@@ -104,5 +107,116 @@ public sealed class InteractiveAuthFlowTests
         Assert.AreEqual(
             $"{Strings.Format("Msg_AuthFailed", "root@h:22")}\ndenied",
             vm.LastConnectionError);
+    }
+
+    [TestMethod]
+    [DataRow("SshErr_TailscaleRejected", true)]
+    [DataRow("SshErr_TailscaleCheckTimeout", true)]
+    [DataRow("SshErr_TailscaleCheckRequired", true)]
+    [DataRow("SshErr_TailscaleRejected", false)]
+    public async Task TailscaleJumpFailure_PreservesFailedPasswordTargetWithoutCredentialRetry(string resource, bool hasAuthenticator)
+    {
+        await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(InteractiveAuthFlowTests).Assembly).RunOnUiAsync(async () =>
+        {
+            var workflow = Substitute.For<IConnectionWorkflowService>();
+            var ssh = Substitute.For<ISshConnectionService>();
+            var profile = new SessionProfile
+            {
+                Name = "target", Host = "target", Username = "root", Password = "target-password",
+                AuthMethod = AuthMethod.Password, JumpHostProfileId = Guid.NewGuid()
+            };
+            string reason = $"ops@jump:22: {Strings.Get(resource)}";
+            workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<SshSession>(new VelaSshTailscaleAuthenticationException(reason)));
+            var vm = new MainWindowViewModel(workflow, ssh, () => FakeTerminal.Emulator());
+            int prompts = 0;
+            if (hasAuthenticator)
+            {
+                vm.InteractiveAuthenticator = candidate =>
+                {
+                    prompts++;
+                    return Task.FromResult<SessionProfile?>(candidate);
+                };
+            }
+
+            TerminalTabViewModel? tab = await vm.TryConnectProfileAsync(profile);
+
+            Assert.IsNotNull(tab);
+            Assert.HasCount(1, vm.TerminalTabs);
+            Assert.AreEqual(SessionStatus.Disconnected, tab.ConnectionStatus);
+            Assert.IsTrue(tab.AuthenticationRequiresUserAction);
+            Assert.IsFalse(tab.UserRequestedDisconnect);
+            Assert.IsFalse(tab.HostKeyRejected);
+            Assert.IsTrue(tab.ShowDisconnectedOverlay);
+            Assert.AreEqual(reason, tab.ConnectionError);
+            Assert.AreEqual(reason, vm.LastConnectionError);
+            Assert.AreEqual(0, prompts);
+            await workflow.Received(1).ConnectProfileAsync(profile, Arg.Any<CancellationToken>());
+            await tab.DisposeAsync();
+        });
+    }
+
+    [TestMethod]
+    public async Task TailscaleCheckCancelled_RemovesInitialTabWithoutPasswordRetryOrError()
+    {
+        await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(InteractiveAuthFlowTests).Assembly).RunOnUiAsync(async () =>
+        {
+            var workflow = Substitute.For<IConnectionWorkflowService>();
+            var profile = new SessionProfile { Host = "tail", Username = "ops", AuthMethod = AuthMethod.Tailscale };
+            workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<SshSession>(new VelaSshAuthenticationCancelledException("cancelled")));
+            var vm = new MainWindowViewModel(workflow, Substitute.For<ISshConnectionService>(), () => FakeTerminal.Emulator());
+            int prompts = 0;
+            vm.InteractiveAuthenticator = candidate =>
+            {
+                prompts++;
+                return Task.FromResult<SessionProfile?>(candidate);
+            };
+
+            Assert.IsNull(await vm.TryConnectProfileAsync(profile));
+            Assert.IsEmpty(vm.TerminalTabs);
+            Assert.IsEmpty(vm.Layout.AllDocuments());
+            Assert.IsNull(vm.LastConnectionError);
+            Assert.AreEqual(0, prompts);
+            await workflow.Received(1).ConnectProfileAsync(profile, Arg.Any<CancellationToken>());
+        });
+    }
+
+    [TestMethod]
+    public async Task TailscaleMissingUsername_PromptsOnlyOnceAndConnectsWithoutPassword()
+    {
+        await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(InteractiveAuthFlowTests).Assembly).RunOnUiAsync(async () =>
+        {
+            var workflow = Substitute.For<IConnectionWorkflowService>();
+            var ssh = Substitute.For<ISshConnectionService>();
+            var client = Substitute.For<ISshClientWrapper>();
+            var shell = Substitute.For<IShellStreamWrapper>();
+            shell.CanRead.Returns(false);
+            ssh.GetClient(Arg.Any<Guid>()).Returns(client);
+            client.CreateShellStreamAsync("xterm-256color", 120, 32, 0, 0, 4096,
+                Arg.Any<IReadOnlyDictionary<TerminalMode, uint>?>(), Arg.Any<CancellationToken>()).Returns(shell);
+            workflow.ConnectProfileAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>())
+                .Returns(args => CreateSession((SessionProfile)args[0]));
+            var profile = new SessionProfile { Host = "tail", AuthMethod = AuthMethod.Tailscale };
+            var vm = new MainWindowViewModel(workflow, ssh, () => FakeTerminal.Emulator());
+            int prompts = 0;
+            vm.InteractiveAuthenticator = candidate =>
+            {
+                prompts++;
+                Assert.AreEqual(AuthMethod.Tailscale, candidate.AuthMethod);
+                candidate.Username = "ops";
+                return Task.FromResult<SessionProfile?>(candidate);
+            };
+
+            TerminalTabViewModel? tab = await vm.TryConnectProfileAsync(profile);
+            Assert.IsNotNull(tab);
+            Assert.AreEqual(1, prompts);
+            Assert.IsFalse(tab.AuthenticationRequiresUserAction);
+            await workflow.Received(1).ConnectProfileAsync(
+                Arg.Is<SessionProfile>(candidate => candidate.AuthMethod == AuthMethod.Tailscale
+                    && candidate.Username == "ops" && candidate.Password == null && candidate.PrivateKeyPath == null),
+                Arg.Any<CancellationToken>());
+            await tab.DisposeAsync();
+        });
     }
 }

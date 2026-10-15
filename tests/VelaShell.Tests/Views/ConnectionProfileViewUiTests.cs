@@ -10,6 +10,7 @@ using NSubstitute;
 using ReactiveUI.Primitives;
 using VelaShell.Behaviors;
 using VelaShell.Core.Models;
+using VelaShell.Core.Resources;
 using VelaShell.Presentation.Services;
 using VelaShell.Security;
 using VelaShell.ViewModels;
@@ -486,6 +487,94 @@ public sealed class ConnectionProfileViewUiTests
 
                 double CentreY(Control c) => c.TranslatePoint(new Point(0, c.Bounds.Height / 2), row)!.Value.Y;
                 Assert.AreEqual(CentreY(display), CentreY(trusted), 0.5, "受信任勾选框应与输入框同一条中线");
+            }
+            finally
+            {
+                window.Close();
+            }
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void TailscaleSelector_UsesFullWidthBelowUsername_AndHidesAuthenticationMaterial()
+    {
+        _session.Dispatch(() =>
+        {
+            var vm = new ConnectionProfileViewModel
+            {
+                Host = "node.example.com",
+                Username = "ops",
+                Password = SecureStringConvert.FromPlaintext("stale-password"),
+                PrivateKeyPath = "/stale-key"
+            };
+            var window = new ConnectionProfileView { DataContext = vm };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            try
+            {
+                Button tailscale = window.GetVisualDescendants().OfType<Button>()
+                    .Single(button => Equals(button.CommandParameter, AuthMethod.Tailscale));
+                TextBox username = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Text == "ops");
+                Assert.IsTrue(tailscale.IsEffectivelyVisible);
+                Assert.IsTrue(tailscale.IsTabStop);
+                Control segments = (Control)tailscale.GetVisualParent()!;
+                Assert.IsTrue(segments.Bounds.Width >= username.Bounds.Width, "认证分段应使用用户名下方的全宽行");
+                Assert.IsTrue(tailscale.TranslatePoint(default, window)!.Value.Y
+                    >= username.TranslatePoint(default, window)!.Value.Y + username.Bounds.Height);
+
+                tailscale.Command!.Execute(tailscale.CommandParameter);
+                Dispatcher.UIThread.RunJobs();
+                Assert.IsTrue(vm.IsTailscaleAuth);
+                Assert.IsTrue(username.IsEffectivelyVisible);
+                Assert.IsFalse(window.GetVisualDescendants().OfType<TextBox>().Single(SecurePasswordBox.GetEnabled).IsEffectivelyVisible);
+                Assert.IsFalse(window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Text == "/stale-key").IsEffectivelyVisible);
+                Assert.IsTrue(window.GetVisualDescendants().OfType<TextBlock>()
+                    .Single(text => text.Text == Strings.Get("Profile_TailscaleAuthHint")).IsEffectivelyVisible);
+
+                vm.SelectConnectionTypeCommand.Execute(ConnectionType.SFTP).Subscribe();
+                Dispatcher.UIThread.RunJobs();
+                Assert.IsTrue(tailscale.IsEffectivelyVisible);
+                Assert.IsTrue(vm.IsTailscaleAuth);
+
+                vm.SelectConnectionTypeCommand.Execute(ConnectionType.FTP).Subscribe();
+                Dispatcher.UIThread.RunJobs();
+                Assert.IsFalse(tailscale.IsEffectivelyVisible);
+                Assert.IsTrue(vm.ShowInlinePassword, "FTP 仍使用既有密码认证布局");
+            }
+            finally
+            {
+                window.Close();
+            }
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void AuthenticationDialog_TailscaleSegment_HidesPasswordAndSharedUpdate()
+    {
+        _session.Dispatch(() =>
+        {
+            var vm = new AuthenticationDialogViewModel("node", 22, "ops",
+                sharedCredential: new("shared", 2, SharedCredentialPromptReason.Incomplete));
+            var window = new AuthenticationDialogView { DataContext = vm };
+            window.Show();
+            vm.NextCommand.Execute().Subscribe();
+            Dispatcher.UIThread.RunJobs();
+            try
+            {
+                Button tailscale = window.GetVisualDescendants().OfType<Button>()
+                    .Single(button => ReferenceEquals(button.Command, vm.SelectTailscaleCommand));
+                Assert.IsTrue(tailscale.IsEffectivelyVisible);
+                Assert.IsTrue(tailscale.IsTabStop);
+                tailscale.Command!.Execute(tailscale.CommandParameter);
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.IsTrue(vm.IsTailscaleMethod);
+                Assert.IsFalse(window.GetVisualDescendants().OfType<TextBox>().Single(SecurePasswordBox.GetEnabled).IsEffectivelyVisible);
+                Assert.IsFalse(window.GetVisualDescendants().OfType<CheckBox>().Any(static box => box.IsEffectivelyVisible));
+                Assert.IsTrue(window.GetVisualDescendants().OfType<TextBlock>()
+                    .Single(text => text.Text == Strings.Get("Profile_TailscaleAuthHint")).IsEffectivelyVisible);
+                Assert.IsTrue(window.GetVisualDescendants().OfType<Button>()
+                    .Single(button => ReferenceEquals(button.Command, vm.LoginCommand)).IsEffectivelyEnabled);
             }
             finally
             {

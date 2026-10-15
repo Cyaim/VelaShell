@@ -26,6 +26,9 @@ public class VelaSshHostKeyRejectedException(string message, Exception? innerExc
 /// <summary>身份认证失败(用户名/密码/密钥错误)。</summary>
 public class VelaSshAuthenticationException(string message, Exception? innerException = null) : VelaSshClientException(message, innerException);
 
+/// <summary>Tailscale SSH 授权失败；只携带本地化安全消息，不保留服务端异常链或验证链接。</summary>
+public class VelaSshTailscaleAuthenticationException(string message) : VelaSshAuthenticationException(message);
+
 /// <summary>
 /// 用户在认证交互(keyboard-interactive 的动态码框)里点了取消。
 /// </summary>

@@ -12,7 +12,7 @@ namespace VelaShell.ViewModels;
 /// 由消费方负责在使用后 Dispose。
 /// </summary>
 /// <param name="Username">登录用户名。</param>
-/// <param name="AuthMethod">选用的认证方式(密码 / 证书 / 密钥)。</param>
+/// <param name="AuthMethod">选用的认证方式(密码 / 证书 / 密钥 / Tailscale SSH)。</param>
 /// <param name="Password">以 SecureString 承载的登录密码;消费方负责在使用后 Dispose。</param>
 /// <param name="PrivateKeyPath">私钥文件路径(密钥认证时使用)。</param>
 /// <param name="PrivateKeyPassphrase">私钥口令短语(如私钥已加密)。</param>
@@ -44,7 +44,10 @@ public enum SharedCredentialPromptReason
     Incomplete,
 
     /// <summary>引用的共享凭据已不存在。</summary>
-    Missing
+    Missing,
+
+    /// <summary>共享凭据使用不支持的 Tailscale SSH 认证。</summary>
+    Unsupported
 }
 
 /// <summary>
@@ -57,12 +60,12 @@ public sealed record SharedCredentialPromptContext(string CredentialName, int Us
 
 /// <summary>
 /// 两步身份验证弹窗(设计 oNZIM / twD13):
-/// 第 1 步输入用户名(显示目标与主机指纹),第 2 步选择认证方式(密码/证书/密钥)并输入凭据。
+/// 第 1 步输入用户名(显示目标与主机指纹),第 2 步选择认证方式并输入所需凭据。
 /// </summary>
 public class AuthenticationDialogViewModel : ReactiveObject
 {
     private readonly int _port;
-    private int _methodIndex; // 0=密码 1=证书 2=密钥;顺序即分段选择器上从左到右的顺序
+    private int _methodIndex; // 0=密码 1=证书 2=密钥 3=Tailscale;顺序即分段选择器从左到右
 
     private string _username;
 
@@ -90,12 +93,13 @@ public class AuthenticationDialogViewModel : ReactiveObject
         // 凭据不完整时用户就是来补它的,默认存回去;被拒时可能只是这一台密码不同,
         // 默认不动 —— 勾错的代价是另外几十台一起连不上。
         UpdateSharedCredential = sharedCredential?.Reason == SharedCredentialPromptReason.Incomplete;
-        // 分段选择器的顺序(密码/证书/密钥)与 AuthMethod 的枚举顺序不一致,这里显式映射,
+        // 分段选择器的顺序与 AuthMethod 的枚举顺序不一致,这里显式映射,
         // 不要图省事写成强转 —— 那会把证书认证的配置打开成密钥页。
         _methodIndex = initialMethod switch
         {
             AuthMethod.Certificate => 1,
             AuthMethod.PrivateKey => 2,
+            AuthMethod.Tailscale => 3,
             _ => 0
         };
         FingerprintText = string.IsNullOrEmpty(knownFingerprint)
@@ -110,18 +114,21 @@ public class AuthenticationDialogViewModel : ReactiveObject
             x => x.Password,
             x => x.PrivateKeyPath,
             x => x.CertificatePath,
-            (method, password, keyPath, certPath) => method switch
+            x => x.Username,
+            (method, password, keyPath, certPath, name) => method switch
             {
                 0 => password is { Length: > 0 },
                 // 证书那一路要两个文件都齐:证书是 CA 的背书,签名仍旧由私钥出。
                 1 => !string.IsNullOrWhiteSpace(certPath) && !string.IsNullOrWhiteSpace(keyPath),
                 2 => !string.IsNullOrWhiteSpace(keyPath),
+                3 => !string.IsNullOrWhiteSpace(name),
                 _ => false
             });
         LoginCommand = ReactiveCommand.Create(BuildResult, canLogin);
         SelectPasswordCommand = ReactiveCommand.Create(() => { MethodIndex = 0; });
         SelectCertificateCommand = ReactiveCommand.Create(() => { MethodIndex = 1; });
         SelectKeyCommand = ReactiveCommand.Create(() => { MethodIndex = 2; });
+        SelectTailscaleCommand = ReactiveCommand.Create(() => { MethodIndex = 3; });
         TogglePasswordVisibilityCommand = ReactiveCommand.Create(() => { ShowPassword = !ShowPassword; });
         this.WhenAnyValue(x => x.Step)
             .Subscribe(_ =>
@@ -138,6 +145,11 @@ public class AuthenticationDialogViewModel : ReactiveObject
                 this.RaisePropertyChanged(nameof(IsPasswordMethod));
                 this.RaisePropertyChanged(nameof(IsKeyMethod));
                 this.RaisePropertyChanged(nameof(IsCertificateMethod));
+                this.RaisePropertyChanged(nameof(IsTailscaleMethod));
+                this.RaisePropertyChanged(nameof(ShowRememberPassword));
+                this.RaisePropertyChanged(nameof(CanUpdateSharedCredential));
+                this.RaisePropertyChanged(nameof(SharedCredentialNotice));
+                this.RaisePropertyChanged(nameof(HasSharedCredentialNotice));
                 this.RaisePropertyChanged(nameof(ShowsKeyFields));
             });
     }
@@ -187,7 +199,7 @@ public class AuthenticationDialogViewModel : ReactiveObject
         }
     }
 
-    /// <summary>当前选中的认证方式索引:0=密码,1=证书,2=密钥。</summary>
+    /// <summary>当前选中的认证方式索引:0=密码,1=证书,2=密钥,3=Tailscale。</summary>
     public int MethodIndex
     {
         get => _methodIndex;
@@ -202,6 +214,9 @@ public class AuthenticationDialogViewModel : ReactiveObject
 
     /// <summary>当前是否选择证书认证方式。</summary>
     public bool IsCertificateMethod => MethodIndex == 1;
+
+    /// <summary>当前是否选择 Tailscale SSH 认证。</summary>
+    public bool IsTailscaleMethod => MethodIndex == 3;
 
     /// <summary>私钥与口令两个字段是否可见:密钥认证与证书认证都要用到它们。</summary>
     /// <remarks>
@@ -240,10 +255,12 @@ public class AuthenticationDialogViewModel : ReactiveObject
     /// 是否显示「记住密码」。引用共享凭据的连接不显示:手输的这一份只用于本次,
     /// 要长期保存就存回共享凭据(<see cref="UpdateSharedCredential" />)—— 连接自己不再存密码。
     /// </summary>
-    public bool ShowRememberPassword => SharedCredential is null;
+    public bool ShowRememberPassword => !IsTailscaleMethod && SharedCredential is null;
 
     /// <summary>又来问凭据的原因说明;不必说明时为 null。</summary>
-    public string? SharedCredentialNotice => SharedCredential switch
+    public string? SharedCredentialNotice => SharedCredential is { Reason: SharedCredentialPromptReason.Unsupported }
+        ? Strings.Get("SharedCred_ErrTailscaleUnsupported")
+        : IsTailscaleMethod ? null : SharedCredential switch
     {
         { Reason: SharedCredentialPromptReason.Rejected } shared =>
             Strings.Format("Auth_SharedRejected", shared.CredentialName),
@@ -258,7 +275,8 @@ public class AuthenticationDialogViewModel : ReactiveObject
 
     /// <summary>能否把本次输入存回共享凭据:凭据还在才能存。</summary>
     public bool CanUpdateSharedCredential =>
-        SharedCredential is { Reason: not SharedCredentialPromptReason.Missing };
+        !IsTailscaleMethod && SharedCredential is
+            { Reason: not (SharedCredentialPromptReason.Missing or SharedCredentialPromptReason.Unsupported) };
 
     /// <summary>「同时更新共享凭据」勾选框的文案(带凭据名与引用它的连接数)。</summary>
     public string UpdateSharedCredentialText => SharedCredential is { } shared
@@ -314,16 +332,20 @@ public class AuthenticationDialogViewModel : ReactiveObject
     /// <summary>切换到证书认证方式的命令。</summary>
     public ReactiveCommand<RxVoid, RxVoid> SelectCertificateCommand { get; }
 
+    /// <summary>切换到 Tailscale SSH 认证方式的命令。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> SelectTailscaleCommand { get; }
+
     /// <summary>切换密码明文/密文显示状态的命令。</summary>
     public ReactiveCommand<RxVoid, RxVoid> TogglePasswordVisibilityCommand { get; }
 
     private AuthenticationResult BuildResult()
     {
-        // 分段选择器的索引不等于枚举值(选择器是密码/证书/密钥),照抄会把证书存成私钥。
+        // 选择器索引不等于枚举值,必须显式映射。
         AuthMethod method = MethodIndex switch
         {
             1 => AuthMethod.Certificate,
             2 => AuthMethod.PrivateKey,
+            3 => AuthMethod.Tailscale,
             _ => AuthMethod.Password
         };
         return new(Username.Trim(),
@@ -335,7 +357,7 @@ public class AuthenticationDialogViewModel : ReactiveObject
             ShowsKeyFields ? PrivateKeyPath : null,
             ShowsKeyFields ? PrivateKeyPassphrase : null,
             IsCertificateMethod ? CertificatePath : null,
-            RememberPassword,
+            !IsTailscaleMethod && RememberPassword,
             CanUpdateSharedCredential && UpdateSharedCredential);
     }
 

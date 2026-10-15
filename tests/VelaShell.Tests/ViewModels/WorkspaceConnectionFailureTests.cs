@@ -1,8 +1,15 @@
+using Avalonia.Headless;
+using NSubstitute;
+using VelaShell.Core.Data;
 using VelaShell.Core.Models;
+using VelaShell.Core.Ssh;
+using VelaShell.Core.Tunnels;
 using VelaShell.Docking;
 using VelaShell.Infrastructure.Plugins.Protocols;
 using VelaShell.PluginSdk.Protocols;
 using VelaShell.PluginSdk.Workspaces;
+using VelaShell.Presentation.Services;
+using VelaShell.Tests.TestSupport;
 using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
@@ -163,5 +170,65 @@ public sealed class WorkspaceConnectionFailureTests
         Assert.IsNull(vm.LastConnectionError);
         // "不连了"也要把占位标签收走 —— 留下一个空壳等于用户取消了个寂寞。
         Assert.IsEmpty(vm.Layout.AllDocuments());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task TailscaleJumpFailure_DoesNotAskForWorkspacePasswordOrOpenProvider(bool cancelled)
+    {
+        await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(WorkspaceConnectionFailureTests).Assembly).RunOnUiAsync(async () =>
+        {
+            var registry = new PluginProtocolRegistry();
+            var provider = Substitute.For<IWorkspaceProvider>();
+            registry.RegisterWorkspace(WorkspaceId, new()
+            {
+                Id = WorkspaceId, DisplayName = "Acme Cache", DefaultPort = 6379,
+                Features = WorkspaceFeatures.AnonymousAccess | WorkspaceFeatures.SshTunnel,
+                Fields = [new ProtocolSettingField { Key = "jump", Label = "Jump", Kind = ProtocolSettingKind.SshSession }]
+            }, provider);
+            var jump = new SessionProfile { Name = "jump", Host = "tail", Username = "ops", AuthMethod = AuthMethod.Tailscale };
+            var profile = new SessionProfile
+            {
+                Name = "cache", Host = "cache", Port = 6379, ConnectionType = ConnectionType.Plugin,
+                PluginProtocolId = WorkspaceId, PluginSettings = new() { ["jump"] = jump.Id.ToString() }
+            };
+            var repository = Substitute.For<ISessionRepository>();
+            repository.GetAllSessionsAsync().Returns([jump]);
+            var workflow = Substitute.For<IConnectionWorkflowService>();
+            string reason = "ops@tail:22: 当前跳的 Tailscale SSH 授权被拒绝";
+            Exception failure = cancelled
+                ? new VelaSshAuthenticationCancelledException("cancelled")
+                : new VelaSshTailscaleAuthenticationException(reason);
+            workflow.ConnectProfileAsync(jump, Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<SshSession>(failure));
+            var vm = new MainWindowViewModel(workflow, sessionRepository: repository,
+                tunnelService: Substitute.For<ITunnelService>(), protocolRegistry: registry,
+                workspaceLauncher: new PluginWorkspaceLauncher(registry));
+            int prompts = 0;
+            vm.InteractiveAuthenticator = candidate =>
+            {
+                prompts++;
+                return Task.FromResult<SessionProfile?>(candidate);
+            };
+
+            Assert.IsNull(await vm.OpenWorkspaceDocumentForProfileAsync(profile));
+            Assert.AreEqual(0, prompts);
+            await workflow.Received(1).ConnectProfileAsync(jump, Arg.Any<CancellationToken>());
+            await provider.DidNotReceive().OpenAsync(Arg.Any<WorkspaceConnectRequest>(), Arg.Any<CancellationToken>());
+            if (cancelled)
+            {
+                Assert.IsNull(vm.LastConnectionError);
+                Assert.IsEmpty(vm.Layout.AllDocuments());
+            }
+            else
+            {
+                ConnectingDocument placeholder = SoleConnectingDocument(vm);
+                Assert.IsTrue(placeholder.HasError);
+                Assert.IsFalse(placeholder.IsConnecting);
+                Assert.AreEqual(reason, placeholder.OverlayDetail);
+                Assert.AreEqual(reason, vm.LastConnectionError);
+            }
+        });
     }
 }

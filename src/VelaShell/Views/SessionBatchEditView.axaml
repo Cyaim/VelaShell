@@ -18,7 +18,7 @@
         WindowStartupLocation="CenterOwner">
 
   <!-- 批量修改(#571):每一项前面一个勾,勾了才改,不勾的保持各自原样。外壳与共享凭据编辑框同一规格;
-       认证方式的分段与那边同一套(共享凭据 / 密码 / 私钥 / Agent)。点「应用」之前,底下那行已经算好
+       认证方式分段放在勾选标题下方的全宽行。点「应用」之前,底下那行已经算好
        会改几条、哪些因协议不支持被跳过。 -->
 
   <Window.Styles>
@@ -145,11 +145,11 @@
         </Grid>
 
         <!-- 身份验证 -->
-        <Grid ColumnDefinitions="130,*">
+        <StackPanel Spacing="10">
           <CheckBox Classes="row-toggle" IsChecked="{Binding ChangeAuth}">
             <TextBlock Classes="row-label" Text="{loc:Localize AuthMethodLabel}" />
           </CheckBox>
-          <StackPanel Grid.Column="1" Spacing="10" IsEnabled="{Binding ChangeAuth}">
+          <StackPanel Spacing="10" IsEnabled="{Binding ChangeAuth}">
             <Border Background="{DynamicResource VelaBgInput}" CornerRadius="4" Padding="2" Height="30">
               <UniformGrid Rows="1">
                 <Button Classes="seg-tab" Classes.active="{Binding IsSharedCredentialAuth}"
@@ -168,6 +168,10 @@
                         Command="{Binding SelectAuthKindCommand}"
                         CommandParameter="{x:Static models:SessionBatchAuthKind.Agent}"
                         Content="{loc:Localize Profile_AgentAuth}" />
+                <Button Classes="seg-tab" Classes.active="{Binding IsTailscaleAuth}"
+                        Command="{Binding SelectAuthKindCommand}"
+                        CommandParameter="{x:Static models:SessionBatchAuthKind.Tailscale}"
+                        Content="{loc:Localize Profile_TailscaleAuth}" />
               </UniformGrid>
             </Border>
 
@@ -227,8 +231,10 @@
 
             <TextBlock Classes="field-hint" IsVisible="{Binding IsAgentAuth}"
                        Text="{loc:Localize Profile_AgentAuthHint}" />
+            <TextBlock Classes="field-hint" IsVisible="{Binding IsTailscaleAuth}"
+                       Text="{loc:Localize Profile_TailscaleAuthHint}" />
           </StackPanel>
-        </Grid>
+        </StackPanel>
 
         <!-- 跳板机 -->
         <Grid ColumnDefinitions="130,*">

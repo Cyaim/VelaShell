@@ -7534,4 +7534,21 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Sudo_Retry" xml:space="preserve"><value>上次密码未被接受，请重试。</value></data>
   <data name="Sudo_NoStorage" xml:space="preserve"><value>密码仅发送给此主机，不保存，也不提供给插件或 AI。</value></data>
   <data name="Sudo_Submit" xml:space="preserve"><value>认证</value></data>
+  <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
+  <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>使用本机已登录的 Tailscale 身份与远端系统用户名，无需 SSH 密码或密钥；服务器可能要求浏览器验证。</value></data>
+  <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH 使用本机 Tailscale 身份，不能保存为共享凭据。</value></data>
+  <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH 验证</value></data>
+  <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>服务器要求身份复核。请点击链接在浏览器中验证；服务器批准后，本次连接会自动继续。</value></data>
+  <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>打开浏览器</value></data>
+  <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>复制链接</value></data>
+  <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH 验证链接已隐藏]</value></data>
+  <data name="Ssh_TailscaleCheckOpenFailed" xml:space="preserve"><value>无法打开浏览器。请复制链接或重试。</value></data>
+  <data name="Ssh_TailscaleCheckCopyFailed" xml:space="preserve"><value>无法复制链接。请选中链接后手动复制。</value></data>
+  <data name="SshErr_TailscaleCheckCancelled" xml:space="preserve"><value>已取消 Tailscale SSH 验证。</value></data>
+  <data name="SshErr_TailscaleRejected" xml:space="preserve"><value>Tailscale SSH 授权被拒绝。请核对当前跳的远端系统用户名与 tailnet SSH 策略。</value></data>
+  <data name="SshErr_TailscaleCheckTimeout" xml:space="preserve"><value>等待 Tailscale SSH 浏览器验证超时，请手动重连后重试。</value></data>
+  <data name="SshErr_TailscaleAuthTimeout" xml:space="preserve"><value>Tailscale SSH 认证超时。</value></data>
+  <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH 要求身份复核，请手动重新连接。</value></data>
+  <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>无法显示 Tailscale SSH 验证窗口。请在主窗口打开后重新连接。</value></data>
+  <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>服务器拒绝或结束了认证，无法继续 Tailscale SSH 验证。</value></data>
 </root>
