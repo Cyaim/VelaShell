@@ -99,7 +99,7 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
             _loop = AcceptLoopAsync(listener, _cts.Token);
             // 闲置会话以前只在 initialize 里顺带扫 —— 一个再也不来的客户端留下的会话
             // 因此永远不会被清掉。改成定时扫。
-            _sweeper = new Timer(_ => EvictIdleSessions(), null, SessionSweepInterval, SessionSweepInterval);
+            _sweeper = new Timer(_ => Track(EvictIdleSessionsAsync()), null, SessionSweepInterval, SessionSweepInterval);
             context.Log.Info($"MCP server listening on {Url} (mode {settings.Mode}, approval {settings.Approval}).");
         }
         catch (HttpListenerException ex)
@@ -171,7 +171,9 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
 
         _cts?.Dispose();
         _cts = null;
-        _sessions.Clear();
+        foreach (string id in _sessions.Keys)
+            if (_sessions.TryRemove(id, out McpToolHost? host))
+                await host.DisposeAsync().ConfigureAwait(false);
     }
 
     private async Task AcceptLoopAsync(HttpListener listener, CancellationToken cancellationToken)
@@ -185,16 +187,27 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
             }
             // 一次请求一个任务:tools/call 可能跑几十秒(一条远程命令),不能占着 accept 循环。
             // 任务要**登记**下来:停端点时得等它们收完,不能把监听一关就当结束了。
-            var worker = Task.Run(() => ServeAsync(http, cancellationToken), cancellationToken);
-            _inFlight[worker] = 0;
-            _ = worker.ContinueWith(t => _inFlight.TryRemove(t, out _), CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            Task worker = ServeAsync(http, cancellationToken);
+            Track(worker);
         }
     }
 
     /// <summary>
     /// 处理一个请求:先抢并发名额,再加单请求时限,最后一定关掉响应。
     /// </summary>
+    private void Track(Task worker)
+    {
+        _inFlight[worker] = 0;
+        _ = ObserveAsync(worker);
+    }
+
+    private async Task ObserveAsync(Task worker)
+    {
+        try { await worker.ConfigureAwait(false); }
+        catch (Exception ex) { context.Log.Warn($"MCP lifecycle cleanup failed: {ex.Message}"); }
+        finally { _inFlight.TryRemove(worker, out _); }
+    }
+
     private async Task ServeAsync(HttpListenerContext http, CancellationToken cancellationToken)
     {
         bool slotHeld = false;
@@ -255,7 +268,8 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
             case "DELETE":
                 if (SessionId(request) is { Length: > 0 } ending)
                 {
-                    _sessions.TryRemove(ending, out _);
+                    if (_sessions.TryRemove(ending, out McpToolHost? endingHost))
+                        await endingHost.DisposeAsync().ConfigureAwait(false);
                 }
                 response.StatusCode = 200;
                 return;
@@ -336,7 +350,7 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
             case "initialize":
                 {
                     // 先扫一遍闲置的,再判上限:满了就明确回绝,而不是让会话字典一路涨下去。
-                    EvictIdleSessions();
+                    await EvictIdleSessionsAsync().ConfigureAwait(false);
                     if (_sessions.Count >= MaxSessions)
                     {
                         response.StatusCode = 503;
@@ -346,8 +360,17 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
                     }
                     string sessionId = Guid.NewGuid().ToString("n");
                     var host = new McpToolHost(context, _settings);
-                    await host.AutoSelectAsync(cancellationToken).ConfigureAwait(false);
-                    _sessions[sessionId] = host;
+                    try
+                    {
+                        await host.AutoSelectAsync(cancellationToken).ConfigureAwait(false);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        _sessions[sessionId] = host;
+                    }
+                    catch
+                    {
+                        await host.DisposeAsync().ConfigureAwait(false);
+                        throw;
+                    }
                     response.AddHeader("Mcp-Session-Id", sessionId);
                     string version = parameters.ValueKind == JsonValueKind.Object
                                      && parameters.TryGetProperty("protocolVersion", out JsonElement requested)
@@ -465,14 +488,15 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
         return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
     }
 
-    private void EvictIdleSessions()
+    private async Task EvictIdleSessionsAsync()
     {
         DateTimeOffset cutoff = DateTimeOffset.UtcNow - SessionIdleTimeout;
         foreach (KeyValuePair<string, McpToolHost> entry in _sessions)
         {
             if (entry.Value.LastActivity < cutoff)
             {
-                _sessions.TryRemove(entry.Key, out _);
+                if (_sessions.TryRemove(entry.Key, out McpToolHost? host))
+                    await host.DisposeAsync().ConfigureAwait(false);
             }
         }
     }

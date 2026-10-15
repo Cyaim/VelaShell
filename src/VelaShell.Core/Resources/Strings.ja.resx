@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -7060,4 +7060,13 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>有効なローカルディレクトリパスを入力してください。</value></data>
   <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>有効なリモートディレクトリパスを入力してください。</value></data>
   <data name="Bookmark_PathTooLong" xml:space="preserve"><value>ローカルまたはリモートのパスが長すぎます。</value></data>
+  <data name="Sudo_Title" xml:space="preserve"><value>root としてコマンドを実行</value></data>
+  <data name="Sudo_Source" xml:space="preserve"><value>要求元プラグイン: {0}</value></data>
+  <data name="Sudo_Target" xml:space="preserve"><value>接続先: {0}</value></data>
+  <data name="Sudo_RootWarning" xml:space="preserve"><value>以下のコマンド全体（パイプとリダイレクトを含む）を root シェル経由で root として実行します。制限された sudoers ポリシーでは拒否される場合があります。</value></data>
+  <data name="Sudo_Approve" xml:space="preserve"><value>root コマンドを承認</value></data>
+  <data name="Sudo_Password" xml:space="preserve"><value>sudo パスワード</value></data>
+  <data name="Sudo_Retry" xml:space="preserve"><value>前のパスワードは受け付けられませんでした。再試行してください。</value></data>
+  <data name="Sudo_NoStorage" xml:space="preserve"><value>パスワードはこのホストにのみ送信されます。保存されず、プラグインや AI にも共有されません。</value></data>
+  <data name="Sudo_Submit" xml:space="preserve"><value>認証</value></data>
 </root>

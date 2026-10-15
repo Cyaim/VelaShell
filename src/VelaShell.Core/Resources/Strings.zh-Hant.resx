@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <!-- 
     Microsoft ResX Schema 
@@ -7525,4 +7525,13 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>請輸入有效的本機目錄路徑。</value></data>
   <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>請輸入有效的遠端目錄路徑。</value></data>
   <data name="Bookmark_PathTooLong" xml:space="preserve"><value>本機或遠端路徑過長。</value></data>
+  <data name="Sudo_Title" xml:space="preserve"><value>以 root 身分執行命令</value></data>
+  <data name="Sudo_Source" xml:space="preserve"><value>來源外掛：{0}</value></data>
+  <data name="Sudo_Target" xml:space="preserve"><value>目標：{0}</value></data>
+  <data name="Sudo_RootWarning" xml:space="preserve"><value>下列完整命令（含管線和重新導向）透過 root shell 以 root 身分執行。受限 sudoers 原則可能拒絕。</value></data>
+  <data name="Sudo_Approve" xml:space="preserve"><value>核准 root 命令</value></data>
+  <data name="Sudo_Password" xml:space="preserve"><value>sudo 密碼</value></data>
+  <data name="Sudo_Retry" xml:space="preserve"><value>上次密碼未被接受，請重試。</value></data>
+  <data name="Sudo_NoStorage" xml:space="preserve"><value>密碼僅傳送給此主機，不儲存，也不提供給外掛或 AI。</value></data>
+  <data name="Sudo_Submit" xml:space="preserve"><value>驗證</value></data>
 </root>

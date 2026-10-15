@@ -10,6 +10,10 @@
     <!-- 只依赖 SDK 契约,严禁引用任何 VelaShell.* 主程序工程(设计稿 02 §2 依赖纪律)。 -->
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(SignAssembly)' != 'true'">
+    <InternalsVisibleTo Include="VelaShell.Infrastructure.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- 插件契约程序集。取 nuget.org 上的正式包,版本 = 根 Directory.Build.props 的
          VelaSdkVersion(由 joesdu/velashell-plugin-toolchain 发布)。 -->

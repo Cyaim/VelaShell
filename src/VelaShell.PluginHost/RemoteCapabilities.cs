@@ -73,21 +73,21 @@ internal sealed class RpcSessions(RpcConnection rpc) : ISessionsApi
         => rpc.RequestAsync<object>(PluginRpc.SessionsClose, new SessionRef(sessionId), Timeout, cancellationToken);
 }
 
-/// <summary>远程执行能力的 RPC 代理(超时随选项放宽,留 15s 往返余量)。</summary>
-internal sealed class RpcRemoteExec(RpcConnection rpc) : IRemoteExecApi
+/// <summary>执行代理:新宿主使用操作 id 取消及有序输出,旧宿主普通流保留原有限死线。</summary>
+internal sealed class RpcRemoteExec(RpcConnection rpc, bool supportsExecutionOperations = false,
+    CancellationToken shutdown = default) : IRemoteExecApi
 {
-    /// <summary>隔离模式下长驻命令的兜底死线。见 <see cref="StreamAsync" /> 的说明。</summary>
-    private static readonly TimeSpan DefaultStreamTimeout = TimeSpan.FromHours(2);
-
-    /// <summary>在途流式执行的输出接收器(outputToken → 回调)。</summary>
-    internal ConcurrentDictionary<string, IProgress<ExecOutput>> OutputSinks { get; } = new();
+    private static readonly TimeSpan LegacyStreamTimeout = TimeSpan.FromHours(2);
+    private readonly ConcurrentDictionary<string, ExecutionEventReceiver<ExecOutput>> _outputSinks = new();
+    private readonly ConcurrentDictionary<string, ExecutionEventReceiver<SudoExecEvent>> _sudoSinks = new();
 
     /// <summary>宿主输出通知入口。</summary>
     internal void OnOutput(ExecOutputNotification notification)
     {
-        if (OutputSinks.TryGetValue(notification.OutputToken, out IProgress<ExecOutput>? sink))
+        if (_outputSinks.TryGetValue(notification.OutputToken, out ExecutionEventReceiver<ExecOutput>? sink))
         {
-            sink.Report(new(notification.IsStandardError ? ExecStream.StandardError : ExecStream.StandardOutput, notification.Line));
+            sink.Report(notification.Sequence,
+                new(notification.IsStandardError ? ExecStream.StandardError : ExecStream.StandardOutput, notification.Line));
         }
     }
 
@@ -101,34 +101,102 @@ internal sealed class RpcRemoteExec(RpcConnection rpc) : IRemoteExecApi
                ?? new("");
     }
 
-    /// <summary>
-    /// 流式执行的 RPC 代理。
-    /// <para>
-    /// **隔离模式下"不限时"是做不到的**:取消令牌不跨进程传播(dev-guide §6),
-    /// 插件这边取消了,宿主那边的 <c>docker logs -f</c> 不会知道。所以这里给未指定超时的
-    /// 流补上一个两小时的死线 —— 让"忘了取消"最坏也只是浪费两小时一个通道,
-    /// 而不是把它泄漏到宿主退出为止。要真正即时的取消,请用 <c>inProcess</c>。
-    /// </para>
-    /// </summary>
     public async Task<ExecStreamResult> StreamAsync(string sessionId, string command, ExecStreamOptions? options,
         IProgress<ExecOutput> output, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(output);
-        TimeSpan deadline = options?.Timeout is { } t && t > TimeSpan.Zero ? t : DefaultStreamTimeout;
-        string token = Guid.NewGuid().ToString("n");
-        OutputSinks[token] = output;
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, shutdown);
+        lifetime.Token.ThrowIfCancellationRequested();
+        TimeSpan? deadline = options?.Timeout;
+        if (!supportsExecutionOperations) { deadline ??= LegacyStreamTimeout; }
+        string id = Guid.NewGuid().ToString("N");
+        var receiver = new ExecutionEventReceiver<ExecOutput>(output, () => Cancel(id), supportsExecutionOperations);
+        _outputSinks[id] = receiver;
+        using CancellationTokenRegistration registration = lifetime.Token.Register(() => Cancel(id));
         try
         {
-            return await rpc.RequestAsync<ExecStreamResult>(PluginRpc.ExecStream,
-                       new ExecStreamRequest(sessionId, command, token, deadline.TotalSeconds,
-                           options?.IncludeStandardError ?? true),
-                       deadline + TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false)
-                   ?? new(0, 0);
+            ExecStreamResult result = await rpc.RequestAsync<ExecStreamResult>(PluginRpc.ExecStream,
+                new ExecStreamRequest(sessionId, command, id, deadline?.TotalSeconds ?? 0,
+                    options?.IncludeStandardError ?? true)
+                { OperationId = supportsExecutionOperations ? id : null },
+                deadline is { } timeout ? timeout + TimeSpan.FromSeconds(15) : Timeout.InfiniteTimeSpan,
+                lifetime.Token).ConfigureAwait(false)
+                ?? throw new IOException("Host returned no execution result.");
+            if (supportsExecutionOperations) { receiver.ValidateOutputCount(result.Lines); }
+            return result;
+        }
+        catch
+        {
+            Cancel(id);
+            throw;
         }
         finally
         {
-            OutputSinks.TryRemove(token, out _);
+            _outputSinks.TryRemove(id, out _);
+            receiver.ThrowIfFailed();
         }
+    }
+
+    internal void OnSudoEvent(ExecSudoEventNotification notification)
+    {
+        if (_sudoSinks.TryGetValue(notification.OperationId, out ExecutionEventReceiver<SudoExecEvent>? receiver))
+        {
+            receiver.Report(notification.Sequence, notification.Event);
+        }
+    }
+
+    public async Task<SudoExecResult> StreamSudoAsync(string sessionId, string command, SudoExecOptions? options,
+        IProgress<SudoExecEvent> progress, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        if (!supportsExecutionOperations)
+        {
+            throw new NotSupportedException("The connected host does not support sudo execution operations.");
+        }
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, shutdown);
+        lifetime.Token.ThrowIfCancellationRequested();
+        string id = Guid.NewGuid().ToString("N");
+        var receiver = new ExecutionEventReceiver<SudoExecEvent>(progress, () => Cancel(id),
+            isOutput: value => value.Kind is SudoExecEventKind.Output);
+        _sudoSinks[id] = receiver;
+        using CancellationTokenRegistration registration = lifetime.Token.Register(() => Cancel(id));
+        try
+        {
+            SudoExecResult result = await rpc.RequestAsync<SudoExecResult>(PluginRpc.ExecSudoStream,
+                new ExecSudoStreamRequest(sessionId, command, id, options?.Timeout?.TotalSeconds ?? 0),
+                options?.Timeout is { } timeout ? timeout + TimeSpan.FromSeconds(15) : Timeout.InfiniteTimeSpan,
+                lifetime.Token).ConfigureAwait(false)
+                ?? new(SudoExecOutcome.Unknown);
+            receiver.ValidateOutputCount(result.OutputChunks);
+            // 即使对端遗漏/损坏退出码,也不能把默认值当退出成功。
+            return result.Outcome is SudoExecOutcome.Exited && result.ExitCode is null
+                ? new(SudoExecOutcome.Unknown, OutputChunks: result.OutputChunks)
+                : result;
+        }
+        catch
+        {
+            Cancel(id);
+            throw;
+        }
+        finally
+        {
+            _sudoSinks.TryRemove(id, out _);
+            receiver.ThrowIfFailed();
+        }
+    }
+
+    private void Cancel(string operationId)
+    {
+        if (supportsExecutionOperations)
+        {
+            _ = SendCancellationAsync(operationId);
+        }
+    }
+
+    private async Task SendCancellationAsync(string operationId)
+    {
+        try { await rpc.NotifyAsync(PluginRpc.ExecCancel, new ExecCancelNotification(operationId)).ConfigureAwait(false); }
+        catch { /* 连接断开时宿主按连接生命周期取消;这里不产生未观察异常。 */ }
     }
 }
 

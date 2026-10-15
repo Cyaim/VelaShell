@@ -69,6 +69,7 @@ public static class PluginServiceCollectionExtensions
                 // 于是开会话一律拒绝。
                 SessionProfiles = sp.GetService<Core.Data.ISessionRepository>(),
                 SessionOpener = sp.GetService<IPluginSessionOpener>(),
+                SudoPrompt = sp.GetService<ISudoPrompt>(),
                 Sftp = sp.GetService<ISftpService>(),
                 Theme = sp.GetService<IThemeService>(),
                 Localization = sp.GetService<ILocalizationService>(),

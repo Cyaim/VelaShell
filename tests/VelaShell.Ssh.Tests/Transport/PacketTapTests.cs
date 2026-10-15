@@ -122,6 +122,47 @@ public sealed class PacketTapTests
         Assert.Contains(r => r.Number == (byte)SshMessageNumber.KexInit && r.PayloadLength == r.Length, records);
     }
 
+    [TestMethod]
+    public async Task SensitiveLeasesSuppressBothDirectionsOverlapAndRestoreOnlyOriginalSettings()
+    {
+        using CancellationTokenSource lifetime = new(TimeSpan.FromSeconds(30));
+        List<Task> servers = [];
+        RecordingTap tap = new();
+        await using SshConnection connection = await SshConnection.ConnectAsync(new SshConnectionOptions("joe@tap.example:22")
+        {
+            Dialer = InMemoryTransport.CreateDialer((server, _, _) =>
+            {
+                servers.Add(ServeAsync(server, lifetime.Token));
+                return ValueTask.CompletedTask;
+            }),
+            Credentials = [new PasswordCredential("hunter2")],
+            HostKeyPolicy = new DangerousAcceptAnyHostKeyPolicy(),
+            PacketTap = tap,
+            AllowPacketTapPayload = true,
+        }, TestContext.CancellationToken);
+        IAsyncDisposable first = connection.SuppressSensitivePayload();
+        IAsyncDisposable second = connection.SuppressSensitivePayload();
+        lock (tap.Records) { tap.Records.Clear(); }
+        await first.DisposeAsync();
+        await first.DisposeAsync();
+        await connection.RunAsync("sensitive", cancellationToken: TestContext.CancellationToken);
+        Seen[] protectedRecords;
+        lock (tap.Records) { protectedRecords = [.. tap.Records]; tap.Records.Clear(); }
+        Assert.IsNotEmpty(protectedRecords);
+        Assert.IsTrue(protectedRecords.All(record => record.PayloadLength == 0));
+        Assert.Contains(record => record.Direction == PacketDirection.Inbound, protectedRecords);
+        Assert.Contains(record => record.Direction == PacketDirection.Outbound, protectedRecords);
+        Assert.IsTrue(protectedRecords.All(record => record.Length > 0));
+        await second.DisposeAsync();
+        await connection.RunAsync("normal", cancellationToken: TestContext.CancellationToken);
+        lock (tap.Records) { Assert.Contains(record => record.PayloadLength > 0, tap.Records); }
+        await connection.DisposeAsync();
+        Assert.ThrowsExactly<ObjectDisposedException>(() => connection.SuppressSensitivePayload());
+        await second.DisposeAsync();
+        await lifetime.CancelAsync();
+        await Task.WhenAll(servers);
+    }
+
     /// <summary>旁路每次都抛：连接照常建起来、命令照常跑完。</summary>
     [TestMethod]
     public async Task 旁路出错不弄坏连接()

@@ -24,6 +24,11 @@ internal sealed class PluginCapabilityRouter : IDisposable
     private readonly ConcurrentDictionary<string, Stream> _openStreams = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PluginSdk.TimeSeries.ITimeSeries> _openSeries = new(StringComparer.Ordinal);
     private readonly string _hostVersion;
+    private readonly ExecutionOperations _executions;
+    private readonly CancellationTokenRegistration _shutdownRegistration;
+
+    /// <summary>有执行操作时不允许空闲回收;显式停用仍无条件取消。</summary>
+    internal int ActiveExecutions => _executions.ActiveCount;
     private volatile bool _handshakeDone;
     private bool _disposed;
 
@@ -41,6 +46,9 @@ internal sealed class PluginCapabilityRouter : IDisposable
         _hostVersion = hostVersion;
         _themeTokens = themeTokens;
         _embedHost = embedHost;
+        _executions = new(context.Shutdown);
+        _shutdownRegistration = context.Shutdown.Register(_executions.Stop);
+        rpc.Disconnected += _executions.Stop;
         // 宿主事件 → 插件进程通知。订阅挂在 context.Events(PluginEventHub)上,
         // context.Dispose 时统一拆除。
         context.Events.SessionConnected += session =>
@@ -145,23 +153,47 @@ internal sealed class PluginCapabilityRouter : IDisposable
             case PluginRpc.ExecStream:
                 {
                     ExecStreamRequest request = Get<ExecStreamRequest>(payload);
-                    // 输出逐行经通知回流(与 fs/progress 同一套 token 机制);应答只带退出码与行数,
-                    // 所以一条跑了一小时的 `docker logs -f` 不会在应答里堆出一个 GB 级的字符串。
-                    Progress<ExecOutput> sink = new(line =>
-                        _ = _rpc.NotifyAsync(PluginRpc.ExecOutput,
-                            new ExecOutputNotification(request.OutputToken, line.Stream is ExecStream.StandardError, line.Line)));
-                    return await _context.RemoteExec.StreamAsync(
-                        request.SessionId,
-                        request.Command,
-                        new()
-                        {
-                            // 取消令牌不跨进程传播(dev-guide §6),所以隔离插件的长驻命令
-                            // 必须靠这个死线收尾 —— 0 表示插件明确要求不限时。
-                            Timeout = request.TimeoutSeconds > 0 ? TimeSpan.FromSeconds(request.TimeoutSeconds) : null,
-                            IncludeStandardError = request.IncludeStandardError
-                        },
-                        sink,
-                        cancellationToken).ConfigureAwait(false);
+                    string operationId = request.OperationId ?? request.OutputToken;
+                    await using ExecutionOperations.Operation operation = _executions.Register(operationId, cancellationToken);
+                    operation.Token.ThrowIfCancellationRequested();
+                    var sink = new ExecutionNotificationSink<ExecOutput>((line, sequence) =>
+                        _rpc.NotifyExecutionAsync(PluginRpc.ExecOutput,
+                            new ExecOutputNotification(request.OutputToken, line.Stream is ExecStream.StandardError, line.Line)
+                            { Sequence = sequence }), () => _executions.Cancel(operationId));
+                    try
+                    {
+                        return await _context.RemoteExec.StreamAsync(request.SessionId, request.Command,
+                            new()
+                            {
+                                Timeout = request.TimeoutSeconds > 0 ? TimeSpan.FromSeconds(request.TimeoutSeconds) : null,
+                                IncludeStandardError = request.IncludeStandardError
+                            }, sink, operation.Token).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        // 应答(成功或错误)绝不能越过最后一条已接收的输出。
+                        await sink.DrainAsync().ConfigureAwait(false);
+                    }
+                }
+            case PluginRpc.ExecSudoStream:
+                {
+                    ExecSudoStreamRequest request = Get<ExecSudoStreamRequest>(payload);
+                    await using ExecutionOperations.Operation operation = _executions.Register(request.OperationId, cancellationToken);
+                    operation.Token.ThrowIfCancellationRequested();
+                    var sink = new ExecutionNotificationSink<SudoExecEvent>((value, sequence) =>
+                        _rpc.NotifyExecutionAsync(PluginRpc.ExecSudoEvent,
+                            new ExecSudoEventNotification(request.OperationId, sequence, value)),
+                        () => _executions.Cancel(request.OperationId));
+                    try
+                    {
+                        return await _context.RemoteExec.StreamSudoAsync(request.SessionId, request.Command,
+                            new() { Timeout = request.TimeoutSeconds > 0 ? TimeSpan.FromSeconds(request.TimeoutSeconds) : null },
+                            sink, operation.Token).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        await sink.DrainAsync().ConfigureAwait(false);
+                    }
                 }
             case PluginRpc.FsList:
                 {
@@ -441,6 +473,9 @@ internal sealed class PluginCapabilityRouter : IDisposable
         Activity?.Invoke();
         switch (method)
         {
+            case PluginRpc.ExecCancel:
+                _executions.Cancel(Get<ExecCancelNotification>(payload).OperationId);
+                break;
             case PluginRpc.UiSurfaces:
                 {
                     SurfacesChanged?.Invoke(Get<UiSurfacesNotification>(payload).Count);
@@ -462,6 +497,9 @@ internal sealed class PluginCapabilityRouter : IDisposable
                 }
         }
     }
+
+    /// <summary>停机后异步等待执行方法及其输出排空;不得在同步 Dispose 中等待网络。</summary>
+    internal ValueTask DrainExecutionsAsync() => _executions.DisposeAsync();
 
     private HandshakeResponse Handshake(HandshakeRequest request)
     {
@@ -486,7 +524,8 @@ internal sealed class PluginCapabilityRouter : IDisposable
             SupportsEmbedding: _embedHost is { IsSupported: true },
             // 主题身份握手就给:插件在 Activate 里建界面时就要知道自己长在哪套主题上,
             // 等第一条 theme/tokens 通知就晚了。
-            ThemeInfo: _context.Theme.Current);
+            ThemeInfo: _context.Theme.Current)
+        { SupportsExecutionOperations = true };
     }
 
     /// <summary>取已打开的 measurement 句柄;插件必须先 <see cref="PluginRpc.TimeSeriesOpen" />。</summary>
@@ -527,6 +566,9 @@ internal sealed class PluginCapabilityRouter : IDisposable
             return;
         }
         _disposed = true;
+        _executions.Stop();
+        _shutdownRegistration.Dispose();
+        _rpc.Disconnected -= _executions.Stop;
         foreach (IDisposable handle in _commandRegistrations.Values)
         {
             handle.Dispose();

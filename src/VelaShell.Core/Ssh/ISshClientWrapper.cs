@@ -82,6 +82,12 @@ public interface ISshClientWrapper : IAsyncDisposable
         Action<bool, string> onLine,
         CancellationToken cancellationToken = default);
 
+    /// <summary>在独立 PTY exec 通道受控提权；不支持的实现必须关闭失败，不降级为普通执行。</summary>
+    Task<SudoExecutionResult> StreamSudoCommandAsync(
+        string commandText, SudoExecutionContext context, ISudoPrompt prompt,
+        Action<SudoExecutionEvent> onEvent, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new SudoExecutionResult(SudoExecutionOutcome.NotSupported));
+
     /// <summary>
     /// 量一次到服务端的往返时间(SSH 层的保活请求,经代理、跳板也量得到);没连上或量不到时为 <see langword="null" />(不抛)。
     /// </summary>

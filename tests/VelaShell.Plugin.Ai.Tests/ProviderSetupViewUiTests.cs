@@ -1171,7 +1171,8 @@ public sealed class ProviderSetupViewUiTests
             (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
                 await ShowAsync(context, new AiSettings
                 {
-                    Providers = [provider, other], ActiveModelId = foreign.Id,
+                    Providers = [provider, other],
+                    ActiveModelId = foreign.Id,
                     FailoverChain = [new FailoverEntry { ModelId = foreign.Id }, new FailoverEntry { ModelId = other.Models[0].Id }]
                 });
             try

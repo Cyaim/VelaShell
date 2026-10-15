@@ -267,7 +267,7 @@ public sealed partial class SessionMetrics
             {
                 continue;
             }
-            long? Number(string value) => long.TryParse(value.Trim(), NumberStyles.Integer,
+            static long? Number(string value) => long.TryParse(value.Trim(), NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out long number) ? number : null;
             drmStats[f[0].Trim()] = (
                 Number(f[1]), Number(f[2]), Number(f[3]),

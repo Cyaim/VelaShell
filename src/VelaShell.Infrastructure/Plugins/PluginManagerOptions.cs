@@ -122,6 +122,9 @@ public sealed class PluginManagerOptions
     /// </summary>
     public IPluginSessionOpener? SessionOpener { get; init; }
 
+    /// <summary>宿主可信 sudo 授权及认证交互;缺席必须明确不支持,不读取 SSH 登录密码。</summary>
+    public ISudoPrompt? SudoPrompt { get; init; }
+
     /// <summary>SFTP 服务(远程文件能力的来源)。</summary>
     public ISftpService? Sftp { get; init; }
 

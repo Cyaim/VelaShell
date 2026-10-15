@@ -691,6 +691,43 @@ public sealed partial class ChatPanelViewUiTests
     /// 这里让假端点按真实节奏逐事件下发,断言正文还没来之前思考区就已经在长。
     /// </summary>
     [TestMethod]
+    public void DetachAsync_WaitsForModelRunAndHistorySettlement()
+    {
+        OnUi(async () =>
+        {
+            await using var stub = new SseStub("""
+            data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"partial"},"finish_reason":null}]}
+
+            data: [DONE]
+
+
+            """, holdAfterFirstChunk: true);
+            using var context = new TestPluginContext();
+            AiProvider provider = StubProvider("stub", stub.BaseUrl, "m");
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            { Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("go");
+                Assert.IsTrue(await WaitForAsync(() => AnswerRenderers(Find<StackPanel>(panel, "MessagesPanel")).Count > 0));
+                panel.SendExternal("queued must never revive after detach");
+                await panel.DetachAsync();
+                panel.SendExternal("late must never revive after detach");
+                await PumpAsync(3);
+                Assert.HasCount(1, stub.Requests);
+                Assert.IsFalse(Find<Button>(panel, "StopButton").IsVisible);
+                var history = new ChatHistoryStore(context);
+                await history.InitAsync();
+                var sessions = await history.ListSessionsAsync();
+                var entries = await history.LoadAsync(sessions.Single().Id);
+                Assert.Contains(e => e.Role == "assistant" && e.Text == "partial", entries);
+            }
+            finally { stub.Release(); await panel.DetachAsync(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
     public void Thinking_StreamsWhileItArrives_NotAfterTheAnswer()
     {
         OnUi(async () =>

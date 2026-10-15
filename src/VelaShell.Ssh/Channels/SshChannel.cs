@@ -60,6 +60,29 @@ public sealed class SshChannel : IAsyncDisposable
 
     /// <summary>通道关了时完成。<see cref="WaitForExitAsync"/> 等它，<b>不去读事件流</b>。</summary>
     private readonly TaskCompletionSource _closedSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _wireClosed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>等待双向 CLOSE（或连接终止）以及 stdin 发送泵收尾，供敏感诊断租约确定安全释放边界。</summary>
+    /// <remarks>velashell-docs/zh/ssh/spec/08-failures.md §9.1；本端 DisposeAsync 不等待对端 CLOSE。</remarks>
+    public async ValueTask WaitForSensitivePayloadDrainAsync(CancellationToken cancellationToken = default)
+    {
+        await _wireClosed.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        Task? input;
+        Task? window;
+        lock (_stateLock)
+        {
+            input = _stdinPump;
+            window = _windowAdjustPump;
+        }
+        if (input is not null)
+        {
+            await input.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        if (window is not null)
+        {
+            await window.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     private readonly Channel<SshChannelEvent> _events =
         Channel.CreateUnbounded<SshChannelEvent>(new UnboundedChannelOptions
@@ -1640,6 +1663,7 @@ public sealed class SshChannel : IAsyncDisposable
 
         // 退的是**计过的**数，不是此刻的窗口大小（见 _budgetCharged）。
         _host.OnChannelClosed(LocalId, charged);
+        _wireClosed.TrySetResult();
     }
 
     private void FinishClose(SshChannelCloseReason reason, Exception? failure = null)
@@ -1671,6 +1695,13 @@ public sealed class SshChannel : IAsyncDisposable
         _events.Writer.TryWrite(closed);
         _events.Writer.TryComplete();
         _closedSignal.TrySetResult();
+        lock (_stateLock)
+        {
+            if (_closeSent && _closeReceived)
+            {
+                _wireClosed.TrySetResult();
+            }
+        }
 
         // 还在等应答的请求不会再有应答了。让它们返回 false 而不是永远挂着 ——
         // 挂死没有堆栈也没有日志，只有一个再也不返回的 await。

@@ -36,7 +36,7 @@ internal sealed class RemotePluginContext : IPluginContext, IDisposable
         Sessions = new RpcSessions(rpc);
         RemoteFsProxy = new(rpc);
         // 保留具体类型的引用:流式执行的输出经通知回流,Program 要按 token 路由到它。
-        RemoteExecProxy = new(rpc);
+        RemoteExecProxy = new(rpc, hello.SupportsExecutionOperations, shutdown);
         RemoteExec = RemoteExecProxy;
         CommandsProxy = new(rpc, Log);
         EventsHub = new(Log);

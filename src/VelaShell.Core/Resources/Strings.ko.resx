@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -7060,4 +7060,13 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>올바른 로컬 디렉터리 경로를 입력하세요.</value></data>
   <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>올바른 원격 디렉터리 경로를 입력하세요.</value></data>
   <data name="Bookmark_PathTooLong" xml:space="preserve"><value>로컬 또는 원격 경로가 너무 깁니다.</value></data>
+  <data name="Sudo_Title" xml:space="preserve"><value>root 권한으로 명령 실행</value></data>
+  <data name="Sudo_Source" xml:space="preserve"><value>요청 플러그인: {0}</value></data>
+  <data name="Sudo_Target" xml:space="preserve"><value>대상: {0}</value></data>
+  <data name="Sudo_RootWarning" xml:space="preserve"><value>아래 명령 전체(파이프와 리디렉션 포함)를 root 셸을 통해 root 권한으로 실행합니다. 제한된 sudoers 정책에서 거부될 수 있습니다.</value></data>
+  <data name="Sudo_Approve" xml:space="preserve"><value>root 명령 승인</value></data>
+  <data name="Sudo_Password" xml:space="preserve"><value>sudo 암호</value></data>
+  <data name="Sudo_Retry" xml:space="preserve"><value>이전 암호가 허용되지 않았습니다. 다시 시도하세요.</value></data>
+  <data name="Sudo_NoStorage" xml:space="preserve"><value>암호는 이 호스트에만 전송됩니다. 저장하거나 플러그인 또는 AI와 공유하지 않습니다.</value></data>
+  <data name="Sudo_Submit" xml:space="preserve"><value>인증</value></data>
 </root>

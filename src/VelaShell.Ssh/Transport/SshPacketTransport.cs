@@ -173,6 +173,46 @@ internal sealed class SshPacketTransport : IAsyncDisposable
     /// <summary>旁路拿不拿得到载荷（认证报文 50–79 无论如何都不给）。</summary>
     internal bool AllowPacketTapPayload { get; set; }
 
+    // velashell-docs/zh/ssh/spec/08-failures.md §9.1：取得、释放与交付使用同一把锁。
+    private readonly Lock _tapLock = new();
+    private int _sensitivePayloadLeases;
+    private bool _tapStopped;
+
+    internal IAsyncDisposable AcquireSensitivePayloadLease()
+    {
+        lock (_tapLock)
+        {
+            ObjectDisposedException.ThrowIf(_tapStopped, this);
+            _sensitivePayloadLeases = checked(_sensitivePayloadLeases + 1);
+            return new SensitivePayloadLease(this);
+        }
+    }
+
+    internal void StopPacketTap()
+    {
+        lock (_tapLock)
+        {
+            _tapStopped = true;
+        }
+    }
+
+    private sealed class SensitivePayloadLease(SshPacketTransport owner) : IAsyncDisposable
+    {
+        private SshPacketTransport? _owner = owner;
+
+        public ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _owner, null) is { } transport)
+            {
+                lock (transport._tapLock)
+                {
+                    transport._sensitivePayloadLeases--;
+                }
+            }
+            return ValueTask.CompletedTask;
+        }
+    }
+
     /// <summary>把一个报文交给旁路。旁路抛的异常吞掉：旁路出错不该弄坏连接。</summary>
     private void Tap(Diagnostics.IPacketTap tap, Diagnostics.PacketDirection direction, ReadOnlySpan<byte> payload, uint sequence)
     {
@@ -184,15 +224,22 @@ internal sealed class SshPacketTransport : IAsyncDisposable
             : null;
 
         // 〔velashell-docs/zh/ssh/spec/08 §9 第 3 条〕认证报文（50–79）的载荷永远不给，没有开关。
-        bool includePayload = AllowPacketTapPayload && number is not (>= 50 and <= 79);
-        try
+        lock (_tapLock)
         {
-            tap.OnPacket(new Diagnostics.PacketTapRecord(
-                direction, number, payload.Length, sequence, channel, includePayload ? payload : default));
-        }
-        catch (Exception)
-        {
-            // 旁路是使用者的代码：它出错不该让连接断开。
+            if (_tapStopped)
+            {
+                return;
+            }
+            bool includePayload = _sensitivePayloadLeases == 0 && AllowPacketTapPayload && number is not (>= 50 and <= 79);
+            try
+            {
+                tap.OnPacket(new Diagnostics.PacketTapRecord(
+                    direction, number, payload.Length, sequence, channel, includePayload ? payload : default));
+            }
+            catch (Exception)
+            {
+                // 旁路是使用者的代码：它出错不该让连接断开。
+            }
         }
     }
 
@@ -625,6 +672,7 @@ internal sealed class SshPacketTransport : IAsyncDisposable
             return;
         }
         _disposed = true;
+        StopPacketTap();
 
         // ⚠️ 曾经在这里当场完成 reader / writer。两端的缓冲是从共享内存池租的、完成时还回去 ——
         //    另一个任务若还停在读里，底层流那次读手里攥着那块 64 KB，数据一到照写，写进的是别人刚租走的数组

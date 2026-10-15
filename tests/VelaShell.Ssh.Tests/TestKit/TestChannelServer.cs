@@ -72,6 +72,9 @@ internal sealed record TestChannelScript
     /// </remarks>
     public Func<PipeReader, PipeWriter, CancellationToken, Task>? SubsystemHandler { get; init; }
 
+    /// <summary>受控 exec 的内存字节流剧本；命令用于取得本次随机认证标记，不执行真实 shell。</summary>
+    public Func<string, PipeReader, PipeWriter, CancellationToken, Task>? ExecHandler { get; init; }
+
     /// <summary>
     /// 收到 <c>direct-tcpip</c> 时怎么处理。
     /// </summary>
@@ -984,6 +987,13 @@ internal sealed class TestChannelServer(SshPacketTransport transport, TestChanne
             StartSubsystem(serverChannel, cancellationToken);
         }
 
+        if (startScript && requestType == SshProtocolNames.RequestExec && _script.ExecHandler is { } handler)
+        {
+            string command = Observation.Commands[^1];
+            StartHandler(serverChannel, (input, output, ct) => handler(command, input, output, ct), cancellationToken, reportExitStatus: true);
+            return;
+        }
+
         if (startScript)
         {
             // 回放在后台跑：它可能要等窗口回补，而那要靠接收循环继续收包。
@@ -1129,7 +1139,7 @@ internal sealed class TestChannelServer(SshPacketTransport transport, TestChanne
     private void StartHandler(
         uint serverChannel,
         Func<PipeReader, PipeWriter, CancellationToken, Task> handler,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool reportExitStatus = false)
     {
         Pipe input = new(new PipeOptions(useSynchronizationContext: false));
         Pipe output = new(new PipeOptions(useSynchronizationContext: false));
@@ -1152,10 +1162,10 @@ internal sealed class TestChannelServer(SshPacketTransport transport, TestChanne
 
         // 把处理器写出来的字节搬到 CHANNEL_DATA 上。
         _ = Task.Run(
-            () => PumpHandlerOutputAsync(serverChannel, cancellationToken), cancellationToken);
+            () => PumpHandlerOutputAsync(serverChannel, reportExitStatus, cancellationToken), cancellationToken);
     }
 
-    private async Task PumpHandlerOutputAsync(uint serverChannel, CancellationToken cancellationToken)
+    private async Task PumpHandlerOutputAsync(uint serverChannel, bool reportExitStatus, CancellationToken cancellationToken)
     {
         PipeReader reader = _channelOutput[serverChannel].Reader;
 
@@ -1176,6 +1186,13 @@ internal sealed class TestChannelServer(SshPacketTransport transport, TestChanne
                 }
             }
 
+            if (reportExitStatus && _script.ExitCode is { } code)
+            {
+                ArrayBufferWriter<byte> buffer = new();
+                SshDataWriter writer = new(buffer);
+                writer.WriteUInt32((uint)code);
+                await SendChannelRequestAsync(serverChannel, "exit-status", buffer.WrittenMemory, cancellationToken);
+            }
             // 处理器写完了 —— 发 EOF 与 CLOSE，让客户端那一侧能正常收场。
             if (_peerIds.TryGetValue(serverChannel, out uint clientChannel))
             {
@@ -1572,7 +1589,7 @@ internal sealed class TestChannelServer(SshPacketTransport transport, TestChanne
                 return null;   // 客户端拒绝了
             }
 
-            _ = Task.Run(() => PumpHandlerOutputAsync(serverChannel, cancellationToken), cancellationToken);
+            _ = Task.Run(() => PumpHandlerOutputAsync(serverChannel, false, cancellationToken), cancellationToken);
             return new PipeDuplexStream(toHandler.Reader, fromHandler.Writer);
         }
     }

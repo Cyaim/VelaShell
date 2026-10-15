@@ -52,6 +52,8 @@ public partial class ChatPanelView
         // ---------- 在途一轮 ----------
         public CancellationTokenSource? Cts;
         public bool Busy;
+        public Agent.CommandJobRunScope? RunScope;
+        public TaskCompletionSource? RunCompleted;
         public AssistantBubble? ActiveBubble;
 
         /// <summary>本段对话是否已提示过"没请求思考"(一次就够)。</summary>

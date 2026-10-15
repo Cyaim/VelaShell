@@ -96,7 +96,7 @@ public sealed class BridgeAgentRunner(
                 .ConfigureAwait(false)
             : null;
 
-        var toolbox = new AgentToolbox(context)
+        await using var toolbox = new AgentToolbox(context)
         {
             SessionIdProvider = () => session?.SessionId,
             ApprovalHandler = approve,
@@ -113,7 +113,44 @@ public sealed class BridgeAgentRunner(
             WebSearch = ai.WebSearch
         };
 
-        IChatClient client = await store.CreateClientAsync(model, cancellationToken: cancellationToken).ConfigureAwait(false);
+        string runId = Guid.NewGuid().ToString("N");
+        await using CommandJobRunScope runScope = toolbox.BeginRun(conversation.ConversationId, runId, cancellationToken);
+        var execution = new AgentExecution(runId, () => runScope.HasUnknownOutcome, () => runScope.HasDeniedExecution);
+        var coordinator = new AgentRunCoordinator(runScope, execution);
+        ProviderCredential fixedCredential = await store.ResolveCredentialAsync(model, cancellationToken: cancellationToken).ConfigureAwait(false);
+        long providerVersion = store.ProviderConfigurationVersion(model.Provider);
+        string endpoint = model.BaseUrl;
+        string modelName = model.Model;
+        (OAuthTokens? Tokens, long Version) account = await store.GetTokenSnapshotAsync(model.Provider.Id, cancellationToken).ConfigureAwait(false);
+        SteeringChatClient steering = null!;
+        steering = new SteeringChatClient(store.CreateClient(model, fixedCredential, callerCountsRetries: true), new(),
+            beforeRequest: async token =>
+            {
+                AiSettings latest = await store.LoadAsync(token).ConfigureAwait(false);
+                ResolvedModel? candidate = latest.FindModel(model.Id);
+                if (candidate is null || candidate.BaseUrl != endpoint || candidate.Model != modelName
+                    || store.ProviderConfigurationVersion(model.Provider) != providerVersion)
+                    throw new ProviderConfigurationChangedException();
+                ProviderCredential credential = await store.ResolveCredentialAsync(candidate, cancellationToken: token).ConfigureAwait(false);
+                bool same = credential.Value == fixedCredential.Value && credential.IsBearerToken == fixedCredential.IsBearerToken
+                    && credential.BaseUrl == fixedCredential.BaseUrl
+                    && (credential.Headers ?? []).SequenceEqual(fixedCredential.Headers ?? []);
+                if (!same)
+                {
+                    var renewed = await store.GetTokenSnapshotAsync(model.Provider.Id, token).ConfigureAwait(false);
+                    bool sameAccount = account.Tokens?.AccountId is { Length: > 0 } id
+                        ? renewed.Tokens?.AccountId == id
+                        : renewed.Version == account.Version;
+                    if (!credential.IsBearerToken || !fixedCredential.IsBearerToken || !sameAccount
+                        || credential.BaseUrl != fixedCredential.BaseUrl
+                        || !(credential.Headers ?? []).SequenceEqual(fixedCredential.Headers ?? []))
+                        throw new ProviderConfigurationChangedException();
+                    steering.ReplaceInnerClient(store.CreateClient(candidate, credential, callerCountsRetries: true));
+                    fixedCredential = credential;
+                    account = renewed;
+                }
+            });
+        IChatClient client = new RecoveringChatClient(steering, execution, loc["ContinuationBoundary"]);
         try
         {
             var options = new ChatOptions
@@ -136,7 +173,7 @@ public sealed class BridgeAgentRunner(
             {
                 mcp.Approval = approval;
                 mcp.ApprovalHandler = approve;
-                IList<AITool> tools = toolbox.CreateTools(mode, nativeSearch);
+                IList<AITool> tools = toolbox.CreateTools(mode, nativeSearch, runScope);
                 if (mode == ChatMode.Agent && ai.McpServers.Any(s => s.Enabled))
                 {
                     (List<AITool> mcpTools, List<string> errors) =
@@ -156,7 +193,7 @@ public sealed class BridgeAgentRunner(
                 }
                 options.Tools = tools;
                 client = client.AsBuilder()
-                    .UseFunctionInvocation(configure: c => c.MaximumIterationsPerRequest = MaxToolIterations)
+                    .UseFunctionInvocation(configure: c => execution.Configure(c, MaxToolIterations))
                     .Build();
             }
 
@@ -180,8 +217,9 @@ public sealed class BridgeAgentRunner(
             string modelLabel = $"{model.ProviderName} / {model.Name}";
             try
             {
-                await foreach (ChatResponseUpdate update in client
-                                   .GetStreamingResponseAsync(request.Messages, options, cancellationToken)
+                await foreach (ChatResponseUpdate update in coordinator.RunAsync(client, request.Messages, options,
+                                   () => progress?.Invoke($"{accumulated}\n\n{loc["WaitingForJobs"]}"), cancellationToken,
+                                   batch => progress?.Invoke($"{accumulated}\n\n{loc.F("ContinuingBatch", batch)}"))
                                    .ConfigureAwait(false))
                 {
                     updates.Add(update);
@@ -204,17 +242,23 @@ public sealed class BridgeAgentRunner(
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException)
             {
+                conversation.History.AddRange(execution.InterruptedHistory(accumulated.ToString()));
+                throw;
+            }
+            catch (Exception ex)
+            {
+                conversation.History.AddRange(execution.InterruptedHistory(accumulated.ToString()));
                 // 把<b>哪个模型</b>带进错误里。群里只看到一句 "401 Unauthorized" 时,
                 // 人第一反应会去查飞书的凭证 —— 而这条 401 来自模型服务商,两者差着十万八千里。
                 // ApiErrorText 顺带把 Anthropic 那种"只有一句 Status Code"的异常展开成服务端原话。
                 throw new InvalidOperationException(
-                    $"{modelLabel}: {ApiErrorText.Describe(ex, notFoundHint: loc["ErrorEndpointNotFound"])}", ex);
+                    $"{modelLabel}: {(ex is AgentPausedException paused ? loc[paused.ReasonKey] : ApiErrorText.Describe(ex, notFoundHint: loc["ErrorEndpointNotFound"]))}", ex);
             }
 
             var response = updates.ToChatResponse();
-            conversation.History.AddMessages(response);
+            conversation.History.AddRange(execution.CompletedMessages);
             string reply = response.Text.Trim();
             if (reply.Length > 0)
             {
@@ -228,6 +272,7 @@ public sealed class BridgeAgentRunner(
         }
         finally
         {
+            await runScope.CancelAsync().ConfigureAwait(false);
             client.Dispose();
         }
     }

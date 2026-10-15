@@ -205,7 +205,7 @@ public sealed class AiPlugin : IVelaPlugin
     public async Task DeactivateAsync(CancellationToken cancellationToken)
     {
         // 命令、事件订阅与面板由宿主自动清理;这里只拆自己的引用。
-        _view?.Detach();
+        if (_view is { } view) await view.DetachAsync();
         _view = null;
         _panel = null;
         _commands.Clear();

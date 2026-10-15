@@ -66,6 +66,9 @@ public sealed class ConversationRouter(
         {
             channel.NormalizeGrants();
         }
+        // 重载可能收紧聊天授权/scope。先取消旧代际(含待审批/宿主认证),
+        // 不让旧授权的在途操作继续等到下一次工具查询才复验。
+        CancelAll();
         Settings = bridge;
         Loc = loc;
         int limit = Math.Clamp(bridge.MaxConcurrentTurns, 1, 16);
