@@ -53,6 +53,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\VelaShell.Ssh\VelaShell.Ssh.csproj" />
+    <ProjectReference Include="..\..\src\VelaShell.Core\VelaShell.Core.csproj" />
+    <!-- 仅验证宿主受控认证状态机；不引用 Infrastructure 或尚未发布的 SDK。 -->
+    <Compile Include="../../src/VelaShell.Infrastructure/Ssh/SudoCommandExecutor.cs" Link="HostSudo/SudoCommandExecutor.cs" />
   </ItemGroup>
 
   <ItemGroup>

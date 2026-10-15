@@ -19,14 +19,16 @@ public sealed class AgentToolboxTests
         "web_search", "web_fetch",
         // 会动东西:一律走审批(close_session 除外,见 CloseSession_NeedsNoApproval…)
         "open_session", "close_session",
-        "run_command", "run_on_sessions", "write_remote_file", "patch_remote_file",
+        "run_command", "run_on_sessions", "task_status", "task_wait", "task_cancel", "write_remote_file", "patch_remote_file",
         "make_remote_directory", "rename_remote_path", "upload_local_file", "download_remote_file",
         "write_terminal"
     ];
 
     private static async Task<string> InvokeAsync(AgentToolbox toolbox, string name, Dictionary<string, object?>? args = null)
     {
-        AIFunction function = toolbox.CreateTools(ChatMode.Agent).OfType<AIFunction>().Single(f => f.Name == name);
+        // 每次辅助调用代表新的用户请求;同轮拒绝守卫由专门持有 scope 的测试覆盖。
+        await using CommandJobRunScope run = toolbox.BeginRun("test", Guid.NewGuid().ToString("N"));
+        AIFunction function = toolbox.CreateTools(ChatMode.Agent, runScope: run).OfType<AIFunction>().Single(f => f.Name == name);
         object? result = await function.InvokeAsync([with(args ?? [])], CancellationToken.None);
         return result?.ToString() ?? "";
     }
@@ -151,11 +153,14 @@ public sealed class AgentToolboxTests
             }
         };
 
-        Assert.AreEqual("out", await InvokeAsync(toolbox, "run_command", new() { ["command"] = "df -h" }));
+        Assert.Contains("out", await InvokeAsync(toolbox, "run_command", new() { ["command"] = "df -h" }));
         Assert.IsEmpty(asked, "df -h 无副作用,不该打扰用户");
 
         Assert.Contains("DENIED", await InvokeAsync(toolbox, "run_command", new() { ["command"] = "rm -rf /tmp/x" }));
-        Assert.Contains("DENIED", await InvokeAsync(toolbox, "write_terminal", new() { ["text"] = "reboot\n" }));
+        // 拒绝会停止旧轮次;用新用户轮次验证写终端仍然需要单独审批。
+        await using CommandJobRunScope nextRun = toolbox.BeginRun("owner", "next");
+        AIFunction terminal = toolbox.CreateTools(ChatMode.Agent, runScope: nextRun).OfType<AIFunction>().Single(f => f.Name == "write_terminal");
+        Assert.Contains("DENIED", (await terminal.InvokeAsync(new AIFunctionArguments { ["text"] = "reboot\n" }, CancellationToken.None))?.ToString() ?? "");
         Assert.AreSequenceEqual(["run_command", "write_terminal"], asked,
             "只读放行只覆盖 run_command 里确实只读的那些,写终端一律照问");
     }
@@ -247,7 +252,7 @@ public sealed class AgentToolboxTests
 
         string result = await InvokeAsync(toolbox, "run_command", new() { ["command"] = "uptime" });
 
-        Assert.AreEqual("up 42 days", result);
+        Assert.Contains("up 42 days", result);
         Assert.HasCount(1, context.FakeRemoteExec.Executed);
     }
 
@@ -271,7 +276,7 @@ public sealed class AgentToolboxTests
 
         string result = await InvokeAsync(toolbox, "run_command", new() { ["command"] = "ls" });
 
-        Assert.AreEqual("ok", result);
+        Assert.Contains("ok", result);
         Assert.IsFalse(handlerCalled);
     }
 

@@ -138,6 +138,7 @@ public class App : Application
             .AddSingleton<IAgentSignPrompt, AgentSignPromptDialogService>()
             // keyboard-interactive(2FA / OTP):服务端要动态码时弹框问。
             .AddSingleton<IKeyboardInteractivePrompt, KeyboardInteractivePromptDialogService>()
+            .AddSingleton<ISudoPrompt, SudoPromptDialogService>()
             // 内置 X 服务端的顶层窗口画成原生窗口(设置 → X Server 的「内置」引擎)。每个服务端实例一个宿主:
             // 开了「每个 SSH 会话一个显示」时,每个会话的服务端各取一个(BuiltInLocalXServer 每次要宿主时从容器里取新的)。
             .AddTransient<Infrastructure.XServer.IEmbeddedXServerHost, Services.XServer.AvaloniaXServerHost>()

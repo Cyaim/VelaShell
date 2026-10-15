@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="MSTest.TestAdapter" />
+    <PackageReference Include="MSTest.TestFramework" />
+  </ItemGroup>
+  <ItemGroup><Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/VelaShell.Core/VelaShell.Core.csproj" />
+    <ProjectReference Include="../../src/VelaShell.Ssh/VelaShell.Ssh.csproj" />
+    <!-- 独立验证受控内核，不引用 Infrastructure/新 SDK，不绕过正式包发布边界。 -->
+    <Compile Include="../../src/VelaShell.Infrastructure/Ssh/SudoCommandExecutor.cs" Link="SudoCommandExecutor.cs" />
+  </ItemGroup>
+</Project>

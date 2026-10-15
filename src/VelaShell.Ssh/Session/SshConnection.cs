@@ -316,6 +316,19 @@ public sealed partial class SshConnection : ISshChannelHost, IAsyncDisposable
     public bool IsAlive => Volatile.Read(ref _fault) is null && !_disposed;
 
     /// <summary>
+    /// 在敏感通道打开之前取得连接级诊断载荷抑制；最后一个租约结束后仅恢复原诊断配置。
+    /// </summary>
+    /// <remarks>
+    /// 依据 velashell-docs/zh/ssh/spec/08-failures.md §9.1。调用方须持有至通道在途收发及双向关闭完成；
+    /// 取消、进程退出或通道 DisposeAsync 返回不等于此边界。租约重复释放安全。
+    /// </remarks>
+    public IAsyncDisposable SuppressSensitivePayload()
+    {
+        ObjectDisposedException.ThrowIf(!IsAlive, this);
+        return _transport.AcquireSensitivePayloadLease();
+    }
+
+    /// <summary>
     /// 会话结束时被取消的令牌 —— 掉线、被对端断开、协议出错，或者自己释放。
     /// </summary>
     /// <remarks>
@@ -1821,6 +1834,7 @@ public sealed partial class SshConnection : ISshChannelHost, IAsyncDisposable
         // 先放出「断了」这个信号，再去收拾等在里面的人 ——
         // 顺序反过来的话，被唤醒的调用方回头去看 Disconnected，会看到它还没取消。
         // 原因先记下：被唤醒的人可能马上就去看 CloseReason。
+        _transport.StopPacketTap();
         Complete(exception);
         SignalDisconnected();
 
@@ -1914,6 +1928,7 @@ public sealed partial class SshConnection : ISshChannelHost, IAsyncDisposable
             return;
         }
         _disposed = true;
+        _transport.StopPacketTap();
         Complete(new SshConnectionClosedException(SshFailureReason.Aborted, SshPhase.Open, "本端释放了连接。"));
         SignalDisconnected();
 

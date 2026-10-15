@@ -36,8 +36,36 @@ namespace VelaShell.Plugin.Ai.Agent;
 /// 而"这条路走不通"本身就是模型需要知道、并据此换个方法的信息。
 /// </para>
 /// </remarks>
-public sealed class AgentToolbox(IPluginContext context)
+public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
 {
+    private readonly CommandJobRegistry _jobs = new(context.RemoteExec, context, context.Shutdown);
+    private readonly AsyncLocal<CommandJobRunScope?> _invocationScope = new();
+    private CommandJobRunScope? _defaultRun;
+    private readonly Lock _defaultRunGate = new();
+
+    /// <summary>入口提供稳定所有者及唯一轮次;工具列表显式捕获,不同对话不共享 taskId。</summary>
+    public CommandJobRunScope BeginRun(string ownerId, string runId, CancellationToken cancellationToken = default)
+        => _jobs.BeginRun(ownerId, runId, cancellationToken, async (id, token) =>
+            await context.Sessions.GetAsync(id, token).ConfigureAwait(false) is { } session
+            && await AllowedAsync(session, token).ConfigureAwait(false));
+
+    private CommandJobRunScope CurrentRun
+    {
+        get
+        {
+            if (_invocationScope.Value is { } scope)
+            {
+                return scope;
+            }
+            lock (_defaultRunGate)
+            {
+                return _defaultRun ??= BeginRun(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
+            }
+        }
+    }
+
+    /// <summary>取消并异步等待工具箱的所有执行轮次收尾。</summary>
+    public ValueTask DisposeAsync() => _jobs.DisposeAsync();
     private const int MaxFileBytes = 256 * 1024;
     private const int MaxDirectoryEntries = 200;
     private const int MaxCommandOutput = 32 * 1024;
@@ -129,7 +157,10 @@ public sealed class AgentToolbox(IPluginContext context)
         ("web_fetch", "取一个网页并转成文本", true),
         ("open_session", "按已保存的配置连一台机器(宿主会再向用户确认一次)", false),
         ("close_session", "关掉本插件自己开的那条会话", false),
-        ("run_command", "在会话上执行一次性命令(独立通道,不进用户终端)", false),
+        ("run_command", "在独立通道托管前台命令,长任务返回 taskId", false),
+        ("task_status", "查看本轮托管任务状态与增量输出", true),
+        ("task_wait", "等待本轮任务,等待到期不取消远端执行", true),
+        ("task_cancel", "请求取消本轮托管任务", false),
         ("run_on_sessions", "在多台会话上并行执行同一条命令", false),
         ("write_remote_file", "经 SFTP 覆盖写入远端文本文件", false),
         ("patch_remote_file", "只替换远端文件里的一段文本(不必回传整份)", false),
@@ -151,7 +182,8 @@ public sealed class AgentToolbox(IPluginContext context)
     /// 两个名字不同、用途一样的检索工具摆在一起,模型会来回换着试,既慢又乱。
     /// web_fetch 照给:原生检索给的是它自己挑好的结果,用户点名要读某个 URL 时还得靠它。
     /// </param>
-    public IList<AITool> CreateTools(ChatMode mode, bool nativeWebSearch = false)
+    /// <param name="runScope">显式绑定入口所有者的运行作用域;不作为模型可见参数。</param>
+    public IList<AITool> CreateTools(ChatMode mode, bool nativeWebSearch = false, CommandJobRunScope? runScope = null)
     {
         // 记下这一轮的模式:"没有会话可用"那句提示要据此决定该不该提 open_session ——
         // 计划模式里它压根没注册,提了只会让模型去调一个不存在的工具。
@@ -204,12 +236,25 @@ public sealed class AgentToolbox(IPluginContext context)
                 + "Do this once you are done with a session you opened, so the user is not left with tabs they did not ask for."), false),
 
             ("run_command", AIFunctionFactory.Create(RunCommandAsync, "run_command",
-                "Run a one-shot, non-interactive shell command on an SSH session over a separate exec channel (it does NOT type into the user's terminal). "
-                + "Requires user approval. Prefer the dedicated read-only tools above where one fits — they need no approval."), false),
+                "Run a non-interactive FOREGROUND shell command on a separate managed exec channel, not the user's terminal. "
+                + "Requires approval. Returns a final result or a running taskId after a short wait. No default execution deadline. "
+                + "Keep the command in the foreground: detached processes (nohup, &, daemonize) are NOT monitored and parent exit does not prove their completion. "
+                + "Set elevated=true only when root is needed, passing the actual command without sudo; the ENTIRE command including pipes/redirections runs as root "
+                + "after trusted host approval/authentication. Never automatically retry a failed/unknown operation or reinterpret ordinary sudo commands."), false),
+
+            ("task_status", AIFunctionFactory.Create(TaskStatusAsync, "task_status",
+                "Read a task created by this run. Returns state, exit code and bounded stdout/stderr since cursor; advance using nextCursor. "
+                + "Tasks from other conversations/runs cannot be accessed. Do not poll repeatedly; finite tasks notify the local agent on completion."), true),
+            ("task_wait", AIFunctionFactory.Create(TaskWaitAsync, "task_wait",
+                "Wait briefly for a managed task and read incremental output. Expiry of this WAIT does not kill the command. "
+                + "Use execution timeout only when an actual command deadline is intended."), true),
+            ("task_cancel", AIFunctionFactory.Create(TaskCancelAsync, "task_cancel",
+                "Request cancellation of a task belonging to this run. Closing the exec channel is NOT proof that detached processes have stopped."), false),
 
             ("run_on_sessions", AIFunctionFactory.Create(RunOnSessionsAsync, "run_on_sessions",
-                "Run the SAME command on several SSH sessions in parallel and return the output per host. Requires user approval. "
-                + "Use it for fleet-wide checks (\"how full is the disk on all of these?\") instead of repeating run_command."), false),
+                "Run the SAME foreground command on up to 16 SSH sessions with at most 4 streams active for this plugin; extra targets queue. "
+                + "Requires batch approval. After a short wait returns final results or taskIds per host; no default execution deadline. "
+                + "Detached processes are not monitored. Use it for fleet-wide checks instead of repeating run_command."), false),
 
             ("write_remote_file", AIFunctionFactory.Create(WriteRemoteFileAsync, "write_remote_file",
                 "Overwrite (or create) a text file on an SSH session via SFTP. Requires user approval. "
@@ -269,8 +314,32 @@ public sealed class AgentToolbox(IPluginContext context)
         return
         [
             .. all.Where(t => (mode != ChatMode.Plan || t.ReadOnly) && !DisabledTools.Contains(t.Name))
-                  .Select(t => t.Tool)
+                  .Select(t => t.Tool is AIFunction function
+                      ? new RunScopedFunction(function, this, runScope ?? CurrentRun) : t.Tool)
         ];
+    }
+
+    /// <summary>scope 由工具列表捕获,不是模型参数;AsyncLocal 仅在一次工具调用内部传递。</summary>
+    private sealed class RunScopedFunction(AIFunction inner, AgentToolbox toolbox, CommandJobRunScope scope)
+        : DelegatingAIFunction(inner)
+    {
+        protected override async ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
+        {
+            CommandJobRunScope? previous = toolbox._invocationScope.Value;
+            toolbox._invocationScope.Value = scope;
+            try
+            {
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, scope.Token);
+                linked.Token.ThrowIfCancellationRequested();
+                if (scope.HasDeniedExecution && Name != "task_cancel")
+                    throw new UnauthorizedAccessException("Execution was denied in this run. A new user request is required.");
+                return await base.InvokeCoreAsync(arguments, linked.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                toolbox._invocationScope.Value = previous;
+            }
+        }
     }
 
     // ---- 只读 ----
@@ -545,8 +614,11 @@ public sealed class AgentToolbox(IPluginContext context)
 
     private async Task<string> RunCommandAsync(
         [Description("The shell command to execute (non-interactive, one-shot).")] string command,
-        [Description("Timeout in seconds (default 30, max 600).")] int timeoutSeconds = 30,
+        [Description("Execution deadline in seconds. 0 (default) means no deadline; max 86400. Not the short wait window.")] int timeoutSeconds = 0,
         [Description("Optional session id from list_sessions; omit to use the session selected in the panel.")] string? sessionId = null,
+        [Description("Seconds to wait before returning taskId (default 2, max 10). Expiry does NOT cancel execution.")] int waitSeconds = 2,
+        [Description("True only for deliberately unbounded streams such as tail -f. These do not auto-wake the model.")] bool monitoring = false,
+        [Description("Run the ENTIRE command as root via trusted host sudo approval/authentication. Supply the actual command WITHOUT a sudo wrapper. Includes all pipelines and redirections.")] bool elevated = false,
         CancellationToken cancellationToken = default)
     {
         (string? id, string? error) = await ResolveAsync(sessionId, cancellationToken).ConfigureAwait(false);
@@ -554,15 +626,124 @@ public sealed class AgentToolbox(IPluginContext context)
         {
             return error!;
         }
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            return "command must not be empty.";
+        }
         // 记忆键取命令名(第一个词):同一次排查里 ls/cat/systemctl 会被反复调用,
         // 一条条点太折磨人;但键只到命令名为止,换个命令仍要重新点头。
-        if (!await ApproveAsync(new ApprovalRequest("run_command", command, $"run_command:{FirstWord(command)}"),
-                cancellationToken).ConfigureAwait(false))
+        SessionInfo? elevatedTarget = elevated
+            ? await context.Sessions.GetAsync(id, cancellationToken).ConfigureAwait(false) : null;
+        string targetLabel = elevatedTarget is { } target
+            ? $"{target.Username}@{target.Host}:{target.Port} ({id})" : id;
+        ApprovalRequest request = elevated
+            ? new ApprovalRequest("run_command_elevated",
+                $"Target session: {targetLabel}\nThe ENTIRE command runs as root, including every pipeline and redirection.\n{command}\n"
+                + "The host will separately require trusted confirmation and, if necessary, sudo authentication.")
+            : new ApprovalRequest("run_command", command, $"run_command:{FirstWord(command)}");
+        if (!await ApproveAsync(request, cancellationToken).ConfigureAwait(false))
         {
             return "The user DENIED execution of this command. Do not retry it; ask the user how to proceed.";
         }
-        return await ExecuteAsync(id, command, timeoutSeconds, cancellationToken).ConfigureAwait(false);
+        return await StartManagedAsync(id, command, timeoutSeconds, waitSeconds, monitoring, cancellationToken, elevated).ConfigureAwait(false);
     }
+
+    private async Task<string> StartManagedAsync(string sessionId, string command, int timeoutSeconds,
+        int waitSeconds, bool monitoring, CancellationToken cancellationToken, bool elevated = false)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CommandJobRunScope scope = CurrentRun;
+        string? taskId = null;
+        try
+        {
+            TimeSpan? deadline = timeoutSeconds > 0 ? TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 86400)) : null;
+            taskId = elevated
+                ? _jobs.StartSudo(scope, sessionId, command, deadline, monitoring)
+                : _jobs.Start(scope, sessionId, command, deadline, monitoring);
+            CommandJobSnapshot snapshot = await _jobs.WaitAsync(scope, taskId,
+                TimeSpan.FromSeconds(Math.Clamp(waitSeconds, 0, 10)), cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!snapshot.IsTerminal)
+            {
+                _jobs.MarkBackground(scope, taskId);
+            }
+            return FormatJob(snapshot);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (taskId is not null)
+            {
+                await _jobs.CancelAsync(scope, taskId).ConfigureAwait(false);
+            }
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return $"Command task failed: {ex.Message}. Do not automatically replay this operation.";
+        }
+    }
+
+    private async Task<string> TaskStatusAsync(
+        [Description("The taskId returned by run_command/run_on_sessions in this run.")] string taskId,
+        [Description("Next output cursor from the previous response, or 0 for retained output.")] long cursor = 0,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return FormatJob(await _jobs.ReadAsync(CurrentRun, taskId, cursor, cancellationToken).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex) { return $"Cannot read task: {ex.Message}"; }
+    }
+
+    private async Task<string> TaskWaitAsync(
+        [Description("The taskId returned in this run.")] string taskId,
+        [Description("Local wait seconds (default 2, max 30); does not kill the command.")] int waitSeconds = 2,
+        [Description("Next output cursor from the previous response, or 0.")] long cursor = 0,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return FormatJob(await _jobs.WaitAsync(CurrentRun, taskId,
+                TimeSpan.FromSeconds(Math.Clamp(waitSeconds, 0, 30)), cursor, cancellationToken).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex) { return $"Cannot wait for task: {ex.Message}"; }
+    }
+
+    private async Task<string> TaskCancelAsync(
+        [Description("The taskId returned in this run.")] string taskId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            await _jobs.CancelAsync(CurrentRun, taskId).ConfigureAwait(false);
+            return JsonSerializer.Serialize(new { taskId, cancellationRequested = true, remoteStopConfirmed = false });
+        }
+        catch (Exception ex) { return $"Cannot cancel task: {ex.Message}"; }
+    }
+
+    /// <summary>为工具回执和独立完成通知生成相同的无秘密任务表示。</summary>
+    public static string FormatJob(CommandJobSnapshot snapshot) => JsonSerializer.Serialize(new
+    {
+        taskId = snapshot.TaskId,
+        sessionId = snapshot.SessionId,
+        state = snapshot.State.ToString(),
+        exitCode = snapshot.ExitCode,
+        snapshot.CreatedAt,
+        snapshot.StartedAt,
+        snapshot.CompletedAt,
+        cancellationRequested = snapshot.CancellationRequested,
+        remoteStopConfirmed = snapshot.RemoteStopConfirmed,
+        monitoring = snapshot.Monitoring,
+        output = snapshot.Output,
+        nextCursor = snapshot.NextCursor,
+        earliestCursor = snapshot.EarliestCursor,
+        outputTruncated = snapshot.OutputTruncated,
+        hasMoreOutput = snapshot.HasMoreOutput,
+        error = snapshot.Error,
+        supervision = "Only the foreground exec channel is monitored; detached processes are not tracked."
+    });
 
     /// <summary>
     /// 同一条命令铺到多台上并行跑。
@@ -574,7 +755,8 @@ public sealed class AgentToolbox(IPluginContext context)
     private async Task<string> RunOnSessionsAsync(
         [Description("Session ids from list_sessions to run the command on.")] string[] sessionIds,
         [Description("The shell command to execute on every listed session (non-interactive, one-shot).")] string command,
-        [Description("Timeout in seconds per session (default 30, max 600).")] int timeoutSeconds = 30,
+        [Description("Execution deadline per session; 0 (default) means no deadline, max 86400.")] int timeoutSeconds = 0,
+        [Description("Short wait window before returning task ids (default 2, max 10 seconds).")] int waitSeconds = 2,
         CancellationToken cancellationToken = default)
     {
         if (sessionIds is not { Length: > 0 })
@@ -610,7 +792,7 @@ public sealed class AgentToolbox(IPluginContext context)
         }
         // 并行发出去,但结果按传入顺序拼 —— 让模型(和用户)看到的次序是稳定的
         string[] outputs = await Task.WhenAll(targets.Select(t =>
-            ExecuteAsync(t.SessionId, command, timeoutSeconds, cancellationToken))).ConfigureAwait(false);
+            StartManagedAsync(t.SessionId, command, timeoutSeconds, waitSeconds, false, cancellationToken))).ConfigureAwait(false);
         var sb = new StringBuilder();
         for (int i = 0; i < targets.Count; i++)
         {
@@ -629,16 +811,27 @@ public sealed class AgentToolbox(IPluginContext context)
             ExecResult result = await context.RemoteExec.RunAsync(sessionId, command,
                 new ExecOptions { Timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 600)) },
                 cancellationToken).ConfigureAwait(false);
-            string output = result.Output;
-            if (output.Length > MaxCommandOutput)
+            return JsonSerializer.Serialize(new
             {
-                output = output[..MaxCommandOutput] + "\n…(output truncated)";
-            }
-            return output.Length == 0 ? "(command produced no output)" : output;
+                stdout = result.Output[..Math.Min(result.Output.Length, MaxCommandOutput)],
+                stderr = result.Error[..Math.Min(result.Error.Length, MaxCommandOutput)],
+                exitCode = result.ExitCode,
+                timedOut = false,
+                outputTruncated = result.Output.Length > MaxCommandOutput || result.Error.Length > MaxCommandOutput
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (TimeoutException)
         {
-            return $"Command timed out after {timeoutSeconds}s.";
+            return JsonSerializer.Serialize(new
+            {
+                timedOut = true,
+                exitCode = (int?)null,
+                error = $"Command timed out after {timeoutSeconds}s; remote outcome may be unknown."
+            });
         }
         catch (Exception ex)
         {
@@ -1416,10 +1609,13 @@ public sealed class AgentToolbox(IPluginContext context)
         }
         if (ApprovalHandler is not { } handler)
         {
+            CurrentRun.MarkExecutionDenied();
             return false;
         }
-        // 用户点了停止时,不再傻等审批
-        return await handler(request).WaitAsync(cancellationToken).ConfigureAwait(false);
+        // 用户点了停止时,不再傻等审批;明确拒绝也成为本轮后续工具的停止边界。
+        bool approved = await handler(request).WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (!approved) CurrentRun.MarkExecutionDenied();
+        return approved;
     }
 
     /// <summary>命令的第一个词(去掉前导的 sudo,否则所有命令的记忆键都是 sudo)。</summary>

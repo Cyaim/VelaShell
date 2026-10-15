@@ -563,6 +563,23 @@ public sealed class BridgeRouterTests
     /// 往聊天里发消息。用户看到的是关掉的机器人过一会儿又自己说话了。
     /// </remarks>
     [TestMethod]
+    public async Task ReloadingAuthorization_CancelsActiveAndQueuedOldRuns()
+    {
+        await using var harness = new Harness();
+        await harness.StartAsync();
+        harness.Channel.HoldSendsContaining = "Working on it";
+        Task first = harness.SendAsync("first question");
+        await WaitUntilAsync(() => harness.Channel.Snapshot().Any(t => t.Contains("Working on it", StringComparison.OrdinalIgnoreCase)));
+        Task second = harness.SendAsync("second question");
+        await WaitUntilAsync(() => harness.Channel.Snapshot().Any(t => t.Contains("queued", StringComparison.OrdinalIgnoreCase)));
+        harness.Router.Apply(new BridgeSettings { Enabled = true, Channels = [] }, new Loc("en"));
+        harness.Channel.ReleaseHeld();
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.DoesNotContain(t => t.Contains("No model", StringComparison.OrdinalIgnoreCase), harness.Channel.Snapshot(),
+            "旧授权排队轮次不能在重载后继续调用模型");
+    }
+
+    [TestMethod]
     public async Task CancelAll_StopsAMessageThatIsStillWaitingInTheQueue()
     {
         await using var harness = new Harness();

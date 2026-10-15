@@ -117,6 +117,12 @@ internal static class Program
             TaskCreationOptions.RunContinuationsAsynchronously);
 
         connection.SetNotificationHandler((method, payload) => DispatchNotification(context, method, payload));
+        // 仅执行事件在读泵同步派发,保证回调完成后才消费终态应答。
+        // 接收器须快速非阻塞,不得在回调中同步等待同一连接的 RPC。
+        connection.SetOrderedNotificationHandler(PluginRpc.ExecOutput,
+            payload => DispatchNotification(context, PluginRpc.ExecOutput, payload));
+        connection.SetOrderedNotificationHandler(PluginRpc.ExecSudoEvent,
+            payload => DispatchNotification(context, PluginRpc.ExecSudoEvent, payload));
         connection.SetRequestHandler(async (method, payload, lifetimeToken) =>
         {
             _ = lifetimeToken; // 生命周期取消由 shutdownSource 表达
@@ -217,6 +223,9 @@ internal static class Program
                 break;
             case PluginRpc.FsProgress when Deserialize<FsProgressNotification>(payload) is { } progress:
                 context.RemoteFsProxy.OnProgress(progress);
+                break;
+            case PluginRpc.ExecSudoEvent when Deserialize<ExecSudoEventNotification>(payload) is { } sudoEvent:
+                context.RemoteExecProxy.OnSudoEvent(sudoEvent);
                 break;
             case PluginRpc.ExecOutput when Deserialize<ExecOutputNotification>(payload) is { } line:
                 context.RemoteExecProxy.OnOutput(line);

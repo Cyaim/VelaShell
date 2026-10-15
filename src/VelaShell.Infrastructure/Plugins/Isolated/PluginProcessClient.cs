@@ -37,6 +37,9 @@ internal sealed class PluginProcessClient : IAsyncDisposable
     /// <summary>插件进程打开面板数变化(转发自路由器)。</summary>
     public event Action<int>? SurfacesChanged;
 
+    /// <summary>包括无输出的长执行;只阻止自动空闲回收,不阻止用户停用。</summary>
+    internal bool IsBusy => _router.ActiveExecutions > 0;
+
     /// <summary>
     /// 启动心跳:周期 ping,连续两次失败(超时/异常,断连除外——断连走进程退出路径)
     /// 判定插件进程挂死并强杀,由 Exited 事件统一进入崩溃处置。
@@ -206,17 +209,30 @@ internal sealed class PluginProcessClient : IAsyncDisposable
         }
         catch
         {
-            router?.Dispose();
-            if (connection is not null)
+            try
             {
-                await connection.DisposeAsync().ConfigureAwait(false);
+                router?.Dispose();
+                try
+                {
+                    if (connection is not null)
+                    {
+                        await connection.DisposeAsync().ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await pipe.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    if (router is not null) { await router.DrainExecutionsAsync().ConfigureAwait(false); }
+                }
             }
-            else
+            finally
             {
-                await pipe.DisposeAsync().ConfigureAwait(false);
+                TryKill(process);
+                process?.Dispose();
             }
-            TryKill(process);
-            process?.Dispose();
             throw;
         }
     }
@@ -309,6 +325,7 @@ internal sealed class PluginProcessClient : IAsyncDisposable
         try
         {
             await _connection.DisposeAsync().ConfigureAwait(false);
+            await _router.DrainExecutionsAsync().ConfigureAwait(false);
         }
         catch
         {
@@ -381,9 +398,23 @@ internal sealed class PluginProcessClient : IAsyncDisposable
         {
             return;
         }
-        _router.Dispose();
-        await _connection.DisposeAsync().ConfigureAwait(false);
-        TryKill(_process);
-        _process.Dispose();
+        try
+        {
+            _router.Dispose();
+            try
+            {
+                await _connection.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                await _router.DrainExecutionsAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // 新增执行收尾失败也不能留下本宿主启动的孤儿进程。
+            TryKill(_process);
+            _process.Dispose();
+        }
     }
 }

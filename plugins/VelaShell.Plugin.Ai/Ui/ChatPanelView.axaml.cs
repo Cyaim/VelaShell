@@ -365,8 +365,18 @@ public partial class ChatPanelView : UserControl
     }
 
     /// <summary>面板关闭时由插件调用,拆除宿主事件订阅并取消进行中的请求。</summary>
+    private Task? _detachCleanup;
+    /// <summary>关闭入口并异步等待工具与MCP清理。</summary>
+    public Task DetachAsync()
+    {
+        Detach();
+        return _detachCleanup ?? Task.CompletedTask;
+    }
+
+    /// <summary>同步发出关闭信号;卸载调用方使用DetachAsync等待收尾。</summary>
     public void Detach()
     {
+        if (_detached) return;
         _detached = true;
         _context.Events.SessionConnected -= OnSessionEvent;
         _context.Events.SessionDisconnected -= OnSessionEvent;
@@ -390,7 +400,21 @@ public partial class ChatPanelView : UserControl
         {
             // 已释放则忽略
         }
-        _ = _mcp.DisposeAsync().AsTask();
+        _detachCleanup = CleanupDetachedAsync();
+    }
+
+    private async Task CleanupDetachedAsync()
+    {
+        try
+        {
+            Task[] active = _conversations.Values.Select(c => c.RunCompleted?.Task).OfType<Task>().ToArray();
+            if (active.Length > 0) await Task.WhenAll(active);
+        }
+        catch (Exception ex) { _context.Log.Warn($"AI run cleanup failed: {ex.Message}"); }
+        try { await _toolbox.DisposeAsync(); }
+        catch (Exception ex) { _context.Log.Warn($"AI toolbox cleanup failed: {ex.Message}"); }
+        try { await _mcp.DisposeAsync(); }
+        catch (Exception ex) { _context.Log.Warn($"AI MCP cleanup failed: {ex.Message}"); }
     }
 
     /// <summary>
@@ -1347,6 +1371,7 @@ public partial class ChatPanelView : UserControl
         // "尚未配置模型"并把设置窗口弹到脸上 —— 而用户什么都没配错。已完成时这里是一次同步返回。
         // 「解释终端输出」那条命令正是开完面板立刻发一条,踩的就是这几毫秒。
         await _initTask;
+        if (_detached) return;
         text = text.Trim();
         // 记下这一轮属于哪份对话:通常就是正显示的这份;后台续跑的下一轮(队列排空)沿用原来那份。
         // 置进 _turnScope 后,这条方法(及它 await 出去的整条流水线)所有代理都落到这份上,
@@ -1406,6 +1431,13 @@ public partial class ChatPanelView : UserControl
 
         Cts = new CancellationTokenSource();
         CancellationToken token = Cts.Token;
+        string runId = Guid.NewGuid().ToString("N");
+        CommandJobRunScope runScope = _toolbox.BeginRun(conv.ConversationId, runId, token);
+        var execution = new AgentExecution(runId, () => runScope.HasUnknownOutcome, () => runScope.HasDeniedExecution);
+        var coordinator = new AgentRunCoordinator(runScope, execution);
+        conv.RunScope = runScope;
+        var runCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        conv.RunCompleted = runCompleted;
         AssistantBubble? bubble = null;
         long startedAt = Environment.TickCount64;
         bool cancelled = false;
@@ -1675,11 +1707,14 @@ public partial class ChatPanelView : UserControl
                 verifiedObservation = _health.BeginObservation();
                 try
                 {
-                    await Task.Run(async () =>
+                    async Task ReadStreamAsync()
                     {
-                        await foreach (ChatResponseUpdate update in client
-                                           .GetStreamingResponseAsync(requestMessages, options, token)
-                                           .ConfigureAwait(false))
+                        // 显式离开UI调度上下文,不是Task.Run包I/O。同步工具替身/适配器也不能阻塞UI。
+                        await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+                        await foreach (ChatResponseUpdate update in coordinator.RunAsync(client,
+                                           requestMessages, options, () => Dispatcher.UIThread.Post(
+                                               () => SetStatus(_loc["WaitingForJobs"])), token,
+                                               batch => Dispatcher.UIThread.Post(() => SetStatus(_loc.F("ContinuingBatch", batch)))).ConfigureAwait(false))
                         {
                             updates.Add(update);
                             bool schedule;
@@ -1694,7 +1729,8 @@ public partial class ChatPanelView : UserControl
                                 Dispatcher.UIThread.Post(DrainUpdates);
                             }
                         }
-                    }, token);
+                    }
+                    await ReadStreamAsync();
                     if (!HasMeaningfulOutput(updates))
                     {
                         throw new HealthProbe.EmptyReplyException();
@@ -1786,7 +1822,7 @@ public partial class ChatPanelView : UserControl
                     _toolbox.DisabledTools = new HashSet<string>(
                         SplitLines(_settings.DisabledBuiltinTools) ?? [], StringComparer.OrdinalIgnoreCase);
                     _toolbox.WebSearch = _settings.WebSearch;
-                    IList<AITool> tools = _toolbox.CreateTools(mode, nativeSearch);
+                    IList<AITool> tools = _toolbox.CreateTools(mode, nativeSearch, runScope);
                     // 计划模式下不接 MCP:那些工具的副作用由第三方服务器说了算,插件无从判断,
                     // 而"计划"的承诺是这一步不动任何东西。
                     if (mode == ChatMode.Agent && _settings.McpServers.Any(s => s.Enabled))
@@ -1827,9 +1863,9 @@ public partial class ChatPanelView : UserControl
                         NativeWebSearch.Apply(options, current, tools, _settings.WebSearch.MaxResults);
                     }
                     options.Tools = tools;
-                    client = client.AsBuilder()
-                        .UseFunctionInvocation(configure: c => c.MaximumIterationsPerRequest = 25)
-                        .Build();
+                    client = new RecoveringChatClient(client, execution, _loc["ContinuationBoundary"],
+                            attempt => Dispatcher.UIThread.Post(() => SetStatus(_loc.F("Retrying", attempt))))
+                        .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, 25)).Build();
                 }
 
                 // MCP 结束后完整复验，而非仅比较 BaseUrl：摘要不能使用已切账号的旧 inner。
@@ -1899,7 +1935,7 @@ public partial class ChatPanelView : UserControl
                             await StreamOnceAsync();
                             break;
                         }
-                        catch (Exception ex) when (attempt < StreamRetries && !HasMeaningfulOutput(updates)
+                        catch (Exception ex) when (mode == ChatMode.Chat && attempt < StreamRetries && !execution.HasToolCalls && !HasMeaningfulOutput(updates)
                                                    && !token.IsCancellationRequested && TransientFailure.IsTransient(ex))
                         {
                             _context.Log.Warn($"Stream failed before any content (attempt {attempt + 1}): {ex.Message}");
@@ -1948,7 +1984,7 @@ public partial class ChatPanelView : UserControl
                     }
                     break; // 这一站答上了
                 }
-                catch (Exception ex) when (!HasMeaningfulOutput(updates)
+                catch (Exception ex) when (!execution.HasToolCalls && !HasMeaningfulOutput(updates)
                                            && !token.IsCancellationRequested && TransientFailure.IsWorthSwitching(ex))
                 {
                     bool changedKeyCandidate = false;
@@ -2066,7 +2102,8 @@ public partial class ChatPanelView : UserControl
             // 兜底补齐插话:送达回调的 Post 可能还排在队里没跑到,而它必须排在
             // 这一轮的回复之前进历史与库(顺序:原消息 → 插话 → 回复)。
             await CommitSteeringAsync(conv);
-            History.AddMessages(response);
+            if (mode == ChatMode.Chat) History.AddMessages(response);
+            else History.AddRange(execution.CompletedMessages);
             int sequence = await PersistAsync("assistant", response.Text);
             if (sequence >= 0 && bubble is not null)
             {
@@ -2090,7 +2127,13 @@ public partial class ChatPanelView : UserControl
                 SetStatus("");
             }
             await CommitSteeringAsync(conv); // 已经送到模型那儿的插话照样算数
-            await SettleUnfinishedTurnAsync(bubble);
+            if (execution.HasToolCalls)
+            {
+                string partial = bubble?.ReplyText.Trim() ?? "";
+                History.AddRange(execution.InterruptedHistory(partial));
+                await PersistAsync("assistant", partial);
+            }
+            else await SettleUnfinishedTurnAsync(bubble);
         }
         catch (Exception ex)
         {
@@ -2102,6 +2145,7 @@ public partial class ChatPanelView : UserControl
             // 根本没连上的那一类另给一句 —— 那时该去查网络/代理,而不是翻 Key 有没有填错。
             string detail = ex.GetBaseException() switch
             {
+                AgentPausedException paused => _loc[paused.ReasonKey],
                 HealthProbe.EmptyReplyException => _loc["ProbeEmptyReply"],
                 AiSettingsStore.BuiltinOAuthHostMismatchException => _loc["SetupBuiltinOAuthHostMismatch"],
                 ProviderConfigurationChangedException => _loc["ErrorProviderChanged"],
@@ -2113,10 +2157,18 @@ public partial class ChatPanelView : UserControl
             // 哪句是回答、哪句是故障。改成一张 error 卡挂在这条回复里(见 AddErrorCard)。
             AddErrorCard(bubble, detail);
             await CommitSteeringAsync(conv);
-            await SettleUnfinishedTurnAsync(bubble);
+            if (execution.HasToolCalls)
+            {
+                string partial = bubble?.ReplyText.Trim() ?? "";
+                History.AddRange(execution.InterruptedHistory(partial));
+                await PersistAsync("assistant", partial);
+            }
+            else await SettleUnfinishedTurnAsync(bubble);
         }
         finally
         {
+            try
+            {
             // 故障转移这一轮没答完(取消/整链都挂):退回原来那一站。
             // 答完(answered)就不退 —— 粘住在这一刻落定,直到它也失败或用户手动切回;
             // 回答之后的入库/落盘失败同样不退(新接入是好的,回滚回已知坏的才是错的)。
@@ -2138,6 +2190,10 @@ public partial class ChatPanelView : UserControl
                 }
                 await PersistSettingsAsync();
             }
+            // Detach可能已启动清理,取消必须幂等;不能因此跳过Busy/TCS收尾。
+            try { await runScope.CancelAsync(); }
+            catch (ObjectDisposedException) { }
+            conv.RunScope = null;
             Cts?.Dispose();
             Cts = null;
             ActiveBubble = null;
@@ -2154,8 +2210,23 @@ public partial class ChatPanelView : UserControl
                 TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt),
                 cancelled);
             RequestAutoScroll();
+            }
+            finally
+            {
+                try { await runScope.DisposeAsync(); }
+                finally
+                {
+                    runCompleted.TrySetResult();
+                    conv.RunCompleted = null;
+                }
+            }
         }
 
+        if (_detached)
+        {
+            SteeringQueue.DrainAll();
+            return;
+        }
         // 这一轮结束时队里还有货 = 这些插话谁也没赶上(纯对话模式只发一次请求;
         // 或者是在最后一步之后才排进来的)。答完了就直接当作下一轮发出去;
         // 被停掉或出错了就原样放回输入框 —— 该重试还是该改写由用户决定。

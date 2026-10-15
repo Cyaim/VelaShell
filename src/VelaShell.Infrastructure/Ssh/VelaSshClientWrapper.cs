@@ -375,6 +375,13 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
         }
     }
 
+    /// <inheritdoc />
+    public Task<SudoExecutionResult> StreamSudoCommandAsync(
+        string commandText, SudoExecutionContext context, ISudoPrompt prompt,
+        Action<SudoExecutionEvent> onEvent, CancellationToken cancellationToken = default) =>
+        SudoCommandExecutor.ExecuteAsync(EnsureConnected(), commandText,
+            context with { Target = _target }, prompt, onEvent, cancellationToken);
+
     /// <summary>
     /// 这个会话的 x11 通道交给内置 X 服务端时带上的来历:哪个会话(user@host:port)、勾没勾「受信任」、
     /// 会话对象本身与它断开的信号(设置里开了「每个 SSH 会话一个显示」时,服务端按它们分显示、在会话断开时收掉)。
@@ -415,56 +422,55 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
     /// 在管道的缓冲区上直接切行,不先把整段转成 <see cref="string" /> 再 <c>Split</c> ——
     /// 长驻命令(<c>tail -F</c>)可能跑上几小时,按行切才不会把整份输出攒在内存里。
     /// </remarks>
-    private static async Task<long> PumpLinesAsync(
+    internal static async Task<long> PumpLinesAsync(
         PipeReader reader, bool isError, Action<bool, string> onLine, CancellationToken cancellationToken)
     {
+        // StreamReader 增量解码保留跨片 UTF-8；ReadLineAsync 会把无换行输出无限攒大。
+        using StreamReader text = new(reader.AsStream(leaveOpen: true), Encoding.UTF8, false, 4096, leaveOpen: true);
+        char[] characters = new char[4096];
+        StringBuilder line = new(4096);
         long lines = 0;
-
+        bool afterCarriageReturn = false;
         while (true)
         {
-            ReadResult result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-            ReadOnlySequence<byte> buffer = result.Buffer;
-
-            while (TryReadLine(ref buffer, out ReadOnlySequence<byte> line))
+            int count = await text.ReadAsync(characters.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (count == 0)
             {
-                onLine(isError, DecodeLine(line));
-                lines++;
-            }
-
-            reader.AdvanceTo(buffer.Start, buffer.End);
-
-            if (result.IsCompleted)
-            {
-                // 最后一行可能没有换行符收尾 —— 丢掉它就等于丢掉命令的最后一句输出。
-                if (!buffer.IsEmpty)
+                if (line.Length > 0)
                 {
-                    onLine(isError, DecodeLine(buffer));
+                    onLine(isError, line.ToString());
                     lines++;
                 }
                 return lines;
             }
+            for (int i = 0; i < count; i++)
+            {
+                char character = characters[i];
+                if (character == '\n' && afterCarriageReturn)
+                {
+                    afterCarriageReturn = false;
+                    continue;
+                }
+                afterCarriageReturn = character == '\r';
+                if (character is '\r' or '\n')
+                {
+                    onLine(isError, line.ToString());
+                    line.Clear();
+                    lines++;
+                }
+                else
+                {
+                    line.Append(character);
+                    if (line.Length >= 4096 && !char.IsHighSurrogate(character))
+                    {
+                        // 显式标记超长逻辑行的续片，不能静默截断让调用方误认完整行。
+                        onLine(isError, line + " [VelaShell: continued]");
+                        line.Clear();
+                        lines++;
+                    }
+                }
+            }
         }
-    }
-
-    private static bool TryReadLine(ref ReadOnlySequence<byte> buffer, out ReadOnlySequence<byte> line)
-    {
-        SequencePosition? end = buffer.PositionOf((byte)'\n');
-        if (end is null)
-        {
-            line = default;
-            return false;
-        }
-
-        line = buffer.Slice(0, end.Value);
-        buffer = buffer.Slice(buffer.GetPosition(1, end.Value));
-        return true;
-    }
-
-    /// <summary>解一行:UTF-8,并去掉行尾可能存在的 CR(远端是 CRLF 时)。</summary>
-    private static string DecodeLine(ReadOnlySequence<byte> line)
-    {
-        string text = Encoding.UTF8.GetString(line);
-        return text.EndsWith('\r') ? text[..^1] : text;
     }
 
     private static async ValueTask TrySendTermAsync(SshCommand? command)

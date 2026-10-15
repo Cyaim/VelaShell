@@ -29,8 +29,11 @@ namespace VelaShell.Plugin.Ai.Interop;
 /// <b>默认值仍是不限范围</b> —— 这条路的边界是回环地址、令牌与只读挡位,把用户自己机器上的
 /// agent 一起收紧挡不住任何攻击者,只挡得住用户自己。</para>
 /// </remarks>
-internal sealed class McpToolHost
+internal sealed class McpToolHost : IAsyncDisposable
 {
+    private readonly CommandJobRunScope _runScope;
+    private readonly SemaphoreSlim _calls = new(1, 1);
+    private readonly CancellationTokenSource _lifetime = new();
     private readonly IPluginContext _context;
     private readonly McpServerSettings _settings;
     private readonly AgentToolbox _toolbox;
@@ -59,6 +62,7 @@ internal sealed class McpToolHost
                 StringComparer.OrdinalIgnoreCase)
             // ApprovalHandler 刻意不设:见类型注释
         };
+        _runScope = _toolbox.BeginRun(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), _lifetime.Token);
         var tools = new List<AIFunction>
         {
             AIFunctionFactory.Create(UseSessionAsync, "use_session",
@@ -66,7 +70,7 @@ internal sealed class McpToolHost
                 + "Call list_sessions first to see what is connected. "
                 + "Accepts user@host:port, host:port or host.")
         };
-        tools.AddRange(_toolbox.CreateTools(settings.Mode).OfType<AIFunction>());
+        tools.AddRange(_toolbox.CreateTools(settings.Mode, runScope: _runScope).OfType<AIFunction>());
         Tools = tools;
     }
 
@@ -79,9 +83,34 @@ internal sealed class McpToolHost
         {
             throw new KeyNotFoundException($"Unknown tool: {name}");
         }
-        object? result = await tool.InvokeAsync([with(arguments)], cancellationToken)
-            .ConfigureAwait(false);
-        return result?.ToString() ?? "";
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+        await _calls.WaitAsync(linked.Token).ConfigureAwait(false);
+        try
+        {
+            object? result = await tool.InvokeAsync([with(arguments)], linked.Token).ConfigureAwait(false);
+            return result?.ToString() ?? "";
+        }
+        finally { _calls.Release(); }
+    }
+
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+    public ValueTask DisposeAsync()
+    {
+        lock (_disposeGate) return new ValueTask(_disposeTask ??= DisposeCoreAsync());
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        await _lifetime.CancelAsync().ConfigureAwait(false);
+        await _calls.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await _runScope.DisposeAsync().ConfigureAwait(false);
+            await _toolbox.DisposeAsync().ConfigureAwait(false);
+            _lifetime.Dispose();
+        }
+        finally { _calls.Release(); }
     }
 
     /// <summary>
@@ -141,6 +170,10 @@ internal sealed class McpToolHost
 
     /// <summary>给 <c>initialize</c> 的服务端说明里带一句"现在对着哪台机器"。</summary>
     public string Describe()
+        => DescribeTarget() + " Background tasks can be queried, waited on, or cancelled with task tools. "
+            + "This server does not wake external models; continuation is the MCP client's responsibility.";
+
+    private string DescribeTarget()
         => _target.Length > 0
             ? $"VelaShell is acting on {_target}. Mode: {_settings.Mode}, approval: {_settings.Approval}.{CanOpen}"
             : $"No session selected yet — call list_sessions, then use_session. Mode: {_settings.Mode}, approval: {_settings.Approval}.{CanOpen}";

@@ -31,6 +31,34 @@ namespace VelaShell.Ssh.Tests.Channels;
 [TestCategory("Channels")]
 public sealed class ChannelTests
 {
+    [TestMethod]
+    public async Task SensitiveDrainDoesNotCompleteOnLocalDisposeBeforePeerClose()
+    {
+        TaskCompletionSource peerMayClose = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using Harness harness = await Harness.StartAsync(new TestChannelScript
+        {
+            CloseAfterScript = false,
+            HoldCloseReplyUntil = peerMayClose.Task,
+        });
+        SshShell shell = await harness.Connection.OpenShellAsync(cancellationToken: harness.Token);
+        Task drain = shell.Channel.WaitForSensitivePayloadDrainAsync(harness.Token).AsTask();
+        await shell.DisposeAsync();
+        Assert.IsFalse(drain.IsCompleted, "本端 Dispose/Closed 不构成对端关闭确认");
+        peerMayClose.SetResult();
+        await drain;
+    }
+
+    [TestMethod]
+    public async Task SensitiveDrainCompletesWhenConnectionTerminatesWithoutPeerClose()
+    {
+        await using Harness harness = await Harness.StartAsync(new TestChannelScript { CloseAfterScript = false });
+        SshShell shell = await harness.Connection.OpenShellAsync(cancellationToken: harness.Token);
+        Task drain = shell.Channel.WaitForSensitivePayloadDrainAsync().AsTask();
+        await harness.Connection.DisposeAsync();
+        await drain.WaitAsync(TimeSpan.FromSeconds(5));
+        await shell.DisposeAsync();
+    }
+
     /// <summary>一次完整的会话：握手 → 认证 → 连接协议，两侧都跑起来。</summary>
     private sealed class Harness : IAsyncDisposable
     {

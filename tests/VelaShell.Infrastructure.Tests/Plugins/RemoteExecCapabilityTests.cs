@@ -187,6 +187,112 @@ public class RemoteExecCapabilityTests
     }
 
     [TestMethod]
+    public async Task SudoAsync_CarriesTrustedSourceAndMergedEventsWithoutExposingCredentials()
+    {
+        Guid id = Guid.NewGuid();
+        ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
+        client.IsConnected.Returns(true);
+        ISshConnectionService connections = Substitute.For<ISshConnectionService>();
+        connections.GetClient(id).Returns(client);
+        ISudoPrompt prompt = Substitute.For<ISudoPrompt>();
+        var capability = new RemoteExecCapability(connections, "trusted.plugin", prompt);
+        client.StreamSudoCommandAsync(Arg.Any<string>(), Arg.Any<SudoExecutionContext>(),
+                Arg.Any<ISudoPrompt>(), Arg.Any<Action<SudoExecutionEvent>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                Assert.AreEqual("id -u; exit 7", call.Arg<string>());
+                Assert.AreEqual("trusted.plugin", call.Arg<SudoExecutionContext>().SourcePluginId);
+                Assert.AreSame(prompt, call.Arg<ISudoPrompt>());
+                Action<SudoExecutionEvent> report = call.Arg<Action<SudoExecutionEvent>>();
+                report(new(SudoExecutionState.AwaitingApproval));
+                report(new(SudoExecutionState.AwaitingAuthentication));
+                report(new(SudoExecutionState.Running));
+                report(new(Text: "root\rprogress"));
+                return Task.FromResult(new SudoExecutionResult(SudoExecutionOutcome.Exited, 7, 1));
+            });
+
+        var events = new SyncProgress<SudoExecEvent>();
+        SudoExecResult result = await capability.StreamSudoAsync(id.ToString(), "id -u; exit 7", null, events);
+
+        Assert.AreEqual(SudoExecOutcome.Exited, result.Outcome);
+        Assert.AreEqual(7, result.ExitCode);
+        Assert.AreEqual(1L, result.OutputChunks);
+        Assert.HasCount(4, events.Items);
+        Assert.AreEqual(SudoExecState.AwaitingAuthentication, events.Items[1].State);
+        Assert.AreEqual(SudoExecEventKind.Output, events.Items[3].Kind);
+        Assert.AreEqual("root\rprogress", events.Items[3].Text);
+        Assert.AreEqual(0, capability.ActiveStreams);
+        await client.DidNotReceive().RunCommandDetailedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    public async Task SudoAsync_WithoutTrustedPromptNeverStartsACommand()
+    {
+        (RemoteExecCapability capability, ISshClientWrapper client, string sessionId) = NewCapability();
+        SudoExecResult result = await capability.StreamSudoAsync(sessionId, "id", null, new SyncProgress<SudoExecEvent>());
+        Assert.AreEqual(SudoExecOutcome.NotSupported, result.Outcome);
+        Assert.AreEqual(0, capability.ActiveStreams);
+        Assert.IsFalse(client.ReceivedCalls().Any(call => call.GetMethodInfo().Name is
+            nameof(ISshClientWrapper.StreamSudoCommandAsync) or nameof(ISshClientWrapper.RunCommandDetailedAsync)));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SudoAsync_SharesOrdinaryStreamLimitAndPropagatesLifetimeCancellation(bool shutdownRequested)
+    {
+        Guid id = Guid.NewGuid();
+        ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
+        client.IsConnected.Returns(true);
+        ISshConnectionService connections = Substitute.For<ISshConnectionService>();
+        connections.GetClient(id).Returns(client);
+        using var shutdown = new CancellationTokenSource();
+        using var caller = new CancellationTokenSource();
+        var capability = new RemoteExecCapability(connections, "plugin", Substitute.For<ISudoPrompt>(), shutdown.Token);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.StreamSudoCommandAsync(Arg.Any<string>(), Arg.Any<SudoExecutionContext>(), Arg.Any<ISudoPrompt>(),
+                Arg.Any<Action<SudoExecutionEvent>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                entered.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>()).ConfigureAwait(false);
+                return new SudoExecutionResult(SudoExecutionOutcome.Unknown);
+            });
+        Task<SudoExecResult>[] running = [.. Enumerable.Range(0, IRemoteExecApi.MaxConcurrentStreams)
+            .Select(_ => capability.StreamSudoAsync(id.ToString(), "id", null, new SyncProgress<SudoExecEvent>(), caller.Token))];
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(IRemoteExecApi.MaxConcurrentStreams, capability.ActiveStreams);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => capability.StreamAsync(
+            id.ToString(), "ordinary", null, new SyncProgress<ExecOutput>()));
+
+        await (shutdownRequested ? shutdown : caller).CancelAsync();
+        foreach (Task<SudoExecResult> operation in running)
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(async () => await operation.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+        Assert.AreEqual(0, capability.ActiveStreams);
+    }
+
+    [TestMethod]
+    public async Task SudoAsync_MissingExitCodeStaysUnknown()
+    {
+        Guid id = Guid.NewGuid();
+        ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
+        client.IsConnected.Returns(true);
+        ISshConnectionService connections = Substitute.For<ISshConnectionService>();
+        connections.GetClient(id).Returns(client);
+        client.StreamSudoCommandAsync(Arg.Any<string>(), Arg.Any<SudoExecutionContext>(), Arg.Any<ISudoPrompt>(),
+                Arg.Any<Action<SudoExecutionEvent>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new SudoExecutionResult(SudoExecutionOutcome.Exited)));
+        var capability = new RemoteExecCapability(connections, "plugin", Substitute.For<ISudoPrompt>());
+
+        SudoExecResult result = await capability.StreamSudoAsync(id.ToString(), "id", null, new SyncProgress<SudoExecEvent>());
+        Assert.AreEqual(SudoExecOutcome.Unknown, result.Outcome);
+        Assert.IsFalse(result.IsSuccess);
+        Assert.IsNull(result.ExitCode);
+    }
+
+    [TestMethod]
     public void ExecResult_FailureTextPrefersStandardError()
     {
         ExecResult failed = new("some stdout noise") { Error = "Error: no such volume\ndetails", ExitCode = 1 };

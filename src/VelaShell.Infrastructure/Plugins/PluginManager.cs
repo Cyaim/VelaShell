@@ -1668,7 +1668,7 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
     }
 
     private static bool IsRecyclableIsolated(PluginRuntime runtime) =>
-        runtime is { Process: not null, OpenSurfaces: 0 }
+        runtime is { Process: { IsBusy: false }, OpenSurfaces: 0 }
         && runtime.Descriptor.State == PluginState.Active
         && runtime.Descriptor.Manifest is { IdlePolicy: PluginIdlePolicy.Recyclable } manifest
         && (manifest.Contributes?.Commands.Length ?? 0) > 0; // 没有回程触发器就不回收
@@ -1694,6 +1694,7 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
         {
             return Volatile.Read(ref runtime.RunningCommands) > 0
                    || runtime.Context?.RemoteTunnel.ActiveTunnels > 0
+                   || runtime.Context?.RemoteExec is RemoteExecCapability { ActiveStreams: > 0 }
                    || runtime.Descriptor.Manifest is not { } manifest
                    || CountOpenSurfaces(runtime, manifest) > 0;
         }
@@ -2391,7 +2392,7 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
                 ? new RemoteFsCapability(sftp, conn)
                 : new UnavailableRemoteFs(),
             RemoteExec = options.Connections is { } execConnections
-                ? new RemoteExecCapability(execConnections)
+                ? new RemoteExecCapability(execConnections, manifest.Id, options.SudoPrompt, runtime.Lifetime.Token)
                 : new UnavailableRemoteExec(),
             RemoteTunnel = options.Connections is { } tunnelConnections
                 ? new RemoteTunnelCapability(tunnelConnections)
@@ -3031,6 +3032,9 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
 
     private sealed class UnavailableRemoteExec : IRemoteExecApi
     {
+        public Task<SudoExecResult> StreamSudoAsync(string sessionId, string command, SudoExecOptions? options,
+            IProgress<SudoExecEvent> progress, CancellationToken cancellationToken = default)
+            => Task.FromException<SudoExecResult>(new NotSupportedException("Sudo execution is unavailable in this host."));
         public Task<ExecResult> RunAsync(string sessionId, string command, ExecOptions? options = null, CancellationToken cancellationToken = default)
             => Task.FromException<ExecResult>(new InvalidOperationException("Remote exec capability is unavailable in this host."));
     }
