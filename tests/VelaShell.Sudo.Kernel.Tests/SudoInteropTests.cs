@@ -49,8 +49,12 @@ public sealed class SudoInteropTests
     {
         ProcessStartInfo start = new("docker")
         {
-            RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true,
-            StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = true,
+            StandardInputEncoding = new UTF8Encoding(false),
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
         foreach (string argument in new[] { "exec", "-i", Container, "sh", "-s" }) { start.ArgumentList.Add(argument); }
         using Process process = Process.Start(start)!;

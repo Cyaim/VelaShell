@@ -18,7 +18,7 @@ public sealed class SudoPromptDialogService : ISudoPrompt
 
     /// <inheritdoc />
     public Task<SudoPassword?> RequestPasswordAsync(SudoExecutionContext context, string command, int attempt, CancellationToken cancellationToken) =>
-        OnUiAsync(owner => SudoPromptDialog.RequestPasswordAsync(owner, context, command, attempt, cancellationToken), (SudoPassword?)null, cancellationToken);
+        OnUiAsync(owner => SudoPromptDialog.RequestPasswordAsync(owner, context, command, attempt, cancellationToken), null, cancellationToken);
 
     private async Task<T> OnUiAsync<T>(Func<Window, Task<T>> show, T refused, CancellationToken cancellationToken)
     {

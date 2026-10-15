@@ -9,7 +9,7 @@ namespace VelaShell.PluginHost;
 internal sealed class ExecutionEventReceiver<T>(IProgress<T> sink, Action cancel, bool requireSequence = true,
     Func<T, bool>? isOutput = null)
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private ExceptionDispatchInfo? _failure;
     private long _lastSequence;
     private long _outputCount;

@@ -1,5 +1,5 @@
-using Microsoft.Extensions.AI;
 using System.Text.Json;
+using Microsoft.Extensions.AI;
 using VelaShell.Plugin.Ai.Agent;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.PluginSdk.RemoteExec;
@@ -41,12 +41,15 @@ public sealed class CommandJobRegistryTests
     [TestMethod]
     public async Task FinalResult_RetainsStderrAndNonzeroExit()
     {
-        var exec = new ControlledExec { Handler = (_, output, _) =>
+        var exec = new ControlledExec
+        {
+            Handler = (_, output, _) =>
         {
             output.Report(new(ExecStream.StandardOutput, "normal"));
             output.Report(new(ExecStream.StandardError, "bad"));
             return Task.FromResult(new ExecStreamResult(23, 2));
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec);
         await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
         string id = registry.Start(scope, "session", "cmd");
@@ -62,11 +65,14 @@ public sealed class CommandJobRegistryTests
     public async Task ShortWait_DoesNotCancel_AndCompletionNotificationIsOnce()
     {
         TaskCompletionSource finish = Signal();
-        var exec = new ControlledExec { Handler = async (_, _, token) =>
+        var exec = new ControlledExec
+        {
+            Handler = async (_, _, token) =>
         {
             await finish.Task.WaitAsync(token);
             return new(0, 0);
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec);
         await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
         string id = registry.Start(scope, "session", "long foreground");
@@ -88,11 +94,14 @@ public sealed class CommandJobRegistryTests
     {
         TaskCompletionSource first = Signal();
         TaskCompletionSource second = Signal();
-        var exec = new ControlledExec { Handler = async (command, _, token) =>
+        var exec = new ControlledExec
+        {
+            Handler = async (command, _, token) =>
         {
             await (command == "first" ? first : second).Task.WaitAsync(token);
             return new(0, 0);
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec);
         await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
         string a = registry.Start(scope, "s", "first");
@@ -112,7 +121,9 @@ public sealed class CommandJobRegistryTests
     [TestMethod]
     public async Task Output_IsBoundedAndCursorsExposeExpiredHistory()
     {
-        var exec = new ControlledExec { Handler = (_, output, _) =>
+        var exec = new ControlledExec
+        {
+            Handler = (_, output, _) =>
         {
             for (int i = 0; i < 20; i++)
             {
@@ -120,7 +131,8 @@ public sealed class CommandJobRegistryTests
             }
             output.Report(new(ExecStream.StandardError, "progress\r100%"));
             return Task.FromResult(new ExecStreamResult(0, 21));
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec);
         await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
         string id = registry.Start(scope, "s", "cmd");
@@ -152,12 +164,15 @@ public sealed class CommandJobRegistryTests
     {
         TaskCompletionSource fourStarted = Signal();
         int active = 0;
-        var exec = new ControlledExec { Handler = async (_, _, token) =>
+        var exec = new ControlledExec
+        {
+            Handler = async (_, _, token) =>
         {
             if (Interlocked.Increment(ref active) == 4) fourStarted.TrySetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
             return new(0, 0);
-        }};
+        }
+        };
         object contextKey = new();
         await using var first = new CommandJobRegistry(exec, contextKey);
         await using var second = new CommandJobRegistry(exec, contextKey);
@@ -183,12 +198,15 @@ public sealed class CommandJobRegistryTests
         bool allowed = true;
         TaskCompletionSource fourStarted = Signal();
         int started = 0;
-        var exec = new ControlledExec { Handler = async (_, _, token) =>
+        var exec = new ControlledExec
+        {
+            Handler = async (_, _, token) =>
         {
             if (Interlocked.Increment(ref started) == 4) fourStarted.TrySetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
             return new(0, 0);
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec);
         await using CommandJobRunScope blockers = registry.BeginRun("blockers", "run");
         await using CommandJobRunScope denied = registry.BeginRun("denied", "run", authorize: (_, _) => Task.FromResult(allowed));
@@ -243,11 +261,14 @@ public sealed class CommandJobRegistryTests
     [TestMethod]
     public async Task Monitoring_DoesNotCauseAutomaticModelWake()
     {
-        var exec = new ControlledExec { Handler = async (_, _, token) =>
+        var exec = new ControlledExec
+        {
+            Handler = async (_, _, token) =>
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
             return new(0, 0);
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec);
         await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
         string id = registry.Start(scope, "s", "tail -f", monitoring: true);
@@ -267,11 +288,14 @@ public sealed class CommandJobRegistryTests
     public async Task MonitoringSelfExit_CompletesLocalWaitWithoutModelNotification()
     {
         TaskCompletionSource finish = Signal();
-        var exec = new ControlledExec { Handler = async (_, _, token) =>
+        var exec = new ControlledExec
+        {
+            Handler = async (_, _, token) =>
         {
             await finish.Task.WaitAsync(token);
             return new(0, 0);
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec);
         await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
         string id = registry.Start(scope, "s", "monitor", monitoring: true);
@@ -288,11 +312,14 @@ public sealed class CommandJobRegistryTests
     public async Task RegistryLifetime_CancelsFallbackAndExplicitRuns()
     {
         using var lifetime = new CancellationTokenSource();
-        var exec = new ControlledExec { Handler = async (_, _, token) =>
+        var exec = new ControlledExec
+        {
+            Handler = async (_, _, token) =>
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
             return new(0, 0);
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec, lifetimeToken: lifetime.Token);
         await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
         string id = registry.Start(scope, "s", "cmd");
@@ -342,7 +369,8 @@ public sealed class CommandJobRegistryTests
         TaskCompletionSource requested = Signal();
         await using var toolbox = new AgentToolbox(context)
         {
-            SessionIdProvider = () => session, Scope = sessionScope,
+            SessionIdProvider = () => session,
+            Scope = sessionScope,
             ApprovalHandler = async _ => { requested.SetResult(); await approve.Task; return true; }
         };
         await using CommandJobRunScope scope = toolbox.BeginRun("owner", "run");
@@ -358,11 +386,14 @@ public sealed class CommandJobRegistryTests
     [TestMethod]
     public async Task Toolbox_BatchOfSixteenQueuesAndRunStopCancelsUnstartedItems()
     {
-        var exec = new ControlledExec { Handler = async (_, _, token) =>
+        var exec = new ControlledExec
+        {
+            Handler = async (_, _, token) =>
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
             return new(0, 0);
-        }};
+        }
+        };
         using var context = new TestPluginContext { RemoteExec = exec };
         string[] sessions = [.. Enumerable.Range(0, 16).Select(i => context.FakeSessions.AddConnected($"host-{i}").SessionId)];
         await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
@@ -370,7 +401,9 @@ public sealed class CommandJobRegistryTests
         AIFunction function = toolbox.CreateTools(ChatMode.Agent, runScope: scope).OfType<AIFunction>().Single(f => f.Name == "run_on_sessions");
         string result = (await function.InvokeAsync(new AIFunctionArguments
         {
-            ["sessionIds"] = sessions, ["command"] = "foreground", ["waitSeconds"] = 0
+            ["sessionIds"] = sessions,
+            ["command"] = "foreground",
+            ["waitSeconds"] = 0
         }, CancellationToken.None))!.ToString()!;
         Assert.AreEqual(4, exec.Calls);
         Assert.AreEqual(16, result.Split("taskId").Length - 1);
@@ -381,18 +414,22 @@ public sealed class CommandJobRegistryTests
     [TestMethod]
     public async Task Toolbox_TaskToolsCaptureOwnerAndCancelDoesNotLeakRevokedMetadata()
     {
-        var exec = new ControlledExec { Handler = async (_, output, token) =>
+        var exec = new ControlledExec
+        {
+            Handler = async (_, output, token) =>
         {
             output.Report(new(ExecStream.StandardError, "private error"));
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
             return new(0, 1);
-        }};
+        }
+        };
         bool allowed = true;
         using var context = new TestPluginContext { RemoteExec = exec };
         string session = context.FakeSessions.AddConnected().SessionId;
         await using var toolbox = new AgentToolbox(context)
         {
-            Approval = ApprovalMode.Bypass, SessionIdProvider = () => session,
+            Approval = ApprovalMode.Bypass,
+            SessionIdProvider = () => session,
             Scope = new DelegateScope(() => allowed)
         };
         await using CommandJobRunScope a = toolbox.BeginRun("chat-a", "run");
@@ -401,7 +438,8 @@ public sealed class CommandJobRegistryTests
         AIFunction[] toolsB = [.. toolbox.CreateTools(ChatMode.Agent, runScope: b).OfType<AIFunction>()];
         string running = (await toolsA.Single(f => f.Name == "run_command").InvokeAsync(new AIFunctionArguments
         {
-            ["command"] = "foreground", ["waitSeconds"] = 0
+            ["command"] = "foreground",
+            ["waitSeconds"] = 0
         }, CancellationToken.None))!.ToString()!;
         using JsonDocument json = JsonDocument.Parse(running);
         string id = json.RootElement.GetProperty("taskId").GetString()!;
@@ -479,13 +517,15 @@ public sealed class CommandJobRegistryTests
         ApprovalRequest? request = null;
         await using var toolbox = new AgentToolbox(context)
         {
-            SessionIdProvider = () => session, Approval = mode,
+            SessionIdProvider = () => session,
+            Approval = mode,
             ApprovalHandler = handlerAvailable ? value => { request = value; return Task.FromResult(true); } : null
         };
         AIFunction command = toolbox.CreateTools(ChatMode.Agent).OfType<AIFunction>().Single(f => f.Name == "run_command");
         await command.InvokeAsync(new AIFunctionArguments
         {
-            ["command"] = "cat /etc/hosts", ["elevated"] = true
+            ["command"] = "cat /etc/hosts",
+            ["elevated"] = true
         }, CancellationToken.None);
         Assert.AreEqual(executed ? 1 : 0, exec.SudoCalls);
         Assert.AreEqual(0, exec.Calls, "提权绝不退化普通exec");
@@ -510,12 +550,15 @@ public sealed class CommandJobRegistryTests
     public async Task Sudo_OutcomeMappingNeverInventsSuccess(SudoExecOutcome outcome, int? exit,
         CommandJobState expected, bool uncertain)
     {
-        var exec = new ControlledExec { SudoHandler = (output, _) =>
+        var exec = new ControlledExec
+        {
+            SudoHandler = (output, _) =>
         {
             output.Report(new(SudoExecEventKind.State, SudoExecState.AwaitingAuthentication));
             output.Report(new(SudoExecEventKind.Output, Text: "partial\nnext\rprogress"));
             return Task.FromResult(new SudoExecResult(outcome, exit, 1));
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec);
         await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
         CommandJobSnapshot result = await registry.ReadAsync(scope, registry.StartSudo(scope, "s", "actual"));
@@ -533,11 +576,14 @@ public sealed class CommandJobRegistryTests
     [DataRow(true)]
     public async Task Sudo_TimeoutGuardOnlyAfterCommandStarted(bool commandStarted)
     {
-        var exec = new ControlledExec { SudoHandler = (output, _) =>
+        var exec = new ControlledExec
+        {
+            SudoHandler = (output, _) =>
         {
             output.Report(new(SudoExecEventKind.State, commandStarted ? SudoExecState.Running : SudoExecState.AwaitingAuthentication));
             throw new TimeoutException();
-        }};
+        }
+        };
         await using var registry = new CommandJobRegistry(exec);
         await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
         CommandJobSnapshot result = await registry.ReadAsync(scope, registry.StartSudo(scope, "s", "actual"));

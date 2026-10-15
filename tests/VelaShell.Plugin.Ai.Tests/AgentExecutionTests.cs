@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
-using VelaShell.Plugin.Ai.Chat;
 using VelaShell.Plugin.Ai.Agent;
+using VelaShell.Plugin.Ai.Chat;
 using VelaShell.PluginSdk.RemoteExec;
 
 namespace VelaShell.Plugin.Ai.Tests;
@@ -131,7 +131,7 @@ public sealed class AgentExecutionTests
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
             await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")], new()
-                       { Tools = [AIFunctionFactory.Create((int value) => { executed++; return value; }, "change")] })) { }
+            { Tools = [AIFunctionFactory.Create((int value) => { executed++; return value; }, "change")] })) { }
         });
         Assert.AreEqual(1, executed);
         Assert.HasCount(1, wire.Requests);
@@ -149,8 +149,10 @@ public sealed class AgentExecutionTests
         using var client = new RecoveringChatClient(wire, execution, "boundary");
         var waiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         async Task Consume()
-        { await foreach (var _ in new AgentRunCoordinator(scope, execution).RunAsync(client,
-              [new(ChatRole.User, "go")], new(), () => waiting.TrySetResult(), default)) { } }
+        {
+            await foreach (var _ in new AgentRunCoordinator(scope, execution).RunAsync(client,
+              [new(ChatRole.User, "go")], new(), () => waiting.TrySetResult(), default)) { }
+        }
         Task run = Consume();
         await waiting.Task.WaitAsync(TimeSpan.FromSeconds(5));
         finish.SetResult(new(1, 0));
@@ -272,7 +274,7 @@ public sealed class AgentExecutionTests
         var coordinator = new AgentRunCoordinator(scope, execution);
         List<ChatResponseUpdate> updates = [];
         await foreach (var update in coordinator.RunAsync(client, [new(ChatRole.User, "go")], new()
-                       { Tools = [AIFunctionFactory.Create((int value) => { executed++; return value; }, "step")] }, null, default))
+        { Tools = [AIFunctionFactory.Create((int value) => { executed++; return value; }, "step")] }, null, default))
             updates.Add(update);
         Assert.AreEqual(26, executed);
         Assert.AreEqual(27, wire.Requests.Count);

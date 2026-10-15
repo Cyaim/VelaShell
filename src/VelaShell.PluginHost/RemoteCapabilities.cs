@@ -117,7 +117,8 @@ internal sealed class RpcRemoteExec(RpcConnection rpc, bool supportsExecutionOpe
         {
             ExecStreamResult result = await rpc.RequestAsync<ExecStreamResult>(PluginRpc.ExecStream,
                 new ExecStreamRequest(sessionId, command, id, deadline?.TotalSeconds ?? 0,
-                    options?.IncludeStandardError ?? true) { OperationId = supportsExecutionOperations ? id : null },
+                    options?.IncludeStandardError ?? true)
+                { OperationId = supportsExecutionOperations ? id : null },
                 deadline is { } timeout ? timeout + TimeSpan.FromSeconds(15) : Timeout.InfiniteTimeSpan,
                 lifetime.Token).ConfigureAwait(false)
                 ?? throw new IOException("Host returned no execution result.");

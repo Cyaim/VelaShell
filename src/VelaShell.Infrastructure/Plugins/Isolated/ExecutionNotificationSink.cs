@@ -5,7 +5,7 @@ namespace VelaShell.Infrastructure.Plugins.Isolated;
 /// <summary>同步收集、单异步写泵发送;终态必须 await DrainAsync。队列溢出明确失败而不静默丢输出。</summary>
 internal sealed class ExecutionNotificationSink<T> : IProgress<T>
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly Channel<T> _queue = Channel.CreateBounded<T>(new BoundedChannelOptions(256)
     {
         SingleReader = true,

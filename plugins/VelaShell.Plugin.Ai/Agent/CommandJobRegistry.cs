@@ -57,7 +57,7 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
     private static readonly ConditionalWeakTable<object, SemaphoreSlim> Schedulers = new();
     private readonly SemaphoreSlim _streamSlots = Schedulers.GetValue(schedulerKey ?? remoteExec,
         static _ => new SemaphoreSlim(IRemoteExecApi.MaxConcurrentStreams));
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly Dictionary<string, Job> _jobs = new(StringComparer.Ordinal);
     private readonly HashSet<CommandJobRunScope> _runs = [];
     private bool _disposed;

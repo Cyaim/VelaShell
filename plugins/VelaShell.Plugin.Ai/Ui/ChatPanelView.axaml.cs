@@ -2169,47 +2169,47 @@ public partial class ChatPanelView : UserControl
         {
             try
             {
-            // 故障转移这一轮没答完(取消/整链都挂):退回原来那一站。
-            // 答完(answered)就不退 —— 粘住在这一刻落定,直到它也失败或用户手动切回;
-            // 回答之后的入库/落盘失败同样不退(新接入是好的,回滚回已知坏的才是错的)。
-            // 另外只在选择仍指着本回合切过去的那家、且计数自粘住起没动过时才退:
-            // 期间用户手动改过(哪怕改了又改回同一站)、或别的对话刚切走,那是更新的选择,
-            // 拿这条老请求的 originalModelId 去盖就是写旧值 —— 只比 id 认不出"改了又改回"。
-            if (!_detached && switched && !answered && (cancelled || failed)
-                && _selectionEpoch == stickyEpoch && _settings.ActiveModelId == switchedToId
-                && _settings.FindModel(originalModelId) is not null)
-            {
-                _selectionEpoch++;
-                _settings.ActiveModelId = originalModelId;
-                ReloadProviderCombo();
-                if (!IsForeground)
+                // 故障转移这一轮没答完(取消/整链都挂):退回原来那一站。
+                // 答完(answered)就不退 —— 粘住在这一刻落定,直到它也失败或用户手动切回;
+                // 回答之后的入库/落盘失败同样不退(新接入是好的,回滚回已知坏的才是错的)。
+                // 另外只在选择仍指着本回合切过去的那家、且计数自粘住起没动过时才退:
+                // 期间用户手动改过(哪怕改了又改回同一站)、或别的对话刚切走,那是更新的选择,
+                // 拿这条老请求的 originalModelId 去盖就是写旧值 —— 只比 id 认不出"改了又改回"。
+                if (!_detached && switched && !answered && (cancelled || failed)
+                    && _selectionEpoch == stickyEpoch && _settings.ActiveModelId == switchedToId
+                    && _settings.FindModel(originalModelId) is not null)
                 {
-                    _turnScope.Value = null;
-                    try { UpdateUsageText(); }
-                    finally { _turnScope.Value = conv; }
+                    _selectionEpoch++;
+                    _settings.ActiveModelId = originalModelId;
+                    ReloadProviderCombo();
+                    if (!IsForeground)
+                    {
+                        _turnScope.Value = null;
+                        try { UpdateUsageText(); }
+                        finally { _turnScope.Value = conv; }
+                    }
+                    await PersistSettingsAsync();
                 }
-                await PersistSettingsAsync();
-            }
-            // Detach可能已启动清理,取消必须幂等;不能因此跳过Busy/TCS收尾。
-            try { await runScope.CancelAsync(); }
-            catch (ObjectDisposedException) { }
-            conv.RunScope = null;
-            Cts?.Dispose();
-            Cts = null;
-            ActiveBubble = null;
-            EndSteering();
-            if (IsForeground)
-            {
-                StatusText.Classes.Remove("retrying");
-            }
-            SetBusy(false);
-            // 一轮到此为止(成功/取消/出错都算):收起思考区,补上"耗时 · 步数"与"时间 · 模型"
-            bubble?.FinishStreaming(
-                modelLabel,
-                DateTimeOffset.Now,
-                TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt),
-                cancelled);
-            RequestAutoScroll();
+                // Detach可能已启动清理,取消必须幂等;不能因此跳过Busy/TCS收尾。
+                try { await runScope.CancelAsync(); }
+                catch (ObjectDisposedException) { }
+                conv.RunScope = null;
+                Cts?.Dispose();
+                Cts = null;
+                ActiveBubble = null;
+                EndSteering();
+                if (IsForeground)
+                {
+                    StatusText.Classes.Remove("retrying");
+                }
+                SetBusy(false);
+                // 一轮到此为止(成功/取消/出错都算):收起思考区,补上"耗时 · 步数"与"时间 · 模型"
+                bubble?.FinishStreaming(
+                    modelLabel,
+                    DateTimeOffset.Now,
+                    TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt),
+                    cancelled);
+                RequestAutoScroll();
             }
             finally
             {

@@ -191,13 +191,27 @@ public class ExecutionRpcTests
 
     private static PluginContext Context(IRemoteExecApi exec, CancellationToken shutdown) => new()
     {
-        PluginId = "test.exec", PluginVersion = "1", DataDirectory = Path.GetTempPath(),
-        Host = new TestHostInfo(), Log = new CollectingLogger(), Storage = new InMemoryStorage(),
-        TimeSeries = new InMemoryTimeSeries(), Sessions = new FakeSessions(), RemoteFs = new FakeRemoteFs(),
-        RemoteExec = exec, RemoteTunnel = new FakeRemoteTunnel(), TerminalView = new FakeTerminalViewApi(),
-        Commands = new RecordingCommands(), Events = new PluginEventHub(new CollectingLogger(), null, null, null),
-        Theme = new StaticHostTheme(), Ui = new FakeUi(), Secrets = new FakeSecrets(), Clipboard = new FakeClipboard(),
-        Terminal = new FakeTerminal(), Protocols = new UnavailableProtocols(), Workspaces = new UnavailableWorkspaces(),
+        PluginId = "test.exec",
+        PluginVersion = "1",
+        DataDirectory = Path.GetTempPath(),
+        Host = new TestHostInfo(),
+        Log = new CollectingLogger(),
+        Storage = new InMemoryStorage(),
+        TimeSeries = new InMemoryTimeSeries(),
+        Sessions = new FakeSessions(),
+        RemoteFs = new FakeRemoteFs(),
+        RemoteExec = exec,
+        RemoteTunnel = new FakeRemoteTunnel(),
+        TerminalView = new FakeTerminalViewApi(),
+        Commands = new RecordingCommands(),
+        Events = new PluginEventHub(new CollectingLogger(), null, null, null),
+        Theme = new StaticHostTheme(),
+        Ui = new FakeUi(),
+        Secrets = new FakeSecrets(),
+        Clipboard = new FakeClipboard(),
+        Terminal = new FakeTerminal(),
+        Protocols = new UnavailableProtocols(),
+        Workspaces = new UnavailableWorkspaces(),
         Shutdown = shutdown
     };
 }

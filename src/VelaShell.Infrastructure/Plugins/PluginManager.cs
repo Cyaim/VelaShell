@@ -1668,7 +1668,7 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
     }
 
     private static bool IsRecyclableIsolated(PluginRuntime runtime) =>
-        runtime is { Process: { IsBusy: false }, OpenSurfaces: 0 }
+        runtime is { Process.IsBusy: false, OpenSurfaces: 0 }
         && runtime.Descriptor.State == PluginState.Active
         && runtime.Descriptor.Manifest is { IdlePolicy: PluginIdlePolicy.Recyclable } manifest
         && (manifest.Contributes?.Commands.Length ?? 0) > 0; // 没有回程触发器就不回收

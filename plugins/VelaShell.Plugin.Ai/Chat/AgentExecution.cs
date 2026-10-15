@@ -163,7 +163,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
                 result.Add(new ChatMessage(ChatRole.Assistant, calls.Cast<AIContent>().ToList()));
                 result.Add(new ChatMessage(ChatRole.Tool, calls.Select(c => (AIContent)new FunctionResultContent(c.CallId,
                     results.TryGetValue(c.CallId, out FunctionResultContent? completed)
-                        ? completed.Result : "This call was not started: execution paused. Do not infer that it ran." )).ToList()));
+                        ? completed.Result : "This call was not started: execution paused. Do not infer that it ran.")).ToList()));
             }
             result.AddRange(_completed.Where(m => m.Role == ChatRole.User));
             if (!string.IsNullOrWhiteSpace(visibleText)) result.Add(new ChatMessage(ChatRole.Assistant, visibleText));
