@@ -38,7 +38,7 @@ public sealed class SshServerBanners
         {
             if (_texts.Count < MaxTexts)
             {
-                _texts.Add(text);
+                _texts.Add(TailscaleSshCheckUri.RedactVerificationUris(text));
             }
         }
         return ValueTask.CompletedTask;

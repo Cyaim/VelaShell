@@ -1,3 +1,4 @@
+using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Ssh;
@@ -175,6 +176,77 @@ public sealed class SonnetDbPersistenceTests : IDisposable
         );
         Assert.DoesNotContain("plaintext-pass", rawJson, "落盘 JSON 不应包含明文密码");
         Assert.Contains("enc1:", rawJson, "落盘密码应带加密前缀");
+    }
+
+    [TestMethod]
+    [DataRow(ConnectionType.SSH)]
+    [DataRow(ConnectionType.SFTP)]
+    public async Task SessionRepository_Tailscale_SaveAndLoadDoesNotPersistStaleMaterials(ConnectionType type)
+    {
+        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var profile = new SessionProfile
+        {
+            Name = "tail", Host = "tail", Username = "deploy", ConnectionType = type,
+            AuthMethod = AuthMethod.Tailscale, Password = "stale-password", PrivateKeyPath = "/stale-key",
+            PrivateKeyPassphrase = "stale-phrase", CertificatePath = "/stale-cert", RememberPassword = true,
+            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()), JumpHostProfileId = Guid.NewGuid()
+        };
+
+        await repo.SaveSessionAsync(profile);
+        string rawJson = await _engine.WithCollectionAsync(SonnetDbEngine.ProfilesCollection,
+            store => store.Get(profile.Id.ToString("D"))!.Json);
+        SessionProfile loaded = (await repo.GetSessionAsync(profile.Id))!;
+
+        Assert.AreEqual(AuthMethod.Tailscale, loaded.AuthMethod);
+        Assert.AreEqual(type, loaded.ConnectionType);
+        Assert.AreEqual("deploy", loaded.Username);
+        Assert.AreEqual(profile.JumpHostProfileId, loaded.JumpHostProfileId);
+        Assert.IsNull(loaded.CredentialSource);
+        Assert.IsNull(loaded.Password);
+        Assert.IsNull(loaded.PrivateKeyPath);
+        Assert.IsNull(loaded.PrivateKeyPassphrase);
+        Assert.IsNull(loaded.CertificatePath);
+        Assert.IsFalse(loaded.RememberPassword);
+        foreach (string stale in (string[])["stale-password", "/stale-key", "stale-phrase", "/stale-cert", "enc1:"])
+        {
+            Assert.DoesNotContain(stale, rawJson);
+        }
+        Assert.AreEqual("stale-password", profile.Password, "保存仅清理副本");
+        Assert.IsNotNull(profile.CredentialSource);
+    }
+
+    [TestMethod]
+    public async Task SessionRepository_Tailscale_LegacyMaterialsAreClearedBeforeDecrypting()
+    {
+        var profile = new SessionProfile
+        {
+            Name = "tail", Host = "tail", Username = "deploy", AuthMethod = AuthMethod.Tailscale,
+            Password = "enc1:invalid", PrivateKeyPath = "/old-key", PrivateKeyPassphrase = "enc1:invalid",
+            CertificatePath = "/old-cert", RememberPassword = true,
+            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()), JumpHostProfileId = Guid.NewGuid()
+        };
+        await _engine.WithCollectionAsync<object?>(SonnetDbEngine.ProfilesCollection, store =>
+        {
+            store.Upsert(profile.Id.ToString("D"), SonnetDbJson.Serialize(profile));
+            return null;
+        });
+        var repo = new SonnetDbSessionRepository(_engine, _protector);
+
+        SessionProfile single = (await repo.GetSessionAsync(profile.Id))!;
+        SessionProfile all = (await repo.GetAllSessionsAsync()).Single();
+
+        foreach (SessionProfile loaded in (SessionProfile[])[single, all])
+        {
+            Assert.AreEqual(AuthMethod.Tailscale, loaded.AuthMethod);
+            Assert.AreEqual("deploy", loaded.Username);
+            Assert.AreEqual(profile.JumpHostProfileId, loaded.JumpHostProfileId);
+            Assert.IsNull(loaded.CredentialSource);
+            Assert.IsNull(loaded.Password);
+            Assert.IsNull(loaded.PrivateKeyPath);
+            Assert.IsNull(loaded.PrivateKeyPassphrase);
+            Assert.IsNull(loaded.CertificatePath);
+            Assert.IsFalse(loaded.RememberPassword);
+        }
     }
 
     [TestMethod]

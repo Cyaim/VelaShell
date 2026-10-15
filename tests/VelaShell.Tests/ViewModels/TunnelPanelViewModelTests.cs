@@ -1,3 +1,4 @@
+using Avalonia.Headless;
 using System.Collections.Concurrent;
 using NSubstitute;
 using ReactiveUI;
@@ -8,6 +9,7 @@ using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Presentation.Services;
 using VelaShell.ViewModels;
+using VelaShell.Tests.TestSupport;
 
 namespace VelaShell.Tests.ViewModels;
 
@@ -207,6 +209,164 @@ public class TunnelPanelViewModelTests
         vm.RefreshLiveState();
         await WaitForAsync(() => Volatile.Read(ref automaticAttempts) == 2);
     }
+
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    [DataRow("SshErr_TailscaleCheckCancelled")]
+    [DataRow("SshErr_TailscaleRejected")]
+    [DataRow("SshErr_TailscaleCheckTimeout")]
+    [DataRow("SshErr_TailscaleAuthTimeout")]
+    [DataRow("SshErr_TailscaleCheckRequired")]
+    [DataRow("SshErr_TailscaleCheckUiUnavailable")]
+    [DataRow("SshErr_TailscaleCheckFailed")]
+    public async Task RefreshLiveState_TailscaleAuthenticationFailure_PausesWithoutChangingSavedPolicy(string errorKey)
+    {
+        bool alive = true;
+        bool failAuthentication = false;
+        int attempts = 0;
+        List<string> errors = [];
+        using TunnelPanelViewModel vm = CreateVm(() => alive, (_, automatic) =>
+        {
+            if (!failAuthentication)
+            {
+                return Task.FromResult(_sessionId);
+            }
+            Assert.IsTrue(automatic);
+            attempts++;
+            return Task.FromException<Guid>(TailscaleFailure(errorKey));
+        }, errors.Add);
+        await SeedTunnelAsync(vm, autoReconnect: true);
+        TunnelItemViewModel original = vm.Tunnels[0];
+        _workflowService.ClearReceivedCalls();
+
+        alive = false;
+        failAuthentication = true;
+        vm.RefreshLiveState();
+        await WaitForAsync(() => attempts == 1 && !original.IsBusy);
+        vm.RefreshLiveState();
+        vm.RefreshLiveState();
+
+        Assert.AreEqual(1, attempts, "认证暂停后刷新不得再次请求连接。");
+        Assert.AreSame(original, vm.Tunnels[0]);
+        Assert.IsFalse(original.IsActive);
+        Assert.IsFalse(original.StoppedByUser, "认证暂停不是用户停止隧道。");
+        Assert.IsTrue(original.Config.AutoReconnect, "不能通过修改保存的恢复策略来暂停认证。");
+        if (errorKey == "SshErr_TailscaleCheckCancelled")
+        {
+            Assert.IsEmpty(errors);
+            Assert.IsNull(vm.ErrorMessage);
+        }
+        else
+        {
+            Assert.AreSequenceEqual([Strings.Get(errorKey)], errors);
+            Assert.AreEqual(Strings.Get(errorKey), vm.ErrorMessage);
+        }
+        await _workflowService.DidNotReceive().RemoveTunnelAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _workflowService.DidNotReceive().CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    [DataRow("SshErr_TailscaleCheckCancelled")]
+    [DataRow("SshErr_TailscaleCheckRequired")]
+    public async Task StartTunnel_TailscalePause_OnlySuccessfulManualConnectionRestoresNetworkRecovery(string errorKey)
+    {
+        bool alive = true;
+        bool failAuthentication = false;
+        int automaticAttempts = 0;
+        int manualAttempts = 0;
+        using TunnelPanelViewModel vm = CreateVm(() => alive, (_, automatic) =>
+        {
+            if (automatic)
+            {
+                automaticAttempts++;
+            }
+            else
+            {
+                manualAttempts++;
+            }
+            if (failAuthentication)
+            {
+                return Task.FromException<Guid>(TailscaleFailure(errorKey));
+            }
+            alive = true;
+            return Task.FromResult(_sessionId);
+        });
+        await SeedTunnelAsync(vm, autoReconnect: true);
+        TunnelItemViewModel original = vm.Tunnels[0];
+        alive = false;
+        failAuthentication = true;
+        vm.RefreshLiveState();
+        await WaitForAsync(() => automaticAttempts == 1 && !original.IsBusy);
+
+        await vm.StartTunnelCommand.Execute(original.Id).FirstAsync();
+        Assert.AreEqual(2, manualAttempts, "暂停不能拦截显式手动尝试。");
+        vm.RefreshLiveState();
+        Assert.AreEqual(1, automaticAttempts, "失败的手动尝试不能清除暂停。");
+
+        failAuthentication = false;
+        await vm.StartTunnelCommand.Execute(original.Id).FirstAsync();
+        Assert.AreEqual(3, manualAttempts);
+        Assert.IsTrue(vm.Tunnels[0].IsActive);
+        Assert.IsTrue(vm.Tunnels[0].AutoReconnect);
+        Assert.IsNull(vm.ErrorMessage);
+        Guid manuallyRebuiltId = vm.Tunnels[0].Id;
+
+        alive = false;
+        vm.RefreshLiveState();
+        await WaitForAsync(() => automaticAttempts == 2 && vm.Tunnels[0].IsActive && vm.Tunnels[0].Id != manuallyRebuiltId);
+        await _workflowService.Received().RemoveTunnelAsync(manuallyRebuiltId, Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task RefreshLiveState_TailscalePause_IsIsolatedPerProfile()
+    {
+        SessionProfile other = new() { Name = "other", Host = "10.0.0.2", Username = "root" };
+        bool alive = true;
+        int blockedAttempts = 0;
+        int otherAttempts = 0;
+        using TunnelPanelViewModel vm = new(_workflowService,
+            () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server, other]),
+            (profile, automatic, _) =>
+            {
+                if (!automatic)
+                {
+                    return Task.FromResult(profile.Id);
+                }
+                if (profile.Id == _server.Id)
+                {
+                    blockedAttempts++;
+                    return Task.FromException<Guid>(TailscaleFailure("SshErr_TailscaleRejected"));
+                }
+                otherAttempts++;
+                return Task.FromResult(profile.Id);
+            }, _ => alive);
+        vm.Servers.Add(_server);
+        vm.Servers.Add(other);
+        vm.SelectedServer = _server;
+        await SeedTunnelAsync(vm, autoReconnect: true);
+        TunnelItemViewModel blocked = vm.Tunnels[0];
+        vm.SelectedServer = other;
+        await SeedTunnelAsync(vm, autoReconnect: true);
+
+        alive = false;
+        vm.RefreshLiveState();
+        await WaitForAsync(() => blockedAttempts == 1 && otherAttempts == 1 && !blocked.IsBusy && !vm.Tunnels[0].IsBusy);
+        vm.RefreshLiveState();
+        await WaitForAsync(() => otherAttempts == 2 && !vm.Tunnels[0].IsBusy);
+
+        Assert.AreEqual(1, blockedAttempts);
+        Assert.IsTrue(vm.Tunnels[0].IsActive, "另一台服务器仍应按其原策略重建。");
+        vm.SelectedServer = _server;
+        Assert.AreSame(blocked, vm.Tunnels[0]);
+        Assert.IsTrue(blocked.AutoReconnect);
+    }
+
+    private static Exception TailscaleFailure(string errorKey) =>
+        errorKey == "SshErr_TailscaleCheckCancelled"
+            ? new VelaSshAuthenticationCancelledException(Strings.Get(errorKey))
+            : new VelaSshTailscaleAuthenticationException(Strings.Get(errorKey));
 
     /// <summary>
     /// 用户按停过的隧道,后来会话掉线也不该被自动恢复拉起来 ——
@@ -926,6 +1086,87 @@ public class TunnelPanelViewModelTests
         Assert.IsTrue(vm.Tunnels.All(t => !t.IsBusy));
     }
 
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task AutoStartTunnelsAsync_ProfilePausedDuringEarlierStartup_RequiresManualRecovery() =>
+        await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(TunnelPanelViewModelTests).Assembly).RunOnUiAsync(async () =>
+        {
+            SessionProfile second = new() { Name = "second", Host = "10.0.0.2", Username = "root", AuthMethod = AuthMethod.Tailscale };
+            IAppDataStore store = Substitute.For<IAppDataStore>();
+            TunnelConfig firstConfig = SavedConfig("first-startup", 5432, autoStart: true);
+            TunnelConfig secondConfig = SavedConfig("second-startup", 6379, autoStart: true, autoReconnect: true);
+            store.GetAsync<List<TunnelConfig>>("tunnels", _server.Id.ToString("D"), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<List<TunnelConfig>?>([firstConfig]));
+            store.GetAsync<List<TunnelConfig>>("tunnels", second.Id.ToString("D"), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<List<TunnelConfig>?>([secondConfig]));
+            TaskCompletionSource<Guid> firstAuthentication = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource firstStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            List<bool> secondAttempts = [];
+            bool secondAlive = false;
+            _workflowService.CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>())
+                            .Returns(call => Task.FromResult(new TunnelInfo
+                            {
+                                Id = Guid.NewGuid(),
+                                Config = call.Arg<TunnelConfig>(),
+                                Status = TunnelStatus.Active,
+                                SessionId = call.Arg<Guid>(),
+                                CreatedAt = DateTime.UtcNow
+                            }));
+            using TunnelPanelViewModel vm = new(_workflowService,
+                () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server, second]),
+                (profile, automatic, _) =>
+                {
+                    if (profile.Id == _server.Id)
+                    {
+                        Assert.IsFalse(automatic, "首次启动仍可发起认证。");
+                        firstStarted.TrySetResult();
+                        return firstAuthentication.Task;
+                    }
+                    secondAttempts.Add(automatic);
+                    if (secondAttempts.Count == 1)
+                    {
+                        return Task.FromException<Guid>(TailscaleFailure("SshErr_TailscaleCheckRequired"));
+                    }
+                    secondAlive = true;
+                    return Task.FromResult(second.Id);
+                }, id => id != second.Id || secondAlive, dataStore: store);
+            Task startup = vm.AutoStartTunnelsAsync();
+            try
+            {
+                await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                Assert.IsFalse(startup.IsCompleted);
+                await vm.OpenAsync(second.Id);
+                TunnelItemViewModel paused = vm.Tunnels.Single();
+                vm.RefreshLiveState();
+                Assert.AreSequenceEqual(new[] { true }, secondAttempts);
+                Assert.IsFalse(paused.IsBusy, "同步认证拒绝应已完成暂停和收尾。");
+                Assert.AreEqual(Strings.Get("SshErr_TailscaleCheckRequired"), vm.ErrorMessage);
+
+                firstAuthentication.TrySetResult(_sessionId);
+                await startup.WaitAsync(TimeSpan.FromSeconds(10));
+                Assert.AreSequenceEqual(new[] { true }, secondAttempts, "启动遍历轮到已暂停服务器时不得再认证。");
+                vm.RefreshLiveState();
+                Assert.AreSequenceEqual(new[] { true }, secondAttempts, "后续普通刷新仍须尊重暂停。");
+                Assert.AreSame(paused, vm.Tunnels.Single());
+                await _workflowService.DidNotReceive().CreateTunnelAsync(second.Id, Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+
+                await vm.StartTunnelCommand.Execute(paused.Id).FirstAsync();
+                Assert.AreSequenceEqual(new[] { true, false }, secondAttempts, "显式手动启动必须允许重新认证。");
+                Assert.IsTrue(vm.Tunnels.Single().IsActive);
+                Guid manualTunnelId = vm.Tunnels.Single().Id;
+                secondAlive = false;
+                vm.RefreshLiveState();
+                Assert.AreSequenceEqual(new[] { true, false, true }, secondAttempts, "手动成功后应恢复普通断线重连。");
+                Assert.IsTrue(vm.Tunnels.Single().IsActive);
+                Assert.AreNotEqual(manualTunnelId, vm.Tunnels.Single().Id);
+            }
+            finally
+            {
+                firstAuthentication.TrySetResult(_sessionId);
+                await startup.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        });
+
     /// <summary>一条都没勾「程序启动时自动建立」时,启动时连服务器都不拨。</summary>
     [TestMethod]
     [TestCategory("TunnelUI")]
@@ -1047,7 +1288,234 @@ public class TunnelPanelViewModelTests
         Assert.IsFalse(_vm.NewAutoStart);
     }
 
-    private static TunnelConfig SavedConfig(string name, uint port, bool autoStart) => new()
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    [DataRow(false, false)]
+    [DataRow(false, true)]
+    [DataRow(true, false)]
+    [DataRow(true, true)]
+    public async Task TailscaleCancellation_StartOrActiveEdit_PreservesDefinitionAndServiceRecord(bool edit, bool callerCancellation)
+    {
+        IAppDataStore store = Substitute.For<IAppDataStore>();
+        List<TunnelConfig> stored = [];
+        store.GetAsync<List<TunnelConfig>>("tunnels", _server.Id.ToString("D"), Arg.Any<CancellationToken>())
+             .Returns(_ => Task.FromResult<List<TunnelConfig>?>(stored));
+        store.UpsertAsync("tunnels", _server.Id.ToString("D"), Arg.Any<List<TunnelConfig>>(), Arg.Any<CancellationToken>())
+             .Returns(call =>
+             {
+                 stored = [.. call.Arg<List<TunnelConfig>>()];
+                 return Task.CompletedTask;
+             });
+        bool alive = true;
+        int attempts = 0;
+        TaskCompletionSource<Guid> authenticating = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using TunnelPanelViewModel vm = new(_workflowService,
+            () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
+            (_, automatic, ct) =>
+            {
+                Assert.IsFalse(automatic);
+                attempts++;
+                return attempts == 1 ? Task.FromResult(_sessionId) : authenticating.Task.WaitAsync(ct);
+            }, _ => alive, dataStore: store);
+        vm.Servers.Add(_server);
+        vm.SelectedServer = _server;
+        TunnelInfo serviceRecord = CreateTunnelInfo(status: TunnelStatus.Stopped);
+        _workflowService.CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>())
+                        .Returns(call =>
+                        {
+                            serviceRecord = new TunnelInfo
+                            {
+                                Id = Guid.NewGuid(),
+                                Config = call.Arg<TunnelConfig>(),
+                                Status = TunnelStatus.Stopped,
+                                SessionId = call.Arg<Guid>(),
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            return Task.FromResult(serviceRecord);
+                        });
+        vm.NewTunnelName = "original";
+        vm.NewLocalHost = "127.0.0.1";
+        vm.NewLocalPort = 3306;
+        vm.NewRemotePort = 3306;
+        vm.NewAutoReconnect = true;
+        await vm.CreateTunnelCommand.Execute().FirstAsync();
+        TunnelItemViewModel original = vm.Tunnels.Single();
+        TunnelConfig originalConfig = stored.Single();
+        Assert.AreSame(serviceRecord.Config, originalConfig);
+        if (edit)
+        {
+            await vm.EditTunnelCommand.Execute(original.Id).FirstAsync();
+            vm.NewTunnelName = "edited";
+            // 编辑表单打开后状态发生变化,实际保存必须走活隧道的认证/重建分支。
+            original.Status = TunnelStatus.Active;
+        }
+        TunnelStatus originalStatus = original.Status;
+        alive = false;
+        _workflowService.ClearReceivedCalls();
+        store.ClearReceivedCalls();
+
+        IObservable<RxVoid> command = edit ? vm.CreateTunnelCommand.Execute() : vm.StartTunnelCommand.Execute(original.Id);
+        if (callerCancellation)
+        {
+            using IDisposable subscription = command.Subscribe();
+            await WaitForAsync(() => attempts == 2 && original.IsBusy);
+            subscription.Dispose();
+            await WaitForAsync(() => !original.IsBusy);
+        }
+        else
+        {
+            Task operation = command.FirstAsync();
+            await WaitForAsync(() => attempts == 2 && original.IsBusy);
+            authenticating.SetException(TailscaleFailure("SshErr_TailscaleCheckCancelled"));
+            await operation;
+        }
+
+        Assert.IsNull(vm.ErrorMessage);
+        Assert.AreSame(original, vm.Tunnels.Single());
+        Assert.AreSame(originalConfig, original.Config);
+        Assert.AreSame(originalConfig, stored.Single());
+        Assert.AreSame(originalConfig, serviceRecord.Config);
+        Assert.AreEqual(originalStatus, serviceRecord.Status);
+        Assert.AreEqual("original", original.Config.Name);
+        Assert.IsFalse(original.IsBusy);
+        Assert.IsFalse(vm.IsServerConnected);
+        Assert.AreEqual(edit, vm.IsEditing);
+        if (edit)
+        {
+            Assert.AreEqual("edited", vm.NewTunnelName, "取消不能抹掉当前编辑表单。");
+        }
+        await _workflowService.DidNotReceive().RemoveTunnelAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _workflowService.DidNotReceive().CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().UpsertAsync("tunnels", Arg.Any<string>(), Arg.Any<List<TunnelConfig>>(), Arg.Any<CancellationToken>());
+        // 保留性断言完成后模拟服务侧报告掉线,让活编辑用例也真正成为自动恢复候选。
+        serviceRecord.Status = TunnelStatus.Stopped;
+        vm.RefreshLiveState();
+        vm.RefreshLiveState();
+        Assert.AreEqual(2, attempts, "取消后刷新不能重新打开验证。");
+    }
+
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    [DataRow("SshErr_TailscaleCheckCancelled")]
+    [DataRow("SshErr_TailscaleRejected")]
+    [DataRow("SshErr_TailscaleCheckTimeout")]
+    [DataRow("SshErr_TailscaleAuthTimeout")]
+    [DataRow("SshErr_TailscaleCheckRequired")]
+    [DataRow("SshErr_TailscaleCheckUiUnavailable")]
+    [DataRow("SshErr_TailscaleCheckFailed")]
+    public async Task AutoStartTunnelsAsync_TailscaleFailure_PausesRefreshAndRetainsStartupDefinition(string errorKey)
+    {
+        IAppDataStore store = Substitute.For<IAppDataStore>();
+        TunnelConfig config = SavedConfig("startup", 5432, autoStart: true, autoReconnect: true);
+        store.GetAsync<List<TunnelConfig>>("tunnels", _server.Id.ToString("D"), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult<List<TunnelConfig>?>([config]));
+        int attempts = 0;
+        List<string> errors = [];
+        using TunnelPanelViewModel vm = new(_workflowService,
+            () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
+            (_, automatic, _) =>
+            {
+                Assert.IsFalse(automatic, "启动允许有人在场进行首次验证。");
+                attempts++;
+                return Task.FromException<Guid>(TailscaleFailure(errorKey));
+            }, _ => false, dataStore: store, errorReporter: errors.Add);
+
+        await vm.AutoStartTunnelsAsync();
+        await vm.OpenAsync(_server.Id);
+        TunnelItemViewModel original = vm.Tunnels.Single();
+        vm.RefreshLiveState();
+        vm.RefreshLiveState();
+
+        Assert.AreEqual(1, attempts, "startup失败必须经Ensure登记暂停,不能在刷新时再次认证。");
+        Assert.AreSame(config, original.Config);
+        Assert.IsTrue(original.AutoReconnect);
+        Assert.IsTrue(original.AutoStart);
+        Assert.IsFalse(original.IsActive);
+        Assert.IsFalse(original.IsBusy);
+        Assert.IsTrue(original.ShowStartButton);
+        Assert.IsFalse(vm.IsServerConnected);
+        Assert.IsNull(vm.ErrorMessage);
+        if (errorKey == "SshErr_TailscaleCheckCancelled")
+        {
+            Assert.IsEmpty(errors);
+        }
+        else
+        {
+            Assert.AreSequenceEqual([Strings.Format("Msg_TunnelAutoStartConnectFailed", _server.Name, Strings.Get(errorKey))], errors);
+        }
+        await _workflowService.DidNotReceive().RemoveTunnelAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _workflowService.DidNotReceive().CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().UpsertAsync("tunnels", Arg.Any<string>(), Arg.Any<List<TunnelConfig>>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    [DataRow("SshErr_TailscaleCheckCancelled")]
+    [DataRow("SshErr_TailscaleRejected")]
+    [DataRow("caller")]
+    public async Task CreateTunnel_TailscaleFailure_RetainsFormAndPausesExistingSavedTunnels(string failure)
+    {
+        IAppDataStore store = Substitute.For<IAppDataStore>();
+        TunnelConfig config = SavedConfig("existing", 5432, autoStart: false, autoReconnect: true);
+        store.GetAsync<List<TunnelConfig>>("tunnels", _server.Id.ToString("D"), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult<List<TunnelConfig>?>([config]));
+        int attempts = 0;
+        TaskCompletionSource<Guid> authenticating = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using TunnelPanelViewModel vm = new(_workflowService,
+            () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
+            (_, automatic, ct) =>
+            {
+                Assert.IsFalse(automatic);
+                attempts++;
+                return authenticating.Task.WaitAsync(ct);
+            }, _ => false, dataStore: store);
+        await vm.OpenAsync(_server.Id);
+        TunnelItemViewModel original = vm.Tunnels.Single();
+        vm.NewTunnelName = "new-tunnel";
+        vm.NewLocalHost = "127.0.0.1";
+        vm.NewLocalPort = 6379;
+        vm.NewRemotePort = 6379;
+
+        if (failure == "caller")
+        {
+            using IDisposable subscription = vm.CreateTunnelCommand.Execute().Subscribe();
+            await WaitForAsync(() => attempts == 1);
+            Assert.AreEqual(Strings.Get("Msg_ConnectingInBackground"), vm.ServerStatusText);
+            subscription.Dispose();
+            await WaitForAsync(() => vm.ServerStatusText != Strings.Get("Msg_ConnectingInBackground"));
+        }
+        else
+        {
+            Task operation = vm.CreateTunnelCommand.Execute().FirstAsync();
+            await WaitForAsync(() => attempts == 1);
+            Assert.AreEqual(Strings.Get("Msg_ConnectingInBackground"), vm.ServerStatusText);
+            authenticating.SetException(TailscaleFailure(failure));
+            await operation;
+        }
+
+        Assert.AreSame(original, vm.Tunnels.Single());
+        Assert.AreSame(config, original.Config);
+        Assert.IsFalse(original.IsBusy);
+        Assert.IsFalse(vm.IsServerConnected);
+        Assert.AreEqual("new-tunnel", vm.NewTunnelName);
+        Assert.AreEqual(6379, vm.NewLocalPort);
+        if (failure == "SshErr_TailscaleRejected")
+        {
+            Assert.AreEqual(Strings.Get(failure), vm.ErrorMessage);
+        }
+        else
+        {
+            Assert.IsNull(vm.ErrorMessage);
+        }
+        vm.RefreshLiveState();
+        vm.RefreshLiveState();
+        Assert.AreEqual(1, attempts);
+        await _workflowService.DidNotReceive().RemoveTunnelAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _workflowService.DidNotReceive().CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().UpsertAsync("tunnels", Arg.Any<string>(), Arg.Any<List<TunnelConfig>>(), Arg.Any<CancellationToken>());
+    }
+
+    private static TunnelConfig SavedConfig(string name, uint port, bool autoStart, bool autoReconnect = false) => new()
     {
         Type = TunnelType.LocalForward,
         Name = name,
@@ -1055,7 +1523,8 @@ public class TunnelPanelViewModelTests
         LocalPort = port,
         RemoteHost = "127.0.0.1",
         RemotePort = port,
-        AutoStart = autoStart
+        AutoStart = autoStart,
+        AutoReconnect = autoReconnect
     };
 
     // ———— 面板拖拽位置 ————

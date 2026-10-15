@@ -58,6 +58,8 @@ internal static class SshConnectionAssembler
     /// keyboard-interactive(2FA / OTP)的弹框;<see langword="null" /> 时不应答动态码,
     /// 只保留库的「密码兼答 keyboard-interactive」。
     /// </param>
+    /// <param name="tailscaleCheckPrompt">验证窗口显示/更新/结束回调；显示只等待 UI 操作，不能等待验证完成。</param>
+    /// <param name="authenticationTimeout">每跳认证期限；生产沿用两分钟，仅测试覆盖短期限。</param>
     public static Assembled Create(
         VelaConnectionInfo info,
         IHostKeyService? hostKey,
@@ -65,7 +67,9 @@ internal static class SshConnectionAssembler
         IHostKeyPrompt? prompt,
         ISecurityAlertService? alerts,
         IProxyResolver? proxyResolver,
-        IKeyboardInteractivePrompt? keyboardPrompt = null)
+        IKeyboardInteractivePrompt? keyboardPrompt = null,
+        Func<TailscaleSshCheckNotification, Task>? tailscaleCheckPrompt = null,
+        TimeSpan? authenticationTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(info);
 
@@ -86,12 +90,14 @@ internal static class SshConnectionAssembler
             ISshTransportDialer inner = dialer;
             dialer = DialerChain.Jump(
                 new SshEndPoint(hop.Host, hop.Port),
-                (jump, ct) => ConnectAsync(hop, policy, settings, inner, connectTimeout, keyboardPrompt, banners, jump, ct));
+                (jump, ct) => ConnectAsync(hop, policy, settings, inner, connectTimeout, keyboardPrompt, banners,
+                    tailscaleCheckPrompt, authenticationTimeout, info.IsAutomaticReconnect, jump, ct));
         }
 
         ISshTransportDialer finalDialer = dialer;
         return new Assembled(
-            ct => ConnectAsync(info, policy, settings, finalDialer, connectTimeout, keyboardPrompt, banners, jump: null, ct),
+            ct => ConnectAsync(info, policy, settings, finalDialer, connectTimeout, keyboardPrompt, banners,
+                tailscaleCheckPrompt, authenticationTimeout, info.IsAutomaticReconnect, jump: null, ct),
             connectTimeout,
             banners);
     }
@@ -122,15 +128,86 @@ internal static class SshConnectionAssembler
         TimeSpan connectTimeout,
         IKeyboardInteractivePrompt? keyboardPrompt,
         SshServerBanners banners,
+        Func<TailscaleSshCheckNotification, Task>? tailscaleCheckPrompt,
+        TimeSpan? authenticationTimeout,
+        bool isAutomaticReconnect,
         SshJumpContext? jump,
         CancellationToken cancellationToken)
     {
+        bool isTailscale = info.AuthMethod == AuthMethod.Tailscale;
+        using CancellationTokenSource? attempt = isTailscale
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken) : null;
+        CancellationToken connectToken = attempt?.Token ?? cancellationToken;
+        Guid attemptId = isTailscale ? Guid.NewGuid() : Guid.Empty;
+        string target = isTailscale ? HostAddress.FormatTarget(info.Username, info.Host, info.Port) : "";
+        object? checkGate = isTailscale ? new object() : null;
+        bool completed = false;
+        bool userCancelled = false;
+        bool checkSeen = false;
+        Uri? currentUri = null;
+        CancellationTokenSource? uiLifetime = null;
+
+        string SafeFailure(string key, SshException? failure = null) =>
+            $"{Strings.Get(key)}\n{target}" + (failure is null ? "" : $" [{failure.Reason} @ {failure.Phase}]");
+
+        void CancelCheck()
+        {
+            lock (checkGate!)
+            {
+                if (completed || userCancelled)
+                {
+                    return;
+                }
+                userCancelled = true;
+                // 与结束标记共用边界；过期按钮永远不会访问已释放的 CTS。
+                attempt!.Cancel();
+            }
+        }
+
+        async ValueTask OnAuthenticationBannerAsync(string text, CancellationToken authToken)
+        {
+            await banners.OnBannerAsync(text, authToken).ConfigureAwait(false);
+            if (!TailscaleSshCheckUri.TryGetVerificationUri(text, out Uri? uri))
+            {
+                return;
+            }
+
+            checkSeen = true;
+            if (isAutomaticReconnect)
+            {
+                throw new VelaSshTailscaleAuthenticationException(SafeFailure("SshErr_TailscaleCheckRequired"));
+            }
+            if (tailscaleCheckPrompt is null)
+            {
+                throw new VelaSshTailscaleAuthenticationException(SafeFailure("SshErr_TailscaleCheckUiUnavailable"));
+            }
+            if (currentUri?.OriginalString == uri.OriginalString)
+            {
+                return;
+            }
+
+            authToken.ThrowIfCancellationRequested();
+            uiLifetime ??= CancellationTokenSource.CreateLinkedTokenSource(authToken);
+            currentUri = uri;
+            try
+            {
+                // 仅等待显示/更新，不等待窗口关闭；认证器必须继续读 SUCCESS。
+                await tailscaleCheckPrompt(new(attemptId, target, uri, CancelCheck, uiLifetime.Token)).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                authToken.ThrowIfCancellationRequested();
+                throw new VelaSshTailscaleAuthenticationException(SafeFailure("SshErr_TailscaleCheckUiUnavailable"));
+            }
+        }
+
         // agent 这一路的签名要回到 agent 去做,所以 agent 客户端得一直活到认证结束 ——
         // 连接建好之后就不再需要它(重协商不会重新认证),在这里释放。
         SshAgentClient? agent = null;
         // 每次尝试一个新的应答器:「口令只代答一次」与「用户点了取消」都是这一次认证的状态。
         KeyboardInteractiveResponder? keyboard =
-            keyboardPrompt is null ? null : KeyboardInteractiveResponder.For(info, keyboardPrompt);
+            keyboardPrompt is null || info.AuthMethod == AuthMethod.Tailscale
+                ? null : KeyboardInteractiveResponder.For(info, keyboardPrompt);
         // 私钥签名器归这一次建连所有:连接建好(或失败)之后就不再需要它(重协商不会重新认证),
         // 在 finally 里释放 —— 它释放时把私钥材料清零。交给后台「自动加钥」的那一把除外,由它用完再释放。
         IReadOnlyList<SshCredential> credentials = [];
@@ -157,12 +234,13 @@ internal static class SshConnectionAssembler
                 HostKeyPolicy = policy,
                 Credentials = credentials,
                 ConnectTimeout = connectTimeout,
+                AuthenticationTimeout = authenticationTimeout ?? TimeSpan.FromMinutes(2),
                 KeepAlive = KeepAlive(settings, info),
                 Algorithms = Algorithms(info),
                 // 「允许老算法」也要放开用户钥的 SHA-1 签名:只认 ssh-rsa 的老设备上,只放开 KEX / 主机密钥 / MAC
                 // 而不放开这一项,RSA 私钥登录必然失败。库在对端不发 server-sig-algs 时会先试 SHA-2、被拒再降级一次。
                 AllowSha1RsaSignatures = info.Ssh?.LegacyAlgorithms == true,
-                BannerHandler = banners.OnBannerAsync,
+                BannerHandler = isTailscale ? OnAuthenticationBannerAsync : banners.OnBannerAsync,
                 DebugMessageHandler = banners.OnBannerAsync,
                 PreAuthBannerHandler = banners.OnPreAuthBannerAsync,
             };
@@ -173,8 +251,34 @@ internal static class SshConnectionAssembler
                 // 跳板这一跳经上下文去连:外层连接的计时器一起带进去,
                 // 用户在跳板上看指纹、输动态码时外层停表。
                 connection = jump is null
-                    ? await SshConnection.ConnectAsync(options, cancellationToken).ConfigureAwait(false)
-                    : await jump.ConnectAsync(options, cancellationToken).ConfigureAwait(false);
+                    ? await SshConnection.ConnectAsync(options, connectToken).ConfigureAwait(false)
+                    : await jump.ConnectAsync(options, connectToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (isTailscale)
+            {
+                // 调用方取消优先，且不把带服务端原文的异常附到取消链上。
+                cancellationToken.ThrowIfCancellationRequested();
+                bool cancelled;
+                lock (checkGate!)
+                {
+                    cancelled = userCancelled;
+                }
+                if (cancelled)
+                {
+                    throw new VelaSshAuthenticationCancelledException(SafeFailure("SshErr_TailscaleCheckCancelled"));
+                }
+                if (ex is SshException { Phase: SshPhase.Authenticating } failure
+                    && failure.Reason is not (SshFailureReason.HostKeyRejected or SshFailureReason.HostKeyChanged))
+                {
+                    string resourceKey = failure.Reason switch
+                    {
+                        SshFailureReason.AuthenticationMethodExhausted or SshFailureReason.TwoFactorRequired => "SshErr_TailscaleRejected",
+                        SshFailureReason.Timeout => checkSeen ? "SshErr_TailscaleCheckTimeout" : "SshErr_TailscaleAuthTimeout",
+                        _ => "SshErr_TailscaleCheckFailed",
+                    };
+                    throw new VelaSshTailscaleAuthenticationException(SafeFailure(resourceKey, failure));
+                }
+                throw;
             }
             catch (SshConnectException ex) when (keyboard is not null
                                                  && ex is { Reason: SshFailureReason.Aborted, Phase: SshPhase.Authenticating }
@@ -185,6 +289,14 @@ internal static class SshConnectionAssembler
                 // 曾经库把这种取消报成认证超时,应答器只好自己记一笔、在这里按那一笔认回来。
                 throw new VelaSshAuthenticationCancelledException(
                     Strings.Get(keyboard.PasswordChangeCancelled ? "SshErr_PasswordChangeCancelled" : "SshErr_KbdAuthCancelled"), ex);
+            }
+            catch (SshAuthenticationException ex) when (jump is not null)
+            {
+                // 在真实认证跳转换；Core 异常会穿透外层拨号，不能被 Tailscale 目标重新归类。
+                string message = $"{SshInterop.LocalizeAuth(ex)}\n{HostAddress.FormatTarget(info.Username, info.Host, info.Port)}";
+                string attempts = ex.DescribeAttempts();
+                throw new VelaSshAuthenticationException(
+                    string.IsNullOrWhiteSpace(attempts) ? message : $"{message}\n{attempts}", ex);
             }
 
             // 「自动加载密钥到 Agent」:认证成功之后才加(配错的钥不该进 agent),而且丢到后台 ——
@@ -212,6 +324,35 @@ internal static class SshConnectionAssembler
         }
         finally
         {
+            if (isTailscale)
+            {
+                lock (checkGate!)
+                {
+                    completed = true;
+                }
+                if (uiLifetime is not null)
+                {
+                    try
+                    {
+                        // 成功也只取消窗口生命周期，不能取消已建好的 SSH 传输。
+                        uiLifetime.Cancel();
+                    }
+                    catch (Exception)
+                    {
+                        // 收窗清理错误不能覆盖当前跳的原始安全结果，也不能记录潜在的 URI。
+                    }
+                    try
+                    {
+                        await tailscaleCheckPrompt!(new(attemptId, target, null, null, CancellationToken.None)).ConfigureAwait(false);
+                    }
+                    catch (Exception)
+                    {
+                        // 同上；End 已按顺序等待，令牌取消也会让窗口进行程序性收尾。
+                    }
+                    uiLifetime.Dispose();
+                }
+            }
+
             if (agent is not null)
             {
                 await agent.DisposeAsync().ConfigureAwait(false);
@@ -324,7 +465,7 @@ internal static class SshConnectionAssembler
     /// 之后的轮次回空串(不会把密码填进验证码那一轮),但那样验证码一轮必然失败,要再走一遍才轮到界面。
     /// </para>
     /// <para>
-    /// <b>有界面时每种认证方式后面都跟一条 keyboard-interactive</b>,好接住
+    /// <b>有界面时普通认证方式后面都跟一条 keyboard-interactive</b>,好接住
     /// <c>AuthenticationMethods publickey,keyboard-interactive</c>(钥 + 动态码)的第二步。
     /// 它不会变成口令回退:非密码认证的那一条遇到单纯的口令提示只答空串。
     /// </para>
@@ -332,6 +473,12 @@ internal static class SshConnectionAssembler
     internal static async ValueTask<IReadOnlyList<SshCredential>> BuildCredentialsAsync(
         VelaConnectionInfo info, CancellationToken cancellationToken, KeyboardInteractiveResponder? keyboard = null)
     {
+        // Tailscale 的身份由已登录的本机网络提供;只发送库的初始 none 请求。
+        if (info.AuthMethod == AuthMethod.Tailscale)
+        {
+            return [];
+        }
+
         IReadOnlyList<SshCredential> primary = await PrimaryCredentialsAsync(info, keyboard, cancellationToken)
             .ConfigureAwait(false);
         return keyboard is null ? primary : [.. primary, keyboard.ToCredential()];

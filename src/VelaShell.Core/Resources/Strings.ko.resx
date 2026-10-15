@@ -7079,4 +7079,21 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="PasswordFill_Expired" xml:space="preserve"><value>세션 또는 입력 상태가 변경되었습니다. 아무것도 전송하지 않았습니다. 선택 창을 다시 여세요.</value></data>
   <data name="PasswordFill_Unavailable" xml:space="preserve"><value>자격 증명이 삭제되었거나 사용 가능한 비밀번호가 없습니다. 아무것도 전송하지 않았습니다.</value></data>
   <data name="PasswordFill_Invalid" xml:space="preserve"><value>비밀번호에 제어 문자가 있거나 현재 세션 인코딩으로 표현할 수 없습니다. 아무것도 전송하지 않았습니다.</value></data>
+  <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
+  <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>이 기기에 로그인된 Tailscale ID와 원격 시스템 사용자 이름을 사용합니다. SSH 비밀번호나 키는 필요하지 않으며 서버가 브라우저 확인을 요청할 수 있습니다.</value></data>
+  <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH는 이 기기의 Tailscale ID를 사용하므로 공유 자격 증명으로 저장할 수 없습니다.</value></data>
+  <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH 확인</value></data>
+  <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>서버가 신원 확인을 요청했습니다. 링크를 브라우저에서 열어 확인하세요. 서버가 승인하면 이 연결이 자동으로 계속됩니다.</value></data>
+  <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>브라우저 열기</value></data>
+  <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>링크 복사</value></data>
+  <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH 확인 링크 숨김]</value></data>
+  <data name="Ssh_TailscaleCheckOpenFailed" xml:space="preserve"><value>브라우저를 열 수 없습니다. 링크를 복사하거나 다시 시도하세요.</value></data>
+  <data name="Ssh_TailscaleCheckCopyFailed" xml:space="preserve"><value>링크를 복사할 수 없습니다. 선택하여 직접 복사하세요.</value></data>
+  <data name="SshErr_TailscaleCheckCancelled" xml:space="preserve"><value>Tailscale SSH 확인이 취소되었습니다.</value></data>
+  <data name="SshErr_TailscaleRejected" xml:space="preserve"><value>Tailscale SSH 승인이 거부되었습니다. 현재 연결 대상의 시스템 사용자 이름과 tailnet SSH 정책을 확인하세요.</value></data>
+  <data name="SshErr_TailscaleCheckTimeout" xml:space="preserve"><value>Tailscale SSH 브라우저 확인 대기 시간이 초과되었습니다. 수동으로 다시 연결하세요.</value></data>
+  <data name="SshErr_TailscaleAuthTimeout" xml:space="preserve"><value>Tailscale SSH 인증 시간이 초과되었습니다.</value></data>
+  <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH에 신원 확인이 필요합니다. 수동으로 다시 연결하세요.</value></data>
+  <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>Tailscale SSH 확인 창을 표시할 수 없습니다. 기본 창을 연 후 다시 연결하세요.</value></data>
+  <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>서버가 인증을 거부하거나 종료하여 Tailscale SSH 확인을 계속할 수 없습니다.</value></data>
 </root>

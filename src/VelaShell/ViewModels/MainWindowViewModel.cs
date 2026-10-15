@@ -2693,7 +2693,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         ArgumentNullException.ThrowIfNull(tab);
 
         // 忽略正在连接或已连接时的重连请求。
-        if (tab.ConnectionStatus is SessionStatus.Connecting or SessionStatus.Connected)
+        if (tab.ConnectionStatus is SessionStatus.Connecting or SessionStatus.Connected
+            || (automatic && tab.AuthenticationRequiresUserAction))
         {
             return;
         }
@@ -2808,6 +2809,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             // 在动态码框上点了取消:按用户主动断开处理 —— 否则自动重连过几秒又来弹同一个框。
             LastConnectionError = null;
             tab.MarkDisconnectedByUser();
+        }
+        catch (VelaSshTailscaleAuthenticationException ex)
+        {
+            LastConnectionError = DescribeConnectionError(ex, tab.Profile);
+            Toasts.Error(LastConnectionError);
+            tab.MarkAuthenticationRequiresUserAction(LastConnectionError);
         }
         catch (VelaSshHostKeyRejectedException ex)
         {
@@ -3037,7 +3044,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     tab.UserRequestedDisconnect,
                     tab.LocalShell is not null,
                     tab.RemoteShellExited,
-                    tab.HostKeyRejected))
+                    tab.HostKeyRejected,
+                    tab.AuthenticationRequiresUserAction))
             {
                 tab.ResetReconnectAttempts();
                 _ = AutoReconnectTabAsync(tab);
@@ -3090,7 +3098,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                    tab.UserRequestedDisconnect,
                    tab.LocalShell is not null,
                    tab.RemoteShellExited,
-                   tab.HostKeyRejected);
+                   tab.HostKeyRejected,
+                   tab.AuthenticationRequiresUserAction);
         if (autoReconnectApplies)
         {
             tab.MaxReconnectAttempts = maxRetries; // 全部自动重连路径共用同一权威值(设置审计 C-02)
@@ -3156,7 +3165,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                         ConnectionStatus: SessionStatus.Disconnected,
                         UserRequestedDisconnect: false,
                         RemoteShellExited: false,
-                        HostKeyRejected: false
+                        HostKeyRejected: false,
+                        AuthenticationRequiresUserAction: false
                     }
                     && TerminalTabs.Contains(tab)
                 )
@@ -3636,8 +3646,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 真缺了什么,解析时会以 <see cref="CredentialProviderException" /> 报出来,连接流程再退回登录框。
     /// </remarks>
     private static bool RequiresCredentials(SessionProfile profile) =>
-        profile.CredentialSource is null
-        && RequiresInlineCredentials(profile);
+        profile.AuthMethod == AuthMethod.Tailscale
+            ? string.IsNullOrWhiteSpace(profile.Username)
+            : profile.CredentialSource is null && RequiresInlineCredentials(profile);
 
     private static bool RequiresInlineCredentials(SessionProfile profile) =>
         string.IsNullOrWhiteSpace(profile.Username)
@@ -3821,6 +3832,13 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     await RemoveTerminalTabAsync(tab, document).ConfigureAwait(true);
                 }
                 return null;
+            }
+            catch (VelaSshTailscaleAuthenticationException ex)
+            {
+                LastConnectionError = DescribeConnectionError(ex, current);
+                Toasts.Error(LastConnectionError);
+                tab.MarkAuthenticationRequiresUserAction(LastConnectionError);
+                return tab;
             }
             catch (Exception ex)
             {
@@ -4136,6 +4154,11 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 // 后者是在动态码框上点了取消 —— 同样是「不连了」,撤占位、不报错。
                 await DisconnectQuietlyAsync(session?.SessionId).ConfigureAwait(true);
                 return (null, new(current, null));
+            }
+            catch (VelaSshTailscaleAuthenticationException ex)
+            {
+                await DisconnectQuietlyAsync(session?.SessionId).ConfigureAwait(true);
+                return (null, new(current, ex));
             }
             catch (Exception auth) when (auth is VelaSshAuthenticationException or CredentialProviderException)
             {
@@ -4948,8 +4971,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 TrackDocumentSession(session.SessionId, profile.Id, SessionStatus.Connected);
                 return document;
             }
-            catch (OperationCanceledException)
+            catch (Exception ex) when (ex is OperationCanceledException or VelaSshAuthenticationCancelledException)
             {
+                LastConnectionError = null;
                 ui.Abandon();
                 return null;
             }
@@ -5424,6 +5448,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         // 所有连接错误都掉进兜底文案。派生类型必须排在基类型前面。
         return ex switch
         {
+            VelaSshTailscaleAuthenticationException => detail,
             // 以前这里还补一句「若要求两步验证本版无法连接」:那时宿主没有输动态码的界面。
             // 现在服务端要动态码会弹框问(KeyboardInteractivePromptDialogService),那句话已经不成立。
             VelaSshAuthenticationException => $"{Strings.Format("Msg_AuthFailed", target)}\n{detail}",
@@ -5702,7 +5727,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 tab.HasConnectionError,
                 tab.UserRequestedDisconnect,
                 tab.LocalShell is not null,
-                tab.RemoteShellExited))
+                tab.RemoteShellExited,
+                tab.AuthenticationRequiresUserAction))
     ];
 
     /// <summary>

@@ -152,6 +152,231 @@ public sealed class SharedCredentialUiTests
         Assert.AreEqual("ops", SharedCredentialPrompt.InitialUsername(Referencing(credential, "ops"), credential));
     }
 
+    [TestMethod]
+    public void Apply_Tailscale_UsesTypedUsername_AndNeverUpdatesSharedCredential()
+    {
+        SharedCredential credential = Credential();
+        SessionProfile profile = Referencing(credential);
+        profile.Password = "old-password";
+        profile.PrivateKeyPath = "/old-key";
+        profile.PrivateKeyPassphrase = "old-passphrase";
+        profile.CertificatePath = "/old-cert";
+        profile.RememberPassword = true;
+        profile.JumpHostProfileId = Guid.NewGuid();
+        var result = new AuthenticationResult("admin", AuthMethod.Tailscale,
+            SecureStringConvert.FromPlaintext("ignored"), "/ignored-key", "ignored", "/ignored-cert", true, true);
+
+        SessionProfile copy = SharedCredentialPrompt.Apply(profile, credential, result, "ignored", out SharedCredential? updated);
+
+        Assert.AreEqual("admin", copy.Username, "即使与共享用户名相同,Tailscale 仍保存自己的系统用户名");
+        Assert.AreEqual(AuthMethod.Tailscale, copy.AuthMethod);
+        Assert.IsFalse(CredentialMaterial.HasInline(copy));
+        Assert.IsNull(copy.Password);
+        Assert.IsNull(copy.PrivateKeyPath);
+        Assert.IsNull(copy.PrivateKeyPassphrase);
+        Assert.IsNull(copy.CertificatePath);
+        Assert.IsNull(copy.CredentialSource);
+        Assert.IsFalse(copy.RememberPassword);
+        Assert.AreEqual(profile.JumpHostProfileId, copy.JumpHostProfileId);
+        Assert.IsNull(updated);
+        Assert.AreEqual("old-password", profile.Password);
+        Assert.AreEqual("s3cret", credential.Password);
+
+        profile.AuthMethod = AuthMethod.Tailscale;
+        Assert.AreEqual(string.Empty, SharedCredentialPrompt.InitialUsername(profile, credential));
+    }
+
+    [TestMethod]
+    [DataRow(ConnectionType.SSH)]
+    [DataRow(ConnectionType.SFTP)]
+    public async Task ProfileDialog_Tailscale_LoadsInline_RequiresOwnUsername_AndReopensWithoutSecrets(ConnectionType type)
+    {
+        SharedCredential credential = Credential();
+        SessionProfile existing = Referencing(credential);
+        existing.ConnectionType = type;
+        existing.AuthMethod = AuthMethod.Tailscale;
+        existing.Password = "old-password";
+        existing.PrivateKeyPath = "/old-key";
+        existing.PrivateKeyPassphrase = "old-passphrase";
+        existing.CertificatePath = "/old-cert";
+        var vm = new ConnectionProfileViewModel(existing, sharedCredentials: RepositoryWith(credential));
+        await vm.LoadSharedCredentialsAsync();
+
+        Assert.IsTrue(vm.IsTailscaleAuth);
+        Assert.IsTrue(vm.ShowTailscaleHint);
+        Assert.IsTrue(vm.ShowAuthMethodSelector);
+        Assert.IsFalse(vm.UsesSharedCredential);
+        Assert.IsNull(vm.SelectedCredentialSource.Reference);
+        Assert.IsFalse(vm.ShowCredentialSourceSelector);
+        Assert.IsFalse(vm.SharedCredentialProvidesUsername);
+        Assert.IsFalse(vm.ShowInlinePassword);
+        Assert.IsFalse(vm.ShowInlineKeyFields);
+        Assert.IsFalse(vm.ShowAgentHint);
+        Assert.IsNotNull(vm.UsernameError);
+        Assert.IsFalse(await vm.SaveCommand.CanExecute.FirstAsync());
+
+        vm.Username = "ops";
+        SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.IsNotNull(saved);
+        Assert.AreEqual(AuthMethod.Tailscale, saved.AuthMethod);
+        Assert.AreEqual(type, saved.ConnectionType);
+        Assert.AreEqual("ops", saved.Username);
+        Assert.IsFalse(CredentialMaterial.HasInline(saved));
+        Assert.IsNull(saved.Password);
+        Assert.IsNull(saved.PrivateKeyPath);
+        Assert.IsNull(saved.PrivateKeyPassphrase);
+        Assert.IsNull(saved.CertificatePath);
+        Assert.IsNull(saved.CredentialSource);
+        Assert.IsFalse(saved.RememberPassword);
+        Assert.AreEqual("old-password", existing.Password, "编辑与保存不修改输入配置");
+
+        var reopened = new ConnectionProfileViewModel(saved, sharedCredentials: RepositoryWith(credential));
+        await reopened.LoadSharedCredentialsAsync();
+        Assert.IsTrue(reopened.IsTailscaleAuth);
+        Assert.IsTrue(reopened.ShowAuthMethodSelector);
+        Assert.AreEqual("ops", reopened.Username);
+        Assert.IsNull(reopened.Password);
+        Assert.IsNull(reopened.PrivateKeyPath);
+        Assert.IsNull(reopened.CertificatePath);
+    }
+
+    [TestMethod]
+    public async Task ProfileDialog_SwitchingToTailscale_DropsSharedSourceWithoutCopyingItsUsername()
+    {
+        SharedCredential credential = Credential();
+        var vm = new ConnectionProfileViewModel(Referencing(credential), sharedCredentials: RepositoryWith(credential));
+        await vm.LoadSharedCredentialsAsync();
+        var raised = new List<string>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName ?? string.Empty);
+
+        await vm.SelectAuthMethodCommand.Execute(AuthMethod.Tailscale).FirstAsync();
+
+        Assert.IsTrue(vm.IsTailscaleAuth);
+        Assert.IsNull(vm.SelectedCredentialSource.Reference);
+        Assert.IsFalse(vm.UsesSharedCredential);
+        Assert.AreEqual(string.Empty, vm.Username);
+        Assert.IsNotNull(vm.UsernameError);
+        Assert.Contains(nameof(ConnectionProfileViewModel.IsTailscaleAuth), raised);
+        Assert.Contains(nameof(ConnectionProfileViewModel.ShowTailscaleHint), raised);
+        Assert.IsFalse(await vm.SaveCommand.CanExecute.FirstAsync());
+
+        await vm.SelectAuthMethodCommand.Execute(AuthMethod.Password).FirstAsync();
+        Assert.IsTrue(vm.ShowCredentialSourceSelector);
+        Assert.IsTrue(vm.ShowInlinePassword);
+        Assert.IsFalse(vm.ShowTailscaleHint);
+    }
+
+    [TestMethod]
+    public async Task ExternalTailscaleSharedCredential_IsExplicitlyRejectedByProfileAndEditor()
+    {
+        SharedCredential credential = Credential();
+        credential.AuthMethod = AuthMethod.Tailscale;
+        var vm = new ConnectionProfileViewModel(Referencing(credential), sharedCredentials: RepositoryWith(credential));
+        await vm.LoadSharedCredentialsAsync();
+
+        Assert.AreEqual(Strings.Get("SharedCred_ErrTailscaleUnsupported"), vm.CredentialSourceError);
+        Assert.AreEqual(Strings.Format("Profile_CredSummary", "admin", Strings.Get("Profile_TailscaleAuth")), vm.SharedCredentialSummary);
+        Assert.IsFalse(await vm.SaveCommand.CanExecute.FirstAsync());
+        Assert.AreEqual(AuthMethod.Password, vm.AuthMethod, "非法共享条目不能改写会话认证方式");
+
+        var editor = new SharedCredentialEditorViewModel(credential, []);
+        Assert.AreEqual(AuthMethod.Tailscale, editor.AuthMethod);
+        Assert.IsFalse(editor.IsPasswordAuth);
+        Assert.AreEqual(Strings.Get("SharedCred_ErrTailscaleUnsupported"), editor.SecretError);
+        Assert.IsFalse(await editor.SaveCommand.CanExecute.FirstAsync());
+    }
+
+    [TestMethod]
+    [DataRow(AuthMethod.Password)]
+    [DataRow(AuthMethod.PrivateKey)]
+    public async Task LoginRetry_UnsupportedSharedCredential_PreservesOwnAuthenticationAndRequiresUsername(AuthMethod method)
+    {
+        SharedCredential credential = Credential();
+        credential.AuthMethod = AuthMethod.Tailscale;
+        SessionProfile profile = Referencing(credential);
+        profile.AuthMethod = method;
+        var context = SharedCredentialPrompt.BuildContext(profile, credential, 2);
+        AuthenticationDialogViewModel vm = SharedCredentialPrompt.CreateDialog(profile, credential, null, context);
+
+        Assert.AreEqual(string.Empty, vm.Username);
+        Assert.AreEqual(method == AuthMethod.Password, vm.IsPasswordMethod);
+        Assert.AreEqual(method == AuthMethod.PrivateKey, vm.IsKeyMethod);
+        Assert.IsFalse(vm.IsTailscaleMethod);
+        Assert.IsFalse(await vm.NextCommand.CanExecute.FirstAsync());
+        Assert.IsFalse(await vm.LoginCommand.CanExecute.FirstAsync());
+        Assert.AreEqual(Strings.Get("SharedCred_ErrTailscaleUnsupported"), vm.SharedCredentialNotice);
+        Assert.IsTrue(vm.HasSharedCredentialNotice);
+        Assert.IsFalse(vm.CanUpdateSharedCredential);
+
+        vm.Username = credential.Username;
+        await vm.NextCommand.Execute().FirstAsync();
+        using var password = SecureStringConvert.FromPlaintext("typed");
+        vm.Password = password;
+        vm.PrivateKeyPath = "/typed-key";
+        vm.UpdateSharedCredential = true;
+        AuthenticationResult result = await vm.LoginCommand.Execute().FirstAsync();
+        using (result.Password)
+        {
+            Assert.AreEqual(method, result.AuthMethod);
+            Assert.IsFalse(result.UpdateSharedCredential);
+            SessionProfile copy = SharedCredentialPrompt.Apply(profile, credential,
+                result with { UpdateSharedCredential = true }, "typed", out SharedCredential? updated);
+            Assert.AreEqual(method, copy.AuthMethod);
+            Assert.AreEqual(credential.Username, copy.Username, "输入即使与非法来源相同也必须成为连接自己的用户名");
+            Assert.IsNull(updated, "不能通过登录重试改写非法共享条目");
+            Assert.AreEqual(AuthMethod.Tailscale, credential.AuthMethod);
+        }
+    }
+
+    [TestMethod]
+    public async Task LoginRetry_UnsupportedSharedCredential_AllowsExplicitTailscaleRecovery()
+    {
+        SharedCredential credential = Credential();
+        credential.AuthMethod = AuthMethod.Tailscale;
+        SessionProfile profile = Referencing(credential);
+        AuthenticationDialogViewModel vm = SharedCredentialPrompt.CreateDialog(profile, credential, null,
+            SharedCredentialPrompt.BuildContext(profile, credential, 2));
+
+        await vm.SelectTailscaleCommand.Execute().FirstAsync();
+        Assert.IsFalse(await vm.LoginCommand.CanExecute.FirstAsync());
+        Assert.AreEqual(Strings.Get("SharedCred_ErrTailscaleUnsupported"), vm.SharedCredentialNotice);
+        vm.Username = "ops";
+        await vm.NextCommand.Execute().FirstAsync();
+        AuthenticationResult result = await vm.LoginCommand.Execute().FirstAsync();
+        SessionProfile copy = SharedCredentialPrompt.Apply(profile, credential, result, null, out SharedCredential? updated);
+
+        Assert.AreEqual(AuthMethod.Tailscale, copy.AuthMethod);
+        Assert.AreEqual("ops", copy.Username);
+        Assert.IsNull(copy.CredentialSource);
+        Assert.IsFalse(CredentialMaterial.HasInline(copy));
+        Assert.IsNull(updated);
+    }
+
+    [TestMethod]
+    public async Task LoginRetry_SupportedSharedKey_StillPrefillsAndCompletesMissingUsername()
+    {
+        SharedCredential credential = Credential(username: "");
+        credential.AuthMethod = AuthMethod.PrivateKey;
+        credential.PrivateKeyPath = "/shared-key";
+        SessionProfile profile = Referencing(credential);
+        AuthenticationDialogViewModel vm = SharedCredentialPrompt.CreateDialog(profile, credential, null,
+            SharedCredentialPrompt.BuildContext(profile, credential, 2));
+
+        Assert.IsTrue(vm.IsKeyMethod);
+        Assert.AreEqual(Strings.Format("Auth_SharedIncomplete", credential.Name), vm.SharedCredentialNotice);
+        Assert.IsTrue(vm.CanUpdateSharedCredential);
+        vm.Username = "ops";
+        await vm.NextCommand.Execute().FirstAsync();
+        AuthenticationResult result = await vm.LoginCommand.Execute().FirstAsync();
+        SessionProfile copy = SharedCredentialPrompt.Apply(profile, credential, result, null, out SharedCredential? updated);
+
+        Assert.IsNotNull(updated);
+        Assert.AreEqual("ops", updated.Username);
+        Assert.AreEqual(AuthMethod.PrivateKey, updated.AuthMethod);
+        Assert.AreEqual("/shared-key", copy.PrivateKeyPath);
+        Assert.AreEqual(string.Empty, copy.Username);
+    }
+
     // ———— 连接配置页:凭据来源 ————
 
     private static ISharedCredentialRepository RepositoryWith(params SharedCredential[] credentials)

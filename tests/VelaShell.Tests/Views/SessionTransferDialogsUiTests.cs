@@ -183,6 +183,18 @@ public class SessionTransferDialogsUiTests
             Assert.IsTrue(apply.IsEffectivelyEnabled);
             SaveOptionalFrame(window, "session-batch-edit.png");
 
+            Button tailscale = window.GetVisualDescendants().OfType<Button>()
+                .Single(button => Equals(button.CommandParameter, SessionBatchAuthKind.Tailscale));
+            Assert.IsTrue(tailscale.IsEffectivelyVisible);
+            Assert.IsTrue(tailscale.IsTabStop);
+            tailscale.Command!.Execute(tailscale.CommandParameter);
+            Dispatcher.UIThread.RunJobs();
+            Assert.IsTrue(viewModel.IsTailscaleAuth);
+            Assert.IsTrue(apply.IsEffectivelyEnabled);
+            Assert.IsFalse(PassphraseBoxes(window).Any(static box => box.IsEffectivelyVisible));
+            Assert.IsFalse(window.GetVisualDescendants().OfType<TextBox>()
+                .Single(box => box.Text == "~/.ssh/id_ed25519").IsEffectivelyVisible);
+
             window.Close();
             return Task.FromResult(true);
         }, CancellationToken.None).GetAwaiter().GetResult();

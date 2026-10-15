@@ -1,5 +1,10 @@
 using System.Net.Sockets;
+using Avalonia.Headless;
+using Avalonia.Threading;
 using NSubstitute;
+using ReactiveUI;
+using ReactiveUI.Primitives;
+using ReactiveUI.Primitives.Concurrency;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
@@ -458,6 +463,211 @@ public sealed class MainWindowSshFeatureTests
         Assert.AreEqual(SessionStatus.Connected, tab.ConnectionStatus);
         Assert.IsFalse(tab.HostKeyRejected);
     }
+
+    [TestMethod]
+    public async Task TailscaleAuthenticationPause_BlocksWakeQueuedCountdownAndSettingsSavedUntilManualSuccess()
+    {
+        await RunOnReconnectUiAsync(async () =>
+        {
+            var (vm, workflow, settings, profile) = CreateReconnectConsumer();
+            string checkReason = $"ops@jump:22: {Strings.Get("SshErr_TailscaleCheckRequired")}";
+            bool requiresCheck = true;
+            workflow.ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>())
+                .Returns(_ => requiresCheck
+                    ? Task.FromException<SshSession>(new VelaSshTailscaleAuthenticationException(checkReason))
+                    : Task.FromResult(ConnectedSession(profile)));
+            try
+            {
+                TerminalTabViewModel? tab = await vm.TryConnectProfileAsync(profile);
+                Assert.IsNotNull(tab);
+                tab.MarkDisconnected();
+                Assert.AreEqual(1, tab.ReconnectAttempts, "真实断线必须先排入一秒倒计时,才能覆盖过期回调。");
+                var paused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                tab.PropertyChanged += (_, args) =>
+                {
+                    if (args.PropertyName == nameof(TerminalTabViewModel.ConnectionStatus)
+                        && tab.ConnectionStatus == SessionStatus.Disconnected
+                        && tab.AuthenticationRequiresUserAction)
+                    {
+                        paused.TrySetResult();
+                    }
+                };
+
+                vm.ReconnectAllAfterResume();
+                await paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                await PassQueuedReconnectDeadlineAsync();
+
+                Assert.IsTrue(tab.AuthenticationRequiresUserAction);
+                Assert.IsFalse(tab.HostKeyRejected);
+                Assert.IsFalse(tab.UserRequestedDisconnect);
+                Assert.AreEqual(checkReason, tab.ConnectionError);
+                await workflow.Received(1).ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>());
+                vm.ReconnectAllAfterResume();
+
+                // 同一配置的新标签是一次独立尝试,不继承旧标签的认证暂停。
+                TerminalTabViewModel? fresh = await vm.TryConnectProfileAsync(profile);
+                Assert.IsNotNull(fresh);
+                Assert.AreNotSame(tab, fresh);
+                Assert.IsFalse(fresh.AuthenticationRequiresUserAction);
+                Assert.AreEqual(SessionStatus.Connected, fresh.ConnectionStatus);
+                fresh.MarkConnectionFailed("网络故障:代理变更对照标签");
+                var changed = ReconnectSettings("system");
+                settings.GetSettingsAsync().Returns(changed);
+                settings.SettingsSaved += Raise.Event<Action<AppSettings>>(changed);
+                await PassQueuedReconnectDeadlineAsync();
+
+                Assert.AreEqual(SessionStatus.Connected, fresh.ConnectionStatus, "SettingsSaved 的代理变更路径必须真实执行,不能只测筛选器。");
+                Assert.AreEqual(SessionStatus.Disconnected, tab.ConnectionStatus);
+                Assert.IsTrue(tab.AuthenticationRequiresUserAction);
+                Assert.AreEqual(checkReason, tab.ConnectionError);
+                await workflow.Received(3).ConnectProfileAsync(profile, Arg.Any<CancellationToken>());
+                await workflow.Received(1).ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>());
+                fresh.MarkDisconnectedByUser();
+
+                // 手动尝试允许进入,但网络失败与新的授权失败都不能提前解除认证暂停。
+                workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
+                    .Returns(Task.FromException<SshSession>(new SocketException()));
+                await vm.ReconnectTabAsync(tab);
+                Assert.IsTrue(tab.AuthenticationRequiresUserAction);
+                string rejected = $"ops@jump:22: {Strings.Get("SshErr_TailscaleRejected")}";
+                workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
+                    .Returns(Task.FromException<SshSession>(new VelaSshTailscaleAuthenticationException(rejected)));
+                await vm.ReconnectTabAsync(tab);
+                Assert.IsTrue(tab.AuthenticationRequiresUserAction);
+                Assert.AreEqual(rejected, tab.ConnectionError);
+
+                workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>()).Returns(_ => ConnectedSession(profile));
+                await vm.ReconnectTabAsync(tab);
+                Assert.AreEqual(SessionStatus.Connected, tab.ConnectionStatus);
+                Assert.IsFalse(tab.AuthenticationRequiresUserAction);
+                Assert.IsFalse(tab.HasConnectionError);
+
+                requiresCheck = false;
+                tab.MarkDisconnected();
+                await PassQueuedReconnectDeadlineAsync();
+                Assert.AreEqual(SessionStatus.Connected, tab.ConnectionStatus, "成功解除暂停后,普通网络掉线要再次自动恢复。");
+                await workflow.Received(2).ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>());
+
+                requiresCheck = true;
+                tab.MarkDisconnected();
+                await PassQueuedReconnectDeadlineAsync();
+                Assert.IsTrue(tab.AuthenticationRequiresUserAction, "下一次实际握手的新 check 要求不能被上一次成功缓存屏蔽。");
+                Assert.AreEqual(checkReason, tab.ConnectionError);
+                await workflow.Received(3).ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>());
+            }
+            finally
+            {
+                foreach (TerminalTabViewModel tab in vm.TerminalTabs.ToArray())
+                {
+                    tab.MarkDisconnectedByUser();
+                    await tab.DisposeAsync();
+                }
+            }
+        });
+    }
+
+    [TestMethod]
+    public async Task TailscaleReconnectCancelled_UsesUserDisconnectAndAllowsManualRecovery()
+    {
+        await RunOnReconnectUiAsync(async () =>
+        {
+            var (vm, workflow, _, profile) = CreateReconnectConsumer();
+            TerminalTabViewModel? tab = await vm.TryConnectProfileAsync(profile);
+            Assert.IsNotNull(tab);
+            try
+            {
+                tab.MarkDisconnected();
+                workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
+                    .Returns(Task.FromException<SshSession>(new VelaSshAuthenticationCancelledException("cancelled")));
+                await vm.ReconnectTabAsync(tab);
+
+                Assert.IsTrue(tab.UserRequestedDisconnect);
+                Assert.IsFalse(tab.AuthenticationRequiresUserAction);
+                Assert.IsNull(vm.LastConnectionError);
+                vm.ReconnectAllAfterResume();
+                await PassQueuedReconnectDeadlineAsync();
+                await workflow.DidNotReceive().ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>());
+
+                workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>()).Returns(_ => ConnectedSession(profile));
+                await vm.ReconnectTabAsync(tab);
+                Assert.AreEqual(SessionStatus.Connected, tab.ConnectionStatus);
+                Assert.IsFalse(tab.UserRequestedDisconnect);
+            }
+            finally
+            {
+                tab.MarkDisconnectedByUser();
+                await tab.DisposeAsync();
+            }
+        });
+    }
+
+    private static (MainWindowViewModel Vm, IConnectionWorkflowService Workflow, ISettingsService Settings, SessionProfile Profile) CreateReconnectConsumer()
+    {
+        var workflow = Substitute.For<IConnectionWorkflowService>();
+        var ssh = Substitute.For<ISshConnectionService>();
+        var client = Substitute.For<ISshClientWrapper>();
+        var shell = Substitute.For<IShellStreamWrapper>();
+        shell.CanRead.Returns(true);
+        shell.ReadAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(async args =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, (CancellationToken)args[3]);
+                return 0;
+            });
+        ssh.GetClient(Arg.Any<Guid>()).Returns(client);
+        client.CreateShellStreamAsync("xterm-256color", 120, 32, 0, 0, 4096,
+            Arg.Any<IReadOnlyDictionary<TerminalMode, uint>?>(), Arg.Any<CancellationToken>()).Returns(shell);
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(ReconnectSettings("none"));
+        var profile = new SessionProfile
+        {
+            Name = "target", Host = "target", Username = "root", AuthMethod = AuthMethod.Password,
+            Password = "target-password", JumpHostProfileId = Guid.NewGuid()
+        };
+        workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>()).Returns(_ => ConnectedSession(profile));
+        workflow.ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>()).Returns(_ => ConnectedSession(profile));
+        return (new MainWindowViewModel(workflow, ssh, () => FakeTerminal.Emulator(), settingsService: settings), workflow, settings, profile);
+    }
+
+    private static AppSettings ReconnectSettings(string proxyType)
+    {
+        var settings = new AppSettings();
+        settings.Proxy.Type = proxyType;
+        settings.General.AutoReconnect = true;
+        settings.General.ReconnectIntervalSeconds = 1;
+        settings.General.NotifyOnDisconnect = false;
+        settings.General.SoundAlerts = false;
+        settings.TerminalBehavior.ReportWorkingDirectory = false;
+        return settings;
+    }
+
+    private static SshSession ConnectedSession(SessionProfile profile) => new()
+    {
+        SessionId = Guid.NewGuid(), Status = SessionStatus.Connected,
+        ConnectionInfo = new() { Host = profile.Host, Port = profile.Port, Username = profile.Username, AuthMethod = profile.AuthMethod }
+    };
+
+    private static async Task PassQueuedReconnectDeadlineAsync()
+    {
+        var sentinel = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using IDisposable timer = DispatcherTimer.RunOnce(() => sentinel.TrySetResult(), TimeSpan.FromMilliseconds(1400));
+        await sentinel.Task.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    private static Task RunOnReconnectUiAsync(Func<Task> body) =>
+        HeadlessUnitTestSession.GetOrStartForAssembly(typeof(MainWindowSshFeatureTests).Assembly).RunOnUiAsync(async () =>
+        {
+            var previous = RxSchedulers.MainThreadScheduler;
+            try
+            {
+                RxSchedulers.MainThreadScheduler = new AvaloniaScheduler(Dispatcher.UIThread);
+                await body();
+            }
+            finally
+            {
+                RxSchedulers.MainThreadScheduler = previous;
+            }
+        });
 
     [TestMethod]
     public async Task ReconnectTabAsync_WhenAlreadyConnected_IsNoOp()

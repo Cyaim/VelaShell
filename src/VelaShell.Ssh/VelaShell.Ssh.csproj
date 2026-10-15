@@ -87,6 +87,7 @@
        友元必须带公钥,而测试程序集不签名,所以签名构建省略友元声明。 -->
   <ItemGroup Condition="'$(SignAssembly)' != 'true'">
     <InternalsVisibleTo Include="VelaShell.Ssh.Tests" />
+    <InternalsVisibleTo Include="VelaShell.Core.Tests" />
     <!-- scripts/ssh 下的单文件脚本（程序集名就是文件名）：基准要直接测密码套件与 wire 编解码，
          严格校验检查要直接喂 zlib 压缩器。为它们把类型公开是本末倒置（AGENTS.md §4.1）；
          它们本来就以非签名构建跑（基准的 -p:SignAssembly=false 见 README）。 -->

@@ -26,6 +26,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 复用真实 wire/KEX/认证服务端，宿主回归仍走 assembler → wrapper → service。 -->
+    <Compile Include="..\VelaShell.Ssh.Tests\TestKit\TestSshServer.cs" Link="Ssh\TestKit\TestSshServer.cs" />
+    <Compile Include="..\VelaShell.Ssh.Tests\TestKit\TestHostKey.cs" Link="Ssh\TestKit\TestHostKey.cs" />
+    <Compile Include="..\VelaShell.Ssh.Tests\TestKit\TestKexResponder.cs" Link="Ssh\TestKit\TestKexResponder.cs" />
+    <Compile Include="..\VelaShell.Ssh.Tests\TestKit\TestAuthServer.cs" Link="Ssh\TestKit\TestAuthServer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\VelaShell.Core\VelaShell.Core.csproj" />
     <ProjectReference Include="..\..\src\VelaShell.Infrastructure\VelaShell.Infrastructure.csproj" />
   </ItemGroup>

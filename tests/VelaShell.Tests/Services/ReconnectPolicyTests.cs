@@ -18,13 +18,13 @@ public sealed class ReconnectPolicyTests
     public void ADroppedRemoteSessionReconnects() =>
         Assert.IsTrue(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false, authenticationRequiresUserAction: false));
 
     [TestMethod]
     public void TheGlobalSwitchWins() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: false, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false, authenticationRequiresUserAction: false));
 
     /// <summary>用户自己点了断开的不碰。</summary>
     /// <remarks>那是明确的意图,自动连回去等于跟用户较劲。</remarks>
@@ -32,7 +32,7 @@ public sealed class ReconnectPolicyTests
     public void AManualDisconnectIsRespected() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: true,
-            userRequestedDisconnect: true, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
+            userRequestedDisconnect: true, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false, authenticationRequiresUserAction: false));
 
     /// <summary>本地终端不自动重开。</summary>
     /// <remarks>shell 退出(<c>exit</c>)是用户意图,自动拉起会没完没了。</remarks>
@@ -40,7 +40,7 @@ public sealed class ReconnectPolicyTests
     public void ALocalShellIsNeverRelaunched() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: true, remoteShellExited: false, hostKeyRejected: false));
+            userRequestedDisconnect: false, isLocalShell: true, remoteShellExited: false, hostKeyRejected: false, authenticationRequiresUserAction: false));
 
     /// <summary>在远端敲 <c>exit</c> 退出的不碰(#383)。</summary>
     /// <remarks>
@@ -51,7 +51,7 @@ public sealed class ReconnectPolicyTests
     public void ARemoteShellThatExitedIsNotDraggedBack() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: true, hostKeyRejected: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: true, hostKeyRejected: false, authenticationRequiresUserAction: false));
 
     /// <summary>上一次重连败在主机指纹上的不碰。</summary>
     /// <remarks>
@@ -62,13 +62,13 @@ public sealed class ReconnectPolicyTests
     public void AHostKeyRejectionStopsAutoReconnect() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: true));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: true, authenticationRequiresUserAction: false));
 
     [TestMethod]
     public void AStillConnectedSessionIsLeftAlone() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: true, isDisconnected: false,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false, authenticationRequiresUserAction: false));
 
     [TestMethod]
     public void AttemptsRunOutAtTheConfiguredLimit()
@@ -140,7 +140,7 @@ public sealed class ReconnectPolicyTests
     public void AFailedAttemptReconnectsAfterAProxyChange() =>
         Assert.IsTrue(ReconnectPolicy.ShouldReconnectAfterProxyChange(
             isDisconnected: true, hasConnectionError: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, authenticationRequiresUserAction: false));
 
     /// <summary>
     /// 干净断开的不碰:覆盖层写的是「连接已断开」而不是「连接失败」,
@@ -150,7 +150,7 @@ public sealed class ReconnectPolicyTests
     public void ACleanDisconnectIsLeftAlone() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnectAfterProxyChange(
             isDisconnected: true, hasConnectionError: false,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, authenticationRequiresUserAction: false));
 
     /// <summary>
     /// 连着的、正在连的不碰 —— 改个代理不该把用户正在用的会话踹掉重连。
@@ -159,7 +159,7 @@ public sealed class ReconnectPolicyTests
     public void ALiveSessionIsNeverTouched() =>
         Assert.IsFalse(ReconnectPolicy.ShouldReconnectAfterProxyChange(
             isDisconnected: false, hasConnectionError: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, authenticationRequiresUserAction: false));
 
     /// <summary>用户主动断开 / 远端 exit / 本地终端,三条豁免与 <see cref="ReconnectPolicy.ShouldReconnect" /> 一致。</summary>
     [TestMethod]
@@ -167,13 +167,13 @@ public sealed class ReconnectPolicyTests
     {
         Assert.IsFalse(ReconnectPolicy.ShouldReconnectAfterProxyChange(
             isDisconnected: true, hasConnectionError: true,
-            userRequestedDisconnect: true, isLocalShell: false, remoteShellExited: false), "用户主动断开的不碰");
+            userRequestedDisconnect: true, isLocalShell: false, remoteShellExited: false, authenticationRequiresUserAction: false), "用户主动断开的不碰");
         Assert.IsFalse(ReconnectPolicy.ShouldReconnectAfterProxyChange(
             isDisconnected: true, hasConnectionError: true,
-            userRequestedDisconnect: false, isLocalShell: true, remoteShellExited: false), "本地终端不看代理设置");
+            userRequestedDisconnect: false, isLocalShell: true, remoteShellExited: false, authenticationRequiresUserAction: false), "本地终端不看代理设置");
         Assert.IsFalse(ReconnectPolicy.ShouldReconnectAfterProxyChange(
             isDisconnected: true, hasConnectionError: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: true), "远端 exit 的不碰");
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: true, authenticationRequiresUserAction: false), "远端 exit 的不碰");
     }
 
     /// <summary>
@@ -190,9 +190,22 @@ public sealed class ReconnectPolicyTests
         // 但改完代理这条要救。两条判定各管各的入口,不能互相替代。
         Assert.IsTrue(ReconnectPolicy.ShouldReconnectAfterProxyChange(
             isDisconnected: true, hasConnectionError: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, authenticationRequiresUserAction: false));
         Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
             autoReconnectEnabled: false, isDisconnected: true,
-            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false));
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false, hostKeyRejected: false, authenticationRequiresUserAction: false));
+    }
+
+    [TestMethod]
+    public void AuthenticationRequiringUserActionStopsBothBackgroundRoutes()
+    {
+        Assert.IsFalse(ReconnectPolicy.ShouldReconnect(
+            autoReconnectEnabled: true, isDisconnected: true,
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false,
+            hostKeyRejected: false, authenticationRequiresUserAction: true));
+        Assert.IsFalse(ReconnectPolicy.ShouldReconnectAfterProxyChange(
+            isDisconnected: true, hasConnectionError: true,
+            userRequestedDisconnect: false, isLocalShell: false, remoteShellExited: false,
+            authenticationRequiresUserAction: true));
     }
 }

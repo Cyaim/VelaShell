@@ -1,8 +1,10 @@
+using Avalonia.Headless;
 using NSubstitute;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Models;
 using VelaShell.Core.Ssh;
 using VelaShell.Terminal;
+using VelaShell.Tests.TestSupport;
 using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
@@ -394,6 +396,39 @@ public class TerminalTabViewModelTests
         _vm.Disconnected += (_, _) => raised = true;
         _vm.MarkDisconnected(); // already Disconnected from construction
         Assert.IsFalse(raised);
+    }
+
+    [TestMethod]
+    [TestCategory("TerminalTab")]
+    public async Task AuthenticationPause_PrecedesDisconnectAndPreservesLatestReasonUntilTransportAttach()
+    {
+        await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(TerminalTabViewModelTests).Assembly).RunOnUiAsync(async () =>
+        {
+            _vm.ConnectionStatus = SessionStatus.Connected;
+            int disconnects = 0;
+            _vm.Disconnected += (_, _) =>
+            {
+                disconnects++;
+                Assert.IsTrue(_vm.AuthenticationRequiresUserAction, "后台排程看到断开事件前必须已经知道认证暂停。");
+            };
+
+            _vm.MarkAuthenticationRequiresUserAction("ops@jump:22: 第一次拒绝");
+            Assert.AreEqual(1, disconnects);
+            Assert.IsFalse(_vm.UserRequestedDisconnect);
+            Assert.IsFalse(_vm.HostKeyRejected);
+            _vm.MarkAuthenticationRequiresUserAction("ops@jump:22: 最新验证失败");
+            Assert.AreEqual("ops@jump:22: 最新验证失败", _vm.ConnectionError);
+            Assert.AreEqual(1, disconnects, "已断开时只更新安全原因,不重复排程。");
+            _vm.MarkDisconnected("后来一次网络失败");
+            Assert.AreEqual("后来一次网络失败", _vm.ConnectionError);
+            Assert.IsTrue(_vm.AuthenticationRequiresUserAction);
+
+            _vm.ConnectionStatus = SessionStatus.Connecting;
+            Assert.IsTrue(_vm.AuthenticationRequiresUserAction, "显式手动尝试开始不代表认证成功。");
+            await _vm.AttachTransportAsync(_shellStream);
+            Assert.IsFalse(_vm.AuthenticationRequiresUserAction);
+            await _vm.DisposeAsync();
+        });
     }
 
     [TestMethod]

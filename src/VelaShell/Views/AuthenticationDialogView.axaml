@@ -6,11 +6,11 @@
         xmlns:behaviors="using:VelaShell.Behaviors"
         xmlns:pc="using:VelaShell.Controls.Controls"
         xmlns:loc="using:VelaShell.Localization"
-        mc:Ignorable="d" d:DesignWidth="420"
+        mc:Ignorable="d" d:DesignWidth="520"
         x:Class="VelaShell.Views.AuthenticationDialogView"
         x:DataType="vm:AuthenticationDialogViewModel"
         Title="{loc:Localize Auth_Title}"
-        Width="428"
+        Width="520"
         SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
@@ -222,9 +222,9 @@
         <!-- 第 2 步:认证方式 -->
         <StackPanel IsVisible="{Binding IsStep2}" Spacing="14">
 
-          <!-- 分段选择:密码 / 证书 / 密钥 -->
+          <!-- 分段选择:密码 / 证书 / 密钥 / Tailscale SSH -->
           <Border Background="{DynamicResource VelaBgInput}" CornerRadius="4" Padding="2" Height="32">
-            <Grid ColumnDefinitions="*,2,*,2,*">
+            <Grid ColumnDefinitions="*,2,*,2,*,2,*">
               <Button Grid.Column="0" Classes="seg-tab" Content="{loc:Localize Password}"
                       Classes.active="{Binding IsPasswordMethod}"
                       Command="{Binding SelectPasswordCommand}" />
@@ -234,8 +234,16 @@
               <Button Grid.Column="4" Classes="seg-tab" Content="{loc:Localize Auth_Key}"
                       Classes.active="{Binding IsKeyMethod}"
                       Command="{Binding SelectKeyCommand}" />
+              <Button Grid.Column="6" Classes="seg-tab" Content="{loc:Localize Profile_TailscaleAuth}"
+                      Classes.active="{Binding IsTailscaleMethod}"
+                      Command="{Binding SelectTailscaleCommand}" />
             </Grid>
           </Border>
+
+          <TextBlock IsVisible="{Binding IsTailscaleMethod}"
+                     Text="{loc:Localize Profile_TailscaleAuthHint}" TextWrapping="Wrap"
+                     Foreground="{DynamicResource VelaTextTertiary}"
+                     FontSize="{DynamicResource VelaFontSize11}" />
 
           <!-- 密码 -->
           <StackPanel IsVisible="{Binding IsPasswordMethod}" Spacing="14">
@@ -321,7 +329,7 @@
             </StackPanel>
           </StackPanel>
 
-          <!-- 共享凭据(#550):把这次输入的存回去,所有引用它的连接一起换上。三种认证方式都适用。 -->
+          <!-- 共享凭据(#550):仅常规认证可把输入存回共享凭据。 -->
           <CheckBox IsVisible="{Binding CanUpdateSharedCredential}"
                     IsChecked="{Binding UpdateSharedCredential}"
                     Padding="0" MinHeight="0">

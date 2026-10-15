@@ -1,0 +1,71 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:VelaShell.ViewModels"
+        xmlns:pc="using:VelaShell.Controls.Controls"
+        xmlns:loc="using:VelaShell.Localization"
+        x:Class="VelaShell.Views.TailscaleSshCheckView"
+        x:DataType="vm:TailscaleSshCheckViewModel"
+        Title="{loc:Localize Ssh_TailscaleCheckTitle}"
+        Width="520" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Border Classes="window-card"
+          Background="{DynamicResource VelaBgSurface}"
+          BorderBrush="{DynamicResource VelaBorderSecondary}">
+    <StackPanel>
+      <Border Classes="window-titlebar window-card-top"
+              Background="{DynamicResource VelaBgSurface}"
+              BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1"
+              PointerPressed="Header_PointerPressed">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="12,0,0,0" VerticalAlignment="Center">
+            <Panel Classes="traffic-light-spacer" />
+            <pc:LucideIcon Width="15" Height="15" Data="{StaticResource Icon.shield}"
+                           Foreground="{DynamicResource VelaAccent}" />
+            <TextBlock Text="{loc:Localize Ssh_TailscaleCheckTitle}"
+                       FontSize="{DynamicResource VelaFontSize13}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource VelaTextPrimary}" VerticalAlignment="Center" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="window-caption" Width="27" Height="27"
+                  Theme="{StaticResource VelaOutlineButtonTheme}" Padding="0" BorderThickness="0"
+                  AutomationProperties.Name="{loc:Localize Cancel}" Click="Cancel_Click">
+            <pc:LucideIcon Width="14" Height="14" Data="{StaticResource Icon.x}"
+                           Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+        </Grid>
+      </Border>
+      <StackPanel Margin="20,16" Spacing="12">
+        <TextBlock Text="{Binding Target}" TextWrapping="Wrap"
+                   FontFamily="{DynamicResource VelaUiMonoFont}"
+                   Foreground="{DynamicResource VelaTextPrimary}" />
+        <TextBlock Text="{loc:Localize Ssh_TailscaleCheckWaiting}" TextWrapping="Wrap"
+                   Foreground="{DynamicResource VelaTextSecondary}" />
+        <TextBox x:Name="VerificationLink" Text="{Binding VerificationUri, Mode=OneWay}"
+                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="96"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 AutomationProperties.Name="{loc:Localize Ssh_TailscaleCheckCopyLink}"
+                 Foreground="{DynamicResource VelaTextPrimary}"
+                 Background="{DynamicResource VelaBgInput}"
+                 BorderBrush="{DynamicResource VelaBorderPrimary}"
+                 FontFamily="{DynamicResource VelaUiMonoFont}" />
+        <TextBlock x:Name="OperationError" Text="{Binding ErrorMessage}" TextWrapping="Wrap"
+                   IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                   Foreground="{DynamicResource VelaError}" />
+        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button x:Name="OpenBrowserButton" Content="{loc:Localize Ssh_TailscaleCheckOpenBrowser}"
+                  AutomationProperties.Name="{loc:Localize Ssh_TailscaleCheckOpenBrowser}"
+                  Command="{Binding OpenBrowserCommand}" Height="28" Margin="0,0,8,4"
+                  Theme="{StaticResource VelaAccentPillButtonTheme}" />
+          <Button x:Name="CopyLinkButton" Content="{loc:Localize Ssh_TailscaleCheckCopyLink}"
+                  AutomationProperties.Name="{loc:Localize Ssh_TailscaleCheckCopyLink}"
+                  Command="{Binding CopyLinkCommand}" Margin="0,0,8,4"
+                  Theme="{StaticResource VelaOutlineButtonTheme}" />
+          <Button x:Name="CancelButton" Content="{loc:Localize Cancel}"
+                  AutomationProperties.Name="{loc:Localize Cancel}" Click="Cancel_Click" Margin="0,0,0,4"
+                  IsEnabled="{Binding !IsCompleted}"
+                  Theme="{StaticResource VelaOutlineButtonTheme}" />
+        </WrapPanel>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

@@ -41,7 +41,7 @@ public static class CredentialMaterial
     /// <param name="profile">连接配置。</param>
     /// <returns>需要解析时为 true。</returns>
     public static bool NeedsResolution(SessionProfile profile) =>
-        profile.CredentialSource is not null && !HasInline(profile);
+        profile.AuthMethod != AuthMethod.Tailscale && profile.CredentialSource is not null && !HasInline(profile);
 
     /// <summary>清掉配置上的认证材料(密码、私钥、口令、证书)。用户名与认证方式不动。</summary>
     /// <param name="profile">要清的配置(就地修改)。</param>
@@ -51,5 +51,18 @@ public static class CredentialMaterial
         profile.PrivateKeyPath = null;
         profile.PrivateKeyPassphrase = null;
         profile.CertificatePath = null;
+    }
+
+    /// <summary>清掉 Tailscale SSH 不使用的认证材料与引用,保留远端用户名和其它连接设置。</summary>
+    /// <param name="profile">要清的配置(就地修改)。其它认证方式不动。</param>
+    public static void ClearTailscaleCredentials(SessionProfile profile)
+    {
+        if (profile.AuthMethod != AuthMethod.Tailscale)
+        {
+            return;
+        }
+        ClearInline(profile);
+        profile.CredentialSource = null;
+        profile.RememberPassword = false;
     }
 }

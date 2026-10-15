@@ -7544,4 +7544,21 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="PasswordFill_Expired" xml:space="preserve"><value>工作階段或輸入內容已變更，未傳送任何內容。請關閉後重新開啟選擇器。</value></data>
   <data name="PasswordFill_Unavailable" xml:space="preserve"><value>此認證資料已刪除或不再有可用密碼，未傳送任何內容。</value></data>
   <data name="PasswordFill_Invalid" xml:space="preserve"><value>密碼包含控制字元或無法以目前工作階段編碼表示，未傳送任何內容。</value></data>
+  <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
+  <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>使用本機已登入的 Tailscale 身分與遠端系統使用者名稱，無需 SSH 密碼或金鑰；伺服器可能要求瀏覽器驗證。</value></data>
+  <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH 使用本機 Tailscale 身分，不能儲存為共用認證。</value></data>
+  <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH 驗證</value></data>
+  <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>伺服器要求身分複核。請點擊連結在瀏覽器中驗證；伺服器批准後，本次連線會自動繼續。</value></data>
+  <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>開啟瀏覽器</value></data>
+  <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>複製連結</value></data>
+  <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH 驗證連結已隱藏]</value></data>
+  <data name="Ssh_TailscaleCheckOpenFailed" xml:space="preserve"><value>無法開啟瀏覽器。請複製連結或重試。</value></data>
+  <data name="Ssh_TailscaleCheckCopyFailed" xml:space="preserve"><value>無法複製連結。請選取連結後手動複製。</value></data>
+  <data name="SshErr_TailscaleCheckCancelled" xml:space="preserve"><value>已取消 Tailscale SSH 驗證。</value></data>
+  <data name="SshErr_TailscaleRejected" xml:space="preserve"><value>Tailscale SSH 授權遭拒絕。請核對目前跳點的遠端系統使用者名稱與 tailnet SSH 原則。</value></data>
+  <data name="SshErr_TailscaleCheckTimeout" xml:space="preserve"><value>等待 Tailscale SSH 瀏覽器驗證逾時，請手動重新連線後重試。</value></data>
+  <data name="SshErr_TailscaleAuthTimeout" xml:space="preserve"><value>Tailscale SSH 認證逾時。</value></data>
+  <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH 要求身分複核，請手動重新連線。</value></data>
+  <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>無法顯示 Tailscale SSH 驗證視窗。請在主視窗開啟後重新連線。</value></data>
+  <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>伺服器拒絕或結束了認證，無法繼續 Tailscale SSH 驗證。</value></data>
 </root>

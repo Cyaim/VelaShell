@@ -1,6 +1,7 @@
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Import;
 using VelaShell.Core.Models;
+using VelaShell.Core.Resources;
 
 namespace VelaShell.Core.Tests.Import;
 
@@ -434,6 +435,81 @@ public sealed class SessionImportPlannerTests
     }
 
     [TestMethod]
+    [DataRow("id", false)]
+    [DataRow("id", true)]
+    [DataRow("name", false)]
+    [DataRow("name", true)]
+    [DataRow("none", false)]
+    public void JsonCredentials_TailscaleSourceIsRejectedBeforeMatchingOrFillingSecrets(string match, bool hasLocalSecret)
+    {
+        const string staleSecret = "UNSUPPORTED_TAILSCALE_IMPORT_SECRET";
+        var local = new SharedCredential { Name = "ops", AuthMethod = AuthMethod.Password, Password = hasLocalSecret ? "local-secret" : null };
+        var external = new SharedCredential
+        {
+            Id = match == "id" ? local.Id : Guid.NewGuid(),
+            Name = "ops",
+            AuthMethod = AuthMethod.Tailscale,
+            Password = staleSecret
+        };
+        SessionProfile incoming = Session("target", "target");
+        incoming.AuthMethod = AuthMethod.Password;
+        incoming.CredentialSource = CredentialReference.ForShared(external.Id);
+        SessionImportDocument document = Json(new SessionArchive { Sessions = [incoming], SharedCredentials = [external] }, "pass-phrase");
+        Assert.IsTrue(SessionArchiveJson.TryUnlock(document, "pass-phrase"));
+
+        SessionImportPlan plan = Plan(document, credentials: match == "none" ? [] : [local]);
+        SessionImportWriteSet writes = Write(plan);
+
+        SessionProfile written = writes.Sessions.Single();
+        Assert.AreEqual(AuthMethod.Password, written.AuthMethod);
+        Assert.IsNull(written.CredentialSource, "不能把非法来源自动改指同 ID 或同名的正常凭据");
+        Assert.IsNull(written.Password);
+        Assert.IsEmpty(writes.SharedCredentials, "既不能补写本机密码,也不能新建非法共享条目");
+        CollectionAssert.Contains(plan.Items.Single().Warnings, Strings.Get("SharedCred_ErrTailscaleUnsupported"));
+        Assert.IsTrue(writes.Warnings.Any(w => w.Contains(Strings.Get("SharedCred_ErrTailscaleUnsupported"), StringComparison.Ordinal)));
+        Assert.AreEqual(hasLocalSecret ? "local-secret" : null, local.Password);
+        Assert.AreEqual(AuthMethod.Password, local.AuthMethod);
+        Assert.AreEqual(staleSecret, external.Password);
+        Assert.AreEqual(staleSecret, document.SharedCredentials.Single().Password);
+        Assert.AreEqual(AuthMethod.Tailscale, document.SharedCredentials.Single().AuthMethod);
+        Assert.AreEqual(CredentialReference.ForShared(external.Id), incoming.CredentialSource);
+        Assert.AreEqual(CredentialReference.ForShared(external.Id), document.Candidates.Single().Profile.CredentialSource);
+    }
+
+    [TestMethod]
+    [DataRow("csv-id")]
+    [DataRow("csv-name")]
+    [DataRow("json-id")]
+    [DataRow("json-name")]
+    public void ImportedCredentialReference_RejectsAnUnsupportedLocalTailscaleEntry(string referenceKind)
+    {
+        var local = new SharedCredential { Name = "ops", AuthMethod = AuthMethod.Tailscale, Password = "local-stale-secret" };
+        SessionImportDocument document;
+        if (referenceKind.StartsWith("csv", StringComparison.Ordinal))
+        {
+            string reference = referenceKind == "csv-id" ? local.Id.ToString() : local.Name;
+            document = Csv($"name,host,credential\ntarget,target,{reference}\n");
+        }
+        else
+        {
+            var external = new SharedCredential { Name = "ops", Password = "external-secret" };
+            SessionProfile incoming = Session("target", "target");
+            incoming.CredentialSource = CredentialReference.ForShared(referenceKind == "json-id" ? local.Id : external.Id);
+            document = Json(new SessionArchive { Sessions = [incoming], SharedCredentials = referenceKind == "json-id" ? [] : [external] });
+        }
+
+        SessionImportPlan plan = Plan(document, credentials: [local]);
+        SessionImportWriteSet writes = Write(plan);
+
+        Assert.IsNull(writes.Sessions.Single().CredentialSource);
+        Assert.IsEmpty(writes.SharedCredentials);
+        CollectionAssert.Contains(plan.Items.Single().Warnings, Strings.Get("SharedCred_ErrTailscaleUnsupported"));
+        Assert.IsTrue(writes.Warnings.Any(w => w.Contains(Strings.Get("SharedCred_ErrTailscaleUnsupported"), StringComparison.Ordinal)));
+        Assert.AreEqual(AuthMethod.Tailscale, local.AuthMethod);
+        Assert.AreEqual("local-stale-secret", local.Password);
+    }
+
+    [TestMethod]
     public void CsvCredential_ByName_AndAMissingOneFallsBackToInlineAuth()
     {
         var local = new SharedCredential { Id = Guid.NewGuid(), Name = "Switch Admin" };
@@ -579,5 +655,110 @@ public sealed class SessionImportPlannerTests
 
         Assert.AreEqual(1, writes.SecretsImported);
         Assert.IsTrue(writes.Sessions[0].RememberPassword);
+    }
+
+    [TestMethod]
+    [DataRow(false, "")]
+    [DataRow(true, "missing")]
+    [DataRow(true, "ops")]
+    public void CsvOverwrite_Tailscale_DiscardsOldSharedReferenceAndSecretsBeforeResolving(bool credentialColumn, string reference)
+    {
+        SessionProfile jump = Session("jump", "jump");
+        SessionProfile local = Session("tail", "tail");
+        local.Password = "old-password";
+        local.PrivateKeyPath = "/old-key";
+        local.PrivateKeyPassphrase = "old-phrase";
+        local.CertificatePath = "/old-cert";
+        local.RememberPassword = true;
+        local.CredentialSource = CredentialReference.ForShared(Guid.NewGuid());
+        local.JumpHostProfileId = jump.Id;
+        var credential = new SharedCredential { Name = "ops", Username = "shared", Password = "shared-secret" };
+        string csv = credentialColumn
+            ? $"id,host,auth,password,private_key,certificate,credential,jump_host\n{local.Id},tail,tailscale,new-password,/new-key,/new-cert,{reference},jump\n"
+            : $"id,host,auth\n{local.Id},tail,tailscale\n";
+
+        SessionImportWriteSet writes = Write(Plan(Csv(csv), [local, jump], credentials: [credential]), SessionImportConflict.Overwrite);
+        SessionProfile written = writes.Sessions.Single();
+
+        Assert.AreEqual(AuthMethod.Tailscale, written.AuthMethod);
+        Assert.AreEqual(local.Id, written.Id);
+        Assert.AreEqual("root", written.Username);
+        Assert.AreEqual(jump.Id, written.JumpHostProfileId);
+        Assert.IsNull(written.CredentialSource);
+        Assert.IsNull(written.Password);
+        Assert.IsNull(written.PrivateKeyPath);
+        Assert.IsNull(written.PrivateKeyPassphrase);
+        Assert.IsNull(written.CertificatePath);
+        Assert.IsFalse(written.RememberPassword);
+        Assert.IsEmpty(writes.SharedCredentials);
+        Assert.IsEmpty(writes.Warnings, "旧引用即使找不到也不应该先尝试解析");
+        Assert.AreEqual("old-password", local.Password);
+        Assert.IsNotNull(local.CredentialSource);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void JsonTailscale_ImportClearsRestoredAndMergedLegacyMaterials(bool overwrite)
+    {
+        SessionProfile jump = Session("jump", "jump");
+        SessionProfile local = Session("tail", "tail");
+        local.Password = "local-password";
+        local.PrivateKeyPassphrase = "local-phrase";
+        local.CredentialSource = CredentialReference.ForShared(Guid.NewGuid());
+        local.RememberPassword = true;
+        SessionProfile incoming = local.Clone();
+        incoming.AuthMethod = AuthMethod.Tailscale;
+        incoming.Password = null;
+        incoming.PrivateKeyPassphrase = null;
+        incoming.PrivateKeyPath = "/legacy-key";
+        incoming.CertificatePath = "/legacy-cert";
+        incoming.JumpHostProfileId = jump.Id;
+        // 模拟外部旧文件,不能走本次导出的清理逻辑。
+        string json = System.Text.Json.JsonSerializer.Serialize(new SessionArchive { Sessions = [incoming] }, SessionArchiveJson.Options);
+        SessionImportDocument document = SessionArchiveJson.Read("legacy.json", json);
+
+        SessionImportWriteSet writes = Write(Plan(document, overwrite ? [local, jump] : [jump]), SessionImportConflict.Overwrite);
+        SessionProfile written = writes.Sessions.Single();
+
+        Assert.AreEqual(AuthMethod.Tailscale, written.AuthMethod);
+        Assert.AreEqual("root", written.Username);
+        Assert.AreEqual(jump.Id, written.JumpHostProfileId);
+        Assert.IsNull(written.CredentialSource);
+        Assert.IsNull(written.Password);
+        Assert.IsNull(written.PrivateKeyPath);
+        Assert.IsNull(written.PrivateKeyPassphrase);
+        Assert.IsNull(written.CertificatePath);
+        Assert.IsFalse(written.RememberPassword);
+        Assert.IsEmpty(writes.Warnings, "不解析旧引用,但仍解析跳板");
+        Assert.AreEqual("local-password", local.Password);
+    }
+
+    [TestMethod]
+    public void JsonTailscale_ImportDiscardsSecretsRestoredFromAnOlderEncryptedFile()
+    {
+        var incoming = new SessionProfile
+        {
+            Name = "tail", Host = "tail", Username = "deploy", Password = "legacy-password",
+            PrivateKeyPath = "/legacy-key", PrivateKeyPassphrase = "legacy-phrase", CertificatePath = "/legacy-cert",
+            RememberPassword = true
+        };
+        const string passphrase = "archive-passphrase";
+        string json = SessionArchiveJson.Serialize(new SessionArchive { Sessions = [incoming] }, passphrase)
+            .Replace("\"authMethod\": \"password\"", "\"authMethod\": \"tailscale\"", StringComparison.Ordinal);
+        SessionImportDocument document = SessionArchiveJson.Read("legacy-encrypted.json", json);
+        Assert.IsTrue(SessionArchiveJson.TryUnlock(document, passphrase));
+        Assert.AreEqual("legacy-password", document.Candidates.Single().Profile.Password, "旧文件可在解锁时恢复材料");
+
+        SessionProfile written = Write(Plan(document)).Sessions.Single();
+
+        Assert.AreEqual(AuthMethod.Tailscale, written.AuthMethod);
+        Assert.AreEqual("deploy", written.Username);
+        Assert.IsNull(written.CredentialSource);
+        Assert.IsNull(written.Password);
+        Assert.IsNull(written.PrivateKeyPath);
+        Assert.IsNull(written.PrivateKeyPassphrase);
+        Assert.IsNull(written.CertificatePath);
+        Assert.IsFalse(written.RememberPassword);
     }
 }

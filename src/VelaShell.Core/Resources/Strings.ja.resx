@@ -7079,4 +7079,21 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PasswordFill_Expired" xml:space="preserve"><value>セッションまたは入力状態が変わりました。何も送信していません。選択画面を開き直してください。</value></data>
   <data name="PasswordFill_Unavailable" xml:space="preserve"><value>資格情報が削除されたか、有効なパスワードがありません。何も送信していません。</value></data>
   <data name="PasswordFill_Invalid" xml:space="preserve"><value>パスワードに制御文字が含まれるか、セッションの文字コードで表現できません。何も送信していません。</value></data>
+  <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
+  <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>この端末でログイン済みの Tailscale ID とリモートのシステムユーザー名を使用します。SSH パスワードや鍵は不要です。サーバーがブラウザーでの確認を求める場合があります。</value></data>
+  <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH はこの端末の Tailscale ID を使用するため、共有認証情報として保存できません。</value></data>
+  <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH の確認</value></data>
+  <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>サーバーが本人確認を要求しています。リンクをブラウザーで開いて確認してください。サーバーが承認すると、この接続は自動的に続行します。</value></data>
+  <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>ブラウザーを開く</value></data>
+  <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>リンクをコピー</value></data>
+  <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH 確認リンクを非表示]</value></data>
+  <data name="Ssh_TailscaleCheckOpenFailed" xml:space="preserve"><value>ブラウザーを開けませんでした。リンクをコピーするか、もう一度お試しください。</value></data>
+  <data name="Ssh_TailscaleCheckCopyFailed" xml:space="preserve"><value>リンクをコピーできませんでした。選択して手動でコピーしてください。</value></data>
+  <data name="SshErr_TailscaleCheckCancelled" xml:space="preserve"><value>Tailscale SSH の確認をキャンセルしました。</value></data>
+  <data name="SshErr_TailscaleRejected" xml:space="preserve"><value>Tailscale SSH の承認が拒否されました。この接続先のシステムユーザー名と tailnet の SSH ポリシーを確認してください。</value></data>
+  <data name="SshErr_TailscaleCheckTimeout" xml:space="preserve"><value>Tailscale SSH のブラウザー確認がタイムアウトしました。手動で再接続してください。</value></data>
+  <data name="SshErr_TailscaleAuthTimeout" xml:space="preserve"><value>Tailscale SSH 認証がタイムアウトしました。</value></data>
+  <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH は本人確認を要求しています。手動で再接続してください。</value></data>
+  <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>Tailscale SSH の確認ウィンドウを表示できません。メインウィンドウを開いてから再接続してください。</value></data>
+  <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>サーバーが認証を拒否または終了したため、Tailscale SSH の確認を続行できません。</value></data>
 </root>

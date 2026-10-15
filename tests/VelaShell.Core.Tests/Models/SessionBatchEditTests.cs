@@ -135,4 +135,60 @@ public sealed class SessionBatchEditTests
         Assert.IsFalse(new SessionBatchEdit().HasChanges);
         Assert.IsTrue(new SessionBatchEdit { ChangeJumpHost = true }.HasChanges);
     }
+
+    [TestMethod]
+    public void Apply_Tailscale_ClearsMaterialsForSshAndSftpAndSkipsPasswordOnlyProtocols()
+    {
+        SessionProfile ssh = Ssh("ssh");
+        ssh.Password = "old";
+        ssh.PrivateKeyPath = "/old-key";
+        ssh.PrivateKeyPassphrase = "old-phrase";
+        ssh.CertificatePath = "/old-cert";
+        ssh.RememberPassword = true;
+        ssh.CredentialSource = CredentialReference.ForShared(Guid.NewGuid());
+        ssh.JumpHostProfileId = Guid.NewGuid();
+        SessionProfile sftp = ssh.Clone();
+        sftp.Id = Guid.NewGuid();
+        sftp.ConnectionType = ConnectionType.SFTP;
+        var ftp = new SessionProfile { ConnectionType = ConnectionType.FTP };
+        var plugin = new SessionProfile { ConnectionType = ConnectionType.Plugin };
+
+        SessionBatchEditResult result = new SessionBatchEdit
+        {
+            Auth = new SessionBatchAuth { Kind = SessionBatchAuthKind.Tailscale }
+        }.Apply([ssh, sftp, ftp, plugin], [ssh, sftp, ftp, plugin]);
+
+        Assert.AreEqual(2, result.AuthSkipped);
+        Assert.HasCount(2, result.Changed);
+        foreach (SessionProfile changed in result.Changed)
+        {
+            Assert.AreEqual(AuthMethod.Tailscale, changed.AuthMethod);
+            Assert.AreEqual("root", changed.Username);
+            Assert.AreEqual(ssh.JumpHostProfileId, changed.JumpHostProfileId);
+            Assert.IsNull(changed.CredentialSource);
+            Assert.IsNull(changed.Password);
+            Assert.IsNull(changed.PrivateKeyPath);
+            Assert.IsNull(changed.PrivateKeyPassphrase);
+            Assert.IsNull(changed.CertificatePath);
+            Assert.IsFalse(changed.RememberPassword);
+        }
+        Assert.AreEqual("old", ssh.Password);
+        Assert.AreEqual(ConnectionType.SFTP, result.Changed[1].ConnectionType);
+    }
+
+    [TestMethod]
+    public void Apply_TailscaleSharedCredential_IsSkipped()
+    {
+        SessionProfile ssh = Ssh("ssh");
+        var credential = new SharedCredential { AuthMethod = AuthMethod.Tailscale };
+
+        SessionBatchEditResult result = new SessionBatchEdit
+        {
+            Auth = new SessionBatchAuth { Kind = SessionBatchAuthKind.SharedCredential, Credential = credential }
+        }.Apply([ssh], [ssh]);
+
+        Assert.AreEqual(1, result.AuthSkipped);
+        Assert.IsEmpty(result.Changed);
+        Assert.AreEqual(AuthMethod.Password, ssh.AuthMethod);
+    }
 }

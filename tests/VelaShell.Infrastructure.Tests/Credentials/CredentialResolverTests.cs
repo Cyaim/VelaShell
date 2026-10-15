@@ -208,4 +208,58 @@ public sealed class CredentialResolverTests
 
         Assert.AreSame(profile, await _resolver.ResolveAsync(profile));
     }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("deploy")]
+    public async Task Tailscale_CleansACopyWithoutReadingOrInheritingTheCredential(string username)
+    {
+        SharedCredential credential = Store(new() { Name = "ops", Username = "shared-user", Password = "shared-secret" });
+        SessionProfile profile = Referencing(credential, ConnectionType.SFTP);
+        profile.AuthMethod = AuthMethod.Tailscale;
+        profile.Username = username;
+        profile.Password = "old";
+        profile.PrivateKeyPath = "/missing-key";
+        profile.PrivateKeyPassphrase = "old-phrase";
+        profile.CertificatePath = "/missing-cert";
+        profile.RememberPassword = true;
+        profile.JumpHostProfileId = Guid.NewGuid();
+
+        SessionProfile effective = await _resolver.ResolveAsync(profile);
+
+        Assert.AreNotSame(profile, effective);
+        Assert.AreEqual(AuthMethod.Tailscale, effective.AuthMethod);
+        Assert.AreEqual(username, effective.Username);
+        Assert.AreEqual(ConnectionType.SFTP, effective.ConnectionType);
+        Assert.AreEqual(profile.JumpHostProfileId, effective.JumpHostProfileId);
+        Assert.IsNull(effective.CredentialSource);
+        Assert.IsNull(effective.Password);
+        Assert.IsNull(effective.PrivateKeyPath);
+        Assert.IsNull(effective.PrivateKeyPassphrase);
+        Assert.IsNull(effective.CertificatePath);
+        Assert.IsFalse(effective.RememberPassword);
+        Assert.IsNotNull(profile.CredentialSource);
+        Assert.AreEqual("old", profile.Password);
+        await _repository.DidNotReceive().GetAsync(Arg.Any<Guid>());
+    }
+
+    [TestMethod]
+    [DataRow(ConnectionType.SSH)]
+    [DataRow(ConnectionType.SFTP)]
+    [DataRow(ConnectionType.FTP)]
+    [DataRow(ConnectionType.Plugin)]
+    public async Task TailscaleSharedCredential_IsRejectedWithoutChangingTheSession(ConnectionType type)
+    {
+        SharedCredential credential = Store(new() { Name = "invalid", Username = "root", AuthMethod = AuthMethod.Tailscale });
+        SessionProfile profile = Referencing(credential, type);
+        profile.Password = "typed";
+
+        CredentialProviderException ex = await Assert.ThrowsExactlyAsync<CredentialProviderException>(
+            () => _resolver.ResolveAsync(profile));
+
+        Assert.AreEqual(CredentialFailure.UnsupportedAuthMethod, ex.Kind);
+        Assert.AreEqual(AuthMethod.Password, profile.AuthMethod);
+        Assert.AreEqual(string.Empty, profile.Username);
+        Assert.AreEqual("typed", profile.Password);
+    }
 }

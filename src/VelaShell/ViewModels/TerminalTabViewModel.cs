@@ -390,6 +390,9 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
     /// </summary>
     public bool HostKeyRejected { get; private set; }
 
+    /// <summary>认证需要人工处理时暂停后台重连;只在成功挂载新传输时清除,不持久化。</summary>
+    public bool AuthenticationRequiresUserAction { get; private set; }
+
     /// <summary>本标签在状态栏显示的连接摘要,例如 "SSH • root@host:22"。</summary>
     public string ConnectionSummary { get; init; } = string.Empty;
 
@@ -826,6 +829,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         UserRequestedDisconnect = false;
         RemoteShellExited = false;
         HostKeyRejected = false;
+        AuthenticationRequiresUserAction = false;
         ShellStream = shellStream;
         var bridge = new SshTerminalBridge(TerminalEmulator, shellStream);
         bridge.Closed += OnBridgeClosed;
@@ -966,6 +970,13 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         MarkDisconnected(reason);
     }
 
+    /// <summary>保留当前认证跳的安全失败原因,在断开通知之前暂停后台重连。</summary>
+    public void MarkAuthenticationRequiresUserAction(string reason)
+    {
+        AuthenticationRequiresUserAction = true;
+        MarkDisconnected(reason);
+    }
+
     /// <summary>用户手动重连:上一次败在主机指纹上的那条不再拦着自动重连(这一次会弹窗问他)。</summary>
     public void ClearHostKeyRejected() => HostKeyRejected = false;
 
@@ -976,13 +987,17 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
     /// </summary>
     public void MarkDisconnected(string? reason = null)
     {
-        if (_disposed || ConnectionStatus == SessionStatus.Disconnected)
+        if (_disposed)
         {
             return;
         }
         if (!string.IsNullOrEmpty(reason))
         {
             ConnectionError = reason;
+        }
+        if (ConnectionStatus == SessionStatus.Disconnected)
+        {
+            return;
         }
         ConnectionStatus = SessionStatus.Disconnected;
         FeedDisconnectNotice();
