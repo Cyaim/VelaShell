@@ -7069,4 +7069,14 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Sudo_Retry" xml:space="preserve"><value>이전 암호가 허용되지 않았습니다. 다시 시도하세요.</value></data>
   <data name="Sudo_NoStorage" xml:space="preserve"><value>암호는 이 호스트에만 전송됩니다. 저장하거나 플러그인 또는 AI와 공유하지 않습니다.</value></data>
   <data name="Sudo_Submit" xml:space="preserve"><value>인증</value></data>
+  <data name="PasswordFill_Title" xml:space="preserve"><value>공유 비밀번호 입력</value></data>
+  <data name="PasswordFill_Hint" xml:space="preserve"><value>입력할 공유 비밀번호 선택…</value></data>
+  <data name="PasswordFill_Search" xml:space="preserve"><value>자격 증명 이름 또는 사용자 이름 검색</value></data>
+  <data name="PasswordFill_Confirm" xml:space="preserve"><value>Enter 없이 입력</value></data>
+  <data name="PasswordFill_Warning" xml:space="preserve"><value>선택한 비밀번호만 이 세션에 입력하며 Enter는 보내지 않습니다. 원격 프로그램의 에코로 화면, 로그 또는 녹화에 남을 수 있습니다. 현재 프롬프트를 신뢰할 수 있을 때만 입력하세요.</value></data>
+  <data name="PasswordFill_Empty" xml:space="preserve"><value>일치하는 공유 비밀번호 자격 증명이 없습니다. 설정 → 공유 자격 증명에서 추가할 수 있습니다.</value></data>
+  <data name="PasswordFill_ReadFailed" xml:space="preserve"><value>자격 증명을 읽거나 복호화할 수 없습니다. 아무것도 전송하지 않았습니다.</value></data>
+  <data name="PasswordFill_Expired" xml:space="preserve"><value>세션 또는 입력 상태가 변경되었습니다. 아무것도 전송하지 않았습니다. 선택 창을 다시 여세요.</value></data>
+  <data name="PasswordFill_Unavailable" xml:space="preserve"><value>자격 증명이 삭제되었거나 사용 가능한 비밀번호가 없습니다. 아무것도 전송하지 않았습니다.</value></data>
+  <data name="PasswordFill_Invalid" xml:space="preserve"><value>비밀번호에 제어 문자가 있거나 현재 세션 인코딩으로 표현할 수 없습니다. 아무것도 전송하지 않았습니다.</value></data>
 </root>

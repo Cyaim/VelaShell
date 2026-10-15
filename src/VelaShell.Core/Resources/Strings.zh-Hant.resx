@@ -7534,4 +7534,14 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Sudo_Retry" xml:space="preserve"><value>上次密碼未被接受，請重試。</value></data>
   <data name="Sudo_NoStorage" xml:space="preserve"><value>密碼僅傳送給此主機，不儲存，也不提供給外掛或 AI。</value></data>
   <data name="Sudo_Submit" xml:space="preserve"><value>驗證</value></data>
+  <data name="PasswordFill_Title" xml:space="preserve"><value>填入共用密碼</value></data>
+  <data name="PasswordFill_Hint" xml:space="preserve"><value>選擇共用密碼填入…</value></data>
+  <data name="PasswordFill_Search" xml:space="preserve"><value>搜尋認證資料名稱或使用者名稱</value></data>
+  <data name="PasswordFill_Confirm" xml:space="preserve"><value>僅填入，不按 Enter</value></data>
+  <data name="PasswordFill_Warning" xml:space="preserve"><value>僅向此工作階段填入所選密碼，不送出 Enter。遠端程式可能回顯密碼，使其進入畫面、記錄或錄製。請確認信任目前提示後再填入。</value></data>
+  <data name="PasswordFill_Empty" xml:space="preserve"><value>沒有相符的共用密碼認證資料。可在「設定 → 共用認證資料」中新增密碼認證資料。</value></data>
+  <data name="PasswordFill_ReadFailed" xml:space="preserve"><value>無法讀取或解密認證資料，未傳送任何內容。</value></data>
+  <data name="PasswordFill_Expired" xml:space="preserve"><value>工作階段或輸入內容已變更，未傳送任何內容。請關閉後重新開啟選擇器。</value></data>
+  <data name="PasswordFill_Unavailable" xml:space="preserve"><value>此認證資料已刪除或不再有可用密碼，未傳送任何內容。</value></data>
+  <data name="PasswordFill_Invalid" xml:space="preserve"><value>密碼包含控制字元或無法以目前工作階段編碼表示，未傳送任何內容。</value></data>
 </root>

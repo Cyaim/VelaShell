@@ -1,4 +1,7 @@
+using System.ComponentModel;
 using System.Text;
+using Microsoft.Extensions.DependencyInjection;
+using VelaShell.Core.Data;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -26,6 +29,128 @@ public partial class TerminalTabView : UserControl
 {
     private readonly IKeyboardShortcutService _shortcutService;
 
+    private SharedPasswordPickerDialog? _passwordPicker;
+    private SharedPasswordFillRequest? _passwordRequest;
+    private string? _suppressedPasswordPrompt;
+    private INotifyPropertyChanged? _passwordHost;
+
+    private void OnPasswordHostChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainWindowViewModel.ActiveTerminalTab))
+        {
+            HidePasswordHint();
+            _passwordRequest?.Invalidate();
+        }
+    }
+
+    private void HidePasswordHint(bool suppress = false)
+    {
+        PasswordHint.IsVisible = false;
+        if (suppress && _termControl is { } control)
+        {
+            _suppressedPasswordPrompt = control.GetBufferLine(control.CursorRow);
+        }
+    }
+
+    private void OnPasswordOutputUpdated()
+    {
+        if (_passwordPicker is not null || _termControl is not { } control
+            || DataContext is not TerminalTabViewModel { IsConnected: true, Bridge: not null } tab
+            || TopLevel.GetTopLevel(this) is not Window { IsActive: true, DataContext: MainWindowViewModel main }
+            || !ReferenceEquals(main.ActiveTerminalTab, tab) || !control.IsFocused
+            || control.ScrollOffset != 0 || control.IsAlternateScreenActive || !IsEffectivelyVisible)
+        {
+            HidePasswordHint();
+            return;
+        }
+        string line = control.GetBufferLine(control.CursorRow);
+        if (!InteractivePromptDetector.IsPasswordFillPrompt(line) || line == _suppressedPasswordPrompt)
+        {
+            HidePasswordHint();
+            if (line != _suppressedPasswordPrompt)
+            {
+                _suppressedPasswordPrompt = null;
+            }
+            return;
+        }
+        DismissSuggestions(suppress: false);
+        Rect cursor = control.GetCursorRect();
+        PasswordHint.Margin = new(Math.Max(0, Math.Min(cursor.X, Bounds.Width - 260)),
+            Math.Max(0, Math.Min(cursor.Bottom + 2, control.Bounds.Height - 42)), 0, 0);
+        PasswordHint.IsVisible = true;
+    }
+
+    private void OpenSharedPassword_Click(object? sender, RoutedEventArgs e) => OpenSharedPasswordPicker();
+    private void PasswordHint_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_termControl is { } control && InteractivePromptDetector.IsPasswordFillPrompt(control.GetBufferLine(control.CursorRow)))
+        {
+            OpenSharedPasswordPicker();
+        }
+    }
+
+    internal void OpenSharedPasswordPicker() => FireAndForget.Run(OpenSharedPasswordPickerAsync);
+
+    private async Task OpenSharedPasswordPickerAsync()
+    {
+        if (_passwordPicker is not null || DataContext is not TerminalTabViewModel { IsConnected: true, Bridge: not null } tab
+            || TopLevel.GetTopLevel(this) is not Window { DataContext: MainWindowViewModel main } owner
+            || !ReferenceEquals(main.ActiveTerminalTab, tab)
+            || Application.Current is not App { Services: { } services }
+            || services.GetService<ISharedCredentialRepository>() is not { } repository)
+        {
+            return;
+        }
+        HidePasswordHint(suppress: true);
+        DismissSuggestions(suppress: false);
+        using var request = new SharedPasswordFillRequest(tab, () => ReferenceEquals(main.ActiveTerminalTab, tab)
+            && ReferenceEquals(DataContext, tab) && IsAttachedToVisualTree() && owner.IsVisible);
+        _passwordRequest = request;
+        var picker = new SharedPasswordPickerDialog(repository, request, tab.Title);
+        _passwordPicker = picker;
+        void OnActiveChanged(object? sender, PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName == nameof(MainWindowViewModel.ActiveTerminalTab))
+            {
+                request.Invalidate();
+            }
+        }
+        void OnOwnerClosing(object? sender, WindowClosingEventArgs args) => request.Invalidate();
+        void OnOwnerPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
+        {
+            if (args.Property == IsVisibleProperty && !owner.IsVisible)
+            {
+                request.Invalidate();
+            }
+        }
+        owner.Closing += OnOwnerClosing;
+        owner.PropertyChanged += OnOwnerPropertyChanged;
+        ((INotifyPropertyChanged)main).PropertyChanged += OnActiveChanged;
+        try
+        {
+            await picker.ShowDialog<bool>(owner);
+        }
+        finally
+        {
+            ((INotifyPropertyChanged)main).PropertyChanged -= OnActiveChanged;
+            owner.Closing -= OnOwnerClosing;
+            owner.PropertyChanged -= OnOwnerPropertyChanged;
+            _passwordPicker = null;
+            _passwordRequest = null;
+            if (owner.IsActive && ReferenceEquals(main.ActiveTerminalTab, tab) && IsAttachedToVisualTree())
+            {
+                FocusTerminal();
+            }
+        }
+    }
+
+    private void CancelPasswordPicker()
+    {
+        HidePasswordHint();
+        _passwordRequest?.Invalidate();
+        _passwordPicker?.PostClose(false);
+    }
+
     // ---- 终端内搜索(spec §5.3) ------------------------------------
 
     private IReadOnlyList<BufferSearchHit> _searchHits = [];
@@ -49,6 +174,7 @@ public partial class TerminalTabView : UserControl
         DetachedFromVisualTree += OnDetachedFromVisualTree;
         DataContextChanged += (_, _) =>
         {
+            CancelPasswordPicker();
             HookTerminalControl();
             HookSuggestions();
             // 失败覆盖层上的「复制」:剪贴板要经 TopLevel 取,视图模型层拿不到,由视图注入。
@@ -96,6 +222,12 @@ public partial class TerminalTabView : UserControl
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
+        if (PasswordHint.IsVisible && e.Key == Key.Escape)
+        {
+            HidePasswordHint(suppress: true);
+            e.Handled = true;
+            return;
+        }
         // 自愈守卫:弹层开着但焦点既不在终端控件也不在本视图(回退层)上,说明焦点
         // 被外因(系统截图覆盖层抢焦点、原生弹层被平台隐藏等)拖进了弹层或别处——
         // 正常交互期间焦点始终在终端/视图上。此时任何按键都先收口弹层并把焦点还给
@@ -190,8 +322,11 @@ public partial class TerminalTabView : UserControl
     }
 
     /// <summary>断连横幅会移动光标,残留的幽灵会被画到新光标处——断连即收口。</summary>
-    private void OnSuggestVmDisconnected(object? sender, EventArgs e) =>
+    private void OnSuggestVmDisconnected(object? sender, EventArgs e)
+    {
+        CancelPasswordPicker();
         DismissSuggestions(suppress: false);
+    }
 
     /// <summary>统一收起智能提示:弹层与幽灵文本同生共灭,防止各清一半的残留。</summary>
     private void DismissSuggestions(bool suppress)
@@ -208,6 +343,7 @@ public partial class TerminalTabView : UserControl
 
     private void OnTrackedInputChanged()
     {
+        HidePasswordHint(suppress: true);
         string input = EffectiveInput();
         // 每键路径:先查开关再拼实参(急切求值防线,见 SuggestDiag.IsEnabled)。
         if (SuggestDiag.IsEnabled)
@@ -739,6 +875,15 @@ public partial class TerminalTabView : UserControl
         // 切到其他应用时收起补全弹层——Popup 是独立顶层窗口,不主动关就会
         // 悬浮在别的程序上面。
         _hostWindow = TopLevel.GetTopLevel(this) as Window;
+        if (_passwordHost is not null)
+        {
+            _passwordHost.PropertyChanged -= OnPasswordHostChanged;
+        }
+        _passwordHost = _hostWindow?.DataContext as MainWindowViewModel;
+        if (_passwordHost is not null)
+        {
+            _passwordHost.PropertyChanged += OnPasswordHostChanged;
+        }
         _hostWindow?.Deactivated += OnHostWindowDeactivated;
         // 重新激活时兜底恢复:系统截图覆盖层(Win+Shift+S)偶尔不触发 Deactivated,
         // 弹层就会保持打开、把焦点困在自己的顶层窗口里,导致终端"输入死亡、内容被
@@ -752,6 +897,7 @@ public partial class TerminalTabView : UserControl
 
     private void OnHostWindowDeactivated(object? sender, EventArgs e)
     {
+        HidePasswordHint();
         SuggestDiag.Log("deactivated", $"view={GetHashCode():X} popupOpen={SuggestPopup.IsOpen}");
         DismissSuggestions(suppress: false);
     }
@@ -812,6 +958,7 @@ public partial class TerminalTabView : UserControl
 
     private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
+        CancelPasswordPicker();
         _suggestDebounce?.Dispose();
         _suggestDebounce = null;
         DismissSuggestions(suppress: false);
@@ -821,8 +968,14 @@ public partial class TerminalTabView : UserControl
         _hostWindow?.Deactivated -= OnHostWindowDeactivated;
         _hostWindow?.Activated -= OnHostWindowActivated;
         _hostWindow = null;
+        if (_passwordHost is not null)
+        {
+            _passwordHost.PropertyChanged -= OnPasswordHostChanged;
+            _passwordHost = null;
+        }
         if (_termControl is not null)
         {
+            _termControl.OutputUpdated -= OnPasswordOutputUpdated;
             _termControl.ScrollChanged -= OnTerminalScrollChanged;
             _termControl.LostFocus -= OnTerminalLostFocus;
             _termControl.LayoutPaddingChanged -= OnTerminalPaddingChanged;
@@ -834,8 +987,11 @@ public partial class TerminalTabView : UserControl
     /// 终端失焦(点击 SFTP 面板/侧边栏等)时收起弹层与幽灵;建议列表项不可聚焦,
     /// 因此点击建议项本身不会触发这里。
     /// </summary>
-    private void OnTerminalLostFocus(object? sender, RoutedEventArgs e) =>
+    private void OnTerminalLostFocus(object? sender, RoutedEventArgs e)
+    {
+        HidePasswordHint();
         DismissSuggestions(suppress: false);
+    }
 
     // 终端控件是跨分屏重新挂载的单一共享实例,因此每个视图都把滚动条(重新)绑定到它
     // 当前承载的那个控件上。
@@ -859,6 +1015,7 @@ public partial class TerminalTabView : UserControl
         }
         if (_termControl is not null)
         {
+            _termControl.OutputUpdated -= OnPasswordOutputUpdated;
             _termControl.ScrollChanged -= OnTerminalScrollChanged;
             _termControl.LostFocus -= OnTerminalLostFocus;
             _termControl.LayoutPaddingChanged -= OnTerminalPaddingChanged;
@@ -870,6 +1027,7 @@ public partial class TerminalTabView : UserControl
         _termControl = ctrl;
         if (_termControl is not null)
         {
+            _termControl.OutputUpdated += OnPasswordOutputUpdated;
             _termControl.ScrollChanged += OnTerminalScrollChanged;
             _termControl.LostFocus += OnTerminalLostFocus;
             _termControl.LayoutPaddingChanged += OnTerminalPaddingChanged;
@@ -896,7 +1054,11 @@ public partial class TerminalTabView : UserControl
 
     private void OnTerminalPaddingChanged() => SyncScrollBarGeometry();
 
-    private void OnTerminalScrollChanged() => SyncScrollBar();
+    private void OnTerminalScrollChanged()
+    {
+        HidePasswordHint();
+        SyncScrollBar();
+    }
 
     private void SyncScrollBar()
     {
@@ -1136,6 +1298,14 @@ public partial class TerminalTabView : UserControl
         Dispatcher.UIThread.Post(
             () =>
             {
+                if (_passwordPicker is not null || !ReferenceEquals(DataContext, vm)
+                    || !IsAttachedToVisualTree() || !IsEffectivelyVisible
+                    || TopLevel.GetTopLevel(this) is not Window { IsActive: true } owner
+                    || (owner.DataContext is MainWindowViewModel main && !ReferenceEquals(main.ActiveTerminalTab, vm))
+                    || owner.OwnedWindows.Any(window => window.IsVisible))
+                {
+                    return;
+                }
                 Focus();
                 vm.TerminalEmulator.Control.Focus();
             },

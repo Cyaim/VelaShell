@@ -88,6 +88,69 @@ public class SelectionVisibilityRenderTests
         });
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void SelectionMatches_PaintOtherOccurrences_WithoutCoveringTheRealSelection(bool light)
+    {
+        OnUi(() =>
+        {
+            using var control = new VelaTerminalControl { CopyOnSelect = false, CursorBlink = false };
+            var window = new Window
+            {
+                Width = 640,
+                Height = 360,
+                Content = control,
+                RequestedThemeVariant = light ? Avalonia.Styling.ThemeVariant.Light : Avalonia.Styling.ThemeVariant.Dark,
+            };
+            window.Show();
+            try
+            {
+                RenderFrame(window);
+                control.Feed(Encoding.UTF8.GetBytes("中e\u0301 中e\u0301"));
+                uint background = CellBackground(window, control, 0, 4);
+                control.SetSearchHighlights([new(0, 4, 3)], -1);
+                uint match = CellBackground(window, control, 0, 4);
+                Assert.AreNotEqual(background, match);
+                control.ClearSearchHighlights();
+
+                Drag(window, control, (0, 0), (0, 3));
+                uint selected = CellBackground(window, control, 0, 0);
+                Assert.AreNotEqual(background, selected, "真实选区不能退化为普通背景。");
+                Assert.AreNotEqual(match, selected, "真实选区必须保持自己的底色。");
+                Assert.AreEqual(match, CellBackground(window, control, 0, 4));
+                Assert.AreEqual(match, CellBackground(window, control, 0, 5), "宽字符尾格不能漏色。");
+                Assert.AreEqual(match, CellBackground(window, control, 0, 6), "组合字符不能使匹配列偏移。");
+
+                control.SetSearchHighlights([new(0, 4, 3)], 0);
+                Assert.AreNotEqual(match, CellBackground(window, control, 0, 4), "搜索当前命中仍有独立底色。");
+                control.ClearSearchHighlights();
+                Assert.AreEqual(match, CellBackground(window, control, 0, 4), "关闭搜索不清除选区匹配。");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    private static uint CellBackground(Window window, VelaTerminalControl control, int row, int col)
+    {
+        uint[] pixels = RenderFrame(window);
+        int width = (int)window.ClientSize.Width;
+        int left = (int)(control.GutterForTest.TotalWidth + col * control.CellWidthForTest);
+        int top = (int)(row * control.CellHeightForTest);
+        var cell = new List<uint>();
+        for (int y = top + 1; y < top + control.CellHeightForTest - 1; y++)
+        {
+            for (int x = left + 1; x < left + control.CellWidthForTest - 1; x++)
+            {
+                cell.Add(pixels[y * width + x]);
+            }
+        }
+        return cell.GroupBy(pixel => pixel).MaxBy(group => group.Count())!.Key;
+    }
+
     private static void Drag(Window window, VelaTerminalControl control, (int Row, int Col) from, (int Row, int Col) to)
     {
         window.MouseDown(CellPoint(control, from.Row, from.Col), MouseButton.Left);

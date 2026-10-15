@@ -176,6 +176,36 @@ public class BufferSearchTests
         Assert.IsLessThanOrEqualTo(4, hit.StartCol + hit.Length, "选区结束列越过了行宽。");
     }
 
+    [TestMethod]
+    public void FindVisible_SearchesOnlySuppliedRows_IncludingHistory()
+    {
+        var e = new TerminalEmulator(40, 3);
+        e.Feed(Encoding.UTF8.GetBytes("needle\r\nneedle\r\nneedle\r\nneedle\r\nneedle"));
+
+        IReadOnlyList<BufferSearchHit> hits = BufferSearch.FindVisible(e.Screen, "NEEDLE", [0, 3, -1]);
+
+        CollectionAssert.AreEqual(new[] { 0, 3 }, hits.Select(hit => hit.Row).ToArray());
+        Assert.HasCount(5, BufferSearch.FindAll(e.Screen, "needle"));
+    }
+
+    [TestMethod]
+    public void FindVisible_EmptyRowsOrQuery_HasNoMatches()
+    {
+        TerminalEmulator e = Feed("needle");
+        Assert.IsEmpty(BufferSearch.FindVisible(e.Screen, "needle", []));
+        Assert.IsEmpty(BufferSearch.FindVisible(e.Screen, "", [0]));
+        Assert.IsEmpty(BufferSearch.FindVisible(e.Screen, "needle", [-1]));
+    }
+
+    [TestMethod]
+    public void FindVisible_PreservesUnicodeColumnsAndMultipleMatches()
+    {
+        TerminalEmulator e = Feed("hidden", "中e\u0301 中e\u0301");
+        IReadOnlyList<BufferSearchHit> hits = BufferSearch.FindVisible(e.Screen, "中E\u0301", [1]);
+        CollectionAssert.AreEqual(
+            new[] { new BufferSearchHit(1, 0, 3), new BufferSearchHit(1, 4, 3) }, hits.ToArray());
+    }
+
     /// <summary>之前只断言了第一个命中的列 —— 而错位恰恰只在宽字符之后的那个命中上现形。</summary>
     [TestMethod]
     public void FindAll_SecondHitAfterWideRun_IsAlsoInScreenColumns()

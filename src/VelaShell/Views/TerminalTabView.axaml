@@ -190,6 +190,19 @@
         <controls:ReparentingHost Target="{Binding TerminalEmulator.Control}" />
       </Border>
 
+      <Button x:Name="SharedPasswordAction" HorizontalAlignment="Right" VerticalAlignment="Top"
+              Margin="0,6,20,0" Width="24" Height="24" Padding="0" Focusable="False"
+              IsVisible="{Binding IsConnected}" Click="OpenSharedPassword_Click"
+              ToolTip.Tip="{loc:Localize PasswordFill_Title}" AutomationProperties.Name="{loc:Localize PasswordFill_Title}">
+        <pc:LucideIcon Width="12" Height="12" Data="{DynamicResource Icon.key-round}" />
+      </Button>
+      <Border x:Name="PasswordHint" IsVisible="False" HorizontalAlignment="Left" VerticalAlignment="Top"
+              Background="{DynamicResource VelaBgSurface}" BorderBrush="{DynamicResource VelaBorderSecondary}"
+              BorderThickness="1" CornerRadius="4" Padding="4" Focusable="False">
+        <Button Content="{loc:Localize PasswordFill_Hint}" Focusable="False" Click="PasswordHint_Click"
+                AutomationProperties.Name="{loc:Localize PasswordFill_Hint}" />
+      </Border>
+
       <!-- 命令补全弹层(plan.md #16,WindTerm 式):锚在终端光标下方;输入即建议,
            空输入按 Alt+Enter 弹全量(快捷命令 + 最近历史)。键位:↑↓ 选择、
            Enter 补全插入(Alt+Enter 召出或 ↑↓ 导航过时;纯自动弹层下直通 shell)、

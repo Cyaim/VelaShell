@@ -7069,4 +7069,14 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sudo_Retry" xml:space="preserve"><value>前のパスワードは受け付けられませんでした。再試行してください。</value></data>
   <data name="Sudo_NoStorage" xml:space="preserve"><value>パスワードはこのホストにのみ送信されます。保存されず、プラグインや AI にも共有されません。</value></data>
   <data name="Sudo_Submit" xml:space="preserve"><value>認証</value></data>
+  <data name="PasswordFill_Title" xml:space="preserve"><value>共有パスワードを入力</value></data>
+  <data name="PasswordFill_Hint" xml:space="preserve"><value>共有パスワードを選択…</value></data>
+  <data name="PasswordFill_Search" xml:space="preserve"><value>資格情報名またはユーザー名を検索</value></data>
+  <data name="PasswordFill_Confirm" xml:space="preserve"><value>Enter を送らず入力</value></data>
+  <data name="PasswordFill_Warning" xml:space="preserve"><value>選択したパスワードだけをこのセッションに入力し、Enter は送りません。リモート側のエコーにより画面、ログ、録画に残る可能性があります。現在のプロンプトを信頼できる場合のみ入力してください。</value></data>
+  <data name="PasswordFill_Empty" xml:space="preserve"><value>一致する共有パスワード資格情報がありません。「設定 → 共有資格情報」で追加できます。</value></data>
+  <data name="PasswordFill_ReadFailed" xml:space="preserve"><value>資格情報を読み取りまたは復号できません。何も送信していません。</value></data>
+  <data name="PasswordFill_Expired" xml:space="preserve"><value>セッションまたは入力状態が変わりました。何も送信していません。選択画面を開き直してください。</value></data>
+  <data name="PasswordFill_Unavailable" xml:space="preserve"><value>資格情報が削除されたか、有効なパスワードがありません。何も送信していません。</value></data>
+  <data name="PasswordFill_Invalid" xml:space="preserve"><value>パスワードに制御文字が含まれるか、セッションの文字コードで表現できません。何も送信していません。</value></data>
 </root>

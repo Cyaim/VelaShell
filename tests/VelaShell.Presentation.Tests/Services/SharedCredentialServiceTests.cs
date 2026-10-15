@@ -215,6 +215,13 @@ public sealed class SharedCredentialServiceTests
         public Task<List<SharedCredential>> GetAllAsync() =>
             Task.FromResult(Store.Values.Select(static c => c.Clone()).ToList());
 
+        public Task<List<SharedCredentialMetadata>> ListMetadataAsync() =>
+            Task.FromResult(Store.Values.Select(c => new SharedCredentialMetadata(c.Id, c.Name, c.Username, c.AuthMethod, !string.IsNullOrEmpty(c.Password)))
+                .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList());
+
+        public Task<string?> GetPasswordAsync(Guid id) =>
+            Task.FromResult(Store.TryGetValue(id, out SharedCredential? c) && c.AuthMethod == AuthMethod.Password ? c.Password : null);
+
         public Task<SharedCredential?> GetAsync(Guid id) =>
             Task.FromResult(Store.TryGetValue(id, out SharedCredential? c) ? c.Clone() : null);
 

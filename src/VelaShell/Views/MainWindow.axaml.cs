@@ -425,6 +425,7 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm)
         {
             vm.TerminalSearchRequested += OnTerminalSearchRequested;
+            vm.SharedPasswordFillRequested += OnSharedPasswordFillRequested;
             vm.TerminalFocusRequested += (_, _) => FocusActiveTerminal(vm);
             // 关闭已连接标签前的确认对话框由视图提供 —— VM 不认识窗口。
             vm.CloseConfirmer = (title, body) => MessageDialog.ConfirmAsync(
@@ -1106,6 +1107,16 @@ public partial class MainWindow : Window
                 view.OpenSearch();
                 return;
             }
+        }
+    }
+
+    private void OnSharedPasswordFillRequested(object? sender, EventArgs e)
+    {
+        if (DataContext is MainWindowViewModel { ActiveTerminalTab: { } tab })
+        {
+            this.GetVisualDescendants().OfType<TerminalTabView>()
+                .FirstOrDefault(view => view.IsEffectivelyVisible && ReferenceEquals(view.DataContext, tab))
+                ?.OpenSharedPasswordPicker();
         }
     }
 

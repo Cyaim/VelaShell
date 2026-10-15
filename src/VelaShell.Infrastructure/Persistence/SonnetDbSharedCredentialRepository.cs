@@ -28,6 +28,36 @@ public sealed class SonnetDbSharedCredentialRepository(SonnetDbEngine engine, IS
     }
 
     /// <inheritdoc />
+    public async Task<List<SharedCredentialMetadata>> ListMetadataAsync() =>
+        await _engine.WithCollectionAsync(SonnetDbEngine.SharedCredentialsCollection, store =>
+            store.Scan().Select(row => SonnetDbJson.Deserialize<SharedCredential>(row.Json))
+                .OfType<SharedCredential>()
+                .Select(c => new SharedCredentialMetadata(c.Id, c.Name, c.Username, c.AuthMethod, !string.IsNullOrEmpty(c.Password)))
+                .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList()).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task<string?> GetPasswordAsync(Guid id)
+    {
+        SharedCredential? credential = await _engine.WithCollectionAsync(SonnetDbEngine.SharedCredentialsCollection, store =>
+        {
+            DocumentRow? row = store.Get(id.ToString("D"));
+            return row is null ? null : SonnetDbJson.Deserialize<SharedCredential>(row.Json);
+        }).ConfigureAwait(false);
+        if (credential is not { AuthMethod: VelaShell.Core.Models.AuthMethod.Password, Password.Length: > 0 })
+        {
+            return null;
+        }
+        string? password = _protector.Unprotect(credential.Password);
+        // 保护器的历史契约在失败时保留密文;终端填入不能把这种失败当成可发送的密码。
+        if (credential.Password.StartsWith("enc1:", StringComparison.Ordinal)
+            && string.Equals(password, credential.Password, StringComparison.Ordinal))
+        {
+            throw new System.Security.Cryptography.CryptographicException();
+        }
+        return password;
+    }
+
+    /// <inheritdoc />
     public async Task<SharedCredential?> GetAsync(Guid id)
     {
         SharedCredential? credential = await _engine.WithCollectionAsync(SonnetDbEngine.SharedCredentialsCollection, store =>
