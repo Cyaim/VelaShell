@@ -1,0 +1,173 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:pc="using:VelaShell.Controls.Controls"
+        xmlns:loc="using:VelaShell.Localization"
+        xmlns:md="using:LiveMarkdown.Avalonia"
+        x:Class="VelaShell.Views.ReleaseNotesDialog"
+        Title="{loc:Localize SetAbout_Changelog}"
+        Width="792" Height="692" MinWidth="360" MinHeight="260"
+        CanResize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://LiveMarkdown.Avalonia/Defaults.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Window.Styles>
+    <StyleInclude Source="avares://LiveMarkdown.Avalonia/Styles.axaml" />
+    <Style Selector="md|MarkdownRenderer md|MarkdownTextBlock">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize13}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      <Setter Property="LineSpacing" Value="5" />
+      <Setter Property="SelectionBrush" Value="{DynamicResource VelaAccentDim}" />
+      <Setter Property="SelectionForegroundBrush" Value="{DynamicResource VelaTextPrimary}" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer Border.Heading1Block, md|MarkdownRenderer Border.Heading2Block">
+      <Setter Property="Margin" Value="0,20,0,10" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource VelaBorderPrimary}" />
+      <Setter Property="Padding" Value="0,0,0,8" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer Border.Heading1Block md|MarkdownTextBlock,
+                     md|MarkdownRenderer Border.Heading2Block md|MarkdownTextBlock">
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize16}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer Border.Heading3Block">
+      <Setter Property="Margin" Value="0,14,0,6" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer Border.Heading3Block md|MarkdownTextBlock,
+                     md|MarkdownRenderer Border.Heading4Block md|MarkdownTextBlock,
+                     md|MarkdownRenderer Border.Heading5Block md|MarkdownTextBlock,
+                     md|MarkdownRenderer Border.Heading6Block md|MarkdownTextBlock">
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize14}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer Border.ParagraphBlock">
+      <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer md|Link, md|MarkdownRenderer md|Link:clicked">
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccentText}" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer md|CodeInline">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccentText}" />
+      <Setter Property="Background" Value="{DynamicResource VelaBgInput}" />
+      <Setter Property="CornerRadius" Value="3" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer Border.QuoteBlock">
+      <Setter Property="Background" Value="{DynamicResource VelaBgInput}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+      <Setter Property="BorderThickness" Value="2,0,0,0" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="Margin" Value="0,8" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer TextBlock.ListBlockBullet, md|MarkdownRenderer TextBlock.ListBlockNumber">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize13}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer Border.ThematicBreak">
+      <Setter Property="Background" Value="{DynamicResource VelaBorderPrimary}" />
+    </Style>
+    <Style Selector="md|CodeBlock">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize12}" />
+    </Style>
+    <Style Selector="Button.caption-close">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Width" Value="27" />
+      <Setter Property="Height" Value="27" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.caption-close:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaDangerHover}" />
+    </Style>
+  </Window.Styles>
+  <Border Classes="window-card" ClipToBounds="True"
+          Background="{DynamicResource VelaBgSurface}"
+          BorderBrush="{DynamicResource VelaBorderSecondary}">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+      <Border Classes="window-titlebar" Padding="20,0,0,0"
+              Background="Transparent" PointerPressed="Header_PointerPressed"
+              BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <pc:LucideIcon Width="15" Height="15" Margin="0,0,8,0"
+                         Data="{StaticResource Icon.history}"
+                         Foreground="{DynamicResource VelaAccent}" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Text="{loc:Localize SetAbout_Changelog}"
+                     Foreground="{DynamicResource VelaTextPrimary}"
+                     FontSize="{DynamicResource VelaFontSize13}" FontWeight="SemiBold"
+                     VerticalAlignment="Center" />
+          <Button Grid.Column="2" Classes="caption-close" Click="Close_Click"
+                  AutomationProperties.Name="{loc:Localize Close}" ToolTip.Tip="{loc:Localize Close}">
+            <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.x}"
+                           Foreground="{DynamicResource VelaTextSecondary}" />
+          </Button>
+        </Grid>
+      </Border>
+      <Border x:Name="ReleaseHeader" Grid.Row="1" IsVisible="False" Padding="28,22,28,18"
+              BorderThickness="0,0,0,1" BorderBrush="{DynamicResource VelaBorderPrimary}">
+        <StackPanel Spacing="8">
+          <WrapPanel Orientation="Horizontal">
+            <SelectableTextBlock x:Name="VersionText" FontWeight="SemiBold" Margin="0,0,12,0"
+                                 FontFamily="{DynamicResource VelaUiMonoFont}"
+                                 FontSize="{DynamicResource VelaFontSize20}"
+                                 Foreground="{DynamicResource VelaTextPrimary}" />
+            <Border Padding="8,3" CornerRadius="4" VerticalAlignment="Center"
+                    Background="{DynamicResource VelaAccentDim}">
+              <TextBlock Text="{loc:Localize ReleaseNotes_Latest}" FontSize="{DynamicResource VelaFontSize10}"
+                         Foreground="{DynamicResource VelaAccentText}" />
+            </Border>
+          </WrapPanel>
+          <TextBlock x:Name="PublishedText" IsVisible="False"
+                     FontSize="{DynamicResource VelaFontSize11}"
+                     Foreground="{DynamicResource VelaTextSecondary}" />
+        </StackPanel>
+      </Border>
+      <Grid Grid.Row="2" Margin="28,8,24,12">
+        <StackPanel x:Name="LoadingPanel" Orientation="Horizontal" Spacing="8"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+          <pc:CircularProgressRing x:Name="LoadingRing" Width="20" Height="20"
+                                   IsIndeterminate="True" ArcBrush="{DynamicResource VelaAccent}" />
+          <TextBlock Text="{loc:Localize Loading}" VerticalAlignment="Center"
+                     Foreground="{DynamicResource VelaTextSecondary}" />
+        </StackPanel>
+        <ScrollViewer x:Name="NotesScroll" IsVisible="False"
+                      HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <md:MarkdownRenderer x:Name="BodyMarkdown" Margin="0,8,8,8" />
+        </ScrollViewer>
+        <TextBlock x:Name="StatusText" IsVisible="False" TextWrapping="Wrap"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="{DynamicResource VelaTextSecondary}" />
+      </Grid>
+      <Border Grid.Row="3" Padding="20,12" BorderThickness="0,1,0,0"
+              BorderBrush="{DynamicResource VelaBorderPrimary}">
+        <Grid ColumnDefinitions="*,Auto">
+          <Button x:Name="GitHubButton" IsEnabled="False" HorizontalAlignment="Left"
+                  Theme="{StaticResource VelaOutlineButtonTheme}" Click="GitHub_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.external-link}"
+                             Foreground="{DynamicResource VelaTextSecondary}" />
+              <TextBlock Text="{loc:Localize ReleaseNotes_ViewOnGitHub}" />
+            </StackPanel>
+          </Button>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <Button x:Name="RetryButton" IsVisible="False"
+                    Theme="{StaticResource VelaAccentPillButtonTheme}"
+                    Content="{loc:Localize ReleaseNotes_Retry}" Click="Retry_Click" />
+            <Button x:Name="CloseButton" Theme="{StaticResource VelaOutlineButtonTheme}"
+                    Content="{loc:Localize Close}" Click="Close_Click" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+</Window>

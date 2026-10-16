@@ -28,7 +28,7 @@ public sealed class SudoKernelTests
         Assert.AreEqual("密碼é🙂", Encoding.UTF8.GetString(bytes.Span));
         secret.Dispose();
         secret.Dispose();
-        Assert.IsTrue(bytes.Span.IndexOfAnyExcept((byte)0) < 0);
+        Assert.IsLessThan(0, bytes.Span.IndexOfAnyExcept((byte)0));
         foreach (char control in new[] { '\0', '\r', '\n', '\b', '\u001b', '\u007f' })
         {
             Assert.ThrowsExactly<ArgumentException>(() => new SudoPassword(("secret" + control).AsSpan()));

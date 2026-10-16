@@ -140,8 +140,8 @@ public sealed class SharedPasswordFillTests
         pending.SetResult("do-not-leak");
         Assert.AreEqual(PasswordFillResult.Expired, await fill);
         await DrainWritesAsync(tab);
-        Assert.IsFalse(shell.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(IShellStreamWrapper.WriteAsync)
-            && ((byte[])c.GetArguments()[0]!).AsSpan().IndexOf("do-not-leak"u8) >= 0));
+        Assert.DoesNotContain(c => c.GetMethodInfo().Name == nameof(IShellStreamWrapper.WriteAsync)
+            && ((byte[])c.GetArguments()[0]!).AsSpan().IndexOf("do-not-leak"u8) >= 0, shell.ReceivedCalls());
     });
 
     [TestMethod]

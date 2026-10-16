@@ -2071,7 +2071,28 @@
     <value>更新履歴</value>
   </data>
   <data name="SetAbout_ChangelogTip" xml:space="preserve">
-    <value>正式版で提供予定</value>
+    <value>プレリリースを含む GitHub の最新リリースノートを表示</value>
+  </data>
+  <data name="ReleaseNotes_NoRelease" xml:space="preserve">
+    <value>公開されたリリースはまだありません。</value>
+  </data>
+  <data name="ReleaseNotes_EmptyBody" xml:space="preserve">
+    <value>このバージョンのリリースノートはありません。</value>
+  </data>
+  <data name="ReleaseNotes_LoadFailed" xml:space="preserve">
+    <value>リリースノートを読み込めませんでした。ネットワーク接続を確認して再試行してください。</value>
+  </data>
+  <data name="ReleaseNotes_Latest" xml:space="preserve">
+    <value>最新リリース</value>
+  </data>
+  <data name="ReleaseNotes_PublishedAt" xml:space="preserve">
+    <value>公開日: {0}</value>
+  </data>
+  <data name="ReleaseNotes_ViewOnGitHub" xml:space="preserve">
+    <value>GitHub で表示</value>
+  </data>
+  <data name="ReleaseNotes_Retry" xml:space="preserve">
+    <value>再試行</value>
   </data>
   <data name="SetAbout_CheckUpdates" xml:space="preserve">
     <value>更新を確認</value>

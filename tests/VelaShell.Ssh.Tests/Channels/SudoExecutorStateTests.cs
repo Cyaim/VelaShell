@@ -32,10 +32,10 @@ public sealed class SudoExecutorStateTests
     {
         const string prefix = "\u001eVELA_AUTH_";
         int start = command.IndexOf(prefix, StringComparison.Ordinal);
-        Assert.IsTrue(start >= 0);
+        Assert.IsGreaterThanOrEqualTo(0, start);
         start += prefix.Length;
         int end = command.IndexOf('\u001f', start);
-        Assert.IsTrue(end > start);
+        Assert.IsGreaterThan(start, end);
         return "\u001eVELA_" + kind + "_" + command[start..end] + "\u001f";
     }
 

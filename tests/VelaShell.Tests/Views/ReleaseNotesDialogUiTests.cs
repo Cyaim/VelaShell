@@ -1,0 +1,278 @@
+using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.VisualTree;
+using LiveMarkdown.Avalonia;
+using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
+using VelaShell.Core.Resources;
+using VelaShell.Services.Update;
+using VelaShell.Tests.TestSupport;
+using VelaShell.Views;
+using VelaShell.Views.Settings;
+
+namespace VelaShell.Tests.Views;
+
+[TestClass]
+public sealed class ReleaseNotesDialogUiTests
+{
+    private static HeadlessUnitTestSession _session = null!;
+
+    [ClassInitialize]
+    public static void Init(TestContext _) =>
+        _session = HeadlessUnitTestSession.GetOrStartForAssembly(typeof(ReleaseNotesDialogUiTests).Assembly);
+
+    [TestMethod]
+    public Task LoadingThenSuccess_ShowsVersionAndCompleteScrollableSelectableBody() => _session.RunOnUiAsync(async () =>
+    {
+        TaskCompletionSource<ReleaseNotes?> completion = new();
+        var source = new StubSource(_ => completion.Task);
+        var dialog = new ReleaseNotesDialog(source);
+        dialog.Show();
+        try
+        {
+            Assert.IsTrue(dialog.IsVisible);
+            Assert.IsTrue(dialog.FindControl<StackPanel>("LoadingPanel")!.IsVisible);
+            Assert.AreEqual(1, source.Calls);
+            string body = "## What's Changed\n" + string.Join('\n', Enumerable.Range(0, 200).Select(i => $"* 更新 {i} by @joesdu in #{i}"));
+            completion.SetResult(new ReleaseNotes("1.7.1", body, DateTimeOffset.Parse("2026-10-16T03:11:41Z")));
+            await WaitUntilAsync(() => dialog.FindControl<ScrollViewer>("NotesScroll")!.IsVisible);
+            Assert.AreEqual("1.7.1", dialog.FindControl<SelectableTextBlock>("VersionText")!.Text);
+            MarkdownRenderer renderer = dialog.FindControl<MarkdownRenderer>("BodyMarkdown")!;
+            renderer.SelectAll();
+            Assert.Contains("What's Changed", renderer.SelectedText!);
+            Assert.Contains("更新 199", renderer.SelectedText!);
+            Assert.DoesNotContain("##", renderer.SelectedText!);
+            Assert.IsTrue(dialog.FindControl<TextBlock>("PublishedText")!.IsVisible);
+            Assert.IsTrue(dialog.FindControl<Button>("GitHubButton")!.IsEnabled);
+            dialog.UpdateLayout();
+            ScrollViewer scroll = dialog.FindControl<ScrollViewer>("NotesScroll")!;
+            Assert.IsGreaterThan(scroll.Viewport.Height, scroll.Extent.Height);
+            Assert.IsTrue(dialog.FindControl<Button>("CloseButton")!.IsEffectivelyVisible);
+            Assert.IsFalse(dialog.FindControl<StackPanel>("LoadingPanel")!.IsVisible);
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    });
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task EmptyStates_AreDistinct(bool hasRelease) => _session.RunOnUiAsync(() =>
+    {
+        var dialog = new ReleaseNotesDialog(new StubSource(_ =>
+            Task.FromResult(hasRelease ? new ReleaseNotes("1.7.1", " \n") : null)));
+        dialog.Show();
+        try
+        {
+            Assert.AreEqual(Strings.Get(hasRelease ? "ReleaseNotes_EmptyBody" : "ReleaseNotes_NoRelease"),
+                dialog.FindControl<TextBlock>("StatusText")!.Text);
+            Assert.AreEqual(hasRelease, dialog.FindControl<Border>("ReleaseHeader")!.IsVisible);
+            Assert.IsFalse(dialog.FindControl<Button>("RetryButton")!.IsVisible);
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task FailureThenRetry_DoesNotStartConcurrentRequests() => _session.RunOnUiAsync(async () =>
+    {
+        TaskCompletionSource<ReleaseNotes?> completion = new();
+        int attempts = 0;
+        var source = new StubSource(_ => ++attempts == 1
+            ? Task.FromException<ReleaseNotes?>(new HttpRequestException("offline")) : completion.Task);
+        var dialog = new ReleaseNotesDialog(source);
+        dialog.Show();
+        try
+        {
+            Button retry = dialog.FindControl<Button>("RetryButton")!;
+            Assert.IsTrue(retry.IsVisible);
+            Assert.AreEqual(Strings.Get("ReleaseNotes_LoadFailed"), dialog.FindControl<TextBlock>("StatusText")!.Text);
+            retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.AreEqual(2, source.Calls);
+            Assert.IsFalse(retry.IsVisible);
+            completion.SetResult(new ReleaseNotes("latest", "notes"));
+            await WaitUntilAsync(() => dialog.FindControl<ScrollViewer>("NotesScroll")!.IsVisible);
+            MarkdownRenderer renderer = dialog.FindControl<MarkdownRenderer>("BodyMarkdown")!;
+            renderer.SelectAll();
+            Assert.AreEqual("notes", renderer.SelectedText?.Trim());
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    });
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task CloseOrEscape_CancelsRequestAndIgnoresLateResult(bool escape) => _session.RunOnUiAsync(async () =>
+    {
+        TaskCompletionSource<ReleaseNotes?> completion = new();
+        var source = new StubSource(_ => completion.Task);
+        var dialog = new ReleaseNotesDialog(source);
+        dialog.Show();
+        if (escape)
+        {
+            dialog.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            await WaitUntilAsync(() => !dialog.IsVisible);
+        }
+        else
+        {
+            dialog.Close();
+        }
+        Assert.IsTrue(source.Token.IsCancellationRequested);
+        completion.SetResult(new ReleaseNotes("late", "late body"));
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Background);
+        Assert.IsNull(dialog.FindControl<MarkdownRenderer>("BodyMarkdown")!.DocumentUpdate);
+    });
+
+    [TestMethod]
+    public Task AboutButton_Enabled_UsesSettingsOwnerAndPreventsDuplicateWindows() => _session.RunOnUiAsync(async () =>
+    {
+        var about = new AboutPage();
+        var owner = new Window { Content = about };
+        var source = new StubSource(_ => Task.FromResult<ReleaseNotes?>(new("1.7.1", "notes")));
+        owner.Show();
+        try
+        {
+            Assert.IsTrue(about.FindControl<Button>("ChangelogButton")!.IsEnabled);
+            Task showing = about.ShowChangelogAsync(source);
+            await about.ShowChangelogAsync(source);
+            ReleaseNotesDialog dialog = owner.OwnedWindows.OfType<ReleaseNotesDialog>().Single();
+            Assert.AreSame(owner, dialog.Owner);
+            Assert.AreEqual(1, source.Calls);
+            dialog.Close();
+            await showing;
+            Task second = about.ShowChangelogAsync(source);
+            owner.OwnedWindows.OfType<ReleaseNotesDialog>().Single().Close();
+            await second;
+            Assert.AreEqual(2, source.Calls);
+        }
+        finally
+        {
+            foreach (Window child in owner.OwnedWindows.ToArray())
+            {
+                child.Close();
+            }
+            owner.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task ParameterlessWindow_DoesNotLoadOrFail() => _session.RunOnUiAsync(() =>
+    {
+        var dialog = new ReleaseNotesDialog();
+        dialog.Show();
+        Assert.IsFalse(dialog.FindControl<Button>("RetryButton")!.IsVisible);
+        dialog.Close();
+    });
+
+    [TestMethod]
+    [DataRow("https://example.com/image.png")]
+    [DataRow("http://example.com/image.png")]
+    [DataRow("file:///C:/secret.png")]
+    [DataRow("data:image/png;base64,aGVsbG8=")]
+    [DataRow("avares://VelaShell/secret.png")]
+    [DataRow("../secret.png")]
+    [DataRow("//example.com/image.png")]
+    public Task Markdown_DropsAllImageNodesBeforeRendering(string url) => _session.RunOnUiAsync(() =>
+    {
+        string body = $"## 标题\n\n![图片说明]({url})\n\n![引用][image]\n\n[image]: {url}\n\n[![嵌套]({url})](https://example.com)";
+        MarkdownDocument document = ReleaseNotesDialog.ParseNotes(body);
+        Assert.DoesNotContain(link => link.IsImage, document.Descendants<LinkInline>());
+        var dialog = new ReleaseNotesDialog(new StubSource(_ => Task.FromResult<ReleaseNotes?>(new("1.7.1", body))));
+        dialog.Show();
+        try
+        {
+            MarkdownRenderer renderer = dialog.FindControl<MarkdownRenderer>("BodyMarkdown")!;
+            Assert.IsEmpty(renderer.GetVisualDescendants().OfType<Image>());
+            renderer.SelectAll();
+            Assert.Contains("图片说明", renderer.SelectedText!);
+            Assert.Contains("嵌套", renderer.SelectedText!);
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    });
+
+    [TestMethod]
+    [DataRow("https://github.com/joesdu/VelaShell/pull/626", true)]
+    [DataRow("http://example.com", false)]
+    [DataRow("file:///C:/secret", false)]
+    [DataRow("javascript:alert(1)", false)]
+    [DataRow("data:text/html,test", false)]
+    [DataRow("avares://VelaShell/test", false)]
+    [DataRow("//example.com/test", false)]
+    [DataRow("../test", false)]
+    [DataRow("mailto:user@example.com", false)]
+    public void Markdown_OnlyAbsoluteHttpsLinksRemainInteractive(string url, bool allowed)
+    {
+        Assert.AreEqual(allowed, ReleaseNotesDialog.IsAllowedLink(url));
+        MarkdownDocument document = ReleaseNotesDialog.ParseNotes($"[可读文字]({url})");
+        Assert.AreEqual(allowed, document.Descendants<LinkInline>().Any());
+    }
+
+    [TestMethod]
+    public Task Markdown_RendersHeadingsEmphasisAndLinks_AndFollowsTheme() => _session.RunOnUiAsync(() =>
+    {
+        string body = "## 更新与下载\n\n- **下载速率**持续刷新，支持 `Tailscale SSH`。\n- [#626](https://github.com/joesdu/VelaShell/pull/626)\n\n<script>alert(1)</script><img src=\"file:///C:/secret.png\">";
+        var dialog = new ReleaseNotesDialog(new StubSource(_ => Task.FromResult<ReleaseNotes?>(new("1.7.1", body))));
+        dialog.Show();
+        try
+        {
+            MarkdownRenderer renderer = dialog.FindControl<MarkdownRenderer>("BodyMarkdown")!;
+            renderer.SelectAll();
+            Assert.Contains("更新与下载", renderer.SelectedText!);
+            Assert.DoesNotContain("**", renderer.SelectedText!);
+            Assert.DoesNotContain("##", renderer.SelectedText!);
+            Assert.Contains(b => b.Classes.Contains("Heading2Block"), renderer.GetVisualDescendants().OfType<Border>());
+            Assert.IsNotEmpty(renderer.GetVisualDescendants().OfType<MarkdownTextBlock>());
+            Assert.IsEmpty(renderer.GetVisualDescendants().OfType<Image>());
+            Assert.IsNull(renderer.LinkContextMenu);
+            foreach (ThemeVariant variant in new[] { ThemeVariant.Dark, ThemeVariant.Light })
+            {
+                dialog.RequestedThemeVariant = variant;
+                dialog.UpdateLayout();
+                var expected = (IBrush)dialog.FindResource(variant, "VelaTextPrimary")!;
+                Assert.IsTrue(renderer.GetVisualDescendants().OfType<MarkdownTextBlock>().All(block =>
+                    Equals(expected, block.Foreground)));
+            }
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    });
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
+    private sealed class StubSource(Func<CancellationToken, Task<ReleaseNotes?>> getNotes) : IReleaseNotesSource
+    {
+        public int Calls { get; private set; }
+        public CancellationToken Token { get; private set; }
+
+        public Task<ReleaseNotes?> GetLatestReleaseNotesAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            Token = cancellationToken;
+            return getNotes(cancellationToken);
+        }
+    }
+}

@@ -518,9 +518,8 @@ public sealed class ConnectionProfileViewUiTests
                 Assert.IsTrue(tailscale.IsEffectivelyVisible);
                 Assert.IsTrue(tailscale.IsTabStop);
                 Control segments = (Control)tailscale.GetVisualParent()!;
-                Assert.IsTrue(segments.Bounds.Width >= username.Bounds.Width, "认证分段应使用用户名下方的全宽行");
-                Assert.IsTrue(tailscale.TranslatePoint(default, window)!.Value.Y
-                    >= username.TranslatePoint(default, window)!.Value.Y + username.Bounds.Height);
+                Assert.IsGreaterThanOrEqualTo(username.Bounds.Width, segments.Bounds.Width, "认证分段应使用用户名下方的全宽行");
+                Assert.IsGreaterThanOrEqualTo(username.TranslatePoint(default, window)!.Value.Y + username.Bounds.Height, tailscale.TranslatePoint(default, window)!.Value.Y);
 
                 tailscale.Command!.Execute(tailscale.CommandParameter);
                 Dispatcher.UIThread.RunJobs();
@@ -570,7 +569,7 @@ public sealed class ConnectionProfileViewUiTests
 
                 Assert.IsTrue(vm.IsTailscaleMethod);
                 Assert.IsFalse(window.GetVisualDescendants().OfType<TextBox>().Single(SecurePasswordBox.GetEnabled).IsEffectivelyVisible);
-                Assert.IsFalse(window.GetVisualDescendants().OfType<CheckBox>().Any(static box => box.IsEffectivelyVisible));
+                Assert.DoesNotContain(static box => box.IsEffectivelyVisible, window.GetVisualDescendants().OfType<CheckBox>());
                 Assert.IsTrue(window.GetVisualDescendants().OfType<TextBlock>()
                     .Single(text => text.Text == Strings.Get("Profile_TailscaleAuthHint")).IsEffectivelyVisible);
                 Assert.IsTrue(window.GetVisualDescendants().OfType<Button>()

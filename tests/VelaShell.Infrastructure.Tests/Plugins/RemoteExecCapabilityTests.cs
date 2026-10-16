@@ -232,8 +232,8 @@ public class RemoteExecCapabilityTests
         SudoExecResult result = await capability.StreamSudoAsync(sessionId, "id", null, new SyncProgress<SudoExecEvent>());
         Assert.AreEqual(SudoExecOutcome.NotSupported, result.Outcome);
         Assert.AreEqual(0, capability.ActiveStreams);
-        Assert.IsFalse(client.ReceivedCalls().Any(call => call.GetMethodInfo().Name is
-            nameof(ISshClientWrapper.StreamSudoCommandAsync) or nameof(ISshClientWrapper.RunCommandDetailedAsync)));
+        Assert.DoesNotContain(call => call.GetMethodInfo().Name is
+            nameof(ISshClientWrapper.StreamSudoCommandAsync) or nameof(ISshClientWrapper.RunCommandDetailedAsync), client.ReceivedCalls());
     }
 
     [TestMethod]

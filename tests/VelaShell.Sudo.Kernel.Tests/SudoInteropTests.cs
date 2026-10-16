@@ -230,7 +230,7 @@ public sealed class SudoInteropTests
         Assert.AreEqual(9, first.Result.ExitCode);
         Assert.Contains("begindone", first.Output);
         Assert.Contains("stderr", first.Output);
-        Assert.IsTrue(elapsed.Elapsed >= TimeSpan.FromSeconds(2));
+        Assert.IsGreaterThanOrEqualTo(TimeSpan.FromSeconds(2), elapsed.Elapsed);
         var next = await ExecuteAsync(new Prompt(true), "printf after-completion");
         Assert.AreEqual(0, next.Result.ExitCode);
         Assert.Contains("after-completion", next.Output);

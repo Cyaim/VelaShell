@@ -2215,7 +2215,28 @@ Paste anyway?</value>
     <value>Changelog</value>
   </data>
   <data name="SetAbout_ChangelogTip" xml:space="preserve">
-    <value>Available with stable releases</value>
+    <value>View the latest GitHub release notes, including prereleases</value>
+  </data>
+  <data name="ReleaseNotes_NoRelease" xml:space="preserve">
+    <value>No releases have been published yet.</value>
+  </data>
+  <data name="ReleaseNotes_EmptyBody" xml:space="preserve">
+    <value>No release notes are available for this version.</value>
+  </data>
+  <data name="ReleaseNotes_LoadFailed" xml:space="preserve">
+    <value>Could not load release notes. Check your network connection and try again.</value>
+  </data>
+  <data name="ReleaseNotes_Latest" xml:space="preserve">
+    <value>Latest release</value>
+  </data>
+  <data name="ReleaseNotes_PublishedAt" xml:space="preserve">
+    <value>Published on {0}</value>
+  </data>
+  <data name="ReleaseNotes_ViewOnGitHub" xml:space="preserve">
+    <value>View on GitHub</value>
+  </data>
+  <data name="ReleaseNotes_Retry" xml:space="preserve">
+    <value>Retry</value>
   </data>
   <data name="SetAbout_CheckUpdates" xml:space="preserve">
     <value>Check for Updates</value>

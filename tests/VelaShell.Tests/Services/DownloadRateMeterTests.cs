@@ -59,7 +59,7 @@ public sealed class DownloadRateMeterTests
             stalled = meter.Sample(400_000);
         }
 
-        Assert.IsTrue(fast > 0);
+        Assert.IsGreaterThan(0, fast);
         Assert.AreEqual(0d, stalled, 0.001);
     }
 
@@ -92,7 +92,7 @@ public sealed class DownloadRateMeterTests
         now += 2_000;
         double rate = meter.Sample(16_384);
 
-        Assert.IsTrue(rate > 0, $"慢速下载也应报出非零速率,实际 {rate}");
-        Assert.IsTrue(rate < 20_000, $"速率不该被放大,实际 {rate}");
+        Assert.IsGreaterThan(0, rate, $"慢速下载也应报出非零速率,实际 {rate}");
+        Assert.IsLessThan(20_000, rate, $"速率不该被放大,实际 {rate}");
     }
 }

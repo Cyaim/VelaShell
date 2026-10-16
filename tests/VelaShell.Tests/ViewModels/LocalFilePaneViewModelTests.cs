@@ -539,7 +539,7 @@ public sealed class LocalFilePaneViewModelTests
         await vm.CommitPathEditAsync();
 
         Assert.IsFalse(vm.IsPathEditing);
-        Assert.AreEqual(enumerated, fs.EnumeratedPaths.Count, "空白不该触发任何列举。");
+        Assert.HasCount(enumerated, fs.EnumeratedPaths, "空白不该触发任何列举。");
     }
 
     [TestMethod]

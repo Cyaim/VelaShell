@@ -861,7 +861,7 @@ public class SftpServiceTests
                 progress: new SynchronousProgress<TransferProgress>(reports.Add)));
 
         Assert.AreEqual(60L, reports[^1].BytesTransferred);
-        Assert.IsFalse(reports.Any(p => p.Percentage == 100));
+        Assert.DoesNotContain(p => p.Percentage == 100, reports);
     }
 
     [TestMethod]

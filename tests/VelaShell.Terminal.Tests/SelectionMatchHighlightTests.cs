@@ -45,7 +45,7 @@ public sealed class SelectionMatchHighlightTests
             Drag(window, control, (1, 5), (1, 9));
             Assert.AreEqual("foo", control.GetSelectedText());
             Assert.IsTrue(control.SelectionMatchesForTest.All(hit => hit.Length == 4));
-            Assert.IsFalse(control.SelectionMatchesForTest.Any(hit => hit.Row == 1 && hit.StartCol == 0));
+            Assert.DoesNotContain(hit => hit.Row == 1 && hit.StartCol == 0, control.SelectionMatchesForTest);
         });
 
     [TestMethod]
