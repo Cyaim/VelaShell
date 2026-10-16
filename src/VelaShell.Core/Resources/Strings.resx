@@ -7075,9 +7075,6 @@ Send anyway?</value>
   <data name="Sudo_NoStorage" xml:space="preserve"><value>The password is sent only to this host. It is not saved or shared with the plugin or AI.</value></data>
   <data name="Sudo_Submit" xml:space="preserve"><value>Authenticate</value></data>
   <data name="PasswordFill_Title" xml:space="preserve"><value>Fill shared password</value></data>
-  <data name="PasswordFill_Hint" xml:space="preserve"><value>Choose a shared password…</value></data>
-  <data name="PasswordFill_Search" xml:space="preserve"><value>Search credential name or username</value></data>
-  <data name="PasswordFill_Confirm" xml:space="preserve"><value>Fill without Enter</value></data>
   <data name="PasswordFill_Warning" xml:space="preserve"><value>Fills only the selected password into this session, without pressing Enter. The remote program may echo it into the screen, logs or recordings. Continue only if you trust this prompt.</value></data>
   <data name="PasswordFill_Empty" xml:space="preserve"><value>No matching shared password credentials. Add a password credential in Settings → Shared credentials.</value></data>
   <data name="PasswordFill_ReadFailed" xml:space="preserve"><value>Unable to read or decrypt the credential. Nothing was sent.</value></data>
