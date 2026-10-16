@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
+using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using Avalonia;
 using Avalonia.Controls;
@@ -29,127 +30,214 @@ public partial class TerminalTabView : UserControl
 {
     private readonly IKeyboardShortcutService _shortcutService;
 
-    private SharedPasswordPickerDialog? _passwordPicker;
+    // 共享密码列表随提示符出现、随上下文变化消失:一次弹出对应一次填入,关掉即作废,
+    // 用户想再填得重新触发 —— 免得一个陈旧的弹层在光标早已挪走后仍然可点。
     private SharedPasswordFillRequest? _passwordRequest;
     private string? _suppressedPasswordPrompt;
     private INotifyPropertyChanged? _passwordHost;
+
+    /// <summary>
+    /// 取共享凭据仓储。生产走 <see cref="App" /> 的 DI 容器;headless 测试挂的是另一个
+    /// <see cref="Application" />(不带容器),故留一个可替换的取数口,与
+    /// <c>EnglishInputLocale.InputLocaleSwitcherFactory</c> 同一套做法。
+    /// </summary>
+    internal static Func<ISharedCredentialRepository?> RepositoryFactory { get; set; } =
+        static () =>
+            Application.Current is App { Services: { } services }
+                ? services.GetService<ISharedCredentialRepository>()
+                : null;
 
     private void OnPasswordHostChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainWindowViewModel.ActiveTerminalTab))
         {
-            HidePasswordHint();
-            _passwordRequest?.Invalidate();
+            ClosePasswordPopup();
         }
     }
 
-    private void HidePasswordHint(bool suppress = false)
+    /// <summary>收起密码列表;请求随之作废,已入队的字节不受影响(桥已持有)。</summary>
+    private void ClosePasswordPopup(bool suppress = false)
     {
-        PasswordHint.IsVisible = false;
         if (suppress && _termControl is { } control)
         {
+            // 记住这一行提示,免得它还在屏幕上时反复重开(用户已决定手输或忽略)。
             _suppressedPasswordPrompt = control.GetBufferLine(control.CursorRow);
         }
+        if (PasswordPopup.IsOpen)
+        {
+            PasswordPopup.IsOpen = false;
+        }
+        PasswordList.ItemsSource = null;
+        PasswordStatus.IsVisible = false;
+        _passwordRequest?.Dispose();
+        _passwordRequest = null;
     }
 
+    /// <summary>
+    /// 输出批次结束后复核光标行:是明确的密码提示且上下文没变,就把共享密码列表锚在
+    /// 光标下一行弹出。识别是启发式的(见 <see cref="InteractivePromptDetector.IsPasswordFillPrompt" />),
+    /// 误判的代价只是多出一个可忽略的列表,手动入口不受影响。
+    /// </summary>
     private void OnPasswordOutputUpdated()
     {
-        if (_passwordPicker is not null || _termControl is not { } control
+        if (_termControl is not { } control
             || DataContext is not TerminalTabViewModel { IsConnected: true, Bridge: not null } tab
             || TopLevel.GetTopLevel(this) is not Window { IsActive: true, DataContext: MainWindowViewModel main }
             || !ReferenceEquals(main.ActiveTerminalTab, tab) || !control.IsFocused
             || control.ScrollOffset != 0 || control.IsAlternateScreenActive || !IsEffectivelyVisible)
         {
-            HidePasswordHint();
+            ClosePasswordPopup();
             return;
         }
         string line = control.GetBufferLine(control.CursorRow);
         if (!InteractivePromptDetector.IsPasswordFillPrompt(line) || line == _suppressedPasswordPrompt)
         {
-            HidePasswordHint();
+            ClosePasswordPopup();
             if (line != _suppressedPasswordPrompt)
             {
                 _suppressedPasswordPrompt = null;
             }
             return;
         }
-        DismissSuggestions(suppress: false);
-        Rect cursor = control.GetCursorRect();
-        PasswordHint.Margin = new(Math.Max(0, Math.Min(cursor.X, Bounds.Width - 260)),
-            Math.Max(0, Math.Min(cursor.Bottom + 2, control.Bounds.Height - 42)), 0, 0);
-        PasswordHint.IsVisible = true;
-    }
-
-    private void OpenSharedPassword_Click(object? sender, RoutedEventArgs e) => OpenSharedPasswordPicker();
-    private void PasswordHint_Click(object? sender, RoutedEventArgs e)
-    {
-        if (_termControl is { } control && InteractivePromptDetector.IsPasswordFillPrompt(control.GetBufferLine(control.CursorRow)))
+        if (!PasswordPopup.IsOpen)
         {
-            OpenSharedPasswordPicker();
+            OpenPasswordPopup(control);
         }
     }
 
-    internal void OpenSharedPasswordPicker() => FireAndForget.Run(OpenSharedPasswordPickerAsync);
-
-    private async Task OpenSharedPasswordPickerAsync()
+    /// <summary>按提示符弹出列表:先只读元数据,读取与发送都留到用户点选之后。</summary>
+    private void OpenPasswordPopup(VelaTerminalControl control)
     {
-        if (_passwordPicker is not null || DataContext is not TerminalTabViewModel { IsConnected: true, Bridge: not null } tab
-            || TopLevel.GetTopLevel(this) is not Window { DataContext: MainWindowViewModel main } owner
-            || !ReferenceEquals(main.ActiveTerminalTab, tab)
-            || Application.Current is not App { Services: { } services }
-            || services.GetService<ISharedCredentialRepository>() is not { } repository)
+        if (DataContext is not TerminalTabViewModel { IsConnected: true, Bridge: not null } tab
+            || RepositoryFactory() is not { } repository)
         {
             return;
         }
-        HidePasswordHint(suppress: true);
         DismissSuggestions(suppress: false);
-        using var request = new SharedPasswordFillRequest(tab, () => ReferenceEquals(main.ActiveTerminalTab, tab)
-            && ReferenceEquals(DataContext, tab) && IsAttachedToVisualTree() && owner.IsVisible);
-        _passwordRequest = request;
-        var picker = new SharedPasswordPickerDialog(repository, request, tab.Title);
-        _passwordPicker = picker;
-        void OnActiveChanged(object? sender, PropertyChangedEventArgs args)
-        {
-            if (args.PropertyName == nameof(MainWindowViewModel.ActiveTerminalTab))
-            {
-                request.Invalidate();
-            }
-        }
-        void OnOwnerClosing(object? sender, WindowClosingEventArgs args) => request.Invalidate();
-        void OnOwnerPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
-        {
-            if (args.Property == IsVisibleProperty && !owner.IsVisible)
-            {
-                request.Invalidate();
-            }
-        }
-        owner.Closing += OnOwnerClosing;
-        owner.PropertyChanged += OnOwnerPropertyChanged;
-        ((INotifyPropertyChanged)main).PropertyChanged += OnActiveChanged;
+        PasswordList.ItemsSource = null;
+        PasswordList.SelectedItem = null;
+        PasswordStatus.IsVisible = false;
+        _passwordRequest = new SharedPasswordFillRequest(
+            tab,
+            () => IsAttachedToVisualTree() && PasswordPopup.IsOpen && ReferenceEquals(DataContext, tab));
+        PasswordPopup.PlacementTarget ??= TerminalHost;
+        // 锚在提示行的下一行:列表落在提示符下面,不挡住用户可能正在手敲的那一行。
+        // 下一行 = 光标格下移一个格高,格高直接取光标格自身的高度(不另问控件要常数)。
+        Rect cursor = control.GetCursorRect();
+        PasswordPopup.PlacementRect = cursor.Translate(new Vector(0, cursor.Height));
+        PasswordPopup.IsOpen = true;
+        FireAndForget.Run(() => LoadPasswordItemsAsync(repository));
+    }
+
+    private async Task LoadPasswordItemsAsync(ISharedCredentialRepository repository)
+    {
+        IReadOnlyList<SharedCredentialMetadata> items;
         try
         {
-            await picker.ShowDialog<bool>(owner);
+            items = [.. (await repository.ListMetadataAsync())
+                .Where(static c => c.AuthMethod == AuthMethod.Password && c.HasPassword)];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            items = [];
+        }
+        if (_passwordRequest is null)
+        {
+            return; // 加载期间弹层已收起:别把列表塞回一个已经失效的请求。
+        }
+        PasswordList.ItemsSource = items;
+        SetPasswordStatus(items.Count == 0 ? "PasswordFill_Empty" : null);
+    }
+
+    private void SetPasswordStatus(string? key)
+    {
+        PasswordStatus.Text = key is null ? string.Empty : Strings.Get(key);
+        PasswordStatus.IsVisible = key is not null;
+    }
+
+    /// <summary>
+    /// 点选一条即读取并填入;只发正文,不追加回车(#628 第 1 项)。
+    /// 挂 SelectionChanged 而不是 Tapped:列表项不可聚焦,选中哪一行本来就是这次点击的唯一
+    /// 语义,而 Tapped 的路由事件在 headless 测试里造不出来 —— 这条路径就永远测不到。
+    /// </summary>
+    private void OnPasswordSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (PasswordList.SelectedItem is not SharedCredentialMetadata selected
+            || _passwordRequest is not { } request
+            || RepositoryFactory() is not { } repository)
+        {
+            return;
+        }
+        // 先清选中再发起读取:清空引发的这一次回调落到上面的 null 守卫上,不会重入。
+        PasswordList.SelectedItem = null;
+        FireAndForget.Run(() => FillSelectedPasswordAsync(request, repository, selected.Id));
+    }
+
+    private async Task FillSelectedPasswordAsync(
+        SharedPasswordFillRequest request,
+        ISharedCredentialRepository repository,
+        Guid id)
+    {
+        PasswordList.IsEnabled = false;
+        PasswordFillResult result;
+        try
+        {
+            result = await request.FillAsync(repository, id);
         }
         finally
         {
-            ((INotifyPropertyChanged)main).PropertyChanged -= OnActiveChanged;
-            owner.Closing -= OnOwnerClosing;
-            owner.PropertyChanged -= OnOwnerPropertyChanged;
-            _passwordPicker = null;
-            _passwordRequest = null;
-            if (owner.IsActive && ReferenceEquals(main.ActiveTerminalTab, tab) && IsAttachedToVisualTree())
+            PasswordList.IsEnabled = true;
+        }
+        if (result != PasswordFillResult.Queued)
+        {
+            // 失败一律留着弹层、把原因写在列表上方:这会儿收口,状态文字会连同弹层一起消失,
+            // 用户只看到"点了一下、没了"。尤其过期那条,什么都没发出去,更不能让用户以为
+            // 已经填上。上下文再变一次(输出/滚动/失焦)弹层自然收口,用户也可按 Esc。
+            SetPasswordStatus(result switch
             {
-                FocusTerminal();
-            }
+                PasswordFillResult.Expired => "PasswordFill_Expired",
+                PasswordFillResult.InvalidPassword => "PasswordFill_Invalid",
+                PasswordFillResult.Unavailable => "PasswordFill_Unavailable",
+                _ => "PasswordFill_ReadFailed",
+            });
+            return;
+        }
+        // 成功即收口:密码已在途,弹层留着只会让人再点一次。入队不等于远端送达,这是已知限制。
+        ClosePasswordPopup(suppress: true);
+        if (_termControl is { } control && IsAttachedToVisualTree())
+        {
+            control.Focus();
         }
     }
 
-    private void CancelPasswordPicker()
+    /// <summary>没有识别到提示符时(命令面板入口)手动召出,锚在当前光标行。</summary>
+    internal void OpenSharedPasswordPicker()
     {
-        HidePasswordHint();
-        _passwordRequest?.Invalidate();
-        _passwordPicker?.PostClose(false);
+        if (_termControl is { } control)
+        {
+            OpenPasswordPopup(control);
+        }
     }
+
+    /// <summary>密码列表当前是否展开(测试用;弹层是独立顶层,不能从可视树里找)。</summary>
+    internal bool PasswordPopupOpenForTest => PasswordPopup.IsOpen;
+
+    /// <summary>密码列表当前展示的条目(测试用)。</summary>
+    internal IReadOnlyList<SharedCredentialMetadata> PasswordItemsForTest =>
+        PasswordList.ItemsSource as IReadOnlyList<SharedCredentialMetadata> ?? [];
+
+    /// <summary>弹层锚定的矩形(测试用;弹层是独立顶层,视觉树里查不到)。</summary>
+    internal Rect PasswordPlacementRectForTest => PasswordPopup.PlacementRect ?? default;
+
+    /// <summary>弹层状态行的当前文字;未显示时为空串(测试用)。</summary>
+    internal string PasswordStatusForTest => PasswordStatus.IsVisible ? PasswordStatus.Text ?? string.Empty : string.Empty;
+
+    /// <summary>收口密码列表(测试用;等价于用户按 Esc 或切走窗口)。</summary>
+    internal void ClosePasswordPopupForTest() => ClosePasswordPopup(suppress: true);
+
+    /// <summary>点选一条列表项(测试用;等价于点中那一行,走同一条 SelectionChanged 路径)。</summary>
+    internal void PickPasswordItem(SharedCredentialMetadata item) =>
+        PasswordList.SelectedItem = item;
 
     // ---- 终端内搜索(spec §5.3) ------------------------------------
 
@@ -174,7 +262,7 @@ public partial class TerminalTabView : UserControl
         DetachedFromVisualTree += OnDetachedFromVisualTree;
         DataContextChanged += (_, _) =>
         {
-            CancelPasswordPicker();
+            ClosePasswordPopup();
             HookTerminalControl();
             HookSuggestions();
             // 失败覆盖层上的「复制」:剪贴板要经 TopLevel 取,视图模型层拿不到,由视图注入。
@@ -199,6 +287,8 @@ public partial class TerminalTabView : UserControl
         SearchClose.Click += (_, _) => CloseSearch();
         SearchBox.KeyDown += OnSearchBoxKeyDown;
         SuggestList.Tapped += (_, _) => AcceptSuggestion();
+        // 列表项不可聚焦(点密码不得抢走终端焦点),选中哪一行就是这次点击的全部语义。
+        PasswordList.SelectionChanged += OnPasswordSelectionChanged;
 
         // 点终端正文即收起补全弹层(#315)。弹层刻意不开 light-dismiss(那会吞掉
         // 关闭它的那一次点击),而点击一个**已经聚焦**的终端不产生 LostFocus,
@@ -222,9 +312,9 @@ public partial class TerminalTabView : UserControl
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        if (PasswordHint.IsVisible && e.Key == Key.Escape)
+        if (PasswordPopup.IsOpen && e.Key == Key.Escape)
         {
-            HidePasswordHint(suppress: true);
+            ClosePasswordPopup(suppress: true);
             e.Handled = true;
             return;
         }
@@ -324,7 +414,7 @@ public partial class TerminalTabView : UserControl
     /// <summary>断连横幅会移动光标,残留的幽灵会被画到新光标处——断连即收口。</summary>
     private void OnSuggestVmDisconnected(object? sender, EventArgs e)
     {
-        CancelPasswordPicker();
+        ClosePasswordPopup();
         DismissSuggestions(suppress: false);
     }
 
@@ -343,7 +433,7 @@ public partial class TerminalTabView : UserControl
 
     private void OnTrackedInputChanged()
     {
-        HidePasswordHint(suppress: true);
+        ClosePasswordPopup(suppress: true);
         string input = EffectiveInput();
         // 每键路径:先查开关再拼实参(急切求值防线,见 SuggestDiag.IsEnabled)。
         if (SuggestDiag.IsEnabled)
@@ -897,7 +987,7 @@ public partial class TerminalTabView : UserControl
 
     private void OnHostWindowDeactivated(object? sender, EventArgs e)
     {
-        HidePasswordHint();
+        ClosePasswordPopup();
         SuggestDiag.Log("deactivated", $"view={GetHashCode():X} popupOpen={SuggestPopup.IsOpen}");
         DismissSuggestions(suppress: false);
     }
@@ -958,7 +1048,7 @@ public partial class TerminalTabView : UserControl
 
     private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
-        CancelPasswordPicker();
+        ClosePasswordPopup();
         _suggestDebounce?.Dispose();
         _suggestDebounce = null;
         DismissSuggestions(suppress: false);
@@ -989,7 +1079,7 @@ public partial class TerminalTabView : UserControl
     /// </summary>
     private void OnTerminalLostFocus(object? sender, RoutedEventArgs e)
     {
-        HidePasswordHint();
+        ClosePasswordPopup();
         DismissSuggestions(suppress: false);
     }
 
@@ -1056,7 +1146,7 @@ public partial class TerminalTabView : UserControl
 
     private void OnTerminalScrollChanged()
     {
-        HidePasswordHint();
+        ClosePasswordPopup();
         SyncScrollBar();
     }
 
@@ -1298,7 +1388,9 @@ public partial class TerminalTabView : UserControl
         Dispatcher.UIThread.Post(
             () =>
             {
-                if (_passwordPicker is not null || !ReferenceEquals(DataContext, vm)
+                // 密码列表开着时不抢焦点:那是用户为点选而保持的鼠标交互,焦点一旦回到
+                // 终端,弹层会立刻被"终端失焦"的镜像守卫收掉,点选就永远落不上。
+                if (PasswordPopup.IsOpen || !ReferenceEquals(DataContext, vm)
                     || !IsAttachedToVisualTree() || !IsEffectivelyVisible
                     || TopLevel.GetTopLevel(this) is not Window { IsActive: true } owner
                     || (owner.DataContext is MainWindowViewModel main && !ReferenceEquals(main.ActiveTerminalTab, vm))
