@@ -114,6 +114,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
     <PackageReference Include="Avalonia.AvaloniaEdit" />
+    <PackageReference Include="LiveMarkdown.Avalonia" />
     <!--
       DevTools 支持包:**只进非 Release 构建**。
 

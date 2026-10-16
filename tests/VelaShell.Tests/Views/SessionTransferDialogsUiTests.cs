@@ -191,7 +191,7 @@ public class SessionTransferDialogsUiTests
             Dispatcher.UIThread.RunJobs();
             Assert.IsTrue(viewModel.IsTailscaleAuth);
             Assert.IsTrue(apply.IsEffectivelyEnabled);
-            Assert.IsFalse(PassphraseBoxes(window).Any(static box => box.IsEffectivelyVisible));
+            Assert.DoesNotContain(static box => box.IsEffectivelyVisible, PassphraseBoxes(window));
             Assert.IsFalse(window.GetVisualDescendants().OfType<TextBox>()
                 .Single(box => box.Text == "~/.ssh/id_ed25519").IsEffectivelyVisible);
 

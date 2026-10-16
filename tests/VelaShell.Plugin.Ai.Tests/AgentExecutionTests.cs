@@ -31,7 +31,7 @@ public sealed class AgentExecutionTests
         Assert.AreEqual(1, executed);
         Assert.AreEqual(3, verified);
         Assert.Contains("[resumed]", updates.ToChatResponse().Text);
-        Assert.IsTrue(wire.Requests[2].SelectMany(m => m.Contents).OfType<FunctionResultContent>().Any());
+        Assert.IsNotEmpty(wire.Requests[2].SelectMany(m => m.Contents).OfType<FunctionResultContent>());
     }
 
     [TestMethod]
@@ -115,8 +115,8 @@ public sealed class AgentExecutionTests
         });
         Assert.AreEqual(1, executed);
         Assert.HasCount(1, wire.Requests);
-        Assert.AreEqual(2, execution.CompletedMessages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Count());
-        Assert.AreEqual(2, execution.CompletedMessages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Count());
+        Assert.HasCount(2, execution.CompletedMessages.SelectMany(m => m.Contents).OfType<FunctionCallContent>());
+        Assert.HasCount(2, execution.CompletedMessages.SelectMany(m => m.Contents).OfType<FunctionResultContent>());
     }
 
     [TestMethod]
@@ -277,9 +277,9 @@ public sealed class AgentExecutionTests
         { Tools = [AIFunctionFactory.Create((int value) => { executed++; return value; }, "step")] }, null, default))
             updates.Add(update);
         Assert.AreEqual(26, executed);
-        Assert.AreEqual(27, wire.Requests.Count);
+        Assert.HasCount(27, wire.Requests);
         Assert.Contains("done", updates.ToChatResponse().Text);
-        Assert.AreEqual(26, wire.Requests[^1].SelectMany(m => m.Contents).OfType<FunctionResultContent>().Count());
+        Assert.HasCount(26, wire.Requests[^1].SelectMany(m => m.Contents).OfType<FunctionResultContent>());
     }
 
     [TestMethod]
@@ -304,12 +304,12 @@ public sealed class AgentExecutionTests
             }
             Task run = Consume();
             await waiting.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.AreEqual(1, wire.Requests.Count, "等待本地任务时不能轮询模型");
+            Assert.HasCount(1, wire.Requests, "等待本地任务时不能轮询模型");
             if (stop) await cancellation.CancelAsync();
             finish.TrySetResult(new(0, 0));
             if (stop) await Assert.ThrowsAsync<OperationCanceledException>(async () => await run);
             else await run.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.AreEqual(stop ? 1 : 2, wire.Requests.Count);
+            Assert.HasCount(stop ? 1 : 2, wire.Requests);
             if (!stop) Assert.Contains("Background task completion notification", wire.Requests[1][^1].Text);
         }
     }

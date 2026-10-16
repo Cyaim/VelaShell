@@ -14,7 +14,7 @@ namespace VelaShell.Services.Update;
 /// 不受限流);该地址只认非预发布 Release,404(例如 beta 阶段全是预发布)时回退到
 /// REST API 列表取最新可用发布。preview 通道直接走 API 列表(预发布也算)。
 /// </summary>
-public sealed class GitHubReleaseSource : IUpdateSource
+public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
 {
     private readonly string _owner;
     private readonly string _repo;
@@ -37,6 +37,45 @@ public sealed class GitHubReleaseSource : IUpdateSource
         _http.Timeout = TimeSpan.FromMinutes(15);
         // GitHub REST API 要求 User-Agent,缺失直接 403。
         _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("VelaShell-Updater", "1"));
+    }
+
+    /// <inheritdoc />
+    public async Task<ReleaseNotes?> GetLatestReleaseNotesAsync(CancellationToken cancellationToken = default)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
+        ReleaseNotes? latest = null;
+        DateTimeOffset latestPublishedAt = DateTimeOffset.MinValue;
+        // 列表按创建时间排序,不能据此推断发布时间;旧 tag 补发的 Release 也可能最新。
+        for (int page = 1; ; page++)
+        {
+            using HttpRequestMessage request = new(HttpMethod.Get,
+                $"https://api.github.com/repos/{_owner}/{_repo}/releases?per_page=100&page={page}");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+            using HttpResponseMessage response = await _http.SendAsync(request, cts.Token);
+            response.EnsureSuccessStatusCode();
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cts.Token));
+            foreach (JsonElement release in doc.RootElement.EnumerateArray())
+            {
+                if (release.GetProperty("draft").GetBoolean())
+                {
+                    continue;
+                }
+                DateTimeOffset publishedAt = release.GetProperty("published_at").GetDateTimeOffset();
+                if (latest == null || publishedAt > latestPublishedAt)
+                {
+                    latestPublishedAt = publishedAt;
+                    latest = new ReleaseNotes(release.GetProperty("tag_name").GetString()!,
+                        release.GetProperty("body").GetString() ?? string.Empty, publishedAt);
+                }
+            }
+            if (!response.Headers.TryGetValues("Link", out IEnumerable<string>? links)
+                || !links.Any(link => link.Split(',').Any(part =>
+                    part.Contains("rel=\"next\"", StringComparison.Ordinal))))
+            {
+                return latest;
+            }
+        }
     }
 
     /// <inheritdoc />

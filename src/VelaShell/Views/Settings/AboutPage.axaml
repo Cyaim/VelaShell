@@ -105,14 +105,15 @@
 
     <!-- 按钮 -->
     <StackPanel Orientation="Horizontal" Spacing="8">
-      <!-- 商店版(MSIX)更新由 Microsoft Store 接管,以下三个操作全部隐藏,只留状态说明。 -->
+      <!-- 商店版(MSIX)更新由 Microsoft Store 接管,更新操作隐藏;更新日志始终可读。 -->
       <Button Classes="dlg-primary" Content="{loc:Localize SetAbout_CheckUpdates}" Command="{Binding CheckUpdatesCommand}"
               IsVisible="{Binding ShowInAppUpdateControls}" />
       <!-- 更新下载完毕后出现:点击重启应用完成安装。 -->
       <Button Classes="dlg-primary" Content="{loc:Localize SetAbout_RestartToUpdate}"
               Command="{Binding RestartToUpdateCommand}"
               IsVisible="{Binding UpdateReady}" />
-      <Button Classes="dlg-outline" Content="{loc:Localize SetAbout_Changelog}" IsEnabled="False" ToolTip.Tip="{loc:Localize SetAbout_ChangelogTip}" />
+      <Button x:Name="ChangelogButton" Classes="dlg-outline" Content="{loc:Localize SetAbout_Changelog}"
+              Click="Changelog_Click" ToolTip.Tip="{loc:Localize SetAbout_ChangelogTip}" />
       <!-- 更新流程被意外中断卡住时的自愈出口:清掉残留,让检查更新重新走通。 -->
       <Button Classes="dlg-outline" Content="{loc:Localize SetAbout_RepairUpdate}"
               Command="{Binding RepairUpdateCommand}"

@@ -2324,7 +2324,28 @@
     <value>更新日志</value>
   </data>
   <data name="SetAbout_ChangelogTip" xml:space="preserve">
-    <value>随正式版本提供</value>
+    <value>查看 GitHub 最新发布的更新说明，包含预发布版本</value>
+  </data>
+  <data name="ReleaseNotes_NoRelease" xml:space="preserve">
+    <value>暂无已发布版本。</value>
+  </data>
+  <data name="ReleaseNotes_EmptyBody" xml:space="preserve">
+    <value>此版本暂无更新说明。</value>
+  </data>
+  <data name="ReleaseNotes_LoadFailed" xml:space="preserve">
+    <value>无法加载更新说明，请检查网络连接后重试。</value>
+  </data>
+  <data name="ReleaseNotes_Latest" xml:space="preserve">
+    <value>最新发布</value>
+  </data>
+  <data name="ReleaseNotes_PublishedAt" xml:space="preserve">
+    <value>发布于 {0}</value>
+  </data>
+  <data name="ReleaseNotes_ViewOnGitHub" xml:space="preserve">
+    <value>在 GitHub 查看</value>
+  </data>
+  <data name="ReleaseNotes_Retry" xml:space="preserve">
+    <value>重试</value>
   </data>
   <data name="SetAbout_CheckUpdates" xml:space="preserve">
     <value>检查更新</value>

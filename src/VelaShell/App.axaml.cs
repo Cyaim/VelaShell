@@ -153,8 +153,11 @@ public class App : Application
             // 应用内自动更新:更新源 = 本仓库 GitHub Releases 的 latest.json 清单(无需自己架服务器),
             // 便携式原地换版,不限定安装位置。通道跟随设置页的 stable/preview 开关;
             // beta 阶段(尚无正式版)stable 通道自动放宽到最新预发布。
+            .AddSingleton(_ => new Services.Update.GitHubReleaseSource("https://github.com/joesdu/VelaShell"))
+            .AddSingleton<Services.Update.IReleaseNotesSource>(sp =>
+                sp.GetRequiredService<Services.Update.GitHubReleaseSource>())
             .AddSingleton<IUpdateService>(sp => new UpdateService(
-                "https://github.com/joesdu/VelaShell",
+                sp.GetRequiredService<Services.Update.GitHubReleaseSource>(),
                 channelProvider: async () =>
                     (await sp.GetRequiredService<ISettingsService>().GetSnapshotAsync()).General.UpdateChannel
             ))

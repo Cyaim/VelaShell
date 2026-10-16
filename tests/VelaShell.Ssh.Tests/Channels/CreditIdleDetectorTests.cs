@@ -68,7 +68,7 @@ public sealed class CreditIdleDetectorTests
         // 带宽是瓶颈：对端手里一直有额度，最长的空档只是一个报文的传输时间，占两轮（8 个报文）的 1/8。
         List<bool> rounds = new Feed().Send(Even(packets: 80, spacing: 1000));
 
-        Assert.IsFalse(rounds.Any(idle => idle), "匀速到达时最长空档只占两轮的 1/8,不该算空等");
+        Assert.DoesNotContain(idle => idle, rounds, "匀速到达时最长空档只占两轮的 1/8,不该算空等");
     }
 
     [TestMethod]
@@ -88,7 +88,7 @@ public sealed class CreditIdleDetectorTests
         // 读得慢：管道里总有没读完的。那时的空档不是在等额度。
         List<bool> rounds = new Feed().Send(Bursts(batches: 10, burst: 8, roundTrip: 10_000), drained: false);
 
-        Assert.IsFalse(rounds.Any(idle => idle), "读的一方没读空时不该算空等");
+        Assert.DoesNotContain(idle => idle, rounds, "读的一方没读空时不该算空等");
     }
 
     [TestMethod]
@@ -97,7 +97,7 @@ public sealed class CreditIdleDetectorTests
         // 窗口只有一两个报文时两轮本来就没几包，匀速到达的空档也占得到 1/4；那时只认见底。
         List<bool> rounds = new Feed().Send(Bursts(batches: 10, burst: 8, roundTrip: 10_000), eligible: false);
 
-        Assert.IsFalse(rounds.Any(idle => idle));
+        Assert.DoesNotContain(idle => idle, rounds);
     }
 
     [TestMethod]

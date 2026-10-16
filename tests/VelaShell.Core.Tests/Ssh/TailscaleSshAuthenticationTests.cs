@@ -121,8 +121,8 @@ public sealed class TailscaleSshAuthenticationTests
         }
         if (outcome == "timeout")
         {
-            Assert.IsTrue(elapsed.Elapsed >= TimeSpan.FromSeconds(1));
-            Assert.IsTrue(elapsed.Elapsed < Deadline);
+            Assert.IsGreaterThanOrEqualTo(TimeSpan.FromSeconds(1), elapsed.Elapsed);
+            Assert.IsLessThan(Deadline, elapsed.Elapsed);
         }
         await harness.ExpectEndAsync(shown);
         shown.Cancel!();

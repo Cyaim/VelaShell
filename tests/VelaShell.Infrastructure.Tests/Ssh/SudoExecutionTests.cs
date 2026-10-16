@@ -16,7 +16,7 @@ public sealed class SudoExecutionTests
         Assert.AreEqual("密碼é🙂", Encoding.UTF8.GetString(memory.Span));
         password.Dispose();
         password.Dispose();
-        Assert.IsTrue(memory.Span.IndexOfAnyExcept((byte)0) < 0);
+        Assert.IsLessThan(0, memory.Span.IndexOfAnyExcept((byte)0));
         Assert.ThrowsExactly<ObjectDisposedException>(() => _ = password.Utf8);
     }
 

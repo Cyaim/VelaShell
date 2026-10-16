@@ -86,7 +86,7 @@ public sealed class CommandJobRegistryTests
         finish.SetResult();
         Assert.AreEqual(CommandJobState.Succeeded, (await pending.WaitAsync(TimeSpan.FromSeconds(5)))[0].State);
         Assert.IsFalse(scope.HasActiveJobs);
-        Assert.HasCount(0, await scope.WaitForCompletionAsync());
+        Assert.IsEmpty(await scope.WaitForCompletionAsync());
     }
 
     [TestMethod]
@@ -138,12 +138,12 @@ public sealed class CommandJobRegistryTests
         string id = registry.Start(scope, "s", "cmd");
         CommandJobSnapshot result = await registry.ReadAsync(scope, id);
         Assert.IsTrue(result.OutputTruncated);
-        Assert.IsTrue(result.EarliestCursor > 0);
-        Assert.IsTrue(result.Output.Sum(x => x.Text.Length) <= 32768);
+        Assert.IsGreaterThan(0, result.EarliestCursor);
+        Assert.IsLessThanOrEqualTo(32768, result.Output.Sum(x => x.Text.Length));
         Assert.IsTrue(result.Output.All(x => x.Text.Length <= 4096));
         Assert.AreEqual(21L, result.NextCursor);
         Assert.AreEqual("progress\r100%", result.Output[^1].Text);
-        Assert.HasCount(0, (await registry.ReadAsync(scope, id, result.NextCursor)).Output);
+        Assert.IsEmpty((await registry.ReadAsync(scope, id, result.NextCursor)).Output);
     }
 
     [TestMethod]
@@ -216,7 +216,7 @@ public sealed class CommandJobRegistryTests
         registry.MarkBackground(denied, id);
         allowed = false;
         await blockers.CancelAsync();
-        Assert.HasCount(0, await denied.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.IsEmpty(await denied.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.AreEqual(4, exec.Calls);
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => registry.ReadAsync(denied, id));
         await registry.CancelAsync(denied, id);
@@ -275,7 +275,7 @@ public sealed class CommandJobRegistryTests
         registry.MarkBackground(scope, id);
         Assert.IsFalse(scope.HasActiveJobs);
         Assert.IsTrue(scope.HasMonitoringJobs);
-        Assert.HasCount(0, await scope.WaitForCompletionAsync());
+        Assert.IsEmpty(await scope.WaitForCompletionAsync());
         await scope.CancelAsync();
         CommandJobSnapshot result = await registry.ReadAsync(scope, id);
         Assert.IsTrue(result.CancellationRequested);

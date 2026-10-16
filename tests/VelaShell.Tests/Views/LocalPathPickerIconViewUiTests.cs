@@ -46,8 +46,8 @@ public sealed class LocalPathPickerIconViewUiTests
             ClickCenter(dialog, dialog.IconViewButton);
 
             Assert.AreEqual(LocalPickerView.Icons, dialog.View);
-            Assert.IsTrue(dialog.IconViewButton.IsChecked == true);
-            Assert.IsFalse(dialog.ListViewButton.IsChecked == true, "切换器两段互斥。");
+            Assert.AreEqual(true, dialog.IconViewButton.IsChecked);
+            Assert.AreNotEqual(true, dialog.ListViewButton.IsChecked, "切换器两段互斥。");
             Assert.IsFalse(dialog.ColumnHeader.IsVisible, "格子里没有列,列头要收起来。");
 
             VirtualizingTilePanel panel = Panel(list);

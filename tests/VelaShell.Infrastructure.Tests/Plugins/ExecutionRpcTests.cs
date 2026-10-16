@@ -146,7 +146,7 @@ public class ExecutionRpcTests
         router.HandleNotification(PluginRpc.ExecCancel, JsonSerializer.SerializeToElement(new ExecCancelNotification("early")));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => router.HandleRequestAsync(PluginRpc.ExecSudoStream,
             JsonSerializer.SerializeToElement(new ExecSudoStreamRequest("s", "id", "early", 0)), CancellationToken.None));
-        Assert.AreEqual(0, fake.SudoStreamed.Count);
+        Assert.IsEmpty(fake.SudoStreamed);
         Task<object?> running = router.HandleRequestAsync(PluginRpc.ExecSudoStream,
             JsonSerializer.SerializeToElement(new ExecSudoStreamRequest("s", "id", "active", 0)), CancellationToken.None);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
