@@ -242,17 +242,24 @@ public sealed class TerminalScreen
     }
 
     /// <summary>
-    /// 把滚动区域向上滚动 <paramref name="count" /> 行。当区域覆盖整屏时,
-    /// 退休的顶部行会被压入回滚区。
+    /// 把滚动区域向上滚动 <paramref name="count" /> 行。区域上边界在屏幕首行时,
+    /// 退休的顶部行会被压入回滚区(下边界到不到底都一样)。
     /// </summary>
+    /// <remarks>
+    /// 只看上边界、不要求整屏,是为了底部钉着状态行的程序:apt 的进度条把区域设成
+    /// 「首行到倒数第二行」,整场安装日志都在这个区域里滚。要求整屏的话,滚出去的每一行
+    /// 都被直接丢掉,装完回滚区是空的(#634)。区域下方的固定行留在活动屏上原地不动;
+    /// 上边界不在首行时,滚出去的行夹在上方固定行与区域之间,历史里没有它的位置,照旧丢弃。
+    /// xterm.js、VTE、Alacritty 都是这个行为。
+    /// </remarks>
     public void ScrollUp(int count, in TerminalCell blank)
     {
         count = Math.Clamp(count, 0, ScrollBottom - ScrollTop + 1);
-        bool fullScreen = ScrollTop == 0 && ScrollBottom == Rows - 1;
+        bool intoHistory = ScrollTop == 0 && MaxScrollback > 0;
         for (int i = 0; i < count; i++)
         {
             TerminalRow retired = _lines[ScrollTop];
-            if (fullScreen && MaxScrollback > 0)
+            if (intoHistory)
             {
                 // 退休就是"从此只读"的那一刻:把整行满宽存储截到最后一个有内容的格。
                 // 回滚区是内存大头(200 列 × 20 万行 × 16 B ≈ 640 MB/标签页),而典型日志行
