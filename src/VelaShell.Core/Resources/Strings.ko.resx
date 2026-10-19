@@ -4845,6 +4845,10 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Sc_SuggestPrev" xml:space="preserve"><value>이전 제안 선택</value></data>
   <data name="Sc_SuggestAccept" xml:space="preserve"><value>선택한 제안 삽입</value></data>
   <data name="Sc_SuggestDismiss" xml:space="preserve"><value>제안 팝업 닫기</value></data>
+  <data name="Sc_PasswordFillNext" xml:space="preserve"><value>다음 공유 비밀번호 선택</value></data>
+  <data name="Sc_PasswordFillPrev" xml:space="preserve"><value>이전 공유 비밀번호 선택</value></data>
+  <data name="Sc_PasswordFillAccept" xml:space="preserve"><value>선택한 공유 비밀번호 입력</value></data>
+  <data name="Sc_PasswordFillDismiss" xml:space="preserve"><value>공유 비밀번호 목록 닫기</value></data>
   <data name="Sc_SuggestNative" xml:space="preserve"><value>셸 자체 자동 완성으로 전달</value></data>
   <data name="Sc_GhostAccept" xml:space="preserve"><value>인라인 고스트 제안 수락</value></data>
   <data name="Sc_OpenLink" xml:space="preserve"><value>포인터 아래 링크 열기</value></data>
@@ -4899,6 +4903,7 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Sc_NoteCtrlCCopies" xml:space="preserve"><value>선택 시 Ctrl+C 복사가 켜져 있고 선택이 있으면 복사</value></data>
   <data name="Sc_NoteSearchOpen" xml:space="preserve"><value>검색 창이 열려 있을 때만</value></data>
   <data name="Sc_NoteSuggestOpen" xml:space="preserve"><value>제안 팝업이 열려 있을 때만</value></data>
+  <data name="Sc_NotePasswordFillOpen" xml:space="preserve"><value>공유 비밀번호 목록이 열려 있을 때만</value></data>
   <data name="Sc_NoteListFocused" xml:space="preserve"><value>목록에 포커스가 있을 때만</value></data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve"><value>앱이 마우스 보고를 사용할 때 필요</value></data>
   <data name="Sc_NoteOptional" xml:space="preserve"><value>설정에서 끌 수 있음</value></data>

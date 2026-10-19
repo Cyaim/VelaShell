@@ -4850,6 +4850,10 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
   <data name="Sc_SuggestPrev" xml:space="preserve"><value>Select the previous suggestion</value></data>
   <data name="Sc_SuggestAccept" xml:space="preserve"><value>Insert the selected suggestion</value></data>
   <data name="Sc_SuggestDismiss" xml:space="preserve"><value>Dismiss the suggestion popup</value></data>
+  <data name="Sc_PasswordFillNext" xml:space="preserve"><value>Select the next shared password</value></data>
+  <data name="Sc_PasswordFillPrev" xml:space="preserve"><value>Select the previous shared password</value></data>
+  <data name="Sc_PasswordFillAccept" xml:space="preserve"><value>Fill the selected shared password</value></data>
+  <data name="Sc_PasswordFillDismiss" xml:space="preserve"><value>Dismiss the shared password list</value></data>
   <data name="Sc_SuggestNative" xml:space="preserve"><value>Fall through to the shell native completion</value></data>
   <data name="Sc_GhostAccept" xml:space="preserve"><value>Accept the inline (ghost) suggestion</value></data>
   <data name="Sc_OpenLink" xml:space="preserve"><value>Open the link under the pointer</value></data>
@@ -4904,6 +4908,7 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
   <data name="Sc_NoteCtrlCCopies" xml:space="preserve"><value>Copies instead when the selection-copy option is on and text is selected</value></data>
   <data name="Sc_NoteSearchOpen" xml:space="preserve"><value>Only while the search bar is open</value></data>
   <data name="Sc_NoteSuggestOpen" xml:space="preserve"><value>Only while the suggestion popup is open</value></data>
+  <data name="Sc_NotePasswordFillOpen" xml:space="preserve"><value>Only while the shared password list is open</value></data>
   <data name="Sc_NoteListFocused" xml:space="preserve"><value>Only while the list has focus</value></data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve"><value>Needed when the app enables mouse reporting</value></data>
   <data name="Sc_NoteOptional" xml:space="preserve"><value>Can be turned off in Settings</value></data>
