@@ -40,7 +40,7 @@ public sealed class ExecutionNotificationSinkTests
         Assert.HasCount(count, sent);
         for (int i = 0; i < count; i++)
         {
-            Assert.AreEqual((i + 1, (long)(i + 1)), sent[i]);
+            Assert.AreEqual((i + 1, i + 1L), sent[i]);
         }
     }
 
@@ -108,6 +108,6 @@ public sealed class ExecutionNotificationSinkTests
         await cancelled.CancelAsync();
         await sink.ReportAsync(7, cancelled.Token);
         await sink.DrainAsync();
-        Assert.AreSequenceEqual((int[])[7], [.. sent]);
+        Assert.AreSequenceEqual([7], [.. sent]);
     }
 }

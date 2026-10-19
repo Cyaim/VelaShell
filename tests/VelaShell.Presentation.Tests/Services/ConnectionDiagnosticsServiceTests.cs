@@ -64,7 +64,11 @@ public sealed class ConnectionDiagnosticsServiceTests
 
     private static SessionProfile Tailscale(int port, string username) => new()
     {
-        Name = "node", Host = "127.0.0.1", Port = port, Username = username, AuthMethod = AuthMethod.Tailscale
+        Name = "node",
+        Host = "127.0.0.1",
+        Port = port,
+        Username = username,
+        AuthMethod = AuthMethod.Tailscale
     };
 
     /// <summary>只发一行 SSH 识别串的本机监听:让前三步(DNS / TCP / 握手)通过,诊断才会走到认证那一步。</summary>

@@ -26,7 +26,7 @@ internal sealed class TailscaleAuthDeadline(
     IHostKeyPolicy inner, CancellationTokenSource attempt, TimeSpan guard, TimeSpan checkWait)
     : IHostKeyPolicy, IHostKeyTypePreference, IHostKeyRotationPolicy
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private bool _armed;
     private bool _finished;
     private DateTimeOffset? _expiresAt;

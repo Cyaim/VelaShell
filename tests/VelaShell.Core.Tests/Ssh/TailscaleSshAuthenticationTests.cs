@@ -756,8 +756,12 @@ public sealed class TailscaleSshAuthenticationTests
         TaskCompletionSource<bool> approve = NewSignal<bool>();
         await using Harness harness = new(profile: port => new ConnectionInfo
         {
-            Host = "127.0.0.1", Port = port, Username = "ops", AuthMethod = AuthMethod.Password,
-            Password = "secret", KeepAliveSeconds = 0
+            Host = "127.0.0.1",
+            Port = port,
+            Username = "ops",
+            AuthMethod = AuthMethod.Password,
+            Password = "secret",
+            KeepAliveSeconds = 0
         });
         // 库开头那条 none 探测被 check 模式的服务端挂起等批准;链接在横幅里。
         await using Round round = harness.Start(Check($"To authenticate, visit: {uri}", approve));
@@ -788,7 +792,10 @@ public sealed class TailscaleSshAuthenticationTests
         using TestHostKey hostKey = TestHostKey.Create(SshAlgorithmNames.SshEd25519);
         ValueTask<SshHostKeyVerdict> evaluating = deadline.EvaluateAsync(new SshHostKeyContext
         {
-            Host = "node", Port = 22, Key = SshPublicKey.Decode(hostKey.PublicKeyBlob), NegotiatedAlgorithm = SshAlgorithmNames.SshEd25519
+            Host = "node",
+            Port = 22,
+            Key = SshPublicKey.Decode(hostKey.PublicKeyBlob),
+            NegotiatedAlgorithm = SshAlgorithmNames.SshEd25519
         });
         await Task.Delay(TimeSpan.FromMilliseconds(600));
         Assert.IsFalse(attempt.IsCancellationRequested, "用户看指纹的时间不算进认证期限。");

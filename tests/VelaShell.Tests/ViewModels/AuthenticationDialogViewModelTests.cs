@@ -196,7 +196,11 @@ public sealed class AuthenticationDialogViewModelTests
     {
         var profile = new SessionProfile
         {
-            ConnectionType = type, Host = "files.example", Port = 21, Username = "ops", AuthMethod = stale
+            ConnectionType = type,
+            Host = "files.example",
+            Port = 21,
+            Username = "ops",
+            AuthMethod = stale
         };
         AuthenticationDialogViewModel vm = SharedCredentialPrompt.CreateDialog(profile, null, null, null);
 

@@ -140,12 +140,8 @@ public partial class ReleaseNotesDialog : Window
             if (!_closed)
             {
                 // 匿名 API 每小时只有 60 次,用完 GitHub 回 403/429;这时让用户去查网络是误导。
-                StatusText.Text = Strings.Get(ex is HttpRequestException
-                    {
-                        StatusCode: HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests
-                    }
-                    ? "ReleaseNotes_RateLimited"
-                    : "ReleaseNotes_LoadFailed");
+                bool rateLimited = ex is HttpRequestException { StatusCode: HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests };
+                StatusText.Text = Strings.Get(rateLimited ? "ReleaseNotes_RateLimited" : "ReleaseNotes_LoadFailed");
                 StatusText.IsVisible = true;
                 RetryButton.IsVisible = true;
             }
