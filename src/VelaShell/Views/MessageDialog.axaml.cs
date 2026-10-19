@@ -120,19 +120,30 @@ public partial class MessageDialog : Window
     }
 
     /// <summary>自定义内容(属性表、权限矩阵等):返回 true 表示用户点击了确认。</summary>
+    /// <remarks>
+    /// <c>cancelIsDefault</c> 给高风险确认(如 root 命令)用:回车与初始焦点都落在取消上 ——
+    /// 这类弹窗可能在用户正往终端里打字时弹出,顺手的一个回车只能是拒绝(与 agent 签名确认框同一约定)。
+    /// </remarks>
     public static Task<bool> ShowCustomAsync(Window owner,
         string title,
         Control content,
         string? confirmText = null,
         string? cancelText = null,
         bool showCancel = true,
-        MessageDialogKind kind = MessageDialogKind.Info)
+        MessageDialogKind kind = MessageDialogKind.Info,
+        bool cancelIsDefault = false)
     {
         var dialog = new MessageDialog();
         dialog.Configure(title, null, kind, confirmText ?? Strings.OK,
             showCancel ? cancelText ?? Strings.Cancel : null, false);
         dialog.BodyHost.IsVisible = true;
         dialog.BodyHost.Content = content;
+        if (cancelIsDefault && showCancel)
+        {
+            dialog.ConfirmButton.IsDefault = false;
+            dialog.CancelButton.IsDefault = true;
+            dialog.Opened += (_, _) => dialog.CancelButton.Focus();
+        }
         return dialog.ShowDialog<bool>(owner);
     }
 

@@ -7102,6 +7102,8 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sudo_Source" xml:space="preserve"><value>要求元プラグイン: {0}</value></data>
   <data name="Sudo_Target" xml:space="preserve"><value>接続先: {0}</value></data>
   <data name="Sudo_RootWarning" xml:space="preserve"><value>以下のコマンド全体（パイプとリダイレクトを含む）を root シェル経由で root として実行します。制限された sudoers ポリシーでは拒否される場合があります。</value></data>
+  <data name="Sudo_CommandSize" xml:space="preserve"><value>行数: {0}、文字数: {1}。承認する前にスクロールしてコマンド全体を確認してください。</value></data>
+  <data name="Sudo_CommandHidden" xml:space="preserve"><value>不可視文字または制御文字: {0} 個。⟨U+XXXX⟩ の形で表示しています。これらもそのままコマンドとして実行されます。</value></data>
   <data name="Sudo_Approve" xml:space="preserve"><value>root コマンドを承認</value></data>
   <data name="Sudo_Password" xml:space="preserve"><value>sudo パスワード</value></data>
   <data name="Sudo_Retry" xml:space="preserve"><value>前のパスワードは受け付けられませんでした。再試行してください。</value></data>

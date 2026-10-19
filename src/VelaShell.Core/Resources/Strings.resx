@@ -7107,6 +7107,8 @@ Send anyway?</value>
   <data name="Sudo_Source" xml:space="preserve"><value>Requested by plugin: {0}</value></data>
   <data name="Sudo_Target" xml:space="preserve"><value>Target: {0}</value></data>
   <data name="Sudo_RootWarning" xml:space="preserve"><value>The entire command below, including pipes and redirections, runs as root through a root shell. Restricted sudoers policies may refuse it.</value></data>
+  <data name="Sudo_CommandSize" xml:space="preserve"><value>Lines: {0}, characters: {1}. Scroll through the whole command before approving.</value></data>
+  <data name="Sudo_CommandHidden" xml:space="preserve"><value>Invisible or control characters: {0}. They are shown as ⟨U+XXXX⟩ and are part of the command that will run.</value></data>
   <data name="Sudo_Approve" xml:space="preserve"><value>Approve root command</value></data>
   <data name="Sudo_Password" xml:space="preserve"><value>sudo password</value></data>
   <data name="Sudo_Retry" xml:space="preserve"><value>The previous password was not accepted. Try again.</value></data>

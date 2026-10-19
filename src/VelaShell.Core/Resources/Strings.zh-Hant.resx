@@ -7577,6 +7577,8 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Sudo_Source" xml:space="preserve"><value>來源外掛：{0}</value></data>
   <data name="Sudo_Target" xml:space="preserve"><value>目標：{0}</value></data>
   <data name="Sudo_RootWarning" xml:space="preserve"><value>下列完整命令（含管線和重新導向）透過 root shell 以 root 身分執行。受限 sudoers 原則可能拒絕。</value></data>
+  <data name="Sudo_CommandSize" xml:space="preserve"><value>共 {0} 行、{1} 個字元。核准前請捲動看完整條命令。</value></data>
+  <data name="Sudo_CommandHidden" xml:space="preserve"><value>含 {0} 個不可見字元或控制字元，已顯示為 ⟨U+XXXX⟩；它們會原樣隨命令執行。</value></data>
   <data name="Sudo_Approve" xml:space="preserve"><value>核准 root 命令</value></data>
   <data name="Sudo_Password" xml:space="preserve"><value>sudo 密碼</value></data>
   <data name="Sudo_Retry" xml:space="preserve"><value>上次密碼未被接受，請重試。</value></data>
