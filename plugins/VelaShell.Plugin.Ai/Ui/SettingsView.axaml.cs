@@ -964,9 +964,10 @@ public partial class SettingsView : UserControl
         {
             PullModelsButton.IsEnabled = false;
             StatusText.Text = _loc["ModelsPulling"];
+            IReadOnlySet<string> referenced = await ModelPull.ReferencedModelIdsAsync(_settings, _context, _context.Shutdown);
             ModelPullResult result = await ModelPull.RunAsync(
                 provider, ProviderCatalog.Find(provider.CatalogId)?.ModelsDevId, _models, _store,
-                force: true, materialiseInto: catalogue, catalogueHttp: _catalogueHttp);
+                force: true, materialiseInto: catalogue, catalogueHttp: _catalogueHttp, referencedModelIds: referenced);
             if (result.Source == ModelSource.None)
             {
                 if (run == _editorRun && ReferenceEquals(SelectedProvider, provider)) StatusText.Text = _loc["ModelsNone"];

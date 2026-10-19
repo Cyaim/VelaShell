@@ -1637,9 +1637,11 @@ public sealed class ProviderSetupView : UserControl
             {
                 progress.Text = _loc["ModelsPulling"];
             }
+            IReadOnlySet<string> referenced = await ModelPull.ReferencedModelIdsAsync(_settings, _context, _context.Shutdown)
+                                                             .ConfigureAwait(true);
             ModelPullResult result = await ModelPull
                                            .RunAsync(provider, entry.ModelsDevId, _models, _store, force: force,
-                                               materialiseInto: catalogue)
+                                               materialiseInto: catalogue, referencedModelIds: referenced)
                                            .ConfigureAwait(true);
             if (result.Source == ModelSource.None)
             {

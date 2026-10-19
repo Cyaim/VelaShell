@@ -102,32 +102,71 @@ internal static class EndpointModelCatalog
         return request;
     }
 
+    /// <summary>翻页时每页要多少条:Anthropic 的上限(默认只给 20)。</summary>
+    private const int PageSize = 1000;
+
+    /// <summary>最多翻几页:一直说"还有"的端点不能把拉取拖成死循环。</summary>
+    private const int MaxPages = 20;
+
     /// <summary>
-    /// 发一次请求,拿这个端点供应的模型 id 与可选上下文窗口。
+    /// 拿这个端点供应的模型 id 与可选上下文窗口;回应声明还有下一页时接着翻完。
     /// </summary>
-    /// <remarks>拿不到不抛异常 —— 调用方要的是"回落到 models.dev",不是一个要处理的异常。</remarks>
+    /// <remarks>
+    /// <para>拿不到不抛异常 —— 调用方要的是"回落到 models.dev",不是一个要处理的异常。</para>
+    /// <para>
+    /// <b>清单必须是全的。</b>拉回来的清单会被当成"这个端点只供应这些"去清理自动模型,
+    /// 只拿到第一页就等于把后面几页的模型全判成下架。Anthropic 的 <c>/v1/models</c> 默认一页 20 条,
+    /// 靠 <c>has_more</c> / <c>last_id</c> 翻页;第一次请求照旧不带参数(不认查询参数的中转站不受影响),
+    /// 回应说还有下一页时才带 <c>limit</c> 与 <c>after_id</c> 接着要。翻到一半失败、
+    /// 游标缺失或不前进,都按"拿不到完整清单"返回空。
+    /// </para>
+    /// </remarks>
     /// <param name="http">发请求用的客户端。</param>
     /// <param name="baseUrl">供应商基地址。</param>
     /// <param name="protocol">线协议。</param>
     /// <param name="credential">凭据。</param>
     /// <param name="cancellationToken">取消。</param>
-    /// <returns>按型号排序去重的模型及窗口;窗口未知时为0,拿不到清单时为空。</returns>
+    /// <returns>按型号排序去重的模型及窗口;窗口未知时为0,拿不到完整清单时为空。</returns>
     public static async Task<IReadOnlyList<(string Id, int ContextTokens)>> FetchAsync(HttpClient http, string? baseUrl,
         ChatProtocol protocol, ProviderCredential credential, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(http);
-        using HttpRequestMessage? request = Request(baseUrl, protocol, credential);
-        if (request is null)
+        var models = new SortedDictionary<string, (string Id, int ContextTokens)>(StringComparer.OrdinalIgnoreCase);
+        string? after = null;
+        for (int page = 0; page < MaxPages; page++)
         {
-            return [];
+            using HttpRequestMessage? request = Request(baseUrl, protocol, credential);
+            if (request is null)
+            {
+                return [];
+            }
+            if (after is not null)
+            {
+                Uri first = request.RequestUri!;
+                request.RequestUri = new Uri(
+                    $"{first.AbsoluteUri}{(first.Query.Length == 0 ? "?" : "&")}limit={PageSize}&after_id={Uri.EscapeDataString(after)}");
+            }
+            using HttpResponseMessage response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return [];
+            }
+            string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (!Collect(body, models, out bool hasMore, out string? lastId))
+            {
+                return [];
+            }
+            if (!hasMore)
+            {
+                return [.. models.Values];
+            }
+            if (string.IsNullOrEmpty(lastId) || lastId == after)
+            {
+                return [];
+            }
+            after = lastId;
         }
-        using HttpResponseMessage response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            return [];
-        }
-        string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        return Parse(body);
+        return [];
     }
 
     /// <summary>
@@ -141,6 +180,21 @@ internal static class EndpointModelCatalog
     /// <param name="json">回应正文。</param>
     public static IReadOnlyList<(string Id, int ContextTokens)> Parse(string json)
     {
+        var models = new SortedDictionary<string, (string Id, int ContextTokens)>(StringComparer.OrdinalIgnoreCase);
+        Collect(json, models, out _, out _);
+        return [.. models.Values];
+    }
+
+    /// <summary>解一页并并进 <paramref name="models" />;回应里根本没有模型列表时返回 false。</summary>
+    /// <param name="json">回应正文。</param>
+    /// <param name="models">跨页累积的结果(按型号去重)。</param>
+    /// <param name="hasMore">回应声明还有下一页(Anthropic 的 <c>has_more</c>)。</param>
+    /// <param name="lastId">下一页的游标(Anthropic 的 <c>last_id</c>)。</param>
+    private static bool Collect(string json, SortedDictionary<string, (string Id, int ContextTokens)> models,
+        out bool hasMore, out string? lastId)
+    {
+        hasMore = false;
+        lastId = null;
         JsonDocument document;
         try
         {
@@ -148,7 +202,7 @@ internal static class EndpointModelCatalog
         }
         catch (JsonException)
         {
-            return [];
+            return false;
         }
         using (document)
         {
@@ -161,9 +215,11 @@ internal static class EndpointModelCatalog
             };
             if (list.ValueKind != JsonValueKind.Array)
             {
-                return [];
+                return false;
             }
-            var models = new SortedDictionary<string, (string Id, int ContextTokens)>(StringComparer.OrdinalIgnoreCase);
+            hasMore = root.ValueKind == JsonValueKind.Object
+                      && root.TryGetProperty("has_more", out JsonElement more) && more.ValueKind == JsonValueKind.True;
+            lastId = root.ValueKind == JsonValueKind.Object ? Text(root, "last_id") : null;
             foreach (JsonElement item in list.EnumerateArray())
             {
                 if (IdOf(item) is { } id && IsUsableForChat(id))
@@ -176,7 +232,7 @@ internal static class EndpointModelCatalog
                     else if (existing.ContextTokens == 0 && contextTokens > 0) models[id] = (existing.Id, contextTokens);
                 }
             }
-            return [.. models.Values];
+            return true;
         }
     }
 

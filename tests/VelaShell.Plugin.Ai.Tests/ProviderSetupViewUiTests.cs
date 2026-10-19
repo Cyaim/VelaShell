@@ -1172,8 +1172,8 @@ public sealed class ProviderSetupViewUiTests
                 await ShowAsync(context, new AiSettings
                 {
                     Providers = [provider, other],
-                    ActiveModelId = foreign.Id,
-                    FailoverChain = [new FailoverEntry { ModelId = foreign.Id }, new FailoverEntry { ModelId = other.Models[0].Id }]
+                    ActiveModelId = other.Models[0].Id,
+                    FailoverChain = [new FailoverEntry { ModelId = other.Models[0].Id }]
                 });
             try
             {
@@ -1193,12 +1193,64 @@ public sealed class ProviderSetupViewUiTests
                     : ["local-model", "tuned-model", "manual-model"];
                 Assert.AreSequenceEqual(expected, provider.Models.Select(model => model.Model).ToArray());
                 Assert.AreSequenceEqual(["local-model"], provider.AvailableModels);
-                Assert.AreEqual(editDuringPull ? foreign.Id : provider.Models[0].Id, settings.ActiveModelId);
-                Assert.AreEqual(editDuringPull, settings.FailoverChain.Any(entry => entry.ModelId == foreign.Id));
+                Assert.AreEqual(other.Models[0].Id, settings.ActiveModelId);
+                Assert.AreSequenceEqual([other.Models[0].Id], settings.FailoverChain.Select(entry => entry.ModelId).ToArray());
                 AiSettings persisted = await store.LoadAsync();
                 Assert.AreSequenceEqual(expected, persisted.Providers.Single(item => item.Id == provider.Id).Models.Select(model => model.Model).ToArray());
                 Assert.AreEqual(settings.ActiveModelId, persisted.ActiveModelId);
                 Assert.AreEqual(otherJson, System.Text.Json.JsonSerializer.Serialize(persisted.Providers.Single(item => item.Id == other.Id)));
+            }
+            finally { endpoint.Release(); window.Close(); }
+        });
+    }
+
+    /// <summary>
+    /// 端点清单里暂时少了的模型,只要当前选中、故障转移链或 IM 桥接还指着它就不清理 ——
+    /// 中转站渠道被自动禁用时清单会缩水;删掉的话选择漂到别处、用户排好的链永久丢一站。
+    /// </summary>
+    [TestMethod]
+    [DataRow("active")]
+    [DataRow("failover")]
+    [DataRow("bridge")]
+    public void PullModels_KeepsUnlistedModelsThatAreStillReferenced(string reference)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            using var endpoint = new HeldModelsEndpoint(response: """{"data":[{"id":"local-model"}]}""");
+            endpoint.Release();
+            AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            provider.BaseUrl = endpoint.BaseUrl + "/v1";
+            var catalog = new ModelsDevCatalog(context);
+            ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("local-model", 0), ("referenced-model", 0), ("stale-model", 0)]));
+            AiModelConfig local = provider.Models.Single(model => model.Model == "local-model");
+            AiModelConfig referenced = provider.Models.Single(model => model.Model == "referenced-model");
+            await context.Secrets.SetAsync($"apikey:{provider.Id}", "sk-instance");
+            if (reference == "bridge")
+            {
+                await new Bridge.BridgeSettingsStore(context).SaveAsync(new Bridge.BridgeSettings { ModelId = referenced.Id });
+            }
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings
+                {
+                    Providers = [provider],
+                    ActiveModelId = reference == "active" ? referenced.Id : local.Id,
+                    FailoverChain = reference == "failover" ? [new FailoverEntry { ModelId = referenced.Id }] : []
+                });
+            try
+            {
+                view.FocusEntry(provider.CatalogId, provider.Id);
+                await ClickPrimaryAsync(view);
+
+                Assert.AreSequenceEqual(["local-model", "referenced-model"], provider.Models.Select(model => model.Model).ToArray(),
+                    "没人引用的过期自动模型照常清理,被引用的留下");
+                Assert.AreSequenceEqual(["local-model"], provider.AvailableModels);
+                Assert.AreEqual(reference == "active" ? referenced.Id : local.Id, settings.ActiveModelId);
+                Assert.AreEqual(reference == "failover", settings.FailoverChain.Any(entry => entry.ModelId == referenced.Id));
+                AiSettings persisted = await store.LoadAsync();
+                Assert.AreSequenceEqual(["local-model", "referenced-model"],
+                    persisted.Providers.Single().Models.Select(model => model.Model).ToArray());
+                Assert.AreEqual(settings.ActiveModelId, persisted.ActiveModelId);
             }
             finally { endpoint.Release(); window.Close(); }
         });

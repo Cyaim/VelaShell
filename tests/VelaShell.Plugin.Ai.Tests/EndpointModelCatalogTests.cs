@@ -250,6 +250,63 @@ public sealed class EndpointModelCatalogTests
         Assert.AreEqual(0, handler.Calls);
     }
 
+    /// <summary>
+    /// Anthropic 的 <c>/v1/models</c> 默认一页 20 条:只认第一页,后面几页的模型会被当成"已下架"清掉。
+    /// 第一次请求不带参数(不认查询参数的中转站照旧),说还有下一页才带 <c>limit</c> 与 <c>after_id</c> 翻。
+    /// </summary>
+    [TestMethod]
+    public async Task Fetch_FollowsAnthropicPagesUntilHasMoreIsFalse()
+    {
+        var handler = new PagedHandler(
+            """{"data":[{"id":"claude-a"},{"id":"claude-b"}],"has_more":true,"first_id":"claude-a","last_id":"claude-b"}""",
+            """{"data":[{"id":"claude-c"}],"has_more":false,"first_id":"claude-c","last_id":"claude-c"}""");
+        using var http = new HttpClient(handler);
+
+        IReadOnlyList<(string Id, int ContextTokens)> models = await EndpointModelCatalog.FetchAsync(http,
+            "https://api.anthropic.com", ChatProtocol.AnthropicMessages, ProviderCredential.Key("sk-ant"));
+
+        Assert.AreSequenceEqual(["claude-a", "claude-b", "claude-c"], models.Select(m => m.Id).ToArray());
+        Assert.HasCount(2, handler.Requests);
+        Assert.AreEqual("https://api.anthropic.com/v1/models", handler.Requests[0].RequestUri!.ToString());
+        Assert.AreEqual("?limit=1000&after_id=claude-b", handler.Requests[1].RequestUri!.Query);
+        Assert.AreEqual("sk-ant", handler.Requests[1].Headers.GetValues("x-api-key").Single(), "翻页请求也得带鉴权");
+    }
+
+    [TestMethod]
+    [DataRow("""{"data":[{"id":"claude-c"}],"has_more":false}""", 500)]
+    [DataRow("""{"data":[{"id":"claude-c"}],"has_more":true,"last_id":"claude-b"}""", 200)]
+    [DataRow("""{"data":[{"id":"claude-c"}],"has_more":true}""", 200)]
+    public async Task Fetch_AnIncompletePageChainYieldsNothingRatherThanAPartialList(string second, int status)
+    {
+        // 翻到一半失败、游标不前进或缺失:拿不到完整清单就按"拿不到"处理,不能拿前几页去清理模型
+        var handler = new PagedHandler(
+            """{"data":[{"id":"claude-a"},{"id":"claude-b"}],"has_more":true,"last_id":"claude-b"}""", second)
+        {
+            SecondStatus = (System.Net.HttpStatusCode)status
+        };
+        using var http = new HttpClient(handler);
+
+        Assert.IsEmpty(await EndpointModelCatalog.FetchAsync(http, "https://api.anthropic.com",
+            ChatProtocol.AnthropicMessages, ProviderCredential.Key("sk-ant")));
+    }
+
+    private sealed class PagedHandler(params string[] pages) : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+        public System.Net.HttpStatusCode SecondStatus { get; init; } = System.Net.HttpStatusCode.OK;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            int index = Math.Min(Requests.Count, pages.Length) - 1;
+            return Task.FromResult(new HttpResponseMessage(index == 0 ? System.Net.HttpStatusCode.OK : SecondStatus)
+            {
+                Content = new StringContent(pages[index])
+            });
+        }
+    }
+
     private sealed class StatusHandler(System.Net.HttpStatusCode status) : HttpMessageHandler
     {
         public int Calls { get; private set; }

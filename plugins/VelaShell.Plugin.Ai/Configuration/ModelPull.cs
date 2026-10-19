@@ -1,3 +1,6 @@
+using VelaShell.Plugin.Ai.Bridge;
+using VelaShell.PluginSdk;
+
 namespace VelaShell.Plugin.Ai.Configuration;
 
 /// <summary>这一次拉取从哪儿拿到的清单。</summary>
@@ -62,11 +65,12 @@ public static class ModelPull
     /// <param name="health">可选共享健康记录；只使本次规格应用真正改变的模型请求配置失效。</param>
     /// <param name="materialiseInto">可选分离的规格草稿;网络请求仍使用 provider 的当前地址和固定凭据。</param>
     /// <param name="catalogueHttp">可选索引传输客户端,由调用方管理生命周期；不承载端点凭据或模型列表请求。</param>
+    /// <param name="referencedModelIds">仍被引用、即便端点清单里没有也不清理的模型配置 id(见 <see cref="ReferencedModelIdsAsync" />)。</param>
     /// <param name="cancellationToken">取消。</param>
     public static async Task<ModelPullResult> RunAsync(AiProvider provider, string? modelsDevId,
         ModelsDevCatalog catalogue, AiSettingsStore store, string? apiKeyOverride = null, bool force = false,
         ProviderHealth? health = null, AiProvider? materialiseInto = null, HttpClient? catalogueHttp = null,
-        CancellationToken cancellationToken = default)
+        IReadOnlySet<string>? referencedModelIds = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(catalogue);
@@ -99,8 +103,11 @@ public static class ModelPull
         if (models.Count > 0)
         {
             // 公共目录不能证明实例已下架某个型号;只有实例端点的清单可清理自动配置。
+            // 中转站的渠道被自动禁用时清单也会暂时少几个,所以当前选中、故障转移链与 IM 桥接
+            // 还指着的模型一律保留 —— 删了它们,选择会漂到别家、用户排好的链会永久丢一站。
             var listed = new HashSet<string>(target.AvailableModels, StringComparer.OrdinalIgnoreCase);
-            target.Models.RemoveAll(model => !listed.Contains(model.Model) && IsUnmodifiedAutomatic(model));
+            target.Models.RemoveAll(model => !listed.Contains(model.Model) && IsUnmodifiedAutomatic(model)
+                && referencedModelIds?.Contains(model.Id) != true);
         }
         foreach ((AiModelConfig model, string previousModel, int previousInputTokens, int previousOutputTokens, bool? previousReasoning) in before)
         {
@@ -115,6 +122,23 @@ public static class ModelPull
         // 见 AiProvider.ModelsExpanded 与设置页的 AutoCollapseFrom。
         target.ModelsExpanded = null;
         return new ModelPullResult(models.Count > 0 ? ModelSource.Endpoint : ModelSource.Catalogue, specs.Count, target.Models.Count);
+    }
+
+    /// <summary>仍被引用的模型配置 id:当前选中、故障转移链,以及 IM 桥接指定的模型。</summary>
+    /// <remarks>桥接设置单独一个存储键(见 <see cref="BridgeSettings" />),读不出来就让这次拉取失败,不冒险清理。</remarks>
+    /// <param name="settings">面板共享的设置。</param>
+    /// <param name="context">插件上下文(读桥接设置)。</param>
+    /// <param name="cancellationToken">取消。</param>
+    public static async Task<IReadOnlySet<string>> ReferencedModelIdsAsync(AiSettings settings, IPluginContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(context);
+        var ids = new HashSet<string>(settings.FailoverChain.Select(entry => entry.ModelId), StringComparer.Ordinal);
+        if (!string.IsNullOrEmpty(settings.ActiveModelId)) ids.Add(settings.ActiveModelId);
+        BridgeSettings bridge = await new BridgeSettingsStore(context).LoadAsync(cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(bridge.ModelId)) ids.Add(bridge.ModelId);
+        return ids;
     }
 
     // 缺少来源或任何用户定制时都保留,不把手动模型误判为过期目录项。
