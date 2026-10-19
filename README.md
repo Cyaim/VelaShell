@@ -127,7 +127,7 @@ VelaShell 是用 **.NET 11 + Avalonia** 写的桌面终端应用，Windows / Lin
 
 ### 环境要求
 
-- [.NET SDK **11.0**](https://dotnet.microsoft.com/download) 预览版 —— `global.json` 钉在 `11.0.100-rc.1.26425.128`（`rollForward: latestFeature`）。
+- [.NET SDK **11.0**](https://dotnet.microsoft.com/download) 预览版 / RC —— 不钉具体版本（仓库没有 `global.json`），用本机装的最新一版；CI 装的是 `11.0.x` 的 preview 通道。
   仓库开启了 `EnablePreviewFeatures` 与 `runtime-async=on`，正式版 SDK 之前只能用预览版构建。
 - （可选）Docker，用于起本地 SSH 测试服务器与互操作用例
 
@@ -225,7 +225,6 @@ VelaShell/
 ├── build/                          # AppImage / deb / rpm / MSIX / 社交预览图的打包脚本
 ├── scripts/                        # 一键发布脚本，以及 SSH / X 服务端的互操作靶机、基准与代码生成
 ├── docker-compose.test.yml         # 本地 SSH 测试服务器
-├── global.json                     # SDK 版本锁定
 ├── Directory.Build.props           # 全仓版本与公共 MSBuild 属性
 └── VelaShell.slnx                  # 解决方案
 ```

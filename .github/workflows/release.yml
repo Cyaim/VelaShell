@@ -85,8 +85,9 @@ jobs:
           dotnet-quality: preview
           dotnet-version: |
             11.0.x
-        # with:
-        #   global-json-file: global.json
+      # 不钉 SDK(仓库没有 global.json),用 runner 上装到的最新 11.0 预览版;把实际版本记进日志备查。
+      - name: Show .NET SDK
+        run: dotnet --info
       - name: Restore strong-name key
         shell: pwsh
         run: |
@@ -133,8 +134,9 @@ jobs:
           dotnet-quality: preview
           dotnet-version: |
             11.0.x
-        # with:
-        #   global-json-file: global.json
+      # 不钉 SDK(仓库没有 global.json),用 runner 上装到的最新 11.0 预览版;把实际版本记进日志备查。
+      - name: Show .NET SDK
+        run: dotnet --info
       - name: Restore strong-name key
         shell: pwsh
         run: |
@@ -167,8 +169,9 @@ jobs:
           dotnet-quality: preview
           dotnet-version: |
             11.0.x
-        # with:
-        #   global-json-file: global.json
+      # 不钉 SDK(仓库没有 global.json),用 runner 上装到的最新 11.0 预览版;把实际版本记进日志备查。
+      - name: Show .NET SDK
+        run: dotnet --info
       - name: Restore strong-name key
         # openssl 在 Linux/macOS 上解码行为一致(避开 GNU/BSD base64 -d/-D 差异)
         run: echo "$SNK_B64" | openssl base64 -A -d > src/VelaShell.snk
@@ -299,8 +302,9 @@ jobs:
           dotnet-quality: preview
           dotnet-version: |
             11.0.x
-        # with:
-        #   global-json-file: global.json
+      # 不钉 SDK(仓库没有 global.json),用 runner 上装到的最新 11.0 预览版;把实际版本记进日志备查。
+      - name: Show .NET SDK
+        run: dotnet --info
       - name: Restore strong-name key
         # openssl 在 Linux/macOS 上解码行为一致(避开 GNU/BSD base64 -d/-D 差异)
         run: echo "$SNK_B64" | openssl base64 -A -d > src/VelaShell.snk

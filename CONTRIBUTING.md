@@ -24,7 +24,7 @@
 
 | 需要 | 说明 |
 |---|---|
-| **.NET SDK** | 版本钉在 [`global.json`](global.json),**目前是 preview 版**(`allowPrerelease: true`)。装的 SDK 低于它会直接拒绝还原 |
+| **.NET SDK** | **.NET 11 SDK 预览版 / RC**(仓库开了 `EnablePreviewFeatures`,正式版发布前只能用它构建)。不钉具体版本、没有 `global.json`,用本机装的最新一版;CI 装的是 `11.0.x` 的 preview 通道 |
 | **IDE** | Visual Studio 2026 / Rider / VS Code + C# Dev Kit 均可;仓库带 `.editorconfig` 与 `VelaShell.sln.DotSettings` |
 | **Docker**(可选) | 只有跑真实 SSH 集成测试时才需要 |
 
