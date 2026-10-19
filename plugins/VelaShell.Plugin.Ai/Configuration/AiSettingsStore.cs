@@ -34,6 +34,14 @@ public sealed class AiSettingsStore(IPluginContext context)
     /// <summary>设置快照已过期或选定 Key 槽已改变；保留草稿，重新加载后才能提交，不得换凭据重放。</summary>
     public sealed class ApiKeySlotChangedException() : InvalidOperationException("The selected API Key slot changed.");
 
+    /// <summary>表单把 Base URL 换到了另一个源,保存会清掉这家供应商已存的 Key;须经用户确认后重新提交。</summary>
+    public sealed class ApiKeyResetRequiredException(int keyCount)
+        : InvalidOperationException("The Base URL points to another origin; saved API Keys must be cleared first.")
+    {
+        /// <summary>确认后会被清掉的已存 Key 数。</summary>
+        public int KeyCount { get; } = keyCount;
+    }
+
     /// <summary>
     /// 已解出的 API Key。取一次要走"读库 + DPAPI 解包",而每发一条消息(以及每次要后续提问)
     /// 都会建一次客户端 —— 没必要每次都解。写入/删除时同步失效。
@@ -906,14 +914,27 @@ public sealed class AiSettingsStore(IPluginContext context)
         if (provider.AdditionalApiKeyIds.Count != 0) throw new ApiKeySlotChangedException();
     }
 
-    internal async Task SaveProviderApiKeyFormAsync(AiSettings settings, AiProvider provider, AiProvider draft,
+    /// <summary>
+    /// 提交供应商表单(名称、地址、协议)与可选的一把替换 Key。
+    /// </summary>
+    /// <remarks>
+    /// Base URL 换到另一个源(协议、主机或端口不同)时,已存的 Key 属于旧地址,不能跟着发过去:
+    /// 主槽、补充槽与继承这个地址的模型自带 Key 一并清掉,补充槽与当前槽复位;同一次提交里新填的 Key
+    /// 是给新地址的,落进主槽。会清掉已存 Key 时默认拒绝并抛 <see cref="ApiKeyResetRequiredException" />,
+    /// 调用方让用户确认后带 <paramref name="resetKeysOnOriginChange" /> 重新提交。只改路径(同源)不动 Key。
+    /// </remarks>
+    /// <returns>清掉的已存 Key 数(不含被这次替换覆盖的那一把)。</returns>
+    internal async Task<int> SaveProviderApiKeyFormAsync(AiSettings settings, AiProvider provider, AiProvider draft,
         string expectedProviderJson, string? replacementKey, string? keyId, string? expectedKey,
-        CancellationToken cancellationToken = default)
+        bool resetKeysOnOriginChange = false, CancellationToken cancellationToken = default)
     {
         await ProviderKeyGate.WaitAsync(cancellationToken);
         string? oldKey = null;
         string ownerId = keyId ?? provider.Id;
         bool secretWritten = false, settingsWritten = false;
+        // 换源时动过的机密:归属者 → 原值,失败时逐个恢复
+        Dictionary<string, string?> resetKeys = new(StringComparer.Ordinal);
+        int cleared = 0;
         try
         {
             ValidateProvider(settings, provider);
@@ -921,12 +942,37 @@ public sealed class AiSettingsStore(IPluginContext context)
             await ValidateProviderSlotTopologyAsync(provider, cancellationToken);
             if (JsonSerializer.Serialize(provider) != expectedProviderJson) throw new ApiKeySlotChangedException();
             if (!ProviderApiKeyIds(provider).Contains(ownerId, StringComparer.Ordinal)) throw new ApiKeySlotChangedException();
-            if (replacementKey is not null) await ValidateUniqueKeyAsync(provider, replacementKey, ownerId, cancellationToken);
+            bool originChanged = !string.Equals(provider.BaseUrl, draft.BaseUrl, StringComparison.Ordinal)
+                && !SameOrigin(provider.BaseUrl, draft.BaseUrl);
+            // 换源时其余 Key 都要清掉,新 Key 与它们重复也无妨(地址搬家、Key 不变是常见情形)
+            if (replacementKey is not null && !originChanged)
+                await ValidateUniqueKeyAsync(provider, replacementKey, ownerId, cancellationToken);
             oldKey = await context.Secrets.GetAsync(SecretName(ownerId), cancellationToken);
             if ((keyId is null && oldKey is not null) || oldKey != expectedKey) throw new ApiKeySlotChangedException();
+            List<string> resetOwners = originChanged ? [.. KeysBoundToProviderOrigin(provider)] : [];
+            foreach (string id in resetOwners)
+            {
+                string? saved = id == ownerId ? oldKey : await context.Secrets.GetAsync(SecretName(id), cancellationToken);
+                resetKeys[id] = saved;
+                // 被这次替换覆盖的那一把是用户自己换掉的,不算「清掉」
+                if (!string.IsNullOrEmpty(saved) && (replacementKey is null || id != ownerId)) cleared++;
+            }
+            if (cleared > 0 && !resetKeysOnOriginChange) throw new ApiKeyResetRequiredException(cleared);
+
+            AiProvider staged = draft;
             _providerKeys.Updating[provider.Id] = 0;
             _providerKeys.Updating[ownerId] = 0;
-            if (replacementKey is not null && replacementKey != oldKey)
+            foreach (string id in resetOwners) _providerKeys.Updating[id] = 0;
+            if (originChanged)
+            {
+                staged = JsonSerializer.Deserialize<AiProvider>(JsonSerializer.Serialize(draft))!;
+                staged.AdditionalApiKeyIds = [];
+                staged.ActiveApiKeyId = null;
+                secretWritten = true;
+                foreach (string id in resetOwners)
+                    await SetApiKeyCoreAsync(id, id == provider.Id ? replacementKey : null, cancellationToken);
+            }
+            else if (replacementKey is not null && replacementKey != oldKey)
             {
                 secretWritten = true;
                 await context.Secrets.SetAsync(SecretName(ownerId), replacementKey, cancellationToken);
@@ -935,19 +981,33 @@ public sealed class AiSettingsStore(IPluginContext context)
             if (JsonSerializer.Serialize(provider) != expectedProviderJson) throw new ApiKeySlotChangedException();
             string expectedSettingsJson = JsonSerializer.Serialize(settings);
             AiSettings detached = JsonSerializer.Deserialize<AiSettings>(expectedSettingsJson)!;
-            detached.Providers[settings.Providers.IndexOf(provider)] = draft;
+            detached.Providers[settings.Providers.IndexOf(provider)] = staged;
             await WriteSettingsSnapshotAsync(settings, JsonSerializer.Serialize(detached), cancellationToken).ConfigureAwait(false);
             settingsWritten = true;
             ValidateProvider(settings, provider);
             if (JsonSerializer.Serialize(settings) != expectedSettingsJson) throw new ApiKeySlotChangedException();
             // 无 await 的发布段:机密/JSON等待期间活配置保持原地址与凭据。
-            CopyProvider(provider, draft);
-            PublishProviderRequests(settings, detached, changedKeyOwnerId: secretWritten ? ownerId : null);
-            if (replacementKey is not null) KeyCache[ownerId] = replacementKey;
+            CopyProvider(provider, staged);
+            if (originChanged)
+            {
+                // 清掉的槽与模型 Key 都归这家供应商:按主槽 id 发布,别处设置里的同一供应商副本也一并作废
+                PublishProviderRequests(settings, detached, changedKeyOwnerId: provider.Id);
+                if (replacementKey is not null) KeyCache[provider.Id] = replacementKey;
+            }
+            else
+            {
+                PublishProviderRequests(settings, detached, changedKeyOwnerId: secretWritten ? ownerId : null);
+                if (replacementKey is not null) KeyCache[ownerId] = replacementKey;
+            }
+            return cleared;
         }
         catch
         {
-            if (secretWritten) await RestoreApiKeyCoreAsync(ownerId, oldKey);
+            if (resetKeys.Count > 0 && secretWritten)
+            {
+                foreach ((string id, string? saved) in resetKeys) await RestoreApiKeyCoreAsync(id, saved);
+            }
+            else if (secretWritten) await RestoreApiKeyCoreAsync(ownerId, oldKey);
             if (settingsWritten) await SaveSettingsCoreAsync(settings, CancellationToken.None);
             throw;
         }
@@ -955,7 +1015,21 @@ public sealed class AiSettingsStore(IPluginContext context)
         {
             _providerKeys.Updating.TryRemove(provider.Id, out _);
             _providerKeys.Updating.TryRemove(ownerId, out _);
+            foreach (string id in resetKeys.Keys) _providerKeys.Updating.TryRemove(id, out _);
             ProviderKeyGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 跟着供应商 Base URL 走的 Key:主槽、补充槽,以及没填覆盖地址、自带 Key 的模型。
+    /// 填了覆盖地址的模型去的是自己的地址,供应商换地址与它们无关。
+    /// </summary>
+    private IEnumerable<string> KeysBoundToProviderOrigin(AiProvider provider)
+    {
+        foreach (string id in ProviderApiKeyIds(provider)) yield return id;
+        foreach (AiModelConfig model in provider.Models)
+        {
+            if (model.HasOwnApiKey && string.IsNullOrWhiteSpace(model.BaseUrlOverride)) yield return model.Id;
         }
     }
 

@@ -306,7 +306,9 @@ public sealed class AiSettingsStoreTests
         secrets.SkipMutationsBeforeFailure = operation is "delete-token" or "delete-provider-token" or "delete-model-token" ? 1 : 0;
         Task Mutation() => operation switch
         {
-            "provider-form" => store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, "key-new", provider.Id, "primary-old"),
+            // 换源:主槽写新 Key、补充槽一并清掉,写到一半抛错要把每一把都恢复
+            "provider-form" => store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, "key-new", provider.Id, "primary-old",
+                resetKeysOnOriginChange: true),
             "model-form" => store.SaveModelFormAsync(settings, provider, model, modelDraft, modelExpected, "key-new", "model-old"),
             "create-key" => store.CreateProviderAsync(settings, created, "key-new"),
             "create-oauth" => store.CreateProviderAsync(settings, created, tokens: newTokens),
@@ -743,7 +745,8 @@ public sealed class AiSettingsStoreTests
                 AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
                 draft.Name = "new name";
                 draft.Models[0].InputPricePerMillion = 7;
-                if (request) draft.BaseUrl = provider.BaseUrl == "https://original.example" ? "https://changed.example" : "https://original.example";
+                // 同源改路径:地址变了请求就变了,但不牵涉换源清 Key
+                if (request) draft.BaseUrl = provider.BaseUrl == "https://original.example" ? "https://original.example/changed" : "https://original.example";
                 return store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, null, provider.Id, "primary");
             }
             string modelExpected = System.Text.Json.JsonSerializer.Serialize(model);
@@ -1301,6 +1304,7 @@ public sealed class AiSettingsStoreTests
     [DataRow(0)]
     [DataRow(1)]
     [DataRow(2)]
+    [DataRow(3)]
     public async Task Review_DetachedProviderCommitRollbackAndRetryKeepBaselineUsable(int operation)
     {
         var storage = new FailingStorage(new InMemoryStorage());
@@ -1310,16 +1314,19 @@ public sealed class AiSettingsStoreTests
         var settings = new AiSettings { Providers = [provider] };
         await store.AddProviderApiKeyAsync(settings, provider, "primary");
         string existing = await store.AddProviderApiKeyAsync(settings, provider, "extra");
+        // 2 = 同源改路径(Key 原样保留);3 = 换源且已确认(补充槽清掉)
+        string draftUrl = operation == 3 ? "https://draft.example" : "https://original.example/draft";
         Task Commit()
         {
             string expected = System.Text.Json.JsonSerializer.Serialize(provider);
             AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
-            draft.BaseUrl = "https://draft.example";
+            draft.BaseUrl = draftUrl;
             return operation switch
             {
                 0 => store.AddProviderApiKeyAsync(settings, provider, "another"),
                 1 => store.RemoveProviderApiKeyAsync(settings, provider, existing),
-                _ => store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, "updated", provider.Id, "primary")
+                _ => store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, "updated", provider.Id, "primary",
+                    resetKeysOnOriginChange: operation == 3)
             };
         }
         storage.Hold = true;
@@ -1337,10 +1344,127 @@ public sealed class AiSettingsStoreTests
         AiSettings saved = await store.LoadAsync();
         Assert.AreEqual("并发草稿不能丢失", saved.SystemPrompt);
         Assert.AreEqual(64, saved.PanelWidthPercent);
-        Assert.AreEqual(operation == 2 ? "https://draft.example" : "https://original.example", saved.Providers[0].BaseUrl);
-        Assert.AreEqual(operation == 2 ? "updated" : "primary", await store.GetApiKeyAsync(provider.Id));
-        Assert.AreEqual(operation == 1 ? null : "extra", await store.GetApiKeyAsync(existing));
-        Assert.HasCount(operation == 0 ? 2 : operation == 1 ? 0 : 1, saved.Providers[0].AdditionalApiKeyIds);
+        Assert.AreEqual(operation >= 2 ? draftUrl : "https://original.example", saved.Providers[0].BaseUrl);
+        Assert.AreEqual(operation >= 2 ? "updated" : "primary", await store.GetApiKeyAsync(provider.Id));
+        Assert.AreEqual(operation is 1 or 3 ? null : "extra", await store.GetApiKeyAsync(existing));
+        Assert.HasCount(operation == 0 ? 2 : operation is 1 or 3 ? 0 : 1, saved.Providers[0].AdditionalApiKeyIds);
+    }
+
+    [TestMethod]
+    public async Task BaseUrlToAnotherOrigin_RefusesUntilConfirmedThenClearsEveryKeyBoundToTheOldAddress()
+    {
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var ownKey = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+        var elsewhere = new AiModelConfig { Model = "elsewhere", HasOwnApiKey = true, BaseUrlOverride = "https://other.example/v1" };
+        var inherits = new AiModelConfig { Model = "inherits" };
+        var provider = new AiProvider { BaseUrl = "https://old.example/v1", Models = [ownKey, elsewhere, inherits] };
+        var settings = new AiSettings { Providers = [provider], ActiveModelId = inherits.Id };
+        await store.AddProviderApiKeyAsync(settings, provider, "primary");
+        string extra = await store.AddProviderApiKeyAsync(settings, provider, "extra");
+        await store.SetApiKeyAsync(ownKey.Id, "own-key");
+        await store.SetApiKeyAsync(elsewhere.Id, "elsewhere-key");
+        provider.ActiveApiKeyId = extra;
+        await store.SaveAsync(settings);
+        string expected = System.Text.Json.JsonSerializer.Serialize(provider);
+        AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
+        draft.BaseUrl = "https://new.example/v1";
+        long epoch = store.ProviderConfigurationVersion(provider);
+
+        AiSettingsStore.ApiKeyResetRequiredException refused = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(() =>
+            store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, null, provider.Id, "primary"));
+        Assert.AreEqual(3, refused.KeyCount, "主槽、补充槽与继承供应商地址的模型 Key");
+        Assert.AreEqual(expected, System.Text.Json.JsonSerializer.Serialize(provider), "没确认就什么都不改");
+        Assert.AreEqual("https://old.example/v1", (await store.LoadAsync()).Providers[0].BaseUrl);
+        Assert.AreEqual("primary", await context.Secrets.GetAsync("apikey:" + provider.Id));
+        Assert.AreEqual("extra", await context.Secrets.GetAsync("apikey:" + extra));
+        Assert.AreEqual("own-key", await context.Secrets.GetAsync("apikey:" + ownKey.Id));
+        Assert.AreEqual(epoch, store.ProviderConfigurationVersion(provider));
+
+        int cleared = await store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, null, provider.Id, "primary",
+            resetKeysOnOriginChange: true);
+        Assert.AreEqual(3, cleared);
+        Assert.IsNull(await context.Secrets.GetAsync("apikey:" + provider.Id));
+        Assert.IsNull(await context.Secrets.GetAsync("apikey:" + extra));
+        Assert.IsNull(await context.Secrets.GetAsync("apikey:" + ownKey.Id));
+        Assert.AreEqual("elsewhere-key", await context.Secrets.GetAsync("apikey:" + elsewhere.Id), "填了覆盖地址的模型不跟供应商换地址");
+        Assert.IsNull(await store.GetApiKeyAsync(provider.Id), "缓存同步失效");
+        Assert.IsNull(await store.GetApiKeyAsync(ownKey.Id));
+        Assert.IsEmpty(provider.AdditionalApiKeyIds);
+        Assert.IsNull(provider.ActiveApiKeyId);
+        Assert.IsGreaterThan(epoch, store.ProviderConfigurationVersion(provider), "旧地址上解出的请求作废");
+        AiSettings saved = await store.LoadAsync();
+        Assert.AreEqual("https://new.example/v1", saved.Providers[0].BaseUrl);
+        Assert.IsEmpty(saved.Providers[0].AdditionalApiKeyIds);
+        Assert.IsNull(saved.Providers[0].ActiveApiKeyId);
+        Assert.IsNull((await store.ResolveProviderCredentialAsync(provider)).Value, "新地址上取不到任何旧 Key");
+        Assert.IsNull((await store.ResolveCredentialAsync(settings.FindModel(ownKey.Id)!)).Value);
+    }
+
+    [TestMethod]
+    public async Task BaseUrlToAnotherOrigin_KeyTypedInTheSameSaveLandsInThePrimarySlot()
+    {
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var provider = new AiProvider { BaseUrl = "https://old.example/v1", Models = [new AiModelConfig { Model = "m" }] };
+        var settings = new AiSettings { Providers = [provider] };
+        await store.AddProviderApiKeyAsync(settings, provider, "primary");
+        string extra = await store.AddProviderApiKeyAsync(settings, provider, "extra");
+        string expected = System.Text.Json.JsonSerializer.Serialize(provider);
+        AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
+        draft.BaseUrl = "https://new.example/v1";
+
+        // 在第二把的行里填新 Key,而且与旧的那把相同(中转站换了域名、Key 没变):被它覆盖的不算「清掉」,也不报重复
+        AiSettingsStore.ApiKeyResetRequiredException refused = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(() =>
+            store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, "primary", extra, "extra"));
+        Assert.AreEqual(1, refused.KeyCount);
+        int cleared = await store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, "primary", extra, "extra",
+            resetKeysOnOriginChange: true);
+        Assert.AreEqual(1, cleared);
+        Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id), "新 Key 落进主槽,不留「主槽空、补充槽有」的状态");
+        Assert.IsNull(await context.Secrets.GetAsync("apikey:" + extra));
+        Assert.IsEmpty(provider.AdditionalApiKeyIds);
+        Assert.AreEqual("primary", (await store.ResolveProviderCredentialAsync(provider)).Value);
+    }
+
+    [TestMethod]
+    public async Task BaseUrlToAnotherOrigin_ReplacingTheOnlyKeyNeedsNoConfirmation()
+    {
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var provider = new AiProvider { BaseUrl = "https://old.example/v1", Models = [new AiModelConfig { Model = "m" }] };
+        var settings = new AiSettings { Providers = [provider] };
+        await store.AddProviderApiKeyAsync(settings, provider, "primary");
+        string expected = System.Text.Json.JsonSerializer.Serialize(provider);
+        AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
+        draft.BaseUrl = "https://new.example/v1";
+        Assert.AreEqual(0, await store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, "new-key", provider.Id, "primary"));
+        Assert.AreEqual("https://new.example/v1", provider.BaseUrl);
+        Assert.AreEqual("new-key", await store.GetApiKeyAsync(provider.Id));
+    }
+
+    [TestMethod]
+    [DataRow("https://old.example/v2")]
+    [DataRow("HTTPS://OLD.EXAMPLE:443/v1/")]
+    public async Task BaseUrlWithinTheSameOrigin_KeepsEveryKey(string url)
+    {
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var ownKey = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+        var provider = new AiProvider { BaseUrl = "https://old.example/v1", Models = [ownKey] };
+        var settings = new AiSettings { Providers = [provider] };
+        await store.AddProviderApiKeyAsync(settings, provider, "primary");
+        string extra = await store.AddProviderApiKeyAsync(settings, provider, "extra");
+        await store.SetApiKeyAsync(ownKey.Id, "own-key");
+        string expected = System.Text.Json.JsonSerializer.Serialize(provider);
+        AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
+        draft.BaseUrl = url;
+        Assert.AreEqual(0, await store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, null, provider.Id, "primary"));
+        Assert.AreEqual(url, provider.BaseUrl);
+        Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id));
+        Assert.AreEqual("extra", await store.GetApiKeyAsync(extra));
+        Assert.AreEqual("own-key", await store.GetApiKeyAsync(ownKey.Id));
+        Assert.AreSequenceEqual([extra], provider.AdditionalApiKeyIds);
     }
 
     [TestMethod]
