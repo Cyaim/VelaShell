@@ -63,19 +63,35 @@ public partial class TerminalTabView : UserControl
             // 记住这一行提示,免得它还在屏幕上时反复重开(用户已决定手输或忽略)。
             _suppressedPasswordPrompt = control.GetLogicalLineEndingAt(control.CursorRow);
         }
+        // 先作废请求再收弹层:收起会同步触发 Closed,那边见请求已空就不再重入。
+        _passwordRequest?.Dispose();
+        _passwordRequest = null;
         if (PasswordPopup.IsOpen)
         {
             PasswordPopup.IsOpen = false;
         }
         PasswordList.ItemsSource = null;
         PasswordStatus.IsVisible = false;
-        _passwordRequest?.Dispose();
-        _passwordRequest = null;
+    }
+
+    /// <summary>
+    /// 请求被键入或提示行变化作废:收口,但不记成「用户已拒绝」(不 suppress)。
+    /// </summary>
+    /// <remarks>
+    /// 空口令上的 Backspace、Enter 不改变跟踪的输入,InputChanged 不响 —— 原先弹层就这么留着,
+    /// 点哪一项都只回「已过期」,而按 Esc 关掉又会把这一行记成已拒绝,自动入口再也不出来。
+    /// </remarks>
+    private void OnPasswordRequestExpired(SharedPasswordFillRequest request)
+    {
+        if (ReferenceEquals(request, _passwordRequest))
+        {
+            ClosePasswordPopup();
+        }
     }
 
     /// <summary>
     /// 输出批次结束后复核光标行:是明确的密码提示且上下文没变,就把共享密码列表锚在
-    /// 光标下一行弹出。识别是启发式的(见 <see cref="InteractivePromptDetector.IsPasswordFillPrompt" />),
+    /// 光标行下沿弹出。识别是启发式的(见 <see cref="InteractivePromptDetector.IsPasswordFillPrompt" />),
     /// 误判的代价只是多出一个可忽略的列表,手动入口不受影响。
     /// </summary>
     private void OnPasswordOutputUpdated()
@@ -89,11 +105,23 @@ public partial class TerminalTabView : UserControl
             ClosePasswordPopup();
             return;
         }
+        // 廉价预筛:每个输出批次都走这里,cat 一个不换行的大文件时整屏就是一条逻辑行。两种认法都要求
+        // 去掉尾随空白后以冒号收尾(见 IsPasswordFillPrompt),而逻辑行的结尾就是光标行 —— 光标行有字
+        // 却不以冒号收尾,就不必拼整段逻辑行、也不必跑正则。光标行全空白时(提示的尾随空格恰好折到
+        // 下一行)结尾在上面几行,照旧拼。
+        string cursorLine = control.GetBufferLine(control.CursorRow);
+        ReadOnlySpan<char> tail = cursorLine.AsSpan().TrimEnd();
+        if (tail.Length > 0 && tail[^1] is not (':' or '：'))
+        {
+            ClosePasswordPopup();
+            _suppressedPasswordPrompt = null;
+            return;
+        }
         // 整段逻辑行:窄窗格里带 URL 的 git 提示会被自动换行折开,光标行只剩尾巴。光标行本身完整时照认 ——
         // 上一行的折行标志可能是 "\r ESC[2K" 原地重写前留下的陈旧值,接起来反倒认不出。
         string line = control.GetLogicalLineEndingAt(control.CursorRow);
         if (!(InteractivePromptDetector.IsPasswordFillPrompt(line)
-              || InteractivePromptDetector.IsPasswordFillPrompt(control.GetBufferLine(control.CursorRow)))
+              || InteractivePromptDetector.IsPasswordFillPrompt(cursorLine))
             || line == _suppressedPasswordPrompt)
         {
             ClosePasswordPopup();
@@ -102,6 +130,11 @@ public partial class TerminalTabView : UserControl
                 _suppressedPasswordPrompt = null;
             }
             return;
+        }
+        if (_passwordRequest is { PromptChanged: true })
+        {
+            // 提示行换了一条(输错后重新提示):旧请求已经作废,按新提示重开,别留一个点了只回「已过期」的列表。
+            ClosePasswordPopup();
         }
         if (!PasswordPopup.IsOpen)
         {
@@ -118,24 +151,32 @@ public partial class TerminalTabView : UserControl
             return;
         }
         DismissSuggestions(suppress: false);
+        // 已经开着一个(命令面板里再点一次手动入口):先作废旧请求,否则它对控件的订阅就此泄漏。
+        _passwordRequest?.Dispose();
         PasswordList.ItemsSource = null;
         PasswordList.SelectedItem = null;
         PasswordStatus.IsVisible = false;
-        _passwordRequest = new SharedPasswordFillRequest(
+        SharedPasswordFillRequest request = new(
             tab,
             () => IsAttachedToVisualTree() && PasswordPopup.IsOpen && ReferenceEquals(DataContext, tab));
+        request.Expired += () => OnPasswordRequestExpired(request);
+        _passwordRequest = request;
         PasswordPopup.PlacementTarget ??= TerminalHost;
-        // 锚在提示行的下一行:列表落在提示符下面,不挡住用户可能正在手敲的那一行。
-        // 下一行 = 光标格下移一个格高,格高直接取光标格自身的高度(不另问控件要常数)。
-        Rect cursor = control.GetCursorRect();
-        PasswordPopup.PlacementRect = cursor.Translate(new Vector(0, cursor.Height));
+        // 锚在光标行本身:下面放得下就贴着它的下沿往下展开,放不下(最大化后提示符在末行)由定位器
+        // 翻到它的上沿之上 —— 两种情况都不挡住提示行。上下各留一道缝,缝做在锚点矩形上而不是
+        // VerticalOffset 上:偏移量翻转时不跟着反向,翻上去就成了往提示行里压。
+        PasswordPopup.PlacementRect = control.GetCursorRect().Inflate(new Thickness(0, PasswordPopupGap));
         PasswordPopup.IsOpen = true;
-        FireAndForget.Run(() => LoadPasswordItemsAsync(repository));
+        FireAndForget.Run(() => LoadPasswordItemsAsync(request, repository));
     }
 
-    private async Task LoadPasswordItemsAsync(ISharedCredentialRepository repository)
+    // 弹层与光标行之间的缝(与补全弹层的 VerticalOffset 同宽)。
+    private const double PasswordPopupGap = 2;
+
+    private async Task LoadPasswordItemsAsync(SharedPasswordFillRequest request, ISharedCredentialRepository repository)
     {
         IReadOnlyList<SharedCredentialMetadata> items;
+        string? status = null;
         try
         {
             items = [.. (await repository.ListMetadataAsync())
@@ -143,14 +184,17 @@ public partial class TerminalTabView : UserControl
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // 读不出来不等于没有:照实说读取失败,别让用户去设置里找一份其实存在的凭据。
+            System.Diagnostics.Trace.WriteLine($"[PasswordFill] Listing shared credentials failed: {ex}");
             items = [];
+            status = "PasswordFill_ReadFailed";
         }
-        if (_passwordRequest is null)
+        if (!ReferenceEquals(request, _passwordRequest))
         {
-            return; // 加载期间弹层已收起:别把列表塞回一个已经失效的请求。
+            return; // 加载期间弹层已收起或换了一次:别把列表塞回一个已经失效的请求。
         }
         PasswordList.ItemsSource = items;
-        SetPasswordStatus(items.Count == 0 ? "PasswordFill_Empty" : null);
+        SetPasswordStatus(status ?? (items.Count == 0 ? "PasswordFill_Empty" : null));
     }
 
     private void SetPasswordStatus(string? key)
@@ -315,10 +359,16 @@ public partial class TerminalTabView : UserControl
     }
 
     /// <summary>没有识别到提示符时(命令面板入口)手动召出,锚在当前光标行。</summary>
+    /// <remarks>
+    /// 先把焦点交回终端:面板收起后没人还焦点,而列表开着时 <see cref="FocusTerminal" /> 刻意不抢 ——
+    /// 焦点不在终端上,↑↓/Enter/Esc 到不了隧道键位,键入也进不了终端,下一批输出还会因
+    /// 「终端没焦点」把列表收掉。
+    /// </remarks>
     internal void OpenSharedPasswordPicker()
     {
         if (_termControl is { } control)
         {
+            control.Focus();
             OpenPasswordPopup(control);
         }
     }
@@ -394,6 +444,15 @@ public partial class TerminalTabView : UserControl
         // 幽灵/列表状态会与本类脱钩;订阅 Closed 统一对账,防止"看不见却仍拦键"的
         // 僵尸弹层
         SuggestPopup.Closed += (_, _) => OnSuggestPopupClosedByPlatform();
+        // 密码列表同理:平台侧收起时请求跟着作废、退订,不能让一个看不见的请求还挂在控件上。
+        // 本类自己收口时请求已先置空,这里不会重入。
+        PasswordPopup.Closed += (_, _) =>
+        {
+            if (_passwordRequest is not null)
+            {
+                ClosePasswordPopup();
+            }
+        };
         SearchBox.TextChanged += (_, _) => ScheduleSearch();
         SearchNext.Click += (_, _) => MoveHit(+1);
         SearchPrev.Click += (_, _) => MoveHit(-1);

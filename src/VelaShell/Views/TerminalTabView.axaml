@@ -192,14 +192,14 @@
       </Border>
 
       <!-- 共享密码列表(WindTerm 式,#628 第 1 项):识别到 Password: 一类提示行时
-           锚在光标下一行弹出,点一项即填入正文,不再有常驻按钮、也不再二次确认。
-           Popup 是独立顶层窗口,锚定在 TerminalHost 上由 PlacementRect 指到光标处。 -->
+           贴着光标行下沿弹出(底下放不下翻到上沿之上),点一项即填入正文,不再有常驻按钮、也不再二次确认。
+           Popup 是独立顶层窗口,锚定在 TerminalHost 上由 PlacementRect 指到光标处。
+           与光标行之间的缝由代码后置做在 PlacementRect 上,这里不设 VerticalOffset:翻转时它不跟着反向。 -->
       <Popup x:Name="PasswordPopup"
              PlacementTarget="{Binding #TerminalHost}"
              Placement="AnchorAndGravity"
              PlacementAnchor="BottomLeft"
              PlacementGravity="BottomRight"
-             VerticalOffset="2"
              IsLightDismissEnabled="False">
         <Border Background="{DynamicResource VelaBgSurface}"
                 BorderBrush="{DynamicResource VelaBorderSecondary}"

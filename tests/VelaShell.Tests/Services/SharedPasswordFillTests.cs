@@ -1,6 +1,7 @@
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -192,11 +193,16 @@ public sealed class SharedPasswordFillTests
             CollectionAssert.AreEqual(
                 new[] { "production", "旧库无口令" },
                 view.PasswordItemsForTest.Select(item => item.Name).ToArray());
-            // 锚在提示符的下一行:列表不遮住用户可能正在手敲的那一行,也不漂到别处。
+            // 锚在光标行本身:列表落在提示行下沿之下,不遮住用户可能正在手敲的那一行,也不漂到别处。
             Rect anchor = view.PasswordPlacementRectForTest;
             Rect cursor = control.GetCursorRect();
             Assert.AreEqual(cursor.X, anchor.X, 0.5, "锚点应与光标同列。");
-            Assert.AreEqual(cursor.Bottom, anchor.Y, 0.5, "列表应紧贴光标行下沿。");
+            Assert.IsTrue(anchor.Top <= cursor.Top && anchor.Bottom >= cursor.Bottom, "锚点矩形应盖住光标行。");
+            Rect popup = PopupBounds(view, window);
+            Rect cursorInWindow = CursorInWindow(control, window);
+            Assert.AreEqual(cursorInWindow.X, popup.X, 0.5, "列表应与光标同列。");
+            Assert.IsTrue(popup.Top >= cursorInWindow.Bottom && popup.Top <= cursorInWindow.Bottom + 4,
+                $"列表应紧贴光标行下沿:popup={popup} cursor={cursorInWindow}");
             // 点一行即读取并填入:只有密码正文,不带回车、不带引号 —— 远端还停在提示符上等输入。
             view.PickPasswordItem(metadata);
             await view.PasswordFillForTest;
@@ -305,6 +311,218 @@ public sealed class SharedPasswordFillTests
             control.Feed("\r\e[2KPassword:"u8.ToArray());
             Paint(window);
             Assert.IsTrue(view.PasswordPopupOpenForTest);
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task Popup_RecognizesPromptWhoseTrailingSpaceWrappedOntoTheNextRow() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
+        {
+            new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
+        });
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            // 提示正好占满一行,尾随空格折到下一行:光标行只剩一个空格。输出批次的廉价预筛只看光标行,
+            // 光标行全空白时必须照旧去拼上面的逻辑行,不能当成「不以冒号收尾」放掉。
+            const string head = "Password for 'https://";
+            string prompt = head + new string('g', control.Columns - head.Length - 2) + "':";
+            Assert.AreEqual(control.Columns, prompt.Length);
+            control.Feed(Encoding.UTF8.GetBytes(prompt + " "));
+            Paint(window);
+            Assert.AreEqual(1, control.CursorRow, "前提:尾随空格折到了下一行。");
+            Assert.AreEqual(" ", control.GetBufferLine(control.CursorRow));
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task Popup_OnLastRow_FlipsAboveThePromptLine() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
+        {
+            new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
+            new(Guid.NewGuid(), "staging", "ops", AuthMethod.Password, true),
+        });
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            // 输出刷满一屏后提示符落在末行(最大化时的常态):下面放不下,定位器把列表翻到上面去。
+            control.Feed(Encoding.UTF8.GetBytes(new string('\n', control.Rows * 2) + "[sudo] password for joe: "));
+            Paint(window);
+            Assert.AreEqual(control.Rows - 1, control.CursorRow, "前提:提示符在末行。");
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            Rect popup = PopupBounds(view, window);
+            Rect cursor = CursorInWindow(control, window);
+            Assert.IsTrue(popup.Bottom <= cursor.Top && popup.Bottom >= cursor.Top - 4,
+                $"翻上去的列表应止于提示行上沿,不能盖住它:popup={popup} cursor={cursor}");
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task Popup_KeyThatExpiresTheRequest_ClosesWithoutSuppressing_AndRePromptGetsAFreshRequest() =>
+        Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        IShellStreamWrapper shell = Shell();
+        await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
+        var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.GetPasswordAsync(metadata.Id).Returns("secret");
+        List<byte> writes = CaptureWrites(shell);
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            control.Feed("[sudo] password for joe: "u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            // 空口令上的 Backspace:跟踪的输入没变(InputChanged 不响),但字节已经发出去、请求随之作废。
+            // 列表不能留着让人点 —— 点哪一项都只会回「已过期」。
+            Press(window, Key.Back, PhysicalKey.Backspace);
+            Assert.IsFalse(view.PasswordPopupOpenForTest, "被键入作废的列表应当收口。");
+            // 这不是用户拒绝(Esc 才是):提示再画一次,入口照常回来。
+            control.Feed("\r\e[2K[sudo] password for joe: "u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest, "Backspace 不该把这一行记成已拒绝。");
+            // 输错后重新提示:开着的列表换成新请求,点一下照样能填,而不是回「已过期」。
+            control.Feed("\r\nSorry, try again.\r\n[sudo] password for joe: "u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            view.PickPasswordItem(metadata);
+            await view.PasswordFillForTest;
+            await DrainWritesAsync(tab);
+            Assert.AreEqual("\u007Fsecret", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.IsFalse(view.PasswordPopupOpenForTest);
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task PalettePicker_TakesTerminalFocus_SoKeysReachTheList() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        IShellStreamWrapper shell = Shell();
+        await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
+        var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.GetPasswordAsync(metadata.Id).Returns("secret");
+        List<byte> writes = CaptureWrites(shell);
+        var palette = new TextBox();
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository, palette);
+        try
+        {
+            Paint(window);
+            // 从命令面板执行:焦点在面板的搜索框上,面板先收起、再执行命令,没人把焦点还给终端。
+            palette.Focus();
+            Paint(window);
+            palette.IsVisible = false;
+            Assert.IsFalse(control.IsFocused, "前提:焦点不在终端上。");
+            view.OpenSharedPasswordPicker();
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            Assert.IsTrue(control.IsFocused, "手动入口应把焦点交回终端,键位才到得了列表。");
+            Press(window, Key.Down, PhysicalKey.ArrowDown);
+            Assert.AreEqual(0, view.PasswordHighlightForTest);
+            Press(window, Key.Enter, PhysicalKey.Enter);
+            await view.PasswordFillForTest;
+            await DrainWritesAsync(tab);
+            Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task Picker_ReopenOrPlatformClose_DoesNotLeakRequestSubscriptions() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
+        {
+            new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
+        });
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            int typed = Subscribers(control, nameof(VelaTerminalControl.TypedInput));
+            int output = Subscribers(control, nameof(VelaTerminalControl.OutputUpdated));
+            // 列表开着时在命令面板里再点一次手动入口:旧请求要先作废,不能连同订阅一起留在控件上。
+            view.OpenSharedPasswordPicker();
+            view.OpenSharedPasswordPicker();
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            Assert.AreEqual(typed + 1, Subscribers(control, nameof(VelaTerminalControl.TypedInput)));
+            Assert.AreEqual(output + 1, Subscribers(control, nameof(VelaTerminalControl.OutputUpdated)));
+            // 平台侧收起弹层(不经本类的收口):Closed 里统一收尾。
+            view.FindControl<Popup>("PasswordPopup")!.IsOpen = false;
+            Assert.AreEqual(typed, Subscribers(control, nameof(VelaTerminalControl.TypedInput)));
+            Assert.AreEqual(output, Subscribers(control, nameof(VelaTerminalControl.OutputUpdated)));
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task ListingFailure_SaysReadFailed_NotThatNothingExists() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(Task.FromException<List<SharedCredentialMetadata>>(new IOException("database is locked")));
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            control.Feed("Password:"u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            Assert.IsEmpty(view.PasswordItemsForTest);
+            // 读不出来不是「没有」:不能叫用户去设置里添加一份其实存在的凭据。
+            Assert.AreEqual(Strings.Get("PasswordFill_ReadFailed"), view.PasswordStatusForTest);
         }
         finally
         {
@@ -642,16 +860,24 @@ public sealed class SharedPasswordFillTests
     /// <summary>
     /// 把标签页挂进一个真实窗口,并把凭据仓储接到 <see cref="TerminalTabView.RepositoryFactory" /> 上。
     /// headless 宿主(<c>VelaHeadlessApp</c>)不是 <c>App</c>,没有 DI 容器,所以那条取数口必须替换。
-    /// 返回值里的 <see cref="IDisposable" /> 负责还原。
+    /// 返回值里的 <see cref="IDisposable" /> 负责还原。<paramref name="overlay" /> 是盖在终端上面、另一个能拿焦点的
+    /// 控件(命令面板之类);与主窗口里的命令面板一样同格叠放,收起它不改变终端的布局。
     /// </summary>
     private static (Window Window, TerminalTabView View, IDisposable Restore) ShowTerminal(
         TerminalTabViewModel tab,
-        ISharedCredentialRepository repository)
+        ISharedCredentialRepository repository,
+        Control? overlay = null)
     {
         var main = new MainWindowViewModel();
         typeof(MainWindowViewModel).GetProperty(nameof(MainWindowViewModel.ActiveTerminalTab))!.SetValue(main, tab);
         var view = new TerminalTabView { DataContext = tab };
-        var window = new Window { Width = 800, Height = 480, DataContext = main, Content = view };
+        Control content = view;
+        if (overlay is not null)
+        {
+            overlay.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
+            content = new Grid { Children = { view, overlay } };
+        }
+        var window = new Window { Width = 800, Height = 480, DataContext = main, Content = content };
         window.Show();
         Func<ISharedCredentialRepository?> original = TerminalTabView.RepositoryFactory;
         TerminalTabView.RepositoryFactory = () => repository;
@@ -672,6 +898,26 @@ public sealed class SharedPasswordFillTests
         window.KeyRelease(key, RawInputModifiers.None, physical, null);
         Paint(window);
     }
+
+    /// <summary>密码列表在窗口坐标里的实际位置(headless 下弹层是窗口里的覆盖层,可以直接换算)。</summary>
+    private static Rect PopupBounds(TerminalTabView view, Window window)
+    {
+        Control child = view.FindControl<Popup>("PasswordPopup")!.Child!;
+        return new Rect(child.TranslatePoint(default, window)!.Value, child.Bounds.Size);
+    }
+
+    /// <summary>光标格在窗口坐标里的矩形。</summary>
+    private static Rect CursorInWindow(VelaTerminalControl control, Window window)
+    {
+        Rect cursor = control.GetCursorRect();
+        return new Rect(control.TranslatePoint(cursor.TopLeft, window)!.Value, cursor.Size);
+    }
+
+    /// <summary>控件某个事件上挂着几个订阅者(查请求退订没有)。</summary>
+    private static int Subscribers(VelaTerminalControl control, string eventName) =>
+        (typeof(VelaTerminalControl)
+            .GetField(eventName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(control) as Delegate)?.GetInvocationList().Length ?? 0;
 
     /// <summary>收集发往远端的全部字节(密码与按键都走这一个出口)。</summary>
     private static List<byte> CaptureWrites(IShellStreamWrapper shell)
