@@ -8,6 +8,7 @@ namespace VelaShell.Services.Update;
 /// 单独一个类的原因在于下载线程<b>只在收到新字节时才汇报</b>。网络一慢一卡就没有任何回调,
 /// 界面只能停在最后一个速率值上,用户分不清"慢"和"已经不动了"。所以这里额外提供一个
 /// 由界面心跳驱动的 <see cref="Tick" />:它不产生新数据,只让速率归零、把停滞时长顶出来。
+/// 计时用单调时钟(<see cref="Environment.TickCount64" />),系统时间被校准或手动调整不会造成假停滞。
 /// </remarks>
 /// <remarks>创建进度快照器。</remarks>
 /// <param name="stallThreshold">
@@ -17,7 +18,13 @@ namespace VelaShell.Services.Update;
 /// <param name="speedFreshness">
 /// 速率保鲜期;不传则用 <see cref="SpeedFreshness" />。
 /// </param>
-public sealed class UpdateDownloadTracker(TimeSpan? stallThreshold = null, TimeSpan? speedFreshness = null)
+/// <param name="clock">
+/// 取当前时刻(毫秒)的委托;不传则用 <see cref="Environment.TickCount64" />。测试注入假时钟,不必真的等。
+/// </param>
+public sealed class UpdateDownloadTracker(
+    TimeSpan? stallThreshold = null,
+    TimeSpan? speedFreshness = null,
+    Func<long>? clock = null)
 {
     /// <summary>连续这么久没有新字节就算停滞,界面改用停滞文案。</summary>
     public static readonly TimeSpan StallThreshold = TimeSpan.FromSeconds(10);
@@ -30,8 +37,15 @@ public sealed class UpdateDownloadTracker(TimeSpan? stallThreshold = null, TimeS
 
     private readonly TimeSpan _stallThreshold = stallThreshold ?? StallThreshold;
     private readonly TimeSpan _speedFreshness = speedFreshness ?? SpeedFreshness;
-    private DateTime _lastAdvancedAt = DateTime.UtcNow;
-    private DateTime _lastSpeedAt = DateTime.UtcNow;
+    private readonly Func<long> _clock = clock ?? (static () => Environment.TickCount64);
+    private long _lastAdvancedAt;
+    private long _lastSpeedAt;
+
+    /// <summary>
+    /// 还没收到过任何汇报:正在连接服务器,或在校验上次留下的断点前缀。这段时间没有字节可言,
+    /// 不能拿"0 B/s"去算停滞、更不能说连接可能已经中断。
+    /// </summary>
+    public bool IsPreparing { get; private set; } = true;
 
     /// <summary>已下载字节数。</summary>
     public long BytesDownloaded { get; private set; }
@@ -47,20 +61,23 @@ public sealed class UpdateDownloadTracker(TimeSpan? stallThreshold = null, TimeS
     /// <summary>当前速率(字节/秒);长时间没有新速率时为 0。</summary>
     public double BytesPerSecond { get; private set; }
 
-    /// <summary>距离上一次收到新字节过去了多久。</summary>
-    public TimeSpan StalledFor => DateTime.UtcNow - _lastAdvancedAt;
+    /// <summary>距离上一次收到新字节过去了多久;准备阶段恒为 0。</summary>
+    public TimeSpan StalledFor => IsPreparing ? TimeSpan.Zero : TimeSpan.FromMilliseconds(_clock() - _lastAdvancedAt);
 
     /// <summary>是否已停滞到需要提醒用户的程度(见 <see cref="StallThreshold" />)。</summary>
-    public bool IsStalled => StalledFor >= _stallThreshold;
+    public bool IsStalled => !IsPreparing && StalledFor >= _stallThreshold;
 
     /// <summary>接收一次下载汇报。字节数只增不减,速率只认正数。</summary>
     /// <param name="progress">下载源给出的进度快照。</param>
     public void Report(UpdateDownloadProgress progress)
     {
-        if (progress.BytesDownloaded > BytesDownloaded)
+        long now = _clock();
+        if (IsPreparing || progress.BytesDownloaded > BytesDownloaded)
         {
-            BytesDownloaded = progress.BytesDownloaded;
-            _lastAdvancedAt = DateTime.UtcNow;
+            // 第一条汇报也算"刚收到数据":停滞从这里起算,而不是从开始连接起算。
+            IsPreparing = false;
+            BytesDownloaded = Math.Max(BytesDownloaded, progress.BytesDownloaded);
+            _lastAdvancedAt = now;
         }
         if (progress.TotalBytes > 0)
         {
@@ -69,7 +86,7 @@ public sealed class UpdateDownloadTracker(TimeSpan? stallThreshold = null, TimeS
         if (progress.BytesPerSecond > 0)
         {
             BytesPerSecond = progress.BytesPerSecond;
-            _lastSpeedAt = DateTime.UtcNow;
+            _lastSpeedAt = now;
         }
     }
 
@@ -78,7 +95,7 @@ public sealed class UpdateDownloadTracker(TimeSpan? stallThreshold = null, TimeS
     /// </summary>
     public void Tick()
     {
-        if (DateTime.UtcNow - _lastSpeedAt >= _speedFreshness)
+        if (BytesPerSecond > 0 && _clock() - _lastSpeedAt >= _speedFreshness.TotalMilliseconds)
         {
             BytesPerSecond = 0;
         }

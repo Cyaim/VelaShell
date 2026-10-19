@@ -86,6 +86,28 @@ public class GitHubReleaseSourceTests : IDisposable
 
     [TestMethod]
     [TestCategory("Update")]
+    public async Task DownloadAssetAsync_UnknownTotal_StillReportsBytes()
+    {
+        // 清单没写大小、响应也不带 Content-Length:老实现一条进度都不报,界面整段都以为卡住了,
+        // 停滞看门狗也会把一个好好的下载当成断线掐掉。
+        byte[] payload = Encoding.ASCII.GetBytes(string.Join('-', Enumerable.Range(0, 60_000)));
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+        {
+            HttpResponseMessage response = FullResponse(payload);
+            response.Content.Headers.ContentLength = null;
+            return response;
+        }));
+        List<UpdateDownloadProgress> reports = [];
+
+        await source.DownloadAssetAsync(
+            CreateManifest("pkg.zip", 0), Asset(0), Path.Combine(_dir, "pkg.zip"), new ByteProgress(reports.Add));
+
+        Assert.Contains(r => r.TotalBytes == 0 && r.BytesDownloaded > 0 && r.BytesDownloaded < payload.Length, reports);
+        Assert.AreEqual(payload.LongLength, reports[^1].BytesDownloaded, "收尾快照报的是实际下到的字节数");
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
     public async Task DownloadAssetAsync_WithPartial_SendsRangeAndAppends()
     {
         byte[] payload = Encoding.ASCII.GetBytes("0123456789");

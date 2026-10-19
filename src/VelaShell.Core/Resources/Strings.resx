@@ -1833,11 +1833,20 @@ Paste anyway?</value>
   <data name="SetAbout_UpdateAvailableManual" xml:space="preserve">
     <value>Update {0} is available, but this install location can't be updated automatically (folder isn't writable). Please download the latest release from the project page.</value>
   </data>
+  <data name="SetAbout_DownloadPreparing" xml:space="preserve">
+    <value>Preparing update download…</value>
+  </data>
   <data name="SetAbout_DownloadingSpeed" xml:space="preserve">
     <value>Downloading update… {0}% · {1}/{2} · {3}</value>
   </data>
   <data name="SetAbout_DownloadStalled" xml:space="preserve">
     <value>Downloading update… {0}% · {1}/{2} · no data for {3}, the connection may have dropped</value>
+  </data>
+  <data name="SetAbout_DownloadingSpeedNoTotal" xml:space="preserve">
+    <value>Downloading update… {0} downloaded · {1}</value>
+  </data>
+  <data name="SetAbout_DownloadStalledNoTotal" xml:space="preserve">
+    <value>Downloading update… {0} downloaded · no data for {1}, the connection may have dropped</value>
   </data>
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>Download failed. Please try again later.</value>

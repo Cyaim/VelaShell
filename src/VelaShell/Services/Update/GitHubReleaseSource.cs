@@ -221,6 +221,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
         }
         string hash;
         long total = 0;
+        long copied = 0;
         using (response)
         {
             response.EnsureSuccessStatusCode();
@@ -242,7 +243,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
                 partialPath, resumed ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None,
                 CopyBufferSize, useAsync: true);
             byte[] buffer = new byte[CopyBufferSize];
-            long copied = resumeFrom;
+            copied = resumeFrom;
             DownloadRateMeter meter = new();
             int lastReportedPercent = -1;
             long lastReportAt = 0;
@@ -252,9 +253,11 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
                 await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 sha.AppendData(buffer, 0, read);
                 copied += read;
-                if (totalBytes > 0 && progress != null)
+                if (progress != null)
                 {
-                    int percent = (int)Math.Clamp(copied * 100 / totalBytes, 0, 100);
+                    // 总量未知(清单没写大小、响应也没带 Content-Length)时照样汇报字节与速率,
+                    // 百分比记 0;不报的话整个下载期间界面都以为卡住了。
+                    int percent = totalBytes > 0 ? (int)Math.Clamp(copied * 100 / totalBytes, 0, 100) : 0;
                     // 百分比不变也照样每隔一小段时间报一次:用户要看的是速率,
                     // 而慢速下载的百分比能几十秒不动,不按时间报就永远看不到速度。
                     long now = Environment.TickCount64;
@@ -269,7 +272,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
             hash = Convert.ToHexStringLower(sha.GetHashAndReset());
         }
         File.Move(partialPath, destinationPath, true);
-        progress?.Report(UpdateDownloadProgress.Completed(total > 0 ? total : asset.Size));
+        progress?.Report(UpdateDownloadProgress.Completed(total > 0 ? total : copied));
         return hash;
     }
 

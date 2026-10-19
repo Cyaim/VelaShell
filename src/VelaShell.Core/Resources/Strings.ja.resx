@@ -1580,11 +1580,20 @@
   <data name="SetAbout_UpdateAvailableManual" xml:space="preserve">
     <value>新しいバージョン {0} が見つかりましたが、現在のインストール先では自動更新できません(フォルダーが書き込み不可)。プロジェクトのリリースページから最新版を入手してください。</value>
   </data>
+  <data name="SetAbout_DownloadPreparing" xml:space="preserve">
+    <value>更新のダウンロードを準備しています…</value>
+  </data>
   <data name="SetAbout_DownloadingSpeed" xml:space="preserve">
     <value>更新をダウンロードしています… {0}% · {1}/{2} · {3}</value>
   </data>
   <data name="SetAbout_DownloadStalled" xml:space="preserve">
     <value>更新をダウンロードしています… {0}% · {1}/{2} · {3} 間データを受信していません。接続が切断された可能性があります</value>
+  </data>
+  <data name="SetAbout_DownloadingSpeedNoTotal" xml:space="preserve">
+    <value>更新をダウンロードしています… {0} 受信済み · {1}</value>
+  </data>
+  <data name="SetAbout_DownloadStalledNoTotal" xml:space="preserve">
+    <value>更新をダウンロードしています… {0} 受信済み · {1} 間データを受信していません。接続が切断された可能性があります</value>
   </data>
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>ダウンロードに失敗しました。後でもう一度お試しください。</value>
