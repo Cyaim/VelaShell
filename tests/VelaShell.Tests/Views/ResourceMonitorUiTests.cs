@@ -299,6 +299,43 @@ public sealed partial class ResourceMonitorUiTests
     }
 
     [TestMethod]
+    public void GpuPage_IntelAndNvidiaMix_LabelsMemoryPerCard()
+    {
+        OnUi(() =>
+        {
+            UseChinese();
+            // nvidia-smi 报的两张 A100,加上 Intel 核显(i915)与 Arc 独显(xe)。
+            SessionMetrics metrics = SessionMetrics.Parse(FullProbeOutput +
+                "__GS__\ncard0|0x8086||||||||Arrow Lake-S Intel Graphics|0000:00:02.0|i915\n" +
+                "card1|0x8086||||||||Arc B580|0000:03:00.0|xe\n" +
+                "__GI__\nm|0000:00:02.0|1073741824||2\nm|0000:03:00.0|20971520|536870912|1\n")!;
+            metrics.CorePercents = [42.0, 7.5];
+            (ResourceMonitorWindow window, ResourceMonitorWindowViewModel vm) = Open(metrics);
+
+            GpuCardRow integrated = vm.Gpus.Single(g => g.Name == "Arrow Lake-S Intel Graphics");
+            GpuCardRow discrete = vm.Gpus.Single(g => g.Name == "Arc B580");
+            Assert.AreEqual("内存", integrated.MemoryTitle);
+            Assert.AreEqual("显存", discrete.MemoryTitle, "Arc 独显的 local/vram 驻留是显存,不能标成共享内存。");
+            Assert.AreEqual("512.0 MB", discrete.MemText, "读不到显存总量时也要显示已用量。");
+
+            vm.SelectPageCommand.Execute("Gpu").Subscribe();
+            vm.SelectGpuCommand.Execute(integrated).Subscribe();
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+
+            // 进程表只来自 nvidia-smi:选中核显时这一列仍是 NVIDIA 的显存,不能跟着卡片标题变成"内存"。
+            Border processes = window.GetVisualDescendants().OfType<Border>()
+                .First(b => b.Classes.Contains("card") && b.IsEffectivelyVisible
+                            && b.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "GPU 进程"));
+            TextBlock[] columns = [.. processes.GetVisualDescendants().OfType<TextBlock>().Where(t => t.Classes.Contains("col"))];
+            Assert.Contains(t => t.Text == "显存", columns);
+            Assert.DoesNotContain(t => t.Text == "内存", columns);
+
+            window.Close();
+        });
+    }
+
+    [TestMethod]
     public void EveryPage_BecomesVisibleWhenSelected()
     {
         OnUi(() =>

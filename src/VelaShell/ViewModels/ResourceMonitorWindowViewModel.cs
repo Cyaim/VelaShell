@@ -1077,9 +1077,13 @@ public sealed class ResourceMonitorWindowViewModel : ReactiveObject, IDisposable
                 ? Strings.Get("Monitor_Memory")
                 : Strings.Get("Monitor_Vram");
             row.ScopeText = gpu.ClientScopedUtil ? Strings.Get("Monitor_GpuClientScope") : "";
-            row.MemText = gpu.MemUsedBytes is { } used && gpu.MemTotalBytes is { } total
-                              ? $"{MetricFormat.Bytes(used)} / {MetricFormat.Bytes(total)}"
-                              : NotAvailable;
+            row.MemText = (gpu.MemUsedBytes, gpu.MemTotalBytes) switch
+            {
+                ({ } used, { } total) => $"{MetricFormat.Bytes(used)} / {MetricFormat.Bytes(total)}",
+                // Intel 独显只读得到已用量:sysfs 不给它的显存总量。
+                ({ } used, null) => MetricFormat.Bytes(used),
+                _ => NotAvailable
+            };
             row.MemPercentText = Format(gpu.MemPercent, MetricFormat.Percent);
             row.TempText = Format(gpu.TemperatureC, t => $"{t:F0} °C");
             row.TempWarn = gpu.TemperatureC is > 70 and <= 80;
