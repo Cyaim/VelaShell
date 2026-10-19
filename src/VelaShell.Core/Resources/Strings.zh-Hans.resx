@@ -2866,6 +2866,12 @@
   <data name="SetSecurity_AutoRecordDesc" xml:space="preserve">
     <value>// 记录终端输出到本地数据库供审计与回放。默认关闭:录制体积增长很快,用得多时一周就是几个 GB。对之后建立的连接生效,保留天数随「常规 → 终端会话日志保留天数」</value>
   </data>
+  <data name="SetSecurity_MaskCaptures" xml:space="preserve">
+    <value>录制与会话日志中遮盖口令和令牌</value>
+  </data>
+  <data name="SetSecurity_MaskCapturesDesc" xml:space="preserve">
+    <value>// 落盘之前,把 PASSWORD=…、token: …、Bearer …、私钥块以及常见格式的令牌换成 ***。屏幕显示不受影响;对之后开始的录制与日志生效</value>
+  </data>
   <data name="SetSecurity_BlockOnChange" xml:space="preserve">
     <value>指纹变更时阻断并告警</value>
   </data>

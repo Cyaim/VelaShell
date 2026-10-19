@@ -2040,3 +2040,13 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - 结果(Windows 11 build 29683、Avalonia 12.1.4):30 Hz 刷新 120 秒 3358 帧,p50 3.6 / p99 4.7 / 最长 9 毫秒;打字节奏(80–600 毫秒随机间隔、回显隔 10 毫秒、每次连出 3 帧)600 键,p50 3.8 / p99 10.6 / 最长 14 毫秒;**0 次超过 50 毫秒**。窗口置顶激活与否一样。
 - 候选修法「保温」(输入后两秒内每帧重画浮层里 1×1 的透明块):30 Hz 3352 帧最长 11 毫秒、打字 600 键 p99 11.3 / 最长 21 毫秒,同样 0 次 —— 没有可见收益,只多了每次输入后两秒的逐帧重画和不到 1 毫秒的 p99。
 **结论**:主程序不改。候选修法留在脚本里(`KeepWarm`),`feature-plan.md` 的条目降为 P2 并写明复现与量法:有用户报「打字卡一下」时,在那台机器上跑脚本对照开关,量出收益再挂。
+
+## ✅ 220. 2026-10-19 会话日志与录制:落盘前遮盖口令、令牌与私钥(默认开)
+
+**问题**:只录输出、不录输入是对的(密码没有回显),但输出里照样有密钥 —— `cat .env`、`kubectl get secret -o yaml`、`env | grep TOKEN` 的值原样进了会话日志与录制,事后谁拿到文件谁就看得到。
+**改法**:
+- `Services/SessionOutputMasker.cs`:挂在桥的旁路(`SshTerminalBridge.DataReceived`)与 `SessionLogWriter` / `SessionRecorder` 之间(`MainWindowViewModel.CaptureSink`),显示路径不经过它。规则(大小写不敏感,宁可多遮):名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 的 `名字=值`、`名字: 值`(JSON、YAML 写法,名字与分隔符之间的 `grep --color` 颜色序列不碍事)只换值,引号留着;`Bearer` / `Basic` 凭据(先于名字=值换,否则「token: Bearer abc」只遮掉 Bearer);PEM 私钥块正文;自带前缀的令牌(`AKIA` / `ASIA`、`ghp_` 一类、`xox?-`、`sk-`)。`pwd` 没进名单:`env` 里的 `PWD=` 是当前目录。
+- 按字节、按行:每个字节按 Latin-1 映射再匹配,规则与替换都是 ASCII,UTF-8 与 GBK 原样往返;空白只认 ASCII 的空格与制表符 —— `\s` 会把 UTF-8 续字节 0x85 / 0xA0 当成空白,值就在一个汉字中间断开。整行才匹配,最后不完整的一行只有正写到一个值的中间(含刚好停在 `=` 上)或在私钥块里时才扣下(上限 4 KB);`Password: ` 这类等输入的提示与全屏程序不换行的输出当场放出,录制的时间轴不受影响。停止记录时先 `Flush` 扣着的部分再收尾;停止记录不退订旧桥,`Write` 与 `Flush` 用一把锁串起来。
+- 设置 `Security.MaskSecretsInCaptures`(默认开),在「安全审计 → 会话录制」里,对之后开始的录制与会话日志生效;五份 resx。`PRIVACY.md` 两段补上默认遮盖与「尽力而为、不改屏幕显示」。
+**验证**:`SessionOutputMaskerTests` 8 项(`.env` / YAML / JSON 只遮值且 `PWD` 不动、值跨两段输出与停在 `=` 上、提示与全屏输出不扣、颜色序列夹在中间、私钥块跨段、Bearer 与带前缀令牌、GBK / UTF-8 往返、扣下上限与收尾 Flush);`SessionRecorderTests` 加一项:遮盖接真实的录制器,落库的块里没有原值、扣着的半行收尾时遮完进库。本地化守卫通过;全量:宿主 2280 通过 / 11 跳过,Core 1026 / 16;构建 0 警告。
+**文档**:velashell-docs 中英文「设置项审计」第十四批、「交互与界面规格」安全审计页一行。不做的:用户自定义规则(与「终端输出的自定义高亮规则」共用规则表,见 `feature-plan.md`);既没有名字也没有前缀的裸值认不出来。

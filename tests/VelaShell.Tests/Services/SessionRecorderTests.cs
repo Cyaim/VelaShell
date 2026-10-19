@@ -35,6 +35,23 @@ public sealed class SessionRecorderTests
         Assert.AreEqual(1, saved.ChunkCount);
     }
 
+    /// <summary>挂了输出遮盖时,落库的录制里看不到口令;扣着的半行在收尾时也遮完进库(主窗口停止记录时先 Flush 再收尾)。</summary>
+    [TestMethod]
+    public async Task MaskedRecording_PersistsNoSecrets()
+    {
+        var store = new RecordingStoreSpy();
+        var recorder = new SessionRecorder(store, "web-01", 100, 30);
+        var masker = new SessionOutputMasker(recorder.Write);
+
+        masker.Write("$ cat .env\r\nDB_PASSWORD=hunter2\r\nAPI_TOKEN=ab"u8.ToArray());
+        masker.Write("c123\r\n$ export SECRET=half"u8.ToArray());
+        masker.Flush();
+        await recorder.DisposeAsync();
+
+        string recorded = string.Concat(store.Chunks.Select(chunk => System.Text.Encoding.UTF8.GetString(chunk.Data)));
+        Assert.AreEqual("$ cat .env\r\nDB_PASSWORD=***\r\nAPI_TOKEN=***\r\n$ export SECRET=***", recorded);
+    }
+
     /// <summary>录制开始时的尺寸要跟着元数据落盘(asciicast 导出的头部要它)。</summary>
     [TestMethod]
     public async Task TheRecordedTerminalSize_IsPersisted()

@@ -2757,6 +2757,12 @@ Paste anyway?</value>
   <data name="SetSecurity_AutoRecordDesc" xml:space="preserve">
     <value>// Record terminal output to a local database for audit and replay. Off by default: recordings grow fast — a busy week can be several GB. Applies to connections opened afterwards; retention follows General → Terminal session log retention</value>
   </data>
+  <data name="SetSecurity_MaskCaptures" xml:space="preserve">
+    <value>Mask passwords and tokens in recordings and session logs</value>
+  </data>
+  <data name="SetSecurity_MaskCapturesDesc" xml:space="preserve">
+    <value>// Before writing to disk, values such as PASSWORD=…, token: …, Bearer …, private key blocks and well-known token formats are replaced with ***. The screen is not affected. Applies to recordings and logs started afterwards</value>
+  </data>
   <data name="SetSecurity_BlockOnChange" xml:space="preserve">
     <value>Block and alert on fingerprint change</value>
   </data>

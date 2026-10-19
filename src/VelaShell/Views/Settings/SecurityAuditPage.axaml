@@ -23,6 +23,14 @@
       </StackPanel>
       <ToggleSwitch Grid.Column="1" IsChecked="{Binding Security.RecordProductionSessions}" VerticalAlignment="Center" />
     </Grid>
+    <!-- 录制与会话日志落盘前遮盖口令、令牌、私钥(默认开);屏幕显示不受影响。 -->
+    <Grid ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="row-label" Text="{loc:Localize SetSecurity_MaskCaptures}" />
+        <TextBlock Classes="row-desc" Text="{loc:Localize SetSecurity_MaskCapturesDesc}" />
+      </StackPanel>
+      <ToggleSwitch Grid.Column="1" IsChecked="{Binding Security.MaskSecretsInCaptures}" VerticalAlignment="Center" />
+    </Grid>
     <Grid ColumnDefinitions="*,Auto">
       <StackPanel Spacing="2">
         <TextBlock Classes="row-label" Text="{loc:Localize SetSecurity_RecordingCenter}" />
