@@ -73,19 +73,25 @@ public interface ISshClientWrapper : IAsyncDisposable
     /// </summary>
     /// <param name="commandText">命令行。</param>
     /// <param name="includeStandardError">是否也回调标准错误。</param>
-    /// <param name="onLine">逐行回调(参数为「是否来自标准错误」与「行文本」);在 I/O 线程上调用,应快速返回。</param>
+    /// <param name="onLine">
+    /// 逐行回调(参数为「是否来自标准错误」与「行文本」);在 I/O 线程上调用。它返回的任务完成前不读下一行 ——
+    /// 慢接收方(隔离插件的 RPC 通知)由此经 SSH 窗口把远端也慢下来,而不是被一段输出里的几百行冲爆。
+    /// </param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>退出码与行数。</returns>
     Task<RemoteCommandStreamResult> StreamCommandAsync(
         string commandText,
         bool includeStandardError,
-        Action<bool, string> onLine,
+        Func<bool, string, ValueTask> onLine,
         CancellationToken cancellationToken = default);
 
-    /// <summary>在独立 PTY exec 通道受控提权；不支持的实现必须关闭失败，不降级为普通执行。</summary>
+    /// <summary>
+    /// 在独立 PTY exec 通道受控提权；不支持的实现必须关闭失败，不降级为普通执行。
+    /// <paramref name="onEvent" /> 与 <see cref="StreamCommandAsync" /> 的逐行回调一样逐条等待(背压)。
+    /// </summary>
     Task<SudoExecutionResult> StreamSudoCommandAsync(
         string commandText, SudoExecutionContext context, ISudoPrompt prompt,
-        Action<SudoExecutionEvent> onEvent, CancellationToken cancellationToken = default) =>
+        Func<SudoExecutionEvent, ValueTask> onEvent, CancellationToken cancellationToken = default) =>
         Task.FromResult(new SudoExecutionResult(SudoExecutionOutcome.NotSupported));
 
     /// <summary>

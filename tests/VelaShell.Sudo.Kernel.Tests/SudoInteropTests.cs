@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Sockets;
 using System.Text;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
@@ -9,14 +10,24 @@ using VelaShell.Ssh.Session;
 
 namespace VelaShell.Sudo.Kernel.Tests;
 
+/// <summary>
+/// 受控 sudo 在<b>真实 sudo + PAM</b> 上的端到端行为。
+/// </summary>
+/// <remarks>
+/// 靶子是 <c>docker-compose.test.yml</c> 的 <c>ssh-sudo</c>(端口 2229,见 <c>tests/fixtures/ssh-sudo/Dockerfile</c>):
+/// <c>docker compose -f docker-compose.test.yml up -d --build ssh-sudo</c>。每条用例先 <c>docker exec</c> 进去
+/// 重设 sudoer 的口令、登录 shell 与 sudoers 策略,所以只能指向一次性容器;
+/// 要换一台,用 <c>VELASHELL_SUDO_CONTAINER</c> / <c>VELASHELL_SUDO_PORT</c> 指过去。靶机不可达时记为跳过。
+/// </remarks>
 [TestClass]
 [DoNotParallelize]
 [TestCategory("SudoInterop")]
+[TestCategory("DockerIntegration")]
 public sealed class SudoInteropTests
 {
     public TestContext TestContext { get; set; } = null!;
-    private static string Container => Environment.GetEnvironmentVariable("VELASHELL_SUDO_CONTAINER") ?? "velashell-ai-sudo-ubuntu";
-    private static int Port => int.TryParse(Environment.GetEnvironmentVariable("VELASHELL_SUDO_PORT"), out int port) ? port : 22991;
+    private static string Container => Environment.GetEnvironmentVariable("VELASHELL_SUDO_CONTAINER") ?? "velashell-test-sudo";
+    private static int Port => int.TryParse(Environment.GetEnvironmentVariable("VELASHELL_SUDO_PORT"), out int port) ? port : 2229;
     private const string Password = "密碼é🙂42";
 
     private sealed class Prompt(bool approve = true, params string?[] answers) : ISudoPrompt
@@ -59,7 +70,8 @@ public sealed class SudoInteropTests
         foreach (string argument in new[] { "exec", "-i", Container, "sh", "-s" }) { start.ArgumentList.Add(argument); }
         using Process process = Process.Start(start)!;
         using CancellationTokenSource deadline = new(TimeSpan.FromSeconds(30));
-        await process.StandardInput.WriteAsync("set -eu\nprintf '%s\\n' 'sudoer:" + Password + "' | chpasswd\nprintf '%s\\n' "
+        // 登录 shell 每次先复位成 bash:换 shell 的用例中途失败,也不能把后面的用例带进 fish/tcsh。
+        await process.StandardInput.WriteAsync("set -eu\nusermod -s /bin/bash sudoer\nprintf '%s\\n' 'sudoer:" + Password + "' | chpasswd\nprintf '%s\\n' "
             + SudoCommandExecutor.Quote("Defaults:sudoer timestamp_timeout=0\n" + policy) + " > /etc/sudoers.d/test-user\nchmod 440 /etc/sudoers.d/test-user\nvisudo -cf /etc/sudoers.d/test-user\n" + extra);
         process.StandardInput.Close();
         Task<string> errors = process.StandardError.ReadToEndAsync();
@@ -97,6 +109,7 @@ public sealed class SudoInteropTests
             {
                 if (entry.Text is { } text) { output.Append(text); }
                 observe?.Invoke(entry, connection);
+                return ValueTask.CompletedTask;
             }, deadline.Token);
         lock (tap.Payloads)
         {
@@ -113,10 +126,40 @@ public sealed class SudoInteropTests
 
     private static void RequireEnvironment()
     {
-        if (Environment.GetEnvironmentVariable("VELASHELL_SUDO_INTEROP") != "1")
+        try
         {
-            Assert.Inconclusive("[SKIP] Set VELASHELL_SUDO_INTEROP=1 and prepare an isolated Ubuntu/Debian container; select it with VELASHELL_SUDO_CONTAINER and VELASHELL_SUDO_PORT.");
+            using TcpClient tcp = new();
+            if (!tcp.ConnectAsync("127.0.0.1", Port).Wait(TimeSpan.FromSeconds(3)))
+            {
+                Assert.Inconclusive($"[SKIP] ssh-sudo 靶机 127.0.0.1:{Port} 不可达。" +
+                                    "运行 'docker compose -f docker-compose.test.yml up -d --build ssh-sudo'。");
+            }
         }
+        catch (Exception ex) when (ex is SocketException or AggregateException)
+        {
+            Assert.Inconclusive($"[SKIP] ssh-sudo 靶机 127.0.0.1:{Port} 不可达:{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 登录 shell 不是 POSIX 家族时照样只执行批准过的那条命令:fish 的单引号里 <c>\\</c> 仍是转义,
+    /// csh 的单引号里不许换行、挡不住 <c>!</c> —— 任何一处被登录 shell 改写,输出就对不上。
+    /// </summary>
+    [TestMethod]
+    [DataRow("/usr/bin/fish")]
+    [DataRow("/usr/bin/tcsh")]
+    [DataRow("/bin/bash")]
+    public async Task NonPosixLoginShellRunsExactlyTheApprovedCommand(string loginShell)
+    {
+        RequireEnvironment();
+        await ConfigureAsync("sudoer ALL=(ALL) NOPASSWD: ALL", $"usermod -s {loginShell} sudoer\n");
+        const string command = """printf '%s|' 'a\\b' "it's" 'bang!' "$(id -u)" """ + "\nprintf '漢🙂'";
+        Prompt prompt = new(true);
+        var (result, output, _) = await ExecuteAsync(prompt, command);
+        TestContext.WriteLine($"{loginShell}: outcome={result.Outcome}, exit={result.ExitCode}, output={output}");
+        Assert.AreEqual(SudoExecutionOutcome.Exited, result.Outcome);
+        Assert.AreEqual(0, result.ExitCode);
+        Assert.Contains("""a\\b|it's|bang!|0|漢🙂""", output);
     }
 
     [TestMethod]

@@ -115,12 +115,13 @@ internal sealed class RpcRemoteExec(RpcConnection rpc, bool supportsExecutionOpe
         using CancellationTokenRegistration registration = lifetime.Token.Register(() => Cancel(id));
         try
         {
-            ExecStreamResult result = await rpc.RequestAsync<ExecStreamResult>(PluginRpc.ExecStream,
+            ExecStreamResult result = await AwaitRequestAsync(rpc.RequestAsync<ExecStreamResult>(PluginRpc.ExecStream,
                 new ExecStreamRequest(sessionId, command, id, deadline?.TotalSeconds ?? 0,
                     options?.IncludeStandardError ?? true)
                 { OperationId = supportsExecutionOperations ? id : null },
                 deadline is { } timeout ? timeout + TimeSpan.FromSeconds(15) : Timeout.InfiniteTimeSpan,
-                lifetime.Token).ConfigureAwait(false)
+                // 旧宿主收不到取消:还没发出去的请求就别再发了,免得留下一条谁都停不了的命令。
+                supportsExecutionOperations ? CancellationToken.None : lifetime.Token), lifetime.Token).ConfigureAwait(false)
                 ?? throw new IOException("Host returned no execution result.");
             if (supportsExecutionOperations) { receiver.ValidateOutputCount(result.Lines); }
             return result;
@@ -162,10 +163,10 @@ internal sealed class RpcRemoteExec(RpcConnection rpc, bool supportsExecutionOpe
         using CancellationTokenRegistration registration = lifetime.Token.Register(() => Cancel(id));
         try
         {
-            SudoExecResult result = await rpc.RequestAsync<SudoExecResult>(PluginRpc.ExecSudoStream,
+            SudoExecResult result = await AwaitRequestAsync(rpc.RequestAsync<SudoExecResult>(PluginRpc.ExecSudoStream,
                 new ExecSudoStreamRequest(sessionId, command, id, options?.Timeout?.TotalSeconds ?? 0),
                 options?.Timeout is { } timeout ? timeout + TimeSpan.FromSeconds(15) : Timeout.InfiniteTimeSpan,
-                lifetime.Token).ConfigureAwait(false)
+                CancellationToken.None), lifetime.Token).ConfigureAwait(false)
                 ?? new(SudoExecOutcome.Unknown);
             receiver.ValidateOutputCount(result.OutputChunks);
             // 即使对端遗漏/损坏退出码,也不能把默认值当退出成功。
@@ -182,6 +183,26 @@ internal sealed class RpcRemoteExec(RpcConnection rpc, bool supportsExecutionOpe
         {
             _sudoSinks.TryRemove(id, out _);
             receiver.ThrowIfFailed();
+        }
+    }
+
+    /// <summary>
+    /// 带操作 id 的请求帧不随调用方取消,取消只停止等待。否则请求在写闸前排队时被取消就根本没发出去,
+    /// 取消通知却照发 —— 宿主把这个永远等不到请求的 id 记进早到取消,攒满上限即停用本插件的全部执行。
+    /// 请求总会发出,随后的取消要么先于登记到达(登记时立即取消),要么取消一条已登记的操作 —— 两种都有着落。
+    /// </summary>
+    private static async Task<T?> AwaitRequestAsync<T>(Task<T?> request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await request.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 不再等的请求仍会收到宿主应答(通常是取消错误):观察掉,不留未观察异常。
+            _ = request.ContinueWith(static task => _ = task.Exception, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            throw;
         }
     }
 

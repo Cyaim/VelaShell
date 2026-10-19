@@ -20,7 +20,44 @@ internal static class SudoCommandExecutor
 
     internal static string Quote(string text) => "'" + text.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
 
-    internal static string BuildCommand(string command, string ready, string passwordPrompt, string started)
+    /// <summary>
+    /// 交给登录 shell 的命令行：外层只含各家 shell 单引号里都按字面处理的字符，
+    /// 真正的 POSIX 脚本（<see cref="BuildScript" />）按 UTF-8 字节编成 <c>printf %b</c> 的 <c>\0ooo</c> 转义，
+    /// 由 <c>/bin/sh</c> 自己还原后 eval。
+    /// </summary>
+    /// <remarks>
+    /// sshd 用用户的登录 shell 执行命令行。fish / csh 不认 POSIX 脚本（<c>modes=…</c>、<c>case…esac</c> 直接语法错误，
+    /// 被当成认证失败，密码框都不弹）；而把脚本单引号包一层交给 <c>/bin/sh</c> 也不够：fish 的单引号里
+    /// <c>\\</c> 与 <c>\'</c> 仍是转义，会悄悄改掉已批准的 root 命令；csh 的单引号里不许换行，也挡不住 <c>!</c>。
+    /// 编码之后不管登录 shell 是哪家，读到的都是同一个 <c>/bin/sh</c> 调用，内层两级 <see cref="Quote" /> 原样不动。
+    /// </remarks>
+    internal static string BuildCommand(string command, string ready, string passwordPrompt, string started) =>
+        "exec /bin/sh -c 'eval \"$(printf %b \"" + EncodeForPrintf(BuildScript(command, ready, passwordPrompt, started)) + "\")\"'";
+
+    /// <summary>
+    /// 字母、数字与 <c> -_./,:=+@</c> 原样保留，其余字节一律写成 <c>\0ooo</c>。
+    /// 保留的这几个在 sh / bash / zsh / fish / csh 的单引号里、在 sh 的双引号里、在 <c>printf %b</c> 的实参里都没有特殊含义。
+    /// </summary>
+    internal static string EncodeForPrintf(string script)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(script);
+        StringBuilder encoded = new(bytes.Length * 2);
+        foreach (byte value in bytes)
+        {
+            if (char.IsAsciiLetterOrDigit((char)value) || " -_./,:=+@".Contains((char)value, StringComparison.Ordinal))
+            {
+                encoded.Append((char)value);
+            }
+            else
+            {
+                encoded.Append("\\0").Append(Convert.ToString(value, 8).PadLeft(3, '0'));
+            }
+        }
+        return encoded.ToString();
+    }
+
+    /// <summary>由 <c>/bin/sh</c> 执行的受控脚本：回读终端状态、打印就绪标记、再 <c>exec sudo</c> 进 root shell。</summary>
+    internal static string BuildScript(string command, string ready, string passwordPrompt, string started)
     {
         // 询问 sudo 前回读实际终端状态。即使 raw 模式也拒绝控制字符，
         // 因为 sudo/PAM 读密码时可能临时修改终端模式。
@@ -35,7 +72,7 @@ internal static class SudoCommandExecutor
     }
 
     internal static async Task<SudoExecutionResult> ExecuteAsync(SshConnection connection, string command,
-        SudoExecutionContext context, ISudoPrompt prompt, Action<SudoExecutionEvent> onEvent, CancellationToken cancellationToken)
+        SudoExecutionContext context, ISudoPrompt prompt, Func<SudoExecutionEvent, ValueTask> onEvent, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(command);
         ArgumentNullException.ThrowIfNull(prompt);
@@ -45,7 +82,7 @@ internal static class SudoCommandExecutor
         {
             return new(SudoExecutionOutcome.NotSupported);
         }
-        onEvent(new(SudoExecutionState.AwaitingApproval));
+        await onEvent(new(SudoExecutionState.AwaitingApproval)).ConfigureAwait(false);
         if (!await prompt.ConfirmAsync(context, command, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -76,7 +113,10 @@ internal static class SudoCommandExecutor
                 Command = BuildCommand(command, ready, passwordPrompt, started),
             }, authentication.Token).ConfigureAwait(false);
 
-            Decoder decoder = new UTF8Encoding(false, true).GetDecoder();
+            // 非法字节按 U+FFFD 替换，与普通执行一致：root 命令输出 GBK 日志、二进制或非 UTF-8 文件名很常见，
+            // 严格解码会把已在跑的命令判成 Unknown、还因关通道给它送去 SIGHUP。
+            // 三个标记全是 ASCII，按最大子段替换既造不出、也吞不掉它们，认证阶段同样不需要严格解码。
+            Decoder decoder = new UTF8Encoding(false, false).GetDecoder();
             string authenticationText = string.Empty;
             bool echoConfirmed = false;
             int attempts = 0;
@@ -121,7 +161,7 @@ internal static class SudoCommandExecutor
                 {
                     if (text.Length > 0)
                     {
-                        onEvent(new(Text: text));
+                        await onEvent(new(Text: text)).ConfigureAwait(false);
                         chunks++;
                     }
                     continue;
@@ -145,15 +185,17 @@ internal static class SudoCommandExecutor
                 if (start >= 0)
                 {
                     running = true; // 不可逆：启动后的输出永远不能重新打开认证入口。
+                    // 先报 Running 再做别的等待：其后撞上死线时，调用方必须知道 root 命令可能已经在跑
+                    // （记 Unknown），不能当成没启动（TimedOut）去重试一遍。
+                    await onEvent(new(SudoExecutionState.Running)).ConfigureAwait(false);
                     authentication.CancelAfter(Timeout.InfiniteTimeSpan);
                     await passwordLifetime.CancelAsync().ConfigureAwait(false);
                     await shell.CompleteStandardInputAsync(cancellationToken).ConfigureAwait(false);
-                    onEvent(new(SudoExecutionState.Running));
                     string tail = authenticationText[(start + started.Length)..];
                     authenticationText = string.Empty;
                     if (tail.Length > 0)
                     {
-                        onEvent(new(Text: tail));
+                        await onEvent(new(Text: tail)).ConfigureAwait(false);
                         chunks++;
                     }
                     continue;
@@ -166,7 +208,7 @@ internal static class SudoCommandExecutor
                         return new(SudoExecutionOutcome.AuthenticationFailed);
                     }
                     authenticationText = authenticationText[(request + passwordPrompt.Length)..];
-                    onEvent(new(SudoExecutionState.AwaitingAuthentication));
+                    await onEvent(new(SudoExecutionState.AwaitingAuthentication)).ConfigureAwait(false);
                     pendingPassword = prompt.RequestPasswordAsync(context, command, attempts, passwordLifetime.Token);
                 }
             }
@@ -179,7 +221,7 @@ internal static class SudoCommandExecutor
         {
             return new(SudoExecutionOutcome.NotSupported);
         }
-        catch (Exception ex) when (ex is SshException or DecoderFallbackException or ObjectDisposedException)
+        catch (Exception ex) when (ex is SshException or ObjectDisposedException)
         {
             return new(running ? SudoExecutionOutcome.Unknown : SudoExecutionOutcome.NotSupported);
         }
