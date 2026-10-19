@@ -680,7 +680,8 @@ public sealed class GistSyncService(
                             incoming.Password = existing.Password;
                             incoming.PrivateKeyPassphrase ??= existing.PrivateKeyPassphrase;
                         }
-                        await sessionRepository.SaveSessionAsync(incoming).ConfigureAwait(false);
+                        // 整条覆盖:远端那份的目录收藏也要带过来(SaveSessionAsync 会保留本机的收藏)。
+                        await sessionRepository.ReplaceSessionAsync(incoming).ConfigureAwait(false);
                     }
                 }
 

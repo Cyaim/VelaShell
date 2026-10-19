@@ -58,13 +58,13 @@ public sealed class RemoteDirectoryBookmark
 
     /// <summary>
     /// 规范化远程 POSIX 路径:统一根目录、重复分隔符、<c>.</c> 与 <c>..</c>。
+    /// 首尾空格原样保留:POSIX 目录名可以以空格开头或结尾,修剪掉就指向了另一个目录。
     /// </summary>
     public static string NormalizeRemotePath(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        string value = path.Trim();
         var segments = new List<string>();
-        foreach (string segment in value.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        foreach (string segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
             switch (segment)
             {

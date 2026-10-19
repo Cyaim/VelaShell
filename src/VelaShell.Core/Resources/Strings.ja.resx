@@ -7097,6 +7097,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Bookmark_InvalidName" xml:space="preserve"><value>1～200文字のブックマーク名を入力してください。</value></data>
   <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>有効なローカルディレクトリパスを入力してください。</value></data>
   <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>有効なリモートディレクトリパスを入力してください。</value></data>
+  <data name="Bookmark_HomeUnavailable" xml:space="preserve"><value>「~」を展開できません。リモートのホームディレクトリが不明です。絶対パスを入力してください。</value></data>
   <data name="Bookmark_PathTooLong" xml:space="preserve"><value>ローカルまたはリモートのパスが長すぎます。</value></data>
   <data name="Sudo_Title" xml:space="preserve"><value>root としてコマンドを実行</value></data>
   <data name="Sudo_Source" xml:space="preserve"><value>要求元プラグイン: {0}</value></data>

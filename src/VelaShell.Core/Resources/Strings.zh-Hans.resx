@@ -7572,6 +7572,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Bookmark_InvalidName" xml:space="preserve"><value>请输入 1–200 个字符的收藏名称。</value></data>
   <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>请输入有效的本地目录路径。</value></data>
   <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>请输入有效的远程目录路径。</value></data>
+  <data name="Bookmark_HomeUnavailable" xml:space="preserve"><value>无法展开“~”：远程家目录未知，请输入绝对路径。</value></data>
   <data name="Bookmark_PathTooLong" xml:space="preserve"><value>本地或远程路径过长。</value></data>
   <data name="Sudo_Title" xml:space="preserve"><value>以 root 身份执行命令</value></data>
   <data name="Sudo_Source" xml:space="preserve"><value>来源插件：{0}</value></data>

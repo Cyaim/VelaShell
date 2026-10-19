@@ -18,7 +18,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     private readonly CancellationTokenSource _lifetime = new();
     private Task? _closeTask;
     private readonly Lock _closeSync = new();
-    private readonly Func<SessionProfile, Task<bool>>? _persistProfileAsync;
+    private readonly Func<Guid, Func<List<RemoteDirectoryBookmark>, bool>, Task<List<RemoteDirectoryBookmark>?>>? _updateBookmarksAsync;
     private readonly SemaphoreSlim _bookmarkGate = new(1, 1);
 
     /// <summary>初始化 SFTP 文档视图模型,并开始加载本地/远程文件树。</summary>
@@ -33,7 +33,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     /// 是两个各自 new 出来的 <see cref="FileBrowserViewModel" />,宿主回调不会自动继承——
     /// 漏传这一个会让右键「使用默认编辑器打开」误报“未配置”(明明已配置)。
     /// </param>
-    /// <param name="persistProfileAsync">按连接配置的持久化回调;临时连接可不提供。</param>
+    /// <param name="updateBookmarksAsync">目录收藏的落盘回调,见另一个构造函数的同名参数。</param>
     public SftpDocumentViewModel(
         SessionProfile profile,
         SshSession session,
@@ -42,7 +42,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         TransferOptions transferOptions,
         FileTransferViewModel? transferSink = null,
         Func<Task<string?>>? getDefaultEditorPath = null,
-        Func<SessionProfile, Task<bool>>? persistProfileAsync = null)
+        Func<Guid, Func<List<RemoteDirectoryBookmark>, bool>, Task<List<RemoteDirectoryBookmark>?>>? updateBookmarksAsync = null)
         : this(profile,
                (session ?? throw new ArgumentNullException(nameof(session))).SessionId,
                (workflow ?? throw new ArgumentNullException(nameof(workflow))).DisconnectAsync,
@@ -50,7 +50,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
                transferOptions,
                transferSink,
                getDefaultEditorPath,
-               persistProfileAsync)
+               updateBookmarksAsync)
     {
         Session = session;
         // 标签页状态灯读的是 Status,而它的真值住在 SshSession 上 —— 转发一次属性变更,
@@ -71,7 +71,11 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     /// <param name="transferOptions">设置 → 文件传输 的选项快照。</param>
     /// <param name="transferSink">承载本文档所发起传输的浮动传输组件;为 null 时不上报进度。</param>
     /// <param name="getDefaultEditorPath">解析「默认编辑器」的回调。</param>
-    /// <param name="persistProfileAsync">按连接配置的持久化回调;临时连接可不提供。</param>
+    /// <param name="updateBookmarksAsync">
+    /// 目录收藏的落盘回调:按配置 id 在库里最新的那份收藏上执行修改(返回 false 不写),交回改后的列表;
+    /// 配置没保存过时交回 null。只改收藏这一项 —— 本文档手里的配置可能早已过时,不能整条写回。
+    /// 临时连接可不提供。
+    /// </param>
     public SftpDocumentViewModel(
         SessionProfile profile,
         Guid sessionId,
@@ -80,10 +84,10 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         TransferOptions transferOptions,
         FileTransferViewModel? transferSink = null,
         Func<Task<string?>>? getDefaultEditorPath = null,
-        Func<SessionProfile, Task<bool>>? persistProfileAsync = null)
+        Func<Guid, Func<List<RemoteDirectoryBookmark>, bool>, Task<List<RemoteDirectoryBookmark>?>>? updateBookmarksAsync = null)
     {
         Profile = profile ?? throw new ArgumentNullException(nameof(profile));
-        _persistProfileAsync = persistProfileAsync;
+        _updateBookmarksAsync = updateBookmarksAsync;
         Profile.DirectoryBookmarks ??= [];
         RebuildBookmarks();
         _disconnectAsync = disconnectAsync ?? throw new ArgumentNullException(nameof(disconnectAsync));
@@ -113,10 +117,10 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         LocalFiles.ConfirmDelete = message => ConfirmLocalDelete?.Invoke(message) ?? Task.FromResult(false);
         CompareDirectoriesCommand = ReactiveCommand.CreateFromTask(CompareDirectoriesAsync);
         OpenSyncCommand = ReactiveCommand.CreateFromTask(OpenSyncAsync);
-        AddBookmarkCommand = ReactiveCommand.CreateFromTask(AddBookmarkAsync);
+        AddBookmarkCommand = ReactiveCommand.CreateFromTask(() => AddBookmarkAsync());
         ApplyBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(ApplyBookmarkAsync);
-        EditBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(EditBookmarkAsync);
-        DeleteBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(DeleteBookmarkAsync);
+        EditBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(item => EditBookmarkAsync(item));
+        DeleteBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(item => DeleteBookmarkAsync(item));
         LocalFiles.PropertyChanged += OnPanePropertyChanged;
         RemoteFiles.PropertyChanged += OnPanePropertyChanged;
         InitialLoadTask = LoadAsync();
@@ -146,7 +150,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     /// <summary>是否至少有一条收藏。</summary>
     public bool HasBookmarks => Bookmarks.Count > 0;
 
-    /// <summary>收藏操作失败时显示在文档工具条上的错误。</summary>
+    /// <summary>收藏操作失败时的错误;文档工具条与收藏管理窗口都显示它。</summary>
     public string? BookmarkErrorMessage
     {
         get;
@@ -161,6 +165,9 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
 
     /// <summary>由视图确认收藏删除。</summary>
     public Func<string, Task<bool>>? ConfirmBookmarkDelete { get; set; }
+
+    /// <summary>文档分离(关闭)时触发:收藏管理窗口据此跟着关掉,不留一个对着已关文档的窗口。</summary>
+    public event EventHandler? Detached;
 
     /// <summary>上次「比较目录」的结论;任一栏换了目录就清掉,免得它描述的已经不是眼前这两个目录。</summary>
     public string? CompareSummary
@@ -327,9 +334,16 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     }
 
     /// <summary>打开新增收藏编辑器并保存用户确认的结果。</summary>
-    public async Task AddBookmarkAsync()
+    public Task AddBookmarkAsync() => AddBookmarkAsync(EditBookmarkDialog);
+
+    /// <summary>
+    /// 用指定的编辑器新增收藏。收藏管理窗口传它自己的编辑器:<see cref="EditBookmarkDialog" /> 挂在文档视图上,
+    /// 文档不是当前标签时那个视图已经离开窗口树,弹不出框,操作就会悄无声息地什么也不做。
+    /// </summary>
+    /// <param name="editor">收藏编辑器,取消时返回 null;为 null 时什么也不做。</param>
+    public async Task AddBookmarkAsync(Func<RemoteDirectoryBookmark, Task<RemoteDirectoryBookmark?>>? editor)
     {
-        if (EditBookmarkDialog is null)
+        if (editor is null)
         {
             return;
         }
@@ -345,7 +359,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
                 LocalPath = LocalFiles.CurrentPath,
                 RemotePath = RemoteFiles.CurrentPath,
             };
-            RemoteDirectoryBookmark? edited = await EditBookmarkDialog(seed);
+            RemoteDirectoryBookmark? edited = await editor(seed);
             if (edited is not null)
             {
                 await AddOrUpdateBookmarkAsync(edited, existingId: null);
@@ -363,12 +377,17 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     /// <summary>同时导航两栏到一条收藏;两侧失败互不回滚。</summary>
     public async Task ApplyBookmarkAsync(DirectoryBookmarkViewModel? item)
     {
-        if (item is null || !TryNormalizeBookmark(item.Snapshot, out RemoteDirectoryBookmark bookmark))
+        if (item is null)
         {
             return;
         }
 
         BookmarkErrorMessage = null;
+        if (await NormalizeBookmarkAsync(item.Snapshot) is not { } bookmark)
+        {
+            return;
+        }
+
         try
         {
             await Task.WhenAll(
@@ -387,9 +406,15 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     }
 
     /// <summary>打开编辑器,成功后替换原收藏并持久化。</summary>
-    public async Task EditBookmarkAsync(DirectoryBookmarkViewModel? item)
+    public Task EditBookmarkAsync(DirectoryBookmarkViewModel? item) => EditBookmarkAsync(item, EditBookmarkDialog);
+
+    /// <summary>用指定的编辑器编辑收藏(收藏管理窗口用,理由同 <see cref="AddBookmarkAsync()" /> 的另一个重载)。</summary>
+    /// <param name="item">要编辑的收藏。</param>
+    /// <param name="editor">收藏编辑器,取消时返回 null;为 null 时什么也不做。</param>
+    public async Task EditBookmarkAsync(
+        DirectoryBookmarkViewModel? item, Func<RemoteDirectoryBookmark, Task<RemoteDirectoryBookmark?>>? editor)
     {
-        if (item is null || EditBookmarkDialog is null)
+        if (item is null || editor is null)
         {
             return;
         }
@@ -398,7 +423,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         try
         {
             BookmarkErrorMessage = null;
-            RemoteDirectoryBookmark? edited = await EditBookmarkDialog(item.Snapshot);
+            RemoteDirectoryBookmark? edited = await editor(item.Snapshot);
             if (edited is not null)
             {
                 await AddOrUpdateBookmarkAsync(edited, item.Id);
@@ -414,9 +439,14 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     }
 
     /// <summary>确认后删除收藏;路径本身不会被删除。</summary>
-    public async Task DeleteBookmarkAsync(DirectoryBookmarkViewModel? item)
+    public Task DeleteBookmarkAsync(DirectoryBookmarkViewModel? item) => DeleteBookmarkAsync(item, ConfirmBookmarkDelete);
+
+    /// <summary>用指定的确认框删除收藏(收藏管理窗口用,理由同 <see cref="AddBookmarkAsync()" /> 的另一个重载)。</summary>
+    /// <param name="item">要删除的收藏。</param>
+    /// <param name="confirm">删除确认;为 null 时什么也不做。</param>
+    public async Task DeleteBookmarkAsync(DirectoryBookmarkViewModel? item, Func<string, Task<bool>>? confirm)
     {
-        if (item is null || ConfirmBookmarkDelete is null)
+        if (item is null || confirm is null)
         {
             return;
         }
@@ -425,19 +455,17 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         try
         {
             BookmarkErrorMessage = null;
-            if (!await ConfirmBookmarkDelete(item.Name))
+            if (!await confirm(item.Name))
             {
                 return;
             }
 
-            List<RemoteDirectoryBookmark> before = SnapshotBookmarks();
-            Profile.DirectoryBookmarks.RemoveAll(bookmark => bookmark.Id == item.Id);
-            RebuildBookmarks();
-            if (!await PersistBookmarksAsync())
+            Guid id = item.Id;
+            await SaveBookmarksAsync(bookmarks =>
             {
-                RestoreBookmarks(before);
-                BookmarkErrorMessage = Strings.Get("Bookmark_SaveFailed");
-            }
+                bookmarks.RemoveAll(bookmark => bookmark.Id == id);
+                return null;
+            });
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
@@ -450,55 +478,47 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
 
     private async Task AddOrUpdateBookmarkAsync(RemoteDirectoryBookmark input, Guid? existingId)
     {
-        if (!TryNormalizeBookmark(input, out RemoteDirectoryBookmark normalized))
+        if (await NormalizeBookmarkAsync(input) is not { } normalized)
         {
             return;
         }
-
-        DirectoryBookmarkViewModel? duplicate = Bookmarks.FirstOrDefault(item =>
-            item.Id != existingId
-            && PathsEqual(item.LocalPath, normalized.LocalPath)
-            && string.Equals(item.RemotePath, normalized.RemotePath, StringComparison.Ordinal));
-        if (duplicate is not null)
-        {
-            BookmarkErrorMessage = Strings.Get("Bookmark_Duplicate");
-            return;
-        }
-
-        List<RemoteDirectoryBookmark> before = SnapshotBookmarks();
         if (existingId is { } id)
         {
-            RemoteDirectoryBookmark? existing = Profile.DirectoryBookmarks.FirstOrDefault(bookmark => bookmark.Id == id);
-            if (existing is null)
-            {
-                BookmarkErrorMessage = Strings.Get("Bookmark_NotFound");
-                return;
-            }
             normalized.Id = id;
-            int index = Profile.DirectoryBookmarks.IndexOf(existing);
-            Profile.DirectoryBookmarks[index] = normalized;
-        }
-        else
-        {
-            Profile.DirectoryBookmarks.Add(normalized);
         }
 
-        RebuildBookmarks();
-        if (!await PersistBookmarksAsync())
+        await SaveBookmarksAsync(bookmarks =>
         {
-            RestoreBookmarks(before);
-            BookmarkErrorMessage = Strings.Get("Bookmark_SaveFailed");
-        }
+            // 查重与找原条目都对着库里最新的那份做:本文档的列表可能早就不是最新的了。
+            if (bookmarks.Exists(bookmark => bookmark.Id != existingId
+                    && PathsEqual(bookmark.LocalPath, normalized.LocalPath)
+                    && string.Equals(bookmark.RemotePath, normalized.RemotePath, StringComparison.Ordinal)))
+            {
+                return "Bookmark_Duplicate";
+            }
+            if (existingId is null)
+            {
+                bookmarks.Add(normalized.Clone());
+                return null;
+            }
+            int index = bookmarks.FindIndex(bookmark => bookmark.Id == existingId);
+            if (index < 0)
+            {
+                return "Bookmark_NotFound";
+            }
+            bookmarks[index] = normalized.Clone();
+            return null;
+        });
     }
 
-    private bool TryNormalizeBookmark(RemoteDirectoryBookmark input, out RemoteDirectoryBookmark normalized)
+    /// <summary>规整一条收藏;不合法时写好 <see cref="BookmarkErrorMessage" /> 并返回 null。</summary>
+    private async Task<RemoteDirectoryBookmark?> NormalizeBookmarkAsync(RemoteDirectoryBookmark input)
     {
-        normalized = new RemoteDirectoryBookmark();
         string name = input.Name.Trim();
         if (name.Length is 0 or > RemoteDirectoryBookmark.MaxNameLength)
         {
             BookmarkErrorMessage = Strings.Get("Bookmark_InvalidName");
-            return false;
+            return null;
         }
 
         string? localPath;
@@ -508,76 +528,144 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
             if (localPath is null)
             {
                 BookmarkErrorMessage = Strings.Get("Bookmark_InvalidLocalPath");
-                return false;
+                return null;
             }
             localPath = RemoteDirectoryBookmark.NormalizeLocalPath(localPath);
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
         {
             BookmarkErrorMessage = Strings.Get("Bookmark_InvalidLocalPath");
-            return false;
+            return null;
         }
 
-        string? remotePath = RemotePathInput.Normalize(input.RemotePath, RemoteFiles.CurrentPath, homePath: null);
+        (string? remotePath, string? remoteError) = await ResolveRemoteBookmarkPathAsync(input.RemotePath);
         if (remotePath is null)
         {
-            BookmarkErrorMessage = Strings.Get("Bookmark_InvalidRemotePath");
-            return false;
-        }
-
-        try
-        {
-            remotePath = RemoteDirectoryBookmark.NormalizeRemotePath(remotePath);
-        }
-        catch (ArgumentException)
-        {
-            BookmarkErrorMessage = Strings.Get("Bookmark_InvalidRemotePath");
-            return false;
+            BookmarkErrorMessage = Strings.Get(remoteError ?? "Bookmark_InvalidRemotePath");
+            return null;
         }
 
         if (localPath.Length > RemoteDirectoryBookmark.MaxPathLength
             || remotePath.Length > RemoteDirectoryBookmark.MaxPathLength)
         {
             BookmarkErrorMessage = Strings.Get("Bookmark_PathTooLong");
-            return false;
+            return null;
         }
 
-        normalized = new RemoteDirectoryBookmark
+        return new RemoteDirectoryBookmark
         {
             Id = input.Id == Guid.Empty ? Guid.NewGuid() : input.Id,
             Name = name,
             LocalPath = localPath,
             RemotePath = remotePath,
         };
-        return true;
     }
 
-    private async Task<bool> PersistBookmarksAsync()
+    /// <summary>
+    /// 远程收藏路径:相对路径按远程栏当前目录解析,<c>~</c> 开头的按远程家目录展开。
+    /// 不 Trim —— 首尾的空格可以是目录名的一部分,原样收藏当前目录时尤其不能改它。
+    /// </summary>
+    /// <returns>规整后的绝对路径;不合法时路径为 null,并给出错误文案的键。</returns>
+    private async Task<(string? Path, string? Error)> ResolveRemoteBookmarkPathAsync(string? input)
     {
-        if (_persistProfileAsync is null)
+        if (string.IsNullOrWhiteSpace(input))
         {
-            // 临时连接没有持久化边界,但本次文档内的修改仍然有效。
-            return true;
+            return (null, "Bookmark_InvalidRemotePath");
         }
 
+        string path = input;
+        if (path[0] == '~')
+        {
+            // 收藏是要存下来的:展开不了就拒收。原样当相对路径拼上去,存下的是「当前目录/~/logs」,错得悄无声息。
+            if (await RemoteFiles.ExpandHomeAsync(path) is not { } expanded)
+            {
+                return (null, "Bookmark_HomeUnavailable");
+            }
+            path = expanded;
+        }
+        else if (path[0] != '/')
+        {
+            path = RemoteFiles.CurrentPath.TrimEnd('/') + "/" + path;
+        }
+        return (RemoteDirectoryBookmark.NormalizeRemotePath(path), null);
+    }
+
+    /// <summary>
+    /// 落盘一次收藏修改:在库里<b>最新</b>的那份收藏上重做这次修改,而不是把本文档手里的整条配置写回去 ——
+    /// 那份配置可能早就过时了(编辑框改过端口、另一个文档加过收藏),整条写回会把别处的改动悄悄回滚。
+    /// 改成了才换掉本文档的列表;落盘失败(不论哪种异常)时列表原样不动,界面上不会留下一条没存上的收藏。
+    /// </summary>
+    /// <param name="change">对收藏列表的修改,返回错误文案的键,null 表示改成了。可能在后台线程上执行,不许碰界面状态。</param>
+    private async Task SaveBookmarksAsync(Func<List<RemoteDirectoryBookmark>, string?> change)
+    {
+        string? error = null;
+        List<RemoteDirectoryBookmark>? saved;
         try
         {
-            return await _persistProfileAsync(Profile);
+            saved = _updateBookmarksAsync is null
+                ? null
+                : await _updateBookmarksAsync(Profile.Id, bookmarks => (error = change(bookmarks)) is null);
         }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
+        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
         {
-            return false;
+            BookmarkErrorMessage = Strings.Get("Bookmark_SaveFailed");
+            return;
+        }
+
+        if (saved is null)
+        {
+            // 临时连接(「最近连接」重建的配置)没有持久化边界:只改本文档内的那份,本次文档里照样有效。
+            List<RemoteDirectoryBookmark> local = SnapshotBookmarks();
+            error = change(local);
+            if (error is null)
+            {
+                Profile.DirectoryBookmarks = local;
+            }
+        }
+        else
+        {
+            // 改没改成都换成库里的那份:别处加的收藏这时一并显示出来。
+            Profile.DirectoryBookmarks = saved;
+        }
+        RebuildBookmarks();
+        if (error is not null)
+        {
+            BookmarkErrorMessage = Strings.Get(error);
+        }
+    }
+
+    /// <summary>
+    /// 打开文档时换成库里最新的收藏。传进来的配置可能是资源管理器缓存或登录框交回的副本,
+    /// 别的文档后来加的收藏它没有 —— 不刷新的话,明明存好了的收藏在这里看不见。
+    /// </summary>
+    private async Task RefreshBookmarksAsync()
+    {
+        if (_updateBookmarksAsync is null)
+        {
+            return;
+        }
+
+        await _bookmarkGate.WaitAsync(_lifetime.Token);
+        try
+        {
+            if (await _updateBookmarksAsync(Profile.Id, static _ => false) is { } latest)
+            {
+                Profile.DirectoryBookmarks = latest;
+                RebuildBookmarks();
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // 读不到就先用手里那份,别拖累后面的目录加载;下一次收藏操作落盘时会换成库里的。
+        }
+        finally
+        {
+            _bookmarkGate.Release();
         }
     }
 
     private List<RemoteDirectoryBookmark> SnapshotBookmarks() =>
         [.. (Profile.DirectoryBookmarks ?? []).Select(static bookmark => bookmark.Clone())];
-
-    private void RestoreBookmarks(IEnumerable<RemoteDirectoryBookmark> bookmarks)
-    {
-        Profile.DirectoryBookmarks = [.. bookmarks.Select(static bookmark => bookmark.Clone())];
-        RebuildBookmarks();
-    }
 
     private void RebuildBookmarks()
     {
@@ -690,6 +778,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         _lifetime.Cancel();
         // 同步窗口与「保持远端最新」的监视都挂在这条连接上:连接要走了,它们得先停。
         ActiveSync?.Dispose();
+        Detached?.Invoke(this, EventArgs.Empty);
         LocalFiles.PropertyChanged -= OnPanePropertyChanged;
         RemoteFiles.PropertyChanged -= OnPanePropertyChanged;
         if (Session is { } session)
@@ -719,6 +808,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
 
     private async Task LoadAsync()
     {
+        await RefreshBookmarksAsync();
         await LocalFiles.LoadInitialAsync(_lifetime.Token);
         await RemoteFiles.LoadInitialAsync(_lifetime.Token);
     }

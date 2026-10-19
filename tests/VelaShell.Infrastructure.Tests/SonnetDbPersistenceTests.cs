@@ -141,6 +141,92 @@ public sealed class SonnetDbPersistenceTests : IDisposable
         Assert.IsNull((await repo.GetSessionAsync(bare.Id))!.Notes);
     }
 
+    /// <summary>
+    /// 整条写回(连接成功、置顶、拖动分组、编辑配置……)拿的多半是早先读出来的副本:
+    /// 它不带别处后来加的目录收藏,写回时收藏必须保留库里的那份,其余字段照传入的写。
+    /// </summary>
+    [TestMethod]
+    public async Task SessionRepository_SaveFromAStaleCopy_KeepsStoredBookmarks()
+    {
+        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var profile = new SessionProfile { Name = "files", Host = "10.0.0.1", Username = "ops", Password = "secret" };
+        await repo.SaveSessionAsync(profile);
+        SessionProfile staleCopy = profile.Clone();
+        await repo.UpdateDirectoryBookmarksAsync(profile.Id, bookmarks =>
+        {
+            bookmarks.Add(new RemoteDirectoryBookmark { Name = "logs", LocalPath = "/tmp/logs", RemotePath = "/var/log" });
+            return true;
+        });
+
+        staleCopy.IsPinned = true;
+        await repo.SaveSessionAsync(staleCopy);
+
+        SessionProfile stored = (await repo.GetSessionAsync(profile.Id))!;
+        Assert.IsTrue(stored.IsPinned, "整条写回的其余字段照常生效");
+        Assert.AreEqual("secret", stored.Password);
+        Assert.AreEqual("/var/log", stored.DirectoryBookmarks.Single().RemotePath, "旧副本里没有的收藏不能被它抹掉");
+    }
+
+    /// <summary>同步拉取、导入备份要连收藏一起覆盖:走 <see cref="ISessionRepository.ReplaceSessionAsync" />。</summary>
+    [TestMethod]
+    public async Task SessionRepository_Replace_OverwritesBookmarksToo()
+    {
+        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var profile = new SessionProfile
+        {
+            Name = "files",
+            Host = "10.0.0.1",
+            Username = "ops",
+            DirectoryBookmarks = [new RemoteDirectoryBookmark { Name = "old", LocalPath = "/tmp/old", RemotePath = "/old" }],
+        };
+        await repo.SaveSessionAsync(profile);
+        SessionProfile incoming = profile.Clone();
+        incoming.DirectoryBookmarks = [new RemoteDirectoryBookmark { Name = "new", LocalPath = "/tmp/new", RemotePath = "/new" }];
+
+        await repo.SaveSessionAsync(incoming);
+        Assert.AreEqual("/old", (await repo.GetSessionAsync(profile.Id))!.DirectoryBookmarks.Single().RemotePath);
+
+        await repo.ReplaceSessionAsync(incoming);
+        Assert.AreEqual("/new", (await repo.GetSessionAsync(profile.Id))!.DirectoryBookmarks.Single().RemotePath);
+    }
+
+    /// <summary>
+    /// 收藏修改只改收藏:在库里最新的那份上改,配置的其余字段(包括加密的密码)原样不动;
+    /// 回调返回 false 不写;配置不在库里时交回 null 且不调用回调。
+    /// </summary>
+    [TestMethod]
+    public async Task SessionRepository_UpdateBookmarks_ChangesOnlyTheBookmarks()
+    {
+        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var profile = new SessionProfile { Name = "files", Host = "10.0.0.1", Port = 2222, Username = "ops", Password = "secret" };
+        await repo.SaveSessionAsync(profile);
+        var bookmark = new RemoteDirectoryBookmark { Name = "logs", LocalPath = "/tmp/logs", RemotePath = "/var/log" };
+
+        List<RemoteDirectoryBookmark>? result = await repo.UpdateDirectoryBookmarksAsync(profile.Id, bookmarks =>
+        {
+            bookmarks.Add(bookmark);
+            return true;
+        });
+
+        Assert.AreEqual(bookmark.Id, result!.Single().Id);
+        Assert.AreNotSame(bookmark, result.Single(), "交回的是副本");
+        SessionProfile stored = (await repo.GetSessionAsync(profile.Id))!;
+        Assert.AreEqual(("files", 2222, "secret"), (stored.Name, stored.Port, stored.Password));
+        Assert.AreEqual("/var/log", stored.DirectoryBookmarks.Single().RemotePath);
+
+        List<RemoteDirectoryBookmark>? unchanged = await repo.UpdateDirectoryBookmarksAsync(profile.Id, bookmarks =>
+        {
+            bookmarks.Clear();
+            return false;
+        });
+        Assert.HasCount(1, unchanged!, "返回 false 不写回,交回的仍是库里那份");
+        Assert.HasCount(1, (await repo.GetSessionAsync(profile.Id))!.DirectoryBookmarks);
+
+        bool called = false;
+        Assert.IsNull(await repo.UpdateDirectoryBookmarksAsync(Guid.NewGuid(), _ => called = true));
+        Assert.IsFalse(called);
+    }
+
     [TestMethod]
     public async Task SessionRepository_LegacyDocumentWithoutConnectionType_DefaultsToSsh()
     {

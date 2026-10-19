@@ -13,6 +13,11 @@ public sealed class RemoteDirectoryBookmarkTests
         Assert.AreEqual("/", RemoteDirectoryBookmark.NormalizeRemotePath("../../"));
     }
 
+    /// <summary>POSIX 目录名可以以空格开头或结尾:修剪掉就指向了另一个目录。</summary>
+    [TestMethod]
+    public void RemotePathKeepsLeadingAndTrailingSpacesOfSegments() =>
+        Assert.AreEqual("/srv/ data /logs ", RemoteDirectoryBookmark.NormalizeRemotePath("/srv/ data /logs "));
+
     [TestMethod]
     public void LocalPathPreservesTheFileSystemRoot()
     {

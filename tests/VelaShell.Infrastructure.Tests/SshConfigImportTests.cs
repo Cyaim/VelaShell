@@ -471,6 +471,12 @@ public class SshConfigImportTests
             return Task.CompletedTask;
         }
 
+        public Task ReplaceSessionAsync(SessionProfile session) => SaveSessionAsync(session);
+
+        public Task<List<RemoteDirectoryBookmark>?> UpdateDirectoryBookmarksAsync(
+            Guid id, Func<List<RemoteDirectoryBookmark>, bool> update) =>
+            throw new NotSupportedException("导入不碰目录收藏。");
+
         public Task DeleteSessionAsync(Guid id)
         {
             _sessions.Remove(id);

@@ -7572,6 +7572,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Bookmark_InvalidName" xml:space="preserve"><value>請輸入 1–200 個字元的收藏名稱。</value></data>
   <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>請輸入有效的本機目錄路徑。</value></data>
   <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>請輸入有效的遠端目錄路徑。</value></data>
+  <data name="Bookmark_HomeUnavailable" xml:space="preserve"><value>無法展開「~」：遠端家目錄未知，請輸入絕對路徑。</value></data>
   <data name="Bookmark_PathTooLong" xml:space="preserve"><value>本機或遠端路徑過長。</value></data>
   <data name="Sudo_Title" xml:space="preserve"><value>以 root 身分執行命令</value></data>
   <data name="Sudo_Source" xml:space="preserve"><value>來源外掛：{0}</value></data>

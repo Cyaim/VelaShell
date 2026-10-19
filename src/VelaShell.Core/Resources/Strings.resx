@@ -7102,6 +7102,7 @@ Send anyway?</value>
   <data name="Bookmark_InvalidName" xml:space="preserve"><value>Enter a bookmark name of 1–200 characters.</value></data>
   <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>Enter a valid local directory path.</value></data>
   <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>Enter a valid remote directory path.</value></data>
+  <data name="Bookmark_HomeUnavailable" xml:space="preserve"><value>Could not expand “~”: the remote home directory is unknown. Enter an absolute path.</value></data>
   <data name="Bookmark_PathTooLong" xml:space="preserve"><value>The local or remote path is too long.</value></data>
   <data name="Sudo_Title" xml:space="preserve"><value>Run command as root</value></data>
   <data name="Sudo_Source" xml:space="preserve"><value>Requested by plugin: {0}</value></data>
