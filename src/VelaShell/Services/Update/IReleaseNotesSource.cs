@@ -7,5 +7,5 @@ public interface IReleaseNotesSource
     Task<ReleaseNotes?> GetLatestReleaseNotesAsync(CancellationToken cancellationToken = default);
 }
 
-/// <summary>一个 Release 的版本标签与完整更新正文。</summary>
-public sealed record ReleaseNotes(string Tag, string Body, DateTimeOffset? PublishedAt = null);
+/// <summary>一个 Release 的版本标签、完整更新正文与发布页地址(API 的 <c>html_url</c>)。</summary>
+public sealed record ReleaseNotes(string Tag, string Body, DateTimeOffset? PublishedAt = null, string? HtmlUrl = null);

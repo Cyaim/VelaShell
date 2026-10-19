@@ -2091,6 +2091,9 @@
   <data name="ReleaseNotes_LoadFailed" xml:space="preserve">
     <value>リリースノートを読み込めませんでした。ネットワーク接続を確認して再試行してください。</value>
   </data>
+  <data name="ReleaseNotes_RateLimited" xml:space="preserve">
+    <value>GitHub へのリクエストが一時的に制限されています。しばらくしてから再試行してください。</value>
+  </data>
   <data name="ReleaseNotes_Latest" xml:space="preserve">
     <value>最新リリース</value>
   </data>

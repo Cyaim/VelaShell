@@ -2235,6 +2235,9 @@ Paste anyway?</value>
   <data name="ReleaseNotes_LoadFailed" xml:space="preserve">
     <value>Could not load release notes. Check your network connection and try again.</value>
   </data>
+  <data name="ReleaseNotes_RateLimited" xml:space="preserve">
+    <value>GitHub is limiting requests right now. Please try again later.</value>
+  </data>
   <data name="ReleaseNotes_Latest" xml:space="preserve">
     <value>Latest release</value>
   </data>

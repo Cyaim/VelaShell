@@ -2344,6 +2344,9 @@
   <data name="ReleaseNotes_LoadFailed" xml:space="preserve">
     <value>无法加载更新说明，请检查网络连接后重试。</value>
   </data>
+  <data name="ReleaseNotes_RateLimited" xml:space="preserve">
+    <value>GitHub 暂时限制了请求次数，请稍后再试。</value>
+  </data>
   <data name="ReleaseNotes_Latest" xml:space="preserve">
     <value>最新发布</value>
   </data>
