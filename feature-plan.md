@@ -41,7 +41,7 @@
 
 | 部分 | 🔴 P0 | 🟠 P1 | 🟡 P2 | 🟢 P3 | 合计 |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| 一、欠账 | 4 | 2 | 15 | 16 | **37** |
+| 一、欠账 | 4 | 2 | 13 | 14 | **33** |
 | 二、路线图 | — | 3 | 17 | 32 | **52** |
 | 三、文档待同步 | — | — | — | — | **9** |
 
@@ -125,11 +125,7 @@
 
 | 状态 | 优先级 | 项 | 现状 | 要做什么 |
 | :---: | :---: | --- | --- | --- |
-| ⏳ | 🟡 P2 | **SSH 靶机镜像过旧，X11 用例本机一直红** | 本机的 `velashell-test-shells` 建于 Dockerfile 给 `vela-dash` 关 X11 之前，`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 因此一直失败（`plan.md` §144、§159、§167、§186 都记过） | 重建镜像；更稳的是让用例先认镜像版本（标签或探针），旧了就 `[SKIP]` 并说明要重建，而不是红 |
-| ⏳ | 🟡 P2 | **互操作靶机与 compose 的 `ssh-2fa` 抢 2224 端口** | 两者同时起着时 `KeyboardInteractiveIntegrationTests` 失败；`目的地约束对真agent_经转发逐跳放行` 因靶机连不到 compose 网络而一直跳过（§193） | 给互操作靶机换端口或让它加入同一个 compose 网络 |
-| ⏳ | 🟢 P3 | **临时目录的 ACL 让 `ssh-keygen` 拒读私钥** | 临时目录带着别的用户组时，`PrivateKeyWriteTests.真ssh_keygen读得出本库写的私钥` 失败（§197、§199、§201 都记过） | 用例自己创建一个只有当前用户可读的私有目录，不依赖 `%TEMP%` 的 ACL |
-| ⏳ | 🟢 P3 | **`test.runsettings` 的 `Workers=2` 拖慢本机** | 为 3 核 runner 定的并行度（§171）让本机 `Ssh.Tests` 从 10 秒变 60 秒；文件是 IDE 与 CI 共用的 | CI 单独传参（或单独一份 runsettings），本机恢复默认并行 |
-| ⏳ | 🟢 P3 | **Release 构建报 NETSDK1150** | 自包含的 `VelaShell` 引用了非自包含的 `VelaShell.PluginHost`（§178 看到、判为无关没处理） | 核对发布流水线是否受影响，再决定改引用方式还是显式压掉 |
+| ⏳ | 🟢 P3 | **靶机镜像跟不上 Dockerfile 时用例变红** | `velashell-test-shells` 建于 Dockerfile 给 `vela-dash` 关 X11 之前时，`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 一直失败（`plan.md` §144、§159、§167、§186）；2026-10-19 镜像已重建，这条用例通过（§221）。改了 `tests/fixtures` 下的 Dockerfile 而本机没重建，同样的事还会再来 | 让用例先认镜像版本（Dockerfile 打标签、用例经 SSH 读一个版本文件），旧了就 `[SKIP]` 并提示 `docker compose -f docker-compose.test.yml build`，而不是红 |
 | ⏳ | 🟢 P3 | **GitHub 的「Code scanning AI findings」一直失败** | GitHub 托管的 Copilot 任务，#562 之前就红、日志只有退出码，不在仓库的 CI 里（§166） | 在仓库设置里关掉或修好，别让 PR 上常驻一个红叉 |
 
 ---

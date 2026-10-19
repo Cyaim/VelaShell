@@ -33,8 +33,10 @@
          CA1707 保护的是**给使用者看的公开 API**,测试方法不是。 -->
     <NoWarn>$(NoWarn);CA1707</NoWarn>
     <!-- 本套件自己的运行设置(30s 超时 + 方法级并行),比全仓那份更严,理由见该文件注释。
+         CI 上(GitHub Actions 给每一步都设了 CI=true)换成 test.ci.runsettings:3 核 runner 上并行度压到 2,本机仍按核数跑。
          tests/Directory.Build.targets 只在这里没给时才套用全仓的 velashell.runsettings。 -->
-    <RunSettingsFilePath>$(MSBuildProjectDirectory)/test.runsettings</RunSettingsFilePath>
+    <RunSettingsFilePath Condition="'$(CI)' == 'true'">$(MSBuildProjectDirectory)/test.ci.runsettings</RunSettingsFilePath>
+    <RunSettingsFilePath Condition="'$(CI)' != 'true'">$(MSBuildProjectDirectory)/test.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>
