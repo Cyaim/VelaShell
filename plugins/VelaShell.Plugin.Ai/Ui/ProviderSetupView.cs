@@ -87,12 +87,15 @@ public sealed class ProviderSetupView : UserControl
     // 展开后绑定实际显示的实例;设置页可指定旧账号,目录初次展开默认最近一份。
     private string? _focusedProviderId;
     private bool _creatingProvider;
+    // 窗口从「新增供应商」入口打开:落库只让当前那一行转入编辑,换行或收起重开仍是新建。
+    private bool _newProviderEntry;
 
     /// <summary>正在跑的那次登录 —— 「取消」按的就是它,窗口关掉也要一并取消。</summary>
     private CancellationTokenSource? _login;
 
     /// <summary>
-    /// 新建供应商或 OAuth「添加另一个账号」的独立实例草稿;收起或落库后清除。
+    /// 克隆已有实例的独立草稿(新建供应商选了已有类型,或 OAuth「添加另一个账号」);
+    /// 该类型还没有实例时不算克隆。收起或落库后清除。
     /// </summary>
     private bool _addingAnother;
     private bool _addingKey;
@@ -119,7 +122,7 @@ public sealed class ProviderSetupView : UserControl
         _settings = settings;
         _loc = loc;
         _health = health;
-        _creatingProvider = focusCatalogId is null;
+        _newProviderEntry = _creatingProvider = focusCatalogId is null;
         _models = new ModelsDevCatalog(context);
         DetachedFromVisualTree += (_, _) => CancelPendingLogin();
 
@@ -172,9 +175,21 @@ public sealed class ProviderSetupView : UserControl
     /// <summary>复用目录窗口时回到新建入口,不继续编辑上一次选中的实例。</summary>
     public void StartNewProvider()
     {
+        // 登录正跑着或草稿还没提交:只把窗口提到前面,不掐登录、不丢草稿(与 Activate / StartAnother 同理);
+        // 之后再点别的行仍按新建处理
+        if (_login is not null || _addingAnother || _addingKey || _newProviderDraft is not null)
+        {
+            _newProviderEntry = true;
+            return;
+        }
+        ResetToNewProvider();
+    }
+
+    private void ResetToNewProvider()
+    {
         Collapse();
         _focusedProviderId = null;
-        _creatingProvider = true;
+        _newProviderEntry = _creatingProvider = true;
     }
 
     /// <summary>
@@ -198,7 +213,7 @@ public sealed class ProviderSetupView : UserControl
             {
                 continue;
             }
-            _creatingProvider = false;
+            _newProviderEntry = _creatingProvider = false;
             _focusedProviderId = _settings.Providers.Any(p => p.Id == providerId && p.CatalogId == catalogId)
                 ? providerId : null;
             Expand(row);
@@ -335,6 +350,8 @@ public sealed class ProviderSetupView : UserControl
             return;
         }
         _focusedProviderId = null;
+        // 落库只把那一行转入编辑;换到别的行(或收起重开)按窗口入口重新决定是否新建
+        _creatingProvider = _newProviderEntry;
         Expand(row, startAnother: _creatingProvider);
     }
 
@@ -367,7 +384,8 @@ public sealed class ProviderSetupView : UserControl
         // Collapse 先跑:收旧的行,顺带把上一次的起草态清干净 —— 所以这一轮要不要起草,
         // 由调用方在这之后重新定,别在 Collapse 之前设(设了也会被它擦掉)
         Collapse();
-        _addingAnother = startAnother;
+        // 只有真有实例可克隆才算「另一个」;该类型的第一份按首次添加走,不套克隆的签发地址核对
+        _addingAnother = startAnother && Existing(row.Entry) is not null;
         _openId = row.Entry.Id;
         row.Slot.Children.Add(BuildDetail(row));
         row.Slot.IsVisible = true;
@@ -921,7 +939,9 @@ public sealed class ProviderSetupView : UserControl
             return;
         }
         ProviderCatalogEntry entry = row.Entry;
-        if (_focusedProviderId is not null && Existing(entry) is null)
+        // 新建草稿交给各自的提交路径判断:Key 草稿自成一体(不带来源的 Key 与模型清单),来源被删也照样能加;
+        // OAuth 克隆带着来源的隐藏授权参数,来源已删时由 SignInAsync 拒绝
+        if (_newProviderDraft is null && _focusedProviderId is not null && Existing(entry) is null)
         {
             progress.Text = _loc["SetupSourceRemoved"];
             return;
@@ -1187,7 +1207,7 @@ public sealed class ProviderSetupView : UserControl
         {
             if (_creatingProvider)
             {
-                StartNewProvider();
+                ResetToNewProvider();
                 return;
             }
             // 放弃这次「再添加一个」,表单回到编辑最近一份
@@ -1323,7 +1343,7 @@ public sealed class ProviderSetupView : UserControl
     private async Task AddOrSaveKeyAsync(ProviderCatalogEntry entry)
     {
         AiProvider? existing = _newProviderDraft is null ? Existing(entry) : null;
-        if (_focusedProviderId is not null && Existing(entry) is null)
+        if (_newProviderDraft is null && _focusedProviderId is not null && existing is null)
         {
             _progress.Text = _loc["SetupSourceRemoved"];
             return;
