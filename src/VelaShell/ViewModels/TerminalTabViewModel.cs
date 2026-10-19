@@ -17,7 +17,7 @@ namespace VelaShell.ViewModels;
 /// 单个终端标签页的视图模型:持有终端模拟器与(可选的)SSH/本地传输,负责连接状态、
 /// 断开/重连、PTY 尺寸同步与命令补全的行跟踪。
 /// </summary>
-public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
+public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShellSession
 {
     /// <summary>「已复制」回执停留的时长;与连接配置页保持一致。</summary>
     private static readonly TimeSpan CopyFeedbackDuration = TimeSpan.FromSeconds(2);
@@ -218,6 +218,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         {
             return;
         }
+        Interlocked.Increment(ref _userInputs);
         Bridge?.SendRaw(data);
     }
 
@@ -235,6 +236,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
 
     private void OnUserInputForTracker(byte[] data)
     {
+        Interlocked.Increment(ref _userInputs);
         // 跟在终端后面走:编码是状态栏上可以随时热切的,而跟踪器解的正是终端刚编出去的
         // 那串字节。在这里同步而不是在切换处推一把,是因为切换点有好几个
         // (状态栏热切、设置热更新、重连重建标签),漏掉任何一个都会静默解成乱码。
@@ -425,6 +427,10 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
 
     private void OnEmulatorWorkingDirectoryChanged(string path)
     {
+        // 去重之前先记一笔:嵌套 shell 的补注(NestedShellFollower)要知道的是"回车之后有没有上报",
+        // 而不是"目录变没变" —— 装了钩子的 shell 在原地回车也会报。
+        Interlocked.Increment(ref _workingDirectoryReports);
+
         // bash/zsh/sh 那几段钩子挂在提示符上,每次回车都会发一遍(即使 cwd 没变;只有 fish 那段
         // 是挂在 PWD 变量上、真变了才响)。这里只在真正变化时对外播报,避免把用户在文件浏览器里
         // 的手动切换在每次回车时都拽回终端目录(仅当终端 cd 到新目录才同步)。
@@ -434,6 +440,62 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         }
         TerminalWorkingDirectory = path;
         WorkingDirectoryChanged?.Invoke(path);
+    }
+
+    // ---- 嵌套 shell 的目录跟随(#637,见 NestedShellFollower) ----
+
+    private long _workingDirectoryReports;
+    private long _userInputs;
+    private NestedShellFollower? _nestedShellFollower;
+
+    /// <summary>
+    /// 本连接注入过目录上报钩子之后由宿主调用:此后每次回车,前台若换成了一个还没装钩子的
+    /// 交互式 shell(<c>su - node</c>、<c>sudo -i</c>),就给它补注一次。断开 / 重连时自动作废,重连后由宿主重新挂上。
+    /// </summary>
+    /// <param name="probe">走本连接 exec 通道的前台探针(见 <see cref="ForegroundShellProbe.DetectAsync" />)。</param>
+    /// <param name="enabled">「上报终端工作目录」此刻是否开着。</param>
+    internal void EnableNestedShellFollow(Func<CancellationToken, Task<ForegroundShell?>> probe, Func<bool> enabled)
+    {
+        _nestedShellFollower?.Dispose();
+        _nestedShellFollower = new(this, probe, enabled);
+    }
+
+    /// <summary>停掉嵌套 shell 的补注(断开、重连、关标签,或这次连接没有注入钩子)。</summary>
+    internal void DisableNestedShellFollow()
+    {
+        _nestedShellFollower?.Dispose();
+        _nestedShellFollower = null;
+    }
+
+    private void OnBridgeLineSubmitted() => _nestedShellFollower?.OnLineSubmitted();
+
+    long INestedShellSession.WorkingDirectoryReports => Interlocked.Read(ref _workingDirectoryReports);
+
+    long INestedShellSession.UserInputs => Interlocked.Read(ref _userInputs);
+
+    // 没有桥 = 断开了:报"刚有输出",于是永远等不到静默,这一轮自然作废。
+    DateTime INestedShellSession.LastOutputUtc => Bridge?.LastOutputUtc ?? DateTime.UtcNow;
+
+    long INestedShellSession.InputGeneration => Bridge?.InputGeneration ?? -1;
+
+    bool INestedShellSession.IsAlternateScreen => TerminalEmulator is VelaTerminalControl { IsAlternateScreenActive: true };
+
+    /// <summary>
+    /// 补注 <paramref name="kind" /> 那一段钩子:与连接时的注入同一行(安装藏掉、末尾那次上报留着),
+    /// 摘历史前缀也按<b>这个</b> shell 的种类接,而不是登录 shell 的。
+    /// </summary>
+    bool INestedShellSession.TryInjectShellIntegration(RemoteShellKind kind, long expectedInputGeneration)
+    {
+        ShellIntegrationInjection injection = ShellIntegrationScript.Build(kind);
+        if (!IsConnected || Bridge is not { } bridge || injection.IsEmpty || injection.Sentinel.Length == 0)
+        {
+            return false;
+        }
+        System.Text.Encoding encoding = TerminalEmulator.SessionEncoding;
+        return bridge.TrySendInjection(
+            encoding.GetBytes(injection.Sentinel),
+            encoding.GetBytes(" " + injection.CommandLine + "\n"),
+            expectedInputGeneration);
     }
 
     /// <summary>当前挂载的 shell 数据流;未连接或断开后为 null。</summary>
@@ -644,9 +706,11 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         // 还在后台慢慢断,关不干净的会话只能等进程退出。
         // (#18「关闭标签卡住 UI」修的是同一件事,当时的手段是甩到线程池。)
         SshTerminalBridge? bridge = Bridge;
+        DisableNestedShellFollow();
         if (bridge is not null)
         {
             bridge.Closed -= OnBridgeClosed;
+            bridge.LineSubmitted -= OnBridgeLineSubmitted;
             Bridge = null;
             await bridge.DisposeAsync().ConfigureAwait(false);
         }
@@ -794,6 +858,13 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         // 注入行同样按会话字符集编码:用户配的「认证后执行命令」与初始目录里可能有中文,
         // 而抑制针 / 哨兵必须与真正送出去的那串字节同一套编码,否则回显匹配不上。
         Bridge.SendRaw(TerminalEmulator.SessionEncoding.GetBytes(" " + injection.CommandLine + "\n"));
+
+        // 用户配的命令(认证后命令 `sudo su -`、启动命令)可能把前台换成新 shell。它紧跟在钩子注入后面发出,
+        // 钩子自己的那次首报会落在它"之后",所以这一行要强制问一次,不能拿"随后有上报"当作没换人。
+        if (hidden is null)
+        {
+            _nestedShellFollower?.OnLineSubmitted(force: true);
+        }
     }
 
     /// <summary>启动桥接的 I/O 泵送(幂等;无桥或已启动时为空操作)。</summary>
@@ -833,6 +904,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
         ShellStream = shellStream;
         var bridge = new SshTerminalBridge(TerminalEmulator, shellStream);
         bridge.Closed += OnBridgeClosed;
+        bridge.LineSubmitted += OnBridgeLineSubmitted;
         ApplyAntiIdle(bridge);
         Bridge = bridge;
         ConnectionGeneration++;
@@ -886,6 +958,9 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable
             return;
         }
         bridge.Closed -= OnBridgeClosed;
+        bridge.LineSubmitted -= OnBridgeLineSubmitted;
+        // 换了连接,登录 shell 与它的进程号也换了:旧的补注记录与探针一并作废,重连后宿主重新挂。
+        DisableNestedShellFollow();
         Bridge = null;
         ConnectionGeneration++;
         ShellStream = null;

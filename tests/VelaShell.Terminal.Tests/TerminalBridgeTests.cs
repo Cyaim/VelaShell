@@ -566,4 +566,80 @@ public class TerminalBridgeTests
         Assert.IsNotNull(capturedError);
         Assert.AreSame(expectedException, capturedError);
     }
+
+    /// <summary>
+    /// 交给前台一行(回车、换行)的出站都报 <see cref="SshTerminalBridge.LineSubmitted" />:
+    /// 键入、程序注入、共享密码填充三条路一条不漏 —— 嵌套 shell 的补注(#637)就靠它知道"前台可能换人了"。
+    /// 单个字符不报。
+    /// </summary>
+    [TestMethod]
+    public async Task LineSubmitted_FiresForEveryOutboundLine()
+    {
+        _shellStream.CanRead.Returns(false);
+        _shellStream.CanWrite.Returns(true);
+        _shellStream.WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        await using var bridge = new SshTerminalBridge(_terminal, _shellStream);
+        int lines = 0;
+        bridge.LineSubmitted += () => lines++;
+
+        _terminal.UserInput += Raise.Event<Action<byte[]>>("s"u8.ToArray());
+        Assert.AreEqual(0, lines);
+        _terminal.UserInput += Raise.Event<Action<byte[]>>("\r"u8.ToArray());
+        Assert.AreEqual(1, lines);
+        bridge.SendRaw(" sudo su -\n"u8.ToArray());
+        Assert.AreEqual(2, lines);
+        Assert.IsTrue(bridge.TrySendRaw("secret\r"u8.ToArray(), bridge.InputGeneration));
+        Assert.AreEqual(3, lines);
+        await bridge.DrainWritesAsync();
+    }
+
+    /// <summary>
+    /// 会话中途的补注:决定"可以注"之后只要有任何输入入过队,就一个字节都不发 ——
+    /// 否则那一行会接在用户刚敲的半截命令后面。
+    /// </summary>
+    [TestMethod]
+    public async Task TrySendInjection_RefusesAfterAnyOtherInput()
+    {
+        _shellStream.CanRead.Returns(false);
+        _shellStream.CanWrite.Returns(true);
+        _shellStream.WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        await using var bridge = new SshTerminalBridge(_terminal, _shellStream);
+        long generation = bridge.InputGeneration;
+        _terminal.UserInput += Raise.Event<Action<byte[]>>("l"u8.ToArray());
+
+        Assert.IsFalse(bridge.TrySendInjection("\e]633;P;VelaShell=0badc0de\a"u8.ToArray(), " hook\n"u8.ToArray(), generation));
+
+        await bridge.DrainWritesAsync();
+        await _shellStream.Received(1).WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>补注本身照常写出、推进输入代次,但<b>不</b>报 <see cref="SshTerminalBridge.LineSubmitted" />:那是我们自己的一行,不是前台换人的信号。</summary>
+    [TestMethod]
+    public async Task TrySendInjection_WritesWithoutReportingALine()
+    {
+        _shellStream.CanRead.Returns(false);
+        _shellStream.CanWrite.Returns(true);
+        var written = new List<byte>();
+        _shellStream.WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                written.AddRange(call.ArgAt<byte[]>(0).AsSpan(call.ArgAt<int>(1), call.ArgAt<int>(2)).ToArray());
+                return Task.CompletedTask;
+            });
+        await using var bridge = new SshTerminalBridge(_terminal, _shellStream);
+        int lines = 0;
+        bridge.LineSubmitted += () => lines++;
+        long generation = bridge.InputGeneration;
+
+        bool sent = await Task.Run(() => bridge.TrySendInjection(
+            "\e]633;P;VelaShell=0badc0de\a"u8.ToArray(), " hook\n"u8.ToArray(), generation));
+
+        Assert.IsTrue(sent);
+        await bridge.DrainWritesAsync();
+        Assert.AreEqual(" hook\n", Encoding.UTF8.GetString(written.ToArray()));
+        Assert.AreEqual(generation + 1, bridge.InputGeneration);
+        Assert.AreEqual(0, lines);
+    }
 }

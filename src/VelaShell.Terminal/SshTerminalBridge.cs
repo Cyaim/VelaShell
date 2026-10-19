@@ -221,6 +221,19 @@ public class SshTerminalBridge : IAsyncDisposable
     public event Action<ShellCloseReason>? Closed;
 
     /// <summary>
+    /// 发往 PTY 的字节里带了回车或换行 —— 有一行交给了前台程序(用户敲回车、粘贴、同步输入、
+    /// 快捷命令、共享密码填充,一律算)。在入队的那条线程上触发,订阅者必须快速返回。
+    /// </summary>
+    /// <remarks>
+    /// 只有 <see cref="TrySendInjection" /> 不触发:那是我们自己补注的钩子,不是"前台换了"的信号。
+    /// 用途见 <c>NestedShellFollower</c>:回车之后前台可能换成了一个新 shell(<c>su -</c>、<c>sudo -i</c>)。
+    /// </remarks>
+    public event Action? LineSubmitted;
+
+    /// <summary>最后一次收到远端输出的时刻(UTC)。</summary>
+    public DateTime LastOutputUtc => new(Interlocked.Read(ref _lastOutputTicks), DateTimeKind.Utc);
+
+    /// <summary>
     /// 在输出流上剥除即将注入的命令回显(见 <see cref="EchoSuppressor" />)。
     /// 回显最多出现两次(内核规范模式 + readline 预输入重绘),窗口过后自动失效。
     /// 显示路径与旁路记录路径(<see cref="DataReceived" />)各装一份实例,理由见字段注释。
@@ -457,7 +470,45 @@ public class SshTerminalBridge : IAsyncDisposable
                 return false;
             }
             Interlocked.Increment(ref _inputGeneration);
+        }
+        RaiseIfLineSubmitted(data);
+        return true;
+    }
+
+    /// <summary>
+    /// 补注一行带哨兵的注入(见 <see cref="OpenInjectionWindow" />),但<b>只在</b>
+    /// <paramref name="expectedInputGeneration" /> 之后没有任何别的输入入队时才发;开窗口与入队在同一锁内完成。
+    /// </summary>
+    /// <remarks>
+    /// 给会话中途的补注用(<c>NestedShellFollower</c>):决定"可以注"到真的写出去之间隔着一次 exec 往返,
+    /// 这期间用户只要按过一个键,提示符那一行就不再是空的 —— 注入会接在他敲的半截命令后面。
+    /// 与 <see cref="TrySendRaw" /> 同一道闸;不触发 <see cref="LineSubmitted" />。
+    /// </remarks>
+    public bool TrySendInjection(byte[] sentinel, byte[] data, long expectedInputGeneration)
+    {
+        lock (_outboundGate)
+        {
+            if (_disposed || !_shellStream.CanWrite || _inputGeneration != expectedInputGeneration)
+            {
+                return false;
+            }
+            OpenInjectionWindow(sentinel);
+            _antiIdle.NoteActivity();
+            if (!_writeQueue.Writer.TryWrite(new(data, null)))
+            {
+                return false;
+            }
+            Interlocked.Increment(ref _inputGeneration);
             return true;
+        }
+    }
+
+    /// <summary>出站字节里有回车或换行就报一声 <see cref="LineSubmitted" />(在锁外触发)。</summary>
+    private void RaiseIfLineSubmitted(byte[] data)
+    {
+        if (LineSubmitted is { } handler && data.AsSpan().IndexOfAny((byte)'\r', (byte)'\n') >= 0)
+        {
+            handler();
         }
     }
 
@@ -918,11 +969,13 @@ public class SshTerminalBridge : IAsyncDisposable
         lock (_outboundGate)
         {
             _antiIdle.NoteActivity();
-            if (_writeQueue.Writer.TryWrite(new(data, null)))
+            if (!_writeQueue.Writer.TryWrite(new(data, null)))
             {
-                Interlocked.Increment(ref _inputGeneration);
+                return;
             }
+            Interlocked.Increment(ref _inputGeneration);
         }
+        RaiseIfLineSubmitted(data);
     }
 
     /// <summary>

@@ -3193,7 +3193,7 @@ Paste anyway?</value>
     <value>Report terminal working directory</value>
   </data>
   <data name="SetTerm_ReportWorkingDirectoryDesc" xml:space="preserve">
-    <value>Silently installs an OSC 7 hook in bash after connecting so the file browser can follow the terminal directory; turn off to inject nothing at all</value>
+    <value>Silently installs a directory-report hook after connecting (and again when su / sudo starts a new shell) so the file browser can follow the terminal directory; turn off to inject nothing at all</value>
   </data>
   <data name="SetTerm_ShellIntegration" xml:space="preserve">
     <value>Shell integration (command blocks)</value>

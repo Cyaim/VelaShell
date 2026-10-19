@@ -3302,7 +3302,7 @@
     <value>上报终端工作目录</value>
   </data>
   <data name="SetTerm_ReportWorkingDirectoryDesc" xml:space="preserve">
-    <value>连接后向 bash 静默安装 OSC 7 钩子,供文件浏览器「跟随终端目录」使用;关闭则不注入任何命令</value>
+    <value>连接后(以及之后 su / sudo 进入新 shell 时)静默安装目录上报钩子,供文件浏览器「跟随终端目录」使用;关闭则不注入任何命令</value>
   </data>
   <data name="SetTerm_ShellIntegration" xml:space="preserve">
     <value>Shell 集成(命令块)</value>
