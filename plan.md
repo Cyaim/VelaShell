@@ -1996,3 +1996,16 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **顺带**:`Picker_CancelWhileReading_DoesNotSendLateResult` 原先在窗口第一轮调度之前就喂提示,列表根本没弹,点选什么都没做,「迟到的密码没发出去」是空断言(§214 以为它跟着受益,其实没跑到那条路径)。补一轮调度,并断言弹层确实打开、读取确实发起。
 **验证**:新增 7 行提示识别用例(git/svn 引号对象含冒号、`Username for` 不认、尾随输入不认等)与 5 条视图用例(折行提示与陈旧折行标志、↑↓ 只挪高亮不读不发、Enter 填入不带回车且下一个 Enter 才提交、无高亮 Enter 直通终端、读取在途吞掉 Enter、点中已高亮行仍能填入)。逐项回退修复验证用例会失败:回退正则、回退逻辑行、去掉光标行兜底、去掉键位处理、去掉按下撤高亮,对应用例均失败。`SharedPasswordFill` 44 项通过;Debug 全解构建 0 警告 / 0 错误;宿主全量 2256 项通过 / 11 项因平台、发布或 shell 环境跳过;终端 551 项通过;`Doc_ListsEveryCatalogEntry` 指向改后的文档实际执行通过。未在真实 Linux 桌面上对 git 远端做人工验收。
 **文档**:同步 velashell-docs 中英文「交互与界面规格」§5.2.1 与「快捷键参考」,[velashell-docs PR #132](https://github.com/VelaShellLabs/velashell-docs/pull/132)。
+
+## ✅ 216. 2026-10-19 跟随终端目录:su / sudo 切进新 shell 后就不跟了(#637,用户反馈)
+
+**现象**:root 登录后「跟随终端目录」正常;`su - node` 之后在终端里怎么 `cd`,文件浏览器都不动;`exit` 回到 root 又恢复。`sudo -i`、`sudo su -`、直接敲 `zsh` 同样。
+**根因**:目录上报钩子只在连接时注入登录 shell 一次。新 shell 是一个全新的进程,函数与 `PROMPT_COMMAND` 都不继承(`su -` 连环境变量都清空,只留 `TERM`),于是不再上报。环境变量这条路走不通,只能在新 shell 的提示符前再注一次;难点是"再注"必须确定无疑 —— 往 PTY 里打字,打进的是前台此刻在读的程序,打进 `su` 的密码提示就成了口令。
+**改法**:
+- `ForegroundShellProbe`(Core):一条 exec 通道上的探针,不碰终端。Linux 读 `/proc`(只用 `read` 内建,只给前台组长 `tr` 一次命令行),macOS / BSD 退回 `ps`;整段包在 `sh -c '…'` 里,fish 登录 shell 也照样跑。登录 shell 靠进程树认:探针沿祖先往上,第一个**恰好**有一个带终端子进程的祖先(sshd 会话进程)的那个子进程;不靠 shell 自报 PID —— 那条上报谁都能在终端里伪造。前台组长是交互式 shell(按 `argv[0]` 认种类;带 `-c` 或脚本操作数的不算)就是它;不是,就看它的后代有没有落在另一个终端上 —— sudo 1.9.14 起默认 `use_pty`,root 的 shell 在新 pty 上,原终端前台是 sudo 自己,要沿过去接着认。认不出来一律当作没有。
+- `NestedShellFollower`(宿主):回车(桥上新的 `LineSubmitted`,键入、粘贴、同步输入、快捷命令、共享密码填充都算)之后等输出静默 0.4 秒;收到了上报就说明前台是装过钩子的 shell,不问。没有上报、不在备用屏幕、开关开着,才问一次前台;是没注过的交互式 shell 就按它的种类补注一次(摘历史前缀也按它的种类接)。写出去那一下走 `SshTerminalBridge.TrySendInjection`:从静默那一刻起有任何输入入过队就不发,开窗口与入队同一把锁。等待期间用户按了键、探针往返期间屏幕又动了或者又来了一行,都作废这一轮。每个 shell 进程只补一次。认证后命令(`sudo su -`)是我们自己发的、紧跟在钩子注入后面,它那一行强制问一次,不拿钩子自己的首报当"没换人"。
+- 宿主在注入登录 shell 的钩子之前挂上补注(`MainWindowViewModel.ArmNestedShellFollow`),不注钩子的连接不挂;断开 / 重连作废,开关在会话中途关掉也停手。设置页「上报终端工作目录」的说明改为如实描述(五份 resx)。
+- 测试靶子 `ssh-shells` 加装 `sudo`(vela-bash 免密)与 `busybox-suid`(Alpine 的 busybox 默认不带 setuid,普通用户敲 su 只会得到 "must be suid")。
+**不补的情形**:密码提示、跑着的脚本或命令、REPL 与 vim / less / top、`ssh` 到别的机器与 `docker exec`(那些目录不在 SFTP 看得到的这台机器上)、tmux / screen 里的 shell。代价是在没有上报的回车之后多一次 exec 往返:装了钩子的 bash / zsh / sh 每个提示符都上报,平时走不到;走到的是 REPL、长命令与 fish(它的钩子只在目录变化时报)。
+**验证**:探针先在 Debian 13(dash 作 `/bin/sh`、sudo `use_pty`)真机上跑过 `su - node`、`sudo -i`、`sudo su -` 后敲 `zsh`、`su node`、`ssh` 出去几种形态,判定用例直接取这些真实输出;`ForegroundShellProbeTests` 57 项、`NestedShellFollowerTests` 14 项、桥 3 项;Docker 端到端 `ShellIntegrationDockerTests` 新增 8 项(五种登录 shell 下认出自己、su 问密码时认不出、su 进去后认出并补注后跟随、sudo 经中转终端认出、卡在 `read` 的脚本不认),`NestedShellFollowDockerTests` 走宿主整条链路:只在终端里敲 `su - vela-zsh` 与密码,新 shell 的目录自动报上来,`cd`、`exit` 之后都照样跟 —— 去掉补注这条用例就停在"新 shell 的首报"上,即 #637 本身。全量:Core 1026 通过 / 16 跳过,Terminal 554,ShellIntegration 46(无跳过),宿主 2271 通过 / 11 跳过;构建 0 警告。
+**文档**:velashell-docs 中英文「交互与界面规格」§6 补上「跟随终端目录」一条(此前文档里没有),[velashell-docs PR #133](https://github.com/VelaShellLabs/velashell-docs/pull/133)。

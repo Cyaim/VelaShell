@@ -254,6 +254,13 @@ internal sealed class ShellIntegrationHarness : IAsyncDisposable
     public Task<RemoteShellKind> DetectShellKindAsync() =>
         RemoteShellProbe.DetectAsync(_client, string.Empty, CancellationToken.None);
 
+    /// <summary>
+    /// 走真探针问一句终端前台现在是谁(#637)—— 与宿主 <c>NestedShellFollower</c> 走的是同一条路:
+    /// 同一条连接上另开一个 exec 通道,终端里一个字符都看不见。
+    /// </summary>
+    public Task<ForegroundShell?> DetectForegroundShellAsync() =>
+        ForegroundShellProbe.DetectAsync(_client, CancellationToken.None);
+
     public async ValueTask DisposeAsync()
     {
         await _cts.CancelAsync();

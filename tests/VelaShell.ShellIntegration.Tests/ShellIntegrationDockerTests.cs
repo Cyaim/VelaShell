@@ -446,6 +446,111 @@ public sealed class ShellIntegrationDockerTests
         Assert.Contains("\e]7;file://", harness.Raw, "裸的那份要留给 tmux 自己记 pane 的 cwd");
     }
 
+    /// <summary>
+    /// 嵌套 shell 探针(#637)在每一种登录 shell 底下都跑得起来,并认得出登录 shell 自己。
+    /// </summary>
+    /// <remarks>
+    /// exec 通道里的命令由登录 shell 解析:fish 要原样交出 <c>sh -c '…'</c>,
+    /// dash / BusyBox ash 要扛得住 <c>${s##*)}</c> 这种剥括号的写法 —— 字符串断言拦不住"跑起来才炸"。
+    /// </remarks>
+    [TestMethod]
+    [DynamicData(nameof(Shells))]
+    [Timeout(60_000)]
+    public async Task NestedShellProbe_RecognisesTheLoginShell(string user, RemoteShellKind expected)
+    {
+        await using ShellIntegrationHarness harness = await ShellIntegrationHarness.ConnectAsync(user);
+        harness.WaitForOutputIdle();
+
+        ForegroundShell? shell = await harness.DetectForegroundShellAsync();
+
+        Assert.IsNotNull(shell, $"{user}:探针没认出前台");
+        Assert.IsTrue(shell.Value.IsLoginShell, $"{user}:前台应是登录 shell 自己");
+        Assert.AreEqual(expected, shell.Value.Kind);
+    }
+
+    /// <summary>
+    /// issue 的原样复现:登录 → <c>su - 别的用户</c> → 新 shell 没有钩子,跟随停了。
+    /// 探针要在密码提示时<b>认不出</b>(那里打字就成了口令)、进了新 shell 后认出它与它的种类;
+    /// 按那个种类补注之后新 shell 照常上报,<c>exit</c> 回来登录 shell 的钩子也还在。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task NestedShell_SuDash_IsFoundAndFollowedAfterInjection()
+    {
+        await using ShellIntegrationHarness harness = await ShellIntegrationHarness.ConnectAsync("vela-bash");
+        harness.WaitForOutputIdle();
+        await harness.InjectShellIntegrationAsync(RemoteShellKind.Bash);
+        harness.WaitForWorkingDirectory(HomeOf("vela-bash"));
+
+        await harness.TypeAsync("su - vela-zsh");
+        harness.WaitFor(() => harness.Visible.Contains("Password", StringComparison.Ordinal), "su 的密码提示");
+        harness.WaitForOutputIdle();
+        Assert.IsNull(await harness.DetectForegroundShellAsync(), "su 正在问密码 —— 往这里打字就成了口令");
+
+        await harness.TypeAsync(ShellIntegrationHarness.Password);
+        harness.WaitForOutputIdle();
+        ForegroundShell? nested = await harness.DetectForegroundShellAsync();
+        Assert.IsNotNull(nested, "su 进去之后没认出新 shell");
+        Assert.IsFalse(nested.Value.IsLoginShell);
+        Assert.AreEqual(RemoteShellKind.Zsh, nested.Value.Kind);
+
+        await harness.InjectShellIntegrationAsync(nested.Value.Kind);
+        harness.WaitForWorkingDirectory(HomeOf("vela-zsh"));
+        await harness.TypeAsync("cd /tmp");
+        harness.WaitForWorkingDirectory("/tmp");
+        AssertNoTrace(harness);
+
+        await harness.TypeAsync("exit");
+        harness.WaitForOutputIdle();
+        Assert.IsTrue((await harness.DetectForegroundShellAsync())?.IsLoginShell, "exit 之后前台应回到登录 shell");
+        await harness.TypeAsync("cd /etc");
+        harness.WaitForWorkingDirectory("/etc");
+    }
+
+    /// <summary>
+    /// <c>sudo -i</c>:sudo 默认 <c>use_pty</c>,root 的 shell 在<b>另一个</b> pty 上,本连接终端的前台是 sudo 自己。
+    /// 探针得沿 sudo 的后代跳到那个终端上去认;补注照样写本连接的 PTY,由 sudo 转进去。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task NestedShell_SudoWithUsePty_IsFoundThroughTheRelayTerminal()
+    {
+        await using ShellIntegrationHarness harness = await ShellIntegrationHarness.ConnectAsync("vela-bash");
+        harness.WaitForOutputIdle();
+        await harness.InjectShellIntegrationAsync(RemoteShellKind.Bash);
+        harness.WaitForWorkingDirectory(HomeOf("vela-bash"));
+
+        await harness.TypeAsync("sudo -i");
+        harness.WaitForOutputIdle();
+        ForegroundShell? nested = await harness.DetectForegroundShellAsync();
+        Assert.IsNotNull(nested, "sudo -i 之后没认出 root 的 shell");
+        Assert.IsFalse(nested.Value.IsLoginShell);
+        Assert.AreEqual(RemoteShellKind.PosixSh, nested.Value.Kind, "Alpine 上 root 的登录 shell 是 BusyBox ash");
+
+        await harness.InjectShellIntegrationAsync(nested.Value.Kind);
+        harness.WaitForWorkingDirectory("/root");
+        await harness.TypeAsync("cd /var");
+        harness.WaitForWorkingDirectory("/var");
+        AssertNoTrace(harness);
+    }
+
+    /// <summary>
+    /// 一个卡在 <c>read</c> 上的 bash 脚本同样是前台组长 —— 它带着脚本路径,不能被当成提示符前的 shell。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task NestedShell_ScriptWaitingForInput_IsNotTreatedAsAShell()
+    {
+        await using ShellIntegrationHarness harness = await ShellIntegrationHarness.ConnectAsync("vela-bash");
+        harness.WaitForOutputIdle();
+
+        await harness.TypeAsync("printf 'read x\\n' > /tmp/vela-read-$$.sh; bash /tmp/vela-read-$$.sh");
+        harness.WaitForOutputIdle();
+
+        Assert.IsNull(await harness.DetectForegroundShellAsync(), "在跑脚本的 bash 被当成了交互式 shell");
+        await harness.TypeAsync("answer");
+    }
+
     /// <summary>屏幕上不许有注入的任何痕迹:脚本正文、摘历史前缀、哨兵,一个都不许露。</summary>
     private static void AssertNoTrace(ShellIntegrationHarness harness)
     {

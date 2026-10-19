@@ -2644,6 +2644,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         // 探针结论先落到标签上:SendSilentCommand 靠它决定注入行接哪一段摘历史前缀
         // (zsh 有它自己的一段;bash 那段在 fish 里会让整行解析失败,见 ShellHistoryScrub.For)。
         terminalTab.RemoteShellKind = shellKind;
+        ArmNestedShellFollow(terminalTab, client, settings, shellKind);
         SendSessionInjections(terminalTab, settings, shellKind, profile);
 
         // 会话 Id 从现在起才存在(握手完成后)——活动标签订阅在它被赋值前已触发,
@@ -2780,6 +2781,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             tab.ResetReconnectAttempts();
             StartSessionLogging(tab, settings);
             tab.RemoteShellKind = shellKind; // 同 RunHandshakeAsync:注入前先落结论
+            ArmNestedShellFollow(tab, client, settings, shellKind);
             // 重连也要跑:配置里那条命令描述的是"每次登进这台机器要做什么"
             // (进 tmux、切目录、sudo),断线重连回来同样成立。
             SendSessionInjections(tab, settings, shellKind, tab.Profile);
@@ -3203,6 +3205,36 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 cancellationToken
             )
             : Task.FromResult(RemoteShellKind.Unknown);
+
+    /// <summary>
+    /// 这次连接会注入目录上报钩子时,顺带挂上嵌套 shell 的补注(#637,见 <see cref="NestedShellFollower" />):
+    /// 用户之后 <c>su - node</c>、<c>sudo -i</c> 进了新 shell,也照样跟随。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 必须挂在 <see cref="SendSessionInjections" /> <b>之前</b>:配置里的认证后命令(<c>sudo su -</c>)
+    /// 就在那一串注入里发出,挂晚了它那一行就没人看见。
+    /// </para>
+    /// <para>
+    /// 不注入钩子的连接(开关关着、探不出 shell 种类、Windows 对端)一律不挂 —— 登录 shell 都没装,
+    /// 谈不上"补"。开关在会话中途被关掉时也停手:<c>enabled</c> 每次动手前现读设置。
+    /// </para>
+    /// </remarks>
+    private void ArmNestedShellFollow(
+        TerminalTabViewModel tab,
+        ISshClientWrapper client,
+        AppSettings settings,
+        RemoteShellKind shellKind)
+    {
+        if (WorkingDirectoryScript(settings, shellKind).Length == 0)
+        {
+            tab.DisableNestedShellFollow();
+            return;
+        }
+        tab.EnableNestedShellFollow(
+            ct => ForegroundShellProbe.DetectAsync(client, ct),
+            () => (_latestSettings ?? settings).TerminalBehavior.ReportWorkingDirectory);
+    }
 
     /// <summary>注入前要等对端静默多久。</summary>
     private static readonly TimeSpan InjectionIdleWindow = TimeSpan.FromMilliseconds(300);
