@@ -844,6 +844,45 @@ public class SftpServiceTests
         }
     }
 
+    /// <summary>
+    /// 满格只报一次:确认阶段可能报两遍满格(最后一次写回调与 Flush 的定时采样),成功收尾也不再补一帧。
+    /// 插件桥把满格当「完成」,重复的满格就是重复的完成。
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Upload_FullProgressIsReportedOnce(bool streamed)
+    {
+        string localPath = Path.GetTempFileName();
+        await File.WriteAllBytesAsync(localPath, new byte[100]);
+        await using var source = new MemoryStream(new byte[100]);
+        var reports = new List<TransferProgress>();
+        const string remotePath = "/home/user/once.bin";
+        _sftpClient.UploadAsync(Arg.Any<Stream>(), remotePath, Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                Action<ulong> callback = call.Arg<Action<ulong>>();
+                callback(60);
+                callback(100);
+                callback(100);
+                return Task.CompletedTask;
+            });
+        try
+        {
+            var progress = new SynchronousProgress<TransferProgress>(reports.Add);
+            await (streamed
+                ? _sftpService.UploadStreamAsync(_sessionId, source, remotePath, 100, progress: progress)
+                : _sftpService.UploadFileAsync(_sessionId, localPath, remotePath, progress));
+
+            Assert.AreEqual(1, reports.Count(static p => p.BytesTransferred == 100));
+            Assert.AreEqual(100, reports[^1].Percentage);
+        }
+        finally
+        {
+            File.Delete(localPath);
+        }
+    }
+
     [TestMethod]
     public async Task Upload_FailureBeforeLastAck_DoesNotInvent100Percent()
     {

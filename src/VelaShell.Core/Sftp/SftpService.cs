@@ -104,24 +104,38 @@ public class SftpService : ISftpService
                 ? client.UploadAsync(input, remotePath, resumeOffset, onBytes, cancellationToken)
                 : client.UploadAsync(input, remotePath, onBytes, cancellationToken);
 
-    /// <summary>字节全部确认的那一拍绕过节流;任务成功仍由上传调用(含 fsync / CLOSE)决定。</summary>
-    private static Action<ulong>? UploadProgressCallback(TransferProgressThrottle reporter, long totalBytes)
+    /// <summary>
+    /// 上传的进度上报:字节全部确认的那一拍绕过节流;任务成功仍由上传调用(含 fsync / CLOSE)决定。
+    /// 满格只报一次:确认阶段报过了,成功收尾就不再补一帧;确认阶段里 Flush 的定时采样与最后一次写回调
+    /// 也可能各报一遍满格,只放第一帧 —— 把满格当「完成」看的下游(插件桥)不该收到好几次完成。
+    /// </summary>
+    private sealed class UploadProgress(TransferProgressThrottle reporter, long totalBytes)
     {
-        if (!reporter.IsEnabled)
+        private int _fullReported;
+
+        /// <summary>交给上传调用的确认字节回调;没有进度接收方时为 null。</summary>
+        public Action<ulong>? OnBytes => reporter.IsEnabled ? OnConfirmed : null;
+
+        /// <summary>上传成功后收尾。节流会丢弃最后一个时间片内的上报,确认阶段没报到满格的话进度条会停在 99%。</summary>
+        public void Complete()
         {
-            return null;
-        }
-        return bytes =>
-        {
-            if ((long)bytes == totalBytes)
+            if (Interlocked.Exchange(ref _fullReported, 1) == 0)
             {
-                reporter.ReportFinal((long)bytes);
+                reporter.ReportFinal(totalBytes);
             }
-            else
+        }
+
+        private void OnConfirmed(ulong bytes)
+        {
+            if ((long)bytes != totalBytes)
             {
                 reporter.Report((long)bytes);
             }
-        };
+            else if (Interlocked.Exchange(ref _fullReported, 1) == 0)
+            {
+                reporter.ReportFinal(totalBytes);
+            }
+        }
     }
 
     /// <summary>将本地文件上传到远端路径,可选限速与进度回报,支持断点续传(resumeOffset > 0 时追加上传)。</summary>
@@ -146,8 +160,8 @@ public class SftpService : ISftpService
         }
 
         // 起点核实完才开始计时、才知道从哪儿算速度(见 TransferProgressThrottle 的 startBytes)。
-        var reporter = new TransferProgressThrottle(progress, fileName, totalBytes, resumeOffset);
-        Action<ulong>? onBytes = UploadProgressCallback(reporter, totalBytes);
+        var reporter = new UploadProgress(new TransferProgressThrottle(progress, fileName, totalBytes, resumeOffset), totalBytes);
+        Action<ulong>? onBytes = reporter.OnBytes;
 
         // 续传与全新上传只差一个偏移量参数,其余(限速包装、收尾上报)完全一致。
         Stream source = OpenLocalRead(localPath);
@@ -168,8 +182,7 @@ public class SftpService : ISftpService
                 throw;
             }
 
-            // 节流会丢弃最后一个时间片内的上报,不强制收尾进度条会停在 99%。
-            reporter.ReportFinal(totalBytes);
+            reporter.Complete();
         }
         catch (Exception ex) when (cancellationToken.IsCancellationRequested && ex is not OperationCanceledException)
         {
@@ -218,8 +231,8 @@ public class SftpService : ISftpService
                 source.Seek(0, SeekOrigin.Begin);
             }
         }
-        var reporter = new TransferProgressThrottle(progress, GetUnixFileName(remotePath), length, resumeOffset);
-        Action<ulong>? onBytes = UploadProgressCallback(reporter, length);
+        var reporter = new UploadProgress(new TransferProgressThrottle(progress, GetUnixFileName(remotePath), length, resumeOffset), length);
+        Action<ulong>? onBytes = reporter.OnBytes;
 
         // 限速包装刻意不释放:它自己不持有任何资源,而释放它会连带关掉调用方的源流 ——
         // 流归调用方(契约如此),它还要在 await using 里自己收尾。
@@ -238,7 +251,7 @@ public class SftpService : ISftpService
                 RememberDurable(sessionId, remotePath, interrupted);
                 throw;
             }
-            reporter.ReportFinal(length);
+            reporter.Complete();
         }
         catch (Exception ex) when (cancellationToken.IsCancellationRequested && ex is not OperationCanceledException)
         {

@@ -29,25 +29,56 @@ internal sealed class RemoteFsCapability(ISftpService sftp, ISshConnectionServic
         return id;
     }
 
-    /// <summary>把 SDK 进度包成宿主进度并节流:至少间隔 100ms 才转发一次,末帧(完成)始终放行。</summary>
-    private static Progress<TransferProgress>? Throttle(IProgress<RemoteTransferProgress>? progress)
+    /// <summary>
+    /// 把宿主进度转成 SDK 进度并节流:至少间隔 100ms 才转发一次。满格那一帧(插件拿它当「完成」)不从这里转发,
+    /// 由 <see cref="TransferAsync" /> 在传输任务成功之后补发一次 —— 上传在最后一批确认到齐时就报满格,
+    /// 那时 fsync / CLOSE 还没做、仍可能失败;收尾时还会再报一遍。原样转发,插件就会收到两次「完成」,
+    /// 而且早于真正的结果。
+    /// </summary>
+    /// <remarks>
+    /// 节流与扣住满格在回调线程上同步做;转发照旧经 <see cref="Progress{T}" /> 投递到调用方的同步上下文,
+    /// 补发的完成帧也走这同一条投递,排在之前那些帧的后面。
+    /// </remarks>
+    private sealed class ProgressRelay(IProgress<RemoteTransferProgress> target) : IProgress<TransferProgress>
     {
-        if (progress is null)
+        private readonly IProgress<RemoteTransferProgress> _marshaled = new Progress<RemoteTransferProgress>(target.Report);
+        private long _lastTicks;
+        private long _totalBytes = -1;
+
+        public void Report(TransferProgress value)
         {
-            return null;
-        }
-        long lastTicks = 0;
-        return new Progress<TransferProgress>(p =>
-        {
-            long now = Environment.TickCount64;
-            bool final = p.TotalBytes > 0 && p.BytesTransferred >= p.TotalBytes;
-            if (!final && now - Interlocked.Read(ref lastTicks) < 100)
+            Interlocked.Exchange(ref _totalBytes, value.TotalBytes);
+            if (value.TotalBytes > 0 && value.BytesTransferred >= value.TotalBytes)
             {
                 return;
             }
-            Interlocked.Exchange(ref lastTicks, now);
-            progress.Report(new(p.BytesTransferred, p.TotalBytes));
-        });
+            long now = Environment.TickCount64;
+            if (now - Interlocked.Read(ref _lastTicks) < 100)
+            {
+                return;
+            }
+            Interlocked.Exchange(ref _lastTicks, now);
+            _marshaled.Report(new(value.BytesTransferred, value.TotalBytes));
+        }
+
+        /// <summary>传输成功:补发唯一的一帧满格。总量未知(没收到过进度,或总量为 0)时不补。</summary>
+        public void Complete()
+        {
+            long total = Interlocked.Read(ref _totalBytes);
+            if (total > 0)
+            {
+                _marshaled.Report(new(total, total));
+            }
+        }
+    }
+
+    /// <summary>跑一次带进度的传输;完成帧以任务结果为准,见 <see cref="ProgressRelay" />。</summary>
+    private static async Task TransferAsync(
+        IProgress<RemoteTransferProgress>? progress, Func<IProgress<TransferProgress>?, Task> transfer)
+    {
+        ProgressRelay? relay = progress is null ? null : new(progress);
+        await transfer(relay).ConfigureAwait(false);
+        relay?.Complete();
     }
 
     public async Task<IReadOnlyList<RemoteFileEntry>> ListDirectoryAsync(string sessionId, string path,
@@ -77,11 +108,17 @@ internal sealed class RemoteFsCapability(ISftpService sftp, ISshConnectionServic
 
     public Task DownloadFileAsync(string sessionId, string remotePath, string localPath,
         IProgress<RemoteTransferProgress>? progress = null, CancellationToken cancellationToken = default)
-        => sftp.DownloadFileAsync(Resolve(sessionId), remotePath, localPath, Throttle(progress), 0, cancellationToken);
+    {
+        Guid id = Resolve(sessionId);
+        return TransferAsync(progress, relay => sftp.DownloadFileAsync(id, remotePath, localPath, relay, 0, cancellationToken));
+    }
 
     public Task UploadFileAsync(string sessionId, string localPath, string remotePath,
         IProgress<RemoteTransferProgress>? progress = null, CancellationToken cancellationToken = default)
-        => sftp.UploadFileAsync(Resolve(sessionId), localPath, remotePath, Throttle(progress), 0, cancellationToken);
+    {
+        Guid id = Resolve(sessionId);
+        return TransferAsync(progress, relay => sftp.UploadFileAsync(id, localPath, remotePath, relay, 0, cancellationToken));
+    }
 
     public Task<Stream> OpenReadAsync(string sessionId, string remotePath, CancellationToken cancellationToken = default)
         => sftp.OpenReadAsync(Resolve(sessionId), remotePath, cancellationToken);
