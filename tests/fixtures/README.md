@@ -90,6 +90,6 @@ docker compose -f docker-compose.test.yml up -d --build ssh-pq   # 端口 2226 /
 `VELASHELL_SUDO_CONTAINER` / `VELASHELL_SUDO_PORT`。
 
 ```bash
-docker compose -f docker-compose.test.yml up -d --build ssh-sudo   # 端口 2229
+docker compose -f docker-compose.test.yml up -d --build ssh-sudo   # 端口 2230
 dotnet test tests/VelaShell.Sudo.Kernel.Tests
 ```

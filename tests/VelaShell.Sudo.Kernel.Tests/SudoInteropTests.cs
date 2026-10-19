@@ -14,7 +14,7 @@ namespace VelaShell.Sudo.Kernel.Tests;
 /// 受控 sudo 在<b>真实 sudo + PAM</b> 上的端到端行为。
 /// </summary>
 /// <remarks>
-/// 靶子是 <c>docker-compose.test.yml</c> 的 <c>ssh-sudo</c>(端口 2229,见 <c>tests/fixtures/ssh-sudo/Dockerfile</c>):
+/// 靶子是 <c>docker-compose.test.yml</c> 的 <c>ssh-sudo</c>(端口 2230,见 <c>tests/fixtures/ssh-sudo/Dockerfile</c>):
 /// <c>docker compose -f docker-compose.test.yml up -d --build ssh-sudo</c>。每条用例先 <c>docker exec</c> 进去
 /// 重设 sudoer 的口令、登录 shell 与 sudoers 策略,所以只能指向一次性容器;
 /// 要换一台,用 <c>VELASHELL_SUDO_CONTAINER</c> / <c>VELASHELL_SUDO_PORT</c> 指过去。靶机不可达时记为跳过。
@@ -27,7 +27,7 @@ public sealed class SudoInteropTests
 {
     public TestContext TestContext { get; set; } = null!;
     private static string Container => Environment.GetEnvironmentVariable("VELASHELL_SUDO_CONTAINER") ?? "velashell-test-sudo";
-    private static int Port => int.TryParse(Environment.GetEnvironmentVariable("VELASHELL_SUDO_PORT"), out int port) ? port : 2229;
+    private static int Port => int.TryParse(Environment.GetEnvironmentVariable("VELASHELL_SUDO_PORT"), out int port) ? port : 2230;
     private const string Password = "密碼é🙂42";
 
     private sealed class Prompt(bool approve = true, params string?[] answers) : ISudoPrompt
