@@ -5173,6 +5173,18 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Sc_SuggestDismiss" xml:space="preserve">
     <value>收起建议弹层</value>
   </data>
+  <data name="Sc_PasswordFillNext" xml:space="preserve">
+    <value>选择下一个共享密码</value>
+  </data>
+  <data name="Sc_PasswordFillPrev" xml:space="preserve">
+    <value>选择上一个共享密码</value>
+  </data>
+  <data name="Sc_PasswordFillAccept" xml:space="preserve">
+    <value>填入选中的共享密码</value>
+  </data>
+  <data name="Sc_PasswordFillDismiss" xml:space="preserve">
+    <value>收起共享密码列表</value>
+  </data>
   <data name="Sc_SuggestNative" xml:space="preserve">
     <value>交给 shell 原生补全</value>
   </data>
@@ -5334,6 +5346,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Sc_NoteSuggestOpen" xml:space="preserve">
     <value>仅在建议弹层打开时</value>
+  </data>
+  <data name="Sc_NotePasswordFillOpen" xml:space="preserve">
+    <value>仅在共享密码列表打开时</value>
   </data>
   <data name="Sc_NoteListFocused" xml:space="preserve">
     <value>仅在列表获得焦点时</value>

@@ -5173,6 +5173,18 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Sc_SuggestDismiss" xml:space="preserve">
     <value>收合建議彈出層</value>
   </data>
+  <data name="Sc_PasswordFillNext" xml:space="preserve">
+    <value>選擇下一個共用密碼</value>
+  </data>
+  <data name="Sc_PasswordFillPrev" xml:space="preserve">
+    <value>選擇上一個共用密碼</value>
+  </data>
+  <data name="Sc_PasswordFillAccept" xml:space="preserve">
+    <value>填入選取的共用密碼</value>
+  </data>
+  <data name="Sc_PasswordFillDismiss" xml:space="preserve">
+    <value>收合共用密碼清單</value>
+  </data>
   <data name="Sc_SuggestNative" xml:space="preserve">
     <value>交給 shell 原生補全</value>
   </data>
@@ -5334,6 +5346,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Sc_NoteSuggestOpen" xml:space="preserve">
     <value>僅在建議彈出層開啟時</value>
+  </data>
+  <data name="Sc_NotePasswordFillOpen" xml:space="preserve">
+    <value>僅在共用密碼清單開啟時</value>
   </data>
   <data name="Sc_NoteListFocused" xml:space="preserve">
     <value>僅在清單取得焦點時</value>

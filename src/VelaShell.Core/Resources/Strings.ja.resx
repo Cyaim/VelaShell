@@ -4845,6 +4845,10 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sc_SuggestPrev" xml:space="preserve"><value>前の候補を選択</value></data>
   <data name="Sc_SuggestAccept" xml:space="preserve"><value>選択した候補を挿入</value></data>
   <data name="Sc_SuggestDismiss" xml:space="preserve"><value>候補ポップアップを閉じる</value></data>
+  <data name="Sc_PasswordFillNext" xml:space="preserve"><value>次の共有パスワードを選択</value></data>
+  <data name="Sc_PasswordFillPrev" xml:space="preserve"><value>前の共有パスワードを選択</value></data>
+  <data name="Sc_PasswordFillAccept" xml:space="preserve"><value>選択した共有パスワードを入力</value></data>
+  <data name="Sc_PasswordFillDismiss" xml:space="preserve"><value>共有パスワード一覧を閉じる</value></data>
   <data name="Sc_SuggestNative" xml:space="preserve"><value>シェル本来の補完に渡す</value></data>
   <data name="Sc_GhostAccept" xml:space="preserve"><value>インライン候補を確定</value></data>
   <data name="Sc_OpenLink" xml:space="preserve"><value>ポインター下のリンクを開く</value></data>
@@ -4899,6 +4903,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sc_NoteCtrlCCopies" xml:space="preserve"><value>選択時に Ctrl+C でコピーが有効かつ選択があればコピー</value></data>
   <data name="Sc_NoteSearchOpen" xml:space="preserve"><value>検索バーが開いている場合のみ</value></data>
   <data name="Sc_NoteSuggestOpen" xml:space="preserve"><value>候補ポップアップ表示中のみ</value></data>
+  <data name="Sc_NotePasswordFillOpen" xml:space="preserve"><value>共有パスワード一覧の表示中のみ</value></data>
   <data name="Sc_NoteListFocused" xml:space="preserve"><value>一覧にフォーカスがある場合のみ</value></data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve"><value>アプリがマウス報告を有効にしている場合に必要</value></data>
   <data name="Sc_NoteOptional" xml:space="preserve"><value>設定でオフにできます</value></data>

@@ -222,7 +222,9 @@
                        FontSize="{DynamicResource VelaFontSize10}" />
             <!-- 列表不可聚焦:点密码不得抢走终端焦点,否则"终端失焦即收起"的守卫
                  会在指针抬起前把弹层关掉。同理这里没有搜索框 —— 提示符前打字必须
-                 原样进终端(可能就是用户在手敲密码),所以整个弹层只走鼠标,长列表滚动。 -->
+                 原样进终端(可能就是用户在手敲密码),长列表靠滚动。键盘只认 ↑↓ 选、
+                 Enter 填、Esc 关(#638),同补全弹层一样由代码后置在隧道阶段截下,
+                 选中态只当键盘高亮用。 -->
             <ListBox Grid.Row="2" x:Name="PasswordList" Focusable="False"
                      Background="Transparent" BorderThickness="0" MaxHeight="220"
                      AutomationProperties.Name="{loc:Localize PasswordFill_Title}">
@@ -234,6 +236,17 @@
                 </Style>
                 <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
                   <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+                </Style>
+                <!-- 键盘高亮与补全弹层同款:bg-active + 2px 强调色左边条,不用 Fluent 的系统强调色底(#246)。 -->
+                <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                  <Setter Property="Background" Value="{DynamicResource VelaBgActive}" />
+                  <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+                  <Setter Property="BorderThickness" Value="2,0,0,0" />
+                </Style>
+                <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter">
+                  <Setter Property="Background" Value="{DynamicResource VelaBgActive}" />
+                  <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+                  <Setter Property="BorderThickness" Value="2,0,0,0" />
                 </Style>
               </ListBox.Styles>
               <ListBox.ItemTemplate>

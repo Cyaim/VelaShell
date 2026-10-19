@@ -192,7 +192,7 @@ public sealed class ShortcutItem : ReactiveObject
 ///   <item><c>Services/KeyboardShortcutService</c> —— 终端上下文 + 平台差异(macOS 用 Command);</item>
 ///   <item><c>VelaShell.Terminal/Input/TerminalKeyRouter</c> —— 终端控件内的剪贴板/翻页/编码分流;</item>
 ///   <item><c>VelaShell.Terminal/Rendering/VelaTerminalControl</c> —— 终端鼠标手势(选区、缩放、链接);</item>
-///   <item><c>Views/TerminalTabView.axaml.cs</c> —— 补全弹层、断线态键位;</item>
+///   <item><c>Views/TerminalTabView.axaml.cs</c> —— 补全弹层、共享密码列表、断线态键位;</item>
 ///   <item>各视图/对话框自己的 <c>OnKeyDown</c>(命令面板、文件管理器、进程管理器、编辑器、AI 面板等)。</item>
 /// </list>
 /// <para>
@@ -285,6 +285,15 @@ public static class ShortcutCatalog
                     Item("Sc_SuggestNative", ["Tab"]),
                     Item("Sc_GhostAccept", ["Right"]),
                     Item("Sc_GhostAccept", ["End"]),
+                ]
+            ),
+            // 识别到密码提示时光标下一行弹出的共享密码列表(#628/#638);点一行同样填入。
+            Group("PasswordFill_Title",
+                [
+                    Item("Sc_PasswordFillNext", ["Down"], "Sc_NotePasswordFillOpen"),
+                    Item("Sc_PasswordFillPrev", ["Up"], "Sc_NotePasswordFillOpen"),
+                    Item("Sc_PasswordFillAccept", ["Enter"], "Sc_NotePasswordFillOpen"),
+                    Item("Sc_PasswordFillDismiss", ["Esc"], "Sc_NotePasswordFillOpen"),
                 ]
             ),
             Group("Sc_GroupMouse",

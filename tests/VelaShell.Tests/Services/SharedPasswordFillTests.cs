@@ -38,6 +38,14 @@ public sealed class SharedPasswordFillTests
     [DataRow("log: password:", false)]
     [DataRow("$ echo password:", false)]
     [DataRow("Password: typed", false)]
+    // git / svn 把对象引起来,URL 里的冒号不能挡住识别(#638)。
+    [DataRow("Password for 'https://git.example.com:8000': ", true)]
+    [DataRow("Password for 'https://joe@git.example.com:8000':", true)]
+    [DataRow("Password for \"https://git.example.com:8443\":", true)]
+    [DataRow("Password for user postgres:", true)]
+    [DataRow("Username for 'https://git.example.com:8000':", false)]
+    [DataRow("Password for 'https://git.example.com:8000': typed", false)]
+    [DataRow("Password for 'https://a': 'b':", false)]
     public void PromptDetection_IsConservative(string line, bool expected) =>
         Assert.AreEqual(expected, InteractivePromptDetector.IsPasswordFillPrompt(line));
 
@@ -266,6 +274,208 @@ public sealed class SharedPasswordFillTests
     });
 
     [TestMethod]
+    public Task Popup_RecognizesGitPromptWrappedAcrossRows() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
+        {
+            new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
+        });
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            // 主机名比一整行还长:提示被自动换行折开,光标行只剩 "….example.com:8000': " 这截尾巴(#638)。
+            string prompt = $"Password for 'https://{new string('g', control.Columns)}.example.com:8000': ";
+            control.Feed(Encoding.UTF8.GetBytes(prompt));
+            Paint(window);
+            Assert.IsFalse(InteractivePromptDetector.IsPasswordFillPrompt(control.GetBufferLine(control.CursorRow)),
+                           "前提:光标行单看认不出,提示确实折行了。");
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            // Esc 记下的是整段逻辑行:后续输出批次不能把同一条提示再弹出来。
+            Press(window, Key.Escape, PhysicalKey.Escape);
+            Assert.IsFalse(view.PasswordPopupOpenForTest);
+            control.Feed("\e[0m"u8.ToArray());
+            Paint(window);
+            Assert.IsFalse(view.PasswordPopupOpenForTest, "收口过的折行提示不该反复重开。");
+            // 续行被原地重写成一条完整提示:上一行的折行标志已经陈旧,接起来反而认不出 —— 光标行自己要认得。
+            control.Feed("\r\e[2KPassword:"u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task Keyboard_ArrowsOnlyHighlight_EnterFillsWithoutEnter_NextEnterSubmits() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        IShellStreamWrapper shell = Shell();
+        await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
+        var prod = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
+        var staging = new SharedCredentialMetadata(Guid.NewGuid(), "staging", "ops", AuthMethod.Password, true);
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { prod, staging });
+        repository.GetPasswordAsync(staging.Id).Returns("secret");
+        List<byte> writes = CaptureWrites(shell);
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            control.Feed("Password for 'https://git.example.com:8000': "u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            Assert.AreEqual(-1, view.PasswordHighlightForTest, "不预先高亮:提示符前直接回车是用户自己的提交。");
+            // ↓ 落到第一项,↑ 首尾循环。只挪高亮:不读密码、不发送,方向键的 ESC 序列也不漏进口令。
+            Press(window, Key.Down, PhysicalKey.ArrowDown);
+            Assert.AreEqual(0, view.PasswordHighlightForTest);
+            Press(window, Key.Up, PhysicalKey.ArrowUp);
+            Assert.AreEqual(1, view.PasswordHighlightForTest);
+            await DrainWritesAsync(tab);
+            Assert.IsEmpty(writes);
+            await repository.DidNotReceive().GetPasswordAsync(Arg.Any<Guid>());
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            // Enter 填入高亮的那一项:只有正文,不带回车。
+            Press(window, Key.Enter, PhysicalKey.Enter);
+            await view.PasswordFillForTest;
+            await DrainWritesAsync(tab);
+            Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
+            await repository.Received(1).GetPasswordAsync(staging.Id);
+            Assert.IsFalse(view.PasswordPopupOpenForTest);
+            // 列表已收口,再按 Enter 就是提交,原样进终端。
+            Press(window, Key.Enter, PhysicalKey.Enter);
+            await DrainWritesAsync(tab);
+            Assert.AreEqual("secret\r", Encoding.UTF8.GetString(writes.ToArray()));
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task Keyboard_ClickingTheHighlightedRowStillFills() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        IShellStreamWrapper shell = Shell();
+        await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
+        var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.GetPasswordAsync(metadata.Id).Returns("secret");
+        List<byte> writes = CaptureWrites(shell);
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            control.Feed("Password:"u8.ToArray());
+            Paint(window);
+            Press(window, Key.Down, PhysicalKey.ArrowDown);
+            Assert.AreEqual(0, view.PasswordHighlightForTest);
+            // 先用 ↓ 看了一眼,再拿鼠标点同一行:选中态不变就不会有 SelectionChanged,这一下不能白点。
+            // 走真实鼠标输入:headless 下弹层是窗口里的覆盖层,自造的 RaiseEvent 指针事件不会让列表项选中。
+            Control row = view.FindControl<ListBox>("PasswordList")!.ContainerFromIndex(0)!;
+            Point point = row.TranslatePoint(new Point(20, 10), window)!.Value;
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            await view.PasswordFillForTest;
+            await DrainWritesAsync(tab);
+            Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.IsFalse(view.PasswordPopupOpenForTest);
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task Keyboard_EnterWithoutHighlight_GoesToTerminalAndReadsNothing() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        IShellStreamWrapper shell = Shell();
+        await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
+        {
+            new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
+        });
+        List<byte> writes = CaptureWrites(shell);
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            control.Feed("Password:"u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            Press(window, Key.Enter, PhysicalKey.Enter);
+            await DrainWritesAsync(tab);
+            Assert.AreEqual("\r", Encoding.UTF8.GetString(writes.ToArray()));
+            await repository.DidNotReceive().GetPasswordAsync(Arg.Any<Guid>());
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task Keyboard_EnterDuringRead_IsSwallowedSoItCannotOvertakeThePassword() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        IShellStreamWrapper shell = Shell();
+        await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
+        var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.GetPasswordAsync(metadata.Id).Returns(pending.Task);
+        List<byte> writes = CaptureWrites(shell);
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            control.Feed("Password:"u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+            Press(window, Key.Down, PhysicalKey.ArrowDown);
+            Press(window, Key.Enter, PhysicalKey.Enter);
+            await repository.Received(1).GetPasswordAsync(metadata.Id);
+            // 解密还没回来,用户已经按下第二个 Enter(本意是提交)。放过去它就先于密码到达远端,
+            // 交上去的是空口令,这次键入还会让在途的填入作废。方向键同样原地不动。
+            Press(window, Key.Enter, PhysicalKey.Enter);
+            Press(window, Key.Down, PhysicalKey.ArrowDown);
+            Assert.AreEqual(-1, view.PasswordHighlightForTest);
+            await DrainWritesAsync(tab);
+            Assert.IsEmpty(writes);
+            pending.SetResult("secret");
+            await view.PasswordFillForTest;
+            await DrainWritesAsync(tab);
+            Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.IsFalse(view.PasswordPopupOpenForTest);
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    [TestMethod]
     public Task LatePassword_KeepsPopupOpenAndSaysNothingWasSent() => Session.RunOnUiAsync(async () =>
     {
         using var control = new VelaTerminalControl();
@@ -329,10 +539,14 @@ public sealed class SharedPasswordFillTests
         try
         {
             control.Focus();
+            Paint(window);
             control.Feed("Password:"u8.ToArray());
             Paint(window);
+            // 先确认真走到了读取:弹层没开时点选什么都不做,下面的「没发」就白断言了。
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
             view.PickPasswordItem(metadata);
             await Task.Yield();
+            await repository.Received(1).GetPasswordAsync(metadata.Id);
             // 读取在途:此刻用户按 Esc 收口(或切走窗口),迟到的密码不得再发。
             view.ClosePasswordPopupForTest();
             Assert.IsFalse(view.PasswordPopupOpenForTest);
@@ -449,6 +663,27 @@ public sealed class SharedPasswordFillTests
     {
         Dispatcher.UIThread.RunJobs();
         using var frame = window.CaptureRenderedFrame();
+    }
+
+    /// <summary>经真实输入管线按一次键:落到聚焦的终端,先过视图的隧道键位。</summary>
+    private static void Press(Window window, Key key, PhysicalKey physical)
+    {
+        window.KeyPress(key, RawInputModifiers.None, physical, null);
+        window.KeyRelease(key, RawInputModifiers.None, physical, null);
+        Paint(window);
+    }
+
+    /// <summary>收集发往远端的全部字节(密码与按键都走这一个出口)。</summary>
+    private static List<byte> CaptureWrites(IShellStreamWrapper shell)
+    {
+        var writes = new List<byte>();
+        shell.WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                writes.AddRange(call.ArgAt<byte[]>(0).AsSpan(call.ArgAt<int>(1), call.ArgAt<int>(2)).ToArray());
+                return Task.CompletedTask;
+            });
+        return writes;
     }
 
     private sealed class Restore(Func<ISharedCredentialRepository?> original) : IDisposable

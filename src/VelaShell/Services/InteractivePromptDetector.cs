@@ -48,9 +48,13 @@ public static partial class InteractivePromptDetector
         IsSecretPromptCore(StripEcho(line, typed));
 
     /// <summary>仅供共享密码入口使用的保守识别;不把私钥口令或验证码当成登录密码。</summary>
+    /// <remarks>
+    /// <c>password for</c> 后面的对象要么不带冒号(sudo、psql 的用户名),要么整段包在引号里 ——
+    /// git / svn 的 <c>Password for 'https://host:8000':</c> 把 URL 引起来,URL 里的冒号只能这样放行(#638)。
+    /// </remarks>
     public static bool IsPasswordFillPrompt(string line) => PasswordFillPromptRegex().IsMatch(line.Trim());
 
-    [GeneratedRegex(@"^(?:password|passwd|enter password|请输入密码|密码|(?:\[sudo\]\s+)?password for [^:\r\n]+|[^\s:'\""$>#]+(?:@[^\s:'\""$>#]+)?['’]s password)[:：]\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?:password|passwd|enter password|请输入密码|密码|(?:\[sudo\]\s+)?password for (?:'[^'\r\n]+'|""[^""\r\n]+""|[^:\r\n]+)|[^\s:'\""$>#]+(?:@[^\s:'\""$>#]+)?['’]s password)[:：]\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PasswordFillPromptRegex();
 
     /// <summary>剥掉光标行末尾已回显的输入,只留下程序打印的提示部分。</summary>

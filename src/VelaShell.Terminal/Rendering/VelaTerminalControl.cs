@@ -837,6 +837,33 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     /// <summary>返回给定活动屏幕行的纯文本。</summary>
     public string GetBufferLine(int row) => Emulator.Screen.ActiveLine(row).GetText();
 
+    /// <summary>
+    /// 返回以给定活动屏幕行收尾的逻辑行:往上把自动换行折出来的物理行(<see cref="TerminalRow.Wrapped" />)接回去。
+    /// 窄窗格里带 URL 的长提示会折成几行,光标行只是它的尾巴。
+    /// </summary>
+    /// <remarks>只在活动屏幕内回溯:开头已滚进回滚区的逻辑行,拿到的是残段。</remarks>
+    public string GetLogicalLineEndingAt(int row)
+    {
+        TerminalScreen screen = Emulator.Screen;
+        row = Math.Clamp(row, 0, screen.Rows - 1);
+        int start = row;
+        while (start > 0 && screen.ActiveLine(start - 1).Wrapped)
+        {
+            start--;
+        }
+        if (start == row)
+        {
+            return screen.ActiveLine(row).GetText();
+        }
+        var sb = new StringBuilder();
+        for (int r = start; r <= row; r++)
+        {
+            // 折行处写过的空格是行中间的内容,GetText 只裁从没写过的空格,接起来不丢字。
+            sb.Append(screen.ActiveLine(r).GetText());
+        }
+        return sb.ToString();
+    }
+
     /// <summary>活动屏幕中的当前光标行。</summary>
     public int CursorRow => Emulator.CursorY;
 

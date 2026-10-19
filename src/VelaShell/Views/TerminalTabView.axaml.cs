@@ -61,7 +61,7 @@ public partial class TerminalTabView : UserControl
         if (suppress && _termControl is { } control)
         {
             // 记住这一行提示,免得它还在屏幕上时反复重开(用户已决定手输或忽略)。
-            _suppressedPasswordPrompt = control.GetBufferLine(control.CursorRow);
+            _suppressedPasswordPrompt = control.GetLogicalLineEndingAt(control.CursorRow);
         }
         if (PasswordPopup.IsOpen)
         {
@@ -89,8 +89,12 @@ public partial class TerminalTabView : UserControl
             ClosePasswordPopup();
             return;
         }
-        string line = control.GetBufferLine(control.CursorRow);
-        if (!InteractivePromptDetector.IsPasswordFillPrompt(line) || line == _suppressedPasswordPrompt)
+        // 整段逻辑行:窄窗格里带 URL 的 git 提示会被自动换行折开,光标行只剩尾巴。光标行本身完整时照认 ——
+        // 上一行的折行标志可能是 "\r ESC[2K" 原地重写前留下的陈旧值,接起来反倒认不出。
+        string line = control.GetLogicalLineEndingAt(control.CursorRow);
+        if (!(InteractivePromptDetector.IsPasswordFillPrompt(line)
+              || InteractivePromptDetector.IsPasswordFillPrompt(control.GetBufferLine(control.CursorRow)))
+            || line == _suppressedPasswordPrompt)
         {
             ClosePasswordPopup();
             if (line != _suppressedPasswordPrompt)
@@ -159,20 +163,118 @@ public partial class TerminalTabView : UserControl
     /// 点选一条即读取并填入;只发正文,不追加回车(#628 第 1 项)。
     /// 挂 SelectionChanged 而不是 Tapped:列表项不可聚焦,选中哪一行本来就是这次点击的唯一
     /// 语义,而 Tapped 的路由事件在 headless 测试里造不出来 —— 这条路径就永远测不到。
+    /// 键盘 ↑↓ 也借选中态当高亮,那时只移高亮、不填入(<see cref="_highlightingPassword" />)。
     /// </summary>
     private void OnPasswordSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (PasswordList.SelectedItem is not SharedCredentialMetadata selected
-            || _passwordRequest is not { } request
-            || RepositoryFactory() is not { } repository)
+        if (!_highlightingPassword && PasswordList.SelectedItem is SharedCredentialMetadata selected)
+        {
+            FillPassword(selected);
+        }
+    }
+
+    private void FillPassword(SharedCredentialMetadata selected)
+    {
+        if (_passwordRequest is not { } request || RepositoryFactory() is not { } repository)
         {
             return;
         }
-        // 先清选中再发起读取:清空引发的这一次回调落到上面的 null 守卫上,不会重入。
+        // 先清选中再发起读取:清空引发的这一次回调落到 null 守卫上,不会重入。
         PasswordList.SelectedItem = null;
         Task fill = FillSelectedPasswordAsync(request, repository, selected.Id);
         PasswordFillForTest = fill;
         FireAndForget.Run(() => fill);
+    }
+
+    // ↑↓ 正在挪键盘高亮:这次选中变化只是高亮,不是点选。
+    private bool _highlightingPassword;
+
+    /// <summary>
+    /// 密码列表键位(#638):↑↓ 移高亮,Enter 填入高亮项;返回 true 表示按键已被列表消费。
+    /// </summary>
+    /// <remarks>
+    /// 列表不可聚焦,键位照补全弹层的办法在隧道阶段截下。不预先高亮任何一项:提示符前直接按 Enter
+    /// 是用户自己的提交(哪怕是空口令),不能变成「把第一个密码发出去」。
+    /// </remarks>
+    private bool HandlePasswordKey(KeyEventArgs e)
+    {
+        if (!PasswordPopup.IsOpen)
+        {
+            return false;
+        }
+        if (e.Key == Key.Escape)
+        {
+            ClosePasswordPopup(suppress: true);
+            e.Handled = true;
+            return true;
+        }
+        if (e.KeyModifiers != Avalonia.Input.KeyModifiers.None)
+        {
+            return false;
+        }
+        switch (e.Key)
+        {
+            case Key.Down or Key.Up:
+                // 密码提示前的方向键只会把 ESC 序列塞进口令,列表开着就归列表;读取在途时原地不动。
+                if (PasswordList.IsEnabled)
+                {
+                    MovePasswordHighlight(e.Key == Key.Down ? +1 : -1);
+                }
+                e.Handled = true;
+                return true;
+            case Key.Enter when !PasswordList.IsEnabled:
+                // 读取在途(列表禁用):这一下多半是连按的「提交」。放过去,回车就抢在密码前面
+                // 到达远端 —— 交上去的是空口令,而这次键入还会让在途的填入作废。
+                e.Handled = true;
+                return true;
+            case Key.Enter when PasswordList.SelectedItem is SharedCredentialMetadata selected:
+                FillPassword(selected);
+                e.Handled = true;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void MovePasswordHighlight(int delta)
+    {
+        int count = PasswordList.ItemCount;
+        if (count == 0)
+        {
+            return;
+        }
+        int current = PasswordList.SelectedIndex;
+        // 还没有高亮时 ↓ 落到第一项、↑ 落到最后一项;之后首尾循环。
+        int next = current < 0
+            ? (delta > 0 ? 0 : count - 1)
+            : ((current + delta) % count + count) % count;
+        SetPasswordHighlight(next);
+        PasswordList.ScrollIntoView(next);
+    }
+
+    private void SetPasswordHighlight(int index)
+    {
+        _highlightingPassword = true;
+        try
+        {
+            PasswordList.SelectedIndex = index;
+        }
+        finally
+        {
+            _highlightingPassword = false;
+        }
+    }
+
+    /// <summary>
+    /// 鼠标按下先撤掉键盘高亮:否则点中的恰是高亮那一项时选中态不变、不触发 SelectionChanged,
+    /// 这一下就白点了。隧道阶段抢在列表项处理按下之前,且不置 Handled。
+    /// </summary>
+    private void OnPasswordListPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (PasswordList.SelectedIndex >= 0)
+        {
+            SetPasswordHighlight(-1);
+        }
     }
 
     private async Task FillSelectedPasswordAsync(
@@ -237,6 +339,9 @@ public partial class TerminalTabView : UserControl
     /// <summary>弹层锚定的矩形(测试用;弹层是独立顶层,视觉树里查不到)。</summary>
     internal Rect PasswordPlacementRectForTest => PasswordPopup.PlacementRect ?? default;
 
+    /// <summary>键盘高亮的是第几项;-1 = 没有高亮(测试用)。</summary>
+    internal int PasswordHighlightForTest => PasswordList.SelectedIndex;
+
     /// <summary>弹层状态行的当前文字;未显示时为空串(测试用)。</summary>
     internal string PasswordStatusForTest => PasswordStatus.IsVisible ? PasswordStatus.Text ?? string.Empty : string.Empty;
 
@@ -297,6 +402,7 @@ public partial class TerminalTabView : UserControl
         SuggestList.Tapped += (_, _) => AcceptSuggestion();
         // 列表项不可聚焦(点密码不得抢走终端焦点),选中哪一行就是这次点击的全部语义。
         PasswordList.SelectionChanged += OnPasswordSelectionChanged;
+        PasswordList.AddHandler(PointerPressedEvent, OnPasswordListPointerPressed, RoutingStrategies.Tunnel);
 
         // 点终端正文即收起补全弹层(#315)。弹层刻意不开 light-dismiss(那会吞掉
         // 关闭它的那一次点击),而点击一个**已经聚焦**的终端不产生 LostFocus,
@@ -320,10 +426,8 @@ public partial class TerminalTabView : UserControl
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        if (PasswordPopup.IsOpen && e.Key == Key.Escape)
+        if (HandlePasswordKey(e))
         {
-            ClosePasswordPopup(suppress: true);
-            e.Handled = true;
             return;
         }
         // 自愈守卫:弹层开着但焦点既不在终端控件也不在本视图(回退层)上,说明焦点
