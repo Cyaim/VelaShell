@@ -137,9 +137,13 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     internal IReadOnlyList<BufferSearchHit> SelectionMatchesForTest => _selectionMatches;
     internal int SelectionMatchRefreshCountForTest { get; private set; }
 
+    // 查询只有一个字(双击选中的变量 i 一类整词):命中也只认整词,否则屏上每个词里的 i 都会亮。
+    private bool _selectionMatchWholeWord;
+
     private void ClearSelectionMatches()
     {
         _selectionMatchQuery = null;
+        _selectionMatchWholeWord = false;
         _selectionMatches = [];
         _selectionMatchRows = null;
         _selectionMatchesDirty = false;
@@ -150,23 +154,52 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     {
         ClearSelectionMatches();
         List<SelectionSpan> spans = SelectionSpans();
-        if (spans.Count != 1 || spans[0] is not { Block: false } span
-            || span.Start.Row != span.End.Row)
+        if (spans.Count != 1 || spans[0] is not { Block: false } span)
         {
             return;
         }
         TerminalScreen screen = Emulator.Screen;
-        TerminalRow line = screen.ViewLine(span.Start.Row);
-        (int from, int to) = TerminalSelectionMath.RowSpan((span.Start, span.End), false, span.Start.Row, line.Columns);
         var text = new StringBuilder();
-        for (int col = from; col < to; col++)
+        for (int row = span.Start.Row; row <= span.End.Row; row++)
         {
-            line[col].AppendText(text);
+            TerminalRow line = screen.ViewLine(row);
+            // 跨行只认自动换行折开的同一逻辑行(双击折行的长 URL,#517);跨了硬换行就是多行选区,不做匹配。
+            if (row < span.End.Row && !line.Wrapped)
+            {
+                return;
+            }
+            (int from, int to) = TerminalSelectionMath.RowSpan((span.Start, span.End), false, row, line.Columns);
+            // 拖过行尾时选区会盖住从没写过的格(PointToCell 允许列一直到 Columns),拼出来是一串尾随空格;
+            // 而 BufferSearch 走 CopyTextTo,行文本恰恰裁掉了这些格 —— 查询对不上,连选中的这一行自己都不亮。
+            // 照 CopyTextTo 的口径收到最后一个写过的格;程序真打印出来的空格(Rune 0x20)不受影响。
+            to = Math.Min(to, line.LastNonBlank() + 1);
+            for (int col = from; col < to; col++)
+            {
+                line[col].AppendText(text);
+            }
         }
         string query = text.ToString();
         if (string.IsNullOrWhiteSpace(query))
         {
             return;
+        }
+        // 误拖一格就把满屏同一个字母点亮是噪音:至少两个字(按字素算,e + 组合音标算一个);
+        // 单个字只在它自己就是一个整词时才算(左右都不是词字符)。
+        if (new StringInfo(query).LengthInTextElements < 2)
+        {
+            TerminalRow line = screen.ViewLine(span.Start.Row);
+            (int from, int to) = TerminalSelectionMath.RowSpan((span.Start, span.End), false, span.Start.Row, line.Columns);
+            to = Math.Min(to, line.LastNonBlank() + 1);
+            while (line[to].IsWideTrailing)
+            {
+                to++; // 只拖到宽字符前半格时,右邻是它自己的尾格,不是下一个字。
+            }
+            if (span.Start.Row != span.End.Row || to <= from || !IsWordCell(line, from)
+                || IsWordCell(line, from - 1) || IsWordCell(line, to))
+            {
+                return;
+            }
+            _selectionMatchWholeWord = true;
         }
         _selectionMatchQuery = query;
         _selectionMatchScreenGeneration = Emulator.ScreenGeneration;
@@ -182,6 +215,14 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         _selectionMatchesDirty = false;
         SelectionMatchRefreshCountForTest++;
         _selectionMatches = BufferSearch.FindVisible(screen, _selectionMatchQuery, _screenToAbs);
+        if (_selectionMatchWholeWord)
+        {
+            _selectionMatches = [.. _selectionMatches.Where(hit =>
+            {
+                TerminalRow line = screen.ViewLine(hit.Row);
+                return !IsWordCell(line, hit.StartCol - 1) && !IsWordCell(line, hit.StartCol + hit.Length);
+            })];
+        }
         _selectionMatchRows = [];
         foreach (BufferSearchHit hit in _selectionMatches)
         {

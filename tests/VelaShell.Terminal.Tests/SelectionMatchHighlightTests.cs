@@ -56,6 +56,62 @@ public sealed class SelectionMatchHighlightTests
             CollectionAssert.AreEqual(new[] { 0, 1 }, control.SelectionMatchesForTest.Select(hit => hit.Row).ToArray());
         });
 
+    /// <summary>
+    /// 从行首一路拖过行尾进空白处:选区盖住了从没写过的格。查询不能带上它们拼出的尾随空格 ——
+    /// 行文本(CopyTextTo)早把它们裁了,带上就连这一行自己都对不上。
+    /// </summary>
+    [TestMethod]
+    public void DragPastEndOfLine_MatchesTheWrittenText() =>
+        Run("error: disk full\r\nlog: error: disk full\r\nerror: disk", (window, control) =>
+        {
+            Drag(window, control, (0, 0), (0, 30));
+            Assert.AreEqual("error: disk full", control.GetSelectedText());
+            CollectionAssert.AreEqual(
+                new[] { new BufferSearchHit(0, 0, 16), new BufferSearchHit(1, 5, 16) },
+                control.SelectionMatchesForTest.ToArray());
+        });
+
+    [TestMethod]
+    public void SingleCharacter_OnlyMatchesAsAWholeWord() =>
+        Run("x = a + a; alpha", (window, control) =>
+        {
+            // 误拖一格(词中间的一个字母):不点亮满屏同一个字母。
+            Drag(window, control, (0, 12), (0, 13));
+            Assert.AreEqual("l", control.GetSelectedText());
+            Assert.IsEmpty(control.SelectionMatchesForTest);
+            // 单字整词(双击变量 a):只亮整词,alpha 里的 a 不算。
+            Point point = Cell(control, 0, 4);
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            Paint(window);
+            Assert.AreEqual("a", control.GetSelectedText());
+            CollectionAssert.AreEqual(
+                new[] { new BufferSearchHit(0, 4, 1), new BufferSearchHit(0, 8, 1) },
+                control.SelectionMatchesForTest.ToArray());
+        });
+
+    /// <summary>双击一个被自动换行折开的词(#517):查询接上折行,命中也认跨折行的那一处。</summary>
+    [TestMethod]
+    public void DoubleClickWrappedWord_MatchesAcrossTheSoftWrap() =>
+        Run("", (window, control) =>
+        {
+            int cols = control.Columns;
+            control.Feed(Encoding.UTF8.GetBytes($"{new string('x', cols - 3)} abcdef\r\nabcdef zz"));
+            Paint(window);
+            Point point = Cell(control, 1, 1);
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            Paint(window);
+            Assert.AreEqual("abcdef", control.GetSelectedText());
+            CollectionAssert.AreEqual(
+                new[] { new BufferSearchHit(0, cols - 2, 2), new BufferSearchHit(1, 0, 4), new BufferSearchHit(2, 0, 6) },
+                control.SelectionMatchesForTest.ToArray());
+        });
+
     [TestMethod]
     public void UnicodeSelection_IncludesCombiningMarksAndWideColumns() =>
         Run("中e\u0301 中e\u0301", (window, control) =>

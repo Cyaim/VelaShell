@@ -197,6 +197,28 @@ public class BufferSearchTests
         Assert.IsEmpty(BufferSearch.FindVisible(e.Screen, "needle", [-1]));
     }
 
+    /// <summary>
+    /// 自动换行折开的相邻可见行接成一段再找,跨折行的命中按行切段;搜索栏用的 FindAll 不接,
+    /// 它要按命中计数、逐个跳转。
+    /// </summary>
+    [TestMethod]
+    public void FindVisible_JoinsSoftWrappedRows_AndSplitsTheHitPerRow()
+    {
+        var e = new TerminalEmulator(8, 4);
+        // 8 列:"xxxxx ab" 正好占满第 0 行,"cdef" 折到第 1 行;第 2 行是一个不折行的 abcdef。
+        e.Feed(Encoding.UTF8.GetBytes("xxxxx abcdef\r\nabcdef"));
+        Assert.IsTrue(e.Screen.ViewLine(0).Wrapped, "前提:第 0 行确实是自动换行折下去的。");
+
+        CollectionAssert.AreEqual(
+            new[] { new BufferSearchHit(0, 6, 2), new BufferSearchHit(1, 0, 4), new BufferSearchHit(2, 0, 6) },
+            BufferSearch.FindVisible(e.Screen, "ABCDEF", [0, 1, 2, 3]).ToArray());
+        // 视口里不相邻(折叠藏掉了第 1 行)就不接。
+        CollectionAssert.AreEqual(
+            new[] { new BufferSearchHit(2, 0, 6) },
+            BufferSearch.FindVisible(e.Screen, "abcdef", [0, 2, 3]).ToArray());
+        Assert.HasCount(1, BufferSearch.FindAll(e.Screen, "abcdef"));
+    }
+
     [TestMethod]
     public void FindVisible_PreservesUnicodeColumnsAndMultipleMatches()
     {
