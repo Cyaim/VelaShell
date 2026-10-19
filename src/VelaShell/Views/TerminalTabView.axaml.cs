@@ -170,7 +170,9 @@ public partial class TerminalTabView : UserControl
         }
         // 先清选中再发起读取:清空引发的这一次回调落到上面的 null 守卫上,不会重入。
         PasswordList.SelectedItem = null;
-        FireAndForget.Run(() => FillSelectedPasswordAsync(request, repository, selected.Id));
+        Task fill = FillSelectedPasswordAsync(request, repository, selected.Id);
+        PasswordFillForTest = fill;
+        FireAndForget.Run(() => fill);
     }
 
     private async Task FillSelectedPasswordAsync(
@@ -218,6 +220,12 @@ public partial class TerminalTabView : UserControl
             OpenPasswordPopup(control);
         }
     }
+
+    /// <summary>
+    /// 最近一次点选发起的读取与填入(测试用)。迟到的读取结果要经 UI 调度器排队才落到状态行,
+    /// 让几次路都不保证轮到它 —— 测试等这个任务,而不是数 <c>Task.Yield</c>。
+    /// </summary>
+    internal Task PasswordFillForTest { get; private set; } = Task.CompletedTask;
 
     /// <summary>密码列表当前是否展开(测试用;弹层是独立顶层,不能从可视树里找)。</summary>
     internal bool PasswordPopupOpenForTest => PasswordPopup.IsOpen;

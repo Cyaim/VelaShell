@@ -191,7 +191,7 @@ public sealed class SharedPasswordFillTests
             Assert.AreEqual(cursor.Bottom, anchor.Y, 0.5, "列表应紧贴光标行下沿。");
             // 点一行即读取并填入:只有密码正文,不带回车、不带引号 —— 远端还停在提示符上等输入。
             view.PickPasswordItem(metadata);
-            await Task.Yield();
+            await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
             Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
             await repository.Received(1).GetPasswordAsync(metadata.Id);
@@ -298,7 +298,9 @@ public sealed class SharedPasswordFillTests
             // 没发出去 —— 悄悄收口会让用户以为已经填上了。
             tab.Bridge!.SendRaw("other-session-input"u8.ToArray());
             pending.SetResult("late-secret");
-            await Task.Yield();
+            // 等这次读取与填入整个跑完再断言。迟到结果的续体排在 UI 调度器上,让一次路轮不到它;
+            // 原先靠后面 DrainWritesAsync 恰好多跨一跳才赶上,写入排空得快就读到空状态(macOS CI 偶发)。
+            await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
             // 唯一的写入是上面那次注入本身,密码没有跟出去。
             Assert.AreEqual("other-session-input", Encoding.UTF8.GetString(writes.ToArray()));
@@ -335,7 +337,8 @@ public sealed class SharedPasswordFillTests
             view.ClosePasswordPopupForTest();
             Assert.IsFalse(view.PasswordPopupOpenForTest);
             pending.SetResult("late-secret");
-            await Task.Yield();
+            // 必须等迟到结果真的被处理过,下面的「没发」才有分量;只让一次路,断言时它可能还没跑。
+            await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
             await shell.DidNotReceive().WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
