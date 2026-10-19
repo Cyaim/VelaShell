@@ -116,8 +116,9 @@ public sealed partial class SessionMetrics
         // __GC__:直接从 sysfs 枚举 PCI 显示类设备(class 0x03xxxx)。这是虚拟化场景的关键一段 ——
         // 显卡直通进来但宿主没装驱动时没有 DRM 节点,lspci 也未必装,只有 /sys/bus/pci 一定在。
         // 先用一个 awk 把所有 class 文件筛一遍(大机器上 PCI 设备好几百,逐个 cat 就是几百次 fork),
-        // 只对筛出来的显示设备再读厂商/设备/驱动。
-        """echo __GC__; for f in $(awk 'FNR==1 && /^0x03/{print FILENAME}' /sys/bus/pci/devices/*/class 2>/dev/null); do d=${f%/class}; echo "${d##*/}|$(cat "$d/vendor" 2>/dev/null)|$(cat "$d/device" 2>/dev/null)|$(basename "$(readlink -f "$d/driver" 2>/dev/null)" 2>/dev/null)"; done 2>/dev/null; """ +
+        // 只对筛出来的显示设备再读厂商/设备/驱动。没绑驱动时 driver 链接不存在,readlink -f 照样吐出
+        // 规范化后的路径,basename 出来就成了驱动名 "driver" —— 所以先判断链接在不在。
+        """echo __GC__; for f in $(awk 'FNR==1 && /^0x03/{print FILENAME}' /sys/bus/pci/devices/*/class 2>/dev/null); do d=${f%/class}; echo "${d##*/}|$(cat "$d/vendor" 2>/dev/null)|$(cat "$d/device" 2>/dev/null)|$([ -e "$d/driver" ] && basename "$(readlink -f "$d/driver" 2>/dev/null)" 2>/dev/null)"; done 2>/dev/null; """ +
         // __GW__:WSL2 没有 PCI 也没有 DRM,GPU 走 /dev/dxg 的 D3D12 直通。
         """echo __GW__; [ -e /dev/dxg ] && echo dxg; """ +
         // __NS__:网卡的静态属性 "名称|type|驱动|无线|有物理设备|ethtool 速率"。

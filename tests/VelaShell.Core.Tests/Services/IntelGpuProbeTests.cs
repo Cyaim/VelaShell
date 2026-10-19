@@ -18,6 +18,7 @@ public sealed class IntelGpuProbeTests
 {
     private const string Integrated = "0000:00:02.0";
     private const string Discrete = "0000:03:00.0";
+    private const string Unbound = "0000:06:00.0";
 
     private string _root = "";
 
@@ -100,6 +101,10 @@ public sealed class IntelGpuProbeTests
         CollectionAssert.AreEqual(new[] { "card0", "card1" }, drm.Select(c => c.Card).ToArray());
         CollectionAssert.AreEqual(new[] { "i915", "xe" }, drm.Select(c => c.Driver).ToArray());
         CollectionAssert.AreEqual(new[] { Integrated, Discrete }, drm.Select(c => c.Slot).ToArray());
+        // 直通进来、宿主没装驱动的卡:驱动留空,不能把 sysfs 的链接名 "driver" 当成驱动
+        GpuCardInfo unbound = info.GpuCards.Single(c => c.Slot == Unbound);
+        Assert.IsFalse(unbound.HasDrm);
+        Assert.AreEqual("", unbound.Driver);
     }
 
     /// <summary>把探针里的绝对路径挪进夹具目录。</summary>
@@ -183,7 +188,8 @@ public sealed class IntelGpuProbeTests
     }
 
     /// <summary>
-    /// 夹具:i915 核显(card0)、xe 独显(card1)、一个非 PCI 的 card2,以及几个进程的 fd。
+    /// 夹具:i915 核显(card0)、xe 独显(card1)、一个非 PCI 的 card2、一块没绑驱动的 PCI 显示设备,
+    /// 以及几个进程的 fd。
     /// <paramref name="second" /> 为 true 时是两秒(远端 uptime)之后的第二轮。
     /// </summary>
     private string BuildFixture(string name, bool second)
@@ -200,6 +206,10 @@ public sealed class IntelGpuProbeTests
         Link(root, "sys/class/drm/card0/device", $"../../../devices/pci0000:00/{Integrated}");
         Link(root, "sys/class/drm/card1/device", $"../../../devices/pci0000:00/{Discrete}");
         Link(root, "sys/class/drm/card2/device", "../../../devices/platform/gpu");
+        // 没绑驱动的 PCI 显示设备:有 class / vendor,没有 driver 链接
+        Write(root, $"sys/bus/pci/devices/{Unbound}/class", "0x030000\n");
+        Write(root, $"sys/bus/pci/devices/{Unbound}/vendor", "0x10de\n");
+        Write(root, $"sys/bus/pci/devices/{Unbound}/device", "0x2204\n");
         Write(root, "proc/meminfo", "MemTotal:       16384000 kB\nMemFree:         8000000 kB\n");
         Write(root, "proc/uptime", second ? "1002.00 4008.00\n" : "1000.00 4000.00\n");
 
