@@ -63,8 +63,12 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
     private bool _disposed;
 
     /// <summary>创建所有者隔离的轮次,并绑定查询和实际启动前的会话授权检查。</summary>
+    /// <remarks>
+    /// <c>denialEndsRun</c> 决定拒绝是否封住整个轮次。MCP 的轮次跨越整条客户端连接,传 false:
+    /// 拒绝只作为那一次调用的结果返回。
+    /// </remarks>
     public CommandJobRunScope BeginRun(string ownerId, string runId, CancellationToken cancellationToken = default,
-        Func<string, CancellationToken, Task<bool>>? authorize = null)
+        Func<string, CancellationToken, Task<bool>>? authorize = null, bool denialEndsRun = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
@@ -75,7 +79,7 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
             {
                 throw new InvalidOperationException("This owner/run is already registered.");
             }
-            var scope = new CommandJobRunScope(this, ownerId, runId, cancellationToken, lifetimeToken, authorize);
+            var scope = new CommandJobRunScope(this, ownerId, runId, cancellationToken, lifetimeToken, authorize, denialEndsRun);
             _runs.Add(scope);
             return scope;
         }
@@ -153,7 +157,17 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
             scope.Token.ThrowIfCancellationRequested();
             if (_jobs.Values.Count(j => ReferenceEquals(j.Scope, scope)) >= MaxJobsPerRun)
             {
-                throw new InvalidOperationException("The command task budget for this run is exhausted.");
+                // 额度满时回收已收尾、终态已交付的任务;否则活一整条连接的 MCP 轮次跑满 128 条就再也执行不了。
+                // Unknown 一类留着:它们是本轮的停止边界,回收了 HasUnknownOutcome 就会悄悄放行。
+                foreach (Job done in _jobs.Values.Where(j => ReferenceEquals(j.Scope, scope) && j.Reclaimable).ToArray())
+                {
+                    _jobs.Remove(done.Id);
+                    done.Cancel.Dispose();
+                }
+                if (_jobs.Values.Count(j => ReferenceEquals(j.Scope, scope)) >= MaxJobsPerRun)
+                {
+                    throw new InvalidOperationException("The command task budget for this run is exhausted.");
+                }
             }
             job = new Job(scope, sessionId, command, monitoring, mergedOutput);
             _jobs.Add(job.Id, job);
@@ -169,7 +183,7 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
     {
         Job job = Find(scope, taskId);
         await AuthorizeAsync(job, cancellationToken).ConfigureAwait(false);
-        return job.Snapshot(cursor);
+        return job.Deliver(cursor);
     }
 
     /// <summary>只限本地等待窗口,不会改变远端执行死线。</summary>
@@ -187,7 +201,7 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
             // 短等结束仍持有任务和独立 CTS;不是执行超时。
         }
         await AuthorizeAsync(job, cancellationToken).ConfigureAwait(false);
-        return job.Snapshot(cursor);
+        return job.Deliver(cursor);
     }
 
     /// <summary>工具已返回运行中回执;允许终态投递为新的本地完成通知。</summary>
@@ -204,6 +218,10 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
     public async Task CancelAsync(CommandJobRunScope scope, string taskId)
     {
         Job job = Find(scope, taskId);
+        lock (job.Gate)
+        {
+            job.StopRequested = true;
+        }
         await job.Cancel.CancelAsync().ConfigureAwait(false);
         // 不等可能失联的远端,也不返回撤权后的输出、退出码或目标元数据。
     }
@@ -285,9 +303,15 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
         {
             lock (job.Gate)
             {
-                job.State = started ? CommandJobState.Unknown : CommandJobState.Cancelled;
+                // 与超时分支同一判据:提权命令还停在审批/认证里就取消,用户命令没有启动过。
+                // 对显式监控任务点名取消是结束它的正常方式,不是需要暂停整轮的未知结果。
+                bool unknown = job.CommandStarted && !(job.Monitoring && job.StopRequested);
+                job.State = unknown ? CommandJobState.Unknown : CommandJobState.Cancelled;
                 job.RemoteStopConfirmed = !started;
-                job.Error = started ? "Exec channel cancelled; remote process termination is not confirmed." : null;
+                job.Error = unknown ? "Exec channel cancelled; remote process termination is not confirmed."
+                    : !started ? null
+                    : job.CommandStarted ? "Monitoring task stopped on request; remote process termination is not confirmed."
+                    : "Cancelled before the command reported starting.";
             }
         }
         catch (JobOutcomeException ex)
@@ -357,43 +381,49 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
     internal async Task<IReadOnlyList<CommandJobSnapshot>> WaitForCompletionAsync(CommandJobRunScope scope,
         CancellationToken cancellationToken)
     {
-        Job[] jobs;
-        lock (_gate)
+        // 只有"已经没有待通知的任务"才返回空表;醒来却一条都交不出时接着等,
+        // 否则调用方会把空表当成全部完成,收尾时连同其余仍在跑的任务一起取消。
+        while (true)
         {
-            ValidateScope(scope);
-            jobs = [.. _jobs.Values.Where(j => ReferenceEquals(j.Scope, scope) && j.NeedsNotification)];
-        }
-        if (jobs.Length == 0)
-        {
-            return [];
-        }
-        await Task.WhenAny(jobs.Select(j => j.Completion.Task)).WaitAsync(cancellationToken).ConfigureAwait(false);
-        var snapshots = new List<CommandJobSnapshot>();
-        foreach (Job job in jobs.Where(j => j.Completion.Task.IsCompleted))
-        {
-            try
+            Job[] jobs;
+            lock (_gate)
             {
-                await AuthorizeAsync(job, cancellationToken).ConfigureAwait(false);
+                ValidateScope(scope);
+                jobs = [.. _jobs.Values.Where(j => ReferenceEquals(j.Scope, scope) && j.NeedsNotification)];
             }
-            catch (UnauthorizedAccessException)
+            if (jobs.Length == 0)
             {
-                // 自动续接和手动查询遵守同一范围;撤销后不能借完成通知读旧输出。
+                return [];
+            }
+            await Task.WhenAny(jobs.Select(j => j.Completion.Task)).WaitAsync(cancellationToken).ConfigureAwait(false);
+            var snapshots = new List<CommandJobSnapshot>();
+            foreach (Job job in jobs.Where(j => j.Completion.Task.IsCompleted))
+            {
+                bool authorized = true;
+                try
+                {
+                    await AuthorizeAsync(job, cancellationToken).ConfigureAwait(false);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    authorized = false;
+                }
                 lock (job.Gate)
                 {
-                    job.Notified = true;
+                    if (!job.Notified)
+                    {
+                        job.Notified = true;
+                        // 自动续接和手动查询遵守同一范围:撤销后不能借完成通知读旧输出,
+                        // 但"这条任务的结果不再提供"本身必须交出去,按 Unknown 停下这一轮。
+                        snapshots.Add(authorized ? job.Snapshot(0) : job.Withheld());
+                    }
                 }
-                continue;
             }
-            lock (job.Gate)
+            if (snapshots.Count > 0)
             {
-                if (!job.Notified)
-                {
-                    job.Notified = true;
-                    snapshots.Add(job.Snapshot(0));
-                }
+                return snapshots;
             }
         }
-        return snapshots;
     }
 
     internal Task WaitForMonitoringEndAsync(CommandJobRunScope scope, CancellationToken cancellationToken)
@@ -476,6 +506,8 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
         public bool RemoteStopConfirmed;
         public bool Background;
         public bool Notified;
+        /// <summary>经 task_cancel 点名取消,而不是随整轮停止或撤权被连带取消。</summary>
+        public bool StopRequested;
         public string? Error;
         private readonly Queue<CommandJobOutput> _output = new();
         private int _characters;
@@ -505,29 +537,72 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
             }
         }
 
+        /// <summary>已收尾、终态已交付,且不承载 Unknown 停止边界;任务额度满时可以回收。</summary>
+        public bool Reclaimable
+        {
+            get
+            {
+                lock (Gate)
+                {
+                    return Completion.Task.IsCompleted && Notified && !HasUnknownOutcome;
+                }
+            }
+        }
+
         public void Append(ExecOutput value)
         {
             lock (Gate)
             {
-                // SDK 2.0.9 已按行回调;接收器仍限制单条长度和总字符,\r 进度也按原文保留。
+                // SDK 2.0.9 已按行回调,提权输出则是最长 8192 字节的原始分片;超长的一段按序拆成多条,
+                // 不丢后半段,也不因此误报截断。\r 进度按原文保留,代理对不拆开。
                 string text = value.Line ?? "";
-                if (text.Length > MaxEntryChars)
+                string stream = MergedOutput ? "combined" : value.Stream == ExecStream.StandardError ? "stderr" : "stdout";
+                int offset = 0;
+                do
                 {
-                    text = text[..MaxEntryChars];
-                    _truncated = true;
+                    int length = Math.Min(MaxEntryChars, text.Length - offset);
+                    if (offset + length < text.Length && char.IsHighSurrogate(text[offset + length - 1]))
+                    {
+                        length--;
+                    }
+                    Enqueue(stream, text.Substring(offset, length));
+                    offset += length;
                 }
-                int cost = Math.Max(1, text.Length);
-                while ((_characters + cost > MaxOutputChars || _output.Count >= MaxOutputEntries)
-                    && _output.TryDequeue(out CommandJobOutput? old))
-                {
-                    _characters -= Math.Max(1, old.Text.Length);
-                    _truncated = true;
-                }
-                _output.Enqueue(new CommandJobOutput(_nextCursor++,
-                    MergedOutput ? "combined" : value.Stream == ExecStream.StandardError ? "stderr" : "stdout", text));
-                _characters += cost;
+                while (offset < text.Length);
             }
         }
+
+        private void Enqueue(string stream, string text)
+        {
+            int cost = Math.Max(1, text.Length);
+            while ((_characters + cost > MaxOutputChars || _output.Count >= MaxOutputEntries)
+                && _output.TryDequeue(out CommandJobOutput? old))
+            {
+                _characters -= Math.Max(1, old.Text.Length);
+                _truncated = true;
+            }
+            _output.Enqueue(new CommandJobOutput(_nextCursor++, stream, text));
+            _characters += cost;
+        }
+
+        /// <summary>交给模型的快照;终态一旦经查询或等待交付,就不再另发一次完成通知。</summary>
+        public CommandJobSnapshot Deliver(long cursor)
+        {
+            lock (Gate)
+            {
+                CommandJobSnapshot snapshot = Snapshot(cursor);
+                if (snapshot.IsTerminal)
+                {
+                    Notified = true;
+                }
+                return snapshot;
+            }
+        }
+
+        /// <summary>会话授权已撤销:只交出任务 id 与"结果不予提供",不带输出、退出码与目标。</summary>
+        public CommandJobSnapshot Withheld() => new(Id, "", CommandJobState.Unknown, null, CreatedAt, null, null,
+            Cancel.IsCancellationRequested, false, Monitoring, [], 0, 0, false, false,
+            "Authorization for this task's session was revoked; its output and final state are withheld. Do not rerun it automatically.");
 
         public CommandJobSnapshot Snapshot(long cursor)
         {
@@ -548,6 +623,7 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
 public sealed class CommandJobRunScope : IAsyncDisposable
 {
     private readonly CommandJobRegistry _registry;
+    private readonly bool _denialEndsRun;
     private int _disposed;
     private int _executionDenied;
     internal readonly CancellationTokenSource CancelSource;
@@ -562,17 +638,24 @@ public sealed class CommandJobRunScope : IAsyncDisposable
     public bool HasActiveJobs => !IsDisposed && _registry.HasActiveJobs(this);
     /// <summary>本轮存在 Unknown 或已启动且未确认停止的 TimedOut,不得自动推进或重放。</summary>
     public bool HasUnknownOutcome => !IsDisposed && _registry.HasUnknownOutcome(this);
-    /// <summary>本轮审批或认证被拒绝,不得自动推进任何后续工具。</summary>
+    /// <summary>本轮审批或认证被拒绝,不得自动推进任何后续工具。拒绝不封轮次的(MCP)恒为 false。</summary>
     public bool HasDeniedExecution => Volatile.Read(ref _executionDenied) != 0;
-    internal void MarkExecutionDenied() => Interlocked.Exchange(ref _executionDenied, 1);
+    internal void MarkExecutionDenied()
+    {
+        if (_denialEndsRun)
+        {
+            Interlocked.Exchange(ref _executionDenied, 1);
+        }
+    }
     /// <summary>仍有不应自动请求模型的显式无限监控任务。</summary>
     public bool HasMonitoringJobs => !IsDisposed && _registry.HasMonitoringJobs(this);
 
     internal CommandJobRunScope(CommandJobRegistry registry, string ownerId, string runId,
         CancellationToken cancellationToken, CancellationToken lifetimeToken,
-        Func<string, CancellationToken, Task<bool>>? authorize)
+        Func<string, CancellationToken, Task<bool>>? authorize, bool denialEndsRun)
     {
         _registry = registry;
+        _denialEndsRun = denialEndsRun;
         OwnerId = ownerId;
         RunId = runId;
         Authorize = authorize;

@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -21,6 +22,8 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
     private int _batchSteps;
     private int _batchSize = 25;
     private Exception? _paused;
+    // 只累计输出 token:每步的 TotalTokenCount 都含整段输入上下文,逐步相加按平方增长,
+    // 四万 token 的上下文跑五六步就会撞线,远在 100 步之前。预算防的是失控生成,不是计费上限。
     private long _tokens;
     private string? _lastCall;
     private int _repeated;
@@ -79,7 +82,11 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
     {
         try
         {
-            object? value = await context.Function.InvokeAsync(context.Arguments, token).ConfigureAwait(false);
+            // 参数绑定失败时工具体一步都没跑、没有副作用:当普通工具错误交还模型自行改正,
+            // 弱一些的模型(Ollama 上常见)传错类型、漏必填全靠这一步纠正,不该整轮暂停。
+            object? value = BindingError(context.Function, context.Arguments) is { } invalid
+                ? $"Invalid arguments for {context.Function.Name}: {invalid} The tool did not run; correct the arguments and call it again."
+                : await context.Function.InvokeAsync(context.Arguments, token).ConfigureAwait(false);
             lock (_gate)
             {
                 var result = new ChatMessage(ChatRole.Tool,
@@ -137,7 +144,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
 
     internal void RecordFailedUsage(UsageDetails? usage)
     {
-        lock (_gate) _tokens += usage?.TotalTokenCount ?? 0;
+        lock (_gate) _tokens += usage?.OutputTokenCount ?? 0;
     }
 
     internal void RecordNotification(ChatMessage notification)
@@ -179,8 +186,38 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
         {
             _checkpoint.AddRange(response.Messages);
             _completed.AddRange(response.Messages);
-            _tokens += response.Usage?.TotalTokenCount ?? 0;
+            _tokens += response.Usage?.OutputTokenCount ?? 0;
         }
+    }
+
+    /// <summary>
+    /// 按 <see cref="AIFunctionFactory" /> 的绑定规则预检参数:缺必填、JSON 转不成参数类型。
+    /// 只认得出这两类、且只查本地反射工具;查不出的仍走"工具失败即暂停"的保守路径。
+    /// </summary>
+    internal static string? BindingError(AIFunction function, AIFunctionArguments arguments)
+    {
+        if (function.UnderlyingMethod is not { } method) return null;
+        foreach (ParameterInfo parameter in method.GetParameters())
+        {
+            Type type = parameter.ParameterType;
+            if (parameter.Name is not { } name || type == typeof(CancellationToken)
+                || type == typeof(AIFunctionArguments) || type == typeof(IServiceProvider)) continue;
+            if (!arguments.TryGetValue(name, out object? value))
+            {
+                if (!parameter.HasDefaultValue) return $"the required argument '{name}' is missing.";
+                continue;
+            }
+            if (value is not JsonElement element) continue;
+            try
+            {
+                _ = element.Deserialize(function.JsonSerializerOptions.GetTypeInfo(type));
+            }
+            catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+            {
+                return $"the argument '{name}' cannot be read as {type.Name}: {ex.Message}";
+            }
+        }
+        return null;
     }
 
     internal static string CanonicalArguments(IDictionary<string, object?>? arguments)
