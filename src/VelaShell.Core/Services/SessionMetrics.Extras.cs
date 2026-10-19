@@ -34,11 +34,25 @@ public sealed partial class SessionMetrics
         """echo __SS__; ss -tinpH state established 2>/dev/null | awk 'NR%2==1{local=$3; peer=$4; proc=""; if (match($0, /users:\(\("[^"]+"/)) { proc=substr($0, RSTART+9, RLENGTH-10) }} NR%2==0{s=""; r=""; for(i=1;i<=NF;i++){ if($i ~ /^bytes_sent:/){split($i,a,":"); s=a[2]} else if($i ~ /^bytes_acked:/ && s==""){split($i,a,":"); s=a[2]} else if($i ~ /^bytes_received:/){split($i,a,":"); r=a[2]} } print local"|"peer"|"proc"|"s"|"r}' | head -n 40""";
 
     /// <summary>
-    /// Intel i915/xe 的 DRM 客户端统计。drm-engine-* 是累计纳秒,内存字段是字节;
-    /// 同一个 drm-client-id 的多个 fd 只计一次。非 root 用户只能看到自己有权限读取的客户端。
+    /// Intel i915/xe 的 DRM 客户端统计,按 drm-pdev 分桶(老内核没有 drm-pdev 时按驱动名):
+    /// <c>t|uptime</c> 是远端单调时钟,作 i915 纳秒计数的分母;
+    /// <c>c|pdev|client-id|键=值 …</c> 是一个客户端逐类引擎的累计计数(i915 的 engine-* 是纳秒,
+    /// xe 的 cycles-* / total-cycles-* 是 GPU 时钟周期);
+    /// <c>m|pdev|系统内存驻留|板载显存驻留|客户端数</c> 是按 drm-client-id 去重后的合计(字节,该类区域不存在时为空)。
+    /// 非 root 用户只能看到自己有权限读取的客户端。
     /// </summary>
+    /// <remarks>
+    /// 先用 <c>ls -ln /proc/[0-9]*/fd</c> 挑出指向 /dev/dri 的 fd,再用一个 cat 把它们的 fdinfo 串成一条流喂给一个 awk
+    /// (每段 fdinfo 都以 <c>pos:</c> 开头,据此切分)。早先是把 <c>/proc/[0-9]*/fdinfo/*</c> 全部交给 awk,两处致命:
+    /// glob 展开时 shell 自己拿着的目录 fd 到 awk 打开它时已经关了,mawk / gawk / busybox 遇到打不开的输入文件
+    /// 都直接退出、不跑 END,整段恒为空;每个文件开头的重置又把累计量清零,只剩最后一个文件(几乎从不是 DRM fd)。
+    /// 那样每轮每张卡还要把全部 fdinfo 打开读一遍 —— 繁忙主机上每秒几万次 open/read,fd 一多参数表还会超过
+    /// ARG_MAX。现在参数表只有进程数那么长,真正打开的只有 DRM fd,整段每轮只扫一次;
+    /// 没有 i915/xe 绑定的设备时连扫描都不做(<c>/sys/bus/pci/drivers/驱动名/</c> 下列着已绑定设备的槽位)。
+    /// cat 在某个 fd 已经关掉时只报错、接着读下一个,不会拖垮整段。
+    /// </remarks>
     private const string IntelGpuCommand =
-        """echo __GI__; for c in /sys/class/drm/card*; do n=${c##*/}; case "$n" in *-*) continue;; esac; [ -d "$c/device" ] || continue; pdev=$(basename "$(readlink -f "$c/device")"); driver=$(basename "$(readlink -f "$c/device/driver" 2>/dev/null)" 2>/dev/null); case "$driver" in i915|xe) awk -v card="$n" -v slot="$pdev" -v drv="$driver" 'function reset(){pdev="";driver="";client="";busy=0;hasbusy=0;total=0;hastotal=0;resident=0;hasresident=0;ebusy=0;ehbusy=0;etotal=0;ehtotal=0;eresident=0;ehresident=0;clients=0} function unit(v,u){if(u=="KiB")return v*1024;if(u=="MiB")return v*1024*1024;return v+0} function emit(k){if(client==""||!(pdev==slot||(pdev==""&&driver==drv)))return;k=pdev"|"client;if(seen[k]++)return;clients++;busy+=ebusy;total+=etotal;resident+=eresident;hasbusy=hasbusy||ehbusy;hastotal=hastotal||ehtotal;hasresident=hasresident||ehresident} BEGIN{reset()} FNR==1{if(NR>1)emit();reset();client="file:"FILENAME} $1=="drm-pdev:"{pdev=$2} $1=="drm-driver:"{driver=$2} $1=="drm-client-id:"{client="id:"$2} $1~/^drm-engine-/&&$1!~/^drm-engine-capacity-/{ebusy+=$2;ehbusy=1} $1~/^drm-total-/&&$1!~/^drm-total-cycles-/{etotal+=unit($2,$3);ehtotal=1} $1~/^drm-resident-/{eresident+=unit($2,$3);ehresident=1} END{emit();if(clients>0)printf "%s|%s|%s|%s|%s\n",card,hasbusy?busy:"",hastotal?total:"",hasresident?resident:"",clients}' /proc/[0-9]*/fdinfo/* 2>/dev/null;; esac; done 2>/dev/null""";
+        """echo __GI__; __g=""; for __d in /sys/bus/pci/drivers/i915/*:* /sys/bus/pci/drivers/xe/*:*; do [ -e "$__d" ] && __g=1; done; if [ -n "$__g" ]; then __fi=$(ls -ln /proc/[0-9]*/fd 2>/dev/null | awk '/:$/ && !/ -> /{d=substr($0,1,length($0)-3)} {i=index($0," -> /dev/dri/")} i{n=split(substr($0,1,i-1),a," "); print d "fdinfo/" a[n]}'); [ -n "$__fi" ] && cat /proc/uptime $__fi 2>/dev/null | awk 'function unit(v,u){if(u=="KiB")return v*1024;if(u=="MiB")return v*1048576;if(u=="GiB")return v*1073741824;return v+0} function flush(k){if(client==""||(driver!="i915"&&driver!="xe"))return;k=(pdev!=""?pdev:driver);if(seen[k "|" client]++)return;n[k]++;if(hs){s[k]+=rs;hsys[k]=1}if(hl){l[k]+=rl;hloc[k]=1}if(e!="")print "c|" k "|" client "|" substr(e,2)} NR==1&&$1!="pos:"{print "t|" $1;next} $1=="pos:"{flush();pdev="";driver="";client="";e="";rs=0;rl=0;hs=0;hl=0;next} $1=="drm-driver:"{driver=$2} $1=="drm-pdev:"{pdev=$2} $1=="drm-client-id:"{client=$2} $1~/^drm-(engine|cycles|total-cycles)-/{x=substr($1,5);sub(/:$/,"",x);e=e " " x "=" $2} $1~/^drm-resident-/{x=substr($1,14);v=unit($2,$3);if(x~/^(local|vram|stolen-local)/){rl+=v;hl=1}else{rs+=v;hs=1}} END{flush();for(k in n)print "m|" k "|" ((k in hsys)?sprintf("%.0f",s[k]):"") "|" ((k in hloc)?sprintf("%.0f",l[k]):"") "|" n[k]}'; fi""";
 
     private const string GpuCommand =
         "echo __GP__; nvidia-smi --query-gpu=index,name,uuid,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,clocks.sm,clocks.mem --format=csv,noheader,nounits 2>/dev/null; " +
@@ -95,8 +109,9 @@ public sealed partial class SessionMetrics
         "echo __BD__; lsblk -dnb -e 7,1,11 -P -o NAME,SIZE,ROTA,TRAN,MODEL 2>/dev/null; " +
         "echo __GD__; nvidia-smi --query-gpu=index,driver_version --format=csv,noheader 2>/dev/null; " +
         // DRM 卡 → PCI 槽位 → lspci 型号名:sysfs 只有 AMD 才有 product_name,
-        // Intel 核显靠 lspci 才能显示成人话。
-        """echo __GV__; for c in /sys/class/drm/card*; do n=${c##*/}; case "$n" in *-*) continue;; esac; [ -d "$c/device" ] || continue; echo "$n $(basename "$(readlink -f "$c/device")") $(cat "$c/device/vendor" 2>/dev/null) $(basename "$(readlink -f "$c/device/driver" 2>/dev/null)" 2>/dev/null)"; done 2>/dev/null; """ +
+        // Intel 核显靠 lspci 才能显示成人话。字段用 | 分隔:非 PCI 的 DRM 设备(树莓派 vc4/v3d、
+        // Rockchip、simpledrm)没有 vendor 文件,空格分隔会让驱动名左移进厂商号那一栏。
+        """echo __GV__; for c in /sys/class/drm/card*; do n=${c##*/}; case "$n" in *-*) continue;; esac; [ -d "$c/device" ] || continue; echo "$n|$(basename "$(readlink -f "$c/device")")|$(cat "$c/device/vendor" 2>/dev/null)|$(basename "$(readlink -f "$c/device/driver" 2>/dev/null)" 2>/dev/null)"; done 2>/dev/null; """ +
         """echo __GL__; lspci -mm 2>/dev/null | grep -iE '"(VGA|3D|Display)'; """ +
         // __GC__:直接从 sysfs 枚举 PCI 显示类设备(class 0x03xxxx)。这是虚拟化场景的关键一段 ——
         // 显卡直通进来但宿主没装驱动时没有 DRM 节点,lspci 也未必装,只有 /sys/bus/pci 一定在。
@@ -166,6 +181,82 @@ public sealed partial class SessionMetrics
     /// <summary>数值或 null:空串与 nvidia-smi 的 <c>[N/A]</c> 都表示"这块卡不提供该指标"。</summary>
     private static double? NumOrNull(string s) =>
         double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : null;
+
+    /// <summary>整数或 null:空字段表示读不到(进程刚退出、权限不足、该类区域不存在)。</summary>
+    private static long? LongOrNull(string s) =>
+        long.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long v) ? v : null;
+
+    /// <summary>__GI__ 里一个 drm-pdev 分桶的内容。</summary>
+    private sealed class DrmBucket
+    {
+        /// <summary>各客户端逐类引擎的累计计数。</summary>
+        public List<GpuEngineCounter> Engines { get; } = [];
+
+        /// <summary>系统内存区域(system* / stolen-system* / gtt)的驻留合计;没有这类区域时为 null。</summary>
+        public long? SystemResident { get; set; }
+
+        /// <summary>板载显存区域(local* / vram*)的驻留合计;核显没有这类区域,为 null。</summary>
+        public long? LocalResident { get; set; }
+
+        /// <summary>按 drm-client-id 去重后的可见客户端数。</summary>
+        public int Clients { get; set; }
+    }
+
+    /// <summary>
+    /// 把一个客户端的 <c>键=值</c> 列表拆成逐类引擎的计数。i915 给 <c>engine-类名</c>(纳秒);
+    /// xe 只给 <c>cycles-类名</c> 与 <c>total-cycles-类名</c>(GPU 时钟周期),利用率是两者差分之比;
+    /// <c>engine-capacity-类名</c> 是该类引擎的实例数。
+    /// </summary>
+    private static List<GpuEngineCounter> EngineCounters(string client, string pairs)
+    {
+        var nanoseconds = new Dictionary<string, long>(StringComparer.Ordinal);
+        var cycles = new Dictionary<string, long>(StringComparer.Ordinal);
+        var totals = new Dictionary<string, long>(StringComparer.Ordinal);
+        var capacity = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (string pair in pairs.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int eq = pair.IndexOf('=');
+            if (eq <= 0 ||
+                !long.TryParse(pair.AsSpan(eq + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out long value))
+            {
+                continue;
+            }
+            string key = pair[..eq];
+            if (key.StartsWith("engine-capacity-", StringComparison.Ordinal))
+            {
+                capacity[key["engine-capacity-".Length..]] = (int)Math.Clamp(value, 1, 64);
+            }
+            else if (key.StartsWith("engine-", StringComparison.Ordinal))
+            {
+                nanoseconds[key["engine-".Length..]] = value;
+            }
+            else if (key.StartsWith("total-cycles-", StringComparison.Ordinal))
+            {
+                totals[key["total-cycles-".Length..]] = value;
+            }
+            else if (key.StartsWith("cycles-", StringComparison.Ordinal))
+            {
+                cycles[key["cycles-".Length..]] = value;
+            }
+        }
+        var counters = new List<GpuEngineCounter>();
+        // 同一类引擎两种都给时以周期为准:它和总周期同一个时钟域,不受两次读取之间 CPU 调度的影响。
+        foreach ((string engine, long busy) in cycles)
+        {
+            if (totals.TryGetValue(engine, out long total))
+            {
+                counters.Add(new(client, engine, busy, total, capacity.GetValueOrDefault(engine, 1)));
+            }
+        }
+        foreach ((string engine, long busy) in nanoseconds)
+        {
+            if (!counters.Exists(c => c.Engine == engine))
+            {
+                counters.Add(new(client, engine, busy, null, capacity.GetValueOrDefault(engine, 1)));
+            }
+        }
+        return counters;
+    }
 
     /// <summary>
     /// PCI 厂商号 → 厂商枚举。虚拟化厂商单列一类:KVM/PVE 的 virtio-gpu 与 QXL、ESXi 的 SVGA、
@@ -257,23 +348,41 @@ public sealed partial class SessionMetrics
             ProcessCount = procs;
         }
 
-        // __GI__:i915/xe 的 DRM 客户端统计。engine 值是累计纳秒,内存值已经在远端
-        // awk 中换算成字节。没有权限读取的客户端不会被伪造成 0。
-        var drmStats = new Dictionary<string, (long? Busy, long? Total, long? Resident, int Clients)>(StringComparer.Ordinal);
+        // __GI__:i915/xe 的 DRM 客户端统计,按 drm-pdev 分桶(格式见 IntelGpuCommand)。
+        // 引擎计数逐客户端保留,差分时按客户端配对;内存值已经在远端 awk 中换算成字节。
+        // 没有权限读取的客户端不会被伪造成 0。
+        double? gpuUptime = null;
+        var drmStats = new Dictionary<string, DrmBucket>(StringComparer.Ordinal);
         foreach (string line in LinesOf(SectionAt(output, "__GI__")))
         {
             string[] f = line.Split('|');
-            if (f.Length < 5 || f[0].Trim().Length == 0)
+            if (f is ["t", { } uptime])
+            {
+                gpuUptime = NumOrNull(uptime);
+                continue;
+            }
+            if (f.Length < 4 || f[1].Trim().Length == 0)
             {
                 continue;
             }
-            static long? Number(string value) => long.TryParse(value.Trim(), NumberStyles.Integer,
-                CultureInfo.InvariantCulture, out long number) ? number : null;
-            drmStats[f[0].Trim()] = (
-                Number(f[1]), Number(f[2]), Number(f[3]),
-                int.TryParse(f[4].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int clients)
+            string bucketKey = f[1].Trim();
+            if (!drmStats.TryGetValue(bucketKey, out DrmBucket? bucket))
+            {
+                bucket = new();
+                drmStats[bucketKey] = bucket;
+            }
+            if (f[0] == "c")
+            {
+                bucket.Engines.AddRange(EngineCounters(f[2].Trim(), f[3]));
+            }
+            else if (f[0] == "m" && f.Length >= 5)
+            {
+                bucket.SystemResident = LongOrNull(f[2]);
+                bucket.LocalResident = LongOrNull(f[3]);
+                bucket.Clients = int.TryParse(f[4].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int clients)
                     ? clients
-                    : 0);
+                    : 0;
+            }
         }
 
         // __GP__:nvidia-smi CSV。缺失字段(如被动散热卡的风扇、虚拟化下的功耗)输出 [N/A],
@@ -308,6 +417,7 @@ public sealed partial class SessionMetrics
         // 序号从 nvidia 之后接着排。
         bool hasNvidiaSmi = gpus.Count > 0;
         int nextIndex = hasNvidiaSmi ? gpus.Max(g => g.Index) + 1 : 0;
+        var usage = new List<GpuUsageCounter>();
         foreach (string line in LinesOf(SectionAt(output, "__GS__")))
         {
             string[] f = line.Split('|');
@@ -322,7 +432,10 @@ public sealed partial class SessionMetrics
             }
             // hwmon 的温度是毫摄氏度、功耗是微瓦、频率是赫兹;gt_cur_freq_mhz 直接是 MHz。
             string card = f[0].Trim();
-            drmStats.TryGetValue(card, out (long? Busy, long? Total, long? Resident, int Clients) stats);
+            string driver = f.Length > 11 ? f[11].Trim() : "";
+            DrmBucket? stats = vendor == GpuVendor.Intel
+                ? drmStats.GetValueOrDefault(f.Length > 10 ? f[10].Trim() : "") ?? drmStats.GetValueOrDefault(driver)
+                : null;
             long? vramUsed = NumOrNull(f[3]) is { } rawUsed ? (long)rawUsed : null;
             long? vramTotal = NumOrNull(f[4]) is { } rawTotal ? (long)rawTotal : null;
             long? memoryUsed = vramUsed;
@@ -330,13 +443,24 @@ public sealed partial class SessionMetrics
             GpuMemoryKind memoryKind = memoryUsed is not null && memoryTotal is not null
                 ? GpuMemoryKind.Dedicated
                 : GpuMemoryKind.Unknown;
-            if (vendor == GpuVendor.Intel && stats.Resident is { } resident)
+            if (stats?.LocalResident is { } local)
             {
-                // Intel 核显没有独立 VRAM:resident 是 DRM 缓冲区驻留的系统内存,
+                // Intel 独显(Arc / Battlemage)的 local* / vram* 区域是板载显存。sysfs 不给它的显存总量,
+                // 总量宁可空着,也不拿系统内存冒充。
+                memoryUsed = local;
+                memoryKind = GpuMemoryKind.Dedicated;
+            }
+            else if (stats?.SystemResident is { } shared)
+            {
+                // Intel 核显没有独立 VRAM:system* / stolen* / gtt 区域是 DRM 缓冲区驻留的系统内存,
                 // 总量使用同一次快照的系统内存总量,不伪造专用显存容量。
-                memoryUsed = resident;
-                memoryTotal = MemTotalBytes > 0 ? MemTotalBytes : stats.Total;
+                memoryUsed = shared;
+                memoryTotal = MemTotalBytes > 0 ? MemTotalBytes : null;
                 memoryKind = GpuMemoryKind.SharedSystem;
+            }
+            if (stats is { Engines.Count: > 0 })
+            {
+                usage.Add(new(card, stats.Engines, gpuUptime));
             }
             double? clock = NumOrNull(f[7]) is { } hz ? hz / 1_000_000 : NumOrNull(f[8]);
             gpus.Add(new(
@@ -357,15 +481,11 @@ public sealed partial class SessionMetrics
                 null)
             {
                 MemoryKind = memoryKind,
-                BusyNanoseconds = stats.Busy,
-                Driver = f.Length > 11 ? f[11].Trim() : "",
-                ClientScopedUtil = stats.Clients > 0
+                Driver = driver,
+                ClientScopedUtil = stats is { Clients: > 0 }
             });
         }
-        GpuUsageCounters = drmStats
-            .Where(pair => pair.Value.Busy is not null)
-            .Select(pair => new GpuUsageCounter(pair.Key, pair.Value.Busy!.Value))
-            .ToArray();
+        GpuUsageCounters = usage;
         Gpus = gpus;
 
         // __GA__:计算进程 "gpu_uuid, pid, name, used_mem(MiB)";按 UUID 归到具体卡。
@@ -502,9 +622,6 @@ public sealed partial class SessionMetrics
             map[pid] = (LongOrNull(parts[1]), LongOrNull(parts[2]));
         }
         return map;
-
-        static long? LongOrNull(string s) =>
-            long.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long v) ? v : null;
     }
 
     /// <summary>解析静态信息探针的输出;整段不可用时返回一个各字段为空的实例。</summary>
@@ -594,18 +711,20 @@ public sealed partial class SessionMetrics
             }
         }
 
-        // __GV__:"卡名 PCI槽位 厂商号";把 lspci 的型号名按槽位后缀匹配上去
-        // (sysfs 给的是 0000:03:00.0,lspci 给的是 03:00.0)。
+        // __GV__:"卡名|PCI槽位|厂商号|驱动";把 lspci 的型号名按槽位后缀匹配上去
+        // (sysfs 给的是 0000:03:00.0,lspci 给的是 03:00.0)。没有厂商号的是非 PCI 设备
+        // (树莓派 / Rockchip 的显示控制器、simpledrm),一个指标也读不到,不单列成卡。
         var cards = new List<GpuCardInfo>();
         foreach (string line in LinesOf(SectionAt(output, "__GV__")))
         {
-            string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 3)
+            string[] parts = line.Split('|');
+            if (parts.Length < 3 || parts[0].Trim().Length == 0 || parts[2].Trim().Length == 0)
             {
                 continue;
             }
-            cards.Add(new(parts[0], VendorOf(parts[2]), LspciName(lspci, parts[1]), parts[1],
-                parts.Length > 3 ? parts[3] : "", true));
+            string slot = parts[1].Trim();
+            cards.Add(new(parts[0].Trim(), VendorOf(parts[2]), LspciName(lspci, slot), slot,
+                parts.Length > 3 ? parts[3].Trim() : "", true));
         }
 
         // __GC__:PCI 上的显示类设备。直通卡在宿主没装驱动时没有 DRM 节点,虚拟机的

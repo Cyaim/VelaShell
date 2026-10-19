@@ -182,43 +182,107 @@ public partial class SessionMetricsExtrasTests
         Assert.AreEqual(3, m.Gpus[3].Index);
     }
 
+    /// <summary>一台 Intel 核显(i915)+ Arc 独显(xe)的机器:__GS__ 的槽位与 __GI__ 的 drm-pdev 分桶对得上。</summary>
+    private const string IntelPrefix =
+        "__P__\n8\n__M__\n17179869184 4509715660\n" +
+        "__GS__\ncard0|0x8086||||45000||||Arrow Lake-S Intel Graphics|0000:00:02.0|i915\n" +
+        "card1|0x8086||||||||Arc B580|0000:03:00.0|xe\n";
+
     [TestMethod]
-    public void Parse_IntelDrmStats_UsesSharedSystemMemoryAndKeepsCounter()
+    public void Parse_IntelDrmStats_SplitsSharedSystemMemoryFromDiscreteVram()
     {
-        const string output =
-            "__P__\n8\n__M__\n17179869184 4509715660\n" +
-            "__GS__\ncard1|0x8086||||45000||||Arrow Lake-S Intel Graphics|0000:00:02.0|i915\n" +
-            "__GI__\ncard1|3000000000|2147483648|1073741824|2\n";
+        string output = IntelPrefix +
+            "__GI__\nt|1000.00\n" +
+            "c|0000:00:02.0|7|engine-render=3000000000 engine-video=0 engine-capacity-video=2\n" +
+            "c|0000:03:00.0|11|cycles-rcs=100 total-cycles-rcs=1000\n" +
+            "m|0000:00:02.0|1073741824||2\n" +
+            // Arc 独显同时有系统内存与板载显存的驻留,显存才是它的"显存"。
+            "m|0000:03:00.0|20971520|536870912|1\n";
 
         SessionMetrics metrics = SessionMetrics.Parse(output)!;
-        GpuDevice gpu = metrics.Gpus.Single();
+        GpuDevice integrated = metrics.Gpus.Single(g => g.Card == "card0");
+        GpuDevice discrete = metrics.Gpus.Single(g => g.Card == "card1");
 
-        Assert.AreEqual(GpuVendor.Intel, gpu.Vendor);
-        Assert.AreEqual(GpuMemoryKind.SharedSystem, gpu.MemoryKind);
-        Assert.AreEqual(1073741824L, gpu.MemUsedBytes);
-        Assert.AreEqual(17179869184L, gpu.MemTotalBytes);
-        Assert.AreEqual(3000000000L, gpu.BusyNanoseconds);
-        Assert.AreEqual("i915", gpu.Driver);
-        Assert.IsTrue(gpu.ClientScopedUtil);
-        Assert.AreEqual(3000000000L, metrics.GpuUsageCounters.Single().BusyNanoseconds);
+        Assert.AreEqual(GpuMemoryKind.SharedSystem, integrated.MemoryKind);
+        Assert.AreEqual(1073741824L, integrated.MemUsedBytes);
+        Assert.AreEqual(17179869184L, integrated.MemTotalBytes, "核显的总量是系统内存总量。");
+        Assert.AreEqual("i915", integrated.Driver);
+        Assert.IsTrue(integrated.ClientScopedUtil);
+
+        Assert.AreEqual(GpuMemoryKind.Dedicated, discrete.MemoryKind, "有 local/vram 区域的 Intel 卡是独显,不能标成共享内存。");
+        Assert.AreEqual(536870912L, discrete.MemUsedBytes);
+        Assert.IsNull(discrete.MemTotalBytes, "独显的显存总量读不到就空着,不能拿系统内存冒充。");
+        Assert.AreEqual("xe", discrete.Driver);
+
+        Assert.HasCount(2, metrics.GpuUsageCounters);
+        GpuUsageCounter i915 = metrics.GpuUsageCounters.Single(c => c.Card == "card0");
+        Assert.AreEqual(1000.0, i915.UptimeSeconds);
+        Assert.AreEqual(2, i915.Engines.Single(e => e.Engine == "video").Capacity);
+        Assert.IsNull(i915.Engines.Single(e => e.Engine == "render").TotalCycles);
+        GpuEngineCounter rcs = metrics.GpuUsageCounters.Single(c => c.Card == "card1").Engines.Single();
+        Assert.AreEqual(100L, rcs.Busy);
+        Assert.AreEqual(1000L, rcs.TotalCycles);
     }
 
     [TestMethod]
-    public void ApplyGpuUsage_DiffsDrmCounterInsteadOfDisplayingZero()
+    public void ApplyGpuUsage_TakesTheBusiestEngineAndUsesRemoteUptime()
     {
-        const string prefix =
-            "__P__\n8\n__M__\n17179869184 4509715660\n" +
-            "__GS__\ncard1|0x8086||||||||Arrow Lake-S Intel Graphics|0000:00:02.0|i915\n";
-        SessionMetrics previous = SessionMetrics.Parse(prefix + "__GI__\ncard1|1000000000|||1\n")!;
-        SessionMetrics current = SessionMetrics.Parse(prefix + "__GI__\ncard1|1500000000|||1\n")!;
+        SessionMetrics previous = SessionMetrics.Parse(IntelPrefix +
+            "__GI__\nt|1000.00\nc|0000:00:02.0|7|engine-render=1000000000 engine-video=0 engine-capacity-video=2\n")!;
+        SessionMetrics current = SessionMetrics.Parse(IntelPrefix +
+            "__GI__\nt|1002.00\nc|0000:00:02.0|7|engine-render=2200000000 engine-video=2400000000 engine-capacity-video=2\n")!;
+
+        // 本地测得 1 秒(SSH 往返抖动),远端 uptime 走了 2 秒 —— 分母以远端为准。
+        current.ApplyGpuUsage(previous.GpuUsageCounters, 1);
+
+        // render 1.2s/2s = 60%;video 2.4s/2s/2 个实例 = 60%。取最忙的引擎,而不是相加钳到 100%。
+        Assert.AreEqual(60.0, current.Gpus.Single(g => g.Card == "card0").UtilPercent!.Value, 0.001);
+    }
+
+    [TestMethod]
+    public void ApplyGpuUsage_PairsClientsSoExitsAndNewcomersDoNotSkewTheDelta()
+    {
+        SessionMetrics previous = SessionMetrics.Parse(IntelPrefix +
+            "__GI__\nt|1000.00\n" +
+            "c|0000:00:02.0|7|engine-render=1000000000\n" +
+            "c|0000:00:02.0|9|engine-render=9000000000\n")!;
+        // 客户端 9 退出、13 新来:对总和做差是 (1.5+20) - (1+9) = 11.5 秒,会被钳成 100%;
+        // 而客户端 9 退出若让总和变小,差值为负,曲线就闪成"不可用"。
+        SessionMetrics current = SessionMetrics.Parse(IntelPrefix +
+            "__GI__\nt|1001.00\n" +
+            "c|0000:00:02.0|7|engine-render=1500000000\n" +
+            "c|0000:00:02.0|13|engine-render=20000000000\n")!;
 
         current.ApplyGpuUsage(previous.GpuUsageCounters, 1);
 
-        Assert.AreEqual(50.0, current.Gpus.Single().UtilPercent!.Value, 0.001);
-        // 利用率必须有上限,即使多个引擎的忙碌计数合计超过墙钟时间。
-        current = SessionMetrics.Parse(prefix + "__GI__\ncard1|3000000000|||1\n")!;
+        Assert.AreEqual(50.0, current.Gpus.Single(g => g.Card == "card0").UtilPercent!.Value, 0.001);
+    }
+
+    [TestMethod]
+    public void ApplyGpuUsage_XeCyclesUseTheirOwnClockDomain()
+    {
+        // xe(Lunar Lake / Battlemage)只给 cycles 与 total-cycles,没有纳秒计数。
+        SessionMetrics previous = SessionMetrics.Parse(IntelPrefix +
+            "__GI__\nt|1000.00\nc|0000:03:00.0|11|cycles-rcs=100 total-cycles-rcs=1000 cycles-vcs=0 total-cycles-vcs=1000 engine-capacity-vcs=2\n")!;
+        SessionMetrics current = SessionMetrics.Parse(IntelPrefix +
+            "__GI__\nt|1001.00\nc|0000:03:00.0|11|cycles-rcs=600 total-cycles-rcs=2000 cycles-vcs=1600 total-cycles-vcs=2000 engine-capacity-vcs=2\n")!;
+
         current.ApplyGpuUsage(previous.GpuUsageCounters, 1);
-        Assert.AreEqual(100.0, current.Gpus.Single().UtilPercent!.Value, 0.001);
+
+        // rcs 500/1000 = 50%;vcs 1600/1000/2 = 80%。
+        Assert.AreEqual(80.0, current.Gpus.Single(g => g.Card == "card1").UtilPercent!.Value, 0.001);
+        Assert.IsNull(current.Gpus.Single(g => g.Card == "card0").UtilPercent, "没有客户端的卡不能凭空算出 0%。");
+    }
+
+    [TestMethod]
+    public void ApplyGpuUsage_FallsBackToLocalIntervalWithoutRemoteUptime()
+    {
+        SessionMetrics previous = SessionMetrics.Parse(IntelPrefix + "__GI__\nc|0000:00:02.0|7|engine-render=1000000000\n")!;
+        SessionMetrics current = SessionMetrics.Parse(IntelPrefix + "__GI__\nc|0000:00:02.0|7|engine-render=1500000000\n")!;
+
+        current.ApplyGpuUsage(previous.GpuUsageCounters, 1);
+
+        Assert.AreEqual(50.0, current.Gpus.Single(g => g.Card == "card0").UtilPercent!.Value, 0.001);
     }
 
     [TestMethod]
@@ -417,7 +481,7 @@ public partial class SessionMetricsExtrasTests
         // KVM/PVE 的 virtio-gpu 与 ESXi 的 SVGA:厂商号不在三大厂里,归到 Unknown
         // 界面会显示成 "UNKNOWN",看着像探测失败。
         const string output =
-            "__GV__\ncard0 0000:00:01.0 0x1af4\n" +
+            "__GV__\ncard0|0000:00:01.0|0x1af4|virtio-pci\n" +
             "__GC__\n0000:00:01.0|0x1af4|0x1050|virtio-pci\n0000:00:0f.0|0x15ad|0x0405|vmwgfx\n";
 
         SessionStaticInfo info = SessionMetrics.ParseStatic(output);
@@ -582,7 +646,7 @@ public partial class SessionMetricsExtrasTests
     public void ParseStatic_GpuCards_NameThemFromLspciBySlot()
     {
         const string output =
-            "__GV__\ncard0 0000:03:00.0 0x10de\ncard1 0000:00:02.0 0x8086\n" +
+            "__GV__\ncard0|0000:03:00.0|0x10de|nvidia\ncard1|0000:00:02.0|0x8086|i915\n" +
             "__GL__\n03:00.0 \"VGA compatible controller\" \"NVIDIA Corporation\" \"GA102 [GeForce RTX 3090]\" -ra1 \"NVIDIA\" \"Device 147d\"\n" +
             "00:02.0 \"VGA compatible controller\" \"Intel Corporation\" \"Raptor Lake-S GT1 [UHD Graphics 770]\" -r04 \"Intel\" \"Device 3000\"\n";
 
@@ -593,8 +657,27 @@ public partial class SessionMetricsExtrasTests
         Assert.AreEqual("GA102 [GeForce RTX 3090]", info.GpuCards[0].Name);
         Assert.AreEqual(GpuVendor.Intel, info.GpuCards[1].Vendor);
         Assert.AreEqual("Raptor Lake-S GT1 [UHD Graphics 770]", info.GpuCards[1].Name);
+        Assert.AreEqual("i915", info.GpuCards[1].Driver);
         // 没有 nvidia-smi 时,卡数由 DRM 卡兜底,GPU 页才不会被误隐藏。
         Assert.AreEqual(2, info.GpuCount);
+    }
+
+    [TestMethod]
+    public void ParseStatic_NonPciDrmDevices_AreNotListedAsGpus()
+    {
+        // 树莓派(vc4 / v3d)、Rockchip、simpledrm 的 DRM 设备挂在 platform 总线上,没有 vendor 文件。
+        // 空格分隔时驱动名会左移进厂商号那一栏,凭空多出一张驱动为 "—" 的 "Unknown" 卡。
+        const string output =
+            "__GV__\ncard0|gpu||vc4\ncard1|fec00000.v3d||v3d\ncard2|simple-framebuffer.0||simpledrm\n" +
+            "card3|0000:00:02.0|0x8086|i915\n";
+
+        SessionStaticInfo info = SessionMetrics.ParseStatic(output);
+
+        GpuCardInfo card = info.GpuCards.Single();
+        Assert.AreEqual("card3", card.Card);
+        Assert.AreEqual("0000:00:02.0", card.Slot);
+        Assert.AreEqual(GpuVendor.Intel, card.Vendor);
+        Assert.AreEqual("i915", card.Driver);
     }
 
     [TestMethod]
