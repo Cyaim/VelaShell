@@ -60,7 +60,7 @@ public sealed class TailscaleSshCheckDialogService(Func<Window?> ownerProvider)
                     {
                         window.PostClose();
                     }
-                });
+                }, notification.ExpiresAt);
             waiting = new(window, vm);
             WaitingWindow entry = waiting;
             window.DataContext = vm;

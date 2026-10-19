@@ -78,13 +78,15 @@ public class AuthenticationDialogViewModel : ReactiveObject
     /// <param name="knownFingerprint">已信任的主机指纹;首次连接为 null。</param>
     /// <param name="initialMethod">初始选中的认证方式。</param>
     /// <param name="sharedCredential">连接引用了共享凭据时传入(#550);否则为 null。</param>
+    /// <param name="connectionType">连接类型:只有 SSH / SFTP 有密码之外的认证方式可选。</param>
     public AuthenticationDialogViewModel(
         string host,
         int port,
         string? username = null,
         string? knownFingerprint = null,
         AuthMethod initialMethod = AuthMethod.Password,
-        SharedCredentialPromptContext? sharedCredential = null)
+        SharedCredentialPromptContext? sharedCredential = null,
+        ConnectionType connectionType = ConnectionType.SSH)
     {
         TargetText = host;
         _port = port;
@@ -93,9 +95,12 @@ public class AuthenticationDialogViewModel : ReactiveObject
         // 凭据不完整时用户就是来补它的,默认存回去;被拒时可能只是这一台密码不同,
         // 默认不动 —— 勾错的代价是另外几十台一起连不上。
         UpdateSharedCredential = sharedCredential?.Reason == SharedCredentialPromptReason.Incomplete;
+        // FTP 与插件协议只认用户名 + 密码:证书 / 密钥 / Tailscale 那几段对它们没有意义,
+        // 选了反而把这次连接的认证方式改掉、密码清空,登录时发出去的是空密码。
+        ShowsMethodSelector = connectionType is ConnectionType.SSH or ConnectionType.SFTP;
         // 分段选择器的顺序与 AuthMethod 的枚举顺序不一致,这里显式映射,
         // 不要图省事写成强转 —— 那会把证书认证的配置打开成密钥页。
-        _methodIndex = initialMethod switch
+        _methodIndex = !ShowsMethodSelector ? 0 : initialMethod switch
         {
             AuthMethod.Certificate => 1,
             AuthMethod.PrivateKey => 2,
@@ -205,6 +210,9 @@ public class AuthenticationDialogViewModel : ReactiveObject
         get => _methodIndex;
         private set => this.RaiseAndSetIfChanged(ref _methodIndex, value);
     }
+
+    /// <summary>是否显示认证方式的分段选择器:只有 SSH / SFTP 有密码之外的方式可选。</summary>
+    public bool ShowsMethodSelector { get; }
 
     /// <summary>当前是否选择密码认证方式。</summary>
     public bool IsPasswordMethod => MethodIndex == 0;

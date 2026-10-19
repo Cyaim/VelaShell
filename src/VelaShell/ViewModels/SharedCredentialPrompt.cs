@@ -69,7 +69,7 @@ public static class SharedCredentialPrompt
                               && !CredentialMaterial.HasInline(profile);
         var viewModel = new AuthenticationDialogViewModel(profile.Host, profile.Port,
             InitialUsername(profile, credential), knownFingerprint,
-            fromCredential ? credential!.AuthMethod : profile.AuthMethod, sharedContext);
+            fromCredential ? credential!.AuthMethod : profile.AuthMethod, sharedContext, profile.ConnectionType);
         if (fromCredential && credential!.AuthMethod is AuthMethod.PrivateKey or AuthMethod.Certificate)
         {
             viewModel.PrivateKeyPath = credential.PrivateKeyPath;

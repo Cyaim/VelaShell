@@ -7594,6 +7594,8 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH 使用本機 Tailscale 身分，不能儲存為共用認證。</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH 驗證</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>伺服器要求身分複核。請點擊連結在瀏覽器中驗證；伺服器批准後，本次連線會自動繼續。</value></data>
+  <data name="Ssh_TailscaleCheckDeviceWarning" xml:space="preserve"><value>批准前請確認：開啟的頁面是在請你批准對這台伺服器的 SSH 存取。如果頁面要求登入，或要將新裝置、新機器加入 tailnet，請不要批准，並取消本次連線。</value></data>
+  <data name="Ssh_TailscaleCheckDeadline" xml:space="preserve"><value>最長等待 {0} 分鐘；到 {1} 伺服器仍未批准，本次連線會自動取消。</value></data>
   <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>開啟瀏覽器</value></data>
   <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>複製連結</value></data>
   <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH 驗證連結已隱藏]</value></data>
@@ -7606,4 +7608,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH 要求身分複核，請手動重新連線。</value></data>
   <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>無法顯示 Tailscale SSH 驗證視窗。請在主視窗開啟後重新連線。</value></data>
   <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>伺服器拒絕或結束了認證，無法繼續 Tailscale SSH 驗證。</value></data>
+  <data name="SshErr_TailscaleServerMessage" xml:space="preserve"><value>伺服器說明：{0}</value></data>
+  <data name="SshErr_TailscaleAuthMethodRequired" xml:space="preserve"><value>此主機要求 Tailscale SSH 瀏覽器驗證。請將工作階段的驗證方式改為 Tailscale SSH 後重新連線。</value></data>
+  <data name="DiagSvc_TailscaleNoUsernameSkip" xml:space="preserve"><value>未填寫遠端使用者名稱，跳過驗證測試</value></data>
+  <data name="DiagSvc_SuggestTailscaleUsername" xml:space="preserve"><value>Tailscale SSH 只需要遠端系統使用者名稱；在編輯視窗填寫後即可測試驗證。</value></data>
+  <data name="DiagSvc_SuggestTailscale" xml:space="preserve"><value>確認本機已登入 Tailscale、遠端使用者名稱正確，且 tailnet 的 SSH 原則允許此使用者；伺服器要求瀏覽器驗證時，請在彈出的驗證視窗中完成。</value></data>
 </root>

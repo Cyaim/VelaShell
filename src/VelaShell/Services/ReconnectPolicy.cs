@@ -33,7 +33,9 @@ public static class ReconnectPolicy
     /// <item><b>上一次重连败在主机指纹上的不碰</b> —— 再试多少次结果都一样,
     /// 自动重连时又不弹窗问人(<c>ConnectionInfo.IsAutomaticReconnect</c>);等用户手动重连、在弹窗里核对。</item>
     /// <item><b>认证需要人工处理的不碰</b> —— 授权被拒或需要浏览器验证时暂停后台尝试;
-    /// 用户显式重连仍可尝试当前服务端策略,只有成功挂载传输才解除暂停。</item>
+    /// 用户显式重连仍可尝试当前服务端策略,只有成功挂载传输才解除暂停。
+    /// 认证途中连接被重置、没等到验证链接就超时这类失败不算(见 <c>VelaSshTailscaleAuthenticationException.RequiresUserAction</c>),
+    /// 与别的认证方式一样照常退避重试。</item>
     /// </list>
     /// <para>
     /// 反过来,只有"没人要它结束"的断开才该救:掉线、超时、服务端崩溃。

@@ -215,6 +215,120 @@ public class TailscaleSshCheckViewTests
             }
         });
 
+    /// <summary>
+    /// 点主窗口的关闭键:Avalonia 先拿 OwnerWindowClosing 问验证窗。曾经验证窗一律拦下 —— 主窗口关不掉、
+    /// 它自己的 Closing 也不来,点一次只取消了验证(首次连接的标签还被撤掉),得再点一次。
+    /// </summary>
+    [TestMethod]
+    public async Task ClosingOwner_IsNotBlocked_AndCancelsWaitingAttemptOnce() =>
+        await _session.RunOnUiAsync(async () =>
+        {
+            var owner = new Window();
+            owner.Show();
+            using var lifetime = new CancellationTokenSource();
+            var service = new TailscaleSshCheckDialogService(() => owner);
+            Guid id = Guid.NewGuid();
+            int cancelled = 0;
+            await service.HandleAsync(Start(id, U1, () => cancelled++, lifetime.Token));
+            var window = (TailscaleSshCheckView)owner.OwnedWindows.Single();
+            var vm = (TailscaleSshCheckViewModel)window.DataContext!;
+            bool ownerClosed = false, windowClosed = false;
+            owner.Closed += (_, _) => ownerClosed = true;
+            window.Closed += (_, _) => windowClosed = true;
+
+            owner.Close();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.IsTrue(ownerClosed, "验证窗不能拦住主窗口的关闭。");
+            Assert.IsTrue(windowClosed);
+            Assert.AreEqual(1, cancelled, "窗口随主窗口关闭时取消本次认证,不留一条没人能操作的认证挂着。");
+            Assert.IsTrue(vm.IsCompleted);
+            lifetime.Cancel();
+            await service.HandleAsync(End(id)).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.AreEqual(1, cancelled);
+        });
+
+    /// <summary>主窗口自己拦下了关闭(最小化到托盘、关闭前确认):验证窗不受影响,认证照常等。</summary>
+    [TestMethod]
+    public async Task OwnerThatKeepsItselfOpen_LeavesVerificationWaiting() =>
+        await _session.RunOnUiAsync(async () =>
+        {
+            var owner = new Window();
+            owner.Show();
+            using var lifetime = new CancellationTokenSource();
+            EventHandler<WindowClosingEventArgs> keepOpen = (_, e) => e.Cancel = true;
+            try
+            {
+                var service = new TailscaleSshCheckDialogService(() => owner);
+                Guid id = Guid.NewGuid();
+                int cancelled = 0;
+                await service.HandleAsync(Start(id, U1, () => cancelled++, lifetime.Token));
+                var window = (TailscaleSshCheckView)owner.OwnedWindows.Single();
+                var vm = (TailscaleSshCheckViewModel)window.DataContext!;
+                owner.Closing += keepOpen;
+
+                owner.Close();
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.IsTrue(owner.IsVisible);
+                Assert.IsTrue(window.IsVisible);
+                Assert.IsFalse(vm.IsCompleted);
+                Assert.AreEqual(0, cancelled);
+
+                lifetime.Cancel();
+                await service.HandleAsync(End(id)).WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.AreEqual(0, cancelled, "服务端结束的 End 仍不是用户取消。");
+            }
+            finally
+            {
+                owner.Closing -= keepOpen;
+                owner.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+        });
+
+    [TestMethod]
+    public async Task ShowsDeadline_DeviceWarning_AndTheExactLinkThatIsOpened() =>
+        await _session.RunOnUiAsync(async () =>
+        {
+            var owner = new Window();
+            owner.Show();
+            using var lifetime = new CancellationTokenSource();
+            try
+            {
+                var service = new TailscaleSshCheckDialogService(() => owner);
+                Guid id = Guid.NewGuid();
+                DateTimeOffset expiresAt = DateTimeOffset.Now.AddMinutes(30);
+                await service.HandleAsync(Start(id, U1, () => { }, lifetime.Token) with { ExpiresAt = expiresAt });
+                var window = (TailscaleSshCheckView)owner.OwnedWindows.Single();
+                var vm = (TailscaleSshCheckViewModel)window.DataContext!;
+
+                string expected = Strings.Format("Ssh_TailscaleCheckDeadline", 30,
+                    expiresAt.ToLocalTime().ToString("t", System.Globalization.CultureInfo.CurrentCulture));
+                Assert.AreEqual(expected, vm.DeadlineText);
+                TextBlock deadline = window.FindControl<TextBlock>("DeadlineNotice")!;
+                Assert.IsTrue(deadline.IsVisible);
+                Assert.AreEqual(expected, deadline.Text);
+                TextBlock warning = window.FindControl<TextBlock>("DeviceWarning")!;
+                Assert.IsTrue(warning.IsVisible, "设备登录链接与 SSH 验证链接同形,批准前要提醒看清页面。");
+                Assert.AreEqual(Strings.Get("Ssh_TailscaleCheckDeviceWarning"), warning.Text);
+                Assert.AreEqual(U1.AbsoluteUri, window.FindControl<TextBox>("VerificationLink")!.Text,
+                    "显示的必须是打开 / 复制的那一串,含 query。");
+
+                lifetime.Cancel();
+                await service.HandleAsync(End(id));
+
+                var undated = new TailscaleSshCheckViewModel("user@node:22", U2, _ => Task.FromResult(true), _ => Task.CompletedTask, () => { });
+                Assert.AreEqual(string.Empty, undated.DeadlineText);
+                undated.Complete();
+            }
+            finally
+            {
+                owner.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+        });
+
     [TestMethod]
     public async Task MissingOrFailingOwnerReportsOnlySafeAuthenticationFailure() =>
         await _session.RunOnUiAsync(async () =>

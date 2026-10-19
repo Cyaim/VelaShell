@@ -223,12 +223,14 @@ public sealed class ConnectionDiagnosticsService(
         }
         else if (!HasStoredCredentials(profile))
         {
+            // Tailscale SSH 没有密码/密钥可存,缺的只能是远端用户名:别叫用户去「保存凭据」。
+            bool tailscale = profile.AuthMethod == AuthMethod.Tailscale;
             Publish(results[3] with
             {
                 Status = DiagnosticStepStatus.Warning,
-                Detail = Strings.Get("DiagSvc_NoCredsSkip")
+                Detail = Strings.Get(tailscale ? "DiagSvc_TailscaleNoUsernameSkip" : "DiagSvc_NoCredsSkip")
             });
-            suggestions.Add(Strings.Get("DiagSvc_SuggestSaveCreds"));
+            suggestions.Add(Strings.Get(tailscale ? "DiagSvc_SuggestTailscaleUsername" : "DiagSvc_SuggestSaveCreds"));
         }
         else
         {
@@ -363,12 +365,19 @@ public sealed class ConnectionDiagnosticsService(
                                       && !string.IsNullOrEmpty(profile.PrivateKeyPath),
             // agent 那一路配置里本来就不存凭据:密钥在 agent 里,连接时现取。
             AuthMethod.Agent => true,
+            // Tailscale SSH 只要远端用户名,身份由本机已登录的 Tailscale 提供;check 模式的浏览器验证照常弹窗。
+            AuthMethod.Tailscale => !string.IsNullOrWhiteSpace(profile.Username),
             _ => false
         };
 
+    /// <summary>失败是不是出在 Tailscale SSH 的认证跳上(那一路的失败消息都带着 Tailscale 字样)。</summary>
+    private static bool IsTailscaleFailure(SessionProfile profile, string reason) =>
+        profile.AuthMethod == AuthMethod.Tailscale && ContainsAny(reason, "Tailscale");
+
     private static (string Title, string Description) ClassifyAuthFailure(SessionProfile profile, bool viaJump, string reason)
     {
-        if (ContainsAny(reason, "Permission denied", "denied", "认证", "password", "publickey", "Authentication"))
+        if (IsTailscaleFailure(profile, reason)
+            || ContainsAny(reason, "Permission denied", "denied", "认证", "password", "publickey", "Authentication"))
         {
             return (Strings.Get("DiagSvc_AuthFailed"), Strings.Format("DiagSvc_AuthFailedDesc", profile.Username, reason));
         }
@@ -385,6 +394,12 @@ public sealed class ConnectionDiagnosticsService(
 
     private static IEnumerable<string> SuggestForAuthFailure(SessionProfile profile, bool viaJump, string reason)
     {
+        if (IsTailscaleFailure(profile, reason))
+        {
+            // 没有密码/密钥可查:方向是本机 Tailscale 身份、远端用户名与 tailnet 的 SSH 策略。
+            yield return Strings.Get("DiagSvc_SuggestTailscale");
+            yield break;
+        }
         if (ContainsAny(reason, "Permission denied", "denied", "认证", "password", "publickey", "Authentication"))
         {
             yield return Strings.Get("DiagSvc_SuggestCheckCreds");

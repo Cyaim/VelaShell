@@ -56,6 +56,10 @@ public static partial class TailscaleSshCheckUri
             ? Strings.Get("Ssh_TailscaleCheckNotice")
             : match.Value);
 
+    /// <summary>去掉文本里的全部 http(s) 链接，用于把服务端说明拼进失败消息。</summary>
+    /// <remarks>失败消息显示在应用自己的提示里，看着像应用的话；未认证对端给的链接不能借这个位置出现。</remarks>
+    public static string RemoveLinks(string text) => UrlTokens().Replace(text, string.Empty);
+
     private static bool IsVerificationCandidate(string candidate)
     {
         if (!candidate.Contains("/a/", StringComparison.OrdinalIgnoreCase))

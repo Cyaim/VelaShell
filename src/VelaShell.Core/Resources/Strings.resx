@@ -7124,6 +7124,8 @@ Send anyway?</value>
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH uses this device's Tailscale identity and cannot be stored as a shared credential.</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH verification</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>The server requires identity verification. Open the link in your browser. This connection will continue automatically when the server approves it.</value></data>
+  <data name="Ssh_TailscaleCheckDeviceWarning" xml:space="preserve"><value>Before approving, make sure the page asks you to approve SSH access to this server. If it asks you to sign in or to add a new device or machine to your tailnet instead, do not approve it; cancel this connection.</value></data>
+  <data name="Ssh_TailscaleCheckDeadline" xml:space="preserve"><value>Waiting up to {0} minutes. If the server has not approved by {1}, this connection is cancelled.</value></data>
   <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>Open browser</value></data>
   <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>Copy link</value></data>
   <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH verification link hidden]</value></data>
@@ -7136,4 +7138,9 @@ Send anyway?</value>
   <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH requires identity verification. Reconnect manually.</value></data>
   <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>The Tailscale SSH verification window is unavailable. Reconnect when the main window is open.</value></data>
   <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>Tailscale SSH verification could not continue because the server rejected or ended authentication.</value></data>
+  <data name="SshErr_TailscaleServerMessage" xml:space="preserve"><value>Server message: {0}</value></data>
+  <data name="SshErr_TailscaleAuthMethodRequired" xml:space="preserve"><value>This host requires Tailscale SSH browser verification. Change the session's authentication method to Tailscale SSH and connect again.</value></data>
+  <data name="DiagSvc_TailscaleNoUsernameSkip" xml:space="preserve"><value>No remote username; authentication test skipped</value></data>
+  <data name="DiagSvc_SuggestTailscaleUsername" xml:space="preserve"><value>Tailscale SSH needs only the remote system username. Enter it in the edit dialog to run the authentication test.</value></data>
+  <data name="DiagSvc_SuggestTailscale" xml:space="preserve"><value>Make sure this device is signed in to Tailscale, the remote username is correct, and the tailnet SSH policy allows this user. If the server asks for browser verification, complete it in the verification window.</value></data>
 </root>

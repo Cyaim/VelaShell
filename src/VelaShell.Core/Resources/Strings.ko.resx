@@ -7119,6 +7119,8 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH는 이 기기의 Tailscale ID를 사용하므로 공유 자격 증명으로 저장할 수 없습니다.</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH 확인</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>서버가 신원 확인을 요청했습니다. 링크를 브라우저에서 열어 확인하세요. 서버가 승인하면 이 연결이 자동으로 계속됩니다.</value></data>
+  <data name="Ssh_TailscaleCheckDeviceWarning" xml:space="preserve"><value>승인하기 전에 열린 페이지가 이 서버에 대한 SSH 접근 승인을 요청하는지 확인하세요. 로그인하거나 새 기기/머신을 tailnet에 추가하라고 요청하면 승인하지 말고 이 연결을 취소하세요.</value></data>
+  <data name="Ssh_TailscaleCheckDeadline" xml:space="preserve"><value>최대 {0}분 동안 기다립니다. {1}까지 서버가 승인하지 않으면 이 연결은 취소됩니다.</value></data>
   <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>브라우저 열기</value></data>
   <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>링크 복사</value></data>
   <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH 확인 링크 숨김]</value></data>
@@ -7131,4 +7133,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH에 신원 확인이 필요합니다. 수동으로 다시 연결하세요.</value></data>
   <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>Tailscale SSH 확인 창을 표시할 수 없습니다. 기본 창을 연 후 다시 연결하세요.</value></data>
   <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>서버가 인증을 거부하거나 종료하여 Tailscale SSH 확인을 계속할 수 없습니다.</value></data>
+  <data name="SshErr_TailscaleServerMessage" xml:space="preserve"><value>서버 메시지: {0}</value></data>
+  <data name="SshErr_TailscaleAuthMethodRequired" xml:space="preserve"><value>이 호스트는 Tailscale SSH 브라우저 확인이 필요합니다. 세션의 인증 방식을 Tailscale SSH로 변경한 후 다시 연결하세요.</value></data>
+  <data name="DiagSvc_TailscaleNoUsernameSkip" xml:space="preserve"><value>원격 사용자 이름이 없어 인증 테스트를 건너뜀</value></data>
+  <data name="DiagSvc_SuggestTailscaleUsername" xml:space="preserve"><value>Tailscale SSH에는 원격 시스템 사용자 이름만 필요합니다. 편집 창에서 입력하면 인증 테스트를 실행할 수 있습니다.</value></data>
+  <data name="DiagSvc_SuggestTailscale" xml:space="preserve"><value>이 기기가 Tailscale에 로그인되어 있고 원격 사용자 이름이 올바르며 tailnet SSH 정책이 이 사용자를 허용하는지 확인하세요. 서버가 브라우저 확인을 요청하면 확인 창에서 완료하세요.</value></data>
 </root>

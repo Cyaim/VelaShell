@@ -2812,8 +2812,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             LastConnectionError = null;
             tab.MarkDisconnectedByUser();
         }
-        catch (VelaSshTailscaleAuthenticationException ex)
+        catch (VelaSshTailscaleAuthenticationException ex) when (ex.RequiresUserAction)
         {
+            // 不需要人处理的(认证途中断线、没等到验证链接就超时)落到下面的通用分支,照常退避重试。
             LastConnectionError = DescribeConnectionError(ex, tab.Profile);
             Toasts.Error(LastConnectionError);
             tab.MarkAuthenticationRequiresUserAction(LastConnectionError);
@@ -3869,7 +3870,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             {
                 LastConnectionError = DescribeConnectionError(ex, current);
                 Toasts.Error(LastConnectionError);
-                tab.MarkAuthenticationRequiresUserAction(LastConnectionError);
+                if (ex.RequiresUserAction)
+                {
+                    tab.MarkAuthenticationRequiresUserAction(LastConnectionError);
+                }
+                else
+                {
+                    // 认证途中断线、没等到验证链接就超时:与网络失败一样留在失败覆盖层,不弹凭据框
+                    // (Tailscale 没有凭据可问),也不暂停之后的自动重试。
+                    tab.MarkConnectionFailed(LastConnectionError);
+                }
                 return tab;
             }
             catch (Exception ex)

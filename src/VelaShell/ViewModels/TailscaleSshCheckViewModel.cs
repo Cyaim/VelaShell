@@ -1,3 +1,4 @@
+using System.Globalization;
 using ReactiveUI;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Resources;
@@ -17,14 +18,27 @@ public sealed class TailscaleSshCheckViewModel : ReactiveObject
     private int _uriRevision;
 
     /// <summary>创建单次认证跳的等待状态;不会自动打开链接。</summary>
+    /// <param name="target">当前认证跳。</param>
+    /// <param name="verificationUri">当前验证链接。</param>
+    /// <param name="openBrowser">打开浏览器。</param>
+    /// <param name="copyLink">复制链接。</param>
+    /// <param name="cancel">取消本次认证。</param>
+    /// <param name="expiresAt">本次等待的截止时刻;到点仍未批准,本次连接按超时结束。</param>
     public TailscaleSshCheckViewModel(string target, Uri verificationUri,
-        Func<Uri, Task<bool>> openBrowser, Func<string, Task> copyLink, Action cancel)
+        Func<Uri, Task<bool>> openBrowser, Func<string, Task> copyLink, Action cancel,
+        DateTimeOffset? expiresAt = null)
     {
         Target = target;
         _verificationUri = verificationUri;
         _openBrowser = openBrowser;
         _copyLink = copyLink;
         _cancel = cancel;
+        // 服务端会等很久(SSO + 多因素也来得及),写明最长等多久、到几点,而不是让人对着窗口猜。
+        DeadlineText = expiresAt is { } end
+            ? Strings.Format("Ssh_TailscaleCheckDeadline",
+                Math.Max(1, (int)Math.Ceiling((end - DateTimeOffset.Now).TotalMinutes)),
+                end.ToLocalTime().ToString("t", CultureInfo.CurrentCulture))
+            : string.Empty;
         IObservable<bool> active = this.WhenAnyValue(x => x.IsCompleted).Select(completed => !completed);
         OpenBrowserCommand = ReactiveCommand.CreateFromTask(OpenBrowserAsync, active);
         CopyLinkCommand = ReactiveCommand.CreateFromTask(CopyLinkAsync, active);
@@ -33,6 +47,9 @@ public sealed class TailscaleSshCheckViewModel : ReactiveObject
 
     /// <summary>当前认证跳,不是最终会话配置的身份。</summary>
     public string Target { get; }
+
+    /// <summary>最长等多久、到几点;没有截止时刻时为空串。</summary>
+    public string DeadlineText { get; }
 
     /// <summary>仅供本窗口展示及用户操作的当前链接,不得持久化。</summary>
     public Uri VerificationUri

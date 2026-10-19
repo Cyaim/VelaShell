@@ -7594,6 +7594,8 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH 使用本机 Tailscale 身份，不能保存为共享凭据。</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH 验证</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>服务器要求身份复核。请点击链接在浏览器中验证；服务器批准后，本次连接会自动继续。</value></data>
+  <data name="Ssh_TailscaleCheckDeviceWarning" xml:space="preserve"><value>批准前请确认：打开的页面是在请你批准对这台服务器的 SSH 访问。如果页面要求登录，或要把新设备、新机器加入 tailnet，请不要批准，并取消本次连接。</value></data>
+  <data name="Ssh_TailscaleCheckDeadline" xml:space="preserve"><value>最长等待 {0} 分钟；到 {1} 服务器仍未批准，本次连接会自动取消。</value></data>
   <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>打开浏览器</value></data>
   <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>复制链接</value></data>
   <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH 验证链接已隐藏]</value></data>
@@ -7606,4 +7608,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH 要求身份复核，请手动重新连接。</value></data>
   <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>无法显示 Tailscale SSH 验证窗口。请在主窗口打开后重新连接。</value></data>
   <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>服务器拒绝或结束了认证，无法继续 Tailscale SSH 验证。</value></data>
+  <data name="SshErr_TailscaleServerMessage" xml:space="preserve"><value>服务器说明：{0}</value></data>
+  <data name="SshErr_TailscaleAuthMethodRequired" xml:space="preserve"><value>该主机要求 Tailscale SSH 浏览器验证。请把会话的认证方式改为 Tailscale SSH 后重新连接。</value></data>
+  <data name="DiagSvc_TailscaleNoUsernameSkip" xml:space="preserve"><value>未填写远端用户名，跳过认证测试</value></data>
+  <data name="DiagSvc_SuggestTailscaleUsername" xml:space="preserve"><value>Tailscale SSH 只需要远端系统用户名；在编辑窗口填写后即可测试认证。</value></data>
+  <data name="DiagSvc_SuggestTailscale" xml:space="preserve"><value>确认本机已登录 Tailscale、远端用户名正确，且 tailnet 的 SSH 策略允许这个用户；服务器要求浏览器验证时，请在弹出的验证窗口中完成。</value></data>
 </root>

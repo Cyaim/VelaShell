@@ -9,6 +9,7 @@ using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
 using VelaShell.Ssh.Diagnostics;
+using VelaShell.Ssh.HostKeys;
 using VelaShell.Ssh.Protocol;
 using VelaShell.Ssh.Tests.TestKit;
 using VelaShell.Ssh.Transport;
@@ -118,6 +119,7 @@ public sealed class TailscaleSshAuthenticationTests
             Assert.IsInstanceOfType<VelaSshTailscaleAuthenticationException>(failure);
             StringAssert.Contains(failure.Message, Strings.Get(resource));
             Assert.IsNull(failure.InnerException, "不能保留携带服务端原文的原始异常链。");
+            Assert.IsTrue(((VelaSshTailscaleAuthenticationException)failure).RequiresUserAction, "出现过验证链接的失败要人重新验证。");
         }
         if (outcome == "timeout")
         {
@@ -148,6 +150,7 @@ public sealed class TailscaleSshAuthenticationTests
 
         StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleRejected"));
         Assert.IsNull(failure.InnerException);
+        Assert.IsTrue(failure.RequiresUserAction, "服务端明确拒绝,再试多少次结果都一样。");
         Assert.AreSequenceEqual([SshProtocolNames.AuthNone], (await round.Ready.Task.WaitAsync(Deadline)).Observation.RequestedMethods);
         Assert.IsFalse(harness.Notifications.Reader.TryRead(out _));
         Assert.IsEmpty(harness.Service.Sessions);
@@ -640,11 +643,178 @@ public sealed class TailscaleSshAuthenticationTests
             async () => await connecting.WaitAsync(Deadline));
         StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleAuthTimeout"));
         Assert.IsNull(failure.InnerException);
+        Assert.IsFalse(failure.RequiresUserAction, "没等到链接的超时与别的认证方式一样照常退避重试。");
         Assert.IsFalse(harness.Notifications.Reader.TryRead(out _));
         Assert.IsEmpty(harness.Service.Sessions);
         string notices = harness.Notices();
         StringAssert.Contains(notices, LegalNotice);
         AssertNoSecret(token, failure.ToString(), harness.Log.Text, notices);
+    }
+
+    [TestMethod]
+    public async Task 收到验证链接后放宽期限_超过守卫期仍能等到批准()
+    {
+        string uri = VerificationUri();
+        TaskCompletionSource<bool> approve = NewSignal<bool>();
+        await using Harness harness = new(authenticationTimeout: TimeSpan.FromSeconds(1), checkTimeout: TimeSpan.FromSeconds(30));
+        await using Round round = harness.Start(Check(uri, approve));
+        DateTimeOffset started = DateTimeOffset.Now;
+        Task<SshSession> connecting = harness.Service.ConnectAsync(harness.Profile);
+        TailscaleSshCheckNotification shown = await harness.NextAsync();
+        AssertShown(harness, shown, uri);
+        Assert.IsNotNull(shown.ExpiresAt, "验证窗要知道最长等到几点。");
+        Assert.IsGreaterThanOrEqualTo(started + TimeSpan.FromSeconds(29), shown.ExpiresAt.Value);
+        Assert.IsLessThanOrEqualTo(DateTimeOffset.Now + TimeSpan.FromSeconds(31), shown.ExpiresAt.Value);
+
+        // 守卫期(1 秒)早过了:曾经的认证期限在开始时一次定死,收到链接也不放宽,SSO + 多因素来不及。
+        await Task.Delay(TimeSpan.FromSeconds(2.5));
+        Assert.IsFalse(connecting.IsCompleted, "收到合法链接之后不能再按守卫期判超时。");
+        approve.SetResult(true);
+        SshSession session = await connecting.WaitAsync(Deadline);
+        await AssertConnectedAsync(harness, round, session);
+        await harness.ExpectEndAsync(shown);
+        await harness.DisconnectAsync(session);
+    }
+
+    [TestMethod]
+    public async Task 没有验证链接时认证途中断线不暂停自动重连()
+    {
+        TaskCompletionSource<bool> entered = NewSignal<bool>();
+        await using Harness harness = new();
+        await using Round round = harness.Start(Accept() with
+        {
+            BannersBeforeSuccess = [LegalNotice],
+            BeforeSuccess = async ct =>
+            {
+                entered.TrySetResult(true);
+                await Task.Delay(Timeout.Infinite, ct);
+                return false;
+            }
+        });
+        Task<SshSession> connecting = harness.ConnectAsync();
+        await entered.Task.WaitAsync(Deadline);
+        round.ClosePeer();
+
+        VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
+            async () => await connecting.WaitAsync(Deadline));
+        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleCheckFailed"));
+        Assert.IsFalse(failure.RequiresUserAction, "连接被重置不是授权结论,要照常退避重试,而不是永久暂停。");
+        Assert.IsFalse(harness.Notifications.Reader.TryRead(out _));
+        Assert.IsEmpty(harness.Service.Sessions);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task 横幅说明后断开按拒绝报_并带上去掉链接与控制字符的服务端说明(bool afterCheck)
+    {
+        string uri = VerificationUri();
+        TaskCompletionSource<bool> approve = NewSignal<bool>();
+        const string Denial = "tailnet policy does not permit you to SSH as user \"root\"";
+        string banner = $"{Denial}\nsee https://evil.example/{Guid.NewGuid():N} \u001b[31mnow\u001b[0m";
+        await using Harness harness = new();
+        TestAuthPolicy policy = afterCheck
+            ? Check($"{LegalNotice}\n{uri}", approve) with { RejectWithBannerAndDisconnect = banner }
+            : new TestAuthPolicy
+            {
+                RequiredMethods = [SshProtocolNames.AuthPassword],
+                OfferedMethods = [SshProtocolNames.AuthPassword],
+                RejectWithBannerAndDisconnect = banner
+            };
+        await using Round round = harness.Start(policy);
+        Task<SshSession> connecting = harness.ConnectAsync();
+        TailscaleSshCheckNotification? shown = null;
+        if (afterCheck)
+        {
+            shown = await harness.NextAsync();
+            AssertShown(harness, shown, uri);
+            approve.SetResult(false);
+        }
+
+        VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
+            async () => await connecting.WaitAsync(Deadline));
+        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleRejected"), "真实的拒绝是横幅 + DISCONNECT,不能报成笼统的验证失败。");
+        StringAssert.Contains(failure.Message, Strings.Format("SshErr_TailscaleServerMessage", "").TrimEnd());
+        StringAssert.Contains(failure.Message, Denial);
+        Assert.DoesNotContain("https://", failure.Message, "服务端说明里的链接不能借应用的失败提示出现。");
+        Assert.DoesNotContain("\u001b", failure.Message);
+        Assert.DoesNotContain(LegalNotice, failure.Message, "验证链接之前的横幅不是拒绝的理由。");
+        Assert.IsTrue(failure.RequiresUserAction);
+        Assert.IsNull(failure.InnerException);
+        if (shown is not null)
+        {
+            await harness.ExpectEndAsync(shown);
+            AssertNoSecret(uri[(uri.LastIndexOf('/') + 1)..], failure.ToString(), harness.Log.Text);
+        }
+        Assert.IsEmpty(harness.Service.Sessions);
+    }
+
+    [TestMethod]
+    public async Task 密码配置遇到Tailscale验证链接立即失败并提示改用Tailscale认证()
+    {
+        string uri = VerificationUri();
+        TaskCompletionSource<bool> approve = NewSignal<bool>();
+        await using Harness harness = new(profile: port => new ConnectionInfo
+        {
+            Host = "127.0.0.1", Port = port, Username = "ops", AuthMethod = AuthMethod.Password,
+            Password = "secret", KeepAliveSeconds = 0
+        });
+        // 库开头那条 none 探测被 check 模式的服务端挂起等批准;链接在横幅里。
+        await using Round round = harness.Start(Check($"To authenticate, visit: {uri}", approve));
+        Stopwatch elapsed = Stopwatch.StartNew();
+
+        VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
+            async () => await harness.ConnectAsync());
+
+        Assert.IsLessThan(Deadline, elapsed.Elapsed, "不能干等到认证期限。");
+        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleAuthMethodRequired"));
+        StringAssert.Contains(failure.Message, $"ops@127.0.0.1:{harness.Port}");
+        Assert.IsTrue(failure.RequiresUserAction, "要改认证方式才连得上,后台重试没有意义。");
+        Assert.IsFalse(harness.Notifications.Reader.TryRead(out _), "密码配置不弹 Tailscale 验证窗。");
+        Assert.AreSequenceEqual([SshProtocolNames.AuthNone], (await round.Ready.Task.WaitAsync(Deadline)).Observation.RequestedMethods,
+            "还没轮到密码就该停下,密码不发出去。");
+        Assert.IsEmpty(harness.Service.Sessions);
+        AssertNoSecret(uri[(uri.LastIndexOf('/') + 1)..], failure.ToString(), harness.Log.Text, harness.Notices());
+    }
+
+    [TestMethod]
+    public async Task 守卫期从主机密钥裁决结束时起算_放宽只一次_结束后不再碰取消源()
+    {
+        TaskCompletionSource<SshHostKeyVerdict> decision = NewSignal<SshHostKeyVerdict>();
+        using CancellationTokenSource attempt = new();
+        TailscaleAuthDeadline deadline = new(new SlowHostKeyPolicy(decision.Task), attempt,
+            guard: TimeSpan.FromMilliseconds(200), checkWait: TimeSpan.FromSeconds(30));
+
+        using TestHostKey hostKey = TestHostKey.Create(SshAlgorithmNames.SshEd25519);
+        ValueTask<SshHostKeyVerdict> evaluating = deadline.EvaluateAsync(new SshHostKeyContext
+        {
+            Host = "node", Port = 22, Key = SshPublicKey.Decode(hostKey.PublicKeyBlob), NegotiatedAlgorithm = SshAlgorithmNames.SshEd25519
+        });
+        await Task.Delay(TimeSpan.FromMilliseconds(600));
+        Assert.IsFalse(attempt.IsCancellationRequested, "用户看指纹的时间不算进认证期限。");
+        Assert.IsFalse(deadline.IsArmed);
+
+        decision.SetResult(SshHostKeyVerdict.Accept);
+        await evaluating;
+        Assert.IsTrue(deadline.IsArmed);
+        await Task.Delay(Timeout.Infinite, attempt.Token).ContinueWith(_ => { }).WaitAsync(Deadline);
+
+        using CancellationTokenSource second = new();
+        TailscaleAuthDeadline check = new(new SlowHostKeyPolicy(Task.FromResult(SshHostKeyVerdict.Accept)), second,
+            guard: TimeSpan.FromMilliseconds(200), checkWait: TimeSpan.FromSeconds(30));
+        DateTimeOffset? expiresAt = check.ExtendForCheck();
+        Assert.IsNotNull(expiresAt);
+        Assert.AreEqual(expiresAt, check.ExtendForCheck(), "同一跳的新链接沿用同一个截止时刻。");
+        await Task.Delay(TimeSpan.FromMilliseconds(400));
+        Assert.IsFalse(second.IsCancellationRequested);
+        check.Finish();
+        Assert.IsNull(check.ExtendForCheck());
+    }
+
+    private sealed class SlowHostKeyPolicy(Task<SshHostKeyVerdict> verdict) : IHostKeyPolicy
+    {
+        public async ValueTask<SshHostKeyVerdict> EvaluateAsync(SshHostKeyContext context, CancellationToken cancellationToken = default) =>
+            await verdict.WaitAsync(cancellationToken);
     }
 
     private static TaskCompletionSource<T> NewSignal<T>() => new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -699,8 +869,10 @@ public sealed class TailscaleSshAuthenticationTests
         public SshConnectionService Service { get; }
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
+        // checkTimeout:收到链接之后的等待上限;不给时与 authenticationTimeout 相同(沿用旧用例的「两秒就超时」)。
         public Harness(bool automatic = false, bool hasUi = true, TimeSpan? authenticationTimeout = null,
-            Func<TailscaleSshCheckNotification, Task>? show = null, Func<int, ConnectionInfo>? profile = null)
+            Func<TailscaleSshCheckNotification, Task>? show = null, Func<int, ConnectionInfo>? profile = null,
+            TimeSpan? checkTimeout = null)
         {
             _listener.Start();
             Profile = profile?.Invoke(Port) ?? ProfileFor(Port, automatic);
@@ -708,7 +880,8 @@ public sealed class TailscaleSshAuthenticationTests
             {
                 SshConnectionAssembler.Assembled assembled = SshConnectionAssembler.Create(
                     info, hostKey: null, settings: null, prompt: null, alerts: null, proxyResolver: null,
-                    tailscaleCheckPrompt: hasUi ? NotifyAsync : null, authenticationTimeout: authenticationTimeout);
+                    tailscaleCheckPrompt: hasUi ? NotifyAsync : null, authenticationTimeout: authenticationTimeout,
+                    tailscaleCheckTimeout: checkTimeout ?? authenticationTimeout);
                 _banners.Enqueue(assembled.Banners);
                 return new VelaSshClientWrapper(assembled.Connect, assembled.ConnectTimeout, info.Ssh, banners: assembled.Banners);
             }, Log);
