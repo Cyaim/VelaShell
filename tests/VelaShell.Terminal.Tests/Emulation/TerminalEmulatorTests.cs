@@ -146,6 +146,68 @@ public class TerminalEmulatorTests
         Assert.AreEqual("c", Line(e, 1));
     }
 
+    /// <summary>
+    /// 区域上边界在首行、底部钉着一行状态(apt 的进度条就是这个布局,#634):
+    /// 从区域顶部滚出去的行照样进历史,状态行原地不动、也不进历史。
+    /// </summary>
+    [TestMethod]
+    public void TopAnchoredScrollRegion_PushesRetiredLinesToScrollback()
+    {
+        TerminalEmulator e = New(20, 5);
+        // apt(Dpkg::Progress-Fancy)的开场:存光标、把区域设成首行到倒数第二行、恢复光标,
+        // 之后每次刷新都跳到最后一行画进度条再跳回来。
+        Feed(e, "\n\e7\e[0;4r\e8\e[1A");
+        Feed(e, "\e7\e[5;0fProgress: [ 50%]\e8");
+        for (int i = 0; i < 10; i++)
+        {
+            Feed(e, $"L{i}\r\n");
+        }
+
+        Assert.AreEqual(7, e.Screen.ScrollbackCount, "L0..L6 都从区域顶部滚出去了,一行都不该丢。");
+        for (int i = 0; i < 7; i++)
+        {
+            Assert.AreEqual($"L{i}", e.Screen.ViewLine(i).GetText());
+        }
+        Assert.AreEqual("L7", Line(e, 0));
+        Assert.AreEqual("L9", Line(e, 2));
+        Assert.AreEqual("Progress: [ 50%]", Line(e, 4), "区域下方的状态行不随区域滚动。");
+    }
+
+    [TestMethod]
+    public void ScrollRegionBelowFixedRows_KeepsRetiredLinesOutOfScrollback()
+    {
+        TerminalEmulator e = New(6, 5);
+        Feed(e, "head\e[2;4r\e[2;1H");
+        for (int i = 0; i < 10; i++)
+        {
+            Feed(e, $"L{i}\r\n");
+        }
+
+        // 上方有固定行时,滚出去的行夹在固定行和区域之间,历史里没有它的位置。
+        Assert.AreEqual(0, e.Screen.ScrollbackCount);
+        Assert.AreEqual("head", Line(e, 0));
+    }
+
+    [TestMethod]
+    public void TopAnchoredScrollRegion_OnTheAlternateScreen_StaysOutOfScrollback()
+    {
+        TerminalEmulator e = New(10, 5);
+        Feed(e, "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\n");
+        int mainHistory = e.Screen.ScrollbackCount;
+        Assert.IsGreaterThan(0, mainHistory, "样本要先在主屏攒出历史。");
+
+        // vim 一类程序在备用屏上设区域(状态栏、分屏)再滚动。
+        Feed(e, "\e[?1049h\e[1;4r");
+        for (int i = 0; i < 10; i++)
+        {
+            Feed(e, $"V{i}\r\n");
+        }
+        Assert.AreEqual(0, e.Screen.ScrollbackCount, "备用屏的退休行不该进历史。");
+
+        Feed(e, "\e[?1049l");
+        Assert.AreEqual(mainHistory, e.Screen.ScrollbackCount, "主屏历史不该被备用屏的滚动改动。");
+    }
+
     [TestMethod]
     public void AlternateScreen_SwitchAndRestore()
     {

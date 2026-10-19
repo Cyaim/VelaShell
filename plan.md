@@ -1968,3 +1968,10 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - **顺带**:`SharedPasswordPickerDialog` / `SharedPasswordPickerViewModel` 删除;`PasswordFill_Hint` / `_Search` / `_Confirm` 三个键从五份 resx 一并移除(`UnusedLocalizedKeyTests` 会拦孤儿键)。视图新增 `RepositoryFactory` 取数口(headless 测试宿主不是 `App`,没有 DI 容器),与 `EnglishInputLocale.InputLocaleSwitcherFactory` 同一套做法。
 - **提交与文档**:同步中英交互规格 §5.2.1;提交与 PR 描述不带 AI 工具署名。
 - **验证**:宿主构建 0 警告 / 0 错误;`TestCategory=SharedPasswordFill` 32 项全通过(提示识别、真实桥发送、八种上下文变化拒绝、取消/重连竞态、弹层锚点与光标对齐、弹层只在真提示上出现并在错误上下文收敛);Terminal 选区匹配相关 34 项通过;五语言与设计门禁(23 项)通过。未进行真实远端 SSH 人工 GUI 验收。
+
+## ✅ 213. 2026-10-19 终端:apt 装大包的日志不进回滚区,装完往上翻什么都没有(#634,用户反馈)
+
+**根因**:`TerminalScreen.ScrollUp` 只在滚动区域等于整屏时才把滚出去的行存进回滚区。`apt install` 默认开着 `Dpkg::Progress-Fancy`,为了在最后一行钉住进度条,把区域设成「首行到倒数第二行」(`ESC 7` `ESC[0;{行数-1}r` `ESC 8`),整场安装的日志都在这个区域里滚 —— 滚出去的每一行都被直接丢掉,回滚行数调到 3 万也一样。issue 截图里屏幕首行的行号就是 1,也就是回滚区一行都没有。
+**改法**:判据从「区域等于整屏」放宽为「区域上边界在首行」,仍只作用于主屏(备用屏容量恒为 0)。区域下方的固定行原地不动、不进历史;上边界不在首行时,滚出去的行夹在上方固定行与区域之间,历史里没有它的位置,照旧丢弃。xterm.js、VTE、Alacritty 都是这个行为。`CSI S`(SU)走同一个函数,口径一致。
+**验证**:新增三条用例 —— 照 apt 的原样序列滚 10 行,L0–L6 进历史、进度条行不动;上方有固定行时不进历史;备用屏上设区域滚动不碰主屏历史。修复前第一条失败(回滚区 0 行)。终端 551 项、Skia 渲染 7 项通过;宿主全量 2236 项通过 / 19 项因平台、发布或 SSH 环境跳过(连跑 5 轮,有 1 轮偶发 1 项失败,之后未再复现)。本机 Docker 没在运行,未拿真实 apt 人工验收。
+**文档**:与现有文档不冲突,不涉及 velashell-docs。
