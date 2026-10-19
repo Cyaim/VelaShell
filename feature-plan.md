@@ -42,7 +42,7 @@
 | 部分 | 🔴 P0 | 🟠 P1 | 🟡 P2 | 🟢 P3 | 合计 |
 | --- | :---: | :---: | :---: | :---: | :---: |
 | 一、欠账 | 4 | 2 | 15 | 16 | **37** |
-| 二、路线图 | — | 5 | 16 | 32 | **53** |
+| 二、路线图 | — | 4 | 17 | 32 | **53** |
 | 三、文档待同步 | — | — | — | — | **9** |
 
 ---
@@ -262,7 +262,7 @@
 | ⏳ | 🟢 P3 | **拖进 X 窗口的远端临时目录不清理** | 往 X 程序里拖本机文件时传到远端的 `/tmp/velashell-drop-<随机串>/`(0700,`XServerDropUploader`,§187)没有任何地方删,长期使用会在远端 `/tmp` 堆积。拖放会话结束(或断开)时删掉;删不掉也别报错 |
 | 💡 | 🟢 P3 | **X 程序清单显示信任级别** | 库里已有 `XClientInfo.Trust`(§187),面板列了来源会话、窗口数、内存与 GrabServer 标记,唯独没列受信 / 非受信 —— 用户判断「该断开谁」时最关心的正是它 |
 | 💡 | 🟢 P3 | **互操作靶场扩充**(审查的测试缺口 T16) | 真实客户端现在只覆盖 x11-apps、xterm、xdpyinfo、glxgears 与 Swing。现有镜像保持轻量、留在 CI,另建一个 heavy 镜像手动或每晚跑,断言沿用「零 `: Bad` 日志 + 画出了东西」再加专项:GTK3(`gtk-3-examples`、`zenity`、`meld`:拖放、剪贴板、弹出层、自绘标题栏的边缘缩放)、GTK4(`gtk-4-examples`、`gnome-calculator`:`GSK_RENDERER=gl` 与 `cairo` 都零错误)、GTK2(`gimp`)、Qt(`wireshark`)、浏览器(`firefox-esr`、`chromium --disable-gpu`:剪贴板提供哪些格式)、Motif / Xaw / Tk / Emacs(`ddd`、`xfig`、`gnuplot-x11`、`gitk`、`emacs-lucid`:核心字体告警、中文与西里尔文)、桌面会话(`xserver-xephyr`、`openbox`、`xfwm4`、`xfdesktop4`:窗口管理器要以「已有窗口管理器」退出,桌面类窗口不开原生窗口)、托盘(`stalonetray`、`yad --notification`)、中日韩输入(`fcitx5`)、办公(`libreoffice-calc`:富格式剪贴板、启动时恢复最大化) |
-| 💡 | 🟠 P1 | **整个应用的渲染停顿**(`plan.md` §201 的四) | Windows 上 Avalonia 零星刷新时每隔十几到几十秒停 400–490 毫秒(渲染计时器空拍之后等系统合成器确认上一次提交),终端打字回显、对话框一样会撞上;X 窗口已经靠「保温」避开。可选:①应用级保温(有输入或刷新之后让渲染循环每帧都有东西画一小段时间);②换渲染组合 —— 3 分钟实测 AngleEgl + WinUI 合成(默认)停 4 次、AngleEgl + RedirectionSurface 停 1 次、Wgl + RedirectionSurface 0 次,但换后端牵涉透明效果、驱动兼容与内存,要实机评估;③把最小复现报给 Avalonia 上游(复现程序:纯 Avalonia、改一段文字、量 `RequestAnimationFrame` 回调的延迟) |
+| 💡 | 🟡 P2 | **整个应用的渲染停顿**(`plan.md` §201 的四、§219) | X 窗口里量到过:Windows 上 Avalonia 的渲染循环连着出帧之后转空拍,等系统合成器确认上一次提交偶尔要 400–490 毫秒,X 窗口已经靠「保温」避开。**主窗口一侧没复现出来**(§219,2026-10-19 开发机):用 `scripts/perf/render-keepwarm.cs` 量「改字 → 这一批被渲染线程处理完」,30 Hz 刷新 8724 帧、打字节奏 600 键 × 3 帧,最长 14 毫秒、0 次停顿;候选修法(应用级保温,脚本里的 `KeepWarm`)开着也是 0 次,只让 p99 多了不到 1 毫秒,所以**没挂进主程序**。⚠️ 别用 `RequestAnimationFrame` 的回调延迟当指标:窗口闲着时 Avalonia 在 UI 线程上当场补发回调(恒为 0 毫秒),停住的是渲染线程。下一步:有用户报「打字卡一下」时,在那台机器上跑脚本对照保温开关,量出收益再决定挂不挂;另两个选项(换渲染组合 —— X 窗口 3 分钟实测 AngleEgl + WinUI 合成停 4 次、AngleEgl + RedirectionSurface 1 次、Wgl + RedirectionSurface 0 次;报给 Avalonia 上游)同样先等复现 |
 | 💡 | 🟢 P3 | **RANDR 的刷新率在 macOS / Linux 上**(`plan.md` §201 的五) | Windows 已按显示器句柄读当前显示模式;macOS(`CGDisplayModeGetRefreshRate`)、Linux(桌面 X 显示的 RANDR / Wayland 输出的 mode)仍报 60,高刷屏上远端程序只画 60 帧 |
 | 💡 | 🟢 P3 | **需要实机核对的** | 分数缩放下最后一列像素可能被裁(API-H13);macOS 上 Command 组合键收不到 KeyUp 时的处理(IN-E19);macOS / FreeBSD 经 `getpeereid` 取对端 uid(CN-S8) |
 
