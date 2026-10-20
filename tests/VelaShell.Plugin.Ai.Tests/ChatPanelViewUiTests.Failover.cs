@@ -129,7 +129,9 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("B 探活的模型故障不能误诊整个 Key 池");
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
-                Assert.AreSequenceEqual(["Bearer key-a", "Bearer key-b"], endpoint.Requests.Select(r => r.Auth).ToArray());
+                Assert.AreSequenceEqual(probeStatus == 200
+                    ? ["Bearer key-a", "Bearer key-b", "Bearer key-b"] : ["Bearer key-a", "Bearer key-b"],
+                    endpoint.Requests.Select(r => r.Auth).ToArray());
                 Assert.HasCount(2, backupEndpoint.Requests);
                 Assert.IsTrue(PanelHealth(panel).IsCooling(provider.Models[0].Id));
                 Assert.IsTrue(PanelHealth(panel).IsKeyCooling(provider.Id));
@@ -630,12 +632,12 @@ public sealed partial class ChatPanelViewUiTests
             {
                 panel.SendExternal("失败探活的用量不能丢");
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
-                Assert.AreEqual(1, empty?.Requests.Count ?? truncated!.Requests, "无正文候选只探活,不发送正式流");
+                Assert.AreEqual(disconnect ? 1 : 2, empty?.Requests.Count ?? truncated!.Requests, "空探活补试一次,断流不额外补试,均不发送正式流");
                 Assert.HasCount(2, healthy.Requests, "下一站一次探活、一次正式回复");
                 TextBlock usage = Find<TextBlock>(panel, "UsageText");
                 Assert.Contains("11/100", usage.Text ?? "");
-                Assert.Contains("Conversation total: in 29 / out 13", ToolTip.GetTip(usage) as string ?? "",
-                    "失败候选 7/3 + 下一站探活 11/5 + 正式流 11/5，均不得重复或丢失");
+                Assert.Contains(disconnect ? "Conversation total: in 29 / out 13" : "Conversation total: in 36 / out 16",
+                    ToolTip.GetTip(usage) as string ?? "", "失败候选每次7/3 + 下一站探活11/5 + 正式流11/5,均不得重复或丢失");
                 Assert.AreEqual("回答", AnswerRenderers(Find<StackPanel>(panel, "MessagesPanel")).Single().MarkdownBuilder.ToString());
             }
             finally { panel.Detach(); window.Close(); }
@@ -1207,7 +1209,9 @@ public sealed partial class ChatPanelViewUiTests
                 data: [DONE]
 
 
-                """, holdFirstStream: true, firstStreamContent: "");
+                """, holdFirstStream: true, firstStreamContent: "", streamingReply: n => n == 3
+                    ? "data: [DONE]\n\n"
+                    : "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"回答成功\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n");
             using var context = new TestPluginContext();
             context.FakeSessions.AddConnected(host: "10.0.0.1", username: "root");
             context.FakeSessions.AddConnected(host: "10.0.0.2", username: "root");
@@ -1246,7 +1250,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("再撞坏站时应仍能探测正常模型");
                 Assert.IsTrue(await WaitForAsync(() => Footers(secondMessages).Count > 1),
                     "旧探活失败不应让备用模型被跳过");
-                Assert.HasCount(4, target.Requests, "新一轮仍须先探活,再由可用模型正式回答");
+                Assert.HasCount(5, target.Requests, "旧探活两次失败不盖过较新的成功;新一轮仍须探活再正式回答");
                 Assert.Contains("\"stream\":true", target.Requests[2]);
                 Assert.Contains("\"stream\":true", target.Requests[3]);
             }
@@ -3089,7 +3093,7 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     [TestMethod]
-    public void WhitespaceOnlyFirstStation_RetriesOnceThenShowsOnlyBackupAnswerAndSticks()
+    public void WhitespaceOnlyFirstStation_RetriesTwiceThenShowsOnlyBackupAnswerAndSticks()
     {
         OnUi(async () =>
         {
@@ -3119,7 +3123,7 @@ public sealed partial class ChatPanelViewUiTests
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0
                     && !Find<Button>(panel, "StopButton").IsVisible));
-                Assert.HasCount(2, empty.Requests, "首站正式空白回复只允许原地重试一次");
+                Assert.HasCount(3, empty.Requests, "首站正式空白回复只允许原地重试两次");
                 Assert.HasCount(2, backup.Requests, "备用一次探活一次正式回复");
                 Assert.AreEqual(second.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
                 Assert.AreEqual(1, Find<ComboBox>(panel, "ProviderCombo").SelectedIndex);
@@ -3174,12 +3178,70 @@ public sealed partial class ChatPanelViewUiTests
                 Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 1;
                 panel.SendExternal("空流失败后备用不报告用量");
                 Assert.IsTrue(await WaitForAsync(() => backup.Requests.Count == 2 && !Find<Button>(panel, "StopButton").IsVisible));
-                Assert.HasCount(2, failed.Requests, "失败元数据流有限重试一次");
+                Assert.HasCount(3, failed.Requests, "失败元数据流有限重试两次");
                 Assert.AreEqual("回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
                 TextBlock usage = Find<TextBlock>(panel, "UsageText");
-                Assert.AreEqual("↑64 ↓16", usage.Text, "累计保留50/10与两次7/3，未知正文占窗不能借用历史或失败量");
-                Assert.Contains("Conversation total: in 64 / out 16", ToolTip.GetTip(usage) as string ?? "");
+                Assert.AreEqual("↑71 ↓19", usage.Text, "累计保留50/10与三次7/3,未知正文占窗不能借用历史或失败量");
+                Assert.Contains("Conversation total: in 71 / out 19", ToolTip.GetTip(usage) as string ?? "");
                 Assert.DoesNotContain("Last turn context:", ToolTip.GetTip(usage) as string ?? "");
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    [DataRow("length")]
+    [DataRow("content_filter")]
+    public void ExplicitModelTermination_DoesNotRetryOrFailOver(string reason)
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub($"data: {{\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{{\"index\":0,\"delta\":{{\"role\":\"assistant\"}},\"finish_reason\":\"{reason}\"}}]}}\n\ndata: [DONE]\n\n");
+            await using var backup = new SseStub(LifecycleAnswer);
+            using var context = new TestPluginContext();
+            AiProvider first = StubProvider("terminal", endpoint.BaseUrl, "m");
+            AiProvider second = StubProvider("backup", backup.BaseUrl, "m");
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [first, second], ActiveModelId = first.Models[0].Id, SuggestFollowUps = false,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }]
+            });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("请回答");
+                StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0));
+                Assert.HasCount(1, endpoint.Requests);
+                Assert.IsEmpty(backup.Requests);
+                Assert.Contains(t => t.Text == new Loc("en")[reason == "length" ? "ErrorOutputLimit" : "ErrorModelRefusal"],
+                    messages.GetVisualDescendants().OfType<SelectableTextBlock>());
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void EmptyAnswers_ThirdAttemptSucceedsWithoutFailover()
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub("", streamingReply: n => n < 3
+                ? "data: [DONE]\n\n"
+                : "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"第三次成功\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n");
+            using var context = new TestPluginContext();
+            AiProvider provider = StubProvider("retry", endpoint.BaseUrl, "m");
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            { Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("请回答");
+                StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0));
+                Assert.HasCount(3, endpoint.Requests);
+                Assert.IsNotEmpty(AnswerRenderers(messages));
+                Assert.IsFalse(messages.GetVisualDescendants().OfType<Border>().Any(b => b.Classes.Contains("errorCard")));
             }
             finally { panel.Detach(); window.Close(); }
         });
@@ -3228,7 +3290,7 @@ public sealed partial class ChatPanelViewUiTests
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && answering.Requests.Count >= 2),
                     "B 探活通过但正式流只有元数据,应由 C 接管回答");
-                Assert.HasCount(3, empty.Requests, "B 一次探活、一次空回复、有限的原地重试一次");
+                Assert.HasCount(4, empty.Requests, "B 一次探活、一次空回复、有限的原地重试两次");
                 Assert.HasCount(2, answering.Requests, "C 探活一次、正式回答一次");
                 Assert.Contains("\"stream\":true", empty.Requests[1]);
                 Assert.Contains("\"stream\":true", empty.Requests[2]);
@@ -3237,8 +3299,8 @@ public sealed partial class ChatPanelViewUiTests
                     "空回复 B 不能粘住,真正答复的 C 才能粘住");
                 Assert.IsNotEmpty(AnswerRenderers(messages), "C 的真实正文要显示,而不是空的成功气泡");
                 string usageTip = ToolTip.GetTip(Find<TextBlock>(panel, "UsageText")) as string ?? "";
-                Assert.Contains("Conversation total: in 36 / out 16", usageTip,
-                    "B 的两次空流各计一次，加上 C 的探活与真实回复；usage 不可被重试清空或并进回答正文");
+                Assert.Contains("Conversation total: in 43 / out 19", usageTip,
+                    "B 的三次空流各计一次，加上 C 的探活与真实回复；usage 不可被重试清空或并进回答正文");
             }
             finally
             {
@@ -3278,7 +3340,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("请回答");
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0));
-                Assert.HasCount(3, empty.Requests, "探活一次后空正式回复最多重试一次");
+                Assert.HasCount(4, empty.Requests, "探活一次后空正式回复最多重试两次");
                 Border card = messages.GetVisualDescendants().OfType<Border>()
                     .Single(b => b.Classes.Contains("errorCard"));
                 string detail = card.GetVisualDescendants().OfType<SelectableTextBlock>()

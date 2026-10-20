@@ -260,7 +260,7 @@ public sealed partial class ChatPanelViewUiTests
                 first.Release();
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0
                     && !Find<Button>(panel, "StopButton").IsVisible));
-                Assert.HasCount(2, first.Requests, "空白首站只重试一次");
+                Assert.HasCount(failover ? 3 : 2, first.Requests, "持续空白最多补试两次,补试成功立即停止");
                 Assert.IsTrue(first.Requests.All(body => body.Contains("STEERING_MARKER", StringComparison.Ordinal)),
                     "重试不得丢失已送达的插话上下文");
                 Assert.HasCount(1, Cards(), "安全重放不得删除已送达插话卡");

@@ -2022,7 +2022,8 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            await using var held = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "");
+            await using var held = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "",
+                streamingReply: n => n == 3 ? "data: [DONE]\n\n" : ProbeAnswerSse);
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
@@ -2094,7 +2095,8 @@ public sealed partial class SettingsViewUiTests
                 data: [DONE]
 
 
-                """, jsonContent: "OK", holdFirstStream: true, firstStreamContent: "");
+                """, jsonContent: "OK", holdFirstStream: true, firstStreamContent: "",
+                streamingReply: n => n == 3 ? "data: [DONE]\n\n" : ProbeAnswerSse);
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
@@ -2604,9 +2606,10 @@ public sealed partial class SettingsViewUiTests
 
                 health.Record(model.Id, false);
                 Task newRun = StartTestAsync(view);
-                await WaitUntilAsync(() => endpoint.Requests.Count == 2);
+                await WaitUntilAsync(() => endpoint.Requests.Count == 3);
                 await newRun.WaitAsync(TimeSpan.FromSeconds(15));
-                Assert.AreEqual("new-account", endpoint.AccountIds[1], "第二轮真实请求必须改用新账号头");
+                Assert.AreEqual("old-account", endpoint.AccountIds[1], "旧探活补试仍固定原账号");
+                Assert.AreEqual("new-account", endpoint.AccountIds[2], "第二轮真实请求必须改用新账号头");
                 Assert.IsFalse(health.IsCooling(model.Id), "新账号成功应清掉已有冷却");
             }
             finally
@@ -3016,6 +3019,7 @@ public sealed partial class SettingsViewUiTests
                 Assert.IsFalse(draftProbe.IsCompleted);
                 endpoint.Release();
                 await draftProbe.WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.HasCount(2, endpoint.Requests, "空回复探活必须完成一次补试");
                 Assert.IsFalse(health.IsCooling(model.Id), "草稿 Low 的失败不能冷却仍为 High 的已保存模型");
 
                 view.GetControl<Button>("SaveButton")
@@ -3023,9 +3027,10 @@ public sealed partial class SettingsViewUiTests
                 await WaitUntilAsync(() => model.Reasoning == ReasoningLevel.Low
                     && view.GetControl<TextBlock>("StatusText").Text == new Loc("en")["Saved"]);
                 Task savedProbe = StartTestAsync(view);
-                await WaitUntilAsync(() => endpoint.Requests.Count == 2);
                 await savedProbe.WaitAsync(TimeSpan.FromSeconds(15));
-                Assert.Contains("\"reasoning_effort\":\"low\"", endpoint.Requests[1]);
+                Assert.HasCount(4, endpoint.Requests, "保存后的探活也必须完成一次补试");
+                foreach (string request in endpoint.Requests)
+                    Assert.Contains("\"reasoning_effort\":\"low\"", request, "探活及补试都必须固定当前 Low 档位");
                 Assert.IsTrue(health.IsCooling(model.Id), "请求档位与落库一致后失败才写入冷却");
             }
             finally { endpoint.Release(); window.Close(); }
@@ -4551,7 +4556,7 @@ public sealed partial class SettingsViewUiTests
             try
             {
                 Click(KeyControl<Button>(view, provider.Id, "ProviderKeyProbeButton")); SelectKeyModel(view, provider.Id, model.Id);
-                await WaitUntilAsync(() => endpoint.Requests.Count == 1 && !IsKeyProbeRunning(KeyProbeState(view, provider.Id)));
+                await WaitUntilAsync(() => endpoint.Requests.Count == 2 && !IsKeyProbeRunning(KeyProbeState(view, provider.Id)));
                 foreach (string language in new[] { "en", "zh-CN", "zh-TW", "ja", "ko" })
                 {
                     loc.Switch(language); view.ApplyLoc();

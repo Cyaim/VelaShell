@@ -1464,6 +1464,7 @@ public partial class SettingsView : UserControl
         string detail = error switch
         {
             HealthProbe.EmptyReplyException => _loc["ProbeEmptyReply"],
+            ModelResponseTerminatedException terminated => _loc[terminated.ReasonKey],
             AiSettingsStore.ApiKeySlotChangedException => _loc["SetupConfigChanged"],
             _ => Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"], _loc["ErrorEndpointNotFound"])
         };
@@ -2494,9 +2495,12 @@ public partial class SettingsView : UserControl
                 }
                 else
                 {
-                    string detail = error is HealthProbe.EmptyReplyException
-                        ? _loc["ProbeEmptyReply"]
-                        : Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"], _loc["ErrorEndpointNotFound"]);
+                    string detail = error switch
+                    {
+                        HealthProbe.EmptyReplyException => _loc["ProbeEmptyReply"],
+                        ModelResponseTerminatedException terminated => _loc[terminated.ReasonKey],
+                        _ => Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"], _loc["ErrorEndpointNotFound"])
+                    };
                     if (rowSelected)
                     {
                         StatusText.Text = _loc.F("TestFail", detail);

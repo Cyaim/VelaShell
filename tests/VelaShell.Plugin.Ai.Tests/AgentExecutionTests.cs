@@ -85,6 +85,126 @@ public sealed class AgentExecutionTests
     }
 
     [TestMethod]
+    public async Task EmptyStep_RetriesTwice_AndDoesNotCommitEmptyHistory()
+    {
+        var wire = new Wire((n, _) => n < 3 ? [End(ChatFinishReason.Stop)]
+            : [new(ChatRole.Assistant, "answer"), End(ChatFinishReason.Stop)]);
+        var execution = new AgentExecution("run");
+        List<TimeSpan> delays = [];
+        using var client = new RecoveringChatClient(wire, execution, "boundary",
+            delay: (wait, _) => { delays.Add(wait); return Task.CompletedTask; });
+        List<ChatResponseUpdate> updates = [];
+        await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) updates.Add(update);
+        Assert.AreEqual("answer", updates.ToChatResponse().Text);
+        Assert.HasCount(3, wire.Requests);
+        Assert.AreSequenceEqual(new[] { TimeSpan.FromMilliseconds(400), TimeSpan.FromMilliseconds(800) }, delays);
+        Assert.HasCount(1, execution.CompletedMessages);
+    }
+
+    [TestMethod]
+    public async Task EmptySteps_ExhaustRecovery_AndKeepFailedUsage()
+    {
+        var wire = new Wire((_, _) => [new(ChatRole.Assistant,
+            [new UsageContent(new() { OutputTokenCount = 3 })]), End(ChatFinishReason.Stop)]);
+        var execution = new AgentExecution("run");
+        using var client = new RecoveringChatClient(wire, execution, "boundary", delay: (_, _) => Task.CompletedTask);
+        List<ChatResponseUpdate> updates = [];
+        await Assert.ThrowsAsync<HealthProbe.EmptyReplyException>(async () =>
+        {
+            await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) updates.Add(update);
+        });
+        Assert.HasCount(3, wire.Requests);
+        Assert.AreEqual(9L, updates.ToChatResponse().Usage?.OutputTokenCount);
+        Assert.IsEmpty(execution.CompletedMessages);
+    }
+
+    [TestMethod]
+    public async Task ToolCompleted_ThenEmptyStep_RetriesModelWithoutRepeatingTool()
+    {
+        int executed = 0, verified = 0;
+        var wire = new Wire((n, _) => n switch
+        {
+            1 => [Call("one", "change"), End(ChatFinishReason.ToolCalls)],
+            2 or 3 => [End(ChatFinishReason.Stop)],
+            _ => [new(ChatRole.Assistant, "done"), End(ChatFinishReason.Stop)]
+        });
+        var execution = new AgentExecution("run");
+        using IChatClient client = new RecoveringChatClient(new SteeringChatClient(wire, new(),
+                beforeRequest: _ => { verified++; return Task.CompletedTask; }), execution, "boundary",
+                delay: (_, _) => Task.CompletedTask)
+            .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, 25)).Build();
+        await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")],
+            new() { Tools = [AIFunctionFactory.Create(() => { executed++; return "result"; }, "change")] })) { }
+        Assert.AreEqual(1, executed);
+        Assert.AreEqual(4, verified);
+        Assert.HasCount(4, wire.Requests);
+        foreach (var request in wire.Requests.Skip(1))
+            Assert.HasCount(1, request.SelectMany(m => m.Contents).OfType<FunctionResultContent>());
+    }
+
+    [TestMethod]
+    [DataRow("length")]
+    [DataRow("content_filter")]
+    [DataRow("refusal")]
+    public async Task DeterministicFinish_IsNotRetried(string reason)
+    {
+        var wire = new Wire((_, _) => [End(new ChatFinishReason(reason))]);
+        using var client = new RecoveringChatClient(wire, new("run"), "boundary", delay: (_, _) => Task.CompletedTask);
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        { await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) { } });
+        Assert.HasCount(1, wire.Requests);
+    }
+
+    [TestMethod]
+    public async Task ExplicitTerminationBeforeDisconnect_DoesNotBecomeTransientFailure()
+    {
+        var wire = new Wire((_, _) => [End(ChatFinishReason.ContentFilter)], failOn: [1]);
+        using var client = new RecoveringChatClient(wire, new("run"), "boundary", delay: (_, _) => Task.CompletedTask);
+        await Assert.ThrowsAsync<Ui.ModelResponseTerminatedException>(async () =>
+        { await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) { } });
+        Assert.HasCount(1, wire.Requests);
+    }
+
+    [TestMethod]
+    public async Task EmptyStep_CancellationDuringBackoff_StopsRecovery()
+    {
+        var wire = new Wire((_, _) => [End(ChatFinishReason.Stop)]);
+        using var cancellation = new CancellationTokenSource();
+        using var client = new RecoveringChatClient(wire, new("run"), "boundary", delay: (_, token) =>
+        {
+            cancellation.Cancel();
+            return Task.Delay(Timeout.InfiniteTimeSpan, token);
+        });
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        { await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")], cancellationToken: cancellation.Token)) { } });
+        Assert.HasCount(1, wire.Requests);
+    }
+
+    [TestMethod]
+    public async Task ReasoningOnlyStep_IsNotRetried()
+    {
+        var wire = new Wire((_, _) => [new(ChatRole.Assistant, [new TextReasoningContent("thinking")]), End(ChatFinishReason.Stop)]);
+        using var client = new RecoveringChatClient(wire, new("run"), "boundary", delay: (_, _) => Task.CompletedTask);
+        await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) { }
+        Assert.HasCount(1, wire.Requests);
+    }
+
+    [TestMethod]
+    public async Task RawReasoningOnlyStep_IsNotRetried()
+    {
+        await using var endpoint = new SseStub("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":\"thinking\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n");
+        using var context = new TestPluginContext();
+        var provider = new AiProvider { BaseUrl = endpoint.BaseUrl,
+            DefaultProtocol = ChatProtocol.OpenAiChatCompletions, Models = [new AiModelConfig { Model = "m" }] };
+        using IChatClient inner = new AiSettingsStore(context).CreateClient(new ResolvedModel(provider, provider.Models[0]), ProviderCredential.Key(null));
+        using var client = new RecoveringChatClient(inner, new("run"), "boundary", delay: (_, _) => Task.CompletedTask);
+        List<ChatResponseUpdate> updates = [];
+        await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "hi")])) updates.Add(update);
+        Assert.HasCount(1, endpoint.Requests);
+        Assert.Contains(content => content.Text == "thinking", updates.SelectMany(u => u.Contents).OfType<TextReasoningContent>());
+    }
+
+    [TestMethod]
     public async Task LengthFinish_WithValidArguments_DoesNotExecute()
     {
         int executed = 0;
@@ -92,7 +212,7 @@ public sealed class AgentExecutionTests
         using IChatClient client = new RecoveringChatClient(new Wire((_, _) => [Call("one", "change"), End(ChatFinishReason.Length)]),
                 execution, "boundary", delay: (_, _) => Task.CompletedTask)
             .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, 25)).Build();
-        await Assert.ThrowsAsync<IOException>(async () =>
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
             await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")],
                                new() { Tools = [AIFunctionFactory.Create(() => { executed++; return "done"; }, "change")] })) { }

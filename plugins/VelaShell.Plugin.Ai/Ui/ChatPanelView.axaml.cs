@@ -1731,6 +1731,7 @@ public partial class ChatPanelView : UserControl
                         }
                     }
                     await ReadStreamAsync();
+                    if (TransientFailure.TerminalFailure(updates) is { } terminal) throw terminal;
                     if (!HasMeaningfulOutput(updates))
                     {
                         throw new HealthProbe.EmptyReplyException();
@@ -1743,6 +1744,7 @@ public partial class ChatPanelView : UserControl
                     {
                         RecordUsage(updates.ToChatResponse().Usage, isContext: false);
                     }
+                    if (!token.IsCancellationRequested && TransientFailure.TerminalFailure(updates) is { } terminal) throw terminal;
                     throw;
                 }
             }
@@ -1935,7 +1937,7 @@ public partial class ChatPanelView : UserControl
                             await StreamOnceAsync();
                             break;
                         }
-                        catch (Exception ex) when (mode == ChatMode.Chat && attempt < StreamRetries && !execution.HasToolCalls && !HasMeaningfulOutput(updates)
+                        catch (Exception ex) when (mode == ChatMode.Chat && attempt < (ex is HealthProbe.EmptyReplyException ? 2 : StreamRetries) && !execution.HasToolCalls && !HasMeaningfulOutput(updates)
                                                    && !token.IsCancellationRequested && TransientFailure.IsTransient(ex))
                         {
                             _context.Log.Warn($"Stream failed before any content (attempt {attempt + 1}): {ex.Message}");
@@ -2146,6 +2148,7 @@ public partial class ChatPanelView : UserControl
             string detail = ex.GetBaseException() switch
             {
                 AgentPausedException paused => _loc[paused.ReasonKey],
+                ModelResponseTerminatedException terminated => _loc[terminated.ReasonKey],
                 HealthProbe.EmptyReplyException => _loc["ProbeEmptyReply"],
                 AiSettingsStore.BuiltinOAuthHostMismatchException => _loc["SetupBuiltinOAuthHostMismatch"],
                 ProviderConfigurationChangedException => _loc["ErrorProviderChanged"],
@@ -2496,15 +2499,7 @@ public partial class ChatPanelView : UserControl
 
     /// <summary>role / usage 等纯元数据不算开口;可见内容、工具调用和副作用则绝不能重放。</summary>
     internal static bool HasMeaningfulOutput(List<ChatResponseUpdate> updates)
-        => updates.Any(update => update.Contents.Any(content => content switch
-            {
-                TextContent text => !string.IsNullOrWhiteSpace(text.Text),
-                TextReasoningContent reasoning => !string.IsNullOrWhiteSpace(reasoning.Text),
-                FunctionCallContent or FunctionResultContent or ErrorContent => true,
-                _ => false
-            }) || (ReasoningPeek.IsBlank(update)
-                  && ReasoningPeek.TryRead(update.RawRepresentation, out string peeked)
-                  && !string.IsNullOrWhiteSpace(peeked)));
+        => TransientFailure.HasMeaningfulOutput(updates);
 
     /// <summary>
     /// 流还没开口就断掉时最多重来几次。<b>只给 1 次</b>:各家 SDK 自己已经对连接级失败退避重试过
