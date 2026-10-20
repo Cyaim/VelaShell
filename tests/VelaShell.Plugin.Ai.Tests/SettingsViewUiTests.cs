@@ -3019,6 +3019,7 @@ public sealed partial class SettingsViewUiTests
                 Assert.IsFalse(draftProbe.IsCompleted);
                 endpoint.Release();
                 await draftProbe.WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.HasCount(2, endpoint.Requests, "空回复探活必须完成一次补试");
                 Assert.IsFalse(health.IsCooling(model.Id), "草稿 Low 的失败不能冷却仍为 High 的已保存模型");
 
                 view.GetControl<Button>("SaveButton")
@@ -3026,9 +3027,10 @@ public sealed partial class SettingsViewUiTests
                 await WaitUntilAsync(() => model.Reasoning == ReasoningLevel.Low
                     && view.GetControl<TextBlock>("StatusText").Text == new Loc("en")["Saved"]);
                 Task savedProbe = StartTestAsync(view);
-                await WaitUntilAsync(() => endpoint.Requests.Count == 2);
                 await savedProbe.WaitAsync(TimeSpan.FromSeconds(15));
-                Assert.Contains("\"reasoning_effort\":\"low\"", endpoint.Requests[1]);
+                Assert.HasCount(4, endpoint.Requests, "保存后的探活也必须完成一次补试");
+                foreach (string request in endpoint.Requests)
+                    Assert.Contains("\"reasoning_effort\":\"low\"", request, "探活及补试都必须固定当前 Low 档位");
                 Assert.IsTrue(health.IsCooling(model.Id), "请求档位与落库一致后失败才写入冷却");
             }
             finally { endpoint.Release(); window.Close(); }

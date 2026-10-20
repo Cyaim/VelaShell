@@ -57,12 +57,12 @@ public sealed class ProviderLoginTests
         OAuthStub stub = new OAuthStub().Json("""{"access_token":"at-1","refresh_token":"rt-1","expires_in":900}""");
         using var http = new HttpClient(stub);
         List<string> pages = [];
-        List<string> progress = [];
+        var progress = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var login = new ProviderLogin(new OAuthClient(http),
             FakeBrowser(query => $"code=the-code&state={query["state"]}", pages));
 
         OAuthTokens tokens = await login.SignInAsync(Standard(), Prompts,
-            new Progress<LoginProgress>(step => progress.Add(step.Message)));
+            new Progress<LoginProgress>(step => progress.Enqueue(step.Message)));
 
         Assert.AreEqual("at-1", tokens.AccessToken);
         Assert.AreEqual("rt-1", tokens.RefreshToken);
@@ -74,6 +74,8 @@ public sealed class ProviderLoginTests
         // 浏览器那边要看到一页"可以关掉了",而不是连接被重置
         await WaitForAsync(() => pages.Count > 0);
         Assert.Contains("You can close this tab.", pages[0]);
+        // Progress.Report 异步投递,登录完成不代表两个进度回调都已执行。
+        await WaitForAsync(() => progress.Contains("waiting") && progress.Contains("exchanging"));
         Assert.Contains("waiting", progress);
         Assert.Contains("exchanging", progress);
     }
