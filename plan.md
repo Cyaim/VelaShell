@@ -2009,3 +2009,14 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **不补的情形**:密码提示、跑着的脚本或命令、REPL 与 vim / less / top、`ssh` 到别的机器与 `docker exec`(那些目录不在 SFTP 看得到的这台机器上)、tmux / screen 里的 shell。代价是在没有上报的回车之后多一次 exec 往返:装了钩子的 bash / zsh / sh 每个提示符都上报,平时走不到;走到的是 REPL、长命令与 fish(它的钩子只在目录变化时报)。
 **验证**:探针先在 Debian 13(dash 作 `/bin/sh`、sudo `use_pty`)真机上跑过 `su - node`、`sudo -i`、`sudo su -` 后敲 `zsh`、`su node`、`ssh` 出去几种形态,判定用例直接取这些真实输出;`ForegroundShellProbeTests` 57 项、`NestedShellFollowerTests` 14 项、桥 3 项;Docker 端到端 `ShellIntegrationDockerTests` 新增 8 项(五种登录 shell 下认出自己、su 问密码时认不出、su 进去后认出并补注后跟随、sudo 经中转终端认出、卡在 `read` 的脚本不认),`NestedShellFollowDockerTests` 走宿主整条链路:只在终端里敲 `su - vela-zsh` 与密码,新 shell 的目录自动报上来,`cd`、`exit` 之后都照样跟 —— 去掉补注这条用例就停在"新 shell 的首报"上,即 #637 本身。全量:Core 1026 通过 / 16 跳过,Terminal 554,ShellIntegration 46(无跳过),宿主 2271 通过 / 11 跳过;构建 0 警告。
 **文档**:velashell-docs 中英文「交互与界面规格」§6 补上「跟随终端目录」一条(此前文档里没有),[velashell-docs PR #133](https://github.com/VelaShellLabs/velashell-docs/pull/133)。
+
+## ✅ 217. 2026-10-19 AI 插件:Base URL 换到另一台主机时,旧 Key 不再跟过去(#582 复审遗留)
+
+**问题**:在设置页或目录页把供应商的 Base URL 改到另一个 origin(协议、主机或端口不同)时,主槽、补充槽、当前槽与继承地址的模型自带 Key 原样保留,下一次请求就把旧中转站的 Key 发给新地址;地址改了还没保存就点「测试」,也会把已存的主 Key 发过去(§177 复审提出、一直没改)。
+**改法**:
+- `AiSettingsStore.SaveProviderApiKeyFormAsync`:地址换到别的 origin 时,主槽、补充槽与没填覆盖地址的自带 Key 模型一并清掉,补充槽与 `ActiveApiKeyId` 复位;同一次保存里新填的 Key 落进主槽(不留「主槽空、补充槽有」的状态,与旧 Key 相同也不报重复)。会清掉已存 Key 时默认拒绝、抛 `ApiKeyResetRequiredException`(带要清的把数),调用方让用户确认后带 `resetKeysOnOriginChange` 重新提交;只改路径(同 origin)不动 Key。清理沿用原事务:先在 `Updating` 闸下改机密、再写 JSON、最后无 await 地发布,任一步失败逐个恢复原机密;发布按主槽 id 推进 epoch,别处设置里同一供应商的副本一并作废。
+- 设置页与目录页:第一次保存只提示要清几把,同一供应商、同一地址再点一次才清;提示之后又改了地址就重新提示。保存后按有没有新填 Key 分两种提示;目录页清空后不再自动拉模型(新地址还没有 Key,只会换来一次鉴权失败),框里预填的旧 Key 一并清掉。
+- 设置页「测试」:地址改到别的 origin 而没保存时,只带表单里新填的 Key;没有就提示先填,不发请求。
+- 没动的既有口径:模型覆盖地址跨源时只用主槽。原先与供应商同源、填了覆盖地址的模型,在供应商换源后会拿到为新地址填的主 Key —— 记进 `feature-plan.md` 由维护者定。目录合并提交(`SaveProviderCatalogueAsync`)的两个调用方都不改地址,没加同样的闸。
+**验证**:新增存储 4 项(5 例:未确认拒绝且不改任何东西、确认后清主槽 / 补充槽 / 继承地址的模型 Key 而保留覆盖地址的、新 Key 落主槽且可与旧 Key 相同、只换唯一一把不用确认、同源改路径与大小写 / 默认端口不清),设置页 2 项(两击确认与改地址后重新提示、未保存跨源测试只带新填的 Key),目录页 1 项(两击确认、清空预填框、不拉模型、之后填新 Key 照常保存);把条件改回去这 5 项失败。9 条旧用例按新语义调整:5 条原本断言旧 Key 发往新主机或跨源测试带主 Key,改为断言新行为;4 条只是借换主机造场景,改成同源路径或在另一个窗口带确认提交,原意不变。`VelaShell.Plugin.Ai.Tests` 全量 1544 通过、0 跳过;构建 0 警告。
+**文档**:插件 README「Base URL 换到另一个 origin 时清掉旧 Key」一段;velashell-docs 没有规定 Key 槽与地址的关系,无需变更。

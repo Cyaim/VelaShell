@@ -389,6 +389,9 @@ public sealed class ProviderSetupView : UserControl
     private AiProvider? _newProviderDraft;
     private string? _primaryKeyId;
     private Task<string?> _primaryKeyBaseline = Task.FromResult<string?>(null);
+
+    /// <summary>两击确认换源清 Key:记着第一击时的供应商与地址,地址再改或换了表单就作废。</summary>
+    private (AiProvider Provider, string Url)? _pendingKeyReset;
     // 克隆的授权参数只属于完整的签发地址;同一主机的不同路径也可能是不同租户。
     private string? _oauthConfiguredBaseUrl;
     private string? _oauthSourceBaseUrl;
@@ -443,6 +446,7 @@ public sealed class ProviderSetupView : UserControl
         _newProviderDraft = existing is null || adding ? draft : null;
         _primaryKeyId = existing is not null && !adding ? existing.Id : null;
         _primaryKeyBaseline = Task.FromResult<string?>(null);
+        _pendingKeyReset = null;
         AiModelConfig model = draft.Models.Count > 0 ? draft.Models[0] : new AiModelConfig();
         Missing missing = MissingOf(entry, draft);
 
@@ -1349,6 +1353,7 @@ public sealed class ProviderSetupView : UserControl
         string? key = keyBox.Text;
         bool keyWasEdited = _keyEdited;
         string? committedKey;
+        int keysCleared = 0;
         if (!OwnsForm() || existing is not null && !_settings.Providers.Contains(existing)) return;
         if (created)
         {
@@ -1370,9 +1375,32 @@ public sealed class ProviderSetupView : UserControl
             string? replacement = !string.IsNullOrWhiteSpace(key) && keyWasEdited ? key : null;
             string? expectedKey = await keyBaseline.ConfigureAwait(true);
             if (!OwnsForm()) return;
-            await _store.SaveProviderApiKeyFormAsync(_settings, provider, draft, expectedProviderJson, replacement,
-                keyId: keyId!, expectedKey: expectedKey, cancellationToken: _context.Shutdown);
-            committedKey = replacement ?? expectedKey;
+            // 地址换到别的源会清掉已存 Key:第一次只提示,同一地址再点一次才清
+            bool confirmed = _pendingKeyReset is { } pending
+                && ReferenceEquals(pending.Provider, provider) && pending.Url == draft.BaseUrl;
+            try
+            {
+                keysCleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, draft, expectedProviderJson,
+                    replacement, keyId: keyId!, expectedKey: expectedKey, resetKeysOnOriginChange: confirmed,
+                    cancellationToken: _context.Shutdown);
+            }
+            catch (AiSettingsStore.ApiKeyResetRequiredException ex)
+            {
+                if (!OwnsForm()) return;
+                _pendingKeyReset = (provider, draft.BaseUrl);
+                _progress.Text = _loc.F("SetupBaseUrlKeyResetConfirm", ex.KeyCount);
+                return;
+            }
+            _pendingKeyReset = null;
+            committedKey = replacement ?? (keysCleared > 0 ? null : expectedKey);
+            // 框里预填的是旧地址的 Key,已经清掉了,别让它还摆在那儿
+            if (committedKey is null && ReferenceEquals(keyBox, _keyBox) && keyBox.Text == key)
+            {
+                _keyPrefilling = true;
+                try { keyBox.Text = ""; }
+                finally { _keyPrefilling = false; }
+                key = "";
+            }
         }
         if (ReferenceEquals(keyBox, _keyBox))
         {
@@ -1383,7 +1411,12 @@ public sealed class ProviderSetupView : UserControl
         }
         if (ReferenceEquals(keyBox, _keyBox)) _keyEdited = keyBox.Text != key;
         if (ReferenceEquals(keyBox, _keyBox)) _conflictValues.IsVisible = false;
-        if (ReferenceEquals(keyBox, _keyBox)) _progress.Text = created ? _loc["SetupAdded"] : _loc["Saved"];
+        bool keysGone = keysCleared > 0 && committedKey is null;
+        if (ReferenceEquals(keyBox, _keyBox))
+            _progress.Text = created ? _loc["SetupAdded"]
+                : keysGone ? _loc["SetupSavedKeysCleared"]
+                : keysCleared > 0 ? _loc["SetupSavedOtherKeysCleared"]
+                : _loc["Saved"];
         await RefreshStatusAsync().ConfigureAwait(true);
         ProviderChanged?.Invoke(provider.Id);
         // 「再添加一个」跟着落库就露出 —— 按钮收尾(PrimaryAsync 的 finally)要等下面这次
@@ -1394,6 +1427,8 @@ public sealed class ProviderSetupView : UserControl
             _another.IsVisible = true;
             _secondary.IsEnabled = true;
         }
+        // Key 刚清空、新地址还没有 Key:拉模型只会换来一次鉴权失败,把「请填入新 Key」的提示盖掉
+        if (keysGone) return;
         await PullModelsAsync(entry, provider).ConfigureAwait(true);
     }
 

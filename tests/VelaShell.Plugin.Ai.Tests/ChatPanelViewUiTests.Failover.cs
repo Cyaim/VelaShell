@@ -3496,8 +3496,11 @@ public sealed partial class ChatPanelViewUiTests
                 FindIn<ListBox>(editor, "ProvidersList").SelectedIndex = 0;
                 await StageProviderApiKeyAsync(editor, "new-key");
                 FindIn<TextBox>(editor, "ProviderBaseUrlBox").Text = moved.BaseUrl;
+                // 换到另一台主机还留着一把备用 Key:先提示会清掉它,再点一次才保存
                 RaiseClick(FindIn<Button>(editor, "SaveButton"));
-                Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == "Saved."));
+                Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == new Loc("en").F("SetupBaseUrlKeyResetConfirm", 1)));
+                RaiseClick(FindIn<Button>(editor, "SaveButton"));
+                Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == new Loc("en")["SetupSavedOtherKeysCleared"]));
                 original.Release();
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
                 Assert.HasCount(1, context.FakeRemoteExec.Executed, "配置变化和可切换鉴权失败不得重放已执行工具");

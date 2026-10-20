@@ -1274,6 +1274,55 @@ public sealed class ProviderSetupViewUiTests
     }
 
     [TestMethod]
+    public void ExistingProvider_BaseUrlToAnotherOriginAsksThenClearsKeysAndSkipsThePull()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            await using var oldEndpoint = new SseStub("");
+            await using var newEndpoint = new SseStub("");
+            AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            provider.BaseUrl = oldEndpoint.BaseUrl + "/v1";
+            string extra = Guid.NewGuid().ToString("N");
+            provider.AdditionalApiKeyIds = [extra];
+            await context.Secrets.SetAsync($"apikey:{provider.Id}", "sk-first");
+            await context.Secrets.SetAsync($"apikey:{extra}", "sk-second");
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id },
+                    focus: "custom-openai");
+            try
+            {
+                var loc = new Loc("en");
+                TextBlock progress = Find<TextBlock>(view, "SetupProgressText");
+                Assert.AreEqual("sk-first", Find<TextBox>(view, "SetupKeyBox").Text, "表单预填着旧地址的 Key");
+                Find<TextBox>(view, "SetupBaseUrlBox").Text = newEndpoint.BaseUrl + "/v1";
+                await ClickPrimaryAsync(view);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), progress.Text);
+                Assert.AreEqual(oldEndpoint.BaseUrl + "/v1", provider.BaseUrl, "第一次只提示");
+                Assert.AreEqual("sk-first", await store.GetApiKeyAsync(provider.Id));
+
+                await ClickPrimaryAsync(view);
+                Assert.AreEqual(loc["SetupSavedKeysCleared"], progress.Text);
+                Assert.AreEqual(newEndpoint.BaseUrl + "/v1", provider.BaseUrl);
+                Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
+                Assert.IsNull(await context.Secrets.GetAsync($"apikey:{extra}"));
+                Assert.IsEmpty(provider.AdditionalApiKeyIds);
+                Assert.AreEqual("", Find<TextBox>(view, "SetupKeyBox").Text ?? "", "清掉的 Key 不再摆在框里");
+                Assert.IsEmpty(newEndpoint.Requests, "新地址还没有 Key,不去拉模型");
+                Assert.IsEmpty(oldEndpoint.Requests);
+
+                // 之后为新地址填 Key:照常保存,不再提示
+                Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
+                await ClickPrimaryAsync(view);
+                Assert.AreEqual("sk-new", await store.GetApiKeyAsync(provider.Id));
+                Assert.IsTrue(newEndpoint.Authorizations.All(header => header is null || header == "Bearer sk-new"),
+                    string.Join(", ", newEndpoint.Authorizations));
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
     [DataRow("cancel")]
     [DataRow("collapse")]
     [DataRow("close")]
@@ -3448,6 +3497,8 @@ public sealed class ProviderSetupViewUiTests
                         "未编辑协议先跟随外部生效值");
                     protocol.SelectedIndex = (int)ChatProtocol.OpenAiChatCompletions;
                 }
+                // 换到了另一台主机:旧 Key 不跟过去,为新主机填一把(只有这一把要换,不用二次确认)
+                Find<TextBox>(view, "SetupKeyBox").Text = "sk-for-new-host";
                 await ClickPrimaryAsync(view);
                 Assert.AreEqual(2, notifications);
                 Assert.AreEqual("my-draft-name", source.Name);
@@ -3456,7 +3507,8 @@ public sealed class ProviderSetupViewUiTests
                 Assert.AreSame(source, settings.Providers.Single());
                 (Exception? error, _) = await HealthProbe.ProbeAsync(store, new ResolvedModel(source, source.Models[0]));
                 Assert.IsNull(error, error?.ToString());
-                Assert.AreEqual("Bearer sk-original", endpoint.Authorizations[^1]);
+                Assert.AreEqual("Bearer sk-for-new-host", endpoint.Authorizations[^1]);
+                Assert.DoesNotContain("Bearer sk-original", endpoint.Authorizations);
                 Assert.Contains("\"model\":\"my-draft-model\"", endpoint.Requests[^1]);
             }
             finally
