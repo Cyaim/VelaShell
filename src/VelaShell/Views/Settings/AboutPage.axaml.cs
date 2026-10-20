@@ -1,7 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using VelaShell.Core.Resources;
+using VelaShell.Infrastructure.Diagnostics;
 using VelaShell.Services.Update;
+using VelaShell.ViewModels;
 using Avalonia.Interactivity;
 using FireAndForget = VelaShell.Services.FireAndForget;
 
@@ -39,6 +43,40 @@ public partial class AboutPage : UserControl
             _showingChangelog = false;
         }
     }
+
+    private void ExportDiagnostics_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (DataContext is not SettingsViewModel viewModel || TopLevel.GetTopLevel(this) is not { } top
+            || sender is not Button button)
+        {
+            return;
+        }
+        IStorageFile? file = await top.StorageProvider.SaveFilePickerAsync(new()
+        {
+            Title = Strings.Get("SetAbout_ExportDiagnosticsDialogTitle"),
+            SuggestedFileName = $"velashell-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
+            SuggestedStartLocation = await StorageDefaults.DownloadsAsync(top),
+            DefaultExtension = "zip"
+        });
+        if (file?.TryGetLocalPath() is not { Length: > 0 } path)
+        {
+            return; // 用户取消了,不算失败,也不用回显。
+        }
+        button.IsEnabled = false;
+        try
+        {
+            DiagnosticBundleResult result = await viewModel.ExportDiagnosticsAsync(path);
+            viewModel.DiagnosticsStatus = Strings.Format("SetAbout_ExportDiagnosticsDone", path, result.LogFiles);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            viewModel.DiagnosticsStatus = Strings.Format("SetAbout_ExportDiagnosticsFailed", ex.Message);
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    });
 
     /// <summary>点击依赖项目名/许可证时,用系统默认浏览器打开对应链接(URL 存放在控件 Tag)。</summary>
     private void OnOpenLink(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>

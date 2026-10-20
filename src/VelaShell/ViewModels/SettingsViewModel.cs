@@ -113,6 +113,9 @@ public partial class SettingsViewModel : ReactiveObject
     private readonly IThemeService _themeService;
     private readonly IUpdateService? _updateService;
     private readonly ILocalXServer? _localXServer;
+    private readonly ISessionRepository? _sessionRepository;
+    private readonly ISharedCredentialRepository? _sharedCredentialRepository;
+    private readonly Infrastructure.Plugins.PluginManager? _pluginManager;
     private readonly JsonSerializerOptions _jsonOption = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -154,10 +157,14 @@ public partial class SettingsViewModel : ReactiveObject
         ILocalXServer? localXServer = null,
         ISharedCredentialRepository? sharedCredentials = null,
         SharedCredentialService? sharedCredentialService = null,
-        ISessionRepository? sessionRepository = null
+        ISessionRepository? sessionRepository = null,
+        Infrastructure.Plugins.PluginManager? pluginManager = null
     )
     {
         SharedCredentials = new(sharedCredentials, sharedCredentialService, sessionRepository);
+        _sessionRepository = sessionRepository;
+        _sharedCredentialRepository = sharedCredentials;
+        _pluginManager = pluginManager;
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
         _localizationService = localizationService;
@@ -812,6 +819,64 @@ public partial class SettingsViewModel : ReactiveObject
 
     /// <summary>打开日志目录命令(关于页):发布版的 Trace 与崩溃记录都落在那里。</summary>
     public ReactiveCommand<RxVoid, RxVoid> OpenLogsDirectoryCommand { get; }
+
+    /// <summary>关于页「导出诊断包」的结果;空串时不显示。</summary>
+    public string DiagnosticsStatus
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = string.Empty;
+
+    /// <summary>
+    /// 把日志、崩溃记录、版本与插件清单脱敏后打成 zip,写到 <paramref name="path" />。只落本机,不上传。
+    /// </summary>
+    /// <remarks>
+    /// 脱敏用的主机与用户名取自已保存的连接、最近连接与共享凭据的元数据(不解密任何机密),
+    /// 再加上本机的用户名、机器名与主目录(见 <see cref="DiagnosticRedactor" />)。
+    /// </remarks>
+    public Task<DiagnosticBundleResult> ExportDiagnosticsAsync(string path, CancellationToken cancellationToken = default)
+        => ExportDiagnosticsAsync(path, DiagnosticLog.Directory, cancellationToken);
+
+    /// <summary>同上,日志目录由调用方给(测试用:全局日志目录是进程级单例)。</summary>
+    internal async Task<DiagnosticBundleResult> ExportDiagnosticsAsync(string path, string? logsDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        List<string> hosts = [];
+        List<string> users = [];
+        if (_sessionRepository is not null)
+        {
+            foreach (SessionProfile profile in await _sessionRepository.GetAllSessionsAsync().ConfigureAwait(false))
+            {
+                hosts.Add(profile.Host);
+                users.Add(profile.Username);
+            }
+        }
+        if (_recentConnections is not null)
+        {
+            // 服务端一次最多取 500 条历史再去重;传更大的数只会让它按这个数预分配列表
+            foreach (RecentConnectionEntry entry in await _recentConnections.GetRecentAsync(500, cancellationToken).ConfigureAwait(false))
+            {
+                hosts.Add(entry.Host);
+                users.Add(entry.Username);
+            }
+        }
+        if (_sharedCredentialRepository is not null)
+        {
+            users.AddRange((await _sharedCredentialRepository.ListMetadataAsync().ConfigureAwait(false)).Select(credential => credential.Username));
+        }
+        var redactor = new DiagnosticRedactor(hosts, users, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            Environment.UserName, Environment.MachineName);
+        DiagnosticPluginInfo[] plugins = _pluginManager is null
+            ? []
+            :
+            [
+                .. _pluginManager.Plugins.Select(plugin => new DiagnosticPluginInfo(
+                    plugin.Manifest?.Id ?? Path.GetFileName(plugin.Directory), plugin.Manifest?.Version, plugin.State.ToString(),
+                    plugin.Manifest?.HostMode.ToString(), plugin.IsDevelopment, plugin.Error))
+            ];
+        return await DiagnosticBundle.WriteAsync(path,
+            new DiagnosticBundleRequest(AppVersion, logsDirectory, plugins, redactor), cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>检查更新的状态提示文本。</summary>
     public string UpdateStatus

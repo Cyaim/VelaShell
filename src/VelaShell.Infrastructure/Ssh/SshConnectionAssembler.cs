@@ -320,6 +320,8 @@ internal static class SshConnectionAssembler
                     CancellationToken.None);
             }
 
+            // 跳板链上的每一跳都走这里:哪一跳先断、为什么断,都进诊断日志
+            SshDisconnectLog.Watch(connection, HostAddress.FormatTarget(info.Username, info.Host, info.Port));
             return connection;
         }
         finally
