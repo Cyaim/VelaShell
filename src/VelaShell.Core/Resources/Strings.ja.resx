@@ -2601,6 +2601,12 @@
   <data name="SetSecurity_AutoRecordDesc" xml:space="preserve">
     <value>// 端末の出力をローカルデータベースに記録し、監査と再生に使います。既定はオフ:録画は急速に増え、よく使う週なら数 GB になります。以降に確立した接続に適用され、保持日数は「一般 → 端末セッションログの保持日数」に従います</value>
   </data>
+  <data name="SetSecurity_MaskCaptures" xml:space="preserve">
+    <value>録画とセッションログのパスワードとトークンを伏せる</value>
+  </data>
+  <data name="SetSecurity_MaskCapturesDesc" xml:space="preserve">
+    <value>// ディスクに書く前に、PASSWORD=…、token: …、Bearer …、秘密鍵ブロック、よく知られた形式のトークンを *** に置き換えます。画面表示には影響しません。以降に始めた録画とログに適用されます</value>
+  </data>
   <data name="SetSecurity_BlockOnChange" xml:space="preserve">
     <value>フィンガープリント変更時にブロックして警告</value>
   </data>
@@ -4008,6 +4014,33 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>ログフォルダーを開く</value>
+  </data>
+  <data name="SetAbout_ExportDiagnostics" xml:space="preserve">
+    <value>診断パッケージを書き出す…</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
+    <value>ログ、クラッシュ記録、バージョン、プラグイン一覧を集め、ホスト名・ユーザー名・ローカルパス・IP を伏せて zip としてこのコンピューターに保存します。アップロードはしません。</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
+    <value>診断パッケージを保存</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
+    <value>診断パッケージを {0} に保存しました（ログ {1} 件、機密情報は伏せ済み）。どこにも送信していません。</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
+    <value>診断パッケージを保存できませんでした: {0}</value>
+  </data>
+  <data name="DiagBundle_ReadMeTitle" xml:space="preserve">
+    <value>VelaShell 診断パッケージ</value>
+  </data>
+  <data name="DiagBundle_ReadMeLocalOnly" xml:space="preserve">
+    <value>このパッケージは選んだ場所に保存しただけで、VelaShell はアップロードしていません。誰かに送る前に中身を確認できます。</value>
+  </data>
+  <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
+    <value>設定、接続設定、資格情報は含まれていません。</value>
+  </data>
+  <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
+    <value>伏せた項目（ホスト名、ユーザー名、ローカルパス、IP、メールアドレス、パスワード、トークン）と置き換え回数:</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>前回、予期せず終了しました</value>

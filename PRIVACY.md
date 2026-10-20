@@ -1,6 +1,6 @@
 # VelaShell Privacy Policy / 隐私政策
 
-**Last updated / 最后更新:2026-08-31**
+**Last updated / 最后更新:2026-10-19**
 
 [English](#english) · [简体中文](#简体中文)
 
@@ -45,6 +45,7 @@ computer unless you explicitly enable the optional sync feature described below.
 | Known SSH host keys | Same folder |
 | Saved commands and snippets | Same folder |
 | Session logs — raw terminal output, **off by default** | `logs` subfolder, auto-deleted after a retention period you set |
+| Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, duration, reason) | `logs` subfolder, auto-deleted after 7 days |
 | Offline IP geolocation database, if you add one | `geoip` subfolder |
 | Plugins you manually install | `~/.velashell/plugins` |
 
@@ -138,7 +139,16 @@ using a passphrase only you know.
 
 Please note that session logging, when you turn it on, records **raw terminal output**,
 which may include anything displayed on screen during a session. These logs are plain files on
-your disk. Keep this in mind before enabling the feature on a shared machine.
+your disk. Keep this in mind before enabling the feature on a shared machine. By default, values that look
+like passwords, tokens or private keys (for example `PASSWORD=…`, `Bearer …`, a PEM private key block) are
+replaced with `***` before session logs and recordings are written (Settings → Security Audit); this is
+best-effort pattern matching, not a guarantee, and it does not change what you see on screen.
+
+“Export diagnostics…” on the About page writes a zip of the diagnostic logs, a version and platform
+summary and the plugin list **only to the location you choose**; nothing is uploaded. Host names,
+user names, local paths, IP and email addresses, and password- or token-like values are masked
+before writing, and settings, connection profiles and credentials are not included. Sending the
+file to anyone is up to you — you can open it and check it first.
 
 No method of storage is perfectly secure, and VelaShell cannot protect data on a computer that
 has already been compromised.
@@ -199,6 +209,7 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 已知的 SSH 主机密钥 | 同上 |
 | 快捷命令与代码片段 | 同上 |
 | 会话日志 —— 终端原始输出,**默认关闭** | `logs` 子目录,按你设定的保留天数自动清理 |
+| 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、时长、原因) | `logs` 子目录,7 天后自动清理 |
 | 离线 IP 归属地数据库(如果你添加了) | `geoip` 子目录 |
 | 你手动安装的插件 | `~/.velashell/plugins` |
 
@@ -274,7 +285,13 @@ VelaShell 不含任何第三方 SDK、追踪器或广告库。
 使用只有你知道的口令做 AES-GCM 端到端加密。
 
 请注意:会话日志功能一旦开启,会记录**终端原始输出**,其中可能包含会话期间显示在屏幕上的
-任何内容。这些日志是磁盘上的普通文件。在共用计算机上启用该功能前请考虑这一点。
+任何内容。这些日志是磁盘上的普通文件。在共用计算机上启用该功能前请考虑这一点。默认情况下,会话日志与录制
+落盘前会把形如口令、令牌或私钥的值(比如 `PASSWORD=…`、`Bearer …`、PEM 私钥块)换成 `***`(设置 → 安全审计);
+这是按规则匹配、尽力而为,不是保证,也不改变屏幕上显示的内容。
+
+关于页的「导出诊断包…」把诊断日志、版本与平台概况和插件清单打成 zip,**只写到你选的位置**,不会上传。
+写入前会遮盖主机名、用户名、本机路径、IP 与邮箱地址,以及形如口令或令牌的值;设置、连接配置与凭据都不收。
+要不要发给别人由你决定,发之前可以先打开检查。
 
 没有任何存储方式是绝对安全的;对于一台已被入侵的计算机,VelaShell 无法保护其上的数据。
 

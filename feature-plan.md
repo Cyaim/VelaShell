@@ -33,16 +33,16 @@
 
 按「杠杆 ÷ 成本」排，下面三件最值得先动：
 
-1. **AI 插件：改 Base URL 后旧 Key 发往新地址**（🟠 P1，一、插件生态）—— 用户的 Key 会发给他没打算给的服务器，改动只在一处。
-2. **录制与日志的输出脱敏**（🟠 P1，二、E）—— `cat .env`、`kubectl get secret` 的输出正原样落盘，是现实风险。
-3. **SSH 断开原因进日志 + 一键导出诊断包**（🟡 P2 / 🟠 P1，二、F）—— 报障时最缺的两样，成本都低，前者做完后者顺带受益。
+1. **布局持久化与命名布局模板**（🟠 P1，二、B）—— 「打开这一组机器并按这个分屏排好」，同时管很多台机器的用户天天要用；VelaDock 模型层本来就可序列化，批量连接（`plan.md` §180）已经铺好一半。
+2. **配置导出的选择性与脱敏**（🟠 P1，一、安全与凭据）—— 导出是全量 `AppSettings`，代理密码是明文，随手分享的一个文件里不该有它。
+3. **协议插件 / 工作台插件模板**（🟠 P1，二、G）—— 五个插件已经把 `Protocols` 与 `Workspaces` 走通，把公共骨架沉淀成模板，第三方接新协议的成本会掉一个数量级。
 
 ## 📊 待办分布
 
 | 部分 | 🔴 P0 | 🟠 P1 | 🟡 P2 | 🟢 P3 | 合计 |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| 一、欠账 | 4 | 3 | 15 | 19 | **41** |
-| 二、路线图 | — | 6 | 17 | 32 | **55** |
+| 一、欠账 | 4 | 2 | 14 | 17 | **37** |
+| 二、路线图 | — | 3 | 17 | 32 | **52** |
 | 三、文档待同步 | — | — | — | — | **9** |
 
 ---
@@ -115,7 +115,7 @@
 
 | 状态 | 优先级 | 项 | 现状 | 要做什么 |
 | :---: | :---: | --- | --- | --- |
-| ⏳ | 🟠 P1 | **AI 插件：改 Base URL 后旧 Key 发往新地址** | #582 复审提出、没改（`plan.md` §177）：在「高级」里改供应商的 Base URL 时，补充槽与 `ActiveApiKeyId` 原样保留，下一次请求会把旧中转站的 Key 发给新地址 | 改地址时清空（或要求重填）这家供应商的全部 Key；有凭据外泄的一面，优先于下一行 |
+| ⏳ | 🟡 P2 | **AI 插件：跨源模型覆盖拿主槽 Key 的口径** | 供应商换源清 Key 已落地（`plan.md` §217）。没动的是既有口径「模型的覆盖地址跨源时只用主槽」：原先与供应商同源、填了覆盖地址的模型，供应商换到别的源之后变成跨源，之后为新地址填的主 Key 会发往这个旧覆盖地址 | 维护者拍板：跨源覆盖改为必须自带 Key（不再借主槽），或换源时一并提示这些模型。⚠️ 改口径会让现有跨源覆盖的模型变成无 Key 请求，要有迁移提示 |
 | ⏳ | 🟡 P2 | **AI 插件：#582 复审的其余六条** | 同出 §177、留给维护者定：①单 Key 供应商的模型级 429 / 403 冷却整把 Key，兄弟模型故障转移时不探活就被跳过；②空链时的自动发现会跨同目录的不同账号重放会话（企业与个人 Copilot），没有开关；③删掉 Key #1 后主槽只清机密、界面不再显示空主槽，之后填不回去，跨源模型覆盖只用主槽，会静默变成无 Key 请求；④Responses 流里的 `ErrorContent` 被 `HasMeaningfulOutput` 当成有效输出（错误记成成功并解冻冷却，只按代码推断）；⑤拉模型后设置向导的型号框不刷新，再点保存会把自动填入的型号写回空串（只按代码推断）；⑥`BareModelId` 把 `phi4:latest` 这类剥成 `latest` | 逐条先复现再改；④⑤先补用例证实。顺带：故障转移或换 Key 发生时在聊天记录里留一条可见提示（切换会粘住并落盘，用户不知道后续请求换了供应商与计费归属） |
 | ⏳ | 🟡 P2 | **AI 插件：#616–#636 复审留待定的几项** | 同出 `plan.md` §222：①自定义 Responses 接入默认 `store=true`，无状态重放之后已无用处，却仍把含终端输出的上下文留在供应商侧；改默认值会让存量接入多发一个 `store:false`，中转站认不认没验证；②复用窗口时「管理登录」（`FocusEntry`）同样会掐掉进行中的登录与未存的草稿；③桥接指定的模型被手动删掉后，`BridgeAgentRunner.ResolveModel` 静默落到全局第一个模型，可能换了一家；④「第 N/8 批」到不了（100 步 ÷ 每批 25 步 = 4）；⑤root 审批框的「批准」没有延迟启用，弹出瞬间鼠标恰好点中的竞态还在；⑥SDK 的 `RpcConnection.WriteAsync` 把调用方的取消令牌传进流写入，取消落在写帧中途时理论上会写出半帧 | ①只对官方 openai 目录条目关掉，或给自定义接入一个可编辑开关；②照 `StartNewProvider` 的守卫；③回退时提示或拒绝，不跨供应商；④改上限或改文案；⑤维护者定；⑥在 SDK 仓库修，⚠️ 按 `AGENTS.md` 的版本纪律走 |
 | ⏳ | 🟡 P2 | **四套版本比较口径** | `PluginManager.IsOlder`（丢掉预发布后缀）、`UpdateVersion`（完整 SemVer 子集）、CLI 的 `VersionOrder`、市场的 `SemVerComparer`（后两者按序数比预发布）—— `1.0.0-beta.10` 与 `1.0.0-beta.2` 谁新，四边能给出不同答案。更新路径已显式选用 `UpdateVersion`，**但那是绕不是修** | 把 `UpdateVersion` 抬进 `VelaShell.PluginSdk`，宿主 / CLI / 市场三边共用。⚠️ 要发 SDK，按 `AGENTS.md` 的版本纪律走 |
@@ -128,11 +128,7 @@
 
 | 状态 | 优先级 | 项 | 现状 | 要做什么 |
 | :---: | :---: | --- | --- | --- |
-| ⏳ | 🟡 P2 | **SSH 靶机镜像过旧，X11 用例本机一直红** | 本机的 `velashell-test-shells` 建于 Dockerfile 给 `vela-dash` 关 X11 之前，`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 因此一直失败（`plan.md` §144、§159、§167、§186 都记过） | 重建镜像；更稳的是让用例先认镜像版本（标签或探针），旧了就 `[SKIP]` 并说明要重建，而不是红 |
-| ⏳ | 🟡 P2 | **互操作靶机与 compose 的 `ssh-2fa` 抢 2224 端口** | 两者同时起着时 `KeyboardInteractiveIntegrationTests` 失败；`目的地约束对真agent_经转发逐跳放行` 因靶机连不到 compose 网络而一直跳过（§193） | 给互操作靶机换端口或让它加入同一个 compose 网络 |
-| ⏳ | 🟢 P3 | **临时目录的 ACL 让 `ssh-keygen` 拒读私钥** | 临时目录带着别的用户组时，`PrivateKeyWriteTests.真ssh_keygen读得出本库写的私钥` 失败（§197、§199、§201 都记过） | 用例自己创建一个只有当前用户可读的私有目录，不依赖 `%TEMP%` 的 ACL |
-| ⏳ | 🟢 P3 | **`test.runsettings` 的 `Workers=2` 拖慢本机** | 为 3 核 runner 定的并行度（§171）让本机 `Ssh.Tests` 从 10 秒变 60 秒；文件是 IDE 与 CI 共用的 | CI 单独传参（或单独一份 runsettings），本机恢复默认并行 |
-| ⏳ | 🟢 P3 | **Release 构建报 NETSDK1150** | 自包含的 `VelaShell` 引用了非自包含的 `VelaShell.PluginHost`（§178 看到、判为无关没处理） | 核对发布流水线是否受影响，再决定改引用方式还是显式压掉 |
+| ⏳ | 🟢 P3 | **靶机镜像跟不上 Dockerfile 时用例变红** | `velashell-test-shells` 建于 Dockerfile 给 `vela-dash` 关 X11 之前时，`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 一直失败（`plan.md` §144、§159、§167、§186）；2026-10-19 镜像已重建，这条用例通过（§221）。改了 `tests/fixtures` 下的 Dockerfile 而本机没重建，同样的事还会再来 | 让用例先认镜像版本（Dockerfile 打标签、用例经 SSH 读一个版本文件），旧了就 `[SKIP]` 并提示 `docker compose -f docker-compose.test.yml build`，而不是红 |
 | ⏳ | 🟢 P3 | **GitHub 的「Code scanning AI findings」一直失败** | GitHub 托管的 Copilot 任务，#562 之前就红、日志只有退出码，不在仓库的 CI 里（§166） | 在仓库设置里关掉或修好，别让 PR 上常驻一个红叉 |
 | ⏳ | 🟢 P3 | **runtime-async 下 Span 跨 await 的可疑失败** | `plan.md` §222 修更新下载时，`zip.AsSpan().SequenceEqual(await File.ReadAllBytesAsync(…))` 编译通过，却在全量运行里失败过一次；改成先 await 再比较后稳定，没坐实 | 写最小复现，确认是不是 runtime-async 的编译器或运行时问题；是的话报上游，并在 `AGENTS.md` 记一条 |
 
@@ -180,7 +176,7 @@
 | 状态 | 优先级 | 项 | 对标 | 架构落点 |
 | :---: | :---: | --- | --- | --- |
 | ⏳ | 🟡 P2 | **命令块的「重跑」与「复制这条命令」** | Warp | OSC 133 的其余部分已落地（`plan.md` §10-E）。**只差 `B`（提示符结束的那一列）** —— 有了它才能把命令文本切出来。当时没做是因为列在改列宽重排后会挪位，要像 `ReflowResize` 搬光标那样换算成逻辑行内偏移再跟着重新换行。做这项时连这份代价一起付 |
-| 💡 | 🟡 P2 | **终端输出的自定义高亮规则** | WindTerm | 语义高亮是编译期硬编码的 7 条（`SemanticMatcher` 的 `[GeneratedRegex]`：Url / Ip / Error / Warning / Success / Option / Number）。改成可注入规则表 + 设置 UI；注意别拖慢逐格渲染的热路径。**这张用户规则表可与「触发器」「输出脱敏」共用** |
+| 💡 | 🟡 P2 | **终端输出的自定义高亮规则** | WindTerm | 语义高亮是编译期硬编码的 7 条（`SemanticMatcher` 的 `[GeneratedRegex]`：Url / Ip / Error / Warning / Success / Option / Number）。改成可注入规则表 + 设置 UI；注意别拖慢逐格渲染的热路径。**这张用户规则表可与「触发器」共用；录制与日志的输出遮盖（`plan.md` §220，`SessionOutputMasker`）目前是内置规则，有了规则表也可以让用户加自己的** |
 | 💡 | 🟢 P3 | **触发器 / 自动应答** | SecureCRT / Xshell | 全仓没有「输出匹配 → 自动发送」机制。expect 式：输出命中正则时自动发送响应（自动 yes、密码带外输入）。与上一行共用规则表，适合一起做 |
 | 💡 | 🟢 P3 | **终端内搜索的增强** | 各家都有 | 基础搜索已有（`MainWindowViewModel.TerminalSearchRequested`）。正则、大小写、全部高亮、上一个 / 下一个的循环计数 —— 按反馈再定 |
 | 💡 | 🟢 P3 | **Sixel / Kitty 图形协议** | MobaXterm / WezTerm | VT 引擎有 DCS 通道，缺的是图像解码 + 位图合成进自绘渲染。多日工作量，至今没有用户提过，**等真实需求** |
@@ -219,7 +215,6 @@
 
 | 状态 | 优先级 | 项 | 对标 | 架构落点 |
 | :---: | :---: | --- | --- | --- |
-| ⏳ | 🟠 P1 | **录制与日志的输出脱敏** | — | ⚠️ **现实风险，不是洁癖。**「输入脱敏不做」是对的（只录输出、密码无回显），但输出里照样有密钥：`cat .env`、`kubectl get secret -o yaml`、`env \| grep TOKEN`，会话日志与录制存的是原始字节。落点：`SshTerminalBridge.DataReceived` 这条旁路本来就是记录专用，在那里过一遍可配的脱敏规则，**不影响显示路径**。规则表与 A 组的自定义高亮共用 |
 | 🚧 | 🟠 P1 | **插件发布者的信任根** | VS Code / JetBrains | 已有：验签 + 发布者连续性（`plan.md` §57，钉住首装的公钥，换钥 / 去签名要用户看过两个指纹再点头）；市场 `GET /api/plugins/latest` 给出每版的发布者指纹、宿主有只读客户端 `IPluginMarketClient`，**更新路径**已拿它比对（`plan.md` §71）。⚠️ 但这仍是 TOFU：`velashell-identity` 是 OIDC 账号服务，不是公钥注册表。真要闭合，缺一份**由发布者身份背书**的 id ↔ 公钥映射（市场把上传者 `sub` 与公钥绑定并可对外验证），且**装包路径也去查它**。外呼仍只在打开插件管理页时发生，别改成开机外呼（`PRIVACY.md`） |
 | 🚧 | 🟡 P2 | **凭据管理器集成** | Termius | **设计已定稿**（velashell-docs [`zh/host/凭据管理器集成设计.md`](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/host/凭据管理器集成设计.md)，v3）。**已落地第一个凭据来源：本机共享凭据**（`plan.md` §157，#550）—— `CredentialReference` / `ICredentialProvider` / `ICredentialResolver` 契约、仓储不变量、五个构建点接线、解析失败退回登录框，以及设计 §3 的 D1 / D3。**还差外部保险库**：1Password / Bitwarden / KeePassXC 三家 CLI（`CliCredentialRunner`、解锁口令内存 TTL 缓存、`ICredentialUnlockPrompt`），届时给解析补上交互 / 非交互之分（自动重连不许弹解锁框，设计 §5.7）与单次尝试缓存，`CredentialReference` 再加 `Scope` 等字段（JSON 省略 null，零迁移）。⚠️ `ISecretProtector` **不是**那层抽象（它管加密不管来源，见设计 §1）。外部保险库的私钥走 SSH Agent。系统密钥链 provider 等 [`系统密钥链与sudo凭据填充可行性调研.md`](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/host/系统密钥链与sudo凭据填充可行性调研.md) 里 `IMasterKeyStore` 的 P/Invoke 层。设计 §3 的 D2（私钥口令不受「记住密码」控制）、D4（`SshSession.ConnectionInfo` 持有每一跳的密码）仍在；§16 另有 11 项待确认决策 |
 | ⏳ | 🟡 P2 | **主机证书（宿主侧）** | OpenSSH `@cert-authority` | **SSH 库已支持**（`plan.md` §113，velashell-docs `ssh/spec/03-key-exchange.md` §5.5）。宿主还用不上：`VelaHostKeyPolicy` 走自己的信任库（`IHostKeyService`），没有「受信 CA」的概念；证书目前按里面那把钥当普通主机密钥处理，默认算法清单里证书又排在后面，实际谈不成证书。要接：①信任库能存受信的主机 CA（手动添加，或从 `~/.ssh/known_hosts` 读 `@cert-authority`）；②`VelaHostKeyPolicy` 已实现 `IHostKeyTypePreference`（交出已记下的钥的类型，`ssh_plan.md` API-H4），还要在有对上的 CA 时把证书算法排前；③裁决时先用 `OpenSshCertificate.CheckHostCertificate` 验证书，CA 管的主机出示没有担保的钥**不退回 TOFU**（规格 §5.5 第 4 条）；④弹窗与设置页文案，五份 resx |
@@ -234,9 +229,7 @@
 
 | 状态 | 优先级 | 项 | 架构落点 |
 | :---: | :---: | --- | --- |
-| ⏳ | 🟠 P1 | **一键导出诊断包** | 支持成本最低的一项投资。崩溃已落地在 `DiagnosticLog.WriteCrash`，但用户报障时仍要被教着去翻目录。做成「关于页一个按钮 → 收集日志 + 版本 + 平台 + 已装插件清单 → 打成一个包」。⚠️ **先脱敏再打包**（主机名、用户名、路径），**只在本地落盘、不自动上传** |
 | ⏳ | 🟡 P2 | **启动时间与内存的回归门禁** | `VelaShell.Benchmarks` 刻意不进 CI（BDN 的抖动当门禁只会天天误报）。折中：不比毫秒数，钉**结构性指标** —— 启动路径上的分配次数、冷启动跨过的模块数；`StartupTrace` / `StartupWarmup` 已在采点。同一类还有两处：内置 X Server 的帧率（`scripts/xserver/perf` 测量台，§201 的自适应窗口问题让经 SSH 只有 9 帧却一直没人发现）可以定期跑出基线；CI 按测试工程记耗时、明显变慢时报出来（§179 的 AI 插件一个工程 22 分钟，等整体拖到 25 分钟以上才被发现） |
-| ⏳ | 🟡 P2 | **SSH 断开原因写进本机日志** | §197 里 SSH 整条断开的原因没进日志，只能另搭单文件程序复现才看到「只剩 32759 字节」。断开时把库给的原因（`SshFailureReason`、对端的断开码与描述）写进诊断日志，诊断包（上面那条）也就带上了 |
 | ⏳ | 🟡 P2 | **长时会话的内存与句柄基线** | 隧道有计量、终端积压有高水位、scrollback 有上限 —— 三条边界各自都在，**但没有「挂 24 小时会怎样」的端到端证据**。做一个长跑冒烟（放 nightly，不进 PR 门禁） |
 | 💡 | 🟢 P3 | **无障碍（屏幕阅读器）** | 全仓只有二十来处 `AutomationProperties`。对「键盘优先」的产品落差比看上去大，但补齐是**跨全部视图**的工作量，先评估真实诉求。已知一处只能用鼠标的：快捷命令的拖动排序没有键盘替代（`plan.md` §158） |
 
@@ -268,7 +261,7 @@
 | ⏳ | 🟢 P3 | **拖进 X 窗口的远端临时目录不清理** | 往 X 程序里拖本机文件时传到远端的 `/tmp/velashell-drop-<随机串>/`(0700,`XServerDropUploader`,§187)没有任何地方删,长期使用会在远端 `/tmp` 堆积。拖放会话结束(或断开)时删掉;删不掉也别报错 |
 | 💡 | 🟢 P3 | **X 程序清单显示信任级别** | 库里已有 `XClientInfo.Trust`(§187),面板列了来源会话、窗口数、内存与 GrabServer 标记,唯独没列受信 / 非受信 —— 用户判断「该断开谁」时最关心的正是它 |
 | 💡 | 🟢 P3 | **互操作靶场扩充**(审查的测试缺口 T16) | 真实客户端现在只覆盖 x11-apps、xterm、xdpyinfo、glxgears 与 Swing。现有镜像保持轻量、留在 CI,另建一个 heavy 镜像手动或每晚跑,断言沿用「零 `: Bad` 日志 + 画出了东西」再加专项:GTK3(`gtk-3-examples`、`zenity`、`meld`:拖放、剪贴板、弹出层、自绘标题栏的边缘缩放)、GTK4(`gtk-4-examples`、`gnome-calculator`:`GSK_RENDERER=gl` 与 `cairo` 都零错误)、GTK2(`gimp`)、Qt(`wireshark`)、浏览器(`firefox-esr`、`chromium --disable-gpu`:剪贴板提供哪些格式)、Motif / Xaw / Tk / Emacs(`ddd`、`xfig`、`gnuplot-x11`、`gitk`、`emacs-lucid`:核心字体告警、中文与西里尔文)、桌面会话(`xserver-xephyr`、`openbox`、`xfwm4`、`xfdesktop4`:窗口管理器要以「已有窗口管理器」退出,桌面类窗口不开原生窗口)、托盘(`stalonetray`、`yad --notification`)、中日韩输入(`fcitx5`)、办公(`libreoffice-calc`:富格式剪贴板、启动时恢复最大化) |
-| 💡 | 🟠 P1 | **整个应用的渲染停顿**(`plan.md` §201 的四) | Windows 上 Avalonia 零星刷新时每隔十几到几十秒停 400–490 毫秒(渲染计时器空拍之后等系统合成器确认上一次提交),终端打字回显、对话框一样会撞上;X 窗口已经靠「保温」避开。可选:①应用级保温(有输入或刷新之后让渲染循环每帧都有东西画一小段时间);②换渲染组合 —— 3 分钟实测 AngleEgl + WinUI 合成(默认)停 4 次、AngleEgl + RedirectionSurface 停 1 次、Wgl + RedirectionSurface 0 次,但换后端牵涉透明效果、驱动兼容与内存,要实机评估;③把最小复现报给 Avalonia 上游(复现程序:纯 Avalonia、改一段文字、量 `RequestAnimationFrame` 回调的延迟) |
+| 💡 | 🟡 P2 | **整个应用的渲染停顿**(`plan.md` §201 的四、§219) | X 窗口里量到过:Windows 上 Avalonia 的渲染循环连着出帧之后转空拍,等系统合成器确认上一次提交偶尔要 400–490 毫秒,X 窗口已经靠「保温」避开。**主窗口一侧没复现出来**(§219,2026-10-19 开发机):用 `scripts/perf/render-keepwarm.cs` 量「改字 → 这一批被渲染线程处理完」,30 Hz 刷新 8724 帧、打字节奏 600 键 × 3 帧,最长 14 毫秒、0 次停顿;候选修法(应用级保温,脚本里的 `KeepWarm`)开着也是 0 次,只让 p99 多了不到 1 毫秒,所以**没挂进主程序**。⚠️ 别用 `RequestAnimationFrame` 的回调延迟当指标:窗口闲着时 Avalonia 在 UI 线程上当场补发回调(恒为 0 毫秒),停住的是渲染线程。下一步:有用户报「打字卡一下」时,在那台机器上跑脚本对照保温开关,量出收益再决定挂不挂;另两个选项(换渲染组合 —— X 窗口 3 分钟实测 AngleEgl + WinUI 合成停 4 次、AngleEgl + RedirectionSurface 1 次、Wgl + RedirectionSurface 0 次;报给 Avalonia 上游)同样先等复现 |
 | 💡 | 🟢 P3 | **RANDR 的刷新率在 macOS / Linux 上**(`plan.md` §201 的五) | Windows 已按显示器句柄读当前显示模式;macOS(`CGDisplayModeGetRefreshRate`)、Linux(桌面 X 显示的 RANDR / Wayland 输出的 mode)仍报 60,高刷屏上远端程序只画 60 帧 |
 | 💡 | 🟢 P3 | **需要实机核对的** | 分数缩放下最后一列像素可能被裁(API-H13);macOS 上 Command 组合键收不到 KeyUp 时的处理(IN-E19);macOS / FreeBSD 经 `getpeereid` 取对端 uid(CN-S8) |
 
@@ -312,7 +305,7 @@
 | **连字（Ligatures）** | 自绘渲染器按**单元格**排版，无法跨字符连字。这是自绘换来渲染控制权的固有代价 |
 | **自适应标题栏颜色** | 主窗与全部对话框的标题栏都是自绘的（macOS 上只借用系统红绿灯，`plan.md` §118），这条已失去对象 |
 | **系统通知 Toast** | 需要 AppUserModelID 与通知框架。替代：常规页「声音提示」、安全审计页告警通道的「提示音」（`Security.AlertSound`）与消息中心（`plan.md` §20） |
-| **输入脱敏（会话录制）** | 只录**输出流**，密码本就无回显，没有要脱敏的对象（输出脱敏是另一回事，见路线图 E 组） |
+| **输入脱敏（会话录制）** | 只录**输出流**，密码本就无回显，没有要脱敏的对象（输出里的口令与令牌另有遮盖，见 `plan.md` §220） |
 | **运行时热切终端类型** | TERM 在**连接时**向远端协商，活动会话热切只会让本地仿真与远端 TERM 能力档不一致。「设置修改对新连接生效」即为正确语义 |
 | **按会话的独立代理** | 已落地为**应用级全局代理**（`plan.md` §12-10、§79）。别与动态 SOCKS 转发（`-D`）混淆 —— 那是**入站**隧道；四种**出站**模式（none / system / http / socks5）只决定第一跳 TCP 怎么走 |
 | **终端渲染的脏行检测 / 子可视化分带** | 2026-09-19 实测否决：纯字母满屏一帧只有 **54 个绘制操作**，逐格工作已被五套跨帧缓存压掉，不存在可被脏行检测救回的「每帧全量重算」。真要省绘制得走子可视化分带，要穿过滚动、选区、搜索高亮、光标层、侧栏、折叠六个子系统，且滚动本身就让全部带失效。见 `plan.md` §81 |

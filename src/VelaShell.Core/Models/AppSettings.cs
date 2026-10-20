@@ -1185,6 +1185,12 @@ public class SecurityOptions : ObservableOptions
     /// <summary>规划中(输入脱敏,依赖会话录制):仅持久化,不出现在设置界面(设置审计 R-12)。</summary>
     public bool MaskSensitiveInput { get; set; } = true;
 
+    /// <summary>
+    /// 会话日志与会话录制落盘前,遮盖输出里形如口令、令牌、私钥的片段(<c>SessionOutputMasker</c>;设置 → 安全审计)。
+    /// 默认开:记录是给事后看的,<c>cat .env</c> 的原文没必要跟着落盘。屏幕显示不受影响;只对之后开始的记录生效。
+    /// </summary>
+    public bool MaskSecretsInCaptures { get; set; } = true;
+
     /// <summary>审计日志与连接历史的默认保留天数。</summary>
     public const int DefaultAuditLogRetentionDays = 180;
 

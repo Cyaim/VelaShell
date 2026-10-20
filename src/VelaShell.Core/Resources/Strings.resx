@@ -2769,6 +2769,12 @@ Paste anyway?</value>
   <data name="SetSecurity_AutoRecordDesc" xml:space="preserve">
     <value>// Record terminal output to a local database for audit and replay. Off by default: recordings grow fast — a busy week can be several GB. Applies to connections opened afterwards; retention follows General → Terminal session log retention</value>
   </data>
+  <data name="SetSecurity_MaskCaptures" xml:space="preserve">
+    <value>Mask passwords and tokens in recordings and session logs</value>
+  </data>
+  <data name="SetSecurity_MaskCapturesDesc" xml:space="preserve">
+    <value>// Before writing to disk, values such as PASSWORD=…, token: …, Bearer …, private key blocks and well-known token formats are replaced with ***. The screen is not affected. Applies to recordings and logs started afterwards</value>
+  </data>
   <data name="SetSecurity_BlockOnChange" xml:space="preserve">
     <value>Block and alert on fingerprint change</value>
   </data>
@@ -4049,6 +4055,33 @@ Overwrite it?</value>
   </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>Open logs folder</value>
+  </data>
+  <data name="SetAbout_ExportDiagnostics" xml:space="preserve">
+    <value>Export diagnostics…</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
+    <value>Collects logs, crash reports, the version and the plugin list, masks host names, user names, local paths and IPs, and saves a zip on this computer. Nothing is uploaded.</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
+    <value>Save diagnostics</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
+    <value>Diagnostics saved to {0} ({1} log file(s), sensitive details masked). It has not been sent anywhere.</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
+    <value>Could not save diagnostics: {0}</value>
+  </data>
+  <data name="DiagBundle_ReadMeTitle" xml:space="preserve">
+    <value>VelaShell diagnostic bundle</value>
+  </data>
+  <data name="DiagBundle_ReadMeLocalOnly" xml:space="preserve">
+    <value>This bundle was only saved where you chose; VelaShell did not upload it. Feel free to open it and check before sending it to anyone.</value>
+  </data>
+  <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
+    <value>Settings, connection profiles and credentials are not included.</value>
+  </data>
+  <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
+    <value>Masked (host names, user names, local paths, IPs, emails, passwords and tokens), times replaced:</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>VelaShell closed unexpectedly last time</value>

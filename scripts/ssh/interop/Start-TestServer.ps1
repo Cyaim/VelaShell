@@ -13,7 +13,12 @@
     并把连接参数写进环境变量文件。
 
 .PARAMETER Port
-    本机映射端口。默认 2222。
+    本机映射端口。默认 2229 —— docker-compose.test.yml 的靶机占着 2222–2228
+    （2222 是 ssh、2224 是 ssh-2fa），撞上了 Core.Tests 的集成用例会连到这台上、失败而不是跳过。
+
+.PARAMETER Network
+    容器加入哪个 Docker 网络。默认 auto：docker-compose.test.yml 的 ssh-shells 靶机（velashell-test-shells）
+    在跑时加入它所在的网络 —— agent 目的地约束的逐跳用例要从这台服务端连到那台。传空串不加入。
 
 .PARAMETER Image
     用哪个镜像。默认 linuxserver/openssh-server（带 sftp-server 与常用工具）。
@@ -25,9 +30,12 @@
 #>
 [CmdletBinding()]
 param(
-    [int]$Port = 2222,
+    [int]$Port = 2229,
     [string]$Image = 'lscr.io/linuxserver/openssh-server:latest',
     [string]$ContainerName = 'velashell-ssh-interop',
+
+    # 加入哪个 Docker 网络;auto = 自动(见上面的 .PARAMETER Network)。[string] 参数收不到 $null(会变成空串),所以用 auto 作标记。
+    [string]$Network = 'auto',
 
     # 装 xauth 并打开 X11Forwarding —— X11 互操作用例需要它。
     # 现成镜像默认两样都没有，而**没有真实对端就等于没验**
@@ -116,7 +124,13 @@ if ($LASTEXITCODE -ne 0) {
 
 $publicKey = Get-Content "$keyPath.pub" -Raw
 
-Write-Step "起容器（镜像 $Image，端口 $Port）"
+if ($Network -eq 'auto') {
+    # compose 网络的名字随检出目录变(velashell_default、velashell-xxx_default……),按靶机实际所在的网络取
+    $Network = (docker inspect velashell-test-shells --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' 2>$null) ?? ''
+}
+$networkArgs = [string]::IsNullOrWhiteSpace($Network) ? @() : @('--network', $Network.Trim())
+
+Write-Step "起容器（镜像 $Image，端口 $Port$($networkArgs ? "，网络 $($Network.Trim())" : '')）"
 docker run -d `
     --name $ContainerName `
     -e PUID=1000 -e PGID=1000 `
@@ -126,6 +140,7 @@ docker run -d `
     -e PUBLIC_KEY="$publicKey" `
     -e DOCKER_MODS=linuxserver/mods:openssh-server-ssh-tunnel `
     -p "${Port}:2222" `
+    @networkArgs `
     $Image | Out-Null
 
 if ($LASTEXITCODE -ne 0) {

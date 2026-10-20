@@ -2878,6 +2878,12 @@
   <data name="SetSecurity_AutoRecordDesc" xml:space="preserve">
     <value>// 記錄終端輸出到本機資料庫供稽核與回放。預設關閉:錄製體積成長很快,用得多時一週就是幾個 GB。對之後建立的連線生效,保留天數隨「一般 → 終端工作階段記錄保留天數」</value>
   </data>
+  <data name="SetSecurity_MaskCaptures" xml:space="preserve">
+    <value>錄製與工作階段記錄中遮蓋密碼和權杖</value>
+  </data>
+  <data name="SetSecurity_MaskCapturesDesc" xml:space="preserve">
+    <value>// 寫入磁碟之前,把 PASSWORD=…、token: …、Bearer …、私密金鑰區塊以及常見格式的權杖換成 ***。螢幕顯示不受影響;對之後開始的錄製與記錄生效</value>
+  </data>
   <data name="SetSecurity_BlockOnChange" xml:space="preserve">
     <value>指紋變更時阻斷並告警</value>
   </data>
@@ -4182,6 +4188,33 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>開啟日誌目錄</value>
+  </data>
+  <data name="SetAbout_ExportDiagnostics" xml:space="preserve">
+    <value>匯出診斷包…</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
+    <value>收集日誌、當機記錄、版本與外掛清單，去掉主機名稱、使用者名稱、本機路徑與 IP 後打包成 zip 存到本機，不會上傳。</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
+    <value>儲存診斷包</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
+    <value>診斷包已儲存到 {0}（{1} 份日誌，敏感資訊已遮蓋）。沒有傳送到任何地方。</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
+    <value>診斷包儲存失敗：{0}</value>
+  </data>
+  <data name="DiagBundle_ReadMeTitle" xml:space="preserve">
+    <value>VelaShell 診斷包</value>
+  </data>
+  <data name="DiagBundle_ReadMeLocalOnly" xml:space="preserve">
+    <value>這個包只儲存在你選的位置，VelaShell 沒有上傳它。傳給別人之前可以先開啟看看。</value>
+  </data>
+  <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
+    <value>不包含設定、連線設定與任何憑證。</value>
+  </data>
+  <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
+    <value>已遮蓋（主機名稱、使用者名稱、本機路徑、IP、電子郵件、密碼與權杖），各類替換次數：</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>上次異常結束</value>

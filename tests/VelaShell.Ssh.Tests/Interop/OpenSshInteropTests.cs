@@ -14,7 +14,7 @@
 //
 // 环境变量：
 //   VELASHELL_SSH_INTEROP_HOST      默认 127.0.0.1
-//   VELASHELL_SSH_INTEROP_PORT      默认 2222
+//   VELASHELL_SSH_INTEROP_PORT      默认 2229(与 Start-TestServer.ps1 一致;2222–2228 是 docker-compose.test.yml 的靶机)
 //   VELASHELL_SSH_INTEROP_USER      默认 velashell
 //   VELASHELL_SSH_INTEROP_PASSWORD  默认 velashell
 //   VELASHELL_SSH_INTEROP_KEY       可选：私钥文件路径
@@ -59,7 +59,7 @@ public sealed partial class OpenSshInteropTests
             Environment.GetEnvironmentVariable("VELASHELL_SSH_INTEROP_PORT"),
             NumberStyles.Integer, CultureInfo.InvariantCulture, out int port)
             ? port
-            : 2222;
+            : 2229;
 
     private static string User =>
         Environment.GetEnvironmentVariable("VELASHELL_SSH_INTEROP_USER") ?? "velashell";

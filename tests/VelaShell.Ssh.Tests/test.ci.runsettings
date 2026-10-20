@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+
+  <!--
+    全局测试超时。
+
+    **挂死是协议库最该防的失败模式**：它不是「一条用例红了」，而是 CI 一直转到被
+    整体杀掉、日志里连是哪条用例都看不出来。一个全局超时把它变成一条普通的失败，
+    并且指名道姓。
+
+    30 秒：本套件的用例全部走内存传输，正常应当是毫秒级；30 秒还没完就一定是挂了，
+    不会是「这台机器慢」—— **CPU 密集的除外**：口令派生（Argon2id）这种内存带宽活儿，
+    3 核 runner 上三套程序集并行时能比本机慢一个数量级（见 Keys/MalformedKeyInputTests 的 ppk 截断，
+    run 37526852105 上一条 4 秒的用例就是这么超过 30 秒的）。写这类用例时把工作量压到
+    30 秒的十分之一以下；真压不下去就在方法上显式给 [Timeout] 并写明它不是挂死。
+  -->
+  <MSTest>
+    <TestTimeout>30000</TestTimeout>
+    <!-- 同一个程序集内并行跑。用例之间不共享状态（没有静态可变状态，
+         内存传输每次新建），并行是安全的。
+         这一份只给 CI 用（工程文件按 CI=true 选它；GitHub Actions 每一步都设了 CI=true），
+         除并行度外与 test.runsettings 相同，改一份要同步另一份。
+         ⚠️ Workers 原先是 0（= 核数）：CI 的 runner 只有 3 核，一次铺满之后，
+         CPU / 内存带宽密集的用例（口令派生、批量读写）互相挤，慢下来的那条就撞上
+         上面的 30 秒（plan.md §170）。固定成 2：留一点并行，不再把 3 核挤满。
+         本机核多，用 test.runsettings 的 0（整套 5 秒左右，固定 2 要 50 多秒）。
+         线程池下限另由 TestSession 抬上去 —— 那里管的是「线程到得快不快」，
+         这里管的是「同时跑几条」。 -->
+    <Parallelize>
+      <Workers>2</Workers>
+      <Scope>MethodLevel</Scope>
+    </Parallelize>
+  </MSTest>
+
+</RunSettings>

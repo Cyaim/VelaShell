@@ -256,6 +256,9 @@ public partial class SettingsView : UserControl
     private ProviderKeyRowState? _keyDraft;
     private ProviderKeyRowState? _savingKeyRow;
     private string? _pendingRemoveKeyId;
+
+    /// <summary>两击确认换源清 Key:记着第一击时的供应商与地址,地址再改或换了选择就作废。</summary>
+    private (AiProvider Provider, string Url)? _pendingKeyReset;
     private string? _lastKeyProbeModelId;
     private CancellationTokenSource _keyEditorCts = new();
     private CancellationTokenSource? _allKeyProbeCts;
@@ -710,6 +713,7 @@ public partial class SettingsView : UserControl
         ProviderApiKeyRows.Children.Clear();
         _keyDraft = null;
         _pendingRemoveKeyId = null;
+        _pendingKeyReset = null;
         ProviderNewApiKeyBox.Text = "";
         ++_keyRowsRun;
     }
@@ -2145,6 +2149,7 @@ public partial class SettingsView : UserControl
             ? (ChatProtocol)ProviderProtocolCombo.SelectedIndex : provider.DefaultProtocol;
         _savingKeyRow = draft;
         SetKeyMutation(true);
+        int keysCleared = 0;
         try
         {
             if (replacement is not null)
@@ -2179,8 +2184,12 @@ public partial class SettingsView : UserControl
                 string? expectedKey = replacement is null ? await _store.GetApiKeyAsync(keyId)
                     : string.IsNullOrEmpty(draft!.OriginalKey) ? null : draft.OriginalKey;
                 if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return;
-                await _store.SaveProviderApiKeyFormAsync(_settings, provider, detached, expected, replacement,
-                    keyId: keyId, expectedKey: expectedKey);
+                // 地址换到别的源会清掉已存 Key:第一次点只提示,同一地址再点一次才清
+                bool confirmed = _pendingKeyReset is { } pending
+                    && ReferenceEquals(pending.Provider, provider) && pending.Url == url;
+                keysCleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, detached, expected, replacement,
+                    keyId: keyId, expectedKey: expectedKey, resetKeysOnOriginChange: confirmed);
+                _pendingKeyReset = null;
             }
             else
             {
@@ -2208,10 +2217,18 @@ public partial class SettingsView : UserControl
             finally { _refreshingNav = false; }
             RefreshEditorContext(provider, null);
             await RefreshProviderKeyRowsAsync(provider, run);
-            if (run == _editorRun && (_keyDraft is null || ReferenceEquals(_keyDraft, draft))) StatusText.Text = _loc["Saved"];
+            if (run == _editorRun && (_keyDraft is null || ReferenceEquals(_keyDraft, draft)))
+                StatusText.Text = keysCleared == 0 ? _loc["Saved"]
+                    : replacement is null ? _loc["SetupSavedKeysCleared"] : _loc["SetupSavedOtherKeysCleared"];
         }
         catch (ArgumentException) { if (run == _editorRun) StatusText.Text = _loc["SetupUniqueApiKey"]; }
         catch (AiSettingsStore.ApiKeySlotChangedException) { await RecoverSettingsConflictAsync(provider, null, run); }
+        catch (AiSettingsStore.ApiKeyResetRequiredException ex)
+        {
+            if (run != _editorRun) return;
+            _pendingKeyReset = (provider, url);
+            StatusText.Text = _loc.F("SetupBaseUrlKeyResetConfirm", ex.KeyCount);
+        }
         catch (Exception ex) { if (run == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex)); }
         finally
         {
@@ -2365,6 +2382,15 @@ public partial class SettingsView : UserControl
                     return;
                 }
                 first = sameOrigin;
+            }
+            // 地址换到别的源、还没保存:已存的 Key 属于旧地址,只许带表单里新填的那把去测
+            if (provider.Auth == AuthMethod.ApiKey && apiKeyOverride is null
+                && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
+                && !string.Equals(draft.BaseUrl, provider.BaseUrl, StringComparison.Ordinal)
+                && !AiSettingsStore.SameOrigin(draft.BaseUrl, provider.BaseUrl))
+            {
+                StatusText.Text = _loc["SetupTestNeedsNewOriginKey"];
+                return;
             }
             candidate = new ResolvedModel(draft, first);
 

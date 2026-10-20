@@ -4,6 +4,9 @@
 // 被测规格: OpenSSH PROTOCOL.key;velashell-docs/zh/ssh/spec/04-authentication.md §4.6
 
 using System.Diagnostics;
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using VelaShell.Ssh.Auth;
 using VelaShell.Ssh.Diagnostics;
 using VelaShell.Ssh.Keys;
@@ -92,7 +95,11 @@ public sealed class PrivateKeyWriteTests
                     await File.WriteAllTextAsync(
                         path, SshPrivateKeyFile.Format(key, withPassphrase ? Passphrase : default, $"vela-{name}", kdfRounds: 8),
                         TestContext.CancellationToken);
-                    if (!OperatingSystem.IsWindows())
+                    if (OperatingSystem.IsWindows())
+                    {
+                        RestrictToCurrentUser(path);
+                    }
+                    else
                     {
                         File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
                     }
@@ -109,6 +116,22 @@ public sealed class PrivateKeyWriteTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Windows 上的 OpenSSH 拒读别人也能读的私钥(UNPROTECTED PRIVATE KEY FILE)。文件从 %TEMP% 继承 ACL,
+    /// 而 %TEMP% 上可能挂着别的用户组(plan.md §197、§199、§201、§210 都撞过):断掉继承,只给自己完全控制 ——
+    /// 与 Unix 上的 0600 是同一件事。
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static void RestrictToCurrentUser(string path)
+    {
+        SecurityIdentifier self = WindowsIdentity.GetCurrent().User!;
+        var security = new FileSecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.SetOwner(self);
+        security.AddAccessRule(new FileSystemAccessRule(self, FileSystemRights.FullControl, AccessControlType.Allow));
+        new FileInfo(path).SetAccessControl(security);
     }
 
     private static string? FindSshKeygen()

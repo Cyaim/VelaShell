@@ -2878,6 +2878,12 @@
   <data name="SetSecurity_AutoRecordDesc" xml:space="preserve">
     <value>// 记录终端输出到本地数据库供审计与回放。默认关闭:录制体积增长很快,用得多时一周就是几个 GB。对之后建立的连接生效,保留天数随「常规 → 终端会话日志保留天数」</value>
   </data>
+  <data name="SetSecurity_MaskCaptures" xml:space="preserve">
+    <value>录制与会话日志中遮盖口令和令牌</value>
+  </data>
+  <data name="SetSecurity_MaskCapturesDesc" xml:space="preserve">
+    <value>// 落盘之前,把 PASSWORD=…、token: …、Bearer …、私钥块以及常见格式的令牌换成 ***。屏幕显示不受影响;对之后开始的录制与日志生效</value>
+  </data>
   <data name="SetSecurity_BlockOnChange" xml:space="preserve">
     <value>指纹变更时阻断并告警</value>
   </data>
@@ -4182,6 +4188,33 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>打开日志目录</value>
+  </data>
+  <data name="SetAbout_ExportDiagnostics" xml:space="preserve">
+    <value>导出诊断包…</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
+    <value>收集日志、崩溃记录、版本与插件清单，去掉主机名、用户名、本机路径与 IP 后打成 zip 存到本机，不会上传。</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
+    <value>保存诊断包</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
+    <value>诊断包已保存到 {0}（{1} 份日志，敏感信息已遮盖）。没有发送到任何地方。</value>
+  </data>
+  <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
+    <value>诊断包保存失败：{0}</value>
+  </data>
+  <data name="DiagBundle_ReadMeTitle" xml:space="preserve">
+    <value>VelaShell 诊断包</value>
+  </data>
+  <data name="DiagBundle_ReadMeLocalOnly" xml:space="preserve">
+    <value>这个包只保存在你选的位置，VelaShell 没有上传它。发给别人之前可以先打开看看。</value>
+  </data>
+  <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
+    <value>不包含设置、连接配置与任何凭据。</value>
+  </data>
+  <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
+    <value>已遮盖（主机名、用户名、本机路径、IP、邮箱、口令与令牌），各类替换次数：</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>上次异常退出</value>
