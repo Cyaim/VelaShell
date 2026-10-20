@@ -86,6 +86,28 @@ public class GitHubReleaseSourceTests : IDisposable
 
     [TestMethod]
     [TestCategory("Update")]
+    public async Task DownloadAssetAsync_UnknownTotal_StillReportsBytes()
+    {
+        // 清单没写大小、响应也不带 Content-Length:老实现一条进度都不报,界面整段都以为卡住了,
+        // 停滞看门狗也会把一个好好的下载当成断线掐掉。
+        byte[] payload = Encoding.ASCII.GetBytes(string.Join('-', Enumerable.Range(0, 60_000)));
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+        {
+            HttpResponseMessage response = FullResponse(payload);
+            response.Content.Headers.ContentLength = null;
+            return response;
+        }));
+        List<UpdateDownloadProgress> reports = [];
+
+        await source.DownloadAssetAsync(
+            CreateManifest("pkg.zip", 0), Asset(0), Path.Combine(_dir, "pkg.zip"), new ByteProgress(reports.Add));
+
+        Assert.Contains(r => r.TotalBytes == 0 && r.BytesDownloaded > 0 && r.BytesDownloaded < payload.Length, reports);
+        Assert.AreEqual(payload.LongLength, reports[^1].BytesDownloaded, "收尾快照报的是实际下到的字节数");
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
     public async Task DownloadAssetAsync_WithPartial_SendsRangeAndAppends()
     {
         byte[] payload = Encoding.ASCII.GetBytes("0123456789");
@@ -281,7 +303,7 @@ public class GitHubReleaseSourceTests : IDisposable
     }
 
     [TestMethod]
-    public async Task ReleaseNotes_ChoosesLatestPublicationIncludingPrereleaseAndOlderTagsAcrossPages()
+    public async Task ReleaseNotes_ReadsOnlyFirstPage_ChoosesLatestPublicationIncludingPrereleaseAndOlderTags()
     {
         int calls = 0;
         GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
@@ -289,29 +311,23 @@ public class GitHubReleaseSourceTests : IDisposable
             calls++;
             Assert.AreEqual("api.github.com", request.RequestUri!.Host);
             Assert.AreEqual("/repos/owner/repo/releases", request.RequestUri.AbsolutePath);
+            Assert.AreEqual($"?per_page={GitHubReleaseSource.ReleaseNotesPageSize}", request.RequestUri.Query);
             Assert.IsNotEmpty(request.Headers.UserAgent);
             Assert.Contains("application/vnd.github+json", request.Headers.Accept.ToString());
-            HttpResponseMessage response = new(HttpStatusCode.OK);
-            if (calls == 1)
+            // 列表按创建时间倒序;旧 tag 补发的 v1.7.1 排在后面,但发布时间最新。
+            HttpResponseMessage response = new(HttpStatusCode.OK)
             {
-                Assert.Contains("page=1", request.RequestUri.Query);
-                response.Content = new StringContent("""
+                Content = new StringContent("""
                     [
                       {"draft":true,"published_at":null},
                       {"draft":false,"prerelease":false,"tag_name":"v9.0","body":"old stable","published_at":"2026-10-01T00:00:00Z"},
-                      {"draft":false,"prerelease":true,"tag_name":"v10-beta","body":"preview","published_at":"2026-10-02T00:00:00Z"}
+                      {"draft":false,"prerelease":true,"tag_name":"v10-beta","body":"preview","published_at":"2026-10-02T00:00:00Z"},
+                      {"draft":false,"prerelease":true,"tag_name":"v1.7.1","body":"## What's Changed\n* 更新下载 by @joesdu in #626\n\n完整正文","published_at":"2026-10-16T00:00:00Z","html_url":"https://github.com/owner/repo/releases/tag/v1.7.1"}
                     ]
-                    """);
-                response.Headers.Add("Link", "<https://api.github.com/repos/owner/repo/releases?per_page=100&page=2>; rel=\"next\"");
-            }
-            else
-            {
-                Assert.AreEqual(2, calls);
-                Assert.Contains("page=2", request.RequestUri.Query);
-                response.Content = new StringContent("""
-                    [{"draft":false,"prerelease":true,"tag_name":"v1.7.1","body":"## What's Changed\n* 更新下载 by @joesdu in #626\n\n完整正文","published_at":"2026-10-16T00:00:00Z"}]
-                    """);
-            }
+                    """)
+            };
+            // 后面还有页,但更新说明只要最新那一条,不该为它翻遍全部发布。
+            response.Headers.Add("Link", "<https://api.github.com/repos/owner/repo/releases?per_page=20&page=2>; rel=\"next\"");
             return response;
         }));
 
@@ -321,7 +337,70 @@ public class GitHubReleaseSourceTests : IDisposable
         Assert.AreEqual("v1.7.1", notes.Tag);
         Assert.AreEqual("## What's Changed\n* 更新下载 by @joesdu in #626\n\n完整正文", notes.Body);
         Assert.AreEqual(DateTimeOffset.Parse("2026-10-16T00:00:00Z"), notes.PublishedAt);
-        Assert.AreEqual(2, calls);
+        Assert.AreEqual("https://github.com/owner/repo/releases/tag/v1.7.1", notes.HtmlUrl);
+        Assert.AreEqual(1, calls);
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_CachedInProcess_ThenRevalidatedWithETag()
+    {
+        const string json = """[{"draft":false,"tag_name":"v1.7.1","body":"notes","published_at":"2026-10-16T00:00:00Z"}]""";
+        List<string?> ifNoneMatch = [];
+        StubHandler handler = new(request =>
+        {
+            ifNoneMatch.Add(request.Headers.IfNoneMatch.FirstOrDefault()?.ToString());
+            if (request.Headers.IfNoneMatch.Count > 0)
+            {
+                return new(HttpStatusCode.NotModified);
+            }
+            HttpResponseMessage response = new(HttpStatusCode.OK) { Content = new StringContent(json) };
+            response.Headers.ETag = new EntityTagHeaderValue("\"abc\"", isWeak: true);
+            return response;
+        });
+
+        // 缓存期内反复打开更新日志:只花一次 API 配额。
+        GitHubReleaseSource cached = new("https://github.com/owner/repo", handler);
+        ReleaseNotes? first = await cached.GetLatestReleaseNotesAsync();
+        Assert.AreEqual(first, await cached.GetLatestReleaseNotesAsync());
+        Assert.HasCount(1, ifNoneMatch);
+
+        // 缓存过期:带 ETag 做条件请求,304(不计配额)时沿用手里的结果。
+        ifNoneMatch.Clear();
+        GitHubReleaseSource revalidating = new("https://github.com/owner/repo", handler)
+        {
+            ReleaseNotesCacheDuration = TimeSpan.Zero
+        };
+        ReleaseNotes? fresh = await revalidating.GetLatestReleaseNotesAsync();
+        ReleaseNotes? revalidated = await revalidating.GetLatestReleaseNotesAsync();
+
+        Assert.AreSequenceEqual([null, "W/\"abc\""], ifNoneMatch);
+        Assert.IsNotNull(revalidated);
+        Assert.AreEqual(fresh, revalidated);
+        Assert.AreEqual("v1.7.1", revalidated.Tag);
+    }
+
+    [TestMethod]
+    public void ApiHandler_AcceptsCompressedResponses()
+    {
+        // 发布列表 JSON 不压缩时 53 个发布就有 1.2 MB,gzip 后约 120 KB。
+        using SocketsHttpHandler handler = GitHubReleaseSource.CreateApiHandler();
+        Assert.IsTrue(handler.AutomaticDecompression.HasFlag(DecompressionMethods.GZip));
+        Assert.IsTrue(handler.AutomaticDecompression.HasFlag(DecompressionMethods.Brotli));
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_InternalTimeout_FailsInsteadOfHanging()
+    {
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new CancellableHandler(started))
+        {
+            RequestTimeout = TimeSpan.FromMilliseconds(100)
+        };
+
+        // 调用方的令牌一直没取消:超时由发布源自己掐断,以取消异常的形式交给界面,界面据此进入可重试的错误态。
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => source.GetLatestReleaseNotesAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.IsTrue(started.Task.IsCompleted);
     }
 
     [TestMethod]
@@ -352,7 +431,9 @@ public class GitHubReleaseSourceTests : IDisposable
     public async Task ReleaseNotes_HttpFailure_Propagates(int status)
     {
         GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ => new((HttpStatusCode)status)));
-        await Assert.ThrowsAsync<HttpRequestException>(() => source.GetLatestReleaseNotesAsync());
+        HttpRequestException ex = await Assert.ThrowsAsync<HttpRequestException>(() => source.GetLatestReleaseNotesAsync());
+        // 状态码要带出去:界面靠它把 403/429 限流和"检查网络"区分开。
+        Assert.AreEqual((HttpStatusCode)status, ex.StatusCode);
     }
 
     [TestMethod]

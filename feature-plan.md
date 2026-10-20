@@ -41,7 +41,7 @@
 
 | 部分 | 🔴 P0 | 🟠 P1 | 🟡 P2 | 🟢 P3 | 合计 |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| 一、欠账 | 4 | 2 | 13 | 14 | **33** |
+| 一、欠账 | 4 | 2 | 14 | 17 | **37** |
 | 二、路线图 | — | 3 | 17 | 32 | **52** |
 | 三、文档待同步 | — | — | — | — | **9** |
 
@@ -89,6 +89,7 @@
 | ⏳ | 🟢 P3 | **目录同步：FTP 时区偏移** | FTP 服务器与本机不在同一时区时，按修改时间比较会整体错位（WinSCP 在会话设置里有这一项） | 连接配置加时区偏移，比较器按偏移换算。同步选项本身**刻意不持久化**（只在文档标签内记住），别顺手加设置项 |
 | ⏳ | 🟢 P3 | **SFTP 文件名按会话编码显示** | SSH 库默认按 UTF-8、解不开的字节无损往返（GBK 名字的文件打得开、删得掉，但显示成替换字符）；库已经有 `SftpOptions.FileNameEncoding`，宿主没接 | 把会话的终端编码（`SessionTerminalSettings.Encoding`）带进 SFTP 的连接参数：`SshSession` / `ConnectionInfo` 现在都不带这个值，得从配置那一路传过来。⚠️ UTF-8 时不要传（传 null），否则丢掉无损往返 |
 | ⏳ | 🟢 P3 | **内置编辑器的临时副本没有兜底清理** | `RemoteFileEditorView.OnClosed` 只删自己那个 `builtin-edit\<8hex>\`；进程崩溃留下的没人管，退出时的 `TryDeleteEmptyTree` 只删空目录 | 启动时按时间兜底（如清 7 天前的）。⚠️ 别把「上传失败刻意保留的草稿」一起删了 —— 那是用户改动唯一的存身之处 |
+| ⏳ | 🟢 P3 | **目录收藏的两处边角** | `plan.md` §222：资源管理器「复制配置」用的是树缓存里的副本，可能缺少树加载之后才加的收藏；Gist 拉取是整条覆盖，旧版本客户端推上去的载荷不带收藏，拉下来会清空本机收藏（原有语义） | 复制时从仓储读最新；拉取时载荷没有收藏字段就保留本机的 |
 
 ### 🖥️ 终端与 SSH
 
@@ -99,6 +100,7 @@
 | ⏳ | 🟡 P2 | **SSH 库已有、宿主还没接的能力** | `plan.md` §161 那一批在库里落地、宿主还没用上：Windows CNG 签名器（证书存储 / TPM / 智能卡里不可导出的钥）、按键时序混淆（`ObscureKeystrokeTiming`）、报文旁路（`IPacketTap`）、转发的实时吞吐 / 连接快照 / 限速、TLS 拨号器、远程动态转发（`-R` 不给目标）与放行名单、Unix 域套接字转发、ssh_config 转发项与 `IdentityAgent` 的导入；agent 加钥的目的地约束（`AllowedHops`，`plan.md` §163） | 逐项接：CNG 进密钥选择（「系统密钥库」一类）；按键混淆作为连接的高级选项（默认关，说明带宽代价）；报文旁路接进连接诊断的协议轨迹；隧道面板显示速率与连接列表、可设限速；TLS 进代理设置；隧道类型加「远程动态」「Unix 套接字」；会话导入带上转发项。每项都要五份 resx 与交互规格。⚠️ 接 `AllowedHops` 之前先核对 Windows 的 OpenSSH agent 与 Pageant 收不收目的地约束（§163 没核） |
 | ⏳ | 🟢 P3 | **FIPS 预设的口径** | `FipsApprovedOnly` 的注释说它与 RHEL 的 FIPS 加密策略对 SSH 放行的一致，不完全准：RHEL 10.2 的策略还放行 `diffie-hellman-group-exchange-sha256` 与 group18，清单没收（`plan.md` §164）；混合 KEX 也还没与 OpenSSH 10.6、Apache MINA SSHD 对照过 | 维护者拍板：清单补上这两项，或注释改成「比 RHEL 更严」；再补两份实现的互操作核对 |
 | ⏳ | 🟡 P2 | **SSH 库剩余中文诊断文本的界面本地化** | 英 / 日 / 韩界面仍会看到库的中文原文：认证逐条尝试记录（`SshAuthAttempt.ToString` / `Detail`）、`SshChannelException` 的建议、`KnownHostLookup.CertificateProblem`、带路径 / 指纹 / 端口的私钥与证书消息（`plan.md` §117） | **先在库里补结构化出处**（`Detail` 的种类、证书问题的枚举），宿主 `SshInterop` 再按枚举出五语言文案 —— 不在宿主里解析句子（`AGENTS.md` 4.5） |
+| ⏳ | 🟢 P3 | **共享密码列表与补全弹层的两处收尾** | `plan.md` §222：防空闲的 NUL 与同步输入的 `SendRaw` 不走 TypedInput，密码列表不会随之收起（点选时提示「已过期」）；命令补全弹层仍用 `VerticalOffset="2"`，翻到上方时压进光标行 2px | 给桥加一个出站事件；补全弹层照密码弹层的做法，把缝留在 `PlacementRect` 上 |
 
 ### 🪟 窗口与外观
 
@@ -115,6 +117,7 @@
 | :---: | :---: | --- | --- | --- |
 | ⏳ | 🟡 P2 | **AI 插件：跨源模型覆盖拿主槽 Key 的口径** | 供应商换源清 Key 已落地（`plan.md` §217）。没动的是既有口径「模型的覆盖地址跨源时只用主槽」：原先与供应商同源、填了覆盖地址的模型，供应商换到别的源之后变成跨源，之后为新地址填的主 Key 会发往这个旧覆盖地址 | 维护者拍板：跨源覆盖改为必须自带 Key（不再借主槽），或换源时一并提示这些模型。⚠️ 改口径会让现有跨源覆盖的模型变成无 Key 请求，要有迁移提示 |
 | ⏳ | 🟡 P2 | **AI 插件：#582 复审的其余六条** | 同出 §177、留给维护者定：①单 Key 供应商的模型级 429 / 403 冷却整把 Key，兄弟模型故障转移时不探活就被跳过；②空链时的自动发现会跨同目录的不同账号重放会话（企业与个人 Copilot），没有开关；③删掉 Key #1 后主槽只清机密、界面不再显示空主槽，之后填不回去，跨源模型覆盖只用主槽，会静默变成无 Key 请求；④Responses 流里的 `ErrorContent` 被 `HasMeaningfulOutput` 当成有效输出（错误记成成功并解冻冷却，只按代码推断）；⑤拉模型后设置向导的型号框不刷新，再点保存会把自动填入的型号写回空串（只按代码推断）；⑥`BareModelId` 把 `phi4:latest` 这类剥成 `latest` | 逐条先复现再改；④⑤先补用例证实。顺带：故障转移或换 Key 发生时在聊天记录里留一条可见提示（切换会粘住并落盘，用户不知道后续请求换了供应商与计费归属） |
+| ⏳ | 🟡 P2 | **AI 插件：#616–#636 复审留待定的几项** | 同出 `plan.md` §222：①自定义 Responses 接入默认 `store=true`，无状态重放之后已无用处，却仍把含终端输出的上下文留在供应商侧；改默认值会让存量接入多发一个 `store:false`，中转站认不认没验证；②复用窗口时「管理登录」（`FocusEntry`）同样会掐掉进行中的登录与未存的草稿；③桥接指定的模型被手动删掉后，`BridgeAgentRunner.ResolveModel` 静默落到全局第一个模型，可能换了一家；④「第 N/8 批」到不了（100 步 ÷ 每批 25 步 = 4）；⑤root 审批框的「批准」没有延迟启用，弹出瞬间鼠标恰好点中的竞态还在；⑥SDK 的 `RpcConnection.WriteAsync` 把调用方的取消令牌传进流写入，取消落在写帧中途时理论上会写出半帧 | ①只对官方 openai 目录条目关掉，或给自定义接入一个可编辑开关；②照 `StartNewProvider` 的守卫；③回退时提示或拒绝，不跨供应商；④改上限或改文案；⑤维护者定；⑥在 SDK 仓库修，⚠️ 按 `AGENTS.md` 的版本纪律走 |
 | ⏳ | 🟡 P2 | **四套版本比较口径** | `PluginManager.IsOlder`（丢掉预发布后缀）、`UpdateVersion`（完整 SemVer 子集）、CLI 的 `VersionOrder`、市场的 `SemVerComparer`（后两者按序数比预发布）—— `1.0.0-beta.10` 与 `1.0.0-beta.2` 谁新，四边能给出不同答案。更新路径已显式选用 `UpdateVersion`，**但那是绕不是修** | 把 `UpdateVersion` 抬进 `VelaShell.PluginSdk`，宿主 / CLI / 市场三边共用。⚠️ 要发 SDK，按 `AGENTS.md` 的版本纪律走 |
 | ⏳ | 🟡 P2 | **对外 MCP 的带外审批** | 对外 MCP 走 `AgentToolbox` 产出工具，那条路上没有审批界面，「询问」模式等于一律拒绝写操作 —— 这是刻意的（`plan.md` §33-四） | 可选增强：审批推到 IM 渠道或桌面通知，用户放行后再执行 |
 | 💡 | 🟢 P3 | **插件更新检查的响应缓存** | 市场没装 OutputCache，`/api/plugins/latest` 每次都真查库；目前只在打开插件管理页时问一次，量很小 | 装 OutputCache + `ETag`，按 ids 组合缓存几分钟。**等真有量了再做**，别为不存在的负载先加一层缓存 |
@@ -127,6 +130,7 @@
 | :---: | :---: | --- | --- | --- |
 | ⏳ | 🟢 P3 | **靶机镜像跟不上 Dockerfile 时用例变红** | `velashell-test-shells` 建于 Dockerfile 给 `vela-dash` 关 X11 之前时，`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 一直失败（`plan.md` §144、§159、§167、§186）；2026-10-19 镜像已重建，这条用例通过（§221）。改了 `tests/fixtures` 下的 Dockerfile 而本机没重建，同样的事还会再来 | 让用例先认镜像版本（Dockerfile 打标签、用例经 SSH 读一个版本文件），旧了就 `[SKIP]` 并提示 `docker compose -f docker-compose.test.yml build`，而不是红 |
 | ⏳ | 🟢 P3 | **GitHub 的「Code scanning AI findings」一直失败** | GitHub 托管的 Copilot 任务，#562 之前就红、日志只有退出码，不在仓库的 CI 里（§166） | 在仓库设置里关掉或修好，别让 PR 上常驻一个红叉 |
+| ⏳ | 🟢 P3 | **runtime-async 下 Span 跨 await 的可疑失败** | `plan.md` §222 修更新下载时，`zip.AsSpan().SequenceEqual(await File.ReadAllBytesAsync(…))` 编译通过，却在全量运行里失败过一次；改成先 await 再比较后稳定，没坐实 | 写最小复现，确认是不是 runtime-async 的编译器或运行时问题；是的话报上游，并在 `AGENTS.md` 记一条 |
 
 ---
 

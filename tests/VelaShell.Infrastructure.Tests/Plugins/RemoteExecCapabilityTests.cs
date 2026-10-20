@@ -65,14 +65,14 @@ public class RemoteExecCapabilityTests
     public async Task StreamAsync_ReportsEachLineWithItsStreamInOrder()
     {
         (RemoteExecCapability capability, ISshClientWrapper client, string sessionId) = NewCapability();
-        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Action<bool, string>>(), Arg.Any<CancellationToken>())
-              .Returns(call =>
+        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
+              .Returns(async call =>
               {
-                  Action<bool, string> onLine = call.Arg<Action<bool, string>>();
-                  onLine(false, "first");
-                  onLine(true, "a warning");
-                  onLine(false, "second");
-                  return Task.FromResult(new RemoteCommandStreamResult(0, 3));
+                  Func<bool, string, ValueTask> onLine = call.Arg<Func<bool, string, ValueTask>>();
+                  await onLine(false, "first");
+                  await onLine(true, "a warning");
+                  await onLine(false, "second");
+                  return new RemoteCommandStreamResult(0, 3);
               });
 
         SyncProgress<ExecOutput> lines = new();
@@ -93,14 +93,14 @@ public class RemoteExecCapabilityTests
     public async Task StreamAsync_PassesTheStandardErrorPreferenceDown()
     {
         (RemoteExecCapability capability, ISshClientWrapper client, string sessionId) = NewCapability();
-        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Action<bool, string>>(), Arg.Any<CancellationToken>())
+        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
               .Returns(Task.FromResult(new RemoteCommandStreamResult(0, 0)));
 
         await capability.StreamAsync(sessionId, "docker events", new() { IncludeStandardError = false },
             new SyncProgress<ExecOutput>());
 
         await client.Received(1).StreamCommandAsync(
-            "docker events", false, Arg.Any<Action<bool, string>>(), Arg.Any<CancellationToken>());
+            "docker events", false, Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>());
     }
 
     [TestMethod]
@@ -109,7 +109,7 @@ public class RemoteExecCapabilityTests
         (RemoteExecCapability capability, ISshClientWrapper client, string sessionId) = NewCapability();
         // 挂在**调用方给的**令牌上,而不是测试自己的:那才是真实形态
         // (`docker logs -f` 一直跑,直到面板关掉、插件取消它)。
-        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Action<bool, string>>(), Arg.Any<CancellationToken>())
+        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
               .Returns(async call =>
               {
                   await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()).ConfigureAwait(false);
@@ -137,7 +137,7 @@ public class RemoteExecCapabilityTests
         }
 
         // 名额在收尾时归还:取消掉那几条之后应该又能开新的。
-        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Action<bool, string>>(), Arg.Any<CancellationToken>())
+        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
               .Returns(Task.FromResult(new RemoteCommandStreamResult(0, 0)));
         ExecStreamResult after = await capability.StreamAsync(sessionId, "docker events", null, new SyncProgress<ExecOutput>());
         Assert.AreEqual(0, after.ExitCode);
@@ -147,7 +147,7 @@ public class RemoteExecCapabilityTests
     public async Task StreamAsync_TranslatesItsOwnDeadlineIntoTimeout()
     {
         (RemoteExecCapability capability, ISshClientWrapper client, string sessionId) = NewCapability();
-        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Action<bool, string>>(), Arg.Any<CancellationToken>())
+        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
               .Returns(async call =>
               {
                   await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()).ConfigureAwait(false);
@@ -165,7 +165,7 @@ public class RemoteExecCapabilityTests
     public async Task StreamAsync_PropagatesCallerCancellationAsCancellation()
     {
         (RemoteExecCapability capability, ISshClientWrapper client, string sessionId) = NewCapability();
-        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Action<bool, string>>(), Arg.Any<CancellationToken>())
+        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
               .Returns(async call =>
               {
                   await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()).ConfigureAwait(false);
@@ -197,18 +197,18 @@ public class RemoteExecCapabilityTests
         ISudoPrompt prompt = Substitute.For<ISudoPrompt>();
         var capability = new RemoteExecCapability(connections, "trusted.plugin", prompt);
         client.StreamSudoCommandAsync(Arg.Any<string>(), Arg.Any<SudoExecutionContext>(),
-                Arg.Any<ISudoPrompt>(), Arg.Any<Action<SudoExecutionEvent>>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
+                Arg.Any<ISudoPrompt>(), Arg.Any<Func<SudoExecutionEvent, ValueTask>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
             {
                 Assert.AreEqual("id -u; exit 7", call.Arg<string>());
                 Assert.AreEqual("trusted.plugin", call.Arg<SudoExecutionContext>().SourcePluginId);
                 Assert.AreSame(prompt, call.Arg<ISudoPrompt>());
-                Action<SudoExecutionEvent> report = call.Arg<Action<SudoExecutionEvent>>();
-                report(new(SudoExecutionState.AwaitingApproval));
-                report(new(SudoExecutionState.AwaitingAuthentication));
-                report(new(SudoExecutionState.Running));
-                report(new(Text: "root\rprogress"));
-                return Task.FromResult(new SudoExecutionResult(SudoExecutionOutcome.Exited, 7, 1));
+                Func<SudoExecutionEvent, ValueTask> report = call.Arg<Func<SudoExecutionEvent, ValueTask>>();
+                await report(new(SudoExecutionState.AwaitingApproval));
+                await report(new(SudoExecutionState.AwaitingAuthentication));
+                await report(new(SudoExecutionState.Running));
+                await report(new(Text: "root\rprogress"));
+                return new SudoExecutionResult(SudoExecutionOutcome.Exited, 7, 1);
             });
 
         var events = new SyncProgress<SudoExecEvent>();
@@ -251,7 +251,7 @@ public class RemoteExecCapabilityTests
         var capability = new RemoteExecCapability(connections, "plugin", Substitute.For<ISudoPrompt>(), shutdown.Token);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.StreamSudoCommandAsync(Arg.Any<string>(), Arg.Any<SudoExecutionContext>(), Arg.Any<ISudoPrompt>(),
-                Arg.Any<Action<SudoExecutionEvent>>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<SudoExecutionEvent, ValueTask>>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
                 entered.TrySetResult();
@@ -282,7 +282,7 @@ public class RemoteExecCapabilityTests
         ISshConnectionService connections = Substitute.For<ISshConnectionService>();
         connections.GetClient(id).Returns(client);
         client.StreamSudoCommandAsync(Arg.Any<string>(), Arg.Any<SudoExecutionContext>(), Arg.Any<ISudoPrompt>(),
-                Arg.Any<Action<SudoExecutionEvent>>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<SudoExecutionEvent, ValueTask>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new SudoExecutionResult(SudoExecutionOutcome.Exited)));
         var capability = new RemoteExecCapability(connections, "plugin", Substitute.For<ISudoPrompt>());
 

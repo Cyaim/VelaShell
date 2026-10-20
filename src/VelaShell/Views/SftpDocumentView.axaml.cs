@@ -32,6 +32,12 @@ public partial class SftpDocumentView : UserControl
             return;
         }
 
+        BuildBookmarkMenu(vm).ShowAt(anchor);
+    }
+
+    /// <summary>「目录收藏」下拉菜单:每条收藏一组「应用 / 编辑 / 删除」,末尾是「管理收藏」。</summary>
+    internal static MenuFlyout BuildBookmarkMenu(SftpDocumentViewModel vm)
+    {
         var menu = new MenuFlyout();
         if (vm.Bookmarks.Count == 0)
         {
@@ -47,21 +53,21 @@ public partial class SftpDocumentView : UserControl
             {
                 var apply = new MenuItem
                 {
-                    Header = Strings.Format("Bookmark_MenuEntry", bookmark.Name, bookmark.LocalPath, bookmark.RemotePath),
+                    Header = LiteralHeader(Strings.Format("Bookmark_MenuEntry", bookmark.Name, bookmark.LocalPath, bookmark.RemotePath)),
                 };
                 apply.Click += (_, _) => _ = vm.ApplyBookmarkAsync(bookmark);
                 menu.Items.Add(apply);
 
                 var edit = new MenuItem
                 {
-                    Header = Strings.Format("Bookmark_EditMenu", bookmark.Name),
+                    Header = LiteralHeader(Strings.Format("Bookmark_EditMenu", bookmark.Name)),
                 };
                 edit.Click += (_, _) => _ = vm.EditBookmarkAsync(bookmark);
                 menu.Items.Add(edit);
 
                 var delete = new MenuItem
                 {
-                    Header = Strings.Format("Bookmark_DeleteMenu", bookmark.Name),
+                    Header = LiteralHeader(Strings.Format("Bookmark_DeleteMenu", bookmark.Name)),
                 };
                 delete.Click += (_, _) => _ = vm.DeleteBookmarkAsync(bookmark);
                 menu.Items.Add(delete);
@@ -78,8 +84,15 @@ public partial class SftpDocumentView : UserControl
         var manage = new MenuItem { Header = Strings.Get("Bookmark_Manage") };
         manage.Click += (_, _) => _ = vm.ShowBookmarkManager?.Invoke() ?? Task.CompletedTask;
         menu.Items.Add(manage);
-        menu.ShowAt(anchor);
+        return menu;
     }
+
+    /// <summary>
+    /// 带用户数据(收藏名、路径)的菜单头用 TextBlock 而不是字符串:字符串头会按访问键解析,
+    /// 第一个下划线被吃掉、后一个字母加下划线 —— <c>/srv/my_app</c> 显示成 <c>/srv/myapp</c>
+    /// (与 FileBrowserView 面包屑那条注释同一个坑)。
+    /// </summary>
+    private static TextBlock LiteralHeader(string text) => new() { Text = text };
 
     private Task ShowBookmarkManagerAsync()
     {
@@ -103,56 +116,14 @@ public partial class SftpDocumentView : UserControl
         return Task.CompletedTask;
     }
 
-    private async Task<RemoteDirectoryBookmark?> EditBookmarkAsync(RemoteDirectoryBookmark initial)
-    {
-        if (TopLevel.GetTopLevel(this) is not Window owner)
-        {
-            return null;
-        }
-
-        var name = new TextBox { Text = initial.Name };
-        var localPath = new TextBox { Text = initial.LocalPath };
-        var remotePath = new TextBox { Text = initial.RemotePath };
-        var form = new StackPanel { Spacing = 6 };
-        AddEditorField(form, "Bookmark_Name", name);
-        AddEditorField(form, "Bookmark_LocalPath", localPath);
-        AddEditorField(form, "Bookmark_RemotePath", remotePath);
-
-        bool accepted = await MessageDialog.ShowCustomAsync(
-            owner,
-            Strings.Get(initial.Id == Guid.Empty ? "Bookmark_AddTitle" : "Bookmark_EditTitle"),
-            form,
-            Strings.Get("Save"),
-            Strings.Get("Cancel"),
-            showCancel: true,
-            kind: MessageDialogKind.Question);
-        return accepted
-            ? new RemoteDirectoryBookmark
-            {
-                Id = initial.Id,
-                Name = name.Text ?? string.Empty,
-                LocalPath = localPath.Text ?? string.Empty,
-                RemotePath = remotePath.Text ?? string.Empty,
-            }
-            : null;
-    }
-
-    private static void AddEditorField(StackPanel form, string labelKey, TextBox field)
-    {
-        form.Children.Add(new TextBlock { Text = Strings.Get(labelKey), Classes = { "dim" } });
-        form.Children.Add(field);
-    }
+    private Task<RemoteDirectoryBookmark?> EditBookmarkAsync(RemoteDirectoryBookmark initial) =>
+        TopLevel.GetTopLevel(this) is Window owner
+            ? DirectoryBookmarkDialogs.EditAsync(owner, initial)
+            : Task.FromResult<RemoteDirectoryBookmark?>(null);
 
     private Task<bool> ConfirmBookmarkDeleteAsync(string name) =>
         TopLevel.GetTopLevel(this) is Window owner
-            ? MessageDialog.ConfirmAsync(
-                owner,
-                Strings.Get("Bookmark_DeleteTitle"),
-                Strings.Format("Bookmark_DeleteMessage", name),
-                confirmText: Strings.Get("Delete"),
-                cancelText: Strings.Get("Cancel"),
-                kind: MessageDialogKind.Warning,
-                danger: true)
+            ? DirectoryBookmarkDialogs.ConfirmDeleteAsync(owner, name)
             : Task.FromResult(false);
 
     /// <summary>

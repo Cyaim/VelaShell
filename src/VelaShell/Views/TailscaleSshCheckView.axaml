@@ -39,7 +39,11 @@
                    Foreground="{DynamicResource VelaTextPrimary}" />
         <TextBlock Text="{loc:Localize Ssh_TailscaleCheckWaiting}" TextWrapping="Wrap"
                    Foreground="{DynamicResource VelaTextSecondary}" />
-        <TextBox x:Name="VerificationLink" Text="{Binding VerificationUri, Mode=OneWay}"
+        <TextBlock x:Name="DeadlineNotice" Text="{Binding DeadlineText}" TextWrapping="Wrap"
+                   IsVisible="{Binding DeadlineText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                   Foreground="{DynamicResource VelaTextSecondary}" />
+        <!-- 显示的就是打开 / 复制的那一串(转义后的完整链接),不是解码过的「好看」版本。 -->
+        <TextBox x:Name="VerificationLink" Text="{Binding VerificationUri.AbsoluteUri, Mode=OneWay}"
                  IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="96"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -48,6 +52,10 @@
                  Background="{DynamicResource VelaBgInput}"
                  BorderBrush="{DynamicResource VelaBorderPrimary}"
                  FontFamily="{DynamicResource VelaUiMonoFont}" />
+        <!-- 设备登录链接(tailscale up)与 SSH 验证链接同在 login.tailscale.com/a/ 下,链接本身分不出来:
+             批准前要看清页面问的是什么,批准一台陌生机器加入 tailnet 的后果远比连不上严重。 -->
+        <TextBlock x:Name="DeviceWarning" Text="{loc:Localize Ssh_TailscaleCheckDeviceWarning}" TextWrapping="Wrap"
+                   Foreground="{DynamicResource VelaWarning}" />
         <TextBlock x:Name="OperationError" Text="{Binding ErrorMessage}" TextWrapping="Wrap"
                    IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                    Foreground="{DynamicResource VelaError}" />

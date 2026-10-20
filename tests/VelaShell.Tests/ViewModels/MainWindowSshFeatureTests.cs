@@ -601,6 +601,80 @@ public sealed class MainWindowSshFeatureTests
         });
     }
 
+    /// <summary>
+    /// 认证途中断线、没等到验证链接就超时不是授权结论:曾经同样被当成「要人处理」,后台重连就此永久暂停。
+    /// 现在与别的认证方式一样按退避再试,下一次连上照常恢复。
+    /// </summary>
+    [TestMethod]
+    public async Task TailscaleTransientAuthFailure_KeepsBackoffRetryInsteadOfPausing()
+    {
+        await RunOnReconnectUiAsync(async () =>
+        {
+            var (vm, workflow, _, profile) = CreateReconnectConsumer();
+            string transient = $"ops@jump:22: {Strings.Get("SshErr_TailscaleAuthTimeout")}";
+            bool fail = true;
+            workflow.ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>())
+                .Returns(_ => fail
+                    ? Task.FromException<SshSession>(new VelaSshTailscaleAuthenticationException(transient, requiresUserAction: false))
+                    : Task.FromResult(ConnectedSession(profile)));
+            TerminalTabViewModel? tab = await vm.TryConnectProfileAsync(profile);
+            Assert.IsNotNull(tab);
+            try
+            {
+                tab.MarkDisconnected();
+                await PassQueuedReconnectDeadlineAsync();
+
+                Assert.IsFalse(tab.AuthenticationRequiresUserAction, "临时失败不能暂停后台重连。");
+                Assert.AreEqual(transient, tab.ConnectionError);
+                await workflow.Received(1).ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>());
+
+                fail = false;
+                await PassQueuedReconnectDeadlineAsync();
+                Assert.AreEqual(SessionStatus.Connected, tab.ConnectionStatus, "下一次退避重试照常进行并连上。");
+                await workflow.Received(2).ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>());
+            }
+            finally
+            {
+                tab.MarkDisconnectedByUser();
+                await tab.DisposeAsync();
+            }
+        });
+    }
+
+    /// <summary>首次连接遇到同样的临时失败:留在失败覆盖层,不弹凭据框(Tailscale 没有凭据可问),也不记认证暂停。</summary>
+    [TestMethod]
+    public async Task TailscaleTransientFailureOnFirstConnect_ShowsFailureWithoutPromptOrPause()
+    {
+        await RunOnReconnectUiAsync(async () =>
+        {
+            var (vm, workflow, _, profile) = CreateReconnectConsumer();
+            string transient = $"ops@jump:22: {Strings.Get("SshErr_TailscaleCheckFailed")}";
+            workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<SshSession>(new VelaSshTailscaleAuthenticationException(transient, requiresUserAction: false)));
+            int prompts = 0;
+            vm.InteractiveAuthenticator = _ =>
+            {
+                prompts++;
+                return Task.FromResult<SessionProfile?>(null);
+            };
+
+            TerminalTabViewModel? tab = await vm.TryConnectProfileAsync(profile);
+            Assert.IsNotNull(tab);
+            try
+            {
+                Assert.AreEqual(0, prompts);
+                Assert.AreEqual(SessionStatus.Disconnected, tab.ConnectionStatus);
+                Assert.AreEqual(transient, tab.ConnectionError);
+                Assert.IsFalse(tab.AuthenticationRequiresUserAction);
+            }
+            finally
+            {
+                tab.MarkDisconnectedByUser();
+                await tab.DisposeAsync();
+            }
+        });
+    }
+
     private static (MainWindowViewModel Vm, IConnectionWorkflowService Workflow, ISettingsService Settings, SessionProfile Profile) CreateReconnectConsumer()
     {
         var workflow = Substitute.For<IConnectionWorkflowService>();

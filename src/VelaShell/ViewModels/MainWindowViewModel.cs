@@ -2815,8 +2815,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             LastConnectionError = null;
             tab.MarkDisconnectedByUser();
         }
-        catch (VelaSshTailscaleAuthenticationException ex)
+        catch (VelaSshTailscaleAuthenticationException ex) when (ex.RequiresUserAction)
         {
+            // 不需要人处理的(认证途中断线、没等到验证链接就超时)落到下面的通用分支,照常退避重试。
             LastConnectionError = DescribeConnectionError(ex, tab.Profile);
             Toasts.Error(LastConnectionError);
             tab.MarkAuthenticationRequiresUserAction(LastConnectionError);
@@ -3899,7 +3900,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             {
                 LastConnectionError = DescribeConnectionError(ex, current);
                 Toasts.Error(LastConnectionError);
-                tab.MarkAuthenticationRequiresUserAction(LastConnectionError);
+                if (ex.RequiresUserAction)
+                {
+                    tab.MarkAuthenticationRequiresUserAction(LastConnectionError);
+                }
+                else
+                {
+                    // 认证途中断线、没等到验证链接就超时:与网络失败一样留在失败覆盖层,不弹凭据框
+                    // (Tailscale 没有凭据可问),也不暂停之后的自动重试。
+                    tab.MarkConnectionFailed(LastConnectionError);
+                }
                 return tab;
             }
             catch (Exception ex)
@@ -4116,7 +4126,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 settings.Transfer,
                 FileTransfer,
                 QueryDefaultEditorPathAsync,
-                PersistProfileIfSavedAsync));
+                UpdateProfileBookmarksAsync));
         ui.HandOver(document);
         // 与 FTP 同理:连接续体可能落在后台线程上,树节点是绑定属性,必须回主线程再改。
         TrackDocumentSession(connection.SessionId, connection.Profile.Id, SessionStatus.Connected);
@@ -4353,7 +4363,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 settings.Transfer,
                 FileTransfer,
                 QueryDefaultEditorPathAsync,
-                PersistProfileIfSavedAsync));
+                UpdateProfileBookmarksAsync));
         ui.HandOver(document);
         TrackDocumentSession(connection.SessionId, profile.Id, SessionStatus.Connected);
         return document;
@@ -4632,7 +4642,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             settings.Transfer,
             FileTransfer,
             QueryDefaultEditorPathAsync,
-            PersistProfileIfSavedAsync);
+            UpdateProfileBookmarksAsync);
         // 协议专属的右键菜单项:声明式,按下右键那一帧就能画出来。
         if (descriptor is { Actions.Count: > 0 })
         {
@@ -5454,10 +5464,22 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
         {
-            // 信任指纹或目录收藏没落盘不影响本次连接,下次会再问一遍。
+            // 信任指纹没落盘不影响本次连接,下次会再问一遍。
             return false;
         }
     }
+
+    /// <summary>
+    /// 目录收藏的落盘入口(#621):只改库里那一条配置的收藏,其余字段不碰。
+    /// 不走 <see cref="PersistProfileIfSavedAsync" /> 的整条写回 —— 文档手里那份配置可能早就过时了
+    /// (编辑框改过端口或名字、另一个文档加过收藏),整条写回会把那些改动悄悄回滚。
+    /// </summary>
+    /// <returns>改后的收藏;配置没保存过(「最近连接」重建的临时配置)时为 null,收藏只在本文档内有效。</returns>
+    private async Task<List<RemoteDirectoryBookmark>?> UpdateProfileBookmarksAsync(
+        Guid profileId, Func<List<RemoteDirectoryBookmark>, bool> update) =>
+        _sessionRepository is null
+            ? null
+            : await _sessionRepository.UpdateDirectoryBookmarksAsync(profileId, update).ConfigureAwait(true);
 
     /// <summary>
     /// 连接侧边栏"最近连接"条目:有 id 时解析已保存配置,否则从记录的主机/端口/用户名重建临时配置。

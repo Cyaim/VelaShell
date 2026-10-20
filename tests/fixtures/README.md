@@ -78,3 +78,18 @@ docker compose -f docker-compose.test.yml up -d --build ssh-legacy   # 端口 22
 ```bash
 docker compose -f docker-compose.test.yml up -d --build ssh-pq   # 端口 2226 / 2227 / 2228,账号 vela-pq / velapass
 ```
+## ssh-sudo —— 受控 sudo 靶子(不是插件夹具)
+
+[ssh-sudo](ssh-sudo/Dockerfile) 是一台 Ubuntu 24.04 的 sshd,装着发行版原装的 sudo(经 PAM 认证、默认 `use_pty`)
+与 fish / tcsh。只有一个账号 `sudoer`,不在 sudo 组 —— 口令、登录 shell 与 `/etc/sudoers.d/test-user`
+都由每条用例先 `docker exec` 进来按需重写,所以这台容器只给测试用。
+
+它服务的是 `VelaShell.Sudo.Kernel.Tests` 的 `SudoInteropTests`:AI 插件「以 root 执行」那条链路要在真实 sudo + PAM 上
+才验得出来 —— `requiretty`、`passwd_tries`、`runas_default`、受限 sudoers 拒绝时回显 argv,以及登录 shell 换成 fish / tcsh
+后批准的命令一个字节都不被改写。靶机不可达时这组用例记为跳过;要指向别的一次性容器,设
+`VELASHELL_SUDO_CONTAINER` / `VELASHELL_SUDO_PORT`。
+
+```bash
+docker compose -f docker-compose.test.yml up -d --build ssh-sudo   # 端口 2230
+dotnet test tests/VelaShell.Sudo.Kernel.Tests
+```

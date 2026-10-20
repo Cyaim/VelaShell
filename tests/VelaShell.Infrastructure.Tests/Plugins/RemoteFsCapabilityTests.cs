@@ -1,0 +1,126 @@
+using NSubstitute;
+using VelaShell.Core.Models;
+using VelaShell.Core.Sftp;
+using VelaShell.Core.Ssh;
+using VelaShell.Infrastructure.Plugins.Capabilities;
+using VelaShell.PluginSdk.RemoteFs;
+
+namespace VelaShell.Infrastructure.Tests.Plugins;
+
+/// <summary>
+/// 插件远程文件能力的进度桥(#617):满格那一帧以传输任务的结果为准 —— 只发一次,
+/// 而且在上传真正成功(fsync / CLOSE 之后)才发;失败了就不发。
+/// </summary>
+[TestClass]
+public sealed class RemoteFsCapabilityTests
+{
+    private readonly Guid _sessionId = Guid.NewGuid();
+    private readonly ISftpService _sftp = Substitute.For<ISftpService>();
+    private readonly ISshConnectionService _connections = Substitute.For<ISshConnectionService>();
+
+    public RemoteFsCapabilityTests() =>
+        _connections.GetSession(_sessionId).Returns(new SshSession
+        {
+            SessionId = _sessionId,
+            ConnectionInfo = new() { Host = "files.example.com", Username = "joe", AuthMethod = AuthMethod.Password },
+            Status = SessionStatus.Connected,
+        });
+
+    /// <summary>
+    /// 宿主上传在最后一批确认到齐时就报满格(那时 fsync / CLOSE 还没做),成功收尾时可能再报一遍;
+    /// 插件拿满格当「完成」,曾经因此收到两次完成、而且早于真正的结果。
+    /// </summary>
+    [TestMethod]
+    public async Task Upload_ReportsCompletionOnce_AfterTheTransferSucceeds()
+    {
+        var closing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        IProgress<TransferProgress>? hostProgress = null;
+        _sftp.UploadFileAsync(_sessionId, "local.bin", "/remote.bin", Arg.Any<IProgress<TransferProgress>?>(), 0, Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                hostProgress = call.ArgAt<IProgress<TransferProgress>?>(3);
+                hostProgress!.Report(Frame(40));
+                hostProgress.Report(Frame(100)); // 最后一批确认到齐,还要等 fsync / CLOSE。
+                return closing.Task;
+            });
+        var plugin = new Recorder();
+
+        Task upload = new RemoteFsCapability(_sftp, _connections)
+            .UploadFileAsync(_sessionId.ToString(), "local.bin", "/remote.bin", plugin);
+        await Task.Delay(150); // 转发经线程池投递(测试线程没有同步上下文),给它时间落地。
+        Assert.IsFalse(upload.IsCompleted);
+        Assert.AreEqual(new RemoteTransferProgress(40, 100), plugin.Frames.Single(), "中间帧照常转发");
+
+        hostProgress!.Report(Frame(100)); // 宿主成功收尾时那一帧。
+        closing.SetResult();
+        await upload;
+        await EventuallyAsync(() => plugin.Frames.Count == 2);
+        await Task.Delay(150);
+
+        Assert.AreSequenceEqual([new RemoteTransferProgress(40, 100), new RemoteTransferProgress(100, 100)], plugin.Frames.ToArray(),
+            "满格只在任务成功后报一次");
+    }
+
+    /// <summary>CLOSE / fsync 失败:字节虽然全确认了,插件也不能收到满格。</summary>
+    [TestMethod]
+    public async Task Upload_WhenCloseFails_NeverReportsCompletion()
+    {
+        _sftp.UploadFileAsync(_sessionId, "local.bin", "/remote.bin", Arg.Any<IProgress<TransferProgress>?>(), 0, Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.ArgAt<IProgress<TransferProgress>?>(3)!.Report(Frame(100));
+                return Task.FromException(new IOException("close failed"));
+            });
+        var plugin = new Recorder();
+
+        await Assert.ThrowsExactlyAsync<IOException>(() => new RemoteFsCapability(_sftp, _connections)
+            .UploadFileAsync(_sessionId.ToString(), "local.bin", "/remote.bin", plugin));
+        await Task.Delay(150);
+
+        Assert.IsFalse(plugin.Frames.Any(static f => f.TransferredBytes >= f.TotalBytes));
+    }
+
+    private static async Task EventuallyAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
+    private static TransferProgress Frame(long bytes) => new()
+    {
+        FileName = "remote.bin",
+        BytesTransferred = bytes,
+        TotalBytes = 100,
+        Percentage = (int)bytes,
+        SpeedBytesPerSecond = 0,
+        EstimatedTimeRemaining = TimeSpan.Zero,
+    };
+
+    /// <summary>同步记下插件收到的每一帧(线程安全:桥可能在别的线程上转发)。</summary>
+    private sealed class Recorder : IProgress<RemoteTransferProgress>
+    {
+        private readonly List<RemoteTransferProgress> _frames = [];
+
+        public List<RemoteTransferProgress> Frames
+        {
+            get
+            {
+                lock (_frames)
+                {
+                    return [.. _frames];
+                }
+            }
+        }
+
+        public void Report(RemoteTransferProgress value)
+        {
+            lock (_frames)
+            {
+                _frames.Add(value);
+            }
+        }
+    }
+}

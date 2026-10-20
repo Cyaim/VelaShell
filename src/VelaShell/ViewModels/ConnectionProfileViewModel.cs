@@ -80,6 +80,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private readonly bool _isPinned;
     private readonly DateTime? _lastConnectedAt;
     private readonly List<Guid>? _autoStartTunnelIds;
+    // 仓储更新时本就保留库里的收藏;这里再带上,是让保存交回去的那份配置(调用方拿它刷新缓存、接着连)也不缺收藏。
+    private readonly List<RemoteDirectoryBookmark> _directoryBookmarks = [];
 
     private readonly ISessionRepository? _sessionRepository;
 
@@ -207,6 +209,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             _isPinned = existing.IsPinned;
             _lastConnectedAt = existing.LastConnectedAt;
             _autoStartTunnelIds = existing.AutoStartTunnelIds;
+            _directoryBookmarks = [.. (existing.DirectoryBookmarks ?? []).Select(static bookmark => bookmark.Clone())];
             _connectionType = existing.ConnectionType;
             _name = existing.Name;
             _host = existing.Host;
@@ -2233,6 +2236,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             IsPinned = _isPinned,
             LastConnectedAt = _lastConnectedAt,
             AutoStartTunnelIds = _autoStartTunnelIds is null ? null : [.. _autoStartTunnelIds],
+            DirectoryBookmarks = [.. _directoryBookmarks.Select(static bookmark => bookmark.Clone())],
             Tags = [.. TagsText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
             // 首尾的空行空格去掉(悬停提示里一条空行也是一截空白);只有空白的归 null,
             // 免得一个回车就让这条连接带上一个空的悬停提示。行内的换行与缩进原样保留。

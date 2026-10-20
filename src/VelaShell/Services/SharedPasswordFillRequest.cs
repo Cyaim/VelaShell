@@ -41,13 +41,33 @@ internal sealed class SharedPasswordFillRequest : IDisposable
         (_control.CursorRow, _control.CursorCol, _control.ScreenGeneration, _control.SessionEncoding.CodePage,
             _control.GetBufferLine(_control.CursorRow));
 
-    private void OnInput(byte[] _) => Invalidate();
+    /// <summary>
+    /// 键入或提示行变化让请求作废的那一刻(UI 线程)。宿主据此收起列表 —— 否则空口令上的 Backspace
+    /// 这类不改变跟踪输入的按键会留下一个点哪项都只回「已过期」的列表。
+    /// </summary>
+    /// <remarks>不经键入的出站输入(同步输入、防空闲)不报:那些只在点选时由 <see cref="IsValid" /> 拦下。</remarks>
+    internal event Action? Expired;
+
+    /// <summary>光标所在的提示行已经不是开列表时那一行(位置、内容、屏幕或编码变了)。</summary>
+    internal bool PromptChanged => CapturePrompt() != _prompt;
+
+    private void OnInput(byte[] _) => Expire();
     private void OnOutput()
     {
-        if (CapturePrompt() != _prompt)
+        if (PromptChanged)
         {
-            Invalidate();
+            Expire();
         }
+    }
+
+    private void Expire()
+    {
+        if (_expired)
+        {
+            return; // 已作废(含已释放、已填入):不再惊动宿主。
+        }
+        _expired = true;
+        Expired?.Invoke();
     }
 
     internal void Invalidate() => _expired = true;
@@ -55,7 +75,7 @@ internal sealed class SharedPasswordFillRequest : IDisposable
     internal bool IsValid => !_expired && _tab.IsConnected && _tab.ShellStream is { CanWrite: true } && _bridge is not null
         && ReferenceEquals(_bridge, _tab.Bridge) && _connectionGeneration == _tab.ConnectionGeneration
         && _bridge.InputGeneration == _inputGeneration
-        && _isActive() && CapturePrompt() == _prompt;
+        && _isActive() && !PromptChanged;
 
     internal async Task<PasswordFillResult> FillAsync(ISharedCredentialRepository repository, Guid id)
     {

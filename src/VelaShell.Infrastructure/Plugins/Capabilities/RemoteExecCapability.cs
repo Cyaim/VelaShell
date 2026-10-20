@@ -70,7 +70,7 @@ internal sealed class RemoteExecCapability(ISshConnectionService connections, st
             RemoteCommandStreamResult result = await client.StreamCommandAsync(
                 command,
                 includeStandardError,
-                (isError, line) => output.Report(new(isError ? ExecStream.StandardError : ExecStream.StandardOutput, line)),
+                (isError, line) => Deliver(output, new(isError ? ExecStream.StandardError : ExecStream.StandardOutput, line), cts.Token),
                 cts.Token).ConfigureAwait(false);
             return new(result.ExitCode, result.Lines);
         }
@@ -111,18 +111,17 @@ internal sealed class RemoteExecCapability(ISshConnectionService connections, st
                 {
                     if (entry.State is { } state)
                     {
-                        progress.Report(new(SudoExecEventKind.State, state switch
+                        return Deliver(progress, new(SudoExecEventKind.State, state switch
                         {
                             SudoExecutionState.AwaitingApproval => SudoExecState.AwaitingApproval,
                             SudoExecutionState.AwaitingAuthentication => SudoExecState.AwaitingAuthentication,
                             SudoExecutionState.Running => SudoExecState.Running,
                             _ => throw new InvalidOperationException("Unknown sudo state.")
-                        }));
+                        }), lifetime.Token);
                     }
-                    else if (entry.Text is { } text)
-                    {
-                        progress.Report(new(SudoExecEventKind.Output, Text: text));
-                    }
+                    return entry.Text is { } text
+                        ? Deliver(progress, new(SudoExecEventKind.Output, Text: text), lifetime.Token)
+                        : ValueTask.CompletedTask;
                 }, lifetime.Token).ConfigureAwait(false);
             SudoExecOutcome outcome = result.Outcome switch
             {
@@ -142,6 +141,19 @@ internal sealed class RemoteExecCapability(ISshConnectionService connections, st
         {
             Interlocked.Decrement(ref _activeStreams);
         }
+    }
+
+    /// <summary>
+    /// 能背压的接收方(隔离插件的 RPC 通知)逐条等它入队;进程内插件的接收方同步转发,行序照旧由调用线程保证。
+    /// </summary>
+    private static ValueTask Deliver<T>(IProgress<T> progress, T value, CancellationToken cancellationToken)
+    {
+        if (progress is IFlowControlledProgress<T> flowControlled)
+        {
+            return flowControlled.ReportAsync(value, cancellationToken);
+        }
+        progress.Report(value);
+        return ValueTask.CompletedTask;
     }
 
     private ISshClientWrapper Resolve(string sessionId) =>

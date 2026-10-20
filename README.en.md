@@ -142,9 +142,10 @@ Every build is **self-contained** — unpack anywhere and run.
 
 ### Prerequisites
 
-- A [.NET SDK **11.0**](https://dotnet.microsoft.com/download) preview — `global.json` pins `11.0.100-rc.1.26425.128`
-  (`rollForward: latestFeature`). The repo enables `EnablePreviewFeatures` and `runtime-async=on`, so until the
-  final SDK ships it only builds with a preview SDK.
+- A [.NET SDK **11.0**](https://dotnet.microsoft.com/download) preview / RC — no exact version is pinned (there is no
+  `global.json`): the newest one you have installed is used, and CI installs `11.0.x` from the preview channel.
+  The repo enables `EnablePreviewFeatures` and `runtime-async=on`, so until the final SDK ships it only builds
+  with a preview SDK.
 - (Optional) Docker, for the local SSH test server and interop tests
 
 ### Build and run
@@ -245,7 +246,6 @@ VelaShell/
 ├── build/                          # Packaging scripts for AppImage / deb / rpm / MSIX / social preview images
 ├── scripts/                        # One-shot publish script, plus interop test servers, benchmarks and code generators for SSH / X server
 ├── docker-compose.test.yml         # Local SSH test server
-├── global.json                     # SDK version pin
 ├── Directory.Build.props           # Repo-wide version and shared MSBuild properties
 └── VelaShell.slnx                  # Solution
 ```

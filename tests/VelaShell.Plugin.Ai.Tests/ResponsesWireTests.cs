@@ -1,4 +1,7 @@
 using System.ClientModel;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using OpenAI;
@@ -261,6 +264,76 @@ public sealed class ResponsesWireTests
         IReadOnlyList<string> requests = stub.Requests;
         Assert.IsGreaterThanOrEqualTo(2, requests.Count, "循环该跑到工具结果那一步");
         string followUp = requests[1];
+        Assert.DoesNotContain("previous_response_id", followUp,
+            $"续接要服务端存着上一步,中转站背后的上游多半没存。实际请求体:{followUp}");
+        Assert.Contains("SYSTEM_MARKER", followUp, $"第二步该带着整段历史。实际请求体:{followUp}");
+        Assert.Contains("\"function_call\"", followUp, $"模型那次调用也得在历史里。实际请求体:{followUp}");
+        Assert.Contains("TOOL_OUTPUT", followUp, $"实际请求体:{followUp}");
+    }
+
+    /// <summary>每一步都让模型调一次 <c>peek</c> 的非流式 Responses 回应(同样带着会被拿去续接的 response id)。</summary>
+    private const string FunctionCallJson =
+        """{"id":"resp_stub","object":"response","created_at":1,"status":"completed","model":"m","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"peek","arguments":"{}","status":"completed"}]}""";
+
+    /// <summary>
+    /// 非流式那条路(<c>GetResponseAsync</c>)同样整段重发:适配器在非流式回应上也会把 response id
+    /// 当会话 id 交上来,只守流式那一半的话,一次性请求(桥接、后续提问)仍会只带 <c>previous_response_id</c>。
+    /// </summary>
+    [TestMethod]
+    public async Task ToolLoop_NonStreaming_AlsoResendsTheWholeHistory()
+    {
+        // 裸 TCP 回固定的 Responses JSON:SseStub 的非流式回应是 Chat Completions 形状,这里用不上
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        string baseUrl = $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}";
+        Task<string[]> received = Task.Run(async () =>
+        {
+            string[] bodies = new string[2];
+            for (int i = 0; i < bodies.Length; i++)
+            {
+                using TcpClient connection = await listener.AcceptTcpClientAsync();
+                using NetworkStream stream = connection.GetStream();
+                // Content-Length 按字节算:请求头逐字节读到空行,正文按字节读满,别让多字节字符把读取卡住
+                using var head = new MemoryStream();
+                byte[] one = new byte[1];
+                while (!head.GetBuffer().AsSpan(0, (int)head.Length).EndsWith("\r\n\r\n"u8))
+                {
+                    await stream.ReadExactlyAsync(one);
+                    head.WriteByte(one[0]);
+                }
+                string length = Encoding.ASCII.GetString(head.GetBuffer(), 0, (int)head.Length).Split("\r\n")
+                    .Single(header => header.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase));
+                byte[] body = new byte[int.Parse(length["Content-Length:".Length..].Trim())];
+                await stream.ReadExactlyAsync(body);
+                bodies[i] = Encoding.UTF8.GetString(body);
+                byte[] payload = Encoding.UTF8.GetBytes(FunctionCallJson);
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(
+                    $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {payload.Length}\r\nConnection: close\r\n\r\n"));
+                await stream.WriteAsync(payload);
+            }
+            return bodies;
+        });
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var relay = new AiProvider
+        {
+            Name = "relay",
+            BaseUrl = baseUrl,
+            DefaultProtocol = ChatProtocol.OpenAiResponses,
+            Models = [new AiModelConfig { Model = "m" }]
+        };
+        Assert.IsTrue(EndpointQuirks.Of(relay).StoreResponses, "前提:自定义供应商默认不关 store");
+        using IChatClient client = store.CreateClient(new ResolvedModel(relay, relay.Models[0]), ProviderCredential.Key("k"))
+            .AsBuilder()
+            .UseFunctionInvocation(configure: c => c.MaximumIterationsPerRequest = 1)
+            .Build();
+        var options = new ChatOptions { Tools = [AIFunctionFactory.Create(() => "TOOL_OUTPUT", "peek")] };
+
+        await client.GetResponseAsync(
+            [new ChatMessage(ChatRole.System, "SYSTEM_MARKER"), new ChatMessage(ChatRole.User, "看看")], options);
+
+        string followUp = (await received.WaitAsync(TimeSpan.FromSeconds(10)))[1];
+        Assert.DoesNotContain("\"stream\":true", followUp, $"这条守的是非流式那条路。实际请求体:{followUp}");
         Assert.DoesNotContain("previous_response_id", followUp,
             $"续接要服务端存着上一步,中转站背后的上游多半没存。实际请求体:{followUp}");
         Assert.Contains("SYSTEM_MARKER", followUp, $"第二步该带着整段历史。实际请求体:{followUp}");

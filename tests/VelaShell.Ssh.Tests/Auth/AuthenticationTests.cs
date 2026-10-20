@@ -1254,6 +1254,37 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
     }
 
     /// <summary>
+    /// 服务端拒绝时不回 FAILURE，而是先发横幅说明原因、再断开：报的是认证期间对端断开（带着原因码），
+    /// 横幅在断开之前照样交给回调 —— 使用方只有靠这段横幅才知道为什么被拒。
+    /// </summary>
+    [TestMethod]
+    public async Task 横幅说明后断开时报对端断开且横幅先送到回调()
+    {
+        List<string> received = [];
+
+        SshConnectionClosedException error = await Assert.ThrowsExactlyAsync<SshConnectionClosedException>(() => RunAsync(
+            [],
+            new TestAuthPolicy
+            {
+                RequiredMethods = [SshProtocolNames.AuthPassword],
+                RejectWithBannerAndDisconnect = "策略不允许以 joe 登录。",
+            },
+            authenticatorFactory: (t, u, s) => new SshAuthenticator(t, u, s)
+            {
+                BannerHandler = (text, _) =>
+                {
+                    received.Add(text);
+                    return ValueTask.CompletedTask;
+                },
+            }));
+
+        Assert.AreEqual(SshFailureReason.Disconnected, error.Reason);
+        Assert.AreEqual(SshPhase.Authenticating, error.Phase);
+        Assert.AreEqual(SshDisconnectReason.NoMoreAuthMethodsAvailable, error.DisconnectReason);
+        Assert.AreSequenceEqual(["策略不允许以 joe 登录。"], received);
+    }
+
+    /// <summary>
     /// 证书被拒：按本机时钟已经过期这件事写进尝试记录（规格 04 §4.5）—— 不在本地拦，照样发出去由服务端判断。
     /// 登录用户在 principals 里时不附 principals 的说法。
     /// </summary>

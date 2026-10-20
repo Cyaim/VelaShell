@@ -48,7 +48,9 @@ public sealed partial class SessionMetrics
         // (htop 99M 对比我们的 19%)高出约 2 倍。
         """echo __M__; awk '/^MemTotal:/{t=$2} /^MemFree:/{f=$2} /^Buffers:/{b=$2} /^Cached:/{c=$2} /^SReclaimable:/{s=$2} /^SwapTotal:/{st=$2} /^SwapFree:/{sf=$2} END{if(t>0){u=t-f-b-c-s; if(u<0)u=0; print t*1024" "u*1024" "st*1024" "(st-sf)*1024}}' /proc/meminfo 2>/dev/null; """ +
         "echo __D__; df -B1 --output=size,used / 2>/dev/null | tail -1; " +
-        """echo __O__; . /etc/os-release 2>/dev/null && echo "$PRETTY_NAME"; """ +
+        // `.` 是特殊内建:文件不在时 POSIX sh(dash、busybox ash)整个退出,后面的 __K__ / __S__ / __N__ 全丢
+        // (CentOS 6 这类没有 os-release 的主机就是如此)。先判断可读,再放进子 shell 里读,也不把变量漏给后面几段。
+        """echo __O__; [ -r /etc/os-release ] && (. /etc/os-release 2>/dev/null; echo "$PRETTY_NAME"); """ +
         "echo __K__; uname -r 2>/dev/null; " +
         "echo __S__; grep -m1 '^cpu ' /proc/stat 2>/dev/null; " +
         """echo __N__; awk -F: 'NR>2 {gsub(/^ +/,"",$1); if ($1!="lo") {split($2,f," "); rx+=f[1]; tx+=f[9]}} END {print rx+0" "tx+0}' /proc/net/dev 2>/dev/null; """ +
@@ -211,24 +213,72 @@ public sealed partial class SessionMetrics
     public IReadOnlyList<GpuUsageCounter> GpuUsageCounters { get; private set; } = [];
 
     /// <summary>用相邻两次 DRM fdinfo 采样计算 GPU 利用率。</summary>
+    /// <param name="previous">上一次采样的引擎计数。</param>
+    /// <param name="seconds">本地测得的采样间隔;远端没给 /proc/uptime 时才用它。</param>
     public void ApplyGpuUsage(IReadOnlyList<GpuUsageCounter> previous, double seconds)
     {
-        if (seconds <= 0 || GpuUsageCounters.Count == 0 || previous.Count == 0)
+        if (GpuUsageCounters.Count == 0 || previous.Count == 0)
         {
             return;
         }
         var old = previous.ToDictionary(c => c.Card, StringComparer.Ordinal);
+        var current = GpuUsageCounters.ToDictionary(c => c.Card, StringComparer.Ordinal);
         Gpus = Gpus.Select(gpu =>
+            gpu.Card.Length > 0 &&
+            current.TryGetValue(gpu.Card, out GpuUsageCounter? now) &&
+            old.TryGetValue(gpu.Card, out GpuUsageCounter? before) &&
+            Utilization(before, now, seconds) is { } utilization
+                ? gpu with { UtilPercent = utilization }
+                : gpu).ToArray();
+    }
+
+    /// <summary>
+    /// 逐类引擎的忙碌占比取最大值(与 intel_gpu_top 同口径):渲染 60% + 视频 60% 是"最忙的引擎 60%",
+    /// 不是把各引擎加起来钳到 100%。
+    /// </summary>
+    /// <remarks>
+    /// 差分按 (客户端, 引擎) 配对,只认两次都在的客户端:新客户端这一轮只当基线,退出的客户端不再参与 ——
+    /// 对所有客户端的总和做差,客户端一退出差值就成了负数,曲线闪成"不可用"。
+    /// i915 的纳秒计数除以远端 /proc/uptime 的差值,本地两次解析的间隔里混着 SSH 往返的抖动;
+    /// xe 只给周期计数,除以同一时钟域的总周期差。同类引擎有多个实例时再除以实例数。
+    /// </remarks>
+    /// <returns>0-100;没有任何可配对的计数时为 null。</returns>
+    private static double? Utilization(GpuUsageCounter before, GpuUsageCounter now, double seconds)
+    {
+        double elapsed = now.UptimeSeconds - before.UptimeSeconds is double remote && remote > 0 ? remote : seconds;
+        var previous = new Dictionary<(string Client, string Engine), GpuEngineCounter>();
+        foreach (GpuEngineCounter counter in before.Engines)
         {
-            if (gpu.Card.Length == 0 || gpu.BusyNanoseconds is not { } current ||
-                !old.TryGetValue(gpu.Card, out GpuUsageCounter? before) || current < before.BusyNanoseconds)
+            previous[(counter.Client, counter.Engine)] = counter;
+        }
+        var load = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (GpuEngineCounter counter in now.Engines)
+        {
+            if (!previous.TryGetValue((counter.Client, counter.Engine), out GpuEngineCounter? last))
             {
-                return gpu;
+                continue;
             }
-            double utilization = Math.Clamp(
-                (current - before.BusyNanoseconds) * 100.0 / (seconds * 1_000_000_000.0), 0, 100);
-            return gpu with { UtilPercent = utilization };
-        }).ToArray();
+            double busy = Math.Max(0, counter.Busy - last.Busy);
+            double share;
+            if (counter.TotalCycles is { } total && last.TotalCycles is { } lastTotal)
+            {
+                if (total <= lastTotal)
+                {
+                    continue;
+                }
+                share = busy / (total - lastTotal);
+            }
+            else if (counter.TotalCycles is null && last.TotalCycles is null && elapsed > 0)
+            {
+                share = busy / (elapsed * 1_000_000_000.0);
+            }
+            else
+            {
+                continue;
+            }
+            load[counter.Engine] = load.GetValueOrDefault(counter.Engine) + (share / Math.Max(1, counter.Capacity));
+        }
+        return load.Count > 0 ? Math.Clamp(load.Values.Max() * 100, 0, 100) : null;
     }
 
     /// <summary>按常驻内存排序的进程 Top;未采集进程段时为空。</summary>

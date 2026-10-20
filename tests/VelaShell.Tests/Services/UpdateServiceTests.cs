@@ -29,12 +29,16 @@ public class UpdateServiceTests : IDisposable
     private UpdateService CreateService(
         string currentVersion = "1.0.0",
         Func<Task<string>>? channelProvider = null,
-        Action? shutdown = null) =>
+        Action? shutdown = null,
+        TimeSpan? stallTimeout = null) =>
         new(_source,
             channelProvider,
             applicationDirectory: _appDir,
             currentVersionOverride: currentVersion,
-            shutdownForRestart: shutdown ?? (static () => { }));
+            shutdownForRestart: shutdown ?? (static () => { }))
+        {
+            DownloadStallTimeout = stallTimeout ?? UpdateService.DefaultDownloadStallTimeout
+        };
 
     /// <summary>为当前平台构造一个指向 <paramref name="archiveBytes" /> 的清单。</summary>
     private static UpdateManifest CreateManifest(string version, byte[] archiveBytes)
@@ -254,6 +258,109 @@ public class UpdateServiceTests : IDisposable
         Assert.AreEqual("previous version", File.ReadAllText(Path.Combine(applier.BackupDirectory, "app.txt")));
     }
 
+    // ———— 下载停滞看门狗 ————
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task DownloadUpdateAsync_SilentlyDroppedConnection_ReconnectsAndResumesFromPartial()
+    {
+        // NAT/VPN 静默断开:响应体读到一半就再也没有数据,TCP 也不报错。老实现会一直挂着,
+        // 界面上「已 1h 20m 没有收到数据」永远涨下去;现在看门狗掐断这次尝试,带 Range 续传剩下的部分。
+        byte[] zip = CreateZipBytes(("app.txt", new string('x', 300_000)));
+        string rid = UpdateManifest.CurrentRid()!;
+        string assetName = $"VelaShell-2.0.0-{rid}.zip";
+        int half = zip.Length / 2;
+        List<long?> ranges = [];
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/latest.json", StringComparison.Ordinal))
+            {
+                return new(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent($$"""
+                        { "version": "2.0.0", "tag": "v2.0.0",
+                          "assets": { "{{rid}}": { "name": "{{assetName}}",
+                            "sha256": "{{Convert.ToHexStringLower(SHA256.HashData(zip))}}", "size": {{zip.Length}} } } }
+                        """)
+                };
+            }
+            long from = request.Headers.Range?.Ranges.First().From ?? 0;
+            lock (ranges)
+            {
+                ranges.Add(request.Headers.Range?.Ranges.First().From);
+            }
+            // 第一次连接只给前一半就"断"(读操作挂住直到被取消);重连后正常给完剩下的。
+            HttpResponseMessage response = new(from == 0 ? System.Net.HttpStatusCode.OK : System.Net.HttpStatusCode.PartialContent)
+            {
+                Content = new StreamContent(new TrickleStream(zip[(int)from..], hangAfter: from == 0 ? half : null))
+            };
+            response.Content.Headers.ContentLength = zip.Length - from;
+            return response;
+        }));
+        UpdateService service = new(
+            source,
+            applicationDirectory: _appDir,
+            currentVersionOverride: "1.0.0",
+            shutdownForRestart: static () => { })
+        {
+            DownloadStallTimeout = TimeSpan.FromSeconds(1)
+        };
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+
+        await service.DownloadUpdateAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.HasCount(2, ranges, "停滞后应当恰好重连一次");
+        Assert.IsNull(ranges[0]);
+        Assert.AreEqual(half, ranges[1], "重连要从半成品的断点续传,而不是整包重下");
+        string archive = Path.Combine(_appDir, UpdateApplier.StagingDirectoryName, assetName);
+        // 先 await 再比:Span 不能跨 await 存活。
+        byte[] downloaded = await File.ReadAllBytesAsync(archive);
+        Assert.IsTrue(zip.AsSpan().SequenceEqual(downloaded), "续传拼起来的包必须逐字节一致");
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task DownloadUpdateAsync_StallsEveryTime_GivesUpAfterBoundedReconnects()
+    {
+        byte[] zip = CreateZipBytes(("app.txt", "new"));
+        _source.Manifest = CreateManifest("2.0.0", zip);
+        _source.AssetBytes = zip;
+        _source.OnDownload = static (_, ct) => Task.Delay(Timeout.InfiniteTimeSpan, ct);
+        UpdateService service = CreateService("1.0.0", stallTimeout: TimeSpan.FromMilliseconds(50));
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+
+        // 次数用尽必须抛出,调用方(关于页)据此报下载失败、恢复按钮,而不是永远挂着。
+        await Assert.ThrowsExactlyAsync<TimeoutException>(
+            () => service.DownloadUpdateAsync().WaitAsync(TimeSpan.FromSeconds(30)));
+
+        Assert.AreEqual(1 + UpdateService.MaxStallReconnects, _source.DownloadCalls);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task DownloadUpdateAsync_CallerCancels_DoesNotReconnect()
+    {
+        byte[] zip = CreateZipBytes(("app.txt", "new"));
+        _source.Manifest = CreateManifest("2.0.0", zip);
+        _source.AssetBytes = zip;
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _source.OnDownload = (_, ct) =>
+        {
+            started.TrySetResult();
+            return Task.Delay(Timeout.InfiniteTimeSpan, ct);
+        };
+        UpdateService service = CreateService("1.0.0");
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+        using CancellationTokenSource cancellation = new();
+
+        Task download = service.DownloadUpdateAsync(cancellationToken: cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => download.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.AreEqual(1, _source.DownloadCalls, "调用方主动取消不是停滞,不该重连");
+    }
+
     [TestMethod]
     [TestCategory("Update")]
     public async Task RepairUpdateState_ClearsStagingAndForcesFreshDownload()
@@ -363,6 +470,52 @@ public class UpdateServiceTests : IDisposable
         public void Report(UpdateDownloadProgress value) => handler(value.Percent);
     }
 
+    private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(responder(request));
+    }
+
+    /// <summary>
+    /// 不可寻址的响应体:按块吐出 <paramref name="data" />;给了 <paramref name="hangAfter" /> 时,
+    /// 吐完这么多字节后读操作一直挂着直到被取消 —— 即连接静默断开的样子。
+    /// </summary>
+    private sealed class TrickleStream(byte[] data, int? hangAfter) : Stream
+    {
+        private int _position;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => _position; set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            int end = hangAfter ?? data.Length;
+            if (_position >= end && end < data.Length)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            int count = Math.Min(buffer.Length, end - _position);
+            data.AsSpan(_position, count).CopyTo(buffer.Span);
+            _position += count;
+            return count;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     private sealed class FakeUpdateSource : IUpdateSource
     {
         public UpdateManifest? Manifest { get; set; }
@@ -371,6 +524,9 @@ public class UpdateServiceTests : IDisposable
         public bool LastIncludePreRelease { get; private set; }
         public int DownloadCalls { get; private set; }
         public int ManifestCalls { get; private set; }
+
+        /// <summary>每次下载落盘前先跑一下(参数:第几次调用、取消令牌);用来模拟连接卡住。</summary>
+        public Func<int, CancellationToken, Task>? OnDownload { get; set; }
 
         public Task<UpdateManifest?> GetLatestManifestAsync(bool includePreRelease, CancellationToken cancellationToken = default)
         {
@@ -389,6 +545,10 @@ public class UpdateServiceTests : IDisposable
             CancellationToken cancellationToken = default)
         {
             DownloadCalls++;
+            if (OnDownload != null)
+            {
+                await OnDownload(DownloadCalls, cancellationToken);
+            }
             byte[] bytes = AssetBytes ?? [];
             await File.WriteAllBytesAsync(destinationPath, bytes, cancellationToken);
             progress?.Report(UpdateDownloadProgress.Completed(bytes.LongLength));

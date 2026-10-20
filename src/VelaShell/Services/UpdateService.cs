@@ -116,13 +116,31 @@ public class UpdateService : IUpdateService
     }
 
     /// <summary>
+    /// 单次下载尝试连续这么久没有任何进度,就判定连接已经静默断开。NAT 表项过期、VPN 掉线之类
+    /// 的断开不会让 TCP 报错,读操作会一直挂着(下载用 ResponseHeadersRead,HttpClient 的整体超时
+    /// 管不到响应体),只能靠这个看门狗把它掐掉重连。45 秒:远长于界面开始提示停滞的 10 秒,
+    /// 慢网偶尔的长停顿不会被误杀。
+    /// </summary>
+    internal static readonly TimeSpan DefaultDownloadStallTimeout = TimeSpan.FromSeconds(45);
+
+    /// <summary>因停滞断开重连的次数上限;用尽仍收不到数据就报下载失败,半成品留着下次续传。</summary>
+    internal const int MaxStallReconnects = 3;
+
+    /// <summary>判定下载停滞的时长;默认 <see cref="DefaultDownloadStallTimeout" />,测试用短值。</summary>
+    internal TimeSpan DownloadStallTimeout { get; init; } = DefaultDownloadStallTimeout;
+
+    /// <summary>
     /// 下载已检查到的更新包到暂存目录并做 SHA-256 校验,失败抛出异常。
     /// 支持断点续传:上次中断的半成品(<c>*.partial</c> 及其分段断点 <c>*.partial.meta</c>)
     /// 从断点继续;上次已完整下载且校验通过的包直接复用,不再耗费流量。
     /// 产物名带版本号与 RID,过期残留按名清理。校验优先采用下载过程中流式算出的
     /// 哈希(更新源返回),免去落盘后重读;源没给哈希时才读文件校验兜底。
+    /// 下载停滞超过 <see cref="DownloadStallTimeout" /> 就断开、按断点重连,
+    /// 最多 <see cref="MaxStallReconnects" /> 次,用尽抛出 <see cref="TimeoutException" />。
     /// </summary>
-    public async Task DownloadUpdateAsync(IProgress<UpdateDownloadProgress>? progress = null)
+    public async Task DownloadUpdateAsync(
+        IProgress<UpdateDownloadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (_manifest == null || _asset == null)
         {
@@ -158,7 +176,8 @@ public class UpdateService : IUpdateService
             }
             File.Delete(archivePath);
         }
-        string? streamedHash = await _source.DownloadAssetAsync(_manifest, _asset, archivePath, progress);
+        string? streamedHash = await DownloadWithStallWatchdogAsync(
+            _manifest, _asset, archivePath, progress, cancellationToken);
         bool valid = streamedHash != null
             ? streamedHash.Equals(_asset.Sha256, StringComparison.OrdinalIgnoreCase)
             : await IsChecksumValidAsync(archivePath, _asset.Sha256);
@@ -169,6 +188,56 @@ public class UpdateService : IUpdateService
                 $"Update package checksum mismatch for {_asset.Name}; the corrupt download was discarded.");
         }
         _downloadedArchivePath = archivePath;
+    }
+
+    /// <summary>
+    /// 带停滞看门狗地下载:每次尝试配一个"空闲超时"——每收到一条进度就把它往后推,
+    /// 连续 <see cref="DownloadStallTimeout" /> 没有进度就取消这次尝试,再调一次更新源,
+    /// 由它按 <c>*.partial</c> 断点续传。调用方自己取消时不重连,原样抛出。
+    /// </summary>
+    private async Task<string?> DownloadWithStallWatchdogAsync(
+        UpdateManifest manifest,
+        UpdateAsset asset,
+        string archivePath,
+        IProgress<UpdateDownloadProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        for (int reconnects = 0; ; reconnects++)
+        {
+            using CancellationTokenSource watchdog = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            watchdog.CancelAfter(DownloadStallTimeout);
+            try
+            {
+                return await _source.DownloadAssetAsync(
+                    manifest, asset, archivePath,
+                    new StallWatchProgress(progress, watchdog, DownloadStallTimeout),
+                    watchdog.Token);
+            }
+            catch (Exception ex) when (watchdog.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                if (reconnects >= MaxStallReconnects)
+                {
+                    throw new TimeoutException(
+                        $"Update download made no progress for {DownloadStallTimeout.TotalSeconds:0}s "
+                        + $"even after {MaxStallReconnects} reconnects.", ex);
+                }
+                Trace.WriteLine(
+                    $"[VelaShell] Update download stalled, reconnecting ({reconnects + 1}/{MaxStallReconnects}): {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>转发进度的同时给看门狗续命:有进度就说明连接还活着。</summary>
+    private sealed class StallWatchProgress(
+        IProgress<UpdateDownloadProgress>? inner, CancellationTokenSource watchdog, TimeSpan stallTimeout)
+        : IProgress<UpdateDownloadProgress>
+    {
+        public void Report(UpdateDownloadProgress value)
+        {
+            // CancelAfter 会重置尚未触发的计时;已触发时无效,这次尝试照样作废重连。
+            watchdog.CancelAfter(stallTimeout);
+            inner?.Report(value);
+        }
     }
 
     private static async Task<bool> IsChecksumValidAsync(string archivePath, string expectedSha256)

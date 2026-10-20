@@ -13,6 +13,9 @@ public sealed record TailscaleSshCheckNotification(
     Action? Cancel,
     CancellationToken CancellationToken)
 {
+    /// <summary>本次等待验证的截止时刻；到点仍未批准则本次认证超时。结束通知为空。</summary>
+    public DateTimeOffset? ExpiresAt { get; init; }
+
     /// <summary>仅格式化类型和尝试标识，绝不暴露验证链接。</summary>
     public override string ToString() => $"{nameof(TailscaleSshCheckNotification)} {{ AttemptId = {AttemptId} }}";
 }

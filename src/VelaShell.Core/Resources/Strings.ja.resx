@@ -1580,11 +1580,20 @@
   <data name="SetAbout_UpdateAvailableManual" xml:space="preserve">
     <value>新しいバージョン {0} が見つかりましたが、現在のインストール先では自動更新できません(フォルダーが書き込み不可)。プロジェクトのリリースページから最新版を入手してください。</value>
   </data>
+  <data name="SetAbout_DownloadPreparing" xml:space="preserve">
+    <value>更新のダウンロードを準備しています…</value>
+  </data>
   <data name="SetAbout_DownloadingSpeed" xml:space="preserve">
     <value>更新をダウンロードしています… {0}% · {1}/{2} · {3}</value>
   </data>
   <data name="SetAbout_DownloadStalled" xml:space="preserve">
     <value>更新をダウンロードしています… {0}% · {1}/{2} · {3} 間データを受信していません。接続が切断された可能性があります</value>
+  </data>
+  <data name="SetAbout_DownloadingSpeedNoTotal" xml:space="preserve">
+    <value>更新をダウンロードしています… {0} 受信済み · {1}</value>
+  </data>
+  <data name="SetAbout_DownloadStalledNoTotal" xml:space="preserve">
+    <value>更新をダウンロードしています… {0} 受信済み · {1} 間データを受信していません。接続が切断された可能性があります</value>
   </data>
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>ダウンロードに失敗しました。後でもう一度お試しください。</value>
@@ -2081,6 +2090,9 @@
   </data>
   <data name="ReleaseNotes_LoadFailed" xml:space="preserve">
     <value>リリースノートを読み込めませんでした。ネットワーク接続を確認して再試行してください。</value>
+  </data>
+  <data name="ReleaseNotes_RateLimited" xml:space="preserve">
+    <value>GitHub へのリクエストが一時的に制限されています。しばらくしてから再試行してください。</value>
   </data>
   <data name="ReleaseNotes_Latest" xml:space="preserve">
     <value>最新リリース</value>
@@ -7118,11 +7130,14 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Bookmark_InvalidName" xml:space="preserve"><value>1～200文字のブックマーク名を入力してください。</value></data>
   <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>有効なローカルディレクトリパスを入力してください。</value></data>
   <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>有効なリモートディレクトリパスを入力してください。</value></data>
+  <data name="Bookmark_HomeUnavailable" xml:space="preserve"><value>「~」を展開できません。リモートのホームディレクトリが不明です。絶対パスを入力してください。</value></data>
   <data name="Bookmark_PathTooLong" xml:space="preserve"><value>ローカルまたはリモートのパスが長すぎます。</value></data>
   <data name="Sudo_Title" xml:space="preserve"><value>root としてコマンドを実行</value></data>
   <data name="Sudo_Source" xml:space="preserve"><value>要求元プラグイン: {0}</value></data>
   <data name="Sudo_Target" xml:space="preserve"><value>接続先: {0}</value></data>
   <data name="Sudo_RootWarning" xml:space="preserve"><value>以下のコマンド全体（パイプとリダイレクトを含む）を root シェル経由で root として実行します。制限された sudoers ポリシーでは拒否される場合があります。</value></data>
+  <data name="Sudo_CommandSize" xml:space="preserve"><value>行数: {0}、文字数: {1}。承認する前にスクロールしてコマンド全体を確認してください。</value></data>
+  <data name="Sudo_CommandHidden" xml:space="preserve"><value>不可視文字または制御文字: {0} 個。⟨U+XXXX⟩ の形で表示しています。これらもそのままコマンドとして実行されます。</value></data>
   <data name="Sudo_Approve" xml:space="preserve"><value>root コマンドを承認</value></data>
   <data name="Sudo_Password" xml:space="preserve"><value>sudo パスワード</value></data>
   <data name="Sudo_Retry" xml:space="preserve"><value>前のパスワードは受け付けられませんでした。再試行してください。</value></data>
@@ -7140,6 +7155,8 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH はこの端末の Tailscale ID を使用するため、共有認証情報として保存できません。</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH の確認</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>サーバーが本人確認を要求しています。リンクをブラウザーで開いて確認してください。サーバーが承認すると、この接続は自動的に続行します。</value></data>
+  <data name="Ssh_TailscaleCheckDeviceWarning" xml:space="preserve"><value>承認する前に、開いたページがこのサーバーへの SSH アクセスの承認を求めていることを確認してください。ログインや、新しいデバイス/マシンを tailnet に追加するよう求められた場合は承認せず、この接続をキャンセルしてください。</value></data>
+  <data name="Ssh_TailscaleCheckDeadline" xml:space="preserve"><value>最大 {0} 分間待機します。{1} までにサーバーが承認しない場合、この接続はキャンセルされます。</value></data>
   <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>ブラウザーを開く</value></data>
   <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>リンクをコピー</value></data>
   <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH 確認リンクを非表示]</value></data>
@@ -7152,4 +7169,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH は本人確認を要求しています。手動で再接続してください。</value></data>
   <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>Tailscale SSH の確認ウィンドウを表示できません。メインウィンドウを開いてから再接続してください。</value></data>
   <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>サーバーが認証を拒否または終了したため、Tailscale SSH の確認を続行できません。</value></data>
+  <data name="SshErr_TailscaleServerMessage" xml:space="preserve"><value>サーバーからのメッセージ: {0}</value></data>
+  <data name="SshErr_TailscaleAuthMethodRequired" xml:space="preserve"><value>このホストは Tailscale SSH のブラウザー確認を必要とします。セッションの認証方式を Tailscale SSH に変更してから再接続してください。</value></data>
+  <data name="DiagSvc_TailscaleNoUsernameSkip" xml:space="preserve"><value>リモートのユーザー名が未入力のため、認証テストをスキップしました</value></data>
+  <data name="DiagSvc_SuggestTailscaleUsername" xml:space="preserve"><value>Tailscale SSH に必要なのはリモートのシステムユーザー名だけです。編集ウィンドウで入力すると認証テストを実行できます。</value></data>
+  <data name="DiagSvc_SuggestTailscale" xml:space="preserve"><value>この端末が Tailscale にログインしていること、リモートのユーザー名が正しいこと、tailnet の SSH ポリシーがこのユーザーを許可していることを確認してください。ブラウザーでの確認を求められた場合は、確認ウィンドウで完了してください。</value></data>
 </root>

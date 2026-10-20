@@ -62,7 +62,11 @@ internal sealed class McpToolHost : IAsyncDisposable
                 StringComparer.OrdinalIgnoreCase)
             // ApprovalHandler 刻意不设:见类型注释
         };
-        _runScope = _toolbox.BeginRun(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), _lifetime.Token);
+        // 一条连接一个轮次,后台任务才查得到;但拒绝不能封住它 —— 只读放行下一条写命令就会被拒,
+        // 封住之后 list_sessions 也调不动,外部 agent 无从恢复。拒绝只作为那一次调用的结果返回,
+        // 停不停由 MCP 客户端决定(桌面与 IM 的轮次才在拒绝后强制暂停)。
+        _runScope = _toolbox.BeginRun(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), _lifetime.Token,
+            denialEndsRun: false);
         var tools = new List<AIFunction>
         {
             AIFunctionFactory.Create(UseSessionAsync, "use_session",

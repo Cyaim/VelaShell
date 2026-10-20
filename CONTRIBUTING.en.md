@@ -24,7 +24,7 @@ Thanks for taking the time to improve VelaShell. This document records the conve
 
 | Requirement | Notes |
 |---|---|
-| **.NET SDK** | Pinned in [`global.json`](global.json), currently a **preview** build (`allowPrerelease: true`). An older SDK will refuse to restore |
+| **.NET SDK** | A **.NET 11 SDK preview / RC** (the repo enables `EnablePreviewFeatures`, so it only builds with one until the final release). No exact version is pinned and there is no `global.json`: the newest SDK you have installed is used; CI installs `11.0.x` from the preview channel |
 | **IDE** | Visual Studio 2026 / Rider / VS Code + C# Dev Kit all work; the repo ships `.editorconfig` and `VelaShell.sln.DotSettings` |
 | **Docker** (optional) | Only needed for the real-SSH integration tests |
 

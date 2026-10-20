@@ -16,9 +16,19 @@ namespace VelaShell.Services.Update;
 /// </summary>
 public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
 {
+    /// <summary>更新日志只看 Releases 列表的第一页(按创建时间倒序)里的这么多条。</summary>
+    internal const int ReleaseNotesPageSize = 20;
+
     private readonly string _owner;
     private readonly string _repo;
+
+    /// <summary>下载与 latest.json 用的 client:不开自动解压,Range 与 Content-Length 必须按原始字节算。</summary>
     private readonly HttpClient _http;
+
+    /// <summary>api.github.com 用的 client:JSON 开 gzip,发布列表的传输量能省九成。</summary>
+    private readonly HttpClient _api;
+
+    private ReleaseNotesCache? _notesCache;
 
     /// <summary>以仓库地址(https://github.com/&lt;owner&gt;/&lt;repo&gt;)构造;<paramref name="handler" /> 供测试注入。</summary>
     public GitHubReleaseSource(string repositoryUrl, HttpMessageHandler? handler = null)
@@ -32,57 +42,88 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
         }
         _owner = segments[0];
         _repo = segments[1];
-        _http = handler != null ? new(handler) : new();
-        // 下载走同一个 client,大包需要宽裕的整体超时;单步(清单/API)另用 CTS 收紧。
+        _http = handler != null ? new(handler, disposeHandler: false) : new();
+        // 下载走这个 client,大包需要宽裕的整体超时;单步(清单/API)另用 CTS 收紧。
         _http.Timeout = TimeSpan.FromMinutes(15);
+        _api = handler != null ? new(handler, disposeHandler: false) : new(CreateApiHandler());
         // GitHub REST API 要求 User-Agent,缺失直接 403。
-        _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("VelaShell-Updater", "1"));
-    }
-
-    /// <inheritdoc />
-    public async Task<ReleaseNotes?> GetLatestReleaseNotesAsync(CancellationToken cancellationToken = default)
-    {
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(30));
-        ReleaseNotes? latest = null;
-        DateTimeOffset latestPublishedAt = DateTimeOffset.MinValue;
-        // 列表按创建时间排序,不能据此推断发布时间;旧 tag 补发的 Release 也可能最新。
-        for (int page = 1; ; page++)
+        foreach (HttpClient client in new[] { _http, _api })
         {
-            using HttpRequestMessage request = new(HttpMethod.Get,
-                $"https://api.github.com/repos/{_owner}/{_repo}/releases?per_page=100&page={page}");
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-            using HttpResponseMessage response = await _http.SendAsync(request, cts.Token);
-            response.EnsureSuccessStatusCode();
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cts.Token));
-            foreach (JsonElement release in doc.RootElement.EnumerateArray())
-            {
-                if (release.GetProperty("draft").GetBoolean())
-                {
-                    continue;
-                }
-                DateTimeOffset publishedAt = release.GetProperty("published_at").GetDateTimeOffset();
-                if (latest == null || publishedAt > latestPublishedAt)
-                {
-                    latestPublishedAt = publishedAt;
-                    latest = new ReleaseNotes(release.GetProperty("tag_name").GetString()!,
-                        release.GetProperty("body").GetString() ?? string.Empty, publishedAt);
-                }
-            }
-            if (!response.Headers.TryGetValues("Link", out IEnumerable<string>? links)
-                || !links.Any(link => link.Split(',').Any(part =>
-                    part.Contains("rel=\"next\"", StringComparison.Ordinal))))
-            {
-                return latest;
-            }
+            client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("VelaShell-Updater", "1"));
         }
     }
+
+    /// <summary>单次 API / 清单请求的整体超时(连接 + 读完响应体)。</summary>
+    internal TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// 更新说明在进程内缓存多久。匿名 API 每小时只有 60 次,还与更新检查的回退路径共用,
+    /// 反复开关更新日志不该每次都花掉一次。
+    /// </summary>
+    internal TimeSpan ReleaseNotesCacheDuration { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>api.github.com 专用的处理器:开自动解压,代理照常走进程级默认代理。</summary>
+    internal static SocketsHttpHandler CreateApiHandler() => new() { AutomaticDecompression = DecompressionMethods.All };
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 只取列表第一页:更新说明只要最新那一条,翻遍全部发布要多拉上百万字节。列表按创建时间排序,
+    /// 不能据此推断发布时间,所以仍在这一页里按发布时间取最新(旧 tag 补发的 Release 也可能最新)。
+    /// 缓存过期后带 ETag 做条件请求,没变化时 GitHub 回 304,不计配额。
+    /// </remarks>
+    public async Task<ReleaseNotes?> GetLatestReleaseNotesAsync(CancellationToken cancellationToken = default)
+    {
+        ReleaseNotesCache? cached = _notesCache;
+        if (cached != null && Environment.TickCount64 - cached.FetchedAt < ReleaseNotesCacheDuration.TotalMilliseconds)
+        {
+            return cached.Notes;
+        }
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(RequestTimeout);
+        using HttpRequestMessage request = new(HttpMethod.Get,
+            $"https://api.github.com/repos/{_owner}/{_repo}/releases?per_page={ReleaseNotesPageSize}");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        if (cached?.ETag is { } etag)
+        {
+            request.Headers.IfNoneMatch.Add(etag);
+        }
+        using HttpResponseMessage response = await _api.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        if (cached != null && response.StatusCode == HttpStatusCode.NotModified)
+        {
+            _notesCache = cached with { FetchedAt = Environment.TickCount64 };
+            return cached.Notes;
+        }
+        // 403/429(限流)原样带着状态码抛出,界面据此给出不同于"检查网络"的提示。
+        response.EnsureSuccessStatusCode();
+        await using Stream body = await response.Content.ReadAsStreamAsync(cts.Token);
+        using JsonDocument doc = await JsonDocument.ParseAsync(body, cancellationToken: cts.Token);
+        ReleaseNotes? latest = null;
+        foreach (JsonElement release in doc.RootElement.EnumerateArray())
+        {
+            if (release.GetProperty("draft").GetBoolean())
+            {
+                continue;
+            }
+            DateTimeOffset publishedAt = release.GetProperty("published_at").GetDateTimeOffset();
+            if (latest == null || publishedAt > latest.PublishedAt)
+            {
+                latest = new ReleaseNotes(release.GetProperty("tag_name").GetString()!,
+                    release.GetProperty("body").GetString() ?? string.Empty, publishedAt,
+                    release.TryGetProperty("html_url", out JsonElement htmlUrl) ? htmlUrl.GetString() : null);
+            }
+        }
+        _notesCache = new ReleaseNotesCache(latest, response.Headers.ETag, Environment.TickCount64);
+        return latest;
+    }
+
+    /// <summary>更新说明的缓存条目:结果(可为 null,即"没有发布")、条件请求用的 ETag 与取回时刻。</summary>
+    private sealed record ReleaseNotesCache(ReleaseNotes? Notes, EntityTagHeaderValue? ETag, long FetchedAt);
 
     /// <inheritdoc />
     public async Task<UpdateManifest?> GetLatestManifestAsync(bool includePreRelease, CancellationToken cancellationToken = default)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(30));
+        cts.CancelAfter(RequestTimeout);
         if (!includePreRelease)
         {
             string url = $"https://github.com/{_owner}/{_repo}/releases/latest/download/latest.json";
@@ -123,9 +164,10 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
             HttpMethod.Get,
             $"https://api.github.com/repos/{_owner}/{_repo}/releases?per_page=20");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        using HttpResponseMessage response = await _http.SendAsync(request, cancellationToken);
+        using HttpResponseMessage response = await _api.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        await using Stream body = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using JsonDocument doc = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
         string? firstNonDraft = null;
         foreach (JsonElement release in doc.RootElement.EnumerateArray())
         {
@@ -221,6 +263,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
         }
         string hash;
         long total = 0;
+        long copied = 0;
         using (response)
         {
             response.EnsureSuccessStatusCode();
@@ -242,7 +285,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
                 partialPath, resumed ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None,
                 CopyBufferSize, useAsync: true);
             byte[] buffer = new byte[CopyBufferSize];
-            long copied = resumeFrom;
+            copied = resumeFrom;
             DownloadRateMeter meter = new();
             int lastReportedPercent = -1;
             long lastReportAt = 0;
@@ -252,9 +295,11 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
                 await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 sha.AppendData(buffer, 0, read);
                 copied += read;
-                if (totalBytes > 0 && progress != null)
+                if (progress != null)
                 {
-                    int percent = (int)Math.Clamp(copied * 100 / totalBytes, 0, 100);
+                    // 总量未知(清单没写大小、响应也没带 Content-Length)时照样汇报字节与速率,
+                    // 百分比记 0;不报的话整个下载期间界面都以为卡住了。
+                    int percent = totalBytes > 0 ? (int)Math.Clamp(copied * 100 / totalBytes, 0, 100) : 0;
                     // 百分比不变也照样每隔一小段时间报一次:用户要看的是速率,
                     // 而慢速下载的百分比能几十秒不动,不按时间报就永远看不到速度。
                     long now = Environment.TickCount64;
@@ -269,7 +314,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
             hash = Convert.ToHexStringLower(sha.GetHashAndReset());
         }
         File.Move(partialPath, destinationPath, true);
-        progress?.Report(UpdateDownloadProgress.Completed(total > 0 ? total : asset.Size));
+        progress?.Report(UpdateDownloadProgress.Completed(total > 0 ? total : copied));
         return hash;
     }
 

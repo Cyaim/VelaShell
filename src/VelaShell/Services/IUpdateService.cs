@@ -37,8 +37,12 @@ public interface IUpdateService
     /// <summary>
     /// 下载已检测到的更新包并校验完整性,可通过 <paramref name="progress"/> 汇报已下载字节、
     /// 整包字节与当前速率(见 <see cref="Update.UpdateDownloadProgress" />)。
+    /// 连接静默断开(长时间收不到任何数据)时自行断开重连、按断点续传,重连次数有上限,
+    /// 用尽即抛出 <see cref="TimeoutException" />,不会无限挂起。
     /// </summary>
-    Task DownloadUpdateAsync(IProgress<Update.UpdateDownloadProgress>? progress = null);
+    Task DownloadUpdateAsync(
+        IProgress<Update.UpdateDownloadProgress>? progress = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>应用已下载的更新并重启应用。</summary>
     void ApplyUpdateAndRestart();

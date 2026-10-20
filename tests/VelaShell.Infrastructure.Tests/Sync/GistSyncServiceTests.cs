@@ -31,7 +31,7 @@ public sealed class GistSyncServiceTests
         bool profileWasSavedWhenNotified = false;
         service.ProfilesApplied += (_, _) =>
             profileWasSavedWhenNotified = sessions.ReceivedCalls().Any(call =>
-                call.GetMethodInfo().Name == nameof(ISessionRepository.SaveSessionAsync)
+                call.GetMethodInfo().Name == nameof(ISessionRepository.ReplaceSessionAsync)
             );
 
         SyncResult result = await service.ApplyRemoteAsync(
@@ -57,7 +57,7 @@ public sealed class GistSyncServiceTests
         Assert.IsTrue(result.Success);
         Assert.AreEqual(SyncAction.Pulled, result.Action);
         Assert.IsTrue(profileWasSavedWhenNotified, "通知必须发生在连接配置写入仓储之后。");
-        await sessions.Received(1).SaveSessionAsync(profile);
+        await sessions.Received(1).ReplaceSessionAsync(profile);
     }
 
     // ———— 共享凭据(#550) ————
@@ -127,7 +127,7 @@ public sealed class GistSyncServiceTests
         var profile = new SessionProfile { Name = "web", Host = "h", CredentialSource = CredentialReference.ForShared(id) };
         var order = new List<string>();
         credentials.When(c => c.SaveAsync(Arg.Any<SharedCredential>())).Do(_ => order.Add("credential"));
-        sessions.When(s => s.SaveSessionAsync(Arg.Any<SessionProfile>())).Do(_ => order.Add("profile"));
+        sessions.When(s => s.ReplaceSessionAsync(Arg.Any<SessionProfile>())).Do(_ => order.Add("profile"));
 
         SyncResult result = await service.ApplyRemoteAsync(
             ProfilesOnly(),

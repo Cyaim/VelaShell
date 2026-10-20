@@ -9,6 +9,7 @@
 
 using System.Buffers;
 using System.Buffers.Binary;
+using VelaShell.Ssh.Diagnostics;
 using VelaShell.Ssh.HostKeys;
 using VelaShell.Ssh.Keys;
 using VelaShell.Ssh.Protocol;
@@ -83,6 +84,15 @@ internal sealed record TestAuthPolicy
 
     /// <summary>横幅发出后、成功前等待外部批准；返回 false 时拒绝这次请求。</summary>
     public Func<CancellationToken, Task<bool>>? BeforeSuccess { get; init; }
+
+    /// <summary>
+    /// 设了就把「拒绝」改成先发这段横幅说明原因、再发 <c>DISCONNECT</c> 断开，而不是回 <c>USERAUTH_FAILURE</c>。
+    /// </summary>
+    /// <remarks>
+    /// 有的服务端拒绝时不列下一个可用方法，而是说明原因后直接断开（RFC 4253 §11.1 允许任何一方随时断开）。
+    /// 客户端看到的是「认证期间对端断开」，不是「认证方法用尽」。
+    /// </remarks>
+    public string? RejectWithBannerAndDisconnect { get; init; }
 
     /// <summary>紧挨着 <c>USERAUTH_SUCCESS</c> 之前再发一个 <c>EXT_INFO</c>（RFC 8308 §2.4 的第二个合法位置）。</summary>
     public IReadOnlyList<string>? ExtInfoBeforeSuccess { get; init; }
@@ -228,6 +238,10 @@ internal sealed class TestAuthServer(SshPacketTransport transport, byte[] sessio
             {
                 return true;
             }
+            if (_disconnected)
+            {
+                return false;   // 服务端已经说明原因并断开
+            }
         }
     }
 
@@ -272,7 +286,7 @@ internal sealed class TestAuthServer(SshPacketTransport transport, byte[] sessio
         {
             if (!_alreadyAnswered)
             {
-                await SendFailureAsync(partialSuccess: false, cancellationToken);
+                await RejectAsync(cancellationToken);
             }
             return false;
         }
@@ -294,7 +308,7 @@ internal sealed class TestAuthServer(SshPacketTransport transport, byte[] sessio
 
         if (_policy.BeforeSuccess is { } beforeSuccess && !await beforeSuccess(cancellationToken))
         {
-            await SendFailureAsync(partialSuccess: false, cancellationToken);
+            await RejectAsync(cancellationToken);
             return false;
         }
 
@@ -647,6 +661,30 @@ internal sealed class TestAuthServer(SshPacketTransport transport, byte[] sessio
     }
 
     private bool _failureSent;
+
+    /// <summary>已经发过 <c>DISCONNECT</c>（<see cref="TestAuthPolicy.RejectWithBannerAndDisconnect"/>）。</summary>
+    private bool _disconnected;
+
+    /// <summary>拒绝这一次请求：照常回 <c>FAILURE</c>，或按策略说明原因后断开。</summary>
+    private async Task RejectAsync(CancellationToken cancellationToken)
+    {
+        if (_policy.RejectWithBannerAndDisconnect is not { } reason)
+        {
+            await SendFailureAsync(partialSuccess: false, cancellationToken);
+            return;
+        }
+
+        await SendBannerAsync(reason, cancellationToken);
+        ArrayBufferWriter<byte> buffer = new();
+        SshDataWriter w = new(buffer);
+        w.WriteMessageNumber(SshMessageNumber.Disconnect);
+        w.WriteUInt32((uint)SshDisconnectReason.NoMoreAuthMethodsAvailable);
+        w.WriteUtf8String("access denied");
+        w.WriteUtf8String("");   // 语言标记
+        _transport.WritePacket(buffer.WrittenSpan);
+        await _transport.FlushAsync(cancellationToken);
+        _disconnected = true;
+    }
 
     private async Task SendFailureAsync(bool partialSuccess, CancellationToken cancellationToken)
     {

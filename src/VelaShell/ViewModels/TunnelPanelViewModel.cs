@@ -675,7 +675,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             _authenticationBlockedProfiles.Remove(profile.Id);
             return sessionId;
         }
-        catch (Exception ex) when (ex is VelaSshTailscaleAuthenticationException or VelaSshAuthenticationCancelledException)
+        catch (Exception ex) when (ex is VelaSshTailscaleAuthenticationException { RequiresUserAction: true }
+                                       or VelaSshAuthenticationCancelledException)
         {
             _authenticationBlockedProfiles.Add(profile.Id);
             throw;
@@ -927,8 +928,9 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         {
             // EnsureSessionAsync 已暂停这台服务器的自动恢复;取消不报错也不进入退避。
         }
-        catch (VelaSshTailscaleAuthenticationException ex)
+        catch (VelaSshTailscaleAuthenticationException ex) when (ex.RequiresUserAction)
         {
+            // 认证途中断线、没等到验证链接就超时不在此列:落到下面的通用分支退避重试。
             _errorReporter?.Invoke(ex.Message);
             if (isSelected)
             {

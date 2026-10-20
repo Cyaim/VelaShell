@@ -114,7 +114,7 @@ public sealed class ConnectionProfileViewModelTests
 
     /// <summary>
     /// 对话框里没有、但属于这条配置的状态,编辑保存时必须原样带回:置顶(资源管理器右键)、
-    /// 最近连接时间(「最近连接」按它排)、自动开启的隧道。
+    /// 最近连接时间(「最近连接」按它排)、自动开启的隧道、SFTP 文档里存的目录收藏。
     /// </summary>
     /// <remarks>
     /// 保存是按界面上的字段新建一条配置再整条覆盖落盘的;漏带一项,表现就是"改个端口,
@@ -125,6 +125,7 @@ public sealed class ConnectionProfileViewModelTests
     {
         DateTime lastConnected = new(2026, 9, 30, 8, 0, 0, DateTimeKind.Utc);
         List<Guid> tunnels = [Guid.NewGuid(), Guid.NewGuid()];
+        var bookmark = new RemoteDirectoryBookmark { Name = "logs", LocalPath = "/tmp/logs", RemotePath = "/var/log" };
         var existing = new SessionProfile
         {
             Name = "bastion",
@@ -133,6 +134,7 @@ public sealed class ConnectionProfileViewModelTests
             IsPinned = true,
             LastConnectedAt = lastConnected,
             AutoStartTunnelIds = tunnels,
+            DirectoryBookmarks = [bookmark],
         };
 
         var vm = new ConnectionProfileViewModel(existing) { Port = 2222 };
@@ -145,6 +147,10 @@ public sealed class ConnectionProfileViewModelTests
         Assert.IsNotNull(saved.AutoStartTunnelIds);
         Assert.AreSequenceEqual(tunnels, saved.AutoStartTunnelIds);
         Assert.AreNotSame(tunnels, saved.AutoStartTunnelIds, "存下去的是副本,不与传进来的配置共享列表");
+        RemoteDirectoryBookmark kept = saved.DirectoryBookmarks.Single();
+        Assert.AreEqual((bookmark.Id, "logs", "/tmp/logs", "/var/log"), (kept.Id, kept.Name, kept.LocalPath, kept.RemotePath),
+            "编辑一条连接、哪怕什么都没改,保存后目录收藏也不能被清空");
+        Assert.AreNotSame(bookmark, kept, "收藏条目也是副本");
     }
 
     /// <summary>新建的连接没有这些状态:不置顶、没连过。</summary>

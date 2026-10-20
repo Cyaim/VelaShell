@@ -88,10 +88,19 @@
         <Border DockPanel.Dock="Bottom" Height="48" Padding="14,0"
                 BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,1,0,0">
           <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+            <!-- 收藏操作的错误在这里也要看得见:从本窗口发起的新增 / 编辑 / 删除失败了,
+                 只写在文档工具条上的话,文档不在前台时用户根本看不到。 -->
             <TextBlock Text="{loc:Localize Bookmark_ManageHint}"
+                       IsVisible="{Binding BookmarkErrorMessage, Converter={x:Static StringConverters.IsNullOrEmpty}}"
                        Foreground="{DynamicResource VelaTextMuted}"
                        FontSize="{DynamicResource VelaFontSize10}"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="ErrorText" Text="{Binding BookmarkErrorMessage}"
+                       IsVisible="{Binding BookmarkErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource VelaError}"
+                       FontSize="{DynamicResource VelaFontSize10}"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding BookmarkErrorMessage}" />
             <Button Grid.Column="1" Classes="action"
                     Click="OnAddClick"
                     AutomationProperties.Name="{loc:Localize Bookmark_Add}">

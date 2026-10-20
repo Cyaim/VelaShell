@@ -55,7 +55,8 @@ public class SettingsViewModelTests
         Assert.Contains("2.0.0-beta.1", vm.UpdateStatus);
         Assert.IsFalse(vm.UpdateReady);
         _ = updates.DidNotReceive().CanSelfUpdate;
-        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<IProgress<UpdateDownloadProgress>>());
+        await updates.DidNotReceive().DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
         updates.DidNotReceive().ApplyUpdateAndRestart();
     }
 
@@ -76,7 +77,8 @@ public class SettingsViewModelTests
 
         Assert.Contains("https://github.com/joesdu/VelaShell/releases", vm.UpdateStatus);
         Assert.IsFalse(vm.UpdateReady);
-        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<IProgress<UpdateDownloadProgress>>());
+        await updates.DidNotReceive().DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
     }
 
     [TestMethod]
@@ -100,6 +102,54 @@ public class SettingsViewModelTests
         Assert.IsFalse(opened);
         Assert.AreEqual(Strings.Get("SetAbout_UpToDate"), vm.UpdateStatus);
         Assert.IsFalse(vm.UpdateReady);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 只打开发布页,不在应用内下载。")]
+    public async Task CheckUpdates_DownloadGivesUpAfterStall_ReportsFailureAndCanRetry()
+    {
+        // 更新服务的停滞看门狗重连用尽后抛 TimeoutException:状态要落到「下载失败」,
+        // 检查更新按钮(命令)要恢复可用,而不是像以前那样永远停在「正在下载」。
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CheckForUpdateAsync().Returns(true);
+        updates.CanSelfUpdate.Returns(true);
+        updates.DownloadUpdateAsync(Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new TimeoutException("stalled")));
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+
+        await vm.CheckUpdatesCommand.Execute().FirstAsync();
+
+        Assert.AreEqual(Strings.Get("SetAbout_DownloadFailed"), vm.UpdateStatus);
+        Assert.IsFalse(vm.UpdateReady);
+        Assert.IsTrue(await vm.CheckUpdatesCommand.CanExecute.FirstAsync());
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public void FormatDownloadStatus_PreparingAndUnknownTotal_UseDedicatedText()
+    {
+        long now = 1_000;
+        UpdateDownloadTracker tracker = new(clock: () => now);
+
+        // 一个字节都还没到(连接中 / 校验断点前缀):不显示「0% · 0 B/0 B · 0 B/s」,
+        // 过了停滞阈值也不说连接可能已经中断。
+        now += 60_000;
+        Assert.AreEqual(Strings.Get("SetAbout_DownloadPreparing"), SettingsViewModel.FormatDownloadStatus(tracker));
+
+        // 总量未知:只报已下载字节与速率,不拼出「0% · x/0 B」。
+        tracker.Report(new UpdateDownloadProgress(2_048, 0, 1_024));
+        Assert.AreEqual(
+            Strings.Format("SetAbout_DownloadingSpeedNoTotal",
+                TransferItemViewModel.FormatBytes(2_048), TransferItemViewModel.FormatSpeed(1_024)),
+            SettingsViewModel.FormatDownloadStatus(tracker));
+
+        now += (long)UpdateDownloadTracker.StallThreshold.TotalMilliseconds;
+        Assert.AreEqual(
+            Strings.Format("SetAbout_DownloadStalledNoTotal",
+                TransferItemViewModel.FormatBytes(2_048),
+                TransferItemViewModel.FormatTimeRemaining(UpdateDownloadTracker.StallThreshold)),
+            SettingsViewModel.FormatDownloadStatus(tracker));
     }
 
     [TestMethod]

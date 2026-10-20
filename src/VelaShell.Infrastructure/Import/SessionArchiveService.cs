@@ -125,7 +125,8 @@ public sealed class SessionArchiveService(
         foreach (SessionProfile profile in writes.Sessions)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await _sessions.SaveSessionAsync(profile).ConfigureAwait(false);
+            // 整条覆盖:文件里的目录收藏是导出时带出来的,覆盖导入要用它(SaveSessionAsync 会保留本机的收藏)。
+            await _sessions.ReplaceSessionAsync(profile).ConfigureAwait(false);
         }
         if (dataStore is not null)
         {

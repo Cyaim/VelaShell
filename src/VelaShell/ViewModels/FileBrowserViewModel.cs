@@ -544,6 +544,24 @@ public class FileBrowserViewModel : ReactiveObject
         }
     }
 
+    /// <summary>
+    /// 展开 <c>~</c> 开头的远程路径(<c>~</c>、<c>~/sub</c>、<c>~用户名/sub</c>),口径同路径栏;展开不了返回 null。
+    /// 给目录收藏用:收藏要存下来,不能像路径栏那样把 <c>~</c> 原样透传给服务端去报错。
+    /// </summary>
+    /// <param name="path">以 <c>~</c> 开头的路径。</param>
+    internal async Task<string?> ExpandHomeAsync(string path)
+    {
+        if (path == "~" || path.StartsWith("~/", StringComparison.Ordinal))
+        {
+            await EnsureHomePathAsync();
+            return _homePath is not { } home
+                ? null
+                : path.Length <= 2 ? home : home.TrimEnd('/') + "/" + path[2..];
+        }
+        // ~用户名 本地展开不了(要读远端 passwd),请服务端展开。
+        return await TryExpandOnServerAsync(path);
+    }
+
     private async Task<string?> TryExpandOnServerAsync(string path)
     {
         if (_sftpService is null || _sessionId == Guid.Empty)

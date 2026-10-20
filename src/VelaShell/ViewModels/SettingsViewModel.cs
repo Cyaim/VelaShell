@@ -968,7 +968,8 @@ public partial class SettingsViewModel : ReactiveObject
             // 下载期间的心跳。下载线程只在收到新字节时才汇报,网络一慢一卡就没有任何回调,
             // 界面会永远停在最后一个速度值上——分不清"慢"和"已经不动了"。定时 tick 一次,
             // 让速率归零、停滞时长长起来,停滞到超过 UpdateDownloadTracker.StallThreshold
-            // 就换成带提示的文案。
+            // 就换成带提示的文案。真断了由 UpdateService 的看门狗断开、按断点重连;重连用尽会抛出,
+            // 落到下面的 catch 报下载失败,检查更新按钮随命令结束恢复可点。
             async Task HeartbeatAsync(CancellationToken cancellationToken)
             {
                 using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(500));
@@ -1023,23 +1024,45 @@ public partial class SettingsViewModel : ReactiveObject
         );
     }
 
-    /// <summary>把下载进度拼成"百分比 · 已下载/总量 · 速率"的状态文本;停滞时改用停滞文案。</summary>
+    /// <summary>
+    /// 把下载进度拼成"百分比 · 已下载/总量 · 速率"的状态文本;停滞时改用停滞文案,
+    /// 第一条汇报到达前显示"正在准备",总量未知时只报已下载字节。
+    /// </summary>
     /// <param name="tracker">本次下载的进度快照器。</param>
     /// <returns>可直接显示的状态文本。</returns>
-    private static string FormatDownloadStatus(UpdateDownloadTracker tracker) =>
-        tracker.IsStalled
+    internal static string FormatDownloadStatus(UpdateDownloadTracker tracker)
+    {
+        if (tracker.IsPreparing)
+        {
+            return Strings.Get("SetAbout_DownloadPreparing");
+        }
+        string downloaded = TransferItemViewModel.FormatBytes(tracker.BytesDownloaded);
+        if (tracker.TotalBytes <= 0)
+        {
+            return tracker.IsStalled
+                ? Strings.Format(
+                    "SetAbout_DownloadStalledNoTotal",
+                    downloaded,
+                    TransferItemViewModel.FormatTimeRemaining(tracker.StalledFor))
+                : Strings.Format(
+                    "SetAbout_DownloadingSpeedNoTotal",
+                    downloaded,
+                    TransferItemViewModel.FormatSpeed(tracker.BytesPerSecond));
+        }
+        return tracker.IsStalled
             ? Strings.Format(
                 "SetAbout_DownloadStalled",
                 tracker.Percent,
-                TransferItemViewModel.FormatBytes(tracker.BytesDownloaded),
+                downloaded,
                 TransferItemViewModel.FormatBytes(tracker.TotalBytes),
                 TransferItemViewModel.FormatTimeRemaining(tracker.StalledFor))
             : Strings.Format(
                 "SetAbout_DownloadingSpeed",
                 tracker.Percent,
-                TransferItemViewModel.FormatBytes(tracker.BytesDownloaded),
+                downloaded,
                 TransferItemViewModel.FormatBytes(tracker.TotalBytes),
                 TransferItemViewModel.FormatSpeed(tracker.BytesPerSecond));
+    }
 
     /// <summary>清除历史记录的状态提示文本。</summary>
     public string ClearHistoryStatus

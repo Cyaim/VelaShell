@@ -32,6 +32,11 @@ public static class BufferSearch
         FindCore(screen, query, [], allRows: true);
 
     /// <summary>只搜索给定的可见绝对行;-1 表示视口中的空行。</summary>
+    /// <remarks>
+    /// 与 <see cref="FindAll" /> 不同,自动换行折开、且在视口里紧挨着的几行先接成一段再找:
+    /// 跨折行的命中按行切成几段,一个匹配可能对应多个 <see cref="BufferSearchHit" />。
+    /// 只给「逐行上色」的选区匹配高亮用 —— 搜索栏要按命中计数、逐个跳转,不能这样拆。
+    /// </remarks>
     internal static IReadOnlyList<BufferSearchHit> FindVisible(
         TerminalScreen screen, string query, ReadOnlySpan<int> visibleRows) =>
         FindCore(screen, query, visibleRows, allRows: false);
@@ -54,6 +59,9 @@ public static class BufferSearch
         // 与 buffer 等长的列映射:第 i 个字符来自第几屏幕列。命中是按字符找到的,
         // 而高亮与选区按列画,两者之间必须有一次显式换算(见 BufferSearchHit)。
         int[] columnOfChar = new int[buffer.Length];
+        // 缓冲里这一段由哪几行拼成、各从第几个字符起;只有可见行模式接折行时才多于一行。
+        var segment = new List<(int Row, int Start)>(1);
+        int length = 0;
         int count = allRows ? totalRows : visibleRows.Length;
         for (int i = 0; i < count; i++)
         {
@@ -63,36 +71,73 @@ public static class BufferSearch
                 continue;
             }
             TerminalRow line = screen.ViewLine(row);
-            int length;
-            while ((length = line.CopyTextTo(buffer, columnOfChar)) < 0)
+            int written;
+            while ((written = line.CopyTextTo(buffer.AsSpan(length), columnOfChar.AsSpan(length))) < 0)
             {
-                // 组合标记可以让一行的字符数超过列数,故按需扩容(极罕见,只发生一次)。
-                buffer = new char[buffer.Length * 2];
-                columnOfChar = new int[buffer.Length];
+                // 组合标记可以让一行的字符数超过列数,接折行也会让一段超过一行,故按需扩容。
+                Array.Resize(ref buffer, buffer.Length * 2);
+                Array.Resize(ref columnOfChar, buffer.Length);
             }
-            ReadOnlySpan<char> text = buffer.AsSpan(0, length);
-            int index = 0;
-            while (index < text.Length)
+            segment.Add((row, length));
+            length += written;
+            // 折到下一行、而下一行就是视口里紧接着的那一行:先不找,接上再说。
+            // 两行文本直接相接,与 GetLogicalLineEndingAt 同一口径(只裁从没写过的格)。
+            if (!allRows && line.Wrapped && i + 1 < count && visibleRows[i + 1] == row + 1)
             {
-                int found = text[index..].IndexOf(query, StringComparison.OrdinalIgnoreCase);
-                if (found < 0)
+                continue;
+            }
+            Collect(screen, query, buffer.AsSpan(0, length), columnOfChar, segment, hits);
+            segment.Clear();
+            length = 0;
+        }
+        return hits;
+    }
+
+    private static void Collect(
+        TerminalScreen screen,
+        string query,
+        ReadOnlySpan<char> text,
+        int[] columnOfChar,
+        List<(int Row, int Start)> segment,
+        List<BufferSearchHit> hits)
+    {
+        int index = 0;
+        while (index < text.Length)
+        {
+            int found = text[index..].IndexOf(query, StringComparison.OrdinalIgnoreCase);
+            if (found < 0)
+            {
+                break;
+            }
+            found += index;
+            int end = found + query.Length;
+            int k = 0;
+            while (k + 1 < segment.Count && segment[k + 1].Start <= found)
+            {
+                k++;
+            }
+            // 逐行切段:命中跨折行时,每一行各报一个列区间。
+            for (int start = found; start < end; k++)
+            {
+                int rowEnd = k + 1 < segment.Count ? segment[k + 1].Start : text.Length;
+                if (rowEnd <= start)
                 {
-                    break;
+                    continue;
                 }
-                found += index;
-                int startCol = columnOfChar[found];
+                int last = Math.Min(end, rowEnd) - 1;
+                int row = segment[k].Row;
+                int startCol = columnOfChar[start];
                 // 末字符所在列的**整格**都要盖住:宽字符的尾格与它同属一个字符单元,
                 // 只盖前半格会在中文命中项右边留下半格没上色。
-                int lastCol = columnOfChar[found + query.Length - 1];
-                int endColExclusive = lastCol + 1;
-                if (line[endColExclusive].IsWideTrailing)
+                int endColExclusive = columnOfChar[last] + 1;
+                if (screen.ViewLine(row)[endColExclusive].IsWideTrailing)
                 {
                     endColExclusive++;
                 }
                 hits.Add(new(row, startCol, endColExclusive - startCol));
-                index = found + Math.Max(1, query.Length);
+                start = last + 1;
             }
+            index = found + Math.Max(1, query.Length);
         }
-        return hits;
     }
 }

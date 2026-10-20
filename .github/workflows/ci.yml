@@ -142,8 +142,11 @@ jobs:
           dotnet-quality: preview
           dotnet-version: |
             11.0.x
-        # with:
-        #   global-json-file: VelaShell/global.json
+
+      # 仓库不用 global.json 钉 SDK:用的是 runner 上装到的最新 11.0 预览版。把实际版本记进日志,
+      # 换了 SDK 之后构建或测试结果变了,一眼就能对上是哪一版。
+      - name: 记录 SDK 版本
+        run: dotnet --info
 
       - name: 构建
         working-directory: VelaShell

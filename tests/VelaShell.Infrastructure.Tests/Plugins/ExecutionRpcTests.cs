@@ -1,8 +1,13 @@
+using System.Globalization;
 using System.IO.Pipes;
+using System.Text;
 using System.Text.Json;
+using NSubstitute;
+using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Plugins;
 using VelaShell.Infrastructure.Plugins.Capabilities;
 using VelaShell.Infrastructure.Plugins.Isolated;
+using VelaShell.Infrastructure.Ssh;
 using VelaShell.PluginHost;
 using VelaShell.PluginSdk;
 using VelaShell.PluginSdk.RemoteExec;
@@ -187,6 +192,97 @@ public class ExecutionRpcTests
         stop.Cancel();
         await Assert.ThrowsExactlyAsync<TaskCanceledException>(async () => await running);
         await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// <c>ls -1 /usr/bin</c> 这类短行输出:一段 4096 字符就是上千行。读泵逐行等发送队列,
+    /// 整条链(SSH 读泵 → 宿主发送队列 → RPC → 插件接收方)不溢出、不丢行、行序与序号连续。
+    /// </summary>
+    [TestMethod]
+    public async Task Router_ShortLineBurst_IsBackpressuredEndToEnd()
+    {
+        const int count = 5000;
+        await using Pair pair = await Pair.OpenAsync();
+        var proxy = new RpcRemoteExec(pair.Plugin, true);
+        pair.Plugin.SetOrderedNotificationHandler(PluginRpc.ExecOutput,
+            payload => proxy.OnOutput(payload!.Value.Deserialize<ExecOutputNotification>()!));
+
+        Guid sessionId = Guid.NewGuid();
+        ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
+        client.IsConnected.Returns(true);
+        client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                System.IO.Pipelines.Pipe pipe = new();
+                byte[] output = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Range(0, count).Select(i => $"{i}\n")));
+                await pipe.Writer.WriteAsync(output);
+                await pipe.Writer.CompleteAsync();
+                long lines = await VelaSshClientWrapper.PumpLinesAsync(pipe.Reader, false,
+                    call.Arg<Func<bool, string, ValueTask>>(), call.Arg<CancellationToken>());
+                return new RemoteCommandStreamResult(0, lines);
+            });
+        ISshConnectionService connections = Substitute.For<ISshConnectionService>();
+        connections.GetClient(sessionId).Returns(client);
+        using PluginContext context = Context(new RemoteExecCapability(connections), CancellationToken.None);
+        using var router = new PluginCapabilityRouter(context, pair.Host, "token", "1");
+        pair.Host.SetRequestHandler(router.HandleRequestAsync);
+        pair.Host.SetNotificationHandler(router.HandleNotification);
+        pair.Host.Start();
+        pair.Plugin.Start();
+        await router.HandleRequestAsync(PluginRpc.Handshake,
+            JsonSerializer.SerializeToElement(new HandshakeRequest("token", "test.exec", "1", [VelaPluginApi.Level])), CancellationToken.None);
+
+        List<string> received = [];
+        ExecStreamResult result = await proxy.StreamAsync(sessionId.ToString(), "ls -1 /usr/bin", null,
+            new Sink<ExecOutput>(line => received.Add(line.Line))).WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.AreEqual(count, result.Lines);
+        Assert.HasCount(count, received);
+        for (int i = 0; i < count; i++)
+        {
+            Assert.AreEqual(i.ToString(CultureInfo.InvariantCulture), received[i]);
+        }
+    }
+
+    /// <summary>
+    /// 插件在请求还排在写闸前时就取消:请求帧照样发出,宿主登记它、再被随后的取消通知取消掉。
+    /// 从前请求被丢在插件侧、取消通知却发了出去,宿主的早到取消集合里就多一条永远等不到请求的 id,
+    /// 攒满上限后该插件的全部执行被停用。
+    /// </summary>
+    [TestMethod]
+    public async Task CancelWhileRequestQueuedForWrite_StillDeliversTheRequestSoTheCancelIsMatched()
+    {
+        await using Pair pair = await Pair.OpenAsync();
+        var proxy = new RpcRemoteExec(pair.Plugin, true);
+        await using var operations = new ExecutionOperations(CancellationToken.None);
+        var registered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        pair.Host.SetNotificationHandler((method, payload) =>
+        {
+            if (method == PluginRpc.ExecCancel) { operations.Cancel(payload!.Value.Deserialize<ExecCancelNotification>()!.OperationId); }
+        });
+        pair.Host.SetRequestHandler(async (method, payload, ct) =>
+        {
+            if (method != PluginRpc.ExecStream) { return null; }
+            var request = payload!.Value.Deserialize<ExecStreamRequest>()!;
+            await using ExecutionOperations.Operation operation = operations.Register(request.OperationId!, ct);
+            // 取消通知与请求在宿主上各自走线程池,两种先后都可能;最终必须是已取消。
+            try { await Task.Delay(TimeSpan.FromSeconds(5), operation.Token); }
+            catch (OperationCanceledException) { registered.TrySetResult(true); throw; }
+            registered.TrySetResult(false);
+            return new ExecStreamResult(0, 0);
+        });
+        pair.Plugin.Start();
+
+        // 宿主还没开始读:一条大通知把插件侧的写闸占住,随后的请求只能排队。
+        Task blocking = pair.Plugin.NotifyAsync("test.noise", new string('x', 4 * 1024 * 1024));
+        Assert.IsFalse(blocking.IsCompleted, "写闸应当被占住");
+        using var stop = new CancellationTokenSource();
+        Task<ExecStreamResult> running = proxy.StreamAsync("s", "long", null, new Sink<ExecOutput>(_ => { }), stop.Token);
+        await stop.CancelAsync();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => running.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        pair.Host.Start();
+        Assert.IsTrue(await registered.Task.WaitAsync(TimeSpan.FromSeconds(10)), "请求送达后应被早到的取消就地取消");
     }
 
     private static PluginContext Context(IRemoteExecApi exec, CancellationToken shutdown) => new()

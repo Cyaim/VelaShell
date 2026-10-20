@@ -166,6 +166,16 @@ internal sealed record TestSftpOptions
     /// <summary><c>WRITE</c> 的应答等这么久才发（数据在收到请求时就已经写下）—— 让一次写在 <c>WriteAsync</c> 返回之后还在路上。</summary>
     public TimeSpan DelayWriteReplies { get; init; }
 
+    /// <summary>
+    /// 扣住每个 <c>WRITE</c> 的应答（数据在收到请求时就已经写下），直到测试调
+    /// <see cref="TestSftpServer.ReleaseHeldWrites"/> 按到达顺序放行。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="DelayWriteReplies"/> 不同：扣住期间照常读后面的请求，「确认什么时候到」完全由测试决定，
+    /// 不靠计时 —— 用来断言进度只跟着确认走、不跟着发出去的字节走。
+    /// </remarks>
+    public bool HoldWriteReplies { get; init; }
+
     /// <summary>设了就对每个 <c>CLOSE</c> 回这个失败码（句柄照样关掉）—— 模拟到关闭时才报出来的写入错误。</summary>
     public SftpStatusCode? FailCloseWith { get; init; }
 
@@ -288,6 +298,48 @@ internal sealed class TestSftpServer
     private bool _exited;
     private PipeReader? _input;
 
+    /// <summary>扣住的 <c>WRITE</c> 应答，按到达顺序（见 <see cref="TestSftpOptions.HoldWriteReplies"/>）。</summary>
+    private readonly Queue<byte[]> _heldWrites = new();
+
+    /// <summary>测试已经放行、等服务端循环发出去的 <c>WRITE</c> 应答。</summary>
+    private readonly List<byte[]> _releasedWrites = [];
+
+    /// <summary>当前扣着几条 <c>WRITE</c> 应答。</summary>
+    public int HeldWriteReplies
+    {
+        get
+        {
+            lock (_heldWrites)
+            {
+                return _heldWrites.Count;
+            }
+        }
+    }
+
+    /// <summary>按到达顺序放行至多 <paramref name="count"/> 条扣住的 <c>WRITE</c> 应答（省略 = 全部）。</summary>
+    /// <remarks>
+    /// 应答仍由服务端循环发出（输出只有它一个写者）：这里只是挪到待发队列，再叫醒正在等请求的循环 ——
+    /// 与 <see cref="Exit"/> 同一个办法。
+    /// </remarks>
+    /// <returns>实际放行了几条。</returns>
+    public int ReleaseHeldWrites(int count = int.MaxValue)
+    {
+        int released = 0;
+        lock (_heldWrites)
+        {
+            while (released < count && _heldWrites.TryDequeue(out byte[]? reply))
+            {
+                _releasedWrites.Add(reply);
+                released++;
+            }
+        }
+        if (released > 0)
+        {
+            Volatile.Read(ref _input)?.CancelPendingRead();
+        }
+        return released;
+    }
+
     /// <summary>跑服务端循环。</summary>
     public async Task RunAsync(PipeReader input, PipeWriter output, CancellationToken cancellationToken)
     {
@@ -325,7 +377,14 @@ internal sealed class TestSftpServer
                     byte[]? reply = Handle(frame);
                     replies.AddRange(_released);
                     _released.Clear();
-                    if (reply is not null)
+                    if (reply is not null && _options.HoldWriteReplies && frame.Type is SftpMessageType.Write)
+                    {
+                        lock (_heldWrites)
+                        {
+                            _heldWrites.Enqueue(reply);
+                        }
+                    }
+                    else if (reply is not null)
                     {
                         replies.Add(reply);
                     }
@@ -349,6 +408,13 @@ internal sealed class TestSftpServer
                 if (delayCloseReplies && _options.DelayCloseReplies > TimeSpan.Zero)
                 {
                     await Task.Delay(_options.DelayCloseReplies, cancellationToken);
+                }
+
+                lock (_heldWrites)
+                {
+                    // 测试放行的确认排在这一批前面：它们对应的 WRITE 比这一批里的任何请求都早到。
+                    replies.InsertRange(0, _releasedWrites);
+                    _releasedWrites.Clear();
                 }
 
                 foreach (byte[] reply in Order(replies))

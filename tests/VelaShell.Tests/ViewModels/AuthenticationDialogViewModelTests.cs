@@ -182,4 +182,41 @@ public sealed class AuthenticationDialogViewModelTests
         Assert.IsTrue(vm.ShowRememberPassword);
         Assert.IsFalse(await vm.LoginCommand.CanExecute.FirstAsync());
     }
+
+    /// <summary>
+    /// FTP 与插件协议也用这扇登录框,但它们只认密码:选到 Tailscale / 密钥 / 证书会把这次连接的认证方式改掉、
+    /// 密码清空,登录时发出去的是空密码。分段选择器整条不给,配置里残留的别的方式也一律按密码问。
+    /// </summary>
+    [TestMethod]
+    [DataRow(ConnectionType.FTP, AuthMethod.Tailscale, false)]
+    [DataRow(ConnectionType.Plugin, AuthMethod.PrivateKey, false)]
+    [DataRow(ConnectionType.SSH, AuthMethod.Tailscale, true)]
+    [DataRow(ConnectionType.SFTP, AuthMethod.Certificate, true)]
+    public async Task OnlySshAndSftp_OfferMethodsBesidesPassword(ConnectionType type, AuthMethod stale, bool offersMethods)
+    {
+        var profile = new SessionProfile
+        {
+            ConnectionType = type,
+            Host = "files.example",
+            Port = 21,
+            Username = "ops",
+            AuthMethod = stale
+        };
+        AuthenticationDialogViewModel vm = SharedCredentialPrompt.CreateDialog(profile, null, null, null);
+
+        Assert.AreEqual(offersMethods, vm.ShowsMethodSelector);
+        if (offersMethods)
+        {
+            Assert.IsFalse(vm.IsPasswordMethod, "SSH / SFTP 照旧按配置里的认证方式打开。");
+            return;
+        }
+        Assert.IsTrue(vm.IsPasswordMethod);
+        await vm.NextCommand.Execute().FirstAsync();
+        vm.Password = SecureStringConvert.FromPlaintext("ftp-secret");
+        AuthenticationResult result = await vm.LoginCommand.Execute().FirstAsync();
+        SessionProfile copy = SharedCredentialPrompt.Apply(profile, null, result, "ftp-secret", out _);
+
+        Assert.AreEqual(AuthMethod.Password, copy.AuthMethod);
+        Assert.AreEqual("ftp-secret", copy.Password);
+    }
 }

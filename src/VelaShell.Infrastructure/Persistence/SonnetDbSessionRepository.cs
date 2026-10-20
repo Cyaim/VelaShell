@@ -51,15 +51,53 @@ public sealed class SonnetDbSessionRepository(SonnetDbEngine engine, ISecretProt
         return profile is null ? null : Unprotect(profile);
     }
 
-    /// <summary>加密敏感字段后插入或更新会话配置(以 Id 为主键)。</summary>
-    public async Task SaveSessionAsync(SessionProfile session)
+    /// <summary>加密敏感字段后插入或更新会话配置(以 Id 为主键);更新时目录收藏保留库里现存的那份。</summary>
+    public Task SaveSessionAsync(SessionProfile session) => UpsertAsync(session, keepStoredBookmarks: true);
+
+    /// <summary>加密敏感字段后插入或整条覆盖会话配置(以 Id 为主键),目录收藏也取传入的。</summary>
+    public Task ReplaceSessionAsync(SessionProfile session) => UpsertAsync(session, keepStoredBookmarks: false);
+
+    /// <summary>在库里最新的那份收藏上执行修改并写回;读、改、写在同一次集合锁内完成。</summary>
+    public async Task<List<RemoteDirectoryBookmark>?> UpdateDirectoryBookmarksAsync(
+        Guid id, Func<List<RemoteDirectoryBookmark>, bool> update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        await EnsureMigratedAsync().ConfigureAwait(false);
+        return await _engine.WithCollectionAsync<List<RemoteDirectoryBookmark>?>(SonnetDbEngine.ProfilesCollection, store =>
+        {
+            string key = id.ToString("D");
+            if (store.Get(key) is not { } row || SonnetDbJson.Deserialize<SessionProfile>(row.Json) is not { } stored)
+            {
+                return null;
+            }
+            // 文档原样读出、原样写回(机密字段还是密文),只换收藏这一项 —— 不经 Unprotect / Protect 走一圈。
+            stored.DirectoryBookmarks ??= [];
+            List<RemoteDirectoryBookmark> bookmarks = [.. stored.DirectoryBookmarks.Select(static b => b.Clone())];
+            if (update(bookmarks))
+            {
+                stored.DirectoryBookmarks = bookmarks;
+                store.Upsert(key, SonnetDbJson.Serialize(stored));
+            }
+            // 不写回时交回库里原来那份:回调改到一半的列表不算数。
+            return [.. stored.DirectoryBookmarks.Select(static b => b.Clone())];
+        }).ConfigureAwait(false);
+    }
+
+    private async Task UpsertAsync(SessionProfile session, bool keepStoredBookmarks)
     {
         ArgumentNullException.ThrowIfNull(session);
         await EnsureMigratedAsync().ConfigureAwait(false);
-        string json = SonnetDbJson.Serialize(Protect(session));
+        SessionProfile copy = Protect(session);
         await _engine.WithCollectionAsync<object?>(SonnetDbEngine.ProfilesCollection, store =>
         {
-            store.Upsert(session.Id.ToString("D"), json);
+            string key = session.Id.ToString("D");
+            // 读现存收藏与写回在同一次集合锁内:中间插进来的收藏修改不会被这次写回盖掉。
+            if (keepStoredBookmarks && store.Get(key) is { } row
+                && SonnetDbJson.Deserialize<SessionProfile>(row.Json) is { } stored)
+            {
+                copy.DirectoryBookmarks = stored.DirectoryBookmarks ?? [];
+            }
+            store.Upsert(key, SonnetDbJson.Serialize(copy));
             return null;
         }).ConfigureAwait(false);
     }

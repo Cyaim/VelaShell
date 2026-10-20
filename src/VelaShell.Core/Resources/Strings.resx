@@ -1833,11 +1833,20 @@ Paste anyway?</value>
   <data name="SetAbout_UpdateAvailableManual" xml:space="preserve">
     <value>Update {0} is available, but this install location can't be updated automatically (folder isn't writable). Please download the latest release from the project page.</value>
   </data>
+  <data name="SetAbout_DownloadPreparing" xml:space="preserve">
+    <value>Preparing update download…</value>
+  </data>
   <data name="SetAbout_DownloadingSpeed" xml:space="preserve">
     <value>Downloading update… {0}% · {1}/{2} · {3}</value>
   </data>
   <data name="SetAbout_DownloadStalled" xml:space="preserve">
     <value>Downloading update… {0}% · {1}/{2} · no data for {3}, the connection may have dropped</value>
+  </data>
+  <data name="SetAbout_DownloadingSpeedNoTotal" xml:space="preserve">
+    <value>Downloading update… {0} downloaded · {1}</value>
+  </data>
+  <data name="SetAbout_DownloadStalledNoTotal" xml:space="preserve">
+    <value>Downloading update… {0} downloaded · no data for {1}, the connection may have dropped</value>
   </data>
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>Download failed. Please try again later.</value>
@@ -2225,6 +2234,9 @@ Paste anyway?</value>
   </data>
   <data name="ReleaseNotes_LoadFailed" xml:space="preserve">
     <value>Could not load release notes. Check your network connection and try again.</value>
+  </data>
+  <data name="ReleaseNotes_RateLimited" xml:space="preserve">
+    <value>GitHub is limiting requests right now. Please try again later.</value>
   </data>
   <data name="ReleaseNotes_Latest" xml:space="preserve">
     <value>Latest release</value>
@@ -7123,11 +7135,14 @@ Send anyway?</value>
   <data name="Bookmark_InvalidName" xml:space="preserve"><value>Enter a bookmark name of 1–200 characters.</value></data>
   <data name="Bookmark_InvalidLocalPath" xml:space="preserve"><value>Enter a valid local directory path.</value></data>
   <data name="Bookmark_InvalidRemotePath" xml:space="preserve"><value>Enter a valid remote directory path.</value></data>
+  <data name="Bookmark_HomeUnavailable" xml:space="preserve"><value>Could not expand “~”: the remote home directory is unknown. Enter an absolute path.</value></data>
   <data name="Bookmark_PathTooLong" xml:space="preserve"><value>The local or remote path is too long.</value></data>
   <data name="Sudo_Title" xml:space="preserve"><value>Run command as root</value></data>
   <data name="Sudo_Source" xml:space="preserve"><value>Requested by plugin: {0}</value></data>
   <data name="Sudo_Target" xml:space="preserve"><value>Target: {0}</value></data>
   <data name="Sudo_RootWarning" xml:space="preserve"><value>The entire command below, including pipes and redirections, runs as root through a root shell. Restricted sudoers policies may refuse it.</value></data>
+  <data name="Sudo_CommandSize" xml:space="preserve"><value>Lines: {0}, characters: {1}. Scroll through the whole command before approving.</value></data>
+  <data name="Sudo_CommandHidden" xml:space="preserve"><value>Invisible or control characters: {0}. They are shown as ⟨U+XXXX⟩ and are part of the command that will run.</value></data>
   <data name="Sudo_Approve" xml:space="preserve"><value>Approve root command</value></data>
   <data name="Sudo_Password" xml:space="preserve"><value>sudo password</value></data>
   <data name="Sudo_Retry" xml:space="preserve"><value>The previous password was not accepted. Try again.</value></data>
@@ -7145,6 +7160,8 @@ Send anyway?</value>
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH uses this device's Tailscale identity and cannot be stored as a shared credential.</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH verification</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>The server requires identity verification. Open the link in your browser. This connection will continue automatically when the server approves it.</value></data>
+  <data name="Ssh_TailscaleCheckDeviceWarning" xml:space="preserve"><value>Before approving, make sure the page asks you to approve SSH access to this server. If it asks you to sign in or to add a new device or machine to your tailnet instead, do not approve it; cancel this connection.</value></data>
+  <data name="Ssh_TailscaleCheckDeadline" xml:space="preserve"><value>Waiting up to {0} minutes. If the server has not approved by {1}, this connection is cancelled.</value></data>
   <data name="Ssh_TailscaleCheckOpenBrowser" xml:space="preserve"><value>Open browser</value></data>
   <data name="Ssh_TailscaleCheckCopyLink" xml:space="preserve"><value>Copy link</value></data>
   <data name="Ssh_TailscaleCheckNotice" xml:space="preserve"><value>[Tailscale SSH verification link hidden]</value></data>
@@ -7157,4 +7174,9 @@ Send anyway?</value>
   <data name="SshErr_TailscaleCheckRequired" xml:space="preserve"><value>Tailscale SSH requires identity verification. Reconnect manually.</value></data>
   <data name="SshErr_TailscaleCheckUiUnavailable" xml:space="preserve"><value>The Tailscale SSH verification window is unavailable. Reconnect when the main window is open.</value></data>
   <data name="SshErr_TailscaleCheckFailed" xml:space="preserve"><value>Tailscale SSH verification could not continue because the server rejected or ended authentication.</value></data>
+  <data name="SshErr_TailscaleServerMessage" xml:space="preserve"><value>Server message: {0}</value></data>
+  <data name="SshErr_TailscaleAuthMethodRequired" xml:space="preserve"><value>This host requires Tailscale SSH browser verification. Change the session's authentication method to Tailscale SSH and connect again.</value></data>
+  <data name="DiagSvc_TailscaleNoUsernameSkip" xml:space="preserve"><value>No remote username; authentication test skipped</value></data>
+  <data name="DiagSvc_SuggestTailscaleUsername" xml:space="preserve"><value>Tailscale SSH needs only the remote system username. Enter it in the edit dialog to run the authentication test.</value></data>
+  <data name="DiagSvc_SuggestTailscale" xml:space="preserve"><value>Make sure this device is signed in to Tailscale, the remote username is correct, and the tailnet SSH policy allows this user. If the server asks for browser verification, complete it in the verification window.</value></data>
 </root>

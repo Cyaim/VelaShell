@@ -222,8 +222,9 @@
         <!-- 第 2 步:认证方式 -->
         <StackPanel IsVisible="{Binding IsStep2}" Spacing="14">
 
-          <!-- 分段选择:密码 / 证书 / 密钥 / Tailscale SSH -->
-          <Border Background="{DynamicResource VelaBgInput}" CornerRadius="4" Padding="2" Height="32">
+          <!-- 分段选择:密码 / 证书 / 密钥 / Tailscale SSH。FTP 与插件协议只有密码一种,整条不显示 -->
+          <Border Background="{DynamicResource VelaBgInput}" CornerRadius="4" Padding="2" Height="32"
+                  IsVisible="{Binding ShowsMethodSelector}">
             <Grid ColumnDefinitions="*,2,*,2,*,2,*">
               <Button Grid.Column="0" Classes="seg-tab" Content="{loc:Localize Password}"
                       Classes.active="{Binding IsPasswordMethod}"

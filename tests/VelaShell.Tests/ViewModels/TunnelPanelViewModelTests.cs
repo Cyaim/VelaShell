@@ -265,6 +265,41 @@ public class TunnelPanelViewModelTests
         await _workflowService.DidNotReceive().CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// 认证途中断线、没等到验证链接就超时不是授权结论:走普通失败的退避,而不是把这台服务器记成「认证要人处理」
+    /// —— 曾经一律记进去,之后网络恢复也不再自动重建。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task RefreshLiveState_TailscaleTransientFailure_BacksOffInsteadOfPausing()
+    {
+        bool alive = true;
+        bool fail = false;
+        int attempts = 0;
+        List<string> errors = [];
+        string transient = Strings.Get("SshErr_TailscaleAuthTimeout");
+        using TunnelPanelViewModel vm = CreateVm(() => alive, (_, _) =>
+        {
+            if (!fail)
+            {
+                return Task.FromResult(_sessionId);
+            }
+            attempts++;
+            return Task.FromException<Guid>(new VelaSshTailscaleAuthenticationException(transient, requiresUserAction: false));
+        }, errors.Add);
+        await SeedTunnelAsync(vm, autoReconnect: true);
+        TunnelItemViewModel original = vm.Tunnels[0];
+
+        alive = false;
+        fail = true;
+        vm.RefreshLiveState();
+        await WaitForAsync(() => attempts == 1 && !original.IsBusy);
+
+        Assert.IsEmpty(errors, "临时失败不按「认证要人处理」报。");
+        Assert.AreEqual(Strings.Format("Msg_TunnelAutoReconnectFailed", transient), vm.ErrorMessage, "走的是普通失败的退避分支。");
+        Assert.IsTrue(original.Config.AutoReconnect);
+    }
+
     [TestMethod]
     [TestCategory("TunnelUI")]
     [DataRow("SshErr_TailscaleCheckCancelled")]

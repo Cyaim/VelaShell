@@ -43,11 +43,15 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
     private CommandJobRunScope? _defaultRun;
     private readonly Lock _defaultRunGate = new();
 
-    /// <summary>入口提供稳定所有者及唯一轮次;工具列表显式捕获,不同对话不共享 taskId。</summary>
-    public CommandJobRunScope BeginRun(string ownerId, string runId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 入口提供稳定所有者及唯一轮次;工具列表显式捕获,不同对话不共享 taskId。
+    /// <c>denialEndsRun</c> 见 <see cref="CommandJobRegistry.BeginRun" />。
+    /// </summary>
+    public CommandJobRunScope BeginRun(string ownerId, string runId, CancellationToken cancellationToken = default,
+        bool denialEndsRun = true)
         => _jobs.BeginRun(ownerId, runId, cancellationToken, async (id, token) =>
             await context.Sessions.GetAsync(id, token).ConfigureAwait(false) is { } session
-            && await AllowedAsync(session, token).ConfigureAwait(false));
+            && await AllowedAsync(session, token).ConfigureAwait(false), denialEndsRun);
 
     private CommandJobRunScope CurrentRun
     {

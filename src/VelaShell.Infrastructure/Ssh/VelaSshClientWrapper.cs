@@ -311,7 +311,7 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
     public async Task<RemoteCommandStreamResult> StreamCommandAsync(
         string commandText,
         bool includeStandardError,
-        Action<bool, string> onLine,
+        Func<bool, string, ValueTask> onLine,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(onLine);
@@ -377,7 +377,7 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
     /// <inheritdoc />
     public Task<SudoExecutionResult> StreamSudoCommandAsync(
         string commandText, SudoExecutionContext context, ISudoPrompt prompt,
-        Action<SudoExecutionEvent> onEvent, CancellationToken cancellationToken = default) =>
+        Func<SudoExecutionEvent, ValueTask> onEvent, CancellationToken cancellationToken = default) =>
         SudoCommandExecutor.ExecuteAsync(EnsureConnected(), commandText,
             context with { Target = _target }, prompt, onEvent, cancellationToken);
 
@@ -420,9 +420,14 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
     /// <remarks>
     /// 在管道的缓冲区上直接切行,不先把整段转成 <see cref="string" /> 再 <c>Split</c> ——
     /// 长驻命令(<c>tail -F</c>)可能跑上几小时,按行切才不会把整份输出攒在内存里。
+    /// <para>
+    /// 每行都等回调完成再切下一行:一段 4096 字符里可能有上千个短行(<c>ls -1 /usr/bin</c>),
+    /// 隔离插件的接收方要逐条过 RPC,不等的话它的有界队列当场溢出、执行被判失败。
+    /// 等着它,管道不再被读,背压沿 SSH 窗口传回远端。
+    /// </para>
     /// </remarks>
     internal static async Task<long> PumpLinesAsync(
-        PipeReader reader, bool isError, Action<bool, string> onLine, CancellationToken cancellationToken)
+        PipeReader reader, bool isError, Func<bool, string, ValueTask> onLine, CancellationToken cancellationToken)
     {
         // StreamReader 增量解码保留跨片 UTF-8；ReadLineAsync 会把无换行输出无限攒大。
         using StreamReader text = new(reader.AsStream(leaveOpen: true), Encoding.UTF8, false, 4096, leaveOpen: true);
@@ -437,7 +442,7 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
             {
                 if (line.Length > 0)
                 {
-                    onLine(isError, line.ToString());
+                    await onLine(isError, line.ToString()).ConfigureAwait(false);
                     lines++;
                 }
                 return lines;
@@ -453,7 +458,7 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
                 afterCarriageReturn = character == '\r';
                 if (character is '\r' or '\n')
                 {
-                    onLine(isError, line.ToString());
+                    await onLine(isError, line.ToString()).ConfigureAwait(false);
                     line.Clear();
                     lines++;
                 }
@@ -463,7 +468,7 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
                     if (line.Length >= 4096 && !char.IsHighSurrogate(character))
                     {
                         // 显式标记超长逻辑行的续片，不能静默截断让调用方误认完整行。
-                        onLine(isError, line + " [VelaShell: continued]");
+                        await onLine(isError, line + " [VelaShell: continued]").ConfigureAwait(false);
                         line.Clear();
                         lines++;
                     }

@@ -209,6 +209,55 @@ public sealed class McpEndpointTests
         }
     }
 
+    /// <summary>
+    /// 一条 MCP 连接只有一个轮次,而默认的只读放行会拒掉任何写命令(这条路没有审批界面)。
+    /// 拒绝曾经封死整个轮次:之后连 list_sessions 都报错,客户端每次调用又刷新活动时间、
+    /// 闲置回收永远轮不到;任务也只在轮次释放时才删,跑满 128 条命令这条连接就再也执行不了。
+    /// </summary>
+    [TestMethod]
+    public async Task ToolsCall_DenialIsPerCall_AndALongSessionOutlivesTheTaskBudget()
+    {
+        using var context = new TestPluginContext();
+        context.FakeSessions.AddConnected(host: "prod-1", username: "root");
+        context.FakeRemoteExec.Handler = (_, _) => "out";
+        (McpEndpoint endpoint, int port, string token) = await StartAsync(context, ChatMode.Agent);
+        await using (endpoint)
+        {
+            using HttpClient client = CreateClient(port, token);
+            string sessionId = await InitializeAsync(client);
+            int id = 10;
+            async Task<(bool IsError, string Text)> CallAsync(string name, object arguments)
+            {
+                using JsonDocument document = await RpcAsync(client, new
+                {
+                    jsonrpc = "2.0",
+                    id = id++,
+                    method = "tools/call",
+                    @params = new { name, arguments }
+                }, sessionId);
+                JsonElement result = document.RootElement.GetProperty("result");
+                return (result.GetProperty("isError").GetBoolean(),
+                    result.GetProperty("content")[0].GetProperty("text").GetString()!);
+            }
+
+            (_, string denied) = await CallAsync("run_command", new { command = "systemctl restart nginx" });
+            Assert.Contains("DENIED", denied);
+            (_, string elevated) = await CallAsync("run_command", new { command = "cat /etc/hosts", elevated = true });
+            Assert.Contains("DENIED", elevated);
+
+            (bool listFailed, string list) = await CallAsync("list_sessions", new { });
+            Assert.IsFalse(listFailed, list);
+            Assert.Contains("prod-1", list);
+
+            for (int i = 0; i < 130; i++)
+            {
+                (bool failed, string text) = await CallAsync("run_command", new { command = "df -h" });
+                Assert.IsFalse(failed, text);
+                Assert.Contains("\"state\":\"Succeeded\"", text, $"第 {i + 1} 条命令:{text}");
+            }
+        }
+    }
+
     /// <summary>没走 initialize 就调工具,要给一个说得清的错,而不是空指针。</summary>
     [TestMethod]
     public async Task ToolsList_WithoutSession_ReportsAnError()

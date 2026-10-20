@@ -1172,8 +1172,8 @@ public sealed class ProviderSetupViewUiTests
                 await ShowAsync(context, new AiSettings
                 {
                     Providers = [provider, other],
-                    ActiveModelId = foreign.Id,
-                    FailoverChain = [new FailoverEntry { ModelId = foreign.Id }, new FailoverEntry { ModelId = other.Models[0].Id }]
+                    ActiveModelId = other.Models[0].Id,
+                    FailoverChain = [new FailoverEntry { ModelId = other.Models[0].Id }]
                 });
             try
             {
@@ -1193,12 +1193,64 @@ public sealed class ProviderSetupViewUiTests
                     : ["local-model", "tuned-model", "manual-model"];
                 Assert.AreSequenceEqual(expected, provider.Models.Select(model => model.Model).ToArray());
                 Assert.AreSequenceEqual(["local-model"], provider.AvailableModels);
-                Assert.AreEqual(editDuringPull ? foreign.Id : provider.Models[0].Id, settings.ActiveModelId);
-                Assert.AreEqual(editDuringPull, settings.FailoverChain.Any(entry => entry.ModelId == foreign.Id));
+                Assert.AreEqual(other.Models[0].Id, settings.ActiveModelId);
+                Assert.AreSequenceEqual([other.Models[0].Id], settings.FailoverChain.Select(entry => entry.ModelId).ToArray());
                 AiSettings persisted = await store.LoadAsync();
                 Assert.AreSequenceEqual(expected, persisted.Providers.Single(item => item.Id == provider.Id).Models.Select(model => model.Model).ToArray());
                 Assert.AreEqual(settings.ActiveModelId, persisted.ActiveModelId);
                 Assert.AreEqual(otherJson, System.Text.Json.JsonSerializer.Serialize(persisted.Providers.Single(item => item.Id == other.Id)));
+            }
+            finally { endpoint.Release(); window.Close(); }
+        });
+    }
+
+    /// <summary>
+    /// 端点清单里暂时少了的模型,只要当前选中、故障转移链或 IM 桥接还指着它就不清理 ——
+    /// 中转站渠道被自动禁用时清单会缩水;删掉的话选择漂到别处、用户排好的链永久丢一站。
+    /// </summary>
+    [TestMethod]
+    [DataRow("active")]
+    [DataRow("failover")]
+    [DataRow("bridge")]
+    public void PullModels_KeepsUnlistedModelsThatAreStillReferenced(string reference)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            using var endpoint = new HeldModelsEndpoint(response: """{"data":[{"id":"local-model"}]}""");
+            endpoint.Release();
+            AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            provider.BaseUrl = endpoint.BaseUrl + "/v1";
+            var catalog = new ModelsDevCatalog(context);
+            ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("local-model", 0), ("referenced-model", 0), ("stale-model", 0)]));
+            AiModelConfig local = provider.Models.Single(model => model.Model == "local-model");
+            AiModelConfig referenced = provider.Models.Single(model => model.Model == "referenced-model");
+            await context.Secrets.SetAsync($"apikey:{provider.Id}", "sk-instance");
+            if (reference == "bridge")
+            {
+                await new Bridge.BridgeSettingsStore(context).SaveAsync(new Bridge.BridgeSettings { ModelId = referenced.Id });
+            }
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings
+                {
+                    Providers = [provider],
+                    ActiveModelId = reference == "active" ? referenced.Id : local.Id,
+                    FailoverChain = reference == "failover" ? [new FailoverEntry { ModelId = referenced.Id }] : []
+                });
+            try
+            {
+                view.FocusEntry(provider.CatalogId, provider.Id);
+                await ClickPrimaryAsync(view);
+
+                Assert.AreSequenceEqual(["local-model", "referenced-model"], provider.Models.Select(model => model.Model).ToArray(),
+                    "没人引用的过期自动模型照常清理,被引用的留下");
+                Assert.AreSequenceEqual(["local-model"], provider.AvailableModels);
+                Assert.AreEqual(reference == "active" ? referenced.Id : local.Id, settings.ActiveModelId);
+                Assert.AreEqual(reference == "failover", settings.FailoverChain.Any(entry => entry.ModelId == referenced.Id));
+                AiSettings persisted = await store.LoadAsync();
+                Assert.AreSequenceEqual(["local-model", "referenced-model"],
+                    persisted.Providers.Single().Models.Select(model => model.Model).ToArray());
+                Assert.AreEqual(settings.ActiveModelId, persisted.ActiveModelId);
             }
             finally { endpoint.Release(); window.Close(); }
         });
@@ -1228,6 +1280,199 @@ public sealed class ProviderSetupViewUiTests
                 Assert.IsFalse(Find<Button>(view, "SetupAddAnotherButton").IsVisible);
                 Assert.AreEqual(original, System.Text.Json.JsonSerializer.Serialize(settings.Providers.Single()));
                 Assert.AreEqual(original, System.Text.Json.JsonSerializer.Serialize((await store.LoadAsync()).Providers.Single()));
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    /// <summary>
+    /// 从「新增供应商」进来、这一类型还没有实例时,第一份 OAuth 接入不是克隆:填好的地址、客户端 id
+    /// 与目录预填的端点 / 权限原样用于登录,不能被克隆专用的签发地址核对整片清空(Azure 首次接入因此卡死)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("custom-oauth")]
+    [DataRow("azure-openai")]
+    public void NewProvider_FirstOAuthInstanceOfItsType_SignsInWithTheFormAsFilled(string catalogId)
+    {
+        OnUi(async () =>
+        {
+            await using var models = new SseStub("", jsonContent: "[]");
+            await using var authorization = new DeviceLoginEndpoint();
+            using var context = new TestPluginContext();
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) = await ShowAsync(context);
+            string scopes = catalogId == "azure-openai"
+                ? ProviderCatalog.Find(catalogId)!.CreateProvider().OAuth!.Scopes
+                : "first-scope";
+            try
+            {
+                await ClickRowAsync(window, view, catalogId);
+                Find<TextBox>(view, "SetupBaseUrlBox").Text = models.BaseUrl + "/v1";
+                Find<TextBox>(view, "SetupClientIdBox").Text = "cid-first";
+                if (catalogId == "custom-oauth")
+                {
+                    Find<ComboBox>(view, "SetupFlowCombo").SelectedIndex = 1;
+                    Find<TextBox>(view, "SetupDeviceUrlBox").Text = authorization.BaseUrl + "/device";
+                    Find<TextBox>(view, "SetupTokenUrlBox").Text = authorization.BaseUrl + "/token";
+                    Find<TextBox>(view, "SetupScopesBox").Text = scopes;
+                }
+                else
+                {
+                    // Azure 的设备码与令牌端点由目录预填、界面上不摆;只把主机换成环回,权限保持目录值
+                    BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                    ((TextBox)typeof(ProviderSetupView).GetField("_deviceUrlBox", flags)!.GetValue(view)!).Text =
+                        authorization.BaseUrl + "/device";
+                    ((TextBox)typeof(ProviderSetupView).GetField("_tokenUrlBox", flags)!.GetValue(view)!).Text =
+                        authorization.BaseUrl + "/token";
+                }
+                await ClickPrimaryAsync(view);
+
+                Assert.AreNotEqual(new Loc("en")["SetupNeedsOAuth"], Find<TextBlock>(view, "SetupProgressText").Text,
+                    "首份接入不是克隆,不能套克隆的签发地址核对把表单清空");
+                Assert.IsGreaterThanOrEqualTo(1, authorization.Requests, "登录得真的发出去");
+                string device = WebUtility.UrlDecode(authorization.Bodies.First(body => !body.Contains("device_code", StringComparison.Ordinal)));
+                Assert.Contains("client_id=cid-first", device);
+                Assert.Contains("scope=" + scopes, device, "目录预填 / 用户填的权限一个字都不能丢");
+                AiProvider created = settings.Providers.Single();
+                Assert.AreEqual(catalogId, created.CatalogId);
+                Assert.AreEqual(models.BaseUrl + "/v1", created.BaseUrl);
+                Assert.AreEqual("cid-first", created.OAuth!.ClientId);
+                Assert.AreEqual(scopes, created.OAuth.Scopes);
+                Assert.AreEqual("at-new", (await store.GetTokensAsync(created.Id))?.AccessToken);
+            }
+            finally
+            {
+                view.CancelPendingLogin();
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 「新增供应商」窗口里加完一家,只有那一行转入编辑;换到另一种已有实例的类型仍是新建 ——
+    /// 打开旧实例的编辑表单并预填它的 Key,用户以为在新建,一保存就覆盖了旧实例。
+    /// </summary>
+    [TestMethod]
+    public void NewProviderWindow_AfterOneCreate_OtherTypesStillOpenAsNewInstances()
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub("", jsonContent: "[]");
+            using var context = new TestPluginContext();
+            AiProvider old = ProviderCatalog.Find("deepseek")!.CreateProvider();
+            old.Name = "old-deepseek";
+            old.BaseUrl = endpoint.BaseUrl + "/v1";
+            await context.Secrets.SetAsync($"apikey:{old.Id}", "sk-old");
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [old] });
+            string oldJson = System.Text.Json.JsonSerializer.Serialize(old);
+            try
+            {
+                await ClickRowAsync(window, view, "custom-openai");
+                Find<TextBox>(view, "SetupBaseUrlBox").Text = endpoint.BaseUrl + "/v1";
+                Find<TextBox>(view, "SetupKeyBox").Text = "sk-relay";
+                await ClickPrimaryAsync(view);
+                Assert.HasCount(2, settings.Providers, "前提:第一家已经加上");
+                Assert.AreEqual("Save", (string?)Find<Button>(view, "SetupPrimaryButton").Content, "刚加的那一行转入编辑");
+
+                await ClickRowAsync(window, view, "deepseek");
+                Find<ToggleButton>(view, "SetupAdvancedToggle").IsChecked = true;
+                await PumpAsync(20);
+                Assert.AreEqual("old-deepseek 2", Find<TextBox>(view, "SetupNameBox").Text, "换到已有实例的类型仍以它为底稿新建");
+                Assert.AreEqual("", Find<TextBox>(view, "SetupKeyBox").Text ?? "", "新建不能预填旧实例的 Key");
+                Assert.AreEqual("Add", (string?)Find<Button>(view, "SetupPrimaryButton").Content);
+                Assert.AreEqual("Cancel", (string?)Find<Button>(view, "SetupSecondaryButton").Content);
+
+                Find<TextBox>(view, "SetupKeyBox").Text = "sk-second";
+                await ClickPrimaryAsync(view);
+                Assert.HasCount(3, settings.Providers, "保存的是一份新实例");
+                Assert.AreEqual(oldJson, System.Text.Json.JsonSerializer.Serialize(old));
+                Assert.AreEqual("sk-old", await store.GetApiKeyAsync(old.Id));
+
+                await ClickRowAsync(window, view, "custom-openai");
+                Assert.AreEqual("Add", (string?)Find<Button>(view, "SetupPrimaryButton").Content,
+                    "收起后重开刚加过的那一类,同样是再新建一份");
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    /// <summary>
+    /// 复用的目录窗口再点一次「新增供应商」:登录在跑或草稿没提交时只把窗口提到前面,
+    /// 不能掐掉浏览器那边正等着回调的登录,也不能丢掉填到一半的表单(与点行、「再添加一个」同一条规矩)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("draft")]
+    [DataRow("login")]
+    public void NewProviderAgain_KeepsTheRunningLoginAndTheUnsavedDraft(string pending)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            (Window window, ProviderSetupView view, _, _) = await ShowAsync(context);
+            try
+            {
+                if (pending == "draft")
+                {
+                    await ClickRowAsync(window, view, "custom-openai");
+                    Find<TextBox>(view, "SetupKeyBox").Text = "sk-half-filled";
+                }
+                else
+                {
+                    await ClickRowAsync(window, view, "openrouter");
+                    Click(Find<Button>(view, "SetupPrimaryButton"));
+                    await PumpAsync(40);
+                }
+                TextBlock progress = Find<TextBlock>(view, "SetupProgressText");
+                string? progressText = progress.Text;
+
+                view.StartNewProvider();
+                await PumpAsync();
+
+                Assert.AreSame(progress, FindOrNull<TextBlock>(view, "SetupProgressText"), "正在进行的这一份不能被重建");
+                Assert.AreEqual(progressText, progress.Text);
+                if (pending == "draft") Assert.AreEqual("sk-half-filled", Find<TextBox>(view, "SetupKeyBox").Text);
+                else Assert.AreEqual("Cancel", (string?)Find<Button>(view, "SetupSecondaryButton").Content, "登录仍在等回调");
+            }
+            finally
+            {
+                view.CancelPendingLogin();
+                await PumpAsync();
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 填 Key 的新建草稿自成一体(不带来源的 Key 与模型清单):来源实例在别处被删,
+    /// 草稿照样能加成独立实例,不该以「来源已移除」拒绝。
+    /// </summary>
+    [TestMethod]
+    public void NewProvider_ApiKeyDraftStillAddsAfterItsSourceIsRemoved()
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub("", jsonContent: "[]");
+            using var context = new TestPluginContext();
+            AiProvider source = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            source.Name = "relay";
+            source.BaseUrl = endpoint.BaseUrl + "/v1";
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [source] });
+            try
+            {
+                await ClickRowAsync(window, view, "custom-openai");
+                Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
+                settings.Providers.Remove(source);
+                await store.SaveAsync(settings);
+                await ClickPrimaryAsync(view);
+
+                Assert.AreNotEqual(new Loc("en")["SetupSourceRemoved"], Find<TextBlock>(view, "SetupProgressText").Text);
+                AiProvider created = settings.Providers.Single();
+                Assert.AreNotEqual(source.Id, created.Id);
+                Assert.AreEqual("relay 2", created.Name);
+                Assert.AreEqual(source.BaseUrl, created.BaseUrl);
+                Assert.AreEqual("sk-new", await store.GetApiKeyAsync(created.Id));
+                Assert.AreEqual(created.Id, (await store.LoadAsync()).Providers.Single().Id);
             }
             finally { window.Close(); }
         });

@@ -34,7 +34,7 @@ public sealed class SudoExecutionTests
     public void ControlledCommandQuotesFullRootCommandAndHasClosedStdin()
     {
         string command = "printf '%s' 'a b'; id | cat > /tmp/file";
-        string wrapped = SudoCommandExecutor.BuildCommand(command, "READY", "AUTH", "START");
+        string wrapped = SudoCommandExecutor.BuildScript(command, "READY", "AUTH", "START");
         Assert.Contains("stty raw -echo || exit 125", wrapped);
         Assert.Contains("exec sudo -S -u root -p 'AUTH' -- /bin/sh -c", wrapped);
         Assert.Contains("</dev/null", wrapped);
@@ -47,7 +47,11 @@ public sealed class SudoExecutionTests
     {
         Pipe pipe = new();
         List<string> lines = [];
-        Task<long> reading = VelaSshClientWrapper.PumpLinesAsync(pipe.Reader, false, (_, text) => lines.Add(text), CancellationToken.None);
+        Task<long> reading = VelaSshClientWrapper.PumpLinesAsync(pipe.Reader, false, (_, text) =>
+        {
+            lines.Add(text);
+            return ValueTask.CompletedTask;
+        }, CancellationToken.None);
         byte[] bytes = Encoding.UTF8.GetBytes(new string('a', 20000) + "漢🙂\rprogress\r\nlast");
         for (int offset = 0; offset < bytes.Length; offset += 113)
         {

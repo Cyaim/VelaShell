@@ -89,6 +89,34 @@ public sealed class CommandJobRegistryTests
         Assert.IsEmpty(await scope.WaitForCompletionAsync());
     }
 
+    /// <summary>模型已经用 task_wait / task_status 拿到终态,就不该再收一条完成通知、多请求一次模型。</summary>
+    [TestMethod]
+    public async Task TerminalStateReadByTheModel_IsNotNotifiedAgain()
+    {
+        TaskCompletionSource finish = Signal();
+        var exec = new ControlledExec
+        {
+            Handler = async (command, _, token) =>
+            {
+                if (command == "waited") await finish.Task.WaitAsync(token);
+                return new(0, 0);
+            }
+        };
+        await using var registry = new CommandJobRegistry(exec);
+        await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
+        string waited = registry.Start(scope, "s", "waited");
+        string read = registry.Start(scope, "s", "read");
+        registry.MarkBackground(scope, waited);
+        registry.MarkBackground(scope, read);
+        Assert.IsFalse((await registry.ReadAsync(scope, waited)).IsTerminal);
+        Assert.IsTrue((await registry.ReadAsync(scope, read)).IsTerminal);
+        Assert.IsTrue(scope.HasActiveJobs, "非终态的查询不算交付");
+        finish.SetResult();
+        Assert.IsTrue((await registry.WaitAsync(scope, waited, TimeSpan.FromSeconds(5))).IsTerminal);
+        Assert.IsFalse(scope.HasActiveJobs);
+        Assert.IsEmpty(await scope.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
     [TestMethod]
     public async Task Notifications_ReturnFirstCompletedWithoutWaitingForOthers()
     {
@@ -141,9 +169,43 @@ public sealed class CommandJobRegistryTests
         Assert.IsGreaterThan(0, result.EarliestCursor);
         Assert.IsLessThanOrEqualTo(32768, result.Output.Sum(x => x.Text.Length));
         Assert.IsTrue(result.Output.All(x => x.Text.Length <= 4096));
-        Assert.AreEqual(21L, result.NextCursor);
+        Assert.AreEqual(61L, result.NextCursor, "每条一万字拆成 4096+4096+1808 三条,不丢后半段");
         Assert.AreEqual("progress\r100%", result.Output[^1].Text);
         Assert.IsEmpty((await registry.ReadAsync(scope, id, result.NextCursor)).Output);
+    }
+
+    /// <summary>
+    /// 宿主按最长 8192 字节上报提权输出,普通流超长行切片后再补 23 字的续片标记(共 4119 字)。
+    /// 单条只留前 4096 字时,前者丢掉后半段,后者丢掉标记,两者还都被误报成截断。
+    /// </summary>
+    [TestMethod]
+    public async Task OversizeEntries_AreSplitInOrder_NotTruncated()
+    {
+        string chunk = string.Concat(Enumerable.Range(0, 8192).Select(i => (char)('a' + i % 26)));
+        string line = new string('x', 4096) + " [VelaShell: continued]";
+        var exec = new ControlledExec
+        {
+            Handler = (_, output, _) =>
+            {
+                output.Report(new(ExecStream.StandardOutput, line));
+                return Task.FromResult(new ExecStreamResult(0, 1));
+            },
+            SudoHandler = (output, _) =>
+            {
+                output.Report(new(SudoExecEventKind.State, SudoExecState.Running));
+                output.Report(new(SudoExecEventKind.Output, Text: chunk));
+                return Task.FromResult(new SudoExecResult(SudoExecOutcome.Exited, 0, 1));
+            }
+        };
+        await using var registry = new CommandJobRegistry(exec);
+        await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
+        foreach ((string id, string expected) in new[] { (registry.StartSudo(scope, "s", "cmd"), chunk), (registry.Start(scope, "s", "cmd"), line) })
+        {
+            CommandJobSnapshot result = await registry.WaitAsync(scope, id, TimeSpan.FromSeconds(5));
+            Assert.AreEqual(expected, string.Concat(result.Output.Select(o => o.Text)));
+            Assert.IsTrue(result.Output.All(o => o.Text.Length <= 4096));
+            Assert.IsFalse(result.OutputTruncated);
+        }
     }
 
     [TestMethod]
@@ -216,7 +278,12 @@ public sealed class CommandJobRegistryTests
         registry.MarkBackground(denied, id);
         allowed = false;
         await blockers.CancelAsync();
-        Assert.IsEmpty(await denied.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        IReadOnlyList<CommandJobSnapshot> withheld = await denied.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.HasCount(1, withheld, "撤权的任务也要交出一条通知,否则续接会把空表当成全部完成");
+        Assert.AreEqual(CommandJobState.Unknown, withheld[0].State);
+        Assert.IsEmpty(withheld[0].Output);
+        Assert.AreEqual("", withheld[0].SessionId);
+        Assert.IsFalse(denied.HasActiveJobs);
         Assert.AreEqual(4, exec.Calls);
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => registry.ReadAsync(denied, id));
         await registry.CancelAsync(denied, id);
@@ -306,6 +373,78 @@ public sealed class CommandJobRegistryTests
         await waiting.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.IsFalse(scope.HasActiveJobs);
         Assert.IsFalse(scope.HasMonitoringJobs);
+    }
+
+    /// <summary>
+    /// 点名取消 tail -f 是结束监控的正常做法;提权命令还停在审批/认证里就取消,用户命令根本没启动。
+    /// 两者以前都记成 Unknown,整轮随之暂停。已经启动的普通命令被取消仍是 Unknown。
+    /// </summary>
+    [TestMethod]
+    public async Task DeliberateMonitoringStop_AndSudoCancelledBeforeStart_AreNotUnknown()
+    {
+        TaskCompletionSource awaitingUser = Signal();
+        var exec = new ControlledExec
+        {
+            Handler = async (_, _, token) =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return new(0, 0);
+            },
+            SudoHandler = async (output, token) =>
+            {
+                output.Report(new(SudoExecEventKind.State, SudoExecState.AwaitingAuthentication));
+                awaitingUser.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return new SudoExecResult(SudoExecOutcome.Exited, 0);
+            }
+        };
+        await using var registry = new CommandJobRegistry(exec);
+        await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
+        string monitor = registry.Start(scope, "s", "tail -f /var/log/syslog", monitoring: true);
+        string sudo = registry.StartSudo(scope, "s", "apt upgrade");
+        await awaitingUser.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        foreach (string id in new[] { monitor, sudo })
+        {
+            await registry.CancelAsync(scope, id);
+            CommandJobSnapshot result = await registry.WaitAsync(scope, id, TimeSpan.FromSeconds(5));
+            Assert.AreEqual(CommandJobState.Cancelled, result.State);
+            Assert.IsFalse(result.RemoteStopConfirmed, "通道已经开过,不能声称远端确认停止");
+        }
+        Assert.IsFalse(scope.HasUnknownOutcome);
+        string running = registry.Start(scope, "s", "apt upgrade");
+        await registry.CancelAsync(scope, running);
+        Assert.AreEqual(CommandJobState.Unknown, (await registry.WaitAsync(scope, running, TimeSpan.FromSeconds(5))).State);
+        Assert.IsTrue(scope.HasUnknownOutcome);
+    }
+
+    /// <summary>
+    /// 已收尾且终态已交付的任务在额度满时回收,长寿的轮次(MCP 一条连接一个)不会跑满 128 条就停摆;
+    /// 承载 Unknown 停止边界的任务不回收。
+    /// </summary>
+    [TestMethod]
+    public async Task DeliveredJobs_AreReclaimedAtTheCap_ButUnknownOutcomesStay()
+    {
+        var exec = new ControlledExec
+        {
+            Handler = (command, _, _) => command == "lost"
+                ? Task.FromException<ExecStreamResult>(new IOException("connection lost"))
+                : Task.FromResult(new ExecStreamResult(0, 0))
+        };
+        await using var registry = new CommandJobRegistry(exec);
+        await using CommandJobRunScope scope = registry.BeginRun("owner", "run");
+        string lost = registry.Start(scope, "s", "lost");
+        Assert.AreEqual(CommandJobState.Unknown, (await registry.WaitAsync(scope, lost, TimeSpan.FromSeconds(5))).State);
+        for (int i = 0; i < 300; i++)
+        {
+            string id = registry.Start(scope, "s", "ok");
+            Assert.AreEqual(CommandJobState.Succeeded, (await registry.WaitAsync(scope, id, TimeSpan.FromSeconds(5))).State);
+        }
+        Assert.IsTrue(scope.HasUnknownOutcome);
+        Assert.AreEqual(CommandJobState.Unknown, (await registry.ReadAsync(scope, lost)).State);
+        await using CommandJobRunScope undelivered = registry.BeginRun("owner", "undelivered");
+        for (int i = 0; i < 128; i++) registry.Start(undelivered, "s", "ok");
+        Assert.ThrowsExactly<InvalidOperationException>(() => registry.Start(undelivered, "s", "ok"),
+            "没交付过终态的任务不回收,模型还可能来查");
     }
 
     [TestMethod]

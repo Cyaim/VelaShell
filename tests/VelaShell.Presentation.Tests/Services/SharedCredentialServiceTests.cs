@@ -193,6 +193,12 @@ public sealed class SharedCredentialServiceTests
             return Task.CompletedTask;
         }
 
+        public Task ReplaceSessionAsync(SessionProfile session) => SaveSessionAsync(session);
+
+        public Task<List<RemoteDirectoryBookmark>?> UpdateDirectoryBookmarksAsync(
+            Guid id, Func<List<RemoteDirectoryBookmark>, bool> update) =>
+            throw new NotSupportedException("凭据服务不碰目录收藏。");
+
         public Task DeleteSessionAsync(Guid id)
         {
             Store.Remove(id);

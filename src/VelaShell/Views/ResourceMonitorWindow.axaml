@@ -1120,7 +1120,9 @@
                         <TextBlock Text="{loc:Localize Monitor_ColProcess}" Classes="col" />
                         <TextBlock Grid.Column="1" Text="{loc:Localize Monitor_Gpu}" Classes="col" TextAlignment="Right" />
                         <TextBlock Grid.Column="2" Text="PID" Classes="col" TextAlignment="Right" />
-                        <TextBlock Grid.Column="3" Text="{Binding SelectedGpu.MemoryTitle}" Classes="col" TextAlignment="Right" />
+                        <!-- 进程表只有 nvidia-smi 给得出来,这一列永远是 NVIDIA 显存;跟着选中卡的 MemoryTitle 走,
+                             Intel 核显 + NVIDIA 的机器选中核显时会把显存标成"内存"。 -->
+                        <TextBlock Grid.Column="3" Text="{loc:Localize Monitor_Vram}" Classes="col" TextAlignment="Right" />
                       </Grid>
                       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <ItemsControl Margin="0,0,20,0" ItemsSource="{Binding GpuProcesses}">

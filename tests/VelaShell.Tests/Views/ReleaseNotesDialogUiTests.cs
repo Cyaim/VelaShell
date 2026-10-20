@@ -1,3 +1,4 @@
+using System.Net;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -38,9 +39,12 @@ public sealed class ReleaseNotesDialogUiTests
             Assert.IsTrue(dialog.FindControl<StackPanel>("LoadingPanel")!.IsVisible);
             Assert.AreEqual(1, source.Calls);
             string body = "## What's Changed\n" + string.Join('\n', Enumerable.Range(0, 200).Select(i => $"* 更新 {i} by @joesdu in #{i}"));
-            completion.SetResult(new ReleaseNotes("1.7.1", body, DateTimeOffset.Parse("2026-10-16T03:11:41Z")));
+            completion.SetResult(new ReleaseNotes("1.7.1", body, DateTimeOffset.Parse("2026-10-16T03:11:41Z"),
+                "https://github.com/owner/repo/releases/tag/1.7.1"));
             await WaitUntilAsync(() => dialog.FindControl<ScrollViewer>("NotesScroll")!.IsVisible);
             Assert.AreEqual("1.7.1", dialog.FindControl<SelectableTextBlock>("VersionText")!.Text);
+            // 「在 GitHub 上查看」打开的是 API 给的发布页,而不是对话框里另拼的仓库地址。
+            Assert.AreEqual(new Uri("https://github.com/owner/repo/releases/tag/1.7.1"), dialog.ReleaseUri);
             MarkdownRenderer renderer = dialog.FindControl<MarkdownRenderer>("BodyMarkdown")!;
             renderer.SelectAll();
             Assert.Contains("What's Changed", renderer.SelectedText!);
@@ -104,6 +108,71 @@ public sealed class ReleaseNotesDialogUiTests
             MarkdownRenderer renderer = dialog.FindControl<MarkdownRenderer>("BodyMarkdown")!;
             renderer.SelectAll();
             Assert.AreEqual("notes", renderer.SelectedText?.Trim());
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    });
+
+    [TestMethod]
+    [DataRow("https://github.com/owner/repo/releases/tag/v1.7.1", true)]
+    [DataRow("http://github.com/owner/repo/releases/tag/v1.7.1", false)]
+    [DataRow("javascript:alert(1)", false)]
+    [DataRow(null, false)]
+    public Task GitHubButton_OnlyOffersHttpsReleasePage(string? htmlUrl, bool enabled) => _session.RunOnUiAsync(() =>
+    {
+        var dialog = new ReleaseNotesDialog(new StubSource(_ =>
+            Task.FromResult<ReleaseNotes?>(new("v1.7.1", "notes", null, htmlUrl))));
+        dialog.Show();
+        try
+        {
+            Assert.AreEqual(enabled, dialog.FindControl<Button>("GitHubButton")!.IsEnabled);
+            Assert.AreEqual(enabled ? new Uri(htmlUrl!) : null, dialog.ReleaseUri);
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    });
+
+    [TestMethod]
+    [DataRow(HttpStatusCode.Forbidden, "ReleaseNotes_RateLimited")]
+    [DataRow(HttpStatusCode.TooManyRequests, "ReleaseNotes_RateLimited")]
+    [DataRow(HttpStatusCode.InternalServerError, "ReleaseNotes_LoadFailed")]
+    public Task HttpFailure_RateLimitHasItsOwnMessage(HttpStatusCode status, string expectedKey) => _session.RunOnUiAsync(() =>
+    {
+        // 匿名 API 每小时 60 次,用完了 GitHub 回 403/429:这时让用户"检查网络"是误导。
+        var dialog = new ReleaseNotesDialog(new StubSource(_ =>
+            Task.FromException<ReleaseNotes?>(new HttpRequestException("failed", null, status))));
+        dialog.Show();
+        try
+        {
+            Assert.AreEqual(Strings.Get(expectedKey), dialog.FindControl<TextBlock>("StatusText")!.Text);
+            Assert.IsTrue(dialog.FindControl<Button>("RetryButton")!.IsVisible);
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    });
+
+    [TestMethod]
+    public Task SourceInternalTimeout_ShowsRetryableError() => _session.RunOnUiAsync(async () =>
+    {
+        // 发布源自己的超时同样以取消异常的形式冒出来;只有关窗引起的取消才静默,超时必须进入可重试的错误态。
+        var source = new GitHubReleaseSource("https://github.com/owner/repo", new HangingHandler())
+        {
+            RequestTimeout = TimeSpan.FromMilliseconds(100)
+        };
+        var dialog = new ReleaseNotesDialog(source);
+        dialog.Show();
+        try
+        {
+            Button retry = dialog.FindControl<Button>("RetryButton")!;
+            await WaitUntilAsync(() => retry.IsVisible);
+            Assert.AreEqual(Strings.Get("ReleaseNotes_LoadFailed"), dialog.FindControl<TextBlock>("StatusText")!.Text);
+            Assert.IsFalse(dialog.FindControl<StackPanel>("LoadingPanel")!.IsVisible);
         }
         finally
         {
@@ -223,6 +292,53 @@ public sealed class ReleaseNotesDialogUiTests
     }
 
     [TestMethod]
+    public Task Markdown_GitHubGeneratedNotes_BareUrlsBecomeLinksAndTablesRender() => _session.RunOnUiAsync(() =>
+    {
+        // GitHub 自动生成的发布说明就是这个样子:PR 与 Full Changelog 都是裸 URL。
+        const string body = """
+            ## What's Changed
+            * 更新日志对话框 by @joesdu in https://github.com/joesdu/VelaShell/pull/635
+            * 不安全的裸地址 http://example.com/x 与 www.example.com 只能是文字
+
+            | 平台 | 状态 |
+            |---|---|
+            | Windows | 可用 |
+
+            - [x] 已完成
+            - [ ] ~~作废~~
+
+            **Full Changelog**: https://github.com/joesdu/VelaShell/compare/v1.7.0...v1.7.1
+            """;
+        MarkdownDocument document = ReleaseNotesDialog.ParseNotes(body);
+        Assert.AreSequenceEqual(
+            ["https://github.com/joesdu/VelaShell/pull/635", "https://github.com/joesdu/VelaShell/compare/v1.7.0...v1.7.1"],
+            document.Descendants<LinkInline>().Select(link => link.Url).ToArray());
+        Assert.IsNotEmpty(document.Descendants<Markdig.Extensions.Tables.Table>());
+        Assert.IsNotEmpty(document.Descendants<Markdig.Extensions.TaskLists.TaskList>());
+        Assert.Contains(e => e.DelimiterChar == '~', document.Descendants<EmphasisInline>());
+
+        var dialog = new ReleaseNotesDialog(new StubSource(_ => Task.FromResult<ReleaseNotes?>(new("v1.7.1", body))));
+        dialog.Show();
+        try
+        {
+            MarkdownRenderer renderer = dialog.FindControl<MarkdownRenderer>("BodyMarkdown")!;
+            dialog.UpdateLayout();
+            Assert.IsNotEmpty(renderer.GetVisualDescendants().OfType<MarkdownTableGrid>(), "管道表格应渲染成表格");
+            renderer.SelectAll();
+            string text = renderer.SelectedText!;
+            Assert.Contains("https://github.com/joesdu/VelaShell/pull/635", text);
+            Assert.Contains("http://example.com/x", text);
+            Assert.Contains("Full Changelog", text);
+            Assert.DoesNotContain("|", text, "管道表格应渲染成表格,而不是原样的竖线");
+            Assert.DoesNotContain("~~", text);
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    });
+
+    [TestMethod]
     public Task Markdown_RendersHeadingsEmphasisAndLinks_AndFollowsTheme() => _session.RunOnUiAsync(() =>
     {
         string body = "## 更新与下载\n\n- **下载速率**持续刷新，支持 `Tailscale SSH`。\n- [#626](https://github.com/joesdu/VelaShell/pull/626)\n\n<script>alert(1)</script><img src=\"file:///C:/secret.png\">";
@@ -260,6 +376,16 @@ public sealed class ReleaseNotesDialogUiTests
         while (!condition())
         {
             await Task.Delay(10, timeout.Token);
+        }
+    }
+
+    /// <summary>一直不回应、直到请求被取消的处理器(模拟连上了却迟迟不给响应的 API)。</summary>
+    private sealed class HangingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return new(HttpStatusCode.OK);
         }
     }
 

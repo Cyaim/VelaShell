@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Net;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -24,7 +25,19 @@ public partial class ReleaseNotesDialog : Window
     private bool _closed;
     private Uri? _releaseUri;
     private readonly List<IDisposable> _skinSubscriptions = [];
-    private static readonly MarkdownPipeline NotesPipeline = new MarkdownPipelineBuilder().DisableHtml().Build();
+
+    /// <summary>
+    /// GitHub 风格的 Markdown:自动生成的发布说明里 PR 与 Full Changelog 都是裸 URL,
+    /// 不开自动链接就是一串点不动的文字;表格、删除线、任务列表同样常见。
+    /// 自动链接生成的也是 <see cref="LinkInline" />,照样经过 <see cref="ParseNotes" /> 的 https 过滤。
+    /// </summary>
+    private static readonly MarkdownPipeline NotesPipeline = new MarkdownPipelineBuilder()
+        .DisableHtml()
+        .UseAutoLinks()
+        .UsePipeTables()
+        .UseEmphasisExtras()
+        .UseTaskLists()
+        .Build();
 
     /// <summary>仅初始化界面,供设计器及窗口外框测试使用,不联网。</summary>
     public ReleaseNotesDialog()
@@ -58,6 +71,9 @@ public partial class ReleaseNotesDialog : Window
 
     /// <summary>窗口打开后通过指定发布源加载更新说明。</summary>
     public ReleaseNotesDialog(IReleaseNotesSource source) : this() => _source = source;
+
+    /// <summary>「在 GitHub 上查看」要打开的发布页;没有可用地址时为 null。</summary>
+    internal Uri? ReleaseUri => _releaseUri;
 
     /// <inheritdoc />
     protected override void OnOpened(EventArgs e)
@@ -100,8 +116,8 @@ public partial class ReleaseNotesDialog : Window
             PublishedText.Text = notes?.PublishedAt is { } publishedAt
                 ? Strings.Format("ReleaseNotes_PublishedAt", publishedAt.ToLocalTime().ToString("d", CultureInfo.CurrentCulture))
                 : null;
-            _releaseUri = notes == null ? null
-                : new Uri($"https://github.com/joesdu/VelaShell/releases/tag/{Uri.EscapeDataString(notes.Tag)}");
+            // 发布页地址取 API 给的 html_url,不在这里另拼一份仓库地址;照样只放行 https。
+            _releaseUri = notes?.HtmlUrl is { } htmlUrl && IsAllowedLink(htmlUrl) ? new Uri(htmlUrl) : null;
             GitHubButton.IsEnabled = _releaseUri != null;
             if (notes == null || string.IsNullOrWhiteSpace(notes.Body))
             {
@@ -123,7 +139,9 @@ public partial class ReleaseNotesDialog : Window
             Trace.WriteLine($"[ReleaseNotes] {ex}");
             if (!_closed)
             {
-                StatusText.Text = Strings.Get("ReleaseNotes_LoadFailed");
+                // 匿名 API 每小时只有 60 次,用完 GitHub 回 403/429;这时让用户去查网络是误导。
+                bool rateLimited = ex is HttpRequestException { StatusCode: HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests };
+                StatusText.Text = Strings.Get(rateLimited ? "ReleaseNotes_RateLimited" : "ReleaseNotes_LoadFailed");
                 StatusText.IsVisible = true;
                 RetryButton.IsVisible = true;
             }

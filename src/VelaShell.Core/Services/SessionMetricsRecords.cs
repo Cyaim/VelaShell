@@ -107,10 +107,19 @@ public enum GpuMemoryKind
     Unknown
 }
 
-/// <summary>一张 DRM 卡的累计 GPU 引擎忙碌时间。</summary>
+/// <summary>一个 DRM 客户端在某一类引擎上的累计计数(取自 fdinfo)。</summary>
+/// <param name="Client">drm-client-id。</param>
+/// <param name="Engine">引擎类名(i915:render / video…;xe:rcs / vcs…)。</param>
+/// <param name="Busy">累计忙碌量:<paramref name="TotalCycles" /> 为 null 时是纳秒,否则是 GPU 时钟周期。</param>
+/// <param name="TotalCycles">同一时钟域的累计总周期(xe 的 drm-total-cycles-*);i915 只给纳秒,为 null。</param>
+/// <param name="Capacity">该类引擎的实例数(drm-engine-capacity-*),没给就是 1。</param>
+public sealed record GpuEngineCounter(string Client, string Engine, long Busy, long? TotalCycles, int Capacity = 1);
+
+/// <summary>一张 DRM 卡的引擎计数快照,由采集服务连续两次采样差分成利用率。</summary>
 /// <param name="Card">DRM 卡名(如 card1)。</param>
-/// <param name="BusyNanoseconds">可见客户端、所有引擎的累计忙碌纳秒数。</param>
-public sealed record GpuUsageCounter(string Card, long BusyNanoseconds);
+/// <param name="Engines">可见客户端逐类引擎的累计计数。</param>
+/// <param name="UptimeSeconds">远端读取计数时的 /proc/uptime;读不到时为 null,差分退回本地采样间隔。</param>
+public sealed record GpuUsageCounter(string Card, IReadOnlyList<GpuEngineCounter> Engines, double? UptimeSeconds);
 
 /// <summary>
 /// 一张 GPU 的实时读数。数值一律可空 —— 不同厂商暴露的指标差别很大
@@ -151,9 +160,6 @@ public sealed record GpuDevice(
 {
     /// <summary>显存/共享内存的物理口径。</summary>
     public GpuMemoryKind MemoryKind { get; init; } = GpuMemoryKind.Unknown;
-
-    /// <summary>由 DRM 客户端 fdinfo 读取的累计引擎忙碌时间。</summary>
-    public long? BusyNanoseconds { get; init; }
 
     /// <summary>已绑定的内核驱动名。</summary>
     public string Driver { get; init; } = "";

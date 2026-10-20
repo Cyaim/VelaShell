@@ -27,7 +27,17 @@ public class VelaSshHostKeyRejectedException(string message, Exception? innerExc
 public class VelaSshAuthenticationException(string message, Exception? innerException = null) : VelaSshClientException(message, innerException);
 
 /// <summary>Tailscale SSH 授权失败；只携带本地化安全消息，不保留服务端异常链或验证链接。</summary>
-public class VelaSshTailscaleAuthenticationException(string message) : VelaSshAuthenticationException(message);
+/// <param name="message">本地化的安全消息。</param>
+/// <param name="requiresUserAction">
+/// 是否要人来处理才可能过：出现过验证链接、或服务端明确拒绝。认证跳上的连接中断、没等到链接的超时
+/// 与别的认证方式一样只是这一次没连上，后台照常退避重试，不暂停自动重连。
+/// </param>
+public class VelaSshTailscaleAuthenticationException(string message, bool requiresUserAction = true)
+    : VelaSshAuthenticationException(message)
+{
+    /// <summary>后台重连是否应当暂停、等用户手动处理。</summary>
+    public bool RequiresUserAction { get; } = requiresUserAction;
+}
 
 /// <summary>
 /// 用户在认证交互(keyboard-interactive 的动态码框)里点了取消。
