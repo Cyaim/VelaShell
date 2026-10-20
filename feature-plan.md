@@ -34,15 +34,15 @@
 按「杠杆 ÷ 成本」排，下面三件最值得先动：
 
 1. **布局持久化与命名布局模板**（🟠 P1，二、B）—— 「打开这一组机器并按这个分屏排好」，同时管很多台机器的用户天天要用；VelaDock 模型层本来就可序列化，批量连接（`plan.md` §180）已经铺好一半。
-2. **录制与日志的输出脱敏**（🟠 P1，二、E）—— `cat .env`、`kubectl get secret` 的输出正原样落盘，是现实风险。诊断包（`plan.md` §218）已经有一套脱敏器，规则表可以从那里起步。
-3. **配置导出的选择性与脱敏**（🟠 P1，一、安全与凭据）—— 导出是全量 `AppSettings`，代理密码是明文，随手分享的一个文件里不该有它。
+2. **配置导出的选择性与脱敏**（🟠 P1，一、安全与凭据）—— 导出是全量 `AppSettings`，代理密码是明文，随手分享的一个文件里不该有它。
+3. **协议插件 / 工作台插件模板**（🟠 P1，二、G）—— 五个插件已经把 `Protocols` 与 `Workspaces` 走通，把公共骨架沉淀成模板，第三方接新协议的成本会掉一个数量级。
 
 ## 📊 待办分布
 
 | 部分 | 🔴 P0 | 🟠 P1 | 🟡 P2 | 🟢 P3 | 合计 |
 | --- | :---: | :---: | :---: | :---: | :---: |
 | 一、欠账 | 4 | 2 | 15 | 16 | **37** |
-| 二、路线图 | — | 4 | 17 | 32 | **53** |
+| 二、路线图 | — | 3 | 17 | 32 | **52** |
 | 三、文档待同步 | — | — | — | — | **9** |
 
 ---
@@ -176,7 +176,7 @@
 | 状态 | 优先级 | 项 | 对标 | 架构落点 |
 | :---: | :---: | --- | --- | --- |
 | ⏳ | 🟡 P2 | **命令块的「重跑」与「复制这条命令」** | Warp | OSC 133 的其余部分已落地（`plan.md` §10-E）。**只差 `B`（提示符结束的那一列）** —— 有了它才能把命令文本切出来。当时没做是因为列在改列宽重排后会挪位，要像 `ReflowResize` 搬光标那样换算成逻辑行内偏移再跟着重新换行。做这项时连这份代价一起付 |
-| 💡 | 🟡 P2 | **终端输出的自定义高亮规则** | WindTerm | 语义高亮是编译期硬编码的 7 条（`SemanticMatcher` 的 `[GeneratedRegex]`：Url / Ip / Error / Warning / Success / Option / Number）。改成可注入规则表 + 设置 UI；注意别拖慢逐格渲染的热路径。**这张用户规则表可与「触发器」「输出脱敏」共用** |
+| 💡 | 🟡 P2 | **终端输出的自定义高亮规则** | WindTerm | 语义高亮是编译期硬编码的 7 条（`SemanticMatcher` 的 `[GeneratedRegex]`：Url / Ip / Error / Warning / Success / Option / Number）。改成可注入规则表 + 设置 UI；注意别拖慢逐格渲染的热路径。**这张用户规则表可与「触发器」共用；录制与日志的输出遮盖（`plan.md` §220，`SessionOutputMasker`）目前是内置规则，有了规则表也可以让用户加自己的** |
 | 💡 | 🟢 P3 | **触发器 / 自动应答** | SecureCRT / Xshell | 全仓没有「输出匹配 → 自动发送」机制。expect 式：输出命中正则时自动发送响应（自动 yes、密码带外输入）。与上一行共用规则表，适合一起做 |
 | 💡 | 🟢 P3 | **终端内搜索的增强** | 各家都有 | 基础搜索已有（`MainWindowViewModel.TerminalSearchRequested`）。正则、大小写、全部高亮、上一个 / 下一个的循环计数 —— 按反馈再定 |
 | 💡 | 🟢 P3 | **Sixel / Kitty 图形协议** | MobaXterm / WezTerm | VT 引擎有 DCS 通道，缺的是图像解码 + 位图合成进自绘渲染。多日工作量，至今没有用户提过，**等真实需求** |
@@ -215,7 +215,6 @@
 
 | 状态 | 优先级 | 项 | 对标 | 架构落点 |
 | :---: | :---: | --- | --- | --- |
-| ⏳ | 🟠 P1 | **录制与日志的输出脱敏** | — | ⚠️ **现实风险，不是洁癖。**「输入脱敏不做」是对的（只录输出、密码无回显），但输出里照样有密钥：`cat .env`、`kubectl get secret -o yaml`、`env \| grep TOKEN`，会话日志与录制存的是原始字节。落点：`SshTerminalBridge.DataReceived` 这条旁路本来就是记录专用，在那里过一遍可配的脱敏规则，**不影响显示路径**。规则表与 A 组的自定义高亮共用 |
 | 🚧 | 🟠 P1 | **插件发布者的信任根** | VS Code / JetBrains | 已有：验签 + 发布者连续性（`plan.md` §57，钉住首装的公钥，换钥 / 去签名要用户看过两个指纹再点头）；市场 `GET /api/plugins/latest` 给出每版的发布者指纹、宿主有只读客户端 `IPluginMarketClient`，**更新路径**已拿它比对（`plan.md` §71）。⚠️ 但这仍是 TOFU：`velashell-identity` 是 OIDC 账号服务，不是公钥注册表。真要闭合，缺一份**由发布者身份背书**的 id ↔ 公钥映射（市场把上传者 `sub` 与公钥绑定并可对外验证），且**装包路径也去查它**。外呼仍只在打开插件管理页时发生，别改成开机外呼（`PRIVACY.md`） |
 | 🚧 | 🟡 P2 | **凭据管理器集成** | Termius | **设计已定稿**（velashell-docs [`zh/host/凭据管理器集成设计.md`](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/host/凭据管理器集成设计.md)，v3）。**已落地第一个凭据来源：本机共享凭据**（`plan.md` §157，#550）—— `CredentialReference` / `ICredentialProvider` / `ICredentialResolver` 契约、仓储不变量、五个构建点接线、解析失败退回登录框，以及设计 §3 的 D1 / D3。**还差外部保险库**：1Password / Bitwarden / KeePassXC 三家 CLI（`CliCredentialRunner`、解锁口令内存 TTL 缓存、`ICredentialUnlockPrompt`），届时给解析补上交互 / 非交互之分（自动重连不许弹解锁框，设计 §5.7）与单次尝试缓存，`CredentialReference` 再加 `Scope` 等字段（JSON 省略 null，零迁移）。⚠️ `ISecretProtector` **不是**那层抽象（它管加密不管来源，见设计 §1）。外部保险库的私钥走 SSH Agent。系统密钥链 provider 等 [`系统密钥链与sudo凭据填充可行性调研.md`](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/host/系统密钥链与sudo凭据填充可行性调研.md) 里 `IMasterKeyStore` 的 P/Invoke 层。设计 §3 的 D2（私钥口令不受「记住密码」控制）、D4（`SshSession.ConnectionInfo` 持有每一跳的密码）仍在；§16 另有 11 项待确认决策 |
 | ⏳ | 🟡 P2 | **主机证书（宿主侧）** | OpenSSH `@cert-authority` | **SSH 库已支持**（`plan.md` §113，velashell-docs `ssh/spec/03-key-exchange.md` §5.5）。宿主还用不上：`VelaHostKeyPolicy` 走自己的信任库（`IHostKeyService`），没有「受信 CA」的概念；证书目前按里面那把钥当普通主机密钥处理，默认算法清单里证书又排在后面，实际谈不成证书。要接：①信任库能存受信的主机 CA（手动添加，或从 `~/.ssh/known_hosts` 读 `@cert-authority`）；②`VelaHostKeyPolicy` 已实现 `IHostKeyTypePreference`（交出已记下的钥的类型，`ssh_plan.md` API-H4），还要在有对上的 CA 时把证书算法排前；③裁决时先用 `OpenSshCertificate.CheckHostCertificate` 验证书，CA 管的主机出示没有担保的钥**不退回 TOFU**（规格 §5.5 第 4 条）；④弹窗与设置页文案，五份 resx |
@@ -306,7 +305,7 @@
 | **连字（Ligatures）** | 自绘渲染器按**单元格**排版，无法跨字符连字。这是自绘换来渲染控制权的固有代价 |
 | **自适应标题栏颜色** | 主窗与全部对话框的标题栏都是自绘的（macOS 上只借用系统红绿灯，`plan.md` §118），这条已失去对象 |
 | **系统通知 Toast** | 需要 AppUserModelID 与通知框架。替代：常规页「声音提示」、安全审计页告警通道的「提示音」（`Security.AlertSound`）与消息中心（`plan.md` §20） |
-| **输入脱敏（会话录制）** | 只录**输出流**，密码本就无回显，没有要脱敏的对象（输出脱敏是另一回事，见路线图 E 组） |
+| **输入脱敏（会话录制）** | 只录**输出流**，密码本就无回显，没有要脱敏的对象（输出里的口令与令牌另有遮盖，见 `plan.md` §220） |
 | **运行时热切终端类型** | TERM 在**连接时**向远端协商，活动会话热切只会让本地仿真与远端 TERM 能力档不一致。「设置修改对新连接生效」即为正确语义 |
 | **按会话的独立代理** | 已落地为**应用级全局代理**（`plan.md` §12-10、§79）。别与动态 SOCKS 转发（`-D`）混淆 —— 那是**入站**隧道；四种**出站**模式（none / system / http / socks5）只决定第一跳 TCP 怎么走 |
 | **终端渲染的脏行检测 / 子可视化分带** | 2026-09-19 实测否决：纯字母满屏一帧只有 **54 个绘制操作**，逐格工作已被五套跨帧缓存压掉，不存在可被脏行检测救回的「每帧全量重算」。真要省绘制得走子可视化分带，要穿过滚动、选区、搜索高亮、光标层、侧栏、折叠六个子系统，且滚动本身就让全部带失效。见 `plan.md` §81 |

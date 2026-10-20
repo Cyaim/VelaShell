@@ -2866,6 +2866,12 @@
   <data name="SetSecurity_AutoRecordDesc" xml:space="preserve">
     <value>// 記錄終端輸出到本機資料庫供稽核與回放。預設關閉:錄製體積成長很快,用得多時一週就是幾個 GB。對之後建立的連線生效,保留天數隨「一般 → 終端工作階段記錄保留天數」</value>
   </data>
+  <data name="SetSecurity_MaskCaptures" xml:space="preserve">
+    <value>錄製與工作階段記錄中遮蓋密碼和權杖</value>
+  </data>
+  <data name="SetSecurity_MaskCapturesDesc" xml:space="preserve">
+    <value>// 寫入磁碟之前,把 PASSWORD=…、token: …、Bearer …、私密金鑰區塊以及常見格式的權杖換成 ***。螢幕顯示不受影響;對之後開始的錄製與記錄生效</value>
+  </data>
   <data name="SetSecurity_BlockOnChange" xml:space="preserve">
     <value>指紋變更時阻斷並告警</value>
   </data>

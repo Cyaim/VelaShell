@@ -77,6 +77,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     private readonly Dictionary<TerminalTabViewModel, SessionRecorder> _sessionRecorders = [];
     private readonly ISessionRecordingStore? _recordingStore;
 
+    /// <summary>挂在日志 / 录制前面的输出遮盖(设置 → 安全审计,默认开);停止记录时先把扣着的那一点放出去。</summary>
+    private readonly Dictionary<TerminalTabViewModel, List<SessionOutputMasker>> _captureMaskers = [];
+
     private readonly IAppDataStore? _appDataStore;
     private readonly PaletteRecency _paletteRecency;
 
@@ -2950,7 +2953,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 reason => ReportCaptureStopped("SessionLog_StoppedTitle", "SessionLog_StoppedBody", tab.Title, reason));
             if (writer is not null)
             {
-                tab.Bridge.DataReceived += writer.Write;
+                tab.Bridge.DataReceived += CaptureSink(tab, settings, writer.Write);
                 _sessionLogs[tab] = writer;
             }
         }
@@ -2971,9 +2974,28 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 tab.TerminalEmulator.Columns,
                 tab.TerminalEmulator.Rows,
                 reason => ReportCaptureStopped("Recorder_StoppedTitle", "Recorder_StoppedBody", tab.Title, reason));
-            tab.Bridge.DataReceived += recorder.Write;
+            tab.Bridge.DataReceived += CaptureSink(tab, settings, recorder.Write);
             _sessionRecorders[tab] = recorder;
         }
+    }
+
+    /// <summary>
+    /// 记录收什么:开着「遮盖口令与令牌」(默认)时在记录前面挂一个 <see cref="SessionOutputMasker" />,
+    /// 否则原样收。只动记录的那一份,屏幕显示走的是另一条路。
+    /// </summary>
+    private Action<byte[]> CaptureSink(TerminalTabViewModel tab, AppSettings settings, Action<byte[]> sink)
+    {
+        if (!settings.Security.MaskSecretsInCaptures)
+        {
+            return sink;
+        }
+        var masker = new SessionOutputMasker(sink);
+        if (!_captureMaskers.TryGetValue(tab, out List<SessionOutputMasker>? maskers))
+        {
+            _captureMaskers[tab] = maskers = [];
+        }
+        maskers.Add(masker);
+        return masker.Write;
     }
 
     /// <summary>
@@ -3007,6 +3029,14 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     private void StopSessionLogging(TerminalTabViewModel tab)
     {
+        if (_captureMaskers.Remove(tab, out List<SessionOutputMasker>? maskers))
+        {
+            // 扣着的半行(正写到一个值的中间)遮完放进记录,再关记录
+            foreach (SessionOutputMasker masker in maskers)
+            {
+                masker.Flush();
+            }
+        }
         if (_sessionLogs.Remove(tab, out SessionLogWriter? writer))
         {
             writer.Dispose(); // 旧桥可能还在收尾;Write 对已释放流是 no-op。
