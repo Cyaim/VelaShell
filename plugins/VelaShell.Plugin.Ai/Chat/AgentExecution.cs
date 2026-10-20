@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
+using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
 
 namespace VelaShell.Plugin.Ai.Chat;
@@ -13,7 +14,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
 {
     private sealed record Invocation(string Signature, Task<object?> Result);
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, Invocation> _calls = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Invocation> _calls = [with(StringComparer.Ordinal)];
     private readonly List<ChatMessage> _checkpoint = [];
     private readonly List<ChatMessage> _completed = [];
     internal IReadOnlyList<ChatMessage> CompletedMessages { get { lock (_gate) return [.. _completed]; } }
@@ -298,7 +299,7 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                     if (update.Contents.Any(c => c is TextContent or TextReasoningContent)
                         || ReasoningPeek.IsBlank(update))
                     {
-                        List<AIContent> prose = update.Contents.Where(c => c is TextContent or TextReasoningContent).ToList();
+                        var prose = update.Contents.Where(c => c is TextContent or TextReasoningContent).ToList();
                         foreach (TextContent text in prose.OfType<TextContent>()) partial.Append(text.Text);
                         ChatResponseUpdate visible = update.Clone();
                         visible.Contents = prose;
@@ -310,10 +311,13 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                     }
                 }
             }
+            failure = TransientFailure.TerminalFailure(buffered) ?? failure;
             if (failure is null)
             {
-                ChatResponse response = buffered.ToChatResponse();
-                if (response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Any()
+                var response = buffered.ToChatResponse();
+                if (!TransientFailure.HasMeaningfulOutput(buffered))
+                    failure = new HealthProbe.EmptyReplyException();
+                else if (response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Any()
                     && (response.FinishReason != ChatFinishReason.ToolCalls
                         || response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Any(c => c.Exception is not null)))
                     failure = new IOException("Incomplete model tool-call step; no tool was executed.");

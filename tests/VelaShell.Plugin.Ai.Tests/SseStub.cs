@@ -103,6 +103,7 @@ public sealed class SseStub : IAsyncDisposable
     /// <param name="holdFirstStream">只挂住首次流式请求,继续接收并立即回应后续请求。</param>
     /// <param name="firstStreamContent">若非 null,首次流式请求改回标准文本 SSE;不影响后续流及非流式请求。</param>
     /// <param name="skipFirstStreams">首流覆写或挂起前跳过的流式请求数；用于同一端点先完成聊天、后等待探活。</param>
+    /// <param name="streamingReply">按从1开始的流式请求序号选择完整SSE回复,不用于逐块挂起场景。</param>
     public SseStub(
         string sse,
         TimeSpan delay = default,
@@ -117,7 +118,8 @@ public sealed class SseStub : IAsyncDisposable
         bool holdAfterFirstChunk = false,
         bool holdFirstStream = false,
         string? firstStreamContent = null,
-        int skipFirstStreams = 0)
+        int skipFirstStreams = 0,
+        Func<int, string>? streamingReply = null)
     {
         // TCP 选出的空闲端口可能落在 Windows HTTP.sys 保留范围:对 HttpListener 却是 Access denied。
         // 只在端口注册失败时重新取一次,其它故障照常冒出;全套并行测试不能随机红。
@@ -263,7 +265,8 @@ public sealed class SseStub : IAsyncDisposable
                         context.Response.ContentType = "text/event-stream";
                         if ((firstStream && firstStreamContent is not null) || (chunkDelay <= TimeSpan.Zero && !holdAfterFirstChunk && !abortAfterFirstChunk))
                         {
-                            byte[] reply = firstStream ? firstStreamed : streamed;
+                            byte[] reply = streamingReply is null ? (firstStream ? firstStreamed : streamed)
+                                : Encoding.UTF8.GetBytes(streamingReply(receivedStreams));
                             context.Response.ContentLength64 = reply.Length;
                             await context.Response.OutputStream.WriteAsync(reply);
                             context.Response.Close();

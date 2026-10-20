@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.AI;
+using VelaShell.Plugin.Ai.Ui;
 
 namespace VelaShell.Plugin.Ai.Configuration;
 
@@ -46,6 +47,7 @@ public static class HealthProbe
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(Timeout);
         UsageDetails? usage = null;
+        Exception? terminal = null;
         try
         {
             using IChatClient client = credential is { } fixedCredential
@@ -68,34 +70,37 @@ public static class HealthProbe
             // 会被自己的「测试 / 全部检测 / 切换前探测」误判成不可用(见 ApplyEndpointQuirks)。
             AiSettingsStore.ApplyEndpointQuirks(options, model);
             string expectedReply = ProbeReply(options.StopSequences);
-            string reply = await Task.Run(async () =>
+            for (int attempt = 0; ; attempt++)
             {
-                var text = new StringBuilder();
-                await foreach (ChatResponseUpdate update in client
-                    .GetStreamingResponseAsync($"Reply with exactly: {expectedReply}", options, cts.Token)
-                    .ConfigureAwait(false))
+                string reply = await Task.Run(async () =>
                 {
-                    text.Append(update.Text);
-                    if (usageCallback is not null)
+                    var text = new StringBuilder();
+                    await foreach (ChatResponseUpdate update in client
+                        .GetStreamingResponseAsync($"Reply with exactly: {expectedReply}", options, cts.Token)
+                        .ConfigureAwait(false))
                     {
-                        foreach (AIContent content in update.Contents)
+                        text.Append(update.Text);
+                        terminal ??= TransientFailure.TerminalFailure([update]);
+                        if (usageCallback is not null)
                         {
-                            if (content is UsageContent reported)
+                            foreach (AIContent content in update.Contents)
                             {
-                                (usage ??= new UsageDetails()).Add(reported.Details);
+                                if (content is UsageContent reported)
+                                {
+                                    (usage ??= new UsageDetails()).Add(reported.Details);
+                                }
                             }
                         }
                     }
-                }
-                return text.ToString().Trim();
-            }, cts.Token);
-            if (!HasVisibleText(reply))
-            {
-                // HTTP 通了、一个字却没答:没答上探测问题,不算活 ——
-                // 否则故障转移会把一个答不上来的备用站端上来
-                return (new EmptyReplyException(), "");
+                    return text.ToString().Trim();
+                }, cts.Token);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (terminal is not null) return (terminal, "");
+                if (HasVisibleText(reply)) return (null, reply);
+                if (attempt >= 1) return (new EmptyReplyException(), "");
+                // 两次探测与退避共用原来的15秒预算,不重置截止时间。
+                await Task.Delay(TimeSpan.FromMilliseconds(400), cts.Token);
             }
-            return (null, reply);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -104,7 +109,7 @@ public static class HealthProbe
         catch (Exception ex)
         {
             // 到点触发的取消也落在这儿(上面那个 when 已把用户取消挑走)——对探活而言超时就是不通
-            return (ex, "");
+            return (terminal ?? ex, "");
         }
         finally
         {
