@@ -1,0 +1,1125 @@
+# VelaShell User Manual
+
+[简体中文](manual.md) · **English**
+
+<a id="scope"></a>
+## 1. Scope and How to Use This Manual
+
+This manual is for users managing servers, working in terminals, and transferring files with VelaShell. It does not cover building the application, developing plugins, or deploying servers. The content was checked against the current workspace source code and locally available official documentation on **2026-10-20**. It is not an all-platform acceptance-test report. Your operating system, distribution package, server permissions, installed plugins, and customized shortcuts affect which features are available.
+
+- Menu paths use English interface terminology. Some title-bar actions are icon-only: hover to read their tooltips. If you cannot find an action, search for it in the **Command Palette, `Ctrl+P`**.
+- A **connection profile** is saved host information in Explorer; a **session** is an actual connection; a **tab** hosts a terminal or file document. Editing a profile generally does not change an established session. Reconnect to use new connection parameters.
+- **SSH, SFTP, and FTP/FTPS are different protocols.** An SSH terminal runs an interactive shell on the server. SFTP operates on files through the SSH file subsystem. FTP/FTPS uses a separate file protocol. Opening a file pane does not mean every command runs in that directory or on that server.
+- **Read the warning before acting.** Risks are called out before synchronization with deletion, Agent forwarding, public listeners, secret exports, and AI write operations. `example.invalid`, `192.0.2.10`, `2001:db8::10`, and `demo` are placeholders; replace them with your own targets. Never put production passwords in demonstrations, screenshots, or chats.
+- This file is delivered in the location requested by the user; it does not change the project's policy of maintaining formal documentation in `velashell-docs`. Historical designs, plans, and README descriptions do not automatically mean that a feature is connected to the current interface. Known limitations are listed at the end.
+
+### Contents
+
+1. [Scope and How to Use This Manual](#scope)
+2. [Installation, First Launch, Updates, and Your First SSH Connection](#start)
+3. [Main Window and Entry-Point Reference](#navigation)
+4. [Connection Management, Import, and Export](#connections)
+5. [Authentication, Keys, and Shared Credentials](#authentication)
+6. [Proxies, Jump Hosts, Keepalive, and Reconnection](#network)
+7. [Working with the Terminal](#terminal)
+8. [Docking, Synchronized Input, and Quick Commands](#workspace)
+9. [SFTP/FTP Transfers, Editing, and Directory Bookmarks](#files)
+10. [Directory Comparison and Synchronization](#sync)
+11. [SSH Tunnels](#tunnels)
+12. [X11 Forwarding and X Server](#x11)
+13. [Resource Monitoring, Processes, Route Tracing, and Diagnostics](#operations)
+14. [Logs, Recording, and Playback](#recordings)
+15. [Settings: All Available Pages](#settings)
+16. [Security, Host Fingerprints, and Auditing](#security)
+17. [Gist Sync, Backup, and Migration](#backup)
+18. [Plugin Management, Optional Protocols, and Docker](#plugins)
+19. [AI Providers, Chat, Agent, MCP, and IM](#ai)
+20. [Message Center, Desktop Integration, and External Launch](#desktop)
+21. [Common Tasks and Troubleshooting](#troubleshooting)
+22. [Keyboard Shortcuts and Mouse Gestures](#shortcuts)
+23. [Explicit Limitations and Reference Index](#limits)
+
+<a id="start"></a>
+## 2. Installation, First Launch, Updates, and Your First SSH Connection
+
+### 2.1 Choose a Distribution Package
+
+**Entry point and prerequisites:** Obtain a package matching your operating system and CPU architecture from [GitHub Releases](https://github.com/joesdu/VelaShell/releases) or the official Microsoft Store entry. Windows offers x64/arm64 portable zip packages and a Microsoft Store edition; Linux offers x64/arm64 tar.gz, AppImage, deb/rpm packages; macOS offers x64/arm64 tar.gz and dmg packages. Packages include the runtime. End users do not need the .NET SDK.
+
+**Steps:** Extract a portable package or install the selected package format, then start VelaShell. Put a portable copy somewhere writable by your user and not subject to temporary-directory cleanup. Unsigned or unnotarized macOS packages may be blocked by the system: verify the source and downloaded file first, rather than disabling system protection globally for an unknown application. Install and update the Store edition through the Store.
+
+**Result and how it works:** Profiles, settings, and encrypted credentials are stored locally. Portable does not mean that all personal data is beside the executable. Regular distributions use `~/.velashell` in your home directory by default. SSH keys may also be in `~/.ssh` or another path specified in a profile. Store data is subject to system redirection and is not automatically shared with the portable edition.
+
+**Caution:** Finish important transfers, save remotely edited files, and finish sensitive command activity before updating. Copying the application directory alone is not a backup of your personal data.
+
+### 2.2 Recommended First-Launch Setup
+
+**Entry point:** **Settings (`Ctrl+,`)**.
+
+1. In **General → Language & Region**, select a language or follow the system language.
+2. Choose a theme and UI font in **Appearance**; check the monospaced font, size, and encoding in **Terminal**.
+3. Decide whether to remember passwords under **General → Privacy & Security**. Review fingerprint policy and on-disk secret masking under **Security Audit**.
+4. Review the feed under **General → Message Center**. Clear its URL if you do not want requests to that source. Startup update checks can be disabled separately.
+5. Configure **Network Proxy** first if your organization requires a proxy.
+6. Save settings. Recreate the affected connection, restart X Server, or restart the application where the page says changes apply on the next connection or startup.
+
+**Result and how it works:** Settings establish host and new-session defaults. Supported connection-specific overrides take precedence. Feeds, update checks, cloud sync, plugin-marketplace checks, and AI providers are separate network paths; turning off one does not disable all of them.
+
+### 2.3 Make Your First SSH Connection
+
+**Prerequisites:** A reachable SSH server, host name or IP, port, login user, and password or private key. Obtain the server's SSH host fingerprint from an administrator or another trusted channel. Installing the client does not create a server you are authorized to access.
+
+**Safety first:** A fingerprint is not trustworthy merely because this is your first connection. Verify its SHA-256 value through an independent channel. Investigate changes before accepting them.
+
+1. Click **+** at the top of Explorer or press `Ctrl+N`.
+2. Select **SSH**. Enter a name, host, port (commonly 22), and username. For example: name `Test server`, host `192.0.2.10`, user `demo`.
+3. Choose an authentication method. For password authentication, enter the password. For private-key authentication, select a local private-key file and supply its passphrase if required. A `.pub` public key is not a private key.
+4. Select a group if needed; keep other defaults initially. **Test** checks the connection, but a successful test is not an established, long-lived interactive terminal.
+5. Choose **Save** to save the profile or **Connect** to begin a session. Handle first-use fingerprint confirmation and any multifactor authentication challenge.
+6. Once the remote shell prompt appears, use read-only commands such as `pwd` and `hostname` to confirm the target before working.
+7. When finished, run `exit` remotely or close the tab. Check the target before approving any close confirmation.
+
+**Result:** An SSH terminal tab opens, and the saved host remains in Explorer for subsequent double-click access.
+
+**How it works and cautions:** SSH verifies server identity, authenticates the user, and allocates a remote pseudo-terminal. The profile name, client-side username field, and remote prompt are not equivalent evidence of identity. Rely on the verified fingerprint and actual remote identity. If connection fails, use [connection diagnostics](#operations) to identify the stage instead of repeatedly changing trust policy.
+
+### 2.4 Check for and Install Updates
+
+**Entry point:** **Settings → About**. Startup checking is controlled in **General**. Depending on update state, About also offers actions to restart and finish an update, repair an update, open logs, and export diagnostics.
+
+**Steps and result:** Run **Check for updates** and read the version information. Supported writable Windows/macOS distributions can download in the application, verify SHA-256, exit, and replace the application. If manual installation is requested, obtain the package from the release entry point. **Linux currently checks versions only; download and install updates manually. The Microsoft Store edition is updated by the Store.**
+
+**How it works and cautions:** Finishing a download does not switch the running process to the new version; complete the exit/restart. Application files and user data are separate, but back up before updating. Do not rely on older descriptions of user-selectable update channels or background automatic downloads that the current interface does not provide.
+
+<a id="navigation"></a>
+## 3. Main Window and Entry-Point Reference
+
+The main window contains a title bar, Explorer, a docking document area, and a bottom status bar. Explorer is normally on the left and can be moved to the right in Appearance. The central area can host terminals and independent dual-pane file documents. Each split pane has its own tab strip.
+
+### 3.1 Find a Feature by Task
+
+| I want to… | Preferred entry point | Prerequisite or result |
+| --- | --- | --- |
+| Add or edit a host | Explorer **+**; connection context menu **Edit** | Opens profile configuration; does not immediately alter a live session |
+| Connect quickly or reopen a recent target | Quick Connect / recent connections | Accepts forms such as `demo@host:22`; authentication and fingerprint checks still apply |
+| Find an application action | Command Palette, `Ctrl+P` | Search, select with arrow keys, execute with Enter |
+| Open a local terminal | Command Palette: open local terminal for a detected shell | Windows only; installed shells are listed; commands run locally, not on the current SSH server |
+| Show the SSH side file pane | `Ctrl+Shift+F` | The active session must support file services |
+| Open local/remote dual panes | A connection's file-document action or a new SFTP/FTP connection | Independent file tab with comparison, sync, and bookmark controls |
+| Copy between two servers | Ctrl-select two file connections → **Open in dual-pane SFTP** | Streamed through this computer, not directly between servers |
+| Manage SSH forwarding | Title-bar tunnel icon; `Ctrl+Shift+T` | Uses saved SSH profiles independently of terminal tabs |
+| Manage processes or monitor resources | Corresponding title-bar actions; resource metrics also from the status bar | Connected SSH session; supported remote sampling commands |
+| Trace a route | Title-bar route action / Command Palette | Probes originate locally, not from remote traceroute |
+| Start or stop X Server | Title-bar X Server icon | Used together with a connection's X11-forwarding setting |
+| View recordings | Settings → Security Audit → playback center | Only previously recorded sessions are available |
+| Manage quick commands | Settings → Snippets; sidebar Quick Commands panel | Organize, edit, and send snippets |
+| View notifications | Sidebar bell → Message Center | Updates, news, and security/runtime warnings |
+| Install extensions | Plugin Manager | Install a trusted `.vpx` or obtain it through the marketplace entry |
+| Use AI | Search AI in the Command Palette | AI is bundled; model access requires configuration |
+| Connect IM or an external Agent | Command Palette → AI collaboration integration | The opposite direction from adding MCP tool servers to the AI |
+
+**Usage:** If an icon is unavailable, first check focus and session type. An FTP tab does not provide SSH process management; a disconnected tab does not supply live resource metrics. The Command Palette executes application actions, not arbitrary remote shell input.
+
+<a id="connections"></a>
+## 4. Connection Management, Import, and Export
+
+### 4.1 Create, Save, and Edit Profiles
+
+**Entry point:** Explorer **+**, a connection's **Edit** context-menu item, or the new-connection shortcut.
+
+**Prerequisites and steps:** Choose SSH, SFTP, FTP, or a protocol supplied by an installed plugin. Enter the host, port, username, and protocol-specific fields; optionally set the name, group, tags, notes, jump host, and initial paths. Recheck port and authentication when changing protocol: SSH private-key authentication cannot simply be applied to FTP. **Test**, **Save**, and **Connect** check, persist, and start a session respectively. Correct invalid host syntax or missing authentication material when an action is unavailable.
+
+**Result and how it works:** The profile is stored locally; connecting creates the appropriate protocol session. SSH/SFTP targets may be host names, IPv4, or IPv6. Where one field contains both IPv6 and a port, use `[2001:db8::10]:2222`, rather than treating the last numeric segment as the port.
+
+**Caution:** Cloning creates another profile/session; later edits do not automatically propagate. Authentication material is shared only through an explicit shared-credential reference. Changing a host while keeping an old password is particularly sensitive: verify that the new target should receive that password.
+
+### 4.2 Groups, Multiple Selection, and Bulk Actions
+
+**Entry point:** Connection and group context menus.
+
+- Double-click a connection to open it. Use its context menu to edit, copy, pin, move, or delete it. Drag a connection into a group to move it; drag group rows to reorder them.
+- `Ctrl+click` adds or removes individual selections; `Shift+click` selects a range; `Ctrl+Shift` can add a further range.
+- Multiple selection offers actions to open N connections, bulk-edit, or export the selection. Group menus can open all, import into the group, or export the group. Opening more than ten connections requires confirmation. Up to six connect concurrently; individual failures do not cancel every target.
+- Bulk edits apply only fields explicitly selected, such as username, port, authentication, or jump host. Review the preview and skipped count. FTP/plugin targets do not accept unsupported private-key authentication types.
+
+**Result, mechanism, and caution:** Bulk edits change saved profiles, not the identity of already logged-in terminals. Check the selection before bulk deletion. [Synchronized input](#workspace) is separate from opening multiple sessions; bulk opening does not automatically broadcast commands.
+
+### 4.3 Import from Xshell, WinSCP, and OpenSSH
+
+**Entry point:** Explorer's more menu → import from other tools.
+
+**Steps:** Wait for the parallel scan of Xshell, WinSCP, and `~/.ssh/config`. Select a source manually if its default location is not found. Review importable and duplicate items, adjust selections, and import. Unsupported protocols cannot be selected. Passwords protected by the original tool's master password are not recovered; be ready to re-enter them.
+
+**Result and how it works:** This imports recognized parameters, not the complete behavior of another application. OpenSSH literal `Host` entries become profiles; `Host *` supplies defaults. Without `HostName`, the alias is used. An imported `IdentityFile` path does not prove that the file exists locally. `ProxyJump` requires the corresponding jump host in the import batch; otherwise the result remains direct and needs manual correction. `LocalForward`, `ServerAliveInterval`, and `ForwardAgent` are not imported automatically.
+
+**Caution:** Keep fingerprint checking enabled before and after import. Importing Xshell sessions is different from [Xshell-compatible external launch](#desktop).
+
+### 4.4 Import and Export Connection JSON/CSV
+
+**Sensitive-data warning:** Protect JSON exports containing secrets with a strong export passphrase and keep that passphrase separately. The application cannot recover a forgotten passphrase. Even exports without passwords may reveal hosts, usernames, notes, groups, and network structure. CSV imports can contain a `password` column; do not share such spreadsheets with untrusted parties.
+
+**Entry point:** Explorer's more menu offers connection-file import, export-all, and a CSV import template. Selection and group menus export the corresponding scope.
+
+**Steps:**
+
+1. Choose JSON for a complete connection export; choose CSV for spreadsheet editing. Save the template first and follow its headers. `host` is required.
+2. JSON exports exclude passwords by default. Explicitly include credentials when needed and set an export passphrase of at least 8 characters. The file uses a passphrase-derived key and AES-GCM. **CSV exports never contain secrets.**
+3. Select the import file (maximum 16 MB), enter its decryption passphrase if required, and review targets and groups in the preview.
+4. Duplicates are skipped by default. Choose overwrite only when intended, or keep both. Import, then spot-check hosts, jump hosts, authentication, and paths.
+
+**Result and how it works:** JSON can carry profiles, groups, jump-host dependencies, shared credentials, and tunnels; required jump hosts are included in the export. This is not the application-settings JSON under General → Data & Storage.
+
+**Caution:** Overwrite may retain a local password while updating host parameters; ensure an old password will not be sent to a new host. Exporting a private-key path does not back up the file itself. Copy actual key files securely during migration.
+
+<a id="authentication"></a>
+## 5. Authentication, Keys, and Shared Credentials
+
+### 5.1 Choose an Authentication Method
+
+**Entry point:** Connection configuration → General → authentication method / credential source.
+
+| Method | Prerequisites and operation | Result, mechanism, and caution |
+| --- | --- | --- |
+| Password | Enter username/password; optionally remember it | The remote SSH server authenticates you; MFA may add a challenge. Basic FTP/plugin authentication is password-based |
+| Private key | Select a local private key and supply its passphrase if needed | Supported OpenSSH, PKCS#8, PPK, and other key formats are parsed by the SSH layer. The server must already authorize the public key; selecting a file does not install it |
+| Certificate | Select an SSH certificate and matching private key | The certificate is not the private key. Selecting `-cert.pub` can infer a private-key path; verify existence and matching material |
+| Agent | Start/configure the local SSH Agent and add the required key | The Agent signs authentication requests. Entering a host does not automatically select Agent authentication or search your key directories |
+| Tailscale | Both ends must meet Tailscale SSH environment and authorization requirements | Access depends on identity and policy; this is not a passwordless bypass of server authorization |
+
+**Steps:** Establish what the server accepts, select the corresponding method and material, test, and connect. Enter interactive verification codes in the challenge dialog when requested. Cancelling stops authentication. Private-key, certificate, and Agent methods do not silently fall back to password authentication.
+
+**Caution:** Do not interpret troubleshooting as an invitation to try every method through automatic key discovery. Fix a missing Agent or invalid material locally. A saved password does not mean a one-time verification code should also be saved.
+
+Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS name or tailnet IP, the remote operating-system username, and an enabled Tailscale SSH policy authorizing that user. A check policy may require browser approval; verify what you are approving. Fingerprint checks, jump hosts, and proxies still apply. Interaction-free access is not guaranteed.
+
+### 5.2 Fill a Shared Password in the Terminal
+
+**Disclosure warning:** The client cannot prove that the remote terminal has disabled echo. A malicious or misconfigured host can display or log the password. Use this only on a trusted terminal showing the password prompt you expect.
+
+**Entry point and steps:** Focus a connected terminal on the primary screen at the bottom of the buffer, not scrolled into history. Recognized `Password:`, sudo, Git, or Chinese password prompts can show a shared-password list beside the cursor line. If detection does not trigger, use the Command Palette action to fill a shared password. Only password-authentication shared credentials with a stored password are listed. Nothing is initially selected, so Enter still goes to the remote terminal. Click an item, or select with ↑↓ and press Enter, to retrieve and fill it. **No Enter is appended.** Check, then press Enter to submit; Esc closes the list.
+
+**Result and how it works:** The selected secret goes directly to the bound terminal connection, not through the clipboard, synchronized-input channel, or completion. UI, connection, or input-state changes expire the request. Private-key passphrases and verification codes are outside automatic detection. Queuing input does not prove delivery; recheck after state changes instead of blindly sending it again.
+
+### 5.3 Key Management
+
+**Entry point:** **Settings → Key Management**.
+
+**Operation:** Search existing keys, generate Ed25519, ECDSA 256/384/521, or RSA 4096 keys, or import an existing key. Copy the public key to the administrator for authorization according to server policy. A default key can be selected. Automatically adding keys to the SSH Agent after login is optional and off by default.
+
+**Result and how it works:** These entries manage real files. Public keys can be distributed; private keys belong on controlled devices. A key passphrase protects use after a file is copied; it does not replace local access control.
+
+**Before deleting:** Deletion affects the actual private-key file under `~/.ssh`, not just a UI record. The confirmation shows the name and private-key path. Verify a protected offline backup and check whether Git, OpenSSH, or automation also uses the key. Generating another key with the same name will not restore access authorized for the old key.
+
+### 5.4 Shared Credentials
+
+**Entry point:** **Settings → Shared Credentials** to create, search, edit, or delete identities. Select a credential source in a connection's General page; authentication material can also be copied from an existing connection.
+
+**Prerequisites and steps:** When multiple hosts genuinely use the same identity, create a named credential with username and authentication material, then reference it from those profiles. A blank profile username inherits the shared value; a filled username overrides it. Save and reconnect to verify.
+
+**Result and how it works:** Profiles retain references rather than independent secret copies. An edit affects every referencing profile's **next connection**. Missing/rejected credentials may lead to a login dialog where you can choose whether to update the shared credential; updating is not preselected for a rejection case.
+
+**Caution:** Check the usage scope before editing. Deletion requires confirmation and copies referenced authentication material back into affected profiles to avoid breaking their login configurations. Therefore deleting a shared credential does not securely erase every local copy of its secrets. Synced file paths refer to each device's own files; Gist sync without end-to-end encryption does not carry secrets.
+
+<a id="network"></a>
+## 6. Proxies, Jump Hosts, Keepalive, and Reconnection
+
+### 6.1 Global Proxy
+
+**Entry point:** **Settings → Network Proxy**.
+
+**Steps:** Select no proxy, system proxy, HTTP, or SOCKS5 as required. For a custom proxy, enter address, port, and credentials; enable remote DNS if appropriate. Save and test a new connection.
+
+**Result and how it works:** System proxy is the default. The setting affects SSH/SFTP/FTP and outgoing HTTP paths such as updates, Gist, feeds, and plugins. In a jump-host chain, it affects the first outbound hop from this computer, not a separate proxy configuration on every host. DNS resolution location affects internal names and where name information is exposed.
+
+**Caution:** A proxy is not an SSH jump host. Reaching the target through HTTP/SOCKS5 does not grant server access. Per-connection proxy configuration is not currently available. Regular settings export removes the proxy password; re-enter it after importing on another device.
+
+### 6.2 Multiple Jump Hosts
+
+**Entry point:** Jump-host selection on the connection's General page.
+
+**Prerequisites and steps:** Save and verify the reachable SSH/SFTP jump-host profile first. Select it for the target. For multiple hops, make the profiles reference the preceding hops without cycles. Handle authentication and host fingerprints separately at each hop.
+
+**Result and how it works:** The application opens a forwarding channel inside the preceding SSH connection and establishes the next SSH connection over it. A jump host carries channels; it does not automatically create an interactive shell for each hop. The final host still needs independent authentication and identity verification.
+
+**Caution:** Distinguish first-hop network failure, jump-host authentication, reachability from jump host to target, and final-target authentication. An unresolved imported jump-host name may leave a direct connection; verify it after import.
+
+### 6.3 Timeouts, Keepalive, and Anti-Idle
+
+**Entry point:** **Settings → General → Connection Defaults**; per-connection keepalive overrides are on the Terminal page.
+
+**Steps:** Start with the defaults: 30-second connection timeout and 60-second keepalive. If network devices frequently drop idle connections, adjust with your administrator. Per-connection keepalive `-1` inherits the global value, `0` disables it, and the maximum is 3600 seconds. Anti-idle is a separate session option, disabled by default.
+
+**Result and how it works:** SSH keepalive checks whether a connection remains usable. Anti-idle sends NUL to the PTY in an attempt to prevent terminal-activity-based idle logout. They are not the same feature. Neither bypasses an organization's mandatory session expiry nor guarantees uninterrupted networking.
+
+### 6.4 Automatic and Manual Reconnection
+
+**Fingerprint boundary:** Automatic reconnection stops for unknown/changed fingerprints or authentication requiring human intervention. It does not keep a fingerprint dialog waiting or silently trust a key. Recover through manual reconnection, verify the fingerprint independently, and accept only when justified or contact your administrator. **Do not disable fingerprint checking to restore connectivity.**
+
+**Entry point and steps:** General behavior settings control automatic reconnection, maximum attempts, and interval cap. Use the disconnected-session overlay, or press `Enter`/`Ctrl+R` in a disconnected tab. `Esc` closes a disconnected tab.
+
+**Result and how it works:** Automatic reconnection defaults to on, with at most 3 attempts and a 5-second interval cap; unexpected disconnections use backoff such as 1/2/4 seconds. Initial handshake failure, intentional disconnect, remote `exit`, local shell exit, fingerprint rejection, and authentication requiring intervention are not retried indefinitely. Reconnection creates a new session; it does not restore unsaved state in the previous shell process. Use appropriate server-side session-persistence tools for important long-running work.
+
+<a id="terminal"></a>
+## 7. Working with the Terminal
+
+### 7.1 Remote and Local Terminals
+
+**Entry point and prerequisites:** Connecting an SSH profile opens a remote terminal. **Local terminals are currently Windows-only.** Search for the local-terminal action in `Ctrl+P`. Detected installations can include PowerShell 7, Windows PowerShell, CMD, WSL, and Git Bash; absent shells are not listed. Linux/macOS currently have no local-terminal entry. Check the tab and prompt before running commands.
+
+**Steps and result:** Type and press Enter to send a command to the active terminal. Remote commands use server permissions/resources; local commands affect your computer. Opening the SSH side file pane does not turn a local terminal into a remote one. Changing tabs does not move a running command to another machine.
+
+**How it works and cautions:** The VT terminal interprets text, control sequences, cursor movement, and colors; the shell interprets commands. The client is not a replacement for bash or PowerShell. Diagnose terminal parameters and remote-shell behavior separately for full-screen applications, encoding, and key problems.
+
+### 7.2 Fonts, Colors, Encoding, and Display
+
+**Entry point:** **Settings → Appearance / Terminal**; supported per-host overrides are on the connection's Terminal page.
+
+**Steps:** For garbled output, compare the actual remote encoding and selected decoding. For alignment, choose a monospaced font with sufficient character coverage, then adjust size, line height, and padding. Match TERM to the remote application's expectations. Use `Ctrl+=`, `Ctrl+-`, and `Ctrl+0` for temporary zoom in/out/reset.
+
+**Result and how it works:** Encoding turns bytes into characters; fonts draw them. A font change cannot repair incorrect decoding. Themes and ANSI palettes change presentation, not remote output content. Terminal-background transparency and window opacity are separate settings.
+
+**Caution:** Per-line times are client-side display aids, not authoritative remote business-event timestamps. Remote output can control screen colors, titles, and links.
+
+### 7.3 Select, Copy, Paste, and Open Links
+
+**Execution warning:** Multiline paste can execute multiple commands. Without bracketed-paste support on the target, embedded line breaks can execute lines even if the client appends no Enter. Keep multiline-paste confirmation enabled; verify host and content. In particular, do not blindly paste website instructions into a production terminal.
+
+**Steps:** Drag to select; double-click selects a word when enabled; `Shift+click` extends the selection. `Alt+drag` selects a rectangle, `Ctrl+Shift+drag` adds a discontiguous selection, and `Ctrl+Shift+Alt+drag` adds a rectangle. When a full-screen application reports mouse input, use `Shift+drag` to bypass reporting and select text. Copy with `Ctrl+Shift+C`; paste with `Ctrl+Shift+V` or `Shift+Insert`.
+
+**Result and how it works:** Copying can trim trailing spaces according to settings. Copy-on-select, right-click paste, and Ctrl+C-to-copy-with-selection modify normal gestures. Treat `Ctrl+C` as remote interrupt by default. With the selection-copy exception enabled, it copies rather than interrupts while a selection exists; clear the selection first.
+
+**Links:** `Ctrl+click` opens recognized links; inspect the actual target. Remote OSC 52 writes to the local clipboard are controlled separately in Terminal settings. Do not unconditionally let untrusted hosts overwrite the clipboard.
+
+### 7.4 Scrollback, Search, Clear, and Buffer Export
+
+**Entry point and operation:** `Ctrl+F` opens search; Enter finds next, Shift+Enter previous, and Esc closes it. PageUp/PageDown scroll primary-screen history; Shift+PageUp/PageDown also scroll the alternate screen. Alt+wheel accelerates scrolling. Settings control scrolling on output/keypress, alternate-screen wheel behavior, and scrollback size (100–200000 lines). `Ctrl+Shift+K` clears the terminal display.
+
+**Result and how it works:** Search covers content retained in the current terminal, not remote disk logs. Output discarded beyond the scrollback limit cannot be recovered by searching. The Command Palette can export the selection or current buffer as plain text: this is a snapshot, not continuous logging or a timed recording. Clearing the screen neither deletes remote files nor erases local logs or audits.
+
+### 7.5 Command Suggestions and Native Shell Completion
+
+**Entry point and operation:** `Alt+Enter` opens suggestions; use ↑↓ to select, Enter to adopt, and Esc to close. Empty input can show quick commands/history. Right/End accepts available ghost text; Tab remains native shell completion.
+
+**Result and how it works:** Local suggestions rank recent history, common subcommands, and quick commands. They do not guarantee awareness of the remote program, permissions, paths, or command safety. Adopting usually inserts text; review before executing. Placeholder-bearing quick-command suggestions are not expanded here, and multiline quick commands are excluded from completion.
+
+### 7.6 Line Numbers, Times, Command Blocks, and Shell Integration
+
+**Entry point:** `Ctrl+Shift+L` toggles the line-number/time gutter; right-click it for options. **Settings → Terminal → Session** provides read-only bash/zsh shell-integration snippets.
+
+**Steps:** To use command blocks, read the instructions and add the appropriate OSC 133 snippet to your shell configuration. Check interactions with prompt tools such as starship or oh-my-posh. Reopen the shell and run a command to verify markers. Click the gutter to fold/unfold output, click a command marker to select its output, and use `Ctrl+Shift+↑/↓` to jump between prompts.
+
+**Result and how it works:** The remote shell reports command boundaries with OSC 133; the client cannot reliably infer them from arbitrary text. Without integration, equivalent command-block navigation is unavailable. Command-block rerun/copy-command actions are not current features. Working-directory reporting also needs remote cooperation; not every shell automatically follows a file-pane path.
+
+<a id="workspace"></a>
+## 8. Docking, Synchronized Input, and Quick Commands
+
+### 8.1 Tabs and Splits
+
+**Entry point and steps:** Open multiple tabs and drag one to a docking edge to split at the indicated target. Alternatively, `Ctrl+Shift+D` splits horizontally and `Ctrl+Shift+S` vertically. `Alt+arrow` moves focus between panes; `Ctrl+Shift+X` maximizes/restores the current pane. Drag dividers to resize or double-click to equalize. Tab context menus offer tab-strip display/order options and pinning; middle-click closes unpinned tabs.
+
+**Result and how it works:** Each pane has its own tab strip; numeric tab navigation counts within that strip. Pinning protects against some quick-close actions and currently lasts for this run only.
+
+**Caution:** Arbitrary floating windows created by dragging docking tabs out, named layouts, and complete layout persistence are not supported. Restoring previous sessions is not restoring the full workspace. Dual-remote file tabs are not restored either.
+
+### 8.2 Synchronized Input Across Terminals
+
+**High risk:** Every machine in a channel can receive the same destructive command. Verify host, permissions, and shell state before joining. Pause or leave before entering passwords, switching to production, or running interactive programs, to avoid broadcasting secrets or control keys.
+
+**Entry point and steps:** Use tab context menus to join synchronized-input channel A/B/C/D. Put cooperating tabs in the same channel and check their top banner. Keyboard input, IME text, and pasted text from an active member are broadcast. Pause, leave, or close the channel from the banner; leave promptly when finished.
+
+**Result and how it works:** Members are peers, not a permanent master and followers. Pausing stops both sending and receiving for that tab; disconnected tabs do not receive input. Different encodings are transcoded. Writing to the destination PTY does not rebroadcast and form a loop.
+
+**Caution:** Input is synchronized, not results or server state. Different directories, prompts, programs, or execution speeds can make identical input behave very differently.
+
+### 8.3 Quick Commands and Parameters
+
+**Multiline warning:** Quick commands append no Enter, but multiline bodies are not inherently safe. Shells without bracketed paste may execute embedded newlines immediately. Check content and target before sending, and keep multiline confirmation enabled.
+
+**Entry point:** Manage groups/snippets under **Settings → Snippets** and use them from the sidebar Quick Commands panel.
+
+**Steps:** Create a name and command body, optionally grouped. Use `{{name}}` or `{{name=default}}`, for example `cd {{directory=/tmp}}`. Supply prompted values, check the expanded result, and send. For single-line commands, decide separately whether to press Enter.
+
+**Result and how it works:** The host substitutes strings and sends the body to the current terminal. It is not a remote script-management service and does not validate shell escaping, permissions, or paths. Multiline sends prefer bracketed paste; otherwise follow confirmation behavior. There is no automatic-execution switch for quick commands.
+
+<a id="files"></a>
+## 9. SFTP/FTP Transfers, Editing, and Directory Bookmarks
+
+### 9.1 Side Pane or Independent Dual Panes?
+
+**Entry point and prerequisites:** Toggle the SSH side file pane with `Ctrl+Shift+F`; create SFTP or FTP profiles for independent file tabs. SSH/SFTP requires the server's file subsystem; FTP/FTPS requires its corresponding service. Plugin file protocols require the plugin first.
+
+**Steps and result:** Independent dual panes show local files on the left and remote files on the right. Resize with the divider. The toolbar offers directory comparison, synchronization, **Save current directories**, and **Bookmarks**. The remote-only side pane does not have the complete local/remote comparison/sync toolbar. Navigate remotely with breadcrumbs; `Ctrl+L` edits a path, Enter navigates, and Esc cancels. Refresh, show hidden files, create files/directories, and view transfer history as needed.
+
+**How it works and cautions:** A session's shell, files, and monitoring commands can use separate SSH channels. Sharing an SSH connection does not share the shell's working directory or execution context. An SFTP-only account may prohibit shell/exec, so transfers can work while resource monitoring or remote SHA-256 does not.
+
+### 9.2 FTP/FTPS Connections
+
+**Plaintext warning:** FTP encryption **None** sends usernames, passwords, and contents in plaintext. **The default Auto setting does not guarantee encryption either: it tries explicit FTPS and falls back to plaintext FTP if unsupported.** On untrusted networks, explicitly choose the server's supported explicit/implicit FTPS mode and verify certificates, or use SFTP. Do not treat Auto as mandatory TLS. Anonymous login does not itself provide encryption; a reachable port is no reason to remove security checks.
+
+**Entry point and steps:** Create an FTP connection with address, port, and account. Choose Auto, explicit, implicit, or no encryption according to server documentation; configure anonymous/passive behavior as needed. Set the initial directory in advanced options. Check fingerprint and certificate issuance details before trusting a TLS warning.
+
+**Result and how it works:** FTP has control and data connections; FTPS adds TLS. It is not SSH. Passive mode, data ports, and firewalls affect cases where login works but transfers fail. FTP certificate trust is separate from SSH host-key trust.
+
+### 9.3 Upload, Download, and Manage Files
+
+**Overwrite/deletion warning:** Check both paths, selected files, and conflict policy first. Remote deletion does not use the local recycle bin. Recursive deletion can immediately affect an entire directory tree; back it up beforehand.
+
+**Steps:** Select local items to upload, or remote items to download into the local pane's current directory. Directories transfer recursively. Remote context menus offer open, open with default editor, download, rename, move to, copy to, properties, and delete. Permissions/ownership can change only where supported by protocol and account; the client cannot bypass server authorization.
+
+**Result and how it works:** Transfers appear in the progress popup/history. Settings control concurrency (1–16), bandwidth, timestamps, completion notifications, and logs. Ordinary name conflicts can ask, overwrite, skip, or rename. Directory synchronization uses its preview rather than that ordinary conflict policy.
+
+**Resume and cancellation:** With resume enabled, a nonempty destination smaller than the source is verified before resuming. Verification failure follows conflict policy; a matching name is not enough to append blindly. Keeping partial files enables later resume. The popup supports bulk cancellation, clearing completed items, and manually retrying failures as new transfer attempts. Automatic retry counts are not wired into runtime, and transfer queues do not persist across application launches. Finish important transfers before quitting.
+
+### 9.4 Built-In and External Remote Editing
+
+**Write-back warning:** Saving a local editing copy can overwrite the original remote path. Back up production configuration first and verify account/file. Avoid two people or editing sessions overwriting one another's work.
+
+**Entry point and steps:** A remote file's **Open** action follows the built-in opening flow; **Open with default editor** uses the editor in File Transfer settings. Double-click behavior is configurable under remote editing, so it is not always the built-in editor.
+
+- Built-in opening accepts regular files up to 5 MB. It downloads into a dedicated temporary directory. `Ctrl+S` saves and uploads to the original path.
+- For external editing, configure the editor path first. VelaShell downloads a temporary copy, launches the editor, and watches saves according to automatic-upload settings, with approximately 600 ms debounce.
+- Check transfer results before closing the file tab. Closing the document finishes editing-session cleanup before disconnecting.
+
+**Result and how it works:** This is a local temporary copy plus remote write-back, not the local editor running on remote storage. An external editor's Save As is not guaranteed to update the original. Disconnection, crashes, permissions, or size limits can prevent upload. Temporary copies can contain sensitive content and are not guaranteed to be cleaned up after a crash.
+
+### 9.5 Local/Remote Directory Bookmarks
+
+**Entry point and steps:** Navigate both panes to frequently used directories, then choose **Save current directories**. Use **Bookmarks** to select a saved pair and navigate both sides. Bookmarks can be edited or deleted.
+
+**Result and how it works:** Each connection stores local↔remote path pairs. Deleting a bookmark does not delete directories. Saved profiles retain bookmarks; temporary connections retain them for this run only. Dual-remote tabs do not offer these paired bookmarks. Adjust local paths after migration. Do not assume copied profiles or old sync payloads always preserve every bookmark detail.
+
+### 9.6 Copy Between Two Remote Hosts
+
+**Entry point and prerequisites:** Ctrl-select two different file-capable connections in Explorer → **Open in dual-pane SFTP**. Either side can be SFTP, FTP/FTPS, or a plugin file protocol. Redis workspaces and terminal protocols such as Telnet cannot use this flow.
+
+**Steps:** Check left/right hosts and paths, select source items, and choose the copy direction. **Compare directories** checks the current level only; there is no sync or keep-up-to-date action. Closing this tab disconnects its two independent connections.
+
+**Result and how it works:** Data streams through local memory, without placing destination credentials on the source server. It is not `scp` running directly from A to B. Both network legs limit speed. A same-session copy-to operation may use temporary files and is not the same mechanism.
+
+**Caution:** Plugin destinations must support streamed uploads or that direction is unavailable. Relay resume is supported only for suitable combinations such as a seekable SFTP source; FTP/plugin sources do not guarantee it. Recursion does not descend into internal directory symlinks. These tabs are excluded from startup restoration.
+
+<a id="sync"></a>
+## 10. Directory Comparison and Synchronization
+
+### 10.1 Compare the Current Level
+
+**Entry point and steps:** Navigate the independent local/remote panes to the directories and choose directory comparison. The application highlights items present on only one side, newer items, and conflicts, and reports counts. Navigating clears the result.
+
+**Result and how it works:** This is nonrecursive difference highlighting, not an automatic transfer. Local/remote comparison uses comparison settings and can use SHA-256 by default. Dual-remote comparison uses size and modification time only. When remote dotfiles are hidden, matching local dotfiles are excluded too, avoiding misleading differences for `.git`, `.env`, and similar files.
+
+### 10.2 Preview, Then Synchronize
+
+**Data-loss warning:** Mirror mode can overwrite newer destination versions. Deleting extra files removes destination-only items, potentially entire directory trees. Wrong direction, paths, or masks can cause irreversible loss. Back up first and test on a small directory without deletion. **Do not test mirroring against a production root.**
+
+**Entry point and prerequisites:** Choose synchronization on a single-remote file document's toolbar. Enter local/remote roots and confirm scan/write permissions.
+
+1. Select local→remote, remote→local, or bidirectional.
+2. Choose synchronize files, mirror files, or timestamps only.
+3. Select SHA-256, modification time, and/or file size. Configure existing-only, masks, and deletion as needed.
+4. Compare and wait for scanning. Review each proposed action, relative path, size, and time; deselect unwanted items.
+5. Changing options invalidates the preview and requires comparison again. Synchronize only after review; deletion has an additional confirmation.
+6. Read results and the automatic recheck. Address remaining differences rather than treating a completed progress bar as proof of equality.
+
+| Mode/option | Effect and boundary |
+| --- | --- |
+| Synchronize files | Transfers missing, newer, or differently sized files without overwriting a newer destination |
+| Mirror files | Source wins for differences, even if destination is newer; deleting extras is a separate option |
+| Timestamps only | Transfers no content; changes destination time only when both files exist, sizes match, and times differ; no deletion |
+| Bidirectional | Uses synchronize-files behavior, without mirroring or deletion; equal-time/content-different conflicts need manual decisions |
+| No comparison criteria selected | Adds missing items only; does not inspect existing contents for differences |
+| File mask | `include \| exclude`; separate masks with `;`, use `*`/`?`, and end directory masks in `/`; excluded directories are neither scanned nor deleted |
+
+For example, `*.conf;*.txt | cache/;*.tmp` considers the listed types and excludes cache directories/temporary files. Still inspect the preview rather than guessing the deletion scope from the mask.
+
+**Execution mechanism:** Create directories, adjust times, transfer files, then delete. Cancellation prevents proceeding with further deletion. Sync uses the transfer pipeline but does not repeat ordinary name-conflict prompts or resume probing: **the preview is the confirmation for this run**. It attempts to align modification times after transfer regardless of the ordinary preserve-timestamps switch.
+
+### 10.3 SHA-256, Times, and Conflicts
+
+**Prerequisites and result:** Hash comparison is useful when sizes match. Equal hashes avoid retransmission even if times differ. SFTP tries remote `sha256sum`/`shasum -a 256`; FTP/FTPS uses server checksum commands. Missing exec access/tools or unsupported servers cause fallback to time+size, with the reason shown. Dual-remote comparison does not use SHA-256.
+
+**How it works and cautions:** Hashing reads both sides' storage and can slow the first large comparison. Caches live within the document/window. Content deliberately changed while size and modification time remain unchanged may evade cache invalidation; reopen comparison. FTP LIST times reflect server-local time and can be offset across time zones. Size-only comparison may be a temporary choice, but equal size does not prove equal content. Unsupported timestamp updates, such as FTP without MFMT, may make bidirectional sync download a just-uploaded file again; address the warning first.
+
+Type conflicts, case-only name differences, and illegal local filenames are not solved safely by blind overwrite. Directory symlinks are not traversed; remote file links are treated as files. Synchronization is file-level, not a transaction: a later error does not roll back earlier successful writes.
+
+### 10.4 Keep the Remote Directory Up to Date
+
+**Deletion risk remains:** Local changes automatically trigger remote updates; with deletion selected, local deletions may propagate remotely. Verify direction, masks, and backup first. Do not let build outputs or temporary files unexpectedly overwrite production content.
+
+**Entry point and steps:** Choose keep-remote-up-to-date in the sync window, perform an initial full alignment, and keep both window and document open. Watch activity and stop when needed. Closing the window or file tab stops it.
+
+**Result and how it works:** Local→remote only. A local filesystem watcher tracks subdirectories and debounces for about 1 second before resynchronizing affected directories. New directories are scanned recursively; watcher overflow triggers a full rescan. This is not remote bidirectional watching or a service that survives application exit. Sync options remain in the current document only and reset after restart.
+
+<a id="tunnels"></a>
+## 11. SSH Tunnels
+
+### 11.1 Choose the Direction and Listening Side
+
+**Exposure warning:** Use loopback `127.0.0.1` by default. Binding `0.0.0.0`, a LAN address, or a publicly reachable server interface can expose databases, internal services, or an unauthenticated SOCKS proxy. Check firewall, permitted sources, and authorization before public listening. Connectivity alone does not justify exposure.
+
+**Entry point and prerequisites:** Title-bar tunnel icon, `Ctrl+Shift+T`, or Command Palette. A saved **SSH** profile is required. The panel does not use SFTP, FTP, or plugin profiles, and no terminal must be open first.
+
+| Type | Listener | Destination is reached from | Typical use |
+| --- | --- | --- | --- |
+| Local `-L` | Local address/port | SSH server side | A local tool accesses an internal database reachable by the server |
+| Remote `-R` | SSH server address/port | Local computer side | A server-side client reaches a service on this computer |
+| Dynamic `-D` | Local SOCKS5 port | SSH server side | SOCKS5-capable applications access a network through the server |
+
+### 11.2 Create, Start, Stop, and Recover
+
+**Steps:** Select a server and create a forward. Set alias, type, and listening host/port; local/remote forwards also need destination host/port. Dynamic forwarding has no fixed destination. The default destination is `127.0.0.1` on the relevant side; clear that default-target option to use another internal host. Save, start, and check status, cumulative traffic, and connection count. Configure the consuming application to use the forwarded port or SOCKS5 address. Stop when finished; deleting a forward asks for confirmation and stops it.
+
+**Result and how it works:** The tunnel maintains SSH transport and opens channels for client connections. It does not automatically configure your browser/system proxy. Upload/download figures are cumulative bytes, not instantaneous rates. Local listener ports are prechecked for conflicts. Remote listening depends on the server's response, not whether the same port is free locally.
+
+**Automatic behavior:** Saving does not mean listening at next startup; forwards default to stopped after restart. Explicitly enable startup establishment when needed. Reconnection after loss is separate and off by default. Tunnel retries back off through 10 seconds, 30 seconds, 1 minute, 2 minutes, and 5 minutes. Manual stop does not restart automatically. Fingerprint/authentication requiring intervention stops retrying.
+
+**Caution:** `-R` listens on the server; a loopback address does not mean the listener is on your computer. Remote dynamic forwarding, Unix-socket forwarding, live rates, rate limits, and connection details supported by lower layers are not necessarily exposed by this panel. Editing configuration files does not make unexposed capabilities supported user operations.
+
+<a id="x11"></a>
+## 12. X11 Forwarding and X Server
+
+**Trust warning:** X11 clients can potentially inspect windows, simulate input, and access clipboard data. Trusted programs sharing one display are not isolated security containers. Enable trusted forwarding only for trusted hosts. For less trusted targets, consider untrusted forwarding, per-session displays, and forwarded-program restrictions.
+
+### 12.1 Run a Remote Graphical Application
+
+**Entry point and prerequisites:** SSH configuration → Forwarding → X11; **Settings → X Server**; title-bar X Server icon. SFTP profiles do not show the Forwarding page. The server must permit X11 forwarding and have the application installed.
+
+1. Select the built-in engine in X Server settings. Windows can instead use a separately installed VcXsrv executable.
+2. Review display number, window mode, clipboard, and security options; save. Changes take effect at the next X Server start.
+3. Enable X11 forwarding in the SSH profile. Leave the display address blank to use the local built-in server. Trusted forwarding (`-Y`) is currently checked by default: evaluate target trust, and uncheck it when those privileges are unnecessary.
+4. Start X Server or enable automatic startup with X11 connections. Reconnect SSH, then start the installed graphical application remotely.
+5. Close applications when finished. With the built-in engine running, click the title-bar icon again for the program-management popup to disconnect a program, release a grab, or stop the server. VcXsrv controls only start/stop the external process.
+
+**Result and how it works:** Applications still run remotely. X11 protocol travels through SSH channels for local display. This is neither a remote desktop nor local installation of the remote application. The built-in engine is bundled across platforms; VcXsrv binaries are not bundled.
+
+### 12.2 Display, Input, and Compatibility
+
+**Operation and caution:** Multiwindow, windowed, undecorated, fullscreen, and rootless options control presentation. The built-in engine offers compositing, source indicators, and local IME options. Clipboard exchange follows the focused session; PRIMARY selection copying defaults to off to avoid unintended disclosure.
+
+**Mechanism and limitations:** Separate displays per SSH session reduce interference between remote hosts. Restrictions can disable input injection such as xdotool/XTEST; that is not automatically a fault requiring weaker security. Additional TCP listening on Linux/macOS is off by default and loopback-only if enabled. Built-in SSH channels do not require publicly exposing X ports. GTK4 forwarding terminals set `GSK_RENDERER=cairo` for compatibility, but Wayland, portals, OpenGL/GLX, and latency can still affect applications. See the troubleshooting references. Protocol support is not equivalent to a complete desktop environment.
+
+<a id="operations"></a>
+## 13. Resource Monitoring, Processes, Route Tracing, and Diagnostics
+
+### 13.1 Resource Monitoring
+
+**Entry point and prerequisites:** From a connected SSH session, use the status-bar resource entry or corresponding Command Palette action. The server must support the sampling commands and data sources.
+
+**Steps:** Inspect CPU, memory, network, and available disk/GPU metrics; choose a 1/2/5/10-second refresh. Correlate sampling times with the event under investigation. Close the window when done.
+
+**Result and how it works:** The host retrieves remote state over SSH and graphs it. These are not the local computer's Task Manager figures. Empty/unavailable metrics require checking remote platform, tools, and permissions; they do not mean zero usage. Sampling itself adds a small load.
+
+### 13.2 Process Management
+
+**Destructive-action warning:** Terminating processes/trees, force-killing, or changing priorities can affect other users, services, and unsaved data. Verify host, PID, owner, and full command. Prefer graceful termination; do not bulk-force-kill based only on a name.
+
+**Entry point and prerequisites:** Title-bar process action / Command Palette with connected SSH. Primarily for Linux with tools such as `ps`; unsupported platforms show an unavailable notice.
+
+**Steps:** Refresh defaults to every 2 seconds; choose 1 or 4 seconds or pause, and use F5 manually. Search by PID, name, command, or user; sort or view the process tree. Select and send SIGTERM or terminate a tree. Use SIGKILL/nice only when required, confirm, and inspect subsequent results.
+
+**Result and how it works:** Remote commands perform the action under the login user's permissions. A PID's associated process can change between refreshes; recheck before acting. Pausing sampling does not pause processes.
+
+### 13.3 Route Tracing and Offline Maps
+
+**Entry point:** Title-bar route icon / Command Palette; target defaults to the current session host.
+
+**Steps:** Enter a target and start. Run continuously or perform a three-round test. Inspect per-hop loss, RTT, and destination; stop at any time. For geography, select a downloaded offline `.mmdb`/`.gz` database. Tracing still works without it. The download entry opens a third-party page in your browser only when clicked.
+
+**Result and how it works:** The implementation sends ICMP TTL probes from this computer. It is not remote `mtr`/`traceroute` or TCP SYN tracing. IP lookup happens offline; the map is not proof of exact physical paths.
+
+**Caution:** Loss at an intermediate hop followed by normal later hops may be ICMP rate limiting, not equivalent business-traffic loss. Firewalls, load balancing, and asymmetric return paths also cause missing/changing hops. Trace text/JSON export and a fifth diagnostics stage are not currently integrated.
+
+### 13.4 Connection Diagnostics and Diagnostic Packages
+
+**Entry point and steps:** Open diagnostics for the current profile from tools / Command Palette. Run DNS → TCP → SSH → authentication, review timings/advice, and optionally export plain text. Address resolution, port reachability, SSH negotiation, and credentials separately.
+
+**Result and how it works:** Stage-based diagnosis avoids blaming every error on passwords. It does not change firewalls or server settings, and it has no integrated route-tracing fifth step.
+
+**Application problems:** Use **Settings → About → open logs / export diagnostics**. The export writes only diagnostic logs, version/platform information, and the plugin list to a local zip you choose; it does not upload. Settings, profiles, and credentials are excluded. Host/user names, paths, IPs, emails, and secret-like patterns are masked. Inspect the archive yourself before sharing and add reproduction steps without secrets.
+
+<a id="recordings"></a>
+## 14. Logs, Recording, and Playback
+
+### 14.1 Three Different Ways to Save Output
+
+| Feature | Entry point and result | Mechanism and boundary |
+| --- | --- | --- |
+| Buffer/selection export | Command Palette terminal-text export | One-time plain-text snapshot of retained content |
+| Session logging | Settings → General → Data & Storage → session logs | New connections create `~/.velashell/logs/session-*.log`, preserving output including ANSI; retention cleanup applies |
+| Session recording | Settings → Security Audit → automatic recording; playback center | Timed output events for variable-speed playback and `.cast` export |
+
+**Privacy warning:** Recording is not just command history. Echoed commands, inspected configuration, tokens, business data, and control sequences can appear in output. On-disk masking is best-effort, not a guarantee that every secret is removed. Inspect recordings/logs before sharing; default masking does not make them public material.
+
+### 14.2 Enable, Play Back, and Clean Up
+
+**Prerequisites and steps:** Enable the needed logging/automatic recording and save for subsequent new connections; do not assume existing sessions are retroactively recorded. Open the playback center, select a recording, play/pause, choose 1/2/4/8/16×, and seek on the timeline. Disable default long-idle skipping if needed. Delete, clean up, or export asciicast v2 `.cast` files.
+
+**Result and how it works:** Only remote output is recorded, not input as a separate stream. Input echoed by the remote still becomes output. Before storage, masking replaces recognized password/token/API-key values, Bearer/Basic credentials, PEM private-key bodies, and similar patterns with `***`. Screen display and remote content are unchanged.
+
+**Storage boundary:** Recording chunks are stored in the local database. Storage failures or a full pending-write queue stop recording and notify Message Center; saved portions remain playable. Playback does not rerun commands or alter the server. Local logs do not replace server-side auditing/compliance retention and are not guaranteed tamper-proof. Retention and manual cleanup affect traceability; archive according to organizational requirements first.
+
+<a id="settings"></a>
+## 15. Settings: All Available Pages
+
+**Common entry point and operation:** Press `Ctrl+,`, choose a page on the left, make changes, and save settings. Except for explicitly immediate management actions, editing a field is not proof of persistence. Follow instructions for restart, reconnection, or next X Server start. There are **14 actual navigation pages**, not the nine/twelve in historical material.
+
+### 15.1 General
+
+| Section | Controls | Mechanism, result, and caution |
+| --- | --- | --- |
+| Startup & Window | Start at login, restore sessions, minimize to tray on close, startup update check | Autostart currently supports the current Windows user only; session restore is not complete layout restore; tray presence is not exit |
+| Message Center | Update notices, HTTPS feed URL, interval 1–168 hours, announcements | Startup update messages require both checking and notifications; clear the feed URL to stop that source |
+| Language & Region | System language or Simplified Chinese/English/Traditional Chinese/Japanese/Korean | Does not change remote system language or terminal byte encoding |
+| Connection Defaults | Port, timeout, keepalive | Defaults for new connections; supported per-profile overrides apply; proxy has a separate page |
+| Data & Storage | Session logging/retention, application-settings JSON import/export | Logging defaults off; settings JSON is not a connection backup |
+| Behavior | Exit/tab-close confirmation, status refresh, follow active session, initially collapsed groups, disconnect sound, automatic reconnect attempts/interval | Attempts 1–20, maximum interval 1–300 seconds; dependent controls appear where applicable |
+| Privacy & Security | Remember passwords, clear recent connections | Clearing recent history asks confirmation; does not delete saved profiles or all logs |
+
+**Recommendation:** Understand tray behavior before relying on background IM/tunnels. Explicitly quit to stop all background capabilities. Disabling confirmations increases accidental production-session closure risk.
+
+### 15.2 Appearance
+
+**Entry point and steps:** Adjust theme, rendering, fonts, window, terminal colors, and ANSI palette; save and inspect previews/new windows.
+
+- **Theme:** Named theme, whether accent follows theme, background image and image/content opacity.
+- **Rendering/fonts:** Hardware acceleration and UI font/size; terminal fonts are configured separately.
+- **Window:** Opacity, Explorer side, multiline tabs, initial window state, Windows splash screen. Restart when indicated.
+- **Terminal colors/ANSI palette:** Select the terminal scheme and base/ANSI colors used for remote color sequences.
+
+**Mechanism and caution:** Appearance does not change remote file contents. Background images may disclose local pictures during screen sharing. Low contrast/excessive transparency impairs command readability. Historical top/bottom tab-position fields are hidden, not available controls.
+
+### 15.3 Terminal
+
+| Section | Available controls and ranges | Boundary |
+| --- | --- | --- |
+| Font & Display | Font, size 8–72, line height 0.8–2, padding 0–40; auto-open file browser; line times/milliseconds, numbers, separators, fold markers, gutter spacing | Monospaced fonts improve alignment; displayed times are client aids; folding needs recognized boundaries |
+| Terminal Type & Encoding | TERM, character encoding | Match remote capabilities; fonts cannot repair decoding errors |
+| Cursor | Bar/block/underline, blinking | Presentation only, not remote editor mode |
+| Bell & Tab Notifications | System sound/none/visual flash, background-tab notification, remote clipboard writes (OSC 52) | Use conservative settings for untrusted hosts |
+| Session | Post-connect command, working-directory reporting, read-only bash/zsh integration snippets | Commands run on new connections and reconnects; manually install the appropriate snippet in shell configuration |
+| Scrolling | Scroll on output/keypress, alternate-screen wheel-to-arrow, scrollback 100–200000 | Large history uses memory; output beyond the limit is discarded |
+| Selection & Copy | Copy on select, right-click paste, trim trailing spaces, double-click word selection | Changes gestures; trimming can alter significant whitespace |
+| Input | Multiline confirmation, IME, local echo, Ctrl+C copies selection | Local echo can reveal passwords; ordinary SSH shells generally need no extra echo |
+
+**Per-connection overrides:** The SSH Terminal page offers post-authentication command with 0–60-second delay, encoding, TERM, tab color, initial directory, keepalive, and anti-idle. The global post-connect command runs first, then the profile's command; both also run after reconnect. Avoid unintended side effects. There is no per-profile terminal color-scheme override control.
+
+### 15.4 Key Management
+
+**Entry point, steps, and result:** Search, generate/import, copy a public key, set a default, or add keys to the Agent after login; see [authentication](#authentication). Deletion immediately affects real private-key files. Verify path and backup before confirming; it is not a draft waiting for Save Settings.
+
+### 15.5 Shared Credentials
+
+**Operation and mechanism:** Create, search, edit, or delete shared identities. Management changes take effect immediately; referenced profiles read updated material on the next connection. Check affected profiles before editing. Passwords/passphrases absent from sync without end-to-end encryption reflect its security design, not accidental credential loss.
+
+### 15.6 Keyboard Shortcuts
+
+**Steps:** Search an action, click the pencil, and press a new combination. Esc or clicking elsewhere cancels capture. Unbind stops the application action from consuming a key; restore resets that action, and restore-all resets all customizations. Save to apply.
+
+**Rules and mechanism:** Window-level and some terminal actions are editable; fixed gestures are not. Combinations require a modifier such as Ctrl/Alt/Win/Cmd, except unmodified F1–F24. Fixed terminal keys are reserved; replacing conflicts needs confirmation. Window shortcuts run before terminal input; `Ctrl+letter` is often a terminal control character. If a remote program does not receive a key, unbind/remap locally before changing the server. See the [shortcut table](#shortcuts).
+
+### 15.7 File Transfer
+
+| Section | Available controls and ranges | Caution |
+| --- | --- | --- |
+| Default Paths | Local download directory, default editor path/browse | Independent dual panes download to the current local directory; defaults are not forced destinations |
+| Remote Editing | Double-click system/built-in/default editor, auto-upload after editing | Saving a local temporary copy can write to production remotely |
+| Transfer Behavior | Concurrency 1–16, preserve timestamps, fsync after upload, completion notices | fsync requires server support; higher concurrency is not always faster |
+| Conflict Handling | Ask/overwrite/skip/rename, hidden files, fast recursive deletion, resume | Fast deletion requires SSH exec and falls back to SFTP on failure; resume retains partial files; failed-temp cleanup is shown only when resume is disabled |
+| Bandwidth Limits | Enable, upload/download MB/s, 0 unlimited | Limits application transfers, not other server applications |
+| Logging | Transfer logs, retention 1–365 days, directory | Paths/filenames can be sensitive; check access and disk space |
+
+**Mechanism:** New file sessions take a settings snapshot. Reopen a file tab if an existing one still has old behavior. Do not assume every parameter changes instantly during an important transfer. Automatic failure-retry counts are not consumed by runtime and are not offered in the interface.
+
+### 15.8 Security Audit
+
+**Sections:** Session recording, audit logs, host trust policy, trusted hosts, external login (Xshell compatibility), and security alerts.
+
+**Operation:** Set automatic recording and on-disk secret masking; open playback/audit viewers; set audit retention to 1–3650 days; control first-use confirmation and changed-key blocking; inspect/delete trusted records (addresses hidden by default); accept/confirm external logins, register protocols, or clear external-target trust; configure in-app/sound/Webhook alerts.
+
+**Caution and mechanism:** Disabling first-use confirmation changes to trust on first use (TOFU), not stronger verification. Disabling changed-key blocking leads to manual adjudication, not a reason to accept a change. Webhooks can disclose event information to the configured service; verify trust and organizational authorization. Auditing does not cover every configuration/settings change and is not a complete tamper-proof ledger.
+
+### 15.9 Network Proxy
+
+**Operation:** Select none/system/HTTP/SOCKS5, set credentials and remote DNS as needed, save, and retry. See the [proxy chapter](#network) for scope and the first-hop boundary. A masked password field protects display only, not the network or backups.
+
+### 15.10 X Server
+
+**Available controls:** Engine selection on Windows; display number, window mode, clipboard, keyboard layout, and startup. Built-in-engine options also cover compositing/source indicators, local IME, security restrictions, and per-SSH-session displays. Linux/macOS can optionally enable additional loopback TCP. VcXsrv options include executable path, keyboard model/special-key capture, native OpenGL, access control, extra arguments, command preview, and tray icon.
+
+**Steps and result:** Configure, save, and restart X Server; enable X11 in the relevant SSH profile too. Extra arguments may override security behavior; do not casually disable access control. Keep defaults if unsure. This page does not install VcXsrv.
+
+### 15.11 Snippets
+
+**Operation:** Create/edit/delete groups and quick commands, fill bodies and placeholders, then use the sidebar panel. Snippets are terminal text, not scheduled jobs. See [Quick Commands](#workspace) for multiline warnings.
+
+### 15.12 Cloud Sync
+
+**Sections:** Account/binding, end-to-end encryption, sync scope, operations, and version history.
+
+**Steps:** Enter a GitHub PAT with gist permission, Gist ID/device name, and preferably an end-to-end passphrase. Select scope and save, then run bidirectional/push-only/pull-only sync. Enable automatic sync or refresh/restore history as needed. See [backup](#backup) for conflicts and migration boundaries.
+
+### 15.13 About
+
+**Operation and result:** View version, contributors, and project entry points; check updates, restart to finish, or repair according to state. Open logs or export a local diagnostic zip. Linux installs updates manually; Store updates are managed by the Store. Contributor avatars are requested from GitHub. Diagnostics are not uploaded automatically; inspect before sending.
+
+### 15.14 Support & Donate
+
+**Entry point and steps:** Read contribution information. If you choose to donate, use the shown Alipay/WeChat Pay QR codes or international Wise QR/link/copy-link controls. Check recipient details and amount on the payment page before paying voluntarily.
+
+**Result and mechanism:** Donation is not a switch that purchases server authorization, protocol access, plugin permissions, or AI quotas. It does not connect you to servers or fund a third-party model account.
+
+<a id="security"></a>
+## 16. Security, Host Fingerprints, and Auditing
+
+### 16.1 First-Use Fingerprints and Changed Keys
+
+**Change warning:** A new fingerprint may indicate a reinstall/key rotation, or a DNS/proxy/routing problem or man-in-the-middle attack. Matching connection names/usernames or a fingerprint supplied by the same unverified endpoint is not enough.
+
+**Entry point and steps:** Check target, algorithm, and SHA-256 fingerprint in first-use/change dialogs. Verify independently before permanent or one-time trust; reject mismatches. Security Audit settings display trusted hosts and changed-key blocking. Deleting a record changes future trust decisions; it does not fix the server. If automatic reconnect stops on trust, manually reconnect to review it.
+
+**Result and how it works:** Trust associates a target with a server key to protect passwords/signatures against an impostor. The host's interactive flow is not the SSH library's default rejection policy; Security Audit settings control application behavior. Verify each jump independently; external launch does not bypass checking.
+
+### 16.2 Agent Authentication Is Not Agent Forwarding
+
+**Signing-permission warning:** Forwarding does not copy the private-key file to the server, but remote root or a compromised program may request signatures through the channel and access other systems as you. Do not enable it for untrusted hosts or equate a locally retained private key with zero risk.
+
+**Entry point and prerequisites:** SSH connection → Forwarding → Agent forwarding. It is independent of Agent authentication, disabled by default, and not shown for SFTP profiles.
+
+**Steps:** Enable only when necessary. Limit forwarded keys and request confirmation before each signature; limited-key mode requires at least one key. Verify source/purpose when prompted. No approval within 60 seconds means rejection. Disable forwarding and reconnect after use.
+
+**Result and how it works:** Remote programs call the local Agent through SSH forwarding channels. Merely using a jump host does not require automatically enabling Agent forwarding.
+
+### 16.3 Algorithm Compatibility and Compression
+
+**Entry point:** SSH/SFTP profile → SSH options.
+
+**Steps and result:** Compression defaults off; enable post-authentication compression if needed. For an old device's negotiation failure, verify server requirements first. Only then consider legacy algorithms or text overrides for KEX/HostKey/Ciphers/MACs, including OpenSSH-style `+`/`-`/`^` adjustments.
+
+**Mechanism and caution:** Legacy compatibility adds a limited set such as group14-sha1, ssh-rsa, and hmac-sha1; it does not offer CBC. Weaker algorithm compatibility cannot repair fingerprints/passwords. Apply it only to affected profiles, not indiscriminately to all hosts.
+
+### 16.4 Local Encryption and Audit Boundaries
+
+**Operation and result:** Passwords/key passphrases are encrypted with AES-256-GCM under the data root. Filter the audit viewer using its available controls, inspect security events, and configure retention. Remove unnecessary host/account details before sharing.
+
+**How it works:** `secret.key` is essential decryption material. Windows additionally wraps it with current-user DPAPI; copying across Windows users or reinstalls usually cannot unwrap it. Linux/macOS primarily rely on file permissions (0600), without an additional passphrase wrapper on that key. A local process with access to data and usable key material may recover secrets. This is not a vault that defeats a compromised computer.
+
+**Caution:** Not every profile/settings change is audited. Logs/recordings are not guaranteed complete, undeletable, or tamper-proof. Master-password protection is not integrated; do not look for a master-password control to protect the whole database.
+
+<a id="backup"></a>
+## 17. Gist Sync, Backup, and Migration
+
+### 17.1 Distinguish Four Data Operations
+
+| Purpose | Entry point | Included/excluded and protection |
+| --- | --- | --- |
+| Move application preferences | General → Data & Storage → settings import/export | **Unencrypted JSON**; settings only, no profiles/groups/keys/snippets; proxy password removed and must be re-entered; still may contain personal/network configuration |
+| Move connections | Explorer connection-file export/import | JSON can include passphrase-encrypted credentials; CSV exports never include secrets; key files are separate |
+| Sync devices | Settings → Cloud Sync | A secret Gist in your GitHub account, optionally end-to-end encrypted; not a full disk mirror/backup |
+| Disaster recovery | Fully quit, then securely back up data root and actual keys | Preserve decryption conditions; Windows DPAPI/user constraints mean a copy is not automatically portable |
+
+**Sensitive-backup warning:** Leaking the database with usable `secret.key` can expose credentials; copied private keys are also authentication material. Encrypt backups, restrict access, and keep export passphrases separately. Never commit `~/.ssh`, secret-bearing JSON, or Gist passphrases to Git or paste them into support chats.
+
+### 17.2 Configure and Run Gist Sync
+
+**Entry point and prerequisites:** Settings → Cloud Sync, a GitHub account, a PAT with the necessary gist permission, and GitHub connectivity.
+
+1. Enable sync and set token/device name. Leave Gist ID blank for initial creation, save, and push once. To bind another device, use the created Gist ID.
+2. **Set an end-to-end passphrase where possible.** Use the same passphrase on devices and store it securely offline. A secret Gist without it is unlisted, not an encrypted vault.
+3. Choose scope: settings, connections/groups/tunnels/shared credentials, snippets, and other available categories; save.
+4. Establish which device is authoritative before the first push-only, pull-only, or bidirectional run. Check results before enabling automatic sync.
+5. Bind the other device with Gist ID, token/passphrase, then pull and inspect hosts, proxy, local paths, and credentials.
+6. Refresh version history to restore a revision when needed. Independently back up before important overwrites.
+
+**Result and how it works:** With a passphrase, AES-GCM encryption occurs locally before upload; GitHub stores ciphertext. Without one, connection/shared-credential passwords and private-key passphrases are removed, but hosts, usernames, notes, and key paths still upload. Pull upserts by ID; conflicts generally prefer newer data. Local-only connections are not deleted, some device settings remain local, and secret-free payloads do not erase existing local passwords.
+
+**Caution:** Sync is not a multiuser editing transaction, complete file backup, or recoverable server-side passphrase escrow. Syncing key paths does not copy keys. Check details such as bookmarks rather than assuming old payloads contain all current fields. Verify device-local items after historical restoration, not just the success notice.
+
+### 17.3 Locate Your Data
+
+**Entry point and location:** Regular distributions default to `~/.velashell`, where `~` means your home directory. On Windows, enter `%USERPROFILE%\.velashell` in File Explorer; on Linux/macOS use `~/.velashell`. Store data may be redirected and is not necessarily the portable edition's data. Logs can also be located from Settings → About → open logs.
+
+| Data | Default location | Backup purpose and boundary |
+| --- | --- | --- |
+| Profiles, groups, settings, trust, history, audits, recordings, plugin storage | `~/.velashell/sonnetdb` | Embedded database directory; fully quit before backup, not a live copy of one chosen file |
+| Credential-decryption key | `~/.velashell/secret.key` | Needed for encrypted credentials; protect the backup; Windows also requires the original DPAPI conditions |
+| Session, transfer, and diagnostic logs | `~/.velashell/logs` | May contain output/paths; a different transfer-log directory can be configured |
+| User-installed plugins | `~/.velashell/plugins` | Separate from bundled `plugins/` under the application; verify compatibility/permissions after migration |
+| Offline geographic database | `~/.velashell/geoip` | Optional data, not connection credentials |
+| SSH private/public keys and certificates | Commonly `~/.ssh`; follow actual profile paths | Not embedded in profiles; securely back up actual files separately |
+
+**Mechanism and caution:** SonnetDB stores documents and time-series data. Historical `settings.json`/`sessions.json` migration files are not the sole current configuration. Starting with `--data-root <directory>` selects another data root and single-instance scope. Check startup arguments before treating a different database as lost data. This option does not migrate existing data or move keys from `~/.ssh` into that root.
+
+### 17.4 Recommended Migration Procedure
+
+**Prerequisite:** The old machine can still decrypt its data, and the new machine has a trusted package.
+
+1. Export passphrase-encrypted connection JSON plus application settings separately, or use Gist sync with an end-to-end passphrase.
+2. Encrypt and back up actual private keys/certificates and necessary public keys separately. Record original paths and purposes, not just path strings from profiles.
+3. Import/pull on the new machine, re-enter proxy passwords, restore keys, and correct paths/permissions. Reconfigure local Agent, external editor, X Server, plugins, AI access, and other device-specific items.
+4. Verify a test connection's fingerprint/login, then important profiles. Do not delete old data before recovery is confirmed and retention obligations are met.
+
+**Mechanism and caution:** Current-user Windows DPAPI prevents assuming raw database/key copies work after account changes/reinstall. Explicit import/sync is also needed across Store/portable isolation. Missing proxy passwords in settings exports are intentional redaction, not corruption.
+
+<a id="plugins"></a>
+## 18. Plugin Management, Optional Protocols, and Docker
+
+### 18.1 Install, Update, Disable, and Revoke Permissions
+
+**Permission warning:** Plugins run with user privileges and can access local files, networking, and sessions. Host capability grants are not an operating-system sandbox for all plugin code. Install trusted packages only; investigate publisher changes and trust warnings rather than approving merely to try a feature.
+
+**Entry point and steps:** Open Plugin Manager. Install a `.vpx` using its top action, or obtain one through the marketplace browser entry. Review package/publisher information and explicit prompts. Enable after installation and reopen relevant UI when needed. Opening the manager checks user-installed plugin updates; downloading and digest verification happen only after Update is selected. Disable/uninstall user plugins as needed. Developer reload is not required for normal use.
+
+**Result and how it works:** Plugins contribute protocols, workspaces, commands, and UI. Availability depends on installation, enablement, and compatibility. Terminal writes and opening saved-profile sessions have separate host authorization gates. Revoke Authorization clears both relevant categories, not just the current dialog decision.
+
+**Caution:** Disabling cannot undo written files or remote actions. Update checks send required information such as user-installed plugin IDs when the manager opens, not a startup timer automatically downloading every plugin.
+
+### 18.2 Use Optional Protocols
+
+**Prerequisite:** AI is bundled. Redis, S3, Telnet, serial, and Docker plugins are installed on demand. Missing entries without their plugins are not host faults.
+
+| Plugin | Entry point, steps, and result | Mechanism and particular cautions |
+| --- | --- | --- |
+| Redis | Install/enable; create a Redis profile with host, usual port 6379, account/password, standalone/Sentinel/cluster, database, TLS, and environment. Optionally tunnel through a saved SSH profile. Use SCAN-based key tree, value view/edit, console, slow log, and overview | A Redis workspace, not a VT shell; cluster uses db0 only. Production defaults read-only and prohibits flush; dangerous commands require confirmation. Server TLS/ACL still apply |
+| S3 | Create S3 with endpoint, Access Key ID/Secret, region, addressing style, TLS, default bucket, and STS token for temporary credentials. Use file panes plus bucket management, object details, and presigned URLs | Object storage, not SSH; TLS default. No POSIX permissions or upload resume; downloads can resume. Presigned URLs grant access during their validity: check scope/expiry before sharing |
+| Telnet | Create Telnet with host/usual port 23, TERM, CRLF/CRNUL/CR, 8-bit mode, and local echo. Log in inside the terminal | Plaintext, without SSH fingerprints/encryption; avoid untrusted networks. Login is not the host's SSH authentication form |
+| Serial | Create serial connection, refresh COM or `/dev/tty…` devices, choose port, baud (default 115200), data/parity/stop bits (8N1), flow control, CR, DTR/RTS, echo/newline/send delay. Open the device terminal | No host:port, SSH jump host, or network encryption; requires driver, device permission, and correct cable. BREAK/DTR actions target the most recently input serial session, not necessarily the currently visible tab |
+
+**Execution warning:** Redis writes/flushes, S3 deletions, and serial control signals can change production data or hardware state. Verify environment, backup, and authorization before writes. A protocol entry does not create server permissions.
+
+### 18.3 Docker Management Panel
+
+**High-privilege warning:** Docker socket access often grants extensive host privileges. Verify the host before stopping/deleting containers, images, volumes, or networks, or executing commands. Removing volumes may permanently destroy data.
+
+**Entry point and prerequisites:** Install the Docker plugin, then use the Command Palette's Docker management action. Remote use requires existing SSH and permission to access the Docker Unix socket, commonly `/var/run/docker.sock`. Plugin-provided local Docker endpoints are also available.
+
+**Steps:** Select the correct endpoint and inspect overview, containers, images, volumes, networks, and Compose pages. Review details/logs before start/stop/cleanup. Confirm the host in destructive-action prompts. Remote Compose requires `docker compose` installed remotely; local endpoints do not offer the same Compose functionality.
+
+**Result and how it works:** Remote access uses SSH `direct-streamlocal` to the socket, without local public listeners or exposing Docker on 2375/2376. The panel console makes individual command requests, not a full interactive PTY. File editing has a 2 MB limit. Endpoint selection determines the affected host; it is not necessarily the active terminal tab.
+
+<a id="ai"></a>
+## 19. AI Providers, Chat, Agent, MCP, and IM
+
+### 19.1 Understand Data and Execution Boundaries First
+
+**Disclosure/write warning:** Questions, terminal context, referenced remote files, and tool results can leave your computer for a provider or relay; IM also traverses the chat platform. Remove keys, passwords, personal data, and business secrets, and choose providers according to organizational policy. Model responses/arguments may be wrong. Review approvals seriously; start production investigation in read-only/Plan mode.
+
+**Entry point and direction:** Search AI in the Command Palette for docked chat, a separate window, terminal explanation, or collaboration integration. Model/tool configuration is in chat; collaboration integration opens independently.
+
+- **AI provider:** VelaShell sends messages to a model provider.
+- **MCP client tools:** The AI plugin calls external MCP servers you configure.
+- **Exposed MCP server:** External Agents call VelaShell's session tools.
+- **IM:** Authorized chats use the local VelaShell Agent to operate permitted sessions.
+
+These are separate paths, not one switch. Closing chat does not necessarily disable an enabled collaboration integration.
+
+### 19.2 Add Providers and Models
+
+**Prerequisites:** A working account/API key or supported browser authorization and permission to send the relevant data. Subscription integrations are experimental and may stop working after upstream changes; check service terms. A ChatGPT/Claude/Copilot subscription is not guaranteed to work in this client.
+
+**Steps:**
+
+1. Open AI chat → model settings → add provider. Select a catalog entry; configured OAuth entries open browser authorization, while API-key entries need a key and required base address.
+2. Check name, Base URL, default protocol, and multiple-key slots. Test/fetch models. Multiple independent instances of one provider are supported.
+3. Add a model under that provider, using its real model ID, not only a display name. Set protocol/address/key overrides, input/output token limits, reasoning, caching, temperature/top-p/stop sequences, and model system prompt as needed.
+4. Save/test and send a nonsensitive question with the chosen model. Distinguish authentication, model permission, address/protocol, and quota errors.
+
+**Result and how it works:** Multiple wire protocols and compatible endpoints are supported. Lists come from endpoints and may be supplemented by specification catalogs; catalog examples do not grant account access. Keys/login credentials use encrypted plugin Secrets; ordinary configuration is plugin-private storage. Do not place keys in prompts, screenshots, or public Base URL query parameters.
+
+### 19.3 Chat, File References, and Global Settings
+
+**Entry point and steps:** Select model, target session, mode, and approval level in chat. Enter sends; Shift+Enter inserts a newline. View/continue/rename/delete history; stop or add input during a run. `@` selects files from the chosen remote session: up to 5 files, each at most 128 KB, included when sending.
+
+**Result and how it works:** Models have supplied context and permitted tool results, not inherently accurate live server state. Referencing reads and transmits content, not merely a local path. Writing back requires Agent mode and appropriate approval.
+
+**Global settings:** Configure global prompts, context compression, follow-up questions, SearXNG/native search, private-network access, and failover. Compression can lose detail; failover can send requests to another provider, affecting confidentiality and billing. Private-network permission expands tool reach; enable deliberately.
+
+### 19.4 Chat, Plan, Agent, and Approval
+
+| Mode | Use and result | Boundary |
+| --- | --- | --- |
+| Chat | Explain, discuss, suggest | Natural-language advice is not proof of execution or validation |
+| Plan | Gather information through permitted read-only tools and propose steps | No write tools; no opening/closing sessions or writing files |
+| Agent | Read sessions/terminals, execute commands, and read/write remote files under tool/approval policy | Writes/commands have real side effects; verify arguments, host, path, and purpose |
+
+**Steps and mechanism:** Approval levels include ask each time, read-only auto-approval, and bypass. Prefer ask or read-only. Review actual commands/content and targets; reject unclear actions. Read-only recognition is not a full audit of server behavior, and external tools' self-declared read-only status is not a sandbox.
+
+**Tool limits:** Built-in reads, listings, output, and uploads have limits, for example 256 KB file reads, 200 directory entries, 32 KB command output, 32 MB uploads, and up to 16 parallel hosts. Truncated results do not prove that an entire directory/log was inspected. Opening a session accepts only an existing saved-profile ID, not arbitrary model-provided hosts/ports. The host separately confirms and can remember permission; revoke in Plugin Manager. This does not expose profile credentials to the plugin. It can close sessions it opened, not user-opened tabs.
+
+### 19.5 Add External MCP Tool Servers to AI
+
+**Execution warning:** stdio MCP starts local programs; HTTP MCP contacts services. They may access files/network. Verify executable, arguments, working directory, environment, URL, headers, and server trust before using unfamiliar configuration.
+
+**Entry point and steps:** AI tool settings → MCP management. Add stdio with executable/arguments/working directory/environment, or HTTP transport with URL/headers. Remote endpoints must use HTTPS; plain HTTP is allowed only for local loopback, not ordinary LAN addresses. Test, refresh the tool list, inspect descriptions, and enable. Disable/delete when no longer needed.
+
+**Result and how it works:** External MCP tools join the loop only in **Agent mode**. Chat has no tools, and Plan does not attach external MCP tools, avoiding reliance on third-party read-only declarations. **All external MCP tools use local approval policy; even `readOnlyHint=true` does not exempt approval.** Any non-bypass level, including read-only auto-approval, requires an available approval channel and approval; without one, execution is rejected. The hint is advisory metadata affecting behavior such as transient-failure retries, not OS-level isolation. A successful connection proves protocol availability, not safety.
+
+### 19.6 Let External Agents Call VelaShell: Exposed MCP Server
+
+**Token/permission warning:** Other same-user processes can reach loopback, so protect the token; do not post it in issues/chats. Restrict allowed servers before enabling Agent/bypass, especially for production hosts and token-bearing local tools.
+
+**Entry point and steps:** Command Palette → AI collaboration integration → exposed MCP. It is currently enabled by default at `127.0.0.1:8391`, requires a random token, and defaults to read-only Plan mode. Copy the page-generated HTTP configuration to the external client using its current address and Bearer token. Update clients after token regeneration.
+
+**Scope:** Allowed servers default to unrestricted; choose selected-only and check saved profiles to restrict. A restricted empty selection permits no servers, not all servers. Select mode/approval before asking an external Agent to enumerate sessions or read terminals.
+
+**Key mechanism:** This direction has no interactive approval UI. **Ask each time means reject write operations**, not that a dialog awaits your click. Plan never registers write tools; Agent still follows approval policy. Read-only permits only recognized allowed reads. Side effects such as `open_session` require conditions such as **Agent + bypass**; the separate host plugin-session confirmation still applies. Connectivity is not write authorization.
+
+**Result and caution:** External Agents can call permitted session, terminal, command, and file tools. Listening is restricted to `127.0.0.1`, with no public-interface option. Disabling stops this entry; quitting VelaShell takes all collaboration integrations offline.
+
+### 19.7 Use the Agent from IM
+
+**Group-chat warning:** Authorizing a group can let members within the permitted-user scope issue instructions. Configure questioners and approvers separately where appropriate. Messages, output, and approvals traverse the platform. Default Plan is read-only; do not switch to writes merely to test connectivity.
+
+**Entry point and prerequisites:** Command Palette → AI collaboration integration. Enable the IM master switch (off by default), and prepare model access and channel credentials.
+
+| Channel | Required information | Network/platform prerequisites |
+| --- | --- | --- |
+| Feishu/Lark | Domestic/international, App ID, App Secret | Outbound persistent connection; no public callback. Configure long-connection events, subscribe to `im.message.receive_v1`, and publish the app version |
+| DingTalk | Client ID (AppKey), Client Secret | Stream connection; no public inbound endpoint |
+| Telegram | Bot Token | Long polling; no public inbound endpoint; after testing, the page QR can help add the bot to a group |
+| WeCom | CorpID, AgentID, Secret, callback Token, EncodingAESKey, local callback port/path | Public HTTPS callback required by platform; local listener is loopback-only, so use a trusted reverse proxy/tunnel, not an exposed management port |
+
+**Steps:**
+
+1. Add a named channel, credentials, and enable it; test. Testing validates integration, not authorization for every chat.
+2. Add the bot to the intended group through platform controls. Feishu uses group settings, not a mini-app link. Do not run the same Feishu credentials on two VelaShell instances: platform cluster delivery can randomly route messages between them.
+3. Configure permitted users/approvers, default target/mode, and save. Generate a personal/group pairing code and send `/pair <code>` in the target chat, or allow an entry in the pending-chat list. Codes are six digits, single-use, expire in ten minutes, and become invalid after five wrong attempts.
+4. **An empty allowlist permits nobody; direct messages also need authorization.** Mention the bot in groups; speak directly in private chats. Use `/sessions` for online targets and `/use demo@host:22` to bind.
+5. Commands include `/help`, `/status`, `/new`, `/stop`, and `/mode chat|plan|agent`. By default `/mode` can only downgrade; upgrades need explicit settings permission.
+6. Authorized approvers reply `y` to allow, `n` to deny, or `a` to allow persistently for this conversation. Timeout denies. Keep VelaShell running; use the tray instead of quitting for background access.
+
+**Result and how it works:** Authorized chats operate permitted sessions through the local Agent; bindings use user@host:port. The Agent can enumerate saved profiles and request an offline target when allowed. Opening is a write operation with chat approval and host confirmation gates, not plugin-supplied passwords. Plan only reads; pairing authorizes a chat without raising mode/approval privileges.
+
+**Limitations:** The bridge handles text, not images/files/rich text. Feishu card approvals are not connected; use textual responses. WeCom's public callback requirement does not justify exposing local management services. Quitting makes the bot offline; this is not a hosted always-on server.
+
+<a id="desktop"></a>
+## 20. Message Center, Desktop Integration, and External Launch
+
+### 20.1 Message Center and Feeds
+
+**Entry point and steps:** The sidebar bell opens Message Center. Filter unread, mark all read, or clear; its draggable popup position is remembered, and at most 200 messages are retained. Check links before opening; only HTTPS links are allowed. General settings control update messages, feed, interval, and announcements.
+
+**Result and how it works:** Updates, news, previous crashes, and recording/security problems appear here. This is not remote mail or server logging. The default official feed is requested at startup and periodically; clearing its URL stops that source. Platform/language/version filtering occurs locally. Clearing notifications does not delete server data or resolve the underlying security incident.
+
+### 20.2 Tray, Autostart, and Single Instance
+
+**Entry point and steps:** General settings control minimize-to-tray on close and Windows autostart. Know whether closing hides or quits. Explicitly quit to stop tunnels/IM/MCP. A second launch brings the existing instance forward; external requests are forwarded to it.
+
+**Result and how it works:** Single-instance scope prevents duplicate windows against the same data root. Current-user communication forwards requests. Autostart registers for the current Windows user without admin rights; the same toggle does not imply a Linux/macOS implementation.
+
+### 20.3 Xshell-Compatible Login from Bastion/SSO Portals
+
+**Command-line disclosure warning:** Passwords in URLs or `-pw` can be visible to same-user processes and EDR/Sysmon process logs. Prefer short-lived one-time credentials from a trusted portal, not long-lived passwords. Not persisting temporary credentials does not remove their command-line exposure.
+
+**Entry point and prerequisites:** Settings → Security Audit → external login (Xshell compatibility). Accepting requests and confirmation before connect default on; `ssh://`/`sftp://` association defaults off. Portals can point their terminal executable to VelaShell. Register protocols only when browser-link launch is needed.
+
+**Supported forms:**
+
+```text
+VelaShell.exe -url ssh://demo@192.0.2.10:2222
+VelaShell.exe -newtab ssh://demo@192.0.2.10:2222
+VelaShell.exe ssh://demo@192.0.2.10:2222
+VelaShell.exe -f "C:\Temp\session.xsh"
+```
+
+Override username/port/password/private key with `-l/-user`, `-p/-port`, `-pw/-password`, and `-i/-identity`; secrets are deliberately absent above. `-newtab` identifies a target only with a scheme; a scheme-less tab name is currently ignored. Candidates are tried as `-url`, bare URL, `-newtab`, then session file. ssh/sftp/ftp/ftps are supported; telnet/rlogin report unsupported. **Post-connect commands/scripts via `-e/-s` are not implemented.** `.xsh` reads recognized target/private-key fields but does not decrypt Xshell passwords.
+
+**Steps and result:** Check target, source, and credential presence in the portal-triggered confirmation before connecting. Fingerprint/authentication still apply. Without supplied credentials, an existing matching profile may be reused. One-time-credential temporary requests are not added to the saved tree; recent history does not store passwords. Choose not-to-ask-again only for genuinely trusted targets; clear external-target trust in Settings when needed.
+
+**Protocol boundary:** Windows uses current-user associations; Linux uses desktop/xdg-mime integration. A runtime macOS toggle cannot change bundle declarations. External-target approval and SSH fingerprint trust are separate records; clearing one does not clear the other. Keep confirmation rather than letting arbitrary webpages silently select targets.
+
+<a id="troubleshooting"></a>
+## 21. Common Tasks and Troubleshooting
+
+### 21.1 Task-Oriented Recipes
+
+| Goal | Suggested sequence | Completion check |
+| --- | --- | --- |
+| First server login | Create SSH → verify fingerprint → authenticate → `hostname`/`pwd` | Correct identity, not just prompt text |
+| Internal host through bastion | Verify saved jump host → select it for target → verify each hop | Final authentication works; not accidentally direct |
+| Local tool to remote database | Local tunnel on loopback → tool uses local port | Not public; destination reachable from server side |
+| Edit remote configuration | Back up → open file → save → inspect upload | Remote file updated; decide separately whether to reload service |
+| Deploy a local directory | Local→remote sync → compare → review → run | Recheck has no unintended differences; no deletion on first test |
+| Move files between hosts | Select two profiles → dual remote → check sides → copy | Destination content/size correct; local link stable |
+| Same read-only check on several hosts | Split → same input channel → verify shells → type → leave | No production writes/password broadcast |
+| Record a reproduction | Enable before new session → reproduce → play → inspect masking → export | Recording did not stop on storage failure; no unwanted secrets |
+| Migrate login capability | Encrypted export/Gist E2E → separate key backup → import/check | Proxy password, paths, Agent, and local items restored |
+| AI read-only investigation | Nonsensitive target → Plan → restrict scope → inspect results | No write grants; truncated results not treated as complete |
+
+### 21.2 Symptom → Cause → Action
+
+| Symptom | Common cause | Recommended action |
+| --- | --- | --- |
+| Cannot create/connect profile | Invalid host, port, or authentication material | Read field validation; bracket IPv6 with ports; match certificate and key |
+| DNS failure/TCP timeout | Name, VPN, proxy, port, firewall | Run four-stage diagnostics; check first-hop networking before changing passwords |
+| Authentication failure | Wrong identity/material, unauthorized key, MFA, permissions | Verify method/system user and challenge; do not assume password fallback |
+| Automatic reconnect stops | Attempts exhausted, intentional exit, authentication/trust intervention | Reconnect manually and investigate; independently verify fingerprints |
+| Fingerprint changed | Reinstall/rotation, impostor, wrong route | Stop and verify old/new keys and change with administrator; do not simply delete trust |
+| No local-terminal entry | Non-Windows or missing shell | Windows detects installed shells; Linux/macOS lack this entry |
+| Shortcut missing in nano/bash | Window shortcut intercepts it | Remap/unbind in Settings; Ctrl+K is not the default palette shortcut |
+| Ctrl+C does not interrupt | Selection-copy exception and active selection | Clear selection; check input settings |
+| Garbled/misaligned output | Encoding mismatch, missing glyphs, proportional font | Check decoding and monospaced font separately |
+| No command blocks/prompt jumps | No OSC 133 from shell | Install appropriate integration; inspect prompt-tool overrides |
+| No shared-password list | Wrong prompt/state, history/alternate screen, no suitable credential | Focus and scroll down, inspect credential type; use manual action only for trusted expected prompts |
+| SFTP works but monitoring/hashes fail | File-only account, prohibited exec, missing tools | Keep security restrictions; use file operations/comparison fallback |
+| FTP login works, transfer fails | Data channel/passive mode/firewall | Check data ports and server requirements; do not remove TLS to hide the issue |
+| Double-click opens differently | Remote-editor setting | Use explicit context action or change File Transfer settings |
+| Saved edit absent remotely | Temporary-only save, auto-upload off, disconnection/permission/size | Inspect transfer/original path; preserve temporary copy before recovery |
+| Sync always finds differences | FTP timezone/precision/MFMT or content conflict | Read warnings and choose suitable criteria; do not repeatedly mirror blindly |
+| Sync requires comparison again | Options invalidated preview | Recompare; prevents applying new rules to an old preview |
+| Tunnel port conflict | Local listener or remote policy/occupation | Choose a free loopback port locally; investigate server for `-R` |
+| X11 no window/stuck | Forwarding denied, local server off, graphics incompatibility | Verify both configurations, reconnect, consult X11 references; do not first expose TCP/disable access control |
+| Heavy intermediate-hop loss | ICMP rate limiting/nonresponse | Inspect later hops, destination, and application metrics |
+| Recording tail missing | Not enabled for new session, storage/queue failure, retention | Check Message Center/storage; saved portion may remain; absence is not proof an event never occurred |
+| Settings export lacks profiles/proxy password | Intentional scope/redaction | Use connection JSON or Gist; re-enter proxy password |
+| Copied database cannot decrypt | Windows DPAPI user/system changed | Export/E2E-sync while old environment can decrypt; generating a new key will not recover old secrets |
+| Gist sync succeeds, private key unusable | Only path synced | Securely restore actual key/certificate, fix path/permissions |
+| Optional protocol missing | Plugin absent/disabled/incompatible | Inspect Plugin Manager; install trusted compatible package |
+| AI 401/model not found | Authentication/quota/model ID/protocol | Test provider/model separately from IM errors |
+| MCP connects but rejects writes | Plan or ask/read-only policy | Expected gate; verify need instead of blindly bypassing; session opening has extra conditions |
+| IM silent | Master switch off, bot absent, chat unauthorized | Test then pair; direct chats need authorization; empty list denies |
+| Feishu tests but no events | Long connection/subscription/version not configured | Configure/publish; avoid competing instances with same credentials |
+| Bot remains online after closing window | Minimize-to-tray on close | Explicitly quit or disable the collaboration switch |
+
+**Still unresolved:** Record version, OS, package, protocol, failure stage, and nonsensitive reproduction. Export a local diagnostic package from About, inspect it, then send it to maintainers. Do not provide private keys, `secret.key`, PAT/API keys, MCP tokens, or secret-bearing connection exports.
+
+<a id="shortcuts"></a>
+## 22. Keyboard Shortcuts and Mouse Gestures
+
+These are factory defaults; customized bindings in Settings take precedence. Global defaults use Ctrl on all three platforms. macOS additionally has fixed `Cmd+C/V/T/W/,` aliases. Arrow-key alternatives mean one direction at a time. Observe focus/state restrictions.
+
+### 22.1 Global, Tabs, and Workspace
+
+| Action | Default | Condition/notes |
+| --- | --- | --- |
+| New SSH connection / new tab | Ctrl+N / Ctrl+T | New tab opens new-connection flow |
+| Clone current session | Ctrl+Shift+N | Cloneable session |
+| Settings / Command Palette | Ctrl+, / Ctrl+P | Ctrl+K is not the palette binding |
+| Close current / all tabs | Ctrl+W / Ctrl+Shift+W | Confirmations/pinning apply |
+| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Current tab group |
+| Tab 1–8 / last tab | Ctrl+Alt+1…8 / Ctrl+Alt+9 | Current strip, not global split numbering |
+| Horizontal / vertical split | Ctrl+Shift+D / Ctrl+Shift+S | Docking workspace |
+| Maximize / restore pane | Ctrl+Shift+X | Split layout |
+| Focus adjacent pane | Alt+←/→/↑/↓ | Split only; otherwise sent remotely |
+| Toggle Explorer | Ctrl+B | Window action |
+| File pane / tunnels | Ctrl+Shift+F / Ctrl+Shift+T | File-capable session for file pane |
+| Line-number/time gutter | Ctrl+Shift+L | Terminal display |
+
+### 22.2 Terminal, Search, Suggestions, and Password List
+
+| Action | Keys | Condition/notes |
+| --- | --- | --- |
+| Copy / paste | Ctrl+Shift+C / Ctrl+Shift+V | Fixed; multiline paste can execute |
+| Classic paste | Shift+Insert | Verify content too |
+| Interrupt ^C | Ctrl+C | Copies instead with selection-copy option and selection |
+| Search | Ctrl+F | Terminal-tab focus |
+| Next / previous / close search | Enter / Shift+Enter / Esc | Search open |
+| Scrollback pages | PageUp / PageDown | Primary screen with history |
+| Scrollback including alternate screen | Shift+PageUp / Shift+PageDown | Not remote application page navigation |
+| Previous / next prompt | Ctrl+Shift+↑ / Ctrl+Shift+↓ | OSC 133 integration |
+| Delete previous word | Ctrl+Backspace | Terminal input |
+| Line start / end | Shift+Home / Shift+End | Terminal input |
+| Reconnect | Enter / Ctrl+R | Disconnected only |
+| Close disconnected tab | Esc | Disconnected only |
+| Clear terminal | Ctrl+Shift+K | Not shared-password filling |
+| Zoom in / out / reset | Ctrl+= / Ctrl+- / Ctrl+0 | Ctrl+- occupies ^_; Ctrl+Shift+- sends that control character |
+| Open suggestions | Alt+Enter | Command suggestions |
+| Select / adopt suggestion | ↑↓ / Enter | Popup open |
+| Dismiss suggestions | Esc, Ctrl+C, click terminal | Last two also continue normal input/click |
+| Native shell completion | Tab | Not suggestion confirmation |
+| Accept ghost text | Right / End | Available suggestion |
+| Select shared password | ↑↓ | Password list open |
+| Fill / close password list | Enter / Esc | Must select first; no appended Enter; with no selection Enter goes remotely |
+
+### 22.3 Mouse, Files, Processes, and Dialogs
+
+| Action | Gesture/keys | Condition/notes |
+| --- | --- | --- |
+| Open link | Ctrl+click | Verify destination |
+| Select / add word | Double-click / Ctrl+Shift+double-click | Ordinary word selection must be enabled |
+| Extend / rectangular selection | Shift+click / Alt+drag | Terminal |
+| Add selection / rectangle | Ctrl+Shift+drag / Ctrl+Shift+Alt+drag | Discontiguous selection |
+| Bypass mouse reporting | Shift+drag | Remote full-screen mouse reporting |
+| Right-click paste | Right-click | Configurable |
+| Font size / fast scroll | Ctrl+wheel / Alt+wheel | Fast scroll is fivefold |
+| Close tab / scroll strip | Middle-click tab / wheel over strip | Pinned tabs resist middle-click |
+| Equalize panes | Double-click divider | Split layout |
+| Gutter menu / folding | Right-/left-click terminal gutter | Not Explorer sidebar |
+| Select command output | Click command marker | OSC 133 |
+| Tree selection / range | Ctrl+click / Shift+click | Explorer |
+| Move group / reorder | Drag connection to group / drag group row | Changes saved organization |
+| Palette select / execute / close | ↑↓ / Enter / Esc | Palette focus |
+| Edit / navigate / cancel path | Ctrl+L / Enter / Esc | File browser |
+| Open file / enter directory | Double-click / Enter | Selection/open behavior applies |
+| Find by name | Type name prefix | File list |
+| Save / close remote editor | Ctrl+S / Esc | Built-in editor |
+| Refresh / terminate / close processes | F5 / Delete / Esc | Delete requires list focus and confirmation |
+| Cancel / default dialog action | Esc / Enter | Default can execute an action |
+| Maximize / restore window | Double-click title bar | Window |
+| Cancel docking drag | Esc | Drag active |
+| Paste in password field | Ctrl+V | Copy/cut disabled; not proof the computer is secure |
+
+### 22.4 AI Panel
+
+| Action | Keys | Condition |
+| --- | --- | --- |
+| Send / newline | Enter / Shift+Enter | Input |
+| Previous / next input | ↑ / ↓ | Cursor at first/last line |
+| Select file candidate | ↑↓ | @ popup |
+| Insert file reference | Enter / Tab | Candidate popup |
+| Close file popup | Esc | Popup open |
+| Delete whole reference | Backspace | At reference |
+| Submit / cancel rename | Enter / Esc | Renaming |
+| Close secondary AI window | Esc | Applicable secondary window |
+
+<a id="limits"></a>
+## 23. Explicit Limitations and Reference Index
+
+### 23.1 Plans and Library Capabilities Are Not Interface Features
+
+This manual intentionally does not promise:
+
+- Local shells across all platforms: only Windows ConPTY is currently integrated; Linux/macOS lack local-terminal actions.
+- Full persistent/named layouts, arbitrary floating docking windows, or restart restoration of dual-remote tabs. Pinning currently lasts for this run.
+- Master-password protection of the whole database; encrypted application-settings export; profiles embedded in that export; proxy passwords in it. Current settings export is unencrypted JSON with the proxy password removed.
+- Linux in-app update installation, selectable update channels, or automatic background downloads described by older material. Linux installs manually; Store is Store-managed.
+- Per-profile proxies; dual-remote synchronization/keep-up-to-date; automatic remote→local watching; persistent transfer queues or automatic failure-retry counts.
+- Sixel/Kitty terminal images or ZMODEM. X11 graphical applications are not terminal image protocols.
+- Redis/S3/Telnet/serial/Docker without plugins. S3 is not POSIX storage and does not supply SSH chmod/upload-resume semantics.
+- Command-block rerun/copy-command buttons or automatic quick-command execution. Completion is not a safety review.
+- Remote mtr/TCP SYN tracing, trace text/JSON export, or a fifth diagnostics stage. Current tracing uses local ICMP.
+- Unexposed tunnel features such as remote dynamic/Unix-socket forwarding, live rates, limits, and connection details. Library support does not imply panel configuration.
+- An OS-level plugin sandbox, complete configuration-change auditing, infallible masking, or secret-Gist links as encryption.
+- Interactive write approvals for the exposed MCP endpoint: ask means reject there. An empty IM allowlist does not allow everyone; pairing grants chat access, not elevated mode.
+
+These boundaries prevent mistakes. Editing files or skipping validation does not turn a missing feature into supported behavior. Distinguish no interface, unsupported protocol/server, insufficient permissions, and planned-only work.
+
+### 23.2 Official References
+
+This manual uses current source and existing references below. Design/audit documents may retain older conclusions; current runtime integration and interface take precedence when they conflict.
+
+- [VelaShell documentation repository](https://github.com/VelaShellLabs/velashell-docs)
+- [Host documentation directory](https://github.com/VelaShellLabs/velashell-docs/tree/main/zh/host)
+- [Shortcut reference](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/host/快捷键参考.md)
+- Local documentation repository `../velashell-docs/zh/host/`: `交互与界面规格.md` (interaction/interface specification), `会话导入.md` (session import), `SFTP双栏与WinSCP差距分析.md` (dual-pane comparison), `隧道功能规划.md` (tunnel design), `Xshell兼容登录.md` (compatible login), and `消息中心与资讯源.md` (Message Center/feeds).
+- `../velashell-docs/zh/plugins/协作接入.md`: IM/MCP direction, allowlists, approvals, and saved-profile sessions.
+- `../velashell-docs/zh/xserver/troubleshooting.md`: X11/graphics compatibility and troubleshooting.
+- This repository's `PRIVACY.md`: storage, automatic/user-triggered networking, and diagnostic exports; `SECURITY.md`: security-reporting procedure.
+
+Chinese filenames above identify the actual referenced documents; they are intentionally not translated into nonexistent paths. The documentation repository also maintains an `en/` tree.
+
+### 23.3 Source-of-Truth Index
+
+This index is for maintenance; end users need not read source code.
+
+| Manual area | Main current evidence |
+| --- | --- |
+| Main window, profiles, import/export | `src/VelaShell/Views/SidebarView.axaml`, `SessionTreeView.axaml`, `ConnectionProfileView.axaml`; `ViewModels/ConnectionProfileViewModel.cs`, `SessionBatchEditViewModel.cs`, `SessionExportViewModel.cs`, `SessionFileImportViewModel.cs` |
+| Authentication, shared passwords, jumps, reconnect | `Services/InteractivePromptDetector.cs`, `SharedPasswordFillRequest.cs`, `ReconnectPolicy.cs`; `ViewModels/HostKeyPromptViewModel.cs`, `SharedCredentialsViewModel.cs`; `Views/TerminalTabView.axaml.cs` |
+| Terminal, docking, suggestions, synchronized input | `ViewModels/ShortcutCatalog.cs`, `Services/ShortcutKeymap.cs`, `KeyboardShortcutService.cs`, `CommandSuggestionProvider.cs`, `SyncInputCoordinator.cs`, `LocalShellCatalog.cs`; `src/VelaShell.Terminal/`; `src/VelaShell/Docking/` |
+| Files, editing, synchronization | `ViewModels/SftpDocumentViewModel.cs`, `DualSftpDocumentViewModel.cs`, `FileBrowserViewModel.cs`, `DirectorySyncViewModel.cs`, `FileTransferViewModel.cs`; `Services/RemoteEditSessionManager.cs` |
+| Tunnels, X11, operations | `ViewModels/TunnelPanelViewModel.cs`, `XServerToggleViewModel.cs`, `ProcessManagerViewModel.cs`, `ResourceMonitorWindowViewModel.cs`, `TraceRouteViewModel.cs`, `ConnectionDiagnosticsViewModel.cs`; `src/VelaShell.Infrastructure/Diagnostics/PingTraceRouteService.cs` |
+| Logs, recordings, data protection | `Services/SessionLogService.cs`, `SessionOutputMasker.cs`; `SessionRecorder.cs`, `RecordingPlayerViewModel.cs`; `src/VelaShell.Infrastructure/Persistence/VelaShellStoragePaths.cs`, `AesSecretProtector.cs` |
+| Settings, sync, plugins, launch, updates | `Views/Settings/*.axaml`, `ViewModels/SettingsViewModel.cs`, `PluginManagerViewModel.cs`; `Services/GistSyncService.cs`, `UpdateService.cs`, `ExternalLaunchCoordinator.cs`, `PluginPermissionGate.cs`; `src/VelaShell.Infrastructure/Startup/` |
+| AI/MCP/IM | `plugins/VelaShell.Plugin.Ai/AiPlugin.cs`, its `Ui/`, Agent tools, MCP client/server, Bridge settings/implementations |
+| Optional protocols/Docker | Current plugin source/manifests and checked user documentation in the adjacent `velashell-plugins` repository; older README contract/version claims are not evidence of host behavior |
+
+**Maintenance rule:** When a release changes entry points, defaults, or security boundaries, review text, anchors, and shortcuts together. A written plan or lower-level capability is not a substitute for an operation users can perform.
