@@ -107,10 +107,14 @@ public sealed class IntelGpuProbeTests
         Assert.AreEqual("", unbound.Driver);
     }
 
-    /// <summary>把探针里的绝对路径挪进夹具目录。</summary>
+    /// <summary>
+    /// 把探针里的绝对路径挪进夹具目录。夹具里没有 <c>/etc/os-release</c>:没有它的主机(CentOS 6、macOS 跑测试的机器)
+    /// 上,基础段读它那一步不能让 POSIX sh 整个退出、把后面的 GPU 段一起吞掉。
+    /// </summary>
     private static string Rooted(string command, string root) =>
         command.Replace("/proc/", root + "/proc/", StringComparison.Ordinal)
-            .Replace("/sys/", root + "/sys/", StringComparison.Ordinal);
+            .Replace("/sys/", root + "/sys/", StringComparison.Ordinal)
+            .Replace("/etc/", root + "/etc/", StringComparison.Ordinal);
 
     /// <summary>选出要跑的 shell 与替身目录;本机没有对应实现时标为未执行。</summary>
     private (string Shell, string[] Prefix, string? Shim) Toolchain(string mode)

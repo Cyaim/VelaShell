@@ -48,7 +48,9 @@ public sealed partial class SessionMetrics
         // (htop 99M 对比我们的 19%)高出约 2 倍。
         """echo __M__; awk '/^MemTotal:/{t=$2} /^MemFree:/{f=$2} /^Buffers:/{b=$2} /^Cached:/{c=$2} /^SReclaimable:/{s=$2} /^SwapTotal:/{st=$2} /^SwapFree:/{sf=$2} END{if(t>0){u=t-f-b-c-s; if(u<0)u=0; print t*1024" "u*1024" "st*1024" "(st-sf)*1024}}' /proc/meminfo 2>/dev/null; """ +
         "echo __D__; df -B1 --output=size,used / 2>/dev/null | tail -1; " +
-        """echo __O__; . /etc/os-release 2>/dev/null && echo "$PRETTY_NAME"; """ +
+        // `.` 是特殊内建:文件不在时 POSIX sh(dash、busybox ash)整个退出,后面的 __K__ / __S__ / __N__ 全丢
+        // (CentOS 6 这类没有 os-release 的主机就是如此)。先判断可读,再放进子 shell 里读,也不把变量漏给后面几段。
+        """echo __O__; [ -r /etc/os-release ] && (. /etc/os-release 2>/dev/null; echo "$PRETTY_NAME"); """ +
         "echo __K__; uname -r 2>/dev/null; " +
         "echo __S__; grep -m1 '^cpu ' /proc/stat 2>/dev/null; " +
         """echo __N__; awk -F: 'NR>2 {gsub(/^ +/,"",$1); if ($1!="lo") {split($2,f," "); rx+=f[1]; tx+=f[9]}} END {print rx+0" "tx+0}' /proc/net/dev 2>/dev/null; """ +

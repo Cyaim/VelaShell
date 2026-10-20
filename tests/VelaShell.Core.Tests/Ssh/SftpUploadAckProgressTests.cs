@@ -37,9 +37,10 @@ public sealed class SftpUploadAckProgressTests
         // 源读完、整份数据都已作为 WRITE 发出,一条确认都没放。
         await source.Eof.WaitAsync(Deadline);
         await EventuallyAsync(() => harness.SftpServer.HeldWriteReplies == Blocks);
-        await Task.Delay(500); // 至少两个 Flush 采样周期(200ms)。
+        // Flush 等确认期间要按 200ms 补报,不能一直不出声。不按固定时长数拍数:慢 runner 上 500ms 里只排得上一拍
+        // (macOS CI 实测),没有补报时这里会一直等到 Deadline 超时失败。
+        await EventuallyAsync(() => samples.Count(static s => s.AfterEof) >= 2);
         Assert.IsFalse(upload.IsCompleted, "确认没到,上传不能完成。");
-        Assert.IsGreaterThanOrEqualTo(2, samples.Count(static s => s.AfterEof), "Flush 等确认期间要按 200ms 补报,不能一直不出声。");
         Assert.IsTrue(samples.All(static s => s.Bytes == 0), "已发出、未确认的字节不能算进度。");
 
         // 放行三条:进度停在三块,不多不少;这一拍来自 Flush 的采样(源早就读完了)。
