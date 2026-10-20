@@ -10,6 +10,14 @@
     <!-- 只依赖 SDK 契约,严禁引用任何 VelaShell.* 主程序工程(设计稿 02 §2 依赖纪律)。 -->
   </PropertyGroup>
 
+  <!-- 与主程序同口径(VelaShell.csproj 的 Release 段):主程序 Release 自包含,它引用的这个可执行体也得自包含,
+       否则不带 -p:SelfContained=true 的本机 Release 构建报 NETSDK1150。发布流水线命令行上本来就传它(全局属性,两边都吃到),
+       这里只是让本机的 Release 构建也对得上。别改成关掉 ValidateExecutableReferencesMatchSelfContained:那道检查拦的
+       正是「主程序自包含、PluginHost 却要找系统里的 .NET 运行时」—— 那样的包装到用户机器上,隔离插件一个也起不来。 -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(SignAssembly)' != 'true'">
     <InternalsVisibleTo Include="VelaShell.Infrastructure.Tests" />
   </ItemGroup>

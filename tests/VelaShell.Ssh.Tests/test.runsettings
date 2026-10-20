@@ -18,13 +18,12 @@
     <TestTimeout>30000</TestTimeout>
     <!-- 同一个程序集内并行跑。用例之间不共享状态（没有静态可变状态，
          内存传输每次新建），并行是安全的。
-         ⚠️ Workers 原先是 0（= 核数）：CI 的 runner 只有 3 核，一次铺满之后，
-         CPU / 内存带宽密集的用例（口令派生、批量读写）互相挤，慢下来的那条就撞上
-         上面的 30 秒（plan.md §170）。固定成 2：留一点并行，不再把 3 核挤满。
+         本机用 0（= 核数）：整套 5 秒左右；固定成 2 时要 50 多秒。
+         CI 用的是同目录的 test.ci.runsettings（工程文件按 CI=true 选它），那边固定成 2，理由见那份。
          线程池下限另由 TestSession 抬上去 —— 那里管的是「线程到得快不快」，
          这里管的是「同时跑几条」。 -->
     <Parallelize>
-      <Workers>2</Workers>
+      <Workers>0</Workers>
       <Scope>MethodLevel</Scope>
     </Parallelize>
   </MSTest>

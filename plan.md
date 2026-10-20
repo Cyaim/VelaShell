@@ -2050,3 +2050,13 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - 设置 `Security.MaskSecretsInCaptures`(默认开),在「安全审计 → 会话录制」里,对之后开始的录制与会话日志生效;五份 resx。`PRIVACY.md` 两段补上默认遮盖与「尽力而为、不改屏幕显示」。
 **验证**:`SessionOutputMaskerTests` 8 项(`.env` / YAML / JSON 只遮值且 `PWD` 不动、值跨两段输出与停在 `=` 上、提示与全屏输出不扣、颜色序列夹在中间、私钥块跨段、Bearer 与带前缀令牌、GBK / UTF-8 往返、扣下上限与收尾 Flush);`SessionRecorderTests` 加一项:遮盖接真实的录制器,落库的块里没有原值、扣着的半行收尾时遮完进库。本地化守卫通过;全量:宿主 2280 通过 / 11 跳过,Core 1026 / 16;构建 0 警告。
 **文档**:velashell-docs 中英文「设置项审计」第十四批、「交互与界面规格」安全审计页一行。不做的:用户自定义规则(与「终端输出的自定义高亮规则」共用规则表,见 `feature-plan.md`);既没有名字也没有前缀的裸值认不出来。
+
+## ✅ 221. 2026-10-19 测试环境的四笔欠账:SSH 用例本机按核数并行、互操作靶机换到 2229 并接进 compose 网络、ssh-keygen 用例不吃 %TEMP% 的 ACL、本机 Release 构建不再报 NETSDK1150
+
+这几条在 `plan.md` 里被一节节记成「与本次无关」(`feature-plan.md`「测试与本机环境」),一次清掉。
+- **`VelaShell.Ssh.Tests` 的并行度**:`test.runsettings` 的 `Workers=2` 是给 3 核 runner 定的(§170),本机整套从 5 秒拖到 53 秒。拆成两份:`test.runsettings`(本机,`Workers=0` 按核数)与 `test.ci.runsettings`(`Workers=2`),工程文件按 `$(CI)` 选 —— GitHub Actions 每一步都设了 `CI=true`。没用命令行覆盖(`-- MSTest.Parallelize.Workers=2`):CI 是整个解决方案一起跑,那样会给 UI 用例也打开方法级并行,而它们共用一条 headless UI 线程。实测本机 6 秒、`CI=true` 55 秒。
+- **互操作靶机**:`Start-TestServer.ps1` 默认映射 2222 —— 那是 compose 的 `ssh`,大家只好改 `-Port 2224`,又撞上 `ssh-2fa`,`KeyboardInteractiveIntegrationTests` 连到这台上失败而不是跳过(§193)。默认改为 2229(用例的默认值同改),并在 compose 的 `ssh-shells` 靶机在跑时加入它所在的网络(名字随检出目录变,按 `docker inspect velashell-test-shells` 取;`-Network ''` 不加入)。`目的地约束对真agent_经转发逐跳放行` 因此第一次真跑通:互操作 61 项全过、0 跳过(原先 60 + 1 环境跳过)。⚠️ `[string]` 参数收不到 `$null`(会变成空串),所以「自动」用 `'auto'` 作标记。
+- **`真ssh_keygen读得出本库写的私钥`**:Windows 上私钥文件从 `%TEMP%` 继承 ACL,`%TEMP%` 挂着别的用户组时 OpenSSH 报 `UNPROTECTED PRIVATE KEY FILE`(§197、§199、§201、§210)。改为断掉继承、只给当前用户完全控制 —— 与 Unix 上的 0600 是同一件事。临时给目录加一条 `BUILTIN\Users` 可读的继承项复现出原报错,加上修复后通过。
+- **NETSDK1150**:主程序 Release 段 `SelfContained=true`,而它引用的 `VelaShell.PluginHost` 不是,本机 `dotnet build -c Release` 直接报错(脚本只好带 `-p:ValidateExecutableReferencesMatchSelfContained=false`)。发布流水线命令行上传 `-p:SelfContained=true`(全局属性,两边都吃到)所以不受影响。PluginHost 的 Release 段同样设成自包含;没去关那道检查 —— 它拦的正是「主程序自包含、PluginHost 找系统运行时」那种隔离插件起不来的包。按 `release.yml` 的命令发布 win-x64:PluginHost 的 runtimeconfig 仍是 `includedFrameworks`,双击能起到「缺 VELA_PLUGIN_PIPE」那一步。
+- 顺带核实:`X11_RefusedByServer_KeepsAgentForwardingAndWarnsOnce` 本机已通过(`velashell-test-shells` 2026-10-19 重建过);镜像跟不上 Dockerfile 这类问题本身还在,`feature-plan.md` 那条降为 P3 并改写。「Code scanning AI findings」是仓库设置里的 GitHub 托管任务,要仓库所有者处理,留着。
+**文档**:velashell-docs 中英文 SSH 架构的互操作一节补上默认端口与网络。
