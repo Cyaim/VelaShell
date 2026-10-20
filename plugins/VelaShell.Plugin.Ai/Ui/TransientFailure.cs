@@ -1,4 +1,6 @@
 using Anthropic.Exceptions;
+using Microsoft.Extensions.AI;
+using VelaShell.Plugin.Ai.Chat;
 using VelaShell.Plugin.Ai.Configuration;
 using AnthropicErrorType = Anthropic.Models.ErrorType;
 
@@ -6,6 +8,12 @@ namespace VelaShell.Plugin.Ai.Ui;
 /// <summary>发送准备期间配置已失效;只可换用其他已验证接入,不能原地重试。</summary>
 internal sealed class ProviderConfigurationChangedException() : InvalidOperationException(
     "Provider configuration changed; refusing to send an unverified request.");
+
+internal sealed class ModelResponseTerminatedException(string reasonKey)
+    : InvalidOperationException($"The model ended the response: {reasonKey}.")
+{
+    internal string ReasonKey { get; } = reasonKey;
+}
 
 /// <summary>
 /// 一次失败值不值得自动重来。
@@ -23,6 +31,41 @@ internal sealed class ProviderConfigurationChangedException() : InvalidOperation
 /// </remarks>
 public static class TransientFailure
 {
+    internal static bool HasMeaningfulOutput(IEnumerable<ChatResponseUpdate> updates)
+        => updates.Any(update => update.Contents.Any(content => content switch
+        {
+            TextContent text => !string.IsNullOrWhiteSpace(text.Text),
+            TextReasoningContent reasoning => !string.IsNullOrWhiteSpace(reasoning.Text),
+            FunctionCallContent or FunctionResultContent or ErrorContent => true,
+            _ => false
+        }) || (ReasoningPeek.IsBlank(update)
+            && ReasoningPeek.TryRead(update.RawRepresentation, out string peeked)
+            && !string.IsNullOrWhiteSpace(peeked)));
+
+    // 确定性终止不能当作空流重发,尤其不能借故障转移绕过拒绝。
+    internal static Exception? TerminalFailure(IEnumerable<ChatResponseUpdate> updates)
+    {
+        foreach (ChatResponseUpdate update in updates)
+        {
+            if (update.FinishReason is { } reason
+                && (reason == ChatFinishReason.Length || reason == ChatFinishReason.ContentFilter
+                    || reason.Value == "refusal"))
+                return new ModelResponseTerminatedException(reason == ChatFinishReason.Length ? "ErrorOutputLimit" : "ErrorModelRefusal");
+#pragma warning disable OPENAI001 // Responses API 在 OpenAI SDK 中标记为实验性
+            if (update.RawRepresentation is OpenAI.Responses.StreamingResponseIncompleteUpdate incomplete)
+                return new ModelResponseTerminatedException(incomplete.Response.IncompleteStatusDetails?.Reason
+                    == OpenAI.Responses.ResponseIncompleteStatusReason.MaxOutputTokens ? "ErrorOutputLimit" : "ErrorModelRefusal");
+            if (update.RawRepresentation is OpenAI.Responses.StreamingResponseRefusalDeltaUpdate
+                or OpenAI.Responses.StreamingResponseRefusalDoneUpdate
+                or OpenAI.Chat.StreamingChatCompletionUpdate { RefusalUpdate.Length: > 0 })
+                return new ModelResponseTerminatedException("ErrorModelRefusal");
+#pragma warning restore OPENAI001
+            if (update.Contents.OfType<ErrorContent>().FirstOrDefault() is { } error)
+                return new InvalidOperationException(error.Message);
+        }
+        return null;
+    }
+
     /// <summary>这个异常值不值得重来一次。</summary>
     /// <remarks>
     /// <b>逐层看 InnerException</b>:HTTP 客户端与 SDK 会把真实原因包上一两层,

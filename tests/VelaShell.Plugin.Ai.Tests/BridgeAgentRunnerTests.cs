@@ -32,6 +32,27 @@ public sealed class BridgeAgentRunnerTests
         Assert.AreEqual("", turn.Model);
     }
 
+    [TestMethod]
+    public async Task EmptyModelSteps_ExhaustSharedRecovery_WithLocalizedError()
+    {
+        await using var endpoint = new SseStub("data: [DONE]\n\n");
+        using var context = new TestPluginContext();
+        var provider = new AiProvider
+        {
+            Name = "empty", BaseUrl = endpoint.BaseUrl,
+            DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
+            Models = [new AiModelConfig { Model = "m" }]
+        };
+        await new AiSettingsStore(context).SaveAsync(new AiSettings
+        { Providers = [provider], ActiveModelId = provider.Models[0].Id });
+        var conversation = new BridgeConversation("ch1", "chat-1");
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Create(context).RunAsync(conversation, new BridgeSettings { Mode = ChatMode.Chat },
+                Message(), Deny, new Loc("zh-Hans"), null, null, CancellationToken.None));
+        Assert.Contains(new Loc("zh-Hans")["ProbeEmptyReply"], error.Message);
+        Assert.HasCount(3, endpoint.Requests);
+    }
+
     /// <summary>
     /// AI 设置必须<b>每轮现读</b>,不能吃桥接启动时的那份快照。
     /// </summary>

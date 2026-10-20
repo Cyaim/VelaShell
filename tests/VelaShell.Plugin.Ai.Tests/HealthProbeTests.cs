@@ -88,6 +88,140 @@ public sealed class HealthProbeTests
     }
 
     [TestMethod]
+    public async Task EmptyProbe_RetriesOnceBeforeSuccess()
+    {
+        int requests = 0;
+        using var endpoint = new ProbeEndpoint(_ => (HttpStatusCode.OK,
+            OpenAiStream(Interlocked.Increment(ref requests) == 1 ? "" : "OK")));
+        using var context = new TestPluginContext();
+        (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(endpoint.BaseUrl));
+        Assert.IsNull(error, error?.ToString());
+        Assert.AreEqual("OK", text);
+        Assert.AreEqual(2, requests);
+    }
+
+    [TestMethod]
+    public async Task ReasoningOnlyProbe_RetriesOnceButDoesNotPass()
+    {
+        await using var endpoint = new SseStub("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"thinking\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n");
+        using var context = new TestPluginContext();
+        (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(endpoint.BaseUrl));
+        Assert.IsInstanceOfType<HealthProbe.EmptyReplyException>(error);
+        Assert.HasCount(2, endpoint.Requests);
+    }
+
+    [TestMethod]
+    [DataRow("length", null)]
+    [DataRow("content_filter", null)]
+    [DataRow("stop", "I cannot help.")]
+    public async Task ExplicitTermination_DoesNotRetryOrBecomeEmptyReply(string finish, string? refusal)
+    {
+        string delta = JsonSerializer.Serialize(new { role = "assistant", refusal });
+        string sse = $"data: {{\"id\":\"probe\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{{\"index\":0,\"delta\":{delta},\"finish_reason\":\"{finish}\"}}]}}\n\ndata: [DONE]\n\n";
+        await using var endpoint = new SseStub(sse);
+        using var context = new TestPluginContext();
+        (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(endpoint.BaseUrl));
+        Assert.IsNotNull(error);
+        Assert.IsNotInstanceOfType<HealthProbe.EmptyReplyException>(error);
+        Assert.IsFalse(Ui.TransientFailure.IsTransient(error));
+        Assert.HasCount(1, endpoint.Requests);
+    }
+
+    [TestMethod]
+    [DataRow("max_tokens")]
+    [DataRow("refusal")]
+    public async Task AnthropicExplicitTermination_DoesNotRetry(string reason)
+    {
+        await using var endpoint = new SseStub(AnthropicReply.Replace("\"text\":\"OK\"", "\"text\":\"\"", StringComparison.Ordinal)
+            .Replace("\"stop_reason\":\"end_turn\"", $"\"stop_reason\":\"{reason}\"", StringComparison.Ordinal));
+        using var context = new TestPluginContext();
+        (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context),
+            ModelFor(endpoint.BaseUrl, ChatProtocol.AnthropicMessages), apiKeyOverride: "test-key");
+        Assert.IsNotNull(error);
+        Assert.IsNotInstanceOfType<HealthProbe.EmptyReplyException>(error);
+        Assert.HasCount(1, endpoint.Requests);
+    }
+
+    [TestMethod]
+    [DataRow("max_output_tokens")]
+    [DataRow("content_filter")]
+    public async Task ResponsesIncomplete_DoesNotRetry(string reason)
+    {
+        string response = JsonSerializer.Serialize(new
+        {
+            id = "resp_1", @object = "response", created_at = 1, status = "incomplete", model = "m",
+            output = Array.Empty<object>(), incomplete_details = new { reason },
+            usage = new { input_tokens = 1, output_tokens = 1, total_tokens = 2 }
+        });
+        await using var endpoint = new SseStub($"event: response.incomplete\ndata: {{\"type\":\"response.incomplete\",\"sequence_number\":1,\"response\":{response}}}\n\n");
+        using var context = new TestPluginContext();
+        (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context),
+            ModelFor(endpoint.BaseUrl, ChatProtocol.OpenAiResponses));
+        Assert.IsNotNull(error);
+        Assert.IsNotInstanceOfType<HealthProbe.EmptyReplyException>(error);
+        Assert.HasCount(1, endpoint.Requests);
+    }
+
+    [TestMethod]
+    [DataRow("max_output_tokens")]
+    [DataRow("content_filter")]
+    [DataRow("refusal")]
+    public async Task ResponsesTerminalStep_AgentDoesNotRetry(string reason)
+    {
+        string response = JsonSerializer.Serialize(new
+        {
+            id = "resp_1", @object = "response", created_at = 1, status = "incomplete", model = "m",
+            output = Array.Empty<object>(), incomplete_details = new { reason }
+        });
+        string sse = reason == "refusal"
+            ? "event: response.refusal.delta\ndata: {\"type\":\"response.refusal.delta\",\"sequence_number\":1,\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"No\"}\n\n"
+            : $"event: response.incomplete\ndata: {{\"type\":\"response.incomplete\",\"sequence_number\":1,\"response\":{response}}}\n\n";
+        await using var endpoint = new SseStub(sse);
+        using var context = new TestPluginContext();
+        using IChatClient inner = new AiSettingsStore(context).CreateClient(ModelFor(endpoint.BaseUrl, ChatProtocol.OpenAiResponses),
+            ProviderCredential.Key("test-key"));
+        using var client = new Chat.RecoveringChatClient(inner, new("run"), "boundary", delay: (_, _) => Task.CompletedTask);
+        await Assert.ThrowsAsync<Ui.ModelResponseTerminatedException>(async () =>
+        { await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "hi")])) { } });
+        Assert.HasCount(1, endpoint.Requests);
+    }
+
+    [TestMethod]
+    public async Task EmptyProbe_RetrySharesOriginalDeadline()
+    {
+        await using var endpoint = new SseStub("data: [DONE]\n\n", delay: TimeSpan.FromSeconds(8));
+        using var context = new TestPluginContext();
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(endpoint.BaseUrl))
+            .WaitAsync(TimeSpan.FromSeconds(20));
+        Assert.IsNotNull(error);
+        Assert.IsNotInstanceOfType<HealthProbe.EmptyReplyException>(error, "第二次请求应被原截止时间取消,而非在16秒后读完");
+        Assert.HasCount(2, endpoint.Requests);
+        Assert.IsLessThan(TimeSpan.FromSeconds(18), elapsed.Elapsed, "重试不能重新获得15秒预算");
+    }
+
+    [TestMethod]
+    public async Task EmptyProbe_UserCancellationPreventsSecondRequest()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int requests = 0;
+        using var endpoint = new ProbeEndpoint(_ =>
+        {
+            Interlocked.Increment(ref requests);
+            requested.TrySetResult();
+            return (HttpStatusCode.OK, OpenAiStream(""));
+        });
+        using var context = new TestPluginContext();
+        Task<(Exception? Error, string Text)> probe = HealthProbe.ProbeAsync(new AiSettingsStore(context),
+            ModelFor(endpoint.BaseUrl), cancellationToken: cancellation.Token);
+        await requested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await Assert.ThrowsAsync<OperationCanceledException>(async () => await probe);
+        Assert.AreEqual(1, requests);
+    }
+
+    [TestMethod]
     public async Task LiveEndpointPassesAndReturnsTheEcho()
     {
         await using var stub = new SseStub(OpenAiStream("OK"));
@@ -122,10 +256,11 @@ public sealed class HealthProbeTests
         Assert.AreEqual(empty ? "" : "OK", text);
         Assert.AreEqual(1, calls, "成功和空白失败都只在结束时结算一次");
         Assert.IsNotNull(received);
-        Assert.AreEqual(18L, received.InputTokenCount);
-        Assert.AreEqual(8L, received.OutputTokenCount);
-        Assert.AreEqual(6L, received.CachedInputTokenCount);
-        Assert.AreEqual(3L, received.ReasoningTokenCount);
+        Assert.AreEqual(empty ? 36L : 18L, received.InputTokenCount);
+        Assert.AreEqual(empty ? 16L : 8L, received.OutputTokenCount);
+        Assert.AreEqual(empty ? 12L : 6L, received.CachedInputTokenCount);
+        Assert.AreEqual(empty ? 6L : 3L, received.ReasoningTokenCount);
+        Assert.HasCount(empty ? 2 : 1, stub.Requests);
     }
 
     [TestMethod]
@@ -583,20 +718,23 @@ public sealed class HealthProbeTests
             {
                 try
                 {
-                    HttpListenerContext context = await _listener.GetContextAsync();
-                    using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
-                    string body = await reader.ReadToEndAsync();
-                    _request.TrySetResult(body);
-                    using var request = JsonDocument.Parse(body);
-                    (HttpStatusCode status, string reply) = respond(request.RootElement);
-                    byte[] bytes = Encoding.UTF8.GetBytes(reply);
-                    context.Response.StatusCode = (int)status;
-                    context.Response.ContentType = status == HttpStatusCode.OK
-                        && request.RootElement.TryGetProperty("stream", out JsonElement stream) && stream.GetBoolean()
-                        ? "text/event-stream" : "application/json";
-                    context.Response.ContentLength64 = bytes.Length;
-                    await context.Response.OutputStream.WriteAsync(bytes);
-                    context.Response.Close();
+                    while (_listener.IsListening)
+                    {
+                        HttpListenerContext context = await _listener.GetContextAsync();
+                        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+                        string body = await reader.ReadToEndAsync();
+                        _request.TrySetResult(body);
+                        using var request = JsonDocument.Parse(body);
+                        (HttpStatusCode status, string reply) = respond(request.RootElement);
+                        byte[] bytes = Encoding.UTF8.GetBytes(reply);
+                        context.Response.StatusCode = (int)status;
+                        context.Response.ContentType = status == HttpStatusCode.OK
+                            && request.RootElement.TryGetProperty("stream", out JsonElement stream) && stream.GetBoolean()
+                            ? "text/event-stream" : "application/json";
+                        context.Response.ContentLength64 = bytes.Length;
+                        await context.Response.OutputStream.WriteAsync(bytes);
+                        context.Response.Close();
+                    }
                 }
                 catch (Exception ex)
                 {

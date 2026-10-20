@@ -476,7 +476,12 @@ public partial class GlobalSettingsView : UserControl
                 tip = $"{_loc[result.Ok ? "DotPassed" : "DotFailed"]} · {result.At:HH:mm}";
                 if (result.Error is { } error)
                 {
-                    detail = Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"], _loc["ErrorEndpointNotFound"]);
+                    detail = error switch
+                    {
+                        HealthProbe.EmptyReplyException => _loc["ProbeEmptyReply"],
+                        ModelResponseTerminatedException terminated => _loc[terminated.ReasonKey],
+                        _ => Chat.ApiErrorText.Describe(error, _loc["ErrorUnreachable"], _loc["ErrorEndpointNotFound"])
+                    };
                     if (result.Credential is { Value: { } secret } && !string.IsNullOrWhiteSpace(secret))
                         detail = detail.Replace(secret, "●●●●", StringComparison.Ordinal);
                 }

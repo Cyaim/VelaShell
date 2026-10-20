@@ -2078,3 +2078,14 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **留待维护者定**(已记入 `feature-plan.md`):AI `store` 默认值、复用窗口时「管理登录」同样会掐登录、桥接模型被手动删除后静默换到别家、「8 批」上限实际到不了(100 ÷ 25)、审批框批准键是否加延迟启用、SDK `RpcConnection.WriteAsync` 取消落在写帧中途可能写出半帧;防空闲 NUL 与同步输入不走 TypedInput,密码列表不会主动收起;补全弹层同样的 `VerticalOffset` 翻转问题;「复制配置」用树缓存副本可能缺收藏。
 **验证**:每组新增用例都在临时撤掉对应修复后确认会失败。集成分支按 CI 口径(`scripts/ci/run-tests.sh`,排除 DockerIntegration / CrossPlatform / Interop)全量 8249 通过 / 0 失败 / 28 跳过(平台、Docker、Interop 条件用例);另在 ssh-sudo 靶机上真跑 `VelaShell.Sudo.Kernel.Tests` 24 项全过。Debug 全解 `-warnaserror` 0 警告;`EnforceCodeStyleInBuild` 下本次新增代码零告警(基线另有 107 处 IDE0055 等,多来自 #631,未在本次处理)。GPU 探针在 WSL Debian 13 上以 dash / bash / busybox sh 与四种 awk 真跑;sudo 包装在 ssh-sudo 靶机上以 bash / fish / tcsh 登录 shell 真跑。macOS 由 CI 覆盖(首轮暴露的两处已修:上面的 os-release,以及确认进度用例原先按固定 500ms 数补报拍数,改为等到补报出现)。
 **文档**:同步 velashell-docs 中英文「架构设计」「消息中心与资讯源」「交互与界面规格」(§5.2 / §5.2.1 / §6 / §9 / §11 / §13 / §14)、「快捷键参考」「凭据管理器集成设计」,以及插件文档 05 / 07 / 11 / 12 与「协作接入」,[velashell-docs PR #134](https://github.com/VelaShellLabs/velashell-docs/pull/134)。
+
+## 223. 2026-10-20 AI 插件:空回复有限重试,恢复模型步骤而非工具副作用
+
+**来由**:用户遇到「端点返回了空回复」。普通聊天已有一次未开口重试,但 Agent 正常结束的空模型步骤绕过已有异常恢复,设置探活也会一次空回复就判失败。
+**改法**:
+- 普通聊天空回复最多补试两次(400/800ms),网络等其它瞬时错误仍只补试一次;共用尝试计数,耗尽后才按既有条件故障转移。有效正文、思考、工具调用/结果不重放。
+- Agent/Plan/Bridge 在完整步骤确认及工具帧释放前判空,接入现有两次恢复预算;工具完成后的空步骤携带既有工具结果重问模型,不重新运行工具、不额外占模型步骤,失败尝试用量照常累计。
+- 探活正常空结束最多补试一次(400ms),两次请求及退避共用15秒截止时间,固定原目标和凭据;只返回思考或不可见字符仍不判活。已知终止信号优先于随后断流,用户取消优先于错误。
+- 明确长度耗尽、过滤、拒绝及错误内容不变成可重试空回复;OpenAI Chat Completions/Responses和Anthropic按已映射终止原因或明确SDK事件判定。长度/拒绝新增五语提示,Bridge及各设置探测入口复用本地化错误。
+**验证**:AI工程全量1593通过/0失败/0跳过;随后补充探活共享截止时间、仅思考探活、终止后断流及取消优先边界,最终相关定向103通过。最终全解Debug构建0警告/0错误;宿主HeadlessDispatch及本地化门禁16通过。真实本地HTTP/SSE覆盖三种协议的明确终止、用量及恢复,headless覆盖第三次成功、换站、插话保留和迟到健康记录;没有声称真实供应商或人工GUI整链实测。首次并行构建遇测试进程锁DLL,等测试退出后串行构建已通过。
+**文档**:更新插件README,同步velashell-docs的`zh/plugins/11-automation-and-ai.md`与`en/plugins/11-automation-and-ai.md` §1.4,两份相对链接检查通过。未改SDK版本、全局SDK内部重试、摘要回落或用户设置;重试次数不包含SDK内部重试。

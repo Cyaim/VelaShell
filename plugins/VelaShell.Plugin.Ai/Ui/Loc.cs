@@ -204,6 +204,8 @@ public sealed class Loc(string locale)
         ["Testing"] = ["Testing…", "测试中…", "測試中…", "テスト中…", "테스트 중…"],
         ["TestOk"] = ["Connection OK: {0}", "连接正常:{0}", "連接正常:{0}", "接続 OK:{0}", "연결 정상: {0}"],
         ["TestFail"] = ["Test failed: {0}", "测试失败:{0}", "測試失敗:{0}", "テスト失敗:{0}", "테스트 실패: {0}"],
+        ["ErrorOutputLimit"] = ["The model reached its output limit. Increase the output limit or shorten the context; no automatic retry was made.", "模型已达到输出上限。请增大输出额度或缩短上下文；未自动重试。", "模型已達到輸出上限。請增大輸出額度或縮短上下文；未自動重試。", "モデルが出力上限に達しました。出力上限を増やすかコンテキストを短くしてください。自動再試行は行いませんでした。", "모델이 출력 한도에 도달했습니다. 출력 한도를 늘리거나 컨텍스트를 줄이세요. 자동으로 재시도하지 않았습니다."],
+        ["ErrorModelRefusal"] = ["The model refused or filtered the response; no automatic retry was made.", "模型拒绝了请求或过滤了回复；未自动重试。", "模型拒絕了請求或過濾了回覆；未自動重試。", "モデルがリクエストを拒否したか応答をフィルタリングしました。自動再試行は行いませんでした。", "모델이 요청을 거부하거나 응답을 필터링했습니다. 자동으로 재시도하지 않았습니다."],
         ["ProbeEmptyReply"] = ["The endpoint replied with nothing.", "端点返回了空回复。", "端點回傳了空回覆。", "エンドポイントから空の応答が返りました。", "엔드포인트가 빈 응답을 반환했습니다."],
         ["Name"] = ["Name", "名称", "名稱", "名前", "이름"],
         ["Protocol"] = ["Protocol", "协议", "協議", "プロトコル", "프로토콜"],
