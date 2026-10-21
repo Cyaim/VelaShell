@@ -36,7 +36,14 @@ public partial class AboutPage : UserControl
         _showingChangelog = true;
         try
         {
-            await new ReleaseNotesDialog(source).ShowDialog(owner);
+            if (DataContext is SettingsViewModel updates)
+            {
+                await new ReleaseNotesDialog(source, updates).ShowDialog(owner);
+            }
+            else
+            {
+                await new ReleaseNotesDialog(source).ShowDialog(owner);
+            }
         }
         finally
         {

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
@@ -13,11 +14,11 @@ public sealed record UpdateAsset(string Name, string Sha256, long Size);
 /// </summary>
 public sealed class UpdateManifest
 {
-    private UpdateManifest(string version, string tag, IReadOnlyDictionary<string, UpdateAsset> assets)
+    private UpdateManifest(string version, string tag, Dictionary<string, UpdateAsset> assets)
     {
         Version = version;
         Tag = tag;
-        Assets = assets;
+        Assets = new ReadOnlyDictionary<string, UpdateAsset>(assets);
     }
 
     /// <summary>清单声明的版本号(不含 v 前缀,可带预发布后缀)。</summary>
@@ -26,12 +27,39 @@ public sealed class UpdateManifest
     /// <summary>产物所在 Release 的 git 标签(下载 URL 用它定位,避免检查与下载之间发新版造成 404)。</summary>
     public string Tag { get; }
 
-    /// <summary>按 RID 索引的产物表。</summary>
+    /// <summary>按 RID 索引的只读产物快照。</summary>
     public IReadOnlyDictionary<string, UpdateAsset> Assets { get; }
 
     /// <summary>取当前进程平台对应的产物;清单里没有该 RID 时返回 null。</summary>
     public UpdateAsset? AssetForCurrentPlatform() =>
         CurrentRid() is { } rid && Assets.TryGetValue(rid, out UpdateAsset? asset) ? asset : null;
+
+    /// <summary>
+    /// 安装候选的附加资格检查,不改变 Parse 对历史清单的宽松契约。
+    /// 日志源附带快照前检查;UpdateService 接受外部候选时也应再次调用,不能只信任 UI。
+    /// </summary>
+    internal bool IsEligibleForInstallation() =>
+        UpdateVersion.TryParse(Tag, out UpdateVersion tagVersion)
+        && UpdateVersion.TryParse(Version, out UpdateVersion manifestVersion)
+        && tagVersion == manifestVersion
+        && AssetForCurrentPlatform() is { } asset && IsEligibleAsset(asset);
+
+    /// <summary>日志快照只保留当前平台的有效资产,其它平台的坏条目不能成为安装候选。</summary>
+    internal UpdateManifest? ForCurrentPlatformInstallation() => IsEligibleForInstallation()
+        ? new(Version, Tag, new Dictionary<string, UpdateAsset>(StringComparer.OrdinalIgnoreCase)
+        {
+            [CurrentRid()!] = AssetForCurrentPlatform()!
+        })
+        : null;
+
+    /// <summary>跨平台安全的附件文件名、完整 SHA-256 与正数大小(上限 8 GiB,远高于发布包)。</summary>
+    internal static bool IsEligibleAsset(UpdateAsset asset) =>
+        !string.IsNullOrEmpty(asset.Name) && asset.Name.Length <= 255
+        && char.IsAsciiLetterOrDigit(asset.Name[0])
+        && asset.Name.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_')
+        && !asset.Name.EndsWith('.')
+        && asset.Sha256 is { Length: 64 } && asset.Sha256.All(char.IsAsciiHexDigit)
+        && asset.Size is > 0 and <= 8L * 1024 * 1024 * 1024;
 
     /// <summary>
     /// 当前进程的 RID(与 CI 产物命名一致);不受支持的平台/架构返回 null。
@@ -59,7 +87,12 @@ public sealed class UpdateManifest
     public static UpdateManifest Parse(string json)
     {
         using var doc = JsonDocument.Parse(json);
-        JsonElement root = doc.RootElement;
+        return Parse(doc.RootElement);
+    }
+
+    /// <summary>复用已解析的响应;与 string 入口保持相同的历史验证契约,不依赖 JsonDocument 的生命周期。</summary>
+    internal static UpdateManifest Parse(JsonElement root)
+    {
         string version = root.GetProperty("version").GetString()
             ?? throw new FormatException("latest.json: version missing");
         string tag = root.GetProperty("tag").GetString()

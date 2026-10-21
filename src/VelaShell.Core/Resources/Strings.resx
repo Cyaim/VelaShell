@@ -2224,7 +2224,7 @@ Paste anyway?</value>
     <value>Changelog</value>
   </data>
   <data name="SetAbout_ChangelogTip" xml:space="preserve">
-    <value>View the latest GitHub release notes, including prereleases</value>
+    <value>View release notes for the current version or an available stable release, and update</value>
   </data>
   <data name="ReleaseNotes_NoRelease" xml:space="preserve">
     <value>No releases have been published yet.</value>
@@ -2239,7 +2239,19 @@ Paste anyway?</value>
     <value>GitHub is limiting requests right now. Please try again later.</value>
   </data>
   <data name="ReleaseNotes_Latest" xml:space="preserve">
-    <value>Latest release</value>
+    <value>Update available</value>
+  </data>
+  <data name="ReleaseNotes_CurrentVersion" xml:space="preserve">
+    <value>Current version</value>
+  </data>
+  <data name="ReleaseNotes_OpenReleasePage" xml:space="preserve">
+    <value>Go to release page</value>
+  </data>
+  <data name="ReleaseNotes_DownloadContinues" xml:space="preserve">
+    <value>The download will continue after you close this window. Once it finishes, you can restart to update from the About page.</value>
+  </data>
+  <data name="ReleaseNotes_NoCurrentRelease" xml:space="preserve">
+    <value>No release notes are available for the current version. This may be a local build, or the version may not yet include a release notes manifest.</value>
   </data>
   <data name="ReleaseNotes_PublishedAt" xml:space="preserve">
     <value>Published on {0}</value>
@@ -2249,6 +2261,18 @@ Paste anyway?</value>
   </data>
   <data name="ReleaseNotes_Retry" xml:space="preserve">
     <value>Retry</value>
+  </data>
+  <data name="ReleaseNotes_UpdateConflict" xml:space="preserve">
+    <value>Another update is in progress or ready to install. Check its status on the About page.</value>
+  </data>
+  <data name="ReleaseNotes_UnknownVersion" xml:space="preserve">
+    <value>The current version could not be identified, so release notes cannot be selected.</value>
+  </data>
+  <data name="ReleaseNotes_CheckFailed" xml:space="preserve">
+    <value>Couldn't check for an available stable release. Please try again later.</value>
+  </data>
+  <data name="ReleaseNotes_UpdateNow" xml:space="preserve">
+    <value>Update now</value>
   </data>
   <data name="SetAbout_CheckUpdates" xml:space="preserve">
     <value>Check for Updates</value>

@@ -10,15 +10,12 @@ namespace VelaShell.Services.Update;
 
 /// <summary>
 /// 以 GitHub Releases 为更新源:每个 Release 附带 CI 生成的 latest.json 清单。
-/// stable 通道优先走固定重定向地址 releases/latest/download/latest.json(不占 API 配额、
-/// 不受限流);该地址只认非预发布 Release,404(例如 beta 阶段全是预发布)时回退到
+/// stable 通道优先走固定重定向地址 releases/latest/download/latest.json(不占 REST API 配额);
+/// 该地址只认非预发布 Release,404(例如 beta 阶段全是预发布)时回退到
 /// REST API 列表取最新可用发布。preview 通道直接走 API 列表(预发布也算)。
 /// </summary>
 public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
 {
-    /// <summary>更新日志只看 Releases 列表的第一页(按创建时间倒序)里的这么多条。</summary>
-    internal const int ReleaseNotesPageSize = 20;
-
     private readonly string _owner;
     private readonly string _repo;
 
@@ -28,7 +25,10 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
     /// <summary>api.github.com 用的 client:JSON 开 gzip,发布列表的传输量能省九成。</summary>
     private readonly HttpClient _api;
 
-    private ReleaseNotesCache? _notesCache;
+    // latest + 本机版本的有限标签变体通常不超过 5 条;最多保留 8 个 URL,避免任意版本查询累积。
+    private const int MaxReleaseNotesCacheEntries = 8;
+    private readonly Dictionary<string, ReleaseNotesCache> _notesCache = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _notesGate = new(1, 1);
 
     /// <summary>以仓库地址(https://github.com/&lt;owner&gt;/&lt;repo&gt;)构造;<paramref name="handler" /> 供测试注入。</summary>
     public GitHubReleaseSource(string repositoryUrl, HttpMessageHandler? handler = null)
@@ -57,8 +57,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
     internal TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// 更新说明在进程内缓存多久。匿名 API 每小时只有 60 次,还与更新检查的回退路径共用,
-    /// 反复开关更新日志不该每次都花掉一次。
+    /// 更新说明在进程内缓存多久。反复开关更新日志不应每次都重新下载清单。
     /// </summary>
     internal TimeSpan ReleaseNotesCacheDuration { get; init; } = TimeSpan.FromMinutes(5);
 
@@ -67,56 +66,137 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
 
     /// <inheritdoc />
     /// <remarks>
-    /// 只取列表第一页:更新说明只要最新那一条,翻遍全部发布要多拉上百万字节。列表按创建时间排序,
-    /// 不能据此推断发布时间,所以仍在这一页里按发布时间取最新(旧 tag 补发的 Release 也可能最新)。
-    /// 缓存过期后带 ETag 做条件请求,没变化时 GitHub 回 304,不计配额。
+    /// 直接读取最新正式版的 latest.json 附件,不查询或回退到匿名 Release API。
+    /// 缓存过期后在服务端提供 ETag 时做条件请求,收到 304 则沿用缓存。
     /// </remarks>
     public async Task<ReleaseNotes?> GetLatestReleaseNotesAsync(CancellationToken cancellationToken = default)
     {
-        ReleaseNotesCache? cached = _notesCache;
-        if (cached != null && Environment.TickCount64 - cached.FetchedAt < ReleaseNotesCacheDuration.TotalMilliseconds)
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(RequestTimeout);
+        return await ReadReleaseNotesAsync(
+            $"https://github.com/{_owner}/{_repo}/releases/latest/download/latest.json", null, null, cts.Token);
+    }
+
+    /// <inheritdoc />
+    public async Task<ReleaseNotes?> GetReleaseNotesForVersionAsync(string version, CancellationToken cancellationToken = default)
+    {
+        if (!UpdateVersion.TryParse(version, out UpdateVersion expectedVersion))
         {
-            return cached.Notes;
+            throw new ArgumentException("Invalid release version.", nameof(version));
         }
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(RequestTimeout);
-        using HttpRequestMessage request = new(HttpMethod.Get,
-            $"https://api.github.com/repos/{_owner}/{_repo}/releases?per_page={ReleaseNotesPageSize}");
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        if (cached?.ETag is { } etag)
+        string original = version.Trim().Split('+')[0];
+        bool prefixed = original.StartsWith('v') || original.StartsWith('V');
+        string bare = prefixed ? original[1..] : original;
+        string normalized = expectedVersion.ToString();
+        // 原写法优先;仅 404 才试有/无 v 与三段规范化,不枚举标签或访问 API。
+        string[] candidates = [original, prefixed ? bare : "v" + bare,
+            prefixed ? "v" + normalized : normalized, prefixed ? normalized : "v" + normalized];
+        foreach (string tag in candidates.Distinct(StringComparer.Ordinal))
         {
-            request.Headers.IfNoneMatch.Add(etag);
-        }
-        using HttpResponseMessage response = await _api.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-        if (cached != null && response.StatusCode == HttpStatusCode.NotModified)
-        {
-            _notesCache = cached with { FetchedAt = Environment.TickCount64 };
-            return cached.Notes;
-        }
-        // 403/429(限流)原样带着状态码抛出,界面据此给出不同于"检查网络"的提示。
-        response.EnsureSuccessStatusCode();
-        await using Stream body = await response.Content.ReadAsStreamAsync(cts.Token);
-        using JsonDocument doc = await JsonDocument.ParseAsync(body, cancellationToken: cts.Token);
-        ReleaseNotes? latest = null;
-        foreach (JsonElement release in doc.RootElement.EnumerateArray())
-        {
-            if (release.GetProperty("draft").GetBoolean())
+            ReleaseNotes? notes = await ReadReleaseNotesAsync(
+                $"https://github.com/{_owner}/{_repo}/releases/download/{Uri.EscapeDataString(tag)}/latest.json",
+                expectedVersion, tag, cts.Token);
+            if (notes != null)
             {
-                continue;
-            }
-            DateTimeOffset publishedAt = release.GetProperty("published_at").GetDateTimeOffset();
-            if (latest == null || publishedAt > latest.PublishedAt)
-            {
-                latest = new ReleaseNotes(release.GetProperty("tag_name").GetString()!,
-                    release.GetProperty("body").GetString() ?? string.Empty, publishedAt,
-                    release.TryGetProperty("html_url", out JsonElement htmlUrl) ? htmlUrl.GetString() : null);
+                return notes;
             }
         }
-        _notesCache = new ReleaseNotesCache(latest, response.Headers.ETag, Environment.TickCount64);
-        return latest;
+        return null;
     }
 
-    /// <summary>更新说明的缓存条目:结果(可为 null,即"没有发布")、条件请求用的 ETag 与取回时刻。</summary>
+    private async Task<ReleaseNotes?> ReadReleaseNotesAsync(
+        string url, UpdateVersion? expectedVersion, string? requestedTag, CancellationToken cancellationToken)
+    {
+        // 同时保护缓存与复验过程,同 URL 的并发读取只发一次请求;等待也受本次整体超时约束。
+        await _notesGate.WaitAsync(cancellationToken);
+        try
+        {
+            _notesCache.TryGetValue(url, out ReleaseNotesCache? cached);
+            if (cached != null && Environment.TickCount64 - cached.FetchedAt < ReleaseNotesCacheDuration.TotalMilliseconds)
+            {
+                return cached.Notes;
+            }
+            using HttpRequestMessage request = new(HttpMethod.Get, url);
+            if (cached?.ETag is { } etag)
+            {
+                request.Headers.IfNoneMatch.Add(etag);
+            }
+            using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (cached?.ETag != null && response.StatusCode == HttpStatusCode.NotModified)
+            {
+                CacheReleaseNotes(url, cached with { FetchedAt = Environment.TickCount64 });
+                return cached.Notes;
+            }
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                CacheReleaseNotes(url, new(null, null, Environment.TickCount64));
+                return null;
+            }
+            response.EnsureSuccessStatusCode();
+            await using Stream body = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using JsonDocument doc = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
+            ReleaseNotes notes = ParseReleaseNotes(doc.RootElement);
+            if (!UpdateVersion.TryParse(notes.Tag, out UpdateVersion tagVersion)
+                || (expectedVersion is { } expected ? tagVersion != expected : tagVersion.PreRelease.Length != 0)
+                || (requestedTag != null && !string.Equals(notes.Tag, requestedTag, StringComparison.Ordinal)))
+            {
+                throw new FormatException("latest.json: unexpected release tag");
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            // 只有完整解析且版本校验通过才覆盖旧缓存;HTTP、JSON、超时失败均保留旧 ETag。
+            CacheReleaseNotes(url, new(notes, response.Headers.ETag, Environment.TickCount64));
+            return notes;
+        }
+        finally
+        {
+            _notesGate.Release();
+        }
+    }
+
+    private static ReleaseNotes ParseReleaseNotes(JsonElement root)
+    {
+        string tag = root.GetProperty("tag").GetString()
+            ?? throw new FormatException("latest.json: tag missing");
+        if (string.IsNullOrWhiteSpace(tag))
+        {
+            throw new FormatException("latest.json: tag empty");
+        }
+        ReleaseNotes notes = new(tag, string.Empty);
+        // 老版本清单没有日志对象:保留标签,交给界面展示正文为空。
+        if (root.TryGetProperty("releaseNotes", out JsonElement releaseNotes) && releaseNotes.ValueKind != JsonValueKind.Null)
+        {
+            string text = releaseNotes.TryGetProperty("body", out JsonElement textElement)
+                ? textElement.GetString() ?? string.Empty : string.Empty;
+            DateTimeOffset? publishedAt = releaseNotes.TryGetProperty("publishedAt", out JsonElement dateElement)
+                && dateElement.ValueKind != JsonValueKind.Null ? dateElement.GetDateTimeOffset() : null;
+            string? htmlUrl = releaseNotes.TryGetProperty("htmlUrl", out JsonElement urlElement) ? urlElement.GetString() : null;
+            notes = new ReleaseNotes(tag, text, publishedAt, htmlUrl);
+        }
+        try
+        {
+            // 日志和可选安装候选来自同一个 JsonElement,不再次请求 latest,也不再次解析 JSON。
+            return notes with { Manifest = UpdateManifest.Parse(root).ForCurrentPlatformInstallation() };
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException or FormatException or JsonException or OverflowException)
+        {
+            // 缺失或损坏的资产不能吞掉有效日志,也不能给立即更新提供不完整候选。
+            return notes;
+        }
+    }
+
+    private void CacheReleaseNotes(string url, ReleaseNotesCache entry)
+    {
+        if (!_notesCache.ContainsKey(url) && _notesCache.Count >= MaxReleaseNotesCacheEntries)
+        {
+            string oldest = _notesCache.MinBy(pair => pair.Value.FetchedAt).Key;
+            _notesCache.Remove(oldest);
+        }
+        _notesCache[url] = entry;
+    }
+
+    /// <summary>更新说明的缓存条目:结果(可为 null,即没有正式版清单)、条件请求用的 ETag 与取回时刻。</summary>
     private sealed record ReleaseNotesCache(ReleaseNotes? Notes, EntityTagHeaderValue? ETag, long FetchedAt);
 
     /// <inheritdoc />

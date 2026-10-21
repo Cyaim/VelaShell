@@ -1,6 +1,8 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using ReactiveUI.Primitives;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -14,13 +16,20 @@ using TextMateSharp.Grammars;
 using VelaShell.Core.Resources;
 using VelaShell.Services;
 using VelaShell.Services.Update;
+using VelaShell.ViewModels;
 
 namespace VelaShell.Views;
 
-/// <summary>按需读取并展示最近一次 GitHub 发布的更新说明。</summary>
+/// <summary>展示当前版本或可用正式版的更新说明,更新操作固定到展示的清单。</summary>
 public partial class ReleaseNotesDialog : Window
 {
     private readonly IReleaseNotesSource? _source;
+    private readonly SettingsViewModel? _updates;
+    private readonly string? _currentVersion;
+    private readonly bool _selectVersion;
+    private ReleaseNotes? _notes;
+    private bool _hasUpdate;
+    private bool _downloadStarted;
     private CancellationTokenSource? _request;
     private bool _closed;
     private Uri? _releaseUri;
@@ -72,6 +81,20 @@ public partial class ReleaseNotesDialog : Window
     /// <summary>窗口打开后通过指定发布源加载更新说明。</summary>
     public ReleaseNotesDialog(IReleaseNotesSource source) : this() => _source = source;
 
+    /// <summary>按运行版本选择日志,并复用关于页的下载、进度与重启状态。</summary>
+    public ReleaseNotesDialog(IReleaseNotesSource source, SettingsViewModel updates) : this(source, updates.CurrentUpdateVersion)
+    {
+        _updates = updates;
+        updates.PropertyChanged += OnUpdateStateChanged;
+        RefreshUpdateAction();
+    }
+
+    internal ReleaseNotesDialog(IReleaseNotesSource source, string? currentVersion) : this(source)
+    {
+        _currentVersion = currentVersion;
+        _selectVersion = true;
+    }
+
     /// <summary>「在 GitHub 上查看」要打开的发布页;没有可用地址时为 null。</summary>
     internal Uri? ReleaseUri => _releaseUri;
 
@@ -103,25 +126,78 @@ public partial class ReleaseNotesDialog : Window
         _releaseUri = null;
         NotesScroll.IsVisible = false;
         RetryButton.IsVisible = false;
+        CheckStatusText.IsVisible = false;
+        _notes = null;
+        _hasUpdate = false;
+        RefreshUpdateAction();
         try
         {
-            ReleaseNotes? notes = await _source.GetLatestReleaseNotesAsync(request.Token);
+            ReleaseNotes? notes;
+            if (!_selectVersion)
+            {
+                notes = await _source.GetLatestReleaseNotesAsync(request.Token);
+            }
+            else if (!UpdateVersion.TryParse(_currentVersion, out UpdateVersion current))
+            {
+                StatusText.Text = Strings.Get("ReleaseNotes_UnknownVersion");
+                StatusText.IsVisible = true;
+                return;
+            }
+            else
+            {
+                Exception? checkError = null;
+                ReleaseNotes? latest = null;
+                try
+                {
+                    latest = await _source.GetLatestReleaseNotesAsync(request.Token);
+                }
+                catch (OperationCanceledException) when (request.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    checkError = ex;
+                }
+                if (latest != null && (!UpdateVersion.TryParse(latest.Tag, out UpdateVersion latestVersion)
+                    || latestVersion.PreRelease.Length != 0))
+                {
+                    checkError = new FormatException("Invalid release version.");
+                    latest = null;
+                }
+                _hasUpdate = latest != null && UpdateVersion.TryParse(latest.Tag, out UpdateVersion newest) && newest > current;
+                bool sameVersion = latest != null && UpdateVersion.TryParse(latest.Tag, out UpdateVersion published) && published == current;
+                notes = _hasUpdate || sameVersion
+                    ? latest
+                    : await _source.GetReleaseNotesForVersionAsync(_currentVersion!, request.Token);
+                if (checkError != null && !_closed)
+                {
+                    Trace.WriteLine($"[ReleaseNotes] Update discovery failed: {checkError}");
+                    CheckStatusText.Text = Strings.Get("ReleaseNotes_CheckFailed");
+                    CheckStatusText.IsVisible = true;
+                    RetryButton.IsVisible = true;
+                }
+            }
             if (_closed)
             {
                 return;
             }
+            _notes = notes;
             VersionText.Text = notes?.Tag;
+            VersionBadge.Text = Strings.Get(_hasUpdate || !_selectVersion ? "ReleaseNotes_Latest" : "ReleaseNotes_CurrentVersion");
             ReleaseHeader.IsVisible = notes != null;
             PublishedText.IsVisible = notes?.PublishedAt != null;
             PublishedText.Text = notes?.PublishedAt is { } publishedAt
                 ? Strings.Format("ReleaseNotes_PublishedAt", publishedAt.ToLocalTime().ToString("d", CultureInfo.CurrentCulture))
                 : null;
-            // 发布页地址取 API 给的 html_url,不在这里另拼一份仓库地址;照样只放行 https。
+            // 发布页地址取清单中的 htmlUrl,不在这里另拼一份仓库地址;照样只放行 https。
             _releaseUri = notes?.HtmlUrl is { } htmlUrl && IsAllowedLink(htmlUrl) ? new Uri(htmlUrl) : null;
             GitHubButton.IsEnabled = _releaseUri != null;
             if (notes == null || string.IsNullOrWhiteSpace(notes.Body))
             {
-                StatusText.Text = Strings.Get(notes == null ? "ReleaseNotes_NoRelease" : "ReleaseNotes_EmptyBody");
+                StatusText.Text = Strings.Get(notes == null
+                    ? _selectVersion ? "ReleaseNotes_NoCurrentRelease" : "ReleaseNotes_NoRelease"
+                    : "ReleaseNotes_EmptyBody");
                 StatusText.IsVisible = true;
             }
             else
@@ -139,7 +215,7 @@ public partial class ReleaseNotesDialog : Window
             Trace.WriteLine($"[ReleaseNotes] {ex}");
             if (!_closed)
             {
-                // 匿名 API 每小时只有 60 次,用完 GitHub 回 403/429;这时让用户去查网络是误导。
+                // 下载服务仍可能限制请求;保留状态码提示,不把所有失败都归为网络故障。
                 bool rateLimited = ex is HttpRequestException { StatusCode: HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests };
                 StatusText.Text = Strings.Get(rateLimited ? "ReleaseNotes_RateLimited" : "ReleaseNotes_LoadFailed");
                 StatusText.IsVisible = true;
@@ -153,6 +229,7 @@ public partial class ReleaseNotesDialog : Window
             {
                 LoadingPanel.IsVisible = false;
                 LoadingRing.IsIndeterminate = false;
+                RefreshUpdateAction();
             }
         }
     }
@@ -162,6 +239,10 @@ public partial class ReleaseNotesDialog : Window
     {
         _closed = true;
         _request?.Cancel();
+        if (_updates != null)
+        {
+            _updates.PropertyChanged -= OnUpdateStateChanged;
+        }
         foreach (IDisposable subscription in _skinSubscriptions)
         {
             subscription.Dispose();
@@ -200,6 +281,82 @@ public partial class ReleaseNotesDialog : Window
 
     private void UpdateCodeTheme() => BodyMarkdown.CodeBlockColorTheme =
         ActualThemeVariant == ThemeVariant.Dark ? ThemeName.DarkPlus : ThemeName.LightPlus;
+
+    private void OnUpdateStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!_closed && (e.PropertyName is nameof(SettingsViewModel.IsUpdating)
+            or nameof(SettingsViewModel.ReadyUpdate) or nameof(SettingsViewModel.UpdateReady)
+            or nameof(SettingsViewModel.UpdateStatus)))
+        {
+            RefreshUpdateAction();
+        }
+    }
+
+    private bool IsDisplayedUpdateReady() => _notes?.Manifest is { } target && _updates?.ReadyUpdate is { } ready
+        && string.Equals(target.Tag, ready.Tag, StringComparison.Ordinal)
+        && string.Equals(target.Version, ready.Version, StringComparison.Ordinal)
+        && Equals(target.AssetForCurrentPlatform(), ready.AssetForCurrentPlatform());
+
+    private void RefreshUpdateAction()
+    {
+        UpdateButton.IsVisible = false;
+        UpdateStatusText.IsVisible = false;
+        DownloadNotice.IsVisible = _downloadStarted;
+        if (_updates == null)
+        {
+            return;
+        }
+        if (_updates.UpdatesManagedByStore)
+        {
+            UpdateStatusText.Text = Strings.Get("SetAbout_StoreManagedUpdates");
+            UpdateStatusText.IsVisible = true;
+            return;
+        }
+        if (_downloadStarted || _updates.IsUpdating || _updates.UpdateReady)
+        {
+            UpdateStatusText.Text = _updates.UpdateStatus;
+            UpdateStatusText.IsVisible = !string.IsNullOrEmpty(_updates.UpdateStatus);
+        }
+        if (!_hasUpdate || _notes?.Manifest == null)
+        {
+            return;
+        }
+        bool manual = !_updates.CanSelfUpdate || OperatingSystem.IsLinux();
+        UpdateButton.IsVisible = !manual || _releaseUri != null;
+        UpdateButton.IsEnabled = !_updates.IsUpdating;
+        UpdateButton.Content = Strings.Get(manual ? "ReleaseNotes_OpenReleasePage"
+            : IsDisplayedUpdateReady() ? "SetAbout_RestartToUpdate" : "ReleaseNotes_UpdateNow");
+    }
+
+    private void Update_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (_updates == null || !_hasUpdate || _notes?.Manifest is not { } manifest
+            || _updates.IsUpdating || _updates.UpdatesManagedByStore)
+        {
+            return;
+        }
+        if (!_updates.CanSelfUpdate || OperatingSystem.IsLinux())
+        {
+            if (_releaseUri is { } uri)
+            {
+                await Launcher.LaunchUriAsync(uri);
+            }
+            return;
+        }
+        if (IsDisplayedUpdateReady())
+        {
+            await _updates.RestartToUpdateCommand.Execute().FirstAsync();
+            return;
+        }
+        _downloadStarted = true;
+        RefreshUpdateAction();
+        // 下载由共享 VM 持有;关闭日志窗口只取消日志请求,不取消用户已经启动的更新。
+        await _updates.UpdateFromReleaseAsync(manifest);
+        if (!_closed)
+        {
+            RefreshUpdateAction();
+        }
+    });
 
     private void OnMarkdownLinkClicked(object? sender, LinkClickedEventArgs e)
     {

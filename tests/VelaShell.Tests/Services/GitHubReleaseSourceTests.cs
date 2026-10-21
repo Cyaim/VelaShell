@@ -2,11 +2,12 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using VelaShell.Services.Update;
 
 namespace VelaShell.Tests.Services;
 
-/// <summary>GitHubReleaseSource 下载通路的断点续传行为(经注入的 HttpMessageHandler 打桩)。</summary>
+/// <summary>GitHubReleaseSource 的更新日志、清单与断点续传行为(经注入的 HttpMessageHandler 打桩)。</summary>
 [TestClass]
 public class GitHubReleaseSourceTests : IDisposable
 {
@@ -303,32 +304,28 @@ public class GitHubReleaseSourceTests : IDisposable
     }
 
     [TestMethod]
-    public async Task ReleaseNotes_ReadsOnlyFirstPage_ChoosesLatestPublicationIncludingPrereleaseAndOlderTags()
+    public async Task ReleaseNotes_ReadsLatestStableManifest_WithoutCallingApiOrRequiringAssets()
     {
         int calls = 0;
         GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
         {
             calls++;
-            Assert.AreEqual("api.github.com", request.RequestUri!.Host);
-            Assert.AreEqual("/repos/owner/repo/releases", request.RequestUri.AbsolutePath);
-            Assert.AreEqual($"?per_page={GitHubReleaseSource.ReleaseNotesPageSize}", request.RequestUri.Query);
+            Assert.AreEqual("https://github.com/owner/repo/releases/latest/download/latest.json", request.RequestUri!.AbsoluteUri);
             Assert.IsNotEmpty(request.Headers.UserAgent);
-            Assert.Contains("application/vnd.github+json", request.Headers.Accept.ToString());
-            // 列表按创建时间倒序;旧 tag 补发的 v1.7.1 排在后面,但发布时间最新。
-            HttpResponseMessage response = new(HttpStatusCode.OK)
+            Assert.IsEmpty(request.Headers.Accept);
+            return new(HttpStatusCode.OK)
             {
                 Content = new StringContent("""
-                    [
-                      {"draft":true,"published_at":null},
-                      {"draft":false,"prerelease":false,"tag_name":"v9.0","body":"old stable","published_at":"2026-10-01T00:00:00Z"},
-                      {"draft":false,"prerelease":true,"tag_name":"v10-beta","body":"preview","published_at":"2026-10-02T00:00:00Z"},
-                      {"draft":false,"prerelease":true,"tag_name":"v1.7.1","body":"## What's Changed\n* 更新下载 by @joesdu in #626\n\n完整正文","published_at":"2026-10-16T00:00:00Z","html_url":"https://github.com/owner/repo/releases/tag/v1.7.1"}
-                    ]
+                    {
+                      "tag":"v1.7.1",
+                      "releaseNotes": {
+                        "body":"## What's Changed\n* 更新下载 by @joesdu in #626\n\n完整正文",
+                        "publishedAt":"2026-10-16T00:00:00Z",
+                        "htmlUrl":"https://github.com/owner/repo/releases/tag/v1.7.1"
+                      }
+                    }
                     """)
             };
-            // 后面还有页,但更新说明只要最新那一条,不该为它翻遍全部发布。
-            response.Headers.Add("Link", "<https://api.github.com/repos/owner/repo/releases?per_page=20&page=2>; rel=\"next\"");
-            return response;
         }));
 
         ReleaseNotes? notes = await source.GetLatestReleaseNotesAsync();
@@ -344,7 +341,7 @@ public class GitHubReleaseSourceTests : IDisposable
     [TestMethod]
     public async Task ReleaseNotes_CachedInProcess_ThenRevalidatedWithETag()
     {
-        const string json = """[{"draft":false,"tag_name":"v1.7.1","body":"notes","published_at":"2026-10-16T00:00:00Z"}]""";
+        const string json = """{"tag":"v1.7.1","releaseNotes":{"body":"notes","publishedAt":"2026-10-16T00:00:00Z"}}""";
         List<string?> ifNoneMatch = [];
         StubHandler handler = new(request =>
         {
@@ -358,13 +355,13 @@ public class GitHubReleaseSourceTests : IDisposable
             return response;
         });
 
-        // 缓存期内反复打开更新日志:只花一次 API 配额。
+        // 缓存期内反复打开更新日志:只下载一次清单。
         GitHubReleaseSource cached = new("https://github.com/owner/repo", handler);
         ReleaseNotes? first = await cached.GetLatestReleaseNotesAsync();
         Assert.AreEqual(first, await cached.GetLatestReleaseNotesAsync());
         Assert.HasCount(1, ifNoneMatch);
 
-        // 缓存过期:带 ETag 做条件请求,304(不计配额)时沿用手里的结果。
+        // 缓存过期:带 ETag 做条件请求,304 时沿用手里的结果。
         ifNoneMatch.Clear();
         GitHubReleaseSource revalidating = new("https://github.com/owner/repo", handler)
         {
@@ -377,6 +374,60 @@ public class GitHubReleaseSourceTests : IDisposable
         Assert.IsNotNull(revalidated);
         Assert.AreEqual(fresh, revalidated);
         Assert.AreEqual("v1.7.1", revalidated.Tag);
+    }
+
+    [TestMethod]
+    public async Task Manifest_StableChannel_UsesAttachmentWithoutApi()
+    {
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            Assert.AreEqual("https://github.com/owner/repo/releases/latest/download/latest.json", request.RequestUri!.AbsoluteUri);
+            return new(HttpStatusCode.OK) { Content = new StringContent("""
+                {"version":"1.7.1","tag":"v1.7.1","assets":{"win-x64":{"name":"pkg.zip","sha256":"abc","size":12}},"releaseNotes":{"body":"notes"}}
+                """) };
+        }));
+
+        UpdateManifest? manifest = await source.GetLatestManifestAsync(includePreRelease: false);
+        Assert.IsNotNull(manifest);
+        Assert.AreEqual("v1.7.1", manifest.Tag);
+        Assert.AreEqual("pkg.zip", manifest.Assets["win-x64"].Name);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Manifest_ApiFallbackAndPreviewChannel_KeepExistingSelection(bool preview)
+    {
+        List<string> urls = [];
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            string url = request.RequestUri!.AbsoluteUri;
+            urls.Add(url);
+            if (url == "https://github.com/owner/repo/releases/latest/download/latest.json")
+            {
+                return new(HttpStatusCode.NotFound);
+            }
+            if (request.RequestUri.Host == "api.github.com")
+            {
+                return new(HttpStatusCode.OK) { Content = new StringContent("""
+                    [
+                      {"draft":true},
+                      {"draft":false,"prerelease":true,"tag_name":"v2.0-beta"},
+                      {"draft":false,"prerelease":false,"tag_name":"v1.7.1"}
+                    ]
+                    """) };
+            }
+            string tag = preview ? "v2.0-beta" : "v1.7.1";
+            Assert.AreEqual($"https://github.com/owner/repo/releases/download/{tag}/latest.json", url);
+            return new(HttpStatusCode.OK) { Content = new StringContent($$$"""
+                {"version":"{{{tag[1..]}}}","tag":"{{{tag}}}","assets":{"win-x64":{"name":"pkg.zip","sha256":"abc"} } }
+                """) };
+        }));
+
+        UpdateManifest? manifest = await source.GetLatestManifestAsync(preview);
+        Assert.AreEqual(preview ? "v2.0-beta" : "v1.7.1", manifest!.Tag);
+        Assert.HasCount(preview ? 2 : 3, urls);
+        Assert.Contains("https://api.github.com/repos/owner/repo/releases?per_page=20", urls);
     }
 
     [TestMethod]
@@ -404,24 +455,95 @@ public class GitHubReleaseSourceTests : IDisposable
     }
 
     [TestMethod]
-    [DataRow("[]")]
-    [DataRow("[{\"draft\":true}]")]
-    public async Task ReleaseNotes_NoPublishedRelease_ReturnsNull(string json)
+    public async Task ReleaseNotes_MissingStableManifest_CachesNullWithoutApiFallback()
     {
-        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
-            new(HttpStatusCode.OK) { Content = new StringContent(json) }));
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            calls++;
+            Assert.AreEqual("https://github.com/owner/repo/releases/latest/download/latest.json", request.RequestUri!.AbsoluteUri);
+            return new(HttpStatusCode.NotFound);
+        }));
         Assert.IsNull(await source.GetLatestReleaseNotesAsync());
+        Assert.IsNull(await source.GetLatestReleaseNotesAsync());
+        Assert.AreEqual(1, calls);
     }
 
     [TestMethod]
-    public async Task ReleaseNotes_NullBody_PreservesVersion()
+    [DataRow("{\"tag\":\"v1.7.1\"}")]
+    [DataRow("{\"tag\":\"v1.7.1\",\"releaseNotes\":null}")]
+    [DataRow("{\"tag\":\"v1.7.1\",\"releaseNotes\":{}}")]
+    [DataRow("{\"tag\":\"v1.7.1\",\"releaseNotes\":{\"body\":null}}")]
+    [DataRow("{\"tag\":\"v1.7.1\",\"releaseNotes\":{\"body\":\"\",\"publishedAt\":null,\"htmlUrl\":null}}")]
+    public async Task ReleaseNotes_OldManifestOrEmptyBody_PreservesVersion(string json)
+    {
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+            new(HttpStatusCode.OK) { Content = new StringContent(json) }));
+        Assert.AreEqual(new ReleaseNotes("v1.7.1", ""), await source.GetLatestReleaseNotesAsync());
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_NullBody_PreservesPublication()
     {
         GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
             new(HttpStatusCode.OK) { Content = new StringContent("""
-                [{"draft":false,"tag_name":"v1.7.1","body":null,"published_at":"2026-10-16T00:00:00Z"}]
+                {"tag":"v1.7.1","releaseNotes":{"body":null,"publishedAt":"2026-10-16T00:00:00Z"}}
                 """) }));
         Assert.AreEqual(new ReleaseNotes("v1.7.1", "", DateTimeOffset.Parse("2026-10-16T00:00:00Z")),
             await source.GetLatestReleaseNotesAsync());
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_ChangedManifest_ReplacesBodyAndClearsOldETag()
+    {
+        List<string?> etags = [];
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            etags.Add(request.Headers.IfNoneMatch.FirstOrDefault()?.ToString());
+            HttpResponseMessage response = new(HttpStatusCode.OK)
+            {
+                Content = new StringContent(etags.Count == 1
+                    ? """{"tag":"v1.0.0","releaseNotes":{"body":"old"}}"""
+                    : """{"tag":"v2.0.0","releaseNotes":{"body":"new"}}""")
+            };
+            if (etags.Count == 1)
+            {
+                response.Headers.ETag = new EntityTagHeaderValue("\"old\"");
+            }
+            return response;
+        }))
+        { ReleaseNotesCacheDuration = TimeSpan.Zero };
+
+        Assert.AreEqual("old", (await source.GetLatestReleaseNotesAsync())!.Body);
+        Assert.AreEqual(new ReleaseNotes("v2.0.0", "new"), await source.GetLatestReleaseNotesAsync());
+        await source.GetLatestReleaseNotesAsync();
+        Assert.AreSequenceEqual([null, "\"old\"", null], etags);
+    }
+
+    [TestMethod]
+    [DataRow("{}", typeof(KeyNotFoundException))]
+    [DataRow("{\"tag\":null}", typeof(FormatException))]
+    [DataRow("{\"tag\":\" \"}", typeof(FormatException))]
+    [DataRow("{\"tag\":4}", typeof(InvalidOperationException))]
+    [DataRow("{\"tag\":\"v1.0.0\",\"releaseNotes\":[]}", typeof(InvalidOperationException))]
+    [DataRow("{\"tag\":\"v1.0.0\",\"releaseNotes\":{\"body\":3}}", typeof(InvalidOperationException))]
+    [DataRow("{\"tag\":\"v1.0.0\",\"releaseNotes\":{\"publishedAt\":\"invalid\"}}", typeof(FormatException))]
+    [DataRow("{\"tag\":\"v1.0.0\",\"releaseNotes\":{\"htmlUrl\":false}}", typeof(InvalidOperationException))]
+    public async Task ReleaseNotes_InvalidManifest_Propagates(string json, Type exceptionType)
+    {
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+            new(HttpStatusCode.OK) { Content = new StringContent(json) }));
+        Exception? error = null;
+        try
+        {
+            await source.GetLatestReleaseNotesAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex;
+        }
+        Assert.IsNotNull(error);
+        Assert.AreEqual(exceptionType, error.GetType());
     }
 
     [TestMethod]
@@ -434,6 +556,33 @@ public class GitHubReleaseSourceTests : IDisposable
         HttpRequestException ex = await Assert.ThrowsAsync<HttpRequestException>(() => source.GetLatestReleaseNotesAsync());
         // 状态码要带出去:界面靠它把 403/429 限流和"检查网络"区分开。
         Assert.AreEqual((HttpStatusCode)status, ex.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_FailedRefresh_DoesNotReplaceSuccessfulCache()
+    {
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            calls++;
+            if (calls == 1)
+            {
+                HttpResponseMessage first = new(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"tag":"v1.0.0","releaseNotes":{"body":"notes"}}""")
+                };
+                first.Headers.ETag = new EntityTagHeaderValue("\"original\"");
+                return first;
+            }
+            Assert.AreEqual("\"original\"", request.Headers.IfNoneMatch.Single().ToString());
+            return new(calls == 2 ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.NotModified);
+        }))
+        { ReleaseNotesCacheDuration = TimeSpan.Zero };
+
+        ReleaseNotes? first = await source.GetLatestReleaseNotesAsync();
+        await Assert.ThrowsAsync<HttpRequestException>(() => source.GetLatestReleaseNotesAsync());
+        Assert.AreEqual(first, await source.GetLatestReleaseNotesAsync());
+        Assert.AreEqual(3, calls);
     }
 
     [TestMethod]
@@ -454,6 +603,401 @@ public class GitHubReleaseSourceTests : IDisposable
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         cancellation.Cancel();
         await Assert.ThrowsAsync<OperationCanceledException>(async () => await pending);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ReleaseNotes_StalledResponseBody_RespectsTimeoutAndCallerCancellation(bool cancelCaller)
+    {
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using CancellationTokenSource cancellation = new();
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+            new(HttpStatusCode.OK) { Content = new StreamContent(new StalledReadStream(started)) }))
+        {
+            RequestTimeout = cancelCaller ? TimeSpan.FromSeconds(30) : TimeSpan.FromMilliseconds(100)
+        };
+
+        Task<ReleaseNotes?> pending = source.GetLatestReleaseNotesAsync(cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (cancelCaller)
+        {
+            cancellation.Cancel();
+        }
+        await Assert.ThrowsAsync<OperationCanceledException>(() => pending.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [TestMethod]
+    [DataRow("1.7.1", true)]
+    [DataRow("1.7.1.0", true)]
+    [DataRow("1.7.1+build", true)]
+    [DataRow("1.7.2", false)]
+    [DataRow("1.7.1-beta.1", false)]
+    [DataRow("invalid", false)]
+    public async Task ReleaseNotes_ManifestCandidate_RequiresVersionMatchingRootTag(string version, bool eligible)
+    {
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+        {
+            calls++;
+            return NotesResponse("v1.7.1", version);
+        }));
+
+        ReleaseNotes? notes = await source.GetLatestReleaseNotesAsync();
+
+        Assert.IsNotNull(notes);
+        Assert.AreEqual("notes for v1.7.1", notes.Body);
+        Assert.AreEqual(eligible, notes.Manifest != null);
+        if (eligible)
+        {
+            Assert.AreEqual("v1.7.1", notes.Manifest!.Tag);
+            Assert.AreEqual(version, notes.Manifest.Version);
+            Assert.HasCount(1, notes.Manifest.Assets);
+            Assert.AreEqual("pkg.zip", notes.Manifest.AssetForCurrentPlatform()!.Name);
+        }
+        Assert.AreEqual(1, calls, "日志和候选应来自同一响应。");
+    }
+
+    [TestMethod]
+    [DataRow("null")]
+    [DataRow("{}")]
+    [DataRow("[]")]
+    [DataRow("{\"name\":\"pkg.zip\"}")]
+    [DataRow("{\"name\":null,\"sha256\":\"bad\",\"size\":1}")]
+    [DataRow("{\"name\":\"../pkg.zip\",\"sha256\":\"bad\",\"size\":1}")]
+    [DataRow("{\"name\":\"pkg.zip\",\"sha256\":\"bad\",\"size\":1}")]
+    [DataRow("{\"name\":\"pkg.zip\",\"sha256\":\"bad\",\"size\":0}")]
+    [DataRow("{\"name\":\"pkg.zip\",\"sha256\":\"bad\",\"size\":9223372036854775808}")]
+    public async Task ReleaseNotes_BadCurrentPlatformAsset_PreservesBodyWithoutCandidate(string asset)
+    {
+        string json = $$"""
+            {"version":"1.7.1","tag":"v1.7.1","assets":{"{{UpdateManifest.CurrentRid()}}":{{asset}} },
+             "releaseNotes":{"body":"readable","publishedAt":"2026-10-21T00:00:00Z"} }
+            """;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+            new(HttpStatusCode.OK) { Content = new StringContent(json) }));
+
+        ReleaseNotes? notes = await source.GetLatestReleaseNotesAsync();
+
+        Assert.IsNotNull(notes);
+        Assert.AreEqual("readable", notes.Body);
+        Assert.AreEqual(DateTimeOffset.Parse("2026-10-21T00:00:00Z"), notes.PublishedAt);
+        Assert.IsNull(notes.Manifest);
+    }
+
+    [TestMethod]
+    [DataRow("v1")]
+    [DataRow("invalid")]
+    [DataRow("v2.0.0-beta.1")]
+    public async Task ReleaseNotes_Latest_RejectsInvalidOrPreviewTag(string tag)
+    {
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+        {
+            calls++;
+            return NotesResponse(tag, "2.0.0-beta.1");
+        }));
+        await Assert.ThrowsExactlyAsync<FormatException>(() => source.GetLatestReleaseNotesAsync());
+        Assert.AreEqual(1, calls);
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_Current_AllowsPreviewAndUsesExactTagWithoutApi()
+    {
+        List<string> urls = [];
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            urls.Add(request.RequestUri!.AbsoluteUri);
+            return NotesResponse("v2.0.0-beta.1", "2.0.0-beta.1");
+        }));
+        ReleaseNotes? notes = await source.GetReleaseNotesForVersionAsync("v2.0.0-beta.1+local");
+        Assert.IsNotNull(notes);
+        Assert.AreEqual("v2.0.0-beta.1", notes.Tag);
+        Assert.IsNotNull(notes.Manifest);
+        Assert.AreSequenceEqual(["https://github.com/owner/repo/releases/download/v2.0.0-beta.1/latest.json"], urls);
+    }
+
+    [TestMethod]
+    [DataRow("v1.7.1", "v1.7.1|1.7.1")]
+    [DataRow("1.7.1", "1.7.1|v1.7.1")]
+    [DataRow("v1.7.1.0", "v1.7.1.0|1.7.1.0|v1.7.1|1.7.1")]
+    [DataRow("1.7.1.0+local", "1.7.1.0|v1.7.1.0|1.7.1|v1.7.1")]
+    [DataRow("v2.0.0.0-beta.1", "v2.0.0.0-beta.1|2.0.0.0-beta.1|v2.0.0-beta.1|2.0.0-beta.1")]
+    public async Task ReleaseNotes_Current_Only404TriesFinitePrefixAndNormalizedVariants(string version, string expectedTags)
+    {
+        List<string> urls = [];
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            urls.Add(request.RequestUri!.AbsoluteUri);
+            return new(HttpStatusCode.NotFound);
+        }));
+        Assert.IsNull(await source.GetReleaseNotesForVersionAsync(version));
+        Assert.IsNull(await source.GetReleaseNotesForVersionAsync(version));
+        Assert.AreSequenceEqual(expectedTags.Split('|').Select(tag =>
+            $"https://github.com/owner/repo/releases/download/{tag}/latest.json").ToArray(), urls);
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_Current_NormalizedFallback_StopsAtFirstValidResponse()
+    {
+        List<string> urls = [];
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            urls.Add(request.RequestUri!.AbsoluteUri);
+            return urls.Count < 3 ? new(HttpStatusCode.NotFound) : NotesResponse("v1.7.1");
+        }));
+        ReleaseNotes? notes = await source.GetReleaseNotesForVersionAsync("v1.7.1.0");
+        Assert.AreEqual("v1.7.1", notes!.Tag);
+        Assert.HasCount(3, urls);
+        Assert.AreEqual("https://github.com/owner/repo/releases/download/v1.7.1/latest.json", urls[^1]);
+    }
+
+    [TestMethod]
+    [DataRow(403)]
+    [DataRow(429)]
+    [DataRow(500)]
+    public async Task ReleaseNotes_Current_HttpFailure_DoesNotTryAnotherTag(int status)
+    {
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+        {
+            calls++;
+            return new((HttpStatusCode)status);
+        }));
+        HttpRequestException error = await Assert.ThrowsAsync<HttpRequestException>(() => source.GetReleaseNotesForVersionAsync("v1.7.1.0"));
+        Assert.AreEqual((HttpStatusCode)status, error.StatusCode);
+        Assert.AreEqual(1, calls);
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_Current_InvalidJson_DoesNotTryAnotherTag()
+    {
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+        {
+            calls++;
+            return new(HttpStatusCode.OK) { Content = new StringContent("invalid") };
+        }));
+        await Assert.ThrowsAsync<JsonException>(() => source.GetReleaseNotesForVersionAsync("v1.7.1.0"));
+        Assert.AreEqual(1, calls);
+    }
+
+    [TestMethod]
+    [DataRow("1.7.1")]
+    [DataRow("V1.7.1")]
+    [DataRow("v1.7.1.0")]
+    [DataRow("v1.7.1+build")]
+    [DataRow("v1.7.2")]
+    [DataRow("v1.7.1-beta.1")]
+    public async Task ReleaseNotes_Current_ResponseMustMatchExactRequestedTag(string responseTag)
+    {
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+        {
+            calls++;
+            return NotesResponse(responseTag);
+        }));
+        await Assert.ThrowsExactlyAsync<FormatException>(() => source.GetReleaseNotesForVersionAsync("v1.7.1"));
+        Assert.AreEqual(1, calls, "非 404 的版本校验失败不得继续尝试其它标签。");
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("v1")]
+    [DataRow("not-a-version")]
+    public async Task ReleaseNotes_Current_InvalidVersion_DoesNotRequest(string version)
+    {
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
+        {
+            calls++;
+            return new(HttpStatusCode.NotFound);
+        }));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => source.GetReleaseNotesForVersionAsync(version));
+        Assert.AreEqual(0, calls);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ReleaseNotes_LatestAndCurrent_KeepSeparateCacheAndETags(bool sameTag)
+    {
+        Dictionary<string, int> calls = [];
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            string url = request.RequestUri!.AbsoluteUri;
+            bool latest = url.Contains("/latest/download/", StringComparison.Ordinal);
+            string tag = latest && !sameTag ? "v2.0.0" : "v1.7.1";
+            string etag = latest ? "\"latest\"" : "\"current\"";
+            int count = calls.GetValueOrDefault(url) + 1;
+            calls[url] = count;
+            if (count > 1)
+            {
+                Assert.AreEqual(etag, request.Headers.IfNoneMatch.Single().ToString());
+                return new(HttpStatusCode.NotModified);
+            }
+            Assert.IsEmpty(request.Headers.IfNoneMatch);
+            return NotesResponse(tag, tag[1..], etag);
+        })) { ReleaseNotesCacheDuration = TimeSpan.Zero };
+
+        ReleaseNotes? latest = await source.GetLatestReleaseNotesAsync();
+        ReleaseNotes? current = await source.GetReleaseNotesForVersionAsync("v1.7.1");
+        Assert.AreSame(current, await source.GetReleaseNotesForVersionAsync("v1.7.1"));
+        Assert.AreSame(latest, await source.GetLatestReleaseNotesAsync());
+        Assert.AreEqual(sameTag ? "v1.7.1" : "v2.0.0", latest!.Manifest!.Tag);
+        Assert.AreEqual("v1.7.1", current!.Manifest!.Tag);
+        Assert.HasCount(2, calls);
+        Assert.IsTrue(calls.Values.All(count => count == 2));
+    }
+
+    [TestMethod]
+    [DataRow("invalid")]
+    [DataRow("{\"tag\":\"v2.0.0-beta.1\"}")]
+    [DataRow("{\"tag\":\"v1\"}")]
+    public async Task ReleaseNotes_InvalidRefresh_PreservesCachedSnapshotAndETag(string badJson)
+    {
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            calls++;
+            if (calls == 1)
+            {
+                return NotesResponse("v1.7.1", etag: "\"original\"");
+            }
+            Assert.AreEqual("\"original\"", request.Headers.IfNoneMatch.Single().ToString());
+            return calls == 2
+                ? new(HttpStatusCode.OK) { Content = new StringContent(badJson) }
+                : new(HttpStatusCode.NotModified);
+        })) { ReleaseNotesCacheDuration = TimeSpan.Zero };
+
+        ReleaseNotes? original = await source.GetLatestReleaseNotesAsync();
+        if (badJson == "invalid")
+        {
+            await Assert.ThrowsAsync<JsonException>(() => source.GetLatestReleaseNotesAsync());
+        }
+        else
+        {
+            await Assert.ThrowsExactlyAsync<FormatException>(() => source.GetLatestReleaseNotesAsync());
+        }
+        Assert.AreSame(original, await source.GetLatestReleaseNotesAsync());
+        Assert.IsNotNull(original!.Manifest);
+        Assert.AreEqual(3, calls);
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_Cache_IsBoundedToEightUrls()
+    {
+        int calls = 0;
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(request =>
+        {
+            calls++;
+            return NotesResponse(request.RequestUri!.Segments[^2].TrimEnd('/'));
+        }));
+        for (int i = 1; i <= 9; i++)
+        {
+            await source.GetReleaseNotesForVersionAsync($"v{i}.0.0");
+        }
+        await source.GetReleaseNotesForVersionAsync("v9.0.0");
+        Assert.AreEqual(9, calls);
+        await source.GetReleaseNotesForVersionAsync("v1.0.0");
+        Assert.AreEqual(10, calls, "第九个 URL 应逐出最早的缓存条目。");
+    }
+
+    [TestMethod]
+    public async Task ReleaseNotes_ConcurrentDifferentUrls_KeepResultsSeparateAndDeduplicateSameUrl()
+    {
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        List<string> urls = [];
+        GitHubReleaseSource source = new("https://github.com/owner/repo", new AsyncStubHandler(async (request, token) =>
+        {
+            string url = request.RequestUri!.AbsoluteUri;
+            urls.Add(url);
+            if (url.Contains("/latest/download/", StringComparison.Ordinal))
+            {
+                started.TrySetResult();
+                await release.Task.WaitAsync(token);
+                return NotesResponse("v3.0.0", "3.0.0");
+            }
+            string tag = request.RequestUri.Segments[^2].TrimEnd('/');
+            return NotesResponse(tag, tag[1..]);
+        }));
+
+        Task<ReleaseNotes?> latest = source.GetLatestReleaseNotesAsync();
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            using CancellationTokenSource cancellation = new();
+            Task<ReleaseNotes?> cancelled = source.GetReleaseNotesForVersionAsync("v1.0.0", cancellation.Token);
+            Task<ReleaseNotes?> current = source.GetReleaseNotesForVersionAsync("v1.0.0");
+            Task<ReleaseNotes?> other = source.GetReleaseNotesForVersionAsync("v2.0.0");
+            Task<ReleaseNotes?> same = source.GetReleaseNotesForVersionAsync("v1.0.0");
+            cancellation.Cancel();
+            await Assert.ThrowsAsync<OperationCanceledException>(() => cancelled.WaitAsync(TimeSpan.FromSeconds(5)));
+            release.TrySetResult();
+
+            ReleaseNotes?[] notes = await Task.WhenAll(latest, current, other, same).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.AreSequenceEqual(["v3.0.0", "v1.0.0", "v2.0.0", "v1.0.0"], notes.Select(note => note!.Tag).ToArray());
+            Assert.AreSame(notes[1], notes[3]);
+            Assert.HasCount(3, urls);
+            Assert.AreEqual(3, urls.Distinct(StringComparer.Ordinal).Count());
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+    }
+
+    private static HttpResponseMessage NotesResponse(string tag, string version = "1.7.1", string? etag = null)
+    {
+        string? rid = UpdateManifest.CurrentRid();
+        Assert.IsNotNull(rid);
+        HttpResponseMessage response = new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                version,
+                tag,
+                assets = new Dictionary<string, object>
+                {
+                    [rid] = new { name = "pkg.zip", sha256 = new string('a', 64), size = 100 },
+                    ["unsupported-rid"] = new { name = "../bad.zip", sha256 = "bad", size = -1 }
+                },
+                releaseNotes = new { body = "notes for " + tag }
+            }))
+        };
+        if (etag != null)
+        {
+            response.Headers.ETag = new EntityTagHeaderValue(etag);
+        }
+        return response;
+    }
+
+    private sealed class AsyncStubHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            responder(request, cancellationToken);
+    }
+
+    private sealed class StalledReadStream(TaskCompletionSource started) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
     }
 
     private sealed class CancellableHandler(TaskCompletionSource started) : HttpMessageHandler

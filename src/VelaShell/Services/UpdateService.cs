@@ -21,9 +21,14 @@ public class UpdateService : IUpdateService
     private readonly Func<Task<string>> _channelProvider;
     private readonly UpdateApplier _applier;
     private readonly Action _shutdownForRestart;
+    private readonly object _stateLock = new();
     private UpdateManifest? _manifest;
     private UpdateAsset? _asset;
+    private UpdateManifest? _readyUpdate;
+    private UpdateAsset? _readyAsset;
     private string? _downloadedArchivePath;
+    private bool _operationInProgress;
+    private long _checkGeneration;
 
     /// <summary>
     /// 以 GitHub 仓库地址构造:更新源即该仓库的 Releases,无需自己架服务器。
@@ -73,7 +78,16 @@ public class UpdateService : IUpdateService
     }
 
     /// <summary>最近一次检查发现的可用更新版本;无可用更新时为 null。</summary>
-    public string? AvailableVersion => _manifest?.Version;
+    public string? AvailableVersion
+    {
+        get { lock (_stateLock) return _manifest?.Version; }
+    }
+
+    /// <inheritdoc />
+    public UpdateManifest? ReadyUpdate
+    {
+        get { lock (_stateLock) return _readyUpdate; }
+    }
 
     /// <inheritdoc />
     public bool CanSelfUpdate =>
@@ -83,9 +97,18 @@ public class UpdateService : IUpdateService
     /// <summary>检查是否存在可用更新;商店版、平台不受支持或检查失败时返回 false。</summary>
     public async Task<bool> CheckForUpdateAsync()
     {
-        _manifest = null;
-        _asset = null;
-        _downloadedArchivePath = null;
+        long generation;
+        lock (_stateLock)
+        {
+            // 下载和 Ready 固定到用户已选的候选,后台检查不能换成刚发布的新版本。
+            if (_operationInProgress || _readyUpdate is not null)
+            {
+                return _manifest is not null;
+            }
+            generation = ++_checkGeneration;
+            _manifest = null;
+            _asset = null;
+        }
         // 商店版连网络都不必发:更新归商店管,查到了也无从安装,徒增一次请求和一条误导提示。
         if (IsStoreManaged || UpdateManifest.CurrentRid() == null)
         {
@@ -104,8 +127,15 @@ public class UpdateService : IUpdateService
             {
                 return false;
             }
-            _manifest = manifest;
-            _asset = asset;
+            lock (_stateLock)
+            {
+                if (generation != _checkGeneration || _operationInProgress || _readyUpdate is not null)
+                {
+                    return false;
+                }
+                _manifest = manifest;
+                _asset = asset;
+            }
             return true;
         }
         catch (Exception ex)
@@ -138,57 +168,159 @@ public class UpdateService : IUpdateService
     /// 下载停滞超过 <see cref="DownloadStallTimeout" /> 就断开、按断点重连,
     /// 最多 <see cref="MaxStallReconnects" /> 次,用尽抛出 <see cref="TimeoutException" />。
     /// </summary>
-    public async Task DownloadUpdateAsync(
+    public Task DownloadUpdateAsync(
         IProgress<UpdateDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        if (_manifest == null || _asset == null)
+        if (IsStoreManaged)
         {
-            return;
+            throw new InvalidOperationException("This installation does not support self-updating.");
         }
-        _downloadedArchivePath = null;
-        string staging = _applier.EnsureStagingDirectory();
-        string archivePath = Path.Combine(staging, _asset.Name);
-        string partialPath = archivePath + ".partial";
-        string metaPath = partialPath + ".meta";
-        foreach (string file in Directory.EnumerateFiles(staging))
+        UpdateManifest? manifest;
+        UpdateAsset? asset;
+        lock (_stateLock)
         {
-            if (file.Equals(archivePath, StringComparison.OrdinalIgnoreCase)
-                || file.Equals(partialPath, StringComparison.OrdinalIgnoreCase)
-                || file.Equals(metaPath, StringComparison.OrdinalIgnoreCase)
-                // 换版日志归 UpdateApplier 管:删掉它,上一轮没收尾的备份就此失去归属,
-                // 既没人回滚也没人清理——这正是老版本"升级失败后再也升不上去"的成因之一。
-                || Path.GetFileName(file).StartsWith(UpdateApplier.JournalFileName, StringComparison.OrdinalIgnoreCase))
+            if (_operationInProgress)
             {
-                continue;
+                throw new InvalidOperationException("An update operation is already in progress.");
             }
-            TryDeleteFile(file);
+            manifest = _manifest;
+            asset = _asset;
         }
-        // 子目录(payload/backup)同样归 UpdateApplier 管:换版前由 Stage 重建,
-        // 启动时由 TryFinalizeStartup 收尾,下载流程一概不碰。
-        if (File.Exists(archivePath))
+        return manifest is null || asset is null
+            ? Task.CompletedTask
+            : DownloadUpdateCoreAsync(manifest, asset, progress, cancellationToken, requireSelfUpdate: false);
+    }
+
+    /// <inheritdoc />
+    public Task DownloadUpdateAsync(
+        UpdateManifest manifest,
+        IProgress<UpdateDownloadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        UpdateAsset asset = ValidateExplicitManifest(manifest);
+        return DownloadUpdateCoreAsync(manifest, asset, progress, cancellationToken, requireSelfUpdate: true);
+    }
+
+    private async Task DownloadUpdateCoreAsync(
+        UpdateManifest manifest,
+        UpdateAsset asset,
+        IProgress<UpdateDownloadProgress>? progress,
+        CancellationToken cancellationToken,
+        bool requireSelfUpdate)
+    {
+        if (IsStoreManaged || (requireSelfUpdate && !CanSelfUpdate))
         {
-            if (await IsChecksumValidAsync(archivePath, _asset.Sha256))
+            throw new InvalidOperationException("This installation does not support self-updating.");
+        }
+        if (!UpdateManifest.IsEligibleAsset(asset))
+        {
+            throw new ArgumentException("The update asset is invalid.", nameof(manifest));
+        }
+        lock (_stateLock)
+        {
+            if (_operationInProgress)
+            {
+                throw new InvalidOperationException("An update operation is already in progress.");
+            }
+            if (_readyUpdate is not null && !SameSnapshot(_readyUpdate, _readyAsset!, manifest, asset))
+            {
+                throw new InvalidOperationException("A different update is already ready; repair the update state first.");
+            }
+            _operationInProgress = true;
+            ++_checkGeneration;
+            _manifest = manifest;
+            _asset = asset;
+            // 重用前也必须重新校验磁盘文件;任何失败都不能留下虚假的 Ready。
+            _readyUpdate = null;
+            _readyAsset = null;
+            _downloadedArchivePath = null;
+        }
+
+        try
+        {
+            string staging = _applier.EnsureStagingDirectory();
+            string archivePath = Path.Combine(staging, asset.Name);
+            string partialPath = archivePath + ".partial";
+            string metaPath = partialPath + ".meta";
+            foreach (string file in Directory.EnumerateFiles(staging))
+            {
+                if (file.Equals(archivePath, StringComparison.OrdinalIgnoreCase)
+                    || file.Equals(partialPath, StringComparison.OrdinalIgnoreCase)
+                    || file.Equals(metaPath, StringComparison.OrdinalIgnoreCase)
+                    || Path.GetFileName(file).StartsWith(UpdateApplier.JournalFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                TryDeleteFile(file);
+            }
+            if (File.Exists(archivePath))
+            {
+                if (await IsChecksumValidAsync(archivePath, asset.Sha256))
+                {
+                    lock (_stateLock)
+                    {
+                        _downloadedArchivePath = archivePath;
+                        _readyUpdate = manifest;
+                        _readyAsset = asset;
+                    }
+                    progress?.Report(UpdateDownloadProgress.Completed(asset.Size));
+                    return;
+                }
+                File.Delete(archivePath);
+            }
+            string? streamedHash = await DownloadWithStallWatchdogAsync(
+                manifest, asset, archivePath, progress, cancellationToken);
+            bool valid = streamedHash != null
+                ? streamedHash.Equals(asset.Sha256, StringComparison.OrdinalIgnoreCase)
+                : await IsChecksumValidAsync(archivePath, asset.Sha256);
+            if (!valid)
+            {
+                File.Delete(archivePath);
+                throw new InvalidDataException(
+                    $"Update package checksum mismatch for {asset.Name}; the corrupt download was discarded.");
+            }
+            lock (_stateLock)
             {
                 _downloadedArchivePath = archivePath;
-                progress?.Report(UpdateDownloadProgress.Completed(_asset.Size));
-                return;
+                _readyUpdate = manifest;
+                _readyAsset = asset;
             }
-            File.Delete(archivePath);
         }
-        string? streamedHash = await DownloadWithStallWatchdogAsync(
-            _manifest, _asset, archivePath, progress, cancellationToken);
-        bool valid = streamedHash != null
-            ? streamedHash.Equals(_asset.Sha256, StringComparison.OrdinalIgnoreCase)
-            : await IsChecksumValidAsync(archivePath, _asset.Sha256);
-        if (!valid)
+        finally
         {
-            File.Delete(archivePath);
-            throw new InvalidDataException(
-                $"Update package checksum mismatch for {_asset.Name}; the corrupt download was discarded.");
+            lock (_stateLock)
+            {
+                _operationInProgress = false;
+            }
         }
-        _downloadedArchivePath = archivePath;
     }
+
+    private UpdateAsset ValidateExplicitManifest(UpdateManifest manifest)
+    {
+        if (IsStoreManaged || !CanSelfUpdate)
+        {
+            throw new InvalidOperationException("This installation does not support self-updating.");
+        }
+        if (!manifest.IsEligibleForInstallation()
+            || !UpdateVersion.TryParse(manifest.Version, out UpdateVersion latest)
+            || !UpdateVersion.TryParse(CurrentVersion, out UpdateVersion current)
+            || latest.CompareTo(current) <= 0)
+        {
+            throw new ArgumentException("The update manifest is not an eligible newer installation candidate.", nameof(manifest));
+        }
+        return manifest.AssetForCurrentPlatform()!;
+    }
+
+    private static bool SameSnapshot(
+        UpdateManifest leftManifest, UpdateAsset leftAsset,
+        UpdateManifest rightManifest, UpdateAsset rightAsset) =>
+        string.Equals(leftManifest.Version, rightManifest.Version, StringComparison.Ordinal)
+        && string.Equals(leftManifest.Tag, rightManifest.Tag, StringComparison.Ordinal)
+        && string.Equals(leftAsset.Name, rightAsset.Name, StringComparison.Ordinal)
+        && string.Equals(leftAsset.Sha256, rightAsset.Sha256, StringComparison.OrdinalIgnoreCase)
+        && leftAsset.Size == rightAsset.Size;
 
     /// <summary>
     /// 带停滞看门狗地下载:每次尝试配一个"空闲超时"——每收到一条进度就把它往后推,
@@ -271,10 +403,31 @@ public class UpdateService : IUpdateService
     /// <inheritdoc />
     public bool RepairUpdateState()
     {
-        _manifest = null;
-        _asset = null;
-        _downloadedArchivePath = null;
-        return _applier.TryRepair();
+        lock (_stateLock)
+        {
+            if (_operationInProgress)
+            {
+                return false;
+            }
+            _operationInProgress = true;
+            ++_checkGeneration;
+            _manifest = null;
+            _asset = null;
+            _readyUpdate = null;
+            _readyAsset = null;
+            _downloadedArchivePath = null;
+        }
+        try
+        {
+            return _applier.TryRepair();
+        }
+        finally
+        {
+            lock (_stateLock)
+            {
+                _operationInProgress = false;
+            }
+        }
     }
 
     /// <summary>
@@ -285,35 +438,56 @@ public class UpdateService : IUpdateService
     /// </summary>
     public void ApplyUpdateAndRestart()
     {
-        if (_downloadedArchivePath == null || !File.Exists(_downloadedArchivePath))
+        string archivePath;
+        lock (_stateLock)
         {
-            throw new InvalidOperationException(
-                "No update has been downloaded. Call CheckForUpdateAsync and DownloadUpdateAsync first.");
+            if (IsStoreManaged || _operationInProgress)
+            {
+                throw new InvalidOperationException("An update cannot be applied in the current state.");
+            }
+            if (_readyUpdate is null || _downloadedArchivePath is not { } path || !File.Exists(path))
+            {
+                throw new InvalidOperationException(
+                    "No update has been downloaded. Call CheckForUpdateAsync and DownloadUpdateAsync first.");
+            }
+            archivePath = path;
+            _operationInProgress = true;
+            ++_checkGeneration;
         }
-        _applier.ClearLastError();
-        _applier.Stage(_downloadedArchivePath);
-        if (_applier.TryHandOffToExternalUpdater(Environment.ProcessId))
+        try
         {
-            // 换版与重启都交给它了,本进程只管干净退出——退得越快,它等得越短。
+            _applier.ClearLastError();
+            _applier.Stage(archivePath);
+            if (_applier.TryHandOffToExternalUpdater(Environment.ProcessId))
+            {
+                // 换版与重启都交给它了,本进程只管干净退出——退得越快,它等得越短。
+                _shutdownForRestart();
+                return;
+            }
+            _applier.SwapFromPayload();
+            string exePath = Environment.ProcessPath
+                ?? Path.Combine(_applier.ApplicationDirectory, "VelaShell" + (OperatingSystem.IsWindows() ? ".exe" : ""));
+            if (!OperatingSystem.IsWindows())
+            {
+                // tar 包的可执行位在解包时已还原,这里兜底保证主程序可执行。
+                File.SetUnixFileMode(exePath, File.GetUnixFileMode(exePath)
+                    | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
+            }
+            Process.Start(new ProcessStartInfo(exePath)
+            {
+                WorkingDirectory = _applier.ApplicationDirectory,
+                UseShellExecute = false,
+                ArgumentList = { "--after-update" }
+            });
             _shutdownForRestart();
-            return;
         }
-        _applier.SwapFromPayload();
-        string exePath = Environment.ProcessPath
-            ?? Path.Combine(_applier.ApplicationDirectory, "VelaShell" + (OperatingSystem.IsWindows() ? ".exe" : ""));
-        if (!OperatingSystem.IsWindows())
+        finally
         {
-            // tar 包的可执行位在解包时已还原,这里兜底保证主程序可执行。
-            File.SetUnixFileMode(exePath, File.GetUnixFileMode(exePath)
-                | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
+            lock (_stateLock)
+            {
+                _operationInProgress = false;
+            }
         }
-        Process.Start(new ProcessStartInfo(exePath)
-        {
-            WorkingDirectory = _applier.ApplicationDirectory,
-            UseShellExecute = false,
-            ArgumentList = { "--after-update" }
-        });
-        _shutdownForRestart();
     }
 
     /// <summary>默认的重启前关闭动作:走 Avalonia 生命周期正常退出,拿不到时硬退。</summary>
