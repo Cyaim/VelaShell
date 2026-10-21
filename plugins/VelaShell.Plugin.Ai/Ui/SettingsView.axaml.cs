@@ -372,8 +372,11 @@ public partial class SettingsView : UserControl
         ModelBox.TextChanged += (_, _) => UpdateContextWindowHint();
         SizeChanged += (_, _) => SettingsLayout.ColumnDefinitions[0].Width = new GridLength(Bounds.Width < 650 ? 120 : 230);
 
-        // 起手选中当前活跃的模型;没有就选第一行
-        ReloadList(selectId: _settings.ActiveModelId ?? _settings.Providers.FirstOrDefault()?.Id);
+        // 默认折叠的供应商只选中父行，不因活跃模型自动展开。
+        AiProvider? activeProvider = _settings.Providers.FirstOrDefault(p => p.Models.Exists(m => m.Id == _settings.ActiveModelId));
+        ReloadList(selectId: activeProvider is not null && !IsExpanded(activeProvider)
+            ? activeProvider.Id
+            : _settings.ActiveModelId ?? _settings.Providers.FirstOrDefault()?.Id);
     }
 
     /// <summary>语言切换时由面板调用。</summary>
@@ -555,20 +558,10 @@ public partial class SettingsView : UserControl
     }
 
     /// <summary>
-    /// 模型多到什么程度就默认折起来。
-    /// </summary>
-    /// <remarks>
-    /// 一屏左栏大约摆得下二十来行。定 12 是让"一家 + 它的模型"仍能和别家一起看见 ——
-    /// 超过这个数,列表就从"一览"变成了"要滚动的东西",那正是该折起来的时候。
-    /// </remarks>
-    private const int AutoCollapseFrom = 12;
-
-    /// <summary>
-    /// 这一家自己的展开状态:用户表过态就听他的,没表过态才按数量自动判断
-    /// (见 <see cref="AiProvider.ModelsExpanded" />)。
+    /// 这一家自己的展开状态：未手动选择时默认折叠，与模型数量无关。
     /// </summary>
     private static bool IsExpanded(AiProvider provider)
-        => provider.ModelsExpanded ?? provider.Models.Count <= AutoCollapseFrom;
+        => provider.ModelsExpanded ?? false;
 
     /// <summary>
     /// 列表里这一家实际展不展开。
