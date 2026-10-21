@@ -123,7 +123,7 @@
                                  Foreground="{DynamicResource VelaTextPrimary}" />
             <Border Padding="8,3" CornerRadius="4" VerticalAlignment="Center"
                     Background="{DynamicResource VelaAccentDim}">
-              <TextBlock Text="{loc:Localize ReleaseNotes_Latest}" FontSize="{DynamicResource VelaFontSize10}"
+              <TextBlock x:Name="VersionBadge" Text="{loc:Localize ReleaseNotes_Latest}" FontSize="{DynamicResource VelaFontSize10}"
                          Foreground="{DynamicResource VelaAccentText}" />
             </Border>
           </WrapPanel>
@@ -132,26 +132,33 @@
                      Foreground="{DynamicResource VelaTextSecondary}" />
         </StackPanel>
       </Border>
-      <Grid Grid.Row="2" Margin="28,8,24,12">
-        <StackPanel x:Name="LoadingPanel" Orientation="Horizontal" Spacing="8"
+      <Grid Grid.Row="2" Margin="28,8,24,12" RowDefinitions="Auto,*" RowSpacing="8">
+        <TextBlock x:Name="CheckStatusText" IsVisible="False" TextWrapping="Wrap"
+                   Foreground="{DynamicResource VelaTextSecondary}" />
+        <StackPanel x:Name="LoadingPanel" Grid.Row="1" Orientation="Horizontal" Spacing="8"
                     HorizontalAlignment="Center" VerticalAlignment="Center">
           <pc:CircularProgressRing x:Name="LoadingRing" Width="20" Height="20"
                                    IsIndeterminate="True" ArcBrush="{DynamicResource VelaAccent}" />
           <TextBlock Text="{loc:Localize Loading}" VerticalAlignment="Center"
                      Foreground="{DynamicResource VelaTextSecondary}" />
         </StackPanel>
-        <ScrollViewer x:Name="NotesScroll" IsVisible="False"
+        <ScrollViewer x:Name="NotesScroll" Grid.Row="1" IsVisible="False"
                       HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
           <md:MarkdownRenderer x:Name="BodyMarkdown" Margin="0,8,8,8" />
         </ScrollViewer>
-        <TextBlock x:Name="StatusText" IsVisible="False" TextWrapping="Wrap"
+        <TextBlock x:Name="StatusText" Grid.Row="1" IsVisible="False" TextWrapping="Wrap"
                    HorizontalAlignment="Center" VerticalAlignment="Center"
                    Foreground="{DynamicResource VelaTextSecondary}" />
       </Grid>
       <Border Grid.Row="3" Padding="20,12" BorderThickness="0,1,0,0"
               BorderBrush="{DynamicResource VelaBorderPrimary}">
-        <Grid ColumnDefinitions="*,Auto">
-          <Button x:Name="GitHubButton" IsEnabled="False" HorizontalAlignment="Left"
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+          <TextBlock x:Name="UpdateStatusText" Grid.ColumnSpan="2" IsVisible="False" TextWrapping="Wrap"
+                     FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextSecondary}" />
+          <TextBlock x:Name="DownloadNotice" Grid.Row="1" Grid.ColumnSpan="2" IsVisible="False" TextWrapping="Wrap"
+                     Text="{loc:Localize ReleaseNotes_DownloadContinues}"
+                     FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextSecondary}" />
+          <Button x:Name="GitHubButton" Grid.Row="2" IsEnabled="False" HorizontalAlignment="Left"
                   Theme="{StaticResource VelaOutlineButtonTheme}" Click="GitHub_Click">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.external-link}"
@@ -159,7 +166,10 @@
               <TextBlock Text="{loc:Localize ReleaseNotes_ViewOnGitHub}" />
             </StackPanel>
           </Button>
-          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+          <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <Button x:Name="UpdateButton" IsVisible="False"
+                    Theme="{StaticResource VelaAccentPillButtonTheme}"
+                    Content="{loc:Localize ReleaseNotes_UpdateNow}" Click="Update_Click" />
             <Button x:Name="RetryButton" IsVisible="False"
                     Theme="{StaticResource VelaAccentPillButtonTheme}"
                     Content="{loc:Localize ReleaseNotes_Retry}" Click="Retry_Click" />

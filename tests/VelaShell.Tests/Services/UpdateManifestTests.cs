@@ -37,6 +37,22 @@ public class UpdateManifestTests
 
     [TestMethod]
     [TestCategory("Update")]
+    [DataRow("{\"body\":\"完整日志\\n第二行\",\"publishedAt\":\"2026-10-21T00:00:00Z\",\"htmlUrl\":\"https://github.com/owner/repo/releases/tag/v0.2.0\"}")]
+    [DataRow("null")]
+    [DataRow("false")]
+    public void Parse_AdditionalReleaseNotes_DoesNotChangeUpdateAssets(string notes)
+    {
+        string json = SampleJson.Insert(SampleJson.LastIndexOf('}'), $", \"releaseNotes\": {notes}");
+        UpdateManifest original = UpdateManifest.Parse(SampleJson);
+        UpdateManifest extended = UpdateManifest.Parse(json);
+
+        Assert.AreEqual(original.Version, extended.Version);
+        Assert.AreEqual(original.Tag, extended.Tag);
+        CollectionAssert.AreEquivalent(original.Assets.ToArray(), extended.Assets.ToArray());
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
     public void AssetForCurrentPlatform_KnownRids_ReturnsMatch()
     {
         // 测试跑在 win/osx/linux 的 x64/arm64 上,CurrentRid 一定命中样例清单。
@@ -73,6 +89,145 @@ public class UpdateManifestTests
     {
         Assert.ThrowsExactly<FormatException>(() =>
             UpdateManifest.Parse("""{ "version": "1.0.0", "tag": "v1.0.0", "assets": {} }"""));
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public void Parse_JsonElement_SurvivesDocumentDisposalAndMatchesStringEntryPoint()
+    {
+        UpdateManifest fromElement;
+        using (JsonDocument document = JsonDocument.Parse(SampleJson))
+        {
+            fromElement = UpdateManifest.Parse(document.RootElement);
+        }
+        UpdateManifest fromString = UpdateManifest.Parse(SampleJson);
+
+        Assert.AreEqual(fromString.Version, fromElement.Version);
+        Assert.AreEqual(fromString.Tag, fromElement.Tag);
+        CollectionAssert.AreEquivalent(fromString.Assets.ToArray(), fromElement.Assets.ToArray());
+        Assert.AreEqual(fromElement.Assets["win-x64"], fromElement.Assets["WIN-X64"]);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void Assets_ParseAndInstallationSnapshot_CannotBeMutated(bool installationSnapshot)
+    {
+        UpdateManifest manifest = CreateEligibleManifest();
+        if (installationSnapshot)
+        {
+            manifest = manifest.ForCurrentPlatformInstallation()!;
+            Assert.IsNotNull(manifest);
+            Assert.HasCount(1, manifest.Assets);
+        }
+        string rid = UpdateManifest.CurrentRid()!;
+        UpdateAsset original = manifest.Assets[rid];
+        Assert.IsFalse(manifest.Assets is Dictionary<string, UpdateAsset>);
+        if (manifest.Assets is IDictionary<string, UpdateAsset> dictionary)
+        {
+            Assert.IsTrue(dictionary.IsReadOnly);
+            Assert.ThrowsExactly<NotSupportedException>(() => dictionary[rid] = new("changed.zip", "bad", 0));
+            Assert.ThrowsExactly<NotSupportedException>(() => dictionary.Remove(rid));
+            Assert.ThrowsExactly<NotSupportedException>(() => dictionary.Clear());
+        }
+        Assert.AreEqual(original, manifest.Assets[rid]);
+        Assert.AreEqual(original, manifest.Assets[rid.ToUpperInvariant()]);
+        Assert.IsTrue(manifest.IsEligibleForInstallation());
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow("1.7.1", "v1.7.1", true)]
+    [DataRow("1.7.1.0", "v1.7.1", true)]
+    [DataRow("1.7.1+build", "v1.7.1", true)]
+    [DataRow("1.7.1-beta.1", "v1.7.1-beta.1", true)]
+    [DataRow("1.7.2", "v1.7.1", false)]
+    [DataRow("1.7.1-beta.1", "v1.7.1", false)]
+    [DataRow("invalid", "v1.7.1", false)]
+    [DataRow("1.7.1", "v1", false)]
+    public void IsEligibleForInstallation_RequiresMatchingParseableVersions(string version, string tag, bool eligible)
+    {
+        UpdateManifest manifest = CreateEligibleManifest(version, tag);
+        Assert.AreEqual(eligible, manifest.IsEligibleForInstallation());
+        Assert.AreEqual(eligible, manifest.ForCurrentPlatformInstallation() != null);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public void IsEligibleForInstallation_MissingCurrentPlatform_IsNotEligible()
+    {
+        string? rid = UpdateManifest.CurrentRid();
+        Assert.IsNotNull(rid);
+        UpdateManifest manifest = UpdateManifest.Parse($$"""
+            {"version":"1.7.1","tag":"v1.7.1","assets":{"unsupported-rid":
+             {"name":"pkg.zip","sha256":"{{new string('a', 64)}}","size":100} } }
+            """);
+        Assert.IsFalse(manifest.IsEligibleForInstallation());
+        Assert.IsNull(manifest.ForCurrentPlatformInstallation());
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow("pkg.zip", 64, 'a', 1L, true)]
+    [DataRow("VelaShell-1.7.1.tar.gz", 64, 'F', 8589934592L, true)]
+    [DataRow("", 64, 'a', 1L, false)]
+    [DataRow("../pkg.zip", 64, 'a', 1L, false)]
+    [DataRow("dir/pkg.zip", 64, 'a', 1L, false)]
+    [DataRow("dir\\pkg.zip", 64, 'a', 1L, false)]
+    [DataRow("C:pkg.zip", 64, 'a', 1L, false)]
+    [DataRow(".pkg.zip", 64, 'a', 1L, false)]
+    [DataRow("pkg.zip.", 64, 'a', 1L, false)]
+    [DataRow("pkg.zip?x=1", 64, 'a', 1L, false)]
+    [DataRow("pkg.zip", 63, 'a', 1L, false)]
+    [DataRow("pkg.zip", 65, 'a', 1L, false)]
+    [DataRow("pkg.zip", 64, 'g', 1L, false)]
+    [DataRow("pkg.zip", 64, 'a', 0L, false)]
+    [DataRow("pkg.zip", 64, 'a', -1L, false)]
+    [DataRow("pkg.zip", 64, 'a', 8589934593L, false)]
+    public void IsEligibleAsset_ValidatesFileNameHashAndSize(string name, int hashLength, char hashCharacter, long size, bool eligible)
+    {
+        UpdateAsset asset = new(name, new string(hashCharacter, hashLength), size);
+        Assert.AreEqual(eligible, UpdateManifest.IsEligibleAsset(asset));
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public void IsEligibleAsset_FileNameLength_IsBounded()
+    {
+        string hash = new('a', 64);
+        Assert.IsTrue(UpdateManifest.IsEligibleAsset(new(new string('a', 255), hash, 1)));
+        Assert.IsFalse(UpdateManifest.IsEligibleAsset(new(new string('a', 256), hash, 1)));
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public void Parse_HistoricalLooseFields_RemainAcceptedButCannotBeInstalled()
+    {
+        UpdateManifest manifest = UpdateManifest.Parse("""
+            {"version":"historical","tag":"v1","assets":{"WIN-X64":{"name":"../pkg.zip","sha256":"short"}}}
+            """);
+        Assert.AreEqual("historical", manifest.Version);
+        Assert.AreEqual("v1", manifest.Tag);
+        Assert.AreEqual(0L, manifest.Assets["win-x64"].Size);
+        Assert.AreEqual("../pkg.zip", manifest.Assets["win-x64"].Name);
+        Assert.AreEqual("short", manifest.Assets["win-x64"].Sha256);
+        Assert.IsFalse(manifest.IsEligibleForInstallation());
+    }
+
+    private static UpdateManifest CreateEligibleManifest(string version = "1.7.1", string tag = "v1.7.1")
+    {
+        string? rid = UpdateManifest.CurrentRid();
+        Assert.IsNotNull(rid);
+        return UpdateManifest.Parse(JsonSerializer.Serialize(new
+        {
+            version,
+            tag,
+            assets = new Dictionary<string, object>
+            {
+                [rid] = new { name = "pkg.zip", sha256 = new string('a', 64), size = 100 }
+            }
+        }));
     }
 
     [TestMethod]

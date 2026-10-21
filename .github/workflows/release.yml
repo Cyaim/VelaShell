@@ -1,4 +1,4 @@
-# 发布流水线:在 GitHub 页面发布 Release(publish)时自动触发。
+# 发布流水线:发布 Release 时构建,编辑 Release 时仅同步清单中的发布日志。
 # 三平台原生 runner 构建 self-contained 产物,统一附加到该 Release:
 #   Windows x64/arm64 → zip
 #   macOS   x64/arm64 → tar.gz + dmg(未签名/未公证;Unix 可执行位在原生 runner 上保留)
@@ -35,7 +35,7 @@
 # 应用内更新器的可写探测会自动把关于页降级成"发现新版本,请手动下载",无需为它们加任何判定。
 # 另生成两份元数据:
 #   SHA256SUMS.txt — 全部产物的校验和(人工核对用)
-#   latest.json    — 应用内自更新清单(版本号/标签/各 RID 产物名+sha256+大小);
+#   latest.json    — 应用内自更新清单(版本号/标签/各 RID 产物名+sha256+大小/发布日志);
 #                    应用经 releases/latest/download/latest.json 固定地址读取(stable 通道,
 #                    不占 API 配额),preview 通道经 API 定位 Release 后取同名清单。
 # 版本号取 Release 标签(去掉前缀 v),经 -p:Version 覆盖 Directory.Build.props,
@@ -58,7 +58,7 @@ name: Release
 
 on:
   release:
-    types: [published]
+    types: [published, edited]
   # 手动兜底:release 事件没能触发时(2026-08-07 就遇到过一次),在 Actions 页面选本工作流
   # → Run workflow → 填标签(如 1.1.2)即可补跑。产物上传用的是 `gh release upload --clobber`,
   # 对同一标签重复跑是幂等的,不会产生重复资产。标签必须已存在且对应 Release 已发布。
@@ -68,15 +68,58 @@ on:
         description: '要构建并回传产物的 Release 标签(如 1.1.2)'
         required: true
         type: string
+      notes_only:
+        description: '仅同步已有清单中的发布日志,不构建安装包'
+        required: false
+        default: false
+        type: boolean
+
+# 同一标签的完整发布与日志同步共用锁,编辑日志不能取消正在上传的发布。
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 env:
   PROJECT: src/VelaShell/VelaShell.csproj
+  # 标签只能经环境变量进入脚本,不能把事件/手动输入拼进 shell 源码。
+  TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+  VERSION_TAG_PATTERN: '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
 
 jobs:
+  prepare-release:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.draft == false
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.validate.outputs.published }}
+    steps:
+      - name: Validate release tag and publication state
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # 白名单同时排除选项注入、路径分隔符、换行和 shell 语法,保留 v 前缀与预发布标签。
+          if [[ ! "$TAG_NAME" =~ $VERSION_TAG_PATTERN ]]; then
+            echo '::error::Release 标签必须是合法版本,如 v1.2.3 或 1.2.3-beta.1'
+            exit 1
+          fi
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft > "$RUNNER_TEMP/release-state.json"
+          jq -e --arg tag "$TAG_NAME" \
+            '.tagName == $tag and (.isDraft | type == "boolean")' "$RUNNER_TEMP/release-state.json" >/dev/null
+          if jq -e '.isDraft' "$RUNNER_TEMP/release-state.json" >/dev/null; then
+            echo '跳过草稿 Release,不构建或上传附件。'
+            echo 'published=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'published=true' >> "$GITHUB_OUTPUT"
+          fi
+
   build-windows:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.published == 'true' && (github.event_name == 'release' && github.event.action == 'published' || github.event_name == 'workflow_dispatch' && !inputs.notes_only)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -98,7 +141,8 @@ jobs:
       - name: Publish (win-x64 / win-arm64)
         shell: pwsh
         run: |
-          $version = '${{ github.event.release.tag_name || inputs.tag }}'.TrimStart('v')
+          if ($env:TAG_NAME -cnotmatch $env:VERSION_TAG_PATTERN) { throw 'Release 标签不是合法版本' }
+          $version = $env:TAG_NAME -creplace '^v', ''
           New-Item -ItemType Directory -Force dist | Out-Null
           foreach ($rid in @('win-x64', 'win-arm64')) {
             $name = "VelaShell-$version-$rid"
@@ -126,6 +170,8 @@ jobs:
   #   vars.MSIX_PUBLISHER_DISPLAY_NAME ← Package/Properties/PublisherDisplayName
   # 三者填错时上传会被拒;脚本会就地算出包系列名(PFN)打印出来,与产品标识页一比即知。
   build-msix:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.published == 'true' && (github.event_name == 'release' && github.event.action == 'published' || github.event_name == 'workflow_dispatch' && !inputs.notes_only)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -147,7 +193,8 @@ jobs:
       - name: Build MSIX bundle (win-x64 + win-arm64)
         shell: pwsh
         run: |
-          $version = '${{ github.event.release.tag_name || inputs.tag }}'.TrimStart('v')
+          if ($env:TAG_NAME -cnotmatch $env:VERSION_TAG_PATTERN) { throw 'Release 标签不是合法版本' }
+          $version = $env:TAG_NAME -creplace '^v', ''
           ./build/msix/Build-Msix.ps1 -Version $version `
             -IdentityName '${{ vars.MSIX_IDENTITY_NAME || 'B0B5EDED.VelaShell' }}' `
             -Publisher '${{ vars.MSIX_PUBLISHER || 'CN=3CDE21EE-6AB1-414B-BD2D-EDE8A225854B' }}' `
@@ -161,6 +208,8 @@ jobs:
           if-no-files-found: error
 
   build-macos:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.published == 'true' && (github.event_name == 'release' && github.event.action == 'published' || github.event_name == 'workflow_dispatch' && !inputs.notes_only)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
@@ -203,6 +252,7 @@ jobs:
       - name: Publish (osx-x64 / osx-arm64)
         run: |
           set -euo pipefail
+          [[ "$TAG_NAME" =~ $VERSION_TAG_PATTERN ]] || { echo '::error::Release 标签不是合法版本'; exit 1; }
           version="${TAG_NAME#v}"
           mkdir -p dist
 
@@ -285,8 +335,6 @@ jobs:
             rm -rf src/*/obj/Release/*/"$rid" src/*/bin/Release/*/"$rid"
             echo "== after $rid =="; df -h /System/Volumes/Data | tail -1
           done
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
       - uses: actions/upload-artifact@v7
         with:
           name: packages-macos
@@ -294,6 +342,8 @@ jobs:
           if-no-files-found: error
 
   build-linux:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.published == 'true' && (github.event_name == 'release' && github.event.action == 'published' || github.event_name == 'workflow_dispatch' && !inputs.notes_only)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -322,6 +372,7 @@ jobs:
       - name: Publish & package (linux-x64 / linux-arm64 → tar.gz + AppImage + deb + rpm)
         run: |
           set -euo pipefail
+          [[ "$TAG_NAME" =~ $VERSION_TAG_PATTERN ]] || { echo '::error::Release 标签不是合法版本'; exit 1; }
           version="${TAG_NAME#v}"
           mkdir -p dist
           for rid in linux-x64 linux-arm64; do
@@ -347,8 +398,6 @@ jobs:
             # 打完就回收:一份发布目录 200 MB 上下,两个 RID 之间不留全量副本。
             rm -rf "out/$name"
           done
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
       - uses: actions/upload-artifact@v7
         with:
           name: packages-linux
@@ -356,7 +405,8 @@ jobs:
           if-no-files-found: error
 
   attach-to-release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [prepare-release, build-windows, build-macos, build-linux]
+    if: needs.prepare-release.outputs.published == 'true' && (github.event_name == 'release' && github.event.action == 'published' || github.event_name == 'workflow_dispatch' && !inputs.notes_only)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -367,8 +417,19 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Generate latest.json (in-app update manifest)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          [[ "$TAG_NAME" =~ $VERSION_TAG_PATTERN ]] || { echo '::error::Release 标签不是合法版本'; exit 1; }
+          # 元数据放在 dist 外,防止被 dist/* 上传或纳入产物校验表。读取失败直接终止。
+          metadata="$RUNNER_TEMP/release-metadata.json"
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" \
+            --json body,publishedAt,url,tagName,isDraft > "$metadata"
+          jq -e --arg tag "$TAG_NAME" '
+            .tagName == $tag and .isDraft == false and
+            (.body == null or (.body | type == "string")) and (.publishedAt | type == "string") and
+            (.url | type == "string")' "$metadata" >/dev/null
           cd dist
           VERSION="${TAG_NAME#v}"
           assets='{}'
@@ -388,16 +449,16 @@ jobs:
           for rid in osx-x64 osx-arm64 linux-x64 linux-arm64; do
             add_asset "$rid" "VelaShell-$VERSION-$rid.tar.gz"
           done
+          # 正文始终作为 JSON 数据读取,不经 shell 展开或拼接为脚本。
           jq -n --arg version "$VERSION" --arg tag "$TAG_NAME" --argjson assets "$assets" \
-            '{version: $version, tag: $tag, assets: $assets}' > latest.json
-          cat latest.json
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+            --slurpfile release "$metadata" '
+            {version: $version, tag: $tag, assets: $assets,
+             releaseNotes: ($release[0] | {body: (.body // ""), publishedAt, htmlUrl: .url})}' > latest.json
       - name: Generate SHA256SUMS.txt
         run: |
           set -euo pipefail
           cd dist
-          # 对全部资产求和(排除清单自身,避免重定向先建出的空文件把自己算进去)
+          # latest.json 最终生成后再求和;只排除 SHA256SUMS.txt 自身,避免算入重定向创建的空文件。
           find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -exec sha256sum {} + \
             | sed 's| \./| |' | sort -k2 > SHA256SUMS.txt
           cat SHA256SUMS.txt
@@ -407,4 +468,65 @@ jobs:
           gh release upload "$TAG_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+
+  # 编辑 Release 或手动补齐旧版本日志时,只改两份元数据,不下载或构建安装包。
+  sync-release-notes:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.published == 'true' && (github.event_name == 'release' && github.event.action == 'edited' || github.event_name == 'workflow_dispatch' && inputs.notes_only)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NOTES_DIR: release-notes
+    steps:
+      - name: Download existing release metadata
+        run: |
+          set -euo pipefail
+          [[ "$TAG_NAME" =~ $VERSION_TAG_PATTERN ]] || { echo '::error::Release 标签不是合法版本'; exit 1; }
+          mkdir -p "$NOTES_DIR"
+          # 两个原附件都必须存在;缺少时不能凭空创建清单或丢弃旧校验记录。
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern latest.json --pattern SHA256SUMS.txt --dir "$NOTES_DIR"
+          for file in latest.json SHA256SUMS.txt; do
+            if [[ ! -s "$NOTES_DIR/$file" ]]; then
+              echo "::error::Release 缺少原始 $file,不能仅同步日志"
+              exit 1
+            fi
+          done
+      - name: Refresh release notes and manifest checksum
+        run: |
+          set -euo pipefail
+          metadata="$RUNNER_TEMP/release-metadata.json"
+          # 每次执行重新读取最新 Release,不能用可能过时的 edited 事件正文覆盖新日志。
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" \
+            --json body,publishedAt,url,tagName,isDraft > "$metadata"
+          jq -e --arg tag "$TAG_NAME" '
+            .tagName == $tag and .isDraft == false and
+            (.body == null or (.body | type == "string")) and (.publishedAt | type == "string") and
+            (.url | type == "string")' "$metadata" >/dev/null
+          cd "$NOTES_DIR"
+          jq -e --arg tag "$TAG_NAME" '.tag == $tag' latest.json >/dev/null
+          # 只替换日志对象,原始 version/tag/assets 及未知扩展字段保持不变。
+          jq --slurpfile release "$metadata" \
+            '.releaseNotes = ($release[0] | {body: (.body // ""), publishedAt, htmlUrl: .url})' \
+            latest.json > "$RUNNER_TEMP/latest-updated.json"
+          mv "$RUNNER_TEMP/latest-updated.json" latest.json
+          sha=$(sha256sum latest.json | cut -d' ' -f1)
+          # 不要求旧 latest.json 的摘要匹配:前次双附件只上传成功一份时,重跑必须能修复。
+          # 但对应行必须唯一且格式有效,其余产物行(包括顺序和校验值)原样保留。
+          awk -v sha="$sha" '
+            /^[[:xdigit:]]{64}[ \t]+[*]?(\.\/)?latest[.]json\r?$/ {
+              count++; sub(/^[[:xdigit:]]{64}/, sha)
+            }
+            { print }
+            END {
+              if (count != 1) {
+                print "SHA256SUMS.txt 必须有且仅有一条有效 latest.json 记录" > "/dev/stderr"
+                exit 1
+              }
+            }' SHA256SUMS.txt > "$RUNNER_TEMP/SHA256SUMS-updated.txt"
+          mv "$RUNNER_TEMP/SHA256SUMS-updated.txt" SHA256SUMS.txt
+      - name: Upload release metadata only
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG_NAME" "$NOTES_DIR/latest.json" "$NOTES_DIR/SHA256SUMS.txt" \
+            --clobber --repo "$GITHUB_REPOSITORY"

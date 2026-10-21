@@ -41,17 +41,20 @@ public class UpdateServiceTests : IDisposable
         };
 
     /// <summary>为当前平台构造一个指向 <paramref name="archiveBytes" /> 的清单。</summary>
-    private static UpdateManifest CreateManifest(string version, byte[] archiveBytes)
+    private static UpdateManifest CreateManifest(
+        string version, byte[] archiveBytes, string? tag = null,
+        string? assetName = null, string? sha256 = null, long? size = null)
     {
         string rid = UpdateManifest.CurrentRid()
             ?? throw new InvalidOperationException("Tests must run on a supported platform.");
-        string sha = Convert.ToHexStringLower(SHA256.HashData(archiveBytes));
+        string sha = sha256 ?? Convert.ToHexStringLower(SHA256.HashData(archiveBytes));
+        string name = assetName ?? $"VelaShell-{version}-{rid}.zip";
         return UpdateManifest.Parse($$"""
             {
               "version": "{{version}}",
-              "tag": "v{{version}}",
+              "tag": "{{tag ?? $"v{version}"}}",
               "assets": {
-                "{{rid}}": { "name": "VelaShell-{{version}}-{{rid}}.zip", "sha256": "{{sha}}", "size": {{archiveBytes.Length}} }
+                "{{rid}}": { "name": {{System.Text.Json.JsonSerializer.Serialize(name)}}, "sha256": "{{sha}}", "size": {{size ?? archiveBytes.Length}} }
               }
             }
             """);
@@ -258,6 +261,373 @@ public class UpdateServiceTests : IDisposable
         Assert.AreEqual("previous version", File.ReadAllText(Path.Combine(applier.BackupDirectory, "app.txt")));
     }
 
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task DownloadUpdateAsync_InFlight_PinsSnapshotAndRejectsOtherOperations(bool explicitTarget)
+    {
+        byte[] zip = CreateZipBytes(("app.txt", "v3"));
+        UpdateManifest v3 = CreateManifest("3.0.0", zip);
+        _source.Manifest = v3;
+        _source.AssetBytes = zip;
+        int shutdowns = 0;
+        UpdateService service = CreateService(shutdown: () => shutdowns++);
+        if (explicitTarget && !service.CanSelfUpdate)
+        {
+            Assert.Inconclusive("Explicit downloads require a self-updating platform.");
+        }
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+        _source.Manifest = CreateManifest("4.0.0", zip);
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _source.OnDownload = async (_, ct) =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(ct);
+        };
+
+        Task download = explicitTarget ? service.DownloadUpdateAsync(v3) : service.DownloadUpdateAsync();
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.IsTrue(await service.CheckForUpdateAsync());
+            Assert.AreEqual(1, _source.ManifestCalls, "下载期间不查询 v4");
+            Assert.AreEqual("3.0.0", service.AvailableVersion);
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.DownloadUpdateAsync());
+            if (service.CanSelfUpdate)
+            {
+                await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.DownloadUpdateAsync(v3));
+            }
+            Assert.IsFalse(service.RepairUpdateState(), "下载期间修复不能清除下载锁");
+            Assert.ThrowsExactly<InvalidOperationException>(service.ApplyUpdateAndRestart);
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.DownloadUpdateAsync());
+            Assert.AreEqual(1, _source.DownloadCalls, "被拒操作的 finally 不能解除正在下载的操作锁");
+            Assert.IsNull(service.ReadyUpdate);
+            Assert.AreEqual(0, shutdowns);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await download.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+
+        Assert.AreSame(v3, _source.DownloadedManifest);
+        Assert.AreEqual(v3.AssetForCurrentPlatform(), _source.DownloadedAsset);
+        Assert.AreSame(v3, service.ReadyUpdate);
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+        Assert.AreEqual(1, _source.ManifestCalls, "Ready 期间同样不查询 v4");
+        Assert.AreEqual("3.0.0", service.AvailableVersion);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task CheckForUpdateAsync_LateResult_CannotReplaceExplicitDownload(bool completeDownloadFirst)
+    {
+        byte[] zip = CreateZipBytes(("app.txt", "v3"));
+        UpdateManifest v3 = CreateManifest("3.0.0", zip);
+        UpdateManifest v4 = CreateManifest("4.0.0", zip);
+        _source.AssetBytes = zip;
+        UpdateService service = CreateService();
+        if (!service.CanSelfUpdate)
+        {
+            Assert.Inconclusive("Explicit downloads require a self-updating platform.");
+        }
+        TaskCompletionSource<UpdateManifest?> checkedManifest = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _source.OnManifest = () => checkedManifest.Task;
+        _source.OnDownload = async (_, ct) =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(ct);
+        };
+        Task<bool> check = service.CheckForUpdateAsync();
+        Task download = service.DownloadUpdateAsync(v3);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            if (completeDownloadFirst)
+            {
+                release.TrySetResult();
+                await download.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            checkedManifest.TrySetResult(v4);
+            Assert.IsFalse(await check.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.AreEqual("3.0.0", service.AvailableVersion);
+            Assert.AreSame(v3, _source.DownloadedManifest);
+        }
+        finally
+        {
+            checkedManifest.TrySetResult(v4);
+            release.TrySetResult();
+            await download.WaitAsync(TimeSpan.FromSeconds(10));
+            await check.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        Assert.AreSame(v3, service.ReadyUpdate);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task CheckForUpdateAsync_LateResultAfterFailedDownload_IsDiscardedByGeneration()
+    {
+        byte[] zip = CreateZipBytes(("app.txt", "v3"));
+        UpdateManifest v3 = CreateManifest("3.0.0", zip);
+        UpdateService service = CreateService();
+        if (!service.CanSelfUpdate)
+        {
+            Assert.Inconclusive("Explicit downloads require a self-updating platform.");
+        }
+        TaskCompletionSource<UpdateManifest?> result = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _source.OnManifest = () => result.Task;
+        _source.OnDownload = static (_, _) => Task.FromException(new HttpRequestException("offline"));
+        Task<bool> check = service.CheckForUpdateAsync();
+        try
+        {
+            await Assert.ThrowsExactlyAsync<HttpRequestException>(() => service.DownloadUpdateAsync(v3));
+        }
+        finally
+        {
+            result.TrySetResult(CreateManifest("4.0.0", zip));
+        }
+        Assert.IsFalse(await check.WaitAsync(TimeSpan.FromSeconds(10)),
+            "下载已失败且没有 Ready,仍须由 generation 拦下旧检查");
+        Assert.AreEqual("3.0.0", service.AvailableVersion);
+        Assert.IsNull(service.ReadyUpdate);
+        _source.OnDownload = null;
+        _source.AssetBytes = zip;
+        await service.DownloadUpdateAsync();
+        Assert.AreSame(v3, service.ReadyUpdate);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task CheckForUpdateAsync_LateResultAfterRepair_IsDiscarded()
+    {
+        TaskCompletionSource<UpdateManifest?> result = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _source.OnManifest = () => result.Task;
+        UpdateService service = CreateService();
+        Task<bool> check = service.CheckForUpdateAsync();
+        Assert.IsTrue(service.RepairUpdateState());
+        result.SetResult(CreateManifest("4.0.0", CreateZipBytes(("app.txt", "v4"))));
+        Assert.IsFalse(await check.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.IsNull(service.AvailableVersion);
+        Assert.IsNull(service.ReadyUpdate);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task CheckForUpdateAsync_OlderCheckCompletesLast_KeepsLatestGeneration()
+    {
+        byte[] zip = CreateZipBytes(("app.txt", "new"));
+        TaskCompletionSource<UpdateManifest?> result = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _source.OnManifest = () => result.Task;
+        UpdateService service = CreateService();
+        Task<bool> first = service.CheckForUpdateAsync();
+        _source.OnManifest = null;
+        _source.Manifest = CreateManifest("3.0.0", zip);
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+        result.SetResult(CreateManifest("4.0.0", zip));
+        Assert.IsFalse(await first.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.AreEqual("3.0.0", service.AvailableVersion);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task DownloadUpdateAsync_ExplicitSnapshot_NoLatestLookupAndReadyIdentityIsEnforced()
+    {
+        byte[] zip = CreateZipBytes(("app.txt", "v3"));
+        UpdateManifest v3 = CreateManifest("3.0.0", zip);
+        _source.Manifest = CreateManifest("4.0.0", zip);
+        _source.AssetBytes = zip;
+        UpdateService service = CreateService();
+        if (!service.CanSelfUpdate)
+        {
+            Assert.Inconclusive("Explicit downloads require a self-updating platform.");
+        }
+
+        await service.DownloadUpdateAsync(v3);
+        Assert.AreEqual(0, _source.ManifestCalls);
+        Assert.AreSame(v3, service.ReadyUpdate);
+        Assert.AreEqual("3.0.0", service.AvailableVersion);
+        // 同值但非同一对象的快照也应复用,不能只比较引用。
+        await service.DownloadUpdateAsync(CreateManifest("3.0.0", zip));
+        Assert.AreEqual(1, _source.DownloadCalls);
+        UpdateManifest ready = service.ReadyUpdate!;
+        UpdateManifest[] differentTargets =
+        [
+            _source.Manifest!,
+            CreateManifest("3.0.0", zip, tag: "3.0.0"),
+            CreateManifest("3.0.0", zip, assetName: "other.zip"),
+            CreateManifest("3.0.0", zip, sha256: new string('a', 64)),
+            CreateManifest("3.0.0", zip, size: zip.Length + 1)
+        ];
+        foreach (UpdateManifest different in differentTargets)
+        {
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.DownloadUpdateAsync(different));
+            Assert.AreSame(ready, service.ReadyUpdate);
+            Assert.AreEqual("3.0.0", service.AvailableVersion);
+        }
+        Assert.AreEqual(1, _source.DownloadCalls);
+        Assert.IsTrue(service.RepairUpdateState());
+        Assert.IsNull(service.ReadyUpdate);
+        await service.DownloadUpdateAsync(_source.Manifest!);
+        Assert.AreEqual("4.0.0", service.ReadyUpdate!.Version);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task DownloadUpdateAsync_MissingOrCorruptReadyArchive_FailedRetryClearsReady(bool missing)
+    {
+        byte[] zip = CreateZipBytes(("app.txt", "new"));
+        _source.Manifest = CreateManifest("3.0.0", zip);
+        _source.AssetBytes = zip;
+        int shutdowns = 0;
+        UpdateService service = CreateService(shutdown: () => shutdowns++);
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+        await service.DownloadUpdateAsync();
+        string archive = Path.Combine(_appDir, UpdateApplier.StagingDirectoryName,
+            _source.Manifest.AssetForCurrentPlatform()!.Name);
+        if (missing)
+        {
+            File.Delete(archive);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(archive, "corrupt");
+        }
+        _source.OnDownload = static (_, _) => Task.FromException(new HttpRequestException("offline"));
+
+        await Assert.ThrowsExactlyAsync<HttpRequestException>(() => service.DownloadUpdateAsync());
+        Assert.IsNull(service.ReadyUpdate, "重下失败不能仍报告旧包 Ready");
+        Assert.ThrowsExactly<InvalidOperationException>(service.ApplyUpdateAndRestart);
+        Assert.AreEqual(0, shutdowns);
+        _source.OnDownload = null;
+        await service.DownloadUpdateAsync();
+        Assert.AreSame(_source.Manifest, service.ReadyUpdate, "失败后操作锁必须释放,允许再次下载");
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow("v3.0.0")]
+    [DataRow("3.0.0")]
+    public async Task DownloadUpdateAsync_ExplicitManifest_AcceptsMatchingTagWithOrWithoutV(string tag)
+    {
+        byte[] zip = CreateZipBytes(("app.txt", "new"));
+        _source.AssetBytes = zip;
+        UpdateService service = CreateService();
+        if (!service.CanSelfUpdate)
+        {
+            Assert.Inconclusive("Explicit downloads require a self-updating platform.");
+        }
+        UpdateManifest manifest = CreateManifest("3.0.0", zip, tag: tag);
+        await service.DownloadUpdateAsync(manifest);
+        Assert.AreSame(manifest, service.ReadyUpdate);
+        Assert.AreEqual(0, _source.ManifestCalls);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow("1.0.0", "v1.0.0")]
+    [DataRow("0.9.0", "0.9.0")]
+    [DataRow("3.0.0", "v4.0.0")]
+    [DataRow("3.0.0", "not-a-version")]
+    public async Task DownloadUpdateAsync_ExplicitManifest_RejectsOldOrMismatchedVersion(string version, string tag)
+    {
+        UpdateService service = CreateService();
+        if (!service.CanSelfUpdate)
+        {
+            Assert.Inconclusive("Explicit downloads require a self-updating platform.");
+        }
+        UpdateManifest manifest = CreateManifest(version, CreateZipBytes(("a", "b")), tag: tag);
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.DownloadUpdateAsync(manifest));
+        Assert.AreEqual(0, _source.DownloadCalls);
+        Assert.IsNull(service.ReadyUpdate);
+        Assert.IsNull(service.AvailableVersion);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task DownloadUpdateAsync_ExplicitManifest_WithoutCurrentPlatformAssetIsRejected()
+    {
+        UpdateService service = CreateService();
+        if (!service.CanSelfUpdate)
+        {
+            Assert.Inconclusive("Explicit downloads require a self-updating platform.");
+        }
+        UpdateManifest manifest = UpdateManifest.Parse("""
+            { "version": "3.0.0", "tag": "3.0.0",
+              "assets": { "solaris-sparc": { "name": "archive.zip", "sha256": "abc", "size": 1 } } }
+            """);
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.DownloadUpdateAsync(manifest));
+        Assert.AreEqual(0, _source.DownloadCalls);
+        Assert.IsNull(service.ReadyUpdate);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow("../escape.zip", 1L, false)]
+    [DataRow("..\\escape.zip", 1L, false)]
+    [DataRow("C:\\escape.zip", 1L, false)]
+    [DataRow("/escape.zip", 1L, false)]
+    [DataRow("archive.zip:stream", 1L, false)]
+    [DataRow("archive.zip.", 1L, false)]
+    [DataRow("archive.zip", 0L, false)]
+    [DataRow("archive.zip", 8589934593L, false)]
+    [DataRow("archive.zip", 1L, true)]
+    public async Task DownloadUpdateAsync_UnsafeAsset_IsRejectedBeforeDownload(string name, long size, bool badHash)
+    {
+        UpdateManifest manifest = CreateManifest("3.0.0", [1], assetName: name,
+            sha256: badHash ? new string('z', 64) : null, size: size);
+        UpdateService service = CreateService();
+        if (service.CanSelfUpdate)
+        {
+            await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.DownloadUpdateAsync(manifest));
+        }
+        // 旧入口仍用于跨平台底层下载,但也不能让不安全文件名越过暂存目录边界。
+        _source.Manifest = manifest;
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.DownloadUpdateAsync());
+        Assert.AreEqual(0, _source.DownloadCalls);
+        Assert.IsNull(service.ReadyUpdate);
+        Assert.IsFalse(Directory.Exists(Path.Combine(_appDir, UpdateApplier.StagingDirectoryName)));
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task StoreManaged_RejectsBothDownloadEntrypointsAndApply()
+    {
+        UpdateManifest manifest = CreateManifest("3.0.0", CreateZipBytes(("a", "b")));
+        int shutdowns = 0;
+        UpdateService service = new(_source, applicationDirectory: _appDir,
+            currentVersionOverride: "1.0.0", shutdownForRestart: () => shutdowns++, storeManagedOverride: true);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.DownloadUpdateAsync());
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.DownloadUpdateAsync(manifest));
+        Assert.ThrowsExactly<InvalidOperationException>(service.ApplyUpdateAndRestart);
+        Assert.AreEqual(0, _source.DownloadCalls);
+        Assert.AreEqual(0, _source.ManifestCalls);
+        Assert.AreEqual(0, shutdowns);
+        Assert.IsNull(service.ReadyUpdate);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task DownloadUpdateAsync_ExplicitManifest_UnsupportedInstallationIsRejected()
+    {
+        UpdateManifest manifest = CreateManifest("3.0.0", CreateZipBytes(("a", "b")));
+        // 不存在的安装目录不能写探针,与 Linux 的平台防御都走 CanSelfUpdate。
+        UpdateService service = new(_source, applicationDirectory: Path.Combine(_appDir, "missing"),
+            currentVersionOverride: "1.0.0", shutdownForRestart: static () => { }, storeManagedOverride: false);
+        Assert.IsFalse(service.CanSelfUpdate);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.DownloadUpdateAsync(manifest));
+        Assert.AreEqual(0, _source.DownloadCalls);
+        Assert.IsNull(service.AvailableVersion);
+    }
+
     // ———— 下载停滞看门狗 ————
 
     [TestMethod]
@@ -404,6 +774,8 @@ public class UpdateServiceTests : IDisposable
 
         Assert.AreEqual("current", File.ReadAllText(Path.Combine(_appDir, "app.txt")));
         Assert.IsEmpty(Directory.GetFiles(_appDir, "*.old", SearchOption.AllDirectories));
+        Assert.IsTrue(service.RepairUpdateState(), "解包异常后必须释放操作锁,允许修复");
+        Assert.IsNull(service.ReadyUpdate);
     }
 
     [TestMethod]
@@ -524,6 +896,9 @@ public class UpdateServiceTests : IDisposable
         public bool LastIncludePreRelease { get; private set; }
         public int DownloadCalls { get; private set; }
         public int ManifestCalls { get; private set; }
+        public UpdateManifest? DownloadedManifest { get; private set; }
+        public UpdateAsset? DownloadedAsset { get; private set; }
+        public Func<Task<UpdateManifest?>>? OnManifest { get; set; }
 
         /// <summary>每次下载落盘前先跑一下(参数:第几次调用、取消令牌);用来模拟连接卡住。</summary>
         public Func<int, CancellationToken, Task>? OnDownload { get; set; }
@@ -534,7 +909,7 @@ public class UpdateServiceTests : IDisposable
             LastIncludePreRelease = includePreRelease;
             return ThrowOnManifest
                 ? Task.FromException<UpdateManifest?>(new HttpRequestException("offline"))
-                : Task.FromResult(Manifest);
+                : OnManifest?.Invoke() ?? Task.FromResult(Manifest);
         }
 
         public async Task<string?> DownloadAssetAsync(
@@ -545,6 +920,8 @@ public class UpdateServiceTests : IDisposable
             CancellationToken cancellationToken = default)
         {
             DownloadCalls++;
+            DownloadedManifest = manifest;
+            DownloadedAsset = asset;
             if (OnDownload != null)
             {
                 await OnDownload(DownloadCalls, cancellationToken);

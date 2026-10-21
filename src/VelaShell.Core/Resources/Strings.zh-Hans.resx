@@ -2333,7 +2333,7 @@
     <value>更新日志</value>
   </data>
   <data name="SetAbout_ChangelogTip" xml:space="preserve">
-    <value>查看 GitHub 最新发布的更新说明，包含预发布版本</value>
+    <value>查看当前版本或可用正式版的更新日志并更新</value>
   </data>
   <data name="ReleaseNotes_NoRelease" xml:space="preserve">
     <value>暂无已发布版本。</value>
@@ -2348,7 +2348,19 @@
     <value>GitHub 暂时限制了请求次数，请稍后再试。</value>
   </data>
   <data name="ReleaseNotes_Latest" xml:space="preserve">
-    <value>最新发布</value>
+    <value>可用更新</value>
+  </data>
+  <data name="ReleaseNotes_CurrentVersion" xml:space="preserve">
+    <value>当前版本</value>
+  </data>
+  <data name="ReleaseNotes_OpenReleasePage" xml:space="preserve">
+    <value>前往发布页</value>
+  </data>
+  <data name="ReleaseNotes_DownloadContinues" xml:space="preserve">
+    <value>关闭此窗口后下载仍会继续，完成后可在关于页重启更新。</value>
+  </data>
+  <data name="ReleaseNotes_NoCurrentRelease" xml:space="preserve">
+    <value>暂无当前版本的更新日志，可能是本地构建或该版本尚未附带日志清单。</value>
   </data>
   <data name="ReleaseNotes_PublishedAt" xml:space="preserve">
     <value>发布于 {0}</value>
@@ -2358,6 +2370,18 @@
   </data>
   <data name="ReleaseNotes_Retry" xml:space="preserve">
     <value>重试</value>
+  </data>
+  <data name="ReleaseNotes_UpdateConflict" xml:space="preserve">
+    <value>另一个更新正在进行或已准备好安装，请在关于页查看其状态。</value>
+  </data>
+  <data name="ReleaseNotes_UnknownVersion" xml:space="preserve">
+    <value>无法识别当前版本，无法选择对应的更新日志。</value>
+  </data>
+  <data name="ReleaseNotes_CheckFailed" xml:space="preserve">
+    <value>检查可用正式版失败，请稍后重试。</value>
+  </data>
+  <data name="ReleaseNotes_UpdateNow" xml:space="preserve">
+    <value>立即更新</value>
   </data>
   <data name="SetAbout_CheckUpdates" xml:space="preserve">
     <value>检查更新</value>

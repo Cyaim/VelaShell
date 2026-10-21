@@ -76,6 +76,12 @@ $manifest = [ordered]@{
     version = $version
     tag     = "v$version"
     assets  = $assets
+    # 本地打包不强制联网;真实发布时由 CI 从 Release 读取日志与发布时间、链接。
+    releaseNotes = [ordered]@{
+        body        = ''
+        publishedAt = $null
+        htmlUrl     = $null
+    }
 }
 Set-Content (Join-Path $outRoot 'latest.json') ($manifest | ConvertTo-Json -Depth 4) -Encoding utf8NoBOM
 

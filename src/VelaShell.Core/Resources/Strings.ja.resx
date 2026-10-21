@@ -2080,7 +2080,7 @@
     <value>更新履歴</value>
   </data>
   <data name="SetAbout_ChangelogTip" xml:space="preserve">
-    <value>プレリリースを含む GitHub の最新リリースノートを表示</value>
+    <value>現在のバージョンまたは利用可能な正式リリースの更新履歴を表示し、更新する</value>
   </data>
   <data name="ReleaseNotes_NoRelease" xml:space="preserve">
     <value>公開されたリリースはまだありません。</value>
@@ -2095,7 +2095,19 @@
     <value>GitHub へのリクエストが一時的に制限されています。しばらくしてから再試行してください。</value>
   </data>
   <data name="ReleaseNotes_Latest" xml:space="preserve">
-    <value>最新リリース</value>
+    <value>更新あり</value>
+  </data>
+  <data name="ReleaseNotes_CurrentVersion" xml:space="preserve">
+    <value>現在のバージョン</value>
+  </data>
+  <data name="ReleaseNotes_OpenReleasePage" xml:space="preserve">
+    <value>リリースページへ</value>
+  </data>
+  <data name="ReleaseNotes_DownloadContinues" xml:space="preserve">
+    <value>このウィンドウを閉じてもダウンロードは続行されます。完了後、「バージョン情報」ページから再起動して更新できます。</value>
+  </data>
+  <data name="ReleaseNotes_NoCurrentRelease" xml:space="preserve">
+    <value>現在のバージョンのリリースノートはありません。ローカルビルドか、このバージョンにリリースノートのマニフェストがまだ添付されていない可能性があります。</value>
   </data>
   <data name="ReleaseNotes_PublishedAt" xml:space="preserve">
     <value>公開日: {0}</value>
@@ -2105,6 +2117,18 @@
   </data>
   <data name="ReleaseNotes_Retry" xml:space="preserve">
     <value>再試行</value>
+  </data>
+  <data name="ReleaseNotes_UpdateConflict" xml:space="preserve">
+    <value>別の更新が進行中か、インストールの準備ができています。「バージョン情報」ページで状態を確認してください。</value>
+  </data>
+  <data name="ReleaseNotes_UnknownVersion" xml:space="preserve">
+    <value>現在のバージョンを識別できないため、対応するリリースノートを選択できません。</value>
+  </data>
+  <data name="ReleaseNotes_CheckFailed" xml:space="preserve">
+    <value>利用可能な正式リリースを確認できませんでした。後でもう一度お試しください。</value>
+  </data>
+  <data name="ReleaseNotes_UpdateNow" xml:space="preserve">
+    <value>今すぐ更新</value>
   </data>
   <data name="SetAbout_CheckUpdates" xml:space="preserve">
     <value>更新を確認</value>

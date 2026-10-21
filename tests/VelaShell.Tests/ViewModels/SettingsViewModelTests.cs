@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using NSubstitute;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Data;
@@ -124,6 +126,437 @@ public class SettingsViewModelTests
         Assert.IsFalse(vm.UpdateReady);
         Assert.IsTrue(await vm.CheckUpdatesCommand.CanExecute.FirstAsync());
     }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内下载。")]
+    public async Task UpdateFromRelease_DownloadsExactManifestWithoutCheckingOrChangingPreviewChannel()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CurrentVersion.Returns("1.0.0");
+        updates.AvailableVersion.Returns("9.0.0");
+        updates.CanSelfUpdate.Returns(true);
+        UpdateManifest target = CreateUpdateManifest("2.0.0-beta.1");
+        UpdateManifest? ready = null;
+        updates.ReadyUpdate.Returns(_ => ready);
+        updates.DownloadUpdateAsync(target, Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                ready = target;
+                return Task.CompletedTask;
+            });
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+        vm.UpdateChannelIndex = 1;
+        List<string?> changed = [];
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        await vm.UpdateFromReleaseAsync(target);
+
+        await updates.Received(1).DownloadUpdateAsync(target,
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        await updates.DidNotReceive().DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        await updates.DidNotReceive().CheckForUpdateAsync();
+        updates.DidNotReceive().ClearUpdateError();
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+        updates.DidNotReceive().RepairUpdateState();
+        Assert.AreEqual("preview", vm.General.UpdateChannel);
+        Assert.AreEqual(1, vm.UpdateChannelIndex);
+        Assert.AreEqual("1.0.0", vm.CurrentUpdateVersion);
+        Assert.IsTrue(vm.CanSelfUpdate);
+        Assert.AreSame(target, vm.ReadyUpdate);
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.AreEqual(Strings.Format("SetAbout_UpdateReady", target.Version), vm.UpdateStatus);
+        Assert.Contains(nameof(SettingsViewModel.ReadyUpdate), changed);
+        Assert.Contains(nameof(SettingsViewModel.UpdateReady), changed);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内下载。")]
+    public async Task UpdateFromRelease_FailureReleasesBusyStateAndSameTargetCanRetry()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        UpdateManifest target = CreateUpdateManifest();
+        UpdateManifest? ready = null;
+        updates.ReadyUpdate.Returns(_ => ready);
+        int attempts = 0;
+        updates.DownloadUpdateAsync(target, Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (++attempts == 1)
+                {
+                    return Task.FromException(new TimeoutException("stalled"));
+                }
+                ready = target;
+                return Task.CompletedTask;
+            });
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+
+        await vm.UpdateFromReleaseAsync(target);
+
+        Assert.AreEqual(Strings.Get("SetAbout_DownloadFailed"), vm.UpdateStatus);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.IsFalse(vm.UpdateReady);
+        Assert.IsNull(vm.ReadyUpdate);
+        Assert.IsTrue(await vm.CheckUpdatesCommand.CanExecute.FirstAsync());
+        Assert.IsTrue(await vm.RepairUpdateCommand.CanExecute.FirstAsync());
+        Assert.IsTrue(await vm.RestartToUpdateCommand.CanExecute.FirstAsync());
+
+        await vm.UpdateFromReleaseAsync(target);
+
+        Assert.AreEqual(2, attempts);
+        Assert.AreSame(target, vm.ReadyUpdate);
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.AreEqual(Strings.Format("SetAbout_UpdateReady", target.Version), vm.UpdateStatus);
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+        await updates.DidNotReceive().CheckForUpdateAsync();
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内下载。")]
+    public async Task UpdateFromRelease_BusyRejectsDuplicateAndAllCommandEntryPoints()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        UpdateManifest target = CreateUpdateManifest();
+        TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        updates.DownloadUpdateAsync(target, Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(finish.Task);
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+        Task download = vm.UpdateFromReleaseAsync(target);
+        try
+        {
+            Assert.IsTrue(vm.IsUpdating);
+            Assert.IsFalse(await vm.CheckUpdatesCommand.CanExecute.FirstAsync());
+            Assert.IsFalse(await vm.RepairUpdateCommand.CanExecute.FirstAsync());
+            Assert.IsFalse(await vm.RestartToUpdateCommand.CanExecute.FirstAsync());
+            await vm.UpdateFromReleaseAsync(target);
+            await vm.UpdateFromReleaseAsync(CreateUpdateManifest("3.0.0"));
+            // 绕过按钮 CanExecute 核验方法自身的 guard,不能只靠界面禁用来互斥。
+            await InvokeUpdateOperationAsync(vm, "CheckForUpdatesAsync");
+            await InvokeUpdateOperationAsync(vm, "RepairUpdateStateAsync");
+            await InvokeUpdateOperationAsync(vm, "RestartToUpdateAsync");
+
+            Assert.IsTrue(vm.IsUpdating, "被拒绝的入口不能结束仍在下载的操作。");
+            Assert.AreEqual(Strings.Get("ReleaseNotes_UpdateConflict"), vm.UpdateStatus);
+            await updates.Received(1).DownloadUpdateAsync(target,
+                Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+            await updates.DidNotReceive().CheckForUpdateAsync();
+            updates.DidNotReceive().ClearUpdateError();
+            updates.DidNotReceive().RepairUpdateState();
+            updates.DidNotReceive().ApplyUpdateAndRestart();
+        }
+        finally
+        {
+            finish.TrySetResult();
+            await download.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.IsFalse(vm.IsUpdating);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow("CheckForUpdatesAsync")]
+    [DataRow("RepairUpdateStateAsync")]
+    [DataRow("RestartToUpdateAsync")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内换版。")]
+    public async Task UpdateOperations_BlockExplicitDownloadWhileBusy(string operation)
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        UpdateManifest target = CreateUpdateManifest();
+        if (operation == "RestartToUpdateAsync")
+        {
+            updates.ReadyUpdate.Returns(target);
+        }
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        updates.CheckForUpdateAsync().Returns(_ =>
+        {
+            started.TrySetResult();
+            return WaitForCheckAsync();
+        });
+        updates.RepairUpdateState().Returns(_ =>
+        {
+            started.TrySetResult();
+            finish.Task.GetAwaiter().GetResult();
+            return true;
+        });
+        updates.When(service => service.ApplyUpdateAndRestart()).Do(_ =>
+        {
+            started.TrySetResult();
+            finish.Task.GetAwaiter().GetResult();
+        });
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+        Task pending = InvokeUpdateOperationAsync(vm, operation);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.IsTrue(vm.IsUpdating);
+            await vm.UpdateFromReleaseAsync(target);
+            Assert.AreEqual(Strings.Get("ReleaseNotes_UpdateConflict"), vm.UpdateStatus);
+            Assert.IsTrue(vm.IsUpdating);
+            await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<UpdateManifest>(),
+                Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            finish.TrySetResult();
+            await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.IsFalse(vm.IsUpdating);
+
+        async Task<bool> WaitForCheckAsync()
+        {
+            await finish.Task;
+            return false;
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow("same")]
+    [DataRow("hash-case")]
+    [DataRow("version")]
+    [DataRow("tag")]
+    [DataRow("name")]
+    [DataRow("hash")]
+    [DataRow("size")]
+    public async Task UpdateFromRelease_ReadySnapshotIsReusedOnlyForSameTarget(string difference)
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        UpdateManifest ready = CreateUpdateManifest();
+        updates.ReadyUpdate.Returns(ready);
+        UpdateManifest target = CreateUpdateManifest(
+            version: difference == "version" ? "3.0.0" : "2.0.0",
+            tag: difference == "tag" ? "other-tag" : null,
+            name: difference == "name" ? "other.zip" : "update.zip",
+            hash: difference == "hash" ? new string('b', 64)
+                : new string(difference == "hash-case" ? 'A' : 'a', 64),
+            size: difference == "size" ? 200 : 100);
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+        List<string?> changed = [];
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        await vm.UpdateFromReleaseAsync(target);
+
+        bool same = difference is "same" or "hash-case";
+        Assert.AreSame(ready, vm.ReadyUpdate);
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.AreEqual(same ? Strings.Format("SetAbout_UpdateReady", ready.Version)
+            : Strings.Get("ReleaseNotes_UpdateConflict"), vm.UpdateStatus);
+        Assert.Contains(nameof(SettingsViewModel.ReadyUpdate), changed);
+        Assert.Contains(nameof(SettingsViewModel.UpdateReady), changed);
+        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<UpdateManifest>(),
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        await updates.DidNotReceive().CheckForUpdateAsync();
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+        updates.DidNotReceive().RepairUpdateState();
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task CheckUpdates_PreservesReadySnapshotWithoutCheckingAgain()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        UpdateManifest ready = CreateUpdateManifest();
+        updates.ReadyUpdate.Returns(ready);
+        updates.AvailableVersion.Returns("9.0.0");
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+
+        await vm.CheckUpdatesCommand.Execute().FirstAsync();
+
+        Assert.AreSame(ready, vm.ReadyUpdate);
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.AreEqual(Strings.Format("SetAbout_UpdateReady", ready.Version), vm.UpdateStatus);
+        await updates.DidNotReceive().CheckForUpdateAsync();
+        updates.DidNotReceive().ClearUpdateError();
+        await updates.DidNotReceive().DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow(false)]
+    [DataRow(true)]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内下载。")]
+    public async Task UpdateFromRelease_ReadyAppearingDuringDownloadIsPublishedEvenOnFailure(bool fails)
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        UpdateManifest target = CreateUpdateManifest();
+        UpdateManifest ready = CreateUpdateManifest("3.0.0");
+        UpdateManifest? serviceReady = null;
+        updates.ReadyUpdate.Returns(_ => serviceReady);
+        updates.DownloadUpdateAsync(target, Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                serviceReady = ready;
+                return fails ? Task.FromException(new InvalidOperationException("conflict")) : Task.CompletedTask;
+            });
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+        List<string?> changed = [];
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        await vm.UpdateFromReleaseAsync(target);
+
+        Assert.AreSame(ready, vm.ReadyUpdate);
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.AreEqual(fails ? Strings.Get("SetAbout_DownloadFailed")
+            : Strings.Format("SetAbout_UpdateReady", ready.Version), vm.UpdateStatus);
+        Assert.Contains(nameof(SettingsViewModel.ReadyUpdate), changed);
+        Assert.Contains(nameof(SettingsViewModel.UpdateReady), changed);
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内下载。")]
+    public async Task CheckUpdates_LegacyDownloadSuccessRetainsRestartEntryWithoutReadyMetadata()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        updates.CheckForUpdateAsync().Returns(true);
+        updates.AvailableVersion.Returns("2.0.0");
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+
+        await vm.CheckUpdatesCommand.Execute().FirstAsync();
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.AreEqual(Strings.Format("SetAbout_UpdateReady", "2.0.0"), vm.UpdateStatus);
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+
+        await vm.UpdateFromReleaseAsync(CreateUpdateManifest("3.0.0"));
+        Assert.AreEqual(Strings.Get("ReleaseNotes_UpdateConflict"), vm.UpdateStatus);
+        Assert.IsTrue(vm.UpdateReady);
+
+        await vm.CheckUpdatesCommand.Execute().FirstAsync();
+
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.IsNull(vm.ReadyUpdate);
+        await updates.Received(1).CheckForUpdateAsync();
+        await updates.Received(1).DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<UpdateManifest>(),
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+        int applyAttempts = 0;
+        updates.When(service => service.ApplyUpdateAndRestart()).Do(_ =>
+        {
+            if (++applyAttempts == 1)
+            {
+                throw new IOException("locked");
+            }
+        });
+
+        await vm.RestartToUpdateCommand.Execute().FirstAsync();
+
+        Assert.AreEqual(Strings.Get("SetAbout_ApplyFailed"), vm.UpdateStatus);
+        Assert.IsTrue(vm.UpdateReady, "失败不能清掉无目标元数据的兼容态,否则无法重试。");
+        Assert.IsFalse(vm.IsUpdating);
+
+        await vm.RestartToUpdateCommand.Execute().FirstAsync();
+
+        updates.Received(2).ApplyUpdateAndRestart();
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow("RepairUpdateStateAsync")]
+    [DataRow("RestartToUpdateAsync")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内换版。")]
+    public async Task UpdateOperationFailure_DoesNotClearExistingReadySnapshot(string operation)
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        UpdateManifest ready = CreateUpdateManifest();
+        updates.ReadyUpdate.Returns(ready);
+        updates.RepairUpdateState().Returns(_ => throw new IOException("locked"));
+        updates.When(service => service.ApplyUpdateAndRestart()).Do(_ => throw new IOException("locked"));
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+
+        await InvokeUpdateOperationAsync(vm, operation);
+
+        Assert.AreSame(ready, vm.ReadyUpdate);
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.AreEqual(Strings.Get(operation == "RepairUpdateStateAsync"
+            ? "SetAbout_RepairFailed" : "SetAbout_ApplyFailed"), vm.UpdateStatus);
+        await vm.UpdateFromReleaseAsync(ready);
+        Assert.AreEqual(Strings.Format("SetAbout_UpdateReady", ready.Version), vm.UpdateStatus);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task RepairUpdate_ClearedReadySnapshotNotifiesBothPropertiesBeforeBecomingIdle()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        UpdateManifest? ready = CreateUpdateManifest();
+        updates.ReadyUpdate.Returns(_ => ready);
+        updates.RepairUpdateState().Returns(_ =>
+        {
+            ready = null;
+            return true;
+        });
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+        List<(string? Property, bool Busy, bool Ready)> changed = [];
+        vm.PropertyChanged += (_, e) => changed.Add((e.PropertyName, vm.IsUpdating, vm.UpdateReady));
+
+        await vm.RepairUpdateCommand.Execute().FirstAsync();
+
+        Assert.IsNull(vm.ReadyUpdate);
+        Assert.IsFalse(vm.UpdateReady);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.IsTrue(changed.Any(change => change is (nameof(SettingsViewModel.ReadyUpdate), true, false)));
+        Assert.IsTrue(changed.Any(change => change is (nameof(SettingsViewModel.UpdateReady), true, false)));
+        Assert.AreEqual(Strings.Get("SetAbout_RepairDone"), vm.UpdateStatus);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow(false, false)]
+    [DataRow(true, true)]
+    public async Task UpdateFromRelease_UnsupportedInstallationNeverDownloads(bool storeManaged, bool writable)
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.IsStoreManaged.Returns(storeManaged);
+        updates.CanSelfUpdate.Returns(writable);
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+        UpdateManifest target = CreateUpdateManifest();
+
+        await vm.UpdateFromReleaseAsync(target);
+
+        Assert.AreEqual(storeManaged ? Strings.Get("SetAbout_StoreManagedUpdates")
+            : Strings.Format("SetAbout_UpdateAvailableManual", target.Version), vm.UpdateStatus);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.IsFalse(vm.UpdateReady);
+        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<UpdateManifest>(),
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        await updates.DidNotReceive().CheckForUpdateAsync();
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+    }
+
+    private static UpdateManifest CreateUpdateManifest(string version = "2.0.0", string? tag = null,
+        string name = "update.zip", string? hash = null, long size = 100) =>
+        UpdateManifest.Parse(JsonSerializer.Serialize(new
+        {
+            version,
+            tag = tag ?? $"v{version}",
+            assets = new Dictionary<string, object>
+            {
+                [UpdateManifest.CurrentRid() ?? "win-x64"] = new { name, sha256 = hash ?? new string('a', 64), size }
+            }
+        }));
+
+    private static Task InvokeUpdateOperationAsync(SettingsViewModel vm, string method) =>
+        (Task)typeof(SettingsViewModel).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, null)!;
 
     [TestMethod]
     [TestCategory("Update")]

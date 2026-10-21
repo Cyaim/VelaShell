@@ -250,25 +250,10 @@ public partial class SettingsViewModel : ReactiveObject
         ResetCommand = ReactiveCommand.Create(ResetToDefaults);
         SetAccentCommand = ReactiveCommand.Create<string>(hex => AccentColor = hex);
         ClearHistoryCommand = ReactiveCommand.CreateFromTask(ClearHistoryAsync);
-        CheckUpdatesCommand = ReactiveCommand.CreateFromTask(CheckForUpdatesAsync);
-        RestartToUpdateCommand = ReactiveCommand.CreateFromTask(async () =>
-        {
-            UpdateStatus = Strings.Get("SetAbout_Applying");
-            try
-            {
-                // 解包是磁盘密集操作,放到线程池执行,UI 保持响应;
-                // 成功后服务内部拉起外置换版进程并请求本进程退出。
-                await Task.Run(() => _updateService?.ApplyUpdateAndRestart());
-            }
-            catch
-            {
-                // 解包失败时应用目录一个字节都没动(换版尚未开始),应用继续以当前版本运行。
-                // 这一步之后的失败发生在外置进程里,由它回滚并落盘原因,下次启动时展示。
-                UpdateReady = false;
-                UpdateStatus = Strings.Get("SetAbout_ApplyFailed");
-            }
-        });
-        RepairUpdateCommand = ReactiveCommand.CreateFromTask(RepairUpdateStateAsync);
+        var canUpdate = this.WhenAnyValue(x => x.IsUpdating, busy => !busy);
+        CheckUpdatesCommand = ReactiveCommand.CreateFromTask(CheckForUpdatesAsync, canUpdate);
+        RestartToUpdateCommand = ReactiveCommand.CreateFromTask(RestartToUpdateAsync, canUpdate);
+        RepairUpdateCommand = ReactiveCommand.CreateFromTask(RepairUpdateStateAsync, canUpdate);
         OpenLogsDirectoryCommand = ReactiveCommand.Create(() => { DiagnosticLog.OpenLogsDirectory(); });
 
         // 商店版(MSIX)装在只读的 WindowsApps 下,更新由 Microsoft Store 接管:
@@ -278,6 +263,10 @@ public partial class SettingsViewModel : ReactiveObject
         if (UpdatesManagedByStore)
         {
             UpdateStatus = Strings.Get("SetAbout_StoreManagedUpdates");
+        }
+        else if (ReadyUpdate is { } ready)
+        {
+            ShowReadyUpdate(ready.Version);
         }
         // 上一轮换版由外置进程执行,它报的错没法当场弹给用户,只能落盘留到这时候如实展示。
         else if (_updateService?.LastUpdateError is { Length: > 0 } lastError)
@@ -298,15 +287,88 @@ public partial class SettingsViewModel : ReactiveObject
     /// </summary>
     private async Task RepairUpdateStateAsync()
     {
+        if (!TryBeginUpdateOperation())
+        {
+            return;
+        }
+        try
+        {
+            UpdateStatus = Strings.Get("SetAbout_Repairing");
+            bool clean = await Task.Run(_updateService!.RepairUpdateState);
+            UpdateReady = ReadyUpdate is not null;
+            UpdateStatus = Strings.Get(clean ? "SetAbout_RepairDone" : "SetAbout_RepairFailed");
+        }
+        catch
+        {
+            UpdateStatus = Strings.Get("SetAbout_RepairFailed");
+        }
+        finally
+        {
+            EndUpdateOperation();
+        }
+    }
+
+    private async Task RestartToUpdateAsync()
+    {
+        if (!TryBeginUpdateOperation())
+        {
+            return;
+        }
+        try
+        {
+            if (OperatingSystem.IsLinux() || !CanSelfUpdate || (!UpdateReady && ReadyUpdate is null))
+            {
+                return;
+            }
+            UpdateStatus = Strings.Get("SetAbout_Applying");
+            // 解包是磁盘密集操作,放到线程池执行,UI 保持响应;
+            // 成功后服务内部拉起外置换版进程并请求本进程退出。
+            await Task.Run(_updateService!.ApplyUpdateAndRestart);
+        }
+        catch
+        {
+            // 应用阶段失败仍可重试,包括无参数下载没有返回目标元数据的兼容态。
+            // 服务若保留了 ReadyUpdate,收尾时也会同步恢复重启入口。
+            UpdateStatus = Strings.Get("SetAbout_ApplyFailed");
+        }
+        finally
+        {
+            EndUpdateOperation();
+        }
+    }
+
+    private bool TryBeginUpdateOperation()
+    {
+        if (IsUpdating)
+        {
+            UpdateStatus = Strings.Get("ReleaseNotes_UpdateConflict");
+            return false;
+        }
         if (_updateService is null)
         {
             UpdateStatus = Strings.Get("Msg_UpdateServiceNotAvailable");
-            return;
+            return false;
         }
-        UpdateReady = false;
-        UpdateStatus = Strings.Get("SetAbout_Repairing");
-        bool clean = await Task.Run(_updateService.RepairUpdateState);
-        UpdateStatus = Strings.Get(clean ? "SetAbout_RepairDone" : "SetAbout_RepairFailed");
+        if (UpdatesManagedByStore)
+        {
+            UpdateStatus = Strings.Get("SetAbout_StoreManagedUpdates");
+            return false;
+        }
+        IsUpdating = true;
+        return true;
+    }
+
+    private void EndUpdateOperation()
+    {
+        // 服务可能在成功或异常返回前改变就绪目标(修复、换版失败也一样)。
+        // 保留无目标元数据的下载兼容态,但有快照时必须恢复重启入口。
+        if (ReadyUpdate is not null)
+        {
+            UpdateReady = true;
+        }
+        this.RaisePropertyChanged(nameof(ReadyUpdate));
+        this.RaisePropertyChanged(nameof(UpdateReady));
+        IsUpdating = false;
     }
 
     // ———— 顶层字段(既有行为:保存后立即生效) ————
@@ -892,74 +954,158 @@ public partial class SettingsViewModel : ReactiveObject
         private set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
+    /// <summary>更新服务报告的当前应用版本。</summary>
+    public string? CurrentUpdateVersion => _updateService?.CurrentVersion;
+
+    /// <summary>当前安装是否支持应用内下载和原地换版。</summary>
+    public bool CanSelfUpdate => _updateService?.CanSelfUpdate ?? false;
+
+    /// <summary>服务中已经下载、校验完成的固定目标。</summary>
+    public UpdateManifest? ReadyUpdate => _updateService?.ReadyUpdate;
+
+    /// <summary>检查、下载、重启或修复正在进行;所有更新入口共用此状态。</summary>
+    public bool IsUpdating
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    private void ShowReadyUpdate(string? version)
+    {
+        UpdateReady = true;
+        UpdateStatus = Strings.Format("SetAbout_UpdateReady", version ?? string.Empty);
+    }
+
     /// <summary>
     /// 检查更新完整流程:Linux 发现更新时打开发布页面供用户下载;其它平台带进度下载,
     /// 完成后置 <see cref="UpdateReady" />,由关于页“重启并更新”按钮触发 <see cref="RestartToUpdateCommand" />。
     /// </summary>
     private async Task CheckForUpdatesAsync()
     {
-        if (_updateService is null)
+        if (!TryBeginUpdateOperation())
         {
-            UpdateStatus = Strings.Get("Msg_UpdateServiceNotAvailable");
             return;
         }
-        if (UpdatesManagedByStore)
-        {
-            UpdateStatus = Strings.Get("SetAbout_StoreManagedUpdates");
-            return;
-        }
-        UpdateReady = false;
-        UpdateStatus = Strings.Get("SetAbout_Checking");
-        // 上一轮的失败提示到此为止:用户已经在重新尝试,再挂着旧错误只会误导。
-        _updateService.ClearUpdateError();
-        bool hasUpdate;
         try
         {
-            hasUpdate = await _updateService.CheckForUpdateAsync();
-        }
-        catch
-        {
-            UpdateStatus = Strings.Get("SetAbout_UpdateCheckFailed");
-            return;
-        }
-        if (!hasUpdate)
-        {
-            UpdateStatus = Strings.Get("SetAbout_UpToDate");
-            return;
-        }
-        if (OperatingSystem.IsLinux())
-        {
-            // Linux 的 deb/rpm 与便携包由用户选择安装,不探测安装目录或自动换版。
-            // 用发布列表而非 /latest,预览通道和只有预发布版时也能找到下载包。
-            Uri releasePage = new("https://github.com/joesdu/VelaShell/releases");
-            UpdateStatus = Strings.Format(
-                "SetAbout_UpdateAvailableLinux",
-                _updateService.AvailableVersion ?? string.Empty,
-                releasePage.AbsoluteUri
-            );
+            // 已准备完成的包必须先安装或修复,再次检查不能覆盖它或清掉重启入口。
+            if (ReadyUpdate is not null || UpdateReady)
+            {
+                ShowReadyUpdate(ReadyUpdate?.Version ?? _updateService!.AvailableVersion);
+                return;
+            }
+            UpdateStatus = Strings.Get("SetAbout_Checking");
+            bool hasUpdate;
             try
             {
-                if (UpdatePageOpener is { } open)
-                {
-                    await open(releasePage);
-                }
+                // 清理失败也要成为可观察的状态,不能流到命令的未观察异常通道。
+                _updateService!.ClearUpdateError();
+                hasUpdate = await _updateService.CheckForUpdateAsync();
             }
-            catch (Exception ex)
+            catch
             {
-                // 桌面没有浏览器或启动失败时,状态中的地址仍可供用户手动访问。
-                Trace.WriteLine($"[VelaShell] Could not open update release page: {ex.Message}");
+                UpdateStatus = Strings.Get("SetAbout_UpdateCheckFailed");
+                return;
             }
-            return;
+            if (!hasUpdate)
+            {
+                UpdateStatus = Strings.Get("SetAbout_UpToDate");
+                return;
+            }
+            if (OperatingSystem.IsLinux())
+            {
+                // Linux 的 deb/rpm 与便携包由用户选择安装,不探测安装目录或自动换版。
+                Uri releasePage = new("https://github.com/joesdu/VelaShell/releases");
+                UpdateStatus = Strings.Format("SetAbout_UpdateAvailableLinux",
+                    _updateService.AvailableVersion ?? string.Empty, releasePage.AbsoluteUri);
+                try
+                {
+                    if (UpdatePageOpener is { } open)
+                    {
+                        await open(releasePage);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"[VelaShell] Could not open update release page: {ex.Message}");
+                }
+                return;
+            }
+            if (!CanSelfUpdate)
+            {
+                UpdateStatus = Strings.Format("SetAbout_UpdateAvailableManual",
+                    _updateService.AvailableVersion ?? string.Empty);
+                return;
+            }
+            // 先固定回显版本;下载完成后优先采用服务的 ReadyUpdate,不读可能变动的检查结果。
+            string? targetVersion = _updateService.AvailableVersion;
+            await DownloadUpdateWithProgressAsync(progress => _updateService.DownloadUpdateAsync(progress), targetVersion);
         }
-        if (!_updateService.CanSelfUpdate)
+        finally
         {
-            // 有新版本但应用目录不可写(如装在 Program Files),只能提示手动下载。
-            UpdateStatus = Strings.Format(
-                "SetAbout_UpdateAvailableManual",
-                _updateService.AvailableVersion ?? string.Empty
-            );
+            EndUpdateOperation();
+        }
+    }
+
+    /// <summary>下载日志中选定的发布清单;不重新检查、不修改更新通道,也不自动重启。</summary>
+    public async Task UpdateFromReleaseAsync(UpdateManifest manifest)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        if (!TryBeginUpdateOperation())
+        {
             return;
         }
+        try
+        {
+            if (ReadyUpdate is { } ready)
+            {
+                UpdateReady = true;
+                if (IsSameUpdate(ready, manifest))
+                {
+                    ShowReadyUpdate(ready.Version);
+                }
+                else
+                {
+                    UpdateStatus = Strings.Get("ReleaseNotes_UpdateConflict");
+                }
+                return;
+            }
+            if (UpdateReady)
+            {
+                // 无参数下载的兼容态(包括未返回 ReadyUpdate 的测试替身):
+                // 已经报告成功的包不能因缺少目标元数据就被另一入口覆盖。
+                UpdateStatus = Strings.Get("ReleaseNotes_UpdateConflict");
+                return;
+            }
+            if (OperatingSystem.IsLinux() || !CanSelfUpdate)
+            {
+                UpdateStatus = Strings.Format("SetAbout_UpdateAvailableManual", manifest.Version);
+                return;
+            }
+            await DownloadUpdateWithProgressAsync(
+                progress => _updateService!.DownloadUpdateAsync(manifest, progress), manifest.Version);
+        }
+        finally
+        {
+            EndUpdateOperation();
+        }
+    }
+
+    private static bool IsSameUpdate(UpdateManifest left, UpdateManifest right) =>
+        string.Equals(left.Version, right.Version, StringComparison.Ordinal)
+        && string.Equals(left.Tag, right.Tag, StringComparison.Ordinal)
+        && SameAsset(left.AssetForCurrentPlatform(), right.AssetForCurrentPlatform());
+
+    private static bool SameAsset(UpdateAsset? left, UpdateAsset? right) =>
+        left is not null
+        && right is not null
+        && string.Equals(left.Name, right.Name, StringComparison.Ordinal)
+        && string.Equals(left.Sha256, right.Sha256, StringComparison.OrdinalIgnoreCase)
+        && left.Size == right.Size;
+
+    private async Task DownloadUpdateWithProgressAsync(
+        Func<IProgress<UpdateDownloadProgress>, Task> download, string? targetVersion)
+    {
         try
         {
             UpdateDownloadTracker tracker = new();
@@ -1003,7 +1149,7 @@ public partial class SettingsViewModel : ReactiveObject
             });
             try
             {
-                await _updateService.DownloadUpdateAsync(progress);
+                await download(progress);
             }
             finally
             {
@@ -1017,11 +1163,7 @@ public partial class SettingsViewModel : ReactiveObject
             UpdateStatus = Strings.Get("SetAbout_DownloadFailed");
             return;
         }
-        UpdateReady = true;
-        UpdateStatus = Strings.Format(
-            "SetAbout_UpdateReady",
-            _updateService.AvailableVersion ?? string.Empty
-        );
+        ShowReadyUpdate(ReadyUpdate?.Version ?? targetVersion ?? _updateService?.AvailableVersion);
     }
 
     /// <summary>

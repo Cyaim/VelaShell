@@ -1,4 +1,9 @@
 using System.Net;
+using NSubstitute;
+using VelaShell.Core.Services;
+using VelaShell.Core.Data;
+using VelaShell.Services;
+using VelaShell.ViewModels;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -370,6 +375,227 @@ public sealed class ReleaseNotesDialogUiTests
         }
     });
 
+    [TestMethod]
+    [DataRow("1.2.0", "v1.4.0", "v1.4.0", true)]
+    [DataRow("1.4.0", "v1.4.0", "v1.4.0", false)]
+    [DataRow("1.5.0-beta.1", "v1.4.0", "v1.5.0-beta.1", false)]
+    public Task VersionSelection_ShowsCurrentOrLatestStable(string current, string latest, string expected, bool newer) =>
+        _session.RunOnUiAsync(() =>
+        {
+            var source = new StubSource(_ => Task.FromResult<ReleaseNotes?>(new(latest, "latest")))
+            {
+                CurrentNotes = version => Task.FromResult<ReleaseNotes?>(new("v" + version, "current"))
+            };
+            var dialog = new ReleaseNotesDialog(source, current);
+            dialog.Show();
+            try
+            {
+                Assert.AreEqual(expected, dialog.FindControl<SelectableTextBlock>("VersionText")!.Text);
+                Assert.AreEqual(Strings.Get(newer ? "ReleaseNotes_Latest" : "ReleaseNotes_CurrentVersion"),
+                    dialog.FindControl<TextBlock>("VersionBadge")!.Text);
+                Assert.AreEqual(expected == latest ? 0 : 1, source.CurrentCalls);
+                Assert.IsFalse(dialog.FindControl<Button>("UpdateButton")!.IsVisible);
+            }
+            finally { dialog.Close(); }
+        });
+
+    [TestMethod]
+    public Task LatestFailure_KeepsCurrentNotesAndOffersRetry() => _session.RunOnUiAsync(() =>
+    {
+        var source = new StubSource(_ => Task.FromException<ReleaseNotes?>(new HttpRequestException("offline")))
+        {
+            CurrentNotes = _ => Task.FromResult<ReleaseNotes?>(new("v1.2.0", "current"))
+        };
+        var dialog = new ReleaseNotesDialog(source, "1.2.0");
+        dialog.Show();
+        try
+        {
+            Assert.AreEqual("v1.2.0", dialog.FindControl<SelectableTextBlock>("VersionText")!.Text);
+            Assert.IsTrue(dialog.FindControl<ScrollViewer>("NotesScroll")!.IsVisible);
+            Assert.AreEqual(Strings.Get("ReleaseNotes_CheckFailed"), dialog.FindControl<TextBlock>("CheckStatusText")!.Text);
+            Assert.IsTrue(dialog.FindControl<Button>("RetryButton")!.IsVisible);
+        }
+        finally { dialog.Close(); }
+    });
+
+    [TestMethod]
+    public Task MissingCurrentRelease_DoesNotShowOlderStableAsCurrent() => _session.RunOnUiAsync(() =>
+    {
+        var source = new StubSource(_ => Task.FromResult<ReleaseNotes?>(new("v1.2.0", "old")))
+        {
+            CurrentNotes = _ => Task.FromResult<ReleaseNotes?>(null)
+        };
+        var dialog = new ReleaseNotesDialog(source, "2.0.0-beta.1");
+        dialog.Show();
+        try
+        {
+            Assert.IsFalse(dialog.FindControl<Border>("ReleaseHeader")!.IsVisible);
+            Assert.AreEqual(Strings.Get("ReleaseNotes_NoCurrentRelease"), dialog.FindControl<TextBlock>("StatusText")!.Text);
+            Assert.IsFalse(dialog.FindControl<Button>("UpdateButton")!.IsVisible);
+        }
+        finally { dialog.Close(); }
+    });
+
+    [TestMethod]
+    public Task UnknownVersion_DoesNotRequestOrOfferInstallation() => _session.RunOnUiAsync(() =>
+    {
+        var source = new StubSource(_ => throw new AssertFailedException("不应请求未知版本"));
+        var dialog = new ReleaseNotesDialog(source, (string?)null);
+        dialog.Show();
+        try
+        {
+            Assert.AreEqual(0, source.Calls);
+            Assert.AreEqual(Strings.Get("ReleaseNotes_UnknownVersion"), dialog.FindControl<TextBlock>("StatusText")!.Text);
+            Assert.IsFalse(dialog.FindControl<Button>("UpdateButton")!.IsVisible);
+        }
+        finally { dialog.Close(); }
+    });
+
+    [TestMethod]
+    public Task StoreBuild_ShowsLogsButNoInstallAction() => _session.RunOnUiAsync(() =>
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CurrentVersion.Returns("1.0.0");
+        updates.IsStoreManaged.Returns(true);
+        SettingsViewModel vm = new(Substitute.For<ISettingsService>(), Substitute.For<IThemeService>(), updateService: updates);
+        var source = new StubSource(_ => Task.FromResult<ReleaseNotes?>(new("v2.0.0", "notes")));
+        var dialog = new ReleaseNotesDialog(source, vm);
+        dialog.Show();
+        try
+        {
+            Assert.AreEqual("v2.0.0", dialog.FindControl<SelectableTextBlock>("VersionText")!.Text);
+            Assert.IsFalse(dialog.FindControl<Button>("UpdateButton")!.IsVisible);
+            Assert.AreEqual(Strings.Get("SetAbout_StoreManagedUpdates"), dialog.FindControl<TextBlock>("UpdateStatusText")!.Text);
+        }
+        finally { dialog.Close(); }
+    });
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task NewRelease_ActionReflectsInstallationMode(bool selfUpdate) => _session.RunOnUiAsync(() =>
+    {
+        UpdateManifest manifest = UpdateManifest.Parse(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            version = "2.0.0",
+            tag = "v2.0.0",
+            assets = new Dictionary<string, object>
+            {
+                [UpdateManifest.CurrentRid()!] = new { name = "package.zip", sha256 = new string('a', 64), size = 12 }
+            }
+        }));
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CurrentVersion.Returns("1.0.0");
+        updates.CanSelfUpdate.Returns(selfUpdate);
+        SettingsViewModel vm = new(Substitute.For<ISettingsService>(), Substitute.For<IThemeService>(), updateService: updates);
+        var dialog = new ReleaseNotesDialog(new StubSource(_ => Task.FromResult<ReleaseNotes?>(
+            new("v2.0.0", "notes", HtmlUrl: "https://github.com/owner/repo/releases/tag/v2.0.0", Manifest: manifest))), vm);
+        dialog.Show();
+        try
+        {
+            Button button = dialog.FindControl<Button>("UpdateButton")!;
+            Assert.IsTrue(button.IsVisible);
+            Assert.IsTrue(button.IsEnabled);
+            Assert.AreEqual(Strings.Get(selfUpdate && !OperatingSystem.IsLinux()
+                ? "ReleaseNotes_UpdateNow" : "ReleaseNotes_OpenReleasePage"), button.Content);
+            Assert.AreEqual(new Uri("https://github.com/owner/repo/releases/tag/v2.0.0"), dialog.ReleaseUri);
+        }
+        finally { dialog.Close(); }
+    });
+
+    [TestMethod]
+    [OSCondition(OperatingSystems.Windows | OperatingSystems.OSX)]
+    public Task UpdateButton_ReadyTargetRestarts_FailedDownloadCanRetry() => _session.RunOnUiAsync(async () =>
+    {
+        UpdateManifest manifest = UpdateManifest.Parse(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            version = "2.0.0",
+            tag = "v2.0.0",
+            assets = new Dictionary<string, object>
+            {
+                [UpdateManifest.CurrentRid()!] = new { name = "package.zip", sha256 = new string('a', 64), size = 12 }
+            }
+        }));
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CurrentVersion.Returns("1.0.0");
+        updates.CanSelfUpdate.Returns(true);
+        int attempts = 0;
+        updates.DownloadUpdateAsync(manifest, Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (++attempts == 1)
+                {
+                    return Task.FromException(new IOException("offline"));
+                }
+                updates.ReadyUpdate.Returns(manifest);
+                return Task.CompletedTask;
+            });
+        SettingsViewModel vm = new(Substitute.For<ISettingsService>(), Substitute.For<IThemeService>(), updateService: updates);
+        var dialog = new ReleaseNotesDialog(new StubSource(_ => Task.FromResult<ReleaseNotes?>(
+            new("v2.0.0", "notes", Manifest: manifest))), vm);
+        dialog.Show();
+        try
+        {
+            Button button = dialog.FindControl<Button>("UpdateButton")!;
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntilAsync(() => !vm.IsUpdating);
+            Assert.AreEqual(Strings.Get("SetAbout_DownloadFailed"), vm.UpdateStatus);
+            Assert.IsTrue(button.IsEnabled, "失败后必须能够重试");
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntilAsync(() => !vm.IsUpdating);
+            Assert.AreEqual(Strings.Get("SetAbout_RestartToUpdate"), button.Content);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntilAsync(() => !vm.IsUpdating);
+            updates.Received(1).ApplyUpdateAndRestart();
+            await updates.DidNotReceive().CheckForUpdateAsync();
+        }
+        finally { dialog.Close(); }
+    });
+
+    [TestMethod]
+    [OSCondition(OperatingSystems.Windows | OperatingSystems.OSX)]
+    public Task UpdateClick_DownloadsDisplayedSnapshot_ContinuesAfterClose() => _session.RunOnUiAsync(async () =>
+    {
+        string rid = UpdateManifest.CurrentRid()!;
+        UpdateManifest manifest = UpdateManifest.Parse($$$"""
+            {"version":"2.0.0","tag":"v2.0.0","assets":{"{{{rid}}}":{"name":"package.zip","sha256":"{{{new string('a', 64)}}}","size":12} } }
+            """);
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CurrentVersion.Returns("1.0.0");
+        updates.CanSelfUpdate.Returns(true);
+        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        updates.DownloadUpdateAsync(manifest, Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => completion.Task);
+        SettingsViewModel vm = new(Substitute.For<ISettingsService>(), Substitute.For<IThemeService>(), updateService: updates);
+        var dialog = new ReleaseNotesDialog(new StubSource(_ => Task.FromResult<ReleaseNotes?>(
+            new("v2.0.0", "notes", Manifest: manifest))), vm);
+        dialog.Show();
+        Button button = dialog.FindControl<Button>("UpdateButton")!;
+        try
+        {
+            Assert.IsTrue(button.IsVisible);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.IsTrue(vm.IsUpdating);
+            Assert.IsFalse(button.IsEnabled);
+            Assert.IsTrue(dialog.FindControl<TextBlock>("DownloadNotice")!.IsVisible);
+            dialog.Close();
+            Assert.IsTrue(vm.IsUpdating, "关闭日志不能取消已经启动的下载");
+            updates.ReadyUpdate.Returns(manifest);
+            completion.SetResult();
+            await WaitUntilAsync(() => !vm.IsUpdating);
+            Assert.IsTrue(vm.UpdateReady);
+            await updates.DidNotReceive().CheckForUpdateAsync();
+            updates.DidNotReceive().ApplyUpdateAndRestart();
+            await updates.Received(1).DownloadUpdateAsync(manifest,
+                Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            completion.TrySetResult();
+            dialog.Close();
+        }
+    });
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
@@ -392,6 +618,8 @@ public sealed class ReleaseNotesDialogUiTests
     private sealed class StubSource(Func<CancellationToken, Task<ReleaseNotes?>> getNotes) : IReleaseNotesSource
     {
         public int Calls { get; private set; }
+        public int CurrentCalls { get; private set; }
+        public Func<string, Task<ReleaseNotes?>>? CurrentNotes { get; init; }
         public CancellationToken Token { get; private set; }
 
         public Task<ReleaseNotes?> GetLatestReleaseNotesAsync(CancellationToken cancellationToken = default)
@@ -399,6 +627,14 @@ public sealed class ReleaseNotesDialogUiTests
             Calls++;
             Token = cancellationToken;
             return getNotes(cancellationToken);
+        }
+
+        public Task<ReleaseNotes?> GetReleaseNotesForVersionAsync(string version, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            CurrentCalls++;
+            Token = cancellationToken;
+            return CurrentNotes?.Invoke(version) ?? getNotes(cancellationToken);
         }
     }
 }

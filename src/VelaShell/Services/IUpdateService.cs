@@ -44,6 +44,18 @@ public interface IUpdateService
         IProgress<Update.UpdateDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>已下载且通过完整性校验的更新快照;尚未就绪时为 null,检查更新不会清除它。</summary>
+    Update.UpdateManifest? ReadyUpdate { get; }
+
+    /// <summary>
+    /// 下载指定清单的更新,不再查询最新版本。目标必须比当前版本新,且本安装支持自更新。
+    /// 正在下载、换版或修复时立即拒绝;已有不同目标的就绪包时,须先明确修复重置再切换。
+    /// </summary>
+    Task DownloadUpdateAsync(
+        Update.UpdateManifest manifest,
+        IProgress<Update.UpdateDownloadProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+
     /// <summary>应用已下载的更新并重启应用。</summary>
     void ApplyUpdateAndRestart();
 
