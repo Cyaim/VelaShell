@@ -458,7 +458,8 @@ internal sealed partial class RemoteFsCapability
         catch (Exception ex)
         {
             bool stopped = (!writing || closed) && !committing;
-            bool timeout = options.Timeout is { } budget && Stopwatch.GetElapsedTime(op.RegisteredTicks) >= budget && !Read(op).CancellationRequested && !lifetime.IsCancellationRequested;
+            bool timeout = options.Timeout is not null && op.Stop.IsCancellationRequested && !Read(op).CancellationRequested
+                && !lifetime.IsCancellationRequested && !op.PermissionRevoked;
             Update(op, s => s with
             {
                 State = timeout ? RemoteTransferState.TimedOut : committing || !stopped ? RemoteTransferState.Unknown
