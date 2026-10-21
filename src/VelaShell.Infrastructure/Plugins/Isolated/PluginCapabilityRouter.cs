@@ -28,7 +28,8 @@ internal sealed class PluginCapabilityRouter : IDisposable
     private readonly CancellationTokenRegistration _shutdownRegistration;
 
     /// <summary>有执行操作时不允许空闲回收;显式停用仍无条件取消。</summary>
-    internal int ActiveExecutions => _executions.ActiveCount;
+    internal int ActiveExecutions => _executions.ActiveCount
+        + (_context.RemoteFs is Capabilities.RemoteFsCapability transfers ? transfers.ActiveTransfers : 0);
     private volatile bool _handshakeDone;
     private bool _disposed;
 
@@ -49,6 +50,7 @@ internal sealed class PluginCapabilityRouter : IDisposable
         _executions = new(context.Shutdown);
         _shutdownRegistration = context.Shutdown.Register(_executions.Stop);
         rpc.Disconnected += _executions.Stop;
+        rpc.Disconnected += StopTransfers;
         // 宿主事件 → 插件进程通知。订阅挂在 context.Events(PluginEventHub)上,
         // context.Dispose 时统一拆除。
         context.Events.SessionConnected += session =>
@@ -225,6 +227,30 @@ internal sealed class PluginCapabilityRouter : IDisposable
                     await _context.RemoteFs.UploadFileAsync(request.SessionId, request.LocalPath, request.RemotePath,
                         ProgressFor(request.ProgressToken), cancellationToken).ConfigureAwait(false);
                     return null;
+                }
+            case PluginRpc.FsTransferStartUpload:
+                {
+                    FsTransferStartUploadRequest request = Get<FsTransferStartUploadRequest>(payload);
+                    return await _context.RemoteFs.StartUploadAsync(request.SessionId, request.LocalPath, request.RemotePath,
+                        request.Options, cancellationToken).ConfigureAwait(false);
+                }
+            case PluginRpc.FsTransferGet:
+                return await _context.RemoteFs.GetTransferAsync(Get<FsTransferRef>(payload).TransferId, cancellationToken).ConfigureAwait(false);
+            case PluginRpc.FsTransferWait:
+                {
+                    FsTransferWaitRequest request = Get<FsTransferWaitRequest>(payload);
+                    return await _context.RemoteFs.WaitTransferAsync(request.TransferId, request.AfterSequence,
+                        TimeSpan.FromSeconds(request.WaitSeconds), cancellationToken).ConfigureAwait(false);
+                }
+            case PluginRpc.FsTransferCancel:
+                {
+                    FsTransferCancelRequest request = Get<FsTransferCancelRequest>(payload);
+                    return await _context.RemoteFs.CancelTransferAsync(request.TransferId, request.ExpectedGeneration, cancellationToken).ConfigureAwait(false);
+                }
+            case PluginRpc.FsTransferResume:
+                {
+                    FsTransferResumeRequest request = Get<FsTransferResumeRequest>(payload);
+                    return await _context.RemoteFs.ResumeTransferAsync(request.TransferId, request.Options, cancellationToken).ConfigureAwait(false);
                 }
             case PluginRpc.FsOpenRead:
                 {
@@ -525,7 +551,7 @@ internal sealed class PluginCapabilityRouter : IDisposable
             // 主题身份握手就给:插件在 Activate 里建界面时就要知道自己长在哪套主题上,
             // 等第一条 theme/tokens 通知就晚了。
             ThemeInfo: _context.Theme.Current)
-        { SupportsExecutionOperations = true };
+        { SupportsExecutionOperations = true, SupportsTransferOperations = _context.RemoteFs.SupportsTransferOperations };
     }
 
     /// <summary>取已打开的 measurement 句柄;插件必须先 <see cref="PluginRpc.TimeSeriesOpen" />。</summary>
@@ -558,6 +584,8 @@ internal sealed class PluginCapabilityRouter : IDisposable
         }
     }
 
+    private void StopTransfers() => (_context.RemoteFs as IDisposable)?.Dispose();
+
     /// <summary>拆除命令/面板注册(context 本体由 PluginManager 统一释放)。</summary>
     public void Dispose()
     {
@@ -569,6 +597,8 @@ internal sealed class PluginCapabilityRouter : IDisposable
         _executions.Stop();
         _shutdownRegistration.Dispose();
         _rpc.Disconnected -= _executions.Stop;
+        _rpc.Disconnected -= StopTransfers;
+        StopTransfers();
         foreach (IDisposable handle in _commandRegistrations.Values)
         {
             handle.Dispose();

@@ -1695,6 +1695,7 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             return Volatile.Read(ref runtime.RunningCommands) > 0
                    || runtime.Context?.RemoteTunnel.ActiveTunnels > 0
                    || runtime.Context?.RemoteExec is RemoteExecCapability { ActiveStreams: > 0 }
+                   || runtime.Context?.RemoteFs is RemoteFsCapability { ActiveTransfers: > 0 }
                    || runtime.Descriptor.Manifest is not { } manifest
                    || CountOpenSurfaces(runtime, manifest) > 0;
         }
@@ -2389,7 +2390,7 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
                 ? new SessionsCapability(manifest.Id, connections, options.SessionProfiles, options.SessionOpener)
                 : new EmptySessionsApi(),
             RemoteFs = options is { Sftp: { } sftp, Connections: { } conn }
-                ? new RemoteFsCapability(sftp, conn)
+                ? new RemoteFsCapability(sftp, conn, runtime.Lifetime.Token, manifest.Id, options.UploadPermissions)
                 : new UnavailableRemoteFs(),
             RemoteExec = options.Connections is { } execConnections
                 ? new RemoteExecCapability(execConnections, manifest.Id, options.SudoPrompt, runtime.Lifetime.Token)

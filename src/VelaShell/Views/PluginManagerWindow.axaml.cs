@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using VelaShell.Core.Resources;
 using VelaShell.Infrastructure.Plugins;
 using VelaShell.PluginSdk.Packaging;
@@ -12,19 +13,33 @@ namespace VelaShell.Views;
 
 /// <summary>
 /// 插件管理窗口(自绘卡片窗口,与资源监视器同规格):列出插件、启停、卸载、
-/// 撤销终端授权、从 .vpx 安装。
+/// 撤销敏感能力授权、从 .vpx 安装。
 /// </summary>
 public partial class PluginManagerWindow : Window
 {
+    private readonly DispatcherTimer _permissionRefresh = new() { Interval = TimeSpan.FromMilliseconds(500) };
     /// <summary>初始化窗口,按平台装外框(最大化时卡片铺满、抓取区让位也由 <see cref="WindowChrome" /> 管)。</summary>
     public PluginManagerWindow()
     {
         InitializeComponent();
         WindowChrome.Apply(this, WindowChromeKind.Tool, ResizeGrips);
-        Closed += (_, _) => (DataContext as PluginManagerViewModel)?.Dispose();
+        _permissionRefresh.Tick += (_, _) => RefreshPermissions();
+        Opened += (_, _) => { _permissionRefresh.Start(); RefreshPermissions(); };
+        Activated += (_, _) => RefreshPermissions();
+        Closed += (_, _) =>
+        {
+            _permissionRefresh.Stop();
+            (DataContext as PluginManagerViewModel)?.Dispose();
+        };
     }
 
     private PluginManagerViewModel? ViewModel => DataContext as PluginManagerViewModel;
+
+    private void RefreshPermissions()
+    {
+        if (IsVisible && ViewModel is { } vm)
+            FireAndForget.Run(vm.RefreshPermissionGrantsAsync);
+    }
 
     private void Header_PointerPressed(object? sender, PointerPressedEventArgs e)
     {

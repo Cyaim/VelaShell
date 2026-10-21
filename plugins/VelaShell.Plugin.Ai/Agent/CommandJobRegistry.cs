@@ -637,9 +637,13 @@ public sealed class CommandJobRunScope : IAsyncDisposable
     /// <summary>仍有尚未消费完成通知的有限后台任务。</summary>
     public bool HasActiveJobs => !IsDisposed && _registry.HasActiveJobs(this);
     /// <summary>本轮存在 Unknown 或已启动且未确认停止的 TimedOut,不得自动推进或重放。</summary>
-    public bool HasUnknownOutcome => !IsDisposed && _registry.HasUnknownOutcome(this);
+    public bool HasUnknownOutcome => (!IsDisposed && _registry.HasUnknownOutcome(this))
+        || Transfers?.HasUnknownOutcome == true;
+    /// <summary>与本轮绑定的独立上传；模型 Stop 不取消已批准的宿主传输。</summary>
+    public FileTransferRunScope? Transfers { get; internal set; }
     /// <summary>本轮审批或认证被拒绝,不得自动推进任何后续工具。拒绝不封轮次的(MCP)恒为 false。</summary>
-    public bool HasDeniedExecution => Volatile.Read(ref _executionDenied) != 0;
+    public bool HasDeniedExecution => Volatile.Read(ref _executionDenied) != 0
+        || (_denialEndsRun && Transfers?.HasDeniedExecution == true);
     internal void MarkExecutionDenied()
     {
         if (_denialEndsRun)
@@ -681,6 +685,7 @@ public sealed class CommandJobRunScope : IAsyncDisposable
             return;
         }
         await _registry.DisposeRunAsync(this).ConfigureAwait(false);
+        if (Transfers is { } transfers) await transfers.DisposeAsync().ConfigureAwait(false);
         CancelSource.Dispose();
     }
 }

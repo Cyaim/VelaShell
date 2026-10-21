@@ -37,6 +37,32 @@ public sealed class BridgeAgentRunner(
 {
     /// <summary>函数调用循环的单轮上限。IM 那头没人盯着,给得比面板保守一点。</summary>
     private const int MaxToolIterations = 20;
+    private readonly Lock _transfersGate = new();
+    private readonly HashSet<BridgeTransferObserver> _transfers = [];
+    private readonly HashSet<FileTransferRunScope> _transferCleanupScopes = [];
+    private CancellationTokenSource _transferLifetime = new();
+
+    /// <summary>入口销毁或授权重载时取消上传，不用于模型Stop。</summary>
+    public void CancelTransfers()
+    {
+        BridgeTransferObserver[] observers;
+        FileTransferRunScope[] scopes;
+        CancellationTokenSource stopping;
+        lock (_transfersGate)
+        {
+            stopping = _transferLifetime; _transferLifetime = new();
+            observers = [.. _transfers]; _transfers.Clear();
+            scopes = [.. _transferCleanupScopes]; _transferCleanupScopes.Clear();
+        }
+        stopping.Cancel(); stopping.Dispose();
+        foreach (var observer in observers) observer.Dispose();
+        foreach (var scope in scopes) _ = CancelAsync(scope);
+        async Task CancelAsync(FileTransferRunScope scope)
+        {
+            try { await scope.CancelAllAsync().ConfigureAwait(false); }
+            catch (Exception ex) { context.Log.Warn($"Bridge upload cleanup failed: {ex.Message}"); }
+        }
+    }
 
     /// <summary>
     /// 跑一轮。<paramref name="progress" /> 每拿到一批增量就被调一次(参数是<b>累计</b>文本),
@@ -53,6 +79,7 @@ public sealed class BridgeAgentRunner(
     /// 这也是升级前那些聊天的取值,所以老配置的行为逐字不变。
     /// </param>
     /// <param name="cancellationToken">取消。</param>
+    /// <param name="localWaiting">仅上传本地等待时暂停模型请求预算；不改变命令等待时限。</param>
     public async Task<BridgeTurn> RunAsync(
         BridgeConversation conversation,
         BridgeSettings bridge,
@@ -61,7 +88,8 @@ public sealed class BridgeAgentRunner(
         Loc loc,
         Action<string>? progress,
         ChatGrant? grant,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<bool>? localWaiting = null)
     {
         ArgumentNullException.ThrowIfNull(conversation);
         ArgumentNullException.ThrowIfNull(bridge);
@@ -151,6 +179,33 @@ public sealed class BridgeAgentRunner(
                 }
             });
         IChatClient client = new RecoveringChatClient(steering, execution, loc["ContinuationBoundary"]);
+        CancellationToken transferLifetime;
+        lock (_transfersGate) transferLifetime = _transferLifetime.Token;
+        var transferObserver = new BridgeTransferObserver(runScope.Transfers!, loc,
+            text => progress?.Invoke(text),
+            text =>
+            {
+                if (hub is not null && !context.Shutdown.IsCancellationRequested && !transferLifetime.IsCancellationRequested)
+                    _ = ReportTransferAsync(text);
+            },
+            observer =>
+            {
+                lock (_transfersGate)
+                {
+                    _transfers.Remove(observer);
+                    if (!observer.Scope.HasRunningTransfers) _transferCleanupScopes.Remove(observer.Scope);
+                }
+            });
+        async Task ReportTransferAsync(string text)
+        {
+            try
+            {
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.Shutdown, transferLifetime);
+                await hub!.SendAsync(conversation.ChannelId, conversation.Reply, text, linked.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) { context.Log.Warn($"Bridge upload report failed: {ex.Message}"); }
+        }
+        lock (_transfersGate) { _transfers.Add(transferObserver); _transferCleanupScopes.Add(runScope.Transfers!); }
         try
         {
             var options = new ChatOptions
@@ -219,7 +274,7 @@ public sealed class BridgeAgentRunner(
             {
                 await foreach (ChatResponseUpdate update in coordinator.RunAsync(client, request.Messages, options,
                                    () => progress?.Invoke($"{accumulated}\n\n{loc["WaitingForJobs"]}"), cancellationToken,
-                                   batch => progress?.Invoke($"{accumulated}\n\n{loc.F("ContinuingBatch", batch)}"))
+                                   batch => progress?.Invoke($"{accumulated}\n\n{loc.F("ContinuingBatch", batch)}"), localWaiting)
                                    .ConfigureAwait(false))
                 {
                     updates.Add(update);
@@ -229,6 +284,7 @@ public sealed class BridgeAgentRunner(
                         {
                             case TextContent { Text.Length: > 0 } text:
                                 accumulated.Append(text.Text);
+                                transferObserver.Text(accumulated.ToString());
                                 progress?.Invoke(accumulated.ToString());
                                 break;
 
@@ -278,6 +334,7 @@ public sealed class BridgeAgentRunner(
         }
         finally
         {
+            transferObserver.Finish();
             await runScope.CancelAsync().ConfigureAwait(false);
             client.Dispose();
         }

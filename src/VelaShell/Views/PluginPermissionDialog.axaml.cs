@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
@@ -10,9 +12,8 @@ namespace VelaShell.Views;
 
 /// <summary>
 /// 插件敏感能力的授权弹窗:展示插件、目标与内容预览,给出
-/// 仅本次 / 本次运行 / 始终 / 拒绝 四种选择(蓝图 06 的最小授权流)。
-/// 两种请求共用这一个窗口:终端回写(预览 = 要敲进去的那行)与
-/// 按已保存配置开会话(预览 = 插件给的理由)。
+/// 终端回写与开会话提供仅本次 / 本次运行 / 始终 / 拒绝四种选择。
+/// 文件上传仅允许批准当前任务或拒绝，预览固定的本地源、远端目标和覆盖策略。
 /// </summary>
 public partial class PluginPermissionDialog : Window
 {
@@ -56,20 +57,67 @@ public partial class PluginPermissionDialog : Window
         => ShowAsync(Strings.Get("PluginPermSession_Title"),
             Strings.Format("PluginPermSession_Message", pluginId, target), reason, "Icon.plug");
 
+    /// <summary>上传可信确认只批准当前任务，不授予其它路径或后续上传的永久权限。</summary>
+    public static Task<PluginPermissionDecision> AskFileUploadAsync(string pluginId, string sessionLabel,
+        string localPath, string remotePath, bool overwrite, CancellationToken cancellationToken = default)
+        => ShowAsync(Strings.Get("PluginPermUpload_Title"),
+            Strings.Format("PluginPermUpload_Message", EscapeUploadField(pluginId), EscapeUploadField(sessionLabel)),
+            Strings.Format("PluginPermUpload_Preview", EscapeUploadField(localPath), EscapeUploadField(remotePath),
+                Strings.Get(overwrite ? "PluginPermUpload_Replace" : "PluginPermUpload_NoReplace")),
+            "Icon.upload", uploadOnly: true, cancellationToken);
+
     private static async Task<PluginPermissionDecision> ShowAsync(string title, string message, string preview,
-        string iconKey)
+        string iconKey, bool uploadOnly = false, CancellationToken cancellationToken = default)
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            return await Dispatcher.UIThread.InvokeAsync(() => ShowAsync(title, message, preview, iconKey));
+            return await Dispatcher.UIThread.InvokeAsync(() => ShowAsync(title, message, preview, iconKey, uploadOnly, cancellationToken));
         }
+        if (cancellationToken.IsCancellationRequested)
+            return PluginPermissionDecision.Deny;
         if ((Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)
             ?.MainWindow is not { } owner)
         {
             return PluginPermissionDecision.Deny;
         }
         var dialog = new PluginPermissionDialog(title, message, preview, iconKey);
-        return await dialog.ShowDialog<PluginPermissionDecision>(owner);
+        if (uploadOnly) dialog.ConfigureUploadOnly();
+        Task<PluginPermissionDecision> decision = dialog.ShowDialog<PluginPermissionDecision>(owner);
+        using CancellationTokenRegistration registration = cancellationToken.Register(() =>
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (dialog.IsVisible) dialog.Close(PluginPermissionDecision.Deny);
+            }));
+        PluginPermissionDecision result = await decision;
+        return cancellationToken.IsCancellationRequested ? PluginPermissionDecision.Deny : result;
+    }
+
+    // 仅转义可信确认的显示值，不改变宿主实际审批的源路径和目标路径。
+    internal static string EscapeUploadField(string value)
+    {
+        var result = new StringBuilder(value.Length + 2);
+        result.Append('"');
+        foreach (char c in value)
+        {
+            if (c is '\\' or '"') result.Append('\\').Append(c);
+            else if (char.GetUnicodeCategory(c) is UnicodeCategory.Control or UnicodeCategory.Format
+                     or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator)
+                result.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
+            else result.Append(c);
+        }
+        return result.Append('"').ToString();
+    }
+
+    internal void ConfigureUploadOnly()
+    {
+        PreviewScroll.MaxHeight = 240;
+        PreviewScroll.HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
+        PreviewText.TextWrapping = Avalonia.Media.TextWrapping.NoWrap;
+        MessageScroll.MaxHeight = 120;
+        SessionButton.IsVisible = false;
+        AlwaysButton.IsVisible = false;
+        AlwaysButton.IsDefault = false;
+        OnceButton.Content = Strings.Get("PluginPermUpload_AllowOnce");
     }
 
     private void Header_PointerPressed(object? sender, PointerPressedEventArgs e)

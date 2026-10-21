@@ -40,6 +40,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
 {
     private readonly CommandJobRegistry _jobs = new(context.RemoteExec, context, context.Shutdown);
     private readonly AsyncLocal<CommandJobRunScope?> _invocationScope = new();
+    internal static readonly AsyncLocal<string?> InvocationIdentity = new();
     private CommandJobRunScope? _defaultRun;
     private readonly Lock _defaultRunGate = new();
 
@@ -49,9 +50,17 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
     /// </summary>
     public CommandJobRunScope BeginRun(string ownerId, string runId, CancellationToken cancellationToken = default,
         bool denialEndsRun = true)
-        => _jobs.BeginRun(ownerId, runId, cancellationToken, async (id, token) =>
-            await context.Sessions.GetAsync(id, token).ConfigureAwait(false) is { } session
-            && await AllowedAsync(session, token).ConfigureAwait(false), denialEndsRun);
+    {
+        // 上传生命周期长于工具箱；只捕获固定授权范围与宿主上下文，不保留工具箱/UI。
+        IPluginContext runContext = context;
+        ISessionScope? runAuthorization = Scope;
+        async Task<bool> Authorize(string id, CancellationToken token)
+            => await runContext.Sessions.GetAsync(id, token).ConfigureAwait(false) is { } session
+                && (runAuthorization is null || await runAuthorization.AllowsLiveAsync(session, token).ConfigureAwait(false));
+        CommandJobRunScope run = _jobs.BeginRun(ownerId, runId, cancellationToken, Authorize, denialEndsRun);
+        run.Transfers = FileTransferJobRegistry.For(context).BeginRun(ownerId, runId, Authorize);
+        return run;
+    }
 
     private CommandJobRunScope CurrentRun
     {
@@ -74,8 +83,8 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
     private const int MaxDirectoryEntries = 200;
     private const int MaxCommandOutput = 32 * 1024;
 
-    /// <summary>本机文件上传的大小上限:比文本写入宽松得多,但也别让一次调用把内存吃光。</summary>
-    private const long MaxUploadBytes = 32 * 1024 * 1024;
+    /// <summary>下载仍保留现有的 32 MiB 上限；独立上传没有固定大小上限。</summary>
+    private const long MaxDownloadBytes = 32 * 1024 * 1024;
 
     /// <summary>一次并行执行最多铺多少台。再多就该写脚本了,而且输出也读不过来。</summary>
     private const int MaxParallelSessions = 16;
@@ -170,7 +179,11 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         ("patch_remote_file", "只替换远端文件里的一段文本(不必回传整份)", false),
         ("make_remote_directory", "创建远端目录(幂等)", false),
         ("rename_remote_path", "重命名 / 移动远端文件或目录(改配置前备份用)", false),
-        ("upload_local_file", "把本机文件(如 MCP 工具刚生成的)经 SFTP 传到服务器", false),
+        ("upload_local_file", "启动独立上传，大文件立即返回 transfer_id", false),
+        ("transfer_status", "查看本轮上传状态、字节、速率和预计剩余时间", true),
+        ("transfer_wait", "本地短等上传完成，等待到期不会取消上传", true),
+        ("transfer_cancel", "显式取消本轮上传的指定执行代次", false),
+        ("transfer_resume", "重新审批后显式恢复本轮可恢复上传", false),
         ("download_remote_file", "把远端文件拉到本机(交给本地 MCP 工具处理)", false),
         ("write_terminal", "把文本敲进用户可见的终端", false),
         ("send_file", "把已下载的文件当附件发进当前这个 IM 聊天(只有 IM 那条路有)", false)
@@ -278,7 +291,17 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
 
             ("upload_local_file", AIFunctionFactory.Create(UploadLocalFileAsync, "upload_local_file",
                 "Upload a file from the USER'S OWN MACHINE to the SSH server via SFTP. Requires user approval. "
-                + "Use this after a local MCP tool produced a file (MCP servers run locally, so their output is NOT on the SSH server)."), false),
+                + "No fixed upload size limit. Returns transfer_id and a JSON snapshot promptly; host-owned uploads survive request timeout and model Stop. "
+                + "Use this after a local MCP tool produced a file (MCP servers run locally, so their output is NOT on the SSH server). "
+                + "Never automatically retry Unknown or uncertain uploads."), false),
+            ("transfer_status", AIFunctionFactory.Create(TransferStatusAsync, "transfer_status",
+                "Read an upload belonging to this run: state, generation, bytes, speed, ETA and still-running status. Never access another conversation's transfer."), true),
+            ("transfer_wait", AIFunctionFactory.Create(TransferWaitAsync, "transfer_wait",
+                "Wait locally for upload completion, at most 30 seconds. Expiry or request cancellation does not cancel the upload. Desktop agents receive one local completion notification."), true),
+            ("transfer_cancel", AIFunctionFactory.Create(TransferCancelAsync, "transfer_cancel",
+                "Explicitly cancel this run's upload with its expectedGeneration. A stale generation must not stop a resumed transfer."), false),
+            ("transfer_resume", AIFunctionFactory.Create(TransferResumeAsync, "transfer_resume",
+                "Explicitly resume a host-confirmed resumable upload, after fresh user approval. Choose the current target session explicitly; never start over for Unknown outcomes."), false),
 
             ("download_remote_file", AIFunctionFactory.Create(DownloadRemoteFileAsync, "download_remote_file",
                 "Download a file from the SSH server to the USER'S OWN MACHINE via SFTP. Requires user approval. "
@@ -335,7 +358,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             {
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, scope.Token);
                 linked.Token.ThrowIfCancellationRequested();
-                if (scope.HasDeniedExecution && Name != "task_cancel")
+                if (scope.HasDeniedExecution && Name is not ("task_cancel" or "transfer_cancel"))
                     throw new UnauthorizedAccessException("Execution was denied in this run. A new user request is required.");
                 return await base.InvokeCoreAsync(arguments, linked.Token).ConfigureAwait(false);
             }
@@ -1214,47 +1237,130 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
     /// 既不在 SSH 服务器上,也不在终端的当前目录里 —— 用户找不到、模型还常常当成远端路径去汇报。
     /// </remarks>
     private async Task<string> UploadLocalFileAsync(
-        [Description("Absolute path of a file on the user's own machine (for example one an MCP tool just produced in its working directory).")] string localPath,
+        [Description("Absolute path of a file on the user's own machine.")] string localPath,
         [Description("Absolute destination path on the SSH server (parent directory must exist).")] string remotePath,
-        [Description("Optional session id from list_sessions; omit to use the session selected in the panel.")] string? sessionId = null,
+        [Description("Optional session id from list_sessions.")] string? sessionId = null,
+        [Description("Allow atomic replacement of an existing destination; default false.")] bool overwrite = false,
+        [Description("Optional short wait for a small file, max 2 seconds; large files return immediately.")] int waitSeconds = 0,
         CancellationToken cancellationToken = default)
     {
         (string? id, string? error) = await ResolveAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        if (id is null)
-        {
-            return error!;
-        }
+        if (id is null) return error!;
         localPath = (localPath ?? "").Trim();
-        if (!Path.IsPathRooted(localPath))
-        {
-            return "local_path must be an absolute path on the user's machine.";
-        }
-        if (!File.Exists(localPath))
-        {
-            return $"No such local file: {localPath}. List the MCP working directory first, or ask the tool where it wrote the file.";
-        }
+        remotePath = (remotePath ?? "").Trim();
+        if (!Path.IsPathFullyQualified(localPath)) return "local_path must be an absolute path on the user's machine.";
+        localPath = Path.GetFullPath(localPath);
+        if (!remotePath.StartsWith('/') || remotePath.Contains('\0')) return "remote_path must be an absolute remote path.";
+        if (!File.Exists(localPath)) return "No such local file.";
+        if (!context.RemoteFs.SupportsTransferOperations)
+            return "This host does not support independent upload tasks. No synchronous fallback was attempted.";
         var info = new FileInfo(localPath);
-        if (info.Length > MaxUploadBytes)
-        {
-            return $"Refusing to upload more than {MaxUploadBytes / (1024 * 1024)} MB in one call ({localPath} is {info.Length / (1024 * 1024)} MB).";
-        }
-        if (!await ApproveAsync(new ApprovalRequest("upload_local_file", $"{localPath}\n→ {remotePath}  ({info.Length} bytes)"),
-                cancellationToken).ConfigureAwait(false))
-        {
+        if (!await ApproveAsync(new ApprovalRequest("upload_local_file",
+                $"{localPath}\n→ {remotePath} ({info.Length} bytes, overwrite={overwrite})"), cancellationToken).ConfigureAwait(false))
             return "The user DENIED this upload. Do not retry; ask the user how to proceed.";
-        }
+        CommandJobRunScope run = CurrentRun;
+        string identity = InvocationIdentity.Value ?? Guid.NewGuid().ToString("N");
+        string operationId = FileTransferJobRegistry.StableOperationId(run.OwnerId, run.RunId, "upload:" + identity);
         try
         {
-            // 走 SFTP 的流式上传,别先整份读进内存 —— xmind/压缩包这类产物可以很大
-            await context.RemoteFs.UploadFileAsync(id, localPath, remotePath, cancellationToken: cancellationToken)
-                         .ConfigureAwait(false);
-            return $"Uploaded {info.Length} bytes: {localPath} → {remotePath}.";
+            RemoteTransferSnapshot snapshot = await run.Transfers!.StartAsync(id, localPath, remotePath,
+                operationId, overwrite, cancellationToken).ConfigureAwait(false);
+            if (!snapshot.IsTerminal && info.Length <= 1024 * 1024 && waitSeconds > 0)
+                snapshot = await run.Transfers.WaitAsync(snapshot.TransferId,
+                    TimeSpan.FromSeconds(Math.Clamp(waitSeconds, 0, 2)), cancellationToken).ConfigureAwait(false);
+            return FormatTransfer(snapshot);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or PluginPermissionDeniedException)
         {
-            return $"Failed to upload: {ex.Message}";
+            run.MarkExecutionDenied();
+            return "Upload authorization was denied or revoked. No metadata is provided.";
+        }
+        catch (Exception ex) when (ex is NotSupportedException or ArgumentException)
+        {
+            return "Upload was rejected before execution: unsupported operation or invalid input. No fallback was attempted.";
+        }
+        catch (Exception)
+        {
+            run.Transfers!.UncertainStart = true;
+            return JsonSerializer.Serialize(new { operationId, state = "Unknown",
+                error = "Upload receipt unavailable. Do not automatically start another upload; the remote outcome may be unknown." });
         }
     }
+
+    private async Task<string> TransferStatusAsync(
+        [Description("The transfer_id returned in this run.")] string transferId,
+        CancellationToken cancellationToken = default)
+    {
+        try { return FormatTransfer(await CurrentRun.Transfers!.ReadAsync(transferId, cancellationToken).ConfigureAwait(false)); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { return "Transfer unavailable in this run or current authorization. No metadata is provided."; }
+    }
+
+    private async Task<string> TransferWaitAsync(
+        [Description("The transfer_id returned in this run.")] string transferId,
+        [Description("Local wait in seconds, default 2, max 30; expiry never stops the upload.")] int waitSeconds = 2,
+        CancellationToken cancellationToken = default)
+    {
+        try { return FormatTransfer(await CurrentRun.Transfers!.WaitAsync(transferId,
+            TimeSpan.FromSeconds(Math.Clamp(waitSeconds, 0, 30)), cancellationToken).ConfigureAwait(false)); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { return "Transfer unavailable in this run or current authorization. No metadata is provided."; }
+    }
+
+    private async Task<string> TransferCancelAsync(
+        [Description("The transfer_id returned in this run.")] string transferId,
+        [Description("Expected execution generation from the snapshot; must be positive.")] long expectedGeneration,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!await ApproveAsync(new ApprovalRequest("transfer_cancel",
+                $"Cancel transfer {transferId}, generation={expectedGeneration}"), cancellationToken).ConfigureAwait(false))
+                return "The user DENIED cancelling this upload. Do not retry.";
+            await CurrentRun.Transfers!.CancelAsync(transferId, expectedGeneration, cancellationToken).ConfigureAwait(false);
+            return JsonSerializer.Serialize(new { transfer_id = transferId, cancellationRequested = true,
+                remoteStopConfirmed = false });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { return "Cancellation unavailable: invalid ownership, authorization or execution generation."; }
+    }
+
+    private async Task<string> TransferResumeAsync(
+        [Description("The transfer_id returned in this run.")] string transferId,
+        [Description("Expected stopped generation from the snapshot.")] long expectedGeneration,
+        [Description("Explicit current target session id; host must verify server, account and namespace identity.")] string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            RemoteTransferSnapshot prior = await CurrentRun.Transfers!.ReadAsync(transferId, cancellationToken).ConfigureAwait(false);
+            if (!prior.CanResume) return "The host has not confirmed this transfer is safely resumable. Do not restart it automatically.";
+            (string? id, string? error) = await ResolveAsync(sessionId, cancellationToken).ConfigureAwait(false);
+            if (id is null) return error!;
+            if (!await ApproveAsync(new ApprovalRequest("transfer_resume",
+                $"{prior.LocalPath}\n→ {prior.RemotePath} (generation={expectedGeneration}, target={id})"), cancellationToken).ConfigureAwait(false))
+                return "The user DENIED this resume. Do not retry.";
+            string identity = InvocationIdentity.Value ?? Guid.NewGuid().ToString("N");
+            string operationId = FileTransferJobRegistry.StableOperationId(CurrentRun.OwnerId, CurrentRun.RunId, "resume:" + identity);
+            return FormatTransfer(await CurrentRun.Transfers.ResumeAsync(transferId, new RemoteTransferResumeOptions
+            { OperationId = operationId, ExpectedGeneration = expectedGeneration, TargetSessionId = id }, cancellationToken).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { return "Transfer resume unavailable. No new upload or fallback was attempted."; }
+    }
+
+    /// <summary>用于工具卡关联与模型读取的结构化回执；字节满格不代表成功。</summary>
+    public static string FormatTransfer(RemoteTransferSnapshot snapshot) => JsonSerializer.Serialize(new
+    {
+        transfer_id = snapshot.TransferId, transferId = snapshot.TransferId,
+        state = snapshot.State.ToString(), stillRunning = !snapshot.IsTerminal,
+        generation = snapshot.Generation, sequence = snapshot.Sequence,
+        transferredBytes = snapshot.TransferredBytes, totalBytes = snapshot.TotalBytes,
+        speedBytesPerSecond = snapshot.SpeedBytesPerSecond, etaSeconds = snapshot.EstimatedTimeRemaining?.TotalSeconds,
+        canResume = snapshot.CanResume, remoteStopConfirmed = snapshot.RemoteStopConfirmed,
+        cancellationRequested = snapshot.CancellationRequested, snapshot
+    });
 
     /// <summary>
     /// 把服务器上的文件拉到<b>本机</b> —— <c>upload_local_file</c> 的反向。
@@ -1309,9 +1415,9 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             {
                 return $"{remotePath} is a directory; archive it first (tar) and download the archive.";
             }
-            if (entry.Size > MaxUploadBytes)
+            if (entry.Size > MaxDownloadBytes)
             {
-                return $"Refusing to download more than {MaxUploadBytes / (1024 * 1024)} MB in one call ({entry.Size / (1024 * 1024)} MB).";
+                return $"Refusing to download more than {MaxDownloadBytes / (1024 * 1024)} MB in one call ({entry.Size / (1024 * 1024)} MB).";
             }
             // 往用户自己的磁盘上写东西,一律问一次
             if (!await ApproveAsync(new ApprovalRequest("download_remote_file", $"{remotePath}\n→ {target}  ({entry.Size} bytes)"),

@@ -47,6 +47,9 @@ internal sealed class McpToolHost : IAsyncDisposable
     /// <summary>最后一次活动时刻(空闲会话回收看它)。</summary>
     public DateTimeOffset LastActivity { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>活跃上传不因外部模型暂时没有调用而被闲置回收。</summary>
+    public bool HasActiveTransfers => _runScope.Transfers?.HasRunningTransfers == true;
+
     public McpToolHost(IPluginContext context, McpServerSettings settings)
     {
         _context = context;
@@ -80,7 +83,7 @@ internal sealed class McpToolHost : IAsyncDisposable
 
     /// <summary>按名字调一个工具,返回给模型看的文本。</summary>
     public async Task<string> CallAsync(string name, IDictionary<string, object?> arguments,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? invocationId = null)
     {
         LastActivity = DateTimeOffset.UtcNow;
         if (Tools.FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.Ordinal)) is not { } tool)
@@ -88,13 +91,21 @@ internal sealed class McpToolHost : IAsyncDisposable
             throw new KeyNotFoundException($"Unknown tool: {name}");
         }
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
-        await _calls.WaitAsync(linked.Token).ConfigureAwait(false);
+        // 查询与等待有上限且绑定所有者；不能占写操作锁挡住显式取消。
+        bool serialize = name is not ("transfer_wait" or "transfer_status" or "task_wait" or "task_status");
+        if (serialize) await _calls.WaitAsync(linked.Token).ConfigureAwait(false);
+        string? previous = AgentToolbox.InvocationIdentity.Value;
+        AgentToolbox.InvocationIdentity.Value = invocationId ?? Guid.NewGuid().ToString("N");
         try
         {
             object? result = await tool.InvokeAsync([with(arguments)], linked.Token).ConfigureAwait(false);
             return result?.ToString() ?? "";
         }
-        finally { _calls.Release(); }
+        finally
+        {
+            AgentToolbox.InvocationIdentity.Value = previous;
+            if (serialize) _calls.Release();
+        }
     }
 
     private readonly Lock _disposeGate = new();
@@ -110,6 +121,7 @@ internal sealed class McpToolHost : IAsyncDisposable
         await _calls.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (_runScope.Transfers is { } transfers) await transfers.CancelAllAsync().ConfigureAwait(false);
             await _runScope.DisposeAsync().ConfigureAwait(false);
             await _toolbox.DisposeAsync().ConfigureAwait(false);
             _lifetime.Dispose();

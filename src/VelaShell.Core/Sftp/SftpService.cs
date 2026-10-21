@@ -467,6 +467,22 @@ public class SftpService : ISftpService
         }
     }
 
+    /// <inheritdoc />
+    public async Task CommitUploadAsync(Guid sessionId, string temporaryPath, string destinationPath, bool overwrite,
+        CancellationToken cancellationToken = default)
+    {
+        ISftpClientWrapper client = await GetOrCreateSftpClientAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (overwrite)
+        {
+            await client.AtomicReplaceFileAsync(temporaryPath, destinationPath, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // 不走 RenameAsync 的探测后回退:探测与 POSIX rename 间可能出现新目标。
+            await client.RenameFileAsync(temporaryPath, destinationPath, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
     /// 将远端文件或目录复制到同一服务器的另一路径。
     /// 单个文件经由临时本地文件复制(不在内存中缓冲大文件)。

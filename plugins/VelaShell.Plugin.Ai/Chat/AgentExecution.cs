@@ -81,6 +81,8 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
 
     private async Task CompleteAsync(FunctionInvocationContext context, TaskCompletionSource<object?> completion, CancellationToken token)
     {
+        string? previousIdentity = Agent.AgentToolbox.InvocationIdentity.Value;
+        Agent.AgentToolbox.InvocationIdentity.Value = context.CallContent.CallId;
         try
         {
             // 参数绑定失败时工具体一步都没跑、没有副作用:当普通工具错误交还模型自行改正,
@@ -121,6 +123,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
             }
             completion.TrySetException(ex);
         }
+        finally { Agent.AgentToolbox.InvocationIdentity.Value = previousIdentity; }
     }
 
     internal void BeginStep(IEnumerable<ChatMessage> messages)

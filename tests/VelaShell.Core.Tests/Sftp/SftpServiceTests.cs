@@ -51,6 +51,28 @@ public class SftpServiceTests
         _sftpService = new SftpService(_connectionService, _ => _sftpClient, settings);
     }
 
+    [TestMethod]
+    public async Task AtomicUploadCommit_NoOverwriteNeverFallsBackToPosixOrDeletesTarget()
+    {
+        _sftpClient.RenameFileAsync("/temp", "/target", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new NotSupportedException("normal rename rejected"));
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => _sftpService.CommitUploadAsync(_sessionId, "/temp", "/target", false));
+        await _sftpClient.DidNotReceive().PosixRenameFileAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _sftpClient.DidNotReceive().AtomicReplaceFileAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _sftpClient.DidNotReceive().DeleteFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    public async Task AtomicUploadCommit_OverwriteRequiresStrictReplacementAndNeverDeletesTarget()
+    {
+        _sftpClient.AtomicReplaceFileAsync("/temp", "/target", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new NotSupportedException("no POSIX extension"));
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => _sftpService.CommitUploadAsync(_sessionId, "/temp", "/target", true));
+        await _sftpClient.DidNotReceive().RenameFileAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _sftpClient.DidNotReceive().PosixRenameFileAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _sftpClient.DidNotReceive().DeleteFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     /// <summary>
     /// SFTP 通道死了(sftp-server 退出、服务端关掉闲置通道)而 SSH 连接还在:下一次操作换一个新客户端,
     /// 旧的那个释放掉 —— 而不是让文件面板一直坏到整条 SSH 连接重连。

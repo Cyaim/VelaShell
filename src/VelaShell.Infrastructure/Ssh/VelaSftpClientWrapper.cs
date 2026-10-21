@@ -397,6 +397,16 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
         }, ct);
 
     /// <inheritdoc />
+    public Task AtomicReplaceFileAsync(string oldPath, string newPath, CancellationToken ct = default) =>
+        GuardedAsync(async () =>
+        {
+            SftpFileSystem fs = EnsureConnected();
+            if (!fs.Capabilities.HasPosixRename)
+                throw new NotSupportedException("The server does not support atomic POSIX replacement.");
+            await fs.RenameAsync(oldPath, newPath, overwrite: true, ct).ConfigureAwait(false);
+        }, ct);
+
+    /// <inheritdoc />
     public Task<bool> ExistsAsync(string path, CancellationToken ct = default) =>
         GuardedAsync(async () => await EnsureConnected().ExistsAsync(path, ct).ConfigureAwait(false), ct);
 

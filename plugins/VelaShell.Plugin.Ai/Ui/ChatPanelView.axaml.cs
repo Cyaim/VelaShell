@@ -405,6 +405,7 @@ public partial class ChatPanelView : UserControl
 
     private async Task CleanupDetachedAsync()
     {
+        await CloseTransfersAsync();
         try
         {
             Task[] active = _conversations.Values.Select(c => c.RunCompleted?.Task).OfType<Task>().ToArray();
@@ -1499,6 +1500,7 @@ public partial class ChatPanelView : UserControl
             await PersistAsync("user", display);
             ClearAttachments();
             bubble = new AssistantBubble(this);
+            BindTransfers(runScope, bubble);
             ActiveBubble = bubble;
             MessagesPanel.Children.Add(bubble.Root);
             TrimMessageWindow(); // 常驻条数封顶,别让可视树越聊越长
@@ -2216,6 +2218,7 @@ public partial class ChatPanelView : UserControl
             }
             finally
             {
+                bubble?.Transfers?.Finish();
                 try { await runScope.DisposeAsync(); }
                 finally
                 {
@@ -3425,11 +3428,13 @@ public partial class ChatPanelView : UserControl
             _currentSegment = null;
         }
 
+        public TransferBinding? Transfers { get; set; }
+
         public void CompleteToolCall(string callId, string result)
         {
             if (_toolCards.TryGetValue(callId, out ToolCard? card))
             {
-                card.Complete(result);
+                if (Transfers?.Bind(card, result) != true) card.Complete(result);
             }
             _currentSegment = null;
         }
@@ -3726,7 +3731,7 @@ public partial class ChatPanelView : UserControl
     /// 一次工具调用的紧凑卡片(主流 Agent 风格):
     /// 单行 = 状态图标 + 工具名 + 参数摘要 + 箭头;点击展开完整参数与结果。
     /// </summary>
-    private sealed class ToolCard
+    internal sealed partial class ToolCard
     {
         private readonly ChatPanelView _owner;
         private readonly Decorator _statusIconHost;
@@ -3736,6 +3741,8 @@ public partial class ChatPanelView : UserControl
         private readonly string _argumentsJson;
         private readonly string _name;
         private string _result = "";
+        private readonly TextBlock _argsText;
+        private bool _transferWithheld;
 
         public Border Root { get; }
 
@@ -3764,7 +3771,7 @@ public partial class ChatPanelView : UserControl
             Grid.SetColumn(nameText, 1);
             header.Children.Add(nameText);
 
-            var argsText = new TextBlock
+            var argsText = _argsText = new TextBlock
             {
                 Classes = { "toolArgs" },
                 Text = ChatFormatting.OneLine(argumentsJson, 160),
@@ -3812,12 +3819,20 @@ public partial class ChatPanelView : UserControl
         public void Complete(string result)
         {
             _result = result;
+            if (RestoreTransfer(result)) return;
+            if (_name is "upload_local_file" or "transfer_status" or "transfer_wait" or "transfer_resume" or "transfer_cancel")
+            {
+                _statusIconHost.Child = MakeIcon("Icon.circle-alert", "VelaWarning", 11);
+                ToolTip.SetTip(_statusIconHost, _owner._loc["TransferUnknown"]);
+                return;
+            }
             _statusIconHost.Child = MakeIcon("Icon.circle-check", "VelaStatusConnected", 11);
             ToolTip.SetTip(_statusIconHost, _owner._loc["ToolDone"]);
         }
 
         private void Toggle()
         {
+            if (_transferWithheld) return;
             if (!_details.IsVisible)
             {
                 var sb = new StringBuilder();

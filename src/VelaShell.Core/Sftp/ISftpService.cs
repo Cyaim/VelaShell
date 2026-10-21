@@ -85,6 +85,11 @@ public interface ISftpService : IAsyncDisposable
     /// <summary>重命名或移动远端条目(SFTP 的 rename 兼具 move 语义)。</summary>
     Task RenameAsync(Guid sessionId, string oldPath, string newPath, CancellationToken cancellationToken = default);
 
+    /// <summary>提交已关闭并校验的上传临时文件。无覆盖只走标准无替换 rename;覆盖只走 POSIX 原子替换,不删除目标、不回退。</summary>
+    Task CommitUploadAsync(Guid sessionId, string temporaryPath, string destinationPath, bool overwrite,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This backend cannot guarantee atomic upload commit.");
+
     /// <summary>
     /// 将远端文件或目录树复制到同一服务器的另一路径。单个文件采用先下载到本地临时文件再上传的方式;
     /// 目录则逐文件递归复制。按文件回报传输进度。

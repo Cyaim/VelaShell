@@ -1,4 +1,5 @@
 using VelaShell.Core.Data;
+using NSubstitute;
 using VelaShell.Infrastructure.Plugins;
 
 namespace VelaShell.Infrastructure.Tests.Plugins;
@@ -50,6 +51,50 @@ public class PluginPermissionGateTests
             SessionOpenCalls++;
             return Task.FromResult(decision);
         }
+    }
+
+    [TestMethod]
+    public async Task UploadNeverInheritsTerminalOrSessionGrant_AndDefaultPromptDenies()
+    {
+        var prompt = new ScriptedPrompt(PluginPermissionDecision.AllowAlways);
+        var gate = new PluginPermissionGate(new MemoryStore(), prompt);
+        Assert.IsTrue(await gate.CheckTerminalWriteAsync("p", "target", "input", default));
+        Assert.IsTrue(await gate.CheckSessionOpenAsync("p", "target", "reason", default));
+        using var lease = gate.CreateUploadLease("p");
+        Assert.IsFalse(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", false, default));
+    }
+
+    [TestMethod]
+    public async Task UploadRejectsMissingPromptAndBroadGrantDecisions()
+    {
+        foreach (PluginPermissionDecision decision in new[] { PluginPermissionDecision.Deny, PluginPermissionDecision.AllowSession, PluginPermissionDecision.AllowAlways })
+        {
+            IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+            prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(decision);
+            var gate = new PluginPermissionGate(null, prompt);
+            using var lease = gate.CreateUploadLease("p");
+            Assert.IsFalse(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", false, default));
+        }
+        var missing = new PluginPermissionGate(null, null);
+        using var absentLease = missing.CreateUploadLease("p");
+        Assert.IsFalse(await missing.CheckUploadAsync(absentLease, "p", "target", "/local", "/remote", false, default));
+    }
+
+    [TestMethod]
+    public async Task PendingUploadCanBeRevokedAndCancellationCallbackMayDisposeLease()
+    {
+        var gate = new PluginPermissionGate(null, null);
+        var first = gate.CreateUploadLease("p");
+        var second = gate.CreateUploadLease("p");
+        using var callback = first.Revocation.Register(() => first.Dispose());
+        Assert.IsTrue(await gate.HasGrantAsync("p"), "尚待审批任务也可在管理页撤销。");
+        Task revoked = gate.RevokeAsync("p");
+        Assert.IsTrue(first.IsRevoked);
+        Assert.IsTrue(second.IsRevoked);
+        Assert.IsTrue(second.Revocation.IsCancellationRequested);
+        await revoked;
+        Assert.IsFalse(await gate.HasGrantAsync("p"));
+        second.Dispose();
     }
 
     [TestMethod]
