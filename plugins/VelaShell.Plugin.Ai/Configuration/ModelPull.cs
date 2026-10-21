@@ -117,9 +117,7 @@ public static class ModelPull
                 health!.Invalidate(model.Id);
             }
         }
-        // 展开状态交回自动判断:用户上次表态时面对的是另一份清单(往往是出厂那一条),
-        // 而这一拉可能就是三百个 —— 拿旧决定套新长度,左栏一进去就是滚不到底的长龙。
-        // 见 AiProvider.ModelsExpanded 与设置页的 AutoCollapseFrom。
+        // 新清单恢复默认折叠：上次展开时面对的可能只有出厂那一条，拉取后可能有几百个。
         target.ModelsExpanded = null;
         return new ModelPullResult(models.Count > 0 ? ModelSource.Endpoint : ModelSource.Catalogue, specs.Count, target.Models.Count);
     }

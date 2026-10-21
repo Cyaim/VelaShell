@@ -281,6 +281,7 @@ public sealed partial class ChatPanelViewUiTests
             using var context = new TestPluginContext();
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
             AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            provider.ModelsExpanded = true;
             provider.BaseUrl = endpoint.BaseUrl + "/v1";
             provider.Models[0].Model = "configured-model";
             provider.Models[0].SupportsReasoning = false;

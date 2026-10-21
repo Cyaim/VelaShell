@@ -15,6 +15,7 @@ public sealed partial class ChatPanelViewUiTests
     private static AiProvider TwoModels(ReasoningLevel first, ReasoningLevel second)
         => new()
         {
+            ModelsExpanded = true,
             Name = "stub",
             BaseUrl = "http://127.0.0.1:1/v1",
             DefaultProtocol = ChatProtocol.OpenAiChatCompletions,

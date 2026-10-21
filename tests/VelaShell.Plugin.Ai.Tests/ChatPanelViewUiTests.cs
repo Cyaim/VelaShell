@@ -34,6 +34,7 @@ public sealed partial class ChatPanelViewUiTests
     private static AiProvider StubProvider(string name, string baseUrl, string model, int maxInputTokens = 128000)
         => new()
         {
+            ModelsExpanded = true,
             Name = name,
             BaseUrl = baseUrl,
             DefaultProtocol = ChatProtocol.OpenAiChatCompletions,

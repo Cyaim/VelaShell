@@ -33,7 +33,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             var model = new AiModelConfig { Model = "m", HasOwnApiKey = savedOwnKey };
-            var provider = new AiProvider { BaseUrl = original.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = original.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             await store.AddProviderApiKeyAsync(settings, provider, "primary");
             provider.ActiveApiKeyId = await store.AddProviderApiKeyAsync(settings, provider, "supplementary");
@@ -68,7 +68,7 @@ public sealed partial class SettingsViewUiTests
             await using var newHost = new SseStub(ProbeAnswerSse);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
-            var provider = new AiProvider { BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
             await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
             string extra = await store.AddProviderApiKeyAsync(settings, provider, "old-extra");
@@ -120,7 +120,7 @@ public sealed partial class SettingsViewUiTests
             await using var newHost = new SseStub(ProbeAnswerSse);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
-            var provider = new AiProvider { BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
             await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
             var loc = new Loc("en");
@@ -160,7 +160,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
             var catalog = new ModelsDevCatalog(context);
-            var provider = new AiProvider();
+            var provider = new AiProvider { ModelsExpanded = true };
             ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("private-model", 0)]));
             AiModelConfig model = provider.Models.Single();
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
@@ -228,7 +228,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
             var catalog = new ModelsDevCatalog(context);
-            var provider = new AiProvider();
+            var provider = new AiProvider { ModelsExpanded = true };
             ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("private-same-number", 0)]));
             AiModelConfig model = provider.Models.Single();
             var other = new AiModelConfig { Model = "other", MaxInputTokens = 128000, DefaultContextWindow = true };
@@ -295,7 +295,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var source = new TestPluginContext();
-            var provider = new AiProvider();
+            var provider = new AiProvider { ModelsExpanded = true };
             File.WriteAllText(Path.Combine(source.DataDirectory, "models-dev.json"), "{}");
             var catalog = new ModelsDevCatalog(source);
             ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("private-loading-window", 0)]));
@@ -346,6 +346,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m" };
             var provider = new AiProvider
             {
+                ModelsExpanded = true,
                 Name = "original",
                 BaseUrl = "https://same.example",
                 Models = [model],
@@ -438,7 +439,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext { Storage = storage };
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
             var catalog = new ModelsDevCatalog(context);
-            var provider = new AiProvider();
+            var provider = new AiProvider { ModelsExpanded = true };
             ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("private-save-window", 0)]));
             AiModelConfig model = provider.Models.Single();
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
@@ -501,7 +502,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext { Storage = storage };
             File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), "{}");
             var catalog = new ModelsDevCatalog(context);
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl };
             ModelsDevCatalog.Materialise(provider, catalog.Describe(null, [("private-atomic-settings-pull", 0)]));
             AiModelConfig model = provider.Models.Single();
             provider.AvailableModels = ["original-candidate"];
@@ -587,7 +588,7 @@ public sealed partial class SettingsViewUiTests
                 {"openai":{"known-model":{"ctx":128000,"max":8192}}}
                 """);
             var catalog = new ModelsDevCatalog(context);
-            var provider = new AiProvider { CatalogId = "openai", AvailableModels = ["private-model", "known-model"] };
+            var provider = new AiProvider { ModelsExpanded = true, CatalogId = "openai", AvailableModels = ["private-model", "known-model"] };
             ModelsDevCatalog.Materialise(provider, catalog.Describe("openai", [("private-model", 0)]));
             AiModelConfig model = provider.Models.Single();
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
@@ -625,7 +626,7 @@ public sealed partial class SettingsViewUiTests
             using var source = new TestPluginContext();
             var secrets = new KeySettingsSecrets(source.Secrets);
             using var context = new TestPluginContext { Secrets = secrets };
-            var provider = new AiProvider { Name = "saved", BaseUrl = endpoint.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var provider = new AiProvider { ModelsExpanded = true, Name = "saved", BaseUrl = endpoint.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
             var settings = new AiSettings { Providers = [provider] };
             await source.Secrets.SetAsync("apikey:" + provider.Id, "original-key");
             var store = new AiSettingsStore(context);
@@ -670,7 +671,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             var model = new AiModelConfig { Model = "m", HasOwnApiKey = action == "own" };
-            var provider = new AiProvider { Name = "original", BaseUrl = oldHost.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, Name = "original", BaseUrl = oldHost.BaseUrl, Models = [model] };
             var initial = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             await store.AddProviderApiKeyAsync(initial, provider, "old-provider-key");
             if (model.HasOwnApiKey) await store.SetApiKeyAsync(model.Id, "old-model-key");
@@ -740,7 +741,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext { Storage = storage, Secrets = secrets };
             var store = new AiSettingsStore(context);
             var model = new AiModelConfig { Model = "m", HasOwnApiKey = true };
-            var provider = new AiProvider { Name = "original", Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, Name = "original", Models = [model] };
             var live = new AiSettings
             {
                 Providers = [provider],
@@ -810,8 +811,8 @@ public sealed partial class SettingsViewUiTests
         {
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
-            var first = new AiProvider { Name = "first", BaseUrl = "https://first.example" };
-            var second = new AiProvider { Name = "second", BaseUrl = "https://second.example" };
+            var first = new AiProvider { ModelsExpanded = true, Name = "first", BaseUrl = "https://first.example" };
+            var second = new AiProvider { ModelsExpanded = true, Name = "second", BaseUrl = "https://second.example" };
             var initial = new AiSettings { Providers = [first, second] };
             await store.AddProviderApiKeyAsync(initial, first, "first-key");
             await store.AddProviderApiKeyAsync(initial, second, "second-key");
@@ -872,7 +873,7 @@ public sealed partial class SettingsViewUiTests
             var store = new AiSettingsStore(context);
             var initial = new AiSettings
             {
-                Providers = [new AiProvider { Name = "original", BaseUrl = oldEndpoint.BaseUrl, Models = [new AiModelConfig { Model = "m" }] }]
+                Providers = [new AiProvider { ModelsExpanded = true, Name = "original", BaseUrl = oldEndpoint.BaseUrl, Models = [new AiModelConfig { Model = "m" }] }]
             };
             await store.AddProviderApiKeyAsync(initial, initial.Providers[0], "original-key");
             AiSettings live = await store.LoadAsync();
@@ -933,7 +934,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
             var model = new AiModelConfig { Model = "m", HasOwnApiKey = ownKey, Temperature = 0.2f };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model] };
             var initial = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             await store.AddProviderApiKeyAsync(initial, provider, "provider-key");
             if (ownKey) await store.SetApiKeyAsync(model.Id, "original-own");
@@ -986,7 +987,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext { Storage = storage };
             var store = new AiSettingsStore(context);
             var model = new AiModelConfig { Name = "original model", Model = "m1", Temperature = 0.2f };
-            var provider = new AiProvider { Name = "original provider", BaseUrl = "https://original.example", Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, Name = "original provider", BaseUrl = "https://original.example", Models = [model] };
             await store.SaveAsync(new AiSettings { Providers = [provider], ActiveModelId = modelPage ? model.Id : null });
             AiSettings live = await store.LoadAsync();
             var view = new SettingsView(context, store, live, new Loc("en"), () => { });
@@ -1037,7 +1038,7 @@ public sealed partial class SettingsViewUiTests
             var secrets = new DelayedSecrets(source.Secrets, $"apikey:{first.Id}");
             using var context = new TestPluginContext { Secrets = secrets };
             var store = new AiSettingsStore(context);
-            var provider = new AiProvider { BaseUrl = "https://same.example", Models = [first, second] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://same.example", Models = [first, second] };
             await store.SaveAsync(new AiSettings { Providers = [provider], ActiveModelId = first.Id });
             AiSettings live = await store.LoadAsync();
             var view = new SettingsView(context, store, live, new Loc("en"), () => { });
@@ -1102,7 +1103,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "original-model", MaxTokens = 1000, MaxInputTokens = 10000 };
             ModelsDevCatalog.Apply(model, new ModelSpec(model.Model, model.Name, model.MaxInputTokens,
                 model.MaxTokens, 0, 0, 0, null), newModel: true);
-            var provider = new AiProvider { BaseUrl = "https://same.example", Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://same.example", Models = [model] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             await store.SaveAsync(settings);
             var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
@@ -1164,9 +1165,9 @@ public sealed partial class SettingsViewUiTests
             var storage = new KeySettingsStorage(new InMemoryStorage());
             using var context = new TestPluginContext { Storage = storage, Secrets = delayed };
             var store = new AiSettingsStore(context);
-            var first = new AiProvider { Name = "owner-A", BaseUrl = "https://a.example", Models = [a], ModelsExpanded = true };
-            var second = new AiProvider { Name = "owner-B", BaseUrl = "https://old-b.example", Models = [b], ModelsExpanded = true };
-            var third = new AiProvider { Name = "owner-C", BaseUrl = "https://c.example", Models = [c], ModelsExpanded = true };
+            var first = new AiProvider { ModelsExpanded = true, Name = "owner-A", BaseUrl = "https://a.example", Models = [a] };
+            var second = new AiProvider { ModelsExpanded = true, Name = "owner-B", BaseUrl = "https://old-b.example", Models = [b] };
+            var third = new AiProvider { ModelsExpanded = true, Name = "owner-C", BaseUrl = "https://c.example", Models = [c] };
             await store.SaveAsync(new AiSettings { Providers = [first, second, third], ActiveModelId = a.Id });
             AiSettings live = await store.LoadAsync();
             var view = new SettingsView(context, store, live, new Loc("en"), () => { });
@@ -1253,7 +1254,7 @@ public sealed partial class SettingsViewUiTests
             await using var endpoint = new SseStub(ProbeAnswerSse);
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
             var settings = new AiSettings { Providers = [provider] };
             await store.AddProviderApiKeyAsync(settings, provider, "saved-key");
             var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
@@ -1284,7 +1285,7 @@ public sealed partial class SettingsViewUiTests
         {
             var storage = new AiSettingsStoreTests.FailingStorage(new InMemoryStorage());
             using var context = new TestPluginContext { Storage = storage };
-            var provider = new AiProvider { BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m" }] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
             var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "primary");
@@ -1338,7 +1339,7 @@ public sealed partial class SettingsViewUiTests
         {
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
-            var provider = new AiProvider { BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m" }] };
             var settings = new AiSettings { Providers = [provider] };
             await store.AddProviderApiKeyAsync(settings, provider, "primary");
             string extra = await store.AddProviderApiKeyAsync(settings, provider, "extra");
@@ -1376,7 +1377,7 @@ public sealed partial class SettingsViewUiTests
             await using var original = new SseStub(ProbeAnswerSse);
             await using var changed = new SseStub(ProbeAnswerSse);
             using var source = new TestPluginContext();
-            var provider = new AiProvider { BaseUrl = original.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = original.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
             var settings = new AiSettings { Providers = [provider] };
             await source.Secrets.SetAsync($"apikey:{provider.Id}", "old-key");
             var delayed = new DelayedSecrets(source.Secrets, $"apikey:{provider.Id}", delayMutation: true);
@@ -1510,6 +1511,7 @@ public sealed partial class SettingsViewUiTests
     {
         var routin = new AiProvider
         {
+            ModelsExpanded = true,
             Name = "Routin",
             BaseUrl = "https://routin.example/v1",
             DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
@@ -1519,7 +1521,7 @@ public sealed partial class SettingsViewUiTests
                 new AiModelConfig { Name = "Claude", Model = "claude-opus-5", Protocol = ChatProtocol.AnthropicMessages, HasOwnApiKey = true }
             ]
         };
-        var ollama = new AiProvider { Name = "Ollama", BaseUrl = "http://localhost:11434/v1", Models = [new AiModelConfig { Model = "llama3.1" }] };
+        var ollama = new AiProvider { ModelsExpanded = true, Name = "Ollama", BaseUrl = "http://localhost:11434/v1", Models = [new AiModelConfig { Model = "llama3.1" }] };
         return new AiSettings { Providers = [routin, ollama], ActiveModelId = routin.Models[1].Id };
     }
 
@@ -1745,7 +1747,7 @@ public sealed partial class SettingsViewUiTests
                 await PumpAsync();
 
                 Assert.HasCount(5, (List<ProviderNavItem>)list.ItemsSource!, "列表一行不少");
-                Assert.IsNull(settings.Providers[0].ModelsExpanded, "模型行点不出折叠状态来");
+                Assert.IsTrue(settings.Providers[0].ModelsExpanded, "模型行不改变原有展开状态");
                 Assert.AreEqual(before, list.SelectedIndex, "更没有被收到供应商行上去");
             }
             finally
@@ -1756,21 +1758,43 @@ public sealed partial class SettingsViewUiTests
     }
 
     [TestMethod]
-    public void ALongModelListStartsCollapsed_AShortOneDoesNot()
+    [DataRow(1, false)]
+    [DataRow(12, false)]
+    [DataRow(40, false)]
+    [DataRow(40, true)]
+    public void ModelListsStartCollapsed_RegardlessOfCountOrActiveModel(int count, bool selectAModel)
     {
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            (Window window, SettingsView view, _, _) = await ShowAsync(context, ManyModels(40, selectAModel: false));
+            AiSettings seed = ManyModels(count, selectAModel);
+            string? activeModelId = seed.ActiveModelId;
+            (Window window, SettingsView view, AiSettings settings, AiSettingsStore store) = await ShowAsync(context, seed);
             try
             {
-                var rows = (List<ProviderNavItem>)view.GetControl<ListBox>("ProvidersList").ItemsSource!;
-                Assert.HasCount(3, rows, "40 个的那家默认折着,1 个的那家照常展开");
+                ListBox list = view.GetControl<ListBox>("ProvidersList");
+                var rows = (List<ProviderNavItem>)list.ItemsSource!;
+                Assert.HasCount(2, rows, "长短模型列表都默认折叠");
                 Assert.AreEqual("Relay", rows[0].Text);
-                Assert.IsFalse(rows[0].Expanded);
-                Assert.AreEqual("40", rows[0].CountText);
-                Assert.IsTrue(rows[1].Expanded);
-                Assert.AreEqual("llama3.1", rows[2].Text);
+                Assert.AreEqual(count.ToString(), rows[0].CountText);
+                Assert.AreEqual("Ollama", rows[1].Text);
+                Assert.AreEqual("1", rows[1].CountText);
+                Assert.IsTrue(rows.All(row => row.IsProvider && !row.Expanded));
+                Assert.AreEqual(selectAModel ? 0 : 1, list.SelectedIndex, "选中活跃模型所属供应商，不自动展开");
+                Assert.IsTrue(view.GetControl<StackPanel>("ProviderEditor").IsVisible);
+                Assert.IsFalse(view.GetControl<StackPanel>("ModelEditor").IsVisible);
+                Assert.AreEqual(activeModelId, settings.ActiveModelId, "导航不切换聊天模型");
+                Assert.IsTrue(settings.Providers.All(provider => provider.ModelsExpanded is null));
+
+                // 手动展开后再打开设置，仍保留用户的选择。
+                string providerId = rows[list.SelectedIndex].Provider.Id;
+                PressKey(list, Key.Right);
+                await PumpAsync();
+                AiSettings reloaded = await store.LoadAsync();
+                var reopened = new SettingsView(context, store, reloaded, new Loc("en"), () => { });
+                var reopenedRows = (List<ProviderNavItem>)reopened.GetControl<ListBox>("ProvidersList").ItemsSource!;
+                Assert.IsTrue(reopenedRows.Single(row => row.IsProvider && row.Provider.Id == providerId).Expanded);
+                Assert.AreEqual(activeModelId, reloaded.ActiveModelId);
             }
             finally
             {
@@ -1780,21 +1804,21 @@ public sealed partial class SettingsViewUiTests
     }
 
     [TestMethod]
-    public void AutoCollapse_YieldsWhenTheSelectedModelIsInsideThatProvider()
+    public void SavedCollapse_IsNotOverriddenByTheActiveModel()
     {
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            // 活跃模型在那一大家里:折起来的话,右边的表单会停在一个左栏看不见的模型上
-            (Window window, SettingsView view, _, _) = await ShowAsync(context, ManyModels(40, selectAModel: true));
+            AiSettings seed = ManyModels(40, selectAModel: true);
+            seed.Providers[0].ModelsExpanded = false;
+            (Window window, SettingsView view, _, _) = await ShowAsync(context, seed);
             try
             {
                 ListBox list = view.GetControl<ListBox>("ProvidersList");
-                var rows = (List<ProviderNavItem>)list.ItemsSource!;
-                Assert.HasCount(43, rows, "那一大家整个展开:1 + 40,后面还跟着 Ollama 那两行");
-                Assert.IsTrue(rows[0].Expanded);
-                Assert.AreEqual(40, list.SelectedIndex, "选中的还是那个活跃模型");
-                Assert.IsTrue(view.GetControl<StackPanel>("ModelEditor").IsVisible);
+                Assert.HasCount(2, (List<ProviderNavItem>)list.ItemsSource!);
+                Assert.AreEqual(0, list.SelectedIndex);
+                Assert.IsTrue(view.GetControl<StackPanel>("ProviderEditor").IsVisible);
+                Assert.IsFalse(seed.Providers[0].ModelsExpanded!.Value);
             }
             finally
             {
@@ -1820,7 +1844,7 @@ public sealed partial class SettingsViewUiTests
 
                 Assert.HasCount(5, (List<ProviderNavItem>)list.ItemsSource!, "一次按键只做一件事:回到父行,不顺手折起来");
                 Assert.AreEqual(0, list.SelectedIndex);
-                Assert.IsNull(settings.Providers[0].ModelsExpanded, "没折过也没展过,状态该留在「自动」");
+                Assert.IsTrue(settings.Providers[0].ModelsExpanded, "回到父行不改变原有展开状态");
             }
             finally
             {
@@ -1957,6 +1981,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
+                ModelsExpanded = true,
                 Name = "Routin",
                 BaseUrl = held.BaseUrl,
                 DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
@@ -2027,6 +2052,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
+                ModelsExpanded = true,
                 Name = "Routin",
                 BaseUrl = held.BaseUrl,
                 DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
@@ -2100,6 +2126,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
+                ModelsExpanded = true,
                 BaseUrl = endpoint.BaseUrl,
                 DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
                 Models = [model]
@@ -2164,7 +2191,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             await using var endpoint = new SseStub(ProbeAnswerSse, hold: true);
             var model = new AiModelConfig { Model = "m1" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             (Window window, SettingsView view, _, _) = await ShowAsync(context, settings);
             try
@@ -2282,7 +2309,7 @@ public sealed partial class SettingsViewUiTests
             };
             ModelsDevCatalog.Apply(model, new ModelSpec(model.Model, model.Name, model.MaxInputTokens, model.MaxTokens,
                 model.InputPricePerMillion, model.OutputPricePerMillion, model.CachedInputPricePerMillion, null), newModel: true);
-            var provider = new AiProvider { CatalogId = "openai", Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, CatalogId = "openai", Models = [model] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             (Window window, SettingsView view, _, AiSettingsStore store) = await ShowAsync(context, settings);
             try
@@ -2353,7 +2380,7 @@ public sealed partial class SettingsViewUiTests
             var second = new AiModelConfig { Model = "second-model", MaxInputTokens = 70000, MaxTokens = 7000 };
             ModelsDevCatalog.Apply(first, new ModelSpec(first.Model, first.Name, first.MaxInputTokens,
                 first.MaxTokens, 0, 0, 0, null), newModel: true);
-            var provider = new AiProvider { Models = [first, second] };
+            var provider = new AiProvider { ModelsExpanded = true, Models = [first, second] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = first.Id };
             await secretSource.Secrets.SetAsync($"apikey:{first.Id}", "first-key");
             var secrets = new DelayedSecrets(secretSource.Secrets, $"apikey:{first.Id}");
@@ -2428,6 +2455,7 @@ public sealed partial class SettingsViewUiTests
             var m2 = new AiModelConfig { Model = "m2", BaseUrlOverride = quick.BaseUrl };
             var provider = new AiProvider
             {
+                ModelsExpanded = true,
                 Name = "Routin",
                 BaseUrl = held.BaseUrl,
                 DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
@@ -2503,6 +2531,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
+                ModelsExpanded = true,
                 Name = "subscription",
                 BaseUrl = oldEndpoint.BaseUrl,
                 Auth = AuthMethod.Subscription,
@@ -2579,6 +2608,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
+                ModelsExpanded = true,
                 Name = "subscription",
                 BaseUrl = endpoint.BaseUrl,
                 Auth = AuthMethod.Subscription,
@@ -2630,6 +2660,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
+                ModelsExpanded = true,
                 BaseUrl = endpoint.BaseUrl,
                 Auth = AuthMethod.Subscription,
                 OAuth = new OAuthConfig { Credential = OAuthCredential.AccessToken },
@@ -2675,7 +2706,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             await using var endpoint = new SseStub(ProbeAnswerSse);
             var model = new AiModelConfig { Model = "m1" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             var health = new ProviderHealth();
             health.Record(model.Id, false);
@@ -2785,7 +2816,7 @@ public sealed partial class SettingsViewUiTests
                 view.GetControl<Button>("ManageSignInButton")
                     .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 Assert.AreEqual(first.Id, requested);
-                list.SelectedIndex = 2;
+                list.SelectedIndex = 1;
                 await PumpAsync();
                 view.GetControl<Button>("ManageSignInButton")
                     .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
@@ -2997,6 +3028,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "m1", Reasoning = ReasoningLevel.High };
             var provider = new AiProvider
             {
+                ModelsExpanded = true,
                 BaseUrl = endpoint.BaseUrl,
                 DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
                 Models = [model]
@@ -3047,8 +3079,8 @@ public sealed partial class SettingsViewUiTests
         {
             using var secretSource = new TestPluginContext();
             var model = new AiModelConfig { Name = "original model", Model = "m1", HasOwnApiKey = !keepKey };
-            var first = new AiProvider { Name = "A", BaseUrl = "https://a.example/v1", Models = [model] };
-            var second = new AiProvider { Name = "B", BaseUrl = "https://b.example/v1" };
+            var first = new AiProvider { ModelsExpanded = true, Name = "A", BaseUrl = "https://a.example/v1", Models = [model] };
+            var second = new AiProvider { ModelsExpanded = true, Name = "B", BaseUrl = "https://b.example/v1" };
             var settings = new AiSettings { Providers = [first, second], ActiveModelId = model.Id };
             string ownerId = providerRow ? first.Id : model.Id;
             if (providerRow || !keepKey)
@@ -3118,8 +3150,8 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var secretSource = new TestPluginContext();
-            var first = new AiProvider { Name = "A", BaseUrl = "https://a.example/v1" };
-            var second = new AiProvider { Name = "B", BaseUrl = "https://b.example/v1" };
+            var first = new AiProvider { ModelsExpanded = true, Name = "A", BaseUrl = "https://a.example/v1" };
+            var second = new AiProvider { ModelsExpanded = true, Name = "B", BaseUrl = "https://b.example/v1" };
             var settings = new AiSettings { Providers = [first, second] };
             await secretSource.Secrets.SetAsync($"apikey:{first.Id}", "key-a");
             var secrets = new DelayedSecrets(secretSource.Secrets, $"apikey:{first.Id}");
@@ -3205,8 +3237,8 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            var first = new AiProvider { Name = "A", BaseUrl = "https://a.example/v1" };
-            var second = new AiProvider { Name = "B", BaseUrl = "https://b.example/v1" };
+            var first = new AiProvider { ModelsExpanded = true, Name = "A", BaseUrl = "https://a.example/v1" };
+            var second = new AiProvider { ModelsExpanded = true, Name = "B", BaseUrl = "https://b.example/v1" };
             var settings = new AiSettings { Providers = [first, second] };
             await context.Secrets.SetAsync($"apikey:{first.Id}", "key-a");
             await context.Secrets.SetAsync($"apikey:{second.Id}", "key-b");
@@ -3248,7 +3280,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            var provider = new AiProvider { Name = "original", BaseUrl = "https://old.example/v1" };
+            var provider = new AiProvider { ModelsExpanded = true, Name = "original", BaseUrl = "https://old.example/v1" };
             var settings = new AiSettings { Providers = [provider] };
             await context.Secrets.SetAsync($"apikey:{provider.Id}", "old-key");
             (Window window, SettingsView view, _, AiSettingsStore store) = await ShowAsync(context, settings);
@@ -3299,7 +3331,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             await using var endpoint = new SseStub("", holdFirstStream: true, firstStreamContent: "");
             var model = new AiModelConfig { Model = "m1", Temperature = 0.25f, TopP = 0.5f, StopSequences = "stop-one\nstop-two" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             var store = new AiSettingsStore(context);
             await store.SaveAsync(settings);
@@ -3476,7 +3508,7 @@ public sealed partial class SettingsViewUiTests
         {
             using var context = new TestPluginContext();
             var model = new AiModelConfig { Model = "m1" };
-            var provider = new AiProvider { Name = "manual", BaseUrl = "https://manual.example/v1", Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, Name = "manual", BaseUrl = "https://manual.example/v1", Models = [model] };
             var settings = new AiSettings { Providers = [provider] };
             await context.Secrets.SetAsync($"apikey:{provider.Id}", "sk-primary-1234");
             int notifications = 0;
@@ -3564,8 +3596,8 @@ public sealed partial class SettingsViewUiTests
         {
             using var context = new TestPluginContext();
             var store = new AiSettingsStore(context);
-            var provider = new AiProvider { BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m1" }] };
-            var other = new AiProvider { Name = "other" };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m1" }] };
+            var other = new AiProvider { ModelsExpanded = true, Name = "other" };
             var settings = new AiSettings { Providers = [provider, other] };
             await store.AddProviderApiKeyAsync(settings, provider, "sk-visible-primary");
             string extra = await store.AddProviderApiKeyAsync(settings, provider, "sk-hidden-additional");
@@ -3625,7 +3657,7 @@ public sealed partial class SettingsViewUiTests
             using var endpoint = new KeyProbeServer(_ => 200); endpoint.Start();
             var first = new AiModelConfig { Model = "first" };
             var chosen = new AiModelConfig { Model = "chosen" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [first, chosen] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [first, chosen] };
             var settings = new AiSettings { Providers = [provider] };
             var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "key-a");
@@ -3673,7 +3705,7 @@ public sealed partial class SettingsViewUiTests
         {
             using var context = new TestPluginContext();
             using var endpoint = new KeyProbeServer(_ => 200); endpoint.Start();
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [new AiModelConfig { Model = "m1" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [new AiModelConfig { Model = "m1" }] };
             var settings = new AiSettings { Providers = [provider] };
             var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "key-a");
@@ -3730,7 +3762,7 @@ public sealed partial class SettingsViewUiTests
             var model = new AiModelConfig { Model = "batch-model" };
             var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
             var cross = new AiModelConfig { Model = "cross", BaseUrlOverride = "https://other.example/v1" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model, own, cross] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model, own, cross] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
             var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "key-a");
@@ -3793,8 +3825,8 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             using var endpoint = new KeyProbeServer(_ => 401, holdFirst: true); endpoint.Start();
             var model = new AiModelConfig { Model = "m1" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
-            var other = new AiProvider { Name = "other" };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model] };
+            var other = new AiProvider { ModelsExpanded = true, Name = "other" };
             var settings = new AiSettings { Providers = [provider, other] };
             var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "key-a");
@@ -3841,7 +3873,7 @@ public sealed partial class SettingsViewUiTests
         {
             using var context = new TestPluginContext();
             using var endpoint = new KeyProbeServer(_ => 200); endpoint.Start();
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [new AiModelConfig { Model = "m1" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [new AiModelConfig { Model = "m1" }] };
             var settings = new AiSettings { Providers = [provider] };
             var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "key-a");
@@ -3883,7 +3915,7 @@ public sealed partial class SettingsViewUiTests
             var m1 = new AiModelConfig { Model = "m1" };
             var m2 = new AiModelConfig { Model = "m2" };
             var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [m1, m2, own] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [m1, m2, own] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = m1.Id };
             var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "key-a");
@@ -3954,7 +3986,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             using var endpoint = new KeyProbeServer(_ => status); endpoint.Start();
             var model = new AiModelConfig { Model = "m1" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider] };
             var store = new AiSettingsStore(context); await store.AddProviderApiKeyAsync(settings, provider, "key-a");
             string b = await store.AddProviderApiKeyAsync(settings, provider, "key-b");
@@ -3990,8 +4022,8 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             using var endpoint = new KeyProbeServer(_ => 401, holdFirst: true); endpoint.Start();
             var model = new AiModelConfig { Model = "m1" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
-            var other = new AiProvider { Name = "other" };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model] };
+            var other = new AiProvider { ModelsExpanded = true, Name = "other" };
             var settings = new AiSettings { Providers = [provider, other] };
             var store = new AiSettingsStore(context); await store.AddProviderApiKeyAsync(settings, provider, "key-a");
             string b = await store.AddProviderApiKeyAsync(settings, provider, "key-b");
@@ -4038,7 +4070,7 @@ public sealed partial class SettingsViewUiTests
             // 首模型把地址改到了别家:补充槽的 Key 在任何路径上都只发往供应商自己的源
             var routed = new AiModelConfig { Model = "m-routed", BaseUrlOverride = elsewhere.BaseUrl };
             var local = new AiModelConfig { Model = "m-local" };
-            var provider = new AiProvider { BaseUrl = own.BaseUrl, Models = [routed, local] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = own.BaseUrl, Models = [routed, local] };
             var settings = new AiSettings { Providers = [provider] };
             var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "primary");
@@ -4063,7 +4095,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            var provider = new AiProvider { BaseUrl = "http://127.0.0.1:9", Models = [new AiModelConfig { Model = "m1" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "http://127.0.0.1:9", Models = [new AiModelConfig { Model = "m1" }] };
             var settings = new AiSettings { Providers = [provider] };
             var store = new AiSettingsStore(context);
             await store.SaveAsync(settings);
@@ -4095,7 +4127,7 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             using var endpoint = new KeyProbeServer(_ => 200); endpoint.Start();
             var model = new AiModelConfig { Model = "m1" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider] };
             var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "primary");
@@ -4123,7 +4155,7 @@ public sealed partial class SettingsViewUiTests
             using var oldEndpoint = new KeyProbeServer(_ => 200); oldEndpoint.Start();
             using var newEndpoint = new KeyProbeServer(_ => 200); newEndpoint.Start();
             var model = new AiModelConfig { Model = "m1" };
-            var provider = new AiProvider { BaseUrl = oldEndpoint.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldEndpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider] };
             var store = new AiSettingsStore(context); await store.AddProviderApiKeyAsync(settings, provider, "primary-old");
             string b = await store.AddProviderApiKeyAsync(settings, provider, "additional-old");
@@ -4178,7 +4210,7 @@ public sealed partial class SettingsViewUiTests
         {
             using var context = new TestPluginContext(); await using var endpoint = new SseStub(ProbeAnswerSse);
             var model = new AiModelConfig { Model = "own", HasOwnApiKey = true, BaseUrlOverride = endpoint.BaseUrl };
-            var provider = new AiProvider { BaseUrl = "https://provider.example", Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://provider.example", Models = [model] };
             var settings = new AiSettings { Providers = [provider] }; var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "provider-saved"); await store.SetApiKeyAsync(model.Id, "own-saved");
             var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
@@ -4206,7 +4238,7 @@ public sealed partial class SettingsViewUiTests
             using var secretSource = new TestPluginContext();
             var secrets = new KeySettingsSecrets(secretSource.Secrets);
             using var context = new TestPluginContext { Storage = storage, Secrets = secrets };
-            var provider = new AiProvider { Name = "original", BaseUrl = "https://old.example", Models = [new AiModelConfig { Model = "m1" }] };
+            var provider = new AiProvider { ModelsExpanded = true, Name = "original", BaseUrl = "https://old.example", Models = [new AiModelConfig { Model = "m1" }] };
             var settings = new AiSettings { Providers = [provider] }; var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "primary");
             string b = await store.AddProviderApiKeyAsync(settings, provider, "additional");
@@ -4258,7 +4290,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            var provider = new AiProvider { Name = "before", BaseUrl = "https://before.example", Models = [new AiModelConfig { Model = "m1" }] };
+            var provider = new AiProvider { ModelsExpanded = true, Name = "before", BaseUrl = "https://before.example", Models = [new AiModelConfig { Model = "m1" }] };
             var settings = new AiSettings { Providers = [provider] };
             var store = new AiSettingsStore(context); await store.AddProviderApiKeyAsync(settings, provider, "same-key");
             int notifications = 0;
@@ -4286,7 +4318,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var source = new TestPluginContext();
-            var provider = new AiProvider { BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m1" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m1" }] };
             var settings = new AiSettings { Providers = [provider] };
             var sourceStore = new AiSettingsStore(source);
             await sourceStore.AddProviderApiKeyAsync(settings, provider, "old-primary");
@@ -4329,7 +4361,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext(); var store = new AiSettingsStore(context);
-            var provider = new AiProvider { BaseUrl = "https://same.example" };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://same.example" };
             var settings = new AiSettings { Providers = [provider] };
             await store.AddProviderApiKeyAsync(settings, provider, "primary");
             string b = await store.AddProviderApiKeyAsync(settings, provider, "additional");
@@ -4373,7 +4405,7 @@ public sealed partial class SettingsViewUiTests
             var b = new AiModelConfig { Model = "m2", Name = "duplicate" };
             var cross = new AiModelConfig { Model = "m3", BaseUrlOverride = other.BaseUrl };
             var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
-            var provider = new AiProvider { BaseUrl = same.BaseUrl, Models = [a, b, cross, own, new AiModelConfig()] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = same.BaseUrl, Models = [a, b, cross, own, new AiModelConfig()] };
             var settings = new AiSettings { Providers = [provider] }; var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "primary");
             string extra = await store.AddProviderApiKeyAsync(settings, provider, "additional");
@@ -4420,8 +4452,8 @@ public sealed partial class SettingsViewUiTests
             var delayed = new DelayedSecrets(source.Secrets, $"apikey:{extra}");
             using var context = new TestPluginContext { Secrets = delayed };
             var store = new AiSettingsStore(context);
-            var first = new AiProvider { Name = "A", BaseUrl = "https://a.example", Models = [new AiModelConfig { Model = "a" }] };
-            var second = new AiProvider { Name = "B", BaseUrl = "https://b.example" };
+            var first = new AiProvider { ModelsExpanded = true, Name = "A", BaseUrl = "https://a.example", Models = [new AiModelConfig { Model = "a" }] };
+            var second = new AiProvider { ModelsExpanded = true, Name = "B", BaseUrl = "https://b.example" };
             var settings = new AiSettings { Providers = [first, second] };
             await source.Secrets.SetAsync($"apikey:{first.Id}", "primary-key");
             await store.SaveAsync(settings);
@@ -4484,7 +4516,7 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext(); var store = new AiSettingsStore(context);
-            var provider = new AiProvider { BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m1" }] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://same.example", Models = [new AiModelConfig { Model = "m1" }] };
             var settings = new AiSettings { Providers = [provider] }; await store.AddProviderApiKeyAsync(settings, provider, "primary");
             var health = new ProviderHealth(); var loc = new Loc("en");
             var view = new SettingsView(context, store, settings, loc, () => { }, health);
@@ -4515,8 +4547,8 @@ public sealed partial class SettingsViewUiTests
         {
             using var context = new TestPluginContext(); var store = new AiSettingsStore(context);
             var model = new AiModelConfig { Model = "own", HasOwnApiKey = true };
-            var provider = new AiProvider { Name = "remove", Models = [model] };
-            var other = new AiProvider { Name = "keep" };
+            var provider = new AiProvider { ModelsExpanded = true, Name = "remove", Models = [model] };
+            var other = new AiProvider { ModelsExpanded = true, Name = "keep" };
             var settings = new AiSettings { Providers = [provider, other] };
             await store.AddProviderApiKeyAsync(settings, provider, "primary");
             string extra = await store.AddProviderApiKeyAsync(settings, provider, "additional");
@@ -4547,7 +4579,7 @@ public sealed partial class SettingsViewUiTests
         {
             using var context = new TestPluginContext(); await using var endpoint = new SseStub("");
             var model = new AiModelConfig { Model = "m1" };
-            var provider = new AiProvider { BaseUrl = endpoint.BaseUrl, Models = [model] };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = endpoint.BaseUrl, Models = [model] };
             var settings = new AiSettings { Providers = [provider] }; var store = new AiSettingsStore(context);
             await store.AddProviderApiKeyAsync(settings, provider, "empty-reply-key");
             var health = new ProviderHealth(); var loc = new Loc("en");
