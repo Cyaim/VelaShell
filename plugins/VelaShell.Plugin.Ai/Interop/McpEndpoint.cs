@@ -437,7 +437,7 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
                     }
                     try
                     {
-                        string text = await host.CallAsync(name, arguments, cancellationToken).ConfigureAwait(false);
+                        string text = await host.CallAsync(name, arguments, cancellationToken, id.Value.GetRawText()).ConfigureAwait(false);
                         await WriteAsync(response, Result(id.Value, new
                         {
                             content = new[] { new { type = "text", text } },
@@ -493,7 +493,7 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
         DateTimeOffset cutoff = DateTimeOffset.UtcNow - SessionIdleTimeout;
         foreach (KeyValuePair<string, McpToolHost> entry in _sessions)
         {
-            if (entry.Value.LastActivity < cutoff)
+            if (entry.Value.LastActivity < cutoff && !entry.Value.HasActiveTransfers)
             {
                 if (_sessions.TryRemove(entry.Key, out McpToolHost? host))
                     await host.DisposeAsync().ConfigureAwait(false);

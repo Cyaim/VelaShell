@@ -71,6 +71,7 @@ public static class PluginServiceCollectionExtensions
                 SessionOpener = sp.GetService<IPluginSessionOpener>(),
                 SudoPrompt = sp.GetService<ISudoPrompt>(),
                 Sftp = sp.GetService<ISftpService>(),
+                UploadPermissions = sp.GetService<PluginPermissionGate>(),
                 Theme = sp.GetService<IThemeService>(),
                 Localization = sp.GetService<ILocalizationService>(),
                 CommandsFactory = sp.GetService<Func<string, IPluginLogger, ICommandsApi>>(),

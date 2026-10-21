@@ -46,6 +46,7 @@ internal sealed class PluginContext : IPluginContext, IDisposable
 
     public void Dispose()
     {
+        (RemoteFs as IDisposable)?.Dispose();
         (Commands as IDisposable)?.Dispose();
         (Events as IDisposable)?.Dispose();
         (Theme as IDisposable)?.Dispose();

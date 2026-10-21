@@ -4688,7 +4688,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
     <value>停用</value>
   </data>
   <data name="PluginManager_RevokePermission" xml:space="preserve">
-    <value>撤銷終端授權</value>
+    <value>撤銷權限</value>
   </data>
   <data name="PluginState_Active" xml:space="preserve">
     <value>執行中</value>
@@ -4732,6 +4732,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="PluginPerm_Deny" xml:space="preserve">
     <value>拒絕</value>
   </data>
+  <data name="PluginPermUpload_Title"><value>檔案上傳授權</value></data>
+  <data name="PluginPermUpload_Message"><value>外掛「{0}」請求讀取本機檔案並上傳至 {1}。核准僅對目前任務有效，可在外掛管理頁撤銷。</value></data>
+  <data name="PluginPermUpload_Preview"><value>本機來源檔案：{0}&#10;遠端目標：{1}&#10;目標策略：{2}</value></data>
+  <data name="PluginPermUpload_Replace"><value>允許原子取代現有檔案</value></data>
+  <data name="PluginPermUpload_NoReplace"><value>不取代現有檔案</value></data>
+  <data name="PluginPermUpload_AllowOnce"><value>允許本次上傳</value></data>
   <data name="PluginPermSession_Title" xml:space="preserve">
     <value>連線請求</value>
   </data>

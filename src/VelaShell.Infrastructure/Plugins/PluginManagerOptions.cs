@@ -16,6 +16,9 @@ namespace VelaShell.Infrastructure.Plugins;
 /// </summary>
 public sealed class PluginManagerOptions
 {
+    /// <summary>独立上传的逐任务可信授权闸;未配置时上传失败关闭,不影响旧文件 API。</summary>
+    public PluginPermissionGate? UploadPermissions { get; init; }
+
     /// <summary>插件发现根目录(按序;同 id 先到先得)。不存在的目录自动跳过。</summary>
     public required IReadOnlyList<string> PluginRoots { get; init; }
 

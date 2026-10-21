@@ -8,11 +8,10 @@
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner">
 
-  <!-- 插件敏感能力授权弹窗(终端回写 / 按已保存配置开会话)。
-       规格与 MessageDialog 一致:bg-surface 卡片 + 圆角 8 + 阴影;
-       四种选择:仅本次 / 本次运行 / 始终 / 拒绝(蓝图 06 的最小授权流)。
-       标题、正文、预览框与图标由 code-behind 按能力填 —— 两种请求的骨架完全一样,
-       各写一个窗口只会让两边的按钮排布慢慢长歪。 -->
+  <!-- 插件敏感能力授权弹窗(终端回写 / 按已保存配置开会话 / 文件上传)。
+       规格与 MessageDialog 一致:bg-surface 卡片 + 圆角 8 + 阴影。
+       标题、正文、预览框与图标由 code-behind 按能力填；上传隐藏本次运行与始终按钮，
+       仅批准预览中的当前上传任务，不扩大到其它路径或后续任务。 -->
 
   <Window.Styles>
     <Style Selector="Button.dlg-outline">
@@ -70,18 +69,22 @@
       </Border>
 
       <StackPanel Grid.Row="1" Margin="20,16" Spacing="10">
-        <TextBlock x:Name="MessageText"
-                   Foreground="{DynamicResource VelaTextSecondary}"
-                   FontSize="{DynamicResource VelaFontSize12}" LineHeight="19"
-                   TextWrapping="Wrap" />
+        <ScrollViewer x:Name="MessageScroll" VerticalScrollBarVisibility="Auto">
+          <TextBlock x:Name="MessageText"
+                     Foreground="{DynamicResource VelaTextSecondary}"
+                     FontSize="{DynamicResource VelaFontSize12}" LineHeight="19"
+                     TextWrapping="Wrap" />
+        </ScrollViewer>
         <Border Background="{DynamicResource VelaBgPage}"
                 BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="1"
                 CornerRadius="4" Padding="10,8">
-          <TextBlock x:Name="PreviewText"
-                     Foreground="{DynamicResource VelaTextPrimary}"
-                     FontFamily="{DynamicResource VelaUiMonoFont}"
-                     FontSize="{DynamicResource VelaFontSize11}"
-                     TextWrapping="Wrap" />
+          <ScrollViewer x:Name="PreviewScroll" VerticalScrollBarVisibility="Auto">
+            <SelectableTextBlock x:Name="PreviewText"
+                       Foreground="{DynamicResource VelaTextPrimary}"
+                       FontFamily="{DynamicResource VelaUiMonoFont}"
+                       FontSize="{DynamicResource VelaFontSize11}"
+                       TextWrapping="Wrap" />
+          </ScrollViewer>
         </Border>
       </StackPanel>
 

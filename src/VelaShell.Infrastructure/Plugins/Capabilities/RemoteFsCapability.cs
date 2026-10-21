@@ -11,7 +11,8 @@ namespace VelaShell.Infrastructure.Plugins.Capabilities;
 /// 进度回调做 ≥100ms 节流 —— 插件流量不允许灌爆调用方的调度器
 /// (吸取大文件传输卡顿的历史教训)。
 /// </summary>
-internal sealed class RemoteFsCapability(ISftpService sftp, ISshConnectionService connections) : IRemoteFsApi
+internal sealed partial class RemoteFsCapability(ISftpService sftp, ISshConnectionService connections,
+    CancellationToken lifetime = default, string? pluginId = null, PluginPermissionGate? uploadPermissions = null) : IRemoteFsApi, IDisposable
 {
     private static RemoteFileEntry Map(RemoteFileInfo info) => new(
         info.Name, info.FullPath, info.IsDirectory, info.Size,

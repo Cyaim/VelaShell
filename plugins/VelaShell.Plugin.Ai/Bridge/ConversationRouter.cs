@@ -170,6 +170,7 @@ public sealed class ConversationRouter(
 
         // 先断掉排队那条的活路,再去掐正在跑的。
         stopping.Cancel();
+        runner.CancelTransfers();
         foreach (BridgeConversation conversation in conversations)
         {
             conversation.Running?.Cancel();
@@ -373,7 +374,7 @@ public sealed class ConversationRouter(
 
         // 超时源链到生命周期:停桥接时正在跑的这一轮也当场结束,不必依赖 Running 被看见。
         using var turn = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
-        turn.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(Settings.TurnTimeoutSeconds, 30, 3600)));
+        using var budget = new BridgeTurnBudget(TimeSpan.FromSeconds(Math.Clamp(Settings.TurnTimeoutSeconds, 30, 3600)), turn.Token);
         conversation.Running = turn;
         string? placeholder = null;
         DateTimeOffset lastEdit = DateTimeOffset.MinValue;
@@ -404,13 +405,15 @@ public sealed class ConversationRouter(
                 conversation, Settings, message,
                 request => approvals.RequestAsync(conversation, config, request,
                     Settings.ApprovalTimeoutSeconds, Loc, turn.Token),
-                Loc, OnProgress, grant, turn.Token).ConfigureAwait(false);
+                Loc, OnProgress, grant, budget.Token, budget.LocalWaiting).ConfigureAwait(false);
 
             await DeliverAsync(conversation, placeholder, Compose(result), turn.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            await DeliverAsync(conversation, placeholder, Loc["BridgeTimeout"], CancellationToken.None).ConfigureAwait(false);
+            // 生命周期取消可能来自撤权；此时不再向旧聊天泄露结果。
+            if (!lifetime.IsCancellationRequested)
+                await DeliverAsync(conversation, placeholder, Loc[turn.IsCancellationRequested ? "BridgeStopped" : "BridgeTimeout"], CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

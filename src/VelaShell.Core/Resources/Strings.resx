@@ -4545,7 +4545,7 @@ Overwrite it?</value>
   <data name="PluginManager_Empty"><value>No plugins installed.</value></data>
   <data name="PluginManager_Enable"><value>Enable</value></data>
   <data name="PluginManager_Disable"><value>Disable</value></data>
-  <data name="PluginManager_RevokePermission"><value>Revoke terminal access</value></data>
+  <data name="PluginManager_RevokePermission"><value>Revoke permissions</value></data>
   <data name="PluginState_Active"><value>Active</value></data>
   <data name="PluginState_Background"><value>Running in background</value></data>
   <data name="PluginState_Discovered"><value>Idle</value></data>
@@ -4560,6 +4560,12 @@ Overwrite it?</value>
   <data name="PluginPerm_AllowSession"><value>Allow this session</value></data>
   <data name="PluginPerm_AllowAlways"><value>Always allow</value></data>
   <data name="PluginPerm_Deny"><value>Deny</value></data>
+  <data name="PluginPermUpload_Title"><value>File upload authorization</value></data>
+  <data name="PluginPermUpload_Message"><value>Plugin "{0}" requests local file access and upload to {1}. Approval applies only to this task; it can be revoked from Plugin Manager.</value></data>
+  <data name="PluginPermUpload_Preview"><value>Local source: {0}&#10;Remote destination: {1}&#10;Destination policy: {2}</value></data>
+  <data name="PluginPermUpload_Replace"><value>Allow atomic replacement of an existing file</value></data>
+  <data name="PluginPermUpload_NoReplace"><value>Do not replace an existing file</value></data>
+  <data name="PluginPermUpload_AllowOnce"><value>Allow this upload</value></data>
   <data name="PluginPermSession_Title"><value>Connection request</value></data>
   <data name="PluginPermSession_Message"><value>Plugin "{0}" wants to open a connection to {1}. Its stated reason:</value></data>
   <data name="PluginManager_Install"><value>Install .vpx…</value></data>

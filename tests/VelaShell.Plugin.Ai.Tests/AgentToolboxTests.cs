@@ -21,6 +21,7 @@ public sealed class AgentToolboxTests
         "open_session", "close_session",
         "run_command", "run_on_sessions", "task_status", "task_wait", "task_cancel", "write_remote_file", "patch_remote_file",
         "make_remote_directory", "rename_remote_path", "upload_local_file", "download_remote_file",
+        "transfer_status", "transfer_wait", "transfer_cancel", "transfer_resume",
         "write_terminal"
     ];
 
@@ -384,6 +385,11 @@ public sealed class AgentToolboxTests
         SessionInfo session = context.FakeSessions.AddConnected();
         string local = Path.Combine(Path.GetTempPath(), $"vela-upload-{Guid.NewGuid():N}.xmind");
         await File.WriteAllTextAsync(local, "pretend this is a mind map");
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.StartUploadHandler = (id, source, destination, options, _) => Task.FromResult(
+            new VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot { TransferId = "upload", OperationId = options.OperationId,
+                SessionId = id, LocalPath = source, RemotePath = destination,
+                State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Succeeded, Generation = 1, Sequence = 1 });
         try
         {
             string? summary = null;
@@ -408,9 +414,9 @@ public sealed class AgentToolboxTests
             string approved = await InvokeAsync(toolbox, "upload_local_file",
                 new() { ["localPath"] = local, ["remotePath"] = "/root/mind.xmind" });
 
-            Assert.Contains("Uploaded", approved);
-            Assert.AreEqual("pretend this is a mind map",
-                Encoding.UTF8.GetString(context.FakeRemoteFs.GetFile(session.SessionId, "/root/mind.xmind")!));
+            Assert.Contains("Succeeded", approved);
+            Assert.HasCount(1, context.FakeRemoteFs.UploadsStarted);
+            Assert.AreEqual("/root/mind.xmind", context.FakeRemoteFs.UploadsStarted[0].RemotePath);
         }
         finally
         {

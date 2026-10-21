@@ -87,6 +87,10 @@ public interface ISftpClientWrapper : IAsyncDisposable
     /// </summary>
     Task PosixRenameFileAsync(string oldPath, string newPath, CancellationToken cancellationToken = default);
 
+    /// <summary>严格 POSIX 原子替换;服务器不支持扩展时必须拒绝,不能回退普通 rename。</summary>
+    Task AtomicReplaceFileAsync(string oldPath, string newPath, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Atomic replacement is not supported by this backend.");
+
     /// <summary>
     /// 判断指定远端路径是否存在。
     /// </summary>

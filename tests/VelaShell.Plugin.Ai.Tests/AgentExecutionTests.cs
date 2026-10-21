@@ -406,6 +406,99 @@ public sealed class AgentExecutionTests
     }
 
     [TestMethod]
+    public async Task HostUploadApprovalDenied_PausesDesktopBeforeAnotherModelRequest_ButNotMcpRun()
+    {
+        foreach (bool denialEndsRun in new[] { true, false })
+        {
+            using var context = new TestPluginContext();
+            var finish = new TaskCompletionSource<VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var snapshot = new VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot
+            {
+                TransferId = "upload", OperationId = "operation", SessionId = "session", LocalPath = "source", RemotePath = "destination",
+                State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Starting, Sequence = 1, Generation = 1
+            };
+            context.FakeRemoteFs.SupportsTransferOperations = true;
+            context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, _) => Task.FromResult(snapshot);
+            context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => finish.Task.WaitAsync(ct);
+            await using var registry = new CommandJobRegistry(new ControlledExec());
+            await using var scope = registry.BeginRun("owner", "run", denialEndsRun: denialEndsRun);
+            scope.Transfers = FileTransferJobRegistry.For(context).BeginRun("owner", "run");
+            await scope.Transfers.StartAsync("session", "source", "destination", "operation", false, default);
+            var execution = new AgentExecution("run", () => scope.HasUnknownOutcome, () => scope.HasDeniedExecution);
+            var wire = new Wire((_, _) => [new(ChatRole.Assistant, "waiting"), End(ChatFinishReason.Stop)]);
+            using var client = new RecoveringChatClient(wire, execution, "boundary");
+            var waiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            async Task Consume()
+            {
+                await foreach (var _ in new AgentRunCoordinator(scope, execution).RunAsync(client,
+                    [new(ChatRole.User, "go")], new(), () => waiting.TrySetResult(), default)) { }
+            }
+            Task run = Consume();
+            await waiting.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            finish.SetResult(snapshot with { State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Failed,
+                Sequence = 2, RemoteStopConfirmed = true, DestinationCommitConfirmedAbsent = true,
+                ErrorCode = "permission-denied", ErrorMessage = "A trusted host upload approval was not granted." });
+            if (denialEndsRun)
+            {
+                AgentPausedException failure = await Assert.ThrowsAsync<AgentPausedException>(() => run);
+                Assert.AreEqual("ExecutionDenied", failure.ReasonKey);
+                Assert.HasCount(1, wire.Requests);
+            }
+            else
+            {
+                await run.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.HasCount(2, wire.Requests);
+                Assert.IsFalse(scope.HasDeniedExecution, "MCP固定run的拒绝不能封住整个客户端连接");
+            }
+            Assert.IsFalse(scope.HasUnknownOutcome, "明确未启动的可信审批拒绝不是Unknown");
+            Assert.IsFalse(scope.Transfers.HasRunningTransfers);
+            Assert.HasCount(1, context.FakeRemoteFs.UploadsStarted);
+            Assert.IsEmpty(context.FakeRemoteFs.TransfersResumed);
+            Assert.IsEmpty(context.FakeRemoteFs.TransfersCancelled);
+        }
+    }
+
+    [TestMethod]
+    public async Task UploadCompletion_ResumesWithNewNotification_AndDoesNotAddSecondCallResult()
+    {
+        using var context = new TestPluginContext();
+        var finish = new TaskCompletionSource<VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var snapshot = new VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot
+        {
+            TransferId = "upload", OperationId = "operation", SessionId = "session", LocalPath = "source", RemotePath = "destination",
+            State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Running, Sequence = 1, Generation = 1
+        };
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, _) => Task.FromResult(snapshot);
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => finish.Task.WaitAsync(ct);
+        await using var registry = new CommandJobRegistry(new ControlledExec());
+        await using var scope = registry.BeginRun("owner", "run");
+        scope.Transfers = FileTransferJobRegistry.For(context).BeginRun("owner", "run");
+        await scope.Transfers.StartAsync("session", "source", "destination", "operation", false, default);
+        var execution = new AgentExecution("run", () => scope.HasUnknownOutcome);
+        var wire = new Wire((_, _) => [new(ChatRole.Assistant, "reply"), End(ChatFinishReason.Stop)]);
+        using var client = new RecoveringChatClient(wire, execution, "boundary");
+        var waiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        List<bool> waitingStates = [];
+        async Task Consume()
+        {
+            await foreach (var _ in new AgentRunCoordinator(scope, execution).RunAsync(client,
+                [new(ChatRole.User, "go")], new(), () => waiting.TrySetResult(), default,
+                localWaiting: waitingStates.Add)) { }
+        }
+        Task run = Consume();
+        await waiting.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.HasCount(1, wire.Requests, "本地等待不应反复调用模型");
+        finish.SetResult(snapshot with { State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Succeeded, Sequence = 2 });
+        await run.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.HasCount(2, wire.Requests);
+        Assert.Contains("upload", wire.Requests[1][^1].Text);
+        Assert.IsEmpty(wire.Requests[1][^1].Contents.OfType<FunctionResultContent>());
+        Assert.AreSequenceEqual(new[] { true, false }, waitingStates);
+        Assert.IsEmpty(await scope.Transfers.WaitForCompletionAsync());
+    }
+
+    [TestMethod]
     public async Task BackgroundCompletion_ResumesOnce_AndStopRejectsLateCompletion()
     {
         foreach (bool stop in new[] { false, true })

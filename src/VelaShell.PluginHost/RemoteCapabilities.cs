@@ -222,8 +222,51 @@ internal sealed class RpcRemoteExec(RpcConnection rpc, bool supportsExecutionOpe
 }
 
 /// <summary>远程文件能力的 RPC 代理。传输走同机文件路径,进度经通知回流。</summary>
-internal sealed class RpcRemoteFs(RpcConnection rpc) : IRemoteFsApi
+internal sealed class RpcRemoteFs(RpcConnection rpc, bool supportsTransferOperations = false) : IRemoteFsApi
 {
+    public bool SupportsTransferOperations => supportsTransferOperations;
+
+    private async Task<RemoteTransferSnapshot> TransferRequestAsync(string method, object request, CancellationToken ct)
+    {
+        if (!SupportsTransferOperations) throw new NotSupportedException("This host does not implement transfer operations.");
+        ct.ThrowIfCancellationRequested();
+        // 短请求帧不随等待者取消,避免取消写半帧;回执等待可取消,后台请求有固定超时并观察异常。
+        Task<RemoteTransferSnapshot?> pending = rpc.RequestAsync<RemoteTransferSnapshot>(method, request, TimeSpan.FromSeconds(45), CancellationToken.None);
+        try
+        {
+            return await pending.WaitAsync(ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Host did not return a transfer snapshot.");
+        }
+        catch (OperationCanceledException)
+        {
+            _ = pending.ContinueWith(static task => _ = task.Exception, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            throw;
+        }
+    }
+
+    public Task<RemoteTransferSnapshot> StartUploadAsync(string sessionId, string localPath, string remotePath,
+        RemoteUploadOptions options, CancellationToken cancellationToken = default)
+        => TransferRequestAsync(PluginRpc.FsTransferStartUpload, new FsTransferStartUploadRequest(sessionId, localPath, remotePath, options), cancellationToken);
+
+    public Task<RemoteTransferSnapshot> GetTransferAsync(string transferId, CancellationToken cancellationToken = default)
+        => TransferRequestAsync(PluginRpc.FsTransferGet, new FsTransferRef(transferId), cancellationToken);
+
+    public Task<RemoteTransferSnapshot> WaitTransferAsync(string transferId, long afterSequence, TimeSpan waitTimeout,
+        CancellationToken cancellationToken = default)
+    {
+        if (afterSequence < 0) throw new ArgumentOutOfRangeException(nameof(afterSequence));
+        if (waitTimeout < TimeSpan.Zero || waitTimeout > TimeSpan.FromSeconds(IRemoteFsApi.MaxTransferWaitSeconds))
+            throw new ArgumentOutOfRangeException(nameof(waitTimeout));
+        return TransferRequestAsync(PluginRpc.FsTransferWait, new FsTransferWaitRequest(transferId, afterSequence, waitTimeout.TotalSeconds), cancellationToken);
+    }
+
+    public Task<RemoteTransferSnapshot> CancelTransferAsync(string transferId, long expectedGeneration, CancellationToken cancellationToken = default)
+        => TransferRequestAsync(PluginRpc.FsTransferCancel, new FsTransferCancelRequest(transferId, expectedGeneration), cancellationToken);
+
+    public Task<RemoteTransferSnapshot> ResumeTransferAsync(string transferId, RemoteTransferResumeOptions options, CancellationToken cancellationToken = default)
+        => TransferRequestAsync(PluginRpc.FsTransferResume, new FsTransferResumeRequest(transferId, options), cancellationToken);
+
     private static readonly TimeSpan Short = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan Transfer = TimeSpan.FromHours(2);
 

@@ -26,7 +26,7 @@ public enum PluginUpdateState
 }
 
 /// <summary>插件管理页里的一行。</summary>
-public sealed class PluginRowViewModel(PluginDescriptor descriptor, bool hasTerminalGrant)
+public sealed class PluginRowViewModel(PluginDescriptor descriptor, bool hasTerminalGrant) : ReactiveObject
 {
     /// <summary>插件 id。</summary>
     public string Id => descriptor.Id;
@@ -91,10 +91,14 @@ public sealed class PluginRowViewModel(PluginDescriptor descriptor, bool hasTerm
     /// <summary>启用/禁用按钮文案。</summary>
     public string ToggleText => Strings.Get(IsDisabled ? "PluginManager_Enable" : "PluginManager_Disable");
 
-    /// <summary>该插件当前是否持有终端回写授权(展示"撤销"入口)。</summary>
-    public bool HasTerminalGrant => hasTerminalGrant;
+    /// <summary>该插件当前是否持有敏感能力授权或上传租约(展示撤销入口)。</summary>
+    public bool HasTerminalGrant
+    {
+        get;
+        internal set => this.RaiseAndSetIfChanged(ref field, value);
+    } = hasTerminalGrant;
 
-    /// <summary>撤销终端授权按钮文案。</summary>
+    /// <summary>撤销敏感能力授权按钮文案。</summary>
     [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "XAML 绑定只解析实例成员。")]
     public string RevokeText => Strings.Get("PluginManager_RevokePermission");
 
@@ -168,7 +172,7 @@ public sealed class PluginRowViewModel(PluginDescriptor descriptor, bool hasTerm
 }
 
 /// <summary>
-/// 插件管理页视图模型:列出全部插件、启停、撤销终端授权。
+/// 插件管理页视图模型:列出全部插件、启停、撤销敏感能力授权。
 /// 订阅 <see cref="PluginManager.Changed" /> 自动刷新(封送到 UI 线程)。
 /// </summary>
 public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
@@ -183,6 +187,8 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
 
     /// <summary>检查更新的重入闸。与界面无关,纯粹是"别把同一个请求发两遍"。</summary>
     private int _checking;
+    private int _refreshingPermissions;
+    private bool _disposed;
     private readonly Action _onChanged;
     private readonly Action<string, int> _onDebugAttach;
 
@@ -257,7 +263,7 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
 
     /// <summary>构造并加载。</summary>
     /// <param name="manager">插件运行时。</param>
-    /// <param name="gate">终端回写授权闸;缺席时不显示撤销入口。</param>
+    /// <param name="gate">敏感能力授权闸;缺席时不显示撤销入口。</param>
     /// <param name="market">
     /// 插件商店的只读客户端;缺席时整个更新检查不存在(headless 测试与离线部署走这条)。
     /// </param>
@@ -312,7 +318,26 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
         // Changed 事件会触发刷新;这里不重复。
     }
 
-    /// <summary>撤销某插件的终端回写授权。</summary>
+    /// <summary>刷新当前行的撤销入口，不重建列表、不查询插件商店。</summary>
+    internal async Task RefreshPermissionGrantsAsync()
+    {
+        if (_gate is null || _disposed || Interlocked.CompareExchange(ref _refreshingPermissions, 1, 0) != 0) return;
+        try
+        {
+            PluginRowViewModel[] rows = await Dispatcher.UIThread.InvokeAsync(() => Plugins.ToArray());
+            foreach (PluginRowViewModel row in rows)
+            {
+                bool granted = await _gate.HasGrantAsync(row.Id).ConfigureAwait(false);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (!_disposed && Plugins.Contains(row)) row.HasTerminalGrant = granted;
+                });
+            }
+        }
+        finally { Interlocked.Exchange(ref _refreshingPermissions, 0); }
+    }
+
+    /// <summary>撤销某插件的敏感能力授权和上传租约。</summary>
     public async Task RevokeTerminalAsync(PluginRowViewModel row)
     {
         if (_gate is not null)
@@ -532,6 +557,7 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        _disposed = true;
         _manager.Changed -= _onChanged;
         _manager.DebugAttachRequested -= _onDebugAttach;
     }
