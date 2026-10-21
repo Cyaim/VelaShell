@@ -44,7 +44,7 @@ public sealed class RemoteTransferTests
             foreach (bool approved in new[] { false, true })
             {
                 IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-                prompt.RequestFileUploadAsync("test.manager", Arg.Any<string>(), Path.GetFullPath(file), "/target", false, Arg.Any<CancellationToken>())
+                prompt.RequestFileUploadAsync("test.manager", Arg.Any<string>(), RemoteFsCapability.ResolveUploadSource(file), "/target", false, Arg.Any<CancellationToken>())
                     .Returns(PluginPermissionDecision.AllowOnce);
                 await using var manager = new PluginManager(new()
                 {
@@ -61,7 +61,7 @@ public sealed class RemoteTransferTests
                 var done = await Terminal(api, start.TransferId);
                 Assert.AreEqual(approved, done.IsSuccess);
                 if (!approved) Assert.AreEqual("permission-denied", done.ErrorCode);
-                else await prompt.Received(1).RequestFileUploadAsync("test.manager", Arg.Any<string>(), Path.GetFullPath(file), "/target", false, Arg.Any<CancellationToken>());
+                else await prompt.Received(1).RequestFileUploadAsync("test.manager", Arg.Any<string>(), RemoteFsCapability.ResolveUploadSource(file), "/target", false, Arg.Any<CancellationToken>());
                 await WaitIdle(api);
             }
             await _sftp.Received(1).CommitUploadAsync(_session, Arg.Any<string>(), "/target", false, Arg.Any<CancellationToken>());
@@ -95,7 +95,7 @@ public sealed class RemoteTransferTests
         var asking = NewSignal();
         var decision = new TaskCompletionSource<PluginPermissionDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileUploadAsync("test.transfer", Arg.Any<string>(), Path.GetFullPath(file), "/target", true, Arg.Any<CancellationToken>())
+        prompt.RequestFileUploadAsync("test.transfer", Arg.Any<string>(), RemoteFsCapability.ResolveUploadSource(file), "/target", true, Arg.Any<CancellationToken>())
             .Returns(async _ => { asking.TrySetResult(); return await decision.Task; });
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
         try
@@ -103,7 +103,9 @@ public sealed class RemoteTransferTests
             var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "approval", Overwrite = true });
             await asking.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.IsFalse(start.IsTerminal, "Start短回执不等待可信审批。");
-            Assert.ThrowsExactly<IOException>(() => { using var write = new FileStream(file, FileMode.Open, FileAccess.Write); });
+            Assert.AreEqual(RemoteFsCapability.ResolveUploadSource(file), start.LocalPath);
+            if (OperatingSystem.IsWindows())
+                Assert.ThrowsExactly<IOException>(() => { using var write = new FileStream(file, FileMode.Open, FileAccess.Write); });
             await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
             decision.TrySetResult(PluginPermissionDecision.Deny);
             Assert.AreEqual("permission-denied", (await Terminal(api, start.TransferId)).ErrorCode);
@@ -111,6 +113,137 @@ public sealed class RemoteTransferTests
             await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
         }
         finally { decision.TrySetResult(PluginPermissionDecision.Deny); File.Delete(file); }
+    }
+
+    [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
+    public async Task UnixSourceModifiedWhileApprovalPendingFailsBeforeRemoteWrite()
+    {
+        string file = CreateFile(8);
+        var asking = NewSignal();
+        var decision = new TaskCompletionSource<PluginPermissionDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(async _ => { asking.TrySetResult(); return await decision.Task; });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "changed-before-approval" });
+            await asking.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            using (var write = new FileStream(file, FileMode.Open, FileAccess.Write, FileShare.ReadWrite)) write.SetLength(16);
+            decision.SetResult(PluginPermissionDecision.AllowOnce);
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual(RemoteTransferState.Failed, done.State);
+            Assert.AreEqual("source-changed", done.ErrorCode);
+            await WaitIdle(api);
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally { decision.TrySetResult(PluginPermissionDecision.Deny); await WaitIdle(api); File.Delete(file); }
+    }
+
+    [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
+    public async Task ParentAliasesBindCanonicalSourceAndReplayDoesNotReopenRetargetedAlias()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "vela-transfer-links-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "first"));
+        Directory.CreateDirectory(Path.Combine(root, "second"));
+        string first = Path.Combine(root, "first", "source");
+        await File.WriteAllBytesAsync(first, [1, 2, 3]);
+        await File.WriteAllBytesAsync(Path.Combine(root, "second", "source"), [9, 9, 9]);
+        string alias = Path.Combine(root, "alias");
+        string outer = Path.Combine(root, "outer");
+        Directory.CreateSymbolicLink(alias, "first");
+        Directory.CreateSymbolicLink(outer, alias);
+        string requested = Path.Combine(outer, "source");
+        string canonical = RemoteFsCapability.ResolveUploadSource(first);
+        var asking = NewSignal();
+        var decision = new TaskCompletionSource<PluginPermissionDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileUploadAsync("test.transfer", Arg.Any<string>(), canonical, "/target", false, Arg.Any<CancellationToken>())
+            .Returns(async _ => { asking.TrySetResult(); return await decision.Task; });
+        string digest = Convert.ToHexString(SHA256.HashData(new byte[] { 1, 2, 3 }));
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), 3, Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                using var bytes = new MemoryStream();
+                await call.ArgAt<Stream>(1).CopyToAsync(bytes);
+                CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, bytes.ToArray());
+            });
+        _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = digest }));
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        var options = new RemoteUploadOptions { OperationId = "alias" };
+        try
+        {
+            var start = await api.StartUploadAsync(_session.ToString(), requested, "/target", options);
+            await asking.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.AreEqual(canonical, start.LocalPath);
+            Directory.Delete(alias);
+            Directory.CreateSymbolicLink(alias, "second");
+            Assert.AreEqual(start.TransferId, (await api.StartUploadAsync(_session.ToString(), requested, "/target", options)).TransferId);
+            decision.SetResult(PluginPermissionDecision.AllowOnce);
+            Assert.IsTrue((await Terminal(api, start.TransferId)).IsSuccess);
+            await WaitIdle(api);
+            File.Delete(Path.Combine(root, "second", "source"));
+            Assert.AreEqual(start.TransferId, (await api.StartUploadAsync(_session.ToString(), requested, "/target", options)).TransferId);
+            await prompt.Received(1).RequestFileUploadAsync("test.transfer", Arg.Any<string>(), canonical, "/target", false, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            decision.TrySetResult(PluginPermissionDecision.Deny);
+            await WaitIdle(api);
+            Directory.Delete(outer);
+            Directory.Delete(alias);
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
+    public void ParentLinkDotDotIsAppliedAfterIntermediateLinkExpansion()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "vela-transfer-dotdot-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "real", "sub"));
+        Directory.CreateDirectory(Path.Combine(root, "real", "destination"));
+        Directory.CreateDirectory(Path.Combine(root, "destination"));
+        string jump = Path.Combine(root, "jump");
+        string alias = Path.Combine(root, "alias");
+        Directory.CreateSymbolicLink(jump, "real/sub");
+        Directory.CreateSymbolicLink(alias, "jump/../destination");
+        try
+        {
+            Assert.AreEqual(RemoteFsCapability.ResolveUploadSource(Path.Combine(root, "real", "destination", "source")),
+                RemoteFsCapability.ResolveUploadSource(Path.Combine(alias, "source")));
+        }
+        finally { Directory.Delete(alias); Directory.Delete(jump); Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
+    public async Task LeafLinksAndUnresolvableParentsRemainRejected()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "vela-transfer-reject-links-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        string source = Path.Combine(root, "source");
+        await File.WriteAllBytesAsync(source, [1]);
+        string leaf = Path.Combine(root, "leaf");
+        string missing = Path.Combine(root, "missing");
+        string loop = Path.Combine(root, "loop");
+        File.CreateSymbolicLink(leaf, source);
+        Directory.CreateSymbolicLink(missing, "absent");
+        Directory.CreateSymbolicLink(loop, "loop");
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        try
+        {
+            await Assert.ThrowsExactlyAsync<NotSupportedException>(() => api.StartUploadAsync(_session.ToString(), leaf, "/target", new() { OperationId = "leaf" }));
+            await Assert.ThrowsAsync<IOException>(() => api.StartUploadAsync(_session.ToString(), Path.Combine(missing, "source"), "/target", new() { OperationId = "missing" }));
+            await Assert.ThrowsAsync<IOException>(() => api.StartUploadAsync(_session.ToString(), Path.Combine(loop, "source"), "/target", new() { OperationId = "loop" }));
+            Assert.AreEqual(0, api.ActiveTransfers);
+        }
+        finally { File.Delete(leaf); Directory.Delete(missing); Directory.Delete(loop); Directory.Delete(root, true); }
     }
 
     [TestMethod]
@@ -217,7 +350,14 @@ public sealed class RemoteTransferTests
             Assert.IsFalse(done.CanResume);
             await WaitIdle(api);
         }
-        finally { close.TrySetResult(); commit.TrySetResult(); await WaitIdle(api); File.Delete(file); }
+        finally
+        {
+            close.TrySetResult();
+            commit.TrySetResult();
+            api.Dispose();
+            try { await WaitIdle(api); }
+            finally { File.Delete(file); }
+        }
     }
 
     [TestMethod]

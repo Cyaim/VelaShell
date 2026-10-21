@@ -16,9 +16,9 @@ internal sealed partial class RemoteFsCapability
     internal bool UseDiskSnapshot { get; init; } = !OperatingSystem.IsWindows();
     private const int MaxRecords = 1024;
     private const int MaxActiveUploads = 32;
-    private readonly object _transfersGate = new();
-    private readonly Dictionary<string, UploadOperation> _transfers = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, StartReceipt> _receipts = new(StringComparer.Ordinal);
+    private readonly Lock _transfersGate = new();
+    private readonly Dictionary<string, UploadOperation> _transfers = [with(StringComparer.Ordinal)];
+    private readonly Dictionary<string, StartReceipt> _receipts = [with(StringComparer.Ordinal)];
     private readonly SemaphoreSlim _uploadSlots = new(4);
     private bool _transfersDisposed;
     private bool _disconnectSubscribed;
@@ -71,22 +71,31 @@ internal sealed partial class RemoteFsCapability
             if (_receipts.Count >= MaxRecords) throw new InvalidOperationException("Transfer operation receipt quota reached for this plugin lifetime.");
             if (_transfers.Values.Count(op => !op.Worker.IsCompleted) >= MaxActiveUploads)
                 throw new InvalidOperationException("Active upload queue quota reached for this plugin.");
-            RejectLinks(local);
-            var source = new FileStream(local, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024,
+            string resolved = ResolveUploadSource(local);
+            RejectLinks(resolved);
+            var source = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
             try
             {
-                RejectLinks(local);
-                if (OperatingSystem.IsWindows()) VerifyOpenedPath(source, local);
+                RejectLinks(resolved);
+                VerifyOpenedPath(source, resolved);
                 var stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
                 if (options.Timeout is { } budget) stop.CancelAfter(budget);
                 DateTimeOffset now = DateTimeOffset.UtcNow;
                 var op = new UploadOperation(new()
                 {
                     TransferId = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
-                    OperationId = options.OperationId, SessionId = sessionId, LocalPath = local, RemotePath = remote,
-                    State = RemoteTransferState.Queued, Generation = 1, Sequence = 1, TotalBytes = source.Length,
-                    CreatedAt = now, UpdatedAt = now, DestinationCommitConfirmedAbsent = true,
+                    OperationId = options.OperationId,
+                    SessionId = sessionId,
+                    LocalPath = resolved,
+                    RemotePath = remote,
+                    State = RemoteTransferState.Queued,
+                    Generation = 1,
+                    Sequence = 1,
+                    TotalBytes = source.Length,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    DestinationCommitConfirmedAbsent = true,
                 }, source, stop);
                 if (uploadPermissions is not null && !string.IsNullOrWhiteSpace(pluginId))
                     op.Permission = uploadPermissions.CreateUploadLease(pluginId);
@@ -98,7 +107,7 @@ internal sealed partial class RemoteFsCapability
                 _transfers.Add(op.Snapshot.TransferId, op);
                 _receipts.Add(options.OperationId, new(sessionId, local, remote, options, op));
                 // 请求令牌只控制回执等待,绝不链接到传输寿命。
-                op.Worker = Task.Run(() => RunUploadAsync(op, session, options));
+                op.Worker = Task.Run(() => RunUploadAsync(op, session, options), CancellationToken.None);
                 _ = op.Worker.ContinueWith(static task => _ = task.Exception, CancellationToken.None,
                     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 return Task.FromResult(Read(op));
@@ -116,7 +125,7 @@ internal sealed partial class RemoteFsCapability
     public async Task<RemoteTransferSnapshot> WaitTransferAsync(string transferId, long afterSequence, TimeSpan waitTimeout,
         CancellationToken cancellationToken = default)
     {
-        if (afterSequence < 0) throw new ArgumentOutOfRangeException(nameof(afterSequence));
+        ArgumentOutOfRangeException.ThrowIfNegative(afterSequence);
         if (waitTimeout < TimeSpan.Zero || waitTimeout > TimeSpan.FromSeconds(IRemoteFsApi.MaxTransferWaitSeconds))
             throw new ArgumentOutOfRangeException(nameof(waitTimeout));
         cancellationToken.ThrowIfCancellationRequested();
@@ -213,16 +222,81 @@ internal sealed partial class RemoteFsCapability
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetFinalPathNameByHandle(SafeFileHandle handle, StringBuilder path, uint length, uint flags);
 
+    [LibraryImport("libc", EntryPoint = "fcntl", SetLastError = true)]
+    private static partial int GetDarwinFilePath(SafeFileHandle handle, int command, [Out] byte[] path);
+
+    [LibraryImport("libc", EntryPoint = "fcntl", SetLastError = true)]
+    private static partial int GetDarwinArm64FilePath(SafeFileHandle handle, int command,
+        nint unused2, nint unused3, nint unused4, nint unused5, nint unused6, nint unused7, [Out] byte[] path);
+
     private static void VerifyOpenedPath(FileStream source, string expected)
     {
-        var path = new StringBuilder(32768);
-        uint length = GetFinalPathNameByHandle(source.SafeFileHandle, path, (uint)path.Capacity, 0);
-        if (length == 0 || length >= path.Capacity) throw new IOException("Cannot verify the opened source object.");
-        string actual = path.ToString();
-        if (actual.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) actual = @"\\" + actual[8..];
-        else if (actual.StartsWith(@"\\?\", StringComparison.Ordinal)) actual = actual[4..];
-        if (!string.Equals(Path.GetFullPath(actual), expected, StringComparison.OrdinalIgnoreCase))
+        string actual;
+        if (OperatingSystem.IsWindows())
+        {
+            var path = new StringBuilder(32768);
+            uint length = GetFinalPathNameByHandle(source.SafeFileHandle, path, (uint)path.Capacity, 0);
+            if (length == 0 || length >= path.Capacity) throw new IOException("Cannot verify the opened source object.");
+            actual = path.ToString();
+            if (actual.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) actual = @"\\" + actual[8..];
+            else if (actual.StartsWith(@"\\?\", StringComparison.Ordinal)) actual = actual[4..];
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            actual = File.ResolveLinkTarget($"/proc/self/fd/{source.SafeFileHandle.DangerousGetHandle().ToInt64()}", false)?.FullName
+                ?? throw new IOException("Cannot verify the opened source object.");
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            // Darwin sys/fcntl.h: F_GETPATH = 50;缓冲大于 MAXPATHLEN,失败时不降级路径检查。
+            byte[] path = new byte[4096];
+            // Apple arm64 的变参在栈上传递，填满 x2–x7 后将缓冲指针放到首个栈槽。
+            int result = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+                ? GetDarwinArm64FilePath(source.SafeFileHandle, 50, 0, 0, 0, 0, 0, 0, path)
+                : GetDarwinFilePath(source.SafeFileHandle, 50, path);
+            if (result == -1)
+                throw new IOException("Cannot verify the opened source object.");
+            int end = Array.IndexOf(path, (byte)0);
+            if (end <= 0) throw new IOException("Cannot verify the opened source object.");
+            actual = new UTF8Encoding(false, true).GetString(path, 0, end);
+        }
+        else throw new PlatformNotSupportedException("Stable upload source verification is unavailable.");
+        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.Equals(Path.GetFullPath(actual), expected, comparison))
             throw new IOException("The opened source does not match the approved path.");
+    }
+
+    internal static string ResolveUploadSource(string path)
+    {
+        path = Path.GetFullPath(path);
+        string parent = Path.GetDirectoryName(path) ?? throw new IOException("The upload source must name a file.");
+        int links = 0;
+        return Path.Combine(ResolveUploadDirectory(parent, ref links), Path.GetFileName(path));
+    }
+
+    private static string ResolveUploadDirectory(string path, ref int links)
+    {
+        string root = Path.GetPathRoot(path) ?? throw new IOException("The upload source must be absolute.");
+        string current = root;
+        foreach (string part in path[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (part == ".") continue;
+            if (part == "..") { current = Path.GetDirectoryName(current) ?? root; continue; }
+            var directory = new DirectoryInfo(Path.Combine(current, part));
+            if (directory.LinkTarget is { } target)
+            {
+                if (++links > 40) throw new IOException("Too many links in the upload source path.");
+                // 链接内容中的 .. 必须在前面的链接已展开后处理，不能先 GetFullPath 折叠。
+                current = ResolveUploadDirectory(Path.IsPathRooted(target) ? target : Path.Combine(current, target), ref links);
+            }
+            else
+            {
+                if (!directory.Exists || (directory.Attributes & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("Cannot verify the upload source directory.");
+                current = directory.FullName;
+            }
+        }
+        return current;
     }
 
     private static void RejectLinks(string path)
@@ -306,7 +380,10 @@ internal sealed partial class RemoteFsCapability
                 else Directory.CreateDirectory(snapshotDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
                 var snapshotOptions = new FileStreamOptions
                 {
-                    Mode = FileMode.CreateNew, Access = FileAccess.ReadWrite, Share = FileShare.None, BufferSize = 128 * 1024,
+                    Mode = FileMode.CreateNew,
+                    Access = FileAccess.ReadWrite,
+                    Share = FileShare.None,
+                    BufferSize = 128 * 1024,
                     Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose | FileOptions.SequentialScan,
                 };
                 if (!OperatingSystem.IsWindows()) snapshotOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
@@ -369,8 +446,11 @@ internal sealed partial class RemoteFsCapability
             await commitTask.WaitAsync(ct).ConfigureAwait(false);
             Update(op, s => s with
             {
-                State = RemoteTransferState.Succeeded, TransferredBytes = s.TotalBytes,
-                CompletedAt = DateTimeOffset.UtcNow, RemoteStopConfirmed = true, DestinationCommitConfirmedAbsent = false,
+                State = RemoteTransferState.Succeeded,
+                TransferredBytes = s.TotalBytes,
+                CompletedAt = DateTimeOffset.UtcNow,
+                RemoteStopConfirmed = true,
+                DestinationCommitConfirmedAbsent = false,
                 SpeedBytesPerSecond = elapsed.Elapsed.TotalSeconds > 0 ? s.TotalBytes / elapsed.Elapsed.TotalSeconds : null,
                 EstimatedTimeRemaining = TimeSpan.Zero,
             });
@@ -384,8 +464,10 @@ internal sealed partial class RemoteFsCapability
                 State = timeout ? RemoteTransferState.TimedOut : committing || !stopped ? RemoteTransferState.Unknown
                     : ex is PluginPermissionDeniedException || op.PermissionRevoked ? RemoteTransferState.Failed
                     : ct.IsCancellationRequested ? RemoteTransferState.Cancelled : RemoteTransferState.Failed,
-                RemoteStopConfirmed = stopped, DestinationCommitConfirmedAbsent = !committing,
-                CompletedAt = DateTimeOffset.UtcNow, Resumable = false,
+                RemoteStopConfirmed = stopped,
+                DestinationCommitConfirmedAbsent = !committing,
+                CompletedAt = DateTimeOffset.UtcNow,
+                Resumable = false,
                 ErrorCode = op.PermissionRevoked ? "permission-revoked" : ex is PluginPermissionDeniedException ? "permission-denied"
                     : committing ? "commit-unknown" : timeout ? "timeout" : ct.IsCancellationRequested ? "cancelled"
                     : ex is SourceChangedException ? "source-changed" : "upload-failed",
@@ -421,8 +503,12 @@ internal sealed partial class RemoteFsCapability
                         try { if (slot) _uploadSlots.Release(); }
                         finally
                         {
-                            if (op.Permission is not null) op.Permission.Active = false;
-                            lock (op.Gate) { op.StopDisposed = true; op.Stop.Dispose(); }
+                            op.Permission?.Active = false;
+                            lock (op.Gate)
+                            {
+                                op.StopDisposed = true;
+                                op.Stop.Dispose();
+                            }
                         }
                     }
                 }
