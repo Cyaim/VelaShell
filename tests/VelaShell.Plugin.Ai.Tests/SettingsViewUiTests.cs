@@ -148,6 +148,227 @@ public sealed partial class SettingsViewUiTests
     }
 
     [TestMethod]
+    public void BaseUrlToAnotherOrigin_KeylessProviderStillTestsTheUnsavedAddress()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.SaveAsync(settings);
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                // Ollama 一类的无鉴权接入从本机换到另一台机器:没有已存的 Key 可带,不该被「请先填新 Key」拦下,照常测
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual("Bearer not-needed", newHost.Authorizations.Single(), view.GetControl<TextBlock>("StatusText").Text);
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_FirstModelsOwnKeyIsNotTestedAgainstTheUnsavedAddress()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [own] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = own.Id };
+            await store.SaveAsync(settings);
+            await store.SetApiKeyAsync(own.Id, "old-own");
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                // 供应商这一层没有 Key,但不是无鉴权接入:首模型自带的那把属于旧地址,同样不带去测
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(loc["SetupTestNeedsNewOriginKey"], view.GetControl<TextBlock>("StatusText").Text);
+                Assert.IsEmpty(newHost.Requests);
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void BaseUrlToAnotherOrigin_OwnKeyFirstModelTestsTheTypedKeyThroughAnInheritingModel(bool inheritingModel)
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+            var provider = new AiProvider
+            {
+                ModelsExpanded = true,
+                BaseUrl = oldHost.BaseUrl,
+                Models = inheritingModel ? [own, new AiModelConfig { Model = "inherits" }] : [own]
+            };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = own.Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            await store.SetApiKeyAsync(own.Id, "old-own");
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                // 没填新 Key:首模型自带的那把属于旧地址,不带去测,请用户先填新 Key
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(loc["SetupTestNeedsNewOriginKey"], status.Text);
+                Assert.IsEmpty(newHost.Requests);
+
+                // 照提示填了新 Key:首模型用不上供应商的 Key,换一个继承供应商 Key 的模型来测;没有就如实说
+                EditProviderKey(view, provider.Id).Text = "new-primary";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                if (inheritingModel)
+                {
+                    Assert.AreEqual("Bearer new-primary", newHost.Authorizations.Single());
+                    Assert.Contains("\"model\":\"inherits\"", newHost.Requests.Single());
+                }
+                else
+                {
+                    Assert.AreEqual(loc["SetupKeyNoModel"], status.Text);
+                    Assert.IsEmpty(newHost.Requests);
+                }
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    [DataRow("same-settings")]
+    [DataRow("same-slot")]
+    [DataRow("other-window")]
+    public void BaseUrlToAnotherOrigin_KeyStoredAfterThePromptAsksAgainInsteadOfClearingIt(string where)
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                Button save = view.GetControl<Button>("SaveButton");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                Click(save);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 1));
+
+                // 提示「清 1 把」之后又存进一把:目录页走同一份设置(加一把,或给同一个槽换上新服务器的 Key);
+                // 另一个窗口写盘后这边冲突重载
+                string added = provider.Id;
+                if (where == "same-settings")
+                {
+                    added = await store.AddProviderApiKeyAsync(settings, provider, "added-after-prompt");
+                }
+                else if (where == "same-slot")
+                {
+                    await store.ReplaceProviderApiKeyAsync(settings, provider, provider.Id, "added-after-prompt");
+                }
+                else
+                {
+                    var external = new AiSettingsStore(context);
+                    AiSettings other = await external.LoadAsync();
+                    added = await external.AddProviderApiKeyAsync(other, other.Providers[0], "added-after-prompt");
+                    Click(save);
+                    await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupConfigChanged"]);
+                    Assert.AreEqual(newHost.BaseUrl, view.GetControl<TextBox>("ProviderBaseUrlBox").Text, "草稿地址保留");
+                }
+                status.Text = "";
+                Click(save);
+                await WaitUntilAsync(() => save.IsEnabled
+                    && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", where == "same-slot" ? 1 : 2));
+                Assert.AreEqual("added-after-prompt", await store.GetApiKeyAsync(added), "旧的确认不能把它一起清掉");
+                Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl);
+
+                Click(save);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupSavedKeysCleared"]);
+                Assert.IsNull(await store.GetApiKeyAsync(added));
+                Assert.AreEqual(newHost.BaseUrl, provider.BaseUrl);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_SavedStatusNamesModelsWhoseOwnKeyWasCleared()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var own = new AiModelConfig { Name = "Own model", Model = "own", HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }, own] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            await store.SetApiKeyAsync(own.Id, "old-own");
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                Button save = view.GetControl<Button>("SaveButton");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                Click(save);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
+                Click(save);
+                // 自带 Key 的模型不会改用供应商的新 Key:点名请用户各自重填
+                await WaitUntilAsync(() => save.IsEnabled
+                    && status.Text == loc["SetupSavedKeysCleared"] + "\n" + loc.F("SetupModelKeysCleared", "Own model"));
+                Assert.IsNull(await store.GetApiKeyAsync(own.Id));
+                Assert.IsTrue(own.HasOwnApiKey);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+
+    [TestMethod]
     [DataRow("en")]
     [DataRow("zh-Hans")]
     [DataRow("zh-Hant")]
@@ -694,7 +915,7 @@ public sealed partial class SettingsViewUiTests
                 draft.BaseUrl = newHost.BaseUrl;
                 // 另一个窗口已确认换源:模型继承地址时它自带的旧 Key 也一并清掉,随后再为新主机填
                 await external.SaveProviderApiKeyFormAsync(current, owner, draft, expected, "new-provider-key", owner.Id, "old-provider-key",
-                    resetKeysOnOriginChange: true);
+                    confirmedKeyReset: model.HasOwnApiKey ? [AiSettingsStore.KeyResetToken(model.Id, "old-model-key")] : null);
                 if (model.HasOwnApiKey) await external.SetApiKeyAsync(model.Id, "new-model-key");
                 if (action == "row")
                 {

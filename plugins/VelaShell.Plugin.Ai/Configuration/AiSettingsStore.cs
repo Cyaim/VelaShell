@@ -2,6 +2,8 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Anthropic;
 using Anthropic.Models.Messages;
@@ -35,11 +37,21 @@ public sealed class AiSettingsStore(IPluginContext context)
     public sealed class ApiKeySlotChangedException() : InvalidOperationException("The selected API Key slot changed.");
 
     /// <summary>表单把 Base URL 换到了另一个源,保存会清掉这家供应商已存的 Key;须经用户确认后重新提交。</summary>
-    public sealed class ApiKeyResetRequiredException(int keyCount)
+    /// <remarks>
+    /// 确认的是提示时列出的那几把:调用方把 <see cref="Confirmation" /> 原样交回。提示之后别处又存进一把、
+    /// 或同一个槽换了值,都不在确认之内,提交时会再拒绝一次,不会被一并清掉。
+    /// </remarks>
+    public sealed class ApiKeyResetRequiredException(IReadOnlyList<string> keyOwners, IReadOnlyList<string> confirmation)
         : InvalidOperationException("The Base URL points to another origin; saved API Keys must be cleared first.")
     {
         /// <summary>确认后会被清掉的已存 Key 数。</summary>
-        public int KeyCount { get; } = keyCount;
+        public int KeyCount => KeyOwners.Count;
+
+        /// <summary>会被清掉的已存 Key 的归属者(供应商的 Key 槽 id 或模型 id)。</summary>
+        public IReadOnlyList<string> KeyOwners { get; } = keyOwners;
+
+        /// <summary>确认凭据:要清的每一把(归属者 + 值的摘要,不含明文)。</summary>
+        public IReadOnlyList<string> Confirmation { get; } = confirmation;
     }
 
     /// <summary>
@@ -921,12 +933,14 @@ public sealed class AiSettingsStore(IPluginContext context)
     /// Base URL 换到另一个源(协议、主机或端口不同)时,已存的 Key 属于旧地址,不能跟着发过去:
     /// 主槽、补充槽与继承这个地址的模型自带 Key 一并清掉,补充槽与当前槽复位;同一次提交里新填的 Key
     /// 是给新地址的,落进主槽。会清掉已存 Key 时默认拒绝并抛 <see cref="ApiKeyResetRequiredException" />,
-    /// 调用方让用户确认后带 <paramref name="resetKeysOnOriginChange" /> 重新提交。只改路径(同源)不动 Key。
+    /// 调用方让用户确认后把异常里的 <see cref="ApiKeyResetRequiredException.Confirmation" /> 经
+    /// <paramref name="confirmedKeyReset" /> 交回;要清的超出确认过的那几把(提示之后别处又存了一把、或同一个槽换了值)
+    /// 就再拒绝一次。只改路径(同源)不动 Key。
     /// </remarks>
-    /// <returns>清掉的已存 Key 数(不含被这次替换覆盖的那一把)。</returns>
-    internal async Task<int> SaveProviderApiKeyFormAsync(AiSettings settings, AiProvider provider, AiProvider draft,
-        string expectedProviderJson, string? replacementKey, string? keyId, string? expectedKey,
-        bool resetKeysOnOriginChange = false, CancellationToken cancellationToken = default)
+    /// <returns>清掉的已存 Key 的归属者(不含被这次替换覆盖的那一把)。</returns>
+    internal async Task<IReadOnlyList<string>> SaveProviderApiKeyFormAsync(AiSettings settings, AiProvider provider,
+        AiProvider draft, string expectedProviderJson, string? replacementKey, string? keyId, string? expectedKey,
+        IReadOnlyCollection<string>? confirmedKeyReset = null, CancellationToken cancellationToken = default)
     {
         await ProviderKeyGate.WaitAsync(cancellationToken);
         string? oldKey = null;
@@ -934,7 +948,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         bool secretWritten = false, settingsWritten = false;
         // 换源时动过的机密:归属者 → 原值,失败时逐个恢复
         Dictionary<string, string?> resetKeys = [with(StringComparer.Ordinal)];
-        int cleared = 0;
+        List<(string Id, string Key)> cleared = [];
         try
         {
             ValidateProvider(settings, provider);
@@ -942,11 +956,14 @@ public sealed class AiSettingsStore(IPluginContext context)
             await ValidateProviderSlotTopologyAsync(provider, cancellationToken);
             if (JsonSerializer.Serialize(provider) != expectedProviderJson) throw new ApiKeySlotChangedException();
             if (!ProviderApiKeyIds(provider).Contains(ownerId, StringComparer.Ordinal)) throw new ApiKeySlotChangedException();
-            bool originChanged = !string.Equals(provider.BaseUrl, draft.BaseUrl, StringComparison.Ordinal)
-                && !SameOrigin(provider.BaseUrl, draft.BaseUrl);
-            // 换源时其余 Key 都要清掉,新 Key 与它们重复也无妨(地址搬家、Key 不变是常见情形)
-            if (replacementKey is not null && !originChanged)
-                await ValidateUniqueKeyAsync(provider, replacementKey, ownerId, cancellationToken);
+            bool originChanged = MovesOrigin(provider.BaseUrl, draft.BaseUrl);
+            if (replacementKey is not null)
+            {
+                // 换源时其余 Key 都要清掉,新 Key 与它们重复也无妨(地址搬家、Key 不变是常见情形);空白照样不收
+                if (!originChanged) await ValidateUniqueKeyAsync(provider, replacementKey, ownerId, cancellationToken);
+                else if (string.IsNullOrWhiteSpace(replacementKey))
+                    throw new ArgumentException("API Key must be nonempty and unique.", nameof(replacementKey));
+            }
             oldKey = await context.Secrets.GetAsync(SecretName(ownerId), cancellationToken);
             if ((keyId is null && oldKey is not null) || oldKey != expectedKey) throw new ApiKeySlotChangedException();
             List<string> resetOwners = originChanged ? [.. KeysBoundToProviderOrigin(provider)] : [];
@@ -954,10 +971,10 @@ public sealed class AiSettingsStore(IPluginContext context)
             {
                 string? saved = id == ownerId ? oldKey : await context.Secrets.GetAsync(SecretName(id), cancellationToken);
                 resetKeys[id] = saved;
-                // 被这次替换覆盖的那一把是用户自己换掉的,不算「清掉」
-                if (!string.IsNullOrEmpty(saved) && (replacementKey is null || id != ownerId)) cleared++;
+                // 被这次替换覆盖的那一把是用户自己换掉的,不算「清掉」;只有空白的那种算不上 Key,照清不问
+                if (!string.IsNullOrWhiteSpace(saved) && (replacementKey is null || id != ownerId)) cleared.Add((id, saved));
             }
-            if (cleared > 0 && !resetKeysOnOriginChange) throw new ApiKeyResetRequiredException(cleared);
+            RequireKeyResetConfirmed(cleared, confirmedKeyReset);
 
             AiProvider staged = draft;
             _providerKeys.Updating[provider.Id] = 0;
@@ -969,8 +986,13 @@ public sealed class AiSettingsStore(IPluginContext context)
                 staged.AdditionalApiKeyIds = [];
                 staged.ActiveApiKeyId = null;
                 secretWritten = true;
+                // 只动机密(与下面的非换源分支一样):缓存等发布段再改,等待期间活配置保持原地址与凭据
                 foreach (string id in resetOwners)
-                    await SetApiKeyCoreAsync(id, id == provider.Id ? replacementKey : null, cancellationToken);
+                {
+                    if (id == provider.Id && replacementKey is not null)
+                        await context.Secrets.SetAsync(SecretName(id), replacementKey, cancellationToken);
+                    else await context.Secrets.DeleteAsync(SecretName(id), cancellationToken);
+                }
             }
             else if (replacementKey is not null && replacementKey != oldKey)
             {
@@ -992,14 +1014,14 @@ public sealed class AiSettingsStore(IPluginContext context)
             {
                 // 清掉的槽与模型 Key 都归这家供应商:按主槽 id 发布,别处设置里的同一供应商副本也一并作废
                 PublishProviderRequests(settings, detached, changedKeyOwnerId: provider.Id);
-                if (replacementKey is not null) KeyCache[provider.Id] = replacementKey;
+                foreach (string id in resetOwners) KeyCache[id] = id == provider.Id ? replacementKey : null;
             }
             else
             {
                 PublishProviderRequests(settings, detached, changedKeyOwnerId: secretWritten ? ownerId : null);
                 if (replacementKey is not null) KeyCache[ownerId] = replacementKey;
             }
-            return cleared;
+            return [.. cleared.Select(item => item.Id)];
         }
         catch
         {
@@ -1020,6 +1042,10 @@ public sealed class AiSettingsStore(IPluginContext context)
         }
     }
 
+    /// <summary>Base URL 从 <paramref name="from" /> 改成 <paramref name="to" /> 是否换到了另一个源;只改路径、大小写或写出默认端口不算。</summary>
+    internal static bool MovesOrigin(string? from, string? to)
+        => !string.Equals(from, to, StringComparison.Ordinal) && !SameOrigin(from, to);
+
     /// <summary>
     /// 跟着供应商 Base URL 走的 Key:主槽、补充槽,以及没填覆盖地址、自带 Key 的模型。
     /// 填了覆盖地址的模型去的是自己的地址,供应商换地址与它们无关。
@@ -1031,6 +1057,20 @@ public sealed class AiSettingsStore(IPluginContext context)
         {
             if (model.HasOwnApiKey && string.IsNullOrWhiteSpace(model.BaseUrlOverride)) yield return model.Id;
         }
+    }
+
+    /// <summary>确认凭据里的一项:归属者 + 值的摘要(不留明文)。同一个槽换了值,摘要就对不上。</summary>
+    internal static string KeyResetToken(string ownerId, string key)
+        => ownerId + ":" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+
+    // 确认的是提示时列出的那几把(归属者与值都算):别处又存进一把、或同一个槽换了值,都要重新问,不能连它一起清;
+    // 要清的变少了(提示后在主槽填了新 Key)仍在确认之内
+    private static void RequireKeyResetConfirmed(List<(string Id, string Key)> cleared, IReadOnlyCollection<string>? confirmed)
+    {
+        if (cleared.Count == 0) return;
+        string[] tokens = [.. cleared.Select(item => KeyResetToken(item.Id, item.Key))];
+        if (confirmed is null || !tokens.All(token => confirmed.Contains(token, StringComparer.Ordinal)))
+            throw new ApiKeyResetRequiredException([.. cleared.Select(item => item.Id)], tokens);
     }
 
     private async Task ValidateUniqueKeyAsync(AiProvider provider, string key, string? exceptId,

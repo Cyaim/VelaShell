@@ -257,8 +257,8 @@ public partial class SettingsView : UserControl
     private ProviderKeyRowState? _savingKeyRow;
     private string? _pendingRemoveKeyId;
 
-    /// <summary>两击确认换源清 Key:记着第一击时的供应商与地址,地址再改或换了选择就作废。</summary>
-    private (AiProvider Provider, string Url)? _pendingKeyReset;
+    /// <summary>两击确认换源清 Key 的第一击;换了选择就作废(<see cref="ResetKeyEditor" />)。</summary>
+    private KeyResetPrompt? _pendingKeyReset;
     private string? _lastKeyProbeModelId;
     private CancellationTokenSource _keyEditorCts = new();
     private CancellationTokenSource? _allKeyProbeCts;
@@ -2143,7 +2143,7 @@ public partial class SettingsView : UserControl
             ? (ChatProtocol)ProviderProtocolCombo.SelectedIndex : provider.DefaultProtocol;
         _savingKeyRow = draft;
         SetKeyMutation(true);
-        int keysCleared = 0;
+        IReadOnlyList<string> cleared = [];
         try
         {
             if (replacement is not null)
@@ -2178,11 +2178,8 @@ public partial class SettingsView : UserControl
                 string? expectedKey = replacement is null ? await _store.GetApiKeyAsync(keyId)
                     : string.IsNullOrEmpty(draft!.OriginalKey) ? null : draft.OriginalKey;
                 if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return;
-                // 地址换到别的源会清掉已存 Key:第一次点只提示,同一地址再点一次才清
-                bool confirmed = _pendingKeyReset is { } pending
-                    && ReferenceEquals(pending.Provider, provider) && pending.Url == url;
-                keysCleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, detached, expected, replacement,
-                    keyId: keyId, expectedKey: expectedKey, resetKeysOnOriginChange: confirmed);
+                cleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, detached, expected, replacement,
+                    keyId: keyId, expectedKey: expectedKey, confirmedKeyReset: _pendingKeyReset?.For(provider, url));
                 _pendingKeyReset = null;
             }
             else
@@ -2212,15 +2209,15 @@ public partial class SettingsView : UserControl
             RefreshEditorContext(provider, null);
             await RefreshProviderKeyRowsAsync(provider, run);
             if (run == _editorRun && (_keyDraft is null || ReferenceEquals(_keyDraft, draft)))
-                StatusText.Text = keysCleared == 0 ? _loc["Saved"]
-                    : replacement is null ? _loc["SetupSavedKeysCleared"] : _loc["SetupSavedOtherKeysCleared"];
+                StatusText.Text = SavedText(provider, cleared, replacement is not null);
         }
         catch (ArgumentException) { if (run == _editorRun) StatusText.Text = _loc["SetupUniqueApiKey"]; }
         catch (AiSettingsStore.ApiKeySlotChangedException) { await RecoverSettingsConflictAsync(provider, null, run); }
         catch (AiSettingsStore.ApiKeyResetRequiredException ex)
         {
+            // 地址换到别的源会清掉已存 Key:第一次点只提示,同一地址再点一次才清 —— 而且只清这次提示列出的那几把
             if (run != _editorRun) return;
-            _pendingKeyReset = (provider, url);
+            _pendingKeyReset = new(provider, url, ex.Confirmation);
             StatusText.Text = _loc.F("SetupBaseUrlKeyResetConfirm", ex.KeyCount);
         }
         catch (Exception ex) { if (run == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex)); }
@@ -2234,6 +2231,16 @@ public partial class SettingsView : UserControl
                 draftFocus.Focus();
             }
         }
+    }
+
+    /// <summary>
+    /// 保存后的提示:换源清了 Key 就如实说;自带 Key 的模型逐个点名 —— 它们不会改用供应商的新 Key,要各自重填。
+    /// </summary>
+    private string SavedText(AiProvider provider, IReadOnlyList<string> cleared, bool keyReplaced)
+    {
+        List<string> models = KeyResetPrompt.ClearedModels(provider, cleared);
+        return _loc.WithClearedModelKeys(cleared.Count == models.Count ? _loc["Saved"]
+            : keyReplaced ? _loc["SetupSavedOtherKeysCleared"] : _loc["SetupSavedKeysCleared"], models);
     }
 
     // ---- 删除 ----
@@ -2380,11 +2387,44 @@ public partial class SettingsView : UserControl
             // 地址换到别的源、还没保存:已存的 Key 属于旧地址,只许带表单里新填的那把去测
             if (provider.Auth == AuthMethod.ApiKey && apiKeyOverride is null
                 && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
-                && !string.Equals(draft.BaseUrl, provider.BaseUrl, StringComparison.Ordinal)
-                && !AiSettingsStore.SameOrigin(draft.BaseUrl, provider.BaseUrl))
+                && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl))
             {
-                StatusText.Text = _loc["SetupTestNeedsNewOriginKey"];
-                return;
+                if (first.HasOwnApiKey && PendingProviderKey is { } typed)
+                {
+                    // 首模型自带的 Key 保存时随换源清掉,也用不上新填的供应商 Key:换一个继承供应商 Key、同源的模型来测新填的那把
+                    if (provider.Models.Find(config => !config.HasOwnApiKey
+                            && AiSettingsStore.SameOrigin(EffectiveBaseUrl(config), draft.BaseUrl)) is not { } inheriting)
+                    {
+                        StatusText.Text = _loc["SetupKeyNoModel"];
+                        return;
+                    }
+                    first = inheriting;
+                    apiKeyOverride = typed;
+                }
+                else
+                {
+                    // 没有新填的 Key:测试本会带上的已存 Key(自带 Key 的首模型是它自己那把,继承的是供应商的各个槽)还在,
+                    // 就请用户先填新 Key;一把都没有(无鉴权接入)才照常测
+                    bool keyFollows = false;
+                    try
+                    {
+                        foreach (string id in first.HasOwnApiKey ? [first.Id] : _store.ProviderApiKeyIds(provider).ToArray())
+                            keyFollows |= !string.IsNullOrWhiteSpace(await _store.GetApiKeyAsync(id));
+                    }
+                    catch (Exception ex)
+                    {
+                        _context.Log.Warn($"Reading the saved Key of '{provider.Id}' failed: {ex.Message}");
+                        if (editorRun == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
+                        return;
+                    }
+                    // 等机密期间换了选择:这次就不测了,免得把「测试中」挂到别的条目上
+                    if (editorRun != _editorRun) return;
+                    if (keyFollows)
+                    {
+                        StatusText.Text = _loc["SetupTestNeedsNewOriginKey"];
+                        return;
+                    }
+                }
             }
             candidate = new ResolvedModel(draft, first);
 
