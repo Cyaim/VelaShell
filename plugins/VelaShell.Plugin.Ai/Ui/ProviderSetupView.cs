@@ -1395,6 +1395,8 @@ public sealed class ProviderSetupView : UserControl
             string? replacement = !string.IsNullOrWhiteSpace(key) && keyWasEdited ? key : null;
             string? expectedKey = await keyBaseline.ConfigureAwait(true);
             if (!OwnsForm()) return;
+            // 换源时旧主槽一律清掉,只有空白的那种不算一把 Key、不在清掉的名单里,也照清 —— 基线要看换没换源,不能只看名单
+            bool movedOrigin = AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl);
             // 地址换到别的源会清掉已存 Key:第一次只提示,同一地址再点一次才清 —— 而且只清这次提示列出的那几把
             try
             {
@@ -1405,12 +1407,15 @@ public sealed class ProviderSetupView : UserControl
             catch (AiSettingsStore.ApiKeyResetRequiredException ex)
             {
                 if (!OwnsForm()) return;
+                // 同一地址已经提示过还被拒:提示之后 Key 变了。换一句话说 —— 一字不差的提示看着像没点上,再点一下就把新存的那把清掉
+                string prompt = _pendingKeyReset?.For(provider, draft.BaseUrl) is null
+                    ? "SetupBaseUrlKeyResetConfirm" : "SetupBaseUrlKeyResetChanged";
                 _pendingKeyReset = new(provider, draft.BaseUrl, ex.Confirmation);
-                _progress.Text = _loc.F("SetupBaseUrlKeyResetConfirm", ex.KeyCount);
+                _progress.Text = _loc.F(prompt, ex.KeyCount);
                 return;
             }
             _pendingKeyReset = null;
-            committedKey = replacement ?? (cleared.Count > 0 ? null : expectedKey);
+            committedKey = replacement ?? (movedOrigin ? null : expectedKey);
             // 框里预填的是旧地址的 Key,已经清掉了,别让它还摆在那儿
             if (committedKey is null && ReferenceEquals(keyBox, _keyBox) && keyBox.Text == key)
             {
@@ -1429,7 +1434,7 @@ public sealed class ProviderSetupView : UserControl
         }
         if (ReferenceEquals(keyBox, _keyBox)) _keyEdited = keyBox.Text != key;
         if (ReferenceEquals(keyBox, _keyBox)) _conflictValues.IsVisible = false;
-        List<string> clearedModels = KeyResetPrompt.ClearedModels(provider, cleared);
+        List<string> clearedModels = KeyResetPrompt.ClearedModels(provider, cleared, _loc);
         // 清掉的是供应商自己的 Key 槽而又没填新的;只清了模型自带的 Key 不算(照常拉模型,见下)
         bool keysGone = cleared.Count > clearedModels.Count && committedKey is null;
         if (ReferenceEquals(keyBox, _keyBox))
@@ -1449,11 +1454,12 @@ public sealed class ProviderSetupView : UserControl
         }
         // Key 刚清空、新地址还没有 Key:拉模型只会换来一次鉴权失败,把「请填入新 Key」的提示盖掉
         if (keysGone) return;
-        // 拉取进度会盖掉保存后的提示:点了名要重填 Key 的模型接回结果后面
-        TextBlock progress = _progress;
-        string? before = progress.Text;
+        // 拉取进度会盖掉保存后的提示:点了名要重填 Key 的模型接回结果后面。只接回这张表单自己的进度行 ——
+        // 保存与刷新状态期间打开了别的卡片,_progress 已是那张卡片的,不往人家那儿接
+        TextBlock? progress = ReferenceEquals(keyBox, _keyBox) ? _progress : null;
+        string? before = progress?.Text;
         await PullModelsAsync(entry, provider).ConfigureAwait(true);
-        if (clearedModels.Count > 0 && ReferenceEquals(_progress, progress) && progress.Text != before)
+        if (clearedModels.Count > 0 && progress is not null && ReferenceEquals(_progress, progress) && progress.Text != before)
             progress.Text = _loc.WithClearedModelKeys(progress.Text ?? "", clearedModels);
     }
 
