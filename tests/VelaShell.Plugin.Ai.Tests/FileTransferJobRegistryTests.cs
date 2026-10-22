@@ -170,8 +170,10 @@ public sealed class FileTransferJobRegistryTests
         context.FakeRemoteFs.SupportsDownloadOperations = true;
         context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(
             Running(id, source, target, options.OperationId) with { State = RemoteTransferState.Succeeded });
+        var downloadCompletion = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) => Task.FromResult(
-            Running(id, local, remote, options.OperationId) with { Direction = RemoteTransferDirection.Download });
+            Running(id, local, remote, options.OperationId) with { TransferId = "download-transfer", Direction = RemoteTransferDirection.Download });
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => downloadCompletion.Task.WaitAsync(ct);
         await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
         await using CommandJobRunScope first = toolbox.BeginRun("owner", "first");
         await using CommandJobRunScope second = toolbox.BeginRun("owner", "second");
@@ -194,9 +196,22 @@ public sealed class FileTransferJobRegistryTests
             });
             using JsonDocument downloadJson = JsonDocument.Parse(download);
             Assert.AreEqual("Download", downloadJson.RootElement.GetProperty("direction").GetString());
-            Assert.AreEqual("transfer", downloadJson.RootElement.GetProperty("transfer_id").GetString());
+            Assert.AreEqual("download-transfer", downloadJson.RootElement.GetProperty("transfer_id").GetString());
+            Assert.IsTrue(downloadJson.RootElement.GetProperty("stillRunning").GetBoolean());
             Assert.HasCount(1, context.FakeRemoteFs.DownloadsStarted);
             Assert.IsFalse(context.FakeRemoteFs.DownloadsStarted[0].Options.Overwrite);
+            await Assert.ThrowsAsync<FileNotFoundException>(() => second.Transfers!.ReadAsync("download-transfer"));
+            Assert.IsEmpty(context.FakeRemoteFs.TransfersRead);
+            downloadCompletion.SetResult(Running(session.SessionId, "", "/tmp/large", "download") with
+            {
+                TransferId = "download-transfer",
+                Direction = RemoteTransferDirection.Download,
+                State = RemoteTransferState.Succeeded,
+                Sequence = 2
+            });
+            RemoteTransferSnapshot completed = (await first.Transfers!.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5)))[0];
+            Assert.AreEqual(RemoteTransferDirection.Download, completed.Direction);
+            Assert.IsTrue(completed.IsSuccess);
         }
         finally { File.Delete(local); }
     }

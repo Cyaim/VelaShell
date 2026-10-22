@@ -306,14 +306,15 @@ internal sealed partial class RemoteFsCapability
         internal void Commit(bool overwrite)
         {
             if (_stream is null) throw new InvalidOperationException();
-            byte[] name = Encoding.Unicode.GetBytes(_destination);
+            // Win32 needs a terminated name; FileNameLength excludes the UTF-16 terminator.
+            byte[] name = Encoding.Unicode.GetBytes(_destination + '\0');
             int offset = IntPtr.Size == 8 ? 20 : 12;
             nint info = Marshal.AllocHGlobal(offset + name.Length);
             try
             {
                 for (int i = 0; i < offset; i++) Marshal.WriteByte(info, i, 0);
                 Marshal.WriteByte(info, 0, overwrite ? (byte)1 : (byte)0);
-                Marshal.WriteInt32(info, offset - 4, name.Length);
+                Marshal.WriteInt32(info, offset - 4, name.Length - sizeof(char));
                 Marshal.Copy(name, 0, info + offset, name.Length);
                 if (!SetFileInformationByHandle(_stream.SafeFileHandle, 3, info, (uint)(offset + name.Length)))
                     throw new IOException("Atomic download commit was rejected.", new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));

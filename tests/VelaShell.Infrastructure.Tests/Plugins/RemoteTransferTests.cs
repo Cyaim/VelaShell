@@ -858,15 +858,18 @@ public sealed class RemoteTransferTests
     }
 
     [TestMethod]
-    [DataRow(false, false)]
-    [DataRow(true, false)]
-    [DataRow(true, true)]
+    [DataRow(false, false, "target")]
+    [DataRow(true, false, "target")]
+    [DataRow(false, true, "target")]
+    [DataRow(true, true, "target")]
+    [DataRow(false, false, "下载-文件-\U0001F600.bin")]
+    [DataRow(true, false, "下载-文件-\U0001F600.bin")]
     [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
-    public async Task DownloadCommitHonorsLateDestinationAndSourceChanges(bool overwrite, bool sourceChanged)
+    public async Task DownloadCommitHonorsLateDestinationAndSourceChanges(bool overwrite, bool sourceChanged, string fileName)
     {
         string directory = Path.Combine(Path.GetTempPath(), "vela-download-race-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        string path = Path.Combine(directory, "target");
+        string path = Path.Combine(directory, fileName);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
         prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, overwrite, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
         RemoteFileInfo Info(int size) => new() { Name = "source", FullPath = "/source", Size = size, LastModified = DateTime.UnixEpoch, Permissions = "-rw-------", IsDirectory = false, Owner = "user", Group = "user" };
@@ -885,6 +888,8 @@ public sealed class RemoteTransferTests
             var done = await Terminal(api, start.TransferId);
             await WaitIdle(api);
             Assert.AreEqual(overwrite && !sourceChanged, done.IsSuccess, done.ErrorMessage);
+            Assert.AreEqual(!done.IsSuccess, done.DestinationCommitConfirmedAbsent);
+            Assert.IsTrue(done.RemoteStopConfirmed);
             if (sourceChanged) Assert.AreEqual("source-changed", done.ErrorCode);
             CollectionAssert.AreEqual(overwrite && !sourceChanged ? new byte[] { 1, 2, 3 } : new byte[] { 9 }, await File.ReadAllBytesAsync(path));
             Assert.AreEqual(1, Directory.GetFiles(directory).Length);
