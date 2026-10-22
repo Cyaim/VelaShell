@@ -48,6 +48,7 @@ public static class HealthProbe
         cts.CancelAfter(Timeout);
         UsageDetails? usage = null;
         Exception? terminal = null;
+        bool repliedEmpty = false;
         try
         {
             using IChatClient client = credential is { } fixedCredential
@@ -98,6 +99,7 @@ public static class HealthProbe
                 if (terminal is not null) return (terminal, "");
                 if (HasVisibleText(reply)) return (null, reply);
                 if (attempt >= 1) return (new EmptyReplyException(), "");
+                repliedEmpty = true;
                 // 两次探测与退避共用原来的15秒预算,不重置截止时间。
                 await Task.Delay(TimeSpan.FromMilliseconds(400), cts.Token);
             }
@@ -105,6 +107,11 @@ public static class HealthProbe
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw; // 用户按了停止:取消照旧往上抛,不记成"端点死了"
+        }
+        catch (OperationCanceledException) when (repliedEmpty && cts.IsCancellationRequested)
+        {
+            // 已空答一次,退避或补试被本探活自己的截止时间切断:不通的原因仍是空回复,不报「操作已取消」
+            return (terminal ?? new EmptyReplyException(), "");
         }
         catch (Exception ex)
         {

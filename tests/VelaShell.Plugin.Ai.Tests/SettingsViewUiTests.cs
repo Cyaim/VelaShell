@@ -2825,7 +2825,9 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            await using var endpoint = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "");
+            // 旧账号首次与补试都空答,这一轮才真有失败;新一轮(第 3 个流)正常作答
+            await using var endpoint = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "",
+                streamingReply: n => n == 2 ? "data: [DONE]\n\n" : ProbeAnswerSse);
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
@@ -2841,7 +2843,8 @@ public sealed partial class SettingsViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(settings);
             await store.SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "same-token", AccountId = "old-account" });
-            var view = new SettingsView(context, store, settings, new Loc("en"), () => { }, health);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { }, health);
             var window = new Window { Width = 900, Height = 700, Content = view };
             window.Show();
             await PumpAsync();
@@ -2853,6 +2856,9 @@ public sealed partial class SettingsViewUiTests
                 await store.SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "same-token", AccountId = "new-account" });
                 endpoint.Release();
                 await oldRun.WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.HasCount(2, endpoint.Requests, "旧探活补试过一次");
+                Assert.AreEqual(loc.F("TestFail", loc["ProbeEmptyReply"]), view.GetControl<TextBlock>("StatusText").Text,
+                    "前提:旧账号这一轮真的失败了,下面的冷却断言才有东西可拦");
                 Assert.IsFalse(health.IsCooling(model.Id), "旧账号的失败不能冷却同 token 的新账号");
 
                 health.Record(model.Id, false);

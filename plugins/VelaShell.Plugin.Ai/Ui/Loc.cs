@@ -201,6 +201,7 @@ public sealed class Loc(string locale)
         ["ApproveAlwaysKey"] = ["Always allow “{0}”", "总是允许「{0}」", "總是允許「{0}」", "「{0}」を常に許可", "「{0}」 항상 허용"],
         ["ApproveAlwaysTip"] = ["Stop asking for “{0}” until this chat ends (not saved to settings).", "本次会话内不再询问「{0}」(不写入设置,换会话即失效)。", "本次會話內不再詢問「{0}」(不寫入設定,換會話即失效)。", "この会話が終わるまで「{0}」は確認しません(設定には保存されません)。", "이 대화가 끝날 때까지 「{0}」은(는) 묻지 않습니다(설정에 저장되지 않음)."],
         ["Retrying"] = ["Connection failed, retrying ({0})…", "连接失败,正在重试({0})…", "連線失敗,正在重試({0})…", "接続に失敗、再試行中({0})…", "연결 실패, 재시도 중({0})…"],
+        ["RetryingEmptyReply"] = ["Empty reply, retrying ({0})…", "收到空回复,正在重试({0})…", "收到空回覆,正在重試({0})…", "空の応答を受信、再試行中({0})…", "빈 응답 수신, 재시도 중({0})…"],
         ["Deny"] = ["Deny", "拒绝", "拒絕", "拒否", "거부"],
         ["ToolRunning"] = ["running…", "执行中…", "執行中…", "実行中…", "실행 중…"],
         ["ToolDone"] = ["done", "完成", "完成", "完了", "완료"],
