@@ -54,11 +54,11 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
     private const int MaxOutputChars = 32 * 1024;
     private const int MaxEntryChars = 4096;
     private const int MaxOutputEntries = 256;
-    private static readonly ConditionalWeakTable<object, SemaphoreSlim> Schedulers = new();
+    private static readonly ConditionalWeakTable<object, SemaphoreSlim> Schedulers = [];
     private readonly SemaphoreSlim _streamSlots = Schedulers.GetValue(schedulerKey ?? remoteExec,
         static _ => new SemaphoreSlim(IRemoteExecApi.MaxConcurrentStreams));
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, Job> _jobs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Job> _jobs = [with(StringComparer.Ordinal)];
     private readonly HashSet<CommandJobRunScope> _runs = [];
     private bool _disposed;
 
@@ -67,8 +67,9 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
     /// <c>denialEndsRun</c> 决定拒绝是否封住整个轮次。MCP 的轮次跨越整条客户端连接,传 false:
     /// 拒绝只作为那一次调用的结果返回。
     /// </remarks>
-    public CommandJobRunScope BeginRun(string ownerId, string runId, CancellationToken cancellationToken = default,
-        Func<string, CancellationToken, Task<bool>>? authorize = null, bool denialEndsRun = true)
+    public CommandJobRunScope BeginRun(string ownerId, string runId,
+        Func<string, CancellationToken, Task<bool>>? authorize = null, bool denialEndsRun = true,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
@@ -79,7 +80,7 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
             {
                 throw new InvalidOperationException("This owner/run is already registered.");
             }
-            var scope = new CommandJobRunScope(this, ownerId, runId, cancellationToken, lifetimeToken, authorize, denialEndsRun);
+            var scope = new CommandJobRunScope(this, ownerId, runId, authorize, denialEndsRun, cancellationToken, lifetimeToken);
             _runs.Add(scope);
             return scope;
         }
@@ -251,7 +252,7 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
 
     private static async Task AuthorizeAsync(Job job, CancellationToken cancellationToken)
     {
-        if (job.Scope.Authorize is { } authorize
+        if (job.Scope._authorize is { } authorize
             && !await authorize(job.SessionId, cancellationToken).ConfigureAwait(false))
         {
             await job.Cancel.CancelAsync().ConfigureAwait(false);
@@ -438,7 +439,7 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
 
     internal async Task CancelRunAsync(CommandJobRunScope scope)
     {
-        await scope.CancelSource.CancelAsync().ConfigureAwait(false);
+        await scope._cancelSource.CancelAsync().ConfigureAwait(false);
         Job[] jobs;
         lock (_gate)
         {
@@ -626,10 +627,10 @@ public sealed class CommandJobRunScope : IAsyncDisposable
     private readonly bool _denialEndsRun;
     private int _disposed;
     private int _executionDenied;
-    internal readonly CancellationTokenSource CancelSource;
-    internal readonly Func<string, CancellationToken, Task<bool>>? Authorize;
+    internal readonly CancellationTokenSource _cancelSource;
+    internal readonly Func<string, CancellationToken, Task<bool>>? _authorize;
     internal bool IsDisposed => Volatile.Read(ref _disposed) != 0;
-    internal CancellationToken Token => CancelSource.Token;
+    internal CancellationToken Token => _cancelSource.Token;
     /// <summary>稳定的入口或对话所有者,不交由模型指定。</summary>
     public string OwnerId { get; }
     /// <summary>入口生成的唯一轮次代际。</summary>
@@ -655,15 +656,15 @@ public sealed class CommandJobRunScope : IAsyncDisposable
     public bool HasMonitoringJobs => !IsDisposed && _registry.HasMonitoringJobs(this);
 
     internal CommandJobRunScope(CommandJobRegistry registry, string ownerId, string runId,
-        CancellationToken cancellationToken, CancellationToken lifetimeToken,
-        Func<string, CancellationToken, Task<bool>>? authorize, bool denialEndsRun)
+        Func<string, CancellationToken, Task<bool>>? authorize, bool denialEndsRun,
+        CancellationToken cancellationToken, CancellationToken lifetimeToken)
     {
         _registry = registry;
         _denialEndsRun = denialEndsRun;
         OwnerId = ownerId;
         RunId = runId;
-        Authorize = authorize;
-        CancelSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetimeToken);
+        _authorize = authorize;
+        _cancelSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetimeToken);
     }
 
     /// <summary>首个有限后台任务结束时唤醒,原子消费此刻所有已完成且未投递的快照。</summary>
@@ -686,6 +687,6 @@ public sealed class CommandJobRunScope : IAsyncDisposable
         }
         await _registry.DisposeRunAsync(this).ConfigureAwait(false);
         if (Transfers is { } transfers) await transfers.DisposeAsync().ConfigureAwait(false);
-        CancelSource.Dispose();
+        _cancelSource.Dispose();
     }
 }

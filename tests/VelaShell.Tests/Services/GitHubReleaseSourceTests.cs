@@ -590,7 +590,7 @@ public class GitHubReleaseSourceTests : IDisposable
     {
         GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
             new(HttpStatusCode.OK) { Content = new StringContent("invalid") }));
-        await Assert.ThrowsAsync<System.Text.Json.JsonException>(() => source.GetLatestReleaseNotesAsync());
+        await Assert.ThrowsAsync<JsonException>(() => source.GetLatestReleaseNotesAsync());
     }
 
     [TestMethod]
@@ -733,8 +733,8 @@ public class GitHubReleaseSourceTests : IDisposable
         }));
         Assert.IsNull(await source.GetReleaseNotesForVersionAsync(version));
         Assert.IsNull(await source.GetReleaseNotesForVersionAsync(version));
-        Assert.AreSequenceEqual(expectedTags.Split('|').Select(tag =>
-            $"https://github.com/owner/repo/releases/download/{tag}/latest.json").ToArray(), urls);
+        Assert.AreSequenceEqual([.. expectedTags.Split('|').Select(tag =>
+            $"https://github.com/owner/repo/releases/download/{tag}/latest.json")], urls);
     }
 
     [TestMethod]
@@ -937,7 +937,7 @@ public class GitHubReleaseSourceTests : IDisposable
             release.TrySetResult();
 
             ReleaseNotes?[] notes = await Task.WhenAll(latest, current, other, same).WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.AreSequenceEqual(["v3.0.0", "v1.0.0", "v2.0.0", "v1.0.0"], notes.Select(note => note!.Tag).ToArray());
+            Assert.AreSequenceEqual(["v3.0.0", "v1.0.0", "v2.0.0", "v1.0.0"], [.. notes.Select(note => note!.Tag)]);
             Assert.AreSame(notes[1], notes[3]);
             Assert.HasCount(3, urls);
             Assert.AreEqual(3, urls.Distinct(StringComparer.Ordinal).Count());

@@ -387,9 +387,9 @@ public sealed class AgentToolboxTests
         await File.WriteAllTextAsync(local, "pretend this is a mind map");
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.StartUploadHandler = (id, source, destination, options, _) => Task.FromResult(
-            new VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot { TransferId = "upload", OperationId = options.OperationId,
+            new PluginSdk.RemoteFs.RemoteTransferSnapshot { TransferId = "upload", OperationId = options.OperationId,
                 SessionId = id, LocalPath = source, RemotePath = destination,
-                State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Succeeded, Generation = 1, Sequence = 1 });
+                State = PluginSdk.RemoteFs.RemoteTransferState.Succeeded, Generation = 1, Sequence = 1 });
         try
         {
             string? summary = null;

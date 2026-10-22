@@ -477,7 +477,7 @@ public sealed class CommandJobRegistryTests
         string session = context.FakeSessions.AddConnected().SessionId;
         await using var toolbox = new AgentToolbox(context) { SessionIdProvider = () => session };
         AIFunction function = toolbox.CreateTools(ChatMode.Agent).OfType<AIFunction>().Single(f => f.Name == "system_overview");
-        string result = (await function.InvokeAsync(new AIFunctionArguments(), CancellationToken.None))!.ToString()!;
+        string result = (await function.InvokeAsync([], CancellationToken.None))!.ToString()!;
         using JsonDocument json = JsonDocument.Parse(result);
         Assert.AreEqual("stdout", json.RootElement.GetProperty("stdout").GetString());
         Assert.AreEqual("stderr", json.RootElement.GetProperty("stderr").GetString());
@@ -490,7 +490,7 @@ public sealed class CommandJobRegistryTests
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
             return new("");
         };
-        Task<object?> pending = function.InvokeAsync(new AIFunctionArguments(), cancel.Token).AsTask();
+        Task<object?> pending = function.InvokeAsync([], cancel.Token).AsTask();
         await started.Task;
         cancel.Cancel();
         await Assert.ThrowsAsync<OperationCanceledException>(() => pending);
@@ -734,9 +734,9 @@ public sealed class CommandJobRegistryTests
     private sealed class DelegateScope(Func<bool> allowed) : ISessionScope
     {
         public string Describe() => "test scope";
-        public Task<bool> AllowsLiveAsync(VelaShell.PluginSdk.Sessions.SessionInfo session, CancellationToken cancellationToken)
+        public Task<bool> AllowsLiveAsync(PluginSdk.Sessions.SessionInfo session, CancellationToken cancellationToken)
             => Task.FromResult(allowed());
-        public Task<bool> AllowsSavedAsync(VelaShell.PluginSdk.Sessions.SavedSessionInfo session, CancellationToken cancellationToken)
+        public Task<bool> AllowsSavedAsync(PluginSdk.Sessions.SavedSessionInfo session, CancellationToken cancellationToken)
             => Task.FromResult(allowed());
     }
 }

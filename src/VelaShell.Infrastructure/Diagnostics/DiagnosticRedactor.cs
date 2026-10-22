@@ -22,22 +22,22 @@ namespace VelaShell.Infrastructure.Diagnostics;
 public sealed partial class DiagnosticRedactor
 {
     /// <summary>认不出是谁的常见登录名,不换。</summary>
-    private static readonly HashSet<string> CommonUserNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "root", "admin", "administrator", "ubuntu", "debian", "centos", "ec2-user", "pi", "user", "git", "test",
-    };
+    private static readonly HashSet<string> CommonUserNames =
+    [
+with(StringComparer.OrdinalIgnoreCase),         "root", "admin", "administrator", "ubuntu", "debian", "centos", "ec2-user", "pi", "user", "git", "test",
+    ];
 
     /// <summary>本机回环地址不算可识别信息。</summary>
-    private static readonly HashSet<string> LoopbackHosts = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0",
-    };
+    private static readonly HashSet<string> LoopbackHosts =
+    [
+with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0",
+    ];
 
     private readonly Regex? _literals;
-    private readonly Dictionary<string, string> _literalTokens = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _ipTokens = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _literalTokens = [with(StringComparer.OrdinalIgnoreCase)];
+    private readonly Dictionary<string, string> _ipTokens = [with(StringComparer.Ordinal)];
     private readonly (string Path, StringComparison Comparison)[] _homes;
-    private readonly Dictionary<string, int> _counts = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _counts = [with(StringComparer.Ordinal)];
 
     /// <summary>按已保存连接里的主机与用户名,以及本机的用户名、机器名与主目录建一个脱敏器。</summary>
     /// <param name="hosts">连接配置里的主机(含跳板机);IP 与域名都行。</param>

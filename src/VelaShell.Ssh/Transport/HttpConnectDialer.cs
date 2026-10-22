@@ -243,7 +243,7 @@ internal sealed record HttpConnectDialer(SshEndPoint Proxy) : ISshTransportDiale
         throw ProxyDialing.Refused($"HTTP 代理 {Proxy} 拒绝连接 {target}：{Truncate(statusLine)}。{hint}");
     }
 
-    /// <summary>代理的应答进消息之前：截短，并清掉控制字符（见 <see cref="Diagnostics.PeerText"/>）。</summary>
+    /// <summary>代理的应答进消息之前：截短，并清掉控制字符（见 <see cref="PeerText"/>）。</summary>
     private static string Truncate(string text) => PeerText.Sanitize(text, 200);
 }
 

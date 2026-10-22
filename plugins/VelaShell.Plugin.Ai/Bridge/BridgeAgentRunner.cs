@@ -142,7 +142,7 @@ public sealed class BridgeAgentRunner(
         };
 
         string runId = Guid.NewGuid().ToString("N");
-        await using CommandJobRunScope runScope = toolbox.BeginRun(conversation.ConversationId, runId, cancellationToken);
+        await using CommandJobRunScope runScope = toolbox.BeginRun(conversation.ConversationId, runId, cancellationToken: cancellationToken);
         var execution = new AgentExecution(runId, () => runScope.HasUnknownOutcome, () => runScope.HasDeniedExecution);
         var coordinator = new AgentRunCoordinator(runScope, execution);
         ProviderCredential fixedCredential = await store.ResolveCredentialAsync(model, cancellationToken: cancellationToken).ConfigureAwait(false);

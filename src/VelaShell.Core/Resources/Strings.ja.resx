@@ -4561,6 +4561,10 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginPermUpload_Replace"><value>既存ファイルのアトミックな置換を許可</value></data>
   <data name="PluginPermUpload_NoReplace"><value>既存ファイルを置換しない</value></data>
   <data name="PluginPermUpload_AllowOnce"><value>今回のアップロードを許可</value></data>
+  <data name="PluginPermDownload_Title"><value>ファイルダウンロードの許可</value></data>
+  <data name="PluginPermDownload_AllowOnce"><value>今回のダウンロードを許可</value></data>
+  <data name="PluginPermDownload_Message"><value>プラグイン「{0}」が {1} からローカルファイルへのダウンロードを要求しています。許可はこのタスクのみ有効です。</value></data>
+  <data name="PluginPermDownload_Preview"><value>リモートソース: {0}&#10;ローカル保存先: {1}&#10;保存先の方針: {2}</value></data>
   <data name="PluginPermSession_Title"><value>接続要求</value></data>
   <data name="PluginPermSession_Message"><value>プラグイン「{0}」が {1} への接続を要求しています。プラグインが示した理由:</value></data>
   <data name="PluginManager_Install"><value>.vpx をインストール…</value></data>

@@ -638,7 +638,7 @@ public class TerminalBridgeTests
 
         Assert.IsTrue(sent);
         await bridge.DrainWritesAsync();
-        Assert.AreEqual(" hook\n", Encoding.UTF8.GetString(written.ToArray()));
+        Assert.AreEqual(" hook\n", Encoding.UTF8.GetString([.. written]));
         Assert.AreEqual(generation + 1, bridge.InputGeneration);
         Assert.AreEqual(0, lines);
     }

@@ -114,7 +114,7 @@ public sealed class DiagnosticBundleTests : IDisposable
         {
             big.SetLength(DiagnosticBundle.MaxLogBytes - 1);
         }
-        Assert.AreSequenceEqual([newest], DiagnosticBundle.LogFiles(Logs).Select(file => file.FullName).ToArray(),
+        Assert.AreSequenceEqual([newest], [.. DiagnosticBundle.LogFiles(Logs).Select(file => file.FullName)],
             "从新到旧收,超过总量上限的旧文件不收");
 
         string zipPath = Path.Combine(_root, "missing-dir", "bundle.zip");

@@ -32,7 +32,7 @@ public sealed record X11ForwardOptions
     /// </remarks>
     public bool IsTrusted { get; init; }
 
-    /// <summary>转发的有效期。默认 20 分钟；<see cref="System.Threading.Timeout.InfiniteTimeSpan"/> 表示不过期。</summary>
+    /// <summary>转发的有效期。默认 20 分钟；<see cref="Timeout.InfiniteTimeSpan"/> 表示不过期。</summary>
     /// <remarks>
     /// <para>
     /// 过期之后新的 <c>x11</c> 通道一律拒绝（已经建好的不受影响）。
@@ -44,16 +44,16 @@ public sealed record X11ForwardOptions
     /// 却反而没有期限，说不通。
     /// </para>
     /// <para>
-    /// 长会话要一直用的话，显式设成 <see cref="System.Threading.Timeout.InfiniteTimeSpan"/>（对应 <c>ForwardX11Timeout 0</c>：整条连接期间都有效）。
+    /// 长会话要一直用的话，显式设成 <see cref="Timeout.InfiniteTimeSpan"/>（对应 <c>ForwardX11Timeout 0</c>：整条连接期间都有效）。
     /// 非受信模式下它还决定 <c>xauth generate ... timeout</c>：有效期再加 60 秒，不过期时传 0（永不过期）——
     /// 见 <see cref="X11Forwarder.XAuthTimeoutSeconds"/>。
     /// </para>
     /// <para>
-    /// 〔AGENTS 4.2〕「不限时」全库只有一种写法：<see cref="System.Threading.Timeout.InfiniteTimeSpan"/>。
+    /// 〔AGENTS 4.2〕「不限时」全库只有一种写法：<see cref="Timeout.InfiniteTimeSpan"/>。
     /// 曾经这里用 <see cref="TimeSpan.Zero"/> 表示不过期，而连接、认证与主机密钥裁决的时限都用 <c>InfiniteTimeSpan</c>。
     /// </para>
     /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException">不为正，也不是 <see cref="System.Threading.Timeout.InfiniteTimeSpan"/>。</exception>
+    /// <exception cref="ArgumentOutOfRangeException">不为正，也不是 <see cref="Timeout.InfiniteTimeSpan"/>。</exception>
     public TimeSpan Timeout
     {
         get;

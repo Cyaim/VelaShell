@@ -55,7 +55,7 @@ public class SftpUploadProgressIntegrationTests
             await source.Eof.WaitAsync(TimeSpan.FromSeconds(15));
             double eofSeconds = clock.Elapsed.TotalSeconds;
             await Task.Delay(700);
-            Sample[] held = samples.ToArray();
+            Sample[] held = [.. samples];
             Assert.IsFalse(upload.IsCompleted, "Source EOF must not complete an upload with held ACKs.");
             Assert.IsGreaterThanOrEqualTo(4, held.Length, "Copy and Flush callbacks must actually execute.");
             Assert.IsTrue(held.All(s => s.Bytes == (ulong)prefixLength),
@@ -63,10 +63,10 @@ public class SftpUploadProgressIntegrationTests
             Assert.IsTrue(held.All(s => s.Bytes < (ulong)data.Length * .9), "Held window must not reach 90%.");
             relay.ReleaseSlowly();
             await upload.WaitAsync(TimeSpan.FromSeconds(25));
-            Sample[] all = samples.ToArray();
+            Sample[] all = [.. samples];
             AssertMonotonic(all, prefixLength, data.Length);
-            ulong[] flushWatermarks = all.Where(s => s.AfterEof && s.Bytes > (ulong)prefixLength && s.Bytes < (ulong)data.Length)
-                .Select(s => s.Bytes).Distinct().ToArray();
+            ulong[] flushWatermarks = [.. all.Where(s => s.AfterEof && s.Bytes > (ulong)prefixLength && s.Bytes < (ulong)data.Length)
+                .Select(s => s.Bytes).Distinct()];
             Assert.IsGreaterThanOrEqualTo(3, flushWatermarks.Length, "Flush must report multiple increasing ACK watermarks, not jump to final.");
             Assert.AreEqual((ulong)data.Length, all[^1].Bytes);
             Assert.AreEqual(SuffixLength, source.BytesRead, "Resume must seek past prefix and read only the suffix.");

@@ -57,6 +57,15 @@ public partial class PluginPermissionDialog : Window
         => ShowAsync(Strings.Get("PluginPermSession_Title"),
             Strings.Format("PluginPermSession_Message", pluginId, target), reason, "Icon.plug");
 
+    /// <summary>下载可信确认只批准当前任务，不授予其它路径或后续下载的永久权限。</summary>
+    public static Task<PluginPermissionDecision> AskFileDownloadAsync(string pluginId, string sessionLabel,
+        string remotePath, string localPath, bool overwrite, CancellationToken cancellationToken = default)
+        => ShowAsync(Strings.Get("PluginPermDownload_Title"),
+            Strings.Format("PluginPermDownload_Message", EscapeUploadField(pluginId), EscapeUploadField(sessionLabel)),
+            Strings.Format("PluginPermDownload_Preview", EscapeUploadField(remotePath), EscapeUploadField(localPath),
+                Strings.Get(overwrite ? "PluginPermUpload_Replace" : "PluginPermUpload_NoReplace")),
+            "Icon.download", uploadOnly: true, cancellationToken, downloadOnly: true);
+
     /// <summary>上传可信确认只批准当前任务，不授予其它路径或后续上传的永久权限。</summary>
     public static Task<PluginPermissionDecision> AskFileUploadAsync(string pluginId, string sessionLabel,
         string localPath, string remotePath, bool overwrite, CancellationToken cancellationToken = default)
@@ -67,11 +76,11 @@ public partial class PluginPermissionDialog : Window
             "Icon.upload", uploadOnly: true, cancellationToken);
 
     private static async Task<PluginPermissionDecision> ShowAsync(string title, string message, string preview,
-        string iconKey, bool uploadOnly = false, CancellationToken cancellationToken = default)
+        string iconKey, bool uploadOnly = false, CancellationToken cancellationToken = default, bool downloadOnly = false)
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            return await Dispatcher.UIThread.InvokeAsync(() => ShowAsync(title, message, preview, iconKey, uploadOnly, cancellationToken));
+            return await Dispatcher.UIThread.InvokeAsync(() => ShowAsync(title, message, preview, iconKey, uploadOnly, cancellationToken, downloadOnly));
         }
         if (cancellationToken.IsCancellationRequested)
             return PluginPermissionDecision.Deny;
@@ -82,6 +91,7 @@ public partial class PluginPermissionDialog : Window
         }
         var dialog = new PluginPermissionDialog(title, message, preview, iconKey);
         if (uploadOnly) dialog.ConfigureUploadOnly();
+        if (downloadOnly) dialog.OnceButton.Content = Strings.Get("PluginPermDownload_AllowOnce");
         Task<PluginPermissionDecision> decision = dialog.ShowDialog<PluginPermissionDecision>(owner);
         using CancellationTokenRegistration registration = cancellationToken.Register(() =>
             Dispatcher.UIThread.Post(() =>

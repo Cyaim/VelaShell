@@ -156,7 +156,7 @@ public sealed class BuiltInLocalXServer : ILocalXServer, IAsyncDisposable, IDisp
     /// 设置存了:「标出 X 窗口的来源」当场交给每个附着着的宿主(它们把开着的窗口的标题改过来)。别的项照旧下次启动生效 ——
     /// 这一项是防冒充的,用户打开它就是要看眼前的窗口是哪来的;原先说明写「对之后打开的窗口生效」,实际要重启 X Server。
     /// </summary>
-    private void OnSettingsSaved(VelaShell.Core.Models.AppSettings saved)
+    private void OnSettingsSaved(Core.Models.AppSettings saved)
     {
         bool show = saved.XServer.ShowWindowSource;
         List<IEmbeddedXServerHost> hosts = [];

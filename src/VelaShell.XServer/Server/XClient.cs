@@ -44,7 +44,7 @@ internal sealed class XClient(int index, bool bigEndian) : IDisposable
 
     public int Index { get; } = index;
 
-    /// <summary>宿主给这条连接起的名字(<see cref="X11Server.ServeAuthenticatedAsync(System.IO.Stream, string?, System.Threading.CancellationToken)" />);没给为 null。</summary>
+    /// <summary>宿主给这条连接起的名字(<see cref="X11Server.ServeAuthenticatedAsync(Stream, string?, CancellationToken)" />);没给为 null。</summary>
     public string? Label { get; init; }
 
     public uint ResourceBase { get; } = (uint)index << 21;
@@ -277,7 +277,7 @@ internal sealed class XClient(int index, bool bigEndian) : IDisposable
     /// <summary>经 Unix 套接字连进来、与服务端在同一个 IPC 命名空间里的(Linux,见 X11Server.SameIpcNamespace):MIT-SHM 只对这样的客户端可见。</summary>
     public bool SameHost { get; init; }
 
-    /// <summary>经 <see cref="X11Server.ServeAuthenticatedAsync(System.IO.Stream, string?, System.Threading.CancellationToken)" /> 进来的(SSH 转发):<see cref="X11ServerOptions.RestrictForwardedClients" /> 管它。</summary>
+    /// <summary>经 <see cref="X11Server.ServeAuthenticatedAsync(Stream, string?, CancellationToken)" /> 进来的(SSH 转发):<see cref="X11ServerOptions.RestrictForwardedClients" /> 管它。</summary>
     public bool Forwarded { get; init; }
 
     /// <summary>连接对端的 uid(Linux 上经 SO_PEERCRED、macOS / FreeBSD 上经 getpeereid 取得);取不到时为 null。MIT-SHM 按它核对段的访问权限。</summary>
@@ -288,7 +288,7 @@ internal sealed class XClient(int index, bool bigEndian) : IDisposable
 
     /// <summary>
     /// 非受信客户端(SECURITY 扩展「SecurityClientUntrusted」):用 SecurityGenerateAuthorization 签出的非受信 cookie 连进来的,
-    /// 或者宿主经 <see cref="X11Server.ServeAuthenticatedAsync(System.IO.Stream, string?, XClientTrust, System.Threading.CancellationToken)" />
+    /// 或者宿主经 <see cref="X11Server.ServeAuthenticatedAsync(Stream, string?, XClientTrust, CancellationToken)" />
     /// 指明非受信的(<c>ssh -X</c> 那一档)。它的请求按 SECURITY 规范第三章受限,见 <c>X11Server.Security.cs</c>。
     /// </summary>
     public bool Untrusted { get; init; }

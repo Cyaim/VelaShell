@@ -27,7 +27,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
 
     // latest + 本机版本的有限标签变体通常不超过 5 条;最多保留 8 个 URL,避免任意版本查询累积。
     private const int MaxReleaseNotesCacheEntries = 8;
-    private readonly Dictionary<string, ReleaseNotesCache> _notesCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ReleaseNotesCache> _notesCache = [with(StringComparer.Ordinal)];
     private readonly SemaphoreSlim _notesGate = new(1, 1);
 
     /// <summary>以仓库地址(https://github.com/&lt;owner&gt;/&lt;repo&gt;)构造;<paramref name="handler" /> 供测试注入。</summary>

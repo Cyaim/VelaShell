@@ -182,7 +182,7 @@ public sealed partial class SshConnection : ISshChannelHost, IAsyncDisposable
     /// 用例在这里停住，让接收循环先处理对端紧跟着确认发来的 <c>CLOSE</c> —— 把「后台任务恰好在两步之间被抢占」这一刻摆出来
     /// （velashell-docs/zh/ssh/spec/05 §8.1）。
     /// </remarks>
-    internal Action<Channels.SshChannel>? AfterIncomingOpenConfirmationQueued { get; set; }
+    internal Action<SshChannel>? AfterIncomingOpenConfirmationQueued { get; set; }
 
     /// <summary>保活、重协商（时间阈值、期限）与通道号复用延迟用的时钟；建连时取 <see cref="SshConnectionOptions.TimeProvider"/>。</summary>
     /// <remarks>

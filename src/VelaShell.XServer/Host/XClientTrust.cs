@@ -5,7 +5,7 @@ namespace VelaShell.XServer;
 
 /// <summary>
 /// 一条连接的信任级别(SECURITY 扩展的 trust-level):宿主经
-/// <see cref="X11Server.ServeAuthenticatedAsync(System.IO.Stream, string?, XClientTrust, System.Threading.CancellationToken)" /> 指明,
+/// <see cref="X11Server.ServeAuthenticatedAsync(Stream, string?, XClientTrust, CancellationToken)" /> 指明,
 /// 或者客户端用 SecurityGenerateAuthorization 签出的 cookie 连进来时由那个授权决定。
 /// </summary>
 public enum XClientTrust

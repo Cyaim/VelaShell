@@ -136,7 +136,7 @@ public sealed class XNativeWindow : Window
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Trace.WriteLine($"[XServer] 截图失败:{ex.Message}");
+            Trace.WriteLine($"[XServer] 截图失败:{ex.Message}");
         }
     });
 
@@ -1126,7 +1126,7 @@ public sealed class XNativeWindow : Window
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Trace.WriteLine($"[XServer] drag out failed: {ex.Message}");
+            Trace.WriteLine($"[XServer] drag out failed: {ex.Message}");
         }
         finally
         {

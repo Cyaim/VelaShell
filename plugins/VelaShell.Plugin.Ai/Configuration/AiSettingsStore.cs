@@ -933,7 +933,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         string ownerId = keyId ?? provider.Id;
         bool secretWritten = false, settingsWritten = false;
         // 换源时动过的机密:归属者 → 原值,失败时逐个恢复
-        Dictionary<string, string?> resetKeys = new(StringComparer.Ordinal);
+        Dictionary<string, string?> resetKeys = [with(StringComparer.Ordinal)];
         int cleared = 0;
         try
         {

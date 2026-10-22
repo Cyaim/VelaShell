@@ -222,13 +222,17 @@ internal sealed class RpcRemoteExec(RpcConnection rpc, bool supportsExecutionOpe
 }
 
 /// <summary>远程文件能力的 RPC 代理。传输走同机文件路径,进度经通知回流。</summary>
-internal sealed class RpcRemoteFs(RpcConnection rpc, bool supportsTransferOperations = false) : IRemoteFsApi
+internal sealed class RpcRemoteFs(RpcConnection rpc, bool supportsTransferOperations = false, bool supportsDownloadOperations = false) : IRemoteFsApi
 {
     public bool SupportsTransferOperations => supportsTransferOperations;
+    public bool SupportsDownloadOperations => supportsDownloadOperations;
 
-    private async Task<RemoteTransferSnapshot> TransferRequestAsync(string method, object request, CancellationToken ct)
+    private async Task<RemoteTransferSnapshot> TransferRequestAsync(string method, object request, CancellationToken ct, bool requiresDownload = false)
     {
-        if (!SupportsTransferOperations) throw new NotSupportedException("This host does not implement transfer operations.");
+        bool supported = method is PluginRpc.FsTransferGet or PluginRpc.FsTransferWait or PluginRpc.FsTransferCancel
+            ? SupportsTransferOperations || SupportsDownloadOperations
+            : requiresDownload ? SupportsDownloadOperations : SupportsTransferOperations;
+        if (!supported) throw new NotSupportedException("This host does not implement the requested transfer operation.");
         ct.ThrowIfCancellationRequested();
         // 短请求帧不随等待者取消,避免取消写半帧;回执等待可取消,后台请求有固定超时并观察异常。
         Task<RemoteTransferSnapshot?> pending = rpc.RequestAsync<RemoteTransferSnapshot>(method, request, TimeSpan.FromSeconds(45), CancellationToken.None);
@@ -248,6 +252,11 @@ internal sealed class RpcRemoteFs(RpcConnection rpc, bool supportsTransferOperat
     public Task<RemoteTransferSnapshot> StartUploadAsync(string sessionId, string localPath, string remotePath,
         RemoteUploadOptions options, CancellationToken cancellationToken = default)
         => TransferRequestAsync(PluginRpc.FsTransferStartUpload, new FsTransferStartUploadRequest(sessionId, localPath, remotePath, options), cancellationToken);
+
+    public Task<RemoteTransferSnapshot> StartDownloadAsync(string sessionId, string remotePath, string localPath,
+        RemoteDownloadOptions options, CancellationToken cancellationToken = default)
+        => TransferRequestAsync(PluginRpc.FsTransferStartDownload,
+            new FsTransferStartDownloadRequest(sessionId, remotePath, localPath, options), cancellationToken, requiresDownload: true);
 
     public Task<RemoteTransferSnapshot> GetTransferAsync(string transferId, CancellationToken cancellationToken = default)
         => TransferRequestAsync(PluginRpc.FsTransferGet, new FsTransferRef(transferId), cancellationToken);

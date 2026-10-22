@@ -9,9 +9,9 @@ internal sealed class ExecutionOperations : IAsyncDisposable
     private const int MaxEarlyCancellations = 128;
     private const int RecentCompletionLimit = 512;
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, Operation> _operations = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _earlyCancelled = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _recentCompleted = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Operation> _operations = [with(StringComparer.Ordinal)];
+    private readonly HashSet<string> _earlyCancelled = [with(StringComparer.Ordinal)];
+    private readonly HashSet<string> _recentCompleted = [with(StringComparer.Ordinal)];
     private readonly Queue<string> _completionOrder = new();
     private readonly CancellationToken _shutdown;
     private bool _stopped;
@@ -113,7 +113,7 @@ internal sealed class ExecutionOperations : IAsyncDisposable
         lock (_gate)
         {
             StopUnderLock();
-            pending = _operations.Values.Select(operation => operation.Completed).ToArray();
+            pending = [.. _operations.Values.Select(operation => operation.Completed)];
         }
         await Task.WhenAll(pending).ConfigureAwait(false);
     }

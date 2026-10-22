@@ -1,11 +1,11 @@
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 using VelaShell.Core.Models;
-using VelaShell.PluginSdk.RemoteFs;
 using VelaShell.PluginSdk;
+using VelaShell.PluginSdk.RemoteFs;
 using RemoteUploadOptions = VelaShell.PluginSdk.RemoteFs.RemoteUploadOptions;
 
 namespace VelaShell.Infrastructure.Plugins.Capabilities;
@@ -24,27 +24,28 @@ internal sealed partial class RemoteFsCapability
     private bool _disconnectSubscribed;
 
     private sealed class SourceChangedException() : IOException("The approved source changed during upload.");
-    private sealed record StartReceipt(string Session, string Local, string Remote, RemoteUploadOptions Options, UploadOperation Operation);
-    private sealed class UploadOperation(RemoteTransferSnapshot snapshot, FileStream source, CancellationTokenSource stop)
+    private sealed record StartReceipt(string Session, string Local, string Remote, object Options, UploadOperation Operation);
+    private sealed class UploadOperation(RemoteTransferSnapshot snapshot, FileStream? source, CancellationTokenSource stop)
     {
-        internal readonly object Gate = new();
-        internal RemoteTransferSnapshot Snapshot = snapshot;
-        internal readonly FileStream Source = source;
-        internal readonly CancellationTokenSource Stop = stop;
-        internal TaskCompletionSource Changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal Task Worker = Task.CompletedTask;
-        internal readonly DateTime SourceModified = File.GetLastWriteTimeUtc(source.SafeFileHandle);
-        internal readonly long SourceLength = source.Length;
-        internal readonly long RegisteredTicks = Stopwatch.GetTimestamp();
-        internal long LastProgress;
-        internal bool StopDisposed;
-        internal UploadPermissionLease? Permission;
-        internal bool PermissionRevoked => Permission?.IsRevoked == true;
+        internal readonly object _gate = new();
+        internal RemoteTransferSnapshot _snapshot = snapshot;
+        internal readonly FileStream _source = source!;
+        internal readonly CancellationTokenSource _stop = stop;
+        internal TaskCompletionSource _changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal Task _worker = Task.CompletedTask;
+        internal readonly DateTime _sourceModified = source is null ? default : File.GetLastWriteTimeUtc(source.SafeFileHandle);
+        internal readonly long _sourceLength = source?.Length ?? -1;
+        internal readonly long _registeredTicks = Stopwatch.GetTimestamp();
+        internal long _lastProgress;
+        internal bool _stopDisposed;
+        internal UploadPermissionLease? _permission;
+        internal DownloadPermissionLease? _downloadPermission;
+        internal bool PermissionRevoked => _permission?.IsRevoked == true || _downloadPermission?.IsRevoked == true;
     }
 
     internal int ActiveTransfers
     {
-        get { lock (_transfersGate) return _transfers.Values.Count(op => !Read(op).IsTerminal || !op.Worker.IsCompleted); }
+        get { lock (_transfersGate) return _transfers.Values.Count(op => !Read(op).IsTerminal || !op._worker.IsCompleted); }
     }
 
     public Task<RemoteTransferSnapshot> StartUploadAsync(string sessionId, string localPath, string remotePath,
@@ -63,13 +64,13 @@ internal sealed partial class RemoteFsCapability
             ObjectDisposedException.ThrowIf(_transfersDisposed || lifetime.IsCancellationRequested, this);
             if (_receipts.TryGetValue(options.OperationId, out StartReceipt? previous))
             {
-                if (previous.Session != sessionId || previous.Local != local || previous.Remote != remote || previous.Options != options)
+                if (previous.Operation._snapshot.Direction != RemoteTransferDirection.Upload || previous.Session != sessionId || previous.Local != local || previous.Remote != remote || !Equals(previous.Options, options))
                     throw new InvalidOperationException("Operation id was already used with different parameters.");
                 return Task.FromResult(ReadAuthorized(previous.Operation));
             }
             Guid session = Resolve(sessionId);
             if (_receipts.Count >= MaxRecords) throw new InvalidOperationException("Transfer operation receipt quota reached for this plugin lifetime.");
-            if (_transfers.Values.Count(op => !op.Worker.IsCompleted) >= MaxActiveUploads)
+            if (_transfers.Values.Count(op => !op._worker.IsCompleted) >= MaxActiveUploads)
                 throw new InvalidOperationException("Active upload queue quota reached for this plugin.");
             string resolved = ResolveUploadSource(local);
             RejectLinks(resolved);
@@ -98,17 +99,17 @@ internal sealed partial class RemoteFsCapability
                     DestinationCommitConfirmedAbsent = true,
                 }, source, stop);
                 if (uploadPermissions is not null && !string.IsNullOrWhiteSpace(pluginId))
-                    op.Permission = uploadPermissions.CreateUploadLease(pluginId);
+                    op._permission = uploadPermissions.CreateUploadLease(pluginId);
                 if (!_disconnectSubscribed)
                 {
                     connections.SessionDisconnected += OnTransferSessionDisconnected;
                     _disconnectSubscribed = true;
                 }
-                _transfers.Add(op.Snapshot.TransferId, op);
+                _transfers.Add(op._snapshot.TransferId, op);
                 _receipts.Add(options.OperationId, new(sessionId, local, remote, options, op));
                 // 请求令牌只控制回执等待,绝不链接到传输寿命。
-                op.Worker = Task.Run(() => RunUploadAsync(op, session, options), CancellationToken.None);
-                _ = op.Worker.ContinueWith(static task => _ = task.Exception, CancellationToken.None,
+                op._worker = Task.Run(() => RunUploadAsync(op, session, options), CancellationToken.None);
+                _ = op._worker.ContinueWith(static task => _ = task.Exception, CancellationToken.None,
                     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 return Task.FromResult(Read(op));
             }
@@ -131,10 +132,10 @@ internal sealed partial class RemoteFsCapability
         cancellationToken.ThrowIfCancellationRequested();
         UploadOperation op = FindTransfer(transferId);
         Task changed;
-        lock (op.Gate)
+        lock (op._gate)
         {
-            if (op.Snapshot.Sequence > afterSequence || op.Snapshot.IsTerminal || waitTimeout == TimeSpan.Zero) return ReadAuthorized(op);
-            changed = op.Changed.Task;
+            if (op._snapshot.Sequence > afterSequence || op._snapshot.IsTerminal || waitTimeout == TimeSpan.Zero) return ReadAuthorized(op);
+            changed = op._changed.Task;
         }
         try { await changed.WaitAsync(waitTimeout, cancellationToken).ConfigureAwait(false); }
         catch (TimeoutException) { }
@@ -146,17 +147,17 @@ internal sealed partial class RemoteFsCapability
     {
         cancellationToken.ThrowIfCancellationRequested();
         UploadOperation op = FindTransfer(transferId, allowRevokedCleanup: true);
-        lock (op.Gate)
+        lock (op._gate)
         {
-            if (expectedGeneration <= 0 || expectedGeneration != op.Snapshot.Generation)
+            if (expectedGeneration <= 0 || expectedGeneration != op._snapshot.Generation)
                 throw new InvalidOperationException("Transfer generation does not match.");
-            if ((!op.Snapshot.IsTerminal || !op.Snapshot.RemoteStopConfirmed && !op.Worker.IsCompleted)
-                && !op.Snapshot.CancellationRequested)
+            if ((!op._snapshot.IsTerminal || !op._snapshot.RemoteStopConfirmed && !op._worker.IsCompleted)
+                && !op._snapshot.CancellationRequested)
             {
                 Update(op, s => s with { State = s.IsTerminal ? s.State : RemoteTransferState.CancelRequested, CancellationRequested = true });
                 RequestStop(op);
             }
-            return Task.FromResult(op.PermissionRevoked ? op.Snapshot with { LocalPath = "", RemotePath = "", SessionId = "" } : op.Snapshot);
+            return Task.FromResult(op.PermissionRevoked ? op._snapshot with { LocalPath = "", RemotePath = "", SessionId = "" } : op._snapshot);
         }
     }
 
@@ -182,12 +183,12 @@ internal sealed partial class RemoteFsCapability
 
     private static RemoteTransferSnapshot ReadAuthorized(UploadOperation op)
     {
-        lock (op.Gate) { DemandSnapshotAccess(op); return op.Snapshot; }
+        lock (op._gate) { DemandSnapshotAccess(op); return op._snapshot; }
     }
 
     private static void DemandSnapshotAccess(UploadOperation op)
     {
-        if (op.PermissionRevoked) throw new PluginPermissionDeniedException("Upload authorization was revoked.");
+        if (op.PermissionRevoked) throw new PluginPermissionDeniedException("Transfer authorization was revoked.");
     }
 
     private UploadOperation FindTransfer(string transferId, bool allowRevokedCleanup = false)
@@ -308,14 +309,14 @@ internal sealed partial class RemoteFsCapability
         }
     }
 
-    private static RemoteTransferSnapshot Read(UploadOperation op) { lock (op.Gate) return op.Snapshot; }
+    private static RemoteTransferSnapshot Read(UploadOperation op) { lock (op._gate) return op._snapshot; }
     private static void Update(UploadOperation op, Func<RemoteTransferSnapshot, RemoteTransferSnapshot> update)
     {
-        lock (op.Gate)
+        lock (op._gate)
         {
-            op.Snapshot = update(op.Snapshot) with { Sequence = op.Snapshot.Sequence + 1, UpdatedAt = DateTimeOffset.UtcNow };
-            TaskCompletionSource changed = op.Changed;
-            op.Changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            op._snapshot = update(op._snapshot) with { Sequence = op._snapshot.Sequence + 1, UpdatedAt = DateTimeOffset.UtcNow };
+            TaskCompletionSource changed = op._changed;
+            op._changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
             changed.TrySetResult();
         }
     }
@@ -325,10 +326,10 @@ internal sealed partial class RemoteFsCapability
         public void Report(TransferProgress value)
         {
             long now = Environment.TickCount64;
-            lock (op.Gate)
+            lock (op._gate)
             {
-                if (op.Snapshot.IsTerminal || now - op.LastProgress < 100) return;
-                op.LastProgress = now;
+                if (op._snapshot.IsTerminal || now - op._lastProgress < 100) return;
+                op._lastProgress = now;
                 Update(op, s => ApplyTransferProgress(s, value));
             }
         }
@@ -336,7 +337,9 @@ internal sealed partial class RemoteFsCapability
 
     internal static RemoteTransferSnapshot ApplyTransferProgress(RemoteTransferSnapshot snapshot, TransferProgress value) => snapshot with
     {
-        TransferredBytes = Math.Clamp(value.BytesTransferred, snapshot.TransferredBytes, snapshot.TotalBytes),
+        TransferredBytes = snapshot.Direction == RemoteTransferDirection.Download || snapshot.TotalBytes < 0
+            ? Math.Max(snapshot.TransferredBytes, value.BytesTransferred)
+            : Math.Clamp(value.BytesTransferred, snapshot.TransferredBytes, snapshot.TotalBytes),
         SpeedBytesPerSecond = value.SpeedBytesPerSecond > 0 ? value.SpeedBytesPerSecond : null,
         EstimatedTimeRemaining = value.SpeedBytesPerSecond > 0 ? value.EstimatedTimeRemaining : null,
     };
@@ -350,18 +353,18 @@ internal sealed partial class RemoteFsCapability
         FileStream? diskSnapshot = null;
         string? snapshotDirectory = null;
         var elapsed = Stopwatch.StartNew();
-        using var execution = CancellationTokenSource.CreateLinkedTokenSource(op.Stop.Token, op.Permission?.Revocation ?? CancellationToken.None);
+        using var execution = CancellationTokenSource.CreateLinkedTokenSource(op._stop.Token, op._permission?.Revocation ?? CancellationToken.None);
         CancellationToken ct = execution.Token;
         using var heartbeatStop = new CancellationTokenSource();
         Task heartbeat = TransferHeartbeatAsync(op, heartbeatStop.Token);
         try
         {
             Update(op, s => s with { State = RemoteTransferState.Starting });
-            if (uploadPermissions is null || op.Permission is null || string.IsNullOrWhiteSpace(pluginId))
+            if (uploadPermissions is null || op._permission is null || string.IsNullOrWhiteSpace(pluginId))
                 throw new PluginPermissionDeniedException("A trusted upload approval is required.");
             SshSession target = connections.GetSession(session) ?? throw new PluginSessionNotFoundException(Read(op).SessionId);
             string label = $"{target.ConnectionInfo.Username}@{target.ConnectionInfo.Host}:{target.ConnectionInfo.Port}";
-            bool approved = await uploadPermissions.CheckUploadAsync(op.Permission, pluginId, label, Read(op).LocalPath,
+            bool approved = await uploadPermissions.CheckUploadAsync(op._permission, pluginId, label, Read(op).LocalPath,
                 Read(op).RemotePath, options.Overwrite, ct).ConfigureAwait(false);
             if (!approved) throw new PluginPermissionDeniedException("The user denied this upload.");
             ct.ThrowIfCancellationRequested();
@@ -372,7 +375,7 @@ internal sealed partial class RemoteFsCapability
             ct.ThrowIfCancellationRequested();
             Resolve(Read(op).SessionId);
             Update(op, s => s with { State = RemoteTransferState.Starting });
-            Stream uploadSource = op.Source;
+            Stream uploadSource = op._source;
             if (UseDiskSnapshot)
             {
                 snapshotDirectory = Path.Combine(Path.GetTempPath(), "vela-upload-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)));
@@ -391,7 +394,7 @@ internal sealed partial class RemoteFsCapability
                 byte[] buffer = new byte[128 * 1024];
                 long last = Environment.TickCount64;
                 int count;
-                while ((count = await op.Source.ReadAsync(buffer, ct).ConfigureAwait(false)) != 0)
+                while ((count = await op._source.ReadAsync(buffer, ct).ConfigureAwait(false)) != 0)
                 {
                     await diskSnapshot.WriteAsync(buffer.AsMemory(0, count), ct).ConfigureAwait(false);
                     if (Environment.TickCount64 - last >= 100)
@@ -402,9 +405,9 @@ internal sealed partial class RemoteFsCapability
                 }
                 await diskSnapshot.FlushAsync(ct).ConfigureAwait(false);
                 diskSnapshot.Position = 0;
-                op.Source.Position = 0;
+                op._source.Position = 0;
                 byte[] snapshotHash = await SHA256.HashDataAsync(diskSnapshot, ct).ConfigureAwait(false);
-                byte[] sourceHash = await SHA256.HashDataAsync(op.Source, ct).ConfigureAwait(false);
+                byte[] sourceHash = await SHA256.HashDataAsync(op._source, ct).ConfigureAwait(false);
                 if (!CryptographicOperations.FixedTimeEquals(snapshotHash, sourceHash)) throw new SourceChangedException();
                 diskSnapshot.Position = 0;
                 uploadSource = diskSnapshot;
@@ -415,7 +418,7 @@ internal sealed partial class RemoteFsCapability
             ct.ThrowIfCancellationRequested();
             Update(op, s => s with { State = RemoteTransferState.Running });
             writing = true;
-            remoteWrite = sftp.UploadStreamAsync(session, uploadSource, temporary, op.SourceLength,
+            remoteWrite = sftp.UploadStreamAsync(session, uploadSource, temporary, op._sourceLength,
                 progress: new UploadProgressSink(op), cancellationToken: ct);
             await remoteWrite.WaitAsync(ct).ConfigureAwait(false);
             closed = true;
@@ -458,7 +461,7 @@ internal sealed partial class RemoteFsCapability
         catch (Exception ex)
         {
             bool stopped = (!writing || closed) && !committing;
-            bool timeout = options.Timeout is not null && op.Stop.IsCancellationRequested && !Read(op).CancellationRequested
+            bool timeout = options.Timeout is not null && op._stop.IsCancellationRequested && !Read(op).CancellationRequested
                 && !lifetime.IsCancellationRequested && !op.PermissionRevoked;
             Update(op, s => s with
             {
@@ -498,17 +501,17 @@ internal sealed partial class RemoteFsCapability
                 finally
                 {
                     if (snapshotDirectory is not null) { try { Directory.Delete(snapshotDirectory); } catch { } }
-                    try { await op.Source.DisposeAsync().ConfigureAwait(false); }
+                    try { await op._source.DisposeAsync().ConfigureAwait(false); }
                     finally
                     {
                         try { if (slot) _uploadSlots.Release(); }
                         finally
                         {
-                            op.Permission?.Active = false;
-                            lock (op.Gate)
+                            op._permission?._active = false;
+                            lock (op._gate)
                             {
-                                op.StopDisposed = true;
-                                op.Stop.Dispose();
+                                op._stopDisposed = true;
+                                op._stop.Dispose();
                             }
                         }
                     }
@@ -541,11 +544,11 @@ internal sealed partial class RemoteFsCapability
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
             {
-                lock (op.Gate)
+                lock (op._gate)
                 {
-                    if (op.Snapshot.IsTerminal) return;
-                    if (op.Snapshot.State == RemoteTransferState.Starting
-                        || op.Snapshot.State == RemoteTransferState.Running && op.Snapshot.TransferredBytes == op.Snapshot.TotalBytes)
+                    if (op._snapshot.IsTerminal) return;
+                    if (op._snapshot.State == RemoteTransferState.Starting
+                        || op._snapshot.State == RemoteTransferState.Running && op._snapshot.TransferredBytes == op._snapshot.TotalBytes)
                         Update(op, s => s);
                 }
             }
@@ -555,13 +558,13 @@ internal sealed partial class RemoteFsCapability
 
     private static void RequestStop(UploadOperation op)
     {
-        lock (op.Gate)
-            if (!op.StopDisposed) op.Stop.Cancel();
+        lock (op._gate)
+            if (!op._stopDisposed) op._stop.Cancel();
     }
 
     private static void ValidateSource(UploadOperation op)
     {
-        if (op.Source.Length != op.SourceLength || File.GetLastWriteTimeUtc(op.Source.SafeFileHandle) != op.SourceModified)
+        if (op._source.Length != op._sourceLength || File.GetLastWriteTimeUtc(op._source.SafeFileHandle) != op._sourceModified)
             throw new SourceChangedException();
     }
 
@@ -569,7 +572,7 @@ internal sealed partial class RemoteFsCapability
     {
         lock (_transfersGate)
             foreach (UploadOperation op in _transfers.Values)
-                if (!op.Worker.IsCompleted && Read(op).SessionId == session.SessionId.ToString())
+                if (!op._worker.IsCompleted && Read(op).SessionId == session.SessionId.ToString())
                     RequestStop(op);
     }
 
@@ -582,13 +585,13 @@ internal sealed partial class RemoteFsCapability
             if (_disconnectSubscribed) connections.SessionDisconnected -= OnTransferSessionDisconnected;
             foreach (UploadOperation op in _transfers.Values)
             {
-                if (!op.Worker.IsCompleted)
+                if (!op._worker.IsCompleted)
                 {
                     RequestStop(op);
-                    _ = op.Worker.ContinueWith(_ => op.Permission?.Dispose(), CancellationToken.None,
+                    _ = op._worker.ContinueWith(_ => { op._permission?.Dispose(); op._downloadPermission?.Dispose(); }, CancellationToken.None,
                         TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 }
-                else op.Permission?.Dispose();
+                else { op._permission?.Dispose(); op._downloadPermission?.Dispose(); }
             }
         }
     }

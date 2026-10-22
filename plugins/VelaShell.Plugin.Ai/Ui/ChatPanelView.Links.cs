@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using LiveMarkdown.Avalonia;
+using VelaShell.Plugin.Ai.Agent;
 using VelaShell.PluginSdk.RemoteFs;
 
 namespace VelaShell.Plugin.Ai.Ui;
@@ -16,9 +17,6 @@ namespace VelaShell.Plugin.Ai.Ui;
 /// </remarks>
 public partial class ChatPanelView
 {
-    /// <summary>下载单个文件的上限:超过这个量该走文件面板的传输队列,不该由聊天面板顺手做。</summary>
-    private const long MaxLinkDownloadBytes = 64 * 1024 * 1024;
-
     private void OnMarkdownLinkClicked(LinkClickedEventArgs e)
     {
         string href = e?.HRef?.ToString() ?? "";
@@ -108,11 +106,6 @@ public partial class ChatPanelView
                 StatusText.Text = _loc.F("LinkIsDirectory", remotePath);
                 return;
             }
-            if (entry.Size > MaxLinkDownloadBytes)
-            {
-                StatusText.Text = _loc.F("LinkTooBig", MaxLinkDownloadBytes / (1024 * 1024));
-                return;
-            }
             if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage)
             {
                 return;
@@ -126,9 +119,18 @@ public partial class ChatPanelView
             {
                 return;
             }
-            StatusText.Text = _loc.F("LinkDownloading", remotePath);
-            await _context.RemoteFs.DownloadFileAsync(sessionId, remotePath, localPath);
-            StatusText.Text = _loc.F("LinkDownloaded", localPath);
+            if (!_context.RemoteFs.SupportsTransferOperations || !_context.RemoteFs.SupportsDownloadOperations)
+            {
+                StatusText.Text = _loc["Error"] + ": independent downloads are unavailable.";
+                return;
+            }
+            FileTransferRunScope scope = BeginLinkTransferScope(sessionId);
+            string operationId = FileTransferJobRegistry.StableOperationId(scope.OwnerId, scope.RunId,
+                "link:" + remotePath + "->" + localPath);
+            RemoteTransferSnapshot snapshot = await scope.StartDownloadAsync(sessionId, remotePath, localPath,
+                operationId, overwrite: false, CancellationToken.None);
+            StatusText.Text = TransferPresentation.Text(_loc, snapshot);
+            _ = new LinkTransferBinding(this, scope, snapshot.TransferId, localPath);
         }
         catch (Exception ex)
         {

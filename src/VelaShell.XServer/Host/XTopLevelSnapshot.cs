@@ -99,7 +99,7 @@ public sealed record XTopLevelSnapshot
     /// <summary>所属客户端的编号(<see cref="XClientInfo.Id" />)。</summary>
     public int ClientId { get; init; }
 
-    /// <summary>所属客户端的连接名(宿主在 <see cref="X11Server.ServeAuthenticatedAsync(System.IO.Stream, string?, System.Threading.CancellationToken)" /> 时给的);没给为 null。</summary>
+    /// <summary>所属客户端的连接名(宿主在 <see cref="X11Server.ServeAuthenticatedAsync(Stream, string?, CancellationToken)" /> 时给的);没给为 null。</summary>
     public string? ClientLabel { get; init; }
 
     /// <summary>

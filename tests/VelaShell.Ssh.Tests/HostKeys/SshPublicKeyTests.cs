@@ -131,7 +131,7 @@ public sealed class SshPublicKeyTests
     [DataRow(SshAlgorithmNames.EcdsaSha2Nistp256)]
     public async Task 原生钥第一次验签时才建(string algorithm)
     {
-        using VelaShell.Ssh.Auth.InMemorySshSigner signer = algorithm == SshAlgorithmNames.RsaSha256
+        using Ssh.Auth.InMemorySshSigner signer = algorithm == SshAlgorithmNames.RsaSha256
             ? Ssh.Auth.InMemorySshSigner.FromRsa(RSA.Create(2048))
             : Ssh.Auth.InMemorySshSigner.FromEcdsa(ECDsa.Create(ECCurve.NamedCurves.nistP256));
         byte[] data = RandomNumberGenerator.GetBytes(32);

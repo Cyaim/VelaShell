@@ -57,7 +57,7 @@ public sealed class RemoteFsCapabilityTests
         await EventuallyAsync(() => plugin.Frames.Count == 2);
         await Task.Delay(150);
 
-        Assert.AreSequenceEqual([new RemoteTransferProgress(40, 100), new RemoteTransferProgress(100, 100)], plugin.Frames.ToArray(),
+        Assert.AreSequenceEqual([new RemoteTransferProgress(40, 100), new RemoteTransferProgress(100, 100)], [.. plugin.Frames],
             "满格只在任务成功后报一次");
     }
 

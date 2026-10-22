@@ -30,7 +30,7 @@ public interface IEmbeddedXServerHost : IX11ServerHost
     }
 
     /// <summary>
-    /// 设置里选的窗口模式(<see cref="VelaShell.Core.XServer.XServerWindowModes" />)。在 <see cref="AttachAsync" /> 之前调用。
+    /// 设置里选的窗口模式(<see cref="Core.XServer.XServerWindowModes" />)。在 <see cref="AttachAsync" /> 之前调用。
     /// 单窗口(rootful)模式下服务端有 <see cref="X11Server.Screen" />:宿主据此决定屏幕窗口带不带边框、是否全屏。默认实现什么也不做。
     /// </summary>
     /// <param name="mode">窗口模式。</param>

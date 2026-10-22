@@ -146,13 +146,13 @@ public sealed class AgentListIdentitiesTests
     /// <summary>一条 SIGN_RESPONSE：签名 blob 是 <c>string 算法名 ‖ string 签名</c>。</summary>
     private static byte[] SignResponse(string algorithm)
     {
-        System.Buffers.ArrayBufferWriter<byte> blob = new();
-        Ssh.Protocol.SshDataWriter blobWriter = new(blob);
+        ArrayBufferWriter<byte> blob = new();
+        SshDataWriter blobWriter = new(blob);
         blobWriter.WriteUtf8String(algorithm);
         blobWriter.WriteString(new byte[64]);
 
-        System.Buffers.ArrayBufferWriter<byte> reply = new();
-        Ssh.Protocol.SshDataWriter writer = new(reply);
+        ArrayBufferWriter<byte> reply = new();
+        SshDataWriter writer = new(reply);
         writer.WriteByte(14);   // SSH_AGENT_SIGN_RESPONSE
         writer.WriteString(blob.WrittenSpan);
         return reply.WrittenSpan.ToArray();

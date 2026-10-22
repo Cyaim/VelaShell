@@ -234,6 +234,12 @@ internal sealed class PluginCapabilityRouter : IDisposable
                     return await _context.RemoteFs.StartUploadAsync(request.SessionId, request.LocalPath, request.RemotePath,
                         request.Options, cancellationToken).ConfigureAwait(false);
                 }
+            case PluginRpc.FsTransferStartDownload:
+                {
+                    FsTransferStartDownloadRequest request = Get<FsTransferStartDownloadRequest>(payload);
+                    return await _context.RemoteFs.StartDownloadAsync(request.SessionId, request.RemotePath, request.LocalPath,
+                        request.Options, cancellationToken).ConfigureAwait(false);
+                }
             case PluginRpc.FsTransferGet:
                 return await _context.RemoteFs.GetTransferAsync(Get<FsTransferRef>(payload).TransferId, cancellationToken).ConfigureAwait(false);
             case PluginRpc.FsTransferWait:
@@ -551,7 +557,11 @@ internal sealed class PluginCapabilityRouter : IDisposable
             // 主题身份握手就给:插件在 Activate 里建界面时就要知道自己长在哪套主题上,
             // 等第一条 theme/tokens 通知就晚了。
             ThemeInfo: _context.Theme.Current)
-        { SupportsExecutionOperations = true, SupportsTransferOperations = _context.RemoteFs.SupportsTransferOperations };
+        {
+            SupportsExecutionOperations = true,
+            SupportsTransferOperations = _context.RemoteFs.SupportsTransferOperations,
+            SupportsDownloadOperations = _context.RemoteFs.SupportsDownloadOperations
+        };
     }
 
     /// <summary>取已打开的 measurement 句柄;插件必须先 <see cref="PluginRpc.TimeSeriesOpen" />。</summary>

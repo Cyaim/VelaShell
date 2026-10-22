@@ -120,7 +120,7 @@ public sealed class SharedCredentialStorageTests : IDisposable
         // 白名单同时钉住返回类型的形状,防止以后给摘要添回密码或私钥口令。
         Assert.AreSequenceEqual(
             new[] { "AuthMethod", "HasPassword", "Id", "Name", "Username" },
-            typeof(SharedCredentialMetadata).GetProperties().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray());
+            [.. typeof(SharedCredentialMetadata).GetProperties().Select(p => p.Name).Order(StringComparer.Ordinal)]);
     }
 
     [TestMethod]

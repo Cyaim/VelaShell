@@ -2567,7 +2567,7 @@ public sealed partial class SettingsViewUiTests
                     endpoints = new { api = newEndpoint.BaseUrl }
                 }));
                 using var http = new HttpClient(exchange);
-                store.TokenClient = new VelaShell.Plugin.Ai.Auth.OAuthClient(http);
+                store.TokenClient = new Auth.OAuthClient(http);
                 await store.SaveTokensAsync(provider.Id, new OAuthTokens
                 {
                     AccessToken = "same-token",
@@ -2931,7 +2931,7 @@ public sealed partial class SettingsViewUiTests
             static async Task ClickAndWaitAsync(Button button)
             {
                 var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                void OnChanged(object? sender, Avalonia.AvaloniaPropertyChangedEventArgs args)
+                void OnChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
                 {
                     if (args.Property == InputElement.IsEnabledProperty && button.IsEnabled)
                         completed.TrySetResult();
@@ -3443,7 +3443,7 @@ public sealed partial class SettingsViewUiTests
         public void Dispose() { Release(); _listener.Close(); }
     }
 
-    private sealed class KeySettingsStorage(VelaShell.PluginSdk.Storage.IPluginStorage inner) : VelaShell.PluginSdk.Storage.IPluginStorage
+    private sealed class KeySettingsStorage(PluginSdk.Storage.IPluginStorage inner) : PluginSdk.Storage.IPluginStorage
     {
         public bool Fail { get; set; }
         public int SettingsReadsUntilHold { get; set; }
@@ -3625,7 +3625,7 @@ public sealed partial class SettingsViewUiTests
                     Assert.IsTrue(button.Focusable);
                     Assert.IsTrue(button.Focus());
                     Assert.IsGreaterThan(0d, button.Bounds.Width);
-                    Avalonia.Point? origin = button.TranslatePoint(new Avalonia.Point(), KeyRow(view, extra));
+                    Point? origin = button.TranslatePoint(new Point(), KeyRow(view, extra));
                     Assert.IsNotNull(origin);
                     Assert.IsTrue(origin.Value.X >= 0 && origin.Value.X + button.Bounds.Width <= KeyRow(view, extra).Bounds.Width + 0.1,
                         "420 DIP 下操作按钮不得裁切或挤入遮罩摘要");

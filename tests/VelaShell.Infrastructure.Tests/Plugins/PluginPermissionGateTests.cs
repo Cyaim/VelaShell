@@ -1,5 +1,5 @@
-using VelaShell.Core.Data;
 using NSubstitute;
+using VelaShell.Core.Data;
 using VelaShell.Infrastructure.Plugins;
 
 namespace VelaShell.Infrastructure.Tests.Plugins;
@@ -95,6 +95,27 @@ public class PluginPermissionGateTests
         await revoked;
         Assert.IsFalse(await gate.HasGrantAsync("p"));
         second.Dispose();
+    }
+
+    [TestMethod]
+    public async Task DownloadPermissionIsIndependentRejectsBroadGrantAndRevokesPendingLease()
+    {
+        foreach (PluginPermissionDecision decision in new[] { PluginPermissionDecision.Deny, PluginPermissionDecision.AllowSession, PluginPermissionDecision.AllowAlways })
+        {
+            IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+            prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(decision);
+            var gate = new PluginPermissionGate(null, prompt);
+            using var lease = gate.CreateDownloadLease("p");
+            Assert.IsFalse(await gate.CheckDownloadAsync(lease, "p", "real-session", "/source", "destination", false, default));
+        }
+        var noPrompt = new PluginPermissionGate(null, null);
+        using var pending = noPrompt.CreateDownloadLease("p");
+        Assert.IsFalse(await noPrompt.CheckDownloadAsync(pending, "p", "session", "/source", "target", false, default));
+        Assert.IsTrue(await noPrompt.HasGrantAsync("p"));
+        await noPrompt.RevokeAsync("p");
+        Assert.IsTrue(pending.IsRevoked);
+        Assert.IsTrue(pending.Revocation.IsCancellationRequested);
+        Assert.IsFalse(await noPrompt.HasGrantAsync("p"));
     }
 
     [TestMethod]

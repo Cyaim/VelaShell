@@ -4561,6 +4561,10 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="PluginPermUpload_Replace"><value>기존 파일의 원자적 교체 허용</value></data>
   <data name="PluginPermUpload_NoReplace"><value>기존 파일을 교체하지 않음</value></data>
   <data name="PluginPermUpload_AllowOnce"><value>이번 업로드 허용</value></data>
+  <data name="PluginPermDownload_Title"><value>파일 다운로드 권한</value></data>
+  <data name="PluginPermDownload_AllowOnce"><value>이번 다운로드 허용</value></data>
+  <data name="PluginPermDownload_Message"><value>플러그인 "{0}"이(가) {1}에서 로컬 파일로 다운로드하도록 요청합니다. 권한은 이 작업에만 적용됩니다.</value></data>
+  <data name="PluginPermDownload_Preview"><value>원격 원본: {0}&#10;로컬 대상: {1}&#10;대상 정책: {2}</value></data>
   <data name="PluginPermSession_Title"><value>연결 요청</value></data>
   <data name="PluginPermSession_Message"><value>플러그인 "{0}"이(가) {1}에 연결하려고 합니다. 플러그인이 밝힌 이유:</value></data>
   <data name="PluginManager_Install"><value>.vpx 설치…</value></data>

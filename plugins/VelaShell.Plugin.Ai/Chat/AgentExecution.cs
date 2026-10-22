@@ -168,13 +168,12 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
                 .ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
             foreach (ChatMessage message in _completed)
             {
-                FunctionCallContent[] calls = message.Contents.OfType<FunctionCallContent>()
-                    .Where(c => seen.Add(c.CallId)).ToArray();
+                FunctionCallContent[] calls = [.. message.Contents.OfType<FunctionCallContent>().Where(c => seen.Add(c.CallId))];
                 if (calls.Length == 0) continue;
-                result.Add(new ChatMessage(ChatRole.Assistant, calls.Cast<AIContent>().ToList()));
-                result.Add(new ChatMessage(ChatRole.Tool, calls.Select(c => (AIContent)new FunctionResultContent(c.CallId,
+                result.Add(new ChatMessage(ChatRole.Assistant, [.. calls.Cast<AIContent>()]));
+                result.Add(new ChatMessage(ChatRole.Tool, [.. calls.Select(c => (AIContent)new FunctionResultContent(c.CallId,
                     results.TryGetValue(c.CallId, out FunctionResultContent? completed)
-                        ? completed.Result : "This call was not started: execution paused. Do not infer that it ran.")).ToList()));
+                        ? completed.Result : "This call was not started: execution paused. Do not infer that it ran."))]));
             }
             result.AddRange(_completed.Where(m => m.Role == ChatRole.User));
             if (!string.IsNullOrWhiteSpace(visibleText)) result.Add(new ChatMessage(ChatRole.Assistant, visibleText));
@@ -343,7 +342,7 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                         else
                         {
                             ChatResponseUpdate remainder = update.Clone();
-                            remainder.Contents = update.Contents.Where(c => c is not TextContent and not TextReasoningContent).ToList();
+                            remainder.Contents = [.. update.Contents.Where(c => c is not TextContent and not TextReasoningContent)];
                             remainder.RawRepresentation = null;
                             yield return remainder;
                         }
@@ -357,7 +356,7 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
             {
                 if (!update.Contents.Any(c => c is UsageContent)) continue;
                 ChatResponseUpdate usage = update.Clone();
-                usage.Contents = update.Contents.Where(c => c is UsageContent).ToList();
+                usage.Contents = [.. update.Contents.Where(c => c is UsageContent)];
                 usage.FinishReason = null;
                 usage.RawRepresentation = null;
                 yield return usage;

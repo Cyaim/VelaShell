@@ -505,7 +505,7 @@ public sealed class LocalFilePaneViewModelTests
 
         Assert.AreEqual(Fake("Books", "123", "35"), vm.CurrentPath);
         Assert.IsFalse(vm.IsPathEditing);
-        Assert.AreSequenceEqual(["fxyc.txt"], vm.SelectedEntries.Select(entry => entry.Name).ToArray());
+        Assert.AreSequenceEqual(["fxyc.txt"], [.. vm.SelectedEntries.Select(entry => entry.Name)]);
     }
 
     [TestMethod]

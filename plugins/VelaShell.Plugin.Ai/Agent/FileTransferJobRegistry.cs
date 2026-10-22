@@ -26,13 +26,13 @@ public sealed record FileTransferJobUpdate(string OwnerId, string RunId, string 
 /// </summary>
 public sealed class FileTransferJobRegistry
 {
-    private static readonly ConditionalWeakTable<IPluginContext, FileTransferJobRegistry> Shared = new();
+    private static readonly ConditionalWeakTable<IPluginContext, FileTransferJobRegistry> Shared = [];
     private readonly IRemoteFsApi _remoteFs;
     private readonly CancellationToken _lifetime;
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, Job> _jobs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Job> _jobs = [with(StringComparer.Ordinal)];
     private sealed record StartReceipt(FileTransferRunScope Scope, string Signature, Task<RemoteTransferSnapshot> Result);
-    private readonly Dictionary<string, StartReceipt> _operations = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, StartReceipt> _operations = [with(StringComparer.Ordinal)];
 
     private FileTransferJobRegistry(IPluginContext context)
     {
@@ -49,13 +49,21 @@ public sealed class FileTransferJobRegistry
         Func<string, CancellationToken, Task<bool>>? authorize = null)
         => new(this, ownerId, runId, authorize);
 
-    internal async Task<RemoteTransferSnapshot> StartAsync(FileTransferRunScope scope, string sessionId,
+    internal Task<RemoteTransferSnapshot> StartAsync(FileTransferRunScope scope, string sessionId,
         string localPath, string remotePath, string operationId, bool overwrite, CancellationToken token)
+        => StartCoreAsync(scope, RemoteTransferDirection.Upload, sessionId, localPath, remotePath, operationId, overwrite, token);
+
+    internal Task<RemoteTransferSnapshot> StartDownloadAsync(FileTransferRunScope scope, string sessionId,
+        string remotePath, string localPath, string operationId, bool overwrite, CancellationToken token)
+        => StartCoreAsync(scope, RemoteTransferDirection.Download, sessionId, localPath, remotePath, operationId, overwrite, token);
+
+    private async Task<RemoteTransferSnapshot> StartCoreAsync(FileTransferRunScope scope, RemoteTransferDirection direction,
+        string sessionId, string localPath, string remotePath, string operationId, bool overwrite, CancellationToken token)
     {
-        if (!_remoteFs.SupportsTransferOperations)
-            throw new NotSupportedException("This host does not support independent transfers; synchronous upload fallback is disabled.");
+        if (!_remoteFs.SupportsTransferOperations || (direction == RemoteTransferDirection.Download && !_remoteFs.SupportsDownloadOperations))
+            throw new NotSupportedException("This host does not support independent transfers; synchronous fallback is disabled.");
         await AuthorizeSessionAsync(scope, sessionId, token).ConfigureAwait(false);
-        string signature = JsonSerializer.Serialize(new { sessionId, localPath, remotePath, overwrite });
+        string signature = JsonSerializer.Serialize(new { direction, sessionId, localPath, remotePath, overwrite });
         TaskCompletionSource<RemoteTransferSnapshot>? starter = null;
         Task<RemoteTransferSnapshot> receipt;
         lock (_gate)
@@ -63,40 +71,39 @@ public sealed class FileTransferJobRegistry
             if (_operations.TryGetValue(operationId, out StartReceipt? prior))
             {
                 if (!ReferenceEquals(prior.Scope, scope) || prior.Signature != signature)
-                    throw new InvalidOperationException("Upload operation identity conflict; do not replay this operation.");
+                    throw new InvalidOperationException("Transfer operation identity conflict; do not replay this operation.");
                 receipt = prior.Result;
             }
             else
             {
-                // 先登记在途回执，调用者取消等待也不能把宿主持有的上传变成无主任务。
-                if (_operations.Count >= 1024) throw new InvalidOperationException("The upload task budget is exhausted.");
+                if (_operations.Count >= 1024) throw new InvalidOperationException("The transfer task budget is exhausted.");
                 starter = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 receipt = starter.Task;
                 _operations.Add(operationId, new(scope, signature, receipt));
-                scope.PendingStarts++;
+                scope._pendingStarts++;
             }
         }
-        if (starter is not null) _ = CompleteStartAsync(scope, sessionId, localPath, remotePath, operationId, overwrite, starter);
+        if (starter is not null) _ = CompleteStartAsync(scope, direction, sessionId, localPath, remotePath, operationId, overwrite, starter);
         RemoteTransferSnapshot result = await receipt.WaitAsync(token).ConfigureAwait(false);
         return Deliver(Find(scope, result.TransferId));
     }
 
-    private async Task CompleteStartAsync(FileTransferRunScope scope, string sessionId, string localPath,
+    private async Task CompleteStartAsync(FileTransferRunScope scope, RemoteTransferDirection direction, string sessionId, string localPath,
         string remotePath, string operationId, bool overwrite, TaskCompletionSource<RemoteTransferSnapshot> completion)
     {
         RemoteTransferSnapshot? result = null;
         Exception? failure = null;
         try
         {
-            result = await ReceiveStartAsync(scope, sessionId, localPath, remotePath, operationId, overwrite).ConfigureAwait(false);
+            result = await ReceiveStartAsync(scope, direction, sessionId, localPath, remotePath, operationId, overwrite).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             failure = ex;
             if (ex is not (ArgumentException or NotSupportedException or UnauthorizedAccessException or PluginPermissionDeniedException))
-                scope.UncertainStart = true;
+                scope._uncertainStart = true;
         }
-        finally { lock (_gate) scope.PendingStarts--; }
+        finally { lock (_gate) scope._pendingStarts--; }
         if (failure is null) completion.TrySetResult(result!);
         else
         {
@@ -106,20 +113,26 @@ public sealed class FileTransferJobRegistry
         }
     }
 
-    private async Task<RemoteTransferSnapshot> ReceiveStartAsync(FileTransferRunScope scope, string sessionId,
+    private async Task<RemoteTransferSnapshot> StartRemoteAsync(RemoteTransferDirection direction, string sessionId,
+        string localPath, string remotePath, string operationId, bool overwrite)
+        => direction == RemoteTransferDirection.Download
+            ? await _remoteFs.StartDownloadAsync(sessionId, remotePath, localPath,
+                new RemoteDownloadOptions { OperationId = operationId, Overwrite = overwrite }, _lifetime).ConfigureAwait(false)
+            : await _remoteFs.StartUploadAsync(sessionId, localPath, remotePath,
+                new RemoteUploadOptions { OperationId = operationId, Overwrite = overwrite }, _lifetime).ConfigureAwait(false);
+
+    private async Task<RemoteTransferSnapshot> ReceiveStartAsync(FileTransferRunScope scope, RemoteTransferDirection direction, string sessionId,
         string localPath, string remotePath, string operationId, bool overwrite)
     {
         RemoteTransferSnapshot snapshot;
         try
         {
-            snapshot = await _remoteFs.StartUploadAsync(sessionId, localPath, remotePath,
-                new RemoteUploadOptions { OperationId = operationId, Overwrite = overwrite }, _lifetime).ConfigureAwait(false);
+            snapshot = await StartRemoteAsync(direction, sessionId, localPath, remotePath, operationId, overwrite).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or TimeoutException)
         {
             // 短请求回执丢失时只用原 OperationId 重取一次；从不另造 id 重传。
-            snapshot = await _remoteFs.StartUploadAsync(sessionId, localPath, remotePath,
-                new RemoteUploadOptions { OperationId = operationId, Overwrite = overwrite }, _lifetime).ConfigureAwait(false);
+            snapshot = await StartRemoteAsync(direction, sessionId, localPath, remotePath, operationId, overwrite).ConfigureAwait(false);
         }
         Job job;
         lock (_gate)
@@ -129,12 +142,12 @@ public sealed class FileTransferJobRegistry
                 job = new Job(scope, snapshot);
                 _jobs.Add(snapshot.TransferId, job);
             }
-            else if (!ReferenceEquals(job.Scope, scope))
+            else if (!ReferenceEquals(job._scope, scope))
                 throw new InvalidOperationException("Transfer identity conflict.");
         }
         await PublishAsync(job, snapshot).ConfigureAwait(false);
         bool cancelLate;
-        lock (_gate) cancelLate = scope.CancelAllRequested;
+        lock (_gate) cancelLate = scope._cancelAllRequested;
         if (cancelLate && NeedsCleanup(snapshot))
         {
             RemoteTransferSnapshot cancelled = await _remoteFs.CancelTransferAsync(snapshot.TransferId,
@@ -161,18 +174,18 @@ public sealed class FileTransferJobRegistry
         bool recovered;
         lock (_gate)
         {
-            recovered = job.MonitoringFailed;
+            recovered = job._monitoringFailed;
             if (recovered)
             {
-                job.MonitoringFailed = false;
-                if (!snapshot.IsTerminal) job.Completion = Signal();
+                job._monitoringFailed = false;
+                if (!snapshot.IsTerminal) job._completion = Signal();
             }
         }
         await PublishAsync(job, snapshot, forceObservationUpdate: recovered).ConfigureAwait(false);
         await AuthorizeAsync(job, token).ConfigureAwait(false);
         StartWatcher(job);
         if (consume) return Deliver(job);
-        lock (_gate) return job.Snapshot;
+        lock (_gate) return job._snapshot;
     }
 
     internal async Task<RemoteTransferSnapshot> WaitAsync(FileTransferRunScope scope, string id, TimeSpan wait,
@@ -182,7 +195,7 @@ public sealed class FileTransferJobRegistry
             throw new ArgumentOutOfRangeException(nameof(wait));
         Job job = Find(scope, id);
         await AuthorizeAsync(job, token).ConfigureAwait(false);
-        try { await job.Completion.Task.WaitAsync(wait, token).ConfigureAwait(false); }
+        try { await job._completion.Task.WaitAsync(wait, token).ConfigureAwait(false); }
         catch (TimeoutException) { /* 只是本地等待窗口，不是传输执行死线。 */ }
         await AuthorizeAsync(job, token).ConfigureAwait(false);
         return Deliver(job);
@@ -201,15 +214,17 @@ public sealed class FileTransferJobRegistry
         RemoteTransferResumeOptions options, CancellationToken token)
     {
         Job job = Find(scope, id);
+        if (job._snapshot.Direction == RemoteTransferDirection.Download)
+            throw new NotSupportedException("Downloaded files cannot be resumed by the upload resume operation.");
         await AuthorizeAsync(job, token).ConfigureAwait(false);
         await AuthorizeSessionAsync(scope, options.TargetSessionId, token).ConfigureAwait(false);
         RemoteTransferSnapshot snapshot = await _remoteFs.ResumeTransferAsync(id, options, token).ConfigureAwait(false);
         lock (_gate)
         {
-            if (snapshot.Generation > job.Snapshot.Generation)
+            if (snapshot.Generation > job._snapshot.Generation)
             {
-                job.Completion = Signal();
-                job.Delivered = false;
+                job._completion = Signal();
+                job._delivered = false;
             }
         }
         await PublishAsync(job, snapshot).ConfigureAwait(false);
@@ -221,39 +236,39 @@ public sealed class FileTransferJobRegistry
     {
         lock (_gate)
         {
-            if (!_jobs.TryGetValue(id, out Job? job) || !ReferenceEquals(job.Scope, scope))
-                throw new FileNotFoundException("No upload task with this id belongs to this run.");
+            if (!_jobs.TryGetValue(id, out Job? job) || !ReferenceEquals(job._scope, scope))
+                throw new FileNotFoundException("No transfer task with this id belongs to this run.");
             return job;
         }
     }
 
     private static async Task AuthorizeSessionAsync(FileTransferRunScope scope, string sessionId, CancellationToken token)
     {
-        if (scope.Authorize is { } authorize && !await authorize(sessionId, token).ConfigureAwait(false))
+        if (scope._authorize is { } authorize && !await authorize(sessionId, token).ConfigureAwait(false))
             throw new UnauthorizedAccessException("Authorization for this transfer was revoked; metadata is withheld.");
     }
 
     private async Task AuthorizeAsync(Job job, CancellationToken token)
     {
-        try { await AuthorizeSessionAsync(job.Scope, job.Snapshot.SessionId, token).ConfigureAwait(false); }
+        try { await AuthorizeSessionAsync(job._scope, job._snapshot.SessionId, token).ConfigureAwait(false); }
         catch (UnauthorizedAccessException)
         {
             await WithholdAsync(job).ConfigureAwait(false);
             throw;
         }
         lock (_gate)
-            if (job.Withheld) throw new UnauthorizedAccessException("Transfer metadata is withheld.");
+            if (job._withheld) throw new UnauthorizedAccessException("Transfer metadata is withheld.");
     }
 
     private async Task WithholdAsync(Job job)
     {
         bool first;
-        lock (_gate) { first = !job.Withheld; job.Withheld = true; job.Completion.TrySetResult(); }
+        lock (_gate) { first = !job._withheld; job._withheld = true; job._completion.TrySetResult(); }
         if (!first) return;
-        job.Scope.Publish(new(job.Scope.OwnerId, job.Scope.RunId, job.Snapshot.TransferId, "", "", null, true));
+        job._scope.Publish(new(job._scope.OwnerId, job._scope.RunId, job._snapshot.TransferId, "", "", null, true));
         try
         {
-            await _remoteFs.CancelTransferAsync(job.Snapshot.TransferId, job.Snapshot.Generation, _lifetime).ConfigureAwait(false);
+            await _remoteFs.CancelTransferAsync(job._snapshot.TransferId, job._snapshot.Generation, _lifetime).ConfigureAwait(false);
         }
         catch { /* 尽力清理；撤权后的元数据始终隐藏。 */ }
     }
@@ -263,18 +278,18 @@ public sealed class FileTransferJobRegistry
         try
         {
             await AuthorizeAsync(job, _lifetime).ConfigureAwait(false);
-            await AuthorizeSessionAsync(job.Scope, snapshot.SessionId, _lifetime).ConfigureAwait(false);
+            await AuthorizeSessionAsync(job._scope, snapshot.SessionId, _lifetime).ConfigureAwait(false);
         }
         catch (UnauthorizedAccessException) { await WithholdAsync(job).ConfigureAwait(false); return; }
         lock (_gate)
         {
-            if (snapshot.Sequence < job.Snapshot.Sequence || job.Withheld) return;
-            if (job.PublishedSequence >= snapshot.Sequence && !forceObservationUpdate) return;
-            job.PublishedSequence = snapshot.Sequence;
-            job.Snapshot = snapshot;
-            if (snapshot.IsTerminal) job.Completion.TrySetResult();
+            if (snapshot.Sequence < job._snapshot.Sequence || job._withheld) return;
+            if (job._publishedSequence >= snapshot.Sequence && !forceObservationUpdate) return;
+            job._publishedSequence = snapshot.Sequence;
+            job._snapshot = snapshot;
+            if (snapshot.IsTerminal) job._completion.TrySetResult();
         }
-        job.Scope.Publish(new(job.Scope.OwnerId, job.Scope.RunId, snapshot.TransferId,
+        job._scope.Publish(new(job._scope.OwnerId, job._scope.RunId, snapshot.TransferId,
             snapshot.LocalPath, snapshot.RemotePath, snapshot));
     }
 
@@ -282,8 +297,8 @@ public sealed class FileTransferJobRegistry
     {
         lock (_gate)
         {
-            if (job.Watching || job.Withheld || job.Snapshot.IsTerminal) return;
-            job.Watching = true;
+            if (job._watching || job._withheld || job._snapshot.IsTerminal) return;
+            job._watching = true;
         }
         _ = WatchAsync(job);
     }
@@ -298,8 +313,8 @@ public sealed class FileTransferJobRegistry
                 RemoteTransferSnapshot current;
                 lock (_gate)
                 {
-                    current = job.Snapshot;
-                    if (current.IsTerminal || job.Withheld) return;
+                    current = job._snapshot;
+                    if (current.IsTerminal || job._withheld) return;
                 }
                 try
                 {
@@ -335,11 +350,11 @@ public sealed class FileTransferJobRegistry
                     lock (_gate)
                     {
                         // 本地观察失败独立于宿主 Sequence/终态，不能伪造版本或让清理漏掉仍运行的上传。
-                        job.MonitoringFailed = true;
-                        job.Scope.UncertainStart = true;
-                        job.Completion.TrySetResult();
+                        job._monitoringFailed = true;
+                        job._scope._uncertainStart = true;
+                        job._completion.TrySetResult();
                     }
-                    job.Scope.Publish(new(job.Scope.OwnerId, job.Scope.RunId, current.TransferId,
+                    job._scope.Publish(new(job._scope.OwnerId, job._scope.RunId, current.TransferId,
                         current.LocalPath, current.RemotePath, current, MonitoringUnavailable: true));
                     return;
                 }
@@ -351,9 +366,9 @@ public sealed class FileTransferJobRegistry
             bool restart;
             lock (_gate)
             {
-                job.Watching = false;
-                restart = !_lifetime.IsCancellationRequested && !job.MonitoringFailed
-                    && !job.Withheld && !job.Snapshot.IsTerminal;
+                job._watching = false;
+                restart = !_lifetime.IsCancellationRequested && !job._monitoringFailed
+                    && !job._withheld && !job._snapshot.IsTerminal;
             }
             // Resume/显式查询可能与旧观察者收尾竞态；不能因旧代次仍持 Watching 而丢失新代次监听。
             if (restart) StartWatcher(job);
@@ -364,15 +379,17 @@ public sealed class FileTransferJobRegistry
     {
         lock (_gate)
         {
-            if (job.Withheld) throw new UnauthorizedAccessException("Transfer metadata is withheld.");
-            if (job.Snapshot.IsTerminal || job.MonitoringFailed) job.Delivered = true;
-            return job.MonitoringFailed ? MonitoringUnknown(job) : job.Snapshot;
+            if (job._withheld) throw new UnauthorizedAccessException("Transfer metadata is withheld.");
+            if (job._snapshot.IsTerminal || job._monitoringFailed) job._delivered = true;
+            return job._monitoringFailed ? MonitoringUnknown(job) : job._snapshot;
         }
     }
 
-    private static RemoteTransferSnapshot MonitoringUnknown(Job job) => job.Snapshot with
+    private static RemoteTransferSnapshot MonitoringUnknown(Job job) => job._snapshot with
     {
-        State = RemoteTransferState.Unknown, RemoteStopConfirmed = false, ErrorCode = "ProgressUnavailable",
+        State = RemoteTransferState.Unknown,
+        RemoteStopConfirmed = false,
+        ErrorCode = "ProgressUnavailable",
         ErrorMessage = "Transfer progress cannot be confirmed. Do not automatically replay this operation."
     };
 
@@ -381,13 +398,13 @@ public sealed class FileTransferJobRegistry
 
     internal bool HasRunningTransfers(FileTransferRunScope scope)
     {
-        lock (_gate) return scope.PendingStarts > 0
-            || _jobs.Values.Any(j => ReferenceEquals(j.Scope, scope) && NeedsCleanup(j.Snapshot));
+        lock (_gate) return scope._pendingStarts > 0
+            || _jobs.Values.Any(j => ReferenceEquals(j._scope, scope) && NeedsCleanup(j._snapshot));
     }
 
     internal bool HasActiveJobs(FileTransferRunScope scope)
     {
-        lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j.Scope, scope) && !j.Delivered);
+        lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope) && !j._delivered);
     }
 
     internal async Task CancelAllAsync(FileTransferRunScope scope)
@@ -395,28 +412,28 @@ public sealed class FileTransferJobRegistry
         Job[] jobs;
         lock (_gate)
         {
-            scope.CancelAllRequested = true;
-            jobs = [.. _jobs.Values.Where(j => ReferenceEquals(j.Scope, scope) && NeedsCleanup(j.Snapshot))];
+            scope._cancelAllRequested = true;
+            jobs = [.. _jobs.Values.Where(j => ReferenceEquals(j._scope, scope) && NeedsCleanup(j._snapshot))];
         }
         foreach (Job job in jobs)
         {
-            try { await CancelAsync(scope, job.Snapshot.TransferId, job.Snapshot.Generation, _lifetime).ConfigureAwait(false); }
+            try { await CancelAsync(scope, job._snapshot.TransferId, job._snapshot.Generation, _lifetime).ConfigureAwait(false); }
             catch { /* 宿主关闭或撤权可能已经收尾了任务。 */ }
         }
     }
 
     internal bool HasDeniedExecution(FileTransferRunScope scope)
     {
-        lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j.Scope, scope)
-            && j.Snapshot.State == RemoteTransferState.Failed && j.Snapshot.ErrorCode == "permission-denied");
+        lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope)
+            && j._snapshot.State == RemoteTransferState.Failed && j._snapshot.ErrorCode == "permission-denied");
     }
 
     internal bool HasUnknownOutcome(FileTransferRunScope scope)
     {
-        if (scope.UncertainStart) return true;
-        lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j.Scope, scope)
-            && (j.Withheld || j.Snapshot.State == RemoteTransferState.Unknown
-                || (j.Snapshot.State == RemoteTransferState.TimedOut && !j.Snapshot.RemoteStopConfirmed)));
+        if (scope._uncertainStart) return true;
+        lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope)
+            && (j._withheld || j._snapshot.State == RemoteTransferState.Unknown
+                || (j._snapshot.State == RemoteTransferState.TimedOut && !j._snapshot.RemoteStopConfirmed)));
     }
 
     internal async Task<IReadOnlyList<RemoteTransferSnapshot>> WaitForCompletionAsync(FileTransferRunScope scope,
@@ -425,24 +442,29 @@ public sealed class FileTransferJobRegistry
         while (true)
         {
             Job[] pending;
-            lock (_gate) pending = [.. _jobs.Values.Where(j => ReferenceEquals(j.Scope, scope) && !j.Delivered)];
+            lock (_gate) pending = [.. _jobs.Values.Where(j => ReferenceEquals(j._scope, scope) && !j._delivered)];
             if (pending.Length == 0) return [];
-            await Task.WhenAny(pending.Select(j => j.Completion.Task)).WaitAsync(token).ConfigureAwait(false);
+            await Task.WhenAny(pending.Select(j => j._completion.Task)).WaitAsync(token).ConfigureAwait(false);
             List<RemoteTransferSnapshot> results = [];
-            foreach (Job job in pending.Where(j => j.Completion.Task.IsCompleted))
+            foreach (Job job in pending.Where(j => j._completion.Task.IsCompleted))
             {
                 try { await AuthorizeAsync(job, token).ConfigureAwait(false); }
                 catch (UnauthorizedAccessException) { }
                 lock (_gate)
                 {
-                    if (job.Delivered) continue;
-                    job.Delivered = true;
-                    results.Add(job.Withheld ? new RemoteTransferSnapshot
+                    if (job._delivered) continue;
+                    job._delivered = true;
+                    results.Add(job._withheld ? new RemoteTransferSnapshot
                     {
-                        TransferId = job.Snapshot.TransferId, OperationId = "", SessionId = "", LocalPath = "", RemotePath = "",
-                        State = RemoteTransferState.Unknown, ErrorCode = "ScopeRevoked",
+                        TransferId = job._snapshot.TransferId,
+                        OperationId = "",
+                        SessionId = "",
+                        LocalPath = "",
+                        RemotePath = "",
+                        State = RemoteTransferState.Unknown,
+                        ErrorCode = "ScopeRevoked",
                         ErrorMessage = "Transfer result is withheld. Do not automatically replay this operation."
-                    } : job.MonitoringFailed ? MonitoringUnknown(job) : job.Snapshot);
+                    } : job._monitoringFailed ? MonitoringUnknown(job) : job._snapshot);
                 }
             }
             if (results.Count > 0) return results;
@@ -457,14 +479,14 @@ public sealed class FileTransferJobRegistry
 
     private sealed class Job(FileTransferRunScope scope, RemoteTransferSnapshot snapshot)
     {
-        internal readonly FileTransferRunScope Scope = scope;
-        internal RemoteTransferSnapshot Snapshot = snapshot;
-        internal TaskCompletionSource Completion = Signal();
-        internal bool Delivered;
-        internal bool Withheld;
-        internal bool Watching;
-        internal bool MonitoringFailed;
-        internal long PublishedSequence;
+        internal readonly FileTransferRunScope _scope = scope;
+        internal RemoteTransferSnapshot _snapshot = snapshot;
+        internal TaskCompletionSource _completion = Signal();
+        internal bool _delivered;
+        internal bool _withheld;
+        internal bool _watching;
+        internal bool _monitoringFailed;
+        internal long _publishedSequence;
     }
 }
 
@@ -474,10 +496,10 @@ public sealed class FileTransferRunScope : IAsyncDisposable
     private readonly FileTransferJobRegistry _registry;
     private readonly Lock _gate = new();
     private readonly List<Action<FileTransferJobUpdate>> _subscribers = [];
-    internal readonly Func<string, CancellationToken, Task<bool>>? Authorize;
-    internal volatile bool UncertainStart;
-    internal int PendingStarts;
-    internal bool CancelAllRequested;
+    internal readonly Func<string, CancellationToken, Task<bool>>? _authorize;
+    internal volatile bool _uncertainStart;
+    internal int _pendingStarts;
+    internal bool _cancelAllRequested;
     /// <summary>入口持有的稳定对话所有者。</summary>
     public string OwnerId { get; }
     /// <summary>入口生成的运行代际。</summary>
@@ -496,7 +518,7 @@ public sealed class FileTransferRunScope : IAsyncDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
-        _registry = registry; OwnerId = ownerId; RunId = runId; Authorize = authorize;
+        _registry = registry; OwnerId = ownerId; RunId = runId; _authorize = authorize;
     }
 
     /// <summary>订阅后台进度；调用者切到 UI 线程并显式释放返回的订阅。</summary>
@@ -518,6 +540,9 @@ public sealed class FileTransferRunScope : IAsyncDisposable
     internal Task<RemoteTransferSnapshot> StartAsync(string sessionId, string localPath, string remotePath,
         string operationId, bool overwrite, CancellationToken token)
         => _registry.StartAsync(this, sessionId, localPath, remotePath, operationId, overwrite, token);
+    internal Task<RemoteTransferSnapshot> StartDownloadAsync(string sessionId, string remotePath, string localPath,
+        string operationId, bool overwrite, CancellationToken token)
+        => _registry.StartDownloadAsync(this, sessionId, remotePath, localPath, operationId, overwrite, token);
     /// <summary>重验当前授权后读取本轮任务；消费终态以避免重复模型唤醒。</summary>
     public Task<RemoteTransferSnapshot> ReadAsync(string transferId, CancellationToken cancellationToken = default)
         => _registry.ReadAsync(this, transferId, cancellationToken);
