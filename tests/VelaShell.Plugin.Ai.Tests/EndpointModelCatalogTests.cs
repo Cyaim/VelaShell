@@ -265,7 +265,7 @@ public sealed class EndpointModelCatalogTests
         IReadOnlyList<(string Id, int ContextTokens)> models = await EndpointModelCatalog.FetchAsync(http,
             "https://api.anthropic.com", ChatProtocol.AnthropicMessages, ProviderCredential.Key("sk-ant"));
 
-        Assert.AreSequenceEqual(["claude-a", "claude-b", "claude-c"], models.Select(m => m.Id).ToArray());
+        Assert.AreSequenceEqual(["claude-a", "claude-b", "claude-c"], [.. models.Select(m => m.Id)]);
         Assert.HasCount(2, handler.Requests);
         Assert.AreEqual("https://api.anthropic.com/v1/models", handler.Requests[0].RequestUri!.ToString());
         Assert.AreEqual("?limit=1000&after_id=claude-b", handler.Requests[1].RequestUri!.Query);

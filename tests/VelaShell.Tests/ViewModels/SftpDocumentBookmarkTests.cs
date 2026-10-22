@@ -92,8 +92,8 @@ public sealed class SftpDocumentBookmarkTests
             await second.AddBookmarkAsync(Editor("www", _localDir, "/srv/www"));
 
             SessionProfile stored = (await _repository.GetSessionAsync(profile.Id))!;
-            Assert.AreSequenceEqual(["/var/log", "/srv/www"], stored.DirectoryBookmarks.Select(static b => b.RemotePath).ToArray());
-            Assert.AreSequenceEqual(["/var/log", "/srv/www"], second.Bookmarks.Select(static b => b.RemotePath).ToArray());
+            Assert.AreSequenceEqual(["/var/log", "/srv/www"], [.. stored.DirectoryBookmarks.Select(static b => b.RemotePath)]);
+            Assert.AreSequenceEqual(["/var/log", "/srv/www"], [.. second.Bookmarks.Select(static b => b.RemotePath)]);
         }
         finally
         {

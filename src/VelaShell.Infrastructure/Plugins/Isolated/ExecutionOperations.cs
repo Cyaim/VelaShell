@@ -113,7 +113,7 @@ internal sealed class ExecutionOperations : IAsyncDisposable
         lock (_gate)
         {
             StopUnderLock();
-            pending = _operations.Values.Select(operation => operation.Completed).ToArray();
+            pending = [.. _operations.Values.Select(operation => operation.Completed)];
         }
         await Task.WhenAll(pending).ConfigureAwait(false);
     }

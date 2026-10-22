@@ -1133,12 +1133,12 @@ public sealed class ProviderSetupViewUiTests
 
                 AiProvider created = settings.Providers.Single(provider => provider.Id != source.Id);
                 Assert.AreSequenceEqual(["new-only", "shared"], created.AvailableModels);
-                Assert.AreSequenceEqual(["new-only", "shared"], created.Models.Select(model => model.Model).ToArray());
+                Assert.AreSequenceEqual(["new-only", "shared"], [.. created.Models.Select(model => model.Model)]);
                 Assert.AreSequenceEqual(created.AvailableModels, Find<ComboBox>(view, "SetupModelPicker").Items.Cast<string>().ToArray());
                 Assert.AreEqual("Bearer sk-new", endpoint.Authorization);
                 Assert.AreEqual(sourceJson, System.Text.Json.JsonSerializer.Serialize(source));
                 AiSettings persisted = await store.LoadAsync();
-                Assert.AreSequenceEqual(["new-only", "shared"], persisted.Providers.Single(provider => provider.Id == created.Id).Models.Select(model => model.Model).ToArray());
+                Assert.AreSequenceEqual(["new-only", "shared"], [.. persisted.Providers.Single(provider => provider.Id == created.Id).Models.Select(model => model.Model)]);
                 Assert.AreEqual(sourceJson, System.Text.Json.JsonSerializer.Serialize(persisted.Providers.Single(provider => provider.Id == source.Id)));
                 view.FocusEntry(source.CatalogId, source.Id);
                 Find<ToggleButton>(view, "SetupAdvancedToggle").IsChecked = true;
@@ -1191,12 +1191,12 @@ public sealed class ProviderSetupViewUiTests
                 string[] expected = editDuringPull
                     ? ["local-model", "foreign-model", "tuned-model", "manual-model"]
                     : ["local-model", "tuned-model", "manual-model"];
-                Assert.AreSequenceEqual(expected, provider.Models.Select(model => model.Model).ToArray());
+                Assert.AreSequenceEqual(expected, [.. provider.Models.Select(model => model.Model)]);
                 Assert.AreSequenceEqual(["local-model"], provider.AvailableModels);
                 Assert.AreEqual(other.Models[0].Id, settings.ActiveModelId);
-                Assert.AreSequenceEqual([other.Models[0].Id], settings.FailoverChain.Select(entry => entry.ModelId).ToArray());
+                Assert.AreSequenceEqual([other.Models[0].Id], [.. settings.FailoverChain.Select(entry => entry.ModelId)]);
                 AiSettings persisted = await store.LoadAsync();
-                Assert.AreSequenceEqual(expected, persisted.Providers.Single(item => item.Id == provider.Id).Models.Select(model => model.Model).ToArray());
+                Assert.AreSequenceEqual(expected, [.. persisted.Providers.Single(item => item.Id == provider.Id).Models.Select(model => model.Model)]);
                 Assert.AreEqual(settings.ActiveModelId, persisted.ActiveModelId);
                 Assert.AreEqual(otherJson, System.Text.Json.JsonSerializer.Serialize(persisted.Providers.Single(item => item.Id == other.Id)));
             }
@@ -1242,14 +1242,14 @@ public sealed class ProviderSetupViewUiTests
                 view.FocusEntry(provider.CatalogId, provider.Id);
                 await ClickPrimaryAsync(view);
 
-                Assert.AreSequenceEqual(["local-model", "referenced-model"], provider.Models.Select(model => model.Model).ToArray(),
+                Assert.AreSequenceEqual(["local-model", "referenced-model"], [.. provider.Models.Select(model => model.Model)],
                     "没人引用的过期自动模型照常清理,被引用的留下");
                 Assert.AreSequenceEqual(["local-model"], provider.AvailableModels);
                 Assert.AreEqual(reference == "active" ? referenced.Id : local.Id, settings.ActiveModelId);
                 Assert.AreEqual(reference == "failover", settings.FailoverChain.Any(entry => entry.ModelId == referenced.Id));
                 AiSettings persisted = await store.LoadAsync();
                 Assert.AreSequenceEqual(["local-model", "referenced-model"],
-                    persisted.Providers.Single().Models.Select(model => model.Model).ToArray());
+                    [.. persisted.Providers.Single().Models.Select(model => model.Model)]);
                 Assert.AreEqual(settings.ActiveModelId, persisted.ActiveModelId);
             }
             finally { endpoint.Release(); window.Close(); }

@@ -207,7 +207,7 @@ public sealed class SharedPasswordFillTests
             view.PickPasswordItem(metadata);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
             await repository.Received(1).GetPasswordAsync(metadata.Id);
             // 填完即收口:留着只会让人再点一次。
             Assert.IsFalse(view.PasswordPopupOpenForTest);
@@ -420,7 +420,7 @@ public sealed class SharedPasswordFillTests
             view.PickPasswordItem(metadata);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("\u007Fsecret", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.AreEqual("\u007Fsecret", Encoding.UTF8.GetString([.. writes]));
             Assert.IsFalse(view.PasswordPopupOpenForTest);
         }
         finally
@@ -460,7 +460,7 @@ public sealed class SharedPasswordFillTests
             Press(window, Key.Enter, PhysicalKey.Enter);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
         }
         finally
         {
@@ -565,13 +565,13 @@ public sealed class SharedPasswordFillTests
             Press(window, Key.Enter, PhysicalKey.Enter);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
             await repository.Received(1).GetPasswordAsync(staging.Id);
             Assert.IsFalse(view.PasswordPopupOpenForTest);
             // 列表已收口,再按 Enter 就是提交,原样进终端。
             Press(window, Key.Enter, PhysicalKey.Enter);
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret\r", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.AreEqual("secret\r", Encoding.UTF8.GetString([.. writes]));
         }
         finally
         {
@@ -608,7 +608,7 @@ public sealed class SharedPasswordFillTests
             window.MouseUp(point, MouseButton.Left);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
             Assert.IsFalse(view.PasswordPopupOpenForTest);
         }
         finally
@@ -640,7 +640,7 @@ public sealed class SharedPasswordFillTests
             Assert.IsTrue(view.PasswordPopupOpenForTest);
             Press(window, Key.Enter, PhysicalKey.Enter);
             await DrainWritesAsync(tab);
-            Assert.AreEqual("\r", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.AreEqual("\r", Encoding.UTF8.GetString([.. writes]));
             await repository.DidNotReceive().GetPasswordAsync(Arg.Any<Guid>());
         }
         finally
@@ -683,7 +683,7 @@ public sealed class SharedPasswordFillTests
             pending.SetResult("secret");
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
             Assert.IsFalse(view.PasswordPopupOpenForTest);
         }
         finally
@@ -731,7 +731,7 @@ public sealed class SharedPasswordFillTests
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
             // 唯一的写入是上面那次注入本身,密码没有跟出去。
-            Assert.AreEqual("other-session-input", Encoding.UTF8.GetString(writes.ToArray()));
+            Assert.AreEqual("other-session-input", Encoding.UTF8.GetString([.. writes]));
             Assert.IsTrue(view.PasswordPopupOpenForTest, "失败要留着弹层,否则状态文字随弹层一起消失。");
             Assert.AreEqual(Strings.Get("PasswordFill_Expired"), view.PasswordStatusForTest);
         }

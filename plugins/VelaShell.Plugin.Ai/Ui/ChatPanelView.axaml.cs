@@ -9,7 +9,6 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using CSharpMath.Avalonia;
 using LiveMarkdown.Avalonia;
 using Microsoft.Extensions.AI;
 using TextMateSharp.Grammars;
@@ -408,7 +407,7 @@ public partial class ChatPanelView : UserControl
         await CloseTransfersAsync();
         try
         {
-            Task[] active = _conversations.Values.Select(c => c.RunCompleted?.Task).OfType<Task>().ToArray();
+            Task[] active = [.. _conversations.Values.Select(c => c.RunCompleted?.Task).OfType<Task>()];
             if (active.Length > 0) await Task.WhenAll(active);
         }
         catch (Exception ex) { _context.Log.Warn($"AI run cleanup failed: {ex.Message}"); }
@@ -3739,7 +3738,6 @@ public partial class ChatPanelView : UserControl
         private readonly ScrollViewer _details;
         private readonly Avalonia.Controls.Shapes.Path _chevron;
         private readonly string _argumentsJson;
-        private readonly string _name;
         private string _result = "";
         private readonly TextBlock _argsText;
         private bool _transferWithheld;
@@ -3749,7 +3747,7 @@ public partial class ChatPanelView : UserControl
         public ToolCard(ChatPanelView owner, string name, string argumentsJson)
         {
             _owner = owner;
-            _name = name;
+            ToolName = name;
             _argumentsJson = argumentsJson;
 
             var header = new Grid
@@ -3771,7 +3769,7 @@ public partial class ChatPanelView : UserControl
             Grid.SetColumn(nameText, 1);
             header.Children.Add(nameText);
 
-            var argsText = _argsText = new TextBlock
+            TextBlock argsText = _argsText = new TextBlock
             {
                 Classes = { "toolArgs" },
                 Text = ChatFormatting.OneLine(argumentsJson, 160),
@@ -3814,13 +3812,13 @@ public partial class ChatPanelView : UserControl
         }
 
         /// <summary>入库用的存档。</summary>
-        public ChatToolCall Snapshot() => new(_name, _argumentsJson, _result);
+        public ChatToolCall Snapshot() => new(ToolName, _argumentsJson, _result);
 
         public void Complete(string result)
         {
             _result = result;
             if (RestoreTransfer(result)) return;
-            if (_name is "upload_local_file" or "transfer_status" or "transfer_wait" or "transfer_resume" or "transfer_cancel")
+            if (ToolName is "upload_local_file" or "transfer_status" or "transfer_wait" or "transfer_resume" or "transfer_cancel")
             {
                 _statusIconHost.Child = MakeIcon("Icon.circle-alert", "VelaWarning", 11);
                 ToolTip.SetTip(_statusIconHost, _owner._loc["TransferUnknown"]);

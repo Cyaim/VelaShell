@@ -130,7 +130,7 @@ public sealed partial class ChatPanelView
 
     internal sealed partial class ToolCard
     {
-        internal string ToolName => _name;
+        internal string ToolName { get; }
         private ProgressBar? _transferBar;
         private TextBlock? _transferText, _resumeHint;
         private Button? _cancelTransfer;
