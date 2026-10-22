@@ -132,7 +132,8 @@ public sealed partial class ChatPanelViewUiTests
             var download = (Task)typeof(ChatPanelView).GetMethod("DownloadRemoteAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(panel, ["/srv/report.pdf"])!;
             await download.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Contains("independent downloads are unavailable", Find<TextBlock>(panel, "StatusText").Text ?? "");
+            var loc = new Loc("en");
+            Assert.AreEqual($"{loc["Error"]}: {loc["TransferDownloadUnsupported"]}", Find<TextBlock>(panel, "StatusText").Text);
         }
         finally { panel.Detach(); window.Close(); }
     });

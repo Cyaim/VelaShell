@@ -62,6 +62,7 @@ public sealed class Loc(string locale)
         ["TransferStarting"] = ["Preparing / checking source", "准备/检查源文件", "準備/檢查來源檔案", "準備 / 元ファイル確認中", "준비 / 원본 확인 중"],
         ["TransferRunning"] = ["Uploading", "上传中", "上傳中", "アップロード中", "업로드 중"],
         ["TransferDownloading"] = ["Downloading", "下载中", "下載中", "ダウンロード中", "다운로드 중"],
+        ["TransferDownloadUnsupported"] = ["This host does not support independent downloads.", "当前宿主不支持独立下载任务。", "目前宿主不支援獨立下載任務。", "このホストは独立したダウンロードに対応していません。", "이 호스트는 독립 다운로드를 지원하지 않습니다."],
         ["TransferFinalizing"] = ["Verifying / committing", "校验/提交中", "驗證/提交中", "検証 / 確定中", "검증 / 확정 중"],
         ["TransferCancelling"] = ["Cancellation requested; awaiting confirmation", "已请求取消,等待确认", "已請求取消,等待確認", "取消要求済み・確認待ち", "취소 요청됨; 확인 대기 중"],
         ["TransferSucceeded"] = ["Transfer succeeded", "传输成功", "傳輸成功", "転送成功", "전송 성공"],

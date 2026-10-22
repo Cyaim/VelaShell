@@ -91,7 +91,7 @@ public partial class ChatPanelView
         // 做不了就别弹保存框:让用户挑完位置才说宿主不支持,等于白挑一次。
         if (!_context.RemoteFs.SupportsTransferOperations || !_context.RemoteFs.SupportsDownloadOperations)
         {
-            StatusText.Text = _loc["Error"] + ": independent downloads are unavailable.";
+            StatusText.Text = $"{_loc["Error"]}: {_loc["TransferDownloadUnsupported"]}";
             return;
         }
         if (SelectedSessionId is not { } sessionId)
