@@ -21,7 +21,7 @@ internal sealed class AgentRunCoordinator(CommandJobRunScope jobs, AgentExecutio
         // 每次唤醒的模型请求仍受执行账本的步数与 token 预算约束。
         int batch = 0;
         Task<IReadOnlyList<CommandJobSnapshot>>? commandCompletion = null;
-        Task<IReadOnlyList<VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot>>? transferCompletion = null;
+        Task<IReadOnlyList<PluginSdk.RemoteFs.RemoteTransferSnapshot>>? transferCompletion = null;
         while (true)
         {
             if (batch >= 8) throw new AgentPausedException("ExecutionBudget");
@@ -53,7 +53,7 @@ internal sealed class AgentRunCoordinator(CommandJobRunScope jobs, AgentExecutio
                 continue;
             }
             IReadOnlyList<CommandJobSnapshot> completed = [];
-            IReadOnlyList<VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot> transfers = [];
+            IReadOnlyList<PluginSdk.RemoteFs.RemoteTransferSnapshot> transfers = [];
             while (completed.Count == 0 && transfers.Count == 0)
             {
                 // 保留两个等待任务，不能让 WhenAny 落败者后台消费终态而丢失通知。

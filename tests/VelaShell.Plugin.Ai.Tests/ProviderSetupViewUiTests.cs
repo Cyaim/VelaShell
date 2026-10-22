@@ -65,7 +65,7 @@ public sealed class ProviderSetupViewUiTests
             health.RecordKey(source.Id, false);
             (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
                 await ShowAsync(context, new AiSettings { Providers = [source], ActiveModelId = model.Id }, "custom-openai", health);
-            const System.Reflection.BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
             int notifications = 0;
             view.ModelsChanged += () => notifications++;
             Task? pull = null;

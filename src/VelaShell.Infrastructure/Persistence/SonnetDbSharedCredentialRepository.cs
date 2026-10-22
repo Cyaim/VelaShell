@@ -43,7 +43,7 @@ public sealed class SonnetDbSharedCredentialRepository(SonnetDbEngine engine, IS
             DocumentRow? row = store.Get(id.ToString("D"));
             return row is null ? null : SonnetDbJson.Deserialize<SharedCredential>(row.Json);
         }).ConfigureAwait(false);
-        if (credential is not { AuthMethod: VelaShell.Core.Models.AuthMethod.Password, Password.Length: > 0 })
+        if (credential is not { AuthMethod: Core.Models.AuthMethod.Password, Password.Length: > 0 })
         {
             return null;
         }

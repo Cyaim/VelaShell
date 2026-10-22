@@ -411,11 +411,11 @@ public sealed class AgentExecutionTests
         foreach (bool denialEndsRun in new[] { true, false })
         {
             using var context = new TestPluginContext();
-            var finish = new TaskCompletionSource<VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var snapshot = new VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot
+            var finish = new TaskCompletionSource<PluginSdk.RemoteFs.RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var snapshot = new PluginSdk.RemoteFs.RemoteTransferSnapshot
             {
                 TransferId = "upload", OperationId = "operation", SessionId = "session", LocalPath = "source", RemotePath = "destination",
-                State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Starting, Sequence = 1, Generation = 1
+                State = PluginSdk.RemoteFs.RemoteTransferState.Starting, Sequence = 1, Generation = 1
             };
             context.FakeRemoteFs.SupportsTransferOperations = true;
             context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, _) => Task.FromResult(snapshot);
@@ -435,7 +435,7 @@ public sealed class AgentExecutionTests
             }
             Task run = Consume();
             await waiting.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            finish.SetResult(snapshot with { State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Failed,
+            finish.SetResult(snapshot with { State = PluginSdk.RemoteFs.RemoteTransferState.Failed,
                 Sequence = 2, RemoteStopConfirmed = true, DestinationCommitConfirmedAbsent = true,
                 ErrorCode = "permission-denied", ErrorMessage = "A trusted host upload approval was not granted." });
             if (denialEndsRun)
@@ -462,11 +462,11 @@ public sealed class AgentExecutionTests
     public async Task UploadCompletion_ResumesWithNewNotification_AndDoesNotAddSecondCallResult()
     {
         using var context = new TestPluginContext();
-        var finish = new TaskCompletionSource<VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var snapshot = new VelaShell.PluginSdk.RemoteFs.RemoteTransferSnapshot
+        var finish = new TaskCompletionSource<PluginSdk.RemoteFs.RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var snapshot = new PluginSdk.RemoteFs.RemoteTransferSnapshot
         {
             TransferId = "upload", OperationId = "operation", SessionId = "session", LocalPath = "source", RemotePath = "destination",
-            State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Running, Sequence = 1, Generation = 1
+            State = PluginSdk.RemoteFs.RemoteTransferState.Running, Sequence = 1, Generation = 1
         };
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, _) => Task.FromResult(snapshot);
@@ -489,7 +489,7 @@ public sealed class AgentExecutionTests
         Task run = Consume();
         await waiting.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.HasCount(1, wire.Requests, "本地等待不应反复调用模型");
-        finish.SetResult(snapshot with { State = VelaShell.PluginSdk.RemoteFs.RemoteTransferState.Succeeded, Sequence = 2 });
+        finish.SetResult(snapshot with { State = PluginSdk.RemoteFs.RemoteTransferState.Succeeded, Sequence = 2 });
         await run.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.HasCount(2, wire.Requests);
         Assert.Contains("upload", wire.Requests[1][^1].Text);
@@ -695,7 +695,7 @@ public sealed class AgentExecutionTests
         using var context = new TestPluginContext();
         await using var toolbox = new AgentToolbox(context);
         AIFunction command = toolbox.CreateTools(ChatMode.Agent).OfType<AIFunction>().Single(f => f.Name == "run_command");
-        Assert.IsNotNull(AgentExecution.BindingError(command, new AIFunctionArguments()));
+        Assert.IsNotNull(AgentExecution.BindingError(command, []));
         Assert.IsNotNull(AgentExecution.BindingError(command, new AIFunctionArguments
         {
             ["command"] = JsonSerializer.SerializeToElement("ls"),

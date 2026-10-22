@@ -113,10 +113,10 @@ internal sealed class RecordingHost : IX11ServerHost, IDisposable
     }
 
     /// <summary><see cref="PointerWarped" /> 收到的根坐标,按先后。</summary>
-    public System.Collections.Concurrent.ConcurrentQueue<(int X, int Y)> Warps { get; } = new();
+    public ConcurrentQueue<(int X, int Y)> Warps { get; } = new();
 
     /// <summary><see cref="PointerConfinementChanged" /> 收到的范围,按先后(null = 解除)。</summary>
-    public System.Collections.Concurrent.ConcurrentQueue<XRect?> Confinements { get; } = new();
+    public ConcurrentQueue<XRect?> Confinements { get; } = new();
 
     public void PointerWarped(int rootX, int rootY)
     {
@@ -131,7 +131,7 @@ internal sealed class RecordingHost : IX11ServerHost, IDisposable
     }
 
     /// <summary><see cref="TopLevelRedrawn" /> 报过的窗口,按先后。</summary>
-    public System.Collections.Concurrent.ConcurrentQueue<XTopLevelWindow> Redrawn { get; } = new();
+    public ConcurrentQueue<XTopLevelWindow> Redrawn { get; } = new();
 
     public void TopLevelRedrawn(XTopLevelWindow window)
     {
@@ -140,7 +140,7 @@ internal sealed class RecordingHost : IX11ServerHost, IDisposable
     }
 
     /// <summary><see cref="FrameClockWanted" /> 收到的值,按先后。</summary>
-    public System.Collections.Concurrent.ConcurrentQueue<bool> FrameClockRequests { get; } = new();
+    public ConcurrentQueue<bool> FrameClockRequests { get; } = new();
 
     public void FrameClockWanted(bool wanted)
     {
@@ -149,7 +149,7 @@ internal sealed class RecordingHost : IX11ServerHost, IDisposable
     }
 
     /// <summary><see cref="ScreenSaverSuspensionChanged" /> 收到的值,按先后。</summary>
-    public System.Collections.Concurrent.ConcurrentQueue<bool> SaverSuspensions { get; } = new();
+    public ConcurrentQueue<bool> SaverSuspensions { get; } = new();
 
     /// <summary><see cref="ScreenSaverReset" /> 收到的次数。</summary>
     public int SaverResets => _saverResets;

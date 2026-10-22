@@ -162,13 +162,13 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "production", "admin", AuthMethod.Password, true);
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
-        {
+        repository.ListMetadataAsync().Returns(
+        [
             metadata,
             new(Guid.NewGuid(), "key", "root", AuthMethod.PrivateKey, true),
             new(Guid.NewGuid(), "missing", "", AuthMethod.Password, false),
             new(Guid.NewGuid(), "旧库无口令", "ops", AuthMethod.Password, true),
-        });
+        ]);
         repository.GetPasswordAsync(metadata.Id).Returns("secret");
         var writes = new List<byte>();
         shell.WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
@@ -227,7 +227,7 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.ListMetadataAsync().Returns([metadata]);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
         {
@@ -285,10 +285,10 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
-        {
+        repository.ListMetadataAsync().Returns(
+        [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
-        });
+        ]);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
         {
@@ -325,10 +325,10 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
-        {
+        repository.ListMetadataAsync().Returns(
+        [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
-        });
+        ]);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
         {
@@ -358,11 +358,11 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
-        {
+        repository.ListMetadataAsync().Returns(
+        [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
             new(Guid.NewGuid(), "staging", "ops", AuthMethod.Password, true),
-        });
+        ]);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
         {
@@ -394,7 +394,7 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.ListMetadataAsync().Returns([metadata]);
         repository.GetPasswordAsync(metadata.Id).Returns("secret");
         List<byte> writes = CaptureWrites(shell);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
@@ -438,7 +438,7 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.ListMetadataAsync().Returns([metadata]);
         repository.GetPasswordAsync(metadata.Id).Returns("secret");
         List<byte> writes = CaptureWrites(shell);
         var palette = new TextBox();
@@ -475,10 +475,10 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
-        {
+        repository.ListMetadataAsync().Returns(
+        [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
-        });
+        ]);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
         {
@@ -540,7 +540,7 @@ public sealed class SharedPasswordFillTests
         var prod = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
         var staging = new SharedCredentialMetadata(Guid.NewGuid(), "staging", "ops", AuthMethod.Password, true);
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { prod, staging });
+        repository.ListMetadataAsync().Returns([prod, staging]);
         repository.GetPasswordAsync(staging.Id).Returns("secret");
         List<byte> writes = CaptureWrites(shell);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
@@ -588,7 +588,7 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.ListMetadataAsync().Returns([metadata]);
         repository.GetPasswordAsync(metadata.Id).Returns("secret");
         List<byte> writes = CaptureWrites(shell);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
@@ -625,10 +625,10 @@ public sealed class SharedPasswordFillTests
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata>
-        {
+        repository.ListMetadataAsync().Returns(
+        [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
-        });
+        ]);
         List<byte> writes = CaptureWrites(shell);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
@@ -658,7 +658,7 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.ListMetadataAsync().Returns([metadata]);
         var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.GetPasswordAsync(metadata.Id).Returns(pending.Task);
         List<byte> writes = CaptureWrites(shell);
@@ -701,7 +701,7 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.ListMetadataAsync().Returns([metadata]);
         var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.GetPasswordAsync(metadata.Id).Returns(pending.Task);
         var writes = new List<byte>();
@@ -750,7 +750,7 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
         var repository = Substitute.For<ISharedCredentialRepository>();
-        repository.ListMetadataAsync().Returns(new List<SharedCredentialMetadata> { metadata });
+        repository.ListMetadataAsync().Returns([metadata]);
         var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.GetPasswordAsync(metadata.Id).Returns(pending.Task);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
@@ -844,7 +844,7 @@ public sealed class SharedPasswordFillTests
     });
 
     private static Task DrainWritesAsync(TerminalTabViewModel tab) =>
-        (Task)typeof(VelaShell.Terminal.SshTerminalBridge)
+        (Task)typeof(Terminal.SshTerminalBridge)
             .GetMethod("DrainWritesAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .Invoke(tab.Bridge, null)!;
 

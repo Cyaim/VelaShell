@@ -352,6 +352,47 @@ public class SftpService : ISftpService
         }
     }
 
+    /// <summary>将远端文件写入调用方提供的流,保留限速与实际字节统计。</summary>
+    public async Task DownloadStreamAsync(Guid sessionId, string remotePath, Stream destination,
+        IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        if (!destination.CanWrite) throw new ArgumentException("Destination stream must be writable.", nameof(destination));
+        ISftpClientWrapper client = await GetTransferClientAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        RemoteFileInfo info = await GetFileInfoAsync(sessionId, remotePath, cancellationToken).ConfigureAwait(false);
+        (_, long downloadBps, bool preserveTimestamps, _) = await GetTransferTuningAsync().ConfigureAwait(false);
+        var reporter = new TransferProgressThrottle(progress, GetUnixFileName(remotePath), info.Size);
+        await using Stream remote = await client.OpenAsync(remotePath, FileMode.Open, FileAccess.Read, cancellationToken).ConfigureAwait(false);
+        Stream sink = downloadBps > 0 ? new ThrottledStream(destination, downloadBps) : destination;
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(256 * 1024);
+        long transferred = 0;
+        try
+        {
+            int read;
+            while ((read = await remote.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                await sink.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                transferred += read;
+                reporter.Report(transferred);
+            }
+            reporter.ReportFinal(transferred);
+            // 调用方持有的临时文件句柄上应用时间戳;绝不按最终目标路径写元数据。
+            if (preserveTimestamps && destination is FileStream file && info.LastModified != default)
+            {
+                // Flush buffered writes before setting mtime, otherwise a later flush resets it.
+                await file.FlushAsync(cancellationToken).ConfigureAwait(false);
+                try { File.SetLastWriteTimeUtc(file.SafeFileHandle, info.LastModified.ToUniversalTime()); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+            // ThrottledStream 无独立资源,释放会连带关闭调用方拥有的流。
+        }
+    }
+
     /// <summary>删除远端文件或目录;目录按深度优先递归删除子项,并逐条回报删除进度。</summary>
     public async Task DeleteAsync(Guid sessionId, string remotePath, IProgress<SftpDeleteProgress>? progress = null, CancellationToken cancellationToken = default)
     {

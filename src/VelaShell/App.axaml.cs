@@ -140,7 +140,7 @@ public class App : Application
             .AddSingleton<IKeyboardInteractivePrompt, KeyboardInteractivePromptDialogService>()
             .AddSingleton<ISudoPrompt, SudoPromptDialogService>()
             .AddSingleton(_ => new TailscaleSshCheckDialogService(() =>
-                (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow))
+                (Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow))
             .AddSingleton<Func<TailscaleSshCheckNotification, Task>>(sp =>
                 sp.GetRequiredService<TailscaleSshCheckDialogService>().HandleAsync)
             // 内置 X 服务端的顶层窗口画成原生窗口(设置 → X Server 的「内置」引擎)。每个服务端实例一个宿主:

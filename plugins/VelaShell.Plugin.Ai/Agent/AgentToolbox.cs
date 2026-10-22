@@ -83,9 +83,6 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
     private const int MaxDirectoryEntries = 200;
     private const int MaxCommandOutput = 32 * 1024;
 
-    /// <summary>下载仍保留现有的 32 MiB 上限；独立上传没有固定大小上限。</summary>
-    private const long MaxDownloadBytes = 32 * 1024 * 1024;
-
     /// <summary>一次并行执行最多铺多少台。再多就该写脚本了,而且输出也读不过来。</summary>
     private const int MaxParallelSessions = 16;
 
@@ -180,11 +177,11 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         ("make_remote_directory", "创建远端目录(幂等)", false),
         ("rename_remote_path", "重命名 / 移动远端文件或目录(改配置前备份用)", false),
         ("upload_local_file", "启动独立上传，大文件立即返回 transfer_id", false),
-        ("transfer_status", "查看本轮上传状态、字节、速率和预计剩余时间", true),
-        ("transfer_wait", "本地短等上传完成，等待到期不会取消上传", true),
-        ("transfer_cancel", "显式取消本轮上传的指定执行代次", false),
-        ("transfer_resume", "重新审批后显式恢复本轮可恢复上传", false),
-        ("download_remote_file", "把远端文件拉到本机(交给本地 MCP 工具处理)", false),
+        ("transfer_status", "查看本轮传输状态、字节、速率和预计剩余时间", true),
+        ("transfer_wait", "本地短等传输完成，等待到期不会取消传输", true),
+        ("transfer_cancel", "显式取消本轮传输的指定执行代次", false),
+        ("transfer_resume", "重新审批后显式恢复本轮可恢复传输", false),
+        ("download_remote_file", "把远端文件后台拉到本机(交给本地 MCP 工具处理)", false),
         ("write_terminal", "把文本敲进用户可见的终端", false),
         ("send_file", "把已下载的文件当附件发进当前这个 IM 聊天(只有 IM 那条路有)", false)
     ];
@@ -295,7 +292,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
                 + "Use this after a local MCP tool produced a file (MCP servers run locally, so their output is NOT on the SSH server). "
                 + "Never automatically retry Unknown or uncertain uploads."), false),
             ("transfer_status", AIFunctionFactory.Create(TransferStatusAsync, "transfer_status",
-                "Read an upload belonging to this run: state, generation, bytes, speed, ETA and still-running status. Never access another conversation's transfer."), true),
+                "Read a transfer belonging to this run: state, direction, phase, generation, bytes, speed, ETA and still-running status. Never access another conversation's transfer."), true),
             ("transfer_wait", AIFunctionFactory.Create(TransferWaitAsync, "transfer_wait",
                 "Wait locally for upload completion, at most 30 seconds. Expiry or request cancellation does not cancel the upload. Desktop agents receive one local completion notification."), true),
             ("transfer_cancel", AIFunctionFactory.Create(TransferCancelAsync, "transfer_cancel",
@@ -305,7 +302,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
 
             ("download_remote_file", AIFunctionFactory.Create(DownloadRemoteFileAsync, "download_remote_file",
                 "Download a file from the SSH server to the USER'S OWN MACHINE via SFTP. Requires user approval. "
-                + "Use it when a local MCP tool needs to work on a remote file. Returns the local path it was saved to."), false),
+                + "Use it when a local MCP tool needs to work on a remote file. Returns a transfer receipt promptly; query transfer_status or transfer_wait before consuming the local target."), false),
 
             ("write_terminal", AIFunctionFactory.Create(WriteTerminalAsync, "write_terminal",
                 "Type text into the user's visible terminal of an SSH session, as if the user typed it. A trailing newline executes the command. "
@@ -1282,9 +1279,13 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         }
         catch (Exception)
         {
-            run.Transfers!.UncertainStart = true;
-            return JsonSerializer.Serialize(new { operationId, state = "Unknown",
-                error = "Upload receipt unavailable. Do not automatically start another upload; the remote outcome may be unknown." });
+            run.Transfers!._uncertainStart = true;
+            return JsonSerializer.Serialize(new
+            {
+                operationId,
+                state = "Unknown",
+                error = "Upload receipt unavailable. Do not automatically start another upload; the remote outcome may be unknown."
+            });
         }
     }
 
@@ -1302,8 +1303,11 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         [Description("Local wait in seconds, default 2, max 30; expiry never stops the upload.")] int waitSeconds = 2,
         CancellationToken cancellationToken = default)
     {
-        try { return FormatTransfer(await CurrentRun.Transfers!.WaitAsync(transferId,
-            TimeSpan.FromSeconds(Math.Clamp(waitSeconds, 0, 30)), cancellationToken).ConfigureAwait(false)); }
+        try
+        {
+            return FormatTransfer(await CurrentRun.Transfers!.WaitAsync(transferId,
+            TimeSpan.FromSeconds(Math.Clamp(waitSeconds, 0, 30)), cancellationToken).ConfigureAwait(false));
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { return "Transfer unavailable in this run or current authorization. No metadata is provided."; }
     }
@@ -1319,8 +1323,12 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
                 $"Cancel transfer {transferId}, generation={expectedGeneration}"), cancellationToken).ConfigureAwait(false))
                 return "The user DENIED cancelling this upload. Do not retry.";
             await CurrentRun.Transfers!.CancelAsync(transferId, expectedGeneration, cancellationToken).ConfigureAwait(false);
-            return JsonSerializer.Serialize(new { transfer_id = transferId, cancellationRequested = true,
-                remoteStopConfirmed = false });
+            return JsonSerializer.Serialize(new
+            {
+                transfer_id = transferId,
+                cancellationRequested = true,
+                remoteStopConfirmed = false
+            });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { return "Cancellation unavailable: invalid ownership, authorization or execution generation."; }
@@ -1353,13 +1361,22 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
     /// <summary>用于工具卡关联与模型读取的结构化回执；字节满格不代表成功。</summary>
     public static string FormatTransfer(RemoteTransferSnapshot snapshot) => JsonSerializer.Serialize(new
     {
-        transfer_id = snapshot.TransferId, transferId = snapshot.TransferId,
-        state = snapshot.State.ToString(), stillRunning = !snapshot.IsTerminal,
-        generation = snapshot.Generation, sequence = snapshot.Sequence,
-        transferredBytes = snapshot.TransferredBytes, totalBytes = snapshot.TotalBytes,
-        speedBytesPerSecond = snapshot.SpeedBytesPerSecond, etaSeconds = snapshot.EstimatedTimeRemaining?.TotalSeconds,
-        canResume = snapshot.CanResume, remoteStopConfirmed = snapshot.RemoteStopConfirmed,
-        cancellationRequested = snapshot.CancellationRequested, snapshot
+        transfer_id = snapshot.TransferId,
+        transferId = snapshot.TransferId,
+        direction = snapshot.Direction.ToString(),
+        phase = snapshot.Phase.ToString(),
+        state = snapshot.State.ToString(),
+        stillRunning = !snapshot.IsTerminal,
+        generation = snapshot.Generation,
+        sequence = snapshot.Sequence,
+        transferredBytes = snapshot.TransferredBytes,
+        totalBytes = snapshot.TotalBytes,
+        speedBytesPerSecond = snapshot.SpeedBytesPerSecond,
+        etaSeconds = snapshot.EstimatedTimeRemaining?.TotalSeconds,
+        canResume = snapshot.CanResume,
+        remoteStopConfirmed = snapshot.RemoteStopConfirmed,
+        cancellationRequested = snapshot.CancellationRequested,
+        snapshot
     });
 
     /// <summary>
@@ -1377,6 +1394,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         [Description("Absolute path of the file on the SSH server.")] string remotePath,
         [Description("Optional absolute destination on the user's machine. Omit it to save into the plugin's downloads folder.")] string? localPath = null,
         [Description("Optional session id from list_sessions; omit to use the session selected in the panel.")] string? sessionId = null,
+        [Description("Explicitly replace an existing local target; defaults to false.")] bool overwrite = false,
         CancellationToken cancellationToken = default)
     {
         (string? id, string? error) = await ResolveAsync(sessionId, cancellationToken).ConfigureAwait(false);
@@ -1393,7 +1411,6 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(localPath))
         {
             string folder = Path.Combine(context.DataDirectory, DownloadFolder);
-            Directory.CreateDirectory(folder);
             target = Path.Combine(folder, Path.GetFileName(remotePath.TrimEnd('/')));
         }
         else if (!Path.IsPathRooted(localPath.Trim()))
@@ -1415,22 +1432,20 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             {
                 return $"{remotePath} is a directory; archive it first (tar) and download the archive.";
             }
-            if (entry.Size > MaxDownloadBytes)
-            {
-                return $"Refusing to download more than {MaxDownloadBytes / (1024 * 1024)} MB in one call ({entry.Size / (1024 * 1024)} MB).";
-            }
-            // 往用户自己的磁盘上写东西,一律问一次
-            if (!await ApproveAsync(new ApprovalRequest("download_remote_file", $"{remotePath}\n→ {target}  ({entry.Size} bytes)"),
+            // 往用户自己的磁盘上写东西,一律问一次;覆盖意图必须显式传入。
+            if (!await ApproveAsync(new ApprovalRequest("download_remote_file", $"{remotePath}\n→ {target}  ({entry.Size} bytes, overwrite={overwrite})"),
                     cancellationToken).ConfigureAwait(false))
             {
                 return "The user DENIED this download. Do not retry; ask the user how to proceed.";
             }
-            await context.RemoteFs.DownloadFileAsync(id, remotePath, target, cancellationToken: cancellationToken)
-                         .ConfigureAwait(false);
-            return $"Downloaded to {target} ({entry.Size} bytes). Local tools can read it from there."
-                   + (FileSender is not null && IsSendable(target)
-                       ? " You can also hand it to the user with send_file."
-                       : "");
+            if (!context.RemoteFs.SupportsTransferOperations || !context.RemoteFs.SupportsDownloadOperations)
+                return "This host does not support independent download tasks. No synchronous fallback was attempted.";
+            CommandJobRunScope run = CurrentRun;
+            string identity = InvocationIdentity.Value ?? Guid.NewGuid().ToString("N");
+            string operationId = FileTransferJobRegistry.StableOperationId(run.OwnerId, run.RunId, "download:" + identity);
+            RemoteTransferSnapshot snapshot = await run.Transfers!.StartDownloadAsync(id, remotePath, target,
+                operationId, overwrite, cancellationToken).ConfigureAwait(false);
+            return FormatTransfer(snapshot);
         }
         catch (Exception ex)
         {

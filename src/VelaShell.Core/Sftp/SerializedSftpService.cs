@@ -48,6 +48,9 @@ public sealed class SerializedSftpService(ISftpService inner, Guid sessionId) : 
     /// <summary>下载文件的透传;不占串行闸(见类型说明),但计入在途,关闭时会被排空。</summary>
     public Task DownloadFileAsync(Guid sessionId, string remotePath, string localPath, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, CancellationToken cancellationToken = default) => ExecuteAsync(sessionId, token => _inner.DownloadFileAsync(sessionId, remotePath, localPath, progress, resumeOffset, token), cancellationToken, serialize: false);
 
+    /// <summary>流式下载的透传;调用方拥有目标流。</summary>
+    public Task DownloadStreamAsync(Guid sessionId, string remotePath, Stream destination, IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default) => ExecuteAsync(sessionId, token => _inner.DownloadStreamAsync(sessionId, remotePath, destination, progress, token), cancellationToken, serialize: false);
+
     /// <summary>删除远端文件或目录的串行化透传。</summary>
     public Task DeleteAsync(Guid sessionId, string remotePath, IProgress<SftpDeleteProgress>? progress = null, CancellationToken cancellationToken = default) => ExecuteAsync(sessionId, token => _inner.DeleteAsync(sessionId, remotePath, progress, token), cancellationToken);
 

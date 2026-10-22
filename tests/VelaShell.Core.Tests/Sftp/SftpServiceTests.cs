@@ -1635,6 +1635,22 @@ public class SftpServiceTests
     }
 
     [TestMethod]
+    public async Task DownloadStreamWritesActualBytesLeavesCallerOpenAndUsesTransferChannel()
+    {
+        const string path = "/source";
+        byte[] content = CreatePattern(300_000);
+        _sftpClient.GetEntryAsync(path, Arg.Any<CancellationToken>()).Returns(new SftpEntry { Name = "source", FullName = path, Length = content.Length + 1 });
+        _sftpClient.OpenAsync(path, FileMode.Open, FileAccess.Read, Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult<Stream>(new MemoryStream(content, false)));
+        using var destination = new MemoryStream();
+        var reports = new List<TransferProgress>();
+        await _sftpService.DownloadStreamAsync(_sessionId, path, destination, new SynchronousProgress<TransferProgress>(reports.Add));
+        Assert.IsTrue(destination.CanWrite);
+        CollectionAssert.AreEqual(content, destination.ToArray());
+        Assert.AreEqual(content.LongLength, reports[^1].BytesTransferred, "Final count is actual bytes, not the advertised source length.");
+        await _sftpClient.Received(1).OpenAsync(path, FileMode.Open, FileAccess.Read, Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
     public async Task Download_ResumeSpeedExcludesTheVerifiedLocalPrefix()
     {
         const int prefix = 190_000;

@@ -77,10 +77,10 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     /// <summary>此刻挂着的 X 托盘图标数(测试看)。</summary>
     internal int TrayIconCount => _trayIcons.Count;
 
-    /// <summary>本机文件拖进经 SSH 转发来的 X 程序时,把文件传到远端(见 <see cref="Views.XServer.XDropTarget" />)。</summary>
+    /// <summary>本机文件拖进经 SSH 转发来的 X 程序时,把文件传到远端(见 <see cref="XDropTarget" />)。</summary>
     internal IXServerDropUploader? DropUploader { get; }
 
-    /// <summary>从经 SSH 转发来的 X 程序往本机拖出文件时,把文件取回本机(见 <see cref="Views.XServer.XDragSource" />)。</summary>
+    /// <summary>从经 SSH 转发来的 X 程序往本机拖出文件时,把文件取回本机(见 <see cref="XDragSource" />)。</summary>
     internal IXServerDragDownloader? DragDownloader { get; }
 
     /// <summary>给用户一条提示(主窗口右下的提示浮层;主窗口不在时不提示)。UI 线程上调。</summary>
@@ -529,7 +529,7 @@ public sealed class AvaloniaXServerHost : IEmbeddedXServerHost
     /// <summary>X 窗口里用本机的输入法(见 <see cref="XNativeWindow" /> 的输入法客户端)。</summary>
     public bool UsesHostInputMethod { get; private set; } = true;
 
-    /// <summary>把原生窗口归进任务栏的一组(null = 清掉);测试换成记录用的。见 <see cref="Services.XServer.TaskbarGroup" />。</summary>
+    /// <summary>把原生窗口归进任务栏的一组(null = 清掉);测试换成记录用的。见 <see cref="TaskbarGroup" />。</summary>
     internal Func<Window, string?, bool> GroupWindow { get; set; } = TaskbarGroup.Apply;
 
     /// <inheritdoc />

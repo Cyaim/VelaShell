@@ -315,7 +315,7 @@ public sealed partial class SshConnection
                 SshFailureReason.ClosedByPeer, phase,
                 $"连 {options.EndPoint} 时连接断了（{phase}）：{PeerText.Sanitize(ex.Message, 256)}", ex);
         }
-        catch (Crypto.SshFrameFormatException ex) when (ex.PeerClosedMidPacket)
+        catch (SshFrameFormatException ex) when (ex.PeerClosedMidPacket)
         {
             await DisposeQuietlyAsync(transport, stream).ConfigureAwait(false);
             throw new SshConnectionClosedException(

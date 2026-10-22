@@ -316,7 +316,7 @@ internal sealed class XimServer
         {
             uint id = _nextWindowId;
             _nextWindowId = id >= LastWindowId ? FirstWindowId : id + 1;
-            if (_server.Lookup<VelaShell.XServer.Resources.XResource>(id) is null)
+            if (_server.Lookup<Resources.XResource>(id) is null)
             {
                 return id;
             }

@@ -6,7 +6,7 @@ namespace VelaShell.XServer;
 /// <summary>一个 X 客户端某一刻的样子(<see cref="X11Server.GetClientsAsync" />)。</summary>
 /// <param name="Id">客户端编号(它的资源 ID 的高位);<see cref="X11Server.DisconnectClient(int)" /> 用它。</param>
 /// <param name="Label">
-/// 宿主给这条连接起的名字(<see cref="X11Server.ServeAuthenticatedAsync(System.IO.Stream, string?, System.Threading.CancellationToken)" />);没给为 null。
+/// 宿主给这条连接起的名字(<see cref="X11Server.ServeAuthenticatedAsync(Stream, string?, CancellationToken)" />);没给为 null。
 /// </param>
 /// <param name="Retained">已经以 Retain 模式断开(SetCloseDownMode),只剩资源还留着。</param>
 /// <param name="ResourceCount">名下的资源数(窗口、像素图、GC、字体……)。</param>

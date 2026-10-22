@@ -4566,6 +4566,10 @@ Overwrite it?</value>
   <data name="PluginPermUpload_Replace"><value>Allow atomic replacement of an existing file</value></data>
   <data name="PluginPermUpload_NoReplace"><value>Do not replace an existing file</value></data>
   <data name="PluginPermUpload_AllowOnce"><value>Allow this upload</value></data>
+  <data name="PluginPermDownload_Title"><value>File download authorization</value></data>
+  <data name="PluginPermDownload_AllowOnce"><value>Allow this download</value></data>
+  <data name="PluginPermDownload_Message"><value>Plugin "{0}" requests downloading from {1} to a local file. Approval applies only to this task.</value></data>
+  <data name="PluginPermDownload_Preview"><value>Remote source: {0}&#10;Local destination: {1}&#10;Destination policy: {2}</value></data>
   <data name="PluginPermSession_Title"><value>Connection request</value></data>
   <data name="PluginPermSession_Message"><value>Plugin "{0}" wants to open a connection to {1}. Its stated reason:</value></data>
   <data name="PluginManager_Install"><value>Install .vpx…</value></data>

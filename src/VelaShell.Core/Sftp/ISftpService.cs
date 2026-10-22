@@ -65,6 +65,11 @@ public interface ISftpService : IAsyncDisposable
     /// <summary>将远端文件下载到给定本地路径,并报告传输进度。</summary>
     Task DownloadFileAsync(Guid sessionId, string remotePath, string localPath, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, CancellationToken cancellationToken = default);
 
+    /// <summary>将远端文件流式下载到调用方已打开的目标流。实现不得关闭该流。</summary>
+    Task DownloadStreamAsync(Guid sessionId, string remotePath, Stream destination,
+        IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This backend cannot download to an opened stream.");
+
     /// <summary>
     /// 删除文件,或递归删除目录及其全部内容。每移除一个条目回报一次进度,
     /// 以便界面对大/慢文件夹的删除展示进度。

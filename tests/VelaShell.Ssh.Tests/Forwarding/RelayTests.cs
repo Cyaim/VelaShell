@@ -237,7 +237,7 @@ public sealed class RelayTests
         byte[] payload = new byte[512 * 1024];
         Random.Shared.NextBytes(payload);
 
-        (VelaShell.Ssh.Transport.InMemoryDuplexStream ours, VelaShell.Ssh.Transport.InMemoryDuplexStream theirs) = Ssh.Transport.InMemoryTransport.CreatePair();
+        (Ssh.Transport.InMemoryDuplexStream ours, Ssh.Transport.InMemoryDuplexStream theirs) = Ssh.Transport.InMemoryTransport.CreatePair();
         FakeEndpoint left = new();
         await using StreamRelayEndpoint right = new(ours, shutdownSend: ours.CompleteWrites);
 

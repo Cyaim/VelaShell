@@ -408,11 +408,11 @@ public sealed class SshHostConfig
             ];
 
     /// <summary>
-    /// <c>PermitRemoteOpen</c>：远程动态转发的放行名单。没写时是 <see cref="Forwarding.RemoteOpenPolicy.Any"/>（OpenSSH 的默认）——
+    /// <c>PermitRemoteOpen</c>：远程动态转发的放行名单。没写时是 <see cref="RemoteOpenPolicy.Any"/>（OpenSSH 的默认）——
     /// 写进配置的 <c>RemoteForward 端口</c> 就是配置作者的明确选择；<c>any</c> / <c>none</c> 照字面。
     /// </summary>
     /// <exception cref="Diagnostics.SshConnectException">规则写法不对（<see cref="Diagnostics.SshFailureReason.InvalidConfiguration"/>）。</exception>
-    public Forwarding.RemoteOpenPolicy GetPermitRemoteOpen()
+    public RemoteOpenPolicy GetPermitRemoteOpen()
     {
         string? value = First("PermitRemoteOpen");
         if (value is null || value.Trim().Equals("any", StringComparison.OrdinalIgnoreCase))

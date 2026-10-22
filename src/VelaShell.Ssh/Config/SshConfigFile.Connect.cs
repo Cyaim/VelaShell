@@ -644,7 +644,7 @@ public static partial class SshConfigFile
         {
             return Dns.GetHostName();
         }
-        catch (System.Net.Sockets.SocketException)
+        catch (SocketException)
         {
             return "";
         }

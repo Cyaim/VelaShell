@@ -320,7 +320,7 @@ internal sealed class TestSshServer : IAsyncDisposable
 
         // ③ 收客户端公开值，算共享密钥。群交换先多一轮：收 GEX_REQUEST（34），回 GEX_GROUP（31）。
         bool groupExchange = negotiated.KeyExchange == SshAlgorithmNames.DiffieHellmanGroupExchangeSha256;
-        Ssh.Crypto.SshGroupExchangeHashInput? groupHashInput = null;
+        SshGroupExchangeHashInput? groupHashInput = null;
         if (groupExchange)
         {
             SshInboundPacket request = await ExpectAsync(read, (SshMessageNumber)34, cancellationToken);
@@ -338,7 +338,7 @@ internal sealed class TestSshServer : IAsyncDisposable
             groupWriter.WriteMpint(prime);
             groupWriter.WriteMpint(generator);
             await send(group.WrittenMemory, cancellationToken);
-            groupHashInput = new Ssh.Crypto.SshGroupExchangeHashInput(min, preferred, max, prime, generator);
+            groupHashInput = new SshGroupExchangeHashInput(min, preferred, max, prime, generator);
         }
 
         SshInboundPacket initPacket = await ExpectAsync(read, (SshMessageNumber)(groupExchange ? 32 : 30), cancellationToken);
@@ -349,8 +349,8 @@ internal sealed class TestSshServer : IAsyncDisposable
             : TestKexResponder.Respond(negotiated.KeyExchange, clientPublic);
 
         // ④ 算交换哈希并签名。
-        using Ssh.Crypto.Kex.ISshKeyExchange shape =
-            Ssh.Crypto.Kex.SshKeyExchangeFactory.Create(negotiated.KeyExchange);
+        using Crypto.Kex.ISshKeyExchange shape =
+            Crypto.Kex.SshKeyExchangeFactory.Create(negotiated.KeyExchange);
 
         byte[] hostKeyBlob = KeyFor(isInitial).PublicKeyBlob;
         byte[] exchangeHash = SshExchangeHash.Compute(shape.HashAlgorithm, new SshExchangeHashInput
@@ -381,7 +381,7 @@ internal sealed class TestSshServer : IAsyncDisposable
         byte[] onWire = isInitial && _options.MangleServerPublicValue is { } mangle
             ? mangle([.. response.ServerPublicValue])
             : response.ServerPublicValue;
-        if (shape.PublicValueEncoding == Ssh.Crypto.Kex.SshKexValueEncoding.Mpint)
+        if (shape.PublicValueEncoding == Crypto.Kex.SshKexValueEncoding.Mpint)
         {
             replyWriter.WriteMpint(onWire);
         }

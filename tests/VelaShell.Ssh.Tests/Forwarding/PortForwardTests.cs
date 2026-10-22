@@ -803,9 +803,9 @@ public sealed class PortForwardTests
         await harness.DropServerAsync();
         await WaitUntilAsync(() => !harness.Connection.IsAlive, harness.Token);
 
-        Assert.Throws<Diagnostics.SshException>(() => LocalPortForwarder.Start(harness.Connection, "t", 1));
-        Assert.Throws<Diagnostics.SshException>(() => LocalPortForwarder.StartDynamic(harness.Connection));
-        await Assert.ThrowsAsync<Diagnostics.SshException>(
+        Assert.Throws<SshException>(() => LocalPortForwarder.Start(harness.Connection, "t", 1));
+        Assert.Throws<SshException>(() => LocalPortForwarder.StartDynamic(harness.Connection));
+        await Assert.ThrowsAsync<SshException>(
             async () => await RemotePortForwarder.StartAsync(harness.Connection, "127.0.0.1", 1, cancellationToken: harness.Token));
 
         await harness.Connection.DisposeAsync();

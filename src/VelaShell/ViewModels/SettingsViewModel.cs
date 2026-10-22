@@ -783,7 +783,7 @@ public partial class SettingsViewModel : ReactiveObject
     /// </summary>
     /// <remarks>
     /// 进程架构与系统架构不一致时两者都显示(如 x64 版跑在 arm64 Windows / Apple Silicon 的仿真层上)。
-    /// 这不是冗余信息:自更新按**进程**架构选产物(见 <see cref="Services.Update.UpdateManifest.CurrentRid" />),
+    /// 这不是冗余信息:自更新按**进程**架构选产物(见 <see cref="UpdateManifest.CurrentRid" />),
     /// 装错架构的人会一直留在仿真轨上拿不到原生版本,关于页是最容易看出来的地方。
     /// 架构名直接取枚举名小写,与 RID 写法一致(X64→x64、Arm64→arm64),
     /// 于是将来出现的新架构(loongarch64、riscv64…)无需改这里也能正确显示。
@@ -1404,7 +1404,7 @@ public partial class SettingsViewModel : ReactiveObject
     }
 
     /// <summary>放弃录键(Esc、录键框失焦、点「取消」)。</summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:将成员标记为 static",
+    [SuppressMessage("Performance", "CA1822:将成员标记为 static",
         Justification = "视图经视图模型实例调用,与同组的改键操作保持同一个入口。")]
     public void CancelShortcutRecording(ShortcutItem item) => ClearShortcutFeedback(item);
 
@@ -1580,7 +1580,7 @@ public partial class SettingsViewModel : ReactiveObject
         Strings.Format("Sc_Count", FilteredShortcutGroups.Sum(group => group.FilteredItems.Count));
 
     /// <summary>macOS 上终端内另有一组固定的 Command 键位的说明(见 KeyboardShortcutService)。</summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:将成员标记为 static", Justification = "<挂起>")]
+    [SuppressMessage("Performance", "CA1822:将成员标记为 static", Justification = "<挂起>")]
     public string ShortcutMacNote => Strings.Get("Sc_MacNote");
 
     /// <summary>搜索期间被临时强制展开的分组,其原折叠态暂存于此,搜索清空后原样还回去。</summary>

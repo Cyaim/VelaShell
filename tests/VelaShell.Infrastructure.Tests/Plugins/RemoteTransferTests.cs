@@ -27,7 +27,8 @@ public sealed class RemoteTransferTests
 
     public RemoteTransferTests() => _connections.GetSession(_session).Returns(new SshSession
     {
-        SessionId = _session, Status = SessionStatus.Connected,
+        SessionId = _session,
+        Status = SessionStatus.Connected,
         ConnectionInfo = new() { Host = "test", Username = "user", AuthMethod = AuthMethod.Password },
     });
 
@@ -48,7 +49,10 @@ public sealed class RemoteTransferTests
                     .Returns(PluginPermissionDecision.AllowOnce);
                 await using var manager = new PluginManager(new()
                 {
-                    PluginRoots = [], DataRootDirectory = root, Connections = _connections, Sftp = _sftp,
+                    PluginRoots = [],
+                    DataRootDirectory = root,
+                    Connections = _connections,
+                    Sftp = _sftp,
                     UploadPermissions = approved ? new(null, prompt) : null,
                 });
                 Type runtimeType = typeof(PluginManager).GetNestedType("PluginRuntime", BindingFlags.NonPublic)!;
@@ -367,8 +371,12 @@ public sealed class RemoteTransferTests
         RemoteTransferSnapshot snapshot = new() { TransferId = "t", OperationId = "o", SessionId = "s", LocalPath = "l", RemotePath = "/r", TotalBytes = total, State = RemoteTransferState.Running };
         var updated = RemoteFsCapability.ApplyTransferProgress(snapshot, new()
         {
-            FileName = "large", BytesTransferred = total, TotalBytes = total, Percentage = 100,
-            SpeedBytesPerSecond = 1024, EstimatedTimeRemaining = TimeSpan.Zero,
+            FileName = "large",
+            BytesTransferred = total,
+            TotalBytes = total,
+            Percentage = 100,
+            SpeedBytesPerSecond = 1024,
+            EstimatedTimeRemaining = TimeSpan.Zero,
         });
         Assert.AreEqual(total, updated.TransferredBytes);
         Assert.IsFalse(updated.IsSuccess);
@@ -635,8 +643,8 @@ public sealed class RemoteTransferTests
     {
         await using var pair = await Pair.Open();
         int calls = 0;
-        pair.Host.SetRequestHandler((_, _, _) => { calls++; return Task.FromResult<object?>(null); });
-        var proxy = new RpcRemoteFs(pair.Plugin);
+        pair._host.SetRequestHandler((_, _, _) => { calls++; return Task.FromResult<object?>(null); });
+        var proxy = new RpcRemoteFs(pair._plugin);
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() => proxy.StartUploadAsync("s", "local", "/remote", new() { OperationId = "old" }));
         Assert.AreEqual(0, calls);
     }
@@ -649,7 +657,7 @@ public sealed class RemoteTransferTests
         var release = NewSignal();
         RemoteTransferSnapshot snapshot = new() { TransferId = "transfer", OperationId = "same", SessionId = "s", LocalPath = "local", RemotePath = "/remote", Sequence = 1, Generation = 1, State = RemoteTransferState.Queued };
         int starts = 0;
-        pair.Host.SetRequestHandler(async (method, payload, _) =>
+        pair._host.SetRequestHandler(async (method, payload, _) =>
         {
             if (method != PluginRpc.FsTransferStartUpload) throw new InvalidOperationException();
             Assert.AreEqual("same", payload!.Value.Deserialize<FsTransferStartUploadRequest>()!.Options.OperationId);
@@ -658,7 +666,7 @@ public sealed class RemoteTransferTests
             await release.Task;
             return snapshot;
         });
-        var proxy = new RpcRemoteFs(pair.Plugin, true);
+        var proxy = new RpcRemoteFs(pair._plugin, true);
         using var request = new CancellationTokenSource();
         Task<RemoteTransferSnapshot> first = proxy.StartUploadAsync("s", "local", "/remote", new() { OperationId = "same" }, request.Token);
         await registered.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -682,17 +690,206 @@ public sealed class RemoteTransferTests
         fake.CancelTransferAsync("transfer", 1, Arg.Any<CancellationToken>()).Returns(snapshot);
         fake.ResumeTransferAsync("transfer", Arg.Any<RemoteTransferResumeOptions>(), Arg.Any<CancellationToken>()).Returns(Task.FromException<RemoteTransferSnapshot>(new NotSupportedException()));
         using PluginContext context = Context(fake);
-        using var router = new PluginCapabilityRouter(context, pair.Host, "token", "1");
-        pair.Host.SetRequestHandler(router.HandleRequestAsync);
-        HandshakeResponse? hello = await pair.Plugin.RequestAsync<HandshakeResponse>(PluginRpc.Handshake,
+        using var router = new PluginCapabilityRouter(context, pair._host, "token", "1");
+        pair._host.SetRequestHandler(router.HandleRequestAsync);
+        HandshakeResponse? hello = await pair._plugin.RequestAsync<HandshakeResponse>(PluginRpc.Handshake,
             new HandshakeRequest("token", "test.transfer", "1", [VelaPluginApi.Level]), TimeSpan.FromSeconds(5));
         Assert.IsTrue(hello!.SupportsTransferOperations);
-        var proxy = new RpcRemoteFs(pair.Plugin, hello.SupportsTransferOperations);
+        var proxy = new RpcRemoteFs(pair._plugin, hello.SupportsTransferOperations);
         Assert.AreEqual(snapshot, await proxy.StartUploadAsync("s", "local", "/remote", new() { OperationId = "operation" }));
         Assert.AreEqual(snapshot, await proxy.GetTransferAsync("transfer"));
         Assert.AreEqual(snapshot, await proxy.WaitTransferAsync("transfer", 3, TimeSpan.Zero));
         Assert.AreEqual(snapshot, await proxy.CancelTransferAsync("transfer", 1));
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() => proxy.ResumeTransferAsync("transfer", new() { OperationId = "resume", ExpectedGeneration = 1, TargetSessionId = "s" }));
+    }
+
+    [TestMethod]
+    public async Task DownloadOnlyRpcCapabilitySupportsStartAndSharedQueriesButNotUpload()
+    {
+        await using var pair = await Pair.Open();
+        RemoteTransferSnapshot snapshot = new() { TransferId = "download", OperationId = "d", SessionId = "s", LocalPath = "local", RemotePath = "/remote", Direction = RemoteTransferDirection.Download, Sequence = 1, Generation = 1, State = RemoteTransferState.Running };
+        IRemoteFsApi fake = Substitute.For<IRemoteFsApi>();
+        fake.SupportsDownloadOperations.Returns(true);
+        fake.StartDownloadAsync("s", "/remote", "local", Arg.Any<RemoteDownloadOptions>(), Arg.Any<CancellationToken>()).Returns(snapshot);
+        fake.GetTransferAsync("download", Arg.Any<CancellationToken>()).Returns(snapshot);
+        fake.WaitTransferAsync("download", 1, TimeSpan.Zero, Arg.Any<CancellationToken>()).Returns(snapshot);
+        fake.CancelTransferAsync("download", 1, Arg.Any<CancellationToken>()).Returns(snapshot);
+        using PluginContext context = Context(fake);
+        using var router = new PluginCapabilityRouter(context, pair._host, "token", "1");
+        pair._host.SetRequestHandler(router.HandleRequestAsync);
+        HandshakeResponse? hello = await pair._plugin.RequestAsync<HandshakeResponse>(PluginRpc.Handshake,
+            new HandshakeRequest("token", "test.transfer", "1", [VelaPluginApi.Level]), TimeSpan.FromSeconds(5));
+        Assert.IsFalse(hello!.SupportsTransferOperations);
+        Assert.IsTrue(hello.SupportsDownloadOperations);
+        var proxy = new RpcRemoteFs(pair._plugin, hello.SupportsTransferOperations, hello.SupportsDownloadOperations);
+        Assert.AreEqual(snapshot, await proxy.StartDownloadAsync("s", "/remote", "local", new() { OperationId = "d" }));
+        Assert.AreEqual(snapshot, await proxy.GetTransferAsync("download"));
+        Assert.AreEqual(snapshot, await proxy.WaitTransferAsync("download", 1, TimeSpan.Zero));
+        Assert.AreEqual(snapshot, await proxy.CancelTransferAsync("download", 1));
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => proxy.StartUploadAsync("s", "local", "/remote", new() { OperationId = "u" }));
+    }
+
+    [TestMethod]
+    public void DownloadProgressKeepsLargeAndOverLengthActualCounts()
+    {
+        RemoteTransferSnapshot snapshot = new() { TransferId = "d", OperationId = "d", SessionId = "s", LocalPath = "l", RemotePath = "/r", Direction = RemoteTransferDirection.Download, TotalBytes = 10 };
+        var value = RemoteFsCapability.ApplyTransferProgress(snapshot, new TransferProgress { FileName = "source", BytesTransferred = 5L * 1024 * 1024 * 1024, TotalBytes = 10, Percentage = 100, SpeedBytesPerSecond = 0, EstimatedTimeRemaining = TimeSpan.Zero });
+        Assert.AreEqual(5L * 1024 * 1024 * 1024, value.TransferredBytes);
+        Assert.AreEqual(17L, RemoteFsCapability.ApplyTransferProgress(snapshot with { TotalBytes = -1 }, new TransferProgress { FileName = "source", BytesTransferred = 17, TotalBytes = -1, Percentage = 0, SpeedBytesPerSecond = 0, EstimatedTimeRemaining = TimeSpan.Zero }).TransferredBytes);
+    }
+
+    [TestMethod]
+    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
+    public async Task DownloadNoApprovalFailsClosedAndSharesDirectionSignature()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "vela-download-test-" + Guid.NewGuid().ToString("N"));
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer");
+        var options = new RemoteDownloadOptions { OperationId = "shared" };
+        var started = await api.StartDownloadAsync(_session.ToString(), "/source", path, options);
+        var done = await Terminal(api, started.TransferId);
+        Assert.AreEqual("permission-denied", done.ErrorCode);
+        Assert.IsFalse(File.Exists(path));
+        Assert.AreEqual(started.TransferId, (await api.StartDownloadAsync(_session.ToString(), "/source", path, options)).TransferId);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => api.StartUploadAsync(_session.ToString(), path, "/source", new() { OperationId = "shared" }));
+        await _sftp.DidNotReceive().DownloadFileAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+        await WaitIdle(api);
+    }
+
+    [TestMethod]
+    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
+    public async Task DownloadCommitsOnlyAfterVerificationAndProtectsExistingDestination()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vela-download-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "target");
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(new RemoteFileInfo { Name = "source", FullPath = "/source", Size = 3, LastModified = new DateTime(2026, 10, 1), Permissions = "-rw-------", IsDirectory = false, Owner = "user", Group = "user" });
+        _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                Assert.IsFalse(File.Exists(path), "Final target cannot appear before commit.");
+                await call.ArgAt<Stream>(2).WriteAsync(new byte[] { 1, 2, 3 }, call.ArgAt<CancellationToken>(4));
+            });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            var start = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "download" });
+            var done = await Terminal(api, start.TransferId);
+            await WaitIdle(api);
+            Assert.AreEqual(RemoteTransferState.Succeeded, done.State, done.ErrorMessage);
+            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(path));
+            var exists = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "existing" });
+            Assert.AreEqual(RemoteTransferState.Failed, (await Terminal(api, exists.TransferId)).State);
+            await WaitIdle(api);
+            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(path));
+            Assert.AreEqual(1, Directory.GetFiles(directory).Length);
+        }
+        finally { await WaitIdle(api); Directory.Delete(directory, true); }
+    }
+
+    [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
+    public async Task UnsupportedLocalPlatformsRejectBackgroundDownloadWithoutLegacyFallback()
+    {
+        using var api = new RemoteFsCapability(_sftp, _connections);
+        Assert.IsFalse(api.SupportsDownloadOperations);
+        await Assert.ThrowsExactlyAsync<PlatformNotSupportedException>(() => api.StartDownloadAsync(_session.ToString(), "/source", Path.Combine(Path.GetTempPath(), "target"), new() { OperationId = "unsupported" }));
+        await _sftp.DidNotReceive().DownloadFileAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
+    public async Task DownloadShortReadOrCancellationKeepsOldTargetAndCleansOwnedTemporary()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vela-download-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "target");
+        await File.WriteAllBytesAsync(path, [9]);
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, true, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(new RemoteFileInfo { Name = "source", FullPath = "/source", Size = 3, LastModified = DateTime.UnixEpoch, Permissions = "-rw-------", IsDirectory = false, Owner = "user", Group = "user" });
+        _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>()).Returns(async call => await call.ArgAt<Stream>(2).WriteAsync(new byte[] { 1 }));
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            var start = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "short", Overwrite = true });
+            Assert.AreEqual(RemoteTransferState.Failed, (await Terminal(api, start.TransferId)).State);
+            await WaitIdle(api);
+            CollectionAssert.AreEqual(new byte[] { 9 }, await File.ReadAllBytesAsync(path));
+            Assert.AreEqual(1, Directory.GetFiles(directory).Length);
+        }
+        finally { await WaitIdle(api); Directory.Delete(directory, true); }
+    }
+
+    [TestMethod]
+    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
+    public async Task DownloadCancellationDoesNotClaimUncooperativeBackendStopped()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vela-download-cancel-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "target");
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, false, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(new RemoteFileInfo { Name = "source", FullPath = "/source", Size = 3, LastModified = DateTime.UnixEpoch, Permissions = "-rw-------", IsDirectory = false, Owner = "user", Group = "user" });
+        var writing = NewSignal();
+        var release = NewSignal();
+        _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(async _ => { writing.TrySetResult(); await release.Task; });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            var start = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "cancel" });
+            await writing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await api.CancelTransferAsync(start.TransferId, 1);
+            var done = await Terminal(api, start.TransferId);
+            Assert.AreEqual(RemoteTransferState.Unknown, done.State);
+            Assert.IsFalse(done.RemoteStopConfirmed);
+            Assert.IsGreaterThan(0, api.ActiveTransfers);
+            Assert.IsFalse(File.Exists(path));
+        }
+        finally
+        {
+            release.TrySetResult();
+            await WaitIdle(api);
+            Assert.AreEqual(0, Directory.GetFiles(directory).Length);
+            Directory.Delete(directory);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(true, true)]
+    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
+    public async Task DownloadCommitHonorsLateDestinationAndSourceChanges(bool overwrite, bool sourceChanged)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vela-download-race-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "target");
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, overwrite, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        RemoteFileInfo Info(int size) => new() { Name = "source", FullPath = "/source", Size = size, LastModified = DateTime.UnixEpoch, Permissions = "-rw-------", IsDirectory = false, Owner = "user", Group = "user" };
+        int reads = 0;
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(Info(++reads >= 3 && sourceChanged ? 4 : 3)));
+        _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await call.ArgAt<Stream>(2).WriteAsync(new byte[] { 1, 2, 3 });
+                await File.WriteAllBytesAsync(path, [9]);
+            });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            var start = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "race", Overwrite = overwrite });
+            var done = await Terminal(api, start.TransferId);
+            await WaitIdle(api);
+            Assert.AreEqual(overwrite && !sourceChanged, done.IsSuccess, done.ErrorMessage);
+            if (sourceChanged) Assert.AreEqual("source-changed", done.ErrorCode);
+            CollectionAssert.AreEqual(overwrite && !sourceChanged ? new byte[] { 1, 2, 3 } : new byte[] { 9 }, await File.ReadAllBytesAsync(path));
+            Assert.AreEqual(1, Directory.GetFiles(directory).Length);
+        }
+        finally { await WaitIdle(api); Directory.Delete(directory, true); }
     }
 
     private static PluginPermissionGate AllowUploads()
@@ -725,8 +922,8 @@ public sealed class RemoteTransferTests
     }
     private sealed class Pair : IAsyncDisposable
     {
-        internal required RpcConnection Host;
-        internal required RpcConnection Plugin;
+        internal required RpcConnection _host;
+        internal required RpcConnection _plugin;
         internal static async Task<Pair> Open()
         {
             string name = PluginProcessClient.CreatePipeName();
@@ -735,19 +932,35 @@ public sealed class RemoteTransferTests
             Task waiting = server.WaitForConnectionAsync();
             await client.ConnectAsync(5000);
             await waiting;
-            var pair = new Pair { Host = new(server), Plugin = new(client) };
-            pair.Host.Start(); pair.Plugin.Start();
+            var pair = new Pair { _host = new(server), _plugin = new(client) };
+            pair._host.Start(); pair._plugin.Start();
             return pair;
         }
-        public async ValueTask DisposeAsync() { await Plugin.DisposeAsync(); await Host.DisposeAsync(); }
+        public async ValueTask DisposeAsync() { await _plugin.DisposeAsync(); await _host.DisposeAsync(); }
     }
     private static PluginContext Context(IRemoteFsApi fs) => new()
     {
-        PluginId = "test.transfer", PluginVersion = "1", DataDirectory = Path.GetTempPath(), Host = new TestHostInfo(),
-        Log = new CollectingLogger(), Storage = new InMemoryStorage(), TimeSeries = new InMemoryTimeSeries(),
-        Sessions = new FakeSessions(), RemoteFs = fs, RemoteExec = new FakeRemoteExec(), RemoteTunnel = new FakeRemoteTunnel(),
-        TerminalView = new FakeTerminalViewApi(), Commands = new RecordingCommands(), Events = new PluginEventHub(new CollectingLogger(), null, null, null),
-        Theme = new StaticHostTheme(), Ui = new FakeUi(), Secrets = new FakeSecrets(), Clipboard = new FakeClipboard(),
-        Terminal = new FakeTerminal(), Protocols = new UnavailableProtocols(), Workspaces = new UnavailableWorkspaces(), Shutdown = CancellationToken.None,
+        PluginId = "test.transfer",
+        PluginVersion = "1",
+        DataDirectory = Path.GetTempPath(),
+        Host = new TestHostInfo(),
+        Log = new CollectingLogger(),
+        Storage = new InMemoryStorage(),
+        TimeSeries = new InMemoryTimeSeries(),
+        Sessions = new FakeSessions(),
+        RemoteFs = fs,
+        RemoteExec = new FakeRemoteExec(),
+        RemoteTunnel = new FakeRemoteTunnel(),
+        TerminalView = new FakeTerminalViewApi(),
+        Commands = new RecordingCommands(),
+        Events = new PluginEventHub(new CollectingLogger(), null, null, null),
+        Theme = new StaticHostTheme(),
+        Ui = new FakeUi(),
+        Secrets = new FakeSecrets(),
+        Clipboard = new FakeClipboard(),
+        Terminal = new FakeTerminal(),
+        Protocols = new UnavailableProtocols(),
+        Workspaces = new UnavailableWorkspaces(),
+        Shutdown = CancellationToken.None,
     };
 }

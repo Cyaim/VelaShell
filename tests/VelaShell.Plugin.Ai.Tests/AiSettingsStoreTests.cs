@@ -355,7 +355,7 @@ public sealed class AiSettingsStoreTests
         Assert.AreEqual(settingsJson, System.Text.Json.JsonSerializer.Serialize(await context.Storage.GetAsync<System.Text.Json.JsonElement>("settings")));
     }
 
-    internal sealed class MutateThenFailSecrets(VelaShell.PluginSdk.Secrets.ISecretsApi inner) : VelaShell.PluginSdk.Secrets.ISecretsApi
+    internal sealed class MutateThenFailSecrets(PluginSdk.Secrets.ISecretsApi inner) : PluginSdk.Secrets.ISecretsApi
     {
         public bool FailNextMutation { get; set; }
         public int SkipMutationsBeforeFailure { get; set; }
@@ -654,7 +654,7 @@ public sealed class AiSettingsStoreTests
         Assert.AreEqual(modelOnly ? "supplementary" : null, await store.GetApiKeyAsync(extra));
     }
 
-    private sealed class DeleteFailingSecrets(VelaShell.PluginSdk.Secrets.ISecretsApi inner) : VelaShell.PluginSdk.Secrets.ISecretsApi
+    private sealed class DeleteFailingSecrets(PluginSdk.Secrets.ISecretsApi inner) : PluginSdk.Secrets.ISecretsApi
     {
         public int FailDeleteNumber { get; set; }
         public int CancelDeleteNumber { get; set; }

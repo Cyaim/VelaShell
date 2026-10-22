@@ -98,7 +98,7 @@ public class SessionBatchEditViewModelTests
     [TestMethod]
     public async Task Apply_AStoreFailure_StaysInTheDialog_AndMarksThatSomethingWasWritten()
     {
-        _repository.SaveSessionAsync(Arg.Any<SessionProfile>()).Returns<Task>(_ => throw new System.Data.DataException("segment locked"));
+        _repository.SaveSessionAsync(Arg.Any<SessionProfile>()).Returns(_ => throw new System.Data.DataException("segment locked"));
         SessionBatchEditViewModel vm = Create(_a, _b);
         vm.ChangeUsername = true;
         vm.Username = "deploy";

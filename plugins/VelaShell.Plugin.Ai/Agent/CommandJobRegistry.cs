@@ -54,11 +54,11 @@ public sealed class CommandJobRegistry(IRemoteExecApi remoteExec, object? schedu
     private const int MaxOutputChars = 32 * 1024;
     private const int MaxEntryChars = 4096;
     private const int MaxOutputEntries = 256;
-    private static readonly ConditionalWeakTable<object, SemaphoreSlim> Schedulers = new();
+    private static readonly ConditionalWeakTable<object, SemaphoreSlim> Schedulers = [];
     private readonly SemaphoreSlim _streamSlots = Schedulers.GetValue(schedulerKey ?? remoteExec,
         static _ => new SemaphoreSlim(IRemoteExecApi.MaxConcurrentStreams));
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, Job> _jobs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Job> _jobs = [with(StringComparer.Ordinal)];
     private readonly HashSet<CommandJobRunScope> _runs = [];
     private bool _disposed;
 

@@ -590,7 +590,7 @@ public class GitHubReleaseSourceTests : IDisposable
     {
         GitHubReleaseSource source = new("https://github.com/owner/repo", new StubHandler(_ =>
             new(HttpStatusCode.OK) { Content = new StringContent("invalid") }));
-        await Assert.ThrowsAsync<System.Text.Json.JsonException>(() => source.GetLatestReleaseNotesAsync());
+        await Assert.ThrowsAsync<JsonException>(() => source.GetLatestReleaseNotesAsync());
     }
 
     [TestMethod]

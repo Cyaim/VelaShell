@@ -13,6 +13,8 @@ public sealed partial class ChatPanelView
 {
     private readonly HashSet<TransferBinding> _transferBindings = [];
     private readonly HashSet<FileTransferRunScope> _transferCleanupScopes = [];
+    private readonly HashSet<FileTransferRunScope> _linkTransferScopes = [];
+    private readonly HashSet<LinkTransferBinding> _linkTransferBindings = [];
 
     private TransferBinding BindTransfers(CommandJobRunScope run, AssistantBubble bubble)
     {
@@ -23,6 +25,15 @@ public sealed partial class ChatPanelView
         return binding;
     }
 
+    private FileTransferRunScope BeginLinkTransferScope(string sessionId)
+    {
+        FileTransferRunScope scope = FileTransferJobRegistry.For(_context).BeginRun(
+            "link:" + _active.SessionKey, Guid.NewGuid().ToString("N"),
+            async (id, token) => id == sessionId && await _context.Sessions.GetAsync(id, token).ConfigureAwait(false) is not null);
+        _linkTransferScopes.Add(scope);
+        return scope;
+    }
+
     private async Task CloseTransfersAsync()
     {
         TransferBinding[] bindings = [.. _transferBindings];
@@ -31,7 +42,90 @@ public sealed partial class ChatPanelView
         _transferCleanupScopes.Clear();
         foreach (FileTransferRunScope scope in scopes)
             try { await scope.CancelAllAsync(); }
-            catch (Exception ex) { _context.Log.Warn($"AI upload cleanup failed: {ex.Message}"); }
+            catch (Exception ex) { _context.Log.Warn($"AI transfer cleanup failed: {ex.Message}"); }
+        LinkTransferBinding[] linkBindings = [.. _linkTransferBindings];
+        foreach (LinkTransferBinding binding in linkBindings) binding.Dispose();
+        FileTransferRunScope[] links = [.. _linkTransferScopes];
+        _linkTransferScopes.Clear();
+        foreach (FileTransferRunScope scope in links)
+            try { await scope.CancelAllAsync(); }
+            catch (Exception ex) { _context.Log.Warn($"AI link transfer cleanup failed: {ex.Message}"); }
+    }
+
+    private sealed class LinkTransferBinding : IDisposable
+    {
+        private readonly ChatPanelView _owner;
+        private readonly FileTransferRunScope _scope;
+        private readonly string _transferId;
+        private readonly string _localPath;
+        private readonly IDisposable _subscription;
+        private readonly DispatcherTimer _timer;
+        private FileTransferJobUpdate? _latest;
+        private ProgressBar _bar;
+        private TextBlock _text;
+        private Button _cancel;
+        private bool _disposed;
+
+        internal LinkTransferBinding(ChatPanelView owner, FileTransferRunScope scope, string transferId, string localPath)
+        {
+            _owner = owner; _scope = scope; _transferId = transferId; _localPath = localPath;
+            _bar = new ProgressBar { Minimum = 0, Maximum = 100, Height = 5, IsIndeterminate = true };
+            _bar[!ForegroundProperty] = new DynamicResourceExtension("VelaAccent");
+            _bar[!BackgroundProperty] = new DynamicResourceExtension("VelaBorderPrimary");
+            _text = new TextBlock { Text = _owner._loc["TransferStarting"], TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+            _text[!TextBlock.FontSizeProperty] = new DynamicResourceExtension("VelaFontSize11");
+            _text[!TextBlock.ForegroundProperty] = new DynamicResourceExtension("VelaTextSecondary");
+            _cancel = new Button { Content = _owner._loc["TransferCancel"] };
+            _cancel[!ThemeProperty] = new DynamicResourceExtension("VelaOutlineButtonTheme");
+            _cancel.Click += async (_, _) =>
+            {
+                if (_latest?.Snapshot is not { } snapshot || snapshot.IsTerminal) return;
+                _cancel.IsEnabled = false;
+                try { await _scope.CancelAsync(_transferId, snapshot.Generation); }
+                catch { _cancel.IsEnabled = true; }
+            };
+            var panel = new StackPanel { Spacing = 5, Margin = new Thickness(0, 6, 0, 0) };
+            panel.Children.Add(_bar); panel.Children.Add(_text); panel.Children.Add(_cancel);
+            owner.MessagesPanel.Children.Add(new Border { Classes = { "toolCard" }, Padding = new Thickness(8, 6), Child = panel });
+            _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _timer.Tick += (_, _) => { _timer.Stop(); Drain(); };
+            _subscription = scope.Subscribe(update =>
+            {
+                if (update.TransferId != _transferId || update.Withheld || update.Snapshot is null) return;
+                _latest = update;
+                Dispatcher.UIThread.Post(() => { if (!_disposed && !_timer.IsEnabled) _timer.Start(); });
+            });
+            _owner._linkTransferBindings.Add(this);
+            _ = RefreshAsync();
+        }
+
+        private async Task RefreshAsync()
+        {
+            try
+            {
+                _latest = new(_scope.OwnerId, _scope.RunId, _transferId, "", "", await _scope.PeekAsync(_transferId));
+                Dispatcher.UIThread.Post(Drain);
+            }
+            catch { }
+        }
+
+        private void Drain()
+        {
+            if (_disposed || _latest?.Snapshot is not { } snapshot) return;
+            _text.Text = TransferPresentation.Text(_owner._loc, snapshot);
+            _bar.IsIndeterminate = !snapshot.IsTerminal && (snapshot.TotalBytes < 0 || TransferPresentation.StateKey(snapshot) is "TransferStarting" or "TransferFinalizing");
+            _bar.Value = TransferPresentation.Percent(snapshot) ?? 0;
+            _cancel.IsVisible = !snapshot.IsTerminal || (!snapshot.RemoteStopConfirmed && snapshot.State is RemoteTransferState.Unknown or RemoteTransferState.TimedOut);
+            _cancel.IsEnabled = snapshot.State != RemoteTransferState.CancelRequested;
+            if (snapshot.IsSuccess) _owner.StatusText.Text = _owner._loc.F("LinkDownloaded", _localPath);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true; _subscription.Dispose(); _timer.Stop();
+            _owner._linkTransferBindings.Remove(this);
+        }
     }
 
     internal sealed partial class ToolCard
@@ -52,8 +146,8 @@ public sealed partial class ChatPanelView
             _transferScope = scope; _transferId = transferId;
             if (_transferBar is not null) return;
             _transferBar = new ProgressBar { Minimum = 0, Maximum = 100, Height = 5, IsIndeterminate = true };
-            _transferBar[!ProgressBar.ForegroundProperty] = new DynamicResourceExtension("VelaAccent");
-            _transferBar[!ProgressBar.BackgroundProperty] = new DynamicResourceExtension("VelaBorderPrimary");
+            _transferBar[!ForegroundProperty] = new DynamicResourceExtension("VelaAccent");
+            _transferBar[!BackgroundProperty] = new DynamicResourceExtension("VelaBorderPrimary");
             _transferText = new TextBlock { Text = _owner._loc["TransferStarting"], TextWrapping = Avalonia.Media.TextWrapping.Wrap };
             _transferText[!TextBlock.FontFamilyProperty] = new DynamicResourceExtension("VelaUiMonoFont");
             _transferText[!TextBlock.FontSizeProperty] = new DynamicResourceExtension("VelaFontSize11");
@@ -64,7 +158,7 @@ public sealed partial class ChatPanelView
             _resumeHint[!TextBlock.FontSizeProperty] = new DynamicResourceExtension("VelaFontSize11");
             _resumeHint[!TextBlock.ForegroundProperty] = new DynamicResourceExtension("VelaTextSecondary");
             _cancelTransfer = new Button { Content = _owner._loc["TransferCancel"], HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
-            _cancelTransfer[!Button.ThemeProperty] = new DynamicResourceExtension("VelaOutlineButtonTheme");
+            _cancelTransfer[!ThemeProperty] = new DynamicResourceExtension("VelaOutlineButtonTheme");
             _cancelTransfer.Click += async (_, _) =>
             {
                 if (_transferSnapshot is not { } current || !CanCancel(current) || _transferScope is null) return;
@@ -80,7 +174,7 @@ public sealed partial class ChatPanelView
 
         internal bool RestoreTransfer(string result)
         {
-            if (ToolName is not ("upload_local_file" or "transfer_status" or "transfer_wait" or "transfer_resume" or "transfer_cancel")) return false;
+            if (ToolName is not ("upload_local_file" or "download_remote_file" or "transfer_status" or "transfer_wait" or "transfer_resume" or "transfer_cancel")) return false;
             try
             {
                 using var json = JsonDocument.Parse(result);
@@ -126,7 +220,7 @@ public sealed partial class ChatPanelView
                 && (snapshot.TotalBytes < 0 || TransferPresentation.StateKey(snapshot) is "TransferStarting" or "TransferFinalizing");
             _transferBar.Value = TransferPresentation.Percent(snapshot) ?? 0;
             string tone = update.MonitoringUnavailable ? "VelaWarning" : snapshot.IsSuccess ? "VelaStatusConnected" : snapshot.IsTerminal ? "VelaWarning" : "VelaAccent";
-            _transferBar[!ProgressBar.ForegroundProperty] = new DynamicResourceExtension(tone);
+            _transferBar[!ForegroundProperty] = new DynamicResourceExtension(tone);
             _statusIconHost.Child = MakeIcon(snapshot.IsSuccess ? "Icon.circle-check" : snapshot.IsTerminal ? "Icon.circle-alert" : "Icon.ellipsis", tone, 11);
             ToolTip.SetTip(_statusIconHost, _owner._loc[update.MonitoringUnavailable ? "TransferMonitoringUnavailable" : TransferPresentation.StateKey(snapshot)]);
             _cancelTransfer.IsVisible = CanCancel(snapshot);
@@ -179,7 +273,7 @@ public sealed partial class ChatPanelView
 
         internal bool Bind(ToolCard card, string result)
         {
-            if (card.ToolName is not ("upload_local_file" or "transfer_status" or "transfer_wait" or "transfer_resume" or "transfer_cancel")) return false;
+            if (card.ToolName is not ("upload_local_file" or "download_remote_file" or "transfer_status" or "transfer_wait" or "transfer_resume" or "transfer_cancel")) return false;
             try
             {
                 using var json = JsonDocument.Parse(result);
@@ -240,7 +334,7 @@ internal static class TransferPresentation
         RemoteTransferState.Queued => "TransferQueued",
         RemoteTransferState.Starting => "TransferStarting",
         RemoteTransferState.Running when s.TotalBytes >= 0 && s.TransferredBytes >= s.TotalBytes => "TransferFinalizing",
-        RemoteTransferState.Running => "TransferRunning",
+        RemoteTransferState.Running => s.Direction == RemoteTransferDirection.Download ? "TransferDownloading" : "TransferRunning",
         RemoteTransferState.CancelRequested => "TransferCancelling",
         RemoteTransferState.Succeeded => "TransferSucceeded",
         RemoteTransferState.Failed => "TransferFailed",

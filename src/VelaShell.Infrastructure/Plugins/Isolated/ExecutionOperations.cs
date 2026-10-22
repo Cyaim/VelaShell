@@ -9,9 +9,9 @@ internal sealed class ExecutionOperations : IAsyncDisposable
     private const int MaxEarlyCancellations = 128;
     private const int RecentCompletionLimit = 512;
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, Operation> _operations = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _earlyCancelled = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _recentCompleted = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Operation> _operations = [with(StringComparer.Ordinal)];
+    private readonly HashSet<string> _earlyCancelled = [with(StringComparer.Ordinal)];
+    private readonly HashSet<string> _recentCompleted = [with(StringComparer.Ordinal)];
     private readonly Queue<string> _completionOrder = new();
     private readonly CancellationToken _shutdown;
     private bool _stopped;
