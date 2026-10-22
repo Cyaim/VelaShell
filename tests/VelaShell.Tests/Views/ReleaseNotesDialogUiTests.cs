@@ -596,6 +596,97 @@ public sealed class ReleaseNotesDialogUiTests
         }
     });
 
+    [TestMethod]
+    [OSCondition(OperatingSystems.Windows | OperatingSystems.OSX)]
+    public Task DownloadProgress_RefreshesStatusTextWithoutProbingSelfUpdate() => _session.RunOnUiAsync(async () =>
+    {
+        UpdateManifest manifest = CreateManifest("2.0.0");
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CurrentVersion.Returns("1.0.0");
+        updates.CanSelfUpdate.Returns(true);
+        IProgress<UpdateDownloadProgress>? progress = null;
+        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        updates.DownloadUpdateAsync(manifest, Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                progress = call.Arg<IProgress<UpdateDownloadProgress>>();
+                return completion.Task;
+            });
+        SettingsViewModel vm = new(Substitute.For<ISettingsService>(), Substitute.For<IThemeService>(), updateService: updates);
+        var dialog = new ReleaseNotesDialog(new StubSource(_ => Task.FromResult<ReleaseNotes?>(
+            new("v2.0.0", "notes", Manifest: manifest))), vm);
+        dialog.Show();
+        try
+        {
+            dialog.FindControl<Button>("UpdateButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.IsNotNull(progress);
+            int statusChanges = 0;
+            vm.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SettingsViewModel.UpdateStatus))
+                {
+                    statusChanges++;
+                }
+            };
+            // 能否自更新要在应用目录里建删探测文件;下载开始后进度一秒刷新多次,每次刷新都不能再探测。
+            updates.ClearReceivedCalls();
+            for (int i = 1; i <= 20; i++)
+            {
+                progress.Report(new UpdateDownloadProgress(i * 1_000, 20_000, 4_096));
+            }
+            await WaitUntilAsync(() => statusChanges >= 20);
+            TextBlock status = dialog.FindControl<TextBlock>("UpdateStatusText")!;
+            Assert.IsTrue(status.IsVisible);
+            Assert.AreEqual(vm.UpdateStatus, status.Text, "状态文字仍要跟着下载进度刷新");
+            _ = updates.DidNotReceive().CanSelfUpdate;
+        }
+        finally
+        {
+            completion.TrySetResult();
+            dialog.Close();
+        }
+    });
+
+    [TestMethod]
+    [OSCondition(OperatingSystems.Windows | OperatingSystems.OSX)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task DownloadNotice_HiddenOnceDownloadFailsOrIsRejected(bool otherUpdateReady) => _session.RunOnUiAsync(async () =>
+    {
+        UpdateManifest manifest = CreateManifest("2.0.0");
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CurrentVersion.Returns("1.0.0");
+        updates.CanSelfUpdate.Returns(true);
+        if (otherUpdateReady)
+        {
+            // 另一个版本已经下载就绪:立即更新被当场拒绝,根本不会开始下载。
+            updates.ReadyUpdate.Returns(CreateManifest("1.5.0"));
+        }
+        updates.DownloadUpdateAsync(manifest, Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("offline")));
+        SettingsViewModel vm = new(Substitute.For<ISettingsService>(), Substitute.For<IThemeService>(), updateService: updates);
+        var dialog = new ReleaseNotesDialog(new StubSource(_ => Task.FromResult<ReleaseNotes?>(
+            new("v2.0.0", "notes", Manifest: manifest))), vm);
+        dialog.Show();
+        try
+        {
+            Button button = dialog.FindControl<Button>("UpdateButton")!;
+            Assert.AreEqual(Strings.Get("ReleaseNotes_UpdateNow"), button.Content);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitUntilAsync(() => !vm.IsUpdating);
+            // 点击处理在下载结束之后还有收尾,先让派发队列里排着的工作跑完。
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Background);
+            Assert.IsFalse(dialog.FindControl<TextBlock>("DownloadNotice")!.IsVisible, "没有进行中的下载,不能再提示关闭窗口后下载仍会继续");
+            TextBlock status = dialog.FindControl<TextBlock>("UpdateStatusText")!;
+            Assert.IsTrue(status.IsVisible, "失败或被拒绝的原因要留在窗口里");
+            Assert.AreEqual(Strings.Get(otherUpdateReady ? "ReleaseNotes_UpdateConflict" : "SetAbout_DownloadFailed"), status.Text);
+            Assert.IsTrue(button.IsEnabled);
+            await updates.Received(otherUpdateReady ? 0 : 1).DownloadUpdateAsync(manifest,
+                Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally { dialog.Close(); }
+    });
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
@@ -604,6 +695,16 @@ public sealed class ReleaseNotesDialogUiTests
             await Task.Delay(10, timeout.Token);
         }
     }
+
+    private static UpdateManifest CreateManifest(string version) => UpdateManifest.Parse(System.Text.Json.JsonSerializer.Serialize(new
+    {
+        version,
+        tag = "v" + version,
+        assets = new Dictionary<string, object>
+        {
+            [UpdateManifest.CurrentRid()!] = new { name = "package.zip", sha256 = new string('a', 64), size = 12 }
+        }
+    }));
 
     /// <summary>一直不回应、直到请求被取消的处理器(模拟连上了却迟迟不给响应的 API)。</summary>
     private sealed class HangingHandler : HttpMessageHandler

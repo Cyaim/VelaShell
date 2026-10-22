@@ -30,6 +30,7 @@ public partial class ReleaseNotesDialog : Window
     private ReleaseNotes? _notes;
     private bool _hasUpdate;
     private bool _downloadStarted;
+    private bool _downloading;
     private CancellationTokenSource? _request;
     private bool _closed;
     private Uri? _releaseUri;
@@ -285,10 +286,14 @@ public partial class ReleaseNotesDialog : Window
     private void OnUpdateStateChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (!_closed && (e.PropertyName is nameof(SettingsViewModel.IsUpdating)
-            or nameof(SettingsViewModel.ReadyUpdate) or nameof(SettingsViewModel.UpdateReady)
-            or nameof(SettingsViewModel.UpdateStatus)))
+            or nameof(SettingsViewModel.ReadyUpdate) or nameof(SettingsViewModel.UpdateReady)))
         {
             RefreshUpdateAction();
+        }
+        else if (!_closed && e.PropertyName is nameof(SettingsViewModel.UpdateStatus))
+        {
+            // 下载进度每秒刷新多次,只换状态文字;按钮要判断能否自更新,那会在应用目录里建删探测文件。
+            RefreshUpdateStatus();
         }
     }
 
@@ -300,8 +305,22 @@ public partial class ReleaseNotesDialog : Window
     private void RefreshUpdateAction()
     {
         UpdateButton.IsVisible = false;
+        DownloadNotice.IsVisible = _downloading;
+        RefreshUpdateStatus();
+        if (_updates == null || _updates.UpdatesManagedByStore || !_hasUpdate || _notes?.Manifest == null)
+        {
+            return;
+        }
+        bool manual = !_updates.CanSelfUpdate || OperatingSystem.IsLinux();
+        UpdateButton.IsVisible = !manual || _releaseUri != null;
+        UpdateButton.IsEnabled = !_updates.IsUpdating;
+        UpdateButton.Content = Strings.Get(manual ? "ReleaseNotes_OpenReleasePage"
+            : IsDisplayedUpdateReady() ? "SetAbout_RestartToUpdate" : "ReleaseNotes_UpdateNow");
+    }
+
+    private void RefreshUpdateStatus()
+    {
         UpdateStatusText.IsVisible = false;
-        DownloadNotice.IsVisible = _downloadStarted;
         if (_updates == null)
         {
             return;
@@ -317,15 +336,6 @@ public partial class ReleaseNotesDialog : Window
             UpdateStatusText.Text = _updates.UpdateStatus;
             UpdateStatusText.IsVisible = !string.IsNullOrEmpty(_updates.UpdateStatus);
         }
-        if (!_hasUpdate || _notes?.Manifest == null)
-        {
-            return;
-        }
-        bool manual = !_updates.CanSelfUpdate || OperatingSystem.IsLinux();
-        UpdateButton.IsVisible = !manual || _releaseUri != null;
-        UpdateButton.IsEnabled = !_updates.IsUpdating;
-        UpdateButton.Content = Strings.Get(manual ? "ReleaseNotes_OpenReleasePage"
-            : IsDisplayedUpdateReady() ? "SetAbout_RestartToUpdate" : "ReleaseNotes_UpdateNow");
     }
 
     private void Update_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
@@ -349,9 +359,12 @@ public partial class ReleaseNotesDialog : Window
             return;
         }
         _downloadStarted = true;
+        _downloading = true;
         RefreshUpdateAction();
         // 下载由共享 VM 持有;关闭日志窗口只取消日志请求,不取消用户已经启动的更新。
         await _updates.UpdateFromReleaseAsync(manifest);
+        // 「关闭后下载仍会继续」只陪着进行中的下载;失败或被当场拒绝后收起,原因留在状态文字里。
+        _downloading = false;
         if (!_closed)
         {
             RefreshUpdateAction();
