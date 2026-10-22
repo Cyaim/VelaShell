@@ -1408,7 +1408,7 @@ public partial class ChatPanelView : UserControl
         Cts = new CancellationTokenSource();
         CancellationToken token = Cts.Token;
         string runId = Guid.NewGuid().ToString("N");
-        CommandJobRunScope runScope = _toolbox.BeginRun(conv.ConversationId, runId, token);
+        CommandJobRunScope runScope = _toolbox.BeginRun(conv.ConversationId, runId, cancellationToken: token);
         var execution = new AgentExecution(runId, () => runScope.HasUnknownOutcome, () => runScope.HasDeniedExecution);
         var coordinator = new AgentRunCoordinator(runScope, execution);
         conv.RunScope = runScope;

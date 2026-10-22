@@ -41,15 +41,14 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
     private readonly CommandJobRegistry _jobs = new(context.RemoteExec, context, context.Shutdown);
     private readonly AsyncLocal<CommandJobRunScope?> _invocationScope = new();
     internal static readonly AsyncLocal<string?> InvocationIdentity = new();
-    private CommandJobRunScope? _defaultRun;
     private readonly Lock _defaultRunGate = new();
 
     /// <summary>
     /// 入口提供稳定所有者及唯一轮次;工具列表显式捕获,不同对话不共享 taskId。
     /// <c>denialEndsRun</c> 见 <see cref="CommandJobRegistry.BeginRun" />。
     /// </summary>
-    public CommandJobRunScope BeginRun(string ownerId, string runId, CancellationToken cancellationToken = default,
-        bool denialEndsRun = true)
+    public CommandJobRunScope BeginRun(string ownerId, string runId, bool denialEndsRun = true,
+        CancellationToken cancellationToken = default)
     {
         // 上传生命周期长于工具箱；只捕获固定授权范围与宿主上下文，不保留工具箱/UI。
         IPluginContext runContext = context;
@@ -57,7 +56,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         async Task<bool> Authorize(string id, CancellationToken token)
             => await runContext.Sessions.GetAsync(id, token).ConfigureAwait(false) is { } session
                 && (runAuthorization is null || await runAuthorization.AllowsLiveAsync(session, token).ConfigureAwait(false));
-        CommandJobRunScope run = _jobs.BeginRun(ownerId, runId, cancellationToken, Authorize, denialEndsRun);
+        CommandJobRunScope run = _jobs.BeginRun(ownerId, runId, Authorize, denialEndsRun, cancellationToken);
         run.Transfers = FileTransferJobRegistry.For(context).BeginRun(ownerId, runId, Authorize);
         return run;
     }
@@ -72,7 +71,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             }
             lock (_defaultRunGate)
             {
-                return _defaultRun ??= BeginRun(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
+                return field ??= BeginRun(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
             }
         }
     }

@@ -506,7 +506,7 @@ public sealed class AgentExecutionTests
             var finish = new TaskCompletionSource<ExecStreamResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             await using var registry = new CommandJobRegistry(new ControlledExec { Pending = finish.Task });
             using var cancellation = new CancellationTokenSource();
-            await using var scope = registry.BeginRun("owner", "run", cancellation.Token);
+            await using var scope = registry.BeginRun("owner", "run", cancellationToken: cancellation.Token);
             string id = registry.Start(scope, "s", "long foreground");
             registry.MarkBackground(scope, id);
             var execution = new AgentExecution("run");

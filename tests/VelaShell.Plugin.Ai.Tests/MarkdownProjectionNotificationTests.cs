@@ -72,7 +72,7 @@ public sealed class MarkdownProjectionNotificationTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            var panel = new ChatPanelView(context, new VelaShell.Plugin.Ai.Configuration.AiSettingsStore(context));
+            var panel = new ChatPanelView(context, new Configuration.AiSettingsStore(context));
             var text = new ObservableStringBuilder();
             var renderer = new MarkdownRenderer { MarkdownBuilder = text };
             var window = new Window { Width = 480, Height = 320, Content = renderer, RequestedThemeVariant = ThemeVariant.Dark };
@@ -98,8 +98,7 @@ public sealed class MarkdownProjectionNotificationTests
                 TextElement.SetForeground(renderer, Brushes.White);
                 text.Append("\n新增 $a+b$。\n");
                 await PumpAsync();
-                formulas = renderer.GetVisualDescendants().OfType<Control>()
-                    .Where(control => control.GetType().FullName == "RaTeX.Avalonia.FormulaControl").ToList();
+                formulas = [.. renderer.GetVisualDescendants().OfType<Control>().Where(control => control.GetType().FullName == "RaTeX.Avalonia.FormulaControl")];
                 Assert.IsGreaterThanOrEqualTo(3, formulas.Count, "流式追加应渲染新公式。");
                 foreach (Control formula in formulas)
                     Assert.AreEqual(Brushes.White, TextElement.GetForeground(formula));
