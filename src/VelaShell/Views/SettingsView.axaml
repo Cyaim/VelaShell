@@ -36,7 +36,7 @@
          (内容区只有纵向滚动条,横向没有可以救)。放在【左列】的说明才会真的换行 ——
          横向 StackPanel 里的短标注(如 "MB/s")按无限宽度量,这条设置对它们是空操作。 -->
     <Style Selector="TextBlock.row-desc">
-      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextTertiary}" />
       <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
       <Setter Property="FontSize" Value="{DynamicResource VelaFontSizeDesc}" />
       <Setter Property="TextWrapping" Value="Wrap" />
@@ -48,7 +48,7 @@
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style Selector="TextBlock.page-subtitle">
-      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextTertiary}" />
       <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
       <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
       <!-- 副标题也必须换行。原先漏了这条:一句长副标题(网络代理页)按自身宽度量,
