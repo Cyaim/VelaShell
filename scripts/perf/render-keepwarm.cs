@@ -38,16 +38,16 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
+using Avalonia.Themes.Fluent;
 
 ProbeOptions options = ProbeOptions.Parse(args);
-Native.TimeBeginPeriod(1);
+if (OperatingSystem.IsWindows()) Native.TimeBeginPeriod(1);
 Console.WriteLine(options.Steady
     ? $"模式:steady  保温:{(options.Warm ? "开" : "关")}  时长:{options.Seconds} s"
     : $"模式:typing  保温:{(options.Warm ? "开" : "关")}  按键:{options.Keys}  间隔:{options.GapMin}-{options.GapMax} ms  回显:{options.EchoMs} ms × {options.Burst} 帧");
-AppBuilder.Configure(() => new ProbeApp(options)).UsePlatformDetect()
+return AppBuilder.Configure(() => new ProbeApp(options)).UsePlatformDetect()
     .With(new Win32PlatformOptions { RenderingMode = [Win32RenderingMode.AngleEgl, Win32RenderingMode.Software] })
     .StartWithClassicDesktopLifetime(args);
-return 0;
 
 sealed record ProbeOptions(bool Steady, bool Warm, int Seconds, int Keys, int GapMin, int GapMax, int EchoMs, int Burst, int Seed)
 {
@@ -80,6 +80,9 @@ sealed class ProbeApp(ProbeOptions options) : Application
     private readonly List<double> _samples = [];
     private readonly Stopwatch _clock = new();
 
+    // 没有主题,窗口就没有模板:文字不上屏、也没有浮层,量到的是「什么都不画」(scripts/xserver/perf/perf.cs 同样要加)
+    public override void Initialize() => Styles.Add(new FluentTheme());
+
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -92,6 +95,13 @@ sealed class ProbeApp(ProbeOptions options) : Application
             {
                 window.Activate();
                 await Task.Delay(2000);   // 让启动时的那一串帧过去
+                // 文字没挂进可视树、或保温控件没挂上浮层,量出来的数没有意义:报错退出,别给一份「0 次停顿」
+                if (TopLevel.GetTopLevel(text) is null || warm is { Attached: false })
+                {
+                    Console.Error.WriteLine("探针没挂上:文字不在可视树里或保温控件没进浮层,结果作废。");
+                    desktop.Shutdown(2);
+                    return;
+                }
                 _clock.Start();
                 if (options.Steady) await RunSteadyAsync(window, text, warm);
                 else await RunTypingAsync(window, text, warm);
@@ -102,7 +112,6 @@ sealed class ProbeApp(ProbeOptions options) : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    /// <summary>改一次字、请求一帧回调,等它来,记下隔了多久。</summary>
     /// <summary>
     /// 改一次字,量到这一批被渲染线程处理完为止。帧回调量不出这种停顿:窗口闲着时 Avalonia 在 UI 线程上当场补发回调,
     /// 停住的是渲染线程(它在等系统合成器确认上一次提交),所以要等「这一批处理完」。
@@ -177,8 +186,17 @@ sealed class KeepWarm
     public KeepWarm(Window window)
     {
         _topLevel = window;
-        window.Opened += (_, _) => OverlayLayer.GetOverlayLayer(window)?.Children.Add(_pulse);
+        window.Opened += (_, _) =>
+        {
+            // 取不到浮层(窗口没有主题模板)就挂不上;不再静默略过,由 Attached 交给探针报错
+            if (OverlayLayer.GetOverlayLayer(window) is not { } layer) return;
+            layer.Children.Add(_pulse);
+            Attached = true;
+        };
     }
+
+    /// <summary>1×1 的重画控件是否已经挂进浮层。</summary>
+    public bool Attached { get; private set; }
 
     public void Warm()
     {
