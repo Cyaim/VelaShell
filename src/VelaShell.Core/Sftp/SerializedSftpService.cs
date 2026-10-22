@@ -66,6 +66,9 @@ public sealed class SerializedSftpService(ISftpService inner, Guid sessionId) : 
     /// <summary>重命名远端条目的串行化透传。</summary>
     public Task RenameAsync(Guid sessionId, string oldPath, string newPath, CancellationToken cancellationToken = default) => ExecuteAsync(sessionId, token => _inner.RenameAsync(sessionId, oldPath, newPath, token), cancellationToken);
 
+    /// <summary>提交上传临时文件的串行化透传(同属改名);接口的默认实现是「不支持」,必须显式转发。</summary>
+    public Task CommitUploadAsync(Guid sessionId, string temporaryPath, string destinationPath, bool overwrite, CancellationToken cancellationToken = default) => ExecuteAsync(sessionId, token => _inner.CommitUploadAsync(sessionId, temporaryPath, destinationPath, overwrite, token), cancellationToken);
+
     /// <summary>远端复制的透传;内部是"下载到临时文件再上传",同属传输,不占串行闸。</summary>
     public Task CopyAsync(Guid sessionId, string sourcePath, string destPath, IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default) => ExecuteAsync(sessionId, token => _inner.CopyAsync(sessionId, sourcePath, destPath, progress, token), cancellationToken, serialize: false);
 

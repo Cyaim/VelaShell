@@ -4,8 +4,10 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 using VelaShell.Core.Models;
+using VelaShell.Core.Ssh;
 using VelaShell.PluginSdk;
 using VelaShell.PluginSdk.RemoteFs;
+using VelaShell.Ssh.Diagnostics;
 using RemoteUploadOptions = VelaShell.PluginSdk.RemoteFs.RemoteUploadOptions;
 
 namespace VelaShell.Infrastructure.Plugins.Capabilities;
@@ -14,6 +16,13 @@ internal sealed partial class RemoteFsCapability
 {
     public bool SupportsTransferOperations => true;
     internal bool UseDiskSnapshot { get; init; } = !OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// 等待被取消、到期、断线或撤权打断后,给仍在跑的后端任务真正停下的有界宽限期:宽限期内停下了,才能确认停写、
+    /// 清掉临时文件;仍没停才记 Unknown。测试可调短(与 <see cref="UseDiskSnapshot" /> 同一用意)。
+    /// </summary>
+    internal TimeSpan StopGracePeriod { get; init; } = TimeSpan.FromSeconds(5);
+
     private const int MaxRecords = 1024;
     private const int MaxActiveUploads = 32;
     private readonly Lock _transfersGate = new();
@@ -25,6 +34,13 @@ internal sealed partial class RemoteFsCapability
 
     private sealed class SourceChangedException() : IOException("The approved source changed during upload.");
     private sealed record StartReceipt(string Session, string Local, string Remote, object Options, UploadOperation Operation);
+
+    /// <summary>
+    /// 任务被要求停下的原因,先到者为准。死线、断线、插件停用与用户取消取消的是同一个停止令牌,
+    /// 终态必须按登记的原因分类,不能从「令牌被取消了」倒推成到期或用户取消。
+    /// </summary>
+    private enum StopReason { None, User, Timeout, Disconnected, Disposed }
+
     private sealed class UploadOperation(RemoteTransferSnapshot snapshot, FileStream? source, CancellationTokenSource stop)
     {
         internal readonly object _gate = new();
@@ -38,6 +54,7 @@ internal sealed partial class RemoteFsCapability
         internal readonly long _registeredTicks = Stopwatch.GetTimestamp();
         internal long _lastProgress;
         internal bool _stopDisposed;
+        internal StopReason _stopReason;
         internal UploadPermissionLease? _permission;
         internal DownloadPermissionLease? _downloadPermission;
         internal bool PermissionRevoked => _permission?.IsRevoked == true || _downloadPermission?.IsRevoked == true;
@@ -59,27 +76,36 @@ internal sealed partial class RemoteFsCapability
             throw new ArgumentOutOfRangeException(nameof(options), "Timeout must be positive and supported by the host timer.");
         string local = Path.GetFullPath(localPath);
         string remote = NormalizeDestination(remotePath);
+        Guid session;
         lock (_transfersGate)
         {
-            ObjectDisposedException.ThrowIf(_transfersDisposed || lifetime.IsCancellationRequested, this);
-            if (_receipts.TryGetValue(options.OperationId, out StartReceipt? previous))
-            {
-                if (previous.Operation._snapshot.Direction != RemoteTransferDirection.Upload || previous.Session != sessionId || previous.Local != local || previous.Remote != remote || !Equals(previous.Options, options))
-                    throw new InvalidOperationException("Operation id was already used with different parameters.");
-                return Task.FromResult(ReadAuthorized(previous.Operation));
-            }
-            Guid session = Resolve(sessionId);
-            if (_receipts.Count >= MaxRecords) throw new InvalidOperationException("Transfer operation receipt quota reached for this plugin lifetime.");
-            if (_transfers.Values.Count(op => !op._worker.IsCompleted) >= MaxActiveUploads)
-                throw new InvalidOperationException("Active upload queue quota reached for this plugin.");
-            string resolved = ResolveUploadSource(local);
+            if (FindUploadReceipt(sessionId, local, remote, options) is { } previous) return Task.FromResult(previous);
+            session = Resolve(sessionId);
+            ThrowIfUploadQuotaReached();
+        }
+        // 解析、打开与核验源都是阻塞 I/O(没有写端的 FIFO 能让 open 一直等下去),一律放在账本锁外:
+        // 锁里只做回执查重与登记,同插件的查询、取消、断线回调与停用不会陪着卡住。
+        string resolved = ResolveUploadSource(local);
+        RejectLinks(resolved);
+        RejectSpecialSource(resolved);
+        var source = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        try
+        {
             RejectLinks(resolved);
-            var source = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-            try
+            VerifyOpenedPath(source, resolved);
+            // 打开前按路径查过类型,打开后再按句柄核一次:两次之间路径被换成设备也拦得住。
+            if (!OperatingSystem.IsWindows() && source.SafeFileHandle.Type != FileHandleType.RegularFile)
+                throw new NotSupportedException("Only regular files can be uploaded.");
+            lock (_transfersGate)
             {
-                RejectLinks(resolved);
-                VerifyOpenedPath(source, resolved);
+                // 锁外打开源的这段时间里,同一 OperationId 的并发启动可能已经先登记:沿用它的回执,本次打开的句柄作废。
+                if (FindUploadReceipt(sessionId, local, remote, options) is { } raced)
+                {
+                    source.Dispose();
+                    return Task.FromResult(raced);
+                }
+                ThrowIfUploadQuotaReached();
                 var stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
                 if (options.Timeout is { } budget) stop.CancelAfter(budget);
                 DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -113,8 +139,29 @@ internal sealed partial class RemoteFsCapability
                     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 return Task.FromResult(Read(op));
             }
-            catch { source.Dispose(); throw; }
         }
+        catch { source.Dispose(); throw; }
+    }
+
+    /// <summary>
+    /// 同一 OperationId 已登记过时按幂等规则重取回执(方向或参数不符一律拒绝,绝不重新打开源);没有回执时为 null。
+    /// 调用方须持有 <see cref="_transfersGate" />。
+    /// </summary>
+    private RemoteTransferSnapshot? FindUploadReceipt(string sessionId, string local, string remote, RemoteUploadOptions options)
+    {
+        ObjectDisposedException.ThrowIf(_transfersDisposed || lifetime.IsCancellationRequested, this);
+        if (!_receipts.TryGetValue(options.OperationId, out StartReceipt? previous)) return null;
+        if (previous.Operation._snapshot.Direction != RemoteTransferDirection.Upload || previous.Session != sessionId || previous.Local != local || previous.Remote != remote || !Equals(previous.Options, options))
+            throw new InvalidOperationException("Operation id was already used with different parameters.");
+        return ReadAuthorized(previous.Operation);
+    }
+
+    /// <summary>回执与活动任务额度;调用方须持有 <see cref="_transfersGate" />。</summary>
+    private void ThrowIfUploadQuotaReached()
+    {
+        if (_receipts.Count >= MaxRecords) throw new InvalidOperationException("Transfer operation receipt quota reached for this plugin lifetime.");
+        if (_transfers.Values.Count(op => !op._worker.IsCompleted) >= MaxActiveUploads)
+            throw new InvalidOperationException("Active upload queue quota reached for this plugin.");
     }
 
     public Task<RemoteTransferSnapshot> GetTransferAsync(string transferId, CancellationToken cancellationToken = default)
@@ -155,9 +202,10 @@ internal sealed partial class RemoteFsCapability
                 && !op._snapshot.CancellationRequested)
             {
                 Update(op, s => s with { State = s.IsTerminal ? s.State : RemoteTransferState.CancelRequested, CancellationRequested = true });
-                RequestStop(op);
+                RequestStop(op, StopReason.User);
             }
-            return Task.FromResult(op.PermissionRevoked ? op._snapshot with { LocalPath = "", RemotePath = "", SessionId = "" } : op._snapshot);
+            // 撤权后只交还清理所需的状态:路径、会话与失败说明(其中可能带着路径)一律不给。
+            return Task.FromResult(op.PermissionRevoked ? op._snapshot with { LocalPath = "", RemotePath = "", SessionId = "", ErrorMessage = null } : op._snapshot);
         }
     }
 
@@ -300,6 +348,56 @@ internal sealed partial class RemoteFsCapability
         return current;
     }
 
+    /// <summary>
+    /// 只接受普通文件,而且在打开之前就拒:没有写端的 FIFO 会让 open 一直阻塞,设备与套接字读不出一份确定的内容,
+    /// 有的设备一打开就有副作用 —— 何况这一步还在用户审批之前。Windows 没有这类会卡住 open 的对象,
+    /// 设备与管道由打开后的路径核验拒绝。
+    /// </summary>
+    private static void RejectSpecialSource(string path)
+    {
+        const uint typeMask = 0xF000, regularFile = 0x8000;   // S_IFMT、S_IFREG
+        if (ReadUnixFileMode(path) is { } mode && (mode & typeMask) != regularFile)
+            throw new NotSupportedException("Only regular files can be uploaded.");
+    }
+
+    /// <summary>
+    /// 不跟随链接地取路径的 st_mode。Linux 用 statx(结构各架构一致:stx_mask 在 0、stx_mode 在 28),
+    /// macOS 用 64 位 inode 的 lstat(st_mode 在 4;x64 上符号名是 lstat$INODE64)。
+    /// 查不了(不存在、没权限、内核或 seccomp 不给 statx、libc 太旧)时为 null:交给正式打开报出原本的错误,
+    /// 打开之后还有按句柄的类型复核。
+    /// </summary>
+    private static uint? ReadUnixFileMode(string path)
+    {
+        byte[] buffer = new byte[512];   // struct statx 256 字节;macOS 的 struct stat 144 字节
+        try
+        {
+            if (OperatingSystem.IsLinux())
+            {
+                const int atFdCwd = -100, atSymlinkNoFollow = 0x100;
+                const uint statxType = 0x1;
+                return LinuxStatX(atFdCwd, path, atSymlinkNoFollow, statxType, buffer) == 0 && (BitConverter.ToUInt32(buffer, 0) & statxType) != 0
+                    ? BitConverter.ToUInt16(buffer, 28)
+                    : null;
+            }
+            if (OperatingSystem.IsMacOS())
+            {
+                int result = RuntimeInformation.ProcessArchitecture == Architecture.X64 ? DarwinLStatInode64(path, buffer) : DarwinLStat(path, buffer);
+                return result == 0 ? BitConverter.ToUInt16(buffer, 4) : null;
+            }
+        }
+        catch (Exception ex) when (ex is EntryPointNotFoundException or DllNotFoundException) { }
+        return null;
+    }
+
+    [LibraryImport("libc", EntryPoint = "statx", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int LinuxStatX(int directory, string path, int flags, uint mask, [Out] byte[] buffer);
+
+    [LibraryImport("libc", EntryPoint = "lstat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int DarwinLStat(string path, [Out] byte[] buffer);
+
+    [LibraryImport("libc", EntryPoint = "lstat$INODE64", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int DarwinLStatInode64(string path, [Out] byte[] buffer);
+
     private static void RejectLinks(string path)
     {
         for (string? current = path; current is not null; current = Path.GetDirectoryName(current))
@@ -347,12 +445,13 @@ internal sealed partial class RemoteFsCapability
     private async Task RunUploadAsync(UploadOperation op, Guid session, RemoteUploadOptions options)
     {
         string temporary = Read(op).RemotePath + ".vela-upload-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-        bool slot = false, writing = false, closed = false, committing = false;
+        bool slot = false, writing = false, committing = false;
         Task? remoteWrite = null;
         Task? commitTask = null;
         FileStream? diskSnapshot = null;
         string? snapshotDirectory = null;
-        var elapsed = Stopwatch.StartNew();
+        // 速率按真正开始传输之后的耗时算:审批对话框、排队与快照准备都不算进去。
+        var elapsed = new Stopwatch();
         using var execution = CancellationTokenSource.CreateLinkedTokenSource(op._stop.Token, op._permission?.Revocation ?? CancellationToken.None);
         CancellationToken ct = execution.Token;
         using var heartbeatStop = new CancellationTokenSource();
@@ -417,11 +516,11 @@ internal sealed partial class RemoteFsCapability
             uploadSource.Position = 0;
             ct.ThrowIfCancellationRequested();
             Update(op, s => s with { State = RemoteTransferState.Running });
+            elapsed.Start();
             writing = true;
             remoteWrite = sftp.UploadStreamAsync(session, uploadSource, temporary, op._sourceLength,
                 progress: new UploadProgressSink(op), cancellationToken: ct);
             await remoteWrite.WaitAsync(ct).ConfigureAwait(false);
-            closed = true;
             Update(op, s => s with { TransferredBytes = s.TotalBytes, SpeedBytesPerSecond = null, EstimatedTimeRemaining = null });
             // 优先服务端摘要;纯 SFTP 账号无 exec 时流式回读校验,不把满字节误报为已提交。
             byte[]? actual = null;
@@ -447,40 +546,25 @@ internal sealed partial class RemoteFsCapability
             committing = true;
             commitTask = sftp.CommitUploadAsync(session, temporary, Read(op).RemotePath, options.Overwrite, ct);
             await commitTask.WaitAsync(ct).ConfigureAwait(false);
-            Update(op, s => s with
-            {
-                State = RemoteTransferState.Succeeded,
-                TransferredBytes = s.TotalBytes,
-                CompletedAt = DateTimeOffset.UtcNow,
-                RemoteStopConfirmed = true,
-                DestinationCommitConfirmedAbsent = false,
-                SpeedBytesPerSecond = elapsed.Elapsed.TotalSeconds > 0 ? s.TotalBytes / elapsed.Elapsed.TotalSeconds : null,
-                EstimatedTimeRemaining = TimeSpan.Zero,
-            });
+            Succeed();
         }
         catch (Exception ex)
         {
-            bool stopped = (!writing || closed) && !committing;
-            bool timeout = options.Timeout is not null && op._stop.IsCancellationRequested && !Read(op).CancellationRequested
-                && !lifetime.IsCancellationRequested && !op.PermissionRevoked;
-            Update(op, s => s with
+            // 取消、到期、断线、撤权只打断了等待,后端任务可能还在跑:先给它一段有界的宽限期真正停下来,再定终态。
+            Task? backend = commitTask ?? remoteWrite;
+            if (backend is { IsCompleted: false })
+                await Task.WhenAny(backend, Task.Delay(StopGracePeriod)).ConfigureAwait(false);
+            // 提交应答赶在宽限期内到了:成功就是成功,取消不宣称回滚。
+            if (commitTask is { IsCompletedSuccessfully: true }) Succeed();
+            else
             {
-                State = timeout ? RemoteTransferState.TimedOut : committing || !stopped ? RemoteTransferState.Unknown
-                    : ex is PluginPermissionDeniedException || op.PermissionRevoked ? RemoteTransferState.Failed
-                    : ct.IsCancellationRequested ? RemoteTransferState.Cancelled : RemoteTransferState.Failed,
-                RemoteStopConfirmed = stopped,
-                DestinationCommitConfirmedAbsent = !committing,
-                CompletedAt = DateTimeOffset.UtcNow,
-                Resumable = false,
-                ErrorCode = op.PermissionRevoked ? "permission-revoked" : ex is PluginPermissionDeniedException ? "permission-denied"
-                    : committing ? "commit-unknown" : timeout ? "timeout" : ct.IsCancellationRequested ? "cancelled"
-                    : ex is SourceChangedException ? "source-changed" : "upload-failed",
-                ErrorMessage = op.PermissionRevoked ? "Upload authorization was revoked."
-                    : ex is PluginPermissionDeniedException ? "A trusted host upload approval was not granted."
-                    : committing ? "The destination commit could not be confirmed; do not retry automatically."
-                    : ex is SourceChangedException ? "The approved source changed; the destination was not committed."
-                    : ex is InvalidDataException ? "Uploaded content verification failed." : "Upload did not complete successfully.",
-            });
+                // 后端自己的失败原因比「等待被打断」有用;同步抛出的提交失败就是 ex 本身。
+                Exception cause = backend is { IsFaulted: true } ? backend.Exception!.InnerException ?? ex : ex;
+                // 只有收不到应答的提交才是 Unknown;根本没发出去或服务端明确拒绝,目标就确认没被提交。
+                bool commitRejected = committing && (commitTask is null or { IsFaulted: true }) && IsDefiniteCommitRejection(cause);
+                FailUpload(op, ex, cause, writeStopped: remoteWrite is not { IsCompleted: false },
+                    commitUnknown: committing && !commitRejected, commitRejected);
+            }
         }
         finally
         {
@@ -491,7 +575,7 @@ internal sealed partial class RemoteFsCapability
             }
             finally
             {
-                // 取消只中止等待时继续保留稳定源句柄,直到后端真正结束;状态保持 Unknown,不冒充已停止。
+                // 宽限期内没停下的后端:继续保留稳定源句柄,直到它真正结束;状态保持 Unknown,不冒充已停止。
                 if (remoteWrite is not null) { try { await remoteWrite.ConfigureAwait(false); } catch { } }
                 if (commitTask is not null) { try { await commitTask.ConfigureAwait(false); } catch { } }
                 try
@@ -535,6 +619,113 @@ internal sealed partial class RemoteFsCapability
                 }
             }
         }
+
+        void Succeed() => Update(op, s => s with
+        {
+            State = RemoteTransferState.Succeeded,
+            TransferredBytes = s.TotalBytes,
+            CompletedAt = DateTimeOffset.UtcNow,
+            RemoteStopConfirmed = true,
+            DestinationCommitConfirmedAbsent = false,
+            SpeedBytesPerSecond = elapsed.Elapsed.TotalSeconds > 0 ? s.TotalBytes / elapsed.Elapsed.TotalSeconds : null,
+            EstimatedTimeRemaining = TimeSpan.Zero,
+        });
+    }
+
+    /// <summary>
+    /// 上传没能成功收尾时按事实定终态:写入任务已经结束(失败也好、取消也好,后端都已关了句柄)就是确认停写,
+    /// 没提交过的临时文件随后清理;提交只有收不到应答才是 Unknown。停止原因按登记的那个分类,
+    /// 失败原因清洗后留给插件,完整异常写进宿主日志。
+    /// </summary>
+    private void FailUpload(UploadOperation op, Exception ex, Exception cause, bool writeStopped, bool commitUnknown, bool commitRejected)
+    {
+        // 撤权优先于其它停止原因,与此前的口径一致:撤权后的到期不再记成到期。
+        StopReason reason = op.PermissionRevoked ? StopReason.None : ReadStopReason(op);
+        bool stopped = writeStopped && !commitUnknown;
+        RemoteTransferState state = reason == StopReason.Timeout ? RemoteTransferState.TimedOut
+            : !stopped ? RemoteTransferState.Unknown
+            : op.PermissionRevoked || ex is PluginPermissionDeniedException ? RemoteTransferState.Failed
+            : reason is StopReason.User or StopReason.Disposed ? RemoteTransferState.Cancelled
+            : RemoteTransferState.Failed;
+        string code = op.PermissionRevoked ? "permission-revoked"
+            : ex is PluginPermissionDeniedException ? "permission-denied"
+            : commitUnknown ? "commit-unknown"
+            : StopCode(reason)
+              ?? (commitRejected ? cause is NotSupportedException ? "not-supported" : "commit-rejected"
+                  : ex is SourceChangedException ? "source-changed" : "upload-failed");
+        string message = op.PermissionRevoked ? "Upload authorization was revoked."
+            : ex is PluginPermissionDeniedException ? "A trusted host upload approval was not granted."
+            : commitUnknown ? "The destination commit could not be confirmed; do not retry automatically."
+            : !stopped ? "The remote write did not confirm it stopped; do not retry automatically."
+            : StopText(reason) is { } stop ? stop + "; the destination was not committed."
+            : commitRejected ? "The destination commit was refused; the destination was not committed: " + DescribeCause(cause)
+            : ex is SourceChangedException ? "The approved source changed; the destination was not committed."
+            : ex is InvalidDataException ? "Uploaded content verification failed."
+            : "Upload failed: " + DescribeCause(cause);
+        Update(op, s => s with
+        {
+            State = state,
+            RemoteStopConfirmed = stopped,
+            DestinationCommitConfirmedAbsent = !commitUnknown,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Resumable = false,
+            ErrorCode = code,
+            ErrorMessage = message,
+        });
+        LogTransferEnd(op, state, code, cause);
+    }
+
+    /// <summary>
+    /// 提交被明确拒绝:请求根本没发出去(后端不支持,如要覆盖而服务端没有 posix-rename),或服务端回了失败状态
+    /// (如不覆盖时普通 RENAME 因目标已存在被拒)。取消、断线、超时都等不到应答,目标是否已被替换无从确认;
+    /// SFTP 通道中途断开报的是传输中断,同样没有应答。
+    /// </summary>
+    private static bool IsDefiniteCommitRejection(Exception ex)
+        => ex is NotSupportedException or (VelaSftpOperationException and not VelaSftpTransferInterruptedException);
+
+    /// <summary>
+    /// 停止原因:显式登记的(用户取消、断线、停用)优先;令牌被取消却没登记的,只能来自寿命令牌(插件停用、宿主退出)
+    /// 或死线。须在停止令牌释放之前读取。
+    /// </summary>
+    private StopReason ReadStopReason(UploadOperation op)
+    {
+        lock (op._gate)
+        {
+            if (op._stopReason != StopReason.None || !op._stop.IsCancellationRequested) return op._stopReason;
+        }
+        return lifetime.IsCancellationRequested ? StopReason.Disposed : StopReason.Timeout;
+    }
+
+    /// <summary>确认停下、又不是授权问题时按停止原因给的错误码;没有停止原因(真失败)时为 null。</summary>
+    private static string? StopCode(StopReason reason) => reason switch
+    {
+        StopReason.User => "cancelled",
+        StopReason.Timeout => "timeout",
+        StopReason.Disconnected => "session-disconnected",
+        StopReason.Disposed => "plugin-stopped",
+        _ => null,
+    };
+
+    private static string? StopText(StopReason reason) => reason switch
+    {
+        StopReason.User => "The transfer was cancelled",
+        StopReason.Timeout => "The transfer deadline was reached",
+        StopReason.Disconnected => "The session disconnected",
+        StopReason.Disposed => "The plugin or host stopped",
+        _ => null,
+    };
+
+    /// <summary>
+    /// 失败原因进快照:只取异常消息,按不可信文本清洗(控制字符、双向控制符)并限长 —— 它会原样到达插件与模型;
+    /// 完整异常只写进宿主日志。
+    /// </summary>
+    private static string DescribeCause(Exception ex) => PeerText.Sanitize(ex.Message);
+
+    /// <summary>非成功收尾写进宿主日志:插件拿到的说明是清洗、截断过的,完整异常(含内层)只留在这里。</summary>
+    private void LogTransferEnd(UploadOperation op, RemoteTransferState state, string code, Exception cause)
+    {
+        RemoteTransferSnapshot snapshot = Read(op);
+        Trace.WriteLine($"[RemoteFs:{pluginId}] {snapshot.Direction} {snapshot.TransferId} ended {state} ({code}): {cause}");
     }
 
     private static async Task TransferHeartbeatAsync(UploadOperation op, CancellationToken ct)
@@ -556,10 +747,15 @@ internal sealed partial class RemoteFsCapability
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
-    private static void RequestStop(UploadOperation op)
+    private static void RequestStop(UploadOperation op, StopReason reason)
     {
         lock (op._gate)
-            if (!op._stopDisposed) op._stop.Cancel();
+        {
+            if (op._stopDisposed) return;
+            // 先到者为准:死线已到或插件已停用时令牌早已取消,不改写成后来的原因。
+            if (!op._stop.IsCancellationRequested && op._stopReason == StopReason.None) op._stopReason = reason;
+            op._stop.Cancel();
+        }
     }
 
     private static void ValidateSource(UploadOperation op)
@@ -573,7 +769,7 @@ internal sealed partial class RemoteFsCapability
         lock (_transfersGate)
             foreach (UploadOperation op in _transfers.Values)
                 if (!op._worker.IsCompleted && Read(op).SessionId == session.SessionId.ToString())
-                    RequestStop(op);
+                    RequestStop(op, StopReason.Disconnected);
     }
 
     public void Dispose()
@@ -587,7 +783,7 @@ internal sealed partial class RemoteFsCapability
             {
                 if (!op._worker.IsCompleted)
                 {
-                    RequestStop(op);
+                    RequestStop(op, StopReason.Disposed);
                     _ = op._worker.ContinueWith(_ => { op._permission?.Dispose(); op._downloadPermission?.Dispose(); }, CancellationToken.None,
                         TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 }
