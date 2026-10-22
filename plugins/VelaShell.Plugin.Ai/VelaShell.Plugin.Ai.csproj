@@ -54,7 +54,7 @@
          无浏览器无子进程),自带平移缩放。 -->
     <PackageReference Include="LiveMarkdown.Avalonia.Mermaid" Version="2.5.0" />
     <!-- LaTeX:$..$ / $$..$$,并补 \(..\) / \[..\](多数模型实际输出的定界符)。
-         CSharpMath 内嵌 Latin Modern Math 字体,不依赖系统字体。 -->
+         2.5.0 使用 RaTeX 后端,公式前景色由 Markdown 控件继承。 -->
     <PackageReference Include="LiveMarkdown.Avalonia.Math" Version="2.5.0" />
     <!-- SVG:给图片管线注册 SVG 解码器。用 Svg.Controls.Avalonia 后端(非 Skia,用户决策)。 -->
     <PackageReference Include="LiveMarkdown.Avalonia.Svg" Version="2.5.0" />

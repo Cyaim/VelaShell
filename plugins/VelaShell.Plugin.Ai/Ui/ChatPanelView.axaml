@@ -380,8 +380,7 @@
     <Style Selector="mdm|PanAndZoom.MermaidBlock">
       <Setter Property="MaxHeight" Value="420" />
     </Style>
-    <!-- LaTeX 的配色不在这里:CSharpMath 的 MathView 吃不到类型选择器(基类是泛型,
-         StyleKey 对不上,实测字面色样式也不生效),只能在 ApplyMathColors() 里就地设。 -->
+    <!-- LaTeX 由 RaTeX 后端渲染,继承 Markdown 的前景色并响应主题变化。 -->
 
     <!-- 图还没画完(流式中)或语法错时退回文本显示,用等宽区分 -->
     <Style Selector="md|MarkdownRenderer md|MarkdownTextBlock.MermaidBlock,

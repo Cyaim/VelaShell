@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using LiveMarkdown.Avalonia;
+using VelaShell.Plugin.Ai.Agent;
 using VelaShell.PluginSdk.RemoteFs;
 
 namespace VelaShell.Plugin.Ai.Ui;

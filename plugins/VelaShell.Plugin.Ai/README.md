@@ -684,14 +684,14 @@ ControlTheme 的芯片开关(`Ui/AiTheme.axaml`,隔离进程下仅令牌也能�
 | 扩展 | 语法 | 效果 |
 | --- | --- | --- |
 | `LiveMarkdown.Avalonia.Mermaid` | ` ```mermaid ` 围栏块 | 24 种图型画成原生 Avalonia 控件,带平移缩放;`Mermaider` 纯托管解析+布局,无浏览器无子进程 |
-| `LiveMarkdown.Avalonia.Math` | `$..$` `$$..$$` 及 `\(..\)` `\[..\]` | CSharpMath 排版;后一组反斜杠定界符是多数模型的实际输出,标准 Markdig 认不出 |
+| `LiveMarkdown.Avalonia.Math` | `$..$` `$$..$$` 及 `\(..\)` `\[..\]` | RaTeX 排版;后一组反斜杠定界符是多数模型的实际输出,标准 Markdig 认不出 |
 | `LiveMarkdown.Avalonia.Svg` | `![](x.svg)` | 给图片管线注册 SVG 解码器(Svg.Controls.Avalonia 后端,非 Skia) |
 
 Mermaid 的配色全部走 `ForegroundColor`/`BorderColor`/`CardBackgroundColor` 三个键,
 已由 `SyncMarkdownSkin()` 映射到 Vela 令牌,主题切换自动跟随;**注意 `BorderColor` 被
 Mermaid 用作全部线条色,不能挪作背景**,所以代码块标题栏底色改用 `nth-child(1)` 选择器给。
-LaTeX 是例外:`MathView` 吃不到类型选择器(基类是泛型,StyleKey 对不上,实测连字面色的
-运行期样式都不生效),默认又是黑色,只能由 `ApplyMathColors()` 在每次渲染定稿后就地设。
+LaTeX 在 LiveMarkdown 2.5.0 中由 RaTeX 后端渲染,继承 Markdown 控件的前景色并响应主题变化,
+不再使用旧后端的逐控件补色适配。
 
 两项刻意的收口:链接只放行 `http`/`https` 并交宿主浏览器打开;图片加载器**摘掉了
 HTTP 处理器**(只留本地文件 / `data:` / 内嵌资源),否则模型回复里的图片 URL 会被

@@ -87,6 +87,7 @@ public sealed class DownloadPermissionLease : IDisposable
     private readonly CancellationTokenSource _revoked = new();
     private readonly Action<DownloadPermissionLease> _release;
     internal DownloadPermissionLease(Action<DownloadPermissionLease> release) { _release = release; Revocation = _revoked.Token; }
+    /// <summary>本任务的撤销信号;待审批与执行中的下载都必须观察。</summary>
     public CancellationToken Revocation { get; }
     internal bool Approved { get; set; }
     internal volatile bool _active = true;
@@ -95,6 +96,7 @@ public sealed class DownloadPermissionLease : IDisposable
     internal void MarkRevoked() => Interlocked.Exchange(ref _revokedFlag, 1);
     internal void SignalRevoked() { try { _revoked.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { } }
     private int _disposed;
+    /// <summary>撤销本任务并解除下载授权账本登记。</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
@@ -133,21 +135,22 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
     private readonly Grants _sessionOpen = new("plugin_session_open_permissions");
 
     private readonly SemaphoreSlim _promptGate = new(1, 1);
-    private readonly object _uploadGate = new();
+    private readonly Lock _uploadGate = new();
     private readonly Dictionary<string, HashSet<UploadPermissionLease>> _uploads = [with(StringComparer.Ordinal)];
     private readonly Dictionary<string, HashSet<DownloadPermissionLease>> _downloads = [with(StringComparer.Ordinal)];
 
+    /// <summary>登记待审批的单任务下载租约,使撤权也能取消等待用户裁决的请求。</summary>
     public DownloadPermissionLease CreateDownloadLease(string pluginId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginId);
         lock (_uploadGate)
         {
-            if (!_downloads.TryGetValue(pluginId, out var leases)) _downloads.Add(pluginId, leases = []);
+            if (!_downloads.TryGetValue(pluginId, out HashSet<DownloadPermissionLease>? leases)) _downloads.Add(pluginId, leases = []);
             var lease = new DownloadPermissionLease(value =>
             {
                 lock (_uploadGate)
                 {
-                    if (_downloads.TryGetValue(pluginId, out var current))
+                    if (_downloads.TryGetValue(pluginId, out HashSet<DownloadPermissionLease>? current))
                     {
                         current.Remove(value);
                         if (current.Count == 0) _downloads.Remove(pluginId);
@@ -158,6 +161,7 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
         }
     }
 
+    /// <summary>逐任务请求可信下载审批;仅 AllowOnce 有效,不复用上传、终端或开会话授权。</summary>
     public async Task<bool> CheckDownloadAsync(DownloadPermissionLease lease, string pluginId, string sessionLabel,
         string remotePath, string localPath, bool overwrite, CancellationToken cancellationToken)
     {
@@ -166,7 +170,7 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
         await _promptGate.WaitAsync(linked.Token).ConfigureAwait(false);
         try
         {
-            lock (_uploadGate) if (!_downloads.TryGetValue(pluginId, out var leases) || !leases.Contains(lease)) return false;
+            lock (_uploadGate) if (!_downloads.TryGetValue(pluginId, out HashSet<DownloadPermissionLease>? leases) || !leases.Contains(lease)) return false;
             Task<PluginPermissionDecision> pending = prompt.RequestFileDownloadAsync(pluginId, sessionLabel, remotePath, localPath, overwrite, linked.Token);
             PluginPermissionDecision decision;
             try { decision = await pending.WaitAsync(linked.Token).ConfigureAwait(false); }
@@ -193,12 +197,12 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginId);
         lock (_uploadGate)
         {
-            if (!_uploads.TryGetValue(pluginId, out var leases)) _uploads.Add(pluginId, leases = []);
+            if (!_uploads.TryGetValue(pluginId, out HashSet<UploadPermissionLease>? leases)) _uploads.Add(pluginId, leases = []);
             var lease = new UploadPermissionLease(value =>
             {
                 lock (_uploadGate)
                 {
-                    if (_uploads.TryGetValue(pluginId, out var current))
+                    if (_uploads.TryGetValue(pluginId, out HashSet<UploadPermissionLease>? current))
                     {
                         current.Remove(value);
                         if (current.Count == 0) _uploads.Remove(pluginId);
@@ -221,7 +225,7 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
         {
             lock (_uploadGate)
             {
-                if (!_uploads.TryGetValue(pluginId, out var leases) || !leases.Contains(lease)) return false;
+                if (!_uploads.TryGetValue(pluginId, out HashSet<UploadPermissionLease>? leases) || !leases.Contains(lease)) return false;
             }
             Task<PluginPermissionDecision> pending = prompt.RequestFileUploadAsync(pluginId, sessionLabel, localPath,
                 remotePath, overwrite, linked.Token);
@@ -271,14 +275,14 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
         // 锁内只同步标记撤销,锁外才执行 CancellationToken 回调,避免回调修改账本或锁倒置。
         lock (_uploadGate)
         {
-            uploads = _uploads.TryGetValue(pluginId, out var live) ? [.. live] : [];
+            uploads = _uploads.TryGetValue(pluginId, out HashSet<UploadPermissionLease>? live) ? [.. live] : [];
             foreach (UploadPermissionLease lease in uploads) lease.MarkRevoked();
         }
         foreach (UploadPermissionLease lease in uploads) lease.SignalRevoked();
         DownloadPermissionLease[] downloads;
         lock (_uploadGate)
         {
-            downloads = _downloads.TryGetValue(pluginId, out var live) ? [.. live] : [];
+            downloads = _downloads.TryGetValue(pluginId, out HashSet<DownloadPermissionLease>? live) ? [.. live] : [];
             foreach (DownloadPermissionLease lease in downloads) lease.MarkRevoked();
         }
         foreach (DownloadPermissionLease lease in downloads) lease.SignalRevoked();
@@ -301,9 +305,9 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
     public async Task<bool> HasGrantAsync(string pluginId, CancellationToken cancellationToken = default)
     {
         lock (_uploadGate)
-            if (_uploads.TryGetValue(pluginId, out var uploads) && uploads.Any(lease => lease._active && !lease.IsRevoked)) return true;
+            if (_uploads.TryGetValue(pluginId, out HashSet<UploadPermissionLease>? uploads) && uploads.Any(lease => lease._active && !lease.IsRevoked)) return true;
         lock (_uploadGate)
-            if (_downloads.TryGetValue(pluginId, out var downloads) && downloads.Any(lease => lease._active && !lease.IsRevoked)) return true;
+            if (_downloads.TryGetValue(pluginId, out HashSet<DownloadPermissionLease>? downloads) && downloads.Any(lease => lease._active && !lease.IsRevoked)) return true;
         foreach (Grants grants in Ledgers)
         {
             if (await IsAlwaysAllowedAsync(grants, pluginId, cancellationToken).ConfigureAwait(false))

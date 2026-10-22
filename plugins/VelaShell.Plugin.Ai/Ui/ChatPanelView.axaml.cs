@@ -216,8 +216,6 @@ public partial class ChatPanelView : UserControl
     private bool _autoScroll = true;
     private bool _scrollScheduled;
     private ThemeName _codeBlockTheme = ThemeName.DarkPlus;
-    private Color _mathTextColor = Colors.Black;
-    private Color _mathErrorColor = Colors.Red;
 
     /// <summary>由插件构造(UI 线程,经 ShowPanelAsync 工厂)。</summary>
     public ChatPanelView(IPluginContext context, AiSettingsStore store)
@@ -604,10 +602,7 @@ public partial class ChatPanelView : UserControl
         Skin("CodeInlineColor", "VelaAccent");
         Skin("QuoteBorderColor", "VelaAccent");
 
-        _mathTextColor = SkinColor("VelaTextPrimary") ?? Colors.Black;
-        _mathErrorColor = SkinColor("VelaError") ?? Colors.Red;
-
-        // 这两样不是资源键而是控件属性,已生成的渲染器要逐个改
+        // 代码高亮是控件属性而非资源键,已生成的渲染器要逐个改
         ThemeName codeTheme = ActualThemeVariant == ThemeVariant.Dark ? ThemeName.DarkPlus : ThemeName.LightPlus;
         _codeBlockTheme = codeTheme;
         // 每份对话各有一条消息流面板,后台那几条此刻不在可视树上但气泡还在 —— 全都要换皮,
@@ -617,7 +612,6 @@ public partial class ChatPanelView : UserControl
             foreach (MarkdownRenderer renderer in conversation.Messages.GetVisualDescendants().OfType<MarkdownRenderer>())
             {
                 renderer.CodeBlockColorTheme = codeTheme;
-                ApplyMathColors(renderer);
             }
         }
 
@@ -629,24 +623,6 @@ public partial class ChatPanelView : UserControl
             }
         }
 
-        Color? SkinColor(string velaKey)
-            => this.TryFindResource(velaKey, ActualThemeVariant, out object? value) && value is ISolidColorBrush brush
-                ? brush.Color
-                : null;
-    }
-
-    /// <summary>
-    /// 给这一段里的 LaTeX 公式上色。CSharpMath 的 <c>MathView</c> 吃不到类型选择器
-    /// (基类是泛型,StyleKey 对不上;实测连字面色的运行期样式都不生效),而它的
-    /// 默认色是黑的 —— 暗色主题下公式等于看不见。只能在每次渲染定稿后就地设。
-    /// </summary>
-    private void ApplyMathColors(MarkdownRenderer renderer)
-    {
-        foreach (MathView view in renderer.GetVisualDescendants().OfType<MathView>())
-        {
-            view.TextColor = _mathTextColor;
-            view.ErrorColor = _mathErrorColor;
-        }
     }
 
     /// <summary>Markdown 链接点击:只放行 http/https,交给宿主的默认浏览器打开。</summary>
@@ -3575,16 +3551,6 @@ public partial class ChatPanelView : UserControl
             {
                 MarkdownBuilder = _text,
                 CodeBlockColorTheme = owner._codeBlockTheme
-            };
-            // 公式控件是渲染时新建的,每次定稿后补一次颜色(见 ApplyMathColors)。
-            // LiveMarkdown 2.4.0 撤掉了 RenderedTextProjectionChanged 事件,改由
-            // RenderedTextProjection 属性发变更通知 —— 每次渲染定稿仍恰好来一次。
-            Host.PropertyChanged += (_, e) =>
-            {
-                if (e.Property == MarkdownRenderer.RenderedTextProjectionProperty)
-                {
-                    owner.ApplyMathColors(Host);
-                }
             };
             // 回复里的链接要能点开(远端路径 = 下载下来)—— 见 OnMarkdownLinkClicked
             Host.LinkClick += (_, e) => owner.OnMarkdownLinkClicked(e);

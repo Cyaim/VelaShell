@@ -89,7 +89,7 @@ public sealed class AiPlugin : IVelaPlugin
     /// <para>
     /// 面板是在 <b>UI 线程</b>上构造的(宿主把内容工厂排进 <c>Dispatcher.UIThread.InvokeAsync</c>,
     /// 见 <c>PluginUiApi.ShowPanelAsync</c>),而第一次构造会连带把 LiveMarkdown / Mermaid /
-    /// CSharpMath / Svg / Anthropic / OpenAI 这一串程序集从盘上读进来 —— 本插件目录下是
+    /// RaTeX / Svg / Anthropic / OpenAI 这一串程序集从盘上读进来 —— 本插件目录下是
     /// 三十来个 dll、三十多兆。文件缓存冷的时候这就是几秒钟的磁盘 IO,而且<b>整段压在 UI 线程上</b>:
     /// 表现就是"点开 AI 面板,主窗口直接变成未响应"。
     /// (实测同一台机器上,光是激活期要碰的那 5 个程序集,冷缓存 2925 ms、热缓存 28 ms ——
