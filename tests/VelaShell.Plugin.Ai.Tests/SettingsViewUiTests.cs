@@ -488,6 +488,66 @@ public sealed partial class SettingsViewUiTests
     [TestMethod]
     [DataRow("ANTHROPIC_API_KEY")]
     [DataRow("ANTHROPIC_AUTH_TOKEN")]
+    [DataRow(null)]
+    public void BaseUrlToAnotherOrigin_BlankKeyWithAnEmptyPrimaryStillGuardsTheMachineKey(string? variable)
+    {
+        OnUi(async () =>
+        {
+            string? apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+            string? authToken = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", null);
+            if (variable is not null) Environment.SetEnvironmentVariable(variable, "machine-secret");
+            await using var oldHost = new SseStub(AnthropicProbeAnswerSse);
+            await using var newHost = new SseStub(AnthropicProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider
+            {
+                ModelsExpanded = true,
+                BaseUrl = oldHost.BaseUrl,
+                DefaultProtocol = ChatProtocol.AnthropicMessages,
+                Models = [new AiModelConfig { Model = "m" }]
+            };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            string extra = await store.AddProviderApiKeyAsync(settings, provider, "old-extra");
+            await store.RemoveProviderApiKeyAsync(settings, provider, provider.Id);
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                // 主槽空着,只把第 2 把改成空格:探活不带任何已存的 Key,拦不拦只看本机环境变量 —— 设了就拦,没设照常测
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                EditProviderKey(view, extra).Text = "   ";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                string? status = view.GetControl<TextBlock>("StatusText").Text;
+                if (variable is not null)
+                {
+                    Assert.AreEqual(new Loc("en")["SetupTestNeedsNewOriginKey"], status, string.Join(", ", newHost.Authorizations));
+                    Assert.IsEmpty(newHost.Requests);
+                }
+                else
+                {
+                    Assert.HasCount(1, newHost.Requests, status);
+                }
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally
+            {
+                window.Close();
+                Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", apiKey);
+                Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", authToken);
+            }
+        });
+    }
+
+    [TestMethod]
+    [DataRow("ANTHROPIC_API_KEY")]
+    [DataRow("ANTHROPIC_AUTH_TOKEN")]
     public void BaseUrlToAnotherOrigin_KeylessAnthropicProviderDoesNotSendTheMachineKey(string variable)
     {
         OnUi(async () =>
@@ -717,6 +777,45 @@ public sealed partial class SettingsViewUiTests
                 delayed.Release();
                 await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(15));
                 Assert.HasCount(1, newHost.Requests);
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally { delayed.Release(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_ClickAfterEditingTheAddressDuringTheReadTestsTheNewAddress()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var firstHost = new SseStub(ProbeAnswerSse);
+            await using var secondHost = new SseStub(ProbeAnswerSse);
+            using var source = new TestPluginContext();
+            var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [own] };
+            var settings = new AiSettings { Providers = [provider] };
+            var delayed = new DelayedSecrets(source.Secrets, $"apikey:{own.Id}");
+            using var context = new TestPluginContext { Secrets = delayed };
+            var store = new AiSettingsStore(context);
+            await store.SaveAsync(settings);
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = firstHost.BaseUrl;
+                Task first = StartTestAsync(view);
+                await delayed.Started.WaitAsync(TimeSpan.FromSeconds(15));
+                // 第一击还在读已存 Key,用户改了地址再点:测的应是框里现在的地址,第一击作废,也不能两击都被吞掉
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = secondHost.BaseUrl;
+                Task second = StartTestAsync(view);
+                delayed.Release();
+                await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.IsEmpty(firstHost.Requests);
+                Assert.HasCount(1, secondHost.Requests, view.GetControl<TextBlock>("StatusText").Text);
                 Assert.IsEmpty(oldHost.Requests);
             }
             finally { delayed.Release(); window.Close(); }

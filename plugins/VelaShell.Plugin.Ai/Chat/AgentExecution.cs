@@ -368,8 +368,8 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure!).Throw();
             retrying?.Invoke(attempt + 1, failure!);
             string snippet = partial.ToString();
-            // 纯空白不算已确认正文:与空步骤一样原样重发,不写续接边界。
-            if (!string.IsNullOrWhiteSpace(snippet))
+            // 空答(只有空白也算空答)原样重发,不写续接边界;连接中断等其余补试照旧:收到过正文就续接。
+            if (failure is not HealthProbe.EmptyReplyException && snippet.Length > 0)
             {
                 // 不重放未完成调用或供应商推理;正文续接边界明确显示。
                 if (snippet.Length > 8000) snippet = snippet[^8000..];

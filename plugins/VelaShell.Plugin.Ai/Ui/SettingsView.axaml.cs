@@ -260,8 +260,11 @@ public partial class SettingsView : UserControl
     /// <summary>两击确认换源清 Key 的第一击;换了选择就作废(<see cref="ResetKeyEditor" />)。</summary>
     private KeyResetPrompt? _pendingKeyReset;
 
-    /// <summary>未保存的跨源「测试」正在读已存 Key:按钮要到探活开始才置灰,读完之前再点的那一下不算,免得连点测两次。</summary>
-    private bool _readingOriginKey;
+    /// <summary>
+    /// 供应商行每点一次「测试」领一个序号。未保存的跨源测试要先读已存 Key(按钮要到探活开始才置灰),
+    /// 读回来时已有更新的一击(连点、改了地址或新填了 Key 再点、换到别家再点),就让给那一击,免得测两次或测旧表单。
+    /// </summary>
+    private int _originKeyRead;
     private string? _lastKeyProbeModelId;
     private CancellationTokenSource _keyEditorCts = new();
     private CancellationTokenSource? _allKeyProbeCts;
@@ -2391,14 +2394,14 @@ public partial class SettingsView : UserControl
                 }
                 first = sameOrigin;
             }
+            // 每一击领一个序号:下面读已存 Key 要等,读回来时已有更新的一击就让给它(见 _originKeyRead)
+            int originKeyRead = ++_originKeyRead;
             // 地址换到别的源、还没保存:已存的 Key 属于旧地址,只许带表单里新填的那把去测。
             // 只敲了空格不算新填:探活带的仍是空凭据,Anthropic 协议下 SDK 会改用本机环境变量里的那把
             if (provider.Auth == AuthMethod.ApiKey && string.IsNullOrWhiteSpace(apiKeyOverride)
                 && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
                 && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl))
             {
-                // 上一击还在读已存 Key(按钮要到探活开始才置灰):连点的这一击不算,免得测两次
-                if (_readingOriginKey) return;
                 // 能替自带 Key 的首模型去测供应商新 Key 的:继承供应商 Key、填了模型 id、与新地址同源
                 AiModelConfig? Inheriting() => provider.Models.Find(config => !config.HasOwnApiKey
                     && !string.IsNullOrWhiteSpace(config.Model)
@@ -2420,7 +2423,6 @@ public partial class SettingsView : UserControl
                     // (见 ResolvePrimaryCredentialForProbeAsync,补充槽不跟去)。它还在就请用户先填新 Key;没有(无鉴权接入)才照常测
                     long version = _store.ProviderConfigurationVersion(provider);
                     bool keyFollows;
-                    _readingOriginKey = true;
                     try
                     {
                         keyFollows = !string.IsNullOrWhiteSpace(await _store.GetApiKeyAsync(first.HasOwnApiKey ? first.Id : provider.Id));
@@ -2428,12 +2430,11 @@ public partial class SettingsView : UserControl
                     catch (Exception ex)
                     {
                         _context.Log.Warn($"Reading the saved Key of '{provider.Id}' failed: {ex.Message}");
-                        if (editorRun == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
+                        if (editorRun == _editorRun && originKeyRead == _originKeyRead) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
                         return;
                     }
-                    finally { _readingOriginKey = false; }
-                    // 等机密期间换了选择:这次就不测了,免得把「测试中」挂到别的条目上
-                    if (editorRun != _editorRun) return;
+                    // 等机密期间换了选择,或者又点了一次(那一击按当时的表单自己测):这次就不测了
+                    if (editorRun != _editorRun || originKeyRead != _originKeyRead) return;
                     // 读的期间这家的配置变了(别处存了 Key、改了模型):刚读到的已不作数,按有 Key 会跟过去处理
                     keyFollows |= _store.ProviderConfigurationVersion(provider) != version;
                     // Anthropic 协议没有 Key 时,SDK 改用本机的 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN,一样会发往这个还没保存的地址

@@ -155,6 +155,18 @@ public sealed class AgentExecutionTests
     }
 
     [TestMethod]
+    public async Task WhitespaceBeforeADisconnect_StillContinuesFromTheReceivedText()
+    {
+        // 只有空答才原样重发;连接中断照旧按已收到的正文续接(那条规则早于空答补试,不跟着改)
+        var wire = new Wire((n, _) => n == 1 ? [new(ChatRole.Assistant, "\n")]
+            : [new(ChatRole.Assistant, "answer"), End(ChatFinishReason.Stop)], failOn: [1]);
+        using var client = new RecoveringChatClient(wire, new AgentExecution("run"), "[boundary]", delay: (_, _) => Task.CompletedTask);
+        await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) { }
+        Assert.HasCount(2, wire.Requests);
+        Assert.HasCount(3, wire.Requests[1], "断线后的补试带上已收到的正文与续接提示");
+    }
+
+    [TestMethod]
     public async Task RetriedStep_ReportsFailureKind_AndRecoveryOnce()
     {
         // 面板据此把「空答」与「连接失败」分开说,并在补试的这一步答上后撤掉重试提示
