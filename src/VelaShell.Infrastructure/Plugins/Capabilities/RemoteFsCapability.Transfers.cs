@@ -105,6 +105,8 @@ internal sealed partial class RemoteFsCapability
                     source.Dispose();
                     return Task.FromResult(raced);
                 }
+                // 会话也可能在这段时间里断开,而断线回调只停已登记的任务:登记前再查一次(只是查表,不阻塞)。
+                Resolve(sessionId);
                 ThrowIfUploadQuotaReached();
                 var stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
                 if (options.Timeout is { } budget) stop.CancelAfter(budget);
@@ -445,7 +447,7 @@ internal sealed partial class RemoteFsCapability
     private async Task RunUploadAsync(UploadOperation op, Guid session, RemoteUploadOptions options)
     {
         string temporary = Read(op).RemotePath + ".vela-upload-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-        bool slot = false, writing = false, committing = false;
+        bool slot = false, writing = false, committing = false, commitRejected = false;
         Task? remoteWrite = null;
         Task? commitTask = null;
         FileStream? diskSnapshot = null;
@@ -454,6 +456,10 @@ internal sealed partial class RemoteFsCapability
         var elapsed = new Stopwatch();
         using var execution = CancellationTokenSource.CreateLinkedTokenSource(op._stop.Token, op._permission?.Revocation ?? CancellationToken.None);
         CancellationToken ct = execution.Token;
+        // SFTP 没有撤回:提交请求一发出,服务端照样改名。停止只打断这边的等待,提交本身在停止之后再等一个宽限期的应答,
+        // 应答赶上了就按事实收尾,赶不上才是 Unknown。登记在 commitWait 之后声明,先于它释放。
+        using var commitWait = new CancellationTokenSource();
+        using CancellationTokenRegistration commitGrace = ct.Register(() => commitWait.CancelAfter(StopGracePeriod));
         using var heartbeatStop = new CancellationTokenSource();
         Task heartbeat = TransferHeartbeatAsync(op, heartbeatStop.Token);
         try
@@ -544,7 +550,7 @@ internal sealed partial class RemoteFsCapability
             DemandSnapshotAccess(op);
             ct.ThrowIfCancellationRequested();
             committing = true;
-            commitTask = sftp.CommitUploadAsync(session, temporary, Read(op).RemotePath, options.Overwrite, ct);
+            commitTask = sftp.CommitUploadAsync(session, temporary, Read(op).RemotePath, options.Overwrite, commitWait.Token);
             await commitTask.WaitAsync(ct).ConfigureAwait(false);
             Succeed();
         }
@@ -561,7 +567,7 @@ internal sealed partial class RemoteFsCapability
                 // 后端自己的失败原因比「等待被打断」有用;同步抛出的提交失败就是 ex 本身。
                 Exception cause = backend is { IsFaulted: true } ? backend.Exception!.InnerException ?? ex : ex;
                 // 只有收不到应答的提交才是 Unknown;根本没发出去或服务端明确拒绝,目标就确认没被提交。
-                bool commitRejected = committing && (commitTask is null or { IsFaulted: true }) && IsDefiniteCommitRejection(cause);
+                commitRejected = committing && (commitTask is null or { IsFaulted: true }) && IsDefiniteCommitRejection(cause);
                 FailUpload(op, ex, cause, writeStopped: remoteWrite is not { IsCompleted: false },
                     commitUnknown: committing && !commitRejected, commitRejected);
             }
@@ -601,8 +607,11 @@ internal sealed partial class RemoteFsCapability
                     }
                 }
             }
-            // 未确认写入/提交不删除、不开放恢复;确认无提交的残留才尽力清理。
-            if (writing && Read(op) is { IsSuccess: false, RemoteStopConfirmed: true, DestinationCommitConfirmedAbsent: true })
+            // 写入与提交到这里都已真正结束(上面等过了)。提交从没发出、或被服务端明确拒绝(迟于宽限期的拒绝也算),
+            // 临时文件就只是残留:不论发布时有没有赶上宽限期都尽力清掉,已发布的终态不改写。
+            // 提交可能已经发生(改名成功、应答被放弃、通道中断)就绝不删,也不开放恢复。
+            if (commitTask is { IsFaulted: true, Exception.InnerException: { } late } && IsDefiniteCommitRejection(late)) commitRejected = true;
+            if (writing && (!committing || commitRejected))
             {
                 Task? cleanupTask = null;
                 try
@@ -635,7 +644,7 @@ internal sealed partial class RemoteFsCapability
     /// <summary>
     /// 上传没能成功收尾时按事实定终态:写入任务已经结束(失败也好、取消也好,后端都已关了句柄)就是确认停写,
     /// 没提交过的临时文件随后清理;提交只有收不到应答才是 Unknown。停止原因按登记的那个分类,
-    /// 失败原因清洗后留给插件,完整异常写进宿主日志。
+    /// 失败原因清洗后留给插件,异常收成一行、限长后写进宿主日志。
     /// </summary>
     private void FailUpload(UploadOperation op, Exception ex, Exception cause, bool writeStopped, bool commitUnknown, bool commitRejected)
     {
@@ -717,15 +726,23 @@ internal sealed partial class RemoteFsCapability
 
     /// <summary>
     /// 失败原因进快照:只取异常消息,按不可信文本清洗(控制字符、双向控制符)并限长 —— 它会原样到达插件与模型;
-    /// 完整异常只写进宿主日志。
+    /// 异常类型、内层与堆栈只写进宿主日志。
     /// </summary>
     private static string DescribeCause(Exception ex) => PeerText.Sanitize(ex.Message);
 
-    /// <summary>非成功收尾写进宿主日志:插件拿到的说明是清洗、截断过的,完整异常(含内层)只留在这里。</summary>
+    /// <summary>宿主日志里收尾原因的长度上限:堆栈与超长消息不能把一行日志撑成一屏。</summary>
+    private const int LogCauseLimit = 1024;
+
+    /// <summary>
+    /// 非成功收尾写进宿主日志:插件拿到的说明只有清洗过的消息,异常本身(类型、内层与堆栈)留在这里 ——
+    /// 同样收成一行、清洗并限长:原样拼进去,消息里的换行就能在日志里伪造出另一条记录。
+    /// </summary>
     private void LogTransferEnd(UploadOperation op, RemoteTransferState state, string code, Exception cause)
     {
         RemoteTransferSnapshot snapshot = Read(op);
-        Trace.WriteLine($"[RemoteFs:{pluginId}] {snapshot.Direction} {snapshot.TransferId} ended {state} ({code}): {cause}");
+        // 各种换行(含 U+2028/U+2029,不少查看器把它们当换行)先换成空格,其余控制字符与双向控制符交给 PeerText 换成 ?
+        string text = PeerText.Sanitize(cause.ToString().ReplaceLineEndings(" "), LogCauseLimit);
+        Trace.WriteLine($"[RemoteFs:{pluginId}] {snapshot.Direction} {snapshot.TransferId} ended {state} ({code}): {text}");
     }
 
     private static async Task TransferHeartbeatAsync(UploadOperation op, CancellationToken ct)

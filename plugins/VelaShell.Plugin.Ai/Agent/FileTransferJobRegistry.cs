@@ -416,15 +416,16 @@ public sealed class FileTransferJobRegistry
     /// <summary>
     /// 仍在启动或宿主尚未报告终态的任务。MCP 闲置回收只为它们留着会话:已终结、停止未确认的
     /// Unknown/TimedOut 等多久都不会变,留着只会把会话名额占满;回收时释放会话照样 CancelAll。
+    /// 撤权后扣下的任务也不算:扣下时已向宿主发过取消,快照再也读不到,只会停在扣下前那份。
     /// </summary>
     internal bool HasUnfinishedTransfers(FileTransferRunScope scope)
     {
         lock (_gate) return scope._pendingStarts > 0
-            || _jobs.Values.Any(j => ReferenceEquals(j._scope, scope) && !j._snapshot.IsTerminal);
+            || _jobs.Values.Any(j => ReferenceEquals(j._scope, scope) && !j._withheld && !j._snapshot.IsTerminal);
     }
 
     /// <summary>
-    /// 本机路径上是否有尚未成功提交的下载:任一次仍可能在写(回执未到或丢失、未终结、停止未确认),
+    /// 本机路径上是否有尚未成功提交的下载:任一次仍可能在写(回执未到或丢失、宿主还没报终态),
     /// 或者最近一次真正开始过的下载没有以 Succeeded 收尾。宿主写随机临时文件、成功才原子改名,
     /// 在那之前目标处要么没有文件、要么是同名旧文件 —— send_file 两种都不该发。整个插件共享,链接下载也算。
     /// </summary>
@@ -435,21 +436,23 @@ public sealed class FileTransferJobRegistry
         {
             if (!_downloadTargets.TryGetValue(target, out List<StartReceipt>? attempts)) return false;
             if (attempts.Any(MayStillWrite)) return true;
-            // 走到这里,每一次要么已明确被拒(什么都没写),要么已拿到回执且停了;被拒的不改变结论
+            // 走到这里,每一次要么已明确被拒(什么都没写),要么已拿到回执且宿主已报终态;被拒的不改变结论
             StartReceipt? latest = attempts.LastOrDefault(a => a.Result.IsCompletedSuccessfully);
             return latest is not null && !(_jobs.TryGetValue(latest.Result.Result.TransferId, out Job? job)
                 && job._snapshot.IsSuccess);
         }
     }
 
-    // 调用方持有 _gate。明确的启动拒绝什么都没开始;其余启动失败与停止未确认一样,当作宿主可能还在写。
+    // 调用方持有 _gate。明确的启动拒绝什么都没开始;其余启动失败与未终结一样,当作宿主可能还在写。
+    // 宿主报了终态就不会再写目标:只有成功才提交,收尾只删自己的临时文件 —— 停止未确认的 Unknown/TimedOut
+    // 也一样(后端仍在写的只是它自己的临时文件)。它留下的同名旧文件由「最近一次须 Succeeded」挡住。
     private bool MayStillWrite(StartReceipt attempt)
     {
         Task<RemoteTransferSnapshot> result = attempt.Result;
         if (!result.IsCompleted) return true;
         if (!result.IsCompletedSuccessfully)
             return result.Exception?.InnerException is not { } failure || !IsDefiniteRejection(failure);
-        return !_jobs.TryGetValue(result.Result.TransferId, out Job? job) || NeedsCleanup(job._snapshot);
+        return !_jobs.TryGetValue(result.Result.TransferId, out Job? job) || !job._snapshot.IsTerminal;
     }
 
     private static bool IsDefiniteRejection(Exception ex)
@@ -561,7 +564,7 @@ public sealed class FileTransferRunScope : IAsyncDisposable
     public bool HasActiveJobs => _registry.HasActiveJobs(this);
     /// <summary>宿主尚未报告终态的真实任务，不受模型通知是否消费影响。</summary>
     public bool HasRunningTransfers => _registry.HasRunningTransfers(this);
-    /// <summary>仍在启动或尚未终结的任务;已终结但停止未确认的不算(MCP 闲置回收看它)。</summary>
+    /// <summary>仍在启动或尚未终结的任务;已终结但停止未确认的、撤权扣下的不算(MCP 闲置回收看它)。</summary>
     internal bool HasUnfinishedTransfers => _registry.HasUnfinishedTransfers(this);
     /// <summary>宿主逐任务可信上传审批被拒绝；不是普通传输失败。</summary>
     public bool HasDeniedExecution => _registry.HasDeniedExecution(this);

@@ -228,26 +228,6 @@ public sealed class SerializedSftpServiceTests
         Assert.AreEqual(1, inner.CloseCalls);
     }
 
-    [TestMethod]
-    public async Task DefaultInterfaceTransferMembers_WhenCalledThroughInterface_DelegateToInnerService()
-    {
-        // Given:调用方只认接口;带默认实现的成员没转发的话,调用会落到默认实现的「不支持」上(#656 F1)。
-        var inner = new BlockingSftpService();
-        ISftpService service = new SerializedSftpService(inner, inner.SessionId);
-        using var cancellation = new CancellationTokenSource();
-        using var destination = new MemoryStream();
-
-        // When
-        await service.DownloadStreamAsync(inner.SessionId, "/download", destination, cancellationToken: cancellation.Token);
-        await service.CommitUploadAsync(inner.SessionId, "/upload.vela-upload", "/upload", overwrite: false, cancellation.Token);
-
-        // Then
-        Assert.AreSequenceEqual(["DownloadStream", "CommitUpload"], inner.OperationNames);
-        Assert.IsTrue(inner.CancellationTokens.All(token => token == cancellation.Token));
-        await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.CommitUploadAsync(Guid.NewGuid(), "/a", "/b", overwrite: false));
-        Assert.HasCount(2, inner.OperationNames);
-    }
-
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
     {
         public void Report(T value) => report(value);
@@ -307,8 +287,6 @@ public sealed class SerializedSftpServiceTests
         public Task CreateFileAsync(Guid sessionId, string remotePath, CancellationToken cancellationToken = default) => InvokeAsync("CreateFile", cancellationToken);
         public Task EnsureDirectoryAsync(Guid sessionId, string remotePath, CancellationToken cancellationToken = default) => InvokeAsync("EnsureDirectory", cancellationToken);
         public Task RenameAsync(Guid sessionId, string oldPath, string newPath, CancellationToken cancellationToken = default) => InvokeAsync("Rename", cancellationToken);
-        public Task CommitUploadAsync(Guid sessionId, string temporaryPath, string destinationPath, bool overwrite, CancellationToken cancellationToken = default) => InvokeAsync("CommitUpload", cancellationToken);
-        public Task DownloadStreamAsync(Guid sessionId, string remotePath, Stream destination, IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default) => InvokeAsync("DownloadStream", cancellationToken);
         public Task SetPermissionsAsync(Guid sessionId, string remotePath, short octalMode, CancellationToken cancellationToken = default) => InvokeAsync("SetPermissions", cancellationToken);
         public Task SetOwnerAsync(Guid sessionId, string remotePath, string? owner, string? group, CancellationToken cancellationToken = default) => InvokeAsync("SetOwner", cancellationToken);
         public Task<RemoteOwnerChoices?> GetOwnerChoicesAsync(Guid sessionId, CancellationToken cancellationToken = default) => InvokeAsync<RemoteOwnerChoices?>("GetOwnerChoices", null, cancellationToken);

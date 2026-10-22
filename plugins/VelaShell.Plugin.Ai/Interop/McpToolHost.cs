@@ -49,7 +49,7 @@ internal sealed class McpToolHost : IAsyncDisposable
 
     /// <summary>
     /// 仍在启动或运行的传输不因外部模型暂时没有调用而被闲置回收。已终结、停止未确认的
-    /// Unknown/TimedOut 不再钉住会话 —— 否则攒满会话上限后 initialize 一律 503;回收照样 CancelAll。
+    /// Unknown/TimedOut 与撤权扣下的不再钉住会话 —— 否则攒满会话上限后 initialize 一律 503;回收照样 CancelAll。
     /// </summary>
     public bool HasActiveTransfers => _runScope.Transfers?.HasUnfinishedTransfers == true;
 

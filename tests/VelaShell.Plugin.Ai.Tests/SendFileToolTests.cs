@@ -287,31 +287,38 @@ public sealed class SendFileToolTests
         Assert.HasCount(1, sent);
     }
 
-    /// <summary>停止未确认的 Unknown 可能还在往这个路径写,之后哪怕重下成功也不发。</summary>
+    /// <summary>
+    /// 停止未确认的 Unknown/TimedOut 已是宿主终态:宿主只在成功时提交目标,收尾只删自己的随机临时文件,
+    /// 不会再往这个路径写。它是最近一次时同名旧文件照样不发;之后重下成功就放行,不能把这个路径永远封住。
+    /// </summary>
     [TestMethod]
-    public async Task AnUnconfirmedStop_KeepsTheTargetUnsendable()
+    public async Task AnUnconfirmedStop_DoesNotBlockTheTargetAfterALaterSuccess()
     {
-        using var context = new TestPluginContext();
-        string path = Downloaded(context, "app.log");
-        string session = RemoteFile(context, "/var/log/app.log");
-        bool first = true;
-        context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) =>
+        foreach (RemoteTransferState ended in new[] { RemoteTransferState.Unknown, RemoteTransferState.TimedOut })
         {
-            RemoteTransferSnapshot snapshot = first
-                ? Snapshot(id, remote, local, options.OperationId, RemoteTransferState.Unknown, stopConfirmed: false)
-                : Snapshot(id, remote, local, options.OperationId, RemoteTransferState.Succeeded);
-            first = false;
-            return Task.FromResult(snapshot);
-        };
-        List<string> sent = [];
-        await using AgentToolbox toolbox = WithSink(context, sent);
-        Dictionary<string, object?> download = new() { ["remotePath"] = "/var/log/app.log", ["sessionId"] = session };
+            using var context = new TestPluginContext();
+            string path = Downloaded(context, "app.log");
+            string session = RemoteFile(context, "/var/log/app.log");
+            bool first = true;
+            context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) =>
+            {
+                RemoteTransferSnapshot snapshot = first
+                    ? Snapshot(id, remote, local, options.OperationId, ended, stopConfirmed: false)
+                    : Snapshot(id, remote, local, options.OperationId, RemoteTransferState.Succeeded);
+                first = false;
+                return Task.FromResult(snapshot);
+            };
+            List<string> sent = [];
+            await using AgentToolbox toolbox = WithSink(context, sent);
+            Dictionary<string, object?> download = new() { ["remotePath"] = "/var/log/app.log", ["sessionId"] = session };
 
-        await InvokeAsync(toolbox, "download_remote_file", download);
-        await InvokeAsync(toolbox, "download_remote_file", download);
+            await InvokeAsync(toolbox, "download_remote_file", download);
+            Assert.Contains("Refused", await InvokeAsync(toolbox, path), ended.ToString());
 
-        Assert.Contains("Refused", await InvokeAsync(toolbox, path));
-        Assert.IsEmpty(sent);
+            await InvokeAsync(toolbox, "download_remote_file", download);
+            Assert.Contains("Sent", await InvokeAsync(toolbox, path), ended.ToString());
+            Assert.HasCount(1, sent, ended.ToString());
+        }
     }
 
     /// <summary>

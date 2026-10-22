@@ -519,6 +519,79 @@ public sealed class RemoteTransferTests
         }
     }
 
+    /// <summary>
+    /// 同一 OperationId 的两次启动并发:一次查过回执、还在锁外打开源时,另一次先登记了。后到的那次沿用
+    /// 先登记的回执、作废自己打开的句柄 —— 不因重复的 OperationId 抛错,也不登记第二个任务。
+    /// </summary>
+    [TestMethod]
+    public async Task ConcurrentStartWithSameOperationIdReusesTheReceiptRegisteredMeanwhile()
+    {
+        string file = CreateFile(8);
+        SshSession connected = _connections.GetSession(_session)!;
+        var asking = NewSignal();
+        var decision = new TaskCompletionSource<PluginPermissionDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(async _ => { asking.TrySetResult(); return await decision.Task; });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        var options = new RemoteUploadOptions { OperationId = "concurrent" };
+        RemoteTransferSnapshot? meanwhile = null;
+        int lookups = 0;
+        // 查会话是启动查过回执之后、去锁外打开源之前的最后一步。账本锁可重入:在这里同步跑完另一次同参数的启动,
+        // 等价于它恰好在本次查过回执、还没登记的空当里先登记了。
+        _connections.GetSession(_session).Returns(_ =>
+        {
+            if (Interlocked.Increment(ref lookups) == 1)
+                meanwhile = api.StartUploadAsync(_session.ToString(), file, "/target", options).Result;
+            return connected;
+        });
+        try
+        {
+            RemoteTransferSnapshot later = await api.StartUploadAsync(_session.ToString(), file, "/target", options);
+            Assert.IsNotNull(meanwhile);
+            Assert.AreEqual(meanwhile.TransferId, later.TransferId);
+            await asking.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.AreEqual(1, api.ActiveTransfers);
+            await prompt.Received(1).RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            decision.SetResult(PluginPermissionDecision.Deny);
+            Assert.AreEqual("permission-denied", (await Terminal(api, later.TransferId)).ErrorCode);
+            await WaitIdle(api);
+            // Windows 上源按拒写共享打开:作废的那个句柄要是没关,任务结束之后照样写不进去
+            if (OperatingSystem.IsWindows()) { using var write = new FileStream(file, FileMode.Open, FileAccess.Write); }
+        }
+        finally { decision.TrySetResult(PluginPermissionDecision.Deny); await WaitIdle(api); File.Delete(file); }
+    }
+
+    /// <summary>
+    /// 会话在启动查过它之后、登记任务之前断开(源在锁外打开的那段时间):断线回调只停已登记的任务,
+    /// 这一次不能照样登记、拿着已断开的会话去要审批。登记前再查一次会话,启动直接报会话不在,什么都不留下。
+    /// </summary>
+    [TestMethod]
+    public async Task SessionLostWhileOpeningSourceRejectsTheStartBeforeRegistering()
+    {
+        string file = CreateFile(8);
+        SshSession connected = _connections.GetSession(_session)!;
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(PluginPermissionDecision.Deny);
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        var options = new RemoteUploadOptions { OperationId = "lost-session" };
+        try
+        {
+            // 启动时那一次查询会话还连着;之后的查询都已断开
+            _connections.GetSession(_session).Returns(connected, (SshSession?)null);
+            await Assert.ThrowsExactlyAsync<PluginSessionNotFoundException>(() => api.StartUploadAsync(_session.ToString(), file, "/target", options));
+            Assert.AreEqual(0, api.ActiveTransfers);
+            await prompt.DidNotReceive().RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            // 没留下回执:会话恢复后同一 OperationId 照常启动一个新任务,而不是重取一张注定失败的旧回执
+            _connections.GetSession(_session).Returns(connected);
+            RemoteTransferSnapshot retried = await api.StartUploadAsync(_session.ToString(), file, "/target", options);
+            Assert.AreEqual("permission-denied", (await Terminal(api, retried.TransferId)).ErrorCode);
+            await prompt.Received(1).RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        }
+        finally { await WaitIdle(api); File.Delete(file); }
+    }
+
     [TestMethod]
     public async Task SessionDisconnectKeepsTaskQueryableAndDoesNotPretendRemoteStopped()
     {
@@ -626,6 +699,46 @@ public sealed class RemoteTransferTests
             Assert.Contains(start.TransferId, trace.Text, StringComparison.Ordinal);
             Assert.Contains(nameof(VelaSftpPermissionDeniedException), trace.Text, StringComparison.Ordinal);
             Assert.Contains("quota-7f3a", trace.Text, StringComparison.Ordinal);
+        }
+        finally { await WaitIdle(api); File.Delete(file); }
+    }
+
+    /// <summary>
+    /// 收尾原因进宿主日志也只占一行:原样拼进去,消息里的换行就能在日志里伪造出另一条记录,
+    /// 堆栈与超长消息还会把一行撑成一屏。收成一行、去掉控制字符并限长,排查要用的类型与原话仍在这一行里。
+    /// </summary>
+    [TestMethod]
+    public async Task TransferEndIsLoggedAsOneBoundedSanitizedLine()
+    {
+        string file = CreateFile(64);
+        const string forged = "[RemoteFs:test.transfer] Upload 00 ended Succeeded (forged)";
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ =>
+            {
+                await Task.Yield();
+                // 真抛出过的异常带着多行堆栈;消息里另有换行、行分隔符、终端转义与一大段内容
+                throw new IOException("write failed: quota-7f3a \u001b]52;c;cGF5bG9hZA==\u0007\n" + forged + (char)0x2028 + forged + "\r\n" + new string('x', 64 * 1024),
+                    new VelaSftpPermissionDeniedException("Permission denied"));
+            });
+        using var trace = new TraceCapture();
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        try
+        {
+            RemoteTransferSnapshot start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "multi-line-cause" });
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual(RemoteTransferState.Failed, done.State, done.ErrorMessage);
+            await WaitIdle(api);
+            // 查看器多半也把 U+2028/U+2029/NEL 当换行
+            string[] lines = trace.Text.Split(['\r', '\n', (char)0x2028, (char)0x2029, '\u0085'], StringSplitOptions.RemoveEmptyEntries);
+            string line = lines.Single(l => l.Contains(start.TransferId, StringComparison.Ordinal));
+            Assert.IsFalse(lines.Any(l => l.Contains("(forged)", StringComparison.Ordinal) && !l.Contains(start.TransferId, StringComparison.Ordinal)),
+                "原因里的换行不能在日志里伪造出另一条记录");
+            Assert.Contains(nameof(IOException), line, StringComparison.Ordinal);
+            Assert.Contains("quota-7f3a", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("\u001b", trace.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain("\u0007", trace.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain(new string('x', 4096), trace.Text, StringComparison.Ordinal);
+            Assert.IsLessThan(2048, line.Length);
         }
         finally { await WaitIdle(api); File.Delete(file); }
     }
@@ -842,6 +955,145 @@ public sealed class RemoteTransferTests
             Assert.AreEqual(1, api.ActiveTransfers);
         }
         finally { release.TrySetResult(); await WaitIdle(api); File.Delete(file); }
+    }
+
+    /// <summary>
+    /// 后端照常理会取消,只是收尾(排空在途写入、发 CLOSE)比宽限期还久:先按停写未确认发布 Unknown。
+    /// 等它真正停下,从没提交过的临时文件照样要清掉 —— 不能因为发布时没赶上宽限期,就永远留在服务器上。
+    /// </summary>
+    [TestMethod]
+    public async Task LateWriteStopStillCleansTemporaryOnceTheBackendEnds()
+    {
+        string file = CreateFile(64);
+        var started = NewSignal();
+        var drained = NewSignal();
+        string? temporary = null;
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            {
+                temporary = call.ArgAt<string>(2);
+                started.TrySetResult();
+                try { await Task.Delay(Timeout.InfiniteTimeSpan, call.ArgAt<CancellationToken>(7)); }
+                catch (OperationCanceledException)
+                {
+                    await drained.Task;
+                    throw;
+                }
+            });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads()) { StopGracePeriod = UncooperativeGrace };
+        try
+        {
+            var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "late-stop" });
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await api.CancelTransferAsync(start.TransferId, 1);
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual(RemoteTransferState.Unknown, done.State, done.ErrorMessage);
+            Assert.IsFalse(done.RemoteStopConfirmed);
+            Assert.IsTrue(done.DestinationCommitConfirmedAbsent);
+            await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+            drained.TrySetResult();
+            await WaitIdle(api);
+            await _sftp.Received(1).DeleteAsync(_session, temporary!, Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            Assert.AreEqual(RemoteTransferState.Unknown, (await api.GetTransferAsync(start.TransferId)).State, "已发布的终态不改写");
+        }
+        finally { drained.TrySetResult(); await WaitIdle(api); File.Delete(file); }
+    }
+
+    /// <summary>
+    /// 提交的结局来得比宽限期还晚:先按提交未确认发布 Unknown,等它真有了结局再决定临时文件 ——
+    /// 服务端明确拒绝(目标没被提交)就清掉;改名成功,或应答被放弃(服务端照样可能已经改名)都绝不删。
+    /// </summary>
+    [TestMethod]
+    [DataRow("rejected", true)]
+    [DataRow("committed", false)]
+    [DataRow("abandoned", false)]
+    public async Task LateCommitOutcomeDecidesWhetherTemporaryIsCleaned(string outcome, bool cleaned)
+    {
+        string file = CreateFile(8);
+        var committing = NewSignal();
+        var reply = NewSignal();
+        string? hash = null, temporary = null;
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            {
+                temporary = call.ArgAt<string>(2);
+                hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1)));
+            });
+        _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = hash }));
+        _sftp.CommitUploadAsync(_session, Arg.Any<string>(), "/target", false, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                committing.TrySetResult();
+                // 「放弃」的后端理会自己的令牌、不再等应答;另两种不理,应答来得比宽限期晚
+                await (outcome == "abandoned" ? reply.Task.WaitAsync(call.ArgAt<CancellationToken>(4)) : reply.Task);
+                if (outcome == "rejected") throw new VelaSftpOperationException("Failure: /target (server: destination exists)");
+            });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads()) { StopGracePeriod = UncooperativeGrace };
+        try
+        {
+            var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "late-commit-" + outcome });
+            await committing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await api.CancelTransferAsync(start.TransferId, 1);
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual(RemoteTransferState.Unknown, done.State, done.ErrorMessage);
+            Assert.AreEqual("commit-unknown", done.ErrorCode);
+            Assert.IsFalse(done.DestinationCommitConfirmedAbsent);
+            reply.TrySetResult();
+            await WaitIdle(api);
+            if (cleaned) await _sftp.Received(1).DeleteAsync(_session, temporary!, Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+            else await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally { reply.TrySetResult(); await WaitIdle(api); File.Delete(file); }
+    }
+
+    /// <summary>
+    /// SFTP 没有撤回:提交请求一发出,服务端照样改名。取消只打断等待,提交本身再等一个宽限期的应答,
+    /// 应答赶上了就按应答收尾 —— 改名成功就是成功;明确被拒就确认目标未提交、清理临时文件。不能一律记成 commit-unknown。
+    /// </summary>
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task CommitReplyArrivingSoonAfterCancelDecidesTheOutcome(bool accepted)
+    {
+        string file = CreateFile(8);
+        var committing = NewSignal();
+        var reply = NewSignal();
+        string? hash = null, temporary = null;
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            {
+                temporary = call.ArgAt<string>(2);
+                hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1)));
+            });
+        _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = hash }));
+        // 与真实管线一样理会自己的令牌:令牌先到就不再等应答,应答先到就照实返回
+        _sftp.CommitUploadAsync(_session, Arg.Any<string>(), "/target", false, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                committing.TrySetResult();
+                await reply.Task.WaitAsync(call.ArgAt<CancellationToken>(4));
+                if (!accepted) throw new VelaSftpOperationException("Failure: /target (server: destination exists)");
+            });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        try
+        {
+            var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "commit-reply" });
+            await committing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await api.CancelTransferAsync(start.TransferId, 1);
+            await Task.Delay(50);
+            reply.TrySetResult();
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            await WaitIdle(api);
+            Assert.AreEqual(accepted ? RemoteTransferState.Succeeded : RemoteTransferState.Cancelled, done.State, done.ErrorMessage);
+            Assert.IsTrue(done.RemoteStopConfirmed);
+            Assert.AreEqual(!accepted, done.DestinationCommitConfirmedAbsent);
+            if (accepted) await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+            else await _sftp.Received(1).DeleteAsync(_session, temporary!, Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally { reply.TrySetResult(); await WaitIdle(api); File.Delete(file); }
     }
 
     [TestMethod]
