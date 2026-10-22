@@ -151,6 +151,41 @@ public sealed class DiagnosticBundleTests : IDisposable
     }
 
     [TestMethod]
+    public void Redactor_HonoursEscapedQuotesAndEscapedJsonKeys()
+    {
+        // 值里转义过的引号不算收尾;JSON 字符串里再套一层 JSON(异常消息常见)时键名两边是 \"
+        var redactor = new DiagnosticRedactor([], [], null, null, null);
+        Assert.AreEqual("{\"password\":\"<redacted>\"}", redactor.Redact("{\"password\":\"p\\\"ss123\"}"));
+        Assert.AreEqual("failed: {\\\"client_secret\\\":\\\"<redacted>\\\"}",
+            redactor.Redact("failed: {\\\"client_secret\\\":\\\"abc-123\\\"}"));
+    }
+
+    [TestMethod]
+    public void Redactor_StaysLinearOnLongBlankRunsBeforeANumber()
+    {
+        // IPv4 的版本号豁免是往回看的:两段可变长的空白挨着时,一长串空白后面跟个数字就会平方级地回溯
+        static TimeSpan Fastest(int blanks)
+        {
+            string text = new string(' ', blanks) + "10.0.0.1";
+            TimeSpan best = TimeSpan.MaxValue;
+            for (int i = 0; i < 3; i++)
+            {
+                long start = Stopwatch.GetTimestamp();
+                _ = new DiagnosticRedactor([], [], null, null, null).Redact(text);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(start);
+                if (elapsed < best) best = elapsed;
+            }
+            return best;
+        }
+
+        TimeSpan small = Fastest(20_000);
+        TimeSpan large = Fastest(80_000);
+
+        Assert.IsLessThan(TimeSpan.FromMilliseconds(500), small, $"20 000 个空白用了 {small}");
+        Assert.IsLessThan(small * 8 + TimeSpan.FromMilliseconds(50), large, $"20 000 个用了 {small},80 000 个用了 {large}:应随长度线性增长");
+    }
+
+    [TestMethod]
     public void Redactor_StaysLinearOnLongRunsOfKeyLikeCharacters()
     {
         // 一长串全是「名字」里允许的字符、处处是关键字、末尾却没有分隔符:回溯式的写法在这里是平方乃至立方级

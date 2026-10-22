@@ -19,7 +19,7 @@ namespace VelaShell.Services;
 /// 紧挨着汉字的令牌就认不出了)。规则(大小写不敏感):
 /// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 的
 /// <c>名字=值</c>、<c>名字: 值</c>(含 JSON 与 YAML 的写法、JSON 里转义过的 <c>\"名字\":</c>;名字与分隔符之间允许 <c>grep --color</c>
-/// 插进来的颜色序列,分隔符与值之间允许 jq、bat 这类工具给值上的色)只换值,双引号串认反斜杠转义;
+/// 插进来的颜色序列,分隔符与值之间允许 jq、bat 这类工具给值上的色,以及 grep 高亮收尾的 <c>ESC[K</c>)只换值,双引号串认反斜杠转义;
 /// <c>Bearer</c> / <c>Basic</c> 后面的凭据;PEM 私钥块的正文(写在一行里的,BEGIN 与 END 之间那段);几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、
 /// GitHub <c>ghp_…</c> 一类、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。宁可多遮,不放过。
 /// </para>
@@ -562,7 +562,7 @@ public sealed partial class SessionOutputMasker
     /// <summary>
     /// <c>名字=值</c> / <c>名字: 值</c>:名字里带口令一类的词,值是引号串(双引号认反斜杠转义,含 JSON 里转义过的 <c>\"…\"</c>)
     /// 或到空白、引号、逗号、分号、控制字符为止的一段。名字与分隔符之间允许颜色序列(<c>grep --color</c> 只给匹配到的名字上色),
-    /// 分隔符与值之间也允许(jq、bat 给值上色)。值为空的(<c>Password: </c> 提示)不动。
+    /// 分隔符与值之间也允许(jq、bat 给值上色;grep 的高亮把分隔符一起框住时,后面跟的是 <c>ESC[m ESC[K</c>)。值为空的(<c>Password: </c> 提示)不动。
     /// 已收到内容的末尾停在一个没收尾的引号串里时走 <c>open</c> 那一支,调用方据此把它当成没完的值扣下。
     /// </summary>
     /// <remarks>
@@ -570,7 +570,7 @@ public sealed partial class SessionOutputMasker
     /// 旧写法在关键词前后各挂一个可回溯的 <c>[A-Za-z0-9_.\-]*</c>,4 KB 的 <c>tokentoken…</c> 就能把它拖上半分钟。
     /// 转义过的 JSON 串里,<c>\\\"</c> 与 <c>\\\\</c> 是里层的转义,不算收尾。
     /// </remarks>
-    [GeneratedRegex("""(?<![A-Za-z0-9_.\-])(?>[A-Za-z0-9_.\-]*?(?:password|passwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential))(?>[A-Za-z0-9_.\-]*)(?:\\?["'])?(?>(?:\x1b\[[0-9;]*[A-Za-z])*[ \t]*)[:=](?>(?:[ \t]|\x1b\[[0-9;]*m)*)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})\z|[^ "',;\x00-\x1f\x7f]+)""",
+    [GeneratedRegex("""(?<![A-Za-z0-9_.\-])(?>[A-Za-z0-9_.\-]*?(?:password|passwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential))(?>[A-Za-z0-9_.\-]*)(?:\\?["'])?(?>(?:\x1b\[[0-9;]*[A-Za-z])*[ \t]*)[:=](?>(?:[ \t]|\x1b\[[0-9;]*[A-Za-z])*)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})\z|[^ "',;\x00-\x1f\x7f]+)""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex KeyValue();
 

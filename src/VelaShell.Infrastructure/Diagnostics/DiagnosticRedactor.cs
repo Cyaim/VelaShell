@@ -136,9 +136,10 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
         text = SecretAssignment().Replace(text, match =>
         {
             Count("secret");
-            // 值带引号的,引号留着:JSON 还是 JSON
+            // 值带引号的,引号留着:JSON 还是 JSON(字符串里套的 JSON 是 \"…\",照样留着转义)
             string value = match.Groups["value"].Value;
-            string masked = value[0] is '"' or '\'' ? $"{value[0]}<redacted>{value[0]}" : "<redacted>";
+            string masked = value.StartsWith("\\\"", StringComparison.Ordinal) ? "\\\"<redacted>\\\""
+                : value[0] is '"' or '\'' ? $"{value[0]}<redacted>{value[0]}" : "<redacted>";
             return match.Groups["key"].Value + match.Groups["sep"].Value + masked;
         });
         text = PrefixedToken().Replace(text, _ =>
@@ -234,7 +235,7 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
     /// 先用前瞻确认这一段名字里有关键字,再用原子组把整段一次吃下、不回吐:一长串像名字的字符只扫一遍,不会回溯成平方级。
     /// <c>PublicKeyToken</c> 是程序集强名称里公开的那一段,崩溃记录里到处都是,不换。
     /// </remarks>
-    [GeneratedRegex("""(?<key>(?<![A-Za-z0-9_.\-])(?!PublicKeyToken(?![A-Za-z0-9_.\-]))(?=[A-Za-z0-9_.\-]*?(?i:password|passwd|pwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential))(?>[A-Za-z0-9_.\-]+)["']?)(?<sep>[ \t]*[:=][ \t]*)(?!["']?<redacted>)(?<value>"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;"']+)""",
+    [GeneratedRegex("""(?<key>(?<![A-Za-z0-9_.\-])(?!PublicKeyToken(?![A-Za-z0-9_.\-]))(?=[A-Za-z0-9_.\-]*?(?i:password|passwd|pwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential))(?>[A-Za-z0-9_.\-]+)(?:\\?["'])?)(?<sep>[ \t]*[:=][ \t]*)(?!\\?["']?<redacted>)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|[^\s,;"']+)""",
         RegexOptions.CultureInvariant)]
     private static partial Regex SecretAssignment();
 
@@ -262,7 +263,7 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
     /// IPv4。句末的句号不挡(<c>closed by 10.0.0.5.</c>)。四段的版本号不是 IP:<c>Version=12.1.4.0</c>(崩溃记录里的程序集名)、
     /// <c>v1.2.3.4</c>,以及启动横幅与崩溃记录开头的 <c>VelaShell 0.0.1.0</c>(见 <see cref="DiagnosticLog" />)。
     /// </summary>
-    [GeneratedRegex(@"(?<![\d.]|[vV]|(?i:version)[ \t]*[=:]?[ \t]*|VelaShell )(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?!\d|\.\d)",
+    [GeneratedRegex(@"(?<![\d.]|[vV]|(?i:version)[ \t]{0,3}[=:]?[ \t]{0,3}|VelaShell )(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?!\d|\.\d)",
         RegexOptions.CultureInvariant)]
     private static partial Regex IPv4();
 

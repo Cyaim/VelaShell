@@ -53,6 +53,10 @@ public sealed class SessionOutputMaskerTests
         ["grep-color",
             "\u001b[01;31m\u001b[KGITHUB_TOKEN\u001b[m\u001b[K=plain-value-1\n",
             "\u001b[01;31m\u001b[KGITHUB_TOKEN\u001b[m\u001b[K=***\n", "plain-value-1"],
+        // GNU grep 的高亮连分隔符一起框住(grep 'PASSWORD='):分隔符后面跟的是 ESC[m ESC[K,不只是颜色序列
+        ["grep-color-to-separator",
+            "DB_\u001b[01;31m\u001b[KPASSWORD=\u001b[m\u001b[Khunter2\n",
+            "DB_\u001b[01;31m\u001b[KPASSWORD=\u001b[m\u001b[K***\n", "hunter2"],
         ["jq", Jq("\"hunter2\""), Jq("\"***\""), "hunter2"],
         ["bat", Bat("hunter2"), Bat("***"), "hunter2"],
         ["bearer", "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig\r\n", "Authorization: Bearer ***\r\n", "eyJhbGciOiJIUzI1NiJ9.payload.sig"],
