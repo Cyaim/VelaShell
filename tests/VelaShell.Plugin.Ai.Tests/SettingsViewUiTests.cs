@@ -502,6 +502,56 @@ public sealed partial class SettingsViewUiTests
     }
 
     [TestMethod]
+    [DataRow("ANTHROPIC_API_KEY")]
+    [DataRow("ANTHROPIC_AUTH_TOKEN")]
+    public void BaseUrlToAnotherOrigin_BlankTypedKeyDoesNotLetTheMachineKeyOut(string variable)
+    {
+        OnUi(async () =>
+        {
+            string? apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+            string? authToken = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", null);
+            Environment.SetEnvironmentVariable(variable, "machine-secret");
+            await using var oldHost = new SseStub(AnthropicProbeAnswerSse);
+            await using var newHost = new SseStub(AnthropicProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider
+            {
+                ModelsExpanded = true,
+                BaseUrl = oldHost.BaseUrl,
+                DefaultProtocol = ChatProtocol.AnthropicMessages,
+                Models = [new AiModelConfig { Model = "m" }]
+            };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                // 主槽里改成只有空格:算不上新填的 Key。探活带的是空白凭据,SDK 会改用本机环境变量里的那把发去这个还没保存的地址
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                EditProviderKey(view, provider.Id).Text = "   ";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(new Loc("en")["SetupTestNeedsNewOriginKey"], view.GetControl<TextBlock>("StatusText").Text,
+                    string.Join(", ", newHost.Authorizations));
+                Assert.IsEmpty(newHost.Requests);
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally
+            {
+                window.Close();
+                Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", apiKey);
+                Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", authToken);
+            }
+        });
+    }
+
+    [TestMethod]
     public void BaseUrlToAnotherOrigin_KeylessAnthropicProviderWithoutAMachineKeyStillTests()
     {
         OnUi(async () =>

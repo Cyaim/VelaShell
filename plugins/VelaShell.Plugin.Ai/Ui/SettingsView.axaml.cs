@@ -2391,8 +2391,9 @@ public partial class SettingsView : UserControl
                 }
                 first = sameOrigin;
             }
-            // 地址换到别的源、还没保存:已存的 Key 属于旧地址,只许带表单里新填的那把去测
-            if (provider.Auth == AuthMethod.ApiKey && apiKeyOverride is null
+            // 地址换到别的源、还没保存:已存的 Key 属于旧地址,只许带表单里新填的那把去测。
+            // 只敲了空格不算新填:探活带的仍是空凭据,Anthropic 协议下 SDK 会改用本机环境变量里的那把
+            if (provider.Auth == AuthMethod.ApiKey && string.IsNullOrWhiteSpace(apiKeyOverride)
                 && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
                 && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl))
             {
