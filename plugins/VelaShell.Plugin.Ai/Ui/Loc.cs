@@ -46,6 +46,10 @@ public sealed class Loc(string locale)
         => window != 128000 || defaultWindow == false ? ""
             : this[defaultWindow == true ? "ContextWindowDefaultHint" : "ContextWindowUnverifiedHint"];
 
+    /// <summary>换源清掉了模型自带的 Key 就逐个点名接在提示后面:它们不会改用供应商的新 Key,要各自重填。</summary>
+    public string WithClearedModelKeys(string text, IReadOnlyCollection<string> models)
+        => models.Count == 0 ? text : text + "\n" + F("SetupModelKeysCleared", string.Join(", ", models));
+
     //                                 en, zh-Hans, zh-Hant, ja, ko
     private static readonly Dictionary<string, string[]> Table = new()
     {
@@ -319,10 +323,11 @@ public sealed class Loc(string locale)
         ["SetupApiKeyOrdinal"] = ["Key {0}", "第 {0} 把 Key", "第 {0} 把 Key", "Key {0}", "Key {0}"],
         ["SetupApiKeyActive"] = ["Currently in use", "当前使用", "目前使用", "現在使用中", "현재 사용 중"],
         ["SetupRemoveApiKeyConfirm"] = ["Click again to remove Key {0}", "再次点击移除第 {0} 把 Key", "再次點擊移除第 {0} 把 Key", "もう一度クリックして Key {0} を削除", "다시 클릭하여 Key {0} 제거"],
-        ["SetupBaseUrlKeyResetConfirm"] = ["The Base URL now points to another server. Saving removes this provider's {0} saved Key(s) so they aren't sent there. Click again to confirm.", "Base URL 换到了另一台服务器：保存会清除这家供应商已存的 {0} 把 Key，免得发往新地址。再点一次确认。", "Base URL 換到了另一台伺服器：儲存會清除這家供應商已存的 {0} 把 Key，避免傳往新位址。再點一次確認。", "Base URL が別のサーバーを指しています。新しいアドレスへ送られないよう、保存するとこのプロバイダーに保存済みの Key {0} 件を削除します。もう一度クリックして確定してください。", "Base URL이 다른 서버를 가리킵니다. 새 주소로 전송되지 않도록 저장하면 이 공급자에 저장된 Key {0}개를 제거합니다. 다시 클릭하여 확인하세요."],
+        ["SetupBaseUrlKeyResetConfirm"] = ["The Base URL now points to another server (scheme, host or port changed). Saving removes this provider's {0} saved Key(s) so they aren't sent there. Click again to confirm.", "Base URL 换到了另一台服务器（协议、主机或端口变了）：保存会清除这家供应商已存的 {0} 把 Key，免得发往新地址。再点一次确认。", "Base URL 換到了另一台伺服器（協定、主機或連接埠變了）：儲存會清除這家供應商已存的 {0} 把 Key，避免傳往新位址。再點一次確認。", "Base URL が別のサーバー(スキーム・ホスト・ポートのいずれかが変更)を指しています。新しいアドレスへ送られないよう、保存するとこのプロバイダーに保存済みの Key {0} 件を削除します。もう一度クリックして確定してください。", "Base URL이 다른 서버(스킴, 호스트 또는 포트 변경)를 가리킵니다. 새 주소로 전송되지 않도록 저장하면 이 공급자에 저장된 Key {0}개를 제거합니다. 다시 클릭하여 확인하세요."],
         ["SetupSavedKeysCleared"] = ["Saved. The previous Keys were removed; enter a Key for the new server.", "已保存。原有 Key 已清除，请填入新服务器的 Key。", "已儲存。原有 Key 已清除，請填入新伺服器的 Key。", "保存しました。以前の Key は削除しました。新しいサーバーの Key を入力してください。", "저장되었습니다. 이전 Key를 제거했습니다. 새 서버의 Key를 입력하세요."],
         ["SetupSavedOtherKeysCleared"] = ["Saved. The new Key was kept; the other Keys for the previous server were removed.", "已保存。新 Key 已保留，旧地址的其余 Key 已清除。", "已儲存。新 Key 已保留，舊位址的其餘 Key 已清除。", "保存しました。新しい Key は残し、以前のサーバー用のほかの Key は削除しました。", "저장되었습니다. 새 Key는 유지하고 이전 서버용 나머지 Key는 제거했습니다."],
         ["SetupTestNeedsNewOriginKey"] = ["The Base URL points to another server, so testing won't send the saved Keys. Enter a Key for the new server first.", "Base URL 换到了另一台服务器，测试不会带上已存的 Key。请先填入新服务器的 Key。", "Base URL 換到了另一台伺服器，測試不會帶上已存的 Key。請先填入新伺服器的 Key。", "Base URL が別のサーバーを指しているため、テストでは保存済みの Key を送信しません。先に新しいサーバーの Key を入力してください。", "Base URL이 다른 서버를 가리키므로 테스트에 저장된 Key를 보내지 않습니다. 먼저 새 서버의 Key를 입력하세요."],
+        ["SetupModelKeysCleared"] = ["These models used their own Key, which was removed with the previous server's Keys; enter a new one for each: {0}", "以下模型原先用自带 Key，已随旧地址的 Key 一并清除，请分别重新填入：{0}", "以下模型原先用自帶 Key，已隨舊位址的 Key 一併清除，請分別重新填入：{0}", "次のモデルは独自の Key を使っていたため、以前のサーバーの Key とあわせて削除しました。それぞれ新しい Key を入力してください:{0}", "다음 모델은 자체 Key를 사용하고 있어 이전 서버의 Key와 함께 제거했습니다. 각각 새 Key를 입력하세요: {0}"],
         ["SetupBalanceApiKeys"] = ["Rotate multiple API Keys", "轮流使用多个 API Key", "輪流使用多個 API Key", "複数の API Key を順番に使用", "여러 API Key 번갈아 사용"],
         ["SetupBalanceApiKeysHint"] = ["Rotate non-cooling Keys for each chat turn's first send; HTTP requests, tokens and costs are not guaranteed to be balanced. Failover remains enabled when off.", "每轮聊天首发轮转非冷却 Key，不保证 HTTP 请求数/token/费用均摊；关闭仍会故障转移", "每輪聊天首次傳送輪替非冷卻 Key，不保證 HTTP 請求數/token/費用均攤；關閉仍會故障轉移", "各ターンの初回送信で冷却中でない Key を切替。HTTP リクエスト数・token・費用の均等化は保証しません。オフでもフェイルオーバーは有効です。", "각 대화 턴의 첫 전송에 대기 중이 아닌 Key를 순환합니다. HTTP 요청 수/token/비용 균등 분배는 보장하지 않으며 꺼도 장애 전환은 유지됩니다."],
         ["SetupKeyEdit"] = ["Edit Key draft", "暂存 Key 修改", "暫存 Key 修改", "Key の変更を下書き", "Key 변경 임시 저장"],
