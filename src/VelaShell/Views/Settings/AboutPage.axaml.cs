@@ -69,21 +69,30 @@ public partial class AboutPage : UserControl
         {
             return; // 用户取消了,不算失败,也不用回显。
         }
+        await ExportDiagnosticsToAsync(viewModel, button, path);
+    });
+
+    /// <summary>选好位置之后的那一段:写包,结果回显在按钮下面。测试从这里进,绕开系统的保存对话框。</summary>
+    internal static async Task ExportDiagnosticsToAsync(SettingsViewModel viewModel, Button button, string path)
+    {
+        // 上一次的「已保存到 …」先清掉:这次还没出结果、或者失败了,都不能让旧路径留在页面上冒充这一次
+        viewModel.DiagnosticsStatus = string.Empty;
         button.IsEnabled = false;
         try
         {
             DiagnosticBundleResult result = await viewModel.ExportDiagnosticsAsync(path);
             viewModel.DiagnosticsStatus = Strings.Format("SetAbout_ExportDiagnosticsDone", path, result.LogFiles);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // 不只 IO 错:读连接配置、脱敏也会抛别的。漏给 FireAndForget 只进日志,用户看到的是点了没反应
             viewModel.DiagnosticsStatus = Strings.Format("SetAbout_ExportDiagnosticsFailed", ex.Message);
         }
         finally
         {
             button.IsEnabled = true;
         }
-    });
+    }
 
     /// <summary>点击依赖项目名/许可证时,用系统默认浏览器打开对应链接(URL 存放在控件 Tag)。</summary>
     private void OnOpenLink(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>

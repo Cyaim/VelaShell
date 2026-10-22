@@ -73,4 +73,36 @@ public sealed class AboutPageDiagnosticsUiTests
             return true;
         }, CancellationToken.None).GetAwaiter().GetResult();
     }
+
+    [TestMethod]
+    public void Export_ClearsThePreviousResultFirstAndShowsFailuresOfAnyKind()
+    {
+        _session.Dispatch(async () =>
+        {
+            var profiles = new TaskCompletionSource<List<SessionProfile>>();
+            ISessionRepository sessions = Substitute.For<ISessionRepository>();
+            sessions.GetAllSessionsAsync().Returns(profiles.Task);
+            ISettingsService settings = Substitute.For<ISettingsService>();
+            settings.GetSettingsAsync().Returns(_ => Task.FromResult(new AppSettings()));
+            var viewModel = new SettingsViewModel(settings, Substitute.For<IThemeService>(), sessionRepository: sessions)
+            {
+                DiagnosticsStatus = Strings.Format("SetAbout_ExportDiagnosticsDone", @"C:\Downloads\old.zip", 3)
+            };
+            var button = new Button();
+
+            Task export = AboutPage.ExportDiagnosticsToAsync(viewModel, button,
+                Path.Combine(Path.GetTempPath(), $"velashell_diagexport_{Guid.NewGuid():N}.zip"));
+
+            Assert.AreEqual("", viewModel.DiagnosticsStatus, "上一次的「已保存到 …」一开始就清掉,不留到这一次出结果");
+            Assert.IsFalse(button.IsEnabled);
+
+            // 读连接配置失败不是 IO 错:原先漏给 FireAndForget,只进日志,页面上什么也不显示
+            profiles.SetException(new InvalidOperationException("database is locked"));
+            await export;
+
+            Assert.AreEqual(Strings.Format("SetAbout_ExportDiagnosticsFailed", "database is locked"), viewModel.DiagnosticsStatus);
+            Assert.IsTrue(button.IsEnabled);
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
 }
