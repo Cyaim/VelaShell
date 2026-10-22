@@ -43,6 +43,35 @@ public sealed class FileTransferJobRegistryTests
         return path;
     }
 
+    /// <summary>
+    /// 仿宿主的下载启动:Windows 安全落盘按 OPEN_EXISTING 逐段钉住父目录链,不替调用方建目录 ——
+    /// 父目录不存在时任务在宿主审批之前就失败。
+    /// </summary>
+    private static RemoteTransferSnapshot StartDownloadLikeHost(string session, string remote, string local, string operation)
+    {
+        RemoteTransferSnapshot started = Running(session, local, remote, operation) with
+        { TransferId = "download-transfer", Direction = RemoteTransferDirection.Download };
+        return Directory.Exists(Path.GetDirectoryName(local)) ? started : started with
+        {
+            State = RemoteTransferState.Failed,
+            RemoteStopConfirmed = true,
+            ErrorCode = "download-failed",
+            ErrorMessage = "Cannot lock the destination directory chain."
+        };
+    }
+
+    /// <summary>支持后台下载的宿主替身:远端预置一个文件,启动走 <see cref="StartDownloadLikeHost" />。</summary>
+    private static string DownloadableHost(TestPluginContext context, string remotePath = "/var/log/app.log")
+    {
+        string session = context.FakeSessions.AddConnected().SessionId;
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.SupportsDownloadOperations = true;
+        context.FakeRemoteFs.AddFile(session, remotePath, new byte[64]);
+        context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) =>
+            Task.FromResult(StartDownloadLikeHost(id, remote, local, options.OperationId));
+        return session;
+    }
+
     [TestMethod]
     public async Task LargeUpload_ReturnsReceipt_AndRequestCancellationOrDisposeDoesNotCancelHost()
     {
@@ -171,8 +200,8 @@ public sealed class FileTransferJobRegistryTests
         context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(
             Running(id, source, target, options.OperationId) with { State = RemoteTransferState.Succeeded });
         var downloadCompletion = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
-        context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) => Task.FromResult(
-            Running(id, local, remote, options.OperationId) with { TransferId = "download-transfer", Direction = RemoteTransferDirection.Download });
+        context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) =>
+            Task.FromResult(StartDownloadLikeHost(id, remote, local, options.OperationId));
         context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => downloadCompletion.Task.WaitAsync(ct);
         await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
         await using CommandJobRunScope first = toolbox.BeginRun("owner", "first");
@@ -551,5 +580,168 @@ public sealed class FileTransferJobRegistryTests
             finish.TrySetResult(snapshot! with { State = RemoteTransferState.Succeeded, Sequence = 2 });
         }
         finally { File.Delete(local); }
+    }
+
+    /// <summary>
+    /// 不给本机路径时落到插件私有的 downloads/。宿主只钉住已存在的父目录链,不替插件建目录 ——
+    /// 这一步漏了,每一次默认下载都在宿主审批之前失败,IM 的 send_file 也就无文件可发。
+    /// </summary>
+    [TestMethod]
+    public async Task DefaultDownload_CreatesThePrivateDownloadsFolder()
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        var finish = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => finish.Task.WaitAsync(ct);
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        string folder = Path.Combine(context.DataDirectory, "downloads");
+        Assert.IsFalse(Directory.Exists(folder));
+        string receipt = await Call(toolbox, run, "download_remote_file", new()
+        {
+            ["remotePath"] = "/var/log/app.log",
+            ["sessionId"] = session
+        });
+        Assert.IsTrue(Directory.Exists(folder), receipt);
+        using JsonDocument json = JsonDocument.Parse(receipt);
+        Assert.AreEqual("Running", json.RootElement.GetProperty("state").GetString(), receipt);
+        Assert.AreEqual(Path.Combine(folder, "app.log"), json.RootElement.GetProperty("snapshot").GetProperty("LocalPath").GetString());
+        finish.TrySetResult(StartDownloadLikeHost(session, "/var/log/app.log", Path.Combine(folder, "app.log"), "done") with
+        { State = RemoteTransferState.Succeeded, Sequence = 2, RemoteStopConfirmed = true });
+    }
+
+    /// <summary>
+    /// 宿主没有独立下载能力时当场说清 —— 先弹审批卡、用户点了允许才说做不了,等于白问一次。
+    /// </summary>
+    [TestMethod]
+    public async Task UnsupportedDownload_FailsBeforeAskingForApproval()
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        context.FakeRemoteFs.SupportsDownloadOperations = false;
+        List<ApprovalRequest> asked = [];
+        await using var toolbox = new AgentToolbox(context)
+        {
+            ApprovalHandler = request =>
+            {
+                asked.Add(request);
+                return Task.FromResult(true);
+            }
+        };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        string result = await Call(toolbox, run, "download_remote_file", new()
+        {
+            ["remotePath"] = "/var/log/app.log",
+            ["sessionId"] = session
+        });
+        Assert.Contains("does not support independent download tasks", result);
+        Assert.IsEmpty(asked, "宿主做不了的下载不该先弹审批");
+        Assert.IsEmpty(context.FakeRemoteFs.DownloadsStarted);
+    }
+
+    /// <summary>
+    /// 下载回执丢失(IO/超时)是不确定的启动,不是失败:回成"失败"会招来一次重复下载。
+    /// 同一调用身份重放只复用原账本,不另起任务。
+    /// </summary>
+    [TestMethod]
+    public async Task LostDownloadReceipt_IsUnknownNotFailed_AndIsNotReplayed()
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        context.FakeRemoteFs.StartDownloadHandler = (_, _, _, _, _) =>
+            Task.FromException<RemoteTransferSnapshot>(new IOException("receipt lost"));
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        try
+        {
+            AgentToolbox.InvocationIdentity.Value = "stable-call";
+            Dictionary<string, object?> args = new() { ["remotePath"] = "/var/log/app.log", ["sessionId"] = session };
+            string first = await Call(toolbox, run, "download_remote_file", args);
+            string second = await Call(toolbox, run, "download_remote_file", args);
+            Assert.DoesNotContain("Failed", first);
+            using JsonDocument json = JsonDocument.Parse(first);
+            Assert.AreEqual("Unknown", json.RootElement.GetProperty("state").GetString());
+            Assert.IsTrue(run.HasUnknownOutcome);
+            Assert.HasCount(2, context.FakeRemoteFs.DownloadsStarted, "回执丢失只用相同 OperationId 重取一次;重复调用复用原账本");
+            Assert.AreEqual(first, second);
+        }
+        finally { AgentToolbox.InvocationIdentity.Value = null; }
+    }
+
+    /// <summary>宿主拒绝授权是本轮的停止边界,不是一次普通的下载失败;也不回带宿主的原话。</summary>
+    [TestMethod]
+    public async Task DeniedDownloadAuthorization_EndsTheRun()
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        context.FakeRemoteFs.StartDownloadHandler = (_, _, _, _, _) => Task.FromException<RemoteTransferSnapshot>(
+            new PluginSdk.PluginPermissionDeniedException("Download permission was not granted."));
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        string result = await Call(toolbox, run, "download_remote_file", new()
+        {
+            ["remotePath"] = "/var/log/app.log",
+            ["sessionId"] = session
+        });
+        Assert.Contains("authorization was denied", result);
+        Assert.DoesNotContain("Download permission was not granted", result);
+        Assert.IsTrue(run.HasDeniedExecution);
+        Assert.IsFalse(run.HasUnknownOutcome);
+        Assert.HasCount(1, context.FakeRemoteFs.DownloadsStarted);
+    }
+
+    /// <summary>
+    /// 等下载回执时用户按了停止:取消照常上抛,而不是回一句"下载失败" ——
+    /// 已受理的启动仍在后台登记,告诉模型"失败"只会招来重复下载。
+    /// </summary>
+    [TestMethod]
+    public async Task StopWhileWaitingForTheDownloadReceipt_IsNotReportedAsAFailure()
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        var accepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var receipt = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.FakeRemoteFs.StartDownloadHandler = (_, _, _, _, _) =>
+        {
+            accepted.TrySetResult();
+            return receipt.Task;
+        };
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        using var stop = new CancellationTokenSource();
+        Task<string> download = Call(toolbox, run, "download_remote_file", new()
+        {
+            ["remotePath"] = "/var/log/app.log",
+            ["sessionId"] = session
+        }, stop.Token);
+        await accepted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await stop.CancelAsync();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => download);
+        receipt.SetResult(StartDownloadLikeHost(session, "/var/log/app.log", "late", "late") with
+        { State = RemoteTransferState.Succeeded, Sequence = 2, RemoteStopConfirmed = true });
+    }
+
+    /// <summary>
+    /// 默认落点的文件名来自服务器,不可信:盘符相对名(<c>C:x</c> 会让 Path.Combine 整个丢掉下载目录)、
+    /// 带冒号的备用数据流、设备名、结尾的点(Windows 会悄悄削掉)一律拒绝,一个字节都不下。
+    /// </summary>
+    [TestMethod]
+    public async Task DefaultDownload_RefusesRemoteNamesThatAreNotPlainLocalFileNames()
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        foreach (string name in new[] { "C:x", "report.txt:hidden", "NUL", "nul.tar.gz", "COM1.txt", "lpt9", "CONOUT$", "COM¹", "notes." })
+        {
+            context.FakeRemoteFs.AddFile(session, "/srv/" + name, new byte[4]);
+            string result = await Call(toolbox, run, "download_remote_file", new()
+            {
+                ["remotePath"] = "/srv/" + name,
+                ["sessionId"] = session
+            });
+            Assert.Contains("Refused", result, name);
+        }
+        Assert.IsEmpty(context.FakeRemoteFs.DownloadsStarted);
     }
 }

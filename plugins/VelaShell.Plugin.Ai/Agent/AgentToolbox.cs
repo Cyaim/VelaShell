@@ -991,6 +991,13 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             return "Refused: send_file can only send files that download_remote_file saved into the plugin's "
                    + "downloads folder. Download the file from the server first, then send that path.";
         }
+        // 下载还没成功提交时,这个路径上要么什么都没有、要么是同名旧文件 —— 两种都不是模型以为的那份
+        if (FileTransferJobRegistry.For(context).HasUncommittedDownload(full))
+        {
+            return "Refused: the download to this path has not been committed successfully (it is still running, did not "
+                   + "succeed, or its outcome is unknown), so the file there is missing or an older one. "
+                   + "Check transfer_status and send it only after the download reports Succeeded.";
+        }
         if (!File.Exists(full))
         {
             return $"No such local file: {full}. Download it from the server first.";
@@ -1406,11 +1413,26 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         {
             return "remote_path must not be empty.";
         }
+        // 做不了就别去惊动用户:审批卡点了"允许"之后才说宿主不支持,等于白问一次。
+        if (!context.RemoteFs.SupportsTransferOperations || !context.RemoteFs.SupportsDownloadOperations)
+        {
+            return "This host does not support independent download tasks. No synchronous fallback was attempted.";
+        }
         string target;
         if (string.IsNullOrWhiteSpace(localPath))
         {
             string folder = Path.Combine(context.DataDirectory, DownloadFolder);
-            target = Path.Combine(folder, Path.GetFileName(remotePath.TrimEnd('/')));
+            string name = Path.GetFileName(remotePath.TrimEnd('/'));
+            target = Path.Combine(folder, name);
+            // 文件名来自服务器,不可信;拼出来的落点也必须仍在下载目录里(与 send_file 同一把尺)
+            if (!IsPlainFileName(name) || !IsSendable(target))
+            {
+                return "Refused: the remote file name cannot be used as a file name in the downloads folder (it is "
+                       + "drive-qualified, contains ':' or invalid characters, is a reserved device name, or ends with a dot or space). "
+                       + "Copy the file to a plain name on the server first, or pass an explicit local_path.";
+            }
+            // 宿主只钉住已存在的父目录链,不替插件建目录;这是插件私有目录,建它碰不到用户的任何东西
+            Directory.CreateDirectory(folder);
         }
         else if (!Path.IsPathRooted(localPath.Trim()))
         {
@@ -1420,36 +1442,86 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         {
             target = localPath.Trim();
         }
+        RemoteFileEntry? entry;
         try
         {
-            RemoteFileEntry? entry = await context.RemoteFs.StatAsync(id, remotePath, cancellationToken).ConfigureAwait(false);
-            if (entry is null)
-            {
-                return $"No such remote file: {remotePath}";
-            }
-            if (entry.IsDirectory)
-            {
-                return $"{remotePath} is a directory; archive it first (tar) and download the archive.";
-            }
-            // 往用户自己的磁盘上写东西,一律问一次;覆盖意图必须显式传入。
-            if (!await ApproveAsync(new ApprovalRequest("download_remote_file", $"{remotePath}\n→ {target}  ({entry.Size} bytes, overwrite={overwrite})"),
-                    cancellationToken).ConfigureAwait(false))
-            {
-                return "The user DENIED this download. Do not retry; ask the user how to proceed.";
-            }
-            if (!context.RemoteFs.SupportsTransferOperations || !context.RemoteFs.SupportsDownloadOperations)
-                return "This host does not support independent download tasks. No synchronous fallback was attempted.";
-            CommandJobRunScope run = CurrentRun;
-            string identity = InvocationIdentity.Value ?? Guid.NewGuid().ToString("N");
-            string operationId = FileTransferJobRegistry.StableOperationId(run.OwnerId, run.RunId, "download:" + identity);
-            RemoteTransferSnapshot snapshot = await run.Transfers!.StartDownloadAsync(id, remotePath, target,
-                operationId, overwrite, cancellationToken).ConfigureAwait(false);
-            return FormatTransfer(snapshot);
+            entry = await context.RemoteFs.StatAsync(id, remotePath, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             return $"Failed to download: {ex.Message}";
         }
+        if (entry is null)
+        {
+            return $"No such remote file: {remotePath}";
+        }
+        if (entry.IsDirectory)
+        {
+            return $"{remotePath} is a directory; archive it first (tar) and download the archive.";
+        }
+        // 往用户自己的磁盘上写东西,一律问一次;覆盖意图必须显式传入。
+        if (!await ApproveAsync(new ApprovalRequest("download_remote_file", $"{remotePath}\n→ {target}  ({entry.Size} bytes, overwrite={overwrite})"),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return "The user DENIED this download. Do not retry; ask the user how to proceed.";
+        }
+        CommandJobRunScope run = CurrentRun;
+        string identity = InvocationIdentity.Value ?? Guid.NewGuid().ToString("N");
+        string operationId = FileTransferJobRegistry.StableOperationId(run.OwnerId, run.RunId, "download:" + identity);
+        // 与 upload_local_file 同一套收尾:已受理的启动在后台继续,等回执时出的错不等于"下载失败"。
+        try
+        {
+            RemoteTransferSnapshot snapshot = await run.Transfers!.StartDownloadAsync(id, remotePath, target,
+                operationId, overwrite, cancellationToken).ConfigureAwait(false);
+            return FormatTransfer(snapshot);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or PluginPermissionDeniedException)
+        {
+            run.MarkExecutionDenied();
+            return "Download authorization was denied or revoked. No metadata is provided.";
+        }
+        catch (Exception ex) when (ex is NotSupportedException or ArgumentException)
+        {
+            return "Download was rejected before execution: unsupported operation or invalid input. No fallback was attempted.";
+        }
+        catch (Exception)
+        {
+            run.Transfers!._uncertainStart = true;
+            return JsonSerializer.Serialize(new
+            {
+                operationId,
+                state = "Unknown",
+                error = "Download receipt unavailable. Do not automatically start another download; the remote outcome may be unknown."
+            });
+        }
+    }
+
+    /// <summary>Windows 保留的设备名:带不带扩展名都指向设备,而不是文件(<c>NUL.txt</c> 就是 <c>NUL</c>)。</summary>
+    private static readonly HashSet<string> ReservedDeviceNames =
+    [
+        with(StringComparer.OrdinalIgnoreCase),
+        "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+        "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "COM¹", "COM²", "COM³",
+        "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "LPT¹", "LPT²", "LPT³"
+    ];
+
+    /// <summary>服务器给的文件名能不能原样当本机文件名,落进下载目录。</summary>
+    /// <remarks>
+    /// 名字来自服务器,不可信。<c>C:x</c> 在 Windows 上是"C 盘当前目录下的 x",
+    /// <see cref="Path.Combine(string, string)" /> 遇到它会整个丢掉下载目录;带冒号的还可能是备用数据流;
+    /// <c>NUL</c>、<c>COM1.txt</c> 指的是设备;结尾的点和空格会被 Windows 悄悄削掉,落盘的就不是审批卡上那个名字。
+    /// 这些在任何平台上一律拒绝:下载目录只收普通文件名,别的请模型换个落点。
+    /// </remarks>
+    private static bool IsPlainFileName(string name)
+    {
+        if (name.Length == 0 || name.EndsWith('.') || name.EndsWith(' ') || name.Contains(':')
+            || Path.IsPathRooted(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            return false;
+        }
+        // 设备名看第一个点之前的那一段,去掉尾随空格(nul.tar.gz、"COM1 .txt" 一样是设备)
+        return !ReservedDeviceNames.Contains(name.Split('.')[0].TrimEnd(' '));
     }
 
     private async Task<string> WriteTerminalAsync(

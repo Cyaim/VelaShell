@@ -1,10 +1,12 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Threading;
 using VelaShell.Plugin.Ai.Agent;
+using VelaShell.PluginSdk;
 using VelaShell.PluginSdk.RemoteFs;
 
 namespace VelaShell.Plugin.Ai.Ui;
@@ -27,9 +29,11 @@ public sealed partial class ChatPanelView
 
     private FileTransferRunScope BeginLinkTransferScope(string sessionId)
     {
-        FileTransferRunScope scope = FileTransferJobRegistry.For(_context).BeginRun(
+        // 授权闭包随任务登记活到插件停用;只捕获宿主上下文与会话 id,捕获 _context 字段就把整个面板一起留住了。
+        IPluginContext context = _context;
+        FileTransferRunScope scope = FileTransferJobRegistry.For(context).BeginRun(
             "link:" + _active.SessionKey, Guid.NewGuid().ToString("N"),
-            async (id, token) => id == sessionId && await _context.Sessions.GetAsync(id, token).ConfigureAwait(false) is not null);
+            async (id, token) => id == sessionId && await context.Sessions.GetAsync(id, token).ConfigureAwait(false) is not null);
         _linkTransferScopes.Add(scope);
         return scope;
     }
@@ -79,7 +83,8 @@ public sealed partial class ChatPanelView
             _cancel[!ThemeProperty] = new DynamicResourceExtension("VelaOutlineButtonTheme");
             _cancel.Click += async (_, _) =>
             {
-                if (_latest?.Snapshot is not { } snapshot || snapshot.IsTerminal) return;
+                // 与按钮可见性同一条规则:停止未确认的 Unknown/TimedOut 终态也得真的发取消
+                if (_latest?.Snapshot is not { } snapshot || !ToolCard.CanCancel(snapshot)) return;
                 _cancel.IsEnabled = false;
                 try { await _scope.CancelAsync(_transferId, snapshot.Generation); }
                 catch { _cancel.IsEnabled = true; }
@@ -115,7 +120,7 @@ public sealed partial class ChatPanelView
             _text.Text = TransferPresentation.Text(_owner._loc, snapshot);
             _bar.IsIndeterminate = !snapshot.IsTerminal && (snapshot.TotalBytes < 0 || TransferPresentation.StateKey(snapshot) is "TransferStarting" or "TransferFinalizing");
             _bar.Value = TransferPresentation.Percent(snapshot) ?? 0;
-            _cancel.IsVisible = !snapshot.IsTerminal || (!snapshot.RemoteStopConfirmed && snapshot.State is RemoteTransferState.Unknown or RemoteTransferState.TimedOut);
+            _cancel.IsVisible = ToolCard.CanCancel(snapshot);
             _cancel.IsEnabled = snapshot.State != RemoteTransferState.CancelRequested;
             if (snapshot.IsSuccess) _owner.StatusText.Text = _owner._loc.F("LinkDownloaded", _localPath);
         }
@@ -138,7 +143,7 @@ public sealed partial class ChatPanelView
         private FileTransferRunScope? _transferScope;
         private string _transferId = "";
 
-        private static bool CanCancel(RemoteTransferSnapshot s) => !s.IsTerminal
+        internal static bool CanCancel(RemoteTransferSnapshot s) => !s.IsTerminal
             || (!s.RemoteStopConfirmed && s.State is RemoteTransferState.Unknown or RemoteTransferState.TimedOut);
 
         public void ShowTransfer(FileTransferRunScope? scope, string transferId)
@@ -356,6 +361,31 @@ internal static class TransferPresentation
         bool finalizing = StateKey(s) == "TransferFinalizing";
         string eta = !s.IsTerminal && !finalizing && s.EstimatedTimeRemaining is { } remaining
             ? loc.F("TransferEta", Math.Max(0, remaining.TotalSeconds).ToString("0")) : loc["TransferEtaUnknown"];
-        return $"{loc[StateKey(s)]} · {bytes} · {percent} · {speed} · {eta}";
+        string text = $"{loc[StateKey(s)]} · {bytes} · {percent} · {speed} · {eta}";
+        return Cause(s) is { } cause ? $"{text} · {cause}" : text;
+    }
+
+    private const int MaxCauseLength = 160;
+
+    /// <summary>
+    /// 没成功的终态带上宿主给的原因 —— 卡片上只写"失败",用户只能去翻日志。
+    /// 原因只是展示文本:折成一行,去掉控制与格式字符(换行、终端转义、双向覆盖),并限长。
+    /// </summary>
+    private static string? Cause(RemoteTransferSnapshot s)
+    {
+        if (!s.IsTerminal || s.IsSuccess || string.IsNullOrWhiteSpace(s.ErrorMessage)) return null;
+        var line = new StringBuilder(Math.Min(s.ErrorMessage.Length, MaxCauseLength + 1));
+        foreach (char c in s.ErrorMessage)
+        {
+            if (line.Length > MaxCauseLength) break;
+            if (!char.IsWhiteSpace(c) && !char.IsControl(c) && char.GetUnicodeCategory(c) != UnicodeCategory.Format)
+                line.Append(c);
+            else if (line.Length > 0 && line[^1] != ' ')
+                line.Append(' ');
+        }
+        string cause = line.ToString().TrimEnd();
+        if (cause.Length <= MaxCauseLength) return cause.Length == 0 ? null : cause;
+        int cut = char.IsHighSurrogate(cause[MaxCauseLength - 2]) ? MaxCauseLength - 2 : MaxCauseLength - 1;
+        return cause[..cut] + "…";
     }
 }

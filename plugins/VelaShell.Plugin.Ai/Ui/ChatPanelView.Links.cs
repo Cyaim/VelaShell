@@ -88,6 +88,12 @@ public partial class ChatPanelView
     /// </summary>
     private async Task DownloadRemoteAsync(string remotePath)
     {
+        // 做不了就别弹保存框:让用户挑完位置才说宿主不支持,等于白挑一次。
+        if (!_context.RemoteFs.SupportsTransferOperations || !_context.RemoteFs.SupportsDownloadOperations)
+        {
+            StatusText.Text = _loc["Error"] + ": independent downloads are unavailable.";
+            return;
+        }
         if (SelectedSessionId is not { } sessionId)
         {
             StatusText.Text = _loc["NoSession"];
@@ -117,11 +123,6 @@ public partial class ChatPanelView
             });
             if (target?.TryGetLocalPath() is not { } localPath)
             {
-                return;
-            }
-            if (!_context.RemoteFs.SupportsTransferOperations || !_context.RemoteFs.SupportsDownloadOperations)
-            {
-                StatusText.Text = _loc["Error"] + ": independent downloads are unavailable.";
                 return;
             }
             FileTransferRunScope scope = BeginLinkTransferScope(sessionId);

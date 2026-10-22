@@ -33,6 +33,8 @@ public sealed class FileTransferJobRegistry
     private readonly Dictionary<string, Job> _jobs = [with(StringComparer.Ordinal)];
     private sealed record StartReceipt(FileTransferRunScope Scope, string Signature, Task<RemoteTransferSnapshot> Result);
     private readonly Dictionary<string, StartReceipt> _operations = [with(StringComparer.Ordinal)];
+    // 同一本机目标(规范化全路径;不分大小写,宁严勿松)的下载按启动先后排,send_file 只认最近一次已成功提交的那次。
+    private readonly Dictionary<string, List<StartReceipt>> _downloadTargets = [with(StringComparer.OrdinalIgnoreCase)];
 
     private FileTransferJobRegistry(IPluginContext context)
     {
@@ -64,6 +66,8 @@ public sealed class FileTransferJobRegistry
             throw new NotSupportedException("This host does not support independent transfers; synchronous fallback is disabled.");
         await AuthorizeSessionAsync(scope, sessionId, token).ConfigureAwait(false);
         string signature = JsonSerializer.Serialize(new { direction, sessionId, localPath, remotePath, overwrite });
+        // 规范化放在登记之前:路径不合法就什么都不记,当作启动前被拒。
+        string? target = direction == RemoteTransferDirection.Download ? Path.GetFullPath(localPath) : null;
         TaskCompletionSource<RemoteTransferSnapshot>? starter = null;
         Task<RemoteTransferSnapshot> receipt;
         lock (_gate)
@@ -79,7 +83,14 @@ public sealed class FileTransferJobRegistry
                 if (_operations.Count >= 1024) throw new InvalidOperationException("The transfer task budget is exhausted.");
                 starter = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 receipt = starter.Task;
-                _operations.Add(operationId, new(scope, signature, receipt));
+                var started = new StartReceipt(scope, signature, receipt);
+                _operations.Add(operationId, started);
+                if (target is not null)
+                {
+                    if (!_downloadTargets.TryGetValue(target, out List<StartReceipt>? attempts))
+                        _downloadTargets.Add(target, attempts = []);
+                    attempts.Add(started);
+                }
                 scope._pendingStarts++;
             }
         }
@@ -100,7 +111,7 @@ public sealed class FileTransferJobRegistry
         catch (Exception ex)
         {
             failure = ex;
-            if (ex is not (ArgumentException or NotSupportedException or UnauthorizedAccessException or PluginPermissionDeniedException))
+            if (!IsDefiniteRejection(ex))
                 scope._uncertainStart = true;
         }
         finally { lock (_gate) scope._pendingStarts--; }
@@ -402,6 +413,48 @@ public sealed class FileTransferJobRegistry
             || _jobs.Values.Any(j => ReferenceEquals(j._scope, scope) && NeedsCleanup(j._snapshot));
     }
 
+    /// <summary>
+    /// 仍在启动或宿主尚未报告终态的任务。MCP 闲置回收只为它们留着会话:已终结、停止未确认的
+    /// Unknown/TimedOut 等多久都不会变,留着只会把会话名额占满;回收时释放会话照样 CancelAll。
+    /// </summary>
+    internal bool HasUnfinishedTransfers(FileTransferRunScope scope)
+    {
+        lock (_gate) return scope._pendingStarts > 0
+            || _jobs.Values.Any(j => ReferenceEquals(j._scope, scope) && !j._snapshot.IsTerminal);
+    }
+
+    /// <summary>
+    /// 本机路径上是否有尚未成功提交的下载:任一次仍可能在写(回执未到或丢失、未终结、停止未确认),
+    /// 或者最近一次真正开始过的下载没有以 Succeeded 收尾。宿主写随机临时文件、成功才原子改名,
+    /// 在那之前目标处要么没有文件、要么是同名旧文件 —— send_file 两种都不该发。整个插件共享,链接下载也算。
+    /// </summary>
+    internal bool HasUncommittedDownload(string localPath)
+    {
+        string target = Path.GetFullPath(localPath);
+        lock (_gate)
+        {
+            if (!_downloadTargets.TryGetValue(target, out List<StartReceipt>? attempts)) return false;
+            if (attempts.Any(MayStillWrite)) return true;
+            // 走到这里,每一次要么已明确被拒(什么都没写),要么已拿到回执且停了;被拒的不改变结论
+            StartReceipt? latest = attempts.LastOrDefault(a => a.Result.IsCompletedSuccessfully);
+            return latest is not null && !(_jobs.TryGetValue(latest.Result.Result.TransferId, out Job? job)
+                && job._snapshot.IsSuccess);
+        }
+    }
+
+    // 调用方持有 _gate。明确的启动拒绝什么都没开始;其余启动失败与停止未确认一样,当作宿主可能还在写。
+    private bool MayStillWrite(StartReceipt attempt)
+    {
+        Task<RemoteTransferSnapshot> result = attempt.Result;
+        if (!result.IsCompleted) return true;
+        if (!result.IsCompletedSuccessfully)
+            return result.Exception?.InnerException is not { } failure || !IsDefiniteRejection(failure);
+        return !_jobs.TryGetValue(result.Result.TransferId, out Job? job) || NeedsCleanup(job._snapshot);
+    }
+
+    private static bool IsDefiniteRejection(Exception ex)
+        => ex is ArgumentException or NotSupportedException or UnauthorizedAccessException or PluginPermissionDeniedException;
+
     internal bool HasActiveJobs(FileTransferRunScope scope)
     {
         lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope) && !j._delivered);
@@ -508,6 +561,8 @@ public sealed class FileTransferRunScope : IAsyncDisposable
     public bool HasActiveJobs => _registry.HasActiveJobs(this);
     /// <summary>宿主尚未报告终态的真实任务，不受模型通知是否消费影响。</summary>
     public bool HasRunningTransfers => _registry.HasRunningTransfers(this);
+    /// <summary>仍在启动或尚未终结的任务;已终结但停止未确认的不算(MCP 闲置回收看它)。</summary>
+    internal bool HasUnfinishedTransfers => _registry.HasUnfinishedTransfers(this);
     /// <summary>宿主逐任务可信上传审批被拒绝；不是普通传输失败。</summary>
     public bool HasDeniedExecution => _registry.HasDeniedExecution(this);
     /// <summary>存在不可自动重放的不确定结果。</summary>
