@@ -243,7 +243,7 @@ public sealed class RemoteTransferTests
             await Assert.ThrowsAsync<IOException>(() => api.StartUploadAsync(_session.ToString(), Path.Combine(loop, "source"), "/target", new() { OperationId = "loop" }));
             Assert.AreEqual(0, api.ActiveTransfers);
         }
-        finally { File.Delete(leaf); Directory.Delete(missing); Directory.Delete(loop); Directory.Delete(root, true); }
+        finally { File.Delete(leaf); File.Delete(missing); File.Delete(loop); Directory.Delete(root, true); }
     }
 
     [TestMethod]
