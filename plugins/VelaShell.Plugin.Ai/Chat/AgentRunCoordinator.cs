@@ -17,14 +17,12 @@ internal sealed class AgentRunCoordinator(CommandJobRunScope jobs, AgentExecutio
         Action<bool>? localWaiting = null)
     {
         List<ChatMessage> context = [.. messages];
-        // 只数显式批次边界;后台任务完成唤醒不算批次,16 台机器先后完成不该把预算吃光,
-        // 每次唤醒的模型请求仍受执行账本的步数与 token 预算约束。
+        // 批次只用于进度提示;显式边界自动续接,后台完成唤醒不增加批次编号。
         int batch = 0;
         Task<IReadOnlyList<CommandJobSnapshot>>? commandCompletion = null;
         Task<IReadOnlyList<PluginSdk.RemoteFs.RemoteTransferSnapshot>>? transferCompletion = null;
         while (true)
         {
-            if (batch >= 8) throw new AgentPausedException("ExecutionBudget");
             cancellationToken.ThrowIfCancellationRequested();
             List<ChatResponseUpdate> updates = [];
             bool atBatchBoundary = false;
