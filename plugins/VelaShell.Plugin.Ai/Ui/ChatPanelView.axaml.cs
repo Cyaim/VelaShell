@@ -1842,8 +1842,15 @@ public partial class ChatPanelView : UserControl
                         NativeWebSearch.Apply(options, current, tools, _settings.WebSearch.MaxResults);
                     }
                     options.Tools = tools;
+                    // 空答不是连接失败,分开说;补试的这一步答上后,状态行仍是这条提示就撤掉,不挂到整轮结束
+                    string? retryStatus = null;
                     client = new RecoveringChatClient(client, execution, _loc["ContinuationBoundary"],
-                            attempt => Dispatcher.UIThread.Post(() => SetStatus(_loc.F("Retrying", attempt))))
+                            (attempt, failure) => Dispatcher.UIThread.Post(() => SetStatus(retryStatus = _loc.F(
+                                failure is HealthProbe.EmptyReplyException ? "RetryingEmptyReply" : "Retrying", attempt))),
+                            recovered: () => Dispatcher.UIThread.Post(() =>
+                            {
+                                if (Cur.Status == retryStatus) SetStatus("");
+                            }))
                         .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, 25)).Build();
                 }
 

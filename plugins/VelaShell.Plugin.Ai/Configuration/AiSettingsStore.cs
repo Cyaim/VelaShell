@@ -986,13 +986,10 @@ public sealed class AiSettingsStore(IPluginContext context)
                 staged.AdditionalApiKeyIds = [];
                 staged.ActiveApiKeyId = null;
                 secretWritten = true;
-                // 只动机密(与下面的非换源分支一样):缓存等发布段再改,等待期间活配置保持原地址与凭据
+                // 缓存跟着机密一起改:提交期间别处读到的是「没有」(主槽是这次新填的那把),不会把旧 Key 拿在手里、
+                // 等提交成功后带去新地址;失败回滚时 catch 里逐个恢复机密与缓存
                 foreach (string id in resetOwners)
-                {
-                    if (id == provider.Id && replacementKey is not null)
-                        await context.Secrets.SetAsync(SecretName(id), replacementKey, cancellationToken);
-                    else await context.Secrets.DeleteAsync(SecretName(id), cancellationToken);
-                }
+                    await SetApiKeyCoreAsync(id, id == provider.Id ? replacementKey : null, cancellationToken);
             }
             else if (replacementKey is not null && replacementKey != oldKey)
             {
@@ -1014,7 +1011,7 @@ public sealed class AiSettingsStore(IPluginContext context)
             {
                 // 清掉的槽与模型 Key 都归这家供应商:按主槽 id 发布,别处设置里的同一供应商副本也一并作废
                 PublishProviderRequests(settings, detached, changedKeyOwnerId: provider.Id);
-                foreach (string id in resetOwners) KeyCache[id] = id == provider.Id ? replacementKey : null;
+                if (replacementKey is not null) KeyCache[provider.Id] = replacementKey;
             }
             else
             {

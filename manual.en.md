@@ -87,7 +87,7 @@ This manual is for users managing servers, working in terminals, and transferrin
 
 **Entry point:** **Settings → About**. Startup checking is controlled in **General**. Depending on update state, About also offers actions to restart and finish an update, repair an update, open logs, and export diagnostics.
 
-**Steps and result:** Run **Check for updates** and read the version information. Supported writable Windows/macOS distributions can download in the application, verify SHA-256, exit, and replace the application. If manual installation is requested, obtain the package from the release entry point. **Linux currently checks versions only; download and install updates manually. The Microsoft Store edition is updated by the Store.**
+**Steps and result:** Run **Check for updates**. When a newer version exists, supported writable Windows/macOS distributions start downloading right away, check the SHA-256 recorded in the same release's `latest.json` (an integrity check, not a signature check), then exit and replace the application. If manual installation is requested, obtain the package from the release entry point. **Linux currently checks versions only; download and install updates manually. The Microsoft Store edition is updated by the Store.**
 
 **How it works and cautions:** Finishing a download does not switch the running process to the new version; complete the exit/restart. Application files and user data are separate, but back up before updating. Do not rely on older descriptions of user-selectable update channels or background automatic downloads that the current interface does not provide.
 
@@ -163,7 +163,7 @@ The main window contains a title bar, Explorer, a docking document area, and a b
 **Steps:**
 
 1. Choose JSON for a complete connection export; choose CSV for spreadsheet editing. Save the template first and follow its headers. `host` is required.
-2. JSON exports exclude passwords by default. Explicitly include credentials when needed and set an export passphrase of at least 8 characters. The file uses a passphrase-derived key and AES-GCM. **CSV exports never contain secrets.**
+2. JSON exports exclude passwords by default. Explicitly include credentials when needed and set an export passphrase of at least 8 characters; the credentials section is encrypted with a passphrase-derived key and AES-GCM, while hosts, user names, notes, groups and the rest stay in plain text. **CSV exports never contain secrets.**
 3. Select the import file (maximum 16 MB), enter its decryption passphrase if required, and review targets and groups in the preview.
 4. Duplicates are skipped by default. Choose overwrite only when intended, or keep both. Import, then spot-check hosts, jump hosts, authentication, and paths.
 
@@ -229,7 +229,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Steps:** Select no proxy, system proxy, HTTP, or SOCKS5 as required. For a custom proxy, enter address, port, and credentials; enable remote DNS if appropriate. Save and test a new connection.
 
-**Result and how it works:** System proxy is the default. The setting affects SSH/SFTP/FTP and outgoing HTTP paths such as updates, Gist, feeds, and plugins. In a jump-host chain, it affects the first outbound hop from this computer, not a separate proxy configuration on every host. DNS resolution location affects internal names and where name information is exposed.
+**Result and how it works:** System proxy is the default. The setting affects SSH/SFTP/FTP and outgoing HTTP paths such as updates, Gist, feeds, and plugins running inside the main process (plugins running in their own process use the system default proxy; connection diagnostics resolve names locally and connect directly). In a jump-host chain, it affects the first outbound hop from this computer, not a separate proxy configuration on every host. DNS resolution location affects internal names and where name information is exposed.
 
 **Caution:** A proxy is not an SSH jump host. Reaching the target through HTTP/SOCKS5 does not grant server access. Per-connection proxy configuration is not currently available. Regular settings export removes the proxy password; re-enter it after importing on another device.
 
@@ -752,7 +752,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 **Prerequisite:** The old machine can still decrypt its data, and the new machine has a trusted package.
 
-1. Export passphrase-encrypted connection JSON plus application settings separately, or use Gist sync with an end-to-end passphrase.
+1. Export connection JSON (with a passphrase encrypting its credentials) plus application settings separately, or use Gist sync with an end-to-end passphrase.
 2. Encrypt and back up actual private keys/certificates and necessary public keys separately. Record original paths and purposes, not just path strings from profiles.
 3. Import/pull on the new machine, re-enter proxy passwords, restore keys, and correct paths/permissions. Reconfigure local Agent, external editor, X Server, plugins, AI access, and other device-specific items.
 4. Verify a test connection's fingerprint/login, then important profiles. Do not delete old data before recovery is confirmed and retention obligations are met.
@@ -766,7 +766,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 **Permission warning:** Plugins run with user privileges and can access local files, networking, and sessions. Host capability grants are not an operating-system sandbox for all plugin code. Install trusted packages only; investigate publisher changes and trust warnings rather than approving merely to try a feature.
 
-**Entry point and steps:** Open Plugin Manager. Install a `.vpx` using its top action, or obtain one through the marketplace browser entry. Review package/publisher information and explicit prompts. Enable after installation and reopen relevant UI when needed. Opening the manager checks user-installed plugin updates; downloading and digest verification happen only after Update is selected. Disable/uninstall user plugins as needed. Developer reload is not required for normal use.
+**Entry point and steps:** Open Plugin Manager. Install a `.vpx` using its top action, or obtain one through the marketplace browser entry. Review package/publisher information and explicit prompts. Enable after installation and reopen relevant UI when needed. Opening the manager checks user-installed plugin updates; downloading happens only after Update is selected, the digest is checked when the marketplace provides one, and installation checks the package signature (bad signatures are always rejected; unsigned packages or unknown publishers need your explicit approval). Disable/uninstall user plugins as needed. Developer reload is not required for normal use.
 
 **Result and how it works:** Plugins contribute protocols, workspaces, commands, and UI. Availability depends on installation, enablement, and compatibility. Terminal writes and opening saved-profile sessions have separate host authorization gates. Revoke Authorization clears both relevant categories, not just the current dialog decision.
 
@@ -830,7 +830,7 @@ These are separate paths, not one switch. Closing chat does not necessarily disa
 
 **Result and how it works:** Models have supplied context and permitted tool results, not inherently accurate live server state. Referencing reads and transmits content, not merely a local path. Writing back requires Agent mode and appropriate approval.
 
-**Global settings:** Configure global prompts, context compression, follow-up questions, SearXNG/native search, private-network access, and failover. Compression can lose detail; failover can send requests to another provider, affecting confidentiality and billing. Private-network permission expands tool reach; enable deliberately.
+**Global settings:** Configure global prompts, context compression, follow-up questions, SearXNG/native search, private-network access, and failover. Compression can lose detail. Failover needs no switch: without a failover chain, a failed request automatically moves to another configured instance of the same catalog entry and model (a different key or endpoint; custom endpoints and Azure excluded); with a chain, it follows the chain and may reach another provider, affecting confidentiality and billing. Private-network permission expands tool reach; enable deliberately.
 
 ### 19.4 Chat, Plan, Agent, and Approval
 
@@ -842,7 +842,7 @@ These are separate paths, not one switch. Closing chat does not necessarily disa
 
 **Steps and mechanism:** Approval levels include ask each time, read-only auto-approval, and bypass. Prefer ask or read-only. Review actual commands/content and targets; reject unclear actions. Read-only recognition is not a full audit of server behavior, and external tools' self-declared read-only status is not a sandbox.
 
-**Tool limits:** Built-in reads, listings, output, and uploads have limits, for example 256 KB file reads, 200 directory entries, 32 KB command output, 32 MB uploads, and up to 16 parallel hosts. Truncated results do not prove that an entire directory/log was inspected. Opening a session accepts only an existing saved-profile ID, not arbitrary model-provided hosts/ports. The host separately confirms and can remember permission; revoke in Plugin Manager. This does not expose profile credentials to the plugin. It can close sessions it opened, not user-opened tabs.
+**Tool limits:** Built-in reads, listings, and output have limits, for example 256 KB file reads, 200 directory entries, 32 KB command output, and up to 16 parallel hosts. Truncated results do not prove that an entire directory/log was inspected. Uploads have no fixed size limit; each one must be allowed separately in the host's confirmation dialog. Opening a session accepts only an existing saved-profile ID, not arbitrary model-provided hosts/ports. The host separately confirms and can remember permission; revoke in Plugin Manager. This does not expose profile credentials to the plugin. It can close sessions it opened, not user-opened tabs.
 
 ### 19.5 Add External MCP Tool Servers to AI
 
@@ -882,7 +882,7 @@ These are separate paths, not one switch. Closing chat does not necessarily disa
 1. Add a named channel, credentials, and enable it; test. Testing validates integration, not authorization for every chat.
 2. Add the bot to the intended group through platform controls. Feishu uses group settings, not a mini-app link. Do not run the same Feishu credentials on two VelaShell instances: platform cluster delivery can randomly route messages between them.
 3. Configure permitted users/approvers, default target/mode, and save. Generate a personal/group pairing code and send `/pair <code>` in the target chat, or allow an entry in the pending-chat list. Codes are six digits, single-use, expire in ten minutes, and become invalid after five wrong attempts.
-4. **An empty allowlist permits nobody; direct messages also need authorization.** Mention the bot in groups; speak directly in private chats. Use `/sessions` for online targets and `/use demo@host:22` to bind.
+4. **An empty chat allowlist permits nobody; direct messages also need authorization. A blank "allowed users" list lets anyone in an allowed chat give commands, and blank approvers fall back to the allowed users.** Mention the bot in groups; speak directly in private chats. Use `/sessions` for online targets and `/use demo@host:22` to bind.
 5. Commands include `/help`, `/status`, `/new`, `/stop`, and `/mode chat|plan|agent`. By default `/mode` can only downgrade; upgrades need explicit settings permission.
 6. Authorized approvers reply `y` to allow, `n` to deny, or `a` to allow persistently for this conversation. Timeout denies. Keep VelaShell running; use the tray instead of quitting for background access.
 

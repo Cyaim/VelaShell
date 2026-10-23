@@ -12,7 +12,23 @@ namespace VelaShell.Infrastructure.Plugins.Capabilities;
 internal sealed partial class RemoteFsCapability
 {
     // Other platforms deliberately fail closed until a directory-relative implementation exists.
-    public bool SupportsDownloadOperations => OperatingSystem.IsWindows();
+    public bool SupportsDownloadOperations => OperatingSystem.IsWindows() || DownloadTargetFactory is not null;
+
+    /// <summary>
+    /// 测试开关:注入落盘目标,在非 Windows 上也能验证下载 worker 的收尾分类(与 <see cref="UseDiskSnapshot" /> 同一用意)。
+    /// 生产代码从不设置;为 null 时只有 Windows 固定本地 NTFS 目标可用。
+    /// </summary>
+    internal Func<string, bool, IDownloadTarget>? DownloadTargetFactory { get; init; }
+
+    /// <summary>下载落盘目标:独占创建临时文件,校验后原子提交;未提交的临时文件随释放清除,清不掉时释放抛出。</summary>
+    internal interface IDownloadTarget : IAsyncDisposable
+    {
+        /// <summary>独占创建临时文件并交出写入流;流归目标所有。</summary>
+        FileStream CreateTemporary();
+
+        /// <summary>把临时文件原子提交为最终目标;不覆盖时目标已存在必须拒绝。</summary>
+        void Commit(bool overwrite);
+    }
 
     public Task<RemoteTransferSnapshot> StartDownloadAsync(string sessionId, string remotePath, string localPath,
         RemoteDownloadOptions options, CancellationToken cancellationToken = default)
@@ -79,8 +95,9 @@ internal sealed partial class RemoteFsCapability
     {
         bool slot = false, committed = false;
         Task? downloadWrite = null;
-        WindowsDownloadTarget? target = null;
-        var elapsed = Stopwatch.StartNew();
+        IDownloadTarget? target = null;
+        // 速率按真正开始传输之后的耗时算:审批对话框与排队等待不算进去。
+        var elapsed = new Stopwatch();
         using var execution = CancellationTokenSource.CreateLinkedTokenSource(op._stop.Token, op._downloadPermission?.Revocation ?? CancellationToken.None);
         CancellationToken ct = execution.Token;
         using var heartbeatStop = new CancellationTokenSource();
@@ -91,7 +108,8 @@ internal sealed partial class RemoteFsCapability
             if (uploadPermissions is null || op._downloadPermission is null || string.IsNullOrWhiteSpace(pluginId))
                 throw new PluginPermissionDeniedException("A trusted download approval is required.");
             // Pin and verify the whole local directory chain before approval, without creating content.
-            target = WindowsDownloadTarget.Open(Read(op).LocalPath, options.Overwrite);
+            target = DownloadTargetFactory?.Invoke(Read(op).LocalPath, options.Overwrite)
+                ?? WindowsDownloadTarget.Open(Read(op).LocalPath, options.Overwrite);
             RemoteFileInfo source = await sftp.GetFileInfoAsync(session, Read(op).RemotePath, ct).ConfigureAwait(false);
             ValidateDownloadSource(source);
             Update(op, s => s with { TotalBytes = source.Size });
@@ -110,6 +128,7 @@ internal sealed partial class RemoteFsCapability
             if (!SameDownloadSource(source, before)) throw new SourceChangedException();
             FileStream sink = target.CreateTemporary();
             Update(op, s => s with { State = RemoteTransferState.Running, Phase = RemoteTransferPhase.Transfer });
+            elapsed.Start();
             downloadWrite = sftp.DownloadStreamAsync(session, Read(op).RemotePath, sink, new UploadProgressSink(op), ct);
             await downloadWrite.WaitAsync(ct).ConfigureAwait(false);
             Update(op, s => s with { Phase = RemoteTransferPhase.Verification, TransferredBytes = sink.Length, SpeedBytesPerSecond = null, EstimatedTimeRemaining = null });
@@ -159,8 +178,11 @@ internal sealed partial class RemoteFsCapability
         }
         catch (Exception ex)
         {
-            // A backend may ignore cancellation. Publish an unconfirmed outcome promptly, but
-            // retain the stream, directory pins and shared slot until it actually exits.
+            // 与上传同理:取消、到期、断线、撤权只打断了等待,后端可能还在往临时文件里写。先给它一段有界的宽限期停下来,
+            // 停下了才关掉并删掉临时文件、确认停写;宽限期内仍没停(后端不理取消),照旧尽快发布未确认的结果,
+            // 流、目录钉与共享槽保留到它真正退出。
+            if (downloadWrite is { IsCompleted: false })
+                await Task.WhenAny(downloadWrite, Task.Delay(StopGracePeriod)).ConfigureAwait(false);
             bool stopped = downloadWrite is null || downloadWrite.IsCompleted;
             bool cleaned = stopped;
             if (stopped && target is not null)
@@ -169,28 +191,35 @@ internal sealed partial class RemoteFsCapability
                 catch { cleaned = false; }
                 target = null;
             }
-            bool timeout = options.Timeout is not null && op._stop.IsCancellationRequested && !Read(op).CancellationRequested
-                && !lifetime.IsCancellationRequested && !op.PermissionRevoked;
+            // 后端自己的失败原因比「等待被打断」有用。
+            Exception cause = downloadWrite is { IsFaulted: true } ? downloadWrite.Exception!.InnerException ?? ex : ex;
+            // 撤权优先于其它停止原因;断线、停用不再被推断成到期或用户取消。
+            StopReason reason = op.PermissionRevoked ? StopReason.None : ReadStopReason(op);
+            RemoteTransferState state = committed ? RemoteTransferState.Unknown : reason == StopReason.Timeout ? RemoteTransferState.TimedOut
+                : !cleaned ? RemoteTransferState.Unknown : op.PermissionRevoked || ex is PluginPermissionDeniedException ? RemoteTransferState.Failed
+                : reason is StopReason.User or StopReason.Disposed ? RemoteTransferState.Cancelled : RemoteTransferState.Failed;
+            string code = op.PermissionRevoked ? "permission-revoked" : ex is PluginPermissionDeniedException ? "permission-denied"
+                : committed ? "commit-unknown" : !cleaned ? "cleanup-unknown"
+                : StopCode(reason) ?? (ex is SourceChangedException ? "source-changed" : ex is NotSupportedException ? "not-supported" : "download-failed");
             Update(op, s => s with
             {
-                State = committed ? RemoteTransferState.Unknown : timeout ? RemoteTransferState.TimedOut
-                    : !cleaned ? RemoteTransferState.Unknown : op.PermissionRevoked || ex is PluginPermissionDeniedException ? RemoteTransferState.Failed
-                    : ct.IsCancellationRequested ? RemoteTransferState.Cancelled : RemoteTransferState.Failed,
+                State = state,
                 CompletedAt = DateTimeOffset.UtcNow,
                 RemoteStopConfirmed = cleaned,
                 DestinationCommitConfirmedAbsent = !committed,
                 Resumable = false,
                 SpeedBytesPerSecond = null,
                 EstimatedTimeRemaining = null,
-                ErrorCode = op.PermissionRevoked ? "permission-revoked" : ex is PluginPermissionDeniedException ? "permission-denied"
-                    : committed ? "commit-unknown" : !cleaned ? "cleanup-unknown" : timeout ? "timeout" : ct.IsCancellationRequested ? "cancelled"
-                    : ex is SourceChangedException ? "source-changed" : ex is NotSupportedException ? "not-supported" : "download-failed",
+                ErrorCode = code,
                 ErrorMessage = committed ? "The destination was committed but final completion could not be confirmed; do not retry automatically."
                     : op.PermissionRevoked ? "Download authorization was revoked."
                     : ex is PluginPermissionDeniedException ? "A trusted host download approval was not granted."
+                    : !cleaned ? "The download did not confirm it stopped and cleaned up; the destination was not committed; do not retry automatically."
+                    : StopText(reason) is { } stop ? stop + "; the destination was not committed."
                     : ex is SourceChangedException ? "The remote source changed; the destination was not committed."
-                    : "Download did not complete; the destination was not committed.",
+                    : "Download did not complete; the destination was not committed: " + DescribeCause(cause),
             });
+            LogTransferEnd(op, state, code, cause);
         }
         finally
         {
@@ -234,7 +263,7 @@ internal sealed partial class RemoteFsCapability
     /// The exclusively-created temporary is renamed/deleted by its handle; final paths are never opened for writing.
     /// Unsupported filesystems/platforms fail closed, rather than substituting path-based preflight checks.
     /// </summary>
-    private sealed partial class WindowsDownloadTarget : IAsyncDisposable
+    private sealed partial class WindowsDownloadTarget : IDownloadTarget
     {
         private readonly List<SafeFileHandle> _directories = [];
         private readonly string _destination;
@@ -293,7 +322,7 @@ internal sealed partial class RemoteFsCapability
             catch { handle.Dispose(); throw; }
         }
 
-        internal FileStream CreateTemporary()
+        public FileStream CreateTemporary()
         {
             string temporary = Path.Combine(Path.GetDirectoryName(_destination)!, ".vela-download-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)));
             const uint fileFlagOverlapped = 0x40000000;
@@ -303,7 +332,7 @@ internal sealed partial class RemoteFsCapability
             return _stream;
         }
 
-        internal void Commit(bool overwrite)
+        public void Commit(bool overwrite)
         {
             if (_stream is null) throw new InvalidOperationException();
             // Win32 needs a terminated name; FileNameLength excludes the UTF-16 terminator.

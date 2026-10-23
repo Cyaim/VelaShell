@@ -1597,7 +1597,8 @@ public sealed class ProviderSetupViewUiTests
                 Assert.AreEqual(loc["SetupConfigChanged"], progress.Text);
                 Assert.AreEqual(newEndpoint.BaseUrl + "/v1", Find<TextBox>(view, "SetupBaseUrlBox").Text, "草稿地址保留");
                 await ClickPrimaryAsync(view);
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), progress.Text);
+                // 同一地址已经提示过:换一句话说 Key 变了,不与第一次的提示混成一样
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetChanged", 2), progress.Text);
                 Assert.AreEqual("sk-added-elsewhere", await store.GetApiKeyAsync(added), "旧的确认不能把它一起清掉");
 
                 await ClickPrimaryAsync(view);
@@ -1650,6 +1651,94 @@ public sealed class ProviderSetupViewUiTests
                 Assert.IsEmpty(oldEndpoint.Requests);
             }
             finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void ExistingProvider_BlankKeyClearedByTheMoveIsNotKeptAsTheBaseline()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            await using var oldEndpoint = new SseStub("");
+            await using var newEndpoint = new SseStub("", jsonContent: "");
+            AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            provider.BaseUrl = oldEndpoint.BaseUrl + "/v1";
+            // 只有空白的「Key」(界面当没有):换源保存时照清,不必确认,也不在清掉的名单里
+            await context.Secrets.SetAsync($"apikey:{provider.Id}", "   ");
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id },
+                    focus: "custom-openai");
+            try
+            {
+                var loc = new Loc("en");
+                Find<TextBox>(view, "SetupBaseUrlBox").Text = newEndpoint.BaseUrl + "/v1";
+                await ClickPrimaryAsync(view);
+                Assert.AreEqual(newEndpoint.BaseUrl + "/v1", provider.BaseUrl);
+                Assert.IsNull(await context.Secrets.GetAsync($"apikey:{provider.Id}"));
+
+                // 同一张表单接着再存(新主机上换个路径):Key 基线若还是那串空白,就对不上库里的「没有」,被误报成配置已变
+                Find<TextBox>(view, "SetupBaseUrlBox").Text = newEndpoint.BaseUrl + "/v2";
+                await ClickPrimaryAsync(view);
+                Assert.AreNotEqual(loc["SetupConfigChanged"], Find<TextBlock>(view, "SetupProgressText").Text);
+                Assert.AreEqual(newEndpoint.BaseUrl + "/v2", provider.BaseUrl);
+                Assert.IsEmpty(oldEndpoint.Requests);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void ExistingProvider_ClearedModelsNoteDoesNotLandOnAnotherCard()
+    {
+        OnUi(async () =>
+        {
+            using var endpoint = new HeldModelsEndpoint();
+            var storage = new KeySaveStorage(new InMemoryStorage());
+            using var context = new TestPluginContext { Storage = storage };
+            await using var oldEndpoint = new SseStub("");
+            AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            provider.BaseUrl = oldEndpoint.BaseUrl + "/v1";
+            provider.Models[0].Model = "inherits";
+            var own = new AiModelConfig { Model = "own-model", HasOwnApiKey = true };
+            provider.Models.Add(own);
+            await context.Secrets.SetAsync($"apikey:{provider.Id}", "sk-first");
+            await context.Secrets.SetAsync($"apikey:{own.Id}", "own-old");
+            (Window window, ProviderSetupView view, AiSettings settings, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id },
+                    focus: "custom-openai");
+            var pulled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            view.ModelsChanged += () => pulled.TrySetResult();
+            try
+            {
+                var loc = new Loc("en");
+                // 换到新主机并填好新 Key:只清模型自带的那把,保存后照常拉新地址的模型清单
+                Find<TextBox>(view, "SetupBaseUrlBox").Text = endpoint.BaseUrl + "/v1";
+                Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
+                await ClickPrimaryAsync(view);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), Find<TextBlock>(view, "SetupProgressText").Text);
+
+                // 确认的这一击写盘途中,用户打开了另一张卡片
+                storage.Hold = true;
+                Click(Find<Button>(view, "SetupPrimaryButton"));
+                await storage.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                view.FocusEntry("deepseek");
+                TextBlock other = Find<TextBlock>(view, "SetupProgressText");
+                storage.Release.TrySetResult();
+                await endpoint.Requested.WaitAsync(TimeSpan.FromSeconds(10));
+                endpoint.Release();
+                await pulled.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                await PumpAsync(10);
+                Assert.IsNull(await store.GetApiKeyAsync(own.Id), "前提:这次保存确实清了模型自带的 Key");
+                // 「这些模型要重填 Key」是刚才那张卡片的保存结果,不能接到另一张卡片的进度行上
+                Assert.DoesNotContain(loc.F("SetupModelKeysCleared", "own-model"), other.Text ?? "");
+            }
+            finally
+            {
+                storage.Release.TrySetResult();
+                endpoint.Release();
+                window.Close();
+            }
         });
     }
 

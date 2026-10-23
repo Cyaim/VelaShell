@@ -66,18 +66,9 @@ internal static class SshDisconnectLog
         => duration.ToString(duration.TotalDays >= 1 ? @"d\.hh\:mm\:ss" : @"hh\:mm\:ss", CultureInfo.InvariantCulture);
 
     /// <summary>压成一行、去掉控制字符并截断:日志一条一行,对端给的文本不能伪造出第二行。</summary>
-    private static string Clean(string text)
-    {
-        var builder = new StringBuilder(Math.Min(text.Length, TextLimit + 1));
-        foreach (char c in text)
-        {
-            if (builder.Length >= TextLimit)
-            {
-                builder.Append('…');
-                break;
-            }
-            builder.Append(char.IsControl(c) ? ' ' : c);
-        }
-        return builder.ToString().Trim();
-    }
+    /// <remarks>
+    /// 各种换行(含 U+2028 / U+2029,不少查看器把它们当换行)先换成空格;其余控制字符与双向控制符交给库的
+    /// <see cref="PeerText.Sanitize" /> 换成 <c>?</c> —— 库自己往异常消息里拼对端原话也是这一套。
+    /// </remarks>
+    private static string Clean(string text) => PeerText.Sanitize(text.ReplaceLineEndings(" "), TextLimit).Trim();
 }

@@ -73,6 +73,11 @@ public sealed class RoutingRemoteFileService(
         Resolve(sessionId).RenameAsync(sessionId, oldPath, newPath, cancellationToken);
 
     /// <inheritdoc />
+    /// <remarks>接口给了「不支持」的默认实现,这里不显式转发就永远落到默认实现上:插件后台上传全部卡在提交。</remarks>
+    public Task CommitUploadAsync(Guid sessionId, string temporaryPath, string destinationPath, bool overwrite, CancellationToken cancellationToken = default) =>
+        Resolve(sessionId).CommitUploadAsync(sessionId, temporaryPath, destinationPath, overwrite, cancellationToken);
+
+    /// <inheritdoc />
     public Task CopyAsync(Guid sessionId, string sourcePath, string destPath, IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default) =>
         Resolve(sessionId).CopyAsync(sessionId, sourcePath, destPath, progress, cancellationToken);
 

@@ -33,6 +33,30 @@ public sealed class TransferPresentationTests
             Assert.AreNotEqual("TransferSucceeded", TransferPresentation.StateKey(snapshot with { State = state }));
     }
 
+    /// <summary>
+    /// 没成功的终态带上宿主给的原因 —— 卡片上只写"失败",用户只能去翻日志。
+    /// 原因只取一行、去掉控制与格式字符并限长;成功或仍在跑的不带。
+    /// </summary>
+    [TestMethod]
+    public void UnsuccessfulTerminalTransfer_ShowsAShortSanitizedCause()
+    {
+        var loc = new Loc("en");
+        var failed = new RemoteTransferSnapshot { TransferId = "t", OperationId = "op", SessionId = "s", LocalPath = "target", RemotePath = "/source",
+            Direction = RemoteTransferDirection.Download, State = RemoteTransferState.Failed, TotalBytes = 10,
+            ErrorMessage = "Cannot lock the destination\r\ndirectory chain.\u001b‮" };
+        string text = TransferPresentation.Text(loc, failed);
+        Assert.Contains(loc["TransferFailed"], text);
+        Assert.Contains("Cannot lock the destination directory chain.", text);
+        Assert.DoesNotContain("\n", text);
+        Assert.DoesNotContain("\u001b", text);
+        Assert.DoesNotContain("‮", text);
+        Assert.Contains("not confirmed", TransferPresentation.Text(loc, failed with
+        { State = RemoteTransferState.Unknown, ErrorMessage = "Stop was not confirmed." }));
+        Assert.IsLessThan(400, TransferPresentation.Text(loc, failed with { ErrorMessage = new string('x', 5000) }).Length);
+        foreach (RemoteTransferState state in new[] { RemoteTransferState.Succeeded, RemoteTransferState.Running })
+            Assert.DoesNotContain("stale", TransferPresentation.Text(loc, failed with { State = state, ErrorMessage = "stale" }));
+    }
+
     [TestMethod]
     public void TransferStatusesHaveFiveLocalizedVariants()
     {

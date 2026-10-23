@@ -1587,7 +1587,7 @@ public sealed class AiSettingsStoreTests
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public async Task BaseUrlToAnotherOrigin_CachedKeysStayUntilTheCommitPublishes(bool fail)
+    public async Task BaseUrlToAnotherOrigin_ResetKeysReadMidCommitAreAlreadyGone(bool fail)
     {
         var storage = new FailingStorage(new InMemoryStorage());
         using var context = new TestPluginContext { Storage = storage };
@@ -1606,22 +1606,24 @@ public sealed class AiSettingsStoreTests
         Task commit = store.SaveProviderApiKeyFormAsync(settings, provider, draft, expected, null, provider.Id, "primary",
             [AiSettingsStore.KeyResetToken(provider.Id, "primary"), AiSettingsStore.KeyResetToken(own.Id, "own-key")]);
         await storage.Started.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        // 机密已删、配置还没落盘:活配置仍是旧地址,缓存里也得还是旧的那几把 —— 不能提前变成「没有」,
-        // 否则这时读到的、提交随后又回滚了的那份,会让聊天不带凭据去敲旧地址
-        Assert.AreEqual("own-key", await store.GetApiKeyAsync(own.Id));
-        Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id));
+        // 机密已删、配置还没落盘:这时读(比如打开模型编辑器)只能读到「没有」。读到旧值的话,
+        // 界面手里那把旧 Key 等提交成功后会被带去新地址;读到「没有」最多让回滚前后的一次请求失败
+        Assert.IsNull(await store.GetApiKeyAsync(own.Id));
+        Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
         storage.Release.TrySetResult();
         if (fail)
         {
+            // 回滚把机密与缓存一并恢复
             await Assert.ThrowsAsync<IOException>(() => commit);
             Assert.AreEqual("own-key", await store.GetApiKeyAsync(own.Id));
             Assert.AreEqual("own-key", await context.Secrets.GetAsync("apikey:" + own.Id));
+            Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id));
             Assert.AreEqual("https://old.example/v1", provider.BaseUrl);
         }
         else
         {
             await commit;
-            Assert.IsNull(await store.GetApiKeyAsync(own.Id), "发布之后缓存同步失效");
+            Assert.IsNull(await store.GetApiKeyAsync(own.Id));
             Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
             Assert.AreEqual("https://new.example/v1", provider.BaseUrl);
         }

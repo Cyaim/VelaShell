@@ -53,6 +53,44 @@ public sealed class BridgeAgentRunnerTests
         Assert.HasCount(3, endpoint.Requests);
     }
 
+    [TestMethod]
+    [DataRow(ChatMode.Chat)]
+    [DataRow(ChatMode.Agent)]
+    [DataRow(ChatMode.Plan)]
+    public async Task WhitespaceModelSteps_RetryUnchanged_WithoutContinuationBoundary(ChatMode mode)
+    {
+        // 纯空白与空步骤同属未开口:各模式都原样补试,不写续接边界、不追加"已中断"提示
+        await using var endpoint = new SseStub("""
+            data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":" \t\n "},"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+
+            """);
+        using var context = new TestPluginContext();
+        var provider = new AiProvider
+        {
+            Name = "blank", BaseUrl = endpoint.BaseUrl,
+            DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
+            Models = [new AiModelConfig { Model = "m" }]
+        };
+        await new AiSettingsStore(context).SaveAsync(new AiSettings
+        { Providers = [provider], ActiveModelId = provider.Models[0].Id });
+        var conversation = new BridgeConversation("ch1", "chat-1");
+        var loc = new Loc("zh-Hans");
+        List<string> progress = [];
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Create(context).RunAsync(conversation, new BridgeSettings { Mode = mode },
+                Message(), Deny, loc, progress.Add, null, CancellationToken.None));
+        Assert.Contains(loc["ProbeEmptyReply"], error.Message);
+        Assert.HasCount(3, endpoint.Requests);
+        Assert.AreEqual(endpoint.Requests[0], endpoint.Requests[1], "补试请求必须与首次相同");
+        Assert.AreEqual(endpoint.Requests[0], endpoint.Requests[2], "补试请求必须与首次相同");
+        string boundary = loc["ContinuationBoundary"].Trim();
+        Assert.IsFalse(progress.Any(text => text.Contains(boundary, StringComparison.Ordinal)), "群里不能看到续接边界");
+        Assert.IsFalse(conversation.History.Any(m => m.Text.Contains(boundary, StringComparison.Ordinal)), "历史不能记下续接边界");
+    }
+
     /// <summary>
     /// AI 设置必须<b>每轮现读</b>,不能吃桥接启动时的那份快照。
     /// </summary>

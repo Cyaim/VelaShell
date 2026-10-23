@@ -262,8 +262,8 @@ internal sealed class AgentPausedException(string key) : InvalidOperationExcepti
 /// 完整模型步骤确认前扣住工具帧,截断调用绝不执行。
 /// </summary>
 internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution execution,
-    string continuationBoundary, Action<int>? retrying = null,
-    Func<TimeSpan, CancellationToken, Task>? delay = null) : DelegatingChatClient(inner)
+    string continuationBoundary, Action<int, Exception>? retrying = null,
+    Func<TimeSpan, CancellationToken, Task>? delay = null, Action? recovered = null) : DelegatingChatClient(inner)
 {
     public override async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages,
         ChatOptions? options = null, CancellationToken cancellationToken = default)
@@ -326,6 +326,8 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                 else
                 {
                     execution.CompleteStep(response);
+                    // 补试后这一步答上了:重试提示到此为止,不挂到整轮结束。
+                    if (attempt > 0) recovered?.Invoke();
                     foreach (ChatResponseUpdate update in buffered)
                     {
                         // 保存的是独立消息列表;输出时不改供应商原始帧,避免污染 checkpoint。
@@ -364,11 +366,12 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
             cancellationToken.ThrowIfCancellationRequested();
             if (attempt >= 2 || !TransientFailure.IsTransient(failure))
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure!).Throw();
-            retrying?.Invoke(attempt + 1);
-            if (partial.Length > 0)
+            retrying?.Invoke(attempt + 1, failure!);
+            string snippet = partial.ToString();
+            // 空答(只有空白也算空答)原样重发,不写续接边界;连接中断等其余补试照旧:收到过正文就续接。
+            if (failure is not HealthProbe.EmptyReplyException && snippet.Length > 0)
             {
                 // 不重放未完成调用或供应商推理;正文续接边界明确显示。
-                string snippet = partial.ToString();
                 if (snippet.Length > 8000) snippet = snippet[^8000..];
                 execution.RecordInterruptedText(snippet + continuationBoundary);
                 outgoing.Add(new ChatMessage(ChatRole.Assistant, snippet));

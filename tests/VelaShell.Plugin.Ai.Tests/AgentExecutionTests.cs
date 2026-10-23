@@ -119,6 +119,76 @@ public sealed class AgentExecutionTests
     }
 
     [TestMethod]
+    public async Task WhitespaceStep_RetriesUnchanged_WithoutContinuationBoundary()
+    {
+        // 纯空白与空步骤同属未开口:原样重发,不当被打断的正文去续接
+        var wire = new Wire((n, _) => n < 3 ? [new(ChatRole.Assistant, " \t\n "), End(ChatFinishReason.Stop)]
+            : [new(ChatRole.Assistant, "answer"), End(ChatFinishReason.Stop)]);
+        var execution = new AgentExecution("run");
+        using var client = new RecoveringChatClient(wire, execution, "[boundary]", delay: (_, _) => Task.CompletedTask);
+        List<ChatResponseUpdate> updates = [];
+        await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) updates.Add(update);
+        Assert.HasCount(3, wire.Requests);
+        foreach (List<ChatMessage> request in wire.Requests)
+            Assert.AreSequenceEqual(new[] { "user:go" }, request.Select(m => $"{m.Role}:{m.Text}").ToArray(), "补试请求必须与首次相同");
+        Assert.DoesNotContain("[boundary]", updates.ToChatResponse().Text);
+        Assert.AreEqual("answer", updates.ToChatResponse().Text.Trim());
+        Assert.HasCount(1, execution.CompletedMessages, "空白不能作为被打断的正文入账");
+    }
+
+    [TestMethod]
+    public async Task WhitespaceSteps_ExhaustRecovery_LikeEmptySteps()
+    {
+        var wire = new Wire((_, _) => [new(ChatRole.Assistant, " \t\n "), End(ChatFinishReason.Stop)]);
+        var execution = new AgentExecution("run");
+        using var client = new RecoveringChatClient(wire, execution, "[boundary]", delay: (_, _) => Task.CompletedTask);
+        List<ChatResponseUpdate> updates = [];
+        await Assert.ThrowsAsync<HealthProbe.EmptyReplyException>(async () =>
+        {
+            await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) updates.Add(update);
+        });
+        Assert.HasCount(3, wire.Requests);
+        foreach (List<ChatMessage> request in wire.Requests)
+            Assert.AreSequenceEqual(new[] { "user:go" }, request.Select(m => $"{m.Role}:{m.Text}").ToArray(), "补试请求必须与首次相同");
+        Assert.IsFalse(Ui.TransientFailure.HasMeaningfulOutput(updates), "续接边界不能冒充正文,否则面板不再换站");
+        Assert.IsEmpty(execution.CompletedMessages);
+    }
+
+    [TestMethod]
+    public async Task WhitespaceBeforeADisconnect_StillContinuesFromTheReceivedText()
+    {
+        // 只有空答才原样重发;连接中断照旧按已收到的正文续接(那条规则早于空答补试,不跟着改)
+        var wire = new Wire((n, _) => n == 1 ? [new(ChatRole.Assistant, "\n")]
+            : [new(ChatRole.Assistant, "answer"), End(ChatFinishReason.Stop)], failOn: [1]);
+        using var client = new RecoveringChatClient(wire, new AgentExecution("run"), "[boundary]", delay: (_, _) => Task.CompletedTask);
+        await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) { }
+        Assert.HasCount(2, wire.Requests);
+        Assert.HasCount(3, wire.Requests[1], "断线后的补试带上已收到的正文与续接提示");
+    }
+
+    [TestMethod]
+    public async Task RetriedStep_ReportsFailureKind_AndRecoveryOnce()
+    {
+        // 面板据此把「空答」与「连接失败」分开说,并在补试的这一步答上后撤掉重试提示
+        var wire = new Wire((n, _) => n switch
+        {
+            1 => [End(ChatFinishReason.Stop)],
+            2 => [],
+            _ => [new(ChatRole.Assistant, "answer"), End(ChatFinishReason.Stop)]
+        }, failOn: [2]);
+        List<string> events = [];
+        using var client = new RecoveringChatClient(wire, new("run"), "boundary",
+            (attempt, failure) => events.Add($"retry {attempt}: {failure.GetType().Name}"),
+            delay: (_, _) => Task.CompletedTask, recovered: () => events.Add("recovered"));
+        await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) { }
+        Assert.AreSequenceEqual(new[] { "retry 1: EmptyReplyException", "retry 2: IOException", "recovered" }, events.ToArray());
+
+        events.Clear();
+        await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "again")])) { }
+        Assert.IsEmpty(events, "没补试过的步骤不发撤销通知");
+    }
+
+    [TestMethod]
     public async Task ToolCompleted_ThenEmptyStep_RetriesModelWithoutRepeatingTool()
     {
         int executed = 0, verified = 0;

@@ -189,15 +189,18 @@ public sealed class HealthProbeTests
     [TestMethod]
     public async Task EmptyProbe_RetrySharesOriginalDeadline()
     {
-        await using var endpoint = new SseStub("data: [DONE]\n\n", delay: TimeSpan.FromSeconds(8));
+        // 每次都 10 秒后空答:补试若另得 15 秒预算,约 20.4 秒才读完;共用原截止时间则 15 秒到点切断
+        await using var endpoint = new SseStub("data: [DONE]\n\n", delay: TimeSpan.FromSeconds(10));
         using var context = new TestPluginContext();
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), ModelFor(endpoint.BaseUrl))
-            .WaitAsync(TimeSpan.FromSeconds(20));
-        Assert.IsNotNull(error);
-        Assert.IsNotInstanceOfType<HealthProbe.EmptyReplyException>(error, "第二次请求应被原截止时间取消,而非在16秒后读完");
-        Assert.HasCount(2, endpoint.Requests);
+            .WaitAsync(TimeSpan.FromSeconds(25));
+        elapsed.Stop();
+        Assert.HasCount(2, endpoint.Requests, "首次空答后补试一次");
+        Assert.IsGreaterThan(TimeSpan.FromSeconds(14), elapsed.Elapsed, "补试是被原截止时间切断的,不是自己提前结束");
         Assert.IsLessThan(TimeSpan.FromSeconds(18), elapsed.Elapsed, "重试不能重新获得15秒预算");
+        Assert.IsInstanceOfType<HealthProbe.EmptyReplyException>(error,
+            "已空答一次、补试被探活自己的截止时间切断:不通的原因仍是空回复,不报「操作已取消」");
     }
 
     [TestMethod]

@@ -198,10 +198,11 @@ public sealed partial class SettingsViewUiTests
             {
                 view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
                 await PumpAsync();
-                // 供应商这一层没有 Key,但不是无鉴权接入:首模型自带的那把属于旧地址,同样不带去测
+                // 供应商这一层没有 Key,但不是无鉴权接入:首模型自带的那把属于旧地址,同样不带去测;
+                // 也没有继承供应商 Key 的模型可换,「先填新 Key」走不通,直说先保存、再给各模型填新服务器的 Key
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
-                Assert.AreEqual(loc["SetupTestNeedsNewOriginKey"], view.GetControl<TextBlock>("StatusText").Text);
+                Assert.AreEqual(loc["SetupTestNeedsModelKeys"], view.GetControl<TextBlock>("StatusText").Text);
                 Assert.IsEmpty(newHost.Requests);
                 Assert.IsEmpty(oldHost.Requests);
             }
@@ -240,9 +241,10 @@ public sealed partial class SettingsViewUiTests
                 await PumpAsync();
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
-                // 没填新 Key:首模型自带的那把属于旧地址,不带去测,请用户先填新 Key
+                // 没填新 Key:首模型自带的那把属于旧地址,不带去测。有继承供应商 Key 的模型可换,就请用户先填新 Key;
+                // 没有的话填了也测不成,直说先保存、再给各模型填新服务器的 Key
                 await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
-                Assert.AreEqual(loc["SetupTestNeedsNewOriginKey"], status.Text);
+                Assert.AreEqual(loc[inheritingModel ? "SetupTestNeedsNewOriginKey" : "SetupTestNeedsModelKeys"], status.Text);
                 Assert.IsEmpty(newHost.Requests);
 
                 // 照提示填了新 Key:首模型用不上供应商的 Key,换一个继承供应商 Key 的模型来测;没有就如实说
@@ -313,10 +315,10 @@ public sealed partial class SettingsViewUiTests
                     await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupConfigChanged"]);
                     Assert.AreEqual(newHost.BaseUrl, view.GetControl<TextBox>("ProviderBaseUrlBox").Text, "草稿地址保留");
                 }
-                status.Text = "";
                 Click(save);
+                // 换一句提示:同一个槽换了值时要清的把数不变,一字不差的提示看着像没点上,再点一下就把新存的那把清掉
                 await WaitUntilAsync(() => save.IsEnabled
-                    && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", where == "same-slot" ? 1 : 2));
+                    && status.Text == loc.F("SetupBaseUrlKeyResetChanged", where == "same-slot" ? 1 : 2));
                 Assert.AreEqual("added-after-prompt", await store.GetApiKeyAsync(added), "旧的确认不能把它一起清掉");
                 Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl);
 
@@ -367,6 +369,502 @@ public sealed partial class SettingsViewUiTests
         });
     }
 
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_SavedStatusCallsAnUnnamedModelWhatTheListCallsIt()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            // 名称与模型 id 都还空着的模型,同样可以自带 Key
+            var own = new AiModelConfig { HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }, own] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            await store.SetApiKeyAsync(own.Id, "old-own");
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                Button save = view.GetControl<Button>("SaveButton");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                Click(save);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
+                Click(save);
+                // 点名时与左栏一样叫「(未命名)」,不在冒号后面留一个空名字
+                await WaitUntilAsync(() => save.IsEnabled
+                    && status.Text == loc["SetupSavedKeysCleared"] + "\n" + loc.F("SetupModelKeysCleared", loc["Unnamed"]));
+                Assert.IsNull(await store.GetApiKeyAsync(own.Id));
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_ClearedStatusReplacesThePromptWhileAnotherKeyIsBeingEdited()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            var storage = new AiSettingsStoreTests.FailingStorage(new InMemoryStorage());
+            using var context = new TestPluginContext { Storage = storage };
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            string extra = await store.AddProviderApiKeyAsync(settings, provider, "old-extra");
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                Button save = view.GetControl<Button>("SaveButton");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                Click(save);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
+
+                // 确认的这一击写盘途中,用户点开了第二把 Key 的编辑框(保存期间别的行照样能编辑)
+                storage.Hold = true;
+                Click(save);
+                await storage.Started.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                EditProviderKey(view, extra);
+                storage.Release.TrySetResult();
+                await WaitUntilAsync(() => save.IsEnabled && provider.BaseUrl == newHost.BaseUrl);
+                // Key 已经清了:「再点一次确认」不能还挂着,否则看着像没生效
+                Assert.AreEqual(loc["SetupSavedKeysCleared"], status.Text);
+                Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
+                Assert.IsNull(await store.GetApiKeyAsync(extra));
+            }
+            finally { storage.Release.TrySetResult(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_EmptyPrimarySlotStillTestsWithoutTheOtherSlots()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            string extra = await store.AddProviderApiKeyAsync(settings, provider, "old-extra");
+            // 移除第 1 把:主槽只清机密,第 2 把留在补充槽
+            await store.RemoveProviderApiKeyAsync(settings, provider, provider.Id);
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                // 未保存的跨源探活只带主槽,补充槽不跟去:主槽空着就没有 Key 会发过去,换到无鉴权的新主机照常测
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.HasCount(1, newHost.Authorizations, view.GetControl<TextBlock>("StatusText").Text);
+                Assert.AreEqual("Bearer not-needed", newHost.Authorizations[0]);
+                Assert.IsEmpty(oldHost.Requests);
+                Assert.AreEqual("old-extra", await store.GetApiKeyAsync(extra));
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    [DataRow("ANTHROPIC_API_KEY")]
+    [DataRow("ANTHROPIC_AUTH_TOKEN")]
+    [DataRow(null)]
+    public void BaseUrlToAnotherOrigin_BlankKeyWithAnEmptyPrimaryStillGuardsTheMachineKey(string? variable)
+    {
+        OnUi(async () =>
+        {
+            string? apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+            string? authToken = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", null);
+            if (variable is not null) Environment.SetEnvironmentVariable(variable, "machine-secret");
+            await using var oldHost = new SseStub(AnthropicProbeAnswerSse);
+            await using var newHost = new SseStub(AnthropicProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider
+            {
+                ModelsExpanded = true,
+                BaseUrl = oldHost.BaseUrl,
+                DefaultProtocol = ChatProtocol.AnthropicMessages,
+                Models = [new AiModelConfig { Model = "m" }]
+            };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            string extra = await store.AddProviderApiKeyAsync(settings, provider, "old-extra");
+            await store.RemoveProviderApiKeyAsync(settings, provider, provider.Id);
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                // 主槽空着,只把第 2 把改成空格:探活不带任何已存的 Key,拦不拦只看本机环境变量 —— 设了就拦,没设照常测
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                EditProviderKey(view, extra).Text = "   ";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                string? status = view.GetControl<TextBlock>("StatusText").Text;
+                if (variable is not null)
+                {
+                    Assert.AreEqual(new Loc("en")["SetupTestNeedsNewOriginKey"], status, string.Join(", ", newHost.Authorizations));
+                    Assert.IsEmpty(newHost.Requests);
+                }
+                else
+                {
+                    Assert.HasCount(1, newHost.Requests, status);
+                }
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally
+            {
+                window.Close();
+                Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", apiKey);
+                Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", authToken);
+            }
+        });
+    }
+
+    [TestMethod]
+    [DataRow("ANTHROPIC_API_KEY")]
+    [DataRow("ANTHROPIC_AUTH_TOKEN")]
+    public void BaseUrlToAnotherOrigin_KeylessAnthropicProviderDoesNotSendTheMachineKey(string variable)
+    {
+        OnUi(async () =>
+        {
+            // Anthropic 协议没有 Key 时 SDK 改用本机环境变量里的那把,同样会发去这个还没保存的地址:与已存的 Key 一样拦下
+            (string? status, IReadOnlyList<string> oldRequests, IReadOnlyList<string> newRequests, IReadOnlyList<string?> sent) =
+                await TestKeylessAnthropicMoveAsync(variable);
+            Assert.AreEqual(new Loc("en")["SetupTestNeedsNewOriginKey"], status, string.Join(", ", sent));
+            Assert.IsEmpty(newRequests);
+            Assert.IsEmpty(oldRequests);
+        });
+    }
+
+    [TestMethod]
+    [DataRow("ANTHROPIC_API_KEY")]
+    [DataRow("ANTHROPIC_AUTH_TOKEN")]
+    public void BaseUrlToAnotherOrigin_BlankTypedKeyDoesNotLetTheMachineKeyOut(string variable)
+    {
+        OnUi(async () =>
+        {
+            string? apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+            string? authToken = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", null);
+            Environment.SetEnvironmentVariable(variable, "machine-secret");
+            await using var oldHost = new SseStub(AnthropicProbeAnswerSse);
+            await using var newHost = new SseStub(AnthropicProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider
+            {
+                ModelsExpanded = true,
+                BaseUrl = oldHost.BaseUrl,
+                DefaultProtocol = ChatProtocol.AnthropicMessages,
+                Models = [new AiModelConfig { Model = "m" }]
+            };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                // 主槽里改成只有空格:算不上新填的 Key。探活带的是空白凭据,SDK 会改用本机环境变量里的那把发去这个还没保存的地址
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                EditProviderKey(view, provider.Id).Text = "   ";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(new Loc("en")["SetupTestNeedsNewOriginKey"], view.GetControl<TextBlock>("StatusText").Text,
+                    string.Join(", ", newHost.Authorizations));
+                Assert.IsEmpty(newHost.Requests);
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally
+            {
+                window.Close();
+                Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", apiKey);
+                Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", authToken);
+            }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_KeylessAnthropicProviderWithoutAMachineKeyStillTests()
+    {
+        OnUi(async () =>
+        {
+            (string? status, IReadOnlyList<string> oldRequests, IReadOnlyList<string> newRequests, _) =
+                await TestKeylessAnthropicMoveAsync(null);
+            Assert.HasCount(1, newRequests, status);
+            Assert.AreEqual(new Loc("en").F("TestOk", "OK"), status);
+            Assert.IsEmpty(oldRequests);
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_BlankTypedKeyDoesNotStandInForTheFirstModelsOwnKey()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [own, new AiModelConfig { Model = "inherits" }] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = own.Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            await store.SetApiKeyAsync(own.Id, "old-own");
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                // 编辑框里只有空格:不是新服务器的 Key,不能借它换一个继承模型、空着凭据去测;按没填处理
+                EditProviderKey(view, provider.Id).Text = "   ";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(loc["SetupTestNeedsNewOriginKey"], view.GetControl<TextBlock>("StatusText").Text);
+                Assert.IsEmpty(newHost.Requests);
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_ModelWithoutAModelIdIsNotUsedToTestTheTypedKey()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+            // 唯一继承供应商 Key 的模型还没填模型 id(名称也空着)
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [own, new AiModelConfig()] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = own.Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            await store.SetApiKeyAsync(own.Id, "old-own");
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                // 填了供应商的新 Key:模型 id 为空的那个发不出像样的请求,不拿它来测
+                TextBox typed = EditProviderKey(view, provider.Id);
+                typed.Text = "new-primary";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(loc["SetupKeyNoModel"], status.Text);
+                Assert.IsEmpty(newHost.Requests);
+
+                // 没填新 Key:同样没有能换的模型,直说先保存、再给各模型填新服务器的 Key
+                typed.Text = "";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(loc["SetupTestNeedsModelKeys"], status.Text);
+                Assert.IsEmpty(newHost.Requests);
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_ConfigurationChangedWhileReadingTheKeyIsNotTested()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var source = new TestPluginContext();
+            var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [own] };
+            // 不设活跃模型:打开时选中供应商行,模型编辑器不先读它的 Key
+            var settings = new AiSettings { Providers = [provider] };
+            // 首模型勾了自带 Key 却还没填;它的 Key 不在缓存里,点「测试」要真等机密存储 —— 把这一下挂住
+            var delayed = new DelayedSecrets(source.Secrets, $"apikey:{own.Id}");
+            using var context = new TestPluginContext { Secrets = delayed };
+            var store = new AiSettingsStore(context);
+            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                Task test = StartTestAsync(view);
+                await delayed.Started.WaitAsync(TimeSpan.FromSeconds(15));
+                // 读的期间,同一份设置里这个模型改成了继承供应商 Key(别处保存):探活改带主槽那把旧 Key,刚读到的「没有」已不作数
+                string expected = System.Text.Json.JsonSerializer.Serialize(own);
+                AiModelConfig inherits = System.Text.Json.JsonSerializer.Deserialize<AiModelConfig>(expected)!;
+                inherits.HasOwnApiKey = false;
+                await store.SaveModelFormAsync(settings, provider, own, inherits, expected, apiKey: null, expectedKey: null);
+                delayed.Release();
+                await test.WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(loc["SetupTestNeedsNewOriginKey"], view.GetControl<TextBlock>("StatusText").Text,
+                    string.Join(", ", newHost.Authorizations));
+                Assert.IsEmpty(newHost.Requests, "旧地址的 Key 不能拿去测新地址");
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally { delayed.Release(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_SecondClickWhileReadingTheKeyDoesNotTestTwice()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var source = new TestPluginContext();
+            var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [own] };
+            // 不设活跃模型:打开时选中供应商行,模型编辑器不先读它的 Key;首模型勾了自带 Key 却还没填(无鉴权接入照常测)
+            var settings = new AiSettings { Providers = [provider] };
+            var delayed = new DelayedSecrets(source.Secrets, $"apikey:{own.Id}");
+            using var context = new TestPluginContext { Secrets = delayed };
+            var store = new AiSettingsStore(context);
+            await store.SaveAsync(settings);
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                Task first = StartTestAsync(view);
+                await delayed.Started.WaitAsync(TimeSpan.FromSeconds(15));
+                // 读已存 Key 的期间按钮还没置灰:连点的第二下不能再起一次探活
+                Assert.IsTrue(view.GetControl<Button>("TestButton").IsEnabled);
+                Task second = StartTestAsync(view);
+                delayed.Release();
+                await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.HasCount(1, newHost.Requests);
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally { delayed.Release(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_ClickAfterEditingTheAddressDuringTheReadTestsTheNewAddress()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var firstHost = new SseStub(ProbeAnswerSse);
+            await using var secondHost = new SseStub(ProbeAnswerSse);
+            using var source = new TestPluginContext();
+            var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [own] };
+            var settings = new AiSettings { Providers = [provider] };
+            var delayed = new DelayedSecrets(source.Secrets, $"apikey:{own.Id}");
+            using var context = new TestPluginContext { Secrets = delayed };
+            var store = new AiSettingsStore(context);
+            await store.SaveAsync(settings);
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = firstHost.BaseUrl;
+                Task first = StartTestAsync(view);
+                await delayed.Started.WaitAsync(TimeSpan.FromSeconds(15));
+                // 第一击还在读已存 Key,用户改了地址再点:测的应是框里现在的地址,第一击作废,也不能两击都被吞掉
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = secondHost.BaseUrl;
+                Task second = StartTestAsync(view);
+                delayed.Release();
+                await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.IsEmpty(firstHost.Requests);
+                Assert.HasCount(1, secondHost.Requests, view.GetControl<TextBlock>("StatusText").Text);
+                Assert.IsEmpty(oldHost.Requests);
+            }
+            finally { delayed.Release(); window.Close(); }
+        });
+    }
+
+    // 无鉴权的 Anthropic 接入把地址换到另一台主机、还没保存就点「测试」;machineVariable 是本机设了的那个环境变量(null 为都没设)
+    private static async Task<(string? Status, IReadOnlyList<string> OldRequests, IReadOnlyList<string> NewRequests,
+        IReadOnlyList<string?> NewAuthorizations)> TestKeylessAnthropicMoveAsync(string? machineVariable)
+    {
+        string? apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        string? authToken = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", null);
+            if (machineVariable is not null) Environment.SetEnvironmentVariable(machineVariable, "machine-secret");
+            await using var oldHost = new SseStub(AnthropicProbeAnswerSse);
+            await using var newHost = new SseStub(AnthropicProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider
+            {
+                ModelsExpanded = true,
+                BaseUrl = oldHost.BaseUrl,
+                DefaultProtocol = ChatProtocol.AnthropicMessages,
+                Models = [new AiModelConfig { Model = "m" }]
+            };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.SaveAsync(settings);
+            var view = new SettingsView(context, store, settings, new Loc("en"), () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                return (view.GetControl<TextBlock>("StatusText").Text, oldHost.Requests, newHost.Requests, newHost.Authorizations);
+            }
+            finally { window.Close(); }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", apiKey);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", authToken);
+        }
+    }
 
     [TestMethod]
     [DataRow("en")]
@@ -1632,6 +2130,27 @@ public sealed partial class SettingsViewUiTests
 
     private static HeadlessUnitTestSession _session = null!;
     private const string ProbeAnswerSse = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"OK\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+    private const string AnthropicProbeAnswerSse = """
+        event: message_start
+        data: {"type":"message_start","message":{"id":"msg_probe","type":"message","role":"assistant","model":"m","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}
+
+        event: content_block_start
+        data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+        event: content_block_delta
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}
+
+        event: content_block_stop
+        data: {"type":"content_block_stop","index":0}
+
+        event: message_delta
+        data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}
+
+        event: message_stop
+        data: {"type":"message_stop"}
+
+
+        """;
 
     [ClassInitialize]
     public static void Init(TestContext _) =>
@@ -2825,7 +3344,9 @@ public sealed partial class SettingsViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            await using var endpoint = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "");
+            // 旧账号首次与补试都空答,这一轮才真有失败;新一轮(第 3 个流)正常作答
+            await using var endpoint = new SseStub(ProbeAnswerSse, holdFirstStream: true, firstStreamContent: "",
+                streamingReply: n => n == 2 ? "data: [DONE]\n\n" : ProbeAnswerSse);
             var model = new AiModelConfig { Model = "m1" };
             var provider = new AiProvider
             {
@@ -2841,7 +3362,8 @@ public sealed partial class SettingsViewUiTests
             var store = new AiSettingsStore(context);
             await store.SaveAsync(settings);
             await store.SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "same-token", AccountId = "old-account" });
-            var view = new SettingsView(context, store, settings, new Loc("en"), () => { }, health);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { }, health);
             var window = new Window { Width = 900, Height = 700, Content = view };
             window.Show();
             await PumpAsync();
@@ -2853,6 +3375,9 @@ public sealed partial class SettingsViewUiTests
                 await store.SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "same-token", AccountId = "new-account" });
                 endpoint.Release();
                 await oldRun.WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.HasCount(2, endpoint.Requests, "旧探活补试过一次");
+                Assert.AreEqual(loc.F("TestFail", loc["ProbeEmptyReply"]), view.GetControl<TextBlock>("StatusText").Text,
+                    "前提:旧账号这一轮真的失败了,下面的冷却断言才有东西可拦");
                 Assert.IsFalse(health.IsCooling(model.Id), "旧账号的失败不能冷却同 token 的新账号");
 
                 health.Record(model.Id, false);

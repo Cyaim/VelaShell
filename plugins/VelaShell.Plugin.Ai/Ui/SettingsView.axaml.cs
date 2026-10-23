@@ -259,6 +259,12 @@ public partial class SettingsView : UserControl
 
     /// <summary>两击确认换源清 Key 的第一击;换了选择就作废(<see cref="ResetKeyEditor" />)。</summary>
     private KeyResetPrompt? _pendingKeyReset;
+
+    /// <summary>
+    /// 供应商行每点一次「测试」领一个序号。未保存的跨源测试要先读已存 Key(按钮要到探活开始才置灰),
+    /// 读回来时已有更新的一击(连点、改了地址或新填了 Key 再点、换到别家再点),就让给那一击,免得测两次或测旧表单。
+    /// </summary>
+    private int _originKeyRead;
     private string? _lastKeyProbeModelId;
     private CancellationTokenSource _keyEditorCts = new();
     private CancellationTokenSource? _allKeyProbeCts;
@@ -2208,7 +2214,8 @@ public partial class SettingsView : UserControl
             finally { _refreshingNav = false; }
             RefreshEditorContext(provider, null);
             await RefreshProviderKeyRowsAsync(provider, run);
-            if (run == _editorRun && (_keyDraft is null || ReferenceEquals(_keyDraft, draft)))
+            // 换源清了 Key 就一定要说:正编辑着另一把 Key 也照样盖掉,不能让「再点一次确认」还挂着
+            if (run == _editorRun && (cleared.Count > 0 || _keyDraft is null || ReferenceEquals(_keyDraft, draft)))
                 StatusText.Text = SavedText(provider, cleared, replacement is not null);
         }
         catch (ArgumentException) { if (run == _editorRun) StatusText.Text = _loc["SetupUniqueApiKey"]; }
@@ -2217,8 +2224,11 @@ public partial class SettingsView : UserControl
         {
             // 地址换到别的源会清掉已存 Key:第一次点只提示,同一地址再点一次才清 —— 而且只清这次提示列出的那几把
             if (run != _editorRun) return;
+            // 同一地址已经提示过还被拒:提示之后 Key 变了。换一句话说 —— 一字不差的提示看着像没点上,再点一下就把新存的那把清掉
+            string prompt = _pendingKeyReset?.For(provider, url) is null
+                ? "SetupBaseUrlKeyResetConfirm" : "SetupBaseUrlKeyResetChanged";
             _pendingKeyReset = new(provider, url, ex.Confirmation);
-            StatusText.Text = _loc.F("SetupBaseUrlKeyResetConfirm", ex.KeyCount);
+            StatusText.Text = _loc.F(prompt, ex.KeyCount);
         }
         catch (Exception ex) { if (run == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex)); }
         finally
@@ -2238,7 +2248,7 @@ public partial class SettingsView : UserControl
     /// </summary>
     private string SavedText(AiProvider provider, IReadOnlyList<string> cleared, bool keyReplaced)
     {
-        List<string> models = KeyResetPrompt.ClearedModels(provider, cleared);
+        List<string> models = KeyResetPrompt.ClearedModels(provider, cleared, _loc);
         return _loc.WithClearedModelKeys(cleared.Count == models.Count ? _loc["Saved"]
             : keyReplaced ? _loc["SetupSavedOtherKeysCleared"] : _loc["SetupSavedKeysCleared"], models);
     }
@@ -2384,16 +2394,22 @@ public partial class SettingsView : UserControl
                 }
                 first = sameOrigin;
             }
-            // 地址换到别的源、还没保存:已存的 Key 属于旧地址,只许带表单里新填的那把去测
-            if (provider.Auth == AuthMethod.ApiKey && apiKeyOverride is null
+            // 每一击领一个序号:下面读已存 Key 要等,读回来时已有更新的一击就让给它(见 _originKeyRead)
+            int originKeyRead = ++_originKeyRead;
+            // 地址换到别的源、还没保存:已存的 Key 属于旧地址,只许带表单里新填的那把去测。
+            // 只敲了空格不算新填:探活带的仍是空凭据,Anthropic 协议下 SDK 会改用本机环境变量里的那把
+            if (provider.Auth == AuthMethod.ApiKey && string.IsNullOrWhiteSpace(apiKeyOverride)
                 && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
                 && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl))
             {
-                if (first.HasOwnApiKey && PendingProviderKey is { } typed)
+                // 能替自带 Key 的首模型去测供应商新 Key 的:继承供应商 Key、填了模型 id、与新地址同源
+                AiModelConfig? Inheriting() => provider.Models.Find(config => !config.HasOwnApiKey
+                    && !string.IsNullOrWhiteSpace(config.Model)
+                    && AiSettingsStore.SameOrigin(EffectiveBaseUrl(config), draft.BaseUrl));
+                if (first.HasOwnApiKey && PendingProviderKey is { } typed && !string.IsNullOrWhiteSpace(typed))
                 {
                     // 首模型自带的 Key 保存时随换源清掉,也用不上新填的供应商 Key:换一个继承供应商 Key、同源的模型来测新填的那把
-                    if (provider.Models.Find(config => !config.HasOwnApiKey
-                            && AiSettingsStore.SameOrigin(EffectiveBaseUrl(config), draft.BaseUrl)) is not { } inheriting)
+                    if (Inheriting() is not { } inheriting)
                     {
                         StatusText.Text = _loc["SetupKeyNoModel"];
                         return;
@@ -2403,25 +2419,34 @@ public partial class SettingsView : UserControl
                 }
                 else
                 {
-                    // 没有新填的 Key:测试本会带上的已存 Key(自带 Key 的首模型是它自己那把,继承的是供应商的各个槽)还在,
-                    // 就请用户先填新 Key;一把都没有(无鉴权接入)才照常测
-                    bool keyFollows = false;
+                    // 没有新填的 Key:只看探活真会带上的那一把 —— 自带 Key 的首模型是它自己那把,继承的只有主槽
+                    // (见 ResolvePrimaryCredentialForProbeAsync,补充槽不跟去)。它还在就请用户先填新 Key;没有(无鉴权接入)才照常测
+                    long version = _store.ProviderConfigurationVersion(provider);
+                    bool keyFollows;
                     try
                     {
-                        foreach (string id in first.HasOwnApiKey ? [first.Id] : _store.ProviderApiKeyIds(provider).ToArray())
-                            keyFollows |= !string.IsNullOrWhiteSpace(await _store.GetApiKeyAsync(id));
+                        keyFollows = !string.IsNullOrWhiteSpace(await _store.GetApiKeyAsync(first.HasOwnApiKey ? first.Id : provider.Id));
                     }
                     catch (Exception ex)
                     {
                         _context.Log.Warn($"Reading the saved Key of '{provider.Id}' failed: {ex.Message}");
-                        if (editorRun == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
+                        if (editorRun == _editorRun && originKeyRead == _originKeyRead) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
                         return;
                     }
-                    // 等机密期间换了选择:这次就不测了,免得把「测试中」挂到别的条目上
-                    if (editorRun != _editorRun) return;
+                    // 等机密期间换了选择,或者又点了一次(那一击按当时的表单自己测):这次就不测了
+                    if (editorRun != _editorRun || originKeyRead != _originKeyRead) return;
+                    // 读的期间这家的配置变了(别处存了 Key、改了模型):刚读到的已不作数,按有 Key 会跟过去处理
+                    keyFollows |= _store.ProviderConfigurationVersion(provider) != version;
+                    // Anthropic 协议没有 Key 时,SDK 改用本机的 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN,一样会发往这个还没保存的地址
+                    keyFollows |= new ResolvedModel(draft, first).Protocol == ChatProtocol.AnthropicMessages
+                        && (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"))
+                            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN")));
                     if (keyFollows)
                     {
-                        StatusText.Text = _loc["SetupTestNeedsNewOriginKey"];
+                        // 首模型自带 Key、又没有继承供应商 Key 的模型可换:「先填新 Key」只会换来「没有可用模型」,
+                        // 直说要先保存、再给各模型填新服务器的 Key
+                        StatusText.Text = first.HasOwnApiKey && Inheriting() is null
+                            ? _loc["SetupTestNeedsModelKeys"] : _loc["SetupTestNeedsNewOriginKey"];
                         return;
                     }
                 }

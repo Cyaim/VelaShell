@@ -37,7 +37,7 @@ public sealed record DiagnosticBundleResult(int LogFiles, IReadOnlyDictionary<st
 /// </remarks>
 public static class DiagnosticBundle
 {
-    /// <summary>收进包的日志原文总量上限;从最新的往旧的收,超了就停。</summary>
+    /// <summary>收进包的日志原文总量上限;从最新的往旧的收,放不下的那份跳过。</summary>
     internal const long MaxLogBytes = 32L * 1024 * 1024;
 
     /// <summary>写诊断包。已有同名文件时覆盖。</summary>
@@ -50,12 +50,13 @@ public static class DiagnosticBundle
         ArgumentException.ThrowIfNullOrWhiteSpace(zipPath);
         ArgumentNullException.ThrowIfNull(request);
 
-        // 先写到旁边的临时文件、写完再换名:中途失败或取消不在用户选的位置留下半个包
-        string temporary = zipPath + ".partial";
+        // 先写到旁边的临时文件、写完再换名:中途失败或取消不在用户选的位置留下半个包。
+        // 名字带随机段、只新建不覆盖:旁边预先放好的同名文件或符号链接不会被顺着打开、截断
+        string temporary = $"{zipPath}.{Guid.NewGuid():N}.partial";
         int logFiles = 0;
         try
         {
-            await using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             await using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
             {
                 foreach (FileInfo log in LogFiles(request.LogsDirectory))
@@ -80,7 +81,11 @@ public static class DiagnosticBundle
         return new DiagnosticBundleResult(logFiles, new Dictionary<string, int>(request.Redactor.Counts));
     }
 
-    /// <summary>日志目录顶层的 <c>*.log</c> 与崩溃记录,新的在前,总量封顶。</summary>
+    /// <summary>日志目录顶层的 <c>*.log</c>(会话日志除外)与崩溃记录,新的在前,总量封顶。</summary>
+    /// <remarks>
+    /// 会话日志(<c>session-*.log</c>,见 <c>SessionLogService</c>)同在这个目录,但那是终端的原始输出,
+    /// 隐私说明里是单独的一类,不算诊断日志。
+    /// </remarks>
     internal static IEnumerable<FileInfo> LogFiles(string? directory)
     {
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) yield break;
@@ -91,6 +96,7 @@ public static class DiagnosticBundle
             [
                 .. new DirectoryInfo(directory).EnumerateFiles()
                     .Where(file => file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase)
+                           && !file.Name.StartsWith("session-", StringComparison.OrdinalIgnoreCase)
                         || file.Name.StartsWith("crash-", StringComparison.OrdinalIgnoreCase)
                            && file.Extension.Equals(".txt", StringComparison.OrdinalIgnoreCase))
                     .OrderByDescending(file => file.LastWriteTimeUtc)
@@ -104,7 +110,8 @@ public static class DiagnosticBundle
         long total = 0;
         foreach (FileInfo file in files)
         {
-            if (total + file.Length > MaxLogBytes) yield break;
+            // 放不下的跳过、接着往旧的收:一份超大的日志不能把它后面的崩溃记录全挤掉,更不能让包里一份日志都没有
+            if (total + file.Length > MaxLogBytes) continue;
             total += file.Length;
             yield return file;
         }

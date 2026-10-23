@@ -194,6 +194,38 @@ public class FtpSupportTests
         await sftp.DidNotReceive().ListDirectoryAsync(s3Session, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// 接口上带默认实现的成员(上传提交、流式下载)路由也必须显式转发:漏转一个,调用就落到默认实现的
+    /// 「不支持」上,插件后台上传全部卡在提交(#656 F1)。
+    /// </summary>
+    [TestMethod]
+    public async Task Routing_DefaultInterfaceTransferMembers_ReachOwningBackend()
+    {
+        ISftpService sftp = Substitute.For<ISftpService>();
+        ISftpService ftp = Substitute.For<ISftpService>();
+        ISftpService plugin = Substitute.For<ISftpService>();
+        IFtpSessionService ftpSessions = Substitute.For<IFtpSessionService>();
+        IPluginProtocolSessionService pluginSessions = Substitute.For<IPluginProtocolSessionService>();
+        Guid ftpSession = Guid.NewGuid(), s3Session = Guid.NewGuid(), sshSession = Guid.NewGuid();
+        ftpSessions.OwnsSession(ftpSession).Returns(true);
+        pluginSessions.OwnsSession(s3Session).Returns(true);
+        ISftpService router = new RoutingRemoteFileService(sftp, ftp, ftpSessions, plugin, pluginSessions);
+        using var destination = new MemoryStream();
+
+        foreach (Guid session in new[] { ftpSession, s3Session, sshSession })
+        {
+            await router.CommitUploadAsync(session, "/t.vela-upload", "/t", overwrite: true);
+            await router.DownloadStreamAsync(session, "/source", destination);
+        }
+
+        foreach ((ISftpService backend, Guid session) in new[] { (ftp, ftpSession), (plugin, s3Session), (sftp, sshSession) })
+        {
+            await backend.Received(1).CommitUploadAsync(session, "/t.vela-upload", "/t", true, Arg.Any<CancellationToken>());
+            await backend.Received(1).CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            await backend.Received(1).DownloadStreamAsync(session, "/source", destination, Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>());
+        }
+    }
+
     /// <summary>未知会话仍走 SFTP 后端 —— 报错行为与加入 FTP / S3 之前保持一致。</summary>
     [TestMethod]
     public async Task Routing_UnknownSession_FallsBackToSftp()

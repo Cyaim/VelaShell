@@ -1,8 +1,11 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text.Json;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Interop;
+using VelaShell.PluginSdk.RemoteFs;
 using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
@@ -395,6 +398,167 @@ public sealed class McpEndpointTests
 
             Assert.IsGreaterThan(0, refused, "开了 40 个会话一个都没被拦下 —— 会话数仍然没有上限。");
         }
+    }
+
+    /// <summary>
+    /// 闲置回收只为还在启动或运行的传输留着会话。已终结、停止未确认的 Unknown 上传等多久都不会变 ——
+    /// 它要是也算"活跃",会话就永远回收不掉,攒满上限之后 initialize 一律 503。回收照样发 CancelAll。
+    /// </summary>
+    [TestMethod]
+    public async Task IdleEviction_KeepsRunningUploads_ButNotTerminalUnknownOnes()
+    {
+        using var context = new TestPluginContext();
+        string connected = context.FakeSessions.AddConnected().SessionId;
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(new RemoteTransferSnapshot
+        {
+            TransferId = target,
+            OperationId = options.OperationId,
+            SessionId = id,
+            LocalPath = source,
+            RemotePath = target,
+            State = target == "/tmp/unknown" ? RemoteTransferState.Unknown : RemoteTransferState.Running,
+            RemoteStopConfirmed = false,
+            Generation = 1,
+            Sequence = 1,
+            TotalBytes = 1
+        });
+        var never = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => never.Task.WaitAsync(ct);
+        context.FakeRemoteFs.CancelTransferHandler = (id, generation, _) => Task.FromResult(new RemoteTransferSnapshot
+        {
+            TransferId = id,
+            OperationId = "cancel",
+            SessionId = connected,
+            LocalPath = "",
+            RemotePath = id,
+            State = RemoteTransferState.Cancelled,
+            RemoteStopConfirmed = true,
+            Generation = generation,
+            Sequence = 2
+        });
+        var store = new McpServerSettingsStore(context);
+        int port = FreePort();
+        await store.SaveAsync(new McpServerSettings { Enabled = true, Port = port, Mode = ChatMode.Agent, Approval = ApprovalMode.Bypass });
+        string token = await store.TokenAsync();
+        string local = Path.Combine(Path.GetTempPath(), "vela-mcp-upload-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(local, "x");
+        try
+        {
+            await using var endpoint = new McpEndpoint(context, store);
+            await endpoint.ReloadAsync();
+            using HttpClient client = CreateClient(port, token);
+            async Task<string> UploadAsync(string sessionId, string remotePath)
+            {
+                using JsonDocument document = await RpcAsync(client, new
+                {
+                    jsonrpc = "2.0",
+                    id = 2,
+                    method = "tools/call",
+                    @params = new { name = "upload_local_file", arguments = new { localPath = local, remotePath, sessionId = connected } }
+                }, sessionId);
+                return document.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString()!;
+            }
+            string unknown = await InitializeAsync(client);
+            string running = await InitializeAsync(client);
+            Assert.Contains("\"state\":\"Unknown\"", await UploadAsync(unknown, "/tmp/unknown"));
+            Assert.Contains("\"state\":\"Running\"", await UploadAsync(running, "/tmp/running"));
+            var sessions = (ConcurrentDictionary<string, McpToolHost>)typeof(McpEndpoint)
+                .GetField("_sessions", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(endpoint)!;
+            foreach (McpToolHost host in sessions.Values) host.LastActivity = DateTimeOffset.UtcNow - TimeSpan.FromHours(3);
+
+            await InitializeAsync(client);
+
+            Assert.IsFalse(sessions.ContainsKey(unknown), "只剩已终结 Unknown 上传的闲置会话应被回收");
+            Assert.IsTrue(sessions.ContainsKey(running), "仍在运行的上传继续保护会话");
+            Assert.AreEqual("/tmp/unknown", context.FakeRemoteFs.TransfersCancelled.Single().TransferId, "回收会话照样 CancelAll");
+        }
+        finally { File.Delete(local); }
+    }
+
+    /// <summary>
+    /// 撤权后被扣下的上传也不再钉住会话:扣下时已经向宿主发过取消,它的快照再也读不到、永远停在扣下前那份
+    /// (多半还是 Running)。把它算成"未终结",会话就永远回收不掉。仍在运行的上传照旧保护会话。
+    /// </summary>
+    [TestMethod]
+    public async Task IdleEviction_DoesNotKeepSessionsForWithheldUploads()
+    {
+        using var context = new TestPluginContext();
+        string connected = context.FakeSessions.AddConnected().SessionId;
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(new RemoteTransferSnapshot
+        {
+            TransferId = target,
+            OperationId = options.OperationId,
+            SessionId = id,
+            LocalPath = source,
+            RemotePath = target,
+            State = RemoteTransferState.Running,
+            Generation = 1,
+            Sequence = 1,
+            TotalBytes = 1
+        });
+        var revoked = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var never = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.FakeRemoteFs.WaitTransferHandler = (id, _, _, ct) => (id == "/tmp/withheld" ? revoked.Task : never.Task).WaitAsync(ct);
+        var withholdCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.FakeRemoteFs.CancelTransferHandler = (id, generation, _) =>
+        {
+            if (id == "/tmp/withheld") withholdCancelled.TrySetResult();
+            // 撤权后宿主只交还清理所需的状态
+            return Task.FromResult(new RemoteTransferSnapshot
+            {
+                TransferId = id,
+                OperationId = "cancel",
+                SessionId = "",
+                LocalPath = "",
+                RemotePath = "",
+                State = RemoteTransferState.Unknown,
+                RemoteStopConfirmed = false,
+                Generation = generation,
+                Sequence = 2,
+                ErrorCode = "permission-revoked"
+            });
+        };
+        var store = new McpServerSettingsStore(context);
+        int port = FreePort();
+        await store.SaveAsync(new McpServerSettings { Enabled = true, Port = port, Mode = ChatMode.Agent, Approval = ApprovalMode.Bypass });
+        string token = await store.TokenAsync();
+        string local = Path.Combine(Path.GetTempPath(), "vela-mcp-upload-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(local, "x");
+        try
+        {
+            await using var endpoint = new McpEndpoint(context, store);
+            await endpoint.ReloadAsync();
+            using HttpClient client = CreateClient(port, token);
+            async Task<string> UploadAsync(string sessionId, string remotePath)
+            {
+                using JsonDocument document = await RpcAsync(client, new
+                {
+                    jsonrpc = "2.0",
+                    id = 2,
+                    method = "tools/call",
+                    @params = new { name = "upload_local_file", arguments = new { localPath = local, remotePath, sessionId = connected } }
+                }, sessionId);
+                return document.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString()!;
+            }
+            string withheld = await InitializeAsync(client);
+            string running = await InitializeAsync(client);
+            Assert.Contains("\"state\":\"Running\"", await UploadAsync(withheld, "/tmp/withheld"));
+            Assert.Contains("\"state\":\"Running\"", await UploadAsync(running, "/tmp/running"));
+            // 宿主撤了权:进度等待报拒绝,插件扣下元数据、向宿主发取消
+            revoked.SetException(new PluginSdk.PluginPermissionDeniedException("Upload authorization was revoked."));
+            await withholdCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var sessions = (ConcurrentDictionary<string, McpToolHost>)typeof(McpEndpoint)
+                .GetField("_sessions", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(endpoint)!;
+            foreach (McpToolHost host in sessions.Values) host.LastActivity = DateTimeOffset.UtcNow - TimeSpan.FromHours(3);
+
+            await InitializeAsync(client);
+
+            Assert.IsFalse(sessions.ContainsKey(withheld), "只剩被扣下上传的闲置会话应被回收");
+            Assert.IsTrue(sessions.ContainsKey(running), "仍在运行的上传继续保护会话");
+        }
+        finally { File.Delete(local); }
     }
 
     private static async Task<string> InitializeAsync(HttpClient client)

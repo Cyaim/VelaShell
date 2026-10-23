@@ -1,3 +1,6 @@
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using Avalonia;
 using Avalonia.LogicalTree;
 using Avalonia.Controls;
 using VelaShell.Tests.TestSupport;
@@ -111,4 +114,93 @@ public sealed partial class ChatPanelViewUiTests
         }
         finally { panel.Detach(); window.Close(); }
     });
+
+    /// <summary>
+    /// 宿主没有后台下载能力时,点远端链接当场说清 —— 不先弹保存框让用户白挑一次位置。
+    /// </summary>
+    [TestMethod]
+    public Task LinkDownload_WithoutDownloadSupport_FailsBeforeTheSavePicker() => HeadlessUi.RunOnUiAsync(_session, async () =>
+    {
+        using var context = new TestPluginContext();
+        var session = context.FakeSessions.AddConnected();
+        context.FakeRemoteFs.AddFile(session.SessionId, "/srv/report.pdf", new byte[8]);
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.SupportsDownloadOperations = false;
+        (Window window, ChatPanelView panel) = await ShowAsync(context);
+        try
+        {
+            var download = (Task)typeof(ChatPanelView).GetMethod("DownloadRemoteAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(panel, ["/srv/report.pdf"])!;
+            await download.WaitAsync(TimeSpan.FromSeconds(10));
+            var loc = new Loc("en");
+            Assert.AreEqual($"{loc["Error"]}: {loc["TransferDownloadUnsupported"]}", Find<TextBlock>(panel, "StatusText").Text);
+        }
+        finally { panel.Detach(); window.Close(); }
+    });
+
+    /// <summary>
+    /// 链接下载卡对停止未确认的 Unknown/TimedOut 显示取消按钮,点下去就得真的发取消 ——
+    /// 按钮在、点了却什么都不做,用户只会以为已经停了。
+    /// </summary>
+    [TestMethod]
+    public Task LinkCard_CancelReachesAnUnconfirmedTerminalDownload() => HeadlessUi.RunOnUiAsync(_session, async () =>
+    {
+        using var context = new TestPluginContext();
+        var unknown = new RemoteTransferSnapshot { TransferId = "t", OperationId = "op", SessionId = "s", LocalPath = "/tmp/report.pdf",
+            RemotePath = "/srv/report.pdf", Direction = RemoteTransferDirection.Download, State = RemoteTransferState.Unknown,
+            RemoteStopConfirmed = false, Generation = 3, Sequence = 4, TotalBytes = 10 };
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.SupportsDownloadOperations = true;
+        context.FakeRemoteFs.StartDownloadHandler = (_, _, _, _, _) => Task.FromResult(unknown);
+        context.FakeRemoteFs.GetTransferHandler = (_, _) => Task.FromResult(unknown);
+        context.FakeRemoteFs.CancelTransferHandler = (_, _, _) => Task.FromResult(unknown with
+        { State = RemoteTransferState.Cancelled, RemoteStopConfirmed = true, Sequence = 5 });
+        (Window window, ChatPanelView panel) = await ShowAsync(context);
+        try
+        {
+            FileTransferRunScope scope = FileTransferJobRegistry.For(context).BeginRun("link:", "run");
+            await scope.StartDownloadAsync("s", "/srv/report.pdf", "/tmp/report.pdf", "op", false, CancellationToken.None);
+            Type binding = typeof(ChatPanelView).GetNestedType("LinkTransferBinding", BindingFlags.NonPublic)!;
+            using var card = (IDisposable)Activator.CreateInstance(binding, BindingFlags.Instance | BindingFlags.NonPublic,
+                null, [panel, scope, "t", "/tmp/report.pdf"], null)!;
+            await PumpAsync();
+            var root = (Border)Find<StackPanel>(panel, "MessagesPanel").Children[^1];
+            Button cancel = ((StackPanel)root.Child!).Children.OfType<Button>().Single();
+            Assert.IsTrue(cancel.IsVisible, "停止未确认的终态仍显示取消");
+            cancel.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await PumpAsync();
+            Assert.HasCount(1, context.FakeRemoteFs.TransfersCancelled);
+            Assert.AreEqual(3L, context.FakeRemoteFs.TransfersCancelled[0].ExpectedGeneration);
+        }
+        finally { panel.Detach(); window.Close(); }
+    });
+
+    /// <summary>
+    /// 链接下载的授权闭包活得和插件一样长(任务登记从不删除),所以只能捕获会话 id 与宿主上下文 ——
+    /// 捕获了面板,每关一个聊天面板就漏一个。
+    /// </summary>
+    [TestMethod]
+    public Task LinkScope_AuthorizationDoesNotCaptureThePanel() => HeadlessUi.RunOnUiAsync(_session, async () =>
+    {
+        using var context = new TestPluginContext();
+        var session = context.FakeSessions.AddConnected();
+        (Window window, ChatPanelView panel) = await ShowAsync(context);
+        try
+        {
+            var scope = (FileTransferRunScope)typeof(ChatPanelView).GetMethod("BeginLinkTransferScope",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(panel, [session.SessionId])!;
+            Func<string, CancellationToken, Task<bool>> authorize = scope._authorize!;
+            Assert.IsTrue(await authorize(session.SessionId, CancellationToken.None));
+            Assert.IsFalse(await authorize("another-session", CancellationToken.None));
+            Assert.IsFalse(CapturesVisual(authorize.Target), "授权闭包不能引用面板或任何控件");
+        }
+        finally { panel.Detach(); window.Close(); }
+    });
+
+    /// <summary>委托目标(含编译器生成的嵌套闭包)里有没有界面对象。</summary>
+    private static bool CapturesVisual(object? target, int depth = 0)
+        => target is Visual || (target is not null && depth < 4
+            && target.GetType().IsDefined(typeof(CompilerGeneratedAttribute), inherit: false)
+            && target.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .Any(field => CapturesVisual(field.GetValue(target), depth + 1)));
 }
