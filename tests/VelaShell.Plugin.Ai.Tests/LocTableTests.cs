@@ -60,6 +60,22 @@ public sealed partial class LocTableTests
         Assert.AreNotEqual(new Loc("ja")["BridgeThinking"], new Loc("ko")["BridgeThinking"]);
     }
 
+    [TestMethod]
+    public void LongRunMessages_HaveNoFormerBatchLimit_AndExplainRetryAfter()
+    {
+        foreach (string locale in new[] { "en", "zh-Hans", "zh-Hant", "ja", "ko" })
+        {
+            var loc = new Loc(locale);
+            string continuing = loc.F("ContinuingBatch", 9);
+            Assert.Contains("9", continuing);
+            Assert.DoesNotContain("/8", continuing);
+            Assert.DoesNotContain("{0}", continuing);
+            Assert.AreNotEqual("RetryAfterTooLong", loc["RetryAfterTooLong"]);
+            Assert.Contains("Retry-After", loc["RetryAfterTooLong"]);
+            Assert.Contains("120", loc["RetryAfterTooLong"]);
+        }
+    }
+
     /// <summary>缺键时返回键名本身,而不是抛 —— 少一句文案不该让面板打不开。</summary>
     [TestMethod]
     public void MissingKey_ReturnsTheKey()

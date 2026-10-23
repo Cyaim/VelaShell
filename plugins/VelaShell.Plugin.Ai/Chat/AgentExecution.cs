@@ -19,13 +19,9 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
     private readonly List<ChatMessage> _completed = [];
     internal IReadOnlyList<ChatMessage> CompletedMessages { get { lock (_gate) return [.. _completed]; } }
     internal IReadOnlyList<ChatMessage> Notifications { get { lock (_gate) return _completed.Where(m => m.Role == ChatRole.User).ToList(); } }
-    private int _steps;
     private int _batchSteps;
     private int _batchSize = 25;
     private Exception? _paused;
-    // 只累计输出 token:每步的 TotalTokenCount 都含整段输入上下文,逐步相加按平方增长,
-    // 四万 token 的上下文跑五六步就会撞线,远在 100 步之前。预算防的是失控生成,不是计费上限。
-    private long _tokens;
     private string? _lastCall;
     private int _repeated;
     internal string RunId { get; } = runId;
@@ -36,7 +32,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
     {
         // 批次边界由外层协调器续接,不能让MEAI静默结束。
         _batchSize = batchSize;
-        // 最后一个模型调用由内层预算守卫拦下,禁止MEAI隐式去掉tools作总结。
+        // 内层显式批次边界先于此上限抛出,禁止MEAI隐式去掉tools作总结。
         client.MaximumIterationsPerRequest = 1000;
         client.MaximumConsecutiveErrorsPerRequest = 0;
         client.AllowConcurrentInvocation = false;
@@ -134,7 +130,6 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
             if (hasUnknownOutcome?.Invoke() == true) throw new AgentPausedException("TaskUnknown");
             if (_paused is { } paused) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(paused).Throw();
             if (_batchSteps >= _batchSize) throw new AgentBatchBoundaryException();
-            if (++_steps > 100 || _tokens > 200_000) throw new AgentPausedException("ExecutionBudget");
             _batchSteps++;
             _checkpoint.Clear();
             _checkpoint.AddRange(messages);
@@ -144,11 +139,6 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
     internal void RecordInterruptedText(string text)
     {
         lock (_gate) _completed.Add(new ChatMessage(ChatRole.Assistant, text));
-    }
-
-    internal void RecordFailedUsage(UsageDetails? usage)
-    {
-        lock (_gate) _tokens += usage?.OutputTokenCount ?? 0;
     }
 
     internal void RecordNotification(ChatMessage notification)
@@ -189,7 +179,6 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
         {
             _checkpoint.AddRange(response.Messages);
             _completed.AddRange(response.Messages);
-            _tokens += response.Usage?.OutputTokenCount ?? 0;
         }
     }
 
@@ -353,7 +342,6 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                 }
             }
             // 失败尝试的usage仍已计费;不把未完成调用/推理当完整历史送出。
-            execution.RecordFailedUsage(buffered.ToChatResponse().Usage);
             foreach (ChatResponseUpdate update in buffered)
             {
                 if (!update.Contents.Any(c => c is UsageContent)) continue;
@@ -400,7 +388,7 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                     System.Globalization.DateTimeStyles.AssumeUniversal, out DateTimeOffset date)
                     ? date - DateTimeOffset.UtcNow : null;
             if (wait is null) continue;
-            if (wait > TimeSpan.FromSeconds(120)) throw new AgentPausedException("ExecutionBudget");
+            if (wait > TimeSpan.FromSeconds(120)) throw new AgentPausedException("RetryAfterTooLong");
             return wait < TimeSpan.Zero ? TimeSpan.Zero : wait;
         }
         return null;

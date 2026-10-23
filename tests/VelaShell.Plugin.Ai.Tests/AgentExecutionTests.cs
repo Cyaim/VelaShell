@@ -66,6 +66,7 @@ public sealed class AgentExecutionTests
             CallContent = new("one", "change", new Dictionary<string, object?> { ["value"] = value })
         };
         Assert.AreEqual("1", (await execution.InvokeAsync(Context(1), default))?.ToString());
+        execution.ContinueBatch();
         Assert.AreEqual("1", (await execution.InvokeAsync(Context(1), default))?.ToString());
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await execution.InvokeAsync(Context(2), default));
         Assert.AreEqual(1, executed);
@@ -116,6 +117,96 @@ public sealed class AgentExecutionTests
         Assert.HasCount(3, wire.Requests);
         Assert.AreEqual(9L, updates.ToChatResponse().Usage?.OutputTokenCount);
         Assert.IsEmpty(execution.CompletedMessages);
+    }
+
+    [TestMethod]
+    public async Task FailedAttempt_ThenRecovery_ReportsEachUsageOnce_WithoutReleasingIncompleteTools()
+    {
+        var wire = new Wire((n, _) => n == 1
+            ? [Call("incomplete", "change"), Usage(40_000, 150_000)]
+            : [new(ChatRole.Assistant, "done"), Usage(40_000, 150_000), End(ChatFinishReason.Stop)], failOn: [1]);
+        var execution = new AgentExecution("run");
+        using var client = new RecoveringChatClient(wire, execution, "boundary", delay: (_, _) => Task.CompletedTask);
+        List<ChatResponseUpdate> updates = [];
+        await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) updates.Add(update);
+        ChatResponse response = updates.ToChatResponse();
+        Assert.HasCount(2, wire.Requests);
+        Assert.AreEqual(80_000L, response.Usage?.InputTokenCount);
+        Assert.AreEqual(300_000L, response.Usage?.OutputTokenCount);
+        Assert.AreEqual(380_000L, response.Usage?.TotalTokenCount);
+        Assert.IsEmpty(response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>());
+        Assert.IsEmpty(execution.CompletedMessages.SelectMany(m => m.Contents).OfType<FunctionCallContent>());
+        Assert.IsEmpty(wire.Requests[1].SelectMany(m => m.Contents).OfType<FunctionCallContent>());
+        Assert.IsFalse(execution.HasToolCalls);
+    }
+
+    [TestMethod]
+    [DataRow(120)]
+    [DataRow(121)]
+    public async Task RetryAfter_RespectsTheWaitOrPausesWithItsOwnReason(int seconds)
+    {
+        var failure = new HttpRequestException("rate limited", null, System.Net.HttpStatusCode.TooManyRequests);
+        failure.Data["Retry-After"] = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var wire = new Wire((_, _) => [new(ChatRole.Assistant, "done"), End(ChatFinishReason.Stop)], failOn: [1], failure: failure);
+        List<TimeSpan> delays = [];
+        using var client = new RecoveringChatClient(wire, new("run"), "boundary",
+            delay: (wait, _) => { delays.Add(wait); return Task.CompletedTask; });
+        async Task Run()
+        {
+            await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) { }
+        }
+        if (seconds == 120)
+        {
+            await Run();
+            Assert.AreSequenceEqual(new[] { TimeSpan.FromSeconds(120) }, delays.ToArray());
+            Assert.HasCount(2, wire.Requests);
+        }
+        else
+        {
+            Assert.AreEqual("RetryAfterTooLong", (await Assert.ThrowsAsync<AgentPausedException>(Run)).ReasonKey);
+            Assert.IsEmpty(delays);
+            Assert.HasCount(1, wire.Requests);
+        }
+    }
+
+    [TestMethod]
+    public async Task RetryAfter_FutureHttpDate_PausesWithoutAnEarlyRetry()
+    {
+        var failure = new HttpRequestException("rate limited", null, System.Net.HttpStatusCode.TooManyRequests);
+        failure.Data["Retry-After"] = DateTimeOffset.UtcNow.AddHours(1).ToString("r", System.Globalization.CultureInfo.InvariantCulture);
+        var wire = new Wire((_, _) => [], failOn: [1], failure: failure);
+        List<TimeSpan> delays = [];
+        using var client = new RecoveringChatClient(wire, new("run"), "boundary",
+            delay: (wait, _) => { delays.Add(wait); return Task.CompletedTask; });
+        var paused = await Assert.ThrowsAsync<AgentPausedException>(async () =>
+        {
+            await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) { }
+        });
+        Assert.AreEqual("RetryAfterTooLong", paused.ReasonKey);
+        Assert.IsEmpty(delays);
+        Assert.HasCount(1, wire.Requests);
+    }
+
+    [TestMethod]
+    public async Task RepeatedToolCalls_StillPauseAcrossBatchBoundaries()
+    {
+        int executed = 0;
+        var function = AIFunctionFactory.Create((int value) => { executed++; return value; }, "change");
+        var execution = new AgentExecution("run");
+        FunctionInvocationContext Context(int id) => new()
+        {
+            Function = function,
+            Arguments = new() { ["value"] = 1 },
+            CallContent = new($"call{id}", "change", new Dictionary<string, object?> { ["value"] = 1 })
+        };
+        for (int id = 1; id <= 3; id++)
+        {
+            await execution.InvokeAsync(Context(id), default);
+            execution.ContinueBatch();
+        }
+        var paused = await Assert.ThrowsAsync<AgentPausedException>(async () => await execution.InvokeAsync(Context(4), default));
+        Assert.AreEqual("NoProgress", paused.ReasonKey);
+        Assert.AreEqual(3, executed);
     }
 
     [TestMethod]
@@ -453,26 +544,31 @@ public sealed class AgentExecutionTests
     }
 
     [TestMethod]
-    public async Task Coordinator_ContinuesAfterBatch25_WithoutRemovingTools()
+    [DataRow(20)]
+    [DataRow(25)]
+    public async Task Coordinator_ContinuesBeyondFormerRunLimits_WithoutRemovingTools(int batchSize)
     {
-        int executed = 0;
-        var wire = new Wire((n, _) => n <= 26
+        const int Steps = 226;
+        List<int> executed = [], batches = [];
+        var wire = new Wire((n, _) => n <= Steps
             ? [Call($"call{n}", "step", new() { ["value"] = n }), End(ChatFinishReason.ToolCalls)]
             : [new(ChatRole.Assistant, "done"), End(ChatFinishReason.Stop)]);
         var execution = new AgentExecution("run");
         await using var registry = new CommandJobRegistry(new ControlledExec());
         await using var scope = registry.BeginRun("owner", "run");
         using IChatClient client = new RecoveringChatClient(wire, execution, "boundary")
-            .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, 25)).Build();
+            .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, batchSize)).Build();
         var coordinator = new AgentRunCoordinator(scope, execution);
         List<ChatResponseUpdate> updates = [];
         await foreach (var update in coordinator.RunAsync(client, [new(ChatRole.User, "go")], new()
-        { Tools = [AIFunctionFactory.Create((int value) => { executed++; return value; }, "step")] }, null, default))
+        { Tools = [AIFunctionFactory.Create((int value) => { executed.Add(value); return value; }, "step")] }, null, default, batches.Add))
             updates.Add(update);
-        Assert.AreEqual(26, executed);
-        Assert.HasCount(27, wire.Requests);
+        Assert.AreSequenceEqual(Enumerable.Range(1, Steps).ToArray(), executed.ToArray());
+        Assert.HasCount(Steps + 1, wire.Requests);
+        Assert.IsTrue(wire.RequestsHaveTools.All(present => present), "跨批续接不能撤掉工具");
+        Assert.AreSequenceEqual(Enumerable.Range(2, Steps / batchSize).ToArray(), batches.ToArray());
         Assert.Contains("done", updates.ToChatResponse().Text);
-        Assert.HasCount(26, wire.Requests[^1].SelectMany(m => m.Contents).OfType<FunctionResultContent>());
+        Assert.HasCount(Steps, wire.Requests[^1].SelectMany(m => m.Contents).OfType<FunctionResultContent>());
     }
 
     [TestMethod]
@@ -679,8 +775,7 @@ public sealed class AgentExecutionTests
     }
 
     /// <summary>
-    /// 十六台先后完成意味着十六次唤醒。唤醒曾经和 25 步的批次边界共用 8 批的预算,
-    /// 第 8 次唤醒就以「达到执行预算」暂停。每次唤醒的模型请求仍受步数与 token 预算约束。
+    /// 后台任务先后完成会分别唤醒模型,但不应被当作显式工具循环的批次边界。
     /// </summary>
     [TestMethod]
     public async Task CompletionWakeups_DoNotConsumeTheBatchBudget()
@@ -707,31 +802,30 @@ public sealed class AgentExecutionTests
         Assert.HasCount(Jobs + 1, wire.Requests);
     }
 
-    /// <summary>
-    /// 每步的 TotalTokenCount 都含整段输入上下文,逐步累加按平方增长:四万 token 的上下文
-    /// 第六步就撞上 200000,远在界面承诺的 100 步之前。预算改按生成的输出 token 计。
-    /// </summary>
+    /// <summary>累计用量超过旧额度仍可完成,输入与输出 usage 均完整交给展示层记账。</summary>
     [TestMethod]
-    public async Task TokenBudget_CountsGeneratedTokens_NotTheRepeatedContext()
+    [DataRow(100)]
+    [DataRow(150_000)]
+    public async Task TokenUsage_DoesNotStopTheRun_AndRemainsFullyReported(int output)
     {
-        foreach ((int output, int expected) in new[] { (100, 10), (150_000, 2) })
-        {
-            int executed = 0;
-            var wire = new Wire((n, _) => n <= 10
-                ? [Call($"call{n}", "step", new() { ["value"] = n }), Usage(40_000, output), End(ChatFinishReason.ToolCalls)]
-                : [new(ChatRole.Assistant, "done"), Usage(40_000, output), End(ChatFinishReason.Stop)]);
-            var execution = new AgentExecution("run");
-            using IChatClient client = new RecoveringChatClient(wire, execution, "boundary")
-                .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, 25)).Build();
-            async Task Run()
-            {
-                await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")],
-                                   new() { Tools = [AIFunctionFactory.Create((int value) => { executed++; return value; }, "step")] })) { }
-            }
-            if (expected == 10) await Run();
-            else Assert.AreEqual("ExecutionBudget", (await Assert.ThrowsAsync<AgentPausedException>(Run)).ReasonKey);
-            Assert.AreEqual(expected, executed);
-        }
+        int executed = 0;
+        var wire = new Wire((n, _) => n <= 10
+            ? [Call($"call{n}", "step", new() { ["value"] = n }), Usage(40_000, output), End(ChatFinishReason.ToolCalls)]
+            : [new(ChatRole.Assistant, "done"), Usage(40_000, output), End(ChatFinishReason.Stop)]);
+        var execution = new AgentExecution("run");
+        using IChatClient client = new RecoveringChatClient(wire, execution, "boundary")
+            .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, 25)).Build();
+        List<ChatResponseUpdate> updates = [];
+        await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "go")],
+            new() { Tools = [AIFunctionFactory.Create((int value) => { executed++; return value; }, "step")] }))
+            updates.Add(update);
+        Assert.AreEqual(10, executed);
+        Assert.HasCount(11, wire.Requests);
+        ChatResponse response = updates.ToChatResponse();
+        Assert.Contains("done", response.Text);
+        Assert.AreEqual(440_000L, response.Usage?.InputTokenCount);
+        Assert.AreEqual(11L * output, response.Usage?.OutputTokenCount);
+        Assert.AreEqual(440_000L + 11L * output, response.Usage?.TotalTokenCount);
     }
 
     /// <summary>
@@ -798,6 +892,7 @@ public sealed class AgentExecutionTests
         int[]? failOn = null, Exception? failure = null) : IChatClient
     {
         internal List<List<ChatMessage>> Requests { get; } = [];
+        internal List<bool> RequestsHaveTools { get; } = [];
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
         public void Dispose() { }
         public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
@@ -806,6 +901,7 @@ public sealed class AgentExecutionTests
             ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             var request = messages.ToList(); Requests.Add(request);
+            RequestsHaveTools.Add(options?.Tools is { Count: > 0 });
             int step = Requests.Count;
             foreach (var update in script(step, request)) { await Task.CompletedTask; yield return update; }
             if (failOn?.Contains(step) == true) throw failure ?? new IOException("disconnected");

@@ -714,7 +714,7 @@ SVG 目前只对 `data:` URI 和本地路径生效;要放开就把 `ConfigureMar
 - OpenAI 两种协议:`OpenAI` 官方 SDK + `Microsoft.Extensions.AI.OpenAI` 适配
   (`GetChatClient().AsIChatClient()` / `GetResponsesClient().AsIChatClient()`);
 - Anthropic 协议:`Anthropic` 官方 SDK 内建的 `AsIChatClient()` 适配;
-- Agent 循环:`FunctionInvokingChatClient`(`UseFunctionInvocation()`,上限 25 轮);
+- Agent 循环:`FunctionInvokingChatClient`(`UseFunctionInvocation()`,桌面每批 25 步、Bridge 每批 20 步,由协调器沿用工具账本自动续接,无累计步数/token/批次硬上限);
 - 工具经 `AIFunctionFactory` 包装插件 SDK 能力(Sessions / Terminal / RemoteExec / RemoteFs);
 - MCP:官方 `ModelContextProtocol.Core` SDK,`McpClientTool` 本身即 `AIFunction`,
   与内置工具同进一个函数调用循环。
