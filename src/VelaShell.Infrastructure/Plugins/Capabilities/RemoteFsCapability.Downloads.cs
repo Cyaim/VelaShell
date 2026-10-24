@@ -11,12 +11,12 @@ namespace VelaShell.Infrastructure.Plugins.Capabilities;
 
 internal sealed partial class RemoteFsCapability
 {
-    // Other platforms deliberately fail closed until a directory-relative implementation exists.
-    public bool SupportsDownloadOperations => OperatingSystem.IsWindows() || DownloadTargetFactory is not null;
+    // Windows 走 NTFS 句柄钉住的目录链,Linux / macOS(x64、arm64)走固定目录 fd 的提交;其它平台照旧拒绝,不退回按路径的检查。
+    public bool SupportsDownloadOperations => OperatingSystem.IsWindows() || PosixDownloadTarget.IsSupported || DownloadTargetFactory is not null;
 
     /// <summary>
-    /// 测试开关:注入落盘目标,在非 Windows 上也能验证下载 worker 的收尾分类(与 <see cref="UseDiskSnapshot" /> 同一用意)。
-    /// 生产代码从不设置;为 null 时只有 Windows 固定本地 NTFS 目标可用。
+    /// 测试开关:注入落盘目标,驱动真实目标难以复现的收尾分支(与 <see cref="UseDiskSnapshot" /> 同一用意)。
+    /// 生产代码从不设置;为 null 时 Windows 用固定本地 NTFS 目标,Linux / macOS 用 <see cref="PosixDownloadTarget" />。
     /// </summary>
     internal Func<string, bool, IDownloadTarget>? DownloadTargetFactory { get; init; }
 
@@ -109,7 +109,7 @@ internal sealed partial class RemoteFsCapability
                 throw new PluginPermissionDeniedException("A trusted download approval is required.");
             // Pin and verify the whole local directory chain before approval, without creating content.
             target = DownloadTargetFactory?.Invoke(Read(op).LocalPath, options.Overwrite)
-                ?? WindowsDownloadTarget.Open(Read(op).LocalPath, options.Overwrite);
+                ?? (OperatingSystem.IsWindows() ? WindowsDownloadTarget.Open(Read(op).LocalPath, options.Overwrite) : OpenPosixDownloadTarget(op, options.Overwrite));
             RemoteFileInfo source = await sftp.GetFileInfoAsync(session, Read(op).RemotePath, ct).ConfigureAwait(false);
             ValidateDownloadSource(source);
             Update(op, s => s with { TotalBytes = source.Size });

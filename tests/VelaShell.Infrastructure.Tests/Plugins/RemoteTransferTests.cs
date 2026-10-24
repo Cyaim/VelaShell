@@ -25,7 +25,7 @@ using RemoteUploadOptions = VelaShell.PluginSdk.RemoteFs.RemoteUploadOptions;
 namespace VelaShell.Infrastructure.Tests.Plugins;
 
 [TestClass]
-public sealed class RemoteTransferTests
+public sealed partial class RemoteTransferTests
 {
     private readonly Guid _session = Guid.NewGuid();
     private readonly ISftpService _sftp = Substitute.For<ISftpService>();
@@ -1479,7 +1479,6 @@ public sealed class RemoteTransferTests
     }
 
     [TestMethod]
-    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
     public async Task DownloadNoApprovalFailsClosedAndSharesDirectionSignature()
     {
         string path = Path.Combine(Path.GetTempPath(), "vela-download-test-" + Guid.NewGuid().ToString("N"));
@@ -1496,11 +1495,9 @@ public sealed class RemoteTransferTests
     }
 
     [TestMethod]
-    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
     public async Task DownloadCommitsOnlyAfterVerificationAndProtectsExistingDestination()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "vela-download-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
+        string directory = NewDirectory("vela-download-");
         string path = Path.Combine(directory, "target");
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
         prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
@@ -1535,22 +1532,45 @@ public sealed class RemoteTransferTests
     }
 
     [TestMethod]
-    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
-    public async Task UnsupportedLocalPlatformsRejectBackgroundDownloadWithoutLegacyFallback()
+    public async Task DesktopPlatformsAdvertiseBackgroundDownloadAndFailClosedWithoutLegacyFallback()
     {
-        using var api = new RemoteFsCapability(_sftp, _connections);
-        Assert.IsFalse(api.SupportsDownloadOperations);
-        await Assert.ThrowsExactlyAsync<PlatformNotSupportedException>(() => api.StartDownloadAsync(_session.ToString(), "/source", Path.Combine(Path.GetTempPath(), "target"), new() { OperationId = "unsupported" }));
-        await _sftp.DidNotReceive().DownloadFileAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+        // Windows 与发布的四个 Linux / macOS RID 都有安全提交;别的组合照旧不给。目标钉不住时任务失败收尾,不退回旧的同步下载。
+        bool supported = OperatingSystem.IsWindows() || (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            && RuntimeInformation.ProcessArchitecture is Architecture.X64 or Architecture.Arm64;
+        using RemoteFsCapability api = DownloadApi();
+        Assert.AreEqual(supported, api.SupportsDownloadOperations);
+        string directory = NewDirectory("vela-download-missing-");
+        string path = Path.Combine(directory, "absent", "target");
+        try
+        {
+            if (!supported)
+            {
+                await Assert.ThrowsExactlyAsync<PlatformNotSupportedException>(() => api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "unsupported" }));
+                return;
+            }
+            var start = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "missing" });
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            await WaitIdle(api);
+            Assert.AreEqual(RemoteTransferState.Failed, done.State, done.ErrorMessage);
+            Assert.AreEqual("download-failed", done.ErrorCode);
+            Assert.IsTrue(done.RemoteStopConfirmed);
+            Assert.IsTrue(done.DestinationCommitConfirmedAbsent);
+            Assert.IsFalse(Directory.Exists(Path.Combine(directory, "absent")));
+        }
+        finally
+        {
+            await WaitIdle(api);
+            await _sftp.DidNotReceive().DownloadFileAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().DownloadStreamAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>());
+            Directory.Delete(directory, true);
+        }
     }
 
     [TestMethod]
-    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
     public async Task DownloadShortReadKeepsOldTargetAndCleansOwnedTemporary()
     {
         // 取消的两种后端(照常停下 / 不理取消)另有 DownloadCooperativeStop… 与 DownloadCancellationDoesNotClaim… 两条用例。
-        string directory = Path.Combine(Path.GetTempPath(), "vela-download-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
+        string directory = NewDirectory("vela-download-");
         string path = Path.Combine(directory, "target");
         await File.WriteAllBytesAsync(path, [9]);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
@@ -1575,11 +1595,9 @@ public sealed class RemoteTransferTests
     }
 
     [TestMethod]
-    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
     public async Task DownloadCancellationDoesNotClaimUncooperativeBackendStopped()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "vela-download-cancel-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
+        string directory = NewDirectory("vela-download-cancel-");
         string path = Path.Combine(directory, "target");
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
         prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, false, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
@@ -1616,11 +1634,9 @@ public sealed class RemoteTransferTests
     [DataRow(true, true, "target")]
     [DataRow(false, false, "下载-文件-\U0001F600.bin")]
     [DataRow(true, false, "下载-文件-\U0001F600.bin")]
-    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
     public async Task DownloadCommitHonorsLateDestinationAndSourceChanges(bool overwrite, bool sourceChanged, string fileName)
     {
-        string directory = Path.Combine(Path.GetTempPath(), "vela-download-race-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
+        string directory = NewDirectory("vela-download-race-");
         string path = Path.Combine(directory, fileName);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
         prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, overwrite, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
@@ -1909,17 +1925,10 @@ public sealed class RemoteTransferTests
         finally { await WaitIdle(api); Directory.Delete(directory, true); }
     }
 
-    /// <summary>经测试落盘目标驱动的下载能力:worker 的收尾分类与平台无关,任何系统上都能验证(NTFS 目标另有 Windows 专用用例)。</summary>
+    /// <summary>经各平台真实落盘目标驱动的下载能力(Windows 的 NTFS 句柄钉、Linux / macOS 的固定目录 fd):worker 的收尾分类在三个系统上都按真目标验证。</summary>
     private RemoteFsCapability DownloadApi(IPluginPermissionPrompt? prompt = null, TimeSpan? stopGrace = null) => stopGrace is { } grace
-        ? new(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt ?? AllowDownloads()))
-        {
-            DownloadTargetFactory = (path, overwrite) => new PathDownloadTarget(path, overwrite),
-            StopGracePeriod = grace,
-        }
-        : new(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt ?? AllowDownloads()))
-        {
-            DownloadTargetFactory = (path, overwrite) => new PathDownloadTarget(path, overwrite),
-        };
+        ? new(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt ?? AllowDownloads())) { StopGracePeriod = grace }
+        : new(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt ?? AllowDownloads()));
 
     /// <summary>
     /// 不理取消的后端永远停不下来:这类用例只验证「宽限期过了仍记 Unknown」,把宽限期调短,免得每条都干等生产默认值。
@@ -1941,43 +1950,15 @@ public sealed class RemoteTransferTests
         _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [remotePath] = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant() }));
 
+    /// <summary>
+    /// 临时目录下新建一个空目录,返回解析掉中间链接后的路径:macOS 的临时目录在 /var 之下(/var → /private/var),
+    /// 下载审批与快照显示的是解析后的真实路径,用例按它比对。
+    /// </summary>
     private static string NewDirectory(string prefix)
     {
         string directory = Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        return directory;
-    }
-
-    /// <summary>测试用落盘目标:同目录独占创建临时文件、按路径提交。只用来驱动 worker 的收尾分类,不冒充 NTFS 的句柄语义。</summary>
-    private sealed class PathDownloadTarget : RemoteFsCapability.IDownloadTarget
-    {
-        private readonly string _destination;
-        private readonly string _temporary;
-        private FileStream? _stream;
-        private bool _committed;
-
-        internal PathDownloadTarget(string destination, bool overwrite)
-        {
-            if (File.Exists(destination) && !overwrite) throw new IOException("The destination already exists.");
-            _destination = destination;
-            _temporary = Path.Combine(Path.GetDirectoryName(destination)!, ".vela-download-test-" + Guid.NewGuid().ToString("N"));
-        }
-
-        public FileStream CreateTemporary() =>
-            _stream = new FileStream(_temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 4096, FileOptions.Asynchronous);
-
-        public void Commit(bool overwrite)
-        {
-            _stream!.Dispose();
-            File.Move(_temporary, _destination, overwrite);
-            _committed = true;
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            if (_stream is not null) await _stream.DisposeAsync();
-            if (!_committed) File.Delete(_temporary);
-        }
+        return RemoteFsCapability.ResolveUploadSource(directory);
     }
 
     /// <summary>宿主 DI 里唯一的 <see cref="ISftpService" /> 是路由服务;SSH 会话落到给定的 SFTP 后端。</summary>
