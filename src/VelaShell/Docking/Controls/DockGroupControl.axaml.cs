@@ -6,8 +6,10 @@ using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Media.Transformation;
 using Avalonia.Threading;
+using VelaShell.Converters;
 using VelaShell.Docking.Model;
 
 namespace VelaShell.Docking.Controls;
@@ -21,6 +23,9 @@ public partial class DockGroupControl : UserControl
 {
     /// <summary>一格滚轮翻过的像素数:约合半个标签,连滚几下能过一屏,又不会一下窜到头。</summary>
     private const double WheelStep = 80;
+
+    /// <summary>溢出区两枚滚动钮点一下(或按住连发时每一下)滚过的像素数,约合一个收到下限的标签。</summary>
+    private const double ScrollButtonStep = 120;
 
     /// <summary>标签条一排的高度(不含下方 1px 分割线);多排时每排也是这个高度。</summary>
     private const double TabStripRowHeight = 35;
@@ -65,22 +70,18 @@ public partial class DockGroupControl : UserControl
     /// <remarks>没有溢出时不吞事件 —— 那一下该照常传给下面的人,而不是变成一次静默的空操作。</remarks>
     private void OnTabsWheel(object? sender, PointerWheelEventArgs e)
     {
-        bool vertical = (Group?.TabsPosition ?? DockTabsPosition.Top) != DockTabsPosition.Top;
         double delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
-        double extent = vertical ? TabScroll.Extent.Height : TabScroll.Extent.Width;
-        double viewport = vertical ? TabScroll.Viewport.Height : TabScroll.Viewport.Width;
-        if (delta == 0 || extent <= viewport + 0.5)
+        if (delta == 0 || !TabStripOverflowConverter.IsOverflowing(TabScroll.Extent, TabScroll.Viewport, IsVerticalStrip))
         {
             return;
         }
         // 滚轮向前(远离自己)= 往标签条的前端翻,与列表滚动的方向感一致。
-        double max = extent - viewport;
-        Vector offset = TabScroll.Offset;
-        TabScroll.Offset = vertical
-                               ? offset.WithY(Math.Clamp(offset.Y - (delta * WheelStep), 0, max))
-                               : offset.WithX(Math.Clamp(offset.X - (delta * WheelStep), 0, max));
+        ScrollTabsBy(-delta * WheelStep);
         e.Handled = true;
     }
+
+    /// <summary>标签沿哪条轴排:停到左 / 右侧时纵排,否则横排(顶部或底部)。</summary>
+    private bool IsVerticalStrip => (Group?.TabsPosition ?? DockTabsPosition.Top) != DockTabsPosition.Top;
 
     private void OnAnyPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -336,8 +337,8 @@ public partial class DockGroupControl : UserControl
     /// <summary>
     /// 标签条的摆法:本组的标签位置(右键菜单“标签位置”)、工作区的「标签栏位置」(顶 / 底)与
     /// 「多行显示标签页」三个开关合起来决定。横排(Top)为默认,停在顶部还是底部看工作区;
-    /// Left/Right 时标签条纵排、分割线立起、滚动方向改为垂直(溢出三连钮按宽度判定,
-    /// 纵排时自然隐藏)。横排且开了多排时两个方向都不滚:面板拿到确定的宽度去换行,高度随排数长。
+    /// Left/Right 时标签条纵排、分割线立起、滚动方向改为垂直(溢出三连钮随之按高度判定、挪到底端,
+    /// 见 ApplyOverflowControlsLayout)。横排且开了多排时两个方向都不滚:面板拿到确定的宽度去换行,高度随排数长。
     /// </summary>
     /// <remarks>
     /// 停到底部只是把标签条连同分割线整体挪到内容区下方,标签自己的样子不变 —— 激活强调线
@@ -374,9 +375,43 @@ public partial class DockGroupControl : UserControl
             panel.Orientation = _tabsOrientation;
             panel.MultiRow = _multiRowTabs;
         }
+        ApplyOverflowControlsLayout(position, edge);
         // 换了摆法,激活标签可能被挤到了视口外(比如从多排切回单排)。
         _revealActiveTab = true;
     }
+
+    /// <summary>
+    /// 溢出三连钮跟着标签排列的方向走:横排停在右端;纵排停在底端、仍排成一行(竖着摞三枚会再吃掉
+    /// 一个标签的高度,横着放只要一排)。两枚滚动箭头沿排列轴指向(纵排转成上 / 下);
+    /// 下拉箭头指向列表弹出的那一边 —— 纵排时若还朝下,就和「往下滚」长得一模一样。
+    /// </summary>
+    private void ApplyOverflowControlsLayout(DockTabsPosition position, Dock edge)
+    {
+        bool vertical = position != DockTabsPosition.Top;
+        DockPanel.SetDock(OverflowControls, vertical ? Dock.Bottom : Dock.Right);
+        OverflowControls.Margin = vertical ? new Thickness(0, 6) : new Thickness(6, 0);
+        OverflowControls.HorizontalAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
+        OverflowControls.VerticalAlignment = vertical ? VerticalAlignment.Stretch : VerticalAlignment.Center;
+        ScrollBackIcon.RenderTransform = vertical ? new RotateTransform(90) : null;
+        ScrollForwardIcon.RenderTransform = vertical ? new RotateTransform(90) : null;
+        TabListIcon.RenderTransform = edge switch
+        {
+            Dock.Left => new RotateTransform(-90),
+            Dock.Right => new RotateTransform(90),
+            Dock.Bottom => new RotateTransform(180),
+            _ => null
+        };
+        UpdateScrollButtons();
+    }
+
+    /// <summary>「所有标签页」列表往哪边弹:离开窗口边缘、朝着内容区。</summary>
+    private PlacementMode TabListPlacement => DockPanel.GetDock(TabStripArea) switch
+    {
+        Dock.Left => PlacementMode.RightEdgeAlignedBottom,
+        Dock.Right => PlacementMode.LeftEdgeAlignedBottom,
+        Dock.Bottom => PlacementMode.TopEdgeAlignedRight,
+        _ => PlacementMode.BottomEdgeAlignedRight
+    };
 
     private DockTabPanel CreateTabPanel() => new()
     {
@@ -387,19 +422,29 @@ public partial class DockGroupControl : UserControl
 
     // ---- 溢出控件(设计 nunbT pZGS4) ----
 
+    /// <summary>沿排列轴的滚动量:(偏移, 视口, 内容) —— 横排取 X / 宽度,纵排取 Y / 高度。</summary>
+    private (double Offset, double Viewport, double Extent) TabScrollAxis => IsVerticalStrip
+        ? (TabScroll.Offset.Y, TabScroll.Viewport.Height, TabScroll.Extent.Height)
+        : (TabScroll.Offset.X, TabScroll.Viewport.Width, TabScroll.Extent.Width);
+
     private void UpdateScrollButtons()
     {
-        ScrollLeftButton.IsEnabled = TabScroll.Offset.X > 0.5;
-        ScrollRightButton.IsEnabled = TabScroll.Offset.X + TabScroll.Viewport.Width < TabScroll.Extent.Width - 0.5;
+        (double offset, double viewport, double extent) = TabScrollAxis;
+        ScrollBackButton.IsEnabled = offset > 0.5;
+        ScrollForwardButton.IsEnabled = offset + viewport < extent - 0.5;
     }
 
-    private void ScrollLeft_Click(object? sender, RoutedEventArgs e) =>
-        TabScroll.Offset = TabScroll.Offset.WithX(Math.Max(0, TabScroll.Offset.X - 120));
+    /// <summary>沿标签排列的那条轴滚 <paramref name="delta" /> 像素(纵排滚 Y、横排滚 X),夹在可滚范围内。</summary>
+    private void ScrollTabsBy(double delta)
+    {
+        (double offset, double viewport, double extent) = TabScrollAxis;
+        double target = Math.Clamp(offset + delta, 0, Math.Max(0, extent - viewport));
+        TabScroll.Offset = IsVerticalStrip ? TabScroll.Offset.WithY(target) : TabScroll.Offset.WithX(target);
+    }
 
-    private void ScrollRight_Click(object? sender, RoutedEventArgs e) =>
-        TabScroll.Offset = TabScroll.Offset.WithX(Math.Min(
-            Math.Max(0, TabScroll.Extent.Width - TabScroll.Viewport.Width),
-            TabScroll.Offset.X + 120));
+    private void ScrollBack_Click(object? sender, RoutedEventArgs e) => ScrollTabsBy(-ScrollButtonStep);
+
+    private void ScrollForward_Click(object? sender, RoutedEventArgs e) => ScrollTabsBy(ScrollButtonStep);
 
     /// <summary>空窗格上的"关闭窗格":把这块空面板从布局里撤掉,兄弟随之填满整片区域。</summary>
     private void ClosePane_Click(object? sender, RoutedEventArgs e)
@@ -417,7 +462,7 @@ public partial class DockGroupControl : UserControl
         {
             return;
         }
-        var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        var flyout = new MenuFlyout { Placement = TabListPlacement };
         foreach (DockDocument document in group.Documents)
         {
             var item = new MenuItem { Header = document.Title };

@@ -46,8 +46,8 @@
   </UserControl.Styles>
 
   <!-- 一个标签组:标签条(35px + 1px 分割线 = 36px,与侧栏头部分割线同一水平线)+
-       内容区。标签条按 TabsPosition 与工作区的 TabsAtBottom 停靠(代码后置调整),溢出时右端
-       出现固定 24px 三连按钮(设计 nunbT pZGS4):左滚/右滚/全部标签下拉。
+       内容区。标签条按 TabsPosition 与工作区的 TabsAtBottom 停靠(代码后置调整),溢出时右端(纵排时底端)
+       出现固定 24px 三连按钮(设计 nunbT pZGS4):往前滚 / 往后滚 / 全部标签下拉。
        开了「多行显示标签页」则换行成多排、每排 35px,标签条随排数长高,不再溢出。 -->
   <DockPanel>
 
@@ -56,6 +56,9 @@
                Background="{DynamicResource VelaBgPage}"
                MinHeight="35">
 
+      <!-- 横排时停在右端;纵排(停到左 / 右侧)时由代码后置挪到底端、仍排成一行,
+           两枚滚动箭头转成上 / 下,下拉箭头指向列表弹出的那一边(ApplyTabStripLayout)。
+           是否出现按标签排列的那条轴判定:横排比宽度,纵排比高度。 -->
       <StackPanel x:Name="OverflowControls"
                   DockPanel.Dock="Right"
                   Orientation="Horizontal"
@@ -63,26 +66,27 @@
                   Margin="6,0"
                   VerticalAlignment="Center">
         <StackPanel.IsVisible>
-          <MultiBinding Converter="{x:Static conv:WidthOverflowConverter.Instance}">
-            <Binding ElementName="TabScroll" Path="Extent.Width" />
-            <Binding ElementName="TabScroll" Path="Viewport.Width" />
+          <MultiBinding Converter="{x:Static conv:TabStripOverflowConverter.Instance}">
+            <Binding ElementName="TabScroll" Path="Extent" />
+            <Binding ElementName="TabScroll" Path="Viewport" />
+            <Binding Path="TabsPosition" />
           </MultiBinding>
         </StackPanel.IsVisible>
 
-        <RepeatButton x:Name="ScrollLeftButton" Classes="tab-nav" Click="ScrollLeft_Click">
-          <pc:LucideIcon Width="14" Height="14"
+        <RepeatButton x:Name="ScrollBackButton" Classes="tab-nav" Click="ScrollBack_Click">
+          <pc:LucideIcon x:Name="ScrollBackIcon" Width="14" Height="14"
                          Data="{DynamicResource Icon.chevron-left}"
                          Foreground="{DynamicResource VelaTextTertiary}" />
         </RepeatButton>
 
-        <RepeatButton x:Name="ScrollRightButton" Classes="tab-nav" Click="ScrollRight_Click">
-          <pc:LucideIcon Width="14" Height="14"
+        <RepeatButton x:Name="ScrollForwardButton" Classes="tab-nav" Click="ScrollForward_Click">
+          <pc:LucideIcon x:Name="ScrollForwardIcon" Width="14" Height="14"
                          Data="{DynamicResource Icon.chevron-right}"
                          Foreground="{DynamicResource VelaTextTertiary}" />
         </RepeatButton>
 
         <Button Classes="tab-nav" Click="TabListDrop_Click" ToolTip.Tip="{loc:Localize Dock_AllTabs}">
-          <pc:LucideIcon Width="14" Height="14"
+          <pc:LucideIcon x:Name="TabListIcon" Width="14" Height="14"
                          Data="{DynamicResource Icon.chevron-down}"
                          Foreground="{DynamicResource VelaTextTertiary}" />
         </Button>

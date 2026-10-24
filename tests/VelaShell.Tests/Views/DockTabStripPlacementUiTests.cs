@@ -149,7 +149,86 @@ public sealed class DockTabStripPlacementUiTests
         }, CancellationToken.None).GetAwaiter().GetResult();
     }
 
+    [TestMethod]
+    public void SideStrip_ShowsOverflowControlsAtItsFoot_AndScrollsVertically()
+    {
+        _session.Dispatch(() =>
+        {
+            var workspace = new DockWorkspace();
+            Add(workspace, Docs([.. Enumerable.Range(1, 15).Select(i => $"host-{i:00}")]));
+            workspace.PrimaryGroup.TabsPosition = DockTabsPosition.Left;
+            // 窗口够宽、不够高:横排放得下,纵排放不下 —— 两条轴各自判定才分得出来。
+            (Window window, DockWorkspaceControl dock) = Show(workspace, 2400, 300);
+            DockGroupControl group = Groups(dock).Single();
+            ScrollViewer strip = group.TabScrollViewer;
+            StackPanel controls = Named<StackPanel>(group, "OverflowControls");
+
+            Assert.IsGreaterThan(strip.Viewport.Height + 0.5, strip.Extent.Height, "纵排得真的放不下");
+            Assert.IsTrue(controls.IsVisible, "纵排溢出时三连钮要出现(以前按宽度判定,永远不出现)");
+            Rect stripRect = BoundsIn(group, group.TabStripPanel);
+            Rect controlsRect = BoundsIn(group, controls);
+            Assert.AreEqual(stripRect.Bottom - 6, controlsRect.Bottom, 0.5, "停在标签条底端");
+            Assert.AreEqual(stripRect.Center.X, controlsRect.Center.X, 1, "在标签条里居中排成一行");
+            Assert.AreEqual(90d, Rotation(group, "ScrollBackIcon"), "滚动箭头转成上 / 下");
+            Assert.AreEqual(-90d, Rotation(group, "TabListIcon"), "下拉箭头指向列表弹出的那一边(左侧条 → 朝右)");
+
+            Button back = Named<Button>(group, "ScrollBackButton");
+            Button forward = Named<Button>(group, "ScrollForwardButton");
+            Assert.IsFalse(back.IsEnabled, "还在最上面,往回滚的那一枚置灰");
+            Assert.IsTrue(forward.IsEnabled);
+            ClickCenter(window, forward);
+            Pump(window);
+            Assert.IsGreaterThan(0d, strip.Offset.Y, "纵排滚的是 Offset.Y");
+            Assert.AreEqual(0d, strip.Offset.X, 0.5);
+            Assert.IsTrue(back.IsEnabled);
+            SaveOptionalFrame(window, "dock-tabs-side-overflow.png");
+
+            ClickCenter(window, back);
+            Pump(window);
+            Assert.AreEqual(0d, strip.Offset.Y, 0.5);
+
+            // 回到横排:这么宽的窗口一排放得下,三连钮跟着消失,箭头转回去。
+            workspace.PrimaryGroup.TabsPosition = DockTabsPosition.Top;
+            Pump(window);
+            Assert.IsFalse(controls.IsVisible, "横排按宽度判定:放得下就不出现,哪怕内容比视口高");
+            Assert.AreEqual(0d, Rotation(group, "ScrollBackIcon"));
+
+            window.Close();
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void BottomStrip_TabListOpensUpward()
+    {
+        _session.Dispatch(() =>
+        {
+            var workspace = new DockWorkspace { TabsAtBottom = true };
+            Add(workspace, Docs([.. Enumerable.Range(1, 12).Select(i => $"host-{i:00}")]));
+            (Window window, DockWorkspaceControl dock) = Show(workspace, 480, 300);
+            DockGroupControl group = Groups(dock).Single();
+
+            Assert.IsTrue(Named<StackPanel>(group, "OverflowControls").IsVisible, "横排放不下,三连钮照常出现");
+            Assert.AreEqual(180d, Rotation(group, "TabListIcon"), "停在底部时列表往上弹,箭头朝上");
+            Assert.AreEqual(0d, Rotation(group, "ScrollBackIcon"), "横排的滚动箭头不转");
+
+            window.Close();
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
     // ---- 脚手架 ----
+
+    private static double Rotation(DockGroupControl group, string iconName) =>
+        Named<Control>(group, iconName).RenderTransform is RotateTransform rotate ? rotate.Angle : 0;
+
+    private static void ClickCenter(Window window, Control control)
+    {
+        Point spot = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window)
+                     ?? throw new AssertFailedException("控件不在可视树上。");
+        window.MouseDown(spot, MouseButton.Left);
+        window.MouseUp(spot, MouseButton.Left);
+    }
 
     private static PluginDocument[] Docs(params string[] titles) =>
         [.. titles.Select((title, i) => new PluginDocument($"doc-{i}", title, "acme.demo", new Border()))];
