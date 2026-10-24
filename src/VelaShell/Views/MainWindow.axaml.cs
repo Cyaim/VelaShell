@@ -43,6 +43,9 @@ public partial class MainWindow : Window
     /// <summary>资源监视窗口尺寸在文档存储里的键。</summary>
     private const string ResourceMonitorLayoutKey = "resourceMonitor";
 
+    /// <summary>插件管理窗口尺寸与位置在文档存储里的键。</summary>
+    private const string PluginManagerLayoutKey = "pluginManager";
+
     /// <summary>每个会话至多一扇任务管理器窗口,按会话标识去重。</summary>
     private readonly Dictionary<Guid, ProcessManagerView> _processManagers = [];
 
@@ -1351,17 +1354,16 @@ public partial class MainWindow : Window
         _processManagers[sessionId] = window;
         window.Closed += (_, _) => _processManagers.Remove(sessionId);
 
-        // 尺寸记忆:所有会话共用一条记录 —— 用户调的是"这个面板多大",不是"这台服务器的面板多大"。
+        // 尺寸与位置记忆:所有会话共用一条记录 —— 用户调的是"这个面板多大、摆在哪块屏",不是"这台服务器的面板"。
         if (app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
         {
-            WindowLayoutStore.Apply(window, await layoutStore.LoadAsync(ProcessManagerLayoutKey));
-            window.Closing += (_, _) => _ = layoutStore.SaveAsync(ProcessManagerLayoutKey, window);
+            await layoutStore.RememberAsync(ProcessManagerLayoutKey, window);
         }
         window.Show(this);
     }
 
     /// <summary>
-    /// 打开(或前置)某个会话的资源监视窗口。与任务管理器同样按会话去重、非模态、记忆尺寸 ——
+    /// 打开(或前置)某个会话的资源监视窗口。与任务管理器同样按会话去重、非模态、记忆尺寸与位置 ——
     /// 用户要一边盯曲线一边在终端里敲命令。
     /// </summary>
     private async Task OpenResourceMonitorAsync(Guid sessionId, string label)
@@ -1383,11 +1385,10 @@ public partial class MainWindow : Window
         _resourceMonitors[sessionId] = window;
         window.Closed += (_, _) => _resourceMonitors.Remove(sessionId);
 
-        // 尺寸记忆:所有会话共用一条记录(同任务管理器)。
+        // 尺寸与位置记忆:所有会话共用一条记录(同任务管理器)。
         if (app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
         {
-            WindowLayoutStore.Apply(window, await layoutStore.LoadAsync(ResourceMonitorLayoutKey));
-            window.Closing += (_, _) => _ = layoutStore.SaveAsync(ResourceMonitorLayoutKey, window);
+            await layoutStore.RememberAsync(ResourceMonitorLayoutKey, window);
         }
         window.Show(this);
     }
@@ -1409,7 +1410,7 @@ public partial class MainWindow : Window
         new LayoutTemplatesWindow { DataContext = templates }.Show(this);
     }
 
-    /// <summary>打开(或前置)某个目标的链路追踪窗口。非模态,尺寸与任务管理器一样记忆。</summary>
+    /// <summary>打开(或前置)某个目标的链路追踪窗口。非模态,尺寸与位置与任务管理器一样记忆。</summary>
     private async Task OpenTraceRouteAsync(MainWindowViewModel vm, string host, string label)
     {
         if (_traceWindows.TryGetValue(host, out TraceRouteWindow? existing))
@@ -1432,8 +1433,7 @@ public partial class MainWindow : Window
         window.Closed += (_, _) => _traceWindows.Remove(host);
         if (Application.Current is App app && app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
         {
-            WindowLayoutStore.Apply(window, await layoutStore.LoadAsync(TraceRouteLayoutKey));
-            window.Closing += (_, _) => _ = layoutStore.SaveAsync(TraceRouteLayoutKey, window);
+            await layoutStore.RememberAsync(TraceRouteLayoutKey, window);
         }
         window.Show(this);
     }
@@ -1515,7 +1515,10 @@ public partial class MainWindow : Window
     private PluginManagerWindow? _pluginManagerWindow;
 
     /// <summary>打开(或聚焦已开的)插件管理窗口。</summary>
-    private void OpenPluginManager()
+    private void OpenPluginManager() => FireAndForget.Run(OpenPluginManagerAsync);
+
+    /// <summary>打开(或聚焦已开的)插件管理窗口;非模态,尺寸与位置记忆同任务管理器。</summary>
+    private async Task OpenPluginManagerAsync()
     {
         if (_pluginManagerWindow is { } existing)
         {
@@ -1530,9 +1533,15 @@ public partial class MainWindow : Window
         var viewModel = new PluginManagerViewModel(manager,
             services.GetService<Infrastructure.Plugins.PluginPermissionGate>(),
             services.GetService<Infrastructure.Plugins.Market.IPluginMarketClient>());
-        _pluginManagerWindow = new PluginManagerWindow { DataContext = viewModel };
-        _pluginManagerWindow.Closed += (_, _) => _pluginManagerWindow = null;
-        _pluginManagerWindow.Show(this);
+        // 先占住槽位再去读布局:读的那一下里再点一次侧栏,只会激活这一扇,不会叠出第二扇。
+        PluginManagerWindow window = new() { DataContext = viewModel };
+        _pluginManagerWindow = window;
+        window.Closed += (_, _) => _pluginManagerWindow = null;
+        if (services.GetService<WindowLayoutStore>() is { } layoutStore)
+        {
+            await layoutStore.RememberAsync(PluginManagerLayoutKey, window);
+        }
+        window.Show(this);
     }
 
     /// <summary>
