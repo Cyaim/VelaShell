@@ -158,7 +158,47 @@ public class UpdateServiceTests : IDisposable
 
     [TestMethod]
     [TestCategory("Update")]
-    public async Task DownloadUpdateAsync_WithoutCheck_CompletesWithoutError() => await CreateService().DownloadUpdateAsync();
+    public async Task DownloadUpdateAsync_WithoutCheck_ThrowsInsteadOfReportingSuccess()
+    {
+        UpdateService service = CreateService();
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.DownloadUpdateAsync());
+
+        Assert.IsNull(service.ReadyUpdate);
+        Assert.AreEqual(0, _source.DownloadCalls);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task DownloadUpdateAsync_TargetClearedByConcurrentCheck_ThrowsWithoutReady()
+    {
+        // 关于页检查完、还没开始下载,启动时的通知检查插进来清空了检查结果:无参数下载不能拿着
+        // 空目标「成功」返回,否则关于页报「已就绪」,手里却没有包。
+        byte[] zip = CreateZipBytes(("app.txt", "new"));
+        UpdateManifest manifest = CreateManifest("2.0.0", zip);
+        _source.Manifest = manifest;
+        _source.AssetBytes = zip;
+        UpdateService service = CreateService();
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+        TaskCompletionSource<UpdateManifest?> pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _source.OnManifest = () => pending.Task;
+        Task<bool> notificationCheck = service.CheckForUpdateAsync();
+        try
+        {
+            Assert.IsNull(service.AvailableVersion, "并发检查一开始就清掉了上一次的结果");
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.DownloadUpdateAsync());
+            Assert.IsNull(service.ReadyUpdate);
+            Assert.AreEqual(0, _source.DownloadCalls);
+            Assert.ThrowsExactly<InvalidOperationException>(service.ApplyUpdateAndRestart);
+        }
+        finally
+        {
+            pending.TrySetResult(manifest);
+        }
+        Assert.IsTrue(await notificationCheck.WaitAsync(TimeSpan.FromSeconds(10)));
+        await service.DownloadUpdateAsync();
+        Assert.AreSame(manifest, service.ReadyUpdate, "并发检查落定后再下载照常就绪");
+    }
 
     [TestMethod]
     [TestCategory("Update")]
@@ -757,25 +797,65 @@ public class UpdateServiceTests : IDisposable
     [TestCategory("Update")]
     public async Task ApplyUpdateAndRestart_StagesWithoutTouchingApplicationDirectory_OnFailure()
     {
-        // 包在下载后被损坏(磁盘错误/被改写):解包阶段就会失败,而解包不动应用目录,
-        // 因此应用完好如初,重试也不需要任何人工清理。
-        byte[] zip = CreateZipBytes(("app.txt", "new"));
-        _source.Manifest = CreateManifest("2.0.0", zip);
-        _source.AssetBytes = zip;
+        // 包与清单哈希一致却解不开(发布时就坏了):解包阶段失败,而解包不动应用目录,
+        // 因此应用完好如初,重试也不需要任何人工清理。下载后才损坏的包换版前就会被拦下,见下一条。
+        byte[] broken = "not an archive, but its hash matches the manifest"u8.ToArray();
+        _source.Manifest = CreateManifest("2.0.0", broken);
+        _source.AssetBytes = broken;
         UpdateService service = CreateService("1.0.0");
         File.WriteAllText(Path.Combine(_appDir, "app.txt"), "current");
         Assert.IsTrue(await service.CheckForUpdateAsync());
         await service.DownloadUpdateAsync();
-        string archive = Path.Combine(
-            _appDir, UpdateApplier.StagingDirectoryName, "VelaShell-2.0.0-" + UpdateManifest.CurrentRid() + ".zip");
-        File.WriteAllText(archive, "corrupted after checksum passed");
 
         Assert.ThrowsExactly<InvalidDataException>(service.ApplyUpdateAndRestart);
 
         Assert.AreEqual("current", File.ReadAllText(Path.Combine(_appDir, "app.txt")));
         Assert.IsEmpty(Directory.GetFiles(_appDir, "*.old", SearchOption.AllDirectories));
+        Assert.AreSame(_source.Manifest, service.ReadyUpdate, "包与快照一致,解包失败不丢就绪状态");
         Assert.IsTrue(service.RepairUpdateState(), "解包异常后必须释放操作锁,允许修复");
         Assert.IsNull(service.ReadyUpdate);
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task ApplyUpdateAndRestart_MissingOrCorruptReadyArchive_DropsReadyAndRedownloads(bool missing)
+    {
+        // 就绪后包被删或被改写:换版必须失败且不碰应用目录,同时丢掉名存实亡的就绪状态 ——
+        // 否则检查更新一直短路成「已就绪」,重启又失败,只能靠修复更新状态脱身。
+        byte[] zip = CreateZipBytes(("app.txt", "new"));
+        _source.Manifest = CreateManifest("2.0.0", zip);
+        _source.AssetBytes = zip;
+        int shutdowns = 0;
+        UpdateService service = CreateService(shutdown: () => shutdowns++);
+        File.WriteAllText(Path.Combine(_appDir, "app.txt"), "current");
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+        await service.DownloadUpdateAsync();
+        Assert.AreSame(_source.Manifest, service.ReadyUpdate);
+        string archive = Path.Combine(_appDir, UpdateApplier.StagingDirectoryName,
+            _source.Manifest.AssetForCurrentPlatform()!.Name);
+        if (missing)
+        {
+            File.Delete(archive);
+        }
+        else
+        {
+            File.WriteAllText(archive, "corrupted after checksum passed");
+        }
+
+        Assert.ThrowsExactly<InvalidDataException>(service.ApplyUpdateAndRestart);
+
+        Assert.IsNull(service.ReadyUpdate, "包已不可用,不能再报告就绪");
+        Assert.IsFalse(File.Exists(archive), "坏包当场删掉");
+        Assert.AreEqual("current", File.ReadAllText(Path.Combine(_appDir, "app.txt")));
+        Assert.AreEqual(0, shutdowns);
+        Assert.ThrowsExactly<InvalidOperationException>(service.ApplyUpdateAndRestart);
+        Assert.IsTrue(await service.CheckForUpdateAsync());
+        Assert.AreEqual(2, _source.ManifestCalls, "就绪状态已丢,检查更新要真的去查");
+        await service.DownloadUpdateAsync();
+        Assert.AreEqual(2, _source.DownloadCalls);
+        Assert.AreSame(_source.Manifest, service.ReadyUpdate);
     }
 
     [TestMethod]
