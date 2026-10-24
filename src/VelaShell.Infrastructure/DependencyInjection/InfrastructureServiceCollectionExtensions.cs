@@ -238,7 +238,9 @@ public static class InfrastructureServiceCollectionExtensions
                     SshConnection inner = ssh.InnerConnection
                         ?? throw new VelaSshConnectionException(
                             "SSH connection is not established; cannot open SFTP channel.");
-                    return await SftpFileSystem.ConnectAsync(inner, cancellationToken: ct).ConfigureAwait(false);
+                    // 文件名按会话的字符集解读(GBK 服务器上的中文名才显示得对);UTF-8 时不传,库走无损往返。
+                    return await SftpFileSystem.ConnectAsync(inner, SftpConnectOptions.For(session.ConnectionInfo), ct)
+                        .ConfigureAwait(false);
                 });
             }, settings);
         });

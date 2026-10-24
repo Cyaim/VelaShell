@@ -90,6 +90,40 @@ public sealed class ConnectionWorkflowServiceTests
         Assert.AreEqual(automatic, connected.JumpHost?.IsAutomaticReconnect);
     }
 
+    /// <summary>
+    /// 会话的字符集(会话覆盖优先于全局)带进连接信息,SFTP 按它解读文件名;跳板那一跳不带(它不开 SFTP)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("GBK", "UTF-8", "GBK")]
+    [DataRow(null, "Big5", "Big5")]
+    [DataRow(null, "UTF-8", "UTF-8")]
+    public async Task ConnectionInfo_CarriesTheSessionEncoding_OnTheTargetHopOnly(
+        string? profileEncoding, string globalEncoding, string expected)
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings { TerminalEncoding = globalEncoding });
+        var service = new ConnectionWorkflowService(_sessionRepository, _sshConnectionService, settingsService: settings);
+        SessionProfile jump = CreateProfile("bastion");
+        jump.Terminal = new TerminalOverrides { Encoding = "Shift_JIS" };
+        SessionProfile target = CreateProfile("legacy-nas");
+        target.Terminal = new TerminalOverrides { Encoding = profileEncoding };
+        target.JumpHostProfileId = jump.Id;
+        _sessionRepository.GetSessionAsync(jump.Id).Returns(jump);
+        ConnectionInfo? connected = null;
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns(call =>
+                             {
+                                 connected = (ConnectionInfo)call[0];
+                                 return new SshSession { ConnectionInfo = connected, Status = SessionStatus.Connected };
+                             });
+
+        await service.ConnectProfileAsync(target);
+
+        Assert.IsNotNull(connected);
+        Assert.AreEqual(expected, connected.FileNameEncoding);
+        Assert.IsNull(connected.JumpHost?.FileNameEncoding, "跳板只开隧道,不该带文件名编码");
+    }
+
     [TestMethod]
     public async Task GetSavedProfilesAsync_ReturnsSortedProfiles()
     {

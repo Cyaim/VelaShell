@@ -225,11 +225,34 @@ public sealed class ConnectionWorkflowService(
     private async Task<ConnectionInfo> BuildConnectionInfoAsync(SessionProfile profile, bool automaticReconnect, CancellationToken cancellationToken)
     {
         var visited = new HashSet<Guid> { profile.Id };
-        return await BuildChainAsync(profile, visited, 0, automaticReconnect, cancellationToken).ConfigureAwait(false);
+        string fileNameEncoding = await ResolveSessionEncodingAsync(profile).ConfigureAwait(false);
+        return await BuildChainAsync(profile, visited, 0, automaticReconnect, fileNameEncoding, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 这条配置生效的会话字符集(会话覆盖优先于全局,与终端标签同一个口径);SFTP 按它解读文件名。
+    /// </summary>
+    /// <remarks>设置读不出来(或单测没给设置服务)时按全局默认值算,不让编码这件小事挡住连接。</remarks>
+    private async Task<string> ResolveSessionEncodingAsync(SessionProfile profile)
+    {
+        AppSettings settings = new();
+        if (settingsService is not null)
+        {
+            try
+            {
+                settings = await settingsService.GetSettingsAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // 沿用默认值。
+            }
+        }
+        return SessionTerminalSettings.Encoding(profile, settings);
     }
 
     private async Task<ConnectionInfo> BuildChainAsync(
-        SessionProfile profile, HashSet<Guid> visited, int depth, bool automaticReconnect, CancellationToken cancellationToken)
+        SessionProfile profile, HashSet<Guid> visited, int depth, bool automaticReconnect, string? fileNameEncoding,
+        CancellationToken cancellationToken)
     {
         // 每一跳各自解析自己引用的凭据(#550);解析出的明文只进 ConnectionInfo,不回写配置。
         SessionProfile effective = await ResolveHopCredentialAsync(profile, depth, cancellationToken).ConfigureAwait(false);
@@ -245,7 +268,8 @@ public sealed class ConnectionWorkflowService(
                 throw new InvalidOperationException(Strings.Get("Svc_JumpChainLoop"));
             }
             SessionProfile jumpProfile = await _sessionRepository.GetSessionAsync(jumpId).ConfigureAwait(false) ?? throw new InvalidOperationException(Strings.Get("Svc_JumpHostMissing"));
-            jump = await BuildChainAsync(jumpProfile, visited, depth + 1, automaticReconnect, cancellationToken).ConfigureAwait(false);
+            // 跳板只开隧道、不开 SFTP:文件名编码只带在终点那一跳上。
+            jump = await BuildChainAsync(jumpProfile, visited, depth + 1, automaticReconnect, null, cancellationToken).ConfigureAwait(false);
         }
         return new()
         {
@@ -261,6 +285,7 @@ public sealed class ConnectionWorkflowService(
             // 会话级保活覆盖(F-06);null = 跟随全局。跳板链上每一跳各带各的。
             KeepAliveSeconds = effective.Terminal?.KeepAliveSeconds,
             Ssh = effective.Ssh?.Clone(),
+            FileNameEncoding = fileNameEncoding,
             JumpHost = jump,
             // 一条链共用一个主机指纹策略(由最外层这一跳决定),每一跳都标上只是让每份 ConnectionInfo 自己说得清。
             IsAutomaticReconnect = automaticReconnect
