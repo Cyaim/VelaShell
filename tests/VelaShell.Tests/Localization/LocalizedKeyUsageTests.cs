@@ -120,7 +120,7 @@ public partial class LocalizedKeyUsageTests
     /// <remarks>
     /// 连接诊断的步骤名、导出报告,捐赠页的「已复制」,路由追踪的 TTL 提示都曾写死在代码里,
     /// 切到英文照样是中文 —— 资源键与平价测试都管不到没走资源的文案。SSH / X 服务端两个库的中文诊断
-    /// 文本另行跟踪(feature-plan.md「SSH 库剩余中文诊断文本的界面本地化」),不在此列。
+    /// 文本另行跟踪(feature-plan.md「SSH 库仍透传的中文诊断(续)」),不在此列。
     /// </remarks>
     [TestMethod]
     public void Code_HasNoHardcodedChineseText()
