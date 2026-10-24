@@ -154,7 +154,7 @@ The main window contains a title bar, Explorer, a docking document area, and a b
 
 **Steps:** Wait for the parallel scan of Xshell, WinSCP, and `~/.ssh/config`. Select a source manually if its default location is not found. Review importable and duplicate items, adjust selections, and import. Unsupported protocols cannot be selected. Passwords protected by the original tool's master password are not recovered; be ready to re-enter them.
 
-**Result and how it works:** This imports recognized parameters, not the complete behavior of another application. OpenSSH literal `Host` entries become profiles; `Host *` supplies defaults. Without `HostName`, the alias is used. An imported `IdentityFile` path does not prove that the file exists locally. `ProxyJump` requires the corresponding jump host in the import batch; otherwise the result remains direct and needs manual correction. `LocalForward`, `ServerAliveInterval`, and `ForwardAgent` are not imported automatically.
+**Result and how it works:** This imports recognized parameters, not the complete behavior of another application. OpenSSH literal `Host` entries become profiles; `Host *` supplies defaults. Without `HostName`, the alias is used. An imported `IdentityFile` path does not prove that the file exists locally. A host with `CertificateFile` (or a `-cert.pub` next to its private key) is imported with certificate authentication; one with only `IdentityAgent` pointing at the default agent uses SSH agent authentication. `KexAlgorithms` / `HostKeyAlgorithms` / `Ciphers` / `MACs` go into the profile's custom algorithm lists as written (names this version does not implement are dropped), and `Compression` and `ForwardAgent yes` are carried over. `LocalForward` / `RemoteForward` / `DynamicForward` become tunnels of the connection (stopped; start them in the tunnel panel); Unix-socket and remote dynamic forwards have no matching tunnel type and are not imported. Anything that could not be imported as written is listed on the preview row in manual-selection mode. `ProxyJump` requires the corresponding jump host in the import batch; otherwise the result remains direct and needs manual correction. Other keywords such as `ServerAliveInterval` are not imported.
 
 **Caution:** Keep fingerprint checking enabled before and after import. Importing Xshell sessions is different from [Xshell-compatible external launch](#desktop).
 
@@ -166,7 +166,7 @@ The main window contains a title bar, Explorer, a docking document area, and a b
 
 **Steps:**
 
-1. Choose JSON for a complete connection export; choose CSV for spreadsheet editing. Save the template first and follow its headers. `host` is required.
+1. Choose JSON for a complete connection export; choose CSV for spreadsheet editing. Save the template first and follow its headers. `host` is required. To share connections with the command-line ssh, choose OpenSSH config: it writes `Host` blocks for SSH / SFTP connections only (host, user, keys and certificates, jump hosts, compression, agent forwarding, algorithms and port forwards, never passwords); merge it into `~/.ssh/config` or reference it with `Include`.
 2. JSON exports exclude passwords by default. Explicitly include credentials when needed and set an export passphrase of at least 8 characters; the credentials section is encrypted with a passphrase-derived key and AES-GCM, while hosts, user names, notes, groups and the rest stay in plain text. **CSV exports never contain secrets.**
 3. Select the import file (maximum 16 MB), enter its decryption passphrase if required, and review targets and groups in the preview.
 4. Duplicates are skipped by default. Choose overwrite only when intended, or keep both. Import, then spot-check hosts, jump hosts, authentication, and paths.
@@ -651,9 +651,9 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 ### 15.8 Security Audit
 
-**Sections:** Session recording, audit logs, host trust policy, trusted hosts, external login (Xshell compatibility), and security alerts.
+**Sections:** Session recording, audit logs, host trust policy, trusted hosts (with OpenSSH known_hosts import/export), trusted host CAs, external login (Xshell compatibility), and security alerts.
 
-**Operation:** Set automatic recording and on-disk secret masking; open playback/audit viewers; set audit retention to 1–3650 days; control first-use confirmation and changed-key blocking; inspect/delete trusted records (addresses hidden by default); accept/confirm external logins, register protocols, or clear external-target trust; configure in-app/sound/Webhook alerts.
+**Operation:** Set automatic recording and on-disk secret masking; open playback/audit viewers; set audit retention to 1–3650 days; control first-use confirmation and changed-key blocking; inspect/delete trusted records (addresses hidden by default); import `known_hosts` (plain lines become trusted hosts, `@cert-authority` / `@revoked` lines go to trusted host CAs) or export in OpenSSH format (optionally hashing host names); add/remove trusted host CAs; accept/confirm external logins, register protocols, or clear external-target trust; configure in-app/sound/Webhook alerts.
 
 **Caution and mechanism:** Disabling first-use confirmation changes to trust on first use (TOFU), not stronger verification. Disabling changed-key blocking leads to manual adjudication, not a reason to accept a change. Webhooks can disclose event information to the configured service; verify trust and organizational authorization. Auditing does not cover every configuration/settings change and is not a complete tamper-proof ledger.
 
@@ -697,6 +697,8 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 **Entry point and steps:** Check target, algorithm, and SHA-256 fingerprint in first-use/change dialogs. Verify independently before permanent or one-time trust; reject mismatches. Security Audit settings display trusted hosts and changed-key blocking. Deleting a record changes future trust decisions; it does not fix the server. If automatic reconnect stops on trust, manually reconnect to review it.
 
 **Result and how it works:** Trust associates a target with a server key to protect passwords/signatures against an impostor. The host's interactive flow is not the SSH library's default rejection policy; Security Audit settings control application behavior. Verify each jump independently; external launch does not bypass checking.
+
+**Trusted host CAs:** When servers use OpenSSH host certificates, add the CA public key and host-name patterns under Settings → Security Audit → Trusted host CAs (same syntax as `@cert-authority` in `known_hosts`; you can also import them from `known_hosts`). Matching hosts that present a certificate signed by that CA, listing the host name as a principal and within its validity period, are then trusted without a dialog. An invalid certificate, or a covered host presenting a plain key the CA does not vouch for, is **rejected instead of falling back to first-use confirmation**; for a host that really has no certificate, verify its fingerprint and import its key from `known_hosts`. `@revoked` entries override any trust.
 
 ### 16.2 Agent Authentication Is Not Agent Forwarding
 
@@ -940,7 +942,7 @@ VelaShell.exe ssh://demo@192.0.2.10:2222
 VelaShell.exe -f "C:\Temp\session.xsh"
 ```
 
-Override username/port/password/private key with `-l/-user`, `-p/-port`, `-pw/-password`, and `-i/-identity`; secrets are deliberately absent above. `-newtab` identifies a target only with a scheme; a scheme-less value is a tab name and becomes the tab title (shown on its own row in the confirmation dialog; the status bar still names the real target). Candidates are tried as `-url`, bare URL, `-newtab`, then session file. ssh/sftp/ftp/ftps are supported; telnet/rlogin report unsupported. **Post-connect commands/scripts via `-e/-s` are not implemented.** `.xsh` reads recognized target/private-key fields but does not decrypt Xshell passwords.
+Override username/port/password/private key with `-l/-user`, `-p/-port`, `-pw/-password`, and `-i/-identity`; PuTTY's `-cert` names the OpenSSH certificate paired with the private key (certificate authentication; without `-i`, the key is found by the `<key>-cert.pub` naming convention); secrets are deliberately absent above. `-newtab` identifies a target only with a scheme; a scheme-less value is a tab name and becomes the tab title (shown on its own row in the confirmation dialog; the status bar still names the real target). Candidates are tried as `-url`, bare URL, `-newtab`, then session file. ssh/sftp/ftp/ftps are supported; telnet/rlogin report unsupported. **Post-connect commands/scripts via `-e/-s` are not implemented.** `.xsh` reads recognized target/private-key fields but does not decrypt Xshell passwords.
 
 **Steps and result:** Check target, source, and credential presence in the portal-triggered confirmation before connecting. Fingerprint/authentication still apply. Without supplied credentials, an existing matching profile may be reused. One-time-credential temporary requests are not added to the saved tree; recent history does not store passwords. Choose not-to-ask-again only for genuinely trusted targets; clear external-target trust in Settings when needed.
 

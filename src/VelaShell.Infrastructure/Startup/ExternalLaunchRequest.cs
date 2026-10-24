@@ -65,6 +65,16 @@ public sealed class ExternalLaunchRequest
     /// <summary>随请求指定的私钥文件(Xshell <c>-i</c>);没有则为 null。</summary>
     public string? PrivateKeyPath { get; init; }
 
+    /// <summary>
+    /// 随请求指定的 OpenSSH 用户证书(PuTTY 的 <c>-cert</c>,与 <c>-i</c> 的私钥配对);没有则为 null。
+    /// 有它就按证书认证连,私钥是 <see cref="PrivateKeyPath" />(没给 <c>-i</c> 时按 <c>&lt;私钥&gt;-cert.pub</c> 的命名约定反推)。
+    /// </summary>
+    public string? CertificatePath { get; init; }
+
+    /// <summary>请求带没带登录材料(一次性密码、私钥或证书)。</summary>
+    [JsonIgnore]
+    public bool HasCredentials => Password is not null || PrivateKeyPath is not null || CertificatePath is not null;
+
     /// <summary>请求来源。</summary>
     public ExternalLaunchOrigin Origin { get; init; } = ExternalLaunchOrigin.CommandLine;
 
