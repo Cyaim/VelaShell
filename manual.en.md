@@ -208,9 +208,11 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Entry point:** **Settings → Key Management**.
 
-**Operation:** Search existing keys, generate Ed25519, ECDSA 256/384/521, or RSA 4096 keys, or import an existing key. Copy the public key to the administrator for authorization according to server policy. A default key can be selected. Automatically adding keys to the SSH Agent after login is optional and off by default.
+**Operation:** Search existing keys, generate Ed25519, ECDSA 256/384/521, or RSA 4096 keys, or import an existing key. Import parses the whole private key: damaged keys and unsupported formats (such as legacy encrypted PEM) are rejected; passphrase-protected keys are accepted and the passphrase is asked for when connecting; a `.pub` chosen along with it that does not belong to the same key is rejected too. Copy the public key to the administrator for authorization according to server policy; each row's **Export** menu saves the public key (`name.pub`) or the private key. A default key can be selected. Automatically adding keys to the SSH Agent after login is optional and off by default.
 
 **Result and how it works:** These entries manage real files. Public keys can be distributed; private keys belong on controlled devices. A key passphrase protects use after a file is copied; it does not replace local access control.
+
+**Before exporting a private key:** The private key is copied as it is to the chosen location; if it has no passphrase, whoever gets that file can sign in to every server that trusts the key. Keep it somewhere only you control and delete it when you are done; do not put it in cloud drives, chats, or repositories. On macOS/Linux the exported file is readable and writable by you only (0600); on Windows it inherits the target folder's permissions.
 
 **Before deleting:** Deletion affects the actual private-key file under `~/.ssh`, not just a UI record. The confirmation shows the name and private-key path. Verify a protected offline backup and check whether Git, OpenSSH, or automation also uses the key. Generating another key with the same name will not restore access authorized for the old key.
 
@@ -235,7 +237,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Result and how it works:** System proxy is the default. The setting affects SSH/SFTP/FTP and outgoing HTTP paths such as updates, Gist, feeds, and plugins running inside the main process (plugins running in their own process use the system default proxy; connection diagnostics resolve names locally and connect directly). In a jump-host chain, it affects the first outbound hop from this computer, not a separate proxy configuration on every host. DNS resolution location affects internal names and where name information is exposed.
 
-**Caution:** A proxy is not an SSH jump host. Reaching the target through HTTP/SOCKS5 does not grant server access. Per-connection proxy configuration is not currently available. Regular settings export removes the proxy password; re-enter it after importing on another device.
+**Caution:** A proxy is not an SSH jump host. Reaching the target through HTTP/SOCKS5 does not grant server access. Per-connection proxy configuration is not currently available. In settings export the **Network Proxy** category is unchecked by default, and even when checked the proxy password is never written; re-enter it after importing on another device (on import, the locally saved password is kept only when the proxy type, host, port, and user name all match).
 
 ### 6.2 Multiple Jump Hosts
 
@@ -312,7 +314,9 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Steps:** To use command blocks, read the instructions and add the appropriate OSC 133 snippet to your shell configuration. Check interactions with prompt tools such as starship or oh-my-posh. Reopen the shell and run a command to verify markers. Click the gutter to fold/unfold output, click a command marker to select its output, and use `Ctrl+Shift+↑/↓` to jump between prompts.
 
-**Result and how it works:** The remote shell reports command boundaries with OSC 133; the client cannot reliably infer them from arbitrary text. Without integration, equivalent command-block navigation is unavailable. Command-block rerun/copy-command actions are not current features. Working-directory reporting also needs remote cooperation; not every shell automatically follows a file-pane path.
+**Result and how it works:** The remote shell reports command boundaries with OSC 133; the client cannot reliably infer them from arbitrary text. Without integration, equivalent command-block navigation is unavailable, and so are the copy and rerun actions below. Working-directory reporting also needs remote cooperation; not every shell automatically follows a file-pane path.
+
+**Copy and rerun:** Right-click any line of a command block in the terminal's left gutter; the menu starts with **Copy this command** and **Rerun this command**. "This command" is the on-screen text between the end of the prompt and the moment Enter ran it (soft-wrapped lines are rejoined; a multi-line command keeps its lines with the continuation prompts cut off). Both items are greyed out for a command that has not been run yet, one abandoned with Ctrl+C, and blocks from older integration scripts that do not mark the end of the prompt. Rerun sends the command plus Enter to **the same terminal** and is available only while the remote side sits at an empty new prompt (not while the previous command still runs, inside a full-screen program, or with something already typed); it goes to this tab only, not through sync-input channels, and runs in the **current** directory on the current host rather than going back to the original context. Multi-line commands are sent as a bracketed paste; when the remote side has not enabled bracketed paste you are asked first, and multi-line commands whose continuation lines are unmarked can only be copied. **The integration snippets changed on 2026-10-24** (bash/zsh continuation prompts are marked too; the zsh prompt marker moved into PS1 and the extra backslash after every prompt is gone), **so copy the snippet from the settings page again if you installed an older one**: with the old zsh snippet command blocks never form at all, and with the old bash snippet multi-line commands cannot be rerun.
 
 <a id="workspace"></a>
 ## 8. Docking, Synchronized Input, and Quick Commands
@@ -321,7 +325,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Entry point and steps:** Open multiple tabs and drag one to a docking edge to split at the indicated target. Alternatively, `Ctrl+Shift+D` splits horizontally and `Ctrl+Shift+S` vertically. `Alt+arrow` moves focus between panes; `Ctrl+Shift+X` maximizes/restores the current pane. Drag dividers to resize or double-click to equalize. Tab context menus offer tab-strip display/order options and pinning; middle-click closes unpinned tabs. The `+` at the end of each tab strip opens a new connection in that pane (same as `Ctrl+T`; the new tab lands in that pane).
 
-**Result and how it works:** Each pane has its own tab strip; numeric tab navigation counts within that strip. When the tabs do not fit, scroll buttons and an "All Tabs" list appear at the end of the strip; a strip moved to the left / right side gets them too, at its foot. Pinning protects against some quick-close actions and currently lasts for this run only.
+**Result and how it works:** Each pane has its own tab strip; numeric tab navigation counts within that strip. When the tabs do not fit, scroll buttons and an "All Tabs" list appear at the end of the strip; a strip moved to the left / right side gets them too, at its foot. Pinning protects against some quick-close actions; the pinned state is saved with layout templates (8.4) and with **Restore split layout**, and lasts for this run only when neither is used.
 
 **Caution:** Arbitrary floating windows created by dragging docking tabs out are not supported. To keep splits and pinned tabs for next time, use the layout templates in 8.4, or turn on **Restore split layout** under **Restore sessions** in **Settings → General** (off by default). With only **Restore sessions** on, the connections that were online at exit are reconnected one by one into a single pane: splits are not rebuilt and dual-remote file tabs are not included.
 
@@ -474,7 +478,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 ### 11.1 Choose the Direction and Listening Side
 
-**Exposure warning:** Use loopback `127.0.0.1` by default. Binding `0.0.0.0`, a LAN address, or a publicly reachable server interface can expose databases, internal services, or an unauthenticated SOCKS proxy. Check firewall, permitted sources, and authorization before public listening. Connectivity alone does not justify exposure.
+**Exposure warning:** Use loopback `127.0.0.1` by default. Binding `0.0.0.0`, a LAN address, or a publicly reachable server interface can expose databases, internal services, or an unauthenticated SOCKS proxy. Check firewall, permitted sources, and authorization before public listening. Connectivity alone does not justify exposure. Remote SOCKS turns this computer into a proxy for the server: the allow list has no default and cannot be empty, so list only the `host:port` entries you actually need; a lone `any` lets the remote side reach everything this computer can.
 
 **Entry point and prerequisites:** Title-bar tunnel icon, `Ctrl+Shift+T`, or Command Palette. A saved **SSH** profile is required. The panel does not use SFTP, FTP, or plugin profiles, and no terminal must be open first.
 
@@ -483,16 +487,17 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 | Local `-L` | Local address/port | SSH server side | A local tool accesses an internal database reachable by the server |
 | Remote `-R` | SSH server address/port | Local computer side | A server-side client reaches a service on this computer |
 | Dynamic `-D` | Local SOCKS5 port | SSH server side | SOCKS5-capable applications access a network through the server |
+| Remote SOCKS (`-R` without a target) | SSH server port (acts as a SOCKS5 proxy) | Local computer side, only destinations on the allow list | Server-side programs reach a few destinations through this computer |
 
 ### 11.2 Create, Start, Stop, and Recover
 
-**Steps:** Select a server and create a forward. Set alias, type, and listening host/port; local/remote forwards also need destination host/port. Dynamic forwarding has no fixed destination. The default destination is `127.0.0.1` on the relevant side; clear that default-target option to use another internal host. Save, start, and check status, cumulative traffic, and connection count. Configure the consuming application to use the forwarded port or SOCKS5 address. Stop when finished; deleting a forward asks for confirmation and stops it.
+**Steps:** Select a server and create a forward. Set alias, type, and listening host/port; local/remote forwards also need destination host/port. Dynamic forwarding has no fixed destination; remote SOCKS takes a server listen address/port and an allow list (for example `localhost:8080 *.corp.example:443`). A local forward's destination defaults to the server itself (`127.0.0.1`); clear **Forward to the server itself** to use another internal host. Remote forwards and remote SOCKS default to **Listen only on the server itself**. Local/remote forwards can switch to **Use Unix domain sockets** and take socket paths instead: either end of a local forward may be a socket, while a remote forward needs both ends to be sockets; local paths must be full paths. Each tunnel can have a rate limit (KB/s, each direction separately, 0 = none), which takes effect the next time the tunnel starts. Save, start, and check status, cumulative traffic, and connection count. Configure the consuming application to use the forwarded port or SOCKS5 address. Stop when finished; deleting a forward asks for confirmation and stops it.
 
-**Result and how it works:** The tunnel maintains SSH transport and opens channels for client connections. It does not automatically configure your browser/system proxy. Upload/download figures are cumulative bytes, not instantaneous rates. Local listener ports are prechecked for conflicts. Remote listening depends on the server's response, not whether the same port is free locally.
+**Result and how it works:** The tunnel maintains SSH transport and opens channels for client connections. It does not automatically configure your browser/system proxy. The statistics line shows cumulative bytes; a running tunnel also has a live-rate line (↑/↓, averaged over the last three seconds) refreshed every second while the panel is open, and **Open connections: N** expands to list each connection's source → destination, age, and bytes in each direction. Local listener ports are prechecked for conflicts; if a file already exists at a local socket path the tunnel does not start and the file is not deleted for you (it is usually left over from last time; delete it once you are sure it is unused). Remote listening depends on the server's response, not whether the same port is free locally.
 
-**Automatic behavior:** Saving does not mean listening at next startup; forwards default to stopped after restart. Explicitly enable startup establishment when needed. Reconnection after loss is separate and off by default. Tunnel retries back off through 10 seconds, 30 seconds, 1 minute, 2 minutes, and 5 minutes. Manual stop does not restart automatically. Fingerprint/authentication requiring intervention stops retrying.
+**Automatic behavior:** Saving does not mean listening at next startup; forwards default to stopped after restart. Explicitly enable startup establishment when needed. Reconnection after loss is separate and off by default. Tunnel retries back off through 10 seconds, 30 seconds, 1 minute, 2 minutes, and 5 minutes. Manual stop does not restart automatically. Fingerprint/authentication requiring intervention stops retrying. When setting up tunnels at startup fails, the notification carries **Retry**: a server that could not be reached is reconnected as a whole, a single tunnel that could not be set up is retried alone.
 
-**Caution:** `-R` listens on the server; a loopback address does not mean the listener is on your computer. Remote dynamic forwarding, Unix-socket forwarding, live rates, rate limits, and connection details supported by lower layers are not necessarily exposed by this panel. Editing configuration files does not make unexposed capabilities supported user operations.
+**Caution:** `-R` listens on the server; a loopback address does not mean the listener is on your computer. Remote SOCKS refuses destinations outside its allow list and notes them on the tunnel row. Remote forwards cannot mix a TCP end with a socket end. Editing configuration files does not make unexposed capabilities supported user operations.
 
 <a id="x11"></a>
 ## 12. X11 Forwarding and X Server
@@ -507,13 +512,13 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 2. Review display number, window mode, clipboard, and security options; save. Changes take effect at the next X Server start.
 3. Enable X11 forwarding in the SSH profile. Leave the display address blank to use the local built-in server. Trusted forwarding (`-Y`) is currently checked by default: evaluate target trust, and uncheck it when those privileges are unnecessary.
 4. Start X Server or enable automatic startup with X11 connections. Reconnect SSH, then start the installed graphical application remotely.
-5. Close applications when finished. With the built-in engine running, click the title-bar icon again for the program-management popup to disconnect a program, release a grab, or stop the server. VcXsrv controls only start/stop the external process.
+5. Close applications when finished. With the built-in engine running, click the title-bar icon again for the program-management popup to disconnect a program, release a grab, or stop the server; each program is marked **Trusted** (local programs and `ssh -Y`, with access to the whole X Server) or **Untrusted** (`ssh -X`). VcXsrv controls only start/stop the external process.
 
 **Result and how it works:** Applications still run remotely. X11 protocol travels through SSH channels for local display. This is neither a remote desktop nor local installation of the remote application. The built-in engine is bundled across platforms; VcXsrv binaries are not bundled.
 
 ### 12.2 Display, Input, and Compatibility
 
-**Operation and caution:** Multiwindow, windowed, undecorated, fullscreen, and rootless options control presentation. The built-in engine offers compositing, source indicators, and local IME options. Clipboard exchange follows the focused session; PRIMARY selection copying defaults to off to avoid unintended disclosure.
+**Operation and caution:** Multiwindow, windowed, undecorated, fullscreen, and rootless options control presentation. The built-in engine offers compositing, source indicators, and local IME options. Clipboard exchange follows the focused session; PRIMARY selection copying defaults to off to avoid unintended disclosure. Local files dragged into an X program are first uploaded to `/tmp/velashell-drop-…/` on that host; once every session to the host that was connected at the time of the drop has ended, they are removed in the background the next time it connects or something is dropped on it again, and a failed upload is removed right away.
 
 **Mechanism and limitations:** Separate displays per SSH session reduce interference between remote hosts. Restrictions can disable input injection such as xdotool/XTEST; that is not automatically a fault requiring weaker security. Additional TCP listening on Linux/macOS is off by default and loopback-only if enabled. Built-in SSH channels do not require publicly exposing X ports. GTK4 forwarding terminals set `GSK_RENDERER=cairo` for compatibility, but Wayland, portals, OpenGL/GLX, and latency can still affect applications. See the troubleshooting references. Protocol support is not equivalent to a complete desktop environment.
 
@@ -592,7 +597,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 | Message Center | Update notices, HTTPS feed URL, interval 1–168 hours, announcements | Startup update messages require both checking and notifications; clear the feed URL to stop that source |
 | Language & Region | System language or Simplified Chinese/English/Traditional Chinese/Japanese/Korean | Does not change remote system language or terminal byte encoding |
 | Connection Defaults | Port, timeout, keepalive | Defaults for new connections; supported per-profile overrides apply; proxy has a separate page |
-| Data & Storage | Session logging/retention, application-settings JSON import/export | Logging defaults off; settings JSON is not a connection backup |
+| Data & Storage | Session logging/retention, application-settings JSON import/export (by category) | Logging defaults off; settings JSON is not a connection backup; Security Audit and Network Proxy are unchecked by default, the proxy password and alert Webhook URL are never written, and import overwrites only the categories that are in the file and checked |
 | Behavior | Exit/tab-close confirmation, status refresh, follow active session, initially collapsed groups, disconnect sound, automatic reconnect attempts/interval | Attempts 1–20, maximum interval 1–300 seconds; dependent controls appear where applicable |
 | Privacy & Security | Remember passwords, clear recent connections | Clearing recent history asks confirmation; does not delete saved profiles or all logs |
 
@@ -626,7 +631,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 ### 15.4 Key Management
 
-**Entry point, steps, and result:** Search, generate/import, copy a public key, set a default, or add keys to the Agent after login; see [authentication](#authentication). Deletion immediately affects real private-key files. Verify path and backup before confirming; it is not a draft waiting for Save Settings.
+**Entry point, steps, and result:** Search, generate/import (import validates the private key), copy or export public/private keys, set a default, or add keys to the Agent after login; see [authentication](#authentication). Deletion immediately affects real private-key files. Verify path and backup before confirming; it is not a draft waiting for Save Settings.
 
 ### 15.5 Shared Credentials
 
@@ -655,9 +660,9 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 **Sections:** Session recording, audit logs, host trust policy, trusted hosts (with OpenSSH known_hosts import/export), trusted host CAs, external login (Xshell compatibility), and security alerts.
 
-**Operation:** Set automatic recording and on-disk secret masking; open playback/audit viewers; set audit retention to 1–3650 days; control first-use confirmation and changed-key blocking; inspect/delete trusted records (addresses hidden by default); import `known_hosts` (plain lines become trusted hosts, `@cert-authority` / `@revoked` lines go to trusted host CAs) or export in OpenSSH format (optionally hashing host names); add/remove trusted host CAs; accept/confirm external logins, register protocols, or clear external-target trust; configure in-app/sound/Webhook alerts.
+**Operation:** Set automatic recording and on-disk secret masking; open playback/audit viewers (the audit viewer filters by category and time range, exports CSV, and opens the profile behind a profile record); set audit retention to 1–3650 days; control first-use confirmation and changed-key blocking; inspect/delete trusted records (addresses hidden by default); import `known_hosts` (plain lines become trusted hosts, `@cert-authority` / `@revoked` lines go to trusted host CAs) or export in OpenSSH format (optionally hashing host names); add/remove trusted host CAs; accept/confirm external logins, register protocols, or clear external-target trust; configure in-app/sound/Webhook alerts.
 
-**Caution and mechanism:** Disabling first-use confirmation changes to trust on first use (TOFU), not stronger verification. Disabling changed-key blocking leads to manual adjudication, not a reason to accept a change. Webhooks can disclose event information to the configured service; verify trust and organizational authorization. Auditing does not cover every configuration/settings change and is not a complete tamper-proof ledger.
+**Caution and mechanism:** Disabling first-use confirmation changes to trust on first use (TOFU), not stronger verification. Disabling changed-key blocking leads to manual adjudication, not a reason to accept a change. Webhooks can disclose event information to the configured service; verify trust and organizational authorization. Auditing records creating, changing, and deleting connection profiles and shared credentials and settings changes, but only which part changed, not the values, and without telling local edits from cloud-sync pulls; it is not a complete tamper-proof ledger.
 
 ### 15.9 Network Proxy
 
@@ -726,11 +731,11 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 ### 16.4 Local Encryption and Audit Boundaries
 
-**Operation and result:** Passwords/key passphrases are encrypted with AES-256-GCM under the data root. Filter the audit viewer using its available controls, inspect security events, and configure retention. Remove unnecessary host/account details before sharing.
+**Operation and result:** Passwords/key passphrases are encrypted with AES-256-GCM under the data root. Filter the audit viewer by category, time range, and keyword, export the records shown as CSV, and configure retention. Remove unnecessary host/account details before sharing.
 
 **How it works:** `secret.key` is essential decryption material. Windows additionally wraps it with current-user DPAPI; copying across Windows users or reinstalls usually cannot unwrap it. Linux/macOS primarily rely on file permissions (0600), without an additional passphrase wrapper on that key. A local process with access to data and usable key material may recover secrets. This is not a vault that defeats a compromised computer.
 
-**Caution:** Not every profile/settings change is audited. Logs/recordings are not guaranteed complete, undeletable, or tamper-proof. Master-password protection is not integrated; do not look for a master-password control to protect the whole database.
+**Caution:** Profile and settings audit records name only the part that changed, not the values, and bulk rewrites such as moving profiles back to ungrouped when a group is deleted are not recorded. Logs/recordings are not guaranteed complete, undeletable, or tamper-proof. Master-password protection is not integrated; do not look for a master-password control to protect the whole database.
 
 <a id="backup"></a>
 ## 17. Gist Sync, Backup, and Migration
@@ -739,7 +744,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 | Purpose | Entry point | Included/excluded and protection |
 | --- | --- | --- |
-| Move application preferences | General → Data & Storage → settings import/export | **Unencrypted JSON**; settings only, no profiles/groups/keys/snippets; proxy password removed and must be re-entered; still may contain personal/network configuration |
+| Move application preferences | General → Data & Storage → settings import/export | **Unencrypted JSON**; settings only, chosen by category, no profiles/groups/keys/snippets; Security Audit and Network Proxy are unchecked by default, and the proxy password and alert Webhook URL are never written, so re-enter them; still may contain personal/network configuration (proxy address, external-login trusted targets, local paths) |
 | Move connections | Explorer connection-file export/import | JSON can include passphrase-encrypted credentials; CSV exports never include secrets; key files are separate |
 | Sync devices | Settings → Cloud Sync | A secret Gist in your GitHub account, optionally end-to-end encrypted; not a full disk mirror/backup |
 | Disaster recovery | Fully quit, then securely back up data root and actual keys | Preserve decryption conditions; Windows DPAPI/user constraints mean a copy is not automatically portable |
@@ -782,10 +787,10 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 1. Export connection JSON (with a passphrase encrypting its credentials) plus application settings separately, or use Gist sync with an end-to-end passphrase.
 2. Encrypt and back up actual private keys/certificates and necessary public keys separately. Record original paths and purposes, not just path strings from profiles.
-3. Import/pull on the new machine, re-enter proxy passwords, restore keys, and correct paths/permissions. Reconfigure local Agent, external editor, X Server, plugins, AI access, and other device-specific items.
+3. Import/pull on the new machine, re-enter proxy passwords and alert Webhook URLs, restore keys, and correct paths/permissions. Reconfigure local Agent, external editor, X Server, plugins, AI access, and other device-specific items.
 4. Verify a test connection's fingerprint/login, then important profiles. Do not delete old data before recovery is confirmed and retention obligations are met.
 
-**Mechanism and caution:** Current-user Windows DPAPI prevents assuming raw database/key copies work after account changes/reinstall. Explicit import/sync is also needed across Store/portable isolation. Missing proxy passwords in settings exports are intentional redaction, not corruption.
+**Mechanism and caution:** Current-user Windows DPAPI prevents assuming raw database/key copies work after account changes/reinstall. Explicit import/sync is also needed across Store/portable isolation. Missing proxy passwords and Webhook URLs, and the Security Audit and Network Proxy categories being unchecked by default, are intentional redaction in settings exports, not corruption.
 
 <a id="plugins"></a>
 ## 18. Plugin Management, Optional Protocols, and Docker
@@ -993,11 +998,11 @@ Override username/port/password/private key with `-l/-user`, `-p/-port`, `-pw/-p
 | Saved edit absent remotely | Temporary-only save, auto-upload off, disconnection/permission/size | Inspect transfer/original path; preserve temporary copy before recovery |
 | Sync always finds differences | FTP timezone/precision/MFMT or content conflict | Read warnings and choose suitable criteria; do not repeatedly mirror blindly |
 | Sync requires comparison again | Options invalidated preview | Recompare; prevents applying new rules to an old preview |
-| Tunnel port conflict | Local listener or remote policy/occupation | Choose a free loopback port locally; investigate server for `-R` |
+| Tunnel port conflict | Local listener, an existing local socket file, or remote policy/occupation | Choose a free loopback port locally and delete a leftover socket file once you are sure it is unused; investigate server for `-R` |
 | X11 no window/stuck | Forwarding denied, local server off, graphics incompatibility | Verify both configurations, reconnect, consult X11 references; do not first expose TCP/disable access control |
 | Heavy intermediate-hop loss | ICMP rate limiting/nonresponse | Inspect later hops, destination, and application metrics |
 | Recording tail missing | Not enabled for new session, storage/queue failure, retention | Check Message Center/storage; saved portion may remain; absence is not proof an event never occurred |
-| Settings export lacks profiles/proxy password | Intentional scope/redaction | Use connection JSON or Gist; re-enter proxy password |
+| Settings export lacks profiles/proxy password | Intentional scope/redaction: no profiles, never the proxy password or Webhook URL, Security Audit and Network Proxy unchecked by default | Use connection JSON or Gist; check those two categories when exporting/importing if needed; re-enter the proxy password and Webhook URL |
 | Copied database cannot decrypt | Windows DPAPI user/system changed | Export/E2E-sync while old environment can decrypt; generating a new key will not recover old secrets |
 | Gist sync succeeds, private key unusable | Only path synced | Securely restore actual key/certificate, fix path/permissions |
 | Optional protocol missing | Plugin absent/disabled/incompatible | Inspect Plugin Manager; install trusted compatible package |
@@ -1070,7 +1075,7 @@ These are factory defaults; customized bindings in Settings take precedence. Glo
 | Font size / fast scroll | Ctrl+wheel / Alt+wheel | Fast scroll is fivefold |
 | Close tab / scroll strip | Middle-click tab / wheel over strip | Pinned tabs resist middle-click |
 | Equalize panes | Double-click divider | Split layout |
-| Gutter menu / folding | Right-/left-click terminal gutter | Not Explorer sidebar |
+| Gutter menu / folding | Right-/left-click terminal gutter | Not Explorer sidebar; right-clicking a command block also offers copy/rerun this command |
 | Select command output | Click command marker | OSC 133 |
 | Tree selection / range | Ctrl+click / Shift+click | Explorer |
 | Move group / reorder | Drag connection to group / drag group row | Changes saved organization |
@@ -1107,15 +1112,15 @@ This manual intentionally does not promise:
 
 - Local shells across all platforms: only Windows ConPTY is currently integrated; Linux/macOS lack local-terminal actions.
 - Arbitrary floating docking windows; layout persistence beyond layout templates and **Restore split layout** (without a template or that option, splits and pinned tabs last for this run only); syncing or exporting layout templates across devices.
-- Master-password protection of the whole database; encrypted application-settings export; profiles embedded in that export; proxy passwords in it. Current settings export is unencrypted JSON with the proxy password removed.
+- Master-password protection of the whole database; encrypted application-settings export; profiles embedded in that export; proxy passwords or alert Webhook URLs in it. Current settings export is unencrypted JSON chosen by category, and those two secrets are never written.
 - Linux in-app update installation or selectable update channels described by older material. Background automatic download exists only on writable Windows/macOS installs; Linux installs manually; Store is Store-managed.
 - Per-profile proxies; dual-remote synchronization/keep-up-to-date; automatic remote→local watching; resuming transfers automatically at startup (the persisted transfer queue is only restored as "paused" and connects when you click "Resume").
 - Sixel/Kitty terminal images or ZMODEM. X11 graphical applications are not terminal image protocols.
 - Redis/S3/Telnet/serial/Docker without plugins. S3 is not POSIX storage and does not supply SSH chmod/upload-resume semantics.
-- Command-block rerun/copy-command buttons or automatic quick-command execution. Completion is not a safety review.
+- Automatic quick-command execution, or a command-block rerun that goes back to the original directory or host. Completion is not a safety review.
 - Remote mtr/TCP SYN tracing, trace text/JSON export, or a fifth diagnostics stage. Current tracing uses local ICMP.
-- Unexposed tunnel features such as remote dynamic/Unix-socket forwarding, live rates, limits, and connection details. Library support does not imply panel configuration.
-- An OS-level plugin sandbox, complete configuration-change auditing, infallible masking, or secret-Gist links as encryption.
+- Remote forwards mixing a TCP end with a Unix-socket end, and SSH library capabilities the host has not wired up, such as the TLS dialer and the packet tap. Library support does not imply panel configuration.
+- An OS-level plugin sandbox, configuration-change auditing that records the values (it records only which part changed), infallible masking, or secret-Gist links as encryption.
 - Interactive write approvals for the exposed MCP endpoint: ask means reject there. An empty IM allowlist does not allow everyone; pairing grants chat access, not elevated mode.
 
 These boundaries prevent mistakes. Editing files or skipping validation does not turn a missing feature into supported behavior. Distinguish no interface, unsupported protocol/server, insufficient permissions, and planned-only work.
