@@ -4271,6 +4271,36 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_ListenOnServerLoopback" xml:space="preserve">
     <value>サーバー自身(127.0.0.1)でのみ待ち受け</value>
   </data>
+  <data name="Tunnel_UnixSocketOption" xml:space="preserve">
+    <value>Unix ドメインソケットを使う</value>
+  </data>
+  <data name="Tunnel_UnixSocketTip" xml:space="preserve">
+    <value>ローカル転送では両端それぞれをソケットにできます。パスを書いた側は上のポートを使いません。リモート転送では両端とも同時にソケットにする必要があります。ローカルのソケットファイルはファイル権限で守られ、このコンピューターの他のユーザーはこのトンネルを使えません。サーバー側で AllowStreamLocalForwarding が有効である必要があります。</value>
+  </data>
+  <data name="Tunnel_LocalSocketListenLabel" xml:space="preserve">
+    <value>待ち受けるローカルソケット(空欄ならローカルポート)</value>
+  </data>
+  <data name="Tunnel_LocalSocketTargetLabel" xml:space="preserve">
+    <value>接続先のローカルソケット</value>
+  </data>
+  <data name="Tunnel_RemoteSocketTargetLabel" xml:space="preserve">
+    <value>サーバー上の接続先ソケット(空欄ならターゲットホスト:ポート)</value>
+  </data>
+  <data name="Tunnel_RemoteSocketListenLabel" xml:space="preserve">
+    <value>サーバーで待ち受けるソケット</value>
+  </data>
+  <data name="Tunnel_SocketPathRequired" xml:space="preserve">
+    <value>ソケットのパスを入力してください。</value>
+  </data>
+  <data name="Tunnel_LocalSocketPathNotAbsolute" xml:space="preserve">
+    <value>完全なパスを入力してください(ルートまたはドライブ文字から)。</value>
+  </data>
+  <data name="Tunnel_LocalSocketPathTooLong" xml:space="preserve">
+    <value>パスが長すぎます: {0} バイト(ソケットのパスは最大 {1} バイト)。短いディレクトリを選んでください。</value>
+  </data>
+  <data name="Tunnel_RemoteSocketPathNotAbsolute" xml:space="preserve">
+    <value>サーバー上のソケットは / で始まる絶対パスで書いてください。</value>
+  </data>
   <data name="Tunnel_LocalForwardTip" xml:space="preserve">
     <value>ローカルポートへのアクセスをサーバー経由でターゲットサービスに転送(ssh -L)</value>
   </data>
@@ -4333,6 +4363,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="TunnelSvc_TargetNotPermitted" xml:space="preserve">
     <value>リモートが要求した接続先は許可リストにないため拒否しました。許可するには、このトンネルの許可リストに追加してください。</value>
+  </data>
+  <data name="TunnelSvc_RemoteSocketNeedsBothEnds" xml:space="preserve">
+    <value>リモート転送は両端ともポートか、両端とも Unix ソケットのどちらかです。この設定はソケットのパスが片側にしかありません。</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketExists" xml:space="preserve">
+    <value>{0} はすでに存在します。前回の後片付けが残っているか、別のプログラムのソケットかもしれません。使われていないことを確かめてから削除し、もう一度開始してください。</value>
   </data>
   <data name="Upload" xml:space="preserve">
     <value>アップロード</value>
@@ -4502,6 +4538,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Tunnel_RouteRemoteDynamic" xml:space="preserve">
     <value>SSHサーバーの {0}:{1} が SOCKS5 プロキシ → 許可された接続先へこのコンピューターが接続</value>
+  </data>
+  <data name="Tunnel_RouteLocalSocket" xml:space="preserve">
+    <value>このコンピューターで {0} を待ち受け → サーバー側の接続先 {1}</value>
+  </data>
+  <data name="Tunnel_RouteRemoteSocket" xml:space="preserve">
+    <value>SSHサーバーで {0} を待ち受け → このコンピューターの {1}</value>
   </data>
   <data name="TunnelSvc_LocalPortInUse" xml:space="preserve">
     <value>ローカルポート {0} は他のプログラムが使用中です。そのプログラムを停止するか、別のローカルポートを指定してください。</value>
@@ -4790,6 +4832,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="TunnelHelp_RemoteDynamicDesc" xml:space="preserve">
     <value>SSHサーバー上に SOCKS5 プロキシのポートを開きます。リモートのプログラムはこれを使って、このコンピューターに接続先へ接続してもらいます。社内のパッケージミラーや内部 API など、このコンピューターからしか届かない場所にサーバーから届くようになります。許可されるのはトンネルの許可リストにある接続先だけで(ホスト:ポート、ワイルドカード可、または any)、それ以外は拒否されます。</value>
+  </data>
+  <data name="TunnelHelp_UnixSocketTitle" xml:space="preserve">
+    <value>Unix ドメインソケット</value>
+  </data>
+  <data name="TunnelHelp_UnixSocketDesc" xml:space="preserve">
+    <value>ローカル転送とリモート転送では、ポートの代わりに Unix ドメインソケットを使えます。ローカル転送は、このコンピューターのソケットファイルで待ち受ける、サーバー上のソケット(/var/run/docker.sock など)へ転送する、またはその両方が可能です。ローカルのツールからリモートの Docker やデータベースを直接操作でき、サーバー側で TCP ポートを開く必要はありません。リモート転送はサーバーにソケットのパスで待ち受けてもらい、このコンピューターのソケットへ接続し直します。ソケットファイルはファイル権限で守られます。サーバー側で AllowStreamLocalForwarding が必要です。Windows では Windows 10 1803 以降で使えます。</value>
   </data>
   <data name="TunnelHelp_LoopbackNote" xml:space="preserve">
     <value>127.0.0.1 の意味は、その端点が属するマシンによって変わります。ローカル転送のサーバー側ターゲットでは SSH サーバー自体を、リモート転送のローカルサービスではこのコンピューターを指します。待ち受け端点でループバックを使用すると、その待ち受けを提供するマシンからのみアクセスできます。</value>

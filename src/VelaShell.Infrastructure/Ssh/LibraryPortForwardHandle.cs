@@ -115,10 +115,19 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
 
         PortForwarder forwarder = request.Kind switch
         {
+            // 目的端是服务器上的 Unix 套接字(-L 端口或本机套接字:/var/run/docker.sock)。
+            PortForwardKind.Local when request.TargetSocketPath is { } remoteSocket => LocalPortForwarder.StartToUnixSocket(
+                connection, remoteSocket, LocalOptions(request, boundHost)),
+
             PortForwardKind.Local => LocalPortForwarder.Start(
                 connection, targetHost, (int)request.TargetPort!, LocalOptions(request, boundHost)),
 
             PortForwardKind.Dynamic => LocalPortForwarder.StartDynamic(connection, LocalOptions(request, boundHost)),
+
+            // 两头都是套接字(-R /服务器/路径:/本机/路径):SSH 库的远程转发只有这一种套接字组合。
+            PortForwardKind.Remote when request is { BoundSocketPath: { } serverSocket, TargetSocketPath: { } localSocket } =>
+                await RemotePortForwarder.StartUnixSocketAsync(
+                    connection, localSocket, serverSocket, RemoteOptions(request, boundHost), cancellationToken).ConfigureAwait(false),
 
             PortForwardKind.Remote => await RemotePortForwarder.StartAsync(
                 connection, ResolveOutboundHost(targetHost), (int)request.TargetPort!,
@@ -136,11 +145,13 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
         return new(forwarder);
     }
 
-    /// <summary>本地 / 动态转发的参数:绑定地址与端口、限速。</summary>
+    /// <summary>本地 / 动态转发的参数:绑定地址与端口(或本机的套接字文件)、限速。</summary>
+    /// <remarks>设了套接字路径时库不再看地址与端口;此时也不解析地址 —— 那一栏可能是用户没再管的旧值。</remarks>
     internal static LocalPortForwardOptions LocalOptions(PortForwardRequest request, string boundHost) => new()
     {
-        BindAddress = ParseBindAddress(boundHost),
-        BindPort = (int)request.BoundPort,
+        BindAddress = request.BoundSocketPath is null ? ParseBindAddress(boundHost) : null,
+        BindPort = request.BoundSocketPath is null ? (int)request.BoundPort : 0,
+        ListenSocketPath = request.BoundSocketPath,
         MaxBytesPerSecond = request.MaxBytesPerSecond,
     };
 

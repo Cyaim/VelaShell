@@ -104,7 +104,7 @@ public sealed class TunnelPanelUiTests
     }
 
     /// <summary>
-    /// 表单里的复选框(转发到本机 / 掉线后自动重连 / 程序启动时自动建立)与上一行之间只留表单 StackPanel 的 Spacing(设计 tunNewForm 是 8px,
+    /// 表单里的复选框(转发到本机 / 改用 Unix 域套接字 / 掉线后自动重连 / 程序启动时自动建立)与上一行之间只留表单 StackPanel 的 Spacing(设计 tunNewForm 是 8px,
     /// 2026-10-09 面板整体放大后为 10px)。Fluent 的 CheckBox 模板在框上下各塞了 6px 死高
     /// (模板里写死 Height="32",外部样式压不动),不抵消掉就是多出 12px 的行距 ——
     /// 肉眼看就是「自动重连」那行离上面差着一大截。复选框之间夹着限速那一行,所以量的是到上一个可见行的间距。
@@ -122,7 +122,7 @@ public sealed class TunnelPanelUiTests
             window.UpdateLayout();
 
             CheckBox[] boxes = [.. view.GetVisualDescendants().OfType<CheckBox>()];
-            Assert.HasCount(3, boxes, "表单里应当是「转发到本机」「自动重连」「程序启动时自动建立」三个复选框。");
+            Assert.HasCount(4, boxes, "表单里应当是「转发到本机」「改用 Unix 域套接字」「自动重连」「程序启动时自动建立」四个复选框。");
 
             // 复选框自身的布局高度,而不是模板撑出来的 32。
             foreach (CheckBox box in boxes)
@@ -191,6 +191,51 @@ public sealed class TunnelPanelUiTests
                 CultureInfo.CurrentUICulture = previousUiCulture;
                 _localization.SetLanguage(previousUiCulture.Name);
             }
+        });
+    }
+
+    /// <summary>
+    /// 勾「改用 Unix 域套接字」:两栏路径出现;填了服务器那头的路径,目标主机与端口置灰;
+    /// 换成动态转发,整个勾选框与路径栏一起收起。
+    /// </summary>
+    [TestMethod]
+    public void Panel_UnixSocketForm_ShowsThePathsAndGreysTheReplacedFields()
+    {
+        OnUi(() =>
+        {
+            var vm = new TunnelPanelViewModel(Substitute.For<ITunnelWorkflowService>());
+            var view = new TunnelPanelView { DataContext = vm };
+            var window = new Window { Width = 380, Height = 900, Content = view };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            CheckBox option = view.FindControl<CheckBox>("UnixSocketOption")!;
+            StackPanel block = view.FindControl<StackPanel>("UnixSocketBlock")!;
+            Grid endpoints = view.FindControl<Grid>("EndpointRow")!;
+            Assert.IsTrue(option.IsEffectivelyVisible);
+            Assert.IsFalse(block.IsEffectivelyVisible);
+
+            vm.NewUseUnixSocket = true;
+            vm.ForwardToServerLoopback = false;
+            vm.NewRemoteSocketPath = "/var/run/docker.sock";
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+
+            Assert.IsTrue(block.IsEffectivelyVisible);
+            Assert.IsTrue(view.FindControl<TextBox>("RemoteSocketPathInput")!.IsEffectivelyVisible);
+            TextBox host = endpoints.GetVisualDescendants().OfType<TextBox>().Single(t => t.FindAncestorOfType<NumericUpDown>() is null);
+            NumericUpDown[] ports = [.. endpoints.GetVisualDescendants().OfType<NumericUpDown>()];
+            Assert.IsFalse(host.IsEffectivelyEnabled, "服务器那头改用套接字,目标主机置灰。");
+            Assert.IsFalse(ports[1].IsEffectivelyEnabled, "目标端口置灰。");
+            Assert.IsTrue(ports[0].IsEffectivelyEnabled, "本机这头没填路径,本地端口照旧可填。");
+            SaveFrame(window, "tunnel-panel-unix-socket.png");
+
+            vm.NewTunnelType = TunnelType.DynamicForward;
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            Assert.IsFalse(option.IsEffectivelyVisible);
+            Assert.IsFalse(block.IsEffectivelyVisible);
+            window.Close();
         });
     }
 

@@ -68,9 +68,21 @@ public class TunnelItemViewModel : ReactiveObject
     /// <summary>隧道创建时间(UTC),用于计算运行时长。</summary>
     public DateTime CreatedAt => _tunnelInfo.CreatedAt;
 
+    /// <summary>本机这头的端点:Unix 套接字路径,或 <c>主机:端口</c>。</summary>
+    private string LocalEndpoint => _tunnelInfo.Config.LocalSocketPath ?? $"{HostAddress.Bracket(LocalHost)}:{LocalPort}";
+
+    /// <summary>服务器那头的端点:Unix 套接字路径,或 <c>主机:端口</c>。</summary>
+    private string RemoteEndpoint => _tunnelInfo.Config.RemoteSocketPath ?? $"{HostAddress.Bracket(RemoteHost)}:{RemotePort}";
+
+    /// <summary>有一头是 Unix 域套接字。</summary>
+    public bool UsesUnixSocket => _tunnelInfo.Config.LocalSocketPath is not null || _tunnelInfo.Config.RemoteSocketPath is not null;
+
     /// <summary>语义路由描述:从角色视角描述转发方向与端点。</summary>
     public string DisplayRoute => TunnelType switch
     {
+        // 有一头是 Unix 套接字时,端点写成整段(路径或 主机:端口),不再拆成主机与端口两个占位。
+        TunnelType.LocalForward when UsesUnixSocket => Strings.Format("Tunnel_RouteLocalSocket", LocalEndpoint, RemoteEndpoint),
+        TunnelType.RemoteForward when UsesUnixSocket => Strings.Format("Tunnel_RouteRemoteSocket", RemoteEndpoint, LocalEndpoint),
         TunnelType.RemoteForward => Strings.Format("Tunnel_RouteRemote", HostAddress.Bracket(LocalHost), LocalPort, RemotePort),
         TunnelType.DynamicForward => Strings.Format("Tunnel_RouteDynamic", HostAddress.Bracket(LocalHost), LocalPort),
         TunnelType.RemoteDynamicForward => Strings.Format("Tunnel_RouteRemoteDynamic", HostAddress.Bracket(RemoteHost), RemotePort),
@@ -89,10 +101,10 @@ public class TunnelItemViewModel : ReactiveObject
     /// <summary>精确端点摘要(紧凑等宽):本地转发为本地→远端,远程转发颠倒顺序,动态仅显示SOCKS5端点。</summary>
     public string EndpointSummary => TunnelType switch
     {
-        TunnelType.RemoteForward => $"{HostAddress.Bracket(RemoteHost)}:{RemotePort} → {HostAddress.Bracket(LocalHost)}:{LocalPort}",
+        TunnelType.RemoteForward => $"{RemoteEndpoint} → {LocalEndpoint}",
         TunnelType.DynamicForward => $"{HostAddress.Bracket(LocalHost)}:{LocalPort} (SOCKS5)",
         TunnelType.RemoteDynamicForward => $"{HostAddress.Bracket(RemoteHost)}:{RemotePort} (SOCKS5)",
-        _ => $"{HostAddress.Bracket(LocalHost)}:{LocalPort} → {HostAddress.Bracket(RemoteHost)}:{RemotePort}"
+        _ => $"{LocalEndpoint} → {RemoteEndpoint}"
     };
 
     /// <summary>

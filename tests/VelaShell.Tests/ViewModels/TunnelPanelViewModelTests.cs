@@ -851,6 +851,152 @@ public class TunnelPanelViewModelTests
         Assert.IsNull(new TunnelItemViewModel(CreateTunnelInfo()).PermitText, "别的类型没有这一行。");
     }
 
+    // ———— Unix 域套接字 ————
+
+    private static readonly string LocalSocket = Path.Combine(Path.GetTempPath(), "docker.sock");
+
+    /// <summary>
+    /// 「改用 Unix 域套接字」只对本地 / 远程转发有。本地转发两头各自可以是套接字:填了路径的那头置灰端口 / 主机栏,
+    /// 只填一头也行;路径要写对(本机是完整路径、服务器是 / 开头),写错当场指出。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public void UnixSocket_LocalForwardForm()
+    {
+        FillValidLocalForm();
+        Assert.IsTrue(_vm.IsUnixSocketOptionVisible);
+        Assert.IsFalse(_vm.IsUnixSocketFormVisible);
+        _vm.NewTunnelType = TunnelType.DynamicForward;
+        Assert.IsFalse(_vm.IsUnixSocketOptionVisible, "动态转发没有套接字的写法。");
+        _vm.NewTunnelType = TunnelType.RemoteDynamicForward;
+        Assert.IsFalse(_vm.IsUnixSocketOptionVisible);
+        _vm.NewTunnelType = TunnelType.LocalForward;
+
+        _vm.NewUseUnixSocket = true;
+        Assert.IsTrue(_vm.IsUnixSocketFormVisible);
+        Assert.AreEqual(Strings.Get("Tunnel_LocalSocketListenLabel"), _vm.LocalSocketLabel);
+        Assert.AreEqual(Strings.Get("Tunnel_RemoteSocketTargetLabel"), _vm.RemoteSocketLabel);
+        Assert.IsTrue(_vm.IsFormValid, "两栏都空着就是照旧用端口。");
+        Assert.IsTrue(_vm.IsLocalPortEditable);
+
+        _vm.NewRemoteSocketPath = "var/run/docker.sock";
+        Assert.AreEqual(Strings.Get("Tunnel_RemoteSocketPathNotAbsolute"), _vm.RemoteSocketPathError);
+        Assert.IsFalse(_vm.IsFormValid);
+        _vm.NewRemoteSocketPath = "/var/run/docker.sock";
+        Assert.IsNull(_vm.RemoteSocketPathError);
+        Assert.IsFalse(_vm.IsRemoteEndpointEditable, "服务器那头改用套接字,目标主机与端口置灰。");
+        Assert.IsFalse(_vm.IsRemoteHostEditable);
+        Assert.IsTrue(_vm.IsLocalPortEditable, "本机这头没填,还是本地端口。");
+        Assert.IsTrue(_vm.IsFormValid);
+
+        _vm.NewLocalSocketPath = "docker.sock";
+        Assert.AreEqual(Strings.Get("Tunnel_LocalSocketPathNotAbsolute"), _vm.LocalSocketPathError);
+        Assert.IsFalse(_vm.IsFormValid);
+        _vm.NewLocalSocketPath = Path.Combine(Path.GetTempPath(), new string('a', 200) + ".sock");
+        StringAssert.StartsWith(_vm.LocalSocketPathError, Strings.Format("Tunnel_LocalSocketPathTooLong",
+            System.Text.Encoding.UTF8.GetByteCount(_vm.NewLocalSocketPath), TunnelPanelViewModel.MaxLocalSocketPathBytes));
+        _vm.NewLocalSocketPath = LocalSocket;
+        Assert.IsNull(_vm.LocalSocketPathError);
+        Assert.IsFalse(_vm.IsLocalPortEditable);
+        _vm.NewLocalPort = 0;
+        Assert.IsTrue(_vm.IsFormValid, "本机这头改用套接字,本地端口不再要求。");
+
+        _vm.NewUseUnixSocket = false;
+        Assert.IsTrue(_vm.IsLocalPortEditable, "取消勾选,端口栏回来。");
+        Assert.IsFalse(_vm.IsFormValid, "又要本地端口了。");
+    }
+
+    /// <summary>远程转发的套接字两头必须同时填(SSH 库只有这一种组合):勾了就两栏都要、端口与主机栏全部置灰。</summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public void UnixSocket_RemoteForwardNeedsBothEnds()
+    {
+        FillValidLocalForm();
+        _vm.NewTunnelType = TunnelType.RemoteForward;
+        _vm.NewUseUnixSocket = true;
+
+        Assert.AreEqual(Strings.Get("Tunnel_LocalSocketTargetLabel"), _vm.LocalSocketLabel);
+        Assert.AreEqual(Strings.Get("Tunnel_RemoteSocketListenLabel"), _vm.RemoteSocketLabel);
+        Assert.IsFalse(_vm.IsLocalPortEditable);
+        Assert.IsFalse(_vm.IsRemoteEndpointEditable);
+        Assert.IsFalse(_vm.IsFormValid, "两栏都得填。");
+
+        _vm.NewRemoteSocketPath = "/tmp/app.sock";
+        Assert.IsFalse(_vm.IsFormValid);
+        _vm.NewLocalSocketPath = LocalSocket;
+        Assert.IsTrue(_vm.IsFormValid);
+    }
+
+    /// <summary>套接字随表单往返:建出来的配置带着两个路径(没用上的那头为 null),编辑时填回、取消后清空。</summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task UnixSocket_RoundTripsThroughTheForm()
+    {
+        List<TunnelConfig> captured = [];
+        _workflowService.CreateTunnelAsync(_sessionId, Arg.Do<TunnelConfig>(captured.Add), Arg.Any<CancellationToken>())
+                        .Returns(callInfo => Task.FromResult(new TunnelInfo
+                        {
+                            Id = Guid.NewGuid(),
+                            Config = callInfo.Arg<TunnelConfig>(),
+                            Status = TunnelStatus.Stopped,
+                            SessionId = _sessionId,
+                            CreatedAt = DateTime.UtcNow
+                        }));
+        FillValidLocalForm();
+        _vm.NewUseUnixSocket = true;
+        _vm.NewRemoteSocketPath = " /var/run/docker.sock ";
+
+        await _vm.CreateTunnelCommand.Execute().FirstAsync();
+
+        Assert.IsNull(captured[0].LocalSocketPath, "本机那栏空着:照旧监听本地端口。");
+        Assert.AreEqual("/var/run/docker.sock", captured[0].RemoteSocketPath);
+        Assert.IsFalse(_vm.NewUseUnixSocket, "建完表单复位。");
+
+        await _vm.EditTunnelCommand.Execute(_vm.Tunnels[0].Id).FirstAsync();
+        Assert.IsTrue(_vm.NewUseUnixSocket);
+        Assert.AreEqual("/var/run/docker.sock", _vm.NewRemoteSocketPath);
+        Assert.AreEqual(string.Empty, _vm.NewLocalSocketPath);
+        await _vm.ResetFormCommand.Execute().FirstAsync();
+        Assert.IsFalse(_vm.NewUseUnixSocket);
+        Assert.AreEqual(string.Empty, _vm.NewRemoteSocketPath);
+    }
+
+    /// <summary>列表里的套接字隧道:路由与端点写的是路径(不再拆成主机与端口)。</summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public void TunnelItemViewModel_UnixSocket_Display()
+    {
+        TunnelInfo Info(TunnelType type, string? local, string? remote) => new()
+        {
+            Id = Guid.NewGuid(),
+            Config = new()
+            {
+                Type = type,
+                Name = "s",
+                LocalHost = "127.0.0.1",
+                LocalPort = 2375,
+                RemoteHost = "127.0.0.1",
+                RemotePort = 2375,
+                LocalSocketPath = local,
+                RemoteSocketPath = remote
+            },
+            Status = TunnelStatus.Stopped,
+            SessionId = Guid.NewGuid(),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var toDocker = new TunnelItemViewModel(Info(TunnelType.LocalForward, null, "/var/run/docker.sock"));
+        Assert.AreEqual(Strings.Format("Tunnel_RouteLocalSocket", "127.0.0.1:2375", "/var/run/docker.sock"), toDocker.DisplayRoute);
+        Assert.AreEqual("127.0.0.1:2375 → /var/run/docker.sock", toDocker.EndpointSummary);
+
+        var back = new TunnelItemViewModel(Info(TunnelType.RemoteForward, LocalSocket, "/tmp/app.sock"));
+        Assert.AreEqual(Strings.Format("Tunnel_RouteRemoteSocket", "/tmp/app.sock", LocalSocket), back.DisplayRoute);
+        Assert.AreEqual($"/tmp/app.sock → {LocalSocket}", back.EndpointSummary);
+
+        var tcp = new TunnelItemViewModel(Info(TunnelType.LocalForward, null, null));
+        Assert.AreEqual(Strings.Format("Tunnel_RouteLocal", "127.0.0.1", 2375u, "127.0.0.1", 2375u), tcp.DisplayRoute, "没用套接字的照旧。");
+    }
+
     /// <summary>面板开着时的每秒一拍:让服务同步读数,并刷各条隧道的流量行。</summary>
     [TestMethod]
     [TestCategory("TunnelUI")]

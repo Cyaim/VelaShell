@@ -427,6 +427,106 @@ public class TunnelServiceTests
         await _mockClientWrapper.DidNotReceive().StartPortForwardAsync(Arg.Any<PortForwardRequest>(), Arg.Any<CancellationToken>());
     }
 
+    // ———— Unix 域套接字 ————
+
+    /// <summary>
+    /// 本地转发两头各自可以是套接字:本机这头的路径进监听端、服务器那头的路径进目的端;
+    /// 本机在套接字上监听时不做端口预检(端口那栏可能是用户没再管的旧值)。
+    /// </summary>
+    [TestMethod]
+    public async Task CreateLocalForwardAsync_UnixSockets_GoIntoTheRequestAndSkipThePortCheck()
+    {
+        List<PortForwardRequest> requests = [];
+        _mockClientWrapper.StartPortForwardAsync(Arg.Do<PortForwardRequest>(requests.Add), Arg.Any<CancellationToken>())
+                          .Returns(Substitute.For<IPortForwardHandle>());
+        TunnelService service = CreateService((_, _) => true);
+        string listen = Path.Combine(Path.GetTempPath(), $"vela-test-{Guid.NewGuid():N}.sock");
+
+        await service.CreateLocalForwardAsync(_sessionId, new TunnelConfig
+        {
+            Type = TunnelType.LocalForward,
+            Name = "docker",
+            LocalHost = "127.0.0.1",
+            LocalPort = 2375,
+            RemoteHost = "127.0.0.1",
+            RemotePort = 2375,
+            LocalSocketPath = listen,
+            RemoteSocketPath = "/var/run/docker.sock"
+        });
+
+        PortForwardRequest request = requests.Single();
+        Assert.AreEqual(PortForwardKind.Local, request.Kind);
+        Assert.AreEqual(listen, request.BoundSocketPath);
+        Assert.AreEqual("/var/run/docker.sock", request.TargetSocketPath);
+    }
+
+    /// <summary>本机套接字路径上已经有文件:不建、不删,报一句说清楚是哪个路径。</summary>
+    [TestMethod]
+    public async Task CreateLocalForwardAsync_ExistingSocketFile_IsReportedNotReplaced()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"vela-test-{Guid.NewGuid():N}.sock");
+        await File.WriteAllTextAsync(path, "someone else's");
+        try
+        {
+            TunnelService service = CreateService();
+
+            TunnelSocketPathInUseException ex = await Assert.ThrowsExactlyAsync<TunnelSocketPathInUseException>(
+                () => service.CreateLocalForwardAsync(_sessionId, new TunnelConfig
+                {
+                    Type = TunnelType.LocalForward,
+                    Name = "docker",
+                    LocalHost = "127.0.0.1",
+                    LocalPort = 2375,
+                    RemoteHost = "127.0.0.1",
+                    RemotePort = 2375,
+                    LocalSocketPath = path
+                }));
+
+            Assert.AreEqual(Strings.Format("TunnelSvc_LocalSocketExists", path), ex.Message);
+            Assert.AreEqual("someone else's", await File.ReadAllTextAsync(path), "不替用户删。");
+            await _mockClientWrapper.DidNotReceive().StartPortForwardAsync(Arg.Any<PortForwardRequest>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// 远程转发的套接字两头必须同时给:服务器那头进监听端、本机那头进目的端;只给一头的不建,也不悄悄退回端口。
+    /// </summary>
+    [TestMethod]
+    public async Task CreateRemoteForwardAsync_UnixSocketsNeedBothEnds()
+    {
+        List<PortForwardRequest> requests = [];
+        _mockClientWrapper.StartPortForwardAsync(Arg.Do<PortForwardRequest>(requests.Add), Arg.Any<CancellationToken>())
+                          .Returns(Substitute.For<IPortForwardHandle>());
+        TunnelService service = CreateService();
+        TunnelConfig Config(string? local, string? remote) => new()
+        {
+            Type = TunnelType.RemoteForward,
+            Name = "agent",
+            LocalHost = "127.0.0.1",
+            LocalPort = 8080,
+            RemoteHost = "127.0.0.1",
+            RemotePort = 8080,
+            LocalSocketPath = local,
+            RemoteSocketPath = remote
+        };
+
+        await service.CreateRemoteForwardAsync(_sessionId, Config(@"C:\Users\me\app.sock", "/tmp/app.sock"));
+        Assert.AreEqual("/tmp/app.sock", requests.Single().BoundSocketPath);
+        Assert.AreEqual(@"C:\Users\me\app.sock", requests.Single().TargetSocketPath);
+
+        foreach (TunnelConfig half in new[] { Config("/home/me/app.sock", null), Config(null, "/tmp/app.sock") })
+        {
+            ArgumentException ex = await Assert.ThrowsExactlyAsync<ArgumentException>(
+                () => service.CreateRemoteForwardAsync(_sessionId, half));
+            Assert.AreEqual(Strings.Get("TunnelSvc_RemoteSocketNeedsBothEnds"), ex.Message);
+        }
+        Assert.HasCount(1, requests);
+    }
+
     private static TunnelConfig LocalConfig(uint port) =>
         new()
         {

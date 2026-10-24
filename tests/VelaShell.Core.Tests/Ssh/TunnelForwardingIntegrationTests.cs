@@ -143,6 +143,138 @@ public class TunnelForwardingIntegrationTests
     }
 
     /// <summary>
+    /// Unix 域套接字的两种转发首尾相接、一次走通:
+    /// 远程转发(服务器上的 <c>/tmp/…sock</c> → 本机的套接字,两头都是套接字)接着一条本地转发(本机端口 → 服务器上那个套接字)。
+    /// 往本机端口写的数据经 <c>direct-streamlocal</c> 到服务器上的套接字,又经 <c>forwarded-streamlocal</c> 回到本机的套接字服务,大写回来。
+    /// 本机这头的 AF_UNIX 在 Windows 上同样能用(Windows 10 1803 起)。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task UnixSocketForwards_RemoteSocketToLocalSocket_AndLocalPortToRemoteSocket()
+    {
+        RequireContainer();
+        await using VelaSshClientWrapper ssh = await ConnectAsync();
+        await using TunnelService service = CreateService(ssh);
+        string localSocket = Path.Combine(Path.GetTempPath(), $"vela-tun-{Guid.NewGuid():N}.sock");
+        string remoteSocket = $"/tmp/vela-tun-{Guid.NewGuid():N}.sock";
+        using Socket echo = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        echo.Bind(new UnixDomainSocketEndPoint(localSocket));
+        echo.Listen(4);
+        int localPort = FreeLocalPort();
+        try
+        {
+            TunnelInfo back = await service.CreateRemoteForwardAsync(SessionId, new TunnelConfig
+            {
+                Type = TunnelType.RemoteForward,
+                Name = "socket-back",
+                LocalHost = "127.0.0.1",
+                LocalPort = 1,
+                RemoteHost = "127.0.0.1",
+                RemotePort = 1,
+                LocalSocketPath = localSocket,
+                RemoteSocketPath = remoteSocket
+            });
+            TunnelInfo there = await service.CreateLocalForwardAsync(SessionId, new TunnelConfig
+            {
+                Type = TunnelType.LocalForward,
+                Name = "to-socket",
+                LocalHost = "127.0.0.1",
+                LocalPort = (uint)localPort,
+                RemoteHost = "127.0.0.1",
+                RemotePort = 1,
+                RemoteSocketPath = remoteSocket
+            });
+
+            Task serve = ServeUppercaseEchoOnceAsync(echo);
+            using TcpClient client = new();
+            await client.ConnectAsync(IPAddress.Loopback, localPort, TestContext.CancellationToken);
+            NetworkStream stream = client.GetStream();
+            await stream.WriteAsync("hello"u8.ToArray(), TestContext.CancellationToken);
+            byte[] reply = new byte[5];
+            await stream.ReadExactlyAsync(reply, TestContext.CancellationToken);
+            Assert.AreEqual("HELLO", System.Text.Encoding.ASCII.GetString(reply));
+
+            client.Client.Shutdown(SocketShutdown.Send);
+            await serve.WaitAsync(TimeSpan.FromSeconds(10), TestContext.CancellationToken);
+            Assert.IsNull(back.LastError, back.LastError);
+            Assert.IsNull(there.LastError, there.LastError);
+            service.RefreshStatistics();
+            Assert.AreEqual(1, back.TotalConnections);
+            Assert.AreEqual(1, there.TotalConnections);
+        }
+        finally
+        {
+            await ssh.RunCommandAsync($"rm -f {remoteSocket}");
+            File.Delete(localSocket);
+        }
+    }
+
+    /// <summary>
+    /// 本地转发在本机的套接字文件上监听(<c>-L /路径/x.sock:127.0.0.1:2222</c>):连那个套接字,读到的是服务器上 sshd 的版本行;
+    /// 停掉隧道之后套接字文件被删掉。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task LocalForward_ListensOnALocalSocketFile()
+    {
+        RequireContainer();
+        await using VelaSshClientWrapper ssh = await ConnectAsync();
+        await using TunnelService service = CreateService(ssh);
+        string localSocket = Path.Combine(Path.GetTempPath(), $"vela-tun-{Guid.NewGuid():N}.sock");
+        try
+        {
+            TunnelInfo tunnel = await service.CreateLocalForwardAsync(SessionId, new TunnelConfig
+            {
+                Type = TunnelType.LocalForward,
+                Name = "sshd-banner",
+                LocalHost = "127.0.0.1",
+                LocalPort = 1,
+                RemoteHost = "127.0.0.1",
+                RemotePort = 2222,
+                LocalSocketPath = localSocket
+            });
+            Assert.IsTrue(File.Exists(localSocket));
+
+            using (Socket client = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified))
+            {
+                await client.ConnectAsync(new UnixDomainSocketEndPoint(localSocket), TestContext.CancellationToken);
+                byte[] banner = new byte[8];
+                int read = 0;
+                while (read < banner.Length)
+                {
+                    int n = await client.ReceiveAsync(banner.AsMemory(read), SocketFlags.None, TestContext.CancellationToken);
+                    Assert.AreNotEqual(0, n, "没读到版本行就断了。");
+                    read += n;
+                }
+                Assert.AreEqual("SSH-2.0-", System.Text.Encoding.ASCII.GetString(banner));
+            }
+
+            await service.StopTunnelAsync(tunnel.Id);
+            Assert.IsFalse(File.Exists(localSocket), "停掉隧道之后套接字文件要删掉。");
+        }
+        finally
+        {
+            File.Delete(localSocket);
+        }
+    }
+
+    /// <summary>本机一个空着的 TCP 端口(绑 0 → 读端口 → 放掉)。</summary>
+    private static int FreeLocalPort()
+    {
+        using TcpListener probe = new(IPAddress.Loopback, 0);
+        probe.Start();
+        return ((IPEndPoint)probe.LocalEndpoint).Port;
+    }
+
+    /// <summary>本机那头的 Unix 套接字服务:接一条连接,把读到的转成大写回送,读到对端关闭为止。</summary>
+    private async Task ServeUppercaseEchoOnceAsync(Socket listener)
+    {
+        using Socket client = await listener.AcceptAsync(TestContext.CancellationToken);
+        await using NetworkStream stream = new(client, ownsSocket: false);
+        await UppercaseEchoAsync(stream);
+    }
+
+    /// <summary>
     /// 远端那头的 SOCKS5 客户端(bash 的 <c>/dev/tcp</c> + 逐字节的 <c>dd</c>,不靠靶机上另装工具):
     /// 协商「不认证」,请求连 <c>127.0.0.1:目标端口</c>,发一段数据,把方法应答、请求应答与回来的数据分别打出来。
     /// <paramref name="payload" /> 为 <see langword="null" /> 时只走到请求应答为止。
@@ -161,7 +293,12 @@ public class TunnelForwardingIntegrationTests
     private async Task ServeUppercaseEchoOnceAsync(TcpListener listener)
     {
         using TcpClient client = await listener.AcceptTcpClientAsync(TestContext.CancellationToken);
-        NetworkStream stream = client.GetStream();
+        await UppercaseEchoAsync(client.GetStream());
+    }
+
+    /// <summary>把读到的转成大写回送,读到对端关闭为止。</summary>
+    private async Task UppercaseEchoAsync(Stream stream)
+    {
         byte[] buffer = new byte[1024];
         int read;
         while ((read = await stream.ReadAsync(buffer, TestContext.CancellationToken)) > 0)

@@ -53,4 +53,23 @@ public sealed class TunnelConfig
     /// 放哪些出去必须由用户明说(写法与校验见 <see cref="Tunnels.RemoteOpenRules" />)。
     /// </remarks>
     public IReadOnlyList<string>? PermitRemoteOpen { get; init; }
+
+    /// <summary>
+    /// 本机这头改用 Unix 域套接字:本地转发是在这个套接字文件上监听(代替 <see cref="LocalHost" />:<see cref="LocalPort" />),
+    /// 远程转发是回连到本机的这个套接字。<see langword="null" />(默认)= 用主机与端口。
+    /// </summary>
+    /// <remarks>
+    /// 套接字文件按文件权限隔离(非 Windows 上建好即设 0600),多用户机器上别人借不走这条隧道 —— 环回端口则对所有用户开放。
+    /// Windows 10 1803 起支持 AF_UNIX,文件沿用所在目录的 ACL。远程转发的两头必须同时是套接字(SSH 库只给了这一种组合)。
+    /// 旧的持久化配置缺这个字段时按 <see langword="null" /> 反序列化。
+    /// </remarks>
+    public string? LocalSocketPath { get; init; }
+
+    /// <summary>
+    /// 服务器那头改用 Unix 域套接字:本地转发是转到服务器上的这个套接字(<c>direct-streamlocal@openssh.com</c>,
+    /// 代替 <see cref="RemoteHost" />:<see cref="RemotePort" />,如 <c>/var/run/docker.sock</c>),
+    /// 远程转发是请服务器在这个路径上监听(<c>streamlocal-forward@openssh.com</c>)。<see langword="null" />(默认)= 用主机与端口。
+    /// </summary>
+    /// <remarks>服务端要开着 <c>AllowStreamLocalForwarding</c>(OpenSSH 默认开)。</remarks>
+    public string? RemoteSocketPath { get; init; }
 }

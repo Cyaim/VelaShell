@@ -39,6 +39,12 @@ public sealed record PortForwardRequest(
 
     /// <summary>远程动态转发的放行名单(<c>主机:端口</c>,或单独一条 <c>any</c>);别的类型不用。</summary>
     public IReadOnlyList<string>? PermitRemoteOpen { get; init; }
+
+    /// <summary>监听端改用 Unix 域套接字(Local 在本机、Remote 在服务器);设了就不用 BoundHost / BoundPort。</summary>
+    public string? BoundSocketPath { get; init; }
+
+    /// <summary>目的端改用 Unix 域套接字(Local 在服务器、Remote 在本机);设了就不用 TargetHost / TargetPort。</summary>
+    public string? TargetSocketPath { get; init; }
 }
 
 /// <summary>

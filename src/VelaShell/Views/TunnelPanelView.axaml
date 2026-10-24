@@ -430,6 +430,7 @@
                       IsVisible="{Binding IsLocalPortVisible}">
             <TextBlock Classes="form-label" Text="{loc:Localize LocalPort}" />
             <NumericUpDown Value="{Binding NewLocalPort}" PlaceholderText="27017"
+                           IsEnabled="{Binding IsLocalPortEditable}"
                            Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
           </StackPanel>
           <StackPanel Grid.Column="1" Spacing="5" IsVisible="{Binding IsRemoteTargetVisible}">
@@ -442,17 +443,46 @@
                       IsVisible="{Binding IsRemoteTargetVisible}">
             <TextBlock Classes="form-label" Text="{loc:Localize Port}" />
             <NumericUpDown Value="{Binding NewRemotePort}" PlaceholderText="27017"
+                           IsEnabled="{Binding IsRemoteEndpointEditable}"
                            Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
           </StackPanel>
         </Grid>
 
         <CheckBox IsChecked="{Binding ForwardToServerLoopback}"
                   IsVisible="{Binding IsRemoteTargetVisible}"
+                  IsEnabled="{Binding IsRemoteEndpointEditable}"
                   Padding="0" MinHeight="0">
           <TextBlock Text="{Binding LoopbackOptionText}"
                      Foreground="{DynamicResource VelaTextSecondary}"
                      FontSize="{DynamicResource VelaFontSize11}" Margin="6,0,0,0" />
         </CheckBox>
+
+        <!-- Unix 域套接字(只有本地 / 远程转发有):本地转发两头各自可以是套接字,填了路径的那头就不再用上面的端口 / 主机,
+             那几栏随之置灰;远程转发两头必须同时是套接字(SSH 库只给了这一种组合)。
+             用途:直接操作远端的 docker.sock、数据库套接字,远端不必开任何 TCP 端口;本机这头按文件权限隔离。 -->
+        <CheckBox Name="UnixSocketOption"
+                  IsChecked="{Binding NewUseUnixSocket}"
+                  IsVisible="{Binding IsUnixSocketOptionVisible}"
+                  ToolTip.Tip="{loc:Localize Tunnel_UnixSocketTip}"
+                  Padding="0" MinHeight="0">
+          <TextBlock Text="{loc:Localize Tunnel_UnixSocketOption}"
+                     Foreground="{DynamicResource VelaTextSecondary}"
+                     FontSize="{DynamicResource VelaFontSize11}" Margin="6,0,0,0" />
+        </CheckBox>
+        <StackPanel Name="UnixSocketBlock" Spacing="5" IsVisible="{Binding IsUnixSocketFormVisible}">
+          <TextBlock Classes="form-label" Text="{Binding LocalSocketLabel}" />
+          <TextBox Name="LocalSocketPathInput" Text="{Binding NewLocalSocketPath}"
+                   PlaceholderText="{x:Static vm:TunnelPanelViewModel.LocalSocketPlaceholder}" />
+          <TextBlock Classes="desc" Text="{Binding LocalSocketPathError}"
+                     Foreground="{DynamicResource VelaError}" TextWrapping="Wrap"
+                     IsVisible="{Binding HasLocalSocketPathError}" />
+          <TextBlock Classes="form-label" Text="{Binding RemoteSocketLabel}" Margin="0,5,0,0" />
+          <TextBox Name="RemoteSocketPathInput" Text="{Binding NewRemoteSocketPath}"
+                   PlaceholderText="/var/run/docker.sock" />
+          <TextBlock Classes="desc" Text="{Binding RemoteSocketPathError}"
+                     Foreground="{DynamicResource VelaError}" TextWrapping="Wrap"
+                     IsVisible="{Binding HasRemoteSocketPathError}" />
+        </StackPanel>
 
         <!-- 远程动态转发的放行名单:远端经它能让本机连哪些 主机:端口。没有默认值、不许留空 ——
              这等于把本机变成远端的 SOCKS 代理,本机能到的内网远端都能到,放哪些出去要用户明说(全放写 any)。 -->

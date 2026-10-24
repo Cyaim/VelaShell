@@ -72,6 +72,25 @@ public sealed class PortForwardAddressTests
         Assert.AreEqual(8080, remote.BindPort);
     }
 
+    /// <summary>本机在套接字文件上监听时,参数里只有那个路径:地址与端口那栏不解析、不交给库(可能是用户没再管的旧值)。</summary>
+    [TestMethod]
+    public void LocalOptions_WithASocketPath_ListenOnTheSocketOnly()
+    {
+        PortForwardRequest request = new(PortForwardKind.Local, "not-an-address", 2375, "127.0.0.1", 2375)
+        {
+            BoundSocketPath = "/run/user/1000/docker.sock",
+            MaxBytesPerSecond = 1024
+        };
+
+        LocalPortForwardOptions options = LibraryPortForwardHandle.LocalOptions(request, request.BoundHost);
+
+        Assert.AreEqual("/run/user/1000/docker.sock", options.ListenSocketPath);
+        Assert.IsNull(options.BindAddress);
+        Assert.AreEqual(0, options.BindPort);
+        Assert.AreEqual(1024L, options.MaxBytesPerSecond);
+        Assert.IsFalse(options.AllowSocketReplacement, "已有的文件不替用户删。");
+    }
+
     /// <summary>
     /// 放行名单交给库:单独一条 any 是全放;别的逐条按 主机:端口 比(通配、端口 *);空名单是全拒,不悄悄变成全放。
     /// </summary>

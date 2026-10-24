@@ -72,12 +72,22 @@ public class TunnelService(
         {
             throw new ArgumentException(@"Config type must be LocalForward", nameof(config));
         }
-        EnsureLocalPortAvailable(config.LocalHost, config.LocalPort);
+        // 本机这头在套接字文件上监听时,预检的是那个路径而不是端口。
+        if (config.LocalSocketPath is { } listenPath)
+        {
+            EnsureLocalSocketPathAvailable(listenPath);
+        }
+        else
+        {
+            EnsureLocalPortAvailable(config.LocalHost, config.LocalPort);
+        }
         return await CreateForwardAsync(sessionId,
                    config,
                    new(PortForwardKind.Local, config.LocalHost, config.LocalPort, config.RemoteHost, config.RemotePort)
                    {
-                       MaxBytesPerSecond = config.MaxBytesPerSecond
+                       MaxBytesPerSecond = config.MaxBytesPerSecond,
+                       BoundSocketPath = config.LocalSocketPath,
+                       TargetSocketPath = config.RemoteSocketPath
                    },
                    "local",
                    cancellationToken).ConfigureAwait(false);
@@ -90,11 +100,19 @@ public class TunnelService(
         {
             throw new ArgumentException(@"Config type must be RemoteForward", nameof(config));
         }
+        // SSH 库的远程转发只有「两头都是 TCP」与「两头都是套接字」两种:只给了一头的配置(手改的、导入的)不建,
+        // 说清楚缺哪头,而不是悄悄退回端口。
+        if ((config.LocalSocketPath is null) != (config.RemoteSocketPath is null))
+        {
+            throw new ArgumentException(Strings.Get("TunnelSvc_RemoteSocketNeedsBothEnds"));
+        }
         return await CreateForwardAsync(sessionId,
                    config,
                    new(PortForwardKind.Remote, config.RemoteHost, config.RemotePort, config.LocalHost, config.LocalPort)
                    {
-                       MaxBytesPerSecond = config.MaxBytesPerSecond
+                       MaxBytesPerSecond = config.MaxBytesPerSecond,
+                       BoundSocketPath = config.RemoteSocketPath,
+                       TargetSocketPath = config.LocalSocketPath
                    },
                    "remote",
                    cancellationToken).ConfigureAwait(false);
@@ -282,6 +300,18 @@ public class TunnelService(
         if (_isLocalPortInUse(host, port))
         {
             throw new TunnelPortInUseException(Strings.Format("TunnelSvc_LocalPortInUse", port), port);
+        }
+    }
+
+    /// <summary>
+    /// 本机套接字监听的预检:那个路径上已经有文件就不建 —— 多半是上一次没收拾干净,也可能是别的程序的套接字,
+    /// 不替用户删(SSH 库默认同样不删),报一句说得清的话。
+    /// </summary>
+    private static void EnsureLocalSocketPathAvailable(string path)
+    {
+        if (File.Exists(path))
+        {
+            throw new TunnelSocketPathInUseException(Strings.Format("TunnelSvc_LocalSocketExists", path), path);
         }
     }
 

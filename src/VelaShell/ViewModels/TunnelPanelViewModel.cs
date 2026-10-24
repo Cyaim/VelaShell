@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Net.Sockets;
+using System.Text;
 using Avalonia;
 using Avalonia.Threading;
 using ReactiveUI;
@@ -273,18 +274,25 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         nameof(NewRemotePort),
         nameof(ForwardToServerLoopback),
         nameof(NewPermitRemoteOpen),
+        nameof(NewUseUnixSocket),
+        nameof(NewLocalSocketPath),
+        nameof(NewRemoteSocketPath),
     ];
 
     /// <summary>
     /// 表单填全了没有(「创建 / 保存」键据此可点):选了服务器;本机这头要端口的有端口;服务器那头要地址的有地址与端口;
     /// 远程动态转发的放行名单至少一条、每条都写对。
     /// </summary>
+    /// <remarks>
+    /// 本地 / 远程转发改用 Unix 套接字时,用上套接字的那一头看路径(要写对),不再看主机与端口。
+    /// </remarks>
     public bool IsFormValid =>
         SelectedServer is not null && NewTunnelType switch
         {
             TunnelType.DynamicForward => IsLocalEndpointFilled,
             TunnelType.RemoteDynamicForward => IsServerEndpointFilled && RemoteOpenRules.TryParse(NewPermitRemoteOpen, out _, out _),
-            _ => IsLocalEndpointFilled && IsServerEndpointFilled
+            _ => (UsesLocalSocket ? LocalSocketPathProblem(NewLocalSocketPath) is null : IsLocalEndpointFilled)
+                 && (UsesRemoteSocket ? RemoteSocketPathProblem(NewRemoteSocketPath) is null : IsServerEndpointFilled)
         };
 
     private bool IsLocalEndpointFilled => !string.IsNullOrWhiteSpace(NewLocalHost) && NewLocalPort is >= 1 and <= 65535;
@@ -352,6 +360,144 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     /// <summary>放行名单有写错的规则。</summary>
     public bool HasPermitRemoteOpenError => PermitRemoteOpenError is not null;
 
+    // ---- Unix 域套接字 ----
+
+    /// <summary>
+    /// 「改用 Unix 域套接字」只对本地 / 远程转发有:SSH 库的本地转发两头各自可以是套接字(四种组合),
+    /// 远程转发只有两头都是套接字这一种;动态与远程动态转发没有套接字的写法。
+    /// </summary>
+    public bool IsUnixSocketOptionVisible => NewTunnelType is TunnelType.LocalForward or TunnelType.RemoteForward;
+
+    /// <summary>表单中的「改用 Unix 域套接字」。默认不勾。</summary>
+    public bool NewUseUnixSocket
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            RaiseSocketChanged();
+        }
+    }
+
+    /// <summary>
+    /// 表单中本机这头的套接字路径:本地转发是在它上面监听(留空则仍用本地端口),远程转发是回连到它(必填)。
+    /// </summary>
+    public string NewLocalSocketPath
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            RaiseSocketChanged();
+        }
+    } = string.Empty;
+
+    /// <summary>
+    /// 表单中服务器那头的套接字路径:本地转发是转到它(留空则仍用目标主机:端口),远程转发是请服务器在它上面监听(必填)。
+    /// </summary>
+    public string NewRemoteSocketPath
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            RaiseSocketChanged();
+        }
+    } = string.Empty;
+
+    /// <summary>套接字那两栏要不要显示:勾了「改用 Unix 域套接字」。</summary>
+    public bool IsUnixSocketFormVisible => IsUnixSocketOptionVisible && NewUseUnixSocket;
+
+    /// <summary>本机这头用不用套接字:远程转发勾了就用(两头必须同时),本地转发要填了路径才用。</summary>
+    private bool UsesLocalSocket =>
+        IsUnixSocketFormVisible
+        && (NewTunnelType == TunnelType.RemoteForward || !string.IsNullOrWhiteSpace(NewLocalSocketPath));
+
+    /// <summary>服务器那头用不用套接字;口径同 <see cref="UsesLocalSocket" />。</summary>
+    private bool UsesRemoteSocket =>
+        IsUnixSocketFormVisible
+        && (NewTunnelType == TunnelType.RemoteForward || !string.IsNullOrWhiteSpace(NewRemoteSocketPath));
+
+    /// <summary>本机套接字那一栏的标签:本地转发是「监听」(可留空),远程转发是「回连到」。</summary>
+    public string LocalSocketLabel => Strings.Get(NewTunnelType == TunnelType.RemoteForward ? "Tunnel_LocalSocketTargetLabel" : "Tunnel_LocalSocketListenLabel");
+
+    /// <summary>服务器套接字那一栏的标签:本地转发是「目标」(可留空),远程转发是「监听」。</summary>
+    public string RemoteSocketLabel => Strings.Get(NewTunnelType == TunnelType.RemoteForward ? "Tunnel_RemoteSocketListenLabel" : "Tunnel_RemoteSocketTargetLabel");
+
+    /// <summary>
+    /// 本机套接字栏的示例路径:放在只有自己进得去的目录里(Linux 的 <c>$XDG_RUNTIME_DIR</c>、Windows 的用户临时目录),
+    /// 从建好套接字到改权限之间的那一小段窗口里别人也够不着它。
+    /// </summary>
+    public static string LocalSocketPlaceholder { get; } = Path.Combine(
+        Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } runtime && !OperatingSystem.IsWindows()
+            ? runtime
+            : Path.GetTempPath(),
+        "app.sock");
+
+    /// <summary>本机套接字路径写错了(不是完整路径、太长)时的提示;空着不算错。</summary>
+    public string? LocalSocketPathError => UsesLocalSocket && !string.IsNullOrWhiteSpace(NewLocalSocketPath) ? LocalSocketPathProblem(NewLocalSocketPath) : null;
+
+    /// <summary>服务器套接字路径写错了(不是 / 开头的绝对路径)时的提示;空着不算错。</summary>
+    public string? RemoteSocketPathError => UsesRemoteSocket && !string.IsNullOrWhiteSpace(NewRemoteSocketPath) ? RemoteSocketPathProblem(NewRemoteSocketPath) : null;
+
+    /// <summary>本机套接字路径有错。</summary>
+    public bool HasLocalSocketPathError => LocalSocketPathError is not null;
+
+    /// <summary>服务器套接字路径有错。</summary>
+    public bool HasRemoteSocketPathError => RemoteSocketPathError is not null;
+
+    /// <summary>本地端口那一栏可编辑:本机这头没改用套接字。</summary>
+    public bool IsLocalPortEditable => !UsesLocalSocket;
+
+    /// <summary>目标(或服务器监听)主机与端口可编辑:服务器那头没改用套接字。</summary>
+    public bool IsRemoteEndpointEditable => !UsesRemoteSocket;
+
+    /// <summary>
+    /// 本机套接字路径的上限(UTF-8 字节,不含结尾的 0):<c>sun_path</c> 在 Linux 与 Windows 上是 108 字节、macOS 上是 104 字节。
+    /// 超了 SSH 库当场报错,表单上先拦住、说清楚。
+    /// </summary>
+    internal static int MaxLocalSocketPathBytes => OperatingSystem.IsMacOS() ? 103 : 107;
+
+    /// <summary>本机套接字路径的问题:要是完整路径(相对路径落在哪全看程序的当前目录)、不能太长。没问题返回 <see langword="null" />。</summary>
+    private static string? LocalSocketPathProblem(string path)
+    {
+        string trimmed = path.Trim();
+        if (trimmed.Length == 0)
+        {
+            return Strings.Get("Tunnel_SocketPathRequired");
+        }
+        if (!Path.IsPathFullyQualified(trimmed))
+        {
+            return Strings.Get("Tunnel_LocalSocketPathNotAbsolute");
+        }
+        int bytes = Encoding.UTF8.GetByteCount(trimmed);
+        return bytes > MaxLocalSocketPathBytes ? Strings.Format("Tunnel_LocalSocketPathTooLong", bytes, MaxLocalSocketPathBytes) : null;
+    }
+
+    /// <summary>服务器套接字路径的问题:要是 <c>/</c> 开头的绝对路径(服务器上的 sshd 按它自己的文件系统解析)。</summary>
+    private static string? RemoteSocketPathProblem(string path)
+    {
+        string trimmed = path.Trim();
+        return trimmed.Length == 0 ? Strings.Get("Tunnel_SocketPathRequired")
+            : !trimmed.StartsWith('/') ? Strings.Get("Tunnel_RemoteSocketPathNotAbsolute")
+            : null;
+    }
+
+    private void RaiseSocketChanged()
+    {
+        this.RaisePropertyChanged(nameof(IsUnixSocketOptionVisible));
+        this.RaisePropertyChanged(nameof(IsUnixSocketFormVisible));
+        this.RaisePropertyChanged(nameof(LocalSocketLabel));
+        this.RaisePropertyChanged(nameof(RemoteSocketLabel));
+        this.RaisePropertyChanged(nameof(LocalSocketPathError));
+        this.RaisePropertyChanged(nameof(RemoteSocketPathError));
+        this.RaisePropertyChanged(nameof(HasLocalSocketPathError));
+        this.RaisePropertyChanged(nameof(HasRemoteSocketPathError));
+        this.RaisePropertyChanged(nameof(IsLocalPortEditable));
+        this.RaisePropertyChanged(nameof(IsRemoteEndpointEditable));
+        this.RaisePropertyChanged(nameof(IsRemoteHostEditable));
+    }
+
     /// <summary>
     /// 默认转发到"服务器本机":目标主机锁定为 127.0.0.1(从服务器视角,
     /// 填服务器公网 IP 会被服务器自己拒绝)。取消勾选可填内网第三方主机。
@@ -370,8 +516,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         }
     } = true;
 
-    /// <summary>目标主机是否可编辑:仅在未勾选"转发到服务器本机"时开放输入。</summary>
-    public bool IsRemoteHostEditable => !ForwardToServerLoopback;
+    /// <summary>目标主机是否可编辑:仅在未勾选"转发到服务器本机"、且服务器那头没改用套接字时开放输入。</summary>
+    public bool IsRemoteHostEditable => !ForwardToServerLoopback && IsRemoteEndpointEditable;
 
     /// <summary>新建/编辑表单选择的隧道类型(本地/远程/动态/远程动态转发)。</summary>
     public TunnelType NewTunnelType
@@ -388,6 +534,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             this.RaisePropertyChanged(nameof(LoopbackOptionText));
             this.RaisePropertyChanged(nameof(PermitRemoteOpenError));
             this.RaisePropertyChanged(nameof(HasPermitRemoteOpenError));
+            RaiseSocketChanged();
         }
     }
 
@@ -480,6 +627,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         this.RaisePropertyChanged(nameof(RemoteHostLabel));
         this.RaisePropertyChanged(nameof(LoopbackOptionText));
         this.RaisePropertyChanged(nameof(PermitRemoteOpenError));
+        RaiseSocketChanged();
         foreach (TunnelItemViewModel tunnel in Tunnels)
         {
             tunnel.RefreshLocalizedText();
@@ -1184,7 +1332,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
 
     /// <summary>配置身份键:恢复时用来跳过面板里已存在的同配置条目。</summary>
     private static string ConfigKey(TunnelConfig config) =>
-        $"{config.Type}|{config.LocalHost}|{config.LocalPort}|{config.RemoteHost}|{config.RemotePort}|{config.Name}|{RemoteOpenRules.Format(config.PermitRemoteOpen)}";
+        $"{config.Type}|{config.LocalHost}|{config.LocalPort}|{config.RemoteHost}|{config.RemotePort}|{config.Name}|{RemoteOpenRules.Format(config.PermitRemoteOpen)}|{config.LocalSocketPath}|{config.RemoteSocketPath}";
 
     /// <summary>从存储恢复该服务器的隧道配置(每次运行每台只执行一次);失败不影响面板。</summary>
     private async Task RestorePersistedTunnelsAsync(Guid profileId, ObservableCollection<TunnelItemViewModel> items)
@@ -1273,6 +1421,9 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         }
         NewTunnelType = item.TunnelType;
         NewPermitRemoteOpen = RemoteOpenRules.Format(item.Config.PermitRemoteOpen);
+        NewUseUnixSocket = item.Config.LocalSocketPath is not null || item.Config.RemoteSocketPath is not null;
+        NewLocalSocketPath = item.Config.LocalSocketPath ?? string.Empty;
+        NewRemoteSocketPath = item.Config.RemoteSocketPath ?? string.Empty;
         ForwardToServerLoopback = item.TunnelType != TunnelType.DynamicForward && item.Config.RemoteHost is "" or "127.0.0.1" or "localhost";
         if (!ForwardToServerLoopback)
         {
@@ -1394,7 +1545,9 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             AutoReconnect = NewAutoReconnect,
             AutoStart = NewAutoStart,
             MaxBytesPerSecond = NewRateLimitKiB > 0 ? NewRateLimitKiB * 1024L : null,
-            PermitRemoteOpen = permit
+            PermitRemoteOpen = permit,
+            LocalSocketPath = UsesLocalSocket ? NewLocalSocketPath.Trim() : null,
+            RemoteSocketPath = UsesRemoteSocket ? NewRemoteSocketPath.Trim() : null
         };
     }
 
@@ -1569,6 +1722,9 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         NewAutoStart = false;
         NewRateLimitKiB = 0;
         NewPermitRemoteOpen = string.Empty;
+        NewUseUnixSocket = false;
+        NewLocalSocketPath = string.Empty;
+        NewRemoteSocketPath = string.Empty;
         NewTunnelTypeIndex = 0;
         ForwardToServerLoopback = true; // 同时把目标主机复位为 127.0.0.1
         RaiseEditingChanged();
