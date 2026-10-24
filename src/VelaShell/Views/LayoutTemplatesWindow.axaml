@@ -1,0 +1,161 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:VelaShell.ViewModels"
+        xmlns:loc="using:VelaShell.Localization"
+        xmlns:pc="using:VelaShell.Controls.Controls"
+        mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="460"
+        x:Class="VelaShell.Views.LayoutTemplatesWindow"
+        x:DataType="vm:LayoutTemplatesViewModel"
+        Title="{loc:Localize LayoutTemplate_Title}"
+        Width="640" Height="460"
+        MinWidth="480" MinHeight="320"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+  <!-- 「管理布局模板」:与目录收藏管理窗口(DirectoryBookmarksWindow)同一副外形 ——
+       标题栏 28px、行内图标按钮、底部操作条。非模态:要一边看着它一边在主窗口里排分屏。 -->
+  <Window.Styles>
+    <Style Selector="Button.toolbar-btn">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="6" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+    </Style>
+    <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="Button.action">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="7,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+    </Style>
+    <Style Selector="Button.action:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="TextBlock.summary">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize10}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextTertiary}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="TextBlock.name">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+  </Window.Styles>
+
+  <Panel>
+    <Border Classes="window-card" ClipToBounds="True"
+            Background="{DynamicResource VelaBgSurface}"
+            BorderBrush="{DynamicResource VelaBorderSecondary}">
+      <DockPanel>
+        <Border DockPanel.Dock="Top" Classes="window-titlebar window-card-top"
+                Height="28" Padding="12,0"
+                Background="{DynamicResource VelaBgSurface}"
+                BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1"
+                PointerPressed="OnTitleBarPointerPressed">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <pc:LucideIcon Width="14" Height="14" Data="{StaticResource Icon.layout-template}"
+                             Foreground="{DynamicResource VelaAccent}" />
+              <TextBlock Text="{Binding $parent[Window].Title}"
+                         Foreground="{DynamicResource VelaTextPrimary}"
+                         FontSize="{DynamicResource VelaFontSize12}" FontWeight="SemiBold"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="toolbar-btn window-caption"
+                    Width="27" Height="27" Padding="0" Click="OnCloseClick"
+                    ToolTip.Tip="{loc:Localize Cancel}"
+                    AutomationProperties.Name="{loc:Localize Cancel}">
+              <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.x}"
+                             Foreground="{DynamicResource VelaTextSecondary}" />
+            </Button>
+          </Grid>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Height="48" Padding="14,0"
+                BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,1,0,0">
+          <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+            <Button Grid.Column="1" Classes="action"
+                    Click="OnSaveClick"
+                    AutomationProperties.Name="{loc:Localize LayoutTemplate_SaveCurrent}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.save}"
+                               Foreground="{DynamicResource VelaAccent}" />
+                <TextBlock Text="{loc:Localize LayoutTemplate_SaveCurrent}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </Grid>
+        </Border>
+
+        <Border DockPanel.Dock="Top" Padding="14,10"
+                Background="{DynamicResource VelaBgInput}"
+                BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
+          <TextBlock Text="{loc:Localize LayoutTemplate_ManageHint}"
+                     Foreground="{DynamicResource VelaTextSecondary}"
+                     FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap" />
+        </Border>
+
+        <Grid>
+          <ListBox x:Name="TemplateList" ItemsSource="{Binding Templates}"
+                   Background="Transparent" BorderThickness="0"
+                   DoubleTapped="OnTemplateDoubleTapped">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:LayoutTemplateItemViewModel">
+                <Border Padding="14,8" BorderBrush="{DynamicResource VelaBorderPrimary}"
+                        BorderThickness="0,0,0,1">
+                  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+                    <StackPanel MinWidth="0" Spacing="3" VerticalAlignment="Center">
+                      <TextBlock Classes="name" Text="{Binding Name}" />
+                      <TextBlock Classes="summary" Text="{Binding Summary}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="action" Click="OnOpenClick"
+                            ToolTip.Tip="{loc:Localize LayoutTemplate_Open}"
+                            AutomationProperties.Name="{loc:Localize LayoutTemplate_Open}">
+                      <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.play}"
+                                     Foreground="{DynamicResource VelaAccent}" />
+                    </Button>
+                    <Button Grid.Column="2" Classes="action" Click="OnOverwriteClick"
+                            ToolTip.Tip="{loc:Localize LayoutTemplate_Overwrite}"
+                            AutomationProperties.Name="{loc:Localize LayoutTemplate_Overwrite}">
+                      <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.save}"
+                                     Foreground="{DynamicResource VelaTextTertiary}" />
+                    </Button>
+                    <Button Grid.Column="3" Classes="action" Click="OnRenameClick"
+                            ToolTip.Tip="{loc:Localize Rename}"
+                            AutomationProperties.Name="{loc:Localize Rename}">
+                      <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.pencil}"
+                                     Foreground="{DynamicResource VelaTextTertiary}" />
+                    </Button>
+                    <Button Grid.Column="4" Classes="action" Click="OnDeleteClick"
+                            ToolTip.Tip="{loc:Localize Delete}"
+                            AutomationProperties.Name="{loc:Localize Delete}">
+                      <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.trash-2}"
+                                     Foreground="{DynamicResource VelaError}" />
+                    </Button>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock Text="{loc:Localize LayoutTemplate_None}"
+                     IsVisible="{Binding !HasTemplates}"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     Foreground="{DynamicResource VelaTextMuted}"
+                     FontSize="{DynamicResource VelaFontSize12}" />
+        </Grid>
+      </DockPanel>
+    </Border>
+  </Panel>
+</Window>

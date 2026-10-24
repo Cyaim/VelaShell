@@ -27,6 +27,14 @@
       </StackPanel>
       <ToggleSwitch Grid.Column="1" IsChecked="{Binding General.RestoreSessionsOnStartup}" VerticalAlignment="Center" />
     </Grid>
+    <!-- 按上次的分屏恢复:只在开了恢复会话时有意义,关着就置灰。默认关 —— 关着时恢复会话照旧逐条重连进一个窗格。 -->
+    <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding General.RestoreSessionsOnStartup}">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="row-label" Text="{loc:Localize SetGeneral_RestoreLayout}" />
+        <TextBlock Classes="row-desc" Text="{loc:Localize SetGeneral_RestoreLayoutDesc}" />
+      </StackPanel>
+      <ToggleSwitch Grid.Column="1" IsChecked="{Binding General.RestoreLayoutOnStartup}" VerticalAlignment="Center" />
+    </Grid>
     <Grid ColumnDefinitions="*,Auto">
       <StackPanel Spacing="2">
         <TextBlock Classes="row-label" Text="{loc:Localize SetGeneral_MinimizeToTray}" />

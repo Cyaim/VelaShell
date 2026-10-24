@@ -535,6 +535,105 @@
   <data name="Disconnected" xml:space="preserve">
     <value>切断済み</value>
   </data>
+  <data name="LayoutTemplate_Title" xml:space="preserve">
+    <value>レイアウト テンプレート</value>
+  </data>
+  <data name="LayoutTemplate_SaveCurrent" xml:space="preserve">
+    <value>現在のレイアウトをテンプレートとして保存…</value>
+  </data>
+  <data name="LayoutTemplate_Manage" xml:space="preserve">
+    <value>レイアウト テンプレートの管理…</value>
+  </data>
+  <data name="LayoutTemplate_None" xml:space="preserve">
+    <value>レイアウト テンプレートはまだありません</value>
+  </data>
+  <data name="LayoutTemplate_ManageHint" xml:space="preserve">
+    <value>タブと分割を整えてテンプレートとして保存すると、同じ接続を同じ配置でまとめて開き直せます。テンプレートは保存済みの接続を参照するだけで、パスワードは含みません。</value>
+  </data>
+  <data name="LayoutTemplate_EnterToOpen" xml:space="preserve">
+    <value>Enter で開く</value>
+  </data>
+  <data name="LayoutTemplate_Summary" xml:space="preserve">
+    <value>タブ {0} 個 · ペイン {1} 個</value>
+  </data>
+  <data name="LayoutTemplate_Open" xml:space="preserve">
+    <value>このレイアウトを開く</value>
+  </data>
+  <data name="LayoutTemplate_SaveTitle" xml:space="preserve">
+    <value>レイアウト テンプレートを保存</value>
+  </data>
+  <data name="LayoutTemplate_NamePrompt" xml:space="preserve">
+    <value>テンプレート名:</value>
+  </data>
+  <data name="LayoutTemplate_DefaultName" xml:space="preserve">
+    <value>レイアウト {0}</value>
+  </data>
+  <data name="LayoutTemplate_ReplaceTitle" xml:space="preserve">
+    <value>レイアウト テンプレートの置き換え</value>
+  </data>
+  <data name="LayoutTemplate_ReplaceMessage" xml:space="preserve">
+    <value>「{0}」という名前のレイアウト テンプレートは既にあります。現在のレイアウトで置き換えますか?</value>
+  </data>
+  <data name="LayoutTemplate_Replace" xml:space="preserve">
+    <value>置き換え</value>
+  </data>
+  <data name="LayoutTemplate_NameTaken" xml:space="preserve">
+    <value>「{0}」という名前のレイアウト テンプレートは既にあります。別の名前にしてください。</value>
+  </data>
+  <data name="LayoutTemplate_Saved" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」を保存しました(タブ {1} 個、ペイン {2} 個)。</value>
+  </data>
+  <data name="LayoutTemplate_SavedPartially" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」を保存しました。開き直せないタブ {1} 個は含まれていません(プラグインのパネル、未保存の一時的な接続):{2}</value>
+  </data>
+  <data name="LayoutTemplate_NothingToSave" xml:space="preserve">
+    <value>現在のレイアウトにはテンプレートに保存できるタブがありません。開き直せるのは保存済みの接続とローカル ターミナルだけです。</value>
+  </data>
+  <data name="LayoutTemplate_SaveFailed" xml:space="preserve">
+    <value>レイアウト テンプレートを保存できませんでした: {0}</value>
+  </data>
+  <data name="LayoutTemplate_DeleteFailed" xml:space="preserve">
+    <value>レイアウト テンプレートを削除できませんでした: {0}</value>
+  </data>
+  <data name="LayoutTemplate_Overwrite" xml:space="preserve">
+    <value>現在のレイアウトで上書き</value>
+  </data>
+  <data name="LayoutTemplate_OverwriteTitle" xml:space="preserve">
+    <value>レイアウト テンプレートの上書き</value>
+  </data>
+  <data name="LayoutTemplate_OverwriteMessage" xml:space="preserve">
+    <value>現在の分割とタブで「{0}」を上書きしますか?保存済みの配置は置き換えられます。</value>
+  </data>
+  <data name="LayoutTemplate_RenameTitle" xml:space="preserve">
+    <value>レイアウト テンプレートの名前の変更</value>
+  </data>
+  <data name="LayoutTemplate_DeleteTitle" xml:space="preserve">
+    <value>レイアウト テンプレートの削除</value>
+  </data>
+  <data name="LayoutTemplate_DeleteMessage" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」を削除しますか?削除されるのはテンプレートだけで、参照している接続には影響しません。</value>
+  </data>
+  <data name="LayoutTemplate_OpenSkipped" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」のタブ {1} 個は開けないためスキップしました: {2}</value>
+  </data>
+  <data name="LayoutTemplate_NothingToOpen" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」のタブはどれも開けません(接続が削除されたか、このコンピューターに該当するシェルがありません)。</value>
+  </data>
+  <data name="LayoutTemplate_MissingProfile" xml:space="preserve">
+    <value>{0}(接続は削除済み)</value>
+  </data>
+  <data name="LayoutTemplate_MissingShell" xml:space="preserve">
+    <value>{0}(このコンピューターにないシェル)</value>
+  </data>
+  <data name="LayoutTemplate_MissingUnsupported" xml:space="preserve">
+    <value>{0}(このバージョンでは未対応)</value>
+  </data>
+  <data name="LayoutTemplate_ListSeparator" xml:space="preserve">
+    <value>、</value>
+  </data>
+  <data name="LayoutTemplate_Untitled" xml:space="preserve">
+    <value>無題のタブ</value>
+  </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>すべてのタブ</value>
   </data>
@@ -2531,6 +2630,12 @@
   </data>
   <data name="SetGeneral_RestoreSessionsDesc" xml:space="preserve">
     <value>// 起動時に前回のセッションへ自動再接続</value>
+  </data>
+  <data name="SetGeneral_RestoreLayout" xml:space="preserve">
+    <value>前回の分割レイアウトで復元</value>
+  </data>
+  <data name="SetGeneral_RestoreLayoutDesc" xml:space="preserve">
+    <value>// セッションの復元時に分割、タブの順序、固定状態もあわせて復元</value>
   </data>
   <data name="SetGeneral_SessionLogging" xml:space="preserve">
     <value>セッションログ</value>

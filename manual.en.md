@@ -102,6 +102,7 @@ The main window contains a title bar, Explorer, a docking document area, and a b
 | --- | --- | --- |
 | Add or edit a host | Explorer **+**; connection context menu **Edit** | Opens profile configuration; does not immediately alter a live session |
 | Connect quickly or reopen a recent target | Quick Connect / recent connections | Accepts forms such as `demo@host:22`; authentication and fingerprint checks still apply |
+| Reopen a set of machines in a saved split layout | Title-bar **Layout templates** icon; search the template name in the Command Palette | Save the arranged panes as a template first; templates refer to saved connections only, see 8.4 |
 | Find an application action | Command Palette, `Ctrl+P` | Search, select with arrow keys, execute with Enter |
 | Open a local terminal | Command Palette: open local terminal for a detected shell | Windows only; installed shells are listed; commands run locally, not on the current SSH server |
 | Show the SSH side file pane | `Ctrl+Shift+F` | The active session must support file services |
@@ -319,7 +320,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Result and how it works:** Each pane has its own tab strip; numeric tab navigation counts within that strip. When the tabs do not fit, scroll buttons and an "All Tabs" list appear at the end of the strip; a strip moved to the left / right side gets them too, at its foot. Pinning protects against some quick-close actions and currently lasts for this run only.
 
-**Caution:** Arbitrary floating windows created by dragging docking tabs out, named layouts, and complete layout persistence are not supported. Restoring previous sessions is not restoring the full workspace. Dual-remote file tabs are not restored either.
+**Caution:** Arbitrary floating windows created by dragging docking tabs out are not supported. To keep splits and pinned tabs for next time, use the layout templates in 8.4, or turn on **Restore split layout** under **Restore sessions** in **Settings → General** (off by default). With only **Restore sessions** on, the connections that were online at exit are reconnected one by one into a single pane: splits are not rebuilt and dual-remote file tabs are not included.
 
 ### 8.2 Synchronized Input Across Terminals
 
@@ -340,6 +341,16 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 **Steps:** Create a name and command body, optionally grouped. Use `{{name}}` or `{{name=default}}`, for example `cd {{directory=/tmp}}`. Supply prompted values, check the expanded result, and send. For single-line commands, decide separately whether to press Enter.
 
 **Result and how it works:** The host substitutes strings and sends the body to the current terminal. It is not a remote script-management service and does not validate shell escaping, permissions, or paths. Multiline sends prefer bracketed paste; otherwise follow confirmation behavior. There is no automatic-execution switch for quick commands.
+
+### 8.4 Layout Templates
+
+**Entry point:** The title-bar **Layout templates** icon (its menu lists every template, followed by **Save current layout as template…** and **Manage layout templates…**); the two commands of the same names in the Command Palette, plus one palette entry per template (Enter opens it).
+
+**Steps:** Open the machines you work with together, drag them into the split you want, pin tabs as needed → **Save current layout as template…** → name it (a name that already exists asks whether to replace that template). Later, pick it from the menu or the palette to reopen everything as saved: pane orientation and proportions, tab order and the selected tab in each pane, pinned state, and tab-strip position. The **Manage layout templates…** window opens, overwrites with the current layout, renames, and deletes templates.
+
+**Result and how it works:** A template records which **saved connection** each tab points to (by profile Id) and how it was opened (terminal, standalone SFTP/FTP/plugin file tab, dual-remote file tab, plugin workspace); local terminals are recorded by shell type. It contains no passwords, and opening runs the normal connection flow (missing credentials still prompt). If the workspace already has tabs, the template opens as a column to the right of the existing layout and your tabs stay put; more than 10 tabs asks first. Templates live in the local database and are not part of settings export or Gist sync.
+
+**Caution:** Plugin panels (such as AI chat) and one-off connections from Quick Connect or external launch cannot be reopened, so saving skips them and says so. When opening, tabs whose connection profile has been deleted, or whose shell is not on this computer, are skipped and listed while the rest open; a pane whose credential prompt you cancel closes itself.
 
 <a id="files"></a>
 ## 9. SFTP/FTP Transfers, Editing, and Directory Bookmarks
@@ -566,7 +577,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 | Section | Controls | Mechanism, result, and caution |
 | --- | --- | --- |
-| Startup & Window | Start at login, restore sessions, minimize to tray on close, startup update check | Autostart currently supports the current Windows user only; session restore is not complete layout restore; tray presence is not exit |
+| Startup & Window | Start at login, restore sessions, restore split layout, minimize to tray on close, startup update check | Autostart currently supports the current Windows user only; restore sessions alone reconnects one by one into a single pane, and only **Restore split layout** (off by default, available while restore sessions is on) also rebuilds splits, tab order, and pinned tabs, covering the connections online at exit plus local terminals; tray presence is not exit |
 | Message Center | Update notices, HTTPS feed URL, interval 1–168 hours, announcements | Startup update messages require both checking and notifications; clear the feed URL to stop that source |
 | Language & Region | System language or Simplified Chinese/English/Traditional Chinese/Japanese/Korean | Does not change remote system language or terminal byte encoding |
 | Connection Defaults | Port, timeout, keepalive | Defaults for new connections; supported per-profile overrides apply; proxy has a separate page |
@@ -1078,7 +1089,7 @@ These are factory defaults; customized bindings in Settings take precedence. Glo
 This manual intentionally does not promise:
 
 - Local shells across all platforms: only Windows ConPTY is currently integrated; Linux/macOS lack local-terminal actions.
-- Full persistent/named layouts, arbitrary floating docking windows, or restart restoration of dual-remote tabs. Pinning currently lasts for this run.
+- Arbitrary floating docking windows; layout persistence beyond layout templates and **Restore split layout** (without a template or that option, splits and pinned tabs last for this run only); syncing or exporting layout templates across devices.
 - Master-password protection of the whole database; encrypted application-settings export; profiles embedded in that export; proxy passwords in it. Current settings export is unencrypted JSON with the proxy password removed.
 - Linux in-app update installation, selectable update channels, or automatic background downloads described by older material. Linux installs manually; Store is Store-managed.
 - Per-profile proxies; dual-remote synchronization/keep-up-to-date; automatic remote→local watching; persistent transfer queues or automatic failure-retry counts.

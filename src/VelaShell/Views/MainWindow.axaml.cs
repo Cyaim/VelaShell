@@ -14,6 +14,7 @@ using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Diagnostics;
 using VelaShell.Core.Import;
+using VelaShell.Core.Layouts;
 using VelaShell.Core.Models;
 using VelaShell.Core.Processes;
 using VelaShell.Core.Resources;
@@ -479,6 +480,11 @@ public partial class MainWindow : Window
 
             vm.ResourceMonitorRequested += (sessionId, label) =>
                 Dispatcher.UIThread.Post(() => _ = OpenResourceMonitorAsync(sessionId, label));
+            // 布局模板:标题栏下拉与命令面板发起的存 / 改名 / 删除以本窗口为属主弹框;
+            // 管理窗口开着时它传自己的那份(见 LayoutTemplatesWindow)。
+            vm.LayoutTemplates.Dialogs = new LayoutTemplateDialogs(this);
+            vm.LayoutTemplates.ManagerRequested += () =>
+                Dispatcher.UIThread.Post(() => ShowLayoutTemplatesWindow(vm.LayoutTemplates));
             // 标题栏"链路追踪":每个目标最多一扇窗,非模态。
             vm.TraceRouteRequested += (host, label) =>
                 Dispatcher.UIThread.Post(() => _ = OpenTraceRouteAsync(vm, host, label));
@@ -588,10 +594,18 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task RestoreSessionsAsync(AppSettings? settings)
     {
+        if (settings?.General.RestoreSessionsOnStartup != true || DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+        // 「按上次的分屏恢复」(默认关):有退出时记下的布局就按它重连并排好;没有(刚打开这个开关、
+        // 上次退出时什么都没连着、布局读不出来)才退回下面的逐条重连。
+        if (settings.General.RestoreLayoutOnStartup && await vm.LayoutTemplates.RestoreSessionLayoutAsync())
+        {
+            return;
+        }
         if (
-            settings?.General.RestoreSessionsOnStartup != true
-            || settings.General.LastOpenProfileIds.Count == 0
-            || DataContext is not MainWindowViewModel vm
+            settings.General.LastOpenProfileIds.Count == 0
             || Application.Current is not App { Services: { } services }
             || services.GetService<ISessionRepository>() is not { } repository
         )
@@ -1097,6 +1111,20 @@ public partial class MainWindow : Window
                         )
                         .Distinct(),
                 ];
+                // 按上次的分屏恢复:另记一份布局(只记在线的标签,口径同上);开关关着时清掉旧的,
+                // 免得哪天重新打开它、又赶上没正常退出,启动时还原出一份很久以前的布局。
+                // 单独兜住:布局没记上不该连累上面那份连接清单与窗口位置也存不进去。
+                try
+                {
+                    LayoutTemplate? layout = settings.General.RestoreLayoutOnStartup
+                                                 ? vm.LayoutTemplates.CaptureSessionLayout()
+                                                 : null;
+                    vm.LayoutTemplates.SaveSessionLayoutAsync(layout).GetAwaiter().GetResult();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    System.Diagnostics.Trace.WriteLine($"[VelaShell] Saving the session layout failed: {ex.Message}");
+                }
             }
             _settingsService.SaveSettingsAsync(settings).GetAwaiter().GetResult();
         }
@@ -1354,6 +1382,23 @@ public partial class MainWindow : Window
             window.Closing += (_, _) => _ = layoutStore.SaveAsync(ResourceMonitorLayoutKey, window);
         }
         window.Show(this);
+    }
+
+    /// <summary>
+    /// 打开(或前置)「管理布局模板」窗口。非模态:用户要一边看着它,一边在主窗口里把分屏排成想存的样子。
+    /// </summary>
+    private void ShowLayoutTemplatesWindow(LayoutTemplatesViewModel templates)
+    {
+        if (OwnedWindows.OfType<LayoutTemplatesWindow>().FirstOrDefault() is { } open)
+        {
+            if (open.WindowState == WindowState.Minimized)
+            {
+                open.WindowState = WindowState.Normal;
+            }
+            open.Activate();
+            return;
+        }
+        new LayoutTemplatesWindow { DataContext = templates }.Show(this);
     }
 
     /// <summary>打开(或前置)某个目标的链路追踪窗口。非模态,尺寸与任务管理器一样记忆。</summary>

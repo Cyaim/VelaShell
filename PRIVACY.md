@@ -44,6 +44,7 @@ computer unless you explicitly enable the optional sync feature described below.
 | The encryption key protecting the above | Same folder, generated on your device |
 | Known SSH host keys | Same folder |
 | Saved commands and snippets | Same folder |
+| Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; not included in sync) | Same folder |
 | Session logs — raw terminal output, **off by default** | `logs` subfolder, auto-deleted after a retention period you set |
 | Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, duration, reason) | `logs` subfolder, auto-deleted after 7 days |
 | Offline IP geolocation database, if you add one | `geoip` subfolder |
@@ -208,6 +209,7 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 保护上述内容的加密密钥 | 同上,在你的设备上生成 |
 | 已知的 SSH 主机密钥 | 同上 |
 | 快捷命令与代码片段 | 同上 |
+| 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码,不参与同步) | 同上 |
 | 会话日志 —— 终端原始输出,**默认关闭** | `logs` 子目录,按你设定的保留天数自动清理 |
 | 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、时长、原因) | `logs` 子目录,7 天后自动清理 |
 | 离线 IP 归属地数据库(如果你添加了) | `geoip` 子目录 |

@@ -40,6 +40,7 @@ using VelaShell.Presentation.Commands;
 using VelaShell.Presentation.Services;
 using VelaShell.Presentation.ViewModels;
 using VelaShell.Services;
+using VelaShell.Services.Layouts;
 using VelaShell.Terminal;
 using VelaShell.Terminal.Emulation;
 using VelaShell.Terminal.Rendering;
@@ -359,6 +360,27 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         Layout.CloseInterceptor = ConfirmCloseDocumentsAsync;
         // 标签右键菜单里切了「多行显示标签页」:写回设置,设置页与下次启动都认这一个值。
         Layout.PropertyChanged += OnLayoutPropertyChanged;
+        // 命名布局模板(以及「恢复会话」按上次的分屏还原):开标签一律走下面这几条既有的连接路径,
+        // 缺凭据弹框、认证重试、证书确认都在它们里面,模板这边一处不重写。
+        LayoutTemplates = new(
+            new LayoutTemplateStore(appDataStore),
+            Layout,
+            new LayoutDocumentOpener(
+                FindProfileForLayoutAsync,
+                shellId => LocalShellCatalog.DetectShells().FirstOrDefault(shell => shell.Id == shellId),
+                new LayoutOpenActions(
+                    profile => TryConnectProfileAsync(profile),
+                    profile => OpenSftpDocumentForProfileAsync(profile),
+                    profile => OpenFtpDocumentForProfileAsync(profile),
+                    profile => OpenPluginDocumentForProfileAsync(profile),
+                    profile => OpenWorkspaceDocumentForProfileAsync(profile),
+                    (left, right) => OpenDualSftpDocumentAsync(left, right),
+                    OpenLocalTerminalAsync)),
+            document => LayoutDocumentDescriber.Describe(
+                document,
+                profile => _protocolRegistry?.KindOf(profile.PluginProtocolId) == PluginConnectionKind.Workspace),
+            async profileId => await FindProfileForLayoutAsync(profileId).ConfigureAwait(true) is not null,
+            Toasts);
 
         // 网络恢复 / 睡眠唤醒:立刻把断开的会话拉起来,而不是干等下一个退避周期。
         if (connectivityMonitor is { } connectivity)
@@ -847,6 +869,13 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <summary>VelaDock 工作区:承载终端文档(标签可拖拽重排、拆分分屏)。</summary>
     public DockWorkspace Layout { get; }
 
+    /// <summary>命名布局模板:把当前分屏存成模板、打开模板,以及「恢复会话」按上次的分屏还原。</summary>
+    public LayoutTemplatesViewModel LayoutTemplates { get; }
+
+    /// <summary>还原布局时按 Id 从库里取配置(取最新的那份,不用模板保存时的旧副本);没有仓储(无界面单测)时一律取不到。</summary>
+    private Task<SessionProfile?> FindProfileForLayoutAsync(Guid profileId) =>
+        _sessionRepository?.GetSessionAsync(profileId) ?? Task.FromResult<SessionProfile?>(null);
+
     /// <summary>当前会话的 SFTP 文件浏览面板(按会话缓存,随活动标签切换重绑)。</summary>
     public FileBrowserViewModel FileBrowser
     {
@@ -1296,6 +1325,27 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 Layout.EqualizePanes,
                 () => Layout.HasMultipleGroups,
                 Icon: "Icon.layout-grid"
+            )
+        );
+        // 布局模板:把当前分屏存成模板 / 打开管理窗口。每个模板本身另作一条可直接打开的条目
+        // 出现在命令面板里(见 BuildPaletteItems)。
+        Commands.Register(
+            new(
+                "layout.save",
+                Strings.Get("LayoutTemplate_SaveCurrent"),
+                Strings.Get("CmdCat_Actions"),
+                () => _ = LayoutTemplates.SaveCurrentAsync(),
+                () => Layout.AllDocuments().Any(),
+                Icon: "Icon.layout-template"
+            )
+        );
+        Commands.Register(
+            new(
+                "layout.manage",
+                Strings.Get("LayoutTemplate_Manage"),
+                Strings.Get("CmdCat_Actions"),
+                LayoutTemplates.OpenManager,
+                Icon: "Icon.layout-template"
             )
         );
         // 本地终端(§12 P1-1):按本机安装情况动态注册 PowerShell/CMD/WSL/Git Bash 入口。
@@ -1940,6 +1990,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
         await Sidebar.RecentConnections.RefreshAsync();
         await RefreshSessionTreeAsync();
+        await LayoutTemplates.LoadAsync();
         RevealActiveSessionInSidebar();
         // 隧道的启停状态不落盘:重启后一律是已停止,只有勾了「程序启动时自动建立」的在这里替用户建好。
         // 不等它 —— 拨号可能要好几秒、还可能弹凭据提示,不该拖住启动。
@@ -2504,6 +2555,21 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     groupName,
                     true,
                     $"session:{captured.Id}"
+                )
+            );
+        }
+
+        // 布局模板:Enter 直接按模板开出这一组连接、排好分屏。
+        foreach (LayoutTemplateItemViewModel template in LayoutTemplates.Templates)
+        {
+            LayoutTemplateItemViewModel captured = template;
+            items.Add(
+                new(
+                    Strings.Get("LayoutTemplate_Title"),
+                    captured.Name,
+                    () => _ = LayoutTemplates.OpenAsync(captured),
+                    Strings.Get("LayoutTemplate_EnterToOpen"),
+                    id: $"layout:{captured.Template.Id}"
                 )
             );
         }
@@ -4013,6 +4079,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         /// <param name="reuse">重试时接手的既有占位标签;首次连接传 <see langword="null" />。</param>
         /// <param name="retry">失败卡片上「重新连接」要跑的流程。</param>
         /// <param name="displayName">占位标签上的名称;不给则取配置的显示名(见 <see cref="ConnectingDocument" />)。</param>
+        /// <param name="secondary">双栏远程文档的右栏配置(见 <see cref="ConnectingDocument.SecondaryProfile" />)。</param>
         public DocumentConnectUi(
             MainWindowViewModel owner,
             SessionProfile profile,
@@ -4020,13 +4087,14 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             ConnectingDocument? reuse,
             Func<ConnectingDocument, Task> retry,
             CancellationToken outer,
-            string? displayName = null)
+            string? displayName = null,
+            SessionProfile? secondary = null)
         {
             _owner = owner;
             _cancellation = CancellationTokenSource.CreateLinkedTokenSource(outer);
             if (reuse is null)
             {
-                Document = new(profile, typeLabel, displayName);
+                Document = new(profile, typeLabel, displayName) { SecondaryProfile = secondary };
                 _owner.Layout.AddDocument(Document);
             }
             else
@@ -4521,7 +4589,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             this, left, "SFTP", reuse,
             document => OpenDualSftpDocumentAsync(latestLeft, latestRight, document, CancellationToken.None),
             cancellationToken,
-            $"{ProfileDisplayName(left)} ⇄ {ProfileDisplayName(right)}");
+            $"{ProfileDisplayName(left)} ⇄ {ProfileDisplayName(right)}",
+            right);
         var connections = new List<DocumentSessionConnection>(2);
         try
         {

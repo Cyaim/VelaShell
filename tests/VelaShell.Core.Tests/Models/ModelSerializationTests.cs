@@ -252,6 +252,22 @@ public class ModelSerializationTests
     }
 
     [TestMethod]
+    public void GeneralOptions_RestoreLayoutOnStartup_DefaultsOffAndRoundTrips()
+    {
+        // 默认关:按上次的分屏恢复会在启动时外连,而且会连出比逐条重连更多的东西(本地终端、双栏)。
+        Assert.IsFalse(new GeneralOptions().RestoreLayoutOnStartup);
+
+        var settings = new AppSettings { General = { RestoreLayoutOnStartup = true } };
+        string json = JsonSerializer.Serialize(settings, _options);
+        Assert.Contains("\"restoreLayoutOnStartup\": true", json);
+        AppSettings back = JsonSerializer.Deserialize<AppSettings>(json, _options)!;
+
+        Assert.IsTrue(back.General.RestoreLayoutOnStartup);
+        Assert.IsFalse(JsonSerializer.Deserialize<AppSettings>("{}", _options)!.General.RestoreLayoutOnStartup,
+            "旧版本写出的设置没有这个字段:读进来是关着的");
+    }
+
+    [TestMethod]
     public void AppearanceOptions_BackgroundImage_DefaultsAndRoundTrip()
     {
         // 默认:无背景图,行为与旧版一致(路径空、图片不透明度 100、内容背景不透明度 85 但仅在设图后生效)。

@@ -46,6 +46,15 @@ public sealed class ConnectingDocument : DockDocument, IDockViewProvider
     public SessionProfile Profile { get; }
 
     /// <summary>
+    /// 「远程 + 远程」双栏一次连两台:右栏那条配置(<see cref="Profile" /> 是左栏);其余连接为 null。
+    /// </summary>
+    /// <remarks>
+    /// 只给布局模板用:用户在「连接中」或失败卡片还挂着的时候存模板,这个标签也该按它将来的样子
+    /// (一个双栏文件标签)记下来,而不是只剩左栏那一台。
+    /// </remarks>
+    public SessionProfile? SecondaryProfile { get; init; }
+
+    /// <summary>
     /// 连接类型的展示名(SFTP / FTP / S3 / Redis…)。
     /// </summary>
     /// <remarks>

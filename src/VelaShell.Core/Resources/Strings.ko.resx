@@ -535,6 +535,105 @@
   <data name="Disconnected" xml:space="preserve">
     <value>연결 끊김</value>
   </data>
+  <data name="LayoutTemplate_Title" xml:space="preserve">
+    <value>레이아웃 템플릿</value>
+  </data>
+  <data name="LayoutTemplate_SaveCurrent" xml:space="preserve">
+    <value>현재 레이아웃을 템플릿으로 저장…</value>
+  </data>
+  <data name="LayoutTemplate_Manage" xml:space="preserve">
+    <value>레이아웃 템플릿 관리…</value>
+  </data>
+  <data name="LayoutTemplate_None" xml:space="preserve">
+    <value>아직 레이아웃 템플릿이 없습니다</value>
+  </data>
+  <data name="LayoutTemplate_ManageHint" xml:space="preserve">
+    <value>탭과 분할 창을 배치한 뒤 템플릿으로 저장하면 같은 연결들을 같은 배치로 한 번에 다시 열 수 있습니다. 템플릿은 저장된 연결만 참조하며 비밀번호는 포함하지 않습니다.</value>
+  </data>
+  <data name="LayoutTemplate_EnterToOpen" xml:space="preserve">
+    <value>Enter로 열기</value>
+  </data>
+  <data name="LayoutTemplate_Summary" xml:space="preserve">
+    <value>탭 {0}개 · 창 {1}개</value>
+  </data>
+  <data name="LayoutTemplate_Open" xml:space="preserve">
+    <value>이 레이아웃 열기</value>
+  </data>
+  <data name="LayoutTemplate_SaveTitle" xml:space="preserve">
+    <value>레이아웃 템플릿 저장</value>
+  </data>
+  <data name="LayoutTemplate_NamePrompt" xml:space="preserve">
+    <value>템플릿 이름:</value>
+  </data>
+  <data name="LayoutTemplate_DefaultName" xml:space="preserve">
+    <value>레이아웃 {0}</value>
+  </data>
+  <data name="LayoutTemplate_ReplaceTitle" xml:space="preserve">
+    <value>레이아웃 템플릿 바꾸기</value>
+  </data>
+  <data name="LayoutTemplate_ReplaceMessage" xml:space="preserve">
+    <value>"{0}" 레이아웃 템플릿이 이미 있습니다. 현재 레이아웃으로 바꿀까요?</value>
+  </data>
+  <data name="LayoutTemplate_Replace" xml:space="preserve">
+    <value>바꾸기</value>
+  </data>
+  <data name="LayoutTemplate_NameTaken" xml:space="preserve">
+    <value>"{0}" 레이아웃 템플릿이 이미 있습니다. 다른 이름을 사용하세요.</value>
+  </data>
+  <data name="LayoutTemplate_Saved" xml:space="preserve">
+    <value>레이아웃 템플릿 "{0}"을(를) 저장했습니다: 탭 {1}개, 창 {2}개.</value>
+  </data>
+  <data name="LayoutTemplate_SavedPartially" xml:space="preserve">
+    <value>레이아웃 템플릿 "{0}"을(를) 저장했습니다. 다시 열 수 없는 탭 {1}개는 포함되지 않았습니다(플러그인 패널, 저장되지 않은 임시 연결): {2}</value>
+  </data>
+  <data name="LayoutTemplate_NothingToSave" xml:space="preserve">
+    <value>현재 레이아웃에는 템플릿에 저장할 수 있는 탭이 없습니다. 저장된 연결과 로컬 터미널만 다시 열 수 있습니다.</value>
+  </data>
+  <data name="LayoutTemplate_SaveFailed" xml:space="preserve">
+    <value>레이아웃 템플릿을 저장하지 못했습니다: {0}</value>
+  </data>
+  <data name="LayoutTemplate_DeleteFailed" xml:space="preserve">
+    <value>레이아웃 템플릿을 삭제하지 못했습니다: {0}</value>
+  </data>
+  <data name="LayoutTemplate_Overwrite" xml:space="preserve">
+    <value>현재 레이아웃으로 덮어쓰기</value>
+  </data>
+  <data name="LayoutTemplate_OverwriteTitle" xml:space="preserve">
+    <value>레이아웃 템플릿 덮어쓰기</value>
+  </data>
+  <data name="LayoutTemplate_OverwriteMessage" xml:space="preserve">
+    <value>현재 분할 창과 탭으로 "{0}"을(를) 덮어쓸까요? 저장된 배치는 바뀝니다.</value>
+  </data>
+  <data name="LayoutTemplate_RenameTitle" xml:space="preserve">
+    <value>레이아웃 템플릿 이름 바꾸기</value>
+  </data>
+  <data name="LayoutTemplate_DeleteTitle" xml:space="preserve">
+    <value>레이아웃 템플릿 삭제</value>
+  </data>
+  <data name="LayoutTemplate_DeleteMessage" xml:space="preserve">
+    <value>레이아웃 템플릿 "{0}"을(를) 삭제할까요? 템플릿만 삭제되며 참조하는 연결에는 영향이 없습니다.</value>
+  </data>
+  <data name="LayoutTemplate_OpenSkipped" xml:space="preserve">
+    <value>레이아웃 템플릿 "{0}"의 탭 {1}개는 열 수 없어 건너뛰었습니다: {2}</value>
+  </data>
+  <data name="LayoutTemplate_NothingToOpen" xml:space="preserve">
+    <value>레이아웃 템플릿 "{0}"의 탭을 하나도 열 수 없습니다(연결이 삭제되었거나 이 컴퓨터에 해당 셸이 없음).</value>
+  </data>
+  <data name="LayoutTemplate_MissingProfile" xml:space="preserve">
+    <value>{0}(연결 삭제됨)</value>
+  </data>
+  <data name="LayoutTemplate_MissingShell" xml:space="preserve">
+    <value>{0}(이 컴퓨터에 없는 셸)</value>
+  </data>
+  <data name="LayoutTemplate_MissingUnsupported" xml:space="preserve">
+    <value>{0}(이 버전에서 지원하지 않음)</value>
+  </data>
+  <data name="LayoutTemplate_ListSeparator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="LayoutTemplate_Untitled" xml:space="preserve">
+    <value>제목 없는 탭</value>
+  </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>모든 탭</value>
   </data>
@@ -2531,6 +2630,12 @@
   </data>
   <data name="SetGeneral_RestoreSessionsDesc" xml:space="preserve">
     <value>// 시작 시 이전 세션에 자동 재연결</value>
+  </data>
+  <data name="SetGeneral_RestoreLayout" xml:space="preserve">
+    <value>이전 분할 레이아웃으로 복원</value>
+  </data>
+  <data name="SetGeneral_RestoreLayoutDesc" xml:space="preserve">
+    <value>// 세션 복원 시 분할 창, 탭 순서, 고정 상태도 함께 복원</value>
   </data>
   <data name="SetGeneral_SessionLogging" xml:space="preserve">
     <value>세션 로그</value>

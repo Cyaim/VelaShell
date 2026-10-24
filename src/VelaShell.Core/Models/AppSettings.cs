@@ -269,6 +269,21 @@ public class GeneralOptions : ObservableOptions
         set => Set(ref field, value);
     } = true;
 
+    /// <summary>
+    /// 「恢复会话」时是否连同上次的分屏一起还原:窗格的方向与比例、各窗格里的标签顺序、选中的标签、固定状态。
+    /// 只在 <see cref="RestoreSessionsOnStartup" /> 开着时起作用。
+    /// </summary>
+    /// <remarks>
+    /// 默认关:关着时恢复会话照旧是把上次在线的连接逐条重连进一个窗格(<see cref="LastOpenProfileIds" />)。
+    /// 开着时退出时另记一份布局(SonnetDB 的 <c>layout_session</c> 集合,不进设置、不随同步与导出走),
+    /// 启动时按它重连并排好;还原的范围与逐条重连同一口径 —— 退出时在线的连接,外加本地终端。
+    /// </remarks>
+    public bool RestoreLayoutOnStartup
+    {
+        get;
+        set => Set(ref field, value);
+    }
+
     /// <summary>启动时是否检查应用更新。</summary>
     public bool CheckUpdatesOnStartup
     {

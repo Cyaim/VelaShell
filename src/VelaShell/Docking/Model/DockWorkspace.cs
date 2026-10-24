@@ -113,6 +113,32 @@ public sealed class DockWorkspace : DockElement
     /// </remarks>
     public event Action<DockDocument>? DocumentAdded;
 
+    /// <summary>
+    /// <see cref="ReplaceDocument" /> 换下旧文档、换上新文档之后触发(参数依次为旧、新)。
+    /// </summary>
+    /// <remarks>
+    /// 「连接中」占位换成真文档在 <see cref="DocumentRemoved" /> / <see cref="DocumentAdded" /> 里看
+    /// 是两件不相干的事;需要跟住「这是同一个标签」的一方(还原布局模板时按模板顺序给后到的标签找位置)
+    /// 靠这一条把旧文档上的记账转给新文档。
+    /// </remarks>
+    public event Action<DockDocument, DockDocument>? DocumentReplaced;
+
+    /// <summary>
+    /// 新文档落点的外部裁决:返回 null 时按默认规则(见 <see cref="TargetGroupForNewDocument" />)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 为还原布局模板而设:模板里每个标签要落回它自己的那个窗格、那个位置,而打开它的是宿主
+    /// 既有的连接流程(先弹凭据框、握手、证书确认……),那些流程自己调 <see cref="AddDocument" />,
+    /// 不该为了「放到哪」各加一个参数。裁决方在这里认出「这是我在等的那个标签」并给出落点。
+    /// </para>
+    /// <para>
+    /// 只管<b>新进来</b>的文档;组间移动、原位替换都不经过它。裁决给出的组已经不在树上
+    /// (用户在还原途中把那个窗格关了)时退回默认规则。
+    /// </para>
+    /// </remarks>
+    public Func<DockDocument, DockPlacement?>? PlacementResolver { get; set; }
+
     // ---- 查询 ----
 
     /// <summary>深度遍历布局树,返回其中全部标签组。</summary>
@@ -206,11 +232,49 @@ public sealed class DockWorkspace : DockElement
     /// <summary>把文档放进最合适的窗格并激活(落点规则见 <see cref="TargetGroupForNewDocument" />)。</summary>
     public void AddDocument(DockDocument document)
     {
+        ArgumentNullException.ThrowIfNull(document);
+        if (PlacementResolver?.Invoke(document) is { } placement && IsOnTree(placement.Group))
+        {
+            AddPlaced(document, placement);
+            return;
+        }
         TargetGroupForNewDocument().Documents.Add(document);
         // 先报"来了"再激活:订阅方(宿主的每标签接线)要在活动标签切过去之前就位,
         // 否则激活回调里读到的还是一个没接好线的标签。
         DocumentAdded?.Invoke(document);
         ActivateDocument(document);
+    }
+
+    /// <summary>按外部裁决放下新文档(见 <see cref="PlacementResolver" />)。</summary>
+    /// <remarks>
+    /// <para>
+    /// 固定状态在插入<b>之前</b>定下:插入位要按它收进固定区或普通区(<see cref="ClampInsertIndex" />),
+    /// 先插再 <see cref="SetPinned" /> 会把标签挪到交界处,模板里排好的顺序就乱了。
+    /// </para>
+    /// <para>
+    /// 不要求激活的文档不抢焦点 —— 还原一套模板时标签陆续连上,每来一个就把焦点拽过去,
+    /// 用户在等的这几秒里什么也干不了。但工作区还没有活动文档时总要有一个,
+    /// 而组里正选中的就是全局活动文档时,改选中等于改活动(否则活动文档会是一个看不见的标签)。
+    /// </para>
+    /// </remarks>
+    private void AddPlaced(DockDocument document, DockPlacement placement)
+    {
+        DockGroup group = placement.Group;
+        document.IsPinned = placement.Pinned;
+        int index = ClampInsertIndex(group, document, Math.Clamp(placement.Index, 0, group.Documents.Count));
+        group.Documents.Insert(index, document);
+        DocumentAdded?.Invoke(document);
+        bool selectsActive = placement.SelectInGroup
+                             && ActiveDocument is not null
+                             && ReferenceEquals(group.ActiveDocument, ActiveDocument);
+        if (placement.Activate || ActiveDocument is null || selectsActive)
+        {
+            ActivateDocument(document);
+        }
+        else if (placement.SelectInGroup || group.ActiveDocument is null)
+        {
+            group.ActiveDocument = document;
+        }
     }
 
     /// <summary>新文档的落点:空窗格 &gt; 正在用的窗格 &gt; 主组。</summary>
@@ -279,7 +343,8 @@ public sealed class DockWorkspace : DockElement
         }
         DocumentRemoved?.Invoke(oldDocument);
         DocumentAdded?.Invoke(newDocument);
-        // 激活放在两条事件之后:订阅方(宿主的每标签接线)要在活动标签切过去之前就位。
+        DocumentReplaced?.Invoke(oldDocument, newDocument);
+        // 激活放在事件之后:订阅方(宿主的每标签接线)要在活动标签切过去之前就位。
         if (wasWorkspaceActive)
         {
             ActivateDocument(newDocument);
@@ -598,6 +663,57 @@ public sealed class DockWorkspace : DockElement
         DockGroup anchor = IsOnTree(target) ? target : PrimaryGroup;
         InsertNeighbor(anchor, newGroup, orientation, after);
         ActivateDocument(document);
+    }
+
+    /// <summary>
+    /// 把一棵新建的布局子树放进工作区(打开布局模板):工作区里还没有任何文档时它就是整个布局,
+    /// 否则作为新的一栏排在现有布局的右侧。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 子树里的组通常是空的 —— 标签随后由各自的连接流程陆续放进来(见 <see cref="PlacementResolver" />)。
+    /// 空组在这里不会被折叠:折叠只在「最后一个标签离开」时发生,一个还没等到标签的组不算。
+    /// 等不来标签的组由调用方用 <see cref="ClosePane" /> 收掉。
+    /// </para>
+    /// <para>
+    /// 有文档时不去动现有的布局:那些都是正连着的会话,模板没有资格替用户关掉它们;
+    /// 也不往某个现有窗格里塞,否则模板的分屏会跟用户自己的分屏搅在一起,哪块是哪块分不清。
+    /// 整块排在右侧,用户关掉旧标签之后模板那一栏自然铺满。
+    /// </para>
+    /// </remarks>
+    /// <param name="tree">调用方新建的子树(分栏与标签组);不能已经挂在别处,至少含一个标签组。</param>
+    /// <returns>子树里的全部标签组,按树上的顺序。</returns>
+    /// <exception cref="ArgumentException">子树已经挂在别处,或者里面没有标签组。</exception>
+    public IReadOnlyList<DockGroup> InsertLayout(DockNode tree)
+    {
+        ArgumentNullException.ThrowIfNull(tree);
+        if (tree.Parent is not null || IsOnTree(tree))
+        {
+            throw new ArgumentException("The layout must be a detached tree.", nameof(tree));
+        }
+        DockGroup[] groups = [.. EnumerateGroups(tree)];
+        if (groups.Length == 0)
+        {
+            throw new ArgumentException("The layout must contain at least one pane.", nameof(tree));
+        }
+        MaximizedGroup = null;
+        tree.Proportion = double.NaN;
+        if (!AllDocuments().Any())
+        {
+            // 空工作区:原来的(空)主组退场,兜底身份交给模板里的第一个组 —— 它就在用户眼前左上角。
+            PrimaryGroup.IsPrimary = false;
+            groups[0].IsPrimary = true;
+            PrimaryGroup = groups[0];
+            Root = tree;
+            return groups;
+        }
+        DockNode existing = Root;
+        var split = new DockSplit(DockOrientation.Horizontal);
+        existing.Proportion = double.NaN;
+        split.Children.Add(existing);
+        split.Children.Add(tree);
+        Root = split;
+        return groups;
     }
 
     /// <summary>组内拖拽重排;固定标签只在固定区里挪,普通标签只在固定区之后挪。</summary>
