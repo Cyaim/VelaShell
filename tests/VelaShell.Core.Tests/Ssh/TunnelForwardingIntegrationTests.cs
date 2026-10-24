@@ -74,14 +74,17 @@ public class TunnelForwardingIntegrationTests
         Stopwatch elapsed = Stopwatch.StartNew();
         Task<long> drain = DrainAsync(accepted.GetStream());
 
-        await Task.Delay(TimeSpan.FromSeconds(1.5), TestContext.CancellationToken);
-        service.RefreshStatistics();
-        TunnelConnectionInfo connection = tunnel.Connections.Single();
-        Assert.AreEqual($"127.0.0.1:{sinkPort}", connection.Target);
-        Assert.IsGreaterThan(0L, connection.BytesReceived, "搬运途中的连接快照里应当已有收回的字节。");
-        Assert.IsLessThan((long)payload, connection.BytesReceived, "限着速,一秒半之内不该已经收完。");
-        Assert.IsGreaterThan(0d, tunnel.ReceivedBytesPerSecond);
-        Assert.AreEqual(1, tunnel.ActiveConnections);
+        // 搬运途中:连接快照里有这一条,目标是本机的 sink。
+        // 不在固定时刻断言字节数:库的限速按一次读到的整块等(读到 200 KB 就先等三秒再整块写出、整块计数),
+        // 机器忙时数据会攒成大块到达,中途的读数是跳着走的 —— 平均速率才是限速的口径。
+        // 本机 sink 先被连上、回连的通道随后才确认并开始搬运,所以等它进快照。
+        await WaitForAsync(() =>
+        {
+            service.RefreshStatistics();
+            // 计数与快照是两次读的,刚开始搬的那一刻可能一个已经算上、另一个还没有,所以两个一起等。
+            return tunnel.Connections.Count == 1 && tunnel.ActiveConnections == 1;
+        }, "搬运途中的连接应当出现在快照里、计进活跃数。");
+        Assert.AreEqual($"127.0.0.1:{sinkPort}", tunnel.Connections.Single().Target);
 
         long received = await drain;
         elapsed.Stop();
@@ -89,6 +92,13 @@ public class TunnelForwardingIntegrationTests
         Assert.AreEqual((long)payload, received);
         Assert.IsGreaterThanOrEqualTo(2.0, elapsed.Elapsed.TotalSeconds,
             $"64 KB/s 收 256 KB 至少要两秒多(一秒突发之后按速率补),实际 {elapsed.Elapsed.TotalSeconds:0.00} 秒 —— 限速没生效。");
+
+        // 收完了、本机这头还没关:这条连接仍在快照里,字节数与速率都已从库同步过来。
+        await WaitForAsync(() =>
+        {
+            service.RefreshStatistics();
+            return tunnel.Connections.SingleOrDefault()?.BytesReceived == payload && tunnel.ReceivedBytesPerSecond > 0;
+        }, "连接快照里的字节数与速率应当同步到 TunnelInfo。");
 
         // 本机这头也关掉,这条连接才算搬完、从快照里摘掉(半关闭:另一个方向还开着时它仍在搬)。
         accepted.Dispose();
