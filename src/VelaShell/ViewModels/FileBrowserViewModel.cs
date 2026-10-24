@@ -1628,12 +1628,8 @@ public class FileBrowserViewModel : ReactiveObject
         try
         {
             ErrorMessage = null;
-            string tempDir = Path.Combine(
-                Path.GetTempPath(),
-                "VelaShell",
-                "builtin-edit",
-                Guid.NewGuid().ToString("N")[..8]
-            );
+            // 编辑器关窗时删掉整个子目录;崩溃留下的由启动时的 BuiltInEditTempFiles.SweepStale 兜底。
+            string tempDir = BuiltInEditTempFiles.NewDirectory();
             if (!LocalPathSafety.TryResolveDestination(tempDir, file.Name, out string localPath))
             {
                 ErrorMessage = Strings.Get("KeySvc_InvalidName");

@@ -292,6 +292,9 @@ public class App : Application
             {
                 SessionLogService.CleanupExpired(logRetentionDays);
                 TransferLogService.CleanupExpired(transferLogDirectory, transferLogRetentionDays);
+                // 内置编辑器崩溃留下的临时副本(关窗才删,进程没了就没人删):7 天没碰过的清掉。
+                // remote-edit 里刻意保留的回传失败草稿不在这里清,理由见 BuiltInEditTempFiles。
+                BuiltInEditTempFiles.SweepStale(BuiltInEditTempFiles.TempBase, DateTime.UtcNow);
             });
 
             // 过期会话录制清理(随终端会话日志的保留天数)。
