@@ -315,9 +315,9 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 ### 8.1 Tabs and Splits
 
-**Entry point and steps:** Open multiple tabs and drag one to a docking edge to split at the indicated target. Alternatively, `Ctrl+Shift+D` splits horizontally and `Ctrl+Shift+S` vertically. `Alt+arrow` moves focus between panes; `Ctrl+Shift+X` maximizes/restores the current pane. Drag dividers to resize or double-click to equalize. Tab context menus offer tab-strip display/order options and pinning; middle-click closes unpinned tabs.
+**Entry point and steps:** Open multiple tabs and drag one to a docking edge to split at the indicated target. Alternatively, `Ctrl+Shift+D` splits horizontally and `Ctrl+Shift+S` vertically. `Alt+arrow` moves focus between panes; `Ctrl+Shift+X` maximizes/restores the current pane. Drag dividers to resize or double-click to equalize. Tab context menus offer tab-strip display/order options and pinning; middle-click closes unpinned tabs. The `+` at the end of each tab strip opens a new connection in that pane (same as `Ctrl+T`; the new tab lands in that pane).
 
-**Result and how it works:** Each pane has its own tab strip; numeric tab navigation counts within that strip. Pinning protects against some quick-close actions and currently lasts for this run only.
+**Result and how it works:** Each pane has its own tab strip; numeric tab navigation counts within that strip. When the tabs do not fit, scroll buttons and an "All Tabs" list appear at the end of the strip; a strip moved to the left / right side gets them too, at its foot. Pinning protects against some quick-close actions and currently lasts for this run only.
 
 **Caution:** Arbitrary floating windows created by dragging docking tabs out, named layouts, and complete layout persistence are not supported. Restoring previous sessions is not restoring the full workspace. Dual-remote file tabs are not restored either.
 
@@ -582,10 +582,10 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 - **Theme:** Named theme, whether accent follows theme, background image and image/content opacity.
 - **Rendering/fonts:** Hardware acceleration and UI font/size; terminal fonts are configured separately.
-- **Window:** Opacity, Explorer side, multiline tabs, initial window state, Windows splash screen. Restart when indicated.
+- **Window:** Opacity, Explorer side, tab bar position (top / bottom, all panes at once), multiline tabs, initial window state, Windows splash screen. Restart when indicated.
 - **Terminal colors/ANSI palette:** Select the terminal scheme and base/ANSI colors used for remote color sequences.
 
-**Mechanism and caution:** Appearance does not change remote file contents. Background images may disclose local pictures during screen sharing. Low contrast/excessive transparency impairs command readability. Historical top/bottom tab-position fields are hidden, not available controls.
+**Mechanism and caution:** Appearance does not change remote file contents. Background images may disclose local pictures during screen sharing. Low contrast/excessive transparency impairs command readability. Tab bar position applies to horizontal tab strips only: a pane whose tabs were moved to the left / right from the tab context menu stays there and lands on the chosen edge once moved back to horizontal.
 
 ### 15.3 Terminal
 
