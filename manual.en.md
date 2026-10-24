@@ -202,7 +202,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Entry point and steps:** Focus a connected terminal on the primary screen at the bottom of the buffer, not scrolled into history. Recognized `Password:`, sudo, Git, or Chinese password prompts can show a shared-password list beside the cursor line. If detection does not trigger, use the Command Palette action to fill a shared password. Only password-authentication shared credentials with a stored password are listed. Nothing is initially selected, so Enter still goes to the remote terminal. Click an item, or select with ↑↓ and press Enter, to retrieve, fill and **submit it with an automatic Enter** (the password and the Enter are sent together, so keys typed right after picking cannot end up in the password); Esc closes the list.
 
-**Result and how it works:** The selected secret goes directly to the bound terminal connection, not through the clipboard, synchronized-input channel, or completion. UI, connection, or input-state changes expire the request. Private-key passphrases and verification codes are outside automatic detection. Queuing input does not prove delivery; recheck after state changes instead of blindly sending it again.
+**Result and how it works:** The selected secret goes directly to the bound terminal connection, not through the clipboard, synchronized-input channel, or completion. UI, connection, or input-state changes expire the request and close the list, including input that does not come from the keyboard (bytes forwarded by a synchronized-input channel, the anti-idle NUL). Private-key passphrases and verification codes are outside automatic detection. Queuing input does not prove delivery; recheck after state changes instead of blindly sending it again.
 
 ### 5.3 Key Management
 
@@ -554,6 +554,8 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 **Result and how it works:** Stage-based diagnosis avoids blaming every error on passwords. It does not change firewalls or server settings, and it has no integrated route-tracing fifth step.
 
+**A session that is already connected:** Right-click its tab → **Connection info…** (or **SSH connection info** in the Command Palette) for a read-only window listing the peer's version and host-key fingerprint, the negotiated algorithms, the authentication method that succeeded and server-sig-algs, how long each connection stage took and the last measured round trip, traffic and rekeying, the open channels, and the proxy and every jump host passed through (each with its own version and algorithms). The data comes from the connection itself: opening and refreshing the window sends nothing extra to the server. The title-bar buttons refresh it and copy the whole thing as text to share. When the session is not connected the window says so.
+
 **Application problems:** Use **Settings → About → open logs / export diagnostics**. The export writes only diagnostic logs, version/platform information, and the plugin list to a local zip you choose; it does not upload. Settings, profiles, and credentials are excluded. Host/user names, paths, IPs, emails, and secret-like patterns are masked. Inspect the archive yourself before sharing and add reproduction steps without secrets.
 
 <a id="recordings"></a>
@@ -717,6 +719,10 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 **Steps and result:** Compression defaults off; enable post-authentication compression if needed. For an old device's negotiation failure, verify server requirements first. Only then consider legacy algorithms or text overrides for KEX/HostKey/Ciphers/MACs, including OpenSSH-style `+`/`-`/`^` adjustments.
 
 **Mechanism and caution:** Legacy compatibility adds a limited set such as group14-sha1, ssh-rsa, and hmac-sha1; it does not offer CBC. Weaker algorithm compatibility cannot repair fingerprints/passwords. Apply it only to affected profiles, not indiscriminately to all hosts.
+
+**One-click fix after a negotiation failure:** When the failure card shows **Allow these algorithms and reconnect**, the server offers algorithms this version implements but does not enable by default. Clicking it asks once more, then appends **only the algorithms the diagnosis named** (with `+`) to the custom algorithm list of the hop that failed (the jump host's own profile when it was a jump host) and reconnects. The legacy-algorithms switch is left alone.
+
+**Obscure keystroke timing (SSH only):** Input goes out on a fixed 20 ms beat and cover packets fill the empty beats while you type, closing the side channel where key gaps reveal what is typed. The cost is about 50 packets a second each way while typing and up to 20 ms extra delay per key; off by default. Cover packets need the PING extension (OpenSSH 9.5+); without it the terminal shows a yellow note that input is only batched.
 
 ### 16.4 Local Encryption and Audit Boundaries
 
