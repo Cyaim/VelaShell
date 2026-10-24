@@ -62,6 +62,47 @@ public class SettingsViewModelTests
         updates.DidNotReceive().ApplyUpdateAndRestart();
     }
 
+    /// <summary>认得出安装方式(这里是 deb):直接打开那个安装包的下载地址,状态行带着文件名与地址。</summary>
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "Linux update behavior requires Linux.")]
+    public async Task LinuxUpdate_KnownInstallOpensItsPackageDownload()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CheckForUpdateAsync().Returns(true);
+        updates.AvailableVersion.Returns("2.0.0");
+        updates.AvailableUpdate.Returns(UpdateManifest.Parse(JsonSerializer.Serialize(new
+        {
+            version = "2.0.0",
+            tag = "2.0.0",
+            assets = new Dictionary<string, object>
+            {
+                ["linux-x64"] = new { name = "VelaShell-2.0.0-linux-x64.tar.gz", sha256 = new string('a', 64), size = 1 },
+                ["linux-arm64"] = new { name = "VelaShell-2.0.0-linux-arm64.tar.gz", sha256 = new string('b', 64), size = 1 },
+            }
+        })));
+        Uri? opened = null;
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates)
+        {
+            LinuxInstallProbe = () => LinuxInstallKind.Deb,
+            UpdatePageOpener = uri =>
+            {
+                opened = uri;
+                return Task.FromResult(true);
+            }
+        };
+
+        await vm.CheckUpdatesCommand.Execute().FirstAsync();
+
+        string arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" : "amd64";
+        string expected = $"https://github.com/joesdu/VelaShell/releases/download/2.0.0/velashell_2.0.0_{arch}.deb";
+        Assert.AreEqual(expected, opened?.AbsoluteUri);
+        Assert.Contains(expected, vm.UpdateStatus);
+        Assert.Contains($"velashell_2.0.0_{arch}.deb", vm.UpdateStatus);
+        await updates.DidNotReceive().DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+    }
+
     [TestMethod]
     [TestCategory("Update")]
     [OSCondition(OperatingSystems.Linux, IgnoreMessage = "Linux update behavior requires Linux.")]

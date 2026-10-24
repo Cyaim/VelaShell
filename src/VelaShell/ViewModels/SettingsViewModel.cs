@@ -875,11 +875,14 @@ public partial class SettingsViewModel : ReactiveObject
     /// <summary>清除历史记录命令:清空连接历史。</summary>
     public ReactiveCommand<RxVoid, RxVoid> ClearHistoryCommand { get; }
 
-    /// <summary>检查更新命令:Linux 打开发布页面,其它平台下载后提示重启。</summary>
+    /// <summary>检查更新命令:Linux 打开对应安装包的下载地址(认不出安装方式时打开发布页),其它平台下载后提示重启。</summary>
     public ReactiveCommand<RxVoid, RxVoid> CheckUpdatesCommand { get; }
 
     /// <summary>由设置窗口注入的系统浏览器入口;返回是否成功启动。</summary>
     public Func<Uri, Task<bool>>? UpdatePageOpener { get; set; }
+
+    /// <summary>Linux 上这份程序的安装方式(决定检查更新给哪个安装包);测试可替换,默认取 <see cref="AppPackaging.LinuxInstall" />。</summary>
+    internal Func<LinuxInstallKind> LinuxInstallProbe { get; set; } = static () => AppPackaging.LinuxInstall;
 
     /// <summary>重启并应用已下载更新命令(仅在 <see cref="UpdateReady" /> 为真时有意义)。</summary>
     public ReactiveCommand<RxVoid, RxVoid> RestartToUpdateCommand { get; }
@@ -985,7 +988,7 @@ public partial class SettingsViewModel : ReactiveObject
     }
 
     /// <summary>
-    /// 检查更新完整流程:Linux 发现更新时打开发布页面供用户下载;其它平台带进度下载,
+    /// 检查更新完整流程:Linux 发现更新时按安装方式打开对应安装包的下载地址(认不出就打开发布页);其它平台带进度下载,
     /// 完成后置 <see cref="UpdateReady" />,由关于页“重启并更新”按钮触发 <see cref="RestartToUpdateCommand" />。
     /// </summary>
     private async Task CheckForUpdatesAsync()
@@ -1022,15 +1025,19 @@ public partial class SettingsViewModel : ReactiveObject
             }
             if (OperatingSystem.IsLinux())
             {
-                // Linux 的 deb/rpm 与便携包由用户选择安装,不探测安装目录或自动换版。
-                Uri releasePage = new("https://github.com/joesdu/VelaShell/releases");
-                UpdateStatus = Strings.Format("SetAbout_UpdateAvailableLinux",
-                    _updateService.AvailableVersion ?? string.Empty, releasePage.AbsoluteUri);
+                // Linux 的 deb/rpm/AppImage 与便携包由用户自己安装,不探测安装目录可写性、也不原地换版。
+                // 认得出当前的安装方式就直接给那一个安装包的下载地址(浏览器打开即开始下载),认不出就打开发布页。
+                LinuxUpdateLink link = LinuxReleaseAsset.Resolve(
+                    LinuxInstallProbe(), _updateService.AvailableUpdate, UpdateManifest.CurrentRid());
+                string version = _updateService.AvailableVersion ?? string.Empty;
+                UpdateStatus = link.AssetName is { } asset
+                    ? Strings.Format("SetAbout_UpdateAvailableLinuxPackage", version, asset, link.Url.AbsoluteUri)
+                    : Strings.Format("SetAbout_UpdateAvailableLinux", version, link.Url.AbsoluteUri);
                 try
                 {
                     if (UpdatePageOpener is { } open)
                     {
-                        await open(releasePage);
+                        await open(link.Url);
                     }
                 }
                 catch (Exception ex)

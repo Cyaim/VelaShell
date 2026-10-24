@@ -58,4 +58,86 @@ internal static partial class AppPackaging
 
     [LibraryImport("kernel32.dll", EntryPoint = "GetCurrentPackageFullName")]
     private static partial uint GetCurrentPackageFullName(ref int packageFullNameLength, IntPtr packageFullName);
+
+    /// <summary>deb / rpm 都把整个发布目录装进这里(<c>build/linux-packages/Stage-Payload.sh</c>)。</summary>
+    internal const string LinuxSystemInstallDirectory = "/opt/velashell";
+
+    /// <summary>
+    /// Linux 上这份程序是怎么装的:决定「检查更新」给哪一个安装包的下载链接(§172 原先只打开整页发布列表)。
+    /// 进程内不会变化,只在 Linux 上探测一次;其它平台恒为 <see cref="LinuxInstallKind.Unknown" />。
+    /// </summary>
+    public static LinuxInstallKind LinuxInstall => _linuxInstall.Value;
+
+    private static readonly Lazy<LinuxInstallKind> _linuxInstall = new(() => OperatingSystem.IsLinux()
+        ? DetectLinuxInstall(
+            Environment.GetEnvironmentVariable("APPIMAGE"),
+            Environment.GetEnvironmentVariable("APPDIR"),
+            AppContext.BaseDirectory,
+            File.Exists,
+            Directory.Exists)
+        : LinuxInstallKind.Unknown);
+
+    /// <summary>
+    /// 按运行时留下的痕迹判断安装方式。判断依据都是打包脚本自己定下的事实,不猜发行版:
+    /// <list type="bullet">
+    /// <item>AppImage:type2 runtime 把 <c>APPIMAGE</c> 设成 .AppImage 文件本身的路径、<c>APPDIR</c> 设成挂载点;
+    /// 应用目录还得落在那个挂载点里,免得从别的 AppImage 里起的终端把变量带进来。</item>
+    /// <item>deb / rpm:装进 <see cref="LinuxSystemInstallDirectory" />(两者是同一棵树,只有外壳不同),
+    /// 再看包管理器的记录 —— dpkg 给每个包留 <c>/var/lib/dpkg/info/&lt;包名&gt;.list</c>;没有 dpkg 记录、
+    /// 系统里有 rpm 数据库(<c>/var/lib/rpm</c>,Fedora 36 起在 <c>/usr/lib/sysimage/rpm</c>)就是 rpm。两样都对不上算不知道。</item>
+    /// <item>其余位置:tar.gz 解出来的便携包(应用内更新器的资产也是它)。</item>
+    /// </list>
+    /// </summary>
+    /// <param name="appImage">环境变量 <c>APPIMAGE</c>。</param>
+    /// <param name="appDir">环境变量 <c>APPDIR</c>。</param>
+    /// <param name="baseDirectory">应用目录(<see cref="AppContext.BaseDirectory" />)。</param>
+    /// <param name="fileExists">文件探测(测试注入)。</param>
+    /// <param name="directoryExists">目录探测(测试注入)。</param>
+    internal static LinuxInstallKind DetectLinuxInstall(
+        string? appImage, string? appDir, string baseDirectory,
+        Func<string, bool> fileExists, Func<string, bool> directoryExists)
+    {
+        string appDirectory = baseDirectory.TrimEnd('/');
+        if (!string.IsNullOrEmpty(appImage)
+            && (string.IsNullOrEmpty(appDir) || IsUnder(appDirectory, appDir.TrimEnd('/'))))
+        {
+            return LinuxInstallKind.AppImage;
+        }
+        if (string.Equals(appDirectory, LinuxSystemInstallDirectory, StringComparison.Ordinal))
+        {
+            // 包架构是 amd64 / arm64 的普通包时 dpkg 记作 velashell.list;万一按 Multi-Arch 装,带 :架构 后缀。
+            if (fileExists("/var/lib/dpkg/info/velashell.list")
+                || fileExists("/var/lib/dpkg/info/velashell:amd64.list")
+                || fileExists("/var/lib/dpkg/info/velashell:arm64.list"))
+            {
+                return LinuxInstallKind.Deb;
+            }
+            return directoryExists("/var/lib/rpm") || directoryExists("/usr/lib/sysimage/rpm")
+                ? LinuxInstallKind.Rpm
+                : LinuxInstallKind.Unknown;
+        }
+        return LinuxInstallKind.Portable;
+    }
+
+    private static bool IsUnder(string path, string root) =>
+        path.Equals(root, StringComparison.Ordinal) || path.StartsWith(root + "/", StringComparison.Ordinal);
+}
+
+/// <summary>Linux 上的安装方式,对应发布页上四种 Linux 产物(见 <c>.github/workflows/release.yml</c>)。</summary>
+public enum LinuxInstallKind
+{
+    /// <summary>判断不出来(或不是 Linux):检查更新照旧打开整页发布列表。</summary>
+    Unknown,
+
+    /// <summary><c>apt install ./velashell_*.deb</c> 装进 <c>/opt/velashell</c>。</summary>
+    Deb,
+
+    /// <summary><c>dnf install ./velashell-*.rpm</c> 装进 <c>/opt/velashell</c>。</summary>
+    Rpm,
+
+    /// <summary>单文件 AppImage。</summary>
+    AppImage,
+
+    /// <summary>tar.gz 便携包,解到哪儿算哪儿。</summary>
+    Portable
 }

@@ -90,3 +90,8 @@ deb / rpm **不进 `latest.json`**,和 AppImage、dmg 一样:装进 `/opt/velash
 `UpdateApplier.IsApplicationDirectoryWritable()` 的写探测必然失败,
 `UpdateService.CanSelfUpdate` 随之为 false,关于页自动降级成"发现新版本,请手动下载"。
 系统包本就该由包管理器更新 —— 这是对的行为,不需要为它们加任何判定。
+
+关于页「检查更新」在 Linux 上按安装方式直接打开对应包的下载地址(`AppPackaging.LinuxInstall`:
+应用目录是 `/opt/velashell` 且有 dpkg 记录 `/var/lib/dpkg/info/velashell.list` 就是 deb,没有 dpkg 记录而有 rpm 数据库就是 rpm;
+地址由 `Services/Update/LinuxReleaseAsset.cs` 照上面的命名拼出)。**改了产物命名要同步那个文件。**
+预发布版的文件名里有 `~`,不拼直链,打开那个版本的发布页。

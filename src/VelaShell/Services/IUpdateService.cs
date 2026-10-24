@@ -10,6 +10,12 @@ public interface IUpdateService
     string? AvailableVersion { get; }
 
     /// <summary>
+    /// 检查选定的那份清单(版本、Release 标签、各平台产物);无可用更新时为 null。
+    /// Linux 据它的标签拼出对应安装包的下载地址 —— 检查与打开浏览器之间若发了新版,也不会指错版本。
+    /// </summary>
+    Update.UpdateManifest? AvailableUpdate { get; }
+
+    /// <summary>
     /// 能否原地自更新:应用目录可写、平台受支持且非商店版时为 true。装在 Program Files 等
     /// 只读位置时为 false;Linux 始终为 false,发现新版本后打开发布页面供用户手动下载。
     /// </summary>

@@ -80,6 +80,7 @@ cp "$desktop" "$appdir/usr/share/applications/VelaShell.desktop"
 cp "$repo_root/src/VelaShell/Assets/velashell.png" "$appdir/velashell.png"
 ln -sf velashell.png "$appdir/.DirIcon"
 
+# 改这个文件名要同步 src/VelaShell/Services/Update/LinuxReleaseAsset.cs:Linux 检查更新按它拼出 AppImage 的直接下载地址。
 output="$out_dir/VelaShell-$version-$rid.AppImage"
 # --no-appstream:仓库没有 AppStream 元数据,不该因为没装 appstreamcli 就让打包失败。
 # ARCH:AppDir 里全是 .NET 的产物,让 appimagetool 自己猜架构既慢又可能猜错,直接告诉它。

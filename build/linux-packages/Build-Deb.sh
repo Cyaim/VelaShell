@@ -74,6 +74,7 @@ Description: Cross-platform SSH terminal client
  This package bundles the .NET runtime, so no system-wide .NET is required.
 CONTROL
 
+# 改这个文件名要同步 src/VelaShell/Services/Update/LinuxReleaseAsset.cs:Linux 检查更新按它拼出 deb 的直接下载地址。
 output="$out_dir/velashell_${pkgversion}_${arch}.deb"
 # --root-owner-group:产物里的文件一律记为 root:root。不加的话记的是打包机上的 uid/gid
 # (CI runner 是 1001),装到用户机器上就成了一堆归属错乱的文件。

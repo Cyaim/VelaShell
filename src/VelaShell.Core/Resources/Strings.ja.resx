@@ -1799,6 +1799,9 @@
   <data name="SetAbout_UpdateAvailableLinux" xml:space="preserve">
     <value>新しいバージョン {0} があります。リリースページから Linux パッケージをダウンロードし、手動でインストールしてください：{1}</value>
   </data>
+  <data name="SetAbout_UpdateAvailableLinuxPackage" xml:space="preserve">
+    <value>新しいバージョン {0} があります。現在のインストール方法に対応するパッケージ {1} のダウンロードを開きました。ダウンロード後に手動でインストールしてください：{2}</value>
+  </data>
   <data name="SetAbout_UpdateAvailableManual" xml:space="preserve">
     <value>新しいバージョン {0} が見つかりましたが、現在のインストール先では自動更新できません(フォルダーが書き込み不可)。プロジェクトのリリースページから最新版を入手してください。</value>
   </data>
