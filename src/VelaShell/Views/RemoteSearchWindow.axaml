@@ -1,0 +1,205 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:VelaShell.ViewModels"
+        xmlns:loc="using:VelaShell.Localization"
+        xmlns:pc="using:VelaShell.Controls.Controls"
+        mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="560"
+        x:Class="VelaShell.Views.RemoteSearchWindow"
+        x:DataType="vm:RemoteSearchViewModel"
+        Title="{loc:Localize Sftp_SearchTitle}"
+        Width="760" Height="560"
+        MinWidth="560" MinHeight="380"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+  <Window.Styles>
+    <Style Selector="Button.toolbar-btn">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="6" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+    </Style>
+    <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="Button.action">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="7,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+    </Style>
+    <Style Selector="Button.action:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="TextBlock.field-label">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style Selector="TextBox.mono">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+    </Style>
+    <Style Selector="TextBlock.path">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize10}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextTertiary}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <!-- 状态行:平时是次要的灰,说的是问题(不支持、出错、结果不全)时转警示色。颜色只能走样式,写成本地值的话样式就盖不过它。 -->
+    <Style Selector="TextBlock.status">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+    </Style>
+    <Style Selector="TextBlock.status.warning">
+      <Setter Property="Foreground" Value="{DynamicResource VelaWarning}" />
+    </Style>
+    <Style Selector="TextBlock.name">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+  </Window.Styles>
+
+  <Panel>
+    <Border Classes="window-card" ClipToBounds="True"
+            Background="{DynamicResource VelaBgSurface}"
+            BorderBrush="{DynamicResource VelaBorderSecondary}">
+      <DockPanel>
+        <Border DockPanel.Dock="Top" Classes="window-titlebar window-card-top"
+                Height="28" Padding="12,0"
+                Background="{DynamicResource VelaBgSurface}"
+                BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1"
+                PointerPressed="OnTitleBarPointerPressed">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <pc:LucideIcon Width="14" Height="14" Data="{StaticResource Icon.search}"
+                             Foreground="{DynamicResource VelaAccent}" />
+              <TextBlock Text="{Binding $parent[Window].Title}"
+                         Foreground="{DynamicResource VelaTextPrimary}"
+                         FontSize="{DynamicResource VelaFontSize12}" FontWeight="SemiBold"
+                         VerticalAlignment="Center" />
+              <!-- 点明是哪一台:几个面板各开一扇搜索窗口时,光看结果分不清在搜谁。 -->
+              <TextBlock Text="{Binding ServerName}"
+                         IsVisible="{Binding ServerName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                         Foreground="{DynamicResource VelaTextTertiary}"
+                         FontFamily="{DynamicResource VelaUiMonoFont}"
+                         FontSize="{DynamicResource VelaFontSize11}"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="toolbar-btn window-caption"
+                    Width="27" Height="27" Padding="0" Click="OnCloseClick"
+                    ToolTip.Tip="{loc:Localize Close}"
+                    AutomationProperties.Name="{loc:Localize Close}">
+              <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.x}"
+                             Foreground="{DynamicResource VelaTextSecondary}" />
+            </Button>
+          </Grid>
+        </Border>
+
+        <!-- 条件区:回车即搜(代码后置 OnCriteriaKeyDown)。 -->
+        <Border DockPanel.Dock="Top" Padding="14,12"
+                Background="{DynamicResource VelaBgInput}"
+                BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,10,Auto,10,Auto">
+            <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3">
+              <TextBlock Classes="field-label" Text="{loc:Localize Sftp_SearchRoot}" />
+              <TextBox x:Name="RootBox" Classes="mono" Text="{Binding Root}" KeyDown="OnCriteriaKeyDown" />
+            </StackPanel>
+            <StackPanel Grid.Row="2" Grid.Column="0">
+              <TextBlock Classes="field-label" Text="{loc:Localize Sftp_SearchName}" />
+              <TextBox x:Name="NameBox" Classes="mono" Text="{Binding NamePattern}"
+                       PlaceholderText="{loc:Localize Sftp_SearchNamePlaceholder}"
+                       KeyDown="OnCriteriaKeyDown" />
+            </StackPanel>
+            <StackPanel Grid.Row="2" Grid.Column="2">
+              <TextBlock Classes="field-label" Text="{loc:Localize Sftp_SearchContent}" />
+              <TextBox Classes="mono" Text="{Binding ContentText}"
+                       PlaceholderText="{loc:Localize Sftp_SearchContentPlaceholder}"
+                       KeyDown="OnCriteriaKeyDown" />
+            </StackPanel>
+            <Grid Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" ColumnDefinitions="*,Auto">
+              <CheckBox IsChecked="{Binding IgnoreCase}" VerticalAlignment="Center">
+                <TextBlock Text="{loc:Localize Sftp_SearchIgnoreCase}" FontSize="{DynamicResource VelaFontSize11}" />
+              </CheckBox>
+              <Panel Grid.Column="1">
+                <Button Classes="action" Command="{Binding SearchCommand}"
+                        IsVisible="{Binding !IsSearching}"
+                        AutomationProperties.Name="{loc:Localize Sftp_SearchStart}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.search}"
+                                   Foreground="{DynamicResource VelaAccent}" />
+                    <TextBlock Text="{loc:Localize Sftp_SearchStart}" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <Button Classes="action" Command="{Binding StopCommand}"
+                        IsVisible="{Binding IsSearching}"
+                        AutomationProperties.Name="{loc:Localize Sftp_SearchStop}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.square}"
+                                   Foreground="{DynamicResource VelaError}" />
+                    <TextBlock Text="{loc:Localize Sftp_SearchStop}" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+              </Panel>
+            </Grid>
+          </Grid>
+        </Border>
+
+        <!-- 状态行:找到几项 / 到上限 / 超时 / 远端不支持 —— 各说各的,不混成「没找到」。 -->
+        <Border DockPanel.Dock="Bottom" Height="36" Padding="14,0"
+                BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,1,0,0">
+          <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+            <ProgressBar Width="54" Height="3" Margin="0,0,10,0" VerticalAlignment="Center"
+                         IsIndeterminate="True" IsVisible="{Binding IsSearching}" />
+            <TextBlock Grid.Column="1" Classes="status" Text="{Binding StatusText}"
+                       Classes.warning="{Binding IsStatusWarning}"
+                       FontSize="{DynamicResource VelaFontSize10}"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding StatusText}" />
+          </Grid>
+        </Border>
+
+        <!-- 结果:双击或回车在面板里定位(目录进去,文件进所在目录并选中)。 -->
+        <ListBox x:Name="ResultList" ItemsSource="{Binding Results}"
+                 Background="Transparent" BorderThickness="0"
+                 DoubleTapped="OnResultDoubleTapped" KeyDown="OnResultKeyDown">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:RemoteSearchResultViewModel">
+              <Border Padding="14,6" BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <Panel VerticalAlignment="Center">
+                    <pc:LucideIcon Width="14" Height="14" Data="{StaticResource Icon.folder}"
+                                   IsVisible="{Binding IsDirectory}"
+                                   Foreground="{DynamicResource VelaAccent}" />
+                    <pc:LucideIcon Width="14" Height="14" Data="{StaticResource Icon.file}"
+                                   IsVisible="{Binding !IsDirectory}"
+                                   Foreground="{DynamicResource VelaTextTertiary}" />
+                  </Panel>
+                  <StackPanel Grid.Column="1" MinWidth="0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Classes="name" Text="{Binding Name}" />
+                    <TextBlock Classes="path" Text="{Binding Directory}" />
+                  </StackPanel>
+                  <Button Grid.Column="2" Classes="action" Click="OnRevealClick"
+                          ToolTip.Tip="{loc:Localize Sftp_SearchReveal}"
+                          AutomationProperties.Name="{loc:Localize Sftp_SearchReveal}">
+                    <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.folder-open}"
+                                   Foreground="{DynamicResource VelaAccent}" />
+                  </Button>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+  </Panel>
+</Window>

@@ -86,6 +86,16 @@ public sealed class TerminalEmulator : IVtActions
     /// </remarks>
     public bool HasPromptMarks { get; private set; }
 
+    /// <summary>
+    /// 对端 shell 报过「命令开始执行」(<c>OSC 133 ; C</c>)、还没报「结束」(<c>D</c>)或画出下一条提示符(<c>A</c>)。
+    /// </summary>
+    /// <remarks>
+    /// 「重跑」据它拦住往一个还在跑的程序里打字:那时敲进去的命令文本加回车会被前台程序当成它的输入
+    /// (<c>sudo</c> 的口令提示、<c>ssh</c> 进去的另一台机器、读 stdin 的脚本)。
+    /// 没装 shell 集成的会话恒为 false —— 那里也没有命令块,不会走到「重跑」。
+    /// </remarks>
+    public bool IsCommandRunning { get; private set; }
+
     /// <summary>当前生效的屏幕缓冲区(主屏或备用屏)。</summary>
     public TerminalScreen Screen { get; private set; }
 
@@ -655,8 +665,10 @@ public sealed class TerminalEmulator : IVtActions
     /// 为此要一路记着"本块的提示符行"(<see cref="_promptRow" />)。
     /// </para>
     /// <para>
-    /// <c>B</c> 被消费但不落行:它标的是列,而列在改列宽重排后会挪位,见
-    /// <see cref="PromptMark" /> 的说明。
+    /// <c>B</c> 与 <c>C</c> 另记<b>列</b>(<see cref="TerminalRow.InputStart" /> /
+    /// <see cref="TerminalRow.InputEnd" />):命令文本就是两者之间的那一段。光标停在行尾等着折行时
+    /// 记成 <see cref="TerminalScreen.Columns" /> —— 下一个字符其实落在下一行行首,记成最后一列
+    /// 就会把提示符的最后一个字符算进命令里。
     /// </para>
     /// </remarks>
     private void SetPromptMark(IReadOnlyList<string> p)
@@ -675,22 +687,35 @@ public sealed class TerminalEmulator : IVtActions
                     row.ExitCode = null;
                     _promptRow = row;
                     HasPromptMarks = true;
+                    // 新提示符 = 上一条命令无论如何都结束了(有的集成不发 D,或 D 丢在了半路)。
+                    IsCommandRunning = false;
                     break;
                 }
-            case 'C':
-                Screen.ActiveLine(Screen.CursorY).Mark = PromptMark.Output;
-                HasPromptMarks = true;
+            case 'B':
+                Screen.ActiveLine(Screen.CursorY).InputStart = CursorColumnForMark();
                 break;
+            case 'C':
+                {
+                    TerminalRow row = Screen.ActiveLine(Screen.CursorY);
+                    row.Mark = PromptMark.Output;
+                    row.InputEnd = CursorColumnForMark();
+                    HasPromptMarks = true;
+                    IsCommandRunning = true;
+                    break;
+                }
             case 'D':
                 if (_promptRow is { } prompt)
                 {
                     prompt.ExitCode = ParseExitCode(p);
                     _promptRow = null;
                 }
+                IsCommandRunning = false;
                 break;
-                // B(提示符结束 / 输入开始)有意接受并忽略,理由见 PromptMark 的说明。
         }
     }
+
+    /// <summary>B / C 该记的列:光标列;光标停在行尾等着折行时是 <see cref="TerminalScreen.Columns" />。</summary>
+    private int CursorColumnForMark() => _pendingWrap ? Screen.Columns : Screen.CursorX;
 
     /// <summary>
     /// 从 <c>OSC 133 ; D ; …</c> 的尾部参数里取退出码;没报或报的不是数字时返回 null。
@@ -1563,6 +1588,7 @@ public sealed class TerminalEmulator : IVtActions
         Hyperlinks.Clear();
         _promptRow = null;
         HasPromptMarks = false;
+        IsCommandRunning = false;
         _utf8.Reset();
         _parser.Reset();
     }

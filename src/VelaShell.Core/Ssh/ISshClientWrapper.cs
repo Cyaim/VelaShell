@@ -100,6 +100,12 @@ public interface ISshClientWrapper : IAsyncDisposable
     Task<TimeSpan?> MeasureRoundTripAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 这条连接此刻的样子(连接信息面板的数据);没连上、不是 SSH 库建的连接时为 <see langword="null" />(不抛)。
+    /// </summary>
+    /// <remarks>只读库已经交出来的属性,不往线上发任何东西 —— 打开面板、点刷新都不算一次探测。</remarks>
+    SshConnectionDetails? GetConnectionDetails() => null;
+
+    /// <summary>
     /// 异步建立并启动一条端口转发;返回的句柄负责其停止与清理。
     /// 启动失败时抛出且不留下半挂的监听。
     /// </summary>

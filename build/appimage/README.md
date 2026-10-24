@@ -65,3 +65,6 @@ AppImage **不进 `latest.json`**,理由和 dmg 一样、但更硬:
 
 `UpdateService.CanSelfUpdate` 会通过写探测发现这一点(`UpdateApplier.IsApplicationDirectoryWritable`),
 自动把关于页降级成"发现新版本,请手动下载",不会走到必然失败的换版流程 —— 无需为 AppImage 加任何判定。
+
+关于页「检查更新」在 Linux 上认得出 AppImage(runtime 设的 `APPIMAGE` / `APPDIR`,见 `AppPackaging.LinuxInstall`),
+直接打开 `VelaShell-<版本>-<RID>.AppImage` 的下载地址(`Services/Update/LinuxReleaseAsset.cs`)。**改了产物命名要同步那个文件。**

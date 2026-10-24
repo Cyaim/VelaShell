@@ -57,6 +57,16 @@ public sealed class XServerClientItemViewModel : ReactiveObject
         private set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
+    /// <summary>
+    /// 受信(能看、能改整个 X Server)还是非受信(<c>ssh -X</c>,只碰得到非受信程序的窗口):第二行开头标出来 ——
+    /// 用户判断「该断开谁」时最关心的就是它看不看得到别的程序的窗口与键盘。
+    /// </summary>
+    public bool Trusted
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
     /// <summary>按服务端此刻的样子更新(同一个 <see cref="Key" />)。</summary>
     internal void Update(XServerClient client)
     {
@@ -69,5 +79,6 @@ public sealed class XServerClientItemViewModel : ReactiveObject
         Stats = Strings.Format("XServer_PanelStats", client.Windows, RemoteFileInfoViewModel.FormatSize(client.MemoryBytes));
         HoldsServerGrab = client.HoldsServerGrab;
         Retained = client.Retained;
+        Trusted = client.Trusted;
     }
 }

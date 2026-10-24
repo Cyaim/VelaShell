@@ -12,7 +12,7 @@ namespace VelaShell.Services.Plugins;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>为什么走 <see cref="MainWindowViewModel.TryConnectProfileAsync" /> 而不是直接
+/// <b>为什么走 <see cref="MainWindowViewModel.TryConnectProfileAsync(SessionProfile, CancellationToken)" /> 而不是直接
 /// <see cref="ISshConnectionService.ConnectAsync" />。</b>后者能连上,但连出来的是一条
 /// 用户在界面上看不见的会话:没有标签页,关不掉,断了也没人知道。插件替人连的机器
 /// 尤其不该是隐形的 —— 用户点了"同意",他期待的是屏幕上多出一台机器,

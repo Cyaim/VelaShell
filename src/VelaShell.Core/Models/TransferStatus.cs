@@ -21,5 +21,12 @@ public enum TransferStatus
     Failed,
 
     /// <summary>已被取消。</summary>
-    Cancelled
+    Cancelled,
+
+    /// <summary>
+    /// 连接没了(或临时失败重试用完)停下,留在传输队列里等用户「继续」—— 换一条连接就能接着传,
+    /// 不算这个文件失败。只出现在记进传输队列的批次里;其余传输照旧是 <see cref="Failed" />。
+    /// 加在末尾:各成员的数值不变。
+    /// </summary>
+    Paused
 }

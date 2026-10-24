@@ -327,9 +327,61 @@
                 <TextBlock Classes="desc" Text="{Binding EndpointSummary}"
                            TextTrimming="CharacterEllipsis"
                            ToolTip.Tip="{Binding EndpointSummary}" />
+                <!-- 远程动态转发:放行了哪些目标(全放时写明「全部」)。 -->
+                <TextBlock Classes="desc" Text="{Binding PermitText}"
+                           IsVisible="{Binding HasPermitText}"
+                           TextWrapping="Wrap" />
                 <TextBlock Classes="desc" Text="{Binding StatusText}" />
                 <!-- 流量统计(设计 fuXS7 预留的说明行):连接数 · 累计字节 -->
                 <TextBlock Classes="desc" Text="{Binding StatsText}" />
+                <!-- 实时速率(↑ 本机送进隧道 / ↓ 从隧道收回,最近三个整秒的平均)与限速;停着时只剩限速那半句。
+                     面板开着时每秒刷一次。 -->
+                <TextBlock Classes="desc" Name="TrafficLine"
+                           Text="{Binding TrafficText}"
+                           IsVisible="{Binding HasTrafficText}"
+                           ToolTip.Tip="{Binding TrafficToolTip}"
+                           TextTrimming="CharacterEllipsis" />
+                <!-- 当前连接:默认收起成一行「当前连接 N 条」,点开列出来源 → 目标、开了多久、两个方向各搬了多少。
+                     动态转发挂着浏览器时一下几十条,只列前 20 条。 -->
+                <Button Name="ConnectionsToggle"
+                        IsVisible="{Binding HasConnections}"
+                        Command="{Binding ToggleConnectionsCommand}"
+                        HorizontalAlignment="Left"
+                        Padding="0" MinHeight="0"
+                        Background="Transparent" BorderThickness="0"
+                        Cursor="Hand">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <pc:LucideIcon Width="10" Height="10" VerticalAlignment="Center"
+                                   Data="{StaticResource Icon.chevron-right}"
+                                   Foreground="{DynamicResource VelaTextTertiary}"
+                                   IsVisible="{Binding !IsConnectionListExpanded}" />
+                    <pc:LucideIcon Width="10" Height="10" VerticalAlignment="Center"
+                                   Data="{StaticResource Icon.chevron-down}"
+                                   Foreground="{DynamicResource VelaTextTertiary}"
+                                   IsVisible="{Binding IsConnectionListExpanded}" />
+                    <TextBlock Classes="desc" Text="{Binding ConnectionsToggleText}"
+                               Foreground="{DynamicResource VelaTextSecondary}" />
+                  </StackPanel>
+                </Button>
+                <ItemsControl Name="ConnectionList"
+                              ItemsSource="{Binding ConnectionRows}"
+                              IsVisible="{Binding IsConnectionListVisible}"
+                              Margin="14,0,0,0">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:TunnelConnectionRow">
+                      <StackPanel Spacing="1" Margin="0,2">
+                        <TextBlock Classes="desc" Text="{Binding Route}"
+                                   Foreground="{DynamicResource VelaTextSecondary}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding Route}" />
+                        <TextBlock Classes="desc" Text="{Binding Detail}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="desc" Margin="14,0,0,0"
+                           Text="{Binding HiddenConnectionsText}"
+                           IsVisible="{Binding HasHiddenConnections}" />
                 <!-- 转发通道错误(如目标拒绝连接):隧道虽在运行,但连接会失败 -->
                 <TextBlock Classes="desc" Text="{Binding LastError, StringFormat='⚠ {0}'}"
                            IsVisible="{Binding HasError}"
@@ -365,36 +417,98 @@
             <ComboBoxItem Content="{loc:Localize LocalForward}" ToolTip.Tip="{loc:Localize Tunnel_LocalForwardTip}" />
             <ComboBoxItem Content="{loc:Localize RemoteForward}" ToolTip.Tip="{loc:Localize Tunnel_RemoteForwardTip}" />
             <ComboBoxItem Content="{loc:Localize Tunnel_DynamicSocks}" ToolTip.Tip="{loc:Localize Tunnel_DynamicSocksTip}" />
+            <ComboBoxItem Content="{loc:Localize Tunnel_RemoteDynamicSocks}" ToolTip.Tip="{loc:Localize Tunnel_RemoteDynamicSocksTip}" />
           </ComboBox>
         </Grid>
 
-        <!-- 目标默认锁定为服务器本机 127.0.0.1(地址从服务器视角解析,填公网 IP 会被拒);
-             取消勾选可填服务器可达的内网第三方主机。 -->
-        <Grid ColumnDefinitions="92,10,*,10,72" RowDefinitions="Auto,5,Auto">
-          <TextBlock Grid.Row="0" Grid.Column="0" Classes="form-label" Text="{loc:Localize LocalPort}" />
-          <NumericUpDown Grid.Row="2" Grid.Column="0" Value="{Binding NewLocalPort}" PlaceholderText="27017"
-                         Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
-          <TextBlock Grid.Row="0" Grid.Column="2" Classes="form-label" Text="{loc:Localize Tunnel_TargetHostLabel}"
-                     IsVisible="{Binding IsRemoteTargetVisible}" />
-          <TextBox   Grid.Row="2" Grid.Column="2"
-                     Text="{Binding NewRemoteHost}"
+        <!-- 本地转发:目标默认锁定为服务器本机 127.0.0.1(地址从服务器视角解析,填公网 IP 会被拒);
+             取消勾选可填服务器可达的内网第三方主机。远程 / 远程动态转发:主机与端口两栏是服务器上的监听端,默认只在服务器本机监听。
+             三栏各自成块、按类型显隐:动态转发只有本地端口,远程动态转发没有本地端口(主机与端口两栏填服务器上的监听地址)。
+             块与块的间距挂在块自己的外边距上,藏掉一块不会留下一道空的间隔列。 -->
+        <Grid Name="EndpointRow" ColumnDefinitions="Auto,*,Auto">
+          <StackPanel Grid.Column="0" Width="92" Margin="0,0,10,0" Spacing="5"
+                      IsVisible="{Binding IsLocalPortVisible}">
+            <TextBlock Classes="form-label" Text="{loc:Localize LocalPort}" />
+            <NumericUpDown Value="{Binding NewLocalPort}" PlaceholderText="27017"
+                           IsEnabled="{Binding IsLocalPortEditable}"
+                           Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="5" IsVisible="{Binding IsRemoteTargetVisible}">
+            <TextBlock Classes="form-label" Text="{Binding RemoteHostLabel}" />
+            <TextBox Text="{Binding NewRemoteHost}"
                      IsEnabled="{Binding IsRemoteHostEditable}"
-                     PlaceholderText="127.0.0.1"
-                     IsVisible="{Binding IsRemoteTargetVisible}" />
-          <TextBlock Grid.Row="0" Grid.Column="4" Classes="form-label" Text="{loc:Localize Port}"
-                     IsVisible="{Binding IsRemoteTargetVisible}" />
-          <NumericUpDown Grid.Row="2" Grid.Column="4" Value="{Binding NewRemotePort}" PlaceholderText="27017"
-                         Minimum="1" Maximum="65535" Increment="1" FormatString="0"
-                         IsVisible="{Binding IsRemoteTargetVisible}" />
+                     PlaceholderText="127.0.0.1" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Width="72" Margin="10,0,0,0" Spacing="5"
+                      IsVisible="{Binding IsRemoteTargetVisible}">
+            <TextBlock Classes="form-label" Text="{loc:Localize Port}" />
+            <NumericUpDown Value="{Binding NewRemotePort}" PlaceholderText="27017"
+                           IsEnabled="{Binding IsRemoteEndpointEditable}"
+                           Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
+          </StackPanel>
         </Grid>
 
         <CheckBox IsChecked="{Binding ForwardToServerLoopback}"
                   IsVisible="{Binding IsRemoteTargetVisible}"
+                  IsEnabled="{Binding IsRemoteEndpointEditable}"
                   Padding="0" MinHeight="0">
-          <TextBlock Text="{loc:Localize Tunnel_ForwardToLoopback}"
+          <TextBlock Text="{Binding LoopbackOptionText}"
                      Foreground="{DynamicResource VelaTextSecondary}"
                      FontSize="{DynamicResource VelaFontSize11}" Margin="6,0,0,0" />
         </CheckBox>
+
+        <!-- Unix 域套接字(只有本地 / 远程转发有):本地转发两头各自可以是套接字,填了路径的那头就不再用上面的端口 / 主机,
+             那几栏随之置灰;远程转发两头必须同时是套接字(SSH 库只给了这一种组合)。
+             用途:直接操作远端的 docker.sock、数据库套接字,远端不必开任何 TCP 端口;本机这头按文件权限隔离。 -->
+        <CheckBox Name="UnixSocketOption"
+                  IsChecked="{Binding NewUseUnixSocket}"
+                  IsVisible="{Binding IsUnixSocketOptionVisible}"
+                  ToolTip.Tip="{loc:Localize Tunnel_UnixSocketTip}"
+                  Padding="0" MinHeight="0">
+          <TextBlock Text="{loc:Localize Tunnel_UnixSocketOption}"
+                     Foreground="{DynamicResource VelaTextSecondary}"
+                     FontSize="{DynamicResource VelaFontSize11}" Margin="6,0,0,0" />
+        </CheckBox>
+        <StackPanel Name="UnixSocketBlock" Spacing="5" IsVisible="{Binding IsUnixSocketFormVisible}">
+          <TextBlock Classes="form-label" Text="{Binding LocalSocketLabel}" />
+          <TextBox Name="LocalSocketPathInput" Text="{Binding NewLocalSocketPath}"
+                   PlaceholderText="{x:Static vm:TunnelPanelViewModel.LocalSocketPlaceholder}" />
+          <TextBlock Classes="desc" Text="{Binding LocalSocketPathError}"
+                     Foreground="{DynamicResource VelaError}" TextWrapping="Wrap"
+                     IsVisible="{Binding HasLocalSocketPathError}" />
+          <TextBlock Classes="form-label" Text="{Binding RemoteSocketLabel}" Margin="0,5,0,0" />
+          <TextBox Name="RemoteSocketPathInput" Text="{Binding NewRemoteSocketPath}"
+                   PlaceholderText="/var/run/docker.sock" />
+          <TextBlock Classes="desc" Text="{Binding RemoteSocketPathError}"
+                     Foreground="{DynamicResource VelaError}" TextWrapping="Wrap"
+                     IsVisible="{Binding HasRemoteSocketPathError}" />
+        </StackPanel>
+
+        <!-- 远程动态转发的放行名单:远端经它能让本机连哪些 主机:端口。没有默认值、不许留空 ——
+             这等于把本机变成远端的 SOCKS 代理,本机能到的内网远端都能到,放哪些出去要用户明说(全放写 any)。 -->
+        <StackPanel Name="PermitRemoteOpenBlock" Spacing="5" IsVisible="{Binding IsPermitRemoteOpenVisible}">
+          <TextBlock Classes="form-label" Text="{loc:Localize Tunnel_PermitRemoteOpenLabel}" />
+          <TextBox Text="{Binding NewPermitRemoteOpen}"
+                   PlaceholderText="localhost:8080 *.corp.example:443"
+                   ToolTip.Tip="{loc:Localize Tunnel_PermitRemoteOpenHint}" />
+          <TextBlock Classes="desc" Text="{Binding PermitRemoteOpenError}"
+                     Foreground="{DynamicResource VelaError}" TextWrapping="Wrap"
+                     IsVisible="{Binding HasPermitRemoteOpenError}" />
+          <TextBlock Classes="desc" Text="{loc:Localize Tunnel_PermitRemoteOpenHint}" TextWrapping="Wrap"
+                     IsVisible="{Binding !HasPermitRemoteOpenError}" />
+        </StackPanel>
+
+        <!-- 限速:每个方向每秒最多搬多少,这条隧道的全部连接共用;0 = 不限(默认)。
+             慢链路上开着好几条隧道时,不让一条下载把交互终端挤满。 -->
+        <Grid ColumnDefinitions="*,10,92">
+          <TextBlock Grid.Column="0" Classes="form-label" VerticalAlignment="Center"
+                     Text="{loc:Localize Tunnel_RateLimitLabel}"
+                     ToolTip.Tip="{loc:Localize Tunnel_RateLimitTip}" />
+          <NumericUpDown Grid.Column="2" Name="RateLimitInput"
+                         Value="{Binding NewRateLimitKiB}" PlaceholderText="0"
+                         Minimum="0" Maximum="1048576" Increment="64" FormatString="0"
+                         ToolTip.Tip="{loc:Localize Tunnel_RateLimitTip}" />
+        </Grid>
 
         <!-- 承载会话掉线后自动重拨并重建这条隧道;默认关闭,因为重拨可能弹凭据提示。 -->
         <CheckBox IsChecked="{Binding NewAutoReconnect}"

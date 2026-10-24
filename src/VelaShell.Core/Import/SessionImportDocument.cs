@@ -10,7 +10,13 @@ public enum SessionFileFormat
     Json,
 
     /// <summary>CSV 表格:给 Excel 批量编辑用,只覆盖常用字段,不带机密(导入时可以有密码列)。</summary>
-    Csv
+    Csv,
+
+    /// <summary>
+    /// OpenSSH 的 <c>ssh_config</c>(只导出):SSH / SFTP 连接一条一个 <c>Host</c> 块,与命令行 ssh 共用。
+    /// 导入走「会话导入」里的 <c>~/.ssh/config</c> 来源(按 OpenSSH 的取值规则解析),不走连接文件这一路。
+    /// </summary>
+    SshConfig
 }
 
 /// <summary>

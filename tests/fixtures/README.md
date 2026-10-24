@@ -41,6 +41,18 @@
 docker compose -f docker-compose.test.yml up -d ssh-shells   # 端口 2223,口令一律 velapass
 ```
 
+**镜像跟不上 Dockerfile 时跳过,而不是红。** Dockerfile 末尾把自己 `COPY` 进镜像(`/etc/velashell-fixture/Dockerfile`),
+依赖这台靶机配置的几组用例(`SshSessionFeaturesIntegrationTests`、`NestedShellFollowDockerTests`、`ShellIntegrationDockerTests`)
+在环境检查里经 SSH 读出它,与仓库里的比 —— 去掉注释、空行与行尾空白之后不一致,或镜像里压根没有这个文件
+(建于这项检查之前),就记 `[SKIP]` Inconclusive 并给出重建命令(见 `tests/VelaShell.Tests/TestSupport/FixtureImage.cs`):
+
+```bash
+docker compose -f docker-compose.test.yml build ssh-shells && docker compose -f docker-compose.test.yml up -d ssh-shells
+```
+
+不用手写版本号:改 Dockerfile 的人忘了抬号,正是这条要防的「改了却没重建」。别的靶机要接同样的检查,
+照抄那一行 `COPY` 并在用例的环境检查里调 `FixtureImage.RequireCurrent`。
+
 ## ssh-2fa —— 两步验证 SSH 靶子(不是插件夹具)
 
 [ssh-2fa](ssh-2fa/Dockerfile) 是一台只开 keyboard-interactive 的 sshd,经 PAM 先问口令(`pam_unix`)、

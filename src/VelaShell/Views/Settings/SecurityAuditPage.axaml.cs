@@ -1,9 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using VelaShell.Core.Data;
 using VelaShell.Core.Recording;
+using VelaShell.Core.Resources;
 using VelaShell.Services;
 using VelaShell.ViewModels;
 
@@ -12,11 +15,19 @@ namespace VelaShell.Views.Settings;
 /// <summary>安全审计设置页:提供会话录制回放、审计日志等安全审计相关入口。</summary>
 public partial class SecurityAuditPage : UserControl
 {
+    /// <summary>回放中心窗口尺寸与位置在文档存储里的键(见 <see cref="WindowLayoutStore" />)。</summary>
+    private const string RecordingPlayerLayoutKey = "recordingPlayer";
+
+    /// <summary>审计日志窗口尺寸与位置在文档存储里的键。</summary>
+    private const string AuditLogLayoutKey = "auditLog";
+
     /// <summary>初始化安全审计设置页并加载 XAML 组件。</summary>
     public SecurityAuditPage() => InitializeComponent();
 
     /// <summary>打开会话录制回放中心(设计 NceE6),非模态独立窗口。</summary>
-    private void OpenRecordingPlayer_Click(object? sender, RoutedEventArgs e)
+    private void OpenRecordingPlayer_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(OpenRecordingPlayerAsync);
+
+    private async Task OpenRecordingPlayerAsync()
     {
         if (Application.Current is not App app || app.Services is null)
         {
@@ -28,19 +39,14 @@ public partial class SecurityAuditPage : UserControl
         }
         var viewModel = new RecordingPlayerViewModel(store, app.Services.GetService<ISettingsService>());
         var window = new RecordingPlayerView { DataContext = viewModel };
-        if (TopLevel.GetTopLevel(this) is Window owner)
-        {
-            window.Show(owner);
-        }
-        else
-        {
-            window.Show();
-        }
+        await ShowRememberedAsync(app.Services, RecordingPlayerLayoutKey, window);
         _ = viewModel.InitializeAsync();
     }
 
     /// <summary>打开审计日志窗口,非模态(与回放中心同样的开法)。</summary>
-    private void OpenAuditLog_Click(object? sender, RoutedEventArgs e)
+    private void OpenAuditLog_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(OpenAuditLogAsync);
+
+    private async Task OpenAuditLogAsync()
     {
         if (Application.Current is not App { Services: { } services }
             || services.GetService<IAuditLogService>() is not { } auditLog)
@@ -49,7 +55,27 @@ public partial class SecurityAuditPage : UserControl
         }
         var viewModel = new AuditLogViewModel(auditLog, services.GetService<ISessionRepository>());
         var window = new AuditLogView { DataContext = viewModel };
-        if (TopLevel.GetTopLevel(this) is Window owner)
+        // 「打开配置」借主窗口的编辑框:保存后要刷新会话树、按「连接」要开标签,这些都在主窗口那边。
+        if ((Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow is MainWindow main)
+        {
+            viewModel.OpenProfile = profile => main.EditProfileAsync(profile, window);
+        }
+        await ShowRememberedAsync(services, AuditLogLayoutKey, window);
+        FireAndForget.Run(() => viewModel.LoadAsync());
+    }
+
+    /// <summary>
+    /// 套上次的尺寸与位置(多屏用户摆到副屏上的,下次还在那儿;那块屏没了就照窗口自己的启动位置居中),
+    /// 再以设置窗口为属主非模态地打开。
+    /// </summary>
+    private async Task ShowRememberedAsync(IServiceProvider services, string layoutKey, Window window)
+    {
+        if (services.GetService<WindowLayoutStore>() is { } layoutStore)
+        {
+            await layoutStore.RememberAsync(layoutKey, window);
+        }
+        // 读布局那一下之后再取属主:设置窗口可能已经关掉了。
+        if (TopLevel.GetTopLevel(this) is Window { IsVisible: true } owner)
         {
             window.Show(owner);
         }
@@ -57,6 +83,46 @@ public partial class SecurityAuditPage : UserControl
         {
             window.Show();
         }
-        FireAndForget.Run(() => viewModel.LoadAsync());
     }
+
+    /// <summary>导入一份 OpenSSH <c>known_hosts</c>:选择框默认打开 <c>~/.ssh</c>。</summary>
+    private void ImportKnownHosts_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (DataContext is not SettingsViewModel { HostTrust: { } trust } || TopLevel.GetTopLevel(this) is not { } top)
+        {
+            return;
+        }
+        IReadOnlyList<IStorageFile> files = await top.StorageProvider.OpenFilePickerAsync(new()
+        {
+            Title = Strings.Get("KnownHosts_ImportDialogTitle"),
+            AllowMultiple = false,
+            SuggestedStartLocation = await StorageDefaults.FolderAsync(top, Path.GetDirectoryName(HostTrustViewModel.DefaultKnownHostsPath))
+                                     ?? await StorageDefaults.HomeAsync(top),
+        });
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { Length: > 0 } path)
+        {
+            return; // 用户取消了。
+        }
+        await trust.ImportFromFileAsync(path);
+    });
+
+    /// <summary>导出成 OpenSSH 格式的 <c>known_hosts</c>。默认存到下载目录:直接覆盖 <c>~/.ssh/known_hosts</c> 会冲掉命令行 ssh 记的那些。</summary>
+    private void ExportKnownHosts_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (DataContext is not SettingsViewModel { HostTrust: { } trust } || TopLevel.GetTopLevel(this) is not { } top)
+        {
+            return;
+        }
+        IStorageFile? file = await top.StorageProvider.SaveFilePickerAsync(new()
+        {
+            Title = Strings.Get("KnownHosts_ExportDialogTitle"),
+            SuggestedFileName = "known_hosts",
+            SuggestedStartLocation = await StorageDefaults.DownloadsAsync(top),
+        });
+        if (file?.TryGetLocalPath() is not { Length: > 0 } path)
+        {
+            return; // 用户取消了。
+        }
+        await trust.ExportToFileAsync(path);
+    });
 }

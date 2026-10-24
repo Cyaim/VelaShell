@@ -26,6 +26,8 @@
     <!-- puttygen 生成的加密 .ppk(v3,Argon2id)与它导出的 .pub:导入「只有 .ppk」时用。 -->
     <None Include="..\VelaShell.Ssh.Tests\Keys\Fixtures\putty-ed25519-v3-hi-enc.ppk" Link="Ssh\Fixtures\putty-ed25519-v3-hi-enc.ppk" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\VelaShell.Ssh.Tests\Keys\Fixtures\putty-ed25519-v3-hi-enc.pub" Link="Ssh\Fixtures\putty-ed25519-v3-hi-enc.pub" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 真 ssh-keygen 签发的主机证书与 CA 公钥(hostcert-*,只取 .pub):受信主机 CA 的裁决用例用。 -->
+    <None Include="..\VelaShell.Ssh.Tests\Keys\Fixtures\hostcert-*.pub" Link="Ssh\Fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

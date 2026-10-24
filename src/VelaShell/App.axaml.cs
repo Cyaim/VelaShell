@@ -161,6 +161,11 @@ public class App : Application
                 channelProvider: async () =>
                     (await sp.GetRequiredService<ISettingsService>().GetSnapshotAsync()).General.UpdateChannel
             ))
+            // 自动下载更新:启动检查在主窗口的消息中心里跑,下载交给设置页那条链路(同一个忙状态,
+            // 关于页开着时看得到进度、不会并发再起一份)。委托里才去取设置视图模型 —— 不为一个默认关着的
+            // 开关在启动时就把整个设置页的视图模型造出来。
+            .AddSingleton<BackgroundUpdateDownload>(sp =>
+                () => sp.GetRequiredService<SettingsViewModel>().DownloadUpdateInBackgroundAsync())
             .AddSingleton(sp => new WindowLayoutStore(sp.GetService<IAppDataStore>()))
             .AddSingleton<QuickCommandsViewModel>()
             .AddSingleton<SettingsViewModel>()
@@ -292,6 +297,9 @@ public class App : Application
             {
                 SessionLogService.CleanupExpired(logRetentionDays);
                 TransferLogService.CleanupExpired(transferLogDirectory, transferLogRetentionDays);
+                // 内置编辑器崩溃留下的临时副本(关窗才删,进程没了就没人删):7 天没碰过的清掉。
+                // remote-edit 里刻意保留的回传失败草稿不在这里清,理由见 BuiltInEditTempFiles。
+                BuiltInEditTempFiles.SweepStale(BuiltInEditTempFiles.TempBase, DateTime.UtcNow);
             });
 
             // 过期会话录制清理(随终端会话日志的保留天数)。

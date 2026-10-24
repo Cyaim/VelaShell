@@ -216,7 +216,7 @@ StatusBar (24px, bg-sidebar)
 | Element | Height | Notes |
 |---|---|---|
 | Title bar | 28px | Every window: main window, standalone windows and dialogs (`Border.window-titlebar`, height set once in `Themes/WindowChrome.axaml`). Exceptions (no title bar, header stays 48px): the settings window, whose top-left strip is the navigation header (drag area, no window buttons); and the message dialog (notice / confirm / prompt), which has no close button — it closes from its button bar or Esc. Main window `bg-sidebar`, bottom 1px `VelaBorderPrimary`; window buttons are 27×27 squares (side = bar − 1px border). Dialogs use the same bar as the standalone windows (the recording player): a 15px Lucide icon in `VelaAccent` followed by a 13px SemiBold title at the left and a 27×27 close square flush with the top-right corner (not tagged `window-caption`, so macOS keeps it; a fixed-size dialog gets no maximize) — never the old 48px header's 16px filled icon, 14px title and rounded 24×24 ×. Every window whose buttons sit flush in the corner sets `ClipToBounds="True"` on its card, so the square hover fill follows the card's rounded corner instead of poking out of it (`WindowChromeCoverageTests` scans for it). Window-level actions sit in the title bar's action group, just left of the window buttons: icon-only `VelaTitleActionButtonTheme` buttons (24×22, 12px icon in `VelaTextMuted`, `VelaAccent` while a toggle is on), each with a tooltip and an automation name — the same group as the main window's global icons (the recording player's export / refresh / clean-up / auto-record, the resource monitor's pause, the remote editor's save, the diagnostics window's export report / re-run). An icon that stands in for a call to action which used to be a solid accent button lights up in `VelaAccent` while the action is due (the editor's save while there are unsaved changes). A status badge that names what the window is looking at (the resource monitor's host) may sit in front of them, no taller than the bar. Only a subtitle goes in a row below the title bar. On macOS windows with traffic lights take the system title bar height (28pt today) so the lights share its centre line |
-| Tab bar | 36px | `bg-page`, contains 32px tab items. With *Show Tabs in Multiple Rows* on, every extra row adds 35px (rows are 35px tall, the 1px separator stays below the last row) |
+| Tab bar | 36px | `bg-page`, contains 32px tab items. A horizontal strip sits above its pane, or below it when *Tab bar position* is Bottom (every pane at once; the 1px separator stays between strip and content, and the active line stays on the tab's top edge, which then faces the content). A pane whose tabs were moved to the left / right from the tab menu keeps that side. With *Show Tabs in Multiple Rows* on, every extra row adds 35px (rows are 35px tall, the 1px separator stays on the content side of the rows) |
 | Tab item | 32px | Active: `VelaTabActiveBg` + 2px top accent; inactive: `VelaTabInactiveBg`. Width follows the title; when one row is too narrow the widest tabs shrink first (title ellipsis, icons and the end button untouched) down to 120px, then the strip scrolls. A pinned tab sorts first and shows a pin (click = unpin) where the close `x` would be |
 | Toolbar | 36px | Sidebar toolbar, file browser header |
 | Column header | 26px | `VelaBgSurface`, bottom 1px `VelaBorderPrimary` |
@@ -334,6 +334,17 @@ Guarded by `DialogButtonStyleTests`.
   pixel of mouse movement is wasted work. Output is always uppercase `#RRGGBB`; an unparsable hex is never written.
 - The white / black in the pad and the thumb rings are the HSV color space itself, not UI colors, so they are not tokens.
 
+#### IconPickerField (`ctl:IconPickerField`, `src/VelaShell/Controls`)
+- The connection dialog's tab icon (General → Organize, every protocol). Same field look as `ColorPickerField`:
+  a 14px icon, the icon's localized name in 11px, a chevron. With no icon picked it shows the protocol's default glyph
+  (`DefaultIconKey`) and `EmptyText` ("Follow protocol"), both in `VelaTextMuted`.
+- Flyout (bare content on the global `FlyoutPresenter` chrome, 224 wide): a wrap of 28px cells (`CornerRadius:4`,
+  1px `VelaBorderPrimary`, 15px stroked icon in `VelaTextSecondary`; hover `VelaBgHover` + `VelaTextPrimary`; the current
+  one outlined in `VelaTextPrimary` 2px with its icon in `VelaAccent`; `:focus-visible` `VelaAccent` 2px) → a
+  full-width `VelaOutlineButtonTheme` "Follow protocol" button, disabled while nothing is picked.
+- A click writes back and closes the flyout. The list is `SessionTabIcons` in Core (ids are lucide names, every one must
+  exist in `Icons.axaml`); each cell's tooltip and automation name is the icon's localized name.
+
 #### StatusDot (`Ellipse`)
 - 7x7 circle, fill driven by connection state
 - Classes: `.dot` (default=disconnected), `.dot.connected` (`VelaStatusConnected`), `.dot.connecting` (`VelaStatusConnecting`)
@@ -428,10 +439,11 @@ The existing SFTP file browser is the primary reusable component for the dual-pa
 ### 5.4 Session Tree (`SessionTreeView.axaml`)
 
 - Group row (30px): chevron + folder icon (color rotates: `VelaWarning`/`VelaInfo`/`VelaAccent`) + name (`VelaTextPrimary` 12px Medium) + count (`VelaTextTertiary` 10px)
-- Session row (28px): status dot + name + optional status tag
+- Session row (28px): status dot + name + optional status tag. A connection with a picked tab icon (`TerminalOverrides.TabIcon`) shows that 12px glyph between the dot and the name, in the name's color (`VelaTextSecondary`, `VelaAccent` when selected / multi-selected); rows without one keep no gap for it
 - Selected: `VelaBgActive` background, name switches to `VelaAccent` Medium
 - Multi-selected rows (Ctrl / Shift, #571): exactly the same treatment as the selected row (`.multimarked`) — they are all "selected"; the list control itself stays single-select
 - Hover: `VelaBgHover`
+- Filter box (`SessionTreeFilterBox`): pinned above the tree (it does not scroll with it), in the sidebar (margin `8,8,8,0`) and in the collapsed rail's flyout — same spec as the quick-command search box: 26px `TextBox`, `VelaFontSize10`, an 11px `search` icon in `VelaTextMuted` on the left, and while filtering an 18px transparent clear button with a 10px `x` in `VelaTextTertiary` on the right. Nothing matched: one `VelaTextMuted` 11px line where the rows would be. Group rows with matches are forced open while filtering; group rows cannot be dragged while filtering
 - Dragging a group row (#571): a 2px `VelaAccent` insertion line (`CornerRadius:1`) on the gap between groups, plus the shared drag ghost (`VelaBgActive` fill, `VelaAccent` 1px border, `VelaShadowWindow`). Sessions dragged into a group keep the old feedback (group row `droptarget` highlight, no insertion line — their position is by name)
 
 ### 5.5 Context Menus (global style in `DockStyles.axaml`)
@@ -454,6 +466,9 @@ The existing SFTP file browser is the primary reusable component for the dual-pa
 - 24x24, `CornerRadius:3`, transparent background
 - Hover: `VelaBgHover`
 - Disabled: 0.35 opacity
+- Used by the overflow trio (scroll back / scroll forward / all tabs) and the `+` new-tab button
+- The trio sits at the strip's far end -- the right end of a horizontal strip, centred in one row at the foot of a left / right strip -- and appears only when the tabs overflow along the strip's own axis. On a vertical strip the scroll chevrons turn up / down; the all-tabs chevron points to where its list opens (down; up for a bottom strip; right for a left strip; left for a right strip)
+- `+` follows the last tab (below it on a vertical strip, its glyph lined up with the tab content) and pins to the end of the viewport once the tabs scroll. The strip reserves 24 + 2×2px for it at the end, so it never pushes the tabs into overflow. 14px `Icon.plus` in `VelaTextTertiary`; tooltip and automation name `Dock_NewTab`. Shown only when the host handles `DockWorkspaceControl.NewTabRequested`
 
 ### 5.8 Scrollbars (`Themes/ScrollBarThemes.axaml`, overrides Fluent's `{x:Type ScrollBar}`)
 

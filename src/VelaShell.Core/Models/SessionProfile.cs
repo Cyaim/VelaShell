@@ -183,12 +183,12 @@ public class SessionProfile
     public Dictionary<string, string>? PluginSecrets { get; set; }
 
     /// <summary>
-    /// 会话级的终端覆盖项:编码、终端类型、配色、标签颜色、初始目录、心跳间隔。
+    /// 会话级的终端覆盖项:编码、终端类型、配色、标签颜色与图标、初始目录、心跳间隔。
     /// null(整个对象,或其中任一字段)= 跟随全局设置。
     /// </summary>
     /// <remarks>
-    /// 单开一个对象而不是把六个字段平铺进来,是为了让「这条配置没有任何覆盖」在落盘时
-    /// 就是一个 <c>null</c> —— 旧数据零迁移,新字段也不会给每条老配置塞六个空值。
+    /// 单开一个对象而不是把这些字段平铺进来,是为了让「这条配置没有任何覆盖」在落盘时
+    /// 就是一个 <c>null</c> —— 旧数据零迁移,新字段也不会给每条老配置塞一串空值。
     /// </remarks>
     public TerminalOverrides? Terminal { get; set; }
 

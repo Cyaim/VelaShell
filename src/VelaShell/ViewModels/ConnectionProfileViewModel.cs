@@ -100,6 +100,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private readonly string? _ftpTrustedThumbprint;
     private readonly int _ftpMaxConnections = new FtpSettings().MaxConnections;
     private string? _ftpInitialRemotePath;
+    private int? _ftpServerUtcOffsetMinutes;
+    private IReadOnlyList<FtpTimeZoneOption>? _ftpTimeZoneOptions;
     private Guid? _groupId;
     private string _host = string.Empty;
     private bool _isCertAuth;
@@ -108,6 +110,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private Guid? _jumpHostProfileId;
     private string _name = string.Empty;
     private string? _notes;
+    private string? _tabIcon;
     private SecureString? _password;
     private int _port = 22;
     private string? _privateKeyPassphrase;
@@ -130,6 +133,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     // ---- SSH 协议层可选能力(压缩 / agent 转发 / X11 转发);默认全关 ----
     private bool _sshCompression;
+    private bool _sshObscureKeystrokeTiming;
     private bool _sshAgentForwarding;
     private bool _sshAgentForwardRestrict;
     private bool _sshAgentForwardConfirm;
@@ -239,6 +243,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 _ftpTrustedThumbprint = ftp.TrustedCertificateThumbprint;
                 _ftpMaxConnections = ftp.MaxConnections;
                 _ftpInitialRemotePath = ftp.InitialRemotePath;
+                _ftpServerUtcOffsetMinutes = ftp.ServerUtcOffsetMinutes;
             }
             _pluginProtocolId = existing.PluginProtocolId;
             _pluginStored = existing.PluginSettings;
@@ -248,6 +253,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 _overrideEncoding = overrides.Encoding;
                 _overrideTerminalType = overrides.TerminalType;
                 _overrideTabColor = overrides.TabColor;
+                _tabIcon = SessionTabIcons.Normalize(overrides.TabIcon);
                 _overrideStartupDirectory = overrides.StartupDirectory;
                 _overrideKeepAliveSeconds = overrides.KeepAliveSeconds ?? -1;
                 _antiIdleSeconds = overrides.AntiIdleSeconds ?? 0;
@@ -255,6 +261,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             if (existing.Ssh is { } ssh)
             {
                 _sshCompression = ssh.Compression;
+                _sshObscureKeystrokeTiming = ssh.ObscureKeystrokeTiming;
                 _sshAgentForwarding = ssh.AgentForwarding;
                 _sshAgentForwardRestrict = ssh.AgentForwardKeys is not null;
                 _savedAgentForwardKeys = ssh.AgentForwardKeys is { } keys ? [.. keys] : [];
@@ -415,6 +422,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             this.RaisePropertyChanged(nameof(IsSftpSelected));
             this.RaisePropertyChanged(nameof(IsFtpSelected));
             this.RaisePropertyChanged(nameof(IsPluginSelected));
+            this.RaisePropertyChanged(nameof(TabIconDefaultKey));
             this.RaisePropertyChanged(nameof(RequiresSshAuth));
             this.RaisePropertyChanged(nameof(SshAlgorithmsError));
             this.RaisePropertyChanged(nameof(SupportsPostAuthCommand));
@@ -1294,7 +1302,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         || _antiIdleSeconds > 0;
 
     /// <summary>「SSH 选项」页是否有非默认值。</summary>
-    public bool IsSshOptionsSectionModified => _sshCompression || _sshLegacyAlgorithms || _sshCustomAlgorithms;
+    public bool IsSshOptionsSectionModified =>
+        _sshCompression || (SupportsPostAuthCommand && _sshObscureKeystrokeTiming) || _sshLegacyAlgorithms || _sshCustomAlgorithms;
 
     /// <summary>「转发」页是否有非默认值。</summary>
     public bool IsForwardingSectionModified => _sshAgentForwarding || _sshX11Forwarding;
@@ -1302,7 +1311,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// <summary>「高级」页是否有非默认值。</summary>
     public bool IsAdvancedSectionModified =>
         IsFtpSelected
-            ? !string.IsNullOrWhiteSpace(_ftpInitialRemotePath)
+            ? !string.IsNullOrWhiteSpace(_ftpInitialRemotePath) || _ftpServerUtcOffsetMinutes is not null
             : PluginFields.Any(f => f.IsAdvanced
                                     && !string.Equals(f.Text, f.Field.DefaultValue ?? string.Empty, StringComparison.Ordinal));
 
@@ -1325,6 +1334,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         this.RaisePropertyChanged(nameof(ShowSshOptionsSection));
         this.RaisePropertyChanged(nameof(ShowForwardingSection));
         this.RaisePropertyChanged(nameof(ShowAdvancedSection));
+        // 按键时序混淆只算 SSH 的:切到 SFTP 它不存,页签上的圆点也不该还亮着。
+        this.RaisePropertyChanged(nameof(IsSshOptionsSectionModified));
         if (!IsSectionAvailable(SelectedSection))
         {
             SelectedSection = ConnectionProfileSection.General;
@@ -1393,7 +1404,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     }.ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> SshOptionsSectionInputs =
-        new[] { nameof(SshCompression), nameof(SshLegacyAlgorithms), nameof(SshCustomAlgorithms) }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { nameof(SshCompression), nameof(SshObscureKeystrokeTiming), nameof(SshLegacyAlgorithms), nameof(SshCustomAlgorithms) }
+            .ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> ForwardingSectionInputs =
         new[] { nameof(SshAgentForwarding), nameof(SshX11Forwarding) }.ToFrozenSet(StringComparer.Ordinal);
@@ -1425,7 +1437,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         {
             this.RaisePropertyChanged(nameof(IsForwardingSectionModified));
         }
-        else if (name == nameof(FtpInitialRemotePath))
+        else if (name is nameof(FtpInitialRemotePath) or nameof(SelectedFtpTimeZone))
         {
             this.RaisePropertyChanged(nameof(IsAdvancedSectionModified));
         }
@@ -1462,6 +1474,23 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         get => _notes;
         set => this.RaiseAndSetIfChanged(ref _notes, value);
     }
+
+    /// <summary>
+    /// 标签页图标(「常规」页「整理」一节的图标字段,<see cref="SessionTabIcons" /> 里的 id);null = 跟协议。
+    /// </summary>
+    /// <remarks>
+    /// 放在「常规」页而不是颜色所在的「终端」页:图标对每一种协议都画(SFTP / FTP / 插件标签也有),
+    /// 而「终端」页只有 SSH 才有。存进 <see cref="TerminalOverrides.TabIcon" />,与标签颜色同一处。
+    /// </remarks>
+    public string? TabIcon
+    {
+        get => _tabIcon;
+        set => this.RaiseAndSetIfChanged(ref _tabIcon, SessionTabIcons.Normalize(value));
+    }
+
+    /// <summary>跟协议时图标字段上画的那枚(按当前选的协议;插件协议是通用插头)。</summary>
+    public string? TabIconDefaultKey =>
+        Services.ConnectionIcon.ResourceKeyFor(new SessionProfile { ConnectionType = ConnectionType });
 
     /// <summary>
     /// 本条配置专属的「认证后执行命令」(「终端」页);留空 = 不执行。
@@ -1515,6 +1544,15 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     {
         get => _sshCompression;
         set => this.RaiseAndSetIfChanged(ref _sshCompression, value);
+    }
+
+    /// <summary>
+    /// 按键时序混淆(OpenSSH 的 <c>ObscureKeystrokeTiming</c>);只挂在交互式 shell 上,显示条件跟 <see cref="SupportsPostAuthCommand" />。
+    /// </summary>
+    public bool SshObscureKeystrokeTiming
+    {
+        get => _sshObscureKeystrokeTiming;
+        set => this.RaiseAndSetIfChanged(ref _sshObscureKeystrokeTiming, value);
     }
 
     // ---- 算法清单(连老设备)----
@@ -1925,6 +1963,32 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         set => this.RaiseAndSetIfChanged(ref _ftpInitialRemotePath, value);
     }
 
+    /// <summary>
+    /// 「服务器时区」下拉候选(「高级」页,仅 FTP / FTPS):「与本机相同」+ UTC−12:00…UTC+14:00。
+    /// 首次读取时才建,那时配置里现存的值已经载入(不在表里的也会被插进去,见 <see cref="FtpTimeZoneOption.Build" />)。
+    /// </summary>
+    public IReadOnlyList<FtpTimeZoneOption> FtpTimeZoneOptions =>
+        _ftpTimeZoneOptions ??= FtpTimeZoneOption.Build(_ftpServerUtcOffsetMinutes);
+
+    /// <summary>
+    /// 选中的服务器时区:目录比较与同步按它换算 LIST 的时间(见 <see cref="FtpSettings.ServerUtcOffsetMinutes" />)。
+    /// 「与本机相同」存为 null,即旧行为。
+    /// </summary>
+    public FtpTimeZoneOption SelectedFtpTimeZone
+    {
+        get => FtpTimeZoneOptions.FirstOrDefault(o => o.Minutes == _ftpServerUtcOffsetMinutes) ?? FtpTimeZoneOptions[0];
+        set
+        {
+            int? minutes = value?.Minutes;
+            if (minutes == _ftpServerUtcOffsetMinutes)
+            {
+                return;
+            }
+            _ftpServerUtcOffsetMinutes = minutes;
+            this.RaisePropertyChanged();
+        }
+    }
+
     /// <summary>分组下拉候选:“未分组” + 全部已保存分组。</summary>
     public ObservableCollection<GroupOption> Groups { get; }
 
@@ -2257,6 +2321,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                     MaxConnections = _ftpMaxConnections,
                     // setter 自带归一化(补前导 /、去尾斜杠、空串归 null),这里原样交给它。
                     InitialRemotePath = _ftpInitialRemotePath,
+                    ServerUtcOffsetMinutes = _ftpServerUtcOffsetMinutes,
                 }
                 : null,
             // 插件协议:只存协议 id 与它自己声明的那些字段。宿主对这些键一无所知,
@@ -2289,6 +2354,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         SshSessionOptions options = new()
         {
             Compression = _sshCompression,
+            // 与两个转发同理:SFTP 配置没有交互式 shell,存下来永远不生效,切回 SSH 时却会突然起作用。
+            ObscureKeystrokeTiming = shell && _sshObscureKeystrokeTiming,
             AgentForwarding = shell && _sshAgentForwarding,
             AgentForwardKeys = shell && _sshAgentForwarding ? SelectedAgentForwardKeys() : null,
             AgentForwardConfirm = shell && _sshAgentForwarding && _sshAgentForwardConfirm,
@@ -2315,6 +2382,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             Encoding = _overrideEncoding,
             TerminalType = _overrideTerminalType,
             TabColor = string.IsNullOrWhiteSpace(_overrideTabColor) ? null : _overrideTabColor.Trim(),
+            // 图标在「常规」页挑,对每一种协议都生效;认不出的 id 存成 null(跟协议)。
+            TabIcon = SessionTabIcons.Normalize(_tabIcon),
             StartupDirectory = string.IsNullOrWhiteSpace(_overrideStartupDirectory)
                 ? null
                 : _overrideStartupDirectory.Trim(),

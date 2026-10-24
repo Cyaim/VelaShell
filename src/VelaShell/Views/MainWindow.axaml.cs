@@ -14,12 +14,14 @@ using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Diagnostics;
 using VelaShell.Core.Import;
+using VelaShell.Core.Layouts;
 using VelaShell.Core.Models;
 using VelaShell.Core.Processes;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Services;
 using VelaShell.Core.Ssh;
 using VelaShell.Docking;
+using VelaShell.Docking.Controls;
 using VelaShell.Infrastructure.Diagnostics;
 using VelaShell.Presentation.Services;
 using VelaShell.Presentation.ViewModels;
@@ -41,6 +43,15 @@ public partial class MainWindow : Window
     /// <summary>资源监视窗口尺寸在文档存储里的键。</summary>
     private const string ResourceMonitorLayoutKey = "resourceMonitor";
 
+    /// <summary>插件管理窗口尺寸与位置在文档存储里的键。</summary>
+    private const string PluginManagerLayoutKey = "pluginManager";
+
+    /// <summary>「管理布局模板」窗口尺寸与位置在文档存储里的键。</summary>
+    private const string LayoutTemplatesLayoutKey = "layoutTemplates";
+
+    /// <summary>开着(或正在读布局、还没 Show)的「管理布局模板」窗口;读布局那一下之间连点两次也只开一扇。</summary>
+    private LayoutTemplatesWindow? _layoutTemplatesWindow;
+
     /// <summary>每个会话至多一扇任务管理器窗口,按会话标识去重。</summary>
     private readonly Dictionary<Guid, ProcessManagerView> _processManagers = [];
 
@@ -49,6 +60,12 @@ public partial class MainWindow : Window
 
     /// <summary>每个追踪目标至多一扇窗口,按目标主机去重。</summary>
     private readonly Dictionary<string, TraceRouteWindow> _traceWindows = [with(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>连接信息窗口尺寸在文档存储里的键。</summary>
+    private const string ConnectionInfoLayoutKey = "connectionInfo";
+
+    /// <summary>每个标签至多一扇连接信息窗口,按标签去重(重连之后还是同一个标签、同一扇窗)。</summary>
+    private readonly Dictionary<TerminalTabViewModel, SshConnectionInfoWindow> _connectionInfoWindows = [];
 
     private IDisposable? _fileBrowserVisibilitySub;
     private IDisposable? _sidebarCollapsedSub;
@@ -168,6 +185,11 @@ public partial class MainWindow : Window
             sidebar.SettingsRequested += (_, _) => _ = OpenSettingsAsync();
             sidebar.PluginsRequested += (_, _) => OpenPluginManager();
             sidebar.ImportSessionsRequested += (_, _) => _ = OpenSessionImportDialogAsync();
+        }
+        // 标签条上的「+」:停靠层只报是哪一格,在那一格里走 Ctrl+T 同一条新建逻辑。
+        if (this.FindControl<DockWorkspaceControl>("DockHost") is { } dockHost)
+        {
+            dockHost.NewTabRequested += pane => (DataContext as MainWindowViewModel)?.OpenNewTabInPane(pane);
         }
         DataContextChanged += (_, _) =>
         {
@@ -461,8 +483,12 @@ public partial class MainWindow : Window
                 proposalRegistry.ConnectionProposalHandler = ProposeConnectionAsync;
             }
             vm.MultilinePasteConfirmer = ConfirmMultilinePasteAsync;
-            vm.QuickCommandVariablePrompt = (name, template) => QuickCommandVariablesPrompt.ShowAsync(this, name, template);
+            vm.QuickCommandVariablePrompt = (name, template, initial) => QuickCommandVariablesPrompt.ShowAsync(this, name, template, initial);
             vm.QuickCommandMultilineConfirmer = ConfirmQuickCommandMultilineAsync;
+            vm.CommandRerunConfirmer = ConfirmCommandRerunMultilineAsync;
+            // 失败覆盖层上的「放开这几个算法并重连」:会降低那条连接的安全性,先点名再问一句。
+            vm.AllowAlgorithmsConfirmer = (title, body) => MessageDialog.ConfirmAsync(
+                this, title, body, Strings.Get("SshAlgoFix_ConfirmAction"), kind: MessageDialogKind.Warning);
             vm.ExportBufferRequested += (_, _) => _ = ExportTerminalBufferAsync(vm);
             // 工具菜单“连接诊断”:对当前标签的配置打开诊断中心(设计 RGXg1)。
             vm.DiagnosticsRequested += profile =>
@@ -473,9 +499,17 @@ public partial class MainWindow : Window
 
             vm.ResourceMonitorRequested += (sessionId, label) =>
                 Dispatcher.UIThread.Post(() => _ = OpenResourceMonitorAsync(sessionId, label));
+            // 布局模板:标题栏下拉与命令面板发起的存 / 改名 / 删除以本窗口为属主弹框;
+            // 管理窗口开着时它传自己的那份(见 LayoutTemplatesWindow)。
+            vm.LayoutTemplates.Dialogs = new LayoutTemplateDialogs(this);
+            vm.LayoutTemplates.ManagerRequested += () =>
+                Dispatcher.UIThread.Post(() => FireAndForget.Run(() => ShowLayoutTemplatesWindowAsync(vm.LayoutTemplates)));
             // 标题栏"链路追踪":每个目标最多一扇窗,非模态。
             vm.TraceRouteRequested += (host, label) =>
                 Dispatcher.UIThread.Post(() => _ = OpenTraceRouteAsync(vm, host, label));
+            // 标签右键 / 命令面板"连接信息":每个标签最多一扇窗,非模态。
+            vm.ConnectionInfoRequested += tab =>
+                Dispatcher.UIThread.Post(() => FireAndForget.Run(() => OpenConnectionInfoAsync(vm, tab)));
 
             // 资源管理器树:右键连接/双击连接 + 右键编辑。
             if (vm.Sidebar.SessionTree is { } tree)
@@ -582,10 +616,18 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task RestoreSessionsAsync(AppSettings? settings)
     {
+        if (settings?.General.RestoreSessionsOnStartup != true || DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+        // 「按上次的分屏恢复」(默认关):有退出时记下的布局就按它重连并排好;没有(刚打开这个开关、
+        // 上次退出时什么都没连着、布局读不出来)才退回下面的逐条重连。
+        if (settings.General.RestoreLayoutOnStartup && await vm.LayoutTemplates.RestoreSessionLayoutAsync())
+        {
+            return;
+        }
         if (
-            settings?.General.RestoreSessionsOnStartup != true
-            || settings.General.LastOpenProfileIds.Count == 0
-            || DataContext is not MainWindowViewModel vm
+            settings.General.LastOpenProfileIds.Count == 0
             || Application.Current is not App { Services: { } services }
             || services.GetService<ISessionRepository>() is not { } repository
         )
@@ -658,13 +700,15 @@ public partial class MainWindow : Window
         Dispatcher.UIThread.Post(action);
     }
 
-    /// <summary>应用设置 → 外观:窗口透明度、侧边栏位置、界面字体/字号。
+    /// <summary>应用设置 → 外观:窗口透明度、侧边栏位置、标签栏位置、界面字体/字号。
     /// (菜单栏显隐设置已随文字菜单一并移除:自绘标题栏承载窗口控制按钮,必须常显。)</summary>
     private void ApplyWindowAppearance(AppSettings settings)
     {
         AppearanceOptions a = settings.Appearance;
         ApplyWindowOpacity(a.WindowOpacityPercent);
         ApplySidebarPosition(a.SidebarPosition == "right");
+        // 与侧边栏位置一样跟着外观预览走:保存时视图模型还会再应用一次(同值,不重排)。
+        (DataContext as MainWindowViewModel)?.ApplyTabBarPosition(a);
         ApplyBackgroundImage(a);
         if (Application.Current is { } app)
         {
@@ -683,6 +727,7 @@ public partial class MainWindow : Window
         AppearanceOptions b = right.Appearance;
         return a.WindowOpacityPercent == b.WindowOpacityPercent
             && string.Equals(a.SidebarPosition, b.SidebarPosition, StringComparison.Ordinal)
+            && string.Equals(a.TabBarPosition, b.TabBarPosition, StringComparison.Ordinal)
             && string.Equals(a.BackgroundImagePath, b.BackgroundImagePath, StringComparison.Ordinal)
             && a.BackgroundImageOpacity == b.BackgroundImageOpacity
             && a.ContentBackgroundOpacity == b.ContentBackgroundOpacity
@@ -1088,6 +1133,20 @@ public partial class MainWindow : Window
                         )
                         .Distinct(),
                 ];
+                // 按上次的分屏恢复:另记一份布局(只记在线的标签,口径同上);开关关着时清掉旧的,
+                // 免得哪天重新打开它、又赶上没正常退出,启动时还原出一份很久以前的布局。
+                // 单独兜住:布局没记上不该连累上面那份连接清单与窗口位置也存不进去。
+                try
+                {
+                    LayoutTemplate? layout = settings.General.RestoreLayoutOnStartup
+                                                 ? vm.LayoutTemplates.CaptureSessionLayout()
+                                                 : null;
+                    vm.LayoutTemplates.SaveSessionLayoutAsync(layout).GetAwaiter().GetResult();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    System.Diagnostics.Trace.WriteLine($"[VelaShell] Saving the session layout failed: {ex.Message}");
+                }
             }
             _settingsService.SaveSettingsAsync(settings).GetAwaiter().GetResult();
         }
@@ -1216,8 +1275,16 @@ public partial class MainWindow : Window
         return saved.Any(candidate => candidate.Id == profile.Id);
     }
 
-    /// <summary>打开“新建连接”弹窗;传入 existing 时为编辑既有配置。</summary>
-    private async Task OpenProfileDialogAsync(SessionProfile? existing)
+    /// <summary>
+    /// 从别的窗口打开一条连接配置的编辑框(审计日志的「打开配置」):编辑框以 <paramref name="owner" /> 为主人弹出,
+    /// 保存、刷新会话树、按「连接」连上都与从资源管理器打开一样。
+    /// </summary>
+    /// <param name="profile">要编辑的配置(从库里刚读出来的)。</param>
+    /// <param name="owner">编辑框的主人窗口。</param>
+    internal Task EditProfileAsync(SessionProfile profile, Window owner) => OpenProfileDialogAsync(profile, owner);
+
+    /// <summary>打开“新建连接”弹窗;传入 existing 时为编辑既有配置。<paramref name="owner" /> 为空时以主窗口为主人。</summary>
+    private async Task OpenProfileDialogAsync(SessionProfile? existing, Window? owner = null)
     {
         if (DataContext is not MainWindowViewModel mainWindowViewModel)
         {
@@ -1263,7 +1330,7 @@ public partial class MainWindow : Window
             OpenPluginManager = OpenPluginManager
         };
         var dialog = new ConnectionProfileView { DataContext = connectionProfileViewModel };
-        SessionProfile? profile = await dialog.ShowDialog<SessionProfile?>(this);
+        SessionProfile? profile = await dialog.ShowDialog<SessionProfile?>(owner ?? this);
         if (profile is null)
         {
             return;
@@ -1306,17 +1373,16 @@ public partial class MainWindow : Window
         _processManagers[sessionId] = window;
         window.Closed += (_, _) => _processManagers.Remove(sessionId);
 
-        // 尺寸记忆:所有会话共用一条记录 —— 用户调的是"这个面板多大",不是"这台服务器的面板多大"。
+        // 尺寸与位置记忆:所有会话共用一条记录 —— 用户调的是"这个面板多大、摆在哪块屏",不是"这台服务器的面板"。
         if (app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
         {
-            WindowLayoutStore.Apply(window, await layoutStore.LoadAsync(ProcessManagerLayoutKey));
-            window.Closing += (_, _) => _ = layoutStore.SaveAsync(ProcessManagerLayoutKey, window);
+            await layoutStore.RememberAsync(ProcessManagerLayoutKey, window);
         }
         window.Show(this);
     }
 
     /// <summary>
-    /// 打开(或前置)某个会话的资源监视窗口。与任务管理器同样按会话去重、非模态、记忆尺寸 ——
+    /// 打开(或前置)某个会话的资源监视窗口。与任务管理器同样按会话去重、非模态、记忆尺寸与位置 ——
     /// 用户要一边盯曲线一边在终端里敲命令。
     /// </summary>
     private async Task OpenResourceMonitorAsync(Guid sessionId, string label)
@@ -1338,16 +1404,43 @@ public partial class MainWindow : Window
         _resourceMonitors[sessionId] = window;
         window.Closed += (_, _) => _resourceMonitors.Remove(sessionId);
 
-        // 尺寸记忆:所有会话共用一条记录(同任务管理器)。
+        // 尺寸与位置记忆:所有会话共用一条记录(同任务管理器)。
         if (app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
         {
-            WindowLayoutStore.Apply(window, await layoutStore.LoadAsync(ResourceMonitorLayoutKey));
-            window.Closing += (_, _) => _ = layoutStore.SaveAsync(ResourceMonitorLayoutKey, window);
+            await layoutStore.RememberAsync(ResourceMonitorLayoutKey, window);
         }
         window.Show(this);
     }
 
-    /// <summary>打开(或前置)某个目标的链路追踪窗口。非模态,尺寸与任务管理器一样记忆。</summary>
+    /// <summary>
+    /// 打开(或前置)「管理布局模板」窗口。非模态:用户要一边看着它,一边在主窗口里把分屏排成想存的样子。
+    /// </summary>
+    private async Task ShowLayoutTemplatesWindowAsync(LayoutTemplatesViewModel templates)
+    {
+        if (_layoutTemplatesWindow is { } open)
+        {
+            if (open.IsVisible)
+            {
+                if (open.WindowState == WindowState.Minimized)
+                {
+                    open.WindowState = WindowState.Normal;
+                }
+                open.Activate();
+            }
+            return;
+        }
+        var window = new LayoutTemplatesWindow { DataContext = templates };
+        _layoutTemplatesWindow = window;
+        window.Closed += (_, _) => _layoutTemplatesWindow = null;
+        // 尺寸与位置记忆(同任务管理器、插件管理)。
+        if (Application.Current is App app && app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
+        {
+            await layoutStore.RememberAsync(LayoutTemplatesLayoutKey, window);
+        }
+        window.Show(this);
+    }
+
+    /// <summary>打开(或前置)某个目标的链路追踪窗口。非模态,尺寸与位置与任务管理器一样记忆。</summary>
     private async Task OpenTraceRouteAsync(MainWindowViewModel vm, string host, string label)
     {
         if (_traceWindows.TryGetValue(host, out TraceRouteWindow? existing))
@@ -1370,8 +1463,28 @@ public partial class MainWindow : Window
         window.Closed += (_, _) => _traceWindows.Remove(host);
         if (Application.Current is App app && app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
         {
-            WindowLayoutStore.Apply(window, await layoutStore.LoadAsync(TraceRouteLayoutKey));
-            window.Closing += (_, _) => _ = layoutStore.SaveAsync(TraceRouteLayoutKey, window);
+            await layoutStore.RememberAsync(TraceRouteLayoutKey, window);
+        }
+        window.Show(this);
+    }
+
+    /// <summary>打开(或前置并刷新)一个标签的连接信息窗口。非模态,尺寸与位置与链路追踪一样记忆。</summary>
+    private async Task OpenConnectionInfoAsync(MainWindowViewModel vm, TerminalTabViewModel tab)
+    {
+        if (_connectionInfoWindows.TryGetValue(tab, out SshConnectionInfoWindow? existing))
+        {
+            // 再点一次是想看此刻的样子:前置的同时刷新。
+            (existing.DataContext as SshConnectionInfoViewModel)?.Refresh();
+            existing.Activate();
+            return;
+        }
+        var window = new SshConnectionInfoWindow { DataContext = vm.CreateConnectionInfo(tab) };
+        _connectionInfoWindows[tab] = window;
+        // 标签关掉之后窗口留着(信息还能复制走),再刷新就如实说「没有连着」。
+        window.Closed += (_, _) => _connectionInfoWindows.Remove(tab);
+        if (Application.Current is App app && app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
+        {
+            await layoutStore.RememberAsync(ConnectionInfoLayoutKey, window);
         }
         window.Show(this);
     }
@@ -1453,7 +1566,10 @@ public partial class MainWindow : Window
     private PluginManagerWindow? _pluginManagerWindow;
 
     /// <summary>打开(或聚焦已开的)插件管理窗口。</summary>
-    private void OpenPluginManager()
+    private void OpenPluginManager() => FireAndForget.Run(OpenPluginManagerAsync);
+
+    /// <summary>打开(或聚焦已开的)插件管理窗口;非模态,尺寸与位置记忆同任务管理器。</summary>
+    private async Task OpenPluginManagerAsync()
     {
         if (_pluginManagerWindow is { } existing)
         {
@@ -1468,9 +1584,15 @@ public partial class MainWindow : Window
         var viewModel = new PluginManagerViewModel(manager,
             services.GetService<Infrastructure.Plugins.PluginPermissionGate>(),
             services.GetService<Infrastructure.Plugins.Market.IPluginMarketClient>());
-        _pluginManagerWindow = new PluginManagerWindow { DataContext = viewModel };
-        _pluginManagerWindow.Closed += (_, _) => _pluginManagerWindow = null;
-        _pluginManagerWindow.Show(this);
+        // 先占住槽位再去读布局:读的那一下里再点一次侧栏,只会激活这一扇,不会叠出第二扇。
+        PluginManagerWindow window = new() { DataContext = viewModel };
+        _pluginManagerWindow = window;
+        window.Closed += (_, _) => _pluginManagerWindow = null;
+        if (services.GetService<WindowLayoutStore>() is { } layoutStore)
+        {
+            await layoutStore.RememberAsync(PluginManagerLayoutKey, window);
+        }
+        window.Show(this);
     }
 
     /// <summary>
@@ -1718,6 +1840,25 @@ public partial class MainWindow : Window
             this,
             Strings.Get("Main_PasteMultilineTitle"),
             Strings.Format("Main_PasteMultilineBody", lines.Length, preview)
+        );
+    }
+
+    /// <summary>
+    /// 侧栏菜单「重跑」一条多行命令、而对端没开括号粘贴:每一行都会当场执行,预览前几行再问一句。
+    /// </summary>
+    private Task<bool> ConfirmCommandRerunMultilineAsync(string text)
+    {
+        string[] lines = text.Split('\n');
+        string preview = string.Join('\n', lines.Take(5));
+        if (lines.Length > 5)
+        {
+            preview += "\n…";
+        }
+        return MessageDialog.ConfirmAsync(
+            this,
+            Strings.Get("Gutter_RerunMultilineTitle"),
+            Strings.Format("Gutter_RerunMultilineBody", lines.Length, preview),
+            Strings.Get("Gutter_RerunCommand")
         );
     }
 

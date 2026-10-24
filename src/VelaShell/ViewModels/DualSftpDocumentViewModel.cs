@@ -168,8 +168,8 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
         RemoteFileInfoViewModel[] leftEntries = VisibleEntries(LeftFiles);
         RemoteFileInfoViewModel[] rightEntries = VisibleEntries(RightFiles);
         IReadOnlyList<SyncComparison> comparisons = DirectoryComparer.Compare(
-            ToSyncItems(leftEntries, TimesMayBeCoarse(_left.Profile)),
-            ToSyncItems(rightEntries, TimesMayBeCoarse(_right.Profile)),
+            ToSyncItems(leftEntries, TimesMayBeCoarse(_left.Profile), SyncTime.ServerClockOffset(_left.Profile)),
+            ToSyncItems(rightEntries, TimesMayBeCoarse(_right.Profile), SyncTime.ServerClockOffset(_right.Profile)),
             options);
 
         StringComparer comparer = options.IgnoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -238,9 +238,12 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
         Func<Task<string?>>? getDefaultEditorPath)
     {
         SessionProfile profile = endpoint.Profile;
+        string serverName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Host : profile.Name;
         var pane = new FileBrowserViewModel(sftp, endpoint.SessionId)
         {
-            ServerDisplayName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Host : profile.Name,
+            ServerDisplayName = serverName,
+            // 往本机的上传 / 下载记进传输队列;两栏之间的中转不记(要两条连接同时在才能接着传)。
+            QueueOrigin = new(profile.Id, serverName),
             // 两栏各带自己那台机器的标识色:两边都是远端,光看路径分不清哪栏是哪台。
             AccentBrush = ConnectionAccent.BrushForProfile(profile),
             TransferSink = transferSink,
@@ -336,10 +339,16 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
     private static RemoteFileInfoViewModel[] VisibleEntries(FileBrowserViewModel pane) =>
         [.. pane.Files.Where(static f => !f.IsParentEntry && !f.IsDirectoryLink)];
 
-    private static IReadOnlyList<SyncItem> ToSyncItems(IEnumerable<RemoteFileInfoViewModel> entries, bool coarse) =>
+    /// <param name="entries">一栏的条目。</param>
+    /// <param name="coarse">时间是否可能粗于秒。</param>
+    /// <param name="clock">这一栏服务器时钟的 UTC 偏移(FTP 配了服务器时区时);null = 与本机同一时区。</param>
+    private static IReadOnlyList<SyncItem> ToSyncItems(IEnumerable<RemoteFileInfoViewModel> entries, bool coarse, TimeSpan? clock) =>
         [.. entries.Select(f => new SyncItem(
-            f.Name, f.FullPath, f.IsDirectory, f.IsDirectory ? 0 : f.SizeBytes, SyncTime.ToUtc(f.LastModified),
-            coarse ? SyncTime.InferPrecision(f.LastModified) : SyncTimePrecision.Second))];
+            f.Name, f.FullPath, f.IsDirectory, f.IsDirectory ? 0 : f.SizeBytes, SyncTime.ToUtc(f.LastModified, clock),
+            coarse ? SyncTime.InferPrecision(f.LastModified) : SyncTimePrecision.Second)
+        {
+            CalendarOffset = SyncTime.CalendarOffsetFor(f.LastModified, clock),
+        })];
 
     private static void Select(FileBrowserViewModel pane, IEnumerable<RemoteFileInfoViewModel> entries, HashSet<string> names)
     {

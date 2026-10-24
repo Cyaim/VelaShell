@@ -451,6 +451,55 @@ public sealed class SharedPasswordFillTests
         }
     });
 
+    /// <summary>
+    /// 不经键入的出站输入(同步输入转来的、防空闲在计时器线程上发的 NUL)同样让列表收起 ——
+    /// 曾经只认 TypedInput,这两种输入之后列表还开着,点哪项都只回「已过期」(plan.md §222 留下的收尾)。
+    /// 收起不算用户拒绝:提示再画一次,入口照常回来。
+    /// </summary>
+    [TestMethod]
+    [DataRow("sync")]
+    [DataRow("timer-thread")]
+    public Task Popup_OutboundInputThatBypassesTyping_ClosesTheListWithoutSuppressing(string source) =>
+        Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        IShellStreamWrapper shell = Shell();
+        await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns([new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true)]);
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            control.Focus();
+            Paint(window);
+            control.Feed("Password:"u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest);
+
+            if (source == "sync")
+            {
+                // 同步输入频道里别的标签转来的字节:走桥的 SendRaw,不触发本标签的 TypedInput。
+                tab.WriteSyncInput("x"u8.ToArray());
+            }
+            else
+            {
+                // 防空闲的 NUL 由计时器线程入队:事件在那条线程上响,要封送回 UI 线程再收。
+                await Task.Run(() => tab.Bridge!.SendRaw([0]));
+            }
+            Paint(window);
+
+            Assert.IsFalse(view.PasswordPopupOpenForTest, "出站输入之后请求已作废,列表不该还开着。");
+            control.Feed("\r\e[2KPassword:"u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest, "这不是用户拒绝,提示再画一次入口要回来。");
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
     [TestMethod]
     public Task PalettePicker_TakesTerminalFocus_SoKeysReachTheList() => Session.RunOnUiAsync(async () =>
     {

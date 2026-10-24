@@ -182,6 +182,24 @@ public sealed class AuthenticationTests
             a => a.Detail is not null && a.Detail.Contains("修改密码", StringComparison.Ordinal), error.Attempts,
             $"应当说明服务端要求改密码：{Environment.NewLine}{error.DescribeAttempts()}");
         Assert.IsEmpty(run.Observation.PasswordChanges, "没配取新密码的回调，不该发改密码请求");
+
+        // 库的原文是写给开发者与日志的，结构化之后一个字都不该变（宿主以外的调用方看到的仍是这句）。
+        Assert.AreEqual("服务端要求先修改密码（没有配置取新密码的回调）。", AttemptOf(error.Attempts, SshProtocolNames.AuthPassword).Detail);
+        AssertKinds(AttemptOf(error.Attempts, SshProtocolNames.AuthPassword), SshAuthDetailKind.PasswordChangeNotConfigured);
+    }
+
+    /// <summary>某个方法的那一条尝试记录（有多条时取最后一条）。</summary>
+    private static SshAuthAttempt AttemptOf(IReadOnlyList<SshAuthAttempt> attempts, string method) =>
+        attempts.Last(a => a.Method == method);
+
+    /// <summary>
+    /// 这一条记录的结构化说明恰好是这几种（按顺序），而且 <see cref="SshAuthAttempt.Detail"/> 就是由它们拼出来的 ——
+    /// 界面按种类说的和日志里的中文说的是同一件事。
+    /// </summary>
+    private static void AssertKinds(SshAuthAttempt attempt, params SshAuthDetailKind[] kinds)
+    {
+        Assert.AreSequenceEqual(kinds, attempt.Details.Select(static d => d.Kind).ToArray(), attempt.ToString());
+        Assert.AreEqual(SshAuthDetail.Render(attempt.Details), attempt.Detail);
     }
 
     /// <summary>配了取新密码的回调：带着旧密码与新密码发改密码请求，改成了就登录成功（RFC 4252 §8）。</summary>
@@ -205,6 +223,8 @@ public sealed class AuthenticationTests
         Assert.HasCount(1, asked);
         Assert.AreEqual("你的密码已过期。", asked[0].Prompt);
         Assert.AreEqual(1, asked[0].Attempt);
+        Assert.AreEqual("已按服务端的要求修改了密码。", AttemptOf(run.Succeeded.Attempts, SshProtocolNames.AuthPassword).Detail);
+        AssertKinds(AttemptOf(run.Succeeded.Attempts, SshProtocolNames.AuthPassword), SshAuthDetailKind.PasswordChanged);
     }
 
     /// <summary>服务端嫌新密码不好会再回 PASSWD_CHANGEREQ：再问一次（提示是服务端的新说法），给对了就成。</summary>
@@ -251,6 +271,13 @@ public sealed class AuthenticationTests
         Assert.HasCount(PasswordCredential.MaxNewPasswordAttempts, run.Observation.PasswordChanges);
         Assert.AreEqual(SshFailureReason.PasswordExpired, run.Failed.Reason);
         Assert.Contains(a => a.Detail?.Contains("新密码太简单", StringComparison.Ordinal) == true, run.Failed.Attempts);
+        Assert.AreEqual(
+            $"服务端要求先修改密码，连续 {PasswordCredential.MaxNewPasswordAttempts} 次不接受新密码：新密码太简单。",
+            AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPassword).Detail);
+        SshAuthDetail rejected = AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPassword).Details.Single();
+        Assert.AreEqual(SshAuthDetailKind.NewPasswordRejected, rejected.Kind);
+        Assert.AreEqual(PasswordCredential.MaxNewPasswordAttempts, rejected.Count);
+        Assert.AreEqual("新密码太简单。", rejected.ServerText, "服务端的原话原样留在参数里，由显示的一方清洗");
     }
 
     /// <summary>回调返回 null（用户这次不改）：不发改密码请求，报「要先改密码」。</summary>
@@ -263,6 +290,8 @@ public sealed class AuthenticationTests
 
         Assert.AreEqual(SshFailureReason.PasswordExpired, run.Failed.Reason);
         Assert.IsEmpty(run.Observation.PasswordChanges);
+        Assert.AreEqual("服务端要求先修改密码，这次没有给出新密码。", AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPassword).Detail);
+        AssertKinds(AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPassword), SshAuthDetailKind.NewPasswordNotProvided);
     }
 
     /// <summary>改密码请求被回 FAILURE（不支持改密码，或旧密码不对）：说清楚没改成。</summary>
@@ -278,6 +307,10 @@ public sealed class AuthenticationTests
         Assert.HasCount(1, run.Observation.PasswordChanges);
         Assert.Contains(a => a.Detail?.Contains("没有改成", StringComparison.Ordinal) == true, run.Failed.Attempts,
             run.Failed.DescribeAttempts());
+        Assert.AreEqual(
+            "服务端要求先修改密码，但没有改成：服务端不支持改密码，或旧密码不对。",
+            AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPassword).Detail);
+        AssertKinds(AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPassword), SshAuthDetailKind.PasswordChangeFailed);
     }
 
     // ------------------------------------------------------------ 公钥
@@ -358,6 +391,8 @@ public sealed class AuthenticationTests
         Assert.AreEqual(1, run.Observation.PublicKeyProbeCount);
         Assert.AreEqual(0, signer.SignCalls,
             "两段式存在的全部意义就是这一条：不认就不签，用户不用白按一次硬件键");
+        Assert.AreEqual("服务端不接受这把公钥。", AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPublicKey).Detail);
+        AssertKinds(AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPublicKey), SshAuthDetailKind.PublicKeyNotAccepted);
     }
 
     /// <summary>
@@ -469,6 +504,10 @@ public sealed class AuthenticationTests
             a => a.CredentialLabel == "坏掉的私钥文件"
                                             && a.Outcome == SshAuthOutcome.SkippedNoMaterial, run.Succeeded.Attempts,
             "「私钥读不出来」与「服务端不认这把钥」是两件事，记录里必须分得开");
+        Assert.AreEqual("私钥文件读不出来：拒绝访问。", run.Succeeded.Attempts.Single(a => a.CredentialLabel == "坏掉的私钥文件").Detail);
+        SshAuthDetail failed = run.Succeeded.Attempts.Single(a => a.CredentialLabel == "坏掉的私钥文件").Details.Single();
+        Assert.AreEqual(SshAuthDetailKind.CredentialFailed, failed.Kind);
+        Assert.IsInstanceOfType<IOException>(failed.Error, "凭据自己抛的那个异常原样交出来，界面据它的类型与原因码说话");
     }
 
     [TestMethod]
@@ -703,6 +742,9 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
         SshAuthAttempt attempt = run.Succeeded.Attempts.Single(a => a.Method == SshProtocolNames.AuthPublicKey);
         Assert.AreEqual(SshAlgorithmNames.SshRsa, attempt.SignatureAlgorithm);
         Assert.Contains("SHA-1", attempt.Detail ?? "");
+        Assert.AreEqual("用的是 SHA-1 签名（ssh-rsa）", attempt.Detail);
+        AssertKinds(attempt, SshAuthDetailKind.Sha1Signature);
+        Assert.AreEqual(SshAlgorithmNames.SshRsa, attempt.Details[0].Algorithm);
     }
 
     /// <summary>
@@ -736,6 +778,10 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
         SshAuthAttempt attempt = run.Succeeded.Attempts.Single(a => a.Method == SshProtocolNames.AuthPublicKey);
         Assert.AreEqual(SshAlgorithmNames.SshRsa, attempt.SignatureAlgorithm, "记的是重试那一次的算法");
         Assert.Contains("降级", attempt.Detail ?? "");
+        Assert.AreEqual("服务端没有宣告 server-sig-algs，rsa-sha2-512 被拒后降级为 ssh-rsa（SHA-1）重试", attempt.Detail);
+        AssertKinds(attempt, SshAuthDetailKind.Sha1Fallback);
+        Assert.AreEqual(SshAlgorithmNames.RsaSha512, attempt.Details[0].Algorithm);
+        Assert.AreEqual(SshAlgorithmNames.SshRsa, attempt.Details[0].FallbackAlgorithm);
     }
 
     /// <summary>每一步 publickey 都记下用的签名算法；不是 SHA-1 时不附说明。</summary>
@@ -778,6 +824,45 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
         Assert.IsNotNull(run.Failed);
         Assert.AreSequenceEqual([SshAlgorithmNames.RsaSha512], run.Observation.PublicKeySignatureAlgorithms,
             "默认不降级：无条件降级会把降级攻击的收益还回去");
+    }
+
+    /// <summary>
+    /// 只给得出 SHA-1 <c>ssh-rsa</c> 的签名器、又没允许 SHA-1：这条凭据按「材料有问题」跳过，什么都不发，
+    /// 记录里写明挑不出算法（原文与结构化之前的异常消息一字不差）。
+    /// </summary>
+    [TestMethod]
+    public async Task 只剩SHA1而没允许时按材料有问题跳过()
+    {
+        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        using var inner = InMemorySshSigner.FromRsa(rsa);
+
+        AuthRun run = await RunAsync(
+            [new PublicKeyCredential(new Sha1OnlySigner(inner))],
+            new TestAuthPolicy { RequiredMethods = [SshProtocolNames.AuthPublicKey] });
+
+        SshAuthAttempt attempt = AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPublicKey);
+        Assert.AreEqual(SshAuthOutcome.SkippedNoMaterial, attempt.Outcome);
+        Assert.IsNull(attempt.SignatureAlgorithm);
+        Assert.IsEmpty(run.Observation.PublicKeySignatureAlgorithms, "挑不出算法时什么都不发");
+        Assert.AreEqual("这把 ssh-rsa 密钥没有可用的签名算法（若需要 SHA-1 的 ssh-rsa，请显式开启 AllowSha1RsaSignatures）。", attempt.Detail);
+        AssertKinds(attempt, SshAuthDetailKind.NoUsableSignatureAlgorithm);
+        Assert.AreEqual(SshAlgorithmNames.SshRsa, attempt.Details[0].KeyType);
+    }
+
+    /// <summary>同一个秘密连错 <see cref="SshAuthenticator.MaxFailuresPerMethod"/> 次之后，后面的同方法凭据跳过并写明原因。</summary>
+    [TestMethod]
+    public async Task 同一方法失败够次数之后跳过并写明原因()
+    {
+        AuthRun run = await RunAsync(
+            [new PasswordCredential("a"), new PasswordCredential("b"), new PasswordCredential("c"), new PasswordCredential("d")],
+            new TestAuthPolicy { AcceptPassword = "hunter2" });
+
+        SshAuthAttempt skipped = AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPassword);
+        Assert.AreEqual(SshAuthOutcome.SkippedNotOffered, skipped.Outcome);
+        Assert.AreEqual("password 在这次认证里已经失败 3 次，不再重试。", skipped.Detail);
+        AssertKinds(skipped, SshAuthDetailKind.MethodFailureLimit);
+        Assert.AreEqual(SshProtocolNames.AuthPassword, skipped.Details[0].Method);
+        Assert.AreEqual(3, skipped.Details[0].Count);
     }
 
     // ------------------------------------------------------------ 键盘交互
@@ -948,6 +1033,12 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
         Assert.Contains(
             a => a.CredentialLabel.Contains("keyboard-interactive", StringComparison.Ordinal), run.Succeeded.Attempts,
             "记录里要看得出走的是桥接那条路");
+        Assert.AreEqual(
+            "password（经 keyboard-interactive）",
+            AttemptOf(run.Succeeded.Attempts, SshProtocolNames.AuthKeyboardInteractive).CredentialLabel);
+        Assert.AreEqual("password", AttemptOf(run.Succeeded.Attempts, SshProtocolNames.AuthKeyboardInteractive).BridgedCredentialLabel,
+            "桥接的结构化出处：原来那条口令凭据的标签，界面据此用自己的语言说「经 keyboard-interactive」");
+        Assert.IsNull(run.Succeeded.Attempts[0].BridgedCredentialLabel);
     }
 
     /// <summary>
@@ -1164,6 +1255,19 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
         Assert.Contains(
             a => a.CredentialLabel == "~/.ssh/id_ed25519"
                                             && a.Outcome == SshAuthOutcome.SkippedNotOffered, run.Succeeded.Attempts);
+
+        // 逐条记录的原文（日志与诊断面板里的样子）一个字都不该变。
+        Assert.AreEqual("none（探测可用方法）：失败 —— 服务端接受：password", run.Succeeded.Attempts[0].ToString());
+        Assert.AreEqual(
+            "~/.ssh/id_ed25519：跳过（服务端不接受这种方法） —— 服务端只接受：password",
+            AttemptOf(run.Succeeded.Attempts, SshProtocolNames.AuthPublicKey).ToString());
+        Assert.AreEqual("password：成功", AttemptOf(run.Succeeded.Attempts, SshProtocolNames.AuthPassword).ToString());
+
+        // 结构化的出处：界面据此用自己的语言说，不解析上面那几句。
+        AssertKinds(run.Succeeded.Attempts[0], SshAuthDetailKind.ServerAccepts);
+        Assert.AreSequenceEqual([SshProtocolNames.AuthPassword], run.Succeeded.Attempts[0].Details[0].Methods);
+        AssertKinds(AttemptOf(run.Succeeded.Attempts, SshProtocolNames.AuthPublicKey), SshAuthDetailKind.MethodNotOffered);
+        Assert.IsEmpty(AttemptOf(run.Succeeded.Attempts, SshProtocolNames.AuthPassword).Details);
     }
 
     [TestMethod]
@@ -1301,6 +1405,13 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
         Assert.Contains("按本机时钟已于 2020-01-02", detail);
         Assert.Contains("expired@velashell", detail);
         Assert.DoesNotContain("不含登录用户", detail);
+
+        OpenSshCertificate certificate = signer.Certificate;
+        Assert.AreEqual($"证书（Key ID「{certificate.KeyId}」）按本机时钟已于 {certificate.ValidBeforeTime:u} 过期", detail);
+        SshAuthDetail hint = AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPublicKey).Details.Single();
+        Assert.AreEqual(SshAuthDetailKind.CertificateExpired, hint.Kind);
+        Assert.AreEqual(certificate.KeyId, hint.KeyId);
+        Assert.AreEqual(certificate.ValidBeforeTime, hint.Time);
     }
 
     /// <summary>证书被拒、登录用户不在 principals 里：写明证书签给了谁。agent 里的证书身份（签名器只交得出 blob）一样。</summary>
@@ -1319,6 +1430,22 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
 
         string detail = run.Failed.Attempts.Single(a => a.Method == SshProtocolNames.AuthPublicKey).Detail ?? "";
         Assert.Contains("证书签给的用户是 joe、deploy，不含登录用户 alice", detail);
+
+        // 先探测的签名器被拒时，「不接受这把公钥」在前、证书线索括在后面 —— 与结构化之前同一个样子。
+        Assert.AreEqual(
+            opaque ? "服务端不接受这把公钥。（证书签给的用户是 joe、deploy，不含登录用户 alice）" : "证书签给的用户是 joe、deploy，不含登录用户 alice",
+            detail);
+        SshAuthAttempt attempt = AttemptOf(run.Failed.Attempts, SshProtocolNames.AuthPublicKey);
+        if (opaque)
+        {
+            AssertKinds(attempt, SshAuthDetailKind.PublicKeyNotAccepted, SshAuthDetailKind.PrincipalNotListed);
+        }
+        else
+        {
+            AssertKinds(attempt, SshAuthDetailKind.PrincipalNotListed);
+        }
+        Assert.AreSequenceEqual(["joe", "deploy"], attempt.Details[^1].Principals.ToArray());
+        Assert.AreEqual("alice", attempt.Details[^1].UserName);
     }
 
     // ------------------------------------------------------------ 测试替身
@@ -1481,6 +1608,20 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
         public ValueTask<byte[]> SignAsync(
             ReadOnlyMemory<byte> data, string algorithm, CancellationToken cancellationToken = default) =>
             throw new IOException("私钥文件读不出来：拒绝访问。");
+    }
+
+    /// <summary>只交得出 SHA-1 <c>ssh-rsa</c> 这一种签名算法的签名器（老 agent、老硬件令牌那样）。</summary>
+    private sealed class Sha1OnlySigner(ISshSigner inner) : ISshSigner
+    {
+        public SshPublicKey PublicKey => inner.PublicKey;
+
+        public IReadOnlyList<string> SignatureAlgorithms => [SshAlgorithmNames.SshRsa];
+
+        public bool IsLocalAndCheap => true;
+
+        public ValueTask<byte[]> SignAsync(
+            ReadOnlyMemory<byte> data, string algorithm, CancellationToken cancellationToken = default) =>
+            inner.SignAsync(data, algorithm, cancellationToken);
     }
 
     /// <summary>像 agent 那样先探测、签名时却被拒（用户在 ssh-add -c 的确认框里点了拒绝）。</summary>

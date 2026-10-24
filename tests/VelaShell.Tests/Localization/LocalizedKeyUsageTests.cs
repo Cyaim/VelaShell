@@ -111,6 +111,7 @@ public partial class LocalizedKeyUsageTests
         ["ConPtyShellStream.cs"] = "仅 Windows 的平台守卫,别的平台走不到这个类",
         ["VelaTerminalControl.cs"] = "控件库自带的默认值,宿主下发设置时换成本地化文案",
         ["SessionCsvHeaderAliases.cs"] = "CSV 表头的中日韩别名:匹配用户自己做的表格里的列名,不是界面文案(#571)",
+        ["QuickCommandVariableMemory.cs"] = "匹配用户起的占位名里的凭据字样(密码 / 令牌 / 验证码),这类的值不记;不是界面文案",
     };
 
     /// <summary>
@@ -119,7 +120,7 @@ public partial class LocalizedKeyUsageTests
     /// <remarks>
     /// 连接诊断的步骤名、导出报告,捐赠页的「已复制」,路由追踪的 TTL 提示都曾写死在代码里,
     /// 切到英文照样是中文 —— 资源键与平价测试都管不到没走资源的文案。SSH / X 服务端两个库的中文诊断
-    /// 文本另行跟踪(feature-plan.md「SSH 库剩余中文诊断文本的界面本地化」),不在此列。
+    /// 文本另行跟踪(feature-plan.md「SSH 库仍透传的中文诊断(续)」),不在此列。
     /// </remarks>
     [TestMethod]
     public void Code_HasNoHardcodedChineseText()

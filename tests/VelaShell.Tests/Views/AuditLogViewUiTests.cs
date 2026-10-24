@@ -30,7 +30,7 @@ public class AuditLogViewUiTests
         OnUi(() =>
         {
             IAuditLogService audit = Substitute.For<IAuditLogService>();
-            audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
                  .Returns(_ =>
                  [
                      new AuditEntry { Category = "connection", Action = "connect-failed", Detail = "root@10.0.0.1:22" },
@@ -77,7 +77,7 @@ public class AuditLogViewUiTests
         OnUi(() =>
         {
             IAuditLogService audit = Substitute.For<IAuditLogService>();
-            audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
                  .Returns(_ => [new AuditEntry { Category = "connection", Action = "connect", Detail = "root@10.0.0.2:22" }]);
             var vm = new AuditLogViewModel(audit);
             vm.LoadAsync().GetAwaiter().GetResult();
@@ -86,15 +86,70 @@ public class AuditLogViewUiTests
             Dispatcher.UIThread.RunJobs();
             try
             {
-                ComboBox category = window.GetVisualDescendants().OfType<ComboBox>().Single();
+                ComboBox[] boxes = [.. window.GetVisualDescendants().OfType<ComboBox>()];
+                Assert.HasCount(2, boxes, "类别与时间段两个下拉");
+                ComboBox category = boxes[0];
                 TextBox search = window.GetVisualDescendants().OfType<TextBox>()
                     .Single(box => box.PlaceholderText == Core.Resources.Strings.Get("AuditLog_SearchPlaceholder"));
                 Button refresh = window.GetVisualDescendants().OfType<Button>()
                     .Single(button => button.Content as string == Core.Resources.Strings.Get("Refresh"));
 
                 Assert.AreEqual(28, category.Bounds.Height, 0.5, "类别下拉");
+                Assert.AreEqual(28, boxes[1].Bounds.Height, 0.5, "时间段下拉");
                 Assert.AreEqual(28, search.Bounds.Height, 0.5, "关键字框");
                 Assert.AreEqual(28, refresh.Bounds.Height, 0.5, "刷新按钮");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 带配置 Id 的行尾有「打开配置」,配置已删时灰着;没有配置 Id 的行没有这个按钮。
+    /// 一条都没有时标题栏的「导出 CSV」灰着。自定义时间段才显示两个日期框。
+    /// </summary>
+    [TestMethod]
+    public void OpenProfile_AndExport_FollowWhatIsThere()
+    {
+        OnUi(() =>
+        {
+            Guid alive = Guid.NewGuid();
+            IAuditLogService audit = Substitute.For<IAuditLogService>();
+            audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
+                 .Returns(_ =>
+                 [
+                     new AuditEntry { Category = "profile", Action = "profile-updated", ProfileId = alive, Detail = "web" },
+                     new AuditEntry { Category = "profile", Action = "profile-deleted", ProfileId = Guid.NewGuid(), Detail = "gone" },
+                     new AuditEntry { Category = "settings", Action = "settings-changed", Detail = "x" },
+                 ]);
+            ISessionRepository sessions = Substitute.For<ISessionRepository>();
+            sessions.GetAllSessionsAsync().Returns([new SessionProfile { Id = alive, Name = "web" }]);
+            var vm = new AuditLogViewModel(audit, sessions);
+            vm.LoadAsync().GetAwaiter().GetResult();
+            var window = new AuditLogView { DataContext = vm };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            try
+            {
+                Button[] open = [.. window.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("open-profile"))];
+                Assert.HasCount(3, open);
+                Assert.IsTrue(open[0].IsVisible && open[0].IsEnabled, "配置还在:可以打开");
+                Assert.IsTrue(open[1].IsVisible && !open[1].IsEnabled, "配置已删:灰着");
+                Assert.IsFalse(open[2].IsVisible, "没有配置 Id:没有这个按钮");
+
+                Button export = window.FindControl<Button>("ExportCsvButton")!;
+                Assert.IsTrue(export.IsEnabled);
+                vm.SearchText = "no-such-thing";
+                Dispatcher.UIThread.RunJobs();
+                Assert.IsFalse(export.IsEnabled, "一条都没有时没什么可导出");
+
+                CalendarDatePicker from = window.FindControl<CalendarDatePicker>("RangeFromPicker")!;
+                Assert.IsFalse(from.IsEffectivelyVisible);
+                vm.RangeIndex = vm.RangeOptions.Count - 1;
+                Dispatcher.UIThread.RunJobs();
+                Assert.IsTrue(from.IsEffectivelyVisible, "选了自定义才显示日期框");
             }
             finally
             {

@@ -272,13 +272,13 @@
            Enter 补全插入(Alt+Enter 召出或 ↑↓ 导航过时;纯自动弹层下直通 shell)、
            Esc 关闭、Tab 归还 shell 原生补全。全部逻辑在代码后置。 -->
       <!-- 锚定 PlacementRect(光标行、输入起点列)的下边缘向下展开:面板落在光标的
-           下一行,不遮挡正在编辑的行;底部空间不足时由定位器自动翻转到上方。 -->
+           下一行,不遮挡正在编辑的行;底部空间不足时由定位器自动翻转到上方。
+           与光标行之间的缝同密码弹层一样由代码后置做在 PlacementRect 上,不设 VerticalOffset:翻转时它不跟着反向。 -->
       <Popup x:Name="SuggestPopup"
              PlacementTarget="{Binding #TerminalHost}"
              Placement="AnchorAndGravity"
              PlacementAnchor="BottomLeft"
              PlacementGravity="BottomRight"
-             VerticalOffset="2"
              IsLightDismissEnabled="False">
         <Border Background="{DynamicResource VelaBgSurface}"
                 BorderBrush="{DynamicResource VelaBorderSecondary}"
@@ -507,6 +507,28 @@
                              Foreground="{DynamicResource VelaAccent}" />
                 </StackPanel>
               </Panel>
+            </Button>
+
+            <!-- 算法协商失败、而对端有本版实现了只是没放开的算法:一键把诊断点名的那几个写进连接配置并重连
+                 (确认框里再点一次名)。描边按钮 + 警示图标:它会降低这条连接的安全性,不该比「重新连接」更抢眼。 -->
+            <Button x:Name="AllowAlgorithmsButton"
+                    HorizontalAlignment="Center"
+                    IsVisible="{Binding HasAlgorithmRemedy}"
+                    Command="{Binding AllowAlgorithmsCommand}"
+                    Background="Transparent"
+                    BorderBrush="{DynamicResource VelaBorderSecondary}"
+                    BorderThickness="1"
+                    CornerRadius="4" Padding="14,6"
+                    ToolTip.Tip="{Binding AlgorithmRemedyTip}"
+                    AutomationProperties.Name="{loc:Localize SshAlgoFix_Button}">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <pc:LucideIcon Width="12" Height="12"
+                               Data="{StaticResource Icon.triangle-alert}"
+                               Foreground="{DynamicResource VelaWarning}" VerticalAlignment="Center" />
+                <TextBlock Text="{loc:Localize SshAlgoFix_Button}"
+                           Foreground="{DynamicResource VelaTextSecondary}"
+                           FontSize="{DynamicResource VelaFontSize12}" FontWeight="Medium" VerticalAlignment="Center" />
+              </StackPanel>
             </Button>
 
             <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">

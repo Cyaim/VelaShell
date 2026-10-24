@@ -34,4 +34,42 @@ public sealed class TunnelConfig
     /// 旧的持久化配置缺这个字段时按 false 反序列化。
     /// </summary>
     public bool AutoStart { get; init; }
+
+    /// <summary>
+    /// 限速:每个方向每秒最多搬多少应用字节,这条隧道的全部连接共用这个额度;<see langword="null" />(默认)不限。
+    /// </summary>
+    /// <remarks>
+    /// 慢链路上开着好几条隧道时,不让一条下载把交互终端挤满。在隧道建立时交给 SSH 库,改了要重启隧道才生效
+    /// (运行中的隧道本来就不能编辑)。旧的持久化配置缺这个字段时按不限反序列化。
+    /// </remarks>
+    public long? MaxBytesPerSecond { get; init; }
+
+    /// <summary>
+    /// 远程动态转发的放行名单(ssh_config 的 <c>PermitRemoteOpen</c>):远端经这条隧道能让本机连的 <c>主机:端口</c>,
+    /// 主机可带 <c>*</c> / <c>?</c> 通配、端口可以是 <c>*</c>;单独一条 <c>any</c> 是全放。别的类型用不上,为 <see langword="null" />。
+    /// </summary>
+    /// <remarks>
+    /// 没有默认值、不许留空:远程动态转发等于把本机变成远端的 SOCKS 代理,本机能到的内网远端都能到,
+    /// 放哪些出去必须由用户明说(写法与校验见 <see cref="Tunnels.RemoteOpenRules" />)。
+    /// </remarks>
+    public IReadOnlyList<string>? PermitRemoteOpen { get; init; }
+
+    /// <summary>
+    /// 本机这头改用 Unix 域套接字:本地转发是在这个套接字文件上监听(代替 <see cref="LocalHost" />:<see cref="LocalPort" />),
+    /// 远程转发是回连到本机的这个套接字。<see langword="null" />(默认)= 用主机与端口。
+    /// </summary>
+    /// <remarks>
+    /// 套接字文件按文件权限隔离(非 Windows 上建好即设 0600),多用户机器上别人借不走这条隧道 —— 环回端口则对所有用户开放。
+    /// Windows 10 1803 起支持 AF_UNIX,文件沿用所在目录的 ACL。远程转发的两头必须同时是套接字(SSH 库只给了这一种组合)。
+    /// 旧的持久化配置缺这个字段时按 <see langword="null" /> 反序列化。
+    /// </remarks>
+    public string? LocalSocketPath { get; init; }
+
+    /// <summary>
+    /// 服务器那头改用 Unix 域套接字:本地转发是转到服务器上的这个套接字(<c>direct-streamlocal@openssh.com</c>,
+    /// 代替 <see cref="RemoteHost" />:<see cref="RemotePort" />,如 <c>/var/run/docker.sock</c>),
+    /// 远程转发是请服务器在这个路径上监听(<c>streamlocal-forward@openssh.com</c>)。<see langword="null" />(默认)= 用主机与端口。
+    /// </summary>
+    /// <remarks>服务端要开着 <c>AllowStreamLocalForwarding</c>(OpenSSH 默认开)。</remarks>
+    public string? RemoteSocketPath { get; init; }
 }

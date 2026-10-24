@@ -1,3 +1,5 @@
+using VelaShell.Core.Models;
+
 namespace VelaShell.Core.DirectorySync;
 
 /// <summary>目录同步的方向(WinSCP「同步」对话框的三个方向)。</summary>
@@ -88,6 +90,16 @@ public sealed record SyncItem(
     /// 内容的 SHA-256(小写十六进制)。只有校验阶段在两边都算出来时才有值;null 表示按大小与修改时间比较。
     /// </summary>
     public string? Sha256 { get; init; }
+
+    /// <summary>
+    /// 这条时间是按哪个 UTC 偏移的日历给出的;null = 本机时区。只有 FTP 的 LIST 时间、且连接配置里设了服务器时区时才有值。
+    /// </summary>
+    /// <remarks>
+    /// 半年以前的文件 LIST 只给日期(<see cref="SyncTimePrecision.Day" />),那是<b>服务器当地</b>的日期。
+    /// 按日比较时两边都要放到这本日历里截断,否则服务器在 UTC、本机在 UTC+8 时,
+    /// 晚上八点以后改的文件在两边落在相邻的两天,被判成「较新」(见 <see cref="SyncTime.Compare" />)。
+    /// </remarks>
+    public TimeSpan? CalendarOffset { get; init; }
 }
 
 /// <summary>一次扫描的结果。</summary>
@@ -229,6 +241,39 @@ public static class SyncTime
     };
 
     /// <summary>
+    /// 同 <see cref="ToUtc(DateTime)" />,但不带时区的时间按 <paramref name="serverClockOffset" /> 解读(服务器时钟 = UTC + 偏移);
+    /// 偏移为 null 时按本机时间解读。
+    /// </summary>
+    /// <remarks>
+    /// <b>只挪 <see cref="DateTimeKind.Unspecified" /> 的时间</b>:那是 FTP LIST 给的服务器墙上时间。
+    /// MLSD / MLST 的 <c>modify</c> 按 RFC 3659 恒为 UTC,FluentFTP 交出来时就标着 <see cref="DateTimeKind.Utc" />,
+    /// 再按偏移挪一遍就错了 —— 同一台服务器上 LIST 与 MLSD 两条路径因此都对得上。
+    /// </remarks>
+    /// <param name="value">后端给的原始时间。</param>
+    /// <param name="serverClockOffset">服务器时钟的 UTC 偏移;null = 与本机同一时区。</param>
+    public static DateTime ToUtc(DateTime value, TimeSpan? serverClockOffset) =>
+        value.Kind == DateTimeKind.Unspecified && serverClockOffset is { } offset
+            ? DateTime.SpecifyKind(value - offset, DateTimeKind.Utc)
+            : ToUtc(value);
+
+    /// <summary>
+    /// 远端条目的这条时间要不要记日历偏移(见 <see cref="SyncItem.CalendarOffset" />):不带时区的原始时间、且配了偏移才记。
+    /// </summary>
+    /// <param name="raw">后端给的原始时间。</param>
+    /// <param name="serverClockOffset">服务器时钟的 UTC 偏移;null = 与本机同一时区。</param>
+    public static TimeSpan? CalendarOffsetFor(DateTime raw, TimeSpan? serverClockOffset) =>
+        raw.Kind == DateTimeKind.Unspecified ? serverClockOffset : null;
+
+    /// <summary>
+    /// 这条连接配置的服务器时钟偏移:只对 FTP / FTPS 有意义(LIST 的时间不带时区),其余协议一律为 null。
+    /// </summary>
+    /// <param name="profile">连接配置。</param>
+    public static TimeSpan? ServerClockOffset(SessionProfile? profile) =>
+        profile is { ConnectionType: ConnectionType.FTP, Ftp.ServerUtcOffsetMinutes: { } minutes }
+            ? TimeSpan.FromMinutes(minutes)
+            : null;
+
+    /// <summary>
     /// 从后端给的原始时间推断精度:没给(默认值、1970 年以前)为未知,时分秒全 0 为日,秒为 0 为分钟,否则为秒。
     /// 只对「本来就可能粗」的后端(FTP、插件协议)使用;SFTP 的 mtime 恒为秒级,不该被一个恰好落在整分的时间降级。
     /// </summary>
@@ -247,7 +292,9 @@ public static class SyncTime
 
     /// <summary>
     /// 比较两个条目的修改时间:&gt;0 表示 <paramref name="a" /> 较新,&lt;0 表示 <paramref name="b" /> 较新,0 表示视为相同。
-    /// 两边先按较粗的精度截断(在本地时区里截,因为 LIST 的日期是按服务器当地日历给的),再按容差判等。
+    /// 两边先按较粗的精度截断,再按容差判等。截断在 LIST 日期所属的那本日历里做:LIST 的日期是按服务器当地日历给的,
+    /// 配了服务器时区(<see cref="SyncItem.CalendarOffset" />)就按那个偏移截,没配就按本机时区截(默认服务器与本机同一时区)。
+    /// 两边必须在同一本日历里截,否则同一刻落在两边的相邻两天。
     /// </summary>
     public static int Compare(SyncItem a, SyncItem b, TimeSpan tolerance)
     {
@@ -256,11 +303,16 @@ public static class SyncTime
         {
             return 0;
         }
-        DateTime left = Truncate(a.LastWriteTimeUtc.ToLocalTime(), precision);
-        DateTime right = Truncate(b.LastWriteTimeUtc.ToLocalTime(), precision);
+        TimeSpan? calendar = a.CalendarOffset ?? b.CalendarOffset;
+        DateTime left = Truncate(InCalendar(a.LastWriteTimeUtc, calendar), precision);
+        DateTime right = Truncate(InCalendar(b.LastWriteTimeUtc, calendar), precision);
         TimeSpan diff = left - right;
         return diff.Duration() <= tolerance ? 0 : Math.Sign(diff.Ticks);
     }
+
+    /// <summary>UTC 时间 → 某本日历上的墙上时间:给了偏移就是 UTC + 偏移,否则是本机时间。</summary>
+    private static DateTime InCalendar(DateTime utc, TimeSpan? offset) =>
+        offset is { } o ? DateTime.SpecifyKind(utc + o, DateTimeKind.Unspecified) : utc.ToLocalTime();
 
     private static DateTime Truncate(DateTime value, SyncTimePrecision precision) => precision switch
     {

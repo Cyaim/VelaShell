@@ -146,6 +146,108 @@
       </ScrollViewer>
     </Border>
 
+    <!-- 与 OpenSSH 互通:known_hosts 的导入 / 导出。导入的普通行进上面的列表,
+         @cert-authority / @revoked 进下面的「受信主机 CA」;导出写 OpenSSH 格式,可选散列主机名。 -->
+    <Grid ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="row-label" Text="{loc:Localize KnownHosts_InteropLabel}" />
+        <TextBlock Classes="row-desc" Text="{loc:Localize KnownHosts_InteropDesc}" TextWrapping="Wrap" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <Button Classes="dlg-outline" Content="{loc:Localize KnownHosts_Import}"
+                IsEnabled="{Binding !HostTrust.IsBusy}"
+                Click="ImportKnownHosts_Click" />
+        <Button Classes="dlg-outline" Content="{loc:Localize KnownHosts_Export}"
+                IsEnabled="{Binding !HostTrust.IsBusy}"
+                Click="ExportKnownHosts_Click" />
+      </StackPanel>
+    </Grid>
+    <Grid ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="row-label" Text="{loc:Localize KnownHosts_HashOnExport}" />
+        <TextBlock Classes="row-desc" Text="{loc:Localize KnownHosts_HashOnExportDesc}" TextWrapping="Wrap" />
+      </StackPanel>
+      <ToggleSwitch Grid.Column="1" IsChecked="{Binding HostTrust.HashHostNamesOnExport}" VerticalAlignment="Center" />
+    </Grid>
+    <TextBlock Classes="row-desc" Text="{Binding HostTrust.StatusText}" TextWrapping="Wrap"
+               IsVisible="{Binding HostTrust.HasStatus}" />
+
+    <Border Classes="sep" />
+
+    <!-- 受信主机 CA(OpenSSH @cert-authority)与吊销记录(@revoked):按主机名模式生效。
+         CA 签发的主机证书在主机名对上模式时直接受信;这类主机出示没有证书担保的钥一律拒绝,不退回首次确认
+         (velashell-docs/zh/ssh/spec/03 §5.5)。改动当场生效,不随「保存」走。 -->
+    <TextBlock Classes="section-title" Text="{loc:Localize HostCa_Section}" />
+    <TextBlock Classes="row-desc" Text="{loc:Localize HostCa_SectionDesc}" TextWrapping="Wrap" />
+    <TextBlock Classes="row-desc" Text="{loc:Localize HostCa_Empty}"
+               IsVisible="{Binding !HostTrust.HasMarkers}" />
+    <Border Classes="table" IsVisible="{Binding HostTrust.HasMarkers}">
+      <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
+        <ItemsControl ItemsSource="{Binding HostTrust.Markers}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:KnownHostMarkerRow">
+              <!-- 右内边距 20 同上:给覆盖式滚动条让出位置。 -->
+              <Border Padding="12,8,20,8"
+                      BorderBrush="{DynamicResource VelaBorderPrimary}"
+                      BorderThickness="0,0,0,1">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock FontSize="{DynamicResource VelaFontSize10}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource VelaAccentText}"
+                                 Text="{Binding KindText}" IsVisible="{Binding !IsRevoked}" />
+                      <TextBlock FontSize="{DynamicResource VelaFontSize10}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource VelaError}"
+                                 Text="{Binding KindText}" IsVisible="{Binding IsRevoked}" />
+                      <TextBlock FontSize="{DynamicResource VelaFontSize12}" FontWeight="Medium"
+                                 Foreground="{DynamicResource VelaTextPrimary}"
+                                 FontFamily="{DynamicResource VelaUiMonoFont}"
+                                 TextWrapping="Wrap"
+                                 Text="{Binding Patterns}" />
+                      <TextBlock FontSize="{DynamicResource VelaFontSize10}" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource VelaTextMuted}"
+                                 Text="{Binding KeyType}" />
+                    </StackPanel>
+                    <TextBlock FontSize="{DynamicResource VelaFontSize10}"
+                               FontFamily="{DynamicResource VelaUiMonoFont}"
+                               Foreground="{DynamicResource VelaTextMuted}"
+                               TextWrapping="Wrap"
+                               Text="{Binding Fingerprint}" />
+                    <TextBlock FontSize="{DynamicResource VelaFontSize10}"
+                               Foreground="{DynamicResource VelaTextTertiary}"
+                               TextWrapping="Wrap"
+                               Text="{Binding Comment}" IsVisible="{Binding HasComment}" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="dlg-danger" Content="{loc:Localize Delete}"
+                          VerticalAlignment="Center"
+                          Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).HostTrust.RemoveMarkerCommand}"
+                          CommandParameter="{Binding}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+    <!-- 添加一个受信 CA:模式 + CA 公钥行(或从 known_hosts 整行复制来的 @cert-authority / @revoked 行)。 -->
+    <StackPanel Spacing="6" IsEnabled="{Binding HostTrust.IsAvailable}">
+      <TextBlock Classes="row-label" Text="{loc:Localize HostCa_AddTitle}" />
+      <TextBox Text="{Binding HostTrust.NewPatterns}"
+               PlaceholderText="*.corp.example,!legacy.corp.example" />
+      <TextBlock Classes="row-desc" Text="{loc:Localize HostCa_PatternsDesc}" TextWrapping="Wrap" />
+      <TextBox Text="{Binding HostTrust.NewPublicKey}" TextWrapping="Wrap"
+               FontFamily="{DynamicResource VelaUiMonoFont}"
+               PlaceholderText="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA… host-ca@corp.example" />
+      <TextBlock Classes="row-desc" Text="{loc:Localize HostCa_KeyDesc}" TextWrapping="Wrap" />
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBox Text="{Binding HostTrust.NewComment}" PlaceholderText="{loc:Localize HostCa_CommentPlaceholder}" />
+        <Button Grid.Column="1" Classes="dlg-outline" Margin="8,0,0,0" Content="{loc:Localize HostCa_Add}"
+                Command="{Binding HostTrust.AddMarkerCommand}" VerticalAlignment="Center" />
+      </Grid>
+      <TextBlock Classes="row-desc" Foreground="{DynamicResource VelaError}" TextWrapping="Wrap"
+                 Text="{Binding HostTrust.AddError}" IsVisible="{Binding HostTrust.HasAddError}" />
+    </StackPanel>
+
     <Border Classes="sep" />
 
     <!-- 外部登录(Xshell 兼容):堡垒机/SSO 网页按 Xshell 的调用约定拉起本应用去登录服务器。

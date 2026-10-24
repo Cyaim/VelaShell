@@ -26,7 +26,7 @@ namespace VelaShell.Infrastructure.Ssh;
 /// 按类型和枚举匹配即可。
 /// </para>
 /// </remarks>
-internal static class SshInterop
+internal static partial class SshInterop
 {
     /// <summary>
     /// VelaShell.Ssh 异常 → Core 中立异常;不认识的类型返回 <see langword="null" />
@@ -51,7 +51,12 @@ internal static class SshInterop
             SshAuthenticationException auth => new VelaSshAuthenticationException(Describe(auth), auth),
             SshPrivateKeyException key => TranslatePrivateKey(key),
             SshCertificateException cert => new VelaSshAuthenticationException(Localize(cert), cert),
-            SftpTransferInterruptedException sftp => new VelaSftpTransferInterruptedException(LocalizeInterrupted(sftp), sftp.DurableLength, sftp),
+            // 内层是 SFTP 状态码 = 服务端拒写(磁盘满、配额、权限,规格 08 §二);没有内层或内层是连接错误 = 断线。
+            // 传输失败重试只重试后一种。
+            SftpTransferInterruptedException sftp => new VelaSftpTransferInterruptedException(LocalizeInterrupted(sftp), sftp.DurableLength, sftp)
+            {
+                RefusedByServer = sftp.InnerException is SftpException,
+            },
             SftpUnavailableException unavailable => new VelaSshClientException(LocalizeUnavailable(unavailable), unavailable),
             SftpException sftp => TranslateSftp(sftp),
             SshNegotiationException negotiation => new VelaSshConnectionException(Describe(negotiation), negotiation),
@@ -100,10 +105,14 @@ internal static class SshInterop
     /// <c>VelaHostKeyPolicy</c> 用本地化文案写的拒绝理由(含新旧指纹)。认不出的原因照旧用原文。
     /// </para>
     /// <para>
-    /// 私钥读不出、格式不对、证书与私钥不是一对、配置不成立、端口占用这几类也不翻:
-    /// 库的消息里带着文件路径、指纹、端口号这些具体信息,换成一句通用文案反而帮不上忙。
-    /// <see cref="SshFailureReason.ForwardSetupFailed" />(消息里是拿不到的 X 显示、xauth 的输出)与
-    /// <see cref="SshFailureReason.Unsupported" />(消息里是不支持的算法、密钥类型、格式版本)同理。
+    /// 通道失败、私钥 / 证书读不出来这几类,库给了比原因码更细的结构化出处(<see cref="SshChannelException.FailureKind" />、
+    /// <see cref="SshKeyProblemKind" /> 与路径、算法名、Key ID、两边的公钥),先按它们说(<c>SshInterop.Diagnostics.cs</c>);
+    /// 没归类的(使用者自己构造的异常)才落到下面按原因码的那一层。
+    /// </para>
+    /// <para>
+    /// 配置不成立、端口占用这几类不翻:库的消息里带着具体的主机名、端口号,还没有结构化的出处,换成一句通用文案反而帮不上忙。
+    /// <see cref="SshFailureReason.ForwardSetupFailed" />(消息里是拿不到的 X 显示、xauth 的输出)同理;
+    /// <see cref="SshFailureReason.Unsupported" /> 除私钥 / 证书以外(消息里是不支持的算法、格式版本)同理。
     /// <see cref="SshFailureReason.HostKeyStoreFailed" /> 同理(消息里是 known_hosts 的路径与 IO 错误);
     /// 而且宿主的信任库不走库的 known_hosts,它只在调用方换用 <c>KnownHostsPolicy</c> 时才会出现。
     /// </para>
@@ -111,7 +120,16 @@ internal static class SshInterop
     /// 尾巴上的 <c>[原因 @ 阶段]</c> 不翻译 —— 那是给提 issue 时贴日志用的,跨语言一致才好搜。
     /// </para>
     /// </remarks>
-    internal static string Localize(SshException ex)
+    internal static string Localize(SshException ex) => ex switch
+    {
+        SshChannelException { FailureKind: not SshChannelFailureKind.Unknown } channel => LocalizeChannel(channel),
+        SshPrivateKeyException { ProblemKind: not SshKeyProblemKind.Unknown } key => LocalizeKeyProblem(key),
+        SshCertificateException { ProblemKind: not SshKeyProblemKind.Unknown } certificate => LocalizeKeyProblem(certificate),
+        _ => LocalizeByReason(ex),
+    };
+
+    /// <summary>只按原因码给出界面语言的一句话(<see cref="Localize" /> 的兜底层);认不出的原因照用原文。</summary>
+    private static string LocalizeByReason(SshException ex)
     {
         string? key = ex.Reason switch
         {
@@ -257,19 +275,18 @@ internal static class SshInterop
     /// <remarks>
     /// 这是旧实现拿不到的东西。Tmds 只给一句
     /// <c>"... - AuthenticationFailed - ..."</c>,用户看不出是密钥被跳过了、
-    /// 服务端根本不接受这种方法、还是口令真的错了。
+    /// 服务端根本不接受这种方法、还是口令真的错了。记录按结构化的说明用界面语言拼(<see cref="DescribeAttempts" />)。
     /// </remarks>
     private static string Describe(SshAuthenticationException ex)
     {
         string main = LocalizeAuth(ex);
-        string attempts = ex.DescribeAttempts();
+        string attempts = DescribeAttempts(ex);
         return string.IsNullOrWhiteSpace(attempts) ? main : $"{main}{Environment.NewLine}{attempts}";
     }
 
     /// <summary>认证失败的主句:原因码加上服务端接受的方法、有没有过一关,足够拼出界面语言的那句话。</summary>
     /// <remarks>
-    /// 逐条尝试记录(<see cref="SshAuthenticationException.DescribeAttempts" />)仍是库的原文 ——
-    /// 要翻它得先给它补结构化的出处(库 AGENTS 4.8)。方法名来自服务端,拼进来之前先清一遍。
+    /// 逐条尝试记录另由 <see cref="DescribeAttempts" /> 拼。方法名来自服务端,拼进来之前先清一遍。
     /// </remarks>
     internal static string LocalizeAuth(SshAuthenticationException ex)
     {
@@ -331,26 +348,13 @@ internal static class SshInterop
     /// </summary>
     private static string? DescribeRemedy(SshNegotiationException ex)
     {
-        SshAlgorithmKind? kind = ex.Category switch
-        {
-            SshNegotiationCategory.KeyExchange => SshAlgorithmKind.KeyExchange,
-            SshNegotiationCategory.HostKey => SshAlgorithmKind.HostKey,
-            SshNegotiationCategory.EncryptionClientToServer or SshNegotiationCategory.EncryptionServerToClient =>
-                SshAlgorithmKind.Cipher,
-            SshNegotiationCategory.MacClientToServer or SshNegotiationCategory.MacServerToClient => SshAlgorithmKind.Mac,
-            _ => null,
-        };
-        if (kind is not { } k)
+        // 与覆盖层上的「放开这几个算法并重连」按钮同一份计算(SshAlgorithmRemedy):诊断点名的就是按钮会写进去的。
+        (SshAlgorithmKind? kind, IReadOnlyList<string> enableable) = SshAlgorithmRemedy.Enableable(ex);
+        if (kind is null)
         {
             return null;
         }
-        IReadOnlyList<string> available = SshAlgorithmPreferences.Available(k);
-        string[] enableable =
-        [
-            .. ex.OfferedByPeer.Where(a => available.Contains(a, StringComparer.Ordinal)
-                                          && !ex.OfferedByUs.Contains(a, StringComparer.Ordinal))
-        ];
-        return enableable.Length > 0
+        return enableable.Count > 0
             ? Strings.Format("Ssh_AlgoMismatchEnable", string.Join(", ", enableable))
             : Strings.Get("Ssh_AlgoMismatchUnsupported");
     }

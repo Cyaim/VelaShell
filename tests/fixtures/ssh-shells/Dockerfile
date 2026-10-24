@@ -74,5 +74,9 @@ RUN printf '%s\n' \
     'PROMPT_COMMAND="__vela_fake_starship"' \
     >> /home/vela-starship/.profile
 
+# 镜像自带构建它的这份 Dockerfile:用例经 SSH 读出来与仓库里的比(tests/VelaShell.Tests/TestSupport/FixtureImage.cs),
+# 改了这里而本机没重建时记 Inconclusive 并提示重建,而不是一片红。只改注释不算改(比的是去掉注释与空行之后的内容)。
+COPY Dockerfile /etc/velashell-fixture/Dockerfile
+
 EXPOSE 2222
 CMD ["/usr/sbin/sshd", "-D", "-e"]

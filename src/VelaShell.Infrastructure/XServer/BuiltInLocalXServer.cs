@@ -650,7 +650,7 @@ public sealed class BuiltInLocalXServer : ILocalXServer, IAsyncDisposable, IDisp
         XTopLevelSnapshot? first = client.TopLevels.Select(w => w.Snapshot).FirstOrDefault();
         string name = first is null ? "" : first.ClassName.Length > 0 ? first.ClassName : first.InstanceName;
         return new XServerClient(Key(generation, instance, client.Id), client.Id, name, first?.Title ?? "", client.Label,
-            client.TopLevels.Count, client.MemoryBytes, client.Retained, client.HoldsServerGrab);
+            client.TopLevels.Count, client.MemoryBytes, client.Retained, client.HoldsServerGrab, client.Trust == XClientTrust.Trusted);
     }
 
     /// <summary>报来抓取卡住的宿主对应哪个实例(共用的那个,或某个会话的显示);已经收掉的为 null。</summary>

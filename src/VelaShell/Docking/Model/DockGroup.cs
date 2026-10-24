@@ -20,7 +20,7 @@ public sealed class DockGroup : DockNode
         set => SetField(ref field, value);
     }
 
-    /// <summary>标签条相对内容区的摆放位置(默认置顶)。</summary>
+    /// <summary>标签条相对内容区的摆放位置(默认横排;横排停在顶部还是底部由 <see cref="DockWorkspace.TabsAtBottom" /> 定)。</summary>
     public DockTabsPosition TabsPosition
     {
         get;

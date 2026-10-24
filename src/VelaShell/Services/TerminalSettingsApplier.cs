@@ -33,13 +33,15 @@ public static class TerminalSettingsApplier
     /// </param>
     /// <param name="profile">会话配置;其覆盖项优先于全局(F-06)。null = 没有配置。</param>
     /// <param name="multilinePasteConfirmation">多行粘贴的确认回调;由视图提供。</param>
+    /// <param name="commandRerunConfirmation">重跑多行命令(对端没开括号粘贴时)的确认回调;由视图提供。</param>
     public static void Apply(
         ITerminalEmulator emulator,
         AppSettings settings,
         UiTheme theme,
         bool forceUtf8 = false,
         SessionProfile? profile = null,
-        Func<string, Task<bool>>? multilinePasteConfirmation = null)
+        Func<string, Task<bool>>? multilinePasteConfirmation = null,
+        Func<string, Task<bool>>? commandRerunConfirmation = null)
     {
         ArgumentNullException.ThrowIfNull(emulator);
         ArgumentNullException.ThrowIfNull(settings);
@@ -89,7 +91,9 @@ public static class TerminalSettingsApplier
             Strings.Get("Gutter_Timestamp"),
             Strings.Get("Gutter_FoldMarker"),
             Strings.Get("Gutter_Blank"),
-            Strings.Get("Gutter_GuideLine")
+            Strings.Get("Gutter_GuideLine"),
+            Strings.Get("Gutter_CopyCommand"),
+            Strings.Get("Gutter_RerunCommand")
         );
         control.ScrollOnKeystroke = behavior.ScrollOnKeystroke;
         control.CopyOnSelect = behavior.CopyOnSelect;
@@ -98,6 +102,7 @@ public static class TerminalSettingsApplier
         control.DoubleClickSelectsWord = behavior.DoubleClickSelectsWord;
         control.ConfirmMultilinePaste = behavior.ConfirmMultilinePaste;
         control.MultilinePasteConfirmation = multilinePasteConfirmation;
+        control.CommandRerunConfirmation = commandRerunConfirmation;
         control.CtrlCCopiesWhenSelected = behavior.CtrlCCopiesWhenSelected;
         control.ImeEnabled = behavior.ImeSupport;
         control.LocalEchoEnabled = behavior.LocalEcho;

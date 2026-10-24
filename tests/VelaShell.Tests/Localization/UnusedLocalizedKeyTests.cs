@@ -59,6 +59,23 @@ public partial class UnusedLocalizedKeyTests
                        string.Join("\n", orphans.Select(key => $"  {key}")));
     }
 
+    /// <summary>
+    /// 拼出来的键另一头也得有:<c>PluginState_{State}</c> 少一个,状态列就原样显示键名
+    /// (<c>Deactivated</c> 曾经漏过 —— 静态扫描与上面的豁免都看不出来)。
+    /// </summary>
+    [TestMethod]
+    public void EveryPluginState_HasAStatusText()
+    {
+        HashSet<string> defined = DefinedKeys();
+        string[] missing =
+        [
+            .. Enum.GetNames<VelaShell.Infrastructure.Plugins.PluginState>()
+                .Select(state => $"PluginState_{state}")
+                .Where(key => !defined.Contains(key))
+        ];
+        Assert.IsEmpty(missing, "这些插件状态没有文案:" + string.Join(", ", missing));
+    }
+
     /// <summary>中性(英文)资源里已定义的全部键。</summary>
     private static HashSet<string> DefinedKeys()
     {

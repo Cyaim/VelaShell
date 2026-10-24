@@ -1,6 +1,6 @@
 # VelaShell Privacy Policy / 隐私政策
 
-**Last updated / 最后更新:2026-10-19**
+**Last updated / 最后更新:2026-10-24**
 
 [English](#english) · [简体中文](#简体中文)
 
@@ -44,8 +44,10 @@ computer unless you explicitly enable the optional sync feature described below.
 | The encryption key protecting the above | Same folder, generated on your device |
 | Known SSH host keys | Same folder |
 | Saved commands and snippets | Same folder |
+| Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; not included in sync) | Same folder |
 | Session logs — raw terminal output, **off by default** | `logs` subfolder, auto-deleted after a retention period you set |
 | Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, duration, reason) | `logs` subfolder, auto-deleted after 7 days |
+| Audit log — connection results (`user@host:port`), host-key decisions, external logins, and changes to connection profiles (name and `user@host:port`), settings and shared credentials: which part changed, never passwords or setting values | `~/.velashell`; records older than the retention period you set (default 180 days) are deleted at startup |
 | Offline IP geolocation database, if you add one | `geoip` subfolder |
 | Plugins you manually install | `~/.velashell/plugins` |
 
@@ -87,7 +89,12 @@ VelaShell connects to the network only in these situations:
 4. **Update checks.** VelaShell asks GitHub for a release manifest when you click "Check for
    updates" in Settings, and also once at startup while "Check for updates at startup" is on
    (Settings → General; on by default) so that a new version can appear in the message centre.
-   GitHub receives your IP address and the request, as with any website visit. **In the
+   GitHub receives your IP address and the request, as with any website visit. If you also turn
+   on "Download updates automatically" (Settings → General, right below it; **off by default**),
+   a new version found by that startup check is downloaded from the same GitHub release in the
+   background and verified against its SHA-256 checksum — one more download of the installer
+   package, carrying nothing about you either. It is only installed when you click restart.
+   Clicking "Check for Updates" on the About page downloads the update as before. **In the
    Microsoft Store version this feature is disabled entirely**, because the Store handles updates.
 
 5. **Plugin update checks.** When you open the Plugin Manager window, VelaShell asks the plugin
@@ -150,6 +157,10 @@ user names, local paths, IP and email addresses, and password- or token-like val
 before writing, and settings, connection profiles and credentials are not included. Sending the
 file to anyone is up to you — you can open it and check it first.
 
+“Export” under Settings → General → Import/export settings writes only the categories you tick, again only
+to the file you choose. Network proxy and Security audit are unticked by default, and the proxy password
+and the alert webhook URL are never written, whichever categories you tick.
+
 No method of storage is perfectly secure, and VelaShell cannot protect data on a computer that
 has already been compromised.
 
@@ -208,8 +219,10 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 保护上述内容的加密密钥 | 同上,在你的设备上生成 |
 | 已知的 SSH 主机密钥 | 同上 |
 | 快捷命令与代码片段 | 同上 |
+| 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码,不参与同步) | 同上 |
 | 会话日志 —— 终端原始输出,**默认关闭** | `logs` 子目录,按你设定的保留天数自动清理 |
 | 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、时长、原因) | `logs` 子目录,7 天后自动清理 |
+| 审计日志 —— 连接成败(`用户@主机:端口`)、主机指纹的裁决、外部拉起的登录,以及连接配置(名称与 `用户@主机:端口`)、设置、共享凭据的改动:只记改了哪一块,不记密码与设置的值 | `~/.velashell`;启动时删掉超过保留期(默认 180 天,可设)的记录 |
 | 离线 IP 归属地数据库(如果你添加了) | `geoip` 子目录 |
 | 你手动安装的插件 | `~/.velashell/plugins` |
 
@@ -244,7 +257,10 @@ VelaShell 仅在以下情形联网:
 4. **检查更新。** 你在设置中点击"检查更新"时,以及"启动时检查更新"处于开启状态时
    (「设置 → 常规」,默认开启)启动时的那一次,VelaShell 会向 GitHub 请求发布清单,
    以便有新版本时投一条消息到消息中心。与访问任何网站一样,GitHub 会收到你的 IP 地址与
-   该请求。**Microsoft Store 版本完全禁用了该功能**,更新由商店接管。
+   该请求。如果你另外打开了"自动下载更新"(「设置 → 常规」,就在它下面;**默认关闭**),
+   启动检查发现的新版本会在后台从同一个 GitHub Release 下载、并按 SHA-256 校验 —— 多出的
+   只是一次安装包下载,同样不带任何关于你的信息;只有你点了重启才会安装。在"关于"页点
+   "检查更新"照旧会接着下载。**Microsoft Store 版本完全禁用了该功能**,更新由商店接管。
 
 5. **插件更新检查。** 打开「插件管理」窗口时,VelaShell 会向插件商店
    (<https://market.easilynet.top>,仅 https)问一次:你装的这几个插件有没有新版本。
@@ -292,6 +308,9 @@ VelaShell 不含任何第三方 SDK、追踪器或广告库。
 关于页的「导出诊断包…」把诊断日志、版本与平台概况和插件清单打成 zip,**只写到你选的位置**,不会上传。
 写入前会遮盖主机名、用户名、本机路径、IP 与邮箱地址,以及形如口令或令牌的值;设置、连接配置与凭据都不收。
 要不要发给别人由你决定,发之前可以先打开检查。
+
+设置 → 常规 →「设置导入/导出」的「导出」只把你勾选的分类写进你选的文件;网络代理与安全审计默认不勾,
+代理密码与告警 Webhook 地址无论勾选什么都不写进去。
 
 没有任何存储方式是绝对安全的;对于一台已被入侵的计算机,VelaShell 无法保护其上的数据。
 

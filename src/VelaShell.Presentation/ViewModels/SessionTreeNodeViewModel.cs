@@ -58,6 +58,31 @@ public sealed class SessionTreeNodeViewModel(
         set => this.RaiseAndSetIfChanged(ref field, value);
     } = name;
 
+    /// <summary>
+    /// 用户给这条连接挑的标签页图标 id(<see cref="SessionTabIcons" />);没挑(跟协议)或认不出时为 null。
+    /// </summary>
+    /// <remarks>
+    /// 资源管理器只在挑过图标的行上画它:没挑的行照旧只有状态圆点与名字(设计 FrJPu),
+    /// 挑了的多出一枚 —— 正是用户想让它在一长串里跳出来的那几台。
+    /// </remarks>
+    public string? TabIconId
+    {
+        get;
+        set
+        {
+            value = SessionTabIcons.Normalize(value);
+            if (field == value)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(HasTabIcon));
+        }
+    }
+
+    /// <summary>是否画自定义图标(<see cref="TabIconId" /> 不为 null)。</summary>
+    public bool HasTabIcon => TabIconId is not null;
+
     /// <summary>悬停提示最多显示的行数;再多就截断,完整的备注在编辑对话框里看。</summary>
     public const int NotesTipMaxLines = 12;
 

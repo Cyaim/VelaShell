@@ -82,7 +82,7 @@ public sealed class AuditLogViewModelTests
     public async Task AFullPage_SaysOnlyTheLatestWereLoaded()
     {
         IAuditLogService audit = Substitute.For<IAuditLogService>();
-        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
              .Returns(_ => [.. Enumerable.Range(0, AuditLogViewModel.MaxRows).Select(i => new AuditEntry { Category = "connection", Action = "connect", Detail = $"h{i}" })]);
         var vm = new AuditLogViewModel(audit);
 
@@ -95,7 +95,7 @@ public sealed class AuditLogViewModelTests
     public async Task AReadFailure_IsShown_NotThrown()
     {
         IAuditLogService audit = Substitute.For<IAuditLogService>();
-        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
              .Returns<Task<List<AuditEntry>>>(_ => throw new IOException("disk gone"));
         var vm = new AuditLogViewModel(audit);
 
@@ -112,15 +112,130 @@ public sealed class AuditLogViewModelTests
 
         await vm.RefreshCommand.Execute().FirstAsync();
 
-        await audit.Received(1).QueryAsync(AuditLogViewModel.MaxRows, null, Arg.Any<CancellationToken>());
+        await audit.Received(1).QueryAsync(AuditLogViewModel.MaxRows, null, null, null, Arg.Any<CancellationToken>());
         Assert.HasCount(4, vm.Rows);
     }
 
-    private static AuditLogViewModel Create(out IAuditLogService audit)
+    [TestMethod]
+    public async Task ConfigCategories_HaveTheirOwnFilterAndLabels()
+    {
+        IAuditLogService audit = Substitute.For<IAuditLogService>();
+        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
+             .Returns(_ =>
+             [
+                 new AuditEntry { Category = AuditCategories.Profile, Action = AuditActions.ProfileUpdated, ProfileId = WebId, Detail = "web-prod · root@h:22" },
+                 new AuditEntry { Category = AuditCategories.Settings, Action = AuditActions.SettingsChanged, Detail = "外观" },
+                 new AuditEntry { Category = AuditCategories.Credential, Action = AuditActions.CredentialUpdated, Detail = "ops" },
+                 new AuditEntry { Category = AuditCategories.Connection, Action = "connect", Detail = "root@h:22" },
+             ]);
+        var vm = new AuditLogViewModel(audit);
+        await vm.LoadAsync(TestContext.CancellationToken);
+
+        Assert.AreEqual(Strings.Get("AuditLog_ActionProfileUpdated"), vm.Rows[0].ActionLabel);
+        Assert.AreEqual(Strings.Get("AuditLog_CategorySettings"), vm.Rows[1].CategoryLabel);
+        Assert.AreEqual(Strings.Get("AuditLog_ActionCredentialUpdated"), vm.Rows[2].ActionLabel);
+        Assert.HasCount(6, vm.CategoryOptions, "全部 / 连接 / 安全 / 连接配置 / 设置 / 共享凭据");
+
+        vm.CategoryIndex = 3;
+        Assert.AreEqual(AuditActions.ProfileUpdated, vm.Rows.Single().Action);
+        vm.CategoryIndex = 5;
+        Assert.AreEqual(AuditActions.CredentialUpdated, vm.Rows.Single().Action);
+    }
+
+    [TestMethod]
+    public async Task TimeRange_IsPushedDownToTheQuery()
+    {
+        var now = new DateTimeOffset(2026, 10, 24, 12, 0, 0, TimeSpan.Zero);
+        IAuditLogService audit = Substitute.For<IAuditLogService>();
+        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
+             .Returns(_ => new List<AuditEntry>());
+        var vm = new AuditLogViewModel(audit, timeProvider: new FixedTime(now, TimeZoneInfo.Utc));
+        await vm.LoadAsync(TestContext.CancellationToken);
+
+        vm.RangeIndex = 2; // 最近 7 天:换了就重读
+        await audit.Received(1).QueryAsync(AuditLogViewModel.MaxRows, null, now.AddDays(-7), null, Arg.Any<CancellationToken>());
+
+        vm.RangeIndex = vm.RangeOptions.Count - 1; // 自定义
+        Assert.IsTrue(vm.IsCustomRange);
+        vm.CustomFrom = new DateTime(2026, 7, 10);
+        vm.CustomTo = new DateTime(2026, 7, 1); // 起止填反了也认
+        Assert.AreEqual(
+            (new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero), (DateTimeOffset?)new DateTimeOffset(2026, 7, 11, 0, 0, 0, TimeSpan.Zero)),
+            vm.SelectedRange(), "按本地日期,结束日当天整天都算");
+        await audit.Received(1).QueryAsync(AuditLogViewModel.MaxRows, null,
+            new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 7, 11, 0, 0, 0, TimeSpan.Zero),
+            Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    public async Task Csv_ExportsTheFilteredRows_AndDefusesFormulas()
+    {
+        IAuditLogService audit = Substitute.For<IAuditLogService>();
+        var at = new DateTimeOffset(2026, 10, 24, 1, 2, 3, TimeSpan.Zero);
+        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
+             .Returns(_ =>
+             [
+                 new AuditEntry { Timestamp = at, Category = "security", Action = "hostkey-rejected", Detail = "=HYPERLINK(\"http://evil\")" },
+                 new AuditEntry { Timestamp = at, Category = "connection", Action = "connect", ProfileId = WebId, Detail = "root@10.0.0.1:22" },
+             ]);
+        ISessionRepository sessions = Substitute.For<ISessionRepository>();
+        sessions.GetAllSessionsAsync().Returns([new SessionProfile { Id = WebId, Name = "@web, prod", Host = "10.0.0.1" }]);
+        var vm = new AuditLogViewModel(audit, sessions);
+        await vm.LoadAsync(TestContext.CancellationToken);
+
+        string[] lines = vm.BuildCsv().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        Assert.HasCount(3, lines, "表头 + 两行");
+        Assert.StartsWith(Strings.Get("AuditLog_ColTime") + ",", lines[0]);
+        Assert.EndsWith("\"'=HYPERLINK(\"\"http://evil\"\")\"", lines[1], "以 = 开头的详情补了单引号");
+        Assert.Contains($",connect,\"'@web, prod\",{WebId:D},", lines[2], "会话名以 @ 开头同样补单引号,带逗号的加引号");
+        Assert.StartsWith(at.ToLocalTime().ToString("yyyy-MM-dd'T'HH:mm:sszzz", System.Globalization.CultureInfo.InvariantCulture), lines[2]);
+
+        vm.CategoryIndex = 1;
+        Assert.HasCount(2, vm.BuildCsv().Split("\r\n", StringSplitOptions.RemoveEmptyEntries), "导出的是筛出来的那些");
+    }
+
+    [TestMethod]
+    public async Task OpenProfile_OpensTheStoredProfile_OrSaysItIsGone()
+    {
+        AuditLogViewModel vm = Create(out _, out ISessionRepository sessions);
+        await vm.LoadAsync(TestContext.CancellationToken);
+        Assert.IsTrue(vm.Rows[0].ProfileExists);
+        Assert.IsTrue(vm.Rows[3].HasProfile);
+        Assert.IsFalse(vm.Rows[3].ProfileExists, "配置已删:打开配置灰着");
+        Assert.IsFalse(vm.Rows[2].HasProfile, "没有配置 Id 的记录没有这个按钮");
+
+        SessionProfile? opened = null;
+        vm.OpenProfile = profile =>
+        {
+            opened = profile;
+            return Task.CompletedTask;
+        };
+        var stored = new SessionProfile { Id = WebId, Name = "web-prod", Host = "10.0.0.1" };
+        sessions.GetSessionAsync(WebId).Returns(stored);
+        await vm.OpenProfileAsync(vm.Rows[0]);
+        Assert.AreSame(stored, opened, "打开的是库里最新的那份");
+
+        sessions.GetSessionAsync(WebId).Returns((SessionProfile?)null);
+        opened = null;
+        await vm.OpenProfileAsync(vm.Rows[0]);
+        Assert.IsNull(opened);
+        Assert.AreEqual(Strings.Get("AuditLog_ProfileGone"), vm.Status, "窗口开着时被删了:说一声");
+    }
+
+    private sealed class FixedTime(DateTimeOffset now, TimeZoneInfo zone) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+
+        public override TimeZoneInfo LocalTimeZone => zone;
+    }
+
+    private static AuditLogViewModel Create(out IAuditLogService audit) => Create(out audit, out _);
+
+    private static AuditLogViewModel Create(out IAuditLogService audit, out ISessionRepository sessions)
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
         audit = Substitute.For<IAuditLogService>();
-        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
              .Returns(_ =>
              [
                  new AuditEntry { Timestamp = now, Category = "connection", Action = "connect-failed", ProfileId = WebId, Detail = "root@10.0.0.1:22" },
@@ -128,7 +243,7 @@ public sealed class AuditLogViewModelTests
                  new AuditEntry { Timestamp = now.AddMinutes(-2), Category = "security", Action = "hostkey-trusted-once", Detail = "10.0.0.2:22 SHA256:abc" },
                  new AuditEntry { Timestamp = now.AddMinutes(-3), Category = "connection", Action = "custom-action", ProfileId = Guid.NewGuid(), Detail = "ops@db:22" },
              ]);
-        ISessionRepository sessions = Substitute.For<ISessionRepository>();
+        sessions = Substitute.For<ISessionRepository>();
         sessions.GetAllSessionsAsync().Returns([new SessionProfile { Id = WebId, Name = "web-prod", Host = "10.0.0.1" }]);
         return new AuditLogViewModel(audit, sessions);
     }

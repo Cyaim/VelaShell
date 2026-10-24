@@ -83,6 +83,18 @@ internal sealed class LoopbackFtpServer : IDisposable
     /// </summary>
     public bool SupportsSha256 { get; set; } = true;
 
+    /// <summary>
+    /// 是否实现 <c>MLSD</c> / <c>MLST</c>(RFC 3659,时间一律 UTC)。默认 false —— 类型注释里说的那条主路径是 LIST;
+    /// 置 true 时 FEAT 通告它们,客户端就改走机读列表,用来验「MLSD 的时间不该再按时区偏移挪」。
+    /// </summary>
+    public bool SupportsMlsd { get; set; }
+
+    /// <summary>
+    /// LIST 按哪个 UTC 偏移的时钟写时间;null(默认)= 本机时区,即服务器与客户端在同一个时区。
+    /// 复刻「服务器在 UTC+0、客户端在 UTC+8」这类整体错位的场景。MLSD 不受它影响(那边恒为 UTC)。
+    /// </summary>
+    public TimeSpan? ListClockOffset { get; set; }
+
     private int _liveSessions;
     private int _liveTransfers;
 
@@ -203,8 +215,30 @@ internal sealed class LoopbackFtpServer : IDisposable
                 {
                     await writer.WriteLineAsync(" XSHA256").ConfigureAwait(false);
                 }
+                if (SupportsMlsd)
+                {
+                    await writer.WriteLineAsync(" MLST type*;size*;modify*;").ConfigureAwait(false);
+                    await writer.WriteLineAsync(" MLSD").ConfigureAwait(false);
+                }
                 await writer.WriteLineAsync("211 End").ConfigureAwait(false);
                 return true;
+            case "MLSD" when SupportsMlsd:
+                await SendMachineListingAsync(state, argument, writer).ConfigureAwait(false);
+                return true;
+            case "MLST" when SupportsMlsd:
+                {
+                    string remote = Normalize(state, argument);
+                    string local = Local(remote);
+                    if (!File.Exists(local) && !Directory.Exists(local))
+                    {
+                        await writer.WriteLineAsync("550 Not found").ConfigureAwait(false);
+                        return true;
+                    }
+                    await writer.WriteLineAsync($"250-Listing {remote}").ConfigureAwait(false);
+                    await writer.WriteLineAsync($" {MachineFacts(local)} {remote}").ConfigureAwait(false);
+                    await writer.WriteLineAsync("250 End").ConfigureAwait(false);
+                    return true;
+                }
             case "XSHA256" when SupportsSha256:
                 {
                     string path = Local(Normalize(state, argument));
@@ -404,12 +438,12 @@ internal sealed class LoopbackFtpServer : IDisposable
         foreach (string directory in Directory.GetDirectories(local))
         {
             var info = new DirectoryInfo(directory);
-            payload.Append(namesOnly ? info.Name : FormatEntry(info.Name, 4096, info.LastWriteTime, isDirectory: true)).Append("\r\n");
+            payload.Append(namesOnly ? info.Name : FormatEntry(info.Name, 4096, ListClock(info.LastWriteTimeUtc), isDirectory: true)).Append("\r\n");
         }
         foreach (string file in Directory.GetFiles(local))
         {
             var info = new FileInfo(file);
-            payload.Append(namesOnly ? info.Name : FormatEntry(info.Name, info.Length, info.LastWriteTime, isDirectory: false)).Append("\r\n");
+            payload.Append(namesOnly ? info.Name : FormatEntry(info.Name, info.Length, ListClock(info.LastWriteTimeUtc), isDirectory: false)).Append("\r\n");
         }
         await writer.WriteLineAsync("150 Opening data connection").ConfigureAwait(false);
         await using (Stream data = await state.AcceptDataAsync().ConfigureAwait(false))
@@ -481,6 +515,41 @@ internal sealed class LoopbackFtpServer : IDisposable
         state.RestartOffset = 0;
         state.CloseData();
         await writer.WriteLineAsync("226 Transfer complete").ConfigureAwait(false);
+    }
+
+    /// <summary>LIST 用的「服务器墙上时间」:默认本机时区,配了 <see cref="ListClockOffset" /> 就按那个偏移。</summary>
+    private DateTime ListClock(DateTime utc) =>
+        ListClockOffset is { } offset ? DateTime.SpecifyKind(utc + offset, DateTimeKind.Unspecified) : utc.ToLocalTime();
+
+    private async Task SendMachineListingAsync(SessionState state, string argument, StreamWriter writer)
+    {
+        string local = Local(Normalize(state, argument));
+        if (!Directory.Exists(local))
+        {
+            await writer.WriteLineAsync("550 No such directory").ConfigureAwait(false);
+            return;
+        }
+        var payload = new StringBuilder();
+        foreach (string entry in Directory.GetDirectories(local).Concat(Directory.GetFiles(local)))
+        {
+            payload.Append(MachineFacts(entry)).Append(' ').Append(Path.GetFileName(entry)).Append("\r\n");
+        }
+        await writer.WriteLineAsync("150 Opening data connection").ConfigureAwait(false);
+        await using (Stream data = await state.AcceptDataAsync().ConfigureAwait(false))
+        {
+            await data.WriteAsync(Encoding.UTF8.GetBytes(payload.ToString())).ConfigureAwait(false);
+        }
+        state.CloseData();
+        await writer.WriteLineAsync("226 Transfer complete").ConfigureAwait(false);
+    }
+
+    /// <summary>MLSD / MLST 的事实串;<c>modify</c> 按 RFC 3659 恒为 UTC。</summary>
+    private static string MachineFacts(string localPath)
+    {
+        string modify = File.GetLastWriteTimeUtc(localPath).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+        return Directory.Exists(localPath)
+            ? $"type=dir;modify={modify};"
+            : $"type=file;size={new FileInfo(localPath).Length};modify={modify};";
     }
 
     /// <summary>Unix 风格的 LIST 行:权限、链接数、属主、属组、大小、时间、名称。</summary>

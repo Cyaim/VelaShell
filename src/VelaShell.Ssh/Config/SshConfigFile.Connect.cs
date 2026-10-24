@@ -544,7 +544,11 @@ public static partial class SshConfigFile
                     if (isExplicit)
                     {
                         settings.IdentityFileSkipped?.Invoke(path, new SshCertificateException(SshFailureReason.KeyMismatch,
-                            $"证书 {Path.GetFileName(path)} 证的钥不在读出来的 IdentityFile 里，没法用它签名。"));
+                            $"证书 {Path.GetFileName(path)} 证的钥不在读出来的 IdentityFile 里，没法用它签名。")
+                        {
+                            ProblemKind = SshKeyProblemKind.CertificateKeyNotLoaded,
+                            Origin = path,
+                        });
                     }
                     continue;
                 }

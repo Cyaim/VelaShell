@@ -154,8 +154,6 @@
                    Text="{Binding Appearance.WindowOpacityPercent, StringFormat={}{0}%}" />
       </StackPanel>
     </Grid>
-    <!-- 标签栏位置:标签栏由可停靠布局(Dock)提供、固定在顶部,暂不展示
-         (设置审计 R-05);Dock 模板支持切换后恢复展示。 -->
     <!-- “显示菜单栏”开关已移除:文字菜单被自绘标题栏取代(含窗口控制按钮,必须常显);
          AppearanceOptions.ShowMenuBar 字段保留以兼容既有存储。 -->
     <Grid ColumnDefinitions="*,Auto">
@@ -166,6 +164,19 @@
       <ComboBox Grid.Column="1" Width="140" SelectedIndex="{Binding SidebarPositionIndex}" VerticalAlignment="Center">
         <ComboBoxItem Content="{loc:Localize SetAppear_SidebarLeft}" />
         <ComboBoxItem Content="{loc:Localize SetAppear_SidebarRight}" />
+      </ComboBox>
+    </Grid>
+    <!-- 标签栏位置(设置审计 R-05,此前因停靠层只会置顶而撤下):横排的标签条停在每个窗格的顶部或底部,
+         所有窗格一起变、预览即生效。两个选项与标签右键菜单「标签位置」里的同名项共用文案;
+         在那里停到左 / 右侧的窗格是按窗格单独挑的,不受这一项影响(说明文字里写明)。 -->
+    <Grid ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="row-label" Text="{loc:Localize SetAppear_TabBarPosition}" />
+        <TextBlock Classes="row-desc" Text="{loc:Localize SetAppear_TabBarPositionDesc}" TextWrapping="Wrap" />
+      </StackPanel>
+      <ComboBox Grid.Column="1" Width="140" SelectedIndex="{Binding TabBarPositionIndex}" VerticalAlignment="Center">
+        <ComboBoxItem Content="{loc:Localize Dock_TabsTop}" />
+        <ComboBoxItem Content="{loc:Localize Dock_TabsBottom}" />
       </ComboBox>
     </Grid>
     <!-- 多行显示标签页(#521):名字与标签右键菜单里那一项用同一个键,两处说的是同一个开关。 -->

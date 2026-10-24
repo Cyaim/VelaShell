@@ -16,6 +16,7 @@ using VelaShell.Core.Ssh;
 using VelaShell.Core.Sync;
 using VelaShell.Core.Tunnels;
 using VelaShell.Core.XServer;
+using VelaShell.Infrastructure.Audit;
 using VelaShell.Infrastructure.Credentials;
 using VelaShell.Infrastructure.Diagnostics;
 using VelaShell.Infrastructure.Ftp;
@@ -59,23 +60,31 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton(sp =>
             StartupWarmup.Claim(sp.GetRequiredService<VelaShellStoragePaths>()));
         services.AddSingleton<ISecretProtector>(sp => new AesSecretProtector(sp.GetRequiredService<VelaShellStoragePaths>()));
+        // 连接配置、设置、共享凭据三处仓储外面各套一层审计(Audit/):配置的增删改、设置变了哪几类、
+        // 共享凭据改动与引用它的连接数都在落盘这一层记,不靠各个界面入口自己记。
         services.AddSingleton<ISessionRepository>(sp =>
         {
             VelaShellStoragePaths paths = sp.GetRequiredService<VelaShellStoragePaths>();
-            return new SonnetDbSessionRepository(sp.GetRequiredService<SonnetDbEngine>(),
-                sp.GetRequiredService<ISecretProtector>(), paths.SessionsFile);
+            return new AuditedSessionRepository(
+                new SonnetDbSessionRepository(sp.GetRequiredService<SonnetDbEngine>(),
+                    sp.GetRequiredService<ISecretProtector>(), paths.SessionsFile),
+                sp.GetService<IAuditLogService>());
         });
         services.AddSingleton<ISettingsService>(sp =>
         {
             VelaShellStoragePaths paths = sp.GetRequiredService<VelaShellStoragePaths>();
-            return new SonnetDbSettingsService(sp.GetRequiredService<SonnetDbEngine>(),
-                [paths.RootDirectory]);
+            return new AuditedSettingsService(
+                new SonnetDbSettingsService(sp.GetRequiredService<SonnetDbEngine>(), [paths.RootDirectory]),
+                sp.GetService<IAuditLogService>());
         });
         // 共享凭据(#550):连接配置只存引用,连接那一刻由解析器按来源取回。
         // 来源以集合注册(先注册具体类型,再转发),外部密码管理器接进来时在这里追加一行。
         services.AddSingleton<ISharedCredentialRepository>(sp =>
-            new SonnetDbSharedCredentialRepository(sp.GetRequiredService<SonnetDbEngine>(),
-                sp.GetRequiredService<ISecretProtector>()));
+            new AuditedSharedCredentialRepository(
+                new SonnetDbSharedCredentialRepository(sp.GetRequiredService<SonnetDbEngine>(),
+                    sp.GetRequiredService<ISecretProtector>()),
+                sp.GetRequiredService<ISessionRepository>(),
+                sp.GetService<IAuditLogService>()));
         services.AddSingleton<SharedCredentialProvider>(sp =>
             new(sp.GetRequiredService<ISharedCredentialRepository>()));
         services.AddSingleton<ICredentialProvider>(sp => sp.GetRequiredService<SharedCredentialProvider>());
@@ -89,7 +98,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<WinScpImportService>(sp =>
             new(sp.GetRequiredService<ISessionRepository>()));
         services.AddSingleton<SshConfigImportService>(sp =>
-            new(sp.GetRequiredService<ISessionRepository>()));
+            new(sp.GetRequiredService<ISessionRepository>(), sp.GetService<IAppDataStore>()));
         services.AddSingleton<ISessionImportService>(sp => sp.GetRequiredService<XshellImportService>());
         services.AddSingleton<ISessionImportService>(sp => sp.GetRequiredService<WinScpImportService>());
         services.AddSingleton<ISessionImportService>(sp => sp.GetRequiredService<SshConfigImportService>());
@@ -199,7 +208,8 @@ public static class InfrastructureServiceCollectionExtensions
             registry.Unregistered += launcher.OnUnregistered;
             return launcher;
         });
-        // 本机文件拖进经 SSH 转发来的 X 程序:经那个会话的 SFTP 传到远端临时目录,再交远端路径(F16)。
+        // 本机文件拖进经 SSH 转发来的 X 程序:经那个会话的 SFTP 传到远端临时目录,再交远端路径(F16);
+        // 拖放时连着那台主机的会话都断了之后,下一次连上或往那台主机拖放时删掉(它订阅了 SessionConnected,所以是单例)。
         services.AddSingleton<IXServerDropUploader>(sp => new SftpXServerDropUploader(
             sp.GetRequiredService<ISshConnectionService>(), sp.GetRequiredService<ISftpService>()));
         // 反方向:从经 SSH 转发来的 X 程序往本机拖出文件,先经那个会话的 SFTP 取回本机的临时目录(F16 的另一半)。
@@ -229,7 +239,9 @@ public static class InfrastructureServiceCollectionExtensions
                     SshConnection inner = ssh.InnerConnection
                         ?? throw new VelaSshConnectionException(
                             "SSH connection is not established; cannot open SFTP channel.");
-                    return await SftpFileSystem.ConnectAsync(inner, cancellationToken: ct).ConfigureAwait(false);
+                    // 文件名按会话的字符集解读(GBK 服务器上的中文名才显示得对);UTF-8 时不传,库走无损往返。
+                    return await SftpFileSystem.ConnectAsync(inner, SftpConnectOptions.For(session.ConnectionInfo), ct)
+                        .ConfigureAwait(false);
                 });
             }, settings);
         });
@@ -295,6 +307,9 @@ public static class InfrastructureServiceCollectionExtensions
         return new VelaSshClientWrapper(
             assembled.Connect, assembled.ConnectTimeout, ci.Ssh,
             localXServer: xServer, agentPrompt: agentPrompt, target: HostAddress.FormatTarget(ci.Username, ci.Host, ci.Port), hostKeys: hostKey,
-            banners: assembled.Banners);
+            banners: assembled.Banners)
+        {
+            Route = assembled.Route,
+        };
     }
 }

@@ -49,6 +49,39 @@
   <data name="AuditLog_ActionHostKeyTrustedOnce" xml:space="preserve">
     <value>今回だけホスト指紋を信頼</value>
   </data>
+  <data name="AuditLog_ActionProfileCreated" xml:space="preserve">
+    <value>接続設定を作成</value>
+  </data>
+  <data name="AuditLog_ActionProfileUpdated" xml:space="preserve">
+    <value>接続設定を変更</value>
+  </data>
+  <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
+    <value>接続設定を削除</value>
+  </data>
+  <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
+    <value>設定を変更</value>
+  </data>
+  <data name="AuditLog_ActionCredentialCreated" xml:space="preserve">
+    <value>共有資格情報を作成</value>
+  </data>
+  <data name="AuditLog_ActionCredentialUpdated" xml:space="preserve">
+    <value>共有資格情報を変更</value>
+  </data>
+  <data name="AuditLog_ActionCredentialDeleted" xml:space="preserve">
+    <value>共有資格情報を削除</value>
+  </data>
+  <data name="AuditLog_AreaName" xml:space="preserve">
+    <value>名前</value>
+  </data>
+  <data name="AuditLog_AreaAddress" xml:space="preserve">
+    <value>アドレス</value>
+  </data>
+  <data name="AuditLog_AreaCredentials" xml:space="preserve">
+    <value>ログイン資格情報</value>
+  </data>
+  <data name="AuditLog_AreaOther" xml:space="preserve">
+    <value>その他の設定</value>
+  </data>
   <data name="AuditLog_CategoryAll" xml:space="preserve">
     <value>すべての種類</value>
   </data>
@@ -57,6 +90,15 @@
   </data>
   <data name="AuditLog_CategorySecurity" xml:space="preserve">
     <value>セキュリティ</value>
+  </data>
+  <data name="AuditLog_CategoryProfile" xml:space="preserve">
+    <value>接続設定</value>
+  </data>
+  <data name="AuditLog_CategorySettings" xml:space="preserve">
+    <value>設定</value>
+  </data>
+  <data name="AuditLog_CategoryCredential" xml:space="preserve">
+    <value>共有資格情報</value>
   </data>
   <data name="AuditLog_ColAction" xml:space="preserve">
     <value>イベント</value>
@@ -73,20 +115,74 @@
   <data name="AuditLog_ColTime" xml:space="preserve">
     <value>時刻</value>
   </data>
+  <data name="AuditLog_ColActionCode" xml:space="preserve">
+    <value>イベントコード</value>
+  </data>
+  <data name="AuditLog_ColProfileId" xml:space="preserve">
+    <value>接続設定 ID</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>{0} 件</value>
   </data>
   <data name="AuditLog_CountFiltered" xml:space="preserve">
     <value>{1} 件中 {0} 件</value>
   </data>
+  <data name="AuditLog_DetailChanged" xml:space="preserve">
+    <value>変更: {0}</value>
+  </data>
+  <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
+    <value>{0} 件の接続が使用中</value>
+  </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>条件に合う記録はありません。</value>
+  </data>
+  <data name="AuditLog_ExportCsv" xml:space="preserve">
+    <value>CSV をエクスポート</value>
+  </data>
+  <data name="AuditLog_ExportCsvTip" xml:space="preserve">
+    <value>現在表示している (絞り込み後の) 記録を CSV ファイルにエクスポートします</value>
+  </data>
+  <data name="AuditLog_ExportDone" xml:space="preserve">
+    <value>{0} 件の記録を {1} にエクスポートしました。</value>
+  </data>
+  <data name="AuditLog_ExportFailed" xml:space="preserve">
+    <value>エクスポートに失敗しました: {0}</value>
   </data>
   <data name="AuditLog_LoadFailed" xml:space="preserve">
     <value>監査ログを読み込めませんでした: {0}</value>
   </data>
   <data name="AuditLog_OnlyProblems" xml:space="preserve">
     <value>問題のみ</value>
+  </data>
+  <data name="AuditLog_OpenProfile" xml:space="preserve">
+    <value>この接続設定を開く</value>
+  </data>
+  <data name="AuditLog_ProfileGone" xml:space="preserve">
+    <value>この接続設定は削除されています。</value>
+  </data>
+  <data name="AuditLog_Range" xml:space="preserve">
+    <value>期間</value>
+  </data>
+  <data name="AuditLog_RangeAll" xml:space="preserve">
+    <value>すべての期間</value>
+  </data>
+  <data name="AuditLog_Range24Hours" xml:space="preserve">
+    <value>過去 24 時間</value>
+  </data>
+  <data name="AuditLog_Range7Days" xml:space="preserve">
+    <value>過去 7 日間</value>
+  </data>
+  <data name="AuditLog_Range30Days" xml:space="preserve">
+    <value>過去 30 日間</value>
+  </data>
+  <data name="AuditLog_RangeCustom" xml:space="preserve">
+    <value>カスタム…</value>
+  </data>
+  <data name="AuditLog_RangeFrom" xml:space="preserve">
+    <value>開始日</value>
+  </data>
+  <data name="AuditLog_RangeTo" xml:space="preserve">
+    <value>終了日</value>
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>ホスト・セッション・詳細を検索</value>
@@ -201,6 +297,9 @@
   </data>
   <data name="Cmd_ConnectionDiagnostics" xml:space="preserve">
     <value>接続診断</value>
+  </data>
+  <data name="Cmd_ConnectionInfo" xml:space="preserve">
+    <value>SSH 接続情報</value>
   </data>
   <data name="Cmd_ExportTerminalOutput" xml:space="preserve">
     <value>ターミナル出力をファイルにエクスポート</value>
@@ -535,8 +634,110 @@
   <data name="Disconnected" xml:space="preserve">
     <value>切断済み</value>
   </data>
+  <data name="LayoutTemplate_Title" xml:space="preserve">
+    <value>レイアウト テンプレート</value>
+  </data>
+  <data name="LayoutTemplate_SaveCurrent" xml:space="preserve">
+    <value>現在のレイアウトをテンプレートとして保存…</value>
+  </data>
+  <data name="LayoutTemplate_Manage" xml:space="preserve">
+    <value>レイアウト テンプレートの管理…</value>
+  </data>
+  <data name="LayoutTemplate_None" xml:space="preserve">
+    <value>レイアウト テンプレートはまだありません</value>
+  </data>
+  <data name="LayoutTemplate_ManageHint" xml:space="preserve">
+    <value>タブと分割を整えてテンプレートとして保存すると、同じ接続を同じ配置でまとめて開き直せます。テンプレートは保存済みの接続を参照するだけで、パスワードは含みません。</value>
+  </data>
+  <data name="LayoutTemplate_EnterToOpen" xml:space="preserve">
+    <value>Enter で開く</value>
+  </data>
+  <data name="LayoutTemplate_Summary" xml:space="preserve">
+    <value>タブ {0} 個 · ペイン {1} 個</value>
+  </data>
+  <data name="LayoutTemplate_Open" xml:space="preserve">
+    <value>このレイアウトを開く</value>
+  </data>
+  <data name="LayoutTemplate_SaveTitle" xml:space="preserve">
+    <value>レイアウト テンプレートを保存</value>
+  </data>
+  <data name="LayoutTemplate_NamePrompt" xml:space="preserve">
+    <value>テンプレート名:</value>
+  </data>
+  <data name="LayoutTemplate_DefaultName" xml:space="preserve">
+    <value>レイアウト {0}</value>
+  </data>
+  <data name="LayoutTemplate_ReplaceTitle" xml:space="preserve">
+    <value>レイアウト テンプレートの置き換え</value>
+  </data>
+  <data name="LayoutTemplate_ReplaceMessage" xml:space="preserve">
+    <value>「{0}」という名前のレイアウト テンプレートは既にあります。現在のレイアウトで置き換えますか?</value>
+  </data>
+  <data name="LayoutTemplate_Replace" xml:space="preserve">
+    <value>置き換え</value>
+  </data>
+  <data name="LayoutTemplate_NameTaken" xml:space="preserve">
+    <value>「{0}」という名前のレイアウト テンプレートは既にあります。別の名前にしてください。</value>
+  </data>
+  <data name="LayoutTemplate_Saved" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」を保存しました(タブ {1} 個、ペイン {2} 個)。</value>
+  </data>
+  <data name="LayoutTemplate_SavedPartially" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」を保存しました。開き直せないタブ {1} 個は含まれていません(プラグインのパネル、未保存の一時的な接続):{2}</value>
+  </data>
+  <data name="LayoutTemplate_NothingToSave" xml:space="preserve">
+    <value>現在のレイアウトにはテンプレートに保存できるタブがありません。開き直せるのは保存済みの接続とローカル ターミナルだけです。</value>
+  </data>
+  <data name="LayoutTemplate_SaveFailed" xml:space="preserve">
+    <value>レイアウト テンプレートを保存できませんでした: {0}</value>
+  </data>
+  <data name="LayoutTemplate_DeleteFailed" xml:space="preserve">
+    <value>レイアウト テンプレートを削除できませんでした: {0}</value>
+  </data>
+  <data name="LayoutTemplate_Overwrite" xml:space="preserve">
+    <value>現在のレイアウトで上書き</value>
+  </data>
+  <data name="LayoutTemplate_OverwriteTitle" xml:space="preserve">
+    <value>レイアウト テンプレートの上書き</value>
+  </data>
+  <data name="LayoutTemplate_OverwriteMessage" xml:space="preserve">
+    <value>現在の分割とタブで「{0}」を上書きしますか?保存済みの配置は置き換えられます。</value>
+  </data>
+  <data name="LayoutTemplate_RenameTitle" xml:space="preserve">
+    <value>レイアウト テンプレートの名前の変更</value>
+  </data>
+  <data name="LayoutTemplate_DeleteTitle" xml:space="preserve">
+    <value>レイアウト テンプレートの削除</value>
+  </data>
+  <data name="LayoutTemplate_DeleteMessage" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」を削除しますか?削除されるのはテンプレートだけで、参照している接続には影響しません。</value>
+  </data>
+  <data name="LayoutTemplate_OpenSkipped" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」のタブ {1} 個は開けないためスキップしました: {2}</value>
+  </data>
+  <data name="LayoutTemplate_NothingToOpen" xml:space="preserve">
+    <value>レイアウト テンプレート「{0}」のタブはどれも開けません(接続が削除されたか、このコンピューターに該当するシェルがありません)。</value>
+  </data>
+  <data name="LayoutTemplate_MissingProfile" xml:space="preserve">
+    <value>{0}(接続は削除済み)</value>
+  </data>
+  <data name="LayoutTemplate_MissingShell" xml:space="preserve">
+    <value>{0}(このコンピューターにないシェル)</value>
+  </data>
+  <data name="LayoutTemplate_MissingUnsupported" xml:space="preserve">
+    <value>{0}(このバージョンでは未対応)</value>
+  </data>
+  <data name="LayoutTemplate_ListSeparator" xml:space="preserve">
+    <value>、</value>
+  </data>
+  <data name="LayoutTemplate_Untitled" xml:space="preserve">
+    <value>無題のタブ</value>
+  </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>すべてのタブ</value>
+  </data>
+  <data name="Dock_NewTab" xml:space="preserve">
+    <value>新しいタブ</value>
   </data>
   <data name="Dock_Close" xml:space="preserve">
     <value>閉じる</value>
@@ -588,6 +789,9 @@
   </data>
   <data name="Dock_TabsTop" xml:space="preserve">
     <value>上</value>
+  </data>
+  <data name="Dock_TabsBottom" xml:space="preserve">
+    <value>下</value>
   </data>
   <data name="Dock_MultiRowTabs" xml:space="preserve">
     <value>タブを複数行で表示</value>
@@ -1111,6 +1315,12 @@
   <data name="HostKeyKnownFingerprint" xml:space="preserve">
     <value>記録済み指紋</value>
   </data>
+  <data name="HostKeyCertificateCa" xml:space="preserve">
+    <value>証明書の発行 CA</value>
+  </data>
+  <data name="HostKeyCertificateCaHint" xml:space="preserve">
+    <value>サーバーはホスト証明書を提示しましたが、このホストを管理する信頼済みホスト CA がないため、証明書内のキーだけを照合します。この CA を確認したら、設定 → セキュリティと監査 → 信頼済みホスト CA で追加すると、その CA が署名したホストを一台ずつ確認する必要がなくなります。</value>
+  </data>
   <data name="HostKeyRandomArt" xml:space="preserve">
     <value>指紋の図</value>
   </data>
@@ -1152,6 +1362,15 @@
   </data>
   <data name="KeySvc_ImportBadPublicKey" xml:space="preserve">
     <value>{0} は解析できる SSH 公開鍵ではありません。何もインポートされていません。</value>
+  </data>
+  <data name="KeySvc_ImportInvalidPrivateKey" xml:space="preserve">
+    <value>{0} は秘密鍵のようですが、内容が不完全か破損しています。何もインポートされていません。</value>
+  </data>
+  <data name="KeySvc_ImportUnsupportedKey" xml:space="preserve">
+    <value>秘密鍵 {0} の形式または暗号化方式はサポートされていません。何もインポートされていません。旧式の暗号化 PEM 形式は「ssh-keygen -p -f &lt;ファイル&gt;」で一度変換できます。</value>
+  </data>
+  <data name="KeySvc_ImportPublicKeyMismatch" xml:space="preserve">
+    <value>公開鍵ファイル {0} は秘密鍵 {1} と対になっていません。何もインポートされていません。</value>
   </data>
   <data name="KeySvc_ImportNotAPrivateKey" xml:space="preserve">
     <value>{0} は秘密鍵ではないようです (形式を認識できません。OpenSSH、PKCS#1/#8、SEC1、PuTTY .ppk に対応しています)。何もインポートされていません。</value>
@@ -1267,6 +1486,93 @@
   </data>
   <data name="SshErr_AuthPartialSuccess" xml:space="preserve">
     <value>少なくとも 1 つのステップは成功しており、後続のステップで止まっています。</value>
+  </data>
+  <data name="SshErr_AuthAttemptLine" xml:space="preserve">
+    <value>· {0}: {1}</value>
+  </data>
+  <data name="SshErr_AuthAttemptLineDetail" xml:space="preserve">
+    <value>· {0}: {1} — {2}</value>
+  </data>
+  <data name="SshErr_AuthNoAttempts" xml:space="preserve">
+    <value>(認証は一度も試行されていません)</value>
+  </data>
+  <data name="SshErr_AuthLabelProbe" xml:space="preserve">
+    <value>none(利用できる方式の確認)</value>
+  </data>
+  <data name="SshErr_AuthLabelViaKbd" xml:space="preserve">
+    <value>{0}(keyboard-interactive 経由)</value>
+  </data>
+  <data name="SshErr_AuthLabelAlgorithm" xml:space="preserve">
+    <value>{0}({1})</value>
+  </data>
+  <data name="SshErr_AuthDetailJoin" xml:space="preserve">
+    <value>{0}; {1}</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSuccess" xml:space="preserve">
+    <value>成功</value>
+  </data>
+  <data name="SshErr_AuthOutcomePartialSuccess" xml:space="preserve">
+    <value>一部成功(サーバーが次の手順を要求)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeFailure" xml:space="preserve">
+    <value>失敗</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNotOffered" xml:space="preserve">
+    <value>スキップ(サーバーがこの方式を受け付けない)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNoMaterial" xml:space="preserve">
+    <value>スキップ(資格情報を使用できない)</value>
+  </data>
+  <data name="SshErr_AuthDetailServerAccepts" xml:space="preserve">
+    <value>サーバーが受け付ける方式: {0}</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodNotOffered" xml:space="preserve">
+    <value>サーバーが受け付けるのは {0} のみ</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodFailureLimit" xml:space="preserve">
+    <value>{0} はこの認証ですでに {1} 回失敗したため、再試行しません</value>
+  </data>
+  <data name="SshErr_AuthDetailPublicKeyNotAccepted" xml:space="preserve">
+    <value>サーバーはこの公開鍵を受け付けません</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChanged" xml:space="preserve">
+    <value>サーバーの要求どおりパスワードを変更しました</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeFailed" xml:space="preserve">
+    <value>サーバーがパスワードの変更を要求しましたが、変更できませんでした(サーバーが変更に対応していないか、旧パスワードが誤っています)</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeNotConfigured" xml:space="preserve">
+    <value>サーバーがまずパスワードの変更を要求しています(ここでは新しいパスワードを尋ねられません)</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordRejected" xml:space="preserve">
+    <value>サーバーがパスワードの変更を要求し、新しいパスワードを {0} 回続けて拒否しました: {1}</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordNotProvided" xml:space="preserve">
+    <value>サーバーがまずパスワードの変更を要求していますが、新しいパスワードが入力されませんでした</value>
+  </data>
+  <data name="SshErr_AuthDetailCredentialFailed" xml:space="preserve">
+    <value>資格情報のエラー: {0}</value>
+  </data>
+  <data name="SshErr_AuthDetailNoUsableSignatureAlgorithm" xml:space="preserve">
+    <value>この {0} 鍵には使える署名アルゴリズムがありません(SHA-1 の ssh-rsa を使うには、接続設定の SSH オプションで「レガシーアルゴリズムを許可」をオンにしてください)</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Fallback" xml:space="preserve">
+    <value>サーバーが server-sig-algs を通知しなかったため、{0} が拒否された後 {1}(SHA-1)で再試行しました</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Signature" xml:space="preserve">
+    <value>SHA-1 署名を使用({0})</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateExpired" xml:space="preserve">
+    <value>証明書(Key ID「{0}」)はこのコンピューターの時計では {1} に期限切れです</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateNotYetValid" xml:space="preserve">
+    <value>証明書(Key ID「{0}」)はこのコンピューターの時計では {1} まで有効になりません</value>
+  </data>
+  <data name="SshErr_AuthDetailHostCertificateForLogin" xml:space="preserve">
+    <value>証明書(Key ID「{0}」)はホスト証明書のため、ログインには使えません</value>
+  </data>
+  <data name="SshErr_AuthDetailPrincipalNotListed" xml:space="preserve">
+    <value>証明書の発行先ユーザーは {0} で、ログインユーザー {1} が含まれていません</value>
   </data>
   <data name="SshErr_LimitExceeded" xml:space="preserve">
     <value>ローカルの同時実行数の上限に達しました(転送接続数、agent / X11 チャネル数)。いくつか閉じてから再試行してください。</value>
@@ -1400,6 +1706,15 @@
   <data name="Msg_HostKeyRejected" xml:space="preserve">
     <value>{0} のホストキー {1} は信頼されませんでした。接続を中止しました。</value>
   </data>
+  <data name="Msg_HostKeyRevoked" xml:space="preserve">
+    <value>{0} が提示したホストキー {1} は失効しています（設定 → セキュリティと監査 → 信頼済みホスト CA の @revoked 記録）。接続を中止しました。このホストには接続しないでください。</value>
+  </data>
+  <data name="Msg_HostCertInvalid" xml:space="preserve">
+    <value>{0} は信頼済み CA {2} が署名したホスト証明書を提示しましたが、証明書が無効です：{1}このホストは CA で管理されているため、新しいホストとして信頼するかを尋ねる動作には戻りません。管理者にホスト証明書の再発行を依頼してください。</value>
+  </data>
+  <data name="Msg_HostCaUnvouched" xml:space="preserve">
+    <value>{0} は信頼済みホスト CA（{1}）の管理対象ですが、提示されたキー（{2}）はその CA の保証を受けていないため、確認せずに接続を拒否しました。このホストに本当に証明書がない場合は、フィンガープリントを確認したうえで known_hosts からそのキーをインポートするか、設定 → セキュリティと監査 で信頼済みホスト CA を見直してください。</value>
+  </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>{0} への自動再接続を停止しました。ホストキー {1} の確認が必要ですが、自動再接続では確認ダイアログを表示しません。手動で再接続し、表示されるダイアログでフィンガープリントを確認してください。</value>
   </data>
@@ -1415,11 +1730,23 @@
   <data name="Msg_KeyDeleted" xml:space="preserve">
     <value>{0} を削除しました。</value>
   </data>
+  <data name="Msg_PublicKeyExported" xml:space="preserve">
+    <value>{0} の公開鍵を {1} にエクスポートしました。</value>
+  </data>
+  <data name="Msg_PrivateKeyExported" xml:space="preserve">
+    <value>秘密鍵 {0} を {1} にエクスポートしました。不要になったらこのコピーを削除してください。</value>
+  </data>
+  <data name="Msg_KeyExportFailed" xml:space="preserve">
+    <value>エクスポートに失敗しました: {0}</value>
+  </data>
   <data name="Msg_KeyGenerated" xml:space="preserve">
     <value>{0}({1})を生成しました。</value>
   </data>
   <data name="Msg_KeyImported" xml:space="preserve">
     <value>{0} をインポートしました。</value>
+  </data>
+  <data name="Msg_KeyImportedNeedsPassphrase" xml:space="preserve">
+    <value>{0} をインポートしました。この鍵にはパスフレーズが設定されているため、接続時に入力を求められます。</value>
   </data>
   <data name="Msg_LastSyncAt" xml:space="preserve">
     <value>前回の同期: {0:yyyy-MM-dd HH:mm:ss}</value>
@@ -1577,6 +1904,9 @@
   <data name="SetAbout_UpdateAvailableLinux" xml:space="preserve">
     <value>新しいバージョン {0} があります。リリースページから Linux パッケージをダウンロードし、手動でインストールしてください：{1}</value>
   </data>
+  <data name="SetAbout_UpdateAvailableLinuxPackage" xml:space="preserve">
+    <value>新しいバージョン {0} があります。現在のインストール方法に対応するパッケージ {1} のダウンロードを開きました。ダウンロード後に手動でインストールしてください：{2}</value>
+  </data>
   <data name="SetAbout_UpdateAvailableManual" xml:space="preserve">
     <value>新しいバージョン {0} が見つかりましたが、現在のインストール先では自動更新できません(フォルダーが書き込み不可)。プロジェクトのリリースページから最新版を入手してください。</value>
   </data>
@@ -1597,6 +1927,9 @@
   </data>
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>ダウンロードに失敗しました。後でもう一度お試しください。</value>
+  </data>
+  <data name="SetAbout_AutoDownloadFailed" xml:space="preserve">
+    <value>更新 {0} をバックグラウンドでダウンロードできませんでした。次回起動時の確認で再試行します。今すぐ「更新を確認」を押してダウンロードすることもできます。</value>
   </data>
   <data name="SetAbout_UpdateCheckFailed" xml:space="preserve">
     <value>更新の確認に失敗しました。後でもう一度お試しください。</value>
@@ -1775,6 +2108,9 @@
   <data name="ColorPicker_Tip" xml:space="preserve">
     <value>色を選択</value>
   </data>
+  <data name="IconPicker_Tip" xml:space="preserve">
+    <value>アイコンを選択</value>
+  </data>
   <data name="ColorPicker_ThemePalette" xml:space="preserve">
     <value>テーマのパレット</value>
   </data>
@@ -1783,6 +2119,81 @@
   </data>
   <data name="Profile_TabColorAuto" xml:space="preserve">
     <value>自動配色</value>
+  </data>
+  <data name="Profile_TabIcon" xml:space="preserve">
+    <value>タブのアイコン</value>
+  </data>
+  <data name="Profile_TabIconDefault" xml:space="preserve">
+    <value>プロトコルに従う</value>
+  </data>
+  <data name="TabIcon_Server" xml:space="preserve">
+    <value>サーバー</value>
+  </data>
+  <data name="TabIcon_Database" xml:space="preserve">
+    <value>データベース</value>
+  </data>
+  <data name="TabIcon_Cloud" xml:space="preserve">
+    <value>クラウド</value>
+  </data>
+  <data name="TabIcon_Globe" xml:space="preserve">
+    <value>地球</value>
+  </data>
+  <data name="TabIcon_Box" xml:space="preserve">
+    <value>ボックス</value>
+  </data>
+  <data name="TabIcon_Layers" xml:space="preserve">
+    <value>レイヤー</value>
+  </data>
+  <data name="TabIcon_Network" xml:space="preserve">
+    <value>ネットワーク</value>
+  </data>
+  <data name="TabIcon_EthernetPort" xml:space="preserve">
+    <value>LAN ポート</value>
+  </data>
+  <data name="TabIcon_Wifi" xml:space="preserve">
+    <value>Wi-Fi</value>
+  </data>
+  <data name="TabIcon_Shield" xml:space="preserve">
+    <value>盾</value>
+  </data>
+  <data name="TabIcon_Key" xml:space="preserve">
+    <value>鍵</value>
+  </data>
+  <data name="TabIcon_Cpu" xml:space="preserve">
+    <value>プロセッサ</value>
+  </data>
+  <data name="TabIcon_Location" xml:space="preserve">
+    <value>場所</value>
+  </data>
+  <data name="TabIcon_HardDrive" xml:space="preserve">
+    <value>ハードディスク</value>
+  </data>
+  <data name="TabIcon_Terminal" xml:space="preserve">
+    <value>ターミナル</value>
+  </data>
+  <data name="TabIcon_Bug" xml:space="preserve">
+    <value>虫</value>
+  </data>
+  <data name="TabIcon_House" xml:space="preserve">
+    <value>家</value>
+  </data>
+  <data name="TabIcon_Flame" xml:space="preserve">
+    <value>炎</value>
+  </data>
+  <data name="TabIcon_Star" xml:space="preserve">
+    <value>星</value>
+  </data>
+  <data name="TabIcon_Zap" xml:space="preserve">
+    <value>稲妻</value>
+  </data>
+  <data name="TabIcon_Gauge" xml:space="preserve">
+    <value>メーター</value>
+  </data>
+  <data name="TabIcon_Activity" xml:space="preserve">
+    <value>波形</value>
+  </data>
+  <data name="TabIcon_User" xml:space="preserve">
+    <value>人物</value>
   </data>
   <data name="Profile_AesNote" xml:space="preserve">
     <value>(AES-256 で暗号化して保存されます)</value>
@@ -2253,6 +2664,12 @@
   <data name="SetAppear_SidebarPositionDesc" xml:space="preserve">
     <value>// サイドバーをウィンドウの左右どちらに表示するか</value>
   </data>
+  <data name="SetAppear_TabBarPosition" xml:space="preserve">
+    <value>タブバーの位置</value>
+  </data>
+  <data name="SetAppear_TabBarPositionDesc" xml:space="preserve">
+    <value>// 各ペインのタブバーを上と下のどちらに置くか。タブの右クリックメニューで左右に移したペインはそのまま</value>
+  </data>
   <data name="SetAppear_MultiRowTabsDesc" xml:space="preserve">
     <value>// タブが 1 行に収まらないとき、幅を詰めて横スクロールする代わりに次の行へ折り返す。タブの右クリックメニューからも切り替え可能</value>
   </data>
@@ -2437,19 +2854,19 @@
     <value>設定のインポート/エクスポート</value>
   </data>
   <data name="SetGeneral_ImportExportDesc" xml:space="preserve">
-    <value>// アプリ設定のみをバックアップ/移行します。接続、グループ、鍵、スニペットは含まれません</value>
+    <value>// アプリ設定をカテゴリごとにバックアップ/移行します。パスワードと Webhook URL はファイルに書き出しません。接続、グループ、鍵、スニペットは含まれません</value>
   </data>
   <data name="SetGeneral_ExportDone" xml:space="preserve">
-    <value>設定を {0} にエクスポートしました。パスワードはエクスポートに含まれないため、インポート後に再入力してください。</value>
+    <value>設定を {0} にエクスポートしました({1})。プロキシのパスワードとアラート Webhook URL はエクスポートに書き出しません。</value>
   </data>
   <data name="SetGeneral_ExportFailed" xml:space="preserve">
     <value>エクスポートに失敗しました: {0}</value>
   </data>
   <data name="SetGeneral_ImportDone" xml:space="preserve">
-    <value>設定をインポートしました。内容を確認してから保存してください。</value>
+    <value>インポートしました:{0}。内容を確認してから保存してください。</value>
   </data>
   <data name="SetGeneral_ImportDoneNeedsSecrets" xml:space="preserve">
-    <value>設定をインポートしました。プロキシのパスワードはエクスポートに含まれません。「ネットワーク」で再入力してから保存してください。</value>
+    <value>インポートしました:{0}。{1}はエクスポートに含まれないため、入力してから保存してください。</value>
   </data>
   <data name="SetGeneral_ImportFailed" xml:space="preserve">
     <value>ファイルを読み取れませんでした: {0}</value>
@@ -2459,6 +2876,42 @@
   </data>
   <data name="SetGeneral_ImportTooLarge" xml:space="preserve">
     <value>このファイルは {0} MB で、設定ファイルの上限 {1} MB を超えています。設定は変更されていません。</value>
+  </data>
+  <data name="SetGeneral_SecretProxyPassword" xml:space="preserve">
+    <value>プロキシのパスワード</value>
+  </data>
+  <data name="SetGeneral_SecretWebhookUrl" xml:space="preserve">
+    <value>アラート Webhook URL</value>
+  </data>
+  <data name="SetTransfer_ListSeparator" xml:space="preserve">
+    <value>、</value>
+  </data>
+  <data name="SetTransfer_ExportSummary" xml:space="preserve">
+    <value>エクスポートするカテゴリを選択します。プロキシのパスワードとアラート Webhook URL は選択に関係なく書き出しません。これらを別の端末へ移すには、エンドツーエンドのパスフレーズを設定したクラウド同期を使ってください。</value>
+  </data>
+  <data name="SetTransfer_ImportSummary" xml:space="preserve">
+    <value>「{0}」には以下のカテゴリが含まれています。チェックしたものだけを置き換え、それ以外の設定はそのままです。確認してから保存してください。</value>
+  </data>
+  <data name="SetTransfer_ExportButton" xml:space="preserve">
+    <value>エクスポート…</value>
+  </data>
+  <data name="SetTransfer_ImportButton" xml:space="preserve">
+    <value>インポート</value>
+  </data>
+  <data name="SetTransfer_SensitiveTag" xml:space="preserve">
+    <value>機微</value>
+  </data>
+  <data name="SetTransfer_ProxyExportWarning" xml:space="preserve">
+    <value>プロキシサーバーのアドレス、ポート、ユーザー名を書き出します(パスワードは書き出しません)。ファイルを他人に渡す場合はチェックしないでください。</value>
+  </data>
+  <data name="SetTransfer_SecurityExportWarning" xml:space="preserve">
+    <value>ホスト鍵のポリシー、外部起動の確認と信頼済みの接続先(ユーザー@ホスト)、アラートのスイッチを書き出します(Webhook URL は書き出しません)。ファイルを他人に渡す場合はチェックしないでください。</value>
+  </data>
+  <data name="SetTransfer_ProxyImportWarning" xml:space="preserve">
+    <value>以後のすべての送信接続(SSH、SFTP、更新の確認…)が使うプロキシを変更します。自分でエクスポートした、信頼できるファイルだけをインポートしてください。</value>
+  </data>
+  <data name="SetTransfer_SecurityImportWarning" xml:space="preserve">
+    <value>ホスト鍵の確認、外部起動の確認と信頼済みの接続先を変更します。自分でエクスポートした、信頼できるファイルだけをインポートしてください。</value>
   </data>
   <data name="SetGeneral_KeepAliveInterval" xml:space="preserve">
     <value>キープアライブ間隔(秒)</value>
@@ -2519,6 +2972,12 @@
   </data>
   <data name="SetGeneral_RestoreSessionsDesc" xml:space="preserve">
     <value>// 起動時に前回のセッションへ自動再接続</value>
+  </data>
+  <data name="SetGeneral_RestoreLayout" xml:space="preserve">
+    <value>前回の分割レイアウトで復元</value>
+  </data>
+  <data name="SetGeneral_RestoreLayoutDesc" xml:space="preserve">
+    <value>// セッションの復元時に分割、タブの順序、固定状態もあわせて復元</value>
   </data>
   <data name="SetGeneral_SessionLogging" xml:space="preserve">
     <value>セッションログ</value>
@@ -2582,6 +3041,26 @@
   </data>
   <data name="SetKeys_DeleteKeyConfirm" xml:space="preserve">
     <value>鍵ペア「{0}」を削除しますか? {1} とその .pub をディスクから削除します。同じ鍵をこのマシンの他のツールが使っている可能性があり、元に戻せません。</value>
+  </data>
+  <data name="SetKeys_ExportKey" xml:space="preserve">
+    <value>鍵をエクスポート</value>
+  </data>
+  <data name="SetKeys_ExportPublicKey" xml:space="preserve">
+    <value>公開鍵をエクスポート…</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKey" xml:space="preserve">
+    <value>秘密鍵をエクスポート…</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKeyTitle" xml:space="preserve">
+    <value>秘密鍵をエクスポート</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKeyConfirm" xml:space="preserve">
+    <value>秘密鍵「{0}」を選択した場所にそのままコピーします。パスフレーズのない鍵なら、このファイルを手に入れた人は、この鍵を信頼しているすべてのサーバーにログインできます。
+
+自分だけが管理できる場所に保存し、使い終わったら削除してください。クラウドドライブ、チャット、リポジトリには置かないでください。macOS / Linux ではエクスポートしたファイルは自分だけが読み書きできます (0600)。</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKeyConfirmButton" xml:space="preserve">
+    <value>エクスポートする</value>
   </data>
   <data name="SetKeys_Generate" xml:space="preserve">
     <value>鍵を生成</value>
@@ -2654,6 +3133,123 @@
   </data>
   <data name="SetSecurity_NoKnownHosts" xml:space="preserve">
     <value>信頼済みホストはまだありません</value>
+  </data>
+  <data name="KnownHosts_InteropLabel" xml:space="preserve">
+    <value>OpenSSH known_hosts</value>
+  </data>
+  <data name="KnownHosts_InteropDesc" xml:space="preserve">
+    <value>// known_hosts をインポートしてコマンドラインの ssh と信頼の基準を共有します（@cert-authority と @revoked の行は下の信頼済みホスト CA へ）。信頼済みホストを OpenSSH 形式でエクスポートすることもできます</value>
+  </data>
+  <data name="KnownHosts_Import" xml:space="preserve">
+    <value>インポート…</value>
+  </data>
+  <data name="KnownHosts_Export" xml:space="preserve">
+    <value>エクスポート…</value>
+  </data>
+  <data name="KnownHosts_HashOnExport" xml:space="preserve">
+    <value>エクスポート時にホスト名をハッシュ化</value>
+  </data>
+  <data name="KnownHosts_HashOnExportDesc" xml:space="preserve">
+    <value>// HashKnownHosts yes と同じく、ホストキーの行を |1|… で書き出し、ファイルからサーバー名が読み取れないようにします。@cert-authority / @revoked 行のパターンはそのまま書き出します</value>
+  </data>
+  <data name="KnownHosts_ImportDialogTitle" xml:space="preserve">
+    <value>known_hosts のインポート</value>
+  </data>
+  <data name="KnownHosts_ExportDialogTitle" xml:space="preserve">
+    <value>known_hosts のエクスポート</value>
+  </data>
+  <data name="KnownHosts_ImportFailed" xml:space="preserve">
+    <value>known_hosts をインポートできませんでした：{0}</value>
+  </data>
+  <data name="KnownHosts_ImportTooLarge" xml:space="preserve">
+    <value>ファイルが 16 MB を超えています。known_hosts ではない可能性があります。</value>
+  </data>
+  <data name="KnownHosts_ImportDone" xml:space="preserve">
+    <value>ホストキー {0} 件、信頼済み CA {1} 件、失効記録 {2} 件をインポートしました。</value>
+  </data>
+  <data name="KnownHosts_ImportAlready" xml:space="preserve">
+    <value>{0} 件はすでに信頼済みでした。</value>
+  </data>
+  <data name="KnownHosts_ImportConflicts" xml:space="preserve">
+    <value>{0} 件はインポートしませんでした：そのホストでは同じ種類の別のキーがすでに信頼されています。サーバーのキーが本当に変わったのであれば、上の一覧で古い記録を削除してからもう一度インポートしてください。</value>
+  </data>
+  <data name="KnownHosts_ImportRevokedSkipped" xml:space="preserve">
+    <value>{0} 件はインポートしませんでした：そのキーは失効しています（@revoked）。</value>
+  </data>
+  <data name="KnownHosts_ImportHashedUnmatched" xml:space="preserve">
+    <value>ハッシュ化されたホスト名（|1|…）のうち {0} 件は、保存済みの接続にも信頼済みホストにも一致せず、どのホストのものか判別できません。</value>
+  </data>
+  <data name="KnownHosts_ImportWildcards" xml:space="preserve">
+    <value>ワイルドカードを含むホストパターンの行 {0} 件をスキップしました：ホストキーは特定のホストに対してのみ信頼できます。</value>
+  </data>
+  <data name="KnownHosts_ImportUnsupported" xml:space="preserve">
+    <value>{0} 行をスキップしました：未対応のキー種類、壊れた行、またはそのまま記録できないホスト名です。</value>
+  </data>
+  <data name="KnownHosts_ExportDone" xml:space="preserve">
+    <value>ホストキー {0} 件と CA / 失効の行 {1} 件を {2} にエクスポートしました。</value>
+  </data>
+  <data name="KnownHosts_ExportSkipped" xml:space="preserve">
+    <value>{0} 件の記録はフィンガープリントしか保存されていないためエクスポートできませんでした。次にそのホストへ接続したときに補完されます。</value>
+  </data>
+  <data name="KnownHosts_ExportFailed" xml:space="preserve">
+    <value>known_hosts をエクスポートできませんでした：{0}</value>
+  </data>
+  <data name="HostCa_Section" xml:space="preserve">
+    <value>信頼済みホスト CA</value>
+  </data>
+  <data name="HostCa_SectionDesc" xml:space="preserve">
+    <value>// これらの CA が署名したホスト証明書は、ホスト名がパターンに一致すれば一台ずつ確認せずに信頼します。CA の管理対象のホストが有効な証明書のないキーを提示した場合は、初回確認に戻らず拒否します。失効したキー（@revoked）もここに表示され、常に拒否されます</value>
+  </data>
+  <data name="HostCa_Empty" xml:space="preserve">
+    <value>信頼済みホスト CA はまだありません</value>
+  </data>
+  <data name="HostCa_KindAuthority" xml:space="preserve">
+    <value>信頼済み CA</value>
+  </data>
+  <data name="HostCa_KindRevoked" xml:space="preserve">
+    <value>失効</value>
+  </data>
+  <data name="HostCa_AddTitle" xml:space="preserve">
+    <value>信頼済みホスト CA を追加</value>
+  </data>
+  <data name="HostCa_PatternsDesc" xml:space="preserve">
+    <value>// ホスト名パターン（カンマ区切り）：* と ? はワイルドカード、! は除外、22 以外のポートは [host]:port（known_hosts のホスト欄と同じ）</value>
+  </data>
+  <data name="HostCa_KeyDesc" xml:space="preserve">
+    <value>// CA の公開鍵の行（CA の .pub ファイルの内容）、または known_hosts からコピーした @cert-authority / @revoked の行全体</value>
+  </data>
+  <data name="HostCa_CommentPlaceholder" xml:space="preserve">
+    <value>メモ（任意）</value>
+  </data>
+  <data name="HostCa_Add" xml:space="preserve">
+    <value>追加</value>
+  </data>
+  <data name="HostCa_Added" xml:space="preserve">
+    <value>{0} の信頼済みホスト CA を追加しました。</value>
+  </data>
+  <data name="HostCa_RevokedAdded" xml:space="preserve">
+    <value>{0} の失効記録を追加しました。</value>
+  </data>
+  <data name="HostCa_ErrPatternsEmpty" xml:space="preserve">
+    <value>ホスト名パターンを一つ以上入力してください。</value>
+  </data>
+  <data name="HostCa_ErrPatternInvalid" xml:space="preserve">
+    <value>ホスト名パターン「{0}」が正しくありません：空白や # は使えず、@ や | で始めることもできません。22 以外のポートは [host]:port と書きます。</value>
+  </data>
+  <data name="HostCa_ErrPatternsOnlyNegated" xml:space="preserve">
+    <value>すべてが除外パターン（!）のため、どのホストにも一致しません。</value>
+  </data>
+  <data name="HostCa_ErrKeyInvalid" xml:space="preserve">
+    <value>有効な OpenSSH 公開鍵の行（種類 base64 [コメント]）でも、@cert-authority / @revoked の行でもありません。</value>
+  </data>
+  <data name="HostCa_ErrKeyIsCertificate" xml:space="preserve">
+    <value>CA の公開鍵そのものを証明書にすることはできません。</value>
+  </data>
+  <data name="HostCa_ErrRsaTooShort" xml:space="preserve">
+    <value>RSA の CA キーは 2048 ビット以上必要ですが、このキーは {0} ビットです。</value>
+  </data>
+  <data name="HostCa_ErrDuplicate" xml:space="preserve">
+    <value>同じパターンでこの CA はすでに信頼されています。</value>
   </data>
   <data name="SetSecurity_OpenAuditLog" xml:space="preserve">
     <value>表示</value>
@@ -3044,6 +3640,22 @@
   </data>
   <data name="Gutter_Blank" xml:space="preserve">
     <value>空白</value>
+  </data>
+  <data name="Gutter_CopyCommand" xml:space="preserve">
+    <value>このコマンドをコピー</value>
+  </data>
+  <data name="Gutter_RerunCommand" xml:space="preserve">
+    <value>このコマンドを再実行</value>
+  </data>
+  <data name="Gutter_RerunMultilineTitle" xml:space="preserve">
+    <value>複数行コマンドの再実行</value>
+  </data>
+  <data name="Gutter_RerunMultilineBody" xml:space="preserve">
+    <value>このコマンドは {0} 行あり、この端末ではブラケットペーストが有効になっていないため、各行が届いた時点ですぐに実行されます:
+
+{1}
+
+それでも再実行しますか?</value>
   </data>
   <data name="SetTerm_ScrollOnOutputDesc" xml:space="preserve">
     <value>// 履歴の閲覧中に新しい出力があると最下部へ移動します。オフの場合は現在位置を維持</value>
@@ -3705,6 +4317,27 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_DynamicSocksTip" xml:space="preserve">
     <value>ローカルポートを SOCKS5 プロキシとして使用、宛先は任意(ssh -D)</value>
   </data>
+  <data name="Tunnel_RemoteDynamicSocks" xml:space="preserve">
+    <value>リモート SOCKS</value>
+  </data>
+  <data name="Tunnel_RemoteDynamicSocksTip" xml:space="preserve">
+    <value>サーバーのポートを SOCKS5 プロキシにし、リモートのプログラムが許可リストの接続先へこのコンピューター経由で接続できるようにします(接続先なしの ssh -R)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenLabel" xml:space="preserve">
+    <value>許可する接続先(リモートが接続できる ホスト:ポート)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenHint" xml:space="preserve">
+    <value>空白またはカンマで区切ります。ホストには * ? のワイルドカード、ポートには * が使えます。any だけを書くとすべて許可(このコンピューターから届く所すべてにリモートが届きます)。リモートが送った名前で照合し、名前解決はしません。</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenInvalid" xml:space="preserve">
+    <value>許可ルール「{0}」の書き方が正しくありません。ホスト:ポート の形で書いてください(ポートは * も可、IPv6 は角かっこで囲む)。any は単独で書きます。</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenSummary" xml:space="preserve">
+    <value>許可: {0}</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenAny" xml:space="preserve">
+    <value>許可: すべて(このコンピューターから届く所すべてにリモートが届きます)</value>
+  </data>
   <data name="Tunnel_EditTip" xml:space="preserve">
     <value>トンネルを編集</value>
   </data>
@@ -3719,6 +4352,39 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Tunnel_ForwardToLoopback" xml:space="preserve">
     <value>サーバー自身(127.0.0.1)へ転送</value>
+  </data>
+  <data name="Tunnel_ListenOnServerLoopback" xml:space="preserve">
+    <value>サーバー自身(127.0.0.1)でのみ待ち受け</value>
+  </data>
+  <data name="Tunnel_UnixSocketOption" xml:space="preserve">
+    <value>Unix ドメインソケットを使う</value>
+  </data>
+  <data name="Tunnel_UnixSocketTip" xml:space="preserve">
+    <value>ローカル転送では両端それぞれをソケットにできます。パスを書いた側は上のポートを使いません。リモート転送では両端とも同時にソケットにする必要があります。ローカルのソケットファイルはファイル権限で守られ、このコンピューターの他のユーザーはこのトンネルを使えません。サーバー側で AllowStreamLocalForwarding が有効である必要があります。</value>
+  </data>
+  <data name="Tunnel_LocalSocketListenLabel" xml:space="preserve">
+    <value>待ち受けるローカルソケット(空欄ならローカルポート)</value>
+  </data>
+  <data name="Tunnel_LocalSocketTargetLabel" xml:space="preserve">
+    <value>接続先のローカルソケット</value>
+  </data>
+  <data name="Tunnel_RemoteSocketTargetLabel" xml:space="preserve">
+    <value>サーバー上の接続先ソケット(空欄ならターゲットホスト:ポート)</value>
+  </data>
+  <data name="Tunnel_RemoteSocketListenLabel" xml:space="preserve">
+    <value>サーバーで待ち受けるソケット</value>
+  </data>
+  <data name="Tunnel_SocketPathRequired" xml:space="preserve">
+    <value>ソケットのパスを入力してください。</value>
+  </data>
+  <data name="Tunnel_LocalSocketPathNotAbsolute" xml:space="preserve">
+    <value>完全なパスを入力してください(ルートまたはドライブ文字から)。</value>
+  </data>
+  <data name="Tunnel_LocalSocketPathTooLong" xml:space="preserve">
+    <value>パスが長すぎます: {0} バイト(ソケットのパスは最大 {1} バイト)。短いディレクトリを選んでください。</value>
+  </data>
+  <data name="Tunnel_RemoteSocketPathNotAbsolute" xml:space="preserve">
+    <value>サーバー上のソケットは / で始まる絶対パスで書いてください。</value>
   </data>
   <data name="Tunnel_LocalForwardTip" xml:space="preserve">
     <value>ローカルポートへのアクセスをサーバー経由でターゲットサービスに転送(ssh -L)</value>
@@ -3753,8 +4419,14 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_AutoStartBadge" xml:space="preserve">
     <value>起動時</value>
   </data>
+  <data name="Tunnel_RetryAction" xml:space="preserve">
+    <value>再試行</value>
+  </data>
   <data name="Tunnel_TargetHostLabel" xml:space="preserve">
     <value>ターゲットホスト(サーバー視点)</value>
+  </data>
+  <data name="Tunnel_ServerBindHostLabel" xml:space="preserve">
+    <value>サーバーの待ち受けアドレス</value>
   </data>
   <data name="Tunnel_Title" xml:space="preserve">
     <value>トンネル</value>
@@ -3770,6 +4442,36 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="TunnelSvc_TargetUnreachable" xml:space="preserve">
     <value>接続先に到達できません。サーバーから対象ホストにアクセスできるか確認してください(内部アドレス/ファイアウォール)。</value>
+  </data>
+  <data name="TunnelSvc_LocalTargetRefused" xml:space="preserve">
+    <value>このコンピューター側の接続先が接続を拒否しました。このトンネルの接続先へはこのコンピューターから接続するので、ここでサービスがそのアドレスとポートで待ち受けているか確認してください(127.0.0.1 はこのコンピューター自身です)。</value>
+  </data>
+  <data name="TunnelSvc_LocalTargetUnreachable" xml:space="preserve">
+    <value>このコンピューターから接続先に到達できません。このトンネルの接続先へはこのコンピューターから接続するので、ここから届くか確認してください(社内アドレス、ファイアウォール、名前解決)。</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailed" xml:space="preserve">
+    <value>このコンピューターで {0} を待ち受けできませんでした({1})。待ち受けアドレスがこのコンピューターのものか、ポートがシステムに予約・禁止されていないか確認してください。</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailedNoDetail" xml:space="preserve">
+    <value>このコンピューターで {0} を待ち受けできませんでした。待ち受けアドレスがこのコンピューターのものか、ポートがシステムに予約・禁止されていないか確認してください。</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailed" xml:space="preserve">
+    <value>ソケット {0} で待ち受けできませんでした({1})。置き場所のディレクトリが存在し、書き込めるか確認してください。</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailedNoDetail" xml:space="preserve">
+    <value>ソケット {0} で待ち受けできませんでした。置き場所のディレクトリが存在し、書き込めるか確認してください。</value>
+  </data>
+  <data name="TunnelSvc_PermitRemoteOpenRequired" xml:space="preserve">
+    <value>リモート動的転送には許可リストが必要です。リモートが接続できる ホスト:ポート を書くか、すべて許可するなら any と書いてください。</value>
+  </data>
+  <data name="TunnelSvc_TargetNotPermitted" xml:space="preserve">
+    <value>リモートが要求した接続先は許可リストにないため拒否しました。許可するには、このトンネルの許可リストに追加してください。</value>
+  </data>
+  <data name="TunnelSvc_RemoteSocketNeedsBothEnds" xml:space="preserve">
+    <value>リモート転送は両端ともポートか、両端とも Unix ソケットのどちらかです。この設定はソケットのパスが片側にしかありません。</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketExists" xml:space="preserve">
+    <value>{0} はすでに存在します。前回の後片付けが残っているか、別のプログラムのソケットかもしれません。使われていないことを確かめてから削除し、もう一度開始してください。</value>
   </data>
   <data name="Upload" xml:space="preserve">
     <value>アップロード</value>
@@ -3913,6 +4615,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_FallbackDynamic" xml:space="preserve">
     <value>ダイナミックトンネル</value>
   </data>
+  <data name="Tunnel_FallbackRemoteDynamic" xml:space="preserve">
+    <value>リモートダイナミックトンネル</value>
+  </data>
   <data name="Tunnel_BadgeLocal" xml:space="preserve">
     <value>ローカル</value>
   </data>
@@ -3922,6 +4627,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_BadgeDynamic" xml:space="preserve">
     <value>ダイナミック</value>
   </data>
+  <data name="Tunnel_BadgeRemoteDynamic" xml:space="preserve">
+    <value>リモート動的</value>
+  </data>
   <data name="Tunnel_RouteLocal" xml:space="preserve">
     <value>このコンピューターで {0}:{1} を待ち受け → サーバー側のターゲット {2}:{3}</value>
   </data>
@@ -3930,6 +4638,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Tunnel_RouteDynamic" xml:space="preserve">
     <value>このコンピューターの SOCKS5 {0}:{1} → 動的な接続先</value>
+  </data>
+  <data name="Tunnel_RouteRemoteDynamic" xml:space="preserve">
+    <value>SSHサーバーの {0}:{1} が SOCKS5 プロキシ → 許可された接続先へこのコンピューターが接続</value>
+  </data>
+  <data name="Tunnel_RouteLocalSocket" xml:space="preserve">
+    <value>このコンピューターで {0} を待ち受け → サーバー側の接続先 {1}</value>
+  </data>
+  <data name="Tunnel_RouteRemoteSocket" xml:space="preserve">
+    <value>SSHサーバーで {0} を待ち受け → このコンピューターの {1}</value>
   </data>
   <data name="TunnelSvc_LocalPortInUse" xml:space="preserve">
     <value>ローカルポート {0} は他のプログラムが使用中です。そのプログラムを停止するか、別のローカルポートを指定してください。</value>
@@ -3942,6 +4659,27 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Tunnel_StatsNone" xml:space="preserve">
     <value>接続はまだありません</value>
+  </data>
+  <data name="Tunnel_RateLimit" xml:space="preserve">
+    <value>帯域制限 {0}/s</value>
+  </data>
+  <data name="Tunnel_RateLimitLabel" xml:space="preserve">
+    <value>帯域制限 KB/s(方向ごと、0 で無制限)</value>
+  </data>
+  <data name="Tunnel_RateLimitTip" xml:space="preserve">
+    <value>方向ごとに制限し、このトンネルのすべての接続でこの帯域を共有します。変更は次にトンネルを開始したときに反映されます。</value>
+  </data>
+  <data name="Tunnel_ConnectionsToggle" xml:space="preserve">
+    <value>現在の接続 {0} 件</value>
+  </data>
+  <data name="Tunnel_ConnectionsMore" xml:space="preserve">
+    <value>ほか {0} 件は省略</value>
+  </data>
+  <data name="Tunnel_ConnectionDetail" xml:space="preserve">
+    <value>接続 {0} · ↑ {1} ↓ {2}</value>
+  </data>
+  <data name="Tunnel_ConnectionSourceUnknown" xml:space="preserve">
+    <value>接続元不明</value>
   </data>
   <data name="Tunnel_AutoBadge" xml:space="preserve">
     <value>自動</value>
@@ -3963,6 +4701,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Msg_TunnelAutoStartFailed" xml:space="preserve">
     <value>起動時にトンネル「{0}」({1})を確立できませんでした: {2}</value>
+  </data>
+  <data name="Msg_TunnelAutoStartRetried" xml:space="preserve">
+    <value>トンネル「{0}」({1})を確立しました。</value>
   </data>
   <data name="Notify_Title" xml:space="preserve">
     <value>メッセージ</value>
@@ -4032,6 +4773,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Notify_UpdateAction" xml:space="preserve">
     <value>バージョン情報を開く</value>
+  </data>
+  <data name="Notify_UpdateReadyTitle" xml:space="preserve">
+    <value>VelaShell {0} のダウンロードが完了しました</value>
+  </data>
+  <data name="Notify_UpdateReadyBody" xml:space="preserve">
+    <value>現在のバージョンは {0} です。更新はバックグラウンドでダウンロード・検証済みです。「バージョン情報」から再起動すると更新が完了します。</value>
+  </data>
+  <data name="Notify_UpdateReadyAction" xml:space="preserve">
+    <value>再起動して更新</value>
   </data>
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>ログフォルダーを開く</value>
@@ -4117,6 +4867,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SetGeneral_CheckUpdatesOnStartupDesc" xml:space="preserve">
     <value>起動時に新しいバージョンを確認します。見つかるとメッセージセンターに表示されます。</value>
   </data>
+  <data name="SetGeneral_AutoDownloadUpdates" xml:space="preserve">
+    <value>更新を自動でダウンロード</value>
+  </data>
+  <data name="SetGeneral_AutoDownloadUpdatesDesc" xml:space="preserve">
+    <value>起動時の確認で新しいバージョンが見つかったら、バックグラウンドでダウンロードして検証し、再起動すれば更新できることをお知らせします。勝手に再起動はしません。「起動時に更新を確認」がオンで、その場で自己更新できるインストールのときだけ有効です（Linux、ストア版、書き込みできないインストール先は対象外）。</value>
+  </data>
   <data name="SetGeneral_MessagesSection" xml:space="preserve">
     <value>メッセージセンター</value>
   </data>
@@ -4174,6 +4930,18 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="TunnelHelp_DynamicDesc" xml:space="preserve">
     <value>ローカルマシン上にSOCKS5プロキシリスナーを作成します。このプロキシを使用するよう設定されたアプリケーションのTCP接続はSSHサーバーを経由してルーティングされ、サーバーが各ターゲットを動的に解決して接続します。一般的な用途：個別の転送設定なしでブラウザやアプリケーションのトラフィックをSSHサーバー経由でルーティングする。</value>
   </data>
+  <data name="TunnelHelp_RemoteDynamicTitle" xml:space="preserve">
+    <value>リモート動的転送(接続先なしの -R)</value>
+  </data>
+  <data name="TunnelHelp_RemoteDynamicDesc" xml:space="preserve">
+    <value>SSHサーバー上に SOCKS5 プロキシのポートを開きます。リモートのプログラムはこれを使って、このコンピューターに接続先へ接続してもらいます。社内のパッケージミラーや内部 API など、このコンピューターからしか届かない場所にサーバーから届くようになります。許可されるのはトンネルの許可リストにある接続先だけで(ホスト:ポート、ワイルドカード可、または any)、それ以外は拒否されます。</value>
+  </data>
+  <data name="TunnelHelp_UnixSocketTitle" xml:space="preserve">
+    <value>Unix ドメインソケット</value>
+  </data>
+  <data name="TunnelHelp_UnixSocketDesc" xml:space="preserve">
+    <value>ローカル転送とリモート転送では、ポートの代わりに Unix ドメインソケットを使えます。ローカル転送は、このコンピューターのソケットファイルで待ち受ける、サーバー上のソケット(/var/run/docker.sock など)へ転送する、またはその両方が可能です。ローカルのツールからリモートの Docker やデータベースを直接操作でき、サーバー側で TCP ポートを開く必要はありません。リモート転送はサーバーにソケットのパスで待ち受けてもらい、このコンピューターのソケットへ接続し直します。ソケットファイルはファイル権限で守られます。サーバー側で AllowStreamLocalForwarding が必要です。Windows では Windows 10 1803 以降で使えます。</value>
+  </data>
   <data name="TunnelHelp_LoopbackNote" xml:space="preserve">
     <value>127.0.0.1 の意味は、その端点が属するマシンによって変わります。ローカル転送のサーバー側ターゲットでは SSH サーバー自体を、リモート転送のローカルサービスではこのコンピューターを指します。待ち受け端点でループバックを使用すると、その待ち受けを提供するマシンからのみアクセスできます。</value>
   </data>
@@ -4204,8 +4972,56 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SetTransfer_AutoCleanTempDesc" xml:space="preserve">
     <value>転送の失敗・キャンセル時に書きかけのファイルを削除します(再開が無効のときのみ)。</value>
   </data>
+  <data name="SetTransfer_MaxRetries" xml:space="preserve">
+    <value>失敗時に自動で再試行</value>
+  </data>
+  <data name="SetTransfer_MaxRetriesDesc" xml:space="preserve">
+    <value>接続切れやタイムアウトなど一時的な失敗のときに再試行する回数(0 = 再試行しない)。権限不足・ディスクの空き不足・パスが存在しない場合は再試行しません。</value>
+  </data>
   <data name="Transfer_Retry" xml:space="preserve">
     <value>再試行</value>
+  </data>
+  <data name="Transfer_RetryWaiting" xml:space="preserve">
+    <value>再試行 {0}/{1}</value>
+  </data>
+  <data name="Transfer_RetryWaitingInfo" xml:space="preserve">
+    <value>中断しました。まもなく再試行します</value>
+  </data>
+  <data name="Transfer_FailedAfterRetries" xml:space="preserve">
+    <value>{0} 回再試行しても失敗しました:{1}</value>
+  </data>
+  <data name="Transfer_Paused" xml:space="preserve">
+    <value>一時停止</value>
+  </data>
+  <data name="Transfer_PausedFiles" xml:space="preserve">
+    <value>{0} 個のファイル</value>
+  </data>
+  <data name="Transfer_PausedInterrupted" xml:space="preserve">
+    <value>接続が切れたため一時停止</value>
+  </data>
+  <data name="Transfer_PausedRestored" xml:space="preserve">
+    <value>前回の終了時に未完了</value>
+  </data>
+  <data name="Transfer_PausedResuming" xml:space="preserve">
+    <value>再開しています…</value>
+  </data>
+  <data name="Transfer_PausedProfileMissing" xml:space="preserve">
+    <value>接続設定が削除されたため再開できません</value>
+  </data>
+  <data name="Transfer_PausedResumeFailed" xml:space="preserve">
+    <value>再開できませんでした:{0}</value>
+  </data>
+  <data name="Transfer_Resume" xml:space="preserve">
+    <value>再開</value>
+  </data>
+  <data name="Transfer_ResumeTip" xml:space="preserve">
+    <value>必要なら再接続して残りのファイルを転送します(途中のファイルは中断した位置から再開)</value>
+  </data>
+  <data name="Transfer_Discard" xml:space="preserve">
+    <value>破棄</value>
+  </data>
+  <data name="Transfer_DiscardTip" xml:space="preserve">
+    <value>残りのファイルは転送しません。転送済みのファイルには影響しません。</value>
   </data>
   <data name="Transfer_ClearCompleted" xml:space="preserve">
     <value>完了分をクリア</value>
@@ -4242,6 +5058,81 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Sftp_EditPath" xml:space="preserve">
     <value>パスを編集 (Ctrl+L)</value>
+  </data>
+  <data name="Sftp_SearchOpen" xml:space="preserve">
+    <value>リモートファイルを検索…</value>
+  </data>
+  <data name="Sftp_SearchHere" xml:space="preserve">
+    <value>このフォルダーで検索…</value>
+  </data>
+  <data name="Sftp_SearchTitle" xml:space="preserve">
+    <value>リモートファイルの検索</value>
+  </data>
+  <data name="Sftp_SearchRoot" xml:space="preserve">
+    <value>検索場所</value>
+  </data>
+  <data name="Sftp_SearchName" xml:space="preserve">
+    <value>ファイル名</value>
+  </data>
+  <data name="Sftp_SearchNamePlaceholder" xml:space="preserve">
+    <value>例: *.log。ワイルドカードがなければ名前に含まれるものを探します</value>
+  </data>
+  <data name="Sftp_SearchContent" xml:space="preserve">
+    <value>含まれるテキスト</value>
+  </data>
+  <data name="Sftp_SearchContentPlaceholder" xml:space="preserve">
+    <value>省略可。文字どおりに照合し、ファイルだけを対象にします</value>
+  </data>
+  <data name="Sftp_SearchIgnoreCase" xml:space="preserve">
+    <value>大文字と小文字を区別しない</value>
+  </data>
+  <data name="Sftp_SearchStart" xml:space="preserve">
+    <value>検索</value>
+  </data>
+  <data name="Sftp_SearchStop" xml:space="preserve">
+    <value>停止</value>
+  </data>
+  <data name="Sftp_SearchReveal" xml:space="preserve">
+    <value>ファイルペインで表示</value>
+  </data>
+  <data name="Sftp_SearchHint" xml:space="preserve">
+    <value>SSH 経由でサーバー上の find / grep を実行します。結果をダブルクリックするとペインで表示します。最大 {0} 件、{1} 秒</value>
+  </data>
+  <data name="Sftp_SearchRunning" xml:space="preserve">
+    <value>検索中… {0} 件見つかりました</value>
+  </data>
+  <data name="Sftp_SearchDone" xml:space="preserve">
+    <value>{0} 件見つかりました</value>
+  </data>
+  <data name="Sftp_SearchTruncated" xml:space="preserve">
+    <value>{0} 件で上限に達したため、結果は不完全です。検索場所を絞るか条件を具体的にしてください</value>
+  </data>
+  <data name="Sftp_SearchTimedOut" xml:space="preserve">
+    <value>{0} 秒を超えたため停止しました。結果は不完全です({1} 件)</value>
+  </data>
+  <data name="Sftp_SearchCancelled" xml:space="preserve">
+    <value>停止しました({0} 件)</value>
+  </data>
+  <data name="Sftp_SearchNoSession" xml:space="preserve">
+    <value>セッションが切断されているため検索できません</value>
+  </data>
+  <data name="Sftp_SearchNotPosix" xml:space="preserve">
+    <value>このサーバーはリモート検索に対応していません。ログインシェルが POSIX シェルではありません(Windows の cmd.exe / PowerShell など)。コマンドは送信していません</value>
+  </data>
+  <data name="Sftp_SearchShellUnknown" xml:space="preserve">
+    <value>サーバーのシェルの種類を判別できませんでした(コマンド実行が禁止されているか、SFTP 専用アカウントの可能性があります)。検索コマンドは送信していません</value>
+  </data>
+  <data name="Sftp_SearchToolMissing" xml:space="preserve">
+    <value>サーバーに find コマンドがありません(内容で検索する場合は grep も必要です)</value>
+  </data>
+  <data name="Sftp_SearchFailed" xml:space="preserve">
+    <value>検索に失敗しました: {0}</value>
+  </data>
+  <data name="Sftp_SearchRootNotAbsolute" xml:space="preserve">
+    <value>検索場所は / で始まるリモートの絶対パスにしてください</value>
+  </data>
+  <data name="Sftp_SearchNeedCriteria" xml:space="preserve">
+    <value>ファイル名か、含まれるテキストを入力してください</value>
   </data>
   <data name="Sftp_PathInputHint" xml:space="preserve">
     <value>パスを入力して Enter</value>
@@ -4531,8 +5422,56 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="XImport_PwKey" xml:space="preserve">
     <value>鍵ファイルを使用</value>
   </data>
+  <data name="XImport_PwCertificate" xml:space="preserve">
+    <value>証明書を使用</value>
+  </data>
+  <data name="XImport_PwAgent" xml:space="preserve">
+    <value>SSH エージェントを使用</value>
+  </data>
   <data name="XImport_Duplicate" xml:space="preserve">
     <value>既に存在します</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardsImported" xml:space="preserve">
+    <value>{0} 件のポート転送をこの接続のトンネルとしてインポートします（停止状態。トンネルパネルで開始してください）。</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardPortZero" xml:space="preserve">
+    <value>インポートしませんでした。ポート 0（接続時に決まるポート）はトンネルでは表せません：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketMix" xml:space="preserve">
+    <value>インポートしませんでした。リモート転送は両端とも Unix ソケットか、両端ともソケットでないかのどちらかです：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketPath" xml:space="preserve">
+    <value>インポートしませんでした。このマシンでは使えないソケットパスです（ローカルのソケットは長すぎない完全パス、サーバー側は / で始まるパスが必要）：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNoPermit" xml:space="preserve">
+    <value>インポートしませんでした。PermitRemoteOpen のないリモート動的転送です。OpenSSH はこの場合、このマシンから届く所すべてにリモートからの接続を許します。このホストに PermitRemoteOpen を書いてから（すべて許可なら any）インポートするか、トンネルパネルで許可リストを入れてトンネルを作成してください：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNone" xml:space="preserve">
+    <value>インポートしませんでした。PermitRemoteOpen none ではこのリモート動的転送はすべての要求を拒否します：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicInvalid" xml:space="preserve">
+    <value>インポートしませんでした。PermitRemoteOpen の「{1}」の書き方が正しくありません：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardInvalid" xml:space="preserve">
+    <value>インポートしませんでした。転送の書き方が正しくありません：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteAlgoDropped" xml:space="preserve">
+    <value>{0}：{1} を除外しました（このバージョンでは未実装で、書いてあってもネゴシエーションできません）</value>
+  </data>
+  <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
+    <value>{0} はインポートしませんでした：{1}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
+    <value>ForwardAgent {0} はインポートしませんでした：VelaShell が転送するのは既定のエージェント（SSH_AUTH_SOCK）だけです。</value>
+  </data>
+  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
+    <value>IdentityAgent {0} はインポートしませんでした：VelaShell が使うのは既定のエージェント（SSH_AUTH_SOCK）だけです。</value>
+  </data>
+  <data name="SshCfgImport_NoteExtraIdentities" xml:space="preserve">
+    <value>1 つの接続で使う秘密鍵は 1 つだけです。インポートしなかった鍵：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteCertificateNoKey" xml:space="preserve">
+    <value>CertificateFile に対応する秘密鍵がありません。接続する前に接続設定で秘密鍵を選んでください。</value>
   </data>
 
   <data name="Plugins"><value>プラグイン</value></data>
@@ -4549,6 +5488,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginState_Crashed"><value>再起動中</value></data>
   <data name="PluginState_Invalid"><value>無効</value></data>
   <data name="PluginState_Incompatible"><value>非互換</value></data>
+  <data name="PluginState_Deactivated"><value>停止済み</value></data>
   <data name="PluginPerm_Title"><value>ターミナル書き込み要求</value></data>
   <data name="PluginPerm_Message"><value>プラグイン「{0}」がターミナル {1} への入力を要求しています:</value></data>
   <data name="PluginPerm_AllowOnce"><value>今回のみ許可</value></data>
@@ -4570,6 +5510,24 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginManager_Install"><value>.vpx をインストール…</value></data>
   <data name="PluginManager_Uninstall"><value>アンインストール</value></data>
   <data name="PluginManager_Reload"><value>再読み込み</value></data>
+  <data name="PluginManager_ViewLog" xml:space="preserve">
+    <value>ログを表示</value>
+  </data>
+  <data name="PluginLog_Title" xml:space="preserve">
+    <value>プラグインのログ · {0}</value>
+  </data>
+  <data name="PluginLog_OpenFolder" xml:space="preserve">
+    <value>保存先のフォルダーを開く</value>
+  </data>
+  <data name="PluginLog_TailOf" xml:space="preserve">
+    <value>末尾 {0} のみ表示 · {1}</value>
+  </data>
+  <data name="PluginLog_Empty" xml:space="preserve">
+    <value>このプラグインはまだログを書いていません。ロガー経由で書いた内容、分離プロセスの標準出力と標準エラー、起動・失敗・クラッシュがここに記録されます。問題を再現してから更新してください。</value>
+  </data>
+  <data name="PluginLog_NotOnDisk" xml:space="preserve">
+    <value>このプラグインのログは専用ファイルに保存されていません。アプリのログ（バージョン情報 → ログフォルダーを開く）で [Plugin:{0}] で始まる行を探してください。</value>
+  </data>
   <data name="PluginManager_UpdateTo"><value>{0} に更新</value></data>
   <data name="PluginManager_UpdateNeedsHost"><value>新しいバージョン {0} がありますが、より新しい VelaShell が必要です（{1}）。</value></data>
   <data name="PluginManager_UpdateAll"><value>すべて更新</value></data>
@@ -4619,6 +5577,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Ftp_InitialPathPlaceholder" xml:space="preserve">
     <value>例: /var/www/html</value>
+  </data>
+  <data name="Ftp_ServerTimeZone" xml:space="preserve">
+    <value>サーバーのタイムゾーン</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneHint" xml:space="preserve">
+    <value>// LIST の更新日時にはタイムゾーンがありません。サーバーの時計が別のタイムゾーンにある場合、ディレクトリの比較と同期はこのオフセットで換算します。MLSD の時刻は元から UTC なのでずらしません</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneLocal" xml:space="preserve">
+    <value>このコンピューターと同じ</value>
   </data>
   <data name="Cert_Title" xml:space="preserve">
     <value>サーバー証明書が信頼されていません</value>
@@ -4820,6 +5787,232 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Ssh_AlgoMismatchEnable" xml:space="preserve">
     <value>  接続先の {0} は、接続設定の SSH オプションで有効にできます(「レガシーアルゴリズムを許可」またはアルゴリズム一覧のカスタマイズ)。</value>
+  </data>
+  <data name="SshAlgoFix_Button" xml:space="preserve">
+    <value>これらのアルゴリズムを許可して再接続</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
+    <value>接続設定のカスタムアルゴリズム一覧({0})の既定の後ろに {1} を追加して再接続します。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
+    <value>これらのアルゴリズムを許可しますか?</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBody" xml:space="preserve">
+    <value>接続「{0}」の SSH オプションで、{1}のカスタム一覧に次のアルゴリズムを追加して再接続します:
+
+{2}
+
+追加するのはこれらだけで、ほかの古いアルゴリズムは無効のままです。既定より弱く、相手が新しいものを何も提供しないときだけ使われます。更新できない機器に限って使ってください。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
+    <value>許可して再接続</value>
+  </data>
+  <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
+    <value>接続設定を保存できませんでした: {0}</value>
+  </data>
+  <data name="SshAlgoFix_HopMissing" xml:space="preserve">
+    <value>踏み台 {0} の接続設定が見つかりません。その SSH オプションでアルゴリズム一覧を手動で変更してください。</value>
+  </data>
+  <data name="SshInfo_Menu" xml:space="preserve">
+    <value>接続情報…</value>
+  </data>
+  <data name="SshInfo_Title" xml:space="preserve">
+    <value>接続情報</value>
+  </data>
+  <data name="SshInfo_Subtitle" xml:space="preserve">
+    <value>{0} · {1} 時点</value>
+  </data>
+  <data name="SshInfo_Copy" xml:space="preserve">
+    <value>テキストとしてコピー</value>
+  </data>
+  <data name="SshInfo_Refresh" xml:space="preserve">
+    <value>更新</value>
+  </data>
+  <data name="SshInfo_Unavailable" xml:space="preserve">
+    <value>このセッションは現在接続されていません。再接続してから更新してください。</value>
+  </data>
+  <data name="SshInfo_SecPeer" xml:space="preserve">
+    <value>接続先</value>
+  </data>
+  <data name="SshInfo_State" xml:space="preserve">
+    <value>状態</value>
+  </data>
+  <data name="SshInfo_StateAlive" xml:space="preserve">
+    <value>接続中</value>
+  </data>
+  <data name="SshInfo_StateClosed" xml:space="preserve">
+    <value>切断済み</value>
+  </data>
+  <data name="SshInfo_PeerVersion" xml:space="preserve">
+    <value>バージョン文字列</value>
+  </data>
+  <data name="SshInfo_HostKey" xml:space="preserve">
+    <value>ホスト鍵</value>
+  </data>
+  <data name="SshInfo_HostKeyValue" xml:space="preserve">
+    <value>{0} · {1} ビット</value>
+  </data>
+  <data name="SshInfo_HostKeyCertificate" xml:space="preserve">
+    <value>ホスト証明書</value>
+  </data>
+  <data name="SshInfo_Fingerprint" xml:space="preserve">
+    <value>フィンガープリント</value>
+  </data>
+  <data name="SshInfo_SessionId" xml:space="preserve">
+    <value>セッション ID</value>
+  </data>
+  <data name="SshInfo_Ping" xml:space="preserve">
+    <value>PING 拡張(ping@openssh.com)</value>
+  </data>
+  <data name="SshInfo_Yes" xml:space="preserve">
+    <value>はい</value>
+  </data>
+  <data name="SshInfo_No" xml:space="preserve">
+    <value>いいえ</value>
+  </data>
+  <data name="SshInfo_SecAlgorithms" xml:space="preserve">
+    <value>ネゴシエーション結果</value>
+  </data>
+  <data name="SshInfo_TwoWay" xml:space="preserve">
+    <value>送信 {0} · 受信 {1}</value>
+  </data>
+  <data name="SshInfo_MacAead" xml:space="preserve">
+    <value>AEAD 暗号に内蔵</value>
+  </data>
+  <data name="SshInfo_Compression" xml:space="preserve">
+    <value>圧縮</value>
+  </data>
+  <data name="SshInfo_StrictKex" xml:space="preserve">
+    <value>厳格な KEX(Terrapin 対策)</value>
+  </data>
+  <data name="SshInfo_ExtInfo" xml:space="preserve">
+    <value>拡張ネゴシエーション(RFC 8308)</value>
+  </data>
+  <data name="SshInfo_SecAuth" xml:space="preserve">
+    <value>認証</value>
+  </data>
+  <data name="SshInfo_AuthMethod" xml:space="preserve">
+    <value>成功した認証方式</value>
+  </data>
+  <data name="SshInfo_ServerSigAlgs" xml:space="preserve">
+    <value>サーバー署名アルゴリズム(server-sig-algs)</value>
+  </data>
+  <data name="SshInfo_NotAnnounced" xml:space="preserve">
+    <value>通知なし</value>
+  </data>
+  <data name="SshInfo_SecTiming" xml:space="preserve">
+    <value>所要時間</value>
+  </data>
+  <data name="SshInfo_TimeDialing" xml:space="preserve">
+    <value>接続(TCP・プロキシ・踏み台)</value>
+  </data>
+  <data name="SshInfo_TimeVersion" xml:space="preserve">
+    <value>バージョン交換</value>
+  </data>
+  <data name="SshInfo_TimeKex" xml:space="preserve">
+    <value>鍵交換(ホスト鍵の確認を含む)</value>
+  </data>
+  <data name="SshInfo_TimeAuth" xml:space="preserve">
+    <value>認証(入力待ちを含む)</value>
+  </data>
+  <data name="SshInfo_TimeTotal" xml:space="preserve">
+    <value>合計</value>
+  </data>
+  <data name="SshInfo_RoundTrip" xml:space="preserve">
+    <value>往復時間(直近の測定)</value>
+  </data>
+  <data name="SshInfo_NotMeasured" xml:space="preserve">
+    <value>未測定</value>
+  </data>
+  <data name="SshInfo_SecTraffic" xml:space="preserve">
+    <value>通信量と鍵の再交換</value>
+  </data>
+  <data name="SshInfo_Sent" xml:space="preserve">
+    <value>送信</value>
+  </data>
+  <data name="SshInfo_Received" xml:space="preserve">
+    <value>受信</value>
+  </data>
+  <data name="SshInfo_BytesPackets" xml:space="preserve">
+    <value>{0} · {1} パケット</value>
+  </data>
+  <data name="SshInfo_RekeyCount" xml:space="preserve">
+    <value>鍵の再交換回数</value>
+  </data>
+  <data name="SshInfo_LastRekey" xml:space="preserve">
+    <value>直近の再交換のきっかけ</value>
+  </data>
+  <data name="SshInfo_LastRekeyDuration" xml:space="preserve">
+    <value>直近の再交換の所要時間</value>
+  </data>
+  <data name="SshInfo_RekeyPeer" xml:space="preserve">
+    <value>相手側から</value>
+  </data>
+  <data name="SshInfo_RekeyRequested" xml:space="preserve">
+    <value>こちらからの要求</value>
+  </data>
+  <data name="SshInfo_RekeyBytes" xml:space="preserve">
+    <value>バイト数が上限に到達({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyPackets" xml:space="preserve">
+    <value>パケット数が上限に到達({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyInterval" xml:space="preserve">
+    <value>経過時間が上限に到達({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyHardLimit" xml:space="preserve">
+    <value>パケット数が絶対上限に到達({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyUnknown" xml:space="preserve">
+    <value>不明</value>
+  </data>
+  <data name="SshInfo_KeystrokeTiming" xml:space="preserve">
+    <value>キー入力タイミングの隠蔽</value>
+  </data>
+  <data name="SshInfo_KeystrokeOff" xml:space="preserve">
+    <value>オフ</value>
+  </data>
+  <data name="SshInfo_KeystrokeOn" xml:space="preserve">
+    <value>オン(20 ミリ秒間隔、ダミーパケットあり)</value>
+  </data>
+  <data name="SshInfo_KeystrokeBatchOnly" xml:space="preserve">
+    <value>オン、まとめ送信のみ: サーバーが PING 非対応のためダミーパケットは送りません</value>
+  </data>
+  <data name="SshInfo_SecChannels" xml:space="preserve">
+    <value>チャネル({0})</value>
+  </data>
+  <data name="SshInfo_ColType" xml:space="preserve">
+    <value>種類</value>
+  </data>
+  <data name="SshInfo_ColState" xml:space="preserve">
+    <value>状態</value>
+  </data>
+  <data name="SshInfo_ColAge" xml:space="preserve">
+    <value>経過</value>
+  </data>
+  <data name="SshInfo_NoChannels" xml:space="preserve">
+    <value>開いているチャネルはありません。</value>
+  </data>
+  <data name="SshInfo_PhaseOpening" xml:space="preserve">
+    <value>オープン中</value>
+  </data>
+  <data name="SshInfo_PhaseOpen" xml:space="preserve">
+    <value>オープン</value>
+  </data>
+  <data name="SshInfo_PhaseHalfClosed" xml:space="preserve">
+    <value>半クローズ(EOF)</value>
+  </data>
+  <data name="SshInfo_PhaseClosing" xml:space="preserve">
+    <value>クローズ中</value>
+  </data>
+  <data name="SshInfo_SecRoute" xml:space="preserve">
+    <value>経由したプロキシと踏み台</value>
+  </data>
+  <data name="SshInfo_Proxy" xml:space="preserve">
+    <value>送信プロキシ</value>
+  </data>
+  <data name="SshInfo_HopDown" xml:space="preserve">
+    <value>切断</value>
   </data>
   <data name="Plugin_ProtocolUnavailable" xml:space="preserve">
     <value>このプロトコルを提供するプラグインが利用できません。プラグイン管理画面でインストールまたは有効化してください。</value>
@@ -5029,6 +6222,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="ExtLaunch_CredentialNone" xml:space="preserve">
     <value>未指定 - VelaShell が入力を求めます</value>
   </data>
+  <data name="ExtLaunch_TabName" xml:space="preserve">
+    <value>タブ名</value>
+  </data>
   <data name="ExtLaunch_TrustTarget" xml:space="preserve">
     <value>この接続先を信頼して今後確認しない</value>
   </data>
@@ -5063,7 +6259,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
     <value>監査ログを表示</value>
   </data>
   <data name="SetSecurity_AuditLogViewerDesc" xml:space="preserve">
-    <value>// 接続の成否、ホスト指紋の判断、外部からの起動によるログイン(新しい順、このマシンにのみ保存)</value>
+    <value>// 接続の成否、ホスト指紋の判断、外部からの起動によるログイン、接続設定・設定・共有資格情報の変更(変わった部分のみで値は記録しない)(新しい順、このマシンにのみ保存)</value>
   </data>
   <data name="SetSecurity_ConfirmExternalLaunch" xml:space="preserve">
     <value>接続前に確認する</value>
@@ -5463,6 +6659,39 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>サーバーのホスト キーが記録済みのものと一致しません。</value>
   </data>
+  <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
+    <value>サーバーが提示したのはユーザー証明書(Key ID「{0}」)で、ホストの身元の証明には使えません。</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyUnreadable" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)に署名した CA の公開鍵を読み取れません(未対応の種類か、それ自体が証明書です)。</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyTooShort" xml:space="preserve">
+    <value>ホスト証明書に署名した RSA CA は {0} ビットしかありません({1} ビット以上が必要です)。</value>
+  </data>
+  <data name="SshErr_HostCertSignatureMalformed" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)の CA 署名の形式が不正です。</value>
+  </data>
+  <data name="SshErr_HostCertSignatureAlgorithmRejected" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)の CA 署名は {1} のため受け付けません(SHA-1 の ssh-rsa 署名はもう安全ではありません)。</value>
+  </data>
+  <data name="SshErr_HostCertSignatureInvalid" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)の CA 署名を検証できません。証明書が改ざんされたか、この CA が署名したものではありません。</value>
+  </data>
+  <data name="SshErr_HostCertExpired" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)は {1} に期限切れになりました。</value>
+  </data>
+  <data name="SshErr_HostCertNotYetValid" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)は {1} まで有効になりません。</value>
+  </data>
+  <data name="SshErr_HostCertNoPrincipals" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)にホスト名が 1 つも記載されていません。すべてのホストに有効になってしまうため、受け付けません。</value>
+  </data>
+  <data name="SshErr_HostCertHostNotListed" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)の発行先は {1} で、{2} は含まれていません。</value>
+  </data>
+  <data name="SshErr_HostCertUnknownCriticalOptions" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)に認識できないクリティカル オプションがあります: {1}。</value>
+  </data>
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>2 段階認証をキャンセルしました。</value>
   </data>
@@ -5505,11 +6734,128 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_KeyPassphraseIncorrect" xml:space="preserve">
     <value>パスフレーズで秘密鍵を復号できません。</value>
   </data>
+  <data name="SshErr_KeyOrigin" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="SshErr_KeyFileUnreadable" xml:space="preserve">
+    <value>秘密鍵ファイルを読み取れません({0})。</value>
+  </data>
+  <data name="SshErr_KeyFileAccessDenied" xml:space="preserve">
+    <value>秘密鍵ファイルを読み取る権限がありません(Unix では秘密鍵を 0600 にしてください)。</value>
+  </data>
+  <data name="SshErr_KeyFormatUnrecognized" xml:space="preserve">
+    <value>秘密鍵の形式を認識できません。対応形式: OpenSSH、PKCS#8、PKCS#1、SEC1、PuTTY の .ppk(v2 / v3)。</value>
+  </data>
+  <data name="SshErr_KeyMalformed" xml:space="preserve">
+    <value>秘密鍵ファイルの内容が不完全か、形式が正しくありません。ファイルが壊れている可能性があります。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedType" xml:space="preserve">
+    <value>対応していない鍵の種類です: {0}。対応しているのは RSA、NIST 曲線の ECDSA、Ed25519 です。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCurve" xml:space="preserve">
+    <value>対応していない曲線です: {0}。SSH が対応するのは NIST P-256 / P-384 / P-521 のみです。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCipher" xml:space="preserve">
+    <value>秘密鍵の暗号方式 {0} には対応していません。別の方式で暗号化し直してください(例: ssh-keygen -p -Z aes256-ctr -f &lt;鍵ファイル&gt;)。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedKdf" xml:space="preserve">
+    <value>秘密鍵の鍵導出方式 {0} には対応していません。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedFormatVersion" xml:space="preserve">
+    <value>このバージョンの鍵ファイル形式には対応していません(PuTTY .ppk は v2 と v3 に対応)。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedPointFormat" xml:space="preserve">
+    <value>{0} の公開点が SSH の要求する非圧縮形式ではありません。</value>
+  </data>
+  <data name="SshErr_KeyMultipleKeys" xml:space="preserve">
+    <value>このファイルには複数の鍵が含まれています。1 ファイルにつき 1 つの鍵のみ対応しています。</value>
+  </data>
+  <data name="SshErr_KeyLegacyPemEncryption" xml:space="preserve">
+    <value>この秘密鍵は古い暗号化 PEM 形式(Proc-Type: 4,ENCRYPTED)のため読み込めません。ssh-keygen -p -f &lt;鍵ファイル&gt; でパスフレーズを一度変更すると(同じパスフレーズでも可)、OpenSSH 形式に変換されます。</value>
+  </data>
+  <data name="SshErr_KeyKdfCostTooHigh" xml:space="preserve">
+    <value>秘密鍵の鍵導出パラメーターが不自然に大きく、ファイルが改ざんされている可能性があります。意図して設定した場合は、より小さい値で暗号化し直してください。</value>
+  </data>
+  <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
+    <value>システムのキー ストアから鍵を開けないか、その鍵を使用できません。</value>
+  </data>
+  <data name="SshErr_CertFileUnreadable" xml:space="preserve">
+    <value>証明書ファイルを読み取れません({0})。</value>
+  </data>
+  <data name="SshErr_CertFileAccessDenied" xml:space="preserve">
+    <value>証明書ファイルを読み取る権限がありません。</value>
+  </data>
+  <data name="SshErr_CertMalformed" xml:space="preserve">
+    <value>証明書の内容が不完全か、形式が正しくありません(「アルゴリズム base64 [コメント]」の 1 行である必要があります)。</value>
+  </data>
+  <data name="SshErr_CertUnsupportedKeyType" xml:space="preserve">
+    <value>対応していない証明書の鍵の種類です: {0}。</value>
+  </data>
+  <data name="SshErr_CertNotACertificate" xml:space="preserve">
+    <value>{0} は証明書の種類ではありません(証明書の種類は -cert-v01@openssh.com で終わります)。</value>
+  </data>
+  <data name="SshErr_CertHostCertificateForLogin" xml:space="preserve">
+    <value>この証明書(Key ID「{0}」)はホスト証明書のため、ログインには使えません。ユーザー証明書は ssh-keygen で -h を付けずに署名したものです。</value>
+  </data>
+  <data name="SshErr_CertKeyMismatch" xml:space="preserve">
+    <value>証明書(Key ID「{0}」)の公開鍵がこの秘密鍵と一致しません。証明書: {1}、秘密鍵: {2}。証明書は発行時に使った秘密鍵と組み合わせて使ってください。</value>
+  </data>
+  <data name="SshErr_CertKeyNotLoaded" xml:space="preserve">
+    <value>この証明書が証明する鍵は読み込んだ IdentityFile に含まれていないため、署名に使えません。</value>
+  </data>
   <data name="SshErr_AgentRefused" xml:space="preserve">
     <value>ssh-agent が要求を拒否しました。鍵が agent から外れている、確認 (ssh-add -c) が拒否された、または agent がロックされている可能性があります。</value>
   </data>
   <data name="SshErr_ChannelRequestRejected" xml:space="preserve">
     <value>サーバーがチャネル上の要求を拒否しました。sshd_config のよくある原因: ForceCommand、PermitTTY no、Subsystem 行の欠落。</value>
+  </data>
+  <data name="SshErr_ChanForwardingProhibited" xml:space="preserve">
+    <value>サーバーがポート転送を禁止しています(sshd_config の AllowTcpForwarding を確認してください)。</value>
+  </data>
+  <data name="SshErr_ChanOpenProhibited" xml:space="preserve">
+    <value>サーバーが管理上の理由でこのチャネルを拒否しました(sshd_config の関連設定を確認してください)。</value>
+  </data>
+  <data name="SshErr_ChanForwardTargetUnreachable" xml:space="preserve">
+    <value>サーバーが転送先に接続できませんでした。</value>
+  </data>
+  <data name="SshErr_ChanUnknownType" xml:space="preserve">
+    <value>サーバーはチャネルの種類 {0} を認識しません。</value>
+  </data>
+  <data name="SshErr_ChanResourceShortage" xml:space="preserve">
+    <value>サーバーのリソースが不足しています。多くの場合、同時セッション数の上限(sshd_config の MaxSessions)に達しています。</value>
+  </data>
+  <data name="SshErr_ChanOpenRejected" xml:space="preserve">
+    <value>サーバーがチャネルのオープンを拒否しました(理由コード {0})。</value>
+  </data>
+  <data name="SshErr_ChanClosedBeforeConfirmation" xml:space="preserve">
+    <value>サーバーがチャネルを確認する前に閉じました。</value>
+  </data>
+  <data name="SshErr_ChanLimitReached" xml:space="preserve">
+    <value>この接続の同時チャネル数がクライアント側の上限({0})に達しました。セッションやトンネルをいくつか閉じてから再試行してください。</value>
+  </data>
+  <data name="SshErr_ChanWindowBudgetExhausted" xml:space="preserve">
+    <value>この接続の受信ウィンドウの総予算({0} MiB)を使い切りました。同時に開いているチャネルが多すぎます。セッションやトンネルをいくつか閉じてから再試行してください。</value>
+  </data>
+  <data name="SshErr_ChanExecRejected" xml:space="preserve">
+    <value>サーバーがコマンドの実行を拒否しました(アカウントが固定コマンドのみに制限されているか、sshd_config で ForceCommand が設定されています)。</value>
+  </data>
+  <data name="SshErr_ChanPtyRejected" xml:space="preserve">
+    <value>サーバーが端末の割り当てを拒否しました(sshd_config の PermitTTY no、またはアカウントが端末なしのログインに設定されています)。</value>
+  </data>
+  <data name="SshErr_ChanShellRejected" xml:space="preserve">
+    <value>サーバーがシェルの起動を拒否しました。</value>
+  </data>
+  <data name="SshErr_ChanSubsystemRejected" xml:space="preserve">
+    <value>サーバーはサブシステム {0} を提供していません。</value>
+  </data>
+  <data name="SshErr_ChanSftpSubsystemRejected" xml:space="preserve">
+    <value>サーバーは sftp サブシステムを提供していません(sshd_config の Subsystem sftp 行を確認してください)。</value>
+  </data>
+  <data name="SshErr_ChanZeroMaxPacket" xml:space="preserve">
+    <value>サーバーがチャネルの最大パケットサイズを 0 と通知したため、入力を送信できません。</value>
+  </data>
+  <data name="SshErr_PeerSaid" xml:space="preserve">
+    <value>{0}サーバーの応答: {1}</value>
   </data>
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>サーバーが転送要求を拒否しました。sshd_config の AllowAgentForwarding / AllowTcpForwarding / X11Forwarding を確認してください。</value>
@@ -5559,6 +6905,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Profile_SshCompressionHint" xml:space="preserve">
     <value>遅延が大きい(国境・大陸をまたぐ回線、往復 100 ms 以上)か帯域が限られている場合に有効にしてください。端末出力やテキストファイルの転送量を大きく減らせます。LAN 内や、画像・アーカイブなど圧縮済みデータが中心の場合は CPU を消費するだけなのでおすすめしません。サーバーが対応していない場合は自動的に無圧縮に戻ります。</value>
   </data>
+  <data name="Profile_SshObscureKeystrokeTiming" xml:space="preserve">
+    <value>キー入力のタイミングを隠す</value>
+  </data>
+  <data name="Profile_SshObscureKeystrokeTimingHint" xml:space="preserve">
+    <value>通常はキーを押すたびに 1 つのパケットが送られるため、キー間の間隔が通信路上で見え、入力内容(パスワードも含む)を推測される手がかりになります。有効にすると入力を 20 ミリ秒の固定間隔で送り、入力中に空いた間隔には同じ長さのダミーパケットを送ります。代償は帯域です: 入力中は片方向あたり毎秒約 50 パケット、キーの送信は最大 20 ミリ秒遅れます。何も入力していないときは何も増えず、貼り付けにも影響しません。ダミーパケットにはサーバーの ping@openssh.com 対応(OpenSSH 9.5 以降)が必要で、非対応のときはまとめて送るだけになります。</value>
+  </data>
   <data name="Profile_SshCustomAlgorithms" xml:space="preserve">
     <value>アルゴリズム一覧をカスタマイズ</value>
   </data>
@@ -5591,6 +6943,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Ssh_AgentForwardOn" xml:space="preserve">
     <value>ssh-agent 転送が有効です</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeOn" xml:space="preserve">
+    <value>キー入力タイミングの隠蔽が有効です(20 ミリ秒間隔、ダミーパケットあり)</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeNoPing" xml:space="preserve">
+    <value>キー入力タイミングの隠蔽: サーバーが ping@openssh.com(OpenSSH 9.5 以降)に対応していないため、20 ミリ秒間隔でまとめて送るだけでダミーパケットは送りません。キー間の間隔はまだ見えます。</value>
   </data>
   <data name="Ssh_X11ForwardFailed" xml:space="preserve">
     <value>X11 転送を有効にできませんでした: {0}</value>
@@ -6053,6 +7411,18 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="XServer_PanelGrabbingTip" xml:space="preserve">
     <value>X Server 全体を占有しています。ほかの X プログラムはすべて待たされています。</value>
+  </data>
+  <data name="XServer_PanelTrusted" xml:space="preserve">
+    <value>信頼済み</value>
+  </data>
+  <data name="XServer_PanelTrustedTip" xml:space="preserve">
+    <value>信頼済み:X Server 全体に完全にアクセスできます。ほかのプログラムのウィンドウを見たり変えたり、キーボードやクリップボードを読んだり、入力を送ったりできます(このコンピューターのプログラム、ssh -Y)。</value>
+  </data>
+  <data name="XServer_PanelUntrusted" xml:space="preserve">
+    <value>非信頼</value>
+  </data>
+  <data name="XServer_PanelUntrustedTip" xml:space="preserve">
+    <value>非信頼(ssh -X):非信頼のプログラムのウィンドウにしかアクセスできません。信頼済みのプログラムの画面を見ることも、キーボード入力やクリップボードを読むことも、入力を偽装することもできません。</value>
   </data>
   <data name="XServer_PanelDisconnectTip" xml:space="preserve">
     <value>このプログラムを切断(ウィンドウはすべて閉じます)</value>
@@ -6680,6 +8050,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tree_ExpandAll" xml:space="preserve">
     <value>すべて展開</value>
   </data>
+  <data name="Tree_FilterPlaceholder" xml:space="preserve">
+    <value>名前・ホスト・タグ・メモで絞り込み</value>
+  </data>
+  <data name="Tree_FilterClear" xml:space="preserve">
+    <value>絞り込みを解除 (Esc)</value>
+  </data>
+  <data name="Tree_FilterNoMatches" xml:space="preserve">
+    <value>一致する接続はありません。</value>
+  </data>
   <data name="Tree_OpenGroup" xml:space="preserve">
     <value>すべての接続を開く</value>
   </data>
@@ -6722,6 +8101,27 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tree_OpenManyAction" xml:space="preserve">
     <value>開く</value>
   </data>
+  <data name="Tree_OpenGroupSynced" xml:space="preserve">
+    <value>すべて開いて入力を同期</value>
+  </data>
+  <data name="Tree_OpenSelectedSynced" xml:space="preserve">
+    <value>{0} 件の接続を開いて入力を同期</value>
+  </data>
+  <data name="Tree_SyncedNoTerminals" xml:space="preserve">
+    <value>これらの接続はどれもターミナルを開かないため、入力を同期できません(SFTP・FTP・ワークスペースはターミナルではありません)。</value>
+  </data>
+  <data name="Tree_SyncedNoFreeChannel" xml:space="preserve">
+    <value>4 つの入力同期チャンネル(A–D)はすべて使用中です。1 つ閉じてから再試行してください。</value>
+  </data>
+  <data name="Tree_SyncedDone" xml:space="preserve">
+    <value>{0} 個のターミナルが入力同期チャンネル {1} に参加しました</value>
+  </data>
+  <data name="Tree_SyncedNotConnected" xml:space="preserve">
+    <value>うち {0} 個は接続できませんでした</value>
+  </data>
+  <data name="Tree_SyncedSkipped" xml:space="preserve">
+    <value>ターミナル以外の接続 {0} 件をスキップしました</value>
+  </data>
   <data name="SessFile_AnyType" xml:space="preserve">
     <value>接続ファイル (JSON / CSV)</value>
   </data>
@@ -6730,6 +8130,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="SessFile_CsvType" xml:space="preserve">
     <value>CSV ファイル</value>
+  </data>
+  <data name="SessFile_SshConfigType" xml:space="preserve">
+    <value>OpenSSH config</value>
   </data>
   <data name="SessFile_CsvEmpty" xml:space="preserve">
     <value>ファイルが空です。見出し行が見つかりません。</value>
@@ -6935,11 +8338,17 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SessExport_FormatCsv" xml:space="preserve">
     <value>CSV</value>
   </data>
+  <data name="SessExport_FormatSshConfig" xml:space="preserve">
+    <value>OpenSSH config</value>
+  </data>
   <data name="SessExport_JsonHint" xml:space="preserve">
     <value>グループ、踏み台ホスト、共有資格情報、ポート転送、ターミナル設定などをすべて保存します。バックアップや別の PC への移行向けです。</value>
   </data>
   <data name="SessExport_CsvHint" xml:space="preserve">
     <value>Excel で編集してインポートし直せる表です。よく使う項目（名前、ホスト、ポート、ユーザー名、グループ、認証、踏み台ホストなど）のみで、パスワードは含みません。</value>
+  </data>
+  <data name="SessExport_SshConfigHint" xml:space="preserve">
+    <value>~/.ssh/config の Host ブロックとして書き出します：SSH / SFTP 接続のホスト、ユーザー、秘密鍵と証明書、踏み台ホスト、圧縮、エージェント転送、アルゴリズム、ポート転送。パスワードは含まず、ほかのプロトコルはスキップします。</value>
   </data>
   <data name="SessExport_IncludeSecrets" xml:space="preserve">
     <value>パスワードなどの機密情報を含める</value>
@@ -6979,6 +8388,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="SessExport_DoneCsv" xml:space="preserve">
     <value>{0} 件の接続を {1} にエクスポートしました。</value>
+  </data>
+  <data name="SessExport_DoneSshConfig" xml:space="preserve">
+    <value>{0} 件の接続を {1} にエクスポートしました（OpenSSH config、パスワードなし）。</value>
   </data>
   <data name="SessExport_TemplateSaved" xml:space="preserve">
     <value>テンプレートを {0} に保存しました。記入したら「ファイルから接続をインポート」で読み込んでください。</value>

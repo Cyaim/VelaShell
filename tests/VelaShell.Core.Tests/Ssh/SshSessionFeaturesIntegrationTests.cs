@@ -12,6 +12,7 @@ using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
 using VelaShell.Ssh.Auth;
 using VelaShell.Ssh.Keys;
+using VelaShell.Tests.TestSupport;
 
 namespace VelaShell.Core.Tests.Ssh;
 
@@ -552,6 +553,8 @@ public class SshSessionFeaturesIntegrationTests
         {
             Assert.Inconclusive($"[SKIP] ssh-shells 靶机 {TestHost}:{TestPort} 不可达:{ex.Message}");
         }
+        // X11 / agent 的开关、vela-dash 单独关 X11 都写在 Dockerfile 里:镜像旧了这些用例验的就不是现在的配置。
+        FixtureImage.RequireCurrent("ssh-shells", "ssh-shells", TestHost, TestPort, TestUser, TestPassword);
     }
 
     /// <summary>假 agent 挂在命名管道上;宿主只在 Windows 上把 SSH_AUTH_SOCK 当管道用。</summary>

@@ -15,7 +15,8 @@ namespace VelaShell.Infrastructure.Persistence;
 /// 并对上层仓储提供带锁的文档/时序访问原语。
 /// 数据模型:
 /// - 文档集合(业务数据,JSON):session_groups、session_profiles($.groupId 索引)、
-/// app_config(settings/state 单文档)、known_hosts、ui_config、quick_commands、shared_credentials。
+/// app_config(settings/state 单文档)、known_hosts、known_host_markers、ui_config、quick_commands、shared_credentials、
+/// transfer_queue(断线 / 重启后待继续的传输)。
 /// - 时序 measurement(时间相关数据):conn_history(最近连接)、audit_log(安全审计)、
 /// session_recording_chunks(会话录制),以及插件私有的 pts_* (见 SonnetDbPluginTimeSeries)。
 /// </summary>
@@ -29,12 +30,19 @@ public sealed class SonnetDbEngine : IDisposable
     public const string ConfigCollection = "app_config";
     /// <summary>已知主机指纹文档集合名。</summary>
     public const string KnownHostsCollection = "known_hosts";
+    /// <summary>受信主机 CA 与吊销记录(<c>@cert-authority</c> / <c>@revoked</c>)文档集合名。</summary>
+    public const string KnownHostMarkersCollection = "known_host_markers";
     /// <summary>界面状态文档集合名。</summary>
     public const string UiConfigCollection = "ui_config";
     /// <summary>快捷命令片段文档集合名。</summary>
     public const string QuickCommandsCollection = "quick_commands";
     /// <summary>会话录制元数据文档集合名。</summary>
     public const string RecordingsCollection = "recordings";
+    /// <summary>
+    /// 传输队列快照文档集合名(断线 / 重启后待继续的传输,见 <see cref="VelaShell.Core.Sftp.TransferQueueJournal" />):
+    /// 与 recordings 同一种形状 —— 建库时创建,一份文档一个键。名字以 Core 的常量为准,两边不各写一份。
+    /// </summary>
+    public const string TransferQueueCollection = VelaShell.Core.Sftp.TransferQueueJournal.Collection;
     /// <summary>共享凭据文档集合名(#550;密码与私钥口令加密落盘)。</summary>
     public const string SharedCredentialsCollection = "shared_credentials";
 
@@ -432,9 +440,11 @@ public sealed class SonnetDbEngine : IDisposable
         CreateCollectionIfMissing(ProfilesCollection, new DocumentPathIndexDefinition("idx_group", "$.groupId"));
         CreateCollectionIfMissing(ConfigCollection);
         CreateCollectionIfMissing(KnownHostsCollection);
+        CreateCollectionIfMissing(KnownHostMarkersCollection);
         CreateCollectionIfMissing(UiConfigCollection);
         CreateCollectionIfMissing(QuickCommandsCollection);
         CreateCollectionIfMissing(RecordingsCollection);
+        CreateCollectionIfMissing(TransferQueueCollection);
         CreateCollectionIfMissing(PluginDataCollection);
         CreateCollectionIfMissing(SharedCredentialsCollection);
         CreateMeasurementIfMissing(ConnHistoryMeasurement);

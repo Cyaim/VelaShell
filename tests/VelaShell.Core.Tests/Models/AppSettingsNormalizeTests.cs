@@ -91,6 +91,40 @@ public class AppSettingsNormalizeTests
         Assert.IsTrue(settings.Security.RecordProductionSessions);
     }
 
+    /// <summary>自动下载更新多一次几十 MB 的外呼下载,默认关(维护约定第 6 条)。</summary>
+    [TestMethod]
+    public void AutoDownloadUpdates_IsOffByDefault() =>
+        Assert.IsFalse(new AppSettings().General.AutoDownloadUpdates);
+
+    /// <summary>
+    /// 这个字段早年默认 true,却没有界面、也没有消费者:存量配置里落盘的 true 只能是旧默认值,统一关一次。
+    /// </summary>
+    [TestMethod]
+    public void LegacyAutoDownloadDefault_IsTurnedOffOnce()
+    {
+        AppSettings settings = new();
+        settings.General.AutoDownloadUpdates = true;
+        settings.General.AutoDownloadUpdatesOptInMigrated = false;
+
+        settings.Normalize();
+
+        Assert.IsFalse(settings.General.AutoDownloadUpdates);
+        Assert.IsTrue(settings.General.AutoDownloadUpdatesOptInMigrated, "迁移标记要落下,之后不再插手用户的选择");
+    }
+
+    /// <summary>迁移只做一次:用户此后在设置页打开自动下载,再次载入设置不能又给关掉。</summary>
+    [TestMethod]
+    public void AutoDownloadOptIn_AfterMigration_IsRespected()
+    {
+        AppSettings settings = new();
+        settings.General.AutoDownloadUpdates = true;
+        settings.General.AutoDownloadUpdatesOptInMigrated = true;
+
+        settings.Normalize();
+
+        Assert.IsTrue(settings.General.AutoDownloadUpdates);
+    }
+
     /// <summary>
     /// 「换了台服务器、IP 没变」是最常见的正当指纹变更(#476)。默认直接阻断会把它报成一条
     /// 连接错误,用户只能去删数据库里的记录 —— 默认改为弹窗裁决。

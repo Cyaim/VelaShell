@@ -45,6 +45,30 @@ public sealed class ImportedSession
     public string? PrivateKeyPath { get; init; }
 
     /// <summary>
+    /// OpenSSH 用户证书路径(来自 <c>CertificateFile</c>,或 <c>IdentityFile</c> 旁边存在的 <c>-cert.pub</c>);
+    /// 非空即以证书认证导入,私钥仍是 <see cref="PrivateKeyPath" />。同样不校验文件是否存在。
+    /// </summary>
+    public string? CertificatePath { get; init; }
+
+    /// <summary>
+    /// 来源明确给出的认证方式(证书、SSH Agent);<see langword="null" /> 时由写入器按
+    /// 「有私钥就私钥认证,否则密码」推断 —— 那是各来源原来的口径。
+    /// </summary>
+    public AuthMethod? AuthMethod { get; init; }
+
+    /// <summary>SSH 协议层的选项(压缩、agent 转发、算法清单);来源没给任何一项时为 <see langword="null" />。</summary>
+    public SshSessionOptions? Ssh { get; init; }
+
+    /// <summary>随会话一起导入的端口转发(落成这条连接的隧道,停止状态);没有时为 <see langword="null" />。</summary>
+    public IReadOnlyList<TunnelConfig>? Tunnels { get; init; }
+
+    /// <summary>
+    /// 导入时的说明(界面语言的一句话一条):转发落成了几条隧道,以及来源里写了、却没能照原样导入的设置。
+    /// 预览行里列给用户看 —— 映射不了的如实说出来,而不是悄悄丢掉、让用户连上之后才发现少了一条转发。
+    /// </summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>
     /// 跳板主机的**别名**(来自 <c>ProxyJump</c>);由写入器在同一批导入的会话里按
     /// <see cref="Name" /> 解析成 <c>SessionProfile.JumpHostProfileId</c>。
     /// </summary>

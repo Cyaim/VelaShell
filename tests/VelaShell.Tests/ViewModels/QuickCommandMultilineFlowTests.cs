@@ -134,7 +134,7 @@ public class QuickCommandMultilineFlowTests
     public void MultilineWithPlaceholders_AsksForValues_ThenPastesTheRenderedText()
     {
         (MainWindowViewModel vm, ITerminalEmulator emulator) = Connected(bracketedPaste: true);
-        vm.QuickCommandVariablePrompt = (_, _) => Task.FromResult<IReadOnlyDictionary<string, string>?>(
+        vm.QuickCommandVariablePrompt = (_, _, _) => Task.FromResult<IReadOnlyDictionary<string, string>?>(
             new Dictionary<string, string> { ["dir"] = "/srv/web" });
 
         Send(vm, "cd {{dir}}\ngit pull");

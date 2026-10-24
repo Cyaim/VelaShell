@@ -1,4 +1,5 @@
 using VelaShell.Core.DirectorySync;
+using VelaShell.Core.Models;
 
 namespace VelaShell.Core.Tests.DirectorySync;
 
@@ -66,6 +67,67 @@ public class DirectoryComparerTests
         // 同一精度下,整整晚一分钟就是较新。
         SyncItem later = r with { LastWriteTimeUtc = r.LastWriteTimeUtc.AddMinutes(1) };
         Assert.AreEqual(SyncComparisonState.RemoteNewer, DirectoryComparer.CompareFiles(l, later, Options()));
+    }
+
+    /// <summary>
+    /// 服务器时区的换算:LIST(不带时区)按偏移换成 UTC,MLSD(已是 UTC)原样;偏移为 null 时按本机时间读(旧行为)。
+    /// </summary>
+    [TestMethod]
+    public void ToUtc_WithServerClockOffset_ShiftsOnlyUnspecifiedTimes()
+    {
+        var wall = new DateTime(2026, 9, 1, 18, 30, 0, DateTimeKind.Unspecified);
+        var utc = new DateTime(2026, 9, 1, 10, 30, 0, DateTimeKind.Utc);
+
+        Assert.AreEqual(utc, SyncTime.ToUtc(wall, TimeSpan.FromHours(8)));
+        Assert.AreEqual(DateTimeKind.Utc, SyncTime.ToUtc(wall, TimeSpan.FromHours(8)).Kind);
+        Assert.AreEqual(utc.AddHours(13), SyncTime.ToUtc(wall, TimeSpan.FromHours(-5)));
+        Assert.AreEqual(utc, SyncTime.ToUtc(utc, TimeSpan.FromHours(8)), "MLSD 的 UTC 不能再挪");
+        Assert.AreEqual(SyncTime.ToUtc(wall), SyncTime.ToUtc(wall, null), "没配偏移就是旧行为");
+        Assert.AreEqual(TimeSpan.FromHours(8), SyncTime.CalendarOffsetFor(wall, TimeSpan.FromHours(8)));
+        Assert.IsNull(SyncTime.CalendarOffsetFor(utc, TimeSpan.FromHours(8)));
+    }
+
+    /// <summary>只有 FTP 才有服务器时区;其余协议即便带着一块 FTP 设置也不认。</summary>
+    [TestMethod]
+    public void ServerClockOffset_OnlyAppliesToFtpProfiles()
+    {
+        var ftp = new SessionProfile
+        {
+            ConnectionType = ConnectionType.FTP,
+            Ftp = new() { ServerUtcOffsetMinutes = -300 },
+        };
+        Assert.AreEqual(TimeSpan.FromHours(-5), SyncTime.ServerClockOffset(ftp));
+        ftp.Ftp.ServerUtcOffsetMinutes = null;
+        Assert.IsNull(SyncTime.ServerClockOffset(ftp));
+        var sftp = new SessionProfile
+        {
+            ConnectionType = ConnectionType.SFTP,
+            Ftp = new() { ServerUtcOffsetMinutes = 480 },
+        };
+        Assert.IsNull(SyncTime.ServerClockOffset(sftp));
+        Assert.IsNull(SyncTime.ServerClockOffset(null));
+    }
+
+    /// <summary>
+    /// 半年前的文件 LIST 只给服务器当地的日期。服务器在 UTC+14、文件在服务器的 12 月 2 日 23:00 改过、本机副本时间相同:
+    /// 两边都要放进服务器那本日历里截断才是同一天;按本机日历截(几乎任何本机时区下)会落在 12 月 1 日与 2 日,误判本地较新。
+    /// </summary>
+    [TestMethod]
+    public void DayPrecision_IsTruncatedInTheServersCalendar()
+    {
+        TimeSpan offset = TimeSpan.FromHours(14);
+        var listed = new DateTime(2025, 12, 2, 0, 0, 0, DateTimeKind.Unspecified);
+        SyncItem remote = File("old.tar", 10, SyncTime.ToUtc(listed, offset)) with
+        {
+            Precision = SyncTimePrecision.Day,
+            CalendarOffset = SyncTime.CalendarOffsetFor(listed, offset),
+        };
+        SyncItem local = File("old.tar", 10, new DateTime(2025, 12, 2, 9, 0, 0, DateTimeKind.Utc));
+
+        Assert.AreEqual(SyncComparisonState.Same, DirectoryComparer.CompareFiles(local, remote, Options()));
+        // 反证:服务器日历上晚了一天,就该判本地较新。
+        SyncItem nextDay = local with { LastWriteTimeUtc = local.LastWriteTimeUtc.AddDays(1) };
+        Assert.AreEqual(SyncComparisonState.LocalNewer, DirectoryComparer.CompareFiles(nextDay, remote, Options()));
     }
 
     [TestMethod]

@@ -1500,7 +1500,10 @@ public sealed class SshChannel : IAsyncDisposable
                     if (RemoteMaxPacketBytes == 0)
                     {
                         throw new SshChannelException(Diagnostics.SshFailureReason.ProtocolError,
-                            $"对端给通道 {LocalId} 宣告的 max packet 是 0 —— 它不收任何数据，写进 stdin 的内容发不出去。");
+                            $"对端给通道 {LocalId} 宣告的 max packet 是 0 —— 它不收任何数据，写进 stdin 的内容发不出去。")
+                        {
+                            FailureKind = SshChannelFailureKind.ZeroMaxPacket,
+                        };
                     }
 
                     // 单个数据段**必须**不超过对端宣告的上限 —— 超了对端会断连。

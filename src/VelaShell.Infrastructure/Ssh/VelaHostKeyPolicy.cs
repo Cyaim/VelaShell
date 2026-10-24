@@ -36,12 +36,14 @@ namespace VelaShell.Infrastructure.Ssh;
 /// <param name="automaticReconnect">
 /// 这是断线后的自动重连(<see cref="ConnectionInfo.IsAutomaticReconnect" />):本该弹窗问的一律拒绝,不弹。
 /// </param>
+/// <param name="timeProvider">验主机证书有效期用的时钟;<see langword="null" /> 用系统时钟。</param>
 internal sealed class VelaHostKeyPolicy(
     IHostKeyService hostKey,
     ISettingsService? settings,
     IHostKeyPrompt? prompt,
     ISecurityAlertService? alerts,
-    bool automaticReconnect = false) : IHostKeyPolicy, IHostKeyTypePreference, IHostKeyRotationPolicy
+    bool automaticReconnect = false,
+    TimeProvider? timeProvider = null) : IHostKeyPolicy, IHostKeyTypePreference, IHostKeyRotationPolicy
 {
     /// <inheritdoc />
     /// <remarks>
@@ -55,21 +57,51 @@ internal sealed class VelaHostKeyPolicy(
     /// 就报「主机指纹已变更」—— 开着「变更即阻断」时连接直接失败;用户学会无视这个告警之后,
     /// 真有中间人时它也就没用了。
     /// </para>
+    /// <para>
+    /// 有对上这台主机的受信 CA 时再交出证书类型(库按 <c>@cert-authority</c> 报出它验得了的全部证书类型),
+    /// 证书算法因此排到前面,服务端才会出示证书 —— 默认清单里证书排在普通算法之后,不这样就永远谈不成证书
+    /// (velashell-docs/zh/ssh/spec/03 §5.5)。这台主机的普通密钥也记着时,普通算法仍在前:那把钥已经被明确信任,
+    /// 用哪条路径验结果一样(库只调顺序,保持原清单里普通在前、证书在后的相对次序)。
+    /// </para>
     /// <para>读不到记录时返回空、不阻断建连:裁决那一步还会再查一次。</para>
     /// </remarks>
     public async ValueTask<IReadOnlyList<string>> GetKnownKeyTypesAsync(
         string host, int port, CancellationToken cancellationToken = default)
     {
+        List<string> types = [];
         try
         {
             IReadOnlyList<KnownHost> known = await hostKey.FindKnownHostKeysAsync(host, port, cancellationToken).ConfigureAwait(false);
-            return [.. known.Select(entry => entry.KeyType).Where(type => !string.IsNullOrEmpty(type)).Distinct(StringComparer.Ordinal)];
+            types.AddRange(known.Select(entry => entry.KeyType).Where(type => !string.IsNullOrEmpty(type)).Distinct(StringComparer.Ordinal));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             System.Diagnostics.Trace.WriteLine($"[VelaShell] known_hosts lookup failed: {ex}");
-            return [];
         }
+
+        try
+        {
+            IReadOnlyList<KnownHostEntry> markers = await LoadMarkerEntriesAsync(cancellationToken).ConfigureAwait(false);
+            foreach (string type in KnownHostsFile.KnownKeyTypes(markers, host, port))
+            {
+                if (!types.Contains(type, StringComparer.Ordinal))
+                {
+                    types.Add(type);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            System.Diagnostics.Trace.WriteLine($"[VelaShell] host CA lookup failed: {ex}");
+        }
+        return types;
+    }
+
+    /// <summary>信任库里的受信主机 CA 与吊销记录,换成库的条目。读不出来照实抛出(调用方决定是否 fail-closed)。</summary>
+    private async Task<IReadOnlyList<KnownHostEntry>> LoadMarkerEntriesAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<KnownHostMarker>? markers = await hostKey.GetMarkersAsync(cancellationToken).ConfigureAwait(false);
+        return markers is null || markers.Count == 0 ? [] : KnownHostMarkers.ToEntries(markers);
     }
 
     /// <inheritdoc />
@@ -105,7 +137,7 @@ internal sealed class VelaHostKeyPolicy(
         string target = port == 22 ? host : HostAddress.FormatEndPoint(host, port);
         foreach (SshPublicKey key in keys)
         {
-            await hostKey.TrustHostKeyAsync(host, port, key.PlainKeyType, key.Sha256Fingerprint, cancellationToken).ConfigureAwait(false);
+            await hostKey.TrustHostKeyAsync(host, port, key.PlainKeyType, key.Sha256Fingerprint, PublicKeyOf(key), cancellationToken).ConfigureAwait(false);
             if (alerts is not null)
             {
                 await alerts.RaiseAsync("hostkey-learned",
@@ -157,6 +189,17 @@ internal sealed class VelaHostKeyPolicy(
     /// 而其它 SSH 客户端在这里弹的是一个「接受并覆盖 / 拒绝」的框。
     /// 要严格 fail-closed 的,把「指纹变更时阻断并告警」打开即可。
     /// </para>
+    /// <para>
+    /// <b>受信主机 CA 与吊销</b>(信任库的 <see cref="KnownHostMarker" />,velashell-docs/zh/ssh/spec/03 §5.5 的裁决顺序):
+    /// ① 这把钥、这张证书或签发它的 CA 被吊销 → 拒绝,不问;② 这把钥单独记着(或本次运行信任过)→ 放行,不再看证书;
+    /// ③ 对上这台主机的 CA 签发的证书 → 库验类型、签名、有效期、主体与关键选项,合格放行(不记进信任库:证书每次重签都会变,
+    /// 下次照样靠 CA 验),不合格拒绝;④ 这台主机由 CA 管、出示的钥却没有那个 CA 担保 → 拒绝,<b>不退回首次确认</b> ——
+    /// 给主机配 CA 要的正是「不再靠第一次盲信」,悄悄改走 TOFU 会把配置出错或路上有人这件事藏起来;
+    /// ⑤ 都不沾才是原来那三条出路。
+    /// </para>
+    /// <para>
+    /// 受信 CA 与吊销记录读不出来时照实抛出(连接失败):当成「没有」会把吊销了的钥、或只认证书的主机放回首次确认。
+    /// </para>
     /// </remarks>
     public async ValueTask<SshHostKeyVerdict> EvaluateAsync(
         SshHostKeyContext context, CancellationToken cancellationToken = default)
@@ -173,13 +216,61 @@ internal sealed class VelaHostKeyPolicy(
         string keyType = context.Key.PlainKeyType;
         string target = context.Target;
 
+        IReadOnlyList<KnownHostEntry> markers = await LoadMarkerEntriesAsync(cancellationToken).ConfigureAwait(false);
+        KnownHostLookup authority = markers.Count == 0
+            ? default
+            : KnownHostsFile.Lookup(markers, host, port, context.Key, Now);
+
+        if (authority.Status == KnownHostStatus.Revoked)
+        {
+            string revoked = Strings.Format("Msg_HostKeyRevoked", target, fingerprint);
+            await RaiseAsync("hostkey-rejected", revoked).ConfigureAwait(false);
+            return SshHostKeyVerdict.Reject(revoked);
+        }
+
         HostKeyVerification verification = await hostKey
             .VerifyHostKeyAsync(host, port, keyType, fingerprint, cancellationToken).ConfigureAwait(false);
 
         if (verification == HostKeyVerification.Trusted
             || HostTrustOnceCache.IsTrusted(host, port, fingerprint))
         {
+            if (verification == HostKeyVerification.Trusted)
+            {
+                await BackfillPublicKeyAsync(context, cancellationToken).ConfigureAwait(false);
+            }
             return SshHostKeyVerdict.Accept;
+        }
+
+        switch (authority.Status)
+        {
+            case KnownHostStatus.Known:
+                return SshHostKeyVerdict.Accept;
+
+            case KnownHostStatus.CertificateInvalid:
+            {
+                System.Diagnostics.Trace.WriteLine($"[VelaShell] host certificate rejected for {target}: {authority.CertificateProblem}");
+                // 哪一条不合格由库按 spec 03 §5.5 的顺序判定并交出结构化的出处,界面语言的那句与其它入口共用一套文案
+                // (SshInterop.LocalizeHostCertificateProblem)。库的约定是这个结论一定带着出处;万一没有,只能照它的原文说。
+                string problem = authority.CertificateProblemDetail is { } detail
+                    ? SshInterop.LocalizeHostCertificateProblem(detail)
+                    : authority.CertificateProblem ?? "";
+                string invalid = Strings.Format("Msg_HostCertInvalid", target, problem,
+                    FingerprintOf(context.Key.Certificate?.SignatureKey));
+                await RaiseAsync("hostkey-rejected", invalid).ConfigureAwait(false);
+                return SshHostKeyVerdict.Reject(invalid);
+            }
+
+            case KnownHostStatus.OtherKeyTypesKnown:
+            {
+                // 这台主机由 CA 管:出示的是普通钥,或者别的 CA 签的证书,而这把钥又没有单独记着。
+                string patterns = authority.ConflictingEntries
+                    .Where(entry => entry.IsCertificateAuthority)
+                    .Select(entry => string.Join(',', entry.Patterns))
+                    .FirstOrDefault() ?? "*";
+                string unvouched = Strings.Format("Msg_HostCaUnvouched", target, patterns, fingerprint);
+                await RaiseAsync("hostkey-rejected", unvouched).ConfigureAwait(false);
+                return SshHostKeyVerdict.RejectChanged(unvouched);
+            }
         }
 
         // 变更时把旧指纹取出来,弹窗与错误文案都要摆它 —— 用户靠两把对照才判断得了
@@ -221,7 +312,10 @@ internal sealed class VelaHostKeyPolicy(
         }
 
         HostKeyDecision decision = askUser
-            ? await prompt!.DecideAsync(host, port, keyType, fingerprint, verification, knownFingerprint, context.Key.RandomArt)
+            // 出示的是主机证书、却没有受信 CA 为它担保时,把签发 CA 的指纹也摆出来:
+            // 用户核对之后把那个 CA 加进信任库,同一个 CA 签的主机就不必逐台确认。
+            ? await prompt!.DecideAsync(host, port, keyType, fingerprint, verification, knownFingerprint, context.Key.RandomArt,
+                    FingerprintOf(context.Key.Certificate?.SignatureKey))
                 .ConfigureAwait(false)
             // 不问的两条默认:首次连接按 TOFU 记下,指纹变更 fail-closed 拒掉。
             : firstSeen
@@ -284,7 +378,7 @@ internal sealed class VelaHostKeyPolicy(
         try
         {
             await hostKey.TrustHostKeyAsync(
-                context.Host, context.Port, context.Key.PlainKeyType, context.Key.Sha256Fingerprint, cancellationToken)
+                context.Host, context.Port, context.Key.PlainKeyType, context.Key.Sha256Fingerprint, PublicKeyOf(context.Key), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -308,6 +402,41 @@ internal sealed class VelaHostKeyPolicy(
             // 阻断开关开着:用户根本没被问过,得告诉他这是策略拦的,以及两条出路。
             ? Strings.Format("Msg_HostKeyChangedBlocked", target, knownFingerprint ?? "-", fingerprint)
             : Strings.Format("Msg_HostKeyRejected", target, fingerprint);
+
+    /// <summary>
+    /// 记着的这把钥还没有公钥原文(换库之前、或这个字段加进来之前信任的,只存了指纹)时顺手补上 ——
+    /// 不补的话这条记录导不出 OpenSSH 的 <c>known_hosts</c>。补不上不影响这次连接。
+    /// </summary>
+    private async Task BackfillPublicKeyAsync(SshHostKeyContext context, CancellationToken cancellationToken)
+    {
+        try
+        {
+            IReadOnlyList<KnownHost>? known = await hostKey.FindKnownHostKeysAsync(context.Host, context.Port, cancellationToken)
+                .ConfigureAwait(false);
+            KnownHost? entry = known?.FirstOrDefault(k => SonnetDbHostKeyService.SameFingerprint(k.Fingerprint, context.Key.Sha256Fingerprint));
+            if (entry is not null && string.IsNullOrEmpty(entry.HostKey))
+            {
+                await hostKey.TrustHostKeyAsync(context.Host, context.Port, context.Key.PlainKeyType, context.Key.Sha256Fingerprint,
+                    PublicKeyOf(context.Key), cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            System.Diagnostics.Trace.WriteLine($"[VelaShell] known_hosts public key backfill failed: {ex}");
+        }
+    }
+
+    /// <summary>记进信任库的公钥原文:证书里那把普通钥的 blob(base64),与 <c>known_hosts</c> 第三栏同一个东西。</summary>
+    private static string PublicKeyOf(SshPublicKey key) => Convert.ToBase64String(key.PlainKey.Blob.Span);
+
+    /// <summary>此刻(验证书有效期用)。</summary>
+    private DateTimeOffset Now => (timeProvider ?? TimeProvider.System).GetUtcNow();
+
+    /// <summary>一把钥的 SHA-256 指纹;没有钥时为 <see langword="null" />。</summary>
+    private static string? FingerprintOf(SshPublicKey? key) => key?.Sha256Fingerprint;
+
+    private Task RaiseAsync(string category, string message) =>
+        alerts is null ? Task.CompletedTask : alerts.RaiseAsync(category, message);
 
     private static SecurityOptions GetSecurityOptions(ISettingsService? settings)
     {

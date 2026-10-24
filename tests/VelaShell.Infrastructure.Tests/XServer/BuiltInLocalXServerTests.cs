@@ -522,7 +522,20 @@ public class BuiltInLocalXServerTests
         Assert.AreEqual(1, await HandshakeAsync(stream));
 
         XServerClient client = (await server.GetClientsAsync()).Single();
-        Assert.AreEqual(("user@host:22", 0, false, false, ""), (client.Source, client.Windows, client.Retained, client.HoldsServerGrab, client.Name));
+        Assert.AreEqual(("user@host:22", 0, false, false, "", true), (client.Source, client.Windows, client.Retained, client.HoldsServerGrab, client.Name, client.Trusted));
+
+        // 非受信的通道(ssh -X)连进来的,清单上报成非受信(浮层据此标出信任级别)。
+        await using (Stream untrusted = await resolution.Connector!(new XServerChannelSource("user@host:22", Trusted: false), CancellationToken.None))
+        {
+            Assert.AreEqual(1, await HandshakeAsync(untrusted));
+            XServerClient restricted = (await server.GetClientsAsync()).Single(c => c.Key != client.Key);
+            Assert.IsFalse(restricted.Trusted);
+            server.DisconnectClient(restricted.Key);
+        }
+        for (int i = 0; i < 100 && (await server.GetClientsAsync()).Count != 1; i++)
+        {
+            await Task.Delay(20);
+        }
 
         server.DisconnectClient("not-a-key");
         Assert.HasCount(1, await server.GetClientsAsync(), "认不出的键什么也不做");

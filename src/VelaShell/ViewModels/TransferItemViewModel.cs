@@ -107,6 +107,25 @@ public class TransferItemViewModel : ReactiveObject
         }
     }
 
+    /// <summary>自动重试到了第几次(0 = 还没重试过)。</summary>
+    public int RetryAttempt { get; private set; }
+
+    /// <summary>自动重试的次数上限(设置 → 文件传输 → 失败自动重试)。</summary>
+    public int RetryLimit { get; private set; }
+
+    /// <summary>
+    /// 这次尝试失败了、正等着自动重试:行回到「等待」态(它确实没在传),右侧读数换成「重试 n/N」。
+    /// 下一次尝试的第一拍进度到达时,照常落回「进行中」。
+    /// </summary>
+    /// <param name="attempt">第几次重试(从 1 起)。</param>
+    /// <param name="limit">次数上限。</param>
+    public void MarkRetrying(int attempt, int limit)
+    {
+        RetryAttempt = attempt;
+        RetryLimit = limit;
+        Status = TransferStatus.Queued;
+    }
+
     /// <summary>指示任务是否处于活动状态(进行中或排队中或续传中)。</summary>
     public bool IsActive => _status is TransferStatus.InProgress or TransferStatus.Queued or TransferStatus.Resuming;
 
@@ -144,6 +163,10 @@ public class TransferItemViewModel : ReactiveObject
     {
         TransferStatus.Completed => Strings.Get("Msg_Done"),
         TransferStatus.Failed => Strings.Get("Msg_Failed"),
+        // 连接没了停下:不标红(不是这个文件的错),由浮窗上那一行「已暂停的批次」带着「继续」。
+        TransferStatus.Paused => Strings.Get("Transfer_Paused"),
+        // 失败了正等着自动重试:说清是第几次,免得看着像又回去排队了。
+        TransferStatus.Queued when RetryAttempt > 0 => Strings.Format("Transfer_RetryWaiting", RetryAttempt, RetryLimit),
         // 排队中显示"等待中"而不是 0%:0% 看着像卡住,而它其实还没轮到。
         TransferStatus.Queued => Strings.Get("Msg_Waiting"),
         _ => $"{_progress}%"
@@ -158,7 +181,9 @@ public class TransferItemViewModel : ReactiveObject
             // (它没在上传),也让人以为传输卡死了。
             if (_status == TransferStatus.Queued)
             {
-                return $"{Direction} {Strings.Get("Msg_Waiting")}";
+                return RetryAttempt > 0
+                    ? $"{Direction} {Strings.Get("Transfer_RetryWaitingInfo")}"
+                    : $"{Direction} {Strings.Get("Msg_Waiting")}";
             }
             string action = _task.Type switch
             {
@@ -175,9 +200,9 @@ public class TransferItemViewModel : ReactiveObject
                     _ => $"↓ {Strings.Get("Msg_Downloaded")}",
                 };
             }
-            else if (_status == TransferStatus.Failed)
+            else if (_status is TransferStatus.Failed or TransferStatus.Paused)
             {
-                action = Strings.Get("Msg_Failed");
+                action = _status == TransferStatus.Paused ? Strings.Get("Transfer_Paused") : Strings.Get("Msg_Failed");
             }
             return _status == TransferStatus.Completed
                        ? $"{FormatBytes(_totalSize)}  •  {Strings.Get("Msg_Completed")}  •  {action}"

@@ -72,6 +72,23 @@ public class ConnectionInfo
     public SshSessionOptions? Ssh { get; init; }
 
     /// <summary>
+    /// 这个会话的字符集名(会话覆盖优先于全局,见 <c>SessionTerminalSettings.Encoding</c>);SFTP 按它解读远端文件名。
+    /// null = UTF-8。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// SFTP v3 没规定文件名编码,SSH 库默认按 UTF-8、解不开的字节无损往返 —— GBK 服务器上的中文名打得开、删得掉,
+    /// 只是显示成替换字符。连 GBK 服务器的人终端编码早就配成了 GBK,文件名多半也是,于是复用这一个值。
+    /// </para>
+    /// <para>
+    /// 放在这里而不是让 Infrastructure 再查一次配置,理由同 <see cref="KeepAliveSeconds" />:开 SFTP 通道的那一层手里只有会话。
+    /// 只在终点那一跳上有值(跳板只开隧道、不开 SFTP)。值是 UTF-8(或认不出的名字)时 Infrastructure <b>不</b>把它交给库,
+    /// 让库走默认的无损往返 —— 库眼下把显式的 UTF-8 也认作默认,但宿主不该把正确性押在这个实现细节上。
+    /// </para>
+    /// </remarks>
+    public string? FileNameEncoding { get; init; }
+
+    /// <summary>
     /// 这次连接是断线后的<b>自动重连</b>(没有人在等它):主机指纹要人裁决时直接拒绝,不弹窗。
     /// </summary>
     /// <remarks>

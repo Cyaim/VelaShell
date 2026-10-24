@@ -522,6 +522,37 @@ public class SessionTreeViewModelTests
         );
     }
 
+    /// <summary>
+    /// 「复制配置」拷的是库里最新的那份:树加载之后才在 SFTP 文档里加的收藏只经
+    /// <c>UpdateDirectoryBookmarksAsync</c> 落库,不回写树缓存,拿缓存拷会把它们丢掉(plan.md §222 留下的边角)。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("SessionTree")]
+    public async Task DuplicateSessionCommand_CopiesBookmarksAddedAfterTheTreeLoaded()
+    {
+        SessionProfile cached = CreateSession("Files");
+        _repository.GetAllGroupsAsync().Returns(Task.FromResult(new List<ServerGroup>()));
+        _repository.GetAllSessionsAsync().Returns(Task.FromResult(new List<SessionProfile> { cached }));
+        await _vm.LoadCommand.Execute().FirstAsync();
+        _vm.SelectedNode = _vm.Nodes.Single();
+
+        // 树加载之后,别处给这条配置加了一条收藏:库里那份有,树缓存那份没有。
+        SessionProfile latest = cached.Clone();
+        latest.DirectoryBookmarks =
+        [
+            new() { Name = "web", LocalPath = @"C:\site", RemotePath = "/var/www" },
+        ];
+        _repository.GetSessionAsync(cached.Id).Returns(Task.FromResult<SessionProfile?>(latest));
+
+        await _vm.DuplicateSessionCommand.Execute().FirstAsync();
+
+        await _repository.Received(1).SaveSessionAsync(Arg.Is<SessionProfile>(copy =>
+            copy.Id != cached.Id
+            && copy.DirectoryBookmarks.Count == 1
+            && copy.DirectoryBookmarks[0].RemotePath == "/var/www"
+            && !ReferenceEquals(copy.DirectoryBookmarks[0], latest.DirectoryBookmarks[0])));
+    }
+
     [TestMethod]
     public async Task SftpSession_AllowsStandaloneSftp_AndKeepsSshOnlyCommandsHidden()
     {

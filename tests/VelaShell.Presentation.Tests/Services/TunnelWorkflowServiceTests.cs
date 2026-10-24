@@ -107,6 +107,21 @@ public sealed class TunnelWorkflowServiceTests
 
     [TestMethod]
     [TestCategory("TunnelWorkflow")]
+    public async Task CreateTunnelAsync_RemoteDynamic_RoutesToRemoteDynamicForward()
+    {
+        TunnelInfo expected = MakeInfo(TunnelType.RemoteDynamicForward);
+        _tunnelService.CreateRemoteDynamicForwardAsync(_sessionId, Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(expected));
+
+        TunnelInfo result = await CreateService().CreateTunnelAsync(_sessionId, MakeConfig(TunnelType.RemoteDynamicForward));
+
+        Assert.AreSame(expected, result);
+        await _tunnelService.Received(1).CreateRemoteDynamicForwardAsync(_sessionId, Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+        await _tunnelService.DidNotReceive().CreateRemoteForwardAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    [TestCategory("TunnelWorkflow")]
     public async Task CreateTunnelAsync_NullConfig_Throws()
     {
         await Assert.ThrowsExactlyAsync<ArgumentNullException>(

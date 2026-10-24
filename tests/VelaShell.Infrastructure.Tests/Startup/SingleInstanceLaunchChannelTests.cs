@@ -58,7 +58,8 @@ public class SingleInstanceLaunchChannelTests
             Port = 2222,
             Username = "root",
             Password = "one-time",
-            Scheme = "ssh"
+            Scheme = "ssh",
+            TabName = "root@Linux[2026_09_20_09_45_18]"
         });
 
         Assert.IsTrue(sent, "对方在听,转发就必须成功。");
@@ -67,6 +68,8 @@ public class SingleInstanceLaunchChannelTests
         Assert.AreEqual(2222, received.Port);
         Assert.AreEqual("root", received.Username);
         Assert.AreEqual("one-time", received.Password, "一次性凭据在管道两端必须原样过去,否则外部登录到了对面就成了缺凭据。");
+        Assert.AreEqual("root@Linux[2026_09_20_09_45_18]", received.TabName,
+            "-newtab 的标签名也得穿过单实例转发 —— 应用已经开着时,请求全是从这条管道进来的。");
     }
 
     [TestMethod]

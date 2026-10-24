@@ -34,12 +34,14 @@ using VelaShell.Infrastructure.Diagnostics;
 using VelaShell.Infrastructure.Net;
 using VelaShell.Infrastructure.Plugins.Protocols;
 using VelaShell.Infrastructure.Pty;
+using VelaShell.Infrastructure.Ssh;
 using VelaShell.PluginSdk.Protocols;
 using VelaShell.PluginSdk.Workspaces;
 using VelaShell.Presentation.Commands;
 using VelaShell.Presentation.Services;
 using VelaShell.Presentation.ViewModels;
 using VelaShell.Services;
+using VelaShell.Services.Layouts;
 using VelaShell.Terminal;
 using VelaShell.Terminal.Emulation;
 using VelaShell.Terminal.Rendering;
@@ -67,6 +69,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     private int _credentialRefreshQueued;
     private readonly ISessionMetricsService? _metricsService;
     private readonly IRemoteProcessService? _remoteProcessService;
+
+    /// <summary>远端搜索(find / grep),挂到 SSH 会话的文件面板上;没有 SSH 连接服务(单测)时为 null,面板上就没有「搜索」。</summary>
+    private readonly IRemoteSearchService? _remoteSearch;
 
     // ---- 会话日志(设置 → 常规 → 数据与存储) ----
 
@@ -250,10 +255,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         ILocalizationService? localization = null,
         ShortcutKeymapService? shortcutKeymap = null,
         ICredentialResolver? credentialResolver = null,
-        ISharedCredentialRepository? sharedCredentials = null
+        ISharedCredentialRepository? sharedCredentials = null,
+        BackgroundUpdateDownload? backgroundUpdateDownload = null
     )
     {
         _credentialResolver = credentialResolver;
+        _backgroundUpdateDownload = backgroundUpdateDownload;
         // 共享凭据被改名、删除(删除会把凭据拷回引用它的连接)之后,树上缓存的配置就旧了:
         // 带着一条已删除的引用去连,只会换来一个"凭据不存在"的登录框。
         sharedCredentials?.Changed += OnSharedCredentialsChanged;
@@ -277,6 +284,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         _suggestionProvider = new(CommandHistory, quickCommandRepository);
         _connectionWorkflowService = connectionWorkflowService;
         _sshConnectionService = sshConnectionService;
+        _remoteSearch = sshConnectionService is null ? null : new RemoteSearchService(sshConnectionService);
         _themeService = themeService;
         // 切主题 → 终端画面跟着换整套配色。不能只靠控件自己听 ThemeVariant:
         // 具名主题里有多套暗色,VelaDark 换到 Tokyo Night 时变体压根没变(#主题目录)。
@@ -359,6 +367,27 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         Layout.CloseInterceptor = ConfirmCloseDocumentsAsync;
         // 标签右键菜单里切了「多行显示标签页」:写回设置,设置页与下次启动都认这一个值。
         Layout.PropertyChanged += OnLayoutPropertyChanged;
+        // 命名布局模板(以及「恢复会话」按上次的分屏还原):开标签一律走下面这几条既有的连接路径,
+        // 缺凭据弹框、认证重试、证书确认都在它们里面,模板这边一处不重写。
+        LayoutTemplates = new(
+            new LayoutTemplateStore(appDataStore),
+            Layout,
+            new LayoutDocumentOpener(
+                FindProfileForLayoutAsync,
+                shellId => LocalShellCatalog.DetectShells().FirstOrDefault(shell => shell.Id == shellId),
+                new LayoutOpenActions(
+                    profile => TryConnectProfileAsync(profile),
+                    profile => OpenSftpDocumentForProfileAsync(profile),
+                    profile => OpenFtpDocumentForProfileAsync(profile),
+                    profile => OpenPluginDocumentForProfileAsync(profile),
+                    profile => OpenWorkspaceDocumentForProfileAsync(profile),
+                    (left, right) => OpenDualSftpDocumentAsync(left, right),
+                    OpenLocalTerminalAsync)),
+            document => LayoutDocumentDescriber.Describe(
+                document,
+                profile => _protocolRegistry?.KindOf(profile.PluginProtocolId) == PluginConnectionKind.Workspace),
+            async profileId => await FindProfileForLayoutAsync(profileId).ConfigureAwait(true) is not null,
+            Toasts);
 
         // 网络恢复 / 睡眠唤醒:立刻把断开的会话拉起来,而不是干等下一个退避周期。
         if (connectivityMonitor is { } connectivity)
@@ -382,6 +411,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         WireBackgroundActivity(backgroundActivity);
         _fileBrowser = new(null, Guid.Empty);
         _fileTransfer = new(transferManager, appDataStore);
+        // 传输浮窗上「已暂停的批次」点「继续」:找回(或重新打开)那条连接接着传(见 ResumeQueuedTransfersAsync)。
+        _fileTransfer.ResumeHandler = ResumeQueuedTransfersAsync;
         // 活动标签换人时要做的那几件事。挂在 ActiveTerminalTab 上而不是某个标签集合上:
         // 停靠布局是唯一事实来源,而 ActiveTerminalTab 正是从它的 ActiveDocumentChanged 派生的。
         // 原先这条订阅挂在 TabBar.ActiveTab 上,于是"谁是活动标签"有两个各自会变的来源,
@@ -466,6 +497,14 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         // X Server 浮层与隧道面板默认都在菜单栏下方右侧:开一个就收起另一个,免得叠在一起(隧道面板拖开了也照样,简单起见)。
         XServer.WhenAnyValue(x => x.IsPanelOpen).Where(open => open).Subscribe(_ => IsTunnelPanelOpen = false);
         this.WhenAnyValue(x => x.IsTunnelPanelOpen).Where(open => open).Subscribe(_ => XServer.IsPanelOpen = false);
+        // 面板开着才每秒刷速率与连接列表(见 TunnelPanelViewModel.IsOpen);面板总是先建好再打开。
+        this.WhenAnyValue(x => x.IsTunnelPanelOpen).Subscribe(open =>
+        {
+            if (TunnelPanel is { } tunnels)
+            {
+                tunnels.IsOpen = open;
+            }
+        });
         // 最近使用记录:让常用命令/会话在同分时排到前面。载入是异步的,先建后载 ——
         // 载入完成前只是没有加权,不影响面板可用。
         _paletteRecency = new(appDataStore);
@@ -674,16 +713,26 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     public Func<string, Task<bool>>? MultilinePasteConfirmer { get; set; }
 
     /// <summary>
-    /// 窗口注入的快捷命令变量询问框:参数是命令名与解析好的模板,确认时返回「变量名 → 值」,
-    /// 取消返回 null(整条不发)。未挂时(headless)含占位的命令原样发送。
+    /// 窗口注入的快捷命令变量询问框:参数是命令名、解析好的模板与每一格的初值(上一次填的值,
+    /// 没记过的是占位的默认值),确认时返回「变量名 → 值」,取消返回 null(整条不发)。
+    /// 未挂时(headless)含占位的命令原样发送。
     /// </summary>
-    public Func<string?, QuickCommandTemplate, Task<IReadOnlyDictionary<string, string>?>>? QuickCommandVariablePrompt { get; set; }
+    public Func<string?, QuickCommandTemplate, IReadOnlyDictionary<string, string>, Task<IReadOnlyDictionary<string, string>?>>? QuickCommandVariablePrompt { get; set; }
+
+    /// <summary>询问框的「上一次填的值」,只在进程里(见 <see cref="QuickCommandVariableMemory" />)。</summary>
+    private readonly QuickCommandVariableMemory _quickCommandVariables = new();
 
     /// <summary>
     /// 窗口注入的多行快捷命令确认框:目标终端里有没开括号粘贴的,多行命令发过去会逐行执行,先问一句。
     /// 参数是将要发送的正文,确认返回 true。未挂时(headless)直接发送。
     /// </summary>
     public Func<string, Task<bool>>? QuickCommandMultilineConfirmer { get; set; }
+
+    /// <summary>
+    /// 窗口注入的「重跑多行命令」确认框:对端没开括号粘贴时每一行都会当场执行,先问一句
+    /// (开关同样是「粘贴时确认多行内容」)。参数是命令文本,确认返回 true。未挂时(headless)直接发送。
+    /// </summary>
+    public Func<string, Task<bool>>? CommandRerunConfirmer { get; set; }
 
     /// <summary>左侧边栏视图模型:资源管理器会话树与最近连接。</summary>
     public SidebarViewModel Sidebar
@@ -846,6 +895,13 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     /// <summary>VelaDock 工作区:承载终端文档(标签可拖拽重排、拆分分屏)。</summary>
     public DockWorkspace Layout { get; }
+
+    /// <summary>命名布局模板:把当前分屏存成模板、打开模板,以及「恢复会话」按上次的分屏还原。</summary>
+    public LayoutTemplatesViewModel LayoutTemplates { get; }
+
+    /// <summary>还原布局时按 Id 从库里取配置(取最新的那份,不用模板保存时的旧副本);没有仓储(无界面单测)时一律取不到。</summary>
+    private Task<SessionProfile?> FindProfileForLayoutAsync(Guid profileId) =>
+        _sessionRepository?.GetSessionAsync(profileId) ?? Task.FromResult<SessionProfile?>(null);
 
     /// <summary>当前会话的 SFTP 文件浏览面板(按会话缓存,随活动标签切换重绑)。</summary>
     public FileBrowserViewModel FileBrowser
@@ -1092,6 +1148,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         );
         Commands.Register(
             new(
+                "tools.connectionInfo",
+                Strings.Get("Cmd_ConnectionInfo"),
+                Strings.Get("CmdCat_Tools"),
+                () => OpenConnectionInfo(ActiveTerminalTab),
+                () => ActiveTerminalTab is { IsSshTerminal: true, IsConnected: true },
+                Icon: "Icon.info"
+            )
+        );
+        Commands.Register(
+            new(
                 "edit.clear",
                 Strings.Get("Cmd_ClearScreen"),
                 Strings.Get("CmdCat_Edit"),
@@ -1298,6 +1364,27 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 Icon: "Icon.layout-grid"
             )
         );
+        // 布局模板:把当前分屏存成模板 / 打开管理窗口。每个模板本身另作一条可直接打开的条目
+        // 出现在命令面板里(见 BuildPaletteItems)。
+        Commands.Register(
+            new(
+                "layout.save",
+                Strings.Get("LayoutTemplate_SaveCurrent"),
+                Strings.Get("CmdCat_Actions"),
+                () => _ = LayoutTemplates.SaveCurrentAsync(),
+                () => Layout.AllDocuments().Any(),
+                Icon: "Icon.layout-template"
+            )
+        );
+        Commands.Register(
+            new(
+                "layout.manage",
+                Strings.Get("LayoutTemplate_Manage"),
+                Strings.Get("CmdCat_Actions"),
+                LayoutTemplates.OpenManager,
+                Icon: "Icon.layout-template"
+            )
+        );
         // 本地终端(§12 P1-1):按本机安装情况动态注册 PowerShell/CMD/WSL/Git Bash 入口。
         foreach (LocalShellInfo shell in LocalShellCatalog.DetectShells())
         {
@@ -1343,6 +1430,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
         // 命令补全:注入建议提供器;提交(已回显校验)的命令进全局历史。
         terminalTab.SuggestionProvider = _suggestionProvider;
+        terminalTab.QuickCommandTextResolver = command =>
+            ResolveQuickCommandTextAsync(command.Id, command.Name, command.CommandText);
         terminalTab.CommandLineSubmitted += CommandHistory.Record;
         if (terminalEmulator is VelaTerminalControl bellSource)
         {
@@ -1504,6 +1593,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         var browser = new FileBrowserViewModel(_sftpService, tab.SessionId)
         {
             TransferSink = FileTransfer,
+            // 上传 / 下载批次记进传输队列,断线或退出时没传完的按这条配置找回连接接着传。
+            QueueOrigin = tab.Profile is { } origin ? new(origin.Id, serverName) : null,
             IsVisible = wasVisible,
             GetDefaultEditorPath = QueryDefaultEditorPathAsync,
             TransferOptions = _latestSettings?.Transfer ?? new TransferOptions(),
@@ -1521,6 +1612,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             ColumnVisibilityToggled = PersistColumnVisibility,
             ServerDisplayName = serverName,
             AccentBrush = tab.Profile is { } p ? ConnectionAccent.BrushForProfile(p) : null,
+            RemoteSearch = _remoteSearch,
         };
         // 「文件浏览器跟随终端目录」(map-pin):该会话终端 shell 的 cwd(OSC 7)变化 → 面板同步(仅在开启跟随时)。
         // 先播种当前已知 cwd(供开启开关时立即同步),再订阅后续变化。二者同会话、同生共死,eviction 时解绑。
@@ -1584,6 +1676,77 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
         TerminalTabViewModel? owner = TerminalTabs.FirstOrDefault(t => t.SessionId == sessionId);
         owner?.FileBrowserOpen = visible;
+    }
+
+    /// <summary>
+    /// 接着传一批停下的传输(断线之后,或上次退出时还没传完的)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 按批次记下的连接配置找连接:先找已经连着这条配置的文件标签,再找打开过文件面板的终端标签;
+    /// 都没有就照常打开一个文件标签(SSH / SFTP、FTP、插件文件协议各走自己的那条打开路径,
+    /// 认证弹窗、指纹核对、失败卡片与平时双击连接一模一样)。启动时不做这件事 —— 只在用户点「继续」时才连。
+    /// </para>
+    /// <para>
+    /// 配置已经删了:不去猜它原来连的是哪台(主机名可能早已指向别处),如实说「配置已删除」,只能放弃。
+    /// </para>
+    /// </remarks>
+    private async Task<TransferResumeOutcome> ResumeQueuedTransfersAsync(PausedTransferBatch batch)
+    {
+        if (_sessionRepository is null)
+        {
+            return new(TransferResumeResult.NotConnected);
+        }
+        IReadOnlyList<SessionProfile> saved = await _sessionRepository.GetAllSessionsAsync().ConfigureAwait(true);
+        if (saved.FirstOrDefault(p => p.Id == batch.Origin.ProfileId) is not { } profile)
+        {
+            return new(TransferResumeResult.ProfileMissing);
+        }
+        FileBrowserViewModel? browser = FindConnectedFileBrowser(profile.Id);
+        if (browser is null)
+        {
+            SftpDocument? document = profile.ConnectionType switch
+            {
+                ConnectionType.SSH or ConnectionType.SFTP => await OpenSftpDocumentForProfileAsync(profile).ConfigureAwait(true),
+                ConnectionType.FTP => await OpenFtpDocumentForProfileAsync(profile).ConfigureAwait(true),
+                ConnectionType.Plugin => await OpenPluginDocumentForProfileAsync(profile).ConfigureAwait(true),
+                _ => null,
+            };
+            // 没连上:失败原因已经由打开路径报过了(浮层 + 失败卡片);用户取消同样原样留着,稍后可以再点。
+            browser = document?.ViewModel.RemoteFiles;
+        }
+        if (browser is null)
+        {
+            return new(TransferResumeResult.NotConnected);
+        }
+        return await browser.ResumeQueuedTransfersAsync(batch).ConfigureAwait(true)
+            ? new(TransferResumeResult.Started)
+            : new(TransferResumeResult.Failed, browser.ErrorMessage);
+    }
+
+    /// <summary>已经连着这条配置、能直接拿来传文件的面板;没有返回 null。</summary>
+    private FileBrowserViewModel? FindConnectedFileBrowser(Guid profileId)
+    {
+        foreach (SftpDocument document in Layout.AllDocuments().OfType<SftpDocument>())
+        {
+            if (document.ViewModel.Profile.Id == profileId && document.ViewModel.Status == SessionStatus.Connected)
+            {
+                return document.ViewModel.RemoteFiles;
+            }
+        }
+        // 终端标签只认打开过文件面板的(缓存里有):没打开过的,替它在后台建一个面板没有意义 ——
+        // 用户看不到它,新开一个文件标签反而一眼就知道文件在往哪儿传。
+        foreach (TerminalTabViewModel tab in TerminalTabs)
+        {
+            if (tab.Profile?.Id == profileId
+                && tab.ConnectionStatus == SessionStatus.Connected
+                && tab.SessionId != Guid.Empty
+                && _fileBrowserCache.TryGetValue(tab.SessionId, out FileBrowserViewModel? cached))
+            {
+                return cached;
+            }
+        }
+        return null;
     }
 
     /// <summary>SFTP「使用默认编辑器打开」读取的编辑器命令(设置 → 文件传输 → 默认编辑器)。</summary>
@@ -1708,6 +1871,35 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <summary>工具菜单“连接诊断”(针对当前标签的配置)—— 由窗口打开诊断中心弹窗。</summary>
     public event Action<SessionProfile>? DiagnosticsRequested;
 
+    /// <summary>
+    /// 标签右键 / 命令面板「连接信息」—— 由窗口打开(或前置)这个标签的连接信息窗口,
+    /// 面板的视图模型向 <see cref="CreateConnectionInfo" /> 要。
+    /// </summary>
+    public event Action<TerminalTabViewModel>? ConnectionInfoRequested;
+
+    /// <summary>请求为一个 SSH 会话标签打开连接信息窗口;不是 SSH 会话标签时是空操作。</summary>
+    public void OpenConnectionInfo(TerminalTabViewModel? tab)
+    {
+        if (tab is { IsSshTerminal: true })
+        {
+            ConnectionInfoRequested?.Invoke(tab);
+        }
+    }
+
+    /// <summary>为一个标签建连接信息面板的视图模型。</summary>
+    /// <remarks>
+    /// 取数按标签<b>此刻</b>的会话去取:重连之后会话 id 换了,面板点一下刷新就跟上新连接;
+    /// 标签断着、会话已经拆了时给 <see langword="null" />,面板如实说「没有连着」。
+    /// </remarks>
+    public SshConnectionInfoViewModel CreateConnectionInfo(TerminalTabViewModel tab)
+    {
+        ArgumentNullException.ThrowIfNull(tab);
+        string name = tab.Profile is { } profile && !string.IsNullOrWhiteSpace(profile.Name)
+            ? profile.Name
+            : tab.Title;
+        return new(name, () => tab.IsConnected ? _sshConnectionService?.GetClient(tab.SessionId)?.GetConnectionDetails() : null);
+    }
+
     /// <summary>单例切换(规范 §17.2):再次打开时聚焦现有面板。</summary>
     public void ToggleTunnelPanel()
     {
@@ -1761,8 +1953,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 id => _sshConnectionService?.GetClient(id)?.IsConnected == true,
                 id => _connectionWorkflowService?.DisconnectAsync(id) ?? Task.CompletedTask,
                 _appDataStore,
-                // 面板外的失败(启动时自动建立隧道)走右下角的错误提示。
-                message => Toasts.Error(message)
+                // 面板外的失败(启动时自动建立隧道)走右下角的错误提示;能重试的带一个「重试」。
+                (message, retry) => Toasts.Error(message, retry is null ? null : Strings.Get("Tunnel_RetryAction"), retry),
+                // 点了「重试」、隧道建起来了:面板多半没开,报一声。
+                message => Toasts.Info(message)
             );
             panel.CloseRequested += (_, _) => IsTunnelPanelOpen = false;
             TunnelPanel = panel;
@@ -1786,6 +1980,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     // ---- 消息中心(侧边栏铃铛) ----
 
     private INotificationCenter? _notificationCenter;
+
+    /// <summary>启动检查发现新版本后的后台下载入口(设置 → 常规 → 自动下载更新);null = 只检查不下载(单测)。</summary>
+    private readonly BackgroundUpdateDownload? _backgroundUpdateDownload;
 
     /// <summary>
     /// 装配消息中心:面板、铃铛角标,以及两个内容来源(本地的更新检查 + 订阅的资讯源)。
@@ -1867,12 +2064,22 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     private async Task RefreshNotificationSourcesAsync(
         INotificationCenter center, IAnnouncementFeed? feed, IUpdateService? updateService)
     {
+        // 启动这一轮要查更新时,设置必须是真读出来的:「启动时检查更新」关掉的人一个请求都不该发,
+        // 「自动下载更新」开着的人也不能因为快照还没缓存就被当成默认值(关)。
+        AppSettings settings = _latestSettings
+            ?? (updateService is null ? new() : await LoadSettingsSnapshotAsync().ConfigureAwait(true));
+        // 更新与资讯源分开投:自动下载要几十秒到几分钟,公告与崩溃提示不该排在它后面。
         IReadOnlyList<NotificationItem> incoming =
-            await NotificationSources.CollectAsync(_latestSettings ?? new(), feed, updateService)
-                                     .ConfigureAwait(true);
+            await NotificationSources.CollectAsync(settings, feed, updateService: null).ConfigureAwait(true);
         if (incoming.Count > 0)
         {
             await center.PublishAsync(incoming).ConfigureAwait(true);
+        }
+        if (updateService is not null
+            && await NotificationSources.CollectUpdateAsync(settings, updateService, _backgroundUpdateDownload)
+                                        .ConfigureAwait(true) is { } update)
+        {
+            await center.PublishAsync([update]).ConfigureAwait(true);
         }
     }
 
@@ -1940,6 +2147,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
         await Sidebar.RecentConnections.RefreshAsync();
         await RefreshSessionTreeAsync();
+        await LayoutTemplates.LoadAsync();
         RevealActiveSessionInSidebar();
         // 隧道的启停状态不落盘:重启后一律是已停止,只有勾了「程序启动时自动建立」的在这里替用户建好。
         // 不等它 —— 拨号可能要好几秒、还可能弹凭据提示,不该拖住启动。
@@ -1974,6 +2182,39 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         Sidebar.IsQuickCommandsVisible =
             _quickCommandRunner is not null && settings.Appearance.ShowQuickCommandsPanel;
         Layout.MultiRowTabs = settings.Appearance.MultiRowTabs;
+        ApplyTabBarPosition(settings.Appearance);
+    }
+
+    /// <summary>
+    /// 设置「标签栏位置」→ 停靠层:横排的标签条停在顶部还是底部,所有窗格一起变。
+    /// 启动、保存设置时由 <see cref="ApplyShellPreferences" /> 调用;设置页的外观预览也走这里
+    /// (主窗口的预览处理器),所以下拉一改当场可见,取消时随预览一起回滚。
+    /// </summary>
+    /// <remarks>
+    /// 只认 <c>bottom</c>,其余值(含手改配置留下的大小写变体)按顶部 —— 与设置页下拉的映射
+    /// (<c>SettingsViewModel.TabBarPositionIndex</c>)同一口径,两处才不会一个说顶部、一个摆在底部。
+    /// </remarks>
+    /// <param name="appearance">要应用的外观设置。</param>
+    public void ApplyTabBarPosition(AppearanceOptions appearance)
+    {
+        ArgumentNullException.ThrowIfNull(appearance);
+        Layout.TabsAtBottom = appearance.TabBarPosition == "bottom";
+    }
+
+    /// <summary>
+    /// 标签条上的「+」(<c>DockWorkspaceControl.NewTabRequested</c>):在那一格里新开会话。
+    /// 走的就是 <c>Ctrl+T</c> 那条命令 <c>session.new</c>(新建连接对话框),落点交给停靠层的既有规则 ——
+    /// 这里只保证那一格是活动窗格(它有标签时),新标签便落进它。
+    /// </summary>
+    /// <param name="pane">按下「+」的那一格。</param>
+    public void OpenNewTabInPane(DockGroup pane)
+    {
+        ArgumentNullException.ThrowIfNull(pane);
+        if (pane.ActiveDocument is { } active && !ReferenceEquals(Layout.ActiveDocument, active))
+        {
+            Layout.ActivateDocument(active);
+        }
+        Commands.Execute("session.new");
     }
 
     private void OnLayoutPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -2273,7 +2514,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     )
     {
         var template = QuickCommandTemplate.Parse(request.CommandText);
-        if (!template.HasVariables || QuickCommandVariablePrompt is not { } prompt)
+        if (!template.HasVariables || QuickCommandVariablePrompt is null)
         {
             // 没有占位(或没有窗口可以问,如 headless 测试)时原样发送,与引入占位之前一致。
             DeliverQuickCommand(request.TargetIds, request.CommandText);
@@ -2281,14 +2522,50 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
         FireAndForget.Run(async () =>
         {
-            IReadOnlyDictionary<string, string>? values = await prompt(request.CommandName, template);
-            if (values is null)
+            string? rendered = await AskQuickCommandVariablesAsync(request.CommandId, request.CommandName, template);
+            if (rendered is null)
             {
                 return;
             }
             // 弹框期间目标可能已经断开:发送时再按当下的标签挑一遍,只发给仍连着的。
-            DeliverQuickCommand(request.TargetIds, template.Render(values));
+            DeliverQuickCommand(request.TargetIds, rendered);
         });
+    }
+
+    /// <summary>
+    /// 快捷命令变量的询问:有占位就弹框(每格预填上一次填的值),确认后返回替换好的命令;取消返回 null。
+    /// 没有占位、或没有窗口可以问(headless)时原样返回。
+    /// </summary>
+    /// <remarks>
+    /// 快捷命令区的发送与终端命令补全选中一条快捷命令,走的是这同一处 —— 两个入口问的是同一个框、
+    /// 记的是同一份值,在补全里填过的 pod 名,到快捷命令区再发同一条命令时照样预填。
+    /// </remarks>
+    /// <param name="commandId">快捷命令 id;询问框按它记值,没有时按正文记。</param>
+    /// <param name="commandName">命令显示名(弹框标题)。</param>
+    /// <param name="commandText">命令正文。</param>
+    /// <returns>要发出去的命令正文,或 null(用户取消)。</returns>
+    internal Task<string?> ResolveQuickCommandTextAsync(Guid? commandId, string? commandName, string commandText)
+    {
+        var template = QuickCommandTemplate.Parse(commandText);
+        return template.HasVariables && QuickCommandVariablePrompt is not null
+            ? AskQuickCommandVariablesAsync(commandId, commandName, template)
+            : Task.FromResult<string?>(commandText);
+    }
+
+    private async Task<string?> AskQuickCommandVariablesAsync(Guid? commandId, string? commandName, QuickCommandTemplate template)
+    {
+        if (QuickCommandVariablePrompt is not { } prompt)
+        {
+            return template.Text;
+        }
+        IReadOnlyDictionary<string, string> initial = _quickCommandVariables.Prefill(commandId, template.Text, template);
+        IReadOnlyDictionary<string, string>? values = await prompt(commandName, template, initial);
+        if (values is null)
+        {
+            return null;
+        }
+        _quickCommandVariables.Remember(commandId, template.Text, template, values);
+        return template.Render(values);
     }
 
     /// <summary>
@@ -2423,6 +2700,11 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
         // 最近连接优先 —— 快捷访问桶(Enter 连接)。
         var recentProfileIds = new HashSet<Guid>();
+        Dictionary<Guid, SessionProfile> profilesById = [];
+        foreach (SessionProfile profile in _paletteProfiles)
+        {
+            _ = profilesById.TryAdd(profile.Id, profile);
+        }
         foreach (RecentConnectionItemViewModel item in Sidebar.RecentConnections.Connections)
         {
             RecentConnectionEntry captured = item.Entry;
@@ -2430,6 +2712,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             {
                 recentProfileIds.Add(pid);
             }
+            // 最近连接里那条若对得上一条已保存的配置,标签与备注同样能搜到它 ——
+            // 它在「会话」桶里因为去重不再出现,不带上的话按标签就搜不到最常用的那几台。
+            IReadOnlyList<string>? recentKeywords =
+                captured.ProfileId is { } recentId && profilesById.TryGetValue(recentId, out SessionProfile? recentProfile)
+                    ? PaletteKeywords(recentProfile)
+                    : null;
             string title = string.IsNullOrWhiteSpace(item.DisplayName)
                 ? captured.Host
                 : item.DisplayName;
@@ -2444,7 +2732,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     // 使用痕迹才不会被拆成两半。
                     id: captured.ProfileId is { } recentProfileId
                         ? $"session:{recentProfileId}"
-                        : $"recent:{captured.Host}"
+                        : $"recent:{captured.Host}",
+                    keywords: recentKeywords
                 )
             );
         }
@@ -2470,7 +2759,23 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     Strings.Get("Msg_EnterToConnect"),
                     groupName,
                     true,
-                    $"session:{captured.Id}"
+                    $"session:{captured.Id}",
+                    PaletteKeywords(captured)
+                )
+            );
+        }
+
+        // 布局模板:Enter 直接按模板开出这一组连接、排好分屏。
+        foreach (LayoutTemplateItemViewModel template in LayoutTemplates.Templates)
+        {
+            LayoutTemplateItemViewModel captured = template;
+            items.Add(
+                new(
+                    Strings.Get("LayoutTemplate_Title"),
+                    captured.Name,
+                    () => _ = LayoutTemplates.OpenAsync(captured),
+                    Strings.Get("LayoutTemplate_EnterToOpen"),
+                    id: $"layout:{captured.Template.Id}"
                 )
             );
         }
@@ -2490,6 +2795,29 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         return items;
     }
 
+    /// <summary>
+    /// 命令面板里一条会话的检索词:标签、主机、备注,按这个先后(越靠前权重越高,见 <see cref="PaletteScorer" />)。
+    /// </summary>
+    /// <remarks>
+    /// 标签原先只有编辑框与导入导出在读(§180),面板与会话树都不认,存了等于没存;备注(#549)也只能悬停时看到。
+    /// 主机一并带上:有名字的配置标题是名字,用户手里却常常只有一个 IP。
+    /// </remarks>
+    /// <param name="profile">连接配置。</param>
+    /// <returns>检索词。</returns>
+    internal static IReadOnlyList<string> PaletteKeywords(SessionProfile profile)
+    {
+        List<string> keywords = [.. (profile.Tags ?? []).Where(static tag => !string.IsNullOrWhiteSpace(tag))];
+        if (!string.IsNullOrWhiteSpace(profile.Host))
+        {
+            keywords.Add(profile.Host);
+        }
+        if (!string.IsNullOrWhiteSpace(profile.Notes))
+        {
+            keywords.Add(profile.Notes);
+        }
+        return keywords;
+    }
+
     /// <summary>读取设置快照并缓存到 <see cref="_latestSettings" />(无设置服务时用默认值)。</summary>
     private async Task<AppSettings> LoadSettingsSnapshotAsync()
     {
@@ -2505,10 +2833,15 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 用户立刻拿到可见、可关闭的标签)。握手由 <see cref="RunHandshakeAsync" /> 完成。
     /// 认证重试会复用同一标签,不重复建标签。
     /// </summary>
+    /// <param name="profile">连接配置。</param>
+    /// <param name="settings">设置快照。</param>
+    /// <param name="protocolLabel">状态栏上的协议名;插件终端协议传自己的页签名,默认 SSH。</param>
+    /// <param name="tabTitle">标签页标题;null = 配置的显示名(外部拉起的 <c>-newtab</c> 名字从这里进来)。</param>
     private (TerminalTabViewModel Tab, TerminalDocument Document) CreateConnectingTab(
         SessionProfile profile,
         AppSettings settings,
-        string? protocolLabel = null
+        string? protocolLabel = null,
+        string? tabTitle = null
     )
     {
         TerminalType terminalType = TerminalTypeExtensions.FromTermName(SessionTerminalSettings.TerminalType(profile, settings));
@@ -2523,7 +2856,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         string protocol = string.IsNullOrWhiteSpace(protocolLabel) ? "SSH" : protocolLabel;
         var terminalTab = new TerminalTabViewModel(terminalEmulator)
         {
-            Title = displayName,
+            // 标签名可以由调用方指定,状态栏那一行不跟着改:它说的是「真连到了哪」。
+            Title = tabTitle ?? displayName,
             ConnectionStatus = SessionStatus.Connecting,
             // 配了跳板的会话在状态栏点明经由跳板,确认链路生效。
             ConnectionSummary = profile.JumpHostProfileId is null
@@ -2537,9 +2871,15 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         };
         terminalTab.ReconnectRequested += (_, _) => _ = ReconnectTabAsync(terminalTab);
         terminalTab.Disconnected += (_, _) => OnTabDisconnected(terminalTab);
+        // 标签右键「连接信息」。
+        terminalTab.ConnectionInfoRequested += (_, _) => OpenConnectionInfo(terminalTab);
+        // 失败覆盖层上的「放开这几个算法并重连」。
+        terminalTab.AllowAlgorithmsRequested += (_, _) => _ = AllowAlgorithmsAndReconnectAsync(terminalTab);
 
         // 命令补全:注入建议提供器;提交(已回显校验)的命令进全局历史。
         terminalTab.SuggestionProvider = _suggestionProvider;
+        terminalTab.QuickCommandTextResolver = command =>
+            ResolveQuickCommandTextAsync(command.Id, command.Name, command.CommandText);
         terminalTab.CommandLineSubmitted += CommandHistory.Record;
 
         // 树上的状态圆点与「活跃/连接中/离线」标签不在这里订阅:一条配置可能同时开着
@@ -2679,6 +3019,113 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         CancellationToken cancellationToken = default
     ) =>
         ReconnectTabCoreAsync(tab, automatic: false, cancellationToken);
+
+    /// <summary>
+    /// 窗口注入的「放开这几个算法并重连」确认框:参数是标题与正文,确认返回 true。未挂时(headless)不改配置、不重连 ——
+    /// 这一步会降低那条连接的安全性,没人点头不能做。
+    /// </summary>
+    public Func<string, string, Task<bool>>? AllowAlgorithmsConfirmer { get; set; }
+
+    /// <summary>
+    /// 覆盖层上的「放开这几个算法并重连」:确认后把诊断点名的那几个算法写进谈不成的那一跳的连接配置
+    /// (自定义算法清单,<c>+</c> 追加),然后就地重连。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠️ 只写诊断点名的那几个(<see cref="SshAlgorithmRemedy" />),不开「允许老算法」总开关 ——
+    /// 那会一次放开三类 SHA-1 算法外加 SHA-1 的 RSA 用户签名,而谈不成的通常只是其中一类。
+    /// </para>
+    /// <para>
+    /// 跳板上谈不成时改的是那台跳板自己的配置(顺着「跳板主机」往上数到那一跳),不是终点的。
+    /// 库里有这条配置就改库里那份并落盘(不经标签手里那份:登录框交回来的副本可能带着用户没让记住的密码);
+    /// 终点那一跳还要同步改标签手里的副本,重连用的是它。「最近连接」重建的临时配置不在库里,只改这一次。
+    /// </para>
+    /// </remarks>
+    public async Task AllowAlgorithmsAndReconnectAsync(TerminalTabViewModel tab)
+    {
+        ArgumentNullException.ThrowIfNull(tab);
+        if (tab.AlgorithmRemedy is not { } remedy || tab.Profile is not { } profile
+            || tab.ConnectionStatus != SessionStatus.Disconnected || AllowAlgorithmsConfirmer is not { } confirm)
+        {
+            return;
+        }
+
+        SessionProfile? stored = null;
+        try
+        {
+            stored = await FindProfileAtHopAsync(profile, remedy.HopDepth).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            Toasts.Error(Strings.Format("SshAlgoFix_SaveFailed", ex.Message));
+            return;
+        }
+        if (remedy.HopDepth > 0 && stored is null)
+        {
+            // 跳板的配置找不到了(删了、链改了):不猜,让用户自己去改。
+            Toasts.Error(Strings.Format("SshAlgoFix_HopMissing", remedy.HopTarget ?? string.Empty));
+            return;
+        }
+        SessionProfile named = stored ?? profile;
+        string name = string.IsNullOrWhiteSpace(named.Name) ? HostAddress.FormatEndPoint(named.Host, named.Port) : named.Name;
+        string body = Strings.Format("SshAlgoFix_ConfirmBody", name, SshAlgorithmPreferences.Label(remedy.Kind),
+            string.Join(Environment.NewLine, remedy.Algorithms.Select(a => "  " + a)));
+        if (!await confirm(Strings.Get("SshAlgoFix_ConfirmTitle"), body).ConfigureAwait(true)
+            || tab.AlgorithmRemedy != remedy || tab.ConnectionStatus != SessionStatus.Disconnected)
+        {
+            return;
+        }
+
+        if (stored is not null)
+        {
+            stored.Ssh = remedy.ApplyTo(stored.Ssh);
+            try
+            {
+                if (_connectionWorkflowService is { } workflow)
+                {
+                    await workflow.SaveProfileAsync(stored).ConfigureAwait(true);
+                }
+                else if (_sessionRepository is { } repository)
+                {
+                    await repository.SaveSessionAsync(stored).ConfigureAwait(true);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
+            {
+                Toasts.Error(Strings.Format("SshAlgoFix_SaveFailed", ex.Message));
+                return;
+            }
+            _ = RefreshSessionTreeAsync();
+        }
+        if (remedy.HopDepth == 0)
+        {
+            profile.Ssh = remedy.ApplyTo(profile.Ssh);
+        }
+        await ReconnectTabAsync(tab).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// 库里那条配置:<paramref name="depth" /> 为 0 是这条本身,1 是它的跳板,2 是跳板的跳板……
+    /// 不在库里(临时配置)或链上断了时为 <see langword="null" />。
+    /// </summary>
+    private async Task<SessionProfile?> FindProfileAtHopAsync(SessionProfile profile, int depth)
+    {
+        if (_sessionRepository is not { } repository)
+        {
+            return null;
+        }
+        SessionProfile? current = await repository.GetSessionAsync(profile.Id).ConfigureAwait(true);
+        HashSet<Guid> visited = [profile.Id];
+        for (int i = 0; i < depth; i++)
+        {
+            if (current?.JumpHostProfileId is not { } next || !visited.Add(next))
+            {
+                return null;
+            }
+            current = await repository.GetSessionAsync(next).ConfigureAwait(true);
+        }
+        return current;
+    }
 
     /// <summary>
     /// 断线后的自动重连(倒计时到点、睡眠唤醒后的批量重连):同 <see cref="ReconnectTabAsync" />,
@@ -2835,7 +3282,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             // 重连失败:保留标签,标签页内覆盖层显示“连接失败 + 原因”(设计 yxjmg),不弹全局框。
             LastConnectionError = DescribeConnectionError(ex, tab.Profile);
             Toasts.Error(LastConnectionError);
-            tab.MarkDisconnected(LastConnectionError);
+            // 败在算法协商上、对端有本版实现了只是没放开的:覆盖层多一颗「放开这几个算法并重连」。
+            tab.MarkDisconnected(LastConnectionError, SshAlgorithmRemedy.Find(ex));
         }
         finally
         {
@@ -3741,7 +4189,152 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <see cref="OpenManyConcurrency" /> 条同时握手。单条失败只在它自己的标签页里提示,不影响其余。
     /// </summary>
     /// <param name="profiles">要打开的连接。</param>
-    public async Task OpenProfilesAsync(IReadOnlyList<SessionProfile> profiles)
+    public Task OpenProfilesAsync(IReadOnlyList<SessionProfile> profiles) => OpenProfilesCoreAsync(profiles, opened: null);
+
+    /// <summary>
+    /// 打开一组连接并把开出来的终端拉进同一个同步输入频道:对一组机器批量下发命令
+    /// (资源管理器分组菜单「打开全部并同步输入」、多选菜单「打开 N 个连接并同步输入」)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>只开终端。</b>同步输入是往终端里打字,SFTP / FTP / 插件的文件协议与工作台开出来的是文档,进不了频道 ——
+    /// 这些连接跳过不开(打开它们是「打开全部连接」的事),结束时的提示里报一个数。插件协议是不是终端要问插件
+    /// (可能触发惰性激活,与真去连它时一样)。
+    /// </para>
+    /// <para>
+    /// <b>总是新开标签,已经开着的同配置标签不动。</b>与「打开全部连接」(§180)同一口径;而且把一个开着的标签
+    /// 拉进频道,它可能正停在 vim 里、或者本来就在别的频道 —— 广播打进去的后果用户看不见也撤不回。
+    /// 同一台机器因此可能开着两个标签,但只有这一批新开的在频道里,命令不会打两遍。
+    /// </para>
+    /// <para>
+    /// <b>频道挑第一个空着的</b>(A → D,没有任何标签在里面,也没被另一批正在开的预订);四个都在用就一个都不开,
+    /// 浮层说明原因 —— 混进一个已有成员的频道,这批命令就会打到不相干的机器上。
+    /// 每个标签连完(连上或失败)就入频道:失败的那个之后重连上来,照样收得到;握手期间敲的字它收不到
+    /// (频道只往连着的标签转发),所以全部连完时报一句「几个进了频道、几个没连上」。
+    /// 超过 10 条先确认、最多 6 条同时握手,与 §180 相同(确认在视图层,<c>SessionTreeActions</c>)。
+    /// </para>
+    /// </remarks>
+    /// <param name="profiles">要打开的连接(按树上的顺序)。</param>
+    /// <returns>挑中的频道;没开(没有终端类连接、四个频道都在用)时为 null。</returns>
+    public async Task<SyncInputChannel?> OpenProfilesInSyncChannelAsync(IReadOnlyList<SessionProfile> profiles)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        List<SessionProfile> terminals = [];
+        foreach (SessionProfile profile in profiles)
+        {
+            if (await OpensTerminalAsync(profile).ConfigureAwait(true))
+            {
+                terminals.Add(profile);
+            }
+        }
+        int skipped = profiles.Count - terminals.Count;
+        if (terminals.Count == 0)
+        {
+            Toasts.Warning(Strings.Get("Tree_SyncedNoTerminals"));
+            return null;
+        }
+        if (FreeSyncChannel() is not { } channel)
+        {
+            Toasts.Warning(Strings.Get("Tree_SyncedNoFreeChannel"));
+            return null;
+        }
+
+        _reservedSyncChannels.Add(channel);
+        List<TerminalTabViewModel> joined = [];
+        try
+        {
+            await OpenProfilesCoreAsync(terminals, tab =>
+            {
+                // 连接途中用户把标签关了:那条就不算了。
+                if (FindDocument(tab) is null)
+                {
+                    return;
+                }
+                tab.JoinSyncChannel(channel);
+                joined.Add(tab);
+            }).ConfigureAwait(true);
+        }
+        finally
+        {
+            _reservedSyncChannels.Remove(channel);
+        }
+
+        if (joined.Count == 0)
+        {
+            return null;
+        }
+        int connected = joined.Count(static tab => tab.IsConnected);
+        List<string> parts = [Strings.Format("Tree_SyncedDone", joined.Count, channel)];
+        if (connected < joined.Count)
+        {
+            parts.Add(Strings.Format("Tree_SyncedNotConnected", joined.Count - connected));
+        }
+        if (skipped > 0)
+        {
+            parts.Add(Strings.Format("Tree_SyncedSkipped", skipped));
+        }
+        string message = string.Join(Strings.Get("BatchEdit_PreviewSeparator"), parts);
+        if (connected < joined.Count || skipped > 0)
+        {
+            Toasts.Warning(message);
+        }
+        else
+        {
+            Toasts.Info(message);
+        }
+        return channel;
+    }
+
+    /// <summary>正被「打开并同步输入」预订着的频道(那一批还在开,频道里暂时一个标签都没有)。</summary>
+    private readonly HashSet<SyncInputChannel> _reservedSyncChannels = [];
+
+    /// <summary>第一个空着的同步输入频道(A → D):没有任何标签在里面,也没被正在开的另一批预订;都在用时为 null。</summary>
+    private SyncInputChannel? FreeSyncChannel()
+    {
+        var used = TerminalTabs.Select(static tab => tab.SyncChannel).OfType<SyncInputChannel>().ToHashSet();
+        foreach (SyncInputChannel candidate in Enum.GetValues<SyncInputChannel>())
+        {
+            if (!used.Contains(candidate) && !_reservedSyncChannels.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>这条连接打开之后是不是一个终端(能进同步输入频道)。</summary>
+    private async Task<bool> OpensTerminalAsync(SessionProfile profile)
+    {
+        switch (profile.ConnectionType)
+        {
+            case ConnectionType.SSH:
+                return true;
+            case ConnectionType.Plugin when _protocolRegistry is { } protocols:
+                if (protocols.KindOf(profile.PluginProtocolId) == PluginConnectionKind.Workspace)
+                {
+                    return false;
+                }
+                try
+                {
+                    PluginProtocolRegistration? registration =
+                        await protocols.ResolveAsync(profile.PluginProtocolId).ConfigureAwait(true);
+                    return registration is { Terminal: not null };
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // 插件激活失败:这条开不出终端,跳过;真去连它时那边会如实报错。
+                    System.Diagnostics.Trace.WriteLine($"[VelaShell] Resolve {profile.PluginProtocolId} failed: {ex.Message}");
+                    return false;
+                }
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="OpenProfilesAsync" /> 的本体:限并发地逐条连,每条连完(拿到终端标签时)回调一次。
+    /// </summary>
+    private async Task OpenProfilesCoreAsync(IReadOnlyList<SessionProfile> profiles, Action<TerminalTabViewModel>? opened)
     {
         ArgumentNullException.ThrowIfNull(profiles);
         using var gate = new SemaphoreSlim(OpenManyConcurrency);
@@ -3752,7 +4345,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     await gate.WaitAsync().ConfigureAwait(true);
                     try
                     {
-                        await TryConnectProfileAsync(profile).ConfigureAwait(true);
+                        if (await TryConnectProfileAsync(profile).ConfigureAwait(true) is { } tab)
+                        {
+                            opened?.Invoke(tab);
+                        }
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
@@ -3773,19 +4369,40 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <see cref="LastConnectionError" /> 并反映在状态栏中,而非让应用崩溃。
     /// 凭据缺失或认证失败时通过 <see cref="InteractiveAuthenticator" /> 走两步验证弹窗(最多重试 3 次)。
     /// </summary>
+    public Task<TerminalTabViewModel?> TryConnectProfileAsync(
+        SessionProfile profile,
+        CancellationToken cancellationToken = default
+    ) =>
+        TryConnectProfileAsync(profile, tabTitle: null, cancellationToken);
+
+    /// <summary>
+    /// 同 <see cref="TryConnectProfileAsync(SessionProfile, CancellationToken)" />,但标签页标题用调用方给的名字。
+    /// </summary>
+    /// <remarks>
+    /// 外部拉起(Xshell 兼容登录)的 <c>-newtab &lt;会话名&gt;</c> 从这里进来(#475):堡垒机给一排标签起的名字
+    /// 是用户分辨它们的唯一线索,而配置名是现搭的 <c>user@堡垒机:端口</c>,一排都一样。
+    /// 名字只上标签(含 SFTP / FTP 的占位与成品标签),不改配置本身 —— 复用已保存的配置时改了它的名称,
+    /// 会随最近连接时间一起落盘;状态栏也照旧显示配置的名称,那一行说的是「真连到了哪」。
+    /// </remarks>
+    /// <param name="profile">连接配置。</param>
+    /// <param name="tabTitle">标签页标题;null 或空白 = 按配置起名。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>终端标签(终端类连接),或 null(文档类连接、取消、失败撤标签)。</returns>
     public async Task<TerminalTabViewModel?> TryConnectProfileAsync(
         SessionProfile profile,
+        string? tabTitle,
         CancellationToken cancellationToken = default
     )
     {
+        tabTitle = string.IsNullOrWhiteSpace(tabTitle) ? null : tabTitle;
         if (profile.ConnectionType == ConnectionType.SFTP)
         {
-            await OpenSftpDocumentForProfileAsync(profile, cancellationToken).ConfigureAwait(true);
+            await OpenSftpDocumentForProfileAsync(profile, null, cancellationToken, tabTitle).ConfigureAwait(true);
             return null;
         }
         if (profile.ConnectionType == ConnectionType.FTP)
         {
-            await OpenFtpDocumentForProfileAsync(profile, cancellationToken).ConfigureAwait(true);
+            await OpenFtpDocumentForProfileAsync(profile, null, cancellationToken, tabTitle).ConfigureAwait(true);
             return null;
         }
         if (profile.ConnectionType == ConnectionType.Plugin)
@@ -3860,7 +4477,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             }
             if (tab is null)
             {
-                (tab, document) = CreateConnectingTab(current, settings);
+                (tab, document) = CreateConnectingTab(current, settings, tabTitle: tabTitle);
             }
             else
             {
@@ -3930,7 +4547,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 }
 
                 // 认证失败且可交互:标记失败态并循环回去重新弹凭据重试。
-                tab.MarkConnectionFailed(LastConnectionError);
+                // 败在算法协商上的同时带上一键补救(见 SshAlgorithmRemedy)。
+                tab.MarkConnectionFailed(LastConnectionError, SshAlgorithmRemedy.Find(ex));
                 if (isAuth && InteractiveAuthenticator is not null)
                 {
                     continue;
@@ -3980,6 +4598,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         /// <param name="reuse">重试时接手的既有占位标签;首次连接传 <see langword="null" />。</param>
         /// <param name="retry">失败卡片上「重新连接」要跑的流程。</param>
         /// <param name="displayName">占位标签上的名称;不给则取配置的显示名(见 <see cref="ConnectingDocument" />)。</param>
+        /// <param name="secondary">双栏远程文档的右栏配置(见 <see cref="ConnectingDocument.SecondaryProfile" />)。</param>
         public DocumentConnectUi(
             MainWindowViewModel owner,
             SessionProfile profile,
@@ -3987,13 +4606,14 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             ConnectingDocument? reuse,
             Func<ConnectingDocument, Task> retry,
             CancellationToken outer,
-            string? displayName = null)
+            string? displayName = null,
+            SessionProfile? secondary = null)
         {
             _owner = owner;
             _cancellation = CancellationTokenSource.CreateLinkedTokenSource(outer);
             if (reuse is null)
             {
-                Document = new(profile, typeLabel, displayName);
+                Document = new(profile, typeLabel, displayName) { SecondaryProfile = secondary };
                 _owner.Layout.AddDocument(Document);
             }
             else
@@ -4084,10 +4704,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <param name="profile">会话配置。</param>
     /// <param name="reuse">失败卡片上点「重新连接」时接手的既有占位标签。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="tabTitle">标签页标题;null = 配置的显示名(外部拉起的 <c>-newtab</c> 名字从这里进来)。</param>
     private async Task<SftpDocument?> OpenSftpDocumentForProfileAsync(
         SessionProfile profile,
         ConnectingDocument? reuse,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? tabTitle = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         if (_connectionWorkflowService is null)
@@ -4100,8 +4722,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         SessionProfile latest = profile;
         using var ui = new DocumentConnectUi(
             this, profile, "SFTP", reuse,
-            document => OpenSftpDocumentForProfileAsync(latest, document, CancellationToken.None),
-            cancellationToken);
+            document => OpenSftpDocumentForProfileAsync(latest, document, CancellationToken.None, tabTitle),
+            cancellationToken,
+            tabTitle);
         (DocumentSessionConnection? connection, DocumentConnectFailure failure) =
             await ConnectSshDocumentSessionAsync(profile, ui).ConfigureAwait(true);
         if (connection is null)
@@ -4117,16 +4740,22 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             return null;
         }
         AppSettings settings = _latestSettings ?? await LoadSettingsSnapshotAsync().ConfigureAwait(true);
-        var document = new SftpDocument(
-            new SftpDocumentViewModel(
-                connection.Profile,
-                connection.Session!,
-                _connectionWorkflowService,
-                _sftpService,
-                settings.Transfer,
-                FileTransfer,
-                QueryDefaultEditorPathAsync,
-                UpdateProfileBookmarksAsync));
+        var sshViewModel = new SftpDocumentViewModel(
+            connection.Profile,
+            connection.Session!,
+            _connectionWorkflowService,
+            _sftpService,
+            settings.Transfer,
+            FileTransfer,
+            QueryDefaultEditorPathAsync,
+            UpdateProfileBookmarksAsync);
+        // 远端搜索走这条 SSH 连接的 exec 通道(FTP 与插件协议的文档没有,不挂)。
+        sshViewModel.RemoteFiles.RemoteSearch = _remoteSearch;
+        var document = new SftpDocument(sshViewModel);
+        if (tabTitle is not null)
+        {
+            document.Title = tabTitle;
+        }
         ui.HandOver(document);
         // 与 FTP 同理:连接续体可能落在后台线程上,树节点是绑定属性,必须回主线程再改。
         TrackDocumentSession(connection.SessionId, connection.Profile.Id, SessionStatus.Connected);
@@ -4328,10 +4957,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <param name="profile">会话配置。</param>
     /// <param name="reuse">失败卡片上点「重新连接」时接手的既有占位标签。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="tabTitle">标签页标题;null = 配置的显示名(外部拉起的 <c>-newtab</c> 名字从这里进来)。</param>
     private async Task<SftpDocument?> OpenFtpDocumentForProfileAsync(
         SessionProfile profile,
         ConnectingDocument? reuse,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? tabTitle = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         if (_ftpSessionService is null || _sftpService is null)
@@ -4343,8 +4974,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         SessionProfile latest = profile;
         using var ui = new DocumentConnectUi(
             this, profile, FtpTypeLabel(profile), reuse,
-            document => OpenFtpDocumentForProfileAsync(latest, document, CancellationToken.None),
-            cancellationToken);
+            document => OpenFtpDocumentForProfileAsync(latest, document, CancellationToken.None, tabTitle),
+            cancellationToken,
+            tabTitle);
         (DocumentSessionConnection? connection, DocumentConnectFailure failure) =
             await ConnectFtpDocumentSessionAsync(profile, ui).ConfigureAwait(true);
         if (connection is null)
@@ -4364,6 +4996,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 FileTransfer,
                 QueryDefaultEditorPathAsync,
                 UpdateProfileBookmarksAsync));
+        if (tabTitle is not null)
+        {
+            document.Title = tabTitle;
+        }
         ui.HandOver(document);
         TrackDocumentSession(connection.SessionId, profile.Id, SessionStatus.Connected);
         return document;
@@ -4488,7 +5124,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             this, left, "SFTP", reuse,
             document => OpenDualSftpDocumentAsync(latestLeft, latestRight, document, CancellationToken.None),
             cancellationToken,
-            $"{ProfileDisplayName(left)} ⇄ {ProfileDisplayName(right)}");
+            $"{ProfileDisplayName(left)} ⇄ {ProfileDisplayName(right)}",
+            right);
         var connections = new List<DocumentSessionConnection>(2);
         try
         {
@@ -4521,14 +5158,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             }
 
             AppSettings settings = _latestSettings ?? await LoadSettingsSnapshotAsync().ConfigureAwait(true);
-            var document = new DualSftpDocument(
-                new DualSftpDocumentViewModel(
-                    ToEndpoint(connections[0]),
-                    ToEndpoint(connections[1]),
-                    _sftpService,
-                    settings.Transfer,
-                    FileTransfer,
-                    QueryDefaultEditorPathAsync));
+            var dualViewModel = new DualSftpDocumentViewModel(
+                ToEndpoint(connections[0]),
+                ToEndpoint(connections[1]),
+                _sftpService,
+                settings.Transfer,
+                FileTransfer,
+                QueryDefaultEditorPathAsync);
+            // 两栏各自判断:是 SSH 会话的那一栏才出现「搜索」(见 FileBrowserViewModel.CanSearchRemote)。
+            dualViewModel.LeftFiles.RemoteSearch = _remoteSearch;
+            dualViewModel.RightFiles.RemoteSearch = _remoteSearch;
+            var document = new DualSftpDocument(dualViewModel);
             ui.HandOver(document);
             // 树上两条配置各自点亮(登记用原始配置的 Id,理由见 TrackDocumentSession)。
             TrackDocumentSession(connections[0].SessionId, left.Id, SessionStatus.Connected);
@@ -5674,7 +6314,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         SessionProfile? profile = null
     ) =>
         TerminalSettingsApplier.Apply(
-            emulator, settings, ActiveUiTheme, forceUtf8, profile, MultilinePasteConfirmer);
+            emulator, settings, ActiveUiTheme, forceUtf8, profile, MultilinePasteConfirmer, CommandRerunConfirmer);
 
     /// <summary>
     /// 当前实际生效的界面主题:「跟随系统」按应用的实际变体落到 VelaDark / VelaLight。
@@ -6271,6 +6911,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 .Distinct()];
         }
         await Task.WhenAll(closeTasks);
+
+        // 传输队列平时攒一秒落一次盘;退出前补落一次,刚传完的文件下次启动就不会又出现在「待继续」里。
+        // 只等两秒:库卡住了也不能把退出拖住。
+        try
+        {
+            await FileTransfer.Journal.FlushAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        catch (TimeoutException)
+        {
+        }
     }
 
     private async Task OnDocumentClosedAsync(TerminalDocument document)

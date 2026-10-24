@@ -51,10 +51,12 @@ internal static class SshConnectionAssembler
     /// <param name="Connect">连接工厂。</param>
     /// <param name="ConnectTimeout">建链超时。</param>
     /// <param name="Banners">认证时服务端发来的横幅(链上每一跳都收),开 shell 时作为提示写进终端。</param>
+    /// <param name="Route">这次连接实际经过的代理与跳板(连接信息面板要列);每次 <paramref name="Connect" /> 开始时清空重记。</param>
     internal readonly record struct Assembled(
         Func<CancellationToken, ValueTask<SshConnection>> Connect,
         TimeSpan ConnectTimeout,
-        SshServerBanners Banners);
+        SshServerBanners Banners,
+        SshRouteRecorder Route);
 
     /// <summary>按连接信息装配。</summary>
     /// <param name="info">连接信息(含跳板链)。</param>
@@ -93,26 +95,37 @@ internal static class SshConnectionAssembler
 
         TimeSpan connectTimeout = ConnectTimeout(settings);
         SshServerBanners banners = new();
+        SshRouteRecorder route = new();
 
         // 最内层跳板真正出网,代理装在它身上;外层每一跳用库的跳板拨号器包住内层。
         // 每一跳的连接由这里现建(要先连 agent、按跳准备凭据),所以用回调那一种。
-        ISshTransportDialer dialer = new ProxyTransportDialer(proxyResolver);
+        ISshTransportDialer dialer = new ProxyTransportDialer(proxyResolver, route);
 
-        foreach (VelaConnectionInfo hop in JumpChainInnerToOuter(info))
+        List<VelaConnectionInfo> chain = JumpChainInnerToOuter(info);
+        for (int i = 0; i < chain.Count; i++)
         {
+            VelaConnectionInfo hop = chain[i];
+            // 离终点几跳:终点的跳板是 1(连接配置里的「跳板主机」),它的跳板是 2……协商失败的一键补救据此找到要改哪条配置。
+            int depth = chain.Count - i;
             ISshTransportDialer inner = dialer;
             dialer = DialerChain.Jump(
                 new SshEndPoint(hop.Host, hop.Port),
                 (jump, ct) => ConnectAsync(hop, policy, settings, inner, connectTimeout, keyboardPrompt, banners,
-                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump, ct));
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump, depth, route, ct));
         }
 
         ISshTransportDialer finalDialer = dialer;
         return new Assembled(
-            ct => ConnectAsync(info, policy, settings, finalDialer, connectTimeout, keyboardPrompt, banners,
-                tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump: null, ct),
+            ct =>
+            {
+                // 跳板按连上的先后记(最内一跳最先连上,也就是从近到远);重连时从头记。
+                route.Begin();
+                return ConnectAsync(info, policy, settings, finalDialer, connectTimeout, keyboardPrompt, banners,
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump: null, hopDepth: 0, route, ct);
+            },
             connectTimeout,
-            banners);
+            banners,
+            route);
     }
 
     /// <summary>
@@ -146,6 +159,8 @@ internal static class SshConnectionAssembler
         TimeSpan? tailscaleCheckTimeout,
         bool isAutomaticReconnect,
         SshJumpContext? jump,
+        int hopDepth,
+        SshRouteRecorder route,
         CancellationToken cancellationToken)
     {
         bool isTailscale = info.AuthMethod == AuthMethod.Tailscale;
@@ -301,6 +316,12 @@ internal static class SshConnectionAssembler
                     ? await SshConnection.ConnectAsync(options, connectToken).ConfigureAwait(false)
                     : await jump.ConnectAsync(options, connectToken).ConfigureAwait(false);
             }
+            catch (SshNegotiationException ex) when (SshAlgorithmRemedy.TagHop(ex, hopDepth, target))
+            {
+                // 过滤器只记「谈不成的是哪一跳」、永远不接住:库会把它包进「连不上跳板」往外传,
+                // 覆盖层上的一键补救据此改对那一跳的配置,而不是终点的。
+                throw;
+            }
             catch (Exception ex) when (isTailscale)
             {
                 // 调用方取消优先，且不把带服务端原文的异常附到取消链上。
@@ -350,7 +371,7 @@ internal static class SshConnectionAssembler
             {
                 // 在真实认证跳转换；Core 异常会穿透外层拨号，不能被 Tailscale 目标重新归类。
                 string message = $"{SshInterop.LocalizeAuth(ex)}\n{HostAddress.FormatTarget(info.Username, info.Host, info.Port)}";
-                string attempts = ex.DescribeAttempts();
+                string attempts = SshInterop.DescribeAttempts(ex);
                 throw new VelaSshAuthenticationException(
                     string.IsNullOrWhiteSpace(attempts) ? message : $"{message}\n{attempts}", ex);
             }
@@ -378,6 +399,11 @@ internal static class SshConnectionAssembler
 
             // 跳板链上的每一跳都走这里:哪一跳先断、为什么断,都进诊断日志
             SshDisconnectLog.Watch(connection, HostAddress.FormatTarget(info.Username, info.Host, info.Port));
+            // 成功连上的跳板也记下(库的拨号器只在失败时留逐跳结果):连接信息面板据此列出经过的每一跳。
+            if (jump is not null)
+            {
+                route.AddHop(info, connection);
+            }
             return connection;
         }
         finally

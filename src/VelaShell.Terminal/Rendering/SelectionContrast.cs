@@ -42,8 +42,8 @@ internal static class SelectionContrast
     /// <para>对齐 VS Code 自家亮色主题的 15.9。</para>
     /// <para>
     /// 比暗色低一档不是凑数:亮色主题的文字是<b>深色</b>的,而这里推选区底的方向是**压深** ——
-    /// 推得越狠,选区底就越贴近文字自身的明度,<see cref="ReadableForeground" /> 那道守卫
-    /// 被触发得越多,代价是选中一段就把 <c>ls --color</c> 的配色抹成兜底色。
+    /// 推得越狠,选区底就越贴近文字自身的明度,<see cref="ReadableOnSelection" /> 那道守卫
+    /// 被触发得越多 —— 它虽然保色相,终究要把撞色的前景提亮 / 压暗,离方案的原色越来越远。
     /// 暗色主题上推的方向是提亮,离深色文字越推越远,没有这一层张力,因此吃得起更高的一档。
     /// </para>
     /// </remarks>
@@ -59,8 +59,8 @@ internal static class SelectionContrast
         Lightness(background) < 50 ? MinLightnessDeltaOnDark : MinLightnessDeltaOnLight;
 
     /// <summary>
-    /// 选中格的前景与选区底之间的最小感知亮度差(0–1 标度)。
-    /// 低于此值就把前景换成 <see cref="ReadableForeground" /> 给的兜底色 —— 选区底一旦不透明,
+    /// 选中格的前景与选区底之间的最小感知亮度差(0–1 标度)—— 「撞了」的判据,渲染热路径上逐格比的就是它。
+    /// 低于此值就由 <see cref="ReadableOnSelection" /> 保色相地推开明度 —— 选区底一旦不透明,
     /// 原本压在终端底上读得清的暗色前景(Solarized Dark 的 ansi black #073642 是最极端的一例)
     /// 就可能贴到明度相近的选区底上,选中即消失。
     /// </summary>
@@ -107,18 +107,76 @@ internal static class SelectionContrast
     }
 
     /// <summary>
-    /// 前景与选区底撞明度时的兜底前景色:优先用终端默认前景(观感上最不突兀),
-    /// 它自己也撞的话才退到纯白/纯黑里较远的那个。
+    /// 撞上选区底的前景要推到的 WCAG 对比度。
     /// </summary>
-    public static Rgba ReadableForeground(Rgba selectionFill, Rgba defaultForeground)
+    /// <remarks>
+    /// 与 ANSI 颜色压在自家终端底上的要求同一档(<c>UiThemeCatalogTests</c> 的
+    /// <c>MinimumGlyphContrast</c>,AA 的图形与界面组件档):选中之后的字不该比没选中时更难认。
+    /// 只推到 <see cref="MinForegroundDelta" /> 那道亮度差是不够的 —— 对着内置方案量过,
+    /// 那样推完只有 1.55:1 ~ 2.3:1,看得见却费眼。
+    /// </remarks>
+    internal const double MinForegroundContrast = 3.0;
+
+    /// <summary>
+    /// 前景与选区底撞明度时,<b>保住色相、只调明度</b>:往白(或黑)里混,混到与选区底的 WCAG 对比度
+    /// 够 <see cref="MinForegroundContrast" /> 就停手。本来就够的原样返回。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 此前撞上的格一律换成同一个兜底色(终端默认前景,它也撞就纯白 / 纯黑):读得清了,可选中一段
+    /// <c>ls --color</c> 的目录蓝、可执行绿、压缩包红就全成了一个颜色 —— 用户拖选正是想看清这一段。
+    /// 往白 / 黑里混不改色相(三个通道同比例地向同一端靠),推的量又只到够看清为止。
+    /// </para>
+    /// <para>
+    /// <b>往前景本来所在的那一侧推</b>(比选区底亮就提亮、暗就压暗),改动最小;那一侧推到头也够不着
+    /// (选区底本身已经贴着纯黑 / 纯白)才换到另一侧 —— 两侧里总有一侧够得着 4.5:1 以上。
+    /// </para>
+    /// <para>
+    /// 走的是带 <c>Math.Pow</c> 的相对亮度与二分,不便宜:渲染层只在 <see cref="Brightness" />
+    /// 判出「撞了」之后才调,并按前景色缓存结果(撞色的前景就那么几种)。
+    /// </para>
+    /// </remarks>
+    /// <param name="foreground">格子本来要画的前景色。</param>
+    /// <param name="fill">整定后的选区填充色(<see cref="Fill" /> 的结果)。</param>
+    public static Rgba ReadableOnSelection(Rgba foreground, Rgba fill)
     {
-        double fill = Brightness(selectionFill);
-        if (Math.Abs(Brightness(defaultForeground) - fill) >= MinForegroundDelta)
+        foreground = Opaque(foreground);
+        double fillLuminance = RelativeLuminance(fill);
+        double luminance = RelativeLuminance(foreground);
+        if (ContrastRatio(luminance, fillLuminance) >= MinForegroundContrast)
         {
-            return defaultForeground;
+            return foreground;
         }
-        return fill < 0.5 ? Rgba.FromRgb(0xFF, 0xFF, 0xFF) : Rgba.FromRgb(0x00, 0x00, 0x00);
+        bool whiteReaches = ContrastRatio(1.0, fillLuminance) >= MinForegroundContrast;
+        bool blackReaches = ContrastRatio(0.0, fillLuminance) >= MinForegroundContrast;
+        bool up = luminance >= fillLuminance ? whiteReaches || !blackReaches : !blackReaches;
+        byte target = up ? (byte)0xFF : (byte)0x00;
+
+        // 二分出刚好够的混合比例;上界 1.0(纯白 / 纯黑)按上面的选边必然够得着。
+        double low = 0.0;
+        double high = 1.0;
+        for (int i = 0; i < 14; i++)
+        {
+            double mid = (low + high) / 2;
+            if (ContrastRatio(RelativeLuminance(Mix(foreground, target, mid)), fillLuminance) >= MinForegroundContrast)
+            {
+                high = mid;
+            }
+            else
+            {
+                low = mid;
+            }
+        }
+        return Opaque(Mix(foreground, target, high));
     }
+
+    /// <summary>WCAG 2 的对比度:<c>(亮 + 0.05) / (暗 + 0.05)</c>。</summary>
+    internal static double ContrastRatio(double luminanceA, double luminanceB) =>
+        (Math.Max(luminanceA, luminanceB) + 0.05) / (Math.Min(luminanceA, luminanceB) + 0.05);
+
+    /// <summary>WCAG 2 的相对亮度(0–1,sRGB 线性化后的 Rec.709 加权)。</summary>
+    internal static double RelativeLuminance(Rgba color) =>
+        (0.2126 * Linear(color.R)) + (0.7152 * Linear(color.G)) + (0.0722 * Linear(color.B));
 
     /// <summary>
     /// 感知亮度(0–1)。用的是 <c>0.299/0.587/0.114</c> 这套直接压在 sRGB 通道上的老式加权,
@@ -131,7 +189,7 @@ internal static class SelectionContrast
     /// <summary>CIE L*(0–100)。只在换主题 / 换配色时算,可以走完整的 sRGB 线性化。</summary>
     internal static double Lightness(Rgba color)
     {
-        double y = (0.2126 * Linear(color.R)) + (0.7152 * Linear(color.G)) + (0.0722 * Linear(color.B));
+        double y = RelativeLuminance(color);
         return y > 0.008856 ? (116 * Math.Cbrt(y)) - 16 : 903.3 * y;
     }
 

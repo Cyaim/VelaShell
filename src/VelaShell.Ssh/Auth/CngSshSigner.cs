@@ -65,7 +65,11 @@ public sealed class CngSshSigner : ISshSigner, IDisposable
         catch (CryptographicException ex)
         {
             throw new SshPrivateKeyException(SshFailureReason.KeyFileUnreadable,
-                $"打不开密钥库 {actual.Provider} 里的钥「{keyName}」：{ex.Message}", ex);
+                $"打不开密钥库 {actual.Provider} 里的钥「{keyName}」：{ex.Message}", ex)
+            {
+                ProblemKind = SshKeyProblemKind.KeyStoreUnavailable,
+                Origin = keyName,
+            };
         }
 
         try
@@ -75,13 +79,22 @@ public sealed class CngSshSigner : ISshSigner, IDisposable
                 : key.AlgorithmGroup == CngAlgorithmGroup.ECDsa
                     ? InMemorySshSigner.FromEcdsa(new ECDsaCng(key))
                     : throw new SshPrivateKeyException(SshFailureReason.Unsupported,
-                        $"「{keyName}」是 {key.AlgorithmGroup?.AlgorithmGroup ?? "未知"} 钥，不能用来签名：只认 RSA 与 ECDSA。");
+                        $"「{keyName}」是 {key.AlgorithmGroup?.AlgorithmGroup ?? "未知"} 钥，不能用来签名：只认 RSA 与 ECDSA。")
+                    {
+                        ProblemKind = SshKeyProblemKind.UnsupportedKeyType,
+                        Origin = keyName,
+                        AlgorithmName = key.AlgorithmGroup?.AlgorithmGroup,
+                    };
             return new CngSshSigner(key, inner, keyName, actual.Provider);
         }
         catch (Exception ex) when (ex is not SshPrivateKeyException)
         {
             key.Dispose();
-            throw new SshPrivateKeyException(SshFailureReason.Unsupported, $"「{keyName}」用不了：{ex.Message}", ex);
+            throw new SshPrivateKeyException(SshFailureReason.Unsupported, $"「{keyName}」用不了：{ex.Message}", ex)
+            {
+                ProblemKind = SshKeyProblemKind.KeyStoreUnavailable,
+                Origin = keyName,
+            };
         }
         catch
         {

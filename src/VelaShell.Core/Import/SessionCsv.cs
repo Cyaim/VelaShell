@@ -43,12 +43,6 @@ public static class SessionCsv
     /// </summary>
     private static readonly Dictionary<string, SessionCsvColumns> Aliases = BuildAliases();
 
-    /// <summary>以单引号开头即被 Excel 当作文本的那几个「公式起始字符」。</summary>
-    private const string FormulaLeads = "=+-@\t\r";
-
-    /// <summary>字段里出现就得加引号的字符:三种分隔符、引号与换行。</summary>
-    private static readonly System.Buffers.SearchValues<char> QuoteTriggers = System.Buffers.SearchValues.Create(",\"\r\n;\t");
-
     /// <summary>
     /// 把导出内容写成 CSV(不含 BOM,编码见 <see cref="SessionFileText.EncodeCsv" />)。机密一律不写。
     /// </summary>
@@ -502,40 +496,11 @@ public static class SessionCsv
 
     // ———— 写 ————
 
-    private static void AppendRow(StringBuilder builder, IReadOnlyList<string> cells)
-    {
-        for (int i = 0; i < cells.Count; i++)
-        {
-            if (i > 0)
-            {
-                builder.Append(',');
-            }
-            builder.Append(Quote(Escape(cells[i])));
-        }
-        builder.Append("\r\n");
-    }
-
-    /// <summary>
-    /// CSV 注入防护:以 <c>= + - @</c> 等开头的单元格前面补一个单引号,Excel 就把它当文本而不是公式。
-    /// </summary>
-    /// <remarks>
-    /// 连接名、备注都可能来自别人给的文件 —— 导入一份不怀好意的文件、再导出成 CSV 用 Excel 打开,
-    /// 一个 <c>=HYPERLINK(…)</c> 就成了可点击的东西。读回来时 <see cref="Unescape" /> 去掉这个单引号,往返不丢字。
-    /// </remarks>
-    private static string Escape(string value) =>
-        value.Length > 0 && FormulaLeads.Contains(value[0], StringComparison.Ordinal) ? "'" + value : value;
+    /// <summary>写一行;引号规则与 CSV 注入防护见 <see cref="CsvText.Cell" />(读回来时 <see cref="Unescape" /> 去掉补的单引号,往返不丢字)。</summary>
+    private static void AppendRow(StringBuilder builder, IReadOnlyList<string> cells) => CsvText.AppendRow(builder, cells);
 
     private static string Unescape(string value) =>
-        value.Length >= 2 && value[0] == '\'' && FormulaLeads.Contains(value[1], StringComparison.Ordinal) ? value[1..] : value;
-
-    private static string Quote(string value)
-    {
-        bool needs = value.Length > 0
-                     && (value.AsSpan().IndexOfAny(QuoteTriggers) >= 0
-                         || char.IsWhiteSpace(value[0])
-                         || char.IsWhiteSpace(value[^1]));
-        return needs ? "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"" : value;
-    }
+        value.Length >= 2 && value[0] == '\'' && CsvText.FormulaLeads.Contains(value[1], StringComparison.Ordinal) ? value[1..] : value;
 
     // ———— 读 ————
 

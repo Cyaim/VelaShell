@@ -21,7 +21,8 @@ public sealed class HostKeyPromptDialogService : IHostKeyPrompt
         string fingerprint,
         HostKeyVerification verification,
         string? knownFingerprint = null,
-        string? randomArt = null)
+        string? randomArt = null,
+        string? certificateAuthority = null)
     {
         try
         {
@@ -34,7 +35,7 @@ public sealed class HostKeyPromptDialogService : IHostKeyPrompt
                 }
                 var dialog = new HostKeyPromptView
                 {
-                    DataContext = new HostKeyPromptViewModel(host, port, keyType, fingerprint, verification, knownFingerprint, randomArt)
+                    DataContext = new HostKeyPromptViewModel(host, port, keyType, fingerprint, verification, knownFingerprint, randomArt, certificateAuthority)
                 };
                 HostKeyDecision? result = await dialog.ShowDialog<HostKeyDecision?>(owner);
 

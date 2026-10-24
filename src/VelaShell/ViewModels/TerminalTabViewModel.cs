@@ -5,6 +5,7 @@ using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Infrastructure.Ssh;
 using VelaShell.Presentation.ViewModels;
 using VelaShell.Services;
 using VelaShell.Terminal;
@@ -55,6 +56,13 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         // OSC 7:shell 上报当前工作目录 → 供「文件浏览器跟随终端目录」用。仅在 cwd 真正变化时向外播报。
         TerminalEmulator.WorkingDirectoryChanged += OnEmulatorWorkingDirectoryChanged;
 
+        // 侧栏菜单的「重跑」(OSC 133 命令块):检查都在控件里做完了,发送交给这里 ——
+        // 同步输入的转发与「程序注入」两个开关都在本视图模型上。
+        if (TerminalEmulator is VelaTerminalControl rerunSource)
+        {
+            rerunSource.CommandRerunRequested += command => TryRerunCommand(command);
+        }
+
         // 工具栏快捷操作:拆除传输但保留标签,
         // 或请求宿主就地重连(#19 流程)。
         DisconnectCommand = ReactiveCommand.CreateFromTask(
@@ -93,6 +101,17 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         CopyErrorCommand = ReactiveCommand.CreateFromTask(
             CopyErrorAsync,
             this.WhenAnyValue(x => x.ConnectionError, error => !string.IsNullOrWhiteSpace(error))
+        );
+
+        AllowAlgorithmsCommand = ReactiveCommand.Create(
+            () =>
+            {
+                if (AlgorithmRemedy is not null && ConnectionStatus == SessionStatus.Disconnected)
+                {
+                    AllowAlgorithmsRequested?.Invoke(this, EventArgs.Empty);
+                }
+            },
+            this.WhenAnyValue(x => x.AlgorithmRemedy, x => x.IsConnected, (remedy, connected) => remedy is not null && !connected)
         );
     }
 
@@ -230,6 +249,13 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
 
     /// <summary>补全建议提供器(宿主 MainWindowViewModel 注入;null = 补全不可用)。</summary>
     public CommandSuggestionProvider? SuggestionProvider { get; set; }
+
+    /// <summary>
+    /// 补全里选中一条带 <c>{{变量}}</c> 的快捷命令时,把它换成要写进命令行的正文:
+    /// 弹与快捷命令区同一个询问框(预填上一次的值),取消返回 null(一个字节都不写)。
+    /// 宿主注入;null 时候选按原文插入(与引入占位之前一致)。
+    /// </summary>
+    public Func<QuickCommand, Task<string?>>? QuickCommandTextResolver { get; set; }
 
     /// <summary>用户在本标签提交了一条通过回显校验的命令(宿主记入全局命令历史)。</summary>
     public event Action<string>? CommandLineSubmitted;
@@ -526,6 +552,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
             if (value == SessionStatus.Connected)
             {
                 ConnectionError = null;
+                AlgorithmRemedy = null;
             }
             this.RaisePropertyChanged(nameof(ShowDisconnectedOverlay));
             this.RaisePropertyChanged(nameof(DisconnectOverlayTitle));
@@ -616,6 +643,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         this.RaisePropertyChanged(nameof(ConnectingOverlayTitle));
         this.RaisePropertyChanged(nameof(DisconnectOverlayTitle));
         this.RaisePropertyChanged(nameof(DisconnectOverlayDetail));
+        this.RaisePropertyChanged(nameof(AlgorithmRemedyTip));
     }
 
     /// <summary>
@@ -728,6 +756,24 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     /// <summary>标签页内失败/断开覆盖层(设计 yxjmg)的“关闭标签页”触发,由宿主移除该标签。</summary>
     public event EventHandler? CloseRequested;
 
+    /// <summary>标签右键「连接信息」:请求宿主打开这条 SSH 会话的连接信息窗口。</summary>
+    public event EventHandler? ConnectionInfoRequested;
+
+    /// <summary>
+    /// 这是一个 SSH 会话标签(有配置、协议是 SSH)—— 只有它有连接信息可看;本地终端与插件终端协议(Telnet、串口)没有。
+    /// </summary>
+    /// <remarks>配置在标签建好时就定了,协议不会中途变,绑定一次性读取即可。</remarks>
+    public bool IsSshTerminal => LocalShell is null && Profile is { ConnectionType: ConnectionType.SSH };
+
+    /// <summary>请求打开连接信息窗口(只对 SSH 会话标签有效)。</summary>
+    public void RequestConnectionInfo()
+    {
+        if (IsSshTerminal)
+        {
+            ConnectionInfoRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     /// <summary>请求重连,但仅在已断开状态下有效(否则为空操作)。</summary>
     public void RequestReconnect()
     {
@@ -750,7 +796,25 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     /// 发之前问不问由调用方决定(见 <see cref="MainWindowViewModel" /> 的多行确认)。
     /// </remarks>
     /// <returns>文本已发送时为 true;终端未连接或命令为空时为 false。</returns>
-    public bool TrySendCommandText(string command)
+    public bool TrySendCommandText(string command) => SendCommand(command, submit: false);
+
+    /// <summary>
+    /// 「重跑」一条 OSC 133 命令块里的命令:与快捷命令同一条发送路径,末尾再按一次回车。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 能不能重跑(对端停在空提示符上、上一条命令已结束、不在全屏程序里)、多行命令要不要先问,
+    /// 都由终端控件在发起前判定过(<c>VelaTerminalControl.RerunCommandAsync</c>);这里只管发。
+    /// </para>
+    /// <para>
+    /// <b>只发给本标签</b>,同步输入不转发:重跑点的是这一个终端历史里的一条命令,频道里别的标签
+    /// 此刻停在什么状态、该不该跑它,这里一概不知 —— 与快捷命令关掉转发的理由一样。
+    /// </para>
+    /// </remarks>
+    /// <returns>已发送时为 true;终端未连接或命令为空时为 false。</returns>
+    public bool TryRerunCommand(string command) => SendCommand(command, submit: true);
+
+    private bool SendCommand(string command, bool submit)
     {
         if (!IsConnected || string.IsNullOrWhiteSpace(command))
         {
@@ -777,6 +841,12 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
                 // 按会话字符集编码:快捷命令里可能带中文(路径、grep 的关键字),
                 // 写死 UTF-8 的话在 GBK 主机上送过去就是乱码。
                 TerminalEmulator.WriteInput(TerminalEmulator.SessionEncoding.GetBytes(payload));
+            }
+            if (submit)
+            {
+                // 回车按终端当前模式编(远端开了换行模式 LNM 时是 CR LF),不写死 \r。
+                // 走同一条键入通道,命令补全的行跟踪照常看到「提交了一行」、记进历史。
+                TerminalEmulator.WriteKeyInput(Avalonia.Input.Key.Enter, Avalonia.Input.KeyModifiers.None);
             }
         }
         finally
@@ -1015,8 +1085,9 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     /// <summary>
     /// 把标签切换到断开状态并记录连接失败的原因(幂等)。覆盖层显示为“连接失败 + 具体原因”,
     /// </summary>
-    /// <param name="message"></param>
-    public void MarkConnectionFailed(string message)
+    /// <param name="message">覆盖层上显示的失败原因。</param>
+    /// <param name="remedy">算法协商失败、且能一键放开对端那几个算法时给;覆盖层据此多一颗按钮。</param>
+    public void MarkConnectionFailed(string message, SshAlgorithmRemedy? remedy = null)
     {
         if (_disposed)
         {
@@ -1025,8 +1096,38 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
 
         // 先记录原因(覆盖层显示“连接失败”),再切断开态刷新覆盖层可见性。
         ConnectionError = message;
+        AlgorithmRemedy = remedy;
         ConnectionStatus = SessionStatus.Disconnected;
     }
+
+    /// <summary>
+    /// 上一次连接败在算法协商上、而对端有本版实现了只是没放开的算法:覆盖层上的「放开这几个算法并重连」按它来。
+    /// 每次记失败原因时一并换掉(没有就是 <see langword="null" />),连上即清。
+    /// </summary>
+    public SshAlgorithmRemedy? AlgorithmRemedy
+    {
+        get;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(HasAlgorithmRemedy));
+            this.RaisePropertyChanged(nameof(AlgorithmRemedyTip));
+        }
+    }
+
+    /// <summary>覆盖层上要不要出「放开这几个算法并重连」。</summary>
+    public bool HasAlgorithmRemedy => AlgorithmRemedy is not null;
+
+    /// <summary>那颗按钮的悬停说明:往哪一类清单里加哪几个。</summary>
+    public string AlgorithmRemedyTip => AlgorithmRemedy is { } remedy
+        ? Strings.Format("SshAlgoFix_ButtonTip", SshAlgorithmPreferences.Label(remedy.Kind), string.Join(", ", remedy.Algorithms))
+        : string.Empty;
+
+    /// <summary>覆盖层上点了「放开这几个算法并重连」:由宿主确认、改配置、重连。</summary>
+    public event EventHandler? AllowAlgorithmsRequested;
+
+    /// <summary>「放开这几个算法并重连」(只在断开且有补救时可点)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> AllowAlgorithmsCommand { get; }
 
     /// <summary>
     /// 用户在认证交互(动态码框)里点了取消:与点断开按钮是同一句话,自动重连不再介入。
@@ -1060,7 +1161,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     /// <paramref name="reason" /> 非空时(如重连失败)覆盖层显示为“连接失败 + 具体原因”,
     /// 否则为普通掉线的“连接已断开”。
     /// </summary>
-    public void MarkDisconnected(string? reason = null)
+    public void MarkDisconnected(string? reason = null, SshAlgorithmRemedy? remedy = null)
     {
         if (_disposed)
         {
@@ -1069,6 +1170,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         if (!string.IsNullOrEmpty(reason))
         {
             ConnectionError = reason;
+            AlgorithmRemedy = remedy;
         }
         if (ConnectionStatus == SessionStatus.Disconnected)
         {

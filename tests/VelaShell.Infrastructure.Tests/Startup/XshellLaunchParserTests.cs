@@ -152,6 +152,61 @@ public class XshellLaunchParserTests
     }
 
     [TestMethod]
+    public void Parse_NewTabLabel_BecomesTheTabName()
+    {
+        // #475 之后的下一步:标签名不再只是被忽略。JumpServer 开一排标签,目标全是同一个堡垒机地址,
+        // 能分清谁是谁的只有它起的那个名字。参数顺序不影响。
+        foreach (string[] args in new[]
+                 {
+                     new[] { "-newtab", "root@Linux[2026_09_20_09_45_18]", "-url", "ssh://JMS-7f3a:lD9xKq2m@192.168.1.1:2222" },
+                     ["-url", "ssh://JMS-7f3a:lD9xKq2m@192.168.1.1:2222", "-newtab", "root@Linux[2026_09_20_09_45_18]"],
+                     ["ssh://#sso:1f4b9c2e7a@10.20.30.40:9527", "-newtab=root@Linux[2026_09_20_09_45_18]"]
+                 })
+        {
+            ExternalLaunchRequest request = XshellLaunchParser.TryParse(args)!;
+
+            Assert.AreEqual("root@Linux[2026_09_20_09_45_18]", request.TabName, string.Join(' ', args));
+        }
+    }
+
+    [TestMethod]
+    public void Parse_NewTabCarryingTheUrl_HasNoTabName()
+    {
+        // -newtab 后面是 URL 时它就是目标,不是名字 —— 标签照常按配置起名,而不是叫一串 ssh://。
+        Assert.IsNull(XshellLaunchParser.TryParse(["-newtab", "ssh://root@10.0.3.21:2222"])!.TabName);
+        Assert.IsNull(XshellLaunchParser.TryParse(["-url", "ssh://root@10.0.3.21:2222"])!.TabName);
+        // 光秃秃的 -newtab(Xshell 里它也可以只当「开新标签」的开关)同样没有名字。
+        Assert.IsNull(XshellLaunchParser.TryParse(["-newtab", "-url", "ssh://root@10.0.3.21:2222"])!.TabName);
+    }
+
+    [TestMethod]
+    public void Parse_NewTabLabel_IsCleanedUp()
+    {
+        // 名字是别的程序给的:引号、换行、制表符都可能混进来,原样上标签会把它撑成两行或画出方框。
+        ExternalLaunchRequest request = XshellLaunchParser.TryParse(
+            ["-newtab", "\"  web\r\n01\t[prod]  \"", "-url", "ssh://root@10.0.3.21:22"])!;
+
+        Assert.AreEqual("web 01 [prod]", request.TabName);
+    }
+
+    [TestMethod]
+    public void NormalizeTabName_DropsBlankAndCapsLength()
+    {
+        Assert.IsNull(ExternalLaunchRequest.NormalizeTabName(null));
+        Assert.IsNull(ExternalLaunchRequest.NormalizeTabName("   "));
+        Assert.IsNull(ExternalLaunchRequest.NormalizeTabName("\"\""));
+        Assert.IsNull(ExternalLaunchRequest.NormalizeTabName("\u001b\u0007"), "全是控制字符等于没给");
+
+        string longName = new('x', ExternalLaunchRequest.MaxTabNameLength + 50);
+        Assert.HasCount(ExternalLaunchRequest.MaxTabNameLength, ExternalLaunchRequest.NormalizeTabName(longName)!);
+
+        // 不在代理对中间切:留半个字符会画成一个方框。
+        string emojiAtTheCut = new string('x', ExternalLaunchRequest.MaxTabNameLength - 1) + "😀tail";
+        string cut = ExternalLaunchRequest.NormalizeTabName(emojiAtTheCut)!;
+        Assert.IsFalse(char.IsHighSurrogate(cut[^1]), "截断落在代理对中间");
+    }
+
+    [TestMethod]
     public void Parse_UrlOption_WithoutScheme_IsStillATarget()
     {
         // 调用方已经明说这是 URL,只是写得糙(省了 ssh://)。挑剔它"长得像不像"的代价是
@@ -396,5 +451,55 @@ public class XshellLaunchParserTests
         Assert.AreEqual(request.ConnectionType, restored.ConnectionType);
         Assert.AreEqual(request.Scheme, restored.Scheme);
         Assert.AreEqual(request.Kind, restored.Kind);
+    }
+
+    /// <summary>
+    /// PuTTY 的 <c>-cert</c>(用户手册 3.11.3.19):与 <c>-i</c> 的私钥配对的 OpenSSH 证书 → 证书认证。
+    /// 没给 <c>-i</c> 时按 <c>&lt;私钥&gt;-cert.pub</c> 的命名约定找那把私钥(文件在才认)。
+    /// </summary>
+    [TestMethod]
+    public void Parse_PuttyCertOption_CarriesCertificateAndKey()
+    {
+        ExternalLaunchRequest withKey = XshellLaunchParser.TryParse(
+            ["-url", "ssh://ops@10.0.3.21", "-i", @"C:\keys\ops", "-cert", @"C:\keys\ops-cert.pub"])!;
+        Assert.AreEqual(@"C:\keys\ops", withKey.PrivateKeyPath);
+        Assert.AreEqual(@"C:\keys\ops-cert.pub", withKey.CertificatePath);
+        Assert.IsTrue(withKey.HasCredentials);
+
+        string directory = Path.Combine(Path.GetTempPath(), $"launch-cert-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string key = Path.Combine(directory, "id_ed25519");
+            File.WriteAllText(key, "");
+            ExternalLaunchRequest inferred = XshellLaunchParser.TryParse(["-url", "ssh://ops@10.0.3.21", "-cert=" + key + "-cert.pub"])!;
+            Assert.AreEqual(key, inferred.PrivateKeyPath, "没给 -i:按命名约定反推");
+            Assert.AreEqual(key + "-cert.pub", inferred.CertificatePath);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+
+        // -cert 是认得的选项名:-pw 不会把它当成口令吞掉。
+        ExternalLaunchRequest password = XshellLaunchParser.TryParse(["-url", "ssh://ops@10.0.3.21", "-pw", "-cert", "x-cert.pub"])!;
+        Assert.IsNull(password.Password);
+        Assert.AreEqual("x-cert.pub", password.CertificatePath);
+
+        ExternalLaunchRequest none = XshellLaunchParser.TryParse(["-url", "ssh://ops@10.0.3.21"])!;
+        Assert.IsNull(none.CertificatePath);
+        Assert.IsFalse(none.HasCredentials);
+    }
+
+    [TestMethod]
+    public void JsonRoundTrip_KeepsCertificate()
+    {
+        ExternalLaunchRequest request = XshellLaunchParser.TryParse(["-url", "ssh://ops@h", "-i", "/k/ops", "-cert", "/k/ops-cert.pub"])!;
+
+        string json = JsonSerializer.Serialize(request, LaunchJsonContext.Default.ExternalLaunchRequest);
+        ExternalLaunchRequest restored = JsonSerializer.Deserialize(json, LaunchJsonContext.Default.ExternalLaunchRequest)!;
+
+        Assert.AreEqual("/k/ops", restored.PrivateKeyPath);
+        Assert.AreEqual("/k/ops-cert.pub", restored.CertificatePath);
     }
 }

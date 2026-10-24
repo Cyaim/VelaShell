@@ -430,10 +430,19 @@ public class SshSessionFeaturesTests
         public Task<IReadOnlyList<KnownHost>> FindKnownHostKeysAsync(string host, int port, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task TrustHostKeyAsync(string host, int port, string keyType, string fingerprint, CancellationToken cancellationToken = default) =>
+        public Task TrustHostKeyAsync(string host, int port, string keyType, string fingerprint, string? publicKey = null, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         public Task RemoveKnownHostAsync(string host, int port, string? keyType = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<KnownHostMarker>> GetMarkersAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<bool> AddMarkerAsync(KnownHostMarker marker, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task RemoveMarkerAsync(string id, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 
@@ -474,5 +483,46 @@ public class SshSessionFeaturesTests
         Assert.IsFalse(new SshSessionOptions { Compression = true }.IsEmpty);
         Assert.IsFalse(new SshSessionOptions { AgentForwarding = true }.IsEmpty);
         Assert.IsFalse(new SshSessionOptions { X11Forwarding = true }.IsEmpty);
+        // 只开了按键时序混淆也是「有」:当成空的话,配置页存回 null,这一项就悄悄没了。
+        Assert.IsFalse(new SshSessionOptions { ObscureKeystrokeTiming = true }.IsEmpty);
+    }
+
+    /// <summary>
+    /// <see cref="SshSessionOptions.Clone" /> 是逐字段手写的(plan.md §37 的名单:配置复制、不记密码的副本、
+    /// 持久化前的拷贝都经它):每个可写的属性都要拷过去,漏一个就是「重开之后这一项没了」。
+    /// </summary>
+    [TestMethod]
+    public void Options_Clone_CopiesEveryWritableProperty()
+    {
+        SshSessionOptions source = new();
+        System.Reflection.PropertyInfo[] properties = [.. typeof(SshSessionOptions).GetProperties().Where(p => p.CanWrite)];
+        foreach (System.Reflection.PropertyInfo property in properties)
+        {
+            object value = property.PropertyType switch
+            {
+                Type t when t == typeof(bool) => !(bool)property.GetValue(source)!,
+                Type t when t == typeof(string) => "x-" + property.Name,
+                Type t when t == typeof(List<string>) => new List<string> { "k-" + property.Name },
+                _ => throw new AssertFailedException($"{property.Name}: 用例没覆盖 {property.PropertyType} 这种类型,补上。"),
+            };
+            property.SetValue(source, value);
+        }
+
+        SshSessionOptions copy = source.Clone();
+
+        foreach (System.Reflection.PropertyInfo property in properties)
+        {
+            object? expected = property.GetValue(source);
+            object? actual = property.GetValue(copy);
+            if (expected is List<string> list)
+            {
+                CollectionAssert.AreEqual(list, (List<string>)actual!, property.Name);
+                Assert.AreNotSame(expected, actual, $"{property.Name} 要深拷贝");
+            }
+            else
+            {
+                Assert.AreEqual(expected, actual, $"Clone 漏拷了 {property.Name}");
+            }
+        }
     }
 }

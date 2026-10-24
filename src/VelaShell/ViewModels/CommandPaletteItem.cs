@@ -13,9 +13,16 @@ public sealed class CommandPaletteItem(
     string? hint = null,
     string? tag = null,
     bool isSession = false,
-    string? id = null)
+    string? id = null,
+    IReadOnlyList<string>? keywords = null)
     : ReactiveObject
 {
+    /// <summary>
+    /// 不显示、只参与匹配的检索词:会话条目是它的标签、主机与备注(按这个先后,越靠前权重越高)。
+    /// 打分规则见 <see cref="PaletteScorer" /> 带检索词的那个 <c>Score</c> 重载。
+    /// </summary>
+    public IReadOnlyList<string> Keywords { get; } = keywords ?? [];
+
     /// <summary>分组桶,作为分组表头展示(如“会话”、“命令”)。</summary>
     public string Category { get; } = category;
 

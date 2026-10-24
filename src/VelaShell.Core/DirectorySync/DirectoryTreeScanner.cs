@@ -112,6 +112,10 @@ public static class DirectoryTreeScanner
     /// </param>
     /// <param name="recursive">false 时只列一层。</param>
     /// <param name="relativePrefix">相对路径前缀。</param>
+    /// <param name="serverClockOffset">
+    /// 服务器时钟的 UTC 偏移(FTP 连接配置里的「服务器时区」,见 <see cref="SyncTime.ServerClockOffset" />);
+    /// null = 与本机同一时区。只换算不带时区的时间(LIST),MLSD 给的 UTC 原样用。
+    /// </param>
     /// <param name="progress">每扫完一个目录报一次累计目录数。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     public static async Task<SyncTree> ScanRemoteAsync(
@@ -122,6 +126,7 @@ public static class DirectoryTreeScanner
         bool inferPrecision,
         bool recursive = true,
         string relativePrefix = "",
+        TimeSpan? serverClockOffset = null,
         IProgress<int>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -157,13 +162,17 @@ public static class DirectoryTreeScanner
                     ? SyncTime.InferPrecision(entry.LastModified)
                     : entry.LastModified.Year < 1971 ? SyncTimePrecision.Unknown : SyncTimePrecision.Second;
                 string fullPath = string.IsNullOrEmpty(entry.FullPath) ? CombineRemote(directory.Path, entry.Name) : entry.FullPath;
+                // 精度按原始时间推断(换算之前:LIST 的「只有日期」是 00:00,挪过偏移就认不出来了)。
                 items.Add(new(
                     relative,
                     fullPath,
                     entry.IsDirectory,
                     entry.IsDirectory ? 0 : entry.Size,
-                    precision == SyncTimePrecision.Unknown ? DateTime.MinValue : SyncTime.ToUtc(entry.LastModified),
-                    precision));
+                    precision == SyncTimePrecision.Unknown ? DateTime.MinValue : SyncTime.ToUtc(entry.LastModified, serverClockOffset),
+                    precision)
+                {
+                    CalendarOffset = SyncTime.CalendarOffsetFor(entry.LastModified, serverClockOffset),
+                });
                 if (entry.IsDirectory && recursive)
                 {
                     pending.Push((fullPath, relative));

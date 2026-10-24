@@ -20,5 +20,12 @@ public readonly record struct KnownHostLookup(
     IReadOnlyList<KnownHostEntry> ConflictingEntries)
 {
     /// <summary><see cref="KnownHostStatus.CertificateInvalid"/> 时：证书哪里不合格（诊断文本，进日志与拒绝理由，不是界面文案）。</summary>
+    /// <remarks>界面文案按 <see cref="CertificateProblemDetail"/> 拼，不解析这句话。</remarks>
     public string? CertificateProblem { get; init; }
+
+    /// <summary>
+    /// <see cref="KnownHostStatus.CertificateInvalid"/> 时：<see cref="CertificateProblem"/> 的结构化出处（哪一条不合格、拼句子用的参数）；
+    /// 别的结论为 <see langword="null"/>。
+    /// </summary>
+    public HostCertificateProblem? CertificateProblemDetail { get; init; }
 }

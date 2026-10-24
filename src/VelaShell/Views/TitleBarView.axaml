@@ -133,6 +133,15 @@
           <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.route}"
                          Foreground="{DynamicResource VelaTextMuted}" />
         </Button>
+        <!-- 布局模板:点开是下拉菜单(每个模板一项,点了按它开出这一组连接并排好分屏;末尾是存为模板 / 管理)。
+             菜单在点击时按当前模板列表现建,见 LayoutTemplatesMenu。 -->
+        <Button Theme="{StaticResource VelaTitleActionButtonTheme}"
+                ToolTip.Tip="{loc:Localize LayoutTemplate_Title}"
+                AutomationProperties.Name="{loc:Localize LayoutTemplate_Title}"
+                Click="LayoutTemplates_Click">
+          <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.layout-template}"
+                         Foreground="{DynamicResource VelaTextMuted}" />
+        </Button>
         <Button Theme="{StaticResource VelaTitleActionButtonTheme}"
                 ToolTip.Tip="{loc:Localize Menu_CommandPaletteTip}"
                 Command="{Binding OpenCommandPaletteCommand}">

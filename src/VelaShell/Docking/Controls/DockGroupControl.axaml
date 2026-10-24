@@ -46,8 +46,9 @@
   </UserControl.Styles>
 
   <!-- 一个标签组:标签条(35px + 1px 分割线 = 36px,与侧栏头部分割线同一水平线)+
-       内容区。标签条按 TabsPosition 停靠(代码后置调整),溢出时右端
-       出现固定 24px 三连按钮(设计 nunbT pZGS4):左滚/右滚/全部标签下拉。
+       内容区。标签条按 TabsPosition 与工作区的 TabsAtBottom 停靠(代码后置调整),溢出时右端(纵排时底端)
+       出现固定 24px 三连按钮(设计 nunbT pZGS4):往前滚 / 往后滚 / 全部标签下拉。
+       最后一个标签后面跟着「+」新建钮(宿主接了 NewTabRequested 才显示)。
        开了「多行显示标签页」则换行成多排、每排 35px,标签条随排数长高,不再溢出。 -->
   <DockPanel>
 
@@ -56,6 +57,9 @@
                Background="{DynamicResource VelaBgPage}"
                MinHeight="35">
 
+      <!-- 横排时停在右端;纵排(停到左 / 右侧)时由代码后置挪到底端、仍排成一行,
+           两枚滚动箭头转成上 / 下,下拉箭头指向列表弹出的那一边(ApplyTabStripLayout)。
+           是否出现按标签排列的那条轴判定:横排比宽度,纵排比高度。 -->
       <StackPanel x:Name="OverflowControls"
                   DockPanel.Dock="Right"
                   Orientation="Horizontal"
@@ -63,84 +67,104 @@
                   Margin="6,0"
                   VerticalAlignment="Center">
         <StackPanel.IsVisible>
-          <MultiBinding Converter="{x:Static conv:WidthOverflowConverter.Instance}">
-            <Binding ElementName="TabScroll" Path="Extent.Width" />
-            <Binding ElementName="TabScroll" Path="Viewport.Width" />
+          <MultiBinding Converter="{x:Static conv:TabStripOverflowConverter.Instance}">
+            <Binding ElementName="TabScroll" Path="Extent" />
+            <Binding ElementName="TabScroll" Path="Viewport" />
+            <Binding Path="TabsPosition" />
           </MultiBinding>
         </StackPanel.IsVisible>
 
-        <RepeatButton x:Name="ScrollLeftButton" Classes="tab-nav" Click="ScrollLeft_Click">
-          <pc:LucideIcon Width="14" Height="14"
+        <RepeatButton x:Name="ScrollBackButton" Classes="tab-nav" Click="ScrollBack_Click">
+          <pc:LucideIcon x:Name="ScrollBackIcon" Width="14" Height="14"
                          Data="{DynamicResource Icon.chevron-left}"
                          Foreground="{DynamicResource VelaTextTertiary}" />
         </RepeatButton>
 
-        <RepeatButton x:Name="ScrollRightButton" Classes="tab-nav" Click="ScrollRight_Click">
-          <pc:LucideIcon Width="14" Height="14"
+        <RepeatButton x:Name="ScrollForwardButton" Classes="tab-nav" Click="ScrollForward_Click">
+          <pc:LucideIcon x:Name="ScrollForwardIcon" Width="14" Height="14"
                          Data="{DynamicResource Icon.chevron-right}"
                          Foreground="{DynamicResource VelaTextTertiary}" />
         </RepeatButton>
 
         <Button Classes="tab-nav" Click="TabListDrop_Click" ToolTip.Tip="{loc:Localize Dock_AllTabs}">
-          <pc:LucideIcon Width="14" Height="14"
+          <pc:LucideIcon x:Name="TabListIcon" Width="14" Height="14"
                          Data="{DynamicResource Icon.chevron-down}"
                          Foreground="{DynamicResource VelaTextTertiary}" />
         </Button>
       </StackPanel>
 
-      <!-- 标签区:纯滚动视口,无内嵌箭头。 -->
-      <ScrollViewer x:Name="TabScroll"
-                    HorizontalScrollBarVisibility="Hidden"
-                    VerticalScrollBarVisibility="Disabled">
-        <!-- 指示器与标签同处滚动内容里,滚动时二者天然同步,不需要任何偏移换算。 -->
-        <Panel x:Name="TabsOverlay">
-          <!-- 排版面板是 DockTabPanel(单排收窄 / 多排换行,#521),由代码后置按标签位置与
-               「多行显示标签页」装配,见 DockGroupControl.CreateTabPanel。 -->
-          <ItemsControl x:Name="TabsHost" ItemsSource="{Binding Documents}">
-            <ItemsControl.DataTemplates>
-              <DataTemplate x:DataType="docking:TerminalDocument">
-                <local:DockTabItem />
-              </DataTemplate>
-              <DataTemplate x:DataType="docking:SftpDocumentBase">
-                <local:SftpDockTabItem />
-              </DataTemplate>
-              <DataTemplate x:DataType="docking:PluginDocument">
-                <local:PluginDockTabItem />
-              </DataTemplate>
-              <!-- 少了这一条,插件的工作台文档就会回落成 ToString(),标签上直接显示类型全名。 -->
-              <DataTemplate x:DataType="docking:PluginWorkspaceDocument">
-                <local:WorkspaceDockTabItem />
-              </DataTemplate>
-              <!-- 文档型连接握手完成前的占位标签(同理:漏了这条就是一行类型全名)。 -->
-              <DataTemplate x:DataType="docking:ConnectingDocument">
-                <local:ConnectingDockTabItem />
-              </DataTemplate>
-            </ItemsControl.DataTemplates>
-          </ItemsControl>
-          <!-- 激活标签的滑动强调线:单条 2px 线在标签间滑动(取代各标签自己顶线的突变),
-               位置/尺寸由代码后置按激活标签的实际边界驱动;水平模式贴顶,垂直模式贴内侧边。 -->
-          <Border x:Name="ActiveTabIndicator"
-                  Background="{DynamicResource VelaAccent}"
-                  HorizontalAlignment="Left"
-                  VerticalAlignment="Top"
+      <!-- 标签区 + 「+」新建钮。「+」跟在最后一个标签后面(纵排时在它下面),标签放不下而滚动时
+           钉在视口末端,不随标签滚走;为此标签视口在排列方向的末端给它让出 24 + 2×2 px
+           (代码后置按方向设 TabScroll 的外边距、按最后一个标签的位置摆 Canvas 坐标)。
+           Canvas 不设背景,点在它的空白处照样落到底下的标签上。 -->
+      <Panel x:Name="TabScrollHost">
+        <!-- 标签区:纯滚动视口,无内嵌箭头。 -->
+        <ScrollViewer x:Name="TabScroll"
+                      HorizontalScrollBarVisibility="Hidden"
+                      VerticalScrollBarVisibility="Disabled">
+          <!-- 指示器与标签同处滚动内容里,滚动时二者天然同步,不需要任何偏移换算。 -->
+          <Panel x:Name="TabsOverlay">
+            <!-- 排版面板是 DockTabPanel(单排收窄 / 多排换行,#521),由代码后置按标签位置与
+                 「多行显示标签页」装配,见 DockGroupControl.CreateTabPanel。 -->
+            <ItemsControl x:Name="TabsHost" ItemsSource="{Binding Documents}">
+              <ItemsControl.DataTemplates>
+                <DataTemplate x:DataType="docking:TerminalDocument">
+                  <local:DockTabItem />
+                </DataTemplate>
+                <DataTemplate x:DataType="docking:SftpDocumentBase">
+                  <local:SftpDockTabItem />
+                </DataTemplate>
+                <DataTemplate x:DataType="docking:PluginDocument">
+                  <local:PluginDockTabItem />
+                </DataTemplate>
+                <!-- 少了这一条,插件的工作台文档就会回落成 ToString(),标签上直接显示类型全名。 -->
+                <DataTemplate x:DataType="docking:PluginWorkspaceDocument">
+                  <local:WorkspaceDockTabItem />
+                </DataTemplate>
+                <!-- 文档型连接握手完成前的占位标签(同理:漏了这条就是一行类型全名)。 -->
+                <DataTemplate x:DataType="docking:ConnectingDocument">
+                  <local:ConnectingDockTabItem />
+                </DataTemplate>
+              </ItemsControl.DataTemplates>
+            </ItemsControl>
+            <!-- 激活标签的滑动强调线:单条 2px 线在标签间滑动(取代各标签自己顶线的突变),
+                 位置/尺寸由代码后置按激活标签的实际边界驱动;水平模式贴顶,垂直模式贴内侧边。 -->
+            <Border x:Name="ActiveTabIndicator"
+                    Background="{DynamicResource VelaAccent}"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    IsVisible="False"
+                    IsHitTestVisible="False">
+              <Border.Transitions>
+                <Transitions>
+                  <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.18" Easing="CubicEaseOut" />
+                  <DoubleTransition Property="Width" Duration="0:0:0.18" Easing="CubicEaseOut" />
+                  <DoubleTransition Property="Height" Duration="0:0:0.18" Easing="CubicEaseOut" />
+                  <!-- 刻意**不给 Opacity 加过渡**:活动窗格的明暗是"我的键盘输入落在哪"的指示,
+                       该在点下去的那一刻就成立。淡入淡出除了让这条指示晚 180ms 之外没有别的作用,
+                       还会把它变成一个只能靠时序观测的状态(界面测试里正是这样卡住的)。 -->
+                </Transitions>
+              </Border.Transitions>
+            </Border>
+          </Panel>
+        </ScrollViewer>
+        <Canvas x:Name="NewTabLayer">
+          <!-- 宿主没接(DockWorkspaceControl.NewTabRequested 无人订阅)时不显示。 -->
+          <Button x:Name="NewTabButton"
+                  Classes="tab-nav"
                   IsVisible="False"
-                  IsHitTestVisible="False">
-            <Border.Transitions>
-              <Transitions>
-                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.18" Easing="CubicEaseOut" />
-                <DoubleTransition Property="Width" Duration="0:0:0.18" Easing="CubicEaseOut" />
-                <DoubleTransition Property="Height" Duration="0:0:0.18" Easing="CubicEaseOut" />
-                <!-- 刻意**不给 Opacity 加过渡**:活动窗格的明暗是"我的键盘输入落在哪"的指示,
-                     该在点下去的那一刻就成立。淡入淡出除了让这条指示晚 180ms 之外没有别的作用,
-                     还会把它变成一个只能靠时序观测的状态(界面测试里正是这样卡住的)。 -->
-              </Transitions>
-            </Border.Transitions>
-          </Border>
-        </Panel>
-      </ScrollViewer>
+                  Click="NewTab_Click"
+                  ToolTip.Tip="{loc:Localize Dock_NewTab}"
+                  AutomationProperties.Name="{loc:Localize Dock_NewTab}">
+            <pc:LucideIcon Width="14" Height="14"
+                           Data="{DynamicResource Icon.plus}"
+                           Foreground="{DynamicResource VelaTextTertiary}" />
+          </Button>
+        </Canvas>
+      </Panel>
     </DockPanel>
 
-    <!-- 标签条下的 1px 分割线:恒用主题分割线画刷,无焦点反馈。 -->
+    <!-- 标签条与内容区之间的 1px 分割线(随标签条停靠到同一边):恒用主题分割线画刷,无焦点反馈。 -->
     <Border x:Name="StripSeparator"
             DockPanel.Dock="Top"
             Height="1"

@@ -1,7 +1,9 @@
 using NSubstitute;
 using VelaShell.Core.Models;
 using VelaShell.Core.Notifications;
+using VelaShell.Core.Resources;
 using VelaShell.Services;
+using VelaShell.Services.Update;
 
 namespace VelaShell.Tests.Services;
 
@@ -159,5 +161,159 @@ public sealed class NotificationSourcesTests
             await NotificationSources.CollectAsync(new AppSettings(), null, null);
 
         Assert.IsEmpty(collected);
+    }
+
+    // ---- 自动下载更新(设置 → 常规) ----
+
+    /// <summary>
+    /// 扮演后台下载入口(真实实现是 <c>SettingsViewModel.DownloadUpdateInBackgroundAsync</c>):
+    /// 记下被调了几次,成功时让服务交出就绪快照,返回值与真实入口同一契约(是否已有就绪包)。
+    /// </summary>
+    private sealed class FakeBackgroundDownload(bool succeeds)
+    {
+        public int Calls { get; private set; }
+
+        public UpdateManifest? Ready { get; private set; }
+
+        public Task<bool> RunAsync()
+        {
+            Calls++;
+            if (succeeds)
+            {
+                Ready = UpdateManifest.Parse(
+                    """{"version":"1.9.0","tag":"1.9.0","assets":{"win-x64":{"name":"a.zip","sha256":"aa","size":1}}}""");
+            }
+            return Task.FromResult(Ready is not null);
+        }
+    }
+
+    /// <summary>一台查得到 1.9.0、能原地换版的安装;就绪快照取自 <paramref name="download" />。</summary>
+    private static IUpdateService UpdatableTo190(FakeBackgroundDownload download)
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CheckForUpdateAsync().Returns(true);
+        updates.AvailableVersion.Returns("1.9.0");
+        updates.CurrentVersion.Returns("1.8.0");
+        updates.CanSelfUpdate.Returns(true);
+        updates.ReadyUpdate.Returns(_ => download.Ready);
+        return updates;
+    }
+
+    private static AppSettings AutoDownload(bool on, bool notify = true, bool checkOnStartup = true) => new()
+    {
+        General = new() { CheckUpdatesOnStartup = checkOnStartup, AutoDownloadUpdates = on },
+        Notifications = new() { NotifyUpdates = notify },
+    };
+
+    /// <summary>开着自动下载:先在后台下完、校验完,再投「已下载好,重启即可更新」—— 而不是先投一条「有新版本」。</summary>
+    [TestMethod]
+    public async Task AutoDownloadOn_DownloadsFirstThenAnnouncesReady()
+    {
+        FakeBackgroundDownload background = new(succeeds: true);
+        IUpdateService updates = UpdatableTo190(background);
+
+        NotificationItem? item = await NotificationSources.CollectUpdateAsync(
+            AutoDownload(on: true), updates, background.RunAsync);
+
+        Assert.AreEqual(1, background.Calls);
+        Assert.IsNotNull(item);
+        Assert.AreEqual("update-ready:1.9.0", item.Id);
+        Assert.AreEqual(Strings.Format("Notify_UpdateReadyTitle", "1.9.0"), item.Title);
+        Assert.AreEqual("app.settings.about", item.Link?.CommandId, "重启入口在关于页。");
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+    }
+
+    /// <summary>关着自动下载:只检查、投「有新版本」,一个字节也不下。</summary>
+    [TestMethod]
+    public async Task AutoDownloadOff_OnlyChecks()
+    {
+        FakeBackgroundDownload background = new(succeeds: true);
+        IUpdateService updates = UpdatableTo190(background);
+
+        NotificationItem? item = await NotificationSources.CollectUpdateAsync(
+            AutoDownload(on: false), updates, background.RunAsync);
+
+        Assert.AreEqual(0, background.Calls);
+        Assert.AreEqual("update:1.9.0", item?.Id);
+    }
+
+    /// <summary>下载失败不打扰:退回普通的「有新版本」,不投任何报错。</summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task AutoDownloadFailure_FallsBackToTheAvailableNotice(bool throws)
+    {
+        FakeBackgroundDownload background = new(succeeds: false);
+        IUpdateService updates = UpdatableTo190(background);
+        BackgroundUpdateDownload download = throws
+            ? () => Task.FromException<bool>(new HttpRequestException("offline"))
+            : background.RunAsync;
+
+        NotificationItem? item = await NotificationSources.CollectUpdateAsync(AutoDownload(on: true), updates, download);
+
+        Assert.AreEqual("update:1.9.0", item?.Id);
+        Assert.AreEqual(NotificationKind.Update, item?.Kind);
+    }
+
+    /// <summary>
+    /// 「提醒可用更新」关着、「自动下载更新」开着:照样检查并下载(重启入口在关于页等着),
+    /// 只是不投消息。以前这种组合连检查都不做。
+    /// </summary>
+    [TestMethod]
+    public async Task AutoDownloadWithNotificationsOff_DownloadsSilently()
+    {
+        FakeBackgroundDownload background = new(succeeds: true);
+        IUpdateService updates = UpdatableTo190(background);
+
+        NotificationItem? item = await NotificationSources.CollectUpdateAsync(
+            AutoDownload(on: true, notify: false), updates, background.RunAsync);
+
+        Assert.AreEqual(1, background.Calls);
+        Assert.IsNull(item);
+    }
+
+    /// <summary>「启动时检查更新」是联网的总闸:关着时自动下载开着也一个请求都不发。</summary>
+    [TestMethod]
+    public async Task AutoDownloadNeverBypassesTheStartupCheckSwitch()
+    {
+        FakeBackgroundDownload background = new(succeeds: true);
+        IUpdateService updates = UpdatableTo190(background);
+
+        NotificationItem? item = await NotificationSources.CollectUpdateAsync(
+            AutoDownload(on: true, checkOnStartup: false), updates, background.RunAsync);
+
+        Assert.IsNull(item);
+        Assert.AreEqual(0, background.Calls);
+        await updates.DidNotReceive().CheckForUpdateAsync();
+    }
+
+    /// <summary>不能原地换版的安装(Linux、只读目录):自动下载不起作用,照旧只投「有新版本」。</summary>
+    [TestMethod]
+    public async Task AutoDownloadSkipsInstallsThatCannotSelfUpdate()
+    {
+        FakeBackgroundDownload background = new(succeeds: true);
+        IUpdateService updates = UpdatableTo190(background);
+        updates.CanSelfUpdate.Returns(false);
+
+        NotificationItem? item = await NotificationSources.CollectUpdateAsync(
+            AutoDownload(on: true), updates, background.RunAsync);
+
+        Assert.AreEqual(0, background.Calls);
+        Assert.AreEqual("update:1.9.0", item?.Id);
+    }
+
+    /// <summary>没有新版本就不下载,也不投任何东西。</summary>
+    [TestMethod]
+    public async Task AutoDownloadDoesNothingWithoutAnUpdate()
+    {
+        FakeBackgroundDownload background = new(succeeds: true);
+        IUpdateService updates = UpdatableTo190(background);
+        updates.CheckForUpdateAsync().Returns(false);
+
+        NotificationItem? item = await NotificationSources.CollectUpdateAsync(
+            AutoDownload(on: true), updates, background.RunAsync);
+
+        Assert.IsNull(item);
+        Assert.AreEqual(0, background.Calls);
     }
 }

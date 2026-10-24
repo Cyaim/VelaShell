@@ -48,7 +48,7 @@ public sealed class ShellIntegrationShellTests
     /// <c>__vela_osc133_status</c> 先塞一个非零值:退出码是经由 <c>PS1</c> 里的参数展开发出去的,
     /// 塞 0 的话"根本没展开"和"展开成 0"看起来一模一样,这条断言就白写了。
     /// </remarks>
-    private static string BuildScript(string? initialPromptCommand, string? initialPs1, int times)
+    private static string BuildScript(string? initialPromptCommand, string? initialPs1, int times, string? initialPs2 = "> ")
     {
         var lines = new List<string>
         {
@@ -56,7 +56,8 @@ public sealed class ShellIntegrationShellTests
             "myhook() { :; }",
             initialPs1 is null ? "unset PS1" : "PS1=" + Quote(initialPs1),
             initialPromptCommand is null ? "unset PROMPT_COMMAND" : "PROMPT_COMMAND=" + Quote(initialPromptCommand),
-            "unset PS0"
+            "unset PS0",
+            initialPs2 is null ? "unset PS2" : "PS2=" + Quote(initialPs2)
         };
         for (int i = 0; i < times; i++)
         {
@@ -66,8 +67,12 @@ public sealed class ShellIntegrationShellTests
         lines.Add("printf 'PS0<%s>\\n' \"${PS0@P}\"");
         lines.Add("printf 'PS1<%s>\\n' \"${PS1@P}\"");
         lines.Add("printf 'PC<%s>\\n' \"$PROMPT_COMMAND\"");
+        lines.Add("printf 'PS2<%s>\\n' \"${PS2@P}\"");
         return string.Join('\n', lines);
     }
+
+    /// <summary>最近一次 <see cref="Run" /> 展开出来的 <c>PS2</c>(续行提示符)。</summary>
+    private string _ps2 = string.Empty;
 
     /// <summary>包成 shell 单引号字面量(内部的单引号按 <c>'\''</c> 拆开重接)。</summary>
     private static string Quote(string value) => "'" + value.Replace("'", "'\\''") + "'";
@@ -75,11 +80,12 @@ public sealed class ShellIntegrationShellTests
     private (string Ps0, string Ps1, string PromptCommand) Run(
         string? initialPromptCommand = null,
         string? initialPs1 = "P> ",
-        int times = 1)
+        int times = 1,
+        string? initialPs2 = "> ")
     {
         string script = Path.Combine(Path.GetTempPath(), $"vela-osc133-{Guid.NewGuid():N}.sh");
         // bash 只认 LF;Windows 上写出 CRLF 会得到 "$'\r': command not found"。
-        File.WriteAllText(script, BuildScript(initialPromptCommand, initialPs1, times).ReplaceLineEndings("\n"));
+        File.WriteAllText(script, BuildScript(initialPromptCommand, initialPs1, times, initialPs2).ReplaceLineEndings("\n"));
         try
         {
             ProcessStartInfo psi = new()
@@ -99,6 +105,7 @@ public sealed class ShellIntegrationShellTests
             string stderr = process.StandardError.ReadToEnd();
             Assert.IsTrue(process.WaitForExit(30_000), "bash 没有在 30 秒内退出");
             TestContext.WriteLine($"stderr: {stderr}");
+            _ps2 = Extract(stdout, "PS2");
             return (Extract(stdout, "PS0"), Extract(stdout, "PS1"), Extract(stdout, "PC"));
         }
         finally
@@ -212,5 +219,30 @@ public sealed class ShellIntegrationShellTests
         Assert.AreEqual("\e]133;C\e\\", ps0);
         Assert.AreEqual("\e]133;D;7\e\\\e]133;A\e\\\e]133;B\e\\", ps1);
         Assert.AreEqual("__vela_osc133_status_capture", pc);
+    }
+
+    [TestMethod]
+    public void Ps2_EndsWithInputStart_SoContinuationPromptsCanBeCutOff()
+    {
+        // 「复制这条命令」「重跑」从每个续行自己的 B 切起;续行不标,"> " 就混进命令文本,
+        // 重跑 here-doc 时 "> important.txt" 会把文件截空。
+        RequireBash();
+        Run();
+
+        Assert.AreEqual("> \e]133;B\e\\", _ps2);
+    }
+
+    [TestMethod]
+    public void Ps2_IsMarkedOnce_AndAnUnsetPs2GetsTheDefaultPrompt()
+    {
+        RequireBash();
+        Run(times: 3);
+        Assert.AreEqual("> \e]133;B\e\\", _ps2, "反复 source 不叠加。");
+
+        Run(initialPs2: null);
+        Assert.AreEqual("> \e]133;B\e\\", _ps2, "PS2 没定义时补上 bash 的默认续行提示符,set -u 下也不炸。");
+
+        Run(initialPs2: "... ");
+        Assert.AreEqual("... \e]133;B\e\\", _ps2, "用户自己的续行提示符原样保留。");
     }
 }

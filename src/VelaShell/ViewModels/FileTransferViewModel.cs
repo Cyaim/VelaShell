@@ -107,15 +107,167 @@ public class FileTransferViewModel : ReactiveObject, IDraggablePanel
     {
         _transferManager = transferManager;
         _dataStore = dataStore;
+        Journal = new(dataStore);
         RestorePanelPosition();
         Transfers = [];
         Transfers.CollectionChanged += OnTransfersChanged;
+        PausedBatches = [];
+        PausedBatches.CollectionChanged += OnPausedBatchesChanged;
         PurgeLegacyHistory();
+        RestorePausedBatches();
         CancelTransferCommand = ReactiveCommand.Create<Guid>(CancelTransfer);
         RetryTransferCommand = ReactiveCommand.Create<Guid>(RetryTransfer);
         ClearCompletedCommand = ReactiveCommand.Create(ClearCompleted);
         CancelAllCommand = ReactiveCommand.Create(CancelAll);
         HidePanelCommand = ReactiveCommand.Create(() => { IsPanelVisible = false; });
+        // 不用 CreateFromTask:「继续」等的是整批传完(可能几个钟头),命令在执行期间会把其余各行的「继续」一并锁住。
+        ResumePausedBatchCommand = ReactiveCommand.Create<Guid>(id => { _ = ResumePausedBatchAsync(id); });
+        DiscardPausedBatchCommand = ReactiveCommand.Create<Guid>(DiscardPausedBatch);
+    }
+
+    /// <summary>
+    /// 传输队列(断线 / 重启之后待继续的批次)。各文件面板的批次都记在这一本账里 ——
+    /// 与传输名额同一个理由:浮窗是全窗口唯一的那一个。没有存储时只在内存里记账。
+    /// </summary>
+    public TransferQueueJournal Journal { get; }
+
+    /// <summary>停下来、等用户「继续」或「放弃」的批次(一批一行,排在传输行上面)。</summary>
+    public ObservableCollection<PausedTransferBatchViewModel> PausedBatches { get; }
+
+    /// <summary>
+    /// 由宿主设置:为一批停下的传输找回(或重新打开)它的连接并接着传。为 null 时「继续」不可用 ——
+    /// 单元测试与没有连接能力的宿主。
+    /// </summary>
+    public Func<PausedTransferBatch, Task<TransferResumeOutcome>>? ResumeHandler { get; set; }
+
+    /// <summary>继续一批停下的传输(参数为批次 Id)。</summary>
+    public ReactiveCommand<Guid, RxVoid> ResumePausedBatchCommand { get; }
+
+    /// <summary>放弃一批停下的传输(参数为批次 Id):剩下的不再传,已传完的不受影响。</summary>
+    public ReactiveCommand<Guid, RxVoid> DiscardPausedBatchCommand { get; }
+
+    /// <summary>
+    /// 一批传输停下了(断线、重试用完):把它剩下的项作为一行「已暂停」挂到浮窗上。
+    /// 这一批里因断线停下的文件行同时撤掉 —— 它们由这一行代表,留着就是同一件事说两遍。
+    /// </summary>
+    /// <param name="batchId">队列里的批次 Id。</param>
+    /// <param name="reason">停下的原因。</param>
+    public void ShowPausedBatch(Guid batchId, PausedBatchReason reason)
+    {
+        foreach (TransferItemViewModel row in Transfers.Where(t => t.Status == TransferStatus.Paused).ToList())
+        {
+            Transfers.Remove(row);
+        }
+        if (Journal.Snapshot(batchId) is not { } batch)
+        {
+            return;
+        }
+        if (PausedBatches.FirstOrDefault(p => p.BatchId == batchId) is { } existing)
+        {
+            existing.Refresh(batch);
+            return;
+        }
+        PausedBatches.Insert(0, new PausedTransferBatchViewModel(batch, reason));
+        // 需要用户处理的东西:面板亮出来,不跟着自动隐藏走(见 NotifyTaskSettled)。
+        _autoHide?.Dispose();
+        _autoHide = null;
+        _hidePending = false;
+        IsPanelVisible = true;
+    }
+
+    /// <summary>
+    /// 一批停下的传输已经交给新的一批接着传(或被放弃):从队列与浮窗上一起撤掉。
+    /// </summary>
+    /// <param name="batchId">队列里的批次 Id。</param>
+    public void RetirePausedBatch(Guid batchId)
+    {
+        Journal.Drop(batchId);
+        if (PausedBatches.FirstOrDefault(p => p.BatchId == batchId) is { } row)
+        {
+            PausedBatches.Remove(row);
+        }
+    }
+
+    private async Task ResumePausedBatchAsync(Guid batchId)
+    {
+        if (PausedBatches.FirstOrDefault(p => p.BatchId == batchId) is not { CanResume: true } row
+            || ResumeHandler is not { } resume)
+        {
+            return;
+        }
+        // 账上此刻剩下的才是要接着传的(行上那份快照是挂上来时取的)。
+        PausedTransferBatch batch = Journal.Snapshot(batchId) ?? row.Batch;
+        row.IsResuming = true;
+        TransferResumeOutcome outcome;
+        try
+        {
+            outcome = await resume(batch);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            outcome = new(TransferResumeResult.Failed, ex.Message);
+        }
+        // 已经交接出去的,行在交接那一刻就撤掉了(RetirePausedBatch);还在的说明没能接着传。
+        if (PausedBatches.Contains(row) && outcome.Result != TransferResumeResult.Started)
+        {
+            row.ApplyOutcome(outcome);
+        }
+        else if (PausedBatches.Contains(row))
+        {
+            // 宿主说开始了、却没走到交接(一项都不用传了之类):这一批已经没有可继续的了。
+            RetirePausedBatch(batchId);
+        }
+    }
+
+    private void DiscardPausedBatch(Guid batchId)
+    {
+        if (PausedBatches.FirstOrDefault(p => p.BatchId == batchId) is { IsResuming: false })
+        {
+            RetirePausedBatch(batchId);
+        }
+    }
+
+    /// <summary>
+    /// 启动时把上次退出时没传完的批次还原成「已暂停」。只还原,不外连:要连哪台、什么时候连,
+    /// 由用户点「继续」决定(不在启动时悄悄去连一串服务器、续传一堆文件)。
+    /// </summary>
+    private void RestorePausedBatches()
+    {
+        if (_dataStore is null)
+        {
+            return;
+        }
+        _ = LoadAsync();
+
+        async Task LoadAsync()
+        {
+            try
+            {
+                IReadOnlyList<PausedTransferBatch> restored = await Journal.LoadAsync().ConfigureAwait(true);
+                // 新的在上面,与本次运行里停下的(插在最上面)同一个顺序;还原出来的都比它们旧,接在后面。
+                foreach (PausedTransferBatch batch in restored.Reverse())
+                {
+                    if (PausedBatches.All(p => p.BatchId != batch.BatchId))
+                    {
+                        PausedBatches.Add(new PausedTransferBatchViewModel(batch, PausedBatchReason.Restored));
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // 读不出来就当没有:队列只是锦上添花,不能让启动因此出错。
+                System.Diagnostics.Trace.WriteLine($"[VelaShell] Transfer queue restore failed: {ex.Message}");
+            }
+        }
+    }
+
+    private void OnPausedBatchesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        IsPanelVisible = Transfers.Count > 0 || PausedBatches.Count > 0;
+        if (PausedBatches.Count == 0)
+        {
+            NotifyTaskSettled();
+        }
     }
 
     /// <summary>当前所有传输项(活动与已完成),新任务插入到列表顶部。</summary>
@@ -320,7 +472,7 @@ public class FileTransferViewModel : ReactiveObject, IDraggablePanel
         _preparingCount = 0;
         IsPreparing = false;
         this.RaisePropertyChanged(nameof(PendingCount));
-        if (Transfers.Count == 0)
+        if (Transfers.Count == 0 && PausedBatches.Count == 0)
         {
             IsPanelVisible = false;
         }
@@ -448,7 +600,7 @@ public class FileTransferViewModel : ReactiveObject, IDraggablePanel
                 item.PropertyChanged -= OnTransferItemChanged;
             }
         }
-        IsPanelVisible = Transfers.Count > 0;
+        IsPanelVisible = Transfers.Count > 0 || PausedBatches.Count > 0;
     }
 
     private void OnTransferItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -471,8 +623,8 @@ public class FileTransferViewModel : ReactiveObject, IDraggablePanel
         _autoHide?.Dispose();
         _autoHide = null;
 
-        // 批次有剩余文件时、任一单文件传输仍在进行时、或扫描正在规划下一批次时,保持浮窗开启。
-        if (ActiveCount > 0 || IsBatchActive || IsPreparing)
+        // 批次有剩余文件时、任一单文件传输仍在进行时、扫描正在规划下一批次时,或还有停下来等用户处理的批次时,保持浮窗开启。
+        if (ActiveCount > 0 || IsBatchActive || IsPreparing || PausedBatches.Count > 0)
         {
             _hidePending = false;
             return;
@@ -612,7 +764,7 @@ public class FileTransferViewModel : ReactiveObject, IDraggablePanel
     {
         _autoHide = DispatcherTimer.RunOnce(() =>
         {
-            if (ActiveCount != 0 || _isPointerOver)
+            if (ActiveCount != 0 || _isPointerOver || PausedBatches.Count > 0)
             {
                 return;
             }

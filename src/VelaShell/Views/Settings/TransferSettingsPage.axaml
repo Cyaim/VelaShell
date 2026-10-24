@@ -134,7 +134,15 @@
       </StackPanel>
       <ToggleSwitch Grid.Column="1" IsChecked="{Binding Transfer.AutoCleanTempFiles}" VerticalAlignment="Center" />
     </Grid>
-    <!-- 传输重试次数(R-09):运行时消费者未实现,暂不展示。 -->
+    <!-- 失败自动重试(设置审计 R-09 / N-07):临时失败(断线、超时)在原会话上按次数重试,翻倍退避;
+         续传开着就接着传,关着就整份重来。上下限与 AppSettings.Normalize 一致(0–10)。 -->
+    <Grid ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="row-label" Text="{loc:Localize SetTransfer_MaxRetries}" />
+        <TextBlock Classes="row-desc" Text="{loc:Localize SetTransfer_MaxRetriesDesc}" />
+      </StackPanel>
+      <NumericUpDown Grid.Column="1" Width="80" Value="{Binding Transfer.TransferMaxRetries}" Minimum="0" Maximum="10" Increment="1" FormatString="0" VerticalAlignment="Center" />
+    </Grid>
 
     <Border Classes="sep" />
 

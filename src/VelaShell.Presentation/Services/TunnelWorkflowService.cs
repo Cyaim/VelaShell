@@ -23,6 +23,7 @@ public sealed class TunnelWorkflowService(ITunnelService tunnelService) : ITunne
             TunnelType.LocalForward => _tunnelService.CreateLocalForwardAsync(sessionId, config, cancellationToken),
             TunnelType.RemoteForward => _tunnelService.CreateRemoteForwardAsync(sessionId, config, cancellationToken),
             TunnelType.DynamicForward => _tunnelService.CreateDynamicForwardAsync(sessionId, config, cancellationToken),
+            TunnelType.RemoteDynamicForward => _tunnelService.CreateRemoteDynamicForwardAsync(sessionId, config, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(config), config.Type, "Unsupported tunnel type.")
         };
     }

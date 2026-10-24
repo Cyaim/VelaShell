@@ -230,6 +230,17 @@ public class SshTerminalBridge : IAsyncDisposable
     /// </remarks>
     public event Action? LineSubmitted;
 
+    /// <summary>
+    /// 有一段输入入了出站队列、<see cref="InputGeneration" /> 刚加过一:击键、<see cref="SendRaw" /> 注入、
+    /// 同步输入(频道里别的标签转来的)、防空闲的 NUL、共享密码、会话中途的补注,一律算。
+    /// </summary>
+    /// <remarks>
+    /// 在入队的那条线程上、锁外触发 —— 防空闲走计时器线程,所以订阅者要自己封送到 UI 线程,并且必须快速返回。
+    /// 用途见共享密码列表(<c>SharedPasswordFillRequest</c>):不经键入的出站输入也让列表收起,
+    /// 曾经只认 <c>TypedInput</c>,防空闲与同步输入之后列表还开着、点哪项都只回「已过期」。
+    /// </remarks>
+    public event Action? InputQueued;
+
     /// <summary>最后一次收到远端输出的时刻(UTC)。</summary>
     public DateTime LastOutputUtc => new(Interlocked.Read(ref _lastOutputTicks), DateTimeKind.Utc);
 
@@ -472,6 +483,7 @@ public class SshTerminalBridge : IAsyncDisposable
             Interlocked.Increment(ref _inputGeneration);
         }
         RaiseIfLineSubmitted(data);
+        InputQueued?.Invoke();
         return true;
     }
 
@@ -499,8 +511,9 @@ public class SshTerminalBridge : IAsyncDisposable
                 return false;
             }
             Interlocked.Increment(ref _inputGeneration);
-            return true;
         }
+        InputQueued?.Invoke();
+        return true;
     }
 
     /// <summary>出站字节里有回车或换行就报一声 <see cref="LineSubmitted" />(在锁外触发)。</summary>
@@ -976,6 +989,7 @@ public class SshTerminalBridge : IAsyncDisposable
             Interlocked.Increment(ref _inputGeneration);
         }
         RaiseIfLineSubmitted(data);
+        InputQueued?.Invoke();
     }
 
     /// <summary>

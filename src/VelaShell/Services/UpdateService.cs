@@ -13,7 +13,7 @@ namespace VelaShell.Services;
 /// 平台匹配的压缩包到应用目录下的暂存目录,SHA-256 校验后由 <see cref="UpdateApplier" />
 /// 解包,再交由本进程退出后才动手的外置换版进程完成换版与重启(见 <see cref="UpdateRunner" />)。
 /// 应用装在哪里就更新哪里,不强制安装位置,也绝不触碰 ~/.velashell 数据目录。
-/// Linux 仅检查版本,由关于页打开发布页面供用户手动下载安装。
+/// Linux 仅检查版本,由关于页按安装方式打开对应安装包的下载地址(认不出时打开发布页)供用户手动安装。
 /// </summary>
 public class UpdateService : IUpdateService
 {
@@ -81,6 +81,12 @@ public class UpdateService : IUpdateService
     public string? AvailableVersion
     {
         get { lock (_stateLock) return _manifest?.Version; }
+    }
+
+    /// <inheritdoc />
+    public UpdateManifest? AvailableUpdate
+    {
+        get { lock (_stateLock) return _manifest; }
     }
 
     /// <inheritdoc />

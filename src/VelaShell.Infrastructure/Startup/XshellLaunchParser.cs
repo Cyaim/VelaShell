@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
+using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Import;
 
 namespace VelaShell.Infrastructure.Startup;
@@ -15,7 +16,7 @@ namespace VelaShell.Infrastructure.Startup;
 /// 再 <c>-f</c> 打开。因此这里认的是**它们发得出的写法**,而不是我们喜欢的写法。
 /// </para>
 /// <para>
-/// 认识的选项:<c>-url</c>、<c>-newtab</c>、<c>-f</c>、<c>-l</c>、<c>-p</c>、<c>-pw</c>、<c>-i</c>,
+/// 认识的选项:<c>-url</c>、<c>-newtab</c>、<c>-f</c>、<c>-l</c>、<c>-p</c>、<c>-pw</c>、<c>-i</c>,以及 PuTTY 的 <c>-cert</c>,
 /// 外加一个裸 URL 位置参数(URL 协议关联走的就是这条:注册表里写的是 <c>"exe" -url "%1"</c>,
 /// 但有的调用方会把 URL 直接甩在第一个参数上)。认不出的一律忽略 —— argv 是与 Avalonia、
 /// 与 <see cref="VelaShellStartupArguments" /> 共用的。
@@ -32,10 +33,12 @@ public static class XshellLaunchParser
         string? urlOption = null;
         string? positionalUrl = null;
         string? tabUrl = null;
+        string? tabName = null;
         string? sessionFile = null;
         string? user = null;
         string? password = null;
         string? keyFile = null;
+        string? certificateFile = null;
         int port = 0;
 
         for (int i = 0; i < (args?.Count ?? 0); i++)
@@ -74,10 +77,17 @@ public static class XshellLaunchParser
                     // 「开新标签」的开关)。确有调用方往里塞 URL,所以带 scheme 的仍然认;但没有 scheme
                     // 的一律当标签名 —— `root@webserver01`、`root@Linux[2026_09_20_09_45_18]` 这种
                     // 名字与一条省了 scheme 的 URL 长得一模一样,猜错就是连到一台根本不存在的主机上。
-                    if ((inline ?? PeekValue(args, ref i)) is { Length: > 0 } tabValue
-                        && tabValue.Contains("://", StringComparison.Ordinal))
+                    // 当名字收下的那个拿去当标签页标题 —— 堡垒机给一排标签起的名字是用户分辨它们的唯一线索。
+                    if ((inline ?? PeekValue(args, ref i)) is { Length: > 0 } tabValue)
                     {
-                        tabUrl ??= Unquote(tabValue);
+                        if (tabValue.Contains("://", StringComparison.Ordinal))
+                        {
+                            tabUrl ??= Unquote(tabValue);
+                        }
+                        else
+                        {
+                            tabName ??= ExternalLaunchRequest.NormalizeTabName(tabValue);
+                        }
                     }
                     break;
                 case "-f":
@@ -103,6 +113,10 @@ public static class XshellLaunchParser
                 case "-i":
                 case "-identity":
                     keyFile ??= Unquote(inline ?? PeekValue(args, ref i) ?? "");
+                    break;
+                case "-cert":
+                    // PuTTY 的 -cert(用户手册 3.11.3.19):与 -i 指的私钥配对的 OpenSSH 证书。Xshell 的命令行没有对应的选项。
+                    certificateFile ??= Unquote(inline ?? PeekValue(args, ref i) ?? "");
                     break;
             }
         }
@@ -135,8 +149,12 @@ public static class XshellLaunchParser
             Port = port > 0 ? port : request.Port,
             Username = user is { Length: > 0 } ? user : request.Username,
             Password = password is { Length: > 0 } ? password : request.Password,
-            PrivateKeyPath = keyFile is { Length: > 0 } ? keyFile : request.PrivateKeyPath,
-            Origin = request.Origin
+            PrivateKeyPath = keyFile is { Length: > 0 } ? keyFile
+                : certificateFile is { Length: > 0 } ? OpenSshCertificatePaths.InferPrivateKeyPath(certificateFile) ?? request.PrivateKeyPath
+                : request.PrivateKeyPath,
+            CertificatePath = certificateFile is { Length: > 0 } ? certificateFile : null,
+            Origin = request.Origin,
+            TabName = tabName
         };
     }
 
@@ -405,7 +423,7 @@ public static class XshellLaunchParser
     private static bool IsOption(string arg) =>
         arg.StartsWith("--", StringComparison.Ordinal)
         || SplitOption(arg).Name is "-url" or "-newtab" or "-f" or "-file" or "-l" or "-user"
-            or "-p" or "-port" or "-pw" or "-password" or "-i" or "-identity"
+            or "-p" or "-port" or "-pw" or "-password" or "-i" or "-identity" or "-cert"
             or "-e" or "-s" or "-ssh" or "-sftp" or "-ftp" or "-telnet" or "-rlogin" or "-serial";
 
     /// <summary>取下一个参数作为值;下一个已是选项(或没有下一个)时返回 null 并保持位置不动。</summary>

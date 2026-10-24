@@ -204,7 +204,7 @@
                       <DataTemplate x:DataType="vm:SessionImportItemViewModel">
                         <Border Padding="6,6" Margin="0,1" CornerRadius="3"
                                 Background="{DynamicResource VelaBgSurface}">
-                          <Grid ColumnDefinitions="Auto,10,*,Auto">
+                          <Grid ColumnDefinitions="Auto,10,*,10,Auto">
                             <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}"
                                       IsEnabled="{Binding CanSelect}"
                                       MinHeight="0" Padding="0" VerticalAlignment="Center" />
@@ -229,8 +229,14 @@
                                          Foreground="{DynamicResource VelaTextTertiary}"
                                          FontSize="{DynamicResource VelaFontSize10}"
                                          FontFamily="{DynamicResource VelaUiMonoFont}" />
+                              <!-- 导入说明:转发落成了几条隧道、哪些设置映射不了(端口 0 或只有一头是套接字的转发、没写放行名单的远程动态转发、别的 agent、没实现的算法)。 -->
+                              <TextBlock Text="{Binding Notes}"
+                                         IsVisible="{Binding HasNotes}"
+                                         Foreground="{DynamicResource VelaTextMuted}"
+                                         FontSize="{DynamicResource VelaFontSize10}"
+                                         TextWrapping="Wrap" />
                             </StackPanel>
-                            <TextBlock Grid.Column="3" Text="{Binding CredentialStatus}"
+                            <TextBlock Grid.Column="4" Text="{Binding CredentialStatus}"
                                        Foreground="{DynamicResource VelaTextMuted}"
                                        FontSize="{DynamicResource VelaFontSize10}" VerticalAlignment="Center" />
                           </Grid>

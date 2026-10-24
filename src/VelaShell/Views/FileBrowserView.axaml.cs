@@ -77,6 +77,7 @@ public partial class FileBrowserView : UserControl
         {
             _viewModel?.DirectoryChanged -= OnDirectoryChanged;
             _viewModel?.PathEditActivated -= OnPathEditActivated;
+            _viewModel?.RevealRequested -= OnRevealRequested;
             _viewModel = DataContext as FileBrowserViewModel;
             if (_viewModel is not { } vm)
             {
@@ -84,6 +85,8 @@ public partial class FileBrowserView : UserControl
             }
             vm.DirectoryChanged += OnDirectoryChanged;
             vm.PathEditActivated += OnPathEditActivated;
+            vm.RevealRequested += OnRevealRequested;
+            vm.ShowRemoteSearch = root => ShowRemoteSearchAsync(vm, root);
             vm.PickLocalPathsForUpload = PickLocalPathsAsync;
             vm.PickSavePathForDownload = PickSavePathAsync;
             vm.PickFolderForDownload = PickDownloadFolderAsync;
@@ -714,6 +717,56 @@ public partial class FileBrowserView : UserControl
         if (owner.DataContext is MainWindowViewModel mainViewModel)
         {
             mainViewModel.OpenSettingsCommand.Execute().Subscribe();
+        }
+    }
+
+    /// <summary>
+    /// 打开(或提到前面)这个面板的搜索窗口。一个面板一扇:窗口按它定位结果的那个面板认,
+    /// 而不是按这个视图 —— 终端侧栏的视图会随标签换 DataContext,各标签的面板各有各的窗口。
+    /// </summary>
+    /// <param name="vm">面板。</param>
+    /// <param name="root">起点目录;null = 面板当前目录(已开着的窗口则不动它填的位置)。</param>
+    private Task ShowRemoteSearchAsync(FileBrowserViewModel vm, string? root)
+    {
+        if (vm.RemoteSearch is not { } service || TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return Task.CompletedTask;
+        }
+        if (owner.OwnedWindows.FirstOrDefault(window =>
+                window is RemoteSearchWindow { DataContext: RemoteSearchViewModel search } && ReferenceEquals(search.Pane, vm))
+            is { DataContext: RemoteSearchViewModel existing } open)
+        {
+            if (root is not null)
+            {
+                existing.Root = root;
+            }
+            if (open.WindowState == WindowState.Minimized)
+            {
+                open.WindowState = WindowState.Normal;
+            }
+            open.Activate();
+            return Task.CompletedTask;
+        }
+        var model = new RemoteSearchViewModel(service, vm);
+        if (root is not null)
+        {
+            model.Root = root;
+        }
+        var searchWindow = new RemoteSearchWindow { DataContext = model };
+        // 面板拆掉了(标签关闭、会话断开):窗口跟着关,不留一扇对着死会话、点了也定位不到的窗口。
+        void OnPaneDetached(object? sender, EventArgs e) => Dispatcher.UIThread.Post(searchWindow.Close);
+        vm.Detached += OnPaneDetached;
+        searchWindow.Closed += (_, _) => vm.Detached -= OnPaneDetached;
+        searchWindow.Show(owner);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>搜索结果定位到的那一行滚进可见区。</summary>
+    private void OnRevealRequested(object? sender, RemoteFileInfoViewModel row)
+    {
+        if (ReferenceEquals(sender, _viewModel))
+        {
+            FileList.ScrollIntoView(row);
         }
     }
 

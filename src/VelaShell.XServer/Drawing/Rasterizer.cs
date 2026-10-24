@@ -1575,10 +1575,16 @@ internal sealed class Rasterizer
             N = ArcSteps(Extent, Math.Max(Rx, Ry) + half);
             Segment = (Rx == 0) != (Ry == 0);
             (_nx, _ny) = Rx == 0 ? (half, 0.0) : (0.0, half);
+            Crosses = Rx == Ry && Rx > 0 && Rx < half;
         }
 
         /// <summary>外接框的宽或高(只有一个)为 0:路径是一条线段,在上面来回走(见 <see cref="AddSegmentBand" />)。</summary>
         public bool Segment { get; }
+
+        /// <summary>
+        /// 半径小于半个线宽的圆:内边界穿过圆心、落在对侧(见 <see cref="Bounds" />),环带是圆心两边的两个扇形(见 <see cref="AddArcBand" />)。
+        /// </summary>
+        public bool Crosses { get; }
 
         /// <summary>
         /// 两端在 90° 的倍数上时按精确的 cos / sin(0、±1)取点(在 <see cref="Sample" /> 之前设)。与别的弧相接的弧这样做:
@@ -1735,11 +1741,15 @@ internal sealed class Rasterizer
         /// 中线上参数角为 <paramref name="t" /> 的点 <paramref name="center" /> 对应的外边界与内边界上的点:半轴各加 / 减半个线宽(不小于 0)的椭圆上
         /// 同一参数角的点;<see cref="Segment" /> 时是中线两侧各平移半个线宽(协议:宽或高为 0 时边界就是与路径相距 lw/2 的两条线,
         /// 不由实现决定 —— 原先内边界缩成中线自己,只画出一半线宽)。
+        /// <see cref="Crosses" /> 时内边界的「半径」是负的 r − lw/2:协议对圆要的是理想边界 —— 沿法线与路径相距 lw/2 的点,
+        /// 半径小于 lw/2 时那个点在圆心的另一边(原先不小于 0,内边界停在圆心,对侧那一截没画)。椭圆的边界由实现决定,照旧不小于 0。
         /// </summary>
         private ((double X, double Y) Outer, (double X, double Y) Inner) Bounds((double X, double Y) center, (double Cos, double Sin) t) =>
             Segment
                 ? ((center.X + _nx, center.Y + _ny), (center.X - _nx, center.Y - _ny))
-                : (Point(Rx + _half, Ry + _half, t), Point(Math.Max(0, Rx - _half), Math.Max(0, Ry - _half), t));
+                : Crosses
+                    ? (Point(Rx + _half, Ry + _half, t), Point(Rx - _half, Ry - _half, t))
+                    : (Point(Rx + _half, Ry + _half, t), Point(Math.Max(0, Rx - _half), Math.Max(0, Ry - _half), t));
     }
 
     /// <summary>一串宽弧在一张活动边表里攒到这么多个顶点就先填掉(见 <see cref="WideArcs" />)。</summary>
@@ -1747,7 +1757,7 @@ internal sealed class Rasterizer
 
     /// <summary>
     /// 一串宽弧:每条弧是沿弧的内外两条边界围成的环带。外边界是半轴各加半个线宽的椭圆,内边界是各减半个线宽(不小于 0)的椭圆 ——
-    /// 对圆来说正好是与弧相距线宽一半的两条曲线;椭圆的边界协议留给实现,只要求形状(相对圆心)只取决于宽、高与线宽,
+    /// 对圆来说正好是与弧相距线宽一半的两条曲线(半径小于半个线宽的圆,内边界穿过圆心落在对侧,见 <see cref="ArcStroke.Crosses" />);椭圆的边界协议留给实现,只要求形状(相对圆心)只取决于宽、高与线宽,
     /// 所以圆心与半轴都不取整;外接框宽或高为 0 的弧是一条线段,边界是它两侧的两条线(<see cref="AddSegmentBand" />)。相邻两条弧之间按 join-style 加接头(<see cref="AddArcJoin" />);整串的两头按 cap-style 加端帽
     /// (端面是同一参数角上内外两点的连线),<paramref name="loop" />(首尾相接,或一条整圆)时哪里都不加,<paramref name="seamJoin" />
     /// 时接缝上也按 join-style 接。虚线沿中线量,跨过接点接着走。整串的各块放进同一张活动边表一次填,每个像素只画一次。
@@ -1964,6 +1974,16 @@ internal sealed class Rasterizer
             AddSegmentBand(polys, arc, ArcStroke.Lerp(arc.Center, i0, f0), i0, i1, arc.At(arc.Center, s1, i1, f1));
             return;
         }
+        if (arc.Crosses)
+        {
+            // 半径小于半个线宽的圆:每个参数角上的法线段从外边界穿过圆心到对侧的内边界,扫出来的是圆心两边的两个扇形 ——
+            // 外侧半径 r + lw/2、角度就是这一截;对侧半径 lw/2 − r、转过半圈。两个都是简单多边形,放进同一张表求并集;
+            // 外边界与端面围成的环带本身是自交的(两个端面在圆心交叉),跨度超过半圈时两个扇形还会重叠,不能当一个多边形填。
+            // 外侧扇形与原先内边界停在圆心时的环带边逐条相同,原来画的像素一个不少。
+            AddIfReaches(polys, Fan(arc.Outer));
+            AddIfReaches(polys, Fan(arc.Inner));
+            return;
+        }
         Polygon band = [with(((i1 - i0 + 2) * 2) + 2)];
         band.Add(ArcStroke.Lerp(arc.Outer, i0, f0));
         for (int i = i0 + 1; i <= i1; i++)
@@ -1978,6 +1998,20 @@ internal sealed class Rasterizer
         }
         band.Add(ArcStroke.Lerp(arc.Inner, i0, f0));
         AddIfReaches(polys, band);
+
+        // 圆心加上一条边界上这一截的点:一个扇形(取点与上面的环带相同)。
+        Polygon Fan((double X, double Y)[] curve)
+        {
+            Polygon fan = [with(i1 - i0 + 3)];
+            fan.Add((arc.Cx, arc.Cy));
+            fan.Add(ArcStroke.Lerp(curve, i0, f0));
+            for (int i = i0 + 1; i <= i1; i++)
+            {
+                fan.Add(curve[i]);
+            }
+            fan.Add(arc.At(curve, s1, i1, f1));
+            return fan;
+        }
     }
 
     /// <summary>

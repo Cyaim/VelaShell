@@ -33,6 +33,12 @@ public interface IHostKeyPrompt
     /// 本次主机密钥的指纹图(OpenSSH <c>ssh-keygen -lv</c> 那种 17×9 的图,行间 <c>\n</c>,要等宽字体);
     /// 人眼比对一张图比比对 43 个字符可靠得多。没有时为 <see langword="null" />。
     /// </param>
+    /// <param name="certificateAuthority">
+    /// 服务端出示的是主机证书、而信任库里没有为这台主机配受信 CA 时,签发它的 CA 公钥的 SHA-256 指纹;
+    /// 否则为 <see langword="null" />。这时证书得不到任何额外的保证,问的仍是证书里那把钥 ——
+    /// 摆出 CA 是为了让用户知道:核对之后把它加进受信主机 CA,同一个 CA 签的主机就不必逐台确认。
+    /// </param>
     Task<HostKeyDecision> DecideAsync(string host, int port, string keyType, string fingerprint,
-        HostKeyVerification verification, string? knownFingerprint = null, string? randomArt = null);
+        HostKeyVerification verification, string? knownFingerprint = null, string? randomArt = null,
+        string? certificateAuthority = null);
 }

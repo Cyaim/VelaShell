@@ -145,6 +145,67 @@ public sealed class GistSyncServiceTests
         Assert.AreSequenceEqual(["credential", "profile"], order);
     }
 
+    /// <summary>
+    /// 旧版本客户端推上去的载荷没有 <c>directoryBookmarks</c> 字段:拉下来不能当成「收藏清空了」整条覆盖,
+    /// 而要走保留库里现存收藏的 <see cref="ISessionRepository.SaveSessionAsync" />。
+    /// </summary>
+    [TestMethod]
+    public async Task Pull_ProfileWithoutBookmarksField_KeepsLocalBookmarks()
+    {
+        (GistSyncService service, ISessionRepository sessions, _) = CreateWithCredentials();
+        var id = Guid.NewGuid();
+
+        SyncResult result = await service.ApplyRemoteAsync(
+            ProfilesOnly(), GistSyncService.ParseEnvelope(EnvelopeJson(id, bookmarksField: null)), "rev", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Message);
+        await sessions.Received(1).SaveSessionAsync(Arg.Is<SessionProfile>(p =>
+            p.Id == id && p.Name == "web" && p.DirectoryBookmarks != null && p.DirectoryBookmarks.Count == 0));
+        await sessions.DidNotReceive().ReplaceSessionAsync(Arg.Any<SessionProfile>());
+    }
+
+    /// <summary>字段在、是空数组:那是对方真的清空了收藏,照旧整条覆盖。</summary>
+    [TestMethod]
+    public async Task Pull_ProfileWithEmptyBookmarksArray_ReplacesTheWholeProfile()
+    {
+        (GistSyncService service, ISessionRepository sessions, _) = CreateWithCredentials();
+        var id = Guid.NewGuid();
+
+        SyncResult result = await service.ApplyRemoteAsync(
+            ProfilesOnly(), GistSyncService.ParseEnvelope(EnvelopeJson(id, bookmarksField: "[]")), "rev", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Message);
+        await sessions.Received(1).ReplaceSessionAsync(Arg.Is<SessionProfile>(p =>
+            p.Id == id && p.DirectoryBookmarks != null && p.DirectoryBookmarks.Count == 0));
+        await sessions.DidNotReceive().SaveSessionAsync(Arg.Any<SessionProfile>());
+    }
+
+    /// <summary>字段里有收藏:整条覆盖,收藏取载荷里的。</summary>
+    [TestMethod]
+    public async Task Pull_ProfileWithBookmarks_ReplacesWithTheIncomingBookmarks()
+    {
+        (GistSyncService service, ISessionRepository sessions, _) = CreateWithCredentials();
+        var id = Guid.NewGuid();
+        const string bookmarks = """[{"name":"web","localPath":"C:\\site","remotePath":"/var/www"}]""";
+
+        SyncResult result = await service.ApplyRemoteAsync(
+            ProfilesOnly(), GistSyncService.ParseEnvelope(EnvelopeJson(id, bookmarks)), "rev", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Message);
+        await sessions.Received(1).ReplaceSessionAsync(Arg.Is<SessionProfile>(p =>
+            p.Id == id && p.DirectoryBookmarks.Count == 1 && p.DirectoryBookmarks[0].RemotePath == "/var/www"));
+    }
+
+    /// <summary>未加密信封的 JSON;<paramref name="bookmarksField" /> 为 null 时连字段都不写(旧客户端的形状)。</summary>
+    private static string EnvelopeJson(Guid profileId, string? bookmarksField)
+    {
+        string bookmarks = bookmarksField is null ? string.Empty : ",\"directoryBookmarks\":" + bookmarksField;
+        return "{\"schemaVersion\":2,\"updatedAtUtc\":\"2026-10-01T00:00:00Z\",\"deviceName\":\"old\",\"encrypted\":false,"
+               + "\"payload\":{\"schemaVersion\":2,\"updatedAtUtc\":\"2026-10-01T00:00:00Z\",\"deviceName\":\"old\","
+               + "\"profiles\":[{\"id\":\"" + profileId.ToString("D") + "\",\"name\":\"web\",\"host\":\"web.example.com\","
+               + "\"username\":\"deploy\"" + bookmarks + "}]}}";
+    }
+
     [TestMethod]
     public async Task Pull_RejectsAPayloadNewerThanItUnderstands()
     {

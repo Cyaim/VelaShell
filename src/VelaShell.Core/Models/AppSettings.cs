@@ -131,6 +131,14 @@ public class AppSettings
             Security.FingerprintChangeDefaultMigrated = true;
         }
 
+        // 自动下载更新以前默认开、却没有界面也没人读(设置审计 R-03)。现在接上了运行时、默认关:
+        // 存量配置里的 true 必然是旧默认值而不是用户选的(没有地方能选),只关这一次。
+        if (!General.AutoDownloadUpdatesOptInMigrated)
+        {
+            General.AutoDownloadUpdates = false;
+            General.AutoDownloadUpdatesOptInMigrated = true;
+        }
+
         // 代理默认值从 none 改成 system(见 ProxyOptions.Type)。老配置里落盘的那个 none
         // 分不清是"用户选的"还是"从来没动过",而两者在没有系统代理时行为一模一样 ——
         // 于是只抬这一次:抬完打标记,此后主动选的 none 永远算数。
@@ -212,6 +220,7 @@ public class AppSettings
         General.ReconnectIntervalSeconds = Math.Clamp(General.ReconnectIntervalSeconds, 1, 300);
         General.StatusMetricsIntervalSeconds = Math.Clamp(General.StatusMetricsIntervalSeconds, 1, 60);
         Transfer.MaxConcurrentTransfers = Math.Clamp(Transfer.MaxConcurrentTransfers, 1, 16);
+        Transfer.TransferMaxRetries = Math.Clamp(Transfer.TransferMaxRetries, 0, 10);
         Security.AuditLogRetentionDays = Math.Clamp(
             Security.AuditLogRetentionDays, 1, SecurityOptions.MaxAuditLogRetentionDays);
         XServer.DisplayNumber = Math.Clamp(
@@ -268,6 +277,21 @@ public class GeneralOptions : ObservableOptions
         get;
         set => Set(ref field, value);
     } = true;
+
+    /// <summary>
+    /// 「恢复会话」时是否连同上次的分屏一起还原:窗格的方向与比例、各窗格里的标签顺序、选中的标签、固定状态。
+    /// 只在 <see cref="RestoreSessionsOnStartup" /> 开着时起作用。
+    /// </summary>
+    /// <remarks>
+    /// 默认关:关着时恢复会话照旧是把上次在线的连接逐条重连进一个窗格(<see cref="LastOpenProfileIds" />)。
+    /// 开着时退出时另记一份布局(SonnetDB 的 <c>layout_session</c> 集合,不进设置、不随同步与导出走),
+    /// 启动时按它重连并排好;还原的范围与逐条重连同一口径 —— 退出时在线的连接,外加本地终端。
+    /// </remarks>
+    public bool RestoreLayoutOnStartup
+    {
+        get;
+        set => Set(ref field, value);
+    }
 
     /// <summary>启动时是否检查应用更新。</summary>
     public bool CheckUpdatesOnStartup
@@ -331,12 +355,27 @@ public class GeneralOptions : ObservableOptions
         set => Set(ref field, value);
     } = "stable";
 
-    /// <summary>是否自动下载可用更新。</summary>
+    /// <summary>
+    /// 启动时检查到新版本后,是否在后台自动下载并校验(设置 → 常规,紧挨「启动时检查更新」)。
+    /// 下完只提示「重启即可更新」,不会自己重启;下载失败不打扰,下一次启动检查再试。
+    /// </summary>
+    /// <remarks>
+    /// 默认关:它比单纯的检查多一次几十 MB 的外呼下载(维护约定第 6 条,见 PRIVACY.md)。
+    /// 只在能原地换版的安装上生效(Windows / macOS 的可写目录);Linux、商店版与只读目录照旧只检查。
+    /// 关于页手动「检查更新」本来就会接着下载,不受这个开关管。
+    /// </remarks>
     public bool AutoDownloadUpdates
     {
         get;
         set => Set(ref field, value);
-    } = true;
+    }
+
+    /// <summary>
+    /// <see cref="AutoDownloadUpdates" />「改为默认关闭」的一次性迁移标记。这个字段早年默认 <see langword="true" />,
+    /// 却从没有界面、也没有任何消费者,存量配置里落盘的那个 true 只能是旧默认值 —— 于是统一关一次并打上标记,
+    /// 之后完全听用户的(见 <see cref="AppSettings.Normalize" />)。
+    /// </summary>
+    public bool AutoDownloadUpdatesOptInMigrated { get; set; }
 
     // 行为
     /// <summary>退出应用前确认;开启“最小化到托盘”后点关闭按钮只隐藏窗口,不触发本确认(设置审计 C-03)。</summary>
@@ -495,7 +534,12 @@ public class AppearanceOptions : ObservableOptions
         set => Set(ref field, value);
     } = 85;
 
-    /// <summary>标签栏位置(如 top / bottom)。</summary>
+    /// <summary>
+    /// 横排的标签条停在窗格顶部(<c>top</c>,默认)还是底部(<c>bottom</c>;其余值一律按顶部)。
+    /// 所有窗格一起变,设置页里一改就能看到(外观预览),取消即回滚;宿主灌进停靠层的
+    /// <c>DockWorkspace.TabsAtBottom</c>。标签右键菜单里停到左 / 右侧的窗格是按窗格单独选的,不受它影响。
+    /// </summary>
+    /// <remarks>设置审计 R-05:停靠层支持底部之前它零消费、从外观页撤下过,现已恢复展示。</remarks>
     public string TabBarPosition
     {
         get;
@@ -1088,8 +1132,19 @@ public class TransferOptions : ObservableOptions
         set => Set(ref field, value);
     } = true;
 
-    /// <summary>规划中(传输失败重试):仅持久化,当前无运行时消费者,不出现在设置界面(设置审计 R-09)。</summary>
-    public int TransferMaxRetries { get; set; } = 3;
+    /// <summary>
+    /// 失败自动重试(设置 → 文件传输):断线、超时这类临时失败,同一个文件在原会话上最多再试几次;0 = 不重试。
+    /// </summary>
+    /// <remarks>
+    /// 哪些失败算「临时」见 <c>TransferRetryPolicy</c>:权限拒绝、磁盘满、路径不存在、用户取消一律不重试。
+    /// 两次之间按 1 s、2 s、4 s……翻倍退避(封顶 30 s)。重试时 <see cref="ResumeEnabled" /> 开着就从这个文件
+    /// 自己已经传过去的地方接着传(起点照常核实),关着就整份重来。上下限与设置页一致(0–10,见 Normalize)。
+    /// </remarks>
+    public int TransferMaxRetries
+    {
+        get;
+        set => Set(ref field, value);
+    } = 3;
 
     /// <summary>
     /// 删除远端目录时先试一条 <c>rm -rf</c>(#474),而不是用 SFTP 逐个条目递归删。

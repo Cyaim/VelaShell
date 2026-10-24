@@ -76,6 +76,11 @@ public sealed class PluginManagerOptions
     /// </summary>
     public string? DiagnosticsDirectory { get; init; }
 
+    /// <summary>
+    /// 每插件一份的日志文件(插件管理页「查看日志」读它)。缺省时插件日志只进宿主 Trace(headless 测试路径)。
+    /// </summary>
+    public PluginLogFiles? LogFiles { get; init; }
+
     /// <summary>插件私有数据根目录:每插件一个 <c>&lt;root&gt;/&lt;pluginId&gt;/</c> 子目录。</summary>
     public required string DataRootDirectory { get; init; }
 

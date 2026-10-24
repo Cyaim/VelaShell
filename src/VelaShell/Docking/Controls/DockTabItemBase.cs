@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using VelaShell.Core.Resources;
 using VelaShell.Docking.Model;
 
 namespace VelaShell.Docking.Controls;
@@ -20,6 +21,12 @@ public abstract class DockTabItemBase : UserControl
     /// 菜单又开在独立的弹出层里,<c>$parent</c> 够不到标签本身。
     /// </remarks>
     internal const string MultiRowTabsMenuItemName = "MultiRowTabsMenuItem";
+
+    /// <summary>
+    /// 「标签位置」子菜单里「回到横排」那一项的名字(有这个子菜单的三种标签各自声明)。
+    /// 横排停在顶部还是底部由设置「标签栏位置」定,这一项的文字跟着它在「顶部」「底部」之间换。
+    /// </summary>
+    internal const string HorizontalTabsMenuItemName = "HorizontalTabsMenuItem";
 
     private DockGroupControl? _owner;
     private ContextMenu? _hookedMenu;
@@ -61,15 +68,24 @@ public abstract class DockTabItemBase : UserControl
     /// <summary>
     /// 菜单打开前填上「多行显示标签页」的勾选状态。标签条停在左 / 右侧时它不起作用,置灰而不是藏起来 ——
     /// 藏起来的话,用户会以为这个功能不见了。
+    /// 「标签位置」里回到横排的那一项按「标签栏位置」写成「顶部」或「底部」:设置成底部之后它还叫「顶部」,
+    /// 点下去标签条却落到了底部,菜单就是在说谎。
     /// </summary>
     private void OnContextMenuOpening(object? sender, CancelEventArgs e)
     {
-        if (sender is not ContextMenu menu || FindMenuItem(menu.Items, MultiRowTabsMenuItemName) is not { } item)
+        if (sender is not ContextMenu menu)
         {
             return;
         }
-        item.IsChecked = Workspace?.MultiRowTabs == true;
-        item.IsEnabled = Workspace is not null && Group?.TabsPosition is null or DockTabsPosition.Top;
+        if (FindMenuItem(menu.Items, MultiRowTabsMenuItemName) is { } multiRow)
+        {
+            multiRow.IsChecked = Workspace?.MultiRowTabs == true;
+            multiRow.IsEnabled = Workspace is not null && Group?.TabsPosition is null or DockTabsPosition.Top;
+        }
+        if (FindMenuItem(menu.Items, HorizontalTabsMenuItemName) is { } horizontal)
+        {
+            horizontal.Header = Strings.Get(Workspace?.TabsAtBottom == true ? "Dock_TabsBottom" : "Dock_TabsTop");
+        }
     }
 
     private static MenuItem? FindMenuItem(IEnumerable<object?> items, string name)
@@ -174,7 +190,7 @@ public abstract class DockTabItemBase : UserControl
     protected void SplitHorizontal_Click(object? sender, RoutedEventArgs e) => Workspace?.SplitDocument(Document!, DockOrientation.Horizontal);
     /// <summary>将文档垂直拆分为新组。</summary>
     protected void SplitVertical_Click(object? sender, RoutedEventArgs e) => Workspace?.SplitDocument(Document!, DockOrientation.Vertical);
-    /// <summary>将标签移到组的顶部。</summary>
+    /// <summary>把标签条放回横排:停在顶部还是底部,看设置「标签栏位置」(<see cref="DockWorkspace.TabsAtBottom" />)。</summary>
     protected void TabsTop_Click(object? sender, RoutedEventArgs e) => SetTabsPosition(DockTabsPosition.Top);
     /// <summary>将标签移到组的左侧。</summary>
     protected void TabsLeft_Click(object? sender, RoutedEventArgs e) => SetTabsPosition(DockTabsPosition.Left);

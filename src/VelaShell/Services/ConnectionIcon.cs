@@ -66,15 +66,25 @@ public static class ConnectionIcon
         };
 
     /// <summary>
-    /// 会话标签页(终端 / SFTP / 插件工作台)的图标:**插件自报的优先**,
-    /// 没有才按连接类型取内建字形。
+    /// 会话标签页(终端 / SFTP / 插件工作台)的图标:**用户在连接里挑的优先**,其次插件自报的,
+    /// 都没有才按连接类型取内建字形。
     /// </summary>
+    /// <remarks>
+    /// 用户挑的压过插件自报的:那是这台机器的主人亲手标的「这台是干什么的」,插件只知道「这是哪种协议」。
+    /// 挑的 id 认不出(更新版本加的、手改的)就当没挑,不让图标凭空消失(见 <see cref="SessionTabIcons" />)。
+    /// </remarks>
     /// <param name="profile">连接配置。</param>
     /// <param name="pluginIcon">插件描述符里交出来的图标;宿主内建协议传 <c>null</c>。</param>
     /// <returns>要画的图标,或 <c>null</c>(此时标签不画图标)。</returns>
     public static TabIcon? ForSession(SessionProfile? profile, PluginIcon? pluginIcon = null) =>
-        FromPlugin(pluginIcon, () => ConnectionAccent.BrushForProfile(profile))
+        FromKey(SessionTabIcons.ResourceKey(SessionTabIcons.For(profile)))
+        ?? FromPlugin(pluginIcon, () => ConnectionAccent.BrushForProfile(profile))
         ?? FromKey(ResourceKeyFor(profile));
+
+    /// <summary>按资源键取宿主图标集里的几何(连接对话框的图标选择器、资源管理器的会话行也用它);取不到为 null。</summary>
+    /// <param name="key">资源键(<c>Icon.&lt;name&gt;</c>)。</param>
+    /// <returns>几何,或 null(键错了,或无头测试里没有资源字典)。</returns>
+    public static Geometry? GeometryFor(string? key) => key is null ? null : Resolve(key);
 
     /// <summary>
     /// 插件面板标签页的图标:插件自报的优先,没有就是通用插头。

@@ -62,7 +62,11 @@ public sealed class SonnetDbHostKeyService(SonnetDbEngine engine, string? legacy
     }
 
     /// <summary>信任指定主机的这把钥:按类型新增或替换那一条(别的类型的记录不动),记下最近可见时间。</summary>
-    public async Task TrustHostKeyAsync(string host, int port, string keyType, string fingerprint, CancellationToken cancellationToken = default)
+    /// <remarks>
+    /// 带了公钥就记下(<see cref="KnownHost.HostKey" />,导出 OpenSSH 的 <c>known_hosts</c> 要它);没带时同一把钥原来记着的照旧,
+    /// 换了一把钥就清掉 —— 留着的话导出去的是上一把,与指纹对不上。
+    /// </remarks>
+    public async Task TrustHostKeyAsync(string host, int port, string keyType, string fingerprint, string? publicKey = null, CancellationToken cancellationToken = default)
     {
         await EnsureMigratedAsync(cancellationToken).ConfigureAwait(false);
         await _engine.WithCollectionAsync<object?>(SonnetDbEngine.KnownHostsCollection, store =>
@@ -87,6 +91,14 @@ public sealed class SonnetDbHostKeyService(SonnetDbEngine engine, string? legacy
             }
 
             KnownHost entry = sameType ?? new KnownHost { Host = host, Port = port, FirstSeenAt = DateTime.UtcNow };
+            if (!string.IsNullOrEmpty(publicKey))
+            {
+                entry.HostKey = publicKey;
+            }
+            else if (!SameFingerprint(entry.Fingerprint, fingerprint))
+            {
+                entry.HostKey = string.Empty;
+            }
             entry.KeyType = keyType;
             entry.Fingerprint = fingerprint;
             entry.LastSeenAt = DateTime.UtcNow;
@@ -119,6 +131,49 @@ public sealed class SonnetDbHostKeyService(SonnetDbEngine engine, string? legacy
                     store.Delete(row.Id);
                 }
             }
+            return null;
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>全部受信主机 CA 与吊销记录(集合 <c>known_host_markers</c>),先加的在前。</summary>
+    /// <remarks>读坏了的文档跳过;集合本身读不出来照实抛出(见接口说明,裁决要 fail-closed)。</remarks>
+    public async Task<IReadOnlyList<KnownHostMarker>> GetMarkersAsync(CancellationToken cancellationToken = default) =>
+        await _engine.WithCollectionAsync<IReadOnlyList<KnownHostMarker>>(SonnetDbEngine.KnownHostMarkersCollection, store =>
+            [.. store.Scan()
+                .Select(row => SonnetDbJson.Deserialize<KnownHostMarker>(row.Json))
+                .OfType<KnownHostMarker>()
+                .Where(marker => marker.HostPatterns.Length > 0 && marker.PublicKey.Length > 0)
+                .OrderBy(marker => marker.AddedAt)],
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>加一条;种类、模式与公钥都相同的已经有了就不加(重复导入同一份 known_hosts 不会越积越多)。</summary>
+    public async Task<bool> AddMarkerAsync(KnownHostMarker marker, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(marker);
+        return await _engine.WithCollectionAsync(SonnetDbEngine.KnownHostMarkersCollection, store =>
+        {
+            bool duplicate = store.Scan()
+                .Select(row => SonnetDbJson.Deserialize<KnownHostMarker>(row.Json))
+                .OfType<KnownHostMarker>()
+                .Any(existing => existing.Kind == marker.Kind
+                                 && string.Equals(existing.HostPatterns, marker.HostPatterns, StringComparison.OrdinalIgnoreCase)
+                                 && string.Equals(existing.PublicKey, marker.PublicKey, StringComparison.Ordinal));
+            if (duplicate)
+            {
+                return false;
+            }
+            store.Upsert(marker.Id, SonnetDbJson.Serialize(marker));
+            return true;
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>按 Id 删一条受信主机 CA 或吊销记录。</summary>
+    public async Task RemoveMarkerAsync(string id, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        await _engine.WithCollectionAsync<object?>(SonnetDbEngine.KnownHostMarkersCollection, store =>
+        {
+            store.Delete(id);
             return null;
         }, cancellationToken).ConfigureAwait(false);
     }

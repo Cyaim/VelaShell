@@ -101,7 +101,10 @@ public static class SshConnectionExtensions
                 throw new SshChannelException(
                     SshFailureReason.ChannelRequestRejected,
                     "服务端拒绝执行这条命令（常见原因：账号被限制成只能跑固定命令，" +
-                    "或者 sshd_config 里配了 ForceCommand）。");
+                    "或者 sshd_config 里配了 ForceCommand）。")
+                {
+                    FailureKind = SshChannelFailureKind.ExecRejected,
+                };
             }
 
             return new SshCommand(
@@ -158,7 +161,10 @@ public static class SshConnectionExtensions
                 throw new SshChannelException(
                     SshFailureReason.ChannelRequestRejected,
                     "服务端拒绝分配伪终端（常见原因：sshd_config 里 PermitTTY no，" +
-                    "或者这个账号被配成了无终端登录）。");
+                    "或者这个账号被配成了无终端登录）。")
+                {
+                    FailureKind = SshChannelFailureKind.PtyRejected,
+                };
             }
 
             forwarding = await RequestForwardingAsync(connection, channel, effective, cancellationToken)
@@ -186,7 +192,10 @@ public static class SshConnectionExtensions
                     throw new SshChannelException(
                         SshFailureReason.ChannelRequestRejected,
                         "服务端拒绝执行这条命令（常见原因：账号被限制成只能跑固定命令，" +
-                        "或者 sshd_config 里配了 ForceCommand）。");
+                        "或者 sshd_config 里配了 ForceCommand）。")
+                    {
+                        FailureKind = SshChannelFailureKind.ExecRejected,
+                    };
                 }
             }
             else
@@ -198,7 +207,10 @@ public static class SshConnectionExtensions
                 if (!shellAccepted)
                 {
                     throw new SshChannelException(
-                        SshFailureReason.ChannelRequestRejected, "服务端拒绝启动 shell。");
+                        SshFailureReason.ChannelRequestRejected, "服务端拒绝启动 shell。")
+                    {
+                        FailureKind = SshChannelFailureKind.ShellRejected,
+                    };
                 }
             }
 
@@ -253,7 +265,11 @@ public static class SshConnectionExtensions
                     $"服务端没有提供子系统 {subsystemName}" +
                     (subsystemName == SshProtocolNames.SubsystemSftp
                         ? "（检查 sshd_config 里的 Subsystem sftp 那一行）。"
-                        : "。"));
+                        : "。"))
+                {
+                    FailureKind = SshChannelFailureKind.SubsystemRejected,
+                    SubsystemName = subsystemName,
+                };
             }
 
             return channel;

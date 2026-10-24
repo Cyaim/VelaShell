@@ -4,10 +4,12 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Core.Tunnels;
 using VelaShell.Ssh.Channels;
+using VelaShell.Ssh.Diagnostics;
 
 namespace VelaShell.Infrastructure.Tunnels;
 
@@ -50,15 +52,18 @@ public class TunnelService(
         }
     }
 
-    /// <summary>把各活动转发句柄的连接数与流量读数同步到对应的 <see cref="TunnelInfo" />。</summary>
+    /// <summary>把各活动转发句柄的连接数、流量、实时速率与连接快照同步到对应的 <see cref="TunnelInfo" />。</summary>
     public void RefreshStatistics()
     {
         foreach ((IPortForwardHandle handle, TunnelInfo info) in _tunnelPorts.Values)
         {
-            // 停止的隧道其句柄已被移出 _tunnelPorts,读数就停在最后一次同步的值上。
+            // 停止的隧道其句柄已被移出 _tunnelPorts,累计读数就停在最后一次同步的值上(速率与连接列表在停止时清掉)。
             info.BytesTransferred = handle.BytesTransferred;
             info.TotalConnections = handle.TotalConnections;
             info.ActiveConnections = handle.ActiveConnections;
+            info.SentBytesPerSecond = handle.SentBytesPerSecond;
+            info.ReceivedBytesPerSecond = handle.ReceivedBytesPerSecond;
+            info.Connections = handle.Connections ?? [];
         }
     }
 
@@ -69,10 +74,23 @@ public class TunnelService(
         {
             throw new ArgumentException(@"Config type must be LocalForward", nameof(config));
         }
-        EnsureLocalPortAvailable(config.LocalHost, config.LocalPort);
+        // 本机这头在套接字文件上监听时,预检的是那个路径而不是端口。
+        if (config.LocalSocketPath is { } listenPath)
+        {
+            EnsureLocalSocketPathAvailable(listenPath);
+        }
+        else
+        {
+            EnsureLocalPortAvailable(config.LocalHost, config.LocalPort);
+        }
         return await CreateForwardAsync(sessionId,
                    config,
-                   new(PortForwardKind.Local, config.LocalHost, config.LocalPort, config.RemoteHost, config.RemotePort),
+                   new(PortForwardKind.Local, config.LocalHost, config.LocalPort, config.RemoteHost, config.RemotePort)
+                   {
+                       MaxBytesPerSecond = config.MaxBytesPerSecond,
+                       BoundSocketPath = config.LocalSocketPath,
+                       TargetSocketPath = config.RemoteSocketPath
+                   },
                    "local",
                    cancellationToken).ConfigureAwait(false);
     }
@@ -84,9 +102,20 @@ public class TunnelService(
         {
             throw new ArgumentException(@"Config type must be RemoteForward", nameof(config));
         }
+        // SSH 库的远程转发只有「两头都是 TCP」与「两头都是套接字」两种:只给了一头的配置(手改的、导入的)不建,
+        // 说清楚缺哪头,而不是悄悄退回端口。
+        if ((config.LocalSocketPath is null) != (config.RemoteSocketPath is null))
+        {
+            throw new ArgumentException(Strings.Get("TunnelSvc_RemoteSocketNeedsBothEnds"));
+        }
         return await CreateForwardAsync(sessionId,
                    config,
-                   new(PortForwardKind.Remote, config.RemoteHost, config.RemotePort, config.LocalHost, config.LocalPort),
+                   new(PortForwardKind.Remote, config.RemoteHost, config.RemotePort, config.LocalHost, config.LocalPort)
+                   {
+                       MaxBytesPerSecond = config.MaxBytesPerSecond,
+                       BoundSocketPath = config.RemoteSocketPath,
+                       TargetSocketPath = config.LocalSocketPath
+                   },
                    "remote",
                    cancellationToken).ConfigureAwait(false);
     }
@@ -101,8 +130,38 @@ public class TunnelService(
         EnsureLocalPortAvailable(config.LocalHost, config.LocalPort);
         return await CreateForwardAsync(sessionId,
                    config,
-                   new(PortForwardKind.Dynamic, config.LocalHost, config.LocalPort),
+                   new(PortForwardKind.Dynamic, config.LocalHost, config.LocalPort)
+                   {
+                       MaxBytesPerSecond = config.MaxBytesPerSecond
+                   },
                    "dynamic",
+                   cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 在指定会话上创建远程动态转发通道:服务器上的端口当 SOCKS 代理,本机按放行名单替远端去连。
+    /// 名单留空(或有写错的规则)时不建,报一句说得清的话 —— 不替用户把它当成「全放」或「全拒」。
+    /// </summary>
+    public async Task<TunnelInfo> CreateRemoteDynamicForwardAsync(Guid sessionId, TunnelConfig config, CancellationToken cancellationToken = default)
+    {
+        if (config.Type != TunnelType.RemoteDynamicForward)
+        {
+            throw new ArgumentException(@"Config type must be RemoteDynamicForward", nameof(config));
+        }
+        if (!RemoteOpenRules.TryParse(RemoteOpenRules.Format(config.PermitRemoteOpen), out IReadOnlyList<string> rules, out string? invalid))
+        {
+            throw new ArgumentException(invalid is null
+                ? Strings.Get("TunnelSvc_PermitRemoteOpenRequired")
+                : Strings.Format("Tunnel_PermitRemoteOpenInvalid", invalid));
+        }
+        return await CreateForwardAsync(sessionId,
+                   config,
+                   new(PortForwardKind.RemoteDynamic, config.RemoteHost, config.RemotePort)
+                   {
+                       MaxBytesPerSecond = config.MaxBytesPerSecond,
+                       PermitRemoteOpen = rules
+                   },
+                   "remote-dynamic",
                    cancellationToken).ConfigureAwait(false);
     }
 
@@ -152,6 +211,9 @@ public class TunnelService(
                 logger?.LogWarning(ex, "Failed to stop tunnel {TunnelId} on session teardown", tunnelId);
                 _tunnelPorts.TryRemove(tunnelId, out _);
                 info.Status = TunnelStatus.Stopped;
+                info.SentBytesPerSecond = 0;
+                info.ReceivedBytesPerSecond = 0;
+                info.Connections = [];
             }
         }
     }
@@ -171,6 +233,9 @@ public class TunnelService(
             info.BytesTransferred = handle.BytesTransferred;
             info.TotalConnections = handle.TotalConnections;
             info.ActiveConnections = 0;
+            info.SentBytesPerSecond = 0;
+            info.ReceivedBytesPerSecond = 0;
+            info.Connections = [];
 
             // 释放幂等,且自带"客户端已随会话释放"的容错(见 IPortForwardHandle 契约)。
             // **等它真的收完**再把状态置为已停止 —— 否则界面上显示「已停止」的那一刻
@@ -240,6 +305,18 @@ public class TunnelService(
         }
     }
 
+    /// <summary>
+    /// 本机套接字监听的预检:那个路径上已经有文件就不建 —— 多半是上一次没收拾干净,也可能是别的程序的套接字,
+    /// 不替用户删(SSH 库默认同样不删),报一句说得清的话。
+    /// </summary>
+    private static void EnsureLocalSocketPathAvailable(string path)
+    {
+        if (File.Exists(path))
+        {
+            throw new TunnelSocketPathInUseException(Strings.Format("TunnelSvc_LocalSocketExists", path), path);
+        }
+    }
+
     /// <summary>默认的占用探测:比对系统 TCP 监听表。</summary>
     private static bool IsLocalPortInUse(string host, uint port)
     {
@@ -292,8 +369,15 @@ public class TunnelService(
     /// 把转发通道异常翻译成用户可理解的提示;最常见的是把目标填成了服务器的
     /// 公网地址,而服务只监听 127.0.0.1。
     /// </summary>
-    internal static string DescribeForwardError(Exception ex)
+    /// <param name="ex">转发通道上报的异常。</param>
+    /// <param name="type">
+    /// 隧道类型:远程 / 远程动态转发的目标是<b>本机</b>去连的(连不上时是本机这头的套接字报的错),
+    /// 提示要说「本机这头」;本地 / 动态转发的目标由服务器去连,提示说「从服务器视角」。
+    /// 曾经不分类型,远程转发的本机服务没起来时,行上写的却是「目标地址是从服务器视角解析的」。
+    /// </param>
+    internal static string DescribeForwardError(Exception ex, TunnelType type)
     {
+        bool targetIsLocal = type is TunnelType.RemoteForward or TunnelType.RemoteDynamicForward;
         // 库把底层异常包在 SshForwardException / SshChannelException 里,
         // 宿主的 SshInterop 又会再包一层 —— 所以沿整条 InnerException 链找,而不是只看一层。
         SocketException? socket = null;
@@ -304,9 +388,9 @@ public class TunnelService(
         switch (socket?.SocketErrorCode)
         {
             case SocketError.ConnectionRefused:
-                return Strings.Get("TunnelSvc_TargetRefused");
-            case SocketError.TimedOut or SocketError.HostUnreachable:
-                return Strings.Get("TunnelSvc_TargetUnreachable");
+                return Strings.Get(targetIsLocal ? "TunnelSvc_LocalTargetRefused" : "TunnelSvc_TargetRefused");
+            case SocketError.TimedOut or SocketError.HostUnreachable or SocketError.NetworkUnreachable or SocketError.HostNotFound:
+                return Strings.Get(targetIsLocal ? "TunnelSvc_LocalTargetUnreachable" : "TunnelSvc_TargetUnreachable");
         }
         // 认原因码而不是认文案:库的消息是中文,「administratively prohibited」这串字只在
         // 服务端原文里才有。原因码是协议定死的(RFC 4254 §5.1),不随谁的措辞变。
@@ -369,7 +453,7 @@ public class TunnelService(
             // 记到 LastError 供界面展示,否则用户只看到"运行中"却连不上。
             handle.ChannelError += ex =>
             {
-                tunnelInfo.LastError = DescribeForwardError(ex);
+                tunnelInfo.LastError = DescribeForwardError(ex, config.Type);
                 logger?.LogWarning(ex, "Tunnel {TunnelId} channel error", tunnelInfo.Id);
             };
             List<TunnelInfo> tunnels = _sessionTunnels.GetOrAdd(sessionId, _ => []);
@@ -389,7 +473,63 @@ public class TunnelService(
         {
             tunnelInfo.Status = TunnelStatus.Error;
             logger?.LogError(ex, "Failed to create {Direction} forward tunnel for session {SessionId}", direction, sessionId);
+            if (DescribeLocalBindFailure(ex, request) is { } message)
+            {
+                throw new TunnelBindFailedException(message, ex);
+            }
             throw;
         }
+    }
+
+    /// <summary>
+    /// 本机监听起不来(SSH 库报 <see cref="SshFailureReason.ForwardBindFailed" />)时给一句本地化的话:
+    /// 在哪儿(配置里的地址与端口、或套接字路径)、为什么(套接字错误码)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 库的消息是写给开发者的中文,宿主的 <c>SshInterop.Localize</c> 对这个原因码刻意不翻 —— 换成一句通用文案会丢掉消息里的路径与端口。
+    /// 隧道这里配置在手,路径与端口不必从库的句子里抠,所以在这一层说清楚。
+    /// </para>
+    /// <para>
+    /// TCP 端口被占(<see cref="SocketError.AddressAlreadyInUse" />)不在这里说:面板按「本地端口 N 已被其它程序占用」报,那句已经够具体。
+    /// 远程转发的监听在服务器上,失败是 <see cref="SshFailureReason.ForwardRejected" />,不归这里。
+    /// </para>
+    /// </remarks>
+    internal static string? DescribeLocalBindFailure(Exception ex, PortForwardRequest request)
+    {
+        if (request.Kind is not (PortForwardKind.Local or PortForwardKind.Dynamic))
+        {
+            return null;
+        }
+        bool bindFailed = false;
+        SocketException? socket = null;
+        Exception? innermost = null;
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            bindFailed |= e is VelaShell.Ssh.Diagnostics.SshException { Reason: SshFailureReason.ForwardBindFailed };
+            socket ??= e as SocketException;
+            innermost = e;
+        }
+        if (!bindFailed)
+        {
+            return null;
+        }
+        if (request.BoundSocketPath is { } path)
+        {
+            string detail = socket is not null
+                ? socket.SocketErrorCode.ToString()
+                : innermost is not null && innermost is not VelaShell.Ssh.Diagnostics.SshException ? innermost.Message : string.Empty;
+            return detail.Length == 0
+                ? Strings.Format("TunnelSvc_LocalSocketBindFailedNoDetail", path)
+                : Strings.Format("TunnelSvc_LocalSocketBindFailed", path, detail);
+        }
+        if (socket?.SocketErrorCode is SocketError.AddressAlreadyInUse)
+        {
+            return null;
+        }
+        string endpoint = $"{HostAddress.Bracket(HostAddress.Normalize(request.BoundHost))}:{request.BoundPort}";
+        return socket is null
+            ? Strings.Format("TunnelSvc_LocalBindFailedNoDetail", endpoint)
+            : Strings.Format("TunnelSvc_LocalBindFailed", endpoint, socket.SocketErrorCode.ToString());
     }
 }

@@ -62,6 +62,47 @@ public class SettingsViewModelTests
         updates.DidNotReceive().ApplyUpdateAndRestart();
     }
 
+    /// <summary>认得出安装方式(这里是 deb):直接打开那个安装包的下载地址,状态行带着文件名与地址。</summary>
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(OperatingSystems.Linux, IgnoreMessage = "Linux update behavior requires Linux.")]
+    public async Task LinuxUpdate_KnownInstallOpensItsPackageDownload()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CheckForUpdateAsync().Returns(true);
+        updates.AvailableVersion.Returns("2.0.0");
+        updates.AvailableUpdate.Returns(UpdateManifest.Parse(JsonSerializer.Serialize(new
+        {
+            version = "2.0.0",
+            tag = "2.0.0",
+            assets = new Dictionary<string, object>
+            {
+                ["linux-x64"] = new { name = "VelaShell-2.0.0-linux-x64.tar.gz", sha256 = new string('a', 64), size = 1 },
+                ["linux-arm64"] = new { name = "VelaShell-2.0.0-linux-arm64.tar.gz", sha256 = new string('b', 64), size = 1 },
+            }
+        })));
+        Uri? opened = null;
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates)
+        {
+            LinuxInstallProbe = () => LinuxInstallKind.Deb,
+            UpdatePageOpener = uri =>
+            {
+                opened = uri;
+                return Task.FromResult(true);
+            }
+        };
+
+        await vm.CheckUpdatesCommand.Execute().FirstAsync();
+
+        string arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" : "amd64";
+        string expected = $"https://github.com/joesdu/VelaShell/releases/download/2.0.0/velashell_2.0.0_{arch}.deb";
+        Assert.AreEqual(expected, opened?.AbsoluteUri);
+        Assert.Contains(expected, vm.UpdateStatus);
+        Assert.Contains($"velashell_2.0.0_{arch}.deb", vm.UpdateStatus);
+        await updates.DidNotReceive().DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+    }
+
     [TestMethod]
     [TestCategory("Update")]
     [OSCondition(OperatingSystems.Linux, IgnoreMessage = "Linux update behavior requires Linux.")]
@@ -555,6 +596,146 @@ public class SettingsViewModelTests
             Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
         await updates.DidNotReceive().CheckForUpdateAsync();
         updates.DidNotReceive().ApplyUpdateAndRestart();
+    }
+
+    /// <summary>
+    /// 自动下载更新:启动检查选定的目标在后台下完、校验完就绪,关于页随之出现「重启并更新」;
+    /// 走的是无参数下载(启动检查选定的那个),不重新检查,也绝不自己换版重启。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内下载。")]
+    public async Task BackgroundDownload_DownloadsTheCheckedTargetAndShowsRestart()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        updates.AvailableVersion.Returns("2.0.0");
+        UpdateManifest target = CreateUpdateManifest("2.0.0");
+        UpdateManifest? ready = null;
+        updates.ReadyUpdate.Returns(_ => ready);
+        updates.DownloadUpdateAsync(Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                ready = target;
+                return Task.CompletedTask;
+            });
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+
+        Assert.IsTrue(await vm.DownloadUpdateInBackgroundAsync());
+
+        await updates.Received(1).DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        await updates.DidNotReceive().CheckForUpdateAsync();
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.AreEqual(Strings.Format("SetAbout_UpdateReady", "2.0.0"), vm.UpdateStatus);
+    }
+
+    /// <summary>已经有就绪的包(这次运行里关于页下过):认它,不再下载一遍。</summary>
+    [TestMethod]
+    [TestCategory("Update")]
+    public async Task BackgroundDownload_ReadyPackageIsNotDownloadedAgain()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        updates.AvailableVersion.Returns("2.0.0");
+        UpdateManifest ready = CreateUpdateManifest("2.0.0");
+        updates.ReadyUpdate.Returns(ready);
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+
+        Assert.IsTrue(await vm.DownloadUpdateInBackgroundAsync());
+
+        await updates.DidNotReceive().DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        Assert.IsTrue(vm.UpdateReady);
+        Assert.AreEqual(Strings.Format("SetAbout_UpdateReady", "2.0.0"), vm.UpdateStatus);
+    }
+
+    /// <summary>
+    /// 后台下载失败不打扰:不抛、不报「下载失败,请稍后重试」(那是给点了按钮的人看的),
+    /// 状态行只说下次启动会再试;忙状态释放,用户随时能自己点「检查更新」重来。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内下载。")]
+    public async Task BackgroundDownload_FailureIsQuietAndLeavesTheCheckButtonUsable()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        updates.AvailableVersion.Returns("2.0.0");
+        updates.DownloadUpdateAsync(Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new HttpRequestException("offline")));
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+
+        Assert.IsFalse(await vm.DownloadUpdateInBackgroundAsync());
+
+        Assert.AreEqual(Strings.Format("SetAbout_AutoDownloadFailed", "2.0.0"), vm.UpdateStatus);
+        Assert.IsFalse(vm.UpdateReady);
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.IsTrue(await vm.CheckUpdatesCommand.CanExecute.FirstAsync());
+    }
+
+    /// <summary>
+    /// 不能原地换版的安装(只读目录、商店版)、或者启动检查的结果已经没了:什么也不下,也不改状态行。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Update")]
+    [DataRow(false, false, "2.0.0")]
+    [DataRow(true, true, "2.0.0")]
+    [DataRow(false, true, null)]
+    public async Task BackgroundDownload_NothingToDownloadStaysSilent(bool storeManaged, bool writable, string? available)
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.IsStoreManaged.Returns(storeManaged);
+        updates.CanSelfUpdate.Returns(writable);
+        updates.AvailableVersion.Returns(available);
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+        string statusBefore = vm.UpdateStatus;
+
+        Assert.IsFalse(await vm.DownloadUpdateInBackgroundAsync());
+
+        await updates.DidNotReceive().DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        Assert.AreEqual(statusBefore, vm.UpdateStatus);
+        Assert.IsFalse(vm.IsUpdating);
+    }
+
+    /// <summary>
+    /// 用户恰好在关于页点了检查、那一路正在下载:后台这一路让开,不再并发起第二份下载,
+    /// 也不把那边的进度文案换成冲突提示。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内下载。")]
+    public async Task BackgroundDownload_StepsAsideWhileAnotherUpdateOperationRuns()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        updates.AvailableVersion.Returns("2.0.0");
+        updates.CheckForUpdateAsync().Returns(true);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        updates.DownloadUpdateAsync(Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => release.Task);
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
+        Task manual = InvokeUpdateOperationAsync(vm, "CheckForUpdatesAsync");
+        try
+        {
+            Assert.IsTrue(vm.IsUpdating);
+            string statusDuringManual = vm.UpdateStatus;
+
+            Assert.IsFalse(await vm.DownloadUpdateInBackgroundAsync());
+
+            Assert.AreEqual(statusDuringManual, vm.UpdateStatus);
+            Assert.IsTrue(vm.IsUpdating, "后台这一路让开时不能结束关于页那一路的忙状态。");
+        }
+        finally
+        {
+            release.TrySetResult();
+            await manual.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        await updates.Received(1).DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
     }
 
     private static UpdateManifest CreateUpdateManifest(string version = "2.0.0", string? tag = null,

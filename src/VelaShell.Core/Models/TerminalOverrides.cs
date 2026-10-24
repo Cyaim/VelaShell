@@ -40,6 +40,16 @@ public sealed class TerminalOverrides
     /// </remarks>
     public string? TabColor { get; set; }
 
+    /// <summary>
+    /// 标签页图标(<see cref="SessionTabIcons" /> 里的 id,如 <c>database</c>);null = 跟协议(§68 的默认图标)。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="TabColor" /> 放在一起:两者都是「这个标签长什么样」,颜色答「哪一台」,图标答「干什么的」。
+    /// 它对每一种协议都生效(SFTP / FTP / 插件标签也画),所以在对话框的「常规」页挑,而不是只有 SSH 才有的「终端」页。
+    /// 存 id 不存几何;认不出的 id 当作没挑。资源管理器的会话行也按它画。
+    /// </remarks>
+    public string? TabIcon { get; set; }
+
     /// <summary>登录后自动切换到的目录;null 或空 = 不切换。</summary>
     public string? StartupDirectory { get; set; }
 
@@ -83,13 +93,14 @@ public sealed class TerminalOverrides
 
     /// <summary>是否一项都没覆盖(等价于整个对象为 null)。</summary>
     /// <remarks>
-    /// 界面把六项都清空之后应当存回 <c>null</c> 而不是一个全空对象:后者会让每条老配置
+    /// 界面把各项都清空之后应当存回 <c>null</c> 而不是一个全空对象:后者会让每条老配置
     /// 的落盘 JSON 平白多出一段,也让"有没有覆盖"这件事有了两种表示。
     /// </remarks>
     public bool IsEmpty =>
         string.IsNullOrWhiteSpace(Encoding)
         && string.IsNullOrWhiteSpace(TerminalType)
         && string.IsNullOrWhiteSpace(TabColor)
+        && string.IsNullOrWhiteSpace(TabIcon)
         && string.IsNullOrWhiteSpace(StartupDirectory)
         && KeepAliveSeconds is null
         && AntiIdleSeconds is null;
@@ -102,6 +113,7 @@ public sealed class TerminalOverrides
             Encoding = Encoding,
             TerminalType = TerminalType,
             TabColor = TabColor,
+            TabIcon = TabIcon,
             StartupDirectory = StartupDirectory,
             KeepAliveSeconds = KeepAliveSeconds,
             AntiIdleSeconds = AntiIdleSeconds

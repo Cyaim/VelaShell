@@ -57,6 +57,7 @@ rpmbuild -bb \
   --quiet \
   "$spec"
 
+# 改这个文件名要同步 src/VelaShell/Services/Update/LinuxReleaseAsset.cs:Linux 检查更新按它拼出 rpm 的直接下载地址。
 built="$topdir/RPMS/$arch/velashell-$pkgversion-1.$arch.rpm"
 [ -f "$built" ] || { echo "Build-Rpm: 没找到预期的产物 $built" >&2; exit 1; }
 mv "$built" "$out_dir/"

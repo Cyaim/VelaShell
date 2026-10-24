@@ -353,6 +353,11 @@ public sealed class TerminalScreen
         switch (mode)
         {
             case 0:
+                if (CursorX == 0)
+                {
+                    // 从行首擦起 = 这一行整个不要了,它也就不再是上一行折过来的那一截。
+                    SeverFromPreviousRow(CursorY);
+                }
                 _lines[CursorY].FillRange(CursorX, Columns, blank);
                 // 该行不再延续到下一行;陈旧的软换行标志会让改变列宽时的重排合并无关的行(提示符重绘 bug)。
                 _lines[CursorY].Wrapped = false;
@@ -369,6 +374,7 @@ public sealed class TerminalScreen
                 }
                 break;
             case 2:
+                SeverFromPreviousRow(0);
                 for (int y = 0; y < Rows; y++)
                 {
                     _lines[y].Fill(blank);
@@ -378,6 +384,35 @@ public sealed class TerminalScreen
                 _scrollback.Clear();
                 _scrollbackStart = 0;
                 break;
+        }
+    }
+
+    /// <summary>
+    /// 把活动屏第 <paramref name="screenRow" /> 行从上一行(首行则是回滚区末行)的软换行里摘出来:
+    /// 上一行不再「折进」这一行。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 软换行标志记在<b>上一行</b>上,擦这一行的那些路径原先只清这一行自己的标志 ——
+    /// 于是「从行首把整行擦掉、再在这里写新内容」之后,重排仍把新内容当成上一行的续段并进去。
+    /// </para>
+    /// <para>
+    /// 真机上撞见的是 zsh:上一条命令的输出没以换行收尾(<c>printf</c>、<c>curl</c>)时,PROMPT_SP
+    /// 在行尾补一个 <c>%</c> 再用一整行空格把光标折到下一行,回到行首 <c>ESC[J</c> 擦掉,
+    /// 再在那一行画提示符。一改列宽,提示符就被并进输出那一行,命令块的提示符标记跟着没了
+    /// (一条逻辑行只保留第一段的标记,而第一段是输出)。xterm.js 同样在「ED 0 从第 0 列起」与
+    /// ED 2 时断开续行。只动 ED:readline 改命令行用的是 EL(<c>ESC[K</c>),那条路不碰。
+    /// </para>
+    /// </remarks>
+    private void SeverFromPreviousRow(int screenRow)
+    {
+        if (screenRow > 0)
+        {
+            _lines[screenRow - 1].Wrapped = false;
+        }
+        else if (ScrollbackCount > 0)
+        {
+            _scrollback[^1].Wrapped = false;
         }
     }
 
@@ -561,6 +596,10 @@ public sealed class TerminalScreen
         // 不做"整段都是 0 就跳过"的优化 —— 两个列表下标必须永远对齐,任何一处漏 Add 都会
         // 让链接整体错位到别的字符上,那比多存几个 0 糟得多。
         var links = new List<ushort>(newCols * 2);
+        // OSC 133 的 B / C 列位置(命令文本的起止,见 TerminalRow.InputStart)同样要穿过 reflow:
+        // 列会整体挪位,所以像光标那样换算成逻辑行内偏移,重新换行后再落回新行的新列。
+        // 绝大多数逻辑行一个都没有,列表跨逻辑行复用、空着就什么都不做。
+        var inputMarks = new List<InputMark>(4);
         int newCursorRow = -1, newCursorCol = 0;
         int i = 0;
         while (i < physical.Count)
@@ -576,6 +615,7 @@ public sealed class TerminalScreen
             // 在最后一个非空单元格处截断(扩展以覆盖光标)。
             cells.Clear();
             links.Clear();
+            inputMarks.Clear();
             int cursorOffset = -1;
             DateTime? lineTimestamp = null;
             // OSC 133 标记同样必须穿过 reflow —— 否则拖一下窗口宽度,命令块的边界与失败标记全没了。
@@ -613,10 +653,22 @@ public sealed class TerminalScreen
                     len = Math.Max(len, cursorCol + 1);
                     cursorOffset = cells.Count + cursorCol;
                 }
+                // B / C 落在内容之后时(提示符以光标右移而非空格收尾、命令还一个字没敲)同样把收集
+                // 延到那一列,与光标同理:否则重排后 B 被挤到提示符末字之后,与光标不再重合,
+                // 「重跑」据以判断「命令行是空的」的那条比较就对不上了。
+                if (row.InputStart >= 0)
+                {
+                    len = Math.Max(len, Math.Min(row.InputStart, row.Columns));
+                }
+                if (row.InputEnd >= 0)
+                {
+                    len = Math.Max(len, Math.Min(row.InputEnd, row.Columns));
+                }
                 // 回滚行的存储可能比逻辑列宽短(退休时按内容截过)。len 取自 LastOccupied,
                 // 天然落在存储内;上面那条光标分支才可能超出去,而光标那一行永远在活动屏上、
                 // 从不截短。仍夹一道:宁可少收几个尾部空格,也不该在拖拽改窗口大小时抛出。
                 int take = Math.Min(len, row.StoredColumns);
+                CollectInputMarks(row, cells.Count, take, inputMarks);
                 cells.AddRange(row.Span[..take]);
                 if (row.HasLinks)
                 {
@@ -644,7 +696,7 @@ public sealed class TerminalScreen
                 Recycle(physical[r]);
             }
             int emittedStart = rebuilt.Count;
-            EmitLogicalLine(cells, links, cursorOffset, newCols, blank, rebuilt, ref newCursorRow, ref newCursorCol);
+            EmitLogicalLine(cells, links, cursorOffset, inputMarks, newCols, blank, rebuilt, ref newCursorRow, ref newCursorCol);
             for (int r = emittedStart; r < rebuilt.Count; r++)
             {
                 rebuilt[r].Timestamp = lineTimestamp;
@@ -710,11 +762,13 @@ public sealed class TerminalScreen
 
     /// <summary>
     /// 把一条逻辑行的单元格换行成若干 <paramref name="cols" /> 宽的行,使宽字符的前导/尾随成对
-    /// 留在同一行,除最后一行外每行都标记为软换行,并报告 <paramref name="cursorOffset" /> 落点。
+    /// 留在同一行,除最后一行外每行都标记为软换行,并报告 <paramref name="cursorOffset" /> 落点、
+    /// 把 <paramref name="inputMarks" />(按偏移升序)落到新行的新列上。
     /// </summary>
     private void EmitLogicalLine(List<TerminalCell> cells,
         List<ushort> links,
         int cursorOffset,
+        List<InputMark> inputMarks,
         int cols,
         in TerminalCell blank,
         List<TerminalRow> output,
@@ -724,6 +778,7 @@ public sealed class TerminalScreen
         TerminalRow row = NewBlankRow(cols, blank);
         output.Add(row);
         int col = 0;
+        int nextMark = 0;
         for (int k = 0; k < cells.Count; k++)
         {
             TerminalCell cell = cells[k];
@@ -745,6 +800,8 @@ public sealed class TerminalScreen
                 cursorRow = output.Count - 1;
                 cursorCol = col;
             }
+            // B / C 标的是「这个字符之前」:换行判定之后再落,被挤到下一行的字符把它一起带过去。
+            nextMark = PlaceInputMarks(inputMarks, nextMark, k, row, col);
             row[col] = cell;
             row.SetLink(col, links[k]);
             col++;
@@ -755,6 +812,7 @@ public sealed class TerminalScreen
                     cursorRow = output.Count - 1;
                     cursorCol = col - 1;
                 }
+                nextMark = PlaceInputMarks(inputMarks, nextMark, k + 1, row, col);
                 row[col] = cells[k + 1];
                 row.SetLink(col, links[k + 1]);
                 col++;
@@ -768,6 +826,70 @@ public sealed class TerminalScreen
             cursorRow = output.Count - 1;
             cursorCol = Math.Min(col, cols - 1);
         }
+        // 落在内容末尾之后的 B / C(命令一个字都没敲、或 C 紧跟在命令末字之后)记在末行的 col 上 ——
+        // 末行恰好排满时 col == cols,与「光标停在行尾等着折行」时记的值同义。
+        PlaceInputMarks(inputMarks, nextMark, int.MaxValue, row, col);
+    }
+
+    /// <summary>
+    /// 一条 B / C 列位置在 reflow 期间的逻辑行内偏移(见 <see cref="TerminalRow.InputStart" />)。
+    /// </summary>
+    /// <param name="Offset">在所属逻辑行收集缓冲里的下标:标的是「这个下标的字符之前」。</param>
+    /// <param name="IsEnd">true = C(<see cref="TerminalRow.InputEnd" />),false = B。</param>
+    private readonly record struct InputMark(int Offset, bool IsEnd);
+
+    /// <summary>
+    /// 收集一行物理行上的 B / C,换算成逻辑行内偏移(<paramref name="baseOffset" /> + 列,
+    /// 夹到本行实际收进去的 <paramref name="taken" /> 格以内),按偏移升序追加。
+    /// </summary>
+    private static void CollectInputMarks(TerminalRow row, int baseOffset, int taken, List<InputMark> marks)
+    {
+        if (row.InputStart < 0 && row.InputEnd < 0)
+        {
+            return;
+        }
+        int start = row.InputStart >= 0 ? baseOffset + Math.Min(row.InputStart, taken) : -1;
+        int end = row.InputEnd >= 0 ? baseOffset + Math.Min(row.InputEnd, taken) : -1;
+        // 同一行上两个都有时按偏移先后排:后面落位时是一路往前扫的。
+        if (start >= 0 && (end < 0 || start <= end))
+        {
+            marks.Add(new(start, false));
+            if (end >= 0)
+            {
+                marks.Add(new(end, true));
+            }
+        }
+        else
+        {
+            marks.Add(new(end, true));
+            if (start >= 0)
+            {
+                marks.Add(new(start, false));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 把偏移不超过 <paramref name="offset" /> 的那些 B / C 落到 (<paramref name="row" />, <paramref name="col" />),
+    /// 返回下一个待落的下标。同一新行上先到先得:两段物理行在变宽后并进同一行时,保留靠前的那个。
+    /// </summary>
+    private static int PlaceInputMarks(List<InputMark> marks, int next, int offset, TerminalRow row, int col)
+    {
+        for (; next < marks.Count && marks[next].Offset <= offset; next++)
+        {
+            if (marks[next].IsEnd)
+            {
+                if (row.InputEnd < 0)
+                {
+                    row.InputEnd = col;
+                }
+            }
+            else if (row.InputStart < 0)
+            {
+                row.InputStart = col;
+            }
+        }
+        return next;
     }
 
     /// <summary>

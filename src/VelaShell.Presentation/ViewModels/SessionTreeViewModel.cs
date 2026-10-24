@@ -34,6 +34,15 @@ public sealed class SessionTreeViewModel : ReactiveObject
 
     private bool _hasNoSessions;
 
+    /// <summary>过滤框拆出来的词(见 <see cref="SessionTreeFilter.Terms" />);空 = 不过滤。</summary>
+    private string[] _filterTerms = [];
+
+    /// <summary>最近一次建树时分组的初始展开态(设置「启动时折叠分组」);清掉过滤时没手动改过的分组回到它。</summary>
+    private bool _defaultExpanded = true;
+
+    /// <summary>过滤框批量展开 / 还原分组期间为 true:这些展开不是用户点的,不记进 <see cref="_groupExpansion" />,行也只在最后对齐一次。</summary>
+    private bool _applyingFilterExpansion;
+
     /// <summary>用指定的会话仓储构造视图模型,并初始化各右键菜单命令及其可用性约束。</summary>
     /// <param name="repository">提供会话与分组读写、持久化的仓储。</param>
     /// <param name="settings">
@@ -105,6 +114,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         // 多选(#571):Ctrl / Shift 选中多条后右键弹的那份菜单。
         IObservable<bool> hasMultiSelection = this.WhenAnyValue(x => x.HasMultiSelection);
         OpenSelectedCommand = ReactiveCommand.Create(RaiseOpenSelected, hasMultiSelection);
+        OpenSelectedInSyncChannelCommand = ReactiveCommand.Create(RaiseOpenSelectedInSyncChannel, hasMultiSelection);
         DeleteSelectedCommand = ReactiveCommand.CreateFromTask(DeleteMultiSelectionAsync, hasMultiSelection);
         MoveSelectionToGroupCommand = ReactiveCommand.CreateFromTask<SessionTreeNodeViewModel>(MoveMultiSelectionToGroupAsync);
         BatchEditCommand = ReactiveCommand.Create(RaiseBatchEdit, hasMultiSelection);
@@ -113,6 +123,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         // 分组行的菜单(#571):整组打开、上移下移、导出 / 导入到这一组。
         IObservable<bool> hasSelectedGroup = this.WhenAnyValue(x => x.SelectedNode).Select(node => node is { IsGroup: true });
         OpenGroupCommand = ReactiveCommand.Create(RaiseOpenGroup, hasSelectedGroup);
+        OpenGroupInSyncChannelCommand = ReactiveCommand.Create(RaiseOpenGroupInSyncChannel, hasSelectedGroup);
         MoveGroupUpCommand = ReactiveCommand.CreateFromTask(
             () => MoveSelectedGroupByAsync(-1),
             this.WhenAnyValue(x => x.CanMoveSelectedGroupUp)
@@ -219,16 +230,131 @@ public sealed class SessionTreeViewModel : ReactiveObject
 
     private void OnNodePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(SessionTreeNodeViewModel.IsExpanded))
+        if (e.PropertyName != nameof(SessionTreeNodeViewModel.IsExpanded) || _applyingFilterExpansion)
         {
             return;
         }
-        // 记下用户这次的展开/折叠选择,重建树时照这份记忆恢复(#474)。
-        if (sender is SessionTreeNodeViewModel { IsGroup: true } group)
+        // 记下用户这次的展开/折叠选择,重建树时照这份记忆恢复(#474)。过滤期间的不记:
+        // 那时分组是被过滤框撑开的,清掉过滤就该回到过滤之前的样子,而不是把一次临时的展开当成用户的选择。
+        if (sender is SessionTreeNodeViewModel { IsGroup: true } group && !IsFiltering)
         {
             _groupExpansion[group.Id] = group.IsExpanded;
         }
         SyncRows();
+    }
+
+    /// <summary>
+    /// 资源管理器顶上过滤框里的文字:按名称、主机、标签、备注(及分组名)过滤,规则见 <see cref="SessionTreeFilter" />。
+    /// 空 = 不过滤。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 过滤时<b>分组里有命中的就留下分组并展开</b>,一条都没命中的分组整个藏起来;置顶的连接照旧摊在最前,
+    /// 没命中的置顶项同样藏起来。展开是临时的:不记进展开态记忆(#474),清掉过滤后每个分组回到过滤之前的样子
+    /// (过滤期间手动折叠 / 展开的也一并还原)。
+    /// </para>
+    /// <para>
+    /// 只改<b>显示</b>:分组菜单「打开全部连接 / 导出此分组 / 删除分组」照旧作用于整组 —— 要对过滤出来的那几条动手,
+    /// 用 Shift / Ctrl 多选(区间按看得见的行算,藏起来的不会被带上)。
+    /// </para>
+    /// </remarks>
+    public string FilterText
+    {
+        get;
+        set
+        {
+            value ??= string.Empty;
+            if (field == value)
+            {
+                return;
+            }
+            bool wasFiltering = IsFiltering;
+            this.RaiseAndSetIfChanged(ref field, value);
+            _filterTerms = SessionTreeFilter.Terms(value);
+            if (IsFiltering)
+            {
+                ExpandGroupsWithMatches();
+            }
+            else if (wasFiltering)
+            {
+                RestoreGroupExpansion();
+            }
+            SyncRows();
+            if (wasFiltering != IsFiltering)
+            {
+                this.RaisePropertyChanged(nameof(IsFiltering));
+            }
+        }
+    } = string.Empty;
+
+    /// <summary>过滤框里是否有字(只有空白不算)。</summary>
+    public bool IsFiltering => _filterTerms.Length > 0;
+
+    /// <summary>正在过滤却一条连接都没命中:树的位置上显示「没有匹配的连接」。</summary>
+    public bool HasNoFilterMatches
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>
+    /// 过滤框 Enter 的去处:过滤后恰好只剩一条连接时就是它,其余情况为 null(不猜用户要连哪一条)。
+    /// </summary>
+    public SessionTreeNodeViewModel? SingleFilterMatch =>
+        IsFiltering && Rows.Where(static row => !row.IsGroup).Take(2).ToList() is [var only] ? only : null;
+
+    /// <summary>清空过滤框(过滤框里按 Esc)。</summary>
+    public void ClearFilter() => FilterText = string.Empty;
+
+    /// <summary>这条连接在当前过滤下是否露面;不过滤时恒为 true。</summary>
+    /// <param name="node">会话节点。</param>
+    /// <param name="group">它所在的分组;根级为 null。</param>
+    private bool PassesFilter(SessionTreeNodeViewModel node, SessionTreeNodeViewModel? group)
+    {
+        if (!IsFiltering)
+        {
+            return true;
+        }
+        // 缓存里没有(理论上不该发生)就只按名字比,不至于让一行凭空消失又找不到原因。
+        SessionProfile profile = _sessionCache.GetValueOrDefault(node.Id) ?? new SessionProfile { Name = node.Name };
+        return SessionTreeFilter.Matches(profile, group?.Name, _filterTerms);
+    }
+
+    /// <summary>把有命中的分组撑开(不记进展开态记忆,见 <see cref="FilterText" />)。</summary>
+    private void ExpandGroupsWithMatches()
+    {
+        _applyingFilterExpansion = true;
+        try
+        {
+            foreach (SessionTreeNodeViewModel group in Nodes.Where(static node => node.IsGroup))
+            {
+                if (group.Children.Any(child => !child.IsPinned && PassesFilter(child, group)))
+                {
+                    group.IsExpanded = true;
+                }
+            }
+        }
+        finally
+        {
+            _applyingFilterExpansion = false;
+        }
+    }
+
+    /// <summary>清掉过滤:每个分组回到过滤之前的展开态(手动改过的按记忆,没改过的按设置)。</summary>
+    private void RestoreGroupExpansion()
+    {
+        _applyingFilterExpansion = true;
+        try
+        {
+            foreach (SessionTreeNodeViewModel group in Nodes.Where(static node => node.IsGroup))
+            {
+                group.IsExpanded = _groupExpansion.GetValueOrDefault(group.Id, _defaultExpanded);
+            }
+        }
+        finally
+        {
+            _applyingFilterExpansion = false;
+        }
     }
 
     private void OnChildrenChanged(object? sender, NotifyCollectionChangedEventArgs e) => SyncRows();
@@ -247,11 +373,20 @@ public sealed class SessionTreeViewModel : ReactiveObject
 
         // 置顶的会话先摊在最前(#474)。它们在 Nodes 里的位置**一点没动** —— 只是这一层
         // 换个顺序摊出来,于是分组归属、拖放落点、"分组空了就删掉"那些规则一条都不用改。
-        desired.AddRange(
-            EnumerateSessionNodes()
-                .Where(node => node.IsPinned)
-                .OrderBy(node => node.Name, StringComparer.OrdinalIgnoreCase)
-        );
+        // 过滤时没命中的置顶项一样藏起来。
+        var pinned = new List<SessionTreeNodeViewModel>();
+        foreach (SessionTreeNodeViewModel node in Nodes)
+        {
+            if (node.IsGroup)
+            {
+                pinned.AddRange(node.Children.Where(child => child.IsPinned && PassesFilter(child, node)));
+            }
+            else if (node.IsPinned && PassesFilter(node, null))
+            {
+                pinned.Add(node);
+            }
+        }
+        desired.AddRange(pinned.OrderBy(node => node.Name, StringComparer.OrdinalIgnoreCase));
         foreach (SessionTreeNodeViewModel node in Nodes)
         {
             if (node.IsPinned)
@@ -260,10 +395,24 @@ public sealed class SessionTreeViewModel : ReactiveObject
                 // 列表里出现两次,选中与容器复用都会错乱。
                 continue;
             }
-            desired.Add(node);
-            if (node.IsGroup && node.IsExpanded)
+            if (!node.IsGroup)
             {
-                desired.AddRange(node.Children.Where(child => !child.IsPinned));
+                if (PassesFilter(node, null))
+                {
+                    desired.Add(node);
+                }
+                continue;
+            }
+            List<SessionTreeNodeViewModel> children = [.. node.Children.Where(child => !child.IsPinned && PassesFilter(child, node))];
+            // 过滤时一条都没命中的分组整个藏起来;不过滤时空分组(只剩置顶成员)照旧显示。
+            if (IsFiltering && children.Count == 0)
+            {
+                continue;
+            }
+            desired.Add(node);
+            if (node.IsExpanded)
+            {
+                desired.AddRange(children);
             }
         }
         var keep = new HashSet<SessionTreeNodeViewModel>(desired);
@@ -300,14 +449,23 @@ public sealed class SessionTreeViewModel : ReactiveObject
             }
         }
 
+        HasNoFilterMatches = IsFiltering && !desired.Any(static row => !row.IsGroup);
+        this.RaisePropertyChanged(nameof(SingleFilterMatch));
+
         if (selected is null)
         {
             return;
         }
+        if (keep.Contains(selected))
+        {
+            SelectedNode = selected;
+            return;
+        }
         // 收进去了:落到它那一组的行上。整个节点已经不在树里了(删掉了)就落空,那是对的。
-        SelectedNode = keep.Contains(selected)
-            ? selected
-            : Nodes.FirstOrDefault(node => node.IsGroup && node.Children.Contains(selected));
+        // 被过滤掉的不算「收进去」:它不在组里也看不见,选中落空,免得右键菜单对着另一行执行。
+        SessionTreeNodeViewModel? owner = Nodes.FirstOrDefault(node => node.IsGroup && node.Children.Contains(selected));
+        bool filteredOut = !selected.IsGroup && !PassesFilter(selected, owner);
+        SelectedNode = !filteredOut && owner is not null && keep.Contains(owner) ? owner : null;
     }
 
     /// <summary>是否当前没有任何会话,用于驱动空状态提示的显示。</summary>
@@ -377,6 +535,9 @@ public sealed class SessionTreeViewModel : ReactiveObject
 
     /// <summary>多选菜单「打开 N 个连接」的文案。</summary>
     public string OpenSelectedText => Strings.Format("Tree_OpenSelected", _multiSelection.Count);
+
+    /// <summary>多选菜单「打开 N 个连接并同步输入」的文案。</summary>
+    public string OpenSelectedInSyncChannelText => Strings.Format("Tree_OpenSelectedSynced", _multiSelection.Count);
 
     /// <summary>多选菜单「删除 N 个连接」的文案。</summary>
     public string DeleteSelectedText => Strings.Format("Tree_DeleteSelected", _multiSelection.Count);
@@ -513,6 +674,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         this.RaisePropertyChanged(nameof(CanOpenDualSelection));
         this.RaisePropertyChanged(nameof(ShowDualSftpUnsupportedHint));
         this.RaisePropertyChanged(nameof(OpenSelectedText));
+        this.RaisePropertyChanged(nameof(OpenSelectedInSyncChannelText));
         this.RaisePropertyChanged(nameof(DeleteSelectedText));
     }
 
@@ -542,6 +704,12 @@ public sealed class SessionTreeViewModel : ReactiveObject
 
     /// <summary>多选菜单「打开 N 个连接」,触发 <see cref="OpenManyRequested" />。</summary>
     public ReactiveCommand<RxVoid, RxVoid> OpenSelectedCommand { get; }
+
+    /// <summary>多选菜单「打开 N 个连接并同步输入」,触发 <see cref="OpenManyInSyncChannelRequested" />。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> OpenSelectedInSyncChannelCommand { get; }
+
+    /// <summary>分组菜单「打开全部并同步输入」,触发 <see cref="OpenManyInSyncChannelRequested" />。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> OpenGroupInSyncChannelCommand { get; }
 
     /// <summary>多选菜单「删除 N 个连接」(先经 <see cref="ConfirmDeleteSessions" /> 确认)。</summary>
     public ReactiveCommand<RxVoid, RxVoid> DeleteSelectedCommand { get; }
@@ -599,6 +767,12 @@ public sealed class SessionTreeViewModel : ReactiveObject
     /// 一次打开多条连接(整组打开、多选打开)。由宿主决定要不要先确认、按什么并发度连。
     /// </summary>
     public event Action<IReadOnlyList<SessionProfile>>? OpenManyRequested;
+
+    /// <summary>
+    /// 打开一组连接并把它们拉进同一个同步输入频道(分组菜单「打开全部并同步输入」、多选菜单「打开 N 个连接并同步输入」)——
+    /// 对一组机器批量下发命令。挑哪个频道、哪些连接开得出终端、要不要先确认,都由宿主定。
+    /// </summary>
+    public event Action<IReadOnlyList<SessionProfile>>? OpenManyInSyncChannelRequested;
 
     /// <summary>多选菜单「批量修改」:由宿主打开批量修改对话框。</summary>
     public event Action<IReadOnlyList<SessionProfile>>? BatchEditRequested;
@@ -723,6 +897,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         {
             IsPinned = session.IsPinned,
             Notes = session.Notes,
+            TabIconId = SessionTabIcons.For(session),
         };
         if (session.GroupId is null)
         {
@@ -944,6 +1119,12 @@ public sealed class SessionTreeViewModel : ReactiveObject
         {
             return false;
         }
+        // 被过滤框藏起来的不去选:选中一行列表里没有的东西,列表会把选中清掉,右键菜单就对不上了。
+        // 用户正在过滤,说明他此刻要找的是别的;清掉过滤之后跟随活动标签照常。
+        if (!PassesFilter(node, parentGroup))
+        {
+            return false;
+        }
         // 置顶的会话恒在树顶可见,不必为了露出它把整个分组铺开。
         if (!node.IsPinned)
         {
@@ -975,6 +1156,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
             ungrouped.Name = Strings.Get("Svc_Ungrouped");
         }
         this.RaisePropertyChanged(nameof(OpenSelectedText));
+        this.RaisePropertyChanged(nameof(OpenSelectedInSyncChannelText));
         this.RaisePropertyChanged(nameof(DeleteSelectedText));
     }
 
@@ -1050,11 +1232,15 @@ public sealed class SessionTreeViewModel : ReactiveObject
     {
         if (
             SelectedNode is not { IsGroup: false } node
-            || !_sessionCache.TryGetValue(node.Id, out SessionProfile? source)
+            || !_sessionCache.TryGetValue(node.Id, out SessionProfile? cached)
         )
         {
             return;
         }
+        // 从仓储取最新的那份再拷:树缓存是加载树那一刻的快照,之后在 SFTP 文档里加的目录收藏
+        // 只经 UpdateDirectoryBookmarksAsync 落库、不回写这份缓存 —— 拿缓存拷出来的副本会少掉它们。
+        // 库里读不到(刚被别处删掉)才退回缓存。
+        SessionProfile source = await _repository.GetSessionAsync(node.Id) ?? cached;
         SessionProfile copy = source.Clone();
         // 副本是一条新配置:换个 id、改个名字,其余原样。原先这里逐字段手写,
         // 每加一个字段就得记得回来补一行 —— 漏了的表现是"复制之后某个设置莫名丢了"。
@@ -1076,6 +1262,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         // 新建一条连接就把刚展开的分组折回去,比不折叠更烦人。
         bool defaultExpanded = _settings is null
             || !(await _settings.GetSnapshotAsync().ConfigureAwait(true)).General.CollapseGroupsByDefault;
+        _defaultExpanded = defaultExpanded;
 
         // 以会话的 GroupId 为唯一事实来源分组;无分组的会话归入“未分组”节点。
         List<ServerGroup> groups = await _repository.GetAllGroupsAsync();
@@ -1124,6 +1311,13 @@ public sealed class SessionTreeViewModel : ReactiveObject
         // “移动到分组”子菜单始终提供“未分组”落点(即移回树根)。
         GroupNodes.Add(new(Guid.Empty, Strings.Get("Svc_Ungrouped"), true));
         RefreshHasNoSessions();
+        // 过滤着的时候重建了树(编辑 / 新建一条连接、云同步回写):新建的分组节点照记忆展开,
+        // 有命中的得重新撑开,否则刚保存完,过滤结果就缩回了一排分组标题。
+        if (IsFiltering)
+        {
+            ExpandGroupsWithMatches();
+            SyncRows();
+        }
     }
 
     private SessionTreeNodeViewModel CreateSessionNode(SessionProfile session, bool isRootLevel)
@@ -1134,6 +1328,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
             IsRootLevel = isRootLevel,
             IsPinned = session.IsPinned,
             Notes = session.Notes,
+            TabIconId = SessionTabIcons.For(session),
         };
         if (_statusCache.TryGetValue(session.Id, out SessionStatus status))
         {
@@ -1192,6 +1387,15 @@ public sealed class SessionTreeViewModel : ReactiveObject
         if (profiles.Count > 0)
         {
             OpenManyRequested?.Invoke(profiles);
+        }
+    }
+
+    private void RaiseOpenSelectedInSyncChannel()
+    {
+        List<SessionProfile> profiles = MultiSelectionProfiles();
+        if (profiles.Count > 0)
+        {
+            OpenManyInSyncChannelRequested?.Invoke(profiles);
         }
     }
 
@@ -1271,19 +1475,25 @@ public sealed class SessionTreeViewModel : ReactiveObject
 
     private void RaiseOpenGroup()
     {
-        if (SelectedNode is not { IsGroup: true } group)
-        {
-            return;
-        }
-        List<SessionProfile> profiles =
-        [
-            .. group.Children.Select(child => _sessionCache.GetValueOrDefault(child.Id)).OfType<SessionProfile>()
-        ];
-        if (profiles.Count > 0)
+        if (SelectedGroupProfiles() is { Count: > 0 } profiles)
         {
             OpenManyRequested?.Invoke(profiles);
         }
     }
+
+    private void RaiseOpenGroupInSyncChannel()
+    {
+        if (SelectedGroupProfiles() is { Count: > 0 } profiles)
+        {
+            OpenManyInSyncChannelRequested?.Invoke(profiles);
+        }
+    }
+
+    /// <summary>选中分组的全部连接,按组内顺序;选中的不是分组时为空。过滤框只管显示,整组的操作照旧是整组。</summary>
+    private List<SessionProfile> SelectedGroupProfiles() =>
+        SelectedNode is { IsGroup: true } group
+            ? [.. group.Children.Select(child => _sessionCache.GetValueOrDefault(child.Id)).OfType<SessionProfile>()]
+            : [];
 
     private void RaiseExportGroup()
     {

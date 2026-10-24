@@ -11,6 +11,7 @@ using VelaShell.Core.Sftp;
 using VelaShell.Core.Sync;
 using VelaShell.Core.Tunnels;
 using VelaShell.Docking;
+using VelaShell.Docking.Model;
 using VelaShell.Presentation.Commands;
 using VelaShell.Presentation.Services;
 using VelaShell.Presentation.ViewModels;
@@ -343,6 +344,55 @@ public class MainWindowViewModelTests
         Assert.IsTrue(vm.Sidebar.IsCollapsed);
         Assert.IsTrue(vm.Layout.MultiRowTabs);
         settingsService.Received(1).GetStateAsync();
+    }
+
+    /// <summary>
+    /// 设置「标签栏位置」→ 停靠层:启动时在首帧之前灌进去,保存设置当场生效;只认 <c>bottom</c>。
+    /// 外观页的即时预览走的是同一个 <see cref="MainWindowViewModel.ApplyTabBarPosition" />。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Startup")]
+    public void TabBarPosition_ReachesTheDockLayout_AtStartupAndOnSave()
+    {
+        ISettingsService settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetStateAsync().Returns(Task.FromResult(new AppState()));
+        var vm = new MainWindowViewModel(settingsService: settingsService);
+        Assert.IsFalse(vm.Layout.TabsAtBottom, "出厂在顶部");
+
+        vm.PrepareForStartup(new AppSettings { Appearance = new() { TabBarPosition = "bottom" } });
+        Assert.IsTrue(vm.Layout.TabsAtBottom);
+
+        settingsService.SettingsSaved += Raise.Event<Action<AppSettings>>(
+            new AppSettings { Appearance = new() { TabBarPosition = "top" } }
+        );
+        SpinWait.SpinUntil(() => !vm.Layout.TabsAtBottom, TimeSpan.FromSeconds(5));
+        Assert.IsFalse(vm.Layout.TabsAtBottom, "保存设置当场生效,不等重启");
+
+        vm.ApplyTabBarPosition(new AppearanceOptions { TabBarPosition = "Bottom" });
+        Assert.IsFalse(vm.Layout.TabsAtBottom, "与设置页下拉同一口径:只认 bottom,别的值按顶部");
+    }
+
+    /// <summary>
+    /// 标签条上的「+」:先让那一格成为活动窗格,再走 Ctrl+T 那条命令(新建连接),
+    /// 新标签于是按停靠层的落点规则落进那一格。
+    /// </summary>
+    [TestMethod]
+    public void OpenNewTabInPane_ActivatesThatPane_ThenRunsTheCtrlTCommand()
+    {
+        var vm = new MainWindowViewModel();
+        var left = new TerminalDocument(new TerminalTabViewModel(FakeTerminal.Emulator()));
+        var right = new TerminalDocument(new TerminalTabViewModel(FakeTerminal.Emulator()));
+        vm.Layout.AddDocument(left);
+        vm.Layout.AddDocument(right);
+        vm.Layout.SplitDocument(right, DockOrientation.Horizontal);
+        Assert.AreSame(right, vm.Layout.ActiveDocument);
+        int requested = 0;
+        vm.NewConnectionRequested += (_, _) => requested++;
+
+        vm.OpenNewTabInPane(vm.Layout.PrimaryGroup);
+
+        Assert.AreSame(left, vm.Layout.ActiveDocument, "按下「+」的那一格成了活动窗格");
+        Assert.AreEqual(1, requested, "与 Ctrl+T 同一条命令:打开新建连接");
     }
 
     [TestMethod]

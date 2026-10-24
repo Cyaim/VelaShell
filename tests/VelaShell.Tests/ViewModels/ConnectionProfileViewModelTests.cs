@@ -286,6 +286,37 @@ public sealed class ConnectionProfileViewModelTests
         Assert.IsFalse(profile.Ssh.AgentForwardConfirm);
     }
 
+    /// <summary>
+    /// 按键时序混淆:SSH 配置打开回显、保存带回,只开它一项也要存下来(不能当成全空存回 null);
+    /// SFTP 没有交互式 shell,存下来永远不生效、切回 SSH 时却会突然起作用,所以不存,页签圆点也不亮。
+    /// </summary>
+    [TestMethod]
+    public async Task ObscureKeystrokeTiming_RoundTripsForSsh_AndIsNotStoredForSftp()
+    {
+        var existing = new SessionProfile
+        {
+            Name = "typing",
+            Host = "10.0.0.4",
+            Username = "ops",
+            Password = "secret",
+            Ssh = new() { ObscureKeystrokeTiming = true },
+        };
+
+        var vm = new ConnectionProfileViewModel(existing);
+        Assert.IsTrue(vm.SshObscureKeystrokeTiming);
+        Assert.IsTrue(vm.IsSshOptionsSectionModified);
+
+        SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.IsNotNull(saved?.Ssh, "只开了这一项也是「有」,不能存回 null。");
+        Assert.IsTrue(saved.Ssh.ObscureKeystrokeTiming);
+
+        vm.SelectConnectionTypeCommand.Execute(ConnectionType.SFTP).Subscribe();
+        Assert.IsFalse(vm.IsSshOptionsSectionModified, "SFTP 不存这一项,圆点不该还亮着。");
+        SessionProfile? sftp = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.IsNotNull(sftp);
+        Assert.IsNull(sftp.Ssh, "SFTP 配置没有交互式 shell,按键时序混淆不存。");
+    }
+
     // 三把测试用公钥(随手拼的 ed25519 blob,只用来算指纹与去重,不参与任何签名)。
     private static string KeyLine(byte seed, string? comment = null)
     {
@@ -459,6 +490,39 @@ public sealed class ConnectionProfileViewModelTests
         Assert.AreEqual("/var/www/html", reopened.FtpInitialRemotePath);
         Assert.IsTrue(reopened.ShowAdvancedSection);
         Assert.IsTrue(reopened.IsAdvancedSectionModified, "填过的路径不能藏得看不出来。");
+    }
+
+    /// <summary>
+    /// FTP 的「服务器时区」:默认「与本机相同」(存 null,旧行为);选了偏移就按分钟存、重开回显、「高级」页签点出圆点;
+    /// 手改出来的、不在下拉表里的偏移重开时也要留着,不能被悄悄改掉。
+    /// </summary>
+    [TestMethod]
+    public async Task FtpServerTimeZone_DefaultsToLocal_IsSavedAsMinutes_AndRestoredOnEdit()
+    {
+        var vm = new ConnectionProfileViewModel { Host = "ftp.example.com", Username = "deploy" };
+        await vm.SelectConnectionTypeCommand.Execute(ConnectionType.FTP).FirstAsync();
+        Assert.IsNull(vm.SelectedFtpTimeZone.Minutes);
+        Assert.IsFalse(vm.IsAdvancedSectionModified);
+
+        vm.SelectedFtpTimeZone = vm.FtpTimeZoneOptions.Single(o => o.Minutes == 345);
+        Assert.AreEqual("UTC+05:45", vm.SelectedFtpTimeZone.Label);
+        SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
+
+        Assert.IsNotNull(saved);
+        Assert.AreEqual(345, saved.Ftp?.ServerUtcOffsetMinutes);
+        var reopened = new ConnectionProfileViewModel(saved);
+        Assert.AreEqual(345, reopened.SelectedFtpTimeZone.Minutes);
+        Assert.IsTrue(reopened.IsAdvancedSectionModified, "配过的时区不能藏得看不出来。");
+
+        reopened.SelectedFtpTimeZone = reopened.FtpTimeZoneOptions[0];
+        SessionProfile? cleared = await reopened.SaveCommand.Execute().FirstAsync();
+        Assert.IsNull(cleared?.Ftp?.ServerUtcOffsetMinutes, "「与本机相同」存 null,即旧行为");
+
+        saved.Ftp!.ServerUtcOffsetMinutes = 7 * 60 + 15;
+        var odd = new ConnectionProfileViewModel(saved);
+        Assert.AreEqual(435, odd.SelectedFtpTimeZone.Minutes);
+        Assert.AreEqual("UTC+07:15", odd.SelectedFtpTimeZone.Label);
+        Assert.AreEqual(435, (await odd.SaveCommand.Execute().FirstAsync())?.Ftp?.ServerUtcOffsetMinutes);
     }
 
     /// <summary>这块设置只属于 FTP;换成别的协议时整个 <c>Ftp</c> 块不落盘,路径自然一起走。</summary>

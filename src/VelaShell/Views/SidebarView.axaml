@@ -132,10 +132,15 @@
           <RowDefinition Height="0" MinHeight="0" />
         </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled">
-          <views:SessionTreeView DataContext="{Binding SessionTree}" Padding="0,8" />
-        </ScrollViewer>
+        <!-- 过滤框钉在树的上方、不跟着树滚:两百台设备的列表滚到底再想过滤,不该还得先滚回顶上。 -->
+        <Grid Grid.Row="0" RowDefinitions="Auto,*">
+          <views:SessionTreeFilterBox Grid.Row="0" Margin="8,8,8,0"
+                                      DataContext="{Binding SessionTree}" />
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled">
+            <views:SessionTreeView DataContext="{Binding SessionTree}" Padding="0,6,0,8" />
+          </ScrollViewer>
+        </Grid>
 
         <Border x:Name="QuickCommandsDivider" Grid.Row="1" Height="1"
                 VerticalAlignment="Center"
@@ -388,10 +393,15 @@
                     Background="{DynamicResource VelaBgSurface}"
                     BorderBrush="{DynamicResource VelaBorderSecondary}"
                     BorderThickness="1" CornerRadius="5">
-              <ScrollViewer VerticalScrollBarVisibility="Auto"
-                            HorizontalScrollBarVisibility="Disabled">
-                <views:SessionTreeView DataContext="{Binding SessionTree}" />
-              </ScrollViewer>
+              <!-- 与展开态同一个过滤框、同一份过滤文字:折起侧栏不等于清掉过滤。 -->
+              <Grid RowDefinitions="Auto,*">
+                <views:SessionTreeFilterBox Grid.Row="0" Margin="6,0,6,6"
+                                            DataContext="{Binding SessionTree}" />
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                  <views:SessionTreeView DataContext="{Binding SessionTree}" />
+                </ScrollViewer>
+              </Grid>
             </Border>
           </Flyout>
         </Button.Flyout>

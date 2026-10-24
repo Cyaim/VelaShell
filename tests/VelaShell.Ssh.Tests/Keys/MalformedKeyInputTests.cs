@@ -30,8 +30,13 @@ public sealed class MalformedKeyInputTests
         {
             parse();
         }
-        catch (TExpected)
+        catch (TExpected ex)
         {
+            // 外来输入的每一种坏法都要归到一个种类：界面按它说话，没归类就只剩库的中文原文。
+            if (ex is SshPrivateKeyException { ProblemKind: SshKeyProblemKind.Unknown } or SshCertificateException { ProblemKind: SshKeyProblemKind.Unknown })
+            {
+                Assert.Fail($"{what}：{ex.GetType().Name} 没有归类（ProblemKind 是 Unknown）：{ex.Message}");
+            }
         }
         catch (Exception ex)
         {

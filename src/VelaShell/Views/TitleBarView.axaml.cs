@@ -183,6 +183,14 @@ public partial class TitleBarView : UserControl
 
     private void Maximize_Click(object? sender, RoutedEventArgs e) => ToggleMaximize();
 
+    private void LayoutTemplates_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is ViewModels.MainWindowViewModel viewModel)
+        {
+            LayoutTemplatesMenu.ShowFor(sender, viewModel, e);
+        }
+    }
+
     /// <summary>关闭走 Window.Close():托盘化/退出确认逻辑在 MainWindow.OnClosing 统一处理。</summary>
     private void Close_Click(object? sender, RoutedEventArgs e) => HostWindow?.Close();
 }

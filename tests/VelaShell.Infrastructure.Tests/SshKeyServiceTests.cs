@@ -1,7 +1,10 @@
 using System.Security.Cryptography;
+using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
+using VelaShell.Ssh.Auth;
 using VelaShell.Ssh.HostKeys;
+using VelaShell.Ssh.Keys;
 
 namespace VelaShell.Infrastructure.Tests;
 
@@ -119,7 +122,7 @@ public sealed class SshKeyServiceTests : IDisposable
     {
         (string privatePath, _) = await CreateExternalKeyAsync("outside_key");
 
-        SshKeyInfo? imported = await _service.ImportKeyAsync(privatePath);
+        SshKeyInfo? imported = (await _service.ImportKeyAsync(privatePath))?.Key;
 
         Assert.IsNotNull(imported);
         Assert.AreEqual("outside_key", imported.Name);
@@ -151,7 +154,7 @@ public sealed class SshKeyServiceTests : IDisposable
         string expected = (await new SshKeyService(_external).ListKeysAsync()).Single().Fingerprint;
         File.Delete(publicPath);
 
-        SshKeyInfo? imported = await _service.ImportKeyAsync(privatePath);
+        SshKeyInfo? imported = (await _service.ImportKeyAsync(privatePath))?.Key;
 
         Assert.IsNotNull(imported);
         Assert.AreEqual(expected, imported.Fingerprint);
@@ -172,7 +175,7 @@ public sealed class SshKeyServiceTests : IDisposable
             await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Ssh", "Fixtures", "putty-ed25519-v3-hi-enc.pub")),
             out SshPublicKey? expected));
 
-        SshKeyInfo? imported = await _service.ImportKeyAsync(ppk);
+        SshKeyInfo? imported = (await _service.ImportKeyAsync(ppk))?.Key;
 
         Assert.IsNotNull(imported);
         Assert.AreEqual("putty_key.ppk", imported.Name);
@@ -250,6 +253,152 @@ public sealed class SshKeyServiceTests : IDisposable
 
         UnixFileMode mode = File.GetUnixFileMode(Path.Combine(_sshDir, "perm_key"));
         Assert.AreEqual(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
+    }
+
+    // ———————————————————— 导入:用 SSH 库把私钥整把解析一遍 ————————————————————
+    //
+    // 以前只认格式(看 BEGIN 行):头尾对、中间坏了的文件照样导进来,连接时才报错;
+    // .pub 与私钥拼错了也照收,列表里的指纹是 .pub 的,认证用的却是另一把。
+
+    /// <summary>头尾都对、正文被截断的私钥:拒收,说清是「坏了」而不是「不是私钥」,不留副本。</summary>
+    [TestMethod]
+    public async Task Import_OfADamagedPrivateKey_IsRejectedAsDamaged()
+    {
+        (string privatePath, _) = await CreateExternalKeyAsync("damaged");
+        string[] lines = await File.ReadAllLinesAsync(privatePath);
+        // 留住 BEGIN / END 两行,砍掉正文的后半段 —— 复制粘贴丢了几行就是这样。
+        string[] body = lines[1..^1];
+        await File.WriteAllLinesAsync(privatePath, [lines[0], .. body[..(body.Length / 2)], lines[^1]]);
+
+        InvalidDataException ex = await Assert.ThrowsExactlyAsync<InvalidDataException>(() => _service.ImportKeyAsync(privatePath));
+
+        Assert.AreEqual(Strings.Format("KeySvc_ImportInvalidPrivateKey", "damaged"), ex.Message);
+        Assert.IsFalse(File.Exists(Path.Combine(_sshDir, "damaged")), "拒收之后不该留下私钥副本。");
+    }
+
+    /// <summary>加了口令的 OpenSSH 私钥:格式对、要口令 —— 照收,并标明要口令;导入时不问口令。</summary>
+    [TestMethod]
+    public async Task Import_OfAPassphraseProtectedKey_IsAcceptedAndFlagged()
+    {
+        Directory.CreateDirectory(_external);
+        string path = Path.Combine(_external, "locked");
+        using (InMemorySshSigner key = InMemorySshSigner.GenerateEd25519())
+        {
+            await File.WriteAllTextAsync(path, SshPrivateKeyFile.Format(key, "correct horse".AsSpan(), "test"));
+            await File.WriteAllTextAsync(path + ".pub", key.PublicKey.ToOpenSshFormat("test") + "\n");
+        }
+
+        SshKeyImportResult? result = await _service.ImportKeyAsync(path);
+
+        Assert.IsNotNull(result);
+        Assert.IsTrue(result.NeedsPassphrase);
+        Assert.AreEqual("ED25519", result.Key.Type);
+    }
+
+    /// <summary>加了口令、又没有 .pub:公钥从 OpenSSH 容器的明文段读,照收。</summary>
+    [TestMethod]
+    public async Task Import_OfAPassphraseProtectedKeyWithoutPub_ReadsThePublicSection()
+    {
+        Directory.CreateDirectory(_external);
+        string path = Path.Combine(_external, "locked_alone");
+        string fingerprint;
+        using (InMemorySshSigner key = InMemorySshSigner.GenerateEd25519())
+        {
+            await File.WriteAllTextAsync(path, SshPrivateKeyFile.Format(key, "pw".AsSpan(), "test"));
+            fingerprint = key.PublicKey.Sha256Fingerprint;
+        }
+
+        SshKeyImportResult? result = await _service.ImportKeyAsync(path);
+
+        Assert.IsTrue(result!.NeedsPassphrase);
+        Assert.AreEqual(fingerprint, result.Key.Fingerprint);
+    }
+
+    /// <summary>.pub 与私钥不是同一把:拒收,一个文件都不留。</summary>
+    [TestMethod]
+    public async Task Import_WithAPubOfAnotherKey_IsRejected()
+    {
+        (string privatePath, string publicPath) = await CreateExternalKeyAsync("mismatch");
+        (_, string otherPub) = await CreateExternalKeyAsync("someone_else");
+        File.Copy(otherPub, publicPath, overwrite: true);
+
+        InvalidDataException ex = await Assert.ThrowsExactlyAsync<InvalidDataException>(() => _service.ImportKeyAsync(privatePath));
+
+        Assert.AreEqual(Strings.Format("KeySvc_ImportPublicKeyMismatch", "mismatch.pub", "mismatch"), ex.Message);
+        Assert.IsFalse(File.Exists(Path.Combine(_sshDir, "mismatch")));
+        Assert.IsFalse(File.Exists(Path.Combine(_sshDir, "mismatch.pub")));
+    }
+
+    /// <summary>过时的传统加密 PEM(Proc-Type: 4,ENCRYPTED):库不读,说清是「不受支持」。</summary>
+    [TestMethod]
+    public async Task Import_OfALegacyEncryptedPem_IsRejectedAsUnsupported()
+    {
+        Directory.CreateDirectory(_external);
+        string path = Path.Combine(_external, "legacy");
+        await File.WriteAllTextAsync(path,
+            "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: DES-EDE3-CBC,0123456789ABCDEF\n\nAAAA\n-----END RSA PRIVATE KEY-----\n");
+        await File.WriteAllTextAsync(path + ".pub", "ssh-rsa AAAA legacy\n");
+
+        InvalidDataException ex = await Assert.ThrowsExactlyAsync<InvalidDataException>(() => _service.ImportKeyAsync(path));
+
+        Assert.AreEqual(Strings.Format("KeySvc_ImportUnsupportedKey", "legacy"), ex.Message);
+    }
+
+    // ———————————————————— 导出 ————————————————————
+
+    [TestMethod]
+    public async Task ExportPublicKey_WritesThePublicKeyLine()
+    {
+        SshKeyInfo key = await _service.GenerateKeyAsync("to_share");
+        string target = Path.Combine(_external, "shared.pub");
+        Directory.CreateDirectory(_external);
+
+        await _service.ExportPublicKeyAsync(key, target);
+
+        Assert.AreEqual(key.PublicKeyLine, (await File.ReadAllTextAsync(target)).Trim());
+    }
+
+    [TestMethod]
+    public async Task ExportPrivateKey_CopiesTheFileAsItIs_AndOverwrites()
+    {
+        SshKeyInfo key = await _service.GenerateKeyAsync("backup_me");
+        Directory.CreateDirectory(_external);
+        string target = Path.Combine(_external, "backup_me");
+        await File.WriteAllTextAsync(target, "old content that is longer than nothing at all");
+
+        await _service.ExportPrivateKeyAsync(key, target);
+
+        CollectionAssert.AreEqual(await File.ReadAllBytesAsync(key.PrivateKeyPath), await File.ReadAllBytesAsync(target));
+    }
+
+    [TestMethod]
+    public async Task ExportPrivateKey_WhenTheKeyIsGone_Throws()
+    {
+        SshKeyInfo key = await _service.GenerateKeyAsync("gone");
+        File.Delete(key.PrivateKeyPath);
+
+        await Assert.ThrowsExactlyAsync<FileNotFoundException>(
+            () => _service.ExportPrivateKeyAsync(key, Path.Combine(_sshDir, "gone_copy")));
+    }
+
+    /// <summary>导出的私钥只给属主读写;目标早就存在、权限还宽的,也要先收窄再写。</summary>
+    [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public async Task ExportPrivateKey_IsOwnerOnlyOnUnix()
+    {
+        SshKeyInfo key = await _service.GenerateKeyAsync("perm_export");
+        Directory.CreateDirectory(_external);
+        string fresh = Path.Combine(_external, "fresh");
+        string existing = Path.Combine(_external, "existing");
+        await File.WriteAllTextAsync(existing, "x");
+        File.SetUnixFileMode(existing, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+
+        await _service.ExportPrivateKeyAsync(key, fresh);
+        await _service.ExportPrivateKeyAsync(key, existing);
+
+        Assert.AreEqual(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(fresh));
+        Assert.AreEqual(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(existing));
     }
 
     /// <summary>在 ~/.ssh 之外先造一对真密钥,再把它当作"外部密钥"导入。</summary>

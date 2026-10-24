@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Net.Sockets;
+using System.Text;
 using Avalonia;
 using Avalonia.Threading;
 using ReactiveUI;
@@ -8,6 +9,7 @@ using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Core.Tunnels;
 using VelaShell.Presentation.Services;
 
 namespace VelaShell.ViewModels;
@@ -71,10 +73,22 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     private readonly DispatcherTimer? _liveTimer;
 
     /// <summary>
-    /// 把面板外发生的错误报给用户(宿主接的是右下角的错误提示)。启动时自动建立隧道那会儿面板多半没开,
-    /// 写进表单下的 <see cref="ErrorMessage" /> 没人看得见。
+    /// 面板开着时每秒一拍,只刷流量(速率、连接列表、累计)。5 秒一拍的 <see cref="_liveTimer" /> 管的是存活与自动恢复,
+    /// 拿它刷速率的话,读数比实际晚五秒才动 —— 而速率本来就取最近三秒的平均。面板收起时停表,不白白每秒同步一遍。
     /// </summary>
-    private readonly Action<string>? _errorReporter;
+    private readonly DispatcherTimer? _trafficTimer;
+
+    /// <summary>
+    /// 把面板外发生的错误报给用户(宿主接的是右下角的错误提示)。启动时自动建立隧道那会儿面板多半没开,
+    /// 写进表单下的 <see cref="ErrorMessage" /> 没人看得见。第二个参数非空时提示上带「重试」,点了就执行它。
+    /// </summary>
+    private readonly Action<string, Action?>? _errorReporter;
+
+    /// <summary>
+    /// 面板外的一句告知(宿主接的是右下角的信息提示)。只用在「点了重试、隧道建起来了」:
+    /// 那时面板多半没开,点完提示就消失,不报一声用户不知道成没成。
+    /// </summary>
+    private readonly Action<string>? _infoReporter;
 
     private readonly Func<Task<IReadOnlyList<SessionProfile>>>? _savedProfilesProvider;
     private readonly Func<Guid, Task>? _sessionDisconnector;
@@ -90,8 +104,16 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
 
     /// <summary>
     /// 构造隧道面板视图模型;可注入已保存会话来源、后台连接/断开与存活探测委托、配置持久化存储
-    /// 及面板外的错误提示出口(均可为空,便于测试)。
+    /// 及面板外的错误 / 信息提示出口(均可为空,便于测试)。
     /// </summary>
+    /// <param name="workflowService">隧道工作流。</param>
+    /// <param name="savedProfilesProvider">已保存的会话。</param>
+    /// <param name="backgroundConnector">后台连接;第二个参数 = 这是断线后的自动恢复。</param>
+    /// <param name="isSessionAlive">后台会话是否还活着。</param>
+    /// <param name="sessionDisconnector">断开后台会话。</param>
+    /// <param name="dataStore">隧道配置与面板位置的存储。</param>
+    /// <param name="errorReporter">面板外的错误提示;第二个参数非空时提示上带「重试」。</param>
+    /// <param name="infoReporter">面板外的信息提示(重试成功时报一声)。</param>
     public TunnelPanelViewModel(
         ITunnelWorkflowService workflowService,
         Func<Task<IReadOnlyList<SessionProfile>>>? savedProfilesProvider = null,
@@ -99,7 +121,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         Func<Guid, bool>? isSessionAlive = null,
         Func<Guid, Task>? sessionDisconnector = null,
         IAppDataStore? dataStore = null,
-        Action<string>? errorReporter = null)
+        Action<string, Action?>? errorReporter = null,
+        Action<string>? infoReporter = null)
     {
         _workflowService = workflowService ?? throw new ArgumentNullException(nameof(workflowService));
         _savedProfilesProvider = savedProfilesProvider;
@@ -108,22 +131,20 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         _sessionDisconnector = sessionDisconnector;
         _dataStore = dataStore;
         _errorReporter = errorReporter;
+        _infoReporter = infoReporter;
         RestorePanelPosition();
         Servers = [];
         _tunnels = [];
-        IObservable<bool> canCreate = this.WhenAnyValue(vm => vm.SelectedServer,
-            vm => vm.NewLocalHost,
-            vm => vm.NewLocalPort,
-            vm => vm.NewRemoteHost,
-            vm => vm.NewRemotePort,
-            vm => vm.NewTunnelTypeIndex,
-            vm => vm.ForwardToServerLoopback,
-            (server, localHost, localPort, remoteHost, remotePort, typeIndex, _) =>
-                server is not null &&
-                !string.IsNullOrWhiteSpace(localHost) &&
-                localPort is >= 1 and <= 65535 &&
-                (typeIndex == 2 ||
-                 (!string.IsNullOrWhiteSpace(remoteHost) && remotePort is >= 1 and <= 65535)));
+        // 表单填全了没有:任何一项表单字段变了就重算。字段随类型增减(远程动态要放行名单,
+        // 本地端口对它没有意义),不再一个个塞进 WhenAnyValue。
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is { } name && FormProperties.Contains(name))
+            {
+                this.RaisePropertyChanged(nameof(IsFormValid));
+            }
+        };
+        IObservable<bool> canCreate = this.WhenAnyValue(vm => vm.IsFormValid);
         CreateTunnelCommand = ReactiveCommand.CreateFromTask(SubmitAsync, canCreate);
         StopTunnelCommand = ReactiveCommand.CreateFromTask<Guid>(StopTunnelAsync);
         StartTunnelCommand = ReactiveCommand.CreateFromTask<Guid>(StartTunnelAsync);
@@ -152,6 +173,36 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             };
             _liveTimer.Tick += (_, _) => RefreshLiveState();
             _liveTimer.Start();
+            _trafficTimer = new()
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _trafficTimer.Tick += (_, _) => RefreshTraffic();
+        }
+    }
+
+    /// <summary>
+    /// 面板是否展开(宿主随面板的显隐设置)。开着时每秒刷一次速率与连接列表,收起就停。
+    /// </summary>
+    public bool IsOpen
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            if (value)
+            {
+                RefreshTraffic();
+                _trafficTimer?.Start();
+            }
+            else
+            {
+                _trafficTimer?.Stop();
+            }
         }
     }
 
@@ -212,7 +263,43 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     /// <summary>当前服务器是否已有活着的后台隧道连接。</summary>
     public bool IsServerConnected => SelectedServer is not null && ResolveLiveSession(SelectedServer.Id) is not null;
 
-    /// <summary>ComboBox 适配器:0 = 本地转发, 1 = 远程转发, 2 = 动态转发 (SOCKS)。</summary>
+    /// <summary>参与「表单填全了没有」(<see cref="IsFormValid" />)的属性。</summary>
+    private static readonly HashSet<string> FormProperties =
+    [
+        nameof(SelectedServer),
+        nameof(NewTunnelType),
+        nameof(NewLocalHost),
+        nameof(NewLocalPort),
+        nameof(NewRemoteHost),
+        nameof(NewRemotePort),
+        nameof(ForwardToServerLoopback),
+        nameof(NewPermitRemoteOpen),
+        nameof(NewUseUnixSocket),
+        nameof(NewLocalSocketPath),
+        nameof(NewRemoteSocketPath),
+    ];
+
+    /// <summary>
+    /// 表单填全了没有(「创建 / 保存」键据此可点):选了服务器;本机这头要端口的有端口;服务器那头要地址的有地址与端口;
+    /// 远程动态转发的放行名单至少一条、每条都写对。
+    /// </summary>
+    /// <remarks>
+    /// 本地 / 远程转发改用 Unix 套接字时,用上套接字的那一头看路径(要写对),不再看主机与端口。
+    /// </remarks>
+    public bool IsFormValid =>
+        SelectedServer is not null && NewTunnelType switch
+        {
+            TunnelType.DynamicForward => IsLocalEndpointFilled,
+            TunnelType.RemoteDynamicForward => IsServerEndpointFilled && RemoteOpenRules.TryParse(NewPermitRemoteOpen, out _, out _),
+            _ => (UsesLocalSocket ? LocalSocketPathProblem(NewLocalSocketPath) is null : IsLocalEndpointFilled)
+                 && (UsesRemoteSocket ? RemoteSocketPathProblem(NewRemoteSocketPath) is null : IsServerEndpointFilled)
+        };
+
+    private bool IsLocalEndpointFilled => !string.IsNullOrWhiteSpace(NewLocalHost) && NewLocalPort is >= 1 and <= 65535;
+
+    private bool IsServerEndpointFilled => !string.IsNullOrWhiteSpace(NewRemoteHost) && NewRemotePort is >= 1 and <= 65535;
+
+    /// <summary>ComboBox 适配器:0 = 本地转发, 1 = 远程转发, 2 = 动态转发 (SOCKS), 3 = 远程动态转发 (SOCKS)。</summary>
     public int NewTunnelTypeIndex
     {
         get =>
@@ -220,23 +307,205 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             {
                 TunnelType.RemoteForward => 1,
                 TunnelType.DynamicForward => 2,
+                TunnelType.RemoteDynamicForward => 3,
                 _ => 0
             };
-        set
-        {
+        set =>
             NewTunnelType = value switch
             {
                 1 => TunnelType.RemoteForward,
                 2 => TunnelType.DynamicForward,
+                3 => TunnelType.RemoteDynamicForward,
                 _ => TunnelType.LocalForward
             };
-            this.RaisePropertyChanged();
-            this.RaisePropertyChanged(nameof(IsRemoteTargetVisible));
+    }
+
+    /// <summary>动态转发(SOCKS)没有固定目标,隐藏目标主机/端口输入。远程动态转发用这两栏填服务器上的监听地址与端口。</summary>
+    public bool IsRemoteTargetVisible => NewTunnelType != TunnelType.DynamicForward;
+
+    /// <summary>本地端口那一栏:远程动态转发两头都不在本机监听、也没有本机目标,用不上它。</summary>
+    public bool IsLocalPortVisible => NewTunnelType != TunnelType.RemoteDynamicForward;
+
+    /// <summary>放行名单只有远程动态转发有。</summary>
+    public bool IsPermitRemoteOpenVisible => NewTunnelType == TunnelType.RemoteDynamicForward;
+
+    /// <summary>
+    /// 主机那一栏的标签:远程 / 远程动态转发填的是服务器上的监听地址,不是目标 —— 远程转发的目标是本机的服务(本地端口那栏)。
+    /// 曾经三种类型共用「目标主机(服务器视角)」,远程转发填的明明是服务器在哪个地址上监听。
+    /// </summary>
+    public string RemoteHostLabel => Strings.Get(ListensOnServer ? "Tunnel_ServerBindHostLabel" : "Tunnel_TargetHostLabel");
+
+    /// <summary>这个类型是请服务器监听(远程 / 远程动态转发):主机与端口两栏说的是服务器上的监听端。</summary>
+    private bool ListensOnServer => NewTunnelType is TunnelType.RemoteForward or TunnelType.RemoteDynamicForward;
+
+    /// <summary>
+    /// 「锁定 127.0.0.1」那个勾选框的字:远程 / 远程动态转发是「只在服务器本机监听」(不让服务器所在网络里的别人连上来),
+    /// 本地转发是「转发到服务器本机」。
+    /// </summary>
+    public string LoopbackOptionText => Strings.Get(ListensOnServer ? "Tunnel_ListenOnServerLoopback" : "Tunnel_ForwardToLoopback");
+
+    /// <summary>
+    /// 表单中的放行名单(远程动态转发):<c>主机:端口</c> 空白或逗号隔开,单独一条 <c>any</c> 是全放。默认空 —— 不替用户全放。
+    /// </summary>
+    public string NewPermitRemoteOpen
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(PermitRemoteOpenError));
+            this.RaisePropertyChanged(nameof(HasPermitRemoteOpenError));
+        }
+    } = string.Empty;
+
+    /// <summary>放行名单里写错的那一条,当场指出来(空着不算写错,只是「创建」点不了)。</summary>
+    public string? PermitRemoteOpenError =>
+        IsPermitRemoteOpenVisible
+        && !RemoteOpenRules.TryParse(NewPermitRemoteOpen, out _, out string? invalid)
+        && invalid is not null
+            ? Strings.Format("Tunnel_PermitRemoteOpenInvalid", invalid)
+            : null;
+
+    /// <summary>放行名单有写错的规则。</summary>
+    public bool HasPermitRemoteOpenError => PermitRemoteOpenError is not null;
+
+    // ---- Unix 域套接字 ----
+
+    /// <summary>
+    /// 「改用 Unix 域套接字」只对本地 / 远程转发有:SSH 库的本地转发两头各自可以是套接字(四种组合),
+    /// 远程转发只有两头都是套接字这一种;动态与远程动态转发没有套接字的写法。
+    /// </summary>
+    public bool IsUnixSocketOptionVisible => NewTunnelType is TunnelType.LocalForward or TunnelType.RemoteForward;
+
+    /// <summary>表单中的「改用 Unix 域套接字」。默认不勾。</summary>
+    public bool NewUseUnixSocket
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            RaiseSocketChanged();
         }
     }
 
-    /// <summary>动态转发(SOCKS)没有固定目标,隐藏目标主机/端口输入。</summary>
-    public bool IsRemoteTargetVisible => NewTunnelType != TunnelType.DynamicForward;
+    /// <summary>
+    /// 表单中本机这头的套接字路径:本地转发是在它上面监听(留空则仍用本地端口),远程转发是回连到它(必填)。
+    /// </summary>
+    public string NewLocalSocketPath
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            RaiseSocketChanged();
+        }
+    } = string.Empty;
+
+    /// <summary>
+    /// 表单中服务器那头的套接字路径:本地转发是转到它(留空则仍用目标主机:端口),远程转发是请服务器在它上面监听(必填)。
+    /// </summary>
+    public string NewRemoteSocketPath
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            RaiseSocketChanged();
+        }
+    } = string.Empty;
+
+    /// <summary>套接字那两栏要不要显示:勾了「改用 Unix 域套接字」。</summary>
+    public bool IsUnixSocketFormVisible => IsUnixSocketOptionVisible && NewUseUnixSocket;
+
+    /// <summary>本机这头用不用套接字:远程转发勾了就用(两头必须同时),本地转发要填了路径才用。</summary>
+    private bool UsesLocalSocket =>
+        IsUnixSocketFormVisible
+        && (NewTunnelType == TunnelType.RemoteForward || !string.IsNullOrWhiteSpace(NewLocalSocketPath));
+
+    /// <summary>服务器那头用不用套接字;口径同 <see cref="UsesLocalSocket" />。</summary>
+    private bool UsesRemoteSocket =>
+        IsUnixSocketFormVisible
+        && (NewTunnelType == TunnelType.RemoteForward || !string.IsNullOrWhiteSpace(NewRemoteSocketPath));
+
+    /// <summary>本机套接字那一栏的标签:本地转发是「监听」(可留空),远程转发是「回连到」。</summary>
+    public string LocalSocketLabel => Strings.Get(NewTunnelType == TunnelType.RemoteForward ? "Tunnel_LocalSocketTargetLabel" : "Tunnel_LocalSocketListenLabel");
+
+    /// <summary>服务器套接字那一栏的标签:本地转发是「目标」(可留空),远程转发是「监听」。</summary>
+    public string RemoteSocketLabel => Strings.Get(NewTunnelType == TunnelType.RemoteForward ? "Tunnel_RemoteSocketListenLabel" : "Tunnel_RemoteSocketTargetLabel");
+
+    /// <summary>
+    /// 本机套接字栏的示例路径:放在只有自己进得去的目录里(Linux 的 <c>$XDG_RUNTIME_DIR</c>、Windows 的用户临时目录),
+    /// 从建好套接字到改权限之间的那一小段窗口里别人也够不着它。
+    /// </summary>
+    public static string LocalSocketPlaceholder { get; } = Path.Combine(
+        Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } runtime && !OperatingSystem.IsWindows()
+            ? runtime
+            : Path.GetTempPath(),
+        "app.sock");
+
+    /// <summary>本机套接字路径写错了(不是完整路径、太长)时的提示;空着不算错。</summary>
+    public string? LocalSocketPathError => UsesLocalSocket && !string.IsNullOrWhiteSpace(NewLocalSocketPath) ? LocalSocketPathProblem(NewLocalSocketPath) : null;
+
+    /// <summary>服务器套接字路径写错了(不是 / 开头的绝对路径)时的提示;空着不算错。</summary>
+    public string? RemoteSocketPathError => UsesRemoteSocket && !string.IsNullOrWhiteSpace(NewRemoteSocketPath) ? RemoteSocketPathProblem(NewRemoteSocketPath) : null;
+
+    /// <summary>本机套接字路径有错。</summary>
+    public bool HasLocalSocketPathError => LocalSocketPathError is not null;
+
+    /// <summary>服务器套接字路径有错。</summary>
+    public bool HasRemoteSocketPathError => RemoteSocketPathError is not null;
+
+    /// <summary>本地端口那一栏可编辑:本机这头没改用套接字。</summary>
+    public bool IsLocalPortEditable => !UsesLocalSocket;
+
+    /// <summary>目标(或服务器监听)主机与端口可编辑:服务器那头没改用套接字。</summary>
+    public bool IsRemoteEndpointEditable => !UsesRemoteSocket;
+
+    /// <summary>
+    /// 本机套接字路径的上限(UTF-8 字节,不含结尾的 0):<c>sun_path</c> 在 Linux 与 Windows 上是 108 字节、macOS 上是 104 字节。
+    /// 超了 SSH 库当场报错,表单上先拦住、说清楚。
+    /// </summary>
+    internal static int MaxLocalSocketPathBytes => OperatingSystem.IsMacOS() ? 103 : 107;
+
+    /// <summary>本机套接字路径的问题:要是完整路径(相对路径落在哪全看程序的当前目录)、不能太长。没问题返回 <see langword="null" />。</summary>
+    private static string? LocalSocketPathProblem(string path)
+    {
+        string trimmed = path.Trim();
+        if (trimmed.Length == 0)
+        {
+            return Strings.Get("Tunnel_SocketPathRequired");
+        }
+        if (!Path.IsPathFullyQualified(trimmed))
+        {
+            return Strings.Get("Tunnel_LocalSocketPathNotAbsolute");
+        }
+        int bytes = Encoding.UTF8.GetByteCount(trimmed);
+        return bytes > MaxLocalSocketPathBytes ? Strings.Format("Tunnel_LocalSocketPathTooLong", bytes, MaxLocalSocketPathBytes) : null;
+    }
+
+    /// <summary>服务器套接字路径的问题:要是 <c>/</c> 开头的绝对路径(服务器上的 sshd 按它自己的文件系统解析)。</summary>
+    private static string? RemoteSocketPathProblem(string path)
+    {
+        string trimmed = path.Trim();
+        return trimmed.Length == 0 ? Strings.Get("Tunnel_SocketPathRequired")
+            : !trimmed.StartsWith('/') ? Strings.Get("Tunnel_RemoteSocketPathNotAbsolute")
+            : null;
+    }
+
+    private void RaiseSocketChanged()
+    {
+        this.RaisePropertyChanged(nameof(IsUnixSocketOptionVisible));
+        this.RaisePropertyChanged(nameof(IsUnixSocketFormVisible));
+        this.RaisePropertyChanged(nameof(LocalSocketLabel));
+        this.RaisePropertyChanged(nameof(RemoteSocketLabel));
+        this.RaisePropertyChanged(nameof(LocalSocketPathError));
+        this.RaisePropertyChanged(nameof(RemoteSocketPathError));
+        this.RaisePropertyChanged(nameof(HasLocalSocketPathError));
+        this.RaisePropertyChanged(nameof(HasRemoteSocketPathError));
+        this.RaisePropertyChanged(nameof(IsLocalPortEditable));
+        this.RaisePropertyChanged(nameof(IsRemoteEndpointEditable));
+        this.RaisePropertyChanged(nameof(IsRemoteHostEditable));
+    }
 
     /// <summary>
     /// 默认转发到"服务器本机":目标主机锁定为 127.0.0.1(从服务器视角,
@@ -256,14 +525,26 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         }
     } = true;
 
-    /// <summary>目标主机是否可编辑:仅在未勾选"转发到服务器本机"时开放输入。</summary>
-    public bool IsRemoteHostEditable => !ForwardToServerLoopback;
+    /// <summary>目标主机是否可编辑:仅在未勾选"转发到服务器本机"、且服务器那头没改用套接字时开放输入。</summary>
+    public bool IsRemoteHostEditable => !ForwardToServerLoopback && IsRemoteEndpointEditable;
 
-    /// <summary>新建/编辑表单选择的隧道类型(本地/远程/动态转发)。</summary>
+    /// <summary>新建/编辑表单选择的隧道类型(本地/远程/动态/远程动态转发)。</summary>
     public TunnelType NewTunnelType
     {
         get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(NewTunnelTypeIndex));
+            this.RaisePropertyChanged(nameof(IsRemoteTargetVisible));
+            this.RaisePropertyChanged(nameof(IsLocalPortVisible));
+            this.RaisePropertyChanged(nameof(IsPermitRemoteOpenVisible));
+            this.RaisePropertyChanged(nameof(RemoteHostLabel));
+            this.RaisePropertyChanged(nameof(LoopbackOptionText));
+            this.RaisePropertyChanged(nameof(PermitRemoteOpenError));
+            this.RaisePropertyChanged(nameof(HasPermitRemoteOpenError));
+            RaiseSocketChanged();
+        }
     }
 
     /// <summary>表单中的本地监听主机,默认 127.0.0.1。</summary>
@@ -314,6 +595,18 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
+    /// <summary>
+    /// 表单中的限速(KB/s,每个方向,这条隧道的全部连接共用);0 = 不限(默认)。
+    /// </summary>
+    public int NewRateLimitKiB
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, Math.Clamp(value, 0, MaxRateLimitKiB));
+    }
+
+    /// <summary>限速输入框的上限(KB/s):1 GB/s,再大就等于不限。</summary>
+    public const int MaxRateLimitKiB = 1024 * 1024;
+
     /// <summary>表单中的隧道别名(可选,留空时用路由描述兜底)。</summary>
     public string NewTunnelName
     {
@@ -340,6 +633,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         this.RaisePropertyChanged(nameof(ServerStatusText));
         this.RaisePropertyChanged(nameof(FormTitle));
         this.RaisePropertyChanged(nameof(SubmitButtonText));
+        this.RaisePropertyChanged(nameof(RemoteHostLabel));
+        this.RaisePropertyChanged(nameof(LoopbackOptionText));
+        this.RaisePropertyChanged(nameof(PermitRemoteOpenError));
+        RaiseSocketChanged();
         foreach (TunnelItemViewModel tunnel in Tunnels)
         {
             tunnel.RefreshLocalizedText();
@@ -377,6 +674,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     public void Dispose()
     {
         _liveTimer?.Stop();
+        _trafficTimer?.Stop();
         GC.SuppressFinalize(this);
     }
 
@@ -478,7 +776,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     /// 重启后一律是已停止,等用户手动启动。
     /// </para>
     /// <para>
-    /// 连不上服务器、端口被占等失败经 <c>errorReporter</c> 报到右下角的错误提示;用户取消认证则安静结束。
+    /// 连不上服务器、端口被占等失败经 <c>errorReporter</c> 报到右下角的错误提示,提示上带「重试」;用户取消认证则安静结束。
     /// 这时面板多半没开,写进表单下面没人看得见。一台服务器失败不耽误其它服务器;
     /// 同一台上一条建不起来也不耽误其余几条。从不抛出(调用方不等它)。
     /// </para>
@@ -493,23 +791,49 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         await LoadServersAsync().ConfigureAwait(true);
         foreach (SessionProfile profile in Servers.ToList())
         {
-            try
-            {
-                await AutoStartProfileAsync(profile).ConfigureAwait(true);
-            }
-            catch (VelaSshAuthenticationCancelledException)
-            {
-                // 用户取消认证,不作为启动失败报告。
-            }
-            catch (Exception ex)
-            {
-                _errorReporter?.Invoke(Strings.Format("Msg_TunnelAutoStartConnectFailed", profile.Name, FriendlyError(ex)));
-            }
+            await RunAutoStartAsync(profile, only: null, userRequested: false).ConfigureAwait(true);
         }
     }
 
+    /// <summary>跑一次「建好这台服务器上该自启的隧道」,并把失败报出去;从不抛出。</summary>
+    /// <param name="profile">服务器。</param>
+    /// <param name="only">只建这一条(提示上的「重试」点名的那条);<see langword="null" /> = 这台上勾了自启、还没起来的全部。</param>
+    /// <param name="userRequested">这是用户在提示上点的「重试」,而不是程序启动时的那一轮。</param>
+    private async Task RunAutoStartAsync(SessionProfile profile, TunnelItemViewModel? only, bool userRequested)
+    {
+        try
+        {
+            await AutoStartProfileAsync(profile, only, userRequested).ConfigureAwait(true);
+        }
+        catch (VelaSshAuthenticationCancelledException)
+        {
+            // 用户取消认证,不作为启动失败报告。
+        }
+        catch (Exception ex)
+        {
+            ReportAutoStartFailure(Strings.Format("Msg_TunnelAutoStartConnectFailed", profile.Name, FriendlyError(ex)), profile, only);
+        }
+    }
+
+    /// <summary>
+    /// 报一条自动建立的失败,提示上带「重试」。
+    /// </summary>
+    /// <remarks>
+    /// 原先只是一句话:用户得打开面板、切到那台服务器、再点那条隧道的启动键 —— 而他看到这条提示时想做的就只有「再来一次」。
+    /// 重试走的是同一条路(连不上就重连,哪条没建起来建哪条),只是由人点的:认证要人处理的那台照样会问他,
+    /// 不受「之前取消过认证、自动的不再试」那一条拦着。
+    /// </remarks>
+    /// <param name="message">提示正文。</param>
+    /// <param name="profile">失败的那台服务器。</param>
+    /// <param name="tunnel">失败的那条隧道;连不上服务器时为 <see langword="null" />(重试这台上该自启的全部)。</param>
+    private void ReportAutoStartFailure(string message, SessionProfile profile, TunnelItemViewModel? tunnel) =>
+        _errorReporter?.Invoke(message, () => _ = RunAutoStartAsync(profile, tunnel, userRequested: true));
+
     /// <summary>建好一台服务器上勾了「程序启动时自动建立」的隧道。</summary>
-    private async Task AutoStartProfileAsync(SessionProfile profile)
+    /// <param name="profile">服务器。</param>
+    /// <param name="only">只建这一条;<see langword="null" /> = 这台上勾了自启、还没起来的全部。</param>
+    /// <param name="userRequested">这是用户点的「重试」:不受「认证要人处理、自动的不再试」拦着;建成了报一声。</param>
+    private async Task AutoStartProfileAsync(SessionProfile profile, TunnelItemViewModel? only, bool userRequested)
     {
         if (!_itemsByProfile.TryGetValue(profile.Id, out ObservableCollection<TunnelItemViewModel>? items))
         {
@@ -518,11 +842,14 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         }
         // 与切到这台服务器时同一份恢复(每台只恢复一次):之后打开面板,看到的就是这里建好的条目。
         await RestorePersistedTunnelsAsync(profile.Id, items).ConfigureAwait(true);
-        if (_authenticationBlockedProfiles.Contains(profile.Id))
+        if (!userRequested && _authenticationBlockedProfiles.Contains(profile.Id))
         {
             return;
         }
-        List<TunnelItemViewModel> pending = [.. items.Where(t => t is { AutoStart: true, IsActive: false, IsBusy: false })];
+        // 点「重试」的那会儿,那条可能已经被用户在面板里启动(换成了新条目)、改过或删掉 —— 不在列表里了就不再建。
+        List<TunnelItemViewModel> pending = only is null
+            ? [.. items.Where(t => t is { AutoStart: true, IsActive: false, IsBusy: false })]
+            : [.. items.Where(t => ReferenceEquals(t, only) && t is { IsActive: false, IsBusy: false })];
         if (pending.Count == 0)
         {
             return;
@@ -544,10 +871,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             }
             catch (Exception ex)
             {
-                _errorReporter?.Invoke(Strings.Format("Msg_TunnelAutoStartConnectFailed", profile.Name, FriendlyError(ex)));
+                ReportAutoStartFailure(Strings.Format("Msg_TunnelAutoStartConnectFailed", profile.Name, FriendlyError(ex)), profile, only);
                 return;
             }
-            bool anyStarted = false;
+            List<string> started = [];
             foreach (TunnelItemViewModel tunnel in pending.Where(items.Contains))
             {
                 try
@@ -558,7 +885,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
                     {
                         items[index] = new(result);
                     }
-                    anyStarted = true;
+                    started.Add(tunnel.Name);
                 }
                 catch (VelaSshAuthenticationCancelledException)
                 {
@@ -566,14 +893,21 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
                 }
                 catch (Exception ex)
                 {
-                    _errorReporter?.Invoke(Strings.Format("Msg_TunnelAutoStartFailed", tunnel.Name, profile.Name,
-                        FriendlyError(ex, tunnel.Config.LocalPort)));
+                    ReportAutoStartFailure(Strings.Format("Msg_TunnelAutoStartFailed", tunnel.Name, profile.Name,
+                        FriendlyError(ex, tunnel.Config.LocalPort)), profile, tunnel);
                 }
             }
-            if (!anyStarted)
+            if (started.Count == 0)
             {
                 // 一条都没建起来:专为它们拨的后台连接没有存在的必要。
                 await ReleaseHostIfUnusedAsync(profile.Id).ConfigureAwait(true);
+            }
+            else if (userRequested)
+            {
+                foreach (string name in started)
+                {
+                    _infoReporter?.Invoke(Strings.Format("Msg_TunnelAutoStartRetried", name, profile.Name));
+                }
             }
         }
         finally
@@ -631,6 +965,26 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         catch
         {
             // 列表刷新失败保留旧数据。
+        }
+    }
+
+    /// <summary>
+    /// 面板开着时的每秒一拍:从服务同步读数,刷当前服务器各条隧道的流量行。
+    /// 无 Avalonia 应用(单元测试)时没有计时器,测试直接调它。
+    /// </summary>
+    internal void RefreshTraffic()
+    {
+        try
+        {
+            _workflowService.RefreshStatistics();
+        }
+        catch
+        {
+            // 同 RefreshLiveState:服务正在拆除时读不到,下一拍再说。
+        }
+        foreach (TunnelItemViewModel tunnel in Tunnels)
+        {
+            tunnel.RefreshTraffic();
         }
     }
 
@@ -931,7 +1285,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         catch (VelaSshTailscaleAuthenticationException ex) when (ex.RequiresUserAction)
         {
             // 认证途中断线、没等到验证链接就超时不在此列:落到下面的通用分支退避重试。
-            _errorReporter?.Invoke(ex.Message);
+            _errorReporter?.Invoke(ex.Message, null);
             if (isSelected)
             {
                 ErrorMessage = ex.Message;
@@ -941,7 +1295,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         {
             // 自动恢复到此为止(EnsureSessionAsync 已把这台记进 _hostKeyRejectedProfiles)。
             // 不管当前选中的是不是这台都报一声:只有用户手动启动、在弹窗里核对过指纹,这些隧道才回得来。
-            _errorReporter?.Invoke(FriendlyError(ex));
+            _errorReporter?.Invoke(FriendlyError(ex), null);
             if (isSelected)
             {
                 ErrorMessage = FriendlyError(ex);
@@ -987,7 +1341,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
 
     /// <summary>配置身份键:恢复时用来跳过面板里已存在的同配置条目。</summary>
     private static string ConfigKey(TunnelConfig config) =>
-        $"{config.Type}|{config.LocalHost}|{config.LocalPort}|{config.RemoteHost}|{config.RemotePort}|{config.Name}";
+        $"{config.Type}|{config.LocalHost}|{config.LocalPort}|{config.RemoteHost}|{config.RemotePort}|{config.Name}|{RemoteOpenRules.Format(config.PermitRemoteOpen)}|{config.LocalSocketPath}|{config.RemoteSocketPath}";
 
     /// <summary>从存储恢复该服务器的隧道配置(每次运行每台只执行一次);失败不影响面板。</summary>
     private async Task RestorePersistedTunnelsAsync(Guid profileId, ObservableCollection<TunnelItemViewModel> items)
@@ -1069,13 +1423,16 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         _editingTunnelId = tunnelId;
         NewTunnelName = item.Config.Name;
         NewLocalHost = item.Config.LocalHost;
-        NewLocalPort = (int)item.Config.LocalPort;
-        NewTunnelTypeIndex = item.TunnelType switch
+        // 远程动态转发不用本地端口(存的是 0):表单那一栏保持原样,换回别的类型时不至于是个非法的 0。
+        if (item.Config.LocalPort != 0)
         {
-            TunnelType.RemoteForward => 1,
-            TunnelType.DynamicForward => 2,
-            _ => 0
-        };
+            NewLocalPort = (int)item.Config.LocalPort;
+        }
+        NewTunnelType = item.TunnelType;
+        NewPermitRemoteOpen = RemoteOpenRules.Format(item.Config.PermitRemoteOpen);
+        NewUseUnixSocket = item.Config.LocalSocketPath is not null || item.Config.RemoteSocketPath is not null;
+        NewLocalSocketPath = item.Config.LocalSocketPath ?? string.Empty;
+        NewRemoteSocketPath = item.Config.RemoteSocketPath ?? string.Empty;
         ForwardToServerLoopback = item.TunnelType != TunnelType.DynamicForward && item.Config.RemoteHost is "" or "127.0.0.1" or "localhost";
         if (!ForwardToServerLoopback)
         {
@@ -1084,6 +1441,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         NewRemotePort = (int)item.Config.RemotePort;
         NewAutoReconnect = item.Config.AutoReconnect;
         NewAutoStart = item.Config.AutoStart;
+        // 配置里存的是字节 / 秒;表单按 KB/s 填,不整除时向上取整(别把限速悄悄放宽成 0 = 不限)。
+        NewRateLimitKiB = item.Config.MaxBytesPerSecond is { } bytesPerSecond
+            ? (int)Math.Min(MaxRateLimitKiB, Math.Max(1, (bytesPerSecond + 1023) / 1024))
+            : 0;
         ErrorMessage = null;
         RaiseEditingChanged();
     }
@@ -1172,14 +1533,18 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     private TunnelConfig BuildConfig()
     {
         bool isDynamic = NewTunnelType == TunnelType.DynamicForward;
+        bool isRemoteDynamic = NewTunnelType == TunnelType.RemoteDynamicForward;
         bool loopback = !isDynamic && ForwardToServerLoopback;
+        IReadOnlyList<string>? permit = isRemoteDynamic && RemoteOpenRules.TryParse(NewPermitRemoteOpen, out IReadOnlyList<string> rules, out _)
+            ? rules
+            : null;
         return new()
         {
             Type = NewTunnelType,
             // 别名可选(设计 B3Rth):留空时用路由描述兜底,列表里始终有可读名称。
             Name = NewTunnelName.Trim(),
             LocalHost = NewLocalHost.Trim(),
-            LocalPort = (uint)NewLocalPort,
+            LocalPort = isRemoteDynamic ? 0u : (uint)NewLocalPort,
             RemoteHost = isDynamic
                              ? string.Empty
                              : loopback
@@ -1187,7 +1552,11 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
                                  : NewRemoteHost.Trim(),
             RemotePort = isDynamic ? 0u : (uint)NewRemotePort,
             AutoReconnect = NewAutoReconnect,
-            AutoStart = NewAutoStart
+            AutoStart = NewAutoStart,
+            MaxBytesPerSecond = NewRateLimitKiB > 0 ? NewRateLimitKiB * 1024L : null,
+            PermitRemoteOpen = permit,
+            LocalSocketPath = UsesLocalSocket ? NewLocalSocketPath.Trim() : null,
+            RemoteSocketPath = UsesRemoteSocket ? NewRemoteSocketPath.Trim() : null
         };
     }
 
@@ -1328,6 +1697,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         ex switch
         {
             VelaSshTailscaleAuthenticationException => ex.Message,
+            // 本机监听没起来:服务层已经说清在哪儿、为什么。排在端口被占之前 —— 套接字路径上的「地址已被占用」不是端口的事。
+            TunnelBindFailedException => ex.Message,
             OperationCanceledException => Strings.Get("Msg_OperationCancelled"),
             InvalidOperationException when ex.Message.Contains("not connected", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
                 => Strings.Get("Msg_ServerConnectionUnavailable"),
@@ -1360,6 +1731,11 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         NewRemotePort = 27017;
         NewAutoReconnect = false;
         NewAutoStart = false;
+        NewRateLimitKiB = 0;
+        NewPermitRemoteOpen = string.Empty;
+        NewUseUnixSocket = false;
+        NewLocalSocketPath = string.Empty;
+        NewRemoteSocketPath = string.Empty;
         NewTunnelTypeIndex = 0;
         ForwardToServerLoopback = true; // 同时把目标主机复位为 127.0.0.1
         RaiseEditingChanged();

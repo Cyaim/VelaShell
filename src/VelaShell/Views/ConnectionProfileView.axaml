@@ -970,7 +970,7 @@
                     <TextBlock Classes="section-title" Text="{loc:Localize Profile_SecOrganize}" />
                     <Border Grid.Column="1" Classes="section-rule" />
                   </Grid>
-                  <Grid ColumnDefinitions="*,12,*,12,*">
+                  <Grid ColumnDefinitions="*,12,*,12,*" RowDefinitions="Auto,12,Auto">
                     <StackPanel Grid.Column="0">
                       <TextBlock Classes="field-label" Text="{loc:Localize Profile_DisplayName}" />
                       <TextBox Text="{Binding Name}" PlaceholderText="web-prod-03" />
@@ -987,6 +987,14 @@
                     <StackPanel Grid.Column="4">
                       <TextBlock Classes="field-label" Text="{loc:Localize Profile_TagsLabel}" TextTrimming="CharacterEllipsis" />
                       <TextBox Text="{Binding TagsText}" PlaceholderText="{loc:Localize Profile_TagsPlaceholder}" />
+                    </StackPanel>
+                    <!-- 标签页图标:像挑颜色一样挑一枚(资源管理器的会话行也画它)。在「常规」页而不是颜色所在的
+                         「终端」页 —— 图标对每一种协议都画,「终端」页只有 SSH 才有。没挑 = 跟协议,字段上画协议的默认图标。 -->
+                    <StackPanel Grid.Row="2" Grid.Column="0">
+                      <TextBlock Classes="field-label" Text="{loc:Localize Profile_TabIcon}" />
+                      <ctl:IconPickerField Value="{Binding TabIcon}"
+                                           DefaultIconKey="{Binding TabIconDefaultKey}"
+                                           EmptyText="{loc:Localize Profile_TabIconDefault}" />
                     </StackPanel>
                   </Grid>
                   <!-- 备注(#549):回车换行 —— 对话框没有默认按钮,回车不会误触保存。
@@ -1091,7 +1099,7 @@
               </StackPanel>
 
               <!-- ============================== SSH 选项(SSH 与 SFTP) ==============================
-                   三项默认全关(与 OpenSSH 一致),每项下面一行灰字说清「什么时候该开」。 -->
+                   各项默认全关(按键时序混淆与 OpenSSH 不同,理由是带宽代价),每项下面一行灰字说清「什么时候该开」。 -->
               <StackPanel Spacing="24" IsVisible="{Binding IsSshOptionsSection}">
                 <StackPanel Spacing="12">
                   <Grid ColumnDefinitions="Auto,*">
@@ -1103,6 +1111,13 @@
                       <TextBlock Classes="check-title" Text="{loc:Localize Profile_SshCompression}" />
                     </CheckBox>
                     <TextBlock Classes="check-desc" Text="{loc:Localize Profile_SshCompressionHint}" />
+                  </StackPanel>
+                  <!-- 按键时序混淆只挂在交互式 shell 上:SFTP 配置没有 shell,不显示也不存。灰字说清带宽代价。 -->
+                  <StackPanel Spacing="4" IsVisible="{Binding SupportsPostAuthCommand}">
+                    <CheckBox IsChecked="{Binding SshObscureKeystrokeTiming}">
+                      <TextBlock Classes="check-title" Text="{loc:Localize Profile_SshObscureKeystrokeTiming}" />
+                    </CheckBox>
+                    <TextBlock Classes="check-desc" Text="{loc:Localize Profile_SshObscureKeystrokeTimingHint}" />
                   </StackPanel>
                 </StackPanel>
 
@@ -1271,6 +1286,15 @@
                   <TextBox Text="{Binding FtpInitialRemotePath}"
                            PlaceholderText="{loc:Localize Ftp_InitialPathPlaceholder}" />
                   <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{loc:Localize Ftp_InitialPathHint}" />
+                </StackPanel>
+                <!-- 服务器时区:LIST 的时间不带时区,服务器不在本机时区时目录比较与同步整体错位(WinSCP 会话设置里的同一项)。
+                     只影响比较与同步时的换算;文件面板里的时间列照旧显示服务器自己的钟。 -->
+                <StackPanel IsVisible="{Binding IsFtpSelected}">
+                  <TextBlock Classes="field-label" Text="{loc:Localize Ftp_ServerTimeZone}" />
+                  <ComboBox Width="248" HorizontalAlignment="Left"
+                            ItemsSource="{Binding FtpTimeZoneOptions}"
+                            SelectedItem="{Binding SelectedFtpTimeZone}" />
+                  <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{loc:Localize Ftp_ServerTimeZoneHint}" />
                 </StackPanel>
                 <!-- 插件标了 IsAdvanced 的调优字段(分片大小、并发数之类):S3 一口气声明了十来个字段,
                      全铺在「常规」页上就长到屏幕外了。 -->

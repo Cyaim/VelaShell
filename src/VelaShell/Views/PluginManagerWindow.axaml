@@ -10,7 +10,7 @@
         WindowStartupLocation="CenterOwner">
 
   <!-- 插件管理窗口:与资源监视/链路追踪同规格(按平台的卡片外框,见 WindowChrome;
-       40px 标题栏 + min/max/close 三连按钮 + 自绘缩放抓取区)。 -->
+       28px 标题栏(window-titlebar)+ min/max/close 三连按钮 + 自绘缩放抓取区)。 -->
 
   <Window.Styles>
     <Style Selector="Button.caption">
@@ -295,6 +295,9 @@
                                    TextWrapping="Wrap" Margin="0,2,0,0" />
                       </StackPanel>
                       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <!-- 用户报「插件不工作」时第一件要看的:这个插件自己那份日志的尾部(只读窗口)。 -->
+                        <Button Classes="row-action" Content="{Binding ViewLogText}"
+                                IsVisible="{Binding CanViewLog}" Click="ViewLog_Click" />
                         <Button Classes="row-action" Content="{Binding RevokeText}"
                                 IsVisible="{Binding HasTerminalGrant}" Click="Revoke_Click" />
                         <!-- 开发内环:重编后点这里就跑上新代码(开发期挂载的插件才有)。 -->

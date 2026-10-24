@@ -1,0 +1,137 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:VelaShell.Localization"
+             xmlns:pc="using:VelaShell.Controls.Controls"
+             x:Class="VelaShell.Controls.IconPickerField">
+  <UserControl.Resources>
+    <!-- 字段本身:与 ColorPickerField 同一个长相(输入框的底色、描边、圆角),里面是图标 + 名字 + 下拉箭头。 -->
+    <ControlTheme x:Key="IconFieldTheme" TargetType="Button">
+      <Setter Property="Background" Value="{DynamicResource VelaBgInput}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource VelaBorderPrimary}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusAdorner" Value="{x:Null}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}"
+                              Foreground="{TemplateBinding Foreground}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover">
+        <Setter Property="BorderBrush" Value="{DynamicResource VelaBorderSecondary}" />
+      </Style>
+      <Style Selector="^:flyout-open">
+        <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+      </Style>
+      <Style Selector="^:focus-visible">
+        <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+      </Style>
+    </ControlTheme>
+
+    <!-- 图标格:28 见方,图标描边;悬停换底色,当前选中的描边加粗,键盘聚焦描 accent。 -->
+    <ControlTheme x:Key="IconCellTheme" TargetType="Button">
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="Margin" Value="0,0,4,4" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource VelaBorderPrimary}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusAdorner" Value="{x:Null}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}">
+            <ContentPresenter Content="{TemplateBinding Content}"
+                              Foreground="{TemplateBinding Foreground}"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover">
+        <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+        <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      </Style>
+      <Style Selector="^.current">
+        <Setter Property="BorderBrush" Value="{DynamicResource VelaTextPrimary}" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      </Style>
+      <Style Selector="^:focus-visible">
+        <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+        <Setter Property="BorderThickness" Value="2" />
+      </Style>
+    </ControlTheme>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <!-- 跟协议时字段上那行字是说明,不是值:弱一档的前景;图标也一样弱下去。 -->
+    <Style Selector="TextBlock.value-text">
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+    </Style>
+    <Style Selector="TextBlock.value-text.empty">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+    </Style>
+    <Style Selector="pc|LucideIcon.value-icon">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+    </Style>
+    <Style Selector="pc|LucideIcon.value-icon.empty">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+    </Style>
+    <!-- 格子里的图标:LucideIcon 的前景不随按钮继承,得在这里按格子的状态给。当前选中的转 accent。 -->
+    <Style Selector="Button.icon-cell pc|LucideIcon">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+    </Style>
+    <Style Selector="Button.icon-cell:pointerover pc|LucideIcon">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+    </Style>
+    <Style Selector="Button.icon-cell.current pc|LucideIcon">
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Button x:Name="FieldButton" Theme="{StaticResource IconFieldTheme}"
+          ToolTip.Tip="{loc:Localize IconPicker_Tip}"
+          AutomationProperties.Name="{loc:Localize Profile_TabIcon}">
+    <Grid ColumnDefinitions="Auto,*,Auto">
+      <pc:LucideIcon x:Name="ValueIcon" Classes="value-icon" Width="14" Height="14" VerticalAlignment="Center" />
+      <TextBlock x:Name="ValueText" Grid.Column="1" Classes="value-text" Margin="8,0" VerticalAlignment="Center"
+                 TextTrimming="CharacterEllipsis" />
+      <pc:LucideIcon Grid.Column="2" Width="12" Height="12" VerticalAlignment="Center"
+                     Data="{StaticResource Icon.chevron-down}"
+                     Foreground="{DynamicResource VelaTextTertiary}" />
+    </Grid>
+    <Button.Flyout>
+      <!-- 浮层外框用全局 FlyoutPresenter 样式(DESIGN.md §5.2「Bare content」)。 -->
+      <Flyout Placement="BottomEdgeAlignedLeft">
+        <StackPanel Width="224" Spacing="10">
+          <WrapPanel x:Name="IconPanel" Margin="0,0,-4,-4" />
+          <!-- 跟协议:清掉自己挑的,标签回到按协议的默认图标(§68)。 -->
+          <Button x:Name="DefaultButton" Theme="{StaticResource VelaOutlineButtonTheme}"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+        </StackPanel>
+      </Flyout>
+    </Button.Flyout>
+  </Button>
+</UserControl>

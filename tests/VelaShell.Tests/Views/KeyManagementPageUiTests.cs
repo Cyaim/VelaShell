@@ -8,6 +8,7 @@ using VelaShell.Core.Data;
 using VelaShell.Core.Localization;
 using VelaShell.Core.Models;
 using VelaShell.Core.Services;
+using VelaShell.Core.Ssh;
 using VelaShell.Localization;
 using VelaShell.ViewModels;
 using VelaShell.Views;
@@ -59,13 +60,38 @@ public sealed class KeyManagementPageUiTests
                             "SelectedIndex 没有写回视图模型 —— 绑定成单向了,用户选什么都会拿到第一档");
         });
 
-    private static void OnKeyManagementPage(Action<ComboBox, SettingsViewModel> body) =>
+    /// <summary>
+    /// 每行的「导出」是一个带菜单的按钮:菜单项要拿得到这一行的密钥(处理函数按 DataContext 取),
+    /// 否则点了「导出私钥…」什么都不发生。
+    /// </summary>
+    [TestMethod]
+    public void ExportMenu_ItemsCarryTheirRowsKey()
+    {
+        var key = new SshKeyInfo("id_ed25519", "ED25519", "SHA256:abc", "/home/u/.ssh/id_ed25519", "ssh-ed25519 AAAA u@h");
+        ISshKeyService keys = Substitute.For<ISshKeyService>();
+        keys.ListKeysAsync(Arg.Any<CancellationToken>()).Returns(new List<SshKeyInfo> { key });
+        OnKeyManagementPage((selector, _) =>
+        {
+            KeyManagementPage page = selector.GetVisualAncestors().OfType<KeyManagementPage>().First();
+            Button export = page.GetVisualDescendants().OfType<Button>()
+                                .Single(b => b.Flyout is MenuFlyout && b.DataContext is SshKeyInfo);
+            export.Flyout!.ShowAt(export);
+            Dispatcher.UIThread.RunJobs();
+
+            MenuItem[] items = [.. ((MenuFlyout)export.Flyout).Items.OfType<MenuItem>()];
+            Assert.HasCount(2, items);
+            Assert.IsTrue(items.All(item => ReferenceEquals(item.DataContext, key)), "菜单项拿不到这一行的密钥");
+            export.Flyout.Hide();
+        }, keys);
+    }
+
+    private static void OnKeyManagementPage(Action<ComboBox, SettingsViewModel> body, ISshKeyService? keys = null) =>
         _session.Dispatch(async () =>
         {
             ISettingsService settings = Substitute.For<ISettingsService>();
             IThemeService theme = Substitute.For<IThemeService>();
             settings.GetSettingsAsync().Returns(new AppSettings());
-            var viewModel = new SettingsViewModel(settings, theme);
+            var viewModel = new SettingsViewModel(settings, theme, sshKeyService: keys);
             await viewModel.LoadCommand.Execute().FirstAsync();
 
             var window = new SettingsView { DataContext = viewModel };

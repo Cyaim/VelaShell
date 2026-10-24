@@ -7,7 +7,7 @@
         x:DataType="vm:AuditLogViewModel"
         Title="{loc:Localize AuditLog_Title}"
         Width="1040" Height="640"
-        MinWidth="760" MinHeight="420"
+        MinWidth="880" MinHeight="420"
         CanResize="True"
         WindowStartupLocation="CenterOwner">
 
@@ -82,6 +82,34 @@
       <Setter Property="Foreground" Value="{DynamicResource VelaError}" />
       <Setter Property="FontWeight" Value="Medium" />
     </Style>
+    <!-- 行尾「打开配置」:22×22 透明图标键,悬停换底色;配置已删时半透明。 -->
+    <Style Selector="Button.open-profile">
+      <Setter Property="Width" Value="22" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.open-profile:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="Button.open-profile:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <Style Selector="Button.open-profile:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.filter-bar CalendarDatePicker">
+      <Setter Property="Height" Value="28" />
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
     <Style Selector="TextBlock.header">
       <Setter Property="FontSize" Value="{DynamicResource VelaFontSize10}" />
       <Setter Property="FontWeight" Value="Medium" />
@@ -102,7 +130,7 @@
               Background="Transparent"
               PointerPressed="Header_PointerPressed"
               DoubleTapped="Header_DoubleTapped">
-        <Grid ColumnDefinitions="*,Auto">
+        <Grid ColumnDefinitions="*,Auto,Auto">
           <DockPanel>
             <Panel Classes="traffic-light-spacer" DockPanel.Dock="Left" />
             <TextBlock Text="{loc:Localize AuditLog_Title}"
@@ -111,7 +139,25 @@
                        FontSize="{DynamicResource VelaFontSize13}" FontWeight="SemiBold"
                        TextTrimming="CharacterEllipsis" />
           </DockPanel>
-          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+          <!-- 窗口级动作收进标题栏的动作图标组(DESIGN.md §4.2):导出眼前筛出来的这些为 CSV。 -->
+          <StackPanel x:Name="TitleActions" Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                      VerticalAlignment="Center" Margin="0,0,10,0">
+            <Button x:Name="ExportCsvButton"
+                    Theme="{StaticResource VelaTitleActionButtonTheme}"
+                    IsEnabled="{Binding !IsEmpty}"
+                    Click="ExportCsv_Click"
+                    AutomationProperties.Name="{loc:Localize AuditLog_ExportCsv}">
+              <ToolTip.Tip>
+                <StackPanel Spacing="2">
+                  <TextBlock Text="{loc:Localize AuditLog_ExportCsv}" FontWeight="Medium" />
+                  <TextBlock Text="{loc:Localize AuditLog_ExportCsvTip}" />
+                </StackPanel>
+              </ToolTip.Tip>
+              <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.download}"
+                             Foreground="{DynamicResource VelaTextMuted}" />
+            </Button>
+          </StackPanel>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
             <Button Classes="caption window-caption" Click="Maximize_Click"
                     ToolTip.Tip="{loc:Localize Recorder_MaximizeTip}">
               <pc:LucideIcon Width="10" Height="10" Data="{StaticResource Icon.square}"
@@ -130,20 +176,38 @@
               Background="Transparent"
               BorderBrush="{DynamicResource VelaBorderPrimary}"
               BorderThickness="0,0,0,1">
-        <Grid ColumnDefinitions="Auto,12,Auto,12,*,12,Auto">
+        <Grid ColumnDefinitions="Auto,8,Auto,Auto,12,Auto,12,*,12,Auto">
           <ComboBox Grid.Column="0" Width="120" VerticalAlignment="Center"
                     ItemsSource="{Binding CategoryOptions}"
-                    SelectedIndex="{Binding CategoryIndex}" />
-          <CheckBox Grid.Column="2" IsChecked="{Binding OnlyProblems}" VerticalAlignment="Center"
+                    SelectedIndex="{Binding CategoryIndex}"
+                    AutomationProperties.Name="{loc:Localize AuditLog_ColCategory}" />
+          <!-- 时间段:换了就重新读库(只在已载入的最近 2000 条里筛,早一点的那一段会是空的)。 -->
+          <ComboBox x:Name="RangeSelector" Grid.Column="2" Width="120" VerticalAlignment="Center"
+                    ItemsSource="{Binding RangeOptions}"
+                    SelectedIndex="{Binding RangeIndex}"
+                    AutomationProperties.Name="{loc:Localize AuditLog_Range}" />
+          <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
+                      VerticalAlignment="Center" IsVisible="{Binding IsCustomRange}">
+            <CalendarDatePicker x:Name="RangeFromPicker" Width="124"
+                                SelectedDate="{Binding CustomFrom}"
+                                PlaceholderText="{loc:Localize AuditLog_RangeFrom}"
+                                AutomationProperties.Name="{loc:Localize AuditLog_RangeFrom}" />
+            <TextBlock Text="–" VerticalAlignment="Center" Foreground="{DynamicResource VelaTextMuted}" />
+            <CalendarDatePicker x:Name="RangeToPicker" Width="124"
+                                SelectedDate="{Binding CustomTo}"
+                                PlaceholderText="{loc:Localize AuditLog_RangeTo}"
+                                AutomationProperties.Name="{loc:Localize AuditLog_RangeTo}" />
+          </StackPanel>
+          <CheckBox Grid.Column="5" IsChecked="{Binding OnlyProblems}" VerticalAlignment="Center"
                     Padding="0" MinHeight="0">
             <TextBlock Text="{loc:Localize AuditLog_OnlyProblems}" Margin="6,0,0,0"
                        Foreground="{DynamicResource VelaTextSecondary}"
                        FontSize="{DynamicResource VelaFontSize11}" />
           </CheckBox>
-          <TextBox Grid.Column="4"
+          <TextBox Grid.Column="7"
                    Text="{Binding SearchText}"
                    PlaceholderText="{loc:Localize AuditLog_SearchPlaceholder}" />
-          <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <StackPanel Grid.Column="9" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center"
                        Foreground="{DynamicResource VelaTextMuted}"
                        FontSize="{DynamicResource VelaFontSize10}" />
@@ -160,7 +224,7 @@
         <Grid RowDefinitions="30,*">
           <Border Grid.Row="0" Padding="12,0,28,0"
                   BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="148,72,172,160,*">
+            <Grid ColumnDefinitions="148,72,172,160,*,28">
               <TextBlock Grid.Column="0" Classes="header" Text="{loc:Localize AuditLog_ColTime}" />
               <TextBlock Grid.Column="1" Classes="header" Text="{loc:Localize AuditLog_ColCategory}" />
               <TextBlock Grid.Column="2" Classes="header" Text="{loc:Localize AuditLog_ColAction}" />
@@ -178,7 +242,7 @@
                    IsVisible="{Binding !IsEmpty}">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:AuditLogRow">
-                <Grid ColumnDefinitions="148,72,172,160,*">
+                <Grid ColumnDefinitions="148,72,172,160,*,28">
                   <TextBlock Grid.Column="0" Classes="cell mono" Text="{Binding TimeText}" />
                   <TextBlock Grid.Column="1" Classes="cell" Text="{Binding CategoryLabel}" />
                   <TextBlock Grid.Column="2" Classes="cell" Classes.problem="{Binding IsProblem}"
@@ -187,6 +251,17 @@
                              ToolTip.Tip="{Binding SessionName}" />
                   <TextBlock Grid.Column="4" Classes="cell mono" Text="{Binding Detail}"
                              ToolTip.Tip="{Binding Detail}" />
+                  <!-- 打开这一行的连接配置:记录里带着配置 Id 才有;配置已删就灰着(提示写在悬停里)。 -->
+                  <Button Grid.Column="5" Classes="open-profile"
+                          IsVisible="{Binding HasProfile}"
+                          IsEnabled="{Binding ProfileExists}"
+                          Click="OpenProfile_Click"
+                          ToolTip.Tip="{Binding OpenProfileTip}"
+                          ToolTip.ShowOnDisabled="True"
+                          AutomationProperties.Name="{Binding OpenProfileTip}">
+                    <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.external-link}"
+                                   Foreground="{DynamicResource VelaTextTertiary}" />
+                  </Button>
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>

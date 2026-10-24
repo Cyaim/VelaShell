@@ -28,7 +28,8 @@ namespace VelaShell.Infrastructure.Ssh;
 /// </para>
 /// </remarks>
 /// <param name="proxyResolver">代理解析器;为 <see langword="null" /> 时一律直连。</param>
-internal sealed class ProxyTransportDialer(IProxyResolver? proxyResolver) : ISshTransportDialer
+/// <param name="recorder">记下这次走了哪个代理(连接信息面板要列);<see langword="null" /> = 不记。</param>
+internal sealed class ProxyTransportDialer(IProxyResolver? proxyResolver, SshRouteRecorder? recorder = null) : ISshTransportDialer
 {
     // 曾经还要声明拨号器的「种类」(库的接口要求),而这里每次拨号现选路,只好用一个 volatile 字段记「上一次」走的路由。
     // 库的接口已经不要它了 —— 每一跳的种类由库的拨号器(DialerChain)自己记进跳信息。
@@ -51,6 +52,7 @@ internal sealed class ProxyTransportDialer(IProxyResolver? proxyResolver) : ISsh
             // 而不是一个裸异常。原因码是配置错误 —— 曾经记成可重试的 ProxyRefused,自动重连只会一遍遍再失败。
             throw new SshConnectException(SshFailureReason.InvalidConfiguration, SshPhase.Dialing, ex.Message, ex);
         }
+        recorder?.SetProxy(route);
 
         // 直连与两种代理的握手都用 SSH 库的拨号器(DialerChain),宿主只管「这次走哪条路」。
         // 直连把主机名交给库去解析(Happy Eyeballs),不在这里先解 —— 内网域名常常只有远端解析得了。

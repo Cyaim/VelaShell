@@ -153,7 +153,30 @@
                                      Foreground="{DynamicResource VelaStatusDisconnected}" />
                     </Button>
                   </Grid>
-                  <TextBlock Classes="desc" Text="{Binding Stats}" />
+                  <!-- 第二行开头是信任级别:受信的描边徽标同隧道行的「自动」;非受信换信息色,一列里一眼分得出来。 -->
+                  <Grid ColumnDefinitions="Auto,*">
+                    <Border Grid.Column="0" Background="Transparent"
+                            BorderBrush="{DynamicResource VelaBorderSecondary}" BorderThickness="1"
+                            CornerRadius="3" Padding="5,0" Margin="0,0,6,0" VerticalAlignment="Center"
+                            IsVisible="{Binding Trusted}"
+                            ToolTip.Tip="{loc:Localize XServer_PanelTrustedTip}">
+                      <TextBlock Text="{loc:Localize XServer_PanelTrusted}"
+                                 Foreground="{DynamicResource VelaTextTertiary}"
+                                 FontFamily="{DynamicResource VelaUiMonoFont}"
+                                 FontSize="{DynamicResource VelaFontSize10}" FontWeight="Medium" />
+                    </Border>
+                    <Border Grid.Column="0" Background="Transparent"
+                            BorderBrush="{DynamicResource VelaInfo}" BorderThickness="1"
+                            CornerRadius="3" Padding="5,0" Margin="0,0,6,0" VerticalAlignment="Center"
+                            IsVisible="{Binding !Trusted}"
+                            ToolTip.Tip="{loc:Localize XServer_PanelUntrustedTip}">
+                      <TextBlock Text="{loc:Localize XServer_PanelUntrusted}"
+                                 Foreground="{DynamicResource VelaInfo}"
+                                 FontFamily="{DynamicResource VelaUiMonoFont}"
+                                 FontSize="{DynamicResource VelaFontSize10}" FontWeight="Medium" />
+                    </Border>
+                    <TextBlock Grid.Column="1" Classes="desc" Text="{Binding Stats}" VerticalAlignment="Center" />
+                  </Grid>
                   <TextBlock Classes="desc" Text="{Binding Detail}"
                              IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                              ToolTip.Tip="{Binding Detail}" />

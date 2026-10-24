@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using VelaShell.Core.Import;
 using VelaShell.Core.Resources;
 using VelaShell.ViewModels;
 using FireAndForget = VelaShell.Services.FireAndForget;
@@ -66,19 +67,19 @@ public partial class SessionExportView : Window
         {
             return;
         }
-        bool json = viewModel.IsJson;
+        FilePickerFileType type = viewModel.Format switch
+        {
+            SessionFileFormat.Json => new FilePickerFileType(Strings.Get("SessFile_JsonType")) { Patterns = ["*.json"] },
+            SessionFileFormat.SshConfig => new FilePickerFileType(Strings.Get("SessFile_SshConfigType")) { Patterns = ["*.conf", "config"] },
+            _ => new FilePickerFileType(Strings.Get("SessFile_CsvType")) { Patterns = ["*.csv"] },
+        };
         IStorageFile? file = await StorageProvider.SaveFilePickerAsync(new()
         {
             Title = Strings.Get("SessExport_Title"),
             SuggestedFileName = viewModel.SuggestedFileName,
             SuggestedStartLocation = await StorageDefaults.DownloadsAsync(this),
             DefaultExtension = viewModel.Extension,
-            FileTypeChoices =
-            [
-                json
-                    ? new FilePickerFileType(Strings.Get("SessFile_JsonType")) { Patterns = ["*.json"] }
-                    : new FilePickerFileType(Strings.Get("SessFile_CsvType")) { Patterns = ["*.csv"] }
-            ]
+            FileTypeChoices = [type]
         });
         if (file?.TryGetLocalPath() is not { Length: > 0 } path)
         {
