@@ -140,6 +140,35 @@ public class SessionExportViewModelTests
         Assert.AreEqual("velashell-生产-环境-A-20261009.json", vm.SuggestedFileName, "分组名里的空白与非法字符换成连字符");
         vm.Format = SessionFileFormat.Csv;
         Assert.AreEqual("velashell-生产-环境-A-20261009.csv", vm.SuggestedFileName);
+        vm.Format = SessionFileFormat.SshConfig;
+        Assert.AreEqual("velashell-生产-环境-A-20261009.conf", vm.SuggestedFileName);
+    }
+
+    /// <summary>OpenSSH config 与 CSV 一样从不带口令:ssh_config 本来就不存密码。</summary>
+    [TestMethod]
+    public async Task SshConfig_NeverCarriesAPassphrase()
+    {
+        SessionExportViewModel vm = await CreateAsync(new SessionExportPreview(2, 2, 0, 1, 2));
+        _service.ExportAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<SessionFileFormat>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new SessionExportFile([], 2, false));
+        vm.IncludeSecrets = true;
+        vm.Format = SessionFileFormat.SshConfig;
+        string path = Path.Combine(Path.GetTempPath(), $"vs-export-{Guid.NewGuid():N}.conf");
+        try
+        {
+            Assert.IsTrue(vm.IsSshConfig);
+            Assert.IsFalse(vm.ShowPassphraseFields);
+            Assert.IsTrue(vm.CanExport);
+
+            SessionExportResult? result = await vm.ExportToAsync(path);
+
+            Assert.AreEqual(SessionFileFormat.SshConfig, result?.Format);
+            await _service.Received(1).ExportAsync(Arg.Any<IReadOnlyCollection<Guid>>(), SessionFileFormat.SshConfig, null, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     private sealed class FixedTime(DateTimeOffset now) : TimeProvider

@@ -98,7 +98,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<WinScpImportService>(sp =>
             new(sp.GetRequiredService<ISessionRepository>()));
         services.AddSingleton<SshConfigImportService>(sp =>
-            new(sp.GetRequiredService<ISessionRepository>()));
+            new(sp.GetRequiredService<ISessionRepository>(), sp.GetService<IAppDataStore>()));
         services.AddSingleton<ISessionImportService>(sp => sp.GetRequiredService<XshellImportService>());
         services.AddSingleton<ISessionImportService>(sp => sp.GetRequiredService<WinScpImportService>());
         services.AddSingleton<ISessionImportService>(sp => sp.GetRequiredService<SshConfigImportService>());

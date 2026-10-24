@@ -5196,8 +5196,41 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="XImport_PwKey" xml:space="preserve">
     <value>鍵ファイルを使用</value>
   </data>
+  <data name="XImport_PwCertificate" xml:space="preserve">
+    <value>証明書を使用</value>
+  </data>
+  <data name="XImport_PwAgent" xml:space="preserve">
+    <value>SSH エージェントを使用</value>
+  </data>
   <data name="XImport_Duplicate" xml:space="preserve">
     <value>既に存在します</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardsImported" xml:space="preserve">
+    <value>{0} 件のポート転送をこの接続のトンネルとしてインポートします（停止状態。トンネルパネルで開始してください）。</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSkipped" xml:space="preserve">
+    <value>インポートしませんでした。対応するトンネルの種類がありません（Unix ソケット、リモート動的転送、またはポート 0）：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardInvalid" xml:space="preserve">
+    <value>インポートしませんでした。転送の書き方が正しくありません：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteAlgoDropped" xml:space="preserve">
+    <value>{0}：{1} を除外しました（このバージョンでは未実装で、書いてあってもネゴシエーションできません）</value>
+  </data>
+  <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
+    <value>{0} はインポートしませんでした：{1}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
+    <value>ForwardAgent {0} はインポートしませんでした：VelaShell が転送するのは既定のエージェント（SSH_AUTH_SOCK）だけです。</value>
+  </data>
+  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
+    <value>IdentityAgent {0} はインポートしませんでした：VelaShell が使うのは既定のエージェント（SSH_AUTH_SOCK）だけです。</value>
+  </data>
+  <data name="SshCfgImport_NoteExtraIdentities" xml:space="preserve">
+    <value>1 つの接続で使う秘密鍵は 1 つだけです。インポートしなかった鍵：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteCertificateNoKey" xml:space="preserve">
+    <value>CertificateFile に対応する秘密鍵がありません。接続する前に接続設定で秘密鍵を選んでください。</value>
   </data>
 
   <data name="Plugins"><value>プラグイン</value></data>
@@ -7456,6 +7489,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SessFile_CsvType" xml:space="preserve">
     <value>CSV ファイル</value>
   </data>
+  <data name="SessFile_SshConfigType" xml:space="preserve">
+    <value>OpenSSH config</value>
+  </data>
   <data name="SessFile_CsvEmpty" xml:space="preserve">
     <value>ファイルが空です。見出し行が見つかりません。</value>
   </data>
@@ -7660,11 +7696,17 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SessExport_FormatCsv" xml:space="preserve">
     <value>CSV</value>
   </data>
+  <data name="SessExport_FormatSshConfig" xml:space="preserve">
+    <value>OpenSSH config</value>
+  </data>
   <data name="SessExport_JsonHint" xml:space="preserve">
     <value>グループ、踏み台ホスト、共有資格情報、ポート転送、ターミナル設定などをすべて保存します。バックアップや別の PC への移行向けです。</value>
   </data>
   <data name="SessExport_CsvHint" xml:space="preserve">
     <value>Excel で編集してインポートし直せる表です。よく使う項目（名前、ホスト、ポート、ユーザー名、グループ、認証、踏み台ホストなど）のみで、パスワードは含みません。</value>
+  </data>
+  <data name="SessExport_SshConfigHint" xml:space="preserve">
+    <value>~/.ssh/config の Host ブロックとして書き出します：SSH / SFTP 接続のホスト、ユーザー、秘密鍵と証明書、踏み台ホスト、圧縮、エージェント転送、アルゴリズム、ポート転送。パスワードは含まず、ほかのプロトコルはスキップします。</value>
   </data>
   <data name="SessExport_IncludeSecrets" xml:space="preserve">
     <value>パスワードなどの機密情報を含める</value>
@@ -7704,6 +7746,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="SessExport_DoneCsv" xml:space="preserve">
     <value>{0} 件の接続を {1} にエクスポートしました。</value>
+  </data>
+  <data name="SessExport_DoneSshConfig" xml:space="preserve">
+    <value>{0} 件の接続を {1} にエクスポートしました（OpenSSH config、パスワードなし）。</value>
   </data>
   <data name="SessExport_TemplateSaved" xml:space="preserve">
     <value>テンプレートを {0} に保存しました。記入したら「ファイルから接続をインポート」で読み込んでください。</value>

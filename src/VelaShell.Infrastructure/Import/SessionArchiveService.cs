@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Import;
@@ -54,7 +55,7 @@ public sealed class SessionArchiveService(
         ArgumentNullException.ThrowIfNull(profileIds);
         (List<SessionProfile> all, List<ServerGroup> groups, List<SharedCredential> shared) = await LoadAsync().ConfigureAwait(false);
         SessionExportSelection selection = SessionArchiveBuilder.Select(profileIds, all, groups);
-        Dictionary<Guid, List<TunnelConfig>> tunnels = format == SessionFileFormat.Json
+        Dictionary<Guid, List<TunnelConfig>> tunnels = format is SessionFileFormat.Json or SessionFileFormat.SshConfig
             ? await LoadTunnelsAsync(selection.Sessions, cancellationToken).ConfigureAwait(false)
             : [];
         SessionArchive archive = SessionArchiveBuilder.Build(selection, groups, shared, tunnels,
@@ -62,6 +63,12 @@ public sealed class SessionArchiveService(
         if (format == SessionFileFormat.Csv)
         {
             return new SessionExportFile(SessionFileText.EncodeCsv(SessionCsv.Write(archive)), selection.Sessions.Count, false);
+        }
+        if (format == SessionFileFormat.SshConfig)
+        {
+            // ssh_config 不带任何机密;OpenSSH 按 UTF-8 读,不要 BOM(带 BOM 的第一行会被当成不认识的关键字)。
+            SshConfigExport config = SshConfigExporter.Write(archive);
+            return new SessionExportFile(new UTF8Encoding(false).GetBytes(config.Content), config.Exported, false);
         }
         bool withSecrets = !string.IsNullOrEmpty(passphrase) && SessionArchiveJson.CountSecrets(archive) > 0;
         string json = SessionArchiveJson.Serialize(archive, withSecrets ? passphrase : null);

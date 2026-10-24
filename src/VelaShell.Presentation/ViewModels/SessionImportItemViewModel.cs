@@ -1,5 +1,6 @@
 using ReactiveUI;
 using VelaShell.Core.Import;
+using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 
@@ -41,13 +42,24 @@ public sealed class SessionImportItemViewModel : ReactiveObject
     /// <summary>该行是否可被勾选(不支持的协议禁用勾选)。</summary>
     public bool CanSelect => Source.IsSupported;
 
-    /// <summary>凭据状态文案:已还原 / 未还原(需手填) / 用密钥 / 无密码。</summary>
+    /// <summary>凭据状态文案:已还原 / 未还原(需手填) / 用证书 / 用 SSH Agent / 用密钥 / 无密码。</summary>
     public string CredentialStatus =>
         !Source.IsSupported ? Strings.Get("XImport_Unsupported") :
         Source.PasswordRecovered ? Strings.Get("XImport_PwRecovered") :
         Source.HasEncryptedPassword ? Strings.Get("XImport_PwFailed") :
+        Source.AuthMethod == AuthMethod.Certificate ? Strings.Get("XImport_PwCertificate") :
+        Source.AuthMethod == AuthMethod.Agent ? Strings.Get("XImport_PwAgent") :
         Source.PrivateKeyPath is { Length: > 0 } ? Strings.Get("XImport_PwKey") :
         Strings.Get("XImport_PwNone");
+
+    /// <summary>
+    /// 导入说明(转发落成了隧道、映射不了的设置),一条一行(<see cref="ImportedSession.Notes" />);没有时为空串。
+    /// 映射不了的如实列出来 —— 少了一条转发,用户该在导入之前就知道。
+    /// </summary>
+    public string Notes => string.Join(Environment.NewLine, Source.Notes);
+
+    /// <summary>有没有要列出来的说明。</summary>
+    public bool HasNotes => Source.Notes.Count > 0;
 
     /// <summary>
     /// 是否与已有会话重复:VelaShell 中已存在同目标(<see cref="ImportedSession.AlreadyExists" />),

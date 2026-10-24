@@ -5201,8 +5201,41 @@ Overwrite it?</value>
   <data name="XImport_PwKey" xml:space="preserve">
     <value>Uses key file</value>
   </data>
+  <data name="XImport_PwCertificate" xml:space="preserve">
+    <value>Uses certificate</value>
+  </data>
+  <data name="XImport_PwAgent" xml:space="preserve">
+    <value>Uses SSH agent</value>
+  </data>
   <data name="XImport_Duplicate" xml:space="preserve">
     <value>Already exists</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardsImported" xml:space="preserve">
+    <value>{0} port forwards are imported as tunnels of this connection (stopped; start them in the tunnel panel).</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSkipped" xml:space="preserve">
+    <value>Not imported, no matching tunnel type (Unix socket, remote dynamic forward or port 0): {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardInvalid" xml:space="preserve">
+    <value>Not imported, malformed forward: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteAlgoDropped" xml:space="preserve">
+    <value>{0}: dropped {1} (not implemented in this version, it could never be negotiated)</value>
+  </data>
+  <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
+    <value>{0} not imported: {1}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
+    <value>ForwardAgent {0} not imported: VelaShell forwards only the default agent (SSH_AUTH_SOCK).</value>
+  </data>
+  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
+    <value>IdentityAgent {0} not imported: VelaShell only uses the default agent (SSH_AUTH_SOCK).</value>
+  </data>
+  <data name="SshCfgImport_NoteExtraIdentities" xml:space="preserve">
+    <value>A connection uses one private key; not imported: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteCertificateNoKey" xml:space="preserve">
+    <value>CertificateFile has no matching private key; choose it in the connection settings before connecting.</value>
   </data>
 
   <data name="Plugins"><value>Plugins</value></data>
@@ -7461,6 +7494,9 @@ Send anyway?</value>
   <data name="SessFile_CsvType" xml:space="preserve">
     <value>CSV spreadsheet</value>
   </data>
+  <data name="SessFile_SshConfigType" xml:space="preserve">
+    <value>OpenSSH config</value>
+  </data>
   <data name="SessFile_CsvEmpty" xml:space="preserve">
     <value>The file is empty: no header row was found.</value>
   </data>
@@ -7665,11 +7701,17 @@ Send anyway?</value>
   <data name="SessExport_FormatCsv" xml:space="preserve">
     <value>CSV spreadsheet</value>
   </data>
+  <data name="SessExport_FormatSshConfig" xml:space="preserve">
+    <value>OpenSSH config</value>
+  </data>
   <data name="SessExport_JsonHint" xml:space="preserve">
     <value>Complete: groups, jump hosts, shared credentials, port forwarding and terminal settings all come along. Use it for backups and for moving to another computer.</value>
   </data>
   <data name="SessExport_CsvHint" xml:space="preserve">
     <value>A spreadsheet you can edit in Excel and import back. Common fields only (name, host, port, username, group, authentication, jump host…); never includes passwords.</value>
+  </data>
+  <data name="SessExport_SshConfigHint" xml:space="preserve">
+    <value>Host blocks for ~/.ssh/config: SSH / SFTP connections with host, user, keys and certificates, jump hosts, compression, agent forwarding, algorithms and port forwards. Never includes passwords; other protocols are skipped.</value>
   </data>
   <data name="SessExport_IncludeSecrets" xml:space="preserve">
     <value>Include passwords and other sensitive data</value>
@@ -7709,6 +7751,9 @@ Send anyway?</value>
   </data>
   <data name="SessExport_DoneCsv" xml:space="preserve">
     <value>Exported {0} connections to {1}.</value>
+  </data>
+  <data name="SessExport_DoneSshConfig" xml:space="preserve">
+    <value>Exported {0} connections to {1} (OpenSSH config, no passwords).</value>
   </data>
   <data name="SessExport_TemplateSaved" xml:space="preserve">
     <value>Template saved to {0}. Fill it in, then use "Import connections from file".</value>

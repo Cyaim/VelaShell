@@ -94,6 +94,67 @@ public static class SshAlgorithmPreferences
         }
     }
 
+    /// <summary>
+    /// 把从别处导入的一条写法(<c>~/.ssh/config</c> 的 <c>Ciphers</c> 等)收拾成本版用得了的:
+    /// OpenSSH 认得、本版没实现的名字(CBC、3des、group1……)逐个去掉,其余照原样留着。
+    /// </summary>
+    /// <param name="kind">类别。</param>
+    /// <param name="spec">原样的写法。</param>
+    /// <param name="dropped">去掉了哪些名字。</param>
+    /// <param name="error">整条用不了时的原因(界面语言);用得了时为 <see langword="null" />。</param>
+    /// <returns>收拾好的写法;整条用不了(拼错的名字、去掉之后一个不剩)时为 <see langword="null" />。</returns>
+    /// <remarks>
+    /// 去掉没实现的名字不改变这条写法能谈成的结果 —— 写着它们本来也谈不成;而整条丢掉就成了「用默认」,
+    /// 那正是写这一行的人想避开的。拼错的名字不猜:整条不导,原因进导入预览。
+    /// </remarks>
+    public static string? SanitizeImported(SshAlgorithmKind kind, string? spec,
+        out IReadOnlyList<string> dropped, out string? error)
+    {
+        List<string> removed = [];
+        dropped = removed;
+        error = null;
+        string? current = spec?.Trim();
+        if (string.IsNullOrEmpty(current))
+        {
+            return null;
+        }
+
+        IReadOnlyList<string> defaults = Defaults(kind, legacy: false);
+        while (true)
+        {
+            try
+            {
+                _ = SshAlgorithmSpec.Apply(CategoryOf(kind), current, defaults);
+                return current;
+            }
+            catch (SshAlgorithmSpecException ex) when (ex.Problem == SshAlgorithmSpecProblem.Unimplemented && ex.Name is { Length: > 0 } name)
+            {
+                string prefix = current[0] is '+' or '-' or '^' ? current[..1] : string.Empty;
+                string[] names = current[prefix.Length..].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                string[] kept = [.. names.Where(n => !string.Equals(n, name, StringComparison.Ordinal))];
+                if (kept.Length == names.Length)
+                {
+                    // 库点名的不在清单里(不会发生,防止死循环)。
+                    error = Strings.Format("Ssh_AlgoSpecUnimplemented", name);
+                    return null;
+                }
+                removed.Add(name);
+                if (kept.Length == 0)
+                {
+                    // 只写了本版没实现的那几个:留下一个空前缀等于什么都没写,不如说清楚。
+                    error = Strings.Format("Ssh_AlgoSpecUnimplemented", string.Join(", ", removed));
+                    return null;
+                }
+                current = prefix + string.Join(',', kept);
+            }
+            catch (SshAlgorithmSpecException)
+            {
+                TryApply(kind, current, legacy: false, out _, out error);
+                return null;
+            }
+        }
+    }
+
     /// <summary>按配置装出库的算法清单。</summary>
     /// <exception cref="VelaSshConnectionException">
     /// 某个自定义清单不成立。界面保存前已经挡过,走到这里的是手改过、或由别处导入的配置。

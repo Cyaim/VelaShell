@@ -153,6 +153,8 @@ internal sealed class SessionTreeActions(Window owner, MainWindowViewModel viewM
         string file = Path.GetFileName(result.Path);
         viewModel.Toasts.Info(result.Format == SessionFileFormat.Csv
             ? Strings.Format("SessExport_DoneCsv", result.SessionCount, file)
+            : result.Format == SessionFileFormat.SshConfig
+                ? Strings.Format("SessExport_DoneSshConfig", result.SessionCount, file)
             : result.SecretsIncluded
                 ? Strings.Format("SessExport_DoneWithSecrets", result.SessionCount, file)
                 : Strings.Format("SessExport_Done", result.SessionCount, file));

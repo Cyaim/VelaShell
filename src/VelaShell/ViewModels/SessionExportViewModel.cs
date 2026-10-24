@@ -17,7 +17,7 @@ namespace VelaShell.ViewModels;
 public sealed record SessionExportResult(string Path, int SessionCount, bool SecretsIncluded, SessionFileFormat Format);
 
 /// <summary>
-/// 导出连接对话框(#571):选格式(JSON / CSV),JSON 可以勾上「包含敏感信息」并设导出口令。
+/// 导出连接对话框(#571):选格式(JSON / CSV / OpenSSH ssh_config),JSON 可以勾上「包含敏感信息」并设导出口令。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -81,6 +81,9 @@ public sealed class SessionExportViewModel : ReactiveObject
 
     /// <summary>是否选了 CSV。</summary>
     public bool IsCsv => Format == SessionFileFormat.Csv;
+
+    /// <summary>是否选了 OpenSSH 的 ssh_config(只写 SSH / SFTP 连接,不带任何机密)。</summary>
+    public bool IsSshConfig => Format == SessionFileFormat.SshConfig;
 
     /// <summary>是否包含敏感信息(只对 JSON 有效)。</summary>
     public bool IncludeSecrets
@@ -167,7 +170,12 @@ public sealed class SessionExportViewModel : ReactiveObject
         : Strings.Format("SessExport_SecretsHintFmt", Preview?.SecretCount ?? 0);
 
     /// <summary>当前格式的一句说明。</summary>
-    public string FormatHint => Strings.Get(IsJson ? "SessExport_JsonHint" : "SessExport_CsvHint");
+    public string FormatHint => Strings.Get(Format switch
+    {
+        SessionFileFormat.Json => "SessExport_JsonHint",
+        SessionFileFormat.SshConfig => "SessExport_SshConfigHint",
+        _ => "SessExport_CsvHint",
+    });
 
     /// <summary>是否正在生成 / 写文件。</summary>
     public bool IsBusy
@@ -190,7 +198,7 @@ public sealed class SessionExportViewModel : ReactiveObject
     /// <summary>导出按钮能不能点。</summary>
     public bool CanExport => !IsBusy && Preview is { SessionCount: > 0 } && PassphraseError is null;
 
-    /// <summary>建议的文件名:velashell-&lt;范围&gt;-&lt;日期&gt;.json / .csv。</summary>
+    /// <summary>建议的文件名:velashell-&lt;范围&gt;-&lt;日期&gt;.json / .csv / .conf。</summary>
     public string SuggestedFileName
     {
         get
@@ -201,7 +209,12 @@ public sealed class SessionExportViewModel : ReactiveObject
     }
 
     /// <summary>当前格式的扩展名(不带点)。</summary>
-    public string Extension => IsJson ? "json" : "csv";
+    public string Extension => Format switch
+    {
+        SessionFileFormat.Json => "json",
+        SessionFileFormat.SshConfig => "conf",
+        _ => "csv",
+    };
 
     /// <summary>切换格式(分段按钮)。</summary>
     public ReactiveCommand<SessionFileFormat, RxVoid> SelectFormatCommand { get; }
@@ -265,6 +278,7 @@ public sealed class SessionExportViewModel : ReactiveObject
     {
         this.RaisePropertyChanged(nameof(IsJson));
         this.RaisePropertyChanged(nameof(IsCsv));
+        this.RaisePropertyChanged(nameof(IsSshConfig));
         this.RaisePropertyChanged(nameof(ShowPassphraseFields));
         this.RaisePropertyChanged(nameof(CanIncludeSecrets));
         this.RaisePropertyChanged(nameof(PassphraseError));

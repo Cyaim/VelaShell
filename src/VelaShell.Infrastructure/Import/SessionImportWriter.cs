@@ -8,16 +8,29 @@ namespace VelaShell.Infrastructure.Import;
 /// <summary>把一批 <see cref="ImportedSession" /> 写入仓储的共享逻辑(各来源的导入服务复用)。</summary>
 internal static class SessionImportWriter
 {
+    /// <summary>隧道所在的集合(文档 Id = 连接 Id),与隧道面板、连接文件导入同一处。</summary>
+    private const string TunnelsCollection = "tunnels";
+
     /// <summary>
     /// 新建一个分组承载选中的受支持会话并逐条持久化;密码由仓储 AES 重新加密落盘,
     /// 仅当密码成功还原时才设 <see cref="SessionProfile.RememberPassword" />。
     /// </summary>
+    /// <param name="repository">连接仓储。</param>
+    /// <param name="items">选中的会话。</param>
+    /// <param name="groupName">新建分组的名称。</param>
+    /// <param name="tag">打在会话上的来源标签。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="dataStore">
+    /// 通用文档存储:会话带着端口转发(<see cref="ImportedSession.Tunnels" />)时写进这条连接的隧道;
+    /// 为 <see langword="null" /> 时不写隧道。
+    /// </param>
     public static async Task<SessionImportOutcome> WriteAsync(
         ISessionRepository repository,
         IReadOnlyList<ImportedSession> items,
         string groupName,
         string tag,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IAppDataStore? dataStore = null)
     {
         ArgumentNullException.ThrowIfNull(items);
         var toImport = items.Where(static i => i.IsSupported).ToList();
@@ -42,6 +55,7 @@ internal static class SessionImportWriter
         {
             cancellationToken.ThrowIfCancellationRequested();
             bool usesKey = item.PrivateKeyPath is { Length: > 0 };
+            bool isSsh = item.ConnectionType is ConnectionType.SSH or ConnectionType.SFTP;
             var profile = new SessionProfile
             {
                 ConnectionType = item.ConnectionType,
@@ -50,10 +64,13 @@ internal static class SessionImportWriter
                 Host = HostAddress.Normalize(item.Host),
                 Port = item.Port,
                 Username = item.Username,
-                AuthMethod = usesKey ? AuthMethod.PrivateKey : AuthMethod.Password,
+                AuthMethod = item.AuthMethod ?? (usesKey ? AuthMethod.PrivateKey : AuthMethod.Password),
                 Password = item.Password,
                 RememberPassword = item.PasswordRecovered,
                 PrivateKeyPath = item.PrivateKeyPath,
+                CertificatePath = item.AuthMethod == AuthMethod.Certificate ? item.CertificatePath : null,
+                // SSH 层的选项只对 SSH 生效(SessionProfile.Ssh 的约定:其余协议一律存 null),一项都没开也存 null。
+                Ssh = isSsh && item.Ssh is { IsEmpty: false } ssh ? ssh.Clone() : null,
                 GroupId = group.Id,
                 Tags = [tag.ToLowerInvariant()],
                 Ftp = item.FtpSettings,
@@ -61,6 +78,12 @@ internal static class SessionImportWriter
                 PluginSettings = SessionProfile.CloneSettings(item.PluginSettings)
             };
             await repository.SaveSessionAsync(profile).ConfigureAwait(false);
+            if (dataStore is not null && isSsh && item.Tunnels is { Count: > 0 } tunnels)
+            {
+                // 写成这条连接的隧道(停止状态,与隧道面板存的同一种文档);连接是新建的,没有旧隧道要合并。
+                await dataStore.UpsertAsync(TunnelsCollection, profile.Id.ToString("D"), tunnels.ToList(), cancellationToken)
+                    .ConfigureAwait(false);
+            }
             group.Sessions.Add(profile.Id);
             _ = byAlias.TryAdd(item.Name, profile);
             if (item.JumpHostAlias is { Length: > 0 } alias)

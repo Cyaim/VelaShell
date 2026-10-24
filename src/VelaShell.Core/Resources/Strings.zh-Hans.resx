@@ -5334,8 +5334,41 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="XImport_PwKey" xml:space="preserve">
     <value>使用密钥文件</value>
   </data>
+  <data name="XImport_PwCertificate" xml:space="preserve">
+    <value>使用证书</value>
+  </data>
+  <data name="XImport_PwAgent" xml:space="preserve">
+    <value>使用 SSH Agent</value>
+  </data>
   <data name="XImport_Duplicate" xml:space="preserve">
     <value>已存在</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardsImported" xml:space="preserve">
+    <value>{0} 条端口转发导入为这条连接的隧道（停止状态，在隧道面板里启动）。</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSkipped" xml:space="preserve">
+    <value>没有导入，现有的隧道类型装不下（Unix 套接字、远程动态转发或端口 0）：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardInvalid" xml:space="preserve">
+    <value>没有导入，转发写得不对：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteAlgoDropped" xml:space="preserve">
+    <value>{0}：去掉了 {1}（本版没有实现，写着也谈不成）</value>
+  </data>
+  <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
+    <value>{0} 没有导入：{1}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
+    <value>ForwardAgent {0} 没有导入：VelaShell 只转发默认的 agent（SSH_AUTH_SOCK）。</value>
+  </data>
+  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
+    <value>IdentityAgent {0} 没有导入：VelaShell 只连默认的 agent（SSH_AUTH_SOCK）。</value>
+  </data>
+  <data name="SshCfgImport_NoteExtraIdentities" xml:space="preserve">
+    <value>一条连接只用一把私钥，没有导入：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteCertificateNoKey" xml:space="preserve">
+    <value>CertificateFile 没有配对的私钥，连接前请在连接配置里选上私钥。</value>
   </data>
   <data name="Plugins" xml:space="preserve">
     <value>插件</value>
@@ -7931,6 +7964,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SessFile_CsvType" xml:space="preserve">
     <value>CSV 表格</value>
   </data>
+  <data name="SessFile_SshConfigType" xml:space="preserve">
+    <value>OpenSSH config</value>
+  </data>
   <data name="SessFile_CsvEmpty" xml:space="preserve">
     <value>文件是空的：没有找到表头行。</value>
   </data>
@@ -8135,11 +8171,17 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SessExport_FormatCsv" xml:space="preserve">
     <value>CSV 表格</value>
   </data>
+  <data name="SessExport_FormatSshConfig" xml:space="preserve">
+    <value>OpenSSH config</value>
+  </data>
   <data name="SessExport_JsonHint" xml:space="preserve">
     <value>完整保存分组、跳板主机、共享凭据、端口转发与终端设置等全部配置，适合备份与迁移到另一台电脑。</value>
   </data>
   <data name="SessExport_CsvHint" xml:space="preserve">
     <value>可以用 Excel 编辑后再导入的表格。只含常用字段（名称、主机、端口、用户名、分组、认证、跳板主机……），不含密码。</value>
+  </data>
+  <data name="SessExport_SshConfigHint" xml:space="preserve">
+    <value>写成 ~/.ssh/config 的 Host 块：SSH / SFTP 连接的主机、用户、私钥与证书、跳板主机、压缩、agent 转发、算法与端口转发。不含密码；别的协议跳过。</value>
   </data>
   <data name="SessExport_IncludeSecrets" xml:space="preserve">
     <value>包含密码等敏感信息</value>
@@ -8179,6 +8221,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="SessExport_DoneCsv" xml:space="preserve">
     <value>已导出 {0} 个连接到 {1}。</value>
+  </data>
+  <data name="SessExport_DoneSshConfig" xml:space="preserve">
+    <value>已把 {0} 个连接导出到 {1}（OpenSSH config，不含密码）。</value>
   </data>
   <data name="SessExport_TemplateSaved" xml:space="preserve">
     <value>模板已保存到 {0}，填好后用「导入连接文件」导入。</value>

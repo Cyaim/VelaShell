@@ -145,6 +145,11 @@
                       Command="{Binding SelectFormatCommand}"
                       CommandParameter="{x:Static import:SessionFileFormat.Csv}"
                       Content="{loc:Localize SessExport_FormatCsv}" />
+              <Button x:Name="SshConfigFormatButton"
+                      Classes="seg-tab" Classes.active="{Binding IsSshConfig}"
+                      Command="{Binding SelectFormatCommand}"
+                      CommandParameter="{x:Static import:SessionFileFormat.SshConfig}"
+                      Content="{loc:Localize SessExport_FormatSshConfig}" />
             </UniformGrid>
           </Border>
           <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{Binding FormatHint}" />
