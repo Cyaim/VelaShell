@@ -43,7 +43,12 @@
       <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
       <Setter Property="Margin" Value="0,0,0,4" />
     </Style>
+    <!-- 条件框高 28,与同从文件面板打开的目录同步窗口(TextBox.field)及其它工具窗口的输入框一致;
+         MinHeight 一起写,否则吃 Fluent 的最小高度 32。 -->
     <Style Selector="TextBox.mono">
+      <Setter Property="Height" Value="28" />
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="Padding" Value="8,0" />
       <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
       <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
     </Style>

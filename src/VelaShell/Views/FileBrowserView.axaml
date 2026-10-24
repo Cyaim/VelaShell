@@ -184,7 +184,7 @@
                        IsVisible="{Binding IsPathEditing}"
                        Text="{Binding PathEditText}"
                        PlaceholderText="{loc:Localize Sftp_PathInputHint}"
-                       MinWidth="240" Height="22" Padding="6,0" VerticalAlignment="Center"
+                       MinWidth="240" Height="22" MinHeight="0" Padding="6,0" VerticalAlignment="Center"
                        VerticalContentAlignment="Center"
                        FontFamily="{DynamicResource VelaUiMonoFont}"
                        FontSize="{DynamicResource VelaFontSize11}"
