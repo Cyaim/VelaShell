@@ -7156,6 +7156,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Profile_SshCompressionHint" xml:space="preserve">
     <value>延迟较高(跨境、跨洋,往返 100 ms 以上)或带宽紧张时建议开启:终端输出与文本文件能省下大量流量。局域网、或主要传输图片 / 压缩包这类已压缩数据时不建议开 —— 只会白白多占 CPU。服务端不支持时自动退回不压缩。</value>
   </data>
+  <data name="Profile_SshObscureKeystrokeTiming" xml:space="preserve">
+    <value>按键时序混淆</value>
+  </data>
+  <data name="Profile_SshObscureKeystrokeTimingHint" xml:space="preserve">
+    <value>平时每次按键单独一个报文,按键之间的间隔在网上看得见,能推测出输入了什么(口令也一样)。打开之后输入按 20 毫秒的固定节拍发出,打字期间空着的节拍上发等长的掩护报文。代价是带宽:打字时每个方向每秒约 50 个报文,每次按键最多晚 20 毫秒发出;闲着时不多发,粘贴不受影响。掩护要服务端支持 ping@openssh.com(OpenSSH 9.5 起),不支持时只攒批。</value>
+  </data>
   <data name="Profile_SshCustomAlgorithms" xml:space="preserve">
     <value>自定义算法清单</value>
   </data>
@@ -7188,6 +7194,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Ssh_AgentForwardOn" xml:space="preserve">
     <value>ssh-agent 转发已开启</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeOn" xml:space="preserve">
+    <value>按键时序混淆已开启(20 毫秒节拍,带掩护报文)</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeNoPing" xml:space="preserve">
+    <value>按键时序混淆:服务端不支持 ping@openssh.com(OpenSSH 9.5 起),只按 20 毫秒节拍攒批、不发掩护报文,按键间隔仍然看得出来。</value>
   </data>
   <data name="Ssh_X11ForwardFailed" xml:space="preserve">
     <value>X11 转发未能启用:{0}</value>

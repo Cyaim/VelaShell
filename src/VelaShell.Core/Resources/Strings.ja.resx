@@ -6679,6 +6679,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Profile_SshCompressionHint" xml:space="preserve">
     <value>遅延が大きい(国境・大陸をまたぐ回線、往復 100 ms 以上)か帯域が限られている場合に有効にしてください。端末出力やテキストファイルの転送量を大きく減らせます。LAN 内や、画像・アーカイブなど圧縮済みデータが中心の場合は CPU を消費するだけなのでおすすめしません。サーバーが対応していない場合は自動的に無圧縮に戻ります。</value>
   </data>
+  <data name="Profile_SshObscureKeystrokeTiming" xml:space="preserve">
+    <value>キー入力のタイミングを隠す</value>
+  </data>
+  <data name="Profile_SshObscureKeystrokeTimingHint" xml:space="preserve">
+    <value>通常はキーを押すたびに 1 つのパケットが送られるため、キー間の間隔が通信路上で見え、入力内容(パスワードも含む)を推測される手がかりになります。有効にすると入力を 20 ミリ秒の固定間隔で送り、入力中に空いた間隔には同じ長さのダミーパケットを送ります。代償は帯域です: 入力中は片方向あたり毎秒約 50 パケット、キーの送信は最大 20 ミリ秒遅れます。何も入力していないときは何も増えず、貼り付けにも影響しません。ダミーパケットにはサーバーの ping@openssh.com 対応(OpenSSH 9.5 以降)が必要で、非対応のときはまとめて送るだけになります。</value>
+  </data>
   <data name="Profile_SshCustomAlgorithms" xml:space="preserve">
     <value>アルゴリズム一覧をカスタマイズ</value>
   </data>
@@ -6711,6 +6717,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Ssh_AgentForwardOn" xml:space="preserve">
     <value>ssh-agent 転送が有効です</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeOn" xml:space="preserve">
+    <value>キー入力タイミングの隠蔽が有効です(20 ミリ秒間隔、ダミーパケットあり)</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeNoPing" xml:space="preserve">
+    <value>キー入力タイミングの隠蔽: サーバーが ping@openssh.com(OpenSSH 9.5 以降)に対応していないため、20 ミリ秒間隔でまとめて送るだけでダミーパケットは送りません。キー間の間隔はまだ見えます。</value>
   </data>
   <data name="Ssh_X11ForwardFailed" xml:space="preserve">
     <value>X11 転送を有効にできませんでした: {0}</value>

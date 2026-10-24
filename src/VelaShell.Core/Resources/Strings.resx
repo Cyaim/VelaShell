@@ -6684,6 +6684,12 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="Profile_SshCompressionHint" xml:space="preserve">
     <value>Turn it on when latency is high (cross-border or intercontinental links, round trips above ~100 ms) or bandwidth is scarce: terminal output and text files shrink a lot. Leave it off on a LAN or when you mostly move already-compressed data (images, archives) — it would only cost CPU. Falls back to no compression if the server does not support it.</value>
   </data>
+  <data name="Profile_SshObscureKeystrokeTiming" xml:space="preserve">
+    <value>Obscure keystroke timing</value>
+  </data>
+  <data name="Profile_SshObscureKeystrokeTimingHint" xml:space="preserve">
+    <value>Normally every keystroke travels in a packet of its own, so the gaps between keys are visible on the wire and can give away what you type, passwords included. With this on, input goes out on a fixed 20 ms beat and same-size cover packets fill the empty beats while you type. The cost is bandwidth: about 50 packets a second in each direction while typing, and a key may go out up to 20 ms later; nothing extra is sent while idle, and pastes are not affected. Cover packets need a server that supports ping@openssh.com (OpenSSH 9.5 or later); otherwise input is only batched.</value>
+  </data>
   <data name="Profile_SshCustomAlgorithms" xml:space="preserve">
     <value>Custom algorithm lists</value>
   </data>
@@ -6716,6 +6722,12 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="Ssh_AgentForwardOn" xml:space="preserve">
     <value>ssh-agent forwarding on</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeOn" xml:space="preserve">
+    <value>Keystroke timing obscured (20 ms beat with cover packets)</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeNoPing" xml:space="preserve">
+    <value>Keystroke timing: the server does not support ping@openssh.com (OpenSSH 9.5 or later), so input is only batched on a 20 ms beat without cover packets; the gaps between keys can still be seen.</value>
   </data>
   <data name="Ssh_X11ForwardFailed" xml:space="preserve">
     <value>X11 forwarding not enabled: {0}</value>

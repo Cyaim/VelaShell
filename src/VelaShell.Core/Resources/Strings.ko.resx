@@ -6679,6 +6679,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Profile_SshCompressionHint" xml:space="preserve">
     <value>지연이 크거나(국경·대륙 간 회선, 왕복 100 ms 이상) 대역폭이 부족할 때 켜는 것을 권장합니다. 터미널 출력과 텍스트 파일의 전송량이 크게 줄어듭니다. LAN이거나 이미지·압축 파일처럼 이미 압축된 데이터를 주로 전송할 때는 CPU만 소모하므로 권장하지 않습니다. 서버가 지원하지 않으면 자동으로 압축 없이 연결합니다.</value>
   </data>
+  <data name="Profile_SshObscureKeystrokeTiming" xml:space="preserve">
+    <value>키 입력 타이밍 숨기기</value>
+  </data>
+  <data name="Profile_SshObscureKeystrokeTimingHint" xml:space="preserve">
+    <value>평소에는 키를 누를 때마다 패킷이 하나씩 나가서 키 사이의 간격이 네트워크에서 보이고, 입력 내용(비밀번호 포함)을 추측하는 단서가 됩니다. 켜면 입력을 20밀리초 고정 간격으로 보내고, 입력 중 비어 있는 간격에는 같은 길이의 위장 패킷을 보냅니다. 대가는 대역폭입니다: 입력하는 동안 방향마다 초당 약 50개의 패킷이 오가고 키 전송이 최대 20밀리초 늦어집니다. 입력이 없을 때는 더 보내지 않으며 붙여넣기에는 영향이 없습니다. 위장 패킷은 서버가 ping@openssh.com을 지원해야 하며(OpenSSH 9.5 이상), 지원하지 않으면 묶어서 보내기만 합니다.</value>
+  </data>
   <data name="Profile_SshCustomAlgorithms" xml:space="preserve">
     <value>알고리즘 목록 사용자 지정</value>
   </data>
@@ -6711,6 +6717,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="Ssh_AgentForwardOn" xml:space="preserve">
     <value>ssh-agent 전달 사용 중</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeOn" xml:space="preserve">
+    <value>키 입력 타이밍 숨기기 사용 중(20밀리초 간격, 위장 패킷 포함)</value>
+  </data>
+  <data name="Ssh_ObscureKeystrokeNoPing" xml:space="preserve">
+    <value>키 입력 타이밍 숨기기: 서버가 ping@openssh.com(OpenSSH 9.5 이상)을 지원하지 않아 20밀리초 간격으로 묶어 보내기만 하고 위장 패킷은 보내지 않습니다. 키 사이의 간격은 여전히 보입니다.</value>
   </data>
   <data name="Ssh_X11ForwardFailed" xml:space="preserve">
     <value>X11 전달을 사용할 수 없습니다: {0}</value>

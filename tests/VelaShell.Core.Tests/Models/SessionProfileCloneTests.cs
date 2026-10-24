@@ -73,6 +73,7 @@ public sealed class SessionProfileCloneTests
             Ssh = new()
             {
                 Compression = true,
+                ObscureKeystrokeTiming = true,
                 AgentForwarding = true,
                 AgentForwardKeys = ["SHA256:abc"],
                 AgentForwardConfirm = true,

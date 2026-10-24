@@ -79,6 +79,13 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
     /// <summary>底层连接;SFTP 要在同一条会话上开通道,所以要拿得到它。</summary>
     internal SshConnection? InnerConnection => _connection;
 
+    /// <summary>按键时序混淆的节拍:取 OpenSSH <c>ObscureKeystrokeTiming yes</c> 的 20 毫秒。</summary>
+    /// <remarks>
+    /// 不开放成可调:节拍越短掩护越密、带宽越大,越长每次按键越迟钝,20 毫秒是 OpenSSH 权衡过的值,
+    /// 在界面上多一个数字框只会让人凭感觉乱填。
+    /// </remarks>
+    internal static readonly TimeSpan KeystrokeObfuscationInterval = TimeSpan.FromMilliseconds(20);
+
     /// <inheritdoc />
     public bool IsConnected
     {
@@ -159,6 +166,7 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
                 TerminalType = terminalName,
                 Size = new SshTerminalSize((int)columns, (int)rows, (int)width, (int)height),
                 Modes = BuildModes(terminalModeValues),
+                ObscureKeystrokeTiming = _features?.ObscureKeystrokeTiming == true ? KeystrokeObfuscationInterval : null,
             };
 
             // 服务端认证时发来的横幅排在最前面(法律声明、「密码将于 3 天后过期」);只在第一个 shell 上显示一次。
@@ -192,6 +200,13 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
             if (shell.Agent is not null && agent is not null)
             {
                 notices.Add(new(SshForwardingOptions.DescribeAgent(_features, agent), false));
+            }
+            if (shell.IsObscuringKeystrokeTiming)
+            {
+                // 服务端不认 PING 时库只攒批、不发掩护 —— 按键间隔照样看得出来,得说一声,别让人以为已经藏住了。
+                notices.Add(connection.PeerSupportsPing
+                    ? new(Strings.Get("Ssh_ObscureKeystrokeOn"), false)
+                    : new(Strings.Get("Ssh_ObscureKeystrokeNoPing"), true));
             }
             return new ShellStreamWrapper(shell, notices);
         }

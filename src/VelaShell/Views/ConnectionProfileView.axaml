@@ -1099,7 +1099,7 @@
               </StackPanel>
 
               <!-- ============================== SSH 选项(SSH 与 SFTP) ==============================
-                   三项默认全关(与 OpenSSH 一致),每项下面一行灰字说清「什么时候该开」。 -->
+                   各项默认全关(按键时序混淆与 OpenSSH 不同,理由是带宽代价),每项下面一行灰字说清「什么时候该开」。 -->
               <StackPanel Spacing="24" IsVisible="{Binding IsSshOptionsSection}">
                 <StackPanel Spacing="12">
                   <Grid ColumnDefinitions="Auto,*">
@@ -1111,6 +1111,13 @@
                       <TextBlock Classes="check-title" Text="{loc:Localize Profile_SshCompression}" />
                     </CheckBox>
                     <TextBlock Classes="check-desc" Text="{loc:Localize Profile_SshCompressionHint}" />
+                  </StackPanel>
+                  <!-- 按键时序混淆只挂在交互式 shell 上:SFTP 配置没有 shell,不显示也不存。灰字说清带宽代价。 -->
+                  <StackPanel Spacing="4" IsVisible="{Binding SupportsPostAuthCommand}">
+                    <CheckBox IsChecked="{Binding SshObscureKeystrokeTiming}">
+                      <TextBlock Classes="check-title" Text="{loc:Localize Profile_SshObscureKeystrokeTiming}" />
+                    </CheckBox>
+                    <TextBlock Classes="check-desc" Text="{loc:Localize Profile_SshObscureKeystrokeTimingHint}" />
                   </StackPanel>
                 </StackPanel>
 

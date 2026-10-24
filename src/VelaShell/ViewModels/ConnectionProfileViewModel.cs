@@ -133,6 +133,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     // ---- SSH 协议层可选能力(压缩 / agent 转发 / X11 转发);默认全关 ----
     private bool _sshCompression;
+    private bool _sshObscureKeystrokeTiming;
     private bool _sshAgentForwarding;
     private bool _sshAgentForwardRestrict;
     private bool _sshAgentForwardConfirm;
@@ -260,6 +261,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             if (existing.Ssh is { } ssh)
             {
                 _sshCompression = ssh.Compression;
+                _sshObscureKeystrokeTiming = ssh.ObscureKeystrokeTiming;
                 _sshAgentForwarding = ssh.AgentForwarding;
                 _sshAgentForwardRestrict = ssh.AgentForwardKeys is not null;
                 _savedAgentForwardKeys = ssh.AgentForwardKeys is { } keys ? [.. keys] : [];
@@ -1300,7 +1302,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         || _antiIdleSeconds > 0;
 
     /// <summary>「SSH 选项」页是否有非默认值。</summary>
-    public bool IsSshOptionsSectionModified => _sshCompression || _sshLegacyAlgorithms || _sshCustomAlgorithms;
+    public bool IsSshOptionsSectionModified =>
+        _sshCompression || (SupportsPostAuthCommand && _sshObscureKeystrokeTiming) || _sshLegacyAlgorithms || _sshCustomAlgorithms;
 
     /// <summary>「转发」页是否有非默认值。</summary>
     public bool IsForwardingSectionModified => _sshAgentForwarding || _sshX11Forwarding;
@@ -1331,6 +1334,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         this.RaisePropertyChanged(nameof(ShowSshOptionsSection));
         this.RaisePropertyChanged(nameof(ShowForwardingSection));
         this.RaisePropertyChanged(nameof(ShowAdvancedSection));
+        // 按键时序混淆只算 SSH 的:切到 SFTP 它不存,页签上的圆点也不该还亮着。
+        this.RaisePropertyChanged(nameof(IsSshOptionsSectionModified));
         if (!IsSectionAvailable(SelectedSection))
         {
             SelectedSection = ConnectionProfileSection.General;
@@ -1399,7 +1404,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     }.ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> SshOptionsSectionInputs =
-        new[] { nameof(SshCompression), nameof(SshLegacyAlgorithms), nameof(SshCustomAlgorithms) }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { nameof(SshCompression), nameof(SshObscureKeystrokeTiming), nameof(SshLegacyAlgorithms), nameof(SshCustomAlgorithms) }
+            .ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> ForwardingSectionInputs =
         new[] { nameof(SshAgentForwarding), nameof(SshX11Forwarding) }.ToFrozenSet(StringComparer.Ordinal);
@@ -1538,6 +1544,15 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     {
         get => _sshCompression;
         set => this.RaiseAndSetIfChanged(ref _sshCompression, value);
+    }
+
+    /// <summary>
+    /// 按键时序混淆(OpenSSH 的 <c>ObscureKeystrokeTiming</c>);只挂在交互式 shell 上,显示条件跟 <see cref="SupportsPostAuthCommand" />。
+    /// </summary>
+    public bool SshObscureKeystrokeTiming
+    {
+        get => _sshObscureKeystrokeTiming;
+        set => this.RaiseAndSetIfChanged(ref _sshObscureKeystrokeTiming, value);
     }
 
     // ---- 算法清单(连老设备)----
@@ -2339,6 +2354,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         SshSessionOptions options = new()
         {
             Compression = _sshCompression,
+            // 与两个转发同理:SFTP 配置没有交互式 shell,存下来永远不生效,切回 SSH 时却会突然起作用。
+            ObscureKeystrokeTiming = shell && _sshObscureKeystrokeTiming,
             AgentForwarding = shell && _sshAgentForwarding,
             AgentForwardKeys = shell && _sshAgentForwarding ? SelectedAgentForwardKeys() : null,
             AgentForwardConfirm = shell && _sshAgentForwarding && _sshAgentForwardConfirm,

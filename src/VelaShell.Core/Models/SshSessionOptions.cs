@@ -27,6 +27,20 @@ public sealed class SshSessionOptions
     public bool Compression { get; set; }
 
     /// <summary>
+    /// 按键时序混淆(OpenSSH 的 <c>ObscureKeystrokeTiming</c>):交互式 shell 的输入按固定节拍(20 毫秒)发出,
+    /// 打字期间没有输入的节拍上发等长的掩护报文,按键之间的间隔在网上就看不出来了。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 每次按键一个报文,按键间隔是公认的侧信道 —— 输口令、敲命令的节奏能推测出内容。代价是带宽:
+    /// 打字时每秒约 50 个报文(服务端还回同样多),每次按键最多晚一个节拍发出;闲着时一个报文都不发,粘贴不受影响。
+    /// 掩护要服务端认 <c>ping@openssh.com</c>(OpenSSH 9.5 起),不认时只攒批、不发掩护。
+    /// </para>
+    /// <para>默认关(与 OpenSSH 不同:它默认开),理由是带宽代价。只对终点那一跳的交互式 shell 生效,SFTP 配置不存。</para>
+    /// </remarks>
+    public bool ObscureKeystrokeTiming { get; set; }
+
+    /// <summary>
     /// 把本机 ssh-agent 转发给远端(<c>ssh -A</c>):在这台机器上继续 ssh 到下一跳时,
     /// 用的是本机 agent 里的密钥,私钥不必拷到服务器上。
     /// </summary>
@@ -112,7 +126,8 @@ public sealed class SshSessionOptions
         || !string.IsNullOrWhiteSpace(Ciphers) || !string.IsNullOrWhiteSpace(Macs);
 
     /// <summary>一项都没开(X11 的两个附属字段在没开 X11 时不算数)。</summary>
-    public bool IsEmpty => !Compression && !AgentForwarding && !X11Forwarding && !LegacyAlgorithms && !HasCustomAlgorithms;
+    public bool IsEmpty => !Compression && !ObscureKeystrokeTiming && !AgentForwarding && !X11Forwarding && !LegacyAlgorithms
+                           && !HasCustomAlgorithms;
 
     /// <summary>返回本对象的副本。</summary>
     /// <returns>与本实例等值的新实例。</returns>
@@ -120,6 +135,7 @@ public sealed class SshSessionOptions
         new()
         {
             Compression = Compression,
+            ObscureKeystrokeTiming = ObscureKeystrokeTiming,
             AgentForwarding = AgentForwarding,
             AgentForwardKeys = AgentForwardKeys is null ? null : [.. AgentForwardKeys],
             AgentForwardConfirm = AgentForwardConfirm,

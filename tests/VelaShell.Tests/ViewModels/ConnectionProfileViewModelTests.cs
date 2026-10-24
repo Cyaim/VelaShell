@@ -286,6 +286,37 @@ public sealed class ConnectionProfileViewModelTests
         Assert.IsFalse(profile.Ssh.AgentForwardConfirm);
     }
 
+    /// <summary>
+    /// 按键时序混淆:SSH 配置打开回显、保存带回,只开它一项也要存下来(不能当成全空存回 null);
+    /// SFTP 没有交互式 shell,存下来永远不生效、切回 SSH 时却会突然起作用,所以不存,页签圆点也不亮。
+    /// </summary>
+    [TestMethod]
+    public async Task ObscureKeystrokeTiming_RoundTripsForSsh_AndIsNotStoredForSftp()
+    {
+        var existing = new SessionProfile
+        {
+            Name = "typing",
+            Host = "10.0.0.4",
+            Username = "ops",
+            Password = "secret",
+            Ssh = new() { ObscureKeystrokeTiming = true },
+        };
+
+        var vm = new ConnectionProfileViewModel(existing);
+        Assert.IsTrue(vm.SshObscureKeystrokeTiming);
+        Assert.IsTrue(vm.IsSshOptionsSectionModified);
+
+        SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.IsNotNull(saved?.Ssh, "只开了这一项也是「有」,不能存回 null。");
+        Assert.IsTrue(saved.Ssh.ObscureKeystrokeTiming);
+
+        vm.SelectConnectionTypeCommand.Execute(ConnectionType.SFTP).Subscribe();
+        Assert.IsFalse(vm.IsSshOptionsSectionModified, "SFTP 不存这一项,圆点不该还亮着。");
+        SessionProfile? sftp = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.IsNotNull(sftp);
+        Assert.IsNull(sftp.Ssh, "SFTP 配置没有交互式 shell,按键时序混淆不存。");
+    }
+
     // 三把测试用公钥(随手拼的 ed25519 blob,只用来算指纹与去重,不参与任何签名)。
     private static string KeyLine(byte seed, string? comment = null)
     {
