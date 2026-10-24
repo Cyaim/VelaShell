@@ -1370,6 +1370,9 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   <data name="Cmd_ConnectionDiagnostics" xml:space="preserve">
     <value>Connection Diagnostics</value>
   </data>
+  <data name="Cmd_ConnectionInfo" xml:space="preserve">
+    <value>SSH connection info</value>
+  </data>
   <data name="Cmd_ExportTerminalOutput" xml:space="preserve">
     <value>Export Terminal Output to File</value>
   </data>
@@ -5792,6 +5795,207 @@ Overwrite it?</value>
   </data>
   <data name="Ssh_AlgoMismatchEnable" xml:space="preserve">
     <value>  the peer's {0} can be enabled in the connection's SSH options ("Allow legacy algorithms" or a custom algorithm list).</value>
+  </data>
+  <data name="SshInfo_Menu" xml:space="preserve">
+    <value>Connection info…</value>
+  </data>
+  <data name="SshInfo_Title" xml:space="preserve">
+    <value>Connection info</value>
+  </data>
+  <data name="SshInfo_Subtitle" xml:space="preserve">
+    <value>{0} · as of {1}</value>
+  </data>
+  <data name="SshInfo_Copy" xml:space="preserve">
+    <value>Copy as text</value>
+  </data>
+  <data name="SshInfo_Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="SshInfo_Unavailable" xml:space="preserve">
+    <value>This session is not connected right now. Reconnect it, then refresh.</value>
+  </data>
+  <data name="SshInfo_SecPeer" xml:space="preserve">
+    <value>Peer</value>
+  </data>
+  <data name="SshInfo_State" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="SshInfo_StateAlive" xml:space="preserve">
+    <value>Connected</value>
+  </data>
+  <data name="SshInfo_StateClosed" xml:space="preserve">
+    <value>Disconnected</value>
+  </data>
+  <data name="SshInfo_PeerVersion" xml:space="preserve">
+    <value>Version string</value>
+  </data>
+  <data name="SshInfo_HostKey" xml:space="preserve">
+    <value>Host key</value>
+  </data>
+  <data name="SshInfo_HostKeyValue" xml:space="preserve">
+    <value>{0} · {1} bits</value>
+  </data>
+  <data name="SshInfo_HostKeyCertificate" xml:space="preserve">
+    <value>host certificate</value>
+  </data>
+  <data name="SshInfo_Fingerprint" xml:space="preserve">
+    <value>Fingerprint</value>
+  </data>
+  <data name="SshInfo_SessionId" xml:space="preserve">
+    <value>Session ID</value>
+  </data>
+  <data name="SshInfo_Ping" xml:space="preserve">
+    <value>PING extension (ping@openssh.com)</value>
+  </data>
+  <data name="SshInfo_Yes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="SshInfo_No" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="SshInfo_SecAlgorithms" xml:space="preserve">
+    <value>Negotiated algorithms</value>
+  </data>
+  <data name="SshInfo_TwoWay" xml:space="preserve">
+    <value>out {0} · in {1}</value>
+  </data>
+  <data name="SshInfo_MacAead" xml:space="preserve">
+    <value>built into the AEAD cipher</value>
+  </data>
+  <data name="SshInfo_Compression" xml:space="preserve">
+    <value>Compression</value>
+  </data>
+  <data name="SshInfo_StrictKex" xml:space="preserve">
+    <value>Strict KEX (Terrapin mitigation)</value>
+  </data>
+  <data name="SshInfo_ExtInfo" xml:space="preserve">
+    <value>Extension negotiation (RFC 8308)</value>
+  </data>
+  <data name="SshInfo_SecAuth" xml:space="preserve">
+    <value>Authentication</value>
+  </data>
+  <data name="SshInfo_AuthMethod" xml:space="preserve">
+    <value>Method that succeeded</value>
+  </data>
+  <data name="SshInfo_ServerSigAlgs" xml:space="preserve">
+    <value>server-sig-algs</value>
+  </data>
+  <data name="SshInfo_NotAnnounced" xml:space="preserve">
+    <value>not announced</value>
+  </data>
+  <data name="SshInfo_SecTiming" xml:space="preserve">
+    <value>Timing</value>
+  </data>
+  <data name="SshInfo_TimeDialing" xml:space="preserve">
+    <value>Dialing (TCP, proxy or jump host)</value>
+  </data>
+  <data name="SshInfo_TimeVersion" xml:space="preserve">
+    <value>Version exchange</value>
+  </data>
+  <data name="SshInfo_TimeKex" xml:space="preserve">
+    <value>Key exchange (incl. confirming the host key)</value>
+  </data>
+  <data name="SshInfo_TimeAuth" xml:space="preserve">
+    <value>Authentication (incl. waiting for input)</value>
+  </data>
+  <data name="SshInfo_TimeTotal" xml:space="preserve">
+    <value>Total</value>
+  </data>
+  <data name="SshInfo_RoundTrip" xml:space="preserve">
+    <value>Round trip (last measured)</value>
+  </data>
+  <data name="SshInfo_NotMeasured" xml:space="preserve">
+    <value>not measured yet</value>
+  </data>
+  <data name="SshInfo_SecTraffic" xml:space="preserve">
+    <value>Traffic and rekeying</value>
+  </data>
+  <data name="SshInfo_Sent" xml:space="preserve">
+    <value>Sent</value>
+  </data>
+  <data name="SshInfo_Received" xml:space="preserve">
+    <value>Received</value>
+  </data>
+  <data name="SshInfo_BytesPackets" xml:space="preserve">
+    <value>{0} · {1} packets</value>
+  </data>
+  <data name="SshInfo_RekeyCount" xml:space="preserve">
+    <value>Rekeys</value>
+  </data>
+  <data name="SshInfo_LastRekey" xml:space="preserve">
+    <value>Last rekey triggered by</value>
+  </data>
+  <data name="SshInfo_LastRekeyDuration" xml:space="preserve">
+    <value>Last rekey took</value>
+  </data>
+  <data name="SshInfo_RekeyPeer" xml:space="preserve">
+    <value>the server</value>
+  </data>
+  <data name="SshInfo_RekeyRequested" xml:space="preserve">
+    <value>a local request</value>
+  </data>
+  <data name="SshInfo_RekeyBytes" xml:space="preserve">
+    <value>byte limit reached ({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyPackets" xml:space="preserve">
+    <value>packet limit reached ({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyInterval" xml:space="preserve">
+    <value>time limit reached ({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyHardLimit" xml:space="preserve">
+    <value>packet hard limit reached ({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyUnknown" xml:space="preserve">
+    <value>unknown</value>
+  </data>
+  <data name="SshInfo_KeystrokeTiming" xml:space="preserve">
+    <value>Keystroke timing obfuscation</value>
+  </data>
+  <data name="SshInfo_KeystrokeOff" xml:space="preserve">
+    <value>off</value>
+  </data>
+  <data name="SshInfo_KeystrokeOn" xml:space="preserve">
+    <value>on (20 ms beat with cover packets)</value>
+  </data>
+  <data name="SshInfo_KeystrokeBatchOnly" xml:space="preserve">
+    <value>on, batching only: the server does not support PING, so no cover packets are sent</value>
+  </data>
+  <data name="SshInfo_SecChannels" xml:space="preserve">
+    <value>Channels ({0})</value>
+  </data>
+  <data name="SshInfo_ColType" xml:space="preserve">
+    <value>Type</value>
+  </data>
+  <data name="SshInfo_ColState" xml:space="preserve">
+    <value>State</value>
+  </data>
+  <data name="SshInfo_ColAge" xml:space="preserve">
+    <value>Open for</value>
+  </data>
+  <data name="SshInfo_NoChannels" xml:space="preserve">
+    <value>No channels are open.</value>
+  </data>
+  <data name="SshInfo_PhaseOpening" xml:space="preserve">
+    <value>opening</value>
+  </data>
+  <data name="SshInfo_PhaseOpen" xml:space="preserve">
+    <value>open</value>
+  </data>
+  <data name="SshInfo_PhaseHalfClosed" xml:space="preserve">
+    <value>half-closed (EOF)</value>
+  </data>
+  <data name="SshInfo_PhaseClosing" xml:space="preserve">
+    <value>closing</value>
+  </data>
+  <data name="SshInfo_SecRoute" xml:space="preserve">
+    <value>Route (proxy and jump hosts)</value>
+  </data>
+  <data name="SshInfo_Proxy" xml:space="preserve">
+    <value>outbound proxy</value>
+  </data>
+  <data name="SshInfo_HopDown" xml:space="preserve">
+    <value>down</value>
   </data>
   <data name="Plugin_ProtocolUnavailable" xml:space="preserve">
     <value>The plugin providing this protocol is unavailable. Install or enable it in the plugin manager.</value>

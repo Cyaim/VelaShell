@@ -61,6 +61,12 @@ public partial class MainWindow : Window
     /// <summary>每个追踪目标至多一扇窗口,按目标主机去重。</summary>
     private readonly Dictionary<string, TraceRouteWindow> _traceWindows = [with(StringComparer.OrdinalIgnoreCase)];
 
+    /// <summary>连接信息窗口尺寸在文档存储里的键。</summary>
+    private const string ConnectionInfoLayoutKey = "connectionInfo";
+
+    /// <summary>每个标签至多一扇连接信息窗口,按标签去重(重连之后还是同一个标签、同一扇窗)。</summary>
+    private readonly Dictionary<TerminalTabViewModel, SshConnectionInfoWindow> _connectionInfoWindows = [];
+
     private IDisposable? _fileBrowserVisibilitySub;
     private IDisposable? _sidebarCollapsedSub;
     private bool _forceClose;
@@ -498,6 +504,9 @@ public partial class MainWindow : Window
             // 标题栏"链路追踪":每个目标最多一扇窗,非模态。
             vm.TraceRouteRequested += (host, label) =>
                 Dispatcher.UIThread.Post(() => _ = OpenTraceRouteAsync(vm, host, label));
+            // 标签右键 / 命令面板"连接信息":每个标签最多一扇窗,非模态。
+            vm.ConnectionInfoRequested += tab =>
+                Dispatcher.UIThread.Post(() => FireAndForget.Run(() => OpenConnectionInfoAsync(vm, tab)));
 
             // 资源管理器树:右键连接/双击连接 + 右键编辑。
             if (vm.Sidebar.SessionTree is { } tree)
@@ -1452,6 +1461,28 @@ public partial class MainWindow : Window
         if (Application.Current is App app && app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
         {
             await layoutStore.RememberAsync(TraceRouteLayoutKey, window);
+        }
+        window.Show(this);
+    }
+
+    /// <summary>打开(或前置并刷新)一个标签的连接信息窗口。非模态,尺寸与链路追踪一样记忆。</summary>
+    private async Task OpenConnectionInfoAsync(MainWindowViewModel vm, TerminalTabViewModel tab)
+    {
+        if (_connectionInfoWindows.TryGetValue(tab, out SshConnectionInfoWindow? existing))
+        {
+            // 再点一次是想看此刻的样子:前置的同时刷新。
+            (existing.DataContext as SshConnectionInfoViewModel)?.Refresh();
+            existing.Activate();
+            return;
+        }
+        var window = new SshConnectionInfoWindow { DataContext = vm.CreateConnectionInfo(tab) };
+        _connectionInfoWindows[tab] = window;
+        // 标签关掉之后窗口留着(信息还能复制走),再刷新就如实说「没有连着」。
+        window.Closed += (_, _) => _connectionInfoWindows.Remove(tab);
+        if (Application.Current is App app && app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
+        {
+            WindowLayoutStore.Apply(window, await layoutStore.LoadAsync(ConnectionInfoLayoutKey));
+            window.Closing += (_, _) => _ = layoutStore.SaveAsync(ConnectionInfoLayoutKey, window);
         }
         window.Show(this);
     }

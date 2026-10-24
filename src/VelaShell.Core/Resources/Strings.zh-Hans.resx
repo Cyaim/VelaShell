@@ -1431,6 +1431,9 @@
   <data name="Cmd_ConnectionDiagnostics" xml:space="preserve">
     <value>连接诊断</value>
   </data>
+  <data name="Cmd_ConnectionInfo" xml:space="preserve">
+    <value>SSH 连接信息</value>
+  </data>
   <data name="Cmd_ExportTerminalOutput" xml:space="preserve">
     <value>导出终端输出到文件</value>
   </data>
@@ -6007,6 +6010,207 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Ssh_AlgoMismatchEnable" xml:space="preserve">
     <value>  对端提供的 {0} 可以在连接配置的 SSH 连接选项里放开(勾「允许老算法」,或写进自定义算法清单)。</value>
+  </data>
+  <data name="SshInfo_Menu" xml:space="preserve">
+    <value>连接信息…</value>
+  </data>
+  <data name="SshInfo_Title" xml:space="preserve">
+    <value>连接信息</value>
+  </data>
+  <data name="SshInfo_Subtitle" xml:space="preserve">
+    <value>{0} · 刷新于 {1}</value>
+  </data>
+  <data name="SshInfo_Copy" xml:space="preserve">
+    <value>复制为文本</value>
+  </data>
+  <data name="SshInfo_Refresh" xml:space="preserve">
+    <value>刷新</value>
+  </data>
+  <data name="SshInfo_Unavailable" xml:space="preserve">
+    <value>这条会话现在没有连着。重新连上之后再点刷新。</value>
+  </data>
+  <data name="SshInfo_SecPeer" xml:space="preserve">
+    <value>对端</value>
+  </data>
+  <data name="SshInfo_State" xml:space="preserve">
+    <value>状态</value>
+  </data>
+  <data name="SshInfo_StateAlive" xml:space="preserve">
+    <value>已连接</value>
+  </data>
+  <data name="SshInfo_StateClosed" xml:space="preserve">
+    <value>已断开</value>
+  </data>
+  <data name="SshInfo_PeerVersion" xml:space="preserve">
+    <value>版本标识</value>
+  </data>
+  <data name="SshInfo_HostKey" xml:space="preserve">
+    <value>主机密钥</value>
+  </data>
+  <data name="SshInfo_HostKeyValue" xml:space="preserve">
+    <value>{0} · {1} 位</value>
+  </data>
+  <data name="SshInfo_HostKeyCertificate" xml:space="preserve">
+    <value>主机证书</value>
+  </data>
+  <data name="SshInfo_Fingerprint" xml:space="preserve">
+    <value>指纹</value>
+  </data>
+  <data name="SshInfo_SessionId" xml:space="preserve">
+    <value>会话 ID</value>
+  </data>
+  <data name="SshInfo_Ping" xml:space="preserve">
+    <value>PING 扩展(ping@openssh.com)</value>
+  </data>
+  <data name="SshInfo_Yes" xml:space="preserve">
+    <value>是</value>
+  </data>
+  <data name="SshInfo_No" xml:space="preserve">
+    <value>否</value>
+  </data>
+  <data name="SshInfo_SecAlgorithms" xml:space="preserve">
+    <value>协商结果</value>
+  </data>
+  <data name="SshInfo_TwoWay" xml:space="preserve">
+    <value>发 {0} · 收 {1}</value>
+  </data>
+  <data name="SshInfo_MacAead" xml:space="preserve">
+    <value>AEAD 加密自带</value>
+  </data>
+  <data name="SshInfo_Compression" xml:space="preserve">
+    <value>压缩</value>
+  </data>
+  <data name="SshInfo_StrictKex" xml:space="preserve">
+    <value>严格 KEX(Terrapin 缓解)</value>
+  </data>
+  <data name="SshInfo_ExtInfo" xml:space="preserve">
+    <value>扩展协商(RFC 8308)</value>
+  </data>
+  <data name="SshInfo_SecAuth" xml:space="preserve">
+    <value>认证</value>
+  </data>
+  <data name="SshInfo_AuthMethod" xml:space="preserve">
+    <value>成功的认证方法</value>
+  </data>
+  <data name="SshInfo_ServerSigAlgs" xml:space="preserve">
+    <value>服务端签名算法(server-sig-algs)</value>
+  </data>
+  <data name="SshInfo_NotAnnounced" xml:space="preserve">
+    <value>未宣告</value>
+  </data>
+  <data name="SshInfo_SecTiming" xml:space="preserve">
+    <value>计时</value>
+  </data>
+  <data name="SshInfo_TimeDialing" xml:space="preserve">
+    <value>拨号(TCP、代理或跳板)</value>
+  </data>
+  <data name="SshInfo_TimeVersion" xml:space="preserve">
+    <value>版本交换</value>
+  </data>
+  <data name="SshInfo_TimeKex" xml:space="preserve">
+    <value>密钥交换(含确认主机密钥)</value>
+  </data>
+  <data name="SshInfo_TimeAuth" xml:space="preserve">
+    <value>认证(含等待输入)</value>
+  </data>
+  <data name="SshInfo_TimeTotal" xml:space="preserve">
+    <value>合计</value>
+  </data>
+  <data name="SshInfo_RoundTrip" xml:space="preserve">
+    <value>往返时间(最近一次测得)</value>
+  </data>
+  <data name="SshInfo_NotMeasured" xml:space="preserve">
+    <value>尚未测量</value>
+  </data>
+  <data name="SshInfo_SecTraffic" xml:space="preserve">
+    <value>流量与重协商</value>
+  </data>
+  <data name="SshInfo_Sent" xml:space="preserve">
+    <value>发出</value>
+  </data>
+  <data name="SshInfo_Received" xml:space="preserve">
+    <value>收到</value>
+  </data>
+  <data name="SshInfo_BytesPackets" xml:space="preserve">
+    <value>{0} · {1} 个报文</value>
+  </data>
+  <data name="SshInfo_RekeyCount" xml:space="preserve">
+    <value>重协商次数</value>
+  </data>
+  <data name="SshInfo_LastRekey" xml:space="preserve">
+    <value>最近一次起因</value>
+  </data>
+  <data name="SshInfo_LastRekeyDuration" xml:space="preserve">
+    <value>最近一次耗时</value>
+  </data>
+  <data name="SshInfo_RekeyPeer" xml:space="preserve">
+    <value>对端发起</value>
+  </data>
+  <data name="SshInfo_RekeyRequested" xml:space="preserve">
+    <value>本端请求</value>
+  </data>
+  <data name="SshInfo_RekeyBytes" xml:space="preserve">
+    <value>字节数到阈值({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyPackets" xml:space="preserve">
+    <value>报文数到阈值({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyInterval" xml:space="preserve">
+    <value>时长到阈值({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyHardLimit" xml:space="preserve">
+    <value>报文数到硬线({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyUnknown" xml:space="preserve">
+    <value>说不清</value>
+  </data>
+  <data name="SshInfo_KeystrokeTiming" xml:space="preserve">
+    <value>按键时序混淆</value>
+  </data>
+  <data name="SshInfo_KeystrokeOff" xml:space="preserve">
+    <value>关</value>
+  </data>
+  <data name="SshInfo_KeystrokeOn" xml:space="preserve">
+    <value>开(20 毫秒节拍,带掩护报文)</value>
+  </data>
+  <data name="SshInfo_KeystrokeBatchOnly" xml:space="preserve">
+    <value>开,但只攒批:服务端不支持 PING,不发掩护报文</value>
+  </data>
+  <data name="SshInfo_SecChannels" xml:space="preserve">
+    <value>通道({0})</value>
+  </data>
+  <data name="SshInfo_ColType" xml:space="preserve">
+    <value>类型</value>
+  </data>
+  <data name="SshInfo_ColState" xml:space="preserve">
+    <value>状态</value>
+  </data>
+  <data name="SshInfo_ColAge" xml:space="preserve">
+    <value>已开</value>
+  </data>
+  <data name="SshInfo_NoChannels" xml:space="preserve">
+    <value>没有开着的通道。</value>
+  </data>
+  <data name="SshInfo_PhaseOpening" xml:space="preserve">
+    <value>打开中</value>
+  </data>
+  <data name="SshInfo_PhaseOpen" xml:space="preserve">
+    <value>开着</value>
+  </data>
+  <data name="SshInfo_PhaseHalfClosed" xml:space="preserve">
+    <value>半关(EOF)</value>
+  </data>
+  <data name="SshInfo_PhaseClosing" xml:space="preserve">
+    <value>关闭中</value>
+  </data>
+  <data name="SshInfo_SecRoute" xml:space="preserve">
+    <value>经过的代理与跳板</value>
+  </data>
+  <data name="SshInfo_Proxy" xml:space="preserve">
+    <value>出站代理</value>
+  </data>
+  <data name="SshInfo_HopDown" xml:space="preserve">
+    <value>已断开</value>
   </data>
   <data name="Plugin_ProtocolUnavailable" xml:space="preserve">
     <value>提供该协议的插件当前不可用。请在插件管理页安装或启用它。</value>

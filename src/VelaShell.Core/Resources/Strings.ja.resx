@@ -298,6 +298,9 @@
   <data name="Cmd_ConnectionDiagnostics" xml:space="preserve">
     <value>接続診断</value>
   </data>
+  <data name="Cmd_ConnectionInfo" xml:space="preserve">
+    <value>SSH 接続情報</value>
+  </data>
   <data name="Cmd_ExportTerminalOutput" xml:space="preserve">
     <value>ターミナル出力をファイルにエクスポート</value>
   </data>
@@ -5787,6 +5790,207 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Ssh_AlgoMismatchEnable" xml:space="preserve">
     <value>  接続先の {0} は、接続設定の SSH オプションで有効にできます(「レガシーアルゴリズムを許可」またはアルゴリズム一覧のカスタマイズ)。</value>
+  </data>
+  <data name="SshInfo_Menu" xml:space="preserve">
+    <value>接続情報…</value>
+  </data>
+  <data name="SshInfo_Title" xml:space="preserve">
+    <value>接続情報</value>
+  </data>
+  <data name="SshInfo_Subtitle" xml:space="preserve">
+    <value>{0} · {1} 時点</value>
+  </data>
+  <data name="SshInfo_Copy" xml:space="preserve">
+    <value>テキストとしてコピー</value>
+  </data>
+  <data name="SshInfo_Refresh" xml:space="preserve">
+    <value>更新</value>
+  </data>
+  <data name="SshInfo_Unavailable" xml:space="preserve">
+    <value>このセッションは現在接続されていません。再接続してから更新してください。</value>
+  </data>
+  <data name="SshInfo_SecPeer" xml:space="preserve">
+    <value>接続先</value>
+  </data>
+  <data name="SshInfo_State" xml:space="preserve">
+    <value>状態</value>
+  </data>
+  <data name="SshInfo_StateAlive" xml:space="preserve">
+    <value>接続中</value>
+  </data>
+  <data name="SshInfo_StateClosed" xml:space="preserve">
+    <value>切断済み</value>
+  </data>
+  <data name="SshInfo_PeerVersion" xml:space="preserve">
+    <value>バージョン文字列</value>
+  </data>
+  <data name="SshInfo_HostKey" xml:space="preserve">
+    <value>ホスト鍵</value>
+  </data>
+  <data name="SshInfo_HostKeyValue" xml:space="preserve">
+    <value>{0} · {1} ビット</value>
+  </data>
+  <data name="SshInfo_HostKeyCertificate" xml:space="preserve">
+    <value>ホスト証明書</value>
+  </data>
+  <data name="SshInfo_Fingerprint" xml:space="preserve">
+    <value>フィンガープリント</value>
+  </data>
+  <data name="SshInfo_SessionId" xml:space="preserve">
+    <value>セッション ID</value>
+  </data>
+  <data name="SshInfo_Ping" xml:space="preserve">
+    <value>PING 拡張(ping@openssh.com)</value>
+  </data>
+  <data name="SshInfo_Yes" xml:space="preserve">
+    <value>はい</value>
+  </data>
+  <data name="SshInfo_No" xml:space="preserve">
+    <value>いいえ</value>
+  </data>
+  <data name="SshInfo_SecAlgorithms" xml:space="preserve">
+    <value>ネゴシエーション結果</value>
+  </data>
+  <data name="SshInfo_TwoWay" xml:space="preserve">
+    <value>送信 {0} · 受信 {1}</value>
+  </data>
+  <data name="SshInfo_MacAead" xml:space="preserve">
+    <value>AEAD 暗号に内蔵</value>
+  </data>
+  <data name="SshInfo_Compression" xml:space="preserve">
+    <value>圧縮</value>
+  </data>
+  <data name="SshInfo_StrictKex" xml:space="preserve">
+    <value>厳格な KEX(Terrapin 対策)</value>
+  </data>
+  <data name="SshInfo_ExtInfo" xml:space="preserve">
+    <value>拡張ネゴシエーション(RFC 8308)</value>
+  </data>
+  <data name="SshInfo_SecAuth" xml:space="preserve">
+    <value>認証</value>
+  </data>
+  <data name="SshInfo_AuthMethod" xml:space="preserve">
+    <value>成功した認証方式</value>
+  </data>
+  <data name="SshInfo_ServerSigAlgs" xml:space="preserve">
+    <value>サーバー署名アルゴリズム(server-sig-algs)</value>
+  </data>
+  <data name="SshInfo_NotAnnounced" xml:space="preserve">
+    <value>通知なし</value>
+  </data>
+  <data name="SshInfo_SecTiming" xml:space="preserve">
+    <value>所要時間</value>
+  </data>
+  <data name="SshInfo_TimeDialing" xml:space="preserve">
+    <value>接続(TCP・プロキシ・踏み台)</value>
+  </data>
+  <data name="SshInfo_TimeVersion" xml:space="preserve">
+    <value>バージョン交換</value>
+  </data>
+  <data name="SshInfo_TimeKex" xml:space="preserve">
+    <value>鍵交換(ホスト鍵の確認を含む)</value>
+  </data>
+  <data name="SshInfo_TimeAuth" xml:space="preserve">
+    <value>認証(入力待ちを含む)</value>
+  </data>
+  <data name="SshInfo_TimeTotal" xml:space="preserve">
+    <value>合計</value>
+  </data>
+  <data name="SshInfo_RoundTrip" xml:space="preserve">
+    <value>往復時間(直近の測定)</value>
+  </data>
+  <data name="SshInfo_NotMeasured" xml:space="preserve">
+    <value>未測定</value>
+  </data>
+  <data name="SshInfo_SecTraffic" xml:space="preserve">
+    <value>通信量と鍵の再交換</value>
+  </data>
+  <data name="SshInfo_Sent" xml:space="preserve">
+    <value>送信</value>
+  </data>
+  <data name="SshInfo_Received" xml:space="preserve">
+    <value>受信</value>
+  </data>
+  <data name="SshInfo_BytesPackets" xml:space="preserve">
+    <value>{0} · {1} パケット</value>
+  </data>
+  <data name="SshInfo_RekeyCount" xml:space="preserve">
+    <value>鍵の再交換回数</value>
+  </data>
+  <data name="SshInfo_LastRekey" xml:space="preserve">
+    <value>直近の再交換のきっかけ</value>
+  </data>
+  <data name="SshInfo_LastRekeyDuration" xml:space="preserve">
+    <value>直近の再交換の所要時間</value>
+  </data>
+  <data name="SshInfo_RekeyPeer" xml:space="preserve">
+    <value>相手側から</value>
+  </data>
+  <data name="SshInfo_RekeyRequested" xml:space="preserve">
+    <value>こちらからの要求</value>
+  </data>
+  <data name="SshInfo_RekeyBytes" xml:space="preserve">
+    <value>バイト数が上限に到達({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyPackets" xml:space="preserve">
+    <value>パケット数が上限に到達({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyInterval" xml:space="preserve">
+    <value>経過時間が上限に到達({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyHardLimit" xml:space="preserve">
+    <value>パケット数が絶対上限に到達({0} / {1})</value>
+  </data>
+  <data name="SshInfo_RekeyUnknown" xml:space="preserve">
+    <value>不明</value>
+  </data>
+  <data name="SshInfo_KeystrokeTiming" xml:space="preserve">
+    <value>キー入力タイミングの隠蔽</value>
+  </data>
+  <data name="SshInfo_KeystrokeOff" xml:space="preserve">
+    <value>オフ</value>
+  </data>
+  <data name="SshInfo_KeystrokeOn" xml:space="preserve">
+    <value>オン(20 ミリ秒間隔、ダミーパケットあり)</value>
+  </data>
+  <data name="SshInfo_KeystrokeBatchOnly" xml:space="preserve">
+    <value>オン、まとめ送信のみ: サーバーが PING 非対応のためダミーパケットは送りません</value>
+  </data>
+  <data name="SshInfo_SecChannels" xml:space="preserve">
+    <value>チャネル({0})</value>
+  </data>
+  <data name="SshInfo_ColType" xml:space="preserve">
+    <value>種類</value>
+  </data>
+  <data name="SshInfo_ColState" xml:space="preserve">
+    <value>状態</value>
+  </data>
+  <data name="SshInfo_ColAge" xml:space="preserve">
+    <value>経過</value>
+  </data>
+  <data name="SshInfo_NoChannels" xml:space="preserve">
+    <value>開いているチャネルはありません。</value>
+  </data>
+  <data name="SshInfo_PhaseOpening" xml:space="preserve">
+    <value>オープン中</value>
+  </data>
+  <data name="SshInfo_PhaseOpen" xml:space="preserve">
+    <value>オープン</value>
+  </data>
+  <data name="SshInfo_PhaseHalfClosed" xml:space="preserve">
+    <value>半クローズ(EOF)</value>
+  </data>
+  <data name="SshInfo_PhaseClosing" xml:space="preserve">
+    <value>クローズ中</value>
+  </data>
+  <data name="SshInfo_SecRoute" xml:space="preserve">
+    <value>経由したプロキシと踏み台</value>
+  </data>
+  <data name="SshInfo_Proxy" xml:space="preserve">
+    <value>送信プロキシ</value>
+  </data>
+  <data name="SshInfo_HopDown" xml:space="preserve">
+    <value>切断</value>
   </data>
   <data name="Plugin_ProtocolUnavailable" xml:space="preserve">
     <value>このプロトコルを提供するプラグインが利用できません。プラグイン管理画面でインストールまたは有効化してください。</value>

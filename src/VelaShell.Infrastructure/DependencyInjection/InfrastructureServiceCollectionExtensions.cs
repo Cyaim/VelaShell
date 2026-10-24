@@ -307,6 +307,9 @@ public static class InfrastructureServiceCollectionExtensions
         return new VelaSshClientWrapper(
             assembled.Connect, assembled.ConnectTimeout, ci.Ssh,
             localXServer: xServer, agentPrompt: agentPrompt, target: HostAddress.FormatTarget(ci.Username, ci.Host, ci.Port), hostKeys: hostKey,
-            banners: assembled.Banners);
+            banners: assembled.Banners)
+        {
+            Route = assembled.Route,
+        };
     }
 }

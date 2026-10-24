@@ -1147,6 +1147,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         );
         Commands.Register(
             new(
+                "tools.connectionInfo",
+                Strings.Get("Cmd_ConnectionInfo"),
+                Strings.Get("CmdCat_Tools"),
+                () => OpenConnectionInfo(ActiveTerminalTab),
+                () => ActiveTerminalTab is { IsSshTerminal: true, IsConnected: true },
+                Icon: "Icon.info"
+            )
+        );
+        Commands.Register(
+            new(
                 "edit.clear",
                 Strings.Get("Cmd_ClearScreen"),
                 Strings.Get("CmdCat_Edit"),
@@ -1859,6 +1869,35 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     /// <summary>工具菜单“连接诊断”(针对当前标签的配置)—— 由窗口打开诊断中心弹窗。</summary>
     public event Action<SessionProfile>? DiagnosticsRequested;
+
+    /// <summary>
+    /// 标签右键 / 命令面板「连接信息」—— 由窗口打开(或前置)这个标签的连接信息窗口,
+    /// 面板的视图模型向 <see cref="CreateConnectionInfo" /> 要。
+    /// </summary>
+    public event Action<TerminalTabViewModel>? ConnectionInfoRequested;
+
+    /// <summary>请求为一个 SSH 会话标签打开连接信息窗口;不是 SSH 会话标签时是空操作。</summary>
+    public void OpenConnectionInfo(TerminalTabViewModel? tab)
+    {
+        if (tab is { IsSshTerminal: true })
+        {
+            ConnectionInfoRequested?.Invoke(tab);
+        }
+    }
+
+    /// <summary>为一个标签建连接信息面板的视图模型。</summary>
+    /// <remarks>
+    /// 取数按标签<b>此刻</b>的会话去取:重连之后会话 id 换了,面板点一下刷新就跟上新连接;
+    /// 标签断着、会话已经拆了时给 <see langword="null" />,面板如实说「没有连着」。
+    /// </remarks>
+    public SshConnectionInfoViewModel CreateConnectionInfo(TerminalTabViewModel tab)
+    {
+        ArgumentNullException.ThrowIfNull(tab);
+        string name = tab.Profile is { } profile && !string.IsNullOrWhiteSpace(profile.Name)
+            ? profile.Name
+            : tab.Title;
+        return new(name, () => tab.IsConnected ? _sshConnectionService?.GetClient(tab.SessionId)?.GetConnectionDetails() : null);
+    }
 
     /// <summary>单例切换(规范 §17.2):再次打开时聚焦现有面板。</summary>
     public void ToggleTunnelPanel()
@@ -2831,6 +2870,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         };
         terminalTab.ReconnectRequested += (_, _) => _ = ReconnectTabAsync(terminalTab);
         terminalTab.Disconnected += (_, _) => OnTabDisconnected(terminalTab);
+        // 标签右键「连接信息」。
+        terminalTab.ConnectionInfoRequested += (_, _) => OpenConnectionInfo(terminalTab);
 
         // 命令补全:注入建议提供器;提交(已回显校验)的命令进全局历史。
         terminalTab.SuggestionProvider = _suggestionProvider;

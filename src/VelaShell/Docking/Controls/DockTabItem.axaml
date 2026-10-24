@@ -69,6 +69,16 @@
     <!-- 与原 DockContextMenu.axaml 完全同构:关闭系列 + 拆分 + 标签位置;
          浮动与 MDI 按产品决策不存在。菜单外观走全局 ContextMenu 样式。 -->
     <ContextMenu>
+      <!-- 连接信息:只对 SSH 会话标签出现(本地终端与插件终端协议没有可看的),没连着时灰掉。 -->
+      <MenuItem Header="{loc:Localize SshInfo_Menu}" Click="ConnectionInfo_Click"
+                IsVisible="{Binding Terminal.IsSshTerminal}"
+                IsEnabled="{Binding Terminal.IsConnected}">
+        <MenuItem.Icon>
+          <pc:LucideIcon Width="13" Height="13" Data="{DynamicResource Icon.info}"
+                         Foreground="{DynamicResource VelaTextTertiary}" />
+        </MenuItem.Icon>
+      </MenuItem>
+      <Separator IsVisible="{Binding Terminal.IsSshTerminal}" />
       <!-- 同步输入频道:四个固定频道以颜色区分,加入后本标签的用户输入与频道内
            其他标签实时互通(对等转发见 SyncInputCoordinator)。 -->
       <MenuItem Header="{loc:Localize SyncInput_Menu}">

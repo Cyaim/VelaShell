@@ -79,6 +79,9 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
     /// <summary>底层连接;SFTP 要在同一条会话上开通道,所以要拿得到它。</summary>
     internal SshConnection? InnerConnection => _connection;
 
+    /// <summary>这次连接经过的代理与跳板(装配时给,见 <see cref="SshConnectionAssembler.Assembled.Route" />);没给时连接信息里不列跳板。</summary>
+    internal SshRouteRecorder? Route { get; init; }
+
     /// <summary>按键时序混淆的节拍:取 OpenSSH <c>ObscureKeystrokeTiming yes</c> 的 20 毫秒。</summary>
     /// <remarks>
     /// 不开放成可调:节拍越短掩护越密、带宽越大,越长每次按键越迟钝,20 毫秒是 OpenSSH 权衡过的值,
@@ -524,6 +527,12 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
             return null;
         }
     }
+
+    /// <inheritdoc />
+    public SshConnectionDetails? GetConnectionDetails() =>
+        _disposed || _connection is not { } connection
+            ? null
+            : SshConnectionDetailsBuilder.Build(connection, _target, Route, _features?.ObscureKeystrokeTiming == true);
 
     /// <inheritdoc />
     /// <remarks>

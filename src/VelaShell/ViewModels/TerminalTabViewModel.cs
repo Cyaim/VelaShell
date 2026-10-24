@@ -742,6 +742,24 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     /// <summary>标签页内失败/断开覆盖层(设计 yxjmg)的“关闭标签页”触发,由宿主移除该标签。</summary>
     public event EventHandler? CloseRequested;
 
+    /// <summary>标签右键「连接信息」:请求宿主打开这条 SSH 会话的连接信息窗口。</summary>
+    public event EventHandler? ConnectionInfoRequested;
+
+    /// <summary>
+    /// 这是一个 SSH 会话标签(有配置、协议是 SSH)—— 只有它有连接信息可看;本地终端与插件终端协议(Telnet、串口)没有。
+    /// </summary>
+    /// <remarks>配置在标签建好时就定了,协议不会中途变,绑定一次性读取即可。</remarks>
+    public bool IsSshTerminal => LocalShell is null && Profile is { ConnectionType: ConnectionType.SSH };
+
+    /// <summary>请求打开连接信息窗口(只对 SSH 会话标签有效)。</summary>
+    public void RequestConnectionInfo()
+    {
+        if (IsSshTerminal)
+        {
+            ConnectionInfoRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     /// <summary>请求重连,但仅在已断开状态下有效(否则为空操作)。</summary>
     public void RequestReconnect()
     {
