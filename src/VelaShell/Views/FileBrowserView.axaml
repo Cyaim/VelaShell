@@ -242,6 +242,17 @@
                              Data="{StaticResource Icon.terminal}"
                              Foreground="{Binding $parent[ToggleButton].Foreground}" />
             </ToggleButton>
+            <!-- 远端搜索(find / grep,经 SSH exec 通道):只在有 SSH 连接的面板上出现,FTP 与插件协议没有 exec。 -->
+            <Button Classes="toolbar-btn" Width="24" Height="24" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    IsVisible="{Binding CanSearchRemote}"
+                    Command="{Binding OpenRemoteSearchCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_SearchOpen}"
+                    AutomationProperties.Name="{loc:Localize Sftp_SearchOpen}">
+              <pc:LucideIcon Width="13" Height="13"
+                             Data="{StaticResource Icon.search}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
+            </Button>
             <Button Classes="toolbar-btn" Width="24" Height="24" Padding="0"
                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                     Command="{Binding ShowTransfersCommand}"
@@ -532,6 +543,14 @@
                                  Foreground="{DynamicResource VelaTextTertiary}" />
                 </MenuItem.Icon>
               </MenuItem>
+              <!-- 在当前目录里搜(find / grep);只在有 SSH 连接的面板上出现。 -->
+              <MenuItem Header="{loc:Localize Sftp_SearchOpen}" Command="{Binding OpenRemoteSearchCommand}"
+                        IsVisible="{Binding CanSearchRemote}">
+                <MenuItem.Icon>
+                  <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.search}"
+                                 Foreground="{DynamicResource VelaTextTertiary}" />
+                </MenuItem.Icon>
+              </MenuItem>
               <Separator />
               <!-- 文件与文件夹合并为一个入口:选择器可混选,文件夹整棵传、文件直接传。 -->
               <MenuItem Header="{loc:Localize UploadHere}" Command="{Binding UploadCommand}">
@@ -604,6 +623,22 @@
                                 Command="{Binding $parent[ListBox].((vm:FileBrowserViewModel)DataContext).RefreshCommand}">
                         <MenuItem.Icon>
                           <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.refresh-cw}"
+                                         Foreground="{DynamicResource VelaTextTertiary}" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                      <!-- 以这个目录为起点搜(find / grep);只对目录、只在有 SSH 连接的面板上出现。 -->
+                      <MenuItem Header="{loc:Localize Sftp_SearchHere}"
+                                Command="{Binding $parent[ListBox].((vm:FileBrowserViewModel)DataContext).OpenRemoteSearchCommand}"
+                                CommandParameter="{Binding FullPath}">
+                        <MenuItem.IsVisible>
+                          <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="IsDirectory" />
+                            <Binding Path="!IsParentEntry" />
+                            <Binding Path="$parent[ListBox].((vm:FileBrowserViewModel)DataContext).CanSearchRemote" />
+                          </MultiBinding>
+                        </MenuItem.IsVisible>
+                        <MenuItem.Icon>
+                          <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.search}"
                                          Foreground="{DynamicResource VelaTextTertiary}" />
                         </MenuItem.Icon>
                       </MenuItem>

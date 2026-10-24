@@ -4581,6 +4581,81 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sftp_EditPath" xml:space="preserve">
     <value>パスを編集 (Ctrl+L)</value>
   </data>
+  <data name="Sftp_SearchOpen" xml:space="preserve">
+    <value>リモートファイルを検索…</value>
+  </data>
+  <data name="Sftp_SearchHere" xml:space="preserve">
+    <value>このフォルダーで検索…</value>
+  </data>
+  <data name="Sftp_SearchTitle" xml:space="preserve">
+    <value>リモートファイルの検索</value>
+  </data>
+  <data name="Sftp_SearchRoot" xml:space="preserve">
+    <value>検索場所</value>
+  </data>
+  <data name="Sftp_SearchName" xml:space="preserve">
+    <value>ファイル名</value>
+  </data>
+  <data name="Sftp_SearchNamePlaceholder" xml:space="preserve">
+    <value>例: *.log。ワイルドカードがなければ名前に含まれるものを探します</value>
+  </data>
+  <data name="Sftp_SearchContent" xml:space="preserve">
+    <value>含まれるテキスト</value>
+  </data>
+  <data name="Sftp_SearchContentPlaceholder" xml:space="preserve">
+    <value>省略可。文字どおりに照合し、ファイルだけを対象にします</value>
+  </data>
+  <data name="Sftp_SearchIgnoreCase" xml:space="preserve">
+    <value>大文字と小文字を区別しない</value>
+  </data>
+  <data name="Sftp_SearchStart" xml:space="preserve">
+    <value>検索</value>
+  </data>
+  <data name="Sftp_SearchStop" xml:space="preserve">
+    <value>停止</value>
+  </data>
+  <data name="Sftp_SearchReveal" xml:space="preserve">
+    <value>ファイルペインで表示</value>
+  </data>
+  <data name="Sftp_SearchHint" xml:space="preserve">
+    <value>SSH 経由でサーバー上の find / grep を実行します。結果をダブルクリックするとペインで表示します。最大 {0} 件、{1} 秒</value>
+  </data>
+  <data name="Sftp_SearchRunning" xml:space="preserve">
+    <value>検索中… {0} 件見つかりました</value>
+  </data>
+  <data name="Sftp_SearchDone" xml:space="preserve">
+    <value>{0} 件見つかりました</value>
+  </data>
+  <data name="Sftp_SearchTruncated" xml:space="preserve">
+    <value>{0} 件で上限に達したため、結果は不完全です。検索場所を絞るか条件を具体的にしてください</value>
+  </data>
+  <data name="Sftp_SearchTimedOut" xml:space="preserve">
+    <value>{0} 秒を超えたため停止しました。結果は不完全です({1} 件)</value>
+  </data>
+  <data name="Sftp_SearchCancelled" xml:space="preserve">
+    <value>停止しました({0} 件)</value>
+  </data>
+  <data name="Sftp_SearchNoSession" xml:space="preserve">
+    <value>セッションが切断されているため検索できません</value>
+  </data>
+  <data name="Sftp_SearchNotPosix" xml:space="preserve">
+    <value>このサーバーはリモート検索に対応していません。ログインシェルが POSIX シェルではありません(Windows の cmd.exe / PowerShell など)。コマンドは送信していません</value>
+  </data>
+  <data name="Sftp_SearchShellUnknown" xml:space="preserve">
+    <value>サーバーのシェルの種類を判別できませんでした(コマンド実行が禁止されているか、SFTP 専用アカウントの可能性があります)。検索コマンドは送信していません</value>
+  </data>
+  <data name="Sftp_SearchToolMissing" xml:space="preserve">
+    <value>サーバーに find コマンドがありません(内容で検索する場合は grep も必要です)</value>
+  </data>
+  <data name="Sftp_SearchFailed" xml:space="preserve">
+    <value>検索に失敗しました: {0}</value>
+  </data>
+  <data name="Sftp_SearchRootNotAbsolute" xml:space="preserve">
+    <value>検索場所は / で始まるリモートの絶対パスにしてください</value>
+  </data>
+  <data name="Sftp_SearchNeedCriteria" xml:space="preserve">
+    <value>ファイル名か、含まれるテキストを入力してください</value>
+  </data>
   <data name="Sftp_PathInputHint" xml:space="preserve">
     <value>パスを入力して Enter</value>
   </data>

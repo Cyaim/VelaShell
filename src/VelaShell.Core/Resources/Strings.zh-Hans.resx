@@ -828,6 +828,81 @@
   <data name="Sftp_EditPath" xml:space="preserve">
     <value>编辑路径 (Ctrl+L)</value>
   </data>
+  <data name="Sftp_SearchOpen" xml:space="preserve">
+    <value>搜索远端文件…</value>
+  </data>
+  <data name="Sftp_SearchHere" xml:space="preserve">
+    <value>在此目录中搜索…</value>
+  </data>
+  <data name="Sftp_SearchTitle" xml:space="preserve">
+    <value>搜索远端文件</value>
+  </data>
+  <data name="Sftp_SearchRoot" xml:space="preserve">
+    <value>搜索位置</value>
+  </data>
+  <data name="Sftp_SearchName" xml:space="preserve">
+    <value>文件名</value>
+  </data>
+  <data name="Sftp_SearchNamePlaceholder" xml:space="preserve">
+    <value>如 *.log；不带通配符时按「名字里含有」匹配</value>
+  </data>
+  <data name="Sftp_SearchContent" xml:space="preserve">
+    <value>包含文字</value>
+  </data>
+  <data name="Sftp_SearchContentPlaceholder" xml:space="preserve">
+    <value>可选；按字面匹配，只查文件</value>
+  </data>
+  <data name="Sftp_SearchIgnoreCase" xml:space="preserve">
+    <value>忽略大小写</value>
+  </data>
+  <data name="Sftp_SearchStart" xml:space="preserve">
+    <value>搜索</value>
+  </data>
+  <data name="Sftp_SearchStop" xml:space="preserve">
+    <value>停止</value>
+  </data>
+  <data name="Sftp_SearchReveal" xml:space="preserve">
+    <value>在文件面板中定位</value>
+  </data>
+  <data name="Sftp_SearchHint" xml:space="preserve">
+    <value>经 SSH 在服务器上跑 find / grep。双击结果在面板里定位；最多 {0} 项、{1} 秒</value>
+  </data>
+  <data name="Sftp_SearchRunning" xml:space="preserve">
+    <value>正在搜索…已找到 {0} 项</value>
+  </data>
+  <data name="Sftp_SearchDone" xml:space="preserve">
+    <value>找到 {0} 项</value>
+  </data>
+  <data name="Sftp_SearchTruncated" xml:space="preserve">
+    <value>已找到 {0} 项，到了上限，结果不完整；缩小搜索位置或换个更具体的条件</value>
+  </data>
+  <data name="Sftp_SearchTimedOut" xml:space="preserve">
+    <value>搜索超过 {0} 秒已停止，结果不完整（已找到 {1} 项）</value>
+  </data>
+  <data name="Sftp_SearchCancelled" xml:space="preserve">
+    <value>已停止（已找到 {0} 项）</value>
+  </data>
+  <data name="Sftp_SearchNoSession" xml:space="preserve">
+    <value>会话已断开，无法搜索</value>
+  </data>
+  <data name="Sftp_SearchNotPosix" xml:space="preserve">
+    <value>这台服务器不支持远端搜索：它的登录 shell 不是 POSIX shell（例如 Windows 的 cmd.exe / PowerShell）。没有发出任何命令</value>
+  </data>
+  <data name="Sftp_SearchShellUnknown" xml:space="preserve">
+    <value>无法确认服务器的 shell 类型（可能禁止了执行命令，或者账号只开放了 SFTP），没有发出搜索命令</value>
+  </data>
+  <data name="Sftp_SearchToolMissing" xml:space="preserve">
+    <value>服务器上没有 find 命令（按内容搜索时还需要 grep）</value>
+  </data>
+  <data name="Sftp_SearchFailed" xml:space="preserve">
+    <value>搜索失败：{0}</value>
+  </data>
+  <data name="Sftp_SearchRootNotAbsolute" xml:space="preserve">
+    <value>搜索位置必须是以 / 开头的远端绝对路径</value>
+  </data>
+  <data name="Sftp_SearchNeedCriteria" xml:space="preserve">
+    <value>请填写文件名或要包含的文字</value>
+  </data>
   <data name="Sftp_PathInputHint" xml:space="preserve">
     <value>输入路径后回车跳转</value>
   </data>

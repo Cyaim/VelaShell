@@ -69,6 +69,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     private readonly ISessionMetricsService? _metricsService;
     private readonly IRemoteProcessService? _remoteProcessService;
 
+    /// <summary>远端搜索(find / grep),挂到 SSH 会话的文件面板上;没有 SSH 连接服务(单测)时为 null,面板上就没有「搜索」。</summary>
+    private readonly IRemoteSearchService? _remoteSearch;
+
     // ---- 会话日志(设置 → 常规 → 数据与存储) ----
 
     private readonly Dictionary<TerminalTabViewModel, SessionLogWriter> _sessionLogs = [];
@@ -278,6 +281,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         _suggestionProvider = new(CommandHistory, quickCommandRepository);
         _connectionWorkflowService = connectionWorkflowService;
         _sshConnectionService = sshConnectionService;
+        _remoteSearch = sshConnectionService is null ? null : new RemoteSearchService(sshConnectionService);
         _themeService = themeService;
         // 切主题 → 终端画面跟着换整套配色。不能只靠控件自己听 ThemeVariant:
         // 具名主题里有多套暗色,VelaDark 换到 Tokyo Night 时变体压根没变(#主题目录)。
@@ -1575,6 +1579,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             ColumnVisibilityToggled = PersistColumnVisibility,
             ServerDisplayName = serverName,
             AccentBrush = tab.Profile is { } p ? ConnectionAccent.BrushForProfile(p) : null,
+            RemoteSearch = _remoteSearch,
         };
         // 「文件浏览器跟随终端目录」(map-pin):该会话终端 shell 的 cwd(OSC 7)变化 → 面板同步(仅在开启跟随时)。
         // 先播种当前已知 cwd(供开启开关时立即同步),再订阅后续变化。二者同会话、同生共死,eviction 时解绑。
@@ -4293,16 +4298,18 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             return null;
         }
         AppSettings settings = _latestSettings ?? await LoadSettingsSnapshotAsync().ConfigureAwait(true);
-        var document = new SftpDocument(
-            new SftpDocumentViewModel(
-                connection.Profile,
-                connection.Session!,
-                _connectionWorkflowService,
-                _sftpService,
-                settings.Transfer,
-                FileTransfer,
-                QueryDefaultEditorPathAsync,
-                UpdateProfileBookmarksAsync));
+        var sshViewModel = new SftpDocumentViewModel(
+            connection.Profile,
+            connection.Session!,
+            _connectionWorkflowService,
+            _sftpService,
+            settings.Transfer,
+            FileTransfer,
+            QueryDefaultEditorPathAsync,
+            UpdateProfileBookmarksAsync);
+        // 远端搜索走这条 SSH 连接的 exec 通道(FTP 与插件协议的文档没有,不挂)。
+        sshViewModel.RemoteFiles.RemoteSearch = _remoteSearch;
+        var document = new SftpDocument(sshViewModel);
         ui.HandOver(document);
         // 与 FTP 同理:连接续体可能落在后台线程上,树节点是绑定属性,必须回主线程再改。
         TrackDocumentSession(connection.SessionId, connection.Profile.Id, SessionStatus.Connected);
@@ -4698,14 +4705,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             }
 
             AppSettings settings = _latestSettings ?? await LoadSettingsSnapshotAsync().ConfigureAwait(true);
-            var document = new DualSftpDocument(
-                new DualSftpDocumentViewModel(
-                    ToEndpoint(connections[0]),
-                    ToEndpoint(connections[1]),
-                    _sftpService,
-                    settings.Transfer,
-                    FileTransfer,
-                    QueryDefaultEditorPathAsync));
+            var dualViewModel = new DualSftpDocumentViewModel(
+                ToEndpoint(connections[0]),
+                ToEndpoint(connections[1]),
+                _sftpService,
+                settings.Transfer,
+                FileTransfer,
+                QueryDefaultEditorPathAsync);
+            // 两栏各自判断:是 SSH 会话的那一栏才出现「搜索」(见 FileBrowserViewModel.CanSearchRemote)。
+            dualViewModel.LeftFiles.RemoteSearch = _remoteSearch;
+            dualViewModel.RightFiles.RemoteSearch = _remoteSearch;
+            var document = new DualSftpDocument(dualViewModel);
             ui.HandOver(document);
             // 树上两条配置各自点亮(登记用原始配置的 Id,理由见 TrackDocumentSession)。
             TrackDocumentSession(connections[0].SessionId, left.Id, SessionStatus.Connected);

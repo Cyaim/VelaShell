@@ -775,6 +775,81 @@
   <data name="Sftp_EditPath" xml:space="preserve">
     <value>Edit path (Ctrl+L)</value>
   </data>
+  <data name="Sftp_SearchOpen" xml:space="preserve">
+    <value>Search remote files…</value>
+  </data>
+  <data name="Sftp_SearchHere" xml:space="preserve">
+    <value>Search in this folder…</value>
+  </data>
+  <data name="Sftp_SearchTitle" xml:space="preserve">
+    <value>Search remote files</value>
+  </data>
+  <data name="Sftp_SearchRoot" xml:space="preserve">
+    <value>Look in</value>
+  </data>
+  <data name="Sftp_SearchName" xml:space="preserve">
+    <value>File name</value>
+  </data>
+  <data name="Sftp_SearchNamePlaceholder" xml:space="preserve">
+    <value>e.g. *.log; without wildcards it matches names containing the text</value>
+  </data>
+  <data name="Sftp_SearchContent" xml:space="preserve">
+    <value>Containing text</value>
+  </data>
+  <data name="Sftp_SearchContentPlaceholder" xml:space="preserve">
+    <value>Optional; matched literally, files only</value>
+  </data>
+  <data name="Sftp_SearchIgnoreCase" xml:space="preserve">
+    <value>Ignore case</value>
+  </data>
+  <data name="Sftp_SearchStart" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="Sftp_SearchStop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="Sftp_SearchReveal" xml:space="preserve">
+    <value>Show in the file pane</value>
+  </data>
+  <data name="Sftp_SearchHint" xml:space="preserve">
+    <value>Runs find / grep on the server over SSH. Double-click a result to show it in the pane. At most {0} results, {1} seconds</value>
+  </data>
+  <data name="Sftp_SearchRunning" xml:space="preserve">
+    <value>Searching… {0} found</value>
+  </data>
+  <data name="Sftp_SearchDone" xml:space="preserve">
+    <value>{0} found</value>
+  </data>
+  <data name="Sftp_SearchTruncated" xml:space="preserve">
+    <value>{0} found and the limit was reached, so the results are incomplete; narrow the folder or the criteria</value>
+  </data>
+  <data name="Sftp_SearchTimedOut" xml:space="preserve">
+    <value>Stopped after {0} seconds, so the results are incomplete ({1} found)</value>
+  </data>
+  <data name="Sftp_SearchCancelled" xml:space="preserve">
+    <value>Stopped ({0} found)</value>
+  </data>
+  <data name="Sftp_SearchNoSession" xml:space="preserve">
+    <value>The session is disconnected; cannot search</value>
+  </data>
+  <data name="Sftp_SearchNotPosix" xml:space="preserve">
+    <value>This server does not support remote search: its login shell is not a POSIX shell (for example cmd.exe or PowerShell on Windows). No command was sent</value>
+  </data>
+  <data name="Sftp_SearchShellUnknown" xml:space="preserve">
+    <value>Could not tell which shell the server runs (command execution may be disabled, or the account is SFTP-only), so no search command was sent</value>
+  </data>
+  <data name="Sftp_SearchToolMissing" xml:space="preserve">
+    <value>The server has no find (or, for a text search, no grep) command</value>
+  </data>
+  <data name="Sftp_SearchFailed" xml:space="preserve">
+    <value>Search failed: {0}</value>
+  </data>
+  <data name="Sftp_SearchRootNotAbsolute" xml:space="preserve">
+    <value>The folder to look in must be an absolute remote path starting with /</value>
+  </data>
+  <data name="Sftp_SearchNeedCriteria" xml:space="preserve">
+    <value>Enter a file name or the text to look for</value>
+  </data>
   <data name="Sftp_PathInputHint" xml:space="preserve">
     <value>Type a path, press Enter</value>
   </data>

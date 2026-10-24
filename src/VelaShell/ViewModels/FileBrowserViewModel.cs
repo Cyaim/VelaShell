@@ -144,6 +144,8 @@ public class FileBrowserViewModel : ReactiveObject
         DeleteSelectedCommand = ReactiveCommand.CreateFromTask(DeleteSelectedAsync);
         CancelDeleteCommand = ReactiveCommand.Create(CancelDelete);
         ShowTransfersCommand = ReactiveCommand.Create(() => TransferSink?.ShowPanel());
+        OpenRemoteSearchCommand = ReactiveCommand.CreateFromTask<string?>(
+            root => CanSearchRemote && ShowRemoteSearch is { } show ? show(root) : Task.CompletedTask);
         ToggleVisibilityCommand = ReactiveCommand.Create(ToggleVisibility);
         ToggleHiddenFilesCommand = ReactiveCommand.Create(() =>
         {
@@ -280,7 +282,11 @@ public class FileBrowserViewModel : ReactiveObject
         {
             // 已拆除 —— 无需取消。
         }
+        Detached?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>本面板被拆除(<see cref="Detach" />)之后触发;对着它开的搜索窗口据此跟着关掉。</summary>
+    public event EventHandler? Detached;
 
     /// <summary>
     /// 把一个操作令牌关联到本浏览器的生命周期,并交出**可释放的**作用域。
@@ -334,6 +340,74 @@ public class FileBrowserViewModel : ReactiveObject
 
     /// <summary>成功进入不同目录后触发,视图据此把滚动条重置到顶部。</summary>
     public event EventHandler? DirectoryChanged;
+
+    /// <summary>
+    /// 远端搜索(<c>find</c> / <c>grep</c>)的服务;由宿主在 SSH 会话的面板上挂(FTP 与插件协议的面板不挂)。
+    /// </summary>
+    public IRemoteSearchService? RemoteSearch
+    {
+        get;
+        set
+        {
+            field = value;
+            this.RaisePropertyChanged(nameof(CanSearchRemote));
+        }
+    }
+
+    /// <summary>工具条与右键菜单里的「搜索」是否出现:要有搜索服务,且这个会话有 SSH 连接(有 exec 通道)。</summary>
+    public bool CanSearchRemote => RemoteSearch?.IsAvailable(_sessionId) == true;
+
+    /// <summary>打开搜索窗口;参数是起点目录(目录行的右键菜单传它自己),null = 当前目录(工具条与空白处右键菜单)。</summary>
+    public ReactiveCommand<string?, RxVoid> OpenRemoteSearchCommand { get; }
+
+    /// <summary>由视图提供:打开(或提到前面)本面板的搜索窗口;参数是起点目录,null = 当前目录。</summary>
+    public Func<string?, Task>? ShowRemoteSearch { get; set; }
+
+    /// <summary>
+    /// 定位到一个远端条目之后触发(参数是已选中的那一行),视图据此把它滚进可见区。
+    /// </summary>
+    public event EventHandler<RemoteFileInfoViewModel>? RevealRequested;
+
+    /// <summary>
+    /// 在面板里定位到一个远端条目(搜索结果被点中时):目录就进去;文件就进它所在的目录并选中它。
+    /// </summary>
+    /// <remarks>
+    /// 文件是点文件而面板隐藏着点文件时,只在<b>这个面板</b>上打开「显示隐藏文件」(不写回设置):
+    /// 用户点的就是它,定位过去却看不见,等于没定位;而为一次定位改掉全局设置又太越权。
+    /// 进不去那个目录(权限、刚被删)时面板照常报错,不选中任何东西。
+    /// </remarks>
+    /// <param name="path">远端绝对路径。</param>
+    /// <param name="isDirectory">是不是目录。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>选中了那一行时为 true;目录、或者定位不到那一行时为 false。</returns>
+    public async Task<bool> RevealAsync(string path, bool isDirectory, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (isDirectory)
+        {
+            await NavigateToAsync(path, ct);
+            return false;
+        }
+        string parent = RemotePath.Parent(path);
+        await NavigateToAsync(parent, ct);
+        if (!string.Equals(CurrentPath, parent, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        if (!ShowHiddenFiles && _allFiles.Exists(f => string.Equals(f.FullPath, path, StringComparison.Ordinal)
+                                                      && !Files.Contains(f)))
+        {
+            ShowHiddenFiles = true;
+        }
+        if (Files.FirstOrDefault(f => !f.IsParentEntry && string.Equals(f.FullPath, path, StringComparison.Ordinal)) is not { } row)
+        {
+            return false;
+        }
+        SelectedFiles.Clear();
+        SelectedFiles.Add(row);
+        RevealRequested?.Invoke(this, row);
+        return true;
+    }
 
     private string? _pendingTerminalPath;
 
