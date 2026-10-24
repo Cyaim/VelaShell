@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using NSubstitute;
 using VelaShell.Core.Models;
+using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
 using VelaShell.Infrastructure.Tunnels;
@@ -96,6 +97,81 @@ public class TunnelForwardingIntegrationTests
             service.RefreshStatistics();
             return tunnel.Connections.Count == 0;
         }, "搬完的连接应当从快照里摘掉。");
+    }
+
+    /// <summary>
+    /// 远程动态转发:远端把服务器上的那个端口当 SOCKS5 代理,名单里的目标由本机替它连上、双向搬运;
+    /// 名单外的目标回「规则不允许」(0x02),隧道行上记一句本地化的提示。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task RemoteDynamicForward_ConnectsAllowedTargetsAndRefusesTheRest()
+    {
+        RequireContainer();
+        await using VelaSshClientWrapper ssh = await ConnectAsync();
+        await using TunnelService service = CreateService(ssh);
+        using TcpListener echo = new(IPAddress.Loopback, 0);
+        echo.Start();
+        int echoPort = ((IPEndPoint)echo.LocalEndpoint).Port;
+        int serverPort = RandomServerPort();
+
+        TunnelInfo tunnel = await service.CreateRemoteDynamicForwardAsync(SessionId, new TunnelConfig
+        {
+            Type = TunnelType.RemoteDynamicForward,
+            Name = "socks-back",
+            LocalHost = "127.0.0.1",
+            LocalPort = 0,
+            RemoteHost = "127.0.0.1",
+            RemotePort = (uint)serverPort,
+            PermitRemoteOpen = [$"127.0.0.1:{echoPort}"]
+        });
+
+        Task serve = ServeUppercaseEchoOnceAsync(echo);
+        string allowed = await ssh.RunCommandAsync(SocksClientScript(serverPort, echoPort, "ping"));
+        await serve.WaitAsync(TimeSpan.FromSeconds(10), TestContext.CancellationToken);
+
+        StringAssert.Contains(allowed, "M=05 00", $"SOCKS 方法协商没过。远端输出:\n{allowed}");
+        StringAssert.Contains(allowed, "R=05 00", $"名单里的目标应当回成功。远端输出:\n{allowed}");
+        StringAssert.Contains(allowed, "D=PING", $"数据没有经本机的目标原样回来。远端输出:\n{allowed}");
+        Assert.IsNull(tunnel.LastError);
+
+        // 被拒之后通道随即关掉:不再往里写(写一个关掉的套接字,bash 会吃 SIGPIPE)。
+        string refused = await ssh.RunCommandAsync(SocksClientScript(serverPort, echoPort == 65535 ? 1 : echoPort + 1, payload: null));
+        StringAssert.Contains(refused, "R=05 02", $"名单外的目标应当回「规则不允许」。远端输出:\n{refused}");
+        await WaitForAsync(() => tunnel.LastError is not null, "被拒的那一条应当记到隧道行上。");
+        Assert.AreEqual(Strings.Get("TunnelSvc_TargetNotPermitted"), tunnel.LastError);
+    }
+
+    /// <summary>
+    /// 远端那头的 SOCKS5 客户端(bash 的 <c>/dev/tcp</c> + 逐字节的 <c>dd</c>,不靠靶机上另装工具):
+    /// 协商「不认证」,请求连 <c>127.0.0.1:目标端口</c>,发一段数据,把方法应答、请求应答与回来的数据分别打出来。
+    /// <paramref name="payload" /> 为 <see langword="null" /> 时只走到请求应答为止。
+    /// </summary>
+    private static string SocksClientScript(int proxyPort, int targetPort, string? payload) =>
+        $"exec 3<>/dev/tcp/127.0.0.1/{proxyPort}; " +
+        "printf '\\x05\\x01\\x00' >&3; " +
+        "echo \"M=$(dd bs=1 count=2 <&3 2>/dev/null | od -An -tx1 | tr -s ' ' | sed 's/^ //')\"; " +
+        $"printf '\\x05\\x01\\x00\\x01\\x7f\\x00\\x00\\x01\\x{targetPort >> 8:x2}\\x{targetPort & 0xFF:x2}' >&3; " +
+        "echo \"R=$(dd bs=1 count=10 <&3 2>/dev/null | od -An -tx1 | tr -s ' ' | sed 's/^ //')\"" +
+        (payload is null
+            ? string.Empty
+            : $"; printf '{payload}' >&3; echo \"D=$(timeout 5 dd bs=1 count={payload.Length} <&3 2>/dev/null)\"");
+
+    /// <summary>本机那头的目标:接一条连接,把读到的转成大写回送,读到对端关闭为止。</summary>
+    private async Task ServeUppercaseEchoOnceAsync(TcpListener listener)
+    {
+        using TcpClient client = await listener.AcceptTcpClientAsync(TestContext.CancellationToken);
+        NetworkStream stream = client.GetStream();
+        byte[] buffer = new byte[1024];
+        int read;
+        while ((read = await stream.ReadAsync(buffer, TestContext.CancellationToken)) > 0)
+        {
+            for (int i = 0; i < read; i++)
+            {
+                buffer[i] = (byte)char.ToUpperInvariant((char)buffer[i]);
+            }
+            await stream.WriteAsync(buffer.AsMemory(0, read), TestContext.CancellationToken);
+        }
     }
 
     // ------------------------------------------------------------ 装配

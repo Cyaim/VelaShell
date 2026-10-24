@@ -4232,6 +4232,27 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Tunnel_DynamicSocksTip" xml:space="preserve">
     <value>로컬 포트를 SOCKS5 프록시로 사용, 대상 임의 (ssh -D)</value>
   </data>
+  <data name="Tunnel_RemoteDynamicSocks" xml:space="preserve">
+    <value>원격 동적 SOCKS</value>
+  </data>
+  <data name="Tunnel_RemoteDynamicSocksTip" xml:space="preserve">
+    <value>서버의 포트를 SOCKS5 프록시로 쓰고, 원격 프로그램이 허용 목록의 대상에 이 컴퓨터를 거쳐 연결하게 합니다(대상 없는 ssh -R)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenLabel" xml:space="preserve">
+    <value>허용 대상 (원격에서 연결할 수 있는 호스트:포트)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenHint" xml:space="preserve">
+    <value>공백이나 쉼표로 구분합니다. 호스트에는 * ? 와일드카드, 포트에는 *를 쓸 수 있습니다. any만 쓰면 모두 허용(이 컴퓨터가 닿는 곳이면 원격도 닿습니다). 원격이 보낸 이름으로 비교하며 이름 해석은 하지 않습니다.</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenInvalid" xml:space="preserve">
+    <value>허용 규칙 「{0}」의 형식이 잘못되었습니다. 호스트:포트 형식으로 쓰세요(포트는 * 가능, IPv6는 대괄호로 감쌈). any는 단독으로만 씁니다.</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenSummary" xml:space="preserve">
+    <value>허용: {0}</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenAny" xml:space="preserve">
+    <value>허용: 전체 (이 컴퓨터가 닿는 곳이면 원격도 닿습니다)</value>
+  </data>
   <data name="Tunnel_EditTip" xml:space="preserve">
     <value>터널 편집</value>
   </data>
@@ -4246,6 +4267,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="Tunnel_ForwardToLoopback" xml:space="preserve">
     <value>서버 자신(127.0.0.1)으로 전달</value>
+  </data>
+  <data name="Tunnel_ListenOnServerLoopback" xml:space="preserve">
+    <value>서버 자신(127.0.0.1)에서만 수신 대기</value>
   </data>
   <data name="Tunnel_LocalForwardTip" xml:space="preserve">
     <value>로컬 포트 접근을 서버를 거쳐 대상 서비스로 전달 (ssh -L)</value>
@@ -4286,6 +4310,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Tunnel_TargetHostLabel" xml:space="preserve">
     <value>대상 호스트 (서버 기준)</value>
   </data>
+  <data name="Tunnel_ServerBindHostLabel" xml:space="preserve">
+    <value>서버 수신 대기 주소</value>
+  </data>
   <data name="Tunnel_Title" xml:space="preserve">
     <value>터널</value>
   </data>
@@ -4300,6 +4327,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="TunnelSvc_TargetUnreachable" xml:space="preserve">
     <value>대상에 연결할 수 없습니다. 서버에서 대상 호스트에 접근할 수 있는지 확인하세요(내부 주소/방화벽).</value>
+  </data>
+  <data name="TunnelSvc_PermitRemoteOpenRequired" xml:space="preserve">
+    <value>원격 동적 포워딩에는 허용 목록이 필요합니다. 원격이 연결할 수 있는 호스트:포트를 쓰거나, 모두 허용하려면 any라고 쓰세요.</value>
+  </data>
+  <data name="TunnelSvc_TargetNotPermitted" xml:space="preserve">
+    <value>원격이 요청한 대상이 허용 목록에 없어 거부했습니다. 허용하려면 이 터널의 허용 목록에 추가하세요.</value>
   </data>
   <data name="Upload" xml:space="preserve">
     <value>업로드</value>
@@ -4443,6 +4476,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Tunnel_FallbackDynamic" xml:space="preserve">
     <value>동적 터널</value>
   </data>
+  <data name="Tunnel_FallbackRemoteDynamic" xml:space="preserve">
+    <value>원격 동적 터널</value>
+  </data>
   <data name="Tunnel_BadgeLocal" xml:space="preserve">
     <value>로컬</value>
   </data>
@@ -4452,6 +4488,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Tunnel_BadgeDynamic" xml:space="preserve">
     <value>동적</value>
   </data>
+  <data name="Tunnel_BadgeRemoteDynamic" xml:space="preserve">
+    <value>원격 동적</value>
+  </data>
   <data name="Tunnel_RouteLocal" xml:space="preserve">
     <value>이 컴퓨터에서 {0}:{1} 수신 대기 → 서버 측 대상 {2}:{3}</value>
   </data>
@@ -4460,6 +4499,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="Tunnel_RouteDynamic" xml:space="preserve">
     <value>이 컴퓨터의 SOCKS5 {0}:{1} → 동적 대상</value>
+  </data>
+  <data name="Tunnel_RouteRemoteDynamic" xml:space="preserve">
+    <value>SSH 서버의 {0}:{1}이(가) SOCKS5 프록시 → 허용된 대상에 이 컴퓨터가 대신 연결</value>
   </data>
   <data name="TunnelSvc_LocalPortInUse" xml:space="preserve">
     <value>로컬 포트 {0}은(는) 다른 프로그램이 사용 중입니다. 해당 프로그램을 중지하거나 다른 로컬 포트를 지정하세요.</value>
@@ -4742,6 +4784,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="TunnelHelp_DynamicDesc" xml:space="preserve">
     <value>로컬 머신에 SOCKS5 프록시 리스너를 생성합니다. 이 프록시를 사용하도록 설정된 애플리케이션의 TCP 연결은 SSH 서버를 통해 라우팅되며, 서버가 각 대상을 동적으로 해석하고 연결합니다. 일반적인 용도: 개별 포워딩 설정 없이 브라우저나 애플리케이션 트래픽을 SSH 서버를 통해 라우팅.</value>
+  </data>
+  <data name="TunnelHelp_RemoteDynamicTitle" xml:space="preserve">
+    <value>원격 동적 포워딩 (대상 없는 -R)</value>
+  </data>
+  <data name="TunnelHelp_RemoteDynamicDesc" xml:space="preserve">
+    <value>SSH 서버에 SOCKS5 프록시 포트를 엽니다. 원격 프로그램은 이를 통해 이 컴퓨터가 대신 대상에 연결하게 합니다. 사내 패키지 미러나 내부 API처럼 이 컴퓨터만 닿는 곳에 서버가 닿을 수 있게 됩니다. 터널의 허용 목록에 있는 대상(호스트:포트, 와일드카드 가능, 또는 any)만 허용하고 나머지는 거부합니다.</value>
   </data>
   <data name="TunnelHelp_LoopbackNote" xml:space="preserve">
     <value>127.0.0.1의 의미는 해당 엔드포인트가 속한 머신에 따라 달라집니다. 로컬 포워딩의 서버 측 대상에서는 SSH 서버 자체를, 원격 포워딩의 로컬 서비스에서는 이 컴퓨터를 가리킵니다. 수신 엔드포인트에 루프백을 사용하면 해당 수신을 제공하는 머신에서만 접근할 수 있습니다.</value>

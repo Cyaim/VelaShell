@@ -4232,6 +4232,27 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_DynamicSocksTip" xml:space="preserve">
     <value>ローカルポートを SOCKS5 プロキシとして使用、宛先は任意(ssh -D)</value>
   </data>
+  <data name="Tunnel_RemoteDynamicSocks" xml:space="preserve">
+    <value>リモート SOCKS</value>
+  </data>
+  <data name="Tunnel_RemoteDynamicSocksTip" xml:space="preserve">
+    <value>サーバーのポートを SOCKS5 プロキシにし、リモートのプログラムが許可リストの接続先へこのコンピューター経由で接続できるようにします(接続先なしの ssh -R)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenLabel" xml:space="preserve">
+    <value>許可する接続先(リモートが接続できる ホスト:ポート)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenHint" xml:space="preserve">
+    <value>空白またはカンマで区切ります。ホストには * ? のワイルドカード、ポートには * が使えます。any だけを書くとすべて許可(このコンピューターから届く所すべてにリモートが届きます)。リモートが送った名前で照合し、名前解決はしません。</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenInvalid" xml:space="preserve">
+    <value>許可ルール「{0}」の書き方が正しくありません。ホスト:ポート の形で書いてください(ポートは * も可、IPv6 は角かっこで囲む)。any は単独で書きます。</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenSummary" xml:space="preserve">
+    <value>許可: {0}</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenAny" xml:space="preserve">
+    <value>許可: すべて(このコンピューターから届く所すべてにリモートが届きます)</value>
+  </data>
   <data name="Tunnel_EditTip" xml:space="preserve">
     <value>トンネルを編集</value>
   </data>
@@ -4246,6 +4267,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Tunnel_ForwardToLoopback" xml:space="preserve">
     <value>サーバー自身(127.0.0.1)へ転送</value>
+  </data>
+  <data name="Tunnel_ListenOnServerLoopback" xml:space="preserve">
+    <value>サーバー自身(127.0.0.1)でのみ待ち受け</value>
   </data>
   <data name="Tunnel_LocalForwardTip" xml:space="preserve">
     <value>ローカルポートへのアクセスをサーバー経由でターゲットサービスに転送(ssh -L)</value>
@@ -4286,6 +4310,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_TargetHostLabel" xml:space="preserve">
     <value>ターゲットホスト(サーバー視点)</value>
   </data>
+  <data name="Tunnel_ServerBindHostLabel" xml:space="preserve">
+    <value>サーバーの待ち受けアドレス</value>
+  </data>
   <data name="Tunnel_Title" xml:space="preserve">
     <value>トンネル</value>
   </data>
@@ -4300,6 +4327,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="TunnelSvc_TargetUnreachable" xml:space="preserve">
     <value>接続先に到達できません。サーバーから対象ホストにアクセスできるか確認してください(内部アドレス/ファイアウォール)。</value>
+  </data>
+  <data name="TunnelSvc_PermitRemoteOpenRequired" xml:space="preserve">
+    <value>リモート動的転送には許可リストが必要です。リモートが接続できる ホスト:ポート を書くか、すべて許可するなら any と書いてください。</value>
+  </data>
+  <data name="TunnelSvc_TargetNotPermitted" xml:space="preserve">
+    <value>リモートが要求した接続先は許可リストにないため拒否しました。許可するには、このトンネルの許可リストに追加してください。</value>
   </data>
   <data name="Upload" xml:space="preserve">
     <value>アップロード</value>
@@ -4443,6 +4476,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_FallbackDynamic" xml:space="preserve">
     <value>ダイナミックトンネル</value>
   </data>
+  <data name="Tunnel_FallbackRemoteDynamic" xml:space="preserve">
+    <value>リモートダイナミックトンネル</value>
+  </data>
   <data name="Tunnel_BadgeLocal" xml:space="preserve">
     <value>ローカル</value>
   </data>
@@ -4452,6 +4488,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_BadgeDynamic" xml:space="preserve">
     <value>ダイナミック</value>
   </data>
+  <data name="Tunnel_BadgeRemoteDynamic" xml:space="preserve">
+    <value>リモート動的</value>
+  </data>
   <data name="Tunnel_RouteLocal" xml:space="preserve">
     <value>このコンピューターで {0}:{1} を待ち受け → サーバー側のターゲット {2}:{3}</value>
   </data>
@@ -4460,6 +4499,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Tunnel_RouteDynamic" xml:space="preserve">
     <value>このコンピューターの SOCKS5 {0}:{1} → 動的な接続先</value>
+  </data>
+  <data name="Tunnel_RouteRemoteDynamic" xml:space="preserve">
+    <value>SSHサーバーの {0}:{1} が SOCKS5 プロキシ → 許可された接続先へこのコンピューターが接続</value>
   </data>
   <data name="TunnelSvc_LocalPortInUse" xml:space="preserve">
     <value>ローカルポート {0} は他のプログラムが使用中です。そのプログラムを停止するか、別のローカルポートを指定してください。</value>
@@ -4742,6 +4784,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="TunnelHelp_DynamicDesc" xml:space="preserve">
     <value>ローカルマシン上にSOCKS5プロキシリスナーを作成します。このプロキシを使用するよう設定されたアプリケーションのTCP接続はSSHサーバーを経由してルーティングされ、サーバーが各ターゲットを動的に解決して接続します。一般的な用途：個別の転送設定なしでブラウザやアプリケーションのトラフィックをSSHサーバー経由でルーティングする。</value>
+  </data>
+  <data name="TunnelHelp_RemoteDynamicTitle" xml:space="preserve">
+    <value>リモート動的転送(接続先なしの -R)</value>
+  </data>
+  <data name="TunnelHelp_RemoteDynamicDesc" xml:space="preserve">
+    <value>SSHサーバー上に SOCKS5 プロキシのポートを開きます。リモートのプログラムはこれを使って、このコンピューターに接続先へ接続してもらいます。社内のパッケージミラーや内部 API など、このコンピューターからしか届かない場所にサーバーから届くようになります。許可されるのはトンネルの許可リストにある接続先だけで(ホスト:ポート、ワイルドカード可、または any)、それ以外は拒否されます。</value>
   </data>
   <data name="TunnelHelp_LoopbackNote" xml:space="preserve">
     <value>127.0.0.1 の意味は、その端点が属するマシンによって変わります。ローカル転送のサーバー側ターゲットでは SSH サーバー自体を、リモート転送のローカルサービスではこのコンピューターを指します。待ち受け端点でループバックを使用すると、その待ち受けを提供するマシンからのみアクセスできます。</value>

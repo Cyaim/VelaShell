@@ -73,6 +73,25 @@ public sealed class PortForwardAddressTests
     }
 
     /// <summary>
+    /// 放行名单交给库:单独一条 any 是全放;别的逐条按 主机:端口 比(通配、端口 *);空名单是全拒,不悄悄变成全放。
+    /// </summary>
+    [TestMethod]
+    public void PermitPolicy_MapsTheAllowList()
+    {
+        RemoteOpenPolicy any = LibraryPortForwardHandle.PermitPolicy(["any"]);
+        Assert.IsTrue(any.Permits("intranet.example", 9999));
+
+        RemoteOpenPolicy listed = LibraryPortForwardHandle.PermitPolicy(["localhost:8080", "*.corp.example:*"]);
+        Assert.IsTrue(listed.Permits("localhost", 8080));
+        Assert.IsTrue(listed.Permits("pkg.corp.example", 443));
+        Assert.IsFalse(listed.Permits("localhost", 8081));
+        Assert.IsFalse(listed.Permits("evil.example", 443));
+
+        Assert.IsFalse(LibraryPortForwardHandle.PermitPolicy([]).Permits("localhost", 8080));
+        Assert.IsFalse(LibraryPortForwardHandle.PermitPolicy(null).Permits("localhost", 8080));
+    }
+
+    /// <summary>
     /// 连接列表里的来源:IPv6 带方括号、服务端报的主机名原样;Unix 套接字上连进来的客户端没有名字,给 null(界面写「来源未知」)。
     /// </summary>
     [TestMethod]

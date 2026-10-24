@@ -43,4 +43,14 @@ public sealed class TunnelConfig
     /// (运行中的隧道本来就不能编辑)。旧的持久化配置缺这个字段时按不限反序列化。
     /// </remarks>
     public long? MaxBytesPerSecond { get; init; }
+
+    /// <summary>
+    /// 远程动态转发的放行名单(ssh_config 的 <c>PermitRemoteOpen</c>):远端经这条隧道能让本机连的 <c>主机:端口</c>,
+    /// 主机可带 <c>*</c> / <c>?</c> 通配、端口可以是 <c>*</c>;单独一条 <c>any</c> 是全放。别的类型用不上,为 <see langword="null" />。
+    /// </summary>
+    /// <remarks>
+    /// 没有默认值、不许留空:远程动态转发等于把本机变成远端的 SOCKS 代理,本机能到的内网远端都能到,
+    /// 放哪些出去必须由用户明说(写法与校验见 <see cref="Tunnels.RemoteOpenRules" />)。
+    /// </remarks>
+    public IReadOnlyList<string>? PermitRemoteOpen { get; init; }
 }

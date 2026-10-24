@@ -4497,6 +4497,27 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Tunnel_DynamicSocksTip" xml:space="preserve">
     <value>本機連接埠作為 SOCKS5 代理,目標任意(ssh -D)</value>
   </data>
+  <data name="Tunnel_RemoteDynamicSocks" xml:space="preserve">
+    <value>遠端動態 SOCKS</value>
+  </data>
+  <data name="Tunnel_RemoteDynamicSocksTip" xml:space="preserve">
+    <value>伺服器上的連接埠當 SOCKS5 代理,遠端程式經它讓本機替自己去連放行名單裡的目標(ssh -R 不給目標)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenLabel" xml:space="preserve">
+    <value>放行名單(遠端經它能連的 主機:連接埠)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenHint" xml:space="preserve">
+    <value>空格或逗號隔開;主機可用 * ? 萬用字元,連接埠可寫 *。單獨寫 any 是全放 —— 本機能到的地方遠端都能到。按遠端給的名稱比對,不先解析。</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenInvalid" xml:space="preserve">
+    <value>放行規則「{0}」寫法不對:要寫成 主機:連接埠(連接埠可以是 *,IPv6 寫在方括號裡),any 只能單獨寫。</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenSummary" xml:space="preserve">
+    <value>放行:{0}</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenAny" xml:space="preserve">
+    <value>放行:全部(本機能到的地方遠端都能到)</value>
+  </data>
   <data name="Tunnel_EditTip" xml:space="preserve">
     <value>編輯隧道</value>
   </data>
@@ -4511,6 +4532,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Tunnel_ForwardToLoopback" xml:space="preserve">
     <value>轉發到伺服器本機(127.0.0.1)</value>
+  </data>
+  <data name="Tunnel_ListenOnServerLoopback" xml:space="preserve">
+    <value>只在伺服器本機監聽(127.0.0.1)</value>
   </data>
   <data name="Tunnel_LocalForwardTip" xml:space="preserve">
     <value>把本機連接埠的存取經伺服器轉發到目標服務(ssh -L)</value>
@@ -4551,6 +4575,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Tunnel_TargetHostLabel" xml:space="preserve">
     <value>目標主機(伺服器視角)</value>
   </data>
+  <data name="Tunnel_ServerBindHostLabel" xml:space="preserve">
+    <value>伺服器監聽位址</value>
+  </data>
   <data name="Tunnel_Title" xml:space="preserve">
     <value>隧道</value>
   </data>
@@ -4565,6 +4592,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="TunnelSvc_TargetUnreachable" xml:space="preserve">
     <value>目標無法連線:請確認目標主機從伺服器可以存取(內網位址/防火牆)。</value>
+  </data>
+  <data name="TunnelSvc_PermitRemoteOpenRequired" xml:space="preserve">
+    <value>遠端動態轉發要有放行名單:寫上遠端可以經它連的 主機:連接埠,全放寫 any。</value>
+  </data>
+  <data name="TunnelSvc_TargetNotPermitted" xml:space="preserve">
+    <value>遠端要連的目標不在放行名單裡,已拒絕;要放行就把它加進這條隧道的放行名單。</value>
   </data>
   <data name="SetGeneral_FollowActiveTerminal" xml:space="preserve">
     <value>作用中終端跟隨資源管理器</value>
@@ -4692,6 +4725,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Tunnel_FallbackDynamic" xml:space="preserve">
     <value>動態隧道</value>
   </data>
+  <data name="Tunnel_FallbackRemoteDynamic" xml:space="preserve">
+    <value>遠端動態隧道</value>
+  </data>
   <data name="Tunnel_BadgeLocal" xml:space="preserve">
     <value>本地</value>
   </data>
@@ -4701,6 +4737,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Tunnel_BadgeDynamic" xml:space="preserve">
     <value>動態</value>
   </data>
+  <data name="Tunnel_BadgeRemoteDynamic" xml:space="preserve">
+    <value>遠端動態</value>
+  </data>
   <data name="Tunnel_RouteLocal" xml:space="preserve">
     <value>本機監聽 {0}:{1} → 伺服器端目標 {2}:{3}</value>
   </data>
@@ -4709,6 +4748,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Tunnel_RouteDynamic" xml:space="preserve">
     <value>本機 SOCKS5 {0}:{1} → 動態目標</value>
+  </data>
+  <data name="Tunnel_RouteRemoteDynamic" xml:space="preserve">
+    <value>SSH 伺服器 {0}:{1} 當 SOCKS5 代理 → 由本機替遠端連放行的目標</value>
   </data>
   <data name="TunnelSvc_LocalPortInUse" xml:space="preserve">
     <value>本機連接埠 {0} 已被其他程式佔用。請關閉該程式，或改用別的本機連接埠。</value>
@@ -4991,6 +5033,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="TunnelHelp_DynamicDesc" xml:space="preserve">
     <value>在您的本地機器上建立一個 SOCKS5 代理監聽器。設定為使用此代理的應用程式，其 TCP 連線將透過 SSH 伺服器路由，伺服器動態解析並連線每個目標。常見用途：瀏覽器或應用程式流量透過 SSH 伺服器路由，無需單獨設定每個轉發。</value>
+  </data>
+  <data name="TunnelHelp_RemoteDynamicTitle" xml:space="preserve">
+    <value>遠端動態轉發(-R 不給目標)</value>
+  </data>
+  <data name="TunnelHelp_RemoteDynamicDesc" xml:space="preserve">
+    <value>在 SSH 伺服器上開一個 SOCKS5 代理連接埠。遠端程式經它讓本機替自己去連目標 —— 伺服器借本機的網路到達只有本機到得了的地方,如公司內網的套件鏡像、內部 API。只放行這條隧道放行名單裡的目標(主機:連接埠,可用萬用字元,或寫 any 全放),其餘一律拒絕。</value>
   </data>
   <data name="TunnelHelp_LoopbackNote" xml:space="preserve">
     <value>127.0.0.1 的含義取決於端點屬於哪台機器：本地轉發的伺服器端目標使用它時，指 SSH 伺服器本身；遠端轉發的本機服務使用它時，指目前電腦；監聽端使用迴環位址時，則只允許從監聽所在機器存取。</value>

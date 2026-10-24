@@ -7,6 +7,7 @@ using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Core.Tunnels;
 using VelaShell.Presentation.Services;
 using VelaShell.ViewModels;
 using VelaShell.Tests.TestSupport;
@@ -729,6 +730,125 @@ public class TunnelPanelViewModelTests
 
         _vm.NewRateLimitKiB = -5;
         Assert.AreEqual(0, _vm.NewRateLimitKiB, "负数夹回 0。");
+    }
+
+    // ———— 远程动态转发与放行名单 ————
+
+    /// <summary>
+    /// 选「远程动态 SOCKS」:本地端口那栏收起,主机栏换成「服务器监听地址」,出现放行名单;
+    /// 名单空着「创建」点不了,写错一条当场指出是哪条,写对了才能建。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public void RemoteDynamic_FormNeedsAValidAllowList()
+    {
+        FillValidLocalForm();
+        Assert.IsTrue(_vm.IsFormValid);
+        Assert.IsFalse(_vm.IsPermitRemoteOpenVisible);
+
+        _vm.NewTunnelTypeIndex = 3;
+
+        Assert.AreEqual(TunnelType.RemoteDynamicForward, _vm.NewTunnelType);
+        Assert.IsFalse(_vm.IsLocalPortVisible);
+        Assert.IsTrue(_vm.IsRemoteTargetVisible);
+        Assert.IsTrue(_vm.IsPermitRemoteOpenVisible);
+        Assert.AreEqual(Strings.Get("Tunnel_ServerBindHostLabel"), _vm.RemoteHostLabel);
+        Assert.AreEqual(Strings.Get("Tunnel_ListenOnServerLoopback"), _vm.LoopbackOptionText);
+        Assert.IsFalse(_vm.IsFormValid, "放行名单空着不能建。");
+        Assert.IsFalse(_vm.HasPermitRemoteOpenError, "空着不算写错,不报红字。");
+
+        _vm.NewPermitRemoteOpen = "localhost:8080 intranet";
+        Assert.IsFalse(_vm.IsFormValid);
+        Assert.AreEqual(Strings.Format("Tunnel_PermitRemoteOpenInvalid", "intranet"), _vm.PermitRemoteOpenError);
+
+        _vm.NewPermitRemoteOpen = "localhost:8080 intranet:*";
+        Assert.IsTrue(_vm.IsFormValid);
+        Assert.IsNull(_vm.PermitRemoteOpenError);
+
+        _vm.NewLocalPort = 0;
+        Assert.IsTrue(_vm.IsFormValid, "远程动态转发用不上本地端口。");
+
+        _vm.NewTunnelTypeIndex = 0;
+        Assert.IsTrue(_vm.IsLocalPortVisible);
+        Assert.AreEqual(Strings.Get("Tunnel_TargetHostLabel"), _vm.RemoteHostLabel);
+        Assert.IsFalse(_vm.IsFormValid, "换回本地转发,本地端口 0 又不合格了。");
+    }
+
+    /// <summary>
+    /// 远程动态转发随表单往返:服务器监听地址 / 端口进 RemoteHost / RemotePort,本地端口存 0,放行名单按条存;
+    /// 编辑时填回表单,取消后名单清空。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task RemoteDynamic_RoundTripsThroughTheForm()
+    {
+        TunnelConfig? captured = null;
+        _workflowService.CreateTunnelAsync(_sessionId, Arg.Do<TunnelConfig>(c => captured = c), Arg.Any<CancellationToken>())
+                        .Returns(callInfo => Task.FromResult(new TunnelInfo
+                        {
+                            Id = Guid.NewGuid(),
+                            Config = callInfo.Arg<TunnelConfig>(),
+                            Status = TunnelStatus.Stopped,
+                            SessionId = _sessionId,
+                            CreatedAt = DateTime.UtcNow
+                        }));
+        _vm.NewTunnelName = "back";
+        _vm.NewTunnelType = TunnelType.RemoteDynamicForward;
+        _vm.NewRemotePort = 1080;
+        _vm.NewPermitRemoteOpen = "localhost:8080, *.corp.example:443";
+
+        await _vm.CreateTunnelCommand.Execute().FirstAsync();
+
+        Assert.IsNotNull(captured);
+        Assert.AreEqual(TunnelType.RemoteDynamicForward, captured.Type);
+        Assert.AreEqual("127.0.0.1", captured.RemoteHost, "默认只在服务器本机监听。");
+        Assert.AreEqual(1080u, captured.RemotePort);
+        Assert.AreEqual(0u, captured.LocalPort);
+        Assert.AreSequenceEqual(["localhost:8080", "*.corp.example:443"], [.. captured.PermitRemoteOpen!]);
+        Assert.AreEqual(string.Empty, _vm.NewPermitRemoteOpen, "建完表单复位。");
+        Assert.AreEqual(TunnelType.LocalForward, _vm.NewTunnelType);
+
+        await _vm.EditTunnelCommand.Execute(_vm.Tunnels[0].Id).FirstAsync();
+        Assert.AreEqual(TunnelType.RemoteDynamicForward, _vm.NewTunnelType);
+        Assert.AreEqual(3, _vm.NewTunnelTypeIndex);
+        Assert.AreEqual("localhost:8080 *.corp.example:443", _vm.NewPermitRemoteOpen);
+        Assert.AreEqual(27017, _vm.NewLocalPort, "存的 0 不填回表单的本地端口。");
+        await _vm.ResetFormCommand.Execute().FirstAsync();
+        Assert.AreEqual(string.Empty, _vm.NewPermitRemoteOpen);
+    }
+
+    /// <summary>列表里的远程动态隧道:徽标、路由、端点,以及放行了哪些(单独一条 any 写明「全部」)。</summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public void TunnelItemViewModel_RemoteDynamic_Display()
+    {
+        TunnelInfo Info(IReadOnlyList<string> permit) => new()
+        {
+            Id = Guid.NewGuid(),
+            Config = new()
+            {
+                Type = TunnelType.RemoteDynamicForward,
+                Name = string.Empty,
+                LocalHost = "127.0.0.1",
+                LocalPort = 0,
+                RemoteHost = "::1",
+                RemotePort = 1080,
+                PermitRemoteOpen = permit
+            },
+            Status = TunnelStatus.Stopped,
+            SessionId = Guid.NewGuid(),
+            CreatedAt = DateTime.UtcNow
+        };
+        var listed = new TunnelItemViewModel(Info(["localhost:8080", "*.corp.example:443"]));
+        var any = new TunnelItemViewModel(Info([RemoteOpenRules.Any]));
+
+        Assert.AreEqual(Strings.Get("Tunnel_FallbackRemoteDynamic"), listed.Name);
+        Assert.AreEqual(Strings.Get("Tunnel_BadgeRemoteDynamic"), listed.TypeBadge);
+        Assert.AreEqual(Strings.Format("Tunnel_RouteRemoteDynamic", "[::1]", 1080u), listed.DisplayRoute);
+        Assert.AreEqual("[::1]:1080 (SOCKS5)", listed.EndpointSummary);
+        Assert.AreEqual(Strings.Format("Tunnel_PermitRemoteOpenSummary", "localhost:8080 *.corp.example:443"), listed.PermitText);
+        Assert.AreEqual(Strings.Get("Tunnel_PermitRemoteOpenAny"), any.PermitText);
+        Assert.IsNull(new TunnelItemViewModel(CreateTunnelInfo()).PermitText, "别的类型没有这一行。");
     }
 
     /// <summary>面板开着时的每秒一拍:让服务同步读数,并刷各条隧道的流量行。</summary>

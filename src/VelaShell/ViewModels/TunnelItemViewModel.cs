@@ -4,6 +4,7 @@ using ReactiveUI.Primitives;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
+using VelaShell.Core.Tunnels;
 
 namespace VelaShell.ViewModels;
 
@@ -44,11 +45,12 @@ public class TunnelItemViewModel : ReactiveObject
                               {
                                   TunnelType.RemoteForward => Strings.Get("Tunnel_FallbackRemote"),
                                   TunnelType.DynamicForward => Strings.Get("Tunnel_FallbackDynamic"),
+                                  TunnelType.RemoteDynamicForward => Strings.Get("Tunnel_FallbackRemoteDynamic"),
                                   _ => Strings.Get("Tunnel_FallbackLocal")
                               }
                               : _tunnelInfo.Config.Name;
 
-    /// <summary>隧道类型(本地/远程/动态转发)。</summary>
+    /// <summary>隧道类型(本地/远程/动态/远程动态转发)。</summary>
     public TunnelType TunnelType => _tunnelInfo.Config.Type;
 
     /// <summary>本地绑定主机。</summary>
@@ -71,6 +73,7 @@ public class TunnelItemViewModel : ReactiveObject
     {
         TunnelType.RemoteForward => Strings.Format("Tunnel_RouteRemote", HostAddress.Bracket(LocalHost), LocalPort, RemotePort),
         TunnelType.DynamicForward => Strings.Format("Tunnel_RouteDynamic", HostAddress.Bracket(LocalHost), LocalPort),
+        TunnelType.RemoteDynamicForward => Strings.Format("Tunnel_RouteRemoteDynamic", HostAddress.Bracket(RemoteHost), RemotePort),
         _ => Strings.Format("Tunnel_RouteLocal", HostAddress.Bracket(LocalHost), LocalPort, HostAddress.Bracket(RemoteHost), RemotePort)
     };
 
@@ -79,6 +82,7 @@ public class TunnelItemViewModel : ReactiveObject
     {
         TunnelType.RemoteForward => Strings.Get("Tunnel_BadgeRemote"),
         TunnelType.DynamicForward => Strings.Get("Tunnel_BadgeDynamic"),
+        TunnelType.RemoteDynamicForward => Strings.Get("Tunnel_BadgeRemoteDynamic"),
         _ => Strings.Get("Tunnel_BadgeLocal")
     };
 
@@ -87,6 +91,7 @@ public class TunnelItemViewModel : ReactiveObject
     {
         TunnelType.RemoteForward => $"{HostAddress.Bracket(RemoteHost)}:{RemotePort} → {HostAddress.Bracket(LocalHost)}:{LocalPort}",
         TunnelType.DynamicForward => $"{HostAddress.Bracket(LocalHost)}:{LocalPort} (SOCKS5)",
+        TunnelType.RemoteDynamicForward => $"{HostAddress.Bracket(RemoteHost)}:{RemotePort} (SOCKS5)",
         _ => $"{HostAddress.Bracket(LocalHost)}:{LocalPort} → {HostAddress.Bracket(RemoteHost)}:{RemotePort}"
     };
 
@@ -130,6 +135,19 @@ public class TunnelItemViewModel : ReactiveObject
             : ActiveConnections > 0
                 ? Strings.Format("Tunnel_StatsLive", TotalConnections, ActiveConnections, FormattedBytes)
                 : Strings.Format("Tunnel_Stats", TotalConnections, FormattedBytes);
+
+    /// <summary>
+    /// 远程动态转发的放行名单那一行:「放行:localhost:8080 *.corp.example:443」,单独一条 any 写明「全部」。别的类型为空。
+    /// </summary>
+    public string? PermitText =>
+        TunnelType != TunnelType.RemoteDynamicForward
+            ? null
+            : _tunnelInfo.Config.PermitRemoteOpen is [var only] && only == RemoteOpenRules.Any
+                ? Strings.Get("Tunnel_PermitRemoteOpenAny")
+                : Strings.Format("Tunnel_PermitRemoteOpenSummary", RemoteOpenRules.Format(_tunnelInfo.Config.PermitRemoteOpen));
+
+    /// <summary>放行名单那一行要不要显示。</summary>
+    public bool HasPermitText => PermitText is not null;
 
     /// <summary>限速(每个方向,字节 / 秒);<see langword="null" /> 不限。</summary>
     public long? MaxBytesPerSecond => _tunnelInfo.Config.MaxBytesPerSecond;
@@ -298,6 +316,7 @@ public class TunnelItemViewModel : ReactiveObject
         this.RaisePropertyChanged(nameof(BusyText));
         this.RaisePropertyChanged(nameof(TrafficText));
         this.RaisePropertyChanged(nameof(TrafficToolTip));
+        this.RaisePropertyChanged(nameof(PermitText));
         RaiseConnectionsChanged();
     }
 

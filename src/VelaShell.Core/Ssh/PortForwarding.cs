@@ -12,7 +12,10 @@ public enum PortForwardKind
     Remote,
 
     /// <summary>动态转发(SOCKS 代理):仅使用 Bound 端,无固定 Target。</summary>
-    Dynamic
+    Dynamic,
+
+    /// <summary>远程动态转发:服务器 Bound 端当 SOCKS 代理,本机按 <see cref="PortForwardRequest.PermitRemoteOpen" /> 替远端去连;无固定 Target。</summary>
+    RemoteDynamic
 }
 
 /// <summary>
@@ -33,6 +36,9 @@ public sealed record PortForwardRequest(
 {
     /// <summary>限速:每个方向每秒最多搬多少应用字节,这条转发的全部连接共用;<see langword="null" /> 不限。</summary>
     public long? MaxBytesPerSecond { get; init; }
+
+    /// <summary>远程动态转发的放行名单(<c>主机:端口</c>,或单独一条 <c>any</c>);别的类型不用。</summary>
+    public IReadOnlyList<string>? PermitRemoteOpen { get; init; }
 }
 
 /// <summary>

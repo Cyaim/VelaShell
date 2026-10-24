@@ -104,6 +104,10 @@
           <TextBlock Text="{loc:Localize TunnelHelp_DynamicTitle}" Classes="help-title" />
           <TextBlock Text="{loc:Localize TunnelHelp_DynamicDesc}" Classes="help-body" />
 
+          <!-- 远程动态转发:服务器上的端口当 SOCKS 代理,本机按放行名单替远端去连 -->
+          <TextBlock Text="{loc:Localize TunnelHelp_RemoteDynamicTitle}" Classes="help-title" />
+          <TextBlock Text="{loc:Localize TunnelHelp_RemoteDynamicDesc}" Classes="help-body" />
+
           <!-- 127.0.0.1 说明:重要但非警告,用主题输入底卡片与正文区分。 -->
           <Border Margin="0,12,0,8" Padding="12,10"
                   Background="{DynamicResource VelaBgInput}"

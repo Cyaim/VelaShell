@@ -8,6 +8,7 @@ using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Core.Tunnels;
 using VelaShell.Presentation.Services;
 
 namespace VelaShell.ViewModels;
@@ -133,19 +134,16 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         RestorePanelPosition();
         Servers = [];
         _tunnels = [];
-        IObservable<bool> canCreate = this.WhenAnyValue(vm => vm.SelectedServer,
-            vm => vm.NewLocalHost,
-            vm => vm.NewLocalPort,
-            vm => vm.NewRemoteHost,
-            vm => vm.NewRemotePort,
-            vm => vm.NewTunnelTypeIndex,
-            vm => vm.ForwardToServerLoopback,
-            (server, localHost, localPort, remoteHost, remotePort, typeIndex, _) =>
-                server is not null &&
-                !string.IsNullOrWhiteSpace(localHost) &&
-                localPort is >= 1 and <= 65535 &&
-                (typeIndex == 2 ||
-                 (!string.IsNullOrWhiteSpace(remoteHost) && remotePort is >= 1 and <= 65535)));
+        // 表单填全了没有:任何一项表单字段变了就重算。字段随类型增减(远程动态要放行名单,
+        // 本地端口对它没有意义),不再一个个塞进 WhenAnyValue。
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is { } name && FormProperties.Contains(name))
+            {
+                this.RaisePropertyChanged(nameof(IsFormValid));
+            }
+        };
+        IObservable<bool> canCreate = this.WhenAnyValue(vm => vm.IsFormValid);
         CreateTunnelCommand = ReactiveCommand.CreateFromTask(SubmitAsync, canCreate);
         StopTunnelCommand = ReactiveCommand.CreateFromTask<Guid>(StopTunnelAsync);
         StartTunnelCommand = ReactiveCommand.CreateFromTask<Guid>(StartTunnelAsync);
@@ -264,7 +262,36 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     /// <summary>当前服务器是否已有活着的后台隧道连接。</summary>
     public bool IsServerConnected => SelectedServer is not null && ResolveLiveSession(SelectedServer.Id) is not null;
 
-    /// <summary>ComboBox 适配器:0 = 本地转发, 1 = 远程转发, 2 = 动态转发 (SOCKS)。</summary>
+    /// <summary>参与「表单填全了没有」(<see cref="IsFormValid" />)的属性。</summary>
+    private static readonly HashSet<string> FormProperties =
+    [
+        nameof(SelectedServer),
+        nameof(NewTunnelType),
+        nameof(NewLocalHost),
+        nameof(NewLocalPort),
+        nameof(NewRemoteHost),
+        nameof(NewRemotePort),
+        nameof(ForwardToServerLoopback),
+        nameof(NewPermitRemoteOpen),
+    ];
+
+    /// <summary>
+    /// 表单填全了没有(「创建 / 保存」键据此可点):选了服务器;本机这头要端口的有端口;服务器那头要地址的有地址与端口;
+    /// 远程动态转发的放行名单至少一条、每条都写对。
+    /// </summary>
+    public bool IsFormValid =>
+        SelectedServer is not null && NewTunnelType switch
+        {
+            TunnelType.DynamicForward => IsLocalEndpointFilled,
+            TunnelType.RemoteDynamicForward => IsServerEndpointFilled && RemoteOpenRules.TryParse(NewPermitRemoteOpen, out _, out _),
+            _ => IsLocalEndpointFilled && IsServerEndpointFilled
+        };
+
+    private bool IsLocalEndpointFilled => !string.IsNullOrWhiteSpace(NewLocalHost) && NewLocalPort is >= 1 and <= 65535;
+
+    private bool IsServerEndpointFilled => !string.IsNullOrWhiteSpace(NewRemoteHost) && NewRemotePort is >= 1 and <= 65535;
+
+    /// <summary>ComboBox 适配器:0 = 本地转发, 1 = 远程转发, 2 = 动态转发 (SOCKS), 3 = 远程动态转发 (SOCKS)。</summary>
     public int NewTunnelTypeIndex
     {
         get =>
@@ -272,23 +299,58 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             {
                 TunnelType.RemoteForward => 1,
                 TunnelType.DynamicForward => 2,
+                TunnelType.RemoteDynamicForward => 3,
                 _ => 0
             };
-        set
-        {
+        set =>
             NewTunnelType = value switch
             {
                 1 => TunnelType.RemoteForward,
                 2 => TunnelType.DynamicForward,
+                3 => TunnelType.RemoteDynamicForward,
                 _ => TunnelType.LocalForward
             };
-            this.RaisePropertyChanged();
-            this.RaisePropertyChanged(nameof(IsRemoteTargetVisible));
-        }
     }
 
-    /// <summary>动态转发(SOCKS)没有固定目标,隐藏目标主机/端口输入。</summary>
+    /// <summary>动态转发(SOCKS)没有固定目标,隐藏目标主机/端口输入。远程动态转发用这两栏填服务器上的监听地址与端口。</summary>
     public bool IsRemoteTargetVisible => NewTunnelType != TunnelType.DynamicForward;
+
+    /// <summary>本地端口那一栏:远程动态转发两头都不在本机监听、也没有本机目标,用不上它。</summary>
+    public bool IsLocalPortVisible => NewTunnelType != TunnelType.RemoteDynamicForward;
+
+    /// <summary>放行名单只有远程动态转发有。</summary>
+    public bool IsPermitRemoteOpenVisible => NewTunnelType == TunnelType.RemoteDynamicForward;
+
+    /// <summary>主机那一栏的标签:远程动态转发填的是服务器上的监听地址,不是目标。</summary>
+    public string RemoteHostLabel => Strings.Get(NewTunnelType == TunnelType.RemoteDynamicForward ? "Tunnel_ServerBindHostLabel" : "Tunnel_TargetHostLabel");
+
+    /// <summary>「锁定 127.0.0.1」那个勾选框的字:远程动态转发是「只在服务器本机监听」。</summary>
+    public string LoopbackOptionText => Strings.Get(NewTunnelType == TunnelType.RemoteDynamicForward ? "Tunnel_ListenOnServerLoopback" : "Tunnel_ForwardToLoopback");
+
+    /// <summary>
+    /// 表单中的放行名单(远程动态转发):<c>主机:端口</c> 空白或逗号隔开,单独一条 <c>any</c> 是全放。默认空 —— 不替用户全放。
+    /// </summary>
+    public string NewPermitRemoteOpen
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(PermitRemoteOpenError));
+            this.RaisePropertyChanged(nameof(HasPermitRemoteOpenError));
+        }
+    } = string.Empty;
+
+    /// <summary>放行名单里写错的那一条,当场指出来(空着不算写错,只是「创建」点不了)。</summary>
+    public string? PermitRemoteOpenError =>
+        IsPermitRemoteOpenVisible
+        && !RemoteOpenRules.TryParse(NewPermitRemoteOpen, out _, out string? invalid)
+        && invalid is not null
+            ? Strings.Format("Tunnel_PermitRemoteOpenInvalid", invalid)
+            : null;
+
+    /// <summary>放行名单有写错的规则。</summary>
+    public bool HasPermitRemoteOpenError => PermitRemoteOpenError is not null;
 
     /// <summary>
     /// 默认转发到"服务器本机":目标主机锁定为 127.0.0.1(从服务器视角,
@@ -311,11 +373,22 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     /// <summary>目标主机是否可编辑:仅在未勾选"转发到服务器本机"时开放输入。</summary>
     public bool IsRemoteHostEditable => !ForwardToServerLoopback;
 
-    /// <summary>新建/编辑表单选择的隧道类型(本地/远程/动态转发)。</summary>
+    /// <summary>新建/编辑表单选择的隧道类型(本地/远程/动态/远程动态转发)。</summary>
     public TunnelType NewTunnelType
     {
         get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(NewTunnelTypeIndex));
+            this.RaisePropertyChanged(nameof(IsRemoteTargetVisible));
+            this.RaisePropertyChanged(nameof(IsLocalPortVisible));
+            this.RaisePropertyChanged(nameof(IsPermitRemoteOpenVisible));
+            this.RaisePropertyChanged(nameof(RemoteHostLabel));
+            this.RaisePropertyChanged(nameof(LoopbackOptionText));
+            this.RaisePropertyChanged(nameof(PermitRemoteOpenError));
+            this.RaisePropertyChanged(nameof(HasPermitRemoteOpenError));
+        }
     }
 
     /// <summary>表单中的本地监听主机,默认 127.0.0.1。</summary>
@@ -404,6 +477,9 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         this.RaisePropertyChanged(nameof(ServerStatusText));
         this.RaisePropertyChanged(nameof(FormTitle));
         this.RaisePropertyChanged(nameof(SubmitButtonText));
+        this.RaisePropertyChanged(nameof(RemoteHostLabel));
+        this.RaisePropertyChanged(nameof(LoopbackOptionText));
+        this.RaisePropertyChanged(nameof(PermitRemoteOpenError));
         foreach (TunnelItemViewModel tunnel in Tunnels)
         {
             tunnel.RefreshLocalizedText();
@@ -1108,7 +1184,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
 
     /// <summary>配置身份键:恢复时用来跳过面板里已存在的同配置条目。</summary>
     private static string ConfigKey(TunnelConfig config) =>
-        $"{config.Type}|{config.LocalHost}|{config.LocalPort}|{config.RemoteHost}|{config.RemotePort}|{config.Name}";
+        $"{config.Type}|{config.LocalHost}|{config.LocalPort}|{config.RemoteHost}|{config.RemotePort}|{config.Name}|{RemoteOpenRules.Format(config.PermitRemoteOpen)}";
 
     /// <summary>从存储恢复该服务器的隧道配置(每次运行每台只执行一次);失败不影响面板。</summary>
     private async Task RestorePersistedTunnelsAsync(Guid profileId, ObservableCollection<TunnelItemViewModel> items)
@@ -1190,13 +1266,13 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         _editingTunnelId = tunnelId;
         NewTunnelName = item.Config.Name;
         NewLocalHost = item.Config.LocalHost;
-        NewLocalPort = (int)item.Config.LocalPort;
-        NewTunnelTypeIndex = item.TunnelType switch
+        // 远程动态转发不用本地端口(存的是 0):表单那一栏保持原样,换回别的类型时不至于是个非法的 0。
+        if (item.Config.LocalPort != 0)
         {
-            TunnelType.RemoteForward => 1,
-            TunnelType.DynamicForward => 2,
-            _ => 0
-        };
+            NewLocalPort = (int)item.Config.LocalPort;
+        }
+        NewTunnelType = item.TunnelType;
+        NewPermitRemoteOpen = RemoteOpenRules.Format(item.Config.PermitRemoteOpen);
         ForwardToServerLoopback = item.TunnelType != TunnelType.DynamicForward && item.Config.RemoteHost is "" or "127.0.0.1" or "localhost";
         if (!ForwardToServerLoopback)
         {
@@ -1297,14 +1373,18 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     private TunnelConfig BuildConfig()
     {
         bool isDynamic = NewTunnelType == TunnelType.DynamicForward;
+        bool isRemoteDynamic = NewTunnelType == TunnelType.RemoteDynamicForward;
         bool loopback = !isDynamic && ForwardToServerLoopback;
+        IReadOnlyList<string>? permit = isRemoteDynamic && RemoteOpenRules.TryParse(NewPermitRemoteOpen, out IReadOnlyList<string> rules, out _)
+            ? rules
+            : null;
         return new()
         {
             Type = NewTunnelType,
             // 别名可选(设计 B3Rth):留空时用路由描述兜底,列表里始终有可读名称。
             Name = NewTunnelName.Trim(),
             LocalHost = NewLocalHost.Trim(),
-            LocalPort = (uint)NewLocalPort,
+            LocalPort = isRemoteDynamic ? 0u : (uint)NewLocalPort,
             RemoteHost = isDynamic
                              ? string.Empty
                              : loopback
@@ -1313,7 +1393,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             RemotePort = isDynamic ? 0u : (uint)NewRemotePort,
             AutoReconnect = NewAutoReconnect,
             AutoStart = NewAutoStart,
-            MaxBytesPerSecond = NewRateLimitKiB > 0 ? NewRateLimitKiB * 1024L : null
+            MaxBytesPerSecond = NewRateLimitKiB > 0 ? NewRateLimitKiB * 1024L : null,
+            PermitRemoteOpen = permit
         };
     }
 
@@ -1487,6 +1568,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         NewAutoReconnect = false;
         NewAutoStart = false;
         NewRateLimitKiB = 0;
+        NewPermitRemoteOpen = string.Empty;
         NewTunnelTypeIndex = 0;
         ForwardToServerLoopback = true; // 同时把目标主机复位为 127.0.0.1
         RaiseEditingChanged();

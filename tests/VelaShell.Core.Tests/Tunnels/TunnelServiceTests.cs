@@ -1,5 +1,6 @@
 using NSubstitute;
 using VelaShell.Core.Models;
+using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Core.Tunnels;
 using VelaShell.Infrastructure.Tunnels;
@@ -365,6 +366,65 @@ public class TunnelServiceTests
         Assert.HasCount(2, requests);
         Assert.AreEqual(512 * 1024L, requests[0].MaxBytesPerSecond);
         Assert.IsNull(requests[1].MaxBytesPerSecond);
+    }
+
+    /// <summary>
+    /// 远程动态转发:服务器上的监听地址与端口取 RemoteHost / RemotePort,放行名单与限速一路带进请求;
+    /// 不做本机端口预检(监听在服务器上)。
+    /// </summary>
+    [TestMethod]
+    public async Task CreateRemoteDynamicForwardAsync_BuildsARemoteDynamicRequest()
+    {
+        PortForwardRequest? request = null;
+        _mockClientWrapper.StartPortForwardAsync(Arg.Do<PortForwardRequest>(r => request = r), Arg.Any<CancellationToken>())
+                          .Returns(Substitute.For<IPortForwardHandle>());
+        TunnelService service = CreateService((_, _) => true);
+
+        TunnelInfo tunnel = await service.CreateRemoteDynamicForwardAsync(_sessionId, new TunnelConfig
+        {
+            Type = TunnelType.RemoteDynamicForward,
+            Name = "socks-back",
+            LocalHost = "127.0.0.1",
+            LocalPort = 0,
+            RemoteHost = "127.0.0.1",
+            RemotePort = 1080,
+            PermitRemoteOpen = ["localhost:8080", "*.corp.example:443"],
+            MaxBytesPerSecond = 4096
+        });
+
+        Assert.AreEqual(TunnelStatus.Active, tunnel.Status);
+        Assert.IsNotNull(request);
+        Assert.AreEqual(PortForwardKind.RemoteDynamic, request.Kind);
+        Assert.AreEqual("127.0.0.1", request.BoundHost);
+        Assert.AreEqual(1080u, request.BoundPort);
+        Assert.IsNull(request.TargetHost);
+        Assert.AreSequenceEqual(["localhost:8080", "*.corp.example:443"], [.. request.PermitRemoteOpen!]);
+        Assert.AreEqual(4096L, request.MaxBytesPerSecond);
+    }
+
+    /// <summary>放行名单留空、或有写错的规则:不建,报一句说得清的话 —— 不替用户当成「全放」或「全拒」。</summary>
+    [TestMethod]
+    public async Task CreateRemoteDynamicForwardAsync_RejectsAMissingOrBadAllowList()
+    {
+        TunnelService service = CreateService();
+        TunnelConfig Config(IReadOnlyList<string>? permit) => new()
+        {
+            Type = TunnelType.RemoteDynamicForward,
+            Name = "socks-back",
+            LocalHost = "127.0.0.1",
+            LocalPort = 0,
+            RemoteHost = "127.0.0.1",
+            RemotePort = 1080,
+            PermitRemoteOpen = permit
+        };
+
+        ArgumentException missing = await Assert.ThrowsExactlyAsync<ArgumentException>(
+            () => service.CreateRemoteDynamicForwardAsync(_sessionId, Config(null)));
+        Assert.AreEqual(Strings.Get("TunnelSvc_PermitRemoteOpenRequired"), missing.Message);
+        ArgumentException bad = await Assert.ThrowsExactlyAsync<ArgumentException>(
+            () => service.CreateRemoteDynamicForwardAsync(_sessionId, Config(["localhost"])));
+        Assert.AreEqual(Strings.Format("Tunnel_PermitRemoteOpenInvalid", "localhost"), bad.Message);
+        await _mockClientWrapper.DidNotReceive().StartPortForwardAsync(Arg.Any<PortForwardRequest>(), Arg.Any<CancellationToken>());
     }
 
     private static TunnelConfig LocalConfig(uint port) =>

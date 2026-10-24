@@ -118,6 +118,33 @@ public class TunnelService(
                    cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 在指定会话上创建远程动态转发通道:服务器上的端口当 SOCKS 代理,本机按放行名单替远端去连。
+    /// 名单留空(或有写错的规则)时不建,报一句说得清的话 —— 不替用户把它当成「全放」或「全拒」。
+    /// </summary>
+    public async Task<TunnelInfo> CreateRemoteDynamicForwardAsync(Guid sessionId, TunnelConfig config, CancellationToken cancellationToken = default)
+    {
+        if (config.Type != TunnelType.RemoteDynamicForward)
+        {
+            throw new ArgumentException(@"Config type must be RemoteDynamicForward", nameof(config));
+        }
+        if (!RemoteOpenRules.TryParse(RemoteOpenRules.Format(config.PermitRemoteOpen), out IReadOnlyList<string> rules, out string? invalid))
+        {
+            throw new ArgumentException(invalid is null
+                ? Strings.Get("TunnelSvc_PermitRemoteOpenRequired")
+                : Strings.Format("Tunnel_PermitRemoteOpenInvalid", invalid));
+        }
+        return await CreateForwardAsync(sessionId,
+                   config,
+                   new(PortForwardKind.RemoteDynamic, config.RemoteHost, config.RemotePort)
+                   {
+                       MaxBytesPerSecond = config.MaxBytesPerSecond,
+                       PermitRemoteOpen = rules
+                   },
+                   "remote-dynamic",
+                   cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>移除指定转发通道:若仍在活动则先停止,随后将其从会话列表中删除。</summary>
     public async Task RemoveTunnelAsync(Guid tunnelId, CancellationToken cancellationToken = default)
     {

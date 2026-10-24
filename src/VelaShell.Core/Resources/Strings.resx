@@ -4390,6 +4390,27 @@ Overwrite it?</value>
   <data name="Tunnel_DynamicSocksTip" xml:space="preserve">
     <value>Local port acts as a SOCKS5 proxy for any target (ssh -D)</value>
   </data>
+  <data name="Tunnel_RemoteDynamicSocks" xml:space="preserve">
+    <value>Remote SOCKS</value>
+  </data>
+  <data name="Tunnel_RemoteDynamicSocksTip" xml:space="preserve">
+    <value>A server port acts as a SOCKS5 proxy: remote programs use it to have this computer connect to the allowed destinations for them (ssh -R without a target)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenLabel" xml:space="preserve">
+    <value>Allowed destinations (host:port the remote side may reach)</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenHint" xml:space="preserve">
+    <value>Separate with spaces or commas; hosts may use * and ? wildcards, ports may be *. A lone “any” allows everything this computer can reach. Matched against the name the remote side sends, without resolving it.</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenInvalid" xml:space="preserve">
+    <value>Rule “{0}” is not valid: write host:port (port may be *, IPv6 in brackets), and “any” must stand alone.</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenSummary" xml:space="preserve">
+    <value>Allowed: {0}</value>
+  </data>
+  <data name="Tunnel_PermitRemoteOpenAny" xml:space="preserve">
+    <value>Allowed: everything (the remote side can reach whatever this computer can)</value>
+  </data>
   <data name="Tunnel_EditTip" xml:space="preserve">
     <value>Edit tunnel</value>
   </data>
@@ -4404,6 +4425,9 @@ Overwrite it?</value>
   </data>
   <data name="Tunnel_ForwardToLoopback" xml:space="preserve">
     <value>Forward to the server itself (127.0.0.1)</value>
+  </data>
+  <data name="Tunnel_ListenOnServerLoopback" xml:space="preserve">
+    <value>Listen only on the server itself (127.0.0.1)</value>
   </data>
   <data name="Tunnel_LocalForwardTip" xml:space="preserve">
     <value>Forward a local port to a target service via the server (ssh -L)</value>
@@ -4444,6 +4468,9 @@ Overwrite it?</value>
   <data name="Tunnel_TargetHostLabel" xml:space="preserve">
     <value>Target host (from the server's view)</value>
   </data>
+  <data name="Tunnel_ServerBindHostLabel" xml:space="preserve">
+    <value>Listen address (on the server)</value>
+  </data>
   <data name="Tunnel_Title" xml:space="preserve">
     <value>Tunnels</value>
   </data>
@@ -4458,6 +4485,12 @@ Overwrite it?</value>
   </data>
   <data name="TunnelSvc_TargetUnreachable" xml:space="preserve">
     <value>Target unreachable: confirm the target host is reachable from the server (internal address / firewall).</value>
+  </data>
+  <data name="TunnelSvc_PermitRemoteOpenRequired" xml:space="preserve">
+    <value>A remote dynamic forward needs an allow list: enter the host:port destinations the remote side may reach, or “any” to allow everything.</value>
+  </data>
+  <data name="TunnelSvc_TargetNotPermitted" xml:space="preserve">
+    <value>The remote side asked for a destination that is not on the allow list, and it was refused. Add it to this tunnel's allow list to permit it.</value>
   </data>
   <data name="SetGeneral_FollowActiveTerminal" xml:space="preserve">
     <value>Follow active terminal in Explorer</value>
@@ -4559,6 +4592,9 @@ Overwrite it?</value>
   <data name="Tunnel_FallbackDynamic" xml:space="preserve">
     <value>Dynamic Tunnel</value>
   </data>
+  <data name="Tunnel_FallbackRemoteDynamic" xml:space="preserve">
+    <value>Remote Dynamic Tunnel</value>
+  </data>
   <data name="Tunnel_BadgeLocal" xml:space="preserve">
     <value>Local</value>
   </data>
@@ -4568,6 +4604,9 @@ Overwrite it?</value>
   <data name="Tunnel_BadgeDynamic" xml:space="preserve">
     <value>Dynamic</value>
   </data>
+  <data name="Tunnel_BadgeRemoteDynamic" xml:space="preserve">
+    <value>Remote SOCKS</value>
+  </data>
   <data name="Tunnel_RouteLocal" xml:space="preserve">
     <value>This computer listens on {0}:{1} → server-side target {2}:{3}</value>
   </data>
@@ -4576,6 +4615,9 @@ Overwrite it?</value>
   </data>
   <data name="Tunnel_RouteDynamic" xml:space="preserve">
     <value>This computer provides SOCKS5 at {0}:{1} → dynamic destinations</value>
+  </data>
+  <data name="Tunnel_RouteRemoteDynamic" xml:space="preserve">
+    <value>SSH server provides SOCKS5 at {0}:{1} → this computer connects to the allowed destinations</value>
   </data>
   <data name="TunnelSvc_LocalPortInUse" xml:space="preserve">
     <value>Local port {0} is already in use by another program. Stop that program, or pick a different local port.</value>
@@ -4858,6 +4900,12 @@ Overwrite it?</value>
   </data>
   <data name="TunnelHelp_DynamicDesc" xml:space="preserve">
     <value>Creates a SOCKS5 proxy listener on your local machine. Applications configured to use this proxy will have their TCP connections routed through the SSH server, which resolves and connects to each target dynamically. Common use: browser or application traffic routing through the SSH server without configuring individual forwards.</value>
+  </data>
+  <data name="TunnelHelp_RemoteDynamicTitle" xml:space="preserve">
+    <value>Remote Dynamic Forward (-R without a target)</value>
+  </data>
+  <data name="TunnelHelp_RemoteDynamicDesc" xml:space="preserve">
+    <value>Opens a SOCKS5 proxy port on the SSH server. Remote programs that use it have this computer connect to the destinations for them — so the server can reach places only this computer can, such as an internal package mirror or API. Only destinations on the tunnel's allow list are permitted (host:port, wildcards allowed, or “any”); everything else is refused.</value>
   </data>
   <data name="TunnelHelp_LoopbackNote" xml:space="preserve">
     <value>The meaning of 127.0.0.1 depends on which machine owns that endpoint. For a local forward's server-side target, it means the SSH server itself. For a remote forward's local service, it means this computer. On a listener endpoint, loopback restricts access to the machine hosting that listener.</value>

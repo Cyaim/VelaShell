@@ -1,7 +1,9 @@
 using System.Net;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
+using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Core.Tunnels;
 using VelaShell.Ssh.Diagnostics;
 using VelaShell.Ssh.Forwarding;
 using VelaShell.Ssh.Session;
@@ -123,6 +125,10 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
                 RemoteOptions(request, boundHost),
                 cancellationToken).ConfigureAwait(false),
 
+            PortForwardKind.RemoteDynamic => await RemotePortForwarder.StartDynamicAsync(
+                connection, PermitPolicy(request.PermitRemoteOpen), RemoteOptions(request, boundHost),
+                cancellationToken).ConfigureAwait(false),
+
             _ => throw new ArgumentOutOfRangeException(
                 nameof(request), request.Kind, @"Unknown port forward kind."),
         };
@@ -145,6 +151,15 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
         BindPort = (int)request.BoundPort,
         MaxBytesPerSecond = request.MaxBytesPerSecond,
     };
+
+    /// <summary>
+    /// 远程动态转发的放行名单:单独一条 <c>any</c> 是全放,别的逐条交给库(写法不对时库当场抛,不起这个转发)。
+    /// 空名单是全拒 —— 宿主的服务层已经拦着空名单,这里只是不把它悄悄当成全放。
+    /// </summary>
+    internal static RemoteOpenPolicy PermitPolicy(IReadOnlyList<string>? rules) =>
+        rules is not { Count: > 0 } ? RemoteOpenPolicy.None :
+        rules.Any(r => string.Equals(r, RemoteOpenRules.Any, StringComparison.OrdinalIgnoreCase)) ? RemoteOpenPolicy.Any :
+        RemoteOpenPolicy.Allow(rules);
 
     /// <summary>把配置里的监听主机翻译成绑定地址(<c>0.0.0.0</c> / <c>*</c> 表示所有接口)。</summary>
     /// <remarks>
@@ -176,6 +191,12 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
     {
         if (_stopped)
         {
+            return;
+        }
+        // 远端要连的目标不在放行名单里:库的消息是写给开发者的,界面上要一句说得清的本地化提示(放宽名单就好)。
+        if (e.Reason == ForwardErrorReason.TargetNotPermitted)
+        {
+            ChannelError?.Invoke(new VelaSshClientException(Strings.Get("TunnelSvc_TargetNotPermitted")));
             return;
         }
         ChannelError?.Invoke(e.Exception ?? new VelaSshClientException($"{e.Reason}:{e.Message}"));

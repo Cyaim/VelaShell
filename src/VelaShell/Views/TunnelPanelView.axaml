@@ -327,6 +327,10 @@
                 <TextBlock Classes="desc" Text="{Binding EndpointSummary}"
                            TextTrimming="CharacterEllipsis"
                            ToolTip.Tip="{Binding EndpointSummary}" />
+                <!-- 远程动态转发:放行了哪些目标(全放时写明「全部」)。 -->
+                <TextBlock Classes="desc" Text="{Binding PermitText}"
+                           IsVisible="{Binding HasPermitText}"
+                           TextWrapping="Wrap" />
                 <TextBlock Classes="desc" Text="{Binding StatusText}" />
                 <!-- 流量统计(设计 fuXS7 预留的说明行):连接数 · 累计字节 -->
                 <TextBlock Classes="desc" Text="{Binding StatsText}" />
@@ -413,36 +417,56 @@
             <ComboBoxItem Content="{loc:Localize LocalForward}" ToolTip.Tip="{loc:Localize Tunnel_LocalForwardTip}" />
             <ComboBoxItem Content="{loc:Localize RemoteForward}" ToolTip.Tip="{loc:Localize Tunnel_RemoteForwardTip}" />
             <ComboBoxItem Content="{loc:Localize Tunnel_DynamicSocks}" ToolTip.Tip="{loc:Localize Tunnel_DynamicSocksTip}" />
+            <ComboBoxItem Content="{loc:Localize Tunnel_RemoteDynamicSocks}" ToolTip.Tip="{loc:Localize Tunnel_RemoteDynamicSocksTip}" />
           </ComboBox>
         </Grid>
 
         <!-- 目标默认锁定为服务器本机 127.0.0.1(地址从服务器视角解析,填公网 IP 会被拒);
-             取消勾选可填服务器可达的内网第三方主机。 -->
-        <Grid ColumnDefinitions="92,10,*,10,72" RowDefinitions="Auto,5,Auto">
-          <TextBlock Grid.Row="0" Grid.Column="0" Classes="form-label" Text="{loc:Localize LocalPort}" />
-          <NumericUpDown Grid.Row="2" Grid.Column="0" Value="{Binding NewLocalPort}" PlaceholderText="27017"
-                         Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
-          <TextBlock Grid.Row="0" Grid.Column="2" Classes="form-label" Text="{loc:Localize Tunnel_TargetHostLabel}"
-                     IsVisible="{Binding IsRemoteTargetVisible}" />
-          <TextBox   Grid.Row="2" Grid.Column="2"
-                     Text="{Binding NewRemoteHost}"
+             取消勾选可填服务器可达的内网第三方主机。
+             三栏各自成块、按类型显隐:动态转发只有本地端口,远程动态转发没有本地端口(主机与端口两栏填服务器上的监听地址)。
+             块与块的间距挂在块自己的外边距上,藏掉一块不会留下一道空的间隔列。 -->
+        <Grid Name="EndpointRow" ColumnDefinitions="Auto,*,Auto">
+          <StackPanel Grid.Column="0" Width="92" Margin="0,0,10,0" Spacing="5"
+                      IsVisible="{Binding IsLocalPortVisible}">
+            <TextBlock Classes="form-label" Text="{loc:Localize LocalPort}" />
+            <NumericUpDown Value="{Binding NewLocalPort}" PlaceholderText="27017"
+                           Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="5" IsVisible="{Binding IsRemoteTargetVisible}">
+            <TextBlock Classes="form-label" Text="{Binding RemoteHostLabel}" />
+            <TextBox Text="{Binding NewRemoteHost}"
                      IsEnabled="{Binding IsRemoteHostEditable}"
-                     PlaceholderText="127.0.0.1"
-                     IsVisible="{Binding IsRemoteTargetVisible}" />
-          <TextBlock Grid.Row="0" Grid.Column="4" Classes="form-label" Text="{loc:Localize Port}"
-                     IsVisible="{Binding IsRemoteTargetVisible}" />
-          <NumericUpDown Grid.Row="2" Grid.Column="4" Value="{Binding NewRemotePort}" PlaceholderText="27017"
-                         Minimum="1" Maximum="65535" Increment="1" FormatString="0"
-                         IsVisible="{Binding IsRemoteTargetVisible}" />
+                     PlaceholderText="127.0.0.1" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Width="72" Margin="10,0,0,0" Spacing="5"
+                      IsVisible="{Binding IsRemoteTargetVisible}">
+            <TextBlock Classes="form-label" Text="{loc:Localize Port}" />
+            <NumericUpDown Value="{Binding NewRemotePort}" PlaceholderText="27017"
+                           Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
+          </StackPanel>
         </Grid>
 
         <CheckBox IsChecked="{Binding ForwardToServerLoopback}"
                   IsVisible="{Binding IsRemoteTargetVisible}"
                   Padding="0" MinHeight="0">
-          <TextBlock Text="{loc:Localize Tunnel_ForwardToLoopback}"
+          <TextBlock Text="{Binding LoopbackOptionText}"
                      Foreground="{DynamicResource VelaTextSecondary}"
                      FontSize="{DynamicResource VelaFontSize11}" Margin="6,0,0,0" />
         </CheckBox>
+
+        <!-- 远程动态转发的放行名单:远端经它能让本机连哪些 主机:端口。没有默认值、不许留空 ——
+             这等于把本机变成远端的 SOCKS 代理,本机能到的内网远端都能到,放哪些出去要用户明说(全放写 any)。 -->
+        <StackPanel Name="PermitRemoteOpenBlock" Spacing="5" IsVisible="{Binding IsPermitRemoteOpenVisible}">
+          <TextBlock Classes="form-label" Text="{loc:Localize Tunnel_PermitRemoteOpenLabel}" />
+          <TextBox Text="{Binding NewPermitRemoteOpen}"
+                   PlaceholderText="localhost:8080 *.corp.example:443"
+                   ToolTip.Tip="{loc:Localize Tunnel_PermitRemoteOpenHint}" />
+          <TextBlock Classes="desc" Text="{Binding PermitRemoteOpenError}"
+                     Foreground="{DynamicResource VelaError}" TextWrapping="Wrap"
+                     IsVisible="{Binding HasPermitRemoteOpenError}" />
+          <TextBlock Classes="desc" Text="{loc:Localize Tunnel_PermitRemoteOpenHint}" TextWrapping="Wrap"
+                     IsVisible="{Binding !HasPermitRemoteOpenError}" />
+        </StackPanel>
 
         <!-- 限速:每个方向每秒最多搬多少,这条隧道的全部连接共用;0 = 不限(默认)。
              慢链路上开着好几条隧道时,不让一条下载把交互终端挤满。 -->

@@ -146,6 +146,55 @@ public sealed class TunnelPanelUiTests
     }
 
     /// <summary>
+    /// 选「远程动态 SOCKS」:本地端口那块收起、主机栏顶到最左(不留一道空列),放行名单出现;写错一条红字点名。
+    /// 日文的类型名最长,截一帧看下拉框放不放得下。
+    /// </summary>
+    [TestMethod]
+    public void Panel_RemoteDynamicForm_ShowsTheAllowListAndHidesTheLocalPort()
+    {
+        OnUi(() =>
+        {
+            CultureInfo previousCulture = CultureInfo.CurrentCulture;
+            CultureInfo previousUiCulture = CultureInfo.CurrentUICulture;
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ja-JP");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("ja-JP");
+            _localization.SetLanguage("ja-JP");
+            try
+            {
+                var vm = new TunnelPanelViewModel(Substitute.For<ITunnelWorkflowService>());
+                var view = new TunnelPanelView { DataContext = vm };
+                var window = new Window { Width = 380, Height = 900, Content = view };
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+                StackPanel permit = view.FindControl<StackPanel>("PermitRemoteOpenBlock")!;
+                Grid endpoints = view.FindControl<Grid>("EndpointRow")!;
+                Assert.IsFalse(permit.IsEffectivelyVisible);
+
+                vm.NewTunnelTypeIndex = 3;
+                vm.NewPermitRemoteOpen = "localhost:8080 intranet";
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+
+                Assert.IsTrue(permit.IsEffectivelyVisible);
+                Control hostBlock = endpoints.Children[1];
+                Assert.IsFalse(endpoints.Children[0].IsVisible, "远程动态转发用不上本地端口。");
+                Assert.AreEqual(0d, hostBlock.TranslatePoint(new(0, 0), endpoints)!.Value.X, 0.5, "主机栏顶到最左,不留空列。");
+                Assert.IsTrue(view.GetVisualDescendants().OfType<TextBlock>()
+                                  .Any(t => t.IsEffectivelyVisible && t.Text == Strings.Format("Tunnel_PermitRemoteOpenInvalid", "intranet")));
+                SaveFrame(window, "tunnel-panel-remote-dynamic-ja.png");
+                window.Close();
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = previousCulture;
+                CultureInfo.CurrentUICulture = previousUiCulture;
+                _localization.SetLanguage(previousUiCulture.Name);
+            }
+        });
+    }
+
+    /// <summary>
     /// 运行中的隧道:速率行(带限速)与「当前连接」开关都在;点开开关,连接一条条列出来(来源 → 目标、开了多久与字节数),
     /// 超过 20 条的写一句没列出的条数。
     /// </summary>
