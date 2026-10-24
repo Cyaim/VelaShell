@@ -46,6 +46,12 @@ public partial class MainWindow : Window
     /// <summary>插件管理窗口尺寸与位置在文档存储里的键。</summary>
     private const string PluginManagerLayoutKey = "pluginManager";
 
+    /// <summary>「管理布局模板」窗口尺寸与位置在文档存储里的键。</summary>
+    private const string LayoutTemplatesLayoutKey = "layoutTemplates";
+
+    /// <summary>开着(或正在读布局、还没 Show)的「管理布局模板」窗口;读布局那一下之间连点两次也只开一扇。</summary>
+    private LayoutTemplatesWindow? _layoutTemplatesWindow;
+
     /// <summary>每个会话至多一扇任务管理器窗口,按会话标识去重。</summary>
     private readonly Dictionary<Guid, ProcessManagerView> _processManagers = [];
 
@@ -487,7 +493,7 @@ public partial class MainWindow : Window
             // 管理窗口开着时它传自己的那份(见 LayoutTemplatesWindow)。
             vm.LayoutTemplates.Dialogs = new LayoutTemplateDialogs(this);
             vm.LayoutTemplates.ManagerRequested += () =>
-                Dispatcher.UIThread.Post(() => ShowLayoutTemplatesWindow(vm.LayoutTemplates));
+                Dispatcher.UIThread.Post(() => FireAndForget.Run(() => ShowLayoutTemplatesWindowAsync(vm.LayoutTemplates)));
             // 标题栏"链路追踪":每个目标最多一扇窗,非模态。
             vm.TraceRouteRequested += (host, label) =>
                 Dispatcher.UIThread.Post(() => _ = OpenTraceRouteAsync(vm, host, label));
@@ -1396,18 +1402,29 @@ public partial class MainWindow : Window
     /// <summary>
     /// 打开(或前置)「管理布局模板」窗口。非模态:用户要一边看着它,一边在主窗口里把分屏排成想存的样子。
     /// </summary>
-    private void ShowLayoutTemplatesWindow(LayoutTemplatesViewModel templates)
+    private async Task ShowLayoutTemplatesWindowAsync(LayoutTemplatesViewModel templates)
     {
-        if (OwnedWindows.OfType<LayoutTemplatesWindow>().FirstOrDefault() is { } open)
+        if (_layoutTemplatesWindow is { } open)
         {
-            if (open.WindowState == WindowState.Minimized)
+            if (open.IsVisible)
             {
-                open.WindowState = WindowState.Normal;
+                if (open.WindowState == WindowState.Minimized)
+                {
+                    open.WindowState = WindowState.Normal;
+                }
+                open.Activate();
             }
-            open.Activate();
             return;
         }
-        new LayoutTemplatesWindow { DataContext = templates }.Show(this);
+        var window = new LayoutTemplatesWindow { DataContext = templates };
+        _layoutTemplatesWindow = window;
+        window.Closed += (_, _) => _layoutTemplatesWindow = null;
+        // 尺寸与位置记忆(同任务管理器、插件管理)。
+        if (Application.Current is App app && app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
+        {
+            await layoutStore.RememberAsync(LayoutTemplatesLayoutKey, window);
+        }
+        window.Show(this);
     }
 
     /// <summary>打开(或前置)某个目标的链路追踪窗口。非模态,尺寸与位置与任务管理器一样记忆。</summary>
