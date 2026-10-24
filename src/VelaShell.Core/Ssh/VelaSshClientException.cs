@@ -70,6 +70,15 @@ public class VelaSftpTransferInterruptedException(string message, long durableLe
 {
     /// <summary>远端文件从开头起连续确认落盘的字节数。</summary>
     public long DurableLength { get; } = durableLength;
+
+    /// <summary>
+    /// 中断是服务端拒写(磁盘满、配额、权限,即 SFTP 状态码),而不是断线或本端释放。
+    /// </summary>
+    /// <remarks>
+    /// 传输失败重试据此分流:断线换一次连接、等一会儿往往就过去了;服务端拒写再试几次结果都一样,
+    /// 只是让用户多等几轮退避才看到「磁盘满」。原因只在库的异常链里,翻译时(<c>SshInterop</c>)定下来。
+    /// </remarks>
+    public bool RefusedByServer { get; init; }
 }
 
 /// <summary>SFTP 路径不存在(SSH_FX_NO_SUCH_FILE)。</summary>

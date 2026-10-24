@@ -4668,8 +4668,23 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SetTransfer_AutoCleanTempDesc" xml:space="preserve">
     <value>传输失败或取消时删除写了一半的目标文件(仅在断点续传关闭时生效)。</value>
   </data>
+  <data name="SetTransfer_MaxRetries" xml:space="preserve">
+    <value>失败自动重试</value>
+  </data>
+  <data name="SetTransfer_MaxRetriesDesc" xml:space="preserve">
+    <value>断线、超时这类临时失败自动重试的次数(0 = 不重试)。权限不足、磁盘已满、路径不存在不会重试。</value>
+  </data>
   <data name="Transfer_Retry" xml:space="preserve">
     <value>重试</value>
+  </data>
+  <data name="Transfer_RetryWaiting" xml:space="preserve">
+    <value>重试 {0}/{1}</value>
+  </data>
+  <data name="Transfer_RetryWaitingInfo" xml:space="preserve">
+    <value>传输中断,稍后自动重试</value>
+  </data>
+  <data name="Transfer_FailedAfterRetries" xml:space="preserve">
+    <value>重试 {0} 次后仍然失败:{1}</value>
   </data>
   <data name="Transfer_ClearCompleted" xml:space="preserve">
     <value>清除已结束</value>

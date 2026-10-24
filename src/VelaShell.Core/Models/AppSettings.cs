@@ -212,6 +212,7 @@ public class AppSettings
         General.ReconnectIntervalSeconds = Math.Clamp(General.ReconnectIntervalSeconds, 1, 300);
         General.StatusMetricsIntervalSeconds = Math.Clamp(General.StatusMetricsIntervalSeconds, 1, 60);
         Transfer.MaxConcurrentTransfers = Math.Clamp(Transfer.MaxConcurrentTransfers, 1, 16);
+        Transfer.TransferMaxRetries = Math.Clamp(Transfer.TransferMaxRetries, 0, 10);
         Security.AuditLogRetentionDays = Math.Clamp(
             Security.AuditLogRetentionDays, 1, SecurityOptions.MaxAuditLogRetentionDays);
         XServer.DisplayNumber = Math.Clamp(
@@ -1108,8 +1109,19 @@ public class TransferOptions : ObservableOptions
         set => Set(ref field, value);
     } = true;
 
-    /// <summary>规划中(传输失败重试):仅持久化,当前无运行时消费者,不出现在设置界面(设置审计 R-09)。</summary>
-    public int TransferMaxRetries { get; set; } = 3;
+    /// <summary>
+    /// 失败自动重试(设置 → 文件传输):断线、超时这类临时失败,同一个文件在原会话上最多再试几次;0 = 不重试。
+    /// </summary>
+    /// <remarks>
+    /// 哪些失败算「临时」见 <c>TransferRetryPolicy</c>:权限拒绝、磁盘满、路径不存在、用户取消一律不重试。
+    /// 两次之间按 1 s、2 s、4 s……翻倍退避(封顶 30 s)。重试时 <see cref="ResumeEnabled" /> 开着就从这个文件
+    /// 自己已经传过去的地方接着传(起点照常核实),关着就整份重来。上下限与设置页一致(0–10,见 Normalize)。
+    /// </remarks>
+    public int TransferMaxRetries
+    {
+        get;
+        set => Set(ref field, value);
+    } = 3;
 
     /// <summary>
     /// 删除远端目录时先试一条 <c>rm -rf</c>(#474),而不是用 SFTP 逐个条目递归删。

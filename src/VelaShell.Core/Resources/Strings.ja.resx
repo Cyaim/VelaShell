@@ -4494,8 +4494,23 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SetTransfer_AutoCleanTempDesc" xml:space="preserve">
     <value>転送の失敗・キャンセル時に書きかけのファイルを削除します(再開が無効のときのみ)。</value>
   </data>
+  <data name="SetTransfer_MaxRetries" xml:space="preserve">
+    <value>失敗時に自動で再試行</value>
+  </data>
+  <data name="SetTransfer_MaxRetriesDesc" xml:space="preserve">
+    <value>接続切れやタイムアウトなど一時的な失敗のときに再試行する回数(0 = 再試行しない)。権限不足・ディスクの空き不足・パスが存在しない場合は再試行しません。</value>
+  </data>
   <data name="Transfer_Retry" xml:space="preserve">
     <value>再試行</value>
+  </data>
+  <data name="Transfer_RetryWaiting" xml:space="preserve">
+    <value>再試行 {0}/{1}</value>
+  </data>
+  <data name="Transfer_RetryWaitingInfo" xml:space="preserve">
+    <value>中断しました。まもなく再試行します</value>
+  </data>
+  <data name="Transfer_FailedAfterRetries" xml:space="preserve">
+    <value>{0} 回再試行しても失敗しました:{1}</value>
   </data>
   <data name="Transfer_ClearCompleted" xml:space="preserve">
     <value>完了分をクリア</value>

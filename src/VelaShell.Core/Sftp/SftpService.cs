@@ -1402,10 +1402,10 @@ public class SftpService : ISftpService
             {
                 return existingClient;
             }
-            SshSession? session = _connectionService.GetSession(sessionId) ?? throw new InvalidOperationException($"Session {sessionId} not found");
+            SshSession? session = _connectionService.GetSession(sessionId) ?? throw new RemoteSessionUnavailableException($"Session {sessionId} not found");
             if (session.Status != SessionStatus.Connected)
             {
-                throw new InvalidOperationException($"Session {sessionId} is not connected");
+                throw new RemoteSessionUnavailableException($"Session {sessionId} is not connected");
             }
             if (_sftpClientFactory == null)
             {
@@ -1471,7 +1471,7 @@ public class SftpService : ISftpService
             }
 
             SshSession session = _connectionService.GetSession(sessionId)
-                ?? throw new InvalidOperationException($"Session {sessionId} not found");
+                ?? throw new RemoteSessionUnavailableException($"Session {sessionId} not found");
             ISftpClientWrapper client = _sftpClientFactory!(session);
             try
             {

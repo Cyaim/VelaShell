@@ -94,6 +94,16 @@ public sealed class AppSettingsClampTests
     }
 
     [TestMethod]
+    public void TransferRetriesAreClamped_AndZeroMeansNever()
+    {
+        // 0 = 不重试,是合法取值;上限与设置页一致(10)。手改成上千次的配置会让一个死链接拖上几个钟头。
+        Assert.AreEqual(0, Normalized(s => s.Transfer.TransferMaxRetries = 0).Transfer.TransferMaxRetries);
+        Assert.AreEqual(0, Normalized(s => s.Transfer.TransferMaxRetries = -2).Transfer.TransferMaxRetries);
+        Assert.AreEqual(10, Normalized(s => s.Transfer.TransferMaxRetries = 1_000).Transfer.TransferMaxRetries);
+        Assert.AreEqual(3, new AppSettings().Transfer.TransferMaxRetries, "出厂值");
+    }
+
+    [TestMethod]
     public void ValuesAlreadyInRangeAreLeftAlone()
     {
         var settings = new AppSettings

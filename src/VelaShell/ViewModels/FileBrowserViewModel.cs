@@ -2804,29 +2804,37 @@ public class FileBrowserViewModel : ReactiveObject
             // 失败后可从传输面板重试:闭包捕获本会话与路径(中转还有源端),重试时重新探测续传起点。
             item.RetryAsync = () => RetryTransferAsync(new(type, localPath, remotePath, Source: source));
         }
-        var progress = new Progress<TransferProgress>(p =>
+        // 本次尝试的起点:续传时 > 0;自动重试会把它挪到这个文件自己已经传过去的地方。
+        long offset = resumeOffset;
+        var progress = new AttemptProgress(new Progress<TransferProgress>(p =>
         {
             item?.UpdateProgress(p);
             // 第一个进度回调 = 字节真的开始流动了:排队结束。续传的第一拍先亮一下"续传中",
             // 之后的回调再落到"进行中"(与改动前的观感一致,只是把它前面那段等待如实标出来了)。
             item?.Status = item.Status switch
             {
-                TransferStatus.Queued when resumeOffset > 0 => TransferStatus.Resuming,
+                TransferStatus.Queued when offset > 0 => TransferStatus.Resuming,
                 TransferStatus.Queued or TransferStatus.Resuming => TransferStatus.InProgress,
                 _ => item.Status,
             };
-        });
+        }));
         // 目标"同名但内容对不上"时改名重传的落点(仅"重命名"策略):当前这一行按跳过收尾,
         // 改名后的整份重传在本方法收尾之后另起一行,免得一行的标题与它实际写的目标对不上。
         PlannedFileTransfer? renamedRetry = null;
         // 中转的源端可能在规划之后被删掉/改名:那种失败发生在目标被碰之前,目标若是用户原有的同名文件,
         // 它完好无损,绝不能按"半截文件"清掉。其余类型维持原先的判断。
         bool targetTouched = type != TransferType.Relay;
+        // 失败自动重试(设置 → 文件传输):只管上传、下载与中转 —— 面板上本来就带「重试」的那几种。
+        // 同会话复制是服务端那边的一次操作,没有半截可接,失败交给用户决定。
+        int maxRetries = type is TransferType.Upload or TransferType.Download or TransferType.Relay
+            ? TransferRetryPolicy.Clamp(TransferOptions.TransferMaxRetries)
+            : 0;
+        int retries = 0;
         try
         {
-            long offset = resumeOffset;
             while (true)
             {
+                progress.BeginAttempt(offset);
                 try
                 {
                     await TransferOnceAsync(offset);
@@ -2864,6 +2872,23 @@ public class FileBrowserViewModel : ReactiveObject
                     offset = 0;
                     item?.Status = TransferStatus.InProgress;
                 }
+
+                // 断线、超时这类临时失败:退避一会儿,在原会话上再试(权限、磁盘满、路径不存在、
+                // 服务端拒写不在此列,见 TransferRetryPolicy)。等待期间这一行显示「等待重试」,
+                // 全部取消照样能把它停下 —— 等待吃的是同一个取消令牌。
+                // 名额在等待期间不放:链路坏了的时候别的文件也传不动,放出去只是让它们也去撞一遍。
+                catch (Exception ex) when (retries < maxRetries
+                                           && ex is not OperationCanceledException
+                                           && !ct.IsCancellationRequested
+                                           && TransferRetryPolicy.Classify(ex) == TransferFailureKind.Transient)
+                {
+                    retries++;
+                    bool movedBytes = progress.MovedBytes;
+                    long attemptStart = offset;
+                    item?.MarkRetrying(retries, maxRetries);
+                    await RetryDelay(TransferRetryPolicy.DelayBeforeRetry(retries), ct);
+                    offset = await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, ct);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -2879,7 +2904,11 @@ public class FileBrowserViewModel : ReactiveObject
         catch (Exception ex)
         {
             item?.Status = TransferStatus.Failed;
-            ErrorMessage = ex.Message;
+            // 重试过还是失败的,说清楚试过几次:否则用户看到的只是最后那一次的错误,
+            // 会以为它一断就放弃了。
+            ErrorMessage = retries > 0
+                ? Strings.Format("Transfer_FailedAfterRetries", retries, ex.Message)
+                : ex.Message;
             if (targetTouched)
             {
                 await CleanupPartialTargetAsync(type, localPath, remotePath);
@@ -2925,6 +2954,82 @@ public class FileBrowserViewModel : ReactiveObject
             _ =>
                 _sftpService.DownloadFileAsync(_sessionId, remotePath, localPath, progress, startAt, ct),
         };
+    }
+
+    /// <summary>
+    /// 自动重试之前的等待(退避时长见 <see cref="TransferRetryPolicy.DelayBeforeRetry" />)。
+    /// 用例换成立即返回并记下时长,不必真的睡几秒。
+    /// </summary>
+    internal Func<TimeSpan, CancellationToken, Task> RetryDelay { get; set; } =
+        static (delay, ct) => Task.Delay(delay, ct);
+
+    /// <summary>
+    /// 自动重试从哪儿接着传。
+    /// </summary>
+    /// <remarks>
+    /// <list type="bullet">
+    /// <item>断点续传关着:整份重来(0)。</item>
+    /// <item>上一次尝试一个字节都没动(连都没连上、打开就失败):原样再试一次同一个起点 ——
+    /// 目标上那份东西不是这次传出来的,不能凭它的长度去续(目录同步的目标比源短正是「内容不同」的常态)。</item>
+    /// <item>动过:目标上的半截是这个文件自己刚写的,重新探一次它的长度,从那里接着传;起点照常由
+    /// SftpService 核实(对不上就落回同名冲突策略),探测失败退回整份重传。</item>
+    /// </list>
+    /// </remarks>
+    private async Task<long> NextRetryOffsetAsync(
+        TransferType type,
+        string localPath,
+        string remotePath,
+        RelaySource? source,
+        long attemptStart,
+        bool movedBytes,
+        CancellationToken ct
+    )
+    {
+        if (!TransferOptions.ResumeEnabled)
+        {
+            return 0;
+        }
+        if (!movedBytes)
+        {
+            return attemptStart;
+        }
+        PlannedFileTransfer? resumed = await TryResumeAsync(new(type, localPath, remotePath, Source: source), [], ct);
+        return resumed?.ResumeOffset ?? 0;
+    }
+
+    /// <summary>
+    /// 一个文件的进度接收方,顺带记下<b>本次尝试</b>有没有真的传出字节(自动重试据此决定从哪儿接着传)。
+    /// </summary>
+    /// <remarks>
+    /// 记账在 <see cref="Report" /> 里同步做,而不是在 <see cref="Progress{T}" /> 的回调里:
+    /// 后者经同步上下文投递,失败的续体先跑到的话就会以为一个字节都没动。
+    /// 进度只在字节真的确认之后才上报(见 <see cref="TransferProgressThrottle" />),所以报上来的位置
+    /// 只要不等于传进去的起点就算动过 —— 包括比起点还小的情形:续传起点在服务里还会再核实、可能往回退,
+    /// 退回去之后写出的那一段报上来就比传进去的起点小。
+    /// </remarks>
+    private sealed class AttemptProgress(IProgress<TransferProgress> inner) : IProgress<TransferProgress>
+    {
+        private long _start;
+        private int _moved;
+
+        /// <summary>开始新的一次尝试。</summary>
+        public void BeginAttempt(long start)
+        {
+            Interlocked.Exchange(ref _start, start);
+            Interlocked.Exchange(ref _moved, 0);
+        }
+
+        /// <summary>本次尝试有没有真的传出过字节。</summary>
+        public bool MovedBytes => Volatile.Read(ref _moved) != 0;
+
+        public void Report(TransferProgress value)
+        {
+            if (value.BytesTransferred != Interlocked.Read(ref _start))
+            {
+                Volatile.Write(ref _moved, 1);
+            }
+            inner.Report(value);
+        }
     }
 
     /// <summary>目标"同名但内容对不上"时的处置。</summary>

@@ -4535,8 +4535,23 @@ Overwrite it?</value>
   <data name="SetTransfer_AutoCleanTempDesc" xml:space="preserve">
     <value>Delete the half-written target file when a transfer fails or is cancelled (only applies while resume is off).</value>
   </data>
+  <data name="SetTransfer_MaxRetries" xml:space="preserve">
+    <value>Retry failed transfers</value>
+  </data>
+  <data name="SetTransfer_MaxRetriesDesc" xml:space="preserve">
+    <value>How many times to retry a file after a temporary failure such as a dropped connection or a timeout (0 = never). Permission errors, a full disk and missing paths are not retried.</value>
+  </data>
   <data name="Transfer_Retry" xml:space="preserve">
     <value>Retry</value>
+  </data>
+  <data name="Transfer_RetryWaiting" xml:space="preserve">
+    <value>Retry {0}/{1}</value>
+  </data>
+  <data name="Transfer_RetryWaitingInfo" xml:space="preserve">
+    <value>Interrupted, retrying shortly</value>
+  </data>
+  <data name="Transfer_FailedAfterRetries" xml:space="preserve">
+    <value>Still failing after {0} retries: {1}</value>
   </data>
   <data name="Transfer_ClearCompleted" xml:space="preserve">
     <value>Clear finished</value>

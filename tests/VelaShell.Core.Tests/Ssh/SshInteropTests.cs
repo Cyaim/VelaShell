@@ -261,6 +261,24 @@ public sealed class SshInteropTests
         Assert.Contains(Strings.Get("SftpErr_Failure"), message);
     }
 
+    /// <summary>
+    /// 服务端拒写与断线分得开:传输失败重试只重试后者(磁盘满再试几轮也是磁盘满)。
+    /// </summary>
+    [TestMethod]
+    public void Translate_SftpTransferInterrupted_MarksServerRefusalOnly()
+    {
+        SftpException rejected = new(SftpStatusCode.Failure, "No space left on device", "/data/big.iso", SftpOperation.Write);
+        SshConnectionClosedException dropped = new(SshFailureReason.ClosedByPeer, SshPhase.Open, "对端关闭了连接。");
+
+        var refused = (VelaSftpTransferInterruptedException)SshInterop.Translate(new SftpTransferInterruptedException(4096, "中断", rejected))!;
+        var lostLink = (VelaSftpTransferInterruptedException)SshInterop.Translate(new SftpTransferInterruptedException(4096, "中断", dropped))!;
+        var bare = (VelaSftpTransferInterruptedException)SshInterop.Translate(new SftpTransferInterruptedException(4096, "中断"))!;
+
+        Assert.IsTrue(refused.RefusedByServer);
+        Assert.IsFalse(lostLink.RefusedByServer);
+        Assert.IsFalse(bare.RefusedByServer, "没有内层异常时按断线算(库的约定)");
+    }
+
     [TestMethod]
     public void Translate_SftpUnavailable_UsesLocalizedText()
     {

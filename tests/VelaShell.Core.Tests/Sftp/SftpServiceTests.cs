@@ -51,6 +51,24 @@ public class SftpServiceTests
         _sftpService = new SftpService(_connectionService, _ => _sftpClient, settings);
     }
 
+    /// <summary>
+    /// 会话没了(从没登记、已断开)用专门的类型报:传输失败重试据此不在原会话上空转,
+    /// 而是把这一项留给换一条连接再接着传。仍是 InvalidOperationException,按基类接的调用方不受影响。
+    /// </summary>
+    [TestMethod]
+    public async Task AMissingOrDisconnectedSession_IsReportedAsUnavailable()
+    {
+        Guid unknown = Guid.NewGuid();
+        _connectionService.GetSession(unknown).Returns((SshSession?)null);
+
+        await Assert.ThrowsExactlyAsync<RemoteSessionUnavailableException>(() => _sftpService.ListDirectoryAsync(unknown, "/"));
+
+        _session.Status = SessionStatus.Disconnected;
+        RemoteSessionUnavailableException ex = await Assert.ThrowsExactlyAsync<RemoteSessionUnavailableException>(
+            () => _sftpService.UploadFileAsync(_sessionId, "C:/nowhere.bin", "/nowhere.bin"));
+        Assert.IsInstanceOfType<InvalidOperationException>(ex);
+    }
+
     [TestMethod]
     public async Task AtomicUploadCommit_NoOverwriteNeverFallsBackToPosixOrDeletesTarget()
     {

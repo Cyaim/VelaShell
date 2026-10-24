@@ -51,7 +51,12 @@ internal static class SshInterop
             SshAuthenticationException auth => new VelaSshAuthenticationException(Describe(auth), auth),
             SshPrivateKeyException key => TranslatePrivateKey(key),
             SshCertificateException cert => new VelaSshAuthenticationException(Localize(cert), cert),
-            SftpTransferInterruptedException sftp => new VelaSftpTransferInterruptedException(LocalizeInterrupted(sftp), sftp.DurableLength, sftp),
+            // 内层是 SFTP 状态码 = 服务端拒写(磁盘满、配额、权限,规格 08 §二);没有内层或内层是连接错误 = 断线。
+            // 传输失败重试只重试后一种。
+            SftpTransferInterruptedException sftp => new VelaSftpTransferInterruptedException(LocalizeInterrupted(sftp), sftp.DurableLength, sftp)
+            {
+                RefusedByServer = sftp.InnerException is SftpException,
+            },
             SftpUnavailableException unavailable => new VelaSshClientException(LocalizeUnavailable(unavailable), unavailable),
             SftpException sftp => TranslateSftp(sftp),
             SshNegotiationException negotiation => new VelaSshConnectionException(Describe(negotiation), negotiation),
