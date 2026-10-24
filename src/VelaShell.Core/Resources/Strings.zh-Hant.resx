@@ -5412,6 +5412,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="PluginState_Incompatible" xml:space="preserve">
     <value>不相容</value>
   </data>
+  <data name="PluginState_Deactivated" xml:space="preserve">
+    <value>已停止</value>
+  </data>
   <data name="PluginPerm_Title" xml:space="preserve">
     <value>終端寫入請求</value>
   </data>

@@ -5412,6 +5412,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="PluginState_Incompatible" xml:space="preserve">
     <value>不兼容</value>
   </data>
+  <data name="PluginState_Deactivated" xml:space="preserve">
+    <value>已停止</value>
+  </data>
   <data name="PluginPerm_Title" xml:space="preserve">
     <value>终端写入请求</value>
   </data>

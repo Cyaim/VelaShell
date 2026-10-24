@@ -5252,6 +5252,7 @@ Overwrite it?</value>
   <data name="PluginState_Crashed"><value>Restarting</value></data>
   <data name="PluginState_Invalid"><value>Invalid</value></data>
   <data name="PluginState_Incompatible"><value>Incompatible</value></data>
+  <data name="PluginState_Deactivated"><value>Stopped</value></data>
   <data name="PluginPerm_Title"><value>Terminal write request</value></data>
   <data name="PluginPerm_Message"><value>Plugin "{0}" wants to type into terminal {1}:</value></data>
   <data name="PluginPerm_AllowOnce"><value>Allow once</value></data>

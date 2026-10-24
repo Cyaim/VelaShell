@@ -10,7 +10,7 @@
         WindowStartupLocation="CenterOwner">
 
   <!-- 插件管理窗口:与资源监视/链路追踪同规格(按平台的卡片外框,见 WindowChrome;
-       40px 标题栏 + min/max/close 三连按钮 + 自绘缩放抓取区)。 -->
+       28px 标题栏(window-titlebar)+ min/max/close 三连按钮 + 自绘缩放抓取区)。 -->
 
   <Window.Styles>
     <Style Selector="Button.caption">

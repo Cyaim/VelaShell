@@ -5247,6 +5247,7 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="PluginState_Crashed"><value>재시작 중</value></data>
   <data name="PluginState_Invalid"><value>잘못됨</value></data>
   <data name="PluginState_Incompatible"><value>호환 불가</value></data>
+  <data name="PluginState_Deactivated"><value>중지됨</value></data>
   <data name="PluginPerm_Title"><value>터미널 쓰기 요청</value></data>
   <data name="PluginPerm_Message"><value>플러그인 "{0}"이(가) 터미널 {1}에 입력하려고 합니다:</value></data>
   <data name="PluginPerm_AllowOnce"><value>한 번만 허용</value></data>

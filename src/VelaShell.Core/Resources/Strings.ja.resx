@@ -5247,6 +5247,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginState_Crashed"><value>再起動中</value></data>
   <data name="PluginState_Invalid"><value>無効</value></data>
   <data name="PluginState_Incompatible"><value>非互換</value></data>
+  <data name="PluginState_Deactivated"><value>停止済み</value></data>
   <data name="PluginPerm_Title"><value>ターミナル書き込み要求</value></data>
   <data name="PluginPerm_Message"><value>プラグイン「{0}」がターミナル {1} への入力を要求しています:</value></data>
   <data name="PluginPerm_AllowOnce"><value>今回のみ許可</value></data>
