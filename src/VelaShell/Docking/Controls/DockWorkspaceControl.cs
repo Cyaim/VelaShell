@@ -23,6 +23,7 @@ public sealed class DockWorkspaceControl : Panel
     private readonly Dictionary<DockDocument, Control> _views = [];
     private readonly List<DockSplit> _observedSplits = [];
     private readonly List<DockGroupControl> _groupControls = [];
+    private Action<DockGroup>? _newTabRequested;
 
     /// <summary>
     /// 已渲染的分栏轨道:节点 → 它那条 Column/RowDefinition。
@@ -42,6 +43,57 @@ public sealed class DockWorkspaceControl : Panel
     {
         get => GetValue(WorkspaceProperty);
         set => SetValue(WorkspaceProperty, value);
+    }
+
+    /// <summary>
+    /// 某个窗格标签条上的「+」被按下:请宿主在这一格里新开一个会话。参数是那一格。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 停靠层不认识「会话」—— 终端、SFTP、插件文档都由宿主来造,所以这里只报「哪一格要一个新标签」,
+    /// 怎么新建交给订阅方(主窗口接的是与 <c>Ctrl+T</c> 同一条命令)。
+    /// </para>
+    /// <para>
+    /// 触发之前已把那一格设为活动窗格(它有标签时激活其选中的那个),新文档于是按
+    /// <see cref="DockWorkspace.AddDocument" /> 的落点规则(空窗格 &gt; 活动窗格 &gt; 主组)落进这一格。
+    /// </para>
+    /// <para>
+    /// 没人订阅时「+」不显示:一枚点了什么也不发生的按钮,比没有更糟。
+    /// </para>
+    /// </remarks>
+    public event Action<DockGroup>? NewTabRequested
+    {
+        add
+        {
+            _newTabRequested += value;
+            RefreshNewTabButtons();
+        }
+        remove
+        {
+            _newTabRequested -= value;
+            RefreshNewTabButtons();
+        }
+    }
+
+    /// <summary>有没有人接「+」;没有时各窗格不显示它。</summary>
+    internal bool CanRequestNewTab => _newTabRequested is not null;
+
+    /// <summary>「+」被按下(鼠标或键盘):先让这一格成为活动窗格,再请宿主新建。</summary>
+    internal void RequestNewTab(DockGroup group)
+    {
+        if (Workspace is { } workspace && group.ActiveDocument is { } active)
+        {
+            workspace.ActivateDocument(active);
+        }
+        _newTabRequested?.Invoke(group);
+    }
+
+    private void RefreshNewTabButtons()
+    {
+        foreach (DockGroupControl groupControl in _groupControls)
+        {
+            groupControl.RefreshNewTabButton();
+        }
     }
 
     internal DockDragController DragController { get; }

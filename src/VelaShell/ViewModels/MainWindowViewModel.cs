@@ -1993,6 +1993,22 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         Layout.TabsAtBottom = appearance.TabBarPosition == "bottom";
     }
 
+    /// <summary>
+    /// 标签条上的「+」(<c>DockWorkspaceControl.NewTabRequested</c>):在那一格里新开会话。
+    /// 走的就是 <c>Ctrl+T</c> 那条命令 <c>session.new</c>(新建连接对话框),落点交给停靠层的既有规则 ——
+    /// 这里只保证那一格是活动窗格(它有标签时),新标签便落进它。
+    /// </summary>
+    /// <param name="pane">按下「+」的那一格。</param>
+    public void OpenNewTabInPane(DockGroup pane)
+    {
+        ArgumentNullException.ThrowIfNull(pane);
+        if (pane.ActiveDocument is { } active && !ReferenceEquals(Layout.ActiveDocument, active))
+        {
+            Layout.ActivateDocument(active);
+        }
+        Commands.Execute("session.new");
+    }
+
     private void OnLayoutPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(DockWorkspace.MultiRowTabs))

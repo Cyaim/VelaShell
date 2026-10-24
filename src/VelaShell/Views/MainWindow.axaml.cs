@@ -20,6 +20,7 @@ using VelaShell.Core.Resources;
 using VelaShell.Core.Services;
 using VelaShell.Core.Ssh;
 using VelaShell.Docking;
+using VelaShell.Docking.Controls;
 using VelaShell.Infrastructure.Diagnostics;
 using VelaShell.Presentation.Services;
 using VelaShell.Presentation.ViewModels;
@@ -168,6 +169,11 @@ public partial class MainWindow : Window
             sidebar.SettingsRequested += (_, _) => _ = OpenSettingsAsync();
             sidebar.PluginsRequested += (_, _) => OpenPluginManager();
             sidebar.ImportSessionsRequested += (_, _) => _ = OpenSessionImportDialogAsync();
+        }
+        // 标签条上的「+」:停靠层只报是哪一格,在那一格里走 Ctrl+T 同一条新建逻辑。
+        if (this.FindControl<DockWorkspaceControl>("DockHost") is { } dockHost)
+        {
+            dockHost.NewTabRequested += pane => (DataContext as MainWindowViewModel)?.OpenNewTabInPane(pane);
         }
         DataContextChanged += (_, _) =>
         {

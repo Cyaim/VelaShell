@@ -51,13 +51,21 @@ public partial class DockGroupControl : UserControl
         // 面板按当前的排向与多排开关现造:模板只在面板(重新)生成时才调用,
         // 之后的切换直接改活面板的属性(ApplyTabStripLayout),不重建标签。
         TabsHost.ItemsPanel = new FuncTemplate<Panel?>(CreateTabPanel);
-        TabScroll.ScrollChanged += (_, _) => UpdateScrollButtons();
+        TabScroll.ScrollChanged += (_, _) =>
+        {
+            UpdateScrollButtons();
+            UpdateNewTabButton();
+        };
         // 隧道阶段接管滚轮:ScrollViewer 自己会把滚轮当纵向滚动,而标签条是横排的,
         // 于是"在标签条上滚一下"什么也不会发生,标签一多就只能去够右端那两枚小箭头。
         TabScroll.AddHandler(PointerWheelChangedEvent, OnTabsWheel, RoutingStrategies.Tunnel);
-        // 标签宽度随标题变化、容器随集合重建 —— 指示器几何跟着布局走最省心;
-        // UpdateActiveTabIndicator 对相同几何短路,不会造成布局风暴。
-        TabsHost.LayoutUpdated += (_, _) => UpdateActiveTabIndicator();
+        // 标签宽度随标题变化、容器随集合重建 —— 指示器与「+」的几何跟着布局走最省心;
+        // 两者对相同几何都不重写属性,不会造成布局风暴。
+        TabsHost.LayoutUpdated += (_, _) =>
+        {
+            UpdateActiveTabIndicator();
+            UpdateNewTabButton();
+        };
         // 点击本组任意位置(含终端内容区)即把本组的选中文档设为全局激活 —— 对应原
         // Dock 的 FocusedDockable 语义;缺了它,分屏后点另一个窗格输入,SFTP 面板与
         // 状态栏不会跟随切换。Tunnel + handledEventsToo:终端控件会吞掉
@@ -376,8 +384,86 @@ public partial class DockGroupControl : UserControl
             panel.MultiRow = _multiRowTabs;
         }
         ApplyOverflowControlsLayout(position, edge);
+        UpdateNewTabButton();
         // 换了摆法,激活标签可能被挤到了视口外(比如从多排切回单排)。
         _revealActiveTab = true;
+    }
+
+    // ---- 「+」新建钮 ----
+
+    /// <summary>「+」的边长:与溢出三连钮同一种 24px 的 <c>.tab-nav</c>。</summary>
+    private const double NewTabButtonSize = 24;
+
+    /// <summary>「+」与最后一个标签、与视口末端之间各留的空隙。</summary>
+    private const double NewTabButtonGap = 2;
+
+    /// <summary>纵排时「+」的左边距:让 14px 的「+」字形与标签内容(左内边距 14)对齐。</summary>
+    private const double NewTabSideInset = 9;
+
+    /// <summary>宿主接没接「+」变了(<see cref="DockWorkspaceControl.NewTabRequested" /> 的订阅增减),重摆一次。</summary>
+    internal void RefreshNewTabButton() => UpdateNewTabButton();
+
+    /// <summary>
+    /// 摆「+」:跟在最后一个标签后面(横排在它右边、与它同一排垂直居中;纵排在它下面),
+    /// 标签放不下而滚动时钉在视口末端。为它让出的那一截由 <c>TabScroll</c> 的外边距留在排列方向的末端,
+    /// 横排时单排收窄与多排换行用的都是让过之后的视口宽度,所以「+」不会把标签条挤成溢出。
+    /// </summary>
+    private void UpdateNewTabButton()
+    {
+        bool available = Group is not null && WorkspaceControl?.CanRequestNewTab == true;
+        bool vertical = IsVerticalStrip;
+        double reserve = NewTabButtonSize + (2 * NewTabButtonGap);
+        Thickness margin = !available ? default
+                         : vertical ? new Thickness(0, 0, 0, reserve)
+                         : new Thickness(0, 0, reserve, 0);
+        if (TabScroll.Margin != margin)
+        {
+            TabScroll.Margin = margin;
+        }
+        NewTabButton.IsVisible = available;
+        if (!available)
+        {
+            return;
+        }
+
+        Rect? last = LastTabBounds();
+        double x;
+        double y;
+        if (vertical)
+        {
+            x = NewTabSideInset;
+            y = Math.Min(last?.Bottom ?? 0, TabScroll.Viewport.Height) + NewTabButtonGap;
+        }
+        else
+        {
+            x = Math.Min(last?.Right ?? 0, TabScroll.Viewport.Width) + NewTabButtonGap;
+            double rowTop = last?.Top ?? 0;
+            double rowHeight = last?.Height ?? Math.Max(TabScroll.Bounds.Height, TabStripRowHeight);
+            y = rowTop + ((rowHeight - NewTabButtonSize) / 2);
+        }
+        Canvas.SetLeft(NewTabButton, Math.Round(x));
+        Canvas.SetTop(NewTabButton, Math.Round(y));
+    }
+
+    /// <summary>最后一个标签在「+」所在图层里的边界(已含滚动偏移);没有标签或还没排版时为 null。</summary>
+    private Rect? LastTabBounds()
+    {
+        if (Group is not { Documents.Count: > 0 } group
+            || TabsHost.ContainerFromIndex(group.Documents.Count - 1) is not { Bounds.Width: > 0 } container
+            || container.TranslatePoint(default, NewTabLayer) is not { } origin)
+        {
+            return null;
+        }
+        return new Rect(origin, container.Bounds.Size);
+    }
+
+    /// <summary>「+」:请宿主在这一格里新开会话。停靠层不认识会话,只报是哪一格。</summary>
+    private void NewTab_Click(object? sender, RoutedEventArgs e)
+    {
+        if (Group is { } group)
+        {
+            WorkspaceControl?.RequestNewTab(group);
+        }
     }
 
     /// <summary>

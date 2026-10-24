@@ -1334,6 +1334,9 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>All Tabs</value>
   </data>
+  <data name="Dock_NewTab" xml:space="preserve">
+    <value>New Tab</value>
+  </data>
   <data name="Dock_Close" xml:space="preserve">
     <value>Close</value>
   </data>

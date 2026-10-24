@@ -1443,6 +1443,9 @@
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>所有标签页</value>
   </data>
+  <data name="Dock_NewTab" xml:space="preserve">
+    <value>新建标签页</value>
+  </data>
   <data name="Dock_Close" xml:space="preserve">
     <value>关闭</value>
   </data>

@@ -120,7 +120,7 @@
         <!-- Top Area: VelaDock 终端工作区(拖拽重排、边缘拖放/右键拆分分屏;
              浮动窗口按产品决策禁用)。视图按文档缓存复用 —— 切换标签不重建
              TerminalTabView,这是多标签切换流畅度的关键。 -->
-        <dockc:DockWorkspaceControl Grid.Row="0" Workspace="{Binding Layout}" />
+        <dockc:DockWorkspaceControl x:Name="DockHost" Grid.Row="0" Workspace="{Binding Layout}" />
 
         <!-- 水平拖拽条:5px 透明抓取区画成 1px 细线,使面板可在无粗分隔线的情况下拖拽。 -->
         <Border Grid.Row="1" Height="1" VerticalAlignment="Center"

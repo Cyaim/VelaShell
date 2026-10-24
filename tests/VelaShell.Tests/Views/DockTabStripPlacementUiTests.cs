@@ -217,7 +217,190 @@ public sealed class DockTabStripPlacementUiTests
         }, CancellationToken.None).GetAwaiter().GetResult();
     }
 
+    [TestMethod]
+    public void NewTabButton_StaysHidden_UntilTheHostHandlesIt()
+    {
+        _session.Dispatch(() =>
+        {
+            var workspace = new DockWorkspace();
+            Add(workspace, Docs("alpha"));
+            (Window window, DockWorkspaceControl dock) = Show(workspace, 800, 300);
+            DockGroupControl group = Groups(dock).Single();
+            Button plus = NewTabButton(group);
+            Assert.IsFalse(plus.IsVisible, "没人接的「+」点了什么也不会发生,不该摆出来");
+            Assert.AreEqual(default, group.TabScrollViewer.Margin, "也不该为它让出位置");
+
+            void Handler(DockGroup _)
+            {
+            }
+            dock.NewTabRequested += Handler;
+            Pump(window);
+            Assert.IsTrue(plus.IsVisible);
+
+            dock.NewTabRequested -= Handler;
+            Pump(window);
+            Assert.IsFalse(plus.IsVisible);
+
+            window.Close();
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void NewTabButton_FollowsTheLastTab_ThenPinsToTheViewportEnd()
+    {
+        _session.Dispatch(() =>
+        {
+            var workspace = new DockWorkspace();
+            PluginDocument[] docs = Docs("alpha", "beta");
+            Add(workspace, docs);
+            (Window window, DockWorkspaceControl dock) = Show(workspace, 900, 300);
+            dock.NewTabRequested += _ => { };
+            Pump(window);
+            DockGroupControl group = Groups(dock).Single();
+            Button plus = NewTabButton(group);
+            ScrollViewer strip = group.TabScrollViewer;
+
+            Rect last = BoundsIn(group, Container(group, docs[1]));
+            Rect plusRect = BoundsIn(group, plus);
+            Assert.AreEqual(last.Right + 2, plusRect.Left, 0.5, "放得下时紧跟在最后一个标签后面");
+            Assert.AreEqual(last.Center.Y, plusRect.Center.Y, 0.5, "与标签同一排、垂直居中");
+            SaveOptionalFrame(window, "dock-tabs-new-button.png");
+
+            foreach (PluginDocument doc in Docs([.. Enumerable.Range(1, 12).Select(i => $"host-{i:00}")]))
+            {
+                workspace.AddDocument(doc);
+            }
+            Pump(window);
+            Assert.IsGreaterThan(strip.Viewport.Width + 0.5, strip.Extent.Width, "这么多标签得溢出了");
+            plusRect = BoundsIn(group, plus);
+            Rect viewport = BoundsIn(group, strip);
+            Assert.AreEqual(viewport.Left + strip.Viewport.Width + 2, plusRect.Left, 0.5, "溢出时钉在视口末端");
+            Assert.IsLessThanOrEqualTo(BoundsIn(group, Named<StackPanel>(group, "OverflowControls")).Left, plusRect.Right,
+                                       "不压到溢出三连钮上");
+
+            strip.Offset = strip.Offset.WithX(0);
+            Pump(window);
+            Assert.AreEqual(plusRect.Left, BoundsIn(group, plus).Left, 0.5, "滚到哪儿它都留在原地,不随标签滚走");
+            SaveOptionalFrame(window, "dock-tabs-new-button-overflow.png");
+
+            window.Close();
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void NewTabButton_SitsBelowTheLastTab_OnASideStrip()
+    {
+        _session.Dispatch(() =>
+        {
+            var workspace = new DockWorkspace();
+            PluginDocument[] docs = Docs("alpha", "beta");
+            Add(workspace, docs);
+            workspace.PrimaryGroup.TabsPosition = DockTabsPosition.Left;
+            (Window window, DockWorkspaceControl dock) = Show(workspace, 900, 400);
+            dock.NewTabRequested += _ => { };
+            Pump(window);
+            DockGroupControl side = Groups(dock).Single();
+
+            Rect last = BoundsIn(side, Container(side, docs[1]));
+            Rect plusRect = BoundsIn(side, NewTabButton(side));
+            Assert.AreEqual(last.Bottom + 2, plusRect.Top, 0.5, "纵排时在最后一个标签下面");
+            Assert.AreEqual(14d, plusRect.Left + 5, 0.5, "「+」字形与标签内容的左缘对齐");
+            SaveOptionalFrame(window, "dock-tabs-new-button-side.png");
+
+            window.Close();
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void NewTabButton_InAnEmptyRootPane_SitsAtTheStartOfTheStrip()
+    {
+        _session.Dispatch(() =>
+        {
+            var workspace = new DockWorkspace();
+            (Window window, DockWorkspaceControl dock) = Show(workspace, 800, 300);
+            dock.NewTabRequested += _ => { };
+            Pump(window);
+            DockGroupControl group = Groups(dock).Single();
+
+            Rect plusRect = BoundsIn(group, NewTabButton(group));
+            Rect strip = BoundsIn(group, group.TabStripPanel);
+            Assert.AreEqual(2d, plusRect.Left, 0.5, "一个标签都没有时就在标签条的起点 —— 那正是「一个会话都没开」时最该点的地方");
+            Assert.AreEqual(strip.Center.Y, plusRect.Center.Y, 0.5);
+
+            window.Close();
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void NewTabButton_WithMultipleRows_FollowsTheLastTabOnTheLastRow()
+    {
+        _session.Dispatch(() =>
+        {
+            var workspace = new DockWorkspace { MultiRowTabs = true };
+            PluginDocument[] docs = Docs([.. Enumerable.Range(1, 7).Select(i => $"server-{i}.example.com")]);
+            Add(workspace, docs);
+            (Window window, DockWorkspaceControl dock) = Show(workspace, 640, 400);
+            dock.NewTabRequested += _ => { };
+            Pump(window);
+            DockGroupControl group = Groups(dock).Single();
+
+            Rect last = BoundsIn(group, Container(group, docs[^1]));
+            Rect first = BoundsIn(group, Container(group, docs[0]));
+            Rect plusRect = BoundsIn(group, NewTabButton(group));
+            Assert.IsGreaterThan(first.Top, last.Top, "得真的换了行");
+            Assert.AreEqual(last.Right + 2, plusRect.Left, 0.5);
+            Assert.AreEqual(last.Center.Y, plusRect.Center.Y, 0.5, "落在最后一排");
+            Assert.IsLessThanOrEqualTo(group.Bounds.Width, plusRect.Right, "换行时已经给它留了位置,不会伸出窗格");
+
+            window.Close();
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void NewTabButton_AsksTheHostForItsOwnPane_ByMouseAndByKeyboard()
+    {
+        _session.Dispatch(() =>
+        {
+            var workspace = new DockWorkspace();
+            PluginDocument[] docs = Docs("alpha", "beta", "gamma");
+            Add(workspace, docs);
+            workspace.SplitDocument(docs[2], DockOrientation.Horizontal);
+            workspace.ActivateDocument(docs[0]);
+            (Window window, DockWorkspaceControl dock) = Show(workspace, 900, 400);
+            List<DockGroup> requested = [];
+            dock.NewTabRequested += requested.Add;
+            Pump(window);
+            DockGroupControl left = Groups(dock).Single(g => ReferenceEquals(g.Group, workspace.PrimaryGroup));
+            DockGroupControl right = Groups(dock).Single(g => !ReferenceEquals(g.Group, workspace.PrimaryGroup));
+
+            ClickCenter(window, NewTabButton(right));
+            Pump(window);
+            Assert.HasCount(1, requested);
+            Assert.AreSame(right.Group, requested[0], "报的是按下「+」的那一格");
+            Assert.AreSame(docs[2], workspace.ActiveDocument, "那一格成了活动窗格,新标签照落点规则落进它");
+
+            Button plus = NewTabButton(left);
+            Assert.IsTrue(plus.Focus(), "「+」要能拿到键盘焦点");
+            window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+            window.KeyRelease(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+            Pump(window);
+            Assert.HasCount(2, requested, "回车也能按下它");
+            Assert.AreSame(left.Group, requested[1]);
+            Assert.AreSame(docs[0], workspace.ActiveDocument, "键盘按下时没有指针那一下顺手激活,得自己把那一格设为活动窗格");
+
+            window.Close();
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
     // ---- 脚手架 ----
+
+    private static Button NewTabButton(DockGroupControl group) => Named<Button>(group, "NewTabButton");
 
     private static double Rotation(DockGroupControl group, string iconName) =>
         Named<Control>(group, iconName).RenderTransform is RotateTransform rotate ? rotate.Angle : 0;
