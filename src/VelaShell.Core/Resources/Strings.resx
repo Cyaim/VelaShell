@@ -4553,6 +4553,39 @@ Overwrite it?</value>
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>Still failing after {0} retries: {1}</value>
   </data>
+  <data name="Transfer_Paused" xml:space="preserve">
+    <value>Paused</value>
+  </data>
+  <data name="Transfer_PausedFiles" xml:space="preserve">
+    <value>{0} files</value>
+  </data>
+  <data name="Transfer_PausedInterrupted" xml:space="preserve">
+    <value>connection lost, paused</value>
+  </data>
+  <data name="Transfer_PausedRestored" xml:space="preserve">
+    <value>not finished when VelaShell last closed</value>
+  </data>
+  <data name="Transfer_PausedResuming" xml:space="preserve">
+    <value>resuming…</value>
+  </data>
+  <data name="Transfer_PausedProfileMissing" xml:space="preserve">
+    <value>connection deleted, cannot resume</value>
+  </data>
+  <data name="Transfer_PausedResumeFailed" xml:space="preserve">
+    <value>could not resume: {0}</value>
+  </data>
+  <data name="Transfer_Resume" xml:space="preserve">
+    <value>Resume</value>
+  </data>
+  <data name="Transfer_ResumeTip" xml:space="preserve">
+    <value>Reconnect if needed and transfer the remaining files (partial files continue from where they stopped)</value>
+  </data>
+  <data name="Transfer_Discard" xml:space="preserve">
+    <value>Discard</value>
+  </data>
+  <data name="Transfer_DiscardTip" xml:space="preserve">
+    <value>Do not transfer the remaining files. Files already transferred are not affected.</value>
+  </data>
   <data name="Transfer_ClearCompleted" xml:space="preserve">
     <value>Clear finished</value>
   </data>

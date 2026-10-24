@@ -379,7 +379,11 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Result and how it works:** Transfers appear in the progress popup/history. Settings control concurrency (1–16), bandwidth, timestamps, completion notifications, and logs. Ordinary name conflicts can ask, overwrite, skip, or rename. Directory synchronization uses its preview rather than that ordinary conflict policy.
 
-**Resume and cancellation:** With resume enabled, a nonempty destination smaller than the source is verified before resuming. Verification failure follows conflict policy; a matching name is not enough to append blindly. Keeping partial files enables later resume. The popup supports bulk cancellation, clearing completed items, and manually retrying failures as new transfer attempts. Automatic retry counts are not wired into runtime, and transfer queues do not persist across application launches. Finish important transfers before quitting.
+**Resume and cancellation:** With resume enabled, a nonempty destination smaller than the source is verified before resuming. Verification failure follows conflict policy; a matching name is not enough to append blindly. Keeping partial files enables later resume. The popup supports bulk cancellation, clearing completed items, and manually retrying failures as new transfer attempts.
+
+**Automatic retry:** Temporary failures such as a dropped connection or a timeout are retried on the same connection up to the "Retry failed transfers" count (default 3, 0 = never), waiting 1, 2, 4 seconds and so on between attempts (at most 30 seconds); the row shows "Retry 1/3" meanwhile. With resume enabled a retry continues from what that file itself already transferred; with resume disabled it starts over. Permission errors, a full disk, missing paths, writes the server refuses, and user cancellation are not retried.
+
+**Continuing after a disconnect or a restart:** Upload and download batches started from a file panel are recorded in a local transfer queue. When the connection drops (or retries run out), the remaining files of that batch are not tried one by one; the whole batch becomes one "paused" row in the popup. Batches not finished when VelaShell closed are restored as "paused" on the next launch — **nothing connects at startup**. Only "Resume" connects: a tab already connected to that profile is reused, otherwise a file tab is opened (with the usual authentication and host-key checks); partial files continue from where they stopped, files not yet started are transferred whole, and the conflict policy is not asked again (it was settled when the batch was planned). "Discard" drops the remaining files; files already transferred are not affected. A batch whose connection profile was deleted can only be discarded. Relays between two remote panes, directory sync, automatic upload of remote edits, and transfers started by AI plugins are not queued.
 
 ### 9.4 Built-In and External Remote Editing
 
@@ -634,11 +638,11 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 | Default Paths | Local download directory, default editor path/browse | Independent dual panes download to the current local directory; defaults are not forced destinations |
 | Remote Editing | Double-click system/built-in/default editor, auto-upload after editing | Saving a local temporary copy can write to production remotely |
 | Transfer Behavior | Concurrency 1–16, preserve timestamps, fsync after upload, completion notices | fsync requires server support; higher concurrency is not always faster |
-| Conflict Handling | Ask/overwrite/skip/rename, hidden files, fast recursive deletion, resume | Fast deletion requires SSH exec and falls back to SFTP on failure; resume retains partial files; failed-temp cleanup is shown only when resume is disabled |
+| Conflict Handling | Ask/overwrite/skip/rename, hidden files, fast recursive deletion, resume, retry failed transfers 0–10 times | Fast deletion requires SSH exec and falls back to SFTP on failure; resume retains partial files; failed-temp cleanup is shown only when resume is disabled; only temporary failures such as disconnects and timeouts are retried |
 | Bandwidth Limits | Enable, upload/download MB/s, 0 unlimited | Limits application transfers, not other server applications |
 | Logging | Transfer logs, retention 1–365 days, directory | Paths/filenames can be sensitive; check access and disk space |
 
-**Mechanism:** New file sessions take a settings snapshot. Reopen a file tab if an existing one still has old behavior. Do not assume every parameter changes instantly during an important transfer. Automatic failure-retry counts are not consumed by runtime and are not offered in the interface.
+**Mechanism:** New file sessions take a settings snapshot. Reopen a file tab if an existing one still has old behavior. Do not assume every parameter changes instantly during an important transfer.
 
 ### 15.8 Security Audit
 
@@ -1092,7 +1096,7 @@ This manual intentionally does not promise:
 - Arbitrary floating docking windows; layout persistence beyond layout templates and **Restore split layout** (without a template or that option, splits and pinned tabs last for this run only); syncing or exporting layout templates across devices.
 - Master-password protection of the whole database; encrypted application-settings export; profiles embedded in that export; proxy passwords in it. Current settings export is unencrypted JSON with the proxy password removed.
 - Linux in-app update installation, selectable update channels, or automatic background downloads described by older material. Linux installs manually; Store is Store-managed.
-- Per-profile proxies; dual-remote synchronization/keep-up-to-date; automatic remote→local watching; persistent transfer queues or automatic failure-retry counts.
+- Per-profile proxies; dual-remote synchronization/keep-up-to-date; automatic remote→local watching; resuming transfers automatically at startup (the persisted transfer queue is only restored as "paused" and connects when you click "Resume").
 - Sixel/Kitty terminal images or ZMODEM. X11 graphical applications are not terminal image protocols.
 - Redis/S3/Telnet/serial/Docker without plugins. S3 is not POSIX storage and does not supply SSH chmod/upload-resume semantics.
 - Command-block rerun/copy-command buttons or automatic quick-command execution. Completion is not a safety review.

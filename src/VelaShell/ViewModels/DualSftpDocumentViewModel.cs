@@ -238,9 +238,12 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
         Func<Task<string?>>? getDefaultEditorPath)
     {
         SessionProfile profile = endpoint.Profile;
+        string serverName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Host : profile.Name;
         var pane = new FileBrowserViewModel(sftp, endpoint.SessionId)
         {
-            ServerDisplayName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Host : profile.Name,
+            ServerDisplayName = serverName,
+            // 往本机的上传 / 下载记进传输队列;两栏之间的中转不记(要两条连接同时在才能接着传)。
+            QueueOrigin = new(profile.Id, serverName),
             // 两栏各带自己那台机器的标识色:两边都是远端,光看路径分不清哪栏是哪台。
             AccentBrush = ConnectionAccent.BrushForProfile(profile),
             TransferSink = transferSink,

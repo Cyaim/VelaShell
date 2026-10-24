@@ -103,6 +103,63 @@
                    FontSize="{DynamicResource VelaFontSize10}" />
       </Border>
 
+      <!-- 已暂停的批次(断线停下 / 上次退出时没传完):一批一行,带「继续」「放弃」,排在传输行上面。
+           单独一个视口:几批停下的不该把正在传的行挤出传输列表的高度上限。 -->
+      <ScrollViewer Name="PausedViewport"
+                    VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled"
+                    MaxHeight="160"
+                    IsVisible="{Binding PausedBatches.Count}">
+        <ItemsControl Name="PausedRows" ItemsSource="{Binding PausedBatches}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PausedTransferBatchViewModel">
+              <Border Padding="12,8,20,8"
+                      BorderBrush="{DynamicResource VelaBorderPrimary}"
+                      BorderThickness="0,0,0,1">
+                <StackPanel Spacing="4">
+                  <Grid ColumnDefinitions="*,Auto,Auto">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding Title}"
+                               Foreground="{DynamicResource VelaTextPrimary}"
+                               FontFamily="{DynamicResource VelaUiMonoFont}"
+                               FontSize="{DynamicResource VelaFontSize10}" FontWeight="Medium"
+                               TextTrimming="CharacterEllipsis" />
+                    <!-- 继续:找回(或重新打开)这条连接,剩下的接着传;半截文件从断点接着传。
+                         正在连、或配置已删除时不显示(而不是灰掉):第二行的状态已经说明了为什么。 -->
+                    <Button Grid.Column="1" Background="Transparent" Padding="4,0" Margin="0,0,4,0" Cursor="Hand"
+                            IsVisible="{Binding CanResume}"
+                            Command="{Binding $parent[ItemsControl].((vm:FileTransferViewModel)DataContext).ResumePausedBatchCommand}"
+                            CommandParameter="{Binding BatchId}"
+                            ToolTip.Tip="{loc:Localize Transfer_ResumeTip}">
+                      <TextBlock Text="{loc:Localize Transfer_Resume}"
+                                 Foreground="{DynamicResource VelaAccent}"
+                                 FontFamily="{DynamicResource VelaUiMonoFont}"
+                                 FontSize="{DynamicResource VelaFontSize10}" FontWeight="Medium" />
+                    </Button>
+                    <!-- 放弃:剩下的不再传。已传完的不受影响,半截文件按「清理半截文件」的设置处理过,这里不动它们。 -->
+                    <Button Grid.Column="2" Background="Transparent" Padding="4,0" Cursor="Hand"
+                            IsVisible="{Binding !IsResuming}"
+                            Command="{Binding $parent[ItemsControl].((vm:FileTransferViewModel)DataContext).DiscardPausedBatchCommand}"
+                            CommandParameter="{Binding BatchId}"
+                            ToolTip.Tip="{loc:Localize Transfer_DiscardTip}">
+                      <TextBlock Text="{loc:Localize Transfer_Discard}"
+                                 Foreground="{DynamicResource VelaTextTertiary}"
+                                 FontFamily="{DynamicResource VelaUiMonoFont}"
+                                 FontSize="{DynamicResource VelaFontSize10}" />
+                    </Button>
+                  </Grid>
+                  <TextBlock Text="{Binding Detail}"
+                             Foreground="{DynamicResource VelaTextMuted}"
+                             FontFamily="{DynamicResource VelaUiMonoFont}"
+                             FontSize="{DynamicResource VelaFontSize9}"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
       <!-- 传输行:限制面板高度(约 5 行)并对溢出内容滚动。
            这里刻意不做虚拟化(默认的 StackPanel 就是要的那个)。它本来就换不来什么:
            行数已在 FileTransferViewModel 里压到 100 以内,一次最多也就实现 100 行;

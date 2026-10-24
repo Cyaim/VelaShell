@@ -4512,6 +4512,39 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>{0} 回再試行しても失敗しました:{1}</value>
   </data>
+  <data name="Transfer_Paused" xml:space="preserve">
+    <value>一時停止</value>
+  </data>
+  <data name="Transfer_PausedFiles" xml:space="preserve">
+    <value>{0} 個のファイル</value>
+  </data>
+  <data name="Transfer_PausedInterrupted" xml:space="preserve">
+    <value>接続が切れたため一時停止</value>
+  </data>
+  <data name="Transfer_PausedRestored" xml:space="preserve">
+    <value>前回の終了時に未完了</value>
+  </data>
+  <data name="Transfer_PausedResuming" xml:space="preserve">
+    <value>再開しています…</value>
+  </data>
+  <data name="Transfer_PausedProfileMissing" xml:space="preserve">
+    <value>接続設定が削除されたため再開できません</value>
+  </data>
+  <data name="Transfer_PausedResumeFailed" xml:space="preserve">
+    <value>再開できませんでした:{0}</value>
+  </data>
+  <data name="Transfer_Resume" xml:space="preserve">
+    <value>再開</value>
+  </data>
+  <data name="Transfer_ResumeTip" xml:space="preserve">
+    <value>必要なら再接続して残りのファイルを転送します(途中のファイルは中断した位置から再開)</value>
+  </data>
+  <data name="Transfer_Discard" xml:space="preserve">
+    <value>破棄</value>
+  </data>
+  <data name="Transfer_DiscardTip" xml:space="preserve">
+    <value>残りのファイルは転送しません。転送済みのファイルには影響しません。</value>
+  </data>
   <data name="Transfer_ClearCompleted" xml:space="preserve">
     <value>完了分をクリア</value>
   </data>

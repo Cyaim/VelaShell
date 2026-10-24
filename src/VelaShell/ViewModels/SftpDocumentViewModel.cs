@@ -97,6 +97,8 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         RemoteFiles = new FileBrowserViewModel(_serializedSftp, SessionId)
         {
             ServerDisplayName = Title,
+            // 上传 / 下载批次记进传输队列:断线或退出时没传完的,按这条配置找回连接接着传。
+            QueueOrigin = new(profile.Id, Title),
             TransferSink = transferSink,
             TransferOptions = transferOptions ?? throw new ArgumentNullException(nameof(transferOptions)),
             IsVisible = true,

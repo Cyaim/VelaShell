@@ -4686,6 +4686,39 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>重試 {0} 次後仍然失敗:{1}</value>
   </data>
+  <data name="Transfer_Paused" xml:space="preserve">
+    <value>已暫停</value>
+  </data>
+  <data name="Transfer_PausedFiles" xml:space="preserve">
+    <value>{0} 個檔案</value>
+  </data>
+  <data name="Transfer_PausedInterrupted" xml:space="preserve">
+    <value>連線中斷,已暫停</value>
+  </data>
+  <data name="Transfer_PausedRestored" xml:space="preserve">
+    <value>上次結束時沒傳完</value>
+  </data>
+  <data name="Transfer_PausedResuming" xml:space="preserve">
+    <value>正在繼續…</value>
+  </data>
+  <data name="Transfer_PausedProfileMissing" xml:space="preserve">
+    <value>連線設定已刪除,無法繼續</value>
+  </data>
+  <data name="Transfer_PausedResumeFailed" xml:space="preserve">
+    <value>無法繼續:{0}</value>
+  </data>
+  <data name="Transfer_Resume" xml:space="preserve">
+    <value>繼續</value>
+  </data>
+  <data name="Transfer_ResumeTip" xml:space="preserve">
+    <value>需要時重新連線,接著傳剩下的檔案(半截檔案從斷點接著傳)</value>
+  </data>
+  <data name="Transfer_Discard" xml:space="preserve">
+    <value>放棄</value>
+  </data>
+  <data name="Transfer_DiscardTip" xml:space="preserve">
+    <value>剩下的檔案不再傳;已經傳完的不受影響。</value>
+  </data>
   <data name="Transfer_ClearCompleted" xml:space="preserve">
     <value>清除已結束</value>
   </data>

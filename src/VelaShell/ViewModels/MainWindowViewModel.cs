@@ -404,6 +404,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         WireBackgroundActivity(backgroundActivity);
         _fileBrowser = new(null, Guid.Empty);
         _fileTransfer = new(transferManager, appDataStore);
+        // 传输浮窗上「已暂停的批次」点「继续」:找回(或重新打开)那条连接接着传(见 ResumeQueuedTransfersAsync)。
+        _fileTransfer.ResumeHandler = ResumeQueuedTransfersAsync;
         // 活动标签换人时要做的那几件事。挂在 ActiveTerminalTab 上而不是某个标签集合上:
         // 停靠布局是唯一事实来源,而 ActiveTerminalTab 正是从它的 ActiveDocumentChanged 派生的。
         // 原先这条订阅挂在 TabBar.ActiveTab 上,于是"谁是活动标签"有两个各自会变的来源,
@@ -1554,6 +1556,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         var browser = new FileBrowserViewModel(_sftpService, tab.SessionId)
         {
             TransferSink = FileTransfer,
+            // 上传 / 下载批次记进传输队列,断线或退出时没传完的按这条配置找回连接接着传。
+            QueueOrigin = tab.Profile is { } origin ? new(origin.Id, serverName) : null,
             IsVisible = wasVisible,
             GetDefaultEditorPath = QueryDefaultEditorPathAsync,
             TransferOptions = _latestSettings?.Transfer ?? new TransferOptions(),
@@ -1634,6 +1638,77 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
         TerminalTabViewModel? owner = TerminalTabs.FirstOrDefault(t => t.SessionId == sessionId);
         owner?.FileBrowserOpen = visible;
+    }
+
+    /// <summary>
+    /// 接着传一批停下的传输(断线之后,或上次退出时还没传完的)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 按批次记下的连接配置找连接:先找已经连着这条配置的文件标签,再找打开过文件面板的终端标签;
+    /// 都没有就照常打开一个文件标签(SSH / SFTP、FTP、插件文件协议各走自己的那条打开路径,
+    /// 认证弹窗、指纹核对、失败卡片与平时双击连接一模一样)。启动时不做这件事 —— 只在用户点「继续」时才连。
+    /// </para>
+    /// <para>
+    /// 配置已经删了:不去猜它原来连的是哪台(主机名可能早已指向别处),如实说「配置已删除」,只能放弃。
+    /// </para>
+    /// </remarks>
+    private async Task<TransferResumeOutcome> ResumeQueuedTransfersAsync(PausedTransferBatch batch)
+    {
+        if (_sessionRepository is null)
+        {
+            return new(TransferResumeResult.NotConnected);
+        }
+        IReadOnlyList<SessionProfile> saved = await _sessionRepository.GetAllSessionsAsync().ConfigureAwait(true);
+        if (saved.FirstOrDefault(p => p.Id == batch.Origin.ProfileId) is not { } profile)
+        {
+            return new(TransferResumeResult.ProfileMissing);
+        }
+        FileBrowserViewModel? browser = FindConnectedFileBrowser(profile.Id);
+        if (browser is null)
+        {
+            SftpDocument? document = profile.ConnectionType switch
+            {
+                ConnectionType.SSH or ConnectionType.SFTP => await OpenSftpDocumentForProfileAsync(profile).ConfigureAwait(true),
+                ConnectionType.FTP => await OpenFtpDocumentForProfileAsync(profile).ConfigureAwait(true),
+                ConnectionType.Plugin => await OpenPluginDocumentForProfileAsync(profile).ConfigureAwait(true),
+                _ => null,
+            };
+            // 没连上:失败原因已经由打开路径报过了(浮层 + 失败卡片);用户取消同样原样留着,稍后可以再点。
+            browser = document?.ViewModel.RemoteFiles;
+        }
+        if (browser is null)
+        {
+            return new(TransferResumeResult.NotConnected);
+        }
+        return await browser.ResumeQueuedTransfersAsync(batch).ConfigureAwait(true)
+            ? new(TransferResumeResult.Started)
+            : new(TransferResumeResult.Failed, browser.ErrorMessage);
+    }
+
+    /// <summary>已经连着这条配置、能直接拿来传文件的面板;没有返回 null。</summary>
+    private FileBrowserViewModel? FindConnectedFileBrowser(Guid profileId)
+    {
+        foreach (SftpDocument document in Layout.AllDocuments().OfType<SftpDocument>())
+        {
+            if (document.ViewModel.Profile.Id == profileId && document.ViewModel.Status == SessionStatus.Connected)
+            {
+                return document.ViewModel.RemoteFiles;
+            }
+        }
+        // 终端标签只认打开过文件面板的(缓存里有):没打开过的,替它在后台建一个面板没有意义 ——
+        // 用户看不到它,新开一个文件标签反而一眼就知道文件在往哪儿传。
+        foreach (TerminalTabViewModel tab in TerminalTabs)
+        {
+            if (tab.Profile?.Id == profileId
+                && tab.ConnectionStatus == SessionStatus.Connected
+                && tab.SessionId != Guid.Empty
+                && _fileBrowserCache.TryGetValue(tab.SessionId, out FileBrowserViewModel? cached))
+            {
+                return cached;
+            }
+        }
+        return null;
     }
 
     /// <summary>SFTP「使用默认编辑器打开」读取的编辑器命令(设置 → 文件传输 → 默认编辑器)。</summary>
@@ -6373,6 +6448,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 .Distinct()];
         }
         await Task.WhenAll(closeTasks);
+
+        // 传输队列平时攒一秒落一次盘;退出前补落一次,刚传完的文件下次启动就不会又出现在「待继续」里。
+        // 只等两秒:库卡住了也不能把退出拖住。
+        try
+        {
+            await FileTransfer.Journal.FlushAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        catch (TimeoutException)
+        {
+        }
     }
 
     private async Task OnDocumentClosedAsync(TerminalDocument document)

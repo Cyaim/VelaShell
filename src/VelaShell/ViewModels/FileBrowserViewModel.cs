@@ -2268,13 +2268,26 @@ public class FileBrowserViewModel : ReactiveObject
         }
     }
 
+    /// <param name="plan">规划好的传输。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <param name="resumes">
+    /// 接着传的是传输队列里停下的哪一批(见 <see cref="ResumeQueuedTransfersAsync" />);新发起的为 <see cref="Guid.Empty" />。
+    /// 接着传时<b>不再走同名冲突策略</b>:这些项在最初规划时已经过了那一关(覆盖、改名后的目标、或本来就不冲突),
+    /// 目标上现在有东西,多半是它自己上次写下的半截或已写完的那份 —— 照「询问」再弹一轮只是让用户把同一个决定再做一遍。
+    /// 半截照常走续传探测;起点核实对不上(源或目标在这期间变了)时按覆盖处理。
+    /// </param>
     private async Task<bool> RunTransferBatchAsync(
         IReadOnlyList<PlannedFileTransfer> plan,
-        CancellationToken ct
+        CancellationToken ct,
+        Guid resumes = default
     )
     {
         if (plan.Count == 0)
         {
+            if (resumes != Guid.Empty)
+            {
+                TransferSink?.RetirePausedBatch(resumes);
+            }
             return true;
         }
 
@@ -2290,7 +2303,7 @@ public class FileBrowserViewModel : ReactiveObject
         var resolved = new List<PlannedFileTransfer>(plan.Count);
         // 本批次“全部覆盖/全部跳过”的粘性决定:一旦用户在某个冲突上选了“全部…”,
         // 其余冲突不再逐个弹窗(拖入上千文件时的关键)。null = 尚未决定,仍逐个询问。
-        var conflictDecision = new BatchConflictDecision();
+        var conflictDecision = new BatchConflictDecision { OverwriteAll = resumes != Guid.Empty ? true : null };
         foreach (PlannedFileTransfer item in plan)
         {
             // 先做断点续传检查:若续传已启用且存在部分文件,从该偏移处续传。
@@ -2300,6 +2313,13 @@ public class FileBrowserViewModel : ReactiveObject
             if (resumed is not null)
             {
                 resolved.Add(resumed);
+                continue;
+            }
+
+            // 接着传一批停下的传输:冲突在最初规划时已经定过了(见 resumes 参数的说明)。
+            if (resumes != Guid.Empty)
+            {
+                resolved.Add(item);
                 continue;
             }
 
@@ -2313,20 +2333,103 @@ public class FileBrowserViewModel : ReactiveObject
                 resolved.Add(settled);
             }
         }
-        return await ExecuteResolvedBatchAsync(resolved, conflictDecision, settled: null, ct);
+        return await ExecuteResolvedBatchAsync(resolved, conflictDecision, settled: null, ct, persist: true, replaces: resumes);
+    }
+
+    /// <summary>
+    /// 本面板发起的传输来自哪条连接(宿主按连接配置设置)。设了它,上传与下载批次就记进传输队列:
+    /// 断线停下、或退出时还没传完的,在浮窗上挂成「已暂停」,点「继续」时按这条连接找回会话接着传。
+    /// 为 null(临时占位面板、没有配置的会话)时不记,失败照旧标红。
+    /// </summary>
+    public TransferQueueOrigin? QueueOrigin { get; init; }
+
+    /// <summary>
+    /// 接着传一批停下来的传输(断线之后,或上次退出时还没传完的):每一项先探续传起点,有半截就从半截接着传,
+    /// 没有就整份传;冲突策略不再过一遍(理由见 <see cref="RunTransferBatchAsync" /> 的 resumes 参数)。
+    /// </summary>
+    /// <remarks>
+    /// 在这一批登记进队列的那一刻,原来那一批从队列与浮窗上撤掉(交接);之后照常是一批普通的传输 ——
+    /// 进度、并发上限、自动重试、取消、再断线时再停下,都与新发起的一样。
+    /// 本地或远端文件在这期间没了、没了权限,那一项按永久失败标红,其余照传。
+    /// </remarks>
+    /// <param name="batch">要接着传的那一批。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>false = 没能开始(原因在 <see cref="ErrorMessage" /> 里),那一批原样留在队列里。</returns>
+    internal async Task<bool> ResumeQueuedTransfersAsync(PausedTransferBatch batch, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        PlannedFileTransfer[] plan = [.. batch.Items.Select(static i => new PlannedFileTransfer(i.Type, i.LocalPath, i.RemotePath))];
+        try
+        {
+            ErrorMessage = null;
+            await RunTransferBatchAsync(plan, ct, batch.BatchId);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            // 交接之后的取消由批次自己收尾(不会抛到这里);走到这里说明还没交接,那一批原样留着。
+            return false;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            ErrorMessage = ex.Message;
+            return false;
+        }
     }
 
     /// <summary>
     /// 执行一批已经过冲突与续传处理的传输:登记批次、按全窗口并发上限分派、收尾通知。
     /// <paramref name="settled" /> 在每一项落定(完成/失败/跳过)后回调,取消时不回调。
     /// </summary>
+    /// <param name="resolved">要传的项。</param>
+    /// <param name="conflictDecision">本批次的粘性冲突决定。</param>
+    /// <param name="settled">每一项落定后的回调。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <param name="persist">
+    /// 记不记进传输队列(用户发起的上传 / 下载批次记;目录同步不记 —— 它的计划是在预览里逐条确认的,
+    /// 重启之后应当重新比较)。记了的批次在连接断掉时整批停下、挂成「已暂停」,而不是剩下的文件一个接一个失败。
+    /// </param>
+    /// <param name="replaces">这一批接替的是队列里的哪一批(登记之后把那一批撤掉)。</param>
     private async Task<bool> ExecuteResolvedBatchAsync(
         IReadOnlyList<PlannedFileTransfer> resolved,
         BatchConflictDecision conflictDecision,
         Func<PlannedFileTransfer, TransferStatus, Task>? settled,
-        CancellationToken ct
+        CancellationToken ct,
+        bool persist = false,
+        Guid replaces = default
     )
     {
+        // 传输队列:只记上传与下载,只在知道发起连接的面板上记(恢复时得知道去连哪台)。
+        TransferQueueJournal? journal = persist && QueueOrigin is not null ? TransferSink?.Journal : null;
+        Guid queueId = Guid.Empty;
+        int[] queueIndex = new int[resolved.Count];
+        if (journal is not null)
+        {
+            var queued = new List<TransferQueueItem>(resolved.Count);
+            for (int i = 0; i < resolved.Count; i++)
+            {
+                PlannedFileTransfer item = resolved[i];
+                queueIndex[i] = TransferQueueJournal.CanPersist(item.Type) && item.Source is null ? queued.Count : -1;
+                if (queueIndex[i] >= 0)
+                {
+                    queued.Add(new(item.Type, item.LocalPath, item.RemotePath));
+                }
+            }
+            if (queued.Count > 0)
+            {
+                queueId = journal.Begin(QueueOrigin!, queued);
+            }
+            else
+            {
+                journal = null;
+            }
+        }
+        // 交接:新的一批已经登记(或者一项都不用再传了),接替的那一批从队列与浮窗上撤掉。
+        // 顺序要紧 —— 先登记新的再撤旧的,中间崩掉也最多是两份都在,而不是两份都没了。
+        if (replaces != Guid.Empty)
+        {
+            TransferSink?.RetirePausedBatch(replaces);
+        }
         if (resolved.Count == 0)
         {
             return true;
@@ -2336,6 +2439,9 @@ public class FileBrowserViewModel : ReactiveObject
         // (见 FileTransferViewModel._batches 的说明)。
         Guid batchId = TransferSink?.BeginBatch(resolved.Count, cts) ?? Guid.Empty;
         bool completed = false;
+        // 有一项因为连接没了(或重试用完)停下:剩下的不再开始 —— 它们多半也传不动,
+        // 一个接一个去撞只会刷出一排红行。停下的整批等用户「继续」。
+        int paused = 0;
         try
         {
             // 最大并发传输数(设置 → 文件传输):1 = 既有的顺序行为。
@@ -2344,14 +2450,16 @@ public class FileBrowserViewModel : ReactiveObject
             int maxConcurrent = Math.Clamp(TransferOptions.MaxConcurrentTransfers, 1, 16);
             if (maxConcurrent <= 1 || resolved.Count == 1)
             {
-                foreach (PlannedFileTransfer item in resolved)
+                for (int position = 0; position < resolved.Count && Volatile.Read(ref paused) == 0; position++)
                 {
+                    PlannedFileTransfer item = resolved[position];
                     // 顺序路径同样要过闸:否则"上限 1"的两个批次会各跑各的,合起来是 2。
                     TransferStatus status;
                     using (await AcquireTransferSlotAsync(maxConcurrent, cts.Token))
                     {
-                        status = await RunTransferAsync(item.Type, item.LocalPath, item.RemotePath, item.ResumeOffset, cts.Token, conflictDecision, item.Source);
+                        status = await RunTransferAsync(item.Type, item.LocalPath, item.RemotePath, item.ResumeOffset, cts.Token, conflictDecision, item.Source, pausable: journal is not null);
                     }
+                    Account(position, status);
                     TransferSink?.NotifyBatchItemSettled(batchId);
                     if (settled is not null)
                     {
@@ -2373,7 +2481,7 @@ public class FileBrowserViewModel : ReactiveObject
                 // (单元测试里就没有),而且任何一层 ConfigureAwait(false) 都能把它打破。
                 // 两个工作任务同时 Dequeue 的后果不是抛异常那么显眼,而是**静默漏传文件**:
                 // 实测在 Linux 上每批稳定少传一到两个,界面上还显示成功。
-                var queue = new ConcurrentQueue<PlannedFileTransfer>(resolved);
+                var queue = new ConcurrentQueue<int>(Enumerable.Range(0, resolved.Count));
                 int workerCount = Math.Min(maxConcurrent, resolved.Count);
                 var workers = new Task[workerCount];
                 for (int i = 0; i < workerCount; i++)
@@ -2387,11 +2495,12 @@ public class FileBrowserViewModel : ReactiveObject
                     while (true)
                     {
                         if (cts.IsCancellationRequested
-                            || !queue.TryDequeue(out PlannedFileTransfer? item)
-                            || item is null)
+                            || Volatile.Read(ref paused) != 0
+                            || !queue.TryDequeue(out int position))
                         {
                             return;
                         }
+                        PlannedFileTransfer item = resolved[position];
                         // 名额在**每个文件**上取放,不是一个工作任务霸着一个:这样上限
                         // 才是"同时在传几个文件",而不是"起了几个工作任务"。
                         TransferStatus status;
@@ -2404,9 +2513,11 @@ public class FileBrowserViewModel : ReactiveObject
                                 item.ResumeOffset,
                                 cts.Token,
                                 conflictDecision,
-                                item.Source
+                                item.Source,
+                                pausable: journal is not null
                             );
                         }
+                        Account(position, status);
                         TransferSink?.NotifyBatchItemSettled(batchId);
                         if (settled is not null)
                         {
@@ -2415,17 +2526,25 @@ public class FileBrowserViewModel : ReactiveObject
                     }
                 }
             }
-            completed = true;
-            return true;
+            completed = Volatile.Read(ref paused) == 0;
+            return completed;
         }
         catch (OperationCanceledException)
         {
-            // 用户取消了:当前传输被中止,其余已跳过。
+            // 用户取消了:当前传输被中止,其余已跳过。剩下的也不再要了 —— 从队列里一并删掉。
+            journal?.Drop(queueId);
+            journal = null;
             return false;
         }
         finally
         {
             TransferSink?.EndBatch(batchId);
+
+            // 停下的批次挂成一行「已暂停」(它在队列里的账原样留着,重启之后也还在)。
+            if (journal is not null && Volatile.Read(ref paused) != 0)
+            {
+                TransferSink?.ShowPausedBatch(queueId, PausedBatchReason.Interrupted);
+            }
 
             // 传输完成后显示通知(设置 → 文件传输):提示音 + 临时展开传输面板。
             // 用 ShowPanelTransient 而非 ShowPanel:后者会钉住面板、杀掉自动隐藏倒计时,
@@ -2434,6 +2553,21 @@ public class FileBrowserViewModel : ReactiveObject
             {
                 SystemSound.Alert();
                 TransferSink?.ShowPanelTransient();
+            }
+        }
+
+        // 一项的结局记进传输队列:停下的(连接没了、重试用完)留着,等「继续」;
+        // 其余(传完、跳过、永久失败)从队列里拿掉 —— 永久失败换一条连接也传不过去。
+        void Account(int position, TransferStatus status)
+        {
+            if (status == TransferStatus.Paused)
+            {
+                Volatile.Write(ref paused, 1);
+                return;
+            }
+            if (journal is not null && queueIndex[position] >= 0)
+            {
+                journal.Settle(queueId, queueIndex[position]);
             }
         }
     }
@@ -2779,7 +2913,8 @@ public class FileBrowserViewModel : ReactiveObject
         long resumeOffset,
         CancellationToken ct,
         BatchConflictDecision? conflictDecision = null,
-        RelaySource? source = null
+        RelaySource? source = null,
+        bool pausable = false
     )
     {
         if (type == TransferType.Relay && source is null)
@@ -2880,6 +3015,7 @@ public class FileBrowserViewModel : ReactiveObject
                 catch (Exception ex) when (retries < maxRetries
                                            && ex is not OperationCanceledException
                                            && !ct.IsCancellationRequested
+                                           && !_lifetime.IsCancellationRequested
                                            && TransferRetryPolicy.Classify(ex) == TransferFailureKind.Transient)
                 {
                     retries++;
@@ -2903,7 +3039,14 @@ public class FileBrowserViewModel : ReactiveObject
         }
         catch (Exception ex)
         {
-            item?.Status = TransferStatus.Failed;
+            // 连接没了(或临时失败重试用完了):记进传输队列的批次里,这不算这个文件失败 ——
+            // 换一条连接就能接着传。面板拆掉之后冒出来的任何失败都按这一类算:那是会话被关掉,不是文件的问题。
+            TransferFailureKind kind = _lifetime.IsCancellationRequested
+                ? TransferFailureKind.SessionLost
+                : TransferRetryPolicy.Classify(ex);
+            bool pause = pausable && kind != TransferFailureKind.Permanent;
+            item?.Status = pause ? TransferStatus.Paused : TransferStatus.Failed;
+            finalStatus = pause ? TransferStatus.Paused : TransferStatus.Failed;
             // 重试过还是失败的,说清楚试过几次:否则用户看到的只是最后那一次的错误,
             // 会以为它一断就放弃了。
             ErrorMessage = retries > 0

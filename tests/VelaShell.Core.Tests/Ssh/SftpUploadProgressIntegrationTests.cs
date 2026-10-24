@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using VelaShell.Core.Sftp;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
 using VelaShell.Ssh.Auth;
@@ -164,6 +165,9 @@ public class SftpUploadProgressIntegrationTests
             VelaSftpTransferInterruptedException error = await Assert.ThrowsAsync<VelaSftpTransferInterruptedException>(
                 () => upload.WaitAsync(TimeSpan.FromSeconds(10)));
             Assert.AreEqual((long)last, error.DurableLength, "Interruption must expose the exact contiguous ACK watermark.");
+            // 真实断链(不是服务端拒写):传输失败重试要把它认作临时失败。
+            Assert.IsFalse(error.RefusedByServer, "A dropped link is not a server refusal.");
+            Assert.AreEqual(TransferFailureKind.Transient, TransferRetryPolicy.Classify(error));
             Assert.IsTrue(samples.All(s => s.Bytes < SuffixLength));
             Assert.IsTrue(upload.IsFaulted);
             await using Client recovery = await Client.ConnectAsync(settings, settings.Port);

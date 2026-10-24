@@ -163,6 +163,8 @@ public class TransferItemViewModel : ReactiveObject
     {
         TransferStatus.Completed => Strings.Get("Msg_Done"),
         TransferStatus.Failed => Strings.Get("Msg_Failed"),
+        // 连接没了停下:不标红(不是这个文件的错),由浮窗上那一行「已暂停的批次」带着「继续」。
+        TransferStatus.Paused => Strings.Get("Transfer_Paused"),
         // 失败了正等着自动重试:说清是第几次,免得看着像又回去排队了。
         TransferStatus.Queued when RetryAttempt > 0 => Strings.Format("Transfer_RetryWaiting", RetryAttempt, RetryLimit),
         // 排队中显示"等待中"而不是 0%:0% 看着像卡住,而它其实还没轮到。
@@ -198,9 +200,9 @@ public class TransferItemViewModel : ReactiveObject
                     _ => $"↓ {Strings.Get("Msg_Downloaded")}",
                 };
             }
-            else if (_status == TransferStatus.Failed)
+            else if (_status is TransferStatus.Failed or TransferStatus.Paused)
             {
-                action = Strings.Get("Msg_Failed");
+                action = _status == TransferStatus.Paused ? Strings.Get("Transfer_Paused") : Strings.Get("Msg_Failed");
             }
             return _status == TransferStatus.Completed
                        ? $"{FormatBytes(_totalSize)}  •  {Strings.Get("Msg_Completed")}  •  {action}"

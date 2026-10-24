@@ -4512,6 +4512,39 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>{0}회 재시도 후에도 실패: {1}</value>
   </data>
+  <data name="Transfer_Paused" xml:space="preserve">
+    <value>일시 중지됨</value>
+  </data>
+  <data name="Transfer_PausedFiles" xml:space="preserve">
+    <value>파일 {0}개</value>
+  </data>
+  <data name="Transfer_PausedInterrupted" xml:space="preserve">
+    <value>연결이 끊겨 일시 중지됨</value>
+  </data>
+  <data name="Transfer_PausedRestored" xml:space="preserve">
+    <value>지난번 종료 시 완료되지 않음</value>
+  </data>
+  <data name="Transfer_PausedResuming" xml:space="preserve">
+    <value>다시 시작하는 중…</value>
+  </data>
+  <data name="Transfer_PausedProfileMissing" xml:space="preserve">
+    <value>연결 설정이 삭제되어 계속할 수 없음</value>
+  </data>
+  <data name="Transfer_PausedResumeFailed" xml:space="preserve">
+    <value>계속하지 못함: {0}</value>
+  </data>
+  <data name="Transfer_Resume" xml:space="preserve">
+    <value>계속</value>
+  </data>
+  <data name="Transfer_ResumeTip" xml:space="preserve">
+    <value>필요하면 다시 연결해 남은 파일을 전송합니다(중단된 파일은 중단 지점부터 이어받기)</value>
+  </data>
+  <data name="Transfer_Discard" xml:space="preserve">
+    <value>포기</value>
+  </data>
+  <data name="Transfer_DiscardTip" xml:space="preserve">
+    <value>남은 파일은 전송하지 않습니다. 이미 전송된 파일에는 영향이 없습니다.</value>
+  </data>
   <data name="Transfer_ClearCompleted" xml:space="preserve">
     <value>완료 항목 지우기</value>
   </data>
