@@ -432,6 +432,7 @@ The existing SFTP file browser is the primary reusable component for the dual-pa
 - Selected: `VelaBgActive` background, name switches to `VelaAccent` Medium
 - Multi-selected rows (Ctrl / Shift, #571): exactly the same treatment as the selected row (`.multimarked`) — they are all "selected"; the list control itself stays single-select
 - Hover: `VelaBgHover`
+- Filter box (`SessionTreeFilterBox`): pinned above the tree (it does not scroll with it), in the sidebar (margin `8,8,8,0`) and in the collapsed rail's flyout — same spec as the quick-command search box: 26px `TextBox`, `VelaFontSize10`, an 11px `search` icon in `VelaTextMuted` on the left, and while filtering an 18px transparent clear button with a 10px `x` in `VelaTextTertiary` on the right. Nothing matched: one `VelaTextMuted` 11px line where the rows would be. Group rows with matches are forced open while filtering; group rows cannot be dragged while filtering
 - Dragging a group row (#571): a 2px `VelaAccent` insertion line (`CornerRadius:1`) on the gap between groups, plus the shared drag ghost (`VelaBgActive` fill, `VelaAccent` 1px border, `VelaShadowWindow`). Sessions dragged into a group keep the old feedback (group row `droptarget` highlight, no insertion line — their position is by name)
 
 ### 5.5 Context Menus (global style in `DockStyles.axaml`)

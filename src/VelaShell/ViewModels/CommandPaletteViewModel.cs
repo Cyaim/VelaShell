@@ -166,7 +166,7 @@ public sealed class CommandPaletteViewModel : ReactiveObject
         for (int i = 0; i < _all.Count; i++)
         {
             CommandPaletteItem item = _all[i];
-            int score = PaletteScorer.Score(item.Title, item.Hint, query, out (int Start, int Length)[] spans);
+            int score = PaletteScorer.Score(item.Title, item.Hint, item.Keywords, query, out (int Start, int Length)[] spans);
             if (score == PaletteScorer.NoMatch)
             {
                 continue;

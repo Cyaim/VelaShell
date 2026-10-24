@@ -7110,6 +7110,15 @@ Send anyway?</value>
   <data name="Tree_ExpandAll" xml:space="preserve">
     <value>Expand all groups</value>
   </data>
+  <data name="Tree_FilterPlaceholder" xml:space="preserve">
+    <value>Filter by name, host, tag or note</value>
+  </data>
+  <data name="Tree_FilterClear" xml:space="preserve">
+    <value>Clear filter (Esc)</value>
+  </data>
+  <data name="Tree_FilterNoMatches" xml:space="preserve">
+    <value>No connections match the filter.</value>
+  </data>
   <data name="Tree_OpenGroup" xml:space="preserve">
     <value>Open all connections</value>
   </data>

@@ -23,7 +23,67 @@ public static class PaletteScorer
     private const int WordStartBase = 3000;
     private const int SubstringBase = 2000;
     private const int SubsequenceBase = 1000;
+    private const int KeywordPrefixBase = 1600;
+    private const int KeywordSubstringBase = 1400;
     private const int HintBase = 100;
+
+    /// <summary>
+    /// 带检索词的打分:标题照不带检索词的那个重载分四档,
+    /// 标题只有子序列命中或完全不沾边时,再看检索词(会话的标签、主机、备注)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 检索词排在标题的连续子串之后、子序列之前:输入 <c>prod</c> 时,名字里就有 prod 的那几台最该在前;
+    /// 而打了 <c>prod</c> 标签的机器是用户自己标出来的,比名字里恰好按顺序散落着 p-r-o-d 几个字母的那台更像他要找的。
+    /// 检索词里以查询开头的高于中间出现的;同档按检索词的先后(调用方把标签放在备注前面),
+    /// 越靠前越高 —— 备注是一大段自由文字,子串命中的偶然性比标签大得多。
+    /// </para>
+    /// <para>
+    /// 只比连续子串,不做子序列:备注动辄几十上百字,按子序列比几乎什么都能命中,等于没过滤。
+    /// 命中检索词时标题里没有可高亮的字符,<paramref name="spans" /> 为空。
+    /// </para>
+    /// </remarks>
+    /// <param name="title">条目标题。</param>
+    /// <param name="hint">尾部提示。</param>
+    /// <param name="keywords">检索词(不显示,只参与匹配);可为 null。</param>
+    /// <param name="query">查询词。</param>
+    /// <param name="spans">标题里命中的字符区间。</param>
+    /// <returns>分数,越大越靠前;<see cref="NoMatch" /> 表示不匹配。</returns>
+    public static int Score(
+        string title,
+        string? hint,
+        IReadOnlyList<string>? keywords,
+        string query,
+        out (int Start, int Length)[] spans)
+    {
+        int titleScore = Score(title, hint, query, out spans);
+        if (keywords is not { Count: > 0 } || string.IsNullOrEmpty(query) || titleScore >= SubstringBase - 200)
+        {
+            return titleScore;
+        }
+        int best = NoMatch;
+        for (int i = 0; i < keywords.Count; i++)
+        {
+            string keyword = keywords[i];
+            if (string.IsNullOrEmpty(keyword))
+            {
+                continue;
+            }
+            int index = keyword.IndexOf(query, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+            {
+                continue;
+            }
+            int score = (index == 0 ? KeywordPrefixBase : KeywordSubstringBase) - Math.Min(i, 50);
+            best = Math.Max(best, score);
+        }
+        if (best == NoMatch || best <= titleScore)
+        {
+            return titleScore;
+        }
+        spans = [];
+        return best;
+    }
 
     /// <summary>
     /// 给一个条目打分,并给出标题里应当高亮的字符区间。

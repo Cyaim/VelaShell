@@ -7105,6 +7105,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tree_ExpandAll" xml:space="preserve">
     <value>すべて展開</value>
   </data>
+  <data name="Tree_FilterPlaceholder" xml:space="preserve">
+    <value>名前・ホスト・タグ・メモで絞り込み</value>
+  </data>
+  <data name="Tree_FilterClear" xml:space="preserve">
+    <value>絞り込みを解除 (Esc)</value>
+  </data>
+  <data name="Tree_FilterNoMatches" xml:space="preserve">
+    <value>一致する接続はありません。</value>
+  </data>
   <data name="Tree_OpenGroup" xml:space="preserve">
     <value>すべての接続を開く</value>
   </data>

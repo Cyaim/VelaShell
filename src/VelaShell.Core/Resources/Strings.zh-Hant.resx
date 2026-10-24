@@ -7580,6 +7580,15 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Tree_ExpandAll" xml:space="preserve">
     <value>全部展開</value>
   </data>
+  <data name="Tree_FilterPlaceholder" xml:space="preserve">
+    <value>依名稱、主機、標籤、備註篩選</value>
+  </data>
+  <data name="Tree_FilterClear" xml:space="preserve">
+    <value>清除篩選(Esc)</value>
+  </data>
+  <data name="Tree_FilterNoMatches" xml:space="preserve">
+    <value>沒有符合的連線。</value>
+  </data>
   <data name="Tree_OpenGroup" xml:space="preserve">
     <value>開啟全部連線</value>
   </data>

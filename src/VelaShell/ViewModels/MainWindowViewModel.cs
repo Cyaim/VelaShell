@@ -2587,6 +2587,11 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
         // 最近连接优先 —— 快捷访问桶(Enter 连接)。
         var recentProfileIds = new HashSet<Guid>();
+        Dictionary<Guid, SessionProfile> profilesById = [];
+        foreach (SessionProfile profile in _paletteProfiles)
+        {
+            _ = profilesById.TryAdd(profile.Id, profile);
+        }
         foreach (RecentConnectionItemViewModel item in Sidebar.RecentConnections.Connections)
         {
             RecentConnectionEntry captured = item.Entry;
@@ -2594,6 +2599,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             {
                 recentProfileIds.Add(pid);
             }
+            // 最近连接里那条若对得上一条已保存的配置,标签与备注同样能搜到它 ——
+            // 它在「会话」桶里因为去重不再出现,不带上的话按标签就搜不到最常用的那几台。
+            IReadOnlyList<string>? recentKeywords =
+                captured.ProfileId is { } recentId && profilesById.TryGetValue(recentId, out SessionProfile? recentProfile)
+                    ? PaletteKeywords(recentProfile)
+                    : null;
             string title = string.IsNullOrWhiteSpace(item.DisplayName)
                 ? captured.Host
                 : item.DisplayName;
@@ -2608,7 +2619,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     // 使用痕迹才不会被拆成两半。
                     id: captured.ProfileId is { } recentProfileId
                         ? $"session:{recentProfileId}"
-                        : $"recent:{captured.Host}"
+                        : $"recent:{captured.Host}",
+                    keywords: recentKeywords
                 )
             );
         }
@@ -2634,7 +2646,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     Strings.Get("Msg_EnterToConnect"),
                     groupName,
                     true,
-                    $"session:{captured.Id}"
+                    $"session:{captured.Id}",
+                    PaletteKeywords(captured)
                 )
             );
         }
@@ -2667,6 +2680,29 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             ))
         );
         return items;
+    }
+
+    /// <summary>
+    /// 命令面板里一条会话的检索词:标签、主机、备注,按这个先后(越靠前权重越高,见 <see cref="PaletteScorer" />)。
+    /// </summary>
+    /// <remarks>
+    /// 标签原先只有编辑框与导入导出在读(§180),面板与会话树都不认,存了等于没存;备注(#549)也只能悬停时看到。
+    /// 主机一并带上:有名字的配置标题是名字,用户手里却常常只有一个 IP。
+    /// </remarks>
+    /// <param name="profile">连接配置。</param>
+    /// <returns>检索词。</returns>
+    internal static IReadOnlyList<string> PaletteKeywords(SessionProfile profile)
+    {
+        List<string> keywords = [.. (profile.Tags ?? []).Where(static tag => !string.IsNullOrWhiteSpace(tag))];
+        if (!string.IsNullOrWhiteSpace(profile.Host))
+        {
+            keywords.Add(profile.Host);
+        }
+        if (!string.IsNullOrWhiteSpace(profile.Notes))
+        {
+            keywords.Add(profile.Notes);
+        }
+        return keywords;
     }
 
     /// <summary>读取设置快照并缓存到 <see cref="_latestSettings" />(无设置服务时用默认值)。</summary>

@@ -7105,6 +7105,15 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Tree_ExpandAll" xml:space="preserve">
     <value>모두 펼치기</value>
   </data>
+  <data name="Tree_FilterPlaceholder" xml:space="preserve">
+    <value>이름, 호스트, 태그, 메모로 필터</value>
+  </data>
+  <data name="Tree_FilterClear" xml:space="preserve">
+    <value>필터 지우기(Esc)</value>
+  </data>
+  <data name="Tree_FilterNoMatches" xml:space="preserve">
+    <value>일치하는 연결이 없습니다.</value>
+  </data>
   <data name="Tree_OpenGroup" xml:space="preserve">
     <value>모든 연결 열기</value>
   </data>

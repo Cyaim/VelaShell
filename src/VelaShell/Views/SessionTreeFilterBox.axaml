@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:VelaShell.Presentation.ViewModels"
+             xmlns:pc="using:VelaShell.Controls.Controls"
+             xmlns:loc="using:VelaShell.Localization"
+             mc:Ignorable="d" d:DesignWidth="260"
+             x:Class="VelaShell.Views.SessionTreeFilterBox"
+             x:DataType="vm:SessionTreeViewModel">
+
+  <!-- 资源管理器的过滤框:按名称 / 主机 / 标签 / 备注(及分组名)过滤会话树,规则在 SessionTreeFilter。
+       与快捷命令区的搜索框同一规格(26 高、10 号字),左边一枚放大镜,有字时右边一枚 × 一键清空。
+       Esc 清空;过滤后只剩一条连接时 Enter 直接连它(见代码后台)。 -->
+  <TextBox x:Name="FilterInput"
+           Height="26"
+           Padding="4,3,7,3"
+           FontSize="{DynamicResource VelaFontSize10}"
+           Text="{Binding FilterText}"
+           PlaceholderText="{loc:Localize Tree_FilterPlaceholder}"
+           AutomationProperties.Name="{loc:Localize Tree_FilterPlaceholder}"
+           KeyDown="FilterInput_KeyDown">
+    <TextBox.InnerLeftContent>
+      <pc:LucideIcon Width="11" Height="11" Margin="8,0,2,0"
+                     Data="{StaticResource Icon.search}"
+                     Foreground="{DynamicResource VelaTextMuted}" />
+    </TextBox.InnerLeftContent>
+    <TextBox.InnerRightContent>
+      <Button Width="18" Height="18" Margin="0,0,4,0" Padding="0"
+              Background="Transparent" CornerRadius="3" Cursor="Hand"
+              IsVisible="{Binding IsFiltering}"
+              Click="ClearFilter_Click"
+              ToolTip.Tip="{loc:Localize Tree_FilterClear}"
+              AutomationProperties.Name="{loc:Localize Tree_FilterClear}">
+        <pc:LucideIcon Width="10" Height="10" Data="{StaticResource Icon.x}"
+                       Foreground="{DynamicResource VelaTextTertiary}" />
+      </Button>
+    </TextBox.InnerRightContent>
+  </TextBox>
+</UserControl>

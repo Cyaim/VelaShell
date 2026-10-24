@@ -113,7 +113,8 @@ public partial class SessionTreeView : UserControl
             viewModel.SelectedNode = node;
             return;
         }
-        if (properties.IsLeftButtonPressed && e.KeyModifiers == KeyModifiers.None)
+        // 过滤时不拖分组:藏起来的分组也占着排序的位置,插入线却只能画在看得见的行之间 —— 画出来的落点会骗人。
+        if (properties.IsLeftButtonPressed && e.KeyModifiers == KeyModifiers.None && !viewModel.IsFiltering)
         {
             _dragNode = node;
             _dragPointerArgs = e;
