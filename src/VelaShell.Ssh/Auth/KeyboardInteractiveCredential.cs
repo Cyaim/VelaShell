@@ -37,6 +37,9 @@ public sealed class KeyboardInteractiveCredential(
     /// <inheritdoc />
     public override string Label { get; } = label ?? "keyboard-interactive";
 
+    /// <summary>认证器把口令凭据改走键盘交互时造的这一条：原来那条口令凭据（进尝试记录的 <see cref="SshAuthAttempt.BridgedCredentialLabel"/>）。</summary>
+    internal PasswordCredential? BridgedFrom { get; init; }
+
     /// <summary>应答一轮询问。</summary>
     public ValueTask<IReadOnlyList<string>> RespondAsync(
         SshKeyboardChallenge challenge, CancellationToken cancellationToken = default) =>

@@ -1484,6 +1484,93 @@
   <data name="SshErr_AuthPartialSuccess" xml:space="preserve">
     <value>최소 한 단계는 통과했으며 이후 단계에서 막혔습니다.</value>
   </data>
+  <data name="SshErr_AuthAttemptLine" xml:space="preserve">
+    <value>· {0}: {1}</value>
+  </data>
+  <data name="SshErr_AuthAttemptLineDetail" xml:space="preserve">
+    <value>· {0}: {1} — {2}</value>
+  </data>
+  <data name="SshErr_AuthNoAttempts" xml:space="preserve">
+    <value>(인증 시도 없음)</value>
+  </data>
+  <data name="SshErr_AuthLabelProbe" xml:space="preserve">
+    <value>none(사용 가능한 방식 확인)</value>
+  </data>
+  <data name="SshErr_AuthLabelViaKbd" xml:space="preserve">
+    <value>{0}(keyboard-interactive 경유)</value>
+  </data>
+  <data name="SshErr_AuthLabelAlgorithm" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
+  <data name="SshErr_AuthDetailJoin" xml:space="preserve">
+    <value>{0}; {1}</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSuccess" xml:space="preserve">
+    <value>성공</value>
+  </data>
+  <data name="SshErr_AuthOutcomePartialSuccess" xml:space="preserve">
+    <value>부분 성공(서버가 다음 단계를 요구)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeFailure" xml:space="preserve">
+    <value>실패</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNotOffered" xml:space="preserve">
+    <value>건너뜀(서버가 이 방식을 허용하지 않음)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNoMaterial" xml:space="preserve">
+    <value>건너뜀(자격 증명을 사용할 수 없음)</value>
+  </data>
+  <data name="SshErr_AuthDetailServerAccepts" xml:space="preserve">
+    <value>서버가 허용하는 방식: {0}</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodNotOffered" xml:space="preserve">
+    <value>서버는 {0}만 허용</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodFailureLimit" xml:space="preserve">
+    <value>{0}이(가) 이번 인증에서 이미 {1}회 실패해 다시 시도하지 않음</value>
+  </data>
+  <data name="SshErr_AuthDetailPublicKeyNotAccepted" xml:space="preserve">
+    <value>서버가 이 공개 키를 허용하지 않음</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChanged" xml:space="preserve">
+    <value>서버 요구에 따라 비밀번호를 변경함</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeFailed" xml:space="preserve">
+    <value>서버가 비밀번호 변경을 요구했지만 변경하지 못함: 서버가 비밀번호 변경을 지원하지 않거나 이전 비밀번호가 틀림</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeNotConfigured" xml:space="preserve">
+    <value>서버가 먼저 비밀번호 변경을 요구함(여기서는 새 비밀번호를 물어볼 수 없음)</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordRejected" xml:space="preserve">
+    <value>서버가 비밀번호 변경을 요구했고 새 비밀번호를 {0}회 연속 거부함: {1}</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordNotProvided" xml:space="preserve">
+    <value>서버가 먼저 비밀번호 변경을 요구했지만 새 비밀번호가 입력되지 않음</value>
+  </data>
+  <data name="SshErr_AuthDetailCredentialFailed" xml:space="preserve">
+    <value>자격 증명 오류: {0}</value>
+  </data>
+  <data name="SshErr_AuthDetailNoUsableSignatureAlgorithm" xml:space="preserve">
+    <value>이 {0} 키에는 사용할 수 있는 서명 알고리즘이 없음(SHA-1 ssh-rsa를 쓰려면 연결 설정의 SSH 옵션에서 "레거시 알고리즘 허용"을 켜세요)</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Fallback" xml:space="preserve">
+    <value>서버가 server-sig-algs를 알리지 않아 {0}이(가) 거부된 뒤 {1}(SHA-1)로 다시 시도함</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Signature" xml:space="preserve">
+    <value>SHA-1 서명 사용({0})</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateExpired" xml:space="preserve">
+    <value>인증서(Key ID "{0}")가 이 컴퓨터 시계 기준으로 {1}에 만료됨</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateNotYetValid" xml:space="preserve">
+    <value>인증서(Key ID "{0}")는 이 컴퓨터 시계 기준으로 {1}부터 유효함</value>
+  </data>
+  <data name="SshErr_AuthDetailHostCertificateForLogin" xml:space="preserve">
+    <value>인증서(Key ID "{0}")는 호스트 인증서라 로그인에 사용할 수 없음</value>
+  </data>
+  <data name="SshErr_AuthDetailPrincipalNotListed" xml:space="preserve">
+    <value>인증서가 발급된 사용자는 {0}이며 로그인 사용자 {1}이(가) 포함되지 않음</value>
+  </data>
   <data name="SshErr_LimitExceeded" xml:space="preserve">
     <value>로컬 동시 실행 한도에 도달했습니다(포워딩 연결 수, agent / X11 채널 수). 일부가 닫힌 뒤 다시 시도하세요.</value>
   </data>
@@ -6331,6 +6418,39 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>서버의 호스트 키가 기록된 키와 일치하지 않습니다.</value>
   </data>
+  <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
+    <value>서버가 제시한 것은 사용자 인증서(Key ID "{0}")라 호스트 신원을 증명할 수 없습니다.</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyUnreadable" xml:space="preserve">
+    <value>호스트 인증서(Key ID "{0}")에 서명한 CA 공개 키를 읽을 수 없습니다(지원하지 않는 유형이거나 그 자체가 인증서).</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyTooShort" xml:space="preserve">
+    <value>호스트 인증서에 서명한 RSA CA가 {0}비트뿐입니다(최소 {1}비트 필요).</value>
+  </data>
+  <data name="SshErr_HostCertSignatureMalformed" xml:space="preserve">
+    <value>호스트 인증서(Key ID "{0}")의 CA 서명 형식이 잘못되었습니다.</value>
+  </data>
+  <data name="SshErr_HostCertSignatureAlgorithmRejected" xml:space="preserve">
+    <value>호스트 인증서(Key ID "{0}")의 CA 서명이 {1}이라 허용하지 않습니다(SHA-1 ssh-rsa 서명은 더 이상 안전하지 않음).</value>
+  </data>
+  <data name="SshErr_HostCertSignatureInvalid" xml:space="preserve">
+    <value>호스트 인증서(Key ID "{0}")의 CA 서명을 검증할 수 없습니다. 인증서가 변조되었거나 이 CA가 서명한 것이 아닙니다.</value>
+  </data>
+  <data name="SshErr_HostCertExpired" xml:space="preserve">
+    <value>호스트 인증서(Key ID "{0}")가 {1}에 만료되었습니다.</value>
+  </data>
+  <data name="SshErr_HostCertNotYetValid" xml:space="preserve">
+    <value>호스트 인증서(Key ID "{0}")는 {1}부터 유효합니다.</value>
+  </data>
+  <data name="SshErr_HostCertNoPrincipals" xml:space="preserve">
+    <value>호스트 인증서(Key ID "{0}")에 호스트 이름이 하나도 없습니다. 모든 호스트에 유효한 셈이라 허용하지 않습니다.</value>
+  </data>
+  <data name="SshErr_HostCertHostNotListed" xml:space="preserve">
+    <value>호스트 인증서(Key ID "{0}")는 {1}에 발급되었으며 {2}은(는) 포함되지 않습니다.</value>
+  </data>
+  <data name="SshErr_HostCertUnknownCriticalOptions" xml:space="preserve">
+    <value>호스트 인증서(Key ID "{0}")에 인식할 수 없는 중요 옵션이 있습니다: {1}.</value>
+  </data>
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>2단계 인증을 취소했습니다.</value>
   </data>
@@ -6373,11 +6493,128 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="SshErr_KeyPassphraseIncorrect" xml:space="preserve">
     <value>암호 문구로 개인 키를 풀 수 없습니다.</value>
   </data>
+  <data name="SshErr_KeyOrigin" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="SshErr_KeyFileUnreadable" xml:space="preserve">
+    <value>개인 키 파일을 읽을 수 없습니다({0}).</value>
+  </data>
+  <data name="SshErr_KeyFileAccessDenied" xml:space="preserve">
+    <value>개인 키 파일을 읽을 권한이 없습니다(Unix에서는 개인 키가 0600이어야 합니다).</value>
+  </data>
+  <data name="SshErr_KeyFormatUnrecognized" xml:space="preserve">
+    <value>개인 키 형식을 인식할 수 없습니다. 지원 형식: OpenSSH, PKCS#8, PKCS#1, SEC1, PuTTY .ppk(v2 / v3).</value>
+  </data>
+  <data name="SshErr_KeyMalformed" xml:space="preserve">
+    <value>개인 키 파일 내용이 불완전하거나 형식이 올바르지 않습니다. 파일이 손상되었을 수 있습니다.</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedType" xml:space="preserve">
+    <value>지원하지 않는 키 유형입니다: {0}. RSA, NIST 곡선의 ECDSA, Ed25519를 지원합니다.</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCurve" xml:space="preserve">
+    <value>지원하지 않는 곡선입니다: {0}. SSH는 NIST P-256 / P-384 / P-521만 지원합니다.</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCipher" xml:space="preserve">
+    <value>개인 키의 암호화 방식 {0}은(는) 지원하지 않습니다. 다른 방식으로 다시 암호화하세요(예: ssh-keygen -p -Z aes256-ctr -f &lt;키 파일&gt;).</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedKdf" xml:space="preserve">
+    <value>개인 키의 키 파생 방식 {0}은(는) 지원하지 않습니다.</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedFormatVersion" xml:space="preserve">
+    <value>이 버전의 키 파일 형식은 지원하지 않습니다(PuTTY .ppk는 v2와 v3 지원).</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedPointFormat" xml:space="preserve">
+    <value>{0}의 공개 점이 SSH가 요구하는 비압축 형식이 아닙니다.</value>
+  </data>
+  <data name="SshErr_KeyMultipleKeys" xml:space="preserve">
+    <value>이 파일에는 키가 둘 이상 들어 있습니다. 파일당 키 하나만 지원합니다.</value>
+  </data>
+  <data name="SshErr_KeyLegacyPemEncryption" xml:space="preserve">
+    <value>이 개인 키는 오래된 암호화 PEM 형식(Proc-Type: 4,ENCRYPTED)이라 읽을 수 없습니다. ssh-keygen -p -f &lt;키 파일&gt;로 암호 문구를 한 번 변경하면(같은 암호 문구도 가능) OpenSSH 형식으로 변환됩니다.</value>
+  </data>
+  <data name="SshErr_KeyKdfCostTooHigh" xml:space="preserve">
+    <value>개인 키의 키 파생 매개변수가 비정상적으로 큽니다. 파일이 변조되었을 수 있습니다. 직접 그렇게 설정했다면 더 작은 값으로 다시 암호화하세요.</value>
+  </data>
+  <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
+    <value>시스템 키 저장소에서 키를 열 수 없거나 키를 사용할 수 없습니다.</value>
+  </data>
+  <data name="SshErr_CertFileUnreadable" xml:space="preserve">
+    <value>인증서 파일을 읽을 수 없습니다({0}).</value>
+  </data>
+  <data name="SshErr_CertFileAccessDenied" xml:space="preserve">
+    <value>인증서 파일을 읽을 권한이 없습니다.</value>
+  </data>
+  <data name="SshErr_CertMalformed" xml:space="preserve">
+    <value>인증서 내용이 불완전하거나 형식이 올바르지 않습니다("알고리즘 base64 [주석]" 한 줄이어야 함).</value>
+  </data>
+  <data name="SshErr_CertUnsupportedKeyType" xml:space="preserve">
+    <value>지원하지 않는 인증서 키 유형입니다: {0}.</value>
+  </data>
+  <data name="SshErr_CertNotACertificate" xml:space="preserve">
+    <value>{0}은(는) 인증서 유형이 아닙니다(인증서 유형은 -cert-v01@openssh.com으로 끝남).</value>
+  </data>
+  <data name="SshErr_CertHostCertificateForLogin" xml:space="preserve">
+    <value>이 인증서(Key ID "{0}")는 호스트 인증서라 로그인에 사용할 수 없습니다. 사용자 인증서는 ssh-keygen에서 -h 없이 서명한 것입니다.</value>
+  </data>
+  <data name="SshErr_CertKeyMismatch" xml:space="preserve">
+    <value>인증서(Key ID "{0}")의 공개 키가 이 개인 키와 짝이 맞지 않습니다. 인증서: {1}, 개인 키: {2}. 인증서는 발급할 때 사용한 개인 키와 함께 사용하세요.</value>
+  </data>
+  <data name="SshErr_CertKeyNotLoaded" xml:space="preserve">
+    <value>인증서가 증명하는 키가 읽어 들인 IdentityFile에 없어 서명에 사용할 수 없습니다.</value>
+  </data>
   <data name="SshErr_AgentRefused" xml:space="preserve">
     <value>ssh-agent가 요청을 거부했습니다. 키가 agent에서 빠졌거나, 확인(ssh-add -c)이 거부되었거나, agent가 잠겨 있을 수 있습니다.</value>
   </data>
   <data name="SshErr_ChannelRequestRejected" xml:space="preserve">
     <value>서버가 채널 요청을 거부했습니다. sshd_config의 흔한 원인: ForceCommand, PermitTTY no, Subsystem 줄 누락.</value>
+  </data>
+  <data name="SshErr_ChanForwardingProhibited" xml:space="preserve">
+    <value>서버가 포트 포워딩을 금지했습니다(sshd_config의 AllowTcpForwarding을 확인하세요).</value>
+  </data>
+  <data name="SshErr_ChanOpenProhibited" xml:space="preserve">
+    <value>서버가 관리 정책으로 이 채널을 거부했습니다(sshd_config의 관련 설정을 확인하세요).</value>
+  </data>
+  <data name="SshErr_ChanForwardTargetUnreachable" xml:space="preserve">
+    <value>서버가 포워딩 대상에 연결하지 못했습니다.</value>
+  </data>
+  <data name="SshErr_ChanUnknownType" xml:space="preserve">
+    <value>서버가 채널 유형 {0}을(를) 인식하지 못합니다.</value>
+  </data>
+  <data name="SshErr_ChanResourceShortage" xml:space="preserve">
+    <value>서버 리소스가 부족합니다. 대개 동시 세션 수 한도(sshd_config의 MaxSessions)에 도달한 경우입니다.</value>
+  </data>
+  <data name="SshErr_ChanOpenRejected" xml:space="preserve">
+    <value>서버가 채널 열기를 거부했습니다(이유 코드 {0}).</value>
+  </data>
+  <data name="SshErr_ChanClosedBeforeConfirmation" xml:space="preserve">
+    <value>서버가 채널을 확인하기 전에 닫았습니다.</value>
+  </data>
+  <data name="SshErr_ChanLimitReached" xml:space="preserve">
+    <value>이 연결의 동시 채널 수가 클라이언트 한도({0})에 도달했습니다. 세션이나 터널을 몇 개 닫은 뒤 다시 시도하세요.</value>
+  </data>
+  <data name="SshErr_ChanWindowBudgetExhausted" xml:space="preserve">
+    <value>이 연결의 전체 수신 윈도 예산({0} MiB)을 모두 사용했습니다. 동시에 열린 채널이 너무 많습니다. 세션이나 터널을 몇 개 닫은 뒤 다시 시도하세요.</value>
+  </data>
+  <data name="SshErr_ChanExecRejected" xml:space="preserve">
+    <value>서버가 명령 실행을 거부했습니다(계정이 고정 명령만 실행하도록 제한되었거나 sshd_config에 ForceCommand가 설정됨).</value>
+  </data>
+  <data name="SshErr_ChanPtyRejected" xml:space="preserve">
+    <value>서버가 터미널 할당을 거부했습니다(sshd_config의 PermitTTY no, 또는 계정이 터미널 없는 로그인으로 설정됨).</value>
+  </data>
+  <data name="SshErr_ChanShellRejected" xml:space="preserve">
+    <value>서버가 셸 시작을 거부했습니다.</value>
+  </data>
+  <data name="SshErr_ChanSubsystemRejected" xml:space="preserve">
+    <value>서버가 하위 시스템 {0}을(를) 제공하지 않습니다.</value>
+  </data>
+  <data name="SshErr_ChanSftpSubsystemRejected" xml:space="preserve">
+    <value>서버가 sftp 하위 시스템을 제공하지 않습니다(sshd_config의 Subsystem sftp 줄을 확인하세요).</value>
+  </data>
+  <data name="SshErr_ChanZeroMaxPacket" xml:space="preserve">
+    <value>서버가 채널의 최대 패킷 크기를 0으로 알려 입력을 보낼 수 없습니다.</value>
+  </data>
+  <data name="SshErr_PeerSaid" xml:space="preserve">
+    <value>{0} 서버 응답: {1}</value>
   </data>
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>서버가 포워딩 요청을 거부했습니다. sshd_config의 AllowAgentForwarding / AllowTcpForwarding / X11Forwarding을 확인하세요.</value>

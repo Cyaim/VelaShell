@@ -203,7 +203,7 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
                     if (bridged is null)
                     {
                         Record(effective, SshAuthOutcome.SkippedNotOffered,
-                            $"服务端只接受：{string.Join(", ", _serverOffered)}");
+                            [new SshAuthDetail(SshAuthDetailKind.MethodNotOffered) { Methods = _serverOffered }]);
                         continue;
                     }
                     effective = bridged;
@@ -218,7 +218,7 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
                 {
                     // 计数是整次认证累计的，不随部分成功清零 —— 所以不说「连续」。
                     Record(effective, SshAuthOutcome.SkippedNotOffered,
-                        $"{effective.MethodName} 在这次认证里已经失败 {MaxFailuresPerMethod} 次，不再重试。");
+                        [new SshAuthDetail(SshAuthDetailKind.MethodFailureLimit) { Method = effective.MethodName, Count = MaxFailuresPerMethod }]);
                     continue;
                 }
 
@@ -284,7 +284,10 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
                 answered = true;
                 return [await password.GetPasswordAsync(cancellationToken).ConfigureAwait(false)];
             },
-            label: $"{password.Label}（经 keyboard-interactive）");
+            label: $"{password.Label}（经 keyboard-interactive）")
+        {
+            BridgedFrom = password,
+        };
     }
 
     // ------------------------------------------------------------ 服务请求
@@ -323,7 +326,7 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
 
         AuthStepResult outcome = await ReadAuthOutcomeAsync(null, cancellationToken).ConfigureAwait(false);
         Record(none, outcome.Outcome, outcome.Outcome == SshAuthOutcome.Failure
-            ? $"服务端接受：{string.Join(", ", _serverOffered)}"
+            ? [new SshAuthDetail(SshAuthDetailKind.ServerAccepts) { Methods = _serverOffered }]
             : null);
 
         return outcome.Outcome == SshAuthOutcome.Success;
@@ -356,10 +359,11 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
             //    SshAgentException 是 SshException，整条链被它打断；而断网的 IOException、
             //    横幅回调抛的异常反倒被当成「跳过」，此时请求已经发出、应答还没读，
             //    下一条凭据读到的是上一条的应答。
-            step = new AuthStepResult(SshAuthOutcome.SkippedNoMaterial, ex.Message);
+            step = new AuthStepResult(SshAuthOutcome.SkippedNoMaterial,
+                [new SshAuthDetail(SshAuthDetailKind.CredentialFailed) { Error = ex.InnerException }]);
         }
 
-        Record(credential, step.Outcome, step.Detail, step.SignatureAlgorithm);
+        Record(credential, step.Outcome, step.Details, step.SignatureAlgorithm);
         return step;
     }
 
@@ -419,22 +423,28 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
                 if (outcome.Outcome is SshAuthOutcome.Success or SshAuthOutcome.PartialSuccess)
                 {
                     _passwordChangeRequested = false;
-                    return outcome with { Detail = "已按服务端的要求修改了密码。" };
+                    return outcome with { Details = [new SshAuthDetail(SshAuthDetailKind.PasswordChanged)] };
                 }
-                return outcome with { Detail = "服务端要求先修改密码，但没有改成：服务端不支持改密码，或旧密码不对。" };
+                return outcome with { Details = [new SshAuthDetail(SshAuthDetailKind.PasswordChangeFailed)] };
             }
 
             // 记下来：方法都试完时据此报 PasswordExpired，而不是笼统的「方法用尽」。
             _passwordChangeRequested = true;
             if (credential.NewPasswordProvider is not { } provider)
             {
-                return new AuthStepResult(SshAuthOutcome.Failure, "服务端要求先修改密码（没有配置取新密码的回调）。");
+                return new AuthStepResult(SshAuthOutcome.Failure,
+                    [new SshAuthDetail(SshAuthDetailKind.PasswordChangeNotConfigured)]);
             }
             if (attempt > PasswordCredential.MaxNewPasswordAttempts)
             {
                 return new AuthStepResult(SshAuthOutcome.Failure,
-                    $"服务端要求先修改密码，连续 {PasswordCredential.MaxNewPasswordAttempts} 次不接受新密码：" +
-                    PeerText.Sanitize(changePrompt, 256));
+                [
+                    new SshAuthDetail(SshAuthDetailKind.NewPasswordRejected)
+                    {
+                        Count = PasswordCredential.MaxNewPasswordAttempts,
+                        ServerText = changePrompt,
+                    },
+                ]);
             }
 
             // 此时服务端的应答已经读完，没有请求在途：回调出错换下一条凭据不会让应答错位。
@@ -442,7 +452,8 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
             string? newPassword = await FromCredentialAsync(() => provider(ask, cancellationToken)).ConfigureAwait(false);
             if (newPassword is null)
             {
-                return new AuthStepResult(SshAuthOutcome.Failure, "服务端要求先修改密码，这次没有给出新密码。");
+                return new AuthStepResult(SshAuthOutcome.Failure,
+                    [new SshAuthDetail(SshAuthDetailKind.NewPasswordNotProvided)]);
             }
 
             await SendPasswordRequestAsync(password, newPassword, cancellationToken).ConfigureAwait(false);
@@ -483,14 +494,19 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
     {
         // 挑不出算法（只剩被禁用的 SHA-1 ssh-rsa）或外部签名器连算法列表都给不出 ——
         // 都是这把钥自己的问题，此时还什么都没发。
-        string algorithm;
+        string? chosen;
         try
         {
-            algorithm = ChooseSignatureAlgorithm(credential.Signer);
+            chosen = ChooseSignatureAlgorithm(credential.Signer);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             throw new CredentialMaterialException(ex);
+        }
+        if (chosen is not { } algorithm)
+        {
+            return new AuthStepResult(SshAuthOutcome.SkippedNoMaterial,
+                [new SshAuthDetail(SshAuthDetailKind.NoUsableSignatureAlgorithm) { KeyType = credential.Signer.PublicKey.KeyType }]);
         }
 
         AuthStepResult step = await TryPublicKeyWithAsync(credential, algorithm, cancellationToken).ConfigureAwait(false);
@@ -506,31 +522,36 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
             AuthStepResult retry = await TryPublicKeyWithAsync(credential, sha1, cancellationToken).ConfigureAwait(false);
             step = retry with
             {
-                Detail = WithNote(retry.Detail, $"服务端没有宣告 server-sig-algs，{algorithm} 被拒后降级为 {sha1}（SHA-1）重试"),
+                Details = WithNotes(retry.Details,
+                    [new SshAuthDetail(SshAuthDetailKind.Sha1Fallback) { Algorithm = algorithm, FallbackAlgorithm = sha1 }]),
                 SignatureAlgorithm = sha1,
             };
         }
         else if (HostKeys.SshPublicKey.StripCertificateSuffix(algorithm) == SshAlgorithmNames.SshRsa)
         {
             // 没有降级、直接挑中了 SHA-1（server-sig-algs 里能用的只有它，或这把钥只给得出它）：同样记一笔。
-            step = step with { Detail = WithNote(step.Detail, $"用的是 SHA-1 签名（{algorithm}）") };
+            step = step with
+            {
+                Details = WithNotes(step.Details, [new SshAuthDetail(SshAuthDetailKind.Sha1Signature) { Algorithm = algorithm }]),
+            };
         }
 
         // 〔§4.5〕证书被拒时，把本地看得出的线索写进记录：按本机时钟过期了、登录用户不在 principals 里……
         // 客户端不因此拦着不发（那是服务端的判断，本机时钟也可能不准），只是让用户不必对着 Permission denied 猜。
         if (step.Outcome == SshAuthOutcome.Failure && DescribeCertificateProblems(credential.Signer) is { } hints)
         {
-            step = step with { Detail = WithNote(step.Detail, hints) };
+            step = step with { Details = WithNotes(step.Details, hints) };
         }
 
         return step;
     }
 
-    private static string WithNote(string? detail, string note) => detail is null ? note : $"{detail}（{note}）";
+    private static List<SshAuthDetail> WithNotes(IReadOnlyList<SshAuthDetail>? details, List<SshAuthDetail> notes) =>
+        [.. details ?? [], .. notes];
 
     /// <summary>证书被拒时本地看得出的线索；不是证书、或者看不出问题时为 <see langword="null"/>。</summary>
     /// <remarks>只写事实：有效期按本机时钟判断（时钟不准时这条线索也不准，所以话里带着「按本机时钟」）。</remarks>
-    private string? DescribeCertificateProblems(ISshSigner signer)
+    private List<SshAuthDetail>? DescribeCertificateProblems(ISshSigner signer)
     {
         if (!signer.PublicKey.IsCertificate)
         {
@@ -555,26 +576,29 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
             }
         }
 
-        string keyId = PeerText.Sanitize(certificate.KeyId, 128);
-        List<string> hints = [];
+        string keyId = certificate.KeyId;
+        List<SshAuthDetail> hints = [];
         DateTimeOffset now = DateTimeOffset.UtcNow;
         if (!certificate.IsTimeValid(now))
         {
             hints.Add(certificate.ValidBeforeTime is { } before && now >= before
-                ? $"证书（Key ID「{keyId}」）按本机时钟已于 {before:u} 过期"
-                : $"证书（Key ID「{keyId}」）按本机时钟要到 {certificate.ValidAfterTime:u} 才生效");
+                ? new SshAuthDetail(SshAuthDetailKind.CertificateExpired) { KeyId = keyId, Time = before }
+                : new SshAuthDetail(SshAuthDetailKind.CertificateNotYetValid) { KeyId = keyId, Time = certificate.ValidAfterTime });
         }
         if (certificate.CertificateType != SshCertificateType.User)
         {
-            hints.Add($"证书（Key ID「{keyId}」）是主机证书，不能用来登录");
+            hints.Add(new SshAuthDetail(SshAuthDetailKind.HostCertificateForLogin) { KeyId = keyId });
         }
         if (certificate.ValidPrincipals.Count > 0 && !certificate.ValidPrincipals.Contains(_userName, StringComparer.Ordinal))
         {
-            string principals = string.Join("、", certificate.ValidPrincipals.Take(8).Select(static p => PeerText.Sanitize(p, 64)));
-            hints.Add($"证书签给的用户是 {principals}{(certificate.ValidPrincipals.Count > 8 ? "……" : "")}，不含登录用户 {_userName}");
+            hints.Add(new SshAuthDetail(SshAuthDetailKind.PrincipalNotListed)
+            {
+                Principals = certificate.ValidPrincipals,
+                UserName = _userName,
+            });
         }
 
-        return hints.Count == 0 ? null : string.Join("；", hints);
+        return hints.Count == 0 ? null : hints;
     }
 
     /// <summary>该不该、能不能降级为 SHA-1 的 RSA 签名重试一次；能的话给出算法名。</summary>
@@ -689,7 +713,7 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
         // 一直等到认证超时。
         return outcome.Outcome == SshAuthOutcome.Success
             ? outcome
-            : new AuthStepResult(SshAuthOutcome.Failure, "服务端不接受这把公钥。");
+            : new AuthStepResult(SshAuthOutcome.Failure, [new SshAuthDetail(SshAuthDetailKind.PublicKeyNotAccepted)]);
     }
 
     /// <summary><c>PK_OK</c> 回显的必须是我们问的那一把（RFC 4252 §7：算法名与公钥 blob 都取自请求）。</summary>
@@ -843,7 +867,8 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
     /// 「服务端要求先改密码」会退化成一句没有内容的「失败」——
     /// 而这正是用户最需要知道的那一句。
     /// </remarks>
-    private readonly record struct AuthStepResult(SshAuthOutcome Outcome, string? Detail = null, string? SignatureAlgorithm = null);
+    private readonly record struct AuthStepResult(
+        SshAuthOutcome Outcome, IReadOnlyList<SshAuthDetail>? Details = null, string? SignatureAlgorithm = null);
 
     /// <summary>读到一个认证结论（SUCCESS / FAILURE / 方法专用报文）。</summary>
     private async ValueTask<AuthStepResult> ReadAuthOutcomeAsync(
@@ -1091,8 +1116,9 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
     /// <remarks>
     /// 收到 <c>server-sig-algs</c> 时取交集中我们最偏好的；
     /// 没收到时用我们自己的第一偏好（velashell-docs/zh/ssh/spec/04 §4.4）。
+    /// 一个能用的都没有（只剩被禁用的 SHA-1 <c>ssh-rsa</c>）时为 <see langword="null"/>：这条凭据按「材料有问题」跳过。
     /// </remarks>
-    private string ChooseSignatureAlgorithm(ISshSigner signer)
+    private string? ChooseSignatureAlgorithm(ISshSigner signer)
     {
         IEnumerable<string> candidates = signer.SignatureAlgorithms;
 
@@ -1107,9 +1133,7 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
         string[] usable = [.. candidates];
         if (usable.Length == 0)
         {
-            throw new InvalidOperationException(
-                $"这把 {signer.PublicKey.KeyType} 密钥没有可用的签名算法" +
-                "（若需要 SHA-1 的 ssh-rsa，请显式开启 AllowSha1RsaSignatures）。");
+            return null;
         }
 
         if (_serverSignatureAlgorithms.Length == 0)
@@ -1135,9 +1159,14 @@ internal sealed class SshAuthenticator(SshPacketTransport transport, string user
         return usable[0];
     }
 
-    private void Record(SshCredential credential, SshAuthOutcome outcome, string? detail, string? signatureAlgorithm = null) =>
+    private void Record(
+        SshCredential credential, SshAuthOutcome outcome, IReadOnlyList<SshAuthDetail>? details, string? signatureAlgorithm = null) =>
         _attempts.Add(new SshAuthAttempt(
-            credential.MethodName, credential.Label, outcome, _serverOffered, detail, signatureAlgorithm));
+            credential.MethodName, credential.Label, outcome, _serverOffered, SshAuthDetail.Render(details ?? []), signatureAlgorithm)
+        {
+            Details = details is null ? [] : [.. details],
+            BridgedCredentialLabel = (credential as KeyboardInteractiveCredential)?.BridgedFrom?.Label,
+        });
 
     private SshAuthenticationResult BuildResult(string method) =>
         new(method, _attempts, _banner, _serverSignatureAlgorithms, _serverExtensions);

@@ -265,10 +265,14 @@ public static class KnownHostsFile
 
         if (authority is not null)
         {
-            string? problem = certificate!.CheckHostCertificate(host, now);
+            HostCertificateProblem? problem = certificate!.FindHostCertificateProblem(host, now);
             return problem is null
                 ? new KnownHostLookup(KnownHostStatus.Known, authority, [])
-                : new KnownHostLookup(KnownHostStatus.CertificateInvalid, authority, []) { CertificateProblem = problem };
+                : new KnownHostLookup(KnownHostStatus.CertificateInvalid, authority, [])
+                {
+                    CertificateProblem = problem.ToString(),
+                    CertificateProblemDetail = problem,
+                };
         }
 
         if (conflicts.Count > 0)

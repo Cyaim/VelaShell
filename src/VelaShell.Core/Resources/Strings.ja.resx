@@ -1484,6 +1484,93 @@
   <data name="SshErr_AuthPartialSuccess" xml:space="preserve">
     <value>少なくとも 1 つのステップは成功しており、後続のステップで止まっています。</value>
   </data>
+  <data name="SshErr_AuthAttemptLine" xml:space="preserve">
+    <value>· {0}: {1}</value>
+  </data>
+  <data name="SshErr_AuthAttemptLineDetail" xml:space="preserve">
+    <value>· {0}: {1} — {2}</value>
+  </data>
+  <data name="SshErr_AuthNoAttempts" xml:space="preserve">
+    <value>(認証は一度も試行されていません)</value>
+  </data>
+  <data name="SshErr_AuthLabelProbe" xml:space="preserve">
+    <value>none(利用できる方式の確認)</value>
+  </data>
+  <data name="SshErr_AuthLabelViaKbd" xml:space="preserve">
+    <value>{0}(keyboard-interactive 経由)</value>
+  </data>
+  <data name="SshErr_AuthLabelAlgorithm" xml:space="preserve">
+    <value>{0}({1})</value>
+  </data>
+  <data name="SshErr_AuthDetailJoin" xml:space="preserve">
+    <value>{0}; {1}</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSuccess" xml:space="preserve">
+    <value>成功</value>
+  </data>
+  <data name="SshErr_AuthOutcomePartialSuccess" xml:space="preserve">
+    <value>一部成功(サーバーが次の手順を要求)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeFailure" xml:space="preserve">
+    <value>失敗</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNotOffered" xml:space="preserve">
+    <value>スキップ(サーバーがこの方式を受け付けない)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNoMaterial" xml:space="preserve">
+    <value>スキップ(資格情報を使用できない)</value>
+  </data>
+  <data name="SshErr_AuthDetailServerAccepts" xml:space="preserve">
+    <value>サーバーが受け付ける方式: {0}</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodNotOffered" xml:space="preserve">
+    <value>サーバーが受け付けるのは {0} のみ</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodFailureLimit" xml:space="preserve">
+    <value>{0} はこの認証ですでに {1} 回失敗したため、再試行しません</value>
+  </data>
+  <data name="SshErr_AuthDetailPublicKeyNotAccepted" xml:space="preserve">
+    <value>サーバーはこの公開鍵を受け付けません</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChanged" xml:space="preserve">
+    <value>サーバーの要求どおりパスワードを変更しました</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeFailed" xml:space="preserve">
+    <value>サーバーがパスワードの変更を要求しましたが、変更できませんでした(サーバーが変更に対応していないか、旧パスワードが誤っています)</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeNotConfigured" xml:space="preserve">
+    <value>サーバーがまずパスワードの変更を要求しています(ここでは新しいパスワードを尋ねられません)</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordRejected" xml:space="preserve">
+    <value>サーバーがパスワードの変更を要求し、新しいパスワードを {0} 回続けて拒否しました: {1}</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordNotProvided" xml:space="preserve">
+    <value>サーバーがまずパスワードの変更を要求していますが、新しいパスワードが入力されませんでした</value>
+  </data>
+  <data name="SshErr_AuthDetailCredentialFailed" xml:space="preserve">
+    <value>資格情報のエラー: {0}</value>
+  </data>
+  <data name="SshErr_AuthDetailNoUsableSignatureAlgorithm" xml:space="preserve">
+    <value>この {0} 鍵には使える署名アルゴリズムがありません(SHA-1 の ssh-rsa を使うには、接続設定の SSH オプションで「レガシーアルゴリズムを許可」をオンにしてください)</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Fallback" xml:space="preserve">
+    <value>サーバーが server-sig-algs を通知しなかったため、{0} が拒否された後 {1}(SHA-1)で再試行しました</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Signature" xml:space="preserve">
+    <value>SHA-1 署名を使用({0})</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateExpired" xml:space="preserve">
+    <value>証明書(Key ID「{0}」)はこのコンピューターの時計では {1} に期限切れです</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateNotYetValid" xml:space="preserve">
+    <value>証明書(Key ID「{0}」)はこのコンピューターの時計では {1} まで有効になりません</value>
+  </data>
+  <data name="SshErr_AuthDetailHostCertificateForLogin" xml:space="preserve">
+    <value>証明書(Key ID「{0}」)はホスト証明書のため、ログインには使えません</value>
+  </data>
+  <data name="SshErr_AuthDetailPrincipalNotListed" xml:space="preserve">
+    <value>証明書の発行先ユーザーは {0} で、ログインユーザー {1} が含まれていません</value>
+  </data>
   <data name="SshErr_LimitExceeded" xml:space="preserve">
     <value>ローカルの同時実行数の上限に達しました(転送接続数、agent / X11 チャネル数)。いくつか閉じてから再試行してください。</value>
   </data>
@@ -6331,6 +6418,39 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>サーバーのホスト キーが記録済みのものと一致しません。</value>
   </data>
+  <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
+    <value>サーバーが提示したのはユーザー証明書(Key ID「{0}」)で、ホストの身元の証明には使えません。</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyUnreadable" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)に署名した CA の公開鍵を読み取れません(未対応の種類か、それ自体が証明書です)。</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyTooShort" xml:space="preserve">
+    <value>ホスト証明書に署名した RSA CA は {0} ビットしかありません({1} ビット以上が必要です)。</value>
+  </data>
+  <data name="SshErr_HostCertSignatureMalformed" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)の CA 署名の形式が不正です。</value>
+  </data>
+  <data name="SshErr_HostCertSignatureAlgorithmRejected" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)の CA 署名は {1} のため受け付けません(SHA-1 の ssh-rsa 署名はもう安全ではありません)。</value>
+  </data>
+  <data name="SshErr_HostCertSignatureInvalid" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)の CA 署名を検証できません。証明書が改ざんされたか、この CA が署名したものではありません。</value>
+  </data>
+  <data name="SshErr_HostCertExpired" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)は {1} に期限切れになりました。</value>
+  </data>
+  <data name="SshErr_HostCertNotYetValid" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)は {1} まで有効になりません。</value>
+  </data>
+  <data name="SshErr_HostCertNoPrincipals" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)にホスト名が 1 つも記載されていません。すべてのホストに有効になってしまうため、受け付けません。</value>
+  </data>
+  <data name="SshErr_HostCertHostNotListed" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)の発行先は {1} で、{2} は含まれていません。</value>
+  </data>
+  <data name="SshErr_HostCertUnknownCriticalOptions" xml:space="preserve">
+    <value>ホスト証明書(Key ID「{0}」)に認識できないクリティカル オプションがあります: {1}。</value>
+  </data>
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>2 段階認証をキャンセルしました。</value>
   </data>
@@ -6373,11 +6493,128 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_KeyPassphraseIncorrect" xml:space="preserve">
     <value>パスフレーズで秘密鍵を復号できません。</value>
   </data>
+  <data name="SshErr_KeyOrigin" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="SshErr_KeyFileUnreadable" xml:space="preserve">
+    <value>秘密鍵ファイルを読み取れません({0})。</value>
+  </data>
+  <data name="SshErr_KeyFileAccessDenied" xml:space="preserve">
+    <value>秘密鍵ファイルを読み取る権限がありません(Unix では秘密鍵を 0600 にしてください)。</value>
+  </data>
+  <data name="SshErr_KeyFormatUnrecognized" xml:space="preserve">
+    <value>秘密鍵の形式を認識できません。対応形式: OpenSSH、PKCS#8、PKCS#1、SEC1、PuTTY の .ppk(v2 / v3)。</value>
+  </data>
+  <data name="SshErr_KeyMalformed" xml:space="preserve">
+    <value>秘密鍵ファイルの内容が不完全か、形式が正しくありません。ファイルが壊れている可能性があります。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedType" xml:space="preserve">
+    <value>対応していない鍵の種類です: {0}。対応しているのは RSA、NIST 曲線の ECDSA、Ed25519 です。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCurve" xml:space="preserve">
+    <value>対応していない曲線です: {0}。SSH が対応するのは NIST P-256 / P-384 / P-521 のみです。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCipher" xml:space="preserve">
+    <value>秘密鍵の暗号方式 {0} には対応していません。別の方式で暗号化し直してください(例: ssh-keygen -p -Z aes256-ctr -f &lt;鍵ファイル&gt;)。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedKdf" xml:space="preserve">
+    <value>秘密鍵の鍵導出方式 {0} には対応していません。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedFormatVersion" xml:space="preserve">
+    <value>このバージョンの鍵ファイル形式には対応していません(PuTTY .ppk は v2 と v3 に対応)。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedPointFormat" xml:space="preserve">
+    <value>{0} の公開点が SSH の要求する非圧縮形式ではありません。</value>
+  </data>
+  <data name="SshErr_KeyMultipleKeys" xml:space="preserve">
+    <value>このファイルには複数の鍵が含まれています。1 ファイルにつき 1 つの鍵のみ対応しています。</value>
+  </data>
+  <data name="SshErr_KeyLegacyPemEncryption" xml:space="preserve">
+    <value>この秘密鍵は古い暗号化 PEM 形式(Proc-Type: 4,ENCRYPTED)のため読み込めません。ssh-keygen -p -f &lt;鍵ファイル&gt; でパスフレーズを一度変更すると(同じパスフレーズでも可)、OpenSSH 形式に変換されます。</value>
+  </data>
+  <data name="SshErr_KeyKdfCostTooHigh" xml:space="preserve">
+    <value>秘密鍵の鍵導出パラメーターが不自然に大きく、ファイルが改ざんされている可能性があります。意図して設定した場合は、より小さい値で暗号化し直してください。</value>
+  </data>
+  <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
+    <value>システムのキー ストアから鍵を開けないか、その鍵を使用できません。</value>
+  </data>
+  <data name="SshErr_CertFileUnreadable" xml:space="preserve">
+    <value>証明書ファイルを読み取れません({0})。</value>
+  </data>
+  <data name="SshErr_CertFileAccessDenied" xml:space="preserve">
+    <value>証明書ファイルを読み取る権限がありません。</value>
+  </data>
+  <data name="SshErr_CertMalformed" xml:space="preserve">
+    <value>証明書の内容が不完全か、形式が正しくありません(「アルゴリズム base64 [コメント]」の 1 行である必要があります)。</value>
+  </data>
+  <data name="SshErr_CertUnsupportedKeyType" xml:space="preserve">
+    <value>対応していない証明書の鍵の種類です: {0}。</value>
+  </data>
+  <data name="SshErr_CertNotACertificate" xml:space="preserve">
+    <value>{0} は証明書の種類ではありません(証明書の種類は -cert-v01@openssh.com で終わります)。</value>
+  </data>
+  <data name="SshErr_CertHostCertificateForLogin" xml:space="preserve">
+    <value>この証明書(Key ID「{0}」)はホスト証明書のため、ログインには使えません。ユーザー証明書は ssh-keygen で -h を付けずに署名したものです。</value>
+  </data>
+  <data name="SshErr_CertKeyMismatch" xml:space="preserve">
+    <value>証明書(Key ID「{0}」)の公開鍵がこの秘密鍵と一致しません。証明書: {1}、秘密鍵: {2}。証明書は発行時に使った秘密鍵と組み合わせて使ってください。</value>
+  </data>
+  <data name="SshErr_CertKeyNotLoaded" xml:space="preserve">
+    <value>この証明書が証明する鍵は読み込んだ IdentityFile に含まれていないため、署名に使えません。</value>
+  </data>
   <data name="SshErr_AgentRefused" xml:space="preserve">
     <value>ssh-agent が要求を拒否しました。鍵が agent から外れている、確認 (ssh-add -c) が拒否された、または agent がロックされている可能性があります。</value>
   </data>
   <data name="SshErr_ChannelRequestRejected" xml:space="preserve">
     <value>サーバーがチャネル上の要求を拒否しました。sshd_config のよくある原因: ForceCommand、PermitTTY no、Subsystem 行の欠落。</value>
+  </data>
+  <data name="SshErr_ChanForwardingProhibited" xml:space="preserve">
+    <value>サーバーがポート転送を禁止しています(sshd_config の AllowTcpForwarding を確認してください)。</value>
+  </data>
+  <data name="SshErr_ChanOpenProhibited" xml:space="preserve">
+    <value>サーバーが管理上の理由でこのチャネルを拒否しました(sshd_config の関連設定を確認してください)。</value>
+  </data>
+  <data name="SshErr_ChanForwardTargetUnreachable" xml:space="preserve">
+    <value>サーバーが転送先に接続できませんでした。</value>
+  </data>
+  <data name="SshErr_ChanUnknownType" xml:space="preserve">
+    <value>サーバーはチャネルの種類 {0} を認識しません。</value>
+  </data>
+  <data name="SshErr_ChanResourceShortage" xml:space="preserve">
+    <value>サーバーのリソースが不足しています。多くの場合、同時セッション数の上限(sshd_config の MaxSessions)に達しています。</value>
+  </data>
+  <data name="SshErr_ChanOpenRejected" xml:space="preserve">
+    <value>サーバーがチャネルのオープンを拒否しました(理由コード {0})。</value>
+  </data>
+  <data name="SshErr_ChanClosedBeforeConfirmation" xml:space="preserve">
+    <value>サーバーがチャネルを確認する前に閉じました。</value>
+  </data>
+  <data name="SshErr_ChanLimitReached" xml:space="preserve">
+    <value>この接続の同時チャネル数がクライアント側の上限({0})に達しました。セッションやトンネルをいくつか閉じてから再試行してください。</value>
+  </data>
+  <data name="SshErr_ChanWindowBudgetExhausted" xml:space="preserve">
+    <value>この接続の受信ウィンドウの総予算({0} MiB)を使い切りました。同時に開いているチャネルが多すぎます。セッションやトンネルをいくつか閉じてから再試行してください。</value>
+  </data>
+  <data name="SshErr_ChanExecRejected" xml:space="preserve">
+    <value>サーバーがコマンドの実行を拒否しました(アカウントが固定コマンドのみに制限されているか、sshd_config で ForceCommand が設定されています)。</value>
+  </data>
+  <data name="SshErr_ChanPtyRejected" xml:space="preserve">
+    <value>サーバーが端末の割り当てを拒否しました(sshd_config の PermitTTY no、またはアカウントが端末なしのログインに設定されています)。</value>
+  </data>
+  <data name="SshErr_ChanShellRejected" xml:space="preserve">
+    <value>サーバーがシェルの起動を拒否しました。</value>
+  </data>
+  <data name="SshErr_ChanSubsystemRejected" xml:space="preserve">
+    <value>サーバーはサブシステム {0} を提供していません。</value>
+  </data>
+  <data name="SshErr_ChanSftpSubsystemRejected" xml:space="preserve">
+    <value>サーバーは sftp サブシステムを提供していません(sshd_config の Subsystem sftp 行を確認してください)。</value>
+  </data>
+  <data name="SshErr_ChanZeroMaxPacket" xml:space="preserve">
+    <value>サーバーがチャネルの最大パケットサイズを 0 と通知したため、入力を送信できません。</value>
+  </data>
+  <data name="SshErr_PeerSaid" xml:space="preserve">
+    <value>{0}サーバーの応答: {1}</value>
   </data>
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>サーバーが転送要求を拒否しました。sshd_config の AllowAgentForwarding / AllowTcpForwarding / X11Forwarding を確認してください。</value>

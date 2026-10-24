@@ -100,6 +100,22 @@ public sealed class HostCertificateTests
         KnownHostLookup sha1 = Lookup(knownHosts, "hostcert-sha1-cert.pub");
         Assert.AreEqual(KnownHostStatus.CertificateInvalid, sha1.Status);
         Assert.Contains("ssh-rsa", sha1.CertificateProblem!);
+        Assert.AreEqual(
+            $"证书(Key ID「{Certificate("hostcert-sha1-cert.pub").KeyId}」)的 CA 签名用的是 ssh-rsa,不接受(SHA-1 的 ssh-rsa 签名已经不安全)。",
+            sha1.CertificateProblem);
+        AssertProblem(sha1, HostCertificateProblemKind.SignatureAlgorithmRejected);
+        Assert.AreEqual(SshAlgorithmNames.SshRsa, sha1.CertificateProblemDetail!.Algorithm);
+    }
+
+    private static OpenSshCertificate Certificate(string fileName) => OpenSshCertificate.Decode(ReadBlob(fileName));
+
+    /// <summary>
+    /// 结构化的出处是这一种，而且它的原文就是 <see cref="KnownHostLookup.CertificateProblem"/> —— 界面按种类说的与日志里说的是同一件事。
+    /// </summary>
+    private static void AssertProblem(KnownHostLookup lookup, HostCertificateProblemKind kind)
+    {
+        Assert.AreEqual(kind, lookup.CertificateProblemDetail?.Kind, lookup.CertificateProblem);
+        Assert.AreEqual(lookup.CertificateProblem, lookup.CertificateProblemDetail!.ToString());
     }
 
     [TestMethod]
@@ -116,6 +132,15 @@ public sealed class HostCertificateTests
         KnownHostLookup early = Lookup(knownHosts, "hostcert-window-cert.pub", now: new DateTimeOffset(2025, 6, 1, 0, 0, 0, TimeSpan.Zero));
         Assert.AreEqual(KnownHostStatus.CertificateInvalid, early.Status);
         Assert.Contains("生效", early.CertificateProblem!);
+
+        // 拒绝理由的原文（进日志与 KnownHostsPolicy 的拒绝消息）一个字都不该变。
+        OpenSshCertificate window = Certificate("hostcert-window-cert.pub");
+        Assert.AreEqual($"主机证书(Key ID「{window.KeyId}」)已于 {window.ValidBeforeTime:u} 过期。", expired.CertificateProblem);
+        Assert.AreEqual($"主机证书(Key ID「{window.KeyId}」)要到 {window.ValidAfterTime:u} 才生效。", early.CertificateProblem);
+        AssertProblem(expired, HostCertificateProblemKind.Expired);
+        Assert.AreEqual(window.ValidBeforeTime, expired.CertificateProblemDetail!.Time);
+        AssertProblem(early, HostCertificateProblemKind.NotYetValid);
+        Assert.AreEqual(window.ValidAfterTime, early.CertificateProblemDetail!.Time);
     }
 
     /// <summary>
@@ -150,6 +175,14 @@ public sealed class HostCertificateTests
 
         Assert.AreEqual(KnownHostStatus.CertificateInvalid, lookup.Status);
         Assert.Contains("other.example", lookup.CertificateProblem!);
+
+        OpenSshCertificate cert = Certificate("hostcert-key-cert.pub");
+        Assert.AreEqual(
+            $"主机证书(Key ID「{cert.KeyId}」)签给的是 {string.Join("、", cert.ValidPrincipals)},不含 other.example。",
+            lookup.CertificateProblem);
+        AssertProblem(lookup, HostCertificateProblemKind.HostNotListed);
+        Assert.AreEqual("other.example", lookup.CertificateProblemDetail!.Host);
+        Assert.AreSequenceEqual(cert.ValidPrincipals.ToArray(), lookup.CertificateProblemDetail.Principals.ToArray());
     }
 
     [TestMethod]
@@ -168,6 +201,10 @@ public sealed class HostCertificateTests
         KnownHostLookup lookup = Lookup(Line("@cert-authority", Host, "hostcert-ca.pub"), "hostcert-noprincipals-cert.pub");
 
         Assert.AreEqual(KnownHostStatus.CertificateInvalid, lookup.Status);
+        Assert.AreEqual(
+            $"主机证书(Key ID「{Certificate("hostcert-noprincipals-cert.pub").KeyId}」)没有列出任何主机名 —— 那等于对所有主机有效,不予接受。",
+            lookup.CertificateProblem);
+        AssertProblem(lookup, HostCertificateProblemKind.NoPrincipals);
     }
 
     [TestMethod]
@@ -177,6 +214,10 @@ public sealed class HostCertificateTests
 
         Assert.AreEqual(KnownHostStatus.CertificateInvalid, lookup.Status);
         Assert.Contains("用户证书", lookup.CertificateProblem!);
+        Assert.AreEqual(
+            $"这是一张用户证书(Key ID「{Certificate("hostcert-usertype-cert.pub").KeyId}」),不能用来证明主机身份。",
+            lookup.CertificateProblem);
+        AssertProblem(lookup, HostCertificateProblemKind.NotHostCertificate);
     }
 
     [TestMethod]
@@ -192,6 +233,10 @@ public sealed class HostCertificateTests
 
         Assert.AreEqual(KnownHostStatus.CertificateInvalid, lookup.Status);
         Assert.Contains("签名", lookup.CertificateProblem!);
+        Assert.AreEqual(
+            $"证书(Key ID「{OpenSshCertificate.Decode(blob).KeyId}」)的 CA 签名验不过 —— 证书被改过,或者不是这个 CA 签的。",
+            lookup.CertificateProblem);
+        AssertProblem(lookup, HostCertificateProblemKind.SignatureInvalid);
     }
 
     // ------------------------------------------------------------ 没有 CA 担保

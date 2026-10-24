@@ -68,12 +68,19 @@ internal static class PuttyPrivateKeyFile
         if (file.Encryption != "aes256-cbc")
         {
             throw new SshPrivateKeyException(SshFailureReason.Unsupported,
-                $"不支持的 .ppk 加密方式 {file.Encryption}{where}。");
+                $"不支持的 .ppk 加密方式 {file.Encryption}{where}。")
+            {
+                ProblemKind = SshKeyProblemKind.UnsupportedCipher,
+                AlgorithmName = file.Encryption,
+            };
         }
 
         if (passphrase.IsEmpty)
         {
-            throw new SshPrivateKeyException(SshFailureReason.KeyPassphraseRequired, $"这把 .ppk 需要口令{where}。");
+            throw new SshPrivateKeyException(SshFailureReason.KeyPassphraseRequired, $"这把 .ppk 需要口令{where}。")
+            {
+                ProblemKind = SshKeyProblemKind.PassphraseRequired,
+            };
         }
 
         cancellationToken.ThrowIfCancellationRequested();   // Argon2 一旦开算就停不下来
@@ -202,7 +209,10 @@ internal static class PuttyPrivateKeyFile
                     {
                         // 截断的文件（复制粘贴丢了尾行）：当场报，不去派生口令（见 EnsureComplete）。
                         throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid,
-                            $".ppk 的 {name} 段说有 {count} 行，文件里只剩 {read} 行{where} —— 文件多半被截断了。");
+                            $".ppk 的 {name} 段说有 {count} 行，文件里只剩 {read} 行{where} —— 文件多半被截断了。")
+                        {
+                            ProblemKind = SshKeyProblemKind.Malformed,
+                        };
                     }
 
                     byte[] blob;
@@ -212,7 +222,10 @@ internal static class PuttyPrivateKeyFile
                     }
                     catch (FormatException ex)
                     {
-                        throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 的 {name} 段解不开{where}。", ex);
+                        throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 的 {name} 段解不开{where}。", ex)
+                        {
+                            ProblemKind = SshKeyProblemKind.Malformed,
+                        };
                     }
 
                     if (name == "Public-Lines")
@@ -232,7 +245,10 @@ internal static class PuttyPrivateKeyFile
             if (version is not (2 or 3))
             {
                 throw new SshPrivateKeyException(SshFailureReason.Unsupported,
-                    $"不支持的 .ppk 版本 {version}{where}（本库支持 2 与 3）。");
+                    $"不支持的 .ppk 版本 {version}{where}（本库支持 2 与 3）。")
+                {
+                    ProblemKind = SshKeyProblemKind.UnsupportedFormatVersion,
+                };
             }
 
             return new PuttyFile
@@ -270,7 +286,10 @@ internal static class PuttyPrivateKeyFile
             }
             catch (FormatException ex)
             {
-                throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 里的十六进制字段格式不对{where}。", ex);
+                throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 里的十六进制字段格式不对{where}。", ex)
+                {
+                    ProblemKind = SshKeyProblemKind.Malformed,
+                };
             }
         }
     }
@@ -346,7 +365,10 @@ internal static class PuttyPrivateKeyFile
             throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid,
                 $".ppk 的 Argon2 参数不合理{where}（内存 {file.Argon2Memory} KiB、{file.Argon2Passes} 遍、" +
                 $"并行度 {file.Argon2Parallelism}、盐 {file.Argon2Salt.Length} 字节）。" +
-                $"上限是内存 {MaxArgon2MemoryKiB} KiB、{MaxArgon2Passes} 遍、并行度 {MaxArgon2Parallelism}。");
+                $"上限是内存 {MaxArgon2MemoryKiB} KiB、{MaxArgon2Passes} 遍、并行度 {MaxArgon2Parallelism}。")
+            {
+                ProblemKind = SshKeyProblemKind.KdfCostTooHigh,
+            };
         }
 
         // 三种变体 PuTTY 都可能写（格式文档允许）。曾经一律按 Argon2id 算，
@@ -357,7 +379,11 @@ internal static class PuttyPrivateKeyFile
             "Argon2i" => Argon2Parameters.Argon2i,
             "Argon2d" => Argon2Parameters.Argon2d,
             _ => throw new SshPrivateKeyException(SshFailureReason.Unsupported,
-                $"不支持的 .ppk v3 口令派生方式 {file.KeyDerivation}{where}。"),
+                $"不支持的 .ppk v3 口令派生方式 {file.KeyDerivation}{where}。")
+            {
+                ProblemKind = SshKeyProblemKind.UnsupportedKdf,
+                AlgorithmName = file.KeyDerivation,
+            },
         };
 
         Argon2Parameters parameters = new Argon2Parameters.Builder(variant)
@@ -414,7 +440,10 @@ internal static class PuttyPrivateKeyFile
         if (ciphertext.Length % 16 != 0)
         {
             throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid,
-                $".ppk 的私钥区长度不是 16 的倍数{where}，文件多半损坏了。");
+                $".ppk 的私钥区长度不是 16 的倍数{where}，文件多半损坏了。")
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
 
         using var aes = Aes.Create();
@@ -457,7 +486,10 @@ internal static class PuttyPrivateKeyFile
         {
             throw new SshPrivateKeyException(
                 SshFailureReason.KeyFormatInvalid,
-                $".ppk 缺少 Private-MAC{where} —— v{file.Version} 的 MAC 是必填的，没有它就验不了文件有没有被改过。");
+                $".ppk 缺少 Private-MAC{where} —— v{file.Version} 的 MAC 是必填的，没有它就验不了文件有没有被改过。")
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
 
         int expected = file.Version == 3 ? 32 : 20;
@@ -465,13 +497,19 @@ internal static class PuttyPrivateKeyFile
         {
             throw new SshPrivateKeyException(
                 SshFailureReason.KeyFormatInvalid,
-                $".ppk 的 Private-MAC 是 {file.Mac.Length} 字节，v{file.Version} 应当是 {expected} 字节{where} —— 文件多半被截断或改过。");
+                $".ppk 的 Private-MAC 是 {file.Mac.Length} 字节，v{file.Version} 应当是 {expected} 字节{where} —— 文件多半被截断或改过。")
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
 
         if (file.Encryption == "aes256-cbc" && file.PrivateBlob.Length % 16 != 0)
         {
             throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid,
-                $".ppk 的私钥区长度不是 16 的倍数{where}，文件多半损坏了。");
+                $".ppk 的私钥区长度不是 16 的倍数{where}，文件多半损坏了。")
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
     }
 
@@ -485,7 +523,10 @@ internal static class PuttyPrivateKeyFile
         {
             throw new SshPrivateKeyException(
                 SshFailureReason.KeyFormatInvalid,
-                $".ppk 缺少 Private-MAC{where} —— v{file.Version} 的 MAC 是必填的，没有它就验不了文件有没有被改过。");
+                $".ppk 缺少 Private-MAC{where} —— v{file.Version} 的 MAC 是必填的，没有它就验不了文件有没有被改过。")
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
 
         foreach (int length in CandidateLengths(file))
@@ -517,7 +558,10 @@ internal static class PuttyPrivateKeyFile
             wrongPassphraseLikely ? SshFailureReason.KeyPassphraseIncorrect : SshFailureReason.KeyFormatInvalid,
             wrongPassphraseLikely
                 ? $".ppk 的 MAC 对不上{where} —— 口令多半不对。"
-                : $".ppk 的 MAC 对不上{where}，文件可能被改过或已损坏。");
+                : $".ppk 的 MAC 对不上{where}，文件可能被改过或已损坏。")
+        {
+            ProblemKind = wrongPassphraseLikely ? SshKeyProblemKind.PassphraseIncorrect : SshKeyProblemKind.Malformed,
+        };
     }
 
     /// <summary>MAC 可能覆盖到私钥区的哪些长度。</summary>
@@ -577,7 +621,11 @@ internal static class PuttyPrivateKeyFile
             SshAlgorithmNames.SshEd25519 => BuildEd25519(ref priv),
             SshAlgorithmNames.SshRsa => BuildRsa(publicBlob, ref priv, where),
             SshAlgorithmNames.EcdsaSha2Nistp256 or SshAlgorithmNames.EcdsaSha2Nistp384 or SshAlgorithmNames.EcdsaSha2Nistp521 => BuildEcdsa(publicBlob, ref priv, algorithm, where),
-            _ => throw new SshPrivateKeyException(SshFailureReason.Unsupported, $".ppk 里是不支持的密钥类型 {algorithm}{where}。"),
+            _ => throw new SshPrivateKeyException(SshFailureReason.Unsupported, $".ppk 里是不支持的密钥类型 {algorithm}{where}。")
+            {
+                ProblemKind = SshKeyProblemKind.UnsupportedKeyType,
+                AlgorithmName = algorithm,
+            },
         };
 
         // 私钥半派生出的公钥必须就是 Public-Lines 那一把。
@@ -588,7 +636,10 @@ internal static class PuttyPrivateKeyFile
             signer.Dispose();
             throw new SshPrivateKeyException(
                 SshFailureReason.KeyFormatInvalid,
-                $".ppk 的私钥与 Public-Lines 里的公钥不是一对{where}，文件可能被改过或已损坏。");
+                $".ppk 的私钥与 Public-Lines 里的公钥不是一对{where}，文件可能被改过或已损坏。")
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
 
         return signer;
@@ -664,7 +715,10 @@ internal static class PuttyPrivateKeyFile
         }
         catch (CryptographicException ex)
         {
-            throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 里的 RSA 参数不成立{where}：{ex.Message}", ex);
+            throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 里的 RSA 参数不成立{where}：{ex.Message}", ex)
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
         finally
         {
@@ -685,12 +739,19 @@ internal static class PuttyPrivateKeyFile
             "nistp256" => (ECCurve.NamedCurves.nistP256, 32),
             "nistp384" => (ECCurve.NamedCurves.nistP384, 48),
             "nistp521" => (ECCurve.NamedCurves.nistP521, 66),
-            _ => throw new SshPrivateKeyException(SshFailureReason.Unsupported, $".ppk 里是不支持的曲线 {curveName}{where}。"),
+            _ => throw new SshPrivateKeyException(SshFailureReason.Unsupported, $".ppk 里是不支持的曲线 {curveName}{where}。")
+            {
+                ProblemKind = SshKeyProblemKind.UnsupportedCurve,
+                AlgorithmName = curveName,
+            },
         };
 
         if (point.Length != 1 + (coordinate * 2) || point[0] != 0x04)
         {
-            throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 里的 {algorithm} 公开点格式不对{where}。");
+            throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 里的 {algorithm} 公开点格式不对{where}。")
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
 
         byte[] d = priv.ReadMpint(512).ToArray();
@@ -715,7 +776,10 @@ internal static class PuttyPrivateKeyFile
         }
         catch (CryptographicException ex)
         {
-            throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 里的 ECDSA 参数不成立{where}：{ex.Message}", ex);
+            throw new SshPrivateKeyException(SshFailureReason.KeyFormatInvalid, $".ppk 里的 ECDSA 参数不成立{where}：{ex.Message}", ex)
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
         finally
         {

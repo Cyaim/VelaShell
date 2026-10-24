@@ -166,11 +166,19 @@ public sealed class OpenSshCertificate
         }
         catch (IOException ex)
         {
-            throw new SshCertificateException(SshFailureReason.KeyFileUnreadable, $"读不了证书文件 {path}:{ex.Message}", ex);
+            throw new SshCertificateException(SshFailureReason.KeyFileUnreadable, $"读不了证书文件 {path}:{ex.Message}", ex)
+            {
+                ProblemKind = SshKeyProblemKind.FileUnreadable,
+                Origin = path,
+            };
         }
         catch (UnauthorizedAccessException ex)
         {
-            throw new SshCertificateException(SshFailureReason.KeyFileUnreadable, $"没有权限读证书文件 {path}。", ex);
+            throw new SshCertificateException(SshFailureReason.KeyFileUnreadable, $"没有权限读证书文件 {path}。", ex)
+            {
+                ProblemKind = SshKeyProblemKind.FileAccessDenied,
+                Origin = path,
+            };
         }
 
         return Parse(text, path);
@@ -198,7 +206,11 @@ public sealed class OpenSshCertificate
             if (parts.Length < 2)
             {
                 throw new SshCertificateException(SshFailureReason.KeyFormatInvalid,
-                    $"证书文本的格式不对{where}:应当是「算法 base64 [注释]」。");
+                    $"证书文本的格式不对{where}:应当是「算法 base64 [注释]」。")
+                {
+                    ProblemKind = SshKeyProblemKind.Malformed,
+                    Origin = origin,
+                };
             }
 
             byte[] blob;
@@ -208,20 +220,43 @@ public sealed class OpenSshCertificate
             }
             catch (FormatException ex)
             {
-                throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书的 base64 解不开{where}。", ex);
+                throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书的 base64 解不开{where}。", ex)
+                {
+                    ProblemKind = SshKeyProblemKind.Malformed,
+                    Origin = origin,
+                };
             }
 
-            OpenSshCertificate certificate = Decode(blob);
+            OpenSshCertificate certificate;
+            try
+            {
+                certificate = Decode(blob);
+            }
+            catch (SshCertificateException ex) when (origin is not null)
+            {
+                // 解 blob 的那一层不知道来源：结构化的来源在这里补上（界面按它显示是哪个文件）。
+                ex.Origin ??= origin;
+                throw;
+            }
+
             if (!string.Equals(certificate.Algorithm, parts[0], StringComparison.Ordinal))
             {
                 // 行首写的算法与 blob 里的类型串不符 —— 文件被手工拼接过的典型症状。
                 throw new SshCertificateException(SshFailureReason.KeyFormatInvalid,
-                    $"证书文件里标的算法是 {parts[0]},而 blob 里是 {certificate.Algorithm}{where}。");
+                    $"证书文件里标的算法是 {parts[0]},而 blob 里是 {certificate.Algorithm}{where}。")
+                {
+                    ProblemKind = SshKeyProblemKind.Malformed,
+                    Origin = origin,
+                };
             }
             return certificate;
         }
 
-        throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书文件是空的{where}。");
+        throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书文件是空的{where}。")
+        {
+            ProblemKind = SshKeyProblemKind.Malformed,
+            Origin = origin,
+        };
     }
 
     /// <summary>解析一个证书 blob。</summary>
@@ -231,7 +266,10 @@ public sealed class OpenSshCertificate
     {
         if (blob.Length is 0 or > MaxBlobBytes)
         {
-            throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书 blob 长度非法:{blob.Length} 字节。");
+            throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书 blob 长度非法:{blob.Length} 字节。")
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
 
         byte[] copy = blob.ToArray();
@@ -243,7 +281,11 @@ public sealed class OpenSshCertificate
             if (!algorithm.EndsWith(SshAlgorithmNames.CertificateSuffix, StringComparison.Ordinal))
             {
                 throw new SshCertificateException(SshFailureReason.KeyFormatInvalid,
-                    $"{algorithm} 不是证书类型 —— 证书的类型串以 {SshAlgorithmNames.CertificateSuffix} 结尾。");
+                    $"{algorithm} 不是证书类型 —— 证书的类型串以 {SshAlgorithmNames.CertificateSuffix} 结尾。")
+                {
+                    ProblemKind = SshKeyProblemKind.NotACertificate,
+                    AlgorithmName = algorithm,
+                };
             }
 
             string plainType = algorithm[..^SshAlgorithmNames.CertificateSuffix.Length];
@@ -255,7 +297,10 @@ public sealed class OpenSshCertificate
             uint type = reader.ReadUInt32();
             if (type is not (1 or 2))
             {
-                throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书类型 {type} 不合法(只有 1=用户、2=主机)。");
+                throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书类型 {type} 不合法(只有 1=用户、2=主机)。")
+                {
+                    ProblemKind = SshKeyProblemKind.Malformed,
+                };
             }
 
             string keyId = reader.ReadUtf8String(MaxFieldBytes);
@@ -279,7 +324,10 @@ public sealed class OpenSshCertificate
         }
         catch (SshWireFormatException ex)
         {
-            throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, "证书 blob 的格式非法。", ex);
+            throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, "证书 blob 的格式非法。", ex)
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
     }
 
@@ -318,7 +366,11 @@ public sealed class OpenSshCertificate
                 break;
 
             default:
-                throw new SshCertificateException(SshFailureReason.Unsupported, $"不支持的证书密钥类型:{plainType}。");
+                throw new SshCertificateException(SshFailureReason.Unsupported, $"不支持的证书密钥类型:{plainType}。")
+                {
+                    ProblemKind = SshKeyProblemKind.UnsupportedKeyType,
+                    AlgorithmName = plainType,
+                };
         }
 
         try
@@ -327,7 +379,10 @@ public sealed class OpenSshCertificate
         }
         catch (SshPublicKeyException ex)
         {
-            throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书里的 {plainType} 公钥不合法。", ex);
+            throw new SshCertificateException(SshFailureReason.KeyFormatInvalid, $"证书里的 {plainType} 公钥不合法。", ex)
+            {
+                ProblemKind = SshKeyProblemKind.Malformed,
+            };
         }
     }
 
@@ -365,13 +420,16 @@ public sealed class OpenSshCertificate
     /// 对主机证书那意味着 CA 签出的一张证书能冒充 <c>@cert-authority</c> 那一行范围里的任何一台主机。
     /// </para>
     /// </remarks>
-    internal string? CheckHostCertificate(string host, DateTimeOffset now)
+    internal string? CheckHostCertificate(string host, DateTimeOffset now) => FindHostCertificateProblem(host, now)?.ToString();
+
+    /// <summary>同 <see cref="CheckHostCertificate" />,交回的是结构化的问题(种类加参数);合格时为 <see langword="null" />。</summary>
+    internal HostCertificateProblem? FindHostCertificateProblem(string host, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(host);
 
         if (CertificateType != SshCertificateType.Host)
         {
-            return $"这是一张用户证书(Key ID「{KeyId}」),不能用来证明主机身份。";
+            return new HostCertificateProblem(HostCertificateProblemKind.NotHostCertificate, KeyId);
         }
 
         if (CheckCaSignature() is { } signatureProblem)
@@ -382,40 +440,44 @@ public sealed class OpenSshCertificate
         if (!IsTimeValid(now))
         {
             return ValidBeforeTime is { } before && now >= before
-                ? $"主机证书(Key ID「{KeyId}」)已于 {before:u} 过期。"
-                : $"主机证书(Key ID「{KeyId}」)要到 {ValidAfterTime:u} 才生效。";
+                ? new HostCertificateProblem(HostCertificateProblemKind.Expired, KeyId) { Time = before }
+                : new HostCertificateProblem(HostCertificateProblemKind.NotYetValid, KeyId) { Time = ValidAfterTime };
         }
 
         if (ValidPrincipals.Count == 0)
         {
-            return $"主机证书(Key ID「{KeyId}」)没有列出任何主机名 —— 那等于对所有主机有效,不予接受。";
+            return new HostCertificateProblem(HostCertificateProblemKind.NoPrincipals, KeyId);
         }
 
         if (!ValidPrincipals.Contains(host, StringComparer.OrdinalIgnoreCase))
         {
-            return $"主机证书(Key ID「{KeyId}」)签给的是 {string.Join("、", ValidPrincipals)},不含 {host}。";
+            return new HostCertificateProblem(HostCertificateProblemKind.HostNotListed, KeyId) { Principals = ValidPrincipals, Host = host };
         }
 
         if (CriticalOptions.Count > 0)
         {
             // 主机证书没有定义任何关键选项;不认识的关键选项按规范必须拒绝。
-            return $"主机证书(Key ID「{KeyId}」)带着不认识的关键选项:{string.Join("、", CriticalOptions)}。";
+            return new HostCertificateProblem(HostCertificateProblemKind.UnknownCriticalOptions, KeyId) { CriticalOptions = CriticalOptions };
         }
 
         return null;
     }
 
     /// <summary>验 CA 对证书的签名;通过时为 <see langword="null" />。</summary>
-    private string? CheckCaSignature()
+    private HostCertificateProblem? CheckCaSignature()
     {
         if (SignatureKey is not { } ca)
         {
-            return $"证书(Key ID「{KeyId}」)的签发 CA 公钥读不出来(类型不支持,或者它自己也是一张证书)。";
+            return new HostCertificateProblem(HostCertificateProblemKind.AuthorityKeyUnreadable, KeyId);
         }
 
         if (ca.PlainKeyType == SshAlgorithmNames.SshRsa && ca.KeyBits < MinimumRsaCaBits)
         {
-            return $"签发证书的 RSA CA 只有 {ca.KeyBits} 位,低于 {MinimumRsaCaBits} 位。";
+            return new HostCertificateProblem(HostCertificateProblemKind.AuthorityKeyTooShort, KeyId)
+            {
+                KeyBits = ca.KeyBits,
+                MinimumKeyBits = MinimumRsaCaBits,
+            };
         }
 
         string algorithm;
@@ -426,18 +488,18 @@ public sealed class OpenSshCertificate
         }
         catch (SshWireFormatException)
         {
-            return $"证书(Key ID「{KeyId}」)的 CA 签名格式非法。";
+            return new HostCertificateProblem(HostCertificateProblemKind.SignatureMalformed, KeyId);
         }
 
         if (!HostCaSignatureAlgorithms.Contains(algorithm, StringComparer.Ordinal))
         {
-            return $"证书(Key ID「{KeyId}」)的 CA 签名用的是 {algorithm},不接受(SHA-1 的 ssh-rsa 签名已经不安全)。";
+            return new HostCertificateProblem(HostCertificateProblemKind.SignatureAlgorithmRejected, KeyId) { Algorithm = algorithm };
         }
 
         if (!ca.SupportsSignatureAlgorithm(algorithm)
             || !ca.VerifySignature(_caSignature, _blob.AsSpan(0, _signedLength), algorithm))
         {
-            return $"证书(Key ID「{KeyId}」)的 CA 签名验不过 —— 证书被改过,或者不是这个 CA 签的。";
+            return new HostCertificateProblem(HostCertificateProblemKind.SignatureInvalid, KeyId);
         }
 
         return null;

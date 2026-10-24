@@ -744,6 +744,93 @@
   <data name="SshErr_AuthPartialSuccess" xml:space="preserve">
     <value>其中至少有一步已經通過,卡在後續步驟。</value>
   </data>
+  <data name="SshErr_AuthAttemptLine" xml:space="preserve">
+    <value>· {0}:{1}</value>
+  </data>
+  <data name="SshErr_AuthAttemptLineDetail" xml:space="preserve">
+    <value>· {0}:{1} —— {2}</value>
+  </data>
+  <data name="SshErr_AuthNoAttempts" xml:space="preserve">
+    <value>(沒有任何驗證嘗試)</value>
+  </data>
+  <data name="SshErr_AuthLabelProbe" xml:space="preserve">
+    <value>none(探測可用方法)</value>
+  </data>
+  <data name="SshErr_AuthLabelViaKbd" xml:space="preserve">
+    <value>{0}(經 keyboard-interactive)</value>
+  </data>
+  <data name="SshErr_AuthLabelAlgorithm" xml:space="preserve">
+    <value>{0}({1})</value>
+  </data>
+  <data name="SshErr_AuthDetailJoin" xml:space="preserve">
+    <value>{0};{1}</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSuccess" xml:space="preserve">
+    <value>成功</value>
+  </data>
+  <data name="SshErr_AuthOutcomePartialSuccess" xml:space="preserve">
+    <value>部分成功(伺服器要求繼續)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeFailure" xml:space="preserve">
+    <value>失敗</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNotOffered" xml:space="preserve">
+    <value>略過(伺服器不接受這種方法)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNoMaterial" xml:space="preserve">
+    <value>略過(無法取得憑證內容)</value>
+  </data>
+  <data name="SshErr_AuthDetailServerAccepts" xml:space="preserve">
+    <value>伺服器接受:{0}</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodNotOffered" xml:space="preserve">
+    <value>伺服器只接受:{0}</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodFailureLimit" xml:space="preserve">
+    <value>{0} 在這次驗證中已失敗 {1} 次,不再重試</value>
+  </data>
+  <data name="SshErr_AuthDetailPublicKeyNotAccepted" xml:space="preserve">
+    <value>伺服器不接受這把公鑰</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChanged" xml:space="preserve">
+    <value>已依伺服器的要求變更密碼</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeFailed" xml:space="preserve">
+    <value>伺服器要求先變更密碼,但沒有成功:伺服器不支援變更密碼,或舊密碼不正確</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeNotConfigured" xml:space="preserve">
+    <value>伺服器要求先變更密碼(這裡沒有詢問新密碼的途徑)</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordRejected" xml:space="preserve">
+    <value>伺服器要求先變更密碼,連續 {0} 次不接受新密碼:{1}</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordNotProvided" xml:space="preserve">
+    <value>伺服器要求先變更密碼,這次沒有提供新密碼</value>
+  </data>
+  <data name="SshErr_AuthDetailCredentialFailed" xml:space="preserve">
+    <value>憑證出錯:{0}</value>
+  </data>
+  <data name="SshErr_AuthDetailNoUsableSignatureAlgorithm" xml:space="preserve">
+    <value>這把 {0} 金鑰沒有可用的簽章演算法(SHA-1 的 ssh-rsa 要在連線設定的 SSH 連線選項裡勾「允許舊演算法」)</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Fallback" xml:space="preserve">
+    <value>伺服器沒有宣告 server-sig-algs,{0} 被拒後降級為 {1}(SHA-1)重試</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Signature" xml:space="preserve">
+    <value>使用的是 SHA-1 簽章({0})</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateExpired" xml:space="preserve">
+    <value>憑證(Key ID「{0}」)依本機時鐘已於 {1} 過期</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateNotYetValid" xml:space="preserve">
+    <value>憑證(Key ID「{0}」)依本機時鐘要到 {1} 才生效</value>
+  </data>
+  <data name="SshErr_AuthDetailHostCertificateForLogin" xml:space="preserve">
+    <value>憑證(Key ID「{0}」)是主機憑證,不能用來登入</value>
+  </data>
+  <data name="SshErr_AuthDetailPrincipalNotListed" xml:space="preserve">
+    <value>憑證簽發給的使用者是 {0},不含登入使用者 {1}</value>
+  </data>
   <data name="SshErr_LimitExceeded" xml:space="preserve">
     <value>達到了本機的並行上限(轉送連線數、agent / X11 通道數)。等其中一些關閉後再試。</value>
   </data>
@@ -6808,6 +6895,39 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>伺服器的主機金鑰與已記錄的不一致。</value>
   </data>
+  <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
+    <value>伺服器出示的是一張使用者憑證(Key ID「{0}」),不能用來證明主機身分。</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyUnreadable" xml:space="preserve">
+    <value>簽發主機憑證(Key ID「{0}」)的 CA 公鑰無法讀取(類型不支援,或它本身也是一張憑證)。</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyTooShort" xml:space="preserve">
+    <value>簽發主機憑證的 RSA CA 只有 {0} 位元,低於 {1} 位元。</value>
+  </data>
+  <data name="SshErr_HostCertSignatureMalformed" xml:space="preserve">
+    <value>主機憑證(Key ID「{0}」)的 CA 簽章格式不正確。</value>
+  </data>
+  <data name="SshErr_HostCertSignatureAlgorithmRejected" xml:space="preserve">
+    <value>主機憑證(Key ID「{0}」)的 CA 簽章使用 {1},不予接受(SHA-1 的 ssh-rsa 簽章已不安全)。</value>
+  </data>
+  <data name="SshErr_HostCertSignatureInvalid" xml:space="preserve">
+    <value>主機憑證(Key ID「{0}」)的 CA 簽章驗證失敗 —— 憑證遭竄改,或不是這個 CA 簽發的。</value>
+  </data>
+  <data name="SshErr_HostCertExpired" xml:space="preserve">
+    <value>主機憑證(Key ID「{0}」)已於 {1} 過期。</value>
+  </data>
+  <data name="SshErr_HostCertNotYetValid" xml:space="preserve">
+    <value>主機憑證(Key ID「{0}」)要到 {1} 才生效。</value>
+  </data>
+  <data name="SshErr_HostCertNoPrincipals" xml:space="preserve">
+    <value>主機憑證(Key ID「{0}」)沒有列出任何主機名稱 —— 那等於對所有主機有效,不予接受。</value>
+  </data>
+  <data name="SshErr_HostCertHostNotListed" xml:space="preserve">
+    <value>主機憑證(Key ID「{0}」)簽發給 {1},不含 {2}。</value>
+  </data>
+  <data name="SshErr_HostCertUnknownCriticalOptions" xml:space="preserve">
+    <value>主機憑證(Key ID「{0}」)帶有無法辨識的關鍵選項:{1}。</value>
+  </data>
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>已取消兩步驗證。</value>
   </data>
@@ -6850,11 +6970,128 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshErr_KeyPassphraseIncorrect" xml:space="preserve">
     <value>密碼短語解不開這把私鑰。</value>
   </data>
+  <data name="SshErr_KeyOrigin" xml:space="preserve">
+    <value>{0}:{1}</value>
+  </data>
+  <data name="SshErr_KeyFileUnreadable" xml:space="preserve">
+    <value>無法讀取私鑰檔案({0})。</value>
+  </data>
+  <data name="SshErr_KeyFileAccessDenied" xml:space="preserve">
+    <value>沒有權限讀取私鑰檔案。(Unix 上私鑰應為 0600。)</value>
+  </data>
+  <data name="SshErr_KeyFormatUnrecognized" xml:space="preserve">
+    <value>無法辨識這個私鑰格式。支援:OpenSSH、PKCS#8、PKCS#1、SEC1,以及 PuTTY 的 .ppk(v2 / v3)。</value>
+  </data>
+  <data name="SshErr_KeyMalformed" xml:space="preserve">
+    <value>私鑰檔案的內容不完整或格式不正確,檔案可能已損毀。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedType" xml:space="preserve">
+    <value>不支援的金鑰類型 {0}。支援 RSA、NIST 曲線上的 ECDSA 與 Ed25519。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCurve" xml:space="preserve">
+    <value>不支援的曲線 {0},SSH 只支援 NIST P-256 / P-384 / P-521。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCipher" xml:space="preserve">
+    <value>私鑰使用的加密演算法 {0} 不受支援。換一種即可,例如 ssh-keygen -p -Z aes256-ctr -f &lt;私鑰檔案&gt;。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedKdf" xml:space="preserve">
+    <value>私鑰使用的密碼短語衍生方式 {0} 不受支援。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedFormatVersion" xml:space="preserve">
+    <value>不支援這個版本的金鑰檔案格式(PuTTY .ppk 支援 v2 與 v3)。</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedPointFormat" xml:space="preserve">
+    <value>{0} 的公開點不是 SSH 要求的未壓縮形式。</value>
+  </data>
+  <data name="SshErr_KeyMultipleKeys" xml:space="preserve">
+    <value>這個檔案裡有不只一把金鑰,只支援一個檔案一把。</value>
+  </data>
+  <data name="SshErr_KeyLegacyPemEncryption" xml:space="preserve">
+    <value>這把私鑰是過時的傳統加密 PEM 格式(Proc-Type: 4,ENCRYPTED),不支援讀取。用 ssh-keygen -p -f &lt;私鑰檔案&gt; 改一次密碼短語(新舊可以相同),它會轉成 OpenSSH 格式。</value>
+  </data>
+  <data name="SshErr_KeyKdfCostTooHigh" xml:space="preserve">
+    <value>私鑰的密碼短語衍生參數大得不合理,檔案可能遭竄改;若確實設過這麼大,請用較小的參數重新加密這把金鑰。</value>
+  </data>
+  <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
+    <value>無法從系統金鑰庫開啟這把金鑰,或它無法使用。</value>
+  </data>
+  <data name="SshErr_CertFileUnreadable" xml:space="preserve">
+    <value>無法讀取憑證檔案({0})。</value>
+  </data>
+  <data name="SshErr_CertFileAccessDenied" xml:space="preserve">
+    <value>沒有權限讀取憑證檔案。</value>
+  </data>
+  <data name="SshErr_CertMalformed" xml:space="preserve">
+    <value>憑證的內容不完整或格式不正確(應為一行「演算法 base64 [註解]」)。</value>
+  </data>
+  <data name="SshErr_CertUnsupportedKeyType" xml:space="preserve">
+    <value>不支援的憑證金鑰類型 {0}。</value>
+  </data>
+  <data name="SshErr_CertNotACertificate" xml:space="preserve">
+    <value>{0} 不是憑證類型(憑證的類型名稱以 -cert-v01@openssh.com 結尾)。</value>
+  </data>
+  <data name="SshErr_CertHostCertificateForLogin" xml:space="preserve">
+    <value>這是一張主機憑證(Key ID「{0}」),不能用來登入。使用者憑證是 ssh-keygen 簽發時不帶 -h 的那一種。</value>
+  </data>
+  <data name="SshErr_CertKeyMismatch" xml:space="preserve">
+    <value>憑證(Key ID「{0}」)裡的公鑰與這把私鑰不是一對。憑證裡的是 {1};私鑰這邊是 {2}。憑證要與簽發時使用的那把私鑰一起用。</value>
+  </data>
+  <data name="SshErr_CertKeyNotLoaded" xml:space="preserve">
+    <value>憑證所證明的金鑰不在已讀取的 IdentityFile 裡,無法用它簽章。</value>
+  </data>
   <data name="SshErr_AgentRefused" xml:space="preserve">
     <value>ssh-agent 拒絕了請求:這把金鑰可能已不在 agent 裡、確認(ssh-add -c)被拒絕,或者 agent 已被鎖定。</value>
   </data>
   <data name="SshErr_ChannelRequestRejected" xml:space="preserve">
     <value>伺服器拒絕了通道上的請求。sshd_config 裡常見的原因:ForceCommand、PermitTTY no,或者缺少 Subsystem 那一行。</value>
+  </data>
+  <data name="SshErr_ChanForwardingProhibited" xml:space="preserve">
+    <value>伺服器禁止了連接埠轉發(檢查 sshd_config 的 AllowTcpForwarding)。</value>
+  </data>
+  <data name="SshErr_ChanOpenProhibited" xml:space="preserve">
+    <value>伺服器以管理原則拒絕了這條通道(檢查 sshd_config 的相關選項)。</value>
+  </data>
+  <data name="SshErr_ChanForwardTargetUnreachable" xml:space="preserve">
+    <value>伺服器連不上轉發的目標位址。</value>
+  </data>
+  <data name="SshErr_ChanUnknownType" xml:space="preserve">
+    <value>伺服器不認得通道類型 {0}。</value>
+  </data>
+  <data name="SshErr_ChanResourceShortage" xml:space="preserve">
+    <value>伺服器資源不足 —— 常見原因是並行工作階段數已滿(sshd_config 的 MaxSessions)。</value>
+  </data>
+  <data name="SshErr_ChanOpenRejected" xml:space="preserve">
+    <value>伺服器拒絕開啟通道,原因碼 {0}。</value>
+  </data>
+  <data name="SshErr_ChanClosedBeforeConfirmation" xml:space="preserve">
+    <value>伺服器還沒確認通道就把它關閉了。</value>
+  </data>
+  <data name="SshErr_ChanLimitReached" xml:space="preserve">
+    <value>這條連線上的並行通道數已達本端上限 {0}。關掉幾個工作階段或通道再試。</value>
+  </data>
+  <data name="SshErr_ChanWindowBudgetExhausted" xml:space="preserve">
+    <value>這條連線的接收視窗總預算({0} MiB)已用盡:同時開著的通道太多。關掉幾個工作階段或通道再試。</value>
+  </data>
+  <data name="SshErr_ChanExecRejected" xml:space="preserve">
+    <value>伺服器拒絕執行這條命令(常見原因:帳號被限制成只能執行固定命令,或 sshd_config 裡設了 ForceCommand)。</value>
+  </data>
+  <data name="SshErr_ChanPtyRejected" xml:space="preserve">
+    <value>伺服器拒絕配置虛擬終端機(常見原因:sshd_config 裡 PermitTTY no,或這個帳號被設成無終端機登入)。</value>
+  </data>
+  <data name="SshErr_ChanShellRejected" xml:space="preserve">
+    <value>伺服器拒絕啟動 shell。</value>
+  </data>
+  <data name="SshErr_ChanSubsystemRejected" xml:space="preserve">
+    <value>伺服器沒有提供子系統 {0}。</value>
+  </data>
+  <data name="SshErr_ChanSftpSubsystemRejected" xml:space="preserve">
+    <value>伺服器沒有提供子系統 sftp(檢查 sshd_config 裡的 Subsystem sftp 那一行)。</value>
+  </data>
+  <data name="SshErr_ChanZeroMaxPacket" xml:space="preserve">
+    <value>伺服器為通道宣告的最大封包長度是 0,輸入的內容送不出去。</value>
+  </data>
+  <data name="SshErr_PeerSaid" xml:space="preserve">
+    <value>{0}伺服器表示:{1}</value>
   </data>
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>伺服器拒絕了轉送請求。檢查 sshd_config 裡的 AllowAgentForwarding / AllowTcpForwarding / X11Forwarding。</value>

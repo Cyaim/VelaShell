@@ -623,7 +623,11 @@ public sealed partial class SshConnection : ISshChannelHost, IAsyncDisposable
             {
                 throw new SshChannelException(
                     SshFailureReason.LimitExceeded,
-                    $"本端的并发通道数已达上限 {_limits.MaxChannels}。");
+                    $"本端的并发通道数已达上限 {_limits.MaxChannels}。")
+                {
+                    FailureKind = SshChannelFailureKind.ChannelLimitReached,
+                    Limit = _limits.MaxChannels,
+                };
             }
 
             if (_windowBudgetUsed + window > _limits.SessionWindowBudgetBytes)
@@ -631,7 +635,11 @@ public sealed partial class SshConnection : ISshChannelHost, IAsyncDisposable
                 throw new SshChannelException(
                     SshFailureReason.LimitExceeded,
                     $"会话的接收窗口总预算已用尽（{_limits.SessionWindowBudgetBytes / (1024 * 1024)} MiB）。" +
-                    "把窗口策略调小，或者少开几条并发通道。");
+                    "把窗口策略调小，或者少开几条并发通道。")
+                {
+                    FailureKind = SshChannelFailureKind.WindowBudgetExhausted,
+                    Limit = _limits.SessionWindowBudgetBytes,
+                };
             }
 
             uint localId = AllocateChannelId();
@@ -1272,7 +1280,10 @@ public sealed partial class SshConnection : ISshChannelHost, IAsyncDisposable
         {
             channel.OnOpenFailed();
             pendingOpen.TrySetException(new SshChannelException(
-                SshFailureReason.ChannelOpenFailed, $"对端还没确认通道 {recipient} 就把它关掉了。"));
+                SshFailureReason.ChannelOpenFailed, $"对端还没确认通道 {recipient} 就把它关掉了。")
+            {
+                FailureKind = SshChannelFailureKind.ClosedBeforeConfirmation,
+            });
             return;
         }
 

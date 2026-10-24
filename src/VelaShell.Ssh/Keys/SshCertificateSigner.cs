@@ -89,7 +89,11 @@ public sealed class SshCertificateSigner : ISshSigner, ISessionAwareSigner, IDis
         {
             throw new SshCertificateException(SshFailureReason.KeyMismatch,
                 $"这是一张主机证书({certificate.KeyId}),不能拿来登录。" +
-                "用户证书是 ssh-keygen 签发时不带 -h 的那一种。");
+                "用户证书是 ssh-keygen 签发时不带 -h 的那一种。")
+            {
+                ProblemKind = SshKeyProblemKind.HostCertificateForLogin,
+                KeyId = certificate.KeyId,
+            };
         }
 
         if (!certificate.Key.Blob.Span.SequenceEqual(signer.PublicKey.Blob.Span))
@@ -98,7 +102,13 @@ public sealed class SshCertificateSigner : ISshSigner, ISessionAwareSigner, IDis
                 $"证书({certificate.KeyId})里的公钥与这把私钥不是一对:" + Environment.NewLine +
                 $"  证书里的是 {certificate.Key.KeyType} {certificate.Key.Sha256Fingerprint}" + Environment.NewLine +
                 $"  私钥这边是 {signer.PublicKey.KeyType} {signer.PublicKey.Sha256Fingerprint}" + Environment.NewLine +
-                "证书要与**签发时用的那把**私钥一起用。");
+                "证书要与**签发时用的那把**私钥一起用。")
+            {
+                ProblemKind = SshKeyProblemKind.CertificateKeyMismatch,
+                KeyId = certificate.KeyId,
+                CertificateKey = certificate.Key,
+                SignerKey = signer.PublicKey,
+            };
         }
 
         var presented = SshPublicKey.ForCertificate(

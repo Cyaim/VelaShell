@@ -135,6 +135,8 @@ public sealed class OpenSshCertificateTests
         SshCertificateException ex = Assert.ThrowsExactly<SshCertificateException>(
             () => SshCertificateSigner.Create(cert, inner));
         Assert.Contains("主机", ex.Message);
+        Assert.AreEqual(SshKeyProblemKind.HostCertificateForLogin, ex.ProblemKind, "界面按种类说，不解析消息");
+        Assert.AreEqual(cert.KeyId, ex.KeyId);
     }
 
     /// <summary>
@@ -155,6 +157,37 @@ public sealed class OpenSshCertificateTests
         // 两把钥的指纹都要摆出来 —— 不摆的话用户无从判断是证书选错了还是私钥选错了。
         Assert.Contains(cert.Key.Sha256Fingerprint, ex.Message);
         Assert.Contains(other.PublicKey.Sha256Fingerprint, ex.Message);
+
+        // 两把钥也以结构化的形式交出来：界面用自己的语言摆指纹，不从消息里切。
+        Assert.AreEqual(SshKeyProblemKind.CertificateKeyMismatch, ex.ProblemKind);
+        Assert.AreEqual(cert.KeyId, ex.KeyId);
+        Assert.AreEqual(cert.Key.Sha256Fingerprint, ex.CertificateKey?.Sha256Fingerprint);
+        Assert.AreEqual(other.PublicKey.Sha256Fingerprint, ex.SignerKey?.Sha256Fingerprint);
+    }
+
+    /// <summary>证书文件读不出、内容坏了：种类与来源（文件路径）都交出来。</summary>
+    [TestMethod]
+    public async Task 证书读不出或格式不对时交出种类与来源()
+    {
+        string missing = Path.Combine(Path.GetTempPath(), $"velashell-missing-{Guid.NewGuid():N}-cert.pub");
+        SshCertificateException unreadable = await Assert.ThrowsExactlyAsync<SshCertificateException>(
+            async () => await OpenSshCertificate.LoadAsync(missing, TestContext.CancellationToken));
+        Assert.AreEqual(SshKeyProblemKind.FileUnreadable, unreadable.ProblemKind);
+        Assert.AreEqual(missing, unreadable.Origin);
+
+        SshCertificateException badBase64 = Assert.ThrowsExactly<SshCertificateException>(
+            () => OpenSshCertificate.Parse("ssh-ed25519-cert-v01@openssh.com !!!", "id-cert.pub"));
+        Assert.AreEqual(SshKeyProblemKind.Malformed, badBase64.ProblemKind);
+        Assert.AreEqual("id-cert.pub", badBase64.Origin);
+
+        // blob 那一层不知道来源，由 Parse 补上。
+        string plainKey = File.ReadAllText(FixturePath("cert-ed25519.pub")).Trim();
+        string[] fields = plainKey.Split(' ');
+        SshCertificateException notCertificate = Assert.ThrowsExactly<SshCertificateException>(
+            () => OpenSshCertificate.Parse($"{fields[0]}-cert-v01@openssh.com {fields[1]}", "id-cert.pub"));
+        Assert.AreEqual(SshKeyProblemKind.NotACertificate, notCertificate.ProblemKind);
+        Assert.AreEqual(fields[0], notCertificate.AlgorithmName);
+        Assert.AreEqual("id-cert.pub", notCertificate.Origin);
     }
 
     /// <summary>过期的证书仍然解得出来 —— 它是事实，由上层决定怎么说。</summary>

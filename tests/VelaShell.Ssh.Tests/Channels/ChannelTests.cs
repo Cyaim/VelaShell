@@ -317,6 +317,7 @@ public sealed class ChannelTests
 
         // 不等应答就发数据的库，在这里会表现成「命令没输出也没报错」。
         Assert.Contains("ForceCommand", error.Message);
+        Assert.AreEqual(SshChannelFailureKind.ExecRejected, error.FailureKind, "界面按种类给建议，不解析这句话");
     }
 
     // ------------------------------------------------------------ 标准输入与 EOF
@@ -885,6 +886,7 @@ public sealed class ChannelTests
 
         Assert.AreEqual(SshFailureReason.ChannelRequestRejected, error.Reason);
         Assert.Contains("命令", error.Message);
+        Assert.AreEqual(SshChannelFailureKind.ExecRejected, error.FailureKind);
     }
 
     /// <summary>〔可观测性缺口 5〕连接交出开着的通道的快照（类型、状态、开通时刻、字节数）；通道自己记开通时刻。</summary>
@@ -1130,6 +1132,7 @@ public sealed class ChannelTests
             async () => await harness.Connection.OpenShellAsync(SshShellOptions.Default, harness.Token));
 
         Assert.Contains("PermitTTY", error.Message);
+        Assert.AreEqual(SshChannelFailureKind.PtyRejected, error.FailureKind);
     }
 
     [TestMethod]
@@ -1306,6 +1309,8 @@ public sealed class ChannelTests
             async () => await harness.Connection.OpenSubsystemAsync("sftp", cancellationToken: harness.Token));
 
         Assert.Contains("Subsystem sftp", error.Message);
+        Assert.AreEqual(SshChannelFailureKind.SubsystemRejected, error.FailureKind);
+        Assert.AreEqual("sftp", error.SubsystemName);
     }
 
     // ------------------------------------------------------------ 通道打开失败
@@ -1326,6 +1331,8 @@ public sealed class ChannelTests
         // 前者告诉用户去改哪个配置，后者只告诉他事情没成。
         Assert.Contains("AllowTcpForwarding", error.Message);
         Assert.AreEqual(SshChannelOpenFailureReason.AdministrativelyProhibited, error.OpenFailureReason);
+        Assert.AreEqual(SshChannelFailureKind.ForwardingProhibited, error.FailureKind);
+        Assert.AreEqual(SshProtocolNames.ChannelDirectTcpIp, error.ChannelType);
     }
 
     [TestMethod]
@@ -1340,6 +1347,7 @@ public sealed class ChannelTests
             async () => await harness.Connection.OpenSessionChannelAsync(null, harness.Token));
 
         Assert.Contains("MaxSessions", error.Message);
+        Assert.AreEqual(SshChannelFailureKind.ResourceShortage, error.FailureKind);
     }
 
     [TestMethod]
@@ -1713,6 +1721,8 @@ public sealed class ChannelTests
 
         Assert.Contains("上限 2", error.Message);
         Assert.AreEqual(SshFailureReason.LimitExceeded, error.Reason, "本端的上限，不是对端拒绝开通道");
+        Assert.AreEqual(SshChannelFailureKind.ChannelLimitReached, error.FailureKind);
+        Assert.AreEqual(2, error.Limit);
         Assert.IsTrue(harness.Connection.IsAlive, "限额是本端的事，不该连累会话");
 
         await first.DisposeAsync();
@@ -1739,6 +1749,8 @@ public sealed class ChannelTests
 
         Assert.Contains("总预算", error.Message);
         Assert.AreEqual(SshFailureReason.LimitExceeded, error.Reason, "本端的上限，不是对端拒绝开通道");
+        Assert.AreEqual(SshChannelFailureKind.WindowBudgetExhausted, error.FailureKind);
+        Assert.AreEqual(300 * 1024, error.Limit);
         Assert.IsTrue(harness.Connection.IsAlive);
 
         await first.DisposeAsync();

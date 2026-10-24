@@ -133,6 +133,8 @@ public sealed class PrivateKeyFileTests
         SshPrivateKeyException error = Assert.ThrowsExactly<SshPrivateKeyException>(() => SshPrivateKeyFile.Parse(pem));
 
         Assert.AreEqual(SshFailureReason.Unsupported, error.Reason, "曲线 SSH 不认识是「不支持」，不是「格式不对」");
+        Assert.AreEqual(SshKeyProblemKind.UnsupportedCurve, error.ProblemKind, "界面按种类说是曲线不支持，不解析消息");
+        Assert.IsFalse(string.IsNullOrEmpty(error.AlgorithmName), "曲线名要交出来，界面才说得出是哪条曲线");
     }
 
     [TestMethod]
@@ -482,6 +484,9 @@ public sealed class PrivateKeyFileTests
         Assert.Contains("3des-cbc", error.Message);
         Assert.Contains("aes256-ctr", error.Message);
         Assert.Contains("ssh-keygen -p -Z", error.Message);
+        Assert.AreEqual(SshKeyProblemKind.UnsupportedCipher, error.ProblemKind);
+        Assert.AreEqual("3des-cbc", error.AlgorithmName);
+        Assert.IsNull(error.Origin, "没给来源就不编一个");
     }
 
     // ------------------------------------------------------------ BCL 能读的格式
@@ -605,6 +610,57 @@ public sealed class PrivateKeyFileTests
         SshPrivateKeyException error = Assert.ThrowsExactly<SshPrivateKeyException>(() => SshPrivateKeyFile.Parse(pem));
 
         Assert.AreEqual(SshFailureReason.KeyFormatInvalid, error.Reason);
+        Assert.AreEqual(SshKeyProblemKind.Malformed, error.ProblemKind);
+
+        // 带着来源解析：内层只知道拼进消息的那段「（来源）」，结构化的来源由入口补上。
+        SshPrivateKeyException withOrigin = Assert.ThrowsExactly<SshPrivateKeyException>(
+            () => SshPrivateKeyFile.Parse(pem, origin: "~/.ssh/id_broken"));
+        Assert.AreEqual("~/.ssh/id_broken", withOrigin.Origin);
+        Assert.Contains("（~/.ssh/id_broken）", withOrigin.Message, "消息里的来源照旧");
+    }
+
+    [TestMethod]
+    public async Task 文件读不出来时交出路径与种类()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"velashell-missing-{Guid.NewGuid():N}.pem");
+
+        SshPrivateKeyException error = await Assert.ThrowsExactlyAsync<SshPrivateKeyException>(
+            async () => await SshPrivateKeyFile.LoadAsync(path));
+
+        Assert.AreEqual(SshFailureReason.KeyFileUnreadable, error.Reason);
+        Assert.AreEqual(SshKeyProblemKind.FileUnreadable, error.ProblemKind);
+        Assert.AreEqual(path, error.Origin);
+        Assert.AreEqual($"读不了私钥文件 {path}：{error.InnerException!.Message}", error.Message, "消息的原文不变");
+    }
+
+    [TestMethod]
+    public async Task 从文件读的私钥格式不对时来源是那个路径()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"velashell-key-{Guid.NewGuid():N}.pem");
+        try
+        {
+            await File.WriteAllTextAsync(path, "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n");
+
+            SshPrivateKeyException error = await Assert.ThrowsExactlyAsync<SshPrivateKeyException>(
+                async () => await SshPrivateKeyFile.LoadAsync(path));
+
+            Assert.AreEqual(SshKeyProblemKind.Malformed, error.ProblemKind);
+            Assert.AreEqual(path, error.Origin);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    public void 认不出的私钥格式归为FormatUnrecognized()
+    {
+        SshPrivateKeyException error = Assert.ThrowsExactly<SshPrivateKeyException>(
+            () => SshPrivateKeyFile.Parse("这不是私钥", origin: "notes.txt"));
+
+        Assert.AreEqual(SshKeyProblemKind.FormatUnrecognized, error.ProblemKind);
+        Assert.AreEqual("notes.txt", error.Origin);
     }
 
     [TestMethod]
@@ -636,6 +692,7 @@ public sealed class PrivateKeyFileTests
         // 后者该说「口令不对，再试一次」。
         Assert.IsTrue(error.NeedsPassphrase);
         Assert.Contains("需要口令", error.Message);
+        Assert.AreEqual(SshKeyProblemKind.PassphraseRequired, error.ProblemKind);
     }
 
     [TestMethod]
@@ -650,6 +707,7 @@ public sealed class PrivateKeyFileTests
 
         Assert.IsTrue(error.NeedsPassphrase);
         Assert.Contains("口令多半不对", error.Message);
+        Assert.AreEqual(SshKeyProblemKind.PassphraseIncorrect, error.ProblemKind);
     }
 
     [TestMethod]

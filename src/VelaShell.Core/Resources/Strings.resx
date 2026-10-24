@@ -690,6 +690,93 @@
   <data name="SshErr_AuthPartialSuccess" xml:space="preserve">
     <value>At least one step succeeded; authentication is stuck on a later step.</value>
   </data>
+  <data name="SshErr_AuthAttemptLine" xml:space="preserve">
+    <value>· {0}: {1}</value>
+  </data>
+  <data name="SshErr_AuthAttemptLineDetail" xml:space="preserve">
+    <value>· {0}: {1} — {2}</value>
+  </data>
+  <data name="SshErr_AuthNoAttempts" xml:space="preserve">
+    <value>(no authentication attempts)</value>
+  </data>
+  <data name="SshErr_AuthLabelProbe" xml:space="preserve">
+    <value>none (probing the available methods)</value>
+  </data>
+  <data name="SshErr_AuthLabelViaKbd" xml:space="preserve">
+    <value>{0} (via keyboard-interactive)</value>
+  </data>
+  <data name="SshErr_AuthLabelAlgorithm" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
+  <data name="SshErr_AuthDetailJoin" xml:space="preserve">
+    <value>{0}; {1}</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSuccess" xml:space="preserve">
+    <value>succeeded</value>
+  </data>
+  <data name="SshErr_AuthOutcomePartialSuccess" xml:space="preserve">
+    <value>partially succeeded (the server requires another step)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeFailure" xml:space="preserve">
+    <value>failed</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNotOffered" xml:space="preserve">
+    <value>skipped (the server does not accept this method)</value>
+  </data>
+  <data name="SshErr_AuthOutcomeSkippedNoMaterial" xml:space="preserve">
+    <value>skipped (the credential could not be used)</value>
+  </data>
+  <data name="SshErr_AuthDetailServerAccepts" xml:space="preserve">
+    <value>The server accepts: {0}</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodNotOffered" xml:space="preserve">
+    <value>The server only accepts: {0}</value>
+  </data>
+  <data name="SshErr_AuthDetailMethodFailureLimit" xml:space="preserve">
+    <value>{0} has already failed {1} times in this sign-in and is not retried</value>
+  </data>
+  <data name="SshErr_AuthDetailPublicKeyNotAccepted" xml:space="preserve">
+    <value>The server does not accept this public key</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChanged" xml:space="preserve">
+    <value>The password was changed as the server required</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeFailed" xml:space="preserve">
+    <value>The server required a password change, but it did not go through: the server does not support changing passwords, or the old password is wrong</value>
+  </data>
+  <data name="SshErr_AuthDetailPasswordChangeNotConfigured" xml:space="preserve">
+    <value>The server requires the password to be changed first, and there is no way to ask for a new one here</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordRejected" xml:space="preserve">
+    <value>The server required a password change and rejected the new password {0} times in a row: {1}</value>
+  </data>
+  <data name="SshErr_AuthDetailNewPasswordNotProvided" xml:space="preserve">
+    <value>The server requires the password to be changed first; no new password was given</value>
+  </data>
+  <data name="SshErr_AuthDetailCredentialFailed" xml:space="preserve">
+    <value>Credential error: {0}</value>
+  </data>
+  <data name="SshErr_AuthDetailNoUsableSignatureAlgorithm" xml:space="preserve">
+    <value>This {0} key has no usable signature algorithm (SHA-1 ssh-rsa needs "Allow legacy algorithms" in the connection&apos;s SSH options)</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Fallback" xml:space="preserve">
+    <value>The server did not announce server-sig-algs; after {0} was rejected, it was retried with {1} (SHA-1)</value>
+  </data>
+  <data name="SshErr_AuthDetailSha1Signature" xml:space="preserve">
+    <value>Signed with SHA-1 ({0})</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateExpired" xml:space="preserve">
+    <value>The certificate (Key ID "{0}") expired at {1} by this computer&apos;s clock</value>
+  </data>
+  <data name="SshErr_AuthDetailCertificateNotYetValid" xml:space="preserve">
+    <value>The certificate (Key ID "{0}") is not valid until {1} by this computer&apos;s clock</value>
+  </data>
+  <data name="SshErr_AuthDetailHostCertificateForLogin" xml:space="preserve">
+    <value>The certificate (Key ID "{0}") is a host certificate and cannot be used to sign in</value>
+  </data>
+  <data name="SshErr_AuthDetailPrincipalNotListed" xml:space="preserve">
+    <value>The certificate is issued to {0}, which does not include the sign-in user {1}</value>
+  </data>
   <data name="SshErr_LimitExceeded" xml:space="preserve">
     <value>A local concurrency limit was reached (forwarded connections, agent or X11 channels). Try again after some of them close.</value>
   </data>
@@ -6336,6 +6423,39 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>The server&apos;s host key does not match the recorded one.</value>
   </data>
+  <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
+    <value>The server presented a user certificate (Key ID "{0}"), which cannot prove a host&apos;s identity.</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyUnreadable" xml:space="preserve">
+    <value>The CA key that signed the host certificate (Key ID "{0}") cannot be read (unsupported type, or it is a certificate itself).</value>
+  </data>
+  <data name="SshErr_HostCertAuthorityKeyTooShort" xml:space="preserve">
+    <value>The RSA CA that signed the host certificate has only {0} bits (at least {1} are required).</value>
+  </data>
+  <data name="SshErr_HostCertSignatureMalformed" xml:space="preserve">
+    <value>The CA signature on the host certificate (Key ID "{0}") is malformed.</value>
+  </data>
+  <data name="SshErr_HostCertSignatureAlgorithmRejected" xml:space="preserve">
+    <value>The host certificate (Key ID "{0}") is signed with {1}, which is not accepted (SHA-1 ssh-rsa signatures are no longer safe).</value>
+  </data>
+  <data name="SshErr_HostCertSignatureInvalid" xml:space="preserve">
+    <value>The CA signature on the host certificate (Key ID "{0}") does not verify — the certificate was altered, or this CA did not sign it.</value>
+  </data>
+  <data name="SshErr_HostCertExpired" xml:space="preserve">
+    <value>The host certificate (Key ID "{0}") expired at {1}.</value>
+  </data>
+  <data name="SshErr_HostCertNotYetValid" xml:space="preserve">
+    <value>The host certificate (Key ID "{0}") is not valid until {1}.</value>
+  </data>
+  <data name="SshErr_HostCertNoPrincipals" xml:space="preserve">
+    <value>The host certificate (Key ID "{0}") lists no host names, which would make it valid for every host; it is not accepted.</value>
+  </data>
+  <data name="SshErr_HostCertHostNotListed" xml:space="preserve">
+    <value>The host certificate (Key ID "{0}") is issued for {1}, which does not include {2}.</value>
+  </data>
+  <data name="SshErr_HostCertUnknownCriticalOptions" xml:space="preserve">
+    <value>The host certificate (Key ID "{0}") carries unrecognized critical options: {1}.</value>
+  </data>
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>Two-step verification was cancelled.</value>
   </data>
@@ -6378,11 +6498,128 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_KeyPassphraseIncorrect" xml:space="preserve">
     <value>The passphrase does not unlock the private key.</value>
   </data>
+  <data name="SshErr_KeyOrigin" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="SshErr_KeyFileUnreadable" xml:space="preserve">
+    <value>The private key file cannot be read ({0}).</value>
+  </data>
+  <data name="SshErr_KeyFileAccessDenied" xml:space="preserve">
+    <value>No permission to read the private key file. (On Unix the key file should be 0600.)</value>
+  </data>
+  <data name="SshErr_KeyFormatUnrecognized" xml:space="preserve">
+    <value>Unrecognized private key format. Supported: OpenSSH, PKCS#8, PKCS#1, SEC1 and PuTTY .ppk (v2 / v3).</value>
+  </data>
+  <data name="SshErr_KeyMalformed" xml:space="preserve">
+    <value>The private key file is incomplete or malformed; it may be damaged.</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedType" xml:space="preserve">
+    <value>Unsupported key type {0}. Supported: RSA, ECDSA on the NIST curves, and Ed25519.</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCurve" xml:space="preserve">
+    <value>Unsupported curve {0}; SSH supports only NIST P-256 / P-384 / P-521.</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedCipher" xml:space="preserve">
+    <value>The private key is encrypted with an unsupported cipher, {0}. Re-encrypt it with another one, e.g. ssh-keygen -p -Z aes256-ctr -f &lt;key file&gt;.</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedKdf" xml:space="preserve">
+    <value>The private key uses an unsupported key derivation, {0}.</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedFormatVersion" xml:space="preserve">
+    <value>This version of the key file format is not supported (PuTTY .ppk: versions 2 and 3).</value>
+  </data>
+  <data name="SshErr_KeyUnsupportedPointFormat" xml:space="preserve">
+    <value>The {0} public point is not in the uncompressed form SSH requires.</value>
+  </data>
+  <data name="SshErr_KeyMultipleKeys" xml:space="preserve">
+    <value>The file contains more than one key; only one key per file is supported.</value>
+  </data>
+  <data name="SshErr_KeyLegacyPemEncryption" xml:space="preserve">
+    <value>The private key uses the outdated encrypted PEM format (Proc-Type: 4,ENCRYPTED), which is not supported. Run ssh-keygen -p -f &lt;key file&gt; once (the passphrase can stay the same) to convert it to the OpenSSH format.</value>
+  </data>
+  <data name="SshErr_KeyKdfCostTooHigh" xml:space="preserve">
+    <value>The private key&apos;s key derivation parameters are unreasonably high; the file may have been tampered with. If you really set them that high, re-encrypt the key with lower values.</value>
+  </data>
+  <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
+    <value>The key cannot be opened from the system key store, or it cannot be used.</value>
+  </data>
+  <data name="SshErr_CertFileUnreadable" xml:space="preserve">
+    <value>The certificate file cannot be read ({0}).</value>
+  </data>
+  <data name="SshErr_CertFileAccessDenied" xml:space="preserve">
+    <value>No permission to read the certificate file.</value>
+  </data>
+  <data name="SshErr_CertMalformed" xml:space="preserve">
+    <value>The certificate is incomplete or malformed (expected one line: algorithm base64 [comment]).</value>
+  </data>
+  <data name="SshErr_CertUnsupportedKeyType" xml:space="preserve">
+    <value>Unsupported certificate key type {0}.</value>
+  </data>
+  <data name="SshErr_CertNotACertificate" xml:space="preserve">
+    <value>{0} is not a certificate type (certificate types end with -cert-v01@openssh.com).</value>
+  </data>
+  <data name="SshErr_CertHostCertificateForLogin" xml:space="preserve">
+    <value>The certificate (Key ID "{0}") is a host certificate and cannot be used to sign in. User certificates are the ones ssh-keygen signs without -h.</value>
+  </data>
+  <data name="SshErr_CertKeyMismatch" xml:space="preserve">
+    <value>The public key in the certificate (Key ID "{0}") does not match this private key. Certificate: {1}; private key: {2}. Use the certificate with the private key it was issued for.</value>
+  </data>
+  <data name="SshErr_CertKeyNotLoaded" xml:space="preserve">
+    <value>The key this certificate certifies is not among the loaded identity files, so it cannot be used to sign.</value>
+  </data>
   <data name="SshErr_AgentRefused" xml:space="preserve">
     <value>The ssh-agent refused the request: the key may no longer be loaded, a confirmation (ssh-add -c) was declined, or the agent is locked.</value>
   </data>
   <data name="SshErr_ChannelRequestRejected" xml:space="preserve">
     <value>The server refused the request on the channel. Common causes in sshd_config: ForceCommand, PermitTTY no, or a missing Subsystem line.</value>
+  </data>
+  <data name="SshErr_ChanForwardingProhibited" xml:space="preserve">
+    <value>The server prohibits port forwarding (check AllowTcpForwarding in sshd_config).</value>
+  </data>
+  <data name="SshErr_ChanOpenProhibited" xml:space="preserve">
+    <value>The server administratively refused this channel (check the related options in sshd_config).</value>
+  </data>
+  <data name="SshErr_ChanForwardTargetUnreachable" xml:space="preserve">
+    <value>The server could not connect to the forwarding target.</value>
+  </data>
+  <data name="SshErr_ChanUnknownType" xml:space="preserve">
+    <value>The server does not recognize the channel type {0}.</value>
+  </data>
+  <data name="SshErr_ChanResourceShortage" xml:space="preserve">
+    <value>The server is out of resources — usually its limit on concurrent sessions has been reached (MaxSessions in sshd_config).</value>
+  </data>
+  <data name="SshErr_ChanOpenRejected" xml:space="preserve">
+    <value>The server refused to open the channel (reason code {0}).</value>
+  </data>
+  <data name="SshErr_ChanClosedBeforeConfirmation" xml:space="preserve">
+    <value>The server closed the channel before confirming it.</value>
+  </data>
+  <data name="SshErr_ChanLimitReached" xml:space="preserve">
+    <value>This client&apos;s limit of {0} concurrent channels on the connection has been reached. Close some sessions or tunnels and try again.</value>
+  </data>
+  <data name="SshErr_ChanWindowBudgetExhausted" xml:space="preserve">
+    <value>The connection&apos;s total receive window budget ({0} MiB) is used up: too many channels are open at once. Close some sessions or tunnels and try again.</value>
+  </data>
+  <data name="SshErr_ChanExecRejected" xml:space="preserve">
+    <value>The server refused to run the command (the account may be restricted to a fixed command, or sshd_config sets ForceCommand).</value>
+  </data>
+  <data name="SshErr_ChanPtyRejected" xml:space="preserve">
+    <value>The server refused to allocate a terminal (PermitTTY no in sshd_config, or the account is set up without a terminal).</value>
+  </data>
+  <data name="SshErr_ChanShellRejected" xml:space="preserve">
+    <value>The server refused to start a shell.</value>
+  </data>
+  <data name="SshErr_ChanSubsystemRejected" xml:space="preserve">
+    <value>The server does not provide the subsystem {0}.</value>
+  </data>
+  <data name="SshErr_ChanSftpSubsystemRejected" xml:space="preserve">
+    <value>The server does not provide the sftp subsystem (check the Subsystem sftp line in sshd_config).</value>
+  </data>
+  <data name="SshErr_ChanZeroMaxPacket" xml:space="preserve">
+    <value>The server announced a maximum packet size of 0 for the channel, so input cannot be sent.</value>
+  </data>
+  <data name="SshErr_PeerSaid" xml:space="preserve">
+    <value>{0} Server said: {1}</value>
   </data>
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>The server refused the forwarding request. Check AllowAgentForwarding / AllowTcpForwarding / X11Forwarding in sshd_config.</value>

@@ -350,7 +350,7 @@ internal static class SshConnectionAssembler
             {
                 // 在真实认证跳转换；Core 异常会穿透外层拨号，不能被 Tailscale 目标重新归类。
                 string message = $"{SshInterop.LocalizeAuth(ex)}\n{HostAddress.FormatTarget(info.Username, info.Host, info.Port)}";
-                string attempts = ex.DescribeAttempts();
+                string attempts = SshInterop.DescribeAttempts(ex);
                 throw new VelaSshAuthenticationException(
                     string.IsNullOrWhiteSpace(attempts) ? message : $"{message}\n{attempts}", ex);
             }

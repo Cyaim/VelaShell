@@ -29,6 +29,22 @@ public sealed class SshChannelException(
     /// <summary>对端给的说明文字。<b>不可信文本</b>，展示时按不可信内容处理。</summary>
     public string? PeerDescription { get; } = peerDescription;
 
+    /// <summary>具体是哪种情形 —— 界面按它给建议，不解析 <see cref="Exception.Message"/> 里的中文建议。</summary>
+    /// <remarks>库自己抛的通道异常都填；使用者自己构造、没填时是 <see cref="SshChannelFailureKind.Unknown"/>。</remarks>
+    public SshChannelFailureKind FailureKind { get; init; }
+
+    /// <summary>
+    /// 开不成的通道类型（<c>CHANNEL_OPEN_FAILURE</c> 的几种情形）。入站的开通道请求里它来自对端：<b>未清洗</b>，展示前先过
+    /// <see cref="PeerText.Sanitize"/>。
+    /// </summary>
+    public string? ChannelType { get; init; }
+
+    /// <summary>被拒的子系统名（<see cref="SshChannelFailureKind.SubsystemRejected"/>）。</summary>
+    public string? SubsystemName { get; init; }
+
+    /// <summary>撞到的本端上限（<see cref="SshChannelFailureKind.ChannelLimitReached"/> 是通道数，<see cref="SshChannelFailureKind.WindowBudgetExhausted"/> 是字节数）。</summary>
+    public long? Limit { get; init; }
+
     /// <summary>
     /// 把一个 <c>CHANNEL_OPEN_FAILURE</c> 翻成一句能照着做事的话。
     /// </summary>
@@ -68,6 +84,20 @@ public sealed class SshChannelException(
             : $"{advice} 服务端说：{PeerText.Sanitize(description)}";
 
         return new SshChannelException(
-            SshFailureReason.ChannelOpenFailed, message, reason, description);
+            SshFailureReason.ChannelOpenFailed, message, reason, description)
+        {
+            FailureKind = reason switch
+            {
+                SshChannelOpenFailureReason.AdministrativelyProhibited =>
+                    channelType is SshProtocolNames.ChannelDirectTcpIp or SshProtocolNames.ChannelDirectStreamLocal
+                        ? SshChannelFailureKind.ForwardingProhibited
+                        : SshChannelFailureKind.OpenProhibited,
+                SshChannelOpenFailureReason.ConnectFailed => SshChannelFailureKind.ForwardTargetUnreachable,
+                SshChannelOpenFailureReason.UnknownChannelType => SshChannelFailureKind.UnknownChannelType,
+                SshChannelOpenFailureReason.ResourceShortage => SshChannelFailureKind.ResourceShortage,
+                _ => SshChannelFailureKind.OpenRejected,
+            },
+            ChannelType = channelType,
+        };
     }
 }

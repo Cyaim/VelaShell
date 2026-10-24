@@ -303,8 +303,13 @@ TFM、`LangVersion`、`Nullable` 由仓库根 `Directory.Build.props` 统一给�
   拆法：`SshChannel` 的收发窗口与 stdin 泵提成 internal 协作者；`SshConnection` 的收包分发、全局请求账本同理。
   纯重构，不混行为改动，单独开 PR（已记入仓库根 `feature-plan.md`）。
 - **还透传库原文的界面文案。** 宿主已按 `Reason` 翻了连接、超时、保活、私钥口令、agent 拒绝、通道请求被拒、转发被拒、认证失败的主句、SFTP 的状态码 / 中断 / 不可用、协议错误、并发上限与取消几类，代理失败由
-  `ProxyTransportDialer` 用界面语言拼。仍是库的中文原文的有：认证的逐条尝试记录（`SshAuthAttempt.ToString` 与 `Detail`）、
-  通道开不成时的建议（`SshChannelException` 的消息）、带具体信息的私钥 / 证书 / 配置 / 端口占用消息、`KnownHostLookup.CertificateProblem`。
+  `ProxyTransportDialer` 用界面语言拼；认证的逐条尝试记录（`SshAuthAttempt.Details`）、通道失败（`SshChannelException.FailureKind`）、
+  私钥 / 证书问题（`SshKeyProblemKind` 与 `Origin` 等属性）、主机证书问题（`KnownHostLookup.CertificateProblemDetail`）按结构化的出处翻
+  （宿主 `SshInterop.Diagnostics.cs`；库里这几类抛出点有没有归类由 `StructuredFailureCoverageTests` 扫源码守着）。
+  仍是库的中文原文的有：建连时主机密钥被拒的几种（解析不了、类型与协商的不符、RSA 太短、签名验不过 —— 都是 `HostKeyRejected`，宿主却当成
+  `VelaHostKeyPolicy` 写的理由照用）、ssh_config 配置不成立与端口占用（`InvalidConfiguration` / `ForwardBindFailed`）、X11 转发起不来
+  （`ForwardSetupFailed`）、agent 不可用（`AgentUnavailable`）、代理握手的拒绝与超时（宿主拼进 `Msg_ProxyConnectFailed` 后半句的仍是库原文）、
+  跳板的「连不上跳板 X」、没有 `Exception` 的转发错误（`ForwardErrorEventArgs.Message`）、SFTP 扩展缺失的那段说明。
   要翻就先给它们加结构化的出处（枚举 / 属性），不要在宿主里解析句子。
 
 ---
