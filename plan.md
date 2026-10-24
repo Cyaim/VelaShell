@@ -2570,3 +2570,15 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **验证**:`SshConnectionDetailsTests` 在环回 TCP 上的测试服务端(新测试辅助 `tests/VelaShell.Core.Tests/Ssh/LoopbackSshHost.cs`,可当跳板,别的宿主侧 SSH 用例可复用)走 `SshConnectionAssembler` → `VelaSshClientWrapper` 的真实装配路径,含经跳板与同一份装配重连时从头记;`SshAlgorithmRemedyTests` 在只认 `diffie-hellman-group14-sha1` 的环回服务端上(终点与跳板两种)验证点名、写入与写入后真能连上且谈成的就是它,`AllowAlgorithmsFlowTests` 走 `MainWindowViewModel` 的重连流程验证落盘的是库里那份且只多了 `KexAlgorithms = +diffie-hellman-group14-sha1`、`LegacyAlgorithms` 仍为 false;按键混淆在环回服务端上覆盖默认、认 PING、不认 PING 三种情形;桥的四条入队路径各报一次且与代次同步,同步输入与计时器线程上的 NUL 都让列表收起,补全弹层上下两种落点都留缝。逐项临时去掉实现(成功时记跳板、每次连接开头清空、跳板打标、失败时带补救、`Clone` 那一行、入队事件、改回 `VerticalOffset`),对应用例变红。合入时 dev 上新加的守卫 `FullyPopulatedSample_LeavesNoPropertyAtItsDefault`(§240)因新字段变红,样本补上。全量 `-warnaserror` 0 警告,各测试工程按 CI 口径全过;`ssh-legacy` 靶机(2225)没在跑,`LegacyAlgorithmsIntegrationTests` 没跑,端到端改由环回测试服务端覆盖。
 
 **文档**:velashell-docs `host/交互与界面规格` §4B.2(标签右键)、新增连接信息窗口一节、§5.2.1、§7 断开连接状态、§8 命令面板、§13.1 SSH 选项(zh / en);仓库内 `manual.md` / `manual.en.md` §5.2、§13.4、§16.3。
+
+## 249. 2026-10-25 共享密码列表认出 sudo-rs 的提示;侧栏搜索框与几处输入框的高度按设计生效
+
+**来由**:用户反馈两件事。① Ubuntu 上 `sudo apt update` 问口令时共享密码列表没有自动弹出,只能从命令面板手动打开;那台机器的 sudo 是 sudo-rs(Ubuntu 25.10 起的默认 sudo),提示是 `[sudo: authenticate] Password:`。② 资源管理器的过滤框和快捷命令区的「搜索代码片段」框比软件里别处的搜索框高,要降到一致,并顺带查别处有没有同样的不一致。
+
+**sudo-rs 的提示**:`InteractivePromptDetector.IsPasswordFillPrompt` 的正则要求行首直接是 password 一类的词,`[sudo] ` 前缀只在 `password for …` 那一支里允许 —— sudo-rs 在 PAM 的原话前面加 `[sudo: authenticate] `,两条路都对不上。现在行首的 sudo 一族标签(`[sudo]`、`[sudo: authenticate]`,以 `sudo-rs` / `su` / `doas` 的名字调用时标签跟着变)所有写法共用;只认这几个名字,`[joe@host ~]` 一类方括号开头的 shell 提示符照旧不算。顺带补上本来同样认不出的本地化 sudo(`[sudo] joe 的密码：` / `のパスワード:` / `의 암호:`,界面支持这三种语言)与 doas 的 `doas (joe@host) password:`。口令输错后 sudo 先单独回一个换行、等完 PAM 的失败延迟再报错重问,那个换行会清掉「同一提示不重开」的抑制,所以重问的同一句提示照样再给一次列表 —— 端到端用例照用户那段输出走了一遍。
+
+**输入框高度**:Fluent 主题给 `TextBox` / `ComboBox` / `CheckBox` / `RadioButton` 这一类设了 `MinHeight="32"`,而 Avalonia 排版时 `MinHeight` 压过 `Height` —— 过滤框与快捷命令搜索框按 26 写、实际渲染成 32(headless 实测),比任务管理器 / 链路追踪 / 审计日志的搜索框(28)高出一截。两者改为 28 并写上 `MinHeight`。全仓扫出同类的还有文件面板与本机面板的路径编辑框:按 22 写、实际 32,一进编辑整排跳高 8px(同一排的 ComboBox 早就写了 `MinHeight="0"`,只有它俩漏了),补上后按 22 生效;另把远端搜索窗口(§239)没设高度、吃默认 32 的三个条件框改成 28,与同从文件面板打开的目录同步窗口的 `TextBox.field` 一致。DESIGN.md §4.2 的标准高度表加一行「搜索 / 过滤框 28px」(设置页与隧道面板 30、对话框表单 32),写明 `MinHeight` 这个坑;§5.4 的过滤框规格随之改为 28。
+
+**验证**:`PromptDetection_IsConservative` 加 13 组写法(sudo-rs 的几种、本地化 sudo、doas,以及方括号开头的 shell 提示符、标签后面是验证码、已回显输入、认证失败那一行这几种不该认的);新增 `Popup_OpensForSudoRsPrompt_AndAgainAfterAFailedAttempt` 照用户那段输出走一遍「弹出 → 手输收口 → 失败重问再弹」。改回旧正则,10 条变红。新增 `Design/InputMinHeightTests` 扫全部 `.axaml`:比 32 矮的 `Height`(元素上或样式里)没有同时写 `MinHeight` 就红,改回原写法时正好列出那 4 处;`SidebarSearchBoxHeightUiTests` 实测过滤框按 28 渲染。headless 截图核对 28 高时放大镜、文字与清空钮都垂直居中。`VelaShell.Tests` 全量 2856 通过,`-warnaserror` 0 警告。
+
+**文档**:velashell-docs `host/交互与界面规格` §5.2.1 识别的提示写法补 sudo-rs、本地化 sudo 与 doas(zh / en);仓库内 `manual.md` / `manual.en.md` 5.2、DESIGN.md §4.2 / §5.4。
