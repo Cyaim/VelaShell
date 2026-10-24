@@ -49,12 +49,21 @@ public static partial class InteractivePromptDetector
 
     /// <summary>仅供共享密码入口使用的保守识别;不把私钥口令或验证码当成登录密码。</summary>
     /// <remarks>
+    /// <para>
     /// <c>password for</c> 后面的对象要么不带冒号(sudo、psql 的用户名),要么整段包在引号里 ——
     /// git / svn 的 <c>Password for 'https://host:8000':</c> 把 URL 引起来,URL 里的冒号只能这样放行(#638)。
+    /// </para>
+    /// <para>
+    /// 行首可以带 sudo 一族的方括号标签,所有写法共用:经典 sudo 的 <c>[sudo] password for joe:</c>,
+    /// sudo-rs(Ubuntu 25.10 起的默认 sudo)的 <c>[sudo: authenticate] Password:</c> —— 标签之后是 PAM 给的原话,
+    /// 以 <c>sudo-rs</c> 的名字调用时标签也跟着叫 <c>sudo-rs</c>。本地化的 sudo 把用户名放在前面:
+    /// <c>[sudo] joe 的密码：</c>、<c>[sudo] joe のパスワード:</c>、<c>[sudo] joe의 암호:</c>。
+    /// 标签只认 sudo / su / doas 这几个名字,别的方括号开头(<c>[joe@host ~]</c> 一类的 shell 提示符)照旧不算。
+    /// </para>
     /// </remarks>
     public static bool IsPasswordFillPrompt(string line) => PasswordFillPromptRegex().IsMatch(line.Trim());
 
-    [GeneratedRegex(@"^(?:password|passwd|enter password|请输入密码|密码|(?:\[sudo\]\s+)?password for (?:'[^'\r\n]+'|""[^""\r\n]+""|[^:\r\n]+)|[^\s:'\""$>#]+(?:@[^\s:'\""$>#]+)?['’]s password)[:：]\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?:\[(?:sudo|su|doas)(?:-rs)?(?::[^\]\r\n]{1,40})?\]\s+)?(?:password|passwd|enter password|请输入密码|密码|パスワード|암호|password for (?:'[^'\r\n]+'|""[^""\r\n]+""|[^:\r\n]+)|[^\s:'\""$>#]+(?:@[^\s:'\""$>#]+)?['’]s password|[^\s:：'\""$>#\[\]]+ ?(?:的密码|のパスワード|의 암호)|doas \([^)\r\n]+\) password)[:：]\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PasswordFillPromptRegex();
 
     /// <summary>剥掉光标行末尾已回显的输入,只留下程序打印的提示部分。</summary>
