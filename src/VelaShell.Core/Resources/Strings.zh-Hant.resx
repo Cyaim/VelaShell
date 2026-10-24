@@ -141,6 +141,39 @@
   <data name="AuditLog_ActionHostKeyTrustedOnce" xml:space="preserve">
     <value>僅本次信任主機指紋</value>
   </data>
+  <data name="AuditLog_ActionProfileCreated" xml:space="preserve">
+    <value>新增連線設定</value>
+  </data>
+  <data name="AuditLog_ActionProfileUpdated" xml:space="preserve">
+    <value>修改連線設定</value>
+  </data>
+  <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
+    <value>刪除連線設定</value>
+  </data>
+  <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
+    <value>設定變更</value>
+  </data>
+  <data name="AuditLog_ActionCredentialCreated" xml:space="preserve">
+    <value>新增共用憑證</value>
+  </data>
+  <data name="AuditLog_ActionCredentialUpdated" xml:space="preserve">
+    <value>修改共用憑證</value>
+  </data>
+  <data name="AuditLog_ActionCredentialDeleted" xml:space="preserve">
+    <value>刪除共用憑證</value>
+  </data>
+  <data name="AuditLog_AreaName" xml:space="preserve">
+    <value>名稱</value>
+  </data>
+  <data name="AuditLog_AreaAddress" xml:space="preserve">
+    <value>位址</value>
+  </data>
+  <data name="AuditLog_AreaCredentials" xml:space="preserve">
+    <value>登入憑證</value>
+  </data>
+  <data name="AuditLog_AreaOther" xml:space="preserve">
+    <value>其他設定</value>
+  </data>
   <data name="AuditLog_CategoryAll" xml:space="preserve">
     <value>全部類別</value>
   </data>
@@ -149,6 +182,15 @@
   </data>
   <data name="AuditLog_CategorySecurity" xml:space="preserve">
     <value>安全</value>
+  </data>
+  <data name="AuditLog_CategoryProfile" xml:space="preserve">
+    <value>連線設定</value>
+  </data>
+  <data name="AuditLog_CategorySettings" xml:space="preserve">
+    <value>設定</value>
+  </data>
+  <data name="AuditLog_CategoryCredential" xml:space="preserve">
+    <value>共用憑證</value>
   </data>
   <data name="AuditLog_ColAction" xml:space="preserve">
     <value>事件</value>
@@ -165,20 +207,74 @@
   <data name="AuditLog_ColTime" xml:space="preserve">
     <value>時間</value>
   </data>
+  <data name="AuditLog_ColActionCode" xml:space="preserve">
+    <value>事件代碼</value>
+  </data>
+  <data name="AuditLog_ColProfileId" xml:space="preserve">
+    <value>設定 Id</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>共 {0} 筆</value>
   </data>
   <data name="AuditLog_CountFiltered" xml:space="preserve">
     <value>{0} / {1} 筆</value>
   </data>
+  <data name="AuditLog_DetailChanged" xml:space="preserve">
+    <value>變更:{0}</value>
+  </data>
+  <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
+    <value>{0} 條連線在用</value>
+  </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>沒有符合條件的紀錄。</value>
+  </data>
+  <data name="AuditLog_ExportCsv" xml:space="preserve">
+    <value>匯出 CSV</value>
+  </data>
+  <data name="AuditLog_ExportCsvTip" xml:space="preserve">
+    <value>把目前篩出來的記錄匯出為 CSV 檔案</value>
+  </data>
+  <data name="AuditLog_ExportDone" xml:space="preserve">
+    <value>已把 {0} 筆記錄匯出到 {1}。</value>
+  </data>
+  <data name="AuditLog_ExportFailed" xml:space="preserve">
+    <value>匯出失敗:{0}</value>
   </data>
   <data name="AuditLog_LoadFailed" xml:space="preserve">
     <value>讀取稽核日誌失敗:{0}</value>
   </data>
   <data name="AuditLog_OnlyProblems" xml:space="preserve">
     <value>只看異常</value>
+  </data>
+  <data name="AuditLog_OpenProfile" xml:space="preserve">
+    <value>開啟這條連線設定</value>
+  </data>
+  <data name="AuditLog_ProfileGone" xml:space="preserve">
+    <value>這條連線設定已經刪除了。</value>
+  </data>
+  <data name="AuditLog_Range" xml:space="preserve">
+    <value>時間範圍</value>
+  </data>
+  <data name="AuditLog_RangeAll" xml:space="preserve">
+    <value>全部時間</value>
+  </data>
+  <data name="AuditLog_Range24Hours" xml:space="preserve">
+    <value>最近 24 小時</value>
+  </data>
+  <data name="AuditLog_Range7Days" xml:space="preserve">
+    <value>最近 7 天</value>
+  </data>
+  <data name="AuditLog_Range30Days" xml:space="preserve">
+    <value>最近 30 天</value>
+  </data>
+  <data name="AuditLog_RangeCustom" xml:space="preserve">
+    <value>自訂…</value>
+  </data>
+  <data name="AuditLog_RangeFrom" xml:space="preserve">
+    <value>起始日</value>
+  </data>
+  <data name="AuditLog_RangeTo" xml:space="preserve">
+    <value>結束日</value>
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>搜尋主機、工作階段或詳情</value>
@@ -5732,7 +5828,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
     <value>檢視稽核日誌</value>
   </data>
   <data name="SetSecurity_AuditLogViewerDesc" xml:space="preserve">
-    <value>// 連線成敗、主機指紋的裁決與外部喚起的登入,依時間倒序;只存在本機</value>
+    <value>// 連線成敗、主機指紋的裁決、外部喚起的登入,以及連線設定、設定與共用憑證的變更(只記改了哪一塊,不記值),依時間倒序;只存在本機</value>
   </data>
   <data name="SetSecurity_ConfirmExternalLaunch" xml:space="preserve">
     <value>連線前先確認</value>

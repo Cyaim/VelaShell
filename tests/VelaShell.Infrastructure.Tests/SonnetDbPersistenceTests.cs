@@ -703,6 +703,33 @@ public sealed class SonnetDbPersistenceTests : IDisposable
         Assert.AreEqual("fresh", recent.Single().Name);
     }
 
+    /// <summary>
+    /// 时间段下推到查询里:落在最近 N 条之外的那一段也要查得到,按时间倒序,上限不含。
+    /// 类别与时间段一起用时两个条件都生效(取值走参数,类别里带引号也不会拼坏 SQL)。
+    /// </summary>
+    [TestMethod]
+    public async Task AuditLog_Query_HonoursTheTimeRange()
+    {
+        var service = new SonnetDbAuditLogService(_engine);
+        DateTimeOffset start = new(2026, 7, 1, 0, 0, 0, TimeSpan.Zero);
+        string[] actions = ["connect", "connect-failed", "profile-updated"];
+        for (int day = 0; day < 30; day++)
+        {
+            await service.WriteAsync(new() { Timestamp = start.AddDays(day), Category = day % 2 == 0 ? "connection" : "profile", Action = actions[day % 3], Detail = $"d{day}" });
+        }
+
+        List<AuditEntry> week = await service.QueryAsync(100, from: start.AddDays(10), to: start.AddDays(17));
+        Assert.AreSequenceEqual(["d16", "d15", "d14", "d13", "d12", "d11", "d10"], [.. week.Select(e => e.Detail)]);
+
+        List<AuditEntry> latestTwo = await service.QueryAsync(2, from: start.AddDays(10), to: start.AddDays(17));
+        Assert.AreSequenceEqual(["d16", "d15"], [.. latestTwo.Select(e => e.Detail)], "上限截的是时间段里最新的");
+
+        List<AuditEntry> connections = await service.QueryAsync(100, "connection", start.AddDays(10), start.AddDays(17));
+        Assert.AreSequenceEqual(["d16", "d14", "d12", "d10"], [.. connections.Select(e => e.Detail)]);
+
+        Assert.IsEmpty(await service.QueryAsync(100, "x' OR '1'='1"));
+    }
+
     [TestMethod]
     public async Task AuditLog_WriteAndQuery_FiltersByCategory()
     {

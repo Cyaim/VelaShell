@@ -69,20 +69,44 @@ public sealed class SonnetDbAuditLogService(SonnetDbEngine engine) : IAuditLogSe
         return engine.TryDeleteAsync($"DELETE FROM {measurement} WHERE time < @cutoff", parameters, cancellationToken);
     }
 
-    /// <summary>按时间倒序查询审计记录,可按分类过滤。</summary>
+    /// <summary>按时间倒序查询审计记录,可按分类与时间段过滤。</summary>
+    /// <remarks>
+    /// 时间段下推到查询里,而不是取最近 N 条再在内存里筛:查看器一次只取最近 2000 条,
+    /// 「上个季度」那一段若在这 2000 条之外,内存里筛出来的就是空的。取值一律走参数。
+    /// </remarks>
     /// <param name="limit">返回的最大记录条数;小于等于 0 时返回空列表。</param>
     /// <param name="category">可选的分类过滤条件,为空时不过滤。</param>
+    /// <param name="from">时间下限(含);空为不限。</param>
+    /// <param name="to">时间上限(不含);空为不限。</param>
     /// <param name="cancellationToken">用于取消查询操作的令牌。</param>
     /// <returns>按时间倒序排列的审计记录列表。</returns>
-    public async Task<List<AuditEntry>> QueryAsync(int limit, string? category = null, CancellationToken cancellationToken = default)
+    public async Task<List<AuditEntry>> QueryAsync(int limit, string? category = null, DateTimeOffset? from = null,
+        DateTimeOffset? to = null, CancellationToken cancellationToken = default)
     {
         if (limit <= 0)
         {
             return [];
         }
-        string where = string.IsNullOrEmpty(category) ? string.Empty : $" WHERE category = '{category.Replace("'", "''")}'";
+        var parameters = new SqlParameters();
+        List<string> conditions = [];
+        if (!string.IsNullOrEmpty(category))
+        {
+            conditions.Add("category = @category");
+            parameters.AddNamed("category", category);
+        }
+        if (from is { } lower)
+        {
+            conditions.Add("time >= @from");
+            parameters.AddNamed("from", lower.ToUnixTimeMilliseconds());
+        }
+        if (to is { } upper)
+        {
+            conditions.Add("time < @to");
+            parameters.AddNamed("to", upper.ToUnixTimeMilliseconds());
+        }
+        string where = conditions.Count == 0 ? string.Empty : " WHERE " + string.Join(" AND ", conditions);
         SelectExecutionResult result = await _engine.QueryAsync($"SELECT time, category, action, profile_id, detail FROM {SonnetDbEngine.AuditLogMeasurement}{where} ORDER BY time DESC LIMIT {limit}",
-                                           cancellationToken).ConfigureAwait(false);
+                                           parameters, cancellationToken).ConfigureAwait(false);
         var entries = new List<AuditEntry>(result.Rows.Count);
         foreach (IReadOnlyList<object?> row in result.Rows)
         {

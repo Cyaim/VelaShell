@@ -37,6 +37,39 @@
   <data name="AuditLog_ActionHostKeyTrustedOnce" xml:space="preserve">
     <value>Host fingerprint trusted once</value>
   </data>
+  <data name="AuditLog_ActionProfileCreated" xml:space="preserve">
+    <value>Profile created</value>
+  </data>
+  <data name="AuditLog_ActionProfileUpdated" xml:space="preserve">
+    <value>Profile changed</value>
+  </data>
+  <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
+    <value>Profile deleted</value>
+  </data>
+  <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
+    <value>Settings changed</value>
+  </data>
+  <data name="AuditLog_ActionCredentialCreated" xml:space="preserve">
+    <value>Shared credential created</value>
+  </data>
+  <data name="AuditLog_ActionCredentialUpdated" xml:space="preserve">
+    <value>Shared credential changed</value>
+  </data>
+  <data name="AuditLog_ActionCredentialDeleted" xml:space="preserve">
+    <value>Shared credential deleted</value>
+  </data>
+  <data name="AuditLog_AreaName" xml:space="preserve">
+    <value>name</value>
+  </data>
+  <data name="AuditLog_AreaAddress" xml:space="preserve">
+    <value>address</value>
+  </data>
+  <data name="AuditLog_AreaCredentials" xml:space="preserve">
+    <value>login credentials</value>
+  </data>
+  <data name="AuditLog_AreaOther" xml:space="preserve">
+    <value>other settings</value>
+  </data>
   <data name="AuditLog_CategoryAll" xml:space="preserve">
     <value>All categories</value>
   </data>
@@ -45,6 +78,15 @@
   </data>
   <data name="AuditLog_CategorySecurity" xml:space="preserve">
     <value>Security</value>
+  </data>
+  <data name="AuditLog_CategoryProfile" xml:space="preserve">
+    <value>Profiles</value>
+  </data>
+  <data name="AuditLog_CategorySettings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="AuditLog_CategoryCredential" xml:space="preserve">
+    <value>Shared credentials</value>
   </data>
   <data name="AuditLog_ColAction" xml:space="preserve">
     <value>Event</value>
@@ -61,20 +103,74 @@
   <data name="AuditLog_ColTime" xml:space="preserve">
     <value>Time</value>
   </data>
+  <data name="AuditLog_ColActionCode" xml:space="preserve">
+    <value>Event code</value>
+  </data>
+  <data name="AuditLog_ColProfileId" xml:space="preserve">
+    <value>Profile ID</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>{0} records</value>
   </data>
   <data name="AuditLog_CountFiltered" xml:space="preserve">
     <value>{0} of {1} records</value>
   </data>
+  <data name="AuditLog_DetailChanged" xml:space="preserve">
+    <value>changed: {0}</value>
+  </data>
+  <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
+    <value>used by {0} connection(s)</value>
+  </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>No matching records.</value>
+  </data>
+  <data name="AuditLog_ExportCsv" xml:space="preserve">
+    <value>Export CSV</value>
+  </data>
+  <data name="AuditLog_ExportCsvTip" xml:space="preserve">
+    <value>Exports the records currently shown (after filtering) as a CSV file</value>
+  </data>
+  <data name="AuditLog_ExportDone" xml:space="preserve">
+    <value>Exported {0} records to {1}.</value>
+  </data>
+  <data name="AuditLog_ExportFailed" xml:space="preserve">
+    <value>Export failed: {0}</value>
   </data>
   <data name="AuditLog_LoadFailed" xml:space="preserve">
     <value>Could not read the audit log: {0}</value>
   </data>
   <data name="AuditLog_OnlyProblems" xml:space="preserve">
     <value>Problems only</value>
+  </data>
+  <data name="AuditLog_OpenProfile" xml:space="preserve">
+    <value>Open this connection profile</value>
+  </data>
+  <data name="AuditLog_ProfileGone" xml:space="preserve">
+    <value>This connection profile has been deleted.</value>
+  </data>
+  <data name="AuditLog_Range" xml:space="preserve">
+    <value>Time range</value>
+  </data>
+  <data name="AuditLog_RangeAll" xml:space="preserve">
+    <value>All time</value>
+  </data>
+  <data name="AuditLog_Range24Hours" xml:space="preserve">
+    <value>Last 24 hours</value>
+  </data>
+  <data name="AuditLog_Range7Days" xml:space="preserve">
+    <value>Last 7 days</value>
+  </data>
+  <data name="AuditLog_Range30Days" xml:space="preserve">
+    <value>Last 30 days</value>
+  </data>
+  <data name="AuditLog_RangeCustom" xml:space="preserve">
+    <value>Custom…</value>
+  </data>
+  <data name="AuditLog_RangeFrom" xml:space="preserve">
+    <value>From</value>
+  </data>
+  <data name="AuditLog_RangeTo" xml:space="preserve">
+    <value>To</value>
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>Search host, session or detail</value>
@@ -5262,7 +5358,7 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
     <value>View the audit log</value>
   </data>
   <data name="SetSecurity_AuditLogViewerDesc" xml:space="preserve">
-    <value>// Connections that succeeded or failed, host-fingerprint decisions and external logins, newest first; stored only on this machine</value>
+    <value>// Connections that succeeded or failed, host-fingerprint decisions, external logins, and changes to connection profiles, settings and shared credentials (what changed, never the values), newest first; stored only on this machine</value>
   </data>
   <data name="SetSecurity_ConfirmExternalLaunch" xml:space="preserve">
     <value>Confirm before connecting</value>

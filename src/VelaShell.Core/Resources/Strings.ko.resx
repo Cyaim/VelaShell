@@ -49,6 +49,39 @@
   <data name="AuditLog_ActionHostKeyTrustedOnce" xml:space="preserve">
     <value>이번만 호스트 지문 신뢰</value>
   </data>
+  <data name="AuditLog_ActionProfileCreated" xml:space="preserve">
+    <value>연결 설정 생성</value>
+  </data>
+  <data name="AuditLog_ActionProfileUpdated" xml:space="preserve">
+    <value>연결 설정 변경</value>
+  </data>
+  <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
+    <value>연결 설정 삭제</value>
+  </data>
+  <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
+    <value>설정 변경</value>
+  </data>
+  <data name="AuditLog_ActionCredentialCreated" xml:space="preserve">
+    <value>공유 자격 증명 생성</value>
+  </data>
+  <data name="AuditLog_ActionCredentialUpdated" xml:space="preserve">
+    <value>공유 자격 증명 변경</value>
+  </data>
+  <data name="AuditLog_ActionCredentialDeleted" xml:space="preserve">
+    <value>공유 자격 증명 삭제</value>
+  </data>
+  <data name="AuditLog_AreaName" xml:space="preserve">
+    <value>이름</value>
+  </data>
+  <data name="AuditLog_AreaAddress" xml:space="preserve">
+    <value>주소</value>
+  </data>
+  <data name="AuditLog_AreaCredentials" xml:space="preserve">
+    <value>로그인 자격 증명</value>
+  </data>
+  <data name="AuditLog_AreaOther" xml:space="preserve">
+    <value>기타 설정</value>
+  </data>
   <data name="AuditLog_CategoryAll" xml:space="preserve">
     <value>모든 분류</value>
   </data>
@@ -57,6 +90,15 @@
   </data>
   <data name="AuditLog_CategorySecurity" xml:space="preserve">
     <value>보안</value>
+  </data>
+  <data name="AuditLog_CategoryProfile" xml:space="preserve">
+    <value>연결 설정</value>
+  </data>
+  <data name="AuditLog_CategorySettings" xml:space="preserve">
+    <value>설정</value>
+  </data>
+  <data name="AuditLog_CategoryCredential" xml:space="preserve">
+    <value>공유 자격 증명</value>
   </data>
   <data name="AuditLog_ColAction" xml:space="preserve">
     <value>이벤트</value>
@@ -73,20 +115,74 @@
   <data name="AuditLog_ColTime" xml:space="preserve">
     <value>시간</value>
   </data>
+  <data name="AuditLog_ColActionCode" xml:space="preserve">
+    <value>이벤트 코드</value>
+  </data>
+  <data name="AuditLog_ColProfileId" xml:space="preserve">
+    <value>연결 설정 ID</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>{0}건</value>
   </data>
   <data name="AuditLog_CountFiltered" xml:space="preserve">
     <value>{1}건 중 {0}건</value>
   </data>
+  <data name="AuditLog_DetailChanged" xml:space="preserve">
+    <value>변경: {0}</value>
+  </data>
+  <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
+    <value>연결 {0}개에서 사용 중</value>
+  </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>조건에 맞는 기록이 없습니다.</value>
+  </data>
+  <data name="AuditLog_ExportCsv" xml:space="preserve">
+    <value>CSV 내보내기</value>
+  </data>
+  <data name="AuditLog_ExportCsvTip" xml:space="preserve">
+    <value>지금 보이는(필터링된) 기록을 CSV 파일로 내보냅니다</value>
+  </data>
+  <data name="AuditLog_ExportDone" xml:space="preserve">
+    <value>기록 {0}건을 {1}(으)로 내보냈습니다.</value>
+  </data>
+  <data name="AuditLog_ExportFailed" xml:space="preserve">
+    <value>내보내기 실패: {0}</value>
   </data>
   <data name="AuditLog_LoadFailed" xml:space="preserve">
     <value>감사 로그를 읽지 못했습니다: {0}</value>
   </data>
   <data name="AuditLog_OnlyProblems" xml:space="preserve">
     <value>문제만 보기</value>
+  </data>
+  <data name="AuditLog_OpenProfile" xml:space="preserve">
+    <value>이 연결 설정 열기</value>
+  </data>
+  <data name="AuditLog_ProfileGone" xml:space="preserve">
+    <value>이 연결 설정은 삭제되었습니다.</value>
+  </data>
+  <data name="AuditLog_Range" xml:space="preserve">
+    <value>기간</value>
+  </data>
+  <data name="AuditLog_RangeAll" xml:space="preserve">
+    <value>전체 기간</value>
+  </data>
+  <data name="AuditLog_Range24Hours" xml:space="preserve">
+    <value>최근 24시간</value>
+  </data>
+  <data name="AuditLog_Range7Days" xml:space="preserve">
+    <value>최근 7일</value>
+  </data>
+  <data name="AuditLog_Range30Days" xml:space="preserve">
+    <value>최근 30일</value>
+  </data>
+  <data name="AuditLog_RangeCustom" xml:space="preserve">
+    <value>사용자 지정…</value>
+  </data>
+  <data name="AuditLog_RangeFrom" xml:space="preserve">
+    <value>시작일</value>
+  </data>
+  <data name="AuditLog_RangeTo" xml:space="preserve">
+    <value>종료일</value>
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>호스트, 세션 또는 상세 내용 검색</value>
@@ -5257,7 +5353,7 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
     <value>감사 로그 보기</value>
   </data>
   <data name="SetSecurity_AuditLogViewerDesc" xml:space="preserve">
-    <value>// 연결 성공·실패, 호스트 지문에 대한 결정, 외부 실행 로그인(최신순, 이 컴퓨터에만 저장)</value>
+    <value>// 연결 성공·실패, 호스트 지문에 대한 결정, 외부 실행 로그인, 연결 설정·설정·공유 자격 증명의 변경(바뀐 부분만, 값은 기록하지 않음)(최신순, 이 컴퓨터에만 저장)</value>
   </data>
   <data name="SetSecurity_ConfirmExternalLaunch" xml:space="preserve">
     <value>연결 전 확인</value>

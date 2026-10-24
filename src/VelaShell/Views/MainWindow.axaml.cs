@@ -1253,8 +1253,16 @@ public partial class MainWindow : Window
         return saved.Any(candidate => candidate.Id == profile.Id);
     }
 
-    /// <summary>打开“新建连接”弹窗;传入 existing 时为编辑既有配置。</summary>
-    private async Task OpenProfileDialogAsync(SessionProfile? existing)
+    /// <summary>
+    /// 从别的窗口打开一条连接配置的编辑框(审计日志的「打开配置」):编辑框以 <paramref name="owner" /> 为主人弹出,
+    /// 保存、刷新会话树、按「连接」连上都与从资源管理器打开一样。
+    /// </summary>
+    /// <param name="profile">要编辑的配置(从库里刚读出来的)。</param>
+    /// <param name="owner">编辑框的主人窗口。</param>
+    internal Task EditProfileAsync(SessionProfile profile, Window owner) => OpenProfileDialogAsync(profile, owner);
+
+    /// <summary>打开“新建连接”弹窗;传入 existing 时为编辑既有配置。<paramref name="owner" /> 为空时以主窗口为主人。</summary>
+    private async Task OpenProfileDialogAsync(SessionProfile? existing, Window? owner = null)
     {
         if (DataContext is not MainWindowViewModel mainWindowViewModel)
         {
@@ -1300,7 +1308,7 @@ public partial class MainWindow : Window
             OpenPluginManager = OpenPluginManager
         };
         var dialog = new ConnectionProfileView { DataContext = connectionProfileViewModel };
-        SessionProfile? profile = await dialog.ShowDialog<SessionProfile?>(this);
+        SessionProfile? profile = await dialog.ShowDialog<SessionProfile?>(owner ?? this);
         if (profile is null)
         {
             return;

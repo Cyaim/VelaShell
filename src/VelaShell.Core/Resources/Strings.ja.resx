@@ -49,6 +49,39 @@
   <data name="AuditLog_ActionHostKeyTrustedOnce" xml:space="preserve">
     <value>今回だけホスト指紋を信頼</value>
   </data>
+  <data name="AuditLog_ActionProfileCreated" xml:space="preserve">
+    <value>接続設定を作成</value>
+  </data>
+  <data name="AuditLog_ActionProfileUpdated" xml:space="preserve">
+    <value>接続設定を変更</value>
+  </data>
+  <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
+    <value>接続設定を削除</value>
+  </data>
+  <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
+    <value>設定を変更</value>
+  </data>
+  <data name="AuditLog_ActionCredentialCreated" xml:space="preserve">
+    <value>共有資格情報を作成</value>
+  </data>
+  <data name="AuditLog_ActionCredentialUpdated" xml:space="preserve">
+    <value>共有資格情報を変更</value>
+  </data>
+  <data name="AuditLog_ActionCredentialDeleted" xml:space="preserve">
+    <value>共有資格情報を削除</value>
+  </data>
+  <data name="AuditLog_AreaName" xml:space="preserve">
+    <value>名前</value>
+  </data>
+  <data name="AuditLog_AreaAddress" xml:space="preserve">
+    <value>アドレス</value>
+  </data>
+  <data name="AuditLog_AreaCredentials" xml:space="preserve">
+    <value>ログイン資格情報</value>
+  </data>
+  <data name="AuditLog_AreaOther" xml:space="preserve">
+    <value>その他の設定</value>
+  </data>
   <data name="AuditLog_CategoryAll" xml:space="preserve">
     <value>すべての種類</value>
   </data>
@@ -57,6 +90,15 @@
   </data>
   <data name="AuditLog_CategorySecurity" xml:space="preserve">
     <value>セキュリティ</value>
+  </data>
+  <data name="AuditLog_CategoryProfile" xml:space="preserve">
+    <value>接続設定</value>
+  </data>
+  <data name="AuditLog_CategorySettings" xml:space="preserve">
+    <value>設定</value>
+  </data>
+  <data name="AuditLog_CategoryCredential" xml:space="preserve">
+    <value>共有資格情報</value>
   </data>
   <data name="AuditLog_ColAction" xml:space="preserve">
     <value>イベント</value>
@@ -73,20 +115,74 @@
   <data name="AuditLog_ColTime" xml:space="preserve">
     <value>時刻</value>
   </data>
+  <data name="AuditLog_ColActionCode" xml:space="preserve">
+    <value>イベントコード</value>
+  </data>
+  <data name="AuditLog_ColProfileId" xml:space="preserve">
+    <value>接続設定 ID</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>{0} 件</value>
   </data>
   <data name="AuditLog_CountFiltered" xml:space="preserve">
     <value>{1} 件中 {0} 件</value>
   </data>
+  <data name="AuditLog_DetailChanged" xml:space="preserve">
+    <value>変更: {0}</value>
+  </data>
+  <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
+    <value>{0} 件の接続が使用中</value>
+  </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>条件に合う記録はありません。</value>
+  </data>
+  <data name="AuditLog_ExportCsv" xml:space="preserve">
+    <value>CSV をエクスポート</value>
+  </data>
+  <data name="AuditLog_ExportCsvTip" xml:space="preserve">
+    <value>現在表示している (絞り込み後の) 記録を CSV ファイルにエクスポートします</value>
+  </data>
+  <data name="AuditLog_ExportDone" xml:space="preserve">
+    <value>{0} 件の記録を {1} にエクスポートしました。</value>
+  </data>
+  <data name="AuditLog_ExportFailed" xml:space="preserve">
+    <value>エクスポートに失敗しました: {0}</value>
   </data>
   <data name="AuditLog_LoadFailed" xml:space="preserve">
     <value>監査ログを読み込めませんでした: {0}</value>
   </data>
   <data name="AuditLog_OnlyProblems" xml:space="preserve">
     <value>問題のみ</value>
+  </data>
+  <data name="AuditLog_OpenProfile" xml:space="preserve">
+    <value>この接続設定を開く</value>
+  </data>
+  <data name="AuditLog_ProfileGone" xml:space="preserve">
+    <value>この接続設定は削除されています。</value>
+  </data>
+  <data name="AuditLog_Range" xml:space="preserve">
+    <value>期間</value>
+  </data>
+  <data name="AuditLog_RangeAll" xml:space="preserve">
+    <value>すべての期間</value>
+  </data>
+  <data name="AuditLog_Range24Hours" xml:space="preserve">
+    <value>過去 24 時間</value>
+  </data>
+  <data name="AuditLog_Range7Days" xml:space="preserve">
+    <value>過去 7 日間</value>
+  </data>
+  <data name="AuditLog_Range30Days" xml:space="preserve">
+    <value>過去 30 日間</value>
+  </data>
+  <data name="AuditLog_RangeCustom" xml:space="preserve">
+    <value>カスタム…</value>
+  </data>
+  <data name="AuditLog_RangeFrom" xml:space="preserve">
+    <value>開始日</value>
+  </data>
+  <data name="AuditLog_RangeTo" xml:space="preserve">
+    <value>終了日</value>
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>ホスト・セッション・詳細を検索</value>
@@ -5257,7 +5353,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
     <value>監査ログを表示</value>
   </data>
   <data name="SetSecurity_AuditLogViewerDesc" xml:space="preserve">
-    <value>// 接続の成否、ホスト指紋の判断、外部からの起動によるログイン(新しい順、このマシンにのみ保存)</value>
+    <value>// 接続の成否、ホスト指紋の判断、外部からの起動によるログイン、接続設定・設定・共有資格情報の変更(変わった部分のみで値は記録しない)(新しい順、このマシンにのみ保存)</value>
   </data>
   <data name="SetSecurity_ConfirmExternalLaunch" xml:space="preserve">
     <value>接続前に確認する</value>

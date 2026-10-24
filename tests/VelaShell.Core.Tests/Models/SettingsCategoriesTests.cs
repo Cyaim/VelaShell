@@ -71,6 +71,32 @@ public sealed class SettingsCategoriesTests
     }
 
     [TestMethod]
+    public void Changed_ListsTheCategoriesThatDiffer_InDisplayOrder()
+    {
+        var before = new AppSettings();
+        var after = new AppSettings { Theme = "light", ScrollbackLines = 500 };
+        after.Security.ConfirmExternalLaunch = false;
+
+        Assert.AreSequenceEqual(
+            [SettingsCategories.Appearance, SettingsCategories.Terminal, SettingsCategories.Security],
+            [.. SettingsCategories.Changed(before, after).Select(c => c.Id)]);
+    }
+
+    [TestMethod]
+    public void Changed_IgnoresRuntimeStateAndMigrationMarks()
+    {
+        var before = new AppSettings();
+        var after = new AppSettings();
+        after.Appearance.LastWindowWidth = 1600;
+        after.Appearance.LastWindowX = 20;
+        after.General.LastOpenProfileIds = [Guid.NewGuid()];
+        after.Security.RecordingOptInMigrated = true;
+        after.Proxy.DefaultsMigrated = true;
+
+        Assert.IsEmpty(SettingsCategories.Changed(before, after));
+    }
+
+    [TestMethod]
     public void IdsAreUnique_AndFindIgnoresCase()
     {
         Assert.HasCount(SettingsCategories.All.Count, SettingsCategories.All.Select(c => c.Id).Distinct());

@@ -1,7 +1,12 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
+using VelaShell.Core.Import;
+using VelaShell.Core.Resources;
+using VelaShell.ViewModels;
+using FireAndForget = VelaShell.Services.FireAndForget;
 
 namespace VelaShell.Views;
 
@@ -37,6 +42,45 @@ public partial class AuditLogView : Window
     }
 
     private void Maximize_Click(object? sender, RoutedEventArgs e) => ToggleMaximize();
+
+    /// <summary>把眼前筛出来的那些导出成 CSV(UTF-8 带 BOM,Excel 直接打开不乱码)。</summary>
+    private void ExportCsv_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (DataContext is not AuditLogViewModel { IsEmpty: false } viewModel)
+        {
+            return;
+        }
+        IStorageFile? file = await StorageProvider.SaveFilePickerAsync(new()
+        {
+            Title = Strings.Get("AuditLog_ExportCsv"),
+            SuggestedFileName = $"velashell-audit-{DateTime.Now:yyyyMMdd-HHmm}.csv",
+            SuggestedStartLocation = await StorageDefaults.DownloadsAsync(this),
+            DefaultExtension = "csv",
+            FileTypeChoices = [new FilePickerFileType(Strings.Get("SessFile_CsvType")) { Patterns = ["*.csv"] }]
+        });
+        if (file?.TryGetLocalPath() is not { Length: > 0 } path)
+        {
+            return; // 取消了。
+        }
+        try
+        {
+            await File.WriteAllBytesAsync(path, SessionFileText.EncodeCsv(viewModel.BuildCsv()));
+            viewModel.ReportExport(Strings.Format("AuditLog_ExportDone", viewModel.Rows.Count, path));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            viewModel.ReportExport(Strings.Format("AuditLog_ExportFailed", ex.Message));
+        }
+    });
+
+    /// <summary>打开这一行对应的连接配置(编辑框以本窗口为主人弹出)。</summary>
+    private void OpenProfile_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (sender is Control { DataContext: AuditLogRow row } && DataContext is AuditLogViewModel viewModel)
+        {
+            await viewModel.OpenProfileAsync(row);
+        }
+    });
 
     private void ToggleMaximize() =>
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;

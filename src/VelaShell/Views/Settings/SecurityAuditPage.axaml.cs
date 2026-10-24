@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
 using Microsoft.Extensions.DependencyInjection;
 using VelaShell.Core.Data;
@@ -49,6 +50,11 @@ public partial class SecurityAuditPage : UserControl
         }
         var viewModel = new AuditLogViewModel(auditLog, services.GetService<ISessionRepository>());
         var window = new AuditLogView { DataContext = viewModel };
+        // 「打开配置」借主窗口的编辑框:保存后要刷新会话树、按「连接」要开标签,这些都在主窗口那边。
+        if ((Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow is MainWindow main)
+        {
+            viewModel.OpenProfile = profile => main.EditProfileAsync(profile, window);
+        }
         if (TopLevel.GetTopLevel(this) is Window owner)
         {
             window.Show(owner);

@@ -47,6 +47,7 @@ computer unless you explicitly enable the optional sync feature described below.
 | Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; not included in sync) | Same folder |
 | Session logs — raw terminal output, **off by default** | `logs` subfolder, auto-deleted after a retention period you set |
 | Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, duration, reason) | `logs` subfolder, auto-deleted after 7 days |
+| Audit log — connection results (`user@host:port`), host-key decisions, external logins, and changes to connection profiles (name and `user@host:port`), settings and shared credentials: which part changed, never passwords or setting values | `~/.velashell`; records older than the retention period you set (default 180 days) are deleted at startup |
 | Offline IP geolocation database, if you add one | `geoip` subfolder |
 | Plugins you manually install | `~/.velashell/plugins` |
 
@@ -216,6 +217,7 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码,不参与同步) | 同上 |
 | 会话日志 —— 终端原始输出,**默认关闭** | `logs` 子目录,按你设定的保留天数自动清理 |
 | 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、时长、原因) | `logs` 子目录,7 天后自动清理 |
+| 审计日志 —— 连接成败(`用户@主机:端口`)、主机指纹的裁决、外部拉起的登录,以及连接配置(名称与 `用户@主机:端口`)、设置、共享凭据的改动:只记改了哪一块,不记密码与设置的值 | `~/.velashell`;启动时删掉超过保留期(默认 180 天,可设)的记录 |
 | 离线 IP 归属地数据库(如果你添加了) | `geoip` 子目录 |
 | 你手动安装的插件 | `~/.velashell/plugins` |
 

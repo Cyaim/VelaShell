@@ -16,6 +16,7 @@ using VelaShell.Core.Ssh;
 using VelaShell.Core.Sync;
 using VelaShell.Core.Tunnels;
 using VelaShell.Core.XServer;
+using VelaShell.Infrastructure.Audit;
 using VelaShell.Infrastructure.Credentials;
 using VelaShell.Infrastructure.Diagnostics;
 using VelaShell.Infrastructure.Ftp;
@@ -59,23 +60,31 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton(sp =>
             StartupWarmup.Claim(sp.GetRequiredService<VelaShellStoragePaths>()));
         services.AddSingleton<ISecretProtector>(sp => new AesSecretProtector(sp.GetRequiredService<VelaShellStoragePaths>()));
+        // 连接配置、设置、共享凭据三处仓储外面各套一层审计(Audit/):配置的增删改、设置变了哪几类、
+        // 共享凭据改动与引用它的连接数都在落盘这一层记,不靠各个界面入口自己记。
         services.AddSingleton<ISessionRepository>(sp =>
         {
             VelaShellStoragePaths paths = sp.GetRequiredService<VelaShellStoragePaths>();
-            return new SonnetDbSessionRepository(sp.GetRequiredService<SonnetDbEngine>(),
-                sp.GetRequiredService<ISecretProtector>(), paths.SessionsFile);
+            return new AuditedSessionRepository(
+                new SonnetDbSessionRepository(sp.GetRequiredService<SonnetDbEngine>(),
+                    sp.GetRequiredService<ISecretProtector>(), paths.SessionsFile),
+                sp.GetService<IAuditLogService>());
         });
         services.AddSingleton<ISettingsService>(sp =>
         {
             VelaShellStoragePaths paths = sp.GetRequiredService<VelaShellStoragePaths>();
-            return new SonnetDbSettingsService(sp.GetRequiredService<SonnetDbEngine>(),
-                [paths.RootDirectory]);
+            return new AuditedSettingsService(
+                new SonnetDbSettingsService(sp.GetRequiredService<SonnetDbEngine>(), [paths.RootDirectory]),
+                sp.GetService<IAuditLogService>());
         });
         // 共享凭据(#550):连接配置只存引用,连接那一刻由解析器按来源取回。
         // 来源以集合注册(先注册具体类型,再转发),外部密码管理器接进来时在这里追加一行。
         services.AddSingleton<ISharedCredentialRepository>(sp =>
-            new SonnetDbSharedCredentialRepository(sp.GetRequiredService<SonnetDbEngine>(),
-                sp.GetRequiredService<ISecretProtector>()));
+            new AuditedSharedCredentialRepository(
+                new SonnetDbSharedCredentialRepository(sp.GetRequiredService<SonnetDbEngine>(),
+                    sp.GetRequiredService<ISecretProtector>()),
+                sp.GetRequiredService<ISessionRepository>(),
+                sp.GetService<IAuditLogService>()));
         services.AddSingleton<SharedCredentialProvider>(sp =>
             new(sp.GetRequiredService<ISharedCredentialRepository>()));
         services.AddSingleton<ICredentialProvider>(sp => sp.GetRequiredService<SharedCredentialProvider>());

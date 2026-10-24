@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using VelaShell.Core.Resources;
 
 namespace VelaShell.Core.Models;
@@ -127,6 +129,38 @@ public static class SettingsCategories
         ("proxy", "defaultsMigrated"),
         ("terminalBehavior", "foldGuideLineMigrated"),
     ];
+
+    /// <summary>
+    /// 两份设置之间哪几类变了(按界面顺序)。运行状态与迁移标记不算 —— 审计「设置变更」用它,
+    /// 只记哪一块变了、不记值。
+    /// </summary>
+    /// <param name="before">改之前。</param>
+    /// <param name="after">改之后。</param>
+    /// <returns>变了的分类;一类都没变时为空。</returns>
+    public static IReadOnlyList<SettingsCategory> Changed(AppSettings before, AppSettings after)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+        JsonObject a = Comparable(before);
+        JsonObject b = Comparable(after);
+        return
+        [
+            .. All.Where(c => c.TopLevel.Prepend(c.Block).Any(key => !JsonNode.DeepEquals(a[key], b[key])))
+        ];
+    }
+
+    private static readonly JsonSerializerOptions DiffOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    /// <summary>设置写成 JSON,去掉运行状态与迁移标记,留下拿来比的部分。</summary>
+    private static JsonObject Comparable(AppSettings settings)
+    {
+        JsonObject root = JsonSerializer.SerializeToNode(settings, DiffOptions)!.AsObject();
+        foreach ((string block, string field) in StateFields.Concat(MigrationFields))
+        {
+            (root[block] as JsonObject)?.Remove(field);
+        }
+        return root;
+    }
 
     /// <summary>按标识找分类;认不出时为 null(更新版本写的文件里可能有本版本不认识的分类)。</summary>
     /// <param name="id">分类标识。</param>
