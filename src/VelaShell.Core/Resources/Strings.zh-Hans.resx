@@ -1074,6 +1074,12 @@
   <data name="HostKeyKnownFingerprint" xml:space="preserve">
     <value>已记录指纹</value>
   </data>
+  <data name="HostKeyCertificateCa" xml:space="preserve">
+    <value>证书签发 CA</value>
+  </data>
+  <data name="HostKeyCertificateCaHint" xml:space="preserve">
+    <value>服务器出示了主机证书，但没有受信主机 CA 管这台主机，所以只按证书里的密钥核对。核实这个 CA 之后，可到 设置 → 安全与审计 → 受信主机 CA 添加它，此后它签发的主机不必再逐台确认。</value>
+  </data>
   <data name="HostKeyRandomArt" xml:space="preserve">
     <value>指纹图</value>
   </data>
@@ -2046,6 +2052,36 @@
   </data>
   <data name="Msg_HostKeyRejected" xml:space="preserve">
     <value>未信任 {0} 的主机密钥 {1}，连接已中止。</value>
+  </data>
+  <data name="Msg_HostKeyRevoked" xml:space="preserve">
+    <value>{0} 出示的主机密钥 {1} 已被吊销（设置 → 安全与审计 → 受信主机 CA 里的 @revoked 记录），连接已中止。不要连接这台主机。</value>
+  </data>
+  <data name="Msg_HostCertInvalid" xml:space="preserve">
+    <value>{0} 出示了受信 CA {2} 签发的主机证书，但证书不合格：{1}这台主机由 CA 管理，不会退回去按新主机询问是否信任。请联系管理员重新签发主机证书。</value>
+  </data>
+  <data name="Msg_HostCaUnvouched" xml:space="preserve">
+    <value>{0} 在受信主机 CA（{1}）的管理范围内，但它出示的密钥（{2}）没有这个 CA 的担保，连接已拒绝，不会按新主机询问。若这台主机确实没有证书，请核对指纹后从 known_hosts 导入它的密钥，或到 设置 → 安全与审计 调整受信主机 CA。</value>
+  </data>
+  <data name="HostCert_ProblemNotHost" xml:space="preserve">
+    <value>这是一张用户证书，不是主机证书。</value>
+  </data>
+  <data name="HostCert_ProblemExpired" xml:space="preserve">
+    <value>证书已于 {0} 过期。</value>
+  </data>
+  <data name="HostCert_ProblemNotYetValid" xml:space="preserve">
+    <value>证书要到 {0} 才生效。</value>
+  </data>
+  <data name="HostCert_ProblemNoPrincipals" xml:space="preserve">
+    <value>证书没有列出任何主机名，那等于对所有主机有效。</value>
+  </data>
+  <data name="HostCert_ProblemPrincipals" xml:space="preserve">
+    <value>证书签给的是 {1}，不含 {0}。</value>
+  </data>
+  <data name="HostCert_ProblemCriticalOptions" xml:space="preserve">
+    <value>证书带着主机证书不认识的关键选项：{0}。</value>
+  </data>
+  <data name="HostCert_ProblemSignature" xml:space="preserve">
+    <value>CA 签名验不过（证书被改过、用的是 SHA-1 的 ssh-rsa 签名，或者 CA 密钥强度不够）。</value>
   </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>已停止自动重连 {0}：主机密钥 {1} 需要你确认，而自动重连不会弹窗询问。请手动重新连接，在弹出的窗口里核对指纹。</value>
@@ -3380,6 +3416,123 @@
   </data>
   <data name="SetSecurity_NoKnownHosts" xml:space="preserve">
     <value>暂无已信任的主机</value>
+  </data>
+  <data name="KnownHosts_InteropLabel" xml:space="preserve">
+    <value>OpenSSH known_hosts</value>
+  </data>
+  <data name="KnownHosts_InteropDesc" xml:space="preserve">
+    <value>// 导入 known_hosts，与命令行 ssh 共用一份信任基线（@cert-authority 与 @revoked 行进下面的受信主机 CA）；或把已信任主机导出成 OpenSSH 格式</value>
+  </data>
+  <data name="KnownHosts_Import" xml:space="preserve">
+    <value>导入…</value>
+  </data>
+  <data name="KnownHosts_Export" xml:space="preserve">
+    <value>导出…</value>
+  </data>
+  <data name="KnownHosts_HashOnExport" xml:space="preserve">
+    <value>导出时散列主机名</value>
+  </data>
+  <data name="KnownHosts_HashOnExportDesc" xml:space="preserve">
+    <value>// 同 HashKnownHosts yes：主机密钥行写成 |1|…，文件里看不出有哪些服务器；@cert-authority / @revoked 行的模式原样写出</value>
+  </data>
+  <data name="KnownHosts_ImportDialogTitle" xml:space="preserve">
+    <value>导入 known_hosts</value>
+  </data>
+  <data name="KnownHosts_ExportDialogTitle" xml:space="preserve">
+    <value>导出 known_hosts</value>
+  </data>
+  <data name="KnownHosts_ImportFailed" xml:space="preserve">
+    <value>导入 known_hosts 失败：{0}</value>
+  </data>
+  <data name="KnownHosts_ImportTooLarge" xml:space="preserve">
+    <value>文件超过 16 MB，多半不是 known_hosts。</value>
+  </data>
+  <data name="KnownHosts_ImportDone" xml:space="preserve">
+    <value>已导入 {0} 把主机密钥、{1} 个受信 CA、{2} 条吊销记录。</value>
+  </data>
+  <data name="KnownHosts_ImportAlready" xml:space="preserve">
+    <value>{0} 条已经在信任库里。</value>
+  </data>
+  <data name="KnownHosts_ImportConflicts" xml:space="preserve">
+    <value>{0} 条没有导入：那台主机已经信任了同一类型的另一把密钥。若服务器确实换了密钥，先在上面的列表里删掉旧的那条再导入。</value>
+  </data>
+  <data name="KnownHosts_ImportRevokedSkipped" xml:space="preserve">
+    <value>{0} 条没有导入：那把密钥已被吊销（@revoked）。</value>
+  </data>
+  <data name="KnownHosts_ImportHashedUnmatched" xml:space="preserve">
+    <value>{0} 条散列过的主机名（|1|…）对不上任何已保存的连接或已信任的主机，认不出是哪台。</value>
+  </data>
+  <data name="KnownHosts_ImportWildcards" xml:space="preserve">
+    <value>{0} 行带通配的主机模式跳过了：主机密钥只能按具体的主机信任。</value>
+  </data>
+  <data name="KnownHosts_ImportUnsupported" xml:space="preserve">
+    <value>{0} 行跳过了：本版不支持的密钥类型、写坏的行，或主机名不能原样记下。</value>
+  </data>
+  <data name="KnownHosts_ExportDone" xml:space="preserve">
+    <value>已把 {0} 把主机密钥与 {1} 条 CA / 吊销记录导出到 {2}。</value>
+  </data>
+  <data name="KnownHosts_ExportSkipped" xml:space="preserve">
+    <value>{0} 条记录只存了指纹、没有公钥原文，没能导出；下次连上那台主机时会自动补上。</value>
+  </data>
+  <data name="KnownHosts_ExportFailed" xml:space="preserve">
+    <value>导出 known_hosts 失败：{0}</value>
+  </data>
+  <data name="HostCa_Section" xml:space="preserve">
+    <value>受信主机 CA</value>
+  </data>
+  <data name="HostCa_SectionDesc" xml:space="preserve">
+    <value>// 这些 CA 签发的主机证书在主机名对上模式时直接受信，不必逐台确认；归 CA 管的主机出示没有合格证书的密钥时直接拒绝，不退回首次确认。吊销的密钥（@revoked）也列在这里，一律拒绝</value>
+  </data>
+  <data name="HostCa_Empty" xml:space="preserve">
+    <value>暂无受信主机 CA</value>
+  </data>
+  <data name="HostCa_KindAuthority" xml:space="preserve">
+    <value>受信 CA</value>
+  </data>
+  <data name="HostCa_KindRevoked" xml:space="preserve">
+    <value>已吊销</value>
+  </data>
+  <data name="HostCa_AddTitle" xml:space="preserve">
+    <value>添加受信主机 CA</value>
+  </data>
+  <data name="HostCa_PatternsDesc" xml:space="preserve">
+    <value>// 主机名模式，逗号分隔：* 与 ? 是通配，! 表示排除，非 22 端口写成 [host]:port（即 known_hosts 的主机那一栏）</value>
+  </data>
+  <data name="HostCa_KeyDesc" xml:space="preserve">
+    <value>// CA 的公钥行（CA 的 .pub 文件内容），或从 known_hosts 整行复制来的 @cert-authority / @revoked 行</value>
+  </data>
+  <data name="HostCa_CommentPlaceholder" xml:space="preserve">
+    <value>备注（可选）</value>
+  </data>
+  <data name="HostCa_Add" xml:space="preserve">
+    <value>添加</value>
+  </data>
+  <data name="HostCa_Added" xml:space="preserve">
+    <value>已为 {0} 添加受信主机 CA。</value>
+  </data>
+  <data name="HostCa_RevokedAdded" xml:space="preserve">
+    <value>已为 {0} 添加吊销记录。</value>
+  </data>
+  <data name="HostCa_ErrPatternsEmpty" xml:space="preserve">
+    <value>至少填一个主机名模式。</value>
+  </data>
+  <data name="HostCa_ErrPatternInvalid" xml:space="preserve">
+    <value>主机名模式「{0}」写得不对：不能有空白与 #，不能以 @ 或 | 开头，非 22 端口要写成 [host]:port。</value>
+  </data>
+  <data name="HostCa_ErrPatternsOnlyNegated" xml:space="preserve">
+    <value>全是排除模式（!），一台主机也对不上。</value>
+  </data>
+  <data name="HostCa_ErrKeyInvalid" xml:space="preserve">
+    <value>不是有效的 OpenSSH 公钥行（类型 base64 [注释]），也不是 @cert-authority / @revoked 行。</value>
+  </data>
+  <data name="HostCa_ErrKeyIsCertificate" xml:space="preserve">
+    <value>CA 公钥本身不能是一张证书。</value>
+  </data>
+  <data name="HostCa_ErrRsaTooShort" xml:space="preserve">
+    <value>RSA 的 CA 公钥至少要 2048 位，这一把只有 {0} 位。</value>
+  </data>
+  <data name="HostCa_ErrDuplicate" xml:space="preserve">
+    <value>同样的模式已经信任了这个 CA。</value>
   </data>
   <data name="SetSecurity_OpenAuditLog" xml:space="preserve">
     <value>查看</value>

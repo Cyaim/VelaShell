@@ -19,6 +19,7 @@ public class HostKeyPromptViewModel : ReactiveObject
     /// <param name="verificationResult">本次指纹相对 known_hosts 的校验结果。</param>
     /// <param name="knownFingerprint">known_hosts 里已记录的旧指纹;首次连接时为 null。</param>
     /// <param name="randomArt">本次主机密钥的指纹图(等宽字体显示);没有时为 null。</param>
+    /// <param name="certificateAuthority">出示的主机证书的签发 CA 指纹(没有受信 CA 为它担保时);不是证书时为 null。</param>
     public HostKeyPromptViewModel(
         string host,
         int port,
@@ -26,9 +27,11 @@ public class HostKeyPromptViewModel : ReactiveObject
         string fingerprint,
         HostKeyVerification verificationResult,
         string? knownFingerprint = null,
-        string? randomArt = null)
+        string? randomArt = null,
+        string? certificateAuthority = null)
     {
         RandomArt = randomArt ?? string.Empty;
+        CertificateAuthority = certificateAuthority ?? string.Empty;
         Host = host;
         Port = port;
         KeyType = keyType;
@@ -52,6 +55,15 @@ public class HostKeyPromptViewModel : ReactiveObject
 
     /// <summary>有没有指纹图(没有就不显示那一行)。</summary>
     public bool HasRandomArt => RandomArt.Length > 0;
+
+    /// <summary>
+    /// 服务端出示了主机证书时,签发它的 CA 指纹;不是证书时为空串。走到弹窗说明没有受信 CA 为它担保,
+    /// 问的仍是证书里那把钥 —— 摆出 CA 是让用户知道可以把它加进受信主机 CA(设置 → 安全审计)。
+    /// </summary>
+    public string CertificateAuthority { get; }
+
+    /// <summary>有没有证书的签发 CA 可摆(没有就不显示那一行)。</summary>
+    public bool HasCertificateAuthority => CertificateAuthority.Length > 0;
 
     /// <summary>目标主机的 SSH 端口。</summary>
     public int Port { get; }

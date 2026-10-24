@@ -53,7 +53,8 @@ public sealed class VelaHostKeyPolicyTests
         using var fresh = InMemorySshSigner.GenerateEd25519();
         await policy.RecordHostKeysAsync("rot.example", 22, [fresh.PublicKey]);
 
-        await store.Received(1).TrustHostKeyAsync("rot.example", 22, "ssh-ed25519", fresh.PublicKey.Sha256Fingerprint, Arg.Any<CancellationToken>());
+        await store.Received(1).TrustHostKeyAsync("rot.example", 22, "ssh-ed25519", fresh.PublicKey.Sha256Fingerprint,
+            Convert.ToBase64String(fresh.PublicKey.Blob.Span), Arg.Any<CancellationToken>());
         await alerts.Received(1).RaiseAsync("hostkey-learned", Arg.Is<string>(m => m.Contains(fresh.PublicKey.Sha256Fingerprint)), Arg.Any<object?>());
     }
 
@@ -112,7 +113,7 @@ public sealed class VelaHostKeyPolicyTests
     {
         IHostKeyService store = Substitute.For<IHostKeyService>();
         IOException locked = new("数据库被锁");
-        store.TrustHostKeyAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        store.TrustHostKeyAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(locked);
         ISecurityAlertService alerts = Substitute.For<ISecurityAlertService>();
 
@@ -144,7 +145,7 @@ public sealed class VelaHostKeyPolicyTests
         store.VerifyHostKeyAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(HostKeyVerification.Changed);
         IHostKeyPrompt prompt = Substitute.For<IHostKeyPrompt>();
-        prompt.DecideAsync(default!, default, default!, default!, default, default, default)
+        prompt.DecideAsync(default!, default, default!, default!, default, default, default, default)
             .ReturnsForAnyArgs(HostKeyDecision.Reject);
 
         using var signer = InMemorySshSigner.GenerateEd25519();
@@ -160,7 +161,7 @@ public sealed class VelaHostKeyPolicyTests
 
         await prompt.Received(1).DecideAsync(
             context.Host, 22, Arg.Any<string>(), signer.PublicKey.Sha256Fingerprint,
-            HostKeyVerification.Changed, Arg.Any<string?>(), signer.PublicKey.RandomArt);
+            HostKeyVerification.Changed, Arg.Any<string?>(), signer.PublicKey.RandomArt, null);
     }
 
     /// <summary>
@@ -198,7 +199,7 @@ public sealed class VelaHostKeyPolicyTests
         Assert.AreEqual(
             verification == HostKeyVerification.Changed ? SshFailureReason.HostKeyChanged : SshFailureReason.HostKeyRejected,
             verdict.Reason);
-        await prompt.DidNotReceiveWithAnyArgs().DecideAsync(default!, default, default!, default!, default, default, default);
+        await prompt.DidNotReceiveWithAnyArgs().DecideAsync(default!, default, default!, default!, default, default, default, default);
         await alerts.Received(1).RaiseAsync("hostkey-rejected", Arg.Any<string>(), Arg.Any<object?>());
     }
 

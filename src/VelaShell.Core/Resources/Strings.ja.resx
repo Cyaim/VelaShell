@@ -1312,6 +1312,12 @@
   <data name="HostKeyKnownFingerprint" xml:space="preserve">
     <value>記録済み指紋</value>
   </data>
+  <data name="HostKeyCertificateCa" xml:space="preserve">
+    <value>証明書の発行 CA</value>
+  </data>
+  <data name="HostKeyCertificateCaHint" xml:space="preserve">
+    <value>サーバーはホスト証明書を提示しましたが、このホストを管理する信頼済みホスト CA がないため、証明書内のキーだけを照合します。この CA を確認したら、設定 → セキュリティと監査 → 信頼済みホスト CA で追加すると、その CA が署名したホストを一台ずつ確認する必要がなくなります。</value>
+  </data>
   <data name="HostKeyRandomArt" xml:space="preserve">
     <value>指紋の図</value>
   </data>
@@ -1609,6 +1615,36 @@
   </data>
   <data name="Msg_HostKeyRejected" xml:space="preserve">
     <value>{0} のホストキー {1} は信頼されませんでした。接続を中止しました。</value>
+  </data>
+  <data name="Msg_HostKeyRevoked" xml:space="preserve">
+    <value>{0} が提示したホストキー {1} は失効しています（設定 → セキュリティと監査 → 信頼済みホスト CA の @revoked 記録）。接続を中止しました。このホストには接続しないでください。</value>
+  </data>
+  <data name="Msg_HostCertInvalid" xml:space="preserve">
+    <value>{0} は信頼済み CA {2} が署名したホスト証明書を提示しましたが、証明書が無効です：{1}このホストは CA で管理されているため、新しいホストとして信頼するかを尋ねる動作には戻りません。管理者にホスト証明書の再発行を依頼してください。</value>
+  </data>
+  <data name="Msg_HostCaUnvouched" xml:space="preserve">
+    <value>{0} は信頼済みホスト CA（{1}）の管理対象ですが、提示されたキー（{2}）はその CA の保証を受けていないため、確認せずに接続を拒否しました。このホストに本当に証明書がない場合は、フィンガープリントを確認したうえで known_hosts からそのキーをインポートするか、設定 → セキュリティと監査 で信頼済みホスト CA を見直してください。</value>
+  </data>
+  <data name="HostCert_ProblemNotHost" xml:space="preserve">
+    <value>これはユーザー証明書で、ホスト証明書ではありません。</value>
+  </data>
+  <data name="HostCert_ProblemExpired" xml:space="preserve">
+    <value>証明書は {0} に期限切れになりました。</value>
+  </data>
+  <data name="HostCert_ProblemNotYetValid" xml:space="preserve">
+    <value>証明書は {0} まで有効になりません。</value>
+  </data>
+  <data name="HostCert_ProblemNoPrincipals" xml:space="preserve">
+    <value>証明書にホスト名が一つも記載されておらず、すべてのホストに有効なことになってしまいます。</value>
+  </data>
+  <data name="HostCert_ProblemPrincipals" xml:space="preserve">
+    <value>証明書の発行先は {1} で、{0} は含まれていません。</value>
+  </data>
+  <data name="HostCert_ProblemCriticalOptions" xml:space="preserve">
+    <value>証明書にホスト証明書では定義されていないクリティカルオプションがあります：{0}。</value>
+  </data>
+  <data name="HostCert_ProblemSignature" xml:space="preserve">
+    <value>CA の署名を検証できません（証明書が改ざんされた、SHA-1 の ssh-rsa で署名されている、または CA キーの強度が不足しています）。</value>
   </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>{0} への自動再接続を停止しました。ホストキー {1} の確認が必要ですが、自動再接続では確認ダイアログを表示しません。手動で再接続し、表示されるダイアログでフィンガープリントを確認してください。</value>
@@ -3028,6 +3064,123 @@
   </data>
   <data name="SetSecurity_NoKnownHosts" xml:space="preserve">
     <value>信頼済みホストはまだありません</value>
+  </data>
+  <data name="KnownHosts_InteropLabel" xml:space="preserve">
+    <value>OpenSSH known_hosts</value>
+  </data>
+  <data name="KnownHosts_InteropDesc" xml:space="preserve">
+    <value>// known_hosts をインポートしてコマンドラインの ssh と信頼の基準を共有します（@cert-authority と @revoked の行は下の信頼済みホスト CA へ）。信頼済みホストを OpenSSH 形式でエクスポートすることもできます</value>
+  </data>
+  <data name="KnownHosts_Import" xml:space="preserve">
+    <value>インポート…</value>
+  </data>
+  <data name="KnownHosts_Export" xml:space="preserve">
+    <value>エクスポート…</value>
+  </data>
+  <data name="KnownHosts_HashOnExport" xml:space="preserve">
+    <value>エクスポート時にホスト名をハッシュ化</value>
+  </data>
+  <data name="KnownHosts_HashOnExportDesc" xml:space="preserve">
+    <value>// HashKnownHosts yes と同じく、ホストキーの行を |1|… で書き出し、ファイルからサーバー名が読み取れないようにします。@cert-authority / @revoked 行のパターンはそのまま書き出します</value>
+  </data>
+  <data name="KnownHosts_ImportDialogTitle" xml:space="preserve">
+    <value>known_hosts のインポート</value>
+  </data>
+  <data name="KnownHosts_ExportDialogTitle" xml:space="preserve">
+    <value>known_hosts のエクスポート</value>
+  </data>
+  <data name="KnownHosts_ImportFailed" xml:space="preserve">
+    <value>known_hosts をインポートできませんでした：{0}</value>
+  </data>
+  <data name="KnownHosts_ImportTooLarge" xml:space="preserve">
+    <value>ファイルが 16 MB を超えています。known_hosts ではない可能性があります。</value>
+  </data>
+  <data name="KnownHosts_ImportDone" xml:space="preserve">
+    <value>ホストキー {0} 件、信頼済み CA {1} 件、失効記録 {2} 件をインポートしました。</value>
+  </data>
+  <data name="KnownHosts_ImportAlready" xml:space="preserve">
+    <value>{0} 件はすでに信頼済みでした。</value>
+  </data>
+  <data name="KnownHosts_ImportConflicts" xml:space="preserve">
+    <value>{0} 件はインポートしませんでした：そのホストでは同じ種類の別のキーがすでに信頼されています。サーバーのキーが本当に変わったのであれば、上の一覧で古い記録を削除してからもう一度インポートしてください。</value>
+  </data>
+  <data name="KnownHosts_ImportRevokedSkipped" xml:space="preserve">
+    <value>{0} 件はインポートしませんでした：そのキーは失効しています（@revoked）。</value>
+  </data>
+  <data name="KnownHosts_ImportHashedUnmatched" xml:space="preserve">
+    <value>ハッシュ化されたホスト名（|1|…）のうち {0} 件は、保存済みの接続にも信頼済みホストにも一致せず、どのホストのものか判別できません。</value>
+  </data>
+  <data name="KnownHosts_ImportWildcards" xml:space="preserve">
+    <value>ワイルドカードを含むホストパターンの行 {0} 件をスキップしました：ホストキーは特定のホストに対してのみ信頼できます。</value>
+  </data>
+  <data name="KnownHosts_ImportUnsupported" xml:space="preserve">
+    <value>{0} 行をスキップしました：未対応のキー種類、壊れた行、またはそのまま記録できないホスト名です。</value>
+  </data>
+  <data name="KnownHosts_ExportDone" xml:space="preserve">
+    <value>ホストキー {0} 件と CA / 失効の行 {1} 件を {2} にエクスポートしました。</value>
+  </data>
+  <data name="KnownHosts_ExportSkipped" xml:space="preserve">
+    <value>{0} 件の記録はフィンガープリントしか保存されていないためエクスポートできませんでした。次にそのホストへ接続したときに補完されます。</value>
+  </data>
+  <data name="KnownHosts_ExportFailed" xml:space="preserve">
+    <value>known_hosts をエクスポートできませんでした：{0}</value>
+  </data>
+  <data name="HostCa_Section" xml:space="preserve">
+    <value>信頼済みホスト CA</value>
+  </data>
+  <data name="HostCa_SectionDesc" xml:space="preserve">
+    <value>// これらの CA が署名したホスト証明書は、ホスト名がパターンに一致すれば一台ずつ確認せずに信頼します。CA の管理対象のホストが有効な証明書のないキーを提示した場合は、初回確認に戻らず拒否します。失効したキー（@revoked）もここに表示され、常に拒否されます</value>
+  </data>
+  <data name="HostCa_Empty" xml:space="preserve">
+    <value>信頼済みホスト CA はまだありません</value>
+  </data>
+  <data name="HostCa_KindAuthority" xml:space="preserve">
+    <value>信頼済み CA</value>
+  </data>
+  <data name="HostCa_KindRevoked" xml:space="preserve">
+    <value>失効</value>
+  </data>
+  <data name="HostCa_AddTitle" xml:space="preserve">
+    <value>信頼済みホスト CA を追加</value>
+  </data>
+  <data name="HostCa_PatternsDesc" xml:space="preserve">
+    <value>// ホスト名パターン（カンマ区切り）：* と ? はワイルドカード、! は除外、22 以外のポートは [host]:port（known_hosts のホスト欄と同じ）</value>
+  </data>
+  <data name="HostCa_KeyDesc" xml:space="preserve">
+    <value>// CA の公開鍵の行（CA の .pub ファイルの内容）、または known_hosts からコピーした @cert-authority / @revoked の行全体</value>
+  </data>
+  <data name="HostCa_CommentPlaceholder" xml:space="preserve">
+    <value>メモ（任意）</value>
+  </data>
+  <data name="HostCa_Add" xml:space="preserve">
+    <value>追加</value>
+  </data>
+  <data name="HostCa_Added" xml:space="preserve">
+    <value>{0} の信頼済みホスト CA を追加しました。</value>
+  </data>
+  <data name="HostCa_RevokedAdded" xml:space="preserve">
+    <value>{0} の失効記録を追加しました。</value>
+  </data>
+  <data name="HostCa_ErrPatternsEmpty" xml:space="preserve">
+    <value>ホスト名パターンを一つ以上入力してください。</value>
+  </data>
+  <data name="HostCa_ErrPatternInvalid" xml:space="preserve">
+    <value>ホスト名パターン「{0}」が正しくありません：空白や # は使えず、@ や | で始めることもできません。22 以外のポートは [host]:port と書きます。</value>
+  </data>
+  <data name="HostCa_ErrPatternsOnlyNegated" xml:space="preserve">
+    <value>すべてが除外パターン（!）のため、どのホストにも一致しません。</value>
+  </data>
+  <data name="HostCa_ErrKeyInvalid" xml:space="preserve">
+    <value>有効な OpenSSH 公開鍵の行（種類 base64 [コメント]）でも、@cert-authority / @revoked の行でもありません。</value>
+  </data>
+  <data name="HostCa_ErrKeyIsCertificate" xml:space="preserve">
+    <value>CA の公開鍵そのものを証明書にすることはできません。</value>
+  </data>
+  <data name="HostCa_ErrRsaTooShort" xml:space="preserve">
+    <value>RSA の CA キーは 2048 ビット以上必要ですが、このキーは {0} ビットです。</value>
+  </data>
+  <data name="HostCa_ErrDuplicate" xml:space="preserve">
+    <value>同じパターンでこの CA はすでに信頼されています。</value>
   </data>
   <data name="SetSecurity_OpenAuditLog" xml:space="preserve">
     <value>表示</value>

@@ -181,6 +181,21 @@
                          TextWrapping="Wrap" />
             </Grid>
 
+            <!-- 出示的是主机证书、却没有受信 CA 为它担保:问的仍是证书里那把钥,这里摆出签发 CA 的指纹,
+                 并说明把它加进受信主机 CA 之后同一个 CA 签的主机就不必逐台确认。不是证书时整行不显示。 -->
+            <Grid ColumnDefinitions="100,*" IsVisible="{Binding HasCertificateAuthority}">
+              <TextBlock Grid.Column="0" Classes="info-label" Text="{loc:Localize HostKeyCertificateCa}" />
+              <StackPanel Grid.Column="1" Spacing="4">
+                <TextBlock Classes="mono"
+                           Text="{Binding CertificateAuthority}"
+                           TextWrapping="Wrap" />
+                <TextBlock Foreground="{DynamicResource VelaTextTertiary}"
+                           FontSize="{DynamicResource VelaFontSize11}"
+                           Text="{loc:Localize HostKeyCertificateCaHint}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
+
           </StackPanel>
         </Border>
 

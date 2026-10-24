@@ -430,10 +430,19 @@ public class SshSessionFeaturesTests
         public Task<IReadOnlyList<KnownHost>> FindKnownHostKeysAsync(string host, int port, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task TrustHostKeyAsync(string host, int port, string keyType, string fingerprint, CancellationToken cancellationToken = default) =>
+        public Task TrustHostKeyAsync(string host, int port, string keyType, string fingerprint, string? publicKey = null, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         public Task RemoveKnownHostAsync(string host, int port, string? keyType = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<KnownHostMarker>> GetMarkersAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<bool> AddMarkerAsync(KnownHostMarker marker, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task RemoveMarkerAsync(string id, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 

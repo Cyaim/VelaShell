@@ -2,9 +2,11 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using VelaShell.Core.Data;
 using VelaShell.Core.Recording;
+using VelaShell.Core.Resources;
 using VelaShell.Services;
 using VelaShell.ViewModels;
 
@@ -82,4 +84,45 @@ public partial class SecurityAuditPage : UserControl
             window.Show();
         }
     }
+
+    /// <summary>导入一份 OpenSSH <c>known_hosts</c>:选择框默认打开 <c>~/.ssh</c>。</summary>
+    private void ImportKnownHosts_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (DataContext is not SettingsViewModel { HostTrust: { } trust } || TopLevel.GetTopLevel(this) is not { } top)
+        {
+            return;
+        }
+        IReadOnlyList<IStorageFile> files = await top.StorageProvider.OpenFilePickerAsync(new()
+        {
+            Title = Strings.Get("KnownHosts_ImportDialogTitle"),
+            AllowMultiple = false,
+            SuggestedStartLocation = await StorageDefaults.FolderAsync(top, Path.GetDirectoryName(HostTrustViewModel.DefaultKnownHostsPath))
+                                     ?? await StorageDefaults.HomeAsync(top),
+        });
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { Length: > 0 } path)
+        {
+            return; // 用户取消了。
+        }
+        await trust.ImportFromFileAsync(path);
+    });
+
+    /// <summary>导出成 OpenSSH 格式的 <c>known_hosts</c>。默认存到下载目录:直接覆盖 <c>~/.ssh/known_hosts</c> 会冲掉命令行 ssh 记的那些。</summary>
+    private void ExportKnownHosts_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (DataContext is not SettingsViewModel { HostTrust: { } trust } || TopLevel.GetTopLevel(this) is not { } top)
+        {
+            return;
+        }
+        IStorageFile? file = await top.StorageProvider.SaveFilePickerAsync(new()
+        {
+            Title = Strings.Get("KnownHosts_ExportDialogTitle"),
+            SuggestedFileName = "known_hosts",
+            SuggestedStartLocation = await StorageDefaults.DownloadsAsync(top),
+        });
+        if (file?.TryGetLocalPath() is not { Length: > 0 } path)
+        {
+            return; // 用户取消了。
+        }
+        await trust.ExportToFileAsync(path);
+    });
 }

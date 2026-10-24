@@ -1009,6 +1009,12 @@
   <data name="HostKeyKnownFingerprint" xml:space="preserve">
     <value>Recorded</value>
   </data>
+  <data name="HostKeyCertificateCa" xml:space="preserve">
+    <value>Certificate CA</value>
+  </data>
+  <data name="HostKeyCertificateCaHint" xml:space="preserve">
+    <value>The server presented a host certificate, but no trusted host CA covers this host, so only the key inside it is checked. After verifying this CA, add it under Settings → Security &amp; Audit → Trusted host CAs; hosts it signs will then no longer need confirming one by one.</value>
+  </data>
   <data name="HostKeyRandomArt" xml:space="preserve">
     <value>Fingerprint art</value>
   </data>
@@ -1937,6 +1943,36 @@ Paste anyway?</value>
   </data>
   <data name="Msg_HostKeyRejected" xml:space="preserve">
     <value>Host key {1} of {0} was not trusted; the connection was aborted.</value>
+  </data>
+  <data name="Msg_HostKeyRevoked" xml:space="preserve">
+    <value>The host key {1} presented by {0} has been revoked (@revoked under Settings → Security &amp; Audit → Trusted host CAs). Do not connect.</value>
+  </data>
+  <data name="Msg_HostCertInvalid" xml:space="preserve">
+    <value>{0} presented a host certificate signed by the trusted CA {2}, but the certificate is not valid: {1} This host is managed by a CA, so VelaShell does not fall back to asking whether to trust the key. Ask the administrator to re-issue the host certificate.</value>
+  </data>
+  <data name="Msg_HostCaUnvouched" xml:space="preserve">
+    <value>{0} is covered by a trusted host CA ({1}), but the key it presented ({2}) is not vouched for by that CA, so the connection was rejected without asking. If this host really has no certificate, verify the fingerprint and import its key from known_hosts, or adjust the trusted host CAs under Settings → Security &amp; Audit.</value>
+  </data>
+  <data name="HostCert_ProblemNotHost" xml:space="preserve">
+    <value>it is a user certificate, not a host certificate.</value>
+  </data>
+  <data name="HostCert_ProblemExpired" xml:space="preserve">
+    <value>it expired at {0}.</value>
+  </data>
+  <data name="HostCert_ProblemNotYetValid" xml:space="preserve">
+    <value>it is not valid until {0}.</value>
+  </data>
+  <data name="HostCert_ProblemNoPrincipals" xml:space="preserve">
+    <value>it lists no host names, which would make it valid for every host.</value>
+  </data>
+  <data name="HostCert_ProblemPrincipals" xml:space="preserve">
+    <value>it was issued for {1}, not for {0}.</value>
+  </data>
+  <data name="HostCert_ProblemCriticalOptions" xml:space="preserve">
+    <value>it carries critical options that host certificates do not define: {0}.</value>
+  </data>
+  <data name="HostCert_ProblemSignature" xml:space="preserve">
+    <value>the CA signature does not verify (the certificate was altered, signed with SHA-1 ssh-rsa, or the CA key is too weak).</value>
   </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>Auto-reconnect to {0} stopped: host key {1} needs your confirmation, and auto-reconnect never asks. Reconnect manually to check the fingerprint.</value>
@@ -3271,6 +3307,123 @@ Keep it somewhere only you control and delete it when you are done; do not put i
   </data>
   <data name="SetSecurity_NoKnownHosts" xml:space="preserve">
     <value>No trusted hosts yet</value>
+  </data>
+  <data name="KnownHosts_InteropLabel" xml:space="preserve">
+    <value>OpenSSH known_hosts</value>
+  </data>
+  <data name="KnownHosts_InteropDesc" xml:space="preserve">
+    <value>// Import a known_hosts file to share one trust baseline with the command-line ssh (@cert-authority and @revoked lines go to Trusted host CAs below), or export the trusted hosts in OpenSSH format</value>
+  </data>
+  <data name="KnownHosts_Import" xml:space="preserve">
+    <value>Import…</value>
+  </data>
+  <data name="KnownHosts_Export" xml:space="preserve">
+    <value>Export…</value>
+  </data>
+  <data name="KnownHosts_HashOnExport" xml:space="preserve">
+    <value>Hash host names on export</value>
+  </data>
+  <data name="KnownHosts_HashOnExportDesc" xml:space="preserve">
+    <value>// Like HashKnownHosts yes: host key lines are written as |1|… so the file does not list your servers; patterns on @cert-authority / @revoked lines are written as-is</value>
+  </data>
+  <data name="KnownHosts_ImportDialogTitle" xml:space="preserve">
+    <value>Import known_hosts</value>
+  </data>
+  <data name="KnownHosts_ExportDialogTitle" xml:space="preserve">
+    <value>Export known_hosts</value>
+  </data>
+  <data name="KnownHosts_ImportFailed" xml:space="preserve">
+    <value>Could not import known_hosts: {0}</value>
+  </data>
+  <data name="KnownHosts_ImportTooLarge" xml:space="preserve">
+    <value>The file is larger than 16 MB; it is probably not a known_hosts file.</value>
+  </data>
+  <data name="KnownHosts_ImportDone" xml:space="preserve">
+    <value>Imported {0} host keys, {1} trusted CAs and {2} revocations.</value>
+  </data>
+  <data name="KnownHosts_ImportAlready" xml:space="preserve">
+    <value>{0} were already trusted.</value>
+  </data>
+  <data name="KnownHosts_ImportConflicts" xml:space="preserve">
+    <value>{0} not imported: that host already trusts a different key of the same type. If the server really changed its key, delete the old entry above and import again.</value>
+  </data>
+  <data name="KnownHosts_ImportRevokedSkipped" xml:space="preserve">
+    <value>{0} not imported: the key is revoked (@revoked).</value>
+  </data>
+  <data name="KnownHosts_ImportHashedUnmatched" xml:space="preserve">
+    <value>{0} hashed host names (|1|…) match none of your saved connections or trusted hosts, so it is unknown which host they belong to.</value>
+  </data>
+  <data name="KnownHosts_ImportWildcards" xml:space="preserve">
+    <value>{0} lines with wildcard host patterns were skipped: a host key can only be trusted for specific hosts.</value>
+  </data>
+  <data name="KnownHosts_ImportUnsupported" xml:space="preserve">
+    <value>{0} lines were skipped: unsupported key type, malformed line, or a host name that cannot be recorded.</value>
+  </data>
+  <data name="KnownHosts_ExportDone" xml:space="preserve">
+    <value>Exported {0} host keys and {1} CA / revocation lines to {2}.</value>
+  </data>
+  <data name="KnownHosts_ExportSkipped" xml:space="preserve">
+    <value>{0} entries were not exported because only their fingerprint is stored; they are filled in the next time you connect to that host.</value>
+  </data>
+  <data name="KnownHosts_ExportFailed" xml:space="preserve">
+    <value>Could not export known_hosts: {0}</value>
+  </data>
+  <data name="HostCa_Section" xml:space="preserve">
+    <value>Trusted host CAs</value>
+  </data>
+  <data name="HostCa_SectionDesc" xml:space="preserve">
+    <value>// Host certificates signed by these CAs are trusted when the host name matches the patterns, without confirming each host. A host covered by a CA that presents a key without a valid certificate is rejected instead of falling back to first-connection confirmation. Revoked keys (@revoked) are listed here too and are always rejected</value>
+  </data>
+  <data name="HostCa_Empty" xml:space="preserve">
+    <value>No trusted host CAs</value>
+  </data>
+  <data name="HostCa_KindAuthority" xml:space="preserve">
+    <value>CA</value>
+  </data>
+  <data name="HostCa_KindRevoked" xml:space="preserve">
+    <value>Revoked</value>
+  </data>
+  <data name="HostCa_AddTitle" xml:space="preserve">
+    <value>Add a trusted host CA</value>
+  </data>
+  <data name="HostCa_PatternsDesc" xml:space="preserve">
+    <value>// Host name patterns, comma-separated: * and ? are wildcards, ! excludes, [host]:port for ports other than 22 (the host column of known_hosts)</value>
+  </data>
+  <data name="HostCa_KeyDesc" xml:space="preserve">
+    <value>// The CA public key line (the CA's .pub file), or a whole @cert-authority / @revoked line copied from known_hosts</value>
+  </data>
+  <data name="HostCa_CommentPlaceholder" xml:space="preserve">
+    <value>Note (optional)</value>
+  </data>
+  <data name="HostCa_Add" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="HostCa_Added" xml:space="preserve">
+    <value>Added a trusted host CA for {0}.</value>
+  </data>
+  <data name="HostCa_RevokedAdded" xml:space="preserve">
+    <value>Added a revocation for {0}.</value>
+  </data>
+  <data name="HostCa_ErrPatternsEmpty" xml:space="preserve">
+    <value>Enter at least one host name pattern.</value>
+  </data>
+  <data name="HostCa_ErrPatternInvalid" xml:space="preserve">
+    <value>The host pattern "{0}" is not valid: no spaces or #, it must not start with @ or |, and ports other than 22 are written as [host]:port.</value>
+  </data>
+  <data name="HostCa_ErrPatternsOnlyNegated" xml:space="preserve">
+    <value>Every pattern is an exclusion (!), so it would match no host.</value>
+  </data>
+  <data name="HostCa_ErrKeyInvalid" xml:space="preserve">
+    <value>Not a valid OpenSSH public key line (type base64 [comment]) or @cert-authority / @revoked line.</value>
+  </data>
+  <data name="HostCa_ErrKeyIsCertificate" xml:space="preserve">
+    <value>A CA key cannot itself be a certificate.</value>
+  </data>
+  <data name="HostCa_ErrRsaTooShort" xml:space="preserve">
+    <value>An RSA CA key must be at least 2048 bits; this one has {0}.</value>
+  </data>
+  <data name="HostCa_ErrDuplicate" xml:space="preserve">
+    <value>This CA is already trusted for the same patterns.</value>
   </data>
   <data name="SetSecurity_OpenAuditLog" xml:space="preserve">
     <value>Open</value>

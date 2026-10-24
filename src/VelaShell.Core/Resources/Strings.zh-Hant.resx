@@ -1074,6 +1074,12 @@
   <data name="HostKeyKnownFingerprint" xml:space="preserve">
     <value>已記錄指紋</value>
   </data>
+  <data name="HostKeyCertificateCa" xml:space="preserve">
+    <value>憑證簽發 CA</value>
+  </data>
+  <data name="HostKeyCertificateCaHint" xml:space="preserve">
+    <value>伺服器出示了主機憑證，但沒有受信主機 CA 管這台主機，所以只按憑證裡的金鑰核對。核實這個 CA 之後，可到 設定 → 安全與稽核 → 受信主機 CA 新增它，此後它簽發的主機不必再逐台確認。</value>
+  </data>
   <data name="HostKeyRandomArt" xml:space="preserve">
     <value>指紋圖</value>
   </data>
@@ -2046,6 +2052,36 @@
   </data>
   <data name="Msg_HostKeyRejected" xml:space="preserve">
     <value>未信任 {0} 的主機金鑰 {1}，連線已中止。</value>
+  </data>
+  <data name="Msg_HostKeyRevoked" xml:space="preserve">
+    <value>{0} 出示的主機金鑰 {1} 已被撤銷（設定 → 安全與稽核 → 受信主機 CA 裡的 @revoked 記錄），連線已中止。不要連線這台主機。</value>
+  </data>
+  <data name="Msg_HostCertInvalid" xml:space="preserve">
+    <value>{0} 出示了受信 CA {2} 簽發的主機憑證，但憑證不合格：{1}這台主機由 CA 管理，不會退回去按新主機詢問是否信任。請聯絡管理員重新簽發主機憑證。</value>
+  </data>
+  <data name="Msg_HostCaUnvouched" xml:space="preserve">
+    <value>{0} 在受信主機 CA（{1}）的管理範圍內，但它出示的金鑰（{2}）沒有這個 CA 的擔保，連線已拒絕，不會按新主機詢問。若這台主機確實沒有憑證，請核對指紋後從 known_hosts 匯入它的金鑰，或到 設定 → 安全與稽核 調整受信主機 CA。</value>
+  </data>
+  <data name="HostCert_ProblemNotHost" xml:space="preserve">
+    <value>這是一張使用者憑證，不是主機憑證。</value>
+  </data>
+  <data name="HostCert_ProblemExpired" xml:space="preserve">
+    <value>憑證已於 {0} 過期。</value>
+  </data>
+  <data name="HostCert_ProblemNotYetValid" xml:space="preserve">
+    <value>憑證要到 {0} 才生效。</value>
+  </data>
+  <data name="HostCert_ProblemNoPrincipals" xml:space="preserve">
+    <value>憑證沒有列出任何主機名稱，那等於對所有主機有效。</value>
+  </data>
+  <data name="HostCert_ProblemPrincipals" xml:space="preserve">
+    <value>憑證簽給的是 {1}，不含 {0}。</value>
+  </data>
+  <data name="HostCert_ProblemCriticalOptions" xml:space="preserve">
+    <value>憑證帶著主機憑證不認識的關鍵選項：{0}。</value>
+  </data>
+  <data name="HostCert_ProblemSignature" xml:space="preserve">
+    <value>CA 簽章驗證不過（憑證被改過、用的是 SHA-1 的 ssh-rsa 簽章，或者 CA 金鑰強度不夠）。</value>
   </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>已停止自動重新連線 {0}：主機金鑰 {1} 需要你確認，而自動重新連線不會彈出視窗詢問。請手動重新連線，在彈出的視窗裡核對指紋。</value>
@@ -3380,6 +3416,123 @@
   </data>
   <data name="SetSecurity_NoKnownHosts" xml:space="preserve">
     <value>尚無已信任的主機</value>
+  </data>
+  <data name="KnownHosts_InteropLabel" xml:space="preserve">
+    <value>OpenSSH known_hosts</value>
+  </data>
+  <data name="KnownHosts_InteropDesc" xml:space="preserve">
+    <value>// 匯入 known_hosts，與命令列 ssh 共用一份信任基準（@cert-authority 與 @revoked 行進下面的受信主機 CA）；或把已信任主機匯出成 OpenSSH 格式</value>
+  </data>
+  <data name="KnownHosts_Import" xml:space="preserve">
+    <value>匯入…</value>
+  </data>
+  <data name="KnownHosts_Export" xml:space="preserve">
+    <value>匯出…</value>
+  </data>
+  <data name="KnownHosts_HashOnExport" xml:space="preserve">
+    <value>匯出時雜湊主機名稱</value>
+  </data>
+  <data name="KnownHosts_HashOnExportDesc" xml:space="preserve">
+    <value>// 同 HashKnownHosts yes：主機金鑰行寫成 |1|…，檔案裡看不出有哪些伺服器；@cert-authority / @revoked 行的模式原樣寫出</value>
+  </data>
+  <data name="KnownHosts_ImportDialogTitle" xml:space="preserve">
+    <value>匯入 known_hosts</value>
+  </data>
+  <data name="KnownHosts_ExportDialogTitle" xml:space="preserve">
+    <value>匯出 known_hosts</value>
+  </data>
+  <data name="KnownHosts_ImportFailed" xml:space="preserve">
+    <value>匯入 known_hosts 失敗：{0}</value>
+  </data>
+  <data name="KnownHosts_ImportTooLarge" xml:space="preserve">
+    <value>檔案超過 16 MB，多半不是 known_hosts。</value>
+  </data>
+  <data name="KnownHosts_ImportDone" xml:space="preserve">
+    <value>已匯入 {0} 把主機金鑰、{1} 個受信 CA、{2} 筆撤銷記錄。</value>
+  </data>
+  <data name="KnownHosts_ImportAlready" xml:space="preserve">
+    <value>{0} 筆已經在信任庫裡。</value>
+  </data>
+  <data name="KnownHosts_ImportConflicts" xml:space="preserve">
+    <value>{0} 筆沒有匯入：那台主機已經信任了同一類型的另一把金鑰。若伺服器確實換了金鑰，先在上面的清單裡刪掉舊的那筆再匯入。</value>
+  </data>
+  <data name="KnownHosts_ImportRevokedSkipped" xml:space="preserve">
+    <value>{0} 筆沒有匯入：那把金鑰已被撤銷（@revoked）。</value>
+  </data>
+  <data name="KnownHosts_ImportHashedUnmatched" xml:space="preserve">
+    <value>{0} 筆雜湊過的主機名稱（|1|…）對不上任何已儲存的連線或已信任的主機，認不出是哪台。</value>
+  </data>
+  <data name="KnownHosts_ImportWildcards" xml:space="preserve">
+    <value>{0} 行帶萬用字元的主機模式略過了：主機金鑰只能按具體的主機信任。</value>
+  </data>
+  <data name="KnownHosts_ImportUnsupported" xml:space="preserve">
+    <value>{0} 行略過了：本版不支援的金鑰類型、寫壞的行，或主機名稱不能原樣記下。</value>
+  </data>
+  <data name="KnownHosts_ExportDone" xml:space="preserve">
+    <value>已把 {0} 把主機金鑰與 {1} 筆 CA / 撤銷記錄匯出到 {2}。</value>
+  </data>
+  <data name="KnownHosts_ExportSkipped" xml:space="preserve">
+    <value>{0} 筆記錄只存了指紋、沒有公鑰原文，沒能匯出；下次連上那台主機時會自動補上。</value>
+  </data>
+  <data name="KnownHosts_ExportFailed" xml:space="preserve">
+    <value>匯出 known_hosts 失敗：{0}</value>
+  </data>
+  <data name="HostCa_Section" xml:space="preserve">
+    <value>受信主機 CA</value>
+  </data>
+  <data name="HostCa_SectionDesc" xml:space="preserve">
+    <value>// 這些 CA 簽發的主機憑證在主機名稱對上模式時直接受信，不必逐台確認；歸 CA 管的主機出示沒有合格憑證的金鑰時直接拒絕，不退回首次確認。撤銷的金鑰（@revoked）也列在這裡，一律拒絕</value>
+  </data>
+  <data name="HostCa_Empty" xml:space="preserve">
+    <value>尚無受信主機 CA</value>
+  </data>
+  <data name="HostCa_KindAuthority" xml:space="preserve">
+    <value>受信 CA</value>
+  </data>
+  <data name="HostCa_KindRevoked" xml:space="preserve">
+    <value>已撤銷</value>
+  </data>
+  <data name="HostCa_AddTitle" xml:space="preserve">
+    <value>新增受信主機 CA</value>
+  </data>
+  <data name="HostCa_PatternsDesc" xml:space="preserve">
+    <value>// 主機名稱模式，逗號分隔：* 與 ? 是萬用字元，! 表示排除，非 22 連接埠寫成 [host]:port（即 known_hosts 的主機那一欄）</value>
+  </data>
+  <data name="HostCa_KeyDesc" xml:space="preserve">
+    <value>// CA 的公鑰行（CA 的 .pub 檔案內容），或從 known_hosts 整行複製來的 @cert-authority / @revoked 行</value>
+  </data>
+  <data name="HostCa_CommentPlaceholder" xml:space="preserve">
+    <value>備註（選填）</value>
+  </data>
+  <data name="HostCa_Add" xml:space="preserve">
+    <value>新增</value>
+  </data>
+  <data name="HostCa_Added" xml:space="preserve">
+    <value>已為 {0} 新增受信主機 CA。</value>
+  </data>
+  <data name="HostCa_RevokedAdded" xml:space="preserve">
+    <value>已為 {0} 新增撤銷記錄。</value>
+  </data>
+  <data name="HostCa_ErrPatternsEmpty" xml:space="preserve">
+    <value>至少填一個主機名稱模式。</value>
+  </data>
+  <data name="HostCa_ErrPatternInvalid" xml:space="preserve">
+    <value>主機名稱模式「{0}」寫得不對：不能有空白與 #，不能以 @ 或 | 開頭，非 22 連接埠要寫成 [host]:port。</value>
+  </data>
+  <data name="HostCa_ErrPatternsOnlyNegated" xml:space="preserve">
+    <value>全是排除模式（!），一台主機也對不上。</value>
+  </data>
+  <data name="HostCa_ErrKeyInvalid" xml:space="preserve">
+    <value>不是有效的 OpenSSH 公鑰行（類型 base64 [註解]），也不是 @cert-authority / @revoked 行。</value>
+  </data>
+  <data name="HostCa_ErrKeyIsCertificate" xml:space="preserve">
+    <value>CA 公鑰本身不能是一張憑證。</value>
+  </data>
+  <data name="HostCa_ErrRsaTooShort" xml:space="preserve">
+    <value>RSA 的 CA 公鑰至少要 2048 位元，這一把只有 {0} 位元。</value>
+  </data>
+  <data name="HostCa_ErrDuplicate" xml:space="preserve">
+    <value>同樣的模式已經信任了這個 CA。</value>
   </data>
   <data name="SetSecurity_OpenAuditLog" xml:space="preserve">
     <value>檢視</value>

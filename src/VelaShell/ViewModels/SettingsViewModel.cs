@@ -250,6 +250,7 @@ public partial class SettingsViewModel : ReactiveObject
             );
         Sync = gistSyncService is null ? null : new SyncViewModel(gistSyncService);
         RemoveKnownHostCommand = ReactiveCommand.CreateFromTask<KnownHost>(RemoveKnownHostAsync);
+        HostTrust = new(hostKeyService, sessionRepository, RefreshKnownHostsAsync);
         ClearTrustedLaunchTargetsCommand = ReactiveCommand.Create(() =>
         {
             Security.TrustedExternalLaunchTargets.Clear();
@@ -563,6 +564,9 @@ public partial class SettingsViewModel : ReactiveObject
 
     /// <summary>删除一条已信任主机指纹;下次连接该主机将重新执行首次指纹流程。</summary>
     public ReactiveCommand<KnownHost, RxVoid> RemoveKnownHostCommand { get; }
+
+    /// <summary>受信主机 CA 与吊销记录、known_hosts 的导入导出(与 OpenSSH 互通)。</summary>
+    public HostTrustViewModel HostTrust { get; }
 
     /// <summary>
     /// 外部登录里被用户勾过「不再询问」的目标数量(<c>scheme://user@host:port</c>)。
@@ -2032,6 +2036,7 @@ public partial class SettingsViewModel : ReactiveObject
         ApplyToViewModel(_loaded);
         this.RaisePropertyChanged(nameof(Keys)); // 列表就位后重新评估选中项
         await RefreshKnownHostsAsync();
+        await HostTrust.RefreshAsync();
         await SharedCredentials.RefreshAsync();
         if (Snippets is not null)
         {
