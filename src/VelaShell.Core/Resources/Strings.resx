@@ -3815,6 +3815,22 @@ Keep it somewhere only you control and delete it when you are done; do not put i
   <data name="Gutter_Blank" xml:space="preserve">
     <value>Spacing</value>
   </data>
+  <data name="Gutter_CopyCommand" xml:space="preserve">
+    <value>Copy this command</value>
+  </data>
+  <data name="Gutter_RerunCommand" xml:space="preserve">
+    <value>Rerun this command</value>
+  </data>
+  <data name="Gutter_RerunMultilineTitle" xml:space="preserve">
+    <value>Rerun a multi-line command</value>
+  </data>
+  <data name="Gutter_RerunMultilineBody" xml:space="preserve">
+    <value>This command has {0} lines, and this terminal has not enabled bracketed paste, so each line will run as soon as it arrives:
+
+{1}
+
+Rerun anyway?</value>
+  </data>
   <data name="SetTerm_ScrollOnOutputDesc" xml:space="preserve">
     <value>// Jump to the bottom on new output while viewing history; off keeps the current position</value>
   </data>

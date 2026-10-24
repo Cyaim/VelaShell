@@ -3572,6 +3572,22 @@
   <data name="Gutter_Blank" xml:space="preserve">
     <value>공백</value>
   </data>
+  <data name="Gutter_CopyCommand" xml:space="preserve">
+    <value>이 명령 복사</value>
+  </data>
+  <data name="Gutter_RerunCommand" xml:space="preserve">
+    <value>이 명령 다시 실행</value>
+  </data>
+  <data name="Gutter_RerunMultilineTitle" xml:space="preserve">
+    <value>여러 줄 명령 다시 실행</value>
+  </data>
+  <data name="Gutter_RerunMultilineBody" xml:space="preserve">
+    <value>이 명령은 {0}줄이며, 이 터미널은 괄호 붙여넣기(bracketed paste)를 사용하지 않으므로 각 줄이 도착하는 즉시 실행됩니다:
+
+{1}
+
+그래도 다시 실행할까요?</value>
+  </data>
   <data name="SetTerm_ScrollOnOutputDesc" xml:space="preserve">
     <value>// 기록을 보는 중 새 출력이 있으면 맨 아래로 이동, 끄면 현재 위치 유지</value>
   </data>

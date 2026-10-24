@@ -3924,6 +3924,22 @@
   <data name="Gutter_Blank" xml:space="preserve">
     <value>空白</value>
   </data>
+  <data name="Gutter_CopyCommand" xml:space="preserve">
+    <value>复制这条命令</value>
+  </data>
+  <data name="Gutter_RerunCommand" xml:space="preserve">
+    <value>重跑这条命令</value>
+  </data>
+  <data name="Gutter_RerunMultilineTitle" xml:space="preserve">
+    <value>重跑多行命令</value>
+  </data>
+  <data name="Gutter_RerunMultilineBody" xml:space="preserve">
+    <value>这条命令有 {0} 行,而这个终端没有开启括号粘贴,发过去每一行都会被立即执行:
+
+{1}
+
+仍要重跑吗?</value>
+  </data>
   <data name="SetTerm_ScrollOnOutputDesc" xml:space="preserve">
     <value>// 翻看历史时有新输出立即拉回底部;关闭则停留在当前位置</value>
   </data>

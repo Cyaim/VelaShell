@@ -55,6 +55,13 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         // OSC 7:shell 上报当前工作目录 → 供「文件浏览器跟随终端目录」用。仅在 cwd 真正变化时向外播报。
         TerminalEmulator.WorkingDirectoryChanged += OnEmulatorWorkingDirectoryChanged;
 
+        // 侧栏菜单的「重跑」(OSC 133 命令块):检查都在控件里做完了,发送交给这里 ——
+        // 同步输入的转发与「程序注入」两个开关都在本视图模型上。
+        if (TerminalEmulator is VelaTerminalControl rerunSource)
+        {
+            rerunSource.CommandRerunRequested += command => TryRerunCommand(command);
+        }
+
         // 工具栏快捷操作:拆除传输但保留标签,
         // 或请求宿主就地重连(#19 流程)。
         DisconnectCommand = ReactiveCommand.CreateFromTask(
@@ -757,7 +764,25 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     /// 发之前问不问由调用方决定(见 <see cref="MainWindowViewModel" /> 的多行确认)。
     /// </remarks>
     /// <returns>文本已发送时为 true;终端未连接或命令为空时为 false。</returns>
-    public bool TrySendCommandText(string command)
+    public bool TrySendCommandText(string command) => SendCommand(command, submit: false);
+
+    /// <summary>
+    /// 「重跑」一条 OSC 133 命令块里的命令:与快捷命令同一条发送路径,末尾再按一次回车。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 能不能重跑(对端停在空提示符上、上一条命令已结束、不在全屏程序里)、多行命令要不要先问,
+    /// 都由终端控件在发起前判定过(<c>VelaTerminalControl.RerunCommandAsync</c>);这里只管发。
+    /// </para>
+    /// <para>
+    /// <b>只发给本标签</b>,同步输入不转发:重跑点的是这一个终端历史里的一条命令,频道里别的标签
+    /// 此刻停在什么状态、该不该跑它,这里一概不知 —— 与快捷命令关掉转发的理由一样。
+    /// </para>
+    /// </remarks>
+    /// <returns>已发送时为 true;终端未连接或命令为空时为 false。</returns>
+    public bool TryRerunCommand(string command) => SendCommand(command, submit: true);
+
+    private bool SendCommand(string command, bool submit)
     {
         if (!IsConnected || string.IsNullOrWhiteSpace(command))
         {
@@ -784,6 +809,12 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
                 // 按会话字符集编码:快捷命令里可能带中文(路径、grep 的关键字),
                 // 写死 UTF-8 的话在 GBK 主机上送过去就是乱码。
                 TerminalEmulator.WriteInput(TerminalEmulator.SessionEncoding.GetBytes(payload));
+            }
+            if (submit)
+            {
+                // 回车按终端当前模式编(远端开了换行模式 LNM 时是 CR LF),不写死 \r。
+                // 走同一条键入通道,命令补全的行跟踪照常看到「提交了一行」、记进历史。
+                TerminalEmulator.WriteKeyInput(Avalonia.Input.Key.Enter, Avalonia.Input.KeyModifiers.None);
             }
         }
         finally

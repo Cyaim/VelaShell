@@ -479,6 +479,7 @@ public partial class MainWindow : Window
             vm.MultilinePasteConfirmer = ConfirmMultilinePasteAsync;
             vm.QuickCommandVariablePrompt = (name, template, initial) => QuickCommandVariablesPrompt.ShowAsync(this, name, template, initial);
             vm.QuickCommandMultilineConfirmer = ConfirmQuickCommandMultilineAsync;
+            vm.CommandRerunConfirmer = ConfirmCommandRerunMultilineAsync;
             vm.ExportBufferRequested += (_, _) => _ = ExportTerminalBufferAsync(vm);
             // 工具菜单“连接诊断”:对当前标签的配置打开诊断中心(设计 RGXg1)。
             vm.DiagnosticsRequested += profile =>
@@ -1806,6 +1807,25 @@ public partial class MainWindow : Window
             this,
             Strings.Get("Main_PasteMultilineTitle"),
             Strings.Format("Main_PasteMultilineBody", lines.Length, preview)
+        );
+    }
+
+    /// <summary>
+    /// 侧栏菜单「重跑」一条多行命令、而对端没开括号粘贴:每一行都会当场执行,预览前几行再问一句。
+    /// </summary>
+    private Task<bool> ConfirmCommandRerunMultilineAsync(string text)
+    {
+        string[] lines = text.Split('\n');
+        string preview = string.Join('\n', lines.Take(5));
+        if (lines.Length > 5)
+        {
+            preview += "\n…";
+        }
+        return MessageDialog.ConfirmAsync(
+            this,
+            Strings.Get("Gutter_RerunMultilineTitle"),
+            Strings.Format("Gutter_RerunMultilineBody", lines.Length, preview),
+            Strings.Get("Gutter_RerunCommand")
         );
     }
 

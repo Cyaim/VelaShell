@@ -3924,6 +3924,22 @@
   <data name="Gutter_Blank" xml:space="preserve">
     <value>空白</value>
   </data>
+  <data name="Gutter_CopyCommand" xml:space="preserve">
+    <value>複製這條命令</value>
+  </data>
+  <data name="Gutter_RerunCommand" xml:space="preserve">
+    <value>重新執行這條命令</value>
+  </data>
+  <data name="Gutter_RerunMultilineTitle" xml:space="preserve">
+    <value>重新執行多行命令</value>
+  </data>
+  <data name="Gutter_RerunMultilineBody" xml:space="preserve">
+    <value>這條命令有 {0} 行,而這個終端沒有開啟括號貼上,送過去每一行都會被立即執行:
+
+{1}
+
+仍要重新執行嗎?</value>
+  </data>
   <data name="SetTerm_ScrollOnOutputDesc" xml:space="preserve">
     <value>// 檢視歷史時有新輸出立即捲回底部;關閉則停留在目前位置</value>
   </data>

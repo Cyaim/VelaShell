@@ -47,6 +47,12 @@ public static class ShellIntegration
     /// CI 的 macOS runner 也是这么翻车的:<c>ShellIntegrationShellTests</c> 现在改用
     /// <c>BashProbe.FindSupportingPs0</c>,找不到 4.4 就如实跳过而不是假装通过。
     /// </para>
+    /// <para>
+    /// <b>续行提示符 <c>PS2</c> 末尾也发一个 <c>B</c>。</b>「复制这条命令」「重跑」把命令从 B 切到 C,
+    /// 多行命令(<c>for</c> 循环、here-doc)的续行前面还画着 <c>PS2</c>(默认 <c>&gt; </c>)。
+    /// 续行不标的话分不清哪一截是提示符:重跑时把 <c>&gt; important.txt</c> 原样送回去,
+    /// 就成了「把 important.txt 截成空文件」。标了,终端就从每个续行自己的 B 切起。
+    /// </para>
     /// </remarks>
     public const string Bash =
         """
@@ -57,6 +63,7 @@ public static class ShellIntegration
           *'133;A'*) ;;
           *) PS1='\[\033]133;D;${__vela_osc133_status:-0}\033\\\033]133;A\033\\\]'"${PS1-}"'\[\033]133;B\033\\\]' ;;
         esac
+        case "${PS2-}" in *'133;B'*) ;; *) PS2="${PS2-> }"'\[\033]133;B\033\\\]' ;; esac
         __vela_osc133_status_capture() { __vela_osc133_status=$?; }
         case "${PROMPT_COMMAND-}" in
           *__vela_osc133_status_capture*) ;;
@@ -66,18 +73,33 @@ public static class ShellIntegration
 
     /// <summary>zsh(用其原生的 <c>precmd</c> / <c>preexec</c> 钩子,不必碰 <c>PS0</c>)。</summary>
     /// <remarks>
+    /// <para>
     /// zsh 自带 <c>add-zsh-hook</c>,多个钩子各自独立注册、互不覆盖 —— 没有 bash 那边
     /// 「一个 <c>PROMPT_COMMAND</c> 字符串你争我抢」的问题,所以这段简单得多。
-    /// <c>B</c>(提示符结束)接在 <c>PS1</c> 末尾。
+    /// <c>D</c> 由 <c>precmd</c> 发,<c>C</c> 由 <c>preexec</c> 发。
+    /// </para>
+    /// <para>
+    /// <b><c>A</c> 必须写进 <c>PS1</c>,不能由 <c>precmd</c> 打。</b>zsh 画提示符之前先补
+    /// PROMPT_SP(上一条输出没换行时的那个 <c>%</c>),再回到行首 <c>ESC[J</c> 把这一行擦掉 ——
+    /// 而 <c>precmd</c> 正好跑在两者之间。<c>precmd</c> 打的 A 落在随即被擦空的那一行上,
+    /// 终端按「整行擦空即作废」把标记一起丢了,zsh 下命令块一个都立不起来(真 PTY 上验出来的,
+    /// 见 <c>Osc133CommandInputDockerTests</c>)。写进 <c>PS1</c> 开头就排在擦除之后。
+    /// </para>
+    /// <para>
+    /// <c>B</c> 接在 <c>PS1</c> 末尾,续行提示符 <c>PS2</c> 末尾也接一个(理由同 bash 那段)。
+    /// ST 里的反斜杠在 <c>$'…'</c> 里只写一层(<c>\\</c>):zsh 的提示符展开不再吃反斜杠,
+    /// 写两层就会在每条提示符后面多打出一个看得见的 <c>\</c>,zle 算的光标列也跟着差一格。
+    /// </para>
     /// </remarks>
     public const string Zsh =
         """
         # VelaShell shell integration (OSC 133)
         autoload -Uz add-zsh-hook
-        __vela_osc133_precmd()  { printf '\033]133;D;%s\033\\\033]133;A\033\\' "$?" }
+        __vela_osc133_precmd()  { printf '\033]133;D;%s\033\\' "$?" }
         __vela_osc133_preexec() { printf '\033]133;C\033\\' }
         add-zsh-hook precmd  __vela_osc133_precmd
         add-zsh-hook preexec __vela_osc133_preexec
-        [[ "$PS1" == *'133;B'* ]] || PS1="$PS1"$'%{\033]133;B\033\\\\%}'
+        [[ "$PS1" == *'133;A'* ]] || PS1=$'%{\033]133;A\033\\%}'"$PS1"$'%{\033]133;B\033\\%}'
+        [[ "$PS2" == *'133;B'* ]] || PS2="$PS2"$'%{\033]133;B\033\\%}'
         """;
 }

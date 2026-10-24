@@ -420,6 +420,26 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     public Func<string, Task<bool>>? MultilinePasteConfirmation { get; set; }
 
     /// <summary>
+    /// 由宿主提供的「重跑多行命令」确认(返回 false 则中止);只在对端没开括号粘贴、
+    /// 且 <see cref="ConfirmMultilinePaste" /> 开着时才问。null = 从不询问。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="MultilinePasteConfirmation" /> 分开:那边的文案说的是「剪贴板里有几行」,
+    /// 这里要说的是「这条命令有几行、对端会逐行执行」—— 同一个框套两种事,用户读不懂为什么弹。
+    /// </remarks>
+    public Func<string, Task<bool>>? CommandRerunConfirmation { get; set; }
+
+    /// <summary>
+    /// 侧栏菜单的「重跑」通过了全部检查,请宿主把这条命令(不含回车)发进本终端并按一次回车。
+    /// </summary>
+    /// <remarks>
+    /// 交给宿主发而不是控件自己发:宿主要在发的那一刻关掉同步输入的转发(重跑只发给这一个终端)、
+    /// 并把它标成程序注入(命令补全不该把它当用户键入弹出来)—— 那两个开关都在标签的视图模型上。
+    /// 没人订阅时(独立使用控件、测试)控件按键入自己发。
+    /// </remarks>
+    public event Action<string>? CommandRerunRequested;
+
+    /// <summary>
     /// 选中时 Ctrl+C 复制:开 = 有选区时 Ctrl+C 复制选中内容而不发送中断(无选区
     /// 仍发送中断);关 = Ctrl+C 始终作为中断信号 ^C 发往 PTY。
     /// </summary>
@@ -612,8 +632,8 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     /// <summary>侧栏右键菜单改动部件开关后上报(时间戳, 行号, 折叠标记, 空白, 分隔线),供上层持久化。</summary>
     public event Action<bool, bool, bool, bool, bool>? GutterOptionsChanged;
 
-    /// <summary>侧栏右键菜单的本地化标签(行号 / 时间戳 / 折叠标记 / 空白 / 分隔线),由上层按当前语言注入。</summary>
-    public GutterMenuLabels GutterMenu { get; set; } = new("行号", "时间戳", "折叠标记", "空白", "分隔线");
+    /// <summary>侧栏右键菜单的本地化标签(行号 / 时间戳 / 折叠标记 / 空白 / 分隔线 / 复制这条命令 / 重跑),由上层按当前语言注入。</summary>
+    public GutterMenuLabels GutterMenu { get; set; } = new("行号", "时间戳", "折叠标记", "空白", "分隔线", "复制这条命令", "重跑这条命令");
 
     /// <summary>
     /// 启用操作系统输入法(中文/日文/韩文组字)。关闭 = 终端从不提供 IME 客户端。
@@ -2958,19 +2978,28 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     /// <summary>上一次弹出的侧栏菜单。每次右键都新建实例,旧实例必须显式关闭,否则会叠着不消失。</summary>
     private ContextMenu? _gutterMenu;
 
-    /// <summary>侧栏右键菜单:五个部件(行号/时间戳/分隔线/折叠标记/空白)的可勾选开关。</summary>
-    private void ShowGutterContextMenu()
+    /// <summary>
+    /// 侧栏右键菜单:点在某条命令块上时先给「复制这条命令」「重跑」,下面是五个部件
+    /// (行号/时间戳/分隔线/折叠标记/空白)的可勾选开关。
+    /// </summary>
+    private void ShowGutterContextMenu(int screenRow)
     {
         _gutterMenu?.Close();
-        _gutterMenu = BuildGutterContextMenu();
+        _gutterMenu = BuildGutterContextMenu(AbsoluteForScreenRow(screenRow));
         _gutterMenu.Open(this);
     }
 
     /// <summary>构建侧栏右键菜单(不弹出)。internal 供 headless 测试直接检视内容与开关接线,避免打开弹层。</summary>
-    internal ContextMenu BuildGutterContextMenu()
+    /// <param name="absRow">右键落在的绝对行;-1 = 不指向任何行(只给部件开关)。</param>
+    internal ContextMenu BuildGutterContextMenu(int absRow = -1)
     {
         GutterMenuLabels labels = GutterMenu;
         var menu = new ContextMenu();
+        if (absRow >= 0 && Emulator.HasPromptMarks && CommandBlocks.BlockAt(Emulator.Screen, absRow) is { } block)
+        {
+            AddCommandBlockItems(menu, labels, CommandBlocks.CommandInputOf(Emulator.Screen, block));
+            menu.Items.Add(new Separator());
+        }
         AddGutterMenuItem(menu, labels.LineNumber, ShowLineNumber, v => ShowLineNumber = v);
         AddGutterMenuItem(menu, labels.Timestamp, ShowLineTimestamp, v => ShowLineTimestamp = v);
         AddGutterMenuItem(menu, labels.GuideLine, ShowFoldGuideLine, v => ShowFoldGuideLine = v);
@@ -3003,13 +3032,117 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         menu.Items.Add(item);
     }
 
+    /// <summary>
+    /// 命令块的两项:「复制这条命令」「重跑」。命令切不出来时两项都在、只是灰掉 ——
+    /// 让人知道有这回事,也看得出是这一块不行(还在敲、按 Ctrl+C 取消了、老集成脚本不发 B)。
+    /// </summary>
+    /// <remarks>
+    /// 菜单弹出时就把命令文本切好、把「能不能重跑」判定一次:用户点的是他此刻在菜单里看见的那一条。
+    /// 点下去时 <see cref="RerunCommandAsync" /> 再核一遍终端状态 —— 菜单开着的这几秒里远端可能已经
+    /// 换了状态(另一个窗口粘进去一条命令、定时输出刷了屏)。
+    /// </remarks>
+    private void AddCommandBlockItems(ContextMenu menu, GutterMenuLabels labels, CommandInput? input)
+    {
+        var copy = new MenuItem { Header = labels.CopyCommand, IsEnabled = input is not null };
+        copy.Click += (_, _) =>
+        {
+            if (input is not null)
+            {
+                _ = CopyCommandAsync(input.Text);
+            }
+        };
+        var rerun = new MenuItem
+        {
+            Header = labels.RerunCommand,
+            IsEnabled = input is { CanRerun: true } && CommandBlocks.IsIdleAtPrompt(Emulator)
+        };
+        rerun.Click += (_, _) =>
+        {
+            if (input is not null)
+            {
+                _ = RerunCommandAsync(input);
+            }
+        };
+        menu.Items.Add(copy);
+        menu.Items.Add(rerun);
+    }
+
+    /// <summary>把命令文本写进系统剪贴板(「复制这条命令」)。</summary>
+    private async Task CopyCommandAsync(string text)
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(text);
+        }
+    }
+
+    /// <summary>
+    /// 「重跑」:把命令文本连同一次回车发进本终端;没通过检查或用户在确认框里取消时什么都不发,返回 false。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>只在对端停在一条空的新提示符上时才发</b>(<see cref="CommandBlocks.IsIdleAtPrompt" />):
+    /// 上一条命令还在跑(没收到 D)、在全屏程序里、命令行上已经敲了半截,都不发 ——
+    /// 那时打进去的字会变成别的程序的输入,或者和半截命令拼成一条谁也没想执行过的命令。
+    /// 续行没带 B 的多行命令也不发(<see cref="CommandInput.CanRerun" />)。
+    /// </para>
+    /// <para>
+    /// <b>多行命令照快捷命令的口径</b>:整段走括号粘贴,shell 收齐了再执行;对端没开括号粘贴时
+    /// 每一行都会当场执行(前一行要是 sudo / ssh,后面的行就成了它的输入),先问一句,
+    /// 开关沿用「粘贴时确认多行内容」。命令文本里的控制字符在切出来时已经剔掉了。
+    /// </para>
+    /// </remarks>
+    internal async Task<bool> RerunCommandAsync(CommandInput input)
+    {
+        if (!input.CanRerun || !CommandBlocks.IsIdleAtPrompt(Emulator))
+        {
+            return false;
+        }
+        if (
+            input.IsMultiline
+            && !Emulator.Modes.BracketedPaste
+            && ConfirmMultilinePaste
+            && CommandRerunConfirmation is { } confirm
+        )
+        {
+            bool approved = await confirm(input.Text);
+            // 确认框是模态窗口,关掉后焦点回不到终端(同 PasteAsync 的处理)。
+            Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Input);
+            // 框开着的时候对端状态可能变了:再核一遍。
+            if (!approved || !CommandBlocks.IsIdleAtPrompt(Emulator))
+            {
+                return false;
+            }
+        }
+        if (CommandRerunRequested is { } host)
+        {
+            host(input.Text);
+        }
+        else
+        {
+            if (input.IsMultiline)
+            {
+                WritePasteInput(input.Text);
+            }
+            else
+            {
+                WriteTextInput(input.Text);
+            }
+            WriteKeyInput(Key.Enter, KeyModifiers.None);
+        }
+        Focus();
+        return true;
+    }
+
     /// <summary>侧栏右键菜单各部件的本地化标签。</summary>
     public sealed record GutterMenuLabels(
         string LineNumber,
         string Timestamp,
         string FoldMarker,
         string Blank,
-        string GuideLine
+        string GuideLine,
+        string CopyCommand,
+        string RerunCommand
     );
 
     /// <summary>本帧「绝对行 → 屏幕行」反查(命中测试/光标定位用),未在可见窗口内返回 -1。</summary>
@@ -3835,7 +3968,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         {
             if (props.IsRightButtonPressed)
             {
-                ShowGutterContextMenu();
+                ShowGutterContextMenu((int)(contentPoint.Y / CellHeightForTest));
                 e.Handled = true;
                 return;
             }

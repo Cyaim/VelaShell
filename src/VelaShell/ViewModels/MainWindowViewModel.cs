@@ -727,6 +727,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// </summary>
     public Func<string, Task<bool>>? QuickCommandMultilineConfirmer { get; set; }
 
+    /// <summary>
+    /// 窗口注入的「重跑多行命令」确认框:对端没开括号粘贴时每一行都会当场执行,先问一句
+    /// (开关同样是「粘贴时确认多行内容」)。参数是命令文本,确认返回 true。未挂时(headless)直接发送。
+    /// </summary>
+    public Func<string, Task<bool>>? CommandRerunConfirmer { get; set; }
+
     /// <summary>左侧边栏视图模型:资源管理器会话树与最近连接。</summary>
     public SidebarViewModel Sidebar
     {
@@ -6155,7 +6161,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         SessionProfile? profile = null
     ) =>
         TerminalSettingsApplier.Apply(
-            emulator, settings, ActiveUiTheme, forceUtf8, profile, MultilinePasteConfirmer);
+            emulator, settings, ActiveUiTheme, forceUtf8, profile, MultilinePasteConfirmer, CommandRerunConfirmer);
 
     /// <summary>
     /// 当前实际生效的界面主题:「跟随系统」按应用的实际变体落到 VelaDark / VelaLight。

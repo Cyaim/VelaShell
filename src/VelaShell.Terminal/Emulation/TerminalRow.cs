@@ -76,6 +76,38 @@ public sealed class TerminalRow(int columns)
     /// <remarks>记在<b>提示符行</b>而不是输出末行:块的身份由提示符行代表,侧栏那个标记也画在这里。</remarks>
     public int? ExitCode { get; set; }
 
+    /// <summary>
+    /// <c>OSC 133 ; B</c>(提示符结束、用户输入开始)落在本行的列;本行没收到过 B 时为 -1。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 与 <see cref="Mark" /> 不同,这是一个<b>列</b>位置:命令文本从提示符后面的这一列开始
+    /// (「复制这条命令」「重跑」靠它把命令从提示符里切出来)。可以等于 <see cref="Columns" /> ——
+    /// 提示符恰好占满一整行、光标停在行尾等着折行时,命令其实从下一行行首开始。
+    /// </para>
+    /// <para>
+    /// 列在改列宽之后会整体挪位,所以 <c>TerminalScreen.ReflowResize</c> 像搬光标那样把它换算成
+    /// 逻辑行内的偏移、跟着重新换行再落回新行的新列;整行作废时与标记一并清掉。
+    /// 续行提示符(PS2)末尾若也发了 B,续行上同样记一个 —— 切命令时据它把续行提示符剪掉。
+    /// </para>
+    /// </remarks>
+    public int InputStart { get; set; } = -1;
+
+    /// <summary>
+    /// <c>OSC 133 ; C</c>(命令开始执行)落在本行的列;本行没收到过 C 时为 -1。命令文本到这一列为止。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>不能只靠 <see cref="Mark" /> 的 <see cref="PromptMark.Output" /> 表示 C。</b>没有输出的命令
+    /// (<c>cd</c>、<c>export</c>)跑完,下一条提示符就画在 C 那一行上,<c>A</c> 把那一行的标记
+    /// 改写成 <see cref="PromptMark.Prompt" /> —— 「这条命令回车执行过」的事实随之丢失,
+    /// 而区分「执行过的命令」与「敲到一半按 Ctrl+C 取消的、还在敲的」正要靠它。
+    /// 单独一个字段不被 A 改写;生命周期与 <see cref="InputStart" /> 相同,只有一处例外:
+    /// ESC[K / ESC[J 把这一行擦空时它留着(见 <see cref="FillRange" />)。
+    /// </para>
+    /// </remarks>
+    public int InputEnd { get; set; } = -1;
+
     /// <summary>本行的单元格(列)数量。</summary>
     public int Columns { get; private set; } = columns;
 
@@ -440,7 +472,14 @@ public sealed class TerminalRow(int columns)
             // OSC 133 标记跟着时间戳走同一条判据,理由也一样:重绘型 shell 每敲一个字符都要
             // ESC[K 擦到行尾,若"擦一下就掉标记",提示符行上的标记会在打字过程中不停闪掉。
             // 只有整行真的空了才算这一行没了。
+            //
+            // 唯独 C 的列(InputEnd)留着:它记的是「命令在这里回车执行过」这件<b>事</b>,不是这一行的内容。
+            // zsh 跑完一条没有输出的命令(cd),先在 C 那一行补 PROMPT_SP、再 ESC[J 把它擦空、
+            // 接着在同一行画下一条提示符 —— 跟着擦掉的话,这条 cd 就成了「没回车过」,切不出来。
+            // 整行覆写(ED 2 / EL 2 / 滚进来的新行,走 Fill)照旧全清。
+            int inputEnd = InputEnd;
             ClearMark();
+            InputEnd = inputEnd;
         }
     }
 
@@ -634,11 +673,13 @@ public sealed class TerminalRow(int columns)
         ClearMark();
     }
 
-    /// <summary>清掉本行的 OSC 133 标记与退出码(整行作废时调用)。</summary>
+    /// <summary>清掉本行的 OSC 133 标记、退出码与 B / C 列位置(整行作废时调用)。</summary>
     private void ClearMark()
     {
         Mark = PromptMark.None;
         ExitCode = null;
+        InputStart = -1;
+        InputEnd = -1;
     }
 
     /// <summary>创建本行的深拷贝,保留单元格、wrapped 标志与时间戳。</summary>
@@ -651,6 +692,8 @@ public sealed class TerminalRow(int columns)
             Timestamp = Timestamp,
             Mark = Mark,
             ExitCode = ExitCode,
+            InputStart = InputStart,
+            InputEnd = InputEnd,
             _cells = new TerminalCell[_cells.Length]
         };
         Array.Copy(_cells, clone._cells, _cells.Length);

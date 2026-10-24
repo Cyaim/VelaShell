@@ -3572,6 +3572,22 @@
   <data name="Gutter_Blank" xml:space="preserve">
     <value>空白</value>
   </data>
+  <data name="Gutter_CopyCommand" xml:space="preserve">
+    <value>このコマンドをコピー</value>
+  </data>
+  <data name="Gutter_RerunCommand" xml:space="preserve">
+    <value>このコマンドを再実行</value>
+  </data>
+  <data name="Gutter_RerunMultilineTitle" xml:space="preserve">
+    <value>複数行コマンドの再実行</value>
+  </data>
+  <data name="Gutter_RerunMultilineBody" xml:space="preserve">
+    <value>このコマンドは {0} 行あり、この端末ではブラケットペーストが有効になっていないため、各行が届いた時点ですぐに実行されます:
+
+{1}
+
+それでも再実行しますか?</value>
+  </data>
   <data name="SetTerm_ScrollOnOutputDesc" xml:space="preserve">
     <value>// 履歴の閲覧中に新しい出力があると最下部へ移動します。オフの場合は現在位置を維持</value>
   </data>

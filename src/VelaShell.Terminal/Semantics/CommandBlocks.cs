@@ -1,6 +1,34 @@
+using System.Text;
 using VelaShell.Terminal.Emulation;
 
 namespace VelaShell.Terminal.Semantics;
+
+/// <summary>命令块里用户敲的那条命令:<c>OSC 133 ; B</c> 到 <c>C</c> 之间的文本。</summary>
+/// <param name="Text">
+/// 命令文本。被自动换行折开的接回一行;硬换行(多行命令)保留为 <c>\n</c>;
+/// 每行行尾空白去掉,行首空白保留(bash 的 <c>HISTCONTROL=ignorespace</c> 靠行首空格不记历史);
+/// 控制字符(C0 / DEL / C1)一律剔除。
+/// </param>
+/// <param name="LineCount">硬换行分出的行数;1 = 单行命令。</param>
+/// <param name="HasUnmarkedContinuation">
+/// 多行命令里有续行<b>没带 B</b>:续行提示符(PS2,默认 <c>&gt; </c>)和命令正文分不开,
+/// 切出来的文本里混着提示符。见 <see cref="CanRerun" />。
+/// </param>
+public sealed record CommandInput(string Text, int LineCount, bool HasUnmarkedContinuation)
+{
+    /// <summary>是不是多行命令(中间夹着硬换行)。</summary>
+    public bool IsMultiline => LineCount > 1;
+
+    /// <summary>
+    /// 切出来的文本能不能原样再执行一次。
+    /// </summary>
+    /// <remarks>
+    /// 续行没带 B 时不能:默认的续行提示符 <c>&gt; </c> 会混进文本,重跑
+    /// <c>cat &lt;&lt;EOF</c> / <c>&gt; important.txt</c> / <c>&gt; EOF</c> 这样的命令,第二行就成了
+    /// 「把 important.txt 截成空文件」。复制不受影响 —— 复制出去的东西用户粘贴前看得见。
+    /// </remarks>
+    public bool CanRerun => !HasUnmarkedContinuation;
+}
 
 /// <summary>一条命令块在缓冲区里的位置(绝对行号,含首含尾)。</summary>
 /// <param name="PromptRow">提示符行(<c>OSC 133 ; A</c>)。块由它起头,退出码也记在这一行。</param>
@@ -100,5 +128,241 @@ public static class CommandBlocks
             }
         }
         return new CommandBlock(prompt, outputStart, last, screen.ViewLine(prompt).ExitCode);
+    }
+
+    /// <summary>
+    /// 切出 <paramref name="block" /> 里用户敲的命令(<c>B</c> 到 <c>C</c> 之间);
+    /// 切不出来时返回 null。
+    /// </summary>
+    /// <remarks>
+    /// <para>切不出来的几种情形,各有各的道理:</para>
+    /// <list type="bullet">
+    /// <item><b>块里没有 B</b> —— 老的集成脚本只发 A/C/D,不知道提示符在哪一列结束,
+    /// 硬猜(找 <c>$ </c>、<c># </c>)会把提示符的一截当成命令。</item>
+    /// <item><b>B 之后没有 C</b> —— 命令还在敲,或者敲了一半按 Ctrl+C 取消了(bash 会在行尾回显
+    /// <c>^C</c>,切出来就是 <c>foo^C</c>)。只有真的回车执行过的才算「这条命令」。</item>
+    /// <item><b>B 与 C 之间是空的</b> —— 在提示符上直接按了回车。</item>
+    /// </list>
+    /// <para>
+    /// <b>C 可以落在下一条提示符那一行上。</b>没有输出的命令(<c>cd</c>)跑完,下一条提示符就画在
+    /// C 那一行,行标记被 A 改写了,C 的列(<see cref="TerminalRow.InputEnd" />)还在。
+    /// 反过来,那一行若同时有自己的 B 且 C 在 B 之后,那是下一条命令自己的 C,不归这一块。
+    /// </para>
+    /// <para>
+    /// <b>续行</b>(多行命令硬换行之后的那些行)上若有自己的 B —— 续行提示符(PS2)末尾也发了 B ——
+    /// 就从那个 B 切起,把续行提示符剪掉;没有就整行照收,并记下
+    /// <see cref="CommandInput.HasUnmarkedContinuation" />。
+    /// </para>
+    /// </remarks>
+    public static CommandInput? CommandInputOf(TerminalScreen screen, CommandBlock block)
+    {
+        if (block.PromptRow < 0 || block.PromptRow >= screen.TotalRows)
+        {
+            return null;
+        }
+        int last = Math.Min(block.LastRow, screen.TotalRows - 1);
+
+        // B:块内第一个记了 B 的行。提示符重绘(readline 收到 SIGWINCH、zle reset-prompt)
+        // 都是原地重画,B 落回同一行;取第一个,续行上的 B 才不会被当成命令起点。
+        int startRow = -1;
+        for (int abs = block.PromptRow; abs <= last; abs++)
+        {
+            if (screen.ViewLine(abs).InputStart >= 0)
+            {
+                startRow = abs;
+                break;
+            }
+        }
+        if (startRow < 0)
+        {
+            return null;
+        }
+        TerminalRow first = screen.ViewLine(startRow);
+        int startCol = Math.Min(first.InputStart, first.Columns);
+
+        // C:B 之后第一个记了 C 的位置,最远看到下一条提示符那一行。
+        int limit = Math.Min(last + 1, screen.TotalRows - 1);
+        int endRow = -1, endCol = 0;
+        for (int abs = startRow; abs <= limit; abs++)
+        {
+            TerminalRow row = screen.ViewLine(abs);
+            if (row.InputEnd < 0)
+            {
+                continue;
+            }
+            if (abs == startRow && row.InputEnd < first.InputStart)
+            {
+                continue; // 同一行上落在 B 之前的 C 是上一条(没有输出的)命令的。
+            }
+            if (abs > last && row.InputStart >= 0 && row.InputEnd >= row.InputStart)
+            {
+                break; // 下一条提示符那一行上、它自己的 B 之后的 C:那是下一条命令的。
+            }
+            endRow = abs;
+            endCol = Math.Min(row.InputEnd, row.Columns);
+            break;
+        }
+        if (endRow < 0)
+        {
+            return null;
+        }
+
+        var lines = new List<string>();
+        var sb = new StringBuilder();
+        bool unmarked = false;
+        bool lineIsContinuation = false;
+        bool lineMarked = false;
+        for (int abs = startRow; abs <= endRow; abs++)
+        {
+            TerminalRow row = screen.ViewLine(abs);
+            bool startsLine = abs == startRow || !screen.ViewLine(abs - 1).Wrapped;
+            int from = 0;
+            if (abs == startRow)
+            {
+                from = startCol;
+            }
+            else if (startsLine)
+            {
+                lineIsContinuation = true;
+                lineMarked = row.InputStart >= 0;
+                if (lineMarked)
+                {
+                    from = Math.Min(row.InputStart, row.Columns);
+                }
+            }
+            int to = abs == endRow ? endCol : row.Columns;
+            bool continues = abs != endRow && row.Wrapped;
+            if (continues)
+            {
+                // 行尾没写过的格子(宽字符在末列放不下、挪到下一行后留下的空位)不是内容。
+                while (to > from && row[to - 1] is { Rune: 0, IsWideTrailing: false })
+                {
+                    to--;
+                }
+            }
+            for (int col = from; col < to; col++)
+            {
+                AppendCommandCell(sb, row[col]);
+            }
+            if (continues)
+            {
+                continue;
+            }
+            // 一条逻辑行收完:去行尾空白,记下这一行是不是没带 B 的续行。
+            string line = sb.ToString().TrimEnd();
+            sb.Clear();
+            if (lineIsContinuation && !lineMarked && line.Length > 0)
+            {
+                unmarked = true;
+            }
+            lines.Add(line);
+        }
+
+        // C 落在行首时,最后收的是 C 那一行的空串;一并去掉末尾的空行。
+        while (lines.Count > 0 && lines[^1].Length == 0)
+        {
+            lines.RemoveAt(lines.Count - 1);
+        }
+        string text = string.Join('\n', lines);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+        return new CommandInput(text, lines.Count, unmarked);
+    }
+
+    /// <summary>
+    /// 把一格的文本追加进命令文本,剔除控制字符。
+    /// </summary>
+    /// <remarks>
+    /// 正常打印路径进不了 C0(解析器当场执行掉了),但 C1(U+0080–U+009F)是零宽字符,会被当成
+    /// 组合标记挂在前一格上;会话字符集是 Latin-1 一类时它编出来就是 8 位的 CSI(0x9B)。
+    /// 「重跑」要把这段文本当键盘输入送回去,屏幕上看不见的控制字符一个都不该跟着回去。
+    /// </remarks>
+    private static void AppendCommandCell(StringBuilder sb, in TerminalCell cell)
+    {
+        if (cell.IsWideTrailing)
+        {
+            return;
+        }
+        if (cell.Rune == 0)
+        {
+            sb.Append(' ');
+            return;
+        }
+        if (IsControl(cell.Rune))
+        {
+            return;
+        }
+        sb.Append(char.ConvertFromUtf32(cell.Rune));
+        if (cell.Combining is { } combining)
+        {
+            foreach (char ch in combining)
+            {
+                if (!IsControl(ch))
+                {
+                    sb.Append(ch);
+                }
+            }
+        }
+    }
+
+    /// <summary>C0、DEL 与 C1 控制字符。</summary>
+    private static bool IsControl(int rune) => rune < 0x20 || rune is >= 0x7F and <= 0x9F;
+
+    /// <summary>
+    /// 对端 shell 此刻是不是停在一条<b>空的</b>新提示符上 —— 「重跑」只在这时才往终端里打字。
+    /// </summary>
+    /// <remarks>
+    /// <para>四条全满足才算:</para>
+    /// <list type="number">
+    /// <item><b>不在备用屏</b>:全屏程序(vim、less、htop)把整屏占着,打进去的字符是它的按键。</item>
+    /// <item><b>上一条命令已经结束</b>(<see cref="TerminalEmulator.IsCommandRunning" /> 为 false):
+    /// 还在跑的命令会把打进去的「命令 + 回车」当成自己的输入 —— sudo 的口令提示、ssh 进去的
+    /// 另一台机器、读 stdin 的脚本。</item>
+    /// <item><b>光标就停在当前这条提示符的 B 上</b>:用户已经敲了半截(或者正在 PS2 续行里),
+    /// 再打一串进去就和那半截拼成一条谁也没想执行过的命令。取的是块内第一个 B,
+    /// 续行上的 B 不算。</item>
+    /// <item><b>光标下那一格从没写过</b>:敲了 <c>ls</c> 再按 Home 回到行首,光标也在 B 上,
+    /// 可后面还躺着 <c>ls</c>。只看光标下这一格而不是整行剩余部分:zsh 的 RPROMPT
+    /// 画在同一行的右端,看整行就永远不空。</item>
+    /// </list>
+    /// <para>
+    /// 判断不了的一律当「不空闲」:没有 B(老集成)、提示符恰好占满一行(B 记在行尾之外,
+    /// 光标还停在上一列)。宁可让「重跑」灰掉,也不往一个说不清状态的终端里打字。
+    /// </para>
+    /// </remarks>
+    public static bool IsIdleAtPrompt(TerminalEmulator emulator)
+    {
+        if (emulator.IsAlternateScreen || emulator.IsCommandRunning || !emulator.HasPromptMarks)
+        {
+            return false;
+        }
+        TerminalScreen screen = emulator.Screen;
+        int cursorAbs = screen.ScrollbackCount + screen.CursorY;
+        if (BlockAt(screen, cursorAbs) is not { } block)
+        {
+            return false;
+        }
+        int startRow = -1;
+        for (int abs = block.PromptRow; abs <= cursorAbs; abs++)
+        {
+            if (screen.ViewLine(abs).InputStart >= 0)
+            {
+                startRow = abs;
+                break;
+            }
+        }
+        if (startRow != cursorAbs)
+        {
+            return false;
+        }
+        TerminalRow row = screen.ViewLine(startRow);
+        if (row.InputStart != screen.CursorX)
+        {
+            return false;
+        }
+        TerminalCell under = row[screen.CursorX];
+        return under is { Rune: 0, IsWideTrailing: false, Combining: null };
     }
 }

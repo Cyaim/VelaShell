@@ -129,6 +129,25 @@ internal sealed class ShellIntegrationHarness : IAsyncDisposable
         }
     }
 
+    /// <summary>在锁里读一眼仿真器 —— 读循环同时在往里喂,仿真器不是线程安全的。</summary>
+    public T Inspect<T>(Func<TerminalEmulator, T> read)
+    {
+        lock (_sync)
+        {
+            return read(_emulator);
+        }
+    }
+
+    /// <summary>像用户拖窗口那样改尺寸:本地仿真器当场重排,远端 PTY 收到 SIGWINCH。</summary>
+    public void Resize(int columns, int rows)
+    {
+        lock (_sync)
+        {
+            _emulator.Resize(columns, rows);
+        }
+        _shell.Resize(new PtySize(columns, rows));
+    }
+
     /// <summary>连上容器里的某个账号并开一条真 PTY。</summary>
     /// <param name="user">账号名,例如 <c>vela-bash</c>。</param>
     public static async Task<ShellIntegrationHarness> ConnectAsync(string user)
@@ -219,6 +238,9 @@ internal sealed class ShellIntegrationHarness : IAsyncDisposable
 
     /// <summary>像用户敲键一样发一行(不抑制,不摘历史)。</summary>
     public Task TypeAsync(string line) => WriteAsync(line + "\n");
+
+    /// <summary>原样发几个键(不补换行):敲半截、Ctrl+U、Ctrl+C 这类。</summary>
+    public Task WriteRawAsync(string keys) => WriteAsync(keys);
 
     /// <summary>等条件成立;超时就把现场(可见/原始输出)一起报出来。</summary>
     public void WaitFor(Func<bool> condition, string what, int timeoutMs = 15_000)

@@ -10,15 +10,15 @@ namespace VelaShell.Terminal.Emulation;
 /// </para>
 /// <list type="bullet">
 /// <item><c>OSC 133 ; A ST</c> —— 提示符开始 → <see cref="Prompt" /></item>
-/// <item><c>OSC 133 ; B ST</c> —— 提示符结束、用户输入开始(本层消费但不落行,见下)</item>
-/// <item><c>OSC 133 ; C ST</c> —— 用户回车了,命令输出从这里开始 → <see cref="Output" /></item>
+/// <item><c>OSC 133 ; B ST</c> —— 提示符结束、用户输入开始 → 记在行上的<b>列</b>(<see cref="TerminalRow.InputStart" />),不占这个枚举</item>
+/// <item><c>OSC 133 ; C ST</c> —— 用户回车了,命令输出从这里开始 → <see cref="Output" />,列另记在 <see cref="TerminalRow.InputEnd" /></item>
 /// <item><c>OSC 133 ; D ; 退出码 ST</c> —— 命令结束,退出码记在该块的提示符行上</item>
 /// </list>
 /// <para>
-/// <b>B 刻意不落行。</b>它标的是一个<b>列</b>位置(命令文本从提示符的第几列开始),而列在改列宽
-/// 重排之后会整体挪位 —— 要正确搬运就得像 <c>ReflowResize</c> 搬运光标那样,把它换算成
-/// 逻辑行内的偏移再跟着重新换行走一遍。本轮的功能(跳转 / 选中输出 / 折叠)全部只按<b>行</b>
-/// 定界,用不到这个列;等真要做「复制这条命令」「重跑」时再补,那时它才开始付出代价。
+/// <b>B 不是行标记。</b>它标的是一个<b>列</b>位置(命令文本从提示符的第几列开始),跳转 / 选中输出 /
+/// 折叠都只按<b>行</b>定界,用不到它;「复制这条命令」「重跑」要把命令文本从 B 切到 C,才用得到。
+/// 列在改列宽重排后会整体挪位,<c>ReflowResize</c> 像搬光标那样把它换算成逻辑行内的偏移,
+/// 跟着重新换行再落回去(见 <see cref="TerminalRow.InputStart" />)。
 /// </para>
 /// </remarks>
 public enum PromptMark : byte
