@@ -151,6 +151,21 @@ public sealed class DiagnosticBundleTests : IDisposable
     }
 
     [TestMethod]
+    public void Redactor_LeavesStackFrameSourceLocationsAlone()
+    {
+        // 崩溃记录的栈帧:文件名里带着关键字,冒号后面是行号 —— 原先换成了「PasswordAuthenticator.cs:<redacted> 87」
+        var redactor = new DiagnosticRedactor([], [], null, null, null);
+        const string trace =
+            "   at VelaShell.Ssh.Auth.PasswordAuthenticator.AuthenticateAsync() in /src/Ssh/Auth/PasswordAuthenticator.cs:line 87\n"
+            + "   at VelaShell.Services.TokenStore.Load() in C:\\src\\VelaShell\\Services\\TokenStore.cs:line 12\n";
+
+        Assert.AreEqual(trace, redactor.Redact(trace));
+        Assert.IsEmpty(redactor.Counts);
+        Assert.AreEqual("PasswordAuthenticator.cs:<redacted> TokenStore.cs=<redacted>",
+            redactor.Redact("PasswordAuthenticator.cs:hunter2 TokenStore.cs=line"), "只有栈帧那一种写法不换");
+    }
+
+    [TestMethod]
     public void Redactor_HonoursEscapedQuotesAndEscapedJsonKeys()
     {
         // 值里转义过的引号不算收尾;JSON 字符串里再套一层 JSON(异常消息常见)时键名两边是 \"

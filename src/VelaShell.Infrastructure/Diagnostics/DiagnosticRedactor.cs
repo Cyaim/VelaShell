@@ -234,8 +234,10 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
     /// 名字的边界只认 ASCII 的字母、数字与 <c>_ . -</c>:<c>\b</c> 把 <c>_</c> 也算在词里,<c>DB_PASSWORD</c> 原先就是这么漏的。
     /// 先用前瞻确认这一段名字里有关键字,再用原子组把整段一次吃下、不回吐:一长串像名字的字符只扫一遍,不会回溯成平方级。
     /// <c>PublicKeyToken</c> 是程序集强名称里公开的那一段,崩溃记录里到处都是,不换。
+    /// 栈帧里的源文件位置(<c>in /src/Ssh/Auth/PasswordAuthenticator.cs:line 87</c>)也不是名字=值:文件名里带着关键字,
+    /// 冒号后面跟的是行号,同样不换 —— 只认 <c>.cs:line 数字</c> 这一种写法。
     /// </remarks>
-    [GeneratedRegex("""(?<key>(?<![A-Za-z0-9_.\-])(?!PublicKeyToken(?![A-Za-z0-9_.\-]))(?=[A-Za-z0-9_.\-]*?(?i:password|passwd|pwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential))(?>[A-Za-z0-9_.\-]+)(?:\\?["'])?)(?<sep>[ \t]*[:=][ \t]*)(?!\\?["']?<redacted>)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|[^\s,;"']+)""",
+    [GeneratedRegex("""(?<key>(?<![A-Za-z0-9_.\-])(?!PublicKeyToken(?![A-Za-z0-9_.\-]))(?=[A-Za-z0-9_.\-]*?(?i:password|passwd|pwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential))(?>[A-Za-z0-9_.\-]+)(?!(?<=\.cs):line [0-9])(?:\\?["'])?)(?<sep>[ \t]*[:=][ \t]*)(?!\\?["']?<redacted>)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|[^\s,;"']+)""",
         RegexOptions.CultureInvariant)]
     private static partial Regex SecretAssignment();
 

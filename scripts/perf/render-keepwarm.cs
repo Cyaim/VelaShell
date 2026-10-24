@@ -157,6 +157,12 @@ sealed class ProbeApp(ProbeOptions options) : Application
 
     private void Report()
     {
+        // --keys 0、--seconds 0 一帧都不量:没有分布可报,别在 _samples[^1] 上抛异常
+        if (_samples.Count == 0)
+        {
+            Console.WriteLine("一帧都没量到(--keys 0 或 --seconds 0),没有分布可报。");
+            return;
+        }
         _samples.Sort();
         double Pct(double p) => _samples[Math.Min(_samples.Count - 1, (int)(p * _samples.Count))];
         Console.WriteLine($"改字到处理完:p50 {Pct(.5):F1} ms  p90 {Pct(.9):F1} ms  p99 {Pct(.99):F1} ms  最长 {_samples[^1]:F0} ms  共 {_samples.Count} 帧");
