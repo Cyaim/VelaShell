@@ -283,7 +283,7 @@ internal static partial class SshInterop
     /// <summary>
     /// 主机证书哪里不合格(<see cref="KnownHostLookup.CertificateProblemDetail" />)的界面语言;没归类的照库的原文。
     /// </summary>
-    /// <remarks>宿主的信任库接上主机 CA 之后(<c>feature-plan.md</c>「主机证书(宿主侧)」)由裁决与弹窗调用;证书来自对端,名字一律清洗。</remarks>
+    /// <remarks>受信主机 CA 签的证书不合格时,<see cref="VelaHostKeyPolicy" /> 的拒绝理由用它 —— 同一个证书问题只有这一套文案;证书来自对端,名字一律清洗。</remarks>
     internal static string LocalizeHostCertificateProblem(HostCertificateProblem problem)
     {
         if (HostCertificateProblemKey(problem.Kind) is not { } key)

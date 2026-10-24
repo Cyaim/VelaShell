@@ -1715,27 +1715,6 @@
   <data name="Msg_HostCaUnvouched" xml:space="preserve">
     <value>{0} は信頼済みホスト CA（{1}）の管理対象ですが、提示されたキー（{2}）はその CA の保証を受けていないため、確認せずに接続を拒否しました。このホストに本当に証明書がない場合は、フィンガープリントを確認したうえで known_hosts からそのキーをインポートするか、設定 → セキュリティと監査 で信頼済みホスト CA を見直してください。</value>
   </data>
-  <data name="HostCert_ProblemNotHost" xml:space="preserve">
-    <value>これはユーザー証明書で、ホスト証明書ではありません。</value>
-  </data>
-  <data name="HostCert_ProblemExpired" xml:space="preserve">
-    <value>証明書は {0} に期限切れになりました。</value>
-  </data>
-  <data name="HostCert_ProblemNotYetValid" xml:space="preserve">
-    <value>証明書は {0} まで有効になりません。</value>
-  </data>
-  <data name="HostCert_ProblemNoPrincipals" xml:space="preserve">
-    <value>証明書にホスト名が一つも記載されておらず、すべてのホストに有効なことになってしまいます。</value>
-  </data>
-  <data name="HostCert_ProblemPrincipals" xml:space="preserve">
-    <value>証明書の発行先は {1} で、{0} は含まれていません。</value>
-  </data>
-  <data name="HostCert_ProblemCriticalOptions" xml:space="preserve">
-    <value>証明書にホスト証明書では定義されていないクリティカルオプションがあります：{0}。</value>
-  </data>
-  <data name="HostCert_ProblemSignature" xml:space="preserve">
-    <value>CA の署名を検証できません（証明書が改ざんされた、SHA-1 の ssh-rsa で署名されている、または CA キーの強度が不足しています）。</value>
-  </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>{0} への自動再接続を停止しました。ホストキー {1} の確認が必要ですが、自動再接続では確認ダイアログを表示しません。手動で再接続し、表示されるダイアログでフィンガープリントを確認してください。</value>
   </data>

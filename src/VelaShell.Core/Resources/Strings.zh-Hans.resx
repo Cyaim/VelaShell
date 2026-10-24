@@ -2152,27 +2152,6 @@
   <data name="Msg_HostCaUnvouched" xml:space="preserve">
     <value>{0} 在受信主机 CA（{1}）的管理范围内，但它出示的密钥（{2}）没有这个 CA 的担保，连接已拒绝，不会按新主机询问。若这台主机确实没有证书，请核对指纹后从 known_hosts 导入它的密钥，或到 设置 → 安全与审计 调整受信主机 CA。</value>
   </data>
-  <data name="HostCert_ProblemNotHost" xml:space="preserve">
-    <value>这是一张用户证书，不是主机证书。</value>
-  </data>
-  <data name="HostCert_ProblemExpired" xml:space="preserve">
-    <value>证书已于 {0} 过期。</value>
-  </data>
-  <data name="HostCert_ProblemNotYetValid" xml:space="preserve">
-    <value>证书要到 {0} 才生效。</value>
-  </data>
-  <data name="HostCert_ProblemNoPrincipals" xml:space="preserve">
-    <value>证书没有列出任何主机名，那等于对所有主机有效。</value>
-  </data>
-  <data name="HostCert_ProblemPrincipals" xml:space="preserve">
-    <value>证书签给的是 {1}，不含 {0}。</value>
-  </data>
-  <data name="HostCert_ProblemCriticalOptions" xml:space="preserve">
-    <value>证书带着主机证书不认识的关键选项：{0}。</value>
-  </data>
-  <data name="HostCert_ProblemSignature" xml:space="preserve">
-    <value>CA 签名验不过（证书被改过、用的是 SHA-1 的 ssh-rsa 签名，或者 CA 密钥强度不够）。</value>
-  </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>已停止自动重连 {0}：主机密钥 {1} 需要你确认，而自动重连不会弹窗询问。请手动重新连接，在弹出的窗口里核对指纹。</value>
   </data>

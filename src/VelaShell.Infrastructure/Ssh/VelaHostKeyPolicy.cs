@@ -4,9 +4,7 @@ using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Persistence;
-using System.Globalization;
 using VelaShell.Ssh.HostKeys;
-using VelaShell.Ssh.Keys;
 
 namespace VelaShell.Infrastructure.Ssh;
 
@@ -251,7 +249,12 @@ internal sealed class VelaHostKeyPolicy(
             case KnownHostStatus.CertificateInvalid:
             {
                 System.Diagnostics.Trace.WriteLine($"[VelaShell] host certificate rejected for {target}: {authority.CertificateProblem}");
-                string invalid = Strings.Format("Msg_HostCertInvalid", target, DescribeCertificateProblem(context.Key, host, Now),
+                // 哪一条不合格由库按 spec 03 §5.5 的顺序判定并交出结构化的出处,界面语言的那句与其它入口共用一套文案
+                // (SshInterop.LocalizeHostCertificateProblem)。库的约定是这个结论一定带着出处;万一没有,只能照它的原文说。
+                string problem = authority.CertificateProblemDetail is { } detail
+                    ? SshInterop.LocalizeHostCertificateProblem(detail)
+                    : authority.CertificateProblem ?? "";
+                string invalid = Strings.Format("Msg_HostCertInvalid", target, problem,
                     FingerprintOf(context.Key.Certificate?.SignatureKey));
                 await RaiseAsync("hostkey-rejected", invalid).ConfigureAwait(false);
                 return SshHostKeyVerdict.Reject(invalid);
@@ -399,43 +402,6 @@ internal sealed class VelaHostKeyPolicy(
             // 阻断开关开着:用户根本没被问过,得告诉他这是策略拦的,以及两条出路。
             ? Strings.Format("Msg_HostKeyChangedBlocked", target, knownFingerprint ?? "-", fingerprint)
             : Strings.Format("Msg_HostKeyRejected", target, fingerprint);
-
-    /// <summary>
-    /// 证书为什么不合格,换成界面语言(库给的 <see cref="KnownHostLookup.CertificateProblem" /> 是写给开发者的诊断文本,只进日志)。
-    /// </summary>
-    /// <remarks>
-    /// 结论由库下(<see cref="KnownHostStatus.CertificateInvalid" />),这里只按证书公开的字段挑一句说得出口的原因:
-    /// 类型、有效期、主体、关键选项逐条看,都对得上才是签名那一条(签名本身只有库验得了)。每一句都是证书上的事实。
-    /// </remarks>
-    internal static string DescribeCertificateProblem(SshPublicKey key, string host, DateTimeOffset now)
-    {
-        if (key.Certificate is not { } certificate)
-        {
-            return Strings.Get("HostCert_ProblemSignature");
-        }
-        if (certificate.CertificateType != SshCertificateType.Host)
-        {
-            return Strings.Get("HostCert_ProblemNotHost");
-        }
-        if (!certificate.IsTimeValid(now))
-        {
-            return certificate.ValidBeforeTime is { } before && now >= before
-                ? Strings.Format("HostCert_ProblemExpired", before.ToString("u", CultureInfo.InvariantCulture))
-                : Strings.Format("HostCert_ProblemNotYetValid",
-                    (certificate.ValidAfterTime ?? DateTimeOffset.MaxValue).ToString("u", CultureInfo.InvariantCulture));
-        }
-        if (certificate.ValidPrincipals.Count == 0)
-        {
-            return Strings.Get("HostCert_ProblemNoPrincipals");
-        }
-        if (!certificate.ValidPrincipals.Contains(host, StringComparer.OrdinalIgnoreCase))
-        {
-            return Strings.Format("HostCert_ProblemPrincipals", host, string.Join(", ", certificate.ValidPrincipals));
-        }
-        return certificate.CriticalOptions.Count > 0
-            ? Strings.Format("HostCert_ProblemCriticalOptions", string.Join(", ", certificate.CriticalOptions))
-            : Strings.Get("HostCert_ProblemSignature");
-    }
 
     /// <summary>
     /// 记着的这把钥还没有公钥原文(换库之前、或这个字段加进来之前信任的,只存了指纹)时顺手补上 ——

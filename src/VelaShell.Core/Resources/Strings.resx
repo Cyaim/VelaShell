@@ -2043,27 +2043,6 @@ Paste anyway?</value>
   <data name="Msg_HostCaUnvouched" xml:space="preserve">
     <value>{0} is covered by a trusted host CA ({1}), but the key it presented ({2}) is not vouched for by that CA, so the connection was rejected without asking. If this host really has no certificate, verify the fingerprint and import its key from known_hosts, or adjust the trusted host CAs under Settings → Security &amp; Audit.</value>
   </data>
-  <data name="HostCert_ProblemNotHost" xml:space="preserve">
-    <value>it is a user certificate, not a host certificate.</value>
-  </data>
-  <data name="HostCert_ProblemExpired" xml:space="preserve">
-    <value>it expired at {0}.</value>
-  </data>
-  <data name="HostCert_ProblemNotYetValid" xml:space="preserve">
-    <value>it is not valid until {0}.</value>
-  </data>
-  <data name="HostCert_ProblemNoPrincipals" xml:space="preserve">
-    <value>it lists no host names, which would make it valid for every host.</value>
-  </data>
-  <data name="HostCert_ProblemPrincipals" xml:space="preserve">
-    <value>it was issued for {1}, not for {0}.</value>
-  </data>
-  <data name="HostCert_ProblemCriticalOptions" xml:space="preserve">
-    <value>it carries critical options that host certificates do not define: {0}.</value>
-  </data>
-  <data name="HostCert_ProblemSignature" xml:space="preserve">
-    <value>the CA signature does not verify (the certificate was altered, signed with SHA-1 ssh-rsa, or the CA key is too weak).</value>
-  </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>Auto-reconnect to {0} stopped: host key {1} needs your confirmation, and auto-reconnect never asks. Reconnect manually to check the fingerprint.</value>
   </data>

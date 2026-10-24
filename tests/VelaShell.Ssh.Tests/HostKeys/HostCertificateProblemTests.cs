@@ -37,6 +37,28 @@ public sealed class HostCertificateProblemTests
     public void 每一种问题的原文与结构化之前一致(HostCertificateProblem problem, string expected) =>
         Assert.AreEqual(expected, problem.ToString());
 
+    /// <summary>
+    /// 证书来自对端:Key ID、主体、关键选项、算法名里的控制字符与双向文本控制符换成 <c>?</c> 才进这句话(spec 08 §一)。
+    /// 曾经原样拼进来,而这句话会进 <c>KnownHostsPolicy</c> 的拒绝消息与日志。正常证书的文本不变(上面的原文用例)。
+    /// </summary>
+    [TestMethod]
+    public void 对端证书里的名字清洗过才进原文()
+    {
+        const string Evil = "x\u001b]52;c;AAAA\u0007‮";
+
+        Assert.AreEqual("这是一张用户证书(Key ID「x?]52;c;AAAA??」),不能用来证明主机身份。",
+            new HostCertificateProblem(HostCertificateProblemKind.NotHostCertificate, Evil).ToString());
+        Assert.AreEqual("主机证书(Key ID「k」)签给的是 a?b、x?]52;c;AAAA??,不含 c.example。",
+            new HostCertificateProblem(HostCertificateProblemKind.HostNotListed, "k") { Principals = ["a\rb", Evil], Host = "c.example" }.ToString());
+        Assert.AreEqual("主机证书(Key ID「k」)带着不认识的关键选项:x?]52;c;AAAA??。",
+            new HostCertificateProblem(HostCertificateProblemKind.UnknownCriticalOptions, "k") { CriticalOptions = [Evil] }.ToString());
+        Assert.AreEqual("证书(Key ID「k」)的 CA 签名用的是 x?]52;c;AAAA??,不接受(SHA-1 的 ssh-rsa 签名已经不安全)。",
+            new HostCertificateProblem(HostCertificateProblemKind.SignatureAlgorithmRejected, "k") { Algorithm = Evil }.ToString());
+
+        HostCertificateProblem raw = new(HostCertificateProblemKind.NotHostCertificate, Evil);
+        Assert.AreEqual(Evil, raw.KeyId, "原值照样留在属性里,由显示的一方决定怎么清");
+    }
+
     [TestMethod]
     public void 每一种问题都有原文()
     {

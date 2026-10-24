@@ -1,7 +1,9 @@
+using System.Globalization;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
+using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Persistence;
 using VelaShell.Infrastructure.Ssh;
@@ -32,10 +34,16 @@ public sealed class HostCaPolicyTests : IDisposable
         Directory.CreateDirectory(_directory);
         _engine = new(Path.Combine(_directory, "sonnetdb"));
         _store = new(_engine);
+
+        // 拒绝理由的文案按英文核对:中文界面的那几句与库的中文原文措辞相同,在中文环境下核对不出用的是哪一套。
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en");
     }
+
+    private readonly CultureInfo _uiCulture = CultureInfo.CurrentUICulture;
 
     public void Dispose()
     {
+        CultureInfo.CurrentUICulture = _uiCulture;
         _engine.Dispose();
         try
         {
@@ -119,6 +127,20 @@ public sealed class HostCaPolicyTests : IDisposable
         Assert.Contains("other.example", verdict.Message!);
         Assert.Contains("server.example", verdict.Message!, "说清证书签给了谁");
         await prompt.DidNotReceiveWithAnyArgs().DecideAsync(default!, default, default!, default!, default, default, default, default);
+
+        // 原因与其它入口共用一套文案(SshInterop.LocalizeHostCertificateProblem),由库判定的那一条决定说哪句。
+        OpenSshCertificateView cert = CertificateOf("hostcert-key-cert.pub");
+        Assert.Contains(
+            Strings.Format("SshErr_HostCertHostNotListed", cert.KeyId, string.Join(", ", cert.Principals), "other.example"), verdict.Message!);
+    }
+
+    /// <summary>证书上用来核对文案的几项。</summary>
+    private sealed record OpenSshCertificateView(string KeyId, IReadOnlyList<string> Principals, DateTimeOffset? ValidAfter, DateTimeOffset? ValidBefore);
+
+    private static OpenSshCertificateView CertificateOf(string fileName)
+    {
+        var certificate = Key(fileName).Certificate!;
+        return new(certificate.KeyId, certificate.ValidPrincipals, certificate.ValidAfterTime, certificate.ValidBeforeTime);
     }
 
     [TestMethod]
@@ -150,13 +172,18 @@ public sealed class HostCaPolicyTests : IDisposable
         Assert.IsFalse(expired.IsAccepted);
         Assert.IsFalse(early.IsAccepted);
         Assert.AreNotEqual(expired.Message, early.Message, "过期与未生效是两句话");
+        OpenSshCertificateView window = CertificateOf("hostcert-window-cert.pub");
+        Assert.Contains(Strings.Format("SshErr_HostCertExpired", window.KeyId,
+            window.ValidBefore!.Value.ToString("u", CultureInfo.InvariantCulture)), expired.Message!);
+        Assert.Contains(Strings.Format("SshErr_HostCertNotYetValid", window.KeyId,
+            window.ValidAfter!.Value.ToString("u", CultureInfo.InvariantCulture)), early.Message!);
         Assert.IsEmpty(await _store.GetKnownHostsAsync(), "不合格也不退回 TOFU 去记(关着首次确认时 TOFU 本来会记下)");
     }
 
     [TestMethod]
-    [DataRow("hostcert-noprincipals-cert.pub")]
-    [DataRow("hostcert-usertype-cert.pub")]
-    public async Task 没列主体与用户证书都拒绝(string certFile)
+    [DataRow("hostcert-noprincipals-cert.pub", "SshErr_HostCertNoPrincipals")]
+    [DataRow("hostcert-usertype-cert.pub", "SshErr_HostCertNotHostCertificate")]
+    public async Task 没列主体与用户证书都拒绝(string certFile, string reasonKey)
     {
         await AddCaAsync("*");
 
@@ -165,6 +192,7 @@ public sealed class HostCaPolicyTests : IDisposable
         Assert.IsFalse(verdict.IsAccepted);
         Assert.AreEqual(SshFailureReason.HostKeyRejected, verdict.Reason);
         Assert.IsEmpty(await _store.GetKnownHostsAsync());
+        Assert.Contains(Strings.Format(reasonKey, CertificateOf(certFile).KeyId), verdict.Message!);
     }
 
     // ------------------------------------------------------------ CA 管的主机出示没有担保的钥

@@ -5,6 +5,8 @@
 //   OpenSSH PROTOCOL.certkeys —— 证书类型、有效期、valid principals、critical options、CA 签名
 //   行为规格: velashell-docs/zh/ssh/spec/03-key-exchange.md §5.5（主机证书的验证）;velashell-docs/zh/ssh/spec/08-failures.md §一
 
+using VelaShell.Ssh.Diagnostics;
+
 namespace VelaShell.Ssh.HostKeys;
 
 /// <summary>主机证书不合格的是哪一条（<see cref="HostCertificateProblem.Kind"/>）。</summary>
@@ -60,7 +62,7 @@ public enum HostCertificateProblemKind
 /// </para>
 /// <para>
 /// <b>证书来自对端</b>：<see cref="KeyId"/>、<see cref="Principals"/>、<see cref="CriticalOptions"/>、<see cref="Algorithm"/> 都是原值，
-/// 拼进界面之前先过 <see cref="Diagnostics.PeerText.Sanitize"/>。
+/// 拼进界面之前先过 <see cref="PeerText.Sanitize"/>（<see cref="ToString"/> 自己会清）。
 /// </para>
 /// </remarks>
 /// <param name="Kind">哪一条不合格。</param>
@@ -89,22 +91,32 @@ public sealed record HostCertificateProblem(HostCertificateProblemKind Kind, str
     public int MinimumKeyBits { get; init; }
 
     /// <summary>这一条问题的中文原文（写给开发者，进日志与拒绝理由，不是界面文案）。</summary>
+    /// <remarks>
+    /// 〔velashell-docs/zh/ssh/spec/08 §一〕证书来自对端：Key ID、主体、关键选项、算法名先过 <see cref="PeerText.Sanitize"/> 再进这句话
+    /// （控制字符、双向文本控制符换成 <c>?</c>，超长截断）。正常证书的文本与清洗之前一字不差；原值照样在各属性里。
+    /// 曾经原样拼进来 —— 而这句话会进 <c>KnownHostsPolicy</c> 的拒绝消息与日志。
+    /// </remarks>
     public override string ToString() => Kind switch
     {
-        HostCertificateProblemKind.NotHostCertificate => $"这是一张用户证书(Key ID「{KeyId}」),不能用来证明主机身份。",
+        HostCertificateProblemKind.NotHostCertificate => $"这是一张用户证书(Key ID「{SafeKeyId}」),不能用来证明主机身份。",
         HostCertificateProblemKind.AuthorityKeyUnreadable =>
-            $"证书(Key ID「{KeyId}」)的签发 CA 公钥读不出来(类型不支持,或者它自己也是一张证书)。",
+            $"证书(Key ID「{SafeKeyId}」)的签发 CA 公钥读不出来(类型不支持,或者它自己也是一张证书)。",
         HostCertificateProblemKind.AuthorityKeyTooShort => $"签发证书的 RSA CA 只有 {KeyBits} 位,低于 {MinimumKeyBits} 位。",
-        HostCertificateProblemKind.SignatureMalformed => $"证书(Key ID「{KeyId}」)的 CA 签名格式非法。",
+        HostCertificateProblemKind.SignatureMalformed => $"证书(Key ID「{SafeKeyId}」)的 CA 签名格式非法。",
         HostCertificateProblemKind.SignatureAlgorithmRejected =>
-            $"证书(Key ID「{KeyId}」)的 CA 签名用的是 {Algorithm},不接受(SHA-1 的 ssh-rsa 签名已经不安全)。",
-        HostCertificateProblemKind.SignatureInvalid => $"证书(Key ID「{KeyId}」)的 CA 签名验不过 —— 证书被改过,或者不是这个 CA 签的。",
-        HostCertificateProblemKind.Expired => $"主机证书(Key ID「{KeyId}」)已于 {Time:u} 过期。",
-        HostCertificateProblemKind.NotYetValid => $"主机证书(Key ID「{KeyId}」)要到 {Time:u} 才生效。",
-        HostCertificateProblemKind.NoPrincipals => $"主机证书(Key ID「{KeyId}」)没有列出任何主机名 —— 那等于对所有主机有效,不予接受。",
-        HostCertificateProblemKind.HostNotListed => $"主机证书(Key ID「{KeyId}」)签给的是 {string.Join("、", Principals)},不含 {Host}。",
+            $"证书(Key ID「{SafeKeyId}」)的 CA 签名用的是 {PeerText.Sanitize(Algorithm, 64)},不接受(SHA-1 的 ssh-rsa 签名已经不安全)。",
+        HostCertificateProblemKind.SignatureInvalid => $"证书(Key ID「{SafeKeyId}」)的 CA 签名验不过 —— 证书被改过,或者不是这个 CA 签的。",
+        HostCertificateProblemKind.Expired => $"主机证书(Key ID「{SafeKeyId}」)已于 {Time:u} 过期。",
+        HostCertificateProblemKind.NotYetValid => $"主机证书(Key ID「{SafeKeyId}」)要到 {Time:u} 才生效。",
+        HostCertificateProblemKind.NoPrincipals => $"主机证书(Key ID「{SafeKeyId}」)没有列出任何主机名 —— 那等于对所有主机有效,不予接受。",
+        HostCertificateProblemKind.HostNotListed => $"主机证书(Key ID「{SafeKeyId}」)签给的是 {JoinNames(Principals)},不含 {Host}。",
         HostCertificateProblemKind.UnknownCriticalOptions =>
-            $"主机证书(Key ID「{KeyId}」)带着不认识的关键选项:{string.Join("、", CriticalOptions)}。",
-        _ => $"主机证书(Key ID「{KeyId}」)不合格。",
+            $"主机证书(Key ID「{SafeKeyId}」)带着不认识的关键选项:{JoinNames(CriticalOptions)}。",
+        _ => $"主机证书(Key ID「{SafeKeyId}」)不合格。",
     };
+
+    private string SafeKeyId => PeerText.Sanitize(KeyId);
+
+    /// <summary>证书里的一串名字逐个清洗后用「、」接起来（个数由证书解析的字段上限管着，这里不再截）。</summary>
+    private static string JoinNames(IReadOnlyList<string> names) => string.Join("、", names.Select(static n => PeerText.Sanitize(n)));
 }

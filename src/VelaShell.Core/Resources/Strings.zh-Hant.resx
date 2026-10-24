@@ -2152,27 +2152,6 @@
   <data name="Msg_HostCaUnvouched" xml:space="preserve">
     <value>{0} 在受信主機 CA（{1}）的管理範圍內，但它出示的金鑰（{2}）沒有這個 CA 的擔保，連線已拒絕，不會按新主機詢問。若這台主機確實沒有憑證，請核對指紋後從 known_hosts 匯入它的金鑰，或到 設定 → 安全與稽核 調整受信主機 CA。</value>
   </data>
-  <data name="HostCert_ProblemNotHost" xml:space="preserve">
-    <value>這是一張使用者憑證，不是主機憑證。</value>
-  </data>
-  <data name="HostCert_ProblemExpired" xml:space="preserve">
-    <value>憑證已於 {0} 過期。</value>
-  </data>
-  <data name="HostCert_ProblemNotYetValid" xml:space="preserve">
-    <value>憑證要到 {0} 才生效。</value>
-  </data>
-  <data name="HostCert_ProblemNoPrincipals" xml:space="preserve">
-    <value>憑證沒有列出任何主機名稱，那等於對所有主機有效。</value>
-  </data>
-  <data name="HostCert_ProblemPrincipals" xml:space="preserve">
-    <value>憑證簽給的是 {1}，不含 {0}。</value>
-  </data>
-  <data name="HostCert_ProblemCriticalOptions" xml:space="preserve">
-    <value>憑證帶著主機憑證不認識的關鍵選項：{0}。</value>
-  </data>
-  <data name="HostCert_ProblemSignature" xml:space="preserve">
-    <value>CA 簽章驗證不過（憑證被改過、用的是 SHA-1 的 ssh-rsa 簽章，或者 CA 金鑰強度不夠）。</value>
-  </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>已停止自動重新連線 {0}：主機金鑰 {1} 需要你確認，而自動重新連線不會彈出視窗詢問。請手動重新連線，在彈出的視窗裡核對指紋。</value>
   </data>
