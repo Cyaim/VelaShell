@@ -56,6 +56,8 @@ public sealed class NestedShellFollowDockerTests
         {
             Assert.Inconclusive($"多 shell 测试服务器 {Host}:{Port} 不可达:{ex.Message}");
         }
+        // su 要 busybox-suid、sudo 要 sudoers 那一行,都是 #637 才加进 Dockerfile 的:镜像旧了就跳过而不是红。
+        FixtureImage.RequireCurrent("ssh-shells", "ssh-shells", Host, Port, "vela-bash", Password);
     }
 
     /// <summary>

@@ -35,6 +35,8 @@
     <Compile Include="..\VelaShell.Ssh.Tests\TestKit\TestChannelServer.cs" Link="Ssh\TestKit\TestChannelServer.cs" />
     <Compile Include="..\VelaShell.Ssh.Tests\TestKit\TestSftpServer.cs" Link="Ssh\TestKit\TestSftpServer.cs" />
     <Compile Include="..\VelaShell.Ssh.Tests\TestKit\SftpWireAccess.cs" Link="Ssh\TestKit\SftpWireAccess.cs" />
+    <!-- 靶机镜像跟不上 Dockerfile 时记 Inconclusive 而不是红(ssh-shells 那几组用例共用这一份)。 -->
+    <Compile Include="..\VelaShell.Tests\TestSupport\FixtureImage.cs" Link="TestSupport\FixtureImage.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -8,6 +8,7 @@ using VelaShell.Ssh.HostKeys;
 using VelaShell.Ssh.Session;
 using VelaShell.Terminal;
 using VelaShell.Terminal.Emulation;
+using VelaShell.Tests.TestSupport;
 
 namespace VelaShell.ShellIntegration.Tests;
 
@@ -370,6 +371,8 @@ internal sealed class ShellIntegrationHarness : IAsyncDisposable
         {
             Assert.Inconclusive($"多 shell 测试服务器 {Host}:{Port} 不可达:{ex.Message}");
         }
+        // 账号、登录 shell、动过手脚的 rc、su / sudo 都写在 Dockerfile 里:镜像旧了就跳过而不是红。
+        FixtureImage.RequireCurrent("ssh-shells", "ssh-shells", Host, Port, "vela-bash", Password);
     }
 
     private static bool IsDockerAvailable()

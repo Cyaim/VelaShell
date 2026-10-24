@@ -18,6 +18,11 @@
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 靶机镜像跟不上 Dockerfile 时记 Inconclusive 而不是红(与 VelaShell.Tests、Core.Tests 共用这一份)。 -->
+    <Compile Include="..\VelaShell.Tests\TestSupport\FixtureImage.cs" Link="TestSupport\FixtureImage.cs" />
+  </ItemGroup>
+
   <!-- 这一套横跨三个程序集,正是它单独立项的理由:
        Core 出脚本与探针、Terminal 出抑制器与仿真器、Infrastructure 出真 SSH 连接。
        塞进任何一个单元测试项目都会给那个项目平白拖进两份不相干的依赖。 -->
