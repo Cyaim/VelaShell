@@ -295,6 +295,78 @@ public class TunnelServiceTests
         Assert.AreEqual(0, tunnel.ActiveConnections, "停掉之后不该还有在传的连接。");
     }
 
+    /// <summary>实时速率与连接快照同计数一起从句柄同步过来;停掉之后清零 —— 停着的隧道没有速率,也没有在搬的连接。</summary>
+    [TestMethod]
+    public async Task RefreshStatistics_CopiesThroughputAndConnections_StopClearsThem()
+    {
+        IPortForwardHandle handle = Substitute.For<IPortForwardHandle>();
+        handle.SentBytesPerSecond.Returns(1500d);
+        handle.ReceivedBytesPerSecond.Returns(250_000d);
+        TunnelConnectionInfo live = new(7, "127.0.0.1:53122", "db:5432", DateTime.UtcNow.AddSeconds(-42), 1024, 65536);
+        handle.Connections.Returns([live]);
+        _mockClientWrapper.StartPortForwardAsync(Arg.Any<PortForwardRequest>(), Arg.Any<CancellationToken>()).Returns(handle);
+        TunnelService service = CreateService();
+        TunnelInfo tunnel = await service.CreateLocalForwardAsync(_sessionId, LocalConfig(5432));
+
+        service.RefreshStatistics();
+
+        Assert.AreEqual(1500d, tunnel.SentBytesPerSecond);
+        Assert.AreEqual(250_000d, tunnel.ReceivedBytesPerSecond);
+        Assert.AreSequenceEqual([live], [.. tunnel.Connections]);
+
+        await service.StopTunnelAsync(tunnel.Id);
+
+        Assert.AreEqual(0d, tunnel.SentBytesPerSecond);
+        Assert.AreEqual(0d, tunnel.ReceivedBytesPerSecond);
+        Assert.IsEmpty(tunnel.Connections);
+    }
+
+    /// <summary>隧道配置里的限速一路带进转发请求(三种类型都带);不设就是不限。</summary>
+    [TestMethod]
+    [DataRow(TunnelType.LocalForward)]
+    [DataRow(TunnelType.RemoteForward)]
+    [DataRow(TunnelType.DynamicForward)]
+    public async Task CreateForward_CarriesTheRateLimitIntoTheRequest(TunnelType type)
+    {
+        List<PortForwardRequest> requests = [];
+        _mockClientWrapper.StartPortForwardAsync(Arg.Do<PortForwardRequest>(requests.Add), Arg.Any<CancellationToken>())
+                          .Returns(Substitute.For<IPortForwardHandle>());
+        TunnelService service = CreateService();
+        TunnelConfig limited = new()
+        {
+            Type = type,
+            Name = "limited",
+            LocalHost = "127.0.0.1",
+            LocalPort = 5432,
+            RemoteHost = "127.0.0.1",
+            RemotePort = 5432,
+            MaxBytesPerSecond = 512 * 1024
+        };
+        TunnelConfig unlimited = new()
+        {
+            Type = type,
+            Name = "unlimited",
+            LocalHost = "127.0.0.1",
+            LocalPort = 5433,
+            RemoteHost = "127.0.0.1",
+            RemotePort = 5433
+        };
+
+        foreach (TunnelConfig config in new[] { limited, unlimited })
+        {
+            _ = type switch
+            {
+                TunnelType.RemoteForward => await service.CreateRemoteForwardAsync(_sessionId, config),
+                TunnelType.DynamicForward => await service.CreateDynamicForwardAsync(_sessionId, config),
+                _ => await service.CreateLocalForwardAsync(_sessionId, config)
+            };
+        }
+
+        Assert.HasCount(2, requests);
+        Assert.AreEqual(512 * 1024L, requests[0].MaxBytesPerSecond);
+        Assert.IsNull(requests[1].MaxBytesPerSecond);
+    }
+
     private static TunnelConfig LocalConfig(uint port) =>
         new()
         {

@@ -71,6 +71,12 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     private readonly DispatcherTimer? _liveTimer;
 
     /// <summary>
+    /// 面板开着时每秒一拍,只刷流量(速率、连接列表、累计)。5 秒一拍的 <see cref="_liveTimer" /> 管的是存活与自动恢复,
+    /// 拿它刷速率的话,读数比实际晚五秒才动 —— 而速率本来就取最近三秒的平均。面板收起时停表,不白白每秒同步一遍。
+    /// </summary>
+    private readonly DispatcherTimer? _trafficTimer;
+
+    /// <summary>
     /// 把面板外发生的错误报给用户(宿主接的是右下角的错误提示)。启动时自动建立隧道那会儿面板多半没开,
     /// 写进表单下的 <see cref="ErrorMessage" /> 没人看得见。第二个参数非空时提示上带「重试」,点了就执行它。
     /// </summary>
@@ -168,6 +174,36 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             };
             _liveTimer.Tick += (_, _) => RefreshLiveState();
             _liveTimer.Start();
+            _trafficTimer = new()
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _trafficTimer.Tick += (_, _) => RefreshTraffic();
+        }
+    }
+
+    /// <summary>
+    /// 面板是否展开(宿主随面板的显隐设置)。开着时每秒刷一次速率与连接列表,收起就停。
+    /// </summary>
+    public bool IsOpen
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            if (value)
+            {
+                RefreshTraffic();
+                _trafficTimer?.Start();
+            }
+            else
+            {
+                _trafficTimer?.Stop();
+            }
         }
     }
 
@@ -330,6 +366,18 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
+    /// <summary>
+    /// 表单中的限速(KB/s,每个方向,这条隧道的全部连接共用);0 = 不限(默认)。
+    /// </summary>
+    public int NewRateLimitKiB
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, Math.Clamp(value, 0, MaxRateLimitKiB));
+    }
+
+    /// <summary>限速输入框的上限(KB/s):1 GB/s,再大就等于不限。</summary>
+    public const int MaxRateLimitKiB = 1024 * 1024;
+
     /// <summary>表单中的隧道别名(可选,留空时用路由描述兜底)。</summary>
     public string NewTunnelName
     {
@@ -393,6 +441,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     public void Dispose()
     {
         _liveTimer?.Stop();
+        _trafficTimer?.Stop();
         GC.SuppressFinalize(this);
     }
 
@@ -683,6 +732,26 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         catch
         {
             // 列表刷新失败保留旧数据。
+        }
+    }
+
+    /// <summary>
+    /// 面板开着时的每秒一拍:从服务同步读数,刷当前服务器各条隧道的流量行。
+    /// 无 Avalonia 应用(单元测试)时没有计时器,测试直接调它。
+    /// </summary>
+    internal void RefreshTraffic()
+    {
+        try
+        {
+            _workflowService.RefreshStatistics();
+        }
+        catch
+        {
+            // 同 RefreshLiveState:服务正在拆除时读不到,下一拍再说。
+        }
+        foreach (TunnelItemViewModel tunnel in Tunnels)
+        {
+            tunnel.RefreshTraffic();
         }
     }
 
@@ -1136,6 +1205,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         NewRemotePort = (int)item.Config.RemotePort;
         NewAutoReconnect = item.Config.AutoReconnect;
         NewAutoStart = item.Config.AutoStart;
+        // 配置里存的是字节 / 秒;表单按 KB/s 填,不整除时向上取整(别把限速悄悄放宽成 0 = 不限)。
+        NewRateLimitKiB = item.Config.MaxBytesPerSecond is { } bytesPerSecond
+            ? (int)Math.Min(MaxRateLimitKiB, Math.Max(1, (bytesPerSecond + 1023) / 1024))
+            : 0;
         ErrorMessage = null;
         RaiseEditingChanged();
     }
@@ -1239,7 +1312,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
                                  : NewRemoteHost.Trim(),
             RemotePort = isDynamic ? 0u : (uint)NewRemotePort,
             AutoReconnect = NewAutoReconnect,
-            AutoStart = NewAutoStart
+            AutoStart = NewAutoStart,
+            MaxBytesPerSecond = NewRateLimitKiB > 0 ? NewRateLimitKiB * 1024L : null
         };
     }
 
@@ -1412,6 +1486,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         NewRemotePort = 27017;
         NewAutoReconnect = false;
         NewAutoStart = false;
+        NewRateLimitKiB = 0;
         NewTunnelTypeIndex = 0;
         ForwardToServerLoopback = true; // 同时把目标主机复位为 127.0.0.1
         RaiseEditingChanged();

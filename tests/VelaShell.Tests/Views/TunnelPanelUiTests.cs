@@ -104,10 +104,10 @@ public sealed class TunnelPanelUiTests
     }
 
     /// <summary>
-    /// 表单末尾几行复选框(转发到本机 / 掉线后自动重连 / 程序启动时自动建立)之间只留表单 StackPanel 的 Spacing(设计 tunNewForm 是 8px,
+    /// 表单里的复选框(转发到本机 / 掉线后自动重连 / 程序启动时自动建立)与上一行之间只留表单 StackPanel 的 Spacing(设计 tunNewForm 是 8px,
     /// 2026-10-09 面板整体放大后为 10px)。Fluent 的 CheckBox 模板在框上下各塞了 6px 死高
     /// (模板里写死 Height="32",外部样式压不动),不抵消掉就是多出 12px 的行距 ——
-    /// 肉眼看就是「自动重连」那行离上面差着一大截。
+    /// 肉眼看就是「自动重连」那行离上面差着一大截。复选框之间夹着限速那一行,所以量的是到上一个可见行的间距。
     /// </summary>
     [TestMethod]
     public void Panel_FormCheckBoxes_KeepOnlyTheFormSpacing()
@@ -131,15 +131,101 @@ public sealed class TunnelPanelUiTests
                     "复选框应当只占勾选框本身的高度,模板多出来的 12px 死高要被抵消掉。");
             }
 
-            for (int i = 1; i < boxes.Length; i++)
+            foreach (CheckBox box in boxes.Where(b => b.IsEffectivelyVisible))
             {
-                double gap = boxes[i].TranslatePoint(new(0, 0), window)!.Value.Y
-                             - boxes[i - 1].TranslatePoint(new(0, 0), window)!.Value.Y
-                             - boxes[i - 1].DesiredSize.Height;
-                Assert.AreEqual(10d, gap, 0.5, $"第 {i} 与第 {i + 1} 行复选框之间应当就是表单 StackPanel 的 Spacing=10。");
+                var form = (StackPanel)box.Parent!;
+                Control previous = form.Children.Take(form.Children.IndexOf(box)).Last(c => c.IsVisible);
+                double gap = box.TranslatePoint(new(0, 0), window)!.Value.Y
+                             - previous.TranslatePoint(new(0, 0), window)!.Value.Y
+                             - previous.Bounds.Height - previous.Margin.Bottom - box.Margin.Top;
+                Assert.AreEqual(10d, gap, 0.5, $"复选框「{ToolTip.GetTip(box) ?? box.Content}」与上一行之间应当就是表单 StackPanel 的 Spacing=10。");
             }
 
             window.Close();
+        });
+    }
+
+    /// <summary>
+    /// 运行中的隧道:速率行(带限速)与「当前连接」开关都在;点开开关,连接一条条列出来(来源 → 目标、开了多久与字节数),
+    /// 超过 20 条的写一句没列出的条数。
+    /// </summary>
+    [TestMethod]
+    public void Panel_ActiveTunnel_ShowsRatesAndExpandsTheConnectionList()
+    {
+        OnUi(() =>
+        {
+            CultureInfo previousCulture = CultureInfo.CurrentCulture;
+            CultureInfo previousUiCulture = CultureInfo.CurrentUICulture;
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("zh-CN");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("zh-CN");
+            _localization.SetLanguage("zh-CN");
+            try
+            {
+                var vm = new TunnelPanelViewModel(Substitute.For<ITunnelWorkflowService>());
+                DateTime now = DateTime.UtcNow;
+                var info = new TunnelInfo
+                {
+                    Id = Guid.NewGuid(),
+                    Config = new()
+                    {
+                        Type = TunnelType.DynamicForward,
+                        Name = "socks",
+                        LocalHost = "127.0.0.1",
+                        LocalPort = 1080,
+                        MaxBytesPerSecond = 512 * 1024
+                    },
+                    Status = TunnelStatus.Active,
+                    SessionId = Guid.NewGuid(),
+                    CreatedAt = now.AddMinutes(-5),
+                    BytesTransferred = 3_200_000,
+                    TotalConnections = 24,
+                    ActiveConnections = 22,
+                    SentBytesPerSecond = 12_800,
+                    ReceivedBytesPerSecond = 480_000,
+                    Connections =
+                    [
+                        .. Enumerable.Range(1, 22).Select(i => new TunnelConnectionInfo(
+                            i, $"127.0.0.1:{51000 + i}", i % 2 == 0 ? "registry.npmjs.org:443" : "[2001:db8::10]:443",
+                            now.AddSeconds(-7 * i), 1024L * i, 40_960L * i))
+                    ]
+                };
+                var item = new TunnelItemViewModel(info);
+                vm.Tunnels.Add(item);
+                var view = new TunnelPanelView { DataContext = vm };
+                var window = new Window { Width = 380, Height = 900, Content = view };
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+
+                TextBlock traffic = view.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "TrafficLine");
+                Assert.IsTrue(traffic.IsEffectivelyVisible);
+                Assert.AreEqual(item.TrafficText, traffic.Text);
+                StringAssert.Contains(traffic.Text, Strings.Format("Tunnel_RateLimit", "512.0 KB"));
+                Button toggle = view.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "ConnectionsToggle");
+                Assert.IsTrue(toggle.IsEffectivelyVisible);
+                ItemsControl list = view.GetVisualDescendants().OfType<ItemsControl>().Single(c => c.Name == "ConnectionList");
+                Assert.IsFalse(list.IsEffectivelyVisible, "默认收起。");
+
+                toggle.Command!.Execute(null);
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+
+                Assert.IsTrue(list.IsEffectivelyVisible);
+                string[] routes = [.. list.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text ?? string.Empty)
+                                      .Where(t => t.Contains('→'))];
+                Assert.HasCount(TunnelItemViewModel.MaxListedConnections, routes);
+                Assert.AreEqual("127.0.0.1:51001 → [2001:db8::10]:443", routes[0]);
+                Assert.IsTrue(view.GetVisualDescendants().OfType<TextBlock>()
+                                  .Any(t => t.IsEffectivelyVisible && t.Text == Strings.Format("Tunnel_ConnectionsMore", 2)));
+                SaveFrame(window, "tunnel-panel-connections-zh.png");
+                window.Close();
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = previousCulture;
+                CultureInfo.CurrentUICulture = previousUiCulture;
+                _localization.SetLanguage(previousUiCulture.Name);
+            }
         });
     }
 

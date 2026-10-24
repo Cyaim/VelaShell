@@ -1,5 +1,7 @@
 using System.Net;
+using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
+using VelaShell.Ssh.Forwarding;
 
 namespace VelaShell.Infrastructure.Tests.Ssh;
 
@@ -53,6 +55,35 @@ public sealed class PortForwardAddressTests
     /// 用户在「远程转发」里把目标填成 0.0.0.0,想表达的是「本机」。
     /// 照字面去连 0.0.0.0 的结果因平台而异,没有一个是他想要的。
     /// </remarks>
+    /// <summary>隧道上设的限速原样交给库的两种转发参数(库按转发器、按方向限);不设就是不限。</summary>
+    [TestMethod]
+    public void Options_CarryTheRateLimit()
+    {
+        PortForwardRequest limited = new(PortForwardKind.Local, "127.0.0.1", 5432, "db", 5432) { MaxBytesPerSecond = 65536 };
+        PortForwardRequest unlimited = new(PortForwardKind.Remote, "localhost", 8080, "127.0.0.1", 80);
+
+        Assert.AreEqual(65536L, LibraryPortForwardHandle.LocalOptions(limited, "127.0.0.1").MaxBytesPerSecond);
+        Assert.AreEqual(5432, LibraryPortForwardHandle.LocalOptions(limited, "127.0.0.1").BindPort);
+        Assert.AreEqual(65536L, LibraryPortForwardHandle.RemoteOptions(limited, "localhost").MaxBytesPerSecond);
+        Assert.IsNull(LibraryPortForwardHandle.LocalOptions(unlimited, "localhost").MaxBytesPerSecond);
+        RemotePortForwardOptions remote = LibraryPortForwardHandle.RemoteOptions(unlimited, "localhost");
+        Assert.IsNull(remote.MaxBytesPerSecond);
+        Assert.AreEqual("localhost", remote.BindAddress, "远程转发的绑定地址原样交给服务端。");
+        Assert.AreEqual(8080, remote.BindPort);
+    }
+
+    /// <summary>
+    /// 连接列表里的来源:IPv6 带方括号、服务端报的主机名原样;Unix 套接字上连进来的客户端没有名字,给 null(界面写「来源未知」)。
+    /// </summary>
+    [TestMethod]
+    public void ConnectionSource_IsWrittenAsHostPort()
+    {
+        Assert.AreEqual("127.0.0.1:53122", LibraryPortForwardHandle.DescribeEndPoint(new IPEndPoint(IPAddress.Loopback, 53122)));
+        Assert.AreEqual("[::1]:53122", LibraryPortForwardHandle.DescribeEndPoint(new IPEndPoint(IPAddress.IPv6Loopback, 53122)));
+        Assert.AreEqual("gateway.local:4022", LibraryPortForwardHandle.DescribeEndPoint(new DnsEndPoint("gateway.local", 4022)));
+        Assert.IsNull(LibraryPortForwardHandle.DescribeEndPoint(null));
+    }
+
     [TestMethod]
     [DataRow("0.0.0.0", "127.0.0.1")]
     [DataRow("*", "127.0.0.1")]

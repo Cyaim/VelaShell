@@ -4722,6 +4722,27 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Tunnel_StatsNone" xml:space="preserve">
     <value>尚無連線</value>
   </data>
+  <data name="Tunnel_RateLimit" xml:space="preserve">
+    <value>限速 {0}/s</value>
+  </data>
+  <data name="Tunnel_RateLimitLabel" xml:space="preserve">
+    <value>限速 KB/s(每個方向,0 為不限)</value>
+  </data>
+  <data name="Tunnel_RateLimitTip" xml:space="preserve">
+    <value>兩個方向分別限速,這條隧道上的全部連線共用這份額度;修改後在下次啟動隧道時生效。</value>
+  </data>
+  <data name="Tunnel_ConnectionsToggle" xml:space="preserve">
+    <value>目前連線 {0} 條</value>
+  </data>
+  <data name="Tunnel_ConnectionsMore" xml:space="preserve">
+    <value>還有 {0} 條未列出</value>
+  </data>
+  <data name="Tunnel_ConnectionDetail" xml:space="preserve">
+    <value>已開 {0} · ↑ {1} ↓ {2}</value>
+  </data>
+  <data name="Tunnel_ConnectionSourceUnknown" xml:space="preserve">
+    <value>來源未知</value>
+  </data>
   <data name="Tunnel_AutoBadge" xml:space="preserve">
     <value>自動</value>
   </data>

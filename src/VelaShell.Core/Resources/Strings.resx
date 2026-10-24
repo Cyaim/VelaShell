@@ -4589,6 +4589,27 @@ Overwrite it?</value>
   <data name="Tunnel_StatsNone" xml:space="preserve">
     <value>No connections yet</value>
   </data>
+  <data name="Tunnel_RateLimit" xml:space="preserve">
+    <value>Limit {0}/s</value>
+  </data>
+  <data name="Tunnel_RateLimitLabel" xml:space="preserve">
+    <value>Rate limit, KB/s per direction (0 = none)</value>
+  </data>
+  <data name="Tunnel_RateLimitTip" xml:space="preserve">
+    <value>Each direction is limited separately, and all connections on this tunnel share the allowance. Changes take effect the next time the tunnel starts.</value>
+  </data>
+  <data name="Tunnel_ConnectionsToggle" xml:space="preserve">
+    <value>Open connections: {0}</value>
+  </data>
+  <data name="Tunnel_ConnectionsMore" xml:space="preserve">
+    <value>{0} more not shown</value>
+  </data>
+  <data name="Tunnel_ConnectionDetail" xml:space="preserve">
+    <value>open {0} · ↑ {1} ↓ {2}</value>
+  </data>
+  <data name="Tunnel_ConnectionSourceUnknown" xml:space="preserve">
+    <value>unknown source</value>
+  </data>
   <data name="Tunnel_AutoBadge" xml:space="preserve">
     <value>AUTO</value>
   </data>

@@ -4473,6 +4473,27 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Tunnel_StatsNone" xml:space="preserve">
     <value>아직 연결 없음</value>
   </data>
+  <data name="Tunnel_RateLimit" xml:space="preserve">
+    <value>속도 제한 {0}/s</value>
+  </data>
+  <data name="Tunnel_RateLimitLabel" xml:space="preserve">
+    <value>속도 제한 KB/s (방향별, 0 = 제한 없음)</value>
+  </data>
+  <data name="Tunnel_RateLimitTip" xml:space="preserve">
+    <value>방향별로 따로 제한하며, 이 터널의 모든 연결이 이 한도를 함께 씁니다. 변경 사항은 다음에 터널을 시작할 때 적용됩니다.</value>
+  </data>
+  <data name="Tunnel_ConnectionsToggle" xml:space="preserve">
+    <value>현재 연결 {0}개</value>
+  </data>
+  <data name="Tunnel_ConnectionsMore" xml:space="preserve">
+    <value>그 밖에 {0}개는 생략</value>
+  </data>
+  <data name="Tunnel_ConnectionDetail" xml:space="preserve">
+    <value>연결 {0} · ↑ {1} ↓ {2}</value>
+  </data>
+  <data name="Tunnel_ConnectionSourceUnknown" xml:space="preserve">
+    <value>출발지 알 수 없음</value>
+  </data>
   <data name="Tunnel_AutoBadge" xml:space="preserve">
     <value>자동</value>
   </data>

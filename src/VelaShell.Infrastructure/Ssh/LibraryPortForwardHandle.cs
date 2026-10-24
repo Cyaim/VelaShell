@@ -1,4 +1,5 @@
 using System.Net;
+using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Ssh;
 using VelaShell.Ssh.Diagnostics;
@@ -23,9 +24,9 @@ namespace VelaShell.Infrastructure.Ssh;
 /// 本类型只是把它的计数与事件接到宿主的契约上。
 /// </para>
 /// <para>
-/// 发送 / 接收分开计数是库的口径,而宿主的契约要的是**总量**,所以这里相加。
-/// 两者都保留会更有信息量,但那要改 <see cref="IPortForwardHandle" /> 以及
-/// 隧道面板的绑定 —— 不在这次迁移的范围里,记在 feature-plan 里。
+/// 发送 / 接收分开计数是库的口径,而宿主的契约要的累计量是**总量**,所以这里相加;
+/// 实时速率(<see cref="PortForwarder.Throughput" />)与连接快照(<see cref="PortForwarder.Connections" />)按方向原样交出去,
+/// 隧道面板显示 ↑ / ↓ 两个速率与当前连接列表。
 /// </para>
 /// </remarks>
 internal sealed class LibraryPortForwardHandle : IPortForwardHandle
@@ -71,6 +72,30 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
     public int ActiveConnections => _forwarder.ActiveConnections;
 
     /// <inheritdoc />
+    public double SentBytesPerSecond => _forwarder.Throughput.SentPerSecond;
+
+    /// <inheritdoc />
+    public double ReceivedBytesPerSecond => _forwarder.Throughput.ReceivedPerSecond;
+
+    /// <inheritdoc />
+    public IReadOnlyList<TunnelConnectionInfo> Connections =>
+        [.. _forwarder.Connections.Select(c => new TunnelConnectionInfo(
+            c.Id, DescribeEndPoint(c.Source), c.Target, c.StartedAt.UtcDateTime, c.BytesSent, c.BytesReceived))];
+
+    /// <summary>
+    /// 连接来源给人看的写法:IPv6 带方括号(与面板上别处的 <c>host:port</c> 一致);
+    /// Unix 套接字上连进来的客户端没有名字(未绑定的一端),给 <see langword="null" />,由界面写「来源未知」。
+    /// </summary>
+    internal static string? DescribeEndPoint(EndPoint? endPoint) =>
+        endPoint switch
+        {
+            IPEndPoint ip => $"{HostAddress.Bracket(ip.Address.ToString())}:{ip.Port}",
+            DnsEndPoint dns => $"{HostAddress.Bracket(dns.Host)}:{dns.Port}",
+            System.Net.Sockets.UnixDomainSocketEndPoint unix when unix.ToString() is { Length: > 0 } path => path,
+            _ => null,
+        };
+
+    /// <inheritdoc />
     public event Action<Exception>? ChannelError;
 
     /// <summary>
@@ -89,13 +114,13 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
         PortForwarder forwarder = request.Kind switch
         {
             PortForwardKind.Local => LocalPortForwarder.Start(
-                connection, targetHost, (int)request.TargetPort!, LocalOptions(boundHost, request.BoundPort)),
+                connection, targetHost, (int)request.TargetPort!, LocalOptions(request, boundHost)),
 
-            PortForwardKind.Dynamic => LocalPortForwarder.StartDynamic(connection, LocalOptions(boundHost, request.BoundPort)),
+            PortForwardKind.Dynamic => LocalPortForwarder.StartDynamic(connection, LocalOptions(request, boundHost)),
 
             PortForwardKind.Remote => await RemotePortForwarder.StartAsync(
                 connection, ResolveOutboundHost(targetHost), (int)request.TargetPort!,
-                new RemotePortForwardOptions { BindAddress = boundHost, BindPort = (int)request.BoundPort },
+                RemoteOptions(request, boundHost),
                 cancellationToken).ConfigureAwait(false),
 
             _ => throw new ArgumentOutOfRangeException(
@@ -105,10 +130,20 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
         return new(forwarder);
     }
 
-    private static LocalPortForwardOptions LocalOptions(string boundHost, uint boundPort) => new()
+    /// <summary>本地 / 动态转发的参数:绑定地址与端口、限速。</summary>
+    internal static LocalPortForwardOptions LocalOptions(PortForwardRequest request, string boundHost) => new()
     {
         BindAddress = ParseBindAddress(boundHost),
-        BindPort = (int)boundPort,
+        BindPort = (int)request.BoundPort,
+        MaxBytesPerSecond = request.MaxBytesPerSecond,
+    };
+
+    /// <summary>远程转发的参数:服务端的绑定地址与端口(原样)、限速。</summary>
+    internal static RemotePortForwardOptions RemoteOptions(PortForwardRequest request, string boundHost) => new()
+    {
+        BindAddress = boundHost,
+        BindPort = (int)request.BoundPort,
+        MaxBytesPerSecond = request.MaxBytesPerSecond,
     };
 
     /// <summary>把配置里的监听主机翻译成绑定地址(<c>0.0.0.0</c> / <c>*</c> 表示所有接口)。</summary>

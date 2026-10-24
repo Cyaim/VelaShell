@@ -602,6 +602,159 @@ public class TunnelPanelViewModelTests
         Assert.AreEqual(Strings.Format("Tunnel_StatsLive", 3, 2, "1.5 KB"), item.StatsText);
     }
 
+    // ———— 实时速率、连接列表、限速 ————
+
+    /// <summary>
+    /// 速率行:运行中写两个方向此刻的速率,设了限速一并写出;停着只写限速;都没有就整行不显示。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public void TunnelItemViewModel_TrafficText_ShowsRatesAndTheLimit()
+    {
+        TunnelInfo info = CreateTunnelInfo();
+        info.SentBytesPerSecond = 1536;
+        info.ReceivedBytesPerSecond = 2 * 1024 * 1024;
+        var item = new TunnelItemViewModel(info);
+        Assert.AreEqual("↑ 1.5 KB/s  ↓ 2.0 MB/s", item.TrafficText);
+        Assert.IsNull(item.TrafficToolTip, "不限速时没有那句说明。");
+
+        TunnelInfo limited = new()
+        {
+            Id = Guid.NewGuid(),
+            Config = new()
+            {
+                Type = TunnelType.LocalForward,
+                Name = "limited",
+                LocalHost = "127.0.0.1",
+                LocalPort = 5432,
+                RemoteHost = "127.0.0.1",
+                RemotePort = 5432,
+                MaxBytesPerSecond = 512 * 1024
+            },
+            Status = TunnelStatus.Active,
+            SessionId = Guid.NewGuid(),
+            CreatedAt = DateTime.UtcNow
+        };
+        var limitedItem = new TunnelItemViewModel(limited);
+        Assert.AreEqual($"↑ 0 B/s  ↓ 0 B/s · {Strings.Format("Tunnel_RateLimit", "512.0 KB")}", limitedItem.TrafficText);
+        Assert.AreEqual(Strings.Get("Tunnel_RateLimitTip"), limitedItem.TrafficToolTip);
+
+        limitedItem.Status = TunnelStatus.Stopped;
+        Assert.AreEqual(Strings.Format("Tunnel_RateLimit", "512.0 KB"), limitedItem.TrafficText, "停着时只剩限多少。");
+
+        item.Status = TunnelStatus.Stopped;
+        Assert.IsNull(item.TrafficText);
+        Assert.IsFalse(item.HasTrafficText);
+    }
+
+    /// <summary>
+    /// 当前连接:默认收起(只显示「当前连接 N 条」);展开后逐条列出来源 → 目标、开了多久、两个方向各搬了多少,
+    /// 至多 20 条,其余写「还有 N 条未列出」。来源给不出时写「来源未知」。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task TunnelItemViewModel_ConnectionList_ExpandsAndCapsTheList()
+    {
+        TunnelInfo info = CreateTunnelInfo();
+        DateTime now = DateTime.UtcNow;
+        info.Connections =
+        [
+            new(1, "127.0.0.1:53122", "db-server:3306", now.AddSeconds(-185), 1536, 2 * 1024 * 1024),
+            new(2, null, "db-server:3306", now, 0, 0),
+            .. Enumerable.Range(3, 23).Select(i => new TunnelConnectionInfo(i, $"127.0.0.1:{50000 + i}", "db-server:3306", now, 0, 0))
+        ];
+        var item = new TunnelItemViewModel(info);
+
+        Assert.IsTrue(item.HasConnections);
+        Assert.AreEqual(Strings.Format("Tunnel_ConnectionsToggle", 25), item.ConnectionsToggleText);
+        Assert.IsFalse(item.IsConnectionListVisible, "默认收起。");
+        Assert.IsEmpty(item.ConnectionRows);
+
+        await item.ToggleConnectionsCommand.Execute().FirstAsync();
+
+        Assert.IsTrue(item.IsConnectionListVisible);
+        Assert.HasCount(TunnelItemViewModel.MaxListedConnections, item.ConnectionRows);
+        Assert.AreEqual("127.0.0.1:53122 → db-server:3306", item.ConnectionRows[0].Route);
+        Assert.AreEqual(Strings.Format("Tunnel_ConnectionDetail", "3m 05s", "1.5 KB", "2.0 MB"), item.ConnectionRows[0].Detail);
+        Assert.AreEqual($"{Strings.Get("Tunnel_ConnectionSourceUnknown")} → db-server:3306", item.ConnectionRows[1].Route);
+        Assert.AreEqual(5, item.HiddenConnectionCount);
+        Assert.AreEqual(Strings.Format("Tunnel_ConnectionsMore", 5), item.HiddenConnectionsText);
+
+        item.Status = TunnelStatus.Stopped;
+        Assert.IsFalse(item.HasConnections, "停着的隧道不显示连接。");
+        Assert.IsEmpty(item.ConnectionRows);
+    }
+
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    [DataRow(0, "0s")]
+    [DataRow(42, "42s")]
+    [DataRow(185, "3m 05s")]
+    [DataRow(3720, "1h 02m")]
+    public void TunnelItemViewModel_FormatDuration(int seconds, string expected) =>
+        Assert.AreEqual(expected, TunnelItemViewModel.FormatDuration(TimeSpan.FromSeconds(seconds)));
+
+    /// <summary>
+    /// 限速随表单往返:按 KB/s 填,配置里存字节 / 秒;0 是不限(存 null);编辑时填回来,取消后回到 0。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task RateLimit_RoundTripsThroughTheForm()
+    {
+        Assert.AreEqual(0, _vm.NewRateLimitKiB, "默认不限。");
+        List<TunnelConfig> captured = [];
+        _workflowService.CreateTunnelAsync(_sessionId, Arg.Do<TunnelConfig>(captured.Add), Arg.Any<CancellationToken>())
+                        .Returns(callInfo => Task.FromResult(new TunnelInfo
+                        {
+                            Id = Guid.NewGuid(),
+                            Config = callInfo.Arg<TunnelConfig>(),
+                            Status = TunnelStatus.Stopped,
+                            SessionId = _sessionId,
+                            CreatedAt = DateTime.UtcNow
+                        }));
+        FillValidLocalForm();
+        await _vm.CreateTunnelCommand.Execute().FirstAsync();
+        Assert.IsNull(captured[0].MaxBytesPerSecond, "0 = 不限。");
+
+        FillValidLocalForm(remotePort: 3307);
+        _vm.NewRateLimitKiB = 512;
+        await _vm.CreateTunnelCommand.Execute().FirstAsync();
+        Assert.AreEqual(512 * 1024L, captured[1].MaxBytesPerSecond);
+        Assert.AreEqual(0, _vm.NewRateLimitKiB, "建完表单复位。");
+
+        await _vm.EditTunnelCommand.Execute(_vm.Tunnels[1].Id).FirstAsync();
+        Assert.AreEqual(512, _vm.NewRateLimitKiB, "编辑时填回表单。");
+        await _vm.ResetFormCommand.Execute().FirstAsync();
+        Assert.AreEqual(0, _vm.NewRateLimitKiB);
+
+        _vm.NewRateLimitKiB = -5;
+        Assert.AreEqual(0, _vm.NewRateLimitKiB, "负数夹回 0。");
+    }
+
+    /// <summary>面板开着时的每秒一拍:让服务同步读数,并刷各条隧道的流量行。</summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task RefreshTraffic_PullsStatisticsAndRefreshesTheRows()
+    {
+        TunnelInfo info = CreateTunnelInfo();
+        _workflowService.CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>())
+                        .Returns(Task.FromResult(info));
+        FillValidLocalForm();
+        await _vm.CreateTunnelCommand.Execute().FirstAsync();
+        TunnelItemViewModel item = _vm.Tunnels.Single();
+        List<string?> changed = [];
+        item.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        _workflowService.ClearReceivedCalls();
+
+        info.SentBytesPerSecond = 2048;
+        _vm.RefreshTraffic();
+
+        _workflowService.Received(1).RefreshStatistics();
+        CollectionAssert.Contains(changed, nameof(TunnelItemViewModel.TrafficText));
+        CollectionAssert.Contains(changed, nameof(TunnelItemViewModel.ConnectionRows));
+        Assert.AreEqual("↑ 2.0 KB/s  ↓ 0 B/s", item.TrafficText);
+    }
+
     /// <summary>时钟每拍都要让服务把底层读数同步到界面持有的 TunnelInfo 上。</summary>
     [TestMethod]
     [TestCategory("TunnelUI")]

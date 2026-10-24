@@ -4473,6 +4473,27 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_StatsNone" xml:space="preserve">
     <value>接続はまだありません</value>
   </data>
+  <data name="Tunnel_RateLimit" xml:space="preserve">
+    <value>帯域制限 {0}/s</value>
+  </data>
+  <data name="Tunnel_RateLimitLabel" xml:space="preserve">
+    <value>帯域制限 KB/s(方向ごと、0 で無制限)</value>
+  </data>
+  <data name="Tunnel_RateLimitTip" xml:space="preserve">
+    <value>方向ごとに制限し、このトンネルのすべての接続でこの帯域を共有します。変更は次にトンネルを開始したときに反映されます。</value>
+  </data>
+  <data name="Tunnel_ConnectionsToggle" xml:space="preserve">
+    <value>現在の接続 {0} 件</value>
+  </data>
+  <data name="Tunnel_ConnectionsMore" xml:space="preserve">
+    <value>ほか {0} 件は省略</value>
+  </data>
+  <data name="Tunnel_ConnectionDetail" xml:space="preserve">
+    <value>接続 {0} · ↑ {1} ↓ {2}</value>
+  </data>
+  <data name="Tunnel_ConnectionSourceUnknown" xml:space="preserve">
+    <value>接続元不明</value>
+  </data>
   <data name="Tunnel_AutoBadge" xml:space="preserve">
     <value>自動</value>
   </data>

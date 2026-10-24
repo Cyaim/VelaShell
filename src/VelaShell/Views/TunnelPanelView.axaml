@@ -330,6 +330,54 @@
                 <TextBlock Classes="desc" Text="{Binding StatusText}" />
                 <!-- 流量统计(设计 fuXS7 预留的说明行):连接数 · 累计字节 -->
                 <TextBlock Classes="desc" Text="{Binding StatsText}" />
+                <!-- 实时速率(↑ 本机送进隧道 / ↓ 从隧道收回,最近三个整秒的平均)与限速;停着时只剩限速那半句。
+                     面板开着时每秒刷一次。 -->
+                <TextBlock Classes="desc" Name="TrafficLine"
+                           Text="{Binding TrafficText}"
+                           IsVisible="{Binding HasTrafficText}"
+                           ToolTip.Tip="{Binding TrafficToolTip}"
+                           TextTrimming="CharacterEllipsis" />
+                <!-- 当前连接:默认收起成一行「当前连接 N 条」,点开列出来源 → 目标、开了多久、两个方向各搬了多少。
+                     动态转发挂着浏览器时一下几十条,只列前 20 条。 -->
+                <Button Name="ConnectionsToggle"
+                        IsVisible="{Binding HasConnections}"
+                        Command="{Binding ToggleConnectionsCommand}"
+                        HorizontalAlignment="Left"
+                        Padding="0" MinHeight="0"
+                        Background="Transparent" BorderThickness="0"
+                        Cursor="Hand">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <pc:LucideIcon Width="10" Height="10" VerticalAlignment="Center"
+                                   Data="{StaticResource Icon.chevron-right}"
+                                   Foreground="{DynamicResource VelaTextTertiary}"
+                                   IsVisible="{Binding !IsConnectionListExpanded}" />
+                    <pc:LucideIcon Width="10" Height="10" VerticalAlignment="Center"
+                                   Data="{StaticResource Icon.chevron-down}"
+                                   Foreground="{DynamicResource VelaTextTertiary}"
+                                   IsVisible="{Binding IsConnectionListExpanded}" />
+                    <TextBlock Classes="desc" Text="{Binding ConnectionsToggleText}"
+                               Foreground="{DynamicResource VelaTextSecondary}" />
+                  </StackPanel>
+                </Button>
+                <ItemsControl Name="ConnectionList"
+                              ItemsSource="{Binding ConnectionRows}"
+                              IsVisible="{Binding IsConnectionListVisible}"
+                              Margin="14,0,0,0">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:TunnelConnectionRow">
+                      <StackPanel Spacing="1" Margin="0,2">
+                        <TextBlock Classes="desc" Text="{Binding Route}"
+                                   Foreground="{DynamicResource VelaTextSecondary}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding Route}" />
+                        <TextBlock Classes="desc" Text="{Binding Detail}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="desc" Margin="14,0,0,0"
+                           Text="{Binding HiddenConnectionsText}"
+                           IsVisible="{Binding HasHiddenConnections}" />
                 <!-- 转发通道错误(如目标拒绝连接):隧道虽在运行,但连接会失败 -->
                 <TextBlock Classes="desc" Text="{Binding LastError, StringFormat='⚠ {0}'}"
                            IsVisible="{Binding HasError}"
@@ -395,6 +443,18 @@
                      Foreground="{DynamicResource VelaTextSecondary}"
                      FontSize="{DynamicResource VelaFontSize11}" Margin="6,0,0,0" />
         </CheckBox>
+
+        <!-- 限速:每个方向每秒最多搬多少,这条隧道的全部连接共用;0 = 不限(默认)。
+             慢链路上开着好几条隧道时,不让一条下载把交互终端挤满。 -->
+        <Grid ColumnDefinitions="*,10,92">
+          <TextBlock Grid.Column="0" Classes="form-label" VerticalAlignment="Center"
+                     Text="{loc:Localize Tunnel_RateLimitLabel}"
+                     ToolTip.Tip="{loc:Localize Tunnel_RateLimitTip}" />
+          <NumericUpDown Grid.Column="2" Name="RateLimitInput"
+                         Value="{Binding NewRateLimitKiB}" PlaceholderText="0"
+                         Minimum="0" Maximum="1048576" Increment="64" FormatString="0"
+                         ToolTip.Tip="{loc:Localize Tunnel_RateLimitTip}" />
+        </Grid>
 
         <!-- 承载会话掉线后自动重拨并重建这条隧道;默认关闭,因为重拨可能弹凭据提示。 -->
         <CheckBox IsChecked="{Binding NewAutoReconnect}"

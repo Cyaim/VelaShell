@@ -1,4 +1,6 @@
+using System.Globalization;
 using ReactiveUI;
+using ReactiveUI.Primitives;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
@@ -6,9 +8,26 @@ using VelaShell.Core.Resources;
 namespace VelaShell.ViewModels;
 
 /// <summary>隧道列表项视图模型:包装共享的 <see cref="TunnelInfo" />,向界面暴露路由、状态、流量等只读展示属性。</summary>
-public class TunnelItemViewModel(TunnelInfo tunnelInfo) : ReactiveObject
+public class TunnelItemViewModel : ReactiveObject
 {
-    private readonly TunnelInfo _tunnelInfo = tunnelInfo ?? throw new ArgumentNullException(nameof(tunnelInfo));
+    /// <summary>
+    /// 展开的连接列表最多列几条。动态转发挂着浏览器时一下就是几十条,全列出来面板就被撑成一长条;
+    /// 多出来的写一句「还有 N 条未列出」。
+    /// </summary>
+    public const int MaxListedConnections = 20;
+
+    private readonly TunnelInfo _tunnelInfo;
+
+    /// <summary>包装一条隧道的共享运行时信息。</summary>
+    /// <param name="tunnelInfo">隧道信息(与服务侧是同一个实例,读数由服务同步进来)。</param>
+    public TunnelItemViewModel(TunnelInfo tunnelInfo)
+    {
+        _tunnelInfo = tunnelInfo ?? throw new ArgumentNullException(nameof(tunnelInfo));
+        ToggleConnectionsCommand = ReactiveCommand.Create(() =>
+        {
+            IsConnectionListExpanded = !IsConnectionListExpanded;
+        });
+    }
 
     /// <summary>隧道唯一标识,用于在面板中定位与去重。</summary>
     public Guid Id => _tunnelInfo.Id;
@@ -112,6 +131,96 @@ public class TunnelItemViewModel(TunnelInfo tunnelInfo) : ReactiveObject
                 ? Strings.Format("Tunnel_StatsLive", TotalConnections, ActiveConnections, FormattedBytes)
                 : Strings.Format("Tunnel_Stats", TotalConnections, FormattedBytes);
 
+    /// <summary>限速(每个方向,字节 / 秒);<see langword="null" /> 不限。</summary>
+    public long? MaxBytesPerSecond => _tunnelInfo.Config.MaxBytesPerSecond;
+
+    /// <summary>
+    /// 速率与限速行:运行中显示两个方向此刻的速率(最近三个整秒的平均),设了限速时一并写出;
+    /// 停着时只在设了限速时写一句限多少。都没有时为空、整行隐藏。
+    /// </summary>
+    public string? TrafficText
+    {
+        get
+        {
+            string? limit = MaxBytesPerSecond is { } bytesPerSecond
+                ? Strings.Format("Tunnel_RateLimit", FormatBytes(bytesPerSecond))
+                : null;
+            if (!IsActive)
+            {
+                return limit;
+            }
+            string rate = $"↑ {FormatRate(_tunnelInfo.SentBytesPerSecond)}  ↓ {FormatRate(_tunnelInfo.ReceivedBytesPerSecond)}";
+            return limit is null ? rate : $"{rate} · {limit}";
+        }
+    }
+
+    /// <summary>速率与限速行要不要显示。</summary>
+    public bool HasTrafficText => TrafficText is not null;
+
+    /// <summary>速率行的悬停说明:设了限速才有(说清楚是按方向、全部连接共用)。</summary>
+    public string? TrafficToolTip => MaxBytesPerSecond is null ? null : Strings.Get("Tunnel_RateLimitTip");
+
+    /// <summary>此刻正在搬的连接数(取自连接快照)。</summary>
+    public int LiveConnectionCount => _tunnelInfo.Connections.Count;
+
+    /// <summary>「当前连接」那一行要不要显示:运行中、且有连接在搬。</summary>
+    public bool HasConnections => IsActive && LiveConnectionCount > 0;
+
+    /// <summary>连接列表是否展开。默认收起 —— 多数时候看一眼速率就够了。</summary>
+    public bool IsConnectionListExpanded
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            RaiseConnectionsChanged();
+        }
+    }
+
+    /// <summary>展开 / 收起连接列表。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> ToggleConnectionsCommand { get; }
+
+    /// <summary>展开开关上的字:「当前连接 3 条」。</summary>
+    public string ConnectionsToggleText => Strings.Format("Tunnel_ConnectionsToggle", LiveConnectionCount);
+
+    /// <summary>列表真的摆出来:展开了、且有连接。</summary>
+    public bool IsConnectionListVisible => HasConnections && IsConnectionListExpanded;
+
+    /// <summary>
+    /// 展开时列出的连接(至多 <see cref="MaxListedConnections" /> 条):来源 → 目标、开了多久、两个方向各搬了多少。
+    /// 收起时为空 —— 没人看的那几十行不必每秒重算一遍。
+    /// </summary>
+    public IReadOnlyList<TunnelConnectionRow> ConnectionRows
+    {
+        get
+        {
+            if (!IsConnectionListVisible)
+            {
+                return [];
+            }
+            DateTime now = DateTime.UtcNow;
+            return
+            [
+                .. _tunnelInfo.Connections.Take(MaxListedConnections).Select(c => new TunnelConnectionRow(
+                    $"{c.Source ?? Strings.Get("Tunnel_ConnectionSourceUnknown")} → {c.Target}",
+                    Strings.Format("Tunnel_ConnectionDetail", FormatDuration(now - c.StartedAtUtc), FormatBytes(c.BytesSent), FormatBytes(c.BytesReceived))))
+            ];
+        }
+    }
+
+    /// <summary>超出 <see cref="MaxListedConnections" /> 没列出来的条数。</summary>
+    public int HiddenConnectionCount => IsConnectionListVisible ? Math.Max(0, LiveConnectionCount - MaxListedConnections) : 0;
+
+    /// <summary>有没列出来的连接。</summary>
+    public bool HasHiddenConnections => HiddenConnectionCount > 0;
+
+    /// <summary>「还有 N 条未列出」。</summary>
+    public string HiddenConnectionsText => Strings.Format("Tunnel_ConnectionsMore", HiddenConnectionCount);
+
     /// <summary>承载会话掉线后是否自动重建这条隧道。</summary>
     public bool AutoReconnect => _tunnelInfo.Config.AutoReconnect;
 
@@ -187,6 +296,9 @@ public class TunnelItemViewModel(TunnelInfo tunnelInfo) : ReactiveObject
         this.RaisePropertyChanged(nameof(EditToolTip));
         this.RaisePropertyChanged(nameof(StatusText));
         this.RaisePropertyChanged(nameof(BusyText));
+        this.RaisePropertyChanged(nameof(TrafficText));
+        this.RaisePropertyChanged(nameof(TrafficToolTip));
+        RaiseConnectionsChanged();
     }
 
     /// <summary>最近一次转发通道错误(目标拒绝连接等),由服务写入共享 TunnelInfo。</summary>
@@ -207,6 +319,35 @@ public class TunnelItemViewModel(TunnelInfo tunnelInfo) : ReactiveObject
 
     /// <summary>由面板的时钟周期性调用:刷新运行时长、透传服务侧的状态/错误变化。</summary>
     public void RefreshLive() => RaiseLiveChanged();
+
+    /// <summary>
+    /// 面板开着时每秒调一次:只刷流量相关的几行(累计、速率、连接列表、运行时长),
+    /// 不碰状态与按键 —— 那些仍随 5 秒一拍的 <see cref="RefreshLive" /> 走。
+    /// </summary>
+    public void RefreshTraffic()
+    {
+        this.RaisePropertyChanged(nameof(BytesTransferred));
+        this.RaisePropertyChanged(nameof(FormattedBytes));
+        this.RaisePropertyChanged(nameof(TotalConnections));
+        this.RaisePropertyChanged(nameof(ActiveConnections));
+        this.RaisePropertyChanged(nameof(StatsText));
+        this.RaisePropertyChanged(nameof(StatusText));
+        this.RaisePropertyChanged(nameof(TrafficText));
+        this.RaisePropertyChanged(nameof(HasTrafficText));
+        RaiseConnectionsChanged();
+    }
+
+    private void RaiseConnectionsChanged()
+    {
+        this.RaisePropertyChanged(nameof(LiveConnectionCount));
+        this.RaisePropertyChanged(nameof(HasConnections));
+        this.RaisePropertyChanged(nameof(ConnectionsToggleText));
+        this.RaisePropertyChanged(nameof(IsConnectionListVisible));
+        this.RaisePropertyChanged(nameof(ConnectionRows));
+        this.RaisePropertyChanged(nameof(HiddenConnectionCount));
+        this.RaisePropertyChanged(nameof(HasHiddenConnections));
+        this.RaisePropertyChanged(nameof(HiddenConnectionsText));
+    }
 
     private void RaiseBusyChanged()
     {
@@ -234,6 +375,31 @@ public class TunnelItemViewModel(TunnelInfo tunnelInfo) : ReactiveObject
         this.RaisePropertyChanged(nameof(TotalConnections));
         this.RaisePropertyChanged(nameof(ActiveConnections));
         this.RaisePropertyChanged(nameof(StatsText));
+        this.RaisePropertyChanged(nameof(TrafficText));
+        this.RaisePropertyChanged(nameof(HasTrafficText));
+        this.RaisePropertyChanged(nameof(TrafficToolTip));
+        RaiseConnectionsChanged();
+    }
+
+    /// <summary>速率的写法:<c>1.2 KB/s</c>(单位与累计字节数同一套)。</summary>
+    public static string FormatRate(double bytesPerSecond) =>
+        $"{FormatBytes((long)Math.Round(Math.Max(0, bytesPerSecond)))}/s";
+
+    /// <summary>
+    /// 一条连接开了多久:<c>42s</c> / <c>3m 05s</c> / <c>1h 02m</c>。比隧道的运行时长细一档 ——
+    /// 连接大多是短的,「不到 1 分钟」对它们等于什么也没说。
+    /// </summary>
+    public static string FormatDuration(TimeSpan duration)
+    {
+        if (duration < TimeSpan.Zero)
+        {
+            duration = TimeSpan.Zero;
+        }
+        return duration.TotalHours >= 1
+            ? string.Create(CultureInfo.InvariantCulture, $"{(int)duration.TotalHours}h {duration.Minutes:00}m")
+            : duration.TotalMinutes >= 1
+                ? string.Create(CultureInfo.InvariantCulture, $"{(int)duration.TotalMinutes}m {duration.Seconds:00}s")
+                : string.Create(CultureInfo.InvariantCulture, $"{duration.Seconds}s");
     }
 
     private static string FormatUptime(TimeSpan uptime)
@@ -266,3 +432,8 @@ public class TunnelItemViewModel(TunnelInfo tunnelInfo) : ReactiveObject
         return $"{bytes / Math.Pow(1024, i):F1} {units[i]}";
     }
 }
+
+/// <summary>隧道「当前连接」列表里的一行。</summary>
+/// <param name="Route">来源 → 目标。</param>
+/// <param name="Detail">开了多久、两个方向各搬了多少。</param>
+public sealed record TunnelConnectionRow(string Route, string Detail);

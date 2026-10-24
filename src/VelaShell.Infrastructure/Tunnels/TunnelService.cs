@@ -50,15 +50,18 @@ public class TunnelService(
         }
     }
 
-    /// <summary>把各活动转发句柄的连接数与流量读数同步到对应的 <see cref="TunnelInfo" />。</summary>
+    /// <summary>把各活动转发句柄的连接数、流量、实时速率与连接快照同步到对应的 <see cref="TunnelInfo" />。</summary>
     public void RefreshStatistics()
     {
         foreach ((IPortForwardHandle handle, TunnelInfo info) in _tunnelPorts.Values)
         {
-            // 停止的隧道其句柄已被移出 _tunnelPorts,读数就停在最后一次同步的值上。
+            // 停止的隧道其句柄已被移出 _tunnelPorts,累计读数就停在最后一次同步的值上(速率与连接列表在停止时清掉)。
             info.BytesTransferred = handle.BytesTransferred;
             info.TotalConnections = handle.TotalConnections;
             info.ActiveConnections = handle.ActiveConnections;
+            info.SentBytesPerSecond = handle.SentBytesPerSecond;
+            info.ReceivedBytesPerSecond = handle.ReceivedBytesPerSecond;
+            info.Connections = handle.Connections ?? [];
         }
     }
 
@@ -72,7 +75,10 @@ public class TunnelService(
         EnsureLocalPortAvailable(config.LocalHost, config.LocalPort);
         return await CreateForwardAsync(sessionId,
                    config,
-                   new(PortForwardKind.Local, config.LocalHost, config.LocalPort, config.RemoteHost, config.RemotePort),
+                   new(PortForwardKind.Local, config.LocalHost, config.LocalPort, config.RemoteHost, config.RemotePort)
+                   {
+                       MaxBytesPerSecond = config.MaxBytesPerSecond
+                   },
                    "local",
                    cancellationToken).ConfigureAwait(false);
     }
@@ -86,7 +92,10 @@ public class TunnelService(
         }
         return await CreateForwardAsync(sessionId,
                    config,
-                   new(PortForwardKind.Remote, config.RemoteHost, config.RemotePort, config.LocalHost, config.LocalPort),
+                   new(PortForwardKind.Remote, config.RemoteHost, config.RemotePort, config.LocalHost, config.LocalPort)
+                   {
+                       MaxBytesPerSecond = config.MaxBytesPerSecond
+                   },
                    "remote",
                    cancellationToken).ConfigureAwait(false);
     }
@@ -101,7 +110,10 @@ public class TunnelService(
         EnsureLocalPortAvailable(config.LocalHost, config.LocalPort);
         return await CreateForwardAsync(sessionId,
                    config,
-                   new(PortForwardKind.Dynamic, config.LocalHost, config.LocalPort),
+                   new(PortForwardKind.Dynamic, config.LocalHost, config.LocalPort)
+                   {
+                       MaxBytesPerSecond = config.MaxBytesPerSecond
+                   },
                    "dynamic",
                    cancellationToken).ConfigureAwait(false);
     }
@@ -152,6 +164,9 @@ public class TunnelService(
                 logger?.LogWarning(ex, "Failed to stop tunnel {TunnelId} on session teardown", tunnelId);
                 _tunnelPorts.TryRemove(tunnelId, out _);
                 info.Status = TunnelStatus.Stopped;
+                info.SentBytesPerSecond = 0;
+                info.ReceivedBytesPerSecond = 0;
+                info.Connections = [];
             }
         }
     }
@@ -171,6 +186,9 @@ public class TunnelService(
             info.BytesTransferred = handle.BytesTransferred;
             info.TotalConnections = handle.TotalConnections;
             info.ActiveConnections = 0;
+            info.SentBytesPerSecond = 0;
+            info.ReceivedBytesPerSecond = 0;
+            info.Connections = [];
 
             // 释放幂等,且自带"客户端已随会话释放"的容错(见 IPortForwardHandle 契约)。
             // **等它真的收完**再把状态置为已停止 —— 否则界面上显示「已停止」的那一刻

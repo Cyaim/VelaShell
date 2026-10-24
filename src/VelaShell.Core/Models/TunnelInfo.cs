@@ -43,6 +43,18 @@ public sealed class TunnelInfo
     public int ActiveConnections { get; set; }
 
     /// <summary>
+    /// 此刻本机送进隧道的速率(应用字节 / 秒,最近三个整秒的平均)。与连接数、字节数一起由
+    /// <see cref="Tunnels.ITunnelService.RefreshStatistics" /> 同步;停止后归零。
+    /// </summary>
+    public double SentBytesPerSecond { get; set; }
+
+    /// <summary>此刻从隧道收回本机的速率(应用字节 / 秒);口径同 <see cref="SentBytesPerSecond" />。</summary>
+    public double ReceivedBytesPerSecond { get; set; }
+
+    /// <summary>正在搬的连接(快照,按序号排);停止后清空。</summary>
+    public IReadOnlyList<TunnelConnectionInfo> Connections { get; set; } = [];
+
+    /// <summary>
     /// 最近一次转发通道错误(如目标拒绝连接)。隧道监听正常但每个连接都失败时,
     /// 界面靠它把问题暴露出来,而不是一直显示"运行中"。
     /// </summary>

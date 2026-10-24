@@ -1,3 +1,5 @@
+using VelaShell.Core.Models;
+
 namespace VelaShell.Core.Ssh;
 
 /// <summary>端口转发类型(对应 SSH 的 direct-tcpip / forwarded-tcpip / SOCKS 动态转发)。</summary>
@@ -27,7 +29,11 @@ public sealed record PortForwardRequest(
     string BoundHost,
     uint BoundPort,
     string? TargetHost = null,
-    uint? TargetPort = null);
+    uint? TargetPort = null)
+{
+    /// <summary>限速:每个方向每秒最多搬多少应用字节,这条转发的全部连接共用;<see langword="null" /> 不限。</summary>
+    public long? MaxBytesPerSecond { get; init; }
+}
 
 /// <summary>
 /// 一条运行中的端口转发的句柄,由 <see cref="ISshClientWrapper.StartPortForwardAsync" /> 返回。
@@ -51,6 +57,15 @@ public interface IPortForwardHandle : IAsyncDisposable
 
     /// <summary>该转发当前仍在传输的连接数。</summary>
     int ActiveConnections { get; }
+
+    /// <summary>此刻本机送进隧道的速率(应用字节 / 秒,最近三个整秒的平均)。</summary>
+    double SentBytesPerSecond { get; }
+
+    /// <summary>此刻从隧道收回本机的速率(应用字节 / 秒,最近三个整秒的平均)。</summary>
+    double ReceivedBytesPerSecond { get; }
+
+    /// <summary>正在搬的连接(快照,按序号排;每次读取都是新的一份)。</summary>
+    IReadOnlyList<TunnelConnectionInfo> Connections { get; }
 
     /// <summary>转发通道错误(每个经过的连接失败时触发,监听端口本身仍在)。</summary>
     event Action<Exception>? ChannelError;

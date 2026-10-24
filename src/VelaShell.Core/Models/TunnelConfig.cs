@@ -34,4 +34,13 @@ public sealed class TunnelConfig
     /// 旧的持久化配置缺这个字段时按 false 反序列化。
     /// </summary>
     public bool AutoStart { get; init; }
+
+    /// <summary>
+    /// 限速:每个方向每秒最多搬多少应用字节,这条隧道的全部连接共用这个额度;<see langword="null" />(默认)不限。
+    /// </summary>
+    /// <remarks>
+    /// 慢链路上开着好几条隧道时,不让一条下载把交互终端挤满。在隧道建立时交给 SSH 库,改了要重启隧道才生效
+    /// (运行中的隧道本来就不能编辑)。旧的持久化配置缺这个字段时按不限反序列化。
+    /// </remarks>
+    public long? MaxBytesPerSecond { get; init; }
 }
