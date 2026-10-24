@@ -41,10 +41,16 @@ internal sealed partial class RemoteFsCapability
     /// </summary>
     private enum StopReason { None, User, Timeout, Disconnected, Disposed }
 
-    private sealed class UploadOperation(RemoteTransferSnapshot snapshot, FileStream? source, CancellationTokenSource stop)
+    private sealed class UploadOperation(RemoteTransferSnapshot snapshot, Guid session, FileStream? source, CancellationTokenSource stop)
     {
         internal readonly object _gate = new();
         internal RemoteTransferSnapshot _snapshot = snapshot;
+
+        /// <summary>
+        /// 解析后的会话。快照里的 SessionId 是插件给的原样字符串(大写、N 格式都解析得了),
+        /// 断线回调按它比对的话,换个写法启动的任务永远收不到断线通知。
+        /// </summary>
+        internal readonly Guid _session = session;
         internal readonly FileStream _source = source!;
         internal readonly CancellationTokenSource _stop = stop;
         internal TaskCompletionSource _changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -125,7 +131,7 @@ internal sealed partial class RemoteFsCapability
                     CreatedAt = now,
                     UpdatedAt = now,
                     DestinationCommitConfirmedAbsent = true,
-                }, source, stop);
+                }, session, source, stop);
                 if (uploadPermissions is not null && !string.IsNullOrWhiteSpace(pluginId))
                     op._permission = uploadPermissions.CreateUploadLease(pluginId);
                 if (!_disconnectSubscribed)
@@ -342,7 +348,7 @@ internal sealed partial class RemoteFsCapability
             }
             else
             {
-                if (!directory.Exists || (directory.Attributes & FileAttributes.ReparsePoint) != 0)
+                if (!directory.Exists || IsLink(directory.FullName, directory.Attributes))
                     throw new IOException("Cannot verify the upload source directory.");
                 current = directory.FullName;
             }
@@ -404,10 +410,48 @@ internal sealed partial class RemoteFsCapability
     {
         for (string? current = path; current is not null; current = Path.GetDirectoryName(current))
         {
-            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+            if (IsLink(current, File.GetAttributes(current)))
                 throw new NotSupportedException("Linked source paths are not supported for stable uploads.");
         }
     }
+
+    /// <summary>
+    /// 路径上这一项是不是链接。Windows 上只有名字代理(name surrogate)类的重解析点 —— 符号链接、目录联接、卷挂载点 ——
+    /// 会把名字解析重定向到别处;OneDrive 的云文件占位符(IO_REPARSE_TAG_CLOUD_*,「已知文件夹移动」把桌面、文档整个放在里面)、
+    /// 重复数据删除这类重解析点只是文件系统过滤器存数据的方式,不改路径解析,不能因此拒绝。
+    /// 打开之后按句柄核验最终路径才是真正的防线;标记读不出来按链接算。Unix 上 .NET 只给符号链接报 ReparsePoint,一律算链接。
+    /// </summary>
+    private static bool IsLink(string path, FileAttributes attributes)
+    {
+        if ((attributes & FileAttributes.ReparsePoint) == 0) return false;
+        if (!OperatingSystem.IsWindows()) return true;
+        // 只要读属性:不参与共享检查、不触发云文件下载;OPEN_REPARSE_POINT 让句柄描述这一项本身,而不是它指向的东西。
+        using SafeFileHandle handle = OpenAttributesHandle(path, 0x80, 7, 0, 3, 0x02200000, 0);
+        return handle.IsInvalid || IsLink(handle);
+    }
+
+    /// <summary>按以 FILE_FLAG_OPEN_REPARSE_POINT 打开的句柄判断(见上);查不了标记按链接算。</summary>
+    private static bool IsLink(SafeFileHandle handle)
+        => !GetFileInformationByHandleEx(handle, 9, out FileAttributeTagInfo info, (uint)Marshal.SizeOf<FileAttributeTagInfo>())
+           || (info.FileAttributes & (uint)FileAttributes.ReparsePoint) != 0 && IsNameSurrogate(info.ReparseTag);
+
+    /// <summary>重解析标记是不是名字代理(winnt.h 的 IsReparseTagNameSurrogate,第 29 位)。</summary>
+    internal static bool IsNameSurrogate(uint reparseTag) => (reparseTag & 0x20000000) != 0;
+
+    /// <summary>GetFileInformationByHandleEx 的 FileAttributeTagInfo(9)。</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileAttributeTagInfo
+    {
+        public uint FileAttributes;
+        public uint ReparseTag;
+    }
+
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    private static partial SafeFileHandle OpenAttributesHandle(string path, uint access, uint share, nint security, uint creation, uint flags, nint template);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetFileInformationByHandleEx(SafeFileHandle file, int informationClass, out FileAttributeTagInfo information, uint size);
 
     private static RemoteTransferSnapshot Read(UploadOperation op) { lock (op._gate) return op._snapshot; }
     private static void Update(UploadOperation op, Func<RemoteTransferSnapshot, RemoteTransferSnapshot> update)
@@ -446,8 +490,11 @@ internal sealed partial class RemoteFsCapability
 
     private async Task RunUploadAsync(UploadOperation op, Guid session, RemoteUploadOptions options)
     {
-        string temporary = Read(op).RemotePath + ".vela-upload-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-        bool slot = false, writing = false, committing = false, commitRejected = false;
+        // 临时文件是目标同目录下的一个短名字:接在目标名后面要多出 61 字节,目标名一过约 194 字节就超过 NAME_MAX(255 字节)。
+        // 64 位随机:同一目录里撞名的概率可以忽略,别人也猜不到名字、抢先占住。
+        string destination = Read(op).RemotePath;
+        string temporary = destination[..destination.LastIndexOf('/')] + "/.vela-up-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(8));
+        bool slot = false, writing = false, committing = false, commitRejected = false, refused = false;
         Task? remoteWrite = null;
         Task? commitTask = null;
         FileStream? diskSnapshot = null;
@@ -480,6 +527,17 @@ internal sealed partial class RemoteFsCapability
             ct.ThrowIfCancellationRequested();
             Resolve(Read(op).SessionId);
             Update(op, s => s with { State = RemoteTransferState.Starting });
+            // 提交预检:注定被拒的提交(要覆盖而服务端没有 posix-rename、不覆盖而目标已存在)在写之前就拒,
+            // 不白做一份快照、白传一整份字节。只是提示,提交仍是权威;拒绝与提交时的拒绝同一个口径。
+            try
+            {
+                await sftp.CheckUploadCommitAsync(session, destination, options.Overwrite, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsDefiniteCommitRejection(ex))
+            {
+                refused = true;
+                throw;
+            }
             Stream uploadSource = op._source;
             if (UseDiskSnapshot)
             {
@@ -496,6 +554,18 @@ internal sealed partial class RemoteFsCapability
                 };
                 if (!OperatingSystem.IsWindows()) snapshotOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
                 diskSnapshot = new FileStream(Path.Combine(snapshotDirectory, "source"), snapshotOptions);
+                if (!OperatingSystem.IsWindows())
+                {
+                    // 快照是源文件的一份明文全拷贝,关闭即删只在正常释放时生效:宿主崩在中途就把它留在 $TMPDIR 里。
+                    // 打开之后立刻删掉文件与目录,数据靠打开着的描述符活着,进程一退由内核回收。删不掉就照旧等释放时清。
+                    try
+                    {
+                        File.Delete(diskSnapshot.Name);
+                        Directory.Delete(snapshotDirectory);
+                        snapshotDirectory = null;
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                }
                 byte[] buffer = new byte[128 * 1024];
                 long last = Environment.TickCount64;
                 int count;
@@ -567,7 +637,7 @@ internal sealed partial class RemoteFsCapability
                 // 后端自己的失败原因比「等待被打断」有用;同步抛出的提交失败就是 ex 本身。
                 Exception cause = backend is { IsFaulted: true } ? backend.Exception!.InnerException ?? ex : ex;
                 // 只有收不到应答的提交才是 Unknown;根本没发出去或服务端明确拒绝,目标就确认没被提交。
-                commitRejected = committing && (commitTask is null or { IsFaulted: true }) && IsDefiniteCommitRejection(cause);
+                commitRejected = refused || committing && (commitTask is null or { IsFaulted: true }) && IsDefiniteCommitRejection(cause);
                 FailUpload(op, ex, cause, writeStopped: remoteWrite is not { IsCompleted: false },
                     commitUnknown: committing && !commitRejected, commitRejected);
             }
@@ -785,7 +855,7 @@ internal sealed partial class RemoteFsCapability
     {
         lock (_transfersGate)
             foreach (UploadOperation op in _transfers.Values)
-                if (!op._worker.IsCompleted && Read(op).SessionId == session.SessionId.ToString())
+                if (!op._worker.IsCompleted && op._session == session.SessionId)
                     RequestStop(op, StopReason.Disconnected);
     }
 

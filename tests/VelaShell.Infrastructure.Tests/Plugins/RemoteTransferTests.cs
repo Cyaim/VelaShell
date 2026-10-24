@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -259,6 +260,83 @@ public sealed class RemoteTransferTests
         finally { File.Delete(leaf); File.Delete(missing); File.Delete(loop); Directory.Delete(root, true); }
     }
 
+    /// <summary>
+    /// Windows 上真正改路径解析的重解析点(名字代理:符号链接、目录联接、挂载点)照旧当链接拒绝:
+    /// 上传的源本身是联接拒绝;下载目录链上有联接拒绝,联接指向的目录里不落任何东西。
+    /// 符号链接要开发者模式或管理员才建得出来,建不出来就只测联接。
+    /// </summary>
+    [TestMethod]
+    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
+    public async Task WindowsJunctionsAndSymlinksStayRejectedAsLinks()
+    {
+        string root = NewDirectory("vela-transfer-junction-");
+        string real = Path.Combine(root, "real");
+        Directory.CreateDirectory(real);
+        string source = Path.Combine(real, "source");
+        await File.WriteAllBytesAsync(source, [1]);
+        string junction = Path.Combine(root, "junction");
+        using (Process mklink = Process.Start(new ProcessStartInfo("cmd.exe") { ArgumentList = { "/c", "mklink", "/J", junction, real }, UseShellExecute = false, RedirectStandardOutput = true })!)
+            await mklink.WaitForExitAsync();
+        Assert.IsNotNull(new DirectoryInfo(junction).LinkTarget, "联接没建出来");
+        string symlink = Path.Combine(root, "symlink");
+        bool canSymlink = true;
+        try { File.CreateSymbolicLink(symlink, source); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { canSymlink = false; }
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(1));
+        // 上传的源在启动时就被拒(审批之前),只有下载需要放行。
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, AllowDownloads()));
+        try
+        {
+            await Assert.ThrowsExactlyAsync<NotSupportedException>(() => api.StartUploadAsync(_session.ToString(), junction, "/target", new() { OperationId = "junction-leaf" }));
+            if (canSymlink)
+                await Assert.ThrowsExactlyAsync<NotSupportedException>(() => api.StartUploadAsync(_session.ToString(), symlink, "/target", new() { OperationId = "symlink-leaf" }));
+            RemoteTransferSnapshot start = await api.StartDownloadAsync(_session.ToString(), "/source", Path.Combine(junction, "target"), new() { OperationId = "junction-parent" });
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual(RemoteTransferState.Failed, done.State, done.ErrorMessage);
+            Assert.AreEqual("download-failed", done.ErrorCode);
+            await WaitIdle(api);
+            CollectionAssert.AreEqual(new[] { source }, Directory.GetFiles(real));
+            await _sftp.DidNotReceive().DownloadStreamAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await WaitIdle(api);
+            if (canSymlink) File.Delete(symlink);
+            Directory.Delete(junction);
+            Directory.Delete(root, true);
+        }
+    }
+
+    /// <summary>
+    /// OneDrive 的云文件占位符是重解析点(IO_REPARSE_TAG_CLOUD_*),但不是名字代理 —— 不改路径解析,不是链接。
+    /// 看得到占位符的进程里,同步盘里的目录照样能作上传源的父目录、能作下载目录。
+    /// 只读元数据:不打开、不改动同步盘里的任何东西(下载在审批处被拒,什么都不落盘)。本机没有 OneDrive 时不确定。
+    /// </summary>
+    [TestMethod]
+    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
+    public async Task OneDrivePlaceholderDirectoriesAreNotTreatedAsLinks()
+    {
+        string? root = Environment.GetEnvironmentVariable("OneDrive");
+        if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) Assert.Inconclusive("本机没有 OneDrive。");
+        using var exposed = new ExposedPlaceholders();
+        if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) == 0) Assert.Inconclusive("OneDrive 目录不是云文件占位符。");
+        string leaf = Path.Combine(root, "vela-onedrive-probe-" + Guid.NewGuid().ToString("N"));
+        Assert.AreEqual(leaf, RemoteFsCapability.ResolveUploadSource(leaf), ignoreCase: true);
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", leaf, false, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.Deny);
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            RemoteTransferSnapshot start = await api.StartDownloadAsync(_session.ToString(), "/source", leaf, new() { OperationId = "onedrive" });
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual("permission-denied", done.ErrorCode, done.ErrorMessage);
+            await prompt.Received(1).RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", leaf, false, Arg.Any<CancellationToken>());
+        }
+        finally { await WaitIdle(api); }
+        Assert.IsFalse(File.Exists(leaf));
+    }
+
     [TestMethod]
     public async Task RevokingPendingPromptNeverStartsAnyRemoteOperation()
     {
@@ -430,10 +508,50 @@ public sealed class RemoteTransferTests
             Assert.AreEqual("Uploaded content verification failed.", done.ErrorMessage);
             await _sftp.DidNotReceive().CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
             await WaitIdle(api);
-            await _sftp.Received(1).DeleteAsync(_session, Arg.Is<string>(path => path.StartsWith("/target.vela-upload-", StringComparison.Ordinal)),
+            await _sftp.Received(1).DeleteAsync(_session, Arg.Is<string>(path => path.StartsWith("/.vela-up-", StringComparison.Ordinal)),
                 Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
         }
         finally { File.Delete(file); }
+    }
+
+    /// <summary>
+    /// 临时文件是目标同目录下的一个短名字,不接在目标名后面:接在后面要多出 61 字节,
+    /// 目标名一过约 194 字节,临时文件名就超过 NAME_MAX(255 字节),上传还没开始就是 ENAMETOOLONG。
+    /// 每次上传的名字都不一样(随机 64 位)。
+    /// </summary>
+    [TestMethod]
+    public async Task UploadTemporaryIsAShortRandomSiblingThatFitsBesideLongNames()
+    {
+        string file = CreateFile(8);
+        string leaf = new('长', 83);   // UTF-8 下 249 字节,接近 NAME_MAX
+        var temporaries = new List<string>();
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call =>
+            {
+                lock (temporaries) temporaries.Add(call.ArgAt<string>(2));
+                return Task.FromException(new IOException("stop after naming"));
+            });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        try
+        {
+            foreach (string destination in new[] { "/data/sub/" + leaf, "/data/sub/" + leaf + "-2", "/top" })
+            {
+                var start = await api.StartUploadAsync(_session.ToString(), file, destination, new() { OperationId = "name-" + destination });
+                Assert.AreEqual("upload-failed", (await Terminal(api, start.TransferId)).ErrorCode);
+                await WaitIdle(api);
+            }
+            Assert.HasCount(3, temporaries);
+            foreach ((string temporary, string directory) in temporaries.Zip(new[] { "/data/sub/", "/data/sub/", "/" }))
+            {
+                Assert.StartsWith(directory + ".vela-up-", temporary);
+                string name = temporary[directory.Length..];
+                Assert.AreEqual(".vela-up-".Length + 16, name.Length, temporary);
+                Assert.IsTrue(name[".vela-up-".Length..].All(Uri.IsHexDigit), temporary);
+                Assert.IsLessThanOrEqualTo(255, Encoding.UTF8.GetByteCount(name));
+            }
+            Assert.AreNotEqual(temporaries[0], temporaries[1]);
+        }
+        finally { await WaitIdle(api); File.Delete(file); }
     }
 
     [TestMethod]
@@ -457,6 +575,44 @@ public sealed class RemoteTransferTests
             var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "snapshot" });
             RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
             Assert.IsTrue(done.IsSuccess, $"{done.State}: {done.ErrorMessage}");
+            await WaitIdle(api);
+        }
+        finally { File.Delete(file); }
+    }
+
+    /// <summary>
+    /// Unix 的磁盘快照是源文件的一份明文全拷贝。关闭即删只在正常释放时生效,宿主崩在上传中途就把它留在 $TMPDIR 里:
+    /// 打开之后立刻删掉文件与它的目录,数据靠打开着的描述符活着,进程一退就由内核回收。
+    /// </summary>
+    [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
+    public async Task UnixDiskSnapshotIsUnlinkedWhileTheUploadStillReadsIt()
+    {
+        string file = CreateFile(256 * 1024 + 3);
+        string? hash = null, snapshot = null;
+        bool fileVisible = true, directoryVisible = true;
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            var source = (FileStream)call.ArgAt<Stream>(1);
+            snapshot = source.Name;
+            fileVisible = File.Exists(source.Name);
+            directoryVisible = Directory.Exists(Path.GetDirectoryName(source.Name));
+            hash = Convert.ToHexString(await SHA256.HashDataAsync(source));
+        });
+        _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = hash }));
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads()) { UseDiskSnapshot = true };
+        try
+        {
+            var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "unlinked-snapshot" });
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.IsTrue(done.IsSuccess, $"{done.State}: {done.ErrorMessage}");
+            Assert.IsNotNull(snapshot);
+            Assert.AreNotEqual(file, snapshot);
+            Assert.IsFalse(fileVisible, "快照在上传期间仍有路径可达");
+            Assert.IsFalse(directoryVisible, "快照目录在上传期间仍在");
+            Assert.AreEqual(Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(file))), hash, "删掉路径之后仍要读到完整内容");
             await WaitIdle(api);
         }
         finally { File.Delete(file); }
@@ -613,6 +769,41 @@ public sealed class RemoteTransferTests
             Assert.IsFalse(done.RemoteStopConfirmed);
         }
         finally { release.TrySetResult(); await WaitIdle(api); File.Delete(file); }
+    }
+
+    /// <summary>
+    /// 会话 id 的写法不止一种(大写、不带连字符的 N 格式都解析得了):断线回调按 Guid 认任务。
+    /// 按字符串比对的话,换个写法启动的上传与下载永远收不到断线通知,只能等到期。
+    /// </summary>
+    [TestMethod]
+    [DataRow("N", false)]
+    [DataRow("upper", false)]
+    [DataRow("N", true)]
+    public async Task DisconnectStopsTransfersStartedWithAnyGuidSpelling(string spelling, bool download)
+    {
+        string file = CreateFile(8);
+        string directory = NewDirectory("vela-transfer-spelling-");
+        var started = NewSignal();
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call => StopCooperatively(started, call.ArgAt<CancellationToken>(7)));
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
+        _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(call => StopCooperatively(started, call.ArgAt<CancellationToken>(4)));
+        using RemoteFsCapability api = download ? DownloadApi() : new(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        string session = spelling == "N" ? _session.ToString("N") : _session.ToString().ToUpperInvariant();
+        try
+        {
+            RemoteTransferSnapshot start = download
+                ? await api.StartDownloadAsync(session, "/source", Path.Combine(directory, "target"), new() { OperationId = "spelling" })
+                : await api.StartUploadAsync(session, file, "/target", new() { OperationId = "spelling" });
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            _connections.SessionDisconnected += Raise.Event<Action<SshSession>>(_connections.GetSession(_session)!);
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual(RemoteTransferState.Failed, done.State, done.ErrorMessage);
+            Assert.AreEqual("session-disconnected", done.ErrorCode);
+            Assert.IsTrue(done.RemoteStopConfirmed);
+        }
+        finally { api.Dispose(); await WaitIdle(api); File.Delete(file); Directory.Delete(directory, true); }
     }
 
     [TestMethod]
@@ -795,6 +986,55 @@ public sealed class RemoteTransferTests
         }
         finally { await WaitIdle(api); File.Delete(file); }
     }
+
+    /// <summary>
+    /// 注定被拒的提交(要覆盖而服务端没有 posix-rename、不覆盖而目标已存在)在写之前就拒:不传一个字节、不留临时文件,
+    /// 错误码与提交时被拒同一个口径。预检只是提示,预检放行之后提交照样是权威(其余用例里替身的预检一律放行)。
+    /// </summary>
+    [TestMethod]
+    [DataRow(true, "not-supported")]
+    [DataRow(false, "commit-rejected")]
+    public async Task CommitThatWouldBeRefusedIsRefusedBeforeAnyByteIsWritten(bool overwrite, string code)
+    {
+        string file = CreateFile(64);
+        Exception refusal = overwrite
+            ? new NotSupportedException("The server does not support atomic POSIX replacement.")
+            : new VelaSftpOperationException("The upload destination already exists.");
+        _sftp.CheckUploadCommitAsync(_session, "/target", overwrite, Arg.Any<CancellationToken>()).Returns(Task.FromException(refusal));
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        try
+        {
+            var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "preflight", Overwrite = overwrite });
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            await WaitIdle(api);
+            Assert.AreEqual(RemoteTransferState.Failed, done.State, done.ErrorMessage);
+            Assert.AreEqual(code, done.ErrorCode);
+            Assert.IsTrue(done.RemoteStopConfirmed);
+            Assert.IsTrue(done.DestinationCommitConfirmedAbsent);
+            Assert.Contains(refusal.Message, done.ErrorMessage!, StringComparison.Ordinal);
+            Assert.AreEqual(0L, done.TransferredBytes);
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally { await WaitIdle(api); File.Delete(file); }
+    }
+
+    /// <summary>
+    /// 只有名字代理(第 29 位)类的重解析点才是链接:符号链接、目录联接 / 挂载点、WSL 的符号链接;
+    /// OneDrive 的云文件占位符、重复数据删除、WOF 压缩、应用执行别名都只是过滤器存数据的方式。
+    /// </summary>
+    [TestMethod]
+    [DataRow(0xA000000Cu, true)]    // IO_REPARSE_TAG_SYMLINK
+    [DataRow(0xA0000003u, true)]    // IO_REPARSE_TAG_MOUNT_POINT(目录联接、卷挂载点)
+    [DataRow(0xA000001Du, true)]    // IO_REPARSE_TAG_LX_SYMLINK
+    [DataRow(0x9000001Au, false)]   // IO_REPARSE_TAG_CLOUD
+    [DataRow(0x9000601Au, false)]   // IO_REPARSE_TAG_CLOUD_6(OneDrive 目录上实际见到的)
+    [DataRow(0x9000701Au, false)]   // IO_REPARSE_TAG_CLOUD_7
+    [DataRow(0x80000013u, false)]   // IO_REPARSE_TAG_DEDUP
+    [DataRow(0x80000017u, false)]   // IO_REPARSE_TAG_WOF
+    [DataRow(0x8000001Bu, false)]   // IO_REPARSE_TAG_APPEXECLINK
+    public void OnlyNameSurrogateReparseTagsAreLinks(uint tag, bool link) => Assert.AreEqual(link, RemoteFsCapability.IsNameSurrogate(tag));
 
     [TestMethod]
     [DataRow(false)]
@@ -1410,6 +1650,107 @@ public sealed class RemoteTransferTests
         finally { await WaitIdle(api); Directory.Delete(directory, true); }
     }
 
+    /// <summary>
+    /// 下载从钉住目录链到提交为止,链上每一级都改不了名、挪不走(审批等待中、写入中都一样):
+    /// 只带读属性权限的句柄不参与共享检查,钉不住祖先,中途把祖先换掉就能让临时文件与提交落到别处。
+    /// 锁住之后提交照样成功(改名要打开目标目录,那一下不能被自己的锁挡住),任务结束锁随之放开。
+    /// </summary>
+    [TestMethod]
+    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
+    public async Task WindowsDownloadLocksEveryAncestorWhileInFlightAndStillCommits()
+    {
+        string root = NewDirectory("vela-download-lock-");
+        string outer = Path.Combine(root, "outer");
+        string inner = Path.Combine(outer, "inner");
+        Directory.CreateDirectory(inner);
+        string path = Path.Combine(inner, "target");
+        var asking = NewSignal();
+        var decision = new TaskCompletionSource<PluginPermissionDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, false, Arg.Any<CancellationToken>())
+            .Returns(async _ => { asking.TrySetResult(); return await decision.Task; });
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
+        var writing = NewSignal();
+        var release = NewSignal();
+        _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await call.ArgAt<Stream>(2).WriteAsync(new byte[] { 1, 2, 3 }, call.ArgAt<CancellationToken>(4));
+                writing.TrySetResult();
+                await release.Task;
+            });
+        ConfigureRemoteDigest("/source", [1, 2, 3]);
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            RemoteTransferSnapshot start = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "lock" });
+            await asking.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            AssertCannotMove(outer, Path.Combine(root, "moved"));
+            AssertCannotMove(inner, Path.Combine(outer, "moved"));
+            decision.SetResult(PluginPermissionDecision.AllowOnce);
+            await writing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            AssertCannotMove(outer, Path.Combine(root, "moved"));
+            AssertCannotMove(inner, Path.Combine(outer, "moved"));
+            release.TrySetResult();
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual(RemoteTransferState.Succeeded, done.State, done.ErrorMessage);
+            await WaitIdle(api);
+            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(path));
+            Assert.HasCount(1, Directory.GetFiles(inner));
+            Directory.Move(outer, Path.Combine(root, "moved"));
+        }
+        finally
+        {
+            decision.TrySetResult(PluginPermissionDecision.Deny);
+            release.TrySetResult();
+            await WaitIdle(api);
+            Directory.Delete(root, true);
+        }
+
+        static void AssertCannotMove(string from, string to)
+        {
+            try { Directory.Move(from, to); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
+            Assert.Fail($"下载在途时 {from} 被挪走了");
+        }
+    }
+
+    /// <summary>
+    /// 宿主崩在下载中途,`.vela-download-*` 临时文件会留在用户选的目录里(没有关闭即删,也没有回收)。
+    /// 再往同一目录下载时,清掉能以独占、可删除方式打开的残留:活着的临时文件被它的 worker 以不共享方式占着,
+    /// 打不开,不会被误删;名字对不上的一律不碰。
+    /// </summary>
+    [TestMethod]
+    [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
+    public async Task WindowsDownloadSweepsOrphanedTemporariesButNotLiveOnes()
+    {
+        string directory = NewDirectory("vela-download-orphans-");
+        string orphan = Path.Combine(directory, ".vela-download-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)));
+        string live = Path.Combine(directory, ".vela-download-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)));
+        string lookalike = Path.Combine(directory, ".vela-download-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(23)));
+        string user = Path.Combine(directory, "vela-download-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)));
+        foreach (string file in new[] { orphan, live, lookalike, user }) await File.WriteAllBytesAsync(file, [7]);
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(PluginPermissionDecision.Deny);
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            using (new FileStream(live, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                RemoteTransferSnapshot start = await api.StartDownloadAsync(_session.ToString(), "/source", Path.Combine(directory, "target"), new() { OperationId = "sweep" });
+                Assert.AreEqual("permission-denied", (await Terminal(api, start.TransferId)).ErrorCode);
+                await WaitIdle(api);
+            }
+            Assert.IsFalse(File.Exists(orphan), "崩溃留下的残留应已清掉");
+            Assert.IsTrue(File.Exists(live), "被占着的临时文件不能删");
+            Assert.IsTrue(File.Exists(lookalike));
+            Assert.IsTrue(File.Exists(user));
+        }
+        finally { await WaitIdle(api); Directory.Delete(directory, true); }
+    }
+
     [TestMethod]
     [DataRow(true)]
     [DataRow(false)]
@@ -1673,6 +2014,26 @@ public sealed class RemoteTransferTests
             await Task.Delay(200, CancellationToken.None);
             throw;
         }
+    }
+
+    /// <summary>
+    /// 本进程默认以 PHCM_DISGUISE_PLACEHOLDER 运行:云文件占位符被伪装成普通文件,看不到重解析属性。
+    /// 切到 PHCM_EXPOSE_PLACEHOLDERS 才看得到真实的 IO_REPARSE_TAG_CLOUD_*(资源管理器这类进程就是这样看的)。
+    /// 整个进程生效,用完恢复;本程序集不并行跑测试。
+    /// </summary>
+    private sealed class ExposedPlaceholders : IDisposable
+    {
+        private readonly sbyte _previous = RtlSetProcessPlaceholderCompatibilityMode(2);
+
+        public ExposedPlaceholders()
+        {
+            if (_previous < 0) Assert.Inconclusive("无法切换占位符兼容模式。");
+        }
+
+        public void Dispose() => RtlSetProcessPlaceholderCompatibilityMode(_previous);
+
+        [DllImport("ntdll.dll")]
+        private static extern sbyte RtlSetProcessPlaceholderCompatibilityMode(sbyte mode);
     }
 
     /// <summary>收集宿主写进 <see cref="Trace" /> 的日志;本程序集不并行跑测试,全局监听器不会串到别的用例。</summary>
