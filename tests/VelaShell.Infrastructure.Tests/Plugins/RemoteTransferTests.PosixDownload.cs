@@ -224,22 +224,23 @@ public sealed partial class RemoteTransferTests
             PosixTarget live = PosixTarget.Open(Path.Combine(directory, "live"), overwrite: false);
             FileStream sink = live.CreateTemporary();
             await sink.WriteAsync(new byte[] { 1 });
-            string busy = Directory.GetFiles(directory, ".vela-download-*").Single(file => file != stale && file != unrelated && file != linked);
-            Assert.IsFalse(File.Exists(stale), "The first Open already sweeps the crash leftover.");
+            string busy = Directory.GetFiles(directory, ".vela-download-*").Single(file => file != stale && file != unrelated);
+            // 第一次 Open 已经清过:遗留的普通文件删掉;同形的链接与 Windows 一样删的是链接本身,不跟随、不碰它指向的文件。
+            Assert.IsFalse(File.Exists(stale));
+            Assert.IsFalse(File.Exists(linked));
+            CollectionAssert.AreEqual(new byte[] { 5 }, await File.ReadAllBytesAsync(outside));
             await File.WriteAllBytesAsync(stale, [7]);
             await PosixTarget.Open(Path.Combine(directory, "other"), overwrite: false).DisposeAsync();
             Assert.IsFalse(File.Exists(stale));
-            Assert.IsTrue(File.Exists(busy));
+            Assert.IsTrue(File.Exists(busy), "被占着的临时文件不能删");
             Assert.IsTrue(File.Exists(unrelated));
-            Assert.IsNotNull(new FileInfo(linked).LinkTarget, "A link shaped like a temporary is neither followed nor removed.");
-            CollectionAssert.AreEqual(new byte[] { 5 }, await File.ReadAllBytesAsync(outside));
             live.Commit(false);
             await live.DisposeAsync();
             CollectionAssert.AreEqual(new byte[] { 1 }, await File.ReadAllBytesAsync(Path.Combine(directory, "live")));
             // 与临时文件同形的名字不能当目标:否则下一次清扫会把它当遗留删掉。
             Assert.AreEqual("Invalid destination name.", Assert.ThrowsExactly<IOException>(() => PosixTarget.Open(stale, overwrite: true)).Message);
         }
-        finally { File.Delete(linked); Directory.Delete(directory, true); Directory.Delete(elsewhere, true); }
+        finally { Directory.Delete(directory, true); Directory.Delete(elsewhere, true); }
     }
 
     [TestMethod]

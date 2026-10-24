@@ -114,7 +114,7 @@ internal sealed partial class RemoteFsCapability
                     if ((mode & FileTypeMask) != RegularFile) throw new IOException("The destination must be a regular file.");
                     if (!overwrite) throw new IOException("The destination already exists.");
                 }
-                target.RemoveOrphans(parent);
+                target.SweepOrphans(parent);
                 return target;
             }
             catch { target._directory.Dispose(); throw; }
@@ -273,22 +273,31 @@ internal sealed partial class RemoteFsCapability
         }
 
         /// <summary>
-        /// 清掉崩溃遗留的临时文件:只认与 <see cref="CreateTemporary" /> 同形的名字、只删普通文件,而且只删拿得到 flock 的 ——
-        /// 还在用的临时文件锁在它的下载手里,拿不到就留着。按路径列目录只为拿候选名字;父目录此刻若已被换掉,列到的名字在
-        /// 钉住的目录里查无此项、自然跳过,查、锁、删一律相对固定目录 fd。尽力而为,任何一步不成都不影响这次下载。
+        /// 清掉崩溃留下的临时文件,口径与 Windows 的 SweepOrphans 一致:名字与 <see cref="CreateTemporary" /> 起的逐字对得上才碰;
+        /// 普通文件只删拿得到 flock 的 —— 活着的临时文件锁在它的 worker 手里,拿不到就留着;同形的符号链接不跟随,删的是链接本身;
+        /// 目录与别的特殊文件不碰。按路径列目录只为拿候选名字:父目录此刻若已被换掉,列到的名字在钉住的目录里查无此项、自然跳过,
+        /// 查、锁、删一律相对固定目录 fd。尽力而为,任何失败都只是跳过。
         /// </summary>
-        private void RemoveOrphans(string parent)
+        private void SweepOrphans(string parent)
         {
             string[] names;
-            try { names = [.. Directory.EnumerateFiles(parent, TemporaryPrefix + "*").Select(Path.GetFileName).OfType<string>().Where(IsTemporaryName)]; }
+            try { names = [.. Directory.EnumerateFileSystemEntries(parent, TemporaryPrefix + "*").Select(Path.GetFileName).OfType<string>().Where(IsTemporaryName)]; }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
             foreach (string name in names)
             {
+                uint type;
                 try
                 {
-                    if (ReadMode(name) is not { } mode || (mode & FileTypeMask) != RegularFile) continue;
+                    if (ReadMode(name) is not { } mode) continue;
+                    type = mode & FileTypeMask;
                 }
                 catch (Exception ex) when (ex is IOException or NotSupportedException) { continue; }
+                if (type == LinkFile)
+                {
+                    UnlinkAt(Fd(_directory), name, 0);
+                    continue;
+                }
+                if (type != RegularFile) continue;
                 int fd = OpenAt(Fd(_directory), name, OReadOnly | ONoFollow | ONonBlock | OCloseOnExec, 0);
                 if (fd < 0) continue;
                 using var candidate = new SafeFileHandle(fd, ownsHandle: true);
@@ -296,9 +305,10 @@ internal sealed partial class RemoteFsCapability
             }
         }
 
+        /// <summary>与 CreateTemporary 起的名字逐字对得上才算:前缀 + 48 位大写十六进制(与 Windows 目标同一判定)。</summary>
         private static bool IsTemporaryName(string name) => name.Length == TemporaryPrefix.Length + 48
             && name.StartsWith(TemporaryPrefix, StringComparison.Ordinal)
-            && !name.AsSpan(TemporaryPrefix.Length).ContainsAnyExcept("0123456789ABCDEF");
+            && name[TemporaryPrefix.Length..].All(char.IsAsciiHexDigitUpper);
 
         private uint? ReadMode(string name) => ReadMode(_directory, name);
 
