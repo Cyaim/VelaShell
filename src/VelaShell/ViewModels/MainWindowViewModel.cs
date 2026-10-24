@@ -702,10 +702,14 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     public Func<string, Task<bool>>? MultilinePasteConfirmer { get; set; }
 
     /// <summary>
-    /// 窗口注入的快捷命令变量询问框:参数是命令名与解析好的模板,确认时返回「变量名 → 值」,
-    /// 取消返回 null(整条不发)。未挂时(headless)含占位的命令原样发送。
+    /// 窗口注入的快捷命令变量询问框:参数是命令名、解析好的模板与每一格的初值(上一次填的值,
+    /// 没记过的是占位的默认值),确认时返回「变量名 → 值」,取消返回 null(整条不发)。
+    /// 未挂时(headless)含占位的命令原样发送。
     /// </summary>
-    public Func<string?, QuickCommandTemplate, Task<IReadOnlyDictionary<string, string>?>>? QuickCommandVariablePrompt { get; set; }
+    public Func<string?, QuickCommandTemplate, IReadOnlyDictionary<string, string>, Task<IReadOnlyDictionary<string, string>?>>? QuickCommandVariablePrompt { get; set; }
+
+    /// <summary>询问框的「上一次填的值」,只在进程里(见 <see cref="QuickCommandVariableMemory" />)。</summary>
+    private readonly QuickCommandVariableMemory _quickCommandVariables = new();
 
     /// <summary>
     /// 窗口注入的多行快捷命令确认框:目标终端里有没开括号粘贴的,多行命令发过去会逐行执行,先问一句。
@@ -1399,6 +1403,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
         // 命令补全:注入建议提供器;提交(已回显校验)的命令进全局历史。
         terminalTab.SuggestionProvider = _suggestionProvider;
+        terminalTab.QuickCommandTextResolver = command =>
+            ResolveQuickCommandTextAsync(command.Id, command.Name, command.CommandText);
         terminalTab.CommandLineSubmitted += CommandHistory.Record;
         if (terminalEmulator is VelaTerminalControl bellSource)
         {
@@ -2437,7 +2443,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     )
     {
         var template = QuickCommandTemplate.Parse(request.CommandText);
-        if (!template.HasVariables || QuickCommandVariablePrompt is not { } prompt)
+        if (!template.HasVariables || QuickCommandVariablePrompt is null)
         {
             // 没有占位(或没有窗口可以问,如 headless 测试)时原样发送,与引入占位之前一致。
             DeliverQuickCommand(request.TargetIds, request.CommandText);
@@ -2445,14 +2451,50 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
         FireAndForget.Run(async () =>
         {
-            IReadOnlyDictionary<string, string>? values = await prompt(request.CommandName, template);
-            if (values is null)
+            string? rendered = await AskQuickCommandVariablesAsync(request.CommandId, request.CommandName, template);
+            if (rendered is null)
             {
                 return;
             }
             // 弹框期间目标可能已经断开:发送时再按当下的标签挑一遍,只发给仍连着的。
-            DeliverQuickCommand(request.TargetIds, template.Render(values));
+            DeliverQuickCommand(request.TargetIds, rendered);
         });
+    }
+
+    /// <summary>
+    /// 快捷命令变量的询问:有占位就弹框(每格预填上一次填的值),确认后返回替换好的命令;取消返回 null。
+    /// 没有占位、或没有窗口可以问(headless)时原样返回。
+    /// </summary>
+    /// <remarks>
+    /// 快捷命令区的发送与终端命令补全选中一条快捷命令,走的是这同一处 —— 两个入口问的是同一个框、
+    /// 记的是同一份值,在补全里填过的 pod 名,到快捷命令区再发同一条命令时照样预填。
+    /// </remarks>
+    /// <param name="commandId">快捷命令 id;询问框按它记值,没有时按正文记。</param>
+    /// <param name="commandName">命令显示名(弹框标题)。</param>
+    /// <param name="commandText">命令正文。</param>
+    /// <returns>要发出去的命令正文,或 null(用户取消)。</returns>
+    internal Task<string?> ResolveQuickCommandTextAsync(Guid? commandId, string? commandName, string commandText)
+    {
+        var template = QuickCommandTemplate.Parse(commandText);
+        return template.HasVariables && QuickCommandVariablePrompt is not null
+            ? AskQuickCommandVariablesAsync(commandId, commandName, template)
+            : Task.FromResult<string?>(commandText);
+    }
+
+    private async Task<string?> AskQuickCommandVariablesAsync(Guid? commandId, string? commandName, QuickCommandTemplate template)
+    {
+        if (QuickCommandVariablePrompt is not { } prompt)
+        {
+            return template.Text;
+        }
+        IReadOnlyDictionary<string, string> initial = _quickCommandVariables.Prefill(commandId, template.Text, template);
+        IReadOnlyDictionary<string, string>? values = await prompt(commandName, template, initial);
+        if (values is null)
+        {
+            return null;
+        }
+        _quickCommandVariables.Remember(commandId, template.Text, template, values);
+        return template.Render(values);
     }
 
     /// <summary>
@@ -2761,6 +2803,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
         // 命令补全:注入建议提供器;提交(已回显校验)的命令进全局历史。
         terminalTab.SuggestionProvider = _suggestionProvider;
+        terminalTab.QuickCommandTextResolver = command =>
+            ResolveQuickCommandTextAsync(command.Id, command.Name, command.CommandText);
         terminalTab.CommandLineSubmitted += CommandHistory.Record;
 
         // 树上的状态圆点与「活跃/连接中/离线」标签不在这里订阅:一条配置可能同时开着

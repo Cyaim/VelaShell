@@ -399,6 +399,18 @@ public partial class TerminalTabView : UserControl
     /// <summary>收口密码列表(测试用;等价于用户按 Esc 或切走窗口)。</summary>
     internal void ClosePasswordPopupForTest() => ClosePasswordPopup(suppress: true);
 
+    /// <summary>在补全面板里选中并接受一条候选(测试用;等价于面板开着时选中它按 Enter)。</summary>
+    internal void AcceptSuggestionForTest(CommandSuggestion suggestion)
+    {
+        _suggestions = [suggestion];
+        SuggestList.ItemsSource = _suggestions;
+        SuggestList.SelectedIndex = 0;
+        AcceptSuggestion();
+    }
+
+    /// <summary>最近一次「先问变量、再写进命令行」的接受流程(测试用;等它而不是数 <c>Task.Yield</c>)。</summary>
+    internal Task QuickCommandAcceptForTest { get; private set; } = Task.CompletedTask;
+
     /// <summary>点选一条列表项(测试用;等价于点中那一行,走同一条 SelectionChanged 路径)。</summary>
     internal void PickPasswordItem(SharedCredentialMetadata item) =>
         PasswordList.SelectedItem = item;
@@ -569,6 +581,9 @@ public partial class TerminalTabView : UserControl
     /// <summary>幽灵文本对应的完整候选命令(接受时据此设置抑制值);null 即无幽灵。</summary>
     private string? _ghostFull;
 
+    /// <summary>幽灵文本对应的那条候选(接受带变量的快捷命令时要问变量);与 <see cref="_ghostFull" /> 同生共灭。</summary>
+    private CommandSuggestion? _ghostSuggestion;
+
     private void HookSuggestions()
     {
         _suggestVm?.InputTracker.InputChanged -= OnTrackedInputChanged;
@@ -600,6 +615,7 @@ public partial class TerminalTabView : UserControl
     private void ClearGhost()
     {
         _ghostFull = null;
+        _ghostSuggestion = null;
         _termControl?.ClearGhostSuggestion();
     }
 
@@ -846,6 +862,7 @@ public partial class TerminalTabView : UserControl
             )
             {
                 _ghostFull = item.Text;
+                _ghostSuggestion = item;
                 // 只交完整候选;剩余部分由控件每帧按屏上"光标左侧已回显文本"现算(见
                 // CurrentGhostRemainder),不再逐键回推,故键入/退格/空格均恒贴光标、不受回显延迟影响。
                 _termControl.SetGhostSuggestion(item.Text);
@@ -918,6 +935,16 @@ public partial class TerminalTabView : UserControl
                 && _termControl?.CurrentGhostRemainder() is { Length: > 0 } remainder
             )
             {
+                // 幽灵是一条带 {{变量}} 的快捷命令:与面板里选中它同一条路,先问变量再写。
+                if (_ghostSuggestion is { HasVariables: true } ghostCommand && _ghostSuggestion.Text == _ghostFull)
+                {
+                    ClearGhost();
+                    if (TryAcceptWithVariables(ghostCommand))
+                    {
+                        e.Handled = true;
+                        return true;
+                    }
+                }
                 // 不设抑制:接受后 InputChanged 里发出的查询若命中更长的候选
                 // (如 "git checkout" → "git checkout -b"),继续以幽灵形式接力提示
                 // (fish 语义);幽灵只显示严格更长的候选,不会原样重现。
@@ -989,28 +1016,90 @@ public partial class TerminalTabView : UserControl
         {
             return;
         }
-        string current = EffectiveInput();
-        string payload;
-        if (suggestion.Text.StartsWith(current, StringComparison.Ordinal))
-        {
-            payload = suggestion.Text[current.Length..];
-        }
-        else
-        {
-            // 候选与已输入不同前缀:回删已键入的字符再写入完整候选(shell 每次 DEL 删一个字符)。
-            payload = new string('\x7f', current.Length) + suggestion.Text;
-        }
         CloseSuggestPopup(suppress: false);
         ClearGhost();
+        if (TryAcceptWithVariables(suggestion))
+        {
+            return;
+        }
+        WriteCompletion(suggestion.Text);
+        FocusTerminal();
+    }
 
-        // 经用户输入通道写入(shell 负责回显),跟踪器同路径感知,行状态保持一致。
-        // 不设抑制:面板已关,WriteInput 触发的查询结果只会落到幽灵文本,且幽灵
-        // 只显示严格更长的候选——接受后若存在更长的延续(参数、子选项)就接力提示。
+    /// <summary>
+    /// 把选中的候选续写进命令行:与已键入的同前缀就只写剩下的部分,不同前缀就先回删再写整条。
+    /// </summary>
+    /// <remarks>
+    /// 经用户输入通道写入(shell 负责回显),跟踪器同路径感知,行状态保持一致。
+    /// 不设抑制:面板已关,WriteInput 触发的查询结果只会落到幽灵文本,且幽灵
+    /// 只显示严格更长的候选——接受后若存在更长的延续(参数、子选项)就接力提示。
+    /// </remarks>
+    /// <param name="text">要落到命令行上的完整文本。</param>
+    private void WriteCompletion(string text)
+    {
+        if (_termControl is null)
+        {
+            return;
+        }
+        string current = EffectiveInput();
+        string payload = text.StartsWith(current, StringComparison.Ordinal)
+            ? text[current.Length..]
+            // 候选与已输入不同前缀:回删已键入的字符再写入完整候选(shell 每次 DEL 删一个字符)。
+            : new string('\x7f', current.Length) + text;
         if (payload.Length > 0)
         {
             _termControl.WriteInput(_termControl.SessionEncoding.GetBytes(payload));
         }
-        FocusTerminal();
+    }
+
+    /// <summary>
+    /// 候选是一条带 <c>{{变量}}</c> 的快捷命令时,先弹与快捷命令区同一个询问框(预填上一次的值),
+    /// 填完再把替换好的命令续写进命令行;返回 false 表示不需要问(照常按原文插入)。
+    /// </summary>
+    /// <remarks>
+    /// 原先插入的是含占位的原文(§132 记过这条):补全按前缀续写,而用户键入的前缀几乎总在占位之前,
+    /// 替换之后照样对得上;对不上时 <see cref="WriteCompletion" /> 回删整段再写,与别的候选一样。
+    /// 弹框期间标签可能断开、视图可能被停靠层换了数据上下文:回来时都要再核一遍,不对就一个字节都不写。
+    /// 取消同样一个字节都不写。
+    /// </remarks>
+    private bool TryAcceptWithVariables(CommandSuggestion suggestion)
+    {
+        if (!suggestion.HasVariables
+            || _suggestVm is not { QuickCommandTextResolver: { } resolve } vm
+            || suggestion.Command is not { } command)
+        {
+            return false;
+        }
+        // 询问框是另一个窗口:用户在那儿敲的字不会进终端,输入跟踪器不受影响。
+        // 记下此刻的输入,回来时据此判断命令行在弹框期间有没有变过(远端自己清了行、重连…)。
+        string inputBefore = EffectiveInput();
+        QuickCommandAcceptForTest = AcceptWithVariablesAsync();
+        return true;
+
+        async Task AcceptWithVariablesAsync()
+        {
+            string? text = null;
+            try
+            {
+                text = await resolve(command);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // 询问框本身出了错(窗口正在关之类):当作取消,别把含占位的原文写进去。
+                System.Diagnostics.Trace.WriteLine($"[VelaShell] Quick command variables prompt failed: {ex.Message}");
+            }
+            if (text is not null
+                && ReferenceEquals(vm, _suggestVm)
+                && vm.IsConnected
+                && EffectiveInput() == inputBefore)
+            {
+                WriteCompletion(text);
+            }
+            if (ReferenceEquals(vm, _suggestVm) && IsAttachedToVisualTree())
+            {
+                FocusTerminal();
+            }
+        }
     }
 
     internal void OpenSearch()
@@ -1286,6 +1375,7 @@ public partial class TerminalTabView : UserControl
             _termControl.ClearGhostSuggestion();
         }
         _ghostFull = null;
+        _ghostSuggestion = null;
         _termControl = ctrl;
         if (_termControl is not null)
         {

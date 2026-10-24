@@ -468,7 +468,7 @@ public partial class MainWindow : Window
                 proposalRegistry.ConnectionProposalHandler = ProposeConnectionAsync;
             }
             vm.MultilinePasteConfirmer = ConfirmMultilinePasteAsync;
-            vm.QuickCommandVariablePrompt = (name, template) => QuickCommandVariablesPrompt.ShowAsync(this, name, template);
+            vm.QuickCommandVariablePrompt = (name, template, initial) => QuickCommandVariablesPrompt.ShowAsync(this, name, template, initial);
             vm.QuickCommandMultilineConfirmer = ConfirmQuickCommandMultilineAsync;
             vm.ExportBufferRequested += (_, _) => _ = ExportTerminalBufferAsync(vm);
             // 工具菜单“连接诊断”:对当前标签的配置打开诊断中心(设计 RGXg1)。

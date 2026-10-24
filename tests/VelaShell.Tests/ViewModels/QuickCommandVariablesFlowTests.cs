@@ -41,7 +41,7 @@ public class QuickCommandVariablesFlowTests
         (MainWindowViewModel vm, ITerminalEmulator emulator) = Connected();
         string? askedName = null;
         QuickCommandTemplate? askedTemplate = null;
-        vm.QuickCommandVariablePrompt = (name, template) =>
+        vm.QuickCommandVariablePrompt = (name, template, _) =>
         {
             askedName = name;
             askedTemplate = template;
@@ -63,7 +63,7 @@ public class QuickCommandVariablesFlowTests
         (MainWindowViewModel vm, ITerminalEmulator emulator) = Connected();
         bool focusRequested = false;
         vm.TerminalFocusRequested += (_, _) => focusRequested = true;
-        vm.QuickCommandVariablePrompt = (_, _) => Task.FromResult<IReadOnlyDictionary<string, string>?>(null);
+        vm.QuickCommandVariablePrompt = (_, _, _) => Task.FromResult<IReadOnlyDictionary<string, string>?>(null);
 
         Send(vm, "查看日志", "kubectl logs -f {{pod}}");
 
@@ -76,7 +76,7 @@ public class QuickCommandVariablesFlowTests
     {
         (MainWindowViewModel vm, ITerminalEmulator emulator) = Connected();
         bool asked = false;
-        vm.QuickCommandVariablePrompt = (_, _) =>
+        vm.QuickCommandVariablePrompt = (_, _, _) =>
         {
             asked = true;
             return Task.FromResult<IReadOnlyDictionary<string, string>?>(null);
@@ -95,7 +95,7 @@ public class QuickCommandVariablesFlowTests
         (MainWindowViewModel vm, ITerminalEmulator emulator) = Connected();
         TerminalTabViewModel tab = vm.TerminalTabs.Single();
         var answer = new TaskCompletionSource<IReadOnlyDictionary<string, string>?>();
-        vm.QuickCommandVariablePrompt = (_, _) => answer.Task;
+        vm.QuickCommandVariablePrompt = (_, _, _) => answer.Task;
 
         Send(vm, "查看日志", "kubectl logs -f {{pod}}");
         tab.ConnectionStatus = SessionStatus.Disconnected;
@@ -103,6 +103,70 @@ public class QuickCommandVariablesFlowTests
 
         emulator.DidNotReceive().WriteInput(Arg.Any<byte[]>());
     }
+
+    [TestMethod]
+    public void SecondSend_PrefillsWhatWasTypedTheFirstTime()
+    {
+        (MainWindowViewModel vm, ITerminalEmulator _) = Connected();
+        var command = new QuickCommand { Name = "查看日志", CommandText = "kubectl logs -f {{pod}} -n {{ns=default}} --token={{token}}" };
+        List<IReadOnlyDictionary<string, string>> prefills = [];
+        vm.QuickCommandVariablePrompt = (_, _, initial) =>
+        {
+            prefills.Add(initial);
+            return Task.FromResult<IReadOnlyDictionary<string, string>?>(
+                new Dictionary<string, string> { ["pod"] = "web-1", ["ns"] = "prod", ["token"] = "t0k" });
+        };
+
+        Send(vm, command);
+        Send(vm, command);
+
+        Assert.AreEqual("", prefills[0]["pod"], "第一次没有可记的,用占位自己的默认值");
+        Assert.AreEqual("default", prefills[0]["ns"]);
+        Assert.AreEqual("web-1", prefills[1]["pod"], "pod 名常连着重复用:第二次预填上一次的值");
+        Assert.AreEqual("prod", prefills[1]["ns"]);
+        Assert.AreEqual("", prefills[1]["token"], "像凭据的占位不记");
+    }
+
+    [TestMethod]
+    public async Task CompletionAndThePanel_AskTheSameWay_AndShareTheMemory()
+    {
+        (MainWindowViewModel vm, ITerminalEmulator _) = Connected();
+        TerminalTabViewModel tab = vm.TerminalTabs.Single();
+        var command = new QuickCommand { Name = "查看日志", CommandText = "kubectl logs -f {{pod}}" };
+        List<IReadOnlyDictionary<string, string>> prefills = [];
+        vm.QuickCommandVariablePrompt = (_, _, initial) =>
+        {
+            prefills.Add(initial);
+            return Task.FromResult<IReadOnlyDictionary<string, string>?>(new Dictionary<string, string> { ["pod"] = "web-1" });
+        };
+        // 补全那一路由宿主在建标签时接上;这里手动接上同一个入口(测试里的标签不是宿主建的)。
+        tab.QuickCommandTextResolver ??= c => vm.ResolveQuickCommandTextAsync(c.Id, c.Name, c.CommandText);
+
+        Send(vm, command);
+        string? rendered = await tab.QuickCommandTextResolver(command);
+
+        Assert.AreEqual("kubectl logs -f web-1", rendered);
+        Assert.HasCount(2, prefills);
+        Assert.AreEqual("web-1", prefills[1]["pod"], "在快捷命令区填过的值,补全里选同一条时照样预填");
+    }
+
+    [TestMethod]
+    public async Task Resolve_WithoutPlaceholders_ReturnsTheTextWithoutAsking()
+    {
+        (MainWindowViewModel vm, ITerminalEmulator _) = Connected();
+        bool asked = false;
+        vm.QuickCommandVariablePrompt = (_, _, _) =>
+        {
+            asked = true;
+            return Task.FromResult<IReadOnlyDictionary<string, string>?>(null);
+        };
+
+        Assert.AreEqual("uptime", await vm.ResolveQuickCommandTextAsync(Guid.NewGuid(), "x", "uptime"));
+        Assert.IsFalse(asked);
+    }
+
+    private static void Send(MainWindowViewModel vm, QuickCommand command) =>
+        vm.Sidebar.QuickCommands!.SendCommand.Execute(new QuickCommandViewModel(command)).Subscribe();
 
     private static (MainWindowViewModel Vm, ITerminalEmulator Emulator) Connected()
     {

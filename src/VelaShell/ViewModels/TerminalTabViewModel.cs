@@ -231,6 +231,13 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     /// <summary>补全建议提供器(宿主 MainWindowViewModel 注入;null = 补全不可用)。</summary>
     public CommandSuggestionProvider? SuggestionProvider { get; set; }
 
+    /// <summary>
+    /// 补全里选中一条带 <c>{{变量}}</c> 的快捷命令时,把它换成要写进命令行的正文:
+    /// 弹与快捷命令区同一个询问框(预填上一次的值),取消返回 null(一个字节都不写)。
+    /// 宿主注入;null 时候选按原文插入(与引入占位之前一致)。
+    /// </summary>
+    public Func<QuickCommand, Task<string?>>? QuickCommandTextResolver { get; set; }
+
     /// <summary>用户在本标签提交了一条通过回显校验的命令(宿主记入全局命令历史)。</summary>
     public event Action<string>? CommandLineSubmitted;
 

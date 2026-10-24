@@ -92,6 +92,39 @@ public class QuickCommandVariablesPromptUiTests
         });
     }
 
+    [TestMethod]
+    public void InitialValues_ArePrefilled_AndThePreviewUsesThem()
+    {
+        OnUi(() =>
+        {
+            var owner = new Window();
+            owner.Show();
+            try
+            {
+                // 宿主按「上一次填的值」给初值;没给的那一格照旧是占位的默认值。
+                Task<IReadOnlyDictionary<string, string>?> pending = QuickCommandVariablesPrompt.ShowAsync(
+                    owner, "查看日志", QuickCommandTemplate.Parse("kubectl logs -f {{pod}} -n {{ns=default}}"),
+                    new Dictionary<string, string> { ["pod"] = "web-1" });
+                Dispatcher.UIThread.RunJobs();
+                Window dialog = owner.OwnedWindows.Single();
+
+                TextBox[] inputs = VariableInputs(dialog);
+                Assert.AreEqual("web-1", inputs[0].Text);
+                Assert.AreEqual("default", inputs[1].Text);
+                TextBlock preview = dialog.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Classes.Contains("mono-accent"));
+                Assert.AreEqual("kubectl logs -f web-1 -n default", preview.Text);
+
+                ButtonNamed(dialog, "ConfirmButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+                Assert.AreEqual("web-1", pending.Result!["pod"], "不改就照预填的值发");
+            }
+            finally
+            {
+                owner.Close();
+            }
+        });
+    }
+
     /// <summary>变量输入框:排除 MessageDialog 自带(此形态下隐藏)的单行输入框。</summary>
     private static TextBox[] VariableInputs(Window dialog) =>
         [.. dialog.GetVisualDescendants().OfType<TextBox>().Where(t => t.Name != "InputBox")];

@@ -14,11 +14,21 @@ namespace VelaShell.Views;
 public static class QuickCommandVariablesPrompt
 {
     /// <summary>弹框询问变量值;确认时返回「变量名 → 值」,取消返回 null。</summary>
+    /// <param name="owner">属主窗口。</param>
+    /// <param name="commandName">命令显示名(标题);没有时用命令正文。</param>
+    /// <param name="template">解析好的模板。</param>
+    /// <param name="initialValues">
+    /// 每一格的初值(宿主按「上一次填的值」给,见 <c>QuickCommandVariableMemory</c>);没给的格子用占位的默认值。
+    /// </param>
     public static async Task<IReadOnlyDictionary<string, string>?> ShowAsync(Window owner,
         string? commandName,
-        QuickCommandTemplate template)
+        QuickCommandTemplate template,
+        IReadOnlyDictionary<string, string>? initialValues = null)
     {
-        var values = template.Variables.ToDictionary(v => v.Name, v => v.DefaultValue, StringComparer.Ordinal);
+        var values = template.Variables.ToDictionary(
+            v => v.Name,
+            v => initialValues is not null && initialValues.TryGetValue(v.Name, out string? initial) ? initial : v.DefaultValue,
+            StringComparer.Ordinal);
         var preview = new TextBlock
         {
             Classes = { "mono-accent" },
@@ -41,7 +51,7 @@ public static class QuickCommandVariablesPrompt
                 Text = variable.Name,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var input = new TextBox { Text = variable.DefaultValue };
+            var input = new TextBox { Text = values[variable.Name] };
             AutomationProperties.SetName(input, variable.Name);
             input.TextChanged += (_, _) =>
             {

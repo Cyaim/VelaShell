@@ -4,8 +4,19 @@ using VelaShell.Core.Resources;
 
 namespace VelaShell.Services;
 
-/// <summary>一条补全建议:插入文本 + 补充说明 + 来源标签。</summary>
-public sealed record CommandSuggestion(string Text, string? Detail, string Source);
+/// <summary>一条补全建议:插入文本 + 补充说明 + 来源标签,以及(正文与某条快捷命令相同时)那条快捷命令。</summary>
+/// <param name="Text">插入的文本。</param>
+/// <param name="Detail">补充说明。</param>
+/// <param name="Source">来源标签(快捷命令 / 历史 / 常用)。</param>
+/// <param name="Command">
+/// 正文与之相同的快捷命令;没有为 null。带 <c>{{变量}}</c> 时选中它要先问变量(§132),
+/// 而不是把占位原文插进命令行 —— 同一段正文从历史里冒出来(早先按原文接受过)也一样。
+/// </param>
+public sealed record CommandSuggestion(string Text, string? Detail, string Source, QuickCommand? Command = null)
+{
+    /// <summary>选中它要先弹变量询问框:来自一条快捷命令,且正文里有 <c>{{变量}}</c> 占位。</summary>
+    public bool HasVariables => Command is not null && QuickCommandTemplate.Parse(Text).HasVariables;
+}
 
 /// <summary>合并本地命令历史与快捷命令的补全建议提供器。</summary>
 public sealed class CommandSuggestionProvider
@@ -47,7 +58,7 @@ public sealed class CommandSuggestionProvider
             {
                 if (all.Count < max && seenAll.Add(command.CommandText))
                 {
-                    all.Add(new(command.CommandText, DescribeQuickCommand(command), quickCommandSource));
+                    all.Add(new(command.CommandText, DescribeQuickCommand(command), quickCommandSource, command));
                 }
             }
             foreach (string entry in _history.Entries)
@@ -110,13 +121,21 @@ public sealed class CommandSuggestionProvider
             }
         }
 
+        // 同文本去重时历史常常赢(分高),但它若与一条快捷命令一字不差,选中时仍按那条快捷命令问变量。
+        var quickByText = new Dictionary<string, QuickCommand>(StringComparer.Ordinal);
+        foreach (QuickCommand command in quick)
+        {
+            _ = quickByText.TryAdd(command.CommandText, command);
+        }
         return
         [
             .. scored
                 .Values.OrderByDescending(pair => pair.Score)
                 .ThenBy(pair => pair.Item.Text.Length)
                 .Take(max)
-                .Select(pair => pair.Item),
+                .Select(pair => quickByText.TryGetValue(pair.Item.Text, out QuickCommand? linked)
+                    ? pair.Item with { Command = linked }
+                    : pair.Item),
         ];
     }
 
