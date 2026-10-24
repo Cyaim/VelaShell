@@ -46,7 +46,7 @@ public sealed class SessionProfileCloneTests
             JumpHostProfileId = Guid.NewGuid(),
             PostAuthCommand = "sudo su -",
             PostAuthCommandDelaySeconds = 3,
-            Ftp = new() { Anonymous = true, MaxConnections = 4, InitialRemotePath = "/srv" },
+            Ftp = new() { Anonymous = true, MaxConnections = 4, InitialRemotePath = "/srv", ServerUtcOffsetMinutes = 480 },
             PluginProtocolId = "velashell.s3",
             PluginSettings = new() { ["region"] = "cn-north-1" },
             PluginSecrets = new() { ["secretKey"] = "s3cr3t" },

@@ -4963,6 +4963,15 @@ Overwrite it?</value>
   <data name="Ftp_InitialPathPlaceholder" xml:space="preserve">
     <value>e.g. /var/www/html</value>
   </data>
+  <data name="Ftp_ServerTimeZone" xml:space="preserve">
+    <value>Server time zone</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneHint" xml:space="preserve">
+    <value>// LIST timestamps carry no time zone; when the server's clock is in another zone, directory compare and sync convert them with this offset. MLSD times are already UTC and are not shifted</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneLocal" xml:space="preserve">
+    <value>Same as this computer</value>
+  </data>
   <data name="Cert_Title" xml:space="preserve">
     <value>Untrusted server certificate</value>
   </data>

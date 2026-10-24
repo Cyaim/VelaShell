@@ -4958,6 +4958,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Ftp_InitialPathPlaceholder" xml:space="preserve">
     <value>例: /var/www/html</value>
   </data>
+  <data name="Ftp_ServerTimeZone" xml:space="preserve">
+    <value>サーバーのタイムゾーン</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneHint" xml:space="preserve">
+    <value>// LIST の更新日時にはタイムゾーンがありません。サーバーの時計が別のタイムゾーンにある場合、ディレクトリの比較と同期はこのオフセットで換算します。MLSD の時刻は元から UTC なのでずらしません</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneLocal" xml:space="preserve">
+    <value>このコンピューターと同じ</value>
+  </data>
   <data name="Cert_Title" xml:space="preserve">
     <value>サーバー証明書が信頼されていません</value>
   </data>

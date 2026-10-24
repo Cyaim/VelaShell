@@ -1272,6 +1272,15 @@
                            PlaceholderText="{loc:Localize Ftp_InitialPathPlaceholder}" />
                   <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{loc:Localize Ftp_InitialPathHint}" />
                 </StackPanel>
+                <!-- 服务器时区:LIST 的时间不带时区,服务器不在本机时区时目录比较与同步整体错位(WinSCP 会话设置里的同一项)。
+                     只影响比较与同步时的换算;文件面板里的时间列照旧显示服务器自己的钟。 -->
+                <StackPanel IsVisible="{Binding IsFtpSelected}">
+                  <TextBlock Classes="field-label" Text="{loc:Localize Ftp_ServerTimeZone}" />
+                  <ComboBox Width="248" HorizontalAlignment="Left"
+                            ItemsSource="{Binding FtpTimeZoneOptions}"
+                            SelectedItem="{Binding SelectedFtpTimeZone}" />
+                  <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{loc:Localize Ftp_ServerTimeZoneHint}" />
+                </StackPanel>
                 <!-- 插件标了 IsAdvanced 的调优字段(分片大小、并发数之类):S3 一口气声明了十来个字段,
                      全铺在「常规」页上就长到屏幕外了。 -->
                 <ItemsControl IsVisible="{Binding IsPluginSelected}"

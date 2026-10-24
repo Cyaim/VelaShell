@@ -4958,6 +4958,15 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Ftp_InitialPathPlaceholder" xml:space="preserve">
     <value>예: /var/www/html</value>
   </data>
+  <data name="Ftp_ServerTimeZone" xml:space="preserve">
+    <value>서버 시간대</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneHint" xml:space="preserve">
+    <value>// LIST의 수정 시간에는 시간대가 없습니다. 서버 시계가 다른 시간대에 있으면 디렉터리 비교와 동기화가 이 오프셋으로 환산합니다. MLSD 시간은 원래 UTC이므로 옮기지 않습니다</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneLocal" xml:space="preserve">
+    <value>이 컴퓨터와 같음</value>
+  </data>
   <data name="Cert_Title" xml:space="preserve">
     <value>신뢰할 수 없는 서버 인증서</value>
   </data>

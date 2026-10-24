@@ -100,6 +100,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private readonly string? _ftpTrustedThumbprint;
     private readonly int _ftpMaxConnections = new FtpSettings().MaxConnections;
     private string? _ftpInitialRemotePath;
+    private int? _ftpServerUtcOffsetMinutes;
+    private IReadOnlyList<FtpTimeZoneOption>? _ftpTimeZoneOptions;
     private Guid? _groupId;
     private string _host = string.Empty;
     private bool _isCertAuth;
@@ -239,6 +241,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 _ftpTrustedThumbprint = ftp.TrustedCertificateThumbprint;
                 _ftpMaxConnections = ftp.MaxConnections;
                 _ftpInitialRemotePath = ftp.InitialRemotePath;
+                _ftpServerUtcOffsetMinutes = ftp.ServerUtcOffsetMinutes;
             }
             _pluginProtocolId = existing.PluginProtocolId;
             _pluginStored = existing.PluginSettings;
@@ -1302,7 +1305,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// <summary>「高级」页是否有非默认值。</summary>
     public bool IsAdvancedSectionModified =>
         IsFtpSelected
-            ? !string.IsNullOrWhiteSpace(_ftpInitialRemotePath)
+            ? !string.IsNullOrWhiteSpace(_ftpInitialRemotePath) || _ftpServerUtcOffsetMinutes is not null
             : PluginFields.Any(f => f.IsAdvanced
                                     && !string.Equals(f.Text, f.Field.DefaultValue ?? string.Empty, StringComparison.Ordinal));
 
@@ -1425,7 +1428,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         {
             this.RaisePropertyChanged(nameof(IsForwardingSectionModified));
         }
-        else if (name == nameof(FtpInitialRemotePath))
+        else if (name is nameof(FtpInitialRemotePath) or nameof(SelectedFtpTimeZone))
         {
             this.RaisePropertyChanged(nameof(IsAdvancedSectionModified));
         }
@@ -1925,6 +1928,32 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         set => this.RaiseAndSetIfChanged(ref _ftpInitialRemotePath, value);
     }
 
+    /// <summary>
+    /// 「服务器时区」下拉候选(「高级」页,仅 FTP / FTPS):「与本机相同」+ UTC−12:00…UTC+14:00。
+    /// 首次读取时才建,那时配置里现存的值已经载入(不在表里的也会被插进去,见 <see cref="FtpTimeZoneOption.Build" />)。
+    /// </summary>
+    public IReadOnlyList<FtpTimeZoneOption> FtpTimeZoneOptions =>
+        _ftpTimeZoneOptions ??= FtpTimeZoneOption.Build(_ftpServerUtcOffsetMinutes);
+
+    /// <summary>
+    /// 选中的服务器时区:目录比较与同步按它换算 LIST 的时间(见 <see cref="FtpSettings.ServerUtcOffsetMinutes" />)。
+    /// 「与本机相同」存为 null,即旧行为。
+    /// </summary>
+    public FtpTimeZoneOption SelectedFtpTimeZone
+    {
+        get => FtpTimeZoneOptions.FirstOrDefault(o => o.Minutes == _ftpServerUtcOffsetMinutes) ?? FtpTimeZoneOptions[0];
+        set
+        {
+            int? minutes = value?.Minutes;
+            if (minutes == _ftpServerUtcOffsetMinutes)
+            {
+                return;
+            }
+            _ftpServerUtcOffsetMinutes = minutes;
+            this.RaisePropertyChanged();
+        }
+    }
+
     /// <summary>分组下拉候选:“未分组” + 全部已保存分组。</summary>
     public ObservableCollection<GroupOption> Groups { get; }
 
@@ -2257,6 +2286,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                     MaxConnections = _ftpMaxConnections,
                     // setter 自带归一化(补前导 /、去尾斜杠、空串归 null),这里原样交给它。
                     InitialRemotePath = _ftpInitialRemotePath,
+                    ServerUtcOffsetMinutes = _ftpServerUtcOffsetMinutes,
                 }
                 : null,
             // 插件协议:只存协议 id 与它自己声明的那些字段。宿主对这些键一无所知,

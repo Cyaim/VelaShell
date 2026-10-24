@@ -5176,6 +5176,15 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Ftp_InitialPathPlaceholder" xml:space="preserve">
     <value>如 /var/www/html</value>
   </data>
+  <data name="Ftp_ServerTimeZone" xml:space="preserve">
+    <value>服务器时区</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneHint" xml:space="preserve">
+    <value>// LIST 给的修改时间不带时区；服务器不在本机时区时，目录比较与同步按这里的偏移换算。MLSD 给的本来就是 UTC，不受影响</value>
+  </data>
+  <data name="Ftp_ServerTimeZoneLocal" xml:space="preserve">
+    <value>与本机相同</value>
+  </data>
   <data name="Cert_Title" xml:space="preserve">
     <value>服务器证书不受信任</value>
   </data>

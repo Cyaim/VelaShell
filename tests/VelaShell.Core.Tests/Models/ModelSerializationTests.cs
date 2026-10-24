@@ -143,6 +143,7 @@ public class ModelSerializationTests
                 TrustedCertificateThumbprint = "AABBCC",
                 MaxConnections = 6,
                 InitialRemotePath = "/var/www/html",
+                ServerUtcOffsetMinutes = -300,
             },
         };
 
@@ -158,6 +159,7 @@ public class ModelSerializationTests
         Assert.AreEqual("AABBCC", roundTrip.Ftp.TrustedCertificateThumbprint);
         Assert.AreEqual(6, roundTrip.Ftp.MaxConnections);
         Assert.AreEqual("/var/www/html", roundTrip.Ftp.InitialRemotePath);
+        Assert.AreEqual(-300, roundTrip.Ftp.ServerUtcOffsetMinutes);
     }
 
     /// <summary>
@@ -182,6 +184,23 @@ public class ModelSerializationTests
         Assert.AreEqual(expected, settings.InitialRemotePath);
         // Clone 是 SessionProfile 那套逐字段手写拷贝的配套件,漏抄的表现是"存下来就没了"。
         Assert.AreEqual(expected, settings.Clone().InitialRemotePath);
+    }
+
+    /// <summary>服务器时区只收 UTC−12:00…UTC+14:00;手改坏的值按「与本机相同」(null,旧行为)处理,Clone 照抄。</summary>
+    [TestMethod]
+    [DataRow(null, null)]
+    [DataRow(0, 0)]
+    [DataRow(-720, -720)]
+    [DataRow(840, 840)]
+    [DataRow(345, 345)]
+    [DataRow(-721, null)]
+    [DataRow(841, null)]
+    public void FtpSettings_ServerUtcOffset_IsRangeCheckedOnAssignment(int? input, int? expected)
+    {
+        var settings = new FtpSettings { ServerUtcOffsetMinutes = input };
+
+        Assert.AreEqual(expected, settings.ServerUtcOffsetMinutes);
+        Assert.AreEqual(expected, settings.Clone().ServerUtcOffsetMinutes);
     }
 
     /// <summary>插件协议(如 S3)的往返:协议 id 与两份设置字典。</summary>

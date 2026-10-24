@@ -85,6 +85,31 @@ public sealed class FtpSettings
         set => field = NormalizeRemotePath(value);
     }
 
+    /// <summary>最西的时区偏移(分钟):UTC−12:00。</summary>
+    public const int MinServerUtcOffsetMinutes = -12 * 60;
+
+    /// <summary>最东的时区偏移(分钟):UTC+14:00。</summary>
+    public const int MaxServerUtcOffsetMinutes = 14 * 60;
+
+    /// <summary>
+    /// 服务器时钟的 UTC 偏移(分钟);null(默认)= 与本机同一时区,即旧行为。
+    /// <para>
+    /// FTP 的 LIST 只给服务器的墙上时间、不带时区,客户端只能当成本机时间读。服务器跑在 UTC、本机在 UTC+8 时,
+    /// 目录比较与同步里所有远端时间整体错开 8 小时,于是一律「较新」(WinSCP 在会话设置里有同一项)。
+    /// 设了这一项,比较时 LIST 的时间按 <c>UTC = 墙上时间 − 偏移</c> 换算;MLSD / MLST 给的本来就是 UTC,不受影响。
+    /// </para>
+    /// <para>
+    /// 存的是<b>服务器所在时区的偏移</b>而不是「比本机快几小时」:本机换夏令时、带着电脑出差,配置都不用改。
+    /// 服务器自己换夏令时的那半年要手动改一次 —— 固定偏移只能如此,与 WinSCP 相同。
+    /// 赋值时超出 UTC−12:00…UTC+14:00 的值归 null(手改坏的配置按旧行为处理)。
+    /// </para>
+    /// </summary>
+    public int? ServerUtcOffsetMinutes
+    {
+        get;
+        set => field = value is >= MinServerUtcOffsetMinutes and <= MaxServerUtcOffsetMinutes ? value : null;
+    }
+
     /// <summary>
     /// 把用户输入的远程路径归一化成 <c>CWD</c> 吃得下的绝对路径;无内容时返回 null。
     /// </summary>
@@ -116,5 +141,6 @@ public sealed class FtpSettings
             TrustedCertificateThumbprint = TrustedCertificateThumbprint,
             MaxConnections = MaxConnections,
             InitialRemotePath = InitialRemotePath,
+            ServerUtcOffsetMinutes = ServerUtcOffsetMinutes,
         };
 }

@@ -114,6 +114,38 @@ public class DirectoryTreeScannerTests
         Assert.AreEqual("/a.txt", tree.Items.Single().FullPath);
     }
 
+    /// <summary>
+    /// 配了服务器时区:不带时区的 LIST 时间按偏移换算、记下日历偏移;MLSD 给的 UTC 原样用、不记。
+    /// 精度按换算之前的原始时间推断 —— 「只有日期」的 00:00 挪过偏移就认不出来了。
+    /// </summary>
+    [TestMethod]
+    public async Task ScanRemote_WithServerClockOffset_ShiftsOnlyListTimes()
+    {
+        ISftpService sftp = Substitute.For<ISftpService>();
+        var session = Guid.NewGuid();
+        sftp.ListDirectoryAsync(session, "/", Arg.Any<CancellationToken>()).Returns(
+        [
+            Remote("/list.txt", isDirectory: false, new(2026, 9, 1, 18, 30, 0, DateTimeKind.Unspecified)),
+            Remote("/old.tar", isDirectory: false, new(2025, 1, 2, 0, 0, 0, DateTimeKind.Unspecified)),
+            Remote("/mlsd.txt", isDirectory: false, new(2026, 9, 1, 10, 30, 7, DateTimeKind.Utc)),
+        ]);
+        TimeSpan offset = TimeSpan.FromHours(8);
+
+        SyncTree tree = await DirectoryTreeScanner.ScanRemoteAsync(
+            sftp, session, "/", SyncFileMask.Empty, inferPrecision: true, serverClockOffset: offset);
+
+        SyncItem list = tree.Items.Single(i => i.Name == "list.txt");
+        Assert.AreEqual(new DateTime(2026, 9, 1, 10, 30, 0, DateTimeKind.Utc), list.LastWriteTimeUtc);
+        Assert.AreEqual(DateTimeKind.Utc, list.LastWriteTimeUtc.Kind);
+        Assert.AreEqual(offset, list.CalendarOffset);
+        SyncItem old = tree.Items.Single(i => i.Name == "old.tar");
+        Assert.AreEqual(SyncTimePrecision.Day, old.Precision, "精度要按换算前的 00:00 推断");
+        Assert.AreEqual(new DateTime(2025, 1, 1, 16, 0, 0, DateTimeKind.Utc), old.LastWriteTimeUtc);
+        SyncItem mlsd = tree.Items.Single(i => i.Name == "mlsd.txt");
+        Assert.AreEqual(new DateTime(2026, 9, 1, 10, 30, 7, DateTimeKind.Utc), mlsd.LastWriteTimeUtc, "MLSD 的 UTC 不能再挪");
+        Assert.IsNull(mlsd.CalendarOffset);
+    }
+
     [TestMethod]
     public void CombineRemote_HandlesRootAndTrailingSlashes()
     {

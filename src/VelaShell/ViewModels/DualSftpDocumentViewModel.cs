@@ -168,8 +168,8 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
         RemoteFileInfoViewModel[] leftEntries = VisibleEntries(LeftFiles);
         RemoteFileInfoViewModel[] rightEntries = VisibleEntries(RightFiles);
         IReadOnlyList<SyncComparison> comparisons = DirectoryComparer.Compare(
-            ToSyncItems(leftEntries, TimesMayBeCoarse(_left.Profile)),
-            ToSyncItems(rightEntries, TimesMayBeCoarse(_right.Profile)),
+            ToSyncItems(leftEntries, TimesMayBeCoarse(_left.Profile), SyncTime.ServerClockOffset(_left.Profile)),
+            ToSyncItems(rightEntries, TimesMayBeCoarse(_right.Profile), SyncTime.ServerClockOffset(_right.Profile)),
             options);
 
         StringComparer comparer = options.IgnoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -339,10 +339,16 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
     private static RemoteFileInfoViewModel[] VisibleEntries(FileBrowserViewModel pane) =>
         [.. pane.Files.Where(static f => !f.IsParentEntry && !f.IsDirectoryLink)];
 
-    private static IReadOnlyList<SyncItem> ToSyncItems(IEnumerable<RemoteFileInfoViewModel> entries, bool coarse) =>
+    /// <param name="entries">一栏的条目。</param>
+    /// <param name="coarse">时间是否可能粗于秒。</param>
+    /// <param name="clock">这一栏服务器时钟的 UTC 偏移(FTP 配了服务器时区时);null = 与本机同一时区。</param>
+    private static IReadOnlyList<SyncItem> ToSyncItems(IEnumerable<RemoteFileInfoViewModel> entries, bool coarse, TimeSpan? clock) =>
         [.. entries.Select(f => new SyncItem(
-            f.Name, f.FullPath, f.IsDirectory, f.IsDirectory ? 0 : f.SizeBytes, SyncTime.ToUtc(f.LastModified),
-            coarse ? SyncTime.InferPrecision(f.LastModified) : SyncTimePrecision.Second))];
+            f.Name, f.FullPath, f.IsDirectory, f.IsDirectory ? 0 : f.SizeBytes, SyncTime.ToUtc(f.LastModified, clock),
+            coarse ? SyncTime.InferPrecision(f.LastModified) : SyncTimePrecision.Second)
+        {
+            CalendarOffset = SyncTime.CalendarOffsetFor(f.LastModified, clock),
+        })];
 
     private static void Select(FileBrowserViewModel pane, IEnumerable<RemoteFileInfoViewModel> entries, HashSet<string> names)
     {

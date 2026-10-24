@@ -351,6 +351,62 @@ public class FtpFileServiceIntegrationTests
         }
     }
 
+    /// <summary>
+    /// 服务器与本机不在同一时区:LIST 给的是服务器墙上时间,不配偏移时整体错位、判成不同;
+    /// 配上服务器时区,同一份文件就是「相同」。MLSD 给的是 UTC,配着同样的偏移也照样「相同」(不能再挪一遍)。
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ServerInAnotherTimeZone_SyncCompareNeedsTheOffsetForListButNotForMlsd(bool mlsd)
+    {
+        // 服务器时区 = 本机偏移 + 3 小时(夹在 UTC−12…UTC+14 里):不管测试机在哪个时区,两边都一定不同。
+        TimeSpan local = TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
+        TimeSpan server = local + TimeSpan.FromHours(3) > TimeSpan.FromHours(14) ? local - TimeSpan.FromHours(3) : local + TimeSpan.FromHours(3);
+        _server.ListClockOffset = server;
+        _server.SupportsMlsd = mlsd;
+        string localDir = Path.Combine(Path.GetTempPath(), $"vela-ftp-tz-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(localDir);
+        try
+        {
+            // 同一个时刻落在两边(几小时前、秒为 0:LIST 只到分钟)。
+            DateTime stamp = DateTime.UtcNow.AddHours(-5);
+            stamp = new DateTime(stamp.Year, stamp.Month, stamp.Day, stamp.Hour, stamp.Minute, 0, DateTimeKind.Utc);
+            string localFile = Path.Combine(localDir, "a.txt");
+            await File.WriteAllTextAsync(localFile, "same", TestContext.CancellationToken);
+            File.SetLastWriteTimeUtc(localFile, stamp);
+            string remoteFile = Path.Combine(_root, "a.txt");
+            await File.WriteAllTextAsync(remoteFile, "same", TestContext.CancellationToken);
+            File.SetLastWriteTimeUtc(remoteFile, stamp);
+            Guid sessionId = await OpenAsync();
+            SyncTree localTree = await DirectoryTreeScanner.ScanLocalAsync(localDir, SyncFileMask.Empty, cancellationToken: TestContext.CancellationToken);
+
+            SyncTree withOffset = await DirectoryTreeScanner.ScanRemoteAsync(
+                _service, sessionId, "/", SyncFileMask.Empty, inferPrecision: true, serverClockOffset: server,
+                cancellationToken: TestContext.CancellationToken);
+            Assert.AreEqual(stamp, withOffset.Items.Single().LastWriteTimeUtc);
+            Assert.AreEqual(SyncComparisonState.Same,
+                DirectoryComparer.Compare(localTree.Items, withOffset.Items, new SyncOptions()).Single().State);
+
+            SyncTree withoutOffset = await DirectoryTreeScanner.ScanRemoteAsync(
+                _service, sessionId, "/", SyncFileMask.Empty, inferPrecision: true,
+                cancellationToken: TestContext.CancellationToken);
+            SyncComparisonState legacy = DirectoryComparer.Compare(localTree.Items, withoutOffset.Items, new SyncOptions()).Single().State;
+            if (mlsd)
+            {
+                Assert.AreEqual(SyncComparisonState.Same, legacy, "MLSD 给的是 UTC,本来就对得上");
+            }
+            else
+            {
+                Assert.AreNotEqual(SyncComparisonState.Same, legacy, "不配偏移时 LIST 的时间整体错开 —— 这正是要修的问题");
+            }
+        }
+        finally
+        {
+            Directory.Delete(localDir, true);
+        }
+    }
+
     [TestMethod]
     public async Task SetLastWriteTime_OnAServerWithoutMfmt_ReportsNotSupported()
     {

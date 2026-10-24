@@ -213,11 +213,16 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         LocalFileEntry[] localEntries = [.. LocalFiles.Entries.Where(e => !e.IsParentEntry && (includeHidden || !e.Name.StartsWith('.')))];
         RemoteFileInfoViewModel[] remoteEntries = [.. RemoteFiles.Files.Where(static f => !f.IsParentEntry && !f.IsDirectoryLink)];
         bool coarse = RemoteTimesMayBeCoarse;
+        // FTP 配了服务器时区时,LIST 的时间按它换算(与同步窗口同一口径,见 SyncTime.ServerClockOffset)。
+        TimeSpan? clock = SyncTime.ServerClockOffset(Profile);
         IReadOnlyList<SyncItem> localItems = [.. localEntries.Select(static e => new SyncItem(
             e.Name, e.FullPath, e.IsDirectory, e.IsDirectory ? 0 : e.SizeBytes, SyncTime.ToUtc(e.LastModified)))];
         IReadOnlyList<SyncItem> remoteItems = [.. remoteEntries.Select(f => new SyncItem(
-            f.Name, f.FullPath, f.IsDirectory, f.IsDirectory ? 0 : f.SizeBytes, SyncTime.ToUtc(f.LastModified),
-            coarse ? SyncTime.InferPrecision(f.LastModified) : SyncTimePrecision.Second))];
+            f.Name, f.FullPath, f.IsDirectory, f.IsDirectory ? 0 : f.SizeBytes, SyncTime.ToUtc(f.LastModified, clock),
+            coarse ? SyncTime.InferPrecision(f.LastModified) : SyncTimePrecision.Second)
+        {
+            CalendarOffset = SyncTime.CalendarOffsetFor(f.LastModified, clock),
+        })];
 
         string? fellBack = null;
         if (options.Criteria.HasFlag(SyncCriteria.Checksum))
@@ -310,6 +315,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
             {
                 RefreshPanesAsync = RefreshPanesAsync,
                 ChecksumCache = _checksumCache,
+                RemoteClockOffset = SyncTime.ServerClockOffset(Profile),
             };
             sync.Disposed += OnSyncDisposed;
             ActiveSync = sync;

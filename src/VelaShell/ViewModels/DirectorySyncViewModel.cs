@@ -163,6 +163,12 @@ public sealed class DirectorySyncViewModel : ReactiveObject, IDisposable
     /// <summary>服务器名(窗口标题)。</summary>
     public string ServerName { get; }
 
+    /// <summary>
+    /// 服务器时钟的 UTC 偏移(FTP 连接配置里的「服务器时区」);null = 与本机同一时区。
+    /// 扫远端时按它换算 LIST 的时间,见 <see cref="SyncTime.ServerClockOffset" />。来自连接配置,不是同步选项 —— 同步选项刻意不持久化。
+    /// </summary>
+    public TimeSpan? RemoteClockOffset { get; init; }
+
     /// <summary>预览行。</summary>
     public ReadOnlyObservableCollection<SyncActionItemViewModel> Items { get; }
 
@@ -508,6 +514,7 @@ public sealed class DirectorySyncViewModel : ReactiveObject, IDisposable
         {
             remoteTree = await DirectoryTreeScanner.ScanRemoteAsync(
                 _sftp, _sessionId, request.RemoteRoot, request.Mask, _inferRemotePrecision,
+                serverClockOffset: RemoteClockOffset,
                 progress: remoteProgress, cancellationToken: ct);
         }
         catch
@@ -828,7 +835,7 @@ public sealed class DirectorySyncViewModel : ReactiveObject, IDisposable
         {
             remote = await DirectoryTreeScanner.ScanRemoteAsync(
                 _sftp, _sessionId, DirectoryTreeScanner.CombineRemote(_watchRemoteRoot, scope), _watchMask,
-                _inferRemotePrecision, recursive, scope, cancellationToken: ct);
+                _inferRemotePrecision, recursive, scope, RemoteClockOffset, cancellationToken: ct);
         }
         catch (OperationCanceledException)
         {
