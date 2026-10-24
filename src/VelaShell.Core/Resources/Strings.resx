@@ -6788,6 +6788,18 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="XServer_PanelGrabbingTip" xml:space="preserve">
     <value>It has grabbed the whole X Server; every other X program is waiting for it.</value>
   </data>
+  <data name="XServer_PanelTrusted" xml:space="preserve">
+    <value>Trusted</value>
+  </data>
+  <data name="XServer_PanelTrustedTip" xml:space="preserve">
+    <value>Trusted: full access to the whole X Server. It can see and change other programs' windows, read the keyboard and the clipboard, and send input (programs on this computer, ssh -Y).</value>
+  </data>
+  <data name="XServer_PanelUntrusted" xml:space="preserve">
+    <value>Untrusted</value>
+  </data>
+  <data name="XServer_PanelUntrustedTip" xml:space="preserve">
+    <value>Untrusted (ssh -X): it only reaches the windows of untrusted programs. It cannot see trusted programs' windows, read their keyboard input or clipboard, or fake input.</value>
+  </data>
   <data name="XServer_PanelDisconnectTip" xml:space="preserve">
     <value>Disconnect this program (all its windows close)</value>
   </data>

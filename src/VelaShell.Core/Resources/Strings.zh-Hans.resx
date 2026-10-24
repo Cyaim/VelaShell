@@ -7260,6 +7260,18 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="XServer_PanelGrabbingTip" xml:space="preserve">
     <value>它抓着整个 X Server，其它 X 程序都在等它。</value>
   </data>
+  <data name="XServer_PanelTrusted" xml:space="preserve">
+    <value>受信任</value>
+  </data>
+  <data name="XServer_PanelTrustedTip" xml:space="preserve">
+    <value>受信任：对整个 X Server 有完全的访问权，能看、能改别的程序的窗口，读键盘与剪贴板，也能注入输入（本机程序、ssh -Y）。</value>
+  </data>
+  <data name="XServer_PanelUntrusted" xml:space="preserve">
+    <value>非受信任</value>
+  </data>
+  <data name="XServer_PanelUntrustedTip" xml:space="preserve">
+    <value>非受信任（ssh -X）：只碰得到非受信任程序的窗口，看不到受信任程序的画面，读不到它们的键盘输入与剪贴板，不能伪造输入。</value>
+  </data>
   <data name="XServer_PanelDisconnectTip" xml:space="preserve">
     <value>断开这个程序（它的窗口全部关闭）</value>
   </data>

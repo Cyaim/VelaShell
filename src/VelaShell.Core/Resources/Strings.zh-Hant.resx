@@ -7260,6 +7260,18 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="XServer_PanelGrabbingTip" xml:space="preserve">
     <value>它抓著整個 X Server，其他 X 程式都在等它。</value>
   </data>
+  <data name="XServer_PanelTrusted" xml:space="preserve">
+    <value>受信任</value>
+  </data>
+  <data name="XServer_PanelTrustedTip" xml:space="preserve">
+    <value>受信任：對整個 X Server 擁有完整存取權，能看、能改其他程式的視窗，讀取鍵盤與剪貼簿，也能注入輸入（本機程式、ssh -Y）。</value>
+  </data>
+  <data name="XServer_PanelUntrusted" xml:space="preserve">
+    <value>非受信任</value>
+  </data>
+  <data name="XServer_PanelUntrustedTip" xml:space="preserve">
+    <value>非受信任（ssh -X）：只能存取非受信任程式的視窗，看不到受信任程式的畫面，讀不到它們的鍵盤輸入與剪貼簿，不能偽造輸入。</value>
+  </data>
   <data name="XServer_PanelDisconnectTip" xml:space="preserve">
     <value>中斷這個程式（它的視窗全部關閉）</value>
   </data>

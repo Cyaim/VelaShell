@@ -92,8 +92,8 @@ public sealed class XServerToggleViewModelTests
     }
 
     private static XServerClient Client(string key, int id, string name = "", string title = "", string? source = null,
-        int windows = 1, long memory = 1024, bool grab = false) =>
-        new(key, id, name, title, source, windows, memory, Retained: false, HoldsServerGrab: grab);
+        int windows = 1, long memory = 1024, bool grab = false, bool trusted = true) =>
+        new(key, id, name, title, source, windows, memory, Retained: false, HoldsServerGrab: grab, Trusted: trusted);
 
     /// <summary>浮层自己的刷新计时器不打扰用例:每一次刷新都由用例显式触发。</summary>
     private static XServerToggleViewModel PanelViewModel(ILocalXServer server, ToastHostViewModel toasts) =>
@@ -131,7 +131,7 @@ public sealed class XServerToggleViewModelTests
     public async Task Refresh_UpdatesRowsInPlace_AddsNewcomers_AndDropsLeavers()
     {
         ILocalXServer server = BuiltInRunning(
-            [Client("1:1", 1, name: "XTerm", title: "user@box: ~", source: "user@box:22"), Client("1:2", 2)],
+            [Client("1:1", 1, name: "XTerm", title: "user@box: ~", source: "user@box:22", trusted: false), Client("1:2", 2)],
             [Client("1:2", 2, name: "Gedit", memory: 4 << 20, grab: true), Client("1:3", 3, title: "xclock")]);
         using ToastHostViewModel toasts = new((_, _) => new NoTimer());
         XServerToggleViewModel vm = PanelViewModel(server, toasts);
@@ -142,6 +142,7 @@ public sealed class XServerToggleViewModelTests
         Assert.AreEqual(("XTerm", "user@box: ~", "user@box:22"), (xterm.Name, xterm.Detail, xterm.Source));
         Assert.AreEqual(Core.Resources.Strings.Format("XServer_PanelUnnamed", 2), second.Name, "没有窗口、没写 WM_CLASS:按编号称呼");
         Assert.AreEqual(Core.Resources.Strings.Get("XServer_PanelLocal"), second.Source, "本机程序没有会话标签");
+        Assert.AreEqual((false, true), (xterm.Trusted, second.Trusted), "信任级别照服务端报的(ssh -X 来的非受信)");
         Assert.IsTrue(vm.HasClients);
 
         await vm.RefreshClientsAsync();

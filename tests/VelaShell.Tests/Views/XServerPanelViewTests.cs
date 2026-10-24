@@ -45,8 +45,8 @@ public sealed class XServerPanelViewTests
             server.Display.Returns("localhost:10.0");
             server.GetClientsAsync().Returns(
             [
-                new XServerClient("1:1", 1, "XTerm", "user@box: ~", "user@box:22", 1, 2 << 20, Retained: false, HoldsServerGrab: true),
-                new XServerClient("1:2", 2, "", "xclock", null, 1, 4096, Retained: true, HoldsServerGrab: false),
+                new XServerClient("1:1", 1, "XTerm", "user@box: ~", "user@box:22", 1, 2 << 20, Retained: false, HoldsServerGrab: true, Trusted: false),
+                new XServerClient("1:2", 2, "", "xclock", null, 1, 4096, Retained: true, HoldsServerGrab: false, Trusted: true),
             ]);
             using ToastHostViewModel toasts = new((_, _) => new NoTimer());
             XServerToggleViewModel vm = new(server, toasts) { RefreshInterval = TimeSpan.FromHours(1) };
@@ -70,6 +70,17 @@ public sealed class XServerPanelViewTests
             Assert.IsTrue(window.TryFindResource("VelaWarning", window.ActualThemeVariant, out object? warning));
             Assert.AreEqual(((Avalonia.Media.ISolidColorBrush)warning!).Color,
                 (retained.Foreground as Avalonia.Media.ISolidColorBrush)?.Color, "Retain 状态用警告色");
+
+            // 信任级别:每一行各标一个(ssh -X 来的 XTerm 非受信,本机的 xclock 受信);非受信的用信息色,一列里分得出来。
+            Assert.AreEqual(1, texts.Count(t => t == Core.Resources.Strings.Get("XServer_PanelUntrusted")), "非受信的那一行");
+            Assert.AreEqual(1, texts.Count(t => t == Core.Resources.Strings.Get("XServer_PanelTrusted")), "受信的那一行");
+            TextBlock untrusted = view.GetVisualDescendants().OfType<TextBlock>()
+                .Single(t => t.IsEffectivelyVisible && t.Text == Core.Resources.Strings.Get("XServer_PanelUntrusted"));
+            Assert.IsTrue(window.TryFindResource("VelaInfo", window.ActualThemeVariant, out object? info));
+            Assert.AreEqual(((Avalonia.Media.ISolidColorBrush)info!).Color,
+                (untrusted.Foreground as Avalonia.Media.ISolidColorBrush)?.Color, "非受信用信息色");
+            Assert.AreEqual(Core.Resources.Strings.Get("XServer_PanelUntrustedTip"),
+                ToolTip.GetTip((Control)untrusted.GetVisualParent()!), "徽标的提示说明非受信意味着什么");
 
             Button breakGrabs = view.GetVisualDescendants().OfType<Button>().Single(b => ReferenceEquals(b.Command, vm.BreakGrabsCommand));
             breakGrabs.Command!.Execute(null);

@@ -54,8 +54,12 @@ public sealed record XServerDisplayResolution(
 /// <param name="MemoryBytes">记在它账上的内存,字节(像素图、窗口缓冲、字形……)。</param>
 /// <param name="Retained">已经以 Retain 模式断开,只剩资源还留着。</param>
 /// <param name="HoldsServerGrab">正抓着整个 X 服务端(GrabServer):别的程序都在等它。</param>
+/// <param name="Trusted">
+/// 受信(SECURITY 扩展的 trust-level):能看、能改整个显示 —— 别的程序的窗口、键盘与剪贴板,也能注入输入(本机程序、<c>ssh -Y</c>);
+/// <see langword="false" /> = 非受信(<c>ssh -X</c>,或拿受限 cookie 连进来的),只碰得到非受信程序的窗口与资源。
+/// </param>
 public sealed record XServerClient(
-    string Key, int Id, string Name, string Title, string? Source, int Windows, long MemoryBytes, bool Retained, bool HoldsServerGrab);
+    string Key, int Id, string Name, string Title, string? Source, int Windows, long MemoryBytes, bool Retained, bool HoldsServerGrab, bool Trusted);
 
 /// <summary>一个 X 程序抓着整个服务端太久,别的 X 程序都在等它(<see cref="ILocalXServer.ServerGrabStalled" />)。</summary>
 /// <param name="ClientKey">断开它用的键(<see cref="ILocalXServer.DisconnectClient" />)。</param>

@@ -6783,6 +6783,18 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="XServer_PanelGrabbingTip" xml:space="preserve">
     <value>X Server 전체를 독점하고 있어 다른 X 프로그램이 모두 기다리고 있습니다.</value>
   </data>
+  <data name="XServer_PanelTrusted" xml:space="preserve">
+    <value>신뢰</value>
+  </data>
+  <data name="XServer_PanelTrustedTip" xml:space="preserve">
+    <value>신뢰: X Server 전체에 완전히 접근할 수 있습니다. 다른 프로그램의 창을 보고 바꾸고, 키보드와 클립보드를 읽고, 입력을 보낼 수 있습니다(이 컴퓨터의 프로그램, ssh -Y).</value>
+  </data>
+  <data name="XServer_PanelUntrusted" xml:space="preserve">
+    <value>비신뢰</value>
+  </data>
+  <data name="XServer_PanelUntrustedTip" xml:space="preserve">
+    <value>비신뢰(ssh -X): 비신뢰 프로그램의 창에만 접근할 수 있어 신뢰 프로그램의 화면을 보거나 키보드 입력과 클립보드를 읽거나 입력을 위조할 수 없습니다.</value>
+  </data>
   <data name="XServer_PanelDisconnectTip" xml:space="preserve">
     <value>이 프로그램 연결 끊기(창이 모두 닫힘)</value>
   </data>

@@ -6783,6 +6783,18 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="XServer_PanelGrabbingTip" xml:space="preserve">
     <value>X Server 全体を占有しています。ほかの X プログラムはすべて待たされています。</value>
   </data>
+  <data name="XServer_PanelTrusted" xml:space="preserve">
+    <value>信頼済み</value>
+  </data>
+  <data name="XServer_PanelTrustedTip" xml:space="preserve">
+    <value>信頼済み:X Server 全体に完全にアクセスできます。ほかのプログラムのウィンドウを見たり変えたり、キーボードやクリップボードを読んだり、入力を送ったりできます(このコンピューターのプログラム、ssh -Y)。</value>
+  </data>
+  <data name="XServer_PanelUntrusted" xml:space="preserve">
+    <value>非信頼</value>
+  </data>
+  <data name="XServer_PanelUntrustedTip" xml:space="preserve">
+    <value>非信頼(ssh -X):非信頼のプログラムのウィンドウにしかアクセスできません。信頼済みのプログラムの画面を見ることも、キーボード入力やクリップボードを読むことも、入力を偽装することもできません。</value>
+  </data>
   <data name="XServer_PanelDisconnectTip" xml:space="preserve">
     <value>このプログラムを切断(ウィンドウはすべて閉じます)</value>
   </data>
