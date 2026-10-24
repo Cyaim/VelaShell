@@ -714,7 +714,11 @@ SVG 目前只对 `data:` URI 和本地路径生效;要放开就把 `ConfigureMar
 - OpenAI 两种协议:`OpenAI` 官方 SDK + `Microsoft.Extensions.AI.OpenAI` 适配
   (`GetChatClient().AsIChatClient()` / `GetResponsesClient().AsIChatClient()`);
 - Anthropic 协议:`Anthropic` 官方 SDK 内建的 `AsIChatClient()` 适配;
-- Agent 循环:`FunctionInvokingChatClient`(`UseFunctionInvocation()`,桌面每批 25 步、Bridge 每批 20 步,由协调器沿用工具账本自动续接,无累计步数/token/批次硬上限);
+- Agent 循环:`FunctionInvokingChatClient`(`UseFunctionInvocation()`,桌面每批 25 步、Bridge 每批 20 步,由协调器沿用工具账本自动续接,无累计步数/token/批次硬上限)。
+  没有总上限,空转就靠两道暂停兜住(`NoProgress`):同一工具同样参数连调四次 —— 只读的轮询工具
+  (`task_status` / `task_wait` / `transfer_status` / `transfer_wait`)结果在变就算有进展、不计入;
+  以及连着三步调了工具却一个都没真跑(参数绑定失败、同 CallId 只交回旧结果)。参数绑定失败本身仍交还模型改正,
+  改两次再调对不受影响。上下文条按最后一次请求的输入算占比,不是一轮各步之和;
 - 工具经 `AIFunctionFactory` 包装插件 SDK 能力(Sessions / Terminal / RemoteExec / RemoteFs);
 - MCP:官方 `ModelContextProtocol.Core` SDK,`McpClientTool` 本身即 `AIFunction`,
   与内置工具同进一个函数调用循环。

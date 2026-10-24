@@ -1,3 +1,5 @@
+using Microsoft.Extensions.AI;
+
 namespace VelaShell.Plugin.Ai.Ui;
 
 /// <summary>
@@ -63,4 +65,18 @@ public static class ChatFormatting
         string flat = text.Replace('\n', ' ').Replace('\r', ' ');
         return flat.Length <= max ? flat : flat[..max] + "…";
     }
+
+    /// <summary>
+    /// 一轮里<b>最后一次请求</b>的用量,上下文条按它算占比。
+    /// </summary>
+    /// <remarks>
+    /// Agent / Plan 一轮要请求好几步,<c>ToChatResponse().Usage</c> 是各步之和:十步、每步 40k 的一轮
+    /// 会在 1M 窗口上显示 40%,批次自动续接之后长任务干脆一直顶在 100%。累计用量照旧用那个和,
+    /// 只有"现在的上下文有多大"取最后一条带输入计数的用量。
+    /// </remarks>
+    /// <param name="updates">这一轮收到的全部更新。</param>
+    /// <returns>最后一次请求的用量;没有带输入计数的用量时为 null。</returns>
+    public static UsageDetails? LastRequestUsage(IEnumerable<ChatResponseUpdate> updates) =>
+        updates.SelectMany(u => u.Contents).OfType<UsageContent>()
+            .LastOrDefault(u => u.Details.InputTokenCount > 0)?.Details;
 }

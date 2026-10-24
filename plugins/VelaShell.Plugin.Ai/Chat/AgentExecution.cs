@@ -23,8 +23,20 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
     private int _batchSize = 25;
     private Exception? _paused;
     private string? _lastCall;
+    private string? _lastObservation;
     private int _repeated;
+    // 一步里调了工具、却一个都没真跑(参数绑定失败、同 CallId 交回旧结果)记为空转;
+    // 每次签名都不同,上面的重复计数拦不住,而批次自动续接之后已没有总步数兜底。
+    private int _stepCalls, _idleSteps;
+    private bool _stepAdvanced;
     internal string RunId { get; } = runId;
+
+    /// <summary>
+    /// 只读的轮询工具:同参连调本就是为了看进度,结果变了就算有进展,不计入重复;
+    /// 结果原样不变才累计。有副作用的工具仍按签名拦,不看结果。
+    /// </summary>
+    private static readonly HashSet<string> ObservationTools =
+        [with(StringComparer.Ordinal), "task_status", "task_wait", "transfer_status", "transfer_wait"];
     internal bool HasToolCalls { get { lock (_gate) return _calls.Count > 0; } }
     internal IReadOnlyList<ChatMessage> Checkpoint { get { lock (_gate) return [.. _checkpoint]; } }
 
@@ -51,6 +63,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
             if (hasDeniedExecution?.Invoke() == true) throw new AgentPausedException("ExecutionDenied");
             if (hasUnknownOutcome?.Invoke() == true) throw new AgentPausedException("TaskUnknown");
             if (_paused is { } paused) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(paused).Throw();
+            _stepCalls++;
             if (_calls.TryGetValue(callId, out Invocation? previous))
             {
                 if (previous.Signature != signature)
@@ -60,7 +73,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
                 }
                 return new ValueTask<object?>(previous.Result.WaitAsync(token));
             }
-            if (_lastCall == signature) _repeated++; else { _lastCall = signature; _repeated = 0; }
+            if (_lastCall == signature) _repeated++; else { _lastCall = signature; _lastObservation = null; _repeated = 0; }
             if (_repeated >= 3)
             {
                 _paused = new AgentPausedException("NoProgress");
@@ -71,11 +84,12 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
             _calls.Add(callId, new(signature, result));
         }
         // 失败/取消也占据账本身份:副作用未知时不能重放。
-        _ = CompleteAsync(context, completion, token);
+        _ = CompleteAsync(context, signature, completion, token);
         return new ValueTask<object?>(result);
     }
 
-    private async Task CompleteAsync(FunctionInvocationContext context, TaskCompletionSource<object?> completion, CancellationToken token)
+    private async Task CompleteAsync(FunctionInvocationContext context, string signature,
+        TaskCompletionSource<object?> completion, CancellationToken token)
     {
         string? previousIdentity = Agent.AgentToolbox.InvocationIdentity.Value;
         Agent.AgentToolbox.InvocationIdentity.Value = context.CallContent.CallId;
@@ -83,7 +97,8 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
         {
             // 参数绑定失败时工具体一步都没跑、没有副作用:当普通工具错误交还模型自行改正,
             // 弱一些的模型(Ollama 上常见)传错类型、漏必填全靠这一步纠正,不该整轮暂停。
-            object? value = BindingError(context.Function, context.Arguments) is { } invalid
+            string? invalid = BindingError(context.Function, context.Arguments);
+            object? value = invalid is not null
                 ? $"Invalid arguments for {context.Function.Name}: {invalid} The tool did not run; correct the arguments and call it again."
                 : await context.Function.InvokeAsync(context.Arguments, token).ConfigureAwait(false);
             lock (_gate)
@@ -92,6 +107,18 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
                     [new FunctionResultContent(context.CallContent.CallId, value)]);
                 _checkpoint.Add(result);
                 _completed.Add(result);
+                if (invalid is null)
+                {
+                    _stepAdvanced = true;
+                    // 结果在交给模型之前记下:同一步里的下一次调用才看得到这次有没有进展。
+                    // AIFunctionFactory 包出来的工具把返回值序列化成 JsonElement,按原文比
+                    string? observed = value switch { string text => text, JsonElement element => element.GetRawText(), _ => null };
+                    if (ObservationTools.Contains(context.Function.Name) && _lastCall == signature && observed is not null)
+                    {
+                        if (_lastObservation is not null && _lastObservation != observed) _repeated = 0;
+                        _lastObservation = observed;
+                    }
+                }
             }
             completion.TrySetResult(value);
         }
@@ -129,6 +156,14 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
             if (hasDeniedExecution?.Invoke() == true) throw new AgentPausedException("ExecutionDenied");
             if (hasUnknownOutcome?.Invoke() == true) throw new AgentPausedException("TaskUnknown");
             if (_paused is { } paused) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(paused).Throw();
+            if (_stepCalls > 0) _idleSteps = _stepAdvanced ? 0 : _idleSteps + 1;
+            _stepCalls = 0;
+            _stepAdvanced = false;
+            if (_idleSteps >= 3)
+            {
+                _paused = new AgentPausedException("NoProgress");
+                throw _paused;
+            }
             if (_batchSteps >= _batchSize) throw new AgentBatchBoundaryException();
             _batchSteps++;
             _checkpoint.Clear();
@@ -241,7 +276,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
 
 internal sealed class AgentBatchBoundaryException : Exception;
 
-internal sealed class AgentPausedException(string key) : InvalidOperationException(key)
+internal sealed class AgentPausedException(string key, Exception? inner = null) : InvalidOperationException(key, inner)
 {
     internal string ReasonKey { get; } = key;
 }
@@ -354,10 +389,13 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
             cancellationToken.ThrowIfCancellationRequested();
             if (attempt >= 2 || !TransientFailure.IsTransient(failure))
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure!).Throw();
+            // 先算等待:Retry-After 超出预算就此暂停,不能先报「正在重试」、再写一道永远等不到续写的续接边界。
+            TimeSpan backoff = RetryAfter(failure!) ?? TimeSpan.FromMilliseconds(400 * (attempt + 1));
             retrying?.Invoke(attempt + 1, failure!);
             string snippet = partial.ToString();
             // 空答(只有空白也算空答)原样重发,不写续接边界;连接中断等其余补试照旧:收到过正文就续接。
-            if (failure is not HealthProbe.EmptyReplyException && snippet.Length > 0)
+            // 断线前只收到空白同理:没有可续的正文,只含空白的 assistant 消息还会被部分供应商拒收。
+            if (failure is not HealthProbe.EmptyReplyException && !string.IsNullOrWhiteSpace(snippet))
             {
                 // 不重放未完成调用或供应商推理;正文续接边界明确显示。
                 if (snippet.Length > 8000) snippet = snippet[^8000..];
@@ -367,7 +405,6 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                     "The preceding response was interrupted. Continue from its last confirmed text. Do not repeat completed tool calls. Incomplete tool calls were not executed."));
                 yield return new ChatResponseUpdate(ChatRole.Assistant, continuationBoundary);
             }
-            TimeSpan backoff = RetryAfter(failure!) ?? TimeSpan.FromMilliseconds(400 * (attempt + 1));
             await (delay ?? Task.Delay)(backoff, cancellationToken).ConfigureAwait(false);
         }
     }
@@ -388,7 +425,8 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                     System.Globalization.DateTimeStyles.AssumeUniversal, out DateTimeOffset date)
                     ? date - DateTimeOffset.UtcNow : null;
             if (wait is null) continue;
-            if (wait > TimeSpan.FromSeconds(120)) throw new AgentPausedException("RetryAfterTooLong");
+            // 原始的 429 / 503 挂在内层:面板的换 Key 与故障转移按内层状态码判断,不能被暂停吞掉。
+            if (wait > TimeSpan.FromSeconds(120)) throw new AgentPausedException("RetryAfterTooLong", exception);
             return wait < TimeSpan.Zero ? TimeSpan.Zero : wait;
         }
         return null;

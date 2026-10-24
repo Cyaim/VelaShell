@@ -53,7 +53,7 @@ public sealed class Loc(string locale)
     //                                 en, zh-Hans, zh-Hant, ja, ko
     private static readonly Dictionary<string, string[]> Table = new()
     {
-        ["ContinuingBatch"] = ["Continuing batch {0}…", "继续第 {0} 批…", "繼續第 {0} 批…", "バッチ {0} を続行中…", "{0} 배치 계속 중…"],
+        ["ContinuingBatch"] = ["Continuing batch {0}…", "继续第 {0} 批…", "繼續第 {0} 批…", "バッチ {0} を続行中…", "{0}번째 배치 계속 중…"],
         ["WaitingForJobs"] = ["Waiting for background tasks (uploads continue after Stop)…", "等待后台任务完成(停止后上传仍会继续)…", "等待背景工作完成(停止後上傳仍會繼續)…", "バックグラウンド作業を待機中(停止後もアップロードは続行)…", "백그라운드 작업 대기 중(중지 후에도 업로드 계속)…"],
         ["TransferPreparationHint"] = ["Preparing may create a private disk snapshot (extra space near the source size). Verification may read the remote file back. No byte movement does not mean the task is stuck.", "准备阶段可能创建私有磁盘快照(需要接近源文件大小的额外空间);校验可能回读远端文件。字节暂不增长不代表卡死。", "準備階段可能建立私有磁碟快照(需要接近來源檔案大小的額外空間);驗證可能回讀遠端檔案。位元組暫不增加不代表卡住。", "準備中は元ファイルと同程度の追加ディスク領域でスナップショットを作成する場合があります。検証時はリモートファイルを読み戻す場合があります。転送量が増えなくても処理中です。", "준비 중 원본 크기 정도의 추가 디스크 공간으로 비공개 스냅샷을 만들 수 있습니다. 검증 시 원격 파일을 다시 읽을 수 있습니다. 바이트 증가가 없어도 작업 중일 수 있습니다."],
         ["TransferHistorical"] = ["Saved running receipt; current outcome is not tracked by this historical card.", "这是已保存的运行回执;此历史卡片不再跟踪当前结果。", "這是已儲存的執行回執;此歷史卡片不再追蹤目前結果。", "保存された実行中の受領記録です。この履歴カードは現在の結果を追跡しません。", "저장된 실행 중 응답입니다. 이 기록 카드는 현재 결과를 추적하지 않습니다."],

@@ -1642,7 +1642,7 @@ public partial class ChatPanelView : UserControl
                 return channel;
             }
 
-            void RecordUsage(UsageDetails? usage, bool isContext = true)
+            void RecordUsage(UsageDetails? usage, bool isContext = true, UsageDetails? lastRequest = null)
             {
                 if (conv.ConversationId != turnConversationId)
                 {
@@ -1650,8 +1650,10 @@ public partial class ChatPanelView : UserControl
                 }
                 if (isContext)
                 {
-                    LastInputTokens = usage?.InputTokenCount ?? 0;
-                    LastCachedInputTokens = usage?.CachedInputTokenCount ?? 0;
+                    // 上下文条看最后一次请求;多步一轮的 usage 是各步之和(见 ChatFormatting.LastRequestUsage)
+                    UsageDetails? context = lastRequest ?? usage;
+                    LastInputTokens = context?.InputTokenCount ?? 0;
+                    LastCachedInputTokens = context?.CachedInputTokenCount ?? 0;
                 }
                 if (usage is null)
                 {
@@ -2084,7 +2086,7 @@ public partial class ChatPanelView : UserControl
             DrainUpdates(); // 兜底清空残留批(此处已回到 UI 线程)
 
             var response = updates.ToChatResponse();
-            RecordUsage(response.Usage);
+            RecordUsage(response.Usage, lastRequest: ChatFormatting.LastRequestUsage(updates));
             // 兜底补齐插话:送达回调的 Post 可能还排在队里没跑到,而它必须排在
             // 这一轮的回复之前进历史与库(顺序:原消息 → 插话 → 回复)。
             await CommitSteeringAsync(conv);
