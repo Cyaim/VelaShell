@@ -1997,6 +1997,9 @@
   <data name="ColorPicker_Tip" xml:space="preserve">
     <value>色を選択</value>
   </data>
+  <data name="IconPicker_Tip" xml:space="preserve">
+    <value>アイコンを選択</value>
+  </data>
   <data name="ColorPicker_ThemePalette" xml:space="preserve">
     <value>テーマのパレット</value>
   </data>
@@ -2005,6 +2008,81 @@
   </data>
   <data name="Profile_TabColorAuto" xml:space="preserve">
     <value>自動配色</value>
+  </data>
+  <data name="Profile_TabIcon" xml:space="preserve">
+    <value>タブのアイコン</value>
+  </data>
+  <data name="Profile_TabIconDefault" xml:space="preserve">
+    <value>プロトコルに従う</value>
+  </data>
+  <data name="TabIcon_Server" xml:space="preserve">
+    <value>サーバー</value>
+  </data>
+  <data name="TabIcon_Database" xml:space="preserve">
+    <value>データベース</value>
+  </data>
+  <data name="TabIcon_Cloud" xml:space="preserve">
+    <value>クラウド</value>
+  </data>
+  <data name="TabIcon_Globe" xml:space="preserve">
+    <value>地球</value>
+  </data>
+  <data name="TabIcon_Box" xml:space="preserve">
+    <value>ボックス</value>
+  </data>
+  <data name="TabIcon_Layers" xml:space="preserve">
+    <value>レイヤー</value>
+  </data>
+  <data name="TabIcon_Network" xml:space="preserve">
+    <value>ネットワーク</value>
+  </data>
+  <data name="TabIcon_EthernetPort" xml:space="preserve">
+    <value>LAN ポート</value>
+  </data>
+  <data name="TabIcon_Wifi" xml:space="preserve">
+    <value>Wi-Fi</value>
+  </data>
+  <data name="TabIcon_Shield" xml:space="preserve">
+    <value>盾</value>
+  </data>
+  <data name="TabIcon_Key" xml:space="preserve">
+    <value>鍵</value>
+  </data>
+  <data name="TabIcon_Cpu" xml:space="preserve">
+    <value>プロセッサ</value>
+  </data>
+  <data name="TabIcon_Location" xml:space="preserve">
+    <value>場所</value>
+  </data>
+  <data name="TabIcon_HardDrive" xml:space="preserve">
+    <value>ハードディスク</value>
+  </data>
+  <data name="TabIcon_Terminal" xml:space="preserve">
+    <value>ターミナル</value>
+  </data>
+  <data name="TabIcon_Bug" xml:space="preserve">
+    <value>虫</value>
+  </data>
+  <data name="TabIcon_House" xml:space="preserve">
+    <value>家</value>
+  </data>
+  <data name="TabIcon_Flame" xml:space="preserve">
+    <value>炎</value>
+  </data>
+  <data name="TabIcon_Star" xml:space="preserve">
+    <value>星</value>
+  </data>
+  <data name="TabIcon_Zap" xml:space="preserve">
+    <value>稲妻</value>
+  </data>
+  <data name="TabIcon_Gauge" xml:space="preserve">
+    <value>メーター</value>
+  </data>
+  <data name="TabIcon_Activity" xml:space="preserve">
+    <value>波形</value>
+  </data>
+  <data name="TabIcon_User" xml:space="preserve">
+    <value>人物</value>
   </data>
   <data name="Profile_AesNote" xml:space="preserve">
     <value>(AES-256 で暗号化して保存されます)</value>

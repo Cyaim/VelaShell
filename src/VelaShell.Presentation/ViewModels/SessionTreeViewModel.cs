@@ -879,6 +879,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         {
             IsPinned = session.IsPinned,
             Notes = session.Notes,
+            TabIconId = SessionTabIcons.For(session),
         };
         if (session.GroupId is null)
         {
@@ -1308,6 +1309,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
             IsRootLevel = isRootLevel,
             IsPinned = session.IsPinned,
             Notes = session.Notes,
+            TabIconId = SessionTabIcons.For(session),
         };
         if (_statusCache.TryGetValue(session.Id, out SessionStatus status))
         {

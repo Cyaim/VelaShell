@@ -119,6 +119,15 @@
   <StreamGeometry x:Key="Icon.list">M3 6h.01 M3 12h.01 M3 18h.01 M8 6h13 M8 12h13 M8 18h13</StreamGeometry>
   <StreamGeometry x:Key="Icon.list-ordered">M10 6h11 M10 12h11 M10 18h11 M4 6h1v4 M4 10h2 M6 18H4c0-1 2-2 2-3s-1-1.5-2-1</StreamGeometry>
   <StreamGeometry x:Key="Icon.network">M9 2h6v6H9Z M2 16h6v6H2Z M16 16h6v6h-6Z M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3 M12 12V8</StreamGeometry>
+  <!-- 按会话自定义标签页图标(连接对话框「常规 → 整理」里挑,清单在 Core 的 SessionTabIcons)只用到、
+       此前图标集里还没有的几枚。清单里的每个 id 都由 SessionTabIconCatalogTests 在这张字典里解析过。 -->
+  <StreamGeometry x:Key="Icon.server">M4 2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z M4 14h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Z M6 6h.01 M6 18h.01</StreamGeometry>
+  <StreamGeometry x:Key="Icon.database">M21 5a9 3 0 1 1-18 0 9 3 0 0 1 18 0Z M3 5v14a9 3 0 0 0 18 0V5 M3 12a9 3 0 0 0 18 0</StreamGeometry>
+  <StreamGeometry x:Key="Icon.cloud">M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z</StreamGeometry>
+  <StreamGeometry x:Key="Icon.globe">M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20 M2 12h20</StreamGeometry>
+  <StreamGeometry x:Key="Icon.box">M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z M3.3 7l8.7 5 8.7-5 M12 22V12</StreamGeometry>
+  <StreamGeometry x:Key="Icon.house">M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8 M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z</StreamGeometry>
+  <StreamGeometry x:Key="Icon.flame">M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5Z</StreamGeometry>
   <StreamGeometry x:Key="Icon.pause">M6 4h4v16H6Z M14 4h4v16h-4Z</StreamGeometry>
   <StreamGeometry x:Key="Icon.ethernet-port">M15 20l3-3h2a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2l3 3Z M6 8v2 M10 8v2 M14 8v2 M18 8v2</StreamGeometry>
   <StreamGeometry x:Key="Icon.folder-tree">M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2a1 1 0 0 0-.8-.4H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z M3 3v13a2 2 0 0 0 2 2h7 M3 8h9</StreamGeometry>

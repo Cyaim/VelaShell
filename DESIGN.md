@@ -334,6 +334,17 @@ Guarded by `DialogButtonStyleTests`.
   pixel of mouse movement is wasted work. Output is always uppercase `#RRGGBB`; an unparsable hex is never written.
 - The white / black in the pad and the thumb rings are the HSV color space itself, not UI colors, so they are not tokens.
 
+#### IconPickerField (`ctl:IconPickerField`, `src/VelaShell/Controls`)
+- The connection dialog's tab icon (General → Organize, every protocol). Same field look as `ColorPickerField`:
+  a 14px icon, the icon's localized name in 11px, a chevron. With no icon picked it shows the protocol's default glyph
+  (`DefaultIconKey`) and `EmptyText` ("Follow protocol"), both in `VelaTextMuted`.
+- Flyout (bare content on the global `FlyoutPresenter` chrome, 224 wide): a wrap of 28px cells (`CornerRadius:4`,
+  1px `VelaBorderPrimary`, 15px stroked icon in `VelaTextSecondary`; hover `VelaBgHover` + `VelaTextPrimary`; the current
+  one outlined in `VelaTextPrimary` 2px with its icon in `VelaAccent`; `:focus-visible` `VelaAccent` 2px) → a
+  full-width `VelaOutlineButtonTheme` "Follow protocol" button, disabled while nothing is picked.
+- A click writes back and closes the flyout. The list is `SessionTabIcons` in Core (ids are lucide names, every one must
+  exist in `Icons.axaml`); each cell's tooltip and automation name is the icon's localized name.
+
 #### StatusDot (`Ellipse`)
 - 7x7 circle, fill driven by connection state
 - Classes: `.dot` (default=disconnected), `.dot.connected` (`VelaStatusConnected`), `.dot.connecting` (`VelaStatusConnecting`)
@@ -428,7 +439,7 @@ The existing SFTP file browser is the primary reusable component for the dual-pa
 ### 5.4 Session Tree (`SessionTreeView.axaml`)
 
 - Group row (30px): chevron + folder icon (color rotates: `VelaWarning`/`VelaInfo`/`VelaAccent`) + name (`VelaTextPrimary` 12px Medium) + count (`VelaTextTertiary` 10px)
-- Session row (28px): status dot + name + optional status tag
+- Session row (28px): status dot + name + optional status tag. A connection with a picked tab icon (`TerminalOverrides.TabIcon`) shows that 12px glyph between the dot and the name, in the name's color (`VelaTextSecondary`, `VelaAccent` when selected / multi-selected); rows without one keep no gap for it
 - Selected: `VelaBgActive` background, name switches to `VelaAccent` Medium
 - Multi-selected rows (Ctrl / Shift, #571): exactly the same treatment as the selected row (`.multimarked`) — they are all "selected"; the list control itself stays single-select
 - Hover: `VelaBgHover`

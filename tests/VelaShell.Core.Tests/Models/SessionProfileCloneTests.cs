@@ -40,13 +40,23 @@ public sealed class SessionProfileCloneTests
             CertificatePath = @"C:\keys\id_ed25519-cert.pub",
             CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
             GroupId = Guid.NewGuid(),
+            IsPinned = true,
             LastConnectedAt = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc),
             Tags = ["prod", "bastion"],
             Notes = "跳板机\n值班:运维二组",
             JumpHostProfileId = Guid.NewGuid(),
             PostAuthCommand = "sudo su -",
             PostAuthCommandDelaySeconds = 3,
-            Ftp = new() { Anonymous = true, MaxConnections = 4, InitialRemotePath = "/srv", ServerUtcOffsetMinutes = 480 },
+            Ftp = new()
+            {
+                EncryptionMode = FtpEncryptionMode.Implicit,
+                DataConnectionMode = FtpDataConnectionMode.Active,
+                Anonymous = true,
+                TrustedCertificateThumbprint = "AB:CD",
+                MaxConnections = 2,
+                InitialRemotePath = "/srv",
+                ServerUtcOffsetMinutes = 480
+            },
             PluginProtocolId = "velashell.s3",
             PluginSettings = new() { ["region"] = "cn-north-1" },
             PluginSecrets = new() { ["secretKey"] = "s3cr3t" },
@@ -55,9 +65,25 @@ public sealed class SessionProfileCloneTests
                 Encoding = "GBK",
                 TerminalType = "vt220",
                 TabColor = "#E05252",
+                TabIcon = "database",
                 StartupDirectory = "/var/log",
                 KeepAliveSeconds = 15,
                 AntiIdleSeconds = 120
+            },
+            Ssh = new()
+            {
+                Compression = true,
+                AgentForwarding = true,
+                AgentForwardKeys = ["SHA256:abc"],
+                AgentForwardConfirm = true,
+                X11Forwarding = true,
+                X11Display = "localhost:10.0",
+                X11Trusted = false,
+                LegacyAlgorithms = true,
+                KexAlgorithms = "curve25519-sha256",
+                HostKeyAlgorithms = "ssh-ed25519",
+                Ciphers = "aes256-gcm@openssh.com",
+                Macs = "hmac-sha2-256"
             },
             AutoStartTunnelIds = [Guid.NewGuid(), Guid.NewGuid()],
             DirectoryBookmarks =
@@ -70,6 +96,52 @@ public sealed class SessionProfileCloneTests
                 }
             ]
         };
+
+    /// <summary>
+    /// 守卫的守卫:<see cref="FullyPopulated" /> 必须把<b>每一个</b>可写属性(连同 <c>Terminal</c> / <c>Ftp</c> / <c>Ssh</c> /
+    /// 目录收藏里那一层)都设成非默认值。
+    /// </summary>
+    /// <remarks>
+    /// 下面那条反射比对只能发现「源与副本不一样」;一个字段在样本里留着默认值,源与副本就都是默认值,
+    /// <c>Clone</c> 漏抄它也照样全绿 —— 这条用例补上之前就是这样:<c>IsPinned</c> 留着 false、<c>Ssh</c> 整个没设,
+    /// 两处都从没被真正比过。新加字段(比如 <c>TerminalOverrides.TabIcon</c>)忘了在样本里填,这里先红,
+    /// 并点名是哪一个。
+    /// </remarks>
+    [TestMethod]
+    public void FullyPopulatedSample_LeavesNoPropertyAtItsDefault()
+    {
+        SessionProfile sample = FullyPopulated();
+        List<string> defaults = [];
+        CollectDefaults(sample, new SessionProfile(), nameof(SessionProfile), defaults);
+        CollectDefaults(sample.Terminal!, new TerminalOverrides(), nameof(SessionProfile.Terminal), defaults);
+        CollectDefaults(sample.Ftp!, new FtpSettings(), nameof(SessionProfile.Ftp), defaults);
+        CollectDefaults(sample.Ssh!, new SshSessionOptions(), nameof(SessionProfile.Ssh), defaults);
+        CollectDefaults(sample.DirectoryBookmarks[0], new RemoteDirectoryBookmark(), nameof(SessionProfile.DirectoryBookmarks), defaults);
+
+        Assert.IsEmpty(
+            defaults,
+            "FullyPopulated 里这些属性还是默认值 —— Clone 漏抄它们也查不出来,请在样本里给它们一个非默认值:"
+            + Environment.NewLine + string.Join(Environment.NewLine, defaults));
+    }
+
+    /// <summary>逐个可写属性与一个新建实例比:相等就记下(Guid 一类构造时随机生成的,新建实例本就不同,自然不会被记)。</summary>
+    private static void CollectDefaults(object sample, object fresh, string owner, List<string> defaults)
+    {
+        foreach (PropertyInfo property in sample.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (!property.CanRead || !property.CanWrite || property.GetIndexParameters().Length > 0)
+            {
+                continue;
+            }
+            object? value = property.GetValue(sample);
+            object? baseline = property.GetValue(fresh);
+            bool emptyCollection = value is IEnumerable items and not string && !items.Cast<object>().Any();
+            if (value is null || emptyCollection || ValueEquals(value, baseline))
+            {
+                defaults.Add($"  {owner}.{property.Name} = {Describe(value)}");
+            }
+        }
+    }
 
     [TestMethod]
     public void CloneCopiesEveryProperty()
@@ -116,6 +188,8 @@ public sealed class SessionProfileCloneTests
         Assert.AreNotSame(source.PluginSettings, copy.PluginSettings);
         Assert.AreNotSame(source.PluginSecrets, copy.PluginSecrets);
         Assert.AreNotSame(source.Terminal, copy.Terminal);
+        Assert.AreNotSame(source.Ssh, copy.Ssh);
+        Assert.AreNotSame(source.Ssh!.AgentForwardKeys, copy.Ssh!.AgentForwardKeys);
         Assert.AreNotSame(source.AutoStartTunnelIds, copy.AutoStartTunnelIds);
         Assert.AreNotSame(source.DirectoryBookmarks, copy.DirectoryBookmarks);
         Assert.AreNotSame(source.DirectoryBookmarks[0], copy.DirectoryBookmarks[0]);
@@ -160,15 +234,19 @@ public sealed class SessionProfileCloneTests
             return leftItems.Length == rightItems.Length
                 && leftItems.Zip(rightItems).All(pair => ValueEquals(pair.First, pair.Second));
         }
-        // FtpSettings / TerminalOverrides 是普通类(引用相等),逐属性下探一层。
-        if (a.GetType() is { IsClass: true } type && type != typeof(string) && !type.IsValueType)
+        // FtpSettings / TerminalOverrides / SshSessionOptions 是普通类(引用相等),逐属性往下比;
+        // 下一层里的列表(SshSessionOptions.AgentForwardKeys)照样按元素比。
+        // record(CredentialReference)自带值相等,不必下探。
+        if (a.GetType() is { IsClass: true } type && type != typeof(string) && !IsRecord(type))
         {
             return type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                        .Where(p => p.CanRead && p.GetIndexParameters().Length == 0)
-                       .All(p => Equals(p.GetValue(a), p.GetValue(b)));
+                       .All(p => ValueEquals(p.GetValue(a), p.GetValue(b)));
         }
         return a.Equals(b);
     }
+
+    private static bool IsRecord(Type type) => type.GetMethod("<Clone>$") is not null;
 
     private static string Describe(object? value) =>
         value switch

@@ -970,7 +970,7 @@
                     <TextBlock Classes="section-title" Text="{loc:Localize Profile_SecOrganize}" />
                     <Border Grid.Column="1" Classes="section-rule" />
                   </Grid>
-                  <Grid ColumnDefinitions="*,12,*,12,*">
+                  <Grid ColumnDefinitions="*,12,*,12,*" RowDefinitions="Auto,12,Auto">
                     <StackPanel Grid.Column="0">
                       <TextBlock Classes="field-label" Text="{loc:Localize Profile_DisplayName}" />
                       <TextBox Text="{Binding Name}" PlaceholderText="web-prod-03" />
@@ -987,6 +987,14 @@
                     <StackPanel Grid.Column="4">
                       <TextBlock Classes="field-label" Text="{loc:Localize Profile_TagsLabel}" TextTrimming="CharacterEllipsis" />
                       <TextBox Text="{Binding TagsText}" PlaceholderText="{loc:Localize Profile_TagsPlaceholder}" />
+                    </StackPanel>
+                    <!-- 标签页图标:像挑颜色一样挑一枚(资源管理器的会话行也画它)。在「常规」页而不是颜色所在的
+                         「终端」页 —— 图标对每一种协议都画,「终端」页只有 SSH 才有。没挑 = 跟协议,字段上画协议的默认图标。 -->
+                    <StackPanel Grid.Row="2" Grid.Column="0">
+                      <TextBlock Classes="field-label" Text="{loc:Localize Profile_TabIcon}" />
+                      <ctl:IconPickerField Value="{Binding TabIcon}"
+                                           DefaultIconKey="{Binding TabIconDefaultKey}"
+                                           EmptyText="{loc:Localize Profile_TabIconDefault}" />
                     </StackPanel>
                   </Grid>
                   <!-- 备注(#549):回车换行 —— 对话框没有默认按钮,回车不会误触保存。

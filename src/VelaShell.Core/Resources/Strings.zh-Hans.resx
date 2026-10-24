@@ -2383,6 +2383,9 @@
   <data name="ColorPicker_Tip" xml:space="preserve">
     <value>选择颜色</value>
   </data>
+  <data name="IconPicker_Tip" xml:space="preserve">
+    <value>选择图标</value>
+  </data>
   <data name="ColorPicker_ThemePalette" xml:space="preserve">
     <value>主题色板</value>
   </data>
@@ -2391,6 +2394,81 @@
   </data>
   <data name="Profile_TabColorAuto" xml:space="preserve">
     <value>自动配色</value>
+  </data>
+  <data name="Profile_TabIcon" xml:space="preserve">
+    <value>标签页图标</value>
+  </data>
+  <data name="Profile_TabIconDefault" xml:space="preserve">
+    <value>跟随协议</value>
+  </data>
+  <data name="TabIcon_Server" xml:space="preserve">
+    <value>服务器</value>
+  </data>
+  <data name="TabIcon_Database" xml:space="preserve">
+    <value>数据库</value>
+  </data>
+  <data name="TabIcon_Cloud" xml:space="preserve">
+    <value>云</value>
+  </data>
+  <data name="TabIcon_Globe" xml:space="preserve">
+    <value>地球</value>
+  </data>
+  <data name="TabIcon_Box" xml:space="preserve">
+    <value>盒子</value>
+  </data>
+  <data name="TabIcon_Layers" xml:space="preserve">
+    <value>层叠</value>
+  </data>
+  <data name="TabIcon_Network" xml:space="preserve">
+    <value>网络</value>
+  </data>
+  <data name="TabIcon_EthernetPort" xml:space="preserve">
+    <value>网口</value>
+  </data>
+  <data name="TabIcon_Wifi" xml:space="preserve">
+    <value>无线</value>
+  </data>
+  <data name="TabIcon_Shield" xml:space="preserve">
+    <value>盾牌</value>
+  </data>
+  <data name="TabIcon_Key" xml:space="preserve">
+    <value>钥匙</value>
+  </data>
+  <data name="TabIcon_Cpu" xml:space="preserve">
+    <value>处理器</value>
+  </data>
+  <data name="TabIcon_Location" xml:space="preserve">
+    <value>地点</value>
+  </data>
+  <data name="TabIcon_HardDrive" xml:space="preserve">
+    <value>硬盘</value>
+  </data>
+  <data name="TabIcon_Terminal" xml:space="preserve">
+    <value>终端</value>
+  </data>
+  <data name="TabIcon_Bug" xml:space="preserve">
+    <value>虫子</value>
+  </data>
+  <data name="TabIcon_House" xml:space="preserve">
+    <value>房子</value>
+  </data>
+  <data name="TabIcon_Flame" xml:space="preserve">
+    <value>火焰</value>
+  </data>
+  <data name="TabIcon_Star" xml:space="preserve">
+    <value>星星</value>
+  </data>
+  <data name="TabIcon_Zap" xml:space="preserve">
+    <value>闪电</value>
+  </data>
+  <data name="TabIcon_Gauge" xml:space="preserve">
+    <value>仪表盘</value>
+  </data>
+  <data name="TabIcon_Activity" xml:space="preserve">
+    <value>波形</value>
+  </data>
+  <data name="TabIcon_User" xml:space="preserve">
+    <value>人像</value>
   </data>
   <data name="Profile_AesNote" xml:space="preserve">
     <value>(将使用 AES-256 加密存储)</value>

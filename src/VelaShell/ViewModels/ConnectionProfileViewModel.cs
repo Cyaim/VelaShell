@@ -110,6 +110,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private Guid? _jumpHostProfileId;
     private string _name = string.Empty;
     private string? _notes;
+    private string? _tabIcon;
     private SecureString? _password;
     private int _port = 22;
     private string? _privateKeyPassphrase;
@@ -251,6 +252,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 _overrideEncoding = overrides.Encoding;
                 _overrideTerminalType = overrides.TerminalType;
                 _overrideTabColor = overrides.TabColor;
+                _tabIcon = SessionTabIcons.Normalize(overrides.TabIcon);
                 _overrideStartupDirectory = overrides.StartupDirectory;
                 _overrideKeepAliveSeconds = overrides.KeepAliveSeconds ?? -1;
                 _antiIdleSeconds = overrides.AntiIdleSeconds ?? 0;
@@ -418,6 +420,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             this.RaisePropertyChanged(nameof(IsSftpSelected));
             this.RaisePropertyChanged(nameof(IsFtpSelected));
             this.RaisePropertyChanged(nameof(IsPluginSelected));
+            this.RaisePropertyChanged(nameof(TabIconDefaultKey));
             this.RaisePropertyChanged(nameof(RequiresSshAuth));
             this.RaisePropertyChanged(nameof(SshAlgorithmsError));
             this.RaisePropertyChanged(nameof(SupportsPostAuthCommand));
@@ -1467,6 +1470,23 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     }
 
     /// <summary>
+    /// 标签页图标(「常规」页「整理」一节的图标字段,<see cref="SessionTabIcons" /> 里的 id);null = 跟协议。
+    /// </summary>
+    /// <remarks>
+    /// 放在「常规」页而不是颜色所在的「终端」页:图标对每一种协议都画(SFTP / FTP / 插件标签也有),
+    /// 而「终端」页只有 SSH 才有。存进 <see cref="TerminalOverrides.TabIcon" />,与标签颜色同一处。
+    /// </remarks>
+    public string? TabIcon
+    {
+        get => _tabIcon;
+        set => this.RaiseAndSetIfChanged(ref _tabIcon, SessionTabIcons.Normalize(value));
+    }
+
+    /// <summary>跟协议时图标字段上画的那枚(按当前选的协议;插件协议是通用插头)。</summary>
+    public string? TabIconDefaultKey =>
+        Services.ConnectionIcon.ResourceKeyFor(new SessionProfile { ConnectionType = ConnectionType });
+
+    /// <summary>
     /// 本条配置专属的「认证后执行命令」(「终端」页);留空 = 不执行。
     /// 与设置里那条全局的「连接后执行命令」互不影响,两处都配就都执行(先全局后本条)。
     /// </summary>
@@ -2345,6 +2365,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             Encoding = _overrideEncoding,
             TerminalType = _overrideTerminalType,
             TabColor = string.IsNullOrWhiteSpace(_overrideTabColor) ? null : _overrideTabColor.Trim(),
+            // 图标在「常规」页挑,对每一种协议都生效;认不出的 id 存成 null(跟协议)。
+            TabIcon = SessionTabIcons.Normalize(_tabIcon),
             StartupDirectory = string.IsNullOrWhiteSpace(_overrideStartupDirectory)
                 ? null
                 : _overrideStartupDirectory.Trim(),

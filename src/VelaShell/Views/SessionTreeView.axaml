@@ -190,6 +190,16 @@
         <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
         <Setter Property="FontWeight" Value="Medium" />
       </Style>
+      <!-- 自定义标签页图标跟着会话名的颜色走。 -->
+      <Style Selector="pc|LucideIcon.sessionIcon">
+        <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+      </Style>
+      <Style Selector="Border.session.selected pc|LucideIcon.sessionIcon">
+        <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+      </Style>
+      <Style Selector="Border.session.multimarked pc|LucideIcon.sessionIcon">
+        <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+      </Style>
 
       <!-- 状态标签胶囊:活跃(accent)/连接中(warning)/离线(error)。
            注意 Avalonia 颜色是 #AARRGGBB,设计稿 #FDCB6E20 → #20FDCB6E。 -->
@@ -477,6 +487,14 @@
                        Classes.connecting="{Binding IsConnecting}"
                        Width="7" Height="7"
                        VerticalAlignment="Center" />
+
+              <!-- 用户在连接里挑的标签页图标(与标签页上画的是同一枚);没挑的行不画、也不占位。
+                   前景与会话名同色(选中 / 多选时一起转 accent),它是名字的一部分,不是状态。 -->
+              <pc:LucideIcon Classes="sessionIcon"
+                             Width="12" Height="12"
+                             IsVisible="{Binding HasTabIcon}"
+                             Data="{Binding TabIconId, Converter={x:Static conv:TabIconIdToGeometryConverter.Instance}}"
+                             VerticalAlignment="Center" />
 
               <TextBlock Classes="sessionName"
                          Text="{Binding Name}"
