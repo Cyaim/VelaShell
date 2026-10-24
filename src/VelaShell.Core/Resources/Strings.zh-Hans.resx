@@ -5269,6 +5269,24 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="PluginManager_Reload" xml:space="preserve">
     <value>重新加载</value>
   </data>
+  <data name="PluginManager_ViewLog" xml:space="preserve">
+    <value>查看日志</value>
+  </data>
+  <data name="PluginLog_Title" xml:space="preserve">
+    <value>插件日志 · {0}</value>
+  </data>
+  <data name="PluginLog_OpenFolder" xml:space="preserve">
+    <value>打开所在文件夹</value>
+  </data>
+  <data name="PluginLog_TailOf" xml:space="preserve">
+    <value>只显示最后 {0} · {1}</value>
+  </data>
+  <data name="PluginLog_Empty" xml:space="preserve">
+    <value>这个插件还没有写过日志。它经日志接口写的内容、隔离进程的标准输出与错误输出，以及激活、失败、崩溃都会记在这里。重现一次问题后点刷新。</value>
+  </data>
+  <data name="PluginLog_NotOnDisk" xml:space="preserve">
+    <value>这个插件的日志没有单独落盘。请到应用日志（关于 → 打开日志目录）里找以 [Plugin:{0}] 开头的行。</value>
+  </data>
   <data name="PluginManager_UpdateTo" xml:space="preserve">
     <value>更新到 {0}</value>
   </data>

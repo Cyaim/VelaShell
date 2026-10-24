@@ -120,7 +120,8 @@ internal sealed class PluginProcessClient : IAsyncDisposable
         PluginContext context, string hostVersion, string dataDirectory,
         TimeSpan activationTimeout, TimeSpan startupTimeout, CancellationToken cancellationToken,
         Func<Task<IReadOnlyList<ThemeTokenDto>>>? themeTokens = null,
-        IPluginEmbedHost? embedHost = null, bool waitForDebugger = false)
+        IPluginEmbedHost? embedHost = null, bool waitForDebugger = false,
+        Action<bool, string>? processOutput = null)
     {
         // 启动预算按阶段递减地花:连上占多少,握手就少多少。两段各给一个满额的常数,
         // 等于把上限悄悄翻了一倍,超时判定也就说不清自己在守什么。
@@ -134,7 +135,7 @@ internal sealed class PluginProcessClient : IAsyncDisposable
         PluginCapabilityRouter? router = null;
         try
         {
-            process = Launch(manifest, entryPath, pipeName, token, dataDirectory, waitForDebugger);
+            process = Launch(manifest, entryPath, pipeName, token, dataDirectory, waitForDebugger, processOutput);
 
             // 等连接与等进程夭折二选一:PluginHost 起不来(缺运行时/被杀软拦)时不干等满预算。
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -247,7 +248,7 @@ internal sealed class PluginProcessClient : IAsyncDisposable
             TaskScheduler.Default);
 
     private static Process Launch(PluginManifest manifest, string entryPath, string pipeName, string token,
-        string dataDirectory, bool waitForDebugger = false)
+        string dataDirectory, bool waitForDebugger = false, Action<bool, string>? processOutput = null)
     {
         string baseDir = AppContext.BaseDirectory;
         string exeName = OperatingSystem.IsWindows() ? "VelaShell.PluginHost.exe" : "VelaShell.PluginHost";
@@ -279,20 +280,28 @@ internal sealed class PluginProcessClient : IAsyncDisposable
         {
             throw new InvalidOperationException("Failed to start VelaShell.PluginHost process.");
         }
-        // stdout/stderr 落宿主 Trace(设计稿 02 §6:插件进程输出重定向)。
-        Drain(process.StandardOutput, manifest.Id);
-        Drain(process.StandardError, manifest.Id);
+        // stdout/stderr 落宿主 Trace(设计稿 02 §6:插件进程输出重定向);
+        // 给了 processOutput 就交给它 —— 宿主再按插件 id 另落一份(插件管理页「查看日志」)。
+        Drain(process.StandardOutput, manifest.Id, isError: false, processOutput);
+        Drain(process.StandardError, manifest.Id, isError: true, processOutput);
         return process;
     }
 
-    private static void Drain(StreamReader reader, string pluginId) =>
+    private static void Drain(StreamReader reader, string pluginId, bool isError, Action<bool, string>? processOutput) =>
         _ = Task.Run(async () =>
         {
             try
             {
                 while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
                 {
-                    Trace.WriteLine($"[PluginHost:{pluginId}] {line}");
+                    if (processOutput is not null)
+                    {
+                        processOutput(isError, line);
+                    }
+                    else
+                    {
+                        Trace.WriteLine($"[PluginHost:{pluginId}] {line}");
+                    }
                 }
             }
             catch

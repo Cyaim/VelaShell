@@ -96,6 +96,41 @@ public partial class PluginManagerWindow : Window
         }
     }
 
+    /// <summary>每个插件至多一扇日志窗口,按插件 id 去重;关掉插件管理窗口时一并关掉(它们以本窗口为属主)。</summary>
+    private readonly Dictionary<string, PluginLogWindow> _logWindows = new(StringComparer.Ordinal);
+
+    private void ViewLog_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (sender is not Control { DataContext: PluginRowViewModel row } || ViewModel is not { } vm)
+        {
+            return;
+        }
+        if (_logWindows.TryGetValue(row.Id, out PluginLogWindow? existing))
+        {
+            existing.Activate();
+            await existing.RefreshAsync();
+            return;
+        }
+        PluginLogWindow window = new() { DataContext = vm.CreateLogViewer(row) };
+        _logWindows[row.Id] = window;
+        window.Closed += (_, _) => _logWindows.Remove(row.Id);
+        // 尺寸与位置记忆同其它工具窗口:各插件的日志窗口共用一条 —— 用户调的是「日志窗口」,不是某个插件的。
+        if ((Avalonia.Application.Current as App)?.Services?.GetService(typeof(Services.WindowLayoutStore))
+            is Services.WindowLayoutStore layoutStore)
+        {
+            await layoutStore.RememberAsync("pluginLog", window);
+        }
+        // 读布局那一下里插件管理窗口可能已经关了:那就不开了(属主没了,开出来的是一扇孤窗)。
+        if (IsVisible)
+        {
+            window.Show(this);
+        }
+        else
+        {
+            _logWindows.Remove(row.Id);
+        }
+    });
+
     private void Revoke_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { DataContext: PluginRowViewModel row } && ViewModel is { } vm)

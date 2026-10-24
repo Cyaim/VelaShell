@@ -1,0 +1,140 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:VelaShell.ViewModels"
+        xmlns:loc="using:VelaShell.Localization"
+        xmlns:pc="using:VelaShell.Controls.Controls"
+        x:Class="VelaShell.Views.PluginLogWindow"
+        x:DataType="vm:PluginLogViewModel"
+        Icon="/Assets/velashell.ico"
+        Title="{Binding Title}"
+        Width="820" Height="560"
+        MinWidth="520" MinHeight="320"
+        WindowStartupLocation="CenterOwner">
+
+  <!-- 插件日志(插件管理页每行的「查看日志」):只读显示这个插件自己那份日志的尾部。
+       规格同插件管理窗口:按平台的卡片外框(WindowChrome)+ 28 标题栏 + 标题栏动作组(刷新 / 打开所在文件夹)
+       + 自绘缩放抓取区;副标题行只放文件路径。 -->
+
+  <Window.Styles>
+    <Style Selector="Button.caption">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Width" Value="27" />
+      <Setter Property="Height" Value="27" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.caption:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="Button.caption-close:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaDangerHover}" />
+    </Style>
+  </Window.Styles>
+
+  <Panel>
+    <Border Classes="window-card" ClipToBounds="True"
+            Background="{DynamicResource VelaBgSurface}"
+            BorderBrush="{DynamicResource VelaBorderSecondary}">
+      <Grid RowDefinitions="Auto,Auto,*">
+
+        <!-- 标题栏:图标 + 标题 | 动作图标组 | 窗口按钮 -->
+        <Border Grid.Row="0" Classes="window-titlebar window-card-top"
+                Background="{DynamicResource VelaBgSurface}"
+                PointerPressed="Header_PointerPressed">
+          <Grid ColumnDefinitions="*,Auto,Auto" Margin="14,0,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+              <Panel Classes="traffic-light-spacer" />
+              <pc:LucideIcon Width="14" Height="14" Data="{StaticResource Icon.file-text}"
+                             Foreground="{DynamicResource VelaAccent}" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Title}"
+                         Foreground="{DynamicResource VelaTextPrimary}"
+                         FontFamily="{DynamicResource VelaUiFont}"
+                         FontSize="{DynamicResource VelaFontSize12}" FontWeight="SemiBold"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                        VerticalAlignment="Center" Margin="0,0,10,0">
+              <Button Theme="{StaticResource VelaTitleActionButtonTheme}"
+                      Click="Refresh_Click" IsEnabled="{Binding !IsLoading}"
+                      AutomationProperties.Name="{loc:Localize Refresh}"
+                      ToolTip.Tip="{loc:Localize Refresh}">
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.refresh-cw}"
+                               Foreground="{DynamicResource VelaTextMuted}" />
+              </Button>
+              <Button Theme="{StaticResource VelaTitleActionButtonTheme}"
+                      Click="OpenFolder_Click" IsEnabled="{Binding CanOpenFolder}"
+                      AutomationProperties.Name="{loc:Localize PluginLog_OpenFolder}"
+                      ToolTip.Tip="{loc:Localize PluginLog_OpenFolder}">
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.folder-open}"
+                               Foreground="{DynamicResource VelaTextMuted}" />
+              </Button>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
+              <Button Classes="caption window-caption" Click="Minimize_Click">
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.minus}"
+                               Foreground="{DynamicResource VelaTextSecondary}" />
+              </Button>
+              <Button Classes="caption window-caption" Click="Maximize_Click">
+                <pc:LucideIcon Width="10" Height="10" Data="{StaticResource Icon.square}"
+                               Foreground="{DynamicResource VelaTextSecondary}" />
+              </Button>
+              <Button Classes="caption caption-close window-caption" Click="Close_Click">
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.x}"
+                               Foreground="{DynamicResource VelaTextSecondary}" />
+              </Button>
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <!-- 副标题行:文件路径(只取了尾部时注明)。同样可拖动。 -->
+        <Border Grid.Row="1" Padding="14,6" Background="Transparent"
+                PointerPressed="Header_PointerPressed"
+                BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
+          <TextBlock Text="{Binding Subtitle}"
+                     Foreground="{DynamicResource VelaTextMuted}"
+                     FontFamily="{DynamicResource VelaUiMonoFont}"
+                     FontSize="{DynamicResource VelaFontSize10}"
+                     TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding Subtitle}" />
+        </Border>
+
+        <!-- 正文:只读、等宽、不折行(日志行与堆栈按原样对齐),横竖都能滚。 -->
+        <Panel Grid.Row="2" Margin="14,12,14,14">
+          <TextBox x:Name="LogText" Text="{Binding Text, Mode=OneWay}"
+                   IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                   IsVisible="{Binding !IsEmpty}"
+                   FontFamily="{DynamicResource VelaUiMonoFont}"
+                   FontSize="{DynamicResource VelaFontSize11}"
+                   Foreground="{DynamicResource VelaTextSecondary}"
+                   Background="{DynamicResource VelaBgInput}"
+                   BorderBrush="{DynamicResource VelaBorderPrimary}"
+                   VerticalContentAlignment="Top"
+                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto" />
+          <StackPanel IsVisible="{Binding IsEmpty}" Spacing="10"
+                      VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="460">
+            <pc:LucideIcon Width="28" Height="28" Data="{StaticResource Icon.file-text}"
+                           Foreground="{DynamicResource VelaTextMuted}" HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding EmptyText}" TextWrapping="Wrap" TextAlignment="Center"
+                       Foreground="{DynamicResource VelaTextMuted}"
+                       FontSize="{DynamicResource VelaFontSize11}" />
+          </StackPanel>
+        </Panel>
+      </Grid>
+    </Border>
+
+    <Panel x:Name="ResizeGrips" ZIndex="200">
+      <Border Tag="North" Height="16" VerticalAlignment="Top" Margin="22,0" Background="Transparent" Cursor="TopSide" PointerPressed="ResizeEdge_PointerPressed" />
+      <Border Tag="South" Height="16" VerticalAlignment="Bottom" Margin="22,0" Background="Transparent" Cursor="BottomSide" PointerPressed="ResizeEdge_PointerPressed" />
+      <Border Tag="West" Width="16" HorizontalAlignment="Left" Margin="0,22" Background="Transparent" Cursor="LeftSide" PointerPressed="ResizeEdge_PointerPressed" />
+      <Border Tag="East" Width="16" HorizontalAlignment="Right" Margin="0,22" Background="Transparent" Cursor="RightSide" PointerPressed="ResizeEdge_PointerPressed" />
+      <Border Tag="NorthWest" Width="22" Height="22" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" Cursor="TopLeftCorner" PointerPressed="ResizeEdge_PointerPressed" />
+      <Border Tag="NorthEast" Width="22" Height="22" HorizontalAlignment="Right" VerticalAlignment="Top" Background="Transparent" Cursor="TopRightCorner" PointerPressed="ResizeEdge_PointerPressed" />
+      <Border Tag="SouthWest" Width="22" Height="22" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomLeftCorner" PointerPressed="ResizeEdge_PointerPressed" />
+      <Border Tag="SouthEast" Width="22" Height="22" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomRightCorner" PointerPressed="ResizeEdge_PointerPressed" />
+    </Panel>
+  </Panel>
+</Window>

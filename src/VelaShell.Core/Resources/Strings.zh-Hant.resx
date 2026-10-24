@@ -5269,6 +5269,24 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="PluginManager_Reload" xml:space="preserve">
     <value>重新載入</value>
   </data>
+  <data name="PluginManager_ViewLog" xml:space="preserve">
+    <value>檢視日誌</value>
+  </data>
+  <data name="PluginLog_Title" xml:space="preserve">
+    <value>外掛日誌 · {0}</value>
+  </data>
+  <data name="PluginLog_OpenFolder" xml:space="preserve">
+    <value>開啟所在資料夾</value>
+  </data>
+  <data name="PluginLog_TailOf" xml:space="preserve">
+    <value>只顯示最後 {0} · {1}</value>
+  </data>
+  <data name="PluginLog_Empty" xml:space="preserve">
+    <value>這個外掛還沒有寫過日誌。它經日誌介面寫的內容、隔離處理程序的標準輸出與錯誤輸出，以及啟用、失敗、當機都會記在這裡。重現一次問題後點重新整理。</value>
+  </data>
+  <data name="PluginLog_NotOnDisk" xml:space="preserve">
+    <value>這個外掛的日誌沒有單獨存檔。請到應用程式日誌（關於 → 開啟日誌目錄）裡找以 [Plugin:{0}] 開頭的行。</value>
+  </data>
   <data name="PluginManager_UpdateTo" xml:space="preserve">
     <value>更新到 {0}</value>
   </data>

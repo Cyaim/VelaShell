@@ -907,6 +907,8 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             }
         }
         TryDeleteDirectory(Path.Combine(options.DataRootDirectory, pluginId));
+        // 插件自己的日志也算它留下的数据(里面可能有它处理过的主机名、路径),随卸载一起清。
+        options.LogFiles?.Delete(pluginId);
     }
 
     private static bool IsUnder(string path, string root)
@@ -2158,6 +2160,8 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             // 空闲回收从激活完成起计:命令触发激活后,插件往往还要再过一会儿才把面板弹出来。
             runtime.LastActivityTicks = Environment.TickCount64;
             Log($"Activated '{manifest.Id}' v{manifest.Version} ({manifest.HostMode}) in {stopwatch.ElapsedMilliseconds}ms.");
+            GetOrCreateLogger(runtime).WriteHostEvent(
+                $"Activated v{manifest.Version} ({manifest.HostMode}) in {stopwatch.ElapsedMilliseconds}ms.");
         }
         catch (Exception ex)
         {
@@ -2175,6 +2179,8 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
                 _ => ex.Message
             };
             Log($"Failed to activate '{manifest.Id}': {descriptor.Error}");
+            // 插件自己的日志里留完整异常:管理页那一行只放得下 Message,排障要的是堆栈。
+            GetOrCreateLogger(runtime).WriteHostEvent($"Failed to activate: {descriptor.Error}{Environment.NewLine}{ex}");
             await CleanupRuntimeAsync(runtime).ConfigureAwait(false);
         }
         RaiseChanged();
@@ -2222,7 +2228,8 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             options.HostVersion, context.DataDirectory,
             debug ? DebugActivationTimeout : options.ActivationTimeout,
             debug ? DebugActivationTimeout : options.IsolatedStartupTimeout, cts.Token,
-            options.ThemeTokensProvider, options.EmbedHost, debug).ConfigureAwait(false);
+            options.ThemeTokensProvider, options.EmbedHost, debug,
+            processOutput: GetOrCreateLogger(runtime).WriteProcessOutput).ConfigureAwait(false);
         runtime.Process = client;
         runtime.LastActivityTicks = Environment.TickCount64;
         runtime.OpenSurfaces = 0;
@@ -2285,6 +2292,7 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             }
         }
         Log($"Plugin '{runtime.Descriptor.Id}' crashed: {runtime.Descriptor.Error}");
+        GetOrCreateLogger(runtime).WriteHostEvent($"Crashed: {runtime.Descriptor.Error}");
         CleanupRuntime(runtime);
         RaiseChanged();
         if (restartDelay is { } delay)
@@ -2318,8 +2326,22 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
         }
     }
 
-    private static TracePluginLogger GetOrCreateLogger(PluginRuntime runtime)
-        => runtime.Logger ??= new(runtime.Descriptor.Id);
+    private TracePluginLogger GetOrCreateLogger(PluginRuntime runtime)
+        => runtime.Logger ??= new(runtime.Descriptor.Id, options.LogFiles);
+
+    /// <summary>
+    /// 某个插件自己的日志尾部(插件管理页「查看日志」)。没配日志文件(headless)或插件还没写过时正文为空。
+    /// </summary>
+    /// <param name="pluginId">插件 id。</param>
+    /// <param name="maxBytes">最多取多少字节。</param>
+    public PluginLogTail ReadLogTail(string pluginId, int maxBytes = PluginLogFiles.DefaultTailBytes)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(pluginId);
+        return options.LogFiles?.ReadTail(pluginId, maxBytes) ?? new(string.Empty, null, false);
+    }
+
+    /// <summary>插件日志所在的目录;没配日志文件时为 null。</summary>
+    public string? LogDirectory => options.LogFiles?.Directory;
 
     /// <summary>每插件命令能力(懒建、占位与真实注册共用;停用后置空重建)。</summary>
     private ICommandsApi GetOrCreateCommandsApi(PluginRuntime runtime)

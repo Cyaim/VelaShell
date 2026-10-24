@@ -5082,6 +5082,24 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginManager_Install"><value>.vpx をインストール…</value></data>
   <data name="PluginManager_Uninstall"><value>アンインストール</value></data>
   <data name="PluginManager_Reload"><value>再読み込み</value></data>
+  <data name="PluginManager_ViewLog" xml:space="preserve">
+    <value>ログを表示</value>
+  </data>
+  <data name="PluginLog_Title" xml:space="preserve">
+    <value>プラグインのログ · {0}</value>
+  </data>
+  <data name="PluginLog_OpenFolder" xml:space="preserve">
+    <value>保存先のフォルダーを開く</value>
+  </data>
+  <data name="PluginLog_TailOf" xml:space="preserve">
+    <value>末尾 {0} のみ表示 · {1}</value>
+  </data>
+  <data name="PluginLog_Empty" xml:space="preserve">
+    <value>このプラグインはまだログを書いていません。ロガー経由で書いた内容、分離プロセスの標準出力と標準エラー、起動・失敗・クラッシュがここに記録されます。問題を再現してから更新してください。</value>
+  </data>
+  <data name="PluginLog_NotOnDisk" xml:space="preserve">
+    <value>このプラグインのログは専用ファイルに保存されていません。アプリのログ（バージョン情報 → ログフォルダーを開く）で [Plugin:{0}] で始まる行を探してください。</value>
+  </data>
   <data name="PluginManager_UpdateTo"><value>{0} に更新</value></data>
   <data name="PluginManager_UpdateNeedsHost"><value>新しいバージョン {0} がありますが、より新しい VelaShell が必要です（{1}）。</value></data>
   <data name="PluginManager_UpdateAll"><value>すべて更新</value></data>

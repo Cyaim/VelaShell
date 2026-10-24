@@ -295,6 +295,9 @@
                                    TextWrapping="Wrap" Margin="0,2,0,0" />
                       </StackPanel>
                       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <!-- 用户报「插件不工作」时第一件要看的:这个插件自己那份日志的尾部(只读窗口)。 -->
+                        <Button Classes="row-action" Content="{Binding ViewLogText}"
+                                IsVisible="{Binding CanViewLog}" Click="ViewLog_Click" />
                         <Button Classes="row-action" Content="{Binding RevokeText}"
                                 IsVisible="{Binding HasTerminalGrant}" Click="Revoke_Click" />
                         <!-- 开发内环:重编后点这里就跑上新代码(开发期挂载的插件才有)。 -->

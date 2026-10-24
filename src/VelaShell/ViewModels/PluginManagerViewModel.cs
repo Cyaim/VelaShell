@@ -115,6 +115,16 @@ public sealed class PluginRowViewModel(PluginDescriptor descriptor, bool hasTerm
     [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "XAML 绑定只解析实例成员。")]
     public string ReloadText => Strings.Get("PluginManager_Reload");
 
+    /// <summary>
+    /// 是否可「查看日志」。清单有效的插件都有:禁用了、激活失败了正是最要看日志的时候。
+    /// 清单都读不出来的(无效)从没跑过,没有它自己的日志可看 —— 原因已经写在那一行的错误里。
+    /// </summary>
+    public bool CanViewLog => descriptor.Manifest is not null;
+
+    /// <summary>「查看日志」按钮文案。</summary>
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "XAML 绑定只解析实例成员。")]
+    public string ViewLogText => Strings.Get("PluginManager_ViewLog");
+
     /// <summary>是否可卸载(用户安装,非应用自带)。</summary>
     public bool CanUninstall { get; init; }
 
@@ -302,6 +312,15 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
             await _manager.DisableAsync(row.Id).ConfigureAwait(false);
         }
         // Changed 事件会触发刷新;这里不重复。
+    }
+
+    /// <summary>「查看日志」窗口的视图模型:读的是这个插件自己那份日志的尾部。</summary>
+    /// <param name="row">插件行。</param>
+    public PluginLogViewModel CreateLogViewer(PluginRowViewModel row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        string id = row.Id;
+        return new(id, row.DisplayName, () => _manager.ReadLogTail(id), _manager.LogDirectory);
     }
 
     /// <summary>
