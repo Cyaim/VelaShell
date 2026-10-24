@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Headless;
@@ -47,13 +48,13 @@ public sealed class MarkdownProjectionNotificationTests
             try
             {
                 text.Append("# 标题\n\n正文一段。\n");
-                await PumpAsync();
+                await PumpUntilCommittedAsync(renderer, text);
                 Assert.IsGreaterThan(0, hits, "首次渲染定稿后应当有一次投影变更通知。");
 
                 // 流式追加也必须通知正文投影的观察方。
                 int afterFirst = hits;
                 text.Append("\n$E = mc^2$\n\n又一段。\n");
-                await PumpAsync();
+                await PumpUntilCommittedAsync(renderer, text);
                 Assert.IsGreaterThan(
                     afterFirst, hits,
                     "后续追加渲染定稿后应当再发通知,以便观察方读取更新后的正文投影。"
@@ -109,6 +110,21 @@ public sealed class MarkdownProjectionNotificationTests
 
     /// <summary>渲染是后台解析 + UI 线程提交,跑几拍调度器让它落定。</summary>
     private static Task PumpAsync(int rounds = 60) => HeadlessPump.RunAsync(rounds);
+
+    /// <summary>跑调度器,直到 <paramref name="text"/> 当前这一版渲染定稿(投影的版本追上源);至多 10 秒,没定稿就交给后面的断言去报。</summary>
+    /// <remarks>
+    /// 不能只泵固定的 60 拍(300 ms):一次渲染要先到线程池上解析、再回 UI 线程提交、再等一次布局才发投影通知,
+    /// CI 上几个测试进程抢核时这一趟会超过 300 ms(Windows runner 上偶发「通知没来」)。
+    /// 以投影的版本而不是通知的次数为准:上一版迟到的通知不会被算到下一版头上。
+    /// </remarks>
+    private static async Task PumpUntilCommittedAsync(MarkdownRenderer renderer, ObservableStringBuilder text)
+    {
+        long deadline = Stopwatch.GetTimestamp() + 10 * Stopwatch.Frequency;
+        while (renderer.RenderedTextProjection?.SourceVersion != text.Version && Stopwatch.GetTimestamp() < deadline)
+        {
+            await HeadlessPump.RunAsync(1);
+        }
+    }
 
     /// <summary>在 headless UI 线程上跑一段异步测试体(重载选择的坑见 ChatPanelViewUiTests.OnUi)。</summary>
     private static void OnUi(Func<Task> body) =>
