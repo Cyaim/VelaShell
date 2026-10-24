@@ -2532,7 +2532,7 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 
 ## 247. 2026-10-24 插件模板:velaplugin-protocol 与 velaplugin-workspace(velashell-plugin-templates)
 
-**来由**:`feature-plan.md` 二、G 的 🟠 P1(上一轮建议第 3 条):Telnet / 串口 / Redis / S3 / DockerPanel 五个插件已把 `Protocols` 与 `Workspaces` 走通,把公共骨架沉淀成模板,第三方接新协议的成本会掉一个数量级 —— 生态能不能长起来的关键杠杆。在 velashell-plugin-templates 仓库的分支 `feat/protocol-workspace-templates` 上完成(五个提交,PR 另开),本仓库没有代码改动。
+**来由**:`feature-plan.md` 二、G 的 🟠 P1(上一轮建议第 3 条):Telnet / 串口 / Redis / S3 / DockerPanel 五个插件已把 `Protocols` 与 `Workspaces` 走通,把公共骨架沉淀成模板,第三方接新协议的成本会掉一个数量级 —— 生态能不能长起来的关键杠杆。在 velashell-plugin-templates 仓库完成(五个提交,VelaShellLabs/velashell-plugin-templates#11),本仓库没有代码改动。
 
 **骨架与业务怎么分**(逐个读五个插件之后定的):进模板的是清单字段(contributes + 惰性激活 + `hostMode: "inProcess"` + 显式的 `minSdkVersion: "2.0.4"`,用到了 `PluginIcon`)、入口生命周期(只注册、换语言重注册、停用撤注册)、插件自带的 Loc、表单声明与解析放同一个文件、Protocol* 异常族的翻译、终端会话的读泵 / 写闸 / EOF / 可唤醒的 Dispose、工作台的状态发布与按端点留存、测试工程的形态(MSTest 4.5.1 + `VelaShell.PluginSdk.Testing` + InternalsVisibleTo + 激活时校验描述符);不进的是 Telnet 协商、串口枚举与带外命令、Redis 的发现、S3 的文件协议、Docker 的隧道 API 这类业务。清单里没有权限字段(权限系统按用户决策不做),唯一的门槛是 inProcess 与 minSdkVersion,模板里写清了。两个模板都没有 `--hostMode`(协议与工作台能力只在 inProcess 下可用);插件工程在根目录,`<名称>.Tests/` 与 `tools/EchoServer.cs`(file-based app,`dotnet run --file` 的 `--file` 不能省)用 `DefaultItemExcludes` 挡在插件编译与 `.vpx` 之外;根目录不放 .slnx(同时有 .csproj 与 .slnx 时 `dotnet build` 报 MSB1011)。要改的地方在代码里标了 ✏️。
 - `velaplugin-protocol`(终端协议):注册 `ProtocolDescriptor`;`ProtocolSession` 沿用 Telnet / 串口的「读泵 + 单出口通道」,写侧串行化、掉线归一成 EOF、`DisposeAsync` 能唤醒挂着的读并带 2 秒兜底、连接超时与连不上翻成带端点的异常,另有回车改写(CR LF 粘贴算一个回车)与本地回显。测试 13 条。
@@ -2541,7 +2541,7 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 
 **顺手修的两处既有问题**(各自独立提交,方便单独挑拣):velaplugin-ui 模板的面板根本开不出来 —— `DemoPanel` 手写了无参 `InitializeComponent()`,而 Avalonia 源生成器生成的是 `InitializeComponent(bool loadXaml = true)`,只有后者给 `x:Name` 字段赋值;重载决议挑中手写的那个,`CountSessionsButton` 是 null,构造函数第二行就 NRE。冒烟只编译不实例化,所以一直没红,**已发布的 2.0.1 模板包带着这个 bug**。冒烟的容器读回一直被静默跳过 —— 脚本只认 `tools/net11.0/VelaShell.Plugin.Cli.dll`,而 2026-09-11 起 `.Build` 包里是 `VelaShell.PluginSdk.Packer.dll`(同样有 `info`),每次只打一条 notice;两个名字都认之后四个模板都真读回了,同一提交还修了 `"$template:…"` 被当成驱动器限定变量、插成空串的错误信息。
 
-**版本**:`VelaTemplatesVersion` 保持 2.0.1(每次发版由 `Set-Version.ps1 <版本>` 落盘,这次是功能 PR 不是发版,新增模板按语义更像次版本,号由维护者排期时定);`VelaBuildPackageVersion` 保持 2.0.9(新模板只需 ≥ 2.0.4,2.0.4–2.0.9 之间 Protocols / Workspaces / PluginIcon 的契约没变,对着 SDK tag 2.0.9 比过)。只把 `Set-Version.ps1` 的落点清单从五处扩成七处,`-Check` 通过;加 `-DocsRoot` 时报出 velashell-docs 两份 dev-guide 的 `PackageReference` 仍是 2.0.0 —— 原有的漂移,按 docs 的约定这处版本号由脚本同步、不手改。没造本地包,没碰 `nuget.config`。
+**版本**:`VelaTemplatesVersion` 保持 2.0.1(每次发版由 `Set-Version.ps1 <版本>` 落盘,这次是功能 PR 不是发版,新增模板按语义更像次版本,号由维护者排期时定);`VelaBuildPackageVersion` 保持 2.0.9(新模板只需 ≥ 2.0.4,2.0.4–2.0.9 之间 Protocols / Workspaces / PluginIcon 的契约没变,对着 SDK tag 2.0.9 比过)。只把 `Set-Version.ps1` 的落点清单从五处扩成七处,`-Check` 通过;加 `-DocsRoot` 时报出 velashell-docs 两份 dev-guide 的 `PackageReference` 仍是 2.0.0 —— 原有的漂移,按 docs 的约定这处版本号由脚本同步、不手改,已用 `Set-Version.ps1 -DocsRoot` 落进 velashell-docs#147。没造本地包,没碰 `nuget.config`。
 
 **验证**:`dotnet build` 0 警告(VELA1004 核对四个模板的 sdkVersion 都是 2.0.9);`dotnet pack` 出的包里有两个新模板的全部文件、没有 bin / obj / TestResults;`Invoke-Smoke.ps1` 四个模板都 Packed、0 警告、容器读回 `format v1 / flags Masked`,协议 13/13、工作台 14/14,插件输出目录只有插件自己那一个 dll。另在 scratch 里做了三项:真宿主 `--dev-root` 加载两个生成工程,清单被接受、惰性等待与预热都对;控制台程序直接驱动安装目录里的 `PluginManager` + 协议注册表 + 终端连接器 + 工作台启动器(真 ALC 装载、真能力桥接),回显、连接、断开都对,死端口的 `PluginProtocolConnectionException` 原样到了宿主;Avalonia.Headless 实例化工作台面板 —— 这一步查出了上面 velaplugin-ui 那个 bug。
 

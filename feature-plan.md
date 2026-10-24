@@ -234,7 +234,7 @@
 
 | 状态 | 优先级 | 项 | 架构落点 |
 | :---: | :---: | --- | --- |
-| 🚧 | 🟠 P1 | **协议插件 / 工作台插件模板** | `velaplugin-protocol`(终端协议)/ `velaplugin-workspace`(工作台连接类型)已在 velashell-plugin-templates 的分支 `feat/protocol-workspace-templates` 做完(`plan.md` §247),各带测试工程与本机回显服务,PR 另开。剩下:①连同 velashell-docs 的模板文档一起合入;②合入后在模板仓库跑一次 `pwsh scripts/Set-Version.ps1 -DocsRoot <velashell-docs>`,把两份 dev-guide 的 `PackageReference` 从 2.0.0 同步到 2.0.9(原有漂移,不手改);③**发一版模板包**(版本号发版时定;已发布的 2.0.1 带着 velaplugin-ui 面板一开就 NRE 的 bug)。文件协议(`IProtocolFileSystem`)暂不出模板:五个插件里只有 S3 一个,沉淀不出公共骨架 |
+| 🚧 | 🟠 P1 | **协议插件 / 工作台插件模板** | `velaplugin-protocol`(终端协议)/ `velaplugin-workspace`(工作台连接类型)已在 velashell-plugin-templates 做完(VelaShellLabs/velashell-plugin-templates#11,`plan.md` §247),各带测试工程与本机回显服务;两份 dev-guide 的 `PackageReference` 已用 `Set-Version.ps1 -DocsRoot` 同步到 2.0.9(VelaShellLabs/velashell-docs#147)。剩下:①连同 velashell-docs#147 一起合入;②**发一版模板包**(版本号发版时定;已发布的 2.0.1 带着 velaplugin-ui 面板一开就 NRE 的 bug)。文件协议(`IProtocolFileSystem`)暂不出模板:五个插件里只有 S3 一个,沉淀不出公共骨架 |
 | ⏳ | 🟡 P2 | **能力域补口：`localFs` / `net`** | `STATUS.md` 列为未开口。有了它插件才能做「本地文件 ↔ 远端」（如 DockerPanel 把容器里的文件拖到桌面）。⚠️ 开口就是**权限面变大**，必须同步进 `PluginPermissionGate` 的逐项授权，apiLevel 只增不改 |
 | ⏳ | 🟡 P2 | **插件往消息中心发通知** | SDK 的 `IUiApi` 只有 `ShowPanelAsync`，插件发不了通知；宿主侧的接口形状已按这个用途定好（`plan.md` §20）。要开放得改 velashell-plugin-sdk + 扩展隔离进程 IPC + 走 SDK 发版流程，是独立一批。⚠️ 消息中心只收「要留存、可回看」的东西，插件通知同样守这条边界 |
 | 💡 | 🟡 P2 | **插件互调 / 插件间事件** | AI 插件能调 DockerPanel 的能力，「让 agent 帮我看看那个容器为什么起不来」就通了。**先想清楚权限模型再设计接口** —— 插件 A 借 B 的手绕过自己没拿到的授权，是这类设计最容易出的洞 |
