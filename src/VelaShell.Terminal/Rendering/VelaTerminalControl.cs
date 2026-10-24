@@ -1053,8 +1053,18 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     /// <summary>选区填充色的感知亮度;渲染热路径上逐个选中格与前景比对,故预先算好。</summary>
     private double _selectionFillBrightness;
 
-    /// <summary>前景与选区底撞明度时顶上的兜底前景色。</summary>
-    private Rgba _selectionFallbackForeground;
+    /// <summary>
+    /// 撞上选区底的前景 → 保色相推开明度之后的颜色(<see cref="SelectionContrast.ReadableOnSelection" />)。
+    /// </summary>
+    /// <remarks>
+    /// 那一步要走相对亮度的 <c>Math.Pow</c> 与二分,不能逐格算;而撞色的前景就那么几种(调色板里与选区底
+    /// 明度相近的那几个,外加偶尔的真彩色),按前景色记下来即可。选区色一变就整表作废;
+    /// 真彩色输出可能撞出很多种,超过上限也整表清掉重来,不让它跟着输出一直长。
+    /// </remarks>
+    private readonly Dictionary<uint, Rgba> _selectionForegroundCache = [];
+
+    /// <summary><see cref="_selectionForegroundCache" /> 的上限。</summary>
+    private const int SelectionForegroundCacheLimit = 256;
 
     /// <summary>
     /// 三层调色板叠完之后,把选区色整定成实际绘制用的填充色。它取决于**最终**的背景色 ——
@@ -1066,7 +1076,23 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         TerminalPalette palette = Emulator.Palette;
         palette.SelectionBackground = SelectionContrast.Fill(palette.SelectionBackground, palette.DefaultBackground);
         _selectionFillBrightness = SelectionContrast.Brightness(palette.SelectionBackground);
-        _selectionFallbackForeground = SelectionContrast.ReadableForeground(palette.SelectionBackground, palette.DefaultForeground);
+        _selectionForegroundCache.Clear();
+    }
+
+    /// <summary>撞上选区底的前景该画成什么颜色(按前景色缓存,见 <see cref="_selectionForegroundCache" />)。</summary>
+    private Rgba SelectionForeground(Rgba foreground)
+    {
+        if (_selectionForegroundCache.TryGetValue(foreground.Packed, out Rgba cached))
+        {
+            return cached;
+        }
+        if (_selectionForegroundCache.Count >= SelectionForegroundCacheLimit)
+        {
+            _selectionForegroundCache.Clear();
+        }
+        Rgba readable = SelectionContrast.ReadableOnSelection(foreground, Emulator.Palette.SelectionBackground);
+        _selectionForegroundCache[foreground.Packed] = readable;
+        return readable;
     }
 
     private static void ApplyPaletteOverrides(TerminalPalette palette, TerminalPaletteOverrides? overrides)
@@ -3231,11 +3257,11 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
                 bg = palette.SelectionBackground;
 
                 // 选区底是不透明的,原本压在终端底上读得清的前景可能正好贴在明度相近的选区底上
-                // (Solarized Dark 的 ansi black #073642 落在自家选区上就是这么消失的)。撞上了才换,
-                // 所以 ls --color / git 的显式配色在绝大多数格上仍原样呈现。
+                // (Solarized Dark 的 ansi black #073642 落在自家选区上就是这么消失的)。撞上了才推,
+                // 而且保色相、只推明度:ls --color / git 的显式配色选中之后仍分得出谁是谁。
                 if (Math.Abs(SelectionContrast.Brightness(fg) - _selectionFillBrightness) < SelectionContrast.MinForegroundDelta)
                 {
-                    fg = _selectionFallbackForeground;
+                    fg = SelectionForeground(fg);
                 }
             }
             if (rowSearchSpans is not null)

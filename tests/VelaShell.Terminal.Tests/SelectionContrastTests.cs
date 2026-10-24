@@ -105,19 +105,142 @@ public class SelectionContrastTests
         }
     }
 
-    /// <summary>撞明度才换前景;不撞的一律原样,免得选中一段就把 ls --color 的配色抹平。</summary>
+    /// <summary>不撞(或撞了但对比度本来就够)的一律原样,免得选中一段就把 ls --color 的配色抹平。</summary>
     [TestMethod]
-    public void ReadableForeground_OnlyReplacesWhatWouldVanish()
+    public void ReadableOnSelection_LeavesWhatIsAlreadyReadableAlone()
     {
         Rgba fill = SelectionContrast.Fill(Hex(0x073642), Hex(0x002B36));
 
-        Assert.AreEqual(Hex(0x839496), SelectionContrast.ReadableForeground(fill, Hex(0x839496)),
-            "默认前景读得清就用默认前景。");
-        Assert.IsGreaterThanOrEqualTo(
-            SelectionContrast.MinForegroundDelta, Math.Abs(SelectionContrast.Brightness(SelectionContrast.ReadableForeground(fill, fill))
-                - SelectionContrast.Brightness(fill)),
-            "默认前景自己也撞的话得退到纯白/纯黑。");
+        Assert.AreEqual(Hex(0xFFFFFF), SelectionContrast.ReadableOnSelection(Hex(0xFFFFFF), fill));
+        Assert.AreEqual(Hex(0x000000), SelectionContrast.ReadableOnSelection(Hex(0x000000), Hex(0xFFFFFF)));
     }
+
+    /// <summary>
+    /// 撞上的前景<b>保色相、只推明度</b>:推完对比度够 3:1,色相与原色一致。
+    /// <para>
+    /// 此前撞上的格一律换成同一个兜底色(默认前景,它也撞就纯白 / 纯黑)—— 这条用例在那时会红:
+    /// 兜底色是灰的,色相对不上。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void ReadableOnSelection_KeepsTheHue_AndReachesTheContrastFloor()
+    {
+        // Solarized Dark 的 ansi blue / magenta / cyan / violet / black 落在推亮之后的选区底上,正是会撞的那几个。
+        Rgba fill = SelectionContrast.Fill(Hex(0x073642), Hex(0x002B36));
+        foreach (Rgba color in new[] { Hex(0x268BD2), Hex(0xD33682), Hex(0x2AA198), Hex(0x6C71C4), Hex(0x073642) })
+        {
+            Rgba fixedColor = SelectionContrast.ReadableOnSelection(color, fill);
+
+            Assert.IsGreaterThanOrEqualTo(SelectionContrast.MinForegroundContrast, Contrast(fixedColor, fill),
+                $"{color.Packed:X8} → {fixedColor.Packed:X8} 推完仍不够。");
+            AssertSameHue(color, fixedColor);
+        }
+    }
+
+    /// <summary>往前景本来所在的那一侧推(改动最小),那一侧推到头也够不着才换边。</summary>
+    [TestMethod]
+    public void ReadableOnSelection_PushesTowardTheSideItIsAlreadyOn()
+    {
+        Rgba grey = Rgba.FromRgb(0x80, 0x80, 0x80);
+        Rgba slightlyBrighter = Rgba.FromRgb(0x90, 0x90, 0x90);
+        Rgba slightlyDarker = Rgba.FromRgb(0x70, 0x70, 0x70);
+
+        Assert.IsGreaterThan(SelectionContrast.Brightness(slightlyBrighter),
+            SelectionContrast.Brightness(SelectionContrast.ReadableOnSelection(slightlyBrighter, grey)));
+        Assert.IsLessThan(SelectionContrast.Brightness(slightlyDarker),
+            SelectionContrast.Brightness(SelectionContrast.ReadableOnSelection(slightlyDarker, grey)));
+
+        // 选区底贴着黑:往暗里推到纯黑也只有 1.2:1,只能提亮。
+        Rgba nearlyBlack = Rgba.FromRgb(0x10, 0x10, 0x10);
+        Rgba darkFill = Rgba.FromRgb(0x18, 0x18, 0x18);
+        Assert.IsGreaterThan(SelectionContrast.Brightness(darkFill),
+            SelectionContrast.Brightness(SelectionContrast.ReadableOnSelection(nearlyBlack, darkFill)));
+    }
+
+    /// <summary>
+    /// 尺子:全部内置方案、默认前景 + ANSI 16 色压在各自整定后的选区底上 —— 渲染层判为「撞了」的那些,
+    /// 推完对比度必须够 3:1(与 ANSI 压在自家终端底上的要求同一档),并且色相不变。
+    /// 新增一套方案时它必须仍是绿的。
+    /// </summary>
+    [TestMethod]
+    public void EveryBuiltInScheme_CollidingAnsiColorsBecomeReadableAndKeepTheirHue()
+    {
+        var failures = new List<string>();
+        int collided = 0;
+        foreach (VelaShell.Core.Models.TerminalColorScheme scheme in VelaShell.Core.Models.TerminalColorScheme.BuiltIn)
+        {
+            Rgba fill = SelectionContrast.Fill(Parse(scheme.Selection), Parse(scheme.Background));
+            double fillBrightness = SelectionContrast.Brightness(fill);
+            foreach (string literal in scheme.AnsiNormal.Concat(scheme.AnsiBright).Prepend(scheme.Foreground))
+            {
+                Rgba color = Parse(literal);
+                if (Math.Abs(SelectionContrast.Brightness(color) - fillBrightness) >= SelectionContrast.MinForegroundDelta)
+                {
+                    continue; // 渲染层不动它。
+                }
+                collided++;
+                Rgba drawn = SelectionContrast.ReadableOnSelection(color, fill);
+                if (Contrast(drawn, fill) < SelectionContrast.MinForegroundContrast)
+                {
+                    failures.Add($"{scheme.Name}: {literal} → {drawn.Packed & 0xFFFFFF:X6} 压在选区底上只有 {Contrast(drawn, fill):F2}:1");
+                }
+                if (HueShift(color, drawn) is var shift && shift > HueTolerance(drawn))
+                {
+                    failures.Add($"{scheme.Name}: {literal} → {drawn.Packed & 0xFFFFFF:X6} 色相偏了 {shift:F1}°");
+                }
+            }
+        }
+        Assert.IsGreaterThan(0, collided, "一个撞色的都没有,尺子就没量到东西。");
+        Assert.IsEmpty(failures, string.Join(Environment.NewLine, failures));
+    }
+
+    private static double Contrast(Rgba a, Rgba b) =>
+        SelectionContrast.ContrastRatio(SelectionContrast.RelativeLuminance(a), SelectionContrast.RelativeLuminance(b));
+
+    private static void AssertSameHue(Rgba expected, Rgba actual) =>
+        Assert.IsLessThanOrEqualTo(HueTolerance(actual), HueShift(expected, actual),
+            $"{expected.Packed:X8} → {actual.Packed:X8}:色相应当不变。");
+
+    /// <summary>
+    /// 色相允许的偏差:3°,外加 8 位取整带来的那一份 —— 推到很暗的颜色三个通道只剩十几个色阶,
+    /// 一个色阶的取整误差就能让色相挪 <c>60° / 色度</c>(Nord 的 #4C566A 压到 #13161A,色度只有 7)。
+    /// </summary>
+    private static double HueTolerance(Rgba color)
+    {
+        int chroma = Math.Max(color.R, Math.Max(color.G, color.B)) - Math.Min(color.R, Math.Min(color.G, color.B));
+        return chroma == 0 ? 3.0 : Math.Max(3.0, 60.0 / chroma);
+    }
+
+    /// <summary>两色在 HSV 色相上差几度;任一方接近灰色(饱和度太低,色相无意义)时记 0。</summary>
+    private static double HueShift(Rgba a, Rgba b)
+    {
+        (double hueA, double satA) = HueAndSaturation(a);
+        (double hueB, double satB) = HueAndSaturation(b);
+        if (satA < 0.08 || satB < 0.08)
+        {
+            return 0;
+        }
+        double d = Math.Abs(hueA - hueB) % 360;
+        return d > 180 ? 360 - d : d;
+    }
+
+    private static (double Hue, double Saturation) HueAndSaturation(Rgba color)
+    {
+        double r = color.R / 255.0, g = color.G / 255.0, b = color.B / 255.0;
+        double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b));
+        double chroma = max - min;
+        if (chroma <= 0)
+        {
+            return (0, 0);
+        }
+        double hue = max == r ? 60 * (((g - b) / chroma) % 6)
+            : max == g ? 60 * (((b - r) / chroma) + 2)
+            : 60 * (((r - g) / chroma) + 4);
+        return (hue < 0 ? hue + 360 : hue, chroma / max);
+    }
+
+    private static Rgba Parse(string literal) =>
+        Hex(uint.Parse(literal.TrimStart('#'), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>控件层:三层配色叠完后落到调色板上的,是整定过的填充色。</summary>
     [TestMethod]

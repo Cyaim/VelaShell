@@ -134,6 +134,88 @@ public class SelectionVisibilityRenderTests
         });
     }
 
+    /// <summary>
+    /// 选中之后,撞上选区底明度的 ANSI 前景<b>还是原来那个颜色家族</b>,只是被推亮(或压暗)到读得清。
+    /// <para>
+    /// 回归的是:此前撞上的格一律换成同一个兜底色(终端默认前景),Solarized Dark 下选中一段
+    /// <c>ls --color</c>,蓝的目录名就成了灰的 —— 默认前景 #839496。用整格实心的 █ 画,
+    /// 格子里最多的那个像素就是前景色本身,不必去猜字形的抗锯齿边。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void SelectedAnsiText_KeepsItsHue_AndStaysReadable()
+    {
+        OnUi(() =>
+        {
+            var palette = new TerminalPaletteOverrides
+            {
+                Background = Emulation.Rgba.FromRgb(0x00, 0x2B, 0x36),
+                Foreground = Emulation.Rgba.FromRgb(0x83, 0x94, 0x96),
+                Selection = Emulation.Rgba.FromRgb(0x07, 0x36, 0x42),
+            };
+            palette.Ansi[4] = Emulation.Rgba.FromRgb(0x26, 0x8B, 0xD2); // Solarized blue
+            using var control = new VelaTerminalControl
+            {
+                CopyOnSelect = false,
+                ShowLineNumber = false,
+                ShowLineTimestamp = false,
+                ShowFoldMarker = false,
+                CursorBlink = false,
+                ThemePalette = palette,
+            };
+            var window = new Window { Width = 640, Height = 360, Content = control };
+            window.Show();
+            try
+            {
+                RenderFrame(window);
+                control.Feed(Encoding.UTF8.GetBytes("\e[34m" + new string('█', 8) + "\e[0m  "));
+                uint unselected = CellBackground(window, control, 0, 2);
+
+                Drag(window, control, (0, 0), (0, 10));
+                uint selected = CellBackground(window, control, 0, 2);
+                uint band = CellBackground(window, control, 0, 9);
+
+                (double hue, double saturation) = HueAndSaturation(unselected);
+                (double selectedHue, double selectedSaturation) = HueAndSaturation(selected);
+                Assert.IsGreaterThan(0.3, saturation, $"未选中时 #{unselected & 0xFFFFFF:X6} 就该是蓝的,取样取错了格。");
+                Assert.IsGreaterThan(0.3, selectedSaturation,
+                    $"选中后 #{selected & 0xFFFFFF:X6} 成了灰的 —— 前景被换成了兜底色,色相没保住。");
+                double shift = Math.Abs(hue - selectedHue);
+                Assert.IsLessThan(6.0, Math.Min(shift, 360 - shift),
+                    $"选中前后色相差 {shift:F1}°(#{unselected & 0xFFFFFF:X6} → #{selected & 0xFFFFFF:X6})。");
+                double contrast = Contrast(selected, band);
+                Assert.IsGreaterThan(2.8, contrast,
+                    $"选中的 #{selected & 0xFFFFFF:X6} 压在选区带 #{band & 0xFFFFFF:X6} 上只有 {contrast:F2}:1。");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>BGRA 像素的 HSV 色相(度)与饱和度。</summary>
+    private static (double Hue, double Saturation) HueAndSaturation(uint bgra)
+    {
+        double b = (byte)bgra / 255.0, g = (byte)(bgra >> 8) / 255.0, r = (byte)(bgra >> 16) / 255.0;
+        double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b)), chroma = max - min;
+        if (chroma <= 0)
+        {
+            return (0, 0);
+        }
+        double hue = max == r ? 60 * (((g - b) / chroma) % 6) : max == g ? 60 * (((b - r) / chroma) + 2) : 60 * (((r - g) / chroma) + 4);
+        return (hue < 0 ? hue + 360 : hue, chroma / max);
+    }
+
+    /// <summary>两个 BGRA 像素的 WCAG 对比度(独立实现,不借渲染侧的算术)。</summary>
+    private static double Contrast(uint a, uint b)
+    {
+        static double Luminance(uint bgra) =>
+            (0.2126 * Linear((byte)(bgra >> 16))) + (0.7152 * Linear((byte)(bgra >> 8))) + (0.0722 * Linear((byte)bgra));
+        double la = Luminance(a), lb = Luminance(b);
+        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+    }
+
     private static uint CellBackground(Window window, VelaTerminalControl control, int row, int col)
     {
         uint[] pixels = RenderFrame(window);
