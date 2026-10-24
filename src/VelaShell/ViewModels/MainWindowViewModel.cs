@@ -1974,6 +1974,23 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         Sidebar.IsQuickCommandsVisible =
             _quickCommandRunner is not null && settings.Appearance.ShowQuickCommandsPanel;
         Layout.MultiRowTabs = settings.Appearance.MultiRowTabs;
+        ApplyTabBarPosition(settings.Appearance);
+    }
+
+    /// <summary>
+    /// 设置「标签栏位置」→ 停靠层:横排的标签条停在顶部还是底部,所有窗格一起变。
+    /// 启动、保存设置时由 <see cref="ApplyShellPreferences" /> 调用;设置页的外观预览也走这里
+    /// (主窗口的预览处理器),所以下拉一改当场可见,取消时随预览一起回滚。
+    /// </summary>
+    /// <remarks>
+    /// 只认 <c>bottom</c>,其余值(含手改配置留下的大小写变体)按顶部 —— 与设置页下拉的映射
+    /// (<c>SettingsViewModel.TabBarPositionIndex</c>)同一口径,两处才不会一个说顶部、一个摆在底部。
+    /// </remarks>
+    /// <param name="appearance">要应用的外观设置。</param>
+    public void ApplyTabBarPosition(AppearanceOptions appearance)
+    {
+        ArgumentNullException.ThrowIfNull(appearance);
+        Layout.TabsAtBottom = appearance.TabBarPosition == "bottom";
     }
 
     private void OnLayoutPropertyChanged(object? sender, PropertyChangedEventArgs e)

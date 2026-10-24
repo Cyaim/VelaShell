@@ -589,6 +589,9 @@
   <data name="Dock_TabsTop" xml:space="preserve">
     <value>上</value>
   </data>
+  <data name="Dock_TabsBottom" xml:space="preserve">
+    <value>下</value>
+  </data>
   <data name="Dock_MultiRowTabs" xml:space="preserve">
     <value>タブを複数行で表示</value>
   </data>
@@ -2252,6 +2255,12 @@
   </data>
   <data name="SetAppear_SidebarPositionDesc" xml:space="preserve">
     <value>// サイドバーをウィンドウの左右どちらに表示するか</value>
+  </data>
+  <data name="SetAppear_TabBarPosition" xml:space="preserve">
+    <value>タブバーの位置</value>
+  </data>
+  <data name="SetAppear_TabBarPositionDesc" xml:space="preserve">
+    <value>// 各ペインのタブバーを上と下のどちらに置くか。タブの右クリックメニューで左右に移したペインはそのまま</value>
   </data>
   <data name="SetAppear_MultiRowTabsDesc" xml:space="preserve">
     <value>// タブが 1 行に収まらないとき、幅を詰めて横スクロールする代わりに次の行へ折り返す。タブの右クリックメニューからも切り替え可能</value>

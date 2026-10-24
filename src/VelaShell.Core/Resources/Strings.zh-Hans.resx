@@ -1494,6 +1494,9 @@
   <data name="Dock_TabsTop" xml:space="preserve">
     <value>顶部</value>
   </data>
+  <data name="Dock_TabsBottom" xml:space="preserve">
+    <value>底部</value>
+  </data>
   <data name="Dock_MultiRowTabs" xml:space="preserve">
     <value>多行显示标签页</value>
   </data>
@@ -2529,6 +2532,12 @@
   </data>
   <data name="SetAppear_SidebarPositionDesc" xml:space="preserve">
     <value>// 侧边栏显示在窗口的左侧或右侧</value>
+  </data>
+  <data name="SetAppear_TabBarPosition" xml:space="preserve">
+    <value>标签栏位置</value>
+  </data>
+  <data name="SetAppear_TabBarPositionDesc" xml:space="preserve">
+    <value>// 每个窗格的标签条停在顶部还是底部。在标签页右键菜单里挪到左侧 / 右侧的窗格不受影响</value>
   </data>
   <data name="SetAppear_MultiRowTabsDesc" xml:space="preserve">
     <value>// 标签页一行放不下时换到下一行,而不是收窄后横向滚动。标签页右键菜单里也能切换</value>

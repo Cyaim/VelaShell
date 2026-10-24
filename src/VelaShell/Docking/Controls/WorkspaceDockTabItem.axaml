@@ -81,7 +81,7 @@
       <MenuItem Header="{loc:Localize Dock_ToggleMaximizePane}" Click="ToggleMaximizePane_Click" />
       <Separator />
       <MenuItem Header="{loc:Localize Dock_TabsPosition}">
-        <MenuItem Header="{loc:Localize Dock_TabsTop}" Click="TabsTop_Click" />
+        <MenuItem x:Name="HorizontalTabsMenuItem" Header="{loc:Localize Dock_TabsTop}" Click="TabsTop_Click" />
         <MenuItem Header="{loc:Localize Dock_TabsLeft}" Click="TabsLeft_Click" />
         <MenuItem Header="{loc:Localize Dock_TabsRight}" Click="TabsRight_Click" />
       </MenuItem>

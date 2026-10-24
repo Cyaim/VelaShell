@@ -62,6 +62,21 @@ public sealed class DockWorkspace : DockElement
         set => SetField(ref field, value);
     }
 
+    /// <summary>
+    /// 横排的标签条停在窗格底部(<c>true</c>),还是顶部(<c>false</c>,默认)。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="MultiRowTabs" /> 同一口径:整个工作区一个开关、所有窗格一起变。宿主把设置里的
+    /// <c>AppearanceOptions.TabBarPosition</c> 灌进来,这里不往回写 —— 入口只有设置页一处。
+    /// 只管<b>横排</b>的标签条:右键菜单里停到左 / 右侧的窗格(<see cref="DockGroup.TabsPosition" />)
+    /// 是用户按窗格单独挑的,这个开关不去动它;它们回到横排时,就落在这里定的那一边。
+    /// </remarks>
+    public bool TabsAtBottom
+    {
+        get;
+        set => SetField(ref field, value);
+    }
+
     /// <summary>全局激活文档(最后交互的组的选中标签),驱动 ActiveTerminalTab/状态栏联动。</summary>
     public DockDocument? ActiveDocument
     {

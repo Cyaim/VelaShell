@@ -495,7 +495,12 @@ public class AppearanceOptions : ObservableOptions
         set => Set(ref field, value);
     } = 85;
 
-    /// <summary>标签栏位置(如 top / bottom)。</summary>
+    /// <summary>
+    /// 横排的标签条停在窗格顶部(<c>top</c>,默认)还是底部(<c>bottom</c>;其余值一律按顶部)。
+    /// 所有窗格一起变,设置页里一改就能看到(外观预览),取消即回滚;宿主灌进停靠层的
+    /// <c>DockWorkspace.TabsAtBottom</c>。标签右键菜单里停到左 / 右侧的窗格是按窗格单独选的,不受它影响。
+    /// </summary>
+    /// <remarks>设置审计 R-05:停靠层支持底部之前它零消费、从外观页撤下过,现已恢复展示。</remarks>
     public string TabBarPosition
     {
         get;

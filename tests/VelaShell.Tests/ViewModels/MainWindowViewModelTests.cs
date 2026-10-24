@@ -345,6 +345,32 @@ public class MainWindowViewModelTests
         settingsService.Received(1).GetStateAsync();
     }
 
+    /// <summary>
+    /// 设置「标签栏位置」→ 停靠层:启动时在首帧之前灌进去,保存设置当场生效;只认 <c>bottom</c>。
+    /// 外观页的即时预览走的是同一个 <see cref="MainWindowViewModel.ApplyTabBarPosition" />。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Startup")]
+    public void TabBarPosition_ReachesTheDockLayout_AtStartupAndOnSave()
+    {
+        ISettingsService settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetStateAsync().Returns(Task.FromResult(new AppState()));
+        var vm = new MainWindowViewModel(settingsService: settingsService);
+        Assert.IsFalse(vm.Layout.TabsAtBottom, "出厂在顶部");
+
+        vm.PrepareForStartup(new AppSettings { Appearance = new() { TabBarPosition = "bottom" } });
+        Assert.IsTrue(vm.Layout.TabsAtBottom);
+
+        settingsService.SettingsSaved += Raise.Event<Action<AppSettings>>(
+            new AppSettings { Appearance = new() { TabBarPosition = "top" } }
+        );
+        SpinWait.SpinUntil(() => !vm.Layout.TabsAtBottom, TimeSpan.FromSeconds(5));
+        Assert.IsFalse(vm.Layout.TabsAtBottom, "保存设置当场生效,不等重启");
+
+        vm.ApplyTabBarPosition(new AppearanceOptions { TabBarPosition = "Bottom" });
+        Assert.IsFalse(vm.Layout.TabsAtBottom, "与设置页下拉同一口径:只认 bottom,别的值按顶部");
+    }
+
     [TestMethod]
     [TestCategory("QuickCommands")]
     public void SettingsSaved_UpdatesQuickCommandsPanelVisibility()

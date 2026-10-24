@@ -154,7 +154,7 @@
           <pc:LucideIcon Width="13" Height="13" Data="{DynamicResource Icon.panel-top}"
                          Foreground="{DynamicResource VelaTextTertiary}" />
         </MenuItem.Icon>
-        <MenuItem Header="{loc:Localize Dock_TabsTop}" Click="TabsTop_Click" />
+        <MenuItem x:Name="HorizontalTabsMenuItem" Header="{loc:Localize Dock_TabsTop}" Click="TabsTop_Click" />
         <MenuItem Header="{loc:Localize Dock_TabsLeft}" Click="TabsLeft_Click" />
         <MenuItem Header="{loc:Localize Dock_TabsRight}" Click="TabsRight_Click" />
       </MenuItem>

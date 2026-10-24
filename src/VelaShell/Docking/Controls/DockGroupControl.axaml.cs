@@ -136,7 +136,7 @@ public partial class DockGroupControl : UserControl
 
     private void OnWorkspacePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(DockWorkspace.MultiRowTabs))
+        if (e.PropertyName is nameof(DockWorkspace.MultiRowTabs) or nameof(DockWorkspace.TabsAtBottom))
         {
             ApplyTabStripLayout();
         }
@@ -334,27 +334,29 @@ public partial class DockGroupControl : UserControl
     }
 
     /// <summary>
-    /// 标签条的摆法:标签位置(右键菜单“标签位置”)与「多行显示标签页」两个开关合起来决定。
-    /// Top 为默认;Left/Right 时标签条纵排、分割线立起、滚动方向改为垂直(溢出三连钮按宽度判定,
-    /// 纵排时自然隐藏)。顶置且开了多排时两个方向都不滚:面板拿到确定的宽度去换行,高度随排数长。
+    /// 标签条的摆法:本组的标签位置(右键菜单“标签位置”)、工作区的「标签栏位置」(顶 / 底)与
+    /// 「多行显示标签页」三个开关合起来决定。横排(Top)为默认,停在顶部还是底部看工作区;
+    /// Left/Right 时标签条纵排、分割线立起、滚动方向改为垂直(溢出三连钮按宽度判定,
+    /// 纵排时自然隐藏)。横排且开了多排时两个方向都不滚:面板拿到确定的宽度去换行,高度随排数长。
     /// </summary>
+    /// <remarks>
+    /// 停到底部只是把标签条连同分割线整体挪到内容区下方,标签自己的样子不变 —— 激活强调线
+    /// 仍贴标签的上缘,在底部那正好是朝着内容区的一边,与纵排时强调线贴内侧边同一个道理。
+    /// </remarks>
     private void ApplyTabStripLayout()
     {
         DockTabsPosition position = Group?.TabsPosition ?? DockTabsPosition.Top;
         bool vertical = position != DockTabsPosition.Top;
         bool multiRow = !vertical && Workspace?.MultiRowTabs == true;
-        DockPanel.SetDock(TabStripArea, position switch
+        Dock edge = position switch
         {
             DockTabsPosition.Left => Dock.Left,
             DockTabsPosition.Right => Dock.Right,
-            _ => Dock.Top
-        });
-        DockPanel.SetDock(StripSeparator, position switch
-        {
-            DockTabsPosition.Left => Dock.Left,
-            DockTabsPosition.Right => Dock.Right,
-            _ => Dock.Top
-        });
+            _ => Workspace?.TabsAtBottom == true ? Dock.Bottom : Dock.Top
+        };
+        // 两者按同一边停靠,先后次序决定了分割线永远夹在标签条与内容区之间。
+        DockPanel.SetDock(TabStripArea, edge);
+        DockPanel.SetDock(StripSeparator, edge);
         StripSeparator.Height = vertical ? double.NaN : 1;
         StripSeparator.Width = vertical ? 1 : double.NaN;
         TabStripArea.MinHeight = vertical ? 0 : TabStripRowHeight;

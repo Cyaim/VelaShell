@@ -13,7 +13,10 @@ public enum DockOrientation
 /// <summary>标签条在组内的停靠位置(右键菜单“标签位置”,与原 Dock 的 Top/Left/Right 对应)。</summary>
 public enum DockTabsPosition
 {
-    /// <summary>标签条位于组的顶部。</summary>
+    /// <summary>
+    /// 标签条横排:默认在组的顶部;<see cref="DockWorkspace.TabsAtBottom" /> 打开时(设置「标签栏位置」)
+    /// 在底部。顶 / 底是整个工作区一起定的,所以这里只有一个「横排」,没有单独的 Bottom。
+    /// </summary>
     Top,
 
     /// <summary>标签条位于组的左侧。</summary>

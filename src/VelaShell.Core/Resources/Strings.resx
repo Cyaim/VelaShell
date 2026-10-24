@@ -1385,6 +1385,9 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   <data name="Dock_TabsTop" xml:space="preserve">
     <value>Top</value>
   </data>
+  <data name="Dock_TabsBottom" xml:space="preserve">
+    <value>Bottom</value>
+  </data>
   <data name="Dock_MultiRowTabs" xml:space="preserve">
     <value>Show Tabs in Multiple Rows</value>
   </data>
@@ -2420,6 +2423,12 @@ Paste anyway?</value>
   </data>
   <data name="SetAppear_SidebarPositionDesc" xml:space="preserve">
     <value>// Show the sidebar on the left or right side of the window</value>
+  </data>
+  <data name="SetAppear_TabBarPosition" xml:space="preserve">
+    <value>Tab bar position</value>
+  </data>
+  <data name="SetAppear_TabBarPositionDesc" xml:space="preserve">
+    <value>// Dock each pane&apos;s tab strip at the top or the bottom. Panes whose tabs were moved to the left or right from the tab right-click menu stay where they are</value>
   </data>
   <data name="SetAppear_MultiRowTabsDesc" xml:space="preserve">
     <value>// When tabs don't fit on one row, wrap them onto more rows instead of shrinking and scrolling. Also in the tab right-click menu</value>

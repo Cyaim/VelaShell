@@ -1494,6 +1494,9 @@
   <data name="Dock_TabsTop" xml:space="preserve">
     <value>頂端</value>
   </data>
+  <data name="Dock_TabsBottom" xml:space="preserve">
+    <value>底端</value>
+  </data>
   <data name="Dock_MultiRowTabs" xml:space="preserve">
     <value>多列顯示分頁</value>
   </data>
@@ -2529,6 +2532,12 @@
   </data>
   <data name="SetAppear_SidebarPositionDesc" xml:space="preserve">
     <value>// 側邊欄顯示在視窗左側或右側</value>
+  </data>
+  <data name="SetAppear_TabBarPosition" xml:space="preserve">
+    <value>分頁列位置</value>
+  </data>
+  <data name="SetAppear_TabBarPositionDesc" xml:space="preserve">
+    <value>// 每個窗格的分頁列停在頂端還是底端。在分頁右鍵選單裡移到左側 / 右側的窗格不受影響</value>
   </data>
   <data name="SetAppear_MultiRowTabsDesc" xml:space="preserve">
     <value>// 分頁一列放不下時換到下一列,而不是縮窄後橫向捲動。分頁右鍵選單裡也能切換</value>

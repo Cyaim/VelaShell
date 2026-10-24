@@ -589,6 +589,9 @@
   <data name="Dock_TabsTop" xml:space="preserve">
     <value>상단</value>
   </data>
+  <data name="Dock_TabsBottom" xml:space="preserve">
+    <value>하단</value>
+  </data>
   <data name="Dock_MultiRowTabs" xml:space="preserve">
     <value>탭을 여러 줄로 표시</value>
   </data>
@@ -2252,6 +2255,12 @@
   </data>
   <data name="SetAppear_SidebarPositionDesc" xml:space="preserve">
     <value>// 사이드바를 창의 왼쪽 또는 오른쪽에 표시</value>
+  </data>
+  <data name="SetAppear_TabBarPosition" xml:space="preserve">
+    <value>탭 표시줄 위치</value>
+  </data>
+  <data name="SetAppear_TabBarPositionDesc" xml:space="preserve">
+    <value>// 각 창의 탭 표시줄을 상단과 하단 중 어디에 둘지. 탭 오른쪽 클릭 메뉴에서 왼쪽 / 오른쪽으로 옮긴 창은 그대로 유지</value>
   </data>
   <data name="SetAppear_MultiRowTabsDesc" xml:space="preserve">
     <value>// 탭이 한 줄에 다 들어가지 않으면 폭을 줄여 가로로 스크롤하는 대신 다음 줄로 넘김. 탭 오른쪽 클릭 메뉴에서도 전환 가능</value>

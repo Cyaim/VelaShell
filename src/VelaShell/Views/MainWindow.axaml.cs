@@ -658,13 +658,15 @@ public partial class MainWindow : Window
         Dispatcher.UIThread.Post(action);
     }
 
-    /// <summary>应用设置 → 外观:窗口透明度、侧边栏位置、界面字体/字号。
+    /// <summary>应用设置 → 外观:窗口透明度、侧边栏位置、标签栏位置、界面字体/字号。
     /// (菜单栏显隐设置已随文字菜单一并移除:自绘标题栏承载窗口控制按钮,必须常显。)</summary>
     private void ApplyWindowAppearance(AppSettings settings)
     {
         AppearanceOptions a = settings.Appearance;
         ApplyWindowOpacity(a.WindowOpacityPercent);
         ApplySidebarPosition(a.SidebarPosition == "right");
+        // 与侧边栏位置一样跟着外观预览走:保存时视图模型还会再应用一次(同值,不重排)。
+        (DataContext as MainWindowViewModel)?.ApplyTabBarPosition(a);
         ApplyBackgroundImage(a);
         if (Application.Current is { } app)
         {
@@ -683,6 +685,7 @@ public partial class MainWindow : Window
         AppearanceOptions b = right.Appearance;
         return a.WindowOpacityPercent == b.WindowOpacityPercent
             && string.Equals(a.SidebarPosition, b.SidebarPosition, StringComparison.Ordinal)
+            && string.Equals(a.TabBarPosition, b.TabBarPosition, StringComparison.Ordinal)
             && string.Equals(a.BackgroundImagePath, b.BackgroundImagePath, StringComparison.Ordinal)
             && a.BackgroundImageOpacity == b.BackgroundImageOpacity
             && a.ContentBackgroundOpacity == b.ContentBackgroundOpacity
