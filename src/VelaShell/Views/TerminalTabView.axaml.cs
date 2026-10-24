@@ -204,7 +204,8 @@ public partial class TerminalTabView : UserControl
     }
 
     /// <summary>
-    /// 点选一条即读取并填入;只发正文,不追加回车(#628 第 1 项)。
+    /// 点选一条即读取、填入并提交:正文后面紧跟一次回车,同一次入队(见 <see cref="SharedPasswordFillRequest.FillAsync" />)。
+    /// 原先只发正文、要用户再按一次 Enter(#628 第 1 项),选完顺手敲的字符就会混进口令里。
     /// 挂 SelectionChanged 而不是 Tapped:列表项不可聚焦,选中哪一行本来就是这次点击的唯一
     /// 语义,而 Tapped 的路由事件在 headless 测试里造不出来 —— 这条路径就永远测不到。
     /// 键盘 ↑↓ 也借选中态当高亮,那时只移高亮、不填入(<see cref="_highlightingPassword" />)。

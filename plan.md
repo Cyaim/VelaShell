@@ -2275,3 +2275,13 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **留待定**(已记入 `feature-plan.md`):AI 传输安全提交的几处残留(macOS 只经 CI、NFS 按不支持拒绝、POSIX 按名字改名、Windows 祖先目录不共享删除、覆盖上传写入期间临时文件是 0644);Anthropic 的思考配置与模型清单版本;遮盖的⑥(转义 JSON 被外层引号截断、`Password:` 后跟 jq 彩色输出)。
 
 **文档**:velashell-docs 同步 `plugins/11-automation-and-ai`、`07-capability-apis`、`12-security-threat-model`、`05-ipc-protocol`、`06-permission-system`、`协作接入`、`sdk/sdk-reference` §3.3b–§3.3c、`host/交互与界面规格`、`host/消息中心与资讯源`(zh / en 同步);插件 README 的 Agent 循环、下载平台、鉴权与采样几节随代码改。
+
+## 234. 2026-10-24 共享密码填入:选中即自动回车提交
+
+**来由**:用户反馈选中共享密码之后还要再按一次 Enter 才提交,中间顺手敲的字符会接在密码后面、成为口令的一部分。原先「只填正文、不附加回车」是 #628 第 1 项与 #638(§213)按当时的需求刻意定的,这次由维护者改为自动提交。
+
+**改动**:`SharedPasswordFillRequest.FillAsync` 在正文后面紧跟一次回车,两者拼成一段、同一次经桥的 `TrySendRaw` 入队(出站输入代次照旧在同一把锁里核对),所以用户选完敲的任何键都落在提交之后,插不进密码与回车之间。回车用终端控件新加的 `EncodeEnterKey()` 取,与此刻真按 Enter 发出的字节相同(远端开了换行模式 LNM 时是 CR LF),不写死 `\r`。点选、键盘 Enter 两个入口一样;读取在途时连按的 Enter 照旧被吞掉,最后只有填入自带的那一个回车。弹层顶部的风险说明(`PasswordFill_Warning`,五语)从「不发送回车」改为「并自动回车提交」。
+
+**验证**:`SharedPasswordFillTests` 51 条全过;原先断言「只有正文」的 7 条改为正文加回车,并断言一次写出;新增换行模式用例(CR LF),键盘用例改为填入之后再敲的字符落在回车之后(`secret\rx\r`)。临时去掉追加的回车,8 条失败。
+
+**文档**:velashell-docs `host/交互与界面规格` §5.2.1 的点选、键盘与发送三处(zh / en);仓库内 `manual.md` / `manual.en.md` 的 5.2 与快捷键表。

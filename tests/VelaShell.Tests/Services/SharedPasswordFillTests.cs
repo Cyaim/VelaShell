@@ -51,7 +51,7 @@ public sealed class SharedPasswordFillTests
         Assert.AreEqual(expected, InteractivePromptDetector.IsPasswordFillPrompt(line));
 
     [TestMethod]
-    public Task Fill_UsesRealBridgeAndSessionEncoding_WithoutTypedInputOrEnter() => Session.RunOnUiAsync(async () =>
+    public Task Fill_UsesRealBridgeAndSessionEncoding_WithoutTypedInput_AndSubmitsInTheSameWrite() => Session.RunOnUiAsync(async () =>
     {
         using var control = new VelaTerminalControl();
         IShellStreamWrapper shell = Shell();
@@ -81,7 +81,10 @@ public sealed class SharedPasswordFillTests
         using var request = new SharedPasswordFillRequest(tab, () => true);
         Assert.AreEqual(PasswordFillResult.Queued, await request.FillAsync(repository, id));
         await DrainWritesAsync(tab);
-        CollectionAssert.AreEqual(Encoding.Unicode.GetBytes("口令!42"), writes.ToArray());
+        // 正文按会话字符集编码,后面紧跟 Enter 键的字节(与真按 Enter 一样不转码);
+        // 同一次写出,用户选完顺手敲的字符插不到密码与回车之间。
+        CollectionAssert.AreEqual((byte[])[.. Encoding.Unicode.GetBytes("口令!42"), (byte)'\r'], writes.ToArray());
+        await shell.Received(1).WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
         Assert.AreEqual(0, typed);
         await DrainWritesAsync(peer);
         await peerShell.DidNotReceive().WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
@@ -90,6 +93,24 @@ public sealed class SharedPasswordFillTests
         Assert.AreEqual("", tab.InputTracker.CurrentInput);
         Assert.AreEqual(PasswordFillResult.Expired, await request.FillAsync(repository, id));
         await repository.Received(1).GetPasswordAsync(id);
+    });
+
+    [TestMethod]
+    public Task Fill_SubmitsWithTheSameBytesAsTheEnterKey_IncludingNewLineMode() => Session.RunOnUiAsync(async () =>
+    {
+        // 远端开了换行模式(LNM,CSI 20 h)时 Enter 发 CR LF;替用户按的那一下要与真按 Enter 一致。
+        using var control = new VelaTerminalControl();
+        IShellStreamWrapper shell = Shell();
+        await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
+        control.Feed("\e[20hPassword:"u8.ToArray());
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.GetPasswordAsync(Arg.Any<Guid>()).Returns("secret");
+        List<byte> writes = CaptureWrites(shell);
+        using var request = new SharedPasswordFillRequest(tab, () => true);
+        Assert.AreEqual(PasswordFillResult.Queued, await request.FillAsync(repository, Guid.NewGuid()));
+        await DrainWritesAsync(tab);
+        Assert.AreEqual("secret\r\n", Encoding.UTF8.GetString([.. writes]));
+        CollectionAssert.AreEqual(control.EncodeEnterKey(), "\r\n"u8.ToArray());
     });
 
     [TestMethod]
@@ -154,7 +175,7 @@ public sealed class SharedPasswordFillTests
     });
 
     [TestMethod]
-    public Task Popup_OpensOnlyOnRealPrompt_ListsUsablePasswords_AndPickingOneFillsWithoutEnter() =>
+    public Task Popup_OpensOnlyOnRealPrompt_ListsUsablePasswords_AndPickingOneFillsAndSubmits() =>
         Session.RunOnUiAsync(async () =>
     {
         using var control = new VelaTerminalControl();
@@ -203,11 +224,11 @@ public sealed class SharedPasswordFillTests
             Assert.AreEqual(cursorInWindow.X, popup.X, 0.5, "列表应与光标同列。");
             Assert.IsTrue(popup.Top >= cursorInWindow.Bottom && popup.Top <= cursorInWindow.Bottom + 4,
                 $"列表应紧贴光标行下沿:popup={popup} cursor={cursorInWindow}");
-            // 点一行即读取并填入:只有密码正文,不带回车、不带引号 —— 远端还停在提示符上等输入。
+            // 点一行即读取、填入并提交:密码正文紧跟一次回车,不带引号 —— 不用再按 Enter。
             view.PickPasswordItem(metadata);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
+            Assert.AreEqual("secret\r", Encoding.UTF8.GetString([.. writes]));
             await repository.Received(1).GetPasswordAsync(metadata.Id);
             // 填完即收口:留着只会让人再点一次。
             Assert.IsFalse(view.PasswordPopupOpenForTest);
@@ -420,7 +441,7 @@ public sealed class SharedPasswordFillTests
             view.PickPasswordItem(metadata);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("\u007Fsecret", Encoding.UTF8.GetString([.. writes]));
+            Assert.AreEqual("\u007Fsecret\r", Encoding.UTF8.GetString([.. writes]));
             Assert.IsFalse(view.PasswordPopupOpenForTest);
         }
         finally
@@ -460,7 +481,7 @@ public sealed class SharedPasswordFillTests
             Press(window, Key.Enter, PhysicalKey.Enter);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
+            Assert.AreEqual("secret\r", Encoding.UTF8.GetString([.. writes]));
         }
         finally
         {
@@ -532,7 +553,7 @@ public sealed class SharedPasswordFillTests
     });
 
     [TestMethod]
-    public Task Keyboard_ArrowsOnlyHighlight_EnterFillsWithoutEnter_NextEnterSubmits() => Session.RunOnUiAsync(async () =>
+    public Task Keyboard_ArrowsOnlyHighlight_EnterFillsAndSubmits_LaterKeysStayOutOfThePassword() => Session.RunOnUiAsync(async () =>
     {
         using var control = new VelaTerminalControl();
         IShellStreamWrapper shell = Shell();
@@ -561,17 +582,19 @@ public sealed class SharedPasswordFillTests
             Assert.IsEmpty(writes);
             await repository.DidNotReceive().GetPasswordAsync(Arg.Any<Guid>());
             Assert.IsTrue(view.PasswordPopupOpenForTest);
-            // Enter 填入高亮的那一项:只有正文,不带回车。
+            // Enter 填入高亮的那一项并提交:正文紧跟一次回车,不用再按一次。
             Press(window, Key.Enter, PhysicalKey.Enter);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
+            Assert.AreEqual("secret\r", Encoding.UTF8.GetString([.. writes]));
             await repository.Received(1).GetPasswordAsync(staging.Id);
             Assert.IsFalse(view.PasswordPopupOpenForTest);
-            // 列表已收口,再按 Enter 就是提交,原样进终端。
+            // 列表已收口:之后的按键都在提交之后、原样进终端,混不进口令(原先这里还得再按一次 Enter,
+            // 中间顺手敲的字符就成了密码的一部分)。
+            window.KeyTextInput("x");
             Press(window, Key.Enter, PhysicalKey.Enter);
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret\r", Encoding.UTF8.GetString([.. writes]));
+            Assert.AreEqual("secret\rx\r", Encoding.UTF8.GetString([.. writes]));
         }
         finally
         {
@@ -608,7 +631,7 @@ public sealed class SharedPasswordFillTests
             window.MouseUp(point, MouseButton.Left);
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
+            Assert.AreEqual("secret\r", Encoding.UTF8.GetString([.. writes]));
             Assert.IsFalse(view.PasswordPopupOpenForTest);
         }
         finally
@@ -673,8 +696,9 @@ public sealed class SharedPasswordFillTests
             Press(window, Key.Down, PhysicalKey.ArrowDown);
             Press(window, Key.Enter, PhysicalKey.Enter);
             await repository.Received(1).GetPasswordAsync(metadata.Id);
-            // 解密还没回来,用户已经按下第二个 Enter(本意是提交)。放过去它就先于密码到达远端,
+            // 解密还没回来,用户已经按下第二个 Enter(习惯性的「提交」)。放过去它就先于密码到达远端,
             // 交上去的是空口令,这次键入还会让在途的填入作废。方向键同样原地不动。
+            // 填入自己会带一次回车,所以最后只该有一个 CR。
             Press(window, Key.Enter, PhysicalKey.Enter);
             Press(window, Key.Down, PhysicalKey.ArrowDown);
             Assert.AreEqual(-1, view.PasswordHighlightForTest);
@@ -683,7 +707,7 @@ public sealed class SharedPasswordFillTests
             pending.SetResult("secret");
             await view.PasswordFillForTest;
             await DrainWritesAsync(tab);
-            Assert.AreEqual("secret", Encoding.UTF8.GetString([.. writes]));
+            Assert.AreEqual("secret\r", Encoding.UTF8.GetString([.. writes]));
             Assert.IsFalse(view.PasswordPopupOpenForTest);
         }
         finally
