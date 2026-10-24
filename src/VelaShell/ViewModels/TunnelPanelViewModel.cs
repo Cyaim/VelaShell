@@ -72,9 +72,15 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
 
     /// <summary>
     /// 把面板外发生的错误报给用户(宿主接的是右下角的错误提示)。启动时自动建立隧道那会儿面板多半没开,
-    /// 写进表单下的 <see cref="ErrorMessage" /> 没人看得见。
+    /// 写进表单下的 <see cref="ErrorMessage" /> 没人看得见。第二个参数非空时提示上带「重试」,点了就执行它。
     /// </summary>
-    private readonly Action<string>? _errorReporter;
+    private readonly Action<string, Action?>? _errorReporter;
+
+    /// <summary>
+    /// 面板外的一句告知(宿主接的是右下角的信息提示)。只用在「点了重试、隧道建起来了」:
+    /// 那时面板多半没开,点完提示就消失,不报一声用户不知道成没成。
+    /// </summary>
+    private readonly Action<string>? _infoReporter;
 
     private readonly Func<Task<IReadOnlyList<SessionProfile>>>? _savedProfilesProvider;
     private readonly Func<Guid, Task>? _sessionDisconnector;
@@ -90,8 +96,16 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
 
     /// <summary>
     /// 构造隧道面板视图模型;可注入已保存会话来源、后台连接/断开与存活探测委托、配置持久化存储
-    /// 及面板外的错误提示出口(均可为空,便于测试)。
+    /// 及面板外的错误 / 信息提示出口(均可为空,便于测试)。
     /// </summary>
+    /// <param name="workflowService">隧道工作流。</param>
+    /// <param name="savedProfilesProvider">已保存的会话。</param>
+    /// <param name="backgroundConnector">后台连接;第二个参数 = 这是断线后的自动恢复。</param>
+    /// <param name="isSessionAlive">后台会话是否还活着。</param>
+    /// <param name="sessionDisconnector">断开后台会话。</param>
+    /// <param name="dataStore">隧道配置与面板位置的存储。</param>
+    /// <param name="errorReporter">面板外的错误提示;第二个参数非空时提示上带「重试」。</param>
+    /// <param name="infoReporter">面板外的信息提示(重试成功时报一声)。</param>
     public TunnelPanelViewModel(
         ITunnelWorkflowService workflowService,
         Func<Task<IReadOnlyList<SessionProfile>>>? savedProfilesProvider = null,
@@ -99,7 +113,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         Func<Guid, bool>? isSessionAlive = null,
         Func<Guid, Task>? sessionDisconnector = null,
         IAppDataStore? dataStore = null,
-        Action<string>? errorReporter = null)
+        Action<string, Action?>? errorReporter = null,
+        Action<string>? infoReporter = null)
     {
         _workflowService = workflowService ?? throw new ArgumentNullException(nameof(workflowService));
         _savedProfilesProvider = savedProfilesProvider;
@@ -108,6 +123,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         _sessionDisconnector = sessionDisconnector;
         _dataStore = dataStore;
         _errorReporter = errorReporter;
+        _infoReporter = infoReporter;
         RestorePanelPosition();
         Servers = [];
         _tunnels = [];
@@ -478,7 +494,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     /// 重启后一律是已停止,等用户手动启动。
     /// </para>
     /// <para>
-    /// 连不上服务器、端口被占等失败经 <c>errorReporter</c> 报到右下角的错误提示;用户取消认证则安静结束。
+    /// 连不上服务器、端口被占等失败经 <c>errorReporter</c> 报到右下角的错误提示,提示上带「重试」;用户取消认证则安静结束。
     /// 这时面板多半没开,写进表单下面没人看得见。一台服务器失败不耽误其它服务器;
     /// 同一台上一条建不起来也不耽误其余几条。从不抛出(调用方不等它)。
     /// </para>
@@ -493,23 +509,49 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         await LoadServersAsync().ConfigureAwait(true);
         foreach (SessionProfile profile in Servers.ToList())
         {
-            try
-            {
-                await AutoStartProfileAsync(profile).ConfigureAwait(true);
-            }
-            catch (VelaSshAuthenticationCancelledException)
-            {
-                // 用户取消认证,不作为启动失败报告。
-            }
-            catch (Exception ex)
-            {
-                _errorReporter?.Invoke(Strings.Format("Msg_TunnelAutoStartConnectFailed", profile.Name, FriendlyError(ex)));
-            }
+            await RunAutoStartAsync(profile, only: null, userRequested: false).ConfigureAwait(true);
         }
     }
 
+    /// <summary>跑一次「建好这台服务器上该自启的隧道」,并把失败报出去;从不抛出。</summary>
+    /// <param name="profile">服务器。</param>
+    /// <param name="only">只建这一条(提示上的「重试」点名的那条);<see langword="null" /> = 这台上勾了自启、还没起来的全部。</param>
+    /// <param name="userRequested">这是用户在提示上点的「重试」,而不是程序启动时的那一轮。</param>
+    private async Task RunAutoStartAsync(SessionProfile profile, TunnelItemViewModel? only, bool userRequested)
+    {
+        try
+        {
+            await AutoStartProfileAsync(profile, only, userRequested).ConfigureAwait(true);
+        }
+        catch (VelaSshAuthenticationCancelledException)
+        {
+            // 用户取消认证,不作为启动失败报告。
+        }
+        catch (Exception ex)
+        {
+            ReportAutoStartFailure(Strings.Format("Msg_TunnelAutoStartConnectFailed", profile.Name, FriendlyError(ex)), profile, only);
+        }
+    }
+
+    /// <summary>
+    /// 报一条自动建立的失败,提示上带「重试」。
+    /// </summary>
+    /// <remarks>
+    /// 原先只是一句话:用户得打开面板、切到那台服务器、再点那条隧道的启动键 —— 而他看到这条提示时想做的就只有「再来一次」。
+    /// 重试走的是同一条路(连不上就重连,哪条没建起来建哪条),只是由人点的:认证要人处理的那台照样会问他,
+    /// 不受「之前取消过认证、自动的不再试」那一条拦着。
+    /// </remarks>
+    /// <param name="message">提示正文。</param>
+    /// <param name="profile">失败的那台服务器。</param>
+    /// <param name="tunnel">失败的那条隧道;连不上服务器时为 <see langword="null" />(重试这台上该自启的全部)。</param>
+    private void ReportAutoStartFailure(string message, SessionProfile profile, TunnelItemViewModel? tunnel) =>
+        _errorReporter?.Invoke(message, () => _ = RunAutoStartAsync(profile, tunnel, userRequested: true));
+
     /// <summary>建好一台服务器上勾了「程序启动时自动建立」的隧道。</summary>
-    private async Task AutoStartProfileAsync(SessionProfile profile)
+    /// <param name="profile">服务器。</param>
+    /// <param name="only">只建这一条;<see langword="null" /> = 这台上勾了自启、还没起来的全部。</param>
+    /// <param name="userRequested">这是用户点的「重试」:不受「认证要人处理、自动的不再试」拦着;建成了报一声。</param>
+    private async Task AutoStartProfileAsync(SessionProfile profile, TunnelItemViewModel? only, bool userRequested)
     {
         if (!_itemsByProfile.TryGetValue(profile.Id, out ObservableCollection<TunnelItemViewModel>? items))
         {
@@ -518,11 +560,14 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         }
         // 与切到这台服务器时同一份恢复(每台只恢复一次):之后打开面板,看到的就是这里建好的条目。
         await RestorePersistedTunnelsAsync(profile.Id, items).ConfigureAwait(true);
-        if (_authenticationBlockedProfiles.Contains(profile.Id))
+        if (!userRequested && _authenticationBlockedProfiles.Contains(profile.Id))
         {
             return;
         }
-        List<TunnelItemViewModel> pending = [.. items.Where(t => t is { AutoStart: true, IsActive: false, IsBusy: false })];
+        // 点「重试」的那会儿,那条可能已经被用户在面板里启动(换成了新条目)、改过或删掉 —— 不在列表里了就不再建。
+        List<TunnelItemViewModel> pending = only is null
+            ? [.. items.Where(t => t is { AutoStart: true, IsActive: false, IsBusy: false })]
+            : [.. items.Where(t => ReferenceEquals(t, only) && t is { IsActive: false, IsBusy: false })];
         if (pending.Count == 0)
         {
             return;
@@ -544,10 +589,10 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
             }
             catch (Exception ex)
             {
-                _errorReporter?.Invoke(Strings.Format("Msg_TunnelAutoStartConnectFailed", profile.Name, FriendlyError(ex)));
+                ReportAutoStartFailure(Strings.Format("Msg_TunnelAutoStartConnectFailed", profile.Name, FriendlyError(ex)), profile, only);
                 return;
             }
-            bool anyStarted = false;
+            List<string> started = [];
             foreach (TunnelItemViewModel tunnel in pending.Where(items.Contains))
             {
                 try
@@ -558,7 +603,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
                     {
                         items[index] = new(result);
                     }
-                    anyStarted = true;
+                    started.Add(tunnel.Name);
                 }
                 catch (VelaSshAuthenticationCancelledException)
                 {
@@ -566,14 +611,21 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
                 }
                 catch (Exception ex)
                 {
-                    _errorReporter?.Invoke(Strings.Format("Msg_TunnelAutoStartFailed", tunnel.Name, profile.Name,
-                        FriendlyError(ex, tunnel.Config.LocalPort)));
+                    ReportAutoStartFailure(Strings.Format("Msg_TunnelAutoStartFailed", tunnel.Name, profile.Name,
+                        FriendlyError(ex, tunnel.Config.LocalPort)), profile, tunnel);
                 }
             }
-            if (!anyStarted)
+            if (started.Count == 0)
             {
                 // 一条都没建起来:专为它们拨的后台连接没有存在的必要。
                 await ReleaseHostIfUnusedAsync(profile.Id).ConfigureAwait(true);
+            }
+            else if (userRequested)
+            {
+                foreach (string name in started)
+                {
+                    _infoReporter?.Invoke(Strings.Format("Msg_TunnelAutoStartRetried", name, profile.Name));
+                }
             }
         }
         finally
@@ -931,7 +983,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         catch (VelaSshTailscaleAuthenticationException ex) when (ex.RequiresUserAction)
         {
             // 认证途中断线、没等到验证链接就超时不在此列:落到下面的通用分支退避重试。
-            _errorReporter?.Invoke(ex.Message);
+            _errorReporter?.Invoke(ex.Message, null);
             if (isSelected)
             {
                 ErrorMessage = ex.Message;
@@ -941,7 +993,7 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         {
             // 自动恢复到此为止(EnsureSessionAsync 已把这台记进 _hostKeyRejectedProfiles)。
             // 不管当前选中的是不是这台都报一声:只有用户手动启动、在弹窗里核对过指纹,这些隧道才回得来。
-            _errorReporter?.Invoke(FriendlyError(ex));
+            _errorReporter?.Invoke(FriendlyError(ex), null);
             if (isSelected)
             {
                 ErrorMessage = FriendlyError(ex);

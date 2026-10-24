@@ -4545,6 +4545,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Tunnel_AutoStartBadge" xml:space="preserve">
     <value>自启</value>
   </data>
+  <data name="Tunnel_RetryAction" xml:space="preserve">
+    <value>重试</value>
+  </data>
   <data name="Tunnel_TargetHostLabel" xml:space="preserve">
     <value>目标主机(服务器视角)</value>
   </data>
@@ -4739,6 +4742,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Msg_TunnelAutoStartFailed" xml:space="preserve">
     <value>启动时自动建立隧道「{0}」（{1}）失败：{2}</value>
+  </data>
+  <data name="Msg_TunnelAutoStartRetried" xml:space="preserve">
+    <value>隧道「{0}」（{1}）已建立。</value>
   </data>
   <data name="Notify_Title" xml:space="preserve">
     <value>消息</value>

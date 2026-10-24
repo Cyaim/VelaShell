@@ -4438,6 +4438,9 @@ Overwrite it?</value>
   <data name="Tunnel_AutoStartBadge" xml:space="preserve">
     <value>STARTUP</value>
   </data>
+  <data name="Tunnel_RetryAction" xml:space="preserve">
+    <value>Retry</value>
+  </data>
   <data name="Tunnel_TargetHostLabel" xml:space="preserve">
     <value>Target host (from the server's view)</value>
   </data>
@@ -4606,6 +4609,9 @@ Overwrite it?</value>
   </data>
   <data name="Msg_TunnelAutoStartFailed" xml:space="preserve">
     <value>Couldn't set up tunnel “{0}” on {1} at startup: {2}</value>
+  </data>
+  <data name="Msg_TunnelAutoStartRetried" xml:space="preserve">
+    <value>Tunnel “{0}” on {1} is up.</value>
   </data>
   <data name="Notify_Title" xml:space="preserve">
     <value>Messages</value>

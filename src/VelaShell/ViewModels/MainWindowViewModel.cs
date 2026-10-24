@@ -1899,8 +1899,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 id => _sshConnectionService?.GetClient(id)?.IsConnected == true,
                 id => _connectionWorkflowService?.DisconnectAsync(id) ?? Task.CompletedTask,
                 _appDataStore,
-                // 面板外的失败(启动时自动建立隧道)走右下角的错误提示。
-                message => Toasts.Error(message)
+                // 面板外的失败(启动时自动建立隧道)走右下角的错误提示;能重试的带一个「重试」。
+                (message, retry) => Toasts.Error(message, retry is null ? null : Strings.Get("Tunnel_RetryAction"), retry),
+                // 点了「重试」、隧道建起来了:面板多半没开,报一声。
+                message => Toasts.Info(message)
             );
             panel.CloseRequested += (_, _) => IsTunnelPanelOpen = false;
             TunnelPanel = panel;

@@ -627,7 +627,7 @@ public class TunnelPanelViewModelTests
             (profile, automaticReconnect, _) => connector(profile, automaticReconnect),
             _ => isAlive(),
             _ => Task.CompletedTask,
-            errorReporter: errorReporter);
+            errorReporter: errorReporter is null ? null : (message, _) => errorReporter(message));
         vm.Servers.Add(_server);
         vm.SelectedServer = _server;
         return vm;
@@ -1245,7 +1245,7 @@ public class TunnelPanelViewModelTests
             _ => true,
             _ => Task.CompletedTask,
             store,
-            errors.Add);
+            (message, _) => errors.Add(message));
 
         await vm.AutoStartTunnelsAsync();
 
@@ -1283,7 +1283,7 @@ public class TunnelPanelViewModelTests
                 return Task.CompletedTask;
             },
             store,
-            errors.Add);
+            (message, _) => errors.Add(message));
 
         await vm.AutoStartTunnelsAsync();
 
@@ -1292,6 +1292,247 @@ public class TunnelPanelViewModelTests
         Assert.AreEqual(Strings.Format("Msg_TunnelAutoStartFailed", "pg", _server.Name,
             Strings.Format("Msg_LocalPortInUse", 5432u)), errors[0]);
         Assert.AreSequenceEqual([_sessionId], disconnected);
+    }
+
+    /// <summary>
+    /// 连不上服务器:右下角那条提示带「重试」,点了就重连、把这台上勾了自启的隧道建起来,并报一声建好了 ——
+    /// 原先用户得打开面板、切到那台服务器、再一条条点启动。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task AutoStartTunnelsAsync_ConnectFailure_RetryReconnectsAndStartsTheTunnels()
+    {
+        IAppDataStore store = Substitute.For<IAppDataStore>();
+        TunnelConfig onStartup = SavedConfig("on-startup", 5432, autoStart: true);
+        TunnelConfig manual = SavedConfig("manual", 6379, autoStart: false);
+        store.GetAsync<List<TunnelConfig>>("tunnels", _server.Id.ToString("D"), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult<List<TunnelConfig>?>([onStartup, manual]));
+        _workflowService.CreateTunnelAsync(_sessionId, Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>())
+                        .Returns(callInfo => Task.FromResult(new TunnelInfo
+                        {
+                            Id = Guid.NewGuid(),
+                            Config = callInfo.Arg<TunnelConfig>(),
+                            Status = TunnelStatus.Active,
+                            SessionId = _sessionId,
+                            CreatedAt = DateTime.UtcNow
+                        }));
+        int attempts = 0;
+        List<(string Message, Action? Retry)> errors = [];
+        List<string> infos = [];
+        using TunnelPanelViewModel vm = new(_workflowService,
+            () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
+            (_, automatic, _) =>
+            {
+                Assert.IsFalse(automatic, "重试是人点的,主机指纹照常可以问他。");
+                return ++attempts == 1
+                    ? Task.FromException<Guid>(new InvalidOperationException("host down"))
+                    : Task.FromResult(_sessionId);
+            },
+            _ => true,
+            _ => Task.CompletedTask,
+            store,
+            (message, retry) => errors.Add((message, retry)),
+            infos.Add);
+
+        await vm.AutoStartTunnelsAsync();
+
+        (string message, Action? retry) = errors.Single();
+        Assert.AreEqual(Strings.Format("Msg_TunnelAutoStartConnectFailed", _server.Name, "host down"), message);
+        Assert.IsNotNull(retry, "连不上服务器的提示要带「重试」。");
+        await _workflowService.DidNotReceive().CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+
+        retry();
+        await WaitForAsync(() => infos.Count == 1);
+
+        Assert.AreEqual(2, attempts);
+        await _workflowService.Received(1).CreateTunnelAsync(_sessionId, onStartup, Arg.Any<CancellationToken>());
+        await _workflowService.DidNotReceive().CreateTunnelAsync(Arg.Any<Guid>(), manual, Arg.Any<CancellationToken>());
+        Assert.AreEqual(Strings.Format("Msg_TunnelAutoStartRetried", "on-startup", _server.Name), infos[0]);
+        Assert.HasCount(1, errors, "重试成功不再报错。");
+        await vm.OpenAsync(_server.Id);
+        Assert.IsTrue(vm.Tunnels.Single(t => t.Name == "on-startup").IsActive);
+        Assert.IsFalse(vm.Tunnels.Single(t => t.Name == "manual").IsActive, "没勾自启的那条,重试也不替用户建。");
+    }
+
+    /// <summary>
+    /// 同一台上一条建不起来(端口被占):它那条提示的「重试」只重建它自己,已经起来的那条不动;
+    /// 再失败照样报、照样带「重试」。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task AutoStartTunnelsAsync_TunnelFailure_RetryRebuildsOnlyThatTunnel()
+    {
+        IAppDataStore store = Substitute.For<IAppDataStore>();
+        TunnelConfig good = SavedConfig("good", 5432, autoStart: true);
+        TunnelConfig busy = SavedConfig("busy", 6379, autoStart: true);
+        store.GetAsync<List<TunnelConfig>>("tunnels", _server.Id.ToString("D"), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult<List<TunnelConfig>?>([good, busy]));
+        int busyAttempts = 0;
+        _workflowService.CreateTunnelAsync(_sessionId, Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>())
+                        .Returns(callInfo =>
+                        {
+                            TunnelConfig config = callInfo.Arg<TunnelConfig>();
+                            if (ReferenceEquals(config, busy) && ++busyAttempts < 3)
+                            {
+                                return Task.FromException<TunnelInfo>(new InvalidOperationException("bind",
+                                    new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.AddressAlreadyInUse)));
+                            }
+                            return Task.FromResult(new TunnelInfo
+                            {
+                                Id = Guid.NewGuid(),
+                                Config = config,
+                                Status = TunnelStatus.Active,
+                                SessionId = _sessionId,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                        });
+        List<(string Message, Action? Retry)> errors = [];
+        List<string> infos = [];
+        using TunnelPanelViewModel vm = new(_workflowService,
+            () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
+            (_, _, _) => Task.FromResult(_sessionId),
+            _ => true,
+            _ => Task.CompletedTask,
+            store,
+            (message, retry) => errors.Add((message, retry)),
+            infos.Add);
+
+        await vm.AutoStartTunnelsAsync();
+        string expected = Strings.Format("Msg_TunnelAutoStartFailed", "busy", _server.Name, Strings.Format("Msg_LocalPortInUse", 6379u));
+        Assert.AreEqual(expected, errors.Single().Message);
+
+        errors.Single().Retry!();
+        await WaitForAsync(() => errors.Count == 2);
+        Assert.AreEqual(expected, errors[1].Message, "再失败照样报出来。");
+        Assert.IsNotNull(errors[1].Retry, "再失败的提示同样能重试。");
+
+        errors[1].Retry!();
+        await WaitForAsync(() => infos.Count == 1);
+
+        Assert.AreEqual(3, busyAttempts);
+        await _workflowService.Received(1).CreateTunnelAsync(_sessionId, good, Arg.Any<CancellationToken>());
+        Assert.AreEqual(Strings.Format("Msg_TunnelAutoStartRetried", "busy", _server.Name), infos[0]);
+        await vm.OpenAsync(_server.Id);
+        Assert.IsTrue(vm.Tunnels.All(t => t.IsActive));
+        Assert.HasCount(2, vm.Tunnels);
+    }
+
+    /// <summary>
+    /// 点「重试」之前用户已经在面板里把那条启动了(换成了新条目):重试什么也不做,不会再建出第二条。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task AutoStartRetry_AfterTheUserStartedTheTunnel_DoesNothing()
+    {
+        IAppDataStore store = Substitute.For<IAppDataStore>();
+        TunnelConfig config = SavedConfig("pg", 5432, autoStart: true);
+        store.GetAsync<List<TunnelConfig>>("tunnels", _server.Id.ToString("D"), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult<List<TunnelConfig>?>([config]));
+        bool fail = true;
+        _workflowService.CreateTunnelAsync(_sessionId, Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>())
+                        .Returns(callInfo => fail
+                            ? Task.FromException<TunnelInfo>(new InvalidOperationException("boom"))
+                            : Task.FromResult(new TunnelInfo
+                            {
+                                Id = Guid.NewGuid(),
+                                Config = callInfo.Arg<TunnelConfig>(),
+                                Status = TunnelStatus.Active,
+                                SessionId = _sessionId,
+                                CreatedAt = DateTime.UtcNow
+                            }));
+        List<(string Message, Action? Retry)> errors = [];
+        List<string> infos = [];
+        using TunnelPanelViewModel vm = new(_workflowService,
+            () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
+            (_, _, _) => Task.FromResult(_sessionId),
+            _ => true,
+            _ => Task.CompletedTask,
+            store,
+            (message, retry) => errors.Add((message, retry)),
+            infos.Add);
+        await vm.AutoStartTunnelsAsync();
+        Action retry = errors.Single().Retry!;
+
+        fail = false;
+        await vm.OpenAsync(_server.Id);
+        await vm.StartTunnelCommand.Execute(vm.Tunnels.Single().Id).FirstAsync();
+        Assert.IsTrue(vm.Tunnels.Single().IsActive);
+        _workflowService.ClearReceivedCalls();
+
+        retry();
+
+        await _workflowService.DidNotReceive().CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+        Assert.IsEmpty(infos);
+        Assert.HasCount(1, vm.Tunnels);
+    }
+
+    /// <summary>
+    /// 启动时那一轮因为认证要人处理而停下的服务器,自动的不再试 —— 但提示上的「重试」是人点的,要照样去认证。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task AutoStartRetry_IsNotBlockedByAnEarlierAuthenticationPause()
+    {
+        IAppDataStore store = Substitute.For<IAppDataStore>();
+        store.GetAsync<List<TunnelConfig>>("tunnels", _server.Id.ToString("D"), Arg.Any<CancellationToken>())
+             .Returns(Task.FromResult<List<TunnelConfig>?>([SavedConfig("pg", 5432, autoStart: true, autoReconnect: true)]));
+        _workflowService.CreateTunnelAsync(_sessionId, Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>())
+                        .Returns(callInfo => Task.FromResult(new TunnelInfo
+                        {
+                            Id = Guid.NewGuid(),
+                            Config = callInfo.Arg<TunnelConfig>(),
+                            Status = TunnelStatus.Active,
+                            SessionId = _sessionId,
+                            CreatedAt = DateTime.UtcNow
+                        }));
+        int attempts = 0;
+        List<(string Message, Action? Retry)> errors = [];
+        using TunnelPanelViewModel vm = new(_workflowService,
+            () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
+            (_, _, _) => ++attempts == 1
+                ? Task.FromException<Guid>(TailscaleFailure("SshErr_TailscaleCheckRequired"))
+                : Task.FromResult(_sessionId),
+            _ => true,
+            _ => Task.CompletedTask,
+            store,
+            (message, retry) => errors.Add((message, retry)));
+
+        await vm.AutoStartTunnelsAsync();
+        vm.RefreshLiveState();
+        Assert.AreEqual(1, attempts, "认证要人处理:自动的不再试。");
+
+        errors.Single().Retry!();
+        await WaitForAsync(() => attempts == 2);
+
+        await _workflowService.Received(1).CreateTunnelAsync(_sessionId, Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>自动重连败在主机指纹上:那条提示不带「重试」—— 要的是用户去面板里手动启动、在弹窗里核对指纹。</summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task RefreshLiveState_HostKeyRejected_ReportsWithoutRetry()
+    {
+        bool alive = true;
+        bool reject = false;
+        List<(string Message, Action? Retry)> errors = [];
+        using TunnelPanelViewModel vm = new(_workflowService,
+            () => Task.FromResult<IReadOnlyList<SessionProfile>>([_server]),
+            (_, _, _) => reject
+                ? Task.FromException<Guid>(new VelaSshHostKeyRejectedException("fingerprint"))
+                : Task.FromResult(_sessionId),
+            _ => alive,
+            _ => Task.CompletedTask,
+            errorReporter: (message, retry) => errors.Add((message, retry)));
+        vm.Servers.Add(_server);
+        vm.SelectedServer = _server;
+        await SeedTunnelAsync(vm, autoReconnect: true);
+
+        alive = false;
+        reject = true;
+        vm.RefreshLiveState();
+        await WaitForAsync(() => errors.Count == 1);
+
+        Assert.IsNull(errors[0].Retry);
     }
 
     /// <summary>「程序启动时自动建立」随隧道配置往返:新建时写进配置、编辑时填回表单、取消后回到默认的不勾。</summary>
@@ -1453,7 +1694,7 @@ public class TunnelPanelViewModelTests
                 Assert.IsFalse(automatic, "启动允许有人在场进行首次验证。");
                 attempts++;
                 return Task.FromException<Guid>(TailscaleFailure(errorKey));
-            }, _ => false, dataStore: store, errorReporter: errors.Add);
+            }, _ => false, dataStore: store, errorReporter: (message, _) => errors.Add(message));
 
         await vm.AutoStartTunnelsAsync();
         await vm.OpenAsync(_server.Id);
@@ -1621,7 +1862,7 @@ public class TunnelPanelViewModelTests
             _ => true,
             _ => Task.CompletedTask,
             store,
-            errorReporter);
+            errorReporter is null ? null : (message, _) => errorReporter(message));
         vm.Servers.Add(_server);
         return vm;
     }

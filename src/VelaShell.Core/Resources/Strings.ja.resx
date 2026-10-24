@@ -4280,6 +4280,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tunnel_AutoStartBadge" xml:space="preserve">
     <value>起動時</value>
   </data>
+  <data name="Tunnel_RetryAction" xml:space="preserve">
+    <value>再試行</value>
+  </data>
   <data name="Tunnel_TargetHostLabel" xml:space="preserve">
     <value>ターゲットホスト(サーバー視点)</value>
   </data>
@@ -4490,6 +4493,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Msg_TunnelAutoStartFailed" xml:space="preserve">
     <value>起動時にトンネル「{0}」({1})を確立できませんでした: {2}</value>
+  </data>
+  <data name="Msg_TunnelAutoStartRetried" xml:space="preserve">
+    <value>トンネル「{0}」({1})を確立しました。</value>
   </data>
   <data name="Notify_Title" xml:space="preserve">
     <value>メッセージ</value>

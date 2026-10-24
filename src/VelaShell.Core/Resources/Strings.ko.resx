@@ -4280,6 +4280,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Tunnel_AutoStartBadge" xml:space="preserve">
     <value>시작 시</value>
   </data>
+  <data name="Tunnel_RetryAction" xml:space="preserve">
+    <value>다시 시도</value>
+  </data>
   <data name="Tunnel_TargetHostLabel" xml:space="preserve">
     <value>대상 호스트 (서버 기준)</value>
   </data>
@@ -4490,6 +4493,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="Msg_TunnelAutoStartFailed" xml:space="preserve">
     <value>시작 시 터널 「{0}」({1})을(를) 만들지 못했습니다: {2}</value>
+  </data>
+  <data name="Msg_TunnelAutoStartRetried" xml:space="preserve">
+    <value>터널 「{0}」({1})을(를) 만들었습니다.</value>
   </data>
   <data name="Notify_Title" xml:space="preserve">
     <value>메시지</value>
