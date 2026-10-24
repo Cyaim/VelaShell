@@ -1,6 +1,6 @@
 # VelaShell Privacy Policy / 隐私政策
 
-**Last updated / 最后更新:2026-10-19**
+**Last updated / 最后更新:2026-10-24**
 
 [English](#english) · [简体中文](#简体中文)
 
@@ -151,6 +151,10 @@ user names, local paths, IP and email addresses, and password- or token-like val
 before writing, and settings, connection profiles and credentials are not included. Sending the
 file to anyone is up to you — you can open it and check it first.
 
+“Export” under Settings → General → Import/export settings writes only the categories you tick, again only
+to the file you choose. Network proxy and Security audit are unticked by default, and the proxy password
+and the alert webhook URL are never written, whichever categories you tick.
+
 No method of storage is perfectly secure, and VelaShell cannot protect data on a computer that
 has already been compromised.
 
@@ -294,6 +298,9 @@ VelaShell 不含任何第三方 SDK、追踪器或广告库。
 关于页的「导出诊断包…」把诊断日志、版本与平台概况和插件清单打成 zip,**只写到你选的位置**,不会上传。
 写入前会遮盖主机名、用户名、本机路径、IP 与邮箱地址,以及形如口令或令牌的值;设置、连接配置与凭据都不收。
 要不要发给别人由你决定,发之前可以先打开检查。
+
+设置 → 常规 →「设置导入/导出」的「导出」只把你勾选的分类写进你选的文件;网络代理与安全审计默认不勾,
+代理密码与告警 Webhook 地址无论勾选什么都不写进去。
 
 没有任何存储方式是绝对安全的;对于一台已被入侵的计算机,VelaShell 无法保护其上的数据。
 

@@ -8,6 +8,7 @@ using System.Text.Json;
 using ReactiveUI;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Data;
+using VelaShell.Core.Import;
 using VelaShell.Core.Localization;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
@@ -28,22 +29,43 @@ namespace VelaShell.ViewModels;
 /// <summary>设置左侧导航项(图标为 PathIcon 几何)。</summary>
 public sealed record SettingsSection(string Name, string Icon);
 
-/// <summary>导入设置的结果。</summary>
+/// <summary>导入设置的结果:覆盖了哪几类、有没有要重填的机密。</summary>
 /// <remarks>
-/// 之前这里只有一个 <c>bool</c>,而调用方把它丢掉了 —— 选错文件、文件是坏的,
-/// 界面上什么都不会发生,用户只能以为"导入了但没生效"。分成几种结果是为了让
-/// 界面能分别说清:文件读不了、内容不是设置、导入成功但秘密要重填。
+/// 最早这里只有一个 <c>bool</c>,而调用方把它丢掉了 —— 选错文件、文件是坏的,
+/// 界面上什么都不会发生,用户只能以为"导入了但没生效"。现在「不是设置文件」在解析那一步
+/// (<see cref="SettingsViewModel.ParseImport" /> 返回 null)就分出去了,这里只描述导入成了的那种。
 /// </remarks>
-public enum SettingsImportResult
+/// <param name="Applied">实际覆盖了的分类。</param>
+/// <param name="ProxyPasswordMissing">代理密码要重填。</param>
+/// <param name="WebhookUrlMissing">告警 Webhook 地址要重填。</param>
+public sealed record SettingsImportOutcome(
+    IReadOnlyList<SettingsCategory> Applied,
+    bool ProxyPasswordMissing,
+    bool WebhookUrlMissing)
 {
-    /// <summary>内容不是合法的设置 JSON;现有设置未被改动。</summary>
-    Invalid,
+    /// <summary>有机密要重填。</summary>
+    public bool NeedsSecrets => ProxyPasswordMissing || WebhookUrlMissing;
 
-    /// <summary>已应用。</summary>
-    Applied,
-
-    /// <summary>已应用,但导出时被抹掉的秘密(代理密码)需要重新填写。</summary>
-    AppliedNeedsSecrets
+    /// <summary>给常规页回显的一句话。</summary>
+    public string Describe()
+    {
+        string categories = SettingsCategories.JoinLabels(Applied);
+        if (!NeedsSecrets)
+        {
+            return Strings.Format("SetGeneral_ImportDone", categories);
+        }
+        List<string> secrets = [];
+        if (ProxyPasswordMissing)
+        {
+            secrets.Add(Strings.Get("SetGeneral_SecretProxyPassword"));
+        }
+        if (WebhookUrlMissing)
+        {
+            secrets.Add(Strings.Get("SetGeneral_SecretWebhookUrl"));
+        }
+        return Strings.Format("SetGeneral_ImportDoneNeedsSecrets", categories,
+            string.Join(Strings.Get("SetTransfer_ListSeparator"), secrets));
+    }
 }
 
 /// <summary>
@@ -116,17 +138,6 @@ public partial class SettingsViewModel : ReactiveObject
     private readonly ISessionRepository? _sessionRepository;
     private readonly ISharedCredentialRepository? _sharedCredentialRepository;
     private readonly Infrastructure.Plugins.PluginManager? _pluginManager;
-    private readonly JsonSerializerOptions _jsonOption = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-    };
-    private readonly JsonSerializerOptions _exportJsonOption = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     // ———— 外观即时预览(改动立即可见,保存才落盘,取消/关窗回滚) ————
     /// <summary>打开设置时的基线快照:未保存关闭时用它恢复主题与外观。</summary>
     private AppSettings _baseline = new();
@@ -1893,53 +1904,52 @@ public partial class SettingsViewModel : ReactiveObject
     }
 
     /// <summary>
-    /// 配置导出为 JSON 文本(常规页“导出”)。<b>秘密字段一律不出现在导出里。</b>
+    /// 设置导出为 JSON 文本(常规页「导出」):只含勾选的分类,<b>机密字段一律不出现在导出里</b>。
     /// </summary>
     /// <remarks>
-    /// 导出文件的用途是备份、换机迁移、贴给别人排查 —— 三种用途都会让它离开本机。
-    /// 之前这里直接序列化整份 <see cref="AppSettings" />,代理密码就跟着走了,
-    /// 而用户完全看不出这个文件里有凭据。抹掉的字段导入后需要重新填,由
-    /// <see cref="SettingsImportResult.AppliedNeedsSecrets" /> 告诉界面。
     /// <para>
-    /// 抹的是<b>副本</b>:直接改 <c>_loaded</c> 等于点一次导出就把用户配好的代理密码清了。
+    /// 导出文件的用途是备份、换机迁移、贴给别人排查 —— 三种用途都会让它离开本机。
+    /// 最早这里直接序列化整份 <see cref="AppSettings" />,代理密码就跟着走了;后来抹掉了密码,
+    /// 却还是整份带着代理的地址账号、告警 Webhook 地址(本身就是令牌)与外部拉起的信任目标。
+    /// 现在按分类挑(<see cref="SettingsCategories" />),哪些字段不写由 <see cref="SettingsTransfer" /> 统一定。
+    /// 抹的是副本,内存里的设置不动。
+    /// </para>
+    /// <para>
+    /// 导出的是<b>设置页上此刻的样子</b>(含没保存的改动)。以前导出的是上次载入的那份,
+    /// 分组选项因为是直绑的对象而带着改动、根级字段(语言、主题、字号……)却没有 —— 一份文件两种口径。
     /// </para>
     /// </remarks>
-    public string BuildExportJson()
+    /// <param name="categoryIds">要导出的分类(<see cref="SettingsCategory.Id" />)。</param>
+    /// <returns>JSON 文本。</returns>
+    public string BuildExportJson(IEnumerable<string> categoryIds)
     {
-        AppSettings redacted = JsonClone(_loaded);
-        redacted.Proxy.Password = string.Empty;
-        return JsonSerializer.Serialize(redacted, _exportJsonOption);
+        var current = new AppSettings();
+        WriteViewModelTo(current);
+        return SettingsTransfer.Export(current, categoryIds, DateTime.UtcNow);
     }
 
-    /// <summary>从导出的 JSON 导入配置(常规页“导入”)。</summary>
-    /// <param name="json">导入文件的内容。</param>
-    /// <returns>导入结果;失败时现有设置保持不变。</returns>
-    public SettingsImportResult TryApplyImportedJson(string json)
+    /// <summary>解析待导入的文件内容(常规页「导入」的第一步);不是设置文件时为 null,现有设置不动。</summary>
+    /// <param name="json">文件内容。</param>
+    /// <returns>文件里带着哪些分类,或 null。</returns>
+    public static SettingsImportFile? ParseImport(string json) => SettingsTransfer.Parse(json);
+
+    /// <summary>
+    /// 把导入文件里勾选的分类应用到设置页(常规页「导入」的第二步):只覆盖这几类,其余保持设置页上的样子;
+    /// 与以前一样只进设置页,点「保存」才落盘。
+    /// </summary>
+    /// <param name="file"><see cref="ParseImport" /> 的结果。</param>
+    /// <param name="categoryIds">要覆盖的分类。</param>
+    /// <returns>覆盖了哪些、有没有机密要重填。</returns>
+    public SettingsImportOutcome ApplyImport(SettingsImportFile file, IEnumerable<string> categoryIds)
     {
-        AppSettings? imported;
-        try
-        {
-            imported = JsonSerializer.Deserialize<AppSettings>(json, _jsonOption);
-        }
-        catch (JsonException)
-        {
-            return SettingsImportResult.Invalid;
-        }
-        if (imported is null)
-        {
-            return SettingsImportResult.Invalid;
-        }
-        // 先算"要不要补填秘密",再 Normalize —— 前者看的就是导出时被抹掉的那些字段。
-        // 只有 http / socks5 才读用户名密码(none / system 根本不消费它们)。
-        bool needsSecrets =
-            imported.Proxy.Type is "http" or "socks5"
-            && !string.IsNullOrEmpty(imported.Proxy.Username)
-            && string.IsNullOrEmpty(imported.Proxy.Password);
-        imported.Normalize();
-        _loaded = imported;
-        ApplyToViewModel(imported);
+        ArgumentNullException.ThrowIfNull(file);
+        var current = new AppSettings();
+        WriteViewModelTo(current);
+        SettingsImportMerge merge = SettingsTransfer.Merge(current, file, categoryIds);
+        _loaded = merge.Settings;
+        ApplyToViewModel(merge.Settings);
         PreviewCurrent();
-        return needsSecrets ? SettingsImportResult.AppliedNeedsSecrets : SettingsImportResult.Applied;
+        return new SettingsImportOutcome(merge.Applied, merge.ProxyPasswordMissing, merge.WebhookUrlMissing);
     }
 
     private async Task LoadAsync()
@@ -2260,28 +2270,34 @@ public partial class SettingsViewModel : ReactiveObject
     private static T JsonClone<T>(T value) =>
         JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))!;
 
+    /// <summary>把设置页上此刻的值写进 <paramref name="target" />(保存与导出共用这一份口径)。</summary>
+    /// <remarks>分组选项是直绑的对象,写进去的是同一个实例;根级字段从视图模型回写。</remarks>
+    private void WriteViewModelTo(AppSettings target)
+    {
+        target.Language = Language;
+        target.Theme = Theme;
+        target.AccentColor = AccentColor;
+        target.TerminalFont = TerminalFont;
+        target.TerminalFontSize = TerminalFontSize;
+        target.ScrollbackLines = ScrollbackLines;
+        target.DefaultPort = DefaultPort;
+        target.TerminalType = TerminalType;
+        target.TerminalEncoding = TerminalEncoding;
+        target.General = General;
+        target.Appearance = Appearance;
+        target.TerminalBehavior = TerminalBehavior;
+        target.Transfer = Transfer;
+        target.Security = Security;
+        target.Keys = Keys;
+        target.Proxy = Proxy;
+        target.Notifications = Notifications;
+        target.XServer = XServer;
+        target.Shortcuts = Shortcuts;
+    }
+
     private async Task SaveAsync()
     {
-        // 分组选项对象被绑定直接修改;顶层字段从 VM 回写。
-        _loaded.Language = Language;
-        _loaded.Theme = Theme;
-        _loaded.AccentColor = AccentColor;
-        _loaded.TerminalFont = TerminalFont;
-        _loaded.TerminalFontSize = TerminalFontSize;
-        _loaded.ScrollbackLines = ScrollbackLines;
-        _loaded.DefaultPort = DefaultPort;
-        _loaded.TerminalType = TerminalType;
-        _loaded.TerminalEncoding = TerminalEncoding;
-        _loaded.General = General;
-        _loaded.Appearance = Appearance;
-        _loaded.TerminalBehavior = TerminalBehavior;
-        _loaded.Transfer = Transfer;
-        _loaded.Security = Security;
-        _loaded.Keys = Keys;
-        _loaded.Proxy = Proxy;
-        _loaded.Notifications = Notifications;
-        _loaded.XServer = XServer;
-        _loaded.Shortcuts = Shortcuts;
+        WriteViewModelTo(_loaded);
         // 语言先于落盘切换:落盘触发的 SettingsSaved 会把设置重新下发到已打开的终端,
         // 其中行号栏右键菜单等文案是下发时现取的 —— 晚一步换语言,它们就停在旧语言。
         _localizationService?.SetLanguage(Language);

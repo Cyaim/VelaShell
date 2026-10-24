@@ -2548,19 +2548,19 @@
     <value>設定のインポート/エクスポート</value>
   </data>
   <data name="SetGeneral_ImportExportDesc" xml:space="preserve">
-    <value>// アプリ設定のみをバックアップ/移行します。接続、グループ、鍵、スニペットは含まれません</value>
+    <value>// アプリ設定をカテゴリごとにバックアップ/移行します。パスワードと Webhook URL はファイルに書き出しません。接続、グループ、鍵、スニペットは含まれません</value>
   </data>
   <data name="SetGeneral_ExportDone" xml:space="preserve">
-    <value>設定を {0} にエクスポートしました。パスワードはエクスポートに含まれないため、インポート後に再入力してください。</value>
+    <value>設定を {0} にエクスポートしました({1})。プロキシのパスワードとアラート Webhook URL はエクスポートに書き出しません。</value>
   </data>
   <data name="SetGeneral_ExportFailed" xml:space="preserve">
     <value>エクスポートに失敗しました: {0}</value>
   </data>
   <data name="SetGeneral_ImportDone" xml:space="preserve">
-    <value>設定をインポートしました。内容を確認してから保存してください。</value>
+    <value>インポートしました:{0}。内容を確認してから保存してください。</value>
   </data>
   <data name="SetGeneral_ImportDoneNeedsSecrets" xml:space="preserve">
-    <value>設定をインポートしました。プロキシのパスワードはエクスポートに含まれません。「ネットワーク」で再入力してから保存してください。</value>
+    <value>インポートしました:{0}。{1}はエクスポートに含まれないため、入力してから保存してください。</value>
   </data>
   <data name="SetGeneral_ImportFailed" xml:space="preserve">
     <value>ファイルを読み取れませんでした: {0}</value>
@@ -2570,6 +2570,42 @@
   </data>
   <data name="SetGeneral_ImportTooLarge" xml:space="preserve">
     <value>このファイルは {0} MB で、設定ファイルの上限 {1} MB を超えています。設定は変更されていません。</value>
+  </data>
+  <data name="SetGeneral_SecretProxyPassword" xml:space="preserve">
+    <value>プロキシのパスワード</value>
+  </data>
+  <data name="SetGeneral_SecretWebhookUrl" xml:space="preserve">
+    <value>アラート Webhook URL</value>
+  </data>
+  <data name="SetTransfer_ListSeparator" xml:space="preserve">
+    <value>、</value>
+  </data>
+  <data name="SetTransfer_ExportSummary" xml:space="preserve">
+    <value>エクスポートするカテゴリを選択します。プロキシのパスワードとアラート Webhook URL は選択に関係なく書き出しません。これらを別の端末へ移すには、エンドツーエンドのパスフレーズを設定したクラウド同期を使ってください。</value>
+  </data>
+  <data name="SetTransfer_ImportSummary" xml:space="preserve">
+    <value>「{0}」には以下のカテゴリが含まれています。チェックしたものだけを置き換え、それ以外の設定はそのままです。確認してから保存してください。</value>
+  </data>
+  <data name="SetTransfer_ExportButton" xml:space="preserve">
+    <value>エクスポート…</value>
+  </data>
+  <data name="SetTransfer_ImportButton" xml:space="preserve">
+    <value>インポート</value>
+  </data>
+  <data name="SetTransfer_SensitiveTag" xml:space="preserve">
+    <value>機微</value>
+  </data>
+  <data name="SetTransfer_ProxyExportWarning" xml:space="preserve">
+    <value>プロキシサーバーのアドレス、ポート、ユーザー名を書き出します(パスワードは書き出しません)。ファイルを他人に渡す場合はチェックしないでください。</value>
+  </data>
+  <data name="SetTransfer_SecurityExportWarning" xml:space="preserve">
+    <value>ホスト鍵のポリシー、外部起動の確認と信頼済みの接続先(ユーザー@ホスト)、アラートのスイッチを書き出します(Webhook URL は書き出しません)。ファイルを他人に渡す場合はチェックしないでください。</value>
+  </data>
+  <data name="SetTransfer_ProxyImportWarning" xml:space="preserve">
+    <value>以後のすべての送信接続(SSH、SFTP、更新の確認…)が使うプロキシを変更します。自分でエクスポートした、信頼できるファイルだけをインポートしてください。</value>
+  </data>
+  <data name="SetTransfer_SecurityImportWarning" xml:space="preserve">
+    <value>ホスト鍵の確認、外部起動の確認と信頼済みの接続先を変更します。自分でエクスポートした、信頼できるファイルだけをインポートしてください。</value>
   </data>
   <data name="SetGeneral_KeepAliveInterval" xml:space="preserve">
     <value>キープアライブ間隔(秒)</value>

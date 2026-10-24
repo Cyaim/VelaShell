@@ -2825,19 +2825,19 @@
     <value>設定匯入/匯出</value>
   </data>
   <data name="SetGeneral_ImportExportDesc" xml:space="preserve">
-    <value>// 僅備份或搬移應用程式設定;連線、群組、金鑰與程式碼片段不包含在內</value>
+    <value>// 依分類備份或搬移應用程式設定,密碼與 Webhook 位址從不寫進檔案;連線、群組、金鑰與程式碼片段不包含在內</value>
   </data>
   <data name="SetGeneral_ExportDone" xml:space="preserve">
-    <value>設定已匯出到 {0}。密碼從不寫進匯出檔案,匯入後需要重新填寫。</value>
+    <value>設定已匯出到 {0}({1})。代理密碼與告警 Webhook 位址從不寫進匯出檔案。</value>
   </data>
   <data name="SetGeneral_ExportFailed" xml:space="preserve">
     <value>匯出失敗:{0}</value>
   </data>
   <data name="SetGeneral_ImportDone" xml:space="preserve">
-    <value>設定已匯入,確認無誤後儲存。</value>
+    <value>已匯入:{0}。確認無誤後儲存。</value>
   </data>
   <data name="SetGeneral_ImportDoneNeedsSecrets" xml:space="preserve">
-    <value>設定已匯入。代理密碼不隨匯出走,請到「網路」重新填寫後再儲存。</value>
+    <value>已匯入:{0}。{1}不隨匯出檔案走,請補填後再儲存。</value>
   </data>
   <data name="SetGeneral_ImportFailed" xml:space="preserve">
     <value>無法讀取該檔案:{0}</value>
@@ -2847,6 +2847,42 @@
   </data>
   <data name="SetGeneral_ImportTooLarge" xml:space="preserve">
     <value>該檔案 {0} MB,超過設定檔案 {1} MB 的上限,現有設定未作變更。</value>
+  </data>
+  <data name="SetGeneral_SecretProxyPassword" xml:space="preserve">
+    <value>代理密碼</value>
+  </data>
+  <data name="SetGeneral_SecretWebhookUrl" xml:space="preserve">
+    <value>告警 Webhook 位址</value>
+  </data>
+  <data name="SetTransfer_ListSeparator" xml:space="preserve">
+    <value>、</value>
+  </data>
+  <data name="SetTransfer_ExportSummary" xml:space="preserve">
+    <value>勾選要匯出的分類。代理密碼與告警 Webhook 位址勾不勾都不寫進檔案;要帶著它們換機,請用雲端同步並設端對端口令。</value>
+  </data>
+  <data name="SetTransfer_ImportSummary" xml:space="preserve">
+    <value>「{0}」裡帶著下面這些分類。只覆蓋勾選的,其餘設定保持不變;匯入後確認無誤再儲存。</value>
+  </data>
+  <data name="SetTransfer_ExportButton" xml:space="preserve">
+    <value>匯出…</value>
+  </data>
+  <data name="SetTransfer_ImportButton" xml:space="preserve">
+    <value>匯入</value>
+  </data>
+  <data name="SetTransfer_SensitiveTag" xml:space="preserve">
+    <value>敏感</value>
+  </data>
+  <data name="SetTransfer_ProxyExportWarning" xml:space="preserve">
+    <value>會寫進代理伺服器的位址、連接埠與使用者名稱(密碼不寫)。檔案要交給別人時別勾。</value>
+  </data>
+  <data name="SetTransfer_SecurityExportWarning" xml:space="preserve">
+    <value>會寫進主機指紋策略、外部啟動的確認開關與信任目標(使用者@主機)以及告警開關(Webhook 位址不寫)。檔案要交給別人時別勾。</value>
+  </data>
+  <data name="SetTransfer_ProxyImportWarning" xml:space="preserve">
+    <value>會改掉之後全部對外連線(SSH、SFTP、檢查更新……)走的代理。只匯入自己匯出、信得過的檔案。</value>
+  </data>
+  <data name="SetTransfer_SecurityImportWarning" xml:space="preserve">
+    <value>會改掉主機指紋確認、外部啟動的確認與信任目標。只匯入自己匯出、信得過的檔案。</value>
   </data>
   <data name="SetGeneral_KeepAliveInterval" xml:space="preserve">
     <value>心跳間隔(秒)</value>

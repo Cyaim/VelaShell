@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using ReactiveUI.Primitives;
+using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.ViewModels;
 using FireAndForget = VelaShell.Services.FireAndForget;
@@ -20,11 +21,20 @@ public partial class GeneralSettingsPage : UserControl
     /// <summary>初始化常规设置页并加载 XAML 组件。</summary>
     public GeneralSettingsPage() => InitializeComponent();
 
+    /// <summary>导出:先勾分类(敏感分类默认不勾),再选保存位置。</summary>
     private void ExportSettings_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
-        if (DataContext is not SettingsViewModel viewModel || TopLevel.GetTopLevel(this) is not { } top)
+        if (DataContext is not SettingsViewModel viewModel || TopLevel.GetTopLevel(this) is not Window top)
         {
             return;
+        }
+        var picker = new SettingsTransferView
+        {
+            DataContext = new SettingsTransferViewModel(SettingsTransferMode.Export, SettingsCategories.All)
+        };
+        if (await picker.ShowDialog<IReadOnlyList<string>?>(top) is not { Count: > 0 } categories)
+        {
+            return; // 取消了。
         }
         IStorageFile? file = await top.StorageProvider.SaveFilePickerAsync(new()
         {
@@ -39,9 +49,10 @@ public partial class GeneralSettingsPage : UserControl
         }
         try
         {
-            await File.WriteAllTextAsync(path, viewModel.BuildExportJson());
-            // 明说秘密没被导出:否则用户把文件搬到新机器上,会以为代理是配好的。
-            viewModel.ImportExportStatus = Strings.Format("SetGeneral_ExportDone", path);
+            await File.WriteAllTextAsync(path, viewModel.BuildExportJson(categories));
+            // 明说导出了哪几类、秘密没被导出:否则用户把文件搬到新机器上,会以为代理是配好的。
+            viewModel.ImportExportStatus = Strings.Format("SetGeneral_ExportDone", path,
+                SettingsCategories.JoinLabels(SettingsCategories.All.Where(c => categories.Contains(c.Id))));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -50,9 +61,10 @@ public partial class GeneralSettingsPage : UserControl
         }
     });
 
+    /// <summary>导入:读文件、认出它带着哪些分类,再勾要覆盖的(敏感分类默认不勾);只覆盖勾上的。</summary>
     private void ImportSettings_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
-        if (DataContext is not SettingsViewModel viewModel || TopLevel.GetTopLevel(this) is not { } top)
+        if (DataContext is not SettingsViewModel viewModel || TopLevel.GetTopLevel(this) is not Window top)
         {
             return;
         }
@@ -92,13 +104,21 @@ public partial class GeneralSettingsPage : UserControl
             return;
         }
 
-        // 返回值以前被整个丢掉:选了个不是设置的 JSON,界面毫无反应。
-        viewModel.ImportExportStatus = viewModel.TryApplyImportedJson(json) switch
+        // 结果以前被整个丢掉:选了个不是设置的 JSON,界面毫无反应。
+        if (SettingsViewModel.ParseImport(json) is not { } imported)
         {
-            SettingsImportResult.Applied => Strings.Get("SetGeneral_ImportDone"),
-            SettingsImportResult.AppliedNeedsSecrets => Strings.Get("SetGeneral_ImportDoneNeedsSecrets"),
-            _ => Strings.Get("SetGeneral_ImportInvalid")
+            viewModel.ImportExportStatus = Strings.Get("SetGeneral_ImportInvalid");
+            return;
+        }
+        var picker = new SettingsTransferView
+        {
+            DataContext = new SettingsTransferViewModel(SettingsTransferMode.Import, imported.Categories, Path.GetFileName(path))
         };
+        if (await picker.ShowDialog<IReadOnlyList<string>?>(top) is not { Count: > 0 } categories)
+        {
+            return; // 取消了:现有设置一项没动。
+        }
+        viewModel.ImportExportStatus = viewModel.ApplyImport(imported, categories).Describe();
     });
 
     /// <summary>清除历史是破坏性操作:先确认再执行(设置审计 §12 破坏性操作需确认)。</summary>

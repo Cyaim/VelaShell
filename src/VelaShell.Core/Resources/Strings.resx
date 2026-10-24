@@ -2716,19 +2716,19 @@ Paste anyway?</value>
     <value>Import/export settings</value>
   </data>
   <data name="SetGeneral_ImportExportDesc" xml:space="preserve">
-    <value>// Backs up or migrates app settings only; connections, groups, keys and snippets are not included</value>
+    <value>// Backs up or migrates app settings by category; passwords and the webhook URL are never written. Connections, groups, keys and snippets are not included</value>
   </data>
   <data name="SetGeneral_ExportDone" xml:space="preserve">
-    <value>Settings exported to {0}. Passwords are never included in an export and must be re-entered after importing.</value>
+    <value>Settings exported to {0} ({1}). The proxy password and the alert webhook URL are never written to an export.</value>
   </data>
   <data name="SetGeneral_ExportFailed" xml:space="preserve">
     <value>Export failed: {0}</value>
   </data>
   <data name="SetGeneral_ImportDone" xml:space="preserve">
-    <value>Settings imported. Review them, then save.</value>
+    <value>Imported: {0}. Review the settings, then save.</value>
   </data>
   <data name="SetGeneral_ImportDoneNeedsSecrets" xml:space="preserve">
-    <value>Settings imported. The proxy password is not part of an export — re-enter it under Network before saving.</value>
+    <value>Imported: {0}. Exports never carry these — fill them in before saving: {1}.</value>
   </data>
   <data name="SetGeneral_ImportFailed" xml:space="preserve">
     <value>Could not read that file: {0}</value>
@@ -2738,6 +2738,42 @@ Paste anyway?</value>
   </data>
   <data name="SetGeneral_ImportTooLarge" xml:space="preserve">
     <value>That file is {0} MB, past the {1} MB limit for a settings file. Nothing was changed.</value>
+  </data>
+  <data name="SetGeneral_SecretProxyPassword" xml:space="preserve">
+    <value>proxy password</value>
+  </data>
+  <data name="SetGeneral_SecretWebhookUrl" xml:space="preserve">
+    <value>alert webhook URL</value>
+  </data>
+  <data name="SetTransfer_ListSeparator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="SetTransfer_ExportSummary" xml:space="preserve">
+    <value>Choose the categories to export. The proxy password and the alert webhook URL are never written, whatever you tick; to move them between devices use cloud sync with an end-to-end passphrase.</value>
+  </data>
+  <data name="SetTransfer_ImportSummary" xml:space="preserve">
+    <value>“{0}” carries the categories below. Only the ticked ones are replaced; everything else stays as it is. Review the result, then save.</value>
+  </data>
+  <data name="SetTransfer_ExportButton" xml:space="preserve">
+    <value>Export…</value>
+  </data>
+  <data name="SetTransfer_ImportButton" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="SetTransfer_SensitiveTag" xml:space="preserve">
+    <value>Sensitive</value>
+  </data>
+  <data name="SetTransfer_ProxyExportWarning" xml:space="preserve">
+    <value>Writes the proxy server’s address, port and user name (not the password). Leave it unticked if the file is going to anyone else.</value>
+  </data>
+  <data name="SetTransfer_SecurityExportWarning" xml:space="preserve">
+    <value>Writes the host-key policy, the external-launch confirmation and trusted targets (user@host) and the alert switches (not the webhook URL). Leave it unticked if the file is going to anyone else.</value>
+  </data>
+  <data name="SetTransfer_ProxyImportWarning" xml:space="preserve">
+    <value>Changes the proxy every outbound connection uses from now on (SSH, SFTP, update checks…). Only import files you exported yourself or trust.</value>
+  </data>
+  <data name="SetTransfer_SecurityImportWarning" xml:space="preserve">
+    <value>Changes host-key confirmation, the external-launch confirmation and its trusted targets. Only import files you exported yourself or trust.</value>
   </data>
   <data name="SetGeneral_KeepAliveInterval" xml:space="preserve">
     <value>Keep-alive interval (s)</value>

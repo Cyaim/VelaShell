@@ -2548,19 +2548,19 @@
     <value>설정 가져오기/내보내기</value>
   </data>
   <data name="SetGeneral_ImportExportDesc" xml:space="preserve">
-    <value>// 앱 설정만 백업하거나 이전합니다. 연결, 그룹, 키, 스니펫은 포함되지 않음</value>
+    <value>// 앱 설정을 분류별로 백업하거나 이전합니다. 비밀번호와 Webhook URL은 파일에 쓰지 않으며, 연결, 그룹, 키, 스니펫은 포함되지 않음</value>
   </data>
   <data name="SetGeneral_ExportDone" xml:space="preserve">
-    <value>설정을 {0}(으)로 내보냈습니다. 비밀번호는 내보내기에 포함되지 않으므로 가져온 뒤 다시 입력해야 합니다.</value>
+    <value>설정을 {0}(으)로 내보냈습니다({1}). 프록시 비밀번호와 경고 Webhook URL은 내보내기에 쓰지 않습니다.</value>
   </data>
   <data name="SetGeneral_ExportFailed" xml:space="preserve">
     <value>내보내기 실패: {0}</value>
   </data>
   <data name="SetGeneral_ImportDone" xml:space="preserve">
-    <value>설정을 가져왔습니다. 확인한 뒤 저장하세요.</value>
+    <value>가져왔습니다: {0}. 확인한 뒤 저장하세요.</value>
   </data>
   <data name="SetGeneral_ImportDoneNeedsSecrets" xml:space="preserve">
-    <value>설정을 가져왔습니다. 프록시 비밀번호는 내보내기에 포함되지 않습니다. 「네트워크」에서 다시 입력한 뒤 저장하세요.</value>
+    <value>가져왔습니다: {0}. 내보내기에는 포함되지 않으므로 저장하기 전에 입력하세요: {1}.</value>
   </data>
   <data name="SetGeneral_ImportFailed" xml:space="preserve">
     <value>파일을 읽을 수 없습니다: {0}</value>
@@ -2570,6 +2570,42 @@
   </data>
   <data name="SetGeneral_ImportTooLarge" xml:space="preserve">
     <value>이 파일은 {0} MB로 설정 파일 상한 {1} MB를 넘습니다. 설정은 변경되지 않았습니다.</value>
+  </data>
+  <data name="SetGeneral_SecretProxyPassword" xml:space="preserve">
+    <value>프록시 비밀번호</value>
+  </data>
+  <data name="SetGeneral_SecretWebhookUrl" xml:space="preserve">
+    <value>경고 Webhook URL</value>
+  </data>
+  <data name="SetTransfer_ListSeparator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="SetTransfer_ExportSummary" xml:space="preserve">
+    <value>내보낼 분류를 선택하세요. 프록시 비밀번호와 경고 Webhook URL은 선택과 관계없이 파일에 쓰지 않습니다. 이 값들을 다른 기기로 옮기려면 종단 간 암호를 설정한 클라우드 동기화를 사용하세요.</value>
+  </data>
+  <data name="SetTransfer_ImportSummary" xml:space="preserve">
+    <value>“{0}”에는 아래 분류가 들어 있습니다. 선택한 분류만 덮어쓰고 나머지 설정은 그대로 둡니다. 확인한 뒤 저장하세요.</value>
+  </data>
+  <data name="SetTransfer_ExportButton" xml:space="preserve">
+    <value>내보내기…</value>
+  </data>
+  <data name="SetTransfer_ImportButton" xml:space="preserve">
+    <value>가져오기</value>
+  </data>
+  <data name="SetTransfer_SensitiveTag" xml:space="preserve">
+    <value>민감</value>
+  </data>
+  <data name="SetTransfer_ProxyExportWarning" xml:space="preserve">
+    <value>프록시 서버의 주소, 포트, 사용자 이름을 씁니다(비밀번호는 쓰지 않음). 파일을 다른 사람에게 줄 때는 선택하지 마세요.</value>
+  </data>
+  <data name="SetTransfer_SecurityExportWarning" xml:space="preserve">
+    <value>호스트 키 정책, 외부 실행 확인과 신뢰 대상(사용자@호스트), 경고 스위치를 씁니다(Webhook URL은 쓰지 않음). 파일을 다른 사람에게 줄 때는 선택하지 마세요.</value>
+  </data>
+  <data name="SetTransfer_ProxyImportWarning" xml:space="preserve">
+    <value>이후 모든 외부 연결(SSH, SFTP, 업데이트 확인…)이 사용하는 프록시를 바꿉니다. 직접 내보냈거나 신뢰할 수 있는 파일만 가져오세요.</value>
+  </data>
+  <data name="SetTransfer_SecurityImportWarning" xml:space="preserve">
+    <value>호스트 키 확인, 외부 실행 확인과 신뢰 대상을 바꿉니다. 직접 내보냈거나 신뢰할 수 있는 파일만 가져오세요.</value>
   </data>
   <data name="SetGeneral_KeepAliveInterval" xml:space="preserve">
     <value>킵얼라이브 간격(초)</value>
