@@ -1468,7 +1468,7 @@ public partial class MainWindow : Window
         window.Show(this);
     }
 
-    /// <summary>打开(或前置并刷新)一个标签的连接信息窗口。非模态,尺寸与链路追踪一样记忆。</summary>
+    /// <summary>打开(或前置并刷新)一个标签的连接信息窗口。非模态,尺寸与位置与链路追踪一样记忆。</summary>
     private async Task OpenConnectionInfoAsync(MainWindowViewModel vm, TerminalTabViewModel tab)
     {
         if (_connectionInfoWindows.TryGetValue(tab, out SshConnectionInfoWindow? existing))
@@ -1484,8 +1484,7 @@ public partial class MainWindow : Window
         window.Closed += (_, _) => _connectionInfoWindows.Remove(tab);
         if (Application.Current is App app && app.Services?.GetService<WindowLayoutStore>() is { } layoutStore)
         {
-            WindowLayoutStore.Apply(window, await layoutStore.LoadAsync(ConnectionInfoLayoutKey));
-            window.Closing += (_, _) => _ = layoutStore.SaveAsync(ConnectionInfoLayoutKey, window);
+            await layoutStore.RememberAsync(ConnectionInfoLayoutKey, window);
         }
         window.Show(this);
     }
