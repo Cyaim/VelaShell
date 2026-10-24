@@ -5456,6 +5456,9 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
   <data name="ExtLaunch_CredentialNone" xml:space="preserve">
     <value>Not supplied - VelaShell will ask</value>
   </data>
+  <data name="ExtLaunch_TabName" xml:space="preserve">
+    <value>Tab name</value>
+  </data>
   <data name="ExtLaunch_TrustTarget" xml:space="preserve">
     <value>Trust this target and stop asking</value>
   </data>

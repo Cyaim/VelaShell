@@ -5451,6 +5451,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="ExtLaunch_CredentialNone" xml:space="preserve">
     <value>未指定 - VelaShell が入力を求めます</value>
   </data>
+  <data name="ExtLaunch_TabName" xml:space="preserve">
+    <value>タブ名</value>
+  </data>
   <data name="ExtLaunch_TrustTarget" xml:space="preserve">
     <value>この接続先を信頼して今後確認しない</value>
   </data>

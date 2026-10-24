@@ -69,6 +69,67 @@ public sealed class ExternalLaunchRequest
     public ExternalLaunchOrigin Origin { get; init; } = ExternalLaunchOrigin.CommandLine;
 
     /// <summary>
+    /// 调用方指定的标签页标题(Xshell <c>-newtab &lt;会话名&gt;</c>,#475);没给则为 null,标签照常按配置起名。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 堡垒机客户端拿它说明「这是哪一台」:JumpServer 发的是 <c>root@Linux[2026_09_20_09_45_18]</c>,
+    /// 某 SSO 客户端发的是 <c>CBH_10.1.2.3_22_root</c> —— 真正的目标是堡垒机自己的地址和代理端口,
+    /// 没有这个名字,开出来的一排标签全叫同一个堡垒机地址,分不清谁是谁。
+    /// </para>
+    /// <para>
+    /// 它只管标签上写什么,不参与信任判据(<see cref="TrustKey" />)与目标解析;状态栏照旧显示配置的名称,
+    /// 那一行说的是「真连到了哪」。来自进程外,用之前一律过一遍 <see cref="NormalizeTabName" />。
+    /// </para>
+    /// </remarks>
+    public string? TabName { get; init; }
+
+    /// <summary>标签名的长度上限(按 UTF-16 码元)。标签条本来就会截断,这里只防一条把 64 KB 载荷塞满的名字。</summary>
+    public const int MaxTabNameLength = 128;
+
+    /// <summary>
+    /// 把调用方给的标签名收拾成能直接上标签的样子:去掉首尾空白与引号、控制字符换成空格并合并连续空白、
+    /// 超长截断(不在代理对中间切);剩下空串时返回 null。
+    /// </summary>
+    /// <remarks>
+    /// 控制字符不能原样留着:换行会把标签撑成两行,ESC 一类的字节画出来是方框;
+    /// 名字是别的程序给的,不能指望它干净。单实例转发的另一端收到后同样再过一遍 —— 管道那头的
+    /// 也可能是一个手搓的客户端。
+    /// </remarks>
+    /// <param name="raw">原始标签名。</param>
+    /// <returns>规整后的标签名,或 null。</returns>
+    public static string? NormalizeTabName(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+        var builder = new System.Text.StringBuilder(Math.Min(raw.Length, MaxTabNameLength));
+        bool pendingSpace = false;
+        foreach (char c in raw.Trim().Trim('"'))
+        {
+            if (char.IsControl(c) || char.IsWhiteSpace(c))
+            {
+                pendingSpace = builder.Length > 0;
+                continue;
+            }
+            if (pendingSpace)
+            {
+                builder.Append(' ');
+                pendingSpace = false;
+            }
+            builder.Append(c);
+        }
+        if (builder.Length > MaxTabNameLength)
+        {
+            int cut = char.IsHighSurrogate(builder[MaxTabNameLength - 1]) ? MaxTabNameLength - 1 : MaxTabNameLength;
+            builder.Length = cut;
+        }
+        string normalized = builder.ToString().Trim();
+        return normalized.Length == 0 ? null : normalized;
+    }
+
+    /// <summary>
     /// 信任判据:scheme + 用户名 + 主机 + 端口。用户勾了「不再询问」记的就是它 ——
     /// 粒度必须含用户名与端口,否则「信任 10.0.3.21」会连带放行 <c>root@10.0.3.21</c>。
     /// </summary>

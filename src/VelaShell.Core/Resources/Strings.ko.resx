@@ -5451,6 +5451,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="ExtLaunch_CredentialNone" xml:space="preserve">
     <value>없음 - VelaShell이 물어봅니다</value>
   </data>
+  <data name="ExtLaunch_TabName" xml:space="preserve">
+    <value>탭 이름</value>
+  </data>
   <data name="ExtLaunch_TrustTarget" xml:space="preserve">
     <value>이 대상을 신뢰하고 다시 묻지 않기</value>
   </data>

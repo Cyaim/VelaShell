@@ -32,6 +32,7 @@ public static class XshellLaunchParser
         string? urlOption = null;
         string? positionalUrl = null;
         string? tabUrl = null;
+        string? tabName = null;
         string? sessionFile = null;
         string? user = null;
         string? password = null;
@@ -74,10 +75,17 @@ public static class XshellLaunchParser
                     // 「开新标签」的开关)。确有调用方往里塞 URL,所以带 scheme 的仍然认;但没有 scheme
                     // 的一律当标签名 —— `root@webserver01`、`root@Linux[2026_09_20_09_45_18]` 这种
                     // 名字与一条省了 scheme 的 URL 长得一模一样,猜错就是连到一台根本不存在的主机上。
-                    if ((inline ?? PeekValue(args, ref i)) is { Length: > 0 } tabValue
-                        && tabValue.Contains("://", StringComparison.Ordinal))
+                    // 当名字收下的那个拿去当标签页标题 —— 堡垒机给一排标签起的名字是用户分辨它们的唯一线索。
+                    if ((inline ?? PeekValue(args, ref i)) is { Length: > 0 } tabValue)
                     {
-                        tabUrl ??= Unquote(tabValue);
+                        if (tabValue.Contains("://", StringComparison.Ordinal))
+                        {
+                            tabUrl ??= Unquote(tabValue);
+                        }
+                        else
+                        {
+                            tabName ??= ExternalLaunchRequest.NormalizeTabName(tabValue);
+                        }
                     }
                     break;
                 case "-f":
@@ -136,7 +144,8 @@ public static class XshellLaunchParser
             Username = user is { Length: > 0 } ? user : request.Username,
             Password = password is { Length: > 0 } ? password : request.Password,
             PrivateKeyPath = keyFile is { Length: > 0 } ? keyFile : request.PrivateKeyPath,
-            Origin = request.Origin
+            Origin = request.Origin,
+            TabName = tabName
         };
     }
 

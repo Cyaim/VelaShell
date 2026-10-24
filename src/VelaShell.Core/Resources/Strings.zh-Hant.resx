@@ -5926,6 +5926,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="ExtLaunch_CredentialNone" xml:space="preserve">
     <value>未提供,稍後由 VelaShell 詢問</value>
   </data>
+  <data name="ExtLaunch_TabName" xml:space="preserve">
+    <value>標籤名稱</value>
+  </data>
   <data name="ExtLaunch_TrustTarget" xml:space="preserve">
     <value>信任此目標,不再詢問</value>
   </data>

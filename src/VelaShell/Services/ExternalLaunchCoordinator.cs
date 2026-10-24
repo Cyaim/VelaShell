@@ -66,7 +66,10 @@ public sealed class ExternalLaunchCoordinator(
             SessionProfile profile = await ResolveProfileAsync(request).ConfigureAwait(true);
             await AuditAsync(request).ConfigureAwait(true);
             _viewModel.Toasts.Info(Strings.Format("ExtLaunch_Connecting", request.DisplayTarget));
-            await _viewModel.TryConnectProfileAsync(profile).ConfigureAwait(true);
+            // -newtab 给的名字只上标签:复用已保存的配置时也不改它的名称(那会随最近连接时间一起落盘)。
+            // 管道那头可能是任何同用户进程,这里再规整一遍,不信转发端已经做过。
+            await _viewModel.TryConnectProfileAsync(profile, ExternalLaunchRequest.NormalizeTabName(request.TabName))
+                .ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -174,6 +177,11 @@ public sealed class ExternalLaunchCoordinator(
                                ? "ExtLaunch_CredentialNone"
                                : "ExtLaunch_CredentialSupplied"),
                mono: false);
+        // 标签名是调用方起的,不是目标:单列一行、排在目标后面,让用户看清「这个名字」对应的是上面哪台。
+        if (ExternalLaunchRequest.NormalizeTabName(request.TabName) is { } tabName)
+        {
+            AddRow(grid, 4, Strings.Get("ExtLaunch_TabName"), tabName, mono: false);
+        }
 
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(grid);

@@ -2684,10 +2684,15 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 用户立刻拿到可见、可关闭的标签)。握手由 <see cref="RunHandshakeAsync" /> 完成。
     /// 认证重试会复用同一标签,不重复建标签。
     /// </summary>
+    /// <param name="profile">连接配置。</param>
+    /// <param name="settings">设置快照。</param>
+    /// <param name="protocolLabel">状态栏上的协议名;插件终端协议传自己的页签名,默认 SSH。</param>
+    /// <param name="tabTitle">标签页标题;null = 配置的显示名(外部拉起的 <c>-newtab</c> 名字从这里进来)。</param>
     private (TerminalTabViewModel Tab, TerminalDocument Document) CreateConnectingTab(
         SessionProfile profile,
         AppSettings settings,
-        string? protocolLabel = null
+        string? protocolLabel = null,
+        string? tabTitle = null
     )
     {
         TerminalType terminalType = TerminalTypeExtensions.FromTermName(SessionTerminalSettings.TerminalType(profile, settings));
@@ -2702,7 +2707,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         string protocol = string.IsNullOrWhiteSpace(protocolLabel) ? "SSH" : protocolLabel;
         var terminalTab = new TerminalTabViewModel(terminalEmulator)
         {
-            Title = displayName,
+            // 标签名可以由调用方指定,状态栏那一行不跟着改:它说的是「真连到了哪」。
+            Title = tabTitle ?? displayName,
             ConnectionStatus = SessionStatus.Connecting,
             // 配了跳板的会话在状态栏点明经由跳板,确认链路生效。
             ConnectionSummary = profile.JumpHostProfileId is null
@@ -3952,19 +3958,40 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <see cref="LastConnectionError" /> 并反映在状态栏中,而非让应用崩溃。
     /// 凭据缺失或认证失败时通过 <see cref="InteractiveAuthenticator" /> 走两步验证弹窗(最多重试 3 次)。
     /// </summary>
+    public Task<TerminalTabViewModel?> TryConnectProfileAsync(
+        SessionProfile profile,
+        CancellationToken cancellationToken = default
+    ) =>
+        TryConnectProfileAsync(profile, tabTitle: null, cancellationToken);
+
+    /// <summary>
+    /// 同 <see cref="TryConnectProfileAsync(SessionProfile, CancellationToken)" />,但标签页标题用调用方给的名字。
+    /// </summary>
+    /// <remarks>
+    /// 外部拉起(Xshell 兼容登录)的 <c>-newtab &lt;会话名&gt;</c> 从这里进来(#475):堡垒机给一排标签起的名字
+    /// 是用户分辨它们的唯一线索,而配置名是现搭的 <c>user@堡垒机:端口</c>,一排都一样。
+    /// 名字只上标签(含 SFTP / FTP 的占位与成品标签),不改配置本身 —— 复用已保存的配置时改了它的名称,
+    /// 会随最近连接时间一起落盘;状态栏也照旧显示配置的名称,那一行说的是「真连到了哪」。
+    /// </remarks>
+    /// <param name="profile">连接配置。</param>
+    /// <param name="tabTitle">标签页标题;null 或空白 = 按配置起名。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>终端标签(终端类连接),或 null(文档类连接、取消、失败撤标签)。</returns>
     public async Task<TerminalTabViewModel?> TryConnectProfileAsync(
         SessionProfile profile,
+        string? tabTitle,
         CancellationToken cancellationToken = default
     )
     {
+        tabTitle = string.IsNullOrWhiteSpace(tabTitle) ? null : tabTitle;
         if (profile.ConnectionType == ConnectionType.SFTP)
         {
-            await OpenSftpDocumentForProfileAsync(profile, cancellationToken).ConfigureAwait(true);
+            await OpenSftpDocumentForProfileAsync(profile, null, cancellationToken, tabTitle).ConfigureAwait(true);
             return null;
         }
         if (profile.ConnectionType == ConnectionType.FTP)
         {
-            await OpenFtpDocumentForProfileAsync(profile, cancellationToken).ConfigureAwait(true);
+            await OpenFtpDocumentForProfileAsync(profile, null, cancellationToken, tabTitle).ConfigureAwait(true);
             return null;
         }
         if (profile.ConnectionType == ConnectionType.Plugin)
@@ -4039,7 +4066,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             }
             if (tab is null)
             {
-                (tab, document) = CreateConnectingTab(current, settings);
+                (tab, document) = CreateConnectingTab(current, settings, tabTitle: tabTitle);
             }
             else
             {
@@ -4265,10 +4292,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <param name="profile">会话配置。</param>
     /// <param name="reuse">失败卡片上点「重新连接」时接手的既有占位标签。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="tabTitle">标签页标题;null = 配置的显示名(外部拉起的 <c>-newtab</c> 名字从这里进来)。</param>
     private async Task<SftpDocument?> OpenSftpDocumentForProfileAsync(
         SessionProfile profile,
         ConnectingDocument? reuse,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? tabTitle = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         if (_connectionWorkflowService is null)
@@ -4281,8 +4310,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         SessionProfile latest = profile;
         using var ui = new DocumentConnectUi(
             this, profile, "SFTP", reuse,
-            document => OpenSftpDocumentForProfileAsync(latest, document, CancellationToken.None),
-            cancellationToken);
+            document => OpenSftpDocumentForProfileAsync(latest, document, CancellationToken.None, tabTitle),
+            cancellationToken,
+            tabTitle);
         (DocumentSessionConnection? connection, DocumentConnectFailure failure) =
             await ConnectSshDocumentSessionAsync(profile, ui).ConfigureAwait(true);
         if (connection is null)
@@ -4310,6 +4340,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         // 远端搜索走这条 SSH 连接的 exec 通道(FTP 与插件协议的文档没有,不挂)。
         sshViewModel.RemoteFiles.RemoteSearch = _remoteSearch;
         var document = new SftpDocument(sshViewModel);
+        if (tabTitle is not null)
+        {
+            document.Title = tabTitle;
+        }
         ui.HandOver(document);
         // 与 FTP 同理:连接续体可能落在后台线程上,树节点是绑定属性,必须回主线程再改。
         TrackDocumentSession(connection.SessionId, connection.Profile.Id, SessionStatus.Connected);
@@ -4511,10 +4545,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <param name="profile">会话配置。</param>
     /// <param name="reuse">失败卡片上点「重新连接」时接手的既有占位标签。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="tabTitle">标签页标题;null = 配置的显示名(外部拉起的 <c>-newtab</c> 名字从这里进来)。</param>
     private async Task<SftpDocument?> OpenFtpDocumentForProfileAsync(
         SessionProfile profile,
         ConnectingDocument? reuse,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? tabTitle = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         if (_ftpSessionService is null || _sftpService is null)
@@ -4526,8 +4562,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         SessionProfile latest = profile;
         using var ui = new DocumentConnectUi(
             this, profile, FtpTypeLabel(profile), reuse,
-            document => OpenFtpDocumentForProfileAsync(latest, document, CancellationToken.None),
-            cancellationToken);
+            document => OpenFtpDocumentForProfileAsync(latest, document, CancellationToken.None, tabTitle),
+            cancellationToken,
+            tabTitle);
         (DocumentSessionConnection? connection, DocumentConnectFailure failure) =
             await ConnectFtpDocumentSessionAsync(profile, ui).ConfigureAwait(true);
         if (connection is null)
@@ -4547,6 +4584,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 FileTransfer,
                 QueryDefaultEditorPathAsync,
                 UpdateProfileBookmarksAsync));
+        if (tabTitle is not null)
+        {
+            document.Title = tabTitle;
+        }
         ui.HandOver(document);
         TrackDocumentSession(connection.SessionId, profile.Id, SessionStatus.Connected);
         return document;
