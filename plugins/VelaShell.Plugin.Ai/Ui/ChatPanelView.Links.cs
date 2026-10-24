@@ -119,24 +119,37 @@ public partial class ChatPanelView
             IStorageFile? target = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = _loc["LinkDownload"],
-                SuggestedFileName = Path.GetFileName(remotePath.TrimEnd('/'))
+                SuggestedFileName = Path.GetFileName(remotePath.TrimEnd('/')),
+                // 选到已有文件时由系统框先问一句"要替换吗";点了替换,下面才按覆盖去请宿主确认
+                ShowOverwritePrompt = true
             });
             if (target?.TryGetLocalPath() is not { } localPath)
             {
                 return;
             }
-            FileTransferRunScope scope = BeginLinkTransferScope(sessionId);
-            string operationId = FileTransferJobRegistry.StableOperationId(scope.OwnerId, scope.RunId,
-                "link:" + remotePath + "->" + localPath);
-            RemoteTransferSnapshot snapshot = await scope.StartDownloadAsync(sessionId, remotePath, localPath,
-                operationId, overwrite: false, CancellationToken.None);
-            StatusText.Text = TransferPresentation.Text(_loc, snapshot);
-            _ = new LinkTransferBinding(this, scope, snapshot.TransferId, localPath);
+            await StartLinkDownloadAsync(sessionId, remotePath, localPath);
         }
         catch (Exception ex)
         {
             _context.Log.Warn($"Downloading '{remotePath}' failed: {ex.Message}");
             StatusText.Text = $"{_loc["Error"]}: {ex.Message}";
         }
+    }
+
+    /// <summary>保存位置已经选好:起后台下载并挂一张进度卡。</summary>
+    /// <remarks>
+    /// 选的是已有文件,说明用户在系统保存框里已经确认过替换 —— 这时仍按"不覆盖"去请求,
+    /// 宿主落盘只会报一句"目标已存在",等于让人白确认一次。覆盖意图如实带给宿主,
+    /// 宿主自己的逐任务确认框也就照实写着"替换"。
+    /// </remarks>
+    private async Task StartLinkDownloadAsync(string sessionId, string remotePath, string localPath)
+    {
+        FileTransferRunScope scope = BeginLinkTransferScope(sessionId);
+        string operationId = FileTransferJobRegistry.StableOperationId(scope.OwnerId, scope.RunId,
+            "link:" + remotePath + "->" + localPath);
+        RemoteTransferSnapshot snapshot = await scope.StartDownloadAsync(sessionId, remotePath, localPath,
+            operationId, overwrite: File.Exists(localPath), CancellationToken.None);
+        StatusText.Text = TransferPresentation.Text(_loc, snapshot);
+        _ = new LinkTransferBinding(this, scope, snapshot.TransferId, localPath);
     }
 }

@@ -1,8 +1,10 @@
+using System.Text.Json;
 using VelaShell.Plugin.Ai.Agent;
 using VelaShell.Plugin.Ai.Bridge;
 using VelaShell.Plugin.Ai.Chat;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
+using VelaShell.PluginSdk.RemoteFs;
 using VelaShell.PluginSdk.Sessions;
 using VelaShell.PluginSdk.Testing;
 
@@ -14,6 +16,7 @@ namespace VelaShell.Plugin.Ai.Tests;
 /// <remarks>
 /// 这里<b>一条模型请求都不发</b> —— 用例只走白名单与斜杠命令这两条不碰模型的路。
 /// 真正要挡住的也正是它们:放行判断错一次,后果是陌生人能在生产机上敲命令。
+/// 唯一的例外是总并发名额那条:它要一轮真的停在"只等传输",模型由本机 <see cref="SseStub" /> 扮演。
 /// </remarks>
 [TestClass]
 public sealed class BridgeRouterTests
@@ -638,6 +641,81 @@ public sealed class BridgeRouterTests
             0,
             harness.Channel.Snapshot().Count(t => t.Contains("dropped", StringComparison.OrdinalIgnoreCase)),
             "刷了八条也一条都没回绝 —— 队列仍然没有上限。");
+    }
+
+    /// <summary>
+    /// 只在等传输的那一轮要把总并发名额让出来,别的聊天照常拿到回复。
+    /// </summary>
+    /// <remarks>
+    /// 宿主的上传确认框没有时限,批准之后的大文件一传就是几个钟头。名额一直占着的话,
+    /// 两个这样的聊天(默认总并发 2)就能把其余所有聊天静默地堵在闸前 —— 群里只看到机器人不理人。
+    /// 用例把总并发设成 1:第一个聊天让模型发起一次上传、然后只等它传完;此刻第二个聊天必须答得出来。
+    /// 上传完成后,第一个聊天取回名额,再调一次模型收尾。
+    /// </remarks>
+    [TestMethod]
+    public async Task ATurnWaitingOnATransfer_DoesNotBlockAnotherChat()
+    {
+        string local = Path.Combine(Path.GetTempPath(), "vela-bridge-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(local, "payload");
+        try
+        {
+            await using var harness = new Harness(new BridgeSettings
+            {
+                Enabled = true,
+                Mode = ChatMode.Agent,
+                Approval = ApprovalMode.Bypass,
+                MaxConcurrentTurns = 1,
+                Channels = [new ChannelConfig { Id = "ch1", AllowedChats = ["chat-1", "chat-2"] }]
+            });
+            string session = harness.Context.FakeSessions.AddConnected().SessionId;
+            var finish = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            RemoteTransferSnapshot? started = null;
+            harness.Context.FakeRemoteFs.SupportsTransferOperations = true;
+            harness.Context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(started = new RemoteTransferSnapshot
+            {
+                TransferId = "transfer", OperationId = options.OperationId, SessionId = id, LocalPath = source, RemotePath = target,
+                State = RemoteTransferState.Running, Sequence = 1, Generation = 1, TotalBytes = 7
+            });
+            harness.Context.FakeRemoteFs.GetTransferHandler = (_, _) => Task.FromResult(started!);
+            harness.Context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => finish.Task.WaitAsync(ct);
+            string upload = JsonSerializer.Serialize(new { localPath = local, remotePath = "/tmp/payload", sessionId = session });
+            // 流式请求按到达先后:①第一个聊天调上传 ②它说"传着呢"后只等传输 ③第二个聊天 ④传完后第一个聊天收尾
+            await using var endpoint = new SseStub("", streamingReply: n => n switch
+            {
+                1 => "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"upload_local_file\",\"arguments\":"
+                     + JsonSerializer.Serialize(upload) + "}}]},\"finish_reason\":null}]}\n\n"
+                     + "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n"
+                     + "data: [DONE]\n\n",
+                2 => Answer("uploading"),
+                3 => Answer("pong"),
+                _ => Answer("upload finished")
+            });
+            AiProvider provider = new()
+            {
+                Name = "stub", BaseUrl = endpoint.BaseUrl,
+                DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
+                Models = [new AiModelConfig { Model = "m" }]
+            };
+            await new AiSettingsStore(harness.Context).SaveAsync(new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id });
+            await harness.StartAsync();
+
+            Task first = harness.SendAsync("upload the file", "chat-1");
+            await WaitUntilAsync(() => endpoint.Requests.Count >= 2);
+            Task second = harness.SendAsync("ping", "chat-2");
+            await WaitUntilAsync(() => harness.Channel.Snapshot().Any(t => t.Contains("pong", StringComparison.Ordinal)));
+            Assert.IsFalse(first.IsCompleted, "上传还没传完,第一个聊天应当仍在等它");
+
+            finish.SetResult(started! with { State = RemoteTransferState.Succeeded, Sequence = 2, TransferredBytes = 7 });
+            await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.Contains(t => t.Contains("upload finished", StringComparison.Ordinal), harness.Channel.Snapshot(),
+                $"传完之后第一个聊天要取回名额再收尾。完整记录:{string.Join(" | ", harness.Channel.Snapshot())}");
+            Assert.HasCount(4, endpoint.Requests);
+        }
+        finally { File.Delete(local); }
+
+        static string Answer(string text)
+            => "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":"
+               + JsonSerializer.Serialize(text) + "},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
     }
 
     /// <summary>轮询等待某个条件成立(不用固定 Sleep 去赌时序)。</summary>

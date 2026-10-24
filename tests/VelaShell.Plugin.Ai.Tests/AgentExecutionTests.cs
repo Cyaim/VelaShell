@@ -799,7 +799,7 @@ public sealed class AgentExecutionTests
         {
             await foreach (var _ in new AgentRunCoordinator(scope, execution).RunAsync(client,
                 [new(ChatRole.User, "go")], new(), () => waiting.TrySetResult(), default,
-                localWaiting: waitingStates.Add)) { }
+                localWaiting: (state, _) => { waitingStates.Add(state); return ValueTask.CompletedTask; })) { }
         }
         Task run = Consume();
         await waiting.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -811,6 +811,83 @@ public sealed class AgentExecutionTests
         Assert.IsEmpty(wire.Requests[1][^1].Contents.OfType<FunctionResultContent>());
         Assert.AreSequenceEqual(new[] { true, false }, waitingStates);
         Assert.IsEmpty(await scope.Transfers.WaitForCompletionAsync());
+    }
+
+    /// <summary>
+    /// 只等传输结束后,下一次调模型必须等入口把让出的名额取回来;取回途中被停掉就不再调模型。
+    /// 等传输时就被停掉的,不再回调"取回"去排队(入口按实际持有状态收尾)。
+    /// </summary>
+    [TestMethod]
+    public async Task TransferWaitEnd_NextModelRequestWaitsForTheEntryToReacquire()
+    {
+        foreach (string stopAt in new[] { "never", "reacquire", "wait" })
+        {
+            using var context = new TestPluginContext();
+            var finish = new TaskCompletionSource<PluginSdk.RemoteFs.RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var snapshot = new PluginSdk.RemoteFs.RemoteTransferSnapshot
+            {
+                TransferId = "upload", OperationId = "operation", SessionId = "session", LocalPath = "source", RemotePath = "destination",
+                State = PluginSdk.RemoteFs.RemoteTransferState.Running, Sequence = 1, Generation = 1
+            };
+            context.FakeRemoteFs.SupportsTransferOperations = true;
+            context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, _) => Task.FromResult(snapshot);
+            context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => finish.Task.WaitAsync(ct);
+            await using var registry = new CommandJobRegistry(new ControlledExec());
+            using var cancellation = new CancellationTokenSource();
+            await using var scope = registry.BeginRun("owner", "run", cancellationToken: cancellation.Token);
+            scope.Transfers = FileTransferJobRegistry.For(context).BeginRun("owner", "run");
+            await scope.Transfers.StartAsync("session", "source", "destination", "operation", false, default);
+            var execution = new AgentExecution("run", () => scope.HasUnknownOutcome);
+            var wire = new Wire((_, _) => [new(ChatRole.Assistant, "reply"), End(ChatFinishReason.Stop)]);
+            using var client = new RecoveringChatClient(wire, execution, "boundary");
+            var paused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reacquiring = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reacquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            List<bool> waitingStates = [];
+            async ValueTask LocalWaiting(bool state, CancellationToken token)
+            {
+                waitingStates.Add(state);
+                if (state)
+                {
+                    paused.TrySetResult();
+                    return;
+                }
+                reacquiring.TrySetResult();
+                await reacquired.Task.WaitAsync(token);
+            }
+            async Task Consume()
+            {
+                await foreach (var _ in new AgentRunCoordinator(scope, execution).RunAsync(client,
+                    [new(ChatRole.User, "go")], new(), null, cancellation.Token, localWaiting: LocalWaiting)) { }
+            }
+            Task run = Consume();
+            await paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            if (stopAt == "wait")
+            {
+                await cancellation.CancelAsync();
+                await Assert.ThrowsAsync<OperationCanceledException>(() => run);
+                Assert.HasCount(1, wire.Requests);
+                Assert.AreSequenceEqual(new[] { true }, waitingStates, stopAt);
+                continue;
+            }
+            finish.SetResult(snapshot with { State = PluginSdk.RemoteFs.RemoteTransferState.Succeeded, Sequence = 2 });
+            await reacquiring.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Delay(50);
+            Assert.HasCount(1, wire.Requests, "名额取回之前不能调模型");
+            if (stopAt == "reacquire")
+            {
+                await cancellation.CancelAsync();
+                await Assert.ThrowsAsync<OperationCanceledException>(() => run);
+                Assert.HasCount(1, wire.Requests);
+            }
+            else
+            {
+                reacquired.SetResult();
+                await run.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.HasCount(2, wire.Requests);
+            }
+            Assert.AreSequenceEqual(new[] { true, false }, waitingStates, stopAt);
+        }
     }
 
     [TestMethod]

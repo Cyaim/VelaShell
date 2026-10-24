@@ -404,6 +404,91 @@ public sealed class FileTransferJobRegistryTests
         finally { File.Delete(local); }
     }
 
+    /// <summary>
+    /// 观察连着失败几次只报"进度不可确认",不就此收手:宿主恢复后自己接着盯到终态。
+    /// </summary>
+    /// <remarks>
+    /// 从前第三次失败后观察者就此退出,而且再也不重启:卡片冻在"不可确认"、IM 等不到结局、
+    /// send_file 被这次下载永远挡着,订阅与清理登记也都放不掉 —— 除非恰好有人显式查一次状态。
+    /// 不确定标记也只该活到拿回新鲜快照为止,不能一直把整轮钉在"结果未知"上。
+    /// </remarks>
+    [TestMethod]
+    public async Task MonitorFailure_KeepsWatchingWithBackoff_AndClearsTheUncertaintyOnRecovery()
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        bool offline = true;
+        RemoteTransferSnapshot? snapshot = null;
+        context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) =>
+            Task.FromResult(snapshot = StartDownloadLikeHost(id, remote, local, options.OperationId));
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, _) => Volatile.Read(ref offline)
+            ? Task.FromException<RemoteTransferSnapshot>(new IOException("offline"))
+            : Task.FromResult(snapshot! with { State = RemoteTransferState.Succeeded, Sequence = 2, RemoteStopConfirmed = true });
+        context.FakeRemoteFs.GetTransferHandler = (_, _) => Volatile.Read(ref offline)
+            ? Task.FromException<RemoteTransferSnapshot>(new IOException("offline")) : Task.FromResult(snapshot!);
+        FileTransferJobRegistry registry = FileTransferJobRegistry.For(context);
+        FileTransferRunScope scope = registry.BeginRun("owner", "run");
+        var unavailable = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var succeeded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using IDisposable subscription = scope.Subscribe(update =>
+        {
+            if (update.MonitoringUnavailable) unavailable.TrySetResult();
+            else if (update.Snapshot?.IsSuccess == true) succeeded.TrySetResult();
+        });
+        string target = Path.Combine(context.DataDirectory, "app.log");
+        Directory.CreateDirectory(context.DataDirectory);
+        await scope.StartDownloadAsync(session, "/var/log/app.log", target, "operation", false, default);
+
+        await unavailable.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.IsTrue(scope.HasUnknownOutcome, "观察不可确认时这一项算结果未知");
+        Assert.IsTrue(registry.HasUncommittedDownload(target));
+        Volatile.Write(ref offline, false);
+
+        await succeeded.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.IsFalse(scope.HasRunningTransfers);
+        Assert.IsFalse(scope.HasUnknownOutcome, "拿回新鲜快照之后,观察失败带来的不确定要撤掉");
+        Assert.IsFalse(registry.HasUncommittedDownload(target), "下载已成功提交,send_file 不该再被它挡着");
+        Assert.IsEmpty(context.FakeRemoteFs.TransfersCancelled, "观察失败不能伪装成取消");
+        Assert.AreEqual(TimeSpan.FromSeconds(1), FileTransferJobRegistry.RetryDelay(3));
+        Assert.AreEqual(TimeSpan.FromSeconds(30), FileTransferJobRegistry.RetryDelay(40), "退避封顶 30 秒");
+    }
+
+    /// <summary>
+    /// 任务登记之后、发布那一步抛了(授权回调读会话失败之类):回执照旧报不确定,
+    /// 但这一项仍得有人盯到终态 —— 从前观察者压根没起,它就永远"还在跑"。
+    /// </summary>
+    [TestMethod]
+    public async Task PublishFailureAfterRegistration_StillStartsTheWatcher()
+    {
+        using var context = new TestPluginContext();
+        RemoteTransferSnapshot snapshot = Running("session", "source", "destination", "operation");
+        var watched = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var succeeded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, _) => Task.FromResult(snapshot);
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, _) =>
+        {
+            watched.TrySetResult();
+            return Task.FromResult(snapshot with { State = RemoteTransferState.Succeeded, Sequence = 2, RemoteStopConfirmed = true });
+        };
+        int checks = 0;
+        // 第一次是启动前的授权;第二次落在登记之后的发布里
+        FileTransferRunScope scope = FileTransferJobRegistry.For(context).BeginRun("owner", "run", (_, _) =>
+            Interlocked.Increment(ref checks) == 2
+                ? Task.FromException<bool>(new IOException("session lookup failed"))
+                : Task.FromResult(true));
+        using IDisposable subscription = scope.Subscribe(update =>
+        {
+            if (update.Snapshot?.IsSuccess == true) succeeded.TrySetResult();
+        });
+
+        await Assert.ThrowsAsync<IOException>(() => scope.StartAsync("session", "source", "destination", "operation", false, default));
+
+        await watched.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await succeeded.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsFalse(scope.HasRunningTransfers);
+    }
+
     [TestMethod]
     public async Task UnconfirmedHostUnknown_RemainsExplicitlyCancellable()
     {
@@ -743,5 +828,170 @@ public sealed class FileTransferJobRegistryTests
             Assert.Contains("Refused", result, name);
         }
         Assert.IsEmpty(context.FakeRemoteFs.DownloadsStarted);
+    }
+
+    /// <summary>
+    /// 给了 local_path 就与上传同一把尺:必须是完整的绝对路径,并在审批之前规范化。
+    /// </summary>
+    /// <remarks>
+    /// Windows 上 <c>C:foo</c>(C 盘的当前目录)与 <c>\tmp\x</c>(当前盘的根)都算 rooted,
+    /// 宿主会按自己进程的当前目录补全 —— 落点就不是审批卡上写的那个。带 <c>..</c> 的全路径先折平,
+    /// 审批卡与宿主拿到的是同一个路径。
+    /// </remarks>
+    [TestMethod]
+    public async Task ExplicitDownloadTarget_MustBeFullyQualified_AndIsNormalizedBeforeApproval()
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        var never = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => never.Task.WaitAsync(ct);
+        List<ApprovalRequest> asked = [];
+        await using var toolbox = new AgentToolbox(context)
+        {
+            ApprovalHandler = request =>
+            {
+                asked.Add(request);
+                return Task.FromResult(true);
+            }
+        };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        foreach (string partial in new[] { "C:app.log", @"\tmp\app.log", "relative/app.log" })
+        {
+            string refused = await Call(toolbox, run, "download_remote_file", new()
+            {
+                ["remotePath"] = "/var/log/app.log",
+                ["localPath"] = partial,
+                ["sessionId"] = session
+            });
+            Assert.Contains("absolute path", refused, partial);
+        }
+        Assert.IsEmpty(asked, "补不全的路径不该先弹审批");
+        Assert.IsEmpty(context.FakeRemoteFs.DownloadsStarted);
+
+        string folder = Path.Combine(context.DataDirectory, "exports");
+        Directory.CreateDirectory(folder);
+        string dotted = Path.Combine(folder, "..", "exports", "app.log");
+        string expected = Path.GetFullPath(dotted);
+        await Call(toolbox, run, "download_remote_file", new()
+        {
+            ["remotePath"] = "/var/log/app.log",
+            ["localPath"] = dotted,
+            ["sessionId"] = session
+        });
+        Assert.Contains("→ " + expected + " ", asked.Single().Detail);
+        Assert.AreEqual(expected, context.FakeRemoteFs.DownloadsStarted.Single().LocalPath);
+    }
+
+    /// <summary>
+    /// 插件自己在交给宿主之前的拒绝 —— 操作身份冲突、每插件 1024 份回执用尽 —— 是确定的"没开始":
+    /// 回「启动前被拒」,不报回执丢失,也不把整轮停成结果未知。
+    /// </summary>
+    [TestMethod]
+    public async Task PluginSideRefusals_AreRejectedBeforeExecution_NotUnknown()
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(
+            Running(id, source, target, options.OperationId) with
+            { TransferId = options.OperationId, State = RemoteTransferState.Succeeded, RemoteStopConfirmed = true });
+        FileTransferJobRegistry registry = FileTransferJobRegistry.For(context);
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        string local = Source(1);
+        try
+        {
+            // 这次调用要用的操作身份已经被另一轮占了
+            AgentToolbox.InvocationIdentity.Value = "stable-call";
+            string taken = FileTransferJobRegistry.StableOperationId("owner", "run", "upload:stable-call");
+            await registry.BeginRun("other", "run").StartAsync(session, local, "/tmp/other", taken, false, default);
+            string conflict = await Call(toolbox, run, "upload_local_file", new()
+            {
+                ["localPath"] = local,
+                ["remotePath"] = "/tmp/file",
+                ["sessionId"] = session
+            });
+            Assert.Contains("rejected before execution", conflict);
+            Assert.IsFalse(run.HasUnknownOutcome, conflict);
+            Assert.HasCount(1, context.FakeRemoteFs.UploadsStarted);
+
+            FileTransferRunScope filler = registry.BeginRun("filler", "run");
+            for (int i = 1; i < 1024; i++)
+                await filler.StartAsync(session, local, "/tmp/filler", "filler-" + i, false, default);
+            AgentToolbox.InvocationIdentity.Value = "download-call";
+            string exhausted = await Call(toolbox, run, "download_remote_file", new()
+            {
+                ["remotePath"] = "/var/log/app.log",
+                ["sessionId"] = session
+            });
+            Assert.Contains("rejected before execution", exhausted);
+            Assert.Contains("budget", exhausted);
+            Assert.IsFalse(run.HasUnknownOutcome, exhausted);
+            Assert.IsEmpty(context.FakeRemoteFs.DownloadsStarted);
+        }
+        finally { AgentToolbox.InvocationIdentity.Value = null; File.Delete(local); }
+    }
+
+    /// <summary>
+    /// transfer_resume 续不上时只回一句文字。它看原任务时不能顺手把终态消费掉 ——
+    /// 否则协调器以为模型已经知道结局,再也不发完成通知,模型只知道"不可恢复"而不知道结果。
+    /// </summary>
+    [TestMethod]
+    public async Task ResumeThatCannotProceed_LeavesTheTerminalStateForTheCompletionNotification()
+    {
+        using var context = new TestPluginContext();
+        var session = context.FakeSessions.AddConnected();
+        var never = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        RemoteTransferSnapshot? snapshot = null;
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) =>
+            Task.FromResult(snapshot = Running(id, source, target, options.OperationId));
+        context.FakeRemoteFs.GetTransferHandler = (_, _) => Task.FromResult(snapshot! with
+        { State = RemoteTransferState.Failed, RemoteStopConfirmed = true, Sequence = 2 });
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => never.Task.WaitAsync(ct);
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        string local = Source(1);
+        try
+        {
+            await Call(toolbox, run, "upload_local_file", new()
+            {
+                ["localPath"] = local,
+                ["remotePath"] = "/tmp/file",
+                ["sessionId"] = session.SessionId
+            });
+            string resumed = await Call(toolbox, run, "transfer_resume", new()
+            {
+                ["transferId"] = "transfer",
+                ["expectedGeneration"] = 1L,
+                ["sessionId"] = session.SessionId
+            });
+            Assert.Contains("not confirmed", resumed);
+            Assert.IsTrue(run.Transfers!.HasActiveJobs, "续不上时终态还没交给模型");
+            RemoteTransferSnapshot notified = (await run.Transfers.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5))).Single();
+            Assert.AreEqual(RemoteTransferState.Failed, notified.State);
+            Assert.IsEmpty(context.FakeRemoteFs.TransfersResumed);
+        }
+        finally { File.Delete(local); }
+    }
+
+    /// <summary>transfer_wait / transfer_cancel 管的是本轮任意方向的传输,说明与回话里不能只写"上传"。</summary>
+    [TestMethod]
+    public async Task TransferWaitAndCancel_SpeakOfTransfersNotJustUploads()
+    {
+        using var context = new TestPluginContext();
+        await using var toolbox = new AgentToolbox(context) { ApprovalHandler = _ => Task.FromResult(false) };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        foreach (string name in new[] { "transfer_wait", "transfer_cancel" })
+        {
+            AIFunction tool = Tool(toolbox, run, name);
+            Assert.Contains("download", tool.Description, name);
+            Assert.DoesNotContain("the upload", tool.Description + tool.JsonSchema, name);
+        }
+        string denied = await Call(toolbox, run, "transfer_cancel", new()
+        {
+            ["transferId"] = "download-transfer",
+            ["expectedGeneration"] = 1L
+        });
+        Assert.Contains("DENIED cancelling this transfer", denied);
     }
 }

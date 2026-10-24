@@ -3793,7 +3793,10 @@ public partial class ChatPanelView : UserControl
         {
             _result = result;
             if (RestoreTransfer(result)) return;
-            if (ToolName is "upload_local_file" or "transfer_status" or "transfer_wait" or "transfer_resume" or "transfer_cancel")
+            // 传输工具没给出快照(被拒、启动前就挡下、回执丢失的 {"state":"Unknown"}):不是"做完了",
+            // 打勾会让人以为文件已经传好。名单与 RestoreTransfer / TransferBinding.Bind 一致。
+            if (ToolName is "upload_local_file" or "download_remote_file" or "transfer_status" or "transfer_wait"
+                or "transfer_resume" or "transfer_cancel")
             {
                 _statusIconHost.Child = MakeIcon("Icon.circle-alert", "VelaWarning", 11);
                 ToolTip.SetTip(_statusIconHost, _owner._loc["TransferUnknown"]);
