@@ -1,10 +1,12 @@
 using System.Globalization;
+using System.Text;
 using VelaShell.Core.Data;
 using VelaShell.Core.Import;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Core.Tunnels;
 using VelaShell.Infrastructure.Ssh;
 using VelaShell.Ssh.Config;
 using VelaShell.Ssh.Diagnostics;
@@ -29,7 +31,7 @@ namespace VelaShell.Infrastructure.Import;
 /// 本身不是一台可连的机器;它们的选项会通过取值规则渗到具名别名上,这正是 OpenSSH 的语义。
 /// </para>
 /// <para>
-/// 映射不了的设置(Unix 套接字转发、远程动态转发、指定了别的 agent 套接字、本版没实现的算法)
+/// 映射不了的设置(端口 0 的转发、只有一头是套接字的远程转发、没写放行名单的远程动态转发、指定了别的 agent 套接字、本版没实现的算法)
 /// 不悄悄丢掉:写进 <see cref="ImportedSession.Notes" />,预览行里列给用户看。
 /// </para>
 /// </remarks>
@@ -259,12 +261,25 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
     }
 
     /// <summary>
-    /// 转发 → 隧道(停止状态,在隧道面板里启动):<c>LocalForward</c> → 本地转发、<c>RemoteForward</c> → 远程转发、
-    /// <c>DynamicForward</c> → 动态转发(SOCKS)。现有的隧道类型装不下的(Unix 套接字、远程动态转发)如实跳过,进预览。
+    /// 转发 → 隧道(停止状态,在隧道面板里启动):<c>LocalForward</c> → 本地转发、<c>RemoteForward</c> → 远程转发
+    /// (不给目标时是远程动态转发,放行名单取这台主机的 <c>PermitRemoteOpen</c>)、<c>DynamicForward</c> → 动态转发(SOCKS)。
+    /// 套接字写法(含 <c>/</c> 的一头)落到 <see cref="TunnelConfig.LocalSocketPath" /> / <see cref="TunnelConfig.RemoteSocketPath" />。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 没写监听地址时本地一头绑环回(<c>GatewayPorts yes</c> 时全部网卡)、远程一头交给服务端定(环回),与 ssh 的默认一致;
     /// <c>*</c> 是全部网卡。<c>ClearAllForwardings yes</c> 时一条都不导。逐行解析:一行写错不连累别的行。
+    /// </para>
+    /// <para>
+    /// 隧道装不下、或者装进去会改变意思的如实跳过,进预览:端口 0(连接时才定的端口);远程转发只有一头是套接字
+    /// (SSH 库只给了两头 TCP、两头套接字两种组合,隧道服务同样拒绝);本机用不了的套接字路径;
+    /// 没写 <c>PermitRemoteOpen</c>、写了 <c>none</c> 或写错了的远程动态转发。
+    /// </para>
+    /// <para>
+    /// 〔决策〕<b>远程动态转发没写 <c>PermitRemoteOpen</c> 时不导入</b>。OpenSSH 在这时按 <c>any</c> 处理(库的 <c>GetPermitRemoteOpen</c> 也是),
+    /// 而隧道的放行名单没有默认值、不许留空(<see cref="RemoteOpenRules" />):远程动态转发等于把本机变成远端的 SOCKS 代理,
+    /// 放哪些出去要用户明说。导入时替用户填上 <c>any</c>,正好是那条规则要防的「替用户当成全放」;配置里明写了的(含 <c>any</c>)照收。
+    /// </para>
     /// </remarks>
     private static List<TunnelConfig> MapForwards(SshHostConfig options, List<string> notes)
     {
@@ -284,6 +299,7 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
         {
             foreach (string value in options.All(keyword))
             {
+                string line = $"{keyword} {value}";
                 SshConfigForward forward;
                 try
                 {
@@ -291,37 +307,21 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
                 }
                 catch (SshConnectException)
                 {
-                    notes.Add(Strings.Format("SshCfgImport_NoteForwardInvalid", $"{keyword} {value}"));
+                    notes.Add(Strings.Format("SshCfgImport_NoteForwardInvalid", line));
                     continue;
                 }
 
-                if (forward.ListenSocketPath is not null || forward.TargetSocketPath is not null || forward.IsRemoteDynamic
-                    || forward.ListenPort == 0)
+                if (forward.ListenSocketPath is null && forward.ListenPort == 0)
                 {
-                    notes.Add(Strings.Format("SshCfgImport_NoteForwardSkipped", $"{keyword} {value}"));
+                    notes.Add(Strings.Format("SshCfgImport_NoteForwardPortZero", line));
                     continue;
                 }
 
-                tunnels.Add(kind switch
+                TunnelConfig? tunnel = kind switch
                 {
-                    SshConfigForwardKind.Local => new TunnelConfig
-                    {
-                        Type = TunnelType.LocalForward,
-                        Name = string.Empty,
-                        LocalHost = ListenHost(forward.ListenAddress, localDefault),
-                        LocalPort = (uint)forward.ListenPort,
-                        RemoteHost = HostAddress.Normalize(forward.TargetHost!),
-                        RemotePort = (uint)forward.TargetPort,
-                    },
-                    SshConfigForwardKind.Remote => new TunnelConfig
-                    {
-                        Type = TunnelType.RemoteForward,
-                        Name = string.Empty,
-                        LocalHost = HostAddress.Normalize(forward.TargetHost!),
-                        LocalPort = (uint)forward.TargetPort,
-                        RemoteHost = ListenHost(forward.ListenAddress, "127.0.0.1"),
-                        RemotePort = (uint)forward.ListenPort,
-                    },
+                    SshConfigForwardKind.Local => MapLocalForward(forward, localDefault, line, notes),
+                    SshConfigForwardKind.Remote when forward.IsRemoteDynamic => MapRemoteDynamicForward(options, forward, line, notes),
+                    SshConfigForwardKind.Remote => MapRemoteForward(forward, line, notes),
                     _ => new TunnelConfig
                     {
                         Type = TunnelType.DynamicForward,
@@ -329,7 +329,11 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
                         LocalHost = ListenHost(forward.ListenAddress, localDefault),
                         LocalPort = (uint)forward.ListenPort,
                     },
-                });
+                };
+                if (tunnel is not null)
+                {
+                    tunnels.Add(tunnel);
+                }
             }
         }
 
@@ -338,6 +342,138 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
             notes.Add(Strings.Format("SshCfgImport_NoteForwardsImported", tunnels.Count.ToString(CultureInfo.InvariantCulture)));
         }
         return tunnels;
+    }
+
+    /// <summary><c>LocalForward</c>:两头各自可以是端口或套接字(隧道与 SSH 库都支持四种组合)。</summary>
+    private static TunnelConfig? MapLocalForward(SshConfigForward forward, string localDefault, string line, List<string> notes)
+    {
+        string? localSocket = null;
+        string? remoteSocket = null;
+        if ((forward.ListenSocketPath is { } listen && (localSocket = LocalSocketPath(listen)) is null)
+            || (forward.TargetSocketPath is { } target && (remoteSocket = RemoteSocketPath(target)) is null))
+        {
+            notes.Add(Strings.Format("SshCfgImport_NoteForwardSocketPath", line));
+            return null;
+        }
+        return new TunnelConfig
+        {
+            Type = TunnelType.LocalForward,
+            Name = string.Empty,
+            // 套接字那头的主机与端口不用(TunnelConfig 的约定:路径非空就以路径为准),照表单的样子留个环回与 0。
+            LocalHost = localSocket is null ? ListenHost(forward.ListenAddress, localDefault) : "127.0.0.1",
+            LocalPort = localSocket is null ? (uint)forward.ListenPort : 0,
+            RemoteHost = remoteSocket is null ? HostAddress.Normalize(forward.TargetHost!) : string.Empty,
+            RemotePort = remoteSocket is null ? (uint)forward.TargetPort : 0,
+            LocalSocketPath = localSocket,
+            RemoteSocketPath = remoteSocket,
+        };
+    }
+
+    /// <summary><c>RemoteForward 监听 目标</c>:两头 TCP,或两头都是套接字;只有一头是套接字的跳过。</summary>
+    private static TunnelConfig? MapRemoteForward(SshConfigForward forward, string line, List<string> notes)
+    {
+        if ((forward.ListenSocketPath is null) != (forward.TargetSocketPath is null))
+        {
+            notes.Add(Strings.Format("SshCfgImport_NoteForwardSocketMix", line));
+            return null;
+        }
+        if (forward.ListenSocketPath is { } listen)
+        {
+            string? serverSocket = RemoteSocketPath(listen);
+            string? localSocket = LocalSocketPath(forward.TargetSocketPath!);
+            if (serverSocket is null || localSocket is null)
+            {
+                notes.Add(Strings.Format("SshCfgImport_NoteForwardSocketPath", line));
+                return null;
+            }
+            return new TunnelConfig
+            {
+                Type = TunnelType.RemoteForward,
+                Name = string.Empty,
+                LocalHost = "127.0.0.1",
+                LocalPort = 0,
+                RemoteHost = string.Empty,
+                RemotePort = 0,
+                LocalSocketPath = localSocket,
+                RemoteSocketPath = serverSocket,
+            };
+        }
+        return new TunnelConfig
+        {
+            Type = TunnelType.RemoteForward,
+            Name = string.Empty,
+            LocalHost = HostAddress.Normalize(forward.TargetHost!),
+            LocalPort = (uint)forward.TargetPort,
+            RemoteHost = ListenHost(forward.ListenAddress, "127.0.0.1"),
+            RemotePort = (uint)forward.ListenPort,
+        };
+    }
+
+    /// <summary>
+    /// <c>RemoteForward [监听地址:]端口</c>(不给目标)→ 远程动态转发,放行名单取这台主机的 <c>PermitRemoteOpen</c>
+    /// (ssh_config 里它是按主机的一条,这台主机的每条远程动态转发共用)。为什么没写就不导,见 <see cref="MapForwards" />。
+    /// </summary>
+    private static TunnelConfig? MapRemoteDynamicForward(SshHostConfig options, SshConfigForward forward, string line, List<string> notes)
+    {
+        if (forward.ListenSocketPath is not null)
+        {
+            // 套接字上的远程动态转发:SSH 库与隧道都没有这一种。
+            notes.Add(Strings.Format("SshCfgImport_NoteForwardSocketMix", line));
+            return null;
+        }
+
+        string? permit = Value(options.First("PermitRemoteOpen"));
+        if (permit is null)
+        {
+            notes.Add(Strings.Format("SshCfgImport_NoteRemoteDynamicNoPermit", line));
+            return null;
+        }
+        if (string.Equals(permit, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            // 什么都不放行的远程动态转发:建起来每个请求都被拒,导进来只是一条用不了的隧道。
+            notes.Add(Strings.Format("SshCfgImport_NoteRemoteDynamicNone", line));
+            return null;
+        }
+        if (!RemoteOpenRules.TryParse(permit, out IReadOnlyList<string> rules, out string? invalid))
+        {
+            notes.Add(Strings.Format("SshCfgImport_NoteRemoteDynamicInvalid", line, invalid ?? permit));
+            return null;
+        }
+
+        return new TunnelConfig
+        {
+            Type = TunnelType.RemoteDynamicForward,
+            Name = string.Empty,
+            // 远程动态没有本机端口(隧道面板同样存 0),服务器上的监听地址与端口沿用远程转发的 RemoteHost / RemotePort。
+            LocalHost = "127.0.0.1",
+            LocalPort = 0,
+            RemoteHost = ListenHost(forward.ListenAddress, "127.0.0.1"),
+            RemotePort = (uint)forward.ListenPort,
+            PermitRemoteOpen = rules,
+        };
+    }
+
+    /// <summary>
+    /// 本机套接字路径:开头的 <c>~</c> 展开成主目录;要是完整路径(相对路径落在哪全看程序的当前目录),
+    /// 也不能超过 <c>sun_path</c> 的上限(Linux 与 Windows 107 字节、macOS 103 字节,与隧道表单同一把尺)。用不了时为 <see langword="null" />。
+    /// </summary>
+    /// <remarks>别的机器上写的配置(Windows 上导入 Linux 的 <c>/run/user/…</c>)在这里就会被拦下:那条路径在本机本来就用不了。</remarks>
+    private static string? LocalSocketPath(string path)
+    {
+        string value = path.Trim().Trim('"');
+        if (value == "~" || value.StartsWith("~/", StringComparison.Ordinal))
+        {
+            value = Path.Combine(SshPathResolver.HomeDirectory, value.Length > 2 ? value[2..] : string.Empty);
+        }
+        int limit = OperatingSystem.IsMacOS() ? 103 : 107;
+        return value.Length > 0 && Path.IsPathFullyQualified(value) && Encoding.UTF8.GetByteCount(value) <= limit ? value : null;
+    }
+
+    /// <summary>服务器套接字路径:要是 <c>/</c> 开头的绝对路径(服务器上的 sshd 按它自己的文件系统解析)。用不了时为 <see langword="null" />。</summary>
+    private static string? RemoteSocketPath(string path)
+    {
+        string value = path.Trim().Trim('"');
+        return value.StartsWith('/') ? value : null;
     }
 
     /// <summary>监听地址:没写用默认,<c>*</c> 是全部网卡,其余原样(IPv6 去掉方括号)。</summary>

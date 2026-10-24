@@ -5439,8 +5439,23 @@ Overwrite it?</value>
   <data name="SshCfgImport_NoteForwardsImported" xml:space="preserve">
     <value>{0} port forwards are imported as tunnels of this connection (stopped; start them in the tunnel panel).</value>
   </data>
-  <data name="SshCfgImport_NoteForwardSkipped" xml:space="preserve">
-    <value>Not imported, no matching tunnel type (Unix socket, remote dynamic forward or port 0): {0}</value>
+  <data name="SshCfgImport_NoteForwardPortZero" xml:space="preserve">
+    <value>Not imported, port 0 (a port picked when connecting) has no tunnel equivalent: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketMix" xml:space="preserve">
+    <value>Not imported, a remote forward needs Unix sockets on both ends or on neither: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketPath" xml:space="preserve">
+    <value>Not imported, the socket path cannot be used on this machine (a local socket needs a full, short enough path; a server socket must start with /): {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNoPermit" xml:space="preserve">
+    <value>Not imported, remote dynamic forward without PermitRemoteOpen: OpenSSH would then let the remote reach everything this machine can. Add PermitRemoteOpen for this host (any to allow all), or create the tunnel in the tunnel panel with an allow list: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNone" xml:space="preserve">
+    <value>Not imported, PermitRemoteOpen none would refuse every request of this remote dynamic forward: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicInvalid" xml:space="preserve">
+    <value>Not imported, the PermitRemoteOpen rule "{1}" is malformed: {0}</value>
   </data>
   <data name="SshCfgImport_NoteForwardInvalid" xml:space="preserve">
     <value>Not imported, malformed forward: {0}</value>

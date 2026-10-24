@@ -5434,8 +5434,23 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshCfgImport_NoteForwardsImported" xml:space="preserve">
     <value>{0} 件のポート転送をこの接続のトンネルとしてインポートします（停止状態。トンネルパネルで開始してください）。</value>
   </data>
-  <data name="SshCfgImport_NoteForwardSkipped" xml:space="preserve">
-    <value>インポートしませんでした。対応するトンネルの種類がありません（Unix ソケット、リモート動的転送、またはポート 0）：{0}</value>
+  <data name="SshCfgImport_NoteForwardPortZero" xml:space="preserve">
+    <value>インポートしませんでした。ポート 0（接続時に決まるポート）はトンネルでは表せません：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketMix" xml:space="preserve">
+    <value>インポートしませんでした。リモート転送は両端とも Unix ソケットか、両端ともソケットでないかのどちらかです：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketPath" xml:space="preserve">
+    <value>インポートしませんでした。このマシンでは使えないソケットパスです（ローカルのソケットは長すぎない完全パス、サーバー側は / で始まるパスが必要）：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNoPermit" xml:space="preserve">
+    <value>インポートしませんでした。PermitRemoteOpen のないリモート動的転送です。OpenSSH はこの場合、このマシンから届く所すべてにリモートからの接続を許します。このホストに PermitRemoteOpen を書いてから（すべて許可なら any）インポートするか、トンネルパネルで許可リストを入れてトンネルを作成してください：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNone" xml:space="preserve">
+    <value>インポートしませんでした。PermitRemoteOpen none ではこのリモート動的転送はすべての要求を拒否します：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicInvalid" xml:space="preserve">
+    <value>インポートしませんでした。PermitRemoteOpen の「{1}」の書き方が正しくありません：{0}</value>
   </data>
   <data name="SshCfgImport_NoteForwardInvalid" xml:space="preserve">
     <value>インポートしませんでした。転送の書き方が正しくありません：{0}</value>

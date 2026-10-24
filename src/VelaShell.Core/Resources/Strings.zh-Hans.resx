@@ -5572,8 +5572,23 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshCfgImport_NoteForwardsImported" xml:space="preserve">
     <value>{0} 条端口转发导入为这条连接的隧道（停止状态，在隧道面板里启动）。</value>
   </data>
-  <data name="SshCfgImport_NoteForwardSkipped" xml:space="preserve">
-    <value>没有导入，现有的隧道类型装不下（Unix 套接字、远程动态转发或端口 0）：{0}</value>
+  <data name="SshCfgImport_NoteForwardPortZero" xml:space="preserve">
+    <value>没有导入，端口 0（连接时才定的端口）在隧道里没有对应的写法：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketMix" xml:space="preserve">
+    <value>没有导入，远程转发要么两头都是 Unix 套接字、要么都不是：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketPath" xml:space="preserve">
+    <value>没有导入，套接字路径在本机用不了（本机套接字要完整路径且不能太长，服务器上的要以 / 开头）：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNoPermit" xml:space="preserve">
+    <value>没有导入，远程动态转发没写 PermitRemoteOpen：OpenSSH 这时让远端能到本机能到的一切。给这台主机写上 PermitRemoteOpen（全放写 any）再导入，或者在隧道面板里建这条隧道并填放行名单：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNone" xml:space="preserve">
+    <value>没有导入，PermitRemoteOpen none 会让这条远程动态转发拒绝所有请求：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicInvalid" xml:space="preserve">
+    <value>没有导入，PermitRemoteOpen 里的「{1}」写得不对：{0}</value>
   </data>
   <data name="SshCfgImport_NoteForwardInvalid" xml:space="preserve">
     <value>没有导入，转发写得不对：{0}</value>

@@ -5572,8 +5572,23 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshCfgImport_NoteForwardsImported" xml:space="preserve">
     <value>{0} 條連接埠轉送匯入為這條連線的通道（停止狀態，在通道面板裡啟動）。</value>
   </data>
-  <data name="SshCfgImport_NoteForwardSkipped" xml:space="preserve">
-    <value>沒有匯入，現有的通道類型裝不下（Unix 通訊端、遠端動態轉送或連接埠 0）：{0}</value>
+  <data name="SshCfgImport_NoteForwardPortZero" xml:space="preserve">
+    <value>沒有匯入，連接埠 0（連線時才決定的連接埠）在通道裡沒有對應的寫法：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketMix" xml:space="preserve">
+    <value>沒有匯入，遠端轉送要嘛兩頭都是 Unix 通訊端、要嘛都不是：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketPath" xml:space="preserve">
+    <value>沒有匯入，通訊端路徑在本機用不了（本機通訊端要完整路徑且不能太長，伺服器上的要以 / 開頭）：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNoPermit" xml:space="preserve">
+    <value>沒有匯入，遠端動態轉送沒寫 PermitRemoteOpen：OpenSSH 這時讓遠端能到本機能到的一切。給這台主機寫上 PermitRemoteOpen（全放寫 any）再匯入，或者在通道面板裡建這條通道並填放行名單：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNone" xml:space="preserve">
+    <value>沒有匯入，PermitRemoteOpen none 會讓這條遠端動態轉送拒絕所有請求：{0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicInvalid" xml:space="preserve">
+    <value>沒有匯入，PermitRemoteOpen 裡的「{1}」寫得不對：{0}</value>
   </data>
   <data name="SshCfgImport_NoteForwardInvalid" xml:space="preserve">
     <value>沒有匯入，轉送寫得不對：{0}</value>

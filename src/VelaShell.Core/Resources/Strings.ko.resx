@@ -5434,8 +5434,23 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="SshCfgImport_NoteForwardsImported" xml:space="preserve">
     <value>포트 포워딩 {0}개를 이 연결의 터널로 가져옵니다(중지 상태, 터널 패널에서 시작하세요).</value>
   </data>
-  <data name="SshCfgImport_NoteForwardSkipped" xml:space="preserve">
-    <value>가져오지 않았습니다. 맞는 터널 유형이 없습니다(Unix 소켓, 원격 동적 포워딩 또는 포트 0): {0}</value>
+  <data name="SshCfgImport_NoteForwardPortZero" xml:space="preserve">
+    <value>가져오지 않았습니다. 포트 0(연결할 때 정해지는 포트)은 터널로 나타낼 수 없습니다: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketMix" xml:space="preserve">
+    <value>가져오지 않았습니다. 원격 포워딩은 양쪽 모두 Unix 소켓이거나 양쪽 모두 아니어야 합니다: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardSocketPath" xml:space="preserve">
+    <value>가져오지 않았습니다. 이 컴퓨터에서 쓸 수 없는 소켓 경로입니다(로컬 소켓은 너무 길지 않은 전체 경로, 서버 소켓은 /로 시작해야 함): {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNoPermit" xml:space="preserve">
+    <value>가져오지 않았습니다. PermitRemoteOpen이 없는 원격 동적 포워딩입니다. 이 경우 OpenSSH는 이 컴퓨터가 닿는 모든 곳에 원격이 접근하게 합니다. 이 호스트에 PermitRemoteOpen을 쓴 뒤(모두 허용은 any) 다시 가져오거나, 터널 패널에서 허용 목록을 넣어 터널을 만드세요: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicNone" xml:space="preserve">
+    <value>가져오지 않았습니다. PermitRemoteOpen none이면 이 원격 동적 포워딩은 모든 요청을 거부합니다: {0}</value>
+  </data>
+  <data name="SshCfgImport_NoteRemoteDynamicInvalid" xml:space="preserve">
+    <value>가져오지 않았습니다. PermitRemoteOpen의 "{1}" 형식이 잘못되었습니다: {0}</value>
   </data>
   <data name="SshCfgImport_NoteForwardInvalid" xml:space="preserve">
     <value>가져오지 않았습니다. 포워딩 형식이 잘못되었습니다: {0}</value>

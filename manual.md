@@ -154,7 +154,7 @@
 
 **步骤：** 打开后等待并行扫描 Xshell、WinSCP 和 `~/.ssh/config`；默认位置没找到时手选来源。核对可导入项和重复项，逐条调整选择后导入。不支持的协议无法勾选，原工具被主密码保护的密码不会被还原，应准备重新输入。
 
-**结果与原理：** 导入的是可识别的连接参数，不是完整模拟另一软件。OpenSSH 只把字面 `Host` 转成连接，`Host *` 作为默认参数来源；没有 `HostName` 时用别名。`IdentityFile` 路径不代表已经核实本机存在；导入后应检查私钥。写了 `CertificateFile`（或私钥旁边有 `-cert.pub`）的按证书认证导入；只写了 `IdentityAgent` 指向默认 agent 的按 SSH Agent 认证导入。`KexAlgorithms` / `HostKeyAlgorithms` / `Ciphers` / `MACs` 原样进连接的自定义算法清单（本版没实现的名字去掉），`Compression`、`ForwardAgent yes` 照开；`LocalForward` / `RemoteForward` / `DynamicForward` 成为这条连接的隧道（停止状态，在隧道面板启动），Unix 套接字与远程动态转发没有对应的隧道类型、不导入。没能照原样导入的设置会在「自定义选择」的预览行里逐条列出。`ProxyJump` 需要本批次有对应跳板，否则保留直连并需手工补设。`ServerAliveInterval` 等其余关键字不导入。
+**结果与原理：** 导入的是可识别的连接参数，不是完整模拟另一软件。OpenSSH 只把字面 `Host` 转成连接，`Host *` 作为默认参数来源；没有 `HostName` 时用别名。`IdentityFile` 路径不代表已经核实本机存在；导入后应检查私钥。写了 `CertificateFile`（或私钥旁边有 `-cert.pub`）的按证书认证导入；只写了 `IdentityAgent` 指向默认 agent 的按 SSH Agent 认证导入。`KexAlgorithms` / `HostKeyAlgorithms` / `Ciphers` / `MACs` 原样进连接的自定义算法清单（本版没实现的名字去掉），`Compression`、`ForwardAgent yes` 照开；`LocalForward` / `RemoteForward` / `DynamicForward` 成为这条连接的隧道（停止状态，在隧道面板启动）；含 `/` 的一头是 Unix 套接字（本地转发两头各自可以是，远程转发要两头都是），`RemoteForward` 不给目标是远程动态转发，放行名单取这台主机的 `PermitRemoteOpen` —— **没写 `PermitRemoteOpen` 的远程动态转发不导入**（OpenSSH 这时按全放处理，而隧道的放行名单必须明写，全放写 `any`）。没能照原样导入的设置会在「自定义选择」的预览行里逐条列出。`ProxyJump` 需要本批次有对应跳板，否则保留直连并需手工补设。`ServerAliveInterval` 等其余关键字不导入。
 
 **注意：** 导入前后都不要关闭指纹校验。Xshell 会话导入与[外部启动兼容登录](#desktop)是两个功能。
 
@@ -166,7 +166,7 @@
 
 **步骤：**
 
-1. 完整备份选 JSON；需要在表格软件整理主机选 CSV，先保存模板再按表头填写，`host` 是必填项；要与命令行 ssh 共用选 OpenSSH config（只写 SSH / SFTP 连接的 `Host` 块：主机、用户、私钥与证书、跳板、压缩、agent 转发、算法与端口转发，从不写密码），把文件内容并进 `~/.ssh/config` 或用 `Include` 引用。
+1. 完整备份选 JSON；需要在表格软件整理主机选 CSV，先保存模板再按表头填写，`host` 是必填项；要与命令行 ssh 共用选 OpenSSH config（只写 SSH / SFTP 连接的 `Host` 块：主机、用户、私钥与证书、跳板、压缩、agent 转发、算法与端口转发，远程动态转发连同 `PermitRemoteOpen` 一起写，从不写密码），把文件内容并进 `~/.ssh/config` 或用 `Include` 引用。
 2. 导出 JSON 默认不含密码；需要包含凭据时显式勾选并设置至少 8 字符的导出口令，凭据部分用口令派生密钥和 AES-GCM 加密，主机、用户名、备注、分组等其余内容仍是明文。**CSV 导出永不包含秘密。**
 3. 导入选文件（上限 16 MB），必要时输入解密口令，在预览中核对目标和分组。
 4. 重复项默认跳过；确需更新再选覆盖，或保留两条。确认后导入，再抽查主机、跳板、认证和路径。

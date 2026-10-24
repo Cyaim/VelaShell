@@ -23,7 +23,7 @@ public sealed record SshConfigExport(string Content, int Exported, int Skipped);
 /// 一条 SSH / SFTP 连接一个 <c>Host</c> 块,别名取连接名(空白与 ssh_config 里另有含义的字符换成 <c>-</c>,重名加序号);
 /// 写的是导入那边认得的同一批关键字:<c>HostName</c> / <c>Port</c> / <c>User</c> / <c>IdentityFile</c> / <c>CertificateFile</c> /
 /// <c>ProxyJump</c>(跳板随导出范围一起带上,按别名引用)/ <c>Compression</c> / <c>ForwardAgent</c> / <c>ForwardX11</c> /
-/// 四个算法清单 / 三种转发。<b>密码与口令从不写</b> —— ssh_config 本来就不存。
+/// 四个算法清单 / 三种转发(含 Unix 套接字,远程动态连同 <c>PermitRemoteOpen</c>)。<b>密码与口令从不写</b> —— ssh_config 本来就不存。
 /// </para>
 /// <para>
 /// 「放开老算法」在 ssh_config 里没有对应的开关:没写自定义清单的类别写成 <c>+老算法</c>;写了 <c>+</c> 的并成一条;
@@ -132,24 +132,91 @@ public static class SshConfigExporter
 
         if (archive.Tunnels?.GetValueOrDefault(session.Id) is { Count: > 0 } tunnels)
         {
-            foreach (TunnelConfig tunnel in tunnels)
-            {
-                switch (tunnel.Type)
-                {
-                    case TunnelType.LocalForward:
-                        Line("LocalForward", $"{Endpoint(tunnel.LocalHost, tunnel.LocalPort)} {Endpoint(tunnel.RemoteHost, tunnel.RemotePort)}");
-                        break;
-                    case TunnelType.RemoteForward:
-                        Line("RemoteForward", $"{Endpoint(tunnel.RemoteHost, tunnel.RemotePort)} {Endpoint(tunnel.LocalHost, tunnel.LocalPort)}");
-                        break;
-                    case TunnelType.DynamicForward:
-                        Line("DynamicForward", Endpoint(tunnel.LocalHost, tunnel.LocalPort));
-                        break;
-                    // 别的隧道类型 ssh_config 这三个关键字表达不了,不写。
-                }
-            }
+            WriteForwards(text, tunnels);
         }
     }
+
+    /// <summary>
+    /// 隧道 → 三种转发关键字。套接字那头写路径(<c>LocalForward /本机/套接字 /服务器/套接字</c>);
+    /// 远程动态写成不给目标的 <c>RemoteForward</c>,放行名单写成这台主机的 <c>PermitRemoteOpen</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠️ <b>远程动态转发一定连同 <c>PermitRemoteOpen</c> 一起写</b>:ssh_config 里没写它时 OpenSSH 按 <c>any</c> 放行,
+    /// 漏写一行就把隧道里收紧过的名单放宽成全放。名单是空的(手改坏了、隧道服务也不会建)的不写。
+    /// </para>
+    /// <para>
+    /// <c>PermitRemoteOpen</c> 在 ssh_config 里是按主机的一条,这台主机的远程动态转发只能共用一份名单:
+    /// 第一条的名单写出来,名单不同的那几条改写成注释 —— 合成一份(取并集)会放宽收得更紧的那一条。
+    /// 只有一头是套接字的远程转发(隧道服务不建)、未来新增的隧道类型同样只写注释。
+    /// </para>
+    /// </remarks>
+    private static void WriteForwards(StringBuilder text, IReadOnlyList<TunnelConfig> tunnels)
+    {
+        void Line(string keyword, string value) => text.Append("    ").Append(keyword).Append(' ').Append(value).Append('\n');
+        void Skipped(string line, string why) => text.Append("    # ").Append(line).Append("  (").Append(why).Append(")\n");
+
+        IReadOnlyList<string>? permit = null;
+        foreach (TunnelConfig tunnel in tunnels)
+        {
+            switch (tunnel.Type)
+            {
+                case TunnelType.LocalForward:
+                    Line("LocalForward",
+                        $"{Socket(tunnel.LocalSocketPath) ?? Endpoint(tunnel.LocalHost, tunnel.LocalPort)} " +
+                        $"{Socket(tunnel.RemoteSocketPath) ?? Endpoint(tunnel.RemoteHost, tunnel.RemotePort)}");
+                    break;
+
+                case TunnelType.RemoteForward when tunnel.LocalSocketPath is not null && tunnel.RemoteSocketPath is not null:
+                    Line("RemoteForward", $"{Socket(tunnel.RemoteSocketPath)} {Socket(tunnel.LocalSocketPath)}");
+                    break;
+
+                case TunnelType.RemoteForward when tunnel.LocalSocketPath is null && tunnel.RemoteSocketPath is null:
+                    Line("RemoteForward", $"{Endpoint(tunnel.RemoteHost, tunnel.RemotePort)} {Endpoint(tunnel.LocalHost, tunnel.LocalPort)}");
+                    break;
+
+                case TunnelType.RemoteForward:
+                    Skipped($"RemoteForward {Socket(tunnel.RemoteSocketPath) ?? Endpoint(tunnel.RemoteHost, tunnel.RemotePort)} " +
+                            $"{Socket(tunnel.LocalSocketPath) ?? Endpoint(tunnel.LocalHost, tunnel.LocalPort)}",
+                        "VelaShell: a remote forward needs Unix sockets on both ends or on neither");
+                    break;
+
+                case TunnelType.DynamicForward:
+                    Line("DynamicForward", Endpoint(tunnel.LocalHost, tunnel.LocalPort));
+                    break;
+
+                case TunnelType.RemoteDynamicForward:
+                {
+                    string forward = Endpoint(tunnel.RemoteHost, tunnel.RemotePort);
+                    if (tunnel.PermitRemoteOpen is not { Count: > 0 } rules)
+                    {
+                        Skipped($"RemoteForward {forward}", "VelaShell: no PermitRemoteOpen allow list");
+                    }
+                    else if (permit is null || permit.SequenceEqual(rules, StringComparer.OrdinalIgnoreCase))
+                    {
+                        permit ??= rules;
+                        Line("RemoteForward", forward);
+                    }
+                    else
+                    {
+                        Skipped($"RemoteForward {forward}",
+                            $"VelaShell: its PermitRemoteOpen ({string.Join(' ', rules)}) differs; ssh_config allows one list per host");
+                    }
+                    break;
+                }
+
+                // 别的隧道类型 ssh_config 这三个关键字表达不了,不写。
+            }
+        }
+
+        if (permit is not null)
+        {
+            Line("PermitRemoteOpen", string.Join(' ', permit));
+        }
+    }
+
+    /// <summary>套接字路径(带空白的加引号);不是套接字时为 <see langword="null" />。</summary>
+    private static string? Socket(string? path) => string.IsNullOrWhiteSpace(path) ? null : Quote(path.Trim());
 
     /// <summary>一个算法类别写成什么;不用写(默认)时为 <see langword="null" />。规则见类型说明。</summary>
     internal static string? AlgorithmLine(SshAlgorithmKind kind, string? spec, bool legacy)
