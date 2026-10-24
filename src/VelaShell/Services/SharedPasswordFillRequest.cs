@@ -114,7 +114,15 @@ internal sealed class SharedPasswordFillRequest : IDisposable
             {
                 Encoding encoding = (Encoding)_control.SessionEncoding.Clone();
                 encoding.EncoderFallback = EncoderFallback.ExceptionFallback;
-                bytes = encoding.GetBytes(password);
+                byte[] secret = encoding.GetBytes(password);
+                // 选中即提交:正文后面紧跟一次回车(与此刻按 Enter 发出的字节相同,换行模式下是 CR LF),
+                // 两者拼成一段、同一次入队。分两次发的话,用户选完顺手敲的字符会插在密码与回车之间,
+                // 被当成口令的一部分交上去。
+                byte[] enter = _control.EncodeEnterKey();
+                bytes = new byte[secret.Length + enter.Length];
+                secret.CopyTo(bytes, 0);
+                enter.CopyTo(bytes, secret.Length);
+                CryptographicOperations.ZeroMemory(secret);
             }
             catch (EncoderFallbackException)
             {

@@ -807,6 +807,11 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         return true;
     }
 
+    /// <summary>此刻按一下 Enter 会发出的字节(远端开了换行模式 LNM 时是 CR LF),只编码、不发送。</summary>
+    /// <remarks>给要在正文后面替用户「按回车」的入口用(共享密码填入),免得各自写死一个 <c>\r</c>。</remarks>
+    public byte[] EncodeEnterKey() =>
+        InputEncoder.Encode(Key.Enter, KeyModifiers.None, Emulator.Modes, Emulator.Type) ?? "\r"u8.ToArray();
+
     /// <inheritdoc />
     public void WritePasteInput(string text)
     {
