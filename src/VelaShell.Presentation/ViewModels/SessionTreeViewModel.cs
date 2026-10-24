@@ -1050,11 +1050,15 @@ public sealed class SessionTreeViewModel : ReactiveObject
     {
         if (
             SelectedNode is not { IsGroup: false } node
-            || !_sessionCache.TryGetValue(node.Id, out SessionProfile? source)
+            || !_sessionCache.TryGetValue(node.Id, out SessionProfile? cached)
         )
         {
             return;
         }
+        // 从仓储取最新的那份再拷:树缓存是加载树那一刻的快照,之后在 SFTP 文档里加的目录收藏
+        // 只经 UpdateDirectoryBookmarksAsync 落库、不回写这份缓存 —— 拿缓存拷出来的副本会少掉它们。
+        // 库里读不到(刚被别处删掉)才退回缓存。
+        SessionProfile source = await _repository.GetSessionAsync(node.Id) ?? cached;
         SessionProfile copy = source.Clone();
         // 副本是一条新配置:换个 id、改个名字,其余原样。原先这里逐字段手写,
         // 每加一个字段就得记得回来补一行 —— 漏了的表现是"复制之后某个设置莫名丢了"。

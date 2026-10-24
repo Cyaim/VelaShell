@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
@@ -44,7 +45,24 @@ public sealed class GistSyncService(
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         WriteIndented = true,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { MarkMissingDirectoryBookmarks } },
     };
+
+    /// <summary>
+    /// 反序列化连接配置之前先把目录收藏置空:载荷里有这个字段(哪怕是 <c>[]</c>)就会被写回,
+    /// 没有就一直是 <see langword="null" /> —— 拉取时据此区分「旧客户端推上来的、根本不带收藏」与「这边确实清空了收藏」。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="SessionProfile.DirectoryBookmarks" /> 有 <c>= []</c> 的初值,按类型反序列化之后两种情形长得一模一样。
+    /// 只挂在同步自己的选项上,仓储与导入备份的序列化不受影响;推送只写不读,也不受影响。
+    /// </remarks>
+    private static void MarkMissingDirectoryBookmarks(JsonTypeInfo typeInfo)
+    {
+        if (typeInfo.Type == typeof(SessionProfile))
+        {
+            typeInfo.OnDeserializing = static profile => ((SessionProfile)profile).DirectoryBookmarks = null!;
+        }
+    }
 
     /// <summary>同步操作串行化:防止自动推送与手动同步并发互踩。</summary>
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -680,8 +698,19 @@ public sealed class GistSyncService(
                             incoming.Password = existing.Password;
                             incoming.PrivateKeyPassphrase ??= existing.PrivateKeyPassphrase;
                         }
-                        // 整条覆盖:远端那份的目录收藏也要带过来(SaveSessionAsync 会保留本机的收藏)。
-                        await sessionRepository.ReplaceSessionAsync(incoming).ConfigureAwait(false);
+                        if (incoming.DirectoryBookmarks is null)
+                        {
+                            // 载荷里压根没有收藏字段:推它的是不认识收藏的旧版本,不是对方清空了收藏。
+                            // 整条覆盖会把本机的收藏一并抹掉,所以走 SaveSessionAsync —— 它在仓储锁内保留库里现存的收藏
+                            // (本机没有这条配置时就是空列表)。
+                            incoming.DirectoryBookmarks = [];
+                            await sessionRepository.SaveSessionAsync(incoming).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            // 字段在(哪怕是空数组):整条覆盖,远端那份的目录收藏也要带过来(SaveSessionAsync 会保留本机的收藏)。
+                            await sessionRepository.ReplaceSessionAsync(incoming).ConfigureAwait(false);
+                        }
                     }
                 }
 
@@ -792,7 +821,7 @@ public sealed class GistSyncService(
             ? null
             : secretProtector.Unprotect(config.ProtectedPassphrase);
 
-    private static SyncEnvelope ParseEnvelope(string content) =>
+    internal static SyncEnvelope ParseEnvelope(string content) =>
         JsonSerializer.Deserialize<SyncEnvelope>(content, JsonOptions)
         ?? throw new InvalidOperationException(Strings.Get("SyncSvc_BadFormat"));
 
