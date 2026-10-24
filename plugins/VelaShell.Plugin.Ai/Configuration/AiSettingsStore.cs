@@ -1603,7 +1603,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         ArgumentNullException.ThrowIfNull(provider);
         EnsureBuiltinOAuthCredentialDestination(provider, credential);
         // OpenAI 系协议无论 Key 还是 access token 都走 Authorization: Bearer,一条路即可;
-        // Anthropic 分岔(Key 是 x-api-key,令牌是 Bearer),见下。
+        // Anthropic 分岔(Key 是 x-api-key,令牌是 Bearer —— SDK 13.x 一律发 Bearer,Key 由插件改回),见下。
         string? secret = credential.Value;
         switch (provider.Protocol)
         {
@@ -1623,12 +1623,21 @@ public sealed class AiSettingsStore(IPluginContext context)
                     string baseUrl = ClientBaseUrl(EndpointOf(provider, credential), provider.Protocol);
                     // 中转站常在 Anthropic 流末尾补一行 OpenAI 习惯的 data: DONE,
                     // 而 SDK 对每个 data: 行无条件反序列化 —— 整轮回复会在最后一刻炸掉(见 SseRepairHandler)
-                    DelegatingHandler[] handlers = credential.Headers is { Count: > 0 } extra
-                        ? [new SseRepairHandler(ReportSseDrop), new ExtraHeadersHandler(extra)]
-                        : [new SseRepairHandler(ReportSseDrop)];
+                    List<DelegatingHandler> handlers = [new SseRepairHandler(ReportSseDrop)];
+                    // SDK 13.x 把 ApiKey 也发成 Authorization: Bearer(12.x 是 x-api-key),只认 x-api-key 的
+                    // 中转站因此 401:手填的 Key 改回 x-api-key。必须排在附加头之前 —— 用户明确配置的头最后落定,
+                    // 不被它盖掉(见 AnthropicApiKeyHandler)。anthropic-version 照 SDK 的发(13.x 是 2026-10-21)。
+                    if (!string.IsNullOrWhiteSpace(secret) && !credential.IsBearerToken)
+                    {
+                        handlers.Add(new AnthropicApiKeyHandler(secret));
+                    }
+                    if (credential.Headers is { Count: > 0 } extra)
+                    {
+                        handlers.Add(new ExtraHeadersHandler(extra));
+                    }
                     // 属性为 init-only,按凭据形态分别构造:
-                    // 无凭据时留给 SDK 的环境变量回退;登录换来的短期令牌要走 AuthToken
-                    // (它发的是 Authorization: Bearer,而 ApiKey 发的是 x-api-key —— 两者不能混)。
+                    // 无凭据时留给 SDK 的环境变量回退;登录换来的短期令牌要走 AuthToken。
+                    // 13.x 起 ApiKey 与 AuthToken 发出去都是 Authorization: Bearer,区别只在上面那个改写处理器挂不挂。
                     bool noSdkRetries = callerCountsRetries && HasProviderKeyPool(provider);
                     AnthropicClient anthropic = string.IsNullOrWhiteSpace(secret)
                         ? new AnthropicClient { BaseUrl = baseUrl, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
@@ -1693,8 +1702,9 @@ public sealed class AiSettingsStore(IPluginContext context)
     /// 在 raw 对象里必然有值,而适配器<b>只覆盖 Messages</b> —— MaxTokens 与 Model 以 raw 里的为准,
     /// <c>ChatOptions.MaxOutputTokens</c> 和 <c>AsIChatClient(model, maxTokens)</c> 都被无视。
     /// 所以这里必须把真实的模型与输出上限一并填进去,否则请求会带着占位值发出去。
-    /// 另:开思考时 Anthropic 要求 <c>max_tokens > budget_tokens</c>,且 temperature 只能是 1 或不填
-    /// (本插件从不设 Temperature)。
+    /// 另:开思考时 Anthropic 要求 <c>max_tokens > budget_tokens</c>。
+    /// temperature 不用操心:SDK 13.x 的 <c>MessageCreateParams</c> 已经没有这个字段,
+    /// Anthropic 协议上 <see cref="ApplyEndpointQuirks" /> 也会把它从选项里抹掉。
     /// </remarks>
     public static void ApplyReasoning(ChatOptions options, ResolvedModel provider)
     {
@@ -1746,6 +1756,13 @@ public sealed class AiSettingsStore(IPluginContext context)
     /// 而且一次只告诉你一个。所以这些差异全部收在<b>目录数据</b>里
     /// (<see cref="AiProvider.UnsupportedParameters" /> / <see cref="AiProvider.StoreResponses" />),
     /// 由这里统一施加 —— 再发现一条只要加一行数据,不必改代码。
+    /// <para>
+    /// 唯一一条<b>按协议</b>而不是按目录数据的规则:Anthropic 协议上一律不发 temperature / top_p / top_k。
+    /// Anthropic SDK 13.x 把 <c>anthropic-version</c> 换成了 <c>2026-10-21</c>,这一版的接口收到这三个字段
+    /// 一律 400;SDK 也随之从 <c>MessageCreateParams</c> 删掉了它们,<c>IChatClient</c> 适配器不再映射。
+    /// 这里显式抹掉,不靠适配器"恰好不映射" —— 设置页对 Anthropic 模型禁用这两格,说的就是这件事。
+    /// 设置里存着的值不动,换回 OpenAI 系协议照常生效。
+    /// </para>
     /// </remarks>
     /// <param name="options">这一轮的请求选项;<b>就地修改</b>。</param>
     /// <param name="provider">已解出继承链的模型。</param>
@@ -1753,6 +1770,12 @@ public sealed class AiSettingsStore(IPluginContext context)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(provider);
+        if (provider.Protocol == ChatProtocol.AnthropicMessages)
+        {
+            options.Temperature = null;
+            options.TopP = null;
+            options.TopK = null;
+        }
         // 按目录现读,不用供应商身上那份快照 —— 否则每加一条新规则,
         // 已经连上的用户都得重新登录一次才拿得到(见 EndpointQuirks)
         var quirks = EndpointQuirks.Of(provider.Provider);

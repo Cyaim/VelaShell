@@ -30,6 +30,10 @@ namespace VelaShell.Plugin.Ai.Configuration;
 internal static class EndpointModelCatalog
 {
     /// <summary>Anthropic 要求每条请求都带的 API 版本头。</summary>
+    /// <remarks>
+    /// 聊天请求由 SDK 自己带版本头(13.x 起是 <c>2026-10-21</c>);这条自己拼的列表请求仍发 <c>2023-06-01</c> ——
+    /// 模型列表接口在两个版本下行为一样,而只认得旧版本号的老兼容端点也不会因此拒绝。
+    /// </remarks>
     public const string AnthropicVersion = "2023-06-01";
 
     /// <summary>
@@ -66,7 +70,8 @@ internal static class EndpointModelCatalog
     /// <remarks>
     /// 鉴权方式跟着协议走,与发对话请求时同一套:OpenAI 系无论 Key 还是订阅令牌都是
     /// <c>Authorization: Bearer</c>;Anthropic 分岔 —— 手填的 Key 是 <c>x-api-key</c>,
-    /// 登录换回来的令牌才是 Bearer。凭据为空也照发:让服务端回一个准确的 401,
+    /// 登录换回来的令牌才是 Bearer(SDK 13.x 一律发 Bearer,聊天那边由 <c>AnthropicApiKeyHandler</c>
+    /// 把 Key 改回 <c>x-api-key</c>,两边才对得上)。凭据为空也照发:让服务端回一个准确的 401,
     /// 比本地猜"大概是没填 Key"要有用。
     /// </remarks>
     /// <param name="baseUrl">供应商基地址。</param>

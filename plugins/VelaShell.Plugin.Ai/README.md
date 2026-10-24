@@ -367,6 +367,16 @@ GitHub Copilot 这三条走的是这一路 —— 因为**没有第二条路**:�
 又不至于每轮刷一条 Warning;认不出来的载荷则每次都警告,那可能是中转站塞进来的错误信息,
 漏一条就变成一次无声的截断。
 
+**API Key 改回 `x-api-key`**(`Auth/AnthropicApiKeyHandler.cs`,同样挂在 `AnthropicClient.Handlers` 上):
+`Anthropic` SDK 13.x 把 `ApiKey` 也发成 `Authorization: Bearer`(12.x 及以前是 `x-api-key`),只认 `x-api-key`
+的中转站于是一聊天就 401 —— 而拉模型清单那条请求是自己拼的(`x-api-key` + `anthropic-version: 2023-06-01`),
+照常能用,两边对不上。所以手填的 Key(含登录换回来的长期 Key)发出前恢复成 13 之前的样子:
+`x-api-key: <Key>`,不带 `Authorization`。只在 `Authorization` 恰好是 `Bearer <这把 Key>` 时改写;
+登录换来的短期令牌照旧走 `Authorization: Bearer`,没有凭据时由 SDK 读 `ANTHROPIC_API_KEY` /
+`ANTHROPIC_AUTH_TOKEN` 的那条路也不动。它排在账号附加头(`ExtraHeadersHandler`)**外层**:附加头后施加,
+用户明确配置的 `Authorization` / `x-api-key` 总是最后落定,不会被盖掉。`anthropic-version` 照 SDK 的发
+(13.x 为 `2026-10-21`)—— 请求体是按这个版本拼的。`AnthropicWireTests` 抓真实请求头守着这几条。
+
 **判据取自请求体里的 `"stream":true`,不看响应的 `Content-Type`。** 第一版按
 `Content-Type == text/event-stream` 判断,在真实中转站上整个没生效 —— 它给流式响应贴的是
 `application/json`(起本地假端点复现确认)。非流式响应则一个字节都不碰:HttpClient 已经把它
@@ -379,6 +389,16 @@ Base URL 与 API Key 全部用户自填;API Key 经宿主 **Secrets 能力加密
 每个模型还可单独配:采样参数(temperature / top_p / 停止序列,留空 = 不发该参数)、
 **专用系统提示词**(盖过全局那份)、以及三档**单价**(输入 / 输出 / 缓存命中,每百万 token)。
 填了单价,用量的悬停提示里就会给出这段会话的花费估算;留 0 就不估。
+
+**temperature / top_p 在 Anthropic 协议上不发。** SDK 13.x 发的 `anthropic-version: 2026-10-21`
+收到 temperature / top_p / top_k 一律 400,SDK 也随之从 `MessageCreateParams` 删掉了这几个字段,
+`IChatClient` 适配器不再映射 `ChatOptions.Temperature` / `TopP` / `TopK`。插件在
+`AiSettingsStore.ApplyEndpointQuirks` 里对 Anthropic 协议显式抹掉三者(不靠适配器"恰好不映射");
+设置页对解出协议为 Anthropic 的模型**禁用**温度与 Top-P 两格并写明原因 —— 只禁用不清空,存着的值照样
+保存,模型换回 OpenAI 系协议就又生效。停止序列不受影响,照发。
+**第三方 Anthropic 兼容端点也不发**:13.2.1 没有受支持的采样入口,唯一能塞任意字段的是
+`MessageCreateParams.FromRawUnchecked` 这种跳过类型检查的原始请求体口子,不算干净的钩子;
+何况中转站多半把版本头原样转给上游,硬塞进去只会把"不生效"变成每轮 400。
 
 ## 供应商 › 模型两层配置
 

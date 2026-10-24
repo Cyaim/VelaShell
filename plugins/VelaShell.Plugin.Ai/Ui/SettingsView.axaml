@@ -408,6 +408,8 @@
                     <!-- 两句说明落在网格末尾(设计图 E):它们讲的是"这一整块怎么用",
                          夹在两排输入框中间会把网格切断。 -->
                     <TextBlock x:Name="SamplingHintText" Classes="hint" />
+                    <!-- 解出的协议是 Anthropic 时温度 / Top-P 两格禁用(SDK 13.x 起不发),这一句说明为什么 -->
+                    <TextBlock x:Name="SamplingAnthropicHintText" Classes="hint" IsVisible="False" />
                     <TextBlock x:Name="PriceHintText" Classes="hint" />
                   </StackPanel>
 
