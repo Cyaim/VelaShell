@@ -124,6 +124,7 @@ public static class SettingsCategories
     /// </summary>
     public static IReadOnlyList<(string Block, string Field)> MigrationFields { get; } =
     [
+        ("general", "autoDownloadUpdatesOptInMigrated"),
         ("security", "recordingOptInMigrated"),
         ("security", "fingerprintChangeDefaultMigrated"),
         ("proxy", "defaultsMigrated"),

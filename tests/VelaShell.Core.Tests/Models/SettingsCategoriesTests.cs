@@ -62,6 +62,26 @@ public sealed class SettingsCategoriesTests
         }
     }
 
+    /// <summary>
+    /// 分块里凡是叫 <c>…Migrated</c> 的都是 <see cref="AppSettings.Normalize" /> 打的一次性标记:漏登记的那个,
+    /// 第一次保存时从 false 变成 true,审计就凭空记一条「设置变更」(自动下载更新的迁移标记就这样漏过一次)。
+    /// </summary>
+    [TestMethod]
+    public void EveryMigratedFlag_IsRegisteredAsAMigrationField()
+    {
+        (string Block, string Field)[] flags =
+        [
+            .. typeof(AppSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => typeof(ObservableOptions).IsAssignableFrom(p.PropertyType))
+                .SelectMany(block => block.PropertyType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(p => p.PropertyType == typeof(bool) && p.Name.EndsWith("Migrated", StringComparison.Ordinal))
+                    .Select(p => (Json(block.Name), Json(p.Name))))
+        ];
+        Assert.IsNotEmpty(flags);
+        Assert.IsEmpty(flags.Except(SettingsCategories.MigrationFields).ToArray(),
+            "有迁移标记没登记进 SettingsCategories.MigrationFields");
+    }
+
     [TestMethod]
     public void OnlyProxyAndSecurity_AreSensitive()
     {
