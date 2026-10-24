@@ -61,6 +61,60 @@ public partial class KeyManagementPage : UserControl
         }
     });
 
+    /// <summary>导出公钥:另存为 <c>名称.pub</c>。</summary>
+    private void ExportPublicKey_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (sender is not Control { DataContext: SshKeyInfo key }
+            || DataContext is not SettingsViewModel viewModel
+            || TopLevel.GetTopLevel(this) is not { } top)
+        {
+            return;
+        }
+        if (await PickDestinationAsync(top, key.Name + ".pub") is { } path)
+        {
+            await viewModel.SshKeys.ExportPublicKeyAsync(key, path);
+        }
+    });
+
+    /// <summary>
+    /// 导出私钥:先把后果说清楚,确认了再另存。
+    /// </summary>
+    /// <remarks>
+    /// 导出的是原样的私钥文件 —— 没设口令的钥,拿到这份文件的人就能登录所有信任它的服务器。
+    /// 公钥导出不问:它本来就是要发给别人的。
+    /// </remarks>
+    private void ExportPrivateKey_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (sender is not Control { DataContext: SshKeyInfo key }
+            || DataContext is not SettingsViewModel viewModel
+            || TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return;
+        }
+        bool confirmed = await MessageDialog.ConfirmAsync(
+            owner,
+            Strings.Get("SetKeys_ExportPrivateKeyTitle"),
+            Strings.Format("SetKeys_ExportPrivateKeyConfirm", key.Name),
+            confirmText: Strings.Get("SetKeys_ExportPrivateKeyConfirmButton"),
+            kind: MessageDialogKind.Warning,
+            danger: true);
+        if (confirmed && await PickDestinationAsync(owner, key.Name) is { } path)
+        {
+            await viewModel.SshKeys.ExportPrivateKeyAsync(key, path);
+        }
+    });
+
+    private static async Task<string?> PickDestinationAsync(TopLevel top, string suggestedName)
+    {
+        IStorageFile? file = await top.StorageProvider.SaveFilePickerAsync(new()
+        {
+            Title = Strings.Get("SetKeys_ExportKey"),
+            SuggestedFileName = suggestedName,
+            SuggestedStartLocation = await StorageDefaults.DownloadsAsync(top)
+        });
+        return file?.TryGetLocalPath() is { Length: > 0 } path ? path : null;
+    }
+
     private void CopyPublicKey_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
         if (sender is Control { DataContext: SshKeyInfo key } && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)

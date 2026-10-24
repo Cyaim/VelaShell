@@ -152,8 +152,14 @@ public class SshKeyManagerViewModel : ReactiveObject
         }
         try
         {
-            SshKeyInfo? imported = await _keyService.ImportKeyAsync(sourcePath);
-            StatusMessage = imported is null ? Strings.Get("Msg_KeyAlreadyExists") : Strings.Format("Msg_KeyImported", imported.Name);
+            SshKeyImportResult? imported = await _keyService.ImportKeyAsync(sourcePath);
+            // 带口令的照收,但要说出来:用户才知道连接时会被问口令,而不是以为导入出了什么岔子。
+            StatusMessage = imported switch
+            {
+                null => Strings.Get("Msg_KeyAlreadyExists"),
+                { NeedsPassphrase: true } => Strings.Format("Msg_KeyImportedNeedsPassphrase", imported.Key.Name),
+                _ => Strings.Format("Msg_KeyImported", imported.Key.Name)
+            };
             await RefreshAsync();
         }
         catch (Exception ex)
@@ -218,6 +224,48 @@ public class SshKeyManagerViewModel : ReactiveObject
         catch (Exception ex)
         {
             StatusMessage = Strings.Format("Msg_DeleteFailed", ex.Message);
+        }
+    }
+
+    /// <summary>把公钥行导出到一个文件(给运维、贴进云控制台、发给要加 authorized_keys 的人)。</summary>
+    /// <param name="key">密钥。</param>
+    /// <param name="destinationPath">另存为对话框选的位置。</param>
+    public async Task ExportPublicKeyAsync(SshKeyInfo key, string destinationPath)
+    {
+        if (_keyService is null)
+        {
+            return;
+        }
+        try
+        {
+            await _keyService.ExportPublicKeyAsync(key, destinationPath);
+            StatusMessage = Strings.Format("Msg_PublicKeyExported", key.Name, destinationPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusMessage = Strings.Format("Msg_KeyExportFailed", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 把私钥文件原样导出。<b>警示在调用方(密钥管理页)做</b> —— 与删除同理,它拿得到窗口。
+    /// </summary>
+    /// <param name="key">密钥。</param>
+    /// <param name="destinationPath">另存为对话框选的位置。</param>
+    public async Task ExportPrivateKeyAsync(SshKeyInfo key, string destinationPath)
+    {
+        if (_keyService is null)
+        {
+            return;
+        }
+        try
+        {
+            await _keyService.ExportPrivateKeyAsync(key, destinationPath);
+            StatusMessage = Strings.Format("Msg_PrivateKeyExported", key.Name, destinationPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusMessage = Strings.Format("Msg_KeyExportFailed", ex.Message);
         }
     }
 

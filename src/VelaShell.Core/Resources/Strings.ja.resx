@@ -1258,6 +1258,15 @@
   <data name="KeySvc_ImportBadPublicKey" xml:space="preserve">
     <value>{0} は解析できる SSH 公開鍵ではありません。何もインポートされていません。</value>
   </data>
+  <data name="KeySvc_ImportInvalidPrivateKey" xml:space="preserve">
+    <value>{0} は秘密鍵のようですが、内容が不完全か破損しています。何もインポートされていません。</value>
+  </data>
+  <data name="KeySvc_ImportUnsupportedKey" xml:space="preserve">
+    <value>秘密鍵 {0} の形式または暗号化方式はサポートされていません。何もインポートされていません。旧式の暗号化 PEM 形式は「ssh-keygen -p -f &lt;ファイル&gt;」で一度変換できます。</value>
+  </data>
+  <data name="KeySvc_ImportPublicKeyMismatch" xml:space="preserve">
+    <value>公開鍵ファイル {0} は秘密鍵 {1} と対になっていません。何もインポートされていません。</value>
+  </data>
   <data name="KeySvc_ImportNotAPrivateKey" xml:space="preserve">
     <value>{0} は秘密鍵ではないようです (形式を認識できません。OpenSSH、PKCS#1/#8、SEC1、PuTTY .ppk に対応しています)。何もインポートされていません。</value>
   </data>
@@ -1520,11 +1529,23 @@
   <data name="Msg_KeyDeleted" xml:space="preserve">
     <value>{0} を削除しました。</value>
   </data>
+  <data name="Msg_PublicKeyExported" xml:space="preserve">
+    <value>{0} の公開鍵を {1} にエクスポートしました。</value>
+  </data>
+  <data name="Msg_PrivateKeyExported" xml:space="preserve">
+    <value>秘密鍵 {0} を {1} にエクスポートしました。不要になったらこのコピーを削除してください。</value>
+  </data>
+  <data name="Msg_KeyExportFailed" xml:space="preserve">
+    <value>エクスポートに失敗しました: {0}</value>
+  </data>
   <data name="Msg_KeyGenerated" xml:space="preserve">
     <value>{0}({1})を生成しました。</value>
   </data>
   <data name="Msg_KeyImported" xml:space="preserve">
     <value>{0} をインポートしました。</value>
+  </data>
+  <data name="Msg_KeyImportedNeedsPassphrase" xml:space="preserve">
+    <value>{0} をインポートしました。この鍵にはパスフレーズが設定されているため、接続時に入力を求められます。</value>
   </data>
   <data name="Msg_LastSyncAt" xml:space="preserve">
     <value>前回の同期: {0:yyyy-MM-dd HH:mm:ss}</value>
@@ -2735,6 +2756,26 @@
   </data>
   <data name="SetKeys_DeleteKeyConfirm" xml:space="preserve">
     <value>鍵ペア「{0}」を削除しますか? {1} とその .pub をディスクから削除します。同じ鍵をこのマシンの他のツールが使っている可能性があり、元に戻せません。</value>
+  </data>
+  <data name="SetKeys_ExportKey" xml:space="preserve">
+    <value>鍵をエクスポート</value>
+  </data>
+  <data name="SetKeys_ExportPublicKey" xml:space="preserve">
+    <value>公開鍵をエクスポート…</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKey" xml:space="preserve">
+    <value>秘密鍵をエクスポート…</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKeyTitle" xml:space="preserve">
+    <value>秘密鍵をエクスポート</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKeyConfirm" xml:space="preserve">
+    <value>秘密鍵「{0}」を選択した場所にそのままコピーします。パスフレーズのない鍵なら、このファイルを手に入れた人は、この鍵を信頼しているすべてのサーバーにログインできます。
+
+自分だけが管理できる場所に保存し、使い終わったら削除してください。クラウドドライブ、チャット、リポジトリには置かないでください。macOS / Linux ではエクスポートしたファイルは自分だけが読み書きできます (0600)。</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKeyConfirmButton" xml:space="preserve">
+    <value>エクスポートする</value>
   </data>
   <data name="SetKeys_Generate" xml:space="preserve">
     <value>鍵を生成</value>

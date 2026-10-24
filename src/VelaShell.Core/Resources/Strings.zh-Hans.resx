@@ -1686,6 +1686,15 @@
   <data name="KeySvc_ImportBadPublicKey" xml:space="preserve">
     <value>{0} 不是可解析的 SSH 公钥,未导入任何内容。</value>
   </data>
+  <data name="KeySvc_ImportInvalidPrivateKey" xml:space="preserve">
+    <value>{0} 看着像私钥,但内容不完整或已损坏,未导入任何内容。</value>
+  </data>
+  <data name="KeySvc_ImportUnsupportedKey" xml:space="preserve">
+    <value>私钥 {0} 的格式或加密方式不受支持,未导入任何内容。过时的 PEM 加密格式可以先用「ssh-keygen -p -f &lt;文件&gt;」转一次。</value>
+  </data>
+  <data name="KeySvc_ImportPublicKeyMismatch" xml:space="preserve">
+    <value>公钥文件 {0} 与私钥 {1} 不是同一把,未导入任何内容。</value>
+  </data>
   <data name="KeySvc_ImportNotAPrivateKey" xml:space="preserve">
     <value>{0} 看起来不是私钥(认不出格式;支持 OpenSSH、PKCS#1/#8、SEC1 与 PuTTY .ppk),未导入任何内容。</value>
   </data>
@@ -1882,11 +1891,23 @@
   <data name="Msg_KeyDeleted" xml:space="preserve">
     <value>已删除 {0}。</value>
   </data>
+  <data name="Msg_PublicKeyExported" xml:space="preserve">
+    <value>已把 {0} 的公钥导出到 {1}。</value>
+  </data>
+  <data name="Msg_PrivateKeyExported" xml:space="preserve">
+    <value>已把私钥 {0} 导出到 {1}。用完请删掉这份副本。</value>
+  </data>
+  <data name="Msg_KeyExportFailed" xml:space="preserve">
+    <value>导出失败:{0}</value>
+  </data>
   <data name="Msg_KeyGenerated" xml:space="preserve">
     <value>已生成 {0}({1})。</value>
   </data>
   <data name="Msg_KeyImported" xml:space="preserve">
     <value>已导入 {0}。</value>
+  </data>
+  <data name="Msg_KeyImportedNeedsPassphrase" xml:space="preserve">
+    <value>已导入 {0}。这把私钥设了口令,连接时会要求输入。</value>
   </data>
   <data name="Msg_LastSyncAt" xml:space="preserve">
     <value>上次同步:{0:yyyy-MM-dd HH:mm:ss}</value>
@@ -3012,6 +3033,26 @@
   </data>
   <data name="SetKeys_DeleteKeyConfirm" xml:space="preserve">
     <value>确定删除密钥对“{0}”吗?这会从磁盘上删除 {1} 及其 .pub。本机其他工具可能正在使用同一把密钥,且此操作不可撤销。</value>
+  </data>
+  <data name="SetKeys_ExportKey" xml:space="preserve">
+    <value>导出密钥</value>
+  </data>
+  <data name="SetKeys_ExportPublicKey" xml:space="preserve">
+    <value>导出公钥…</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKey" xml:space="preserve">
+    <value>导出私钥…</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKeyTitle" xml:space="preserve">
+    <value>导出私钥</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKeyConfirm" xml:space="preserve">
+    <value>私钥「{0}」会原样复制到你选的位置。没设口令的私钥,拿到这份文件的人就能登录所有信任它的服务器。
+
+只存到自己能控制的地方,用完删掉;不要放进网盘、聊天或代码仓库。macOS / Linux 上导出的文件只给你自己读写(0600)。</value>
+  </data>
+  <data name="SetKeys_ExportPrivateKeyConfirmButton" xml:space="preserve">
+    <value>仍然导出</value>
   </data>
   <data name="SetKeys_Generate" xml:space="preserve">
     <value>生成密钥</value>

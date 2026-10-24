@@ -35,14 +35,43 @@ public enum SshKeyAlgorithm
     Rsa
 }
 
-/// <summary>SSH 密钥管理(设置 - 密钥管理页):枚举、导入、生成、删除 ~/.ssh 下的密钥对。</summary>
+/// <summary>导入一把私钥的结果。</summary>
+/// <param name="Key">导入后的密钥(按真实解析结果)。</param>
+/// <param name="NeedsPassphrase">
+/// 私钥加了口令:格式对、结构完整,但要口令才解得开 —— 导入时不问口令,连接时再问。
+/// 与「不是私钥」「私钥坏了」分开报,用户才知道该去找口令还是该换文件。
+/// </param>
+public sealed record SshKeyImportResult(SshKeyInfo Key, bool NeedsPassphrase);
+
+/// <summary>SSH 密钥管理(设置 - 密钥管理页):枚举、导入、导出、生成、删除 ~/.ssh 下的密钥对。</summary>
 public interface ISshKeyService
 {
     /// <summary>枚举 ~/.ssh 下已有的密钥对。</summary>
     Task<List<SshKeyInfo>> ListKeysAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>把外部私钥(及同名 .pub)复制进 ~/.ssh。返回 null 表示同名文件已存在。</summary>
-    Task<SshKeyInfo?> ImportKeyAsync(string sourcePrivateKeyPath, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 把外部私钥(及同名 .pub)复制进 ~/.ssh。先用 SSH 库把私钥完整解析一遍:坏的、不受支持的拒收,
+    /// 加了口令的照收并标明;.pub 与私钥不是同一把时拒收。返回 null 表示同名文件已存在。
+    /// </summary>
+    /// <exception cref="FileNotFoundException">源私钥不存在,或没有 .pub 而私钥里又读不出公钥。</exception>
+    /// <exception cref="InvalidDataException">不是私钥、私钥损坏或不受支持、.pub 不是公钥或与私钥不配对。</exception>
+    Task<SshKeyImportResult?> ImportKeyAsync(string sourcePrivateKeyPath, CancellationToken cancellationToken = default);
+
+    /// <summary>把一把密钥的公钥行写到 <paramref name="destinationPath" />(已存在则覆盖)。</summary>
+    /// <param name="key">密钥。</param>
+    /// <param name="destinationPath">目标文件。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task ExportPublicKeyAsync(SshKeyInfo key, string destinationPath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 把一把密钥的私钥文件原样复制到 <paramref name="destinationPath" />(已存在则覆盖);
+    /// Unix 上目标文件只给属主读写(0600),写入内容之前就收窄。
+    /// </summary>
+    /// <param name="key">密钥。</param>
+    /// <param name="destinationPath">目标文件。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <exception cref="FileNotFoundException">私钥文件不在了。</exception>
+    Task ExportPrivateKeyAsync(SshKeyInfo key, string destinationPath, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 生成密钥对(OpenSSH 格式私钥 + OpenSSH 公钥行),默认 Ed25519。名称已存在时抛 IOException。
