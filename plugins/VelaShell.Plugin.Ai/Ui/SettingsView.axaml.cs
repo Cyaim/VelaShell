@@ -435,6 +435,7 @@ public partial class SettingsView : UserControl
         TopPLabel.Text = _loc["TopP"];
         StopLabel.Text = _loc["StopSequences"];
         SamplingHintText.Text = _loc["SamplingHint"];
+        SamplingAnthropicHintText.Text = _loc["SamplingAnthropicNotSent"];
         PriceInLabel.Text = _loc["PriceIn"];
         PriceOutLabel.Text = _loc["PriceOut"];
         PriceCachedLabel.Text = _loc["PriceCached"];
@@ -933,9 +934,23 @@ public partial class SettingsView : UserControl
             : null;
     }
 
-    /// <summary>只对某一种协议成立的选项跟着解出的协议显隐(现在只有 Anthropic 的提示词缓存)。</summary>
+    /// <summary>
+    /// 只对某一种协议成立的选项跟着解出的协议走:Anthropic 的提示词缓存显隐;
+    /// 温度 / Top-P 在 Anthropic 协议上禁用并给出说明。
+    /// </summary>
+    /// <remarks>
+    /// Anthropic SDK 13.x 发 <c>anthropic-version: 2026-10-21</c>,这一版不收 temperature / top_p,
+    /// 插件在这条协议上也就不发(见 <c>AiSettingsStore.ApplyEndpointQuirks</c>)。只禁用、不清空:
+    /// 框里仍显示存着的值,保存时原样写回,换回 OpenAI 系协议就又生效 —— 用户填过的东西不替他扔。
+    /// </remarks>
     private void UpdateProtocolOnlyFields()
-        => PromptCachePanel.IsVisible = FormProtocol() == ChatProtocol.AnthropicMessages;
+    {
+        bool anthropic = FormProtocol() == ChatProtocol.AnthropicMessages;
+        PromptCachePanel.IsVisible = anthropic;
+        TemperatureBox.IsEnabled = !anthropic;
+        TopPBox.IsEnabled = !anthropic;
+        SamplingAnthropicHintText.IsVisible = anthropic;
+    }
 
     /// <summary>
     /// 「拉取模型」:问端点它实际供应哪些模型,配上规格,落成真正可选的模型。

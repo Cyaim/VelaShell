@@ -11,10 +11,15 @@ namespace VelaShell.Plugin.Ai.Chat;
 /// </summary>
 internal sealed class AgentRunCoordinator(CommandJobRunScope jobs, AgentExecution execution)
 {
+    /// <remarks>
+    /// <c>localWaiting</c> 只在纯等独立传输的那段回调:进入时传 <see langword="true" />,结束、下一次调模型之前
+    /// 传 <see langword="false" /> 并等它返回。入口借此暂停请求预算、让出共享名额(Bridge 的总并发闸)并在这里取回;
+    /// 被取消时不再回调 <see langword="false" />,名额由入口按实际持有状态收尾。
+    /// </remarks>
     internal async IAsyncEnumerable<ChatResponseUpdate> RunAsync(IChatClient client,
         IEnumerable<ChatMessage> messages, ChatOptions options, Action? waiting,
         [EnumeratorCancellation] CancellationToken cancellationToken, Action<int>? continuingBatch = null,
-        Action<bool>? localWaiting = null)
+        Func<bool, CancellationToken, ValueTask>? localWaiting = null)
     {
         List<ChatMessage> context = [.. messages];
         // 批次只用于进度提示;显式边界自动续接,后台完成唤醒不增加批次编号。
@@ -72,12 +77,18 @@ internal sealed class AgentRunCoordinator(CommandJobRunScope jobs, AgentExecutio
                 List<Task> pending = [];
                 if (commandCompletion is not null) pending.Add(commandCompletion);
                 if (transferCompletion is not null) pending.Add(transferCompletion);
-                // 只暂停独立上传的本地等待预算；纯命令/监控保留既有入口超时策略。
-                bool waitingForTransfer = transferCompletion is not null && jobs.Transfers?.HasRunningTransfers == true
+                // 只暂停独立传输的本地等待预算；纯命令/监控保留既有入口超时策略。
+                bool waitingForTransfer = localWaiting is not null && transferCompletion is not null
+                    && jobs.Transfers?.HasRunningTransfers == true
                     && commandCompletion is null && !jobs.HasActiveJobs && !jobs.HasMonitoringJobs;
-                if (waitingForTransfer) localWaiting?.Invoke(true);
+                if (waitingForTransfer) await localWaiting!(true, cancellationToken).ConfigureAwait(false);
                 try { await Task.WhenAny(pending).WaitAsync(cancellationToken).ConfigureAwait(false); }
-                finally { if (waitingForTransfer) localWaiting?.Invoke(false); }
+                finally
+                {
+                    // 取回在下一次调模型之前完成;已取消就不再回头排队抢名额,本轮就此收尾。
+                    if (waitingForTransfer && !cancellationToken.IsCancellationRequested)
+                        await localWaiting!(false, cancellationToken).ConfigureAwait(false);
+                }
                 if (commandCompletion?.IsCompleted == true)
                 {
                     completed = await commandCompletion.ConfigureAwait(false);

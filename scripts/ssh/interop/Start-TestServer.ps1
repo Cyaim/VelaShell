@@ -125,8 +125,14 @@ if ($LASTEXITCODE -ne 0) {
 $publicKey = Get-Content "$keyPath.pub" -Raw
 
 if ($Network -eq 'auto') {
-    # compose 网络的名字随检出目录变(velashell_default、velashell-xxx_default……),按靶机实际所在的网络取
-    $Network = (docker inspect velashell-test-shells --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' 2>$null) ?? ''
+    # compose 网络的名字随检出目录变(velashell_default、velashell-xxx_default……),按靶机实际所在的网络取。
+    # 靶机没在跑时 docker inspect 往 stderr 写一句 no such object、退出码 1:PowerShell 7.0/7.1 在 Stop 下
+    # 会把重定向掉的 stderr 也当成终止错误,整个脚本停在这。只在这一句里放宽成 Continue,结果看退出码
+    $Network = & {
+        $ErrorActionPreference = 'Continue'
+        $networks = docker inspect velashell-test-shells --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' 2>$null
+        $LASTEXITCODE -eq 0 ? "$networks" : ''
+    }
 }
 $networkArgs = [string]::IsNullOrWhiteSpace($Network) ? @() : @('--network', $Network.Trim())
 

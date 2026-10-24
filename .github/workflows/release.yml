@@ -409,6 +409,12 @@ jobs:
     if: needs.prepare-release.outputs.published == 'true' && (github.event_name == 'release' && github.event.action == 'published' || github.event_name == 'workflow_dispatch' && !inputs.notes_only)
     runs-on: ubuntu-latest
     steps:
+      # 只要 scripts/ci:latest.json 由 release-manifest.sh 生成,仅同步日志的任务重建清单时用同一份。
+      # 先于下载产物检出 —— checkout 会清空不是仓库的工作目录。
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           # 只收便携版产物:store-msix 是给 Partner Center 手动提交的,不能混进 Release 资产
@@ -430,30 +436,9 @@ jobs:
             .tagName == $tag and .isDraft == false and
             (.body == null or (.body | type == "string")) and (.publishedAt | type == "string") and
             (.url | type == "string")' "$metadata" >/dev/null
-          cd dist
-          VERSION="${TAG_NAME#v}"
-          assets='{}'
-          add_asset() {
-            local rid="$1" file="$2"
-            local sha size
-            sha=$(sha256sum "$file" | cut -d' ' -f1)
-            size=$(stat -c%s "$file")
-            assets=$(jq --arg rid "$rid" --arg name "$file" --arg sha "$sha" --argjson size "$size" \
-              '.[$rid] = {name: $name, sha256: $sha, size: $size}' <<< "$assets")
-          }
-          for rid in win-x64 win-arm64; do
-            add_asset "$rid" "VelaShell-$VERSION-$rid.zip"
-          done
-          # macOS 固定登记 tar.gz —— 更新器只会原地解包 zip/tar.gz,dmg 是给人手动安装的,
-          # 写进清单会让全体 mac 用户的应用内更新直接报"不支持的包格式"(见文件头)。
-          for rid in osx-x64 osx-arm64 linux-x64 linux-arm64; do
-            add_asset "$rid" "VelaShell-$VERSION-$rid.tar.gz"
-          done
-          # 正文始终作为 JSON 数据读取,不经 shell 展开或拼接为脚本。
-          jq -n --arg version "$VERSION" --arg tag "$TAG_NAME" --argjson assets "$assets" \
-            --slurpfile release "$metadata" '
-            {version: $version, tag: $tag, assets: $assets,
-             releaseNotes: ($release[0] | {body: (.body // ""), publishedAt, htmlUrl: .url})}' > latest.json
+          # 各 RID 登记哪个产物、清单长什么样都在脚本里;这里对 dist 中的产物现算哈希与大小。
+          bash scripts/ci/release-manifest.sh files dist "$metadata" > "$RUNNER_TEMP/latest.json"
+          mv "$RUNNER_TEMP/latest.json" dist/latest.json
       - name: Generate SHA256SUMS.txt
         run: |
           set -euo pipefail
@@ -478,21 +463,59 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       NOTES_DIR: release-notes
     steps:
+      # 只要 scripts/ci:清单丢了的时候,按构建任务同一份脚本重建(见下)。
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci
+          persist-credentials: false
       - name: Download existing release metadata
+        id: existing
         run: |
           set -euo pipefail
           [[ "$TAG_NAME" =~ $VERSION_TAG_PATTERN ]] || { echo '::error::Release 标签不是合法版本'; exit 1; }
           mkdir -p "$NOTES_DIR"
-          # 两个原附件都必须存在;缺少时不能凭空创建清单或丢弃旧校验记录。
-          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" \
-            --pattern latest.json --pattern SHA256SUMS.txt --dir "$NOTES_DIR"
+          # 先看 Release 上有哪几份附件,只下载在的:一份都不匹配时 `gh release download` 直接报错,
+          # 分不清「构建还没传完」和真出了故障。附件列表留给下一步重建清单时取字节数。
+          release_assets="$RUNNER_TEMP/release-assets.json"
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json assets > "$release_assets"
+          has_asset() {
+            jq -e --arg name "$1" \
+              '[.assets[] | select(.name == $name and (.state // "uploaded") == "uploaded")] | length == 1' \
+              "$release_assets" >/dev/null
+          }
+          files=()
           for file in latest.json SHA256SUMS.txt; do
+            if has_asset "$file"; then
+              files+=("$file")
+            fi
+          done
+          if [[ ${#files[@]} -eq 0 ]]; then
+            # 两份都没有:多半是构建还在跑,它的附加任务读的是那时的最新正文,这次编辑不会丢。
+            # 也可能是构建失败、排队时被取消,或上次同步把两份都删了却没传上去 —— 那只能完整重跑。
+            echo "::notice::Release $TAG_NAME 还没有 latest.json 与 SHA256SUMS.txt,跳过日志同步。构建若仍在进行,会带上最新正文;若已失败或被取消,请以 notes_only=false 手动重跑本工作流。"
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 校验表必须在:清单只记了更新器那几个包,dmg / AppImage / deb / rpm 的哈希只在校验表里,
+          # 不能凭空造,也不能丢掉旧记录。只缺清单时下一步按校验表重建(--clobber 先删后传,
+          # 上次同步可能断在删与传之间)。
+          if ! has_asset SHA256SUMS.txt; then
+            echo '::error::Release 缺少原始 SHA256SUMS.txt,不能仅同步日志'
+            exit 1
+          fi
+          patterns=()
+          for file in "${files[@]}"; do
+            patterns+=(--pattern "$file")
+          done
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" "${patterns[@]}" --dir "$NOTES_DIR"
+          for file in "${files[@]}"; do
             if [[ ! -s "$NOTES_DIR/$file" ]]; then
-              echo "::error::Release 缺少原始 $file,不能仅同步日志"
+              echo "::error::Release 的 $file 为空,不能仅同步日志"
               exit 1
             fi
           done
       - name: Refresh release notes and manifest checksum
+        if: steps.existing.outputs.skip != 'true'
         run: |
           set -euo pipefail
           metadata="$RUNNER_TEMP/release-metadata.json"
@@ -504,6 +527,14 @@ jobs:
             (.body == null or (.body | type == "string")) and (.publishedAt | type == "string") and
             (.url | type == "string")' "$metadata" >/dev/null
           cd "$NOTES_DIR"
+          if [[ ! -f latest.json ]]; then
+            # 哈希取自构建时的校验表、字节数取自 Release 上现存的产物,与原清单一致,不必重新构建;
+            # 任一平台的产物或校验记录缺失时脚本直接失败,那就只能完整重跑。
+            echo "::warning::Release 缺少 latest.json,按 SHA256SUMS.txt 与现存附件重建"
+            bash "$GITHUB_WORKSPACE/scripts/ci/release-manifest.sh" sums \
+              SHA256SUMS.txt "$RUNNER_TEMP/release-assets.json" "$metadata" > "$RUNNER_TEMP/latest-rebuilt.json"
+            mv "$RUNNER_TEMP/latest-rebuilt.json" latest.json
+          fi
           jq -e --arg tag "$TAG_NAME" '.tag == $tag' latest.json >/dev/null
           # 只替换日志对象,原始 version/tag/assets 及未知扩展字段保持不变。
           jq --slurpfile release "$metadata" \
@@ -526,6 +557,7 @@ jobs:
             }' SHA256SUMS.txt > "$RUNNER_TEMP/SHA256SUMS-updated.txt"
           mv "$RUNNER_TEMP/SHA256SUMS-updated.txt" SHA256SUMS.txt
       - name: Upload release metadata only
+        if: steps.existing.outputs.skip != 'true'
         run: |
           set -euo pipefail
           gh release upload "$TAG_NAME" "$NOTES_DIR/latest.json" "$NOTES_DIR/SHA256SUMS.txt" \

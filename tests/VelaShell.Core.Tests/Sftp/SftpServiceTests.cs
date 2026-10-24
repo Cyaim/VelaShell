@@ -74,6 +74,109 @@ public class SftpServiceTests
     }
 
     /// <summary>
+    /// 覆盖提交换进来的是临时文件那个 inode(按 0644 新建):被替换的普通文件原有的属主与权限位先带过去。
+    /// 属主先改、权限后改(非 root 改属主时内核会清掉 setuid / setgid);属主没改成(不是 root)时 setuid / setgid 不带 ——
+    /// 否则凭空造出一个以上传者身份运行的 setuid 程序。粘滞位照带。
+    /// </summary>
+    [TestMethod]
+    [DataRow("100600", true, "600")]
+    [DataRow("100755", true, "755")]
+    [DataRow("106755", true, "6755")]
+    [DataRow("106755", false, "755")]
+    [DataRow("101777", false, "1777")]
+    public async Task AtomicUploadCommit_OverwriteCarriesTheReplacedFilesOwnerThenModeOntoTheTemporary(string target, bool ownerAccepted, string expected)
+    {
+        _sftpClient.SupportsAtomicReplace.Returns(true);
+        _sftpClient.GetLinkModeAsync("/target", Arg.Any<CancellationToken>()).Returns(new SftpFileMode(Octal(target), 1000, 1000));
+        if (!ownerAccepted)
+        {
+            _sftpClient.ChangeOwnerAsync("/temp", 1000, 1000, Arg.Any<CancellationToken>())
+                .ThrowsAsync(new VelaSftpPermissionDeniedException("Permission denied"));
+        }
+
+        await _sftpService.CommitUploadAsync(_sessionId, "/temp", "/target", true);
+
+        Received.InOrder(() =>
+        {
+            _sftpClient.ChangeOwnerAsync("/temp", 1000, 1000, Arg.Any<CancellationToken>());
+            _sftpClient.SetModeAsync("/temp", Octal(expected), Arg.Any<CancellationToken>());
+            _sftpClient.AtomicReplaceFileAsync("/temp", "/target", Arg.Any<CancellationToken>());
+        });
+    }
+
+    /// <summary>新文件(目标不存在)与非普通文件的目标(被替换的是链接本身)不动模式,与新建上传同一口径。</summary>
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("120777")]
+    public async Task AtomicUploadCommit_OverwriteLeavesNewFilesAndLinksWithTheirCreationMode(string? target)
+    {
+        _sftpClient.SupportsAtomicReplace.Returns(true);
+        _sftpClient.GetLinkModeAsync("/target", Arg.Any<CancellationToken>())
+            .Returns(target is null ? null : new SftpFileMode(Octal(target), 1000, 1000));
+
+        await _sftpService.CommitUploadAsync(_sessionId, "/temp", "/target", true);
+
+        await _sftpClient.DidNotReceive().SetModeAsync(Arg.Any<string>(), Arg.Any<uint>(), Arg.Any<CancellationToken>());
+        await _sftpClient.DidNotReceive().ChangeOwnerAsync(Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+        await _sftpClient.Received(1).AtomicReplaceFileAsync("/temp", "/target", Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// 带不过去就只许收窄、不许放宽:目标存在却读不到它的模式,或服务端不许改临时文件的模式而它比目标宽,就拒绝提交,目标原样不动;
+    /// 临时文件本来就不比目标宽(只是少了执行位)时照样提交。属主没报时不改属主(当成 0 等于把文件交给 root)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("unreported", "100644", false)]
+    [DataRow("100600", "100644", false)]
+    [DataRow("100755", "100644", true)]
+    public async Task AtomicUploadCommit_OverwriteNeverWidensTheReplacedFilesPermissions(string target, string temporary, bool commits)
+    {
+        _sftpClient.SupportsAtomicReplace.Returns(true);
+        _sftpClient.GetLinkModeAsync("/target", Arg.Any<CancellationToken>())
+            .Returns(new SftpFileMode(target == "unreported" ? null : Octal(target), null, null));
+        _sftpClient.GetLinkModeAsync("/temp", Arg.Any<CancellationToken>()).Returns(new SftpFileMode(Octal(temporary), null, null));
+        _sftpClient.SetModeAsync("/temp", Arg.Any<uint>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new VelaSftpPermissionDeniedException("setstat disabled"));
+
+        Task commit = _sftpService.CommitUploadAsync(_sessionId, "/temp", "/target", true);
+
+        if (commits)
+        {
+            await commit;
+            await _sftpClient.Received(1).AtomicReplaceFileAsync("/temp", "/target", Arg.Any<CancellationToken>());
+        }
+        else
+        {
+            Exception refused = await Assert.ThrowsAsync<Exception>(() => commit);
+            Assert.IsTrue(refused is NotSupportedException or VelaSftpOperationException, refused.GetType().Name);
+            await _sftpClient.DidNotReceive().AtomicReplaceFileAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        }
+        await _sftpClient.DidNotReceive().ChangeOwnerAsync(Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+        await _sftpClient.DidNotReceive().DeleteFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// 提交预检:要覆盖而服务端没有原子替换、不覆盖而目标已存在,都在写之前就拒;问不出目标在不在就不拦(提交仍是权威)。
+    /// </summary>
+    [TestMethod]
+    public async Task UploadCommitPreflight_RefusesOnlyCommitsThatWouldCertainlyBeRefused()
+    {
+        _sftpClient.SupportsAtomicReplace.Returns(false);
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => _sftpService.CheckUploadCommitAsync(_sessionId, "/target", true));
+        _sftpClient.SupportsAtomicReplace.Returns(true);
+        await _sftpService.CheckUploadCommitAsync(_sessionId, "/target", true);
+
+        _sftpClient.ExistsAsync("/target", Arg.Any<CancellationToken>()).Returns(true);
+        await Assert.ThrowsExactlyAsync<VelaSftpOperationException>(() => _sftpService.CheckUploadCommitAsync(_sessionId, "/target", false));
+        _sftpClient.ExistsAsync("/target", Arg.Any<CancellationToken>()).Returns(false);
+        await _sftpService.CheckUploadCommitAsync(_sessionId, "/target", false);
+        _sftpClient.ExistsAsync("/target", Arg.Any<CancellationToken>()).ThrowsAsync(new VelaSftpPermissionDeniedException("Permission denied"));
+        await _sftpService.CheckUploadCommitAsync(_sessionId, "/target", false);
+    }
+
+    private static uint Octal(string digits) => Convert.ToUInt32(digits, 8);
+
+    /// <summary>
     /// SFTP 通道死了(sftp-server 退出、服务端关掉闲置通道)而 SSH 连接还在:下一次操作换一个新客户端,
     /// 旧的那个释放掉 —— 而不是让文件面板一直坏到整条 SSH 连接重连。
     /// </summary>

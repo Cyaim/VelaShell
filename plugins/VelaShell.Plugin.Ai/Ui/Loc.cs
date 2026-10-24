@@ -53,7 +53,7 @@ public sealed class Loc(string locale)
     //                                 en, zh-Hans, zh-Hant, ja, ko
     private static readonly Dictionary<string, string[]> Table = new()
     {
-        ["ContinuingBatch"] = ["Continuing batch {0}…", "继续第 {0} 批…", "繼續第 {0} 批…", "バッチ {0} を続行中…", "{0} 배치 계속 중…"],
+        ["ContinuingBatch"] = ["Continuing batch {0}…", "继续第 {0} 批…", "繼續第 {0} 批…", "バッチ {0} を続行中…", "{0}번째 배치 계속 중…"],
         ["WaitingForJobs"] = ["Waiting for background tasks (uploads continue after Stop)…", "等待后台任务完成(停止后上传仍会继续)…", "等待背景工作完成(停止後上傳仍會繼續)…", "バックグラウンド作業を待機中(停止後もアップロードは続行)…", "백그라운드 작업 대기 중(중지 후에도 업로드 계속)…"],
         ["TransferPreparationHint"] = ["Preparing may create a private disk snapshot (extra space near the source size). Verification may read the remote file back. No byte movement does not mean the task is stuck.", "准备阶段可能创建私有磁盘快照(需要接近源文件大小的额外空间);校验可能回读远端文件。字节暂不增长不代表卡死。", "準備階段可能建立私有磁碟快照(需要接近來源檔案大小的額外空間);驗證可能回讀遠端檔案。位元組暫不增加不代表卡住。", "準備中は元ファイルと同程度の追加ディスク領域でスナップショットを作成する場合があります。検証時はリモートファイルを読み戻す場合があります。転送量が増えなくても処理中です。", "준비 중 원본 크기 정도의 추가 디스크 공간으로 비공개 스냅샷을 만들 수 있습니다. 검증 시 원격 파일을 다시 읽을 수 있습니다. 바이트 증가가 없어도 작업 중일 수 있습니다."],
         ["TransferHistorical"] = ["Saved running receipt; current outcome is not tracked by this historical card.", "这是已保存的运行回执;此历史卡片不再跟踪当前结果。", "這是已儲存的執行回執;此歷史卡片不再追蹤目前結果。", "保存された実行中の受領記録です。この履歴カードは現在の結果を追跡しません。", "저장된 실행 중 응답입니다. 이 기록 카드는 현재 결과를 추적하지 않습니다."],
@@ -270,7 +270,10 @@ public sealed class Loc(string locale)
         ["Temperature"] = ["Temperature", "温度", "溫度", "温度", "온도"],
         ["TopP"] = ["Top-P", "Top-P", "Top-P", "Top-P", "Top-P"],
         ["StopSequences"] = ["Stop (one per line)", "停止序列(每行一条)", "停止序列(每行一條)", "停止シーケンス(1 行に 1 つ)", "정지 시퀀스(줄마다 하나)"],
-        ["SamplingHint"] = ["Leave blank to let the provider decide. Note: Anthropic models with thinking on only accept temperature 1 (or blank).", "留空即使用服务端默认。注意:开了思考的 Anthropic 模型只接受温度 1(或留空)。", "留空即使用伺服器預設。注意:開了思考的 Anthropic 模型只接受溫度 1(或留空)。", "空欄ならプロバイダー既定に従います。注意:思考を有効にした Anthropic モデルは temperature 1(または空欄)のみ受け付けます。", "비워 두면 프로바이더 기본값을 사용합니다. 참고: 사고를 켠 Anthropic 모델은 temperature 1(또는 공란)만 허용합니다."],
+        ["SamplingHint"] = ["Leave blank to let the provider decide. Some models (e.g. with thinking on) only accept the default values — leave these blank for them.", "留空即使用服务端默认。部分模型(例如开了思考的)只接受默认值,对它们请留空。", "留空即使用伺服器預設。部分模型(例如開了思考的)只接受預設值,對它們請留空。", "空欄ならプロバイダー既定に従います。一部のモデル(思考を有効にしたものなど)は既定値しか受け付けないため、その場合は空欄のままにしてください。", "비워 두면 프로바이더 기본값을 사용합니다. 일부 모델(사고를 켠 모델 등)은 기본값만 허용하므로 그런 모델에서는 비워 두세요."],
+        // Anthropic SDK 13.x 发 anthropic-version: 2026-10-21,这一版不收 temperature / top_p;
+        // 设置页在解出的协议是 Anthropic 时禁用那两格,下面这句说明原因(停止序列不受影响)
+        ["SamplingAnthropicNotSent"] = ["Temperature and Top-P are not sent on the Anthropic protocol: the API version the Anthropic SDK uses (2026-10-21) rejects them. Saved values are kept and apply again if this model switches to an OpenAI protocol. Stop sequences are still sent.", "Anthropic 协议下不发送温度与 Top-P:Anthropic SDK 使用的接口版本(2026-10-21)不接受这两个参数。已保存的值会保留,模型改回 OpenAI 系协议后照常生效。停止序列仍会发送。", "Anthropic 協議下不傳送溫度與 Top-P:Anthropic SDK 使用的介面版本(2026-10-21)不接受這兩個參數。已儲存的值會保留,模型改回 OpenAI 系協議後照常生效。停止序列仍會傳送。", "Anthropic プロトコルでは温度と Top-P を送信しません。Anthropic SDK が使う API バージョン(2026-10-21)がこれらを受け付けないためです。保存済みの値は残り、このモデルを OpenAI 系プロトコルに戻すと再び有効になります。停止シーケンスは引き続き送信されます。", "Anthropic 프로토콜에서는 온도와 Top-P를 보내지 않습니다. Anthropic SDK가 사용하는 API 버전(2026-10-21)이 이 값을 받지 않기 때문입니다. 저장된 값은 유지되며, 이 모델을 OpenAI 계열 프로토콜로 바꾸면 다시 적용됩니다. 정지 시퀀스는 계속 전송됩니다."],
         ["PriceIn"] = ["Price / M input", "输入单价 / 百万", "輸入單價 / 百萬", "入力単価 / 100万", "입력 단가 / 100만"],
         ["PriceOut"] = ["Price / M output", "输出单价 / 百万", "輸出單價 / 百萬", "出力単価 / 100万", "출력 단가 / 100만"],
         ["PriceCached"] = ["Price / M cached", "缓存单价 / 百万", "快取單價 / 百萬", "キャッシュ単価 / 100万", "캐시 단가 / 100만"],

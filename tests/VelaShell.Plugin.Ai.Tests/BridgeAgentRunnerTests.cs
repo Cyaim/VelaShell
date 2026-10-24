@@ -3,6 +3,7 @@ using VelaShell.Plugin.Ai.Bridge;
 using VelaShell.Plugin.Ai.Chat;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
+using VelaShell.PluginSdk.RemoteFs;
 using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
@@ -175,5 +176,33 @@ public sealed class BridgeAgentRunnerTests
                 new BridgeSettings { Mode = ChatMode.Chat }, Message(), Deny, English, null, null, CancellationToken.None));
 
         Assert.StartsWith("Acme / some-model:", error.Message);
+    }
+
+    /// <summary>
+    /// 一轮收尾时,看到的传输都已终结 —— 哪怕是停止未确认的 Unknown —— 就释放 IM 进度订阅。
+    /// </summary>
+    /// <remarks>
+    /// 停止未确认的 Unknown/TimedOut 留给显式清理,所以一直算 <c>HasRunningTransfers</c>;收尾只看那一条的话,
+    /// 订阅连同捕获的渠道回调要挂到桥接重载才放。桌面卡片(<c>TransferBinding.Drain</c>)早就按"看到的都终结了"收。
+    /// </remarks>
+    [TestMethod]
+    public async Task TransferObserver_IsReleasedAtFinishWhenEverySeenTransferIsTerminal()
+    {
+        using var context = new TestPluginContext();
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.StartUploadHandler = (_, source, target, options, _) => Task.FromResult(new RemoteTransferSnapshot
+        {
+            TransferId = "transfer", OperationId = options.OperationId, SessionId = "session", LocalPath = source, RemotePath = target,
+            State = RemoteTransferState.Unknown, RemoteStopConfirmed = false, Sequence = 1, Generation = 1
+        });
+        FileTransferRunScope scope = FileTransferJobRegistry.For(context).BeginRun("owner", "run");
+        int released = 0;
+        using var observer = new BridgeTransferObserver(scope, English, _ => { }, _ => { }, _ => released++);
+        await scope.StartAsync("session", "source", "/target", "operation", false, default);
+        Assert.IsTrue(scope.HasRunningTransfers, "停止未确认的 Unknown 仍留给显式清理");
+
+        observer.Finish();
+
+        Assert.AreEqual(1, released, "看到的传输都已终结,收尾就该释放订阅");
     }
 }

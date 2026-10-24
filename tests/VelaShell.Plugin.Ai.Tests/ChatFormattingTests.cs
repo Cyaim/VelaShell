@@ -1,5 +1,6 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using Microsoft.Extensions.AI;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
 
@@ -70,6 +71,25 @@ public sealed class ChatFormattingTests
         // 带换行的文本直接放进标签,高度会突然涨到几行,把整条工具条顶变形。
         Assert.DoesNotContain("\n", ChatFormatting.OneLine("a\nb\nc", 100));
         Assert.AreEqual("a b c", ChatFormatting.OneLine("a\nb\nc", 100));
+    }
+
+    /// <summary>上下文条取最后一次请求的输入,而不是一轮里各步之和。</summary>
+    /// <remarks>
+    /// 十步、每步 40k 的 Agent 一轮,<c>ToChatResponse().Usage</c> 是 400k:1M 窗口上会显示 40%,
+    /// 批次自动续接之后的长任务一直顶在 100%。只带输出计数的那条(流末尾的增量)不算。
+    /// </remarks>
+    [TestMethod]
+    public void ContextUsageIsTheLastRequestNotTheSumOfSteps()
+    {
+        static ChatResponseUpdate Usage(long? input, long output) => new()
+        {
+            Contents = [new UsageContent(new() { InputTokenCount = input, OutputTokenCount = output })]
+        };
+        List<ChatResponseUpdate> updates =
+            [Usage(40_000, 100), Usage(41_000, 100), Usage(42_500, 50), Usage(null, 20)];
+        Assert.AreEqual(123_500, updates.ToChatResponse().Usage!.InputTokenCount);
+        Assert.AreEqual(42_500, ChatFormatting.LastRequestUsage(updates)!.InputTokenCount);
+        Assert.IsNull(ChatFormatting.LastRequestUsage([Usage(null, 20)]));
     }
 
     [TestMethod]

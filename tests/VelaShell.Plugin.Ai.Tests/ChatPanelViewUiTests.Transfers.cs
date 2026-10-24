@@ -63,6 +63,35 @@ public sealed partial class ChatPanelViewUiTests
         finally { panel.Detach(); window.Close(); }
     });
 
+    /// <summary>
+    /// 下载工具没给出快照 —— 被拒、启动前就挡下、回执丢失的 <c>{"state":"Unknown"}</c> —— 时不打"完成"的勾。
+    /// 与上传卡同一条规则,否则用户会以为文件已经下好了。
+    /// </summary>
+    [TestMethod]
+    public Task DownloadCardWithoutASnapshot_IsNotMarkedDone() => HeadlessUi.RunOnUiAsync(_session, async () =>
+    {
+        using var context = new TestPluginContext();
+        (Window window, ChatPanelView panel) = await ShowAsync(context);
+        try
+        {
+            var loc = new Loc("en");
+            foreach (string result in new[]
+                     {
+                         "The user DENIED this download. Do not retry; ask the user how to proceed.",
+                         "{\"operationId\":\"op\",\"state\":\"Unknown\",\"error\":\"Download receipt unavailable.\"}"
+                     })
+            {
+                var card = new ChatPanelView.ToolCard(panel, "download_remote_file", "{}");
+                window.Content = card.Root;
+                card.Complete(result);
+                object?[] tips = [.. card.Root.GetLogicalDescendants().OfType<Decorator>().Select(ToolTip.GetTip)];
+                Assert.IsTrue(tips.Contains(loc["TransferUnknown"]), result);
+                Assert.IsFalse(tips.Contains(loc["ToolDone"]), result);
+            }
+        }
+        finally { panel.Detach(); window.Close(); }
+    });
+
     [TestMethod]
     public Task Binding_KeepsOriginalBubble_MultipleCardsAndRunIsolation() => HeadlessUi.RunOnUiAsync(_session, async () =>
     {
@@ -171,6 +200,41 @@ public sealed partial class ChatPanelViewUiTests
             await PumpAsync();
             Assert.HasCount(1, context.FakeRemoteFs.TransfersCancelled);
             Assert.AreEqual(3L, context.FakeRemoteFs.TransfersCancelled[0].ExpectedGeneration);
+        }
+        finally { panel.Detach(); window.Close(); }
+    });
+
+    /// <summary>
+    /// 链接另存时选到已有文件,系统保存框已经问过"要替换吗":按覆盖去请宿主确认。
+    /// 照旧按不覆盖请求的话,宿主落盘只会报"目标已存在",用户白确认一次;选的是新文件名则照旧不覆盖。
+    /// </summary>
+    [TestMethod]
+    public Task LinkDownload_ToAnExistingFileTheUserChoseToReplace_AsksTheHostToOverwrite() => HeadlessUi.RunOnUiAsync(_session, async () =>
+    {
+        using var context = new TestPluginContext();
+        var session = context.FakeSessions.AddConnected();
+        var never = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.SupportsDownloadOperations = true;
+        context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) => Task.FromResult(new RemoteTransferSnapshot
+        {
+            TransferId = options.OperationId, OperationId = options.OperationId, SessionId = id, LocalPath = local, RemotePath = remote,
+            Direction = RemoteTransferDirection.Download, State = RemoteTransferState.Running, Generation = 1, Sequence = 1, TotalBytes = 8
+        });
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => never.Task.WaitAsync(ct);
+        string folder = Path.Combine(context.DataDirectory, "saved");
+        Directory.CreateDirectory(folder);
+        string existing = Path.Combine(folder, "report.pdf");
+        File.WriteAllText(existing, "old");
+        (Window window, ChatPanelView panel) = await ShowAsync(context);
+        try
+        {
+            MethodInfo start = typeof(ChatPanelView).GetMethod("StartLinkDownloadAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            foreach (string target in new[] { existing, Path.Combine(folder, "new.pdf") })
+                await ((Task)start.Invoke(panel, [session.SessionId, "/srv/report.pdf", target])!).WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.HasCount(2, context.FakeRemoteFs.DownloadsStarted);
+            Assert.IsTrue(context.FakeRemoteFs.DownloadsStarted[0].Options.Overwrite, "保存框里已经确认过替换");
+            Assert.IsFalse(context.FakeRemoteFs.DownloadsStarted[1].Options.Overwrite, "新文件名不需要覆盖");
         }
         finally { panel.Detach(); window.Close(); }
     });

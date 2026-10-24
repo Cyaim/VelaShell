@@ -195,7 +195,7 @@ public class FtpSupportTests
     }
 
     /// <summary>
-    /// 接口上带默认实现的成员(上传提交、流式下载)路由也必须显式转发:漏转一个,调用就落到默认实现的
+    /// 接口上带默认实现的成员(上传提交与它的预检、流式下载)路由也必须显式转发:漏转一个,调用就落到默认实现的
     /// 「不支持」上,插件后台上传全部卡在提交(#656 F1)。
     /// </summary>
     [TestMethod]
@@ -214,12 +214,15 @@ public class FtpSupportTests
 
         foreach (Guid session in new[] { ftpSession, s3Session, sshSession })
         {
+            await router.CheckUploadCommitAsync(session, "/t", overwrite: true);
             await router.CommitUploadAsync(session, "/t.vela-upload", "/t", overwrite: true);
             await router.DownloadStreamAsync(session, "/source", destination);
         }
 
         foreach ((ISftpService backend, Guid session) in new[] { (ftp, ftpSession), (plugin, s3Session), (sftp, sshSession) })
         {
+            await backend.Received(1).CheckUploadCommitAsync(session, "/t", true, Arg.Any<CancellationToken>());
+            await backend.Received(1).CheckUploadCommitAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
             await backend.Received(1).CommitUploadAsync(session, "/t.vela-upload", "/t", true, Arg.Any<CancellationToken>());
             await backend.Received(1).CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
             await backend.Received(1).DownloadStreamAsync(session, "/source", destination, Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>());

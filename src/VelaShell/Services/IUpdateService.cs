@@ -39,12 +39,16 @@ public interface IUpdateService
     /// 整包字节与当前速率(见 <see cref="Update.UpdateDownloadProgress" />)。
     /// 连接静默断开(长时间收不到任何数据)时自行断开重连、按断点续传,重连次数有上限,
     /// 用尽即抛出 <see cref="TimeoutException" />,不会无限挂起。
+    /// 没有检查到的目标(包括被并发的另一次检查清掉)时抛出 <see cref="InvalidOperationException" />。
     /// </summary>
     Task DownloadUpdateAsync(
         IProgress<Update.UpdateDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>已下载且通过完整性校验的更新快照;尚未就绪时为 null,检查更新不会清除它。</summary>
+    /// <summary>
+    /// 已下载且通过完整性校验的更新快照;尚未就绪时为 null,检查更新不会清除它。
+    /// 换版前发现包已丢失或损坏时清除,需重新下载。
+    /// </summary>
     Update.UpdateManifest? ReadyUpdate { get; }
 
     /// <summary>
@@ -56,7 +60,10 @@ public interface IUpdateService
         IProgress<Update.UpdateDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>应用已下载的更新并重启应用。</summary>
+    /// <summary>
+    /// 应用已下载的更新并重启应用。包已丢失或损坏时清除 <see cref="ReadyUpdate" /> 并抛出;
+    /// 其余失败保留它,可直接重试。
+    /// </summary>
     void ApplyUpdateAndRestart();
 
     /// <summary>

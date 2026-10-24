@@ -92,6 +92,25 @@ public interface ISftpClientWrapper : IAsyncDisposable
         => throw new NotSupportedException("Atomic replacement is not supported by this backend.");
 
     /// <summary>
+    /// 服务端有没有 <see cref="AtomicReplaceFileAsync" /> 要的严格 POSIX 原子替换(<c>posix-rename@openssh.com</c>)。
+    /// 没有时替换必然被拒;上传据此在写入之前就拒绝,不白传一整份字节。
+    /// </summary>
+    bool SupportsAtomicReplace => false;
+
+    /// <summary>
+    /// 不跟随链接地取条目自身的模式位(含文件类型)与属主/属组;条目不存在时为 <see langword="null" />(不抛)。
+    /// </summary>
+    Task<SftpFileMode?> GetLinkModeAsync(string path, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Raw file modes are not available from this backend.");
+
+    /// <summary>
+    /// 按原始模式位改权限:<paramref name="mode" /> 是 <c>07777</c> 以内的位(含 setuid / setgid / 粘滞位),
+    /// 不是 <see cref="ChangePermissionsAsync" /> 那种把八进制数字写成十进制的约定。
+    /// </summary>
+    Task SetModeAsync(string path, uint mode, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Raw file modes cannot be set on this backend.");
+
+    /// <summary>
     /// 判断指定远端路径是否存在。
     /// </summary>
     Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default);

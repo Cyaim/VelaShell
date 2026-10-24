@@ -167,6 +167,8 @@ public class UpdateService : IUpdateService
     /// 哈希(更新源返回),免去落盘后重读;源没给哈希时才读文件校验兜底。
     /// 下载停滞超过 <see cref="DownloadStallTimeout" /> 就断开、按断点重连,
     /// 最多 <see cref="MaxStallReconnects" /> 次,用尽抛出 <see cref="TimeoutException" />。
+    /// 没有已选定的目标(没检查过,或检查结果被另一次并发检查清掉)时抛出
+    /// <see cref="InvalidOperationException" />,不能当成下载成功。
     /// </summary>
     public Task DownloadUpdateAsync(
         IProgress<UpdateDownloadProgress>? progress = null,
@@ -187,9 +189,14 @@ public class UpdateService : IUpdateService
             manifest = _manifest;
             asset = _asset;
         }
-        return manifest is null || asset is null
-            ? Task.CompletedTask
-            : DownloadUpdateCoreAsync(manifest, asset, progress, cancellationToken, requireSelfUpdate: false);
+        // 启动时的通知检查一开始就清空检查结果:它若恰好插在关于页的检查与下载之间,
+        // 这里拿到的就是空目标。以前直接返回已完成的任务,调用方据此报「已就绪」,手里却没有包。
+        if (manifest is null || asset is null)
+        {
+            throw new InvalidOperationException(
+                "No update has been selected for download. Call CheckForUpdateAsync first.");
+        }
+        return DownloadUpdateCoreAsync(manifest, asset, progress, cancellationToken, requireSelfUpdate: false);
     }
 
     /// <inheritdoc />
@@ -382,6 +389,17 @@ public class UpdateService : IUpdateService
         return Convert.ToHexStringLower(hash).Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary><see cref="IsChecksumValidAsync" /> 的同步版,给本就跑在线程池上的换版用。</summary>
+    private static bool IsChecksumValid(string archivePath, string expectedSha256)
+    {
+        byte[] hash;
+        using (FileStream stream = File.OpenRead(archivePath))
+        {
+            hash = SHA256.HashData(stream);
+        }
+        return Convert.ToHexStringLower(hash).Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void TryDeleteFile(string path)
     {
         try
@@ -435,27 +453,45 @@ public class UpdateService : IUpdateService
     /// 不改动应用目录里的任何文件,因此磁盘不足、包损坏之类的失败都发生在"应用仍然完好"的状态下,
     /// 异常上抛后重试即可。换版本身由退出后才动手的外置进程完成(应用目录无文件被占用,
     /// 覆盖必然成功);包里没有主程序或外置进程拉不起来时退回本进程原地换版。
+    /// 动手前先按就绪快照重新校验已下载的包:包已被删或损坏时丢掉就绪状态再抛出,
+    /// 下一次检查更新重新下载;其余失败(文件被占用、磁盘满)保留就绪状态,可直接重试。
     /// </summary>
     public void ApplyUpdateAndRestart()
     {
         string archivePath;
+        UpdateAsset readyAsset;
         lock (_stateLock)
         {
             if (IsStoreManaged || _operationInProgress)
             {
                 throw new InvalidOperationException("An update cannot be applied in the current state.");
             }
-            if (_readyUpdate is null || _downloadedArchivePath is not { } path || !File.Exists(path))
+            if (_readyUpdate is null || _readyAsset is not { } asset || _downloadedArchivePath is not { } path)
             {
                 throw new InvalidOperationException(
                     "No update has been downloaded. Call CheckForUpdateAsync and DownloadUpdateAsync first.");
             }
             archivePath = path;
+            readyAsset = asset;
             _operationInProgress = true;
             ++_checkGeneration;
         }
         try
         {
+            // 就绪之后包仍可能被杀软隔离、被手动清理或在磁盘上损坏。就绪状态若原样留着,
+            // 检查更新与立即更新都会短路成「已就绪」,重启又失败,只能修复更新状态才走得出来。
+            if (!File.Exists(archivePath) || !IsChecksumValid(archivePath, readyAsset.Sha256))
+            {
+                TryDeleteFile(archivePath);
+                lock (_stateLock)
+                {
+                    _readyUpdate = null;
+                    _readyAsset = null;
+                    _downloadedArchivePath = null;
+                }
+                throw new InvalidDataException(
+                    $"The downloaded update package {readyAsset.Name} is missing or corrupt; it must be downloaded again.");
+            }
             _applier.ClearLastError();
             _applier.Stage(archivePath);
             if (_applier.TryHandOffToExternalUpdater(Environment.ProcessId))

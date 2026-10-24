@@ -88,7 +88,7 @@ pwsh scripts/ssh/interop/Stop-TestServer.ps1
 ```
 
 没有 docker 时可以在 WSL 里起一台**非 root** 的 sshd（[`wsl-sshd.sh`](../../scripts/ssh/interop/wsl-sshd.sh)：只开公钥认证，
-打开了有限域 DH 与 `RekeyLimit 1M`）。非 root 的 sshd 验不了口令，用例的默认凭据改用私钥：
+打开了有限域 DH 与 `RekeyLimit 1M`，监听用例默认的 2229 端口）。非 root 的 sshd 验不了口令，用例的默认凭据改用私钥：
 
 ```powershell
 wsl sh scripts/ssh/interop/wsl-sshd.sh /mnt/c/temp      # 前台运行；私钥写到 C:\temp\interop_client

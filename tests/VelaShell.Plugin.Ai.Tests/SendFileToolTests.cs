@@ -349,6 +349,49 @@ public sealed class SendFileToolTests
         Assert.HasCount(1, sent);
     }
 
+    /// <summary>
+    /// IM 里的审批常要等几分钟。这期间同一路径上又起了一次下载、或者文件被换掉了,
+    /// 发出去之前要按此刻再核一遍 —— 发的必须还是审批卡上写的那一份。
+    /// </summary>
+    [TestMethod]
+    public async Task WhatChangesWhileWaitingForApproval_IsCheckedAgainBeforeSending()
+    {
+        foreach (string change in new[] { "download", "rewrite" })
+        {
+            using var context = new TestPluginContext();
+            string path = Downloaded(context, "app.log");
+            string session = RemoteFile(context, "/var/log/app.log");
+            var never = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) =>
+                Task.FromResult(Snapshot(id, remote, local, options.OperationId, RemoteTransferState.Running));
+            context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => never.Task.WaitAsync(ct);
+            List<string> sent = [];
+            await using var toolbox = new AgentToolbox(context)
+            {
+                Approval = ApprovalMode.Ask,
+                ApprovalHandler = async _ =>
+                {
+                    if (change == "download")
+                        await FileTransferJobRegistry.For(context).BeginRun("another-chat", "run")
+                            .StartDownloadAsync(session, "/var/log/app.log", path, "late", false, CancellationToken.None);
+                    else
+                        File.WriteAllText(path, "a different and longer file than the one on the approval card");
+                    return true;
+                },
+                FileSender = (p, _) =>
+                {
+                    sent.Add(p);
+                    return Task.FromResult<string?>(null);
+                }
+            };
+
+            string result = await InvokeAsync(toolbox, path);
+
+            Assert.Contains("Refused", result, change);
+            Assert.IsEmpty(sent, change);
+        }
+    }
+
     private static string Downloaded(TestPluginContext context, string name)
     {
         string folder = Path.Combine(context.DataDirectory, "downloads");

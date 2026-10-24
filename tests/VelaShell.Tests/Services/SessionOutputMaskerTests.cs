@@ -89,6 +89,24 @@ public sealed class SessionOutputMaskerTests
         ["bearer-inside-a-word", new string('Z', 600) + "Bearer abcdefghij\r\n", new string('Z', 600) + "Bearer abcdefghij\r\n", ""],
         ["bare-aws-key", "aws AKIAIOSFODNN7EXAMPLE\n", null, "IOSFODNN7EXAMPLE"],
         ["token-after-cjk", "令牌为sk-proj-ABCDEFGHIJKLMNOPQRST\n", null, "proj-ABCDEFGHIJKLMNOPQRST"],
+        // 令牌与凭据紧跟在颜色序列后面:序列的收尾字节 m、K 是字母,不能因此当成「前面挨着字母」
+        ["token-after-sgr", "\u001b[38;5;231mghp_0123456789abcdefghijABCDEFGHIJ0123\u001b[0m\n", null, "0123456789abcdefghijABCDEFGHIJ0123"],
+        ["openai-key-after-sgr", "\u001b[32msk-proj-ABCDEFGHIJKLMNOPQRSTUV\u001b[0m\n", null, "proj-ABCDEFGHIJKLMNOPQRSTUV"],
+        ["aws-key-after-reset", "\u001b[0mAKIAIOSFODNN7EXAMPLE\n", null, "IOSFODNN7EXAMPLE"],
+        ["bearer-after-sgr",
+            "\u001b[37mBearer eyJhbGciOiJIUzI1NiJ9.payload.sig\u001b[39m\n",
+            "\u001b[37mBearer ***\u001b[39m\n", "eyJhbGciOiJIUzI1NiJ9.payload.sig"],
+        ["grep-highlighted-token", "\u001b[01;31m\u001b[Kghp_0123456789abcdefghijABCDEFGHIJ0123\u001b[m\u001b[K\n", null, "0123456789abcdefghijABCDEFGHIJ0123"],
+        // 多行私钥块里 END 前面同一行还有正文
+        ["pem-body-before-end",
+            "-----BEGIN RSA PRIVATE KEY-----\nAAAA\nBBBBsecret2-----END RSA PRIVATE KEY-----\n",
+            "-----BEGIN RSA PRIVATE KEY-----\n***\n***-----END RSA PRIVATE KEY-----\n", "BBBBsecret2"],
+        // 到行尾都没收尾的引号串:扣着的值不能等到换行就原文放出去
+        ["unclosed-double-quote", "password=\"abc def\r\n$ ", "password=\"***\r\n$ ", "abc def"],
+        ["unclosed-single-quote", "export TOKEN='abc def\r\n> ", "export TOKEN='***\r\n> ", "abc def"],
+        ["unclosed-escaped-json",
+            "\"body\": \"{\\\"password\\\":\\\"abc def\n",
+            "\"body\": \"{\\\"password\\\":\\\"***\n", "abc def"],
     ];
 
     [TestMethod]
@@ -119,6 +137,32 @@ public sealed class SessionOutputMaskerTests
         masker.Write(Bytes("xyz\n"));
         Assert.AreEqual("export TOKEN=***\nnext SECRET=***\n", Written);
         Assert.DoesNotContain("ab", Written.Replace("next", ""));
+    }
+
+    /// <summary>
+    /// 到行尾都没收尾的引号串(shell 的续行、截断的 JSON):扣着的值等到换行不能原文放出去,从引号之后遮到行尾;
+    /// 不跨行,开头的引号照放,也不凭空补一个收尾的引号。行中间的 <c>\r</c>(进度条)同样算行尾,与双引号串的吞法一致。
+    /// </summary>
+    [TestMethod]
+    public void UnclosedQuotedValue_IsMaskedToTheEndOfTheLine()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("password=\"abc def"));
+        Assert.AreEqual("password=", Written, "引号串还没收尾:扣下");
+        masker.Write(Bytes("\r\n$ "));
+        Assert.AreEqual("password=\"***\r\n$ ", Written, "到行尾都没收尾:遮到行尾,换行与提示符照放");
+        _written.Clear();
+
+        masker.Write(Bytes("export TOKEN='abc def\r\n> rest'\r\n"));
+        masker.Write(Bytes("\"body\": \"{\\\"password\\\":\\\"abc def\n"));
+        masker.Write(Bytes("token=\"abc\rprogress 50%\r\n"));
+        masker.Write(Bytes("password=\"\nPassword: \"\n"));
+        Assert.AreEqual(
+            "export TOKEN='***\r\n> rest'\r\n"
+            + "\"body\": \"{\\\"password\\\":\\\"***\n"
+            + "token=\"***\rprogress 50%\r\n"
+            + "password=\"\nPassword: \"\n",
+            Written, "只遮到行尾,下一行照常;引号后面什么都没有的不动");
     }
 
     [TestMethod]
@@ -205,6 +249,25 @@ public sealed class SessionOutputMaskerTests
     }
 
     /// <summary>
+    /// 多行私钥块的最后一行正文与 END 写在同一行(<c>…Qy==-----END …</c>,手工拼接或截断的输出):END 前面的正文换成 <c>***</c>,END 照放;
+    /// 只有缩进的(YAML 里的块)照原样,END 后面的照常跑别的规则。
+    /// </summary>
+    [TestMethod]
+    public void PrivateKeyBlock_BodyBeforeEndOnTheSameLineIsMasked()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("-----BEGIN RSA PRIVATE KEY-----\nAAAA\nBBBBsecret2-----END RSA PRIVATE KEY-----\n$ "));
+        masker.Write(Bytes("key: |\n  -----BEGIN EC PRIVATE KEY-----\n  MHcCAQEE\n  -----END EC PRIVATE KEY-----\nnext: 1\n"));
+        masker.Write(Bytes("-----BEGIN OPENSSH PRIVATE KEY-----\r\nb3BlbnNz\r\nQyNT"));
+        masker.Write(Bytes("UxOQ-----END OPENSSH PRIVATE KEY----- password=hunter2\r\n"));
+        Assert.AreEqual(
+            "-----BEGIN RSA PRIVATE KEY-----\n***\n***-----END RSA PRIVATE KEY-----\n$ "
+            + "key: |\n  -----BEGIN EC PRIVATE KEY-----\n***\n  -----END EC PRIVATE KEY-----\nnext: 1\n"
+            + "-----BEGIN OPENSSH PRIVATE KEY-----\r\n***\r\n***-----END OPENSSH PRIVATE KEY----- password=***\r\n",
+            Written);
+    }
+
+    /// <summary>
     /// 私钥写在一行里(JSON 与 <c>.env</c> 里 <c>\n</c> 是字面量):BEGIN 与 END 之间的正文遮掉,没有 END 就遮到行尾、下一行起照旧按私钥块整行遮;
     /// 同一行里的其他规则照跑。
     /// </summary>
@@ -267,6 +330,30 @@ public sealed class SessionOutputMaskerTests
         Assert.AreEqual("改为Bearer ***\n", Encoding.UTF8.GetString(_written[2]));
         byte[] latin1Neighbours = [0xB5, .. "***"u8, 0xFF, (byte)'\n'];
         CollectionAssert.AreEqual(latin1Neighbours, _written[3]);
+    }
+
+    /// <summary>
+    /// 令牌与凭据紧跟在颜色序列后面也认得出(bat、grep 高亮、带色的日志):<c>ESC[0m</c>、<c>ESC[K</c> 的收尾字节是字母,
+    /// 只看前一个字符就当成了「前面挨着字母」。序列原样留着;序列后面接着的是一个词的中间时照旧不算。
+    /// </summary>
+    [TestMethod]
+    public void TokensRightAfterAControlSequence_AreMasked()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("\u001b[38;5;231mghp_0123456789abcdefghijABCDEFGHIJ0123\u001b[0m\n"));
+        masker.Write(Bytes("\u001b[32msk-proj-ABCDEFGHIJKLMNOPQRSTUV\u001b[0m\n"));
+        masker.Write(Bytes("\u001b[0mAKIAIOSFODNN7EXAMPLE\n"));
+        masker.Write(Bytes("\u001b[36mAuthorization\u001b[39m: \u001b[37mBearer eyJhbGciOiJIUzI1NiJ9.payload.sig\u001b[39m\n"));
+        masker.Write(Bytes("\u001b[01;31m\u001b[Kghp_0123456789abcdefghijABCDEFGHIJ0123\u001b[m\u001b[K\n"));
+        masker.Write(Bytes("\u001b[0mxBearer abcdefghij \u001b[0mmy_ghp_0123456789abcdefghijABCDEFGHIJ0123\n"));
+        Assert.AreEqual(
+            "\u001b[38;5;231m***\u001b[0m\n"
+            + "\u001b[32m***\u001b[0m\n"
+            + "\u001b[0m***\n"
+            + "\u001b[36mAuthorization\u001b[39m: \u001b[37mBearer ***\u001b[39m\n"
+            + "\u001b[01;31m\u001b[K***\u001b[m\u001b[K\n"
+            + "\u001b[0mxBearer abcdefghij \u001b[0mmy_ghp_0123456789abcdefghijABCDEFGHIJ0123\n",
+            Written);
     }
 
     /// <summary>引号串认反斜杠转义;JSON 里转义过的名字(<c>\"password\":</c>,如 aws secretsmanager 的 SecretString)也认得出。</summary>
@@ -400,6 +487,9 @@ public sealed class SessionOutputMaskerTests
             ("引号连串", Repeat("password=\"x ")),
             ("私钥开头连串", Repeat("-----BEGIN ")),
             ("颜色序列连串", Repeat("token\u001b[1m")),
+            ("颜色序列后的令牌前缀连串", Repeat("\u001b[1;2mghp_")),
+            ("超长的控制序列参数", "\u001b[" + Repeat("1;") + "mBearer abcdefghij\r\n"),
+            ("没收尾的引号串里满是名字", "password=\"" + Repeat("token=x ") + "\r\n"),
         ];
         foreach ((string name, string text) in inputs)
         {

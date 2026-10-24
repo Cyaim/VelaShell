@@ -426,12 +426,20 @@ public sealed class SessionFailureTests
         int probes = 0;
         var reading = Task.Run(async () =>
         {
-            while (await peer.ReadAsync() is { } payload)
+            try
             {
-                if ((SshMessageNumber)payload[0] == SshMessageNumber.GlobalRequest)
+                while (await peer.ReadAsync() is { } payload)
                 {
-                    Interlocked.Increment(ref probes);
+                    if ((SshMessageNumber)payload[0] == SshMessageNumber.GlobalRequest)
+                    {
+                        Interlocked.Increment(ref probes);
+                    }
                 }
+            }
+            catch (Exception ex) when (ex is ObjectDisposedException or OperationCanceledException)
+            {
+                // 用例结束释放对端传输，挂着的读随之结束。这个任务没人 await：不接住的话它成了未观察的任务异常，
+                // 会被同时在跑的、进程级收集这类异常的用例（SftpTests.CollectUnobservedAsync）算进去。
             }
         });
 
@@ -607,11 +615,27 @@ public sealed class SessionFailureTests
         await peer.Transport.DisposeAsync();
         await WaitForDisconnectAsync(peer.Connection);
 
+        // 照读者的常规写法读到底：要断言的是「最后拿到的是断线的原因，不是一个干净的 EOF」。
+        // 只读一次不行 —— Fault 先放出 Disconnected、再收尾通道（见 SshConnection.Fault 的说明），
+        // 回调醒来的这一刻通道可能还没收尾，读到的是断线前真到了的那半截数据（CI 上偶发「没有抛异常」）。
         SshConnectionClosedException error = await Assert.ThrowsExactlyAsync<SshConnectionClosedException>(
-            async () => await channel.StandardOutput.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10)));
+            async () => await ReadToEndAsync(channel.StandardOutput).WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.AreEqual(SshFailureReason.ClosedByPeer, error.Reason);
         await Assert.ThrowsExactlyAsync<SshConnectionClosedException>(
             async () => await channel.StandardError.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10)));
+
+        static async Task ReadToEndAsync(PipeReader reader)
+        {
+            while (true)
+            {
+                ReadResult read = await reader.ReadAsync();
+                reader.AdvanceTo(read.Buffer.End);
+                if (read.IsCompleted)
+                {
+                    return;   // 干净的 EOF：断言会报「没有抛异常」
+                }
+            }
+        }
     }
 
     /// <summary>对端已经发了 EOF，之后连接才断：数据是完整的，照常干净地读完。</summary>

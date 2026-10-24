@@ -35,7 +35,10 @@ public sealed class BridgeAgentRunner(
     McpManager mcp,
     ChannelHub? hub = null)
 {
-    /// <summary>函数调用循环的单轮上限。IM 那头没人盯着,给得比面板保守一点。</summary>
+    /// <summary>
+    /// 函数调用循环的每批步数(面板每批 25)。只是批次大小,不是上限:到边界由协调器沿用工具账本自动续接,
+    /// IM 那头看到一句「继续第 N 批」;批小一点,没人盯着的群里进度提示就勤一点。
+    /// </summary>
     private const int MaxToolIterations = 20;
     private readonly Lock _transfersGate = new();
     private readonly HashSet<BridgeTransferObserver> _transfers = [];
@@ -79,7 +82,10 @@ public sealed class BridgeAgentRunner(
     /// 这也是升级前那些聊天的取值,所以老配置的行为逐字不变。
     /// </param>
     /// <param name="cancellationToken">取消。</param>
-    /// <param name="localWaiting">仅上传本地等待时暂停模型请求预算；不改变命令等待时限。</param>
+    /// <param name="localWaiting">
+    /// 仅等独立传输时回调:<see langword="true" /> 时暂停模型请求预算并让出总并发名额,
+    /// <see langword="false" /> 时取回名额(等它返回才会再调模型)后恢复预算;不改变命令等待时限。
+    /// </param>
     public async Task<BridgeTurn> RunAsync(
         BridgeConversation conversation,
         BridgeSettings bridge,
@@ -89,7 +95,7 @@ public sealed class BridgeAgentRunner(
         Action<string>? progress,
         ChatGrant? grant,
         CancellationToken cancellationToken,
-        Action<bool>? localWaiting = null)
+        Func<bool, CancellationToken, ValueTask>? localWaiting = null)
     {
         ArgumentNullException.ThrowIfNull(conversation);
         ArgumentNullException.ThrowIfNull(bridge);

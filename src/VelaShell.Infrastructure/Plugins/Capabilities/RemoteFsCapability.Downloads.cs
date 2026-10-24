@@ -11,12 +11,12 @@ namespace VelaShell.Infrastructure.Plugins.Capabilities;
 
 internal sealed partial class RemoteFsCapability
 {
-    // Other platforms deliberately fail closed until a directory-relative implementation exists.
-    public bool SupportsDownloadOperations => OperatingSystem.IsWindows() || DownloadTargetFactory is not null;
+    // Windows 走 NTFS 句柄钉住的目录链,Linux / macOS(x64、arm64)走固定目录 fd 的提交;其它平台照旧拒绝,不退回按路径的检查。
+    public bool SupportsDownloadOperations => OperatingSystem.IsWindows() || PosixDownloadTarget.IsSupported || DownloadTargetFactory is not null;
 
     /// <summary>
-    /// 测试开关:注入落盘目标,在非 Windows 上也能验证下载 worker 的收尾分类(与 <see cref="UseDiskSnapshot" /> 同一用意)。
-    /// 生产代码从不设置;为 null 时只有 Windows 固定本地 NTFS 目标可用。
+    /// 测试开关:注入落盘目标,驱动真实目标难以复现的收尾分支(与 <see cref="UseDiskSnapshot" /> 同一用意)。
+    /// 生产代码从不设置;为 null 时 Windows 用固定本地 NTFS 目标,Linux / macOS 用 <see cref="PosixDownloadTarget" />。
     /// </summary>
     internal Func<string, bool, IDownloadTarget>? DownloadTargetFactory { get; init; }
 
@@ -74,7 +74,7 @@ internal sealed partial class RemoteFsCapability
                 CreatedAt = now,
                 UpdatedAt = now,
                 DestinationCommitConfirmedAbsent = true,
-            }, null, stop);
+            }, session, null, stop);
             if (uploadPermissions is not null && !string.IsNullOrWhiteSpace(pluginId))
                 op._downloadPermission = uploadPermissions.CreateDownloadLease(pluginId);
             if (!_disconnectSubscribed)
@@ -109,7 +109,7 @@ internal sealed partial class RemoteFsCapability
                 throw new PluginPermissionDeniedException("A trusted download approval is required.");
             // Pin and verify the whole local directory chain before approval, without creating content.
             target = DownloadTargetFactory?.Invoke(Read(op).LocalPath, options.Overwrite)
-                ?? WindowsDownloadTarget.Open(Read(op).LocalPath, options.Overwrite);
+                ?? (OperatingSystem.IsWindows() ? WindowsDownloadTarget.Open(Read(op).LocalPath, options.Overwrite) : OpenPosixDownloadTarget(op, options.Overwrite));
             RemoteFileInfo source = await sftp.GetFileInfoAsync(session, Read(op).RemotePath, ct).ConfigureAwait(false);
             ValidateDownloadSource(source);
             Update(op, s => s with { TotalBytes = source.Size });
@@ -259,14 +259,20 @@ internal sealed partial class RemoteFsCapability
         => !right.IsDirectory && !right.IsSymbolicLink && left.Size == right.Size && left.LastModified == right.LastModified;
 
     /// <summary>
-    /// Windows local NTFS only: every ancestor is held without write/delete sharing, preventing rename/reparse retargeting.
-    /// The exclusively-created temporary is renamed/deleted by its handle; final paths are never opened for writing.
+    /// Windows local NTFS only: every ancestor is held (with traverse access, so the share mode is enforced) without delete
+    /// sharing, so no ancestor can be renamed, moved or deleted while the download is in flight. The exclusively-created
+    /// temporary is verified by handle to live in the pinned parent and is renamed relative to the pinned parent handle,
+    /// or deleted by its handle; final paths are never opened for writing.
     /// Unsupported filesystems/platforms fail closed, rather than substituting path-based preflight checks.
     /// </summary>
     private sealed partial class WindowsDownloadTarget : IDownloadTarget
     {
+        private const string TemporaryPrefix = ".vela-download-";
         private readonly List<SafeFileHandle> _directories = [];
         private readonly string _destination;
+
+        /// <summary>按句柄核验过的父目录最终路径(最后钉住的那一级)。</summary>
+        private string _parent = "";
         private FileStream? _stream;
         private bool _committed;
         private WindowsDownloadTarget(string destination) => _destination = destination;
@@ -295,10 +301,12 @@ internal sealed partial class RemoteFsCapability
                 }
                 if (File.Exists(destination) || Directory.Exists(destination))
                 {
-                    if ((File.GetAttributes(destination) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+                    FileAttributes attributes = File.GetAttributes(destination);
+                    if ((attributes & FileAttributes.Directory) != 0 || IsLink(destination, attributes))
                         throw new IOException("The destination must not be a directory or link.");
                     if (!overwrite) throw new IOException("The destination already exists.");
                 }
+                SweepOrphans(target._parent);
                 return target;
             }
             catch { foreach (SafeFileHandle handle in target._directories) handle.Dispose(); throw; }
@@ -306,28 +314,59 @@ internal sealed partial class RemoteFsCapability
 
         private void PinDirectory(string path)
         {
-            SafeFileHandle handle = CreateFileW(path, 0x80, 1, 0, 3, 0x02200000, 0);
+            // 遍历 + 读属性(FILE_TRAVERSE | FILE_READ_ATTRIBUTES):只读属性的句柄不参与共享检查,共享模式形同虚设,
+            // 带上遍历权限才算数。共享读写、不共享删除:祖先改不了名、挪不走、删不掉;在目录里建临时文件、
+            // 提交改名时打开目标目录(要读写共享)照常。
+            SafeFileHandle handle = CreateFileW(path, 0xA0, 3, 0, 3, 0x02200000, 0);
             if (handle.IsInvalid) { handle.Dispose(); throw new IOException("Cannot lock the destination directory chain.", new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error())); }
             try
             {
-                var buffer = new StringBuilder(32768);
-                uint length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
-                string actual = buffer.ToString();
-                if (actual.StartsWith(@"\\?\", StringComparison.Ordinal)) actual = actual[4..];
-                if (length == 0 || length >= buffer.Capacity || !string.Equals(Path.TrimEndingDirectorySeparator(actual), Path.TrimEndingDirectorySeparator(path), StringComparison.OrdinalIgnoreCase)
-                    || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                string? actual = FinalPath(handle);
+                if (actual is null || !string.Equals(Path.TrimEndingDirectorySeparator(actual), Path.TrimEndingDirectorySeparator(path), StringComparison.OrdinalIgnoreCase)
+                    || IsLink(handle))
                     throw new IOException("Destination directory identity cannot be verified.");
                 _directories.Add(handle);
+                _parent = Path.TrimEndingDirectorySeparator(actual);
             }
             catch { handle.Dispose(); throw; }
         }
 
+        /// <summary>
+        /// 清掉崩溃留下的临时文件:宿主崩在下载中途时没有关闭即删,`.vela-download-` 加 48 位十六进制的文件会一直留在用户选的目录里。
+        /// 只删能以「可删除、不共享」打开的 —— 活着的临时文件被它的 worker 以不共享方式占着,打不开,不会被误删;
+        /// 不跟随链接(删的是链接本身),目录打不开;名字对不上的一律不碰。尽力而为,任何失败都只是跳过。
+        /// </summary>
+        private static void SweepOrphans(string directory)
+        {
+            try
+            {
+                foreach (string path in Directory.EnumerateFiles(directory, TemporaryPrefix + "*"))
+                {
+                    // 与 CreateTemporary 起的名字逐字对得上才算:前缀 + 48 位大写十六进制。
+                    string name = Path.GetFileName(path);
+                    if (name.Length != TemporaryPrefix.Length + 48 || !name.StartsWith(TemporaryPrefix, StringComparison.Ordinal)
+                        || !name[TemporaryPrefix.Length..].All(char.IsAsciiHexDigitUpper))
+                        continue;
+                    using SafeFileHandle orphan = CreateFileW(path, 0x00010000, 0, 0, 3, 0x00200000, 0);
+                    if (!orphan.IsInvalid) MarkForDeletion(orphan);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+
         public FileStream CreateTemporary()
         {
-            string temporary = Path.Combine(Path.GetDirectoryName(_destination)!, ".vela-download-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)));
+            string name = TemporaryPrefix + Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
             const uint fileFlagOverlapped = 0x40000000;
-            SafeFileHandle handle = CreateFileW(temporary, 0xC0010000, 0, 0, 1, fileFlagOverlapped, 0);
+            SafeFileHandle handle = CreateFileW(Path.Combine(Path.GetDirectoryName(_destination)!, name), 0xC0010000, 0, 0, 1, fileFlagOverlapped, 0);
             if (handle.IsInvalid) { handle.Dispose(); throw new IOException("Cannot exclusively create the download temporary file."); }
+            // 祖先都钉着、路径换不了;仍按句柄核一次它确实建在钉住的那个目录里,不在就删掉自己建的这个、拒绝。
+            if (!string.Equals(FinalPath(handle), Path.Combine(_parent, name), StringComparison.OrdinalIgnoreCase))
+            {
+                MarkForDeletion(handle);
+                handle.Dispose();
+                throw new IOException("The download temporary file was not created in the locked destination directory.");
+            }
             _stream = new FileStream(handle, FileAccess.ReadWrite, 128 * 1024, isAsync: true);
             return _stream;
         }
@@ -335,21 +374,33 @@ internal sealed partial class RemoteFsCapability
         public void Commit(bool overwrite)
         {
             if (_stream is null) throw new InvalidOperationException();
-            // Win32 needs a terminated name; FileNameLength excludes the UTF-16 terminator.
-            byte[] name = Encoding.Unicode.GetBytes(_destination + '\0');
-            int offset = IntPtr.Size == 8 ? 20 : 12;
+            // 相对钉住的父目录句柄改名、只给末级名字:不再按完整路径重新解析一遍目标目录。
+            // 走 NtSetInformationFile:Win32 的 SetFileInformationByHandle 把名字当 DOS 路径再转一遍,带 RootDirectory 时报参数错误(87)。
+            // FileNameLength excludes the UTF-16 terminator.
+            byte[] name = Encoding.Unicode.GetBytes(Path.GetFileName(_destination) + '\0');
+            int root = IntPtr.Size, offset = IntPtr.Size == 8 ? 20 : 12;
+            SafeFileHandle parent = _directories[^1];
             nint info = Marshal.AllocHGlobal(offset + name.Length);
+            bool referenced = false;
             try
             {
+                parent.DangerousAddRef(ref referenced);
                 for (int i = 0; i < offset; i++) Marshal.WriteByte(info, i, 0);
                 Marshal.WriteByte(info, 0, overwrite ? (byte)1 : (byte)0);
+                Marshal.WriteIntPtr(info, root, parent.DangerousGetHandle());
                 Marshal.WriteInt32(info, offset - 4, name.Length - sizeof(char));
                 Marshal.Copy(name, 0, info + offset, name.Length);
-                if (!SetFileInformationByHandle(_stream.SafeFileHandle, 3, info, (uint)(offset + name.Length)))
-                    throw new IOException("Atomic download commit was rejected.", new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));
+                // FileRenameInformation(10)。即便句柄是重叠方式打开的,这个调用也同步返回最终结果。
+                int status = NtSetInformationFile(_stream.SafeFileHandle, out _, info, (uint)(offset + name.Length), 10);
+                if (status < 0)
+                    throw new IOException("Atomic download commit was rejected.", new System.ComponentModel.Win32Exception(RtlNtStatusToDosError(status)));
                 _committed = true;
             }
-            finally { Marshal.FreeHGlobal(info); }
+            finally
+            {
+                if (referenced) parent.DangerousRelease();
+                Marshal.FreeHGlobal(info);
+            }
         }
 
         public async ValueTask DisposeAsync()
@@ -359,17 +410,8 @@ internal sealed partial class RemoteFsCapability
             {
                 if (_stream is not null && !_stream.SafeFileHandle.IsClosed)
                 {
-                    if (!_committed)
-                    {
-                        nint disposition = Marshal.AllocHGlobal(4);
-                        try
-                        {
-                            Marshal.WriteInt32(disposition, 1);
-                            if (!SetFileInformationByHandle(_stream.SafeFileHandle, 4, disposition, 4))
-                                cleanupFailure = new IOException("The task temporary cleanup could not be confirmed.");
-                        }
-                        finally { Marshal.FreeHGlobal(disposition); }
-                    }
+                    if (!_committed && !MarkForDeletion(_stream.SafeFileHandle))
+                        cleanupFailure = new IOException("The task temporary cleanup could not be confirmed.");
                     await _stream.DisposeAsync().ConfigureAwait(false);
                 }
             }
@@ -377,10 +419,46 @@ internal sealed partial class RemoteFsCapability
             if (cleanupFailure is not null) throw cleanupFailure;
         }
 
+        /// <summary>按句柄标记删除(FileDispositionInfo):关掉最后一个句柄时删掉的就是这个对象,不按路径再找一遍。</summary>
+        private static bool MarkForDeletion(SafeFileHandle handle)
+        {
+            nint disposition = Marshal.AllocHGlobal(4);
+            try
+            {
+                Marshal.WriteInt32(disposition, 1);
+                return SetFileInformationByHandle(handle, 4, disposition, 4);
+            }
+            finally { Marshal.FreeHGlobal(disposition); }
+        }
+
+        /// <summary>句柄的最终路径(去掉 <c>\\?\</c> 前缀);查不出来为 null。</summary>
+        private static string? FinalPath(SafeFileHandle handle)
+        {
+            var buffer = new StringBuilder(32768);
+            uint length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
+            if (length == 0 || length >= buffer.Capacity) return null;
+            string actual = buffer.ToString();
+            return actual.StartsWith(@"\\?\", StringComparison.Ordinal) ? actual[4..] : actual;
+        }
+
         [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         private static partial SafeFileHandle CreateFileW(string path, uint access, uint share, nint security, uint creation, uint flags, nint template);
         [LibraryImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static partial bool SetFileInformationByHandle(SafeFileHandle file, int informationClass, nint information, uint size);
+
+        /// <summary>IO_STATUS_BLOCK:Status 与 Pointer 共用第一个指针宽的槽。</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IoStatusBlock
+        {
+            public nint Status;
+            public nint Information;
+        }
+
+        [LibraryImport("ntdll.dll")]
+        private static partial int NtSetInformationFile(SafeFileHandle file, out IoStatusBlock status, nint information, uint length, int informationClass);
+
+        [LibraryImport("ntdll.dll")]
+        private static partial int RtlNtStatusToDosError(int status);
     }
 }

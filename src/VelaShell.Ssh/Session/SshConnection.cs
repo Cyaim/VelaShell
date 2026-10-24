@@ -1702,14 +1702,20 @@ public sealed partial class SshConnection : ISshChannelHost, IAsyncDisposable
         writer.WriteUtf8String(description);
         writer.WriteUtf8String("");
 
+        Task sending = SendControlAsync(buffer.WrittenMemory, cancellationToken).AsTask();
         try
         {
-            await SendControlAsync(buffer.WrittenMemory, cancellationToken).AsTask()
-                .WaitAsync(DisconnectFlushTimeout, cancellationToken).ConfigureAwait(false);
+            await sending.WaitAsync(DisconnectFlushTimeout, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception)
         {
             // 已经在断开的路上了。
+            // 等不及（超时、被取消）时这一帧还在发送队列里：链路堵着（对端不读）正是会超时的那种情形，
+            // 随后释放停下发送泵，它就以「连接已经关闭」失败 —— 那时已经没人等它了。
+            // 把异常看掉：曾经它成了未观察的任务异常，每关一个堵住的连接，宿主的崩溃日志里就多一条。
+            _ = sending.ContinueWith(
+                static t => _ = t.Exception, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
     }
 

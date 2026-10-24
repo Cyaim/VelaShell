@@ -293,9 +293,9 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             ("transfer_status", AIFunctionFactory.Create(TransferStatusAsync, "transfer_status",
                 "Read a transfer belonging to this run: state, direction, phase, generation, bytes, speed, ETA and still-running status. Never access another conversation's transfer."), true),
             ("transfer_wait", AIFunctionFactory.Create(TransferWaitAsync, "transfer_wait",
-                "Wait locally for upload completion, at most 30 seconds. Expiry or request cancellation does not cancel the upload. Desktop agents receive one local completion notification."), true),
+                "Wait locally for this run's transfer (upload or download) to finish, at most 30 seconds. Expiry or request cancellation does not cancel the transfer. Desktop agents receive one local completion notification."), true),
             ("transfer_cancel", AIFunctionFactory.Create(TransferCancelAsync, "transfer_cancel",
-                "Explicitly cancel this run's upload with its expectedGeneration. A stale generation must not stop a resumed transfer."), false),
+                "Explicitly cancel this run's transfer (upload or download) with its expectedGeneration. A stale generation must not stop a resumed transfer."), false),
             ("transfer_resume", AIFunctionFactory.Create(TransferResumeAsync, "transfer_resume",
                 "Explicitly resume a host-confirmed resumable upload, after fresh user approval. Choose the current target session explicitly; never start over for Unknown outcomes."), false),
 
@@ -991,6 +991,39 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             return "Refused: send_file can only send files that download_remote_file saved into the plugin's "
                    + "downloads folder. Download the file from the server first, then send that path.";
         }
+        if (Unsendable(full) is { } refused)
+        {
+            return refused;
+        }
+        var info = new FileInfo(full);
+        (long Length, DateTime Written) approved = (info.Length, info.LastWriteTimeUtc);
+        if (!await ApproveAsync(new ApprovalRequest("send_file", $"{info.Name}  ({info.Length} bytes)\n→ this chat"),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return "The user DENIED sending this file. Do not retry; ask the user how to proceed.";
+        }
+        // IM 里的审批要等人看到、再回一句,几分钟很常见。这期间同一路径上可能又起了一次下载,
+        // 或者文件被换掉了 —— 发出去之前按此刻再核一遍,而且发的必须还是审批卡上写的那一份。
+        if (Unsendable(full) is { } late)
+        {
+            return late;
+        }
+        info = new FileInfo(full);
+        if (info.Length != approved.Length || info.LastWriteTimeUtc != approved.Written)
+        {
+            return "Refused: the file changed while the send was waiting for approval, so it is no longer the one the user "
+                   + "approved. Check transfer_status, then call send_file again to ask for a fresh approval.";
+        }
+        if (await send(full, cancellationToken).ConfigureAwait(false) is { } failure)
+        {
+            return $"Could not send the file: {failure}";
+        }
+        return $"Sent {info.Name} ({info.Length} bytes) into the chat.";
+    }
+
+    /// <summary>此刻发不得的理由(发得了返回 <see langword="null" />)。审批前后各查一次。</summary>
+    private string? Unsendable(string full)
+    {
         // 下载还没成功提交时,这个路径上要么什么都没有、要么是同名旧文件 —— 两种都不是模型以为的那份
         if (FileTransferJobRegistry.For(context).HasUncommittedDownload(full))
         {
@@ -998,21 +1031,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
                    + "succeed, or its outcome is unknown), so the file there is missing or an older one. "
                    + "Check transfer_status and send it only after the download reports Succeeded.";
         }
-        if (!File.Exists(full))
-        {
-            return $"No such local file: {full}. Download it from the server first.";
-        }
-        var info = new FileInfo(full);
-        if (!await ApproveAsync(new ApprovalRequest("send_file", $"{info.Name}  ({info.Length} bytes)\n→ this chat"),
-                cancellationToken).ConfigureAwait(false))
-        {
-            return "The user DENIED sending this file. Do not retry; ask the user how to proceed.";
-        }
-        if (await send(full, cancellationToken).ConfigureAwait(false) is { } failure)
-        {
-            return $"Could not send the file: {failure}";
-        }
-        return $"Sent {info.Name} ({info.Length} bytes) into the chat.";
+        return File.Exists(full) ? null : $"No such local file: {full}. Download it from the server first.";
     }
 
     /// <summary>这个路径在允许发出去的那个目录里吗。</summary>
@@ -1283,6 +1302,11 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         {
             return "Upload was rejected before execution: unsupported operation or invalid input. No fallback was attempted.";
         }
+        catch (FileTransferRejectedException ex)
+        {
+            // 插件自己的拒绝,宿主什么都没收到:结论确定,不标不确定、不停整轮
+            return $"Upload was rejected before execution: {ex.Message} Nothing was started; no fallback was attempted.";
+        }
         catch (Exception)
         {
             run.Transfers!._uncertainStart = true;
@@ -1306,7 +1330,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
 
     private async Task<string> TransferWaitAsync(
         [Description("The transfer_id returned in this run.")] string transferId,
-        [Description("Local wait in seconds, default 2, max 30; expiry never stops the upload.")] int waitSeconds = 2,
+        [Description("Local wait in seconds, default 2, max 30; expiry never stops the transfer.")] int waitSeconds = 2,
         CancellationToken cancellationToken = default)
     {
         try
@@ -1327,7 +1351,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         {
             if (!await ApproveAsync(new ApprovalRequest("transfer_cancel",
                 $"Cancel transfer {transferId}, generation={expectedGeneration}"), cancellationToken).ConfigureAwait(false))
-                return "The user DENIED cancelling this upload. Do not retry.";
+                return "The user DENIED cancelling this transfer. Do not retry.";
             await CurrentRun.Transfers!.CancelAsync(transferId, expectedGeneration, cancellationToken).ConfigureAwait(false);
             return JsonSerializer.Serialize(new
             {
@@ -1348,7 +1372,9 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
     {
         try
         {
-            RemoteTransferSnapshot prior = await CurrentRun.Transfers!.ReadAsync(transferId, cancellationToken).ConfigureAwait(false);
+            // 只看一眼,不消费终态:没续上(不可恢复、审批被拒、会话不对)时模型只拿到一句文字,
+            // 那份终态还得照常由完成通知交给它;续上了则由 ResumeAsync 换代重新计。
+            RemoteTransferSnapshot prior = await CurrentRun.Transfers!.PeekAsync(transferId, cancellationToken).ConfigureAwait(false);
             if (!prior.CanResume) return "The host has not confirmed this transfer is safely resumable. Do not restart it automatically.";
             (string? id, string? error) = await ResolveAsync(sessionId, cancellationToken).ConfigureAwait(false);
             if (id is null) return error!;
@@ -1434,13 +1460,16 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             // 宿主只钉住已存在的父目录链,不替插件建目录;这是插件私有目录,建它碰不到用户的任何东西
             Directory.CreateDirectory(folder);
         }
-        else if (!Path.IsPathRooted(localPath.Trim()))
+        else if (!Path.IsPathFullyQualified(localPath.Trim()))
         {
+            // 与 upload_local_file 同一把尺。Windows 上 C:foo(C 盘的当前目录)与 \tmp\x(当前盘的根)
+            // 都算 rooted,宿主会按自己进程的当前目录补全 —— 落点就不是审批卡上写的那个。
             return "local_path must be an absolute path on the user's machine (or omit it).";
         }
         else
         {
-            target = localPath.Trim();
+            // 审批之前先规范化(折平 ..):审批卡、宿主确认框与真正落盘的是同一个全路径
+            target = Path.GetFullPath(localPath.Trim());
         }
         RemoteFileEntry? entry;
         try
@@ -1484,6 +1513,10 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         catch (Exception ex) when (ex is NotSupportedException or ArgumentException)
         {
             return "Download was rejected before execution: unsupported operation or invalid input. No fallback was attempted.";
+        }
+        catch (FileTransferRejectedException ex)
+        {
+            return $"Download was rejected before execution: {ex.Message} Nothing was started; no fallback was attempted.";
         }
         catch (Exception)
         {

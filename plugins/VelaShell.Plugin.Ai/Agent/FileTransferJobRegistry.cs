@@ -21,6 +21,12 @@ public sealed record FileTransferJobUpdate(string OwnerId, string RunId, string 
     bool MonitoringUnavailable = false);
 
 /// <summary>
+/// 插件自己在交给宿主<b>之前</b>就拒绝了这次启动(回执额度用尽、操作身份冲突):宿主什么都没收到,
+/// 结论是确定的"没开始",不能当成回执丢失去标记不确定、把整轮停成 TaskUnknown。
+/// </summary>
+internal sealed class FileTransferRejectedException(string message) : InvalidOperationException(message);
+
+/// <summary>
 /// 插件生命周期内共享的 AI 上传登记与本地进度监听。请求、模型与 run 取消不取消宿主任务；
 /// 用户必须显式取消传输。插件停用由宿主及 context.Shutdown 收尾。
 /// </summary>
@@ -75,12 +81,12 @@ public sealed class FileTransferJobRegistry
             if (_operations.TryGetValue(operationId, out StartReceipt? prior))
             {
                 if (!ReferenceEquals(prior.Scope, scope) || prior.Signature != signature)
-                    throw new InvalidOperationException("Transfer operation identity conflict; do not replay this operation.");
+                    throw new FileTransferRejectedException("Transfer operation identity conflict; do not replay this operation.");
                 receipt = prior.Result;
             }
             else
             {
-                if (_operations.Count >= 1024) throw new InvalidOperationException("The transfer task budget is exhausted.");
+                if (_operations.Count >= 1024) throw new FileTransferRejectedException("The transfer task budget is exhausted.");
                 starter = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 receipt = starter.Task;
                 var started = new StartReceipt(scope, signature, receipt);
@@ -156,16 +162,24 @@ public sealed class FileTransferJobRegistry
             else if (!ReferenceEquals(job._scope, scope))
                 throw new InvalidOperationException("Transfer identity conflict.");
         }
-        await PublishAsync(job, snapshot).ConfigureAwait(false);
-        bool cancelLate;
-        lock (_gate) cancelLate = scope._cancelAllRequested;
-        if (cancelLate && NeedsCleanup(snapshot))
+        try
         {
-            RemoteTransferSnapshot cancelled = await _remoteFs.CancelTransferAsync(snapshot.TransferId,
-                snapshot.Generation, _lifetime).ConfigureAwait(false);
-            await PublishAsync(job, cancelled).ConfigureAwait(false);
+            await PublishAsync(job, snapshot).ConfigureAwait(false);
+            bool cancelLate;
+            lock (_gate) cancelLate = scope._cancelAllRequested;
+            if (cancelLate && NeedsCleanup(snapshot))
+            {
+                RemoteTransferSnapshot cancelled = await _remoteFs.CancelTransferAsync(snapshot.TransferId,
+                    snapshot.Generation, _lifetime).ConfigureAwait(false);
+                await PublishAsync(job, cancelled).ConfigureAwait(false);
+            }
         }
-        StartWatcher(job);
+        finally
+        {
+            // 任务已经登记:发布或迟到取消哪一步抛了(授权回调读会话失败、取消请求断网),都得有人盯着它走到终态。
+            // 没有观察者,卡片冻住、清理与 send_file 守卫一直以为它还在跑。
+            StartWatcher(job);
+        }
         // 后台收据登记不是模型读取；迟到终态仍必须由协调器消费一次。
         return snapshot;
     }
@@ -182,17 +196,7 @@ public sealed class FileTransferJobRegistry
             await WithholdAsync(job).ConfigureAwait(false);
             throw new UnauthorizedAccessException("Transfer metadata is withheld.");
         }
-        bool recovered;
-        lock (_gate)
-        {
-            recovered = job._monitoringFailed;
-            if (recovered)
-            {
-                job._monitoringFailed = false;
-                if (!snapshot.IsTerminal) job._completion = Signal();
-            }
-        }
-        await PublishAsync(job, snapshot, forceObservationUpdate: recovered).ConfigureAwait(false);
+        await ObservedAsync(job, snapshot).ConfigureAwait(false);
         await AuthorizeAsync(job, token).ConfigureAwait(false);
         StartWatcher(job);
         if (consume) return Deliver(job);
@@ -304,6 +308,25 @@ public sealed class FileTransferJobRegistry
             snapshot.LocalPath, snapshot.RemotePath, snapshot));
     }
 
+    /// <summary>
+    /// 从宿主拿到了一份新鲜快照(显式查询或观察者恢复):先撤下"进度不可确认",再发布。
+    /// 宿主 Sequence 没变也照发一次,否则界面会一直挂着"不可确认"。
+    /// </summary>
+    private async Task ObservedAsync(Job job, RemoteTransferSnapshot snapshot)
+    {
+        bool recovered;
+        lock (_gate)
+        {
+            recovered = job._monitoringFailed && !job._withheld;
+            if (recovered)
+            {
+                job._monitoringFailed = false;
+                if (!snapshot.IsTerminal) job._completion = Signal();
+            }
+        }
+        await PublishAsync(job, snapshot, forceObservationUpdate: recovered).ConfigureAwait(false);
+    }
+
     private void StartWatcher(Job job)
     {
         lock (_gate)
@@ -342,7 +365,7 @@ public sealed class FileTransferJobRegistry
                         next = await _remoteFs.GetTransferAsync(current.TransferId, _lifetime).ConfigureAwait(false);
                         await Task.Delay(TimeSpan.FromMilliseconds(250), _lifetime).ConfigureAwait(false);
                     }
-                    await PublishAsync(job, next).ConfigureAwait(false);
+                    await ObservedAsync(job, next).ConfigureAwait(false);
                     failures = 0;
                     if (next.Sequence <= current.Sequence && !next.IsTerminal)
                         await Task.Delay(TimeSpan.FromMilliseconds(100), _lifetime).ConfigureAwait(false);
@@ -352,22 +375,22 @@ public sealed class FileTransferJobRegistry
                 { await WithholdAsync(job).ConfigureAwait(false); return; }
                 catch (Exception)
                 {
-                    if (++failures < 3)
+                    // 不取消宿主任务，也不把网络故障伪装成撤权。
+                    if (++failures == 3)
                     {
-                        await Task.Delay(TimeSpan.FromMilliseconds(250 * failures), _lifetime).ConfigureAwait(false);
-                        continue;
+                        lock (_gate)
+                        {
+                            // 本地观察失败独立于宿主 Sequence/终态，不能伪造版本或让清理漏掉仍运行的上传。
+                            // 只记在这一项上(不碰整轮的 _uncertainStart):拿回新鲜快照时就能撤掉。
+                            job._monitoringFailed = true;
+                            job._completion.TrySetResult();
+                        }
+                        job._scope.Publish(new(job._scope.OwnerId, job._scope.RunId, current.TransferId,
+                            current.LocalPath, current.RemotePath, current, MonitoringUnavailable: true));
                     }
-                    // 只结束本地观察，不取消宿主任务，也不把网络故障伪装成撤权。
-                    lock (_gate)
-                    {
-                        // 本地观察失败独立于宿主 Sequence/终态，不能伪造版本或让清理漏掉仍运行的上传。
-                        job._monitoringFailed = true;
-                        job._scope._uncertainStart = true;
-                        job._completion.TrySetResult();
-                    }
-                    job._scope.Publish(new(job._scope.OwnerId, job._scope.RunId, current.TransferId,
-                        current.LocalPath, current.RemotePath, current, MonitoringUnavailable: true));
-                    return;
+                    // 报了"不可确认"也不收手:观察一停,卡片冻住、IM 永远等不到终态、send_file 被这次下载一直挡着,
+                    // 订阅与清理登记也都释放不掉。退避着一直盯到宿主报终态、撤权或插件停用。
+                    await Task.Delay(RetryDelay(failures), _lifetime).ConfigureAwait(false);
                 }
             }
         }
@@ -378,13 +401,17 @@ public sealed class FileTransferJobRegistry
             lock (_gate)
             {
                 job._watching = false;
-                restart = !_lifetime.IsCancellationRequested && !job._monitoringFailed
-                    && !job._withheld && !job._snapshot.IsTerminal;
+                restart = !_lifetime.IsCancellationRequested && !job._withheld && !job._snapshot.IsTerminal;
             }
             // Resume/显式查询可能与旧观察者收尾竞态；不能因旧代次仍持 Watching 而丢失新代次监听。
             if (restart) StartWatcher(job);
         }
     }
+
+    /// <summary>观察失败后的退避:前两次 250 / 500 ms,第三次起(已报"不可确认")1 s 起翻倍,封顶 30 s。</summary>
+    internal static TimeSpan RetryDelay(int failures) => failures < 3
+        ? TimeSpan.FromMilliseconds(250 * failures)
+        : TimeSpan.FromSeconds(Math.Min(30, 1 << Math.Min(failures - 3, 5)));
 
     private RemoteTransferSnapshot Deliver(Job job)
     {
@@ -487,8 +514,9 @@ public sealed class FileTransferJobRegistry
     internal bool HasUnknownOutcome(FileTransferRunScope scope)
     {
         if (scope._uncertainStart) return true;
+        // 观察暂不可确认只记在那一项上:观察者退避重试拿回新鲜快照就撤掉,结论回到宿主的权威状态。
         lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope)
-            && (j._withheld || j._snapshot.State == RemoteTransferState.Unknown
+            && (j._withheld || j._monitoringFailed || j._snapshot.State == RemoteTransferState.Unknown
                 || (j._snapshot.State == RemoteTransferState.TimedOut && !j._snapshot.RemoteStopConfirmed)));
     }
 
@@ -508,7 +536,8 @@ public sealed class FileTransferJobRegistry
                 catch (UnauthorizedAccessException) { }
                 lock (_gate)
                 {
-                    if (job._delivered) continue;
+                    // 观察恢复会换上新的完成信号:那一刻起它又是未完成任务,不能把运行中的快照当终态交出去。
+                    if (job._delivered || !job._completion.Task.IsCompleted) continue;
                     job._delivered = true;
                     results.Add(job._withheld ? new RemoteTransferSnapshot
                     {

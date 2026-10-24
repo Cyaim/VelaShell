@@ -9,6 +9,9 @@
 # 另外打开有限域 DH（OpenSSH 10 的 sshd 默认已经不开）与 RekeyLimit 1M（服务端发起的重协商），
 # 让密钥交换矩阵与「开着压缩时服务端发起的重协商」真的跑到。
 #
+# 监听 2229，与互操作用例的默认端口（VELASHELL_SSH_INTEROP_PORT）一致；2222–2228 是 docker-compose.test.yml 的靶机，
+# WSL2 把端口转到 Windows 的 localhost 上，撞了会连错机器。
+#
 # 用法：sh scripts/ssh/interop/wsl-sshd.sh <放客户端私钥的目录>      前台运行，Ctrl+C 停。
 set -e
 
@@ -22,7 +25,7 @@ cd "$D"
 [ -f client ] || ssh-keygen -q -t ed25519 -f client -N ''
 cp client.pub authorized_keys
 cat > sshd_config <<EOF
-Port 2222
+Port 2229
 ListenAddress 0.0.0.0
 HostKey $D/host_ed25519
 HostKey $D/host_ecdsa

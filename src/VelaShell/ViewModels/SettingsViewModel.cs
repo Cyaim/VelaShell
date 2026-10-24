@@ -316,7 +316,7 @@ public partial class SettingsViewModel : ReactiveObject
         }
         try
         {
-            if (OperatingSystem.IsLinux() || !CanSelfUpdate || (!UpdateReady && ReadyUpdate is null))
+            if (OperatingSystem.IsLinux() || !CanSelfUpdate || ReadyUpdate is null)
             {
                 return;
             }
@@ -327,8 +327,8 @@ public partial class SettingsViewModel : ReactiveObject
         }
         catch
         {
-            // 应用阶段失败仍可重试,包括无参数下载没有返回目标元数据的兼容态。
-            // 服务若保留了 ReadyUpdate,收尾时也会同步恢复重启入口。
+            // 服务保留了 ReadyUpdate(文件被占用之类)就还能直接重试;包已丢失或损坏时服务会清掉它,
+            // 收尾时重启入口随之收起,下一次检查更新重新下载,不再「已就绪 → 重启失败」地兜圈。
             UpdateStatus = Strings.Get("SetAbout_ApplyFailed");
         }
         finally
@@ -361,11 +361,8 @@ public partial class SettingsViewModel : ReactiveObject
     private void EndUpdateOperation()
     {
         // 服务可能在成功或异常返回前改变就绪目标(修复、换版失败也一样)。
-        // 保留无目标元数据的下载兼容态,但有快照时必须恢复重启入口。
-        if (ReadyUpdate is not null)
-        {
-            UpdateReady = true;
-        }
+        // 重启入口只跟着服务的快照走:没有包就不能显示「已就绪」。
+        UpdateReady = ReadyUpdate is not null;
         this.RaisePropertyChanged(nameof(ReadyUpdate));
         this.RaisePropertyChanged(nameof(UpdateReady));
         IsUpdating = false;
@@ -989,9 +986,9 @@ public partial class SettingsViewModel : ReactiveObject
         try
         {
             // 已准备完成的包必须先安装或修复,再次检查不能覆盖它或清掉重启入口。
-            if (ReadyUpdate is not null || UpdateReady)
+            if (ReadyUpdate is { } ready)
             {
-                ShowReadyUpdate(ReadyUpdate?.Version ?? _updateService!.AvailableVersion);
+                ShowReadyUpdate(ready.Version);
                 return;
             }
             UpdateStatus = Strings.Get("SetAbout_Checking");
@@ -1037,9 +1034,7 @@ public partial class SettingsViewModel : ReactiveObject
                     _updateService.AvailableVersion ?? string.Empty);
                 return;
             }
-            // 先固定回显版本;下载完成后优先采用服务的 ReadyUpdate,不读可能变动的检查结果。
-            string? targetVersion = _updateService.AvailableVersion;
-            await DownloadUpdateWithProgressAsync(progress => _updateService.DownloadUpdateAsync(progress), targetVersion);
+            await DownloadUpdateWithProgressAsync(progress => _updateService.DownloadUpdateAsync(progress));
         }
         finally
         {
@@ -1070,20 +1065,12 @@ public partial class SettingsViewModel : ReactiveObject
                 }
                 return;
             }
-            if (UpdateReady)
-            {
-                // 无参数下载的兼容态(包括未返回 ReadyUpdate 的测试替身):
-                // 已经报告成功的包不能因缺少目标元数据就被另一入口覆盖。
-                UpdateStatus = Strings.Get("ReleaseNotes_UpdateConflict");
-                return;
-            }
             if (OperatingSystem.IsLinux() || !CanSelfUpdate)
             {
                 UpdateStatus = Strings.Format("SetAbout_UpdateAvailableManual", manifest.Version);
                 return;
             }
-            await DownloadUpdateWithProgressAsync(
-                progress => _updateService!.DownloadUpdateAsync(manifest, progress), manifest.Version);
+            await DownloadUpdateWithProgressAsync(progress => _updateService!.DownloadUpdateAsync(manifest, progress));
         }
         finally
         {
@@ -1103,8 +1090,7 @@ public partial class SettingsViewModel : ReactiveObject
         && string.Equals(left.Sha256, right.Sha256, StringComparison.OrdinalIgnoreCase)
         && left.Size == right.Size;
 
-    private async Task DownloadUpdateWithProgressAsync(
-        Func<IProgress<UpdateDownloadProgress>, Task> download, string? targetVersion)
+    private async Task DownloadUpdateWithProgressAsync(Func<IProgress<UpdateDownloadProgress>, Task> download)
     {
         try
         {
@@ -1163,7 +1149,15 @@ public partial class SettingsViewModel : ReactiveObject
             UpdateStatus = Strings.Get("SetAbout_DownloadFailed");
             return;
         }
-        ShowReadyUpdate(ReadyUpdate?.Version ?? targetVersion ?? _updateService?.AvailableVersion);
+        // 只认服务交出的就绪快照:下载正常返回却没有快照,就是什么也没下到,不能报「已就绪」。
+        if (ReadyUpdate is { } ready)
+        {
+            ShowReadyUpdate(ready.Version);
+        }
+        else
+        {
+            UpdateStatus = Strings.Get("SetAbout_DownloadFailed");
+        }
     }
 
     /// <summary>

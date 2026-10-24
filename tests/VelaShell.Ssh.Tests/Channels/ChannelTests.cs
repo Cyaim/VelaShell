@@ -921,12 +921,17 @@ public sealed class ChannelTests
     [TestMethod]
     public async Task 关闭原因看谁先发的CLOSE()
     {
-        await using (Harness local = await Harness.StartAsync(new TestChannelScript { CloseAfterScript = false, ExitCode = null }))
+        // 对端的 CLOSE 扣到断言之后。CloseAsync 等的是自己的 CLOSE 上线、不等对端回：
+        // 不扣的话，测试服务端收到就回，接收循环把通道收尾成 Closed，可能抢在下面这条断言之前（CI 上偶发 actual Closed）。
+        TaskCompletionSource peerMayClose = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (Harness local = await Harness.StartAsync(
+            new TestChannelScript { CloseAfterScript = false, ExitCode = null, HoldCloseReplyUntil = peerMayClose.Task }))
         {
             SshChannel channel = await local.Connection.OpenSessionChannelAsync(null, local.Token);
             ValueTask closing = channel.CloseAsync(local.Token);
             Assert.AreEqual(SshChannelState.Closing, channel.State, "本端先发 CLOSE，等对端那一个时是 Closing");
             await closing;
+            peerMayClose.SetResult();
 
             Assert.AreEqual(SshChannelCloseReason.ClosedLocally, (await ReadUntilClosedAsync(channel, local.Token)).Reason);
             Assert.AreEqual(SshChannelCloseReason.ClosedLocally, channel.CloseReason, "属性与事件一致，谁来问都一样");

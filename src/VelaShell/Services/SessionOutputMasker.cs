@@ -19,9 +19,10 @@ namespace VelaShell.Services;
 /// 紧挨着汉字的令牌就认不出了)。规则(大小写不敏感):
 /// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 的
 /// <c>名字=值</c>、<c>名字: 值</c>(含 JSON 与 YAML 的写法、JSON 里转义过的 <c>\"名字\":</c>;名字与分隔符之间允许 <c>grep --color</c>
-/// 插进来的颜色序列,分隔符与值之间允许 jq、bat 这类工具给值上的色,以及 grep 高亮收尾的 <c>ESC[K</c>)只换值,双引号串认反斜杠转义;
+/// 插进来的颜色序列,分隔符与值之间允许 jq、bat 这类工具给值上的色,以及 grep 高亮收尾的 <c>ESC[K</c>)只换值,双引号串认反斜杠转义,
+/// 到行尾都没收尾的引号串从引号之后遮到行尾;
 /// <c>Bearer</c> / <c>Basic</c> 后面的凭据;PEM 私钥块的正文(写在一行里的,BEGIN 与 END 之间那段);几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、
-/// GitHub <c>ghp_…</c> 一类、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。宁可多遮,不放过。
+/// GitHub <c>ghp_…</c> 一类、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。凭据与令牌紧跟在颜色序列后面也认。宁可多遮,不放过。
 /// </para>
 /// <para>
 /// 一段输出可能在任何字节处被切开,打字回显更是一个字节一段。当前行已经放出去的原文(大约最后 <see cref="MaxContextBytes" /> 字节)留作匹配上下文,
@@ -301,7 +302,9 @@ public sealed partial class SessionOutputMasker
         _keyTail = KeyTail(_keyTail + line[from..end]);
     }
 
-    /// <summary>多行私钥块里的一行:整行换成 <c>***</c>(行尾留着);出现 END 的那一行原样放出,之后回到平常。</summary>
+    /// <summary>
+    /// 多行私钥块里的一行:整行换成 <c>***</c>(行尾留着);出现 END 的那一行 END 照放、它前面的正文换成 <c>***</c>,之后回到平常。
+    /// </summary>
     private void KeyLine(string segment, bool complete, bool final, StringBuilder output)
     {
         if (segment.Length == 0)
@@ -311,7 +314,9 @@ public sealed partial class SessionOutputMasker
         if (FirstKeyEnd(segment, segment.Length) is { } end)
         {
             int stop = end.Index + end.Length;
-            output.Append(segment, 0, stop);
+            // END 前面同一行里还有正文(BBBB…-----END …):正文换成 ***,END 照放;只有缩进的照原样
+            bool hasBody = segment.AsSpan(0, end.Index).IndexOfAnyExcept(' ', '\t', '\r') >= 0;
+            output.Append(hasBody ? Mask : segment[..end.Index]).Append(segment, end.Index, end.Length);
             _inPrivateKey = false;
             _inKeyBody = false;
             _context = string.Empty;
@@ -366,9 +371,17 @@ public sealed partial class SessionOutputMasker
                 : first == '\'' ? "'"
                 : string.Empty;
             ValueKind kind = quote.Length == 0 ? ValueKind.Plain : quote == "'" ? ValueKind.SingleQuoted : ValueKind.DoubleQuoted;
+            bool open = match.Groups["open"].Success;
+            int valueEnd = value.Index + value.Length;
+            if (open && valueEnd < line.Length)
+            {
+                // 到行尾(\r 或 \n)都没收尾的引号串:引号之后遮到行尾,不跨行。开头的引号照放,也不凭空补一个收尾的引号 ——
+                // 与扣到上限、收尾时的样子(引号 + ***,照引号的结束条件吞到行尾)一致
+                Add(found, line, from, complete, value.Index + quote.Length, valueEnd, kind, string.Empty, closed: true);
+                continue;
+            }
             // 收了尾的引号串不会再长;没收尾的(open 那一支)与不加引号的,伸到末尾就是还没完
-            bool closed = quote.Length > 0 && !match.Groups["open"].Success;
-            Add(found, line, from, complete, value.Index, value.Index + value.Length, kind, quote, closed);
+            Add(found, line, from, complete, value.Index, valueEnd, kind, quote, closed: quote.Length > 0 && !open);
         }
         for (Match match = PrefixedToken().Match(line, _scanFrom); match.Success; match = match.NextMatch())
         {
@@ -563,28 +576,41 @@ public sealed partial class SessionOutputMasker
     /// <c>名字=值</c> / <c>名字: 值</c>:名字里带口令一类的词,值是引号串(双引号认反斜杠转义,含 JSON 里转义过的 <c>\"…\"</c>)
     /// 或到空白、引号、逗号、分号、控制字符为止的一段。名字与分隔符之间允许颜色序列(<c>grep --color</c> 只给匹配到的名字上色),
     /// 分隔符与值之间也允许(jq、bat 给值上色;grep 的高亮把分隔符一起框住时,后面跟的是 <c>ESC[m ESC[K</c>)。值为空的(<c>Password: </c> 提示)不动。
-    /// 已收到内容的末尾停在一个没收尾的引号串里时走 <c>open</c> 那一支,调用方据此把它当成没完的值扣下。
+    /// 没收尾的引号串走 <c>open</c> 那一支:停在已收到内容的末尾的,调用方把它当成没完的值扣下;
+    /// 停在行尾(<c>\r</c> 或 <c>\n</c>)的,从引号之后遮到行尾 —— 不然扣着的值等到换行就原文放了出去。
     /// </summary>
     /// <remarks>
     /// 名字从一串标识符字符的开头算起,先找到第一个关键词、再把整串吃完,两步都是原子的,值的各支也互不重叠 —— 整条是线性的。
     /// 旧写法在关键词前后各挂一个可回溯的 <c>[A-Za-z0-9_.\-]*</c>,4 KB 的 <c>tokentoken…</c> 就能把它拖上半分钟。
     /// 转义过的 JSON 串里,<c>\\\"</c> 与 <c>\\\\</c> 是里层的转义,不算收尾。
+    /// 名字前面紧挨着颜色序列(<c>ESC[38;5;203mDB_PASSWORD</c>)不用另认:序列的收尾字节与前面的参数也是名字里允许的字符,一并算进名字,只换值。
     /// </remarks>
-    [GeneratedRegex("""(?<![A-Za-z0-9_.\-])(?>[A-Za-z0-9_.\-]*?(?:password|passwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential))(?>[A-Za-z0-9_.\-]*)(?:\\?["'])?(?>(?:\x1b\[[0-9;]*[A-Za-z])*[ \t]*)[:=](?>(?:[ \t]|\x1b\[[0-9;]*[A-Za-z])*)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})\z|[^ "',;\x00-\x1f\x7f]+)""",
+    [GeneratedRegex("""(?<![A-Za-z0-9_.\-])(?>[A-Za-z0-9_.\-]*?(?:password|passwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential))(?>[A-Za-z0-9_.\-]*)(?:\\?["'])?(?>(?:\x1b\[[0-9;]*[A-Za-z])*[ \t]*)[:=](?>(?:[ \t]|\x1b\[[0-9;]*[A-Za-z])*)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|[^ "',;\x00-\x1f\x7f]+)""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex KeyValue();
+
+    /// <summary>
+    /// <c>Bearer</c> 与带前缀的令牌从哪起头:前面不是 ASCII 字母、数字或下划线(<c>xBearer</c>、<c>my_ghp_…</c> 不算),
+    /// 或者紧跟在一个终端控制序列后面 —— <c>ESC[0m</c>、<c>ESC[K</c> 的收尾字节是字母,只看前一个字符的话,
+    /// 上了色的令牌(bat、grep 的高亮,带色的日志)一个都认不出。CSI 与两字节的 ESC 序列都算,序列原样留在输出里。
+    /// </summary>
+    /// <remarks>
+    /// 往回看的只是紧挨着的那一个序列,几类字符互不重叠,仍是线性的。上下文截断时把前面的序列切掉了也无妨:
+    /// 还要遮的令牌都在上下文的末尾(值没处理完的扣着,不进上下文),紧挨着它的序列总在留下的那几百字节里。
+    /// </remarks>
+    private const string TokenStart = @"(?:(?<![A-Za-z0-9_])|(?<=\x1b(?:\[[0-?]*[ -/]*[@-~]|[ -/]*[0-~])))";
 
     /// <summary><c>Bearer</c> / <c>Basic</c> 后面的凭据;已收到内容的末尾停在凭据里(哪怕还不够 8 个字符)也算,调用方据此扣下。</summary>
     /// <remarks>
     /// 本类的正则里空白一律只认 ASCII 的空格与制表符:按 Latin-1 映射后,UTF-8 的续字节 0x85、0xA0 会被 <c>\s</c> 当成空白,
     /// 值就会在一个汉字中间断开。
     /// </remarks>
-    [GeneratedRegex(@"(?<![A-Za-z0-9_])(?:bearer|basic)(?>[ \t]+)(?<value>[A-Za-z0-9._~+/\-]{8,}=*|[A-Za-z0-9._~+/\-]+=*\z)",
+    [GeneratedRegex(TokenStart + @"(?:bearer|basic)(?>[ \t]+)(?<value>[A-Za-z0-9._~+/\-]{8,}=*|[A-Za-z0-9._~+/\-]+=*\z)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AuthorizationScheme();
 
     /// <summary>自带前缀、不必看上下文就认得出的令牌;已收到内容的末尾停在一个前缀已齐的令牌里也算,调用方据此扣下。</summary>
-    [GeneratedRegex(@"(?<![A-Za-z0-9_])(?:(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_(?>[A-Za-z0-9]{30,})|xox[abprs]-[A-Za-z0-9\-]{10,}|sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_])|(?:(?:AKIA|ASIA)[0-9A-Z]*|gh[pousr]_[A-Za-z0-9]*|xox[abprs]-[A-Za-z0-9\-]*|sk-[A-Za-z0-9_\-]*)\z)",
+    [GeneratedRegex(TokenStart + @"(?:(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_(?>[A-Za-z0-9]{30,})|xox[abprs]-[A-Za-z0-9\-]{10,}|sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_])|(?:(?:AKIA|ASIA)[0-9A-Z]*|gh[pousr]_[A-Za-z0-9]*|xox[abprs]-[A-Za-z0-9\-]*|sk-[A-Za-z0-9_\-]*)\z)",
         RegexOptions.CultureInvariant)]
     private static partial Regex PrefixedToken();
 

@@ -90,8 +90,20 @@ public interface ISftpService : IAsyncDisposable
     /// <summary>重命名或移动远端条目(SFTP 的 rename 兼具 move 语义)。</summary>
     Task RenameAsync(Guid sessionId, string oldPath, string newPath, CancellationToken cancellationToken = default);
 
-    /// <summary>提交已关闭并校验的上传临时文件。无覆盖只走标准无替换 rename;覆盖只走 POSIX 原子替换,不删除目标、不回退。</summary>
+    /// <summary>
+    /// 提交已关闭并校验的上传临时文件。无覆盖只走标准无替换 rename;覆盖只走 POSIX 原子替换,不删除目标、不回退,
+    /// 并把被替换的普通文件原有的权限与属主带到新文件上(带不过去又会放宽权限时拒绝提交)。
+    /// </summary>
     Task CommitUploadAsync(Guid sessionId, string temporaryPath, string destinationPath, bool overwrite,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This backend cannot guarantee atomic upload commit.");
+
+    /// <summary>
+    /// 上传开始写之前的提交预检:<see cref="CommitUploadAsync" /> 注定拒绝时提前拒绝,不白传一整份字节 ——
+    /// 覆盖而服务端没有原子替换抛 <see cref="NotSupportedException" />,不覆盖而目标已存在抛 <c>VelaSftpOperationException</c>。
+    /// 只是提示:查不出来就不拦,预检之后才出现的目标照样由提交拒绝,提交仍是唯一的权威。
+    /// </summary>
+    Task CheckUploadCommitAsync(Guid sessionId, string destinationPath, bool overwrite,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This backend cannot guarantee atomic upload commit.");
 

@@ -2235,3 +2235,43 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **验证**:执行恢复与五语言定向测试 48/48 通过;AI 插件全量测试 1695/1695 通过,无失败或跳过;宿主本地化、HeadlessDispatch 与对话框按钮设计门禁 20/20 通过,无跳过;完整解决方案 Debug 构建 0 警告/0 错误。回归涵盖 20/25 两种批大小分别连续完成 226 次工具调用、跨越旧 100 步与 8 批限制且始终保留工具、累计输出超过旧额度仍完成并完整报告用量、失败后恢复用量各计一次且未完成工具帧不释放、Retry-After 120/121 秒与未来 HTTP-date、跨批账本去重及重复调用保护。独立复核 PASS:重跑定向 48/48 与相关 Bridge/任务/工具/Steering/传输/Responses 回归 118/118;临时本地替身探针完成 1200 次工具副作用和 1202 次模型请求,跨 60 次续接且复用旧 CallId 不重跑,迟到 Stop/拒绝/Unknown 与重复调用分别保持停止边界。额外 whitespace 检查报错逐行对照 HEAD 均为本次未改的既有行,未扩大范围格式化。未对真实服务器安装 1Panel,未宣称供应商或人工 GUI 整链实测。
 
 **文档**:更新插件 README 中旧「上限 25 轮」为每批步数与自动续接;同步 velashell-docs 的 `zh/plugins/11-automation-and-ai.md` 与英文镜像;`feature-plan.md` 仅移除「第 N/8 批」对应子项,其它待定事项保留。未改 SDK 或版本号,未提交、推送或创建 PR。
+
+## 233. 2026-10-24 复审 #646–#667:换源清 Key 之后的跟进、AI 传输两端、Anthropic SDK 13、遮盖与 CI 偶发失败
+
+**来由**:按 PR 复审 #646 之后合进 main 的全部 PR(#646–#667,#661 号空缺),每个 PR 的 diff 取合并提交相对合并前 main 的改动。#659 / #660 是对 #646–#658 的复审修复,这次连同它们自己引入的代码一起审;#662(去掉累计执行硬限额)此前没人审过;#663–#667 是依赖升级、贡献者名单与 AGENTS.md 文案。§231 已记为「留待维护者定」的条目不重复报,除非复审发现原记录不准;维护者这次拍板了两件:Anthropic SDK 保留 13.x 并补兼容,macOS / Linux 的 AI 下载实现 POSIX 安全提交。Windows 上全量构建 `-warnaserror` 0 警告,各测试工程按 CI 口径(AI 插件三组 UI 分进程)全部通过 —— #660 只在 macOS 上跑过、没能跑的 Windows 专用下载用例,这次在 Windows 上补跑通过。
+
+**#662 去掉总上限之后的空转**:
+- 参数每次都不一样的绑定失败(弱模型把 `timeoutSeconds` 传成 `"soon"`、`"later"`…)、供应商每步重发同一个 CallId 只换回旧结果,签名各异,「同签名连调四次」拦不住,批次续接下会一直重发越来越长的上下文 → 连着三步调了工具却一个都没真跑就以 `NoProgress` 暂停(改两次参数再调对不受影响)。
+- `transfer_wait` / `transfer_status` 没有游标参数,轮询一个正在传的大文件第四次就被当成重复暂停 → 只读的轮询工具(`task_status` / `task_wait` / `transfer_status` / `transfer_wait`)结果在变就算有进展,原样不变才累计;有副作用的工具照旧按签名拦。`AIFunctionFactory` 把返回值包成 `JsonElement`,按原文比。
+- Retry-After 超过 120 秒的暂停丢掉了原始 429:面板首步的换 Key / 换站按内层状态码判断,于是多 Key 供应商的 Agent / Plan 首步直接暂停,与 Chat 模式和 README 不一致;状态行还先闪一下「正在重试」并写进一道续不上的续接边界 → 暂停挂上原异常,先算等待再报重试。
+- 断线前只收到空白也走了「续接」(送出只含空白的 assistant 消息,边界算成正文后面板不再换站)→ 与空答一样原样重发。
+- 上下文条用的是一轮各步 usage 之和(早于 #662,但 §232 说的「最近请求输入」并不成立,长任务一直顶在 100%)→ 取最后一条带输入计数的用量(`ChatFormatting.LastRequestUsage`)。韩文「继续第 N 批」改成序数说法。
+
+**AI 传输,插件侧(#656 / #657 / #660)**:
+- Bridge 一轮只等传输时仍占着桥接总并发名额(默认 2):宿主确认框没有时限、批准后的大文件能传几个钟头,两个这样的聊天就把其余聊天静默堵在闸前 → 只等传输的那段让出名额(聊天闸照旧握着),下一次调模型前取回同一把闸,取回之后才恢复预算;`BridgeTurnSlot` 记账,取回途中被停掉不多还也不漏还。`localWaiting` 改成可 await 的回调。
+- 观察连续失败三次就永久停盯、置运行级的不确定:卡片冻住、IM 不报终态、`send_file` 一直被挡 → 1 s 起翻倍、封顶 30 s 退避续盯,不确定只记在那一项、拿回新鲜快照即撤;登记之后发布出错也照样起观察者。
+- 插件自己的拒绝(1024 回执额度、操作身份冲突)被当成「结果可能未知」停成 TaskUnknown → `FileTransferRejectedException`,回「启动前被拒」。`transfer_resume` 续不上时把终态消费掉、模型永远收不到 → 只看一眼。`send_file` 审批后再核一遍下载登记与文件。`download_remote_file` 的 `local_path` 与上传同一把尺(完整绝对路径、审批前规范化)。下载卡没快照不再打「完成」的勾;IM 进度订阅在看到的传输都已终结时释放;链接另存选到已有文件(系统框已确认替换)按 `overwrite=true` 请求宿主。工具说明不再只说「上传」。
+
+**AI 传输,宿主侧(#656 / #657)**:
+- 覆盖上传把被替换文件的权限重置成 0644(临时文件按 0644 新建再原子换入;旧的同步上传是原地写、保留模式),`~/.pgpass` 一类 0600 的文件被放宽、脚本丢了 +x → 提交前把原文件的属主与 07777 权限位带到临时文件上(setuid / setgid 仅在属主对上之后才带;带不过去又会放宽时拒绝提交),真实 OpenSSH 上验证 600 / 755 / 4755 保持。
+- 所有重解析点一律当链接拒绝,OneDrive「已知文件夹移动」下的桌面与文档目录(云文件占位符)上传、下载都失败 → 只认名字代理类(符号链接、目录联接、挂载点)。本机默认的 `PHCM_DISGUISE_PLACEHOLDER` 模式下 .NET 本就看不到占位符的重解析属性,用例切到 EXPOSE 模式验。
+- Windows 下载的目录「锁」只开了 `FILE_READ_ATTRIBUTES`,共享模式不生效、祖先照样能改名,提交又按完整路径重新解析 → 以 `FILE_TRAVERSE | FILE_READ_ATTRIBUTES` 打开、共享读写不共享删除,提交改用 `NtSetInformationFile` 相对父目录句柄改名(Win32 的 `SetFileInformationByHandle` 带 RootDirectory 报 87),临时文件建好后按句柄核对确在钉住的目录里;打开同一目录时清扫崩溃遗留的 `.vela-download-*`。
+- 另:上传在写入前做提交预检(服务器没有 posix-rename、不覆盖而目标已存在,以前要传完整份才知道);上传临时文件改为同目录短名 `.vela-up-<16 位十六进制>`(原名多 61 字节,长文件名 ENAMETOOLONG);Unix 磁盘快照打开后立即删掉路径(崩溃不留明文副本);断线回调按 Guid 认任务(大写或 N 格式的会话 id 以前对不上)。
+
+**macOS / Linux 的 AI 下载**(#657 之后一律失败):新增 `PosixDownloadTarget`,x64 / arm64 的 Linux 与 macOS 上 `SupportsDownloadOperations` 为真。审批前把父目录解析成真实路径并显示,从 `/` 起逐级 `openat(O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)`(Linux 加 `O_PATH`)钉住父目录 fd,链上有链接即拒;临时文件 `O_EXCL` 新建并持 `flock`,不覆盖用 `renameat2(RENAME_NOREPLACE)` / `renameatx_np(RENAME_EXCL)`、不支持时退到 `linkat` + `unlinkat`,覆盖用 `renameat` 并保留旧权限位(去掉 setuid / setgid / 粘滞位);崩溃遗留按 Windows 同一口径清扫(拿得到 `flock` 的才删)。与 Windows 只收本地 NTFS 同理,父目录须在本地按 inode 寻址的文件系统上(Linux 按 `f_type` 白名单、macOS 看 `MNT_LOCAL`),9p / SMB / FUSE / NFS 审批前按不支持拒绝 —— WSL 的 `/mnt/c`(9p)上实测祖先改名后提交没落进钉住的目录。原有的 Download 用例改为三个平台都对真实目标跑;Linux 在 WSL Debian 13 的 ext4 与 tmpfs 上全过,macOS 的常量与调用约定只经 CI 验证。
+
+**Anthropic SDK 13**(#657 把 12.60.0 抬到 13.1.0,#665 / #666 到 13.2.1,plan 没记):13.x (a) `anthropic-version` 由 `2023-06-01` 换成 `2026-10-21`,(b) `ApiKey` 也发成 `Authorization: Bearer`、不再发 `x-api-key`,(c) `MessageCreateParams` 去掉了 temperature / top_p / top_k,`IChatClient` 适配器也不再映射(对照两版程序集的字符串核实)。只认 `x-api-key` 的中转站因此聊天 401,而自己拼请求的模型拉取照常;设置里的温度 / Top-P 在 Anthropic 协议上悄悄不发。→ 新增 `AnthropicApiKeyHandler`,只把 `Bearer <这把 Key>` 改回 `x-api-key`(登录令牌与环境变量回退不挂它,用户配置的附加头在其后施加、不被覆盖);`ApplyEndpointQuirks` 在 Anthropic 协议上显式抹掉三个采样参数,设置页禁用温度与 Top-P 并注明原因(存着的值保留)。`AnthropicWireTests` 抓真实请求头断言。思考配置与模型清单的版本没动,记入 `feature-plan.md`。
+
+**#649 / #660 遮盖**:令牌与 `Bearer` / `Basic` 紧跟在颜色序列后面时(`ESC[0m`、`ESC[K` 的收尾字节是字母,过不了「前面不是字母数字」的回看)原样落盘 —— bat 看令牌文件、grep 整个高亮令牌都是这样 → 起头也认紧挨着的 CSI / 两字节 ESC 序列,序列原样保留。多行私钥块里 END 前面同一行的正文换成 `***`;没收尾的引号串(`password="abc def` 后直接换行)原先整段放出,现从引号之后遮到行尾(不跨行)。诊断包不再把栈帧里的 `PasswordAuthenticator.cs:line 87` 当成名字=值。复审者的模糊测试:切分泄漏 0,新旧对照没有新增泄漏。
+
+**#655 更新**:关于页检查与无参数下载之间插进启动时的通知检查,下载找不到目标就空手返回,界面照报「已就绪」,而 #655 起「检查更新」见就绪就短路、重启失败又不收,只能「修复更新状态」→ 无参数下载没有目标时抛出,界面只跟服务的就绪快照走;换版前按快照复核已下载的包,被删或损坏就删包、丢掉就绪,下一次检查重新下载(§231 记的循环随之消失)。发布流水线:`gh release upload --clobber` 先删后传,仅同步日志的运行若断在两者之间,latest.json 就没了,下一次同步直接报错、只能完整重建 → 缺 latest.json 而校验表在时按 SHA256SUMS.txt 与 Release 现存附件的大小重建(生成逻辑抽到 `scripts/ci/release-manifest.sh`,与构建任务共用;用 1.7.3 的实际附件验证,重建结果与原件逐字节一致),两份都缺时打 notice 跳过。并发组与触发方式不动(维护者已定为等构建完再改说明,#667)。
+
+**CI 偶发失败**(10-23 main 与 PR 上四条,重跑即过):SSH 库断开时 `TrySendDisconnectAsync` 最多等 2 秒,链路堵着时超时先到,被丢下的发送任务随后以「连接已经关闭」失败、没人观察,宿主崩溃日志里每次多一条 UnobservedTaskException(SftpTests 按进程收集这类异常,与大量上传用例并行时变红)→ 接住它的异常。另三条是用例的时序假设:读断线原因只读一次(`Fault` 先放出 `Disconnected` 再收尾通道,这个顺序是 sudo 与端口转发依赖的)、关闭状态断言抢不过测试服务端的 CLOSE、Markdown 投影只泵固定 300 ms。放大竞态窗口复现:改前 100/100、50/50、11/24、10/10 失败,改后全 0。#650 没有改 CI 上 Ssh.Tests 的并行度(仍是 2)。
+
+**其余**:`scripts/ssh/interop/wsl-sshd.sh` 也改听 2229(#650 漏改)。渲染测量脚本零样本时报告抛异常;`Start-TestServer.ps1` 在 PowerShell 7.0 / 7.1 下 `docker inspect` 一失败就整个终止 —— 一并修掉。
+
+**查过、没问题**:#646 / #659 的换源清 Key 确认与跨源测试;#653 默认折叠;#654 / #664 的依赖升级(LiveMarkdown 宿主与插件版本一致、MCP 2.3);#657 的取消令牌参数挪位(调用方都按名传参,挪了位置的会编译失败,不会悄悄换参);#658 的 `VelaTextTertiary` 在全部主题里都有、对比度高于原来的 Muted;#663 / #667 文案。
+
+**留待定**(已记入 `feature-plan.md`):AI 传输安全提交的几处残留(macOS 只经 CI、NFS 按不支持拒绝、POSIX 按名字改名、Windows 祖先目录不共享删除、覆盖上传写入期间临时文件是 0644);Anthropic 的思考配置与模型清单版本;遮盖的⑥(转义 JSON 被外层引号截断、`Password:` 后跟 jq 彩色输出)。
+
+**文档**:velashell-docs 同步 `plugins/11-automation-and-ai`、`07-capability-apis`、`12-security-threat-model`、`05-ipc-protocol`、`06-permission-system`、`协作接入`、`sdk/sdk-reference` §3.3b–§3.3c、`host/交互与界面规格`、`host/消息中心与资讯源`(zh / en 同步);插件 README 的 Agent 循环、下载平台、鉴权与采样几节随代码改。

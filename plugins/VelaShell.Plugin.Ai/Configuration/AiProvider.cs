@@ -275,10 +275,14 @@ public sealed class AiModelConfig
     public bool PromptCaching { get; set; } = true;
 
     /// <summary>采样温度;null = 不发这个参数,用服务端默认。</summary>
-    /// <remarks>开思考的 Anthropic 模型只接受 temperature=1 或不填,那种情况下这里应留空。</remarks>
+    /// <remarks>
+    /// Anthropic 协议上不发(SDK 13.x 的 <c>anthropic-version: 2026-10-21</c> 不收这个字段,
+    /// 见 <c>AiSettingsStore.ApplyEndpointQuirks</c>);值照存,换回 OpenAI 系协议照常生效。
+    /// </remarks>
     public float? Temperature { get; set; }
 
     /// <summary>核采样 top_p;null = 不发。与 <see cref="Temperature" /> 一般只调一个。</summary>
+    /// <remarks>Anthropic 协议上同样不发,理由同 <see cref="Temperature" />。</remarks>
     public float? TopP { get; set; }
 
     /// <summary>停止序列(每行一条);为空则不发。</summary>

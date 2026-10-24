@@ -78,6 +78,10 @@ public sealed class RoutingRemoteFileService(
         Resolve(sessionId).CommitUploadAsync(sessionId, temporaryPath, destinationPath, overwrite, cancellationToken);
 
     /// <inheritdoc />
+    public Task CheckUploadCommitAsync(Guid sessionId, string destinationPath, bool overwrite, CancellationToken cancellationToken = default) =>
+        Resolve(sessionId).CheckUploadCommitAsync(sessionId, destinationPath, overwrite, cancellationToken);
+
+    /// <inheritdoc />
     public Task CopyAsync(Guid sessionId, string sourcePath, string destPath, IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default) =>
         Resolve(sessionId).CopyAsync(sessionId, sourcePath, destPath, progress, cancellationToken);
 

@@ -419,8 +419,10 @@ public class SettingsViewModelTests
     [TestMethod]
     [TestCategory("Update")]
     [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内下载。")]
-    public async Task CheckUpdates_LegacyDownloadSuccessRetainsRestartEntryWithoutReadyMetadata()
+    public async Task CheckUpdates_DownloadReturningWithoutReadySnapshotIsNotReportedReady()
     {
+        // 下载正常返回却没有就绪快照(服务拿到空目标时以前就是这样),不能报「已就绪」:
+        // 否则检查更新从此短路,重启又必然失败,只能在「已就绪 → 重启失败」之间兜圈。
         IUpdateService updates = Substitute.For<IUpdateService>();
         updates.CanSelfUpdate.Returns(true);
         updates.CheckForUpdateAsync().Returns(true);
@@ -428,43 +430,55 @@ public class SettingsViewModelTests
         SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
 
         await vm.CheckUpdatesCommand.Execute().FirstAsync();
-        Assert.IsTrue(vm.UpdateReady);
+
+        Assert.IsFalse(vm.UpdateReady);
+        Assert.IsNull(vm.ReadyUpdate);
         Assert.IsFalse(vm.IsUpdating);
-        Assert.AreEqual(Strings.Format("SetAbout_UpdateReady", "2.0.0"), vm.UpdateStatus);
-        updates.DidNotReceive().ApplyUpdateAndRestart();
+        Assert.AreEqual(Strings.Get("SetAbout_DownloadFailed"), vm.UpdateStatus);
 
         await vm.UpdateFromReleaseAsync(CreateUpdateManifest("3.0.0"));
-        Assert.AreEqual(Strings.Get("ReleaseNotes_UpdateConflict"), vm.UpdateStatus);
+        await vm.CheckUpdatesCommand.Execute().FirstAsync();
+        await vm.RestartToUpdateCommand.Execute().FirstAsync();
+
+        Assert.IsFalse(vm.UpdateReady);
+        await updates.Received(2).CheckForUpdateAsync();
+        await updates.Received(2).DownloadUpdateAsync(
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        await updates.Received(1).DownloadUpdateAsync(Arg.Any<UpdateManifest>(),
+            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
+        updates.DidNotReceive().ApplyUpdateAndRestart();
+    }
+
+    [TestMethod]
+    [TestCategory("Update")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Linux, IgnoreMessage = "Linux 不在应用内换版。")]
+    public async Task RestartToUpdate_FailureThatDropsReadySnapshot_HidesRestartAndChecksAgain()
+    {
+        IUpdateService updates = Substitute.For<IUpdateService>();
+        updates.CanSelfUpdate.Returns(true);
+        UpdateManifest? ready = CreateUpdateManifest();
+        updates.ReadyUpdate.Returns(_ => ready);
+        updates.When(service => service.ApplyUpdateAndRestart()).Do(_ =>
+        {
+            // 服务换版前复核发现包已丢失或损坏:丢掉就绪快照再报错。
+            ready = null;
+            throw new InvalidDataException("missing");
+        });
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
         Assert.IsTrue(vm.UpdateReady);
+
+        await vm.RestartToUpdateCommand.Execute().FirstAsync();
+
+        Assert.IsNull(vm.ReadyUpdate);
+        Assert.IsFalse(vm.UpdateReady, "包已不在,重启入口必须收起");
+        Assert.IsFalse(vm.IsUpdating);
+        Assert.AreEqual(Strings.Get("SetAbout_ApplyFailed"), vm.UpdateStatus);
 
         await vm.CheckUpdatesCommand.Execute().FirstAsync();
 
-        Assert.IsTrue(vm.UpdateReady);
-        Assert.IsNull(vm.ReadyUpdate);
         await updates.Received(1).CheckForUpdateAsync();
-        await updates.Received(1).DownloadUpdateAsync(
-            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
-        await updates.DidNotReceive().DownloadUpdateAsync(Arg.Any<UpdateManifest>(),
-            Arg.Any<IProgress<UpdateDownloadProgress>>(), Arg.Any<CancellationToken>());
-        updates.DidNotReceive().ApplyUpdateAndRestart();
-        int applyAttempts = 0;
-        updates.When(service => service.ApplyUpdateAndRestart()).Do(_ =>
-        {
-            if (++applyAttempts == 1)
-            {
-                throw new IOException("locked");
-            }
-        });
-
-        await vm.RestartToUpdateCommand.Execute().FirstAsync();
-
-        Assert.AreEqual(Strings.Get("SetAbout_ApplyFailed"), vm.UpdateStatus);
-        Assert.IsTrue(vm.UpdateReady, "失败不能清掉无目标元数据的兼容态,否则无法重试。");
-        Assert.IsFalse(vm.IsUpdating);
-
-        await vm.RestartToUpdateCommand.Execute().FirstAsync();
-
-        updates.Received(2).ApplyUpdateAndRestart();
+        Assert.AreEqual(Strings.Get("SetAbout_UpToDate"), vm.UpdateStatus);
+        updates.Received(1).ApplyUpdateAndRestart();
     }
 
     [TestMethod]

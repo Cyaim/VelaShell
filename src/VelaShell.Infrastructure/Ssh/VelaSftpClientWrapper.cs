@@ -407,6 +407,36 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
         }, ct);
 
     /// <inheritdoc />
+    public bool SupportsAtomicReplace => _fs is { } fs && fs.Capabilities.HasPosixRename;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// LSTAT 原样交出:类型位留着(调用方要分辨普通文件与链接),uid / gid 只在服务端报了才给 ——
+    /// 没报的当成 0,等于把文件交给 root(同 <see cref="ChangeOwnerAsync" /> 的说明)。
+    /// </remarks>
+    public Task<SftpFileMode?> GetLinkModeAsync(string path, CancellationToken ct = default) =>
+        GuardedAsync(async () =>
+        {
+            try
+            {
+                SftpFileAttributes attributes = await EnsureConnected().GetLinkAttributesAsync(path, ct).ConfigureAwait(false);
+                return new SftpFileMode(
+                    attributes.HasPermissions ? attributes.Permissions : null,
+                    attributes.HasUidGid ? unchecked((int)attributes.UserId) : null,
+                    attributes.HasUidGid ? unchecked((int)attributes.GroupId) : null);
+            }
+            catch (SftpException ex) when (ex.IsNotFound)
+            {
+                return (SftpFileMode?)null;
+            }
+        }, ct);
+
+    /// <inheritdoc />
+    public Task SetModeAsync(string path, uint mode, CancellationToken ct = default) =>
+        GuardedAsync(async () =>
+            await EnsureConnected().SetPermissionsAsync(path, mode & 0xFFF, ct).ConfigureAwait(false), ct);
+
+    /// <inheritdoc />
     public Task<bool> ExistsAsync(string path, CancellationToken ct = default) =>
         GuardedAsync(async () => await EnsureConnected().ExistsAsync(path, ct).ConfigureAwait(false), ct);
 

@@ -367,6 +367,16 @@ GitHub Copilot 这三条走的是这一路 —— 因为**没有第二条路**:�
 又不至于每轮刷一条 Warning;认不出来的载荷则每次都警告,那可能是中转站塞进来的错误信息,
 漏一条就变成一次无声的截断。
 
+**API Key 改回 `x-api-key`**(`Auth/AnthropicApiKeyHandler.cs`,同样挂在 `AnthropicClient.Handlers` 上):
+`Anthropic` SDK 13.x 把 `ApiKey` 也发成 `Authorization: Bearer`(12.x 及以前是 `x-api-key`),只认 `x-api-key`
+的中转站于是一聊天就 401 —— 而拉模型清单那条请求是自己拼的(`x-api-key` + `anthropic-version: 2023-06-01`),
+照常能用,两边对不上。所以手填的 Key(含登录换回来的长期 Key)发出前恢复成 13 之前的样子:
+`x-api-key: <Key>`,不带 `Authorization`。只在 `Authorization` 恰好是 `Bearer <这把 Key>` 时改写;
+登录换来的短期令牌照旧走 `Authorization: Bearer`,没有凭据时由 SDK 读 `ANTHROPIC_API_KEY` /
+`ANTHROPIC_AUTH_TOKEN` 的那条路也不动。它排在账号附加头(`ExtraHeadersHandler`)**外层**:附加头后施加,
+用户明确配置的 `Authorization` / `x-api-key` 总是最后落定,不会被盖掉。`anthropic-version` 照 SDK 的发
+(13.x 为 `2026-10-21`)—— 请求体是按这个版本拼的。`AnthropicWireTests` 抓真实请求头守着这几条。
+
 **判据取自请求体里的 `"stream":true`,不看响应的 `Content-Type`。** 第一版按
 `Content-Type == text/event-stream` 判断,在真实中转站上整个没生效 —— 它给流式响应贴的是
 `application/json`(起本地假端点复现确认)。非流式响应则一个字节都不碰:HttpClient 已经把它
@@ -379,6 +389,16 @@ Base URL 与 API Key 全部用户自填;API Key 经宿主 **Secrets 能力加密
 每个模型还可单独配:采样参数(temperature / top_p / 停止序列,留空 = 不发该参数)、
 **专用系统提示词**(盖过全局那份)、以及三档**单价**(输入 / 输出 / 缓存命中,每百万 token)。
 填了单价,用量的悬停提示里就会给出这段会话的花费估算;留 0 就不估。
+
+**temperature / top_p 在 Anthropic 协议上不发。** SDK 13.x 发的 `anthropic-version: 2026-10-21`
+收到 temperature / top_p / top_k 一律 400,SDK 也随之从 `MessageCreateParams` 删掉了这几个字段,
+`IChatClient` 适配器不再映射 `ChatOptions.Temperature` / `TopP` / `TopK`。插件在
+`AiSettingsStore.ApplyEndpointQuirks` 里对 Anthropic 协议显式抹掉三者(不靠适配器"恰好不映射");
+设置页对解出协议为 Anthropic 的模型**禁用**温度与 Top-P 两格并写明原因 —— 只禁用不清空,存着的值照样
+保存,模型换回 OpenAI 系协议就又生效。停止序列不受影响,照发。
+**第三方 Anthropic 兼容端点也不发**:13.2.1 没有受支持的采样入口,唯一能塞任意字段的是
+`MessageCreateParams.FromRawUnchecked` 这种跳过类型检查的原始请求体口子,不算干净的钩子;
+何况中转站多半把版本头原样转给上游,硬塞进去只会把"不生效"变成每轮 400。
 
 ## 供应商 › 模型两层配置
 
@@ -532,8 +552,8 @@ Anthropic 回 `tool_use ids must have corresponding tool_result`。两个方向�
 现在按目标形状分三条路:网址交给浏览器,本机绝对路径交给系统默认程序,
 **以 `/` 开头的远端绝对路径经 SFTP 后台下载**(先 `Stat` 确认存在且不是目录,
 再选择保存位置并请求逐任务宿主确认；已移除原64 MiB固定判断，进度卡绑定点击时的对话/会话，
-不伪造模型工具调用或完成通知)。保存选择器不提前截断目标，也不能替代宿主审批。
-此下载接线仍受下方正式SDK待发布与Windows固定本地NTFS提交限制，不能视为已发布可用。
+不伪造模型工具调用或完成通知)。保存选择器不提前截断目标，也不能替代宿主审批；选到已有文件时由系统框先问「要替换吗」，确认替换后按 `overwrite=true` 请求宿主确认（宿主确认框照实写着替换），否则宿主落盘只会报「目标已存在」。
+落盘走宿主的安全提交(Windows 固定本地 NTFS,Linux / macOS 本地按 inode 寻址的文件系统),见下方「安全落盘」一条。
 
 **历史存的不只是文本**:思考过程、工具调用、模型名、耗时另存一张 `chat_meta` 表
 (按 `conv + seq` 与消息对应)。翻回旧会话时 Agent 做过什么一览无余,导出的 Markdown 里也带着。
@@ -714,7 +734,11 @@ SVG 目前只对 `data:` URI 和本地路径生效;要放开就把 `ConfigureMar
 - OpenAI 两种协议:`OpenAI` 官方 SDK + `Microsoft.Extensions.AI.OpenAI` 适配
   (`GetChatClient().AsIChatClient()` / `GetResponsesClient().AsIChatClient()`);
 - Anthropic 协议:`Anthropic` 官方 SDK 内建的 `AsIChatClient()` 适配;
-- Agent 循环:`FunctionInvokingChatClient`(`UseFunctionInvocation()`,桌面每批 25 步、Bridge 每批 20 步,由协调器沿用工具账本自动续接,无累计步数/token/批次硬上限);
+- Agent 循环:`FunctionInvokingChatClient`(`UseFunctionInvocation()`,桌面每批 25 步、Bridge 每批 20 步,由协调器沿用工具账本自动续接,无累计步数/token/批次硬上限)。
+  没有总上限,空转就靠两道暂停兜住(`NoProgress`):同一工具同样参数连调四次 —— 只读的轮询工具
+  (`task_status` / `task_wait` / `transfer_status` / `transfer_wait`)结果在变就算有进展、不计入;
+  以及连着三步调了工具却一个都没真跑(参数绑定失败、同 CallId 只交回旧结果)。参数绑定失败本身仍交还模型改正,
+  改两次再调对不受影响。上下文条按最后一次请求的输入算占比,不是一轮各步之和;
 - 工具经 `AIFunctionFactory` 包装插件 SDK 能力(Sessions / Terminal / RemoteExec / RemoteFs);
 - MCP:官方 `ModelContextProtocol.Core` SDK,`McpClientTool` 本身即 `AIFunction`,
   与内置工具同进一个函数调用循环。
@@ -750,11 +774,11 @@ SVG 目前只对 `data:` URI 和本地路径生效;要放开就把 `ConfigureMar
   既不在 SSH 服务器上、也不在终端的当前目录里。系统提示词里会明说这件事,并把各台 MCP
   服务器的工作目录一并告诉模型 —— 不说清楚它就会把本机产物当成远端路径去汇报(实际发生过:
   xmind MCP 生成的文件被报成 `/root/xxx.xmind`,两边都找不到)。
-- `download_remote_file` 与点击远端链接两个入口分别移除原32/64 MiB固定判断，按流使用宿主持有的独立后台下载任务。默认 `overwrite=false`，同名失败而非覆盖；明确覆盖仍须批准。`SupportsDownloadOperations` 目前只有 Windows 宿主为 true（macOS / Linux 怎么补见 `feature-plan.md`），不支持时在 AI 审批与选保存位置之前就直接说明，不降级旧同步下载；不给 `local_path` 时存进插件私有的 `downloads` 目录（不存在就建），文件名来自服务器，带盘符或冒号、是设备名、以点或空格结尾的直接拒绝；下载 `CanResume=false`。源/目标、Download方向、Approval/Transfer/Verification/Commit阶段、64位字节数、速率、ETA与停止确认通过 `transfer_status` / `transfer_wait` / `transfer_cancel` 管理；短等到期或请求取消不杀任务，无默认执行死线。满字节仍须校验、关闭和提交确认，只有Succeeded是成功；Unknown/TimedOut且停止未确认不得当作副作用结束，不自动重下。失败的传输卡片附一句简短原因。
-- 用户进度卡与模型回执分离，本地观察更新进度、不反复请求模型；终态只消费/通知一次，status/wait已消费就不重复，不给原CallId第二个工具结果。Stop只停止模型等待，原任务/观察继续，卡片可显式取消；关闭面板、插件停用、MCP会话销毁或授权重载清理，包括迟到启动。Bridge沿用纯传输等待暂停剩余预算与Stop后观察，不自动重启模型；外部MCP须主动查询，服务端不承诺唤醒模型。任务按owner/run隔离，链接下载绑定原对话的独立scope，不生成模型通知。
-- 新下载使用独立宿主单任务租约，逐次确认插件、真实会话、远端源、最终本地目标和覆盖策略；不借用上传/终端许可，AI全部自动与保存选择器都不能绕过，无提示器/窗口则拒绝。撤权取消待批准/活动任务，提交前重验、后续结果脱敏，不承诺回滚已提交文件。`send_file`拒绝尚未成功提交的下载目标或同名旧文件，原目录限制、外发审批和IM平台上限保留。
-- 安全落盘源码当前**仅Windows固定本地NTFS**：逐段持有父目录句柄、独占随机临时文件并按句柄原子提交；默认无替换，明确覆盖不先删目标，时间戳写持有的临时句柄。Linux/macOS、UNC、其它文件系统/后端明确拒绝，不回退直接写最终路径。检查实际长度、前后元数据及可用摘要，纯SFTP不强制exec/默认二次整文件下载；这不是远端原子快照保证。不合作后端停止未确认时保留槽与句柄直到实际退出。上传下载共享每插件4实际传输/32活动排队/1024回执；授权、用户限速、磁盘、上下文读取、聊天附件与IM资源边界保留。
-- **下载发布状态：** SDK 2.1.2 已发布，宿主 src / tests 中央包、AI 显式依赖与 minSdkVersion 均已升到 2.1.2；下载只在 Windows 宿主上可用，仍未宣称真实 SSH / GUI 或跨平台提交验证通过。
+- `download_remote_file` 与点击远端链接两个入口分别移除原32/64 MiB固定判断，按流使用宿主持有的独立后台下载任务。默认 `overwrite=false`，同名失败而非覆盖；明确覆盖仍须批准。`SupportsDownloadOperations` 在 Windows 与 Linux / macOS(x64、arm64)宿主上为 true，不支持时(其它平台,或目标所在文件系统不支持安全提交)在 AI 审批与选保存位置之前就直接说明，不降级旧同步下载；不给 `local_path` 时存进插件私有的 `downloads` 目录（不存在就建），文件名来自服务器，带盘符或冒号、是设备名、以点或空格结尾的直接拒绝；给了 `local_path` 则与上传同一把尺，必须是完整的绝对路径（Windows 上 `C:foo`、`\tmp\x` 这类会被宿主按进程当前目录补全的一律拒绝），并在审批之前规范化，审批卡与宿主确认框写的就是真正的落点；下载 `CanResume=false`。源/目标、Download方向、Approval/Transfer/Verification/Commit阶段、64位字节数、速率、ETA与停止确认通过 `transfer_status` / `transfer_wait` / `transfer_cancel` 管理；短等到期或请求取消不杀任务，无默认执行死线。满字节仍须校验、关闭和提交确认，只有Succeeded是成功；Unknown/TimedOut且停止未确认不得当作副作用结束，不自动重下。失败的传输卡片附一句简短原因；上传、下载与 `transfer_*` 工具没给出快照（被拒、启动前挡下、回执丢失）时卡片标警示，不打「完成」的勾。
+- 用户进度卡与模型回执分离，本地观察更新进度、不反复请求模型；终态只消费/通知一次，status/wait已消费就不重复，不给原CallId第二个工具结果。Stop只停止模型等待，原任务/观察继续，卡片可显式取消；关闭面板、插件停用、MCP会话销毁或授权重载清理，包括迟到启动。Bridge沿用纯传输等待暂停剩余预算与Stop后观察，不自动重启模型；只等传输的那段还会让出桥接总并发名额（聊天闸照旧握着，同一聊天仍串行），下一次调模型之前排队取回同一把闸、取回之后才恢复预算 —— 宿主确认框没有时限、大文件能传几个钟头，占着名额会把别的聊天静默堵在闸前；取回途中被停掉的不多还也不漏还名额。IM 进度订阅在看到的传输都已终结（含停止未确认的 Unknown/TimedOut）时随轮次收尾释放，与桌面卡片同一条规则。外部MCP须主动查询，服务端不承诺唤醒模型。本地观察连续失败三次只报「进度不可确认」（这一项算结果未知），之后按1 s起翻倍、封顶30 s退避继续盯到宿主终态、撤权或插件停用；拿回新鲜快照即撤下这份不确定，卡片、IM终态报告与`send_file`守卫都跟着走完。`transfer_resume`只看一眼原任务、不消费终态，没续上时那份终态照常由完成通知交给模型。任务按owner/run隔离，链接下载绑定原对话的独立scope，不生成模型通知。
+- 新下载使用独立宿主单任务租约，逐次确认插件、真实会话、远端源、最终本地目标和覆盖策略；不借用上传/终端许可，AI全部自动与保存选择器都不能绕过，无提示器/窗口则拒绝。撤权取消待批准/活动任务，提交前重验、后续结果脱敏，不承诺回滚已提交文件。`send_file`拒绝尚未成功提交的下载目标或同名旧文件，审批前后各核一次（IM 审批常要等几分钟），审批期间文件大小或修改时间变了也不发、请模型重新申请；原目录限制、外发审批和IM平台上限保留。
+- 安全落盘：**Windows 固定本地 NTFS** 逐段持有父目录句柄(FILE_TRAVERSE、共享读写不共享删除,祖先目录真被锁住)、独占随机临时文件并相对父目录句柄原子提交；**Linux / macOS** 从 `/` 起逐级 `openat(O_NOFOLLOW)` 钉住父目录 fd、`O_EXCL` 新建临时文件并持 `flock`,不覆盖用 `renameat2(RENAME_NOREPLACE)` / `renameatx_np(RENAME_EXCL)`(不支持时退到 `linkat`),覆盖用 `renameat` 并保留旧权限位；父目录须在本地按 inode 寻址的文件系统上(9p / SMB / FUSE / NFS 审批前即拒)。两边都只把名字代理类重解析点 / 符号链接当链接拒绝,崩溃遗留的 `.vela-download-*` 在下一次打开同一目录时清扫。默认无替换，明确覆盖不先删目标，时间戳写持有的临时句柄。UNC、其它文件系统/后端明确拒绝，不回退直接写最终路径。检查实际长度、前后元数据及可用摘要，纯SFTP不强制exec/默认二次整文件下载；这不是远端原子快照保证。不合作后端停止未确认时保留槽与句柄直到实际退出。上传下载共享每插件4实际传输/32活动排队/1024回执；回执额度用尽或操作身份冲突是插件在交给宿主之前的拒绝，工具回「启动前被拒」，不标结果未知、不把整轮停成 TaskUnknown。授权、用户限速、磁盘、上下文读取、聊天附件与IM资源边界保留。
+- **下载发布状态：** SDK 2.1.2 已发布，宿主 src / tests 中央包、AI 显式依赖与 minSdkVersion 均已升到 2.1.2；下载在 Windows 与 Linux / macOS 宿主上可用(Linux 的提交用例在 WSL Debian 的 ext4 与 tmpfs 上跑过,macOS 只经 CI);仍未宣称真实 SSH / GUI 整链验证通过。
 - 目标会话由面板顶部的会话下拉框选定。
 - 审批卡上还有第三个按钮 **「本次会话总是允许」**,但**只对可重复、语义稳定的操作开放**:
   `run_command` 的记忆键到命令名为止(`sudo` 会带上后面那个词),同一次排查里

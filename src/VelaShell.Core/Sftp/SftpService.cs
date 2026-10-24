@@ -515,12 +515,105 @@ public class SftpService : ISftpService
         ISftpClientWrapper client = await GetOrCreateSftpClientAsync(sessionId, cancellationToken).ConfigureAwait(false);
         if (overwrite)
         {
+            // 没有原子替换就不必先带模式:下面的替换照样拒绝,拒绝原因也该是「不支持」,而不是带模式时的别的失败。
+            if (client.SupportsAtomicReplace)
+            {
+                await CarryOverReplacedModeAsync(client, temporaryPath, destinationPath, cancellationToken).ConfigureAwait(false);
+            }
             await client.AtomicReplaceFileAsync(temporaryPath, destinationPath, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             // 不走 RenameAsync 的探测后回退:探测与 POSIX rename 间可能出现新目标。
             await client.RenameFileAsync(temporaryPath, destinationPath, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 覆盖提交之前,把被替换的普通文件原有的属主与权限位带到临时文件上。posix-rename 换进来的是临时文件那个 inode,
+    /// 它按 0644 新建:不带过去的话,覆盖一个 0600 的密钥文件就成了 0644,0755 的脚本丢掉执行位(旧的就地覆盖写不改这些)。
+    /// <list type="bullet">
+    ///   <item>目标不存在(新文件)或不是普通文件:不动,与新建上传同一口径 —— 被替换的是链接本身,目录本来就换不了;</item>
+    ///   <item>属主尽力而为:普通用户改不了别人的属主,服务端拒绝就留着上传者。setuid / setgid 只在属主属组对上之后才带,
+    ///   否则等于凭空造出一个以上传者身份运行的 setuid 程序;属主先改、权限后改,非 root 改属主时内核会清掉这两位;</item>
+    ///   <item>只许收窄,不许放宽:目标存在却读不到它的模式,或改不了临时文件的模式而它比目标宽,就拒绝提交、目标原样不动 ——
+    ///   宁可这次覆盖失败,也不让一个 0600 的文件悄悄变成 0644。</item>
+    /// </list>
+    /// </summary>
+    private static async Task CarryOverReplacedModeAsync(ISftpClientWrapper client, string temporaryPath, string destinationPath,
+        CancellationToken cancellationToken)
+    {
+        SftpFileMode? target = await client.GetLinkModeAsync(destinationPath, cancellationToken).ConfigureAwait(false);
+        if (target is null)
+        {
+            return;
+        }
+        if (target.Mode is not { } mode)
+        {
+            throw new NotSupportedException("The server did not report the permissions of the file being replaced; refusing to replace it with default permissions.");
+        }
+        if (!target.IsRegularFile)
+        {
+            return;
+        }
+
+        bool owned = false;
+        if (target is { UserId: { } uid, GroupId: { } gid })
+        {
+            try
+            {
+                await client.ChangeOwnerAsync(temporaryPath, uid, gid, cancellationToken).ConfigureAwait(false);
+                owned = true;
+            }
+            catch (VelaSftpOperationException ex) when (ex is not VelaSftpTransferInterruptedException)
+            {
+                // 属主尽力而为:服务端明确拒绝(不是 root 就改不了别人的属主)时留着上传者。
+            }
+        }
+
+        // 0777 与粘滞位(01777)照带;setuid / setgid(06000)只在属主属组对上之后才带。
+        uint wanted = mode & (owned ? 0xFFFu : 0x3FFu);
+        try
+        {
+            await client.SetModeAsync(temporaryPath, wanted, cancellationToken).ConfigureAwait(false);
+        }
+        catch (VelaSftpOperationException ex) when (ex is not VelaSftpTransferInterruptedException)
+        {
+            // 服务端不许改模式:临时文件不比目标宽(只会少几位,比如丢了执行位)才照样提交,否则原样拒绝。
+            SftpFileMode? temporary = await client.GetLinkModeAsync(temporaryPath, cancellationToken).ConfigureAwait(false);
+            if (temporary?.PermissionBits is not { } bits || (bits & ~wanted) != 0)
+            {
+                throw;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task CheckUploadCommitAsync(Guid sessionId, string destinationPath, bool overwrite,
+        CancellationToken cancellationToken = default)
+    {
+        ISftpClientWrapper client = await GetOrCreateSftpClientAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (overwrite)
+        {
+            if (!client.SupportsAtomicReplace)
+            {
+                throw new NotSupportedException("The server does not support atomic POSIX replacement.");
+            }
+            return;
+        }
+        bool exists;
+        try
+        {
+            exists = await client.ExistsAsync(destinationPath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 预检只负责提前拒绝:问不出来(没权限 stat、通道出错)就不拦,由提交按服务端的应答定。
+            return;
+        }
+        if (exists)
+        {
+            throw new VelaSftpOperationException("The upload destination already exists.");
         }
     }
 

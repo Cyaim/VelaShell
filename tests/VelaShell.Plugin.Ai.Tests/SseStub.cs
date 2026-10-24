@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -28,6 +29,7 @@ public sealed class SseStub : IAsyncDisposable
     private readonly List<string> _bodies = [];
     private readonly List<string?> _authorizations = [];
     private readonly List<string?> _accountIds = [];
+    private readonly List<NameValueCollection> _headers = [];
     private int _disposed;
 
     /// <summary>接入配置里填的基地址。</summary>
@@ -74,6 +76,21 @@ public sealed class SseStub : IAsyncDisposable
             lock (_gate)
             {
                 return [.. _accountIds];
+            }
+        }
+    }
+
+    /// <summary>
+    /// 每次请求的<b>全部</b>请求头(拷贝),与 <see cref="Requests" /> 同序 ——
+    /// 要断言"某个头根本没发"(如 API Key 不该再以 Bearer 出现)时看这一份。
+    /// </summary>
+    public IReadOnlyList<NameValueCollection> RequestHeaders
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _headers];
             }
         }
     }
@@ -195,6 +212,7 @@ public sealed class SseStub : IAsyncDisposable
                             _bodies.Add(body);
                             _authorizations.Add(context.Request.Headers["Authorization"]);
                             _accountIds.Add(context.Request.Headers["chatgpt-account-id"]);
+                            _headers.Add(new NameValueCollection(context.Request.Headers));
                         }
                         _request.TrySetResult(body);
                         bool wantsStream = body.Contains("\"stream\":true", StringComparison.Ordinal);

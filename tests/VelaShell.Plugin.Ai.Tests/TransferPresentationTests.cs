@@ -90,4 +90,38 @@ public sealed class TransferPresentationTests
         stop.Cancel();
         Assert.IsTrue(budget.Token.IsCancellationRequested, "Stop/lifetime remain effective during upload waiting");
     }
+
+    /// <summary>
+    /// 只等传输时让出的名额,取回途中被停掉:没拿到就不还,收尾再还一次也不多放 ——
+    /// 总并发闸最后仍是原来那么多名额。
+    /// </summary>
+    [TestMethod]
+    public async Task TurnSlot_StopWhileReacquiring_NeitherLeaksNorDoublesTheSlot()
+    {
+        using var gate = new SemaphoreSlim(1, 1);
+        var waiting = new BridgeTurnSlot(gate);
+        await waiting.AcquireAsync(CancellationToken.None);
+        waiting.Release();
+        var other = new BridgeTurnSlot(gate);
+        await other.AcquireAsync(CancellationToken.None);
+        Assert.AreEqual(0, gate.CurrentCount, "让出的名额应当能被别的聊天拿走");
+
+        using var stop = new CancellationTokenSource();
+        Task reacquire = waiting.AcquireAsync(stop.Token);
+        Assert.IsFalse(reacquire.IsCompleted, "名额被占着时取回要排队");
+        await stop.CancelAsync();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => reacquire);
+        Assert.IsFalse(waiting.IsHeld);
+        waiting.Release();
+        Assert.AreEqual(0, gate.CurrentCount, "没取回的名额不能在收尾时凭空还一个");
+
+        other.Release();
+        other.Release();
+        Assert.AreEqual(1, gate.CurrentCount, "重复收尾只还一次");
+        await waiting.AcquireAsync(CancellationToken.None);
+        await waiting.AcquireAsync(CancellationToken.None);
+        Assert.AreEqual(0, gate.CurrentCount, "已持有时再取回不多占");
+        waiting.Release();
+        Assert.AreEqual(1, gate.CurrentCount);
+    }
 }

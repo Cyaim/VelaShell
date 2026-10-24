@@ -50,7 +50,7 @@ internal sealed class BridgeTransferObserver : IDisposable
                 _lastProgress = now;
                 progress = $"{_text}\n\n{status}";
             }
-            dispose = _finished && (!_scope.HasRunningTransfers || (_terminal.Count > 0 && _terminal.Values.All(t => t)));
+            dispose = Drained();
         }
         if (progress is not null) _progress(progress);
         if (report is not null) _report(report);
@@ -62,9 +62,15 @@ internal sealed class BridgeTransferObserver : IDisposable
         lock (_gate)
         {
             _finished = true;
-            if (!_scope.HasRunningTransfers) Dispose();
+            if (Drained()) Dispose();
         }
     }
+
+    // 调用方持有 _gate。收尾之后观察者只为"报终态"而活:宿主那边已没有要清理的任务,或者看到的每一项都已终结
+    // (与桌面 TransferBinding.Drain 同一条规则)。停止未确认的 Unknown/TimedOut 是终态,却一直算 HasRunningTransfers ——
+    // Finish 只看后者的话,订阅连同那几个闭包要一直挂到桥接重载。
+    private bool Drained() => _finished
+        && (!_scope.HasRunningTransfers || (_terminal.Count > 0 && _terminal.Values.All(t => t)));
 
     public void Dispose()
     {

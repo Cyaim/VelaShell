@@ -336,14 +336,13 @@ public sealed class ConversationRouter(
         }
 
         bool chatGateHeld = false;
-        bool turnGateHeld = false;
-        SemaphoreSlim turnGate = _turnGate;
+        // 记住的是**当初那一把**闸:设置重载会把 _turnGate 换掉,让出之后取回、收尾时归还都只能对着它。
+        var turnSlot = new BridgeTurnSlot(_turnGate);
         try
         {
             await conversation.Gate.WaitAsync(lifetime).ConfigureAwait(false);
             chatGateHeld = true;
-            await turnGate.WaitAsync(lifetime).ConfigureAwait(false);
-            turnGateHeld = true;
+            await turnSlot.AcquireAsync(lifetime).ConfigureAwait(false);
             // 拿到闸之后**再确认一次**。停桥接会同时做两件事:取消生命周期、以及让正在跑的
             // 那一轮结束(它随即归还闸)。于是排队的这条会同时看到"许可可用"与"令牌已取消",
             // 而 SemaphoreSlim 在两者同时成立时不保证优先报取消 —— 谁先谁后由调度决定。
@@ -354,10 +353,7 @@ public sealed class ConversationRouter(
         {
             // 停了(或闸被换掉了):这条消息就到此为止,一个字都不发给模型。
             // 只归还真正拿到手的那几把。
-            if (turnGateHeld)
-            {
-                turnGate.Release();
-            }
+            turnSlot.Release();
             if (chatGateHeld)
             {
                 conversation.Gate.Release();
@@ -401,11 +397,27 @@ public sealed class ConversationRouter(
                     Clip(accumulated, capabilities.MaxMessageChars), CancellationToken.None);
             }
 
+            // 只等传输的那段把总并发名额让出来。宿主的上传/下载确认框没有时限,批准后的大文件
+            // 一传就是几个钟头;一直占着名额的话,两个这样的聊天就能把其余所有聊天静默地堵在闸前。
+            // 聊天闸照旧握着(同一个聊天仍然串行);预算在让出之前暂停,取回之后才恢复 ——
+            // 排队等名额的时间不算模型请求的耗时。
+            async ValueTask LocalWaitingAsync(bool waiting, CancellationToken token)
+            {
+                if (waiting)
+                {
+                    budget.LocalWaiting(true);
+                    turnSlot.Release();
+                    return;
+                }
+                await turnSlot.AcquireAsync(token).ConfigureAwait(false);
+                budget.LocalWaiting(false);
+            }
+
             BridgeTurn result = await runner.RunAsync(
                 conversation, Settings, message,
                 request => approvals.RequestAsync(conversation, config, request,
                     Settings.ApprovalTimeoutSeconds, Loc, turn.Token),
-                Loc, OnProgress, grant, budget.Token, budget.LocalWaiting).ConfigureAwait(false);
+                Loc, OnProgress, grant, budget.Token, LocalWaitingAsync).ConfigureAwait(false);
 
             await DeliverAsync(conversation, placeholder, Compose(result), turn.Token).ConfigureAwait(false);
         }
@@ -426,11 +438,9 @@ public sealed class ConversationRouter(
             conversation.Running = null;
             approvals.Cancel(conversation.ChatKey);
             // 归还的必须是**当初拿的那一把**:设置重载会把 _turnGate 换掉,
-            // 释放新闸等于凭空多给一个名额,总并发上限就此失守。
-            if (turnGateHeld)
-            {
-                turnGate.Release();
-            }
+            // 释放新闸等于凭空多给一个名额,总并发上限就此失守。等传输时让出、还没取回就被停掉的,
+            // 此刻手里没有名额,turnSlot 也就不会再还一次。
+            turnSlot.Release();
             if (chatGateHeld)
             {
                 conversation.Gate.Release();

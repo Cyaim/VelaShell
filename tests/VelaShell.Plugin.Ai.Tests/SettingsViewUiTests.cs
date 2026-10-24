@@ -2319,6 +2319,85 @@ public sealed partial class SettingsViewUiTests
         });
     }
 
+    [TestMethod]
+    public void Sampling_AnthropicProtocolDisablesTemperatureAndTopP_ButKeepsTheSavedValues()
+    {
+        // Anthropic SDK 13.x 的接口版本(2026-10-21)不收 temperature / top_p,插件在这条协议上不发:
+        // 设置页得把这件事摆出来,而不是让两格照常可填、填了却静默丢掉
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            var claude = new AiModelConfig
+            {
+                Model = "claude-opus-5", Protocol = ChatProtocol.AnthropicMessages, Temperature = 0.3f, TopP = 0.9f
+            };
+            var provider = new AiProvider
+            {
+                ModelsExpanded = true,
+                Name = "Relay",
+                BaseUrl = "https://relay.example/v1",
+                DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
+                Models = [claude, new AiModelConfig { Model = "gpt-5", Temperature = 0.5f }]
+            };
+            (Window window, SettingsView view, _, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [provider], ActiveModelId = claude.Id });
+            try
+            {
+                var loc = new Loc("en");
+                TextBox temperature = view.GetControl<TextBox>("TemperatureBox");
+                TextBox topP = view.GetControl<TextBox>("TopPBox");
+                TextBox stop = view.GetControl<TextBox>("StopBox");
+                TextBlock notice = view.GetControl<TextBlock>("SamplingAnthropicHintText");
+                ComboBox protocol = view.GetControl<ComboBox>("ProtocolCombo");
+
+                // 起手选中的就是覆盖成 Anthropic 协议的那个模型
+                Assert.AreEqual((int)ChatProtocol.AnthropicMessages + 1, protocol.SelectedIndex);
+                Assert.IsFalse(temperature.IsEnabled, "Anthropic 协议不发温度,这一格不该还能填");
+                Assert.IsFalse(topP.IsEnabled);
+                Assert.IsTrue(stop.IsEnabled, "停止序列在 Anthropic 协议上照发,不能跟着禁用");
+                Assert.IsTrue(notice.IsVisible);
+                Assert.AreEqual(loc["SamplingAnthropicNotSent"], notice.Text);
+                Assert.AreEqual(0.3f.ToString(), temperature.Text, "只禁用、不清空:存着的值照样显示");
+                Assert.AreEqual(0.9f.ToString(), topP.Text);
+                Assert.DoesNotContain("Anthropic", view.GetControl<TextBlock>("SamplingHintText").Text!,
+                    "通用说明不能再暗示这两格对 Anthropic 有效");
+
+                // 改成继承供应商的 OpenAI 协议:两格重新可填,说明收起
+                protocol.SelectedIndex = 0;
+                await PumpAsync();
+                Assert.IsTrue(temperature.IsEnabled);
+                Assert.IsTrue(topP.IsEnabled);
+                Assert.IsFalse(notice.IsVisible);
+
+                // 切回 Anthropic 再保存:禁用着的两格把存着的值原样写回,不被当成"清空"
+                protocol.SelectedIndex = (int)ChatProtocol.AnthropicMessages + 1;
+                await PumpAsync();
+                Assert.IsFalse(temperature.IsEnabled);
+                stop.Text = "END";
+                Click(view.GetControl<Button>("SaveButton"));
+                await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc["Saved"]);
+                AiModelConfig saved = (await store.LoadAsync()).Providers.Single().Models[0];
+                Assert.AreEqual(0.3f, saved.Temperature);
+                Assert.AreEqual(0.9f, saved.TopP);
+                Assert.AreEqual("END", saved.StopSequences);
+                Assert.AreEqual(ChatProtocol.AnthropicMessages, saved.Protocol);
+
+                // 走 OpenAI 协议的模型:照常可填
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 2;
+                await PumpAsync();
+                Assert.AreEqual("gpt-5", view.GetControl<TextBox>("ModelBox").Text);
+                Assert.IsTrue(temperature.IsEnabled);
+                Assert.IsTrue(topP.IsEnabled);
+                Assert.IsFalse(notice.IsVisible);
+                Assert.AreEqual(0.5f.ToString(), temperature.Text);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     // ---- 折叠 ----
 
     /// <summary>一家挂 <paramref name="count" /> 个模型;端点能报上几百个,左栏得受得住。</summary>
