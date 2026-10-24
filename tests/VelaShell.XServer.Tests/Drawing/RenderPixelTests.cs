@@ -782,4 +782,71 @@ public sealed class RenderPixelTests
         PixelBuffer copy = tiled.Detach(new XRect(40, 40, 20, 20)).Buffer;
         Assert.IsLessThanOrEqualTo(14 * 14, copy.Width * copy.Height, $"拷了 {copy.Width}×{copy.Height}");
     }
+
+    /// <summary>
+    /// r5g6b5、x1r5g5b5、a4 目标走整数(一行展开到 8 位合成、再收回):与全程浮点的差不过目标格式的一级 —— 展开与收回各多一次
+    /// 取整,8 位上的误差折到 4 / 5 / 6 位上不到半级。全部 Porter-Duff / Disjoint / Conjoint(a4 连混合模式),带不带遮罩、
+    /// 分量 alpha,8 位像素、纯色与双线性的源。rgb 两种格式上的混合模式仍走浮点,与浮点版逐位相同。
+    /// </summary>
+    [TestMethod]
+    public void 低位深目标走整数_与浮点差不过目标格式的一级()
+    {
+        const int size = 24;
+        Random random = new(565);
+        PixelBuffer argbImage = EdgeBuffer(random, 17, 13, 32);
+        PixelBuffer maskImage = EdgeBuffer(random, size, size, 32);
+        byte[] maskBytes = new byte[size * size];
+        random.NextBytes(maskBytes);
+        double c = Math.Cos(0.4), sn = Math.Sin(0.4);
+        double[] rotate = [c, -sn, 2.5, sn, c, -1.5, 0, 0, 1];
+        List<(string Name, Func<RenderSource> Make)> sources =
+        [
+            ("纯色", () => new SolidSource(new Argb(102 / 255f, 26 / 255f, 51 / 255f, 77 / 255f))),
+            ("纯色不透明", () => new SolidSource(new Argb(1, 200 / 255f, 3 / 255f, 128 / 255f))),
+            ("argb 平铺", () => new ImageSource(argbImage, 0, 0, 17, 13, PictFormat.A8R8G8B8) { Repeat = RenderSource.RepeatNormal }),
+            ("argb 旋转双线性", () => new ImageSource(argbImage, 0, 0, 17, 13, PictFormat.A8R8G8B8) { Repeat = RenderSource.RepeatReflect, Bilinear = true, Transform = rotate }),
+        ];
+        List<(string Name, Func<RenderSource?> Make, bool ComponentAlpha)> masks =
+        [
+            ("无遮罩", () => null, false),
+            ("单字节遮罩", () => new ByteMaskSource(maskBytes, 0, 0, size, size), false),
+            ("分量 alpha 遮罩", () => new ImageSource(maskImage, 0, 0, size, size, PictFormat.A8R8G8B8), true),
+        ];
+        int worst = 0;
+        foreach ((PictFormat format, byte depth) in ((PictFormat, byte)[])[(PictFormat.R5G6B5, 16), (PictFormat.X1R5G5B5, 15), (PictFormat.A4, 4)])
+        {
+            (int Shift, uint Mask)[] channels = format.HasColor
+                ? [(format.RedShift, format.RedMask), (format.GreenShift, format.GreenMask), (format.BlueShift, format.BlueMask)]
+                : [(format.AlphaShift, format.AlphaMask)];
+            foreach (byte op in AllOps)
+            {
+                int limit = op >= 0x30 && format.HasColor ? 0 : 1;
+                foreach ((string sourceName, Func<RenderSource> makeSource) in sources)
+                {
+                    foreach ((string maskName, Func<RenderSource?> makeMask, bool componentAlpha) in masks)
+                    {
+                        PixelBuffer dst = new(size, size, depth);
+                        for (int i = 0; i < dst.Pixels.Length; i++)
+                        {
+                            dst.Pixels[i] = (uint)random.Next() & dst.DepthMask;
+                        }
+                        uint[] expected = FloatComposite(op, makeSource(), makeMask(), dst, format, componentAlpha);
+                        RenderTarget target = new(dst, 0, 0, format, [new XRect(0, 0, size, size)]);
+                        RenderCompositor.Composite(op, makeSource(), makeMask(), componentAlpha, target, 0, 0, 0, 0, 0, 0, size, size);
+                        for (int i = 0; i < expected.Length; i++)
+                        {
+                            foreach ((int shift, uint mask) in channels)
+                            {
+                                int diff = Math.Abs((int)((expected[i] >> shift) & mask) - (int)((dst.Pixels[i] >> shift) & mask));
+                                worst = Math.Max(worst, diff);
+                                Assert.IsLessThanOrEqualTo(limit, diff,
+                                    $"{format.Depth} 位目标、op 0x{op:X2}、{sourceName}、{maskName}:像素 {i} 期望 0x{expected[i]:X4},实际 0x{dst.Pixels[i]:X4}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Console.WriteLine($"低位深目标最大差 {worst} 级");
+    }
 }

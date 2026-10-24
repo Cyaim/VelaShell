@@ -7,7 +7,7 @@
 //   dotnet run -c Release -p:SignAssembly=false scripts/xserver/bench/bench.cs   (仓库里没有签名密钥,Release 需关掉签名)
 //
 // 场景:核心填充、32 位 PutImage(小块与整窗)、Xft 式字形合成(a8 字形 + 纯色源 + Over)、ARGB 图像 Over 合成、
-// RENDER 通用路径(线性渐变源、带缩放变换的双线性源、ARGB 源 + a8 遮罩)、GLX 单缓冲的小三角形(每个 Render 请求一个)、
+// RENDER 通用路径(线性渐变源、带缩放变换的双线性源、ARGB 源 + a8 遮罩)、低位深的目标(r5g6b5、a4)、GLX 单缓冲的小三角形(每个 Render 请求一个)、
 // RENDER 多矩形填充、PolyArc(各自独立的宽弧、首尾相接的宽弧与细弧)、指针移动注入(窗口选了 PointerMotion)、请求往返延迟;
 // 最后量整窗 PutImage 满载时宿主读像素(另一条线程每 16 毫秒读一次整窗)要等多久 —— 宿主 UI 线程卡不卡看的就是它;
 // 再量四个窗口一起忙时宿主每帧逐个窗口读一遍(每个窗口拿一次像素锁)的总耗时。
@@ -38,7 +38,7 @@ c.Request(55, 0, b => b.U32(gc).U32(window).U32(0x4).U32(0x336699));
 await c.SyncAsync();
 
 byte render = await c.QueryExtensionAsync("RENDER");
-(uint argb, uint rgb, uint a8) = await c.FormatsAsync(render);
+(uint argb, uint rgb, uint a8, uint r5g6b5, uint a4) = await c.FormatsAsync(render);
 uint picture = c.NewId();
 c.Request(render, 4, b => b.U32(picture).U32(window).U32(rgb).U32(0));
 uint solid = c.NewId();
@@ -80,6 +80,12 @@ for (int i = 0; i < ramp.Length; i++)
     ramp[i] = (byte)(i % 100 * 255 / 99);
 }
 c.Request(72, 2, b => b.U32(maskPixmap).U32(maskGc).U16(100).U16(100).I16(0).I16(0).U8(0).U8(8).U16(0).Bytes(ramp));
+// 低位深的目标:100×100 的 r5g6b5 像素图(16 位视觉上的程序、VNC / 远程桌面的帧缓冲)与 a4 像素图(少见的 4 位遮罩)。
+uint lowPixmap = c.NewId(), lowPicture = c.NewId(), a4Pixmap = c.NewId(), a4Picture = c.NewId();
+c.Request(53, 16, b => b.U32(lowPixmap).U32(window).U16(100).U16(100));
+c.Request(render, 4, b => b.U32(lowPicture).U32(lowPixmap).U32(r5g6b5).U32(0));
+c.Request(53, 4, b => b.U32(a4Pixmap).U32(window).U16(100).U16(100));
+c.Request(render, 4, b => b.U32(a4Picture).U32(a4Pixmap).U32(a4).U32(0));
 await c.SyncAsync();
 
 byte[] image = new byte[200 * 100 * 4];
@@ -166,6 +172,15 @@ await RunAsync("Composite 放大 2 倍双线性 100×100 Over", 5_000, i =>
 await RunAsync("Composite ARGB + a8 遮罩 100×100 Over", 5_000, i =>
     c.Request(render, 8, b => b.U8(3).U8(0).U8(0).U8(0).U32(argbPicture).U32(maskPicture).U32(picture)
         .I16(0).I16(0).I16(0).I16(0).I16((short)(i % 700)).I16((short)(i % 500)).U16(100).U16(100)));
+await RunAsync("Composite ARGB → r5g6b5 100×100 Over", 5_000, _ =>
+    c.Request(render, 8, b => b.U8(3).U8(0).U8(0).U8(0).U32(argbPicture).U32(0).U32(lowPicture)
+        .I16(0).I16(0).I16(0).I16(0).I16(0).I16(0).U16(100).U16(100)));
+await RunAsync("Composite ARGB + a8 遮罩 → r5g6b5 Over", 5_000, _ =>
+    c.Request(render, 8, b => b.U8(3).U8(0).U8(0).U8(0).U32(argbPicture).U32(maskPicture).U32(lowPicture)
+        .I16(0).I16(0).I16(0).I16(0).I16(0).I16(0).U16(100).U16(100)));
+await RunAsync("Composite a8 → a4 100×100 Add", 5_000, _ =>
+    c.Request(render, 8, b => b.U8(12).U8(0).U8(0).U8(0).U32(maskPicture).U32(0).U32(a4Picture)
+        .I16(0).I16(0).I16(0).I16(0).I16(0).I16(0).U16(100).U16(100)));
 await RunAsync("GLX 单缓冲 Render 小三角形", 5_000, i => c.Raw(triangles[i % triangles.Length]));
 await RunAsync("PutImage 800×600 整窗(BIG-REQUESTS)", 1_000, _ => c.Raw(frameRequest));
 await RunAsync("RenderFillRectangles ×50", 5_000, _ => c.Request(render, 26, fillRects));
@@ -441,11 +456,11 @@ sealed class Client(Stream stream)
         return reply[9];
     }
 
-    public async Task<(uint Argb, uint Rgb, uint A8)> FormatsAsync(byte render)
+    public async Task<(uint Argb, uint Rgb, uint A8, uint R5G6B5, uint A4)> FormatsAsync(byte render)
     {
         byte[] f = await RequestAsync(render, 1);
         int count = (int)BinaryPrimitives.ReadUInt32LittleEndian(f.AsSpan(8));
-        uint argb = 0, rgb = 0, a8 = 0;
+        uint argb = 0, rgb = 0, a8 = 0, r5g6b5 = 0, a4 = 0;
         for (int i = 0; i < count; i++)
         {
             int o = 32 + (i * 28);
@@ -455,8 +470,10 @@ sealed class Client(Stream stream)
             if (depth == 32 && alpha == 0xFF) argb = id;
             if (depth == 24 && red == 0xFF) rgb = id;
             if (depth == 8 && alpha == 0xFF && red == 0) a8 = id;
+            if (depth == 16 && red == 0x1F) r5g6b5 = id;
+            if (depth == 4 && alpha == 0xF) a4 = id;
         }
-        return (argb, rgb, a8);
+        return (argb, rgb, a8, r5g6b5, a4);
     }
 
     private async Task ReadLoopAsync()

@@ -9,6 +9,7 @@
 //   「Blend modes」(Multiply … HSLLuminosity,公式引自 PDF Reference 1.7 §7.2.4「Blend Mode」),与 RenderPixels.cs 的浮点版同一出处
 
 using System.Buffers;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using VelaShell.XServer.Protocol;
 
@@ -72,15 +73,24 @@ internal static class RenderCompositor
 
         // 8888 目标上的全部运算走整数:源与遮罩各取成 8 位预乘的一行(渐变、变换、重复、各种源格式都在取样里处理掉),
         // 逐像素整数合成 —— 最常用的 Src / Over / Add 有专门的写法,其余 Porter-Duff 与 Disjoint / Conjoint 按两个因子算,
-        // PDF 混合模式见 BlendRow;分量 alpha(次像素字形)见 CombineComponentRow。别的目标格式(r5g6b5、x1r5g5b5、a4)走浮点。
+        // PDF 混合模式见 BlendRow;分量 alpha(次像素字形)见 CombineComponentRow。
         // 只有 alpha 的 a8 / a1 目标(cairo 拼遮罩、Qt 的 alpha 图、位图裁剪)上的全部运算同样走整数,只算 alpha 一个通道 ——
         // 分量 alpha 不影响 alpha 通道(它只用遮罩的 alpha,规范 §9),所以不必区分。
-        bool alphaOnly = ReferenceEquals(dst.Format, PictFormat.A8) || ReferenceEquals(dst.Format, PictFormat.A1);
-        bool integer = alphaOnly || Is8888(dst.Format);
+        // 低位深的 r5g6b5、x1r5g5b5、a4 目标也走整数:这一行先展开成 x8r8g8b8 / a8(各通道按四舍五入换到 8 位,见 WidenRow),
+        // 照上面合成,再按四舍五入收回原来的位数(NarrowRow)。比全程浮点多两次取整,结果差不过目标格式的一级 ——
+        // Porter-Duff、Disjoint、Conjoint 对目标颜色只是乘一个不大于 1 的因子,展开时那不到半级(8 位上)的误差不会变大;
+        // 目标 alpha 要么恒为 1(这两种 rgb 格式没有 alpha),要么 4 位展开正好是整数(× 17)。PDF 混合模式在 r5g6b5 / x1r5g5b5 上
+        // 仍走浮点:颜色减淡 / 加深与 HSL 几种对目标颜色的斜率没有上界,那半级会被放大成目标格式的好几级(a4 只算 alpha,不受影响)。
+        bool widened = IsLowDepth(dst.Format) && (op < 0x30 || !dst.Format.HasColor);
+        bool alphaOnly = ReferenceEquals(dst.Format, PictFormat.A8) || ReferenceEquals(dst.Format, PictFormat.A1) || ReferenceEquals(dst.Format, PictFormat.A4);
+        bool integer = alphaOnly || widened || Is8888(dst.Format);
+        bool dstAlpha = dst.Format.HasAlpha && !widened;   // 展开后的 r5g6b5 / x1r5g5b5 一行就是 x8r8g8b8(a4 只算 alpha,用不到它)
+        uint rowMask = widened ? 0x00FFFFFFu : depthMask;
         Argb[] srcRow = integer ? [] : ArrayPool<Argb>.Shared.Rent(Math.Max(1, width));
         Argb[] maskRow = integer ? [] : ArrayPool<Argb>.Shared.Rent(Math.Max(1, width));
         uint[] srcRow8 = integer ? ArrayPool<uint>.Shared.Rent(Math.Max(1, width)) : [];
         uint[] maskRow8 = integer && mask is not null ? ArrayPool<uint>.Shared.Rent(Math.Max(1, width)) : [];
+        uint[] wideRow = widened ? ArrayPool<uint>.Shared.Rent(Math.Max(1, width)) : [];
         try
         {
             foreach (XRect clip in dst.Clip)
@@ -117,26 +127,35 @@ internal static class RenderCompositor
                         int dy = by - dst.OriginY - dstY;
                         src.FetchRow8888(srcX + dx, srcY + dy, s8);
                         mask?.FetchRow8888(maskX + dx, maskY + dy, m8);
-                        Span<uint> row = buffer.Pixels.AsSpan((by * buffer.Width) + r.X, r.Width);
+                        Span<uint> packed = buffer.Pixels.AsSpan((by * buffer.Width) + r.X, r.Width);
+                        Span<uint> row = widened ? wideRow.AsSpan(0, r.Width) : packed;
+                        if (widened)
+                        {
+                            WidenRow(dst.Format, packed, row);
+                        }
                         if (alphaOnly)
                         {
                             CombineAlphaRow(op, s8, m8, row, dst.Format.Depth == 1);
                         }
                         else if (componentAlpha && op < 0x30)
                         {
-                            CombineComponentRow(op, s8, m8, row, dst.Format.HasAlpha, depthMask);
+                            CombineComponentRow(op, s8, m8, row, dstAlpha, rowMask);
                         }
                         else if (!componentAlpha && op is RenderOps.Src or RenderOps.Over or RenderOps.Add)
                         {
-                            CombineRow(op, s8, m8, row, dst.Format.HasAlpha, depthMask);
+                            CombineRow(op, s8, m8, row, dstAlpha, rowMask);
                         }
                         else if (op < 0x30)
                         {
-                            CombineFactorRow(op, s8, m8, row, dst.Format.HasAlpha, depthMask);
+                            CombineFactorRow(op, s8, m8, row, dstAlpha, rowMask);
                         }
                         else
                         {
-                            BlendRow(op, s8, m8, componentAlpha, row, dst.Format.HasAlpha, depthMask);
+                            BlendRow(op, s8, m8, componentAlpha, row, dstAlpha, rowMask);
+                        }
+                        if (widened)
+                        {
+                            NarrowRow(dst.Format, row, packed);
                         }
                     }
                     continue;
@@ -193,6 +212,7 @@ internal static class RenderCompositor
             Return(maskRow);
             Return(srcRow8);
             Return(maskRow8);
+            Return(wideRow);
         }
         return x2 < x1 ? default : new XRect(x1, y1, x2 - x1, y2 - y1);
 
@@ -206,6 +226,69 @@ internal static class RenderCompositor
     }
 
     // ================================================================== 整数路径
+
+    /// <summary>r5g6b5、x1r5g5b5、a4:合成时一行先展开到 8 位(<see cref="WidenRow" />),算完再收回(<see cref="NarrowRow" />)。</summary>
+    private static bool IsLowDepth(PictFormat f) =>
+        ReferenceEquals(f, PictFormat.R5G6B5) || ReferenceEquals(f, PictFormat.X1R5G5B5) || ReferenceEquals(f, PictFormat.A4);
+
+    /// <summary>n 位通道值 → 8 位:v × 255 / (2ⁿ − 1) 四舍五入(与浮点版解码出的 v / (2ⁿ − 1) 差不到半级)。下标是位数。</summary>
+    private static readonly byte[][] Widen = [[], [], [], [], Table(16, v => ((v * 255) + 7) / 15), Table(32, v => ((v * 255) + 15) / 31), Table(64, v => ((v * 255) + 31) / 63)];
+
+    /// <summary>8 位 → n 位:v × (2ⁿ − 1) / 255 四舍五入(与浮点版编码的取整一致)。下标是位数。</summary>
+    private static readonly byte[][] Narrow = [[], [], [], [], Table(256, v => ((v * 15) + 127) / 255), Table(256, v => ((v * 31) + 127) / 255), Table(256, v => ((v * 63) + 127) / 255)];
+
+    private static byte[] Table(int length, Func<int, int> value)
+    {
+        byte[] table = new byte[length];
+        for (int v = 0; v < length; v++)
+        {
+            table[v] = (byte)value(v);
+        }
+        return table;
+    }
+
+    /// <summary>低位深的一行展开成 8 位:r5g6b5 / x1r5g5b5 成 x8r8g8b8(alpha 字节 0),a4 成 a8 的值。</summary>
+    private static void WidenRow(PictFormat f, ReadOnlySpan<uint> packed, Span<uint> wide)
+    {
+        if (!f.HasColor)
+        {
+            ReadOnlySpan<byte> alpha = Widen[4];
+            for (int i = 0; i < packed.Length; i++)
+            {
+                wide[i] = alpha[(int)(packed[i] & 0xF)];
+            }
+            return;
+        }
+        (int rs, int gs, uint rm, uint gm, uint bm) = (f.RedShift, f.GreenShift, f.RedMask, f.GreenMask, f.BlueMask);
+        ReadOnlySpan<byte> red = Widen[BitOperations.PopCount(rm)], green = Widen[BitOperations.PopCount(gm)], blue = Widen[BitOperations.PopCount(bm)];
+        for (int i = 0; i < packed.Length; i++)
+        {
+            uint p = packed[i];
+            wide[i] = ((uint)red[(int)((p >> rs) & rm)] << 16) | ((uint)green[(int)((p >> gs) & gm)] << 8) | blue[(int)(p & bm)];
+        }
+    }
+
+    /// <summary><see cref="WidenRow" /> 的反过来:合成完的 8 位一行收回目标的位数。</summary>
+    private static void NarrowRow(PictFormat f, ReadOnlySpan<uint> wide, Span<uint> packed)
+    {
+        if (!f.HasColor)
+        {
+            ReadOnlySpan<byte> alpha = Narrow[4];
+            for (int i = 0; i < wide.Length; i++)
+            {
+                packed[i] = alpha[(int)(wide[i] & 0xFF)];
+            }
+            return;
+        }
+        (int rs, int gs) = (f.RedShift, f.GreenShift);
+        ReadOnlySpan<byte> red = Narrow[BitOperations.PopCount(f.RedMask)], green = Narrow[BitOperations.PopCount(f.GreenMask)],
+            blue = Narrow[BitOperations.PopCount(f.BlueMask)];
+        for (int i = 0; i < wide.Length; i++)
+        {
+            uint w = wide[i];
+            packed[i] = ((uint)red[(int)((w >> 16) & 0xFF)] << rs) | ((uint)green[(int)((w >> 8) & 0xFF)] << gs) | blue[(int)(w & 0xFF)];
+        }
+    }
 
     /// <summary>255²:单位 1/65025 的 1(8 位的源 alpha × 8 位的遮罩,乘积不取整)。</summary>
     private const uint Square = 255 * 255;
