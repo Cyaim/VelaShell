@@ -509,6 +509,28 @@
               </Panel>
             </Button>
 
+            <!-- 算法协商失败、而对端有本版实现了只是没放开的算法:一键把诊断点名的那几个写进连接配置并重连
+                 (确认框里再点一次名)。描边按钮 + 警示图标:它会降低这条连接的安全性,不该比「重新连接」更抢眼。 -->
+            <Button x:Name="AllowAlgorithmsButton"
+                    HorizontalAlignment="Center"
+                    IsVisible="{Binding HasAlgorithmRemedy}"
+                    Command="{Binding AllowAlgorithmsCommand}"
+                    Background="Transparent"
+                    BorderBrush="{DynamicResource VelaBorderSecondary}"
+                    BorderThickness="1"
+                    CornerRadius="4" Padding="14,6"
+                    ToolTip.Tip="{Binding AlgorithmRemedyTip}"
+                    AutomationProperties.Name="{loc:Localize SshAlgoFix_Button}">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <pc:LucideIcon Width="12" Height="12"
+                               Data="{StaticResource Icon.triangle-alert}"
+                               Foreground="{DynamicResource VelaWarning}" VerticalAlignment="Center" />
+                <TextBlock Text="{loc:Localize SshAlgoFix_Button}"
+                           Foreground="{DynamicResource VelaTextSecondary}"
+                           FontSize="{DynamicResource VelaFontSize12}" FontWeight="Medium" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+
             <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
               <Button Command="{Binding ReconnectCommand}"
                       Background="{DynamicResource VelaAccent}"

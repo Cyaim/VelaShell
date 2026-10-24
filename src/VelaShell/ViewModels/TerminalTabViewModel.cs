@@ -5,6 +5,7 @@ using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Infrastructure.Ssh;
 using VelaShell.Presentation.ViewModels;
 using VelaShell.Services;
 using VelaShell.Terminal;
@@ -100,6 +101,17 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         CopyErrorCommand = ReactiveCommand.CreateFromTask(
             CopyErrorAsync,
             this.WhenAnyValue(x => x.ConnectionError, error => !string.IsNullOrWhiteSpace(error))
+        );
+
+        AllowAlgorithmsCommand = ReactiveCommand.Create(
+            () =>
+            {
+                if (AlgorithmRemedy is not null && ConnectionStatus == SessionStatus.Disconnected)
+                {
+                    AllowAlgorithmsRequested?.Invoke(this, EventArgs.Empty);
+                }
+            },
+            this.WhenAnyValue(x => x.AlgorithmRemedy, x => x.IsConnected, (remedy, connected) => remedy is not null && !connected)
         );
     }
 
@@ -540,6 +552,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
             if (value == SessionStatus.Connected)
             {
                 ConnectionError = null;
+                AlgorithmRemedy = null;
             }
             this.RaisePropertyChanged(nameof(ShowDisconnectedOverlay));
             this.RaisePropertyChanged(nameof(DisconnectOverlayTitle));
@@ -630,6 +643,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         this.RaisePropertyChanged(nameof(ConnectingOverlayTitle));
         this.RaisePropertyChanged(nameof(DisconnectOverlayTitle));
         this.RaisePropertyChanged(nameof(DisconnectOverlayDetail));
+        this.RaisePropertyChanged(nameof(AlgorithmRemedyTip));
     }
 
     /// <summary>
@@ -1071,8 +1085,9 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     /// <summary>
     /// 把标签切换到断开状态并记录连接失败的原因(幂等)。覆盖层显示为“连接失败 + 具体原因”,
     /// </summary>
-    /// <param name="message"></param>
-    public void MarkConnectionFailed(string message)
+    /// <param name="message">覆盖层上显示的失败原因。</param>
+    /// <param name="remedy">算法协商失败、且能一键放开对端那几个算法时给;覆盖层据此多一颗按钮。</param>
+    public void MarkConnectionFailed(string message, SshAlgorithmRemedy? remedy = null)
     {
         if (_disposed)
         {
@@ -1081,8 +1096,38 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
 
         // 先记录原因(覆盖层显示“连接失败”),再切断开态刷新覆盖层可见性。
         ConnectionError = message;
+        AlgorithmRemedy = remedy;
         ConnectionStatus = SessionStatus.Disconnected;
     }
+
+    /// <summary>
+    /// 上一次连接败在算法协商上、而对端有本版实现了只是没放开的算法:覆盖层上的「放开这几个算法并重连」按它来。
+    /// 每次记失败原因时一并换掉(没有就是 <see langword="null" />),连上即清。
+    /// </summary>
+    public SshAlgorithmRemedy? AlgorithmRemedy
+    {
+        get;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(HasAlgorithmRemedy));
+            this.RaisePropertyChanged(nameof(AlgorithmRemedyTip));
+        }
+    }
+
+    /// <summary>覆盖层上要不要出「放开这几个算法并重连」。</summary>
+    public bool HasAlgorithmRemedy => AlgorithmRemedy is not null;
+
+    /// <summary>那颗按钮的悬停说明:往哪一类清单里加哪几个。</summary>
+    public string AlgorithmRemedyTip => AlgorithmRemedy is { } remedy
+        ? Strings.Format("SshAlgoFix_ButtonTip", SshAlgorithmPreferences.Label(remedy.Kind), string.Join(", ", remedy.Algorithms))
+        : string.Empty;
+
+    /// <summary>覆盖层上点了「放开这几个算法并重连」:由宿主确认、改配置、重连。</summary>
+    public event EventHandler? AllowAlgorithmsRequested;
+
+    /// <summary>「放开这几个算法并重连」(只在断开且有补救时可点)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> AllowAlgorithmsCommand { get; }
 
     /// <summary>
     /// 用户在认证交互(动态码框)里点了取消:与点断开按钮是同一句话,自动重连不再介入。
@@ -1116,7 +1161,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     /// <paramref name="reason" /> 非空时(如重连失败)覆盖层显示为“连接失败 + 具体原因”,
     /// 否则为普通掉线的“连接已断开”。
     /// </summary>
-    public void MarkDisconnected(string? reason = null)
+    public void MarkDisconnected(string? reason = null, SshAlgorithmRemedy? remedy = null)
     {
         if (_disposed)
         {
@@ -1125,6 +1170,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         if (!string.IsNullOrEmpty(reason))
         {
             ConnectionError = reason;
+            AlgorithmRemedy = remedy;
         }
         if (ConnectionStatus == SessionStatus.Disconnected)
         {

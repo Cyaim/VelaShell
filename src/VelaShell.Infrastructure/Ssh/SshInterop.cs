@@ -348,26 +348,13 @@ internal static partial class SshInterop
     /// </summary>
     private static string? DescribeRemedy(SshNegotiationException ex)
     {
-        SshAlgorithmKind? kind = ex.Category switch
-        {
-            SshNegotiationCategory.KeyExchange => SshAlgorithmKind.KeyExchange,
-            SshNegotiationCategory.HostKey => SshAlgorithmKind.HostKey,
-            SshNegotiationCategory.EncryptionClientToServer or SshNegotiationCategory.EncryptionServerToClient =>
-                SshAlgorithmKind.Cipher,
-            SshNegotiationCategory.MacClientToServer or SshNegotiationCategory.MacServerToClient => SshAlgorithmKind.Mac,
-            _ => null,
-        };
-        if (kind is not { } k)
+        // 与覆盖层上的「放开这几个算法并重连」按钮同一份计算(SshAlgorithmRemedy):诊断点名的就是按钮会写进去的。
+        (SshAlgorithmKind? kind, IReadOnlyList<string> enableable) = SshAlgorithmRemedy.Enableable(ex);
+        if (kind is null)
         {
             return null;
         }
-        IReadOnlyList<string> available = SshAlgorithmPreferences.Available(k);
-        string[] enableable =
-        [
-            .. ex.OfferedByPeer.Where(a => available.Contains(a, StringComparer.Ordinal)
-                                          && !ex.OfferedByUs.Contains(a, StringComparer.Ordinal))
-        ];
-        return enableable.Length > 0
+        return enableable.Count > 0
             ? Strings.Format("Ssh_AlgoMismatchEnable", string.Join(", ", enableable))
             : Strings.Get("Ssh_AlgoMismatchUnsupported");
     }

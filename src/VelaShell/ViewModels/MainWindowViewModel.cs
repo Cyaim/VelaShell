@@ -34,6 +34,7 @@ using VelaShell.Infrastructure.Diagnostics;
 using VelaShell.Infrastructure.Net;
 using VelaShell.Infrastructure.Plugins.Protocols;
 using VelaShell.Infrastructure.Pty;
+using VelaShell.Infrastructure.Ssh;
 using VelaShell.PluginSdk.Protocols;
 using VelaShell.PluginSdk.Workspaces;
 using VelaShell.Presentation.Commands;
@@ -2872,6 +2873,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         terminalTab.Disconnected += (_, _) => OnTabDisconnected(terminalTab);
         // 标签右键「连接信息」。
         terminalTab.ConnectionInfoRequested += (_, _) => OpenConnectionInfo(terminalTab);
+        // 失败覆盖层上的「放开这几个算法并重连」。
+        terminalTab.AllowAlgorithmsRequested += (_, _) => _ = AllowAlgorithmsAndReconnectAsync(terminalTab);
 
         // 命令补全:注入建议提供器;提交(已回显校验)的命令进全局历史。
         terminalTab.SuggestionProvider = _suggestionProvider;
@@ -3016,6 +3019,113 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         CancellationToken cancellationToken = default
     ) =>
         ReconnectTabCoreAsync(tab, automatic: false, cancellationToken);
+
+    /// <summary>
+    /// 窗口注入的「放开这几个算法并重连」确认框:参数是标题与正文,确认返回 true。未挂时(headless)不改配置、不重连 ——
+    /// 这一步会降低那条连接的安全性,没人点头不能做。
+    /// </summary>
+    public Func<string, string, Task<bool>>? AllowAlgorithmsConfirmer { get; set; }
+
+    /// <summary>
+    /// 覆盖层上的「放开这几个算法并重连」:确认后把诊断点名的那几个算法写进谈不成的那一跳的连接配置
+    /// (自定义算法清单,<c>+</c> 追加),然后就地重连。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠️ 只写诊断点名的那几个(<see cref="SshAlgorithmRemedy" />),不开「允许老算法」总开关 ——
+    /// 那会一次放开三类 SHA-1 算法外加 SHA-1 的 RSA 用户签名,而谈不成的通常只是其中一类。
+    /// </para>
+    /// <para>
+    /// 跳板上谈不成时改的是那台跳板自己的配置(顺着「跳板主机」往上数到那一跳),不是终点的。
+    /// 库里有这条配置就改库里那份并落盘(不经标签手里那份:登录框交回来的副本可能带着用户没让记住的密码);
+    /// 终点那一跳还要同步改标签手里的副本,重连用的是它。「最近连接」重建的临时配置不在库里,只改这一次。
+    /// </para>
+    /// </remarks>
+    public async Task AllowAlgorithmsAndReconnectAsync(TerminalTabViewModel tab)
+    {
+        ArgumentNullException.ThrowIfNull(tab);
+        if (tab.AlgorithmRemedy is not { } remedy || tab.Profile is not { } profile
+            || tab.ConnectionStatus != SessionStatus.Disconnected || AllowAlgorithmsConfirmer is not { } confirm)
+        {
+            return;
+        }
+
+        SessionProfile? stored = null;
+        try
+        {
+            stored = await FindProfileAtHopAsync(profile, remedy.HopDepth).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            Toasts.Error(Strings.Format("SshAlgoFix_SaveFailed", ex.Message));
+            return;
+        }
+        if (remedy.HopDepth > 0 && stored is null)
+        {
+            // 跳板的配置找不到了(删了、链改了):不猜,让用户自己去改。
+            Toasts.Error(Strings.Format("SshAlgoFix_HopMissing", remedy.HopTarget ?? string.Empty));
+            return;
+        }
+        SessionProfile named = stored ?? profile;
+        string name = string.IsNullOrWhiteSpace(named.Name) ? HostAddress.FormatEndPoint(named.Host, named.Port) : named.Name;
+        string body = Strings.Format("SshAlgoFix_ConfirmBody", name, SshAlgorithmPreferences.Label(remedy.Kind),
+            string.Join(Environment.NewLine, remedy.Algorithms.Select(a => "  " + a)));
+        if (!await confirm(Strings.Get("SshAlgoFix_ConfirmTitle"), body).ConfigureAwait(true)
+            || tab.AlgorithmRemedy != remedy || tab.ConnectionStatus != SessionStatus.Disconnected)
+        {
+            return;
+        }
+
+        if (stored is not null)
+        {
+            stored.Ssh = remedy.ApplyTo(stored.Ssh);
+            try
+            {
+                if (_connectionWorkflowService is { } workflow)
+                {
+                    await workflow.SaveProfileAsync(stored).ConfigureAwait(true);
+                }
+                else if (_sessionRepository is { } repository)
+                {
+                    await repository.SaveSessionAsync(stored).ConfigureAwait(true);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
+            {
+                Toasts.Error(Strings.Format("SshAlgoFix_SaveFailed", ex.Message));
+                return;
+            }
+            _ = RefreshSessionTreeAsync();
+        }
+        if (remedy.HopDepth == 0)
+        {
+            profile.Ssh = remedy.ApplyTo(profile.Ssh);
+        }
+        await ReconnectTabAsync(tab).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// 库里那条配置:<paramref name="depth" /> 为 0 是这条本身,1 是它的跳板,2 是跳板的跳板……
+    /// 不在库里(临时配置)或链上断了时为 <see langword="null" />。
+    /// </summary>
+    private async Task<SessionProfile?> FindProfileAtHopAsync(SessionProfile profile, int depth)
+    {
+        if (_sessionRepository is not { } repository)
+        {
+            return null;
+        }
+        SessionProfile? current = await repository.GetSessionAsync(profile.Id).ConfigureAwait(true);
+        HashSet<Guid> visited = [profile.Id];
+        for (int i = 0; i < depth; i++)
+        {
+            if (current?.JumpHostProfileId is not { } next || !visited.Add(next))
+            {
+                return null;
+            }
+            current = await repository.GetSessionAsync(next).ConfigureAwait(true);
+        }
+        return current;
+    }
 
     /// <summary>
     /// 断线后的自动重连(倒计时到点、睡眠唤醒后的批量重连):同 <see cref="ReconnectTabAsync" />,
@@ -3172,7 +3282,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             // 重连失败:保留标签,标签页内覆盖层显示“连接失败 + 原因”(设计 yxjmg),不弹全局框。
             LastConnectionError = DescribeConnectionError(ex, tab.Profile);
             Toasts.Error(LastConnectionError);
-            tab.MarkDisconnected(LastConnectionError);
+            // 败在算法协商上、对端有本版实现了只是没放开的:覆盖层多一颗「放开这几个算法并重连」。
+            tab.MarkDisconnected(LastConnectionError, SshAlgorithmRemedy.Find(ex));
         }
         finally
         {
@@ -4436,7 +4547,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 }
 
                 // 认证失败且可交互:标记失败态并循环回去重新弹凭据重试。
-                tab.MarkConnectionFailed(LastConnectionError);
+                // 败在算法协商上的同时带上一键补救(见 SshAlgorithmRemedy)。
+                tab.MarkConnectionFailed(LastConnectionError, SshAlgorithmRemedy.Find(ex));
                 if (isAuth && InteractiveAuthenticator is not null)
                 {
                     continue;

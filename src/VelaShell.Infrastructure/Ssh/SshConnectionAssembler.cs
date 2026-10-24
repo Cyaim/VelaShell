@@ -101,13 +101,17 @@ internal static class SshConnectionAssembler
         // 每一跳的连接由这里现建(要先连 agent、按跳准备凭据),所以用回调那一种。
         ISshTransportDialer dialer = new ProxyTransportDialer(proxyResolver, route);
 
-        foreach (VelaConnectionInfo hop in JumpChainInnerToOuter(info))
+        List<VelaConnectionInfo> chain = JumpChainInnerToOuter(info);
+        for (int i = 0; i < chain.Count; i++)
         {
+            VelaConnectionInfo hop = chain[i];
+            // 离终点几跳:终点的跳板是 1(连接配置里的「跳板主机」),它的跳板是 2……协商失败的一键补救据此找到要改哪条配置。
+            int depth = chain.Count - i;
             ISshTransportDialer inner = dialer;
             dialer = DialerChain.Jump(
                 new SshEndPoint(hop.Host, hop.Port),
                 (jump, ct) => ConnectAsync(hop, policy, settings, inner, connectTimeout, keyboardPrompt, banners,
-                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump, route, ct));
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump, depth, route, ct));
         }
 
         ISshTransportDialer finalDialer = dialer;
@@ -117,7 +121,7 @@ internal static class SshConnectionAssembler
                 // 跳板按连上的先后记(最内一跳最先连上,也就是从近到远);重连时从头记。
                 route.Begin();
                 return ConnectAsync(info, policy, settings, finalDialer, connectTimeout, keyboardPrompt, banners,
-                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump: null, route, ct);
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump: null, hopDepth: 0, route, ct);
             },
             connectTimeout,
             banners,
@@ -155,6 +159,7 @@ internal static class SshConnectionAssembler
         TimeSpan? tailscaleCheckTimeout,
         bool isAutomaticReconnect,
         SshJumpContext? jump,
+        int hopDepth,
         SshRouteRecorder route,
         CancellationToken cancellationToken)
     {
@@ -310,6 +315,12 @@ internal static class SshConnectionAssembler
                 connection = jump is null
                     ? await SshConnection.ConnectAsync(options, connectToken).ConfigureAwait(false)
                     : await jump.ConnectAsync(options, connectToken).ConfigureAwait(false);
+            }
+            catch (SshNegotiationException ex) when (SshAlgorithmRemedy.TagHop(ex, hopDepth, target))
+            {
+                // 过滤器只记「谈不成的是哪一跳」、永远不接住:库会把它包进「连不上跳板」往外传,
+                // 覆盖层上的一键补救据此改对那一跳的配置,而不是终点的。
+                throw;
             }
             catch (Exception ex) when (isTailscale)
             {

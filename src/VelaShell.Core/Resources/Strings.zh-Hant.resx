@@ -6011,6 +6011,31 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Ssh_AlgoMismatchEnable" xml:space="preserve">
     <value>  對端提供的 {0} 可以在連線設定的 SSH 連線選項裡放開(勾「允許舊演算法」,或寫進自訂演算法清單)。</value>
   </data>
+  <data name="SshAlgoFix_Button" xml:space="preserve">
+    <value>放開這幾個演算法並重新連線</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
+    <value>在連線設定的自訂演算法清單({0})裡追加 {1}(排在預設之後),然後重新連線。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
+    <value>放開這幾個演算法?</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBody" xml:space="preserve">
+    <value>將在連線「{0}」的 SSH 選項裡,往{1}的自訂清單追加下面這幾個演算法,然後重新連線:
+
+{2}
+
+只加這幾個,其餘舊演算法照舊關著。它們比預設的弱,只在對端一個更新的都不支援時才會用上,只對無法升級的裝置這樣做。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
+    <value>放開並重新連線</value>
+  </data>
+  <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
+    <value>連線設定沒能儲存:{0}</value>
+  </data>
+  <data name="SshAlgoFix_HopMissing" xml:space="preserve">
+    <value>找不到跳板 {0} 的連線設定,請到它的 SSH 選項裡手動修改演算法清單。</value>
+  </data>
   <data name="SshInfo_Menu" xml:space="preserve">
     <value>連線資訊…</value>
   </data>

@@ -5796,6 +5796,31 @@ Overwrite it?</value>
   <data name="Ssh_AlgoMismatchEnable" xml:space="preserve">
     <value>  the peer's {0} can be enabled in the connection's SSH options ("Allow legacy algorithms" or a custom algorithm list).</value>
   </data>
+  <data name="SshAlgoFix_Button" xml:space="preserve">
+    <value>Allow these algorithms and reconnect</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
+    <value>Appends {1} to the custom {0} list in the connection's SSH options (after the defaults), then reconnects.</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
+    <value>Allow these algorithms?</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBody" xml:space="preserve">
+    <value>The following will be appended to the custom {1} list in the SSH options of connection "{0}", and the session will reconnect:
+
+{2}
+
+Only these are added; the other legacy algorithms stay off. They are weaker than the defaults and are only used when the server offers nothing newer, so keep this for devices you cannot upgrade.</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
+    <value>Allow and reconnect</value>
+  </data>
+  <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
+    <value>Could not save the connection settings: {0}</value>
+  </data>
+  <data name="SshAlgoFix_HopMissing" xml:space="preserve">
+    <value>The saved connection for jump host {0} could not be found; change the algorithm lists in its SSH options by hand.</value>
+  </data>
   <data name="SshInfo_Menu" xml:space="preserve">
     <value>Connection info…</value>
   </data>

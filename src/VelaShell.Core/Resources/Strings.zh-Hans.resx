@@ -6011,6 +6011,31 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Ssh_AlgoMismatchEnable" xml:space="preserve">
     <value>  对端提供的 {0} 可以在连接配置的 SSH 连接选项里放开(勾「允许老算法」,或写进自定义算法清单)。</value>
   </data>
+  <data name="SshAlgoFix_Button" xml:space="preserve">
+    <value>放开这几个算法并重连</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
+    <value>在连接配置的自定义算法清单({0})里追加 {1}(排在默认之后),然后重连。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
+    <value>放开这几个算法?</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBody" xml:space="preserve">
+    <value>将在连接「{0}」的 SSH 选项里,往{1}的自定义清单追加下面这几个算法,然后重连:
+
+{2}
+
+只加这几个,其余老算法照旧关着。它们比默认的弱,只在对端一个更新的都不支持时才会用上,只对没法升级的设备这样做。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
+    <value>放开并重连</value>
+  </data>
+  <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
+    <value>连接配置没能保存:{0}</value>
+  </data>
+  <data name="SshAlgoFix_HopMissing" xml:space="preserve">
+    <value>找不到跳板 {0} 的连接配置,请到它的 SSH 选项里手动修改算法清单。</value>
+  </data>
   <data name="SshInfo_Menu" xml:space="preserve">
     <value>连接信息…</value>
   </data>

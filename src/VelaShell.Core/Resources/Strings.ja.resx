@@ -5791,6 +5791,31 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Ssh_AlgoMismatchEnable" xml:space="preserve">
     <value>  接続先の {0} は、接続設定の SSH オプションで有効にできます(「レガシーアルゴリズムを許可」またはアルゴリズム一覧のカスタマイズ)。</value>
   </data>
+  <data name="SshAlgoFix_Button" xml:space="preserve">
+    <value>これらのアルゴリズムを許可して再接続</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
+    <value>接続設定のカスタムアルゴリズム一覧({0})の既定の後ろに {1} を追加して再接続します。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
+    <value>これらのアルゴリズムを許可しますか?</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBody" xml:space="preserve">
+    <value>接続「{0}」の SSH オプションで、{1}のカスタム一覧に次のアルゴリズムを追加して再接続します:
+
+{2}
+
+追加するのはこれらだけで、ほかの古いアルゴリズムは無効のままです。既定より弱く、相手が新しいものを何も提供しないときだけ使われます。更新できない機器に限って使ってください。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
+    <value>許可して再接続</value>
+  </data>
+  <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
+    <value>接続設定を保存できませんでした: {0}</value>
+  </data>
+  <data name="SshAlgoFix_HopMissing" xml:space="preserve">
+    <value>踏み台 {0} の接続設定が見つかりません。その SSH オプションでアルゴリズム一覧を手動で変更してください。</value>
+  </data>
   <data name="SshInfo_Menu" xml:space="preserve">
     <value>接続情報…</value>
   </data>

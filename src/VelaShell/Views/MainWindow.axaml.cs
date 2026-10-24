@@ -486,6 +486,9 @@ public partial class MainWindow : Window
             vm.QuickCommandVariablePrompt = (name, template, initial) => QuickCommandVariablesPrompt.ShowAsync(this, name, template, initial);
             vm.QuickCommandMultilineConfirmer = ConfirmQuickCommandMultilineAsync;
             vm.CommandRerunConfirmer = ConfirmCommandRerunMultilineAsync;
+            // 失败覆盖层上的「放开这几个算法并重连」:会降低那条连接的安全性,先点名再问一句。
+            vm.AllowAlgorithmsConfirmer = (title, body) => MessageDialog.ConfirmAsync(
+                this, title, body, Strings.Get("SshAlgoFix_ConfirmAction"), kind: MessageDialogKind.Warning);
             vm.ExportBufferRequested += (_, _) => _ = ExportTerminalBufferAsync(vm);
             // 工具菜单“连接诊断”:对当前标签的配置打开诊断中心(设计 RGXg1)。
             vm.DiagnosticsRequested += profile =>
