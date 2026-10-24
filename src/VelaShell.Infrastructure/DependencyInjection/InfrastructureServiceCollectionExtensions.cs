@@ -208,7 +208,8 @@ public static class InfrastructureServiceCollectionExtensions
             registry.Unregistered += launcher.OnUnregistered;
             return launcher;
         });
-        // 本机文件拖进经 SSH 转发来的 X 程序:经那个会话的 SFTP 传到远端临时目录,再交远端路径(F16)。
+        // 本机文件拖进经 SSH 转发来的 X 程序:经那个会话的 SFTP 传到远端临时目录,再交远端路径(F16);
+        // 拖放时连着那台主机的会话都断了之后,下一次连上或往那台主机拖放时删掉(它订阅了 SessionConnected,所以是单例)。
         services.AddSingleton<IXServerDropUploader>(sp => new SftpXServerDropUploader(
             sp.GetRequiredService<ISshConnectionService>(), sp.GetRequiredService<ISftpService>()));
         // 反方向:从经 SSH 转发来的 X 程序往本机拖出文件,先经那个会话的 SFTP 取回本机的临时目录(F16 的另一半)。
