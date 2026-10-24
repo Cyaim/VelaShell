@@ -7709,6 +7709,27 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Tree_OpenManyAction" xml:space="preserve">
     <value>開啟</value>
   </data>
+  <data name="Tree_OpenGroupSynced" xml:space="preserve">
+    <value>開啟全部並同步輸入</value>
+  </data>
+  <data name="Tree_OpenSelectedSynced" xml:space="preserve">
+    <value>開啟 {0} 個連線並同步輸入</value>
+  </data>
+  <data name="Tree_SyncedNoTerminals" xml:space="preserve">
+    <value>這些連線都開不出終端，沒有可以同步輸入的（SFTP、FTP 與工作台開出來的不是終端）。</value>
+  </data>
+  <data name="Tree_SyncedNoFreeChannel" xml:space="preserve">
+    <value>四個同步輸入頻道（A–D）都在使用中。先關閉一個頻道再試。</value>
+  </data>
+  <data name="Tree_SyncedDone" xml:space="preserve">
+    <value>{0} 個終端已加入同步輸入頻道 {1}</value>
+  </data>
+  <data name="Tree_SyncedNotConnected" xml:space="preserve">
+    <value>其中 {0} 個沒連上</value>
+  </data>
+  <data name="Tree_SyncedSkipped" xml:space="preserve">
+    <value>略過 {0} 個不是終端的連線</value>
+  </data>
   <data name="SessFile_AnyType" xml:space="preserve">
     <value>連線檔案 (JSON / CSV)</value>
   </data>

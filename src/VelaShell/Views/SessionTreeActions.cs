@@ -42,6 +42,7 @@ internal sealed class SessionTreeActions(Window owner, MainWindowViewModel viewM
     {
         ArgumentNullException.ThrowIfNull(tree);
         tree.OpenManyRequested += profiles => FireAndForget.Run(() => OpenManyAsync(profiles));
+        tree.OpenManyInSyncChannelRequested += profiles => FireAndForget.Run(() => OpenManyInSyncChannelAsync(profiles));
         tree.BatchEditRequested += profiles => FireAndForget.Run(() => BatchEditAsync(profiles));
         tree.ExportRequested += request => FireAndForget.Run(() => ExportAsync(request));
         tree.ImportFileRequested += target => FireAndForget.Run(() => ImportFileAsync(target));
@@ -59,21 +60,34 @@ internal sealed class SessionTreeActions(Window owner, MainWindowViewModel viewM
     /// <summary>整组打开 / 多选打开:条数多时先确认,再按限定的并发度依次连。</summary>
     internal async Task OpenManyAsync(IReadOnlyList<SessionProfile> profiles)
     {
-        if (profiles.Count == 0)
-        {
-            return;
-        }
-        if (profiles.Count > OpenManyConfirmThreshold
-            && !await MessageDialog.ConfirmAsync(owner,
-                Strings.Get("Tree_OpenManyTitle"),
-                Strings.Format("Tree_OpenManyConfirm", profiles.Count),
-                Strings.Get("Tree_OpenManyAction"),
-                Strings.Cancel))
+        if (profiles.Count == 0 || !await ConfirmOpenManyAsync(profiles.Count))
         {
             return;
         }
         await viewModel.OpenProfilesAsync(profiles);
     }
+
+    /// <summary>
+    /// 整组 / 多选打开并拉进同一个同步输入频道(对一组机器批量下发命令):确认口径与 <see cref="OpenManyAsync" /> 相同,
+    /// 挑频道、只开终端、报结果都在 <see cref="MainWindowViewModel.OpenProfilesInSyncChannelAsync" />。
+    /// </summary>
+    internal async Task OpenManyInSyncChannelAsync(IReadOnlyList<SessionProfile> profiles)
+    {
+        if (profiles.Count == 0 || !await ConfirmOpenManyAsync(profiles.Count))
+        {
+            return;
+        }
+        await viewModel.OpenProfilesInSyncChannelAsync(profiles);
+    }
+
+    /// <summary>超过 <see cref="OpenManyConfirmThreshold" /> 条时先问一句;没超过直接放行。</summary>
+    private async Task<bool> ConfirmOpenManyAsync(int count) =>
+        count <= OpenManyConfirmThreshold
+        || await MessageDialog.ConfirmAsync(owner,
+            Strings.Get("Tree_OpenManyTitle"),
+            Strings.Format("Tree_OpenManyConfirm", count),
+            Strings.Get("Tree_OpenManyAction"),
+            Strings.Cancel);
 
     private async Task BatchEditAsync(IReadOnlyList<SessionProfile> profiles)
     {

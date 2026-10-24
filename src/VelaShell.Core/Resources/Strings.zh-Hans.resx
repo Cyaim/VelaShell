@@ -7709,6 +7709,27 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Tree_OpenManyAction" xml:space="preserve">
     <value>打开</value>
   </data>
+  <data name="Tree_OpenGroupSynced" xml:space="preserve">
+    <value>打开全部并同步输入</value>
+  </data>
+  <data name="Tree_OpenSelectedSynced" xml:space="preserve">
+    <value>打开 {0} 个连接并同步输入</value>
+  </data>
+  <data name="Tree_SyncedNoTerminals" xml:space="preserve">
+    <value>这些连接都开不出终端，没有可以同步输入的（SFTP、FTP 与工作台开出来的不是终端）。</value>
+  </data>
+  <data name="Tree_SyncedNoFreeChannel" xml:space="preserve">
+    <value>四个同步输入频道（A–D）都在用。先关掉一个频道再试。</value>
+  </data>
+  <data name="Tree_SyncedDone" xml:space="preserve">
+    <value>{0} 个终端已加入同步输入频道 {1}</value>
+  </data>
+  <data name="Tree_SyncedNotConnected" xml:space="preserve">
+    <value>其中 {0} 个没连上</value>
+  </data>
+  <data name="Tree_SyncedSkipped" xml:space="preserve">
+    <value>跳过 {0} 个不是终端的连接</value>
+  </data>
   <data name="SessFile_AnyType" xml:space="preserve">
     <value>连接文件 (JSON / CSV)</value>
   </data>

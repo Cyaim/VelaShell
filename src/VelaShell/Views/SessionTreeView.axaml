@@ -24,6 +24,14 @@
                          Foreground="{DynamicResource VelaAccent}" />
         </MenuItem.Icon>
       </MenuItem>
+      <!-- 打开并拉进同一个同步输入频道:对这几台批量下发命令(只开终端,频道挑第一个空着的)。 -->
+      <MenuItem Header="{Binding OpenSelectedInSyncChannelText}"
+                Command="{Binding OpenSelectedInSyncChannelCommand}">
+        <MenuItem.Icon>
+          <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.link-2}"
+                         Foreground="{DynamicResource VelaTextTertiary}" />
+        </MenuItem.Icon>
+      </MenuItem>
       <!-- 恰好两条时才有「在双栏 SFTP 中打开」(先选的在左栏,#524)。 -->
       <MenuItem Header="{loc:Localize Tree_OpenDualSftp}"
                 Command="{Binding OpenDualSftpCommand}"
@@ -249,6 +257,14 @@
                   <MenuItem.Icon>
                     <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.plug}"
                                    Foreground="{DynamicResource VelaAccent}" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <!-- 整组打开并拉进同一个同步输入频道:对这一组机器批量下发命令。 -->
+                <MenuItem Header="{loc:Localize Tree_OpenGroupSynced}"
+                          Command="{Binding $parent[ListBox].((vm:SessionTreeViewModel)DataContext).OpenGroupInSyncChannelCommand}">
+                  <MenuItem.Icon>
+                    <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.link-2}"
+                                   Foreground="{DynamicResource VelaTextTertiary}" />
                   </MenuItem.Icon>
                 </MenuItem>
                 <Separator />

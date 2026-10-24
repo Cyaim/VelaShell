@@ -4006,7 +4006,152 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <see cref="OpenManyConcurrency" /> 条同时握手。单条失败只在它自己的标签页里提示,不影响其余。
     /// </summary>
     /// <param name="profiles">要打开的连接。</param>
-    public async Task OpenProfilesAsync(IReadOnlyList<SessionProfile> profiles)
+    public Task OpenProfilesAsync(IReadOnlyList<SessionProfile> profiles) => OpenProfilesCoreAsync(profiles, opened: null);
+
+    /// <summary>
+    /// 打开一组连接并把开出来的终端拉进同一个同步输入频道:对一组机器批量下发命令
+    /// (资源管理器分组菜单「打开全部并同步输入」、多选菜单「打开 N 个连接并同步输入」)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>只开终端。</b>同步输入是往终端里打字,SFTP / FTP / 插件的文件协议与工作台开出来的是文档,进不了频道 ——
+    /// 这些连接跳过不开(打开它们是「打开全部连接」的事),结束时的提示里报一个数。插件协议是不是终端要问插件
+    /// (可能触发惰性激活,与真去连它时一样)。
+    /// </para>
+    /// <para>
+    /// <b>总是新开标签,已经开着的同配置标签不动。</b>与「打开全部连接」(§180)同一口径;而且把一个开着的标签
+    /// 拉进频道,它可能正停在 vim 里、或者本来就在别的频道 —— 广播打进去的后果用户看不见也撤不回。
+    /// 同一台机器因此可能开着两个标签,但只有这一批新开的在频道里,命令不会打两遍。
+    /// </para>
+    /// <para>
+    /// <b>频道挑第一个空着的</b>(A → D,没有任何标签在里面,也没被另一批正在开的预订);四个都在用就一个都不开,
+    /// 浮层说明原因 —— 混进一个已有成员的频道,这批命令就会打到不相干的机器上。
+    /// 每个标签连完(连上或失败)就入频道:失败的那个之后重连上来,照样收得到;握手期间敲的字它收不到
+    /// (频道只往连着的标签转发),所以全部连完时报一句「几个进了频道、几个没连上」。
+    /// 超过 10 条先确认、最多 6 条同时握手,与 §180 相同(确认在视图层,<c>SessionTreeActions</c>)。
+    /// </para>
+    /// </remarks>
+    /// <param name="profiles">要打开的连接(按树上的顺序)。</param>
+    /// <returns>挑中的频道;没开(没有终端类连接、四个频道都在用)时为 null。</returns>
+    public async Task<SyncInputChannel?> OpenProfilesInSyncChannelAsync(IReadOnlyList<SessionProfile> profiles)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        List<SessionProfile> terminals = [];
+        foreach (SessionProfile profile in profiles)
+        {
+            if (await OpensTerminalAsync(profile).ConfigureAwait(true))
+            {
+                terminals.Add(profile);
+            }
+        }
+        int skipped = profiles.Count - terminals.Count;
+        if (terminals.Count == 0)
+        {
+            Toasts.Warning(Strings.Get("Tree_SyncedNoTerminals"));
+            return null;
+        }
+        if (FreeSyncChannel() is not { } channel)
+        {
+            Toasts.Warning(Strings.Get("Tree_SyncedNoFreeChannel"));
+            return null;
+        }
+
+        _reservedSyncChannels.Add(channel);
+        List<TerminalTabViewModel> joined = [];
+        try
+        {
+            await OpenProfilesCoreAsync(terminals, tab =>
+            {
+                // 连接途中用户把标签关了:那条就不算了。
+                if (FindDocument(tab) is null)
+                {
+                    return;
+                }
+                tab.JoinSyncChannel(channel);
+                joined.Add(tab);
+            }).ConfigureAwait(true);
+        }
+        finally
+        {
+            _reservedSyncChannels.Remove(channel);
+        }
+
+        if (joined.Count == 0)
+        {
+            return null;
+        }
+        int connected = joined.Count(static tab => tab.IsConnected);
+        List<string> parts = [Strings.Format("Tree_SyncedDone", joined.Count, channel)];
+        if (connected < joined.Count)
+        {
+            parts.Add(Strings.Format("Tree_SyncedNotConnected", joined.Count - connected));
+        }
+        if (skipped > 0)
+        {
+            parts.Add(Strings.Format("Tree_SyncedSkipped", skipped));
+        }
+        string message = string.Join(Strings.Get("BatchEdit_PreviewSeparator"), parts);
+        if (connected < joined.Count || skipped > 0)
+        {
+            Toasts.Warning(message);
+        }
+        else
+        {
+            Toasts.Info(message);
+        }
+        return channel;
+    }
+
+    /// <summary>正被「打开并同步输入」预订着的频道(那一批还在开,频道里暂时一个标签都没有)。</summary>
+    private readonly HashSet<SyncInputChannel> _reservedSyncChannels = [];
+
+    /// <summary>第一个空着的同步输入频道(A → D):没有任何标签在里面,也没被正在开的另一批预订;都在用时为 null。</summary>
+    private SyncInputChannel? FreeSyncChannel()
+    {
+        var used = TerminalTabs.Select(static tab => tab.SyncChannel).OfType<SyncInputChannel>().ToHashSet();
+        foreach (SyncInputChannel candidate in Enum.GetValues<SyncInputChannel>())
+        {
+            if (!used.Contains(candidate) && !_reservedSyncChannels.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>这条连接打开之后是不是一个终端(能进同步输入频道)。</summary>
+    private async Task<bool> OpensTerminalAsync(SessionProfile profile)
+    {
+        switch (profile.ConnectionType)
+        {
+            case ConnectionType.SSH:
+                return true;
+            case ConnectionType.Plugin when _protocolRegistry is { } protocols:
+                if (protocols.KindOf(profile.PluginProtocolId) == PluginConnectionKind.Workspace)
+                {
+                    return false;
+                }
+                try
+                {
+                    PluginProtocolRegistration? registration =
+                        await protocols.ResolveAsync(profile.PluginProtocolId).ConfigureAwait(true);
+                    return registration is { Terminal: not null };
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // 插件激活失败:这条开不出终端,跳过;真去连它时那边会如实报错。
+                    System.Diagnostics.Trace.WriteLine($"[VelaShell] Resolve {profile.PluginProtocolId} failed: {ex.Message}");
+                    return false;
+                }
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="OpenProfilesAsync" /> 的本体:限并发地逐条连,每条连完(拿到终端标签时)回调一次。
+    /// </summary>
+    private async Task OpenProfilesCoreAsync(IReadOnlyList<SessionProfile> profiles, Action<TerminalTabViewModel>? opened)
     {
         ArgumentNullException.ThrowIfNull(profiles);
         using var gate = new SemaphoreSlim(OpenManyConcurrency);
@@ -4017,7 +4162,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     await gate.WaitAsync().ConfigureAwait(true);
                     try
                     {
-                        await TryConnectProfileAsync(profile).ConfigureAwait(true);
+                        if (await TryConnectProfileAsync(profile).ConfigureAwait(true) is { } tab)
+                        {
+                            opened?.Invoke(tab);
+                        }
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {

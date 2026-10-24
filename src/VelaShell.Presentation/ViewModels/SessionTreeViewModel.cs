@@ -114,6 +114,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         // 多选(#571):Ctrl / Shift 选中多条后右键弹的那份菜单。
         IObservable<bool> hasMultiSelection = this.WhenAnyValue(x => x.HasMultiSelection);
         OpenSelectedCommand = ReactiveCommand.Create(RaiseOpenSelected, hasMultiSelection);
+        OpenSelectedInSyncChannelCommand = ReactiveCommand.Create(RaiseOpenSelectedInSyncChannel, hasMultiSelection);
         DeleteSelectedCommand = ReactiveCommand.CreateFromTask(DeleteMultiSelectionAsync, hasMultiSelection);
         MoveSelectionToGroupCommand = ReactiveCommand.CreateFromTask<SessionTreeNodeViewModel>(MoveMultiSelectionToGroupAsync);
         BatchEditCommand = ReactiveCommand.Create(RaiseBatchEdit, hasMultiSelection);
@@ -122,6 +123,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         // 分组行的菜单(#571):整组打开、上移下移、导出 / 导入到这一组。
         IObservable<bool> hasSelectedGroup = this.WhenAnyValue(x => x.SelectedNode).Select(node => node is { IsGroup: true });
         OpenGroupCommand = ReactiveCommand.Create(RaiseOpenGroup, hasSelectedGroup);
+        OpenGroupInSyncChannelCommand = ReactiveCommand.Create(RaiseOpenGroupInSyncChannel, hasSelectedGroup);
         MoveGroupUpCommand = ReactiveCommand.CreateFromTask(
             () => MoveSelectedGroupByAsync(-1),
             this.WhenAnyValue(x => x.CanMoveSelectedGroupUp)
@@ -534,6 +536,9 @@ public sealed class SessionTreeViewModel : ReactiveObject
     /// <summary>多选菜单「打开 N 个连接」的文案。</summary>
     public string OpenSelectedText => Strings.Format("Tree_OpenSelected", _multiSelection.Count);
 
+    /// <summary>多选菜单「打开 N 个连接并同步输入」的文案。</summary>
+    public string OpenSelectedInSyncChannelText => Strings.Format("Tree_OpenSelectedSynced", _multiSelection.Count);
+
     /// <summary>多选菜单「删除 N 个连接」的文案。</summary>
     public string DeleteSelectedText => Strings.Format("Tree_DeleteSelected", _multiSelection.Count);
 
@@ -669,6 +674,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         this.RaisePropertyChanged(nameof(CanOpenDualSelection));
         this.RaisePropertyChanged(nameof(ShowDualSftpUnsupportedHint));
         this.RaisePropertyChanged(nameof(OpenSelectedText));
+        this.RaisePropertyChanged(nameof(OpenSelectedInSyncChannelText));
         this.RaisePropertyChanged(nameof(DeleteSelectedText));
     }
 
@@ -698,6 +704,12 @@ public sealed class SessionTreeViewModel : ReactiveObject
 
     /// <summary>多选菜单「打开 N 个连接」,触发 <see cref="OpenManyRequested" />。</summary>
     public ReactiveCommand<RxVoid, RxVoid> OpenSelectedCommand { get; }
+
+    /// <summary>多选菜单「打开 N 个连接并同步输入」,触发 <see cref="OpenManyInSyncChannelRequested" />。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> OpenSelectedInSyncChannelCommand { get; }
+
+    /// <summary>分组菜单「打开全部并同步输入」,触发 <see cref="OpenManyInSyncChannelRequested" />。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> OpenGroupInSyncChannelCommand { get; }
 
     /// <summary>多选菜单「删除 N 个连接」(先经 <see cref="ConfirmDeleteSessions" /> 确认)。</summary>
     public ReactiveCommand<RxVoid, RxVoid> DeleteSelectedCommand { get; }
@@ -755,6 +767,12 @@ public sealed class SessionTreeViewModel : ReactiveObject
     /// 一次打开多条连接(整组打开、多选打开)。由宿主决定要不要先确认、按什么并发度连。
     /// </summary>
     public event Action<IReadOnlyList<SessionProfile>>? OpenManyRequested;
+
+    /// <summary>
+    /// 打开一组连接并把它们拉进同一个同步输入频道(分组菜单「打开全部并同步输入」、多选菜单「打开 N 个连接并同步输入」)——
+    /// 对一组机器批量下发命令。挑哪个频道、哪些连接开得出终端、要不要先确认,都由宿主定。
+    /// </summary>
+    public event Action<IReadOnlyList<SessionProfile>>? OpenManyInSyncChannelRequested;
 
     /// <summary>多选菜单「批量修改」:由宿主打开批量修改对话框。</summary>
     public event Action<IReadOnlyList<SessionProfile>>? BatchEditRequested;
@@ -1138,6 +1156,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
             ungrouped.Name = Strings.Get("Svc_Ungrouped");
         }
         this.RaisePropertyChanged(nameof(OpenSelectedText));
+        this.RaisePropertyChanged(nameof(OpenSelectedInSyncChannelText));
         this.RaisePropertyChanged(nameof(DeleteSelectedText));
     }
 
@@ -1371,6 +1390,15 @@ public sealed class SessionTreeViewModel : ReactiveObject
         }
     }
 
+    private void RaiseOpenSelectedInSyncChannel()
+    {
+        List<SessionProfile> profiles = MultiSelectionProfiles();
+        if (profiles.Count > 0)
+        {
+            OpenManyInSyncChannelRequested?.Invoke(profiles);
+        }
+    }
+
     private void RaiseBatchEdit()
     {
         List<SessionProfile> profiles = MultiSelectionProfiles();
@@ -1447,19 +1475,25 @@ public sealed class SessionTreeViewModel : ReactiveObject
 
     private void RaiseOpenGroup()
     {
-        if (SelectedNode is not { IsGroup: true } group)
-        {
-            return;
-        }
-        List<SessionProfile> profiles =
-        [
-            .. group.Children.Select(child => _sessionCache.GetValueOrDefault(child.Id)).OfType<SessionProfile>()
-        ];
-        if (profiles.Count > 0)
+        if (SelectedGroupProfiles() is { Count: > 0 } profiles)
         {
             OpenManyRequested?.Invoke(profiles);
         }
     }
+
+    private void RaiseOpenGroupInSyncChannel()
+    {
+        if (SelectedGroupProfiles() is { Count: > 0 } profiles)
+        {
+            OpenManyInSyncChannelRequested?.Invoke(profiles);
+        }
+    }
+
+    /// <summary>选中分组的全部连接,按组内顺序;选中的不是分组时为空。过滤框只管显示,整组的操作照旧是整组。</summary>
+    private List<SessionProfile> SelectedGroupProfiles() =>
+        SelectedNode is { IsGroup: true } group
+            ? [.. group.Children.Select(child => _sessionCache.GetValueOrDefault(child.Id)).OfType<SessionProfile>()]
+            : [];
 
     private void RaiseExportGroup()
     {

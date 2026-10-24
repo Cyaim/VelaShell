@@ -7234,6 +7234,27 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tree_OpenManyAction" xml:space="preserve">
     <value>開く</value>
   </data>
+  <data name="Tree_OpenGroupSynced" xml:space="preserve">
+    <value>すべて開いて入力を同期</value>
+  </data>
+  <data name="Tree_OpenSelectedSynced" xml:space="preserve">
+    <value>{0} 件の接続を開いて入力を同期</value>
+  </data>
+  <data name="Tree_SyncedNoTerminals" xml:space="preserve">
+    <value>これらの接続はどれもターミナルを開かないため、入力を同期できません(SFTP・FTP・ワークスペースはターミナルではありません)。</value>
+  </data>
+  <data name="Tree_SyncedNoFreeChannel" xml:space="preserve">
+    <value>4 つの入力同期チャンネル(A–D)はすべて使用中です。1 つ閉じてから再試行してください。</value>
+  </data>
+  <data name="Tree_SyncedDone" xml:space="preserve">
+    <value>{0} 個のターミナルが入力同期チャンネル {1} に参加しました</value>
+  </data>
+  <data name="Tree_SyncedNotConnected" xml:space="preserve">
+    <value>うち {0} 個は接続できませんでした</value>
+  </data>
+  <data name="Tree_SyncedSkipped" xml:space="preserve">
+    <value>ターミナル以外の接続 {0} 件をスキップしました</value>
+  </data>
   <data name="SessFile_AnyType" xml:space="preserve">
     <value>接続ファイル (JSON / CSV)</value>
   </data>

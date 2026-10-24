@@ -7234,6 +7234,27 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Tree_OpenManyAction" xml:space="preserve">
     <value>열기</value>
   </data>
+  <data name="Tree_OpenGroupSynced" xml:space="preserve">
+    <value>모두 열고 입력 동기화</value>
+  </data>
+  <data name="Tree_OpenSelectedSynced" xml:space="preserve">
+    <value>연결 {0}개 열고 입력 동기화</value>
+  </data>
+  <data name="Tree_SyncedNoTerminals" xml:space="preserve">
+    <value>이 연결들은 모두 터미널이 아니어서 입력을 동기화할 대상이 없습니다(SFTP, FTP, 워크스페이스는 터미널이 아닙니다).</value>
+  </data>
+  <data name="Tree_SyncedNoFreeChannel" xml:space="preserve">
+    <value>입력 동기화 채널 4개(A–D)가 모두 사용 중입니다. 하나를 닫은 뒤 다시 시도하세요.</value>
+  </data>
+  <data name="Tree_SyncedDone" xml:space="preserve">
+    <value>터미널 {0}개가 입력 동기화 채널 {1}에 참가했습니다</value>
+  </data>
+  <data name="Tree_SyncedNotConnected" xml:space="preserve">
+    <value>그중 {0}개는 연결되지 않았습니다</value>
+  </data>
+  <data name="Tree_SyncedSkipped" xml:space="preserve">
+    <value>터미널이 아닌 연결 {0}개를 건너뛰었습니다</value>
+  </data>
   <data name="SessFile_AnyType" xml:space="preserve">
     <value>연결 파일 (JSON / CSV)</value>
   </data>
