@@ -760,4 +760,69 @@ public sealed class RasterizerTests
             }
         }
     }
+
+    [TestMethod]
+    public void 半径小于半个线宽的圆上的宽弧_内边界穿过圆心画到对侧()
+    {
+        // 协议「PolyArc」:圆的宽弧边界是理想的那两条 —— 沿法线与路径相距 lw/2 的点。圆心 (32,32)、半径 2,lw = 12:
+        // 从 0° 逆时针到 90° 的这一段,法线段从半径 8 的外边界穿过圆心,一直伸到对侧半径 4 处。扫出来的是右上方半径 8 的扇形
+        // 加上左下方(转过半圈)半径 4 的扇形;原先内边界停在圆心,左下那一块没画。
+        XGc gc = new(1, null, 24) { Foreground = 1, LineWidth = 12, CapStyle = 1 };
+        PixelBuffer arc = Stroke(gc, r => r.Arc(30, 30, 4, 4, 0, 90 * 64));
+        Assert.AreEqual((1u, 1u, 1u), (arc.Get(36, 28), arc.Get(30, 34), arc.Get(31, 35)), "右上的外侧扇形与左下的对侧扇形");
+        Assert.AreEqual((0u, 0u, 0u), (arc.Get(28, 36), arc.Get(35, 35), arc.Get(29, 29)), "对侧扇形只有 4 那么长;另两个象限什么都没有");
+
+        // 随机的圆、线宽与角度(Butt 端帽):离边界(两个半径、两个端面所在的直线)超过 0.25 像素的像素中心,画没画只看它在不在两个扇形里。
+        // 跨度超过半圈时两个扇形在圆心附近重叠,重叠处同样要画(求并集,不是按自交的轮廓算奇偶)。
+        Random random = new(185);
+        for (int round = 0; round < 400; round++)
+        {
+            int w = random.Next(1, 12), lw = random.Next(w + 1, 30);
+            int a1 = random.Next(-360 * 64, 360 * 64), a2 = random.Next(1, 360 * 64) * (random.Next(2) == 0 ? 1 : -1);
+            gc = new(1, null, 24) { Foreground = 1, LineWidth = (ushort)lw, CapStyle = 1 };
+            int x = 32 - (w / 2), y = 32 - (w / 2);
+            PixelBuffer drawn = Stroke(gc, r => r.Arc(x, y, w, w, a1, a2));
+            double cx = x + (w / 2.0), cy = y + (w / 2.0), radius = w / 2.0, half = lw / 2.0;
+            double start = a1 / 64.0 * Math.PI / 180, extent = a2 / 64.0 * Math.PI / 180;
+            for (int py = 0; py < Size; py++)
+            {
+                for (int px = 0; px < Size; px++)
+                {
+                    // y 朝下:数学上的角度按 −dy 算。
+                    double dx = px - cx, dy = cy - py, distance = Math.Sqrt((dx * dx) + (dy * dy));
+                    if (Math.Abs(distance - radius - half) < 0.25 || Math.Abs(distance - (half - radius)) < 0.25
+                        || NearLine(dx, dy, start) || NearLine(dx, dy, start + extent))
+                    {
+                        continue;
+                    }
+                    double angle = Math.Atan2(dy, dx);
+                    bool outer = distance < radius + half && Within(angle, start, extent);
+                    bool opposite = distance < half - radius && Within(angle + Math.PI, start, extent);
+                    Assert.AreEqual(outer || opposite ? 1u : 0u, drawn.Get(px, py),
+                        $"第 {round} 组:外接框 ({x},{y},{w},{w}) 角度 {a1}/{a2} lw={lw}:({px},{py})");
+                }
+            }
+        }
+
+        // 整圆不受影响:就是半径 r + lw/2 的实心圆(线宽取偶数,那个圆的外接框才在整数上;取的点与宽弧的外边界逐位相同)。
+        foreach ((int w, ushort lw) in new (int, ushort)[] { (1, 4), (2, 6), (3, 8), (6, 20) })
+        {
+            XGc wide = new(1, null, 24) { Foreground = 1, LineWidth = lw, CapStyle = 1 };
+            XGc fill = new(1, null, 24) { Foreground = 1 };
+            int x = 32 - (w / 2), y = 32 - (w / 2), grow = lw / 2;
+            Assert.AreSequenceEqual(
+                Stroke(fill, r => r.FillArc(x - grow, y - grow, w + lw, w + lw, 0, 360 * 64)).Pixels,
+                Stroke(wide, r => r.Arc(x, y, w, w, 0, 360 * 64)).Pixels, $"w = {w}、lw = {lw}");
+        }
+
+        // 端面所在的直线(过圆心、方向为角 t)附近 0.25 像素以内。
+        static bool NearLine(double dx, double dy, double t) => Math.Abs((dx * Math.Sin(t)) - (dy * Math.Cos(t))) < 0.25;
+
+        // 角 a 是否落在从 start 起转 extent(有正负)的范围里。
+        static bool Within(double a, double start, double extent)
+        {
+            double turn = 2 * Math.PI, offset = ((((extent >= 0 ? a - start : start - a) % turn) + turn) % turn);
+            return offset <= Math.Abs(extent);
+        }
+    }
 }
