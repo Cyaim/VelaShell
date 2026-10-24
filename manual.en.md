@@ -277,7 +277,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Steps:** For garbled output, compare the actual remote encoding and selected decoding. For alignment, choose a monospaced font with sufficient character coverage, then adjust size, line height, and padding. Match TERM to the remote application's expectations. Use `Ctrl+=`, `Ctrl+-`, and `Ctrl+0` for temporary zoom in/out/reset.
 
-**Result and how it works:** Encoding turns bytes into characters; fonts draw them. A font change cannot repair incorrect decoding. Themes and ANSI palettes change presentation, not remote output content. Terminal-background transparency and window opacity are separate settings.
+**Result and how it works:** Encoding turns bytes into characters; fonts draw them. A font change cannot repair incorrect decoding. SFTP file names of an SSH session are decoded with the session encoding in effect when it connected (for example Chinese names on a GBK server); with a UTF-8 session, undecodable names show replacement characters but can still be opened and deleted. An encoding switched temporarily from the status bar only affects the terminal, not an already open file pane. Themes and ANSI palettes change presentation, not remote output content. Terminal-background transparency and window opacity are separate settings.
 
 **Caution:** Per-line times are client-side display aids, not authoritative remote business-event timestamps. Remote output can control screen colors, titles, and links.
 
@@ -367,7 +367,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Plaintext warning:** FTP encryption **None** sends usernames, passwords, and contents in plaintext. **The default Auto setting does not guarantee encryption either: it tries explicit FTPS and falls back to plaintext FTP if unsupported.** On untrusted networks, explicitly choose the server's supported explicit/implicit FTPS mode and verify certificates, or use SFTP. Do not treat Auto as mandatory TLS. Anonymous login does not itself provide encryption; a reachable port is no reason to remove security checks.
 
-**Entry point and steps:** Create an FTP connection with address, port, and account. Choose Auto, explicit, implicit, or no encryption according to server documentation; configure anonymous/passive behavior as needed. Set the initial directory in advanced options. Check fingerprint and certificate issuance details before trusting a TLS warning.
+**Entry point and steps:** Create an FTP connection with address, port, and account. Choose Auto, explicit, implicit, or no encryption according to server documentation; configure anonymous/passive behavior as needed. Set the initial directory and the server time zone in advanced options (when the server clock runs in another zone, directory compare and sync convert LIST modification times with it). Check fingerprint and certificate issuance details before trusting a TLS warning.
 
 **Result and how it works:** FTP has control and data connections; FTPS adds TLS. It is not SSH. Passive mode, data ports, and firewalls affect cases where login works but transfers fail. FTP certificate trust is separate from SSH host-key trust.
 
@@ -376,6 +376,8 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 **Overwrite/deletion warning:** Check both paths, selected files, and conflict policy first. Remote deletion does not use the local recycle bin. Recursive deletion can immediately affect an entire directory tree; back it up beforehand.
 
 **Steps:** Select local items to upload, or remote items to download into the local pane's current directory. Directories transfer recursively. Remote context menus offer open, open with default editor, download, rename, move to, copy to, properties, and delete. Permissions/ownership can change only where supported by protocol and account; the client cannot bypass server authorization.
+
+**Search:** File panes of SSH sessions (the side pane, file tabs, and the SSH side of a dual-remote tab) have "Search remote files" on the toolbar and in the background and folder context menus. It searches on the server with `find` / `grep` by file name (without wildcards it matches names containing the text) or by file content (literal match); double-click a result to show it in the pane. At most 500 results and 2 minutes; hitting either limit is reported as incomplete. Windows servers (cmd.exe / PowerShell) and SFTP-only accounts are not supported and no command is sent. FTP and plugin protocols do not have this entry.
 
 **Result and how it works:** Transfers appear in the progress popup/history. Settings control concurrency (1–16), bandwidth, timestamps, completion notifications, and logs. Ordinary name conflicts can ask, overwrite, skip, or rename. Directory synchronization uses its preview rather than that ordinary conflict policy.
 
@@ -395,13 +397,13 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 - For external editing, configure the editor path first. VelaShell downloads a temporary copy, launches the editor, and watches saves according to automatic-upload settings, with approximately 600 ms debounce.
 - Check transfer results before closing the file tab. Closing the document finishes editing-session cleanup before disconnecting.
 
-**Result and how it works:** This is a local temporary copy plus remote write-back, not the local editor running on remote storage. An external editor's Save As is not guaranteed to update the original. Disconnection, crashes, permissions, or size limits can prevent upload. Temporary copies can contain sensitive content and are not guaranteed to be cleaned up after a crash.
+**Result and how it works:** This is a local temporary copy plus remote write-back, not the local editor running on remote storage. An external editor's Save As is not guaranteed to update the original. Disconnection, crashes, permissions, or size limits can prevent upload. Temporary copies can contain sensitive content: built-in editor copies are deleted when the editor closes, and those left by a crash are removed in the background on the next start once untouched for 7 days. When an external-editor upload fails, the draft is **deliberately kept** and its location shown; such drafts are never cleaned up automatically, so delete them yourself once handled.
 
 ### 9.5 Local/Remote Directory Bookmarks
 
 **Entry point and steps:** Navigate both panes to frequently used directories, then choose **Save current directories**. Use **Bookmarks** to select a saved pair and navigate both sides. Bookmarks can be edited or deleted.
 
-**Result and how it works:** Each connection stores local↔remote path pairs. Deleting a bookmark does not delete directories. Saved profiles retain bookmarks; temporary connections retain them for this run only. Dual-remote tabs do not offer these paired bookmarks. Adjust local paths after migration. Do not assume copied profiles or old sync payloads always preserve every bookmark detail.
+**Result and how it works:** Each connection stores local↔remote path pairs. Deleting a bookmark does not delete directories. Saved profiles retain bookmarks; temporary connections retain them for this run only. Dual-remote tabs do not offer these paired bookmarks. Adjust local paths after migration. Duplicating a profile copies the latest stored bookmarks; a Gist pull of a payload pushed by an older version without bookmarks keeps the local ones, and only an explicitly empty bookmark list clears them.
 
 ### 9.6 Copy Between Two Remote Hosts
 
@@ -452,7 +454,7 @@ For example, `*.conf;*.txt | cache/;*.tmp` considers the listed types and exclud
 
 **Prerequisites and result:** Hash comparison is useful when sizes match. Equal hashes avoid retransmission even if times differ. SFTP tries remote `sha256sum`/`shasum -a 256`; FTP/FTPS uses server checksum commands. Missing exec access/tools or unsupported servers cause fallback to time+size, with the reason shown. Dual-remote comparison does not use SHA-256.
 
-**How it works and cautions:** Hashing reads both sides' storage and can slow the first large comparison. Caches live within the document/window. Content deliberately changed while size and modification time remain unchanged may evade cache invalidation; reopen comparison. FTP LIST times reflect server-local time and can be offset across time zones. Size-only comparison may be a temporary choice, but equal size does not prove equal content. Unsupported timestamp updates, such as FTP without MFMT, may make bidirectional sync download a just-uploaded file again; address the warning first.
+**How it works and cautions:** Hashing reads both sides' storage and can slow the first large comparison. Caches live within the document/window. Content deliberately changed while size and modification time remain unchanged may evade cache invalidation; reopen comparison. FTP LIST times reflect server-local time and are offset across time zones: set the server time zone on the FTP connection's Advanced page to convert them (MLSD times are UTC and unaffected). Without it, size-only comparison may be a temporary choice, but equal size does not prove equal content. Unsupported timestamp updates, such as FTP without MFMT, may make bidirectional sync download a just-uploaded file again; address the warning first.
 
 Type conflicts, case-only name differences, and illegal local filenames are not solved safely by blind overwrite. Directory symlinks are not traversed; remote file links are treated as files. Synchronization is file-level, not a transaction: a later error does not roll back earlier successful writes.
 
