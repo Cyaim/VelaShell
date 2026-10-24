@@ -128,7 +128,7 @@ The main window contains a title bar, Explorer, a docking document area, and a b
 
 **Entry point:** Explorer **+**, a connection's **Edit** context-menu item, or the new-connection shortcut.
 
-**Prerequisites and steps:** Choose SSH, SFTP, FTP, or a protocol supplied by an installed plugin. Enter the host, port, username, and protocol-specific fields; optionally set the name, group, tags, notes, jump host, and initial paths. Recheck port and authentication when changing protocol: SSH private-key authentication cannot simply be applied to FTP. **Test**, **Save**, and **Connect** check, persist, and start a session respectively. Correct invalid host syntax or missing authentication material when an action is unavailable.
+**Prerequisites and steps:** Choose SSH, SFTP, FTP, or a protocol supplied by an installed plugin. Enter the host, port, username, and protocol-specific fields; optionally set the name, group, tags, notes, tab icon, jump host, and initial paths. The tab icon is picked under **General → Organize**; leave it unset to follow the protocol. A connection with a picked icon shows it on its tabs and on its Explorer row. Recheck port and authentication when changing protocol: SSH private-key authentication cannot simply be applied to FTP. **Test**, **Save**, and **Connect** check, persist, and start a session respectively. Correct invalid host syntax or missing authentication material when an action is unavailable.
 
 **Result and how it works:** The profile is stored locally; connecting creates the appropriate protocol session. SSH/SFTP targets may be host names, IPv4, or IPv6. Where one field contains both IPv6 and a port, use `[2001:db8::10]:2222`, rather than treating the last numeric segment as the port.
 
@@ -139,11 +139,12 @@ The main window contains a title bar, Explorer, a docking document area, and a b
 **Entry point:** Connection and group context menus.
 
 - Double-click a connection to open it. Use its context menu to edit, copy, pin, move, or delete it. Drag a connection into a group to move it; drag group rows to reorder them.
+- The filter box above the Explorer filters by name, host, tag, and note (and group name): every space-separated word must match, e.g. `prod web`. Groups with matches open automatically; clearing the filter (`Esc` or the × in the box) restores their previous state. When exactly one connection is left, Enter connects it. Filtering only changes what is shown: group menus still act on the whole group, so multi-select to act on the filtered rows.
 - `Ctrl+click` adds or removes individual selections; `Shift+click` selects a range; `Ctrl+Shift` can add a further range.
-- Multiple selection offers actions to open N connections, bulk-edit, or export the selection. Group menus can open all, import into the group, or export the group. Opening more than ten connections requires confirmation. Up to six connect concurrently; individual failures do not cancel every target.
+- Multiple selection offers actions to open N connections, open N connections with synced input, bulk-edit, or export the selection. Group menus can open all, open all with synced input, import into the group, or export the group. Opening more than ten connections requires confirmation. Up to six connect concurrently; individual failures do not cancel every target.
 - Bulk edits apply only fields explicitly selected, such as username, port, authentication, or jump host. Review the preview and skipped count. FTP/plugin targets do not accept unsupported private-key authentication types.
 
-**Result, mechanism, and caution:** Bulk edits change saved profiles, not the identity of already logged-in terminals. Check the selection before bulk deletion. [Synchronized input](#workspace) is separate from opening multiple sessions; bulk opening does not automatically broadcast commands.
+**Result, mechanism, and caution:** Bulk edits change saved profiles, not the identity of already logged-in terminals. Check the selection before bulk deletion. Plain bulk opening does not broadcast commands; to type into a group of machines at once, use **Open All with Synced Input** or [synchronized input](#workspace).
 
 ### 4.3 Import from Xshell, WinSCP, and OpenSSH
 
@@ -301,7 +302,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Entry point and operation:** `Alt+Enter` opens suggestions; use ↑↓ to select, Enter to adopt, and Esc to close. Empty input can show quick commands/history. Right/End accepts available ghost text; Tab remains native shell completion.
 
-**Result and how it works:** Local suggestions rank recent history, common subcommands, and quick commands. They do not guarantee awareness of the remote program, permissions, paths, or command safety. Adopting usually inserts text; review before executing. Placeholder-bearing quick-command suggestions are not expanded here, and multiline quick commands are excluded from completion.
+**Result and how it works:** Local suggestions rank recent history, common subcommands, and quick commands. They do not guarantee awareness of the remote program, permissions, paths, or command safety. Adopting usually inserts text; review before executing. Adopting a quick command with `{{placeholders}}` (including accepting it as ghost text with Right/End) first opens the same value prompt as the quick-command panel and writes the expanded command only after you confirm; cancelling writes nothing. Multiline quick commands are excluded from completion.
 
 ### 7.6 Line Numbers, Times, Command Blocks, and Shell Integration
 
@@ -326,7 +327,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **High risk:** Every machine in a channel can receive the same destructive command. Verify host, permissions, and shell state before joining. Pause or leave before entering passwords, switching to production, or running interactive programs, to avoid broadcasting secrets or control keys.
 
-**Entry point and steps:** Use tab context menus to join synchronized-input channel A/B/C/D. Put cooperating tabs in the same channel and check their top banner. Keyboard input, IME text, and pasted text from an active member are broadcast. Pause, leave, or close the channel from the banner; leave promptly when finished.
+**Entry point and steps:** Use tab context menus to join synchronized-input channel A/B/C/D. Put cooperating tabs in the same channel and check their top banner. Keyboard input, IME text, and pasted text from an active member are broadcast. Pause, leave, or close the channel from the banner; leave promptly when finished. From the Explorer, a group's **Open All with Synced Input** (or **Open N Connections with Synced Input** on a multiple selection) opens only the connections that produce a terminal (SFTP/FTP/workspaces are skipped), always in new tabs, and puts them in the first free channel; if all four channels are in use nothing is opened. Tabs already open for the same machines are left alone. When all have finished connecting a notice says how many joined and how many did not connect — those miss anything typed meanwhile.
 
 **Result and how it works:** Members are peers, not a permanent master and followers. Pausing stops both sending and receiving for that tab; disconnected tabs do not receive input. Different encodings are transcoded. Writing to the destination PTY does not rebroadcast and form a loop.
 
@@ -338,7 +339,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Entry point:** Manage groups/snippets under **Settings → Snippets** and use them from the sidebar Quick Commands panel.
 
-**Steps:** Create a name and command body, optionally grouped. Use `{{name}}` or `{{name=default}}`, for example `cd {{directory=/tmp}}`. Supply prompted values, check the expanded result, and send. For single-line commands, decide separately whether to press Enter.
+**Steps:** Create a name and command body, optionally grouped. Use `{{name}}` or `{{name=default}}`, for example `cd {{directory=/tmp}}`. Supply prompted values, check the expanded result, and send. For single-line commands, decide separately whether to press Enter. The prompt pre-fills the values last entered for the same quick command (kept for this run only, never written to disk or synced; parameters whose names look like passwords, tokens, or verification codes are not remembered, and a field left blank falls back to its default).
 
 **Result and how it works:** The host substitutes strings and sends the body to the current terminal. It is not a remote script-management service and does not validate shell escaping, permissions, or paths. Multiline sends prefer bracketed paste; otherwise follow confirmation behavior. There is no automatic-execution switch for quick commands.
 
@@ -937,7 +938,7 @@ VelaShell.exe ssh://demo@192.0.2.10:2222
 VelaShell.exe -f "C:\Temp\session.xsh"
 ```
 
-Override username/port/password/private key with `-l/-user`, `-p/-port`, `-pw/-password`, and `-i/-identity`; secrets are deliberately absent above. `-newtab` identifies a target only with a scheme; a scheme-less tab name is currently ignored. Candidates are tried as `-url`, bare URL, `-newtab`, then session file. ssh/sftp/ftp/ftps are supported; telnet/rlogin report unsupported. **Post-connect commands/scripts via `-e/-s` are not implemented.** `.xsh` reads recognized target/private-key fields but does not decrypt Xshell passwords.
+Override username/port/password/private key with `-l/-user`, `-p/-port`, `-pw/-password`, and `-i/-identity`; secrets are deliberately absent above. `-newtab` identifies a target only with a scheme; a scheme-less value is a tab name and becomes the tab title (shown on its own row in the confirmation dialog; the status bar still names the real target). Candidates are tried as `-url`, bare URL, `-newtab`, then session file. ssh/sftp/ftp/ftps are supported; telnet/rlogin report unsupported. **Post-connect commands/scripts via `-e/-s` are not implemented.** `.xsh` reads recognized target/private-key fields but does not decrypt Xshell passwords.
 
 **Steps and result:** Check target, source, and credential presence in the portal-triggered confirmation before connecting. Fingerprint/authentication still apply. Without supplied credentials, an existing matching profile may be reused. One-time-credential temporary requests are not added to the saved tree; recent history does not store passwords. Choose not-to-ask-again only for genuinely trusted targets; clear external-target trust in Settings when needed.
 
