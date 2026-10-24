@@ -89,7 +89,12 @@ VelaShell connects to the network only in these situations:
 4. **Update checks.** VelaShell asks GitHub for a release manifest when you click "Check for
    updates" in Settings, and also once at startup while "Check for updates at startup" is on
    (Settings → General; on by default) so that a new version can appear in the message centre.
-   GitHub receives your IP address and the request, as with any website visit. **In the
+   GitHub receives your IP address and the request, as with any website visit. If you also turn
+   on "Download updates automatically" (Settings → General, right below it; **off by default**),
+   a new version found by that startup check is downloaded from the same GitHub release in the
+   background and verified against its SHA-256 checksum — one more download of the installer
+   package, carrying nothing about you either. It is only installed when you click restart.
+   Clicking "Check for Updates" on the About page downloads the update as before. **In the
    Microsoft Store version this feature is disabled entirely**, because the Store handles updates.
 
 5. **Plugin update checks.** When you open the Plugin Manager window, VelaShell asks the plugin
@@ -252,7 +257,10 @@ VelaShell 仅在以下情形联网:
 4. **检查更新。** 你在设置中点击"检查更新"时,以及"启动时检查更新"处于开启状态时
    (「设置 → 常规」,默认开启)启动时的那一次,VelaShell 会向 GitHub 请求发布清单,
    以便有新版本时投一条消息到消息中心。与访问任何网站一样,GitHub 会收到你的 IP 地址与
-   该请求。**Microsoft Store 版本完全禁用了该功能**,更新由商店接管。
+   该请求。如果你另外打开了"自动下载更新"(「设置 → 常规」,就在它下面;**默认关闭**),
+   启动检查发现的新版本会在后台从同一个 GitHub Release 下载、并按 SHA-256 校验 —— 多出的
+   只是一次安装包下载,同样不带任何关于你的信息;只有你点了重启才会安装。在"关于"页点
+   "检查更新"照旧会接着下载。**Microsoft Store 版本完全禁用了该功能**,更新由商店接管。
 
 5. **插件更新检查。** 打开「插件管理」窗口时,VelaShell 会向插件商店
    (<https://market.easilynet.top>,仅 https)问一次:你装的这几个插件有没有新版本。

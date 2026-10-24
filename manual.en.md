@@ -89,7 +89,9 @@ This manual is for users managing servers, working in terminals, and transferrin
 
 **Steps and result:** Run **Check for updates**. When a newer version exists, supported writable Windows/macOS distributions start downloading right away, check the SHA-256 recorded in the same release's `latest.json` (an integrity check, not a signature check), then exit and replace the application. If manual installation is requested, obtain the package from the release entry point. **Linux currently checks versions only; download and install updates manually. The Microsoft Store edition is updated by the Store.**
 
-**How it works and cautions:** Finishing a download does not switch the running process to the new version; complete the exit/restart. Application files and user data are separate, but back up before updating. Do not rely on older descriptions of user-selectable update channels or background automatic downloads that the current interface does not provide.
+**Background download:** **Settings → General → Download updates automatically** (off by default; it needs **Check for updates on startup** on and only appears on the writable Windows/macOS installs described above). When on, a newer version found by the startup check is downloaded in the background and verified against the same SHA-256; the message center then says it is ready, and **Restart & update** on About finishes the job. It never restarts by itself. A failed background download shows no error: the message center falls back to the plain "update available" entry, and the next startup check tries again.
+
+**How it works and cautions:** Finishing a download does not switch the running process to the new version; complete the exit/restart. Application files and user data are separate, but back up before updating. Do not rely on older descriptions of user-selectable update channels that the current interface does not provide.
 
 <a id="navigation"></a>
 ## 3. Main Window and Entry-Point Reference
@@ -584,7 +586,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 | Section | Controls | Mechanism, result, and caution |
 | --- | --- | --- |
-| Startup & Window | Start at login, restore sessions, restore split layout, minimize to tray on close, startup update check | Autostart currently supports the current Windows user only; restore sessions alone reconnects one by one into a single pane, and only **Restore split layout** (off by default, available while restore sessions is on) also rebuilds splits, tab order, and pinned tabs, covering the connections online at exit plus local terminals; tray presence is not exit |
+| Startup & Window | Start at login, restore sessions, restore split layout, minimize to tray on close, startup update check, automatic update download | Autostart currently supports the current Windows user only; restore sessions alone reconnects one by one into a single pane, and only **Restore split layout** (off by default, available while restore sessions is on) also rebuilds splits, tab order, and pinned tabs, covering the connections online at exit plus local terminals; tray presence is not exit; automatic download is off by default, rides on the startup check, and only downloads and verifies without restarting (see 2.4) |
 | Message Center | Update notices, HTTPS feed URL, interval 1–168 hours, announcements | Startup update messages require both checking and notifications; clear the feed URL to stop that source |
 | Language & Region | System language or Simplified Chinese/English/Traditional Chinese/Japanese/Korean | Does not change remote system language or terminal byte encoding |
 | Connection Defaults | Port, timeout, keepalive | Defaults for new connections; supported per-profile overrides apply; proxy has a separate page |
@@ -1098,7 +1100,7 @@ This manual intentionally does not promise:
 - Local shells across all platforms: only Windows ConPTY is currently integrated; Linux/macOS lack local-terminal actions.
 - Arbitrary floating docking windows; layout persistence beyond layout templates and **Restore split layout** (without a template or that option, splits and pinned tabs last for this run only); syncing or exporting layout templates across devices.
 - Master-password protection of the whole database; encrypted application-settings export; profiles embedded in that export; proxy passwords in it. Current settings export is unencrypted JSON with the proxy password removed.
-- Linux in-app update installation, selectable update channels, or automatic background downloads described by older material. Linux installs manually; Store is Store-managed.
+- Linux in-app update installation or selectable update channels described by older material. Background automatic download exists only on writable Windows/macOS installs; Linux installs manually; Store is Store-managed.
 - Per-profile proxies; dual-remote synchronization/keep-up-to-date; automatic remote→local watching; resuming transfers automatically at startup (the persisted transfer queue is only restored as "paused" and connects when you click "Resume").
 - Sixel/Kitty terminal images or ZMODEM. X11 graphical applications are not terminal image protocols.
 - Redis/S3/Telnet/serial/Docker without plugins. S3 is not POSIX storage and does not supply SSH chmod/upload-resume semantics.

@@ -44,13 +44,24 @@
     </Grid>
     <!-- 「启动时检查更新」恢复展示:它此前被判为"更新服务尚未接入"而隐藏(设置审计 R-01),
          但这个开关已经有实际消费者 —— 消息中心据它决定要不要在启动时查一次新版本。
-         更新频道 / 自动下载仍未接线,继续隐藏。 -->
+         更新频道在关于页。 -->
     <Grid ColumnDefinitions="*,Auto">
       <StackPanel Spacing="2">
         <TextBlock Classes="row-label" Text="{loc:Localize SetGeneral_CheckUpdatesOnStartup}" />
         <TextBlock Classes="row-desc" Text="{loc:Localize SetGeneral_CheckUpdatesOnStartupDesc}" />
       </StackPanel>
       <ToggleSwitch Grid.Column="1" IsChecked="{Binding General.CheckUpdatesOnStartup}" VerticalAlignment="Center" />
+    </Grid>
+    <!-- 「自动下载更新」挂在启动检查上:检查关着就没有可下的东西,开关跟着置灰。
+         只在能原地换版的安装上出现(CanSelfUpdate:Linux、商店版与只读目录为假)——
+         那几种安装上它什么也不会做,摆出来就是又一个"界面在骗人"(设置审计 R-03)。 -->
+    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding CanSelfUpdate}">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="row-label" Text="{loc:Localize SetGeneral_AutoDownloadUpdates}" />
+        <TextBlock Classes="row-desc" Text="{loc:Localize SetGeneral_AutoDownloadUpdatesDesc}" />
+      </StackPanel>
+      <ToggleSwitch Grid.Column="1" IsChecked="{Binding General.AutoDownloadUpdates}"
+                    IsEnabled="{Binding General.CheckUpdatesOnStartup}" VerticalAlignment="Center" />
     </Grid>
 
     <Border Classes="sep" />

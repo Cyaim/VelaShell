@@ -2257,6 +2257,9 @@
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>下载失败,请稍后重试。</value>
   </data>
+  <data name="SetAbout_AutoDownloadFailed" xml:space="preserve">
+    <value>更新 {0} 没能在后台下载下来，下次启动检查时会再试；也可以现在点「检查更新」重新下载。</value>
+  </data>
   <data name="SetAbout_UpdateCheckFailed" xml:space="preserve">
     <value>检查更新失败,请稍后重试。</value>
   </data>
@@ -4650,6 +4653,15 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Notify_UpdateAction" xml:space="preserve">
     <value>前往关于页</value>
   </data>
+  <data name="Notify_UpdateReadyTitle" xml:space="preserve">
+    <value>VelaShell {0} 已下载好</value>
+  </data>
+  <data name="Notify_UpdateReadyBody" xml:space="preserve">
+    <value>当前版本 {0}。更新已在后台下载并校验，到「关于」页重启即可完成更新。</value>
+  </data>
+  <data name="Notify_UpdateReadyAction" xml:space="preserve">
+    <value>去重启更新</value>
+  </data>
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>打开日志目录</value>
   </data>
@@ -4733,6 +4745,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartupDesc" xml:space="preserve">
     <value>启动时查一次有没有新版本；发现新版本会出现在消息中心。</value>
+  </data>
+  <data name="SetGeneral_AutoDownloadUpdates" xml:space="preserve">
+    <value>自动下载更新</value>
+  </data>
+  <data name="SetGeneral_AutoDownloadUpdatesDesc" xml:space="preserve">
+    <value>启动时检查到新版本后，在后台下载并校验，好了提示重启即可更新；不会自己重启。需要开着「启动时检查更新」，且本机安装能原地更新（Linux、商店版与只读安装目录不适用）。</value>
   </data>
   <data name="SetGeneral_MessagesSection" xml:space="preserve">
     <value>消息中心</value>

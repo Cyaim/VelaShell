@@ -7,6 +7,12 @@ using VelaShell.Infrastructure.Diagnostics;
 namespace VelaShell.Services;
 
 /// <summary>
+/// 后台下载启动检查选定的那个更新并校验(设置 → 常规 → 自动下载更新),返回是否已有可重启换版的包。
+/// 实现是 <c>SettingsViewModel.DownloadUpdateInBackgroundAsync</c>:与关于页共用一条下载链路和忙状态。
+/// </summary>
+public delegate Task<bool> BackgroundUpdateDownload();
+
+/// <summary>
 /// 攒出这一轮该投进消息中心的条目:有新版本了、订阅源的公告、上次运行留下的崩溃记录。
 /// </summary>
 /// <remarks>
@@ -37,12 +43,8 @@ public static class NotificationSources
     {
         ArgumentNullException.ThrowIfNull(settings);
         List<NotificationItem> incoming = [];
-        // 两个开关都要点头:「通知我有更新」是消息中心的偏好,「启动时检查更新」是
-        // 更新功能自己的开关 —— 后者关掉时连网络请求都不该发。
         if (updateService is not null
-            && settings.Notifications.NotifyUpdates
-            && settings.General.CheckUpdatesOnStartup
-            && await BuildUpdateNotificationAsync(updateService).ConfigureAwait(true) is { } update)
+            && await CollectUpdateAsync(settings, updateService, backgroundDownload: null).ConfigureAwait(true) is { } update)
         {
             incoming.Add(update);
         }
@@ -59,6 +61,83 @@ public static class NotificationSources
         }
         return incoming;
     }
+
+    /// <summary>
+    /// 启动时的更新这一轮:查一次,该自动下载就在后台下完、校验完,再决定投哪一条。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 「启动时检查更新」是联网的总闸,关掉时一个请求都不发。开着时,查了之后总得有人要这个结果 ——
+    /// 要么投消息(「提醒可用更新」),要么后台下载(「自动下载更新」);两样都不要就不查。
+    /// </para>
+    /// <para>
+    /// 自动下载只在能原地换版的安装上发生(<see cref="IUpdateService.CanSelfUpdate" />:Linux、商店版、
+    /// 只读目录都不算)。下好了投「已下载好,重启即可更新」,不重启;没下成不打扰,退回普通的「有新版本」,
+    /// 下一次启动检查再试。下载要几十秒到几分钟,所以调用方要把它和资讯源分开投 —— 别让一条公告等着它。
+    /// </para>
+    /// </remarks>
+    /// <param name="settings">当前设置。</param>
+    /// <param name="updateService">更新服务。</param>
+    /// <param name="backgroundDownload">后台下载入口(关于页那条下载链路);null = 只检查不下载。</param>
+    /// <returns>要投的那一条;不查、没有新版本、或这次的结果不需要投消息时为 null。</returns>
+    public static async Task<NotificationItem?> CollectUpdateAsync(
+        AppSettings settings,
+        IUpdateService updateService,
+        BackgroundUpdateDownload? backgroundDownload)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(updateService);
+        bool notify = settings.Notifications.NotifyUpdates;
+        bool autoDownload = backgroundDownload is not null && settings.General.AutoDownloadUpdates;
+        if (!settings.General.CheckUpdatesOnStartup || !(notify || autoDownload))
+        {
+            return null;
+        }
+        if (await BuildUpdateNotificationAsync(updateService).ConfigureAwait(true) is not { } available)
+        {
+            return null;
+        }
+        if (autoDownload && updateService.CanSelfUpdate)
+        {
+            bool ready;
+            try
+            {
+                ready = await backgroundDownload!().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                // 下载入口自己会兜住失败;这里再兜一层,免得一个意外的异常吞掉下面那条退回的消息。
+                Trace.WriteLine($"[VelaShell] Background update download failed: {ex.Message}");
+                ready = false;
+            }
+            if (ready && updateService.ReadyUpdate is { } snapshot)
+            {
+                return notify ? BuildUpdateReadyNotification(snapshot.Version, updateService.CurrentVersion) : null;
+            }
+        }
+        return notify ? available : null;
+    }
+
+    /// <summary>后台下载好、校验过的更新:点它落到关于页,那里有「重启并更新」。</summary>
+    /// <param name="readyVersion">就绪包的版本号。</param>
+    /// <param name="currentVersion">当前运行的版本号。</param>
+    /// <returns>消息条目。</returns>
+    public static NotificationItem BuildUpdateReadyNotification(string readyVersion, string? currentVersion) =>
+        new()
+        {
+            // 与「有新版本」的 update:<版本> 分开:同一个版本先投过「有新版本」(当时没开自动下载),
+            // 下好之后这一条要重新亮起未读,而不是被当成同一条去重掉。
+            Id = $"update-ready:{readyVersion}",
+            Kind = NotificationKind.Update,
+            Title = Strings.Format("Notify_UpdateReadyTitle", readyVersion),
+            Body = Strings.Format("Notify_UpdateReadyBody", currentVersion ?? "?"),
+            PublishedAt = DateTime.UtcNow,
+            Link = new()
+            {
+                Label = Strings.Get("Notify_UpdateReadyAction"),
+                CommandId = "app.settings.about"
+            }
+        };
 
     /// <summary>
     /// 上次运行留下了未提示过的崩溃记录时,攒一条消息中心条目(带"打开日志目录"动作)。

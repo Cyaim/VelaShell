@@ -161,6 +161,11 @@ public class App : Application
                 channelProvider: async () =>
                     (await sp.GetRequiredService<ISettingsService>().GetSnapshotAsync()).General.UpdateChannel
             ))
+            // 自动下载更新:启动检查在主窗口的消息中心里跑,下载交给设置页那条链路(同一个忙状态,
+            // 关于页开着时看得到进度、不会并发再起一份)。委托里才去取设置视图模型 —— 不为一个默认关着的
+            // 开关在启动时就把整个设置页的视图模型造出来。
+            .AddSingleton<BackgroundUpdateDownload>(sp =>
+                () => sp.GetRequiredService<SettingsViewModel>().DownloadUpdateInBackgroundAsync())
             .AddSingleton(sp => new WindowLayoutStore(sp.GetService<IAppDataStore>()))
             .AddSingleton<QuickCommandsViewModel>()
             .AddSingleton<SettingsViewModel>()

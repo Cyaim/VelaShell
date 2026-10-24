@@ -1820,6 +1820,9 @@
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>ダウンロードに失敗しました。後でもう一度お試しください。</value>
   </data>
+  <data name="SetAbout_AutoDownloadFailed" xml:space="preserve">
+    <value>更新 {0} をバックグラウンドでダウンロードできませんでした。次回起動時の確認で再試行します。今すぐ「更新を確認」を押してダウンロードすることもできます。</value>
+  </data>
   <data name="SetAbout_UpdateCheckFailed" xml:space="preserve">
     <value>更新の確認に失敗しました。後でもう一度お試しください。</value>
   </data>
@@ -4401,6 +4404,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Notify_UpdateAction" xml:space="preserve">
     <value>バージョン情報を開く</value>
   </data>
+  <data name="Notify_UpdateReadyTitle" xml:space="preserve">
+    <value>VelaShell {0} のダウンロードが完了しました</value>
+  </data>
+  <data name="Notify_UpdateReadyBody" xml:space="preserve">
+    <value>現在のバージョンは {0} です。更新はバックグラウンドでダウンロード・検証済みです。「バージョン情報」から再起動すると更新が完了します。</value>
+  </data>
+  <data name="Notify_UpdateReadyAction" xml:space="preserve">
+    <value>再起動して更新</value>
+  </data>
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>ログフォルダーを開く</value>
   </data>
@@ -4484,6 +4496,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartupDesc" xml:space="preserve">
     <value>起動時に新しいバージョンを確認します。見つかるとメッセージセンターに表示されます。</value>
+  </data>
+  <data name="SetGeneral_AutoDownloadUpdates" xml:space="preserve">
+    <value>更新を自動でダウンロード</value>
+  </data>
+  <data name="SetGeneral_AutoDownloadUpdatesDesc" xml:space="preserve">
+    <value>起動時の確認で新しいバージョンが見つかったら、バックグラウンドでダウンロードして検証し、再起動すれば更新できることをお知らせします。勝手に再起動はしません。「起動時に更新を確認」がオンで、その場で自己更新できるインストールのときだけ有効です（Linux、ストア版、書き込みできないインストール先は対象外）。</value>
   </data>
   <data name="SetGeneral_MessagesSection" xml:space="preserve">
     <value>メッセージセンター</value>

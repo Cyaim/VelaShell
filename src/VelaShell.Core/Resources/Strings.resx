@@ -2148,6 +2148,9 @@ Paste anyway?</value>
   <data name="SetAbout_DownloadFailed" xml:space="preserve">
     <value>Download failed. Please try again later.</value>
   </data>
+  <data name="SetAbout_AutoDownloadFailed" xml:space="preserve">
+    <value>Update {0} couldn't be downloaded in the background. It will be retried at the next startup check, or click "Check for Updates" to download it now.</value>
+  </data>
   <data name="SetAbout_UpdateCheckFailed" xml:space="preserve">
     <value>Couldn't check for updates. Please try again later.</value>
   </data>
@@ -4517,6 +4520,15 @@ Overwrite it?</value>
   <data name="Notify_UpdateAction" xml:space="preserve">
     <value>Go to About</value>
   </data>
+  <data name="Notify_UpdateReadyTitle" xml:space="preserve">
+    <value>VelaShell {0} is ready to install</value>
+  </data>
+  <data name="Notify_UpdateReadyBody" xml:space="preserve">
+    <value>You are on {0}. The update was downloaded and verified in the background; restart from the About page to finish.</value>
+  </data>
+  <data name="Notify_UpdateReadyAction" xml:space="preserve">
+    <value>Restart to update</value>
+  </data>
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>Open logs folder</value>
   </data>
@@ -4600,6 +4612,12 @@ Overwrite it?</value>
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartupDesc" xml:space="preserve">
     <value>Look for a newer version at launch. A found update appears in the message center.</value>
+  </data>
+  <data name="SetGeneral_AutoDownloadUpdates" xml:space="preserve">
+    <value>Download updates automatically</value>
+  </data>
+  <data name="SetGeneral_AutoDownloadUpdatesDesc" xml:space="preserve">
+    <value>When the startup check finds a new version, download and verify it in the background, then tell you a restart will finish the update. It never restarts on its own. Only applies when "Check for updates on startup" is on and VelaShell can update itself in place (not on Linux, the Store version or a read-only install folder).</value>
   </data>
   <data name="SetGeneral_MessagesSection" xml:space="preserve">
     <value>Message center</value>

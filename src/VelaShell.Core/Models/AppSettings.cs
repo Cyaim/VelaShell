@@ -131,6 +131,14 @@ public class AppSettings
             Security.FingerprintChangeDefaultMigrated = true;
         }
 
+        // 自动下载更新以前默认开、却没有界面也没人读(设置审计 R-03)。现在接上了运行时、默认关:
+        // 存量配置里的 true 必然是旧默认值而不是用户选的(没有地方能选),只关这一次。
+        if (!General.AutoDownloadUpdatesOptInMigrated)
+        {
+            General.AutoDownloadUpdates = false;
+            General.AutoDownloadUpdatesOptInMigrated = true;
+        }
+
         // 代理默认值从 none 改成 system(见 ProxyOptions.Type)。老配置里落盘的那个 none
         // 分不清是"用户选的"还是"从来没动过",而两者在没有系统代理时行为一模一样 ——
         // 于是只抬这一次:抬完打标记,此后主动选的 none 永远算数。
@@ -347,12 +355,27 @@ public class GeneralOptions : ObservableOptions
         set => Set(ref field, value);
     } = "stable";
 
-    /// <summary>是否自动下载可用更新。</summary>
+    /// <summary>
+    /// 启动时检查到新版本后,是否在后台自动下载并校验(设置 → 常规,紧挨「启动时检查更新」)。
+    /// 下完只提示「重启即可更新」,不会自己重启;下载失败不打扰,下一次启动检查再试。
+    /// </summary>
+    /// <remarks>
+    /// 默认关:它比单纯的检查多一次几十 MB 的外呼下载(维护约定第 6 条,见 PRIVACY.md)。
+    /// 只在能原地换版的安装上生效(Windows / macOS 的可写目录);Linux、商店版与只读目录照旧只检查。
+    /// 关于页手动「检查更新」本来就会接着下载,不受这个开关管。
+    /// </remarks>
     public bool AutoDownloadUpdates
     {
         get;
         set => Set(ref field, value);
-    } = true;
+    }
+
+    /// <summary>
+    /// <see cref="AutoDownloadUpdates" />「改为默认关闭」的一次性迁移标记。这个字段早年默认 <see langword="true" />,
+    /// 却从没有界面、也没有任何消费者,存量配置里落盘的那个 true 只能是旧默认值 —— 于是统一关一次并打上标记,
+    /// 之后完全听用户的(见 <see cref="AppSettings.Normalize" />)。
+    /// </summary>
+    public bool AutoDownloadUpdatesOptInMigrated { get; set; }
 
     // 行为
     /// <summary>退出应用前确认;开启“最小化到托盘”后点关闭按钮只隐藏窗口,不触发本确认(设置审计 C-03)。</summary>

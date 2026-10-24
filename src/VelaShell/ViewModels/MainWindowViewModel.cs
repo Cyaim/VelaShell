@@ -254,10 +254,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         ILocalizationService? localization = null,
         ShortcutKeymapService? shortcutKeymap = null,
         ICredentialResolver? credentialResolver = null,
-        ISharedCredentialRepository? sharedCredentials = null
+        ISharedCredentialRepository? sharedCredentials = null,
+        BackgroundUpdateDownload? backgroundUpdateDownload = null
     )
     {
         _credentialResolver = credentialResolver;
+        _backgroundUpdateDownload = backgroundUpdateDownload;
         // 共享凭据被改名、删除(删除会把凭据拷回引用它的连接)之后,树上缓存的配置就旧了:
         // 带着一条已删除的引用去连,只会换来一个"凭据不存在"的登录框。
         sharedCredentials?.Changed += OnSharedCredentialsChanged;
@@ -1923,6 +1925,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     private INotificationCenter? _notificationCenter;
 
+    /// <summary>启动检查发现新版本后的后台下载入口(设置 → 常规 → 自动下载更新);null = 只检查不下载(单测)。</summary>
+    private readonly BackgroundUpdateDownload? _backgroundUpdateDownload;
+
     /// <summary>
     /// 装配消息中心:面板、铃铛角标,以及两个内容来源(本地的更新检查 + 订阅的资讯源)。
     /// 无消息中心(单元测试)时整块跳过。
@@ -2003,12 +2008,22 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     private async Task RefreshNotificationSourcesAsync(
         INotificationCenter center, IAnnouncementFeed? feed, IUpdateService? updateService)
     {
+        // 启动这一轮要查更新时,设置必须是真读出来的:「启动时检查更新」关掉的人一个请求都不该发,
+        // 「自动下载更新」开着的人也不能因为快照还没缓存就被当成默认值(关)。
+        AppSettings settings = _latestSettings
+            ?? (updateService is null ? new() : await LoadSettingsSnapshotAsync().ConfigureAwait(true));
+        // 更新与资讯源分开投:自动下载要几十秒到几分钟,公告与崩溃提示不该排在它后面。
         IReadOnlyList<NotificationItem> incoming =
-            await NotificationSources.CollectAsync(_latestSettings ?? new(), feed, updateService)
-                                     .ConfigureAwait(true);
+            await NotificationSources.CollectAsync(settings, feed, updateService: null).ConfigureAwait(true);
         if (incoming.Count > 0)
         {
             await center.PublishAsync(incoming).ConfigureAwait(true);
+        }
+        if (updateService is not null
+            && await NotificationSources.CollectUpdateAsync(settings, updateService, _backgroundUpdateDownload)
+                                        .ConfigureAwait(true) is { } update)
+        {
+            await center.PublishAsync([update]).ConfigureAwait(true);
         }
     }
 

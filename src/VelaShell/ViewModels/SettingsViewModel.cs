@@ -1089,6 +1089,47 @@ public partial class SettingsViewModel : ReactiveObject
         }
     }
 
+    /// <summary>
+    /// 启动检查发现新版本之后的后台下载(设置 → 常规 → 自动下载更新)。走的就是关于页「检查更新」那条下载链路
+    /// (断点续传、SHA-256 校验、停滞重连),而且占着同一个忙状态 —— 关于页开着时照样看得到进度、
+    /// 「检查更新」按钮不会再起一份并发下载;下完同样出现「重启并更新」。
+    /// </summary>
+    /// <remarks>
+    /// 不重启、不弹任何东西。失败只在关于页的状态行留一句说明,不报错、不发消息,下一次启动检查再试;
+    /// 已经有就绪的包就直接认它,不再下载。别的更新操作正在进行(用户恰好在关于页点了检查)时什么也不做 ——
+    /// 那一路自己会下载,这里再插一脚只会撞上「已有操作进行中」。
+    /// </remarks>
+    /// <returns>是否已有校验通过、可以重启换版的包。</returns>
+    public async Task<bool> DownloadUpdateInBackgroundAsync()
+    {
+        if (IsUpdating || _updateService is null || UpdatesManagedByStore)
+        {
+            return ReadyUpdate is not null;
+        }
+        IsUpdating = true;
+        try
+        {
+            if (ReadyUpdate is { } ready)
+            {
+                ShowReadyUpdate(ready.Version);
+                return true;
+            }
+            // 启动检查选定的目标被别的检查清掉了,或者这台安装压根不能原地换版:没有可下的,安静地退出。
+            if (OperatingSystem.IsLinux() || !CanSelfUpdate || _updateService.AvailableVersion is not { Length: > 0 } version)
+            {
+                return false;
+            }
+            await DownloadUpdateWithProgressAsync(
+                progress => _updateService.DownloadUpdateAsync(progress),
+                () => Strings.Format("SetAbout_AutoDownloadFailed", version));
+            return ReadyUpdate is not null;
+        }
+        finally
+        {
+            EndUpdateOperation();
+        }
+    }
+
     private static bool IsSameUpdate(UpdateManifest left, UpdateManifest right) =>
         string.Equals(left.Version, right.Version, StringComparison.Ordinal)
         && string.Equals(left.Tag, right.Tag, StringComparison.Ordinal)
@@ -1101,8 +1142,10 @@ public partial class SettingsViewModel : ReactiveObject
         && string.Equals(left.Sha256, right.Sha256, StringComparison.OrdinalIgnoreCase)
         && left.Size == right.Size;
 
-    private async Task DownloadUpdateWithProgressAsync(Func<IProgress<UpdateDownloadProgress>, Task> download)
+    private async Task DownloadUpdateWithProgressAsync(
+        Func<IProgress<UpdateDownloadProgress>, Task> download, Func<string>? failureStatus = null)
     {
+        failureStatus ??= static () => Strings.Get("SetAbout_DownloadFailed");
         try
         {
             UpdateDownloadTracker tracker = new();
@@ -1155,9 +1198,10 @@ public partial class SettingsViewModel : ReactiveObject
                 await heartbeat;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            UpdateStatus = Strings.Get("SetAbout_DownloadFailed");
+            Trace.WriteLine($"[VelaShell] Update download failed: {ex.Message}");
+            UpdateStatus = failureStatus();
             return;
         }
         // 只认服务交出的就绪快照:下载正常返回却没有快照,就是什么也没下到,不能报「已就绪」。
@@ -1167,7 +1211,7 @@ public partial class SettingsViewModel : ReactiveObject
         }
         else
         {
-            UpdateStatus = Strings.Get("SetAbout_DownloadFailed");
+            UpdateStatus = failureStatus();
         }
     }
 
