@@ -4729,6 +4729,24 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="TunnelSvc_TargetUnreachable" xml:space="preserve">
     <value>目標無法連線:請確認目標主機從伺服器可以存取(內網位址/防火牆)。</value>
   </data>
+  <data name="TunnelSvc_LocalTargetRefused" xml:space="preserve">
+    <value>本機這頭的目標拒絕連線:這條隧道的目標是從本機去連的,請確認本機上的服務正在那個位址與連接埠上監聽(127.0.0.1 就是這台電腦)。</value>
+  </data>
+  <data name="TunnelSvc_LocalTargetUnreachable" xml:space="preserve">
+    <value>本機這頭的目標不可達:這條隧道的目標是從本機去連的,請確認這台電腦能存取它(內網位址 / 防火牆 / 網域名稱解析)。</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailed" xml:space="preserve">
+    <value>本機沒能在 {0} 上監聽({1}):請確認監聽位址是這台電腦上的位址,連接埠沒有被系統保留或禁止。</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailedNoDetail" xml:space="preserve">
+    <value>本機沒能在 {0} 上監聽:請確認監聽位址是這台電腦上的位址,連接埠沒有被系統保留或禁止。</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailed" xml:space="preserve">
+    <value>本機沒能在通訊端 {0} 上監聽({1}):請確認所在目錄存在且可寫入。</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailedNoDetail" xml:space="preserve">
+    <value>本機沒能在通訊端 {0} 上監聽:請確認所在目錄存在且可寫入。</value>
+  </data>
   <data name="TunnelSvc_PermitRemoteOpenRequired" xml:space="preserve">
     <value>遠端動態轉發要有放行名單:寫上遠端可以經它連的 主機:連接埠,全放寫 any。</value>
   </data>

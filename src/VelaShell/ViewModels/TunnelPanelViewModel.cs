@@ -329,11 +329,20 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
     /// <summary>放行名单只有远程动态转发有。</summary>
     public bool IsPermitRemoteOpenVisible => NewTunnelType == TunnelType.RemoteDynamicForward;
 
-    /// <summary>主机那一栏的标签:远程动态转发填的是服务器上的监听地址,不是目标。</summary>
-    public string RemoteHostLabel => Strings.Get(NewTunnelType == TunnelType.RemoteDynamicForward ? "Tunnel_ServerBindHostLabel" : "Tunnel_TargetHostLabel");
+    /// <summary>
+    /// 主机那一栏的标签:远程 / 远程动态转发填的是服务器上的监听地址,不是目标 —— 远程转发的目标是本机的服务(本地端口那栏)。
+    /// 曾经三种类型共用「目标主机(服务器视角)」,远程转发填的明明是服务器在哪个地址上监听。
+    /// </summary>
+    public string RemoteHostLabel => Strings.Get(ListensOnServer ? "Tunnel_ServerBindHostLabel" : "Tunnel_TargetHostLabel");
 
-    /// <summary>「锁定 127.0.0.1」那个勾选框的字:远程动态转发是「只在服务器本机监听」。</summary>
-    public string LoopbackOptionText => Strings.Get(NewTunnelType == TunnelType.RemoteDynamicForward ? "Tunnel_ListenOnServerLoopback" : "Tunnel_ForwardToLoopback");
+    /// <summary>这个类型是请服务器监听(远程 / 远程动态转发):主机与端口两栏说的是服务器上的监听端。</summary>
+    private bool ListensOnServer => NewTunnelType is TunnelType.RemoteForward or TunnelType.RemoteDynamicForward;
+
+    /// <summary>
+    /// 「锁定 127.0.0.1」那个勾选框的字:远程 / 远程动态转发是「只在服务器本机监听」(不让服务器所在网络里的别人连上来),
+    /// 本地转发是「转发到服务器本机」。
+    /// </summary>
+    public string LoopbackOptionText => Strings.Get(ListensOnServer ? "Tunnel_ListenOnServerLoopback" : "Tunnel_ForwardToLoopback");
 
     /// <summary>
     /// 表单中的放行名单(远程动态转发):<c>主机:端口</c> 空白或逗号隔开,单独一条 <c>any</c> 是全放。默认空 —— 不替用户全放。
@@ -1688,6 +1697,8 @@ public class TunnelPanelViewModel : ReactiveObject, IDisposable, IDraggablePanel
         ex switch
         {
             VelaSshTailscaleAuthenticationException => ex.Message,
+            // 本机监听没起来:服务层已经说清在哪儿、为什么。排在端口被占之前 —— 套接字路径上的「地址已被占用」不是端口的事。
+            TunnelBindFailedException => ex.Message,
             OperationCanceledException => Strings.Get("Msg_OperationCancelled"),
             InvalidOperationException when ex.Message.Contains("not connected", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
                 => Strings.Get("Msg_ServerConnectionUnavailable"),

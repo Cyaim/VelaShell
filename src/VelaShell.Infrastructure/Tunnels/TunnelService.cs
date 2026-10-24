@@ -4,10 +4,12 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 using VelaShell.Core.Models;
+using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Core.Tunnels;
 using VelaShell.Ssh.Channels;
+using VelaShell.Ssh.Diagnostics;
 
 namespace VelaShell.Infrastructure.Tunnels;
 
@@ -367,8 +369,15 @@ public class TunnelService(
     /// 把转发通道异常翻译成用户可理解的提示;最常见的是把目标填成了服务器的
     /// 公网地址,而服务只监听 127.0.0.1。
     /// </summary>
-    internal static string DescribeForwardError(Exception ex)
+    /// <param name="ex">转发通道上报的异常。</param>
+    /// <param name="type">
+    /// 隧道类型:远程 / 远程动态转发的目标是<b>本机</b>去连的(连不上时是本机这头的套接字报的错),
+    /// 提示要说「本机这头」;本地 / 动态转发的目标由服务器去连,提示说「从服务器视角」。
+    /// 曾经不分类型,远程转发的本机服务没起来时,行上写的却是「目标地址是从服务器视角解析的」。
+    /// </param>
+    internal static string DescribeForwardError(Exception ex, TunnelType type)
     {
+        bool targetIsLocal = type is TunnelType.RemoteForward or TunnelType.RemoteDynamicForward;
         // 库把底层异常包在 SshForwardException / SshChannelException 里,
         // 宿主的 SshInterop 又会再包一层 —— 所以沿整条 InnerException 链找,而不是只看一层。
         SocketException? socket = null;
@@ -379,9 +388,9 @@ public class TunnelService(
         switch (socket?.SocketErrorCode)
         {
             case SocketError.ConnectionRefused:
-                return Strings.Get("TunnelSvc_TargetRefused");
-            case SocketError.TimedOut or SocketError.HostUnreachable:
-                return Strings.Get("TunnelSvc_TargetUnreachable");
+                return Strings.Get(targetIsLocal ? "TunnelSvc_LocalTargetRefused" : "TunnelSvc_TargetRefused");
+            case SocketError.TimedOut or SocketError.HostUnreachable or SocketError.NetworkUnreachable or SocketError.HostNotFound:
+                return Strings.Get(targetIsLocal ? "TunnelSvc_LocalTargetUnreachable" : "TunnelSvc_TargetUnreachable");
         }
         // 认原因码而不是认文案:库的消息是中文,「administratively prohibited」这串字只在
         // 服务端原文里才有。原因码是协议定死的(RFC 4254 §5.1),不随谁的措辞变。
@@ -444,7 +453,7 @@ public class TunnelService(
             // 记到 LastError 供界面展示,否则用户只看到"运行中"却连不上。
             handle.ChannelError += ex =>
             {
-                tunnelInfo.LastError = DescribeForwardError(ex);
+                tunnelInfo.LastError = DescribeForwardError(ex, config.Type);
                 logger?.LogWarning(ex, "Tunnel {TunnelId} channel error", tunnelInfo.Id);
             };
             List<TunnelInfo> tunnels = _sessionTunnels.GetOrAdd(sessionId, _ => []);
@@ -464,7 +473,63 @@ public class TunnelService(
         {
             tunnelInfo.Status = TunnelStatus.Error;
             logger?.LogError(ex, "Failed to create {Direction} forward tunnel for session {SessionId}", direction, sessionId);
+            if (DescribeLocalBindFailure(ex, request) is { } message)
+            {
+                throw new TunnelBindFailedException(message, ex);
+            }
             throw;
         }
+    }
+
+    /// <summary>
+    /// 本机监听起不来(SSH 库报 <see cref="SshFailureReason.ForwardBindFailed" />)时给一句本地化的话:
+    /// 在哪儿(配置里的地址与端口、或套接字路径)、为什么(套接字错误码)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 库的消息是写给开发者的中文,宿主的 <c>SshInterop.Localize</c> 对这个原因码刻意不翻 —— 换成一句通用文案会丢掉消息里的路径与端口。
+    /// 隧道这里配置在手,路径与端口不必从库的句子里抠,所以在这一层说清楚。
+    /// </para>
+    /// <para>
+    /// TCP 端口被占(<see cref="SocketError.AddressAlreadyInUse" />)不在这里说:面板按「本地端口 N 已被其它程序占用」报,那句已经够具体。
+    /// 远程转发的监听在服务器上,失败是 <see cref="SshFailureReason.ForwardRejected" />,不归这里。
+    /// </para>
+    /// </remarks>
+    internal static string? DescribeLocalBindFailure(Exception ex, PortForwardRequest request)
+    {
+        if (request.Kind is not (PortForwardKind.Local or PortForwardKind.Dynamic))
+        {
+            return null;
+        }
+        bool bindFailed = false;
+        SocketException? socket = null;
+        Exception? innermost = null;
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            bindFailed |= e is VelaShell.Ssh.Diagnostics.SshException { Reason: SshFailureReason.ForwardBindFailed };
+            socket ??= e as SocketException;
+            innermost = e;
+        }
+        if (!bindFailed)
+        {
+            return null;
+        }
+        if (request.BoundSocketPath is { } path)
+        {
+            string detail = socket is not null
+                ? socket.SocketErrorCode.ToString()
+                : innermost is not null && innermost is not VelaShell.Ssh.Diagnostics.SshException ? innermost.Message : string.Empty;
+            return detail.Length == 0
+                ? Strings.Format("TunnelSvc_LocalSocketBindFailedNoDetail", path)
+                : Strings.Format("TunnelSvc_LocalSocketBindFailed", path, detail);
+        }
+        if (socket?.SocketErrorCode is SocketError.AddressAlreadyInUse)
+        {
+            return null;
+        }
+        string endpoint = $"{HostAddress.Bracket(HostAddress.Normalize(request.BoundHost))}:{request.BoundPort}";
+        return socket is null
+            ? Strings.Format("TunnelSvc_LocalBindFailedNoDetail", endpoint)
+            : Strings.Format("TunnelSvc_LocalBindFailed", endpoint, socket.SocketErrorCode.ToString());
     }
 }

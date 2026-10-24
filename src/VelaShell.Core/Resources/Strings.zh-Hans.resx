@@ -4729,6 +4729,24 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="TunnelSvc_TargetUnreachable" xml:space="preserve">
     <value>目标不可达:请确认目标主机从服务器可以访问(内网地址/防火墙)。</value>
   </data>
+  <data name="TunnelSvc_LocalTargetRefused" xml:space="preserve">
+    <value>本机这头的目标拒绝连接:这条隧道的目标是从本机去连的,请确认本机上的服务正在那个地址与端口上监听(127.0.0.1 就是这台电脑)。</value>
+  </data>
+  <data name="TunnelSvc_LocalTargetUnreachable" xml:space="preserve">
+    <value>本机这头的目标不可达:这条隧道的目标是从本机去连的,请确认这台电脑能访问它(内网地址 / 防火墙 / 域名解析)。</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailed" xml:space="preserve">
+    <value>本机没能在 {0} 上监听({1}):请确认监听地址是这台电脑上的地址,端口没有被系统保留或禁止。</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailedNoDetail" xml:space="preserve">
+    <value>本机没能在 {0} 上监听:请确认监听地址是这台电脑上的地址,端口没有被系统保留或禁止。</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailed" xml:space="preserve">
+    <value>本机没能在套接字 {0} 上监听({1}):请确认所在目录存在且可写。</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailedNoDetail" xml:space="preserve">
+    <value>本机没能在套接字 {0} 上监听:请确认所在目录存在且可写。</value>
+  </data>
   <data name="TunnelSvc_PermitRemoteOpenRequired" xml:space="preserve">
     <value>远程动态转发要有放行名单:写上远端可以经它连的 主机:端口,全放写 any。</value>
   </data>

@@ -4464,6 +4464,24 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="TunnelSvc_TargetUnreachable" xml:space="preserve">
     <value>대상에 연결할 수 없습니다. 서버에서 대상 호스트에 접근할 수 있는지 확인하세요(내부 주소/방화벽).</value>
   </data>
+  <data name="TunnelSvc_LocalTargetRefused" xml:space="preserve">
+    <value>이 컴퓨터 쪽 대상이 연결을 거부했습니다. 이 터널의 대상은 이 컴퓨터에서 연결하므로, 이 컴퓨터의 서비스가 해당 주소와 포트에서 수신 대기 중인지 확인하세요(127.0.0.1은 이 컴퓨터입니다).</value>
+  </data>
+  <data name="TunnelSvc_LocalTargetUnreachable" xml:space="preserve">
+    <value>이 컴퓨터에서 대상에 연결할 수 없습니다. 이 터널의 대상은 이 컴퓨터에서 연결하므로, 여기서 닿는지 확인하세요(내부 주소, 방화벽, 이름 확인).</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailed" xml:space="preserve">
+    <value>이 컴퓨터에서 {0} 수신 대기를 시작하지 못했습니다({1}). 수신 대기 주소가 이 컴퓨터의 주소인지, 포트가 시스템에 예약되거나 막혀 있지 않은지 확인하세요.</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailedNoDetail" xml:space="preserve">
+    <value>이 컴퓨터에서 {0} 수신 대기를 시작하지 못했습니다. 수신 대기 주소가 이 컴퓨터의 주소인지, 포트가 시스템에 예약되거나 막혀 있지 않은지 확인하세요.</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailed" xml:space="preserve">
+    <value>소켓 {0}에서 수신 대기를 시작하지 못했습니다({1}). 해당 디렉터리가 있고 쓸 수 있는지 확인하세요.</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailedNoDetail" xml:space="preserve">
+    <value>소켓 {0}에서 수신 대기를 시작하지 못했습니다. 해당 디렉터리가 있고 쓸 수 있는지 확인하세요.</value>
+  </data>
   <data name="TunnelSvc_PermitRemoteOpenRequired" xml:space="preserve">
     <value>원격 동적 포워딩에는 허용 목록이 필요합니다. 원격이 연결할 수 있는 호스트:포트를 쓰거나, 모두 허용하려면 any라고 쓰세요.</value>
   </data>

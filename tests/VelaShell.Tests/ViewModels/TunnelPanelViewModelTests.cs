@@ -775,6 +775,41 @@ public class TunnelPanelViewModelTests
     }
 
     /// <summary>
+    /// 远程转发的主机与端口两栏是服务器上的监听端(目标是本机的服务):标签说「服务器监听地址」、勾选框说「只在服务器本机监听」。
+    /// 曾经与本地转发共用「目标主机(服务器视角)」「转发到服务器本机」。本地转发不变。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public void RemoteForward_LabelsTheServerListenEnd()
+    {
+        _vm.NewTunnelType = TunnelType.RemoteForward;
+        Assert.AreEqual(Strings.Get("Tunnel_ServerBindHostLabel"), _vm.RemoteHostLabel);
+        Assert.AreEqual(Strings.Get("Tunnel_ListenOnServerLoopback"), _vm.LoopbackOptionText);
+
+        _vm.NewTunnelType = TunnelType.LocalForward;
+        Assert.AreEqual(Strings.Get("Tunnel_TargetHostLabel"), _vm.RemoteHostLabel);
+        Assert.AreEqual(Strings.Get("Tunnel_ForwardToLoopback"), _vm.LoopbackOptionText);
+    }
+
+    /// <summary>
+    /// 本机监听没起来时服务层给的那句(在哪儿、为什么)原样显示 —— 哪怕底下是「地址已被占用」,
+    /// 也不能被当成「本地端口 N 已被占用」(套接字路径上的占用不是端口的事)。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("TunnelUI")]
+    public async Task CreateTunnel_BindFailure_ShowsTheServiceMessage()
+    {
+        _workflowService.CreateTunnelAsync(Arg.Any<Guid>(), Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>())
+                        .Returns(Task.FromException<TunnelInfo>(new TunnelBindFailedException("本机没能在套接字上监听",
+                            new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.AddressAlreadyInUse))));
+        FillValidLocalForm();
+
+        await _vm.CreateTunnelCommand.Execute().FirstAsync();
+
+        Assert.AreEqual("本机没能在套接字上监听", _vm.ErrorMessage);
+    }
+
+    /// <summary>
     /// 远程动态转发随表单往返:服务器监听地址 / 端口进 RemoteHost / RemotePort,本地端口存 0,放行名单按条存;
     /// 编辑时填回表单,取消后名单清空。
     /// </summary>

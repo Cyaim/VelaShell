@@ -4622,6 +4622,24 @@ Overwrite it?</value>
   <data name="TunnelSvc_TargetUnreachable" xml:space="preserve">
     <value>Target unreachable: confirm the target host is reachable from the server (internal address / firewall).</value>
   </data>
+  <data name="TunnelSvc_LocalTargetRefused" xml:space="preserve">
+    <value>The target on this computer refused the connection: for this tunnel the target is reached from this computer, so make sure the service here is listening on that address and port (127.0.0.1 means this computer).</value>
+  </data>
+  <data name="TunnelSvc_LocalTargetUnreachable" xml:space="preserve">
+    <value>The target cannot be reached from this computer: for this tunnel the target is reached from this computer, so make sure it is reachable from here (internal address, firewall, name resolution).</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailed" xml:space="preserve">
+    <value>Couldn't listen on {0} on this computer ({1}): check that the address belongs to this computer and that the port is not reserved or blocked by the system.</value>
+  </data>
+  <data name="TunnelSvc_LocalBindFailedNoDetail" xml:space="preserve">
+    <value>Couldn't listen on {0} on this computer: check that the address belongs to this computer and that the port is not reserved or blocked by the system.</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailed" xml:space="preserve">
+    <value>Couldn't listen on the socket {0} ({1}): check that its directory exists and is writable.</value>
+  </data>
+  <data name="TunnelSvc_LocalSocketBindFailedNoDetail" xml:space="preserve">
+    <value>Couldn't listen on the socket {0}: check that its directory exists and is writable.</value>
+  </data>
   <data name="TunnelSvc_PermitRemoteOpenRequired" xml:space="preserve">
     <value>A remote dynamic forward needs an allow list: enter the host:port destinations the remote side may reach, or “any” to allow everything.</value>
   </data>
