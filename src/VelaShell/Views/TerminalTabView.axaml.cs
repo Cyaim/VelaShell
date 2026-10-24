@@ -165,13 +165,14 @@ public partial class TerminalTabView : UserControl
         // 锚在光标行本身:下面放得下就贴着它的下沿往下展开,放不下(最大化后提示符在末行)由定位器
         // 翻到它的上沿之上 —— 两种情况都不挡住提示行。上下各留一道缝,缝做在锚点矩形上而不是
         // VerticalOffset 上:偏移量翻转时不跟着反向,翻上去就成了往提示行里压。
-        PasswordPopup.PlacementRect = control.GetCursorRect().Inflate(new Thickness(0, PasswordPopupGap));
+        PasswordPopup.PlacementRect = control.GetCursorRect().Inflate(new Thickness(0, CursorPopupGap));
         PasswordPopup.IsOpen = true;
         FireAndForget.Run(() => LoadPasswordItemsAsync(request, repository));
     }
 
-    // 弹层与光标行之间的缝(与补全弹层的 VerticalOffset 同宽)。
-    private const double PasswordPopupGap = 2;
+    // 贴着光标行弹出的两个弹层(共享密码、命令补全)与光标行之间的缝,上下各一道。
+    // 缝做在锚点矩形上,不用 VerticalOffset:定位器把弹层翻到上方时偏移量不跟着反向,翻上去就压进光标行。
+    private const double CursorPopupGap = 2;
 
     private async Task LoadPasswordItemsAsync(SharedPasswordFillRequest request, ISharedCredentialRepository repository)
     {
@@ -389,6 +390,9 @@ public partial class TerminalTabView : UserControl
 
     /// <summary>弹层锚定的矩形(测试用;弹层是独立顶层,视觉树里查不到)。</summary>
     internal Rect PasswordPlacementRectForTest => PasswordPopup.PlacementRect ?? default;
+
+    /// <summary>命令补全弹层是否开着(测试用)。</summary>
+    internal bool SuggestPopupOpenForTest => SuggestPopup.IsOpen;
 
     /// <summary>键盘高亮的是第几项;-1 = 没有高亮(测试用)。</summary>
     internal int PasswordHighlightForTest => PasswordList.SelectedIndex;
@@ -834,7 +838,8 @@ public partial class TerminalTabView : UserControl
         if (_termControl is not null)
         {
             // 锚定在输入起点列(而非光标列):面板不随键入逐列漂移,与主流终端一致。
-            SuggestPopup.PlacementRect = _termControl.GetCursorRect(input.Length);
+            // 与光标行的缝照密码弹层的做法留在锚点矩形上(见 CursorPopupGap),底下放不下翻到上方时也不压进光标行。
+            SuggestPopup.PlacementRect = _termControl.GetCursorRect(input.Length).Inflate(new Thickness(0, CursorPopupGap));
         }
         SuggestPopup.IsOpen = true;
         SuggestDiag.Log(

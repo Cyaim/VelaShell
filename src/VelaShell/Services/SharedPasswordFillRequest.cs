@@ -35,6 +35,7 @@ internal sealed class SharedPasswordFillRequest : IDisposable
         _prompt = CapturePrompt();
         _control.TypedInput += OnInput;
         _control.OutputUpdated += OnOutput;
+        _bridge?.InputQueued += OnInputQueued;
     }
 
     private (int, int, int, int, string) CapturePrompt() =>
@@ -42,16 +43,49 @@ internal sealed class SharedPasswordFillRequest : IDisposable
             _control.GetBufferLine(_control.CursorRow));
 
     /// <summary>
-    /// 键入或提示行变化让请求作废的那一刻(UI 线程)。宿主据此收起列表 —— 否则空口令上的 Backspace
+    /// 键入、别的出站输入或提示行变化让请求作废的那一刻(UI 线程)。宿主据此收起列表 —— 否则空口令上的 Backspace
     /// 这类不改变跟踪输入的按键会留下一个点哪项都只回「已过期」的列表。
     /// </summary>
-    /// <remarks>不经键入的出站输入(同步输入、防空闲)不报:那些只在点选时由 <see cref="IsValid" /> 拦下。</remarks>
+    /// <remarks>
+    /// 不经键入的出站输入(同步输入转来的、防空闲的 NUL、程序注入)经桥的 <see cref="SshTerminalBridge.InputQueued" /> 报来,
+    /// 同样作废 —— 曾经只在点选时由 <see cref="IsValid" /> 拦下,列表开着、点哪项都只回「已过期」。
+    /// 已经点选、正在读取口令时例外:这时不收列表,由 <see cref="FillAsync" /> 回「已过期」并在列表上说明什么都没发出去
+    /// (悄悄收口会让人以为已经填上了)。
+    /// </remarks>
     internal event Action? Expired;
 
     /// <summary>光标所在的提示行已经不是开列表时那一行(位置、内容、屏幕或编码变了)。</summary>
     internal bool PromptChanged => CapturePrompt() != _prompt;
 
     private void OnInput(byte[] _) => Expire();
+
+    /// <summary>桥上有输入入队:防空闲在计时器线程上,先封送回 UI 线程再判。</summary>
+    private void OnInputQueued()
+    {
+        // 按入队那一刻算「是不是正在读口令」:封送到 UI 线程时 FillAsync 可能已经回完「已过期」,
+        // 那时再收列表,刚写上的说明就跟着没了。
+        bool duringFill = Volatile.Read(ref _sending);
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            OnOutboundInput(duringFill);
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(() => OnOutboundInput(duringFill));
+        }
+    }
+
+    private void OnOutboundInput(bool duringFill)
+    {
+        // 读取口令期间来的(含填入自己那一次入队)不收列表,交给 FillAsync 的复核去回「已过期」。
+        // 代次没变说明这一下早于开列表(封送晚到了),不算。
+        if (duringFill || _bridge is not { } bridge || bridge.InputGeneration == _inputGeneration)
+        {
+            return;
+        }
+        Expire();
+    }
+
     private void OnOutput()
     {
         if (PromptChanged)
@@ -154,5 +188,6 @@ internal sealed class SharedPasswordFillRequest : IDisposable
         _expired = true;
         _control.TypedInput -= OnInput;
         _control.OutputUpdated -= OnOutput;
+        _bridge?.InputQueued -= OnInputQueued;
     }
 }

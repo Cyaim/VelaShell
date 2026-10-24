@@ -595,6 +595,36 @@ public class TerminalBridgeTests
     }
 
     /// <summary>
+    /// 每一次入队都报 <see cref="SshTerminalBridge.InputQueued" />,且与 <see cref="SshTerminalBridge.InputGeneration" /> 同步:
+    /// 键入、SendRaw(同步输入与程序注入)、敏感输入、补注四条路一条不漏;没入队(代次对不上)的不报。
+    /// 共享密码列表靠它在不经键入的出站之后收起(plan.md §222)。
+    /// </summary>
+    [TestMethod]
+    public async Task InputQueued_FiresForEveryEnqueue_InStepWithTheInputGeneration()
+    {
+        _shellStream.CanRead.Returns(false);
+        _shellStream.CanWrite.Returns(true);
+        _shellStream.WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        await using var bridge = new SshTerminalBridge(_terminal, _shellStream);
+        int queued = 0;
+        bridge.InputQueued += () => queued++;
+        long start = bridge.InputGeneration;
+
+        _terminal.UserInput += Raise.Event<Action<byte[]>>("s"u8.ToArray());
+        bridge.SendRaw([0]);
+        Assert.IsTrue(bridge.TrySendRaw("secret\r"u8.ToArray(), bridge.InputGeneration));
+        Assert.IsTrue(bridge.TrySendInjection("\e]633;P;VelaShell=0badc0de\a"u8.ToArray(), " hook\n"u8.ToArray(), bridge.InputGeneration));
+        Assert.AreEqual(4, queued);
+        Assert.AreEqual(start + 4, bridge.InputGeneration);
+
+        // 代次对不上:什么都没入队,也就不报。
+        Assert.IsFalse(bridge.TrySendRaw("late\r"u8.ToArray(), start));
+        Assert.AreEqual(4, queued);
+        await bridge.DrainWritesAsync();
+    }
+
+    /// <summary>
     /// 会话中途的补注:决定"可以注"之后只要有任何输入入过队,就一个字节都不发 ——
     /// 否则那一行会接在用户刚敲的半截命令后面。
     /// </summary>
