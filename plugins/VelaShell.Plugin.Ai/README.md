@@ -384,7 +384,10 @@ GitHub Copilot 这三条走的是这一路 —— 因为**没有第二条路**:�
 登录换来的短期令牌照旧走 `Authorization: Bearer`,没有凭据时由 SDK 读 `ANTHROPIC_API_KEY` /
 `ANTHROPIC_AUTH_TOKEN` 的那条路也不动。它排在账号附加头(`ExtraHeadersHandler`)**外层**:附加头后施加,
 用户明确配置的 `Authorization` / `x-api-key` 总是最后落定,不会被盖掉。`anthropic-version` 照 SDK 的发
-(13.x 为 `2026-10-21`)—— 请求体是按这个版本拼的。`AnthropicWireTests` 抓真实请求头守着这几条。
+(13.x 为 `2026-10-21`)—— 请求体是按这个版本拼的。拉模型清单那条自己拼的请求如今跟着发同一个版本号
+(`EndpointModelCatalog.AnthropicVersion`,以前留在 `2023-06-01`;维护者 2026-10-25 决定),鉴权头本来就一致
+(Key 走 `x-api-key`、令牌走 Bearer)。`AnthropicWireTests` 抓真实请求头守着这几条,清单请求与聊天请求逐个头比对。
+思考档位(`thinking.budget_tokens` 还是交给适配器的 `Reasoning`)留给后续用真 Key 实测,这一轮不动。
 
 **判据取自请求体里的 `"stream":true`,不看响应的 `Content-Type`。** 第一版按
 `Content-Type == text/event-stream` 判断,在真实中转站上整个没生效 —— 它给流式响应贴的是

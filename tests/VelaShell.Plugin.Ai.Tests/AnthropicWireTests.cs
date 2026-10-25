@@ -86,6 +86,31 @@ public sealed class AnthropicWireTests
         Assert.AreEqual("2026-10-21", headers["anthropic-version"]);
     }
 
+    /// <summary>
+    /// 拉模型清单那条自己拼的请求,版本头与鉴权头跟聊天请求一模一样(维护者 2026-10-25 决定,#657 复审跟进②):
+    /// 以前清单还发 <c>2023-06-01</c>,与 SDK 13.x 聊天请求的 <c>2026-10-21</c> 不一致 —— 同一把 Key 在两条路上
+    /// 碰到的可能是两个版本的接口。拿真 SDK 发出去的那一份比,SDK 再换版本号时这里会红。
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, DisplayName = "手填的 Key")]
+    [DataRow(true, DisplayName = "登录换回来的令牌")]
+    public async Task ModelListRequest_SendsTheSameVersionAndAuthHeadersAsChat(bool token)
+    {
+        ProviderCredential credential = token
+            ? new ProviderCredential("sk-ant-oat-1", true, [new("anthropic-beta", "oauth-2025-04-20")])
+            : ProviderCredential.Key("sk-ant-key");
+        (NameValueCollection chat, _) = await SendAsync(credential);
+
+        using HttpRequestMessage list = EndpointModelCatalog.Request("https://api.anthropic.com",
+            ChatProtocol.AnthropicMessages, credential)!;
+
+        foreach (string name in new[] { "anthropic-version", "x-api-key", "Authorization", "anthropic-beta" })
+        {
+            string? sent = list.Headers.TryGetValues(name, out IEnumerable<string>? values) ? string.Join(",", values) : null;
+            Assert.AreEqual(chat[name], sent, $"{name}:清单请求与聊天请求要一致");
+        }
+    }
+
     [TestMethod]
     public async Task LoginToken_StaysBearer_AndKeepsItsBetaHeader()
     {

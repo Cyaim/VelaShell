@@ -31,10 +31,12 @@ internal static class EndpointModelCatalog
 {
     /// <summary>Anthropic 要求每条请求都带的 API 版本头。</summary>
     /// <remarks>
-    /// 聊天请求由 SDK 自己带版本头(13.x 起是 <c>2026-10-21</c>);这条自己拼的列表请求仍发 <c>2023-06-01</c> ——
-    /// 模型列表接口在两个版本下行为一样,而只认得旧版本号的老兼容端点也不会因此拒绝。
+    /// 与聊天请求一致:聊天请求由 SDK 自己带版本头,13.x 起是 <c>2026-10-21</c>,这条自己拼的列表请求跟着发同一个
+    /// (维护者 2026-10-25 决定,#657 复审跟进②)。以前这里留着 <c>2023-06-01</c>,同一把 Key 在拉清单与聊天两条路上
+    /// 碰到的是两个版本的接口,清单拉得到、聊天却 400 这类问题就无从对照。鉴权头本来就一致(Key 走 <c>x-api-key</c>、
+    /// 令牌走 Bearer,见 <see cref="Request" />)。<c>AnthropicWireTests</c> 拿真 SDK 的请求头比对,SDK 换版本号时会红。
     /// </remarks>
-    public const string AnthropicVersion = "2023-06-01";
+    public const string AnthropicVersion = "2026-10-21";
 
     /// <summary>
     /// 拼出模型列表接口的地址;地址不可用时返回 null。
