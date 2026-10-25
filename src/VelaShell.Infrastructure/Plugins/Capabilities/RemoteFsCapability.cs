@@ -14,10 +14,16 @@ namespace VelaShell.Infrastructure.Plugins.Capabilities;
 internal sealed partial class RemoteFsCapability(ISftpService sftp, ISshConnectionService connections,
     CancellationToken lifetime = default, string? pluginId = null, PluginPermissionGate? uploadPermissions = null) : IRemoteFsApi, IDisposable
 {
+    // 链接两个字段(SDK 2.1.3)随条目交给插件:进程内直接带,隔离模式 fs/list、fs/stat 的 JSON 自动带上 ——
+    // 插件(含 AI 插件)经 IRemoteFsApi 看得到链接,删除、递归时才知道只处理链接本身。
     private static RemoteFileEntry Map(RemoteFileInfo info) => new(
         info.Name, info.FullPath, info.IsDirectory, info.Size,
         new DateTimeOffset(DateTime.SpecifyKind(info.LastModified, DateTimeKind.Utc), TimeSpan.Zero),
-        info.Permissions, info.Owner, info.Group);
+        info.Permissions, info.Owner, info.Group)
+    {
+        IsSymbolicLink = info.IsSymbolicLink,
+        LinkTarget = info.IsSymbolicLink ? info.LinkTarget : null
+    };
 
     /// <summary>解析并校验会话 id;无效或未连接时抛 <see cref="PluginSessionNotFoundException" />。</summary>
     private Guid Resolve(string sessionId)
