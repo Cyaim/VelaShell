@@ -1887,6 +1887,60 @@
   <data name="LayoutTemplate_Untitled" xml:space="preserve">
     <value>未命名分頁</value>
   </data>
+  <data name="LayoutTemplate_Export" xml:space="preserve">
+    <value>匯出…</value>
+  </data>
+  <data name="LayoutTemplate_Import" xml:space="preserve">
+    <value>匯入…</value>
+  </data>
+  <data name="LayoutTemplate_ExportDialogTitle" xml:space="preserve">
+    <value>匯出版面配置範本</value>
+  </data>
+  <data name="LayoutTemplate_ImportDialogTitle" xml:space="preserve">
+    <value>匯入版面配置範本</value>
+  </data>
+  <data name="LayoutTemplate_FileType" xml:space="preserve">
+    <value>VelaShell 版面配置範本</value>
+  </data>
+  <data name="LayoutTemplate_NothingToExport" xml:space="preserve">
+    <value>還沒有可匯出的版面配置範本。</value>
+  </data>
+  <data name="LayoutTemplate_Exported" xml:space="preserve">
+    <value>已匯出 {0} 個版面配置範本到 {1}。檔案裡只有連線設定的 Id 與開啟方式,不含密碼。</value>
+  </data>
+  <data name="LayoutTemplate_ExportFailed" xml:space="preserve">
+    <value>版面配置範本沒有匯出成功:{0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportFailed" xml:space="preserve">
+    <value>檔案讀取失敗:{0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportInvalid" xml:space="preserve">
+    <value>這不是 VelaShell 的版面配置範本檔案。</value>
+  </data>
+  <data name="LayoutTemplate_ImportEmpty" xml:space="preserve">
+    <value>檔案裡沒有可用的版面配置範本。</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictTitle" xml:space="preserve">
+    <value>有範本已經存在</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictMessage" xml:space="preserve">
+    <value>檔案裡有 {0} 個範本與本機已有的是同一個或同名:{1}。取代本機的,還是另存為新範本、兩份都留?</value>
+  </data>
+  <data name="LayoutTemplate_ImportReplace" xml:space="preserve">
+    <value>取代</value>
+  </data>
+  <data name="LayoutTemplate_ImportKeepBoth" xml:space="preserve">
+    <value>另存為新範本</value>
+  </data>
+  <data name="LayoutTemplate_Imported" xml:space="preserve">
+    <value>已匯入 {0} 個版面配置範本。</value>
+  </data>
+  <data name="LayoutTemplate_ImportedMissing" xml:space="preserve">
+    <value>已匯入 {0} 個版面配置範本;其中 {1} 個引用的連線本機沒有,開啟時會略過那些分頁。</value>
+  </data>
+  <data name="LayoutTemplate_CopyName" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>所有分頁</value>
   </data>
@@ -3831,6 +3885,12 @@
   <data name="SetSync_ScopeAppSettings" xml:space="preserve">
     <value>應用程式設定</value>
   </data>
+  <data name="SetSync_ScopeLayoutTemplates" xml:space="preserve">
+    <value>版面配置範本</value>
+  </data>
+  <data name="SetSync_ScopeLayoutTemplatesDesc" xml:space="preserve">
+    <value>// 單獨一個檔案,按範本逐個合併;範本只記連線設定的 Id,另一台裝置上要有同一批連線(隨連線設定同步)才打得開</value>
+  </data>
   <data name="SetSync_ScopeProfilesDesc" xml:space="preserve">
     <value>// 伺服器連線、分組與連接埠轉送隧道;本機獨有的連線不會被雲端刪除</value>
   </data>
@@ -4542,6 +4602,18 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="SyncSvc_GistNotFound" xml:space="preserve">
     <value>Gist 不存在或權杖無權存取(請檢查 Gist Id 與權杖帳號)。</value>
+  </data>
+  <data name="SyncSvc_LayoutsFailed" xml:space="preserve">
+    <value>(版面配置範本這次沒有同步:{0})</value>
+  </data>
+  <data name="SyncSvc_LayoutsLocked" xml:space="preserve">
+    <value>(版面配置範本這次略過:雲端那份是端對端加密的,本裝置沒設口令或口令不同)</value>
+  </data>
+  <data name="SyncSvc_LayoutsNewer" xml:space="preserve">
+    <value>(版面配置範本這次略過:雲端那份是更新版本的 VelaShell 寫的,本裝置升級之後才能同步)</value>
+  </data>
+  <data name="SyncSvc_LayoutsPushed" xml:space="preserve">
+    <value>(本機的版面配置範本改動也一併推上了雲端)</value>
   </data>
   <data name="SyncSvc_MissingPayload" xml:space="preserve">
     <value>雲端資料缺少載荷。</value>

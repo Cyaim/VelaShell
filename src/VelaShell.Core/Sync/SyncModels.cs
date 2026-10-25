@@ -32,6 +32,12 @@ public class SyncSettings
     /// <summary>同步范围:是否同步快捷命令/代码片段。</summary>
     public bool SyncSnippets { get; set; } = true;
 
+    /// <summary>
+    /// 同步范围:是否同步布局模板(Gist 里单独的 <c>velashell-layouts.json</c>,见 <see cref="LayoutTemplatesSyncEnvelope" />)。
+    /// 默认开,与其余三项一样:模板不含机密,只记连接配置的 Id 与打开方式;存量的同步配置里没有这个字段,读出来也是开。
+    /// </summary>
+    public bool SyncLayoutTemplates { get; set; } = true;
+
     /// <summary>GitHub PAT(gist 权限),ISecretProtector 加密存储。</summary>
     public string? ProtectedToken { get; set; }
 

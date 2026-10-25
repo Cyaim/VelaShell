@@ -1,11 +1,13 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Avalonia.Threading;
 using ReactiveUI;
 using VelaShell.Core.Layouts;
 using VelaShell.Core.Resources;
 using VelaShell.Docking;
 using VelaShell.Docking.Model;
 using VelaShell.Presentation.ViewModels;
+using VelaShell.Services;
 using VelaShell.Services.Layouts;
 
 namespace VelaShell.ViewModels;
@@ -27,6 +29,23 @@ public interface ILayoutTemplateDialogs
     /// <param name="danger">确认按钮是否按危险操作渲染(删除)。</param>
     /// <returns>用户点了确认返回 <see langword="true" />。</returns>
     Task<bool> ConfirmAsync(string title, string message, string confirmText, bool danger);
+
+    /// <summary>多选一(导入撞上已有模板时:替换 / 另存 / 取消)。</summary>
+    /// <param name="title">弹窗标题。</param>
+    /// <param name="message">正文。</param>
+    /// <param name="choices">按钮文字,按顺序排;第一个是默认动作。</param>
+    /// <param name="cancelResult">按 Esc 关掉时返回的下标。</param>
+    /// <returns>被点的按钮下标。</returns>
+    Task<int> ChooseAsync(string title, string message, IReadOnlyList<string> choices, int cancelResult);
+
+    /// <summary>选导出文件的保存位置;取消返回 null。</summary>
+    /// <param name="suggestedFileName">建议的文件名。</param>
+    /// <returns>本机路径。</returns>
+    Task<string?> PickExportPathAsync(string suggestedFileName);
+
+    /// <summary>选要导入的文件;取消返回 null。</summary>
+    /// <returns>本机路径。</returns>
+    Task<string?> PickImportPathAsync();
 }
 
 /// <summary>模板列表里的一行。</summary>
@@ -68,6 +87,9 @@ public sealed class LayoutTemplatesViewModel : ReactiveObject
     /// <summary>提示里最多点名几个标签,其余用省略号。</summary>
     private const int MaxNamedInNotice = 5;
 
+    /// <summary>导入文件的大小上限(与设置导入同一个数)。</summary>
+    internal const long MaxImportBytes = 4L * 1024 * 1024;
+
     private readonly LayoutTemplateStore _store;
     private readonly DockWorkspace _layout;
     private readonly LayoutTemplateLauncher _launcher;
@@ -101,6 +123,9 @@ public sealed class LayoutTemplatesViewModel : ReactiveObject
         _toasts = toasts ?? throw new ArgumentNullException(nameof(toasts));
         _now = now ?? (() => DateTimeOffset.UtcNow);
         _launcher = new(layout, opener ?? throw new ArgumentNullException(nameof(opener)));
+        // 云同步把别的设备的模板写进来了(可能在后台线程):回到界面线程重读一遍列表。
+        // 自己的增删改不走这条,它们当场就改了内存里的列表。
+        _store.SyncApplied += (_, _) => Dispatcher.UIThread.Post(() => FireAndForget.Run(LoadAsync));
     }
 
     /// <summary>全部模板,按名字的自然顺序。</summary>
@@ -278,6 +303,154 @@ public sealed class LayoutTemplatesViewModel : ReactiveObject
         _templates.RemoveAll(template => template.Id == item.Template.Id);
         Publish();
         return true;
+    }
+
+    // ---- 导出 / 导入 ----
+
+    /// <summary>把全部模板导出成一个 JSON 文件(格式见 <see cref="LayoutTemplateFile" />;不含机密)。</summary>
+    /// <param name="dialogs">这一次用的对话框;不给用 <see cref="Dialogs" />。</param>
+    /// <returns>写出了文件返回 <see langword="true" />。</returns>
+    public async Task<bool> ExportAsync(ILayoutTemplateDialogs? dialogs = null)
+    {
+        if ((dialogs ?? Dialogs) is not { } ui)
+        {
+            return false;
+        }
+        if (_templates.Count == 0)
+        {
+            _toasts.Warning(Strings.Get("LayoutTemplate_NothingToExport"));
+            return false;
+        }
+        string? path = await ui.PickExportPathAsync("velashell-layout-templates.json").ConfigureAwait(true);
+        if (string.IsNullOrEmpty(path))
+        {
+            return false;
+        }
+        LayoutTemplate[] templates = [.. _templates];
+        try
+        {
+            await File.WriteAllTextAsync(path, LayoutTemplateFile.Export(templates, _now().UtcDateTime)).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            _toasts.Error(Strings.Format("LayoutTemplate_ExportFailed", ex.Message));
+            return false;
+        }
+        _toasts.Info(Strings.Format("LayoutTemplate_Exported", templates.Length, path));
+        return true;
+    }
+
+    /// <summary>
+    /// 从导出文件导入模板。与本机已有的是同一个(同 Id)或重名(不分大小写)的,先问一次:全部替换、全部另存为新模板,或者取消;
+    /// 其余直接加进来。导入的模板引用的连接在本机不存在时提示一句(打开时照常跳过那些标签)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 「替换」沿用原来那一条的 Id 与创建时间(同「存为模板」撞名时的替换),换上文件里的名字与布局;
+    /// 「另存」给新 Id,名字后面补序号(<c>名字 (2)</c>)。冲突只按导入之前本机已有的那些判断 ——
+    /// 文件里自己重名的几条照样都收下,与同步「重名照存」同一口径。
+    /// </para>
+    /// <para>
+    /// 写进来的一律把修改时间刷成现在:导入是用户刚做的决定,随后的同步里它要胜过云端那份(包括本机删过它留下的墓碑)。
+    /// </para>
+    /// </remarks>
+    /// <param name="dialogs">这一次用的对话框;不给用 <see cref="Dialogs" />。</param>
+    /// <returns>导入了几个;取消、文件不对时为 null。</returns>
+    public async Task<int?> ImportAsync(ILayoutTemplateDialogs? dialogs = null)
+    {
+        if ((dialogs ?? Dialogs) is not { } ui
+            || await ui.PickImportPathAsync().ConfigureAwait(true) is not { Length: > 0 } path)
+        {
+            return null;
+        }
+        string json;
+        try
+        {
+            if (new FileInfo(path).Length > MaxImportBytes)
+            {
+                // 模板文件是几 KB 到几百 KB 的东西;超过上限多半是选错了文件,整份读进内存再解析纯属白费。
+                _toasts.Warning(Strings.Get("LayoutTemplate_ImportInvalid"));
+                return null;
+            }
+            json = await File.ReadAllTextAsync(path).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            _toasts.Error(Strings.Format("LayoutTemplate_ImportFailed", ex.Message));
+            return null;
+        }
+        if (LayoutTemplateFile.Parse(json) is not { } parsed)
+        {
+            _toasts.Warning(Strings.Get("LayoutTemplate_ImportInvalid"));
+            return null;
+        }
+        // 同一个文件里同一个 Id 出现两次(手拼的文件):留修改时间较晚的那份。
+        List<LayoutTemplate> incoming = [.. parsed.GroupBy(t => t.Id).Select(g => g.OrderByDescending(t => t.UpdatedAt).First())];
+        if (incoming.Count == 0)
+        {
+            _toasts.Warning(Strings.Get("LayoutTemplate_ImportEmpty"));
+            return null;
+        }
+
+        LayoutTemplate[] before = [.. _templates];
+        Dictionary<Guid, LayoutTemplate?> conflicts = incoming.ToDictionary(t => t.Id, t => ConflictOf(t, before));
+        bool keepBoth = false;
+        if (conflicts.Values.Any(existing => existing is not null))
+        {
+            List<string> names = [.. incoming.Where(t => conflicts[t.Id] is not null).Select(t => t.Name)];
+            int answer = await ui.ChooseAsync(
+                Strings.Get("LayoutTemplate_ImportConflictTitle"),
+                Strings.Format("LayoutTemplate_ImportConflictMessage", names.Count, JoinNames(names)),
+                [Strings.Get("LayoutTemplate_ImportReplace"), Strings.Get("LayoutTemplate_ImportKeepBoth"), Strings.Cancel],
+                cancelResult: 2).ConfigureAwait(true);
+            if (answer is not (0 or 1))
+            {
+                return null;
+            }
+            keepBoth = answer == 1;
+        }
+
+        DateTimeOffset now = _now();
+        var imported = new List<LayoutTemplate>();
+        foreach (LayoutTemplate template in incoming)
+        {
+            LayoutTemplate copy = Copy(template);
+            copy.UpdatedAt = now;
+            if (copy.CreatedAt == default)
+            {
+                copy.CreatedAt = now;
+            }
+            if (conflicts[template.Id] is { } existing)
+            {
+                if (keepBoth)
+                {
+                    copy.Id = Guid.NewGuid();
+                    copy.Name = UniqueCopyName(template.Name);
+                    copy.CreatedAt = now;
+                }
+                else
+                {
+                    copy.Id = existing.Id;
+                    copy.CreatedAt = existing.CreatedAt;
+                }
+            }
+            if (!await TrySaveAsync(copy).ConfigureAwait(true))
+            {
+                return imported.Count;
+            }
+            imported.Add(copy);
+        }
+
+        int missing = await CountWithMissingProfilesAsync(imported).ConfigureAwait(true);
+        if (missing > 0)
+        {
+            _toasts.Warning(Strings.Format("LayoutTemplate_ImportedMissing", imported.Count, missing));
+        }
+        else
+        {
+            _toasts.Info(Strings.Format("LayoutTemplate_Imported", imported.Count));
+        }
+        return imported.Count;
     }
 
     // ---- 打开 ----
@@ -479,7 +652,67 @@ public sealed class LayoutTemplatesViewModel : ReactiveObject
         CreatedAt = template.CreatedAt,
         UpdatedAt = template.UpdatedAt,
         Root = template.Root,
+        ExtensionData = template.ExtensionData,
     };
+
+    /// <summary>导入的一项撞上了本机哪一条:同 Id 优先,其次同名(不分大小写);都没有为 null。</summary>
+    private static LayoutTemplate? ConflictOf(LayoutTemplate incoming, IReadOnlyList<LayoutTemplate> local) =>
+        local.FirstOrDefault(template => template.Id == incoming.Id)
+        ?? local.FirstOrDefault(template =>
+            string.Equals(template.Name, incoming.Name, StringComparison.CurrentCultureIgnoreCase));
+
+    /// <summary>另存时的名字:「名字 (2)」「名字 (3)」…取第一个没被占用的;超长时截短原名、保住序号。</summary>
+    private string UniqueCopyName(string name)
+    {
+        for (int n = 2; ; n++)
+        {
+            string candidate = Strings.Format("LayoutTemplate_CopyName", name, n);
+            if (candidate.Length > LayoutTemplate.MaxNameLength)
+            {
+                int keep = Math.Max(1, name.Length - (candidate.Length - LayoutTemplate.MaxNameLength));
+                candidate = Strings.Format("LayoutTemplate_CopyName", name[..keep].TrimEnd(), n);
+            }
+            if (FindByName(candidate, except: null) is null)
+            {
+                return candidate;
+            }
+        }
+    }
+
+    /// <summary>有几个模板引用了本机不存在的连接配置(打开时那些标签会被跳过)。</summary>
+    private async Task<int> CountWithMissingProfilesAsync(IEnumerable<LayoutTemplate> templates)
+    {
+        var exists = new Dictionary<Guid, bool>();
+        int missing = 0;
+        foreach (LayoutTemplate template in templates)
+        {
+            foreach (Guid id in LayoutTree.Documents(template.Root)
+                                          .SelectMany(document => (Guid?[])[document.ProfileId, document.SecondProfileId])
+                                          .OfType<Guid>()
+                                          .Distinct())
+            {
+                if (!exists.TryGetValue(id, out bool found))
+                {
+                    try
+                    {
+                        found = await _profileExists(id).ConfigureAwait(true);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        Trace.WriteLine($"[LayoutTemplates] 查询配置 {id} 失败:{ex.Message}");
+                        found = false;
+                    }
+                    exists[id] = found;
+                }
+                if (!found)
+                {
+                    missing++;
+                    break;
+                }
+            }
+        }
+        return missing;
+    }
 
     private static string DescribeMissing(LayoutMissingDocument missing)
     {

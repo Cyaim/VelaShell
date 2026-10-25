@@ -44,7 +44,7 @@ computer unless you explicitly enable the optional sync feature described below.
 | The encryption key protecting the above | Same folder, generated on your device |
 | Known SSH host keys | Same folder |
 | Saved commands and snippets | Same folder |
-| Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; not included in sync) | Same folder |
+| Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; templates can travel with the optional cloud sync below, the layout at exit never does) | Same folder |
 | Session logs — raw terminal output, **off by default** | `logs` subfolder, auto-deleted after a retention period you set |
 | Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, when it connected, reason) | `logs` subfolder, auto-deleted after 7 days |
 | Transfer records — one line per upload or download (local path, remote path, result; on by default, Settings → File transfer) — plus the external-editing log (`remote-edit.log`), the VcXsrv log (`vcxsrv.log`, Windows only) and each plugin's own log | `logs` subfolder (the transfer-record folder can be changed); transfer records are deleted after the retention period you set, `remote-edit.log` starts over at 1 MB, plugin logs rotate once at 1 MB |
@@ -113,7 +113,7 @@ VelaShell connects to the network only in these situations:
    placeholder initials are shown and nothing else is affected.
 
 7. **Cloud sync — off by default, entirely optional.** If you enable it, VelaShell stores your
-   settings, connection profiles, and snippets in a **secret GitHub Gist in your own GitHub
+   settings, connection profiles, snippets, and layout templates in a **secret GitHub Gist in your own GitHub
    account**, using a personal access token that you supply. The data goes to your GitHub
    account, never to us. You may additionally set an end-to-end encryption passphrase, in which
    case the payload is encrypted with AES-GCM on your device before upload and GitHub stores
@@ -121,8 +121,9 @@ VelaShell connects to the network only in these situations:
    never uploaded — neither those on connection profiles nor those of shared credentials; a
    shared credential travels only as its name, username, notes and key / certificate file
    paths, and the proxy password and alert webhook URL in your settings are left out as
-   well. You choose which categories to sync, and you can turn it off or delete the Gist at
-   any time.
+   well. Layout templates never contain passwords either: only the profile Id each tab points
+   to, how it opens, and the tab title at save time (often `user@host`). You choose which
+   categories to sync, and you can turn it off or delete the Gist at any time.
 
 VelaShell does not download the IP geolocation database itself. If you want that optional
 feature, the application opens the DB-IP download page in your browser and you choose the
@@ -230,7 +231,7 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 保护上述内容的加密密钥 | 同上,在你的设备上生成 |
 | 已知的 SSH 主机密钥 | 同上 |
 | 快捷命令与代码片段 | 同上 |
-| 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码,不参与同步) | 同上 |
+| 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码;模板可随下文的可选云同步上传,退出时布局从不上传) | 同上 |
 | 会话日志 —— 终端原始输出,**默认关闭** | `logs` 子目录,按你设定的保留天数自动清理 |
 | 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、连上的时刻、原因) | `logs` 子目录,7 天后自动清理 |
 | 传输记录 —— 每次上传、下载一行(本机路径、远端路径、结果;默认开,设置 → 文件传输),以及外部编辑日志(`remote-edit.log`)、VcXsrv 日志(`vcxsrv.log`,仅 Windows)与各插件自己的日志 | `logs` 子目录(传输记录的目录可改);传输记录按你设定的保留天数清理,`remote-edit.log` 满 1 MB 重写,插件日志满 1 MB 轮转一份 |
@@ -286,12 +287,13 @@ VelaShell 仅在以下情形联网:
    IP 地址。请求失败时显示首字母占位图,不影响其他功能。
 
 7. **云同步 —— 默认关闭,完全可选。** 若你启用,VelaShell 会使用你自己提供的个人访问令牌,
-   把设置、连接配置与代码片段保存到**你自己 GitHub 账户下的一个 secret Gist** 中。数据进入
+   把设置、连接配置、代码片段与布局模板保存到**你自己 GitHub 账户下的一个 secret Gist** 中。数据进入
    的是你的 GitHub 账户,而非我们。你还可以额外设置端到端加密口令,此时载荷会在你的设备上
    用 AES-GCM 加密后再上传,GitHub 只能拿到密文。没设这个口令时,已保存的密码与私钥口令一律
    不上传 —— 连接配置上的与共享凭据里的都一样;共享凭据只带名称、用户名、备注与私钥 / 证书
-   文件路径;设置里的代理密码与告警 Webhook 地址同样不上传。同步范围由你勾选,可随时关闭
-   或删除该 Gist。
+   文件路径;设置里的代理密码与告警 Webhook 地址同样不上传。布局模板本来就不含密码,只有每个
+   标签指向的连接配置 Id、打开方式与保存时的标签标题(常常就是 `用户@主机`)。同步范围由你勾选,
+   可随时关闭或删除该 Gist。
 
 VelaShell 不会自行下载 IP 归属地数据库。若你需要该可选功能,应用会在你的浏览器中打开 DB-IP
 的下载页面,由你手动选择下载好的文件。

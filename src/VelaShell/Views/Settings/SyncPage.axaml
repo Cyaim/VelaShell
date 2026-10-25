@@ -140,6 +140,13 @@
       </Grid>
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Spacing="2">
+          <TextBlock Classes="row-label" Text="{loc:Localize SetSync_ScopeLayoutTemplates}" />
+          <TextBlock Classes="row-desc" Text="{loc:Localize SetSync_ScopeLayoutTemplatesDesc}" />
+        </StackPanel>
+        <ToggleSwitch Grid.Column="1" IsChecked="{Binding SyncLayoutTemplates}" VerticalAlignment="Center" />
+      </Grid>
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="2">
           <TextBlock Classes="row-label" Text="{loc:Localize SetSync_AutoSync}" />
           <TextBlock Classes="row-desc" Text="{loc:Localize SetSync_AutoSyncDesc}" />
         </StackPanel>

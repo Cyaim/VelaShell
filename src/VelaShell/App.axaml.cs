@@ -9,6 +9,7 @@ using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using VelaShell.Controls.DependencyInjection;
 using VelaShell.Core.Data;
+using VelaShell.Core.Layouts;
 using VelaShell.Core.Localization;
 using VelaShell.Core.Models;
 using VelaShell.Core.Recording;
@@ -373,7 +374,8 @@ public class App : Application
                     syncService,
                     _serviceProvider.GetService<ISettingsService>(),
                     _serviceProvider.GetService<IQuickCommandRepository>(),
-                    markLocalChangedFirst: quickCommandLoad?.Migrated == true
+                    markLocalChangedFirst: quickCommandLoad?.Migrated == true,
+                    layoutTemplates: _serviceProvider.GetService<LayoutTemplateStore>()
                 );
             }
 
@@ -470,7 +472,8 @@ public class App : Application
         IGistSyncService syncService,
         ISettingsService? settingsService,
         IQuickCommandRepository? quickCommandRepository,
-        bool markLocalChangedFirst = false
+        bool markLocalChangedFirst = false,
+        LayoutTemplateStore? layoutTemplates = null
     )
     {
         _ = Task.Run(async () =>
@@ -504,6 +507,8 @@ public class App : Application
         settingsService?.SettingsSaved += _ => QueueAutoSyncUnlessApplyingRemote(syncService);
         quickCommandRepository?.Changed += (_, _) =>
                 QueueAutoSyncUnlessApplyingRemote(syncService);
+        // 布局模板只有本机的增删改报 Changed;同步合并写进来的报的是 SyncApplied,不会又触发一次推送。
+        layoutTemplates?.Changed += (_, _) => QueueAutoSyncUnlessApplyingRemote(syncService);
     }
 
     private void QueueAutoSyncUnlessApplyingRemote(IGistSyncService syncService)

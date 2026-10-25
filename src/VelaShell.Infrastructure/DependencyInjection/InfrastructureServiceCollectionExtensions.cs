@@ -4,6 +4,7 @@ using VelaShell.Core.Data;
 using VelaShell.Core.Diagnostics;
 using VelaShell.Core.Ftp;
 using VelaShell.Core.Import;
+using VelaShell.Core.Layouts;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Notifications;
@@ -259,7 +260,10 @@ public static class InfrastructureServiceCollectionExtensions
             // 后台活动账本:自动同步是静默的,至少让状态栏的圆环交代一句"正在同步"。
             sp.GetService<IBackgroundActivityService>(),
             // 共享凭据随连接配置一起同步,否则另一台设备上的引用全是悬空的。
-            sp.GetRequiredService<ISharedCredentialRepository>()));
+            sp.GetRequiredService<ISharedCredentialRepository>(),
+            // 布局模板:与界面共用这一个实例,本机改动才推得出去、拉下来的界面才看得见。
+            sp.GetRequiredService<LayoutTemplateStore>()));
+        services.AddSingleton(sp => new LayoutTemplateStore(sp.GetService<IAppDataStore>()));
         services.AddSingleton<ISessionMetricsService>(sp =>
             new SessionMetricsService(sp.GetRequiredService<ISshConnectionService>()));
         services.AddSingleton<IRemoteProcessService>(sp =>

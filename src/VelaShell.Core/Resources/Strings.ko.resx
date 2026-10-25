@@ -799,6 +799,60 @@
   <data name="LayoutTemplate_Untitled" xml:space="preserve">
     <value>제목 없는 탭</value>
   </data>
+  <data name="LayoutTemplate_Export" xml:space="preserve">
+    <value>내보내기…</value>
+  </data>
+  <data name="LayoutTemplate_Import" xml:space="preserve">
+    <value>가져오기…</value>
+  </data>
+  <data name="LayoutTemplate_ExportDialogTitle" xml:space="preserve">
+    <value>레이아웃 템플릿 내보내기</value>
+  </data>
+  <data name="LayoutTemplate_ImportDialogTitle" xml:space="preserve">
+    <value>레이아웃 템플릿 가져오기</value>
+  </data>
+  <data name="LayoutTemplate_FileType" xml:space="preserve">
+    <value>VelaShell 레이아웃 템플릿</value>
+  </data>
+  <data name="LayoutTemplate_NothingToExport" xml:space="preserve">
+    <value>내보낼 레이아웃 템플릿이 아직 없습니다.</value>
+  </data>
+  <data name="LayoutTemplate_Exported" xml:space="preserve">
+    <value>레이아웃 템플릿 {0}개를 {1}(으)로 내보냈습니다. 파일에는 연결 프로필 ID와 여는 방식만 있고 비밀번호는 없습니다.</value>
+  </data>
+  <data name="LayoutTemplate_ExportFailed" xml:space="preserve">
+    <value>레이아웃 템플릿을 내보내지 못했습니다: {0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportFailed" xml:space="preserve">
+    <value>파일을 읽지 못했습니다: {0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportInvalid" xml:space="preserve">
+    <value>VelaShell 레이아웃 템플릿 파일이 아닙니다.</value>
+  </data>
+  <data name="LayoutTemplate_ImportEmpty" xml:space="preserve">
+    <value>파일에 사용할 수 있는 레이아웃 템플릿이 없습니다.</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictTitle" xml:space="preserve">
+    <value>이미 있는 템플릿이 있습니다</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictMessage" xml:space="preserve">
+    <value>파일의 템플릿 {0}개가 기존 템플릿과 같거나 이름이 같습니다: {1}. 기존 템플릿을 바꿀까요, 아니면 새 템플릿으로 저장해 둘 다 남길까요?</value>
+  </data>
+  <data name="LayoutTemplate_ImportReplace" xml:space="preserve">
+    <value>바꾸기</value>
+  </data>
+  <data name="LayoutTemplate_ImportKeepBoth" xml:space="preserve">
+    <value>새로 저장</value>
+  </data>
+  <data name="LayoutTemplate_Imported" xml:space="preserve">
+    <value>레이아웃 템플릿 {0}개를 가져왔습니다.</value>
+  </data>
+  <data name="LayoutTemplate_ImportedMissing" xml:space="preserve">
+    <value>레이아웃 템플릿 {0}개를 가져왔습니다. 그중 {1}개는 이 기기에 없는 연결을 가리키므로, 열 때 해당 탭은 건너뜁니다.</value>
+  </data>
+  <data name="LayoutTemplate_CopyName" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>모든 탭</value>
   </data>
@@ -3479,6 +3533,12 @@
   <data name="SetSync_ScopeAppSettings" xml:space="preserve">
     <value>앱 설정</value>
   </data>
+  <data name="SetSync_ScopeLayoutTemplates" xml:space="preserve">
+    <value>레이아웃 템플릿</value>
+  </data>
+  <data name="SetSync_ScopeLayoutTemplatesDesc" xml:space="preserve">
+    <value>// 별도 파일로 템플릿마다 병합합니다. 템플릿은 연결 프로필 ID만 기록하므로, 다른 기기에서 열려면 같은 연결(연결 프로필과 함께 동기화)이 있어야 합니다</value>
+  </data>
   <data name="SetSync_ScopeProfilesDesc" xml:space="preserve">
     <value>// 서버 연결, 그룹 및 포트 포워딩 터널; 로컬에만 있는 연결은 클라우드에 의해 삭제되지 않습니다</value>
   </data>
@@ -4244,6 +4304,18 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="SyncSvc_GistNotFound" xml:space="preserve">
     <value>Gist가 존재하지 않거나 토큰에 접근 권한이 없습니다(Gist Id와 토큰 계정을 확인하세요).</value>
+  </data>
+  <data name="SyncSvc_LayoutsFailed" xml:space="preserve">
+    <value> (레이아웃 템플릿은 이번에 동기화되지 않았습니다: {0})</value>
+  </data>
+  <data name="SyncSvc_LayoutsLocked" xml:space="preserve">
+    <value> (레이아웃 템플릿은 건너뛰었습니다: 클라우드 사본이 종단 간 암호화되어 있는데 이 기기에 암호가 없거나 다릅니다)</value>
+  </data>
+  <data name="SyncSvc_LayoutsNewer" xml:space="preserve">
+    <value> (레이아웃 템플릿은 건너뛰었습니다: 클라우드 사본은 더 새로운 VelaShell이 기록했습니다. 이 기기를 업데이트하면 동기화됩니다)</value>
+  </data>
+  <data name="SyncSvc_LayoutsPushed" xml:space="preserve">
+    <value> (이 기기의 레이아웃 템플릿 변경도 함께 푸시했습니다)</value>
   </data>
   <data name="SyncSvc_MissingPayload" xml:space="preserve">
     <value>클라우드 데이터에 페이로드가 없습니다.</value>

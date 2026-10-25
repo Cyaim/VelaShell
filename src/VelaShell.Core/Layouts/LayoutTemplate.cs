@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace VelaShell.Core.Layouts;
@@ -42,6 +43,13 @@ public sealed class LayoutTemplate
 
     /// <summary>布局树的根;为 null 表示空模板(不会被保存出来,读到时按空处理)。</summary>
     public LayoutNode? Root { get; set; }
+
+    /// <summary>
+    /// 更新的版本写进来、本版本不认识的字段:原样留着,落盘、同步、导出时照写回去。
+    /// 不留的话,旧版本拉到新版本推上来的模板、再推一次就把新字段抹掉了(快捷命令的 <c>HiddenBuiltInIds</c> 吃过这个亏)。
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 /// <summary>
@@ -67,6 +75,10 @@ public sealed class LayoutNode
 
     /// <summary>标签条位置(<c>Top</c> / <c>Left</c> / <c>Right</c> …,按名字存);null 或不认识的值按置顶处理。</summary>
     public string? TabsPosition { get; set; }
+
+    /// <summary>本版本不认识的字段,原样往返(理由见 <see cref="LayoutTemplate.ExtensionData" />)。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 
     /// <summary>这个节点是不是分栏。</summary>
     [JsonIgnore]
@@ -106,6 +118,10 @@ public sealed class LayoutDocument
 
     /// <summary>保存时它是不是整个工作区的活动标签(全树至多一个)。</summary>
     public bool IsActive { get; set; }
+
+    /// <summary>本版本不认识的字段,原样往返(理由见 <see cref="LayoutTemplate.ExtensionData" />)。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 /// <summary>

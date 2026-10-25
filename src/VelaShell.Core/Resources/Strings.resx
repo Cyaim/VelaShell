@@ -1778,6 +1778,60 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   <data name="LayoutTemplate_Untitled" xml:space="preserve">
     <value>Untitled tab</value>
   </data>
+  <data name="LayoutTemplate_Export" xml:space="preserve">
+    <value>Export…</value>
+  </data>
+  <data name="LayoutTemplate_Import" xml:space="preserve">
+    <value>Import…</value>
+  </data>
+  <data name="LayoutTemplate_ExportDialogTitle" xml:space="preserve">
+    <value>Export layout templates</value>
+  </data>
+  <data name="LayoutTemplate_ImportDialogTitle" xml:space="preserve">
+    <value>Import layout templates</value>
+  </data>
+  <data name="LayoutTemplate_FileType" xml:space="preserve">
+    <value>VelaShell layout templates</value>
+  </data>
+  <data name="LayoutTemplate_NothingToExport" xml:space="preserve">
+    <value>There are no layout templates to export yet.</value>
+  </data>
+  <data name="LayoutTemplate_Exported" xml:space="preserve">
+    <value>Exported {0} layout template(s) to {1}. The file holds connection IDs and how each tab opens, no passwords.</value>
+  </data>
+  <data name="LayoutTemplate_ExportFailed" xml:space="preserve">
+    <value>The layout templates could not be exported: {0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportFailed" xml:space="preserve">
+    <value>The file could not be read: {0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportInvalid" xml:space="preserve">
+    <value>This is not a VelaShell layout template file.</value>
+  </data>
+  <data name="LayoutTemplate_ImportEmpty" xml:space="preserve">
+    <value>The file contains no usable layout templates.</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictTitle" xml:space="preserve">
+    <value>Some templates already exist</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictMessage" xml:space="preserve">
+    <value>{0} template(s) in the file are the same as, or share a name with, templates you already have: {1}. Replace yours, or save the imported ones as new templates and keep both?</value>
+  </data>
+  <data name="LayoutTemplate_ImportReplace" xml:space="preserve">
+    <value>Replace</value>
+  </data>
+  <data name="LayoutTemplate_ImportKeepBoth" xml:space="preserve">
+    <value>Save as new</value>
+  </data>
+  <data name="LayoutTemplate_Imported" xml:space="preserve">
+    <value>Imported {0} layout template(s).</value>
+  </data>
+  <data name="LayoutTemplate_ImportedMissing" xml:space="preserve">
+    <value>Imported {0} layout template(s). {1} of them refer to connections that do not exist on this device; those tabs will be skipped when the template is opened.</value>
+  </data>
+  <data name="LayoutTemplate_CopyName" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>All Tabs</value>
   </data>
@@ -3722,6 +3776,12 @@ Keep it somewhere only you control and delete it when you are done; do not put i
   <data name="SetSync_ScopeAppSettings" xml:space="preserve">
     <value>App settings</value>
   </data>
+  <data name="SetSync_ScopeLayoutTemplates" xml:space="preserve">
+    <value>Layout templates</value>
+  </data>
+  <data name="SetSync_ScopeLayoutTemplatesDesc" xml:space="preserve">
+    <value>// A separate file merged template by template; templates only record connection IDs, so another device needs the same connections (synced with connection profiles) to open them</value>
+  </data>
   <data name="SetSync_ScopeProfilesDesc" xml:space="preserve">
     <value>// Server connections, groups, and port-forwarding tunnels; connections that exist only locally are never deleted by the cloud</value>
   </data>
@@ -4435,6 +4495,18 @@ Overwrite it?</value>
   </data>
   <data name="SyncSvc_GistNotFound" xml:space="preserve">
     <value>The Gist does not exist or the token has no access (check the Gist Id and token account).</value>
+  </data>
+  <data name="SyncSvc_LayoutsFailed" xml:space="preserve">
+    <value> (layout templates were not synced: {0})</value>
+  </data>
+  <data name="SyncSvc_LayoutsLocked" xml:space="preserve">
+    <value> (layout templates were skipped: the cloud copy is end-to-end encrypted, and this device has no passphrase or a different one)</value>
+  </data>
+  <data name="SyncSvc_LayoutsNewer" xml:space="preserve">
+    <value> (layout templates were skipped: the cloud copy was written by a newer VelaShell; update this device to sync them)</value>
+  </data>
+  <data name="SyncSvc_LayoutsPushed" xml:space="preserve">
+    <value> (local layout template changes were pushed as well)</value>
   </data>
   <data name="SyncSvc_MissingPayload" xml:space="preserve">
     <value>Cloud data is missing its payload.</value>

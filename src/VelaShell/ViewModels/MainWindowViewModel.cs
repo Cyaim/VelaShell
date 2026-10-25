@@ -14,6 +14,7 @@ using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Diagnostics;
 using VelaShell.Core.Ftp;
+using VelaShell.Core.Layouts;
 using VelaShell.Core.Localization;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
@@ -257,7 +258,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         ICredentialResolver? credentialResolver = null,
         ISharedCredentialRepository? sharedCredentials = null,
         BackgroundUpdateDownload? backgroundUpdateDownload = null,
-        IMasterKeyStatusSource? masterKeyStatus = null
+        IMasterKeyStatusSource? masterKeyStatus = null,
+        LayoutTemplateStore? layoutTemplateStore = null
     )
     {
         _credentialResolver = credentialResolver;
@@ -372,7 +374,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         // 命名布局模板(以及「恢复会话」按上次的分屏还原):开标签一律走下面这几条既有的连接路径,
         // 缺凭据弹框、认证重试、证书确认都在它们里面,模板这边一处不重写。
         LayoutTemplates = new(
-            new LayoutTemplateStore(appDataStore),
+            // DI 里与云同步共用一个实例(本机改动推得出去、拉下来的界面看得见);单测不给时按文档库现建。
+            layoutTemplateStore ?? new LayoutTemplateStore(appDataStore),
             Layout,
             new LayoutDocumentOpener(
                 FindProfileForLayoutAsync,

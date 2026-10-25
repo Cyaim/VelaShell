@@ -87,6 +87,25 @@
         <Border DockPanel.Dock="Bottom" Height="48" Padding="14,0"
                 BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,1,0,0">
           <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+            <!-- 导出 / 导入:JSON 文件,只有配置 Id 与打开方式,不含机密(LayoutTemplateFile)。 -->
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <Button Classes="action" Click="OnExportClick"
+                      AutomationProperties.Name="{loc:Localize LayoutTemplate_Export}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.file-down}"
+                                 Foreground="{DynamicResource VelaTextTertiary}" />
+                  <TextBlock Text="{loc:Localize LayoutTemplate_Export}" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button Classes="action" Click="OnImportClick"
+                      AutomationProperties.Name="{loc:Localize LayoutTemplate_Import}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.file-up}"
+                                 Foreground="{DynamicResource VelaTextTertiary}" />
+                  <TextBlock Text="{loc:Localize LayoutTemplate_Import}" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
             <Button Grid.Column="1" Classes="action"
                     Click="OnSaveClick"
                     AutomationProperties.Name="{loc:Localize LayoutTemplate_SaveCurrent}">

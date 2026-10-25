@@ -88,6 +88,22 @@ public sealed class LayoutTemplatesViewModelTests
             Asked.Add(danger ? $"danger:{message}" : $"confirm:{message}");
             return Task.FromResult(ConfirmAnswer);
         }
+
+        /// <summary>多选一的回答(按钮下标)。</summary>
+        public int ChooseAnswer { get; set; }
+
+        public Task<int> ChooseAsync(string title, string message, IReadOnlyList<string> choices, int cancelResult)
+        {
+            Asked.Add($"choose:{message}");
+            return Task.FromResult(ChooseAnswer);
+        }
+
+        /// <summary>文件对话框交回的路径;null = 用户取消。</summary>
+        public string? FilePath { get; set; }
+
+        public Task<string?> PickExportPathAsync(string suggestedFileName) => Task.FromResult(FilePath);
+
+        public Task<string?> PickImportPathAsync() => Task.FromResult(FilePath);
     }
 
     private sealed class RestoredDocument(LayoutOpenRequest request) : DockDocument
@@ -123,17 +139,19 @@ public sealed class LayoutTemplatesViewModelTests
         MemoryStore Store,
         FakeOpener Opener,
         ScriptedDialogs Dialogs,
-        ToastHostViewModel Toasts);
+        ToastHostViewModel Toasts,
+        LayoutTemplateStore TemplateStore);
 
     private static Scene NewScene()
     {
         var workspace = new DockWorkspace();
         var store = new MemoryStore();
+        var templateStore = new LayoutTemplateStore(store);
         var opener = new FakeOpener(workspace);
         var dialogs = new ScriptedDialogs();
         var toasts = new ToastHostViewModel((_, _) => new NoTimer());
         var vm = new LayoutTemplatesViewModel(
-            new LayoutTemplateStore(store),
+            templateStore,
             workspace,
             opener,
             document => LayoutDocumentDescriber.Describe(document, _ => false),
@@ -143,7 +161,7 @@ public sealed class LayoutTemplatesViewModelTests
         {
             Dialogs = dialogs,
         };
-        return new(vm, workspace, store, opener, dialogs, toasts);
+        return new(vm, workspace, store, opener, dialogs, toasts, templateStore);
     }
 
     private static TerminalDocument OpenTerminal(Scene scene, string name, bool saved = true, bool connected = true)
@@ -286,7 +304,8 @@ public sealed class LayoutTemplatesViewModelTests
 
         Assert.IsTrue(scene.Dialogs.Asked.Last().StartsWith("danger:", StringComparison.Ordinal));
         Assert.IsFalse(scene.ViewModel.HasTemplates);
-        Assert.IsEmpty(scene.Store.Rows);
+        Assert.IsFalse(scene.Store.Rows.Keys.Any(key => key.Collection == LayoutTemplateStore.Collection));
+        Assert.AreEqual(item.Template.Id.ToString("D"), scene.Store.Rows.Keys.Single().Id, "只留一块墓碑,同步靠它把删除传出去");
         Assert.HasCount(1, scene.Workspace.AllDocuments().ToList(), "删模板不碰开着的标签");
     }
 
@@ -341,6 +360,227 @@ public sealed class LayoutTemplatesViewModelTests
 
         Assert.IsFalse(scene.Workspace.AllDocuments().OfType<RestoredDocument>().Any());
     }
+
+    // ---- 导出 / 导入 ----
+
+    private static string TempFile() =>
+        Path.Combine(Path.GetTempPath(), "velashell-layout-tests", Guid.NewGuid().ToString("N") + ".json");
+
+    private static async Task<string> WriteFileAsync(string json)
+    {
+        string path = TempFile();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(path, json);
+        return path;
+    }
+
+    private static async Task<LayoutTemplateItemViewModel> SaveAsync(Scene scene, string name, params string[] hosts)
+    {
+        var documents = new List<TerminalDocument>();
+        foreach (string host in hosts)
+        {
+            documents.Add(OpenTerminal(scene, host));
+        }
+        scene.Dialogs.Names.Enqueue(name);
+        Assert.IsTrue(await scene.ViewModel.SaveCurrentAsync());
+        foreach (TerminalDocument document in documents)
+        {
+            scene.Workspace.RemoveDocument(document);
+        }
+        return scene.ViewModel.Templates.Single(t => t.Name == name);
+    }
+
+    [TestMethod]
+    public async Task ExportThenImportOnAnotherDevice_BringsTheTemplatesOver_WithTheirIds()
+    {
+        Scene desktop = NewScene();
+        LayoutTemplateItemViewModel prod = await SaveAsync(desktop, "prod", "web", "db");
+        desktop.Dialogs.FilePath = TempFile();
+        Directory.CreateDirectory(Path.GetDirectoryName(desktop.Dialogs.FilePath)!);
+        try
+        {
+            Assert.IsTrue(await desktop.ViewModel.ExportAsync());
+            string json = await File.ReadAllTextAsync(desktop.Dialogs.FilePath);
+            StringAssert.Contains(json, LayoutTemplateFile.FormatId);
+            StringAssert.Contains(LastToast(desktop), desktop.Dialogs.FilePath);
+
+            Scene laptop = NewScene();
+            foreach (SessionProfile profile in desktop.Opener.Profiles.Values)
+            {
+                laptop.Opener.Profiles[profile.Id] = profile; // 连接配置随同步过来了
+            }
+            laptop.Dialogs.FilePath = desktop.Dialogs.FilePath;
+
+            Assert.AreEqual(1, await laptop.ViewModel.ImportAsync());
+
+            LayoutTemplateItemViewModel imported = laptop.ViewModel.Templates.Single();
+            Assert.AreEqual((prod.Template.Id, "prod", 2), (imported.Template.Id, imported.Name, imported.DocumentCount));
+            Assert.AreEqual(VelaShell.Core.Resources.Strings.Format("LayoutTemplate_Imported", 1), LastToast(laptop));
+            Assert.IsFalse(laptop.Dialogs.Asked.Any(a => a.StartsWith("choose:", StringComparison.Ordinal)), "没有冲突就不问");
+        }
+        finally
+        {
+            File.Delete(desktop.Dialogs.FilePath);
+        }
+    }
+
+    [TestMethod]
+    public async Task Import_OfTemplatesWhoseConnectionsAreMissingHere_SaysSoUpFront()
+    {
+        Scene desktop = NewScene();
+        LayoutTemplateItemViewModel prod = await SaveAsync(desktop, "prod", "web");
+        string path = await WriteFileAsync(LayoutTemplateFile.Export([prod.Template], DateTime.UtcNow));
+        try
+        {
+            Scene other = NewScene(); // 这台设备上没有那条连接
+            other.Dialogs.FilePath = path;
+
+            Assert.AreEqual(1, await other.ViewModel.ImportAsync());
+
+            Assert.AreEqual(VelaShell.Core.Resources.Strings.Format("LayoutTemplate_ImportedMissing", 1, 1), LastToast(other));
+            Assert.HasCount(1, other.ViewModel.Templates, "照样导入:配置以后可能随同步过来,打开时照现有口径跳过");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(0, DisplayName = "替换")]
+    [DataRow(1, DisplayName = "另存")]
+    [DataRow(2, DisplayName = "取消")]
+    public async Task Import_ConflictsBySameIdOrName_AreAskedAboutOnce(int answer)
+    {
+        Scene scene = NewScene();
+        LayoutTemplateItemViewModel prod = await SaveAsync(scene, "prod", "web");
+        LayoutTemplateItemViewModel db = await SaveAsync(scene, "db", "db1");
+        LayoutTemplate sameId = new()
+        {
+            Id = prod.Template.Id,
+            Name = "prod",
+            Root = new() { Documents = [new() { Kind = LayoutDocumentKind.LocalShell, ShellId = "pwsh", Title = "a" }, new() { Kind = LayoutDocumentKind.LocalShell, ShellId = "cmd", Title = "b" }] },
+        };
+        LayoutTemplate sameName = new()
+        {
+            Name = "DB",
+            Root = new() { Documents = [new() { Kind = LayoutDocumentKind.LocalShell, ShellId = "pwsh", Title = "c" }] },
+        };
+        LayoutTemplate fresh = new()
+        {
+            Name = "fresh",
+            Root = new() { Documents = [new() { Kind = LayoutDocumentKind.LocalShell, ShellId = "pwsh", Title = "d" }] },
+        };
+        string path = await WriteFileAsync(LayoutTemplateFile.Export([sameId, sameName, fresh], DateTime.UtcNow));
+        int rowsBefore = scene.Store.Rows.Count;
+        scene.Dialogs.FilePath = path;
+        scene.Dialogs.ChooseAnswer = answer;
+        try
+        {
+            int? imported = await scene.ViewModel.ImportAsync();
+
+            string choose = scene.Dialogs.Asked.Single(a => a.StartsWith("choose:", StringComparison.Ordinal));
+            StringAssert.Contains(choose, "prod");
+            StringAssert.Contains(choose, "DB");
+            Assert.DoesNotContain("fresh", choose, "不冲突的不点名");
+            string[] names = [.. scene.ViewModel.Templates.Select(t => t.Name)];
+            switch (answer)
+            {
+                case 0:
+                    Assert.AreEqual(3, imported);
+                    Assert.AreSequenceEqual(new[] { "DB", "fresh", "prod" }, names);
+                    LayoutTemplate replacedById = scene.ViewModel.Templates.Single(t => t.Name == "prod").Template;
+                    Assert.AreEqual((prod.Template.Id, 2), (replacedById.Id, LayoutTree.Documents(replacedById.Root).Count()));
+                    LayoutTemplate replacedByName = scene.ViewModel.Templates.Single(t => t.Name == "DB").Template;
+                    Assert.AreEqual(db.Template.Id, replacedByName.Id, "重名的替换沿用本机那一条的 Id,不是又多出一条");
+                    Assert.AreEqual(db.Template.CreatedAt, replacedByName.CreatedAt);
+                    break;
+                case 1:
+                    Assert.AreEqual(3, imported);
+                    Assert.AreSequenceEqual(new[] { "db", "DB (2)", "fresh", "prod", "prod (2)" }, names);
+                    Assert.AreEqual(1, LayoutTree.Documents(scene.ViewModel.Templates.Single(t => t.Name == "prod").Template.Root).Count(),
+                        "本机原来那份不动");
+                    Assert.AreNotEqual(prod.Template.Id, scene.ViewModel.Templates.Single(t => t.Name == "prod (2)").Template.Id);
+                    break;
+                default:
+                    Assert.IsNull(imported);
+                    Assert.AreSequenceEqual(new[] { "db", "prod" }, names);
+                    Assert.AreEqual(rowsBefore, scene.Store.Rows.Count, "取消:一条都不写");
+                    break;
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    public async Task Import_OfADeletedTemplate_LiftsItsTombstone()
+    {
+        Scene scene = NewScene();
+        LayoutTemplateItemViewModel prod = await SaveAsync(scene, "prod", "web");
+        string path = await WriteFileAsync(LayoutTemplateFile.Export([prod.Template], DateTime.UtcNow));
+        Assert.IsTrue(await scene.ViewModel.DeleteAsync(prod));
+        scene.Dialogs.FilePath = path;
+        try
+        {
+            Assert.AreEqual(1, await scene.ViewModel.ImportAsync());
+
+            LayoutTemplateSyncState state = await scene.TemplateStore.LoadSyncStateAsync();
+            Assert.AreEqual(prod.Template.Id, state.Templates.Single().Id);
+            Assert.IsEmpty(state.Tombstones, "导回来的模板撤掉自己的墓碑");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    public async Task Import_OfSomethingElse_SaysItIsNotATemplateFile()
+    {
+        Scene scene = NewScene();
+        string path = await WriteFileAsync("""{"general":{"language":"en"}}""");
+        scene.Dialogs.FilePath = path;
+        try
+        {
+            Assert.IsNull(await scene.ViewModel.ImportAsync());
+
+            Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("LayoutTemplate_ImportInvalid"), LastToast(scene));
+            Assert.IsEmpty(scene.Store.Rows);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    public async Task Export_WithNoTemplates_WarnsWithoutAskingForAFile()
+    {
+        Scene scene = NewScene();
+        scene.Dialogs.FilePath = TempFile();
+
+        Assert.IsFalse(await scene.ViewModel.ExportAsync());
+
+        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("LayoutTemplate_NothingToExport"), LastToast(scene));
+        Assert.IsFalse(File.Exists(scene.Dialogs.FilePath));
+    }
+
+    [TestMethod]
+    public async Task TemplatesArrivingFromSync_ShowUpInTheList() => await _session.RunOnUiAsync(async () =>
+    {
+        Scene scene = NewScene();
+        var remote = new LayoutTemplateSyncState(
+            [new LayoutTemplate { Name = "from laptop", UpdatedAt = DateTimeOffset.UtcNow, Root = new() { Documents = [new() { Kind = LayoutDocumentKind.LocalShell, ShellId = "pwsh", Title = "x" }] } }],
+            []);
+
+        await scene.TemplateStore.MergeAsync(remote);
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+        Assert.AreEqual("from laptop", scene.ViewModel.Templates.Single().Name, "同步写进来的,界面重读之后看得见");
+    });
 
     // ---- 退出时的布局 ----
 

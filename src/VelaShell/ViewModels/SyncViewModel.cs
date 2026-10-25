@@ -108,6 +108,13 @@ public class SyncViewModel : ReactiveObject
         set => this.RaiseAndSetIfChanged(ref field, value);
     } = true;
 
+    /// <summary>是否同步布局模板(Gist 里单独一个文件,按模板合并)。</summary>
+    public bool SyncLayoutTemplates
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = true;
+
     // ———— 运行状态 ————
 
     /// <summary>是否正在执行同步/配置操作;为 true 时禁用各命令。</summary>
@@ -177,6 +184,7 @@ public class SyncViewModel : ReactiveObject
         SyncAppSettings = _config.SyncAppSettings;
         SyncProfiles = _config.SyncProfiles;
         SyncSnippets = _config.SyncSnippets;
+        SyncLayoutTemplates = _config.SyncLayoutTemplates;
         HasSavedToken = _syncService.HasToken(_config);
         HasSavedPassphrase = _syncService.HasPassphrase(_config);
         TokenInput = "";
@@ -217,6 +225,7 @@ public class SyncViewModel : ReactiveObject
         _config.SyncAppSettings = SyncAppSettings;
         _config.SyncProfiles = SyncProfiles;
         _config.SyncSnippets = SyncSnippets;
+        _config.SyncLayoutTemplates = SyncLayoutTemplates;
         _syncService.ApplyToken(_config, TokenInput);
 
         // 口令:输入了新值才更新;留空保持已保存值不变。

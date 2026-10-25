@@ -799,6 +799,60 @@
   <data name="LayoutTemplate_Untitled" xml:space="preserve">
     <value>無題のタブ</value>
   </data>
+  <data name="LayoutTemplate_Export" xml:space="preserve">
+    <value>エクスポート…</value>
+  </data>
+  <data name="LayoutTemplate_Import" xml:space="preserve">
+    <value>インポート…</value>
+  </data>
+  <data name="LayoutTemplate_ExportDialogTitle" xml:space="preserve">
+    <value>レイアウト テンプレートのエクスポート</value>
+  </data>
+  <data name="LayoutTemplate_ImportDialogTitle" xml:space="preserve">
+    <value>レイアウト テンプレートのインポート</value>
+  </data>
+  <data name="LayoutTemplate_FileType" xml:space="preserve">
+    <value>VelaShell レイアウト テンプレート</value>
+  </data>
+  <data name="LayoutTemplate_NothingToExport" xml:space="preserve">
+    <value>エクスポートできるレイアウト テンプレートはまだありません。</value>
+  </data>
+  <data name="LayoutTemplate_Exported" xml:space="preserve">
+    <value>レイアウト テンプレート {0} 個を {1} にエクスポートしました。ファイルには接続プロファイルの ID と開き方だけが含まれ、パスワードは含まれません。</value>
+  </data>
+  <data name="LayoutTemplate_ExportFailed" xml:space="preserve">
+    <value>レイアウト テンプレートをエクスポートできませんでした: {0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportFailed" xml:space="preserve">
+    <value>ファイルを読み込めませんでした: {0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportInvalid" xml:space="preserve">
+    <value>これは VelaShell のレイアウト テンプレート ファイルではありません。</value>
+  </data>
+  <data name="LayoutTemplate_ImportEmpty" xml:space="preserve">
+    <value>ファイルに使えるレイアウト テンプレートがありません。</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictTitle" xml:space="preserve">
+    <value>既にあるテンプレートがあります</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictMessage" xml:space="preserve">
+    <value>ファイル内の {0} 個のテンプレートが、既存のテンプレートと同じもの、または同じ名前です: {1}。既存のものを置き換えますか? それとも新しいテンプレートとして保存して両方残しますか?</value>
+  </data>
+  <data name="LayoutTemplate_ImportReplace" xml:space="preserve">
+    <value>置き換え</value>
+  </data>
+  <data name="LayoutTemplate_ImportKeepBoth" xml:space="preserve">
+    <value>新規として保存</value>
+  </data>
+  <data name="LayoutTemplate_Imported" xml:space="preserve">
+    <value>レイアウト テンプレートを {0} 個インポートしました。</value>
+  </data>
+  <data name="LayoutTemplate_ImportedMissing" xml:space="preserve">
+    <value>レイアウト テンプレートを {0} 個インポートしました。うち {1} 個はこのデバイスにない接続を参照しているため、開くときにそのタブはスキップされます。</value>
+  </data>
+  <data name="LayoutTemplate_CopyName" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>すべてのタブ</value>
   </data>
@@ -3479,6 +3533,12 @@
   <data name="SetSync_ScopeAppSettings" xml:space="preserve">
     <value>アプリ設定</value>
   </data>
+  <data name="SetSync_ScopeLayoutTemplates" xml:space="preserve">
+    <value>レイアウト テンプレート</value>
+  </data>
+  <data name="SetSync_ScopeLayoutTemplatesDesc" xml:space="preserve">
+    <value>// 別ファイルとしてテンプレートごとにマージします。テンプレートは接続プロファイルの ID しか記録しないため、別のデバイスで開くには同じ接続(接続プロファイルと一緒に同期)が必要です</value>
+  </data>
   <data name="SetSync_ScopeProfilesDesc" xml:space="preserve">
     <value>// サーバー接続、グループ、ポート転送トンネル。ローカルにのみ存在する接続がクラウドによって削除されることはありません</value>
   </data>
@@ -4244,6 +4304,18 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="SyncSvc_GistNotFound" xml:space="preserve">
     <value>Gist が存在しないか、トークンにアクセス権がありません(Gist Id とトークンのアカウントを確認してください)。</value>
+  </data>
+  <data name="SyncSvc_LayoutsFailed" xml:space="preserve">
+    <value>(レイアウト テンプレートは今回同期されませんでした: {0})</value>
+  </data>
+  <data name="SyncSvc_LayoutsLocked" xml:space="preserve">
+    <value>(レイアウト テンプレートはスキップしました: クラウドのデータはエンドツーエンドで暗号化されていますが、このデバイスにはパスフレーズがないか、異なります)</value>
+  </data>
+  <data name="SyncSvc_LayoutsNewer" xml:space="preserve">
+    <value>(レイアウト テンプレートはスキップしました: クラウドのデータは新しいバージョンの VelaShell で書かれています。このデバイスを更新すると同期できます)</value>
+  </data>
+  <data name="SyncSvc_LayoutsPushed" xml:space="preserve">
+    <value>(このデバイスのレイアウト テンプレートの変更もあわせてプッシュしました)</value>
   </data>
   <data name="SyncSvc_MissingPayload" xml:space="preserve">
     <value>クラウドのデータにペイロードがありません。</value>

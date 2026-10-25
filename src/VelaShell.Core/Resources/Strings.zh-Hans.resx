@@ -1887,6 +1887,60 @@
   <data name="LayoutTemplate_Untitled" xml:space="preserve">
     <value>未命名标签页</value>
   </data>
+  <data name="LayoutTemplate_Export" xml:space="preserve">
+    <value>导出…</value>
+  </data>
+  <data name="LayoutTemplate_Import" xml:space="preserve">
+    <value>导入…</value>
+  </data>
+  <data name="LayoutTemplate_ExportDialogTitle" xml:space="preserve">
+    <value>导出布局模板</value>
+  </data>
+  <data name="LayoutTemplate_ImportDialogTitle" xml:space="preserve">
+    <value>导入布局模板</value>
+  </data>
+  <data name="LayoutTemplate_FileType" xml:space="preserve">
+    <value>VelaShell 布局模板</value>
+  </data>
+  <data name="LayoutTemplate_NothingToExport" xml:space="preserve">
+    <value>还没有可导出的布局模板。</value>
+  </data>
+  <data name="LayoutTemplate_Exported" xml:space="preserve">
+    <value>已导出 {0} 个布局模板到 {1}。文件里只有连接配置的 Id 与打开方式,不含密码。</value>
+  </data>
+  <data name="LayoutTemplate_ExportFailed" xml:space="preserve">
+    <value>布局模板没有导出成功:{0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportFailed" xml:space="preserve">
+    <value>文件读取失败:{0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportInvalid" xml:space="preserve">
+    <value>这不是 VelaShell 的布局模板文件。</value>
+  </data>
+  <data name="LayoutTemplate_ImportEmpty" xml:space="preserve">
+    <value>文件里没有可用的布局模板。</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictTitle" xml:space="preserve">
+    <value>有模板已经存在</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictMessage" xml:space="preserve">
+    <value>文件里有 {0} 个模板与本机已有的是同一个或重名:{1}。替换本机的,还是另存为新模板、两份都留?</value>
+  </data>
+  <data name="LayoutTemplate_ImportReplace" xml:space="preserve">
+    <value>替换</value>
+  </data>
+  <data name="LayoutTemplate_ImportKeepBoth" xml:space="preserve">
+    <value>另存为新模板</value>
+  </data>
+  <data name="LayoutTemplate_Imported" xml:space="preserve">
+    <value>已导入 {0} 个布局模板。</value>
+  </data>
+  <data name="LayoutTemplate_ImportedMissing" xml:space="preserve">
+    <value>已导入 {0} 个布局模板;其中 {1} 个引用的连接本机没有,打开时会跳过那些标签页。</value>
+  </data>
+  <data name="LayoutTemplate_CopyName" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>所有标签页</value>
   </data>
@@ -3831,6 +3885,12 @@
   <data name="SetSync_ScopeAppSettings" xml:space="preserve">
     <value>应用设置</value>
   </data>
+  <data name="SetSync_ScopeLayoutTemplates" xml:space="preserve">
+    <value>布局模板</value>
+  </data>
+  <data name="SetSync_ScopeLayoutTemplatesDesc" xml:space="preserve">
+    <value>// 单独一个文件,按模板逐个合并;模板只记连接配置的 Id,另一台设备上要有同一批连接(随连接配置同步)才打得开</value>
+  </data>
   <data name="SetSync_ScopeProfilesDesc" xml:space="preserve">
     <value>// 服务器连接、分组与端口转发隧道;本地独有的连接不会被云端删除</value>
   </data>
@@ -4542,6 +4602,18 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="SyncSvc_GistNotFound" xml:space="preserve">
     <value>Gist 不存在或令牌无权访问(请检查 Gist Id 与令牌账号)。</value>
+  </data>
+  <data name="SyncSvc_LayoutsFailed" xml:space="preserve">
+    <value>(布局模板这次没有同步:{0})</value>
+  </data>
+  <data name="SyncSvc_LayoutsLocked" xml:space="preserve">
+    <value>(布局模板这次跳过:云端那份是端到端加密的,本设备没设口令或口令不同)</value>
+  </data>
+  <data name="SyncSvc_LayoutsNewer" xml:space="preserve">
+    <value>(布局模板这次跳过:云端那份是更新版本的 VelaShell 写的,本设备升级之后才能同步)</value>
+  </data>
+  <data name="SyncSvc_LayoutsPushed" xml:space="preserve">
+    <value>(本机的布局模板改动也一并推上了云端)</value>
   </data>
   <data name="SyncSvc_MissingPayload" xml:space="preserve">
     <value>云端数据缺少载荷。</value>

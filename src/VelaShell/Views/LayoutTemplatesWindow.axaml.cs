@@ -6,7 +6,7 @@ using FireAndForget = VelaShell.Services.FireAndForget;
 
 namespace VelaShell.Views;
 
-/// <summary>「管理布局模板」窗口:打开、用当前布局覆盖、重命名、删除,以及把当前布局存成新模板。</summary>
+/// <summary>「管理布局模板」窗口:打开、用当前布局覆盖、重命名、删除,把当前布局存成新模板,以及导出 / 导入模板文件。</summary>
 /// <remarks>
 /// 弹框一律以本窗口为属主(<see cref="LayoutTemplateDialogs" />):本窗口是非模态的,
 /// 借主窗口弹的话,弹框会被本窗口挡在后面,看起来像点了没反应。
@@ -30,6 +30,22 @@ public partial class LayoutTemplatesWindow : Window
         if (ViewModel is { } viewModel)
         {
             await viewModel.SaveCurrentAsync(_dialogs);
+        }
+    });
+
+    private void OnExportClick(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (ViewModel is { } viewModel)
+        {
+            await viewModel.ExportAsync(_dialogs);
+        }
+    });
+
+    private void OnImportClick(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
+    {
+        if (ViewModel is { } viewModel)
+        {
+            await viewModel.ImportAsync(_dialogs);
         }
     });
 

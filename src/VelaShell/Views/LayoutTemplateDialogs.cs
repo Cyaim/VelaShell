@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using VelaShell.Core.Resources;
 using VelaShell.ViewModels;
 
@@ -26,6 +27,36 @@ internal sealed class LayoutTemplateDialogs(Window owner) : ILayoutTemplateDialo
             Strings.Cancel,
             danger ? MessageDialogKind.Warning : MessageDialogKind.Question,
             danger);
+
+    /// <inheritdoc />
+    public Task<int> ChooseAsync(string title, string message, IReadOnlyList<string> choices, int cancelResult) =>
+        MessageDialog.ChooseAsync(owner, title, message, choices, primaryIndex: 0, cancelResult);
+
+    /// <inheritdoc />
+    public async Task<string?> PickExportPathAsync(string suggestedFileName)
+    {
+        IStorageFile? file = await owner.StorageProvider.SaveFilePickerAsync(new()
+        {
+            Title = Strings.Get("LayoutTemplate_ExportDialogTitle"),
+            SuggestedFileName = suggestedFileName,
+            SuggestedStartLocation = await StorageDefaults.DownloadsAsync(owner),
+            DefaultExtension = "json",
+            FileTypeChoices = [new FilePickerFileType(Strings.Get("LayoutTemplate_FileType")) { Patterns = ["*.json"] }],
+        });
+        return file?.TryGetLocalPath();
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> PickImportPathAsync()
+    {
+        IReadOnlyList<IStorageFile> files = await owner.StorageProvider.OpenFilePickerAsync(new()
+        {
+            Title = Strings.Get("LayoutTemplate_ImportDialogTitle"),
+            AllowMultiple = false,
+            SuggestedStartLocation = await StorageDefaults.DownloadsAsync(owner),
+        });
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+    }
 }
 
 /// <summary>标题栏「布局模板」按钮的下拉菜单:每个模板一项(点了就打开),末尾是「存为模板」与「管理」。</summary>
