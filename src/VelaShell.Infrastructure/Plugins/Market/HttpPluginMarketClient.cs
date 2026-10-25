@@ -87,6 +87,11 @@ public sealed class HttpPluginMarketClient(string? baseUrl = null, HttpClient? h
         ArgumentException.ThrowIfNullOrWhiteSpace(version);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
 
+        // 与查更新同一条规矩:商店地址不是 https 就连票据都不取 —— 票据里那个地址与摘要正是中间人想换的东西
+        if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out Uri? market) || market.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new InvalidOperationException($"The marketplace address is not https: '{BaseUrl}'.");
+        }
         string ticketUrl = $"{BaseUrl}/api/plugins/{Uri.EscapeDataString(pluginId)}"
                            + $"/versions/{Uri.EscapeDataString(version)}/download";
         string json = await GetMetadataAsync(ticketUrl, cancellationToken).ConfigureAwait(false)
@@ -96,12 +101,20 @@ public sealed class HttpPluginMarketClient(string? baseUrl = null, HttpClient? h
         using var ticket = JsonDocument.Parse(json);
         JsonElement root = ticket.RootElement;
         string url = root.TryGetProperty("url", out JsonElement urlElement) ? urlElement.GetString() ?? "" : "";
-        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? download)
-            || (download.Scheme != Uri.UriSchemeHttps && download.Scheme != Uri.UriSchemeHttp))
+        // 下载地址只认 https,摘要必须给、必须是 SHA-256(维护者 2026-10-25 决定,#652 复审⑤)。
+        // 以前 http 照下、没给摘要就不核 —— 能换掉票据或下载流的人就能换掉要在本机跑起来的代码;
+        // 包签名还在,但未签名或陌生发布者的包只要用户点一下「放行」,摘要是这条路上唯一不靠人眼的那道核对。
+        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? download) || download.Scheme != Uri.UriSchemeHttps)
         {
-            throw new InvalidOperationException($"The marketplace returned a download URL that is not http(s): '{url}'.");
+            throw new InvalidOperationException($"The marketplace returned a download URL that is not https: '{url}'.");
         }
-        string? expected = root.TryGetProperty("fileSha256", out JsonElement shaElement) ? shaElement.GetString() : null;
+        string? expected = root.TryGetProperty("fileSha256", out JsonElement shaElement)
+                           && shaElement.ValueKind == JsonValueKind.String ? shaElement.GetString() : null;
+        if (expected is not { Length: 64 } || !expected.All(Uri.IsHexDigit))
+        {
+            throw new InvalidOperationException(
+                $"The marketplace did not declare a SHA-256 digest for {pluginId} v{version}; refusing to download it.");
+        }
         long declaredSize = root.TryGetProperty("packageSize", out JsonElement sizeElement)
                             && sizeElement.TryGetInt64(out long parsed)
             ? parsed
@@ -109,7 +122,7 @@ public sealed class HttpPluginMarketClient(string? baseUrl = null, HttpClient? h
 
         string actual = await DownloadToFileAsync(download, destinationPath, declaredSize, progress, cancellationToken)
             .ConfigureAwait(false);
-        if (!string.IsNullOrEmpty(expected) && !actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+        if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
         {
             // 摘要对不上就把文件删掉再报错:一个内容存疑的包留在磁盘上,
             // 迟早会有人(或某段重试逻辑)把它当成"已经下好了"直接装上去。

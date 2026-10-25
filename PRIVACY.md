@@ -109,8 +109,8 @@ VelaShell connects to the network only in these situations:
    they have updates without naming them. No account, no token, no install identifier: that server
    sees only your IP address. **This happens only when you open that window** — not at startup, not
    on a background timer. If you never open it, no request is ever made. A plugin package is
-   downloaded only after you click Update, and the digest the marketplace declares is verified
-   before it is installed.
+   downloaded only after you click Update, only over https, and only when the marketplace
+   declares its SHA-256 digest, which is verified before it is installed.
 
 6. **Contributor avatars.** Opening the About page loads contributor profile pictures from
    GitHub, which discloses your IP address to GitHub in the same way. If the request fails,
@@ -306,7 +306,7 @@ VelaShell 仅在以下情形联网:
    因为"它们有没有新版"这个问题,没办法在不说出是哪几个插件的前提下问出口。
    不带账号、不带令牌、不带任何安装标识符,那台服务器看到的只有你的 IP 地址。
    **只在你打开那个窗口时发生** —— 不在启动时,也不在后台定时发生;你不打开它,
-   一个请求都不会发出。插件包只有在你点了「更新」之后才会下载,装之前会核对商店声明的摘要。
+   一个请求都不会发出。插件包只有在你点了「更新」之后才会下载,只走 https,而且商店必须声明它的 SHA-256 摘要(没给就不下),装之前核对。
 
 6. **贡献者头像。** 打开"关于"页面会从 GitHub 加载贡献者头像,同样会向 GitHub 暴露你的
    IP 地址。请求失败时显示首字母占位图,不影响其他功能。

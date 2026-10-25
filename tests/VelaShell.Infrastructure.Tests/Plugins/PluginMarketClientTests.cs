@@ -147,6 +147,48 @@ public class PluginMarketClientTests : IDisposable
         Assert.IsFalse(File.Exists(destination));
     }
 
+    /// <summary>
+    /// 插件更新一律要摘要、一律走 https(维护者 2026-10-25 决定,#652 复审⑤):商店没给 <c>fileSha256</c>
+    /// (或给的不是 64 位十六进制)就不下,票据里的下载地址是 http 也不下 —— 以前前者照装不核、后者照下。
+    /// 两种都在发出下载请求之前拒绝,磁盘上什么都不留。
+    /// </summary>
+    [TestMethod]
+    [DataRow("https://cdn.test/acme.foo-1.3.0.vpx", null, DisplayName = "没给摘要")]
+    [DataRow("https://cdn.test/acme.foo-1.3.0.vpx", "", DisplayName = "摘要是空串")]
+    [DataRow("https://cdn.test/acme.foo-1.3.0.vpx", "bb", DisplayName = "摘要不是 SHA-256")]
+    [DataRow("http://cdn.test/acme.foo-1.3.0.vpx", "valid", DisplayName = "下载地址是明文 http")]
+    public async Task DownloadAsync_WithoutADigestOrOverPlainHttp_RefusesBeforeDownloading(string url, string? digest)
+    {
+        byte[] payload = Encoding.ASCII.GetBytes("pretend-this-is-a-vpx");
+        string declared = digest == "valid" ? Convert.ToHexStringLower(SHA256.HashData(payload)) : digest ?? "";
+        string sha = digest is null ? "" : $"\"fileSha256\": \"{declared}\",";
+        StubHandler handler = new(request => request.RequestUri!.AbsolutePath.EndsWith("/download", StringComparison.Ordinal)
+            ? Json($$"""{ "url": "{{url}}", {{sha}} "packageSize": {{payload.Length}} }""")
+            : new(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) });
+        HttpPluginMarketClient client = new("https://market.test", new(handler));
+        string destination = Path.Combine(_dir, "acme.foo-1.3.0.vpx");
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => client.DownloadAsync("acme.foo", "1.3.0", destination));
+
+        Assert.HasCount(1, handler.Requested, "只取了票据,包一个字节都没下");
+        Assert.IsFalse(File.Exists(destination));
+        Assert.IsFalse(File.Exists(destination + ".partial"));
+    }
+
+    /// <summary>商店地址本身是 http 时连票据都不取(与查更新同一条规矩)。</summary>
+    [TestMethod]
+    public async Task DownloadAsync_FromAPlainHttpMarketplace_SendsNothingAtAll()
+    {
+        StubHandler handler = new(_ => Json("{}"));
+        HttpPluginMarketClient client = new("http://market.test", new(handler));
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => client.DownloadAsync("acme.foo", "1.3.0", Path.Combine(_dir, "x.vpx")));
+
+        Assert.IsEmpty(handler.Requested);
+    }
+
     /// <summary>先回下载票据,再回包体。</summary>
     private static StubHandler TicketThen(byte[] payload, string declaredDigest) =>
         new(request => request.RequestUri!.AbsolutePath.EndsWith("/download", StringComparison.Ordinal)
