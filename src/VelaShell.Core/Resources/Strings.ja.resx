@@ -4804,6 +4804,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>ログフォルダーを開く</value>
   </data>
+  <data name="Cmd_OpenRemoteEditDrafts" xml:space="preserve">
+    <value>外部編集の下書きフォルダーを開く</value>
+  </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>ログフォルダーを開く</value>
   </data>
@@ -4905,6 +4908,18 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} を利用できないため({1})、ローカルの暗号化キーはこれまでどおりデータフォルダーのキーファイルに保存されています。キーチェーンが使えるようになると、次回の起動時に自動で移行します。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
+    <value>外部エディターでの変更がサーバーに送り返されていません</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBody" xml:space="preserve">
+    <value>{0}（{1}）への変更はまだこのコンピューターの {2} にだけあり、サーバーへ送り返されていません。手動でアップロードするか別の場所に保存してから、このコピーを削除してください。下書きは自動では削除されません。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBodyUnknown" xml:space="preserve">
+    <value>外部編集で使った {0} のコピーが {1} に残っています。サーバーへ送り返されていない変更が含まれている可能性があります。確認してから削除してください。下書きは自動では削除されません。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftAction" xml:space="preserve">
+    <value>フォルダーを開く</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>システム</value>

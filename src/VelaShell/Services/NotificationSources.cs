@@ -171,6 +171,63 @@ public static class NotificationSources
         };
     }
 
+    /// <summary>外部编辑草稿那几条消息的 id 前缀,后面接草稿子目录的名字。</summary>
+    public const string RemoteEditDraftIdPrefix = "remote-edit-draft:";
+
+    /// <summary>「打开外部编辑草稿文件夹」命令。</summary>
+    public const string OpenRemoteEditDraftsCommandId = "files.remoteEditDrafts.open";
+
+    /// <summary>
+    /// 每份外部编辑草稿(上次运行留下、带着或可能带着没传回服务器的改动)一条消息,带「打开所在文件夹」。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// id 用草稿子目录的名字:草稿还在,每次启动重投都按 id 去重、保住已读状态;草稿没了(用户处理完删掉了),
+    /// 调用方按 <see cref="StaleRemoteEditDraftIds" /> 把消息撤掉。发布时间取第一次发现它的时刻(之后重投按 id 去重,保住这个时刻):列表按发布时间倒序、满 200 条丢最旧的,
+    /// 拿草稿最后被改的时刻会让几个月前的草稿一投进来就沉底甚至被挤掉。
+    /// </para>
+    /// <para>
+    /// 只能打开文件夹,不能从这里直接重传:消息中心的动作只有一条不带参数的命令,而重传要先连上那台服务器
+    /// (会话随上次运行一起没了)、再按这一份草稿传。标记里记着连接配置,留给以后。
+    /// </para>
+    /// </remarks>
+    /// <param name="drafts">启动时找到的草稿(<see cref="RemoteEditDrafts.ListDrafts" />)。</param>
+    /// <returns>消息条目,一份草稿一条。</returns>
+    public static IReadOnlyList<NotificationItem> BuildRemoteEditDraftNotifications(IEnumerable<RemoteEditDraft> drafts)
+    {
+        ArgumentNullException.ThrowIfNull(drafts);
+        return [.. drafts.Select(static draft => new NotificationItem
+        {
+            Id = RemoteEditDraftIdPrefix + Path.GetFileName(draft.Directory),
+            Kind = NotificationKind.System,
+            Severity = NotificationSeverity.Warning,
+            Title = Strings.Get("Notify_RemoteEditDraftTitle"),
+            Body = draft.RemotePath is { Length: > 0 } remotePath
+                ? Strings.Format("Notify_RemoteEditDraftBody", draft.FileName,
+                    draft.Server is { Length: > 0 } server ? $"{server}:{remotePath}" : remotePath, draft.LocalPath)
+                : Strings.Format("Notify_RemoteEditDraftBodyUnknown", draft.FileName, draft.LocalPath),
+            PublishedAt = DateTime.UtcNow,
+            Link = new()
+            {
+                Label = Strings.Get("Notify_RemoteEditDraftAction"),
+                CommandId = OpenRemoteEditDraftsCommandId
+            }
+        })];
+    }
+
+    /// <summary>消息中心里还挂着、草稿却已经不在了的那几条(用户处理完删掉了草稿):该撤掉。</summary>
+    /// <param name="existing">消息中心此刻的条目。</param>
+    /// <param name="drafts">此刻还在的草稿。</param>
+    /// <returns>要撤掉的消息 id。</returns>
+    public static IReadOnlyList<string> StaleRemoteEditDraftIds(IEnumerable<NotificationItem> existing, IEnumerable<RemoteEditDraft> drafts)
+    {
+        ArgumentNullException.ThrowIfNull(existing);
+        ArgumentNullException.ThrowIfNull(drafts);
+        var current = drafts.Select(static draft => RemoteEditDraftIdPrefix + Path.GetFileName(draft.Directory)).ToHashSet(StringComparer.Ordinal);
+        return [.. existing.Select(static item => item.Id)
+            .Where(id => id.StartsWith(RemoteEditDraftIdPrefix, StringComparison.Ordinal) && !current.Contains(id))];
+    }
+
     /// <summary>
     /// 本机加密密钥的解析结果里有要用户知道的事时,攒成消息中心条目;一切照常(包括这次顺利迁进了密钥链)时为空。
     /// </summary>

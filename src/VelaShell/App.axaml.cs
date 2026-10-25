@@ -315,8 +315,11 @@ public class App : Application
                 SessionLogService.CleanupExpired(logRetentionDays);
                 TransferLogService.CleanupExpired(transferLogDirectory, transferLogRetentionDays);
                 // 内置编辑器崩溃留下的临时副本(关窗才删,进程没了就没人删):7 天没碰过的清掉。
-                // remote-edit 里刻意保留的回传失败草稿不在这里清,理由见 BuiltInEditTempFiles。
                 BuiltInEditTempFiles.SweepStale(BuiltInEditTempFiles.TempBase, DateTime.UtcNow);
+                // 外部编辑的副本按状态标记分:干净的同样 7 天后清;有未传改动的(含没有标记的旧副本)是草稿,
+                // 永不自动删,由消息中心列出来(见 RemoteEditDrafts 与 MainWindowViewModel.PublishRemoteEditDraftsAsync)。
+                RemoteEditDrafts.SweepStaleClean(RemoteEditSessionManager.TempRoot, DateTime.UtcNow,
+                    [.. RemoteEditSessionManager.ActiveSessions.Select(static s => Path.GetDirectoryName(s.LocalPath)!)]);
             });
 
             // 过期会话录制清理(随终端会话日志的保留天数)。

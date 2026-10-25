@@ -5053,6 +5053,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>開啟日誌目錄</value>
   </data>
+  <data name="Cmd_OpenRemoteEditDrafts" xml:space="preserve">
+    <value>開啟外部編輯草稿資料夾</value>
+  </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>開啟日誌目錄</value>
   </data>
@@ -5154,6 +5157,18 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} 無法使用({1}),本機加密金鑰照舊儲存在資料目錄的金鑰檔案裡(與之前相同)。金鑰鏈可用之後,下次啟動會自動遷移過去。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
+    <value>外部編輯的變更沒傳回伺服器</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBody" xml:space="preserve">
+    <value>{0}（{1}）的變更還留在本機的 {2}，沒有傳回伺服器。手動上傳或另存之後刪掉這份副本即可；草稿不會被自動刪除。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBodyUnknown" xml:space="preserve">
+    <value>本機的 {1} 裡有一份外部編輯留下的副本（{0}），可能帶著沒傳回伺服器的變更。確認之後請自己刪掉；草稿不會被自動刪除。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftAction" xml:space="preserve">
+    <value>開啟所在資料夾</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>系統</value>

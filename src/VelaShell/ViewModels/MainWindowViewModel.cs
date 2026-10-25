@@ -1294,6 +1294,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 Icon: "Icon.folder-open"
             )
         );
+        // 消息中心里「外部编辑的改动没传回服务器」那几条的动作;没有草稿目录时灰掉。
+        Commands.Register(
+            new(
+                NotificationSources.OpenRemoteEditDraftsCommandId,
+                Strings.Get("Cmd_OpenRemoteEditDrafts"),
+                Strings.Get("CmdCat_Actions"),
+                () => RemoteEditDrafts.OpenDraftsFolder(RemoteEditSessionManager.TempRoot),
+                () => Directory.Exists(RemoteEditSessionManager.TempRoot),
+                Icon: "Icon.folder-open"
+            )
+        );
         Commands.Register(
             new(
                 "app.palette",
@@ -2059,6 +2070,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             Sidebar.NotificationUnreadCount = center.UnreadCount;
             // 与更新检查并行:后者可能要后台下载好几分钟,密钥的提示不该排在它后面。
             Task keyNotices = PublishMasterKeyNoticesAsync(center);
+            await PublishRemoteEditDraftsAsync(center).ConfigureAwait(true);
             await RefreshNotificationSourcesAsync(center, feed, updateService).ConfigureAwait(true);
             await keyNotices.ConfigureAwait(true);
         }
@@ -2094,6 +2106,28 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         catch (Exception ex)
         {
             System.Diagnostics.Trace.WriteLine($"[Secrets] Master key notice could not be published: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 上次运行留下的外部编辑草稿(有或可能有没传回服务器的改动)一份一条投进消息中心;草稿已经不在的,撤掉它那一条。
+    /// </summary>
+    /// <remarks>
+    /// 只在启动时做一次:运行中留下的草稿当场就在文件面板报过位置(<c>Svc_RemoteEditDraftKept</c>),
+    /// 下次启动再在这里列。扫目录是磁盘 IO,放到线程池;正开着的编辑会话不算草稿。
+    /// </remarks>
+    internal static async Task PublishRemoteEditDraftsAsync(INotificationCenter center, string? root = null)
+    {
+        string draftsRoot = root ?? RemoteEditSessionManager.TempRoot;
+        string[] active = [.. RemoteEditSessionManager.ActiveSessions.Select(static s => Path.GetDirectoryName(s.LocalPath)!)];
+        IReadOnlyList<RemoteEditDraft> drafts = await Task.Run(() => RemoteEditDrafts.ListDrafts(draftsRoot, active)).ConfigureAwait(true);
+        foreach (string stale in NotificationSources.StaleRemoteEditDraftIds(center.Items, drafts))
+        {
+            await center.RemoveAsync(stale).ConfigureAwait(true);
+        }
+        if (drafts.Count > 0)
+        {
+            await center.PublishAsync(NotificationSources.BuildRemoteEditDraftNotifications(drafts)).ConfigureAwait(true);
         }
     }
 

@@ -4804,6 +4804,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>로그 폴더 열기</value>
   </data>
+  <data name="Cmd_OpenRemoteEditDrafts" xml:space="preserve">
+    <value>외부 편집 초안 폴더 열기</value>
+  </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>로그 폴더 열기</value>
   </data>
@@ -4905,6 +4908,18 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} 을(를) 사용할 수 없어({1}) 로컬 암호화 키를 이전처럼 데이터 폴더의 키 파일에 저장합니다. 키체인을 사용할 수 있게 되면 다음 실행 때 자동으로 옮깁니다.</value>
+  </data>
+  <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
+    <value>외부 편집 변경 사항이 서버로 전송되지 않았습니다</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBody" xml:space="preserve">
+    <value>{0}({1})의 변경 사항이 아직 이 컴퓨터의 {2}에만 있고 서버로 전송되지 않았습니다. 직접 업로드하거나 다른 곳에 저장한 뒤 이 사본을 삭제하세요. 초안은 자동으로 삭제되지 않습니다.</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBodyUnknown" xml:space="preserve">
+    <value>외부 편집에 쓰인 {0}의 사본이 {1}에 남아 있으며 서버로 전송되지 않은 변경 사항이 있을 수 있습니다. 확인한 뒤 직접 삭제하세요. 초안은 자동으로 삭제되지 않습니다.</value>
+  </data>
+  <data name="Notify_RemoteEditDraftAction" xml:space="preserve">
+    <value>폴더 열기</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>시스템</value>

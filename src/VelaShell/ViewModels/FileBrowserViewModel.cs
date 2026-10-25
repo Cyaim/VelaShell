@@ -1806,6 +1806,9 @@ public class FileBrowserViewModel : ReactiveObject
                     EditorCommand = editor,
                     OpenLocalAsync = OpenLocalFile,
                     AutoUpload = TransferOptions.AutoUploadOnEdit,
+                    // 写进副本旁边的状态标记:崩溃之后消息中心要说得出草稿是哪台机器上的哪个文件。
+                    Server = QueueOrigin?.ServerName ?? (string.IsNullOrEmpty(ServerDisplayName) ? null : ServerDisplayName),
+                    ProfileId = QueueOrigin?.ProfileId,
                     OnError = message => Dispatcher.UIThread.Post(() => ErrorMessage = message),
 
                     // 下载与回传都经传输浮窗(进度、限速、可取消)。

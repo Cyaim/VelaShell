@@ -4920,6 +4920,9 @@ Overwrite it?</value>
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>Open logs folder</value>
   </data>
+  <data name="Cmd_OpenRemoteEditDrafts" xml:space="preserve">
+    <value>Open external edit drafts folder</value>
+  </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>Open logs folder</value>
   </data>
@@ -5021,6 +5024,18 @@ Overwrite it?</value>
   </data>
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} is not available ({1}), so the local encryption key stays in the key file in the data directory, as before. Once the keychain is available, the next start moves the key there automatically.</value>
+  </data>
+  <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
+    <value>External edit not uploaded</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBody" xml:space="preserve">
+    <value>Changes to {0} ({1}) are still only on this computer at {2} and were not uploaded. Upload or save them yourself, then delete this copy; drafts are never deleted automatically.</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBodyUnknown" xml:space="preserve">
+    <value>An external-edit copy of {0} was left at {1} and may contain changes that were not uploaded. Check it, then delete it yourself; drafts are never deleted automatically.</value>
+  </data>
+  <data name="Notify_RemoteEditDraftAction" xml:space="preserve">
+    <value>Open folder</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>System</value>

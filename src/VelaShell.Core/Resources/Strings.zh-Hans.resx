@@ -5053,6 +5053,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>打开日志目录</value>
   </data>
+  <data name="Cmd_OpenRemoteEditDrafts" xml:space="preserve">
+    <value>打开外部编辑草稿文件夹</value>
+  </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>打开日志目录</value>
   </data>
@@ -5154,6 +5157,18 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} 用不了({1}),本机加密密钥照旧保存在数据目录的密钥文件里(与之前相同)。密钥链可用之后,下次启动会自动迁过去。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
+    <value>外部编辑的改动没传回服务器</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBody" xml:space="preserve">
+    <value>{0}（{1}）的改动还留在本机的 {2}，没有传回服务器。手动上传或另存之后删掉这份副本即可；草稿不会被自动删除。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBodyUnknown" xml:space="preserve">
+    <value>本机的 {1} 里有一份外部编辑留下的副本（{0}），可能带着没传回服务器的改动。确认之后请自己删掉；草稿不会被自动删除。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftAction" xml:space="preserve">
+    <value>打开所在文件夹</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>系统</value>
