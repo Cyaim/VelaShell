@@ -198,8 +198,9 @@ internal static partial class SshInterop
 
     /// <summary>SFTP 子系统起不来:握手超时、「服务端没开 SFTP」与「sftp-server 没起来就退出了」分开说;别的原因(库内收尾)按原因码。</summary>
     /// <remarks>
-    /// 版本不对、本端已经收工按库给的种类(<see cref="SftpUnavailableException.FailureKind" />)另说 —— 它们的原因码是
-    /// <see cref="SshFailureReason.Unsupported" /> / <see cref="SshFailureReason.ProtocolError" />,曾经一律说成「服务端没开 SFTP」。
+    /// 版本不对、本端已经收工按库给的种类(<see cref="SftpUnavailableException.FailureKind" />)另说 —— 版本不对的原因码是
+    /// <see cref="SshFailureReason.Unsupported" /> / <see cref="SshFailureReason.ProtocolError" />,曾经一律说成「服务端没开 SFTP」;
+    /// 本端收工(关闭文件系统、连接释放)是 <see cref="SshFailureReason.Aborted" />,尾巴照实写 <c>[Aborted @ Open]</c>。
     /// </remarks>
     internal static string LocalizeUnavailable(SftpUnavailableException ex)
     {

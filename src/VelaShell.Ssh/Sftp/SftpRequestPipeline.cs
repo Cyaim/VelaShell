@@ -685,8 +685,10 @@ internal sealed class SftpRequestPipeline : IAsyncDisposable
             // 释放路径不抛。
         }
 
-        // 原因码照旧是 Unsupported（公开构造的语义不变）；种类说清这是本端收工，界面不再说成「服务端没开 SFTP」。
-        Fault(new SftpUnavailableException("SFTP 流水线已释放。")
+        // 本端释放是中止（Aborted），与接收循环被取消时的「已收工」同一个原因码 —— 两者谁先落到 Fault 上不确定，
+        // 原因码不该跟着竞态变。种类说清这是本端收工，界面不再说成「服务端没开 SFTP」。
+        // 〔历史〕曾经走公开构造、原因码是 Unsupported（对端或本库不支持），说的不是真话（库 AGENTS.md 4.5）。
+        Fault(new SftpUnavailableException(SshFailureReason.Aborted, "SFTP 流水线已释放。")
         {
             FailureKind = SftpUnavailableKind.SessionClosed,
         });

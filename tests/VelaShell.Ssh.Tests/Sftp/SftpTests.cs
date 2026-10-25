@@ -948,6 +948,7 @@ public sealed class SftpTests
         Exception ended = await closed.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.IsInstanceOfType<SftpUnavailableException>(ended);
         Assert.AreEqual(SftpUnavailableKind.SessionClosed, ((SftpUnavailableException)ended).FailureKind, "本端收工，不是服务端没开 SFTP");
+        Assert.AreEqual(SshFailureReason.Aborted, ((SftpUnavailableException)ended).Reason, "本端收工是中止，不是不支持");
         Assert.IsFalse(harness.Sftp.IsConnected);
     }
 
