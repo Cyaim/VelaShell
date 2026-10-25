@@ -1,0 +1,355 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:VelaShell.ViewModels"
+             xmlns:pc="using:VelaShell.Controls.Controls"
+             xmlns:loc="using:VelaShell.Localization"
+             x:Class="VelaShell.Views.Settings.OutputRulesPage"
+             x:DataType="vm:SettingsViewModel">
+
+  <UserControl.Styles>
+    <!-- 行内操作:24×24 透明图标按钮(代码片段页、密钥管理页同款)。 -->
+    <Style Selector="Button.icon-btn">
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.icon-btn /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.icon-btn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="Border.rule-row">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.rule-row:pointerover">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <!-- 动作标签(高亮 / 自动应答):与状态标签同一种小胶囊。 -->
+    <Style Selector="Border.badge">
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Background" Value="{DynamicResource VelaAccentDim}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox.mono">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+    </Style>
+    <!-- 测试文本:多行等宽,太长就在框内滚动,不把整页撑开。 -->
+    <Style Selector="TextBox.test-input">
+      <Setter Property="AcceptsReturn" Value="True" />
+      <Setter Property="TextWrapping" Value="NoWrap" />
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="MinHeight" Value="80" />
+      <Setter Property="MaxHeight" Value="200" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Spacing="14">
+    <StackPanel Spacing="2">
+      <TextBlock Classes="page-title" Text="{loc:Localize OutRule_Title}" />
+      <TextBlock Classes="page-subtitle" Text="{loc:Localize OutRule_Subtitle}" />
+    </StackPanel>
+
+    <TextBlock Text="{loc:Localize OutRule_Intro}"
+               Foreground="{DynamicResource VelaTextSecondary}"
+               FontSize="{DynamicResource VelaFontSize12}" TextWrapping="Wrap" />
+    <!-- 安全说明常驻:自动应答只用于 yes / 回车 / 固定文本,口令一律走共享密码。 -->
+    <Border Background="{DynamicResource VelaBgInput}"
+            BorderBrush="{DynamicResource VelaBorderPrimary}"
+            BorderThickness="1" CornerRadius="4" Padding="12,8">
+      <Grid ColumnDefinitions="Auto,8,*">
+        <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.shield}"
+                       Foreground="{DynamicResource VelaWarning}" VerticalAlignment="Top" Margin="0,2,0,0" />
+        <TextBlock Grid.Column="2" Text="{loc:Localize OutRule_SafetyNote}"
+                   Foreground="{DynamicResource VelaTextSecondary}"
+                   FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap" />
+      </Grid>
+    </Border>
+
+    <!-- 规则列表(顺序 = 优先级,排前面的赢)。 -->
+    <Grid ColumnDefinitions="*,12,Auto">
+      <TextBlock Classes="section-title" Text="{loc:Localize OutRule_ListSection}" VerticalAlignment="Center" />
+      <Button x:Name="AddRuleButton" Grid.Column="2" Classes="dlg-primary"
+              Content="{loc:Localize OutRule_Add}"
+              Command="{Binding OutputRules.AddCommand}" />
+    </Grid>
+    <TextBlock Classes="row-desc" Text="{Binding OutputRules.LimitText}"
+               IsVisible="{Binding !OutputRules.CanAdd}" />
+    <TextBlock Classes="row-desc" Text="{loc:Localize OutRule_Empty}"
+               IsVisible="{Binding OutputRules.IsEmpty}" />
+
+    <Border Classes="table" IsVisible="{Binding !OutputRules.IsEmpty}">
+      <ItemsControl x:Name="RuleList" ItemsSource="{Binding OutputRules.Rules}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:OutputRuleRowViewModel">
+            <Border Classes="rule-row" Padding="10,8" BorderThickness="0,0,0,1"
+                    BorderBrush="{DynamicResource VelaBorderPrimary}">
+              <Grid ColumnDefinitions="Auto,10,*,12,Auto,4,Auto,4,Auto,4,Auto">
+                <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center"
+                          ToolTip.Tip="{loc:Localize OutRule_Enabled}"
+                          AutomationProperties.Name="{loc:Localize OutRule_Enabled}" />
+                <StackPanel Grid.Column="2" Spacing="3">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding DisplayName}"
+                               Foreground="{DynamicResource VelaTextPrimary}"
+                               FontSize="{DynamicResource VelaFontSize12}" FontWeight="Medium"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <Border Classes="badge">
+                      <TextBlock Text="{Binding ActionText}"
+                                 Foreground="{DynamicResource VelaAccentText}"
+                                 FontSize="{DynamicResource VelaFontSize10}" />
+                    </Border>
+                    <TextBlock Text="{Binding ScopeText}"
+                               Foreground="{DynamicResource VelaTextTertiary}"
+                               FontSize="{DynamicResource VelaFontSize10}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <TextBlock Text="{Binding Pattern}"
+                             Foreground="{DynamicResource VelaAccentText}"
+                             FontFamily="{DynamicResource VelaUiMonoFont}"
+                             FontSize="{DynamicResource VelaFontSize10}" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}"
+                             Foreground="{DynamicResource VelaError}"
+                             FontSize="{DynamicResource VelaFontSize10}" TextWrapping="Wrap" />
+                </StackPanel>
+                <Button Grid.Column="4" Classes="icon-btn" VerticalAlignment="Center"
+                        ToolTip.Tip="{loc:Localize OutRule_MoveUp}"
+                        AutomationProperties.Name="{loc:Localize OutRule_MoveUp}"
+                        Click="MoveUp_Click">
+                  <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.arrow-up}"
+                                 Foreground="{DynamicResource VelaTextTertiary}" />
+                </Button>
+                <Button Grid.Column="6" Classes="icon-btn" VerticalAlignment="Center"
+                        ToolTip.Tip="{loc:Localize OutRule_MoveDown}"
+                        AutomationProperties.Name="{loc:Localize OutRule_MoveDown}"
+                        Click="MoveDown_Click">
+                  <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.arrow-down}"
+                                 Foreground="{DynamicResource VelaTextTertiary}" />
+                </Button>
+                <Button Grid.Column="8" Classes="icon-btn" VerticalAlignment="Center"
+                        ToolTip.Tip="{loc:Localize Edit}"
+                        AutomationProperties.Name="{loc:Localize Edit}"
+                        Click="EditRule_Click">
+                  <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.pencil}"
+                                 Foreground="{DynamicResource VelaTextTertiary}" />
+                </Button>
+                <Button Grid.Column="10" Classes="icon-btn" VerticalAlignment="Center"
+                        ToolTip.Tip="{loc:Localize Delete}"
+                        AutomationProperties.Name="{loc:Localize Delete}"
+                        Click="DeleteRule_Click">
+                  <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.trash-2}"
+                                 Foreground="{DynamicResource VelaError}" />
+                </Button>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Border>
+
+    <!-- 编辑框:改的是副本,「完成」写回列表(校验不过不可点),保存设置时才落盘。 -->
+    <Border x:Name="RuleEditor" IsVisible="{Binding OutputRules.IsEditing}"
+            BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="1"
+            CornerRadius="6" Padding="14">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="section-title" Text="{Binding OutputRules.EditorTitle}" />
+
+        <Grid ColumnDefinitions="120,*">
+          <TextBlock Classes="row-label" Text="{loc:Localize OutRule_Name}" VerticalAlignment="Center" />
+          <TextBox x:Name="RuleNameBox" Grid.Column="1" Text="{Binding OutputRules.DraftName}"
+                   PlaceholderText="{loc:Localize OutRule_NamePlaceholder}" />
+        </Grid>
+        <Grid ColumnDefinitions="120,*">
+          <TextBlock Classes="row-label" Text="{loc:Localize OutRule_Pattern}" VerticalAlignment="Center" />
+          <TextBox x:Name="RulePatternBox" Grid.Column="1" Classes="mono" Text="{Binding OutputRules.DraftPattern}"
+                   PlaceholderText="{loc:Localize OutRule_PatternPlaceholder}" />
+        </Grid>
+        <Grid ColumnDefinitions="120,*">
+          <StackPanel Grid.Column="1" Spacing="4">
+            <CheckBox Content="{loc:Localize OutRule_CaseSensitive}" IsChecked="{Binding OutputRules.DraftCaseSensitive}" />
+            <TextBlock Classes="row-desc" Text="{loc:Localize OutRule_PatternDesc}" />
+          </StackPanel>
+        </Grid>
+        <Grid ColumnDefinitions="120,*">
+          <TextBlock Classes="row-label" Text="{loc:Localize OutRule_Action}" VerticalAlignment="Center" />
+          <ComboBox x:Name="RuleActionBox" Grid.Column="1" Width="200" SelectedIndex="{Binding OutputRules.DraftActionIndex}">
+            <ComboBoxItem Content="{loc:Localize OutRule_ActionHighlight}" />
+            <ComboBoxItem Content="{loc:Localize OutRule_ActionRespond}" />
+          </ComboBox>
+        </Grid>
+        <Grid ColumnDefinitions="120,*">
+          <TextBlock Classes="row-label" Text="{loc:Localize OutRule_Scope}" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <ComboBox Width="140" SelectedIndex="{Binding OutputRules.DraftScopeIndex}">
+              <ComboBoxItem Content="{loc:Localize OutRule_ScopeGlobal}" />
+              <ComboBoxItem Content="{loc:Localize OutRule_ScopeGroup}" />
+              <ComboBoxItem Content="{loc:Localize OutRule_ScopeProfile}" />
+            </ComboBox>
+            <ComboBox Width="220" IsVisible="{Binding OutputRules.DraftNeedsScopeTarget}"
+                      ItemsSource="{Binding OutputRules.ScopeTargets}"
+                      SelectedItem="{Binding OutputRules.DraftScopeTarget}"
+                      PlaceholderText="{loc:Localize OutRule_ScopeTargetPlaceholder}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:OutputRuleScopeTarget">
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+        </Grid>
+
+        <!-- 高亮:前景 / 背景只能选调色板里的颜色,另可加粗。 -->
+        <StackPanel Spacing="10" IsVisible="{Binding OutputRules.DraftIsHighlight}">
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Classes="row-label" Text="{loc:Localize OutRule_Foreground}" VerticalAlignment="Center" />
+            <ComboBox x:Name="RuleForegroundBox" Grid.Column="1" Width="200"
+                      ItemsSource="{Binding OutputRules.PaletteChoices}"
+                      SelectedItem="{Binding OutputRules.DraftForeground}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:OutputRulePaletteChoice">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Width="14" Height="14" CornerRadius="3" IsVisible="{Binding HasSwatch}"
+                            Background="{Binding Swatch}"
+                            BorderBrush="{DynamicResource VelaBorderSecondary}" BorderThickness="1"
+                            VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Classes="row-label" Text="{loc:Localize OutRule_Background}" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1" Width="200"
+                      ItemsSource="{Binding OutputRules.PaletteChoices}"
+                      SelectedItem="{Binding OutputRules.DraftBackground}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:OutputRulePaletteChoice">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Width="14" Height="14" CornerRadius="3" IsVisible="{Binding HasSwatch}"
+                            Background="{Binding Swatch}"
+                            BorderBrush="{DynamicResource VelaBorderSecondary}" BorderThickness="1"
+                            VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <CheckBox Grid.Column="1" Content="{loc:Localize OutRule_Bold}" IsChecked="{Binding OutputRules.DraftBold}" />
+          </Grid>
+          <TextBlock Classes="row-desc" Text="{loc:Localize OutRule_HighlightDesc}" />
+        </StackPanel>
+
+        <!-- 自动应答:固定文本 + 回车,冷却与每分钟上限,默认不转发给同步输入频道。 -->
+        <StackPanel Spacing="10" IsVisible="{Binding OutputRules.DraftIsRespond}">
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Classes="row-label" Text="{loc:Localize OutRule_Response}" VerticalAlignment="Center" />
+            <TextBox x:Name="RuleResponseBox" Grid.Column="1" Classes="mono" Text="{Binding OutputRules.DraftResponse}"
+                     PlaceholderText="{loc:Localize OutRule_ResponsePlaceholder}" />
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <StackPanel Grid.Column="1" Spacing="6">
+              <CheckBox Content="{loc:Localize OutRule_SendEnter}" IsChecked="{Binding OutputRules.DraftSendEnter}" />
+              <TextBlock Classes="row-desc" Text="{loc:Localize OutRule_ResponseDesc}" />
+            </StackPanel>
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="row-label" Text="{loc:Localize OutRule_Cooldown}" />
+              <TextBlock Classes="row-desc" Text="{loc:Localize OutRule_CooldownDesc}" />
+            </StackPanel>
+            <NumericUpDown Grid.Column="1" Width="90" Value="{Binding OutputRules.DraftCooldownSeconds}"
+                           Minimum="1" Maximum="3600" Increment="1" FormatString="0" VerticalAlignment="Center" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="row-label" Text="{loc:Localize OutRule_MaxPerMinute}" />
+              <TextBlock Classes="row-desc" Text="{loc:Localize OutRule_MaxPerMinuteDesc}" />
+            </StackPanel>
+            <NumericUpDown Grid.Column="1" Width="90" Value="{Binding OutputRules.DraftMaxPerMinute}"
+                           Minimum="1" Maximum="30" Increment="1" FormatString="0" VerticalAlignment="Center" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="row-label" Text="{loc:Localize OutRule_ForwardSync}" />
+              <TextBlock Classes="row-desc" Text="{loc:Localize OutRule_ForwardSyncDesc}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1" IsChecked="{Binding OutputRules.DraftForwardToSyncChannel}" VerticalAlignment="Center" />
+          </Grid>
+        </StackPanel>
+
+        <TextBlock x:Name="RuleDraftError" Text="{Binding OutputRules.DraftError}"
+                   IsVisible="{Binding OutputRules.HasDraftError}"
+                   Foreground="{DynamicResource VelaError}"
+                   FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+          <Button Classes="dlg-outline" Content="{loc:Localize Cancel}"
+                  Command="{Binding OutputRules.CancelEditCommand}" />
+          <Button x:Name="CommitRuleButton" Classes="dlg-primary" Content="{loc:Localize OutRule_Done}"
+                  Command="{Binding OutputRules.CommitEditCommand}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Border Classes="sep" />
+
+    <!-- 测试:粘贴一段输出看命中效果。编辑框开着时只测草稿,否则测表里全部启用的规则。 -->
+    <TextBlock Classes="section-title" Text="{loc:Localize OutRule_TestSection}" />
+    <TextBlock Classes="row-desc" Text="{loc:Localize OutRule_TestDesc}" />
+    <TextBox x:Name="RuleTestBox" Classes="test-input" Text="{Binding OutputRules.TestText}"
+             PlaceholderText="{loc:Localize OutRule_TestPlaceholder}" />
+    <TextBlock Classes="row-desc" Text="{Binding OutputRules.TestSummary}"
+               IsVisible="{Binding OutputRules.TestSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <ItemsControl x:Name="RuleTestResults" ItemsSource="{Binding OutputRules.TestResults}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:OutputRuleTestLineViewModel">
+          <Grid ColumnDefinitions="36,*" Margin="0,2">
+            <TextBlock Text="{Binding LineNumber}"
+                       Foreground="{DynamicResource VelaTextMuted}"
+                       FontFamily="{DynamicResource VelaUiMonoFont}"
+                       FontSize="{DynamicResource VelaFontSize11}" />
+            <StackPanel Grid.Column="1" Spacing="2">
+              <ItemsControl ItemsSource="{Binding Segments}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:OutputRuleTestSegmentViewModel">
+                    <!-- 规则设了前景就用规则的(调色板色),否则用界面正文色;两枚 TextBlock 二选一显示。 -->
+                    <Border Background="{Binding Background}">
+                      <Panel>
+                        <TextBlock Text="{Binding Text}" IsVisible="{Binding !HasForeground}"
+                                   Foreground="{DynamicResource VelaTextPrimary}"
+                                   FontFamily="{DynamicResource VelaUiMonoFont}"
+                                   FontSize="{DynamicResource VelaFontSize11}"
+                                   FontWeight="{Binding Weight}"
+                                   TextDecorations="{Binding Decorations}" />
+                        <TextBlock Text="{Binding Text}" IsVisible="{Binding HasForeground}"
+                                   Foreground="{Binding Foreground}"
+                                   FontFamily="{DynamicResource VelaUiMonoFont}"
+                                   FontSize="{DynamicResource VelaFontSize11}"
+                                   FontWeight="{Binding Weight}"
+                                   TextDecorations="{Binding Decorations}" />
+                      </Panel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Text="{Binding RespondNote}" IsVisible="{Binding HasRespondNote}"
+                         Foreground="{DynamicResource VelaAccentText}"
+                         FontSize="{DynamicResource VelaFontSize10}" TextWrapping="Wrap" />
+            </StackPanel>
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

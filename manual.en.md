@@ -318,6 +318,17 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 **Result and how it works:** The remote shell reports command boundaries with OSC 133; the client cannot reliably infer them from arbitrary text. Without integration, equivalent command-block navigation is unavailable, and so are the copy and rerun actions below. Working-directory reporting also needs remote cooperation; not every shell automatically follows a file-pane path.
 
 **Copy and rerun:** Right-click any line of a command block in the terminal's left gutter; the menu starts with **Copy this command** and **Rerun this command**. "This command" is the on-screen text between the end of the prompt and the moment Enter ran it (soft-wrapped lines are rejoined; a multi-line command keeps its lines with the continuation prompts cut off). Both items are greyed out for a command that has not been run yet, one abandoned with Ctrl+C, and blocks from older integration scripts that do not mark the end of the prompt. Rerun sends the command plus Enter to **the same terminal** and is available only while the remote side sits at an empty new prompt (not while the previous command still runs, inside a full-screen program, or with something already typed); it goes to this tab only, not through sync-input channels, and runs in the **current** directory on the current host rather than going back to the original context. Multi-line commands are sent as a bracketed paste; when the remote side has not enabled bracketed paste you are asked first, and multi-line commands whose continuation lines are unmarked can only be copied. **The integration snippets changed on 2026-10-24** (bash/zsh continuation prompts are marked too; the zsh prompt marker moved into PS1 and the extra backslash after every prompt is gone), **so copy the snippet from the settings page again if you installed an older one**: with the old zsh snippet command blocks never form at all, and with the old bash snippet multi-line commands cannot be rerun.
+### 7.7 Output Rules: Custom Highlighting and Auto-Answer
+
+**Auto-answer risk:** Auto-answer types into the terminal for you. Use it only for yes / Enter / fixed-text answers, and **never put a password into a rule**: rules are saved with your settings and, with cloud sync on, end up in the Gist. For passwords use the shared password list from 5.2. Rules that would match a password, passphrase, or verification-code prompt cannot be set to auto-answer; the settings page rejects them.
+
+**Entry point and steps:** **Settings → Output Rules** (the page right below Terminal). **New rule** → enter a name and a pattern (.NET regular expression, matched line by line) and choose case sensitivity → pick the action (Highlight / Auto-answer) and where it applies (all terminals / one group / one connection) → **Done** → **Save settings** at the bottom of the window; open tabs pick it up immediately. In the list you can enable/disable, move up/down (higher wins), edit, and delete. **Test** at the bottom of the page takes pasted output and shows what matches: while the editor is open only the rule being edited is tested, otherwise all enabled rules. There are no rules out of the box.
+
+**Highlight:** Text and background colors can only be chosen from the ANSI 16 colors of the terminal color scheme, plus bold, so they follow theme and scheme changes. Your rules sit above the built-in semantic highlighting (URLs, IPs, error/warning/success words, options, numbers): a text color you set overrides the program's own color, everything you leave unset stays as it was, and selection and search highlights still show on top. Main screen only; full-screen programs such as vim, htop, and less are left alone.
+
+**Auto-answer:** After remote output, when the line the cursor is waiting on matches a rule, VelaShell waits for the remote to go quiet for a moment (about 0.3 s), sends the rule's text, presses Enter if the rule says so, and shows **Auto-answered: rule name** above the terminal. Each line is answered once; two answers from the same rule are at least **Cooldown** seconds apart (default 2; a prompt that shows up sooner is answered when the cooldown ends); after **At most per minute** answers (default 6) the rule pauses and says so, leaving the rest to you. Nothing is sent while you are typing on that line (including local echo and pastes); judging restarts after Enter. Only remote output counts: local echo, text the client writes into the terminal, and recording playback never trigger, and neither does output that has already scrolled past (for example a file you `cat` that happens to contain the same words). Answers go out the same way as Quick Commands and are **not** forwarded to sync-input channels unless the rule turns on **Also send to the sync input channel**.
+
+**How it works and caveats:** Every pattern is compiled for a linear-time engine, so even catastrophic patterns such as `(a+)+$` cannot slow the terminal down; the price is no backreferences or lookarounds (the settings page tells you). At most 64 rules. Highlights are cached per line of text, so lines that did not change are not matched again. Rules live in the terminal settings, travel with the Terminal category of settings export/import and with the app settings in Gist sync. Terminal views owned by plugins get highlighting but no auto-answer. Masking for recordings and logs (chapter 14) still uses only the built-in rules; this table does not feed it yet.
 
 <a id="workspace"></a>
 ## 8. Docking, Synchronized Input, and Quick Commands
@@ -592,7 +603,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 <a id="settings"></a>
 ## 15. Settings: All Available Pages
 
-**Common entry point and operation:** Press `Ctrl+,`, choose a page on the left, make changes, and save settings. Except for explicitly immediate management actions, editing a field is not proof of persistence. Follow instructions for restart, reconnection, or next X Server start. There are **14 actual navigation pages**, not the nine/twelve in historical material.
+**Common entry point and operation:** Press `Ctrl+,`, choose a page on the left, make changes, and save settings. Except for explicitly immediate management actions, editing a field is not proof of persistence. Follow instructions for restart, reconnection, or next X Server start. There are **15 actual navigation pages**, not the nine/twelve in historical material.
 
 ### 15.1 General
 
@@ -633,6 +644,8 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 | Input | Multiline confirmation, IME, local echo, Ctrl+C copies selection | Local echo can reveal passwords; ordinary SSH shells generally need no extra echo |
 
 **Per-connection overrides:** The SSH Terminal page offers post-authentication command with 0–60-second delay, encoding, TERM, tab color, initial directory, keepalive, and anti-idle. The global post-connect command runs first, then the profile's command; both also run after reconnect. Avoid unintended side effects. There is no per-profile terminal color-scheme override control.
+
+**Output Rules:** A separate page right below Terminal manages custom highlighting and auto-answer (rule list, editor, test); rules that apply to one connection or group pick their scope there. See 7.7 for usage and limits.
 
 ### 15.4 Key Management
 
@@ -1127,6 +1140,7 @@ This manual intentionally does not promise:
 - Sixel/Kitty terminal images or ZMODEM. X11 graphical applications are not terminal image protocols.
 - Redis/S3/Telnet/serial/Docker without plugins. S3 is not POSIX storage and does not supply SSH chmod/upload-resume semantics.
 - Automatic quick-command execution, or a command-block rerun that goes back to the original directory or host. Completion is not a safety review.
+- Output rules as expect scripts: auto-answer only answers the line the cursor is waiting on, and a rule sends one piece of fixed text; there are no multi-step dialogues, variables, or passwords. Recording and log masking cannot take your own rules from this table yet.
 - Remote mtr/TCP SYN tracing, trace text/JSON export, or a fifth diagnostics stage. Current tracing uses local ICMP.
 - Remote forwards mixing a TCP end with a Unix-socket end, and SSH library capabilities the host has not wired up, such as the TLS dialer and the packet tap. Library support does not imply panel configuration.
 - An OS-level plugin sandbox, configuration-change auditing that records the values (it records only which part changed), infallible masking, or secret-Gist links as encryption.

@@ -4260,6 +4260,234 @@ Rerun anyway?</value>
   <data name="SetVm_SectionTerminal" xml:space="preserve">
     <value>Terminal</value>
   </data>
+  <data name="SetVm_SectionOutputRules" xml:space="preserve">
+    <value>Output Rules</value>
+  </data>
+  <data name="OutRule_Title" xml:space="preserve">
+    <value>Output Rules</value>
+  </data>
+  <data name="OutRule_Subtitle" xml:space="preserve">
+    <value>Highlight terminal output with your own regular expressions, or answer prompts automatically</value>
+  </data>
+  <data name="OutRule_Intro" xml:space="preserve">
+    <value>Rules apply to the main screen of SSH and local terminals (full-screen programs such as vim and htop draw their own colors and are left alone). Your highlights sit above the built-in semantic highlighting (URLs, IP addresses, error words…), which keeps working; among your own rules, the one higher in the list wins. Rules are part of the Terminal category in settings export / import and travel with cloud sync of app settings.</value>
+  </data>
+  <data name="OutRule_SafetyNote" xml:space="preserve">
+    <value>Auto-answer is only for yes / Enter / fixed text. Never put a password into a rule: rules are saved with your settings and synced. When a password is needed, use Shared Credentials — the shared password list pops up at password prompts. Rules that would match a password prompt cannot be set to auto-answer.</value>
+  </data>
+  <data name="OutRule_ListSection" xml:space="preserve">
+    <value>Rules</value>
+  </data>
+  <data name="OutRule_Add" xml:space="preserve">
+    <value>New rule</value>
+  </data>
+  <data name="OutRule_EditTitle" xml:space="preserve">
+    <value>Edit rule</value>
+  </data>
+  <data name="OutRule_LimitReached" xml:space="preserve">
+    <value>At most {0} rules.</value>
+  </data>
+  <data name="OutRule_Empty" xml:space="preserve">
+    <value>No rules yet. The built-in semantic highlighting is not affected.</value>
+  </data>
+  <data name="OutRule_Enabled" xml:space="preserve">
+    <value>Enabled</value>
+  </data>
+  <data name="OutRule_MoveUp" xml:space="preserve">
+    <value>Move up (higher priority)</value>
+  </data>
+  <data name="OutRule_MoveDown" xml:space="preserve">
+    <value>Move down</value>
+  </data>
+  <data name="OutRule_ActionHighlight" xml:space="preserve">
+    <value>Highlight</value>
+  </data>
+  <data name="OutRule_ActionRespond" xml:space="preserve">
+    <value>Auto-answer</value>
+  </data>
+  <data name="OutRule_ScopeGlobal" xml:space="preserve">
+    <value>All terminals</value>
+  </data>
+  <data name="OutRule_ScopeGroup" xml:space="preserve">
+    <value>Group</value>
+  </data>
+  <data name="OutRule_ScopeProfile" xml:space="preserve">
+    <value>Connection</value>
+  </data>
+  <data name="OutRule_ScopeGroupNamed" xml:space="preserve">
+    <value>Group: {0}</value>
+  </data>
+  <data name="OutRule_ScopeProfileNamed" xml:space="preserve">
+    <value>Connection: {0}</value>
+  </data>
+  <data name="OutRule_ScopeMissing" xml:space="preserve">
+    <value>(no longer exists)</value>
+  </data>
+  <data name="OutRule_ScopeTargetPlaceholder" xml:space="preserve">
+    <value>Choose…</value>
+  </data>
+  <data name="OutRule_Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="OutRule_NamePlaceholder" xml:space="preserve">
+    <value>Shown in the auto-answer notice; defaults to the pattern</value>
+  </data>
+  <data name="OutRule_Pattern" xml:space="preserve">
+    <value>Pattern</value>
+  </data>
+  <data name="OutRule_PatternPlaceholder" xml:space="preserve">
+    <value>e.g. ERROR|FATAL</value>
+  </data>
+  <data name="OutRule_PatternDesc" xml:space="preserve">
+    <value>.NET regular expression, matched line by line. So that rules can never slow the terminal down, every rule runs on a linear-time engine: backreferences and lookarounds are not supported.</value>
+  </data>
+  <data name="OutRule_CaseSensitive" xml:space="preserve">
+    <value>Case sensitive</value>
+  </data>
+  <data name="OutRule_Action" xml:space="preserve">
+    <value>Action</value>
+  </data>
+  <data name="OutRule_Scope" xml:space="preserve">
+    <value>Applies to</value>
+  </data>
+  <data name="OutRule_Foreground" xml:space="preserve">
+    <value>Text color</value>
+  </data>
+  <data name="OutRule_Background" xml:space="preserve">
+    <value>Background</value>
+  </data>
+  <data name="OutRule_Bold" xml:space="preserve">
+    <value>Bold</value>
+  </data>
+  <data name="OutRule_HighlightDesc" xml:space="preserve">
+    <value>Colors are the ANSI 16 colors of the terminal color scheme, so highlights follow theme and scheme changes. Your text color overrides colors set by the program; selection and search highlights still show on top.</value>
+  </data>
+  <data name="OutRule_ColorNone" xml:space="preserve">
+    <value>Unchanged</value>
+  </data>
+  <data name="OutRule_ColorBlack" xml:space="preserve">
+    <value>Black</value>
+  </data>
+  <data name="OutRule_ColorRed" xml:space="preserve">
+    <value>Red</value>
+  </data>
+  <data name="OutRule_ColorGreen" xml:space="preserve">
+    <value>Green</value>
+  </data>
+  <data name="OutRule_ColorYellow" xml:space="preserve">
+    <value>Yellow</value>
+  </data>
+  <data name="OutRule_ColorBlue" xml:space="preserve">
+    <value>Blue</value>
+  </data>
+  <data name="OutRule_ColorMagenta" xml:space="preserve">
+    <value>Magenta</value>
+  </data>
+  <data name="OutRule_ColorCyan" xml:space="preserve">
+    <value>Cyan</value>
+  </data>
+  <data name="OutRule_ColorWhite" xml:space="preserve">
+    <value>White</value>
+  </data>
+  <data name="OutRule_ColorBright" xml:space="preserve">
+    <value>Bright {0}</value>
+  </data>
+  <data name="OutRule_Response" xml:space="preserve">
+    <value>Send</value>
+  </data>
+  <data name="OutRule_ResponsePlaceholder" xml:space="preserve">
+    <value>e.g. yes; leave empty to just press Enter</value>
+  </data>
+  <data name="OutRule_SendEnter" xml:space="preserve">
+    <value>Then press Enter</value>
+  </data>
+  <data name="OutRule_ResponseDesc" xml:space="preserve">
+    <value>Answers only the line the cursor is waiting on, after the remote has been quiet for a moment, and only once per line; nothing is sent while you are typing on that line. Sent the same way as Quick Commands.</value>
+  </data>
+  <data name="OutRule_Cooldown" xml:space="preserve">
+    <value>Cooldown (seconds)</value>
+  </data>
+  <data name="OutRule_CooldownDesc" xml:space="preserve">
+    <value>Minimum gap between two answers from this rule; a prompt that shows up sooner is answered when the cooldown ends.</value>
+  </data>
+  <data name="OutRule_MaxPerMinute" xml:space="preserve">
+    <value>At most per minute</value>
+  </data>
+  <data name="OutRule_MaxPerMinuteDesc" xml:space="preserve">
+    <value>When reached, this rule stops answering and a notice appears above the terminal, so a remote that floods prompts cannot make it flood answers back.</value>
+  </data>
+  <data name="OutRule_ForwardSync" xml:space="preserve">
+    <value>Also send to the sync input channel</value>
+  </data>
+  <data name="OutRule_ForwardSyncDesc" xml:space="preserve">
+    <value>Off by default: other tabs in the channel may be at different prompts, and their own rules answer for them.</value>
+  </data>
+  <data name="OutRule_Done" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="OutRule_TestSection" xml:space="preserve">
+    <value>Test</value>
+  </data>
+  <data name="OutRule_TestDesc" xml:space="preserve">
+    <value>Paste some terminal output to see what the rules match. While the editor is open only that rule is tested, otherwise all enabled rules. In a real terminal, auto-answer only acts on the line the cursor is waiting on.</value>
+  </data>
+  <data name="OutRule_TestPlaceholder" xml:space="preserve">
+    <value>Paste output here…</value>
+  </data>
+  <data name="OutRule_TestSummary" xml:space="preserve">
+    <value>{1} of {0} lines matched</value>
+  </data>
+  <data name="OutRule_TestNoMatch" xml:space="preserve">
+    <value>No matches</value>
+  </data>
+  <data name="OutRule_TestRespond" xml:space="preserve">
+    <value>Auto-answer &quot;{0}&quot; → sends {1}</value>
+  </data>
+  <data name="OutRule_TestEnterKey" xml:space="preserve">
+    <value> [Enter]</value>
+  </data>
+  <data name="OutRule_ErrPatternEmpty" xml:space="preserve">
+    <value>Enter a pattern.</value>
+  </data>
+  <data name="OutRule_ErrPatternTooLong" xml:space="preserve">
+    <value>The pattern may be at most {0} characters.</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalid" xml:space="preserve">
+    <value>The pattern is not valid (near character {0}).</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalidNoPos" xml:space="preserve">
+    <value>The pattern is not valid.</value>
+  </data>
+  <data name="OutRule_ErrPatternUnsupported" xml:space="preserve">
+    <value>Backreferences, lookarounds, atomic groups and conditionals are not supported (rules run on a linear-time engine so they cannot slow the terminal down).</value>
+  </data>
+  <data name="OutRule_ErrScopeTarget" xml:space="preserve">
+    <value>Choose the group or connection this rule applies to.</value>
+  </data>
+  <data name="OutRule_ErrNoStyle" xml:space="preserve">
+    <value>Pick at least one of text color, background or bold.</value>
+  </data>
+  <data name="OutRule_ErrResponseEmpty" xml:space="preserve">
+    <value>With nothing to send, tick &quot;Then press Enter&quot; — otherwise nothing would be sent.</value>
+  </data>
+  <data name="OutRule_ErrResponseTooLong" xml:space="preserve">
+    <value>The answer may be at most {0} characters.</value>
+  </data>
+  <data name="OutRule_ErrResponseNotSingleLine" xml:space="preserve">
+    <value>The answer must be a single line of visible text (use &quot;Then press Enter&quot; for Enter).</value>
+  </data>
+  <data name="OutRule_ErrSecretPrompt" xml:space="preserve">
+    <value>This rule would match a password prompt, so it cannot auto-answer. Rules never hold passwords; at password prompts use Shared Credentials — the shared password list pops up there.</value>
+  </data>
+  <data name="OutRule_ErrUnknownKind" xml:space="preserve">
+    <value>This rule comes from a newer version; its action or scope is not recognized here, so it does not take effect.</value>
+  </data>
+  <data name="OutRule_NoticeResponded" xml:space="preserve">
+    <value>Auto-answered: {0}</value>
+  </data>
+  <data name="OutRule_NoticeRateLimited" xml:space="preserve">
+    <value>&quot;{0}&quot; hit its per-minute limit; auto-answer paused</value>
+  </data>
   <data name="SetVm_SectionTransfer" xml:space="preserve">
     <value>File Transfer</value>
   </data>

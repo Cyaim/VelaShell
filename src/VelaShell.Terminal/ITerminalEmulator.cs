@@ -1,6 +1,7 @@
 using System.Text;
 using Avalonia.Controls;
 using Avalonia.Input;
+using VelaShell.Core.OutputRules;
 using VelaShell.Core.Ssh;
 
 namespace VelaShell.Terminal;
@@ -97,6 +98,12 @@ public interface ITerminalEmulator : IDisposable
     /// </para>
     /// </summary>
     event Action<string>? WorkingDirectoryChanged;
+
+    /// <summary>
+    /// 一条自动应答规则(设置 → 输出规则)命中了远端一条等着输入的提示(UI 线程)。
+    /// 发送与提示由宿主做 —— 同步输入的转发、「程序注入」的开关都在标签的视图模型上。
+    /// </summary>
+    event Action<OutputTriggerHit>? OutputTriggerFired;
 
     /// <summary>
     /// 当前会话字符集:解码对端输出与编码用户输入共用同一套。

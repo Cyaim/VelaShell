@@ -4369,6 +4369,234 @@
   <data name="SetVm_SectionTerminal" xml:space="preserve">
     <value>终端</value>
   </data>
+  <data name="SetVm_SectionOutputRules" xml:space="preserve">
+    <value>输出规则</value>
+  </data>
+  <data name="OutRule_Title" xml:space="preserve">
+    <value>输出规则</value>
+  </data>
+  <data name="OutRule_Subtitle" xml:space="preserve">
+    <value>用自己的正则给终端输出加高亮,或在提示出现时自动应答</value>
+  </data>
+  <data name="OutRule_Intro" xml:space="preserve">
+    <value>规则作用于 SSH 与本地终端的主屏(vim、htop 这类全屏程序自带配色,不受影响)。你的高亮压在内置语义高亮(网址、IP、错误词……)之上,内置高亮照常生效;你的规则之间,排在列表上面的优先。规则属于设置导出 / 导入里的「终端」分类,也随应用设置云同步。</value>
+  </data>
+  <data name="OutRule_SafetyNote" xml:space="preserve">
+    <value>自动应答只用于 yes / 回车 / 固定文本。规则里不要写口令:规则随设置保存并同步。需要输入密码时请用共享凭据 —— 遇到密码提示,终端里会弹出共享密码列表。会命中口令提示的规则不能设成自动应答。</value>
+  </data>
+  <data name="OutRule_ListSection" xml:space="preserve">
+    <value>规则</value>
+  </data>
+  <data name="OutRule_Add" xml:space="preserve">
+    <value>新建规则</value>
+  </data>
+  <data name="OutRule_EditTitle" xml:space="preserve">
+    <value>编辑规则</value>
+  </data>
+  <data name="OutRule_LimitReached" xml:space="preserve">
+    <value>最多 {0} 条规则。</value>
+  </data>
+  <data name="OutRule_Empty" xml:space="preserve">
+    <value>还没有规则。内置的语义高亮不受影响。</value>
+  </data>
+  <data name="OutRule_Enabled" xml:space="preserve">
+    <value>启用</value>
+  </data>
+  <data name="OutRule_MoveUp" xml:space="preserve">
+    <value>上移(优先级提高)</value>
+  </data>
+  <data name="OutRule_MoveDown" xml:space="preserve">
+    <value>下移</value>
+  </data>
+  <data name="OutRule_ActionHighlight" xml:space="preserve">
+    <value>高亮</value>
+  </data>
+  <data name="OutRule_ActionRespond" xml:space="preserve">
+    <value>自动应答</value>
+  </data>
+  <data name="OutRule_ScopeGlobal" xml:space="preserve">
+    <value>全局</value>
+  </data>
+  <data name="OutRule_ScopeGroup" xml:space="preserve">
+    <value>分组</value>
+  </data>
+  <data name="OutRule_ScopeProfile" xml:space="preserve">
+    <value>连接</value>
+  </data>
+  <data name="OutRule_ScopeGroupNamed" xml:space="preserve">
+    <value>分组:{0}</value>
+  </data>
+  <data name="OutRule_ScopeProfileNamed" xml:space="preserve">
+    <value>连接:{0}</value>
+  </data>
+  <data name="OutRule_ScopeMissing" xml:space="preserve">
+    <value>(已不存在)</value>
+  </data>
+  <data name="OutRule_ScopeTargetPlaceholder" xml:space="preserve">
+    <value>请选择…</value>
+  </data>
+  <data name="OutRule_Name" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="OutRule_NamePlaceholder" xml:space="preserve">
+    <value>自动应答提示里显示它;不填就显示正则</value>
+  </data>
+  <data name="OutRule_Pattern" xml:space="preserve">
+    <value>正则</value>
+  </data>
+  <data name="OutRule_PatternPlaceholder" xml:space="preserve">
+    <value>例如 ERROR|FATAL</value>
+  </data>
+  <data name="OutRule_PatternDesc" xml:space="preserve">
+    <value>.NET 正则,逐行匹配。为了不拖慢终端,规则一律用线性时间引擎:不支持反向引用与环视。</value>
+  </data>
+  <data name="OutRule_CaseSensitive" xml:space="preserve">
+    <value>区分大小写</value>
+  </data>
+  <data name="OutRule_Action" xml:space="preserve">
+    <value>动作</value>
+  </data>
+  <data name="OutRule_Scope" xml:space="preserve">
+    <value>作用范围</value>
+  </data>
+  <data name="OutRule_Foreground" xml:space="preserve">
+    <value>前景色</value>
+  </data>
+  <data name="OutRule_Background" xml:space="preserve">
+    <value>背景色</value>
+  </data>
+  <data name="OutRule_Bold" xml:space="preserve">
+    <value>加粗</value>
+  </data>
+  <data name="OutRule_HighlightDesc" xml:space="preserve">
+    <value>颜色取自终端配色方案的 ANSI 16 色,换主题、换配色方案时高亮跟着换。你设的前景色会盖过程序自己设的颜色;选区与搜索命中仍显示在最上面。</value>
+  </data>
+  <data name="OutRule_ColorNone" xml:space="preserve">
+    <value>不改</value>
+  </data>
+  <data name="OutRule_ColorBlack" xml:space="preserve">
+    <value>黑</value>
+  </data>
+  <data name="OutRule_ColorRed" xml:space="preserve">
+    <value>红</value>
+  </data>
+  <data name="OutRule_ColorGreen" xml:space="preserve">
+    <value>绿</value>
+  </data>
+  <data name="OutRule_ColorYellow" xml:space="preserve">
+    <value>黄</value>
+  </data>
+  <data name="OutRule_ColorBlue" xml:space="preserve">
+    <value>蓝</value>
+  </data>
+  <data name="OutRule_ColorMagenta" xml:space="preserve">
+    <value>品红</value>
+  </data>
+  <data name="OutRule_ColorCyan" xml:space="preserve">
+    <value>青</value>
+  </data>
+  <data name="OutRule_ColorWhite" xml:space="preserve">
+    <value>白</value>
+  </data>
+  <data name="OutRule_ColorBright" xml:space="preserve">
+    <value>亮{0}</value>
+  </data>
+  <data name="OutRule_Response" xml:space="preserve">
+    <value>发送</value>
+  </data>
+  <data name="OutRule_ResponsePlaceholder" xml:space="preserve">
+    <value>例如 yes;留空 = 只按回车</value>
+  </data>
+  <data name="OutRule_SendEnter" xml:space="preserve">
+    <value>再按回车</value>
+  </data>
+  <data name="OutRule_ResponseDesc" xml:space="preserve">
+    <value>只应答光标所在、正等着输入的那一行,等对端安静片刻后才发,每行只答一次;你正在这一行上打字时不应答。与快捷命令走同一条发送路径。</value>
+  </data>
+  <data name="OutRule_Cooldown" xml:space="preserve">
+    <value>冷却(秒)</value>
+  </data>
+  <data name="OutRule_CooldownDesc" xml:space="preserve">
+    <value>这条规则两次应答之间至少隔多久;更早出现的提示等冷却结束再答。</value>
+  </data>
+  <data name="OutRule_MaxPerMinute" xml:space="preserve">
+    <value>每分钟上限</value>
+  </data>
+  <data name="OutRule_MaxPerMinuteDesc" xml:space="preserve">
+    <value>到了上限就暂停应答,并在终端上方提示 —— 对端刷屏时不会被它刷发回去。</value>
+  </data>
+  <data name="OutRule_ForwardSync" xml:space="preserve">
+    <value>也转发给同步通道</value>
+  </data>
+  <data name="OutRule_ForwardSyncDesc" xml:space="preserve">
+    <value>默认关:通道里别的标签停在什么提示上这里不知道,它们自己的规则会各自应答。</value>
+  </data>
+  <data name="OutRule_Done" xml:space="preserve">
+    <value>完成</value>
+  </data>
+  <data name="OutRule_TestSection" xml:space="preserve">
+    <value>测试</value>
+  </data>
+  <data name="OutRule_TestDesc" xml:space="preserve">
+    <value>粘贴一段终端输出,看规则命中哪里。编辑框开着时只测正在编辑的这条,否则测列表里全部启用的规则。实际终端里自动应答只对光标所在、等着输入的那一行生效。</value>
+  </data>
+  <data name="OutRule_TestPlaceholder" xml:space="preserve">
+    <value>在这里粘贴输出…</value>
+  </data>
+  <data name="OutRule_TestSummary" xml:space="preserve">
+    <value>{0} 行里有 {1} 行命中</value>
+  </data>
+  <data name="OutRule_TestNoMatch" xml:space="preserve">
+    <value>没有命中</value>
+  </data>
+  <data name="OutRule_TestRespond" xml:space="preserve">
+    <value>自动应答「{0}」→ 发送 {1}</value>
+  </data>
+  <data name="OutRule_TestEnterKey" xml:space="preserve">
+    <value> [回车]</value>
+  </data>
+  <data name="OutRule_ErrPatternEmpty" xml:space="preserve">
+    <value>请填写正则。</value>
+  </data>
+  <data name="OutRule_ErrPatternTooLong" xml:space="preserve">
+    <value>正则不能超过 {0} 个字符。</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalid" xml:space="preserve">
+    <value>正则写法有误(第 {0} 个字符附近)。</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalidNoPos" xml:space="preserve">
+    <value>正则写法有误。</value>
+  </data>
+  <data name="OutRule_ErrPatternUnsupported" xml:space="preserve">
+    <value>不支持反向引用、环视、原子组与条件分支(规则一律用线性时间引擎,免得拖慢终端)。</value>
+  </data>
+  <data name="OutRule_ErrScopeTarget" xml:space="preserve">
+    <value>请选择这条规则作用的分组或连接。</value>
+  </data>
+  <data name="OutRule_ErrNoStyle" xml:space="preserve">
+    <value>前景色、背景色、加粗至少选一项。</value>
+  </data>
+  <data name="OutRule_ErrResponseEmpty" xml:space="preserve">
+    <value>应答为空时要勾上「再按回车」,否则什么都不会发送。</value>
+  </data>
+  <data name="OutRule_ErrResponseTooLong" xml:space="preserve">
+    <value>应答不能超过 {0} 个字符。</value>
+  </data>
+  <data name="OutRule_ErrResponseNotSingleLine" xml:space="preserve">
+    <value>应答只能是一行可见文字(回车用「再按回车」)。</value>
+  </data>
+  <data name="OutRule_ErrSecretPrompt" xml:space="preserve">
+    <value>这条规则会命中口令提示,不能用于自动应答。规则里不保存口令:遇到密码提示请用共享凭据 —— 终端里会弹出共享密码列表。</value>
+  </data>
+  <data name="OutRule_ErrUnknownKind" xml:space="preserve">
+    <value>这条规则来自更新的版本,这里不认识它的动作或作用范围,不生效。</value>
+  </data>
+  <data name="OutRule_NoticeResponded" xml:space="preserve">
+    <value>已自动应答:{0}</value>
+  </data>
+  <data name="OutRule_NoticeRateLimited" xml:space="preserve">
+    <value>「{0}」已到每分钟上限,暂停自动应答</value>
+  </data>
   <data name="SetVm_SectionTransfer" xml:space="preserve">
     <value>文件传输</value>
   </data>

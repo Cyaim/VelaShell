@@ -4369,6 +4369,234 @@
   <data name="SetVm_SectionTerminal" xml:space="preserve">
     <value>終端機</value>
   </data>
+  <data name="SetVm_SectionOutputRules" xml:space="preserve">
+    <value>輸出規則</value>
+  </data>
+  <data name="OutRule_Title" xml:space="preserve">
+    <value>輸出規則</value>
+  </data>
+  <data name="OutRule_Subtitle" xml:space="preserve">
+    <value>用自己的正規表示式為終端機輸出加上醒目標示,或在提示出現時自動應答</value>
+  </data>
+  <data name="OutRule_Intro" xml:space="preserve">
+    <value>規則作用於 SSH 與本機終端機的主畫面(vim、htop 這類全螢幕程式自帶配色,不受影響)。你的醒目標示疊在內建語意標示(網址、IP、錯誤字詞……)之上,內建標示照常生效;你的規則之間,排在清單上方的優先。規則屬於設定匯出 / 匯入中的「終端機」分類,也隨應用程式設定雲端同步。</value>
+  </data>
+  <data name="OutRule_SafetyNote" xml:space="preserve">
+    <value>自動應答只用於 yes / Enter / 固定文字。規則裡不要寫密碼:規則會隨設定儲存並同步。需要輸入密碼時請使用共用憑證 —— 遇到密碼提示時,終端機會彈出共用密碼清單。會命中密碼提示的規則不能設為自動應答。</value>
+  </data>
+  <data name="OutRule_ListSection" xml:space="preserve">
+    <value>規則</value>
+  </data>
+  <data name="OutRule_Add" xml:space="preserve">
+    <value>新增規則</value>
+  </data>
+  <data name="OutRule_EditTitle" xml:space="preserve">
+    <value>編輯規則</value>
+  </data>
+  <data name="OutRule_LimitReached" xml:space="preserve">
+    <value>最多 {0} 條規則。</value>
+  </data>
+  <data name="OutRule_Empty" xml:space="preserve">
+    <value>還沒有規則。內建的語意標示不受影響。</value>
+  </data>
+  <data name="OutRule_Enabled" xml:space="preserve">
+    <value>啟用</value>
+  </data>
+  <data name="OutRule_MoveUp" xml:space="preserve">
+    <value>上移(優先順序提高)</value>
+  </data>
+  <data name="OutRule_MoveDown" xml:space="preserve">
+    <value>下移</value>
+  </data>
+  <data name="OutRule_ActionHighlight" xml:space="preserve">
+    <value>醒目標示</value>
+  </data>
+  <data name="OutRule_ActionRespond" xml:space="preserve">
+    <value>自動應答</value>
+  </data>
+  <data name="OutRule_ScopeGlobal" xml:space="preserve">
+    <value>全域</value>
+  </data>
+  <data name="OutRule_ScopeGroup" xml:space="preserve">
+    <value>群組</value>
+  </data>
+  <data name="OutRule_ScopeProfile" xml:space="preserve">
+    <value>連線</value>
+  </data>
+  <data name="OutRule_ScopeGroupNamed" xml:space="preserve">
+    <value>群組:{0}</value>
+  </data>
+  <data name="OutRule_ScopeProfileNamed" xml:space="preserve">
+    <value>連線:{0}</value>
+  </data>
+  <data name="OutRule_ScopeMissing" xml:space="preserve">
+    <value>(已不存在)</value>
+  </data>
+  <data name="OutRule_ScopeTargetPlaceholder" xml:space="preserve">
+    <value>請選擇…</value>
+  </data>
+  <data name="OutRule_Name" xml:space="preserve">
+    <value>名稱</value>
+  </data>
+  <data name="OutRule_NamePlaceholder" xml:space="preserve">
+    <value>自動應答提示中會顯示它;不填則顯示正規表示式</value>
+  </data>
+  <data name="OutRule_Pattern" xml:space="preserve">
+    <value>正規表示式</value>
+  </data>
+  <data name="OutRule_PatternPlaceholder" xml:space="preserve">
+    <value>例如 ERROR|FATAL</value>
+  </data>
+  <data name="OutRule_PatternDesc" xml:space="preserve">
+    <value>.NET 正規表示式,逐行比對。為了不拖慢終端機,規則一律使用線性時間引擎:不支援反向參照與環視。</value>
+  </data>
+  <data name="OutRule_CaseSensitive" xml:space="preserve">
+    <value>區分大小寫</value>
+  </data>
+  <data name="OutRule_Action" xml:space="preserve">
+    <value>動作</value>
+  </data>
+  <data name="OutRule_Scope" xml:space="preserve">
+    <value>作用範圍</value>
+  </data>
+  <data name="OutRule_Foreground" xml:space="preserve">
+    <value>前景色</value>
+  </data>
+  <data name="OutRule_Background" xml:space="preserve">
+    <value>背景色</value>
+  </data>
+  <data name="OutRule_Bold" xml:space="preserve">
+    <value>粗體</value>
+  </data>
+  <data name="OutRule_HighlightDesc" xml:space="preserve">
+    <value>顏色取自終端機配色方案的 ANSI 16 色,切換主題或配色方案時標示會跟著變。你設定的前景色會蓋過程式自己設定的顏色;選取範圍與搜尋結果仍顯示在最上層。</value>
+  </data>
+  <data name="OutRule_ColorNone" xml:space="preserve">
+    <value>不變</value>
+  </data>
+  <data name="OutRule_ColorBlack" xml:space="preserve">
+    <value>黑</value>
+  </data>
+  <data name="OutRule_ColorRed" xml:space="preserve">
+    <value>紅</value>
+  </data>
+  <data name="OutRule_ColorGreen" xml:space="preserve">
+    <value>綠</value>
+  </data>
+  <data name="OutRule_ColorYellow" xml:space="preserve">
+    <value>黃</value>
+  </data>
+  <data name="OutRule_ColorBlue" xml:space="preserve">
+    <value>藍</value>
+  </data>
+  <data name="OutRule_ColorMagenta" xml:space="preserve">
+    <value>洋紅</value>
+  </data>
+  <data name="OutRule_ColorCyan" xml:space="preserve">
+    <value>青</value>
+  </data>
+  <data name="OutRule_ColorWhite" xml:space="preserve">
+    <value>白</value>
+  </data>
+  <data name="OutRule_ColorBright" xml:space="preserve">
+    <value>亮{0}</value>
+  </data>
+  <data name="OutRule_Response" xml:space="preserve">
+    <value>傳送</value>
+  </data>
+  <data name="OutRule_ResponsePlaceholder" xml:space="preserve">
+    <value>例如 yes;留空 = 只按 Enter</value>
+  </data>
+  <data name="OutRule_SendEnter" xml:space="preserve">
+    <value>再按 Enter</value>
+  </data>
+  <data name="OutRule_ResponseDesc" xml:space="preserve">
+    <value>只應答游標所在、正等待輸入的那一行,等對端安靜片刻後才送出,每行只答一次;你正在這一行打字時不應答。與快速命令走同一條傳送路徑。</value>
+  </data>
+  <data name="OutRule_Cooldown" xml:space="preserve">
+    <value>冷卻(秒)</value>
+  </data>
+  <data name="OutRule_CooldownDesc" xml:space="preserve">
+    <value>這條規則兩次應答之間至少間隔多久;更早出現的提示會等冷卻結束再答。</value>
+  </data>
+  <data name="OutRule_MaxPerMinute" xml:space="preserve">
+    <value>每分鐘上限</value>
+  </data>
+  <data name="OutRule_MaxPerMinuteDesc" xml:space="preserve">
+    <value>達到上限就暫停應答,並在終端機上方提示 —— 對端洗版時不會被它反過來洗版。</value>
+  </data>
+  <data name="OutRule_ForwardSync" xml:space="preserve">
+    <value>也轉送給同步通道</value>
+  </data>
+  <data name="OutRule_ForwardSyncDesc" xml:space="preserve">
+    <value>預設關閉:通道裡其他分頁停在什麼提示上這裡無從得知,它們自己的規則會各自應答。</value>
+  </data>
+  <data name="OutRule_Done" xml:space="preserve">
+    <value>完成</value>
+  </data>
+  <data name="OutRule_TestSection" xml:space="preserve">
+    <value>測試</value>
+  </data>
+  <data name="OutRule_TestDesc" xml:space="preserve">
+    <value>貼上一段終端機輸出,看規則命中哪裡。編輯框開著時只測試正在編輯的這條,否則測試清單中所有啟用的規則。實際終端機中自動應答只對游標所在、等待輸入的那一行生效。</value>
+  </data>
+  <data name="OutRule_TestPlaceholder" xml:space="preserve">
+    <value>在這裡貼上輸出…</value>
+  </data>
+  <data name="OutRule_TestSummary" xml:space="preserve">
+    <value>{0} 行中有 {1} 行命中</value>
+  </data>
+  <data name="OutRule_TestNoMatch" xml:space="preserve">
+    <value>沒有命中</value>
+  </data>
+  <data name="OutRule_TestRespond" xml:space="preserve">
+    <value>自動應答「{0}」→ 傳送 {1}</value>
+  </data>
+  <data name="OutRule_TestEnterKey" xml:space="preserve">
+    <value> [Enter]</value>
+  </data>
+  <data name="OutRule_ErrPatternEmpty" xml:space="preserve">
+    <value>請填寫正規表示式。</value>
+  </data>
+  <data name="OutRule_ErrPatternTooLong" xml:space="preserve">
+    <value>正規表示式不能超過 {0} 個字元。</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalid" xml:space="preserve">
+    <value>正規表示式寫法有誤(第 {0} 個字元附近)。</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalidNoPos" xml:space="preserve">
+    <value>正規表示式寫法有誤。</value>
+  </data>
+  <data name="OutRule_ErrPatternUnsupported" xml:space="preserve">
+    <value>不支援反向參照、環視、原子群組與條件分支(規則一律使用線性時間引擎,以免拖慢終端機)。</value>
+  </data>
+  <data name="OutRule_ErrScopeTarget" xml:space="preserve">
+    <value>請選擇這條規則作用的群組或連線。</value>
+  </data>
+  <data name="OutRule_ErrNoStyle" xml:space="preserve">
+    <value>前景色、背景色、粗體至少選一項。</value>
+  </data>
+  <data name="OutRule_ErrResponseEmpty" xml:space="preserve">
+    <value>應答為空時要勾選「再按 Enter」,否則什麼都不會送出。</value>
+  </data>
+  <data name="OutRule_ErrResponseTooLong" xml:space="preserve">
+    <value>應答不能超過 {0} 個字元。</value>
+  </data>
+  <data name="OutRule_ErrResponseNotSingleLine" xml:space="preserve">
+    <value>應答只能是一行可見文字(Enter 請用「再按 Enter」)。</value>
+  </data>
+  <data name="OutRule_ErrSecretPrompt" xml:space="preserve">
+    <value>這條規則會命中密碼提示,不能用於自動應答。規則裡不儲存密碼:遇到密碼提示請使用共用憑證 —— 終端機會彈出共用密碼清單。</value>
+  </data>
+  <data name="OutRule_ErrUnknownKind" xml:space="preserve">
+    <value>這條規則來自較新的版本,這裡無法辨識它的動作或作用範圍,不會生效。</value>
+  </data>
+  <data name="OutRule_NoticeResponded" xml:space="preserve">
+    <value>已自動應答:{0}</value>
+  </data>
+  <data name="OutRule_NoticeRateLimited" xml:space="preserve">
+    <value>「{0}」已達每分鐘上限,暫停自動應答</value>
+  </data>
   <data name="SetVm_SectionTransfer" xml:space="preserve">
     <value>檔案傳輸</value>
   </data>

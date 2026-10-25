@@ -4050,6 +4050,234 @@
   <data name="SetVm_SectionTerminal" xml:space="preserve">
     <value>ターミナル</value>
   </data>
+  <data name="SetVm_SectionOutputRules" xml:space="preserve">
+    <value>出力ルール</value>
+  </data>
+  <data name="OutRule_Title" xml:space="preserve">
+    <value>出力ルール</value>
+  </data>
+  <data name="OutRule_Subtitle" xml:space="preserve">
+    <value>独自の正規表現でターミナル出力を強調表示したり、プロンプトに自動応答したりします</value>
+  </data>
+  <data name="OutRule_Intro" xml:space="preserve">
+    <value>ルールは SSH とローカルターミナルのメイン画面に適用されます(vim や htop などの全画面プログラムは独自の配色を持つため対象外です)。独自の強調表示は組み込みのセマンティック強調表示(URL、IP アドレス、エラー語など)の上に重なり、組み込みのものも引き続き有効です。独自ルール同士では一覧の上にあるものが優先されます。ルールは設定のエクスポート / インポートの「ターミナル」分類に含まれ、アプリ設定のクラウド同期にも含まれます。</value>
+  </data>
+  <data name="OutRule_SafetyNote" xml:space="preserve">
+    <value>自動応答は yes / Enter / 固定テキストのみに使います。ルールにパスワードを書かないでください。ルールは設定と一緒に保存・同期されます。パスワードが必要な場面では共有資格情報を使ってください —— パスワードのプロンプトでは共有パスワードの一覧が表示されます。パスワードのプロンプトに一致するルールは自動応答に設定できません。</value>
+  </data>
+  <data name="OutRule_ListSection" xml:space="preserve">
+    <value>ルール</value>
+  </data>
+  <data name="OutRule_Add" xml:space="preserve">
+    <value>新しいルール</value>
+  </data>
+  <data name="OutRule_EditTitle" xml:space="preserve">
+    <value>ルールを編集</value>
+  </data>
+  <data name="OutRule_LimitReached" xml:space="preserve">
+    <value>ルールは最大 {0} 件です。</value>
+  </data>
+  <data name="OutRule_Empty" xml:space="preserve">
+    <value>ルールはまだありません。組み込みのセマンティック強調表示には影響しません。</value>
+  </data>
+  <data name="OutRule_Enabled" xml:space="preserve">
+    <value>有効</value>
+  </data>
+  <data name="OutRule_MoveUp" xml:space="preserve">
+    <value>上へ移動(優先度を上げる)</value>
+  </data>
+  <data name="OutRule_MoveDown" xml:space="preserve">
+    <value>下へ移動</value>
+  </data>
+  <data name="OutRule_ActionHighlight" xml:space="preserve">
+    <value>強調表示</value>
+  </data>
+  <data name="OutRule_ActionRespond" xml:space="preserve">
+    <value>自動応答</value>
+  </data>
+  <data name="OutRule_ScopeGlobal" xml:space="preserve">
+    <value>すべてのターミナル</value>
+  </data>
+  <data name="OutRule_ScopeGroup" xml:space="preserve">
+    <value>グループ</value>
+  </data>
+  <data name="OutRule_ScopeProfile" xml:space="preserve">
+    <value>接続</value>
+  </data>
+  <data name="OutRule_ScopeGroupNamed" xml:space="preserve">
+    <value>グループ: {0}</value>
+  </data>
+  <data name="OutRule_ScopeProfileNamed" xml:space="preserve">
+    <value>接続: {0}</value>
+  </data>
+  <data name="OutRule_ScopeMissing" xml:space="preserve">
+    <value>(存在しません)</value>
+  </data>
+  <data name="OutRule_ScopeTargetPlaceholder" xml:space="preserve">
+    <value>選択…</value>
+  </data>
+  <data name="OutRule_Name" xml:space="preserve">
+    <value>名前</value>
+  </data>
+  <data name="OutRule_NamePlaceholder" xml:space="preserve">
+    <value>自動応答の通知に表示されます。空欄なら正規表現を表示</value>
+  </data>
+  <data name="OutRule_Pattern" xml:space="preserve">
+    <value>正規表現</value>
+  </data>
+  <data name="OutRule_PatternPlaceholder" xml:space="preserve">
+    <value>例: ERROR|FATAL</value>
+  </data>
+  <data name="OutRule_PatternDesc" xml:space="preserve">
+    <value>.NET の正規表現で、行ごとに照合します。ターミナルを遅くしないよう、すべてのルールは線形時間エンジンで実行されます。後方参照と先読み・後読みは使えません。</value>
+  </data>
+  <data name="OutRule_CaseSensitive" xml:space="preserve">
+    <value>大文字と小文字を区別</value>
+  </data>
+  <data name="OutRule_Action" xml:space="preserve">
+    <value>動作</value>
+  </data>
+  <data name="OutRule_Scope" xml:space="preserve">
+    <value>適用範囲</value>
+  </data>
+  <data name="OutRule_Foreground" xml:space="preserve">
+    <value>文字色</value>
+  </data>
+  <data name="OutRule_Background" xml:space="preserve">
+    <value>背景色</value>
+  </data>
+  <data name="OutRule_Bold" xml:space="preserve">
+    <value>太字</value>
+  </data>
+  <data name="OutRule_HighlightDesc" xml:space="preserve">
+    <value>色はターミナル配色の ANSI 16 色なので、テーマや配色を変えると強調表示も追従します。設定した文字色はプログラムが指定した色より優先されます。選択範囲と検索結果は引き続き最前面に表示されます。</value>
+  </data>
+  <data name="OutRule_ColorNone" xml:space="preserve">
+    <value>変更しない</value>
+  </data>
+  <data name="OutRule_ColorBlack" xml:space="preserve">
+    <value>黒</value>
+  </data>
+  <data name="OutRule_ColorRed" xml:space="preserve">
+    <value>赤</value>
+  </data>
+  <data name="OutRule_ColorGreen" xml:space="preserve">
+    <value>緑</value>
+  </data>
+  <data name="OutRule_ColorYellow" xml:space="preserve">
+    <value>黄</value>
+  </data>
+  <data name="OutRule_ColorBlue" xml:space="preserve">
+    <value>青</value>
+  </data>
+  <data name="OutRule_ColorMagenta" xml:space="preserve">
+    <value>マゼンタ</value>
+  </data>
+  <data name="OutRule_ColorCyan" xml:space="preserve">
+    <value>シアン</value>
+  </data>
+  <data name="OutRule_ColorWhite" xml:space="preserve">
+    <value>白</value>
+  </data>
+  <data name="OutRule_ColorBright" xml:space="preserve">
+    <value>明るい{0}</value>
+  </data>
+  <data name="OutRule_Response" xml:space="preserve">
+    <value>送信</value>
+  </data>
+  <data name="OutRule_ResponsePlaceholder" xml:space="preserve">
+    <value>例: yes。空欄なら Enter のみ</value>
+  </data>
+  <data name="OutRule_SendEnter" xml:space="preserve">
+    <value>続けて Enter を押す</value>
+  </data>
+  <data name="OutRule_ResponseDesc" xml:space="preserve">
+    <value>応答するのはカーソルがあり入力待ちになっている行だけで、相手側の出力が少し止まってから送信し、1 行につき 1 回だけです。その行で入力中のときは応答しません。クイックコマンドと同じ経路で送信します。</value>
+  </data>
+  <data name="OutRule_Cooldown" xml:space="preserve">
+    <value>クールダウン(秒)</value>
+  </data>
+  <data name="OutRule_CooldownDesc" xml:space="preserve">
+    <value>このルールの 2 回の応答の最小間隔です。それより早く現れたプロンプトにはクールダウン終了後に応答します。</value>
+  </data>
+  <data name="OutRule_MaxPerMinute" xml:space="preserve">
+    <value>1 分あたりの上限</value>
+  </data>
+  <data name="OutRule_MaxPerMinuteDesc" xml:space="preserve">
+    <value>上限に達すると応答を停止し、ターミナル上部に通知します。相手側がプロンプトを連発しても、応答を連発し返すことはありません。</value>
+  </data>
+  <data name="OutRule_ForwardSync" xml:space="preserve">
+    <value>同期入力チャンネルにも送る</value>
+  </data>
+  <data name="OutRule_ForwardSyncDesc" xml:space="preserve">
+    <value>既定はオフ: チャンネル内の他のタブは別のプロンプトにいるかもしれず、それぞれのルールが応答します。</value>
+  </data>
+  <data name="OutRule_Done" xml:space="preserve">
+    <value>完了</value>
+  </data>
+  <data name="OutRule_TestSection" xml:space="preserve">
+    <value>テスト</value>
+  </data>
+  <data name="OutRule_TestDesc" xml:space="preserve">
+    <value>ターミナル出力を貼り付けると、ルールが一致する箇所を確認できます。エディターが開いているときは編集中のルールのみ、それ以外は有効なルールすべてをテストします。実際のターミナルでは、自動応答はカーソルのある入力待ちの行にのみ作用します。</value>
+  </data>
+  <data name="OutRule_TestPlaceholder" xml:space="preserve">
+    <value>ここに出力を貼り付け…</value>
+  </data>
+  <data name="OutRule_TestSummary" xml:space="preserve">
+    <value>{0} 行中 {1} 行が一致</value>
+  </data>
+  <data name="OutRule_TestNoMatch" xml:space="preserve">
+    <value>一致なし</value>
+  </data>
+  <data name="OutRule_TestRespond" xml:space="preserve">
+    <value>自動応答「{0}」→ {1} を送信</value>
+  </data>
+  <data name="OutRule_TestEnterKey" xml:space="preserve">
+    <value> [Enter]</value>
+  </data>
+  <data name="OutRule_ErrPatternEmpty" xml:space="preserve">
+    <value>正規表現を入力してください。</value>
+  </data>
+  <data name="OutRule_ErrPatternTooLong" xml:space="preserve">
+    <value>正規表現は {0} 文字以内にしてください。</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalid" xml:space="preserve">
+    <value>正規表現が正しくありません({0} 文字目付近)。</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalidNoPos" xml:space="preserve">
+    <value>正規表現が正しくありません。</value>
+  </data>
+  <data name="OutRule_ErrPatternUnsupported" xml:space="preserve">
+    <value>後方参照、先読み・後読み、アトミックグループ、条件分岐は使えません(ターミナルを遅くしないよう、ルールは線形時間エンジンで実行されます)。</value>
+  </data>
+  <data name="OutRule_ErrScopeTarget" xml:space="preserve">
+    <value>このルールを適用するグループまたは接続を選んでください。</value>
+  </data>
+  <data name="OutRule_ErrNoStyle" xml:space="preserve">
+    <value>文字色、背景色、太字のいずれかを選んでください。</value>
+  </data>
+  <data name="OutRule_ErrResponseEmpty" xml:space="preserve">
+    <value>送信内容が空の場合は「続けて Enter を押す」をオンにしてください。そうしないと何も送信されません。</value>
+  </data>
+  <data name="OutRule_ErrResponseTooLong" xml:space="preserve">
+    <value>応答は {0} 文字以内にしてください。</value>
+  </data>
+  <data name="OutRule_ErrResponseNotSingleLine" xml:space="preserve">
+    <value>応答は 1 行の可視テキストにしてください(Enter は「続けて Enter を押す」で指定します)。</value>
+  </data>
+  <data name="OutRule_ErrSecretPrompt" xml:space="preserve">
+    <value>このルールはパスワードのプロンプトに一致するため、自動応答には使えません。ルールにパスワードは保存しません。パスワードのプロンプトでは共有資格情報を使ってください —— 共有パスワードの一覧が表示されます。</value>
+  </data>
+  <data name="OutRule_ErrUnknownKind" xml:space="preserve">
+    <value>このルールは新しいバージョンで作成されたもので、動作または適用範囲を認識できないため無効です。</value>
+  </data>
+  <data name="OutRule_NoticeResponded" xml:space="preserve">
+    <value>自動応答しました: {0}</value>
+  </data>
+  <data name="OutRule_NoticeRateLimited" xml:space="preserve">
+    <value>「{0}」が 1 分あたりの上限に達したため、自動応答を一時停止しました</value>
+  </data>
   <data name="SetVm_SectionTransfer" xml:space="preserve">
     <value>ファイル転送</value>
   </data>

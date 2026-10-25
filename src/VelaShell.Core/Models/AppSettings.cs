@@ -200,6 +200,7 @@ public class AppSettings
             Shortcuts.Overrides.Remove(id);
         }
 
+        NormalizeOutputRules();
         ClampNumbers();
     }
 
@@ -218,6 +219,43 @@ public class AppSettings
     /// 两处对不上的话,会出现"设置页显示的值一保存就变"这种说不清的行为。
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 输出规则的规整:磁盘上的内容拦不住(手改的、同步来的、更新版本写的)。
+    /// </summary>
+    /// <remarks>
+    /// 只钳数值、丢空条目与超额的条目,不在这里判正则对不对 —— 那要编译,而判不过的规则留在表里、
+    /// 由编译那一步跳过并在设置页标出来,比载入时悄悄删掉更好:用户看得见是哪一条、为什么不生效。
+    /// 调色板下标越界的当「不改这一项」处理,而不是夹到 0 或 15 —— 夹出来的是一个用户没选过的颜色。
+    /// </remarks>
+    private void NormalizeOutputRules()
+    {
+        TerminalBehavior ??= new();
+        List<OutputRule> rules = [.. (TerminalBehavior.OutputRules ?? []).Where(rule => rule is not null)];
+        if (rules.Count > OutputRuleLimits.MaxRules)
+        {
+            rules.RemoveRange(OutputRuleLimits.MaxRules, rules.Count - OutputRuleLimits.MaxRules);
+        }
+        foreach (OutputRule rule in rules)
+        {
+            rule.Name ??= string.Empty;
+            rule.Pattern ??= string.Empty;
+            rule.Response ??= string.Empty;
+            rule.Scope ??= OutputRuleScopes.Global;
+            rule.Action ??= OutputRuleActions.Highlight;
+            if (rule.Foreground is < 0 or > OutputRuleLimits.MaxPaletteIndex)
+            {
+                rule.Foreground = null;
+            }
+            if (rule.Background is < 0 or > OutputRuleLimits.MaxPaletteIndex)
+            {
+                rule.Background = null;
+            }
+            rule.CooldownSeconds = Math.Clamp(rule.CooldownSeconds, 1, OutputRuleLimits.MaxCooldownSeconds);
+            rule.MaxPerMinute = Math.Clamp(rule.MaxPerMinute, 1, OutputRuleLimits.MaxPerMinuteCeiling);
+        }
+        TerminalBehavior.OutputRules = rules;
+    }
+
     private void ClampNumbers()
     {
         ScrollbackLines = Math.Clamp(ScrollbackLines, 100, 200_000);
@@ -982,6 +1020,20 @@ public class TerminalBehaviorOptions : ObservableOptions
         get;
         set => Set(ref field, value);
     } = true;
+
+    /// <summary>
+    /// 终端输出规则(设置 → 输出规则):用户自己的高亮与自动应答,共用一张表(见 <see cref="OutputRule" />)。
+    /// 出厂为空 —— 默认没有任何触发器;内置的语义高亮(URL / IP / 错误词…)不在这张表里,照旧生效。
+    /// </summary>
+    /// <remarks>
+    /// 放在终端这一块里而不是另起一块:导出 / 导入、审计按「终端」分类走,云同步随应用设置走,
+    /// 不必在 <see cref="SettingsCategories" /> 里再登记一类。整表替换才触发变更通知。
+    /// </remarks>
+    public List<OutputRule> OutputRules
+    {
+        get;
+        set => Set(ref field, value ?? []);
+    } = [];
 }
 
 /// <summary>设置 - 文件传输(设计 HGwa7)。</summary>

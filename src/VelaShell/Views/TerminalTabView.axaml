@@ -191,6 +191,27 @@
         <controls:ReparentingHost Target="{Binding TerminalEmulator.Control}" />
       </Border>
 
+      <!-- 输出规则的自动应答提示(「已自动应答:规则名」/ 到了每分钟上限):贴终端上沿居中,
+           几秒后自己消失。不接收指针 —— 它盖在终端正文上,不能挡住选区与点击。 -->
+      <Border x:Name="AutoResponseNotice"
+              IsVisible="{Binding AutoResponseNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+              IsHitTestVisible="False"
+              HorizontalAlignment="Center" VerticalAlignment="Top"
+              Margin="0,8,0,0" Padding="10,4"
+              Background="{DynamicResource VelaBgSurface}"
+              BorderBrush="{DynamicResource VelaBorderSecondary}"
+              BorderThickness="1" CornerRadius="4"
+              BoxShadow="{DynamicResource VelaShadowWindow}">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.zap}"
+                         Foreground="{DynamicResource VelaAccent}" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding AutoResponseNotice}"
+                     Foreground="{DynamicResource VelaTextSecondary}"
+                     FontSize="{DynamicResource VelaFontSize11}"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+      </Border>
+
       <!-- 共享密码列表(WindTerm 式,#628 第 1 项):识别到 Password: 一类提示行时
            贴着光标行下沿弹出(底下放不下翻到上沿之上),点一项即填入正文,不再有常驻按钮、也不再二次确认。
            Popup 是独立顶层窗口,锚定在 TerminalHost 上由 PlacementRect 指到光标处。

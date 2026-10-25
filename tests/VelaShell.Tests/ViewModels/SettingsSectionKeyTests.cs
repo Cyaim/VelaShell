@@ -28,6 +28,7 @@ public class SettingsSectionKeyTests
             Strings.Get("SetVm_SectionGeneral"),
             Strings.Get("SetVm_SectionAppearance"),
             Strings.Get("SetVm_SectionTerminal"),
+            Strings.Get("SetVm_SectionOutputRules"),
             Strings.Get("SetVm_SectionKeys"),
             Strings.Get("SetVm_SectionCredentials"),
             Strings.Get("SetVm_SectionShortcuts"),
