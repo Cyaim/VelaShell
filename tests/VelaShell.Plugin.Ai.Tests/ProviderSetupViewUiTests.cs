@@ -2743,6 +2743,62 @@ public sealed class ProviderSetupViewUiTests
         });
     }
 
+    /// <summary>
+    /// #582 复审⑤:拉模型把首模型自动填成清单里的型号之后,型号框要跟上;再点保存不能把它写回空串。
+    /// </summary>
+    /// <remarks>
+    /// 自定义接入的出厂首模型型号是空的(规格来源也是空 id),拉到清单时由 <c>Materialise</c> 对齐成清单里的头一个。
+    /// 改前型号框还是空的,表单的输入基线也还是空 —— 用户什么都没改,再点一次保存,<c>ApplyForm</c>
+    /// 就把空的型号框写回首模型,刚填进去的型号没了。用户自己改过的型号框不在此列(见下一条用例)。
+    /// </remarks>
+    [TestMethod]
+    [DataRow("save", DisplayName = "保存后自动拉取")]
+    [DataRow("pull", DisplayName = "点「拉取模型」")]
+    public void PulledModels_RefreshTheUntouchedModelBoxAndSaveKeepsIt(string trigger)
+    {
+        OnUi(async () =>
+        {
+            using var endpoint = new HeldModelsEndpoint();
+            endpoint.Release();
+            using var context = new TestPluginContext();
+            AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            provider.BaseUrl = endpoint.BaseUrl + "/v1";
+            Assert.AreEqual("", provider.Models[0].Model, "前提:出厂首模型的型号是空的");
+            (Window window, ProviderSetupView view, _, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [provider] }, focus: "custom-openai");
+            int pulls = 0;
+            view.ModelsChanged += () => pulls++;
+            try
+            {
+                Find<ToggleButton>(view, "SetupAdvancedToggle").IsChecked = true;
+                TextBox model = Find<TextBox>(view, "SetupModelBox");
+                Assert.AreEqual("", model.Text);
+                if (trigger == "save") await ClickPrimaryAsync(view);
+                else
+                {
+                    Button pull = Find<Button>(view, "SetupPullButton");
+                    Click(pull);
+                    await WaitForEnabledAsync(pull);
+                }
+                for (int i = 0; i < 400 && pulls == 0; i++) await PumpAsync(2);
+                Assert.IsGreaterThan(0, pulls, "清单应当已经拉到并落库");
+                await PumpAsync(2);
+                Assert.AreEqual("old-model", provider.Models[0].Model, "前提:拉取把首模型对齐到了清单里的型号");
+                Assert.AreSame(model, Find<TextBox>(view, "SetupModelBox"), "不该为此重建表单");
+                Assert.AreEqual("old-model", model.Text, "用户没碰过的型号框要跟上自动填入的型号");
+
+                await ClickPrimaryAsync(view);
+                Assert.AreEqual("old-model", provider.Models[0].Model, "再点保存不能把空的型号框写回去");
+                Assert.AreEqual("old-model", (await store.LoadAsync()).Providers.Single().Models[0].Model);
+            }
+            finally
+            {
+                await WaitForEnabledAsync(Find<Button>(view, "SetupPrimaryButton"));
+                window.Close();
+            }
+        });
+    }
+
     [TestMethod]
     public void CurrentProviderLateModels_KeepUnsavedDraftAndOfferNewModelInPicker()
     {

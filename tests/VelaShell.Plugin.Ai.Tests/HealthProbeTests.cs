@@ -186,6 +186,54 @@ public sealed class HealthProbeTests
         Assert.HasCount(1, endpoint.Requests);
     }
 
+    /// <summary>
+    /// #582 复审④:Responses 流以 <c>response.failed</c> / <c>error</c> 事件收尾时不能算"答上了"——
+    /// 探活报不通、不是空回复,正式请求按服务端的原话失败,不给模型记成功、不解冻冷却。
+    /// </summary>
+    /// <remarks>
+    /// 复审时 <c>HasMeaningfulOutput</c> 把 <see cref="ErrorContent" /> 当成有效输出(那是为了"开口之后不重放"),
+    /// 只按代码推断会记成成功。<c>error</c> 事件确实被适配器转成 <see cref="ErrorContent" />,§223 加的
+    /// <c>TransientFailure.TerminalFailure</c> 已把它抛成失败;真 SDK 跑下来,<c>response.failed</c> 却是一帧
+    /// <b>没有任何内容</b>的更新 —— 先吐了 "OK" 再失败的探活被判成通,一个字没吐的被判成空回复。
+    /// </remarks>
+    [TestMethod]
+    [DataRow("failed", false)]
+    [DataRow("failed", true)]
+    [DataRow("error", false)]
+    [DataRow("error", true)]
+    public async Task ResponsesErrorEvent_IsAFailureNotAReply(string kind, bool textFirst)
+    {
+        string sse = ResponsesErrorSse(kind, textFirst);
+        await using var endpoint = new SseStub(sse);
+        using var context = new TestPluginContext();
+        (Exception? error, string text) = await HealthProbe.ProbeAsync(new AiSettingsStore(context),
+            ModelFor(endpoint.BaseUrl, ChatProtocol.OpenAiResponses));
+        Assert.IsNotNull(error, "错误事件不能被探活当成通");
+        Assert.IsNotInstanceOfType<HealthProbe.EmptyReplyException>(error, "是服务端报的错,不是空回复");
+        Assert.AreEqual("", text);
+
+        // 正式请求(Agent / Plan 与 Chat 都走 RecoveringChatClient)同样以失败收场,不交出一个"完成"的步骤
+        using IChatClient inner = new AiSettingsStore(context).CreateClient(ModelFor(endpoint.BaseUrl, ChatProtocol.OpenAiResponses),
+            ProviderCredential.Key("test-key"));
+        using var client = new Chat.RecoveringChatClient(inner, new("run"), "boundary", delay: (_, _) => Task.CompletedTask);
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        { await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "hi")])) { } });
+        Assert.Contains("upstream exploded", failure.Message);
+    }
+
+    /// <summary>Responses 流:可选先吐一段正文,再以 <c>response.failed</c> 或 <c>error</c> 事件收尾。</summary>
+    internal static string ResponsesErrorSse(string kind, bool textFirst)
+    {
+        string created = "event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"created_at\":1,\"status\":\"in_progress\",\"model\":\"m\",\"output\":[]}}\n\n";
+        string text = textFirst
+            ? "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":1,\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"OK\"}\n\n"
+            : "";
+        string end = kind == "failed"
+            ? "event: response.failed\ndata: {\"type\":\"response.failed\",\"sequence_number\":2,\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"created_at\":1,\"status\":\"failed\",\"model\":\"m\",\"output\":[],\"error\":{\"code\":\"server_error\",\"message\":\"upstream exploded\"}}}\n\n"
+            : "event: error\ndata: {\"type\":\"error\",\"sequence_number\":2,\"code\":\"server_error\",\"message\":\"upstream exploded\",\"param\":null}\n\n";
+        return created + text + end;
+    }
+
     [TestMethod]
     public async Task EmptyProbe_RetrySharesOriginalDeadline()
     {

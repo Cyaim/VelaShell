@@ -3468,6 +3468,55 @@ public sealed partial class ChatPanelViewUiTests
         });
     }
 
+    /// <summary>
+    /// #582 复审④:Responses 流以 <c>response.failed</c> / <c>error</c> 收尾时,面板不能把这一站记成"答上了"——
+    /// 先前那次失败的冷却要留着,界面摆出服务端的原话。
+    /// </summary>
+    /// <remarks>
+    /// <c>error</c> 事件被适配器转成 <see cref="ErrorContent" />,§223 的 <c>TransientFailure.TerminalFailure</c> 已把它抛成失败;
+    /// <c>response.failed</c> 却被转成一帧<b>没有内容</b>的更新,改前先吐半截正文再失败的流记成成功、冷却被解冻,
+    /// 一个字没吐的被当成空回复重试、报"空回复"。
+    /// </remarks>
+    [TestMethod]
+    [DataRow(ChatMode.Chat, "failed", false)]
+    [DataRow(ChatMode.Chat, "failed", true)]
+    [DataRow(ChatMode.Agent, "failed", true)]
+    [DataRow(ChatMode.Agent, "error", false)]
+    public void ResponsesErrorContent_IsNotRecordedAsSuccess(ChatMode mode, string kind, bool textFirst)
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub(HealthProbeTests.ResponsesErrorSse(kind, textFirst));
+            using var context = new TestPluginContext();
+            AiProvider provider = StubProvider("responses", endpoint.BaseUrl, "m");
+            provider.DefaultProtocol = ChatProtocol.OpenAiResponses;
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SuggestFollowUps = false,
+                Mode = mode
+            });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                ProviderHealth health = PanelHealth(panel);
+                health.Record(provider.Models[0].Id, false);
+                panel.SendExternal("hi");
+                Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count >= 1 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(health.IsCooling(provider.Models[0].Id), "服务端报错的一轮不能记成成功、解冻先前的冷却");
+                Assert.IsTrue(await WaitForAsync(() => Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants()
+                    .OfType<TextBlock>().Any(t => t.Text?.Contains("upstream exploded", StringComparison.Ordinal) == true)),
+                    "错误原文要摆给用户看");
+            }
+            finally
+            {
+                panel.Detach();
+                window.Close();
+            }
+        });
+    }
+
     [TestMethod]
     public void RoleOnlyUpdate_DoesNotBlockReplayButVisibleContentAndToolsDo()
     {

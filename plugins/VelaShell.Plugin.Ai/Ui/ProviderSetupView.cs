@@ -1700,6 +1700,7 @@ public sealed class ProviderSetupView : UserControl
             string? baselineJson = !_addingAnother && !_addingKey && _openId == entry.Id
                 && ReferenceEquals(Existing(entry), provider) ? _providerFormBaseline : null;
             AiProvider? baseline = baselineJson is null ? null : JsonSerializer.Deserialize<AiProvider>(baselineJson);
+            string? openedModel = baseline?.Models.FirstOrDefault()?.Model;
             List<string>? changedModels = _health is null ? null : [];
             string expectedProviderJson = JsonSerializer.Serialize(provider);
             AiProvider draft = JsonSerializer.Deserialize<AiProvider>(expectedProviderJson)!;
@@ -1714,6 +1715,7 @@ public sealed class ProviderSetupView : UserControl
                 && _providerFormBaseline == baselineJson)
             {
                 _providerFormBaseline = JsonSerializer.Serialize(baseline);
+                FollowPulledModel(openedModel, baseline.Models.FirstOrDefault()?.Model);
             }
 
             ModelsChanged?.Invoke();
@@ -1738,6 +1740,26 @@ public sealed class ProviderSetupView : UserControl
             }
         }
     }
+    /// <summary>
+    /// 拉取把首模型的型号改了(出厂的空型号对齐成清单里的头一个、下架的自动模型被清掉换了首位):
+    /// 用户没碰过的型号框跟上,输入基线一并改成新值。
+    /// </summary>
+    /// <remarks>
+    /// 只改提交基线不改框的话,框里还是旧值(自定义接入是空串)、输入基线也还是旧值 —— 表单看着没改过,
+    /// 再点一次保存,<see cref="ApplyForm" /> 把框里的旧值写回首模型,刚填进去的型号就没了(#582 复审⑤)。
+    /// 框被用户改过就不动它:那是草稿,保存时照用户写的落库(与 <see cref="FollowUntouchedFields" /> 同一条规矩)。
+    /// </remarks>
+    private void FollowPulledModel(string? opened, string? latest)
+    {
+        if (latest is null || opened == latest || _formInputBaseline is not { } inputs
+            || inputs.Model != opened || _modelBox.Text != opened)
+        {
+            return;
+        }
+        _modelBox.Text = latest;
+        _formInputBaseline = inputs with { Model = latest };
+    }
+
     // 目录只接纳自己实际改过的规格字段;网络期间的外部编辑不能混进表单基线。
     internal static void MergeCatalogue(AiProvider target, AiProvider before, AiProvider catalogue,
         AiProvider? baseline, List<string>? changedModels)
