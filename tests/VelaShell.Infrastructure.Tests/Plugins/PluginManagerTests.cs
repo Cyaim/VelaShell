@@ -110,6 +110,48 @@ public class PluginManagerTests
         Assert.AreEqual(expected, manager.Plugins.Single().State, manager.Plugins.Single().Error);
     }
 
+    /// <summary>
+    /// 清单的版本字段与宿主 / CLI / 商店共用的 SemanticVersion 同一口径(维护者 2026-10-25 定,第二轮第 28 条):
+    /// SDK 正则放过、SemanticVersion 判不合法的写法(预发布纯数字标识符带前导零、空标识符)发现期判 Invalid,
+    /// 原因写明怎么改;清单留在描述上 —— 管理页照常显示插件名,id 也还是它自己的(卸载清扫按它认人)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("\"version\": \"1.0.0-beta.01\"", "'1.0.0-beta.1'")]
+    [DataRow("\"version\": \"1.0.0-a..b\"", "must not be empty")]
+    [DataRow("\"version\": \"1.0.0-rc.\"", "must not be empty")]
+    [DataRow("\"version\": \"1.0.0\", \"minSdkVersion\": \"2.0.0-rc.007\"", "minSdkVersion")]
+    [DataRow("\"version\": \"1.0.0\", \"minHostVersion\": \"1.0.0-00\"", "minHostVersion")]
+    [DataRow("\"version\": \"99999999999.0.0\"", "32 bits")]
+    public void Discover_RejectsManifestVersionsSemanticVersionCannotOrder(string versionFields, string expectedInError)
+    {
+        AddPlugin("loose", $$"""{ "id": "a.loose", {{versionFields}}, "displayName": "Loose", "entry": "L.dll" }""");
+
+        var manager = new PluginManager(Options());
+        manager.Discover();
+
+        PluginDescriptor plugin = manager.Plugins.Single();
+        Assert.AreEqual(PluginState.Invalid, plugin.State);
+        Assert.Contains(expectedInError, plugin.Error);
+        Assert.AreEqual("a.loose", plugin.Id);
+        Assert.AreEqual("Loose", plugin.Manifest?.DisplayName);
+    }
+
+    /// <summary>收紧只动 SemanticVersion 判不合法的那部分:合法的预发布写法(含纯数字 0 与字母混排的前导零)照常放行。</summary>
+    [TestMethod]
+    [DataRow("1.0.0-beta.1")]
+    [DataRow("1.0.0-0")]
+    [DataRow("1.0.0-0a.01b")]
+    [DataRow("1.2.3.4-rc.10")]
+    public void Discover_AcceptsSemVerPreReleaseVersions(string version)
+    {
+        AddPlugin("strict", $$"""{ "id": "a.strict", "version": "{{version}}", "displayName": "S", "entry": "S.dll" }""");
+
+        var manager = new PluginManager(Options());
+        manager.Discover();
+
+        Assert.AreEqual(PluginState.Discovered, manager.Plugins.Single().State, manager.Plugins.Single().Error);
+    }
+
     [TestMethod]
     public void Discover_DirectoryNameNeedNotMatchId()
     {

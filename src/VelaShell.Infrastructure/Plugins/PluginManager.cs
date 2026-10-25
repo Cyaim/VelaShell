@@ -372,6 +372,11 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
                 throw new InvalidOperationException("Package has no plugin.json at its root.");
             }
             manifest = PluginManifestReader.Load(manifestPath); // 坏清单在此抛 PluginManifestException
+            if (DescribeManifestVersionProblem(manifest) is { } versionProblem)
+            {
+                // 与发现期同一套收紧(见 DescribeManifestVersionProblem):装上了也只会是一行 Invalid,不如在这里就拒。
+                throw new PluginManifestException(versionProblem);
+            }
             // 清单读出来了,副标题就从包文件名换成插件的显示名 —— 那才是用户认得的东西。
             activity?.Report(0.55, DisplayNameOf(manifest));
             string entryPath = Path.Combine(staging, manifest.Entry);
@@ -1969,6 +1974,14 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             descriptor.State = PluginState.Invalid;
             descriptor.Error = $"Duplicate plugin id '{manifest.Id}' (already provided by an earlier plugin root).";
         }
+        else if (DescribeManifestVersionProblem(manifest) is { } versionProblem)
+        {
+            // 清单留在描述上(与重复 id 同一处置):管理页照常显示插件名、可卸载,id 也还是它自己的 ——
+            // 置空清单的话,卸载清扫会按目录名认人,数据可能被当成孤儿删掉。
+            Log($"Rejected plugin at '{dir}': {versionProblem}");
+            descriptor.State = PluginState.Invalid;
+            descriptor.Error = versionProblem;
+        }
         else if (isDevelopment
                      ? _devDisabled.Contains(manifest.Id)
                      : File.Exists(Path.Combine(dir, PluginContentHash.DisabledMarkerName))
@@ -2093,6 +2106,51 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
 
     private static bool ContentMatches(string actual, string expected) =>
         CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(actual), Encoding.ASCII.GetBytes(expected));
+
+    /// <summary>
+    /// 清单的三个版本字段(<c>version</c> / <c>minHostVersion</c> / <c>minSdkVersion</c>)再按
+    /// <see cref="SemanticVersion" /> 校验一遍;合格时为 <see langword="null" />,否则给出写给插件作者看的原因。
+    /// </summary>
+    /// <remarks>
+    /// SDK 的清单校验用正则 <c>^\d+(\.\d+){1,3}(-[0-9A-Za-z.-]+)?$</c>,比宿主、<c>vela-plugin</c> 与商店共用的
+    /// <see cref="SemanticVersion" /> 宽:<c>1.0.0-beta.01</c>(预发布的纯数字标识符带前导零)、<c>1.0.0-a..b</c>
+    /// (空标识符)能过正则,却解析不出版本 —— 这样的插件装得上,之后「有没有新版」永远查不到、装载闸一律放行,
+    /// 用户看不出任何异样。维护者 2026-10-25 定(第二轮第 28 条):宿主收紧到与 <see cref="SemanticVersion" /> 一致,
+    /// 商店下一版上传时同样拒收。只收紧 SDK 正则已经放过的那部分(先过 SDK 校验才走到这里),所以 <c>v</c> 前缀与
+    /// <c>+构建元数据</c> 照旧不收。
+    /// </remarks>
+    internal static string? DescribeManifestVersionProblem(PluginManifest manifest)
+    {
+        return Check("version", manifest.Version)
+               ?? (manifest.MinHostVersion is { } minHost ? Check("minHostVersion", minHost) : null)
+               ?? (manifest.MinSdkVersion is { } minSdk ? Check("minSdkVersion", minSdk) : null);
+
+        static string? Check(string field, string value)
+        {
+            if (SemanticVersion.TryParse(value, out _))
+            {
+                return null;
+            }
+            int dash = value.IndexOf('-');
+            string[] identifiers = dash >= 0 ? value[(dash + 1)..].Split('.') : [];
+            if (identifiers.Any(static part => part.Length == 0))
+            {
+                return $"Invalid {field} '{value}': pre-release identifiers must not be empty (no \"..\", leading or trailing \".\"). "
+                       + "VelaShell, vela-plugin and the plugin store compare versions by SemVer 2.0 and cannot order this one.";
+            }
+            if (identifiers.Any(IsZeroPadded))
+            {
+                string fixedUp = value[..(dash + 1)] + string.Join('.', identifiers.Select(
+                    static part => IsZeroPadded(part) ? part.TrimStart('0') is { Length: > 0 } trimmed ? trimmed : "0" : part));
+                return $"Invalid {field} '{value}': numeric pre-release identifiers must not have leading zeros under SemVer 2.0 "
+                       + $"(\"01\" cannot be ordered against \"1\"). Write '{fixedUp}' instead.";
+            }
+            return $"Invalid {field} '{value}': not a version VelaShell can compare (each number must fit in 32 bits; "
+                   + "expected e.g. \"1.2.0\" or \"1.2.0-beta.1\").";
+        }
+
+        static bool IsZeroPadded(string part) => part.Length > 1 && part[0] == '0' && part.All(char.IsAsciiDigit);
+    }
 
     /// <summary>宿主版本是否低于要求(数字段比较,忽略预发布后缀;不可解析时不拦)。</summary>
     private bool IsHostOlderThan(string minHostVersion) => IsOlder(options.HostVersion, minHostVersion);

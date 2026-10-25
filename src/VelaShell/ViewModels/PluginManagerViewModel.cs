@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Avalonia.Threading;
 using ReactiveUI;
@@ -561,17 +562,31 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
             // 应用自带、开发期挂载、商店上查不到的,都没有"更新"这个动作。
             return (PluginUpdateState.Unknown, null, null);
         }
-        if (!SemanticVersion.TryParse(latest.Version, out SemanticVersion remote)
-            || !SemanticVersion.TryParse(manifest.Version, out SemanticVersion local)
-            || remote.CompareTo(local) <= 0)
+        if (CompareForUpdate(latest.Version, manifest.Version) is { } settled)
         {
-            return (PluginUpdateState.UpToDate, null, null);
+            if (settled == PluginUpdateState.Unknown)
+            {
+                Trace.WriteLine($"[PluginManager] Cannot compare versions of {descriptor.Id}: local '{manifest.Version}', store '{latest.Version}'.");
+            }
+            return (settled, null, null);
         }
         string? blocker = _manager.DescribeUpdateBlocker(latest.ApiLevel, latest.MinHostVersion, latest.MinSdkVersion);
         return blocker is null
             ? (PluginUpdateState.Available, latest.Version, null)
             : (PluginUpdateState.BlockedByHost, latest.Version, blocker);
     }
+
+    /// <summary>
+    /// 商店那一版比本地新时为 <see langword="null" />(还要再看装不装得上);不新时为 <see cref="PluginUpdateState.UpToDate" />;
+    /// 任一侧解析不出时为 <see cref="PluginUpdateState.Unknown" /> —— 比不了就不报「有新版」,也不冒充「已是最新」
+    /// (与 vela-plugin 同一口径)。旧的 UpdateVersion 对后缀宽松,会把本地的 <c>1.0.0-beta.01</c> 与商店的
+    /// <c>1.0.0</c> 比出「有新版」;这类清单现在发现期就判 Invalid,走到这里的只剩商店返回了怪写法。
+    /// </summary>
+    internal static PluginUpdateState? CompareForUpdate(string? remoteVersion, string? localVersion) =>
+        !SemanticVersion.TryParse(remoteVersion, out SemanticVersion remote)
+        || !SemanticVersion.TryParse(localVersion, out SemanticVersion local)
+            ? PluginUpdateState.Unknown
+            : remote.CompareTo(local) > 0 ? null : PluginUpdateState.UpToDate;
 
     /// <inheritdoc />
     public void Dispose()

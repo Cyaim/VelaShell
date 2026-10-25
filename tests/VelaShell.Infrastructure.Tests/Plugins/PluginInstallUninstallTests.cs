@@ -133,6 +133,25 @@ public class PluginInstallUninstallTests
         await manager.DisposeAsync();
     }
 
+    /// <summary>
+    /// 版本号 SemanticVersion 排不了序的包(<c>1.0.0-beta.01</c>)在安装时就拒,原因写明怎么改,用户目录里什么都不落 ——
+    /// 装上去也只会在下次发现时变成一行 Invalid(第二轮第 28 条)。
+    /// </summary>
+    [TestMethod]
+    public async Task InstallFromVpx_RejectsVersionSemanticVersionCannotOrder()
+    {
+        PluginManager manager = CreateManager();
+        await manager.StartAsync();
+
+        PluginSdk.Manifest.PluginManifestException ex = await Assert.ThrowsExactlyAsync<PluginSdk.Manifest.PluginManifestException>(
+            () => manager.InstallFromVpxAsync(BuildVpx(id: "acme.loose", version: "1.0.0-beta.01"), allowUntrustedPackage: true));
+
+        Assert.Contains("'1.0.0-beta.1'", ex.Message);
+        Assert.IsFalse(Directory.Exists(Path.Combine(_userRoot, "acme.loose")));
+        Assert.IsFalse(manager.Plugins.Any(p => p.Id == "acme.loose"));
+        await manager.DisposeAsync();
+    }
+
     [TestMethod]
     public async Task InstallFromVpx_ReportsProgressToTheBackgroundLedger_AndClearsIt()
     {
