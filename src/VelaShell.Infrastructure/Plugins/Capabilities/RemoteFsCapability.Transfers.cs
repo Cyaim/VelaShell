@@ -21,7 +21,14 @@ internal sealed partial class RemoteFsCapability
     /// 等待被取消、到期、断线或撤权打断后,给仍在跑的后端任务真正停下的有界宽限期:宽限期内停下了,才能确认停写、
     /// 清掉临时文件;仍没停才记 Unknown。测试可调短(与 <see cref="UseDiskSnapshot" /> 同一用意)。
     /// </summary>
-    internal TimeSpan StopGracePeriod { get; init; } = TimeSpan.FromSeconds(5);
+    /// <remarks>
+    /// 定 30 秒(原先 5 秒):SFTP 上传被取消时,文件流关闭前要先排空已经发出、还没确认的写入,再等 <c>CLOSE</c> 的应答,
+    /// SSH 库给这两步各 30 秒(<c>SftpOptions.CloseTimeout</c>)。慢链路上排空一窗在途写入常要十几秒,5 秒的宽限期
+    /// 一到就只能记「结果未知」、不敢清临时文件 —— 后端其实随后就合作地停了。取 30 秒盖住排空这一步;连 <c>CLOSE</c>
+    /// 也等满的链路已经接近断开,仍按未确认记 Unknown,后端真停下后照样清掉没提交过的临时文件。
+    /// 宽限期只在停止之后才开始算,正常传输不受影响;停止原因与终态的口径不变。
+    /// </remarks>
+    internal TimeSpan StopGracePeriod { get; init; } = TimeSpan.FromSeconds(30);
 
     private const int MaxRecords = 1024;
     private const int MaxActiveUploads = 32;

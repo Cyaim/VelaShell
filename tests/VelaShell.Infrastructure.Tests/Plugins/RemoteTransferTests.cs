@@ -1297,6 +1297,61 @@ public sealed partial class RemoteTransferTests
     }
 
     /// <summary>
+    /// 停止宽限期按生产默认值(30 秒)走:后端理会取消,只是排空在途写入要 6 秒(慢链路上常见,比原先的 5 秒长)——
+    /// 这是确认的停写,按用户取消收尾、清掉临时文件,不能记成「结果未知」。上传与下载同一个宽限期。
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SlowCooperativeDrainWithinTheDefaultGraceIsAConfirmedStop(bool download)
+    {
+        string file = CreateFile(64);
+        string directory = NewDirectory("vela-transfer-drain-");
+        var started = NewSignal();
+        string? temporary = null;
+        async Task DrainSlowly(CancellationToken token)
+        {
+            started.TrySetResult();
+            try { await Task.Delay(Timeout.InfiniteTimeSpan, token); }
+            catch (OperationCanceledException)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(6), CancellationToken.None);
+                throw;
+            }
+        }
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call =>
+            {
+                temporary = call.ArgAt<string>(2);
+                return DrainSlowly(call.ArgAt<CancellationToken>(7));
+            });
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
+        _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(call => DrainSlowly(call.ArgAt<CancellationToken>(4)));
+        using RemoteFsCapability api = download ? DownloadApi() : new(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        Assert.AreEqual(TimeSpan.FromSeconds(30), api.StopGracePeriod);
+        try
+        {
+            RemoteTransferSnapshot start = download
+                ? await api.StartDownloadAsync(_session.ToString(), "/source", Path.Combine(directory, "target"), new() { OperationId = "slow-drain" })
+                : await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "slow-drain" });
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await api.CancelTransferAsync(start.TransferId, 1);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            RemoteTransferSnapshot done = await api.GetTransferAsync(start.TransferId, timeout.Token);
+            while (!done.IsTerminal) done = await api.WaitTransferAsync(start.TransferId, done.Sequence, TimeSpan.FromSeconds(1), timeout.Token);
+            Assert.AreEqual(RemoteTransferState.Cancelled, done.State, done.ErrorMessage);
+            Assert.AreEqual("cancelled", done.ErrorCode);
+            Assert.IsTrue(done.RemoteStopConfirmed);
+            Assert.IsTrue(done.DestinationCommitConfirmedAbsent);
+            await WaitIdle(api);
+            if (download) CollectionAssert.AreEqual(Array.Empty<string>(), Directory.GetFileSystemEntries(directory), "下载的临时文件随停写确认清掉");
+            else await _sftp.Received(1).DeleteAsync(_session, temporary!, Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally { api.Dispose(); await WaitIdle(api); File.Delete(file); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>
     /// 提交的结局来得比宽限期还晚:先按提交未确认发布 Unknown,等它真有了结局再决定临时文件 ——
     /// 服务端明确拒绝(目标没被提交)就清掉;改名成功,或应答被放弃(服务端照样可能已经改名)都绝不删。
     /// </summary>
