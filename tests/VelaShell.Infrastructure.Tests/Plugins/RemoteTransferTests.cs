@@ -72,6 +72,9 @@ public sealed partial class RemoteTransferTests
                 var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "manager" });
                 var done = await Terminal(api, start.TransferId);
                 Assert.AreEqual(approved ? RemoteTransferState.Succeeded : RemoteTransferState.Failed, done.State, done.ErrorMessage);
+                Assert.AreEqual(RemoteTransferPhase.Approval, start.Phase, "回执就在等宿主确认");
+                Assert.AreEqual(approved ? RemoteTransferPhase.Commit : RemoteTransferPhase.Approval, done.Phase,
+                    "批准之后走完传输、校验与提交;被拒的停在确认阶段");
                 Assert.IsTrue(done.RemoteStopConfirmed);
                 if (!approved) Assert.AreEqual("permission-denied", done.ErrorCode);
                 else await prompt.Received(1).RequestFileUploadAsync("test.manager", Arg.Any<string>(), RemoteFsCapability.ResolveUploadSource(file), "/target", false, Arg.Any<long>(), Arg.Any<CancellationToken>());
@@ -183,6 +186,51 @@ public sealed partial class RemoteTransferTests
             await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
         }
         finally { decision.TrySetResult(PluginPermissionDecision.Deny); File.Delete(file); }
+    }
+
+    /// <summary>
+    /// 等宿主确认的上传报 <see cref="RemoteTransferPhase.Approval" />(与下载同一口径),插件据此只撤"还没批准"的那些:
+    /// 排在确认闸后的取消之后不再弹框,已经弹出来的那个随取消关掉,两者都以 Cancelled 收尾、什么都没写。
+    /// </summary>
+    [TestMethod]
+    public async Task UploadsAwaitingApproval_ReportTheApprovalPhase_AndCancellingWithdrawsTheirPrompts()
+    {
+        string file = CreateFile(8);
+        var asking = NewSignal();
+        var shown = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                CancellationToken token = call.ArgAt<CancellationToken>(5);
+                shown.TrySetResult(token);
+                asking.TrySetResult();
+                await Task.Delay(Timeout.Infinite, token);
+                return PluginPermissionDecision.Deny;
+            });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            RemoteTransferSnapshot first = await api.StartUploadAsync(_session.ToString(), file, "/a", new() { OperationId = "first" });
+            RemoteTransferSnapshot second = await api.StartUploadAsync(_session.ToString(), file, "/b", new() { OperationId = "second" });
+            Assert.AreEqual(RemoteTransferPhase.Approval, first.Phase);
+            Assert.AreEqual(RemoteTransferPhase.Approval, second.Phase);
+            await asking.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.AreEqual(RemoteTransferPhase.Approval, (await api.GetTransferAsync(second.TransferId)).Phase, "排在确认闸后的同样算等确认");
+
+            await api.CancelTransferAsync(second.TransferId, second.Generation);
+            RemoteTransferSnapshot secondDone = await Terminal(api, second.TransferId);
+            Assert.AreEqual(RemoteTransferState.Cancelled, secondDone.State, secondDone.ErrorMessage);
+            await api.CancelTransferAsync(first.TransferId, first.Generation);
+            Assert.IsTrue((await shown.Task).IsCancellationRequested, "已经弹出来的确认框随取消关掉");
+            RemoteTransferSnapshot firstDone = await Terminal(api, first.TransferId);
+            Assert.AreEqual(RemoteTransferState.Cancelled, firstDone.State, firstDone.ErrorMessage);
+            Assert.IsTrue(firstDone.DestinationCommitConfirmedAbsent && secondDone.DestinationCommitConfirmedAbsent);
+            await WaitIdle(api);
+            await prompt.Received(1).RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+        }
+        finally { File.Delete(file); }
     }
 
     [TestMethod]

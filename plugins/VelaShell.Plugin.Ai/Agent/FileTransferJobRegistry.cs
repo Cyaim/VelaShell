@@ -54,8 +54,8 @@ public sealed class FileTransferJobRegistry
 
     /// <summary>传输身份能力由入口生成，不接受模型指定 owner/run。</summary>
     public FileTransferRunScope BeginRun(string ownerId, string runId,
-        Func<string, CancellationToken, Task<bool>>? authorize = null)
-        => new(this, ownerId, runId, authorize);
+        Func<string, CancellationToken, Task<bool>>? authorize = null, bool denialEndsRun = false)
+        => new(this, ownerId, runId, authorize, denialEndsRun);
 
     internal Task<RemoteTransferSnapshot> StartAsync(FileTransferRunScope scope, string sessionId,
         string localPath, string remotePath, string operationId, bool overwrite, CancellationToken token)
@@ -296,6 +296,7 @@ public sealed class FileTransferJobRegistry
             await AuthorizeSessionAsync(job._scope, snapshot.SessionId, _lifetime).ConfigureAwait(false);
         }
         catch (UnauthorizedAccessException) { await WithholdAsync(job).ConfigureAwait(false); return; }
+        bool cancelThis, cancelOthers;
         lock (_gate)
         {
             if (snapshot.Sequence < job._snapshot.Sequence || job._withheld) return;
@@ -303,9 +304,16 @@ public sealed class FileTransferJobRegistry
             job._publishedSequence = snapshot.Sequence;
             job._snapshot = snapshot;
             if (snapshot.IsTerminal) job._completion.TrySetResult();
+            // 本轮已停止或被拒之后才进入确认阶段的(启动回执迟到、或宿主晚一拍才报阶段):一到就撤
+            cancelThis = job._scope._cancelUnapprovedRequested && AwaitsApproval(snapshot);
+            // 用户在宿主确认框里拒了这一项:整轮算被拒(与 HasDeniedExecution 同一判据),同一轮排着的确认一并撤掉
+            cancelOthers = job._scope.DenialEndsRun && !job._scope._cancelUnapprovedRequested
+                && snapshot.State == RemoteTransferState.Failed && snapshot.ErrorCode == "permission-denied";
         }
         job._scope.Publish(new(job._scope.OwnerId, job._scope.RunId, snapshot.TransferId,
             snapshot.LocalPath, snapshot.RemotePath, snapshot));
+        if (cancelThis) _ = CancelUnapprovedAsync(job);
+        if (cancelOthers) _ = CancelUnapprovedAsync(job._scope);
     }
 
     /// <summary>
@@ -505,6 +513,45 @@ public sealed class FileTransferJobRegistry
         }
     }
 
+    /// <summary>
+    /// 本轮停止或被拒:撤掉还在等宿主确认的传输。
+    /// </summary>
+    /// <remarks>
+    /// 宿主的逐任务确认框一次只弹一个(其余排在闸后)。模型一步里发起了几次上传、用户点了停止或拒绝了其中一个,
+    /// 剩下的确认框以前仍一个接一个弹出来(AI 上传③)。停止只停模型、不停已批准的传输(那是用户点过头的),
+    /// 所以这里只撤 <see cref="RemoteTransferPhase.Approval" /> 阶段的:宿主那边排队的确认随取消一起撤下,
+    /// 已经弹出来的那个也随之关掉,任务以 Cancelled 收尾、什么都没写。
+    /// 之后才拿到回执的(启动请求还在路上)由 <see cref="FileTransferRunScope._cancelUnapprovedRequested" /> 接住。
+    /// 旧宿主的上传不报阶段(Unknown),这里认不出就不撤,退回原来的行为。
+    /// </remarks>
+    internal async Task CancelUnapprovedAsync(FileTransferRunScope scope)
+    {
+        Job[] jobs;
+        lock (_gate)
+        {
+            scope._cancelUnapprovedRequested = true;
+            jobs = [.. _jobs.Values.Where(j => ReferenceEquals(j._scope, scope) && AwaitsApproval(j._snapshot))];
+        }
+        foreach (Job job in jobs) await CancelUnapprovedAsync(job).ConfigureAwait(false);
+    }
+
+    private async Task CancelUnapprovedAsync(Job job)
+    {
+        RemoteTransferSnapshot snapshot;
+        lock (_gate) snapshot = job._snapshot;
+        try
+        {
+            RemoteTransferSnapshot cancelled = await _remoteFs.CancelTransferAsync(snapshot.TransferId,
+                snapshot.Generation, _lifetime).ConfigureAwait(false);
+            await PublishAsync(job, cancelled).ConfigureAwait(false);
+        }
+        catch { /* 宿主可能已经收尾或撤权;观察者照常盯到终态。 */ }
+    }
+
+    /// <summary>还在等宿主确认、也还没被要求取消。</summary>
+    private static bool AwaitsApproval(RemoteTransferSnapshot snapshot)
+        => !snapshot.IsTerminal && !snapshot.CancellationRequested && snapshot.Phase == RemoteTransferPhase.Approval;
+
     internal bool HasDeniedExecution(FileTransferRunScope scope)
     {
         lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope)
@@ -585,6 +632,13 @@ public sealed class FileTransferRunScope : IAsyncDisposable
     internal volatile bool _uncertainStart;
     internal int _pendingStarts;
     internal bool _cancelAllRequested;
+    /// <summary>本轮已停止或被拒:之后才登记上、仍在等宿主确认的任务一到就撤(见 <see cref="CancelUnapprovedAsync" />)。</summary>
+    internal bool _cancelUnapprovedRequested;
+    /// <summary>
+    /// 宿主拒绝其中一项就算整轮被拒(桌面与 IM 的轮次)。对外 MCP 的轮次跨越整条客户端连接,拒绝只是那一次调用的结果,
+    /// 不连带撤掉同一连接里别的上传。
+    /// </summary>
+    internal bool DenialEndsRun { get; }
     /// <summary>入口持有的稳定对话所有者。</summary>
     public string OwnerId { get; }
     /// <summary>入口生成的运行代际。</summary>
@@ -601,11 +655,11 @@ public sealed class FileTransferRunScope : IAsyncDisposable
     public bool HasUnknownOutcome => _registry.HasUnknownOutcome(this);
 
     internal FileTransferRunScope(FileTransferJobRegistry registry, string ownerId, string runId,
-        Func<string, CancellationToken, Task<bool>>? authorize)
+        Func<string, CancellationToken, Task<bool>>? authorize, bool denialEndsRun = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
-        _registry = registry; OwnerId = ownerId; RunId = runId; _authorize = authorize;
+        _registry = registry; OwnerId = ownerId; RunId = runId; _authorize = authorize; DenialEndsRun = denialEndsRun;
     }
 
     /// <summary>订阅后台进度；调用者切到 UI 线程并显式释放返回的订阅。</summary>
@@ -650,6 +704,11 @@ public sealed class FileTransferRunScope : IAsyncDisposable
 
     /// <summary>入口显式销毁/撤销授权时取消该轮次的未完成上传；模型 Stop 不调用它。</summary>
     public Task CancelAllAsync() => _registry.CancelAllAsync(this);
+
+    /// <summary>
+    /// 本轮停止或被拒时撤掉还在等宿主确认的传输(已批准的照常传完);之后才登记上的也一到就撤。不抛异常。
+    /// </summary>
+    public Task CancelUnapprovedAsync() => _registry.CancelUnapprovedAsync(this);
 
     /// <summary>释放模型观察者不取消宿主任务；UI 订阅由返回的 IDisposable 独立管理。</summary>
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

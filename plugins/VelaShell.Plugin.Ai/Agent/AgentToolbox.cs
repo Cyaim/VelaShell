@@ -57,7 +57,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             => await runContext.Sessions.GetAsync(id, token).ConfigureAwait(false) is { } session
                 && (runAuthorization is null || await runAuthorization.AllowsLiveAsync(session, token).ConfigureAwait(false));
         CommandJobRunScope run = _jobs.BeginRun(ownerId, runId, Authorize, denialEndsRun, cancellationToken);
-        run.Transfers = FileTransferJobRegistry.For(context).BeginRun(ownerId, runId, Authorize);
+        run.Transfers = FileTransferJobRegistry.For(context).BeginRun(ownerId, runId, Authorize, denialEndsRun);
         return run;
     }
 

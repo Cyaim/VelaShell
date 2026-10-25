@@ -138,6 +138,7 @@ internal sealed partial class RemoteFsCapability
                     CreatedAt = now,
                     UpdatedAt = now,
                     DestinationCommitConfirmedAbsent = true,
+                    Phase = RemoteTransferPhase.Approval,
                 }, session, source, stop);
                 if (uploadPermissions is not null && !string.IsNullOrWhiteSpace(pluginId))
                     op._permission = uploadPermissions.CreateUploadLease(pluginId);
@@ -473,7 +474,9 @@ internal sealed partial class RemoteFsCapability
         Task heartbeat = TransferHeartbeatAsync(op, heartbeatStop.Token);
         try
         {
-            Update(op, s => s with { State = RemoteTransferState.Starting });
+            // 阶段与下载同一口径:等宿主确认时是 Approval,批准之后才进 Transfer。插件靠它分辨"还没批准"的任务 ——
+            // 用户停止或拒绝时撤掉的只是这些,排队的确认框不再一个个弹(已批准的照常传完)
+            Update(op, s => s with { State = RemoteTransferState.Starting, Phase = RemoteTransferPhase.Approval });
             if (uploadPermissions is null || op._permission is null || string.IsNullOrWhiteSpace(pluginId))
                 throw new PluginPermissionDeniedException("A trusted upload approval is required.");
             SshSession target = connections.GetSession(session) ?? throw new PluginSessionNotFoundException(Read(op).SessionId);
@@ -483,7 +486,7 @@ internal sealed partial class RemoteFsCapability
             if (!approved) throw new PluginPermissionDeniedException("The user denied this upload.");
             ct.ThrowIfCancellationRequested();
             ValidateSource(op);
-            Update(op, s => s with { State = RemoteTransferState.Queued });
+            Update(op, s => s with { State = RemoteTransferState.Queued, Phase = RemoteTransferPhase.Transfer });
             await _uploadSlots.WaitAsync(ct).ConfigureAwait(false);
             slot = true;
             ct.ThrowIfCancellationRequested();
@@ -519,7 +522,7 @@ internal sealed partial class RemoteFsCapability
             remoteWrite = sftp.UploadStreamAsync(session, uploadSource, temporary, op._sourceLength,
                 progress: new UploadProgressSink(op), createMode: createMode, cancellationToken: ct);
             await remoteWrite.WaitAsync(ct).ConfigureAwait(false);
-            Update(op, s => s with { TransferredBytes = s.TotalBytes, SpeedBytesPerSecond = null, EstimatedTimeRemaining = null });
+            Update(op, s => s with { Phase = RemoteTransferPhase.Verification, TransferredBytes = s.TotalBytes, SpeedBytesPerSecond = null, EstimatedTimeRemaining = null });
             // 优先服务端摘要;纯 SFTP 账号无 exec 时流式回读校验,不把满字节误报为已提交。
             byte[]? actual = null;
             try
@@ -541,6 +544,7 @@ internal sealed partial class RemoteFsCapability
             ValidateSource(op);
             DemandSnapshotAccess(op);
             ct.ThrowIfCancellationRequested();
+            Update(op, s => s with { Phase = RemoteTransferPhase.Commit });
             committing = true;
             commitTask = sftp.CommitUploadAsync(session, temporary, Read(op).RemotePath, options.Overwrite, commitWait.Token);
             await commitTask.WaitAsync(ct).ConfigureAwait(false);

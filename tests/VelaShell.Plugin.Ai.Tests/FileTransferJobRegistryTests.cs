@@ -994,4 +994,237 @@ public sealed class FileTransferJobRegistryTests
         });
         Assert.Contains("DENIED cancelling this transfer", denied);
     }
+
+    /// <summary>
+    /// 仿宿主的逐任务确认:每次上传先停在 Approval 阶段(确认框排在闸后),测试点「批准」「拒绝」;
+    /// 取消请求让还在确认阶段的任务以 Cancelled 收尾(确认框随之撤下),已批准的则只记一次取消请求。
+    /// </summary>
+    private sealed class ApprovalQueueHost
+    {
+        private readonly Lock _gate = new();
+        private readonly Dictionary<string, RemoteTransferSnapshot> _snapshots = [];
+        private readonly Dictionary<string, TaskCompletionSource> _changed = [];
+        private int _next;
+
+        public ApprovalQueueHost(TestPluginContext context)
+        {
+            context.FakeRemoteFs.SupportsTransferOperations = true;
+            context.FakeRemoteFs.StartUploadHandler = (session, local, remote, options, _) =>
+            {
+                lock (_gate)
+                {
+                    string id = $"t{++_next}";
+                    _snapshots[id] = new RemoteTransferSnapshot
+                    {
+                        TransferId = id, OperationId = options.OperationId, SessionId = session, LocalPath = local, RemotePath = remote,
+                        State = RemoteTransferState.Starting, Phase = RemoteTransferPhase.Approval,
+                        Sequence = 1, Generation = 1, TotalBytes = 1
+                    };
+                    _changed[id] = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                    return Task.FromResult(_snapshots[id]);
+                }
+            };
+            context.FakeRemoteFs.GetTransferHandler = (id, _) => { lock (_gate) return Task.FromResult(_snapshots[id]); };
+            context.FakeRemoteFs.WaitTransferHandler = async (id, after, _, ct) =>
+            {
+                Task changed;
+                lock (_gate)
+                {
+                    if (_snapshots[id].Sequence > after) return _snapshots[id];
+                    changed = _changed[id].Task;
+                }
+                await changed.WaitAsync(ct);
+                lock (_gate) return _snapshots[id];
+            };
+            context.FakeRemoteFs.CancelTransferHandler = (id, _, _) =>
+            {
+                lock (_gate)
+                {
+                    RemoteTransferSnapshot current = _snapshots[id];
+                    if (current.IsTerminal) return Task.FromResult(current);
+                    Set(id, current.Phase == RemoteTransferPhase.Approval
+                        ? current with { State = RemoteTransferState.Cancelled, CancellationRequested = true, RemoteStopConfirmed = true }
+                        : current with { State = RemoteTransferState.CancelRequested, CancellationRequested = true });
+                    return Task.FromResult(_snapshots[id]);
+                }
+            };
+        }
+
+        public void Approve(string id)
+        {
+            lock (_gate) Set(id, _snapshots[id] with { State = RemoteTransferState.Running, Phase = RemoteTransferPhase.Transfer });
+        }
+
+        public void Deny(string id)
+        {
+            lock (_gate)
+                Set(id, _snapshots[id] with
+                {
+                    State = RemoteTransferState.Failed, RemoteStopConfirmed = true,
+                    ErrorCode = "permission-denied", ErrorMessage = "A trusted host upload approval was not granted."
+                });
+        }
+
+        public RemoteTransferState State(string id) { lock (_gate) return _snapshots[id].State; }
+
+        // 调用方持有 _gate
+        private void Set(string id, RemoteTransferSnapshot next)
+        {
+            _snapshots[id] = next with { Sequence = _snapshots[id].Sequence + 1 };
+            TaskCompletionSource changed = _changed[id];
+            _changed[id] = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            changed.TrySetResult();
+        }
+    }
+
+    private static async Task UploadAsync(AgentToolbox toolbox, CommandJobRunScope run, string session, string local, string remote)
+    {
+        string receipt = await Call(toolbox, run, "upload_local_file", new()
+        { ["localPath"] = local, ["remotePath"] = remote, ["sessionId"] = session });
+        StringAssert.Contains(receipt, "transfer_id", receipt);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> done)
+    {
+        for (int i = 0; i < 1_000 && !done(); i++) await Task.Delay(10);
+        Assert.IsTrue(done(), "等待的条件没能在超时内成立。");
+    }
+
+    /// <summary>
+    /// AI 上传③:一轮里发起了几次上传,宿主的确认框排着队一个个弹。用户点了停止,
+    /// 还在等确认的那些要一并撤掉(确认框不再弹),已经批准的照常传完 —— 停止只停模型。
+    /// </summary>
+    [TestMethod]
+    public async Task Stop_WithdrawsTheRunsUploadsStillAwaitingHostApproval()
+    {
+        using var context = new TestPluginContext();
+        string session = context.FakeSessions.AddConnected().SessionId;
+        var host = new ApprovalQueueHost(context);
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        using var stop = new CancellationTokenSource();
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run", cancellationToken: stop.Token);
+        string local = Source(1);
+        try
+        {
+            await UploadAsync(toolbox, run, session, local, "/tmp/a");
+            await UploadAsync(toolbox, run, session, local, "/tmp/b");
+            await UploadAsync(toolbox, run, session, local, "/tmp/c");
+            host.Approve("t1");
+            await WaitUntilAsync(() => host.State("t1") == RemoteTransferState.Running);
+
+            await stop.CancelAsync();
+
+            await WaitUntilAsync(() => context.FakeRemoteFs.TransfersCancelled.Count == 2);
+            await WaitUntilAsync(() => host.State("t2") == RemoteTransferState.Cancelled && host.State("t3") == RemoteTransferState.Cancelled);
+            Assert.AreEqual(RemoteTransferState.Running, host.State("t1"), "已批准的那一个照常传");
+            Assert.IsFalse(run.HasUnknownOutcome, "撤掉的是还没开始的任务,结果是确定的");
+        }
+        finally { File.Delete(local); }
+    }
+
+    /// <summary>拒绝同样是本轮的停止边界:插件审批卡上拒了别的工具,或在宿主确认框里拒了其中一个上传。</summary>
+    [TestMethod]
+    [DataRow("plugin-card")]
+    [DataRow("host-dialog")]
+    public async Task Denial_WithdrawsTheRunsOtherUploadsStillAwaitingHostApproval(string where)
+    {
+        using var context = new TestPluginContext();
+        string session = context.FakeSessions.AddConnected().SessionId;
+        context.FakeRemoteExec.Handler = (_, _) => "out";
+        var host = new ApprovalQueueHost(context);
+        await using var toolbox = new AgentToolbox(context)
+        {
+            SessionIdProvider = () => session,
+            Approval = ApprovalMode.Ask,
+            ApprovalHandler = request => Task.FromResult(request.Kind == "upload_local_file")
+        };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        string local = Source(1);
+        try
+        {
+            await UploadAsync(toolbox, run, session, local, "/tmp/a");
+            await UploadAsync(toolbox, run, session, local, "/tmp/b");
+            if (where == "plugin-card")
+            {
+                Assert.Contains("DENIED", await Call(toolbox, run, "run_command", new() { ["command"] = "rm -rf /tmp/x" }));
+                await WaitUntilAsync(() => host.State("t1") == RemoteTransferState.Cancelled && host.State("t2") == RemoteTransferState.Cancelled);
+            }
+            else
+            {
+                host.Deny("t1");
+                await WaitUntilAsync(() => host.State("t2") == RemoteTransferState.Cancelled);
+                Assert.AreEqual(RemoteTransferState.Failed, host.State("t1"));
+            }
+            Assert.IsTrue(run.HasDeniedExecution);
+        }
+        finally { File.Delete(local); }
+    }
+
+    /// <summary>
+    /// 正常收尾(模型答完、上传还排着等确认)不撤:那是用户随后要去点的。
+    /// 对外 MCP 的轮次跨整条连接,宿主拒了其中一个也不连带撤掉同一连接里别的上传。
+    /// </summary>
+    [TestMethod]
+    [DataRow(true, DisplayName = "桌面 / IM 的轮次正常收尾")]
+    [DataRow(false, DisplayName = "对外 MCP 的轮次里宿主拒了一个")]
+    public async Task NormalFinishOrMcpDenial_LeavesPendingApprovalsAlone(bool desktop)
+    {
+        using var context = new TestPluginContext();
+        string session = context.FakeSessions.AddConnected().SessionId;
+        var host = new ApprovalQueueHost(context);
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        using var stop = new CancellationTokenSource();
+        CommandJobRunScope run = toolbox.BeginRun("owner", "run", denialEndsRun: desktop, cancellationToken: stop.Token);
+        string local = Source(1);
+        try
+        {
+            await UploadAsync(toolbox, run, session, local, "/tmp/a");
+            await UploadAsync(toolbox, run, session, local, "/tmp/b");
+            if (desktop)
+            {
+                await run.DisposeAsync();
+                await stop.CancelAsync(); // 收尾之后入口令牌再被取消(换会话、关面板)与这一轮无关
+            }
+            else
+            {
+                host.Deny("t1");
+                await WaitUntilAsync(() => run.Transfers!.HasDeniedExecution);
+            }
+            await Task.Delay(200);
+            Assert.IsEmpty(context.FakeRemoteFs.TransfersCancelled);
+            Assert.AreEqual(RemoteTransferState.Starting, host.State("t2"), "还等着用户去点");
+        }
+        finally
+        {
+            await run.DisposeAsync();
+            File.Delete(local);
+        }
+    }
+
+    /// <summary>停止之后才拿到回执、还在确认阶段的任务(启动请求在路上)同样一到就撤。</summary>
+    [TestMethod]
+    public async Task UploadReceiptArrivingAfterStop_IsWithdrawnToo()
+    {
+        using var context = new TestPluginContext();
+        var receipt = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var accepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        RemoteTransferSnapshot pending = Running("session", "source", "/remote", "operation") with
+        { State = RemoteTransferState.Starting, Phase = RemoteTransferPhase.Approval, TransferredBytes = 0 };
+        context.FakeRemoteFs.SupportsTransferOperations = true;
+        context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, ct) => { accepted.TrySetResult(); return receipt.Task.WaitAsync(ct); };
+        context.FakeRemoteFs.GetTransferHandler = (_, _) => Task.FromResult(pending);
+        context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => Task.Delay(Timeout.Infinite, ct).ContinueWith(_ => pending, ct);
+        context.FakeRemoteFs.CancelTransferHandler = (_, _, _) => Task.FromResult(pending with
+        { State = RemoteTransferState.Cancelled, CancellationRequested = true, RemoteStopConfirmed = true, Sequence = 2 });
+        FileTransferRunScope scope = FileTransferJobRegistry.For(context).BeginRun("owner", "run", denialEndsRun: true);
+        Task<RemoteTransferSnapshot> start = scope.StartAsync("session", "source", "/remote", "operation", false, default);
+        await accepted.Task;
+
+        await scope.CancelUnapprovedAsync();
+        Assert.IsEmpty(context.FakeRemoteFs.TransfersCancelled, "回执还没到,没有可撤的");
+        receipt.SetResult(pending);
+        await start;
+
+        await WaitUntilAsync(() => context.FakeRemoteFs.TransfersCancelled.Count == 1);
+    }
 }
