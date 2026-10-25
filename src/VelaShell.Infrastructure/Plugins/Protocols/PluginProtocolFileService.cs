@@ -202,8 +202,10 @@ public sealed class PluginProtocolFileService(PluginProtocolRegistry registry)
     /// </para>
     /// </remarks>
     public Task UploadStreamAsync(Guid sessionId, Stream source, string remotePath, long length,
-        DateTime? lastWriteTime = null, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, CancellationToken cancellationToken = default)
+        DateTime? lastWriteTime = null, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, uint? createMode = null,
+        CancellationToken cancellationToken = default)
     {
+        // createMode 不用:插件协议(S3、WebDAV…)没有 POSIX 权限位。
         ArgumentNullException.ThrowIfNull(source);
         Session session = Require(sessionId);
         if (session.FileSystem is not IProtocolStreamUpload streaming)

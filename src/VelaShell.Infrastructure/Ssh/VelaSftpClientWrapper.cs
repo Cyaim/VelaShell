@@ -135,9 +135,15 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
         {
             SftpFileSystem fs = EnsureConnected();
 
-            SftpFileStream remote = resumeOffset > 0
-                ? await fs.OpenAppendAsync(path, resumeOffset, cancellationToken: ct).ConfigureAwait(false)
-                : await fs.OpenWriteAsync(path, cancellationToken: ct).ConfigureAwait(false);
+            // 建文件时的权限位只在 OPEN 新建它的那一刻起作用(随 OPEN 的 ATTRS 发出,服务端减 umask);
+            // setuid / setgid / 粘滞位不在这里带 —— 属主还没对上,带了就是一个以上传者身份运行的 setuid 程序。
+            SftpFileStream remote = (resumeOffset > 0, options.CreateMode) switch
+            {
+                (true, { } mode) => await fs.OpenAppendAsync(path, resumeOffset, mode & 0x1FF, ct).ConfigureAwait(false),
+                (true, null) => await fs.OpenAppendAsync(path, resumeOffset, cancellationToken: ct).ConfigureAwait(false),
+                (false, { } mode) => await fs.OpenWriteAsync(path, mode & 0x1FF, cancellationToken: ct).ConfigureAwait(false),
+                (false, null) => await fs.OpenWriteAsync(path, cancellationToken: ct).ConfigureAwait(false),
+            };
             try
             {
                 if (resumeOffset > 0)

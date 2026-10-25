@@ -140,6 +140,48 @@ public class SftpServiceTests
     }
 
     /// <summary>
+    /// 覆盖上传的临时文件按被替换文件的 0777 那几位新建(setuid / setgid / 粘滞位留给提交:属主还没对上);
+    /// 新文件、链接按服务端默认;是个条目却读不到模式时按 0600(提交反正会拒绝)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("100600", "600")]
+    [DataRow("100755", "755")]
+    [DataRow("106755", "755")]
+    [DataRow("101777", "777")]
+    [DataRow("120777", null)]
+    [DataRow(null, null)]
+    public async Task UploadCreateMode_IsTheReplacedRegularFilesPermissionBits(string? target, string? expected)
+    {
+        _sftpClient.GetLinkModeAsync("/target", Arg.Any<CancellationToken>())
+            .Returns(target is null ? null : new SftpFileMode(Octal(target), 1000, 1000));
+
+        uint? mode = await _sftpService.GetUploadCreateModeAsync(_sessionId, "/target");
+
+        Assert.AreEqual(expected is null ? null : Octal(expected), mode);
+    }
+
+    [TestMethod]
+    public async Task UploadCreateMode_UnknownModeOfAnExistingEntry_IsOwnerOnly()
+    {
+        _sftpClient.GetLinkModeAsync("/target", Arg.Any<CancellationToken>()).Returns(new SftpFileMode(null, null, null));
+
+        Assert.AreEqual(Octal("600"), await _sftpService.GetUploadCreateModeAsync(_sessionId, "/target"));
+    }
+
+    /// <summary>流式上传把新建权限位交给客户端:随 OPEN 一起发出,文件一建出来就是这个模式。</summary>
+    [TestMethod]
+    public async Task UploadStream_WithCreateMode_PassesItToTheClient()
+    {
+        using var source = new MemoryStream(new byte[4]);
+
+        await _sftpService.UploadStreamAsync(_sessionId, source, "/dir/.vela-up-1", 4, createMode: Octal("600"));
+
+        await _sftpClient.Received(1).UploadAsync(source, "/dir/.vela-up-1",
+            Arg.Is<RemoteUploadOptions>(o => o.CreateMode == Octal("600") && o.ResumeOffset == 0),
+            Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// 带不过去就只许收窄、不许放宽:目标存在却读不到它的模式,或服务端不许改临时文件的模式而它比目标宽,就拒绝提交,目标原样不动;
     /// 临时文件本来就不比目标宽(只是少了执行位)时照样提交。属主没报时不改属主(当成 0 等于把文件交给 root)。
     /// </summary>

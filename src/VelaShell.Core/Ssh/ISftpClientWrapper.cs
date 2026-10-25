@@ -10,7 +10,12 @@ namespace VelaShell.Core.Ssh;
 /// 关闭之前要求服务端落盘(SFTP 的 <c>fsync@openssh.com</c>,服务端不支持时跳过)。落盘失败算上传失败 ——
 /// 要了「断电也不能丢」却没做到,不能报成功。
 /// </param>
-public sealed record RemoteUploadOptions(long ResumeOffset = 0, DateTimeOffset? LastWriteTime = null, bool Fsync = false);
+/// <param name="CreateMode">
+/// 上传<b>新建</b>这个文件时用的权限位(只取 0777,服务端照常再减 umask);null = 服务端默认(0644 减 umask)。
+/// 文件已经存在时不改它的模式。覆盖上传的临时文件靠它一建出来就不比被替换的文件宽,而不是写完、提交前才收窄。
+/// </param>
+public sealed record RemoteUploadOptions(long ResumeOffset = 0, DateTimeOffset? LastWriteTime = null, bool Fsync = false,
+    uint? CreateMode = null);
 
 /// <summary>
 /// SFTP 客户端的库中立抽象(参见 <see cref="ISshClientWrapper" /> 的隔离说明):

@@ -41,8 +41,8 @@ public sealed class RoutingRemoteFileService(
         Resolve(sessionId).UploadFileAsync(sessionId, localPath, remotePath, progress, resumeOffset, cancellationToken);
 
     /// <inheritdoc />
-    public Task UploadStreamAsync(Guid sessionId, Stream source, string remotePath, long length, DateTime? lastWriteTime = null, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, CancellationToken cancellationToken = default) =>
-        Resolve(sessionId).UploadStreamAsync(sessionId, source, remotePath, length, lastWriteTime, progress, resumeOffset, cancellationToken);
+    public Task UploadStreamAsync(Guid sessionId, Stream source, string remotePath, long length, DateTime? lastWriteTime = null, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, uint? createMode = null, CancellationToken cancellationToken = default) =>
+        Resolve(sessionId).UploadStreamAsync(sessionId, source, remotePath, length, lastWriteTime, progress, resumeOffset, createMode, cancellationToken);
 
     /// <inheritdoc />
     public Task DownloadFileAsync(Guid sessionId, string remotePath, string localPath, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, CancellationToken cancellationToken = default) =>
@@ -80,6 +80,11 @@ public sealed class RoutingRemoteFileService(
     /// <inheritdoc />
     public Task CheckUploadCommitAsync(Guid sessionId, string destinationPath, bool overwrite, CancellationToken cancellationToken = default) =>
         Resolve(sessionId).CheckUploadCommitAsync(sessionId, destinationPath, overwrite, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>理由同 <see cref="CommitUploadAsync" />:不显式转发就落到默认实现(null),覆盖上传的临时文件又回到 0644 新建。</remarks>
+    public Task<uint?> GetUploadCreateModeAsync(Guid sessionId, string destinationPath, CancellationToken cancellationToken = default) =>
+        Resolve(sessionId).GetUploadCreateModeAsync(sessionId, destinationPath, cancellationToken);
 
     /// <inheritdoc />
     public Task CopyAsync(Guid sessionId, string sourcePath, string destPath, IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default) =>

@@ -93,13 +93,14 @@ public class SftpService : ISftpService
 
     /// <summary>将本地文件上传到远端路径,可选限速与进度回报,支持取消。</summary>
     /// <summary>
-    /// 上传的几种形状只差几个参数:要保留时间戳或要落盘的,带着这些要求上传(关闭之前按同一个句柄做完);
+    /// 上传的几种形状只差几个参数:要保留时间戳、要落盘或要指定新建权限位的,带着这些要求上传(关闭之前按同一个句柄做完);
     /// 其余按有没有续传起点选重载。
     /// </summary>
     private static Task UploadAsync(ISftpClientWrapper client, Stream input, string remotePath, long resumeOffset,
-        DateTimeOffset? lastWriteTime, bool fsync, Action<ulong>? onBytes, CancellationToken cancellationToken) =>
-        lastWriteTime is not null || fsync
-            ? client.UploadAsync(input, remotePath, new RemoteUploadOptions(resumeOffset, lastWriteTime, fsync), onBytes, cancellationToken)
+        DateTimeOffset? lastWriteTime, bool fsync, Action<ulong>? onBytes, uint? createMode,
+        CancellationToken cancellationToken) =>
+        lastWriteTime is not null || fsync || createMode is not null
+            ? client.UploadAsync(input, remotePath, new RemoteUploadOptions(resumeOffset, lastWriteTime, fsync, createMode), onBytes, cancellationToken)
             : resumeOffset > 0
                 ? client.UploadAsync(input, remotePath, resumeOffset, onBytes, cancellationToken)
                 : client.UploadAsync(input, remotePath, onBytes, cancellationToken);
@@ -174,7 +175,7 @@ public class SftpService : ISftpService
                 // (下载方向的对等实现见 DownloadFileAsync)。关闭之前用同一个句柄设,一次往返;
                 // 尽力而为 —— 个别服务器禁 setstat,不能让一次时间戳设置失败把已完成的上传标成失败。
                 await UploadAsync(client, fileStream, remotePath, resumeOffset,
-                    preserveTimestamps ? new DateTimeOffset(fileInfo.LastWriteTimeUtc) : null, fsync, onBytes, cancellationToken).ConfigureAwait(false);
+                    preserveTimestamps ? new DateTimeOffset(fileInfo.LastWriteTimeUtc) : null, fsync, onBytes, createMode: null, cancellationToken).ConfigureAwait(false);
             }
             catch (VelaSftpTransferInterruptedException interrupted)
             {
@@ -211,6 +212,7 @@ public class SftpService : ISftpService
         DateTime? lastWriteTime = null,
         IProgress<TransferProgress>? progress = null,
         long resumeOffset = 0,
+        uint? createMode = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -244,7 +246,7 @@ public class SftpService : ISftpService
                 : null;
             try
             {
-                await UploadAsync(client, input, remotePath, resumeOffset, keepTime, fsync, onBytes, cancellationToken).ConfigureAwait(false);
+                await UploadAsync(client, input, remotePath, resumeOffset, keepTime, fsync, onBytes, createMode, cancellationToken).ConfigureAwait(false);
             }
             catch (VelaSftpTransferInterruptedException interrupted)
             {
@@ -590,6 +592,30 @@ public class SftpService : ISftpService
             }
         }
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 与提交时 <see cref="CarryOverReplacedModeAsync" /> 同一套判断(lstat,不跟随链接):目标是链接、目录就不管(换掉的是链接本身,
+    /// 与新建上传同一口径);读到模式就只取 0777;是普通文件却没报模式,按最严的 0600 建 —— 提交时那一步会因为读不到模式拒绝,
+    /// 临时文件随后被删,写入期间也不该比 0600 宽。
+    /// </remarks>
+    public async Task<uint?> GetUploadCreateModeAsync(Guid sessionId, string destinationPath, CancellationToken cancellationToken = default)
+    {
+        ISftpClientWrapper client = await GetOrCreateSftpClientAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        SftpFileMode? target = await client.GetLinkModeAsync(destinationPath, cancellationToken).ConfigureAwait(false);
+        if (target is null)
+        {
+            return null;
+        }
+        if (target.Mode is not { } mode)
+        {
+            return OwnerOnlyMode;
+        }
+        return target.IsRegularFile ? mode & 0x1FFu : null;
+    }
+
+    /// <summary>读不到被替换文件的模式时临时文件按它新建:只有属主读写。</summary>
+    private const uint OwnerOnlyMode = 0x180; // 0600
 
     /// <inheritdoc />
     public async Task CheckUploadCommitAsync(Guid sessionId, string destinationPath, bool overwrite,

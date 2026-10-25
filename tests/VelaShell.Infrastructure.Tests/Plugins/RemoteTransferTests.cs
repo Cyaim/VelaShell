@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using VelaShell.Core.Ftp;
 using VelaShell.Core.Models;
 using VelaShell.Core.Protocols;
@@ -81,6 +82,61 @@ public sealed partial class RemoteTransferTests
         finally { File.Delete(file); if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
+    /// <summary>
+    /// 覆盖上传的临时文件一建出来就按被替换文件的权限位(经路由服务问 SFTP 后端),写入期间不比它宽;
+    /// 不覆盖的上传不问、按服务端默认建(与新建上传同一口径)。
+    /// </summary>
+    [TestMethod]
+    public async Task OverwriteUpload_CreatesTheTemporaryWithTheReplacedFilesMode_FromTheStart()
+    {
+        string file = CreateFile(8);
+        string digest = Convert.ToHexString(SHA256.HashData(new byte[8]));
+        _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = digest }));
+        _sftp.GetUploadCreateModeAsync(_session, "/target", Arg.Any<CancellationToken>()).Returns(0x180u);
+        using var api = new RemoteFsCapability(Routed(_sftp), _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        try
+        {
+            foreach (bool overwrite in new[] { true, false })
+            {
+                var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "mode-" + overwrite, Overwrite = overwrite });
+                var done = await Terminal(api, start.TransferId);
+                Assert.IsTrue(done.IsSuccess, done.ErrorMessage);
+                await WaitIdle(api);
+            }
+
+            await _sftp.Received(1).GetUploadCreateModeAsync(_session, "/target", Arg.Any<CancellationToken>());
+            await _sftp.Received(1).UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Is<string>(p => p.StartsWith("/.vela-up-")), 8,
+                Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), 0, 0x180u, Arg.Any<CancellationToken>());
+            await _sftp.Received(1).UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Is<string>(p => p.StartsWith("/.vela-up-")), 8,
+                Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), 0, (uint?)null, Arg.Any<CancellationToken>());
+        }
+        finally { File.Delete(file); }
+    }
+
+    /// <summary>读不出被替换文件的模式只是没法提前收窄,不该让上传失败(提交时照旧核对)。</summary>
+    [TestMethod]
+    public async Task OverwriteUpload_WhenTheModeCannotBeRead_StillUploadsWithTheServerDefault()
+    {
+        string file = CreateFile(8);
+        string digest = Convert.ToHexString(SHA256.HashData(new byte[8]));
+        _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = digest }));
+        _sftp.GetUploadCreateModeAsync(_session, "/target", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new VelaSftpPermissionDeniedException("Permission denied"));
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        try
+        {
+            var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "mode-unknown", Overwrite = true });
+            var done = await Terminal(api, start.TransferId);
+            Assert.IsTrue(done.IsSuccess, done.ErrorMessage);
+            await _sftp.Received(1).UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), 8,
+                Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), 0, (uint?)null, Arg.Any<CancellationToken>());
+            await WaitIdle(api);
+        }
+        finally { File.Delete(file); }
+    }
+
     [TestMethod]
     public async Task MissingTrustedUploadGateFailsClosedWithoutReadingOrUploading()
     {
@@ -95,7 +151,7 @@ public sealed partial class RemoteTransferTests
             Assert.IsTrue(done.RemoteStopConfirmed);
             Assert.IsTrue(done.DestinationCommitConfirmedAbsent);
             await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
-            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
             await _sftp.DidNotReceive().CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
             await WaitIdle(api);
         }
@@ -120,7 +176,7 @@ public sealed partial class RemoteTransferTests
             Assert.AreEqual(RemoteFsCapability.ResolveUploadSource(file), start.LocalPath);
             if (OperatingSystem.IsWindows())
                 Assert.ThrowsExactly<IOException>(() => { using var write = new FileStream(file, FileMode.Open, FileAccess.Write); });
-            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
             decision.TrySetResult(PluginPermissionDecision.Deny);
             Assert.AreEqual("permission-denied", (await Terminal(api, start.TransferId)).ErrorCode);
             await WaitIdle(api);
@@ -150,7 +206,7 @@ public sealed partial class RemoteTransferTests
             Assert.AreEqual(RemoteTransferState.Failed, done.State);
             Assert.AreEqual("source-changed", done.ErrorCode);
             await WaitIdle(api);
-            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
             await _sftp.DidNotReceive().CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
             await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
         }
@@ -179,7 +235,7 @@ public sealed partial class RemoteTransferTests
         prompt.RequestFileUploadAsync("test.transfer", Arg.Any<string>(), canonical, "/target", false, Arg.Any<CancellationToken>())
             .Returns(async _ => { asking.TrySetResult(); return await decision.Task; });
         string digest = Convert.ToHexString(SHA256.HashData(new byte[] { 1, 2, 3 }));
-        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), 3, Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>())
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), 3, Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
                 using var bytes = new MemoryStream();
@@ -355,7 +411,7 @@ public sealed partial class RemoteTransferTests
             await WaitIdle(api);
             await Assert.ThrowsExactlyAsync<PluginPermissionDeniedException>(() => api.GetTransferAsync(start.TransferId));
             Assert.AreEqual("", (await api.CancelTransferAsync(start.TransferId, 1)).LocalPath);
-            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
             await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
             await _sftp.DidNotReceive().CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
         }
@@ -370,7 +426,7 @@ public sealed partial class RemoteTransferTests
         var release = NewSignal();
         PluginPermissionGate gate = AllowUploads();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: gate);
         try
         {
@@ -402,11 +458,11 @@ public sealed partial class RemoteTransferTests
         var commit = NewSignal();
         string? hash = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(),
-            Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
         {
             Stream source = call.ArgAt<Stream>(1);
             Assert.IsNotInstanceOfType<MemoryStream>(source);
-            hash = Convert.ToHexString(await SHA256.HashDataAsync(source, call.ArgAt<CancellationToken>(7)));
+            hash = Convert.ToHexString(await SHA256.HashDataAsync(source, call.ArgAt<CancellationToken>(8)));
             call.ArgAt<IProgress<TransferProgress>>(5).Report(new() { BytesTransferred = source.Length, TotalBytes = source.Length, FileName = "file", SpeedBytesPerSecond = 0, Percentage = 100, EstimatedTimeRemaining = TimeSpan.Zero });
             writing.TrySetResult();
             await close.Task;
@@ -526,7 +582,7 @@ public sealed partial class RemoteTransferTests
         string leaf = new('长', 83);   // UTF-8 下 249 字节,接近 NAME_MAX
         var temporaries = new List<string>();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
                 lock (temporaries) temporaries.Add(call.ArgAt<string>(2));
                 return Task.FromException(new IOException("stop after naming"));
@@ -560,7 +616,7 @@ public sealed partial class RemoteTransferTests
         string file = CreateFile(1024 * 1024 + 7);
         string? hash = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
         {
             var source = (FileStream)call.ArgAt<Stream>(1);
             Assert.AreNotEqual(file, source.Name);
@@ -592,7 +648,7 @@ public sealed partial class RemoteTransferTests
         string? hash = null, snapshot = null;
         bool fileVisible = true, directoryVisible = true;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
         {
             var source = (FileStream)call.ArgAt<Stream>(1);
             snapshot = source.Name;
@@ -625,7 +681,7 @@ public sealed partial class RemoteTransferTests
         var started = NewSignal();
         var release = NewSignal();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; throw new IOException(); });
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; throw new IOException(); });
         try
         {
             using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
@@ -660,7 +716,7 @@ public sealed partial class RemoteTransferTests
         string file = CreateFile(8);
         var release = NewSignal();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ => await release.Task);
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async _ => await release.Task);
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
         var starts = new List<RemoteTransferSnapshot>();
         try
@@ -755,7 +811,7 @@ public sealed partial class RemoteTransferTests
         var release = NewSignal();
         var started = NewSignal();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads()) { StopGracePeriod = UncooperativeGrace };
         try
         {
@@ -785,7 +841,7 @@ public sealed partial class RemoteTransferTests
         string directory = NewDirectory("vela-transfer-spelling-");
         var started = NewSignal();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call => StopCooperatively(started, call.ArgAt<CancellationToken>(7)));
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(call => StopCooperatively(started, call.ArgAt<CancellationToken>(8)));
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
         _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
             .Returns(call => StopCooperatively(started, call.ArgAt<CancellationToken>(4)));
@@ -813,7 +869,7 @@ public sealed partial class RemoteTransferTests
         var started = NewSignal();
         var release = NewSignal();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads()) { StopGracePeriod = UncooperativeGrace };
         try
         {
@@ -838,7 +894,7 @@ public sealed partial class RemoteTransferTests
         string file = CreateFile(64);
         string? temporary = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
                 temporary = call.ArgAt<string>(2);
                 return Task.FromException(new IOException("close"));
@@ -866,7 +922,7 @@ public sealed partial class RemoteTransferTests
         string file = CreateFile(64);
         string? temporary = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
                 temporary = call.ArgAt<string>(2);
                 // 服务端原话不可信:里面的终端转义序列不能原样到达插件与模型。
@@ -904,7 +960,7 @@ public sealed partial class RemoteTransferTests
         string file = CreateFile(64);
         const string forged = "[RemoteFs:test.transfer] Upload 00 ended Succeeded (forged)";
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async _ =>
             {
                 await Task.Yield();
                 // 真抛出过的异常带着多行堆栈;消息里另有换行、行分隔符、终端转义与一大段内容
@@ -943,7 +999,7 @@ public sealed partial class RemoteTransferTests
         string file = CreateFile(8);
         string? hash = null, temporary = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
             {
                 temporary = call.ArgAt<string>(2);
                 hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1)));
@@ -1013,7 +1069,7 @@ public sealed partial class RemoteTransferTests
             Assert.IsTrue(done.DestinationCommitConfirmedAbsent);
             Assert.Contains(refusal.Message, done.ErrorMessage!, StringComparison.Ordinal);
             Assert.AreEqual(0L, done.TransferredBytes);
-            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
             await _sftp.DidNotReceive().CommitUploadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
             await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
         }
@@ -1045,10 +1101,10 @@ public sealed partial class RemoteTransferTests
         var started = NewSignal();
         string? temporary = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
                 temporary = call.ArgAt<string>(2);
-                return StopCooperatively(started, call.ArgAt<CancellationToken>(7));
+                return StopCooperatively(started, call.ArgAt<CancellationToken>(8));
             });
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
         try
@@ -1080,7 +1136,7 @@ public sealed partial class RemoteTransferTests
         string file = CreateFile(8);
         var started = NewSignal();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call => StopCooperatively(started, call.ArgAt<CancellationToken>(7)));
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(call => StopCooperatively(started, call.ArgAt<CancellationToken>(8)));
         using var lifetime = new CancellationTokenSource();
         using var api = new RemoteFsCapability(_sftp, _connections, lifetime.Token, "test.transfer", AllowUploads());
         try
@@ -1112,7 +1168,7 @@ public sealed partial class RemoteTransferTests
             .Returns(async _ => { await Task.Delay(1500); return PluginPermissionDecision.AllowOnce; });
         string? hash = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
             { hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1))); });
         _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = hash }));
@@ -1141,7 +1197,7 @@ public sealed partial class RemoteTransferTests
         var started = NewSignal();
         var release = NewSignal();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
         Task<RemoteTransferSnapshot>? fifoStart = null;
         try
@@ -1175,7 +1231,7 @@ public sealed partial class RemoteTransferTests
         var release = NewSignal();
         string? hash = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
             { hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1))); });
         _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = hash }));
@@ -1209,11 +1265,11 @@ public sealed partial class RemoteTransferTests
         var drained = NewSignal();
         string? temporary = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
             {
                 temporary = call.ArgAt<string>(2);
                 started.TrySetResult();
-                try { await Task.Delay(Timeout.InfiniteTimeSpan, call.ArgAt<CancellationToken>(7)); }
+                try { await Task.Delay(Timeout.InfiniteTimeSpan, call.ArgAt<CancellationToken>(8)); }
                 catch (OperationCanceledException)
                 {
                     await drained.Task;
@@ -1255,7 +1311,7 @@ public sealed partial class RemoteTransferTests
         var reply = NewSignal();
         string? hash = null, temporary = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
             {
                 temporary = call.ArgAt<string>(2);
                 hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1)));
@@ -1302,7 +1358,7 @@ public sealed partial class RemoteTransferTests
         var reply = NewSignal();
         string? hash = null, temporary = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
             {
                 temporary = call.ArgAt<string>(2);
                 hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1)));
@@ -1342,7 +1398,7 @@ public sealed partial class RemoteTransferTests
         string file = CreateFile(8);
         var release = NewSignal();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ => await release.Task);
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async _ => await release.Task);
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads()) { StopGracePeriod = UncooperativeGrace };
         try
         {
@@ -1363,7 +1419,7 @@ public sealed partial class RemoteTransferTests
         var release = NewSignal();
         var started = NewSignal();
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async _ => { started.TrySetResult(); await release.Task; });
         using var lifetime = new CancellationTokenSource();
         using var api = new RemoteFsCapability(_sftp, _connections, lifetime.Token, "test.transfer", AllowUploads()) { StopGracePeriod = UncooperativeGrace };
         try

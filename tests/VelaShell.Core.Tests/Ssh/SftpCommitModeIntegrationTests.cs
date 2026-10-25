@@ -86,6 +86,68 @@ public class SftpCommitModeIntegrationTests
         }
     }
 
+    /// <summary>
+    /// 覆盖上传的临时文件<b>一建出来</b>就是被替换文件的权限位(0777 那几位),不是先按 0644 写完、提交前才收窄 ——
+    /// 写入的那段时间里同机的其他用户读不到一个 0600 文件的新内容。setuid 位仍由提交补上(属主对上之后)。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("DockerIntegration")]
+    [Timeout(60_000)]
+    public async Task OverwriteUpload_TemporaryStartsWithTheReplacedFilesMode_AgainstRealOpenSsh()
+    {
+        RequireDockerAndSsh();
+
+        string root = $"/tmp/vela-create-mode-{Guid.NewGuid():N}";
+        VelaSshClientWrapper ssh = await ConnectAsync();
+        try
+        {
+            (string Name, string Mode, string Temporary)[] files = [("secret", "600", "600"), ("script", "755", "755"), ("tool", "4755", "755")];
+            await ssh.RunCommandAsync($"mkdir -p {root} && cd {root} && "
+                + string.Join(" && ", files.Select(f => $"printf old > {f.Name} && chmod {f.Mode} {f.Name}")));
+
+            SshConnection inner = ssh.InnerConnection ?? throw new InvalidOperationException("SSH not connected.");
+            await using var sftp = new VelaSftpClientWrapper(
+                async ct => await SftpFileSystem.ConnectAsync(inner, cancellationToken: ct));
+            await sftp.ConnectAsync(CancellationToken.None);
+            Guid sessionId = Guid.NewGuid();
+            ISshConnectionService connections = Substitute.For<ISshConnectionService>();
+            connections.GetSession(sessionId).Returns(new SshSession
+            {
+                SessionId = sessionId,
+                Status = SessionStatus.Connected,
+                ConnectionInfo = new() { Host = TestHost, Port = TestPort, Username = TestUser, AuthMethod = AuthMethod.Password },
+            });
+            await using var service = new SftpService(connections, _ => sftp);
+
+            Assert.IsNull(await service.GetUploadCreateModeAsync(sessionId, $"{root}/absent"), "新文件按服务端默认建");
+            foreach ((string name, string mode, string expectedTemporary) in files)
+            {
+                uint? createMode = await service.GetUploadCreateModeAsync(sessionId, $"{root}/{name}");
+                string temporary = $"{root}/.vela-up-{name}";
+                using (var content = new MemoryStream("new"u8.ToArray()))
+                {
+                    await service.UploadStreamAsync(sessionId, content, temporary, 3, createMode: createMode);
+                }
+                Assert.AreEqual(expectedTemporary, (await ssh.RunCommandAsync($"stat -c %a {temporary}")).Trim(), $"{name}:临时文件写完、提交之前的模式");
+
+                await service.CommitUploadAsync(sessionId, temporary, $"{root}/{name}", overwrite: true);
+                Assert.AreEqual(mode, (await ssh.RunCommandAsync($"stat -c %a {root}/{name}")).Trim(), name);
+            }
+        }
+        finally
+        {
+            try
+            {
+                await ssh.RunCommandAsync($"rm -rf {root}");
+            }
+            catch
+            {
+                // 清理尽力而为;容器本来就是一次性的。
+            }
+            await ssh.DisposeAsync();
+        }
+    }
+
     /// <summary>跳过记 Inconclusive 而不是"通过":全绿的报告里不能混着一行断言都没跑的用例。</summary>
     private static void RequireDockerAndSsh()
     {

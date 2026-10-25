@@ -591,11 +591,14 @@ internal sealed partial class RemoteFsCapability
             byte[] hash = await SHA256.HashDataAsync(uploadSource, ct).ConfigureAwait(false);
             uploadSource.Position = 0;
             ct.ThrowIfCancellationRequested();
+            // 覆盖上传:临时文件一建出来就按被替换文件的权限位(0777 那几位),写入期间不比它宽 —— 以前按 0644(减 umask)新建、
+            // 提交前才收窄,覆盖一个 0600 的文件时,写入的那段时间里同机的其他用户读得到新内容。提交时照旧按那一刻的目标补齐属主与全部位。
+            uint? createMode = options.Overwrite ? await ReadCreateModeAsync(session, destination, ct).ConfigureAwait(false) : null;
             Update(op, s => s with { State = RemoteTransferState.Running });
             elapsed.Start();
             writing = true;
             remoteWrite = sftp.UploadStreamAsync(session, uploadSource, temporary, op._sourceLength,
-                progress: new UploadProgressSink(op), cancellationToken: ct);
+                progress: new UploadProgressSink(op), createMode: createMode, cancellationToken: ct);
             await remoteWrite.WaitAsync(ct).ConfigureAwait(false);
             Update(op, s => s with { TransferredBytes = s.TotalBytes, SpeedBytesPerSecond = null, EstimatedTimeRemaining = null });
             // 优先服务端摘要;纯 SFTP 账号无 exec 时流式回读校验,不把满字节误报为已提交。
@@ -752,6 +755,24 @@ internal sealed partial class RemoteFsCapability
             ErrorMessage = message,
         });
         LogTransferEnd(op, state, code, cause);
+    }
+
+    /// <summary>覆盖上传的临时文件按什么权限位新建;读不出来就按服务端默认(改动之前的样子)。</summary>
+    /// <remarks>
+    /// 只是收窄写入期间的暴露面,不是安全提交的一环:提交时 <c>CommitUploadAsync</c> 照旧重新读目标的模式,读不到就拒绝提交。
+    /// 所以这里查不出来(没权限 stat、通道一时出错)不该让整次上传失败。
+    /// </remarks>
+    private async Task<uint?> ReadCreateModeAsync(Guid session, string destination, CancellationToken ct)
+    {
+        try
+        {
+            return await sftp.GetUploadCreateModeAsync(session, destination, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Trace.WriteLine($"[RemoteFs:{pluginId}] create mode for the upload temporary unknown: {PeerText.Sanitize(ex.Message)}");
+            return null;
+        }
     }
 
     /// <summary>
