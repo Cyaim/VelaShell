@@ -4753,6 +4753,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             FileTransfer,
             QueryDefaultEditorPathAsync,
             UpdateProfileBookmarksAsync);
+        WireDocumentPanesToSettings(sshViewModel);
         // 远端搜索走这条 SSH 连接的 exec 通道(FTP 与插件协议的文档没有,不挂)。
         sshViewModel.RemoteFiles.RemoteSearch = _remoteSearch;
         var document = new SftpDocument(sshViewModel);
@@ -4990,16 +4991,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             return null;
         }
         AppSettings settings = _latestSettings ?? await LoadSettingsSnapshotAsync().ConfigureAwait(true);
-        var document = new SftpDocument(
-            new SftpDocumentViewModel(
-                connection.Profile,
-                connection.SessionId,
-                connection.DisconnectAsync,
-                _sftpService,
-                settings.Transfer,
-                FileTransfer,
-                QueryDefaultEditorPathAsync,
-                UpdateProfileBookmarksAsync));
+        var ftpViewModel = new SftpDocumentViewModel(
+            connection.Profile,
+            connection.SessionId,
+            connection.DisconnectAsync,
+            _sftpService,
+            settings.Transfer,
+            FileTransfer,
+            QueryDefaultEditorPathAsync,
+            UpdateProfileBookmarksAsync);
+        WireDocumentPanesToSettings(ftpViewModel);
+        var document = new SftpDocument(ftpViewModel);
         if (tabTitle is not null)
         {
             document.Title = tabTitle;
@@ -5169,6 +5171,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 settings.Transfer,
                 FileTransfer,
                 QueryDefaultEditorPathAsync);
+            WireDocumentPanesToSettings(dualViewModel);
             // 两栏各自判断:是 SSH 会话的那一栏才出现「搜索」(见 FileBrowserViewModel.CanSearchRemote)。
             dualViewModel.LeftFiles.RemoteSearch = _remoteSearch;
             dualViewModel.RightFiles.RemoteSearch = _remoteSearch;
@@ -5287,6 +5290,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             FileTransfer,
             QueryDefaultEditorPathAsync,
             UpdateProfileBookmarksAsync);
+        WireDocumentPanesToSettings(viewModel);
         // 协议专属的右键菜单项:声明式,按下右键那一帧就能画出来。
         if (descriptor is { Actions.Count: > 0 })
         {
@@ -6376,20 +6380,20 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 // “显示隐藏文件”状态(设置审计 C-04:设置中心与工具栏共用一个来源)。
                 // 面板按会话缓存后,当前实例与全部缓存实例都要广播到。
                 FileBrowser.TransferOptions = settings.Transfer;
-                FileBrowser.ShowHiddenFiles = settings.Transfer.ShowHiddenFiles;
-                ApplyColumnVisibility(FileBrowser, settings.Transfer);
+                FileBrowser.ApplyDisplayOptions(settings.Transfer);
                 foreach (FileBrowserViewModel browser in _fileBrowserCache.Values)
                 {
                     browser.TransferOptions = settings.Transfer;
-                    browser.ShowHiddenFiles = settings.Transfer.ShowHiddenFiles;
-                    ApplyColumnVisibility(browser, settings.Transfer);
+                    browser.ApplyDisplayOptions(settings.Transfer);
                 }
                 // 独立文件标签(单栏、双栏远程)的远端栏同样换上新选项:它们打开时拿的是那一刻的设置,
-                // 不广播的话改了冲突策略、并发、重试次数、双击行为,开着的文件标签还照旧(差距分析 A7)。
+                // 不广播的话改了冲突策略、并发、重试次数、双击行为,开着的文件标签还照旧(差距分析 A7);
+                // 隐藏文件与列显示也在这里跟上 —— 在别的面板上切了,这里一起变(差距分析 A8)。
                 // 限速、保留时间戳、上传后落盘由 SftpService 每次传输现读设置,本来就跟得上。
                 foreach (FileBrowserViewModel pane in DocumentFilePanes())
                 {
                     pane.TransferOptions = settings.Transfer;
+                    pane.ApplyDisplayOptions(settings.Transfer);
                 }
 
                 RevealActiveSessionInSidebar();
@@ -6564,18 +6568,20 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
     }
 
-    /// <summary>把设置里的列显示状态铺到某个文件浏览器面板(设置保存后广播用)。</summary>
-    private static void ApplyColumnVisibility(
-        FileBrowserViewModel browser,
-        TransferOptions transfer
-    )
+    /// <summary>
+    /// 文件标签(单栏、双栏远程)的远端栏挂上写回设置的回调:工具栏切「显示隐藏文件」、表头右键切列显示,
+    /// 与终端侧栏的面板一样写回 <c>Transfer</c>,保存后再由 <see cref="OnSettingsSaved" /> 广播给所有面板
+    /// (设置审计 C-04,差距分析 A8)。此前文件标签的面板不读也不写这两样:设置里开着隐藏文件,文件标签照样不显示;
+    /// 在文件标签里切了,也不留到下次。
+    /// 初始值由文档视图模型按打开时的设置铺好(<see cref="FileBrowserViewModel.ApplyDisplayOptions" />),这里只挂回调。
+    /// </summary>
+    private void WireDocumentPanesToSettings(ISftpDocumentContent content)
     {
-        browser.ShowSizeColumn = transfer.ShowSizeColumn;
-        browser.ShowPermissionsColumn = transfer.ShowPermissionsColumn;
-        browser.ShowOwnerColumn = transfer.ShowOwnerColumn;
-        browser.ShowGroupColumn = transfer.ShowGroupColumn;
-        browser.ShowTypeColumn = transfer.ShowTypeColumn;
-        browser.ShowModifiedColumn = transfer.ShowModifiedColumn;
+        foreach (FileBrowserViewModel pane in content.RemotePanes)
+        {
+            pane.ShowHiddenFilesToggled = PersistShowHiddenFiles;
+            pane.ColumnVisibilityToggled = PersistColumnVisibility;
+        }
     }
 
     /// <summary>

@@ -257,6 +257,8 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
             InitialRemotePath = profile.Ftp?.InitialRemotePath,
             AcceptsStreamedUploads = endpoint.AcceptsStreamedUploads,
         };
+        // 「显示隐藏文件」与列显示按设置铺好(与单栏文档同一口径,差距分析 A8);写回设置的回调由宿主建好之后再挂。
+        pane.ApplyDisplayOptions(transferOptions);
         // 插件协议的右键动作(S3 的「复制分享链接」之类),与单栏文档同一种接法。
         if (endpoint.Protocol is { Actions.Count: > 0 } protocol && endpoint.InvokeProtocolAction is { } invoke)
         {

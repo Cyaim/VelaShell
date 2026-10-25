@@ -108,6 +108,8 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
             // 取到 null 即照旧从登录工作目录起步。
             InitialRemotePath = profile.Ftp?.InitialRemotePath,
         };
+        // 「显示隐藏文件」与列显示按设置铺好,与终端侧栏的面板同一个来源(差距分析 A8);写回设置的回调由宿主建好之后再挂。
+        RemoteFiles.ApplyDisplayOptions(transferOptions);
         LocalFiles = new LocalFilePaneViewModel(transferOptions)
         {
             UploadSelectedAsync = () => UploadSelectedAsync()
