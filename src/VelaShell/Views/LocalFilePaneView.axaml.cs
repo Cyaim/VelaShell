@@ -168,12 +168,21 @@ public partial class LocalFilePaneView : UserControl
             danger: true);
     }
 
+    /// <summary>
+    /// 双击:目录(含 "..")进去;文件用系统默认程序打开,与远端栏双击文件对称(上传留给拖放、按钮与右键)。
+    /// </summary>
     private void OnFileDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (DataContext is LocalFilePaneViewModel vm && sender is ListBox list && list.SelectedItem is LocalFileEntry entry)
+        if (DataContext is not LocalFilePaneViewModel vm || sender is not ListBox { SelectedItem: LocalFileEntry entry })
+        {
+            return;
+        }
+        if (entry.IsDirectory)
         {
             vm.ActivateCommand.Execute(entry).Subscribe();
+            return;
         }
+        vm.OpenItemCommand.Execute(entry).Subscribe(_ => { }, _ => { });
     }
 
     /// <summary>

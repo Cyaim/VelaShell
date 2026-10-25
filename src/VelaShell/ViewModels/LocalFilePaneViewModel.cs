@@ -48,6 +48,7 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         UploadSelectedCommand = ReactiveCommand.CreateFromTask(() => UploadSelectedAsync?.Invoke() ?? Task.CompletedTask);
         RenameCommand = ReactiveCommand.CreateFromTask<LocalFileEntry>(entry => RenameAsync(entry, _lifetime.Token));
         NewFolderCommand = ReactiveCommand.CreateFromTask(() => NewFolderAsync(_lifetime.Token));
+        NewFileCommand = ReactiveCommand.CreateFromTask(() => NewFileAsync(_lifetime.Token));
         OpenItemCommand = ReactiveCommand.CreateFromTask<LocalFileEntry>(entry => OpenItemAsync(entry, _lifetime.Token));
         SortCommand = ReactiveCommand.Create<string>(ToggleSort);
         BeginPathEditCommand = ReactiveCommand.Create(BeginPathEdit);
@@ -103,6 +104,9 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
 
     /// <summary>在当前目录中创建新文件夹。</summary>
     public ReactiveCommand<RxVoid, RxVoid> NewFolderCommand { get; }
+
+    /// <summary>在当前目录中新建空文件(同名已存在时报错、不覆盖)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> NewFileCommand { get; }
 
     /// <summary>用默认程序打开本地文件,或进入某个目录。</summary>
     public ReactiveCommand<LocalFileEntry, RxVoid> OpenItemCommand { get; }
@@ -1056,6 +1060,42 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         {
             ErrorMessage = null;
             await _fileSystem.CreateDirectoryAsync(target, cancellationToken);
+            await RefreshAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// 在当前目录新建一个空文件(与远端栏的「新建文件」同一套校验)。同名的已经在了就报错、不覆盖 ——
+    /// 新建从来不该把别人的文件清空。
+    /// </summary>
+    private async Task NewFileAsync(CancellationToken cancellationToken = default)
+    {
+        if (PromptForText is null || string.IsNullOrEmpty(CurrentPath))
+        {
+            return;
+        }
+        string? name = await PromptForText(Strings.Get("NewFile"), "");
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+        string trimmedName = name.Trim();
+        if (!LocalPathSafety.IsSafeLeafName(trimmedName))
+        {
+            ErrorMessage = Strings.Get("KeySvc_InvalidName");
+            return;
+        }
+        string target = Path.Combine(CurrentPath, trimmedName);
+        try
+        {
+            ErrorMessage = null;
+            await using (await _fileSystem.OpenWriteAsync(target, FileMode.CreateNew, cancellationToken))
+            {
+            }
             await RefreshAsync(cancellationToken);
         }
         catch (Exception ex)

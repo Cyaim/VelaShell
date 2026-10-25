@@ -253,6 +253,10 @@
             <MenuItem Header="{loc:Localize NewFolder}" Command="{Binding NewFolderCommand}">
               <MenuItem.Icon><pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.folder-plus}" Foreground="{DynamicResource VelaTextTertiary}" /></MenuItem.Icon>
             </MenuItem>
+            <!-- 与远端栏的「新建文件」同一个文案与图标;同名已存在时报错、不覆盖。 -->
+            <MenuItem Header="{loc:Localize NewFile}" Command="{Binding NewFileCommand}">
+              <MenuItem.Icon><pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.file-plus}" Foreground="{DynamicResource VelaTextTertiary}" /></MenuItem.Icon>
+            </MenuItem>
             <Separator />
             <MenuItem Header="{loc:Localize Delete}" Command="{Binding DeleteSelectedCommand}" Foreground="{DynamicResource VelaError}">
               <MenuItem.Icon><pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.trash-2}" Foreground="{DynamicResource VelaError}" /></MenuItem.Icon>

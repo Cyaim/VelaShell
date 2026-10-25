@@ -275,6 +275,45 @@ public sealed class FilePaneShortcutUiTests
         });
     }
 
+    // ---- 本地栏双击 ----
+
+    [TestMethod]
+    public void LocalPane_DoubleClickingAFile_OpensItWithTheSystemProgram_AndAFolderIsEntered()
+    {
+        RunWithLocalPane((window, view, list, vm, root) =>
+        {
+            List<string> opened = [];
+            vm.OpenLocalFile = path =>
+            {
+                opened.Add(path);
+                return Task.CompletedTask;
+            };
+
+            DoubleClick(window, list, vm.Entries.Single(entry => entry.Name == "b.txt"));
+            PumpWhile(window, () => opened.Count == 0);
+            Assert.AreSequenceEqual([Path.Combine(root, "b.txt")], opened, "与远端栏双击文件对称:用系统程序打开,不是上传。");
+            Assert.AreEqual(root, vm.CurrentPath);
+
+            DoubleClick(window, list, vm.Entries.Single(entry => entry.Name == "sub"));
+            PumpWhile(window, () => vm.CurrentPath != Path.Combine(root, "sub"));
+            Assert.AreEqual(Path.Combine(root, "sub"), vm.CurrentPath, "目录照旧是进去。");
+            Assert.HasCount(1, opened);
+        });
+    }
+
+    private static void DoubleClick(Window window, ListBox list, object item)
+    {
+        list.ScrollIntoView(item);
+        Pump(window);
+        Control row = list.ContainerFromItem(item)!;
+        Point at = row.TranslatePoint(new(20, row.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(at, MouseButton.Left);
+        window.MouseUp(at, MouseButton.Left);
+        window.MouseDown(at, MouseButton.Left);
+        window.MouseUp(at, MouseButton.Left);
+        Pump(window);
+    }
+
     // ---- 后退 / 前进 ----
 
     [TestMethod]
