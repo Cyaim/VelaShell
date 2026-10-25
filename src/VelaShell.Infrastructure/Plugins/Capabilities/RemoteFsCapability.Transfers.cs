@@ -106,7 +106,7 @@ internal sealed partial class RemoteFsCapability
         try
         {
             RejectLinks(resolved);
-            VerifyOpenedPath(source, resolved);
+            VerifyOpenedSource(source.SafeFileHandle, resolved);
             // 打开前按路径查过类型,打开后再按句柄核一次:两次之间路径被换成设备也拦得住。
             if (!OperatingSystem.IsWindows() && source.SafeFileHandle.Type != FileHandleType.RegularFile)
                 throw new NotSupportedException("Only regular files can be uploaded.");
@@ -285,50 +285,6 @@ internal sealed partial class RemoteFsCapability
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetFinalPathNameByHandle(SafeFileHandle handle, StringBuilder path, uint length, uint flags);
-
-    [LibraryImport("libc", EntryPoint = "fcntl", SetLastError = true)]
-    private static partial int GetDarwinFilePath(SafeFileHandle handle, int command, [Out] byte[] path);
-
-    [LibraryImport("libc", EntryPoint = "fcntl", SetLastError = true)]
-    private static partial int GetDarwinArm64FilePath(SafeFileHandle handle, int command,
-        nint unused2, nint unused3, nint unused4, nint unused5, nint unused6, nint unused7, [Out] byte[] path);
-
-    private static void VerifyOpenedPath(FileStream source, string expected)
-    {
-        string actual;
-        if (OperatingSystem.IsWindows())
-        {
-            var path = new StringBuilder(32768);
-            uint length = GetFinalPathNameByHandle(source.SafeFileHandle, path, (uint)path.Capacity, 0);
-            if (length == 0 || length >= path.Capacity) throw new IOException("Cannot verify the opened source object.");
-            actual = path.ToString();
-            if (actual.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) actual = @"\\" + actual[8..];
-            else if (actual.StartsWith(@"\\?\", StringComparison.Ordinal)) actual = actual[4..];
-        }
-        else if (OperatingSystem.IsLinux())
-        {
-            actual = File.ResolveLinkTarget($"/proc/self/fd/{source.SafeFileHandle.DangerousGetHandle().ToInt64()}", false)?.FullName
-                ?? throw new IOException("Cannot verify the opened source object.");
-        }
-        else if (OperatingSystem.IsMacOS())
-        {
-            // Darwin sys/fcntl.h: F_GETPATH = 50;缓冲大于 MAXPATHLEN,失败时不降级路径检查。
-            byte[] path = new byte[4096];
-            // Apple arm64 的变参在栈上传递，填满 x2–x7 后将缓冲指针放到首个栈槽。
-            int result = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
-                ? GetDarwinArm64FilePath(source.SafeFileHandle, 50, 0, 0, 0, 0, 0, 0, path)
-                : GetDarwinFilePath(source.SafeFileHandle, 50, path);
-            if (result == -1)
-                throw new IOException("Cannot verify the opened source object.");
-            int end = Array.IndexOf(path, (byte)0);
-            if (end <= 0) throw new IOException("Cannot verify the opened source object.");
-            actual = new UTF8Encoding(false, true).GetString(path, 0, end);
-        }
-        else throw new PlatformNotSupportedException("Stable upload source verification is unavailable.");
-        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (!string.Equals(Path.GetFullPath(actual), expected, comparison))
-            throw new IOException("The opened source does not match the approved path.");
-    }
 
     internal static string ResolveUploadSource(string path)
     {

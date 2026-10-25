@@ -37,17 +37,17 @@ internal sealed partial class RemoteFsCapability
         private static readonly bool Linux = OperatingSystem.IsLinux();
         private static readonly bool LinuxArm64 = Linux && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
         private static readonly bool DarwinArm64 = OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
-        private static readonly int ODirectory = LinuxArm64 ? 0x4000 : Linux ? 0x10000 : 0x100000;
-        private static readonly int ONoFollow = LinuxArm64 ? 0x8000 : Linux ? 0x20000 : 0x100;
+        internal static readonly int ODirectory = LinuxArm64 ? 0x4000 : Linux ? 0x10000 : 0x100000;
+        internal static readonly int ONoFollow = LinuxArm64 ? 0x8000 : Linux ? 0x20000 : 0x100;
         private static readonly int OCreate = Linux ? 0x40 : 0x200;
         private static readonly int OExclusive = Linux ? 0x80 : 0x800;
         private static readonly int ONonBlock = Linux ? 0x800 : 0x4;
-        private static readonly int OCloseOnExec = Linux ? 0x80000 : 0x1000000;
+        internal static readonly int OCloseOnExec = Linux ? 0x80000 : 0x1000000;
         // Linux 用 O_PATH 打开目录链:只走不读,只给了 x 权限的祖先目录(0711 的 /home 之类)也走得过去;macOS 用 O_RDONLY。
-        private static readonly int OPath = Linux ? 0x200000 : 0;
+        internal static readonly int OPath = Linux ? 0x200000 : 0;
         private const int OReadOnly = 0, OReadWrite = 2;
-        private static readonly int AtFdCwd = Linux ? -100 : -2;
-        private static readonly int AtSymlinkNoFollow = Linux ? 0x100 : 0x20;
+        internal static readonly int AtFdCwd = Linux ? -100 : -2;
+        internal static readonly int AtSymlinkNoFollow = Linux ? 0x100 : 0x20;
         private const uint LinuxRenameNoReplace = 0x1, DarwinRenameExclusive = 0x4;
         private const int LockExclusive = 2, LockNonBlocking = 4;
         private const uint FileTypeMask = 0xF000, RegularFile = 0x8000, DirectoryFile = 0x4000, LinkFile = 0xA000, PermissionBits = 0x1FF;
@@ -187,7 +187,7 @@ internal sealed partial class RemoteFsCapability
             uint mode = 0x1B6;
             if (_overwrite && ReadMode(_name) is { } existing && (existing & FileTypeMask) == RegularFile) mode = existing & PermissionBits;
             int flags = OReadWrite | OCreate | OExclusive | ONoFollow | OCloseOnExec;
-            // Apple arm64 的变参在栈上传递:填满 x3–x7 后,mode 落在首个栈槽(与 F_GETPATH 的 fcntl 同一做法)。
+            // Apple arm64 的被调方一律从栈上取变参:用 x3–x7 五个占位参数填满寄存器,mode 才落在首个栈槽上。
             int fd = DarwinArm64
                 ? DarwinArm64OpenAt(Fd(_directory), temporary, flags, 0, 0, 0, 0, 0, (nint)mode)
                 : OpenAt(Fd(_directory), temporary, flags, (nint)mode);
