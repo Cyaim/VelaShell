@@ -337,6 +337,7 @@ public sealed class Loc(string locale)
         ["SetupUniqueApiKey"] = ["Enter a non-empty, different Key", "请输入非空且不同的 Key", "請輸入非空且不同的 Key", "空でない別の Key を入力してください", "비어 있지 않은 다른 Key를 입력하세요"],
         ["SetupSaveProviderFirst"] = ["Save current changes first", "先保存当前修改", "先儲存目前修改", "先に変更を保存してください", "현재 변경 사항을 먼저 저장하세요"],
         ["SetupApiKeyOrdinal"] = ["Key {0}", "第 {0} 把 Key", "第 {0} 把 Key", "Key {0}", "Key {0}"],
+        ["SetupApiKeyEmptySlot"] = ["(empty — use the pencil to fill it in)", "(空着,点铅笔填回)", "(空著,點鉛筆填回)", "(空 — 鉛筆で入力し直せます)", "(비어 있음 — 연필로 다시 입력)"],
         ["SetupApiKeyActive"] = ["Currently in use", "当前使用", "目前使用", "現在使用中", "현재 사용 중"],
         ["SetupRemoveApiKeyConfirm"] = ["Click again to remove Key {0}", "再次点击移除第 {0} 把 Key", "再次點擊移除第 {0} 把 Key", "もう一度クリックして Key {0} を削除", "다시 클릭하여 Key {0} 제거"],
         ["SetupKeyResetTitle"] = ["Remove the previous server's Keys?", "清除旧地址的 Key?", "清除舊位址的 Key?", "以前のサーバーの Key を削除しますか?", "이전 서버의 Key를 제거할까요?"],

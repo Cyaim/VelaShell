@@ -528,6 +528,54 @@ public sealed partial class SettingsViewUiTests
     }
 
     [TestMethod]
+    public void RemovedKeyOne_StillShowsAnEmptyPrimarySlotThatCanBeFilledBackIn()
+    {
+        OnUi(async () =>
+        {
+            await using var host = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = host.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "key-one");
+            string extra = await store.AddProviderApiKeyAsync(settings, provider, "key-two");
+            // 存量状态:第 1 把被移除过 —— 主槽只清了机密,槽还在,第 2 把留在补充槽
+            await store.RemoveProviderApiKeyAsync(settings, provider, provider.Id);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                Assert.IsTrue(HasKeyRow(view, provider.Id), "空着的主槽照样摆出来");
+                Assert.AreEqual(loc.F("SetupApiKeyOrdinal", 1) + " · " + loc["SetupApiKeyEmptySlot"],
+                    KeyControl<Button>(view, provider.Id, "ProviderKeyRevealButton").GetLogicalDescendants().OfType<TextBlock>().Single().Text);
+                Assert.AreEqual(loc["StatusNeedsKey"], KeyControl<TextBlock>(view, provider.Id, "ProviderKeyStatus").Text);
+                Assert.IsFalse(KeyControl<Button>(view, provider.Id, "ProviderKeyRevealButton").IsEnabled);
+                Assert.IsFalse(KeyControl<Button>(view, provider.Id, "ProviderKeyRemoveButton").IsEnabled, "没有 Key 可移除");
+                Assert.IsFalse(KeyControl<Button>(view, provider.Id, "ProviderKeyProbeButton").IsEnabled, "没有 Key 可测");
+                Assert.IsTrue(KeyControl<Button>(view, provider.Id, "ProviderKeyEditButton").IsEnabled);
+                Assert.IsTrue(view.GetControl<Button>("ProviderProbeAllKeysButton").IsEnabled, "空主槽不算坏行,检测全部照常可用(只测有 Key 的)");
+                Assert.IsFalse(view.GetControl<TextBlock>("ProviderAllKeysHintText").IsVisible);
+                Assert.IsTrue(HasKeyRow(view, extra));
+
+                // 铅笔填回第 1 把,保存:落进主槽,第 2 把照旧
+                EditProviderKey(view, provider.Id).Text = "key-one-again";
+                Click(view.GetControl<Button>("SaveButton"));
+                await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc["Saved"]);
+                Assert.AreEqual("key-one-again", await store.GetApiKeyAsync(provider.Id));
+                Assert.AreEqual("key-two", await store.GetApiKeyAsync(extra));
+                CollectionAssert.AreEqual(new[] { extra }, provider.AdditionalApiKeyIds.ToArray());
+                await WaitUntilAsync(() => KeyControl<Button>(view, provider.Id, "ProviderKeyRemoveButton").IsEnabled);
+                Assert.IsTrue(KeyControl<Button>(view, provider.Id, "ProviderKeyRevealButton").IsEnabled);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
     public void ConfirmOverlay_DefaultsToCancel_AndEscapeReplacementOrDetachAllCancel()
     {
         OnUi(async () =>
@@ -4700,13 +4748,15 @@ public sealed partial class SettingsViewUiTests
                 Assert.IsNull(await store.GetApiKeyAsync(second));
                 Click(KeyControl<Button>(view, provider.Id, "ProviderKeyRemoveButton"));
                 Click(KeyControl<Button>(view, provider.Id, "ProviderKeyRemoveButton"));
-                await WaitUntilAsync(() => !HasKeyRow(view, provider.Id));
+                // 移除第 1 把只清主槽机密:第 3 把还在,这一行照样摆着(空着,能用铅笔填回去)
+                await WaitUntilAsync(() => KeyControl<TextBlock>(view, provider.Id, "ProviderKeyStatus").Text == new Loc("en")["StatusNeedsKey"]);
+                Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
                 Assert.AreEqual(provider.Id, settings.Providers.Single().Id);
                 Assert.AreEqual(model.Id, provider.Models.Single().Id);
                 Assert.AreEqual("sk-third-9012", (await store.ResolveCredentialAsync(settings.FindModel(model.Id)!)).Value);
                 Click(KeyControl<Button>(view, third, "ProviderKeyRemoveButton"));
                 Click(KeyControl<Button>(view, third, "ProviderKeyRemoveButton"));
-                await WaitUntilAsync(() => !HasKeyRow(view, third));
+                await WaitUntilAsync(() => !HasKeyRow(view, third) && !HasKeyRow(view, provider.Id));
                 view.GetControl<TextBox>("ProviderNewApiKeyBox").Text = "tiny";
                 Click(view.GetControl<Button>("ProviderAddApiKeyButton"));
                 await WaitUntilAsync(() => HasKeyRow(view, provider.Id));

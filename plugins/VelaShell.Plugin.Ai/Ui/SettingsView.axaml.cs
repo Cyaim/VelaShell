@@ -1264,6 +1264,9 @@ public partial class SettingsView : UserControl
             string? key = await _store.GetApiKeyAsync(id, token);
             if (!string.IsNullOrWhiteSpace(key)) keys.Add((id, key));
         }
+        // 移除第 1 把只清主槽的机密、槽还在(补充槽也还在):照样摆一行空的主槽,铅笔能把它填回去。
+        // 不摆的话「添加 API Key」只会在后面再加一个补充槽,第 1 把永远空着、再也填不回去
+        if (keys.Count > 0 && keys[0].Id != provider.Id) keys.Insert(0, (provider.Id, ""));
         if (token.IsCancellationRequested || refresh != _keyRowsRun || run != _editorRun
             || !ReferenceEquals(SelectedProvider, provider) || SelectedModel is not null
             || !_settings.Providers.Contains(provider) || provider.Auth != AuthMethod.ApiKey)
@@ -1461,7 +1464,12 @@ public partial class SettingsView : UserControl
     private void ApplyKeyRowLoc(ProviderKeyRowState row)
     {
         string ordinal = _loc.F("SetupApiKeyOrdinal", row.Ordinal);
-        string summary = row.Revealed ? row.Key : row.Key.Length > 4 ? "●●●●" + row.Key[^4..] : "●●●●";
+        bool empty = string.IsNullOrWhiteSpace(row.Key);
+        string summary = empty ? _loc["SetupApiKeyEmptySlot"]
+            : row.Revealed ? row.Key : row.Key.Length > 4 ? "●●●●" + row.Key[^4..] : "●●●●";
+        // 空着的一行:没有可显示、可移除的 Key,只留铅笔把它填回去
+        row.Reveal.IsEnabled = !empty;
+        row.Remove.IsEnabled = !empty && !_keyMutation;
         string active = !row.Provider.BalanceApiKeys && CurrentProviderKeyId(row.Provider) == row.Id
             ? $" · {_loc["SetupApiKeyActive"]}" : "";
         row.Label.Text = $"{ordinal} · {summary}{active}";
@@ -1746,17 +1754,25 @@ public partial class SettingsView : UserControl
 
     private void CancelAllKeysProbe() => _allKeyProbeCts?.Cancel();
 
+    /// <summary>空着的主槽那一行(移除第 1 把之后留下的):可以填回去,但没有 Key 可测、可显示、可移除。</summary>
+    private static bool IsEmptyPrimary(ProviderKeyRowState row)
+        => row.Id == row.Provider.Id && string.IsNullOrWhiteSpace(row.Key);
+
+    /// <summary>「检测全部」要测的那几行:有 Key 的;空着的主槽不在其中。</summary>
+    private List<ProviderKeyRowState> ProbeableKeyRows => [.. _keyRows.Where(row => !string.IsNullOrWhiteSpace(row.Key))];
+
     private bool HasInvalidKeyRows()
     {
         foreach (ProviderKeyRowState row in _keyRows)
-            if (string.IsNullOrWhiteSpace(row.Key) || !KeyRowCurrent(row, _editorRun)) return true;
+            if (string.IsNullOrWhiteSpace(row.Key) && !IsEmptyPrimary(row) || !KeyRowCurrent(row, _editorRun)) return true;
         return false;
     }
 
     private bool AllKeysCanUse(AiModelConfig model)
     {
-        if (_keyRows.Count == 0) return false;
-        foreach (ProviderKeyRowState row in _keyRows)
+        List<ProviderKeyRowState> rows = ProbeableKeyRows;
+        if (rows.Count == 0) return false;
+        foreach (ProviderKeyRowState row in rows)
             if (!KeyModelEligible(row, model)) return false;
         return true;
     }
@@ -1820,15 +1836,16 @@ public partial class SettingsView : UserControl
 
         if (HasInvalidKeyRows()) { RefreshAllKeysProbeControls(); return; }
         if (ProviderDraftDirty(provider)) { StatusText.Text = _loc["SetupSaveProviderFirst"]; return; }
+        List<ProviderKeyRowState> probeable = ProbeableKeyRows;
         if (_settings.FindModel(modelId) is not { } model || !ReferenceEquals(model.Provider, provider)
-            || _keyRows.Count == 0 || _keyRows.Any(row => !KeyModelEligible(row, model.Config)))
+            || probeable.Count == 0 || probeable.Any(row => !KeyModelEligible(row, model.Config)))
         {
             return;
         }
 
         int editorRun = _editorRun, version = _health?.Version ?? 0;
         var snapshot = KeyRequestSnapshot.Capture(model);
-        (ProviderKeyRowState Row, string Key)[] rows = [.. _keyRows.Select(row => (Row: row, row.Key))];
+        (ProviderKeyRowState Row, string Key)[] rows = [.. probeable.Select(row => (Row: row, row.Key))];
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(_keyEditorCts.Token);
         _allKeyProbeCts = cts;
         foreach ((ProviderKeyRowState? row, string _) in rows)
@@ -1844,7 +1861,7 @@ public partial class SettingsView : UserControl
             foreach ((ProviderKeyRowState? row, string _) in rows)
             {
                 if (cts.IsCancellationRequested || _keyMutation || ProviderDraftDirty(provider)
-                    || version != (_health?.Version ?? 0) || _keyRows.Count != rows.Length
+                    || version != (_health?.Version ?? 0) || ProbeableKeyRows.Count != rows.Length
                     || rows.Any(entry => !KeyRowCurrent(entry.Row, editorRun) || entry.Row.Key != entry.Key)
                     || _settings.FindModel(modelId) is not { } live || snapshot != KeyRequestSnapshot.Capture(live))
                 {
