@@ -6,8 +6,8 @@
 namespace VelaShell.Ssh.Tests;
 
 /// <summary>
-/// 库里每一处 <c>new SshPrivateKeyException(…)</c> / <c>new SshCertificateException(…)</c> / <c>new SshChannelException(…)</c>
-/// 都要带上种类（<c>ProblemKind</c> / <c>FailureKind</c>）。
+/// 库里每一处 <c>new SshPrivateKeyException(…)</c> / <c>new SshCertificateException(…)</c> / <c>new SshChannelException(…)</c>，
+/// 以及主机密钥被拒、代理 / 跳板拒绝的 <c>new SshConnectException(…)</c>，都要带上种类（<c>ProblemKind</c> / <c>FailureKind</c>）。
 /// </summary>
 /// <remarks>
 /// 宿主按种类说界面语言（<c>SshInterop.Diagnostics.cs</c>）；新加的抛出点忘了归类，英 / 日 / 韩界面就又回到库的中文原文 ——
@@ -18,11 +18,17 @@ namespace VelaShell.Ssh.Tests;
 [TestCategory("Diagnostics")]
 public sealed class StructuredFailureCoverageTests
 {
-    private static readonly (string Constructor, string Property)[] Classified =
+    /// <summary>
+    /// 要扫的构造与它必须带的种类属性。<c>When</c> 不为空时只管参数里提到其中之一的那些抛出点 ——
+    /// 建连异常里 DNS、TCP、超时这些原因码本身就说得清，只有主机密钥被拒与代理 / 跳板拒绝才必须归类
+    /// （代理握手的其余失败走 <c>ProxyDialing.Refused</c> / <c>Misconfigured</c>，种类是必填参数，编译期就拦住了）。
+    /// </summary>
+    private static readonly (string Constructor, string Property, string[]? When)[] Classified =
     [
-        ("new SshPrivateKeyException(", "ProblemKind ="),
-        ("new SshCertificateException(", "ProblemKind ="),
-        ("new SshChannelException(", "FailureKind ="),
+        ("new SshPrivateKeyException(", "ProblemKind =", null),
+        ("new SshCertificateException(", "ProblemKind =", null),
+        ("new SshChannelException(", "FailureKind =", null),
+        ("new SshConnectException(", "FailureKind =", ["HostKeyRejected", "HostKeyChanged", "ProxyRefused"]),
     ];
 
     [TestMethod]
@@ -41,7 +47,7 @@ public sealed class StructuredFailureCoverageTests
             }
 
             string text = File.ReadAllText(file);
-            foreach ((string constructor, string property) in Classified)
+            foreach ((string constructor, string property, string[]? when) in Classified)
             {
                 for (int at = text.IndexOf(constructor, StringComparison.Ordinal); at >= 0;
                      at = text.IndexOf(constructor, at + constructor.Length, StringComparison.Ordinal))
@@ -50,8 +56,13 @@ public sealed class StructuredFailureCoverageTests
                     {
                         continue;
                     }
-                    sites++;
                     int close = MatchParen(text, at + constructor.Length - 1);
+                    if (when is not null
+                        && !when.Any(word => text.AsSpan(at, close - at).Contains(word, StringComparison.Ordinal)))
+                    {
+                        continue;
+                    }
+                    sites++;
                     string after = text[(close + 1)..].TrimStart();
                     int end = after.StartsWith('{') ? after.IndexOf('}', StringComparison.Ordinal) : -1;
                     if (end < 0 || !after[..end].Contains(property, StringComparison.Ordinal))

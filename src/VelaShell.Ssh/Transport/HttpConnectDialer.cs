@@ -130,8 +130,9 @@ internal sealed record HttpConnectDialer(SshEndPoint Proxy) : ISshTransportDiale
 
     /// <remarks>不是「代理拒绝」—— 那一类会被当成可重试的；这里重试多少次都一样，得改输入。</remarks>
     private static SshConnectException InvalidHost(string host, string why) =>
-        new(SshFailureReason.InvalidConfiguration, SshPhase.Dialing,
-            $"主机名 {PeerText.Sanitize(host)} 不能放进 HTTP 代理的 CONNECT 请求：{why}。");
+        ProxyDialing.Misconfigured(
+            SshConnectFailureKind.ProxyTargetNameInvalid,
+            $"主机名 {PeerText.Sanitize(host)} 不能放进 HTTP 代理的 CONNECT 请求：{why}。", host);
 
     private async ValueTask<Stream> HandshakeAsync(
         Stream stream, byte[] request, SshEndPoint target, CancellationToken cancellationToken)
@@ -156,7 +157,8 @@ internal sealed record HttpConnectDialer(SshEndPoint Proxy) : ISshTransportDiale
                     if (filled == MaxResponseHeaderBytes)
                     {
                         throw ProxyDialing.Refused(
-                            $"HTTP 代理 {Proxy} 的响应头超过了 {MaxResponseHeaderBytes / 1024} KiB —— 它可能不是一个 HTTP 代理。");
+                            SshConnectFailureKind.HttpProxyResponseTooLarge,
+                            $"HTTP 代理 {Proxy} 的响应头超过了 {MaxResponseHeaderBytes / 1024} KiB —— 它可能不是一个 HTTP 代理。", Proxy);
                     }
 
                     int read = await stream.ReadAsync(buffer.AsMemory(filled, MaxResponseHeaderBytes - filled), cancellationToken)
@@ -213,7 +215,10 @@ internal sealed record HttpConnectDialer(SshEndPoint Proxy) : ISshTransportDiale
         // 状态行：HTTP/1.x 空格 三位状态码 空格 原因短语。
         if (StatusOf(head) is not { } status)
         {
-            throw ProxyDialing.Refused($"{Proxy} 回的不是 HTTP 响应（「{Truncate(statusLine)}」）—— 它可能是 SOCKS 代理，或者根本不是代理。");
+            throw ProxyDialing.Refused(
+                SshConnectFailureKind.HttpProxyNotHttp,
+                $"{Proxy} 回的不是 HTTP 响应（「{Truncate(statusLine)}」）—— 它可能是 SOCKS 代理，或者根本不是代理。",
+                Proxy, reply: statusLine);
         }
 
         if (status is >= 200 and < 300)
@@ -240,7 +245,10 @@ internal sealed record HttpConnectDialer(SshEndPoint Proxy) : ISshTransportDiale
             ? " 这个代理可能只放行 80/443 端口 —— 请改用 SOCKS5，或让 SSH 服务端在 443 上监听。"
             : "";
 
-        throw ProxyDialing.Refused($"HTTP 代理 {Proxy} 拒绝连接 {target}：{Truncate(statusLine)}。{hint}");
+        throw ProxyDialing.Refused(
+            SshConnectFailureKind.HttpConnectRefused,
+            $"HTTP 代理 {Proxy} 拒绝连接 {target}：{Truncate(statusLine)}。{hint}",
+            Proxy, target, replyCode: status, reply: statusLine);
     }
 
     /// <summary>代理的应答进消息之前：截短，并清掉控制字符（见 <see cref="PeerText"/>）。</summary>

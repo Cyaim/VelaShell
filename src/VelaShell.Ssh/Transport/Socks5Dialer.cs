@@ -10,6 +10,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using VelaShell.Ssh.Diagnostics;
 
 namespace VelaShell.Ssh.Transport;
 
@@ -80,11 +81,15 @@ internal sealed record Socks5Dialer(SshEndPoint Proxy) : ISshTransportDialer, IS
             case MethodNoneAcceptable:
                 throw Credentials is null
                     ? ProxyDialing.AuthRequired($"SOCKS5 代理 {Proxy} 要求认证，但没有配置代理凭据。")
-                    : ProxyDialing.Refused($"SOCKS5 代理 {Proxy} 不接受我们提供的任何认证方法。");
+                    : ProxyDialing.Refused(
+                        SshConnectFailureKind.Socks5NoAcceptableMethod,
+                        $"SOCKS5 代理 {Proxy} 不接受我们提供的任何认证方法。", Proxy);
 
             default:
                 throw ProxyDialing.Refused(
-                    $"SOCKS5 代理 {Proxy} 选了一个我们没提供的认证方法（0x{choice[1]:X2}）—— 这是协议错误。");
+                    SshConnectFailureKind.Socks5UnexpectedMethod,
+                    $"SOCKS5 代理 {Proxy} 选了一个我们没提供的认证方法（0x{choice[1]:X2}）—— 这是协议错误。",
+                    Proxy, replyCode: choice[1]);
         }
 
         // ② CONNECT。
@@ -103,7 +108,8 @@ internal sealed record Socks5Dialer(SshEndPoint Proxy) : ISshTransportDialer, IS
             AddressIPv6 => 16,
             AddressDomain => await ReadByteAsync(stream, cancellationToken).ConfigureAwait(false),
             _ => throw ProxyDialing.Refused(
-                $"SOCKS5 代理 {Proxy} 的应答里地址类型非法（0x{header[3]:X2}）。"),
+                SshConnectFailureKind.Socks5InvalidAddressType,
+                $"SOCKS5 代理 {Proxy} 的应答里地址类型非法（0x{header[3]:X2}）。", Proxy, replyCode: header[3]),
         };
 
         byte[] bound = new byte[addressLength + 2];
@@ -112,7 +118,9 @@ internal sealed record Socks5Dialer(SshEndPoint Proxy) : ISshTransportDialer, IS
         if (header[1] != 0)
         {
             throw ProxyDialing.Refused(
-                $"SOCKS5 代理 {Proxy} 拒绝连接 {target}：{DescribeReply(header[1])}（结果码 {header[1]}）。");
+                SshConnectFailureKind.Socks5ConnectRefused,
+                $"SOCKS5 代理 {Proxy} 拒绝连接 {target}：{DescribeReply(header[1])}（结果码 {header[1]}）。",
+                Proxy, target, replyCode: header[1]);
         }
 
         return stream;
@@ -129,6 +137,7 @@ internal sealed record Socks5Dialer(SshEndPoint Proxy) : ISshTransportDialer, IS
         if (user.Length is 0 or > 255 || password.Length is 0 or > 255)
         {
             throw ProxyDialing.Misconfigured(
+                SshConnectFailureKind.Socks5CredentialsTooLong,
                 "SOCKS5 的用户名与口令编码后都必须在 1–255 字节之间（RFC 1929）。");
         }
 
@@ -172,13 +181,15 @@ internal sealed record Socks5Dialer(SshEndPoint Proxy) : ISshTransportDialer, IS
             }
             catch (ArgumentException ex)
             {
-                throw ProxyDialing.Misconfigured($"主机名 {target.Host} 不是合法的域名：{ex.Message}");
+                throw ProxyDialing.Misconfigured(
+                    SshConnectFailureKind.ProxyTargetNameInvalid, $"主机名 {target.Host} 不是合法的域名：{ex.Message}", target.Host);
             }
 
             byte[] name = Encoding.ASCII.GetBytes(ascii);
             if (name.Length is 0 or > 255)
             {
-                throw ProxyDialing.Misconfigured($"主机名 {target.Host} 超过了 SOCKS5 允许的 255 字节。");
+                throw ProxyDialing.Misconfigured(
+                    SshConnectFailureKind.ProxyTargetNameInvalid, $"主机名 {target.Host} 超过了 SOCKS5 允许的 255 字节。", target.Host);
             }
 
             address = [(byte)name.Length, .. name];
@@ -200,7 +211,9 @@ internal sealed record Socks5Dialer(SshEndPoint Proxy) : ISshTransportDialer, IS
         if (version != Version)
         {
             throw ProxyDialing.Refused(
-                $"{Proxy} 回的不是 SOCKS5（版本字节 0x{version:X2}）—— 它可能是 HTTP 代理，或者根本不是代理。");
+                SshConnectFailureKind.Socks5VersionMismatch,
+                $"{Proxy} 回的不是 SOCKS5（版本字节 0x{version:X2}）—— 它可能是 HTTP 代理，或者根本不是代理。",
+                Proxy, replyCode: version);
         }
     }
 

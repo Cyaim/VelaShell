@@ -6688,6 +6688,93 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_ProxyAuthRequired" xml:space="preserve">
     <value>The proxy requires authentication, but no proxy credentials are configured.</value>
   </data>
+  <data name="SshErr_ProxyConnectFailed" xml:space="preserve">
+    <value>Cannot reach the proxy {0}: {1}</value>
+  </data>
+  <data name="SshErr_ProxyHandshakeTimeout" xml:space="preserve">
+    <value>The proxy {0} accepted the connection but never answered the handshake (connecting to {1}).</value>
+  </data>
+  <data name="SshErr_ProxyClosedDuringHandshake" xml:space="preserve">
+    <value>The proxy {0} closed the connection during the handshake (connecting to {1}). It most likely refused the request without saying why.</value>
+  </data>
+  <data name="SshErr_ProxyTargetNameInvalid" xml:space="preserve">
+    <value>The host name {0} cannot be put into a proxy request: it is not a valid host name, or it is too long.</value>
+  </data>
+  <data name="SshErr_Socks5CredentialsTooLong" xml:space="preserve">
+    <value>The SOCKS5 proxy user name and password must each be 1–255 bytes once encoded (RFC 1929).</value>
+  </data>
+  <data name="SshErr_Socks5VersionMismatch" xml:space="preserve">
+    <value>{0} did not answer as a SOCKS5 proxy (version byte 0x{1}). It may be an HTTP proxy, or not a proxy at all.</value>
+  </data>
+  <data name="SshErr_Socks5NoAcceptableMethod" xml:space="preserve">
+    <value>The SOCKS5 proxy {0} accepts none of the authentication methods offered.</value>
+  </data>
+  <data name="SshErr_Socks5UnexpectedMethod" xml:space="preserve">
+    <value>The SOCKS5 proxy {0} chose an authentication method that was not offered (0x{1}). This is a protocol error.</value>
+  </data>
+  <data name="SshErr_Socks5InvalidAddressType" xml:space="preserve">
+    <value>The SOCKS5 proxy {0} replied with an invalid address type (0x{1}).</value>
+  </data>
+  <data name="SshErr_Socks5ConnectRefused" xml:space="preserve">
+    <value>The SOCKS5 proxy {0} refused to connect to {1}: {2} (reply code {3}).</value>
+  </data>
+  <data name="SshErr_Socks5Reply1" xml:space="preserve">
+    <value>general proxy server failure</value>
+  </data>
+  <data name="SshErr_Socks5Reply2" xml:space="preserve">
+    <value>the proxy&apos;s rules do not allow this connection</value>
+  </data>
+  <data name="SshErr_Socks5Reply3" xml:space="preserve">
+    <value>network unreachable</value>
+  </data>
+  <data name="SshErr_Socks5Reply4" xml:space="preserve">
+    <value>host unreachable</value>
+  </data>
+  <data name="SshErr_Socks5Reply5" xml:space="preserve">
+    <value>the target refused the connection</value>
+  </data>
+  <data name="SshErr_Socks5Reply6" xml:space="preserve">
+    <value>TTL expired</value>
+  </data>
+  <data name="SshErr_Socks5Reply7" xml:space="preserve">
+    <value>the proxy does not support the CONNECT command</value>
+  </data>
+  <data name="SshErr_Socks5Reply8" xml:space="preserve">
+    <value>the proxy does not support this address type</value>
+  </data>
+  <data name="SshErr_Socks5ReplyOther" xml:space="preserve">
+    <value>unknown error</value>
+  </data>
+  <data name="SshErr_HttpProxyNotHttp" xml:space="preserve">
+    <value>{0} did not answer with an HTTP response ("{1}"). It may be a SOCKS proxy, or not a proxy at all.</value>
+  </data>
+  <data name="SshErr_HttpProxyResponseTooLarge" xml:space="preserve">
+    <value>The HTTP proxy {0} sent oversized response headers. It may not be an HTTP proxy.</value>
+  </data>
+  <data name="SshErr_HttpConnectRefused" xml:space="preserve">
+    <value>The HTTP proxy {0} refused to connect to {1}: {2}.</value>
+  </data>
+  <data name="SshErr_ProxyCommandExited" xml:space="preserve">
+    <value>ProxyCommand ({0}) exited with code {2} before connecting to {1}.</value>
+  </data>
+  <data name="SshErr_ProxyCommandSaid" xml:space="preserve">
+    <value>{0} It said: {1}</value>
+  </data>
+  <data name="SshErr_JumpConnectFailed" xml:space="preserve">
+    <value>Cannot connect to jump host {0}: {1}</value>
+  </data>
+  <data name="SshErr_JumpConnectTimeout" xml:space="preserve">
+    <value>Timed out while connecting through jump host {0} (time spent waiting for your input is not counted).</value>
+  </data>
+  <data name="SshErr_JumpForwardRefused" xml:space="preserve">
+    <value>Jump host {0} refused to forward to {1}: {2}</value>
+  </data>
+  <data name="SshErr_JumpForwardFailed" xml:space="preserve">
+    <value>Jump host {0} ran into a problem while forwarding to {1}: {2}</value>
+  </data>
+  <data name="SshErr_JumpForwardTimeout" xml:space="preserve">
+    <value>Timed out while jump host {0} was forwarding to {1}.</value>
+  </data>
   <data name="SshErr_NotAnSshServer" xml:space="preserve">
     <value>The remote end is not an SSH server (no valid protocol identification was received).</value>
   </data>
@@ -6696,6 +6783,24 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>The server&apos;s host key does not match the recorded one.</value>
+  </data>
+  <data name="SshErr_HostKeyMalformed" xml:space="preserve">
+    <value>The server&apos;s host key cannot be parsed.</value>
+  </data>
+  <data name="SshErr_HostKeyAlgorithmMismatch" xml:space="preserve">
+    <value>The server presented a {0} key, which does not match the negotiated host key algorithm {1}.</value>
+  </data>
+  <data name="SshErr_HostKeyTooShort" xml:space="preserve">
+    <value>The server&apos;s RSA host key has only {0} bits (at least {1} are required).</value>
+  </data>
+  <data name="SshErr_HostKeySignatureInvalid" xml:space="preserve">
+    <value>The server&apos;s signature over the key exchange ({0}) does not verify: it does not hold the host private key it claims to have. There may be a man-in-the-middle.</value>
+  </data>
+  <data name="SshErr_HostKeyPolicyRejected" xml:space="preserve">
+    <value>The host key was rejected by the host key policy.</value>
+  </data>
+  <data name="SshErr_RekeyFailed" xml:space="preserve">
+    <value>Key re-exchange failed: {0}</value>
   </data>
   <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
     <value>The server presented a user certificate (Key ID "{0}"), which cannot prove a host&apos;s identity.</value>
@@ -6897,6 +7002,39 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>The server refused the forwarding request. Check AllowAgentForwarding / AllowTcpForwarding / X11Forwarding in sshd_config.</value>
+  </data>
+  <data name="SshErr_FwdAccept" xml:space="preserve">
+    <value>Accepting an incoming connection on the forwarded port failed.</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimit" xml:space="preserve">
+    <value>The forward has reached its limit of {0} concurrent connections; a new connection was refused.</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimitMany" xml:space="preserve">
+    <value>The forward has reached its limit of {0} concurrent connections; {1} connections were refused (this is reported at most once a second).</value>
+  </data>
+  <data name="SshErr_FwdSocksTimeout" xml:space="preserve">
+    <value>A SOCKS client did not finish its handshake within {0} seconds; the connection was closed.</value>
+  </data>
+  <data name="SshErr_FwdSocksInvalid" xml:space="preserve">
+    <value>A SOCKS client sent an invalid handshake or an unsupported command; the connection was closed.</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenTimeout" xml:space="preserve">
+    <value>The tunnel to {0} did not open within {1} seconds (the server has not answered yet); the connection was dropped.</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenFailed" xml:space="preserve">
+    <value>The tunnel to {0} could not be opened.</value>
+  </data>
+  <data name="SshErr_FwdTargetConnect" xml:space="preserve">
+    <value>Cannot connect to the forward target {0}.</value>
+  </data>
+  <data name="SshErr_FwdRelay" xml:space="preserve">
+    <value>The connection to {0} broke off while relaying data.</value>
+  </data>
+  <data name="SshErr_FwdSetupSkipped" xml:space="preserve">
+    <value>X11 or agent forwarding could not be set up; the session started without it.</value>
+  </data>
+  <data name="SshErr_FwdUnknown" xml:space="preserve">
+    <value>A forwarded connection failed.</value>
   </data>
   <data name="SftpErr_NoSuchFile" xml:space="preserve">
     <value>No such file or directory</value>

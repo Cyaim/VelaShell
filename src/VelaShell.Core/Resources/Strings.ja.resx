@@ -6683,6 +6683,93 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_ProxyAuthRequired" xml:space="preserve">
     <value>プロキシが認証を要求していますが、プロキシの資格情報が設定されていません。</value>
   </data>
+  <data name="SshErr_ProxyConnectFailed" xml:space="preserve">
+    <value>プロキシ {0} に接続できません: {1}</value>
+  </data>
+  <data name="SshErr_ProxyHandshakeTimeout" xml:space="preserve">
+    <value>プロキシ {0} は接続を受け付けましたが、ハンドシェイクに応答しませんでした({1} への接続)。</value>
+  </data>
+  <data name="SshErr_ProxyClosedDuringHandshake" xml:space="preserve">
+    <value>プロキシ {0} がハンドシェイクの途中で接続を切断しました({1} への接続)。理由は示されていませんが、要求を拒否した可能性が高いです。</value>
+  </data>
+  <data name="SshErr_ProxyTargetNameInvalid" xml:space="preserve">
+    <value>ホスト名 {0} をプロキシ要求に含められません。有効なホスト名ではないか、長すぎます。</value>
+  </data>
+  <data name="SshErr_Socks5CredentialsTooLong" xml:space="preserve">
+    <value>SOCKS5 プロキシのユーザー名とパスワードは、エンコード後それぞれ 1~255 バイトである必要があります(RFC 1929)。</value>
+  </data>
+  <data name="SshErr_Socks5VersionMismatch" xml:space="preserve">
+    <value>{0} は SOCKS5 として応答しませんでした(バージョン バイト 0x{1})。HTTP プロキシか、プロキシではない可能性があります。</value>
+  </data>
+  <data name="SshErr_Socks5NoAcceptableMethod" xml:space="preserve">
+    <value>SOCKS5 プロキシ {0} は、提示したどの認証方式も受け付けません。</value>
+  </data>
+  <data name="SshErr_Socks5UnexpectedMethod" xml:space="preserve">
+    <value>SOCKS5 プロキシ {0} が、提示していない認証方式(0x{1})を選択しました。プロトコル エラーです。</value>
+  </data>
+  <data name="SshErr_Socks5InvalidAddressType" xml:space="preserve">
+    <value>SOCKS5 プロキシ {0} の応答のアドレス タイプが不正です(0x{1})。</value>
+  </data>
+  <data name="SshErr_Socks5ConnectRefused" xml:space="preserve">
+    <value>SOCKS5 プロキシ {0} が {1} への接続を拒否しました: {2}(応答コード {3})。</value>
+  </data>
+  <data name="SshErr_Socks5Reply1" xml:space="preserve">
+    <value>プロキシ内部のエラー</value>
+  </data>
+  <data name="SshErr_Socks5Reply2" xml:space="preserve">
+    <value>プロキシのルールでこの接続は許可されていません</value>
+  </data>
+  <data name="SshErr_Socks5Reply3" xml:space="preserve">
+    <value>ネットワークに到達できません</value>
+  </data>
+  <data name="SshErr_Socks5Reply4" xml:space="preserve">
+    <value>ホストに到達できません</value>
+  </data>
+  <data name="SshErr_Socks5Reply5" xml:space="preserve">
+    <value>接続先が接続を拒否しました</value>
+  </data>
+  <data name="SshErr_Socks5Reply6" xml:space="preserve">
+    <value>TTL が切れました</value>
+  </data>
+  <data name="SshErr_Socks5Reply7" xml:space="preserve">
+    <value>プロキシが CONNECT コマンドに対応していません</value>
+  </data>
+  <data name="SshErr_Socks5Reply8" xml:space="preserve">
+    <value>プロキシがこのアドレス タイプに対応していません</value>
+  </data>
+  <data name="SshErr_Socks5ReplyOther" xml:space="preserve">
+    <value>不明なエラー</value>
+  </data>
+  <data name="SshErr_HttpProxyNotHttp" xml:space="preserve">
+    <value>{0} は HTTP 応答を返しませんでした(「{1}」)。SOCKS プロキシか、プロキシではない可能性があります。</value>
+  </data>
+  <data name="SshErr_HttpProxyResponseTooLarge" xml:space="preserve">
+    <value>HTTP プロキシ {0} の応答ヘッダーが上限を超えました。HTTP プロキシではない可能性があります。</value>
+  </data>
+  <data name="SshErr_HttpConnectRefused" xml:space="preserve">
+    <value>HTTP プロキシ {0} が {1} への接続を拒否しました: {2}。</value>
+  </data>
+  <data name="SshErr_ProxyCommandExited" xml:space="preserve">
+    <value>ProxyCommand({0})が {1} に接続する前に終了コード {2} で終了しました。</value>
+  </data>
+  <data name="SshErr_ProxyCommandSaid" xml:space="preserve">
+    <value>{0}出力: {1}</value>
+  </data>
+  <data name="SshErr_JumpConnectFailed" xml:space="preserve">
+    <value>踏み台 {0} に接続できません: {1}</value>
+  </data>
+  <data name="SshErr_JumpConnectTimeout" xml:space="preserve">
+    <value>踏み台 {0} 経由の接続がタイムアウトしました(入力を待っていた時間は含みません)。</value>
+  </data>
+  <data name="SshErr_JumpForwardRefused" xml:space="preserve">
+    <value>踏み台 {0} が {1} への転送を拒否しました: {2}</value>
+  </data>
+  <data name="SshErr_JumpForwardFailed" xml:space="preserve">
+    <value>踏み台 {0} で {1} への転送中に問題が発生しました: {2}</value>
+  </data>
+  <data name="SshErr_JumpForwardTimeout" xml:space="preserve">
+    <value>踏み台 {0} から {1} への転送がタイムアウトしました。</value>
+  </data>
   <data name="SshErr_NotAnSshServer" xml:space="preserve">
     <value>接続先は SSH サーバーではありません(正しいプロトコル識別子を受信できませんでした)。</value>
   </data>
@@ -6691,6 +6778,24 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>サーバーのホスト キーが記録済みのものと一致しません。</value>
+  </data>
+  <data name="SshErr_HostKeyMalformed" xml:space="preserve">
+    <value>サーバーのホスト鍵を解析できません。</value>
+  </data>
+  <data name="SshErr_HostKeyAlgorithmMismatch" xml:space="preserve">
+    <value>サーバーが提示した {0} 鍵は、ネゴシエートされたホスト鍵アルゴリズム {1} と一致しません。</value>
+  </data>
+  <data name="SshErr_HostKeyTooShort" xml:space="preserve">
+    <value>サーバーの RSA ホスト鍵は {0} ビットしかありません({1} ビット以上が必要です)。</value>
+  </data>
+  <data name="SshErr_HostKeySignatureInvalid" xml:space="preserve">
+    <value>鍵交換に対するサーバーの署名({0})を検証できません。相手は主張しているホスト秘密鍵を持っていません。中間者攻撃の可能性があります。</value>
+  </data>
+  <data name="SshErr_HostKeyPolicyRejected" xml:space="preserve">
+    <value>ホスト鍵がホスト鍵ポリシーによって拒否されました。</value>
+  </data>
+  <data name="SshErr_RekeyFailed" xml:space="preserve">
+    <value>鍵の再交換に失敗しました: {0}</value>
   </data>
   <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
     <value>サーバーが提示したのはユーザー証明書(Key ID「{0}」)で、ホストの身元の証明には使えません。</value>
@@ -6892,6 +6997,39 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>サーバーが転送要求を拒否しました。sshd_config の AllowAgentForwarding / AllowTcpForwarding / X11Forwarding を確認してください。</value>
+  </data>
+  <data name="SshErr_FwdAccept" xml:space="preserve">
+    <value>転送ポートで着信接続を受け付けられませんでした。</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimit" xml:space="preserve">
+    <value>同時接続数が上限の {0} に達したため、新しい接続を拒否しました。</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimitMany" xml:space="preserve">
+    <value>同時接続数が上限の {0} に達したため、{1} 件の接続を拒否しました(このエラーは 1 秒に 1 回まで報告されます)。</value>
+  </data>
+  <data name="SshErr_FwdSocksTimeout" xml:space="preserve">
+    <value>SOCKS ハンドシェイクが {0} 秒以内に完了しなかったため、この接続を閉じました。</value>
+  </data>
+  <data name="SshErr_FwdSocksInvalid" xml:space="preserve">
+    <value>SOCKS ハンドシェイクが不正か、コマンドに対応していないため、この接続を閉じました。</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenTimeout" xml:space="preserve">
+    <value>{0} へのトンネルが {1} 秒以内に開きませんでした(サーバーがまだ応答していません)。この接続は破棄しました。</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenFailed" xml:space="preserve">
+    <value>{0} へのトンネルを開けませんでした。</value>
+  </data>
+  <data name="SshErr_FwdTargetConnect" xml:space="preserve">
+    <value>転送先 {0} に接続できません。</value>
+  </data>
+  <data name="SshErr_FwdRelay" xml:space="preserve">
+    <value>{0} への接続がデータの中継中に途切れました。</value>
+  </data>
+  <data name="SshErr_FwdSetupSkipped" xml:space="preserve">
+    <value>X11 または agent 転送を開始できなかったため、それなしでセッションを開始しました。</value>
+  </data>
+  <data name="SshErr_FwdUnknown" xml:space="preserve">
+    <value>転送中の接続が失敗しました。</value>
   </data>
   <data name="SftpErr_NoSuchFile" xml:space="preserve">
     <value>ファイルまたはディレクトリが存在しません</value>

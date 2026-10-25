@@ -207,6 +207,13 @@ public class ProxySupportTests
             DialThroughAsync(route, "target.example", 22, cts.Token));
         Assert.AreEqual(SshFailureReason.ProxyRefused, error.Reason);
         Assert.Contains($"via socks5 127.0.0.1:{server.Port} → target.example:22", error.Message);
+
+        // 后半句按库交出的种类与应答码用界面语言说,不再拼库的中文原文(「……(结果码 5)」)。
+        Assert.StartsWith(
+            Strings.Format("Msg_ProxyConnectFailed", Strings.Format("SshErr_Socks5ConnectRefused",
+                $"127.0.0.1:{server.Port}", "target.example:22", Strings.Get("SshErr_Socks5Reply5"), "5")),
+            error.Message);
+        Assert.DoesNotContain("结果码", error.Message);
     }
 
     // ———— HTTP CONNECT ————
@@ -255,6 +262,10 @@ public class ProxySupportTests
             DialThroughAsync(route, "target.example", 22, cts.Token));
         Assert.AreEqual(SshFailureReason.ProxyRefused, error.Reason);
         Assert.Contains("switch Proxy to socks5", error.Message, "HTTP 代理拒绝 22 端口时要指路");
+        Assert.StartsWith(
+            Strings.Format("Msg_ProxyConnectFailed", Strings.Format("SshErr_HttpConnectRefused",
+                $"127.0.0.1:{server.Port}", "target.example:22", "HTTP/1.1 502 Bad Gateway")),
+            error.Message);
     }
 
     // ———— SSH 的代理拨号器 ————

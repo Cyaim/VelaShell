@@ -117,7 +117,7 @@ internal sealed class ProxyTransportDialer(IProxyResolver? proxyResolver, SshRou
     }
 
     /// <summary>
-    /// 代理失败的错误补全(#464):界面语言的标题 + 库给的细节 + 走了哪个代理、去往哪个目标。
+    /// 代理失败的错误补全(#464):界面语言的标题 + 按库给的种类说的细节 + 走了哪个代理、去往哪个目标。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -146,6 +146,11 @@ internal sealed class ProxyTransportDialer(IProxyResolver? proxyResolver, SshRou
         string hint = route.Kind == ProxyKind.Http && port == 22
             ? " If the proxy refuses CONNECT to port 22, switch Proxy to socks5 (e.g. 127.0.0.1:10808) or none for TUN."
             : "";
-        return Strings.Format("Msg_ProxyConnectFailed", error.Message) + via + hint;
+        // 后半句:库按种类交出了代理回的是什么(SOCKS5 应答码、HTTP 状态行、握手超时 / 中途断开),用界面语言说;
+        // 没归类的(非本库的异常)才用它自己的消息。曾经一律拼库的中文原文。
+        string detail = error is SshConnectException { FailureKind: not SshConnectFailureKind.Unknown } structured
+            ? SshInterop.DescribeConnectFailure(structured)
+            : error.Message;
+        return Strings.Format("Msg_ProxyConnectFailed", detail) + via + hint;
     }
 }

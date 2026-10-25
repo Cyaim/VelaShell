@@ -549,7 +549,7 @@ public sealed class LocalPortForwarder : PortForwarder
                 target = socketPath;
                 channel = await OpenTunnelAsync(
                     token => _connection.OpenUnixSocketTunnelAsync(socketPath, _options.Channel, token),
-                    local, $"远端套接字 {target}", socksAddressType: null, cancellationToken).ConfigureAwait(false);
+                    local, $"远端套接字 {target}", target, socksAddressType: null, cancellationToken).ConfigureAwait(false);
                 if (channel is null)
                 {
                     return;
@@ -579,7 +579,8 @@ public sealed class LocalPortForwarder : PortForwarder
                     catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                     {
                         Report(ForwardErrorReason.SocksHandshake,
-                            $"SOCKS 握手在 {_options.SocksHandshakeTimeout.TotalSeconds:0.#} 秒内没有完成，这一条被关掉。", null);
+                            $"SOCKS 握手在 {_options.SocksHandshakeTimeout.TotalSeconds:0.#} 秒内没有完成，这一条被关掉。", null,
+                            timeout: _options.SocksHandshakeTimeout);
                         return;
                     }
                 }
@@ -609,7 +610,7 @@ public sealed class LocalPortForwarder : PortForwarder
                     originatorPort: (source as IPEndPoint)?.Port ?? 0,
                     _options.Channel,
                     token),
-                local, target, Kind == ForwardKind.Dynamic ? socksAddressType : null, cancellationToken).ConfigureAwait(false);
+                local, target, target, Kind == ForwardKind.Dynamic ? socksAddressType : null, cancellationToken).ConfigureAwait(false);
             if (channel is null)
             {
                 return;
@@ -633,7 +634,7 @@ public sealed class LocalPortForwarder : PortForwarder
         {
             // 单条连接的失败绝不影响转发器本身。一条隧道要能跑几天，
             // 期间必然有连不上的目标、被重置的连接。
-            Report(ForwardErrorReason.Relay, $"到 {target} 的连接出错：{ex.Message}", ex);
+            Report(ForwardErrorReason.Relay, $"到 {target} 的连接出错：{ex.Message}", ex, target);
         }
         finally
         {
@@ -659,6 +660,7 @@ public sealed class LocalPortForwarder : PortForwarder
         Func<CancellationToken, ValueTask<SshChannel>> open,
         StreamRelayEndpoint local,
         string description,
+        string target,
         byte? socksAddressType,
         CancellationToken cancellationToken)
     {
@@ -671,6 +673,7 @@ public sealed class LocalPortForwarder : PortForwarder
         SocksReply reply;
         string message;
         Exception? error;
+        TimeSpan? timedOutAfter = null;
         try
         {
             return await open(limit.Token).ConfigureAwait(false);
@@ -681,6 +684,7 @@ public sealed class LocalPortForwarder : PortForwarder
             reply = SocksReply.TtlExpired;
             message = $"到 {description} 的隧道在 {_options.ChannelOpenTimeout.TotalSeconds:0.#} 秒内没有打开（服务端还没应答），这一条被放弃。";
             error = null;
+            timedOutAfter = _options.ChannelOpenTimeout;
         }
         catch (SshChannelException ex)
         {
@@ -700,7 +704,7 @@ public sealed class LocalPortForwarder : PortForwarder
             await local.AbortAsync().ConfigureAwait(false);
         }
 
-        Report(ForwardErrorReason.ChannelOpen, message, error);
+        Report(ForwardErrorReason.ChannelOpen, message, error, target, timedOutAfter);
         return null;
     }
 

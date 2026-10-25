@@ -7,6 +7,7 @@ using VelaShell.Infrastructure.Ssh;
 using VelaShell.Ssh.Auth;
 using VelaShell.Ssh.Channels;
 using VelaShell.Ssh.Diagnostics;
+using VelaShell.Ssh.Forwarding;
 using VelaShell.Ssh.HostKeys;
 using VelaShell.Ssh.Keys;
 
@@ -76,13 +77,38 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
         AssertKeys(Enum.GetValues<HostCertificateProblemKind>().Where(static k => k != HostCertificateProblemKind.Unknown)
             .Select(static k => (k.ToString(), SshInterop.HostCertificateProblemKey(k))));
 
+    /// <summary>
+    /// 建连失败的每一种(主机密钥、代理、跳板)都有文案 —— 只有「策略拒的」例外:那句话是 <c>VelaHostKeyPolicy</c> 用界面语言写好的,原样用。
+    /// </summary>
+    [TestMethod]
+    public void 每一种建连失败都有五语言文案()
+    {
+        Assert.IsNull(SshInterop.ConnectFailureKey(SshConnectFailureKind.HostKeyPolicyRejected), "策略拒的那句原样用,不另配文案");
+        AssertKeys(Enum.GetValues<SshConnectFailureKind>()
+            .Where(static k => k is not (SshConnectFailureKind.Unknown or SshConnectFailureKind.HostKeyPolicyRejected))
+            .Select(static k => (k.ToString(), SshInterop.ConnectFailureKey(k))));
+    }
+
+    [TestMethod]
+    public void 每一个SOCKS5应答码都有五语言文案() =>
+        AssertKeys(Enumerable.Range(0, 11).Select(static code => ($"REP {code}", (string?)SshInterop.Socks5ReplyKey(code))));
+
+    [TestMethod]
+    public void 每一种转发连接失败都有五语言文案() =>
+        AssertKeys(Enum.GetValues<ForwardErrorReason>().SelectMany(static r => new[]
+        {
+            ($"{r}", (string?)SshInterop.ForwardErrorKey(r)),
+            ($"{r}(超时)", SshInterop.ForwardErrorKey(r, timedOut: true)),
+            ($"{r}(多条)", SshInterop.ForwardErrorKey(r, many: true)),
+        }));
+
     [TestMethod]
     public void 拼句子用的几条文案也五语言齐全() =>
         AssertKeys(new[]
         {
             "SshErr_AuthAttemptLine", "SshErr_AuthAttemptLineDetail", "SshErr_AuthNoAttempts", "SshErr_AuthLabelProbe",
             "SshErr_AuthLabelViaKbd", "SshErr_AuthLabelAlgorithm", "SshErr_AuthDetailJoin", "SshErr_ChanSftpSubsystemRejected",
-            "SshErr_PeerSaid", "SshErr_KeyOrigin",
+            "SshErr_PeerSaid", "SshErr_KeyOrigin", "SshErr_ProxyCommandSaid", "SshErr_RekeyFailed",
         }.Select(static k => (k, (string?)k)));
 
     /// <summary>每个种类都映射到了键;键在五份 resx 里都有、不是空的,占位符与英文一致。</summary>
@@ -202,6 +228,54 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
                 MinimumKeyBits = 2048,
             };
             AssertNoChinese(kind.ToString(), SshInterop.LocalizeHostCertificateProblem(problem));
+        }
+    }
+
+    [TestMethod]
+    public void 英文界面下每一种建连失败都不透传中文()
+    {
+        UseEnglish();
+        foreach (SshConnectFailureKind kind in Enum.GetValues<SshConnectFailureKind>()
+                     .Where(static k => k is not (SshConnectFailureKind.Unknown or SshConnectFailureKind.HostKeyPolicyRejected)))
+        {
+            // 内层(那一跳自己的失败)也是库的中文消息:要按它的原因码 / 种类说,不能原样拼进来。
+            Exception inner = kind == SshConnectFailureKind.JumpForwardRefused
+                ? SshChannelException.FromOpenFailure("direct-tcpip", 1, "")
+                : new SshConnectException(SshFailureReason.TcpRefused, SshPhase.Dialing, "中文原文");
+            SshConnectException ex = new(SshFailureReason.ProxyRefused, SshPhase.Dialing, "中文原文", inner)
+            {
+                FailureKind = kind,
+                Via = "proxy.example:1080",
+                Target = "target.example:22",
+                HostKeyType = "ssh-rsa",
+                HostKeyAlgorithm = "rsa-sha2-512",
+                HostKeyBits = 1024,
+                MinimumHostKeyBits = 2048,
+                ProxyReplyCode = 5,
+                ProxyReply = "HTTP/1.1 403 Forbidden",
+            };
+            AssertNoChinese(kind.ToString(), SshInterop.Localize(ex));
+            AssertNoChinese($"{kind}(经 Translate)", SshInterop.Translate(ex)!.Message);
+        }
+    }
+
+    [TestMethod]
+    public void 英文界面下每一种转发连接失败都不透传中文()
+    {
+        UseEnglish();
+        foreach (ForwardErrorReason reason in Enum.GetValues<ForwardErrorReason>())
+        {
+            foreach (TimeSpan? timeout in new TimeSpan?[] { null, TimeSpan.FromSeconds(10) })
+            {
+                ForwardErrorEventArgs e = new(reason, "中文原文")
+                {
+                    Target = "db.internal:5432",
+                    Timeout = timeout,
+                    Limit = 64,
+                    RejectedCount = 3,
+                };
+                AssertNoChinese($"{reason}/{timeout}", SshInterop.LocalizeForwardError(e));
+            }
         }
     }
 
@@ -387,6 +461,152 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
         Assert.Contains(other.PublicKey.Sha256Fingerprint, text);
         Assert.Contains("joe@example", text);
         Assert.EndsWith("[KeyMismatch @ None]", text);
+    }
+
+    /// <summary>
+    /// 同是 HostKeyRejected:库自己验不过的按种类说(带算法、尾巴是原因码),策略拒的那句原样用(VelaHostKeyPolicy 已经用界面语言写好)。
+    /// 曾经两种都当成策略的话照用 —— 英 / 日 / 韩界面上签名验不过显示的是库的中文。
+    /// </summary>
+    [TestMethod]
+    public void 主机密钥被拒分清库自己拒的与策略拒的()
+    {
+        SshConnectException signature = new(SshFailureReason.HostKeyRejected, SshPhase.KeyExchange, "服务端对交换哈希的签名验证失败。")
+        {
+            FailureKind = SshConnectFailureKind.HostKeySignatureInvalid,
+            HostKeyType = "ssh-ed25519",
+            HostKeyAlgorithm = "ssh-ed25519",
+        };
+        Exception? translated = SshInterop.Translate(signature);
+        Assert.IsInstanceOfType<VelaSshHostKeyRejectedException>(translated, "自动重连照旧据此停下");
+        Assert.AreEqual($"{Strings.Format("SshErr_HostKeySignatureInvalid", "ssh-ed25519")} [HostKeyRejected @ KeyExchange]", translated.Message);
+
+        SshConnectException tooShort = new(SshFailureReason.HostKeyRejected, SshPhase.KeyExchange, "x")
+        {
+            FailureKind = SshConnectFailureKind.HostKeyTooShort,
+            HostKeyBits = 1024,
+            MinimumHostKeyBits = 2048,
+        };
+        Assert.StartsWith(Strings.Format("SshErr_HostKeyTooShort", 1024, 2048), SshInterop.Localize(tooShort));
+
+        const string policyText = "Host key for example.com was rejected (SHA256:abc).";
+        SshConnectException policy = new(SshFailureReason.HostKeyRejected, SshPhase.KeyExchange, policyText)
+        {
+            FailureKind = SshConnectFailureKind.HostKeyPolicyRejected,
+        };
+        Assert.AreEqual(policyText, SshInterop.Translate(policy)!.Message, "策略写的理由原样用,不加尾巴(与原来一样)");
+    }
+
+    /// <summary>对端出示的主机密钥类型来自对端:清洗过才进文案。</summary>
+    [TestMethod]
+    public void 主机密钥类型来自对端清洗过才进文案()
+    {
+        SshConnectException ex = new(SshFailureReason.HostKeyRejected, SshPhase.KeyExchange, "x")
+        {
+            FailureKind = SshConnectFailureKind.HostKeyAlgorithmMismatch,
+            HostKeyType = "evil\u001b[2J",
+            HostKeyAlgorithm = "ssh-ed25519",
+        };
+
+        Assert.StartsWith(Strings.Format("SshErr_HostKeyAlgorithmMismatch", "evil?[2J", "ssh-ed25519"), SshInterop.Localize(ex));
+    }
+
+    /// <summary>跳板这一跳的失败:外层说「连不上跳板 X」,原因按内层(那一跳自己的异常)的完整译法说;异常类型照内层的原因码分流。</summary>
+    [TestMethod]
+    public void 跳板失败按内层的译法说并说清是哪一跳()
+    {
+        const string policyText = "Host key for jump.example was rejected.";
+        SshConnectException hop = new(SshFailureReason.HostKeyRejected, SshPhase.KeyExchange, policyText)
+        {
+            FailureKind = SshConnectFailureKind.HostKeyPolicyRejected,
+        };
+        SshConnectException wrapped = new(SshFailureReason.HostKeyRejected, SshPhase.Dialing, $"连不上跳板 jump.example:22：{policyText}", hop)
+        {
+            FailureKind = SshConnectFailureKind.JumpConnectFailed,
+            Via = "jump.example:22",
+        };
+
+        Exception? translated = SshInterop.Translate(wrapped);
+
+        Assert.IsInstanceOfType<VelaSshHostKeyRejectedException>(translated, "跳板的指纹被拒,自动重连同样要停");
+        Assert.AreEqual(Strings.Format("SshErr_JumpConnectFailed", "jump.example:22", policyText), translated.Message);
+
+        SshConnectException refused = new(SshFailureReason.ProxyRefused, SshPhase.Dialing, "跳板 jump.example:22 不肯转发……",
+            SshChannelException.FromOpenFailure("direct-tcpip", 1, ""))
+        {
+            FailureKind = SshConnectFailureKind.JumpForwardRefused,
+            Via = "jump.example:22",
+            Target = "db.internal:22",
+        };
+        Assert.AreEqual(
+            Strings.Format("SshErr_JumpForwardRefused", "jump.example:22", "db.internal:22",
+                $"{Strings.Get("SshErr_ChanForwardingProhibited")} [ChannelOpenFailed @ Open]"),
+            SshInterop.Localize(refused), "跳板回的原因码按通道失败的种类说");
+    }
+
+    /// <summary>代理回的原话(HTTP 状态行)来自对端:清洗过才进文案;SOCKS5 应答码按 RFC 1928 的含义说。</summary>
+    [TestMethod]
+    public void 代理的应答按种类说且原话清洗过()
+    {
+        SshConnectException http = new(SshFailureReason.ProxyRefused, SshPhase.Dialing, "x")
+        {
+            FailureKind = SshConnectFailureKind.HttpConnectRefused,
+            Via = "proxy.example:3128",
+            Target = "target.example:22",
+            ProxyReplyCode = 403,
+            ProxyReply = "HTTP/1.1 403 \u001b]0;pwn\u0007",
+        };
+        Assert.AreEqual(
+            Strings.Format("SshErr_HttpConnectRefused", "proxy.example:3128", "target.example:22", "HTTP/1.1 403 ?]0;pwn?"),
+            SshInterop.DescribeConnectFailure(http));
+
+        SshConnectException socks = new(SshFailureReason.ProxyRefused, SshPhase.Dialing, "x")
+        {
+            FailureKind = SshConnectFailureKind.Socks5ConnectRefused,
+            Via = "proxy.example:1080",
+            Target = "target.example:22",
+            ProxyReplyCode = 2,
+        };
+        Assert.AreEqual(
+            $"{Strings.Format("SshErr_Socks5ConnectRefused", "proxy.example:1080", "target.example:22", Strings.Get("SshErr_Socks5Reply2"), "2")} [ProxyRefused @ Dialing]",
+            SshInterop.Localize(socks));
+        Assert.AreEqual("SshErr_Socks5ReplyOther", SshInterop.Socks5ReplyKey(42));
+    }
+
+    /// <summary>重协商时验签失败:库把首次交换口径的那条包在内层,界面照它的种类说,并点明是重协商。</summary>
+    [TestMethod]
+    public void 重协商时主机密钥被拒按内层的种类说()
+    {
+        SshConnectException kex = new(SshFailureReason.HostKeyRejected, SshPhase.KeyExchange, "x")
+        {
+            FailureKind = SshConnectFailureKind.HostKeySignatureInvalid,
+            HostKeyAlgorithm = "ssh-ed25519",
+        };
+        SshConnectionClosedException closed = new(SshFailureReason.HostKeyRejected, SshPhase.Rekeying, "密钥重协商失败：x", kex);
+
+        Assert.AreEqual(
+            $"{Strings.Format("SshErr_RekeyFailed", Strings.Format("SshErr_HostKeySignatureInvalid", "ssh-ed25519"))} [HostKeyRejected @ Rekeying]",
+            SshInterop.Translate(closed)!.Message);
+    }
+
+    /// <summary>转发上没带异常的失败:按原因、目标与时限说;撞上限时说拒了几条。</summary>
+    [TestMethod]
+    public void 没带异常的转发失败按原因与参数说()
+    {
+        Assert.AreEqual(Strings.Format("SshErr_FwdChannelOpenTimeout", "db.internal:5432", "30"),
+            SshInterop.LocalizeForwardError(new ForwardErrorEventArgs(ForwardErrorReason.ChannelOpen, "x")
+            {
+                Target = "db.internal:5432",
+                Timeout = TimeSpan.FromSeconds(30),
+            }));
+        Assert.AreEqual(Strings.Format("SshErr_FwdConnectionLimitMany", "8", 5),
+            SshInterop.LocalizeForwardError(new ForwardErrorEventArgs(ForwardErrorReason.ConnectionLimit, "x") { Limit = 8, RejectedCount = 5 }));
+        Assert.AreEqual(Strings.Format("SshErr_FwdConnectionLimit", "8"),
+            SshInterop.LocalizeForwardError(new ForwardErrorEventArgs(ForwardErrorReason.ConnectionLimit, "x") { Limit = 8, RejectedCount = 1 }));
+        Assert.AreEqual(Strings.Get("SshErr_FwdSocksInvalid"),
+            SshInterop.LocalizeForwardError(new ForwardErrorEventArgs(ForwardErrorReason.SocksHandshake, "x")));
+        Assert.AreEqual(Strings.Format("SshErr_FwdChannelOpenFailed", "a?b"),
+            SshInterop.LocalizeForwardError(new ForwardErrorEventArgs(ForwardErrorReason.ChannelOpen, "x") { Target = "a\u001bb" }),
+            "SOCKS 客户端给的目标名清洗过才进文案");
     }
 
     /// <summary>主机证书来自对端:Key ID、主体都清洗过才进文案。</summary>

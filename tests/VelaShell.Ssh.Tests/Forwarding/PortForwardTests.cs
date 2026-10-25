@@ -236,6 +236,9 @@ public sealed class PortForwardTests
         Assert.AreEqual(ForwardErrorReason.ChannelOpen, errors[0].Reason);
         Assert.Contains("AllowTcpForwarding", errors[0].Message);
         Assert.IsTrue(forwarder.IsActive, "转发器必须还活着");
+        Assert.AreEqual("blocked:80", errors[0].Target);
+        Assert.IsNull(errors[0].Timeout, "被拒不是超时");
+        Assert.IsInstanceOfType<SshChannelException>(errors[0].Exception);
 
         // 再来一条，仍然能被接受（并仍然失败）。
         using Socket second = new(SocketType.Stream, ProtocolType.Tcp);
@@ -495,7 +498,12 @@ public sealed class PortForwardTests
 
             await WaitUntilAsync(() => errors.Count > 0, harness.Token);
             Assert.AreEqual(ForwardErrorReason.ChannelOpen, errors[0].Reason);
-            Assert.Contains("没有打开", errors[0].Message);
+            Assert.AreEqual("到 10.0.0.1:80 的隧道在 0.3 秒内没有打开（服务端还没应答），这一条被放弃。", errors[0].Message);
+
+            // 没有异常可译：界面按原因、目标与时限说。
+            Assert.IsNull(errors[0].Exception);
+            Assert.AreEqual("10.0.0.1:80", errors[0].Target);
+            Assert.AreEqual(TimeSpan.FromMilliseconds(300), errors[0].Timeout);
         }
 
         await using (var local = LocalPortForwarder.Start(harness.Connection, "slow", 80, quick))
@@ -559,6 +567,14 @@ public sealed class PortForwardTests
                 return errors.Any(e => e.Reason == ForwardErrorReason.ConnectionLimit);
             }
         }, harness.Token);
+        lock (errors)
+        {
+            ForwardErrorEventArgs limit = errors.First(e => e.Reason == ForwardErrorReason.ConnectionLimit);
+            Assert.AreEqual("并发连接数已达上限 1，这一条被拒绝。", limit.Message);
+            Assert.AreEqual(1, limit.Limit);
+            Assert.AreEqual(1, limit.RejectedCount);
+            Assert.IsNull(limit.Exception);
+        }
         await first.DisposeAsync();
     }
 
@@ -793,6 +809,9 @@ public sealed class PortForwardTests
 
         await WaitUntilAsync(() => errors.Count > 0, deadline.Token);
         Assert.AreEqual(ForwardErrorReason.SocksHandshake, errors[0].Reason);
+        Assert.AreEqual("SOCKS 握手在 0.2 秒内没有完成，这一条被关掉。", errors[0].Message);
+        Assert.AreEqual(TimeSpan.FromMilliseconds(200), errors[0].Timeout, "超时那一种带着时限，界面据此与「握手非法」分开说");
+        Assert.IsNull(errors[0].Target);
     }
 
     /// <summary>〔FW-E17〕在已经断开的连接上起本地 / 动态转发：照实失败（与远程转发一致），而不是「成功」返回一个不工作的转发器。</summary>
@@ -896,6 +915,10 @@ public sealed class PortForwardTests
             limitEvents = errors.Count(e => e.Reason == ForwardErrorReason.ConnectionLimit);
         }
         Assert.IsTrue(limitEvents is >= 1 and <= 2, $"20 条被拒只该换来一两次事件，实际 {limitEvents} 次");
+        lock (errors)
+        {
+            Assert.IsTrue(errors.Where(e => e.Reason == ForwardErrorReason.ConnectionLimit).All(e => e.Limit == 1 && e.RejectedCount >= 1));
+        }
         release.SetResult();
     }
 
@@ -1076,6 +1099,7 @@ public sealed class PortForwardTests
         await WaitUntilAsync(() => errors.Count > 0, harness.Token);
         Assert.AreEqual(ForwardErrorReason.TargetConnect, errors[0].Reason);
         Assert.AreEqual(0, forwarder.ActiveConnections, "槽位要还回去");
+        Assert.AreEqual($"127.0.0.1:{deadPort}", errors[0].Target);
     }
 
     [TestMethod]

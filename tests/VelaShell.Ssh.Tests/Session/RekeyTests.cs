@@ -383,6 +383,8 @@ public sealed class RekeyTests
         Assert.AreEqual(SshFailureReason.HostKeyRejected, error.Reason);
         Assert.AreEqual(SshPhase.Rekeying, error.Phase);
         Assert.IsInstanceOfType<SshConnectException>(error.InnerException);
+        Assert.AreEqual(SshConnectFailureKind.HostKeySignatureInvalid, ((SshConnectException)error.InnerException).FailureKind,
+            "内层是密钥交换按首次交换的口径报的那一条，种类照样在");
     }
 
     private sealed class CountingPolicy : Ssh.HostKeys.IHostKeyPolicy

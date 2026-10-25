@@ -582,7 +582,7 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
             outbound.Dispose();
 
             // 连不上本机目标：拒掉这一条，转发器继续跑。
-            Report(ForwardErrorReason.TargetConnect, $"连不上本机目标 {target}：{ex.SocketErrorCode}。", ex);
+            Report(ForwardErrorReason.TargetConnect, $"连不上本机目标 {target}：{ex.SocketErrorCode}。", ex, target);
             throw new SshForwardException(ReasonFor(ex.SocketErrorCode), "连不上转发的本机目标。", ex);
         }
         catch
@@ -663,7 +663,7 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
         }
         catch (Exception ex)
         {
-            Report(ForwardErrorReason.Relay, $"到 {target} 的连接出错：{ex.Message}", ex);
+            Report(ForwardErrorReason.Relay, $"到 {target} 的连接出错：{ex.Message}", ex, target);
         }
         finally
         {
@@ -692,7 +692,8 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
                     Report(ForwardErrorReason.SocksHandshake,
-                        $"远端的 SOCKS 握手在 {_options.SocksHandshakeTimeout.TotalSeconds:0.#} 秒内没有完成，这一条被关掉。", null);
+                        $"远端的 SOCKS 握手在 {_options.SocksHandshakeTimeout.TotalSeconds:0.#} 秒内没有完成，这一条被关掉。", null,
+                        timeout: _options.SocksHandshakeTimeout);
                     return;
                 }
             }
@@ -710,7 +711,7 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
             // 先记、再回：远端一收到应答就可能再来一条，事件不该落在它后面。
             if (!permit.Permits(parsed.Host, parsed.Port))
             {
-                Report(ForwardErrorReason.TargetNotPermitted, $"远端要连 {target}，不在放行名单（{permit}）里。", null);
+                Report(ForwardErrorReason.TargetNotPermitted, $"远端要连 {target}，不在放行名单（{permit}）里。", null, target);
                 await RefuseAsync(channel, SocksReply.NotAllowed, parsed.AddressType, cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -724,7 +725,7 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
             catch (SocketException ex)
             {
                 outbound.Dispose();
-                Report(ForwardErrorReason.TargetConnect, $"替远端连 {target} 没连上：{ex.SocketErrorCode}。", ex);
+                Report(ForwardErrorReason.TargetConnect, $"替远端连 {target} 没连上：{ex.SocketErrorCode}。", ex, target);
                 await RefuseAsync(channel, ReplyFor(ex.SocketErrorCode), parsed.AddressType, cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -753,7 +754,7 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
         }
         catch (Exception ex)
         {
-            Report(ForwardErrorReason.Relay, $"到 {target} 的连接出错：{ex.Message}", ex);
+            Report(ForwardErrorReason.Relay, $"到 {target} 的连接出错：{ex.Message}", ex, target);
         }
     }
 

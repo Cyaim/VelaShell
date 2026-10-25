@@ -7160,6 +7160,93 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshErr_ProxyAuthRequired" xml:space="preserve">
     <value>代理伺服器要求驗證,但未設定代理憑據。</value>
   </data>
+  <data name="SshErr_ProxyConnectFailed" xml:space="preserve">
+    <value>無法連線到代理伺服器 {0}:{1}</value>
+  </data>
+  <data name="SshErr_ProxyHandshakeTimeout" xml:space="preserve">
+    <value>代理伺服器 {0} 接受了連線,卻一直沒有回應交握(要連 {1})。</value>
+  </data>
+  <data name="SshErr_ProxyClosedDuringHandshake" xml:space="preserve">
+    <value>代理伺服器 {0} 在交握途中中斷了連線(要連 {1})—— 多半是拒絕了請求,只是沒說原因。</value>
+  </data>
+  <data name="SshErr_ProxyTargetNameInvalid" xml:space="preserve">
+    <value>主機名稱 {0} 無法放進代理請求:它不是合法的主機名稱,或者太長了。</value>
+  </data>
+  <data name="SshErr_Socks5CredentialsTooLong" xml:space="preserve">
+    <value>SOCKS5 代理的使用者名稱與密碼編碼後都必須在 1–255 位元組之間(RFC 1929)。</value>
+  </data>
+  <data name="SshErr_Socks5VersionMismatch" xml:space="preserve">
+    <value>{0} 回應的不是 SOCKS5(版本位元組 0x{1})—— 它可能是 HTTP 代理,或者根本不是代理伺服器。</value>
+  </data>
+  <data name="SshErr_Socks5NoAcceptableMethod" xml:space="preserve">
+    <value>SOCKS5 代理 {0} 不接受我們提供的任何驗證方法。</value>
+  </data>
+  <data name="SshErr_Socks5UnexpectedMethod" xml:space="preserve">
+    <value>SOCKS5 代理 {0} 選了一個我們沒提供的驗證方法(0x{1})—— 這是協定錯誤。</value>
+  </data>
+  <data name="SshErr_Socks5InvalidAddressType" xml:space="preserve">
+    <value>SOCKS5 代理 {0} 的回應中位址類型不合法(0x{1})。</value>
+  </data>
+  <data name="SshErr_Socks5ConnectRefused" xml:space="preserve">
+    <value>SOCKS5 代理 {0} 拒絕連線到 {1}:{2}(回應碼 {3})。</value>
+  </data>
+  <data name="SshErr_Socks5Reply1" xml:space="preserve">
+    <value>代理伺服器內部錯誤</value>
+  </data>
+  <data name="SshErr_Socks5Reply2" xml:space="preserve">
+    <value>代理伺服器的規則不允許這個連線</value>
+  </data>
+  <data name="SshErr_Socks5Reply3" xml:space="preserve">
+    <value>網路無法連線</value>
+  </data>
+  <data name="SshErr_Socks5Reply4" xml:space="preserve">
+    <value>主機無法連線</value>
+  </data>
+  <data name="SshErr_Socks5Reply5" xml:space="preserve">
+    <value>目標拒絕連線</value>
+  </data>
+  <data name="SshErr_Socks5Reply6" xml:space="preserve">
+    <value>TTL 已過期</value>
+  </data>
+  <data name="SshErr_Socks5Reply7" xml:space="preserve">
+    <value>代理伺服器不支援 CONNECT 命令</value>
+  </data>
+  <data name="SshErr_Socks5Reply8" xml:space="preserve">
+    <value>代理伺服器不支援這種位址類型</value>
+  </data>
+  <data name="SshErr_Socks5ReplyOther" xml:space="preserve">
+    <value>未知錯誤</value>
+  </data>
+  <data name="SshErr_HttpProxyNotHttp" xml:space="preserve">
+    <value>{0} 回應的不是 HTTP 回應(「{1}」)—— 它可能是 SOCKS 代理,或者根本不是代理伺服器。</value>
+  </data>
+  <data name="SshErr_HttpProxyResponseTooLarge" xml:space="preserve">
+    <value>HTTP 代理 {0} 的回應標頭超過了上限 —— 它可能不是 HTTP 代理伺服器。</value>
+  </data>
+  <data name="SshErr_HttpConnectRefused" xml:space="preserve">
+    <value>HTTP 代理 {0} 拒絕連線到 {1}:{2}。</value>
+  </data>
+  <data name="SshErr_ProxyCommandExited" xml:space="preserve">
+    <value>ProxyCommand({0})在連上 {1} 之前就以結束代碼 {2} 結束了。</value>
+  </data>
+  <data name="SshErr_ProxyCommandSaid" xml:space="preserve">
+    <value>{0}它的輸出:{1}</value>
+  </data>
+  <data name="SshErr_JumpConnectFailed" xml:space="preserve">
+    <value>無法連線到跳板 {0}:{1}</value>
+  </data>
+  <data name="SshErr_JumpConnectTimeout" xml:space="preserve">
+    <value>經跳板 {0} 建立連線時逾時(等待您輸入的時間不計在內)。</value>
+  </data>
+  <data name="SshErr_JumpForwardRefused" xml:space="preserve">
+    <value>跳板 {0} 拒絕轉發到 {1}:{2}</value>
+  </data>
+  <data name="SshErr_JumpForwardFailed" xml:space="preserve">
+    <value>跳板 {0} 在轉發到 {1} 時發生問題:{2}</value>
+  </data>
+  <data name="SshErr_JumpForwardTimeout" xml:space="preserve">
+    <value>跳板 {0} 轉發到 {1} 時逾時。</value>
+  </data>
   <data name="SshErr_NotAnSshServer" xml:space="preserve">
     <value>對端不是 SSH 服務(未收到合法的協定識別)。</value>
   </data>
@@ -7168,6 +7255,24 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>伺服器的主機金鑰與已記錄的不一致。</value>
+  </data>
+  <data name="SshErr_HostKeyMalformed" xml:space="preserve">
+    <value>伺服器的主機金鑰無法解析。</value>
+  </data>
+  <data name="SshErr_HostKeyAlgorithmMismatch" xml:space="preserve">
+    <value>伺服器出示的是 {0} 金鑰,與協商出的主機金鑰演算法 {1} 不相符。</value>
+  </data>
+  <data name="SshErr_HostKeyTooShort" xml:space="preserve">
+    <value>伺服器的 RSA 主機金鑰只有 {0} 位元,低於要求的 {1} 位元。</value>
+  </data>
+  <data name="SshErr_HostKeySignatureInvalid" xml:space="preserve">
+    <value>伺服器對金鑰交換的簽章({0})驗證失敗 —— 對端沒有它所聲稱的那把主機私鑰,可能有中間人。</value>
+  </data>
+  <data name="SshErr_HostKeyPolicyRejected" xml:space="preserve">
+    <value>主機金鑰被主機金鑰策略拒絕了。</value>
+  </data>
+  <data name="SshErr_RekeyFailed" xml:space="preserve">
+    <value>金鑰重新協商失敗:{0}</value>
   </data>
   <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
     <value>伺服器出示的是一張使用者憑證(Key ID「{0}」),不能用來證明主機身分。</value>
@@ -7369,6 +7474,39 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>伺服器拒絕了轉送請求。檢查 sshd_config 裡的 AllowAgentForwarding / AllowTcpForwarding / X11Forwarding。</value>
+  </data>
+  <data name="SshErr_FwdAccept" xml:space="preserve">
+    <value>轉發連接埠接受傳入連線失敗。</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimit" xml:space="preserve">
+    <value>並行連線數已達上限 {0},這一條被拒絕。</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimitMany" xml:space="preserve">
+    <value>並行連線數已達上限 {0},拒絕了 {1} 條(這類錯誤每秒最多回報一次)。</value>
+  </data>
+  <data name="SshErr_FwdSocksTimeout" xml:space="preserve">
+    <value>SOCKS 交握在 {0} 秒內沒有完成,這一條已關閉。</value>
+  </data>
+  <data name="SshErr_FwdSocksInvalid" xml:space="preserve">
+    <value>SOCKS 交握不合法或命令不支援,這一條已關閉。</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenTimeout" xml:space="preserve">
+    <value>到 {0} 的隧道在 {1} 秒內沒有開啟(伺服器尚未回應),這一條已放棄。</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenFailed" xml:space="preserve">
+    <value>到 {0} 的隧道無法開啟。</value>
+  </data>
+  <data name="SshErr_FwdTargetConnect" xml:space="preserve">
+    <value>無法連線到轉發的目標 {0}。</value>
+  </data>
+  <data name="SshErr_FwdRelay" xml:space="preserve">
+    <value>到 {0} 的連線在轉送途中出錯。</value>
+  </data>
+  <data name="SshErr_FwdSetupSkipped" xml:space="preserve">
+    <value>X11 或 agent 轉發沒有成功開啟,工作階段照常啟動。</value>
+  </data>
+  <data name="SshErr_FwdUnknown" xml:space="preserve">
+    <value>一條轉發連線失敗了。</value>
   </data>
   <data name="SftpErr_NoSuchFile" xml:space="preserve">
     <value>檔案或目錄不存在</value>

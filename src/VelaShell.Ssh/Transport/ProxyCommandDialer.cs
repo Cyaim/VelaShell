@@ -317,6 +317,11 @@ internal sealed class ProcessDuplexStream : Stream
             throw new SshConnectException(SshFailureReason.ProxyRefused, SshPhase.Dialing, message)
             {
                 Hops = [DialHops.Hop(SshDialKind.ProxyCommand, _target, succeeded: false, _startedAt, message)],
+                FailureKind = SshConnectFailureKind.ProxyCommandExited,
+                Via = _command,
+                Target = _target.ToString(),
+                ProxyReplyCode = _process.ExitCode,
+                ProxyReply = stderr.Length == 0 ? null : stderr,
             };
         }
 

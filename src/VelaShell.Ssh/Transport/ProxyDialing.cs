@@ -47,9 +47,15 @@ internal static class ProxyDialing
             if (DialHops.KindOf(inner) == SshDialKind.Tcp && ex.Reason is SshFailureReason.DnsFailure
                 or SshFailureReason.TcpRefused or SshFailureReason.TcpTimeout or SshFailureReason.TcpUnreachable)
             {
-                throw new SshConnectException(SshFailureReason.ProxyUnreachable, SshPhase.Dialing, message, ex) { Hops = hops };
+                throw new SshConnectException(SshFailureReason.ProxyUnreachable, SshPhase.Dialing, message, ex)
+                {
+                    Hops = hops,
+                    FailureKind = SshConnectFailureKind.ProxyConnectFailed,
+                    Via = proxy.ToString(),
+                    Target = target.EndPoint.ToString(),
+                };
             }
-            throw DialHops.Rewrap(ex, message, hops);
+            throw DialHops.Rewrap(ex, message, hops, SshConnectFailureKind.ProxyConnectFailed, proxy.ToString(), target.EndPoint);
         }
 
         SshHopInfo reachedProxy = DialHops.Hop(DialHops.KindOf(inner), proxy, succeeded: true, startedAt);
@@ -72,6 +78,9 @@ internal static class ProxyDialing
                 $"经{kindName} {proxy} 连 {target.EndPoint} 时在代理握手这一步超时：{detail}", ex)
             {
                 Hops = [reachedProxy, DialHops.Hop(kind, target.EndPoint, succeeded: false, handshakeStartedAt, "超时")],
+                FailureKind = SshConnectFailureKind.ProxyHandshakeTimeout,
+                Via = proxy.ToString(),
+                Target = target.EndPoint.ToString(),
             };
         }
         catch (Exception ex) when (ex is SshException or IOException)
@@ -79,14 +88,16 @@ internal static class ProxyDialing
             await DisposeQuietlyAsync(stream).ConfigureAwait(false);
 
             // 握手中途断开：代理说话说到一半就走了 —— 那是代理拒绝了我们，只是没说原因。
+            // 握手自己报的失败（SshException）已经带着种类与参数，改写时原样带过去，只补上跳信息。
             string detail = ex is IOException
                 ? $"{kindName}在握手中途断开了连接（{ex.Message}）。"
                 : ex.Message;
+            IReadOnlyList<SshHopInfo> hops = [reachedProxy, DialHops.Hop(kind, target.EndPoint, succeeded: false, handshakeStartedAt, detail)];
 
-            throw DialHops.Rewrap(
-                ex,
-                ex is IOException ? $"经{kindName} {proxy} 连 {target.EndPoint} 失败：{detail}" : detail,
-                [reachedProxy, DialHops.Hop(kind, target.EndPoint, succeeded: false, handshakeStartedAt, detail)]);
+            throw ex is IOException
+                ? DialHops.Rewrap(ex, $"经{kindName} {proxy} 连 {target.EndPoint} 失败：{detail}", hops,
+                    SshConnectFailureKind.ProxyClosedDuringHandshake, proxy.ToString(), target.EndPoint)
+                : DialHops.Rewrap(ex, detail, hops);
         }
         catch (Exception)
         {
@@ -96,8 +107,23 @@ internal static class ProxyDialing
     }
 
     /// <summary>一条代理拒绝的失败（<see cref="SshFailureReason.ProxyRefused"/>）。</summary>
-    public static SshConnectException Refused(string message) =>
-        new(SshFailureReason.ProxyRefused, SshPhase.Dialing, message);
+    /// <param name="kind">具体情形 —— 必填：宿主按它出界面文案（库的消息是写给开发者的中文）。</param>
+    /// <param name="message">诊断消息。</param>
+    /// <param name="proxy">代理的地址。</param>
+    /// <param name="target">请代理去连的目标（拒绝连接的那几种）。</param>
+    /// <param name="replyCode">代理回的那个数（见 <see cref="SshConnectException.ProxyReplyCode"/>）。</param>
+    /// <param name="reply">代理回的原话（见 <see cref="SshConnectException.ProxyReply"/>），原样、不清洗。</param>
+    public static SshConnectException Refused(
+        SshConnectFailureKind kind, string message, SshEndPoint proxy,
+        SshEndPoint? target = null, int? replyCode = null, string? reply = null) =>
+        new(SshFailureReason.ProxyRefused, SshPhase.Dialing, message)
+        {
+            FailureKind = kind,
+            Via = proxy.ToString(),
+            Target = target?.ToString(),
+            ProxyReplyCode = replyCode,
+            ProxyReply = reply,
+        };
 
     /// <summary>一条代理要认证的失败（<see cref="SshFailureReason.ProxyAuthRequired"/>）。</summary>
     public static SshConnectException AuthRequired(string message) =>
@@ -111,8 +137,15 @@ internal static class ProxyDialing
     /// 请求在本地就发不出去：主机名放不进代理协议、凭据超长（<see cref="SshFailureReason.InvalidConfiguration"/>）。
     /// </summary>
     /// <remarks>曾经报 <see cref="SshFailureReason.ProxyRefused"/> —— 代理根本没见到请求，而且那个码判为可重试，重试只会再失败一次。</remarks>
-    public static SshConnectException Misconfigured(string message) =>
-        new(SshFailureReason.InvalidConfiguration, SshPhase.Dialing, message);
+    /// <param name="kind">具体情形（主机名放不进请求，或凭据超长）—— 必填，同 <see cref="Refused"/>。</param>
+    /// <param name="message">诊断消息。</param>
+    /// <param name="hostName">放不进请求的那个主机名（<see cref="SshConnectFailureKind.ProxyTargetNameInvalid"/>），原样。</param>
+    public static SshConnectException Misconfigured(SshConnectFailureKind kind, string message, string? hostName = null) =>
+        new(SshFailureReason.InvalidConfiguration, SshPhase.Dialing, message)
+        {
+            FailureKind = kind,
+            Target = hostName,
+        };
 
     private static async ValueTask DisposeQuietlyAsync(Stream stream)
     {

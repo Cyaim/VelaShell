@@ -35,12 +35,44 @@ internal static class DialHops
     /// <param name="failure">原来的失败。</param>
     /// <param name="message">给人看的一句话（通常在原消息前面加上「是哪一跳」）。</param>
     /// <param name="hops">链路上每一跳的结果。</param>
-    public static SshConnectException Rewrap(Exception failure, string message, IReadOnlyList<SshHopInfo> hops)
+    /// <param name="kind">
+    /// 改写后的种类，<paramref name="via"/> / <paramref name="target"/> 是它的参数。不给（<see cref="SshConnectFailureKind.Unknown"/>）时
+    /// 说的还是原来那件事：<paramref name="failure"/> 若是 <see cref="SshConnectException"/>，它的种类与参数原样带过来 ——
+    /// 只补跳信息就把它们丢掉的话，宿主就只剩库的中文消息可显示。
+    /// </param>
+    /// <param name="via">经过的那一跳（代理或跳板的地址）。</param>
+    /// <param name="target">请那一跳去连的目标。</param>
+    public static SshConnectException Rewrap(
+        Exception failure, string message, IReadOnlyList<SshHopInfo> hops,
+        SshConnectFailureKind kind = SshConnectFailureKind.Unknown, string? via = null, SshEndPoint? target = null)
     {
         (SshFailureReason reason, SshPhase phase) = failure is SshException ssh
             ? (ssh.Reason, SshPhase.Dialing)
             : (SshFailureReason.ProxyRefused, SshPhase.Dialing);
 
-        return new SshConnectException(reason, phase, message, failure) { Hops = hops };
+        if (kind != SshConnectFailureKind.Unknown || failure is not SshConnectException same)
+        {
+            return new SshConnectException(reason, phase, message, failure)
+            {
+                Hops = hops,
+                FailureKind = kind,
+                Via = via,
+                Target = target?.ToString(),
+            };
+        }
+
+        return new SshConnectException(reason, phase, message, failure)
+        {
+            Hops = hops,
+            FailureKind = same.FailureKind,
+            Via = same.Via,
+            Target = same.Target,
+            HostKeyType = same.HostKeyType,
+            HostKeyAlgorithm = same.HostKeyAlgorithm,
+            HostKeyBits = same.HostKeyBits,
+            MinimumHostKeyBits = same.MinimumHostKeyBits,
+            ProxyReplyCode = same.ProxyReplyCode,
+            ProxyReply = same.ProxyReply,
+        };
     }
 }

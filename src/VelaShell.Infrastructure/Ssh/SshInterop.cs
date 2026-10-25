@@ -101,12 +101,14 @@ internal static partial class SshInterop
     /// 只翻有把握的那几类。<see cref="SshFailureReason.ProxyUnreachable" />、<see cref="SshFailureReason.ProxyRefused" />、
     /// <see cref="SshFailureReason.ProxyAuthRequired" /> 与 <see cref="SshFailureReason.ProxyAuthFailed" /> 不在其中:它们的消息是 <c>ProxyTransportDialer</c>
     /// 用界面语言拼的,带着「经哪个代理去哪」、换 SOCKS5 的提示,并且分得清「没配凭据」与「凭据不对」,
-    /// 比一句泛泛的「代理拒绝」有用得多。<see cref="SshFailureReason.HostKeyRejected" /> 同理:消息是
-    /// <c>VelaHostKeyPolicy</c> 用本地化文案写的拒绝理由(含新旧指纹)。认不出的原因照旧用原文。
+    /// 比一句泛泛的「代理拒绝」有用得多(后半句的代理应答按 <see cref="SshConnectException.FailureKind" /> 说)。
+    /// <see cref="SshFailureReason.HostKeyRejected" /> 由种类分开:策略拒的(<see cref="SshConnectFailureKind.HostKeyPolicyRejected" />)消息是
+    /// <c>VelaHostKeyPolicy</c> 用本地化文案写的拒绝理由(含新旧指纹),原样用;库自己验不过的几种按种类说。认不出的原因照旧用原文。
     /// </para>
     /// <para>
-    /// 通道失败、私钥 / 证书读不出来这几类,库给了比原因码更细的结构化出处(<see cref="SshChannelException.FailureKind" />、
-    /// <see cref="SshKeyProblemKind" /> 与路径、算法名、Key ID、两边的公钥),先按它们说(<c>SshInterop.Diagnostics.cs</c>);
+    /// 通道失败、私钥 / 证书读不出来、建连失败(主机密钥、代理握手、跳板)这几类,库给了比原因码更细的结构化出处
+    /// (<see cref="SshChannelException.FailureKind" />、<see cref="SshKeyProblemKind" /> 与路径、算法名、Key ID、两边的公钥,
+    /// <see cref="SshConnectException.FailureKind" /> 与经过的那一跳、代理的应答),先按它们说(<c>SshInterop.Diagnostics.cs</c>);
     /// 没归类的(使用者自己构造的异常)才落到下面按原因码的那一层。
     /// </para>
     /// <para>
@@ -125,6 +127,13 @@ internal static partial class SshInterop
         SshChannelException { FailureKind: not SshChannelFailureKind.Unknown } channel => LocalizeChannel(channel),
         SshPrivateKeyException { ProblemKind: not SshKeyProblemKind.Unknown } key => LocalizeKeyProblem(key),
         SshCertificateException { ProblemKind: not SshKeyProblemKind.Unknown } certificate => LocalizeKeyProblem(certificate),
+        SshConnectException { FailureKind: not SshConnectFailureKind.Unknown } connect => LocalizeConnect(connect),
+        // 重协商时密钥交换按首次交换的口径报的失败(验签失败、主机密钥类型不符),库把它包成「建好的连接断了」,原来那条在内层。
+        SshConnectionClosedException
+        {
+            Phase: SshPhase.Rekeying,
+            InnerException: SshConnectException { FailureKind: not SshConnectFailureKind.Unknown } rekey,
+        } => $"{Strings.Format("SshErr_RekeyFailed", DescribeConnectFailure(rekey))} [{ex.Reason} @ {ex.Phase}]",
         _ => LocalizeByReason(ex),
     };
 

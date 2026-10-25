@@ -178,7 +178,11 @@ public abstract class PortForwarder : IAsyncDisposable
         string message = rejected <= 1
             ? $"并发连接数已达上限 {maxConnections}，这一条被拒绝。"
             : $"并发连接数已达上限 {maxConnections}，又拒绝了 {rejected} 条（这类错误每秒至多报一次）。";
-        ForwardEvents.Raise(Error, this, new ForwardErrorEventArgs(ForwardErrorReason.ConnectionLimit, message, null));
+        ForwardEvents.Raise(Error, this, new ForwardErrorEventArgs(ForwardErrorReason.ConnectionLimit, message, null)
+        {
+            Limit = maxConnections,
+            RejectedCount = Math.Max(rejected, 1),
+        });
     }
 
     /// <summary>把本机一头与隧道通道对接起来搬运，计量、事件、错误都在这里。</summary>
@@ -251,7 +255,7 @@ public abstract class PortForwarder : IAsyncDisposable
             if (result.Error is { } error
                 && !(error is OperationCanceledException && cancellationToken.IsCancellationRequested))
             {
-                Report(ForwardErrorReason.Relay, $"到 {target} 的搬运中断：{error.Message}", error);
+                Report(ForwardErrorReason.Relay, $"到 {target} 的搬运中断：{error.Message}", error, target);
             }
         }
         finally
@@ -262,9 +266,19 @@ public abstract class PortForwarder : IAsyncDisposable
     }
 
     /// <summary>一条连接失败了：记一笔错误计数，发 <see cref="Error"/> 事件。</summary>
-    private protected void Report(ForwardErrorReason reason, string message, Exception? exception)
+    /// <param name="reason">失败的分类。</param>
+    /// <param name="message">诊断消息（写给开发者的中文）。</param>
+    /// <param name="exception">底层异常；没有时界面只能按分类与下面的参数说，所以它们要给全。</param>
+    /// <param name="target">这一条要连的目标（见 <see cref="ForwardErrorEventArgs.Target"/>）。</param>
+    /// <param name="timeout">超时那一种的时限（见 <see cref="ForwardErrorEventArgs.Timeout"/>）。</param>
+    private protected void Report(
+        ForwardErrorReason reason, string message, Exception? exception, string? target = null, TimeSpan? timeout = null)
     {
         ForwardEvents.RecordError(Kind, reason);
-        ForwardEvents.Raise(Error, this, new ForwardErrorEventArgs(reason, message, exception));
+        ForwardEvents.Raise(Error, this, new ForwardErrorEventArgs(reason, message, exception)
+        {
+            Target = target,
+            Timeout = timeout,
+        });
     }
 }

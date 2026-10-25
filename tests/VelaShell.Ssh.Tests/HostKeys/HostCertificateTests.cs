@@ -490,6 +490,10 @@ public sealed class HostCertificateTests
 
         Assert.AreEqual(SshFailureReason.HostKeyRejected, ex.Reason);
         Assert.Contains("1024", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.HostKeyTooShort, ex.FailureKind);
+        Assert.AreEqual(1024, ex.HostKeyBits);
+        Assert.AreEqual(2048, ex.MinimumHostKeyBits);
+        Assert.AreEqual(SshAlgorithmNames.SshRsaCertV01, ex.HostKeyType);
     }
 
     [TestMethod]
@@ -498,10 +502,16 @@ public sealed class HostCertificateTests
         SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(() => HandshakeAsync(
             "hostcert-key", "hostcert-key.pub", [SshAlgorithmNames.SshEd25519CertV01], PreferCertificates));
         Assert.AreEqual(SshFailureReason.HostKeyRejected, ex.Reason);
+        Assert.AreEqual($"服务端出示的是 {SshAlgorithmNames.SshEd25519} 密钥，与协商出的 {SshAlgorithmNames.SshEd25519CertV01} 不匹配。", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.HostKeyAlgorithmMismatch, ex.FailureKind);
+        Assert.AreEqual(SshAlgorithmNames.SshEd25519, ex.HostKeyType);
+        Assert.AreEqual(SshAlgorithmNames.SshEd25519CertV01, ex.HostKeyAlgorithm);
 
         // 反过来：谈成普通算法却出示证书。
         ex = await Assert.ThrowsExactlyAsync<SshConnectException>(() => HandshakeAsync(
             "hostcert-key", "hostcert-key-cert.pub", [SshAlgorithmNames.SshEd25519], SshAlgorithmSet.Default));
         Assert.AreEqual(SshFailureReason.HostKeyRejected, ex.Reason);
+        Assert.AreEqual(SshConnectFailureKind.HostKeyAlgorithmMismatch, ex.FailureKind);
+        Assert.AreEqual(SshAlgorithmNames.SshEd25519CertV01, ex.HostKeyType);
     }
 }

@@ -347,7 +347,41 @@ public sealed class HandshakeTests
 
         Assert.AreEqual(SshFailureReason.HostKeyRejected, ex.Reason);
         Assert.AreEqual(SshPhase.KeyExchange, ex.Phase);
-        Assert.Contains("签名验证失败", ex.Message);
+        Assert.AreEqual(
+            "服务端对交换哈希的签名验证失败（ssh-ed25519，对端 SSH-2.0-VelaShellTestServer_1.0）。这意味着对端没有它所声称的那把主机私钥 —— 可能有中间人。",
+            ex.Message);
+
+        // 库自己验不过（还没轮到策略）：种类与算法交给界面，宿主不再把这句中文当成策略写的理由照用。
+        Assert.AreEqual(SshConnectFailureKind.HostKeySignatureInvalid, ex.FailureKind);
+        Assert.AreEqual(SshAlgorithmNames.SshEd25519, ex.HostKeyAlgorithm);
+        Assert.AreEqual(SshAlgorithmNames.SshEd25519, ex.HostKeyType);
+    }
+
+    /// <summary>服务端出示的主机密钥 blob 解析不了：库自己拒（种类 <see cref="SshConnectFailureKind.HostKeyMalformed"/>），内层是公钥解析异常。</summary>
+    [TestMethod]
+    public async Task 主机密钥解析不了时按种类拒绝()
+    {
+        using TestHostKey real = TestHostKey.Create(SshAlgorithmNames.SshEd25519);
+        SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
+            async () => await HandshakeAsync(serverOptions: new TestSshServerOptions { HostKey = new TruncatedBlobHostKey(real) }));
+
+        Assert.AreEqual(SshFailureReason.HostKeyRejected, ex.Reason);
+        Assert.StartsWith("服务端主机密钥无法解析：", ex.Message);
+        Assert.IsInstanceOfType<SshPublicKeyException>(ex.InnerException);
+        Assert.AreEqual(SshConnectFailureKind.HostKeyMalformed, ex.FailureKind);
+        Assert.AreEqual(SshAlgorithmNames.SshEd25519, ex.HostKeyAlgorithm);
+    }
+
+    /// <summary>出示的 blob 里 Ed25519 公钥只有 3 个字节（签名照常由真钥做 —— 走不到验签那一步）。</summary>
+    private sealed class TruncatedBlobHostKey(TestHostKey real) : TestHostKey
+    {
+        public override string KeyType => real.KeyType;
+
+        public override IReadOnlyList<string> SignatureAlgorithms => real.SignatureAlgorithms;
+
+        public override byte[] PublicKeyBlob => [0, 0, 0, 11, .. "ssh-ed25519"u8, 0, 0, 0, 3, 1, 2, 3];
+
+        public override byte[] Sign(ReadOnlySpan<byte> data, string algorithm) => real.Sign(data, algorithm);
     }
 
     [TestMethod]
@@ -412,6 +446,8 @@ public sealed class HandshakeTests
 
         Assert.AreEqual(SshFailureReason.HostKeyRejected, ex.Reason);
         Assert.AreEqual(reason, ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.HostKeyPolicyRejected, ex.FailureKind, "这句话是策略写的 —— 界面原样用");
+        Assert.AreEqual(SshAlgorithmNames.SshEd25519, ex.HostKeyType);
     }
 
     [TestMethod]
@@ -423,6 +459,8 @@ public sealed class HandshakeTests
 
         Assert.AreEqual(SshFailureReason.HostKeyRejected, ex.Reason);
         Assert.IsFalse(default(SshHostKeyVerdict).IsAccepted);
+        Assert.AreEqual("test.invalid:22 的主机密钥被策略拒绝。", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.HostKeyPolicyRejectedWithoutReason, ex.FailureKind, "策略没给原因：这句是库补的，界面另说");
     }
 
     [TestMethod]
@@ -435,6 +473,7 @@ public sealed class HandshakeTests
 
         Assert.AreEqual(SshFailureReason.HostKeyChanged, ex.Reason);
         Assert.AreEqual(message, ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.HostKeyPolicyRejected, ex.FailureKind);
     }
 
     [TestMethod]
