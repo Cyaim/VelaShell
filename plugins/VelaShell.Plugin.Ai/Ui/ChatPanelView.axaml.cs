@@ -51,6 +51,7 @@ public partial class ChatPanelView : UserControl
     private readonly Loc _loc;
     private readonly AgentToolbox _toolbox;
     private readonly McpManager _mcp;
+    private readonly McpApproval _mcpApproval;
     private readonly ChatHistoryStore _historyStore;
 
     // ---------- 按会话分桶的对话 ----------
@@ -236,7 +237,9 @@ public partial class ChatPanelView : UserControl
             SessionIdProvider = CurrentToolSessionId,
             ApprovalHandler = RequestApprovalAsync
         };
-        _mcp = new McpManager(context) { ApprovalHandler = RequestApprovalAsync };
+        _mcp = new McpManager(context);
+        // 面板只有这一份:挡位由 ApplyApprovalMode 每轮开头推一次、中途改了再推(各对话共用同一个挡位设置)
+        _mcpApproval = new McpApproval(RequestApprovalAsync);
         // 必须在 InitializeComponent 之前:注册 Markdown 扩展(pipeline 只在渲染器构造时建一次),
         // 同时把 LiveMarkdown 各程序集拉进插件 ALC —— XAML 里的 avares://LiveMarkdown.*/ 靠
         // "已加载程序集按名查找"定位,插件依赖不在装载方探测路径上,没被引用过就找不到(勿调序)。
@@ -1809,7 +1812,7 @@ public partial class ChatPanelView : UserControl
                     if (mode == ChatMode.Agent && _settings.McpServers.Any(s => s.Enabled))
                     {
                         SetStatus(_loc["McpConnecting"]);
-                        (List<AITool> mcpTools, List<string> mcpErrors) = await _mcp.GetToolsAsync(_settings.McpServers, token);
+                        (List<AITool> mcpTools, List<string> mcpErrors) = await _mcp.GetToolsAsync(_settings.McpServers, _mcpApproval, token);
                         foreach (AITool tool in mcpTools)
                         {
                             tools.Add(tool);
@@ -2844,7 +2847,7 @@ public partial class ChatPanelView : UserControl
     private void ApplyApprovalMode()
     {
         _toolbox.Approval = _settings.Approval;
-        _mcp.Approval = _settings.Approval;
+        _mcpApproval.Mode = _settings.Approval;
         switch (_settings.Approval)
         {
             case ApprovalMode.Bypass:

@@ -232,13 +232,12 @@ public sealed class BridgeAgentRunner(
                                 && NativeWebSearch.IsSupported(model.Protocol);
             if (mode != ChatMode.Chat)
             {
-                mcp.Approval = approval;
-                mcp.ApprovalHandler = approve;
                 IList<AITool> tools = toolbox.CreateTools(mode, nativeSearch, runScope);
                 if (mode == ChatMode.Agent && ai.McpServers.Any(s => s.Enabled))
                 {
-                    (List<AITool> mcpTools, List<string> errors) =
-                        await mcp.GetToolsAsync(ai.McpServers, cancellationToken).ConfigureAwait(false);
+                    // 审批上下文每轮一份:mcp 是所有聊天共用的,别的聊天的轮次可能正同时在跑
+                    (List<AITool> mcpTools, List<string> errors) = await mcp
+                        .GetToolsAsync(ai.McpServers, new McpApproval(approve, approval), cancellationToken).ConfigureAwait(false);
                     foreach (AITool tool in mcpTools)
                     {
                         tools.Add(tool);
