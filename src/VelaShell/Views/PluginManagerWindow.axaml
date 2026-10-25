@@ -300,6 +300,10 @@
                                 IsVisible="{Binding CanViewLog}" Click="ViewLog_Click" />
                         <Button Classes="row-action" Content="{Binding RevokeText}"
                                 IsVisible="{Binding HasTerminalGrant}" Click="Revoke_Click" />
+                        <!-- 插件往消息中心发通知的开关:只在它发过(列表里还有)或已经静音时出现。 -->
+                        <Button Classes="row-action" Content="{Binding NotificationsToggleText}"
+                                ToolTip.Tip="{Binding NotificationsToggleTip}"
+                                IsVisible="{Binding CanToggleNotifications}" Click="ToggleNotifications_Click" />
                         <!-- 开发内环:重编后点这里就跑上新代码(开发期挂载的插件才有)。 -->
                         <Button Classes="row-action" Content="{Binding ReloadText}"
                                 IsVisible="{Binding CanReload}" Click="Reload_Click" />

@@ -182,6 +182,40 @@ public class NotificationPanelViewModelTests
     }
 
     /// <summary>
+    /// 插件发来的消息标「插件」徽标与「来自 插件名」一行 —— 一眼分得出是插件说的,不是 VelaShell 自己说的;
+    /// 宿主自己的消息没有来源行。点它走插件自己的命令(命令注册表里有占位时会惰性激活插件)。
+    /// </summary>
+    [TestMethod]
+    public async Task ItemViewModel_ShowsPluginBadgeAndSource_AndActivatesThePluginCommand()
+    {
+        NotificationItem plugin = new()
+        {
+            Id = "plugin:acme.backup:failed",
+            Kind = NotificationKind.Plugin,
+            Title = "夜间备份失败",
+            PublishedAt = DateTime.UtcNow,
+            Source = "Acme Backup",
+            Link = new() { Label = "", CommandId = "acme.backup.show-log" }
+        };
+        var vm = new NotificationItemViewModel(plugin);
+        var host = new NotificationItemViewModel(Item("update:1"));
+
+        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("Notify_KindPlugin"), vm.KindBadge);
+        Assert.IsTrue(vm.HasSource);
+        Assert.AreEqual(VelaShell.Core.Resources.Strings.Format("Notify_Source", "Acme Backup"), vm.SourceText);
+        Assert.Contains("Acme Backup", vm.SourceText);
+        Assert.IsFalse(host.HasSource);
+        Assert.AreEqual(string.Empty, host.SourceText);
+        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("Notify_LinkOpen"), vm.LinkLabel, "插件没给动作文案时用通用的「查看」");
+
+        NotificationCenter center = await SeededCenterAsync(plugin);
+        string? invoked = null;
+        var panel = new NotificationPanelViewModel(center, id => { invoked = id; return true; });
+        await panel.ActivateCommand.Execute(plugin.Id).FirstAsync();
+        Assert.AreEqual("acme.backup.show-log", invoked);
+    }
+
+    /// <summary>
     /// 拖动后的位置落在 <c>ui-layout/notification-panel</c> —— 与文件传输提示同集合、
     /// 各占一个文档 Id。两个浮层写进同一个 Id 会互相踩,这条钉住 Id 不被写错。
     /// </summary>

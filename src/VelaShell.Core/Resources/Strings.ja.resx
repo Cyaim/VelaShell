@@ -5431,6 +5431,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>システム</value>
   </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>プラグイン</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>{0} から</value>
+  </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>{0} 番目のタブへ</value>
   </data>
@@ -6125,7 +6131,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginPermDownload_Title"><value>ファイルダウンロードの許可</value></data>
   <data name="PluginPermDownload_AllowOnce"><value>今回のダウンロードを許可</value></data>
   <data name="PluginPermDownload_Message"><value>プラグイン「{0}」が {1} からローカルファイルへのダウンロードを要求しています。許可はこのタスクのみ有効です。</value></data>
-  <data name="PluginPermDownload_Preview"><value>リモートソース: {0}&#10;ローカル保存先: {1}&#10;保存先の方針: {2}</value></data>
+  <data name="PluginPermDownload_Preview"><value>リモートソース: {0}&#10;サイズ: {3}&#10;ローカル保存先: {1}&#10;保存先の方針: {2}</value></data>
   <data name="PluginPermSession_Title"><value>接続要求</value></data>
   <data name="PluginPermSession_Message"><value>プラグイン「{0}」が {1} への接続を要求しています。プラグインが示した理由:</value></data>
   <data name="PluginManager_Install"><value>.vpx をインストール…</value></data>
@@ -6133,6 +6139,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginManager_Reload"><value>再読み込み</value></data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>ログを表示</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>通知をミュート</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>通知のミュートを解除</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>このプラグインがメッセージ一覧にメッセージを追加しないようにします。すでに届いたメッセージはメッセージ一覧で削除するまで残り、プラグインをアンインストールすると一緒に削除されます。</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>プラグインのログ · {0}</value>

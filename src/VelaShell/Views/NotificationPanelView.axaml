@@ -223,6 +223,14 @@
                                    FontFamily="{DynamicResource VelaUiMonoFont}"
                                    FontSize="{DynamicResource VelaFontSize10}"
                                    VerticalAlignment="Center" />
+                        <!-- 插件消息的来源(宿主按插件身份填,不取自消息):一眼分得出是插件说的,不是 VelaShell 自己说的。 -->
+                        <TextBlock Text="{Binding SourceText}"
+                                   IsVisible="{Binding HasSource}"
+                                   Foreground="{DynamicResource VelaTextMuted}"
+                                   FontFamily="{DynamicResource VelaUiFont}"
+                                   FontSize="{DynamicResource VelaFontSize10}"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="180"
+                                   VerticalAlignment="Center" />
                       </StackPanel>
                       <!-- 已读退到次要色且不加粗,未读保持主文本 + Medium:
                            一列消息里,读没读过要能靠余光分出来,而不是逐条去找竖条。 -->

@@ -92,6 +92,47 @@ public class PluginPermissionGateTests
         Assert.IsTrue(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", true, size, default));
     }
 
+    /// <summary>
+    /// 批准生效的回调只在真批准时调、而且在闸返回之前(登记批准的同一把锁里)调:调用方据此把任务阶段与
+    /// 「已批准」一起推进。拒绝、范围过宽都不调。
+    /// </summary>
+    [TestMethod]
+    [DataRow(PluginPermissionDecision.AllowOnce, true)]
+    [DataRow(PluginPermissionDecision.Deny, false)]
+    [DataRow(PluginPermissionDecision.AllowAlways, false)]
+    public async Task ApprovalCallbackRunsOnlyWhenApprovedAndBeforeTheGateReturns(PluginPermissionDecision decision, bool expected)
+    {
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(decision);
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(decision);
+        var gate = new PluginPermissionGate(null, prompt);
+        using UploadPermissionLease upload = gate.CreateUploadLease("p");
+        using DownloadPermissionLease download = gate.CreateDownloadLease("p");
+        int uploadCalls = 0, downloadCalls = 0;
+
+        bool uploadApproved = await gate.CheckUploadAsync(upload, "p", "target", "/local", "/remote", false, 8, default,
+            () => uploadCalls++);
+        bool downloadApproved = await gate.CheckDownloadAsync(download, "p", "target", "/remote", "/local", false, 3, default,
+            () => downloadCalls++);
+
+        Assert.AreEqual(expected, uploadApproved);
+        Assert.AreEqual(expected, downloadApproved);
+        Assert.AreEqual(expected ? 1 : 0, uploadCalls);
+        Assert.AreEqual(expected ? 1 : 0, downloadCalls);
+    }
+
+    /// <summary>下载确认框拿到审批之前 stat 到的远端大小照实显示(与上传同一口径)。</summary>
+    [TestMethod]
+    public async Task DownloadPromptIsGivenTheRemoteSize()
+    {
+        const long size = 5L * 1024 * 1024 * 1024 + 7;
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileDownloadAsync("p", "target", "/remote", "/local", false, size, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        var gate = new PluginPermissionGate(null, prompt);
+        using DownloadPermissionLease lease = gate.CreateDownloadLease("p");
+        Assert.IsTrue(await gate.CheckDownloadAsync(lease, "p", "target", "/remote", "/local", false, size, default));
+    }
+
     [TestMethod]
     public async Task PendingUploadCanBeRevokedAndCancellationCallbackMayDisposeLease()
     {
@@ -115,14 +156,14 @@ public class PluginPermissionGateTests
         foreach (PluginPermissionDecision decision in new[] { PluginPermissionDecision.Deny, PluginPermissionDecision.AllowSession, PluginPermissionDecision.AllowAlways })
         {
             IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-            prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(decision);
+            prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(decision);
             var gate = new PluginPermissionGate(null, prompt);
             using var lease = gate.CreateDownloadLease("p");
-            Assert.IsFalse(await gate.CheckDownloadAsync(lease, "p", "real-session", "/source", "destination", false, default));
+            Assert.IsFalse(await gate.CheckDownloadAsync(lease, "p", "real-session", "/source", "destination", false, 3, default));
         }
         var noPrompt = new PluginPermissionGate(null, null);
         using var pending = noPrompt.CreateDownloadLease("p");
-        Assert.IsFalse(await noPrompt.CheckDownloadAsync(pending, "p", "session", "/source", "target", false, default));
+        Assert.IsFalse(await noPrompt.CheckDownloadAsync(pending, "p", "session", "/source", "target", false, 3, default));
         Assert.IsTrue(await noPrompt.HasGrantAsync("p"));
         await noPrompt.RevokeAsync("p");
         Assert.IsTrue(pending.IsRevoked);

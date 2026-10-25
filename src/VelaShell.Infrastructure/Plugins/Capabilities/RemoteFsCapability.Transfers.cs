@@ -94,15 +94,24 @@ internal sealed partial class RemoteFsCapability
         {
             if (FindUploadReceipt(sessionId, local, remote, options) is { } previous) return Task.FromResult(previous);
             session = Resolve(sessionId);
-            ThrowIfUploadQuotaReached();
+            ThrowIfTransferQuotaReached("upload");
         }
         // 解析、打开与核验源都是阻塞 I/O(没有写端的 FIFO 能让 open 一直等下去),一律放在账本锁外:
         // 锁里只做回执查重与登记,同插件的查询、取消、断线回调与停用不会陪着卡住。
-        string resolved = ResolveUploadSource(local);
-        RejectLinks(resolved);
-        RejectSpecialSource(resolved);
-        var source = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        string resolved;
+        FileStream source;
+        try
+        {
+            resolved = ResolveUploadSource(local);
+            RejectLinks(resolved);
+            RejectSpecialSource(resolved);
+            source = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+        }
+        catch (Exception ex) when (AsSourceRejection(ex) is { } rejected)
+        {
+            throw rejected;
+        }
         try
         {
             RejectLinks(resolved);
@@ -120,7 +129,7 @@ internal sealed partial class RemoteFsCapability
                 }
                 // 会话也可能在这段时间里断开,而断线回调只停已登记的任务:登记前再查一次(只是查表,不阻塞)。
                 Resolve(sessionId);
-                ThrowIfUploadQuotaReached();
+                ThrowIfTransferQuotaReached("upload");
                 var stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
                 if (options.Timeout is { } budget) stop.CancelAfter(budget);
                 DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -156,8 +165,37 @@ internal sealed partial class RemoteFsCapability
                 return Task.FromResult(Read(op));
             }
         }
+        catch (Exception ex) when (AsSourceRejection(ex) is { } rejected)
+        {
+            // 打开之后、登记之前文件没了(核验时按路径再走一遍才发现):同样什么都没登记。
+            source.Dispose();
+            throw rejected;
+        }
         catch { source.Dispose(); throw; }
     }
+
+    private const int SharingViolationHResult = unchecked((int)0x80070020);   // ERROR_SHARING_VIOLATION
+    private const int LockViolationHResult = unchecked((int)0x80070021);      // ERROR_LOCK_VIOLATION
+
+    /// <summary>
+    /// 登记之前、源文件这一侧的明确拒绝 → <see cref="PluginTransferRejectedException" />(SDK 2.1.3):源不存在或已删除
+    /// 记 <see cref="RemoteTransferRejectReason.SourceNotFound" />,被别的程序以拒读共享打开或锁住记
+    /// <see cref="RemoteTransferRejectReason.SourceInUse" />。其余照旧是原来的类型 —— 链接、特殊文件、核验不过
+    /// (<see cref="NotSupportedException" /> / <see cref="IOException" />)、没有权限(<see cref="UnauthorizedAccessException" />)。
+    /// </summary>
+    /// <remarks>
+    /// 分开报的理由在调用方:这几种原先都是 <see cref="IOException" />,插件按约定把它当成「回执可能丢了」,
+    /// 用同一个 OperationId 重取 —— 撞上同一个错误之后只能记成「结果未知」,整轮不敢再动。
+    /// 新类型等于宿主保证什么都没开始;消息里不带路径(会转给模型)。
+    /// </remarks>
+    private static PluginTransferRejectedException? AsSourceRejection(Exception ex) => ex switch
+    {
+        FileNotFoundException or DirectoryNotFoundException => new(RemoteTransferRejectReason.SourceNotFound,
+            "The local source file does not exist (it may have been moved or deleted).", ex),
+        IOException { HResult: SharingViolationHResult or LockViolationHResult } => new(RemoteTransferRejectReason.SourceInUse,
+            "The local source file is locked or open in another program without read sharing.", ex),
+        _ => null
+    };
 
     /// <summary>
     /// 同一 OperationId 已登记过时按幂等规则重取回执(方向或参数不符一律拒绝,绝不重新打开源);没有回执时为 null。
@@ -172,12 +210,19 @@ internal sealed partial class RemoteFsCapability
         return ReadAuthorized(previous.Operation);
     }
 
-    /// <summary>回执与活动任务额度;调用方须持有 <see cref="_transfersGate" />。</summary>
-    private void ThrowIfUploadQuotaReached()
+    /// <summary>
+    /// 回执与活动任务额度(上传、下载共用);调用方须持有 <see cref="_transfersGate" />。额度满是登记之前的明确拒绝,
+    /// 抛 <see cref="PluginTransferRejectedException" />(<see cref="RemoteTransferRejectReason.QuotaExceeded" />);
+    /// 它派生自 <see cref="InvalidOperationException" />,与先前抛的类型兼容。
+    /// </summary>
+    private void ThrowIfTransferQuotaReached(string queue)
     {
-        if (_receipts.Count >= MaxRecords) throw new InvalidOperationException("Transfer operation receipt quota reached for this plugin lifetime.");
+        if (_receipts.Count >= MaxRecords)
+            throw new PluginTransferRejectedException(RemoteTransferRejectReason.QuotaExceeded,
+                "Transfer operation receipt quota reached for this plugin lifetime.");
         if (_transfers.Values.Count(op => !op._worker.IsCompleted) >= MaxActiveUploads)
-            throw new InvalidOperationException("Active upload queue quota reached for this plugin.");
+            throw new PluginTransferRejectedException(RemoteTransferRejectReason.QuotaExceeded,
+                $"Active {queue} queue quota reached for this plugin; wait for running transfers to finish.");
     }
 
     public Task<RemoteTransferSnapshot> GetTransferAsync(string transferId, CancellationToken cancellationToken = default)
@@ -312,7 +357,10 @@ internal sealed partial class RemoteFsCapability
             }
             else
             {
-                if (!directory.Exists || IsLink(directory.FullName, directory.Attributes))
+                // 目录不在单独报:那是「源找不到」(启动前被拒,见 AsSourceRejection),不是核验失败。
+                if (!directory.Exists)
+                    throw new DirectoryNotFoundException("The upload source directory does not exist.");
+                if (IsLink(directory.FullName, directory.Attributes))
                     throw new IOException("Cannot verify the upload source directory.");
                 current = directory.FullName;
             }
@@ -482,11 +530,10 @@ internal sealed partial class RemoteFsCapability
             SshSession target = connections.GetSession(session) ?? throw new PluginSessionNotFoundException(Read(op).SessionId);
             string label = $"{target.ConnectionInfo.Username}@{target.ConnectionInfo.Host}:{target.ConnectionInfo.Port}";
             bool approved = await uploadPermissions.CheckUploadAsync(op._permission, pluginId, label, Read(op).LocalPath,
-                Read(op).RemotePath, options.Overwrite, op._sourceLength, ct).ConfigureAwait(false);
+                Read(op).RemotePath, options.Overwrite, op._sourceLength, ct, () => EnterTransferPhase(op)).ConfigureAwait(false);
             if (!approved) throw new PluginPermissionDeniedException("The user denied this upload.");
-            ct.ThrowIfCancellationRequested();
+            ConfirmApprovedOrCancelled(op, ct);
             ValidateSource(op);
-            Update(op, s => s with { State = RemoteTransferState.Queued, Phase = RemoteTransferPhase.Transfer });
             await _uploadSlots.WaitAsync(ct).ConfigureAwait(false);
             slot = true;
             ct.ThrowIfCancellationRequested();
@@ -794,6 +841,42 @@ internal sealed partial class RemoteFsCapability
             // 先到者为准:死线已到或插件已停用时令牌早已取消,不改写成后来的原因。
             if (!op._stop.IsCancellationRequested && op._stopReason == StopReason.None) op._stopReason = reason;
             op._stop.Cancel();
+        }
+    }
+
+    /// <summary>
+    /// 批准生效的那一刻(授权闸登记批准的锁里,见 <see cref="PluginPermissionGate.CheckUploadAsync" /> 的 onApproved)
+    /// 把任务从「等确认」推进到「已批准、排队等传输槽」:<see cref="RemoteTransferState.Queued" /> + <see cref="RemoteTransferPhase.Transfer" />。
+    /// </summary>
+    /// <remarks>
+    /// 原先阶段要等批准的回执回到后台任务里才改(下载更晚,要等拿到传输槽),中间这段插件读到的仍是 Approval ——
+    /// AI 插件按「Approval 才撤」的口径在停止时撤掉等确认的任务,读到旧阶段就把用户刚批准的那个也撤了
+    /// (插件已改为撤前先 GetTransferAsync,但取到的还是 Approval,挡不住)。取消已经登记的不推进:
+    /// 那一项随后在 <see cref="ConfirmApprovedOrCancelled" /> 里以 Cancelled 收尾。
+    /// </remarks>
+    private static void EnterTransferPhase(UploadOperation op)
+    {
+        lock (op._gate)
+        {
+            if (op._snapshot.IsTerminal || op._snapshot.CancellationRequested || op._snapshot.Phase != RemoteTransferPhase.Approval) return;
+            Update(op, s => s with { State = RemoteTransferState.Queued, Phase = RemoteTransferPhase.Transfer });
+        }
+    }
+
+    /// <summary>
+    /// 批准之后、碰源文件与传输槽之前,在任务自己的锁里定下「传还是不传」:已经要求取消的(取消与批准几乎同时到)
+    /// 以 Cancelled 收尾、一个字节都不传;否则确保阶段已是 Transfer(授权闸没替我们推进时补上)。
+    /// 取消请求(<see cref="CancelTransferAsync" />)在同一把锁里登记意图并发出停止,所以两边只会有一个先后:
+    /// 取消先到就一个字节都不传(不会「撤了还在传」);批准先到,插件此后读到的就已经是 Transfer 阶段,
+    /// 不会再按「还在等确认」把它撤掉。插件读快照与发取消之间那一个往返的空当这里合不上,要 SDK 提供条件取消。
+    /// </summary>
+    private static void ConfirmApprovedOrCancelled(UploadOperation op, CancellationToken ct)
+    {
+        lock (op._gate)
+        {
+            if (op._snapshot.CancellationRequested) throw new OperationCanceledException(ct);
+            ct.ThrowIfCancellationRequested();
+            EnterTransferPhase(op);
         }
     }
 

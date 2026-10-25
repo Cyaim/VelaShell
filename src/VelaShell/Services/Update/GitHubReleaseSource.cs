@@ -5,6 +5,7 @@ using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using VelaShell.PluginSdk.Versioning;
 
 namespace VelaShell.Services.Update;
 
@@ -80,7 +81,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
     /// <inheritdoc />
     public async Task<ReleaseNotes?> GetReleaseNotesForVersionAsync(string version, CancellationToken cancellationToken = default)
     {
-        if (!UpdateVersion.TryParse(version, out UpdateVersion expectedVersion))
+        if (!SemanticVersion.TryParse(version, out SemanticVersion expectedVersion))
         {
             throw new ArgumentException("Invalid release version.", nameof(version));
         }
@@ -89,8 +90,9 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
         string original = version.Trim().Split('+')[0];
         bool prefixed = original.StartsWith('v') || original.StartsWith('V');
         string bare = prefixed ? original[1..] : original;
-        string normalized = expectedVersion.ToString();
-        // 原写法优先;仅 404 才试有/无 v 与三段规范化,不枚举标签或访问 API。
+        // 规范写法去掉构建元数据:标签从不带 +xxx(原写法也已截掉),带上只会多试一个必然 404 的地址。
+        string normalized = expectedVersion.ToString().Split('+')[0];
+        // 原写法优先;仅 404 才试有/无 v 与规范化写法(三段,第四段非 0 时四段),不枚举标签或访问 API。
         string[] candidates = [original, prefixed ? bare : "v" + bare,
             prefixed ? "v" + normalized : normalized, prefixed ? normalized : "v" + normalized];
         foreach (string tag in candidates.Distinct(StringComparer.Ordinal))
@@ -107,7 +109,7 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
     }
 
     private async Task<ReleaseNotes?> ReadReleaseNotesAsync(
-        string url, UpdateVersion? expectedVersion, string? requestedTag, CancellationToken cancellationToken)
+        string url, SemanticVersion? expectedVersion, string? requestedTag, CancellationToken cancellationToken)
     {
         // 同时保护缓存与复验过程,同 URL 的并发读取只发一次请求;等待也受本次整体超时约束。
         await _notesGate.WaitAsync(cancellationToken);
@@ -138,8 +140,8 @@ public sealed class GitHubReleaseSource : IUpdateSource, IReleaseNotesSource
             await using Stream body = await response.Content.ReadAsStreamAsync(cancellationToken);
             using JsonDocument doc = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
             ReleaseNotes notes = ParseReleaseNotes(doc.RootElement);
-            if (!UpdateVersion.TryParse(notes.Tag, out UpdateVersion tagVersion)
-                || (expectedVersion is { } expected ? tagVersion != expected : tagVersion.PreRelease.Length != 0)
+            if (!SemanticVersion.TryParse(notes.Tag, out SemanticVersion tagVersion)
+                || (expectedVersion is { } expected ? tagVersion != expected : tagVersion.IsPreRelease)
                 || (requestedTag != null && !string.Equals(notes.Tag, requestedTag, StringComparison.Ordinal)))
             {
                 throw new FormatException("latest.json: unexpected release tag");

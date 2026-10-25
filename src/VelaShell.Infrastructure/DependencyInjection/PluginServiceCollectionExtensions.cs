@@ -35,6 +35,13 @@ public static class PluginServiceCollectionExtensions
                 sp.GetRequiredService<Core.Data.ISecretProtector>(),
                 Path.Combine(paths.RootDirectory, "trusted-plugin-publishers.json"));
         });
+        // 插件发往消息中心的通知:进程内的界面能力与隔离插件的 ui/notify 共用这一个实例(限频与静音按插件算)。
+        // 显示名按需向 PluginManager 取(投递时它早已建好),这里不依赖它,两者之间没有构造环。
+        // 没有消息中心的宿主(只装了插件运行时的测试组合)解析出 null,插件那边如实报不支持。
+        services.AddSingleton(sp => sp.GetService<Core.Notifications.INotificationCenter>() is { } center
+            ? new PluginNotificationService(center, sp.GetService<Core.Data.IAppDataStore>(),
+                pluginId => sp.GetService<PluginManager>()?.Plugins.FirstOrDefault(p => p.Id == pluginId)?.Manifest?.DisplayName)
+            : null!);
         services.AddSingleton<PluginManager>(sp =>
         {
             VelaShellStoragePaths paths = sp.GetRequiredService<VelaShellStoragePaths>();
@@ -75,6 +82,7 @@ public static class PluginServiceCollectionExtensions
                 SudoPrompt = sp.GetService<ISudoPrompt>(),
                 Sftp = sp.GetService<ISftpService>(),
                 UploadPermissions = sp.GetService<PluginPermissionGate>(),
+                Notifications = sp.GetService<PluginNotificationService>(),
                 Theme = sp.GetService<IThemeService>(),
                 Localization = sp.GetService<ILocalizationService>(),
                 CommandsFactory = sp.GetService<Func<string, IPluginLogger, ICommandsApi>>(),

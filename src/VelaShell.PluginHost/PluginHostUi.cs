@@ -17,10 +17,15 @@ namespace VelaShell.PluginHost;
 /// <see cref="PanelDisplayMode.Document" /> 与 <see cref="PanelDisplayMode.Window" />
 /// 在隔离模式下都是独立卡片窗口;需要真·dock 标签页请用 <c>inProcess</c> 宿主模式。
 /// 面板数变化上报宿主(空闲回收的"无打开面板"条件)。
+/// <para>
+/// 往消息中心发通知走 <c>ui/notify</c>:宿主握手宣告了(<see cref="HandshakeResponse.SupportsNotifications" />)才支持;
+/// 先在本进程用 SDK 的同一套规则校验,不合格的不必过一趟进程边界。发送方由连接绑定,宿主那边不信消息里的任何身份。
+/// </para>
 /// </remarks>
-internal sealed class PluginHostUi(string pluginId, IPluginLogger log, RpcConnection rpc)
+internal sealed class PluginHostUi(string pluginId, IPluginLogger log, RpcConnection rpc, bool supportsNotifications = false)
     : IUiApi, IDisposable
 {
+    private static readonly TimeSpan NotifyTimeout = TimeSpan.FromSeconds(30);
     private readonly Lock _gate = new();
     private readonly List<IPluginPanel> _panels = [];
     private bool _disposed;
@@ -68,6 +73,24 @@ internal sealed class PluginHostUi(string pluginId, IPluginLogger log, RpcConnec
         });
         Track(panel);
         return panel;
+    }
+
+    /// <inheritdoc />
+    public bool SupportsNotifications => supportsNotifications;
+
+    /// <inheritdoc />
+    public async Task<PluginNotificationOutcome> PostNotificationAsync(PluginNotification notification,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
+        if (!supportsNotifications)
+        {
+            throw new NotSupportedException("This host does not accept plugin notifications.");
+        }
+        notification.Validate(pluginId);
+        UiNotifyResponse? response = await rpc.RequestAsync<UiNotifyResponse>(PluginRpc.UiNotify,
+            new UiNotifyRequest(notification), NotifyTimeout, cancellationToken).ConfigureAwait(false);
+        return response?.Outcome ?? PluginNotificationOutcome.Unknown;
     }
 
     private static Control RequireControl(object content) =>

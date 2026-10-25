@@ -19,6 +19,12 @@ public sealed class PluginManagerOptions
     /// <summary>独立上传的逐任务可信授权闸;未配置时上传失败关闭,不影响旧文件 API。</summary>
     public PluginPermissionGate? UploadPermissions { get; init; }
 
+    /// <summary>
+    /// 插件发往消息中心的通知(与界面能力共用同一个实例);卸载插件时经它删掉那个插件发过的消息与静音记录。
+    /// 缺省时不清理(headless 测试路径,也没有消息中心)。
+    /// </summary>
+    public PluginNotificationService? Notifications { get; init; }
+
     /// <summary>插件发现根目录(按序;同 id 先到先得)。不存在的目录自动跳过。</summary>
     public required IReadOnlyList<string> PluginRoots { get; init; }
 

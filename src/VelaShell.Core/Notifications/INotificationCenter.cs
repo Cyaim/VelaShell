@@ -28,7 +28,8 @@ public interface INotificationCenter
     /// **且保留原有的已读状态** —— 每次启动都重新投递同一条"有新版本"时,
     /// 不该把用户读过的又变回未读。
     /// </summary>
-    Task PublishAsync(IEnumerable<NotificationItem> items, CancellationToken cancellationToken = default);
+    /// <returns>这次真正新增的条数(同 id 已在的不算)。插件通知靠它分辨「新发」与「早就发过」。</returns>
+    Task<int> PublishAsync(IEnumerable<NotificationItem> items, CancellationToken cancellationToken = default);
 
     /// <summary>把一条标记为已读。</summary>
     Task MarkReadAsync(string id, CancellationToken cancellationToken = default);
@@ -38,6 +39,12 @@ public interface INotificationCenter
 
     /// <summary>删除一条。</summary>
     Task RemoveAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 删除 <see cref="NotificationItem.Id" /> 以 <paramref name="idPrefix" /> 开头的全部消息(按序数比较),返回删了几条。
+    /// 卸载插件时用它清掉那个插件发过的消息(插件消息的 id 是 <c>plugin:&lt;插件 id&gt;:…</c>)。
+    /// </summary>
+    Task<int> RemoveByIdPrefixAsync(string idPrefix, CancellationToken cancellationToken = default);
 
     /// <summary>清空全部消息。</summary>
     Task ClearAsync(CancellationToken cancellationToken = default);

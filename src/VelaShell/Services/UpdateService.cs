@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
+using VelaShell.PluginSdk.Versioning;
 using VelaShell.Services.Update;
 
 namespace VelaShell.Services;
@@ -126,8 +127,8 @@ public class UpdateService : IUpdateService
                 await _channelProvider(), "preview", StringComparison.OrdinalIgnoreCase);
             UpdateManifest? manifest = await _source.GetLatestManifestAsync(includePreRelease);
             if (manifest == null
-                || !UpdateVersion.TryParse(manifest.Version, out UpdateVersion latest)
-                || !UpdateVersion.TryParse(CurrentVersion, out UpdateVersion current)
+                || !SemanticVersion.TryParse(manifest.Version, out SemanticVersion latest)
+                || !SemanticVersion.TryParse(CurrentVersion, out SemanticVersion current)
                 || latest.CompareTo(current) <= 0
                 || manifest.AssetForCurrentPlatform() is not { } asset)
             {
@@ -317,8 +318,8 @@ public class UpdateService : IUpdateService
             throw new InvalidOperationException("This installation does not support self-updating.");
         }
         if (!manifest.IsEligibleForInstallation()
-            || !UpdateVersion.TryParse(manifest.Version, out UpdateVersion latest)
-            || !UpdateVersion.TryParse(CurrentVersion, out UpdateVersion current)
+            || !SemanticVersion.TryParse(manifest.Version, out SemanticVersion latest)
+            || !SemanticVersion.TryParse(CurrentVersion, out SemanticVersion current)
             || latest.CompareTo(current) <= 0)
         {
             throw new ArgumentException("The update manifest is not an eligible newer installation candidate.", nameof(manifest));

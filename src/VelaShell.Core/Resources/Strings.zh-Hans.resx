@@ -5680,6 +5680,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>系统</value>
   </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>插件</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>来自 {0}</value>
+  </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>跳到第 {0} 个标签</value>
   </data>
@@ -6304,7 +6310,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="PluginPermDownload_Title"><value>文件下载授权</value></data>
   <data name="PluginPermDownload_AllowOnce"><value>允许本次下载</value></data>
   <data name="PluginPermDownload_Message"><value>插件“{0}”请求从 {1} 下载到本机文件。批准仅对当前任务有效。</value></data>
-  <data name="PluginPermDownload_Preview"><value>远端源文件：{0}&#10;本机目标：{1}&#10;目标策略：{2}</value></data>
+  <data name="PluginPermDownload_Preview"><value>远端源文件：{0}&#10;大小：{3}&#10;本机目标：{1}&#10;目标策略：{2}</value></data>
   <data name="PluginPermSession_Title" xml:space="preserve">
     <value>连接请求</value>
   </data>
@@ -6322,6 +6328,15 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>查看日志</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>静音通知</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>恢复通知</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>不再让这个插件往消息中心里发消息。它已经发的留着，要删在消息中心里删；卸载插件时一并删掉。</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>插件日志 · {0}</value>

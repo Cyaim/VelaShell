@@ -85,10 +85,10 @@ public sealed class NotificationCenter(IAppDataStore? store = null) : INotificat
     }
 
     /// <inheritdoc />
-    public async Task PublishAsync(IEnumerable<NotificationItem> items, CancellationToken cancellationToken = default)
+    public async Task<int> PublishAsync(IEnumerable<NotificationItem> items, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
-        bool added = false;
+        int added = 0;
         lock (_gate)
         {
             foreach (NotificationItem item in items)
@@ -100,16 +100,17 @@ public sealed class NotificationCenter(IAppDataStore? store = null) : INotificat
                     continue;
                 }
                 _items.Add(item);
-                added = true;
+                added++;
             }
-            if (!added)
+            if (added == 0)
             {
-                return;
+                return 0;
             }
             Prune();
         }
         Changed?.Invoke();
         await SaveAsync(cancellationToken).ConfigureAwait(false);
+        return added;
     }
 
     /// <inheritdoc />
@@ -141,6 +142,19 @@ public sealed class NotificationCenter(IAppDataStore? store = null) : INotificat
     /// <inheritdoc />
     public Task RemoveAsync(string id, CancellationToken cancellationToken = default) =>
         MutateAsync(items => items.RemoveAll(item => item.Id == id) > 0, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<int> RemoveByIdPrefixAsync(string idPrefix, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(idPrefix);
+        int removed = 0;
+        await MutateAsync(items =>
+        {
+            removed = items.RemoveAll(item => item.Id.StartsWith(idPrefix, StringComparison.Ordinal));
+            return removed > 0;
+        }, cancellationToken).ConfigureAwait(false);
+        return removed;
+    }
 
     /// <inheritdoc />
     public Task ClearAsync(CancellationToken cancellationToken = default) =>

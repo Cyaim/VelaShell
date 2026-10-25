@@ -27,7 +27,11 @@ public enum NotificationKind
     /// 走消息中心而不是启动弹窗:崩溃提示要的是"下次打开时能看到并取证",
     /// 不是在用户想干活的那一刻挡在前面。
     /// </remarks>
-    System
+    System,
+
+    /// <summary>插件经 SDK 的 <c>IUiApi.PostNotificationAsync</c> 发来的消息(来源见 <see cref="NotificationItem.Source" />)。</summary>
+    /// <remarks>排在最后、只增不改:消息跨重启落盘,枚举值改了旧消息就换了种类。</remarks>
+    Plugin
 }
 
 /// <summary>消息的轻重,决定列表里的强调程度。</summary>
@@ -82,6 +86,12 @@ public sealed class NotificationItem
 
     /// <summary>点击这条消息去哪;null 表示没有可去的地方(纯告知)。</summary>
     public NotificationLink? Link { get; init; }
+
+    /// <summary>
+    /// 来源(列表里写成「来自 …」);宿主自己的消息为 null。插件消息是发送时那个插件的显示名 ——
+    /// 宿主按连接 / 实例绑定的插件身份填,不取自消息本身,插件冒充不了别人,也冒充不了宿主。
+    /// </summary>
+    public string? Source { get; init; }
 }
 
 /// <summary>
