@@ -213,9 +213,24 @@ public sealed class ProviderSetupView : UserControl
             {
                 continue;
             }
-            _newProviderEntry = _creatingProvider = false;
-            _focusedProviderId = _settings.Providers.Any(p => p.Id == providerId && p.CatalogId == catalogId)
+            string? focused = _settings.Providers.Any(p => p.Id == providerId && p.CatalogId == catalogId)
                 ? providerId : null;
+            // 复用窗口时与 StartNewProvider 同一道守卫:登录正跑着或草稿还没提交,只把窗口提到前面 ——
+            // Expand 先 Collapse,会掐掉浏览器那边正等着回调的登录、丢掉填到一半的表单(#616–#636 复审②)。
+            // 之后再点别的行按编辑处理(这个入口是来"管理"已有实例的)
+            if (_login is not null || _addingAnother || _addingKey || _newProviderDraft is not null)
+            {
+                _newProviderEntry = false;
+                return;
+            }
+            // 要管的这一份已经摆着:不重建,改到一半的字段留着
+            if (_openId == catalogId && row.Slot.IsVisible && focused is not null && focused == _focusedProviderId)
+            {
+                row.Card.BringIntoView();
+                return;
+            }
+            _newProviderEntry = _creatingProvider = false;
+            _focusedProviderId = focused;
             Expand(row);
             row.Card.BringIntoView();
             return;

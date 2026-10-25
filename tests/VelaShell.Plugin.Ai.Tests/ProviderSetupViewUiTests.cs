@@ -1443,6 +1443,91 @@ public sealed class ProviderSetupViewUiTests
     }
 
     /// <summary>
+    /// 复用的目录窗口从设置页点「管理登录」(<see cref="ProviderSetupView.FocusEntry" />)过来:与「新增供应商」同一条规矩,
+    /// 登录在跑或草稿没提交时只把窗口提到前面,不掐登录、不丢草稿(#616–#636 复审②)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("draft")]
+    [DataRow("login")]
+    [DataRow("key-draft")]
+    public void ManageLoginAgain_KeepsTheRunningLoginAndTheUnsavedDraft(string pending)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            AiProvider other = ProviderCatalog.Find("deepseek")!.CreateProvider();
+            AiProvider keyed = ProviderCatalog.Find("groq")!.CreateProvider();
+            (Window window, ProviderSetupView view, _, _) =
+                await ShowAsync(context, new AiSettings { Providers = [other, keyed] });
+            try
+            {
+                if (pending == "draft")
+                {
+                    await ClickRowAsync(window, view, "custom-openai");
+                    Find<TextBox>(view, "SetupKeyBox").Text = "sk-half-filled";
+                }
+                else if (pending == "key-draft")
+                {
+                    view.FocusEntry(keyed.CatalogId, keyed.Id);
+                    await PumpAsync();
+                    Click(Find<Button>(view, "SetupAddAnotherButton"));
+                    await PumpAsync();
+                    Find<TextBox>(view, "SetupKeyBox").Text = "sk-second-key";
+                }
+                else
+                {
+                    await ClickRowAsync(window, view, "openrouter");
+                    Click(Find<Button>(view, "SetupPrimaryButton"));
+                    await PumpAsync(40);
+                }
+                TextBlock progress = Find<TextBlock>(view, "SetupProgressText");
+                string? progressText = progress.Text;
+
+                view.FocusEntry(other.CatalogId, other.Id);
+                await PumpAsync();
+
+                Assert.AreSame(progress, FindOrNull<TextBlock>(view, "SetupProgressText"), "正在进行的这一份不能被重建");
+                Assert.AreEqual(progressText, progress.Text);
+                if (pending == "draft") Assert.AreEqual("sk-half-filled", Find<TextBox>(view, "SetupKeyBox").Text);
+                else if (pending == "key-draft") Assert.AreEqual("sk-second-key", Find<TextBox>(view, "SetupKeyBox").Text);
+                else Assert.AreEqual("Cancel", (string?)Find<Button>(view, "SetupSecondaryButton").Content, "登录仍在等回调");
+            }
+            finally
+            {
+                view.CancelPendingLogin();
+                await PumpAsync();
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>复用窗口里已经摆着这一份的表单:再点一次「管理登录」不重建,填到一半的字段留着。</summary>
+    [TestMethod]
+    public void ManageLoginForTheShownProvider_DoesNotRebuildTheForm()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            AiProvider provider = ProviderCatalog.Find("deepseek")!.CreateProvider();
+            (Window window, ProviderSetupView view, _, _) = await ShowAsync(context, new AiSettings { Providers = [provider] });
+            try
+            {
+                view.FocusEntry(provider.CatalogId, provider.Id);
+                await PumpAsync();
+                TextBox name = Find<TextBox>(view, "SetupNameBox");
+                name.Text = "half-edited";
+
+                view.FocusEntry(provider.CatalogId, provider.Id);
+                await PumpAsync();
+
+                Assert.AreSame(name, Find<TextBox>(view, "SetupNameBox"));
+                Assert.AreEqual("half-edited", name.Text);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    /// <summary>
     /// 填 Key 的新建草稿自成一体(不带来源的 Key 与模型清单):来源实例在别处被删,
     /// 草稿照样能加成独立实例,不该以「来源已移除」拒绝。
     /// </summary>
