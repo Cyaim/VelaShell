@@ -359,7 +359,10 @@ public sealed partial class RemoteTransferTests
         try
         {
             await Assert.ThrowsExactlyAsync<NotSupportedException>(() => api.StartUploadAsync(_session.ToString(), leaf, "/target", new() { OperationId = "leaf" }));
-            await Assert.ThrowsAsync<IOException>(() => api.StartUploadAsync(_session.ToString(), Path.Combine(missing, "source"), "/target", new() { OperationId = "missing" }));
+            PluginTransferRejectedException missingSource = await Assert.ThrowsExactlyAsync<PluginTransferRejectedException>(
+                () => api.StartUploadAsync(_session.ToString(), Path.Combine(missing, "source"), "/target", new() { OperationId = "missing" }));
+            Assert.AreEqual(RemoteTransferRejectReason.SourceNotFound, missingSource.Reason);
+            Assert.IsInstanceOfType<DirectoryNotFoundException>(missingSource.InnerException);
             await Assert.ThrowsAsync<IOException>(() => api.StartUploadAsync(_session.ToString(), Path.Combine(loop, "source"), "/target", new() { OperationId = "loop" }));
             Assert.AreEqual(0, api.ActiveTransfers);
         }
