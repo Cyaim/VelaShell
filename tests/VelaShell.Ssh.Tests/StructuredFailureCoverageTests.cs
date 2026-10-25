@@ -33,7 +33,7 @@ public sealed class StructuredFailureCoverageTests
         ("new SftpUnavailableException(", "FailureKind =", null),
         // 本库自己报的「服务端不支持」只在服务端缺扩展时出现：缺的是哪个要有结构化的出处。
         ("new SftpException(", "MissingExtensions =", ["OperationUnsupported"]),
-        ("new SshConnectException(", "FailureKind =", ["HostKeyRejected", "HostKeyChanged", "ProxyRefused"]),
+        ("new SshConnectException(", "FailureKind =", ["HostKeyRejected", "HostKeyChanged", "ProxyRefused", "SshFailureReason.Unknown"]),
     ];
 
     [TestMethod]

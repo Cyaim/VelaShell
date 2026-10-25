@@ -6694,6 +6694,9 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_TcpUnreachable" xml:space="preserve">
     <value>The network or host is unreachable.</value>
   </data>
+  <data name="SshErr_TcpConnectFailed" xml:space="preserve">
+    <value>Cannot connect to {0} ({1}).</value>
+  </data>
   <data name="SshErr_ProxyAuthRequired" xml:space="preserve">
     <value>The proxy requires authentication, but no proxy credentials are configured.</value>
   </data>
@@ -6879,6 +6882,9 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="SshErr_Disconnected" xml:space="preserve">
     <value>The server ended the session.</value>
+  </data>
+  <data name="SshErr_ConnectionFaulted" xml:space="preserve">
+    <value>The connection was interrupted by an unexpected error: {0}</value>
   </data>
   <data name="SshErr_KeyPassphraseRequired" xml:space="preserve">
     <value>The private key is encrypted and needs its passphrase.</value>

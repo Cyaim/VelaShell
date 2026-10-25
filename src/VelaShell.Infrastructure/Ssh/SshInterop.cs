@@ -138,6 +138,10 @@ internal static partial class SshInterop
             Phase: SshPhase.Rekeying,
             InnerException: SshConnectException { FailureKind: not SshConnectFailureKind.Unknown } rekey,
         } => $"{Strings.Format("SshErr_RekeyFailed", DescribeConnectFailure(rekey))} [{ex.Reason} @ {ex.Phase}]",
+        // 会话因为一个意外的(不是 IO、帧格式、协议)异常判死:库把它包一层、原因码是 Unknown(说不清就报不知道),原异常在内层。
+        // 内层的类型名与消息(按系统语言)就是全部线索;曾经透传「连接因意外错误中断:…」这句中文。
+        SshConnectionClosedException { Reason: SshFailureReason.Unknown, InnerException: { } fault } =>
+            $"{Strings.Format("SshErr_ConnectionFaulted", $"{fault.GetType().Name}: {fault.Message}")} [{ex.Reason} @ {ex.Phase}]",
         _ => LocalizeByReason(ex),
     };
 

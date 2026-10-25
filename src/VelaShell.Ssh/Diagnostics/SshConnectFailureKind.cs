@@ -22,6 +22,14 @@ public enum SshConnectFailureKind
     /// <summary>没归类。</summary>
     Unknown = 0,
 
+    // ---- 直连 TCP ----
+
+    /// <summary>
+    /// 连 <see cref="SshConnectException.Target"/> 失败，套接字错误不属于解析 / 拒绝 / 超时 / 不可达里的任何一类（本机防火墙拦了出站、本机地址不可用……），
+    /// 原因码因此是 <see cref="SshFailureReason.Unknown"/>；错误码在内层的 <c>SocketException</c>。
+    /// </summary>
+    TcpConnectFailed,
+
     // ---- 主机密钥：库自己验不过（还没轮到主机密钥策略）----
 
     /// <summary>服务端出示的主机密钥解析不了（内层是 <c>SshPublicKeyException</c>）。</summary>

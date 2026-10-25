@@ -83,6 +83,18 @@ public sealed class TcpDialerTests
 
         Assert.AreEqual(expected, translated.Reason);
         Assert.AreEqual(SshPhase.Dialing, translated.Phase);
+
+        // 说不清是哪一类的(Unknown)照样交出种类与目标,界面按它与内层的错误码说;原因码说得清的不归类。
+        if (expected == SshFailureReason.Unknown)
+        {
+            Assert.AreEqual($"连 host.example:22 失败：{error}。", translated.Message);
+            Assert.AreEqual(SshConnectFailureKind.TcpConnectFailed, translated.FailureKind);
+            Assert.AreEqual("host.example:22", translated.Target);
+        }
+        else
+        {
+            Assert.AreEqual(SshConnectFailureKind.Unknown, translated.FailureKind);
+        }
     }
 
     [TestMethod]

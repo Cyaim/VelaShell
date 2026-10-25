@@ -810,6 +810,31 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
         Assert.StartsWith(Strings.Get("SshErr_AgentAddRefusedDestination"), SshInterop.Localize(add));
     }
 
+    /// <summary>
+    /// 原因码说不清(Unknown)的两种:TCP 拨号的冷门套接字错误按种类、目标与错误码说;会话因意外异常判死时说内层的类型与消息。
+    /// 曾经都透传库的中文。
+    /// </summary>
+    [TestMethod]
+    public void 原因码说不清的拨号与断线也用界面语言说()
+    {
+        UseEnglish();
+        SshConnectException tcp = new(SshFailureReason.Unknown, SshPhase.Dialing, "连 host.example:22 失败：AccessDenied。",
+            new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.AccessDenied))
+        {
+            FailureKind = SshConnectFailureKind.TcpConnectFailed,
+            Target = "host.example:22",
+        };
+        Exception? translated = SshInterop.Translate(tcp);
+        Assert.IsInstanceOfType<VelaSshConnectionException>(translated);
+        Assert.AreEqual($"{Strings.Format("SshErr_TcpConnectFailed", "host.example:22", "AccessDenied")} [Unknown @ Dialing]", translated.Message);
+
+        SshConnectionClosedException faulted = new(SshFailureReason.Unknown, SshPhase.Open, "连接因意外错误中断：boom",
+            new InvalidCastException("boom"));
+        string text = SshInterop.Localize(faulted);
+        Assert.AreEqual($"{Strings.Format("SshErr_ConnectionFaulted", "InvalidCastException: boom")} [Unknown @ Open]", text);
+        AssertNoChinese("意外断线", text);
+    }
+
     /// <summary>转发上没带异常的失败:按原因、目标与时限说;撞上限时说拒了几条。</summary>
     [TestMethod]
     public void 没带异常的转发失败按原因与参数说()

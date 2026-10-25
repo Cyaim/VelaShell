@@ -316,6 +316,7 @@ internal static partial class SshInterop
     /// </summary>
     internal static string? ConnectFailureKey(SshConnectFailureKind kind) => kind switch
     {
+        SshConnectFailureKind.TcpConnectFailed => "SshErr_TcpConnectFailed",
         SshConnectFailureKind.HostKeyMalformed => "SshErr_HostKeyMalformed",
         SshConnectFailureKind.HostKeyAlgorithmMismatch => "SshErr_HostKeyAlgorithmMismatch",
         SshConnectFailureKind.HostKeyTooShort => "SshErr_HostKeyTooShort",
@@ -395,6 +396,9 @@ internal static partial class SshInterop
         string hex = ex.ProxyReplyCode is { } h ? h.ToString("X2", CultureInfo.InvariantCulture) : "?";
         return ex.FailureKind switch
         {
+            // 套接字错误码的枚举名跨语言一致(与库的原文一样),也最好搜。
+            SshConnectFailureKind.TcpConnectFailed => Strings.Format(key, target,
+                (ex.InnerException as System.Net.Sockets.SocketException)?.SocketErrorCode.ToString() ?? "?"),
             SshConnectFailureKind.HostKeyAlgorithmMismatch => Strings.Format(key,
                 PeerText.Sanitize(ex.HostKeyType, 128), PeerText.Sanitize(ex.HostKeyAlgorithm, 128)),
             SshConnectFailureKind.HostKeyTooShort => Strings.Format(key, ex.HostKeyBits, ex.MinimumHostKeyBits),

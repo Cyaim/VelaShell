@@ -7166,6 +7166,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshErr_TcpUnreachable" xml:space="preserve">
     <value>網路或主機無法連線。</value>
   </data>
+  <data name="SshErr_TcpConnectFailed" xml:space="preserve">
+    <value>無法連線到 {0}({1})。</value>
+  </data>
   <data name="SshErr_ProxyAuthRequired" xml:space="preserve">
     <value>代理伺服器要求驗證,但未設定代理憑據。</value>
   </data>
@@ -7351,6 +7354,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="SshErr_Disconnected" xml:space="preserve">
     <value>伺服器結束了工作階段。</value>
+  </data>
+  <data name="SshErr_ConnectionFaulted" xml:space="preserve">
+    <value>連線因意外錯誤而中斷:{0}</value>
   </data>
   <data name="SshErr_KeyPassphraseRequired" xml:space="preserve">
     <value>私鑰已加密,需要輸入密碼短語。</value>
