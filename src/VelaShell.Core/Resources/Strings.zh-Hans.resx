@@ -7181,6 +7181,15 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Sc_EnterSelectedFolder" xml:space="preserve">
     <value>进入选中的文件夹</value>
   </data>
+  <data name="Sc_RefreshDirectory" xml:space="preserve">
+    <value>刷新当前目录</value>
+  </data>
+  <data name="Sc_RenameSelected" xml:space="preserve">
+    <value>重命名选中的条目</value>
+  </data>
+  <data name="Sc_DeleteSelected" xml:space="preserve">
+    <value>删除选中的条目(先确认)</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve">
     <value>关闭编辑器</value>
   </data>
@@ -7270,6 +7279,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Sc_NoteListFocused" xml:space="preserve">
     <value>仅在列表获得焦点时</value>
+  </data>
+  <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
+    <value>焦点在这一栏里时(输入框除外)</value>
   </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve">
     <value>应用启用鼠标上报时需要</value>

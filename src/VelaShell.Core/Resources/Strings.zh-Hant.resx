@@ -7181,6 +7181,15 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Sc_EnterSelectedFolder" xml:space="preserve">
     <value>進入選取的資料夾</value>
   </data>
+  <data name="Sc_RefreshDirectory" xml:space="preserve">
+    <value>重新整理目前的目錄</value>
+  </data>
+  <data name="Sc_RenameSelected" xml:space="preserve">
+    <value>重新命名選取的項目</value>
+  </data>
+  <data name="Sc_DeleteSelected" xml:space="preserve">
+    <value>刪除選取的項目(先確認)</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve">
     <value>關閉編輯器</value>
   </data>
@@ -7270,6 +7279,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Sc_NoteListFocused" xml:space="preserve">
     <value>僅在清單取得焦點時</value>
+  </data>
+  <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
+    <value>焦點在這一欄時(輸入框除外)</value>
   </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve">
     <value>應用程式啟用滑鼠回報時需要</value>

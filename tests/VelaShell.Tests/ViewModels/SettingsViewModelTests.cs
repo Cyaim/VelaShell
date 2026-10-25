@@ -1299,7 +1299,7 @@ public class SettingsViewModelTests
     }
 
     // ———— 快捷键参考页的搜索 ————
-    // 全部断言只用键位(F5、Ctrl+Shift+L)而不用动作名:动作名随界面语言变,
+    // 全部断言只用键位(F2、F5、Ctrl+Shift+L)而不用动作名:动作名随界面语言变,
     // 键位不变,测试才不会因为跑测机器的语言不同而红。
 
     /// <summary>搜索一个只属于某一组的键位:其余分组整组消失,计数跟着收窄。</summary>
@@ -1310,9 +1310,9 @@ public class SettingsViewModelTests
         SettingsViewModel vm = CreateVm();
         int total = vm.FilteredShortcutGroups.Sum(group => group.FilteredItems.Count);
 
-        vm.ShortcutFilter = "F5";
+        vm.ShortcutFilter = "F2";
 
-        Assert.HasCount(1, vm.FilteredShortcutGroups, "F5 只在进程管理器一组里出现");
+        Assert.HasCount(1, vm.FilteredShortcutGroups, "F2 只在 SFTP 文件管理器一组里出现(F5 那里与任务管理器各有一行)");
         Assert.HasCount(1, vm.FilteredShortcutGroups[0].FilteredItems);
         Assert.IsTrue(vm.HasShortcutMatches);
         Assert.IsGreaterThan(1, total, "全量表不该只有一条,否则下面的收窄断言没意义");

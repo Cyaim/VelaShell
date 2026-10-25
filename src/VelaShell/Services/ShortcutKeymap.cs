@@ -287,6 +287,9 @@ public static class ShortcutGestures
         ("Alt+Up", "Sc_FocusPane"),
         ("Alt+Down", "Sc_FocusPane"),
         ("Ctrl+L", "Sc_EditPath"),
+        // 文件栏的视图内按键(Views/FilePaneKeys):窗口级键位先于路由事件吃键,占了它们文件栏就刷新 / 重命名不了。
+        ("F5", "Sc_RefreshDirectory"),
+        ("F2", "Sc_RenameSelected"),
     ];
 
     /// <summary>macOS 上终端内的复制粘贴(<c>KeyboardShortcutService</c>)。</summary>

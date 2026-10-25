@@ -72,17 +72,40 @@ public partial class LocalFilePaneView : UserControl
 
         // 手动输入路径(路径栏见 LocalPathBar)。Ctrl+L 走隧道,免得先被文件列表的键盘导航吃掉;
         // 登记在本地栏上,焦点在远端栏时由远端栏自己的 Ctrl+L 接。输入框收起后焦点回到列表。
+        // F5 / F2 / Delete 同一个处理器(见 FilePaneKeys)。
         AddHandler(KeyDownEvent, OnLocalPaneKeyDownTunnel, RoutingStrategies.Tunnel);
         PathBar.EditFinished += (_, _) => FileList.FocusSelectedOrFirstRow();
     }
 
     private void OnLocalPaneKeyDownTunnel(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control)
-            && DataContext is LocalFilePaneViewModel vm)
+        if (DataContext is not LocalFilePaneViewModel vm)
+        {
+            return;
+        }
+        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             vm.BeginPathEdit();
             e.Handled = true;
+            return;
+        }
+
+        // F5 / F2 / Delete(资源管理器口径,见 FilePaneKeys)。走隧道:F2 / Delete 要赶在列表自己的键盘处理之前。
+        switch (FilePaneKeys.Classify(e, FileList))
+        {
+            case FilePaneKeyAction.Refresh:
+                vm.RefreshCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Rename when vm.SelectedEntries is [{ IsParentEntry: false } entry]:
+                vm.RenameCommand.Execute(entry).Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Delete:
+                // 删除命令自己会先弹确认,只选着 ".." 时什么也不做。
+                vm.DeleteSelectedCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
         }
     }
 

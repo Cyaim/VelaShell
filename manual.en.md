@@ -399,6 +399,8 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Steps:** Select local items to upload, or remote items to download into the local pane's current directory. Directories transfer recursively. You can also drag items between the two panes. Files dragged in from the system file manager upload when dropped on the remote pane; the local pane does not accept them (the cursor shows no drop, and nothing is copied — use the system file manager to copy files between local folders). Remote context menus offer open, open with default editor, download, download as…, rename, move to, copy to, properties, and delete. "Download as…" appears only when you right-click a single file: pick the location and name in the system save dialog; if the dialog asked whether to replace an existing file and you agreed, it is overwritten — the "When a file already exists" policy does not ask, skip, or rename again, and the existing file is not treated as a partial download to resume. Permissions/ownership can change only where supported by protocol and account; the client cannot bypass server authorization.
 
+**Keyboard:** Both panes follow File Explorer: `F5` refreshes the current directory (focus anywhere in that pane except a text box); `F2` renames the selected item and `Delete` deletes the selected items. These two need focus in the file list, and deletion still asks first (the remote confirmation names the server). `F2` does nothing while several items are selected, and while the path box has focus these keys belong to it.
+
 **Search:** File panes of SSH sessions (the side pane, file tabs, and the SSH side of a dual-remote tab) have "Search remote files" on the toolbar and in the background and folder context menus. It searches on the server with `find` / `grep` by file name (without wildcards it matches names containing the text) or by file content (literal match); double-click a result to show it in the pane. At most 500 results and 2 minutes; hitting either limit is reported as incomplete. Result names follow the session encoding (the same source as the file pane, so Chinese names on a GBK server show correctly and can be selected), and a name containing a line break is still one result. Windows servers (cmd.exe / PowerShell) and SFTP-only accounts are not supported and no command is sent. FTP and plugin protocols do not have this entry.
 
 **Result and how it works:** Transfers appear in the progress popup/history. Settings control concurrency (1–16), bandwidth, timestamps, completion notifications, and logs. Ordinary name conflicts can ask, overwrite, skip, or rename. Directory synchronization uses its preview rather than that ordinary conflict policy.
@@ -662,7 +664,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 **Steps:** Search an action, click the pencil, and press a new combination. Esc or clicking elsewhere cancels capture. Unbind stops the application action from consuming a key; restore resets that action, and restore-all resets all customizations. Save to apply.
 
-**Rules and mechanism:** Window-level and some terminal actions are editable; fixed gestures are not. Combinations require a modifier such as Ctrl/Alt/Win/Cmd, except unmodified F1–F24. Fixed terminal keys are reserved; replacing conflicts needs confirmation. Window shortcuts run before terminal input; `Ctrl+letter` is often a terminal control character. If a remote program does not receive a key, unbind/remap locally before changing the server. See the [shortcut table](#shortcuts).
+**Rules and mechanism:** Window-level and some terminal actions are editable; fixed gestures are not. Combinations require a modifier such as Ctrl/Alt/Win/Cmd, except unmodified F1–F24 (`F2` and `F5` stay with the file panes' rename and refresh). Fixed terminal keys are reserved; replacing conflicts needs confirmation. Window shortcuts run before terminal input; `Ctrl+letter` is often a terminal control character. If a remote program does not receive a key, unbind/remap locally before changing the server. See the [shortcut table](#shortcuts).
 
 ### 15.7 File Transfer
 
@@ -1110,6 +1112,7 @@ These are factory defaults; customized bindings in Settings take precedence. Glo
 | Edit / navigate / cancel path | Ctrl+L / Enter / Esc | File browser |
 | Open file / enter directory | Double-click / Enter | Selection/open behavior applies |
 | Find by name | Type name prefix | File list |
+| Refresh / rename / delete in a file pane | F5 / F2 / Delete | Local and remote panes; F2 and Delete need list focus, deletion asks first |
 | Save / close remote editor | Ctrl+S / Esc | Built-in editor |
 | Refresh / terminate / close processes | F5 / Delete / Esc | Delete requires list focus and confirmation |
 | Cancel / default dialog action | Esc / Enter | Default can execute an action |

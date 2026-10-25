@@ -6791,6 +6791,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sc_TypeToLocate" xml:space="preserve"><value>入力した文字で始まる項目へ移動</value></data>
   <data name="Sc_KeyTypeName" xml:space="preserve"><value>名前の先頭を入力</value></data>
   <data name="Sc_EnterSelectedFolder" xml:space="preserve"><value>選択したフォルダーを開く</value></data>
+  <data name="Sc_RefreshDirectory" xml:space="preserve">
+    <value>現在のフォルダーを更新</value>
+  </data>
+  <data name="Sc_RenameSelected" xml:space="preserve">
+    <value>選択した項目の名前を変更</value>
+  </data>
+  <data name="Sc_DeleteSelected" xml:space="preserve">
+    <value>選択した項目を削除(先に確認)</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>エディターを閉じる</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>プロセス一覧を更新</value></data>
   <data name="Sc_EndTask" xml:space="preserve"><value>選択したプロセスを終了</value></data>
@@ -6821,6 +6830,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sc_NoteSuggestOpen" xml:space="preserve"><value>候補ポップアップ表示中のみ</value></data>
   <data name="Sc_NotePasswordFillOpen" xml:space="preserve"><value>共有パスワード一覧の表示中のみ</value></data>
   <data name="Sc_NoteListFocused" xml:space="preserve"><value>一覧にフォーカスがある場合のみ</value></data>
+  <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
+    <value>そのペインにフォーカスがある場合のみ(入力欄を除く)</value>
+  </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve"><value>アプリがマウス報告を有効にしている場合に必要</value></data>
   <data name="Sc_NoteOptional" xml:space="preserve"><value>設定でオフにできます</value></data>
   <data name="Sc_NoteRequiresSetting" xml:space="preserve"><value>設定で該当オプションを有効にする必要があります</value></data>

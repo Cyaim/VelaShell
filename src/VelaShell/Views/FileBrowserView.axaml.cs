@@ -141,7 +141,7 @@ public partial class FileBrowserView : UserControl
         AddHandler(PointerReleasedEvent, OnColumnSplitterReleased, RoutingStrategies.Tunnel);
 
         // Ctrl+L 切到手动输入路径(浏览器/文件管理器的通用手势)。走隧道,免得先被
-        // 文件列表的键盘导航吃掉。
+        // 文件列表的键盘导航吃掉。F5 / F2 / Delete 同一个处理器(见 FilePaneKeys)。
         AddHandler(KeyDownEvent, OnFileBrowserKeyDown, RoutingStrategies.Tunnel);
     }
 
@@ -149,11 +149,33 @@ public partial class FileBrowserView : UserControl
 
     private void OnFileBrowserKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control)
-            && DataContext is FileBrowserViewModel vm)
+        if (DataContext is not FileBrowserViewModel vm)
+        {
+            return;
+        }
+        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             vm.BeginPathEditCommand.Execute().Subscribe(_ => { }, _ => { });
             e.Handled = true;
+            return;
+        }
+
+        // F5 / F2 / Delete(资源管理器口径,见 FilePaneKeys)。删除进行中(遮罩挡着)不再接第二次。
+        switch (FilePaneKeys.Classify(e, FileList))
+        {
+            case FilePaneKeyAction.Refresh:
+                vm.RefreshCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Rename when !vm.IsLoading && vm.SelectedFiles is [{ IsParentEntry: false } file]:
+                vm.RenameCommand.Execute(file).Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Delete when !vm.IsLoading:
+                // 删除命令自己会先弹确认(带服务器名),只选着 ".." 时什么也不做。
+                vm.DeleteSelectedCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
         }
     }
 

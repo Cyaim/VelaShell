@@ -344,6 +344,10 @@ public static class ShortcutCatalog
                     Item("Sc_OpenEntry", [K("Sc_KeyDoubleClick")]),
                     Item("Sc_TypeToLocate", [K("Sc_KeyTypeName")]),
                     Item("Sc_EnterSelectedFolder", ["Enter"]),
+                    // 资源管理器口径,与任务管理器的 F5 / Delete 一致;本地栏、远端栏都有(Views/FilePaneKeys)。
+                    Item("Sc_RefreshDirectory", ["F5"], "Sc_NoteFilePaneFocused"),
+                    Item("Sc_RenameSelected", ["F2"], "Sc_NoteListFocused"),
+                    Item("Sc_DeleteSelected", ["Delete"], "Sc_NoteListFocused"),
                 ]
             ),
             Group("Sc_GroupFileOperations",
