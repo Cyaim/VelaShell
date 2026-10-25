@@ -257,8 +257,6 @@ public partial class SettingsView : UserControl
     private ProviderKeyRowState? _savingKeyRow;
     private string? _pendingRemoveKeyId;
 
-    /// <summary>两击确认换源清 Key 的第一击;换了选择就作废(<see cref="ResetKeyEditor" />)。</summary>
-    private KeyResetPrompt? _pendingKeyReset;
 
     /// <summary>
     /// 供应商行每点一次「测试」领一个序号。未保存的跨源测试要先读已存 Key(按钮要到探活开始才置灰),
@@ -726,7 +724,8 @@ public partial class SettingsView : UserControl
         ProviderApiKeyRows.Children.Clear();
         _keyDraft = null;
         _pendingRemoveKeyId = null;
-        _pendingKeyReset = null;
+        // 换了选择,框里问的那件事就不作数了:按取消收起
+        KeyResetConfirm.Dismiss();
         ProviderNewApiKeyBox.Text = "";
         ++_keyRowsRun;
     }
@@ -2146,9 +2145,9 @@ public partial class SettingsView : UserControl
 
     // ---- 保存 ----
 
-    private void OnSaveClick(object? sender, RoutedEventArgs e) => _ = SaveAsync();
+    private void OnSaveClick(object? sender, RoutedEventArgs e) => _ = SaveAsync(null);
 
-    private async Task SaveAsync()
+    private async Task SaveAsync(KeyResetPrompt? confirmedKeyReset)
     {
         ProviderNavItem? before = SelectedItem;
         int run = _editorRun;
@@ -2178,7 +2177,8 @@ public partial class SettingsView : UserControl
         }
         if (item.Model is null)
         {
-            await SaveProviderFormAsync(item.Provider, run);
+            // 确认框里点了确认:带着这份确认从头再存一次(重新合并、重取基线),与以前第二击「保存」走的是同一条路
+            if (await SaveProviderFormAsync(item.Provider, run, confirmedKeyReset) is { } confirmed) await SaveAsync(confirmed);
             return;
         }
         AiModelConfig liveModel = item.Model;
@@ -2258,9 +2258,10 @@ public partial class SettingsView : UserControl
             if (run == _editorRun) StatusText.Text = $"{_loc["Error"]}: {ex.Message}";
         }
     }
-    private async Task SaveProviderFormAsync(AiProvider provider, int run)
+    /// <returns>确认框里点了确认、要带着这份确认重新提交时返回它;其余(保存完了、取消、出错)返回 null。</returns>
+    private async Task<KeyResetPrompt?> SaveProviderFormAsync(AiProvider provider, int run, KeyResetPrompt? confirmed)
     {
-        if (_keyMutation || !_settings.Providers.Contains(provider)) return;
+        if (_keyMutation || !_settings.Providers.Contains(provider)) return null;
         ProviderKeyRowState? draft = _keyDraft;
         Control? draftFocus = draft?.EditBox.IsFocused == true ? draft.EditBox : null;
         string? replacement = PendingProviderKey;
@@ -2268,7 +2269,7 @@ public partial class SettingsView : UserControl
             || provider.Auth != AuthMethod.ApiKey))
         {
             StatusText.Text = _loc["SetupConfigChanged"];
-            return;
+            return null;
         }
         string name = ProviderNameBox.Text?.Trim() ?? "";
         string url = ProviderBaseUrlBox.Text?.Trim() ?? "";
@@ -2285,7 +2286,7 @@ public partial class SettingsView : UserControl
                 if (run != _editorRun || !ReferenceEquals(_keyDraft, draft)
                     || !KeyRowCurrent(draft, run))
                 {
-                    return;
+                    return null;
                 }
 
                 if (draft.OriginalUrl != provider.BaseUrl || draft.OriginalProtocol != provider.DefaultProtocol
@@ -2297,7 +2298,7 @@ public partial class SettingsView : UserControl
             if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)
                 || SelectedModel is not null || !_settings.Providers.Contains(provider))
             {
-                return;
+                return null;
             }
 
             if (provider.Auth == AuthMethod.ApiKey)
@@ -2310,10 +2311,9 @@ public partial class SettingsView : UserControl
                 string keyId = replacement is null ? provider.Id : draft!.Id;
                 string? expectedKey = replacement is null ? await _store.GetApiKeyAsync(keyId)
                     : string.IsNullOrEmpty(draft!.OriginalKey) ? null : draft.OriginalKey;
-                if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return;
+                if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return null;
                 cleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, detached, expected, replacement,
-                    keyId: keyId, expectedKey: expectedKey, confirmedKeyReset: _pendingKeyReset?.For(provider, url));
-                _pendingKeyReset = null;
+                    keyId: keyId, expectedKey: expectedKey, confirmedKeyReset: confirmed?.For(provider, url));
             }
             else
             {
@@ -2331,7 +2331,7 @@ public partial class SettingsView : UserControl
                 draft.Revealed = false;
             }
             _onProvidersChanged();
-            if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return;
+            if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return null;
             _loadedProviderName = provider.Name;
             _loadedProviderUrl = provider.BaseUrl;
             _loadedProviderProtocol = (int)provider.DefaultProtocol;
@@ -2341,7 +2341,7 @@ public partial class SettingsView : UserControl
             finally { _refreshingNav = false; }
             RefreshEditorContext(provider, null);
             await RefreshProviderKeyRowsAsync(provider, run);
-            // 换源清了 Key 就一定要说:正编辑着另一把 Key 也照样盖掉,不能让「再点一次确认」还挂着
+            // 换源清了 Key 就一定要说:正编辑着另一把 Key 也照样盖掉
             if (run == _editorRun && (cleared.Count > 0 || _keyDraft is null || ReferenceEquals(_keyDraft, draft)))
                 StatusText.Text = SavedText(provider, cleared, replacement is not null);
         }
@@ -2349,13 +2349,20 @@ public partial class SettingsView : UserControl
         catch (AiSettingsStore.ApiKeySlotChangedException) { await RecoverSettingsConflictAsync(provider, null, run); }
         catch (AiSettingsStore.ApiKeyResetRequiredException ex)
         {
-            // 地址换到别的源会清掉已存 Key:第一次点只提示,同一地址再点一次才清 —— 而且只清这次提示列出的那几把
-            if (run != _editorRun) return;
-            // 同一地址已经提示过还被拒:提示之后 Key 变了。换一句话说 —— 一字不差的提示看着像没点上,再点一下就把新存的那把清掉
-            string prompt = _pendingKeyReset?.For(provider, url) is null
-                ? "SetupBaseUrlKeyResetConfirm" : "SetupBaseUrlKeyResetChanged";
-            _pendingKeyReset = new(provider, url, ex.Confirmation);
-            StatusText.Text = _loc.F(prompt, ex.KeyCount);
+            // 地址换到别的源会清掉已存 Key:弹确认框列出要清的那几把,点了确认才清(连点「保存」不算确认)。
+            // 已经确认过一次还被拒,是框开着期间要清的有了变动(别处又存了一把、同一个槽换了值):换一句话再问,
+            // 框里没列的那把不会被一起清掉。框开着时「保存」等按钮都锁着(SetKeyMutation),底下的页面也点不到
+            if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return null;
+            bool accepted = await KeyResetPrompt.AskAsync(KeyResetConfirm, provider, ex,
+                changed: confirmed?.For(provider, url) is not null, _loc);
+            if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return null;
+            if (!accepted)
+            {
+                StatusText.Text = _loc["SetupResetCancelled"];
+                return null;
+            }
+            // 交回去重新走一遍保存(与以前第二击一样合并已保存的字段、重取基线),带着这一次的确认
+            return new KeyResetPrompt(provider, url, ex.Confirmation);
         }
         catch (Exception ex) { if (run == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex)); }
         finally
@@ -2368,6 +2375,7 @@ public partial class SettingsView : UserControl
                 draftFocus.Focus();
             }
         }
+        return null;
     }
 
     /// <summary>

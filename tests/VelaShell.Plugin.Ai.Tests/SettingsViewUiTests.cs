@@ -200,7 +200,7 @@ public sealed partial class SettingsViewUiTests
     }
 
     [TestMethod]
-    public void BaseUrlToAnotherOrigin_SaveAsksOnceForThatAddressThenClearsSavedKeys()
+    public void BaseUrlToAnotherOrigin_SaveAsksInADialogThenClearsSavedKeys()
     {
         OnUi(async () =>
         {
@@ -225,20 +225,29 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 url.Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
-                Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl, "第一次只提示");
+                // 独立的确认框列出要清的把数;框开着时「保存」锁着,再点一下(连点)不算确认
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await WaitForConfirmAsync(view));
+                Assert.IsFalse(save.IsEnabled);
+                Click(save);
+                await PumpAsync();
+                Assert.IsTrue(ConfirmBox(view).IsOpen);
+                Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl, "没点确认就什么都不改");
                 Assert.AreEqual("old-primary", await store.GetApiKeyAsync(provider.Id));
 
-                // 提示之后地址又改了:确认作废,对新地址重新提示
-                url.Text = "https://third.example/v1";
-                status.Text = "";
-                Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
+                // 取消:地址与 Key 都不动,草稿留着
+                AnswerConfirm(view, accept: false);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupResetCancelled"]);
                 Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl);
                 Assert.AreEqual("old-extra", await store.GetApiKeyAsync(extra));
+                Assert.AreEqual(newHost.BaseUrl, url.Text);
 
+                // 换个地址再存:重新问,这次确认
+                url.Text = "https://third.example/v1";
                 Click(save);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await WaitForConfirmAsync(view));
+                AnswerConfirm(view, accept: true);
                 await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupSavedKeysCleared"]);
+
                 Assert.AreEqual("https://third.example/v1", provider.BaseUrl);
                 Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
                 Assert.IsNull(await store.GetApiKeyAsync(extra));
@@ -407,6 +416,39 @@ public sealed partial class SettingsViewUiTests
     }
 
     [TestMethod]
+    public void ConfirmOverlay_DefaultsToCancel_AndEscapeReplacementOrDetachAllCancel()
+    {
+        OnUi(async () =>
+        {
+            var overlay = new ConfirmOverlay();
+            var below = new Button { Name = "Below" };
+            var window = new Window { Content = new Grid { Children = { below, overlay } }, Width = 600, Height = 400 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                Task<bool> first = overlay.AskAsync("title", "message", "Remove", "Cancel");
+                await PumpAsync();
+                Assert.IsTrue(overlay.IsVisible && overlay.IsOpen);
+                Button cancel = overlay.GetLogicalDescendants().OfType<Button>().Single(button => button.Name == "ConfirmCancelButton");
+                Assert.IsTrue(cancel.IsFocused, "会删东西的确认默认落在「取消」上:顺手一个回车不该把 Key 清掉");
+                // 同一时刻只问一件事:再问就把前一个按取消收掉
+                Task<bool> second = overlay.AskAsync("title", "again", "Remove", "Cancel");
+                Assert.IsFalse(await first);
+                overlay.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
+                Assert.IsFalse(await second, "Esc 等于取消");
+                Assert.IsFalse(overlay.IsVisible);
+                Task<bool> third = overlay.AskAsync("title", "detached", "Remove", "Cancel");
+                window.Content = null; // 视图被拆下(关窗、换页)
+                Assert.IsFalse(await third);
+                Task<bool> fourth = overlay.AskAsync("title", "accepted", "Remove", "Cancel");
+                Click(overlay.GetLogicalDescendants().OfType<Button>().Single(button => button.Name == "ConfirmAcceptButton"));
+                Assert.IsTrue(await fourth, "只有点框里的确认按钮才算确认");
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
     [DataRow("same-settings")]
     [DataRow("same-slot")]
     [DataRow("other-window")]
@@ -433,9 +475,9 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 1));
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), await WaitForConfirmAsync(view));
 
-                // 提示「清 1 把」之后又存进一把:目录页走同一份设置(加一把,或给同一个槽换上新服务器的 Key);
+                // 确认框列着「清 1 把」的时候又存进一把:目录页走同一份设置(加一把,或给同一个槽换上新服务器的 Key);
                 // 另一个窗口写盘后这边冲突重载
                 string added = provider.Id;
                 if (where == "same-settings")
@@ -451,18 +493,25 @@ public sealed partial class SettingsViewUiTests
                     var external = new AiSettingsStore(context);
                     AiSettings other = await external.LoadAsync();
                     added = await external.AddProviderApiKeyAsync(other, other.Providers[0], "added-after-prompt");
-                    Click(save);
+                }
+                AnswerConfirm(view, accept: true);
+                if (where == "other-window")
+                {
                     await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupConfigChanged"]);
                     Assert.AreEqual(newHost.BaseUrl, view.GetControl<TextBox>("ProviderBaseUrlBox").Text, "草稿地址保留");
+                    Assert.AreEqual("added-after-prompt", await store.GetApiKeyAsync(added), "冲突时什么都不清");
+                    Click(save);
+                    Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await WaitForConfirmAsync(view));
                 }
-                Click(save);
-                // 换一句提示:同一个槽换了值时要清的把数不变,一字不差的提示看着像没点上,再点一下就把新存的那把清掉
-                await WaitUntilAsync(() => save.IsEnabled
-                    && status.Text == loc.F("SetupBaseUrlKeyResetChanged", where == "same-slot" ? 1 : 2));
+                else
+                {
+                    // 确认的只是框里那 1 把:要清的变了,存储层再拒一次,换一句话再问 —— 一字不差的框看着像没点上
+                    Assert.AreEqual(loc.F("SetupBaseUrlKeyResetChanged", where == "same-slot" ? 1 : 2), await WaitForConfirmAsync(view));
+                }
                 Assert.AreEqual("added-after-prompt", await store.GetApiKeyAsync(added), "旧的确认不能把它一起清掉");
                 Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl);
 
-                Click(save);
+                AnswerConfirm(view, accept: true);
                 await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupSavedKeysCleared"]);
                 Assert.IsNull(await store.GetApiKeyAsync(added));
                 Assert.AreEqual(newHost.BaseUrl, provider.BaseUrl);
@@ -497,8 +546,10 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
-                Click(save);
+                // 确认框里就点名:哪几个模型自带的 Key 会一起清
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2) + "\n" + loc.F("SetupBaseUrlKeyResetModels", "Own model"),
+                    await WaitForConfirmAsync(view));
+                AnswerConfirm(view, accept: true);
                 // 自带 Key 的模型不会改用供应商的新 Key:点名请用户各自重填
                 await WaitUntilAsync(() => save.IsEnabled
                     && status.Text == loc["SetupSavedKeysCleared"] + "\n" + loc.F("SetupModelKeysCleared", "Own model"));
@@ -536,8 +587,9 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
-                Click(save);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2) + "\n" + loc.F("SetupBaseUrlKeyResetModels", loc["Unnamed"]),
+                    await WaitForConfirmAsync(view));
+                AnswerConfirm(view, accept: true);
                 // 点名时与左栏一样叫「(未命名)」,不在冒号后面留一个空名字
                 await WaitUntilAsync(() => save.IsEnabled
                     && status.Text == loc["SetupSavedKeysCleared"] + "\n" + loc.F("SetupModelKeysCleared", loc["Unnamed"]));
@@ -573,16 +625,16 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await WaitForConfirmAsync(view));
 
-                // 确认的这一击写盘途中,用户点开了第二把 Key 的编辑框(保存期间别的行照样能编辑)
+                // 点了确认、写盘途中,用户点开了第二把 Key 的编辑框(保存期间别的行照样能编辑)
                 storage.Hold = true;
-                Click(save);
+                AnswerConfirm(view, accept: true);
                 await storage.Started.Task.WaitAsync(TimeSpan.FromSeconds(15));
                 EditProviderKey(view, extra);
                 storage.Release.TrySetResult();
                 await WaitUntilAsync(() => save.IsEnabled && provider.BaseUrl == newHost.BaseUrl);
-                // Key 已经清了:「再点一次确认」不能还挂着,否则看着像没生效
+                // Key 已经清了:保存结果要说出来,不能被别的状态盖住
                 Assert.AreEqual(loc["SetupSavedKeysCleared"], status.Text);
                 Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
                 Assert.IsNull(await store.GetApiKeyAsync(extra));
@@ -1677,7 +1729,7 @@ public sealed partial class SettingsViewUiTests
             try
             {
                 System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-                Task Save() => (Task)typeof(SettingsView).GetMethod("SaveAsync", flags)!.Invoke(view, null)!;
+                Task Save() => (Task)typeof(SettingsView).GetMethod("SaveAsync", flags)!.Invoke(view, [null])!;
                 await ((Task)typeof(SettingsView).GetField("_editorLoad", flags)!.GetValue(view)!).WaitAsync(TimeSpan.FromSeconds(15));
                 view.GetControl<TextBox>("ProviderNameBox").Text = "first draft";
                 TextBox key = EditProviderKey(view, first.Id);
@@ -2303,6 +2355,20 @@ public sealed partial class SettingsViewUiTests
         (Task)(typeof(SettingsView).GetMethod("TestAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
             ?? throw new InvalidOperationException("SettingsView.TestAsync is gone")).Invoke(view, null)!;
     private static void Click(Button button) => button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+
+    private static ConfirmOverlay ConfirmBox(Control view) => view.GetLogicalDescendants().OfType<ConfirmOverlay>().Single();
+
+    /// <summary>等确认框弹出来,返回框里的说明。</summary>
+    private static async Task<string?> WaitForConfirmAsync(Control view)
+    {
+        ConfirmOverlay box = ConfirmBox(view);
+        await WaitUntilAsync(() => box.IsOpen);
+        return box.GetLogicalDescendants().OfType<TextBlock>().Single(text => text.Name == "ConfirmMessage").Text;
+    }
+
+    /// <summary>点确认框里的「确认」或「取消」。</summary>
+    private static void AnswerConfirm(Control view, bool accept) => Click(ConfirmBox(view).GetLogicalDescendants()
+        .OfType<Button>().Single(button => button.Name == (accept ? "ConfirmAcceptButton" : "ConfirmCancelButton")));
 
     private static Border KeyRow(SettingsView view, string keyId) => view.GetLogicalDescendants()
         .OfType<Border>().Single(row => row.Name == "ProviderKeyRow" && (string?)row.Tag == keyId);
@@ -4121,7 +4187,7 @@ public sealed partial class SettingsViewUiTests
             {
                 await secrets.Started.WaitAsync(TimeSpan.FromSeconds(15));
                 var saving = (Task)typeof(SettingsView).GetMethod("SaveAsync",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(view, null)!;
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(view, [null])!;
                 Assert.IsFalse(saving.IsCompleted, "保存确实在等首次机密读取");
                 ListBox list = view.GetControl<ListBox>("ProvidersList");
                 var rows = (List<ProviderNavItem>)list.ItemsSource!;
@@ -5141,11 +5207,11 @@ public sealed partial class SettingsViewUiTests
                 Assert.AreEqual("Bearer additional-new", newEndpoint.Requests[0].Auth);
                 Assert.IsTrue(health.IsKeyCooling(b), "未落库的显式测试不得改共享健康");
                 Assert.AreEqual("additional-old", await store.GetApiKeyAsync(b));
-                // 换到另一台主机:先提示会清掉旧主槽那一把,再点一次才保存;新填的 Key 落进主槽、补充槽复位
+                // 换到另一台主机:先在确认框里说会清掉旧主槽那一把,确认才保存;新填的 Key 落进主槽、补充槽复位
                 Click(view.GetControl<Button>("SaveButton"));
-                await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc.F("SetupBaseUrlKeyResetConfirm", 1));
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), await WaitForConfirmAsync(view));
                 Assert.AreEqual(0, notifications); Assert.AreEqual(oldEndpoint.BaseUrl, provider.BaseUrl);
-                Click(view.GetControl<Button>("SaveButton"));
+                AnswerConfirm(view, accept: true);
                 await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc["SetupSavedOtherKeysCleared"]);
                 Assert.AreEqual(1, notifications); Assert.AreEqual(newEndpoint.BaseUrl, provider.BaseUrl);
                 Assert.AreEqual("additional-new", await new AiSettingsStore(context).GetApiKeyAsync(provider.Id));

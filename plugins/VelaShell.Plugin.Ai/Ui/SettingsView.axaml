@@ -498,5 +498,8 @@
         </StackPanel>
       </ScrollViewer>
     </Border>
+
+    <!-- 会删东西的确认(换源清 Key)用独立的确认框,盖住左右两栏;不再靠同一个按钮点两下 -->
+    <ui:ConfirmOverlay x:Name="KeyResetConfirm" Grid.ColumnSpan="2" ScrimCornerRadius="0,0,7,7" />
   </Grid>
 </UserControl>

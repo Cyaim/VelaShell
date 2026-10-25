@@ -319,6 +319,36 @@ public sealed class ProviderSetupViewUiTests
         await WaitForEnabledAsync(primary);
     }
 
+    /// <summary>点主按钮,等确认框弹出来,返回框里的说明(按钮此时还锁着)。</summary>
+    private static async Task<string?> ClickPrimaryUntilConfirmAsync(ProviderSetupView view)
+    {
+        Click(Find<Button>(view, "SetupPrimaryButton"));
+        return await WaitForConfirmAsync(view);
+    }
+
+    private static ConfirmOverlay ConfirmBox(Control view) => view.GetLogicalDescendants().OfType<ConfirmOverlay>().Single();
+
+    private static async Task<string?> WaitForConfirmAsync(Control view)
+    {
+        ConfirmOverlay box = ConfirmBox(view);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+        while (!box.IsOpen)
+        {
+            await Task.Delay(5, timeout.Token);
+            Dispatcher.UIThread.RunJobs();
+        }
+        return box.GetLogicalDescendants().OfType<TextBlock>().Single(text => text.Name == "ConfirmMessage").Text;
+    }
+
+    /// <summary>点确认框里的「确认」或「取消」,等主按钮放开(这一轮提交收尾)。</summary>
+    private static async Task AnswerConfirmAsync(ProviderSetupView view, bool accept)
+    {
+        Click(ConfirmBox(view).GetLogicalDescendants().OfType<Button>()
+            .Single(button => button.Name == (accept ? "ConfirmAcceptButton" : "ConfirmCancelButton")));
+        await PumpAsync(2);
+        if (!ConfirmBox(view).IsOpen) await WaitForEnabledAsync(Find<Button>(view, "SetupPrimaryButton"));
+    }
+
     /// <summary>照用户的操作展开一行:真点在行上(命中测试、冒泡都真跑)。</summary>
     private static async Task ClickRowAsync(Window window, ProviderSetupView view, string entryId)
     {
@@ -1626,12 +1656,20 @@ public sealed class ProviderSetupViewUiTests
                 TextBlock progress = Find<TextBlock>(view, "SetupProgressText");
                 Assert.AreEqual("sk-first", Find<TextBox>(view, "SetupKeyBox").Text, "表单预填着旧地址的 Key");
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = newEndpoint.BaseUrl + "/v1";
-                await ClickPrimaryAsync(view);
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), progress.Text);
-                Assert.AreEqual(oldEndpoint.BaseUrl + "/v1", provider.BaseUrl, "第一次只提示");
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await ClickPrimaryUntilConfirmAsync(view));
+                Assert.AreEqual(oldEndpoint.BaseUrl + "/v1", provider.BaseUrl, "没点确认就什么都不改");
                 Assert.AreEqual("sk-first", await store.GetApiKeyAsync(provider.Id));
+                Assert.IsFalse(Find<Button>(view, "SetupPrimaryButton").IsEnabled, "框开着时主按钮锁着,连点不算确认");
 
-                await ClickPrimaryAsync(view);
+                // 先取消一次:什么都不改,草稿留着
+                await AnswerConfirmAsync(view, accept: false);
+                Assert.AreEqual(loc["SetupResetCancelled"], progress.Text);
+                Assert.AreEqual(oldEndpoint.BaseUrl + "/v1", provider.BaseUrl);
+                Assert.AreEqual("sk-first", await store.GetApiKeyAsync(provider.Id));
+                Assert.AreEqual(newEndpoint.BaseUrl + "/v1", Find<TextBox>(view, "SetupBaseUrlBox").Text);
+
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await ClickPrimaryUntilConfirmAsync(view));
+                await AnswerConfirmAsync(view, accept: true);
                 Assert.AreEqual(loc["SetupSavedKeysCleared"], progress.Text);
                 Assert.AreEqual(newEndpoint.BaseUrl + "/v1", provider.BaseUrl);
                 Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
@@ -1671,22 +1709,21 @@ public sealed class ProviderSetupViewUiTests
                 var loc = new Loc("en");
                 TextBlock progress = Find<TextBlock>(view, "SetupProgressText");
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = newEndpoint.BaseUrl + "/v1";
-                await ClickPrimaryAsync(view);
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), progress.Text);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), await ClickPrimaryUntilConfirmAsync(view));
 
-                // 提示之后另一个窗口给这一家加了 Key:这边冲突重载;旧的确认盖不住新加的那把,按最新的两把重新提示
+                // 确认框开着的时候另一个窗口给这一家加了 Key:点确认后这边冲突重载,什么都不清
                 var external = new AiSettingsStore(context);
                 AiSettings other = await external.LoadAsync();
                 string added = await external.AddProviderApiKeyAsync(other, other.Providers[0], "sk-added-elsewhere");
-                await ClickPrimaryAsync(view);
+                await AnswerConfirmAsync(view, accept: true);
                 Assert.AreEqual(loc["SetupConfigChanged"], progress.Text);
                 Assert.AreEqual(newEndpoint.BaseUrl + "/v1", Find<TextBox>(view, "SetupBaseUrlBox").Text, "草稿地址保留");
-                await ClickPrimaryAsync(view);
-                // 同一地址已经提示过:换一句话说 Key 变了,不与第一次的提示混成一样
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetChanged", 2), progress.Text);
                 Assert.AreEqual("sk-added-elsewhere", await store.GetApiKeyAsync(added), "旧的确认不能把它一起清掉");
 
-                await ClickPrimaryAsync(view);
+                // 再存:按最新的两把重新问
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await ClickPrimaryUntilConfirmAsync(view));
+                Assert.AreEqual("sk-added-elsewhere", await store.GetApiKeyAsync(added));
+                await AnswerConfirmAsync(view, accept: true);
                 Assert.AreEqual(loc["SetupSavedKeysCleared"], progress.Text);
                 Assert.IsNull(await store.GetApiKeyAsync(added));
                 Assert.AreEqual(newEndpoint.BaseUrl + "/v1", provider.BaseUrl);
@@ -1724,9 +1761,9 @@ public sealed class ProviderSetupViewUiTests
                 // 都不是「供应商的 Key 没了」
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = newEndpoint.BaseUrl + "/v1";
                 if (newProviderKey) Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
-                await ClickPrimaryAsync(view);
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), progress.Text);
-                await ClickPrimaryAsync(view);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1) + "\n" + loc.F("SetupBaseUrlKeyResetModels", "own-model"),
+                    await ClickPrimaryUntilConfirmAsync(view));
+                await AnswerConfirmAsync(view, accept: true);
                 Assert.AreEqual(newProviderKey ? "sk-new" : null, await store.GetApiKeyAsync(provider.Id));
                 Assert.IsNull(await store.GetApiKeyAsync(own.Id));
                 // 照常拉新地址的模型清单,点名提示仍在
@@ -1800,12 +1837,12 @@ public sealed class ProviderSetupViewUiTests
                 // 换到新主机并填好新 Key:只清模型自带的那把,保存后照常拉新地址的模型清单
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = endpoint.BaseUrl + "/v1";
                 Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
-                await ClickPrimaryAsync(view);
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), Find<TextBlock>(view, "SetupProgressText").Text);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1) + "\n" + loc.F("SetupBaseUrlKeyResetModels", "own-model"),
+                    await ClickPrimaryUntilConfirmAsync(view));
 
-                // 确认的这一击写盘途中,用户打开了另一张卡片
+                // 点了确认、写盘途中,用户打开了另一张卡片
                 storage.Hold = true;
-                Click(Find<Button>(view, "SetupPrimaryButton"));
+                Click(ConfirmBox(view).GetLogicalDescendants().OfType<Button>().Single(button => button.Name == "ConfirmAcceptButton"));
                 await storage.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 view.FocusEntry("deepseek");
                 TextBlock other = Find<TextBlock>(view, "SetupProgressText");
@@ -2100,7 +2137,10 @@ public sealed class ProviderSetupViewUiTests
                 keyBox.Text = draftKey;
                 secrets.Fail = failure == "secret";
                 storage.Failure = failure;
-                await ClickPrimaryAsync(view);
+                // 换到了另一台主机:先确认清掉旧地址的补充槽。确认之后写机密 / 写 JSON 失败或被取消都要整个恢复;
+                // 新 Key 与补充槽那把相同在换源时不算重复(旧 Key 都要清),那一行改为在确认框里取消,同样什么都不改
+                Assert.AreEqual(new Loc("en").F("SetupBaseUrlKeyResetConfirm", 1), await ClickPrimaryUntilConfirmAsync(view));
+                await AnswerConfirmAsync(view, accept: failure != "duplicate");
 
                 Assert.AreEqual(original.BaseUrl + "/v1", provider.BaseUrl, "失败不能把旧凭据留在新端点");
                 Assert.AreEqual("original provider", provider.Name);

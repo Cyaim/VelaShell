@@ -139,13 +139,21 @@ public sealed class ProviderSetupView : UserControl
         // 两大段常驻文案只是把列表往下挤(用户验收时点名要删)。
         // 右侧留白拆成 10(根)+ 10(滚动区内):覆盖式滚动条贴着滚动区右缘画,
         // 全放根上它就压在卡片边上了(与「配置工具」同一处理)。
-        Content = new Border
+        // 最上面盖一层确认框:换源清 Key 这种会删东西的确认用独立的框,不再靠同一个按钮点两下
+        Content = new Panel
         {
-            Padding = new Thickness(20, 16, 20 - Gutter, 16),
-            Child = new ScrollViewer
+            Children =
             {
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = new Border { Padding = new Thickness(0, 0, Gutter, 0), Child = _rows }
+                new Border
+                {
+                    Padding = new Thickness(20, 16, 20 - Gutter, 16),
+                    Child = new ScrollViewer
+                    {
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                        Content = new Border { Padding = new Thickness(0, 0, Gutter, 0), Child = _rows }
+                    }
+                },
+                _confirm
             }
         };
 
@@ -423,8 +431,8 @@ public sealed class ProviderSetupView : UserControl
     private string? _primaryKeyId;
     private Task<string?> _primaryKeyBaseline = Task.FromResult<string?>(null);
 
-    /// <summary>两击确认换源清 Key 的第一击;换了表单就作废(<see cref="BuildDetail" />)。</summary>
-    private KeyResetPrompt? _pendingKeyReset;
+    /// <summary>换源清 Key 的确认框;换了表单就按取消收起(<see cref="BuildDetail" />)。</summary>
+    private readonly ConfirmOverlay _confirm = new() { Name = "SetupConfirm", ScrimCornerRadius = new CornerRadius(0, 0, 7, 7) };
     // 克隆的授权参数只属于完整的签发地址;同一主机的不同路径也可能是不同租户。
     private string? _oauthConfiguredBaseUrl;
     private string? _oauthSourceBaseUrl;
@@ -479,7 +487,7 @@ public sealed class ProviderSetupView : UserControl
         _newProviderDraft = existing is null || adding ? draft : null;
         _primaryKeyId = existing is not null && !adding ? existing.Id : null;
         _primaryKeyBaseline = Task.FromResult<string?>(null);
-        _pendingKeyReset = null;
+        _confirm.Dismiss();
         AiModelConfig model = draft.Models.Count > 0 ? draft.Models[0] : new AiModelConfig();
         Missing missing = MissingOf(entry, draft);
 
@@ -1413,24 +1421,33 @@ public sealed class ProviderSetupView : UserControl
             if (!OwnsForm()) return;
             // 换源时旧主槽一律清掉,只有空白的那种不算一把 Key、不在清掉的名单里,也照清 —— 基线要看换没换源,不能只看名单
             bool movedOrigin = AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl);
-            // 地址换到别的源会清掉已存 Key:第一次只提示,同一地址再点一次才清 —— 而且只清这次提示列出的那几把
-            try
+            // 地址换到别的源会清掉已存 Key:先弹确认框列出要清的那几把,点了确认才清。框开着期间要清的有了变动,
+            // 存储层核对确认凭据再拒一次,换一句话再问 —— 框里没列的那把不会被一起清掉
+            IReadOnlyCollection<string>? confirmed = null;
+            while (true)
             {
-                cleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, draft, expectedProviderJson,
-                    replacement, keyId: keyId!, expectedKey: expectedKey,
-                    confirmedKeyReset: _pendingKeyReset?.For(provider, draft.BaseUrl), cancellationToken: _context.Shutdown);
+                try
+                {
+                    cleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, draft, expectedProviderJson,
+                        replacement, keyId: keyId!, expectedKey: expectedKey,
+                        confirmedKeyReset: confirmed, cancellationToken: _context.Shutdown);
+                    break;
+                }
+                catch (AiSettingsStore.ApiKeyResetRequiredException ex)
+                {
+                    if (!OwnsForm()) return;
+                    TextBlock resetProgress = _progress;
+                    bool accepted = await KeyResetPrompt.AskAsync(_confirm, provider, ex, confirmed is not null, _loc)
+                        .ConfigureAwait(true);
+                    if (!OwnsForm()) return;
+                    if (!accepted)
+                    {
+                        resetProgress.Text = _loc["SetupResetCancelled"];
+                        return;
+                    }
+                    confirmed = ex.Confirmation;
+                }
             }
-            catch (AiSettingsStore.ApiKeyResetRequiredException ex)
-            {
-                if (!OwnsForm()) return;
-                // 同一地址已经提示过还被拒:提示之后 Key 变了。换一句话说 —— 一字不差的提示看着像没点上,再点一下就把新存的那把清掉
-                string prompt = _pendingKeyReset?.For(provider, draft.BaseUrl) is null
-                    ? "SetupBaseUrlKeyResetConfirm" : "SetupBaseUrlKeyResetChanged";
-                _pendingKeyReset = new(provider, draft.BaseUrl, ex.Confirmation);
-                _progress.Text = _loc.F(prompt, ex.KeyCount);
-                return;
-            }
-            _pendingKeyReset = null;
             committedKey = replacement ?? (movedOrigin ? null : expectedKey);
             // 框里预填的是旧地址的 Key,已经清掉了,别让它还摆在那儿
             if (committedKey is null && ReferenceEquals(keyBox, _keyBox) && keyBox.Text == key)
