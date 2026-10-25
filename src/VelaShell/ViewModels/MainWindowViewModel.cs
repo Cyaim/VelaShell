@@ -227,7 +227,6 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         ISettingsService? settingsService = null,
         ISessionRepository? sessionRepository = null,
         ISftpService? sftpService = null,
-        ITransferManager? transferManager = null,
         ITunnelService? tunnelService = null,
         ITunnelWorkflowService? tunnelWorkflowService = null,
         ISessionMetricsService? metricsService = null,
@@ -320,6 +319,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         _protocolRegistry = protocolRegistry;
         _workspaceLauncher = workspaceLauncher;
         gistSyncService?.ProfilesApplied += OnSyncProfilesApplied;
+        gistSyncService?.WebhookUrlMissing += OnSyncWebhookUrlMissing;
         // 插件被停用/卸载 → 它名下的工作台文档已无人应答,走正常关闭路径撤掉标签页。
         workspaceLauncher?.SessionAbandoned += OnWorkspaceSessionAbandoned;
         // 新建连接对话框里的「测试」对插件连接类型没法拿 SSH 去试(那只会撞出一个
@@ -415,7 +415,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         _backgroundActivity = backgroundActivity;
         WireBackgroundActivity(backgroundActivity);
         _fileBrowser = new(null, Guid.Empty);
-        _fileTransfer = new(transferManager, appDataStore);
+        _fileTransfer = new(appDataStore);
         // 传输浮窗上「已暂停的批次」点「继续」:找回(或重新打开)那条连接接着传(见 ResumeQueuedTransfersAsync)。
         _fileTransfer.ResumeHandler = ResumeQueuedTransfersAsync;
         // 活动标签换人时要做的那几件事。挂在 ActiveTerminalTab 上而不是某个标签集合上:
@@ -1298,6 +1298,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 Icon: "Icon.info"
             )
         );
+        // 安全审计页:消息中心里「云同步拉到的设置开着 Webhook 告警却没有地址」那一条的动作。
+        Commands.Register(
+            new(
+                NotificationSources.OpenSecuritySettingsCommandId,
+                Strings.Get("Cmd_OpenSecuritySettings"),
+                Strings.Get("CmdCat_Edit"),
+                () => SettingsSectionRequested?.Invoke(this, SettingsSectionKey.Security),
+                Icon: "Icon.shield"
+            )
+        );
         Commands.Register(
             new(
                 "app.logs.open",
@@ -1647,6 +1657,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             browser.OnTerminalWorkingDirectoryChanged(cwd);
         }
         tab.WorkingDirectoryChanged += browser.OnTerminalWorkingDirectoryChanged;
+        // 右键「在此处打开终端」:终端侧栏的面板挂在 SSH 会话上(插件终端与本地 shell 前面已经排除了)。
+        WireOpenTerminalHere(browser, () => tab.Profile);
 
         _fileBrowserCache[tab.SessionId] = browser;
         FileBrowser = browser;
@@ -2040,6 +2052,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     private INotificationCenter? _notificationCenter;
 
+    /// <summary>
+    /// 消息中心载入上次留下的消息(<see cref="INotificationCenter.LoadAsync" />)那一步;没有消息中心时为 null。
+    /// 后台来源(启动时的自动同步)要等它完了再投 —— 载入会整份换成存着的列表,赶在它前面投的会被盖掉。
+    /// </summary>
+    private Task? _notificationsLoaded;
+
     /// <summary>启动检查发现新版本后的后台下载入口(设置 → 常规 → 自动下载更新);null = 只检查不下载(单测)。</summary>
     private readonly BackgroundUpdateDownload? _backgroundUpdateDownload;
 
@@ -2108,7 +2126,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     {
         try
         {
-            await center.LoadAsync().ConfigureAwait(true);
+            _notificationsLoaded = center.LoadAsync();
+            await _notificationsLoaded.ConfigureAwait(true);
             Sidebar.NotificationUnreadCount = center.UnreadCount;
             // 与更新检查并行:后者可能要后台下载好几分钟,密钥的提示不该排在它后面。
             Task keyNotices = PublishMasterKeyNoticesAsync(center);
@@ -2771,6 +2790,48 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         _ = sender;
         _ = args;
         RxSchedulers.MainThreadScheduler.Schedule(() => _ = RefreshSessionTreeAsync());
+    }
+
+    /// <summary>
+    /// 云同步拉到「Webhook 告警开着、这台设备上却没有地址」的设置:投一条消息中心提示,带「前往安全审计设置」。
+    /// 同一份设置只来一次(服务按设置指纹去重并记在同步配置里),消息 id 也带着指纹。可能来自后台线程。
+    /// </summary>
+    /// <remarks>
+    /// 云同步本来是静默的(启动拉取、保存后防抖推送);设置导入遇到同样的情形会当场提示重填,
+    /// 同步这条路以前却只是静默留空,告警就这样悄悄停了(维护者 2026-10-25 定,第二轮第 17 条)。
+    /// </remarks>
+    private void OnSyncWebhookUrlMissing(object? sender, string fingerprint)
+    {
+        _ = sender;
+        if (_notificationCenter is not { } center)
+        {
+            return;
+        }
+        _ = PublishSyncNoticeAsync(center, NotificationSources.BuildSyncWebhookMissingNotification(fingerprint, DateTime.UtcNow));
+    }
+
+    /// <summary>等消息中心载入完上次的消息再投一条(整段吞异常:提示投不出去不该拦住同步)。</summary>
+    private async Task PublishSyncNoticeAsync(INotificationCenter center, NotificationItem item)
+    {
+        try
+        {
+            if (_notificationsLoaded is { } loaded)
+            {
+                await loaded.ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // 载入失败照投:铃铛照常可用,只是没有历史消息。
+        }
+        try
+        {
+            await center.PublishAsync([item]).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"[Sync] Notice could not be published: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -4048,7 +4109,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// </remarks>
     private static void SendStartupDirectory(TerminalTabViewModel tab, SessionProfile profile)
     {
-        if (SessionTerminalSettings.StartupDirectory(profile) is not { } directory)
+        // 文件栏「在此处打开终端」开出来的标签有自己的目录,压过配置里的初始目录(见 OpenTerminalHereAsync)。
+        if ((tab.StartupDirectoryOverride ?? SessionTerminalSettings.StartupDirectory(profile)) is not { } directory)
         {
             return;
         }
@@ -4256,13 +4318,21 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     /// <summary>缺少连接所需凭据(用户名/密码/私钥/证书)时需要先走登录验证流程。</summary>
     /// <remarks>
+    /// <para>
     /// 引用共享凭据的配置一律不先弹(#550):用户名与认证材料都由凭据提供(手输过的材料也算在内),
     /// 真缺了什么,解析时会以 <see cref="CredentialProviderException" /> 报出来,连接流程再退回登录框。
+    /// </para>
+    /// <para>
+    /// 存着的密码 / 私钥口令在这台设备上解不开(<see cref="CredentialMaterial.HasUnreadableSecret(SessionProfile)" />)
+    /// 也算缺:以前当成有密码,拿密文去试一次、认证失败了才弹框 —— 白白一次失败认证,还可能撞上 fail2ban。
+    /// 现在直接弹,登录框上说明为什么(第二轮第 20 条)。
+    /// </para>
     /// </remarks>
     private static bool RequiresCredentials(SessionProfile profile) =>
         profile.AuthMethod == AuthMethod.Tailscale
             ? string.IsNullOrWhiteSpace(profile.Username)
-            : profile.CredentialSource is null && RequiresInlineCredentials(profile);
+            : profile.CredentialSource is null
+              && (RequiresInlineCredentials(profile) || CredentialMaterial.HasUnreadableSecret(profile));
 
     private static bool RequiresInlineCredentials(SessionProfile profile) =>
         string.IsNullOrWhiteSpace(profile.Username)
@@ -4491,10 +4561,48 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <param name="tabTitle">标签页标题;null 或空白 = 按配置起名。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>终端标签(终端类连接),或 null(文档类连接、取消、失败撤标签)。</returns>
-    public async Task<TerminalTabViewModel?> TryConnectProfileAsync(
+    public Task<TerminalTabViewModel?> TryConnectProfileAsync(
         SessionProfile profile,
         string? tabTitle,
         CancellationToken cancellationToken = default
+    ) =>
+        TryConnectProfileCoreAsync(profile, tabTitle, startupDirectory: null, cancellationToken);
+
+    /// <summary>
+    /// 文件栏右键「在此处打开终端」(维护者 2026-10-25 定,只对 SSH 会话):开一个连同一配置的终端标签,
+    /// 认证后 <c>cd</c> 进 <paramref name="remoteDirectory" />。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>cd</c> 走认证后命令那一条路(<see cref="SendStartupDirectory" />,单引号转义),与配置里的「初始目录」、
+    /// 跟随终端目录的钩子共用同一套静默注入与防回显 —— 用户屏幕上不会多出一行没敲过的命令,
+    /// 带空格、带引号的目录名也不会变成两个参数或一条注入。它压过配置里的初始目录,只挂在这个标签上,不写进配置。
+    /// </para>
+    /// <para>
+    /// 连接本身就是普通的「打开这条配置」:凭据缺了照样弹登录框,认证失败照样原地重试,与双击资源管理器里那一条一样;
+    /// 传进来的是文件栏手里那份配置(登录框交回的副本),刚输过却没让记住的密码不用再输一遍。
+    /// </para>
+    /// </remarks>
+    /// <param name="profile">文件栏所连的那条配置(连接类型须是 SSH,否则没有 shell 可开)。</param>
+    /// <param name="remoteDirectory">远端绝对路径。</param>
+    internal Task<TerminalTabViewModel?> OpenTerminalHereAsync(SessionProfile profile, string remoteDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentException.ThrowIfNullOrWhiteSpace(remoteDirectory);
+        return profile.ConnectionType == ConnectionType.SSH
+            ? TryConnectProfileCoreAsync(profile, tabTitle: null, remoteDirectory, CancellationToken.None)
+            : Task.FromResult<TerminalTabViewModel?>(null);
+    }
+
+    /// <param name="profile">连接配置。</param>
+    /// <param name="tabTitle">标签页标题;null 或空白 = 按配置起名。</param>
+    /// <param name="startupDirectory">认证后先 cd 进去的目录(见 <see cref="OpenTerminalHereAsync" />);null = 按配置。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    private async Task<TerminalTabViewModel?> TryConnectProfileCoreAsync(
+        SessionProfile profile,
+        string? tabTitle,
+        string? startupDirectory,
+        CancellationToken cancellationToken
     )
     {
         tabTitle = string.IsNullOrWhiteSpace(tabTitle) ? null : tabTitle;
@@ -4581,6 +4689,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             if (tab is null)
             {
                 (tab, document) = CreateConnectingTab(current, settings, tabTitle: tabTitle);
+                tab.StartupDirectoryOverride = startupDirectory;
             }
             else
             {
@@ -4856,6 +4965,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         WireDocumentPanesToSettings(sshViewModel);
         // 远端搜索走这条 SSH 连接的 exec 通道(FTP 与插件协议的文档没有,不挂)。
         sshViewModel.RemoteFiles.RemoteSearch = _remoteSearch;
+        SessionProfile terminalProfile = connection.Profile;
+        WireOpenTerminalHere(sshViewModel.RemoteFiles, () => terminalProfile);
         var document = new SftpDocument(sshViewModel);
         if (tabTitle is not null)
         {
@@ -5285,6 +5396,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             // 两栏各自判断:是 SSH 会话的那一栏才出现「搜索」(见 FileBrowserViewModel.CanSearchRemote)。
             dualViewModel.LeftFiles.RemoteSearch = _remoteSearch;
             dualViewModel.RightFiles.RemoteSearch = _remoteSearch;
+            WireOpenTerminalHere(dualViewModel.LeftFiles, () => dualViewModel.LeftProfile);
+            WireOpenTerminalHere(dualViewModel.RightFiles, () => dualViewModel.RightProfile);
             var document = new DualSftpDocument(dualViewModel);
             ui.HandOver(document);
             // 树上两条配置各自点亮(登记用原始配置的 Id,理由见 TrackDocumentSession)。
@@ -6117,11 +6230,15 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 只有「填了用户名却没有口令」才是真的缺东西。
     /// </summary>
     private static bool RequiresPluginCredentials(SessionProfile profile, bool allowsAnonymous) =>
-        // 引用共享凭据的不先弹,理由同 RequiresCredentials。
+        // 引用共享凭据的不先弹,理由同 RequiresCredentials;存着的口令解不开也算缺,同样理由。
         profile.CredentialSource is null
         && (allowsAnonymous
-            ? !string.IsNullOrWhiteSpace(profile.Username) && string.IsNullOrEmpty(profile.Password)
-            : string.IsNullOrWhiteSpace(profile.Username) || string.IsNullOrEmpty(profile.Password));
+            ? !string.IsNullOrWhiteSpace(profile.Username) && MissingPassword(profile)
+            : string.IsNullOrWhiteSpace(profile.Username) || MissingPassword(profile));
+
+    /// <summary>没有能用的密码:空着,或者存着的那份在这台设备上解不开(FTP 与插件协议只认密码)。</summary>
+    private static bool MissingPassword(SessionProfile profile) =>
+        string.IsNullOrEmpty(profile.Password) || StoredSecret.IsUnreadable(profile.Password);
 
     /// <summary>
     /// 返回一份把服务器证书指纹记为已信任的配置副本。指纹写进协议自己声明的那个隐藏字段
@@ -6179,9 +6296,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <summary>FTP 缺少登录凭据时才需要弹登录框;匿名登录不需要用户名与口令。</summary>
     private static bool RequiresFtpCredentials(SessionProfile profile) =>
         profile.Ftp?.Anonymous != true &&
-        // 引用共享凭据的不先弹,理由同 RequiresCredentials。
+        // 引用共享凭据的不先弹,理由同 RequiresCredentials;存着的口令解不开也算缺。
         profile.CredentialSource is null &&
-        (string.IsNullOrWhiteSpace(profile.Username) || string.IsNullOrEmpty(profile.Password));
+        (string.IsNullOrWhiteSpace(profile.Username) || MissingPassword(profile));
 
     /// <summary>返回一份把服务器证书指纹记为已信任的配置副本。</summary>
     private static SessionProfile WithTrustedCertificate(SessionProfile profile, string thumbprint)
@@ -6685,6 +6802,19 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 在文件标签里切了,也不留到下次。
     /// 初始值由文档视图模型按打开时的设置铺好(<see cref="FileBrowserViewModel.ApplyDisplayOptions" />),这里只挂回调。
     /// </summary>
+    /// <summary>
+    /// 给文件栏挂上右键「在此处打开终端」(见 <see cref="OpenTerminalHereAsync" />),只给连接类型为 SSH 的配置:
+    /// SFTP 专用配置多半就是没有 shell 的账号,FTP 与插件协议更没有。配置在点的那一刻现取 ——
+    /// 终端标签认证重试之后换上的是登录框交回的新副本。
+    /// </summary>
+    private void WireOpenTerminalHere(FileBrowserViewModel pane, Func<SessionProfile?> profile)
+    {
+        if (profile() is { ConnectionType: ConnectionType.SSH })
+        {
+            pane.OpenTerminalAt = directory => profile() is { } current ? OpenTerminalHereAsync(current, directory) : Task.CompletedTask;
+        }
+    }
+
     private void WireDocumentPanesToSettings(ISftpDocumentContent content)
     {
         foreach (FileBrowserViewModel pane in content.RemotePanes)

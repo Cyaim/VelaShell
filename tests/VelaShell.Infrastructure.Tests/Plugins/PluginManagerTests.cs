@@ -83,6 +83,75 @@ public class PluginManagerTests
         Assert.AreEqual(PluginState.Discovered, byId["a.sdkok"].State);
     }
 
+    /// <summary>
+    /// minHostVersion 闸与 CLI、商店同一份口径(SDK 的 SemanticVersion.CompareCoreTo):只比数字段。
+    /// 预发布宿主装得上为同号正式版写的插件;<c>1.0.0.0</c> 与 <c>1.0.0</c> 相等(原先按 <see cref="Version" />
+    /// 比,第四段缺省是 -1,三段的宿主被判成比 <c>1.0.0.0</c> 老);带构建元数据的宿主版本照样参与比较(原先解析不出、一律放行)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("1.1.0-beta.2", "1.1.0", PluginState.Discovered)]
+    [DataRow("1.0.0", "1.0.0.0", PluginState.Discovered)]
+    [DataRow("1.0.0", "1.0.0.1", PluginState.Incompatible)]
+    [DataRow("1.0.0+build.7", "1.0.1", PluginState.Incompatible)]
+    [DataRow("1.0.0+build.7", "1.0.0", PluginState.Discovered)]
+    [DataRow("not-a-version", "9.9.9", PluginState.Discovered)]
+    public void Discover_MinHostVersionComparesNumericSegmentsOnly(string hostVersion, string minHost, PluginState expected)
+    {
+        AddPlugin("gated", $$"""{ "id": "a.gated", "version": "1.0.0", "displayName": "G", "entry": "G.dll", "minHostVersion": "{{minHost}}" }""");
+
+        var manager = new PluginManager(new()
+        {
+            PluginRoots = [_root],
+            DataRootDirectory = _dataRoot,
+            HostVersion = hostVersion
+        });
+        manager.Discover();
+
+        Assert.AreEqual(expected, manager.Plugins.Single().State, manager.Plugins.Single().Error);
+    }
+
+    /// <summary>
+    /// 清单的版本字段与宿主 / CLI / 商店共用的 SemanticVersion 同一口径(维护者 2026-10-25 定,第二轮第 28 条):
+    /// SDK 正则放过、SemanticVersion 判不合法的写法(预发布纯数字标识符带前导零、空标识符)发现期判 Invalid,
+    /// 原因写明怎么改;清单留在描述上 —— 管理页照常显示插件名,id 也还是它自己的(卸载清扫按它认人)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("\"version\": \"1.0.0-beta.01\"", "'1.0.0-beta.1'")]
+    [DataRow("\"version\": \"1.0.0-a..b\"", "must not be empty")]
+    [DataRow("\"version\": \"1.0.0-rc.\"", "must not be empty")]
+    [DataRow("\"version\": \"1.0.0\", \"minSdkVersion\": \"2.0.0-rc.007\"", "minSdkVersion")]
+    [DataRow("\"version\": \"1.0.0\", \"minHostVersion\": \"1.0.0-00\"", "minHostVersion")]
+    [DataRow("\"version\": \"99999999999.0.0\"", "32 bits")]
+    public void Discover_RejectsManifestVersionsSemanticVersionCannotOrder(string versionFields, string expectedInError)
+    {
+        AddPlugin("loose", $$"""{ "id": "a.loose", {{versionFields}}, "displayName": "Loose", "entry": "L.dll" }""");
+
+        var manager = new PluginManager(Options());
+        manager.Discover();
+
+        PluginDescriptor plugin = manager.Plugins.Single();
+        Assert.AreEqual(PluginState.Invalid, plugin.State);
+        Assert.Contains(expectedInError, plugin.Error);
+        Assert.AreEqual("a.loose", plugin.Id);
+        Assert.AreEqual("Loose", plugin.Manifest?.DisplayName);
+    }
+
+    /// <summary>收紧只动 SemanticVersion 判不合法的那部分:合法的预发布写法(含纯数字 0 与字母混排的前导零)照常放行。</summary>
+    [TestMethod]
+    [DataRow("1.0.0-beta.1")]
+    [DataRow("1.0.0-0")]
+    [DataRow("1.0.0-0a.01b")]
+    [DataRow("1.2.3.4-rc.10")]
+    public void Discover_AcceptsSemVerPreReleaseVersions(string version)
+    {
+        AddPlugin("strict", $$"""{ "id": "a.strict", "version": "{{version}}", "displayName": "S", "entry": "S.dll" }""");
+
+        var manager = new PluginManager(Options());
+        manager.Discover();
+
+        Assert.AreEqual(PluginState.Discovered, manager.Plugins.Single().State, manager.Plugins.Single().Error);
+    }
+
     [TestMethod]
     public void Discover_DirectoryNameNeedNotMatchId()
     {

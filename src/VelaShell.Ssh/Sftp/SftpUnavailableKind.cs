@@ -33,6 +33,9 @@ public enum SftpUnavailableKind
     /// <summary>服务端回的版本 v<see cref="SftpUnavailableException.ServerVersion"/> 比我们发的 v3 高（draft-02 §4 要求回较小的那个）：按 v3 解析会读错属性，不连。</summary>
     VersionTooNew,
 
-    /// <summary>SFTP 流水线已经收工或释放（本端关闭了文件系统、连接释放）：那是本端的事，不是服务端不支持 SFTP。</summary>
+    /// <summary>
+    /// SFTP 流水线已经收工或释放（本端关闭了文件系统、连接释放）：那是本端的事，不是服务端不支持 SFTP。
+    /// 原因码是 <see cref="Diagnostics.SshFailureReason.Aborted"/>（曾经释放那一条路是 <see cref="Diagnostics.SshFailureReason.Unsupported"/>）。
+    /// </summary>
     SessionClosed,
 }

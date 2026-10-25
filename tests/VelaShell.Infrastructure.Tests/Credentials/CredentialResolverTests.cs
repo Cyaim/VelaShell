@@ -33,6 +33,26 @@ public sealed class CredentialResolverTests
             CredentialSource = CredentialReference.ForShared(credential.Id)
         };
 
+    /// <summary>
+    /// 共享凭据里存着的那份在这台设备上解不开(载入时仍是密文):不交给连接去试登录,报「解不开」并点名是哪条凭据,
+    /// 连接流程据此退回登录框(第二轮第 20 条)。本次在登录框里手输过的照用。
+    /// </summary>
+    [TestMethod]
+    public async Task UnreadableSharedSecret_IsReported_NotHandedToTheConnection()
+    {
+        SharedCredential credential = Store(new() { Name = "ops", Username = "root", Password = "enc1:AAAAAAAAAAAAAAAAAAAAAAAA" });
+        SessionProfile profile = Referencing(credential);
+
+        CredentialProviderException error = await Assert.ThrowsExactlyAsync<CredentialProviderException>(
+            () => _resolver.ResolveAsync(profile));
+
+        Assert.AreEqual(CredentialFailure.UnreadableSecret, error.Kind);
+        Assert.Contains("ops", error.Message);
+
+        profile.Password = "typed-in-the-login-dialog";
+        Assert.AreEqual("typed-in-the-login-dialog", (await _resolver.ResolveAsync(profile)).Password);
+    }
+
     [TestMethod]
     public async Task ProfileWithoutReference_IsReturnedAsIs()
     {

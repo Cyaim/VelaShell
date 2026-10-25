@@ -16,7 +16,13 @@ public enum CredentialFailure
     MissingSecret,
 
     /// <summary>认证方式不适用于这种连接(FTP 与插件协议只能用密码)。</summary>
-    UnsupportedAuthMethod
+    UnsupportedAuthMethod,
+
+    /// <summary>
+    /// 已存的密码 / 私钥口令在这台设备上解不开(本机加密密钥换过、系统密钥链这次没打开),
+    /// 没有拿密文去试登录(<see cref="CredentialMaterial.HasUnreadableSecret(Models.SessionProfile)" />)。
+    /// </summary>
+    UnreadableSecret
 }
 
 /// <summary>

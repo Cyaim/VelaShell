@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -72,16 +73,66 @@ public partial class LocalFilePaneView : UserControl
 
         // 手动输入路径(路径栏见 LocalPathBar)。Ctrl+L 走隧道,免得先被文件列表的键盘导航吃掉;
         // 登记在本地栏上,焦点在远端栏时由远端栏自己的 Ctrl+L 接。输入框收起后焦点回到列表。
+        // F5 / F2 / Delete 同一个处理器(见 FilePaneKeys)。
         AddHandler(KeyDownEvent, OnLocalPaneKeyDownTunnel, RoutingStrategies.Tunnel);
         PathBar.EditFinished += (_, _) => FileList.FocusSelectedOrFirstRow();
     }
 
     private void OnLocalPaneKeyDownTunnel(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control)
-            && DataContext is LocalFilePaneViewModel vm)
+        if (DataContext is not LocalFilePaneViewModel vm)
+        {
+            return;
+        }
+        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             vm.BeginPathEdit();
+            e.Handled = true;
+            return;
+        }
+
+        // F5 / F2 / Delete(资源管理器口径,见 FilePaneKeys)。走隧道:F2 / Delete 要赶在列表自己的键盘处理之前。
+        switch (FilePaneKeys.Classify(e, FileList))
+        {
+            case FilePaneKeyAction.Refresh:
+                vm.RefreshCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Rename when vm.SelectedEntries is [{ IsParentEntry: false } entry]:
+                vm.RenameCommand.Execute(entry).Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Delete:
+                // 删除命令自己会先弹确认,只选着 ".." 时什么也不做。
+                vm.DeleteSelectedCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Back:
+                // 与按钮同一个命令、同样先问能不能执行:没有历史、或上一步还没走完时什么也不做。
+                FilePaneKeys.Run(vm.GoBackCommand);
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Forward:
+                FilePaneKeys.Run(vm.GoForwardCommand);
+                e.Handled = true;
+                return;
+        }
+    }
+
+    /// <summary>用户点开过滤框就把焦点给它;程序改开关不抢焦点(与远端栏同一处理,见 FilePaneFilter)。</summary>
+    private void OnFilterToggleClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton { IsChecked: true })
+        {
+            FilePaneFilter.FocusWhenShown(FilterBox);
+        }
+    }
+
+    /// <summary>过滤框里:Esc 清空并收起,回车把焦点交回列表。</summary>
+    private void OnFilterBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is LocalFilePaneViewModel vm && FilePaneFilter.HandleKey(e, FileList, () => vm.IsFilterOpen = false))
+        {
             e.Handled = true;
         }
     }
@@ -117,12 +168,21 @@ public partial class LocalFilePaneView : UserControl
             danger: true);
     }
 
+    /// <summary>
+    /// 双击:目录(含 "..")进去;文件用系统默认程序打开,与远端栏双击文件对称(上传留给拖放、按钮与右键)。
+    /// </summary>
     private void OnFileDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (DataContext is LocalFilePaneViewModel vm && sender is ListBox list && list.SelectedItem is LocalFileEntry entry)
+        if (DataContext is not LocalFilePaneViewModel vm || sender is not ListBox { SelectedItem: LocalFileEntry entry })
+        {
+            return;
+        }
+        if (entry.IsDirectory)
         {
             vm.ActivateCommand.Execute(entry).Subscribe();
+            return;
         }
+        vm.OpenItemCommand.Execute(entry).Subscribe(_ => { }, _ => { });
     }
 
     /// <summary>
@@ -318,12 +378,19 @@ public partial class LocalFilePaneView : UserControl
 
     // ── 放置处理(远端 → 本地) ──────────────────────────────────
 
+    /// <summary>
+    /// 只接远端栏拖过来的行(下载)。从系统文件管理器拖进来的文件给 None:光标不显示「可放下」,松手也什么都不做。
+    /// </summary>
+    /// <remarks>
+    /// 以前这里对系统文件也给 Copy,松手却只刷新一下 —— 显示能放、放了又没复制,这个假承诺比不接更糟。
+    /// 本机文件之间的复制不是这个窗口的本职(系统文件管理器做得更好);真要做,得沿用冲突策略、
+    /// 给目录复制进度与取消,另立一项(维护者 2026-10-25 定:先不显示可放下)。拖进远端栏照旧是上传。
+    /// </remarks>
     private void OnLocalDropDragOver(object? sender, DragEventArgs e)
     {
         bool isRemoteDrag = !string.IsNullOrEmpty(e.DataTransfer.TryGetText())
             && e.DataTransfer.TryGetText()!.StartsWith(DragDropFormats.RemotePaths);
-        bool hasFiles = e.DataTransfer.TryGetFiles()?.Length > 0;
-        e.DragEffects = (isRemoteDrag || hasFiles) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.DragEffects = isRemoteDrag ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
@@ -359,18 +426,7 @@ public partial class LocalFilePaneView : UserControl
                 }
             }
             e.Handled = true;
-            return;
         }
-
-        // 也支持将操作系统文件拖入本地面板(仅刷新)。
-        IStorageItem[]? files = e.DataTransfer.TryGetFiles();
-        if (files is { Length: > 0 })
-        {
-            if (DataContext is LocalFilePaneViewModel vm)
-            {
-                await vm.RefreshAsync();
-            }
-            e.Handled = true;
-        }
+        // 系统文件拖进来不接(见 OnLocalDropDragOver):DragOver 已经给了 None,这里也不做任何事。
     });
 }

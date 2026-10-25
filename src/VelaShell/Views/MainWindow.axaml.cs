@@ -1662,7 +1662,8 @@ public partial class MainWindow : Window
         }
         var viewModel = new PluginManagerViewModel(manager,
             services.GetService<Infrastructure.Plugins.PluginPermissionGate>(),
-            services.GetService<Infrastructure.Plugins.Market.IPluginMarketClient>());
+            services.GetService<Infrastructure.Plugins.Market.IPluginMarketClient>(),
+            services.GetService<Infrastructure.Plugins.PluginNotificationService>());
         // 先占住槽位再去读布局:读的那一下里再点一次侧栏,只会激活这一扇,不会叠出第二扇。
         PluginManagerWindow window = new() { DataContext = viewModel };
         _pluginManagerWindow = window;
@@ -1825,8 +1826,29 @@ public partial class MainWindow : Window
             }
         }
 
+        // 不在库里的临时配置(外部拉起、「最近连接」重建的):框上不给「记住密码」(存不下),改给「另存为连接」。
+        bool temporary = await TemporaryConnectionPrompt.IsTemporaryAsync(services?.GetService<ISessionRepository>(), profile);
+        // 存着的密码在这台设备上解不开:说清为什么,原因照本机加密密钥的解析结果(启动时已在后台解析好,这里只是取结果)。
+        string? unreadableNotice = null;
+        if (UnreadableSecretPrompt.Applies(profile, credential))
+        {
+            MasterKeyStatus? keyStatus = null;
+            if (services?.GetService<IMasterKeyStatusSource>() is { } keys)
+            {
+                try
+                {
+                    keyStatus = await Task.Run(keys.GetKeyStatus);
+                }
+                catch (Exception ex)
+                {
+                    // 说不出原因就按「解不开」说,不影响弹框。
+                    Trace.WriteLine($"[Secrets] Master key status unavailable for the login prompt: {ex.Message}");
+                }
+            }
+            unreadableNotice = UnreadableSecretPrompt.Describe(profile.CredentialSource is null ? null : credential!.Name, keyStatus);
+        }
         AuthenticationDialogViewModel viewModel = SharedCredentialPrompt.CreateDialog(
-            profile, credential, knownFingerprint, sharedContext);
+            profile, credential, knownFingerprint, sharedContext, temporary, unreadableNotice);
         var dialog = new AuthenticationDialogView { DataContext = viewModel };
         AuthenticationResult? result = await dialog.ShowDialog<AuthenticationResult?>(this);
         if (result is null)
@@ -1855,6 +1877,23 @@ public partial class MainWindow : Window
             {
                 // 没存进去不影响这一次连接:副本上带着刚输的那一份。
                 Trace.WriteLine($"[Cred] Updating shared credential {updated.Id} failed: {ex.Message}");
+            }
+        }
+        if (result.SaveAsConnection && services?.GetService<IConnectionWorkflowService>() is { } workflow)
+        {
+            try
+            {
+                await TemporaryConnectionPrompt.SaveAsConnectionAsync(workflow, copy);
+                if (DataContext is MainWindowViewModel vm)
+                {
+                    await vm.RefreshSessionTreeAsync();
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
+            {
+                // 没存成不影响这一次连接:副本上带着刚输的凭据,照常去连,只是仍是一条临时连接。
+                Trace.WriteLine($"[Connect] Saving temporary profile {copy.Id} as a connection failed: {ex.Message}");
+                (DataContext as MainWindowViewModel)?.Toasts.Error(Strings.Format("Auth_SaveAsConnectionFailed", ex.Message));
             }
         }
         return copy;
@@ -1993,7 +2032,9 @@ public partial class MainWindow : Window
         if (e.KeyModifiers != Avalonia.Input.KeyModifiers.Alt
             || DataContext is not MainWindowViewModel vm
             || !vm.Layout.HasMultipleGroups
-            || vm.RunCommand is null)
+            || vm.RunCommand is null
+            // 焦点在文件栏里时 Alt+← / Alt+→ 是那一栏的后退 / 前进(资源管理器口径),这里让路。
+            || FilePaneKeys.OwnsPaneNavigationKey(e))
         {
             return;
         }

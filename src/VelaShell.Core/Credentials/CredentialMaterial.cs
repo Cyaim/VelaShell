@@ -1,3 +1,4 @@
+using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 
 namespace VelaShell.Core.Credentials;
@@ -44,6 +45,28 @@ public static class CredentialMaterial
     /// <returns>需要解析时为 true。</returns>
     public static bool NeedsResolution(SessionProfile profile) =>
         profile.AuthMethod is not (AuthMethod.Tailscale or AuthMethod.KeyStore) && profile.CredentialSource is not null && !HasInline(profile);
+
+    /// <summary>
+    /// 配置上这次要用的那份已存机密(密码认证的密码,私钥 / 证书认证的私钥口令)在这台设备上解不开 ——
+    /// 载入时仍是密文原样(<see cref="StoredSecret" />)。这时不该拿它去登录,该直接问用户并说清原因。
+    /// </summary>
+    /// <param name="profile">连接配置(仓储载入的,或登录框交回的副本)。</param>
+    /// <returns>解不开时为 true。</returns>
+    public static bool HasUnreadableSecret(SessionProfile profile) =>
+        UnreadableFor(profile.AuthMethod, profile.Password, profile.PrivateKeyPassphrase);
+
+    /// <summary>共享凭据里那份已存机密在这台设备上解不开(口径同 <see cref="HasUnreadableSecret(SessionProfile)" />)。</summary>
+    /// <param name="credential">共享凭据(仓储载入的)。</param>
+    /// <returns>解不开时为 true。</returns>
+    public static bool HasUnreadableSecret(SharedCredential credential) =>
+        UnreadableFor(credential.AuthMethod, credential.Password, credential.PrivateKeyPassphrase);
+
+    private static bool UnreadableFor(AuthMethod method, string? password, string? passphrase) => method switch
+    {
+        AuthMethod.Password => StoredSecret.IsUnreadable(password),
+        AuthMethod.PrivateKey or AuthMethod.Certificate => StoredSecret.IsUnreadable(passphrase),
+        _ => false
+    };
 
     /// <summary>清掉配置上的认证材料(密码、私钥、口令、证书)。用户名与认证方式不动。</summary>
     /// <param name="profile">要清的配置(就地修改)。</param>

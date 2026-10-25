@@ -16,6 +16,7 @@
 #   * -warnaserror:当前基线就是 0 警告,守住它。
 #   * **不加** dotnet format --verify-no-changes:CRLF 工作树与 end_of_line = lf 的
 #     .editorconfig 会产生十几万条 ENDOFLINE 噪音,先把换行统一了再加这一步。
+#   * Linux 上多编一遍 runtime-async=off,专扫 Span / ref struct 跨 await(CS4007),理由见那一步。
 name: CI
 
 on:
@@ -149,6 +150,7 @@ jobs:
         run: dotnet --info
 
       - name: 构建
+        id: build
         working-directory: VelaShell
         run: dotnet build VelaShell.slnx -c Debug --nologo -warnaserror
 
@@ -164,6 +166,22 @@ jobs:
           # 检出成功才指过去;失败时不设,文档比对用例照旧记为跳过(见上面那步的说明)。
           VELASHELL_DOCS_DIR: ${{ steps.docs.outcome == 'success' && format('{0}/velashell-docs', github.workspace) || '' }}
         run: ${{ matrix.launcher }} bash scripts/ci/run-tests.sh
+
+      # Directory.Build.props 开着 runtime-async=on,而这个模式下编译器不报 CS4007:Span / ref struct 跨 await
+      # 照常编译,await 真挂起之后那个 Span 回来是空的(根 AGENTS.md「几条会让你踩坑的硬约束」,plan.md §251)。
+      # 关掉它再编一遍,报出来的 CS4007 就是这类代码 —— 测试抓不住它:await 同步完成时结果又是对的。
+      #   * 只在 Linux 上跑:仓里没有 #if,所有工程都是同一个 net11.0(没有 -windows 目标、没有 WPF / WinForms),
+      #     三个平台编到的源码一样,扫一个平台不漏,多扫两个只是多花两次全量编译。三个作业的时长差不多(7–10 分钟),
+      #     加在哪个上都是拉长一次编译;Linux runner 的分钟计费倍率最低(Windows 2×、macOS 10×)。
+      #   * 单独的 artifacts 路径:编到工作区外,不碰上面那次构建的 bin / obj,也不碰 artifacts/trx。
+      #   * 测试红了也照扫(只要上面的构建过了):两件事互不相干,一次跑完都看得到。
+      #   * Features 是整体覆盖:全局属性压过 Directory.Build.props 里的 $(Features);runtime-async=on。
+      #     那里以后若加了别的 feature,这里要一并写上。
+      #   * 不加 -warnaserror:警告由上面那次构建守着,这一步只管 runtime-async=off 下才报出来的错误。
+      - name: 扫 Span 跨 await (runtime-async=off,CS4007)
+        if: runner.os == 'Linux' && !cancelled() && steps.build.outcome == 'success'
+        working-directory: VelaShell
+        run: dotnet build VelaShell.slnx -c Debug --nologo --artifacts-path "${{ runner.temp }}/runtime-async-off" -p:Features=runtime-async=off
 
       # 失败也要传:-v 默认不打印失败用例名,trx 是唯一能定位到具体是哪一条的东西。
       # 偶发失败(见 plan-claude.md Q-06)就靠攒这些 trx 才有得查。

@@ -1,11 +1,12 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Avalonia.Threading;
 using ReactiveUI;
 using VelaShell.Core.Resources;
 using VelaShell.Infrastructure.Plugins;
 using VelaShell.Infrastructure.Plugins.Market;
-using VelaShell.Services.Update;
+using VelaShell.PluginSdk.Versioning;
 
 namespace VelaShell.ViewModels;
 
@@ -128,6 +129,23 @@ public sealed class PluginRowViewModel(PluginDescriptor descriptor, bool hasTerm
     /// <summary>是否可卸载(用户安装,非应用自带)。</summary>
     public bool CanUninstall { get; init; }
 
+    /// <summary>用户是否关掉了这个插件往消息中心发的通知。</summary>
+    public bool NotificationsMuted { get; init; }
+
+    /// <summary>
+    /// 是否摆出「静音通知 / 恢复通知」。只在它真往消息中心发过消息(列表里还有)或已经静音时出现:
+    /// 每一行都摆一个,对从不发通知的插件只是多一个看不懂的按钮。
+    /// </summary>
+    public bool CanToggleNotifications { get; init; }
+
+    /// <summary>静音开关的文案。</summary>
+    public string NotificationsToggleText =>
+        Strings.Get(NotificationsMuted ? "PluginManager_UnmuteNotifications" : "PluginManager_MuteNotifications");
+
+    /// <summary>静音开关的悬停说明。</summary>
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "XAML 绑定只解析实例成员。")]
+    public string NotificationsToggleTip => Strings.Get("PluginManager_MuteNotificationsTip");
+
     /// <summary>
     /// 安装时钉住的发布者公钥指纹;<see langword="null" /> = 这一条没有可核对的身份
     /// (应用自带、命令行旁装、或者装的就是个未签名的包)。
@@ -190,6 +208,7 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
     private readonly PluginManager _manager;
     private readonly PluginPermissionGate? _gate;
     private readonly IPluginMarketClient? _market;
+    private readonly PluginNotificationService? _notifications;
 
     /// <summary>上次问到的商店版本表(按插件 id)。每次刷新列表都拿它比对,不再重新外呼。</summary>
     private IReadOnlyDictionary<string, PluginMarketVersion> _latest =
@@ -277,12 +296,14 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
     /// <param name="market">
     /// 插件商店的只读客户端;缺席时整个更新检查不存在(headless 测试与离线部署走这条)。
     /// </param>
+    /// <param name="notifications">插件通知(静音开关);缺席时不显示静音入口。</param>
     public PluginManagerViewModel(PluginManager manager, PluginPermissionGate? gate,
-        IPluginMarketClient? market = null)
+        IPluginMarketClient? market = null, PluginNotificationService? notifications = null)
     {
         _manager = manager;
         _gate = gate;
         _market = market;
+        _notifications = notifications;
         _onChanged = () => Dispatcher.UIThread.Post(() => _ = ReloadAsync());
         // 等待调试器的隔离插件:把 pid 摆到管理页上。它同时进日志、落 pid 文件,
         // 但开发者此刻多半正开着这个页面,让他去翻日志属于本可以省掉的一步。
@@ -364,6 +385,18 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
             await _gate.RevokeAsync(row.Id).ConfigureAwait(false);
             await ReloadAsync().ConfigureAwait(false);
         }
+    }
+
+    /// <summary>静音或恢复某插件的通知(已经发进消息中心的那些不动,要删在消息中心里删)。</summary>
+    public async Task ToggleNotificationsAsync(PluginRowViewModel row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (_notifications is null || !row.CanToggleNotifications)
+        {
+            return;
+        }
+        await _notifications.SetMutedAsync(row.Id, !row.NotificationsMuted).ConfigureAwait(false);
+        await ReloadAsync().ConfigureAwait(false);
     }
 
     /// <summary>卸载某插件(用户安装的)。调用方已确认。</summary>
@@ -509,9 +542,12 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
             bool uninstallable = _manager.IsUninstallable(descriptor.Id);
             string? pinned = await _manager.GetPinnedPublisherFingerprintAsync(descriptor.Id).ConfigureAwait(false);
             (PluginUpdateState state, string? available, string? blocker) = ResolveUpdate(descriptor, uninstallable);
+            bool muted = _notifications is not null && await _notifications.IsMutedAsync(descriptor.Id).ConfigureAwait(false);
             rows.Add(new(descriptor, grant)
             {
                 CanUninstall = uninstallable,
+                NotificationsMuted = muted,
+                CanToggleNotifications = _notifications is not null && (muted || _notifications.HasMessages(descriptor.Id)),
                 OpenSurfaces = _manager.GetOpenSurfaceCount(descriptor.Id),
                 PublisherFingerprint = pinned,
                 UpdateState = state,
@@ -545,8 +581,8 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
 
     /// <summary>把「商店上那一版」与「本地这一版」对起来:该不该升、升不升得上去。</summary>
     /// <remarks>
-    /// 版本比较走 <see cref="UpdateVersion" />(应用自更新用的那一套),**不是**
-    /// <c>PluginManager</c> 内部判 minHostVersion 的那个 IsOlder —— 后者整段丢掉预发布后缀,
+    /// 「哪个更新」按 <see cref="SemanticVersion.CompareTo" /> 的完整优先级比(与应用自更新、CLI、商店同一份),**不是**
+    /// <c>PluginManager</c> 装载闸用的 <see cref="SemanticVersion.CompareCoreTo" /> —— 后者只比数字段,
     /// 本地装着 <c>1.2.0-beta.1</c> 时它会认为商店上的 <c>1.2.0</c> 不算更新。
     /// </remarks>
     /// <param name="descriptor">本地插件。</param>
@@ -561,17 +597,31 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
             // 应用自带、开发期挂载、商店上查不到的,都没有"更新"这个动作。
             return (PluginUpdateState.Unknown, null, null);
         }
-        if (!UpdateVersion.TryParse(latest.Version, out UpdateVersion remote)
-            || !UpdateVersion.TryParse(manifest.Version, out UpdateVersion local)
-            || remote.CompareTo(local) <= 0)
+        if (CompareForUpdate(latest.Version, manifest.Version) is { } settled)
         {
-            return (PluginUpdateState.UpToDate, null, null);
+            if (settled == PluginUpdateState.Unknown)
+            {
+                Trace.WriteLine($"[PluginManager] Cannot compare versions of {descriptor.Id}: local '{manifest.Version}', store '{latest.Version}'.");
+            }
+            return (settled, null, null);
         }
         string? blocker = _manager.DescribeUpdateBlocker(latest.ApiLevel, latest.MinHostVersion, latest.MinSdkVersion);
         return blocker is null
             ? (PluginUpdateState.Available, latest.Version, null)
             : (PluginUpdateState.BlockedByHost, latest.Version, blocker);
     }
+
+    /// <summary>
+    /// 商店那一版比本地新时为 <see langword="null" />(还要再看装不装得上);不新时为 <see cref="PluginUpdateState.UpToDate" />;
+    /// 任一侧解析不出时为 <see cref="PluginUpdateState.Unknown" /> —— 比不了就不报「有新版」,也不冒充「已是最新」
+    /// (与 vela-plugin 同一口径)。旧的 UpdateVersion 对后缀宽松,会把本地的 <c>1.0.0-beta.01</c> 与商店的
+    /// <c>1.0.0</c> 比出「有新版」;这类清单现在发现期就判 Invalid,走到这里的只剩商店返回了怪写法。
+    /// </summary>
+    internal static PluginUpdateState? CompareForUpdate(string? remoteVersion, string? localVersion) =>
+        !SemanticVersion.TryParse(remoteVersion, out SemanticVersion remote)
+        || !SemanticVersion.TryParse(localVersion, out SemanticVersion local)
+            ? PluginUpdateState.Unknown
+            : remote.CompareTo(local) > 0 ? null : PluginUpdateState.UpToDate;
 
     /// <inheritdoc />
     public void Dispose()

@@ -157,8 +157,12 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
                 FailureKind = SftpUnavailableKind.VersionTooOld,
                 ServerVersion = 2,
             }));
-        Assert.AreEqual($"{Strings.Get("SftpErr_SessionClosed")} [Unsupported @ Open]",
-            SshInterop.LocalizeUnavailable(new SftpUnavailableException("SFTP 流水线已释放。") { FailureKind = SftpUnavailableKind.SessionClosed }),
+        // 照库里本端释放时的样子构造:原因码是 Aborted(曾经是 Unsupported),尾巴照实写。
+        Assert.AreEqual($"{Strings.Get("SftpErr_SessionClosed")} [Aborted @ Open]",
+            SshInterop.LocalizeUnavailable(new SftpUnavailableException(SshFailureReason.Aborted, "SFTP 流水线已释放。")
+            {
+                FailureKind = SftpUnavailableKind.SessionClosed,
+            }),
             "本端收工,不说成服务端没开 SFTP");
         Assert.StartsWith(Strings.Get("SftpErr_Unavailable"),
             SshInterop.LocalizeUnavailable(new SftpUnavailableException("x") { FailureKind = SftpUnavailableKind.SubsystemRejected }));

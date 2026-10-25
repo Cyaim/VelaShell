@@ -506,7 +506,7 @@ internal static class SshConnectionAssembler
 
     /// <summary>释放这一次建连读出来的私钥签名器(释放时清零私钥)。</summary>
     /// <remarks>
-    /// 只管本地读出的私钥(<see cref="InMemorySshSigner" />)与包着它的证书签名器(它会连同里面那把一起释放);
+    /// 只管本地读出的私钥(<see cref="InMemorySshSigner" />)与包着它(或包着系统密钥库那把)的证书签名器(它会连同里面那把一起释放);
     /// 系统密钥库的签名器(<see cref="CngSshSigner" />)也在这里释放 —— 释放的是密钥库句柄,私钥本来就不在本进程里。
     /// agent 的签名器不归这里 —— 它背后的连接由 agent 客户端管。
     /// 曾经从不释放:私钥材料在托管堆上一直留到 GC,证书读失败时已经读出的私钥也留在原处。
@@ -684,30 +684,17 @@ internal static class SshConnectionAssembler
                 {
                     InMemorySshSigner signer = await LoadSignerAsync(
                         info.PrivateKeyPath!, info.PrivateKeyPassphrase, cancellationToken).ConfigureAwait(false);
-
-                    try
-                    {
-                        OpenSshCertificate certificate = await OpenSshCertificate
-                            .LoadAsync(info.CertificatePath!, cancellationToken).ConfigureAwait(false);
-
-                        // Create 当场核对「证书与私钥是不是一对」—— 不核对的话配错了的表现是
-                        // 服务端一句 Permission denied,与「CA 不被信任」「主体不匹配」没法区分。
-                        // 证书签名器接管私钥签名器:释放它就连同私钥一起释放。
-                        return [new PublicKeyCredential(
-                            SshCertificateSigner.Create(certificate, signer), info.CertificatePath)];
-                    }
-                    catch
-                    {
-                        // 证书读不出来或与私钥不是一对:已经读出的私钥没有人会再用,当场释放(清零)。
-                        signer.Dispose();
-                        throw;
-                    }
+                    return [await WithCertificateAsync(signer, info.CertificatePath!, cancellationToken).ConfigureAwait(false)];
                 }
 
             case AuthMethod.KeyStore:
                 {
                     ISshSigner signer = await OpenKeyStoreSignerAsync(info, cancellationToken).ConfigureAwait(false);
-                    return [new PublicKeyCredential(signer, info.KeyStoreKey!.KeyName)];
+                    // 证书是可选的:CA 给密钥库里这把钥签了用户证书,就照「私钥 + 证书」那一路出示证书 ——
+                    // 服务端认的是 CA,不必把这把钥的公钥加进 authorized_keys。签名照旧由密钥库做。
+                    return string.IsNullOrWhiteSpace(info.CertificatePath)
+                        ? [new PublicKeyCredential(signer, info.KeyStoreKey!.KeyName)]
+                        : [await WithCertificateAsync(signer, info.CertificatePath, cancellationToken).ConfigureAwait(false)];
                 }
 
             default:
@@ -749,6 +736,31 @@ internal static class SshConnectionAssembler
             key.KeyName,
             new CngProvider(key.Provider),
             key.MachineKey ? CngKeyOpenOptions.MachineKey : CngKeyOpenOptions.None);
+
+    /// <summary>
+    /// 给已经打开的签名器配上证书(<c>*-cert.pub</c>):「私钥 + 证书」与「系统密钥库 + 证书」共用这一段。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="SshCertificateSigner.Create" /> 当场核对「证书与私钥是不是一对」—— 不核对的话配错了的表现是
+    /// 服务端一句 Permission denied,与「CA 不被信任」「主体不匹配」没法区分。
+    /// 证书签名器接管 <paramref name="signer" />:释放它就连同里面那把一起释放(私钥清零、密钥库句柄关掉)。
+    /// 证书读不出来或与钥不是一对时,<paramref name="signer" /> 没有人会再用,当场释放。
+    /// </remarks>
+    private static async ValueTask<PublicKeyCredential> WithCertificateAsync(
+        ISshSigner signer, string certificatePath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            OpenSshCertificate certificate = await OpenSshCertificate
+                .LoadAsync(certificatePath, cancellationToken).ConfigureAwait(false);
+            return new PublicKeyCredential(SshCertificateSigner.Create(certificate, signer), certificatePath);
+        }
+        catch
+        {
+            (signer as IDisposable)?.Dispose();
+            throw;
+        }
+    }
 
     /// <summary>
     /// 读一把私钥。

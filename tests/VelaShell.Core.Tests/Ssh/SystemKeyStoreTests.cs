@@ -106,6 +106,74 @@ public sealed class SystemKeyStoreTests
         Assert.IsTrue(ssh.IsConnected);
     }
 
+    /// <summary>
+    /// 配了证书:出示的是 CA 给这把钥签的用户证书(服务端只认证书 blob,不认那把裸公钥),签名照旧由密钥库做。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task 配了证书时出示证书登录()
+    {
+        if (!WindowsOrSkip())
+        {
+            return;
+        }
+        using TestKey key = TestKey.Create();
+        string certificatePath = Path.Combine(Path.GetTempPath(), $"vela-keystore-{Guid.NewGuid():N}-cert.pub");
+        (string line, byte[] blob) = key.UserCertificate("joe");
+        await File.WriteAllTextAsync(certificatePath, line + "\n", TestContext.CancellationToken);
+        try
+        {
+            await using LoopbackSshHost host = new()
+            {
+                AuthPolicy = new TestAuthPolicy
+                {
+                    RequiredMethods = ["publickey"],
+                    // 只认证书:出示的若是裸公钥就登不上 —— 能登上就说明证书配上了。
+                    AcceptedPublicKeys = [blob],
+                },
+            };
+
+            await using VelaSshClientWrapper ssh = await ConnectAsync(KeyStoreInfo(host.Port, key.Name, certificatePath));
+
+            Assert.IsTrue(ssh.IsConnected);
+        }
+        finally
+        {
+            File.Delete(certificatePath);
+        }
+    }
+
+    /// <summary>证书签的不是这把钥:建连之前就如实说「证书与钥不是一对」,不去连服务器(而不是换来一句笼统的 publickey 被拒)。</summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task 证书与密钥库里的钥不是一对时如实说()
+    {
+        if (!WindowsOrSkip())
+        {
+            return;
+        }
+        using TestKey key = TestKey.Create();
+        using TestKey other = TestKey.Create();
+        string certificatePath = Path.Combine(Path.GetTempPath(), $"vela-keystore-{Guid.NewGuid():N}-cert.pub");
+        await File.WriteAllTextAsync(certificatePath, other.UserCertificate("joe").Line + "\n", TestContext.CancellationToken);
+        try
+        {
+            await using LoopbackSshHost host = new();
+            string name = key.Name;
+
+            VelaSshAuthenticationException ex = await Assert.ThrowsAsync<VelaSshAuthenticationException>(
+                async () => await ConnectAsync(KeyStoreInfo(host.Port, name, certificatePath)));
+
+            Assert.AreEqual(VelaShell.Ssh.Keys.SshKeyProblemKind.CertificateKeyMismatch,
+                Assert.IsInstanceOfType<VelaShell.Ssh.Keys.SshCertificateException>(ex.InnerException).ProblemKind);
+            Assert.AreEqual(0, host.Accepted, "证书配错了就不去连服务器");
+        }
+        finally
+        {
+            File.Delete(certificatePath);
+        }
+    }
+
     /// <summary>引用的钥在这台电脑上不在(别的电脑上建的、卡没插):如实说「打不开系统密钥库里的这把钥」,不去连服务器。</summary>
     [TestMethod]
     [Timeout(60_000)]
@@ -153,13 +221,14 @@ public sealed class SystemKeyStoreTests
 
     // ------------------------------------------------------------ 辅助
 
-    private static ConnectionInfo KeyStoreInfo(int port, string keyName) => new()
+    private static ConnectionInfo KeyStoreInfo(int port, string keyName, string? certificatePath = null) => new()
     {
         Host = "127.0.0.1",
         Port = port,
         Username = "joe",
         AuthMethod = AuthMethod.KeyStore,
         KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.SoftwareProvider, KeyName = keyName },
+        CertificatePath = certificatePath,
     };
 
     private static async Task<VelaSshClientWrapper> ConnectAsync(ConnectionInfo info)
@@ -230,6 +299,55 @@ public sealed class SystemKeyStoreTests
             return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1));
         }
 
+        /// <summary>
+        /// 拿一把现建的 CA 钥(ECDSA P-256,只在内存里)给这把钥签一张用户证书(OpenSSH PROTOCOL.certkeys 的
+        /// <c>ecdsa-sha2-nistp256-cert-v01@openssh.com</c>),有效期前后各一小时。
+        /// </summary>
+        /// <returns><c>-cert.pub</c> 那一行,与证书 blob(测试服务端按它认人)。</returns>
+        public (string Line, byte[] Blob) UserCertificate(string principal)
+        {
+            using ECDsaCng subject = new(_key);
+            ECParameters parameters = subject.ExportParameters(includePrivateParameters: false);
+            using ECDsa ca = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+            using MemoryStream blob = new();
+            WriteString(blob, "ecdsa-sha2-nistp256-cert-v01@openssh.com"u8);
+            WriteString(blob, RandomNumberGenerator.GetBytes(32));                       // nonce
+            WriteString(blob, "nistp256"u8);
+            WriteString(blob, [0x04, .. parameters.Q.X!, .. parameters.Q.Y!]);
+            WriteUInt64(blob, 1);                                                         // serial
+            WriteUInt32(blob, 1);                                                         // 1 = 用户证书
+            WriteString(blob, "vela-keystore-test"u8);                                    // key id
+            using (MemoryStream principals = new())
+            {
+                WriteString(principals, System.Text.Encoding.UTF8.GetBytes(principal));
+                WriteString(blob, principals.ToArray());
+            }
+            WriteUInt64(blob, (ulong)(now - 3600));                                       // valid after
+            WriteUInt64(blob, (ulong)(now + 3600));                                       // valid before
+            WriteString(blob, []);                                                        // critical options
+            WriteString(blob, []);                                                        // extensions
+            WriteString(blob, []);                                                        // reserved
+            WriteString(blob, EcdsaBlob(ca.ExportParameters(includePrivateParameters: false)));
+
+            // CA 的签名覆盖前面的全部字段(RFC 5656 §3.1.2 的签名格式:类型串 + (mpint r, mpint s))。
+            byte[] signed = blob.ToArray();
+            byte[] rs = ca.SignData(signed, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+            using MemoryStream signature = new();
+            WriteString(signature, "ecdsa-sha2-nistp256"u8);
+            using (MemoryStream pair = new())
+            {
+                WriteMpint(pair, rs.AsSpan(0, 32));
+                WriteMpint(pair, rs.AsSpan(32));
+                WriteString(signature, pair.ToArray());
+            }
+            WriteString(blob, signature.ToArray());
+
+            byte[] certificate = blob.ToArray();
+            return ($"ecdsa-sha2-nistp256-cert-v01@openssh.com {Convert.ToBase64String(certificate)} vela-keystore-test", certificate);
+        }
+
         /// <summary>RFC 5656 §3.1 的 ecdsa-sha2-nistp256 公钥 blob。</summary>
         private static byte[] EcdsaBlob(ECParameters parameters)
         {
@@ -243,10 +361,30 @@ public sealed class SystemKeyStoreTests
 
         private static void WriteString(Stream stream, ReadOnlySpan<byte> value)
         {
-            Span<byte> length = stackalloc byte[4];
-            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(length, (uint)value.Length);
-            stream.Write(length);
+            WriteUInt32(stream, (uint)value.Length);
             stream.Write(value);
+        }
+
+        private static void WriteUInt32(Stream stream, uint value)
+        {
+            Span<byte> bytes = stackalloc byte[4];
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(bytes, value);
+            stream.Write(bytes);
+        }
+
+        private static void WriteUInt64(Stream stream, ulong value)
+        {
+            Span<byte> bytes = stackalloc byte[8];
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(bytes, value);
+            stream.Write(bytes);
+        }
+
+        /// <summary>RFC 4251 §5 的 mpint(正数):去掉前导零,最高位是 1 时补一个 0。</summary>
+        private static void WriteMpint(Stream stream, ReadOnlySpan<byte> magnitude)
+        {
+            magnitude = magnitude.TrimStart((byte)0);
+            byte[] value = magnitude.Length > 0 && (magnitude[0] & 0x80) != 0 ? [0, .. magnitude] : magnitude.ToArray();
+            WriteString(stream, value);
         }
 
         public void Dispose()

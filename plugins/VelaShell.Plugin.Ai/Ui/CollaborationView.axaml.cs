@@ -115,6 +115,7 @@ public partial class CollaborationView : UserControl
 
         BridgeEnabledCheck.IsCheckedChanged += (_, _) => UpdateVisibility();
         McpEnabledCheck.IsCheckedChanged += (_, _) => UpdateVisibility();
+        BridgeModelCombo.SelectionChanged += (_, _) => UpdateModelRemovedHint();
         McpPortBox.TextChanged += (_, _) => UpdateCommandSample();
         AddChannelButton.Click += (_, _) => AddChannel();
         SaveButton.Click += (_, _) => _ = SaveAsync();
@@ -141,6 +142,7 @@ public partial class CollaborationView : UserControl
         ConcurrencyLabel.Text = _loc["BridgeConcurrency"];
         BridgeModelLabel.Text = _loc["BridgeModel"];
         BridgeModelHint.Text = _loc["BridgeModelHint"];
+        BridgeModelRemovedHint.Text = _loc["BridgeModelRemovedHint"];
 
         SectionChannelsTitle.Text = _loc["SecChannels"];
         AddChannelButton.Content = _loc["ChannelAdd"];
@@ -179,6 +181,8 @@ public partial class CollaborationView : UserControl
         FillApprovals(McpApprovalCombo);
         FillScopeKinds(McpScopeCombo);
         FillKinds();
+        // 「跟随聊天面板」「已删除的模型」两项跟着语言走;选中项不变
+        FillModels(BridgeModelCombo.SelectedIndex);
     }
 
     /// <summary>"限不限范围"那个下拉。与授权行上的那一个同文同序。</summary>
@@ -213,6 +217,13 @@ public partial class CollaborationView : UserControl
 
     /// <summary>可选的模型(下拉里第 0 项是"跟随聊天面板",所以下标要减一)。</summary>
     private List<ResolvedModel> _models = [];
+
+    /// <summary>
+    /// 桥接指定、却已经从 AI 设置里删掉的那个模型 id(没有就是 null)。下拉末尾多摆一项「已删除的模型」如实显示,
+    /// 保存时原样写回。以前它显示成「跟随聊天面板」,点一下保存(哪怕只是改了别的渠道)就静默改成了跟随 ——
+    /// 桥接从「拒绝并请人重选」变成悄悄换到面板当前的模型,那可能是另一家供应商、另一份计费。
+    /// </summary>
+    private string? _removedModelId;
 
     private async Task LoadAsync()
     {
@@ -261,20 +272,33 @@ public partial class CollaborationView : UserControl
     /// </summary>
     /// <remarks>
     /// 一个模型都没配时只留第 0 项 —— 这时桥接跑起来会回一句"还没配置模型",
-    /// 比在下拉里摆一堆空条目诚实。
+    /// 比在下拉里摆一堆空条目诚实。指定的模型已被删掉时末尾多一项「已删除的模型」并选中它(见 <see cref="_removedModelId" />);
+    /// 「跟随」与「指定」的判据与桥接(<c>BridgeAgentRunner</c>)一致:id 为空白就是跟随。
     /// </remarks>
     private async Task LoadModelsAsync()
     {
         AiSettings ai = await new AiSettingsStore(_context).LoadAsync();
         _models = ai.ResolveModels();
+        string? pinned = string.IsNullOrWhiteSpace(_settings.ModelId) ? null : _settings.ModelId;
+        int index = pinned is null ? 0 : _models.FindIndex(m => m.Id == pinned) + 1;
+        _removedModelId = pinned is not null && index == 0 ? pinned : null;
+        FillModels(_removedModelId is null ? index : _models.Count + 1);
+    }
+
+    /// <summary>按当前语言重填模型下拉,选中第 <paramref name="selected" /> 项(越界就落到最近的一项)。</summary>
+    private void FillModels(int selected)
+    {
         List<string> items = [_loc["BridgeModelFollow"]];
         items.AddRange(_models.Select(m => $"{m.ProviderName} / {m.Name}"));
+        if (_removedModelId is not null) items.Add(_loc["BridgeModelRemoved"]);
         BridgeModelCombo.ItemsSource = items;
-        int index = _settings.ModelId is { Length: > 0 } id
-            ? _models.FindIndex(m => m.Id == id) + 1
-            : 0;
-        BridgeModelCombo.SelectedIndex = Math.Max(0, index);
+        BridgeModelCombo.SelectedIndex = Math.Clamp(selected, 0, items.Count - 1);
+        UpdateModelRemovedHint();
     }
+
+    /// <summary>选中的是「已删除的模型」时说明桥接会怎么做:拒绝并请人重选,保存也原样保留这个指定。</summary>
+    private void UpdateModelRemovedHint()
+        => BridgeModelRemovedHint.IsVisible = _removedModelId is not null && BridgeModelCombo.SelectedIndex == _models.Count + 1;
 
     private async Task RebuildChannelsAsync()
     {
@@ -796,10 +820,12 @@ public partial class CollaborationView : UserControl
             _settings.TurnTimeoutSeconds = ParseInt(TurnTimeoutBox.Text, _settings.TurnTimeoutSeconds, 30, 3600);
             _settings.ApprovalTimeoutSeconds = ParseInt(ApprovalTimeoutBox.Text, _settings.ApprovalTimeoutSeconds, 10, 3600);
             _settings.MaxConcurrentTurns = ParseInt(ConcurrencyBox.Text, _settings.MaxConcurrentTurns, 1, 16);
-            // 第 0 项是"跟随聊天面板",落库时写 null
-            _settings.ModelId = BridgeModelCombo.SelectedIndex > 0
-                ? _models[BridgeModelCombo.SelectedIndex - 1].Id
-                : null;
+            // 第 0 项是"跟随聊天面板",落库时写 null;末尾的「已删除的模型」原样写回那个 id ——
+            // 桥接照旧拒绝并请人重选,不因为这一页点了保存就悄悄改成跟随
+            int pick = BridgeModelCombo.SelectedIndex;
+            _settings.ModelId = pick <= 0 ? null
+                : pick <= _models.Count ? _models[pick - 1].Id
+                : _removedModelId;
 
             var channels = new List<ChannelConfig>();
             foreach (ChannelRow row in _rows)
@@ -859,6 +885,12 @@ public partial class CollaborationView : UserControl
             _mcp.Scope = _mcpScope?.Invoke() ?? _mcp.Scope;
             await _mcpStore.SaveAsync(_mcp);
 
+            // 已经改指定了别的(或改成跟随)并存下:那一项不再是任何人的设置,从下拉里拿掉
+            if (_removedModelId is not null && _settings.ModelId != _removedModelId)
+            {
+                _removedModelId = null;
+                FillModels(BridgeModelCombo.SelectedIndex);
+            }
             await _restart();
             StatusText.Text = _loc["Saved"];
         }

@@ -148,6 +148,28 @@ public sealed class ConnectionDiagnosticsServiceTests
         await _workflow.DidNotReceive().TestConnectionAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// 存着的密码在这台设备上解不开:认证那一步不拿密文去试(白白一次失败认证),标成「要人补」并说明原因 ——
+    /// 巡检里归到「需要凭据」(第二轮第 20 条)。
+    /// </summary>
+    [TestMethod]
+    public async Task UnreadableStoredPassword_SkipsTheLoginAttempt_WithAReason()
+    {
+        await using SshBannerListener server = new();
+        var profile = new SessionProfile
+        {
+            Name = "web", Host = "127.0.0.1", Port = server.Port, Username = "root",
+            AuthMethod = AuthMethod.Password, Password = "enc1:AAAAAAAAAAAAAAAAAAAAAAAA"
+        };
+
+        DiagnosticReport report = await Service().DiagnoseAsync(profile);
+
+        Assert.AreEqual(DiagnosticStepStatus.Warning, report.Steps[3].Status);
+        Assert.AreEqual(Strings.Get("Cred_Failure_StoredSecretUnreadable"), report.Steps[3].Detail);
+        await _workflow.DidNotReceive().TestConnectionAsync(Arg.Any<SessionProfile>(), Arg.Any<SshPacketTrace>(), Arg.Any<CancellationToken>());
+        await _workflow.DidNotReceive().TestConnectionUnattendedAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
+    }
+
     private ConnectionDiagnosticsService Service() => new(_sessions, _workflow);
 
     private static SessionProfile Tailscale(int port, string username) => new()

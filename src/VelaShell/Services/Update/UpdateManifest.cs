@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using VelaShell.PluginSdk.Versioning;
 
 namespace VelaShell.Services.Update;
 
@@ -39,8 +40,8 @@ public sealed class UpdateManifest
     /// 日志源附带快照前检查;UpdateService 接受外部候选时也应再次调用,不能只信任 UI。
     /// </summary>
     internal bool IsEligibleForInstallation() =>
-        UpdateVersion.TryParse(Tag, out UpdateVersion tagVersion)
-        && UpdateVersion.TryParse(Version, out UpdateVersion manifestVersion)
+        SemanticVersion.TryParse(Tag, out SemanticVersion tagVersion)
+        && SemanticVersion.TryParse(Version, out SemanticVersion manifestVersion)
         && tagVersion == manifestVersion
         && AssetForCurrentPlatform() is { } asset && IsEligibleAsset(asset);
 

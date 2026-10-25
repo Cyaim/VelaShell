@@ -43,9 +43,12 @@ public interface IPluginPermissionPrompt
         string remotePath, bool overwrite, long sizeBytes, CancellationToken cancellationToken)
         => Task.FromResult(PluginPermissionDecision.Deny);
 
-    /// <summary>逐任务审批具体下载;仅 AllowOnce 有效,不授予其它文件或终端能力。</summary>
+    /// <summary>
+    /// 逐任务审批具体下载;仅 AllowOnce 有效,不授予其它文件或终端能力。<paramref name="sizeBytes" /> 是审批之前对远端源
+    /// stat 到的大小,确认框与上传一样照实显示(维护者 2026-10-25 定,第二轮第 27 条)。
+    /// </summary>
     Task<PluginPermissionDecision> RequestFileDownloadAsync(string pluginId, string sessionLabel, string remotePath,
-        string localPath, bool overwrite, CancellationToken cancellationToken)
+        string localPath, bool overwrite, long sizeBytes, CancellationToken cancellationToken)
         => Task.FromResult(PluginPermissionDecision.Deny);
 }
 
@@ -165,8 +168,10 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
     }
 
     /// <summary>逐任务请求可信下载审批;仅 AllowOnce 有效,不复用上传、终端或开会话授权。</summary>
+    /// <remarks><c>onApproved</c> 与 <see cref="CheckUploadAsync" /> 的同名参数一样:批准生效时在登记批准的同一把锁里调用。</remarks>
     public async Task<bool> CheckDownloadAsync(DownloadPermissionLease lease, string pluginId, string sessionLabel,
-        string remotePath, string localPath, bool overwrite, CancellationToken cancellationToken)
+        string remotePath, string localPath, bool overwrite, long sizeBytes, CancellationToken cancellationToken,
+        Action? onApproved = null)
     {
         if (prompt is null) return false;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lease.Revocation);
@@ -174,7 +179,8 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
         try
         {
             lock (_uploadGate) if (!_downloads.TryGetValue(pluginId, out HashSet<DownloadPermissionLease>? leases) || !leases.Contains(lease)) return false;
-            Task<PluginPermissionDecision> pending = prompt.RequestFileDownloadAsync(pluginId, sessionLabel, remotePath, localPath, overwrite, linked.Token);
+            Task<PluginPermissionDecision> pending = prompt.RequestFileDownloadAsync(pluginId, sessionLabel, remotePath, localPath,
+                overwrite, sizeBytes, linked.Token);
             PluginPermissionDecision decision;
             try { decision = await pending.WaitAsync(linked.Token).ConfigureAwait(false); }
             catch (OperationCanceledException)
@@ -188,6 +194,7 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
             {
                 linked.Token.ThrowIfCancellationRequested();
                 lease.Approved = !lease.IsRevoked && decision == PluginPermissionDecision.AllowOnce;
+                if (lease.Approved) onApproved?.Invoke();
                 return lease.Approved;
             }
         }
@@ -218,8 +225,15 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
     }
 
     /// <summary>逐次请求可信上传审批,明确拒绝 Session/Always 扩大范围,不复用其它能力授权。</summary>
+    /// <remarks>
+    /// <c>onApproved</c> 在批准生效时、登记批准的同一把锁里调用,让调用方把任务状态与「已批准」一起推进:插件此刻读到的快照
+    /// 要么还在等确认、要么已经批准,不会有「其实批了、快照还说在等」的空当(插件停止时按快照撤等确认的任务,
+    /// 那段空当里读到的旧阶段会把用户刚批准的传输撤掉)。回调只许做不阻塞的内存操作:可以取任务自己的锁
+    /// (锁序固定为本闸 → 任务),不许回头调用本闸。
+    /// </remarks>
     public async Task<bool> CheckUploadAsync(UploadPermissionLease lease, string pluginId, string sessionLabel,
-        string localPath, string remotePath, bool overwrite, long sizeBytes, CancellationToken cancellationToken)
+        string localPath, string remotePath, bool overwrite, long sizeBytes, CancellationToken cancellationToken,
+        Action? onApproved = null)
     {
         if (prompt is null) return false;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lease.Revocation);
@@ -246,6 +260,7 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
                 linked.Token.ThrowIfCancellationRequested();
                 if (lease.IsRevoked) return false;
                 lease.Approved = decision == PluginPermissionDecision.AllowOnce;
+                if (lease.Approved) onApproved?.Invoke();
                 return lease.Approved;
             }
         }

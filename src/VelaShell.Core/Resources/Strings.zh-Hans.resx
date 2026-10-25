@@ -927,6 +927,9 @@
   <data name="Download" xml:space="preserve">
     <value>下载</value>
   </data>
+  <data name="DownloadAs" xml:space="preserve">
+    <value>下载为…</value>
+  </data>
   <data name="Refresh" xml:space="preserve">
     <value>刷新</value>
   </data>
@@ -942,6 +945,18 @@
   <data name="Sftp_GoUpRemotePane" xml:space="preserve">
     <value>远程栏上一级</value>
   </data>
+  <data name="Sftp_BackLocalPane" xml:space="preserve">
+    <value>本地栏后退 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardLocalPane" xml:space="preserve">
+    <value>本地栏前进 (Alt+→)</value>
+  </data>
+  <data name="Sftp_BackRemotePane" xml:space="preserve">
+    <value>远程栏后退 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardRemotePane" xml:space="preserve">
+    <value>远程栏前进 (Alt+→)</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>跟随终端目录(同步到终端当前路径)</value>
   </data>
@@ -954,8 +969,17 @@
   <data name="Sftp_SearchOpen" xml:space="preserve">
     <value>搜索远端文件…</value>
   </data>
+  <data name="Sftp_FilterToggle" xml:space="preserve">
+    <value>过滤当前目录</value>
+  </data>
+  <data name="Sftp_FilterPlaceholder" xml:space="preserve">
+    <value>按名称过滤</value>
+  </data>
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>在此目录中搜索…</value>
+  </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>在此处打开终端</value>
   </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>搜索远端文件</value>
@@ -5035,6 +5059,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Transfer_CancelRemainingTip" xml:space="preserve">
     <value>取消剩余传输</value>
   </data>
+  <data name="Transfer_CancelItemTip" xml:space="preserve">
+    <value>取消这一项(这一批其余照传)</value>
+  </data>
   <data name="Transfer_CollapseTip" xml:space="preserve">
     <value>收起（任务继续后台执行）</value>
   </data>
@@ -5650,6 +5677,15 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} 用不了({1}),本机加密密钥照旧保存在数据目录的密钥文件里(与之前相同)。密钥链可用之后,下次启动会自动迁过去。</value>
   </data>
+  <data name="Notify_SyncWebhookMissingTitle" xml:space="preserve">
+    <value>Webhook 告警开着,这台设备上却没有地址</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingBody" xml:space="preserve">
+    <value>云同步拉下来的设置开着「安全审计 → Webhook」,这台设备上却没有填 Webhook 地址,安全告警发不出去。没设同步口令的云同步不带这个地址(机器人地址本身就是令牌),请在「设置 → 安全审计」里填上。同一份设置只提示这一次。</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingAction" xml:space="preserve">
+    <value>前往安全审计设置</value>
+  </data>
   <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
     <value>外部编辑的改动没传回服务器</value>
   </data>
@@ -5664,6 +5700,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>系统</value>
+  </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>插件</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>来自 {0}</value>
   </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>跳到第 {0} 个标签</value>
@@ -5697,6 +5739,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Cmd_OpenAbout" xml:space="preserve">
     <value>打开关于页</value>
+  </data>
+  <data name="Cmd_OpenSecuritySettings" xml:space="preserve">
+    <value>打开安全审计设置</value>
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartup" xml:space="preserve">
     <value>启动时检查更新</value>
@@ -5826,6 +5871,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>重试 {0} 次后仍然失败:{1}</value>
+  </data>
+  <data name="Transfer_Cancelled" xml:space="preserve">
+    <value>已取消</value>
   </data>
   <data name="Transfer_Paused" xml:space="preserve">
     <value>已暂停</value>
@@ -6283,7 +6331,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="PluginPermDownload_Title"><value>文件下载授权</value></data>
   <data name="PluginPermDownload_AllowOnce"><value>允许本次下载</value></data>
   <data name="PluginPermDownload_Message"><value>插件“{0}”请求从 {1} 下载到本机文件。批准仅对当前任务有效。</value></data>
-  <data name="PluginPermDownload_Preview"><value>远端源文件：{0}&#10;本机目标：{1}&#10;目标策略：{2}</value></data>
+  <data name="PluginPermDownload_Preview"><value>远端源文件：{0}&#10;大小：{3}&#10;本机目标：{1}&#10;目标策略：{2}</value></data>
   <data name="PluginPermSession_Title" xml:space="preserve">
     <value>连接请求</value>
   </data>
@@ -6301,6 +6349,15 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>查看日志</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>静音通知</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>恢复通知</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>不再让这个插件往消息中心里发消息。它已经发的留着，要删在消息中心里删；卸载插件时一并删掉。</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>插件日志 · {0}</value>
@@ -7172,6 +7229,27 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Sc_EnterSelectedFolder" xml:space="preserve">
     <value>进入选中的文件夹</value>
   </data>
+  <data name="Sc_RefreshDirectory" xml:space="preserve">
+    <value>刷新当前目录</value>
+  </data>
+  <data name="Sc_RenameSelected" xml:space="preserve">
+    <value>重命名选中的条目</value>
+  </data>
+  <data name="Sc_DeleteSelected" xml:space="preserve">
+    <value>删除选中的条目(先确认)</value>
+  </data>
+  <data name="Sc_FilterClear" xml:space="preserve">
+    <value>清空并收起过滤框</value>
+  </data>
+  <data name="Sc_FilterToList" xml:space="preserve">
+    <value>从过滤框回到文件列表</value>
+  </data>
+  <data name="Sc_NavigateBack" xml:space="preserve">
+    <value>后退到上一个目录</value>
+  </data>
+  <data name="Sc_NavigateForward" xml:space="preserve">
+    <value>前进到后退之前的目录</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve">
     <value>关闭编辑器</value>
   </data>
@@ -7261,6 +7339,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Sc_NoteListFocused" xml:space="preserve">
     <value>仅在列表获得焦点时</value>
+  </data>
+  <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
+    <value>焦点在这一栏里时(输入框除外)</value>
+  </data>
+  <data name="Sc_NoteFilterFocused" xml:space="preserve">
+    <value>仅在过滤框获得焦点时</value>
   </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve">
     <value>应用启用鼠标上报时需要</value>
@@ -9275,6 +9359,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Cred_Failure_MissingSecret" xml:space="preserve">
     <value>共享凭据「{0}」在本机没有密码或密钥(云同步未设端到端口令时不会带上它们)。</value>
   </data>
+  <data name="Cred_Failure_StoredSecretUnreadable" xml:space="preserve">
+    <value>存着的密码(或私钥口令)在这台设备上解不开(本机加密密钥换过,或系统密钥链这次没能打开),没有拿它去试登录。请重新输入。</value>
+  </data>
+  <data name="Cred_Failure_SharedSecretUnreadable" xml:space="preserve">
+    <value>共享凭据「{0}」存着的密码(或私钥口令)在这台设备上解不开(本机加密密钥换过,或系统密钥链这次没能打开),没有拿它去试登录。请重新输入,或在「设置 → 共享凭据」里重新填写。</value>
+  </data>
   <data name="Cred_Failure_UnsupportedAuth" xml:space="preserve">
     <value>共享凭据「{0}」不是密码类型;FTP 与插件连接只能用密码登录。</value>
   </data>
@@ -9290,8 +9380,32 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Auth_SharedMissing" xml:space="preserve">
     <value>这条连接引用的共享凭据已不存在。这里输入的凭据只用于这一次;要长期保存,请编辑这条连接,改选凭据来源。</value>
   </data>
+  <data name="Auth_UnreadableSecretOwn" xml:space="preserve">
+    <value>这条连接存着的密码(或私钥口令)</value>
+  </data>
+  <data name="Auth_UnreadableSecretShared" xml:space="preserve">
+    <value>共享凭据「{0}」存着的密码(或私钥口令)</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeychainUnavailable" xml:space="preserve">
+    <value>{0}这次解不开:{1} 没能打开({2})。它没有丢 —— 解锁 {1} 之后重启 VelaShell 就能照常读取;也可以先在这里输入,这一次照样登录。</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeyMissing" xml:space="preserve">
+    <value>{0}在这台设备上解不开:加密它的本机密钥不在这里(数据目录从别的电脑或账户拷来,或者密钥条目被删、密钥文件被换过,消息中心里有说明)。请重新输入并存下,存的就是这台设备解得开的一份。</value>
+  </data>
+  <data name="Auth_UnreadableSecretUnknown" xml:space="preserve">
+    <value>{0}在这台设备上解不开(可能是从别的设备同步或拷来的,也可能已经损坏)。请重新输入并存下,存的就是这台设备解得开的一份。</value>
+  </data>
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>同时更新共享凭据「{0}」({1} 条连接在用)</value>
+  </data>
+  <data name="Auth_SaveAsConnection" xml:space="preserve">
+    <value>另存为连接</value>
+  </data>
+  <data name="Auth_SaveAsConnectionHint" xml:space="preserve">
+    <value>这是一条临时连接(外部拉起的,或从「最近连接」重建的):不在资源管理器里,这里输入的凭据只用于这一次。勾上则存成一条连接(未分组),密码也随之记住(常规页的「记住密码」开着时)。</value>
+  </data>
+  <data name="Auth_SaveAsConnectionFailed" xml:space="preserve">
+    <value>没能存成连接:{0}。这一次照常以临时连接登录。</value>
   </data>
   <data name="Profile_CredSource" xml:space="preserve">
     <value>凭据来源</value>
@@ -10051,6 +10165,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Profile_KeyStoreHint" xml:space="preserve">
     <value>私钥不出密钥库,配置里只存用哪一把;TPM、智能卡签名时可能要输 PIN。只在 Windows 上可用。</value>
+  </data>
+  <data name="Profile_KeyStoreCertificate" xml:space="preserve">
+    <value>用户证书(可选)</value>
+  </data>
+  <data name="Profile_KeyStoreCertificateHint" xml:space="preserve">
+    <value>CA 给这把钥签发的 OpenSSH 用户证书(*-cert.pub,拿「复制公钥」得到的那一行去签)。配上之后按证书登录:服务端信任这个 CA(TrustedUserCAKeys)就行,不必把公钥加进 authorized_keys。留空就按公钥登录。</value>
   </data>
   <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
     <value>这条配置用 Windows 系统密钥库里的钥签名,这台电脑上没有系统密钥库。要在这里连,换一种认证方式。</value>

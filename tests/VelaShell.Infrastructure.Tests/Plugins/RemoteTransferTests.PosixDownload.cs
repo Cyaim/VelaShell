@@ -148,7 +148,7 @@ public sealed partial class RemoteTransferTests
         Assert.AreEqual(RemoteTransferState.Failed, done.State, done.ErrorMessage);
         Assert.AreEqual("not-supported", done.ErrorCode);
         Assert.IsTrue(done.DestinationCommitConfirmedAbsent);
-        await prompt.DidNotReceive().RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        await prompt.DidNotReceive().RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
     }
 
     [TestMethod]
@@ -161,7 +161,7 @@ public sealed partial class RemoteTransferTests
         string requested = Path.Combine(root, "alias", "target");
         string resolved = Path.Combine(root, "real", "target");
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", resolved, false, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", resolved, false, Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
         _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
             .Returns(async call => await call.ArgAt<Stream>(2).WriteAsync(new byte[] { 1, 2, 3 }, call.ArgAt<CancellationToken>(4)));
@@ -175,7 +175,7 @@ public sealed partial class RemoteTransferTests
             // 审批框与快照给的都是实际落盘的位置,不是插件递来的别名。
             Assert.AreEqual(RemoteTransferState.Succeeded, done.State, done.ErrorMessage);
             Assert.AreEqual(resolved, done.LocalPath);
-            await prompt.Received(1).RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", resolved, false, Arg.Any<CancellationToken>());
+            await prompt.Received(1).RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", resolved, false, Arg.Any<long>(), Arg.Any<CancellationToken>());
             CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(resolved));
         }
         finally { await WaitIdle(api); Directory.Delete(Path.Combine(root, "alias")); Directory.Delete(root, true); }

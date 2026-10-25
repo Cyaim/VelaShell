@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
@@ -257,6 +258,16 @@ public sealed class ConnectionDiagnosticsService(
                 Detail = Strings.Get(tailscale ? "DiagSvc_TailscaleNoUsernameSkip" : "DiagSvc_NoCredsSkip")
             });
             suggestions.Add(Strings.Get(tailscale ? "DiagSvc_SuggestTailscaleUsername" : "DiagSvc_SuggestSaveCreds"));
+        }
+        else if (profile.CredentialSource is null && CredentialMaterial.HasUnreadableSecret(profile))
+        {
+            // 存着的密码 / 口令在这台设备上解不开:不拿密文去试登录(白白一次失败认证,还可能撞上 fail2ban)。
+            // 与「没存凭据」一样标成要人补,巡检里归到「需要凭据」。
+            Publish(results[3] with
+            {
+                Status = DiagnosticStepStatus.Warning,
+                Detail = Strings.Get("Cred_Failure_StoredSecretUnreadable")
+            });
         }
         else
         {

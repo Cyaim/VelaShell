@@ -26,7 +26,8 @@ namespace VelaShell.Services;
 /// </para>
 /// <para>
 /// 规则(大小写不敏感):
-/// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 这几个词(要成词:<c>max_tokens</c>、<c>tokenizers</c> 不算,见 <see cref="KeyValue" />)的
+/// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 这几个词(要成词:<c>max_tokens</c>、<c>tokenizers</c> 不算;
+/// token 与 secret 后面跟着 type / endpoint / name / count 一类非机密后缀的也不算,<c>token_type</c>、<c>secretName</c>,见 <see cref="KeyValue" />)的
 /// <c>名字=值</c>、<c>名字: 值</c>(含 JSON 与 YAML 的写法、JSON 里转义过的 <c>\"名字\":</c>)只换值,双引号串认反斜杠转义,
 /// 到行尾都没收尾的引号串从引号之后遮到行尾,转义过的 JSON 串被外层的裸引号截断时遮到那个引号之前,
 /// 冒号后面跟空白、不加引号的值遮到行尾(停在同一行的下一个键之前,判据见 <see cref="KeyValue" />);
@@ -34,7 +35,9 @@ namespace VelaShell.Services;
 /// <c>.netrc</c> 的 <c>password</c>(<c>machine … password …</c> 一行写完的,或分行写时单独一行的);
 /// <c>Bearer</c> / <c>Basic</c> 后面的凭据(Basic 只认解得开、带冒号的 base64,Bearer 不认纯字母又不够长的英文单词,见 <see cref="LooksLikeCredential" />);PEM 私钥块(含 OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c>)的正文(写在一行里的,BEGIN 与 END 之间那段;
 /// 多行的只认 base64 正文行,一行不像私钥块里的行就当私钥块已经结束,见 <see cref="KeyLine" />);
-/// 几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、GitHub <c>ghp_…</c> 一类与 <c>github_pat_…</c>、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。
+/// 几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、GitHub <c>ghp_…</c> 一类与 <c>github_pat_…</c>、GitLab <c>glpat-…</c>、
+/// Stripe <c>sk_live_…</c> / <c>rk_live_…</c>、Google <c>AIza…</c>、npm <c>npm_…</c>、PyPI <c>pypi-…</c>、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>;
+/// 前缀之后的长度与字符集各自卡住,见 <see cref="PrefixedToken" />)。
 /// 宁可多遮,不放过。
 /// </para>
 /// <para>
@@ -955,6 +958,33 @@ public sealed partial class SessionOutputMasker
     private static string KeyTail(string text) => text.Length <= MarkerTailBytes ? text : text[^MarkerTailBytes..];
 
     /// <summary>
+    /// 名字里一个词在这里结束(<see cref="KeyValue" /> 用,那条正则不区分大小写,这一段区分):紧跟在后面的不是同样大小写的字母 ——
+    /// <c>token_</c>、<c>tokenId</c>、<c>TOKEN_</c>、名字结尾都算,<c>tokens</c>、<c>tokenizer</c>、<c>TOKENS</c> 不算。
+    /// </summary>
+    private const string WordEnd = "(?-i:(?<=[a-z])(?![a-z])|(?<=[A-Z])(?![A-Za-z]))";
+
+    /// <summary>
+    /// token / secret 后面紧跟着这些词之一(分隔符 <c>_ - .</c> 之后,或驼峰的下一个词;可带复数 <c>s</c>,要成词)的,这一处不算关键词:
+    /// 名字说的是令牌或机密的某个属性,值不是它本身。只收公认不装机密的:
+    /// <list type="bullet">
+    /// <item><c>type</c>:OAuth 2.0 的 <c>token_type</c>(<c>Bearer</c> / <c>mac</c>,RFC 6749 §5.1)、令牌交换的 <c>subject_token_type</c> 一类(URN,RFC 8693)、
+    /// 吊销的 <c>token_type_hint</c>(RFC 7009),值是枚举出来的类型名;</item>
+    /// <item><c>endpoint</c>:OIDC 发现文档的 <c>token_endpoint</c>(URL)与 <c>token_endpoint_auth_methods_supported</c>(认证方式名的列表);</item>
+    /// <item><c>name</c>:Kubernetes 卷与 Ingress TLS 的 <c>secretName</c>、Terraform / 云 CLI 的 <c>secret_name</c>、<c>token_name</c>,值是引用机密的名字;</item>
+    /// <item><c>count</c> / <c>limit</c>:大模型接口与配置里的 <c>token_count</c>、<c>token_limit</c>,值是数;</item>
+    /// <item><c>url</c> / <c>uri</c>:令牌服务的地址 —— Google 服务账号 JSON 的 <c>token_uri</c>、Spring Security 的 <c>token-uri</c>、OAuth 客户端库的 <c>token_url</c>;</item>
+    /// <item><c>expires</c> / <c>expiry</c> / <c>expiration</c> / <c>ttl</c>:期限与时长 —— <c>refresh_token_expires_in</c>(GitHub)、
+    /// <c>client_secret_expires_at</c>(RFC 7591)、Google oauth2client 凭据文件的 <c>token_expiry</c>、Vault 的 <c>token_ttl</c>。</item>
+    /// </list>
+    /// 故意不收的:<c>id</c>(Vault AppRole 的 <c>secret_id</c> 本身就是机密)、<c>key</c>(<c>secret_key</c>)、<c>value</c> / <c>data</c> / <c>string</c>
+    /// (<c>secretValue</c>、<c>SecretString</c>)、<c>hash</c>(低熵口令的散列能离线猜)、<c>file</c> / <c>path</c>(值多半是路径,
+    /// 但只看关键词后面的第一个词,<c>token_file_content</c> 这样的名字就会漏)、<c>signing</c> / <c>encryption</c>(<c>token_signing_key</c>)。
+    /// 只给 token 与 secret:password、credential、api key 这几个词后面跟什么都照遮(维护者 2026-10-25 定的范围)。
+    /// </summary>
+    private const string NonSecretSuffix =
+        "(?:[_.\\-]|(?-i:(?=[A-Z])))(?:type|endpoint|name|count|limit|url|uri|expires|expiry|expiration|ttl)s?" + WordEnd;
+
+    /// <summary>
     /// <c>名字=值</c> / <c>名字: 值</c>:名字里带口令一类的词,值是引号串(双引号认反斜杠转义,含 JSON 里转义过的 <c>\"…\"</c>)
     /// 或到空白、引号、逗号、分号、控制字符为止的一段。跑在可见文本上:颜色序列已经剥掉,名字、分隔符、值上不上色都一样。
     /// 值为空的(<c>Password: </c> 提示)不动。
@@ -985,15 +1015,20 @@ public sealed partial class SessionOutputMasker
     /// 而 <c>max_tokens</c> 一类才是最常见的误遮。这条判断写在原子组里:第一个关键词不成词时接着找同一个名字里的下一个
     /// (<c>tokens_secret</c> 照样认),整个名字都不成立时这个位置就不算匹配 —— 不能先配上再丢弃,那样值里的真机密会被一起跳过。
     /// 冒号后面没有空白、值以 <c>~</c> 或 <c>/</c> 起头的也不算(<c>secret-box:~#</c> 这类没有 <c>用户@</c> 的提示符、<c>host:/path</c>)。
+    /// token 与 secret 后面紧跟着「非机密后缀」(<see cref="NonSecretSuffix" />:<c>token_type</c>、<c>token_endpoint</c>、<c>secretName</c>、<c>token_count</c>…)的,
+    /// 这一处也不算关键词 —— 名字说的是令牌的类型、地址、名字、数量、期限,值不是令牌本身。同样写在原子组里,接着找同一个名字里的下一个关键词
+    /// (<c>secret_name_token</c> 照遮)。
     /// </para>
     /// </summary>
     /// <remarks>
     /// 名字从一串标识符字符的开头算起,先找到第一个关键词、再把整串吃完,两步都是原子的,值的各支也互不重叠 —— 整条是线性的。
     /// 旧写法在关键词前后各挂一个可回溯的 <c>[A-Za-z0-9_.\-]*</c>,4 KB 的 <c>tokentoken…</c> 就能把它拖上半分钟。
+    /// 关键词后面看一眼后缀表也只看十几个字符,不改变线性。
     /// 转义过的 JSON 串里,<c>\\\"</c> 与 <c>\\\\</c> 是里层的转义,不算收尾。
     /// <c>rest</c> 一支按「词 + 空白」一段段吃,每段空白只在后面那个词的开头看一眼是不是键,词与空白都是原子的,也是线性的。
     /// </remarks>
-    [GeneratedRegex("""(?:(?<![A-Za-z0-9_.\-@])(?>[A-Za-z0-9_.\-]*?(?:(?:password|passwd|passphrase|secret|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential|key[_\-]data|\.key|dockerconfigjson|dockercfg)s?|token)(?-i:(?<=[a-z])(?![a-z])|(?<=[A-Z])(?![A-Za-z])))(?>[A-Za-z0-9_.\-]*)|(?<exact>(?<=")auth(?=\\?")))(?:\\?["'])?(?>[ \t]*)(?:(?<colon>:)|=)(?>(?<ws>[ \t]+)?)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*(?:\\"|(?<bare>(?=")))|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|(?(exact)(?!)|(?(colon)(?(ws)(?<rest>(?!\\?["'])(?>[^ \t\r\n\x00-\x1f\x7f]+)(?:(?>[ \t]+)(?!\#|["']?[A-Za-z_](?>[A-Za-z0-9_.\-]*)["']?[ \t]*(?::(?=[ \t\r\n])|=))(?>[^ \t\r\n\x00-\x1f\x7f]+))*)|(?![~/])[^ "',;\x00-\x1f\x7f]+)|[^ "',;\x00-\x1f\x7f]+)))""",
+    [GeneratedRegex("""(?:(?<![A-Za-z0-9_.\-@])(?>[A-Za-z0-9_.\-]*?(?:(?:password|passwd|passphrase|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential|key[_\-]data|\.key|dockerconfigjson|dockercfg)s?"""
+        + WordEnd + "|(?:secrets?|token)" + WordEnd + "(?!" + NonSecretSuffix + "))" + """)(?>[A-Za-z0-9_.\-]*)|(?<exact>(?<=")auth(?=\\?")))(?:\\?["'])?(?>[ \t]*)(?:(?<colon>:)|=)(?>(?<ws>[ \t]+)?)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*(?:\\"|(?<bare>(?=")))|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|(?(exact)(?!)|(?(colon)(?(ws)(?<rest>(?!\\?["'])(?>[^ \t\r\n\x00-\x1f\x7f]+)(?:(?>[ \t]+)(?!\#|["']?[A-Za-z_](?>[A-Za-z0-9_.\-]*)["']?[ \t]*(?::(?=[ \t\r\n])|=))(?>[^ \t\r\n\x00-\x1f\x7f]+))*)|(?![~/])[^ "',;\x00-\x1f\x7f]+)|[^ "',;\x00-\x1f\x7f]+)))""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex KeyValue();
 
@@ -1031,9 +1066,34 @@ public sealed partial class SessionOutputMasker
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AuthorizationScheme();
 
-    /// <summary>自带前缀、不必看上下文就认得出的令牌;已收到内容的末尾停在一个前缀已齐的令牌里也算,调用方据此扣下。</summary>
-    /// <remarks>GitHub 细粒度令牌 <c>github_pat_…</c> 的正文里有下划线,单列一支。</remarks>
-    [GeneratedRegex(TokenStart + @"(?:(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_(?>[A-Za-z0-9]{30,})|github_pat_(?>[A-Za-z0-9_]{22,})|xox[abprs]-[A-Za-z0-9\-]{10,}|sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_])|(?:(?:AKIA|ASIA)[0-9A-Z]*|gh[pousr]_[A-Za-z0-9]*|github_pat_[A-Za-z0-9_]*|xox[abprs]-[A-Za-z0-9\-]*|sk-[A-Za-z0-9_\-]*)\z)",
+    /// <summary>
+    /// 自带前缀、不必看上下文就认得出的令牌;已收到内容的末尾停在一个前缀已齐、还可能长成令牌的串里也算,调用方据此扣下。
+    /// 前缀区分大小写,前缀之后的长度与字符集按各家的格式卡住(短了、字符不对的不算,收窄误报):
+    /// <list type="bullet">
+    /// <item>GitHub <c>gh[pousr]_</c> + 至少 30 个 <c>[A-Za-z0-9]</c>;细粒度令牌 <c>github_pat_</c> + 至少 22 个 <c>[A-Za-z0-9_]</c>(正文里有下划线);</item>
+    /// <item>GitLab 个人访问令牌 <c>glpat-</c> + 至少 20 个 <c>[A-Za-z0-9_-]</c>(老格式正好 20 个);可路由的新格式在正文后面再跟 <c>.</c> + 9 个 <c>[0-9a-z]</c>
+    /// (版本与校验码),一并遮掉 —— 已收到内容的末尾停在这段尾巴的半截(含只有一个 <c>.</c>)时不当成已经完了,扣着等下一段;</item>
+    /// <item>Stripe 密钥 <c>sk_live_</c> 与受限密钥 <c>rk_live_</c> + 至少 24 个 <c>[A-Za-z0-9]</c>(老格式正好 24 个,新格式近百个);
+    /// 可公开的 <c>pk_live_</c> 不认;</item>
+    /// <item>Google API key <c>AIza</c> + 正好 35 个 <c>[A-Za-z0-9_-]</c>;</item>
+    /// <item>npm 访问令牌 <c>npm_</c> + 正好 36 个 <c>[A-Za-z0-9]</c>(30 个随机字符 + 6 个校验字符)—— <c>npm_config_cache</c>、<c>npm_package_version</c>
+    /// 这类 npm 脚本的环境变量里有下划线,不会中;</item>
+    /// <item>PyPI 上传令牌 <c>pypi-AgE</c> + 至少 50 个 <c>[A-Za-z0-9_-]</c>:令牌是 base64url 编码的 macaroon,第二版二进制格式以版本 2、位置字段开头,
+    /// 编码出来总是 <c>AgE</c>(pypi.org 的是 <c>AgEIcHlwaS5vcmc</c>,TestPyPI 的是 <c>AgENdGVzdC5weXBpLm9yZw</c>)—— <c>pypi-attestations</c> 一类包名不会中;</item>
+    /// <item>AWS <c>AKIA</c> / <c>ASIA</c> + 正好 16 个 <c>[0-9A-Z]</c>;Slack <c>xox[abprs]-</c> + 至少 10 个 <c>[A-Za-z0-9-]</c>;OpenAI 式 <c>sk-</c> + 至少 20 个 <c>[A-Za-z0-9_-]</c>。</item>
+    /// </list>
+    /// 后面紧跟着字母、数字、下划线的不算(那是更长的一个词)。
+    /// </summary>
+    /// <remarks>
+    /// 线性:每个令牌从一串字符的开头起(<see cref="TokenStart" />),各支要么原子地吃完整串(<c>{n,}</c> 的几支,串够长就一定配上),要么定长。
+    /// 「还没写完」那一支对定长的令牌只认到定长为止(<c>AIza</c> 35 个、<c>npm_</c> 36 个):已经比定长还长的串不会再长成令牌,不扣,当场放出;
+    /// 顺带每个起点要看的字符也有了上限(<c>AIza</c> 的字符集里有 <c>-</c>,<c>-</c> 后面又能起头)。
+    /// </remarks>
+    [GeneratedRegex(TokenStart + @"(?:(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_(?>[A-Za-z0-9]{30,})|github_pat_(?>[A-Za-z0-9_]{22,})"
+        + @"|glpat-(?>[A-Za-z0-9_\-]{20,})(?:\.[0-9a-z]{9}|(?!\.[0-9a-z]{0,8}\z))|[rs]k_live_(?>[A-Za-z0-9]{24,})|AIza[A-Za-z0-9_\-]{35}|npm_[A-Za-z0-9]{36}"
+        + @"|pypi-AgE(?>[A-Za-z0-9_\-]{50,})|xox[abprs]-[A-Za-z0-9\-]{10,}|sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_])"
+        + @"|(?:(?:AKIA|ASIA)[0-9A-Z]*|gh[pousr]_[A-Za-z0-9]*|github_pat_[A-Za-z0-9_]*|glpat-(?>[A-Za-z0-9_\-]*)(?:\.[0-9a-z]{0,9})?|[rs]k_live_[A-Za-z0-9]*"
+        + @"|AIza[A-Za-z0-9_\-]{0,35}|npm_[A-Za-z0-9]{0,36}|pypi-(?:AgE[A-Za-z0-9_\-]*|Ag?)?|xox[abprs]-[A-Za-z0-9\-]*|sk-[A-Za-z0-9_\-]*)\z)",
         RegexOptions.CultureInvariant)]
     private static partial Regex PrefixedToken();
 

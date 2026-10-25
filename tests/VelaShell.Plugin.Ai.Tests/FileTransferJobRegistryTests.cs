@@ -3,6 +3,7 @@ using Microsoft.Extensions.AI;
 using VelaShell.Plugin.Ai.Agent;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Interop;
+using VelaShell.PluginSdk;
 using VelaShell.PluginSdk.RemoteFs;
 using VelaShell.PluginSdk.Testing;
 
@@ -929,6 +930,64 @@ public sealed class FileTransferJobRegistryTests
             Assert.IsEmpty(context.FakeRemoteFs.DownloadsStarted);
         }
         finally { AgentToolbox.InvocationIdentity.Value = null; File.Delete(local); }
+    }
+
+    /// <summary>
+    /// 宿主登记之前的明确拒绝(SDK 2.1.3 的 <see cref="PluginTransferRejectedException" />:源被占用、找不到、额度满)
+    /// 同样是确定的"没开始":不按回执丢失用同一个 OperationId 重取(它不是 IOException),不把整轮停成结果未知,
+    /// 也不让这个本地路径从此被当成「可能还在写」;给模型的说明按原因写,叫它别紧接着重试。
+    /// </summary>
+    [TestMethod]
+    [DataRow(RemoteTransferRejectReason.SourceInUse, "locked by another program")]
+    [DataRow(RemoteTransferRejectReason.SourceNotFound, "does not exist")]
+    [DataRow(RemoteTransferRejectReason.QuotaExceeded, "too many transfers")]
+    [DataRow(RemoteTransferRejectReason.Unknown, "no specific reason")]
+    public async Task HostSideRefusalsBeforeRegistering_AreRejectedNotUnknown(RemoteTransferRejectReason reason, string hint)
+    {
+        using var context = new TestPluginContext();
+        string session = DownloadableHost(context);
+        int uploads = 0, downloads = 0;
+        context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, _) =>
+        {
+            Interlocked.Increment(ref uploads);
+            return Task.FromException<RemoteTransferSnapshot>(new PluginTransferRejectedException(reason, "refused by host"));
+        };
+        context.FakeRemoteFs.StartDownloadHandler = (_, _, _, _, _) =>
+        {
+            Interlocked.Increment(ref downloads);
+            return Task.FromException<RemoteTransferSnapshot>(new PluginTransferRejectedException(reason, "refused by host"));
+        };
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
+        string local = Source(1);
+        string target = Path.Combine(context.DataDirectory, "rejected.log");
+        try
+        {
+            string upload = await Call(toolbox, run, "upload_local_file", new()
+            {
+                ["localPath"] = local,
+                ["remotePath"] = "/tmp/file",
+                ["sessionId"] = session
+            });
+            string download = await Call(toolbox, run, "download_remote_file", new()
+            {
+                ["remotePath"] = "/var/log/app.log",
+                ["localPath"] = target,
+                ["sessionId"] = session
+            });
+
+            foreach (string result in new[] { upload, download })
+            {
+                Assert.Contains("rejected by the host before it started", result);
+                Assert.Contains(hint, result);
+                Assert.DoesNotContain("Unknown", result);
+            }
+            Assert.AreEqual(1, uploads, "启动前被拒不是回执丢失,不能拿同一个 OperationId 再发一次");
+            Assert.AreEqual(1, downloads);
+            Assert.IsFalse(run.HasUnknownOutcome, upload + download);
+            Assert.IsFalse(FileTransferJobRegistry.For(context).HasUncommittedDownload(target), "被拒的下载什么都没写,不挡后续 send_file");
+        }
+        finally { File.Delete(local); }
     }
 
     /// <summary>

@@ -927,6 +927,9 @@
   <data name="Download" xml:space="preserve">
     <value>下載</value>
   </data>
+  <data name="DownloadAs" xml:space="preserve">
+    <value>下載為…</value>
+  </data>
   <data name="Refresh" xml:space="preserve">
     <value>重新整理</value>
   </data>
@@ -942,6 +945,18 @@
   <data name="Sftp_GoUpRemotePane" xml:space="preserve">
     <value>遠端欄上一層</value>
   </data>
+  <data name="Sftp_BackLocalPane" xml:space="preserve">
+    <value>本機欄返回 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardLocalPane" xml:space="preserve">
+    <value>本機欄前進 (Alt+→)</value>
+  </data>
+  <data name="Sftp_BackRemotePane" xml:space="preserve">
+    <value>遠端欄返回 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardRemotePane" xml:space="preserve">
+    <value>遠端欄前進 (Alt+→)</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>跟隨終端機目錄(同步到終端機目前路徑)</value>
   </data>
@@ -954,8 +969,17 @@
   <data name="Sftp_SearchOpen" xml:space="preserve">
     <value>搜尋遠端檔案…</value>
   </data>
+  <data name="Sftp_FilterToggle" xml:space="preserve">
+    <value>篩選目前的目錄</value>
+  </data>
+  <data name="Sftp_FilterPlaceholder" xml:space="preserve">
+    <value>依名稱篩選</value>
+  </data>
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>在此目錄中搜尋…</value>
+  </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>在此處開啟終端機</value>
   </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>搜尋遠端檔案</value>
@@ -5035,6 +5059,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Transfer_CancelRemainingTip" xml:space="preserve">
     <value>取消剩餘傳輸</value>
   </data>
+  <data name="Transfer_CancelItemTip" xml:space="preserve">
+    <value>取消這一項(這一批其餘照傳)</value>
+  </data>
   <data name="Transfer_CollapseTip" xml:space="preserve">
     <value>收起(任務繼續於背景執行)</value>
   </data>
@@ -5650,6 +5677,15 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} 無法使用({1}),本機加密金鑰照舊儲存在資料目錄的金鑰檔案裡(與之前相同)。金鑰鏈可用之後,下次啟動會自動遷移過去。</value>
   </data>
+  <data name="Notify_SyncWebhookMissingTitle" xml:space="preserve">
+    <value>Webhook 告警開著,這台裝置上卻沒有位址</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingBody" xml:space="preserve">
+    <value>雲端同步拉下來的設定開著「安全稽核 → Webhook」,這台裝置上卻沒有填 Webhook 位址,安全告警發不出去。沒設同步口令的雲端同步不帶這個位址(機器人位址本身就是權杖),請在「設定 → 安全稽核」裡填上。同一份設定只提示這一次。</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingAction" xml:space="preserve">
+    <value>前往安全稽核設定</value>
+  </data>
   <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
     <value>外部編輯的變更沒傳回伺服器</value>
   </data>
@@ -5664,6 +5700,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>系統</value>
+  </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>外掛程式</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>來自 {0}</value>
   </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>跳到第 {0} 個標籤</value>
@@ -5697,6 +5739,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Cmd_OpenAbout" xml:space="preserve">
     <value>開啟關於頁</value>
+  </data>
+  <data name="Cmd_OpenSecuritySettings" xml:space="preserve">
+    <value>開啟安全稽核設定</value>
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartup" xml:space="preserve">
     <value>啟動時檢查更新</value>
@@ -5826,6 +5871,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>重試 {0} 次後仍然失敗:{1}</value>
+  </data>
+  <data name="Transfer_Cancelled" xml:space="preserve">
+    <value>已取消</value>
   </data>
   <data name="Transfer_Paused" xml:space="preserve">
     <value>已暫停</value>
@@ -6283,7 +6331,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="PluginPermDownload_Title"><value>檔案下載授權</value></data>
   <data name="PluginPermDownload_AllowOnce"><value>允許本次下載</value></data>
   <data name="PluginPermDownload_Message"><value>外掛「{0}」請求從 {1} 下載至本機檔案。核准僅對目前任務有效。</value></data>
-  <data name="PluginPermDownload_Preview"><value>遠端來源：{0}&#10;本機目標：{1}&#10;目標策略：{2}</value></data>
+  <data name="PluginPermDownload_Preview"><value>遠端來源：{0}&#10;大小：{3}&#10;本機目標：{1}&#10;目標策略：{2}</value></data>
   <data name="PluginPermSession_Title" xml:space="preserve">
     <value>連線請求</value>
   </data>
@@ -6301,6 +6349,15 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>檢視日誌</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>靜音通知</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>恢復通知</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>不再讓這個外掛程式往訊息中心裡發訊息。它已經發的留著，要刪在訊息中心裡刪；解除安裝外掛程式時一併刪除。</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>外掛日誌 · {0}</value>
@@ -7172,6 +7229,27 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Sc_EnterSelectedFolder" xml:space="preserve">
     <value>進入選取的資料夾</value>
   </data>
+  <data name="Sc_RefreshDirectory" xml:space="preserve">
+    <value>重新整理目前的目錄</value>
+  </data>
+  <data name="Sc_RenameSelected" xml:space="preserve">
+    <value>重新命名選取的項目</value>
+  </data>
+  <data name="Sc_DeleteSelected" xml:space="preserve">
+    <value>刪除選取的項目(先確認)</value>
+  </data>
+  <data name="Sc_FilterClear" xml:space="preserve">
+    <value>清除並收起篩選框</value>
+  </data>
+  <data name="Sc_FilterToList" xml:space="preserve">
+    <value>從篩選框回到檔案清單</value>
+  </data>
+  <data name="Sc_NavigateBack" xml:space="preserve">
+    <value>返回上一個目錄</value>
+  </data>
+  <data name="Sc_NavigateForward" xml:space="preserve">
+    <value>前進到返回之前的目錄</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve">
     <value>關閉編輯器</value>
   </data>
@@ -7261,6 +7339,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Sc_NoteListFocused" xml:space="preserve">
     <value>僅在清單取得焦點時</value>
+  </data>
+  <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
+    <value>焦點在這一欄時(輸入框除外)</value>
+  </data>
+  <data name="Sc_NoteFilterFocused" xml:space="preserve">
+    <value>僅在篩選框取得焦點時</value>
   </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve">
     <value>應用程式啟用滑鼠回報時需要</value>
@@ -9275,6 +9359,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Cred_Failure_MissingSecret" xml:space="preserve">
     <value>共用憑證「{0}」在本機沒有密碼或金鑰(雲端同步未設端對端口令時不會帶上它們)。</value>
   </data>
+  <data name="Cred_Failure_StoredSecretUnreadable" xml:space="preserve">
+    <value>存著的密碼(或私鑰密碼短語)在這台裝置上解不開(本機加密金鑰換過,或系統金鑰鏈這次沒能開啟),沒有拿它去試登入。請重新輸入。</value>
+  </data>
+  <data name="Cred_Failure_SharedSecretUnreadable" xml:space="preserve">
+    <value>共用憑證「{0}」存著的密碼(或私鑰密碼短語)在這台裝置上解不開(本機加密金鑰換過,或系統金鑰鏈這次沒能開啟),沒有拿它去試登入。請重新輸入,或在「設定 → 共用憑證」裡重新填寫。</value>
+  </data>
   <data name="Cred_Failure_UnsupportedAuth" xml:space="preserve">
     <value>共用憑證「{0}」不是密碼類型;FTP 與外掛連線只能用密碼登入。</value>
   </data>
@@ -9290,8 +9380,32 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Auth_SharedMissing" xml:space="preserve">
     <value>這條連線參照的共用憑證已不存在。這裡輸入的憑證只用於這一次;要長期保存,請編輯這條連線,改選憑證來源。</value>
   </data>
+  <data name="Auth_UnreadableSecretOwn" xml:space="preserve">
+    <value>這條連線存著的密碼(或私鑰密碼短語)</value>
+  </data>
+  <data name="Auth_UnreadableSecretShared" xml:space="preserve">
+    <value>共用憑證「{0}」存著的密碼(或私鑰密碼短語)</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeychainUnavailable" xml:space="preserve">
+    <value>{0}這次解不開:{1} 沒能開啟({2})。它沒有遺失 —— 解鎖 {1} 之後重新啟動 VelaShell 就能照常讀取;也可以先在這裡輸入,這一次照樣登入。</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeyMissing" xml:space="preserve">
+    <value>{0}在這台裝置上解不開:加密它的本機金鑰不在這裡(資料目錄是從別的電腦或帳戶複製來的,或者金鑰項目被刪、金鑰檔被換過,訊息中心裡有說明)。請重新輸入並存下,存的就是這台裝置解得開的一份。</value>
+  </data>
+  <data name="Auth_UnreadableSecretUnknown" xml:space="preserve">
+    <value>{0}在這台裝置上解不開(可能是從別的裝置同步或複製來的,也可能已經損壞)。請重新輸入並存下,存的就是這台裝置解得開的一份。</value>
+  </data>
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>同時更新共用憑證「{0}」({1} 條連線在用)</value>
+  </data>
+  <data name="Auth_SaveAsConnection" xml:space="preserve">
+    <value>另存為連線</value>
+  </data>
+  <data name="Auth_SaveAsConnectionHint" xml:space="preserve">
+    <value>這是一條臨時連線(由外部啟動的,或從「最近連線」重建的):不在資源總管裡,這裡輸入的憑證只用於這一次。勾選則存成一條連線(未分組),密碼也隨之記住(一般頁的「記住密碼」開啟時)。</value>
+  </data>
+  <data name="Auth_SaveAsConnectionFailed" xml:space="preserve">
+    <value>沒能存成連線:{0}。這一次照常以臨時連線登入。</value>
   </data>
   <data name="Profile_CredSource" xml:space="preserve">
     <value>憑證來源</value>
@@ -10051,6 +10165,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Profile_KeyStoreHint" xml:space="preserve">
     <value>私鑰不出金鑰庫,設定裡只存用哪一把;TPM、智慧卡簽章時可能要輸入 PIN。只在 Windows 上可用。</value>
+  </data>
+  <data name="Profile_KeyStoreCertificate" xml:space="preserve">
+    <value>使用者憑證(選填)</value>
+  </data>
+  <data name="Profile_KeyStoreCertificateHint" xml:space="preserve">
+    <value>CA 為這把金鑰簽發的 OpenSSH 使用者憑證(*-cert.pub,拿「複製公鑰」得到的那一行去簽)。設定之後以憑證登入:伺服器信任這個 CA(TrustedUserCAKeys)即可,不必把公鑰加進 authorized_keys。留空則以公鑰登入。</value>
   </data>
   <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
     <value>這條設定用 Windows 系統金鑰庫裡的金鑰簽章,這台電腦上沒有系統金鑰庫。要在這裡連線,換一種認證方式。</value>

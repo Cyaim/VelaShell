@@ -54,6 +54,12 @@ public class SyncSettings
 
     /// <summary>上次同步时远端的 Gist revision;用于检测远端是否有新版本。</summary>
     public string? LastRemoteVersion { get; set; }
+
+    /// <summary>
+    /// 上一次为哪一份拉到的设置提示过「Webhook 告警开着、这台设备上却没有地址」(那份设置的指纹);
+    /// 同一份设置再拉一次不再提示(见 <see cref="IGistSyncService.WebhookUrlMissing" />)。
+    /// </summary>
+    public string? WebhookUrlMissingNotice { get; set; }
 }
 
 /// <summary>同步载荷:各端共享的用户数据快照(存放于 Gist 单文件)。</summary>

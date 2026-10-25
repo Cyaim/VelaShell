@@ -136,6 +136,12 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
     public bool? FileBrowserOpen { get; set; }
 
     /// <summary>
+    /// 认证后先 <c>cd</c> 进去的远端目录,优先于配置里的初始目录;文件栏「在此处打开终端」开出来的标签才有,其余为 null。
+    /// 只挂在标签上、不写进配置(那份配置是别的标签与文件标签共用的);重连照样 cd 回这里 —— 这个标签就是为这个目录开的。
+    /// </summary>
+    public string? StartupDirectoryOverride { get; set; }
+
+    /// <summary>
     /// 本标签页的资源面板数据(悬停 > 400ms 时显示,§11)。
     /// 握手完成后才赋值,而标签 ToolTip.Tip 在标签创建时就已绑定到它,
     /// 必须发变更通知,否则 Tip 停留在 null,悬浮面板永远不弹。

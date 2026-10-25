@@ -344,6 +344,7 @@ public sealed class Loc(string locale)
         ["SetupBaseUrlKeyResetConfirm"] = ["The Base URL now points to another server (scheme, host or port changed). Saving removes this provider's {0} saved Key(s) so they aren't sent there.", "Base URL 换到了另一台服务器（协议、主机或端口变了）：保存会清除这家供应商已存的 {0} 把 Key，免得发往新地址。", "Base URL 換到了另一台伺服器（協定、主機或連接埠變了）：儲存會清除這家供應商已存的 {0} 把 Key，避免傳往新位址。", "Base URL が別のサーバー(スキーム・ホスト・ポートのいずれかが変更)を指しています。新しいアドレスへ送られないよう、保存するとこのプロバイダーに保存済みの Key {0} 件を削除します。", "Base URL이 다른 서버(스킴, 호스트 또는 포트 변경)를 가리킵니다. 새 주소로 전송되지 않도록 저장하면 이 공급자에 저장된 Key {0}개를 제거합니다."],
         ["SetupBaseUrlKeyResetChanged"] = ["The Keys to be removed changed after you confirmed. Saving removes {0} saved Key(s).", "确认之后，要清除的 Key 有了变动：保存会清除已存的 {0} 把 Key。", "確認之後，要清除的 Key 有了變動：儲存會清除已存的 {0} 把 Key。", "確認後に削除対象の Key が変わりました。保存すると保存済みの Key {0} 件を削除します。", "확인한 뒤 제거할 Key가 바뀌었습니다. 저장하면 저장된 Key {0}개를 제거합니다."],
         ["SetupBaseUrlKeyResetModels"] = ["Including the separate Keys of these models: {0}", "其中包括这些模型自带的 Key：{0}", "其中包括這些模型自帶的 Key：{0}", "次のモデルの個別の Key も含みます:{0}", "다음 모델의 별도 Key도 포함됩니다: {0}"],
+        ["ModelBaseUrlKeyResetConfirm"] = ["The Base URL override now sends this model to another server (scheme, host or port changed). Saving removes this model's saved separate API Key so it isn't sent there. If the new server needs a Key, enter it after saving, or replace the Key in the form before you save.", "覆盖基地址把这个模型换到了另一台服务器（协议、主机或端口变了）：保存会清除这个模型自带的 API Key，免得发往新地址。新服务器要 Key 的话，保存后重新填入，或者保存之前直接在表单里换成新服务器的 Key。", "覆蓋基底位址把這個模型換到了另一台伺服器（協定、主機或連接埠變了）：儲存會清除這個模型自帶的 API Key，避免傳往新位址。新伺服器需要 Key 的話，儲存後重新填入，或者儲存之前直接在表單裡換成新伺服器的 Key。", "ベース URL の上書きで、このモデルの送信先が別のサーバー(スキーム・ホスト・ポートのいずれかが変更)になりました。新しいアドレスへ送られないよう、保存するとこのモデルに保存済みの個別の API キーを削除します。新しいサーバーで Key が必要なら、保存後に入力し直すか、保存前にフォームで新しいサーバーの Key に置き換えてください。", "베이스 URL 재정의로 이 모델이 다른 서버(스킴, 호스트 또는 포트 변경)로 가게 되었습니다. 새 주소로 전송되지 않도록 저장하면 이 모델에 저장된 별도 API 키를 제거합니다. 새 서버에 Key가 필요하면 저장한 뒤 다시 입력하거나, 저장하기 전에 양식에서 새 서버의 Key로 바꾸세요."],
         ["SetupKeyResetAccept"] = ["Remove and save", "清除并保存", "清除並儲存", "削除して保存", "제거하고 저장"],
         ["SetupResetCancelled"] = ["Cancelled. Nothing was changed.", "已取消，什么都没改。", "已取消，什麼都沒改。", "キャンセルしました。何も変更していません。", "취소했습니다. 아무것도 바꾸지 않았습니다."],
         ["SetupSignOutResetTitle"] = ["Sign out to change the server?", "换地址需要退出登录", "換位址需要登出", "サーバーを変更するにはログアウトが必要です", "서버를 바꾸려면 로그아웃해야 합니다"],
@@ -581,6 +582,14 @@ public sealed class Loc(string locale)
         ["BridgeConcurrency"] = ["Concurrent turns", "并发轮次", "並發輪次", "同時実行ターン数", "동시 실행 턴 수"],
         ["BridgeModel"] = ["Model", "模型", "模型", "モデル", "모델"],
         ["BridgeModelFollow"] = ["Follow the chat panel", "跟随聊天面板", "跟隨聊天面板", "チャットパネルに従う", "채팅 패널을 따름"],
+        ["BridgeModelRemoved"] = ["Removed model — pick another", "已删除的模型(请重新选择)", "已刪除的模型(請重新選擇)", "削除されたモデル(選び直してください)", "삭제된 모델(다시 선택하세요)"],
+        ["BridgeModelRemovedHint"] = [
+            "The model this bridge is pinned to has been removed from VelaShell. Until you pick another one, the bot answers each message by asking for that — it does not switch to the chat panel's model or any other. Saving keeps the pin as it is.",
+            "桥接指定的模型已从 VelaShell 里删掉了。重新选一个之前,机器人收到消息只会回一句请重选,不会换成聊天面板的模型或别的模型;点保存也原样保留这个指定。",
+            "橋接指定的模型已從 VelaShell 裡刪掉了。重新選一個之前,機器人收到訊息只會回一句請重選,不會換成聊天面板的模型或別的模型;按儲存也原樣保留這個指定。",
+            "この連携に固定したモデルは VelaShell から削除されました。選び直すまで、ボットはメッセージを受けるたびに選び直しを求める返信だけを返し、チャットパネルのモデルや別のモデルには切り替えません。保存してもこの固定はそのまま残ります。",
+            "이 브리지에 지정한 모델이 VelaShell에서 삭제되었습니다. 다시 선택하기 전까지 봇은 메시지마다 다시 선택하라는 답장만 보내며, 채팅 패널의 모델이나 다른 모델로 바꾸지 않습니다. 저장해도 이 지정은 그대로 유지됩니다."
+        ],
         ["BridgeModelHint"] = [
             "Pin one so a failure names the right provider — an \"unauthorised\" from the model looks nothing like one from the chat platform, but both land in the same chat message.",
             "指定一个,出错时才知道该查哪家的密钥 —— 模型返回的「未授权」和 IM 平台返回的「未授权」是两回事,但在群里长得一模一样。",

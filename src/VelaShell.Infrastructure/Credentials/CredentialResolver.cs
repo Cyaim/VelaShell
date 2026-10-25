@@ -91,6 +91,15 @@ public sealed class CredentialResolver(IEnumerable<ICredentialProvider> provider
                 provider.Id,
                 Strings.Format("Cred_Failure_MissingUsername", resolved.DisplayName));
         }
+        // 凭据里存着的那份在这台设备上解不开(本机加密密钥换过、系统密钥链这次没打开):不拿密文去试登录 ——
+        // 白白一次失败认证,还可能撞上 fail2ban。退回登录框让用户手输,登录框据此说明原因。
+        if (!inline && CredentialMaterial.HasUnreadableSecret(effective))
+        {
+            throw new CredentialProviderException(
+                CredentialFailure.UnreadableSecret,
+                provider.Id,
+                Strings.Format("Cred_Failure_SharedSecretUnreadable", resolved.DisplayName));
+        }
         if (effective.AuthMethod != AuthMethod.Agent && !CredentialMaterial.HasInline(effective))
         {
             throw new CredentialProviderException(

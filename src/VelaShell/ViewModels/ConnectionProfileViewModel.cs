@@ -844,20 +844,20 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// 证书文件缺失或不存在时的提示;没问题为 null。
     /// </summary>
     /// <remarks>
-    /// 与私钥那条不同,空路径在这里也算错:私钥留空还能退回默认密钥,
-    /// 证书没有任何默认位置可退。
+    /// 与私钥那条不同,证书认证下空路径也算错:私钥留空还能退回默认密钥,
+    /// 证书没有任何默认位置可退。系统密钥库认证的证书是可选的:留空就是按公钥认证,填了才要文件在。
     /// </remarks>
     public string? CertificatePathError
     {
         get
         {
-            if (AuthMethod != AuthMethod.Certificate)
+            if (AuthMethod is not (AuthMethod.Certificate or AuthMethod.KeyStore))
             {
                 return null;
             }
             if (string.IsNullOrWhiteSpace(CertificatePath))
             {
-                return Strings.Get("Profile_ErrCertRequired");
+                return AuthMethod == AuthMethod.Certificate ? Strings.Get("Profile_ErrCertRequired") : null;
             }
             return FileExistsSafe(CertificatePath) ? null : Strings.Get("Profile_ErrCertMissing");
         }

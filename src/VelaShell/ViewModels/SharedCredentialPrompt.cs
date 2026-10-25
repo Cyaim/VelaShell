@@ -36,6 +36,11 @@ public static class SharedCredentialPrompt
             // 用户这次手输的又被拒了:原因用户自己清楚,不再复述。
             reason = SharedCredentialPromptReason.None;
         }
+        else if (CredentialMaterial.HasUnreadableSecret(credential))
+        {
+            // 存着的那份在这台设备上解不开:不是「被服务器拒了」,也不是「没填」,登录框另有一条说明。
+            reason = SharedCredentialPromptReason.Unreadable;
+        }
         else if (!credential.HasSecret
                  || (profile.ConnectionType != ConnectionType.Plugin
                      && string.IsNullOrWhiteSpace(profile.Username)
@@ -62,14 +67,15 @@ public static class SharedCredentialPrompt
 
     internal static AuthenticationDialogViewModel CreateDialog(
         SessionProfile profile, SharedCredential? credential, string? knownFingerprint,
-        SharedCredentialPromptContext? sharedContext)
+        SharedCredentialPromptContext? sharedContext, bool temporaryProfile = false, string? unreadableSecretNotice = null)
     {
         bool fromCredential = profile.AuthMethod != AuthMethod.Tailscale
                               && credential is { AuthMethod: not AuthMethod.Tailscale }
                               && !CredentialMaterial.HasInline(profile);
         var viewModel = new AuthenticationDialogViewModel(profile.Host, profile.Port,
             InitialUsername(profile, credential), knownFingerprint,
-            fromCredential ? credential!.AuthMethod : profile.AuthMethod, sharedContext, profile.ConnectionType);
+            fromCredential ? credential!.AuthMethod : profile.AuthMethod, sharedContext, profile.ConnectionType,
+            temporaryProfile, unreadableSecretNotice);
         if (fromCredential && credential!.AuthMethod is AuthMethod.PrivateKey or AuthMethod.Certificate)
         {
             viewModel.PrivateKeyPath = credential.PrivateKeyPath;

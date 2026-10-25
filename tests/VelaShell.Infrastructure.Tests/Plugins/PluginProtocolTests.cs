@@ -344,6 +344,142 @@ public sealed class PluginProtocolTests
         Assert.IsNull(fileSystem.LastPath, "核实不了就一个字节都不写。");
     }
 
+    /// <summary>
+    /// 协议条目上的链接字段(SDK 2.1.3)原样进宿主模型:文件面板据此画链接、删除与递归只处理链接本身。
+    /// 非链接的条目不带目标文本,哪怕插件填了。
+    /// </summary>
+    [TestMethod]
+    public async Task FileService_CarriesSymbolicLinkFieldsIntoTheHostModel()
+    {
+        var registry = new PluginProtocolRegistry();
+        using var fileSystem = new FakeProtocolFileSystem
+        {
+            Entries =
+            [
+                new("logs", "/data/logs", IsDirectory: true, 0, DateTimeOffset.UnixEpoch, "", "", "") { IsSymbolicLink = true, LinkTarget = "../var/log" },
+                new("plain", "/data/plain", IsDirectory: false, 1, DateTimeOffset.UnixEpoch, "", "", "") { LinkTarget = "ignored" }
+            ]
+        };
+        registry.Register(PluginId, Descriptor(), fileSystem);
+        var service = new PluginProtocolFileService(registry);
+        Guid sessionId = await service.OpenSessionAsync(Profile());
+
+        List<RemoteFileInfo> entries = await service.ListDirectoryAsync(sessionId, "/data");
+
+        Assert.IsTrue(entries[0].IsSymbolicLink);
+        Assert.IsTrue(entries[0].IsDirectory, "指向目录的链接照常能点进去");
+        Assert.AreEqual("../var/log", entries[0].LinkTarget);
+        Assert.IsFalse(entries[1].IsSymbolicLink);
+        Assert.IsNull(entries[1].LinkTarget);
+    }
+
+    /// <summary>
+    /// 协议兼实现了改修改时间(<see cref="IProtocolLastWriteTime" />):目录同步上传后对齐时间的调用按会话键转过去,
+    /// UTC 原样成为绝对时刻;没实现、或这条会话做不到(插件抛 ProtocolUnsupportedException)都如实报不支持。
+    /// </summary>
+    [TestMethod]
+    public async Task FileService_SetLastWriteTime_RoutesToAPluginThatSupportsIt()
+    {
+        var registry = new PluginProtocolRegistry();
+        using var fileSystem = new CapableProtocolFileSystem();
+        registry.Register(PluginId, Descriptor(), fileSystem);
+        var service = new PluginProtocolFileService(registry);
+        Guid sessionId = await service.OpenSessionAsync(Profile());
+        var when = new DateTime(2026, 10, 25, 8, 30, 15, DateTimeKind.Utc);
+
+        await service.SetLastWriteTimeAsync(sessionId, "/bucket/a.bin", when);
+
+        Assert.AreEqual("/bucket/a.bin", fileSystem.TimedPath);
+        Assert.AreEqual(new DateTimeOffset(when), fileSystem.TimedAt);
+        Assert.AreEqual(TimeSpan.Zero, fileSystem.TimedAt!.Value.Offset);
+
+        fileSystem.Unsupported = true;
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => service.SetLastWriteTimeAsync(sessionId, "/bucket/a.bin", when));
+
+        var plain = new PluginProtocolRegistry();
+        using var basic = new FakeProtocolFileSystem();
+        plain.Register(PluginId, Descriptor(), basic);
+        var basicService = new PluginProtocolFileService(plain);
+        Guid basicSession = await basicService.OpenSessionAsync(Profile());
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => basicService.SetLastWriteTimeAsync(basicSession, "/x", when));
+    }
+
+    /// <summary>
+    /// 协议兼实现了服务器端摘要(<see cref="IProtocolChecksum" />):按 SHA-256 请求,结果不全信 ——
+    /// 请求里没有的键丢掉,缺的键补 null,不是 64 位小写十六进制的值当「算不出」(否则同步逐字比会把相同内容判成不同)。
+    /// 没实现、或这条会话做不到,都如实报不支持,由同步回退到大小与时间。
+    /// </summary>
+    [TestMethod]
+    public async Task FileService_ComputeSha256_NormalizesWhatThePluginReports()
+    {
+        string good = new('a', 64);
+        var registry = new PluginProtocolRegistry();
+        using var fileSystem = new CapableProtocolFileSystem
+        {
+            Digests = new Dictionary<string, string?>
+            {
+                ["/a"] = good,
+                ["/upper"] = good.ToUpperInvariant(),
+                ["/short"] = "abc",
+                ["/unrequested"] = good
+            }
+        };
+        registry.Register(PluginId, Descriptor(), fileSystem);
+        var service = new PluginProtocolFileService(registry);
+        Guid sessionId = await service.OpenSessionAsync(Profile());
+
+        IReadOnlyDictionary<string, string?> result = await service.ComputeSha256Async(sessionId, ["/a", "/upper", "/short", "/missing"]);
+
+        Assert.AreEqual(RemoteChecksumAlgorithm.Sha256, fileSystem.RequestedAlgorithm);
+        Assert.HasCount(4, result);
+        Assert.AreEqual(good, result["/a"]);
+        Assert.IsNull(result["/upper"]);
+        Assert.IsNull(result["/short"]);
+        Assert.IsNull(result["/missing"]);
+        Assert.IsFalse(result.ContainsKey("/unrequested"));
+        Assert.IsEmpty(await service.ComputeSha256Async(sessionId, []));
+
+        fileSystem.Unsupported = true;
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => service.ComputeSha256Async(sessionId, ["/a"]));
+
+        var plain = new PluginProtocolRegistry();
+        using var basic = new FakeProtocolFileSystem();
+        plain.Register(PluginId, Descriptor(), basic);
+        var basicService = new PluginProtocolFileService(plain);
+        Guid basicSession = await basicService.OpenSessionAsync(Profile());
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => basicService.ComputeSha256Async(basicSession, ["/a"]));
+    }
+
+    /// <summary>兼实现了改修改时间与服务器端摘要的协议替身;<see cref="Unsupported" /> 模拟「这条会话做不到」。</summary>
+    private sealed class CapableProtocolFileSystem : FakeProtocolFileSystemBase, IProtocolLastWriteTime, IProtocolChecksum
+    {
+        public bool Unsupported { get; set; }
+
+        public string? TimedPath { get; private set; }
+
+        public DateTimeOffset? TimedAt { get; private set; }
+
+        public IReadOnlyDictionary<string, string?> Digests { get; init; } = new Dictionary<string, string?>();
+
+        public RemoteChecksumAlgorithm? RequestedAlgorithm { get; private set; }
+
+        public Task SetLastWriteTimeAsync(string sessionId, string path, DateTimeOffset lastWriteTime, CancellationToken cancellationToken = default)
+        {
+            if (Unsupported) return Task.FromException(new ProtocolUnsupportedException("no MFMT"));
+            TimedPath = path;
+            TimedAt = lastWriteTime;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyDictionary<string, string?>> ComputeChecksumsAsync(string sessionId, RemoteChecksumAlgorithm algorithm,
+            IReadOnlyList<string> paths, CancellationToken cancellationToken = default)
+        {
+            if (Unsupported) return Task.FromException<IReadOnlyDictionary<string, string?>>(new ProtocolUnsupportedException("no HASH"));
+            RequestedAlgorithm = algorithm;
+            return Task.FromResult(Digests);
+        }
+    }
+
     /// <summary>同步回调的进度接收器(<see cref="Progress{T}" /> 会把回调投递到别的线程)。</summary>
     private sealed class SynchronousProgress(Action<TransferProgress> report) : IProgress<TransferProgress>
     {
@@ -381,6 +517,9 @@ public sealed class PluginProtocolTests
 
         public Exception? ConnectFailure { get; init; }
 
+        /// <summary>列目录返回的条目;缺省是一个普通文件 <c>readme.txt</c>。</summary>
+        public IReadOnlyList<RemoteFileEntry>? Entries { get; init; }
+
         public event EventHandler<ProtocolSessionStateChange>? SessionStateChanged;
 
         public Task ConnectAsync(string sessionId, ProtocolConnectRequest request, CancellationToken cancellationToken = default)
@@ -394,8 +533,7 @@ public sealed class PluginProtocolTests
         public Task<string> GetHomePathAsync(string sessionId, CancellationToken cancellationToken = default) => Task.FromResult("/");
 
         public Task<IReadOnlyList<RemoteFileEntry>> ListDirectoryAsync(string sessionId, string path, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<RemoteFileEntry>>(
-                [new("readme.txt", path + "/readme.txt", IsDirectory: false, 42, DateTimeOffset.UnixEpoch, "", "", "")]);
+            Task.FromResult(Entries ?? [new("readme.txt", path + "/readme.txt", IsDirectory: false, 42, DateTimeOffset.UnixEpoch, "", "", "")]);
 
         public Task<RemoteFileEntry?> StatAsync(string sessionId, string path, CancellationToken cancellationToken = default) =>
             Task.FromResult<RemoteFileEntry?>(null);

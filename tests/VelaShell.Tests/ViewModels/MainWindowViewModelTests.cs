@@ -544,6 +544,34 @@ public class MainWindowViewModelTests
         Assert.IsTrue(appeared, "云同步拉取的连接应立即出现在会话树中。");
     }
 
+    /// <summary>
+    /// 云同步拉到「Webhook 告警开着却没有地址」的设置:消息中心里多一条带「前往安全审计设置」的提示;
+    /// 同一份设置(同一个指纹)再来一次也只有一条(第二轮第 17 条)。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Notifications")]
+    public void SyncWebhookUrlMissing_PublishesOneNoticeToTheMessageCenter()
+    {
+        IGistSyncService syncService = Substitute.For<IGistSyncService>();
+        var center = new VelaShell.Infrastructure.Notifications.NotificationCenter();
+        var vm = new MainWindowViewModel(gistSyncService: syncService, notificationCenter: center);
+
+        syncService.WebhookUrlMissing += Raise.Event<EventHandler<string>>(syncService, "0123456789abcdef");
+        syncService.WebhookUrlMissing += Raise.Event<EventHandler<string>>(syncService, "0123456789abcdef");
+
+        bool published = SpinWait.SpinUntil(
+            () => center.Items.Any(item => item.Id.StartsWith(NotificationSources.SyncWebhookMissingIdPrefix, StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(5));
+        Assert.IsTrue(published, "拉到这种设置要在消息中心说一声");
+        // 只看这一类:消息中心启动时还会投崩溃记录、外部编辑草稿之类,取决于跑测试的这台机器。
+        NotificationItem notice = Assert.ContainsSingle(
+            center.Items.Where(item => item.Id.StartsWith(NotificationSources.SyncWebhookMissingIdPrefix, StringComparison.Ordinal)),
+            "同一份设置只留一条");
+        Assert.AreEqual(NotificationSources.OpenSecuritySettingsCommandId, notice.Link?.CommandId);
+        Assert.IsTrue(vm.Commands.All.Any(command => command.Id == NotificationSources.OpenSecuritySettingsCommandId),
+            "消息上的动作要有对应的命令,否则点了没反应");
+    }
+
     [TestMethod]
     [TestCategory("UI")]
     public void SidebarViewModel_Initializes_WithCommands()

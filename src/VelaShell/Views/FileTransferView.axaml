@@ -180,8 +180,8 @@
                       BorderThickness="0,0,0,1">
                 <StackPanel Spacing="4">
 
-                  <!-- 名称 / 重试 / 百分比 -->
-                  <Grid ColumnDefinitions="*,Auto,Auto">
+                  <!-- 名称 / 重试 / 百分比 / × -->
+                  <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                     <TextBlock Grid.Column="0"
                                Text="{Binding FileName}"
                                Foreground="{DynamicResource VelaTextPrimary}"
@@ -205,7 +205,8 @@
                                FontSize="{DynamicResource VelaFontSize10}" FontWeight="Medium"
                                Classes.done="{Binding IsCompleted}"
                                Classes.failed="{Binding IsFailed}"
-                               Classes.waiting="{Binding IsWaiting}">
+                               Classes.waiting="{Binding IsWaiting}"
+                               Classes.cancelled="{Binding IsCancelled}">
                       <TextBlock.Styles>
                         <Style Selector="TextBlock">
                           <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
@@ -216,12 +217,26 @@
                         <Style Selector="TextBlock.failed">
                           <Setter Property="Foreground" Value="{DynamicResource VelaError}" />
                         </Style>
-                        <!-- 等待中:静默色。用强调色会跟正在跑的那几行抢注意力,而它恰恰是没在动的那些。 -->
-                        <Style Selector="TextBlock.waiting">
+                        <!-- 等待中:静默色。用强调色会跟正在跑的那几行抢注意力,而它恰恰是没在动的那些。
+                             已取消同理:它已经不动了。 -->
+                        <Style Selector="TextBlock.waiting, TextBlock.cancelled">
                           <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
                         </Style>
                       </TextBlock.Styles>
                     </TextBlock>
+                    <!-- ×:只停这一项,这一批其余照传;停下的这一项从传输队列里摘掉,之后「继续」也不再传它。
+                         只在还没落定的行上出现(排队、在传、等待自动重试);与表头的「取消」(整批)分工。 -->
+                    <Button Grid.Column="3" Name="CancelItemButton"
+                            Background="Transparent" Padding="2" Margin="6,0,0,0" Cursor="Hand"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding CanCancel}"
+                            Command="{Binding $parent[ItemsControl].((vm:FileTransferViewModel)DataContext).CancelTransferCommand}"
+                            CommandParameter="{Binding Id}"
+                            ToolTip.Tip="{loc:Localize Transfer_CancelItemTip}">
+                      <pc:LucideIcon Width="10" Height="10"
+                                     Data="{StaticResource Icon.x}"
+                                     Foreground="{DynamicResource VelaTextTertiary}" />
+                    </Button>
                   </Grid>
 
                   <!-- 进度条:3px 轨道 border-primary + 强调色填充 -->

@@ -122,10 +122,17 @@ public sealed partial class RemoteTransferTests
     /// 映射盘:句柄的最终路径是 <c>\\server\share\…</c>,原先逐字比对一律拒绝。经本机的管理共享 <c>\\localhost\C$</c>
     /// 映射一个空闲盘符(不记住,用完删掉)验证 SMB 重定向器上的钉目录与文件 id;映射不上(没有管理共享、Server 服务没开)时不确定。
     /// </summary>
+    /// <remarks>
+    /// 它会真的执行 <c>net use</c>:往当前登录会话里挂一个网络盘(资源管理器里看得见),测试进程跑到一半被杀掉就留在那儿。
+    /// 单元测试不该去动本机的网络盘映射,所以默认不跑,设 <c>VELASHELL_NET_USE_TESTS=1</c> 才跑(维护者 2026-10-25 定)。
+    /// 映射盘的结论另有手动实测(§257),这条留着是为了改核验代码时能重跑一遍。
+    /// </remarks>
     [TestMethod]
     [OSCondition(ConditionMode.Include, OperatingSystems.Windows)]
     public async Task WindowsMappedDriveSourceIsTheSameFile()
     {
+        if (Environment.GetEnvironmentVariable("VELASHELL_NET_USE_TESTS") != "1")
+            Assert.Inconclusive("[SKIP] 这条会真的 net use 一个网络盘到本机的管理共享,设 VELASHELL_NET_USE_TESTS=1 才跑。");
         string directory = NewDirectory("vela-identity-mapped-");
         await File.WriteAllBytesAsync(Path.Combine(directory, "source"), [1, 2, 3]);
         string? root = Path.GetPathRoot(directory);

@@ -567,7 +567,7 @@ public class FileBrowserViewModelTests
     [TestCategory("FileBrowser")]
     public void ShowTransfers_ReopensTransferToast()
     {
-        var toast = new FileTransferViewModel(Substitute.For<ITransferManager>());
+        var toast = new FileTransferViewModel();
         _vm.TransferSink = toast;
         Assert.IsFalse(toast.IsPanelVisible);
         _vm.ShowTransfersCommand.Execute().Subscribe();
@@ -1085,6 +1085,48 @@ public class FileBrowserViewModelTests
         var file = new RemoteFileInfoViewModel(CreateTestFiles()[0]);
         await _vm.PropertiesCommand.Execute(file).FirstAsync();
         Assert.AreSame(file, shown);
+    }
+
+    /// <summary>
+    /// 「下载为…」:另存为对话框里点的「替换」就是这次的冲突决定 —— 不再按「文件已存在时」再问一遍、跳过或改名,
+    /// 也不把那里原有的同名文件当成半截去续传(它比远端小也一样:那是用户确认要替换掉的文件)。
+    /// </summary>
+    [TestMethod]
+    [TestCategory("FileBrowser")]
+    [DataRow("ask")]
+    [DataRow("skip")]
+    [DataRow("rename")]
+    public async Task DownloadItem_TheSaveDialogsReplaceIsTheConflictDecision(string policy)
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "vela-download-as-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string target = Path.Combine(dir, "readme.txt");
+            // 比远端(1234 字节)小:常规下载路径会把它当成半截、从第 10 字节接着下。
+            await File.WriteAllBytesAsync(target, new byte[10]);
+            _vm.TransferOptions.ConflictPolicy = policy;
+            _vm.TransferOptions.ResumeEnabled = true;
+            _vm.TransferOptions.TransferLogging = false;
+            _vm.TransferOptions.NotifyOnComplete = false;
+            _vm.ConfirmOverwrite = _ => throw new AssertFailedException("另存为对话框已经问过「要替换吗」,不该再弹冲突框。");
+            RemoteFileInfo remote = CreateTestFiles()[1]; // /home/user/readme.txt,1234 字节
+            _sftpService.GetFileInfoAsync(_sessionId, remote.FullPath, Arg.Any<CancellationToken>()).Returns(remote);
+            _vm.PickSavePathForDownload = _ => Task.FromResult<string?>(target);
+
+            await _vm.DownloadItemCommand.Execute(new RemoteFileInfoViewModel(remote)).FirstAsync();
+
+            await _sftpService.Received(1).DownloadFileAsync(
+                _sessionId, remote.FullPath, target, Arg.Any<IProgress<TransferProgress>?>(), 0, Arg.Any<CancellationToken>());
+            Assert.AreEqual(
+                1,
+                _sftpService.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(ISftpService.DownloadFileAsync)),
+                "只下这一份,落在用户选的名字上");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     [TestMethod]

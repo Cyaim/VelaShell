@@ -20,7 +20,14 @@ public interface IAnnouncementFeed
 /// <summary>
 /// 资讯源的投放上下文:决定一条消息该不该给这台机器看。
 /// </summary>
-/// <param name="AppVersion">当前应用版本,用于 <c>minVersion</c>/<c>maxVersion</c> 定向。</param>
+/// <param name="AppVersion">当前应用版本(含预发布后缀),用于 <c>minVersion</c>/<c>maxVersion</c> 定向。</param>
 /// <param name="Rid">运行平台标识(如 <c>win-x64</c>),用于 <c>platforms</c> 定向。</param>
 /// <param name="UiCulture">界面语言(如 <c>zh-Hans</c>),用于 <c>locales</c> 定向。</param>
-public sealed record FeedAudience(string? AppVersion, string? Rid, string? UiCulture);
+/// <param name="CompareVersions">
+/// 版本比较:左边比右边旧为负、相同为 0、更新为正;任一侧解析不出时为 <see langword="null" />。
+/// 由 Infrastructure 注入插件 SDK 的 <c>SemanticVersion</c>(与更新检查、插件装载闸同一份口径)——
+/// Core 不引用 SDK,也不再自己写一套版本比较(四五套口径各说各话,正是要消灭的那件事)。
+/// 缺省时版本定向不生效,与「本机版本读不出来」同一处置:宁可多看一条。
+/// </param>
+public sealed record FeedAudience(string? AppVersion, string? Rid, string? UiCulture,
+    Func<string, string, int?>? CompareVersions = null);

@@ -10,12 +10,34 @@ namespace VelaShell.Plugin.Ai.Ui;
 /// 确认走独立的确认框(<see cref="ConfirmOverlay" />),不再靠同一个按钮点两下:连点两下就算确认了。
 /// 确认的是框里列出的那几把;框开着的时候别处又存了一把、或同一个槽换了值,由存储层核对凭据拦下,
 /// 再问一次(换一句话说「有了变动」)。这份记录只活在确认之后的那一次提交里,不留到下一次点「保存」。
+/// 模型这一层把覆盖基地址换到别的源、要清这一行自带的 Key 时也用它,那时 <see cref="Model" /> 是那一行、
+/// <see cref="Url" /> 是表单里的覆盖地址;两层的确认互不顶用。
 /// </remarks>
-internal sealed record KeyResetPrompt(AiProvider Provider, string Url, IReadOnlyList<string> Confirmation)
+internal sealed record KeyResetPrompt(AiProvider Provider, string Url, IReadOnlyList<string> Confirmation,
+    AiModelConfig? Model = null)
 {
-    /// <summary>这次提交要交回的确认凭据;换了供应商或地址就是 null(重新问)。</summary>
+    /// <summary>供应商这一层的提交要交回的确认凭据;换了供应商或地址就是 null(重新问)。</summary>
     public IReadOnlyList<string>? For(AiProvider provider, string url)
-        => ReferenceEquals(Provider, provider) && Url == url ? Confirmation : null;
+        => Model is null && ReferenceEquals(Provider, provider) && Url == url ? Confirmation : null;
+
+    /// <summary>模型这一层的提交要交回的确认凭据;换了模型或覆盖地址就是 null(重新问)。</summary>
+    public IReadOnlyList<string>? For(AiProvider provider, AiModelConfig model, string url)
+        => ReferenceEquals(Model, model) && ReferenceEquals(Provider, provider) && Url == url ? Confirmation : null;
+
+    /// <summary>
+    /// 弹确认框:这个模型的覆盖基地址换到了别的源,保存会清掉它自带的那把 Key。点确认返回 true。
+    /// </summary>
+    /// <param name="overlay">视图上的确认框。</param>
+    /// <param name="reset">存储层的拒绝。</param>
+    /// <param name="changed">已经确认过一次、提交时又被拒(框开着期间这把 Key 换了值)。</param>
+    /// <param name="loc">文案。</param>
+    public static Task<bool> AskModelAsync(ConfirmOverlay overlay, AiSettingsStore.ApiKeyResetRequiredException reset,
+        bool changed, Loc loc)
+        => overlay.AskAsync(
+            loc["SetupKeyResetTitle"],
+            changed ? loc.F("SetupBaseUrlKeyResetChanged", reset.KeyCount) : loc["ModelBaseUrlKeyResetConfirm"],
+            loc["SetupKeyResetAccept"],
+            loc["Cancel"]);
 
     /// <summary>弹确认框:换源要清掉这些已存的 Key(订阅登录的还要退出登录)。点确认返回 true。</summary>
     /// <param name="overlay">视图上的确认框。</param>

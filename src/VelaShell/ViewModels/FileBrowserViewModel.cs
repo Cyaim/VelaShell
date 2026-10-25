@@ -114,6 +114,8 @@ public class FileBrowserViewModel : ReactiveObject
         CommitPathEditCommand = ReactiveCommand.CreateFromTask(CommitPathEditAsync);
         ActivateCommand = ReactiveCommand.CreateFromTask<RemoteFileInfoViewModel>(ActivateAsync);
         GoUpCommand = ReactiveCommand.CreateFromTask(GoUpAsync);
+        GoBackCommand = ReactiveCommand.CreateFromTask(() => GoBackAsync(), this.WhenAnyValue(x => x.CanGoBack));
+        GoForwardCommand = ReactiveCommand.CreateFromTask(() => GoForwardAsync(), this.WhenAnyValue(x => x.CanGoForward));
         RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAsync);
         LoadInitialCommand = ReactiveCommand.CreateFromTask(LoadInitialAsync);
         UploadCommand = ReactiveCommand.CreateFromTask(UploadAsync);
@@ -146,6 +148,8 @@ public class FileBrowserViewModel : ReactiveObject
         ShowTransfersCommand = ReactiveCommand.Create(() => TransferSink?.ShowPanel());
         OpenRemoteSearchCommand = ReactiveCommand.CreateFromTask<string?>(
             root => CanSearchRemote && ShowRemoteSearch is { } show ? show(root) : Task.CompletedTask);
+        OpenTerminalHereCommand = ReactiveCommand.CreateFromTask<string?>(
+            directory => OpenTerminalAt is { } open ? open(directory ?? CurrentPath) : Task.CompletedTask);
         ToggleVisibilityCommand = ReactiveCommand.Create(ToggleVisibility);
         ToggleHiddenFilesCommand = ReactiveCommand.Create(() =>
         {
@@ -364,6 +368,26 @@ public class FileBrowserViewModel : ReactiveObject
     public Func<string?, Task>? ShowRemoteSearch { get; set; }
 
     /// <summary>
+    /// 由宿主在 SSH 会话(连接类型为 SSH 的配置)的面板上挂:开一个连同一配置的终端标签,认证后 cd 进参数给的远端目录。
+    /// SFTP 专用配置、FTP、插件协议的面板不挂 —— 那里没有 shell 可开,右键里也就没有这一项。
+    /// </summary>
+    public Func<string, Task>? OpenTerminalAt
+    {
+        get;
+        set
+        {
+            field = value;
+            this.RaisePropertyChanged(nameof(CanOpenTerminalHere));
+        }
+    }
+
+    /// <summary>右键菜单里的「在此处打开终端」是否出现。</summary>
+    public bool CanOpenTerminalHere => OpenTerminalAt is not null;
+
+    /// <summary>「在此处打开终端」;参数是目录(目录行的右键菜单传它自己),null = 当前目录(空白处右键)。</summary>
+    public ReactiveCommand<string?, RxVoid> OpenTerminalHereCommand { get; }
+
+    /// <summary>
     /// 定位到一个远端条目之后触发(参数是已选中的那一行),视图据此把它滚进可见区。
     /// </summary>
     public event EventHandler<RemoteFileInfoViewModel>? RevealRequested;
@@ -398,6 +422,12 @@ public class FileBrowserViewModel : ReactiveObject
                                                       && !Files.Contains(f)))
         {
             ShowHiddenFiles = true;
+        }
+        // 就在当前目录里时不会换目录,过滤条件还在:它挡着那一行的话同样等于没定位。
+        if (_filterText.Length > 0 && _allFiles.Exists(f => string.Equals(f.FullPath, path, StringComparison.Ordinal)
+                                                            && !Files.Contains(f)))
+        {
+            FilterText = string.Empty;
         }
         if (Files.FirstOrDefault(f => !f.IsParentEntry && string.Equals(f.FullPath, path, StringComparison.Ordinal)) is not { } row)
         {
@@ -755,6 +785,59 @@ public class FileBrowserViewModel : ReactiveObject
         }
     }
 
+    // ---- 当前目录过滤(头部工具条上可收起的过滤框)--------------------------------
+    //
+    // 只过滤显示:按「名字含有」(不分大小写)把不相干的行藏起来,不去服务器上找 —— 那是远端搜索的事。
+    // 藏起来的行不在 Files 里,于是全选、键入定位、下载、删除都只对着看得见的行;
+    // 换目录时清空(收藏、跟随终端、搜索定位进来的也算),免得进了新目录还对着上一个目录的筛选条件。
+
+    private string _filterText = string.Empty;
+
+    /// <summary>过滤框是否展开。收起即清空过滤 —— 收起来的框还在暗中藏行,只会让人以为文件丢了。</summary>
+    public bool IsFilterOpen
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            if (!value)
+            {
+                FilterText = string.Empty;
+            }
+        }
+    }
+
+    /// <summary>过滤框里的文字;空 = 不过滤。</summary>
+    public string FilterText
+    {
+        get => _filterText;
+        set
+        {
+            value ??= string.Empty;
+            if (string.Equals(_filterText, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref _filterText, value);
+            HashSet<string> selected = [.. SelectedFiles.Where(file => !file.IsParentEntry).Select(file => file.FullPath)];
+            RebuildVisibleFiles();
+            RestoreSelection(selected);
+        }
+    }
+
+    /// <summary>换了目录:过滤条件作废,框照旧开着,等着输新的。只清字、不重建,调用方接着会重建可见行。</summary>
+    private void ClearFilterForNewDirectory()
+    {
+        if (_filterText.Length > 0)
+        {
+            this.RaiseAndSetIfChanged(ref _filterText, string.Empty, nameof(FilterText));
+        }
+    }
+
     /// <summary>“名称”列的用户可调宽度(有最小像素下限约束)。</summary>
     public GridLength NameColumnWidth
     {
@@ -1067,7 +1150,10 @@ public class FileBrowserViewModel : ReactiveObject
     /// <summary>在当前目录下新建符号链接(依次提示目标与名称;参数为右键所在行,用来预填目标)。</summary>
     public ReactiveCommand<RemoteFileInfoViewModel?, RxVoid> NewSymbolicLinkCommand { get; }
 
-    /// <summary>下载选中的单个文件或目录到本地(目录递归)。</summary>
+    /// <summary>
+    /// 下载单个文件或目录到本地(目录递归)。文件走系统「另存为」对话框(右键「下载为…」),
+    /// 对话框里的覆盖确认就是冲突决定;目录选一个本地文件夹。
+    /// </summary>
     public ReactiveCommand<RemoteFileInfoViewModel, RxVoid> DownloadItemCommand { get; }
 
     /// <summary>在同目录内重命名选中的条目(提示输入新名称)。</summary>
@@ -1184,7 +1270,10 @@ public class FileBrowserViewModel : ReactiveObject
     /// </summary>
     public Func<Task<IReadOnlyList<string>>>? PickLocalPathsForUpload { get; set; }
 
-    /// <summary>由视图设置:询问下载保存位置(参数 = 建议的文件名)。</summary>
+    /// <summary>
+    /// 由视图设置:询问下载保存位置(参数 = 建议的文件名)。选了已有的文件时,由对话框自己问「要替换吗」——
+    /// 返回的路径即视为用户已同意覆盖(「下载为…」不再走「文件已存在时」策略)。
+    /// </summary>
     public Func<string, Task<string?>>? PickSavePathForDownload { get; set; }
 
     /// <summary>由视图设置:为文件夹/批量下载选取本地目标文件夹。</summary>
@@ -1416,8 +1505,14 @@ public class FileBrowserViewModel : ReactiveObject
                 : " ▲"
             : string.Empty;
 
-    /// <summary>导航到指定绝对路径的目录(面包屑点击等)。失败时保留原目录。</summary>
-    public async Task NavigateToAsync(string path, CancellationToken ct = default)
+    /// <summary>导航到指定绝对路径的目录(面包屑点击等)。失败时保留原目录。进了别的目录就记进后退历史。</summary>
+    public Task NavigateToAsync(string path, CancellationToken ct = default) =>
+        NavigateCoreAsync(path, recordHistory: true, ct);
+
+    /// <param name="path">目标目录。</param>
+    /// <param name="recordHistory">进了别的目录时要不要把原目录记进后退历史;后退 / 前进自己挪历史,传 false。</param>
+    /// <param name="ct">取消令牌。</param>
+    private async Task NavigateCoreAsync(string path, bool recordHistory, CancellationToken ct)
     {
         using LifetimeScope lifetime = LinkToLifetime(ct);
         long navigationVersion = Interlocked.Increment(ref _navigationVersion);
@@ -1464,10 +1559,17 @@ public class FileBrowserViewModel : ReactiveObject
             }
             _allFiles.Clear();
             _allFiles.AddRange(files.Select(f => new RemoteFileInfoViewModel(f)));
+            string previousPath = CurrentPath;
             CurrentPath = path;
             if (pathChanged)
             {
                 SelectedFiles.Clear();
+                ClearFilterForNewDirectory();
+                // 首次加载之前的 CurrentPath 只是占位(构造时的 "/"),用户没在那儿待过,不进历史。
+                if (recordHistory && HasLoaded)
+                {
+                    PushHistory(previousPath);
+                }
             }
             RebuildVisibleFiles();
             if (!pathChanged)
@@ -1582,6 +1684,10 @@ public class FileBrowserViewModel : ReactiveObject
     {
         IEnumerable<RemoteFileInfoViewModel> visible =
             RemoteFileSort.ApplyHiddenFilter(_allFiles, ShowHiddenFiles);
+        if (_filterText.Length > 0)
+        {
+            visible = visible.Where(file => file.Name.Contains(_filterText, StringComparison.OrdinalIgnoreCase));
+        }
         var rebuilt = new List<RemoteFileInfoViewModel>();
         if (CurrentPath != "/")
         {
@@ -1838,6 +1944,79 @@ public class FileBrowserViewModel : ReactiveObject
             return;
         }
         await NavigateToAsync(RemotePath.Parent(CurrentPath), ct);
+    }
+
+    // ---- 后退 / 前进(Alt+← / Alt+→ 与工具条按钮)--------------------------------
+    //
+    // 每个面板各有一对历史栈,只活在这个实例里:断线重连后宿主建的是新面板,历史自然不留 ——
+    // 重连之后的会话可能已经换了一台机器(同名配置改过地址),旧路径未必还有意义。
+    // 凡是进了别的目录都记(面包屑、双击、上一级、手动输入、收藏、跟随终端、搜索定位),刷新同一目录不记。
+
+    /// <summary>历史栈的上限:够用,又不至于让一个开了一整天的面板无限长下去。</summary>
+    internal const int MaxHistory = 50;
+
+    private readonly List<string> _backHistory = [];
+    private readonly List<string> _forwardHistory = [];
+
+    /// <summary>有没有可以后退的目录。</summary>
+    public bool CanGoBack => _backHistory.Count > 0;
+
+    /// <summary>有没有可以前进的目录。</summary>
+    public bool CanGoForward => _forwardHistory.Count > 0;
+
+    /// <summary>后退到上一个待过的目录(Alt+←)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> GoBackCommand { get; }
+
+    /// <summary>前进到后退之前的目录(Alt+→)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> GoForwardCommand { get; }
+
+    /// <summary>进了别的目录:原目录压进后退栈,前进栈作废(与浏览器一样,从历史中间岔出去就没有「前进」了)。</summary>
+    private void PushHistory(string previous)
+    {
+        if (_backHistory.Count == 0 || !string.Equals(_backHistory[^1], previous, StringComparison.Ordinal))
+        {
+            _backHistory.Add(previous);
+            if (_backHistory.Count > MaxHistory)
+            {
+                _backHistory.RemoveAt(0);
+            }
+        }
+        _forwardHistory.Clear();
+        RaiseHistoryChanged();
+    }
+
+    private void RaiseHistoryChanged()
+    {
+        this.RaisePropertyChanged(nameof(CanGoBack));
+        this.RaisePropertyChanged(nameof(CanGoForward));
+    }
+
+    /// <summary>后退一步。目标目录进不去(刚被删、没权限)时照常报错,历史原样不动。</summary>
+    public Task GoBackAsync(CancellationToken ct = default) => MoveInHistoryAsync(_backHistory, _forwardHistory, ct);
+
+    /// <summary>前进一步;规则同 <see cref="GoBackAsync" />。</summary>
+    public Task GoForwardAsync(CancellationToken ct = default) => MoveInHistoryAsync(_forwardHistory, _backHistory, ct);
+
+    private async Task MoveInHistoryAsync(List<string> from, List<string> to, CancellationToken ct)
+    {
+        if (from.Count == 0)
+        {
+            return;
+        }
+        string target = from[^1];
+        string origin = CurrentPath;
+        await NavigateCoreAsync(target, recordHistory: false, ct);
+
+        // 只认「确实到了那儿」:失败、或者半路被另一次导航顶掉了,历史都不挪。
+        if (!string.Equals(CurrentPath, target, StringComparison.Ordinal)
+            || from.Count == 0
+            || !string.Equals(from[^1], target, StringComparison.Ordinal))
+        {
+            return;
+        }
+        from.RemoveAt(from.Count - 1);
+        to.Add(origin);
+        RaiseHistoryChanged();
     }
 
     private async Task RefreshAsync(CancellationToken ct = default) =>
@@ -2109,8 +2288,13 @@ public class FileBrowserViewModel : ReactiveObject
         {
             return;
         }
+        // 「下载为…」:落点与名字是用户在系统「另存为」对话框里挑的,同名时对话框也已经问过「要替换吗」——
+        // 那一下就是这次的冲突决定。所以既不走「文件已存在时」策略(「询问」会再弹一遍,「跳过 / 重命名」
+        // 还会推翻用户刚选定的名字),也不做续传探测(那里原有的同名文件是用户确认要替换掉的,不是这次的半截)。
+        // 其余照常:进浮窗、占全窗口名额、可取消、记进传输队列(断线停下之后「继续」从这次的半截接着传)。
         PlannedFileTransfer[] single = [new(TransferType.Download, localPath, file.FullPath)];
-        await RunTransferBatchAsync(single, ct);
+        ErrorMessage = null;
+        await ExecuteResolvedBatchAsync(single, new BatchConflictDecision { OverwriteAll = true }, settled: null, ct, persist: true);
     }
 
     /// <summary>
@@ -2469,7 +2653,7 @@ public class FileBrowserViewModel : ReactiveObject
 
     /// <summary>
     /// 执行一批已经过冲突与续传处理的传输:登记批次、按全窗口并发上限分派、收尾通知。
-    /// <paramref name="settled" /> 在每一项落定(完成/失败/跳过)后回调,取消时不回调。
+    /// <paramref name="settled" /> 在每一项落定(完成/失败/跳过,以及浮窗那一行的 × 单条取消)后回调,整批取消时不回调。
     /// </summary>
     /// <param name="resolved">要传的项。</param>
     /// <param name="conflictDecision">本批次的粘性冲突决定。</param>
@@ -2994,7 +3178,7 @@ public class FileBrowserViewModel : ReactiveObject
     /// <summary>
     /// 端到端执行一次传输:在传输浮窗中注册,将进度流式推送进去,
     /// 并落定最终状态。失败将行标红并返回;取消将行标为取消、清理本地部分文件,
-    /// 并传播取消使批量任务中止。
+    /// 并传播取消使批量任务中止。只停这一项(浮窗那一行的 ×)时不传播:返回已取消,这一批其余照传。
     /// </summary>
     private async Task<TransferStatus> RunTransferAsync(
         TransferType type,
@@ -3029,6 +3213,12 @@ public class FileBrowserViewModel : ReactiveObject
             // 失败后可从传输面板重试:闭包捕获本会话与路径(中转还有源端),重试时重新探测续传起点。
             item.RetryAsync = () => RetryTransferAsync(new(type, localPath, remotePath, Source: source));
         }
+        // 这一项自己的取消源,链在批次的上面:「全部取消」照样停得下它,浮窗那一行的 × 只停它。
+        // 下面凡是属于这一项的等待(传输本身、重试前的退避、续传探测、冲突改名)都吃它的令牌;
+        // 改名重传另起一行、另有自己的取消源,所以那一句仍传批次的令牌。
+        using var itemCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        CancellationToken itemCt = itemCts.Token;
+        item?.CancelItem = itemCts.Cancel;
         // 本次尝试的起点:续传时 > 0;自动重试会把它挪到这个文件自己已经传过去的地方。
         long offset = resumeOffset;
         var progress = new AttemptProgress(new Progress<TransferProgress>(p =>
@@ -3080,7 +3270,7 @@ public class FileBrowserViewModel : ReactiveObject
                         remotePath,
                         conflictDecision,
                         source,
-                        ct
+                        itemCt
                     );
                     if (action.Renamed is { } target)
                     {
@@ -3100,11 +3290,11 @@ public class FileBrowserViewModel : ReactiveObject
 
                 // 断线、超时这类临时失败:退避一会儿,在原会话上再试(权限、磁盘满、路径不存在、
                 // 服务端拒写不在此列,见 TransferRetryPolicy)。等待期间这一行显示「等待重试」,
-                // 全部取消照样能把它停下 —— 等待吃的是同一个取消令牌。
+                // 全部取消与这一行的 × 照样能把它停下 —— 等待吃的是这一项的取消令牌。
                 // 名额在等待期间不放:链路坏了的时候别的文件也传不动,放出去只是让它们也去撞一遍。
                 catch (Exception ex) when (retries < maxRetries
                                            && ex is not OperationCanceledException
-                                           && !ct.IsCancellationRequested
+                                           && !itemCt.IsCancellationRequested
                                            && !_lifetime.IsCancellationRequested
                                            && TransferRetryPolicy.Classify(ex) == TransferFailureKind.Transient)
                 {
@@ -3112,9 +3302,23 @@ public class FileBrowserViewModel : ReactiveObject
                     bool movedBytes = progress.MovedBytes;
                     long attemptStart = offset;
                     item?.MarkRetrying(retries, maxRetries);
-                    await RetryDelay(TransferRetryPolicy.DelayBeforeRetry(retries), ct);
-                    offset = await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, ct);
+                    await RetryDelay(TransferRetryPolicy.DelayBeforeRetry(retries), itemCt);
+                    offset = await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, itemCt);
                 }
+            }
+        }
+        // 只停这一项(浮窗那一行的 ×),批次没取消:这一项按已取消落定、不往上抛,这一批其余照传。
+        // 落定之后批次把它从传输队列里摘掉(见 ExecuteResolvedBatchAsync 的 Account),这一批以后
+        // 再停下、点「继续」时不会再传它。不只认 OperationCanceledException:取消把流关掉时,
+        // 底下冒出来的也可能是一个「通道已关闭」之类的异常 —— 那是取消的后果,不能算这个文件失败,
+        // 更不能当成断线把整批挂起。半截目标与整批取消一样,按「断点续传 / 清理半截文件」处理。
+        catch (Exception) when (itemCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            item?.Status = TransferStatus.Cancelled;
+            finalStatus = TransferStatus.Cancelled;
+            if (targetTouched)
+            {
+                await CleanupPartialTargetAsync(type, localPath, remotePath);
             }
         }
         catch (OperationCanceledException)
@@ -3149,6 +3353,8 @@ public class FileBrowserViewModel : ReactiveObject
         }
         finally
         {
+            // 落定了:摘掉 ×(取消源随方法返回释放,不能再让那一行去点它)。
+            item?.CancelItem = null;
             TransferSink?.NotifyTaskSettled();
 
             // 记录传输日志(设置 → 文件传输 → 日志记录)。中转的"本地"一列写源端,带上它是哪台机器 ——
@@ -3175,17 +3381,17 @@ public class FileBrowserViewModel : ReactiveObject
         Task TransferOnceAsync(long startAt) => type switch
         {
             TransferType.Upload =>
-                _sftpService.UploadFileAsync(_sessionId, localPath, remotePath, progress, startAt, ct),
+                _sftpService.UploadFileAsync(_sessionId, localPath, remotePath, progress, startAt, itemCt),
             // Copy:LocalPath = 远端源路径,RemotePath = 远端目标路径。
             TransferType.Copy =>
-                _sftpService.CopyAsync(_sessionId, localPath, remotePath, progress, ct),
+                _sftpService.CopyAsync(_sessionId, localPath, remotePath, progress, itemCt),
             // Relay:LocalPath = 另一栏会话上的源路径,RemotePath = 本会话上的目标路径。
             TransferType.Relay =>
                 RemoteRelay.CopyFileAsync(
                     source!.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
-                    progress, () => targetTouched = true, startAt, ct),
+                    progress, () => targetTouched = true, startAt, itemCt),
             _ =>
-                _sftpService.DownloadFileAsync(_sessionId, remotePath, localPath, progress, startAt, ct),
+                _sftpService.DownloadFileAsync(_sessionId, remotePath, localPath, progress, startAt, itemCt),
         };
     }
 
@@ -3985,7 +4191,7 @@ public class FileBrowserViewModel : ReactiveObject
     /// 进度、并发上限、取消、传输日志与普通传输完全共用。
     /// </summary>
     /// <param name="requests">要执行的传输(目标父目录须已存在)。</param>
-    /// <param name="settled">每项落定后回调,用于回写修改时间;取消时不回调。</param>
+    /// <param name="settled">每项落定后回调,用于回写修改时间;单条取消按已取消回调,整批取消时不回调。</param>
     /// <param name="ct">取消令牌。</param>
     /// <returns>false 表示被取消。</returns>
     internal Task<bool> RunSyncTransfersAsync(

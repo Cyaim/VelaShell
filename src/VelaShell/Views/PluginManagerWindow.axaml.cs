@@ -139,6 +139,14 @@ public partial class PluginManagerWindow : Window
         }
     }
 
+    private void ToggleNotifications_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: PluginRowViewModel row } && ViewModel is { } vm)
+        {
+            FireAndForget.Run(() => vm.ToggleNotificationsAsync(row));
+        }
+    }
+
     private void Uninstall_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
         if (sender is not Control { DataContext: PluginRowViewModel row } || ViewModel is not { } vm)

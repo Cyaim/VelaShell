@@ -155,7 +155,7 @@ public static class AnnouncementFeedDocument
     private static bool MatchesAudience(JsonElement element, FeedAudience audience) =>
         MatchesList(element, "locales", audience.UiCulture) &&
         MatchesList(element, "platforms", audience.Rid) &&
-        MatchesVersionRange(element, audience.AppVersion);
+        MatchesVersionRange(element, audience);
 
     private static bool MatchesList(JsonElement element, string property, string? actual)
     {
@@ -180,7 +180,11 @@ public static class AnnouncementFeedDocument
         return empty;
     }
 
-    private static bool MatchesVersionRange(JsonElement element, string? appVersion)
+    /// <summary>
+    /// 版本区间(含端点),按 SemVer 优先级比(比较由 <see cref="FeedAudience.CompareVersions" /> 给出):
+    /// 预发布版低于同号正式版,所以 <c>minVersion: 1.4.0</c> 不投给 <c>1.4.0-beta.2</c> —— 那台机器还没有 1.4.0 的东西。
+    /// </summary>
+    private static bool MatchesVersionRange(JsonElement element, FeedAudience audience)
     {
         string? min = ReadString(element, "minVersion");
         string? max = ReadString(element, "maxVersion");
@@ -188,34 +192,18 @@ public static class AnnouncementFeedDocument
         {
             return true;
         }
-        if (!TryParseVersion(appVersion, out Version? current))
+        if (audience.AppVersion is not { } current || audience.CompareVersions is not { } compare)
         {
-            // 版本读不出来时不做定向过滤:宁可多看一条,也好过因为本机版本号异常而
+            // 版本读不出来(或者没有比较口径)时不做定向过滤:宁可多看一条,也好过因为本机版本号异常而
             // 把所有定向消息(可能正是"你这个版本有问题,快升级")全部漏掉。
             return true;
         }
-        if (TryParseVersion(min, out Version? minimum) && current < minimum)
+        // 某一端写得解析不出(比较结果为 null)就当这一端没给,与本机版本读不出来同一个处置。
+        if (min is not null && compare(current, min) < 0)
         {
             return false;
         }
-        return !TryParseVersion(max, out Version? maximum) || current <= maximum;
-    }
-
-    /// <summary>解析版本号,忽略预发布后缀(<c>1.4.0-beta.2</c> → <c>1.4.0</c>)。</summary>
-    private static bool TryParseVersion(string? text, out Version? version)
-    {
-        version = null;
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-        string trimmed = text.TrimStart('v', 'V');
-        int dash = trimmed.IndexOfAny(['-', '+']);
-        if (dash >= 0)
-        {
-            trimmed = trimmed[..dash];
-        }
-        return Version.TryParse(trimmed, out version);
+        return max is null || !(compare(current, max) > 0);
     }
 
     private static NotificationKind ParseKind(string? kind) =>

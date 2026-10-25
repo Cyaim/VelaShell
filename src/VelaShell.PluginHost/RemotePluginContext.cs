@@ -40,7 +40,7 @@ internal sealed class RemotePluginContext : IPluginContext, IDisposable
         RemoteExec = RemoteExecProxy;
         CommandsProxy = new(rpc, Log);
         EventsHub = new(Log);
-        UiLocal = new(pluginId, Log, rpc);
+        UiLocal = new(pluginId, Log, rpc, hello.SupportsNotifications);
         Secrets = new RpcSecrets(rpc);
         Clipboard = new RpcClipboard(rpc);
         Terminal = new RpcTerminal(rpc);

@@ -1808,6 +1808,131 @@ public sealed class AiSettingsStoreTests
         }
     }
 
+    /// <summary>
+    /// 模型这一层的换源(维护者 2026-10-25 第二轮第 24 条):覆盖基地址把模型实际去的地址换到别的源,
+    /// 已存的自带 Key 原样留着就先拒;确认后连同地址一起清掉。从供应商地址改到覆盖地址、覆盖地址之间互换、
+    /// 去掉覆盖地址回到别源的供应商地址,都算换源。
+    /// </summary>
+    [TestMethod]
+    [DataRow(null, "https://elsewhere.example/v1")]
+    [DataRow("https://relay.example/v1", "https://elsewhere.example/v1")]
+    [DataRow("https://relay.example/v1", null)]
+    public async Task ModelOverrideToAnotherOrigin_RefusesUntilConfirmedThenClearsTheModelsOwnKey(string? from, string? to)
+    {
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var own = new AiModelConfig { Model = "own", HasOwnApiKey = true, BaseUrlOverride = from };
+        var provider = new AiProvider { BaseUrl = "https://home.example/v1", Models = [own] };
+        var settings = new AiSettings { Providers = [provider], ActiveModelId = own.Id };
+        await store.AddProviderApiKeyAsync(settings, provider, "primary");
+        await store.SetApiKeyAsync(own.Id, "own-key");
+        await store.SaveAsync(settings);
+        string expected = System.Text.Json.JsonSerializer.Serialize(own);
+        AiModelConfig draft = System.Text.Json.JsonSerializer.Deserialize<AiModelConfig>(expected)!;
+        draft.BaseUrlOverride = to;
+        draft.Name = "renamed";
+        long epoch = store.ProviderConfigurationVersion(provider);
+
+        // 表单预填的那把没动过,原样交回:它会被发往新地址,先拒
+        AiSettingsStore.ApiKeyResetRequiredException refused = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(() =>
+            store.SaveModelFormAsync(settings, provider, own, draft, expected, "own-key", "own-key"));
+        Assert.AreSequenceEqual([own.Id], refused.KeyOwners);
+        Assert.AreEqual(1, refused.KeyCount);
+        Assert.IsFalse(refused.SignsOut);
+        Assert.AreEqual(expected, System.Text.Json.JsonSerializer.Serialize(own), "没确认就什么都不改");
+        Assert.AreEqual(from, (await store.LoadAsync()).Providers[0].Models[0].BaseUrlOverride);
+        Assert.AreEqual("own-key", await context.Secrets.GetAsync("apikey:" + own.Id));
+        Assert.AreEqual(epoch, store.ProviderConfigurationVersion(provider));
+
+        IReadOnlyList<string> cleared = await store.SaveModelFormAsync(settings, provider, own, draft, expected,
+            "own-key", "own-key", refused.Confirmation);
+        Assert.AreSequenceEqual([own.Id], cleared);
+        Assert.AreEqual(to, own.BaseUrlOverride);
+        Assert.AreEqual("renamed", own.Name, "表单的其余字段照常保存");
+        Assert.IsTrue(own.HasOwnApiKey, "仍是自带 Key:不悄悄改用供应商的 Key,由界面请用户为新地址重填");
+        Assert.IsNull(await context.Secrets.GetAsync("apikey:" + own.Id));
+        Assert.IsNull(await store.GetApiKeyAsync(own.Id), "缓存同步失效");
+        Assert.IsNull((await store.ResolveCredentialAsync(settings.FindModel(own.Id)!)).Value, "新地址上取不到旧 Key");
+        Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id), "供应商的 Key 不受模型这一层换源影响");
+        Assert.IsGreaterThan(epoch, store.ProviderConfigurationVersion(provider), "旧地址上解出的请求作废");
+        AiModelConfig saved = (await store.LoadAsync()).Providers[0].Models[0];
+        Assert.AreEqual(to, saved.BaseUrlOverride);
+        Assert.IsTrue(saved.HasOwnApiKey);
+    }
+
+    /// <summary>
+    /// 模型这一层不必问的几种:同一次保存里换了新 Key(那把是给新地址的)、清空了 Key 或取消自带 Key(本来就不留)、
+    /// 只改路径或写法(同源)、本来就没存 Key。
+    /// </summary>
+    [TestMethod]
+    [DataRow("new-key", "https://elsewhere.example/v1", "new-key")]
+    [DataRow(null, "https://elsewhere.example/v1", null)]
+    [DataRow("", "https://elsewhere.example/v1", null)]
+    [DataRow("own-key", "HTTPS://HOME.EXAMPLE:443/v2", "own-key")]
+    [DataRow("own-key", "https://home.example/v1", "own-key")]
+    public async Task ModelOverride_NeedsNoConfirmationWhenTheSavedKeyDoesNotFollowToAnotherOrigin(string? submitted, string to, string? kept)
+    {
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+        var provider = new AiProvider { BaseUrl = "https://home.example/v1", Models = [own] };
+        var settings = new AiSettings { Providers = [provider], ActiveModelId = own.Id };
+        await store.SetApiKeyAsync(own.Id, "own-key");
+        await store.SaveAsync(settings);
+        string expected = System.Text.Json.JsonSerializer.Serialize(own);
+        AiModelConfig draft = System.Text.Json.JsonSerializer.Deserialize<AiModelConfig>(expected)!;
+        draft.BaseUrlOverride = to;
+        draft.HasOwnApiKey = submitted is not null;
+        Assert.IsEmpty(await store.SaveModelFormAsync(settings, provider, own, draft, expected, submitted, "own-key"));
+        Assert.AreEqual(to, own.BaseUrlOverride);
+        Assert.AreEqual(kept, await store.GetApiKeyAsync(own.Id));
+
+        // 本来就没存 Key 的模型换源:没有东西会跟去
+        var bare = new AiModelConfig { Model = "bare", HasOwnApiKey = true };
+        provider.Models.Add(bare);
+        await store.SaveAsync(settings);
+        expected = System.Text.Json.JsonSerializer.Serialize(bare);
+        draft = System.Text.Json.JsonSerializer.Deserialize<AiModelConfig>(expected)!;
+        draft.BaseUrlOverride = "https://third.example/v1";
+        Assert.IsEmpty(await store.SaveModelFormAsync(settings, provider, bare, draft, expected, "", null));
+        Assert.AreEqual("https://third.example/v1", bare.BaseUrlOverride);
+    }
+
+    /// <summary>确认之后这把 Key 被别处换了值:确认的不是它,再拒一次(界面换一句话再问),不连它一起清。</summary>
+    [TestMethod]
+    public async Task ModelOverrideToAnotherOrigin_KeyChangedAfterThePromptAsksAgain()
+    {
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var own = new AiModelConfig { Model = "own", HasOwnApiKey = true };
+        var provider = new AiProvider { BaseUrl = "https://home.example/v1", Models = [own] };
+        var settings = new AiSettings { Providers = [provider], ActiveModelId = own.Id };
+        await store.SetApiKeyAsync(own.Id, "own-key");
+        await store.SaveAsync(settings);
+        string expected = System.Text.Json.JsonSerializer.Serialize(own);
+        AiModelConfig draft = System.Text.Json.JsonSerializer.Deserialize<AiModelConfig>(expected)!;
+        draft.BaseUrlOverride = "https://elsewhere.example/v1";
+        AiSettingsStore.ApiKeyResetRequiredException refused = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(() =>
+            store.SaveModelFormAsync(settings, provider, own, draft, expected, "own-key", "own-key"));
+
+        await store.SetApiKeyAsync(own.Id, "own-key-2");
+        AiSettingsStore.ApiKeyResetRequiredException again = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(() =>
+            store.SaveModelFormAsync(settings, provider, own, draft, expected, "own-key-2", "own-key-2", refused.Confirmation));
+        Assert.AreSequenceEqual([own.Id], again.KeyOwners);
+        Assert.AreEqual("own-key-2", await store.GetApiKeyAsync(own.Id));
+        Assert.IsNull(own.BaseUrlOverride);
+
+        // 供应商那一层的确认也不顶用:按归属者与值核对,确认的得是这把
+        await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(() =>
+            store.SaveModelFormAsync(settings, provider, own, draft, expected, "own-key-2", "own-key-2",
+                [AiSettingsStore.KeyResetToken(provider.Id, "own-key-2")]));
+        IReadOnlyList<string> cleared = await store.SaveModelFormAsync(settings, provider, own, draft, expected,
+            "own-key-2", "own-key-2", again.Confirmation);
+        Assert.AreSequenceEqual([own.Id], cleared);
+        Assert.IsNull(await store.GetApiKeyAsync(own.Id));
+        Assert.AreEqual("https://elsewhere.example/v1", own.BaseUrlOverride);
+    }
+
     [TestMethod]
     public async Task Review_ProviderFormEmptyCredentialBaselineCannotOverwriteNewlyAddedKey()
     {

@@ -325,6 +325,142 @@ public sealed partial class SettingsViewUiTests
         });
     }
 
+    /// <summary>
+    /// 模型这一层换源(维护者 2026-10-25 第二轮第 24 条):覆盖基地址改到别的服务器,表单里预填的自带 Key 没动过,
+    /// 保存先弹确认框(连点「保存」不算确认),取消什么都不改,确认后清掉这一行自带的 Key、地址落库。
+    /// </summary>
+    [TestMethod]
+    public void ModelOverrideToAnotherOrigin_SaveAsksInADialogThenClearsTheOwnKey()
+    {
+        OnUi(async () =>
+        {
+            await using var home = new SseStub(ProbeAnswerSse);
+            await using var elsewhere = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var model = new AiModelConfig { Name = "Own", Model = "m", HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = home.BaseUrl, Models = [model] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "primary");
+            await store.SetApiKeyAsync(model.Id, "own-key");
+            await store.SaveAsync(settings);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 1;
+                TextBox key = view.GetControl<TextBox>("ApiKeyBox");
+                await WaitUntilAsync(() => key.Text == "own-key");
+                TextBox url = view.GetControl<TextBox>("BaseUrlBox");
+                Button save = view.GetControl<Button>("SaveButton");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                url.Text = elsewhere.BaseUrl;
+                Click(save);
+                Assert.AreEqual(loc["ModelBaseUrlKeyResetConfirm"], await WaitForConfirmAsync(view));
+                Assert.AreEqual(loc["SetupKeyResetTitle"], ConfirmBox(view).GetLogicalDescendants().OfType<TextBlock>()
+                    .Single(text => text.Name == "ConfirmTitle").Text);
+                Assert.IsFalse(save.IsEnabled, "框开着时「保存」锁着");
+                Click(save);
+                await PumpAsync();
+                Assert.IsTrue(ConfirmBox(view).IsOpen);
+                Assert.IsNull(model.BaseUrlOverride, "没点确认就什么都不改");
+                Assert.AreEqual("own-key", await store.GetApiKeyAsync(model.Id));
+
+                AnswerConfirm(view, accept: false);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupResetCancelled"]);
+                Assert.IsNull(model.BaseUrlOverride);
+                Assert.AreEqual("own-key", await store.GetApiKeyAsync(model.Id));
+                Assert.AreEqual(elsewhere.BaseUrl, url.Text, "草稿留着");
+                Assert.AreEqual("own-key", key.Text);
+
+                Click(save);
+                Assert.AreEqual(loc["ModelBaseUrlKeyResetConfirm"], await WaitForConfirmAsync(view));
+                AnswerConfirm(view, accept: true);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupSavedKeysCleared"]);
+                Assert.AreEqual(elsewhere.BaseUrl, model.BaseUrlOverride);
+                Assert.IsTrue(model.HasOwnApiKey, "仍是自带 Key:不改用供应商的 Key");
+                Assert.IsNull(await store.GetApiKeyAsync(model.Id));
+                Assert.AreEqual("", key.Text, "框里不再留着旧 Key");
+                Assert.IsTrue(view.GetControl<CheckBox>("OwnKeyCheck").IsChecked);
+                Assert.AreEqual("primary", await store.GetApiKeyAsync(provider.Id));
+                AiModelConfig saved = (await new AiSettingsStore(context).LoadAsync()).Providers[0].Models[0];
+                Assert.AreEqual(elsewhere.BaseUrl, saved.BaseUrlOverride);
+                Assert.IsEmpty(home.Requests);
+                Assert.IsEmpty(elsewhere.Requests);
+
+                // 之后为新地址填的 Key 照常保存,不再问
+                key.Text = "elsewhere-key";
+                Click(save);
+                await WaitUntilAsync(() => status.Text == loc["Saved"]);
+                Assert.IsFalse(ConfirmBox(view).IsOpen);
+                Assert.AreEqual("elsewhere-key", await store.GetApiKeyAsync(model.Id));
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    /// <summary>
+    /// 模型这一层换源还没保存时,「测试」不带框里预填的已存自带 Key:请用户先填新服务器的 Key;
+    /// 换成新填的就测它,框清空了就不带 Key 测。同一次保存里换了新 Key 也不必确认。
+    /// </summary>
+    [TestMethod]
+    public void ModelOverrideToAnotherOrigin_UnsavedTestDoesNotSendTheSavedOwnKey()
+    {
+        OnUi(async () =>
+        {
+            await using var home = new SseStub(ProbeAnswerSse);
+            await using var elsewhere = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var model = new AiModelConfig { Name = "Own", Model = "m", HasOwnApiKey = true };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = home.BaseUrl, Models = [model] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = model.Id };
+            await store.SetApiKeyAsync(model.Id, "own-key");
+            await store.SaveAsync(settings);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 1;
+                TextBox key = view.GetControl<TextBox>("ApiKeyBox");
+                await WaitUntilAsync(() => key.Text == "own-key");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+
+                // 地址没换源:照常带着它测
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual("Bearer own-key", home.Authorizations.Single(), status.Text);
+
+                view.GetControl<TextBox>("BaseUrlBox").Text = elsewhere.BaseUrl;
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(loc["SetupTestNeedsNewOriginKey"], status.Text);
+                Assert.IsEmpty(elsewhere.Requests, "旧地址的 Key 不能拿去测新地址");
+                Assert.HasCount(1, home.Requests);
+
+                key.Text = "";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual("Bearer not-needed", elsewhere.Authorizations.Single(), status.Text);
+
+                key.Text = "elsewhere-key";
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual("Bearer elsewhere-key", elsewhere.Authorizations[1], status.Text);
+                Assert.AreEqual("own-key", await store.GetApiKeyAsync(model.Id), "测试不落库");
+                Assert.HasCount(1, home.Requests);
+
+                // 新填的 Key 是给新地址的:保存不问,直接落库
+                Click(view.GetControl<Button>("SaveButton"));
+                await WaitUntilAsync(() => status.Text == loc["Saved"]);
+                Assert.IsFalse(ConfirmBox(view).IsOpen);
+                Assert.AreEqual(elsewhere.BaseUrl, model.BaseUrlOverride);
+                Assert.AreEqual("elsewhere-key", await store.GetApiKeyAsync(model.Id));
+            }
+            finally { window.Close(); }
+        });
+    }
+
     [TestMethod]
     public void BaseUrlToAnotherOrigin_FirstModelsOwnKeyIsNotTestedAgainstTheUnsavedAddress()
     {

@@ -66,10 +66,7 @@ public class FileTransferViewModel : ReactiveObject, IDraggablePanel
     /// </remarks>
     private int _slotDebt;
 
-    // 可空:无参构造的宿主(单元测试/无 SFTP 服务的场景)不提供传输管理器。
-    private readonly ITransferManager? _transferManager;
-
-    // 可空:同上,无存储时面板位置只在本次运行内保持。
+    // 可空:单元测试与无存储的宿主不提供,面板位置与传输队列只在本次运行内保持。
     private readonly IAppDataStore? _dataStore;
 
     private IDisposable? _autoHide;
@@ -99,13 +96,17 @@ public class FileTransferViewModel : ReactiveObject, IDraggablePanel
     private int _preparingCount;
 
     /// <summary>
-    /// 构造视图模型并初始化各命令;<paramref name="transferManager" /> 可为空
-    /// (单元测试或无 SFTP 服务的宿主场景不提供传输管理器)。
-    /// <paramref name="dataStore" /> 为空时面板位置只在本次运行内保持,不跨重启。
+    /// 构造视图模型并初始化各命令。
+    /// <paramref name="dataStore" /> 为空时面板位置与传输队列只在本次运行内保持,不跨重启。
     /// </summary>
-    public FileTransferViewModel(ITransferManager? transferManager, IAppDataStore? dataStore = null)
+    /// <remarks>
+    /// 排队、并发与取消都在这里与发起传输的文件面板里:全窗口共享的并发名额(<see cref="AcquireTransferSlotAsync" />)、
+    /// 面板的批次执行(<c>FileBrowserViewModel.RunTransferBatchAsync</c>)与传输队列(<see cref="Journal" />)。
+    /// 早先另有一套 <c>TransferManager</c>(自己的排队与并发上限),生产代码从没往里排过一个任务,
+    /// 单条取消通知的却是它 —— 于是那条取消只改了行的状态、传输照跑;2026-10-25 整套删掉。
+    /// </remarks>
+    public FileTransferViewModel(IAppDataStore? dataStore = null)
     {
-        _transferManager = transferManager;
         _dataStore = dataStore;
         Journal = new(dataStore);
         RestorePanelPosition();
@@ -806,15 +807,31 @@ public class FileTransferViewModel : ReactiveObject, IDraggablePanel
     /// <summary>按 Id 查找传输项,未找到时返回 <see langword="null" />。</summary>
     public TransferItemViewModel? FindTransfer(Guid transferId) => Transfers.FirstOrDefault(t => t.Id == transferId);
 
+    /// <summary>
+    /// 行尾的 ×:只停这一项,这一批其余照传。
+    /// </summary>
+    /// <remarks>
+    /// 发起传输的文件面板给每一项挂了它自己的取消源(链在批次的取消源上,见 <see cref="TransferItemViewModel.CancelItem" />)。
+    /// 停下的这一项算落定:记进传输队列的批次把它从队列里摘掉,之后这一批再断线停下、挂成「已暂停」时,「继续」也不会再传它。
+    /// 没挂取消动作的行(已经结束了)不动 —— 与 <see cref="CancelAll" /> 同一条规矩:行的状态只有在取消真的发出去之后才改。
+    /// </remarks>
     private void CancelTransfer(Guid transferId)
     {
-        TransferItemViewModel? item = FindTransfer(transferId);
-        if (item == null)
+        if (FindTransfer(transferId) is not { CanCancel: true, CancelItem: { } cancel } item)
         {
             return;
         }
+        try
+        {
+            cancel();
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or AggregateException)
+        {
+            // 尽力而为:这一项恰好在收尾,取消源已经释放 —— 它自己会落定状态。
+            return;
+        }
+        // 立即反映取消状态;正在传的这一个随其流关闭而结束。恰好在这之前传完的,收尾时会改回「完成」。
         item.Status = TransferStatus.Cancelled;
-        _transferManager?.CancelTransferAsync(transferId);
     }
 
     private void RetryTransfer(Guid transferId)

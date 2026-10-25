@@ -228,6 +228,39 @@ public static class NotificationSources
             .Where(id => id.StartsWith(RemoteEditDraftIdPrefix, StringComparison.Ordinal) && !current.Contains(id))];
     }
 
+    /// <summary>「打开安全审计设置」命令。</summary>
+    public const string OpenSecuritySettingsCommandId = "app.settings.security";
+
+    /// <summary>云同步拉到「Webhook 告警开着却没有地址」那条消息的 id 前缀,后面接那份设置的指纹。</summary>
+    public const string SyncWebhookMissingIdPrefix = "sync:webhook-url-missing:";
+
+    /// <summary>
+    /// 云同步拉到的设置开着 Webhook 告警、这台设备上却没有 Webhook 地址(没设同步口令的同步不带它,本机也没填):
+    /// 一条消息,带「前往安全审计设置」。
+    /// </summary>
+    /// <remarks>
+    /// id 带着那份设置的指纹:同一份设置只提示一次(服务那边已按指纹去重,这里再保一道),
+    /// 对方之后又推了一份不同的设置、仍是这个情形,才算一件新的事。
+    /// </remarks>
+    /// <param name="fingerprint">拉到的那份设置的指纹(<c>IGistSyncService.WebhookUrlMissing</c> 交来的)。</param>
+    /// <param name="nowUtc">此刻(UTC)。</param>
+    /// <returns>消息条目。</returns>
+    public static NotificationItem BuildSyncWebhookMissingNotification(string fingerprint, DateTime nowUtc) =>
+        new()
+        {
+            Id = SyncWebhookMissingIdPrefix + fingerprint,
+            Kind = NotificationKind.System,
+            Severity = NotificationSeverity.Warning,
+            Title = Strings.Get("Notify_SyncWebhookMissingTitle"),
+            Body = Strings.Get("Notify_SyncWebhookMissingBody"),
+            PublishedAt = nowUtc,
+            Link = new()
+            {
+                Label = Strings.Get("Notify_SyncWebhookMissingAction"),
+                CommandId = OpenSecuritySettingsCommandId
+            }
+        };
+
     /// <summary>
     /// 本机加密密钥的解析结果里有要用户知道的事时,攒成消息中心条目;一切照常(包括这次顺利迁进了密钥链)时为空。
     /// </summary>

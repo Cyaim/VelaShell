@@ -197,8 +197,9 @@ public sealed class PluginProtocolFileService(PluginProtocolRegistry registry)
     /// <para>
     /// SDK 的这一面不续传,也就核实不了「目标上那个较短的同名文件是不是上一次的半截」:要求续传时抛
     /// <see cref="VelaSftpResumeMismatchException" />,调用方把它交回同名冲突策略(与核实了但对不上同一条路)。
-    /// 悄悄整份重传会不经询问覆盖一个可能与此无关的文件。修改时间不设 —— 插件协议本来就设不了
-    /// (见 <see cref="SetLastWriteTimeAsync" />)。
+    /// 悄悄整份重传会不经询问覆盖一个可能与此无关的文件。修改时间这里不顺手设,与 FTP 的流式上传同一口径:
+    /// 要对齐的调用方(目录同步)上传之后显式调 <see cref="SetLastWriteTimeAsync" />,协议兼实现了
+    /// <see cref="IProtocolLastWriteTime" /> 时它才做得到。
     /// </para>
     /// </remarks>
     public Task UploadStreamAsync(Guid sessionId, Stream source, string remotePath, long length,
@@ -304,8 +305,9 @@ public sealed class PluginProtocolFileService(PluginProtocolRegistry registry)
 
     /// <inheritdoc />
     /// <remarks>
-    /// SDK 的 <see cref="IProtocolFileSystem" /> 没有链接这一面(S3 / WebDAV 这类对象存储本来也没有),
-    /// 所以如实报不支持。真要支持得先在 SDK 里加契约,不能在宿主这边编一个。
+    /// SDK 2.1.3 起协议能在条目上报出链接(<see cref="RemoteFileEntry.IsSymbolicLink" />,见 <see cref="ToRemoteFileInfo" />),
+    /// 但还没有「创建链接」的契约(S3 / WebDAV 这类对象存储本来也没有),所以如实报不支持。
+    /// 真要支持得先在 SDK 里加一个可选接口,不能在宿主这边编一个。
     /// </remarks>
     public Task CreateSymbolicLinkAsync(Guid sessionId, string linkPath, string targetPath, CancellationToken cancellationToken = default)
     {
@@ -314,21 +316,57 @@ public sealed class PluginProtocolFileService(PluginProtocolRegistry registry)
     }
 
     /// <inheritdoc />
-    /// <remarks>SDK 的 <see cref="IProtocolFileSystem" /> 没有改修改时间这一面(对象存储的时间戳也不可写),如实报不支持。</remarks>
+    /// <remarks>
+    /// 改修改时间是插件的<b>可选</b>能力(SDK 2.1.3 的 <see cref="IProtocolLastWriteTime" />,由协议实现兼实现):
+    /// 实现了就把 UTC 换成绝对时刻转过去,目录同步靠它在上传之后把远端时间对齐本地源文件;没实现就如实报不支持
+    /// (对象存储的时间戳多半只读),同步改按大小 / 摘要比较。实现了但这条会话做不到时插件抛
+    /// <see cref="ProtocolUnsupportedException" />,经 <see cref="Translate" /> 同样成为 <see cref="NotSupportedException" />。
+    /// </remarks>
     public Task SetLastWriteTimeAsync(Guid sessionId, string remotePath, DateTime lastWriteTimeUtc, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(remotePath);
         Session session = Require(sessionId);
-        return Task.FromException(new NotSupportedException($"Protocol '{session.Descriptor.Id}' does not support setting modification times."));
+        if (session.FileSystem is not IProtocolLastWriteTime times)
+        {
+            return Task.FromException(new NotSupportedException($"Protocol '{session.Descriptor.Id}' does not support setting modification times."));
+        }
+        // 与 SftpService 同一口径:Unspecified 当 UTC(调用方给的就是 LastWriteTimeUtc),Local 换成 UTC。
+        DateTime utc = lastWriteTimeUtc.Kind == DateTimeKind.Local ? lastWriteTimeUtc.ToUniversalTime() : DateTime.SpecifyKind(lastWriteTimeUtc, DateTimeKind.Utc);
+        return Guard(session, () => times.SetLastWriteTimeAsync(session.Key, remotePath, new DateTimeOffset(utc), cancellationToken));
     }
 
     /// <inheritdoc />
-    /// <remarks>SDK 的 <see cref="IProtocolFileSystem" /> 没有服务器端摘要这一面,如实报不支持,由同步回退到大小与修改时间。</remarks>
-    public Task<IReadOnlyDictionary<string, string?>> ComputeSha256Async(Guid sessionId, IReadOnlyList<string> remotePaths, CancellationToken cancellationToken = default)
+    /// <remarks>
+    /// 服务器端摘要是插件的<b>可选</b>能力(SDK 2.1.3 的 <see cref="IProtocolChecksum" />):实现了就按 SHA-256 请求,
+    /// 没实现就如实报不支持,由同步回退到大小与修改时间。插件给的结果不全信:请求里没有的键丢掉,缺的键补 null,
+    /// 不是 64 位小写十六进制的值也当「这个文件算不出」—— 同步拿它与本地摘要逐字比,一个大写或带前缀的值
+    /// 会让内容相同的文件被判成不同、整份重传。
+    /// </remarks>
+    public async Task<IReadOnlyDictionary<string, string?>> ComputeSha256Async(Guid sessionId, IReadOnlyList<string> remotePaths, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(remotePaths);
         Session session = Require(sessionId);
-        return Task.FromException<IReadOnlyDictionary<string, string?>>(
-            new NotSupportedException($"Protocol '{session.Descriptor.Id}' does not support server-side checksums."));
+        if (session.FileSystem is not IProtocolChecksum checksums)
+        {
+            throw new NotSupportedException($"Protocol '{session.Descriptor.Id}' does not support server-side checksums.");
+        }
+        var result = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (remotePaths.Count == 0)
+        {
+            return result;
+        }
+        IReadOnlyDictionary<string, string?> reported = await GuardValue(session,
+            () => checksums.ComputeChecksumsAsync(session.Key, RemoteChecksumAlgorithm.Sha256, remotePaths, cancellationToken)).ConfigureAwait(false);
+        foreach (string path in remotePaths)
+        {
+            result.TryAdd(path, reported.TryGetValue(path, out string? digest) && IsLowerHexSha256(digest) ? digest : null);
+        }
+        return result;
     }
+
+    /// <summary>恰好 64 个小写十六进制字符(SHA-256 的规范写法,与 <c>sha256sum</c> 的输出一致)。</summary>
+    private static bool IsLowerHexSha256(string? digest) =>
+        digest is { Length: 64 } && digest.All(static c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     /// <inheritdoc />
     public async Task<RemoteFileInfo> GetFileInfoAsync(Guid sessionId, string remotePath, CancellationToken cancellationToken = default)
@@ -502,6 +540,10 @@ public sealed class PluginProtocolFileService(PluginProtocolRegistry registry)
             Size = entry.Size,
             Permissions = entry.Permissions,
             IsDirectory = entry.IsDirectory,
+            // 链接两个字段是 SDK 2.1.3 新增的 init 属性,老插件给的条目恒为「不是链接」。是链接时 IsDirectory / 大小 / 时间
+            // 描述的是目标(指向目录的链接点进去就是目标目录),宿主的删除、复制、递归下载与目录同步据此只处理链接本身。
+            IsSymbolicLink = entry.IsSymbolicLink,
+            LinkTarget = entry.IsSymbolicLink ? entry.LinkTarget : null,
             // SDK 侧是带时区的绝对时刻,宿主模型是「本地墙钟时间」(SFTP/FTP 后端存的也是这个)。
             // 取 LocalDateTime 而不是 UtcDateTime:后者会让文件列表里的时间整体偏掉一个时区。
             // default 是协议说的「不知道」(S3 的虚构目录就没有修改时间),原样传成 MinValue

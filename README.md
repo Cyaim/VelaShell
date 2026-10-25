@@ -172,7 +172,7 @@ docker compose -f docker-compose.test.yml up -d
 | 内容 | 位置 |
 | --- | --- |
 | SonnetDB 数据目录（连接 / 分组 / 设置 / known_hosts / 历史 / 审计 / 录制 / 插件数据） | `~/.velashell/sonnetdb` |
-| 凭据加密密钥（AES-256） | `~/.velashell/secret.key` |
+| 凭据加密密钥（AES-256） | macOS 登录钥匙串 / Linux Secret Service（数据目录里只留条目编号 `~/.velashell/secret.key.ref`）；Windows 与系统密钥链用不了时是 `~/.velashell/secret.key`（Windows 上以 DPAPI 绑定当前用户），见 [manual.md](manual.md) 17.3 |
 | 会话日志（开启后）与诊断日志 | `~/.velashell/logs` |
 | 用户手动安装的插件（`.vpx`） | `~/.velashell/plugins`（第一方插件在程序目录的 `plugins/`） |
 | 宿主自登记（供 `vela-plugin` 定位） | `~/.velashell/host.json` |
@@ -197,7 +197,7 @@ pwsh scripts/publish-all.ps1     # 一键产出全平台发布包 → publish/
 
 | 流水线 | 触发 | 做什么 |
 | --- | --- | --- |
-| [`ci.yml`](.github/workflows/ci.yml) | push `main` / 全部 PR | windows + ubuntu + macos 三平台矩阵，Debug 构建 + 全量测试，`-warnaserror` |
+| [`ci.yml`](.github/workflows/ci.yml) | push `main` / 全部 PR | windows + ubuntu + macos 三平台矩阵，Debug 构建 + 全量测试，`-warnaserror`；ubuntu 上另以 `runtime-async=off` 编一遍，扫 Span 跨 `await`（CS4007） |
 | [`release.yml`](.github/workflows/release.yml) | 发布 Release | 三平台并行打包，附上 `SHA256SUMS.txt` 与自动更新清单 `latest.json`；另打 **MSIX** 供 Microsoft Store 提交 |
 
 CI 刻意用 **Debug**（强名签名只在 Release 打开，fork 与 Dependabot 的 PR 拿不到仓库 secret），

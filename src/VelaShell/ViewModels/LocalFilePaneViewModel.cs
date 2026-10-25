@@ -38,6 +38,8 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         NavigateToCommand = ReactiveCommand.CreateFromTask<string>(path => NavigateToAsync(path, _lifetime.Token));
         ActivateCommand = ReactiveCommand.CreateFromTask<LocalFileEntry>(entry => ActivateAsync(entry, _lifetime.Token));
         GoUpCommand = ReactiveCommand.CreateFromTask(() => GoUpAsync(_lifetime.Token));
+        GoBackCommand = ReactiveCommand.CreateFromTask(() => GoBackAsync(_lifetime.Token), this.WhenAnyValue(x => x.CanGoBack));
+        GoForwardCommand = ReactiveCommand.CreateFromTask(() => GoForwardAsync(_lifetime.Token), this.WhenAnyValue(x => x.CanGoForward));
         RefreshCommand = ReactiveCommand.CreateFromTask(() => RefreshAsync(_lifetime.Token));
         SwitchRootCommand = ReactiveCommand.CreateFromTask<LocalRootEntry>(root => SwitchRootAsync(root, _lifetime.Token));
         RefreshRootsCommand = ReactiveCommand.CreateFromTask(() => RefreshRootsAsync(_lifetime.Token));
@@ -46,6 +48,7 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         UploadSelectedCommand = ReactiveCommand.CreateFromTask(() => UploadSelectedAsync?.Invoke() ?? Task.CompletedTask);
         RenameCommand = ReactiveCommand.CreateFromTask<LocalFileEntry>(entry => RenameAsync(entry, _lifetime.Token));
         NewFolderCommand = ReactiveCommand.CreateFromTask(() => NewFolderAsync(_lifetime.Token));
+        NewFileCommand = ReactiveCommand.CreateFromTask(() => NewFileAsync(_lifetime.Token));
         OpenItemCommand = ReactiveCommand.CreateFromTask<LocalFileEntry>(entry => OpenItemAsync(entry, _lifetime.Token));
         SortCommand = ReactiveCommand.Create<string>(ToggleSort);
         BeginPathEditCommand = ReactiveCommand.Create(BeginPathEdit);
@@ -101,6 +104,9 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
 
     /// <summary>在当前目录中创建新文件夹。</summary>
     public ReactiveCommand<RxVoid, RxVoid> NewFolderCommand { get; }
+
+    /// <summary>在当前目录中新建空文件(同名已存在时报错、不覆盖)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> NewFileCommand { get; }
 
     /// <summary>用默认程序打开本地文件,或进入某个目录。</summary>
     public ReactiveCommand<LocalFileEntry, RxVoid> OpenItemCommand { get; }
@@ -298,8 +304,14 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         }
     }
 
-    /// <summary>列举目录,列举失败时保留原有行。</summary>
-    public async Task NavigateToAsync(string path, CancellationToken cancellationToken = default)
+    /// <summary>列举目录,列举失败时保留原有行。进了别的目录就把原目录记进后退历史。</summary>
+    public Task NavigateToAsync(string path, CancellationToken cancellationToken = default) =>
+        NavigateCoreAsync(path, recordHistory: true, cancellationToken);
+
+    /// <param name="path">目标目录。</param>
+    /// <param name="recordHistory">进了别的目录时要不要记历史;后退 / 前进自己挪历史,传 false。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    private async Task NavigateCoreAsync(string path, bool recordHistory, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         string canonical = Path.GetFullPath(path);
@@ -319,10 +331,21 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
                 .Where(entry => !entry.IsParentEntry)
                 .Select(entry => entry.FullPath)
                 .ToHashSet(PathComparisonComparer);
+            string previousPath = CurrentPath;
             CurrentPath = canonical;
             if (changed)
             {
                 SelectedEntries.Clear();
+                // 首次加载之前 CurrentPath 是空的,不进历史。
+                if (recordHistory && previousPath.Length > 0)
+                {
+                    PushHistory(previousPath);
+                }
+                // 换了目录,过滤条件作废(框照旧开着);只清字,下面这次重建就按不过滤来。
+                if (_filterText.Length > 0)
+                {
+                    this.RaiseAndSetIfChanged(ref _filterText, string.Empty, nameof(FilterText));
+                }
             }
             RebuildEntries(listed);
             SyncSelectedRoot(canonical);
@@ -448,6 +471,13 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
             return;
         }
         IsPathEditing = false;
+
+        // 输入的文件就在当前目录里时不会换目录,过滤条件还在;它挡着那个文件就清掉,不然选不中。
+        if (fileName is not null && _filterText.Length > 0
+            && !Entries.Any(entry => !entry.IsParentEntry && string.Equals(entry.Name, fileName, PathComparison)))
+        {
+            FilterText = string.Empty;
+        }
 
         if (fileName is not null
             && Entries.FirstOrDefault(entry => !entry.IsParentEntry && string.Equals(entry.Name, fileName, PathComparison)) is { } file)
@@ -576,6 +606,74 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         string.IsNullOrEmpty(CurrentPath)
             ? LoadInitialAsync(cancellationToken)
             : NavigateToAsync(ParentOf(CurrentPath), cancellationToken);
+
+    // ---- 后退 / 前进(与远端栏同一口径,见 FileBrowserViewModel.GoBackAsync)----
+    //
+    // 历史只活在这个面板实例里;文档关掉重开、断线后重开的都是新面板,历史不留。
+
+    private readonly List<string> _backHistory = [];
+    private readonly List<string> _forwardHistory = [];
+
+    /// <summary>有没有可以后退的目录。</summary>
+    public bool CanGoBack => _backHistory.Count > 0;
+
+    /// <summary>有没有可以前进的目录。</summary>
+    public bool CanGoForward => _forwardHistory.Count > 0;
+
+    /// <summary>后退到上一个待过的目录(Alt+←)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> GoBackCommand { get; }
+
+    /// <summary>前进到后退之前的目录(Alt+→)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> GoForwardCommand { get; }
+
+    private void PushHistory(string previous)
+    {
+        if (_backHistory.Count == 0 || !string.Equals(_backHistory[^1], previous, PathComparison))
+        {
+            _backHistory.Add(previous);
+            if (_backHistory.Count > FileBrowserViewModel.MaxHistory)
+            {
+                _backHistory.RemoveAt(0);
+            }
+        }
+        _forwardHistory.Clear();
+        RaiseHistoryChanged();
+    }
+
+    private void RaiseHistoryChanged()
+    {
+        this.RaisePropertyChanged(nameof(CanGoBack));
+        this.RaisePropertyChanged(nameof(CanGoForward));
+    }
+
+    /// <summary>后退一步。目标目录进不去(刚被删、拔了盘)时照常报错,历史原样不动。</summary>
+    public Task GoBackAsync(CancellationToken cancellationToken = default) =>
+        MoveInHistoryAsync(_backHistory, _forwardHistory, cancellationToken);
+
+    /// <summary>前进一步;规则同 <see cref="GoBackAsync" />。</summary>
+    public Task GoForwardAsync(CancellationToken cancellationToken = default) =>
+        MoveInHistoryAsync(_forwardHistory, _backHistory, cancellationToken);
+
+    private async Task MoveInHistoryAsync(List<string> from, List<string> to, CancellationToken cancellationToken)
+    {
+        if (from.Count == 0)
+        {
+            return;
+        }
+        string target = from[^1];
+        string origin = CurrentPath;
+        await NavigateCoreAsync(target, recordHistory: false, cancellationToken);
+        if (ErrorMessage is not null
+            || !string.Equals(CurrentPath, Path.GetFullPath(target), PathComparison)
+            || from.Count == 0
+            || !string.Equals(from[^1], target, PathComparison))
+        {
+            return;
+        }
+        from.RemoveAt(from.Count - 1);
+        to.Add(origin);
+        RaiseHistoryChanged();
+    }
 
     /// <summary>进入一个目录条目;文件与父目录行不响应。</summary>
     public Task ActivateAsync(LocalFileEntry? entry, CancellationToken cancellationToken = default) =>
@@ -747,12 +845,65 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         this.RaisePropertyChanged(nameof(NameSortGlyph));
         this.RaisePropertyChanged(nameof(SizeSortGlyph));
         this.RaisePropertyChanged(nameof(ModifiedSortGlyph));
-        RebuildEntries(_entries.Where(entry => !entry.IsParentEntry));
+        // 从完整列举重排,而不是从眼前的行:过滤藏起来的行不在 Entries 里,从那里重排就永远找不回来了。
+        RebuildEntries(_listing);
+    }
+
+    // ---- 当前目录过滤(与远端栏同一口径,见 FileBrowserViewModel.FilterText)----
+
+    /// <summary>当前目录的完整列举(过滤与排序之前),排序与过滤都从它重建可见行。</summary>
+    private List<LocalFileEntry> _listing = [];
+
+    private string _filterText = string.Empty;
+
+    /// <summary>过滤框是否展开。收起即清空过滤。</summary>
+    public bool IsFilterOpen
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            if (!value)
+            {
+                FilterText = string.Empty;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 过滤框里的文字:按「名字含有」(不分大小写)只过滤显示,空 = 不过滤;换目录时清空。
+    /// 藏起来的行不在 <see cref="Entries" /> 里,全选、上传、删除都只对着看得见的行。
+    /// </summary>
+    public string FilterText
+    {
+        get => _filterText;
+        set
+        {
+            value ??= string.Empty;
+            if (string.Equals(_filterText, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref _filterText, value);
+            HashSet<string> selected = SelectedEntries
+                .Where(entry => !entry.IsParentEntry)
+                .Select(entry => entry.FullPath)
+                .ToHashSet(PathComparisonComparer);
+            RebuildEntries(_listing);
+            RestoreSelection(selected);
+        }
     }
 
     private void RebuildEntries(IEnumerable<LocalFileEntry> entries)
     {
-        IEnumerable<LocalFileEntry> sorted = entries.Where(entry => !entry.IsParentEntry);
+        _listing = [.. entries.Where(entry => !entry.IsParentEntry)];
+        IEnumerable<LocalFileEntry> sorted = _filterText.Length == 0
+            ? _listing
+            : _listing.Where(entry => entry.Name.Contains(_filterText, StringComparison.OrdinalIgnoreCase));
         IOrderedEnumerable<LocalFileEntry> directories = sorted.OrderByDescending(entry => entry.IsDirectory);
         sorted = SortColumn switch
         {
@@ -909,6 +1060,42 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         {
             ErrorMessage = null;
             await _fileSystem.CreateDirectoryAsync(target, cancellationToken);
+            await RefreshAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// 在当前目录新建一个空文件(与远端栏的「新建文件」同一套校验)。同名的已经在了就报错、不覆盖 ——
+    /// 新建从来不该把别人的文件清空。
+    /// </summary>
+    private async Task NewFileAsync(CancellationToken cancellationToken = default)
+    {
+        if (PromptForText is null || string.IsNullOrEmpty(CurrentPath))
+        {
+            return;
+        }
+        string? name = await PromptForText(Strings.Get("NewFile"), "");
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+        string trimmedName = name.Trim();
+        if (!LocalPathSafety.IsSafeLeafName(trimmedName))
+        {
+            ErrorMessage = Strings.Get("KeySvc_InvalidName");
+            return;
+        }
+        string target = Path.Combine(CurrentPath, trimmedName);
+        try
+        {
+            ErrorMessage = null;
+            await using (await _fileSystem.OpenWriteAsync(target, FileMode.CreateNew, cancellationToken))
+            {
+            }
             await RefreshAsync(cancellationToken);
         }
         catch (Exception ex)

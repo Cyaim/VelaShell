@@ -2,9 +2,15 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Input.Raw;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using NSubstitute;
+using System.Runtime.CompilerServices;
 using VelaShell.Core.Models;
+using VelaShell.Core.Sftp;
 using VelaShell.Tests.TestSupport;
 using VelaShell.ViewModels;
 using VelaShell.Views;
@@ -186,6 +192,98 @@ public sealed class LocalFilePaneViewUiTests
                 Dispatcher.UIThread.RunJobs();
             }
         });
+    }
+
+    /// <summary>
+    /// 从系统文件管理器拖文件进本地栏(差距分析 A12):不显示「可放下」,松手也不复制 ——
+    /// 以前给的是 Copy,松手却只刷新一下,是假承诺(维护者 2026-10-25 定:先不显示可放下)。
+    /// 远端栏拖过来的行照旧可放(下载);系统文件拖进远端栏照旧可放(上传)。
+    /// </summary>
+    [TestMethod]
+    public async Task SystemFilesDraggedOntoTheLocalPane_ShowNoDropEffect_WhileDownloadsAndUploadsStillDo()
+    {
+        await _session.RunOnUiAsync(async () =>
+        {
+            using var root = new TempDirectory();
+            using var elsewhere = new TempDirectory();
+            File.WriteAllText(Path.Combine(root.Path, "keep.txt"), "x");
+            string outside = Path.Combine(elsewhere.Path, "outside.txt");
+            File.WriteAllText(outside, "from the system file manager");
+            var accessible = new LocalRootEntry("~", root.Path, true, root.Path);
+            // 同上:必须早于 TempDirectory 释放,否则删目录的监视回调会污染 Dispatcher.UIThread。
+            using var viewModel = new LocalFilePaneViewModel(
+                new TransferOptions { LocalDownloadDirectory = root.Path },
+                rootProvider: new TestRootProvider(accessible));
+            await viewModel.LoadInitialAsync();
+
+            var local = new LocalFilePaneView { DataContext = viewModel };
+            var remote = new FileBrowserView
+            {
+                DataContext = new FileBrowserViewModel(Substitute.For<ISftpService>(), Guid.NewGuid()) { IsVisible = true },
+            };
+            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
+            Grid.SetColumn(remote, 1);
+            grid.Children.Add(local);
+            grid.Children.Add(remote);
+            var window = new Window { Width = 1400, Height = 450, Content = grid };
+            // 视图在列表上把 DragOver 标成已处理;窗口上连已处理的一起收,读到的就是视图最后给的效果。
+            var effect = new StrongBox<DragDropEffects?>();
+            window.AddHandler(DragDrop.DragOverEvent, (_, e) => effect.Value = e.DragEffects, RoutingStrategies.Bubble, handledEventsToo: true);
+            try
+            {
+                window.Show();
+                Pump(window);
+                Point overLocal = CenterOf(local.GetVisualDescendants().OfType<ListBox>().Single(l => l.Name == "FileList"), window);
+                Point overRemote = CenterOf(remote.GetVisualDescendants().OfType<ListBox>().Single(l => l.Name == "FileList"), window);
+
+                IStorageFile file = Substitute.For<IStorageFile>();
+                file.Name.Returns("outside.txt");
+                file.Path.Returns(new Uri(outside));
+                DataTransfer systemFiles = Payload(item => item.SetFile(file));
+
+                Assert.AreEqual(DragDropEffects.None, DragOver(window, overLocal, systemFiles, effect), "系统文件拖进本地栏:不显示可放下");
+                window.DragDrop(overLocal, RawDragEventType.Drop, systemFiles, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+                Pump(window);
+                CollectionAssert.AreEquivalent(
+                    new[] { "keep.txt" },
+                    Directory.GetFileSystemEntries(root.Path).Select(Path.GetFileName).ToArray(),
+                    "松手也不复制");
+
+                Assert.AreEqual(DragDropEffects.Copy, DragOver(window, overRemote, systemFiles, effect), "系统文件拖进远端栏照旧是上传");
+                window.DragDrop(overRemote, RawDragEventType.DragLeave, systemFiles, DragDropEffects.Copy, RawInputModifiers.None);
+
+                DataTransfer remoteRows = Payload(item => item.SetText(DragDropFormats.RemotePaths + "/srv/app.log"));
+                Assert.AreEqual(DragDropEffects.Copy, DragOver(window, overLocal, remoteRows, effect), "远端栏拖过来的行照旧可放(下载)");
+                window.DragDrop(overLocal, RawDragEventType.DragLeave, remoteRows, DragDropEffects.Copy, RawInputModifiers.None);
+            }
+            finally
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+        });
+
+        static DataTransfer Payload(Action<DataTransferItem> fill)
+        {
+            var data = new DataTransfer();
+            var item = new DataTransferItem();
+            fill(item);
+            data.Add(item);
+            return data;
+        }
+
+        static Point CenterOf(Control control, Window window) =>
+            control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window)!.Value;
+    }
+
+    /// <summary>拖着 <paramref name="data" /> 进到 <paramref name="at" /> 并移动一下,返回视图给出的放下效果。</summary>
+    private static DragDropEffects? DragOver(Window window, Point at, DataTransfer data, StrongBox<DragDropEffects?> effect)
+    {
+        effect.Value = null;
+        window.DragDrop(at, RawDragEventType.DragEnter, data, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        window.DragDrop(at, RawDragEventType.DragOver, data, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        Pump(window);
+        return effect.Value;
     }
 
     private static Point FindWhitespacePoint(Control row)

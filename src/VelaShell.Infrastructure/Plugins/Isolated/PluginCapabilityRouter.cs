@@ -481,6 +481,16 @@ internal sealed class PluginCapabilityRouter : IDisposable
                     };
                     return new UiEmbedResponse(panel.PanelId);
                 }
+            case PluginRpc.UiNotify:
+                {
+                    // 发送方是这条连接绑定的插件(_context 的界面能力就是它的),不取自消息本身。
+                    // 宿主不支持时界面能力自己抛 NotSupportedException,握手里也没宣告,PluginHost 本不该发来。
+                    UiNotifyRequest request = Get<UiNotifyRequest>(payload);
+                    PluginSdk.Ui.PluginNotificationOutcome outcome = await _context.Ui
+                        .PostNotificationAsync(request.Notification ?? throw new ArgumentException("Missing notification."), cancellationToken)
+                        .ConfigureAwait(false);
+                    return new UiNotifyResponse(outcome);
+                }
             case PluginRpc.UiClosePanel:
                 {
                     if (_embeddedPanels.TryRemove(Get<UiPanelRef>(payload).PanelId, out PluginSdk.Ui.IPluginPanel? panel))
@@ -560,7 +570,8 @@ internal sealed class PluginCapabilityRouter : IDisposable
         {
             SupportsExecutionOperations = true,
             SupportsTransferOperations = _context.RemoteFs.SupportsTransferOperations,
-            SupportsDownloadOperations = _context.RemoteFs.SupportsDownloadOperations
+            SupportsDownloadOperations = _context.RemoteFs.SupportsDownloadOperations,
+            SupportsNotifications = _context.Ui.SupportsNotifications
         };
     }
 

@@ -102,6 +102,26 @@ public sealed class PluginPermissionDialogTests
         Assert.DoesNotContain("(512 B)", small);
     }
 
+    /// <summary>
+    /// 下载确认的预览与上传一样写明大小(维护者 2026-10-25 定,第二轮第 27 条):远端源之后、本机目标之前一行,
+    /// 约数加精确字节数,不足 1 KB 只写一个数。
+    /// </summary>
+    [TestMethod]
+    public void DownloadPermission_PreviewShowsTheRemoteSize()
+    {
+        const long size = 5L * 1024 * 1024 * 1024 + 7;
+        string large = PluginPermissionDialog.DownloadPreview("/var/log/big.bin", "/home/me/big.bin", false, size);
+        string expected = TransferItemViewModel.FormatBytes(size) + " (" + size.ToString("N0", System.Globalization.CultureInfo.CurrentCulture) + " B)";
+        string[] lines = large.Split('\n');
+        Assert.HasCount(4, lines);
+        Assert.Contains("\"/var/log/big.bin\"", lines[0]);
+        Assert.Contains(expected, lines[1]);
+        Assert.Contains("\"/home/me/big.bin\"", lines[2]);
+        string small = PluginPermissionDialog.DownloadPreview("/a", "/b", true, 0);
+        Assert.Contains(TransferItemViewModel.FormatBytes(0), small);
+        Assert.DoesNotContain("(0 B)", small);
+    }
+
     [TestMethod]
     public void UploadPermission_FieldsEscapeControlAndBidiWithoutChangingOrdinaryUnicode()
     {

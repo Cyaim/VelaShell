@@ -17,6 +17,7 @@ using VelaShell.PluginSdk.RemoteExec;
 using VelaShell.PluginSdk.RemoteFs;
 using VelaShell.PluginSdk.RemoteTunnel;
 using VelaShell.PluginSdk.Sessions;
+using VelaShell.PluginSdk.Versioning;
 
 namespace VelaShell.Infrastructure.Plugins;
 
@@ -276,6 +277,7 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             TryDeleteDirectory(runtime.Descriptor.Directory);
             await PurgePluginDataAsync(pluginId).ConfigureAwait(false);
             await RemoveInstallReceiptAsync(pluginId).ConfigureAwait(false);
+            await ForgetNotificationsAsync(pluginId).ConfigureAwait(false);
             lock (_gate)
             {
                 _plugins.Remove(runtime);
@@ -371,6 +373,11 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
                 throw new InvalidOperationException("Package has no plugin.json at its root.");
             }
             manifest = PluginManifestReader.Load(manifestPath); // 坏清单在此抛 PluginManifestException
+            if (DescribeManifestVersionProblem(manifest) is { } versionProblem)
+            {
+                // 与发现期同一套收紧(见 DescribeManifestVersionProblem):装上了也只会是一行 Invalid,不如在这里就拒。
+                throw new PluginManifestException(versionProblem);
+            }
             // 清单读出来了,副标题就从包文件名换成插件的显示名 —— 那才是用户认得的东西。
             activity?.Report(0.55, DisplayNameOf(manifest));
             string entryPath = Path.Combine(staging, manifest.Entry);
@@ -1751,9 +1758,26 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
         return wait.IsCanceled;
     }
 
+    /// <summary>插件卸载:删掉它发进消息中心的消息与静音记录(插件不能自己撤回已发的消息,卸载是唯一的收尾)。</summary>
+    private async Task ForgetNotificationsAsync(string pluginId)
+    {
+        if (options.Notifications is not { } notifications)
+        {
+            return;
+        }
+        try
+        {
+            await notifications.ForgetPluginAsync(pluginId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log($"Could not remove notifications of '{pluginId}': {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// 卸载清理(蓝图 03 §7):插件目录已不存在(≠ 被 .disabled 禁用,禁用者仍在盘上、
-    /// 数据保留)即视为已卸载,其 SonnetDB 命名空间与数据目录整体删除。
+    /// 数据保留)即视为已卸载,其 SonnetDB 命名空间与数据目录整体删除,发进消息中心的消息一并删掉。
     /// </summary>
     private async Task PurgeUninstalledDataAsync()
     {
@@ -1763,6 +1787,17 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             // 一切仍在盘上的插件都算"在装"(含 Invalid/Disabled/Incompatible —— 修好清单
             // 或重新启用后数据应仍在);Invalid 无清单者以目录名兜底。
             installed = [.. _plugins.Select(p => p.Descriptor.Id)];
+        }
+        if (options.Notifications is { } notifications)
+        {
+            try
+            {
+                await notifications.SweepUninstalledAsync(installed, _shutdown.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log($"Uninstalled-plugin notification sweep failed: {ex.Message}");
+            }
         }
         if (options.DataStore is { } dataStore)
         {
@@ -1968,6 +2003,14 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             descriptor.State = PluginState.Invalid;
             descriptor.Error = $"Duplicate plugin id '{manifest.Id}' (already provided by an earlier plugin root).";
         }
+        else if (DescribeManifestVersionProblem(manifest) is { } versionProblem)
+        {
+            // 清单留在描述上(与重复 id 同一处置):管理页照常显示插件名、可卸载,id 也还是它自己的 ——
+            // 置空清单的话,卸载清扫会按目录名认人,数据可能被当成孤儿删掉。
+            Log($"Rejected plugin at '{dir}': {versionProblem}");
+            descriptor.State = PluginState.Invalid;
+            descriptor.Error = versionProblem;
+        }
         else if (isDevelopment
                      ? _devDisabled.Contains(manifest.Id)
                      : File.Exists(Path.Combine(dir, PluginContentHash.DisabledMarkerName))
@@ -2093,31 +2136,68 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
     private static bool ContentMatches(string actual, string expected) =>
         CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(actual), Encoding.ASCII.GetBytes(expected));
 
+    /// <summary>
+    /// 清单的三个版本字段(<c>version</c> / <c>minHostVersion</c> / <c>minSdkVersion</c>)再按
+    /// <see cref="SemanticVersion" /> 校验一遍;合格时为 <see langword="null" />,否则给出写给插件作者看的原因。
+    /// </summary>
+    /// <remarks>
+    /// SDK 的清单校验用正则 <c>^\d+(\.\d+){1,3}(-[0-9A-Za-z.-]+)?$</c>,比宿主、<c>vela-plugin</c> 与商店共用的
+    /// <see cref="SemanticVersion" /> 宽:<c>1.0.0-beta.01</c>(预发布的纯数字标识符带前导零)、<c>1.0.0-a..b</c>
+    /// (空标识符)能过正则,却解析不出版本 —— 这样的插件装得上,之后「有没有新版」永远查不到、装载闸一律放行,
+    /// 用户看不出任何异样。维护者 2026-10-25 定(第二轮第 28 条):宿主收紧到与 <see cref="SemanticVersion" /> 一致,
+    /// 商店下一版上传时同样拒收。只收紧 SDK 正则已经放过的那部分(先过 SDK 校验才走到这里),所以 <c>v</c> 前缀与
+    /// <c>+构建元数据</c> 照旧不收。
+    /// </remarks>
+    internal static string? DescribeManifestVersionProblem(PluginManifest manifest)
+    {
+        return Check("version", manifest.Version)
+               ?? (manifest.MinHostVersion is { } minHost ? Check("minHostVersion", minHost) : null)
+               ?? (manifest.MinSdkVersion is { } minSdk ? Check("minSdkVersion", minSdk) : null);
+
+        static string? Check(string field, string value)
+        {
+            if (SemanticVersion.TryParse(value, out _))
+            {
+                return null;
+            }
+            int dash = value.IndexOf('-');
+            string[] identifiers = dash >= 0 ? value[(dash + 1)..].Split('.') : [];
+            if (identifiers.Any(static part => part.Length == 0))
+            {
+                return $"Invalid {field} '{value}': pre-release identifiers must not be empty (no \"..\", leading or trailing \".\"). "
+                       + "VelaShell, vela-plugin and the plugin store compare versions by SemVer 2.0 and cannot order this one.";
+            }
+            if (identifiers.Any(IsZeroPadded))
+            {
+                string fixedUp = value[..(dash + 1)] + string.Join('.', identifiers.Select(
+                    static part => IsZeroPadded(part) ? part.TrimStart('0') is { Length: > 0 } trimmed ? trimmed : "0" : part));
+                return $"Invalid {field} '{value}': numeric pre-release identifiers must not have leading zeros under SemVer 2.0 "
+                       + $"(\"01\" cannot be ordered against \"1\"). Write '{fixedUp}' instead.";
+            }
+            return $"Invalid {field} '{value}': not a version VelaShell can compare (each number must fit in 32 bits; "
+                   + "expected e.g. \"1.2.0\" or \"1.2.0-beta.1\").";
+        }
+
+        static bool IsZeroPadded(string part) => part.Length > 1 && part[0] == '0' && part.All(char.IsAsciiDigit);
+    }
+
     /// <summary>宿主版本是否低于要求(数字段比较,忽略预发布后缀;不可解析时不拦)。</summary>
     private bool IsHostOlderThan(string minHostVersion) => IsOlder(options.HostVersion, minHostVersion);
 
     /// <summary>
-    /// <paramref name="actual" /> 是否比 <paramref name="required" /> 老。
-    /// 预发布后缀被忽略(<c>1.1.0-beta</c> 视作 <c>1.1.0</c>):把 beta 判成"不够新"
-    /// 会让预览版宿主装不上为它写的插件,而那正是预览版存在的意义。
+    /// <paramref name="actual" /> 是否比 <paramref name="required" /> 老。装载闸的口径,与 CLI、商店共用 SDK 的
+    /// <see cref="SemanticVersion" />:只比数字段(<see cref="SemanticVersion.CompareCoreTo" />),预发布后缀被忽略
+    /// (<c>1.1.0-beta</c> 视作 <c>1.1.0</c>)—— 把 beta 判成"不够新"会让预览版宿主装不上为它写的插件,
+    /// 而那正是预览版存在的意义。第四段参与比较(<c>1.2.3.1</c> 高于 <c>1.2.3</c>,<c>1.2.3.0</c> 等于 <c>1.2.3</c>)。
     /// 任一侧解析不出版本号就放行 —— 拦下一个只是版本号写得怪的插件,损失大于收益。
     /// </summary>
     /// <param name="actual">实际版本。</param>
     /// <param name="required">要求的最低版本。</param>
     /// <returns>实际版本更老时为 true。</returns>
-    private static bool IsOlder(string actual, string required)
-    {
-        static Version? ParseNumeric(string v)
-        {
-            string numeric = v.Split('-', 2)[0];
-            if (!numeric.Contains('.'))
-            {
-                numeric += ".0";
-            }
-            return Version.TryParse(numeric, out Version? parsed) ? parsed : null;
-        }
-        return ParseNumeric(actual) is { } left && ParseNumeric(required) is { } right && left < right;
-    }
+    private static bool IsOlder(string actual, string required) =>
+        SemanticVersion.TryParse(actual, out SemanticVersion left)
+        && SemanticVersion.TryParse(required, out SemanticVersion right)
+        && left.CompareCoreTo(right) < 0;
 
     private async Task ActivateAsync(PluginRuntime runtime, CancellationToken cancellationToken)
     {

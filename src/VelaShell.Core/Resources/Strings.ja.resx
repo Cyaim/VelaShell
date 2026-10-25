@@ -1048,6 +1048,9 @@
   <data name="Download" xml:space="preserve">
     <value>ダウンロード</value>
   </data>
+  <data name="DownloadAs" xml:space="preserve">
+    <value>名前を付けてダウンロード…</value>
+  </data>
   <data name="DualSftp_CannotReceive" xml:space="preserve">
     <value>{0} は別のサーバーからストリームで送られるファイルを受け取れません(プラグインがストリームアップロードに対応していません)。</value>
   </data>
@@ -2723,6 +2726,18 @@
   </data>
   <data name="Sftp_GoUpRemotePane" xml:space="preserve">
     <value>リモートペインで上の階層へ</value>
+  </data>
+  <data name="Sftp_BackLocalPane" xml:space="preserve">
+    <value>ローカルペインで戻る (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardLocalPane" xml:space="preserve">
+    <value>ローカルペインで進む (Alt+→)</value>
+  </data>
+  <data name="Sftp_BackRemotePane" xml:space="preserve">
+    <value>リモートペインで戻る (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardRemotePane" xml:space="preserve">
+    <value>リモートペインで進む (Alt+→)</value>
   </data>
   <data name="RemoteForward" xml:space="preserve">
     <value>リモート転送</value>
@@ -4755,6 +4770,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Transfer_CancelRemainingTip" xml:space="preserve">
     <value>残りの転送をキャンセル</value>
   </data>
+  <data name="Transfer_CancelItemTip" xml:space="preserve">
+    <value>この項目をキャンセル(同じバッチの残りは続行)</value>
+  </data>
   <data name="Transfer_CollapseTip" xml:space="preserve">
     <value>折りたたむ(タスクはバックグラウンドで継続)</value>
   </data>
@@ -5401,6 +5419,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} を利用できないため({1})、ローカルの暗号化キーはこれまでどおりデータフォルダーのキーファイルに保存されています。キーチェーンが使えるようになると、次回の起動時に自動で移行します。</value>
   </data>
+  <data name="Notify_SyncWebhookMissingTitle" xml:space="preserve">
+    <value>Webhook アラートはオンですが、このデバイスには URL がありません</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingBody" xml:space="preserve">
+    <value>クラウド同期で取得した設定では「セキュリティ監査 → Webhook」がオンですが、このデバイスには Webhook URL が入力されていないため、セキュリティアラートが送信されません。同期パスフレーズを設定していないクラウド同期はこの URL を運びません(ボットの URL 自体がトークンです)。「設定 → セキュリティ監査」で入力してください。同じ設定についてのお知らせは一度だけです。</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingAction" xml:space="preserve">
+    <value>セキュリティ監査の設定へ</value>
+  </data>
   <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
     <value>外部エディターでの変更がサーバーに送り返されていません</value>
   </data>
@@ -5415,6 +5442,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>システム</value>
+  </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>プラグイン</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>{0} から</value>
   </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>{0} 番目のタブへ</value>
@@ -5448,6 +5481,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Cmd_OpenAbout" xml:space="preserve">
     <value>バージョン情報を開く</value>
+  </data>
+  <data name="Cmd_OpenSecuritySettings" xml:space="preserve">
+    <value>セキュリティ監査の設定を開く</value>
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartup" xml:space="preserve">
     <value>起動時に更新を確認</value>
@@ -5578,6 +5614,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>{0} 回再試行しても失敗しました:{1}</value>
   </data>
+  <data name="Transfer_Cancelled" xml:space="preserve">
+    <value>キャンセル済み</value>
+  </data>
   <data name="Transfer_Paused" xml:space="preserve">
     <value>一時停止</value>
   </data>
@@ -5650,8 +5689,17 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sftp_SearchOpen" xml:space="preserve">
     <value>リモートファイルを検索…</value>
   </data>
+  <data name="Sftp_FilterToggle" xml:space="preserve">
+    <value>このフォルダーを絞り込む</value>
+  </data>
+  <data name="Sftp_FilterPlaceholder" xml:space="preserve">
+    <value>名前で絞り込み</value>
+  </data>
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>このフォルダーで検索…</value>
+  </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>ここでターミナルを開く</value>
   </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>リモートファイルの検索</value>
@@ -6104,7 +6152,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginPermDownload_Title"><value>ファイルダウンロードの許可</value></data>
   <data name="PluginPermDownload_AllowOnce"><value>今回のダウンロードを許可</value></data>
   <data name="PluginPermDownload_Message"><value>プラグイン「{0}」が {1} からローカルファイルへのダウンロードを要求しています。許可はこのタスクのみ有効です。</value></data>
-  <data name="PluginPermDownload_Preview"><value>リモートソース: {0}&#10;ローカル保存先: {1}&#10;保存先の方針: {2}</value></data>
+  <data name="PluginPermDownload_Preview"><value>リモートソース: {0}&#10;サイズ: {3}&#10;ローカル保存先: {1}&#10;保存先の方針: {2}</value></data>
   <data name="PluginPermSession_Title"><value>接続要求</value></data>
   <data name="PluginPermSession_Message"><value>プラグイン「{0}」が {1} への接続を要求しています。プラグインが示した理由:</value></data>
   <data name="PluginManager_Install"><value>.vpx をインストール…</value></data>
@@ -6112,6 +6160,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginManager_Reload"><value>再読み込み</value></data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>ログを表示</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>通知をミュート</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>通知のミュートを解除</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>このプラグインがメッセージ一覧にメッセージを追加しないようにします。すでに届いたメッセージはメッセージ一覧で削除するまで残り、プラグインをアンインストールすると一緒に削除されます。</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>プラグインのログ · {0}</value>
@@ -6782,6 +6839,27 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sc_TypeToLocate" xml:space="preserve"><value>入力した文字で始まる項目へ移動</value></data>
   <data name="Sc_KeyTypeName" xml:space="preserve"><value>名前の先頭を入力</value></data>
   <data name="Sc_EnterSelectedFolder" xml:space="preserve"><value>選択したフォルダーを開く</value></data>
+  <data name="Sc_RefreshDirectory" xml:space="preserve">
+    <value>現在のフォルダーを更新</value>
+  </data>
+  <data name="Sc_RenameSelected" xml:space="preserve">
+    <value>選択した項目の名前を変更</value>
+  </data>
+  <data name="Sc_DeleteSelected" xml:space="preserve">
+    <value>選択した項目を削除(先に確認)</value>
+  </data>
+  <data name="Sc_FilterClear" xml:space="preserve">
+    <value>絞り込み欄をクリアして閉じる</value>
+  </data>
+  <data name="Sc_FilterToList" xml:space="preserve">
+    <value>絞り込み欄からファイル一覧へ戻る</value>
+  </data>
+  <data name="Sc_NavigateBack" xml:space="preserve">
+    <value>前のフォルダーに戻る</value>
+  </data>
+  <data name="Sc_NavigateForward" xml:space="preserve">
+    <value>戻る前のフォルダーへ進む</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>エディターを閉じる</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>プロセス一覧を更新</value></data>
   <data name="Sc_EndTask" xml:space="preserve"><value>選択したプロセスを終了</value></data>
@@ -6812,6 +6890,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sc_NoteSuggestOpen" xml:space="preserve"><value>候補ポップアップ表示中のみ</value></data>
   <data name="Sc_NotePasswordFillOpen" xml:space="preserve"><value>共有パスワード一覧の表示中のみ</value></data>
   <data name="Sc_NoteListFocused" xml:space="preserve"><value>一覧にフォーカスがある場合のみ</value></data>
+  <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
+    <value>そのペインにフォーカスがある場合のみ(入力欄を除く)</value>
+  </data>
+  <data name="Sc_NoteFilterFocused" xml:space="preserve">
+    <value>絞り込み欄にフォーカスがある場合のみ</value>
+  </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve"><value>アプリがマウス報告を有効にしている場合に必要</value></data>
   <data name="Sc_NoteOptional" xml:space="preserve"><value>設定でオフにできます</value></data>
   <data name="Sc_NoteRequiresSetting" xml:space="preserve"><value>設定で該当オプションを有効にする必要があります</value></data>
@@ -8798,6 +8882,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Cred_Failure_MissingSecret" xml:space="preserve">
     <value>共有資格情報「{0}」にはこのデバイス上のパスワードや鍵がありません(エンドツーエンドのパスフレーズなしのクラウド同期では転送されません)。</value>
   </data>
+  <data name="Cred_Failure_StoredSecretUnreadable" xml:space="preserve">
+    <value>保存されたパスワード(または秘密鍵のパスフレーズ)はこのデバイスでは復号できません(ローカルの暗号化キーが変わったか、今回はシステムキーチェーンを開けませんでした)。そのためサインインには使っていません。もう一度入力してください。</value>
+  </data>
+  <data name="Cred_Failure_SharedSecretUnreadable" xml:space="preserve">
+    <value>共有資格情報「{0}」に保存されたパスワード(または秘密鍵のパスフレーズ)はこのデバイスでは復号できません(ローカルの暗号化キーが変わったか、今回はシステムキーチェーンを開けませんでした)。そのためサインインには使っていません。もう一度入力するか、「設定 → 共有資格情報」で入力し直してください。</value>
+  </data>
   <data name="Cred_Failure_UnsupportedAuth" xml:space="preserve">
     <value>共有資格情報「{0}」はパスワード方式ではありません。FTP とプラグイン接続はパスワードでのみサインインできます。</value>
   </data>
@@ -8813,8 +8903,32 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Auth_SharedMissing" xml:space="preserve">
     <value>この接続が参照している共有資格情報はもう存在しません。ここで入力した資格情報は今回のサインインにだけ使われます。保存するには、接続を編集して資格情報のソースを選び直してください。</value>
   </data>
+  <data name="Auth_UnreadableSecretOwn" xml:space="preserve">
+    <value>この接続に保存されたパスワード(または秘密鍵のパスフレーズ)</value>
+  </data>
+  <data name="Auth_UnreadableSecretShared" xml:space="preserve">
+    <value>共有資格情報「{0}」に保存されたパスワード(または秘密鍵のパスフレーズ)</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeychainUnavailable" xml:space="preserve">
+    <value>{0}は今回復号できません: {1} を開けませんでした({2})。失われてはいません。{1} のロックを解除して VelaShell を再起動すれば通常どおり読み込めます。今回はここで入力してサインインすることもできます。</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeyMissing" xml:space="preserve">
+    <value>{0}はこのデバイスでは復号できません: 保存時に使ったローカルの暗号化キーがここにありません(データフォルダーを別の PC やアカウントからコピーした、キーチェーンの項目が削除された、またはキーファイルが置き換えられた可能性があります。メッセージセンターに説明があります)。もう一度入力して保存すれば、このデバイスで復号できる形で保存されます。</value>
+  </data>
+  <data name="Auth_UnreadableSecretUnknown" xml:space="preserve">
+    <value>{0}はこのデバイスでは復号できません(別のデバイスから同期またはコピーされたものか、壊れている可能性があります)。もう一度入力して保存すれば、このデバイスで復号できる形で保存されます。</value>
+  </data>
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>共有資格情報「{0}」もあわせて更新({1} 件の接続で使用中)</value>
+  </data>
+  <data name="Auth_SaveAsConnection" xml:space="preserve">
+    <value>接続として保存</value>
+  </data>
+  <data name="Auth_SaveAsConnectionHint" xml:space="preserve">
+    <value>これは一時的な接続です(外部から起動されたもの、または「最近の接続」から再作成されたもの)。エクスプローラーには表示されず、ここで入力した資格情報は今回のサインインにだけ使われます。チェックすると接続として保存し(グループなし)、パスワードもあわせて保存します(一般設定の「パスワードを保存」がオンの場合)。</value>
+  </data>
+  <data name="Auth_SaveAsConnectionFailed" xml:space="preserve">
+    <value>接続として保存できませんでした: {0}。今回は一時的な接続のままサインインします。</value>
   </data>
   <data name="Profile_CredSource" xml:space="preserve">
     <value>資格情報のソース</value>
@@ -9574,6 +9688,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Profile_KeyStoreHint" xml:space="preserve">
     <value>秘密鍵はキーストアの外に出ません。このプロファイルにはどの鍵を使うかだけを保存します。TPM やスマートカードは署名時に PIN を求めることがあります。Windows のみ。</value>
+  </data>
+  <data name="Profile_KeyStoreCertificate" xml:space="preserve">
+    <value>ユーザー証明書(任意)</value>
+  </data>
+  <data name="Profile_KeyStoreCertificateHint" xml:space="preserve">
+    <value>CA がこの鍵に発行した OpenSSH ユーザー証明書(*-cert.pub。「公開鍵をコピー」で得た行に CA が署名したもの)。設定すると証明書でログインします。サーバーが CA を信頼していれば(TrustedUserCAKeys)よく、authorized_keys に公開鍵を追加する必要はありません。空欄なら公開鍵でログインします。</value>
   </data>
   <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
     <value>このプロファイルは Windows のキーストアにある鍵で署名しますが、このコンピューターにはキーストアがありません。ここから接続するには別の認証方式を選んでください。</value>

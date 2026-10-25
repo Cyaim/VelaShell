@@ -13,6 +13,7 @@ using System.Buffers.Binary;
 using VelaShell.Ssh.Auth;
 using VelaShell.Ssh.Channels;
 using VelaShell.Ssh.Crypto;
+using VelaShell.Ssh.Diagnostics;
 using VelaShell.Ssh.HostKeys;
 using VelaShell.Ssh.Session;
 using VelaShell.Ssh.Sftp;
@@ -216,5 +217,38 @@ public sealed class SftpRequestPipelineTests
             () => version.WaitAsync(TimeSpan.FromSeconds(5), harness.Token));
         Assert.AreSame(reason, error, $"应当当场拿到收工的原因，而不是等到超时：{error}");
         await channel.DisposeAsync();
+    }
+
+    /// <summary>
+    /// 本端释放流水线是中止（<see cref="SshFailureReason.Aborted"/>），不是「对端或本库不支持」。
+    /// 接收循环被取消时的「已收工」与释放时的「已释放」谁先落到收工原因上不确定：两条路的原因码必须一样。
+    /// </summary>
+    /// <remarks>曾经「已释放」走公开构造，原因码是 <see cref="SshFailureReason.Unsupported"/>。</remarks>
+    [TestMethod]
+    public async Task 本端释放流水线的原因码是Aborted()
+    {
+        await using Harness harness = await Harness.StartAsync();
+
+        // 没起接收循环：收工原因只能来自释放那一条路，结果是确定的。
+        SshChannel idle = await harness.Connection.OpenSubsystemAsync("sftp", null, harness.Token);
+        SftpRequestPipeline notStarted = new(idle, maxInFlight: 1, adaptive: false, ceiling: 1);
+        await notStarted.DisposeAsync();
+        AssertAborted(await notStarted.Closed.WaitAsync(TimeSpan.FromSeconds(10), harness.Token), "只走释放那一条路");
+        await idle.DisposeAsync();
+
+        // 起了接收循环：两条路抢先，谁赢都一样。
+        SshChannel busy = await harness.Connection.OpenSubsystemAsync("sftp", null, harness.Token);
+        SftpRequestPipeline started = new(busy, maxInFlight: 1, adaptive: false, ceiling: 1);
+        started.Start();
+        await started.DisposeAsync();
+        AssertAborted(await started.Closed.WaitAsync(TimeSpan.FromSeconds(10), harness.Token), "接收循环与释放抢先");
+        await busy.DisposeAsync();
+
+        static void AssertAborted(Exception reason, string what)
+        {
+            SftpUnavailableException unavailable = Assert.IsInstanceOfType<SftpUnavailableException>(reason, what);
+            Assert.AreEqual(SshFailureReason.Aborted, unavailable.Reason, $"{what}：本端收工是中止，不是不支持");
+            Assert.AreEqual(SftpUnavailableKind.SessionClosed, unavailable.FailureKind, what);
+        }
     }
 }

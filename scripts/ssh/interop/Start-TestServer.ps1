@@ -322,12 +322,12 @@ if ($LASTEXITCODE -ne 0) {
 }
 Start-Sleep -Milliseconds 500
 
-# 群交换（RFC 4419）：OpenSSH 10 起服务端默认不开，这里追加进清单（不动默认的那些）。
-Write-Step '让 sshd 再开 diffie-hellman-group-exchange-sha256（验群交换）'
+# 群交换（RFC 4419）与 group18（RFC 8268）：OpenSSH 10 起服务端默认不开 DH 那几种，这里追加进清单（不动默认的那些）。
+Write-Step '让 sshd 再开 diffie-hellman-group-exchange-sha256 与 diffie-hellman-group18-sha512（验群交换与 group18）'
 docker cp (Join-Path $PSScriptRoot 'kex-gex.sh') "${ContainerName}:/tmp/kex-gex.sh" | Out-Null
 docker exec $ContainerName sh /tmp/kex-gex.sh
 if ($LASTEXITCODE -ne 0) {
-    throw '打开群交换失败 —— 群交换的互操作用例会记成 Inconclusive。'
+    throw '打开群交换与 group18 失败 —— 群交换的互操作用例会记成 Inconclusive，「每一种密钥交换」会把 group18 记成对端不支持。'
 }
 Start-Sleep -Milliseconds 500
 

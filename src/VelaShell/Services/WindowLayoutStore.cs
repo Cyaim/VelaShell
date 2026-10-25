@@ -30,6 +30,32 @@ public sealed class WindowLayout
 }
 
 /// <summary>
+/// 文件栏记住的几何(windowLayout 集合里 <c>filePanes</c> 那一条):远端栏各列的宽度与双栏文件标签的分栏比例。
+/// </summary>
+/// <remarks>
+/// 全局一份,不按连接分 —— 用户调的是「文件栏」这件东西,不是「这台服务器的文件栏」(上传选择框同一口径)。
+/// 纯属使用习惯,与辅助窗口的尺寸一样不进设置页。
+/// </remarks>
+public sealed class FilePaneLayout
+{
+    /// <summary>
+    /// 远端栏拖过的列宽(列键 → 逻辑像素;列键见 <c>FileBrowserViewModel.SetColumnWidth</c>)。
+    /// 没拖过的列不在其中,按出厂宽度。
+    /// </summary>
+    public Dictionary<string, double>? ColumnWidths { get; set; }
+
+    /// <summary>双栏文件标签(本地 + 远程、远程 + 远程)左栏占两栏的比例(0–1);没拖过分隔条时为 null,各占一半。</summary>
+    public double? SplitRatio { get; set; }
+
+    /// <summary>深拷贝(写库用一份快照,内存里那份接着改)。</summary>
+    internal FilePaneLayout Clone() => new()
+    {
+        ColumnWidths = ColumnWidths is null ? null : new(ColumnWidths, StringComparer.Ordinal),
+        SplitRatio = SplitRatio,
+    };
+}
+
+/// <summary>
 /// 辅助窗口(任务管理器等)的尺寸与位置持久化。主窗口的尺寸走设置里的
 /// <c>Appearance.LastWindowWidth</c>,那是用户可见的一项设置;辅助窗口纯属使用习惯,
 /// 不该塞进设置页,因此落在文档存储里。
@@ -42,6 +68,60 @@ public sealed class WindowLayout
 public sealed class WindowLayoutStore(IAppDataStore? store)
 {
     private const string Collection = "windowLayout";
+
+    /// <summary>文件栏几何在 windowLayout 集合里的键(见 <see cref="FilePaneLayout" />)。</summary>
+    private const string FilePanesKey = "filePanes";
+
+    private FilePaneLayout? _filePanes;
+    private Task<FilePaneLayout>? _filePanesLoad;
+
+    /// <summary>
+    /// 已经读进内存的文件栏几何;还没读过(或第一次读库还没回来)时为 null。
+    /// 视图建好时同步套用它,免得每开一个文件栏都先按出厂宽度画一帧再跳。
+    /// </summary>
+    public FilePaneLayout? FilePanes => _filePanes;
+
+    /// <summary>读文件栏几何:只在第一次读库,之后都用内存里那份(改动经 <see cref="SaveFilePanesAsync" /> 先改内存)。</summary>
+    public Task<FilePaneLayout> LoadFilePanesAsync() => _filePanesLoad ??= LoadFilePanesCoreAsync();
+
+    private async Task<FilePaneLayout> LoadFilePanesCoreAsync()
+    {
+        FilePaneLayout? stored = null;
+        if (store is not null)
+        {
+            try
+            {
+                stored = await store.GetAsync<FilePaneLayout>(Collection, FilePanesKey).ConfigureAwait(false);
+            }
+            catch
+            {
+                // 记不住列宽不值得打扰用户:读不出来就按出厂宽度。
+            }
+        }
+        return _filePanes ??= stored ?? new FilePaneLayout();
+    }
+
+    /// <summary>改一处文件栏几何,写回存储;失败静默忽略。</summary>
+    /// <param name="change">对内存里那份的修改。在调用方的线程上执行(视图在 UI 线程上调)。</param>
+    public async Task SaveFilePanesAsync(Action<FilePaneLayout> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        // 不加 ConfigureAwait(false):修改要回到调用方的线程上做,视图同步读的就是这一份。
+        FilePaneLayout layout = await LoadFilePanesAsync();
+        change(layout);
+        if (store is null)
+        {
+            return;
+        }
+        try
+        {
+            await store.UpsertAsync(Collection, FilePanesKey, layout.Clone()).ConfigureAwait(false);
+        }
+        catch
+        {
+            // 同上。
+        }
+    }
 
     /// <summary>读取某个窗口上次的几何信息;没存过或读取失败时返回 null。</summary>
     /// <param name="key">窗口标识,如 "processManager"。</param>

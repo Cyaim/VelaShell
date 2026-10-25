@@ -17,9 +17,12 @@ namespace VelaShell.ViewModels;
 /// <param name="PrivateKeyPath">私钥文件路径(密钥认证时使用)。</param>
 /// <param name="PrivateKeyPassphrase">私钥口令短语(如私钥已加密)。</param>
 /// <param name="CertificatePath">OpenSSH 用户证书文件路径(证书认证时使用)。</param>
-/// <param name="RememberPassword">是否记住本次登录密码。</param>
+/// <param name="RememberPassword">是否记住本次登录密码。临时连接上只有「另存为连接」时才为 true。</param>
 /// <param name="UpdateSharedCredential">
 /// 是否把本次输入的凭据存回连接所引用的共享凭据(#550);连接没引用共享凭据时恒为 false。
+/// </param>
+/// <param name="SaveAsConnection">
+/// 是否把这条临时连接(外部拉起、「最近连接」重建的,不在库里)存成一条正式的连接配置;不是临时连接时恒为 false。
 /// </param>
 public sealed record AuthenticationResult(
     string Username,
@@ -29,7 +32,8 @@ public sealed record AuthenticationResult(
     string? PrivateKeyPassphrase,
     string? CertificatePath,
     bool RememberPassword,
-    bool UpdateSharedCredential = false);
+    bool UpdateSharedCredential = false,
+    bool SaveAsConnection = false);
 
 /// <summary>为什么一条引用共享凭据的连接又来问凭据(#550)。</summary>
 public enum SharedCredentialPromptReason
@@ -47,7 +51,13 @@ public enum SharedCredentialPromptReason
     Missing,
 
     /// <summary>共享凭据使用不支持的 Tailscale SSH 认证。</summary>
-    Unsupported
+    Unsupported,
+
+    /// <summary>
+    /// 共享凭据里存着的密码 / 私钥口令在这台设备上解不开(本机加密密钥换过、系统密钥链这次没打开)。
+    /// 原因由登录框上「已存的密码解不开」那一条说(<see cref="AuthenticationDialogViewModel.UnreadableSecretNotice" />)。
+    /// </summary>
+    Unreadable
 }
 
 /// <summary>
@@ -79,6 +89,12 @@ public class AuthenticationDialogViewModel : ReactiveObject
     /// <param name="initialMethod">初始选中的认证方式。</param>
     /// <param name="sharedCredential">连接引用了共享凭据时传入(#550);否则为 null。</param>
     /// <param name="connectionType">连接类型:只有 SSH / SFTP 有密码之外的认证方式可选。</param>
+    /// <param name="temporaryProfile">
+    /// 要连的是不在库里的临时配置(外部拉起、「最近连接」重建的):不给「记住密码」,改给「另存为连接」。
+    /// </param>
+    /// <param name="unreadableSecretNotice">
+    /// 这次要用的那份已存密码 / 私钥口令在这台设备上解不开时的说明(见 <c>UnreadableSecretPrompt</c>);没有这回事时为 null。
+    /// </param>
     public AuthenticationDialogViewModel(
         string host,
         int port,
@@ -86,15 +102,20 @@ public class AuthenticationDialogViewModel : ReactiveObject
         string? knownFingerprint = null,
         AuthMethod initialMethod = AuthMethod.Password,
         SharedCredentialPromptContext? sharedCredential = null,
-        ConnectionType connectionType = ConnectionType.SSH)
+        ConnectionType connectionType = ConnectionType.SSH,
+        bool temporaryProfile = false,
+        string? unreadableSecretNotice = null)
     {
         TargetText = host;
         _port = port;
         _username = username ?? string.Empty;
         SharedCredential = sharedCredential;
-        // 凭据不完整时用户就是来补它的,默认存回去;被拒时可能只是这一台密码不同,
-        // 默认不动 —— 勾错的代价是另外几十台一起连不上。
-        UpdateSharedCredential = sharedCredential?.Reason == SharedCredentialPromptReason.Incomplete;
+        IsTemporaryProfile = temporaryProfile;
+        UnreadableSecretNotice = unreadableSecretNotice;
+        // 凭据不完整、或存着的那份在这台设备上解不开时,用户就是来补它的,默认存回去;
+        // 被拒时可能只是这一台密码不同,默认不动 —— 勾错的代价是另外几十台一起连不上。
+        UpdateSharedCredential = sharedCredential?.Reason is SharedCredentialPromptReason.Incomplete
+            or SharedCredentialPromptReason.Unreadable;
         // FTP 与插件协议只认用户名 + 密码:证书 / 密钥 / Tailscale 那几段对它们没有意义,
         // 选了反而把这次连接的认证方式改掉、密码清空,登录时发出去的是空密码。
         ShowsMethodSelector = connectionType is ConnectionType.SSH or ConnectionType.SFTP;
@@ -155,6 +176,7 @@ public class AuthenticationDialogViewModel : ReactiveObject
                 this.RaisePropertyChanged(nameof(CanUpdateSharedCredential));
                 this.RaisePropertyChanged(nameof(SharedCredentialNotice));
                 this.RaisePropertyChanged(nameof(HasSharedCredentialNotice));
+                this.RaisePropertyChanged(nameof(HasUnreadableSecretNotice));
                 this.RaisePropertyChanged(nameof(ShowsKeyFields));
             });
     }
@@ -262,8 +284,25 @@ public class AuthenticationDialogViewModel : ReactiveObject
     /// <summary>
     /// 是否显示「记住密码」。引用共享凭据的连接不显示:手输的这一份只用于本次,
     /// 要长期保存就存回共享凭据(<see cref="UpdateSharedCredential" />)—— 连接自己不再存密码。
+    /// 临时连接也不显示:它不落库(plan.md §252),勾了也存不下,改给「另存为连接」(<see cref="SaveAsConnection" />)。
     /// </summary>
-    public bool ShowRememberPassword => !IsTailscaleMethod && SharedCredential is null;
+    public bool ShowRememberPassword => !IsTailscaleMethod && SharedCredential is null && !IsTemporaryProfile;
+
+    // ---- 临时连接:另存为连接 ----
+
+    /// <summary>要连的是不在库里的临时配置(外部拉起、「最近连接」重建的)。</summary>
+    public bool IsTemporaryProfile { get; }
+
+    /// <summary>
+    /// 是否把这条临时连接存成正式的连接配置(进资源管理器,未分组)。存成之后才记住密码 ——
+    /// 仍受「常规 → 隐私与安全 → 记住密码」总开关约束。默认不勾:外部拉起带来的本来就是一次性的东西。
+    /// </summary>
+    /// <remarks>与认证方式无关(用密钥、Tailscale 登录的也可以存),所以放在各认证方式的面板外面。</remarks>
+    public bool SaveAsConnection
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    }
 
     /// <summary>又来问凭据的原因说明;不必说明时为 null。</summary>
     public string? SharedCredentialNotice => SharedCredential is { Reason: SharedCredentialPromptReason.Unsupported }
@@ -280,6 +319,18 @@ public class AuthenticationDialogViewModel : ReactiveObject
 
     /// <summary>是否显示原因说明条。</summary>
     public bool HasSharedCredentialNotice => SharedCredentialNotice is not null;
+
+    /// <summary>
+    /// 「已存的密码解不开」的说明:是哪一份、为什么(本机加密密钥的解析结果,§253)、怎么办;没有这回事时为 null。
+    /// </summary>
+    /// <remarks>
+    /// 以前这种情形当成「有密码」拿密文去试一次,认证失败才弹一个什么都不说的登录框 ——
+    /// 用户只会以为是自己记错了密码(第二轮第 20 条)。
+    /// </remarks>
+    public string? UnreadableSecretNotice { get; }
+
+    /// <summary>是否显示「已存的密码解不开」说明条(选了 Tailscale 就用不着那份密码了,不显示)。</summary>
+    public bool HasUnreadableSecretNotice => UnreadableSecretNotice is not null && !IsTailscaleMethod;
 
     /// <summary>能否把本次输入存回共享凭据:凭据还在才能存。</summary>
     public bool CanUpdateSharedCredential =>
@@ -365,8 +416,10 @@ public class AuthenticationDialogViewModel : ReactiveObject
             ShowsKeyFields ? PrivateKeyPath : null,
             ShowsKeyFields ? PrivateKeyPassphrase : null,
             IsCertificateMethod ? CertificatePath : null,
-            !IsTailscaleMethod && RememberPassword,
-            CanUpdateSharedCredential && UpdateSharedCredential);
+            // 临时连接:另存为连接才记住(存不进库的配置,记住了也落不了盘);其余照「记住密码」那一勾。
+            !IsTailscaleMethod && (IsTemporaryProfile ? SaveAsConnection : RememberPassword),
+            CanUpdateSharedCredential && UpdateSharedCredential,
+            IsTemporaryProfile && SaveAsConnection);
     }
 
     private static string Shorten(string fingerprint) => fingerprint.Length <= 24 ? fingerprint : $"{fingerprint[..12]}...{fingerprint[^4..]}";

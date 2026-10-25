@@ -3,6 +3,7 @@ using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Data;
+using VelaShell.Core.DirectorySync;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Sftp;
@@ -221,6 +222,74 @@ public sealed class TransferQueueTests
     });
 
     /// <summary>
+    /// 浮窗那一行的 ×:只停这一项,这一批其余照传;停下的这一项从队列里摘掉 ——
+    /// 之后这一批断线停下,「已暂停」那一行里只剩真正没传的,点「继续」也不会再传它。
+    /// </summary>
+    [TestMethod]
+    public Task CancellingOneRow_StopsOnlyThatFile_AndDropsItFromTheQueue() => OnUi(async () =>
+    {
+        using var rig = new Rig();
+        Task<CancellationToken> bStarted = rig.Hangs("/srv/b.bin");
+        rig.Fails("/srv/c.bin", new RemoteSessionUnavailableException("Session gone"));
+
+        Task download = rig.DownloadAsync("a", "b", "c", "d");
+        CancellationToken bToken = await bStarted.WaitAsync(TimeSpan.FromSeconds(10));
+        TransferItemViewModel b = rig.Row("b.bin");
+        Assert.IsTrue(b.CanCancel, "在传的那一行有 ×");
+        rig.Sink.CancelTransferCommand.Execute(b.Id).Subscribe();
+        await download.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.IsTrue(bToken.IsCancellationRequested, "停的是 b 自己那一次传输,不只是行上改个字");
+        Assert.AreEqual(TransferStatus.Cancelled, b.Status);
+        Assert.IsFalse(b.CanCancel);
+        CollectionAssert.AreEqual(new[] { "/srv/a.bin", "/srv/b.bin", "/srv/c.bin" }, rig.Downloaded(rig.First).ToArray(),
+            "b 停下之后这一批接着传 c(c 断线,整批才停)");
+        Assert.AreEqual(TransferStatus.Completed, rig.Row("a.bin").Status);
+        PausedTransferBatchViewModel paused = rig.Sink.PausedBatches.Single();
+        CollectionAssert.AreEqual(new[] { "/srv/c.bin", "/srv/d.bin" }, paused.Batch.Items.Select(i => i.RemotePath).ToArray(),
+            "取消了的 b 不再记在队列里,「继续」不会再传它");
+    });
+
+    /// <summary>
+    /// 并发传输时同样只停那一项:另一条在传的不受牵连,停下的那个名额接着传下一个;
+    /// 这一批照常记账 —— 之后断线停下时,队列里剩的是真正没传完的那些。
+    /// </summary>
+    [TestMethod]
+    public Task CancellingOneRow_WhileOthersRunConcurrently_LeavesThemRunning() => OnUi(async () =>
+    {
+        using var rig = new Rig(concurrency: 2);
+        Task<CancellationToken> aStarted = rig.Hangs("/srv/a.bin");
+        rig.Fails("/srv/c.bin", new RemoteSessionUnavailableException("Session gone"));
+        var releaseB = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var bStarted = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Sftp.DownloadFileAsync(rig.First, "/srv/b.bin", Arg.Any<string>(), Arg.Any<IProgress<TransferProgress>?>(),
+                Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                bStarted.TrySetResult(call.ArgAt<CancellationToken>(5));
+                await releaseB.Task;
+            });
+
+        Task download = rig.DownloadAsync("a", "b", "c");
+        CancellationToken aToken = await aStarted.WaitAsync(TimeSpan.FromSeconds(10));
+        CancellationToken bToken = await bStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        rig.Sink.CancelTransferCommand.Execute(rig.Row("a.bin").Id).Subscribe();
+        Assert.IsTrue(aToken.IsCancellationRequested);
+        Assert.IsFalse(bToken.IsCancellationRequested, "同一批里另一条在传的不受牵连");
+        releaseB.SetResult();
+        await download.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.AreEqual(TransferStatus.Cancelled, rig.Row("a.bin").Status);
+        Assert.AreEqual(TransferStatus.Completed, rig.Row("b.bin").Status);
+        CollectionAssert.Contains(rig.Downloaded(rig.First), "/srv/c.bin", "a 停下之后它那个名额接着传 c");
+        // c 断线,整批停下:队列里只剩 c —— a 取消了、b 传完了,都已摘掉。
+        // 要是 a 的取消漏成整批取消,这一批就被当成「不要了」整个从队列里删掉,这一行根本不会出现。
+        PausedTransferBatchViewModel paused = rig.Sink.PausedBatches.Single();
+        CollectionAssert.AreEqual(new[] { "/srv/c.bin" }, paused.Batch.Items.Select(i => i.RemotePath).ToArray());
+        Assert.IsFalse(rig.Sink.IsBatchActive, "停一项不该让批次挂在那里收不了尾");
+    });
+
+    /// <summary>
     /// 重启之后:上次没传完的批次还原成「已暂停」,但<b>不外连</b> —— 一个字节都不传,连也不连,等用户点「继续」。
     /// </summary>
     [TestMethod]
@@ -242,7 +311,7 @@ public sealed class TransferQueueTests
             }));
         int resumeCalls = 0;
 
-        var sink = new FileTransferViewModel(null, store)
+        var sink = new FileTransferViewModel(store)
         {
             ResumeHandler = _ =>
             {
@@ -285,19 +354,48 @@ public sealed class TransferQueueTests
         Assert.IsTrue(rig.Sink.Transfers.Any(t => t.Status == TransferStatus.Failed));
     });
 
+    /// <summary>
+    /// 目录同步里点了一行的 ×:同步其余照做、不算整个同步被取消;这一项记「已取消」——
+    /// 不拿 ErrorMessage 顶替(那是别的文件留下的,或者没有,就成了「传输失败」)。
+    /// </summary>
+    [TestMethod]
+    public Task CancellingOneSyncRow_RecordsItAsCancelled_AndTheSyncCarriesOn() => OnUi(async () =>
+    {
+        using var rig = new Rig();
+        Task<CancellationToken> aStarted = rig.Hangs("/srv/a.bin");
+        var runner = new DirectorySyncRunner(rig.Sftp, rig.First, rig.Panel(rig.First));
+
+        Task<DirectorySyncResult> sync = runner.ExecuteAsync(rig.Directory, "/srv", [Download("a.bin"), Download("b.bin")], null, CancellationToken.None);
+        await aStarted.WaitAsync(TimeSpan.FromSeconds(10));
+        rig.Sink.CancelTransferCommand.Execute(rig.Row("a.bin").Id).Subscribe();
+        DirectorySyncResult result = await sync.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.IsFalse(result.Cancelled, "停一项不是取消整个同步");
+        Assert.AreEqual(1, result.Succeeded);
+        Assert.AreEqual(1, result.Failed);
+        Assert.AreSequenceEqual([$"a.bin: {Strings.Get("Sync_Cancelled")}"], [.. result.Errors]);
+        CollectionAssert.Contains(rig.Downloaded(rig.First), "/srv/b.bin");
+
+        // 远端时间精度记成未知:替身不真的写文件,别让「对齐修改时间」去碰一个不存在的本地文件。
+        static SyncAction Download(string name) => new(SyncActionKind.Download, name, false, null,
+            new SyncItem(name, "/srv/" + name, false, 100, DateTime.UtcNow, SyncTimePrecision.Unknown));
+    });
+
     private static Task OnUi(Func<Task> body) => _session.RunOnUiAsync(body);
 
     private sealed class Rig : IDisposable
     {
         private readonly bool _withOrigin;
         private readonly int _retries;
+        private readonly int _concurrency;
         private FileBrowserViewModel? _first;
 
-        public Rig(int retries = 0, bool withOrigin = true, IAppDataStore? store = null)
+        public Rig(int retries = 0, bool withOrigin = true, IAppDataStore? store = null, int concurrency = 1)
         {
             _retries = retries;
             _withOrigin = withOrigin;
-            Sink = new FileTransferViewModel(null, store);
+            _concurrency = concurrency;
+            Sink = new FileTransferViewModel(store);
             System.IO.Directory.CreateDirectory(Directory);
         }
 
@@ -322,7 +420,7 @@ public sealed class TransferQueueTests
                 AutoCleanTempFiles = false,
                 TransferLogging = false,
                 NotifyOnComplete = false,
-                MaxConcurrentTransfers = 1,
+                MaxConcurrentTransfers = _concurrency,
                 TransferMaxRetries = _retries,
             },
             RetryDelay = (_, _) => Task.CompletedTask,
@@ -340,6 +438,27 @@ public sealed class TransferQueueTests
                 Owner = "u",
                 Group = "g",
             });
+
+        /// <summary>
+        /// 这个远端文件在第一个会话上的下载一直传着、直到它的取消令牌被触发;返回的任务在下载开始时完成。
+        /// 也记下那个令牌,好断言取消的是不是这一项自己的那个。
+        /// </summary>
+        public Task<CancellationToken> Hangs(string remotePath)
+        {
+            var started = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Sftp.DownloadFileAsync(First, remotePath, Arg.Any<string>(), Arg.Any<IProgress<TransferProgress>?>(),
+                    Arg.Any<long>(), Arg.Any<CancellationToken>())
+                .Returns(async call =>
+                {
+                    CancellationToken token = call.ArgAt<CancellationToken>(5);
+                    started.TrySetResult(token);
+                    await Task.Delay(Timeout.Infinite, token);
+                });
+            return started.Task;
+        }
+
+        /// <summary>浮窗上某个文件的那一行。</summary>
+        public TransferItemViewModel Row(string fileName) => Sink.Transfers.Single(t => t.FileName == fileName);
 
         /// <summary>这个远端文件在第一个会话上下载失败;失败之前先在本地写下 <paramref name="writtenBeforeFailure" /> 字节。</summary>
         public void Fails(string remotePath, Exception failure, long writtenBeforeFailure = 0) =>

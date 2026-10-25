@@ -15,6 +15,7 @@ using Markdig.Syntax.Inlines;
 using TextMateSharp.Grammars;
 using VelaShell.Core.Resources;
 using VelaShell.Services;
+using VelaShell.PluginSdk.Versioning;
 using VelaShell.Services.Update;
 using VelaShell.ViewModels;
 
@@ -138,7 +139,7 @@ public partial class ReleaseNotesDialog : Window
             {
                 notes = await _source.GetLatestReleaseNotesAsync(request.Token);
             }
-            else if (!UpdateVersion.TryParse(_currentVersion, out UpdateVersion current))
+            else if (!SemanticVersion.TryParse(_currentVersion, out SemanticVersion current))
             {
                 StatusText.Text = Strings.Get("ReleaseNotes_UnknownVersion");
                 StatusText.IsVisible = true;
@@ -160,14 +161,14 @@ public partial class ReleaseNotesDialog : Window
                 {
                     checkError = ex;
                 }
-                if (latest != null && (!UpdateVersion.TryParse(latest.Tag, out UpdateVersion latestVersion)
-                    || latestVersion.PreRelease.Length != 0))
+                if (latest != null && (!SemanticVersion.TryParse(latest.Tag, out SemanticVersion latestVersion)
+                    || latestVersion.IsPreRelease))
                 {
                     checkError = new FormatException("Invalid release version.");
                     latest = null;
                 }
-                _hasUpdate = latest != null && UpdateVersion.TryParse(latest.Tag, out UpdateVersion newest) && newest > current;
-                bool sameVersion = latest != null && UpdateVersion.TryParse(latest.Tag, out UpdateVersion published) && published == current;
+                _hasUpdate = latest != null && SemanticVersion.TryParse(latest.Tag, out SemanticVersion newest) && newest > current;
+                bool sameVersion = latest != null && SemanticVersion.TryParse(latest.Tag, out SemanticVersion published) && published == current;
                 notes = _hasUpdate || sameVersion
                     ? latest
                     : await _source.GetReleaseNotesForVersionAsync(_currentVersion!, request.Token);

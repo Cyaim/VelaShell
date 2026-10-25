@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Reflection;
 using VelaShell.Core.Models;
 using VelaShell.Core.Notifications;
+using VelaShell.PluginSdk.Versioning;
 
 namespace VelaShell.Infrastructure.Notifications;
 
@@ -104,13 +106,31 @@ public sealed class HttpAnnouncementFeed(
 
     /// <summary>
     /// 按本机情况组装投放上下文:版本取入口程序集,平台按进程架构解析(与更新产物的
-    /// RID 命名一致),语言取当前界面语言。
+    /// RID 命名一致),语言取当前界面语言;版本比较用 <see cref="CompareVersions" />。
     /// </summary>
     public static FeedAudience DescribeAudience() =>
-        new(EntryVersion(), CurrentRid(), CultureInfo.CurrentUICulture.Name);
+        new(EntryVersion(), CurrentRid(), CultureInfo.CurrentUICulture.Name, CompareVersions);
 
-    private static string? EntryVersion() =>
-        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3);
+    /// <summary>
+    /// 版本定向的比较口径:SDK 的 <see cref="SemanticVersion" /> 完整优先级(与更新检查同一份),
+    /// 任一侧解析不出时为 <see langword="null" />(那一端的条件不生效)。
+    /// </summary>
+    public static int? CompareVersions(string left, string right) =>
+        SemanticVersion.TryParse(left, out SemanticVersion a) && SemanticVersion.TryParse(right, out SemanticVersion b)
+            ? a.CompareTo(b)
+            : null;
+
+    /// <summary>
+    /// 入口程序集的 InformationalVersion(带预发布后缀,与更新检查读的是同一个),读不到退回三段数字版。
+    /// 只用于本机过滤,不随请求发出。三段数字版里没有预发布后缀:<c>1.4.0-beta.2</c> 会被当成 <c>1.4.0</c>,
+    /// 收到冲着正式版写的「1.4.0 起」那类消息。
+    /// </summary>
+    private static string? EntryVersion()
+    {
+        Assembly? entry = Assembly.GetEntryAssembly();
+        return entry?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+               ?? entry?.GetName().Version?.ToString(3);
+    }
 
     /// <summary>
     /// 当前进程的 RID。按**进程**架构而非 OS 架构解析:x64 版本跑在 arm64 Windows

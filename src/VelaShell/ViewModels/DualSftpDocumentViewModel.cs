@@ -168,6 +168,9 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
     public Task CompareDirectoriesAsync()
     {
         var options = new SyncOptions { Criteria = SyncCriteria.Time | SyncCriteria.Size };
+        // 比较的是整个目录:任一栏的过滤框藏着行,结论就会把藏起来的那些说成「只有另一边有」。
+        LeftFiles.FilterText = string.Empty;
+        RightFiles.FilterText = string.Empty;
         RemoteFileInfoViewModel[] leftEntries = VisibleEntries(LeftFiles);
         RemoteFileInfoViewModel[] rightEntries = VisibleEntries(RightFiles);
         IReadOnlyList<SyncComparison> comparisons = DirectoryComparer.Compare(

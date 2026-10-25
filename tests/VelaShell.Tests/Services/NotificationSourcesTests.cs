@@ -386,6 +386,25 @@ public sealed class NotificationSourcesTests
         Assert.AreEqual("master-key:replaced:secret.key.unreadable-20261025080000", notice.Id);
     }
 
+    /// <summary>
+    /// 云同步拉到「Webhook 告警开着却没有地址」:一条警告级的系统消息,带「前往安全审计设置」;
+    /// id 带着那份设置的指纹,同一份设置投几次都只剩一条(第二轮第 17 条)。
+    /// </summary>
+    [TestMethod]
+    public void SyncWebhookMissing_PointsToSecuritySettings_AndIsKeyedByTheSettings()
+    {
+        NotificationItem notice = NotificationSources.BuildSyncWebhookMissingNotification("0123456789abcdef", Now);
+        NotificationItem again = NotificationSources.BuildSyncWebhookMissingNotification("0123456789abcdef", Now.AddHours(5));
+        NotificationItem other = NotificationSources.BuildSyncWebhookMissingNotification("fedcba9876543210", Now);
+
+        Assert.AreEqual(NotificationKind.System, notice.Kind);
+        Assert.AreEqual(NotificationSeverity.Warning, notice.Severity);
+        Assert.AreEqual(Strings.Get("Notify_SyncWebhookMissingTitle"), notice.Title);
+        Assert.AreEqual(NotificationSources.OpenSecuritySettingsCommandId, notice.Link?.CommandId);
+        Assert.AreEqual(notice.Id, again.Id);
+        Assert.AreNotEqual(notice.Id, other.Id);
+    }
+
     /// <summary>从没迁过、密钥链又用不了(没装 keyring 的机器):如实说密钥还在文件里,只说一次。</summary>
     [TestMethod]
     public void MasterKey_FileFallback_IsAnInfoNoticeShownOnce()

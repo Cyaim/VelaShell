@@ -50,8 +50,15 @@ public class NotificationItemViewModel(NotificationItem item) : ReactiveObject
         NotificationKind.Security => Strings.Get("Notify_KindSecurity"),
         NotificationKind.Promotion => Strings.Get("Notify_KindPromotion"),
         NotificationKind.System => Strings.Get("Notify_KindSystem"),
+        NotificationKind.Plugin => Strings.Get("Notify_KindPlugin"),
         _ => Strings.Get("Notify_KindNews")
     };
+
+    /// <summary>来源一行(「来自 插件名」);宿主自己的消息没有来源,为空。</summary>
+    public string SourceText => _item.Source is { Length: > 0 } source ? Strings.Format("Notify_Source", source) : string.Empty;
+
+    /// <summary>是否显示来源(插件消息才有)。</summary>
+    public bool HasSource => _item.Source is { Length: > 0 };
 
     /// <summary>是否为需要留意的消息(警告/严重),用于把徽标换成警示色。</summary>
     public bool IsHighlighted => _item.Severity is NotificationSeverity.Warning or NotificationSeverity.Critical;
@@ -94,6 +101,7 @@ public class NotificationItemViewModel(NotificationItem item) : ReactiveObject
     public void RefreshLocalizedText()
     {
         this.RaisePropertyChanged(nameof(KindBadge));
+        this.RaisePropertyChanged(nameof(SourceText));
         this.RaisePropertyChanged(nameof(LinkLabel));
         RefreshRelativeTime();
     }

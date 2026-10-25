@@ -1307,6 +1307,12 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             // 插件自己的拒绝,宿主什么都没收到:结论确定,不标不确定、不停整轮
             return $"Upload was rejected before execution: {ex.Message} Nothing was started; no fallback was attempted.";
         }
+        catch (PluginTransferRejectedException ex)
+        {
+            // 宿主登记之前就明确拒了:同样什么都没开始,不标不确定;条件不变就别紧接着重试
+            return $"Upload was rejected by the host before it started: {FileTransferJobRegistry.DescribeHostRejection(ex.Reason)} "
+                   + "Nothing was started or written; do not start it again automatically.";
+        }
         catch (Exception)
         {
             run.Transfers!._uncertainStart = true;
@@ -1517,6 +1523,11 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         catch (FileTransferRejectedException ex)
         {
             return $"Download was rejected before execution: {ex.Message} Nothing was started; no fallback was attempted.";
+        }
+        catch (PluginTransferRejectedException ex)
+        {
+            return $"Download was rejected by the host before it started: {FileTransferJobRegistry.DescribeHostRejection(ex.Reason)} "
+                   + "Nothing was started or written; do not start it again automatically.";
         }
         catch (Exception)
         {

@@ -302,7 +302,14 @@ public static class SettingsTransfer
         return [.. SettingsCategories.All.Where(c => wanted.Contains(c.Id))];
     }
 
-    private static bool SameProxy(ProxyOptions a, ProxyOptions b) =>
+    /// <summary>
+    /// 两份代理配置指的是不是同一台代理(类型、主机、端口、用户名都相同):只有这时一份的密码才能给另一份用。
+    /// 导入、云同步拉取与设置服务保留解不开的代理密码(<c>SonnetDbSettingsService</c>)共用这一条。
+    /// </summary>
+    /// <param name="a">一份代理配置。</param>
+    /// <param name="b">另一份。</param>
+    /// <returns>同一台代理时为 true。</returns>
+    public static bool SameProxy(ProxyOptions a, ProxyOptions b) =>
         string.Equals(a.Type, b.Type, StringComparison.OrdinalIgnoreCase)
         && string.Equals(a.Host.Trim(), b.Host.Trim(), StringComparison.OrdinalIgnoreCase)
         && a.Port == b.Port

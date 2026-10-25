@@ -167,6 +167,13 @@ internal sealed class DirectorySyncRunner(ISftpService sftp, Guid sessionId, Fil
         return await transfers.RunSyncTransfersAsync(requests, async (request, status) =>
         {
             SyncAction action = owners[request];
+            if (status == TransferStatus.Cancelled)
+            {
+                // 传输浮窗那一行的 × 只停了这一项:其余照做,这一项记「已取消」——
+                // 不拿 ErrorMessage 顶替,那是别的文件留下的(或者没有,就成了「传输失败」)。
+                run.Fail(action, Strings.Get("Sync_Cancelled"));
+                return;
+            }
             if (status != TransferStatus.Completed)
             {
                 run.Fail(action, transfers.ErrorMessage ?? Strings.Get("Sync_TransferFailed"));

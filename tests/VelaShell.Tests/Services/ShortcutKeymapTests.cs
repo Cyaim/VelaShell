@@ -224,7 +224,7 @@ public sealed class ShortcutKeymapTests
         Assert.AreEqual(ShortcutRejection.NeedsModifier, ShortcutGestures.Check(G("K"), isMacOS: false).Rejection);
         Assert.AreEqual(ShortcutRejection.NeedsModifier, ShortcutGestures.Check(G("Shift+K"), isMacOS: false).Rejection);
         Assert.AreEqual(ShortcutRejection.NeedsModifier, ShortcutGestures.Check(G("Enter"), isMacOS: false).Rejection);
-        Assert.AreEqual(ShortcutRejection.None, ShortcutGestures.Check(G("F5"), isMacOS: false).Rejection);
+        Assert.AreEqual(ShortcutRejection.None, ShortcutGestures.Check(G("F6"), isMacOS: false).Rejection);
         Assert.AreEqual(ShortcutRejection.None, ShortcutGestures.Check(G("Shift+F5"), isMacOS: false).Rejection);
         Assert.AreEqual(ShortcutRejection.None, ShortcutGestures.Check(G("Alt+K"), isMacOS: false).Rejection);
         Assert.AreEqual(ShortcutRejection.None, ShortcutGestures.Check(G("Meta+K"), isMacOS: false).Rejection);
@@ -239,6 +239,9 @@ public sealed class ShortcutKeymapTests
         Assert.AreEqual("Copy", copy.ReservedLabelKey);
         Assert.AreEqual(ShortcutRejection.Reserved, ShortcutGestures.Check(G("Alt+Left"), isMacOS: false).Rejection);
         Assert.AreEqual(ShortcutRejection.Reserved, ShortcutGestures.Check(G("Ctrl+L"), isMacOS: false).Rejection);
+        // 文件栏的 F5 / F2(视图内按键):绑成全局键位,窗口就在文件栏之前把它们吃掉了。Shift+F5 不是同一按,照样能绑。
+        Assert.AreEqual("Sc_RefreshDirectory", ShortcutGestures.Check(G("F5"), isMacOS: false).ReservedLabelKey);
+        Assert.AreEqual("Sc_RenameSelected", ShortcutGestures.Check(G("F2"), isMacOS: false).ReservedLabelKey);
 
         Assert.AreEqual(ShortcutRejection.None, ShortcutGestures.Check(G("Meta+C"), isMacOS: false).Rejection);
         Assert.AreEqual(ShortcutRejection.Reserved, ShortcutGestures.Check(G("Meta+C"), isMacOS: true).Rejection);

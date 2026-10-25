@@ -874,6 +874,9 @@
   <data name="Download" xml:space="preserve">
     <value>Download</value>
   </data>
+  <data name="DownloadAs" xml:space="preserve">
+    <value>Download as…</value>
+  </data>
   <data name="Refresh" xml:space="preserve">
     <value>Refresh</value>
   </data>
@@ -889,6 +892,18 @@
   <data name="Sftp_GoUpRemotePane" xml:space="preserve">
     <value>Go up (remote pane)</value>
   </data>
+  <data name="Sftp_BackLocalPane" xml:space="preserve">
+    <value>Back (local pane, Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardLocalPane" xml:space="preserve">
+    <value>Forward (local pane, Alt+→)</value>
+  </data>
+  <data name="Sftp_BackRemotePane" xml:space="preserve">
+    <value>Back (remote pane, Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardRemotePane" xml:space="preserve">
+    <value>Forward (remote pane, Alt+→)</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>Follow terminal directory (sync to the terminal's current path)</value>
   </data>
@@ -901,8 +916,17 @@
   <data name="Sftp_SearchOpen" xml:space="preserve">
     <value>Search remote files…</value>
   </data>
+  <data name="Sftp_FilterToggle" xml:space="preserve">
+    <value>Filter this folder</value>
+  </data>
+  <data name="Sftp_FilterPlaceholder" xml:space="preserve">
+    <value>Filter by name</value>
+  </data>
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>Search in this folder…</value>
+  </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>Open terminal here</value>
   </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>Search remote files</value>
@@ -4928,6 +4952,9 @@ Overwrite it?</value>
   <data name="Transfer_CancelRemainingTip" xml:space="preserve">
     <value>Cancel remaining transfers</value>
   </data>
+  <data name="Transfer_CancelItemTip" xml:space="preserve">
+    <value>Cancel this file (the rest of the batch keeps going)</value>
+  </data>
   <data name="Transfer_CollapseTip" xml:space="preserve">
     <value>Collapse (transfers continue in the background)</value>
   </data>
@@ -5517,6 +5544,15 @@ Overwrite it?</value>
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} is not available ({1}), so the local encryption key stays in the key file in the data directory, as before. Once the keychain is available, the next start moves the key there automatically.</value>
   </data>
+  <data name="Notify_SyncWebhookMissingTitle" xml:space="preserve">
+    <value>Webhook alerts are on, but this device has no webhook URL</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingBody" xml:space="preserve">
+    <value>Settings pulled by cloud sync have Security &amp; Audit → Webhook turned on, but no webhook URL is filled in on this device, so security alerts are not being sent. Cloud sync without a sync passphrase never carries this URL (a bot URL is itself a token). Fill it in under Settings → Security &amp; Audit. You are told only once for the same settings.</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingAction" xml:space="preserve">
+    <value>Go to Security &amp; Audit</value>
+  </data>
   <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
     <value>External edit not uploaded</value>
   </data>
@@ -5531,6 +5567,12 @@ Overwrite it?</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>System</value>
+  </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>Plugin</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>from {0}</value>
   </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>Go to tab {0}</value>
@@ -5564,6 +5606,9 @@ Overwrite it?</value>
   </data>
   <data name="Cmd_OpenAbout" xml:space="preserve">
     <value>Open About</value>
+  </data>
+  <data name="Cmd_OpenSecuritySettings" xml:space="preserve">
+    <value>Open Security &amp; Audit Settings</value>
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartup" xml:space="preserve">
     <value>Check for updates on startup</value>
@@ -5693,6 +5738,9 @@ Overwrite it?</value>
   </data>
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>Still failing after {0} retries: {1}</value>
+  </data>
+  <data name="Transfer_Cancelled" xml:space="preserve">
+    <value>Cancelled</value>
   </data>
   <data name="Transfer_Paused" xml:space="preserve">
     <value>Paused</value>
@@ -6109,7 +6157,7 @@ Overwrite it?</value>
   <data name="PluginPermDownload_Title"><value>File download authorization</value></data>
   <data name="PluginPermDownload_AllowOnce"><value>Allow this download</value></data>
   <data name="PluginPermDownload_Message"><value>Plugin "{0}" requests downloading from {1} to a local file. Approval applies only to this task.</value></data>
-  <data name="PluginPermDownload_Preview"><value>Remote source: {0}&#10;Local destination: {1}&#10;Destination policy: {2}</value></data>
+  <data name="PluginPermDownload_Preview"><value>Remote source: {0}&#10;Size: {3}&#10;Local destination: {1}&#10;Destination policy: {2}</value></data>
   <data name="PluginPermSession_Title"><value>Connection request</value></data>
   <data name="PluginPermSession_Message"><value>Plugin "{0}" wants to open a connection to {1}. Its stated reason:</value></data>
   <data name="PluginManager_Install"><value>Install .vpx…</value></data>
@@ -6117,6 +6165,15 @@ Overwrite it?</value>
   <data name="PluginManager_Reload"><value>Reload</value></data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>View log</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>Mute notifications</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>Unmute notifications</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>Stop this plugin from adding messages to the Message Center. Messages it already posted stay until you remove them; uninstalling the plugin removes them.</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>Plugin log · {0}</value>
@@ -6787,6 +6844,27 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
   <data name="Sc_TypeToLocate" xml:space="preserve"><value>Jump to the item whose name starts with what you type</value></data>
   <data name="Sc_KeyTypeName" xml:space="preserve"><value>Type the name</value></data>
   <data name="Sc_EnterSelectedFolder" xml:space="preserve"><value>Open the selected folder</value></data>
+  <data name="Sc_RefreshDirectory" xml:space="preserve">
+    <value>Refresh the current folder</value>
+  </data>
+  <data name="Sc_RenameSelected" xml:space="preserve">
+    <value>Rename the selected item</value>
+  </data>
+  <data name="Sc_DeleteSelected" xml:space="preserve">
+    <value>Delete the selected items (asks first)</value>
+  </data>
+  <data name="Sc_FilterClear" xml:space="preserve">
+    <value>Clear and close the filter box</value>
+  </data>
+  <data name="Sc_FilterToList" xml:space="preserve">
+    <value>Go from the filter box back to the file list</value>
+  </data>
+  <data name="Sc_NavigateBack" xml:space="preserve">
+    <value>Go back to the previous folder</value>
+  </data>
+  <data name="Sc_NavigateForward" xml:space="preserve">
+    <value>Go forward again</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>Close the editor</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>Refresh the process list</value></data>
   <data name="Sc_EndTask" xml:space="preserve"><value>End the selected process</value></data>
@@ -6817,6 +6895,12 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
   <data name="Sc_NoteSuggestOpen" xml:space="preserve"><value>Only while the suggestion popup is open</value></data>
   <data name="Sc_NotePasswordFillOpen" xml:space="preserve"><value>Only while the shared password list is open</value></data>
   <data name="Sc_NoteListFocused" xml:space="preserve"><value>Only while the list has focus</value></data>
+  <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
+    <value>Only while focus is in that file pane, outside its text boxes</value>
+  </data>
+  <data name="Sc_NoteFilterFocused" xml:space="preserve">
+    <value>Only while the filter box has focus</value>
+  </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve"><value>Needed when the app enables mouse reporting</value></data>
   <data name="Sc_NoteOptional" xml:space="preserve"><value>Can be turned off in Settings</value></data>
   <data name="Sc_NoteRequiresSetting" xml:space="preserve"><value>Requires the matching option in Settings</value></data>
@@ -8803,6 +8887,12 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="Cred_Failure_MissingSecret" xml:space="preserve">
     <value>The shared credential “{0}” has no password or key on this device (cloud sync without an end-to-end passphrase does not carry them).</value>
   </data>
+  <data name="Cred_Failure_StoredSecretUnreadable" xml:space="preserve">
+    <value>The saved password (or key passphrase) cannot be decrypted on this device (the local encryption key has changed, or the system keychain could not be opened this time), so it was not used to sign in. Enter it again.</value>
+  </data>
+  <data name="Cred_Failure_SharedSecretUnreadable" xml:space="preserve">
+    <value>The password (or key passphrase) saved in the shared credential “{0}” cannot be decrypted on this device (the local encryption key has changed, or the system keychain could not be opened this time), so it was not used to sign in. Enter it again, or re-enter it under Settings → Shared Credentials.</value>
+  </data>
   <data name="Cred_Failure_UnsupportedAuth" xml:space="preserve">
     <value>The shared credential “{0}” does not use a password; FTP and plugin connections can only sign in with a password.</value>
   </data>
@@ -8818,8 +8908,32 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="Auth_SharedMissing" xml:space="preserve">
     <value>The shared credential this connection uses no longer exists. What you enter here is used for this sign-in only; to keep it, edit the connection and choose another credential source.</value>
   </data>
+  <data name="Auth_UnreadableSecretOwn" xml:space="preserve">
+    <value>The password (or key passphrase) saved for this connection</value>
+  </data>
+  <data name="Auth_UnreadableSecretShared" xml:space="preserve">
+    <value>The password (or key passphrase) saved in the shared credential “{0}”</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeychainUnavailable" xml:space="preserve">
+    <value>{0} cannot be decrypted this time: {1} could not be opened ({2}). It is not lost: unlock {1} and restart VelaShell to read it as usual. You can also type it here to sign in this time.</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeyMissing" xml:space="preserve">
+    <value>{0} cannot be decrypted on this device: the local encryption key it was saved with is not here (the data folder was copied from another computer or account, or the keychain entry was deleted or the key file replaced; the message center explains which). Enter it again and save it, so the saved copy is one this device can decrypt.</value>
+  </data>
+  <data name="Auth_UnreadableSecretUnknown" xml:space="preserve">
+    <value>{0} cannot be decrypted on this device (it may have been synced or copied from another device, or it is damaged). Enter it again and save it, so the saved copy is one this device can decrypt.</value>
+  </data>
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>Also update the shared credential “{0}” (used by {1} connections)</value>
+  </data>
+  <data name="Auth_SaveAsConnection" xml:space="preserve">
+    <value>Save as a connection</value>
+  </data>
+  <data name="Auth_SaveAsConnectionHint" xml:space="preserve">
+    <value>This is a temporary connection (launched from outside VelaShell, or rebuilt from Recent Connections): it is not in the Explorer, and what you enter here is used for this sign-in only. Tick this to save it as a connection (ungrouped); the password is then remembered too, as long as "Remember passwords" is on in General settings.</value>
+  </data>
+  <data name="Auth_SaveAsConnectionFailed" xml:space="preserve">
+    <value>Could not save this as a connection: {0}. This sign-in goes ahead as a temporary connection.</value>
   </data>
   <data name="Profile_CredSource" xml:space="preserve">
     <value>Credential source</value>
@@ -9579,6 +9693,12 @@ Send anyway?</value>
   </data>
   <data name="Profile_KeyStoreHint" xml:space="preserve">
     <value>The private key never leaves the key store; this profile stores only which key to use. The TPM or a smart card may ask for a PIN when signing. Windows only.</value>
+  </data>
+  <data name="Profile_KeyStoreCertificate" xml:space="preserve">
+    <value>User certificate (optional)</value>
+  </data>
+  <data name="Profile_KeyStoreCertificateHint" xml:space="preserve">
+    <value>An OpenSSH user certificate a CA issued for this key (*-cert.pub; have the CA sign the line that "Copy public key" gives you). With it you sign in by certificate: the server only needs to trust the CA (TrustedUserCAKeys) instead of listing the key in authorized_keys. Leave it empty to sign in with the public key.</value>
   </data>
   <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
     <value>This profile signs with a key from a Windows key store, which this computer does not have. To connect from here, choose another authentication method.</value>

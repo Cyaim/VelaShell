@@ -27,6 +27,38 @@ public sealed class RemoteFsCapabilityTests
         });
 
     /// <summary>
+    /// 宿主条目上的链接字段随 <see cref="IRemoteFsApi" /> 交给插件(SDK 2.1.3 的 init 属性):AI 插件这类调用方
+    /// 据此知道删除、递归只该处理链接本身。非链接不带目标文本。
+    /// </summary>
+    [TestMethod]
+    public async Task ListAndStat_CarrySymbolicLinkFieldsToPlugins()
+    {
+        RemoteFileInfo link = new()
+        {
+            Name = "current", FullPath = "/srv/current", Size = 0, Permissions = "lrwxrwxrwx", IsDirectory = true,
+            IsSymbolicLink = true, LinkTarget = "releases/42", LastModified = DateTime.UnixEpoch, Owner = "joe", Group = "joe"
+        };
+        RemoteFileInfo file = new()
+        {
+            Name = "a.txt", FullPath = "/srv/a.txt", Size = 3, Permissions = "-rw-r--r--", IsDirectory = false,
+            LinkTarget = "stale", LastModified = DateTime.UnixEpoch, Owner = "joe", Group = "joe"
+        };
+        _sftp.ListDirectoryAsync(_sessionId, "/srv", Arg.Any<CancellationToken>()).Returns([link, file]);
+        _sftp.GetFileInfoAsync(_sessionId, "/srv/current", Arg.Any<CancellationToken>()).Returns(link);
+        var api = new RemoteFsCapability(_sftp, _connections);
+
+        IReadOnlyList<RemoteFileEntry> entries = await api.ListDirectoryAsync(_sessionId.ToString(), "/srv");
+        RemoteFileEntry? stat = await api.StatAsync(_sessionId.ToString(), "/srv/current");
+
+        Assert.IsTrue(entries[0].IsSymbolicLink);
+        Assert.AreEqual("releases/42", entries[0].LinkTarget);
+        Assert.IsFalse(entries[1].IsSymbolicLink);
+        Assert.IsNull(entries[1].LinkTarget);
+        Assert.IsTrue(stat!.IsSymbolicLink);
+        Assert.AreEqual("releases/42", stat.LinkTarget);
+    }
+
+    /// <summary>
     /// 宿主上传在最后一批确认到齐时就报满格(那时 fsync / CLOSE 还没做),成功收尾时可能再报一遍;
     /// 插件拿满格当「完成」,曾经因此收到两次完成、而且早于真正的结果。
     /// </summary>

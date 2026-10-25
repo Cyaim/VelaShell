@@ -18,6 +18,36 @@
     <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
     </Style>
+    <!-- 后退 / 前进没有历史可走时淡下去;执行中禁用时不铺 Fluent 的灰底(同远端栏)。 -->
+    <Style Selector="Button.history-btn.unavailable">
+      <Setter Property="Opacity" Value="0.35" />
+    </Style>
+    <Style Selector="Button.history-btn:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- 过滤框开关:与远端栏(FileBrowserView)同一种安静的图标开关,展开时图标染强调色。 -->
+    <Style Selector="ToggleButton.pane-toggle">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextTertiary}" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:checked">
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:checked:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
     <Style Selector="Border.file-row:pointerover">
       <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
     </Style>
@@ -101,6 +131,45 @@
                 </DataTemplate>
               </ComboBox.ItemTemplate>
             </ComboBox>
+            <!-- 当前目录过滤,与远端栏同一口径:只藏眼前的行,收起即清空,换目录清空文字。 -->
+            <TextBox x:Name="FilterBox"
+                     IsVisible="{Binding IsFilterOpen}"
+                     Text="{Binding FilterText}"
+                     PlaceholderText="{loc:Localize Sftp_FilterPlaceholder}"
+                     AutomationProperties.Name="{loc:Localize Sftp_FilterPlaceholder}"
+                     Width="140" Height="22" MinHeight="0" Padding="6,0"
+                     VerticalAlignment="Center" VerticalContentAlignment="Center"
+                     FontFamily="{DynamicResource VelaUiMonoFont}"
+                     FontSize="{DynamicResource VelaFontSize11}"
+                     KeyDown="OnFilterBoxKeyDown" />
+            <ToggleButton x:Name="FilterToggle" Classes="pane-toggle" Width="24" Height="24" Padding="0"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                          IsChecked="{Binding IsFilterOpen}"
+                          Click="OnFilterToggleClick"
+                          ToolTip.Tip="{loc:Localize Sftp_FilterToggle}"
+                          AutomationProperties.Name="{loc:Localize Sftp_FilterToggle}">
+              <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.list-filter}"
+                             Foreground="{Binding $parent[ToggleButton].Foreground}" />
+            </ToggleButton>
+            <!-- 后退 / 前进(Alt+← / Alt+→),挨着上一级;提示语与读屏名与远程栏那两颗区分开。 -->
+            <Button x:Name="LocalBackButton"
+                    Classes="toolbar-btn history-btn" Classes.unavailable="{Binding !CanGoBack}"
+                    Width="24" Height="24" Padding="0"
+                    Command="{Binding GoBackCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_BackLocalPane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_BackLocalPane}">
+              <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.arrow-left}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
+            </Button>
+            <Button x:Name="LocalForwardButton"
+                    Classes="toolbar-btn history-btn" Classes.unavailable="{Binding !CanGoForward}"
+                    Width="24" Height="24" Padding="0"
+                    Command="{Binding GoForwardCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_ForwardLocalPane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_ForwardLocalPane}">
+              <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.arrow-right}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
+            </Button>
             <!-- 上一级与刷新同理:远程栏也有一颗,提示语与读屏名要分得出是哪一栏。 -->
             <Button x:Name="LocalGoUpButton"
                     Classes="toolbar-btn" Width="24" Height="24" Padding="0"
@@ -183,6 +252,10 @@
             <Separator />
             <MenuItem Header="{loc:Localize NewFolder}" Command="{Binding NewFolderCommand}">
               <MenuItem.Icon><pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.folder-plus}" Foreground="{DynamicResource VelaTextTertiary}" /></MenuItem.Icon>
+            </MenuItem>
+            <!-- 与远端栏的「新建文件」同一个文案与图标;同名已存在时报错、不覆盖。 -->
+            <MenuItem Header="{loc:Localize NewFile}" Command="{Binding NewFileCommand}">
+              <MenuItem.Icon><pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.file-plus}" Foreground="{DynamicResource VelaTextTertiary}" /></MenuItem.Icon>
             </MenuItem>
             <Separator />
             <MenuItem Header="{loc:Localize Delete}" Command="{Binding DeleteSelectedCommand}" Foreground="{DynamicResource VelaError}">

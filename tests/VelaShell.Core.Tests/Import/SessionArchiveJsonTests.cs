@@ -156,6 +156,8 @@ public sealed class SessionArchiveJsonTests
             {
                 Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy", MachineKey = true, PublicKey = "ecdsa-sha2-nistp256 AAAA deploy",
             },
+            // 系统密钥库可选配的证书:与证书认证同一个字段,照样往返。
+            CertificatePath = @"C:\certs\deploy-cert.pub",
         };
 
         string json = SessionArchiveJson.Serialize(new SessionArchive { Sessions = [tpm] }, null);
@@ -164,6 +166,7 @@ public sealed class SessionArchiveJsonTests
         Assert.Contains("\"authMethod\": \"keyStore\"", json);
         Assert.AreEqual(AuthMethod.KeyStore, read.AuthMethod);
         Assert.AreEqual(tpm.KeyStoreKey, read.KeyStoreKey);
+        Assert.AreEqual(tpm.CertificatePath, read.CertificatePath);
     }
 
     [TestMethod]
