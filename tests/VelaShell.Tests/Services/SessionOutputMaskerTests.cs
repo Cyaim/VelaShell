@@ -107,7 +107,135 @@ public sealed class SessionOutputMaskerTests
         ["unclosed-escaped-json",
             "\"body\": \"{\\\"password\\\":\\\"abc def\n",
             "\"body\": \"{\\\"password\\\":\\\"***\n", "abc def"],
+        // 冒号后跟空白、不加引号的值遮到行尾;同一行后面的下一个键留着(紧挨着的逗号也留给它)
+        ["yaml-passphrase-to-eol", "passphrase: correct horse battery staple\r\n", "passphrase: ***\r\n", "correct horse battery staple"],
+        ["yaml-value-before-next-key", "password: abc def, user: bob\n", "password: ***, user: bob\n", "abc def"],
+        ["yaml-value-before-comment", "  password: abc def  # rotated monthly\n", "  password: ***  # rotated monthly\n", "abc def"],
+        // 不带口令字样、值却必是机密的键
+        ["k8s-tls-key", "  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t\n", "  tls.key: ***\n", "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t"],
+        ["kubeconfig-client-key-data",
+            "    client-key-data: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVk=\n", "    client-key-data: ***\n", "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVk="],
+        ["dockerconfigjson",
+            "  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeSI6e319fQ==\n", "  .dockerconfigjson: ***\n", "eyJhdXRocyI6eyJyZWdpc3RyeSI6e319fQ=="],
+        ["docker-config-auth",
+            "{\"auths\":{\"registry.example.com\":{\"auth\":\"b3BzOmh1bnRlcjI=\"}}}\n",
+            "{\"auths\":{\"registry.example.com\":{\"auth\":\"***\"}}}\n", "b3BzOmh1bnRlcjI="],
+        ["netrc-one-line", "machine api.example.com login ops password hunter2\n", "machine api.example.com login ops password ***\n", "hunter2"],
+        ["netrc-multi-line",
+            "machine api.example.com\r\n  login ops\r\n  password hunter2\r\n",
+            "machine api.example.com\r\n  login ops\r\n  password ***\r\n", "hunter2"],
+        ["github-fine-grained-pat",
+            "GH github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456\n", null,
+            "11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"],
+        ["pgp-private-key-block",
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYBGVxQ0EBCADabcdefghijklmnop\n=AbCd\n-----END PGP PRIVATE KEY BLOCK-----\n",
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n***\n***\n-----END PGP PRIVATE KEY BLOCK-----\n", "lQOYBGVxQ0EBCADabcdefghijklmnop"],
     ];
+
+    /// <summary>
+    /// 新加的几条规则「不该遮的没遮」:证书与公钥、作为值出现的文件名、不是字符串的 <c>auth</c>、帮助文本与句子里的 <c>password</c>、
+    /// 不够长的 <c>github_pat_</c>。逐字节原样。
+    /// </summary>
+    [TestMethod]
+    [DataRow("  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t\n")]
+    [DataRow("    client-certificate-data: LS0tLS1CRUdJTiBDRVJU\n    certificate-authority-data: LS0tLS1CRUdJTiBDRVJU\n")]
+    [DataRow("    ssl_certificate_key /etc/nginx/tls.key;\n")]
+    [DataRow("{\"auth\": {\"type\": \"oauth\"}, \"oauth\": \"x\", \"author\": \"ops\"}\n")]
+    [DataRow("auth: true\n")]
+    [DataRow("  password  Set the account password\n")]
+    [DataRow("password reset link sent to ops@example.com\n")]
+    [DataRow("Password for 'https://ops@github.com': ")]
+    [DataRow("the machine room password policy is strict\n")]
+    [DataRow("PasswordAuthentication yes\n")]
+    [DataRow("see github_pat_example in the docs\n")]
+    [DataRow("-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmQINBGVxQ0EBEADabcdefghijklmnop\n-----END PGP PUBLIC KEY BLOCK-----\n")]
+    [DataRow("ops@vault-secrets-01: ~$ ")]
+    [DataRow("[ops@token-box: ~/deploy]$ ")]
+    public void NewRules_LeaveLookalikesAlone(string text)
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes(text));
+        Assert.AreEqual(text, Written, "原样、当场放出");
+    }
+
+    /// <summary>
+    /// 冒号后跟空白、不加引号的值遮到行尾:值里可以有空格。同一行后面别的键不能吃掉 —— 判据是空白之后紧跟着「键」
+    /// (标识符紧跟 <c>=</c>,或紧跟 <c>:</c> 而冒号后是空白),或者 YAML 注释的 <c>#</c>;<c>10:30</c>、<c>C:\</c>、<c>http://</c> 不算键。
+    /// <c>名字=值</c> 仍到空白为止(<c>.env</c> 与 <c>k=v k=v</c> 日志里空格就是边界);冒号后面没有空白的也照旧。
+    /// </summary>
+    [TestMethod]
+    public void UnquotedColonValues_AreMaskedToTheEndOfTheLine_WithoutEatingTheNextKey()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("passphrase: correct horse battery staple\n"));
+        masker.Write(Bytes("secret: meet at 10:30 near C:\\vault, see http://intranet\n"));
+        masker.Write(Bytes("password: abc def user: bob\n"));
+        masker.Write(Bytes("password: abc def, user: bob; token: x y\n"));
+        masker.Write(Bytes("token: abc def host=10.0.0.1 port=22\n"));
+        masker.Write(Bytes("password: a b \"user\": \"x\"\n"));
+        masker.Write(Bytes("password: it's \"quoted\" inside  \n"));
+        masker.Write(Bytes("DB_PASSWORD=abc def\n"));
+        masker.Write(Bytes("password:abc def\n"));
+        masker.Write(Bytes("\"auth\": {\"password\": \"p4ss\"}\n"));
+        Assert.AreEqual(
+            "passphrase: ***\n"
+            + "secret: ***\n"
+            + "password: *** user: bob\n"
+            + "password: ***, user: bob; token: ***\n"
+            + "token: *** host=10.0.0.1 port=22\n"
+            + "password: *** \"user\": \"x\"\n"
+            + "password: ***  \n"
+            + "DB_PASSWORD=*** def\n"
+            + "password:*** def\n"
+            + "\"auth\": {\"password\": \"***\"}\n",
+            Written, "不是字符串的 \"auth\" 不配,也不能把里面的 password 一起跳过");
+    }
+
+    /// <summary>
+    /// 到行尾的值在行还没完时扣着:停在值里、停在值后面的空白上、停在看不出是不是下一个键的半截上,都等下一段;
+    /// 下一段里看出是键了,值就停在键前面。超过扣下的上限照样吞到同一个终点。
+    /// </summary>
+    [TestMethod]
+    public void UnquotedColonValue_IsHeldUntilItsEndIsKnown()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("passphrase: correct "));
+        Assert.AreEqual("passphrase: ", Written, "值后面的空白之后可能还有词:扣着");
+        masker.Write(Bytes("horse user"));
+        Assert.AreEqual("passphrase: ", Written, "user 后面还看不出是不是键");
+        masker.Write(Bytes(": bob\n"));
+        Assert.AreEqual("passphrase: *** user: bob\n", Written);
+        _written.Clear();
+
+        string value = string.Concat(Enumerable.Repeat("word ", 1200));
+        masker.Write(Bytes("password: " + value[..3000]));
+        masker.Write(Bytes(value[3000..] + "us"));
+        masker.Write(Bytes("er: bob # note\n"));
+        Assert.AreEqual("password: *** user: bob # note\n", Written, "吞的时候同一个判据:停在下一个键前面");
+    }
+
+    /// <summary><c>.netrc</c> 分行写的 <c>password</c> 只认行首的单独一行;后面再来一个词就不算(扣着的那一点原样放出)。</summary>
+    [TestMethod]
+    public void NetrcPasswordLine_OnlyCountsWhenItIsTheWholeLine()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("  password hunt"));
+        Assert.AreEqual("  password ", Written, "可能是 netrc 的口令行:扣着等行尾");
+        masker.Write(Bytes("er2\r\n"));
+        Assert.AreEqual("  password ***\r\n", Written);
+        _written.Clear();
+
+        masker.Write(Bytes("password changed"));
+        masker.Write(Bytes(" for ops\r\n"));
+        masker.Write(Bytes("password changed "));
+        Assert.AreEqual("password changed for ops\r\npassword ", Written, "停在词后面的空白上也还不知道后面有没有词:接着扣");
+        masker.Write(Bytes("for ops\r\n"));
+        Assert.AreEqual("password changed for ops\r\npassword changed for ops\r\n", Written, "后面还有词:不是 netrc,原样");
+        _written.Clear();
+
+        masker.Write(Bytes("$ grep -r x .\r\n./a: password hunter2\r\n"));
+        Assert.AreEqual("$ grep -r x .\r\n./a: password hunter2\r\n", Written, "不在行首的不算");
+    }
 
     [TestMethod]
     public void EnvFileYamlAndJson_OnlyTheSecretValuesAreMasked()
@@ -310,7 +438,8 @@ public sealed class SessionOutputMaskerTests
         masker.Write(Bytes("token: Bearer abcdefgh123\n"));
         masker.Write(Bytes("aws AKIAIOSFODNN7EXAMPLE gh ghp_0123456789abcdefghijABCDEFGHIJ0123 sk-proj-ABCDEFGHIJKLMNOPQRST\n"));
         string text = Written;
-        Assert.AreEqual("Authorization: Bearer ***\ntoken: *** ***\naws *** gh *** ***\n", text);
+        // 「token: Bearer …」冒号后跟空白、不加引号:值到行尾,与里面的 Bearer 凭据并成一段
+        Assert.AreEqual("Authorization: Bearer ***\ntoken: ***\naws *** gh *** ***\n", text);
     }
 
     /// <summary>
@@ -490,6 +619,13 @@ public sealed class SessionOutputMaskerTests
             ("颜色序列后的令牌前缀连串", Repeat("\u001b[1;2mghp_")),
             ("超长的控制序列参数", "\u001b[" + Repeat("1;") + "mBearer abcdefghij\r\n"),
             ("没收尾的引号串里满是名字", "password=\"" + Repeat("token=x ") + "\r\n"),
+            ("到行尾的值里满是词", "password: " + Repeat("a ") + "\r\n"),
+            ("到行尾的值里满是像键的词", "password: " + Repeat("user:x ") + "\r\n"),
+            ("到行尾的值后一长串空白", "password: a" + Repeat(" ") + "b\r\n"),
+            ("到行尾的值连串", Repeat("token: a ")),
+            ("扣着的到行尾的值", "passphrase: " + Repeat("ab ")[..4000]),
+            ("netrc 连串", Repeat("machine a login b ") + "\r\n"),
+            ("netrc 口令行", "password " + Repeat("a")),
         ];
         foreach ((string name, string text) in inputs)
         {

@@ -20,9 +20,12 @@ namespace VelaShell.Services;
 /// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 的
 /// <c>名字=值</c>、<c>名字: 值</c>(含 JSON 与 YAML 的写法、JSON 里转义过的 <c>\"名字\":</c>;名字与分隔符之间允许 <c>grep --color</c>
 /// 插进来的颜色序列,分隔符与值之间允许 jq、bat 这类工具给值上的色,以及 grep 高亮收尾的 <c>ESC[K</c>)只换值,双引号串认反斜杠转义,
-/// 到行尾都没收尾的引号串从引号之后遮到行尾;
-/// <c>Bearer</c> / <c>Basic</c> 后面的凭据;PEM 私钥块的正文(写在一行里的,BEGIN 与 END 之间那段);几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、
-/// GitHub <c>ghp_…</c> 一类、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。凭据与令牌紧跟在颜色序列后面也认。宁可多遮,不放过。
+/// 到行尾都没收尾的引号串从引号之后遮到行尾,冒号后面跟空白、不加引号的值遮到行尾(停在同一行的下一个键之前,判据见 <see cref="KeyValue" />);
+/// 几个不带口令字样的键:<c>tls.key</c> 一类、kubeconfig 的 <c>client-key-data</c>、<c>.dockerconfigjson</c>、Docker <c>config.json</c> 的 <c>"auth"</c>;
+/// <c>.netrc</c> 的 <c>password</c>(<c>machine … password …</c> 一行写完的,或分行写时单独一行的);
+/// <c>Bearer</c> / <c>Basic</c> 后面的凭据;PEM 私钥块(含 OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c>)的正文(写在一行里的,BEGIN 与 END 之间那段);
+/// 几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、GitHub <c>ghp_…</c> 一类与 <c>github_pat_…</c>、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。
+/// 凭据与令牌紧跟在颜色序列后面也认。宁可多遮,不放过。
 /// </para>
 /// <para>
 /// 一段输出可能在任何字节处被切开,打字回显更是一个字节一段。当前行已经放出去的原文(大约最后 <see cref="MaxContextBytes" /> 字节)留作匹配上下文,
@@ -62,6 +65,15 @@ public sealed partial class SessionOutputMasker
     private static readonly SearchValues<char> PlainValueEnds =
         SearchValues.Create(" \"',;\u007f" + string.Concat(Enumerable.Range(0, 0x20).Select(c => (char)c)));
 
+    /// <summary><c>.netrc</c> 口令到这些字符为止:空白,以及 C0 控制字符与 DEL。</summary>
+    private static readonly SearchValues<char> WordEnds =
+        SearchValues.Create(" \u007f" + string.Concat(Enumerable.Range(0, 0x20).Select(c => (char)c)));
+
+    /// <summary>
+    /// 吞 <see cref="ValueKind.LineValue" /> 时,空白之后要看多远才能断定那是不是下一个键;再远的当成值的一部分吞掉。
+    /// </summary>
+    private const int MaxKeyProbeBytes = 256;
+
     /// <summary><c>Bearer</c> / <c>Basic</c> 凭据的字符。</summary>
     private static readonly SearchValues<char> CredentialChars =
         SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/-=");
@@ -81,6 +93,11 @@ public sealed partial class SessionOutputMasker
     /// (<c>xBearer …</c> 截成 <c>Bearer …</c> 不能凭空多出一个凭据)。
     /// </summary>
     private int _scanFrom;
+
+    /// <summary>
+    /// 上下文是从当前行的行首起的(没截过,也不是吞完一个值或私钥块结尾之后在行中间重新起的):只认行首的规则(<see cref="NetrcLine" />)据此才用。
+    /// </summary>
+    private bool _contextAtLineStart = true;
 
     /// <summary>当前行处理过的原文的最后 <see cref="MarkerTailBytes" /> 个字节:认私钥块的开头与结尾用。</summary>
     private string _keyTail = string.Empty;
@@ -107,6 +124,12 @@ public sealed partial class SessionOutputMasker
 
         /// <summary>不加引号的值:到空白、引号、逗号、分号或控制字符为止。</summary>
         Plain,
+
+        /// <summary><c>名字: 值</c> 里不加引号的值:到行尾、控制字符,或者空白之后跟着的下一个键、YAML 注释为止。</summary>
+        LineValue,
+
+        /// <summary><c>.netrc</c> 的口令:到空白或控制字符为止(引号、逗号都可能是口令的一部分)。</summary>
+        Word,
 
         /// <summary>双引号串(含 JSON 里转义过的 <c>\"…\"</c>):到不带转义的 <c>"</c> 或行尾为止。</summary>
         DoubleQuoted,
@@ -200,6 +223,7 @@ public sealed partial class SessionOutputMasker
             // 上下文从值的结尾重新起:吞掉的值里像「名字: 值」的字样不能再拿来匹配
             _context = string.Empty;
             _scanFrom = 0;
+            _contextAtLineStart = false;
         }
         if (_inPrivateKey)
         {
@@ -253,6 +277,7 @@ public sealed partial class SessionOutputMasker
             _inKeyBody = false;
             _context = string.Empty;
             _scanFrom = 0;
+            _contextAtLineStart = true;
             _keyTail = string.Empty;
         }
         else
@@ -298,6 +323,7 @@ public sealed partial class SessionOutputMasker
             contextStart = keep - 1;
             _scanFrom = 1;
         }
+        _contextAtLineStart &= contextStart == 0;
         _context = line[contextStart..end];
         _keyTail = KeyTail(_keyTail + line[from..end]);
     }
@@ -321,6 +347,7 @@ public sealed partial class SessionOutputMasker
             _inKeyBody = false;
             _context = string.Empty;
             _scanFrom = 0;
+            _contextAtLineStart = false;
             _keyTail = KeyTail(segment[..stop]);
             Line(segment[stop..], complete, final, output);
             return;
@@ -331,6 +358,7 @@ public sealed partial class SessionOutputMasker
             output.Append(body == 0 ? segment : Mask + segment[body..]);
             _context = string.Empty;
             _scanFrom = 0;
+            _contextAtLineStart = true;
             _keyTail = string.Empty;
             return;
         }
@@ -366,6 +394,11 @@ public sealed partial class SessionOutputMasker
             matches.Add((match.Index, match.Index + match.Length));
             Group value = match.Groups["value"];
             char first = line[value.Index];
+            if (match.Groups["rest"].Success)
+            {
+                AddLineValue(found, line, from, complete, value.Index, value.Index + value.Length);
+                continue;
+            }
             string quote = first == '\\' && value.Length > 1 && line[value.Index + 1] == '"' ? "\\\""
                 : first == '"' ? "\""
                 : first == '\'' ? "'"
@@ -387,6 +420,20 @@ public sealed partial class SessionOutputMasker
         {
             matches.Add((match.Index, match.Index + match.Length));
             Add(found, line, from, complete, match.Index, match.Index + match.Length, ValueKind.Token, string.Empty, closed: false);
+        }
+        for (Match match = NetrcEntry().Match(line, _scanFrom); match.Success; match = match.NextMatch())
+        {
+            matches.Add((match.Index, match.Index + match.Length));
+            Group value = match.Groups["value"];
+            Add(found, line, from, complete, value.Index, value.Index + value.Length, ValueKind.Word, string.Empty, closed: false);
+        }
+        if (_contextAtLineStart && NetrcLine().Match(line) is { Success: true } netrc)
+        {
+            // 口令后面只能是空白与行尾:行还没完时停在口令或它后面的空白上,都要扣着等行尾(后面再来一个词就不算了)
+            matches.Add((netrc.Index, netrc.Index + netrc.Length));
+            Group value = netrc.Groups["value"];
+            Add(found, line, from, complete, value.Index, value.Index + value.Length, ValueKind.Word, string.Empty, closed: false,
+                openAt: netrc.Index + netrc.Length);
         }
 
         // 私钥正文:BEGIN 之后到同一行的 END 为止,没有 END 就到行尾。开头与结尾按原文认(原文的尾巴接上新到的一段,
@@ -423,12 +470,35 @@ public sealed partial class SessionOutputMasker
         return Merge(found);
     }
 
-    private static void Add(List<Secret> found, string line, int from, bool complete, int start, int end, ValueKind kind, string quote, bool closed)
+    /// <summary>
+    /// 记下一处要遮的片段(结尾落在 <paramref name="from" /> 之后才算)。<paramref name="openAt" /> 是「后面可能还有」的判据落在哪:
+    /// 默认是值的结尾(伸到已收到内容的末尾就是没完);值后面只能跟空白与行尾的(<see cref="NetrcLine" />、<see cref="ValueKind.LineValue" />)
+    /// 传那段空白的结尾。
+    /// </summary>
+    private static void Add(List<Secret> found, string line, int from, bool complete, int start, int end, ValueKind kind, string quote, bool closed,
+        int openAt = -1)
     {
         if (end > from && end > start)
         {
-            found.Add(new Secret(start, end, kind, quote, Open: !complete && !closed && end == line.Length, ContentStart: start + quote.Length));
+            bool open = !complete && !closed && (openAt < 0 ? end : openAt) == line.Length;
+            found.Add(new Secret(start, end, kind, quote, Open: open, ContentStart: start + quote.Length));
         }
+    }
+
+    /// <summary>
+    /// <c>名字: 值</c> 里到行尾的值(<see cref="ValueKind.LineValue" />):尾随的空白不遮;停在下一个键前面的,紧挨着的逗号、分号留给那个键。
+    /// 值后面到已收到内容的末尾都是空白时还不算完 —— 下一段可能接着是值的下一个词,也可能是下一个键。
+    /// </summary>
+    private static void AddLineValue(List<Secret> found, string line, int from, bool complete, int start, int end)
+    {
+        int after = line.AsSpan(end).IndexOfAnyExcept(' ', '\t');
+        after = after < 0 ? line.Length : end + after;
+        bool beforeKey = after > end && after < line.Length && line[after] is >= ' ' and not '\u007f' and not '#';
+        if (beforeKey && end - 1 > start && line[end - 1] is ',' or ';')
+        {
+            end--;
+        }
+        Add(found, line, from, complete, start, end, ValueKind.LineValue, string.Empty, closed: false, openAt: after);
     }
 
     /// <summary>
@@ -511,6 +581,10 @@ public sealed partial class SessionOutputMasker
         {
             case ValueKind.Plain:
                 return text.AsSpan().IndexOfAny(PlainValueEnds);
+            case ValueKind.Word:
+                return text.AsSpan().IndexOfAny(WordEnds);
+            case ValueKind.LineValue:
+                return LineValueEnd(text, out keep);
             case ValueKind.Credential:
                 return text.AsSpan().IndexOfAnyExcept(CredentialChars);
             case ValueKind.Token:
@@ -556,6 +630,99 @@ public sealed partial class SessionOutputMasker
         }
     }
 
+    /// <summary>
+    /// 正在吞的 <see cref="ValueKind.LineValue" /> 到哪为止,与 <see cref="KeyValue" /> 的 <c>rest</c> 一支同一个判据:
+    /// 行尾与控制字符;一段空白之后跟着 YAML 注释的 <c>#</c>,或者跟着下一个键(标识符紧跟 <c>=</c>,或紧跟 <c>:</c> 而冒号后是空白)——
+    /// 停在那段空白前面(紧挨着的逗号、分号留给那个键)。空白之后还看不出是不是键就到了末尾的,从那段空白起留着等下一段;
+    /// 要看的超过 <see cref="MaxKeyProbeBytes" /> 就不等了,当成值吞掉。
+    /// </summary>
+    private static int LineValueEnd(string text, out int keep)
+    {
+        keep = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c is not (' ' or '\t'))
+            {
+                if (c < ' ' || c == '\u007f')
+                {
+                    return i;
+                }
+                continue;
+            }
+            int blanks = i;
+            while (i < text.Length && text[i] is ' ' or '\t')
+            {
+                i++;
+            }
+            if (i < text.Length && text[i] == '#')
+            {
+                return blanks;
+            }
+            switch (NextKeyAt(text, i))
+            {
+                case true:
+                    return blanks > 0 && text[blanks - 1] is ',' or ';' ? blanks - 1 : blanks;
+                case null when text.Length - blanks <= MaxKeyProbeBytes:
+                    keep = text.Length - blanks;
+                    return -1;
+            }
+            // 不是键(或者看不出来、而要看的太长了):空白与后面的词都算值的一部分
+            i--;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// <paramref name="text" /> 的 <paramref name="at" /> 处是不是一个键(可带引号的标识符,紧跟 <c>=</c>,或紧跟 <c>:</c> 而冒号后是空白);
+    /// null 表示到了末尾还看不出来。与 <see cref="KeyValue" /> 里 <c>rest</c> 一支的停止条件同一个判据。
+    /// </summary>
+    private static bool? NextKeyAt(string text, int at)
+    {
+        if (at >= text.Length)
+        {
+            return null;
+        }
+        int i = at;
+        if (text[i] is '"' or '\'')
+        {
+            i++;
+        }
+        if (i >= text.Length)
+        {
+            return null;
+        }
+        if (!char.IsAsciiLetter(text[i]) && text[i] != '_')
+        {
+            return false;
+        }
+        while (i < text.Length && (char.IsAsciiLetterOrDigit(text[i]) || text[i] is '_' or '.' or '-'))
+        {
+            i++;
+        }
+        if (i < text.Length && text[i] is '"' or '\'')
+        {
+            i++;
+        }
+        while (i < text.Length && text[i] is ' ' or '\t')
+        {
+            i++;
+        }
+        if (i >= text.Length)
+        {
+            return null;
+        }
+        if (text[i] == '=')
+        {
+            return true;
+        }
+        if (text[i] != ':')
+        {
+            return false;
+        }
+        return i + 1 >= text.Length ? null : text[i + 1] is ' ' or '\t' or '\r' or '\n';
+    }
+
     /// <summary><paramref name="text" /> 前 <paramref name="limit" /> 个字符里的第一个 <c>-----END … PRIVATE KEY-----</c>。</summary>
     private static Match? FirstKeyEnd(string text, int limit)
     {
@@ -578,16 +745,51 @@ public sealed partial class SessionOutputMasker
     /// 分隔符与值之间也允许(jq、bat 给值上色;grep 的高亮把分隔符一起框住时,后面跟的是 <c>ESC[m ESC[K</c>)。值为空的(<c>Password: </c> 提示)不动。
     /// 没收尾的引号串走 <c>open</c> 那一支:停在已收到内容的末尾的,调用方把它当成没完的值扣下;
     /// 停在行尾(<c>\r</c> 或 <c>\n</c>)的,从引号之后遮到行尾 —— 不然扣着的值等到换行就原文放了出去。
+    /// <para>
+    /// 不加引号的值:<c>名字=值</c> 到空白、引号、逗号、分号或控制字符为止(<c>.env</c>、shell、<c>k=v k=v</c> 的日志里空格就是值的边界);
+    /// <c>名字: 值</c>(冒号后面跟着空白,YAML、HTTP 头、<c>kubectl describe</c> 的写法)走 <c>rest</c> 那一支,值里可以有空格,
+    /// 一直到行尾(<c>passphrase: correct horse battery staple</c>)。同一行后面还有别的键时不能把它吃掉,判据是:
+    /// 空白之后紧跟着一个「键」—— 标识符(可带引号)紧跟 <c>=</c>,或紧跟 <c>:</c> 而冒号后面是空白或行尾 —— 或者 YAML 注释的 <c>#</c>,
+    /// 值就停在那段空白之前(紧挨着的逗号、分号留给下一个键)。<c>10:30</c>、<c>C:\x</c>、<c>http://</c> 不算键:
+    /// 前者不是标识符开头,后两者冒号后面不是空白。冒号后面没有空白的(<c>host:~$</c> 这类提示符)仍按到空白为止。
+    /// </para>
+    /// <para>
+    /// 名字也认几个不带口令字样、但值必是机密的键:<c>tls.key</c> 一类以 <c>.key</c> 结尾的(Kubernetes TLS Secret 的私钥)、
+    /// <c>client-key-data</c> 一类 <c>…key-data</c>(kubeconfig)、<c>.dockerconfigjson</c> / <c>.dockercfg</c>(镜像仓库凭据);
+    /// 以及 Docker <c>config.json</c> 里的 <c>"auth"</c>(base64 的 <c>用户:口令</c>)—— 这个词太常见,只认带双引号的名字、
+    /// 值是引号串的那种(<c>exact</c> 组只配引号串的几支),<c>auth: true</c>、<c>"auth": {…}</c> 不动 —— 也不能先配上再丢弃:<c>{"password": …}</c> 会被这个配不上的值整段跳过。
+    /// 名字紧跟在 <c>@</c> 后面的不算:那是 <c>用户@主机</c> 里的主机名(<c>ops@vault-secrets-01:~$</c>)。
+    /// </para>
     /// </summary>
     /// <remarks>
     /// 名字从一串标识符字符的开头算起,先找到第一个关键词、再把整串吃完,两步都是原子的,值的各支也互不重叠 —— 整条是线性的。
     /// 旧写法在关键词前后各挂一个可回溯的 <c>[A-Za-z0-9_.\-]*</c>,4 KB 的 <c>tokentoken…</c> 就能把它拖上半分钟。
     /// 转义过的 JSON 串里,<c>\\\"</c> 与 <c>\\\\</c> 是里层的转义,不算收尾。
     /// 名字前面紧挨着颜色序列(<c>ESC[38;5;203mDB_PASSWORD</c>)不用另认:序列的收尾字节与前面的参数也是名字里允许的字符,一并算进名字,只换值。
+    /// <c>rest</c> 一支按「词 + 空白」一段段吃,每段空白只在后面那个词的开头看一眼是不是键,词与空白都是原子的,也是线性的。
     /// </remarks>
-    [GeneratedRegex("""(?<![A-Za-z0-9_.\-])(?>[A-Za-z0-9_.\-]*?(?:password|passwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential))(?>[A-Za-z0-9_.\-]*)(?:\\?["'])?(?>(?:\x1b\[[0-9;]*[A-Za-z])*[ \t]*)[:=](?>(?:[ \t]|\x1b\[[0-9;]*[A-Za-z])*)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|[^ "',;\x00-\x1f\x7f]+)""",
+    [GeneratedRegex("""(?:(?<![A-Za-z0-9_.\-@])(?>[A-Za-z0-9_.\-]*?(?:password|passwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential|key[_\-]data|\.key|dockerconfigjson|dockercfg))(?>[A-Za-z0-9_.\-]*)|(?<exact>(?<=")auth(?=\\?")))(?:\\?["'])?(?>(?:\x1b\[[0-9;]*[A-Za-z])*[ \t]*)(?:(?<colon>:)|=)(?>(?:\x1b\[[0-9;]*[A-Za-z])*(?:(?<ws>[ \t])(?:[ \t]|\x1b\[[0-9;]*[A-Za-z])*)?)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|(?(exact)(?!)|(?(colon)(?(ws)(?<rest>(?!\\?["'])(?>[^ \t\r\n\x00-\x1f\x7f]+)(?:(?>[ \t]+)(?!\#|["']?[A-Za-z_](?>[A-Za-z0-9_.\-]*)["']?[ \t]*(?::(?=[ \t\r\n])|=))(?>[^ \t\r\n\x00-\x1f\x7f]+))*)|[^ "',;\x00-\x1f\x7f]+)|[^ "',;\x00-\x1f\x7f]+)))""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex KeyValue();
+
+    /// <summary>
+    /// <c>.netrc</c> 写在一行里的条目:<c>machine 主机 login 用户 password 口令</c>(或以 <c>default</c> 起头),
+    /// 值到空白为止。关键词按 netrc 的写法只认小写;<c>password</c> 前面必须有 <c>machine</c> / <c>default</c> 起头、中间至少一个
+    /// <c>login</c> / <c>account</c> / <c>port</c> —— 光凭「password 后跟一个词」会把 <c>[sudo] password for ops:</c> 里的 <c>for</c> 遮掉,
+    /// 不要求 login 的话 <c>the machine room password policy</c> 这种句子也会中。
+    /// </summary>
+    /// <remarks>各段互不重叠、中间那串 login / account / port 是原子的,线性。</remarks>
+    [GeneratedRegex(@"(?<![A-Za-z0-9_])(?:machine[ \t]+[^ \t\r\n]+|default)(?>(?:[ \t]+(?:login|account|port)[ \t]+[^ \t\r\n]+)+)[ \t]+password[ \t]+(?<value>[^ \t\r\n\x00-\x1f\x7f]+)",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex NetrcEntry();
+
+    /// <summary>
+    /// <c>.netrc</c> 分行写的条目里单独的一行 <c>password 口令</c>:只认行首(缩进之后)的小写 <c>password</c>、后面恰好一个词就到行尾。
+    /// 后面还有别的词的(帮助文本里的 <c>password  Set the password</c>)不算;行还没完、停在这个词上或它后面的空白上时,调用方扣下等行尾。
+    /// 只在上下文从行首起的时候用(见 <see cref="_contextAtLineStart" />)。
+    /// </summary>
+    [GeneratedRegex(@"\A[ \t]*password[ \t]+(?<value>[^ \t\r\n\x00-\x1f\x7f]+)[ \t]*(?:\r?\n|\r?\z)", RegexOptions.CultureInvariant)]
+    private static partial Regex NetrcLine();
 
     /// <summary>
     /// <c>Bearer</c> 与带前缀的令牌从哪起头:前面不是 ASCII 字母、数字或下划线(<c>xBearer</c>、<c>my_ghp_…</c> 不算),
@@ -610,12 +812,13 @@ public sealed partial class SessionOutputMasker
     private static partial Regex AuthorizationScheme();
 
     /// <summary>自带前缀、不必看上下文就认得出的令牌;已收到内容的末尾停在一个前缀已齐的令牌里也算,调用方据此扣下。</summary>
-    [GeneratedRegex(TokenStart + @"(?:(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_(?>[A-Za-z0-9]{30,})|xox[abprs]-[A-Za-z0-9\-]{10,}|sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_])|(?:(?:AKIA|ASIA)[0-9A-Z]*|gh[pousr]_[A-Za-z0-9]*|xox[abprs]-[A-Za-z0-9\-]*|sk-[A-Za-z0-9_\-]*)\z)",
+    /// <remarks>GitHub 细粒度令牌 <c>github_pat_…</c> 的正文里有下划线,单列一支。</remarks>
+    [GeneratedRegex(TokenStart + @"(?:(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_(?>[A-Za-z0-9]{30,})|github_pat_(?>[A-Za-z0-9_]{22,})|xox[abprs]-[A-Za-z0-9\-]{10,}|sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_])|(?:(?:AKIA|ASIA)[0-9A-Z]*|gh[pousr]_[A-Za-z0-9]*|github_pat_[A-Za-z0-9_]*|xox[abprs]-[A-Za-z0-9\-]*|sk-[A-Za-z0-9_\-]*)\z)",
         RegexOptions.CultureInvariant)]
     private static partial Regex PrefixedToken();
 
-    /// <summary>PEM 私钥块的开头(<c>begin</c> 组)或结尾。</summary>
-    [GeneratedRegex(@"-----(?:(?<begin>BEGIN)|END) [A-Z0-9 ]*PRIVATE KEY-----", RegexOptions.CultureInvariant)]
+    /// <summary>PEM 私钥块的开头(<c>begin</c> 组)或结尾;OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c> 也算。</summary>
+    [GeneratedRegex(@"-----(?:(?<begin>BEGIN)|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----", RegexOptions.CultureInvariant)]
     private static partial Regex PrivateKeyMarker();
 
     /// <summary>
