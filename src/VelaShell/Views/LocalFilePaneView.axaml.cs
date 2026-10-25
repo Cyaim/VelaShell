@@ -318,12 +318,19 @@ public partial class LocalFilePaneView : UserControl
 
     // ── 放置处理(远端 → 本地) ──────────────────────────────────
 
+    /// <summary>
+    /// 只接远端栏拖过来的行(下载)。从系统文件管理器拖进来的文件给 None:光标不显示「可放下」,松手也什么都不做。
+    /// </summary>
+    /// <remarks>
+    /// 以前这里对系统文件也给 Copy,松手却只刷新一下 —— 显示能放、放了又没复制,这个假承诺比不接更糟。
+    /// 本机文件之间的复制不是这个窗口的本职(系统文件管理器做得更好);真要做,得沿用冲突策略、
+    /// 给目录复制进度与取消,另立一项(维护者 2026-10-25 定:先不显示可放下)。拖进远端栏照旧是上传。
+    /// </remarks>
     private void OnLocalDropDragOver(object? sender, DragEventArgs e)
     {
         bool isRemoteDrag = !string.IsNullOrEmpty(e.DataTransfer.TryGetText())
             && e.DataTransfer.TryGetText()!.StartsWith(DragDropFormats.RemotePaths);
-        bool hasFiles = e.DataTransfer.TryGetFiles()?.Length > 0;
-        e.DragEffects = (isRemoteDrag || hasFiles) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.DragEffects = isRemoteDrag ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
@@ -359,18 +366,7 @@ public partial class LocalFilePaneView : UserControl
                 }
             }
             e.Handled = true;
-            return;
         }
-
-        // 也支持将操作系统文件拖入本地面板(仅刷新)。
-        IStorageItem[]? files = e.DataTransfer.TryGetFiles();
-        if (files is { Length: > 0 })
-        {
-            if (DataContext is LocalFilePaneViewModel vm)
-            {
-                await vm.RefreshAsync();
-            }
-            e.Handled = true;
-        }
+        // 系统文件拖进来不接(见 OnLocalDropDragOver):DragOver 已经给了 None,这里也不做任何事。
     });
 }
