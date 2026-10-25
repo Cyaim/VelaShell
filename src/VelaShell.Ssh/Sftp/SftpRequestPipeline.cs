@@ -385,7 +385,10 @@ internal sealed class SftpRequestPipeline : IAsyncDisposable
         catch (OperationCanceledException)
         {
             // 本端在收工（关闭文件系统、连接释放）：那是中止，不是「服务端不支持 SFTP」。
-            Fault(new SftpUnavailableException(SshFailureReason.Aborted, "SFTP 流水线已收工。"));
+            Fault(new SftpUnavailableException(SshFailureReason.Aborted, "SFTP 流水线已收工。")
+            {
+                FailureKind = SftpUnavailableKind.SessionClosed,
+            });
         }
         catch (Exception ex)
         {
@@ -682,7 +685,11 @@ internal sealed class SftpRequestPipeline : IAsyncDisposable
             // 释放路径不抛。
         }
 
-        Fault(new SftpUnavailableException("SFTP 流水线已释放。"));
+        // 原因码照旧是 Unsupported（公开构造的语义不变）；种类说清这是本端收工，界面不再说成「服务端没开 SFTP」。
+        Fault(new SftpUnavailableException("SFTP 流水线已释放。")
+        {
+            FailureKind = SftpUnavailableKind.SessionClosed,
+        });
 
         if (_receiveLoop is not null)
         {

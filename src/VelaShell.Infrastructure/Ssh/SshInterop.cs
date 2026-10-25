@@ -193,8 +193,25 @@ internal static partial class SshInterop
     }
 
     /// <summary>SFTP 子系统起不来:握手超时、「服务端没开 SFTP」与「sftp-server 没起来就退出了」分开说;别的原因(库内收尾)按原因码。</summary>
+    /// <remarks>
+    /// 版本不对、本端已经收工按库给的种类(<see cref="SftpUnavailableException.FailureKind" />)另说 —— 它们的原因码是
+    /// <see cref="SshFailureReason.Unsupported" /> / <see cref="SshFailureReason.ProtocolError" />,曾经一律说成「服务端没开 SFTP」。
+    /// </remarks>
     internal static string LocalizeUnavailable(SftpUnavailableException ex)
     {
+        string? kindKey = ex.FailureKind switch
+        {
+            SftpUnavailableKind.VersionTooOld => "SftpErr_VersionTooOld",
+            SftpUnavailableKind.VersionTooNew => "SftpErr_VersionTooNew",
+            SftpUnavailableKind.SessionClosed => "SftpErr_SessionClosed",
+            _ => null,
+        };
+        if (kindKey is not null)
+        {
+            string version = ex.ServerVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
+            return $"{Strings.Format(kindKey, version)} [{ex.Reason} @ {ex.Phase}]";
+        }
+
         if (ex.Reason == SshFailureReason.CommandFailed)
         {
             // 退出码与 sftp-server 在 stderr 上说的话都是结构化的(库已按对端文本清洗过),不解析消息句子。
@@ -273,8 +290,22 @@ internal static partial class SshInterop
         {
             text = Strings.Format("SftpErr_ServerSaid", text, PeerText.Sanitize(ex.ServerMessage));
         }
+        if (ex.MissingExtensions.Count > 0)
+        {
+            text = WithMissingExtensions(text, ex);
+        }
         return text;
     }
+
+    /// <summary>
+    /// 服务端缺的扩展(库在没宣告时自己报「不支持」,<see cref="SftpException.MissingExtensions" />)接在句子后面:说出是哪个;
+    /// 覆盖式改名(<see cref="SftpOperation.PosixRename" />,缺的是 posix-rename)另带「先删再改名不是原子的」那句提醒。
+    /// 曾经只在库的消息里,按状态码翻的时候丢了。扩展名是协议常量(本端名单里的),不来自对端。
+    /// </summary>
+    private static string WithMissingExtensions(string text, SftpException ex) =>
+        ex.Operation == SftpOperation.PosixRename
+            ? Strings.Format("SftpErr_MissingPosixRename", text)
+            : Strings.Format("SftpErr_MissingExtension", text, string.Join(" / ", ex.MissingExtensions));
 
     /// <summary>
     /// 私钥读不出来是**认证**失败的一种,而不是连接失败 —— 上层据此弹的是凭据对话框。

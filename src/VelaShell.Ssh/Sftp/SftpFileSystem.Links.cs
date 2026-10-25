@@ -50,7 +50,10 @@ public sealed partial class SftpFileSystem
                 sourcePath,
                 SftpOperation.PosixRename,
                 detail: "这台服务端没有 posix-rename@openssh.com，做不到原子覆盖式重命名。" +
-                        "可以先删除目标再重命名，但那不是原子的 —— 中途失败会两个都没有");
+                        "可以先删除目标再重命名，但那不是原子的 —— 中途失败会两个都没有")
+            {
+                MissingExtensions = [SftpExtensionNames.PosixRename],
+            };
         }
 
         if (overwrite)
@@ -193,7 +196,10 @@ public sealed partial class SftpFileSystem
                 serverMessage: "",
                 linkPath,
                 SftpOperation.CreateHardLink,
-                detail: "这台服务端没有 hardlink@openssh.com");
+                detail: "这台服务端没有 hardlink@openssh.com")
+            {
+                MissingExtensions = [SftpExtensionNames.HardLink],
+            };
         }
 
         using SftpResponse response = await _pipeline.SendAsync(

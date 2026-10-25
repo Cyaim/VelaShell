@@ -675,6 +675,15 @@
   <data name="SftpErr_Unavailable" xml:space="preserve">
     <value>The server&apos;s SFTP subsystem is not available (SFTP may be disabled on the server).</value>
   </data>
+  <data name="SftpErr_VersionTooOld" xml:space="preserve">
+    <value>The server only supports SFTP v{0}; at least v3 is required.</value>
+  </data>
+  <data name="SftpErr_VersionTooNew" xml:space="preserve">
+    <value>The server answered with SFTP v{0} although v3 was offered; it should answer with the lower of the two. Reading a newer protocol as v3 would misread file attributes, so the session was not used.</value>
+  </data>
+  <data name="SftpErr_SessionClosed" xml:space="preserve">
+    <value>The SFTP session has already been closed on this side.</value>
+  </data>
   <data name="SftpErr_ServerExited" xml:space="preserve">
     <value>The server&apos;s sftp-server exited before SFTP could start (exit status {0})</value>
   </data>
@@ -7134,6 +7143,12 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="SftpErr_ServerSaid" xml:space="preserve">
     <value>{0}. Server said: {1}</value>
+  </data>
+  <data name="SftpErr_MissingExtension" xml:space="preserve">
+    <value>{0}. The server does not provide the {1} extension.</value>
+  </data>
+  <data name="SftpErr_MissingPosixRename" xml:space="preserve">
+    <value>{0}. The server lacks posix-rename@openssh.com, so the target cannot be replaced atomically. Deleting the target first and then renaming works, but is not atomic: a failure in between leaves neither file.</value>
   </data>
   <data name="Profile_AgentAuth" xml:space="preserve">
     <value>Agent</value>

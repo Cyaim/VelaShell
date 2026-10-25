@@ -1249,6 +1249,15 @@
   <data name="SftpErr_Unavailable" xml:space="preserve">
     <value>서버의 SFTP 하위 시스템을 사용할 수 없습니다(서버에서 SFTP가 비활성화되어 있을 수 있습니다).</value>
   </data>
+  <data name="SftpErr_VersionTooOld" xml:space="preserve">
+    <value>서버가 SFTP v{0}만 지원합니다. 최소 v3이 필요합니다.</value>
+  </data>
+  <data name="SftpErr_VersionTooNew" xml:space="preserve">
+    <value>v3을 제시했는데 서버가 SFTP v{0}(으)로 응답했습니다(둘 중 낮은 버전으로 응답해야 합니다). 더 높은 버전을 v3으로 해석하면 파일 속성을 잘못 읽으므로 이 세션을 쓰지 않았습니다.</value>
+  </data>
+  <data name="SftpErr_SessionClosed" xml:space="preserve">
+    <value>SFTP 세션이 이쪽에서 이미 닫혔습니다.</value>
+  </data>
   <data name="SftpErr_ServerExited" xml:space="preserve">
     <value>서버의 sftp-server가 SFTP 시작 전에 종료되었습니다(종료 코드 {0})</value>
   </data>
@@ -7129,6 +7138,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="SftpErr_ServerSaid" xml:space="preserve">
     <value>{0}. 서버 응답: {1}</value>
+  </data>
+  <data name="SftpErr_MissingExtension" xml:space="preserve">
+    <value>{0}. 서버에 {1} 확장이 없습니다.</value>
+  </data>
+  <data name="SftpErr_MissingPosixRename" xml:space="preserve">
+    <value>{0}. 서버에 posix-rename@openssh.com이 없어 대상을 원자적으로 덮어쓰며 이름을 바꿀 수 없습니다. 대상을 먼저 지우고 이름을 바꿀 수는 있지만 원자적이지 않아 도중에 실패하면 둘 다 없어집니다.</value>
   </data>
   <data name="Profile_AgentAuth" xml:space="preserve">
     <value>에이전트</value>

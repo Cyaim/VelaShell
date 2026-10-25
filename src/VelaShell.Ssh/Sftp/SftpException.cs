@@ -72,6 +72,16 @@ public sealed class SftpException : SshException
     /// <summary>出问题的操作。</summary>
     public SftpOperation Operation { get; }
 
+    /// <summary>
+    /// 服务端缺的扩展（扩展名，如 <c>statvfs@openssh.com</c>，与 <see cref="SftpCapabilities.RawExtensions"/> 的键同一套）：本库在服务端没宣告某个扩展时自己报
+    /// <see cref="SftpStatusCode.OperationUnsupported"/>，消息里那段说明在这里有结构化的出处。不是这种情形时为空。
+    /// </summary>
+    /// <remarks>
+    /// 曾经只活在消息里（<see cref="ServerMessage"/> 照规矩只装服务端的原话、是空串），宿主按状态码翻成「不支持这个操作」时把它丢了 ——
+    /// 用户看不出缺的是哪个扩展。覆盖式改名（<see cref="SftpOperation.PosixRename"/>）缺 <c>posix-rename@openssh.com</c> 时消息里还有「先删再改名不是原子的」那句提醒。
+    /// </remarks>
+    public IReadOnlyList<string> MissingExtensions { get; init; } = [];
+
     /// <summary>是不是「文件不存在」。</summary>
     public bool IsNotFound => StatusCode is SftpStatusCode.NoSuchFile or SftpStatusCode.NoSuchPath;
 

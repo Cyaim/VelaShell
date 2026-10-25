@@ -1249,6 +1249,15 @@
   <data name="SftpErr_Unavailable" xml:space="preserve">
     <value>サーバーの SFTP サブシステムを利用できません(サーバーで SFTP が無効になっている可能性があります)。</value>
   </data>
+  <data name="SftpErr_VersionTooOld" xml:space="preserve">
+    <value>サーバーは SFTP v{0} までしか対応していません(v3 以上が必要です)。</value>
+  </data>
+  <data name="SftpErr_VersionTooNew" xml:space="preserve">
+    <value>v3 を提示したのに、サーバーは SFTP v{0} で応答しました(低い方で応答すべきです)。新しいプロトコルを v3 として解釈するとファイル属性を読み違えるため、このセッションは使いませんでした。</value>
+  </data>
+  <data name="SftpErr_SessionClosed" xml:space="preserve">
+    <value>SFTP セッションはこちら側で既に閉じられています。</value>
+  </data>
   <data name="SftpErr_ServerExited" xml:space="preserve">
     <value>サーバーの sftp-server が SFTP の開始前に終了しました(終了コード {0})</value>
   </data>
@@ -7129,6 +7138,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="SftpErr_ServerSaid" xml:space="preserve">
     <value>{0}。サーバーの応答: {1}</value>
+  </data>
+  <data name="SftpErr_MissingExtension" xml:space="preserve">
+    <value>{0}。サーバーに {1} 拡張がありません。</value>
+  </data>
+  <data name="SftpErr_MissingPosixRename" xml:space="preserve">
+    <value>{0}。サーバーに posix-rename@openssh.com がないため、上書きの名前変更をアトミックに行えません。先に対象を削除してから名前を変える方法もありますが、アトミックではなく、途中で失敗すると両方とも失われます。</value>
   </data>
   <data name="Profile_AgentAuth" xml:space="preserve">
     <value>エージェント</value>

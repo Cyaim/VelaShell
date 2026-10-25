@@ -83,7 +83,10 @@ public sealed partial class SftpFileSystem
                 serverMessage: "",
                 path,
                 SftpOperation.SetAttributes,
-                detail: "这台服务端没有 lsetstat@openssh.com");
+                detail: "这台服务端没有 lsetstat@openssh.com")
+            {
+                MissingExtensions = [SftpExtensionNames.LSetStat],
+            };
         }
 
         using SftpResponse response = await _pipeline.SendAsync(

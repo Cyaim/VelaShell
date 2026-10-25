@@ -729,6 +729,15 @@
   <data name="SftpErr_Unavailable" xml:space="preserve">
     <value>伺服器的 SFTP 子系統無法使用(伺服器可能沒有啟用 SFTP)。</value>
   </data>
+  <data name="SftpErr_VersionTooOld" xml:space="preserve">
+    <value>伺服器只支援 SFTP v{0},至少需要 v3。</value>
+  </data>
+  <data name="SftpErr_VersionTooNew" xml:space="preserve">
+    <value>伺服器回應的 SFTP 版本是 v{0},而我們提供的是 v3 —— 它應當回應兩者中較小的那個。按 v3 去解析更高的版本會把檔案屬性讀錯,所以沒有使用這個工作階段。</value>
+  </data>
+  <data name="SftpErr_SessionClosed" xml:space="preserve">
+    <value>SFTP 工作階段已在本端關閉。</value>
+  </data>
   <data name="SftpErr_ServerExited" xml:space="preserve">
     <value>伺服器的 sftp-server 沒等 SFTP 建立就結束了(結束代碼 {0})</value>
   </data>
@@ -7606,6 +7615,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="SftpErr_ServerSaid" xml:space="preserve">
     <value>{0}。伺服器表示:{1}</value>
+  </data>
+  <data name="SftpErr_MissingExtension" xml:space="preserve">
+    <value>{0}。這台伺服器沒有 {1} 擴充。</value>
+  </data>
+  <data name="SftpErr_MissingPosixRename" xml:space="preserve">
+    <value>{0}。這台伺服器沒有 posix-rename@openssh.com,做不到原子性的覆蓋式重新命名。可以先刪除目標再重新命名,但那不是原子操作 —— 中途失敗會兩個都沒有。</value>
   </data>
   <data name="Profile_AgentAuth" xml:space="preserve">
     <value>Agent</value>

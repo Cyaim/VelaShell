@@ -10,6 +10,7 @@ using VelaShell.Ssh.Diagnostics;
 using VelaShell.Ssh.Forwarding;
 using VelaShell.Ssh.HostKeys;
 using VelaShell.Ssh.Keys;
+using VelaShell.Ssh.Sftp;
 
 namespace VelaShell.Core.Tests.Ssh;
 
@@ -129,7 +130,65 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
             "SshErr_AuthAttemptLine", "SshErr_AuthAttemptLineDetail", "SshErr_AuthNoAttempts", "SshErr_AuthLabelProbe",
             "SshErr_AuthLabelViaKbd", "SshErr_AuthLabelAlgorithm", "SshErr_AuthDetailJoin", "SshErr_ChanSftpSubsystemRejected",
             "SshErr_PeerSaid", "SshErr_KeyOrigin", "SshErr_ProxyCommandSaid", "SshErr_RekeyFailed",
+            "SftpErr_VersionTooOld", "SftpErr_VersionTooNew", "SftpErr_SessionClosed", "SftpErr_MissingExtension", "SftpErr_MissingPosixRename",
         }.Select(static k => (k, (string?)k)));
+
+    /// <summary>
+    /// SFTP 起不来的每一种(<see cref="SftpUnavailableKind" />)在英文界面下都有界面语言的说法,没有一种透传库的中文。
+    /// 曾经「版本太低」「流水线已释放」都显示成「服务端没开 SFTP」。
+    /// </summary>
+    [TestMethod]
+    public void 英文界面下每一种SFTP起不来都不透传中文()
+    {
+        UseEnglish();
+        foreach (SftpUnavailableKind kind in Enum.GetValues<SftpUnavailableKind>().Where(static k => k != SftpUnavailableKind.Unknown))
+        {
+            SftpUnavailableException ex = new("中文原文") { FailureKind = kind, ServerVersion = 2, ServerExitStatus = 127 };
+            AssertNoChinese(kind.ToString(), SshInterop.LocalizeUnavailable(ex));
+        }
+    }
+
+    [TestMethod]
+    public void SFTP起不来按种类说()
+    {
+        Assert.AreEqual($"{Strings.Format("SftpErr_VersionTooOld", "2")} [Unsupported @ Open]",
+            SshInterop.LocalizeUnavailable(new SftpUnavailableException("服务端只支持 SFTP v2。")
+            {
+                FailureKind = SftpUnavailableKind.VersionTooOld,
+                ServerVersion = 2,
+            }));
+        Assert.AreEqual($"{Strings.Get("SftpErr_SessionClosed")} [Unsupported @ Open]",
+            SshInterop.LocalizeUnavailable(new SftpUnavailableException("SFTP 流水线已释放。") { FailureKind = SftpUnavailableKind.SessionClosed }),
+            "本端收工,不说成服务端没开 SFTP");
+        Assert.StartsWith(Strings.Get("SftpErr_Unavailable"),
+            SshInterop.LocalizeUnavailable(new SftpUnavailableException("x") { FailureKind = SftpUnavailableKind.SubsystemRejected }));
+    }
+
+    /// <summary>服务端缺扩展(库自己报的「不支持」):说出缺的是哪个;缺 posix-rename 时带上「先删再改名不是原子的」。</summary>
+    [TestMethod]
+    public void SFTP缺扩展时说出是哪一个()
+    {
+        SftpException statvfs = new(SftpStatusCode.OperationUnsupported, "", "/data", SftpOperation.GetFileSystemInfo)
+        {
+            MissingExtensions = ["statvfs@openssh.com"],
+        };
+        Assert.AreEqual(
+            Strings.Format("SftpErr_MissingExtension",
+                Strings.Format("SftpErr_WithPath", Strings.Get("SftpErr_Unsupported"), "/data"), "statvfs@openssh.com"),
+            SshInterop.LocalizeSftp(statvfs));
+
+        SftpException rename = new(SftpStatusCode.OperationUnsupported, "", "/a", SftpOperation.PosixRename)
+        {
+            MissingExtensions = ["posix-rename@openssh.com"],
+        };
+        Assert.AreEqual(
+            Strings.Format("SftpErr_MissingPosixRename", Strings.Format("SftpErr_WithPath", Strings.Get("SftpErr_Unsupported"), "/a")),
+            SshInterop.LocalizeSftp(rename));
+
+        // 服务端自己回的「不支持」没有这一段。
+        Assert.AreEqual(Strings.Get("SftpErr_Unsupported"),
+            SshInterop.LocalizeSftp(new SftpException(SftpStatusCode.OperationUnsupported, "")));
+    }
 
     /// <summary>每个种类都映射到了键;键在五份 resx 里都有、不是空的,占位符与英文一致。</summary>
     private static void AssertKeys(IEnumerable<(string What, string? Key)> mappings)

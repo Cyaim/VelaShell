@@ -230,7 +230,10 @@ public sealed partial class SftpFileSystem : IAsyncDisposable
             throw new SftpUnavailableException(
                 "服务端没有提供 sftp 子系统。常见原因是 sshd_config 里缺少或注释掉了 " +
                 "「Subsystem sftp ...」那一行。（本库不会自动改用「exec sftp-server」绕开它 —— " +
-                "那等于绕过管理员的配置。）", ex);
+                "那等于绕过管理员的配置。）", ex)
+            {
+                FailureKind = SftpUnavailableKind.SubsystemRejected,
+            };
         }
 
         SftpRequestPipeline pipeline;
@@ -264,7 +267,10 @@ public sealed partial class SftpFileSystem : IAsyncDisposable
             throw new SftpUnavailableException(
                 SshFailureReason.Timeout,
                 $"SFTP 握手在 {effective.HandshakeTimeout.TotalSeconds:0} 秒内没有完成：sftp-server 没有回应。" +
-                "常见原因是服务端登录 shell 的启动文件卡住了（等输入、挂在一个连不上的网络盘上）。", ex);
+                "常见原因是服务端登录 shell 的启动文件卡住了（等输入、挂在一个连不上的网络盘上）。", ex)
+            {
+                FailureKind = SftpUnavailableKind.HandshakeTimeout,
+            };
         }
         catch (SftpTransferInterruptedException ex) when (!versionReceived && connection.CloseReason is null && !cancellationToken.IsCancellationRequested)
         {
@@ -318,6 +324,7 @@ public sealed partial class SftpFileSystem : IAsyncDisposable
         {
             ServerExitStatus = exit.ExitCode,
             ServerErrorOutput = stderr,
+            FailureKind = SftpUnavailableKind.ServerExited,
         };
     }
 
@@ -337,7 +344,11 @@ public sealed partial class SftpFileSystem : IAsyncDisposable
         {
             // v0–v2 与 v3 的差异过大（没有 ATTRS 的部分字段、没有 handle 语义保证）。
             throw new SftpUnavailableException(
-                $"服务端只支持 SFTP v{version}，本库要求至少 v{SftpProtocol.Version}。");
+                $"服务端只支持 SFTP v{version}，本库要求至少 v{SftpProtocol.Version}。")
+            {
+                FailureKind = SftpUnavailableKind.VersionTooOld,
+                ServerVersion = version,
+            };
         }
 
         if (version > SftpProtocol.Version)
@@ -348,7 +359,11 @@ public sealed partial class SftpFileSystem : IAsyncDisposable
             throw new SftpUnavailableException(
                 SshFailureReason.ProtocolError,
                 $"服务端回的 SFTP 版本是 v{version}：按 draft-02 §4 它应当回双方版本里较小的那个（我们发的是 v{SftpProtocol.Version}）。" +
-                "按 v3 去解析一个说更高版本的服务端会把文件属性读错，所以不连。");
+                "按 v3 去解析一个说更高版本的服务端会把文件属性读错，所以不连。")
+            {
+                FailureKind = SftpUnavailableKind.VersionTooNew,
+                ServerVersion = version,
+            };
         }
 
         return new SftpCapabilities(version, extensions);

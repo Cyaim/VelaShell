@@ -260,7 +260,9 @@ public sealed class SftpTests
         SftpUnavailableException error = await Assert.ThrowsExactlyAsync<SftpUnavailableException>(
             async () => await Harness.StartAsync(sftpOptions: new TestSftpOptions { Version = 2 }));
 
-        Assert.Contains("v2", error.Message);
+        Assert.AreEqual("服务端只支持 SFTP v2，本库要求至少 v3。", error.Message);
+        Assert.AreEqual(SftpUnavailableKind.VersionTooOld, error.FailureKind, "界面据此不再说成「服务端没开 SFTP」");
+        Assert.AreEqual(2u, error.ServerVersion);
     }
 
     [TestMethod]
@@ -410,6 +412,7 @@ public sealed class SftpTests
             async () => await Harness.StartAsync(channelScript: script => script with { RejectCommand = true }));
 
         Assert.Contains("Subsystem", error.Message);
+        Assert.AreEqual(SftpUnavailableKind.SubsystemRejected, error.FailureKind);
     }
 
     [TestMethod]
@@ -435,6 +438,8 @@ public sealed class SftpTests
 
         Assert.AreEqual(SshFailureReason.ProtocolError, error.Reason);
         Assert.Contains("v6", error.Message);
+        Assert.AreEqual(SftpUnavailableKind.VersionTooNew, error.FailureKind);
+        Assert.AreEqual(6u, error.ServerVersion);
     }
 
     // ------------------------------------------------------------ 读写
@@ -940,7 +945,9 @@ public sealed class SftpTests
 
         await harness.DisposeAsync();
 
-        Assert.IsInstanceOfType<SftpUnavailableException>(await closed.WaitAsync(TimeSpan.FromSeconds(10)));
+        Exception ended = await closed.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.IsInstanceOfType<SftpUnavailableException>(ended);
+        Assert.AreEqual(SftpUnavailableKind.SessionClosed, ((SftpUnavailableException)ended).FailureKind, "本端收工，不是服务端没开 SFTP");
         Assert.IsFalse(harness.Sftp.IsConnected);
     }
 
@@ -1666,6 +1673,7 @@ public sealed class SftpTests
                 "/home/joe/hard.txt", "/home/joe/orig.txt", harness.Token));
 
         Assert.IsTrue(error.IsUnsupported);
+        Assert.AreSequenceEqual(new[] { SftpExtensionNames.HardLink }, error.MissingExtensions.ToArray());
     }
 
     // ------------------------------------------------------------ uid / gid 翻成名字
@@ -1705,6 +1713,7 @@ public sealed class SftpTests
         SftpException error = await Assert.ThrowsExactlyAsync<SftpException>(async () =>
             await harness.Sftp.LookupUserAndGroupNamesAsync([0], [0], harness.Token));
         Assert.IsTrue(error.IsUnsupported);
+        Assert.AreSequenceEqual(new[] { SftpExtensionNames.UsersGroupsById }, error.MissingExtensions.ToArray());
 
         uint[] tooMany = [.. Enumerable.Range(0, SftpFileSystem.MaxIdsPerLookup + 1).Select(i => (uint)i)];
         await Assert.ThrowsExactlyAsync<ArgumentException>(async () =>
@@ -1764,6 +1773,7 @@ public sealed class SftpTests
             await harness.Sftp.CopyFileAsync("/home/joe/src.txt", "/home/joe/dst.txt", cancellationToken: harness.Token));
 
         Assert.IsTrue(error.IsUnsupported);
+        Assert.AreSequenceEqual(new[] { SftpExtensionNames.CopyData }, error.MissingExtensions.ToArray());
         Assert.IsFalse(await harness.Sftp.ExistsAsync("/home/joe/dst.txt", harness.Token));
     }
 
@@ -1826,6 +1836,7 @@ public sealed class SftpTests
             await harness.Sftp.SetLinkAttributesAsync("/home/joe/link", SftpFileAttributes.WithPermissions(0x1FF), harness.Token));
 
         Assert.IsTrue(error.IsUnsupported);
+        Assert.AreSequenceEqual(new[] { SftpExtensionNames.LSetStat }, error.MissingExtensions.ToArray());
     }
 
     // ------------------------------------------------------------ 展开 ~
@@ -1871,6 +1882,7 @@ public sealed class SftpTests
             async () => await harness.Sftp.ExpandPathAsync("~alice", harness.Token));
         Assert.IsTrue(error.IsUnsupported);
         Assert.AreEqual(SftpOperation.ExpandPath, error.Operation);
+        Assert.AreSequenceEqual(new[] { SftpExtensionNames.ExpandPath, SftpExtensionNames.HomeDirectory }, error.MissingExtensions.ToArray());
     }
 
     // ------------------------------------------------------------ 文件系统用量
@@ -1906,6 +1918,8 @@ public sealed class SftpTests
 
         Assert.IsTrue(error.IsUnsupported);
         Assert.AreEqual(SftpOperation.GetFileSystemInfo, error.Operation);
+        Assert.AreSequenceEqual(new[] { SftpExtensionNames.StatVfs }, error.MissingExtensions.ToArray());
+        Assert.AreEqual("", error.ServerMessage, "服务端没说话：说明不进 ServerMessage");
     }
 
     [TestMethod]
@@ -1967,6 +1981,7 @@ public sealed class SftpTests
         // 「先删再改名」不是原子的 —— 中途失败会两个都没有。
         Assert.IsTrue(error.IsUnsupported);
         Assert.Contains("不是原子的", error.Message);
+        Assert.AreSequenceEqual(new[] { SftpExtensionNames.PosixRename }, error.MissingExtensions.ToArray());
         Assert.IsFalse(harness.Sftp.Capabilities.HasPosixRename);
     }
 
