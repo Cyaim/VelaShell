@@ -641,6 +641,14 @@
                                  Foreground="{DynamicResource VelaTextTertiary}" />
                 </MenuItem.Icon>
               </MenuItem>
+              <!-- 开一个连同一配置的终端标签,cd 进当前目录;只在 SSH 会话的面板上出现(SFTP 专用配置、FTP、插件协议没有 shell)。 -->
+              <MenuItem Header="{loc:Localize Sftp_OpenTerminalHere}" Command="{Binding OpenTerminalHereCommand}"
+                        IsVisible="{Binding CanOpenTerminalHere}">
+                <MenuItem.Icon>
+                  <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.terminal}"
+                                 Foreground="{DynamicResource VelaTextTertiary}" />
+                </MenuItem.Icon>
+              </MenuItem>
               <Separator />
               <!-- 文件与文件夹合并为一个入口:选择器可混选,文件夹整棵传、文件直接传。 -->
               <MenuItem Header="{loc:Localize UploadHere}" Command="{Binding UploadCommand}">
@@ -729,6 +737,22 @@
                         </MenuItem.IsVisible>
                         <MenuItem.Icon>
                           <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.search}"
+                                         Foreground="{DynamicResource VelaTextTertiary}" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                      <!-- 在这个目录里开终端(cd 进它);只对目录、只在 SSH 会话的面板上出现。 -->
+                      <MenuItem Header="{loc:Localize Sftp_OpenTerminalHere}"
+                                Command="{Binding $parent[ListBox].((vm:FileBrowserViewModel)DataContext).OpenTerminalHereCommand}"
+                                CommandParameter="{Binding FullPath}">
+                        <MenuItem.IsVisible>
+                          <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="IsDirectory" />
+                            <Binding Path="!IsParentEntry" />
+                            <Binding Path="$parent[ListBox].((vm:FileBrowserViewModel)DataContext).CanOpenTerminalHere" />
+                          </MultiBinding>
+                        </MenuItem.IsVisible>
+                        <MenuItem.Icon>
+                          <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.terminal}"
                                          Foreground="{DynamicResource VelaTextTertiary}" />
                         </MenuItem.Icon>
                       </MenuItem>

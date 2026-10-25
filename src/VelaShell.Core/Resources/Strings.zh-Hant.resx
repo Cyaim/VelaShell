@@ -978,6 +978,9 @@
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>在此目錄中搜尋…</value>
   </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>在此處開啟終端機</value>
+  </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>搜尋遠端檔案</value>
   </data>

@@ -978,6 +978,9 @@
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>在此目录中搜索…</value>
   </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>在此处打开终端</value>
+  </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>搜索远端文件</value>
   </data>

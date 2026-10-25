@@ -1646,6 +1646,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             browser.OnTerminalWorkingDirectoryChanged(cwd);
         }
         tab.WorkingDirectoryChanged += browser.OnTerminalWorkingDirectoryChanged;
+        // 右键「在此处打开终端」:终端侧栏的面板挂在 SSH 会话上(插件终端与本地 shell 前面已经排除了)。
+        WireOpenTerminalHere(browser, () => tab.Profile);
 
         _fileBrowserCache[tab.SessionId] = browser;
         FileBrowser = browser;
@@ -4047,7 +4049,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// </remarks>
     private static void SendStartupDirectory(TerminalTabViewModel tab, SessionProfile profile)
     {
-        if (SessionTerminalSettings.StartupDirectory(profile) is not { } directory)
+        // 文件栏「在此处打开终端」开出来的标签有自己的目录,压过配置里的初始目录(见 OpenTerminalHereAsync)。
+        if ((tab.StartupDirectoryOverride ?? SessionTerminalSettings.StartupDirectory(profile)) is not { } directory)
         {
             return;
         }
@@ -4490,10 +4493,48 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <param name="tabTitle">标签页标题;null 或空白 = 按配置起名。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>终端标签(终端类连接),或 null(文档类连接、取消、失败撤标签)。</returns>
-    public async Task<TerminalTabViewModel?> TryConnectProfileAsync(
+    public Task<TerminalTabViewModel?> TryConnectProfileAsync(
         SessionProfile profile,
         string? tabTitle,
         CancellationToken cancellationToken = default
+    ) =>
+        TryConnectProfileCoreAsync(profile, tabTitle, startupDirectory: null, cancellationToken);
+
+    /// <summary>
+    /// 文件栏右键「在此处打开终端」(维护者 2026-10-25 定,只对 SSH 会话):开一个连同一配置的终端标签,
+    /// 认证后 <c>cd</c> 进 <paramref name="remoteDirectory" />。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>cd</c> 走认证后命令那一条路(<see cref="SendStartupDirectory" />,单引号转义),与配置里的「初始目录」、
+    /// 跟随终端目录的钩子共用同一套静默注入与防回显 —— 用户屏幕上不会多出一行没敲过的命令,
+    /// 带空格、带引号的目录名也不会变成两个参数或一条注入。它压过配置里的初始目录,只挂在这个标签上,不写进配置。
+    /// </para>
+    /// <para>
+    /// 连接本身就是普通的「打开这条配置」:凭据缺了照样弹登录框,认证失败照样原地重试,与双击资源管理器里那一条一样;
+    /// 传进来的是文件栏手里那份配置(登录框交回的副本),刚输过却没让记住的密码不用再输一遍。
+    /// </para>
+    /// </remarks>
+    /// <param name="profile">文件栏所连的那条配置(连接类型须是 SSH,否则没有 shell 可开)。</param>
+    /// <param name="remoteDirectory">远端绝对路径。</param>
+    internal Task<TerminalTabViewModel?> OpenTerminalHereAsync(SessionProfile profile, string remoteDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentException.ThrowIfNullOrWhiteSpace(remoteDirectory);
+        return profile.ConnectionType == ConnectionType.SSH
+            ? TryConnectProfileCoreAsync(profile, tabTitle: null, remoteDirectory, CancellationToken.None)
+            : Task.FromResult<TerminalTabViewModel?>(null);
+    }
+
+    /// <param name="profile">连接配置。</param>
+    /// <param name="tabTitle">标签页标题;null 或空白 = 按配置起名。</param>
+    /// <param name="startupDirectory">认证后先 cd 进去的目录(见 <see cref="OpenTerminalHereAsync" />);null = 按配置。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    private async Task<TerminalTabViewModel?> TryConnectProfileCoreAsync(
+        SessionProfile profile,
+        string? tabTitle,
+        string? startupDirectory,
+        CancellationToken cancellationToken
     )
     {
         tabTitle = string.IsNullOrWhiteSpace(tabTitle) ? null : tabTitle;
@@ -4580,6 +4621,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             if (tab is null)
             {
                 (tab, document) = CreateConnectingTab(current, settings, tabTitle: tabTitle);
+                tab.StartupDirectoryOverride = startupDirectory;
             }
             else
             {
@@ -4855,6 +4897,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         WireDocumentPanesToSettings(sshViewModel);
         // 远端搜索走这条 SSH 连接的 exec 通道(FTP 与插件协议的文档没有,不挂)。
         sshViewModel.RemoteFiles.RemoteSearch = _remoteSearch;
+        SessionProfile terminalProfile = connection.Profile;
+        WireOpenTerminalHere(sshViewModel.RemoteFiles, () => terminalProfile);
         var document = new SftpDocument(sshViewModel);
         if (tabTitle is not null)
         {
@@ -5284,6 +5328,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             // 两栏各自判断:是 SSH 会话的那一栏才出现「搜索」(见 FileBrowserViewModel.CanSearchRemote)。
             dualViewModel.LeftFiles.RemoteSearch = _remoteSearch;
             dualViewModel.RightFiles.RemoteSearch = _remoteSearch;
+            WireOpenTerminalHere(dualViewModel.LeftFiles, () => dualViewModel.LeftProfile);
+            WireOpenTerminalHere(dualViewModel.RightFiles, () => dualViewModel.RightProfile);
             var document = new DualSftpDocument(dualViewModel);
             ui.HandOver(document);
             // 树上两条配置各自点亮(登记用原始配置的 Id,理由见 TrackDocumentSession)。
@@ -6684,6 +6730,19 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 在文件标签里切了,也不留到下次。
     /// 初始值由文档视图模型按打开时的设置铺好(<see cref="FileBrowserViewModel.ApplyDisplayOptions" />),这里只挂回调。
     /// </summary>
+    /// <summary>
+    /// 给文件栏挂上右键「在此处打开终端」(见 <see cref="OpenTerminalHereAsync" />),只给连接类型为 SSH 的配置:
+    /// SFTP 专用配置多半就是没有 shell 的账号,FTP 与插件协议更没有。配置在点的那一刻现取 ——
+    /// 终端标签认证重试之后换上的是登录框交回的新副本。
+    /// </summary>
+    private void WireOpenTerminalHere(FileBrowserViewModel pane, Func<SessionProfile?> profile)
+    {
+        if (profile() is { ConnectionType: ConnectionType.SSH })
+        {
+            pane.OpenTerminalAt = directory => profile() is { } current ? OpenTerminalHereAsync(current, directory) : Task.CompletedTask;
+        }
+    }
+
     private void WireDocumentPanesToSettings(ISftpDocumentContent content)
     {
         foreach (FileBrowserViewModel pane in content.RemotePanes)

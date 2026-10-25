@@ -5680,6 +5680,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>このフォルダーで検索…</value>
   </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>ここでターミナルを開く</value>
+  </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>リモートファイルの検索</value>
   </data>

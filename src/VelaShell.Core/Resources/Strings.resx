@@ -925,6 +925,9 @@
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>Search in this folder…</value>
   </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>Open terminal here</value>
+  </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>Search remote files</value>
   </data>

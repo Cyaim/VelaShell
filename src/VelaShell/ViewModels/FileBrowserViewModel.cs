@@ -148,6 +148,8 @@ public class FileBrowserViewModel : ReactiveObject
         ShowTransfersCommand = ReactiveCommand.Create(() => TransferSink?.ShowPanel());
         OpenRemoteSearchCommand = ReactiveCommand.CreateFromTask<string?>(
             root => CanSearchRemote && ShowRemoteSearch is { } show ? show(root) : Task.CompletedTask);
+        OpenTerminalHereCommand = ReactiveCommand.CreateFromTask<string?>(
+            directory => OpenTerminalAt is { } open ? open(directory ?? CurrentPath) : Task.CompletedTask);
         ToggleVisibilityCommand = ReactiveCommand.Create(ToggleVisibility);
         ToggleHiddenFilesCommand = ReactiveCommand.Create(() =>
         {
@@ -364,6 +366,26 @@ public class FileBrowserViewModel : ReactiveObject
 
     /// <summary>由视图提供:打开(或提到前面)本面板的搜索窗口;参数是起点目录,null = 当前目录。</summary>
     public Func<string?, Task>? ShowRemoteSearch { get; set; }
+
+    /// <summary>
+    /// 由宿主在 SSH 会话(连接类型为 SSH 的配置)的面板上挂:开一个连同一配置的终端标签,认证后 cd 进参数给的远端目录。
+    /// SFTP 专用配置、FTP、插件协议的面板不挂 —— 那里没有 shell 可开,右键里也就没有这一项。
+    /// </summary>
+    public Func<string, Task>? OpenTerminalAt
+    {
+        get;
+        set
+        {
+            field = value;
+            this.RaisePropertyChanged(nameof(CanOpenTerminalHere));
+        }
+    }
+
+    /// <summary>右键菜单里的「在此处打开终端」是否出现。</summary>
+    public bool CanOpenTerminalHere => OpenTerminalAt is not null;
+
+    /// <summary>「在此处打开终端」;参数是目录(目录行的右键菜单传它自己),null = 当前目录(空白处右键)。</summary>
+    public ReactiveCommand<string?, RxVoid> OpenTerminalHereCommand { get; }
 
     /// <summary>
     /// 定位到一个远端条目之后触发(参数是已选中的那一行),视图据此把它滚进可见区。

@@ -5680,6 +5680,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>이 폴더에서 검색…</value>
   </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>여기서 터미널 열기</value>
+  </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>원격 파일 검색</value>
   </data>
