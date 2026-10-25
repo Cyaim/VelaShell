@@ -291,6 +291,9 @@ public class SftpService : ISftpService
                 LocalStreamBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             localStream.SetLength(resumeOffset);
             localStream.Seek(resumeOffset, SeekOrigin.Begin);
+            // 限速与整份下载同一个做法:包住本地写流。续传这条路是自己搬字节、不经 client.DownloadAsync,
+            // 原先漏了这一层,开着带宽限制时一续传就不限速了。包装流不持有资源,不必单独释放(本地流由上面的 await using 关)。
+            Stream sink = downloadBps > 0 ? new ThrottledStream(localStream, downloadBps) : localStream;
             // 从偏移处分块拷贝下载远端内容。远端流用 await using:同步 Dispose 会阻塞在网络关闭上。
             await using Stream remoteStream = await client.OpenAsync(remotePath, FileMode.Open, FileAccess.Read, cancellationToken).ConfigureAwait(false);
             remoteStream.Seek(resumeOffset, SeekOrigin.Begin);
@@ -305,7 +308,7 @@ public class SftpService : ISftpService
                 int read;
                 while ((read = await remoteStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
                 {
-                    await localStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    await sink.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                     bytesRead += read;
                     reporter.Report(resumeOffset + bytesRead);
                 }

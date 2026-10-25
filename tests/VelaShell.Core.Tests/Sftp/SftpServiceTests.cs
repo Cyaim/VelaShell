@@ -1805,6 +1805,51 @@ public class SftpServiceTests
         }
     }
 
+    /// <summary>
+    /// 续传下载同样受「带宽限制」管。续传这条路自己从远端流搬字节,不经 <c>client.DownloadAsync</c>,
+    /// 原先漏包限速流:开着 1 MB/s 的限制,一续传就按链路全速跑。
+    /// </summary>
+    /// <remarks>
+    /// 只断言下界:续传部分比 1 MiB 多一点,按 1 MiB/s 整形至少要等将近一秒;不限速时内存流一下就拷完。
+    /// 机器忙只会让它更慢,不会让它误绿。
+    /// </remarks>
+    [TestMethod]
+    public async Task DownloadFileAsync_ResumeHonoursTheDownloadBandwidthLimit()
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            Transfer = { PreserveTimestamps = false, BandwidthLimitEnabled = true, DownloadLimitMBps = 1 },
+        });
+        var service = new SftpService(_connectionService, _ => _sftpClient, settings);
+        const int prefix = 100_000;
+        byte[] content = CreatePattern(prefix + (1024 * 1024) + (64 * 1024));
+        string localPath = Path.Combine(Path.GetTempPath(), $"vela-resume-limit-{Guid.NewGuid():N}.bin");
+        await File.WriteAllBytesAsync(localPath, content[..prefix]);
+        const string remotePath = "/home/user/limited.bin";
+        _sftpClient.GetEntryAsync(remotePath, Arg.Any<CancellationToken>())
+            .Returns(new SftpEntry { Name = "limited.bin", FullName = remotePath, Length = content.Length });
+        _sftpClient.OpenAsync(remotePath, FileMode.Open, FileAccess.Read, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream>(new MemoryStream(content, false)));
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            await service.DownloadFileAsync(_sessionId, remotePath, localPath, null, resumeOffset: prefix);
+            watch.Stop();
+
+            CollectionAssert.AreEqual(content, await File.ReadAllBytesAsync(localPath));
+            await _sftpClient.DidNotReceive().DownloadAsync(
+                Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>());
+            Assert.IsGreaterThanOrEqualTo(
+                600L, watch.ElapsedMilliseconds,
+                $"续传了 {content.Length - prefix} 字节、限速 1 MiB/s,却只用了 {watch.ElapsedMilliseconds} ms —— 续传分支没有限速。");
+        }
+        finally
+        {
+            File.Delete(localPath);
+        }
+    }
+
     private sealed class DelayedReadStream(byte[] content) : MemoryStream(content, false)
     {
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
