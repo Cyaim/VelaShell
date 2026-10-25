@@ -131,6 +131,15 @@ public class AppSettings
             Security.FingerprintChangeDefaultMigrated = true;
         }
 
+        // 首次连接的指纹确认从默认关改为默认开(见 SecurityOptions.ConfirmFirstFingerprint)。
+        // 老配置里的 false 绝大多数是从来没动过的旧默认值,少数是用户主动关的,两者分不清 ——
+        // 宁可让主动关过的人再关一次,也不让没动过的人继续首次即信任:只开这一次,打上标记后此后的选择都算数。
+        if (!Security.FirstFingerprintDefaultMigrated)
+        {
+            Security.ConfirmFirstFingerprint = true;
+            Security.FirstFingerprintDefaultMigrated = true;
+        }
+
         // 自动下载更新以前默认开、却没有界面也没人读(设置审计 R-03)。现在接上了运行时、默认关:
         // 存量配置里的 true 必然是旧默认值而不是用户选的(没有地方能选),只关这一次。
         if (!General.AutoDownloadUpdatesOptInMigrated)
@@ -1266,12 +1275,33 @@ public class SecurityOptions : ObservableOptions
         set => Set(ref field, value);
     } = DefaultAuditLogRetentionDays;
 
-    /// <summary>首次连接主机时是否需确认其指纹。</summary>
+    /// <summary>
+    /// 首次连接一台没见过的主机时,是否弹窗让用户核对指纹。默认开,与 OpenSSH 的
+    /// <c>StrictHostKeyChecking=ask</c> 一致;关掉就是首次使用即信任(TOFU):第一次见到的钥直接永久记下。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 早先默认关,而用户手册一直说首次连接会弹窗核对 —— 维护者 2026-10-25 定为改代码对齐手册。
+    /// TOFU 的问题在于第一次就是最该核对的时候:路上有人时,记下的正是冒名的那把钥,之后每次都「校验通过」。
+    /// </para>
+    /// <para>
+    /// 自动重连(断线倒计时、睡眠唤醒、隧道自动恢复)没有人在等,本该弹窗的一律直接拒绝、不弹
+    /// (<see cref="ConnectionInfo.IsAutomaticReconnect" />);用户手动重连时再核对。
+    /// 存量配置里的 <see langword="false" /> 统一打开一次,见 <see cref="FirstFingerprintDefaultMigrated" />。
+    /// </para>
+    /// </remarks>
     public bool ConfirmFirstFingerprint
     {
         get;
         set => Set(ref field, value);
-    }
+    } = true;
+
+    /// <summary>
+    /// <see cref="ConfirmFirstFingerprint" />「改为默认开启」的一次性迁移标记。
+    /// 存量配置里落盘的 <see langword="false" /> 分不清是用户选的还是旧默认值带的,
+    /// 于是统一打开一次并打上标记,之后完全听用户的(见 <see cref="AppSettings.Normalize" />)。
+    /// </summary>
+    public bool FirstFingerprintDefaultMigrated { get; set; }
 
     /// <summary>
     /// 主机指纹变化时是否**直接阻断**(不询问)。默认关闭:变更走确认弹窗,由用户当场裁决

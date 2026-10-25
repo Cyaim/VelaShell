@@ -127,6 +127,7 @@ public static class SettingsCategories
         ("general", "autoDownloadUpdatesOptInMigrated"),
         ("security", "recordingOptInMigrated"),
         ("security", "fingerprintChangeDefaultMigrated"),
+        ("security", "firstFingerprintDefaultMigrated"),
         ("proxy", "defaultsMigrated"),
         ("terminalBehavior", "foldGuideLineMigrated"),
     ];

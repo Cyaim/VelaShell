@@ -161,6 +161,45 @@ public class AppSettingsNormalizeTests
     }
 
     /// <summary>
+    /// 首次连接没见过的主机先弹窗核对指纹(与 OpenSSH 的 ask 一致;维护者 2026-10-25 定):
+    /// 首次即信任记下的,正是路上有人时那把冒名的钥。
+    /// </summary>
+    [TestMethod]
+    public void FirstFingerprint_IsConfirmedByDefault() =>
+        Assert.IsTrue(new AppSettings().Security.ConfirmFirstFingerprint);
+
+    /// <summary>
+    /// 存量配置里的 <c>false</c> 分不清是用户主动关的还是旧默认值(早先默认关),统一打开一次 ——
+    /// 落盘的 JSON 照原样读进来再规整,与真实升级同一条路。
+    /// </summary>
+    [TestMethod]
+    public void LegacyFirstFingerprintDefault_IsTurnedOnOnce()
+    {
+        AppSettings settings = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(
+            """{"security":{"confirmFirstFingerprint":false}}""",
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        Assert.IsFalse(settings.Security.ConfirmFirstFingerprint, "前提:旧配置里落盘的是 false");
+
+        settings.Normalize();
+
+        Assert.IsTrue(settings.Security.ConfirmFirstFingerprint);
+        Assert.IsTrue(settings.Security.FirstFingerprintDefaultMigrated, "迁移标记要落下,之后不再插手用户的选择");
+    }
+
+    /// <summary>迁移只做一次:用户此后自己关掉首次确认(改回 TOFU),再次载入设置不能又给打开。</summary>
+    [TestMethod]
+    public void FirstFingerprintOptOut_AfterMigration_IsRespected()
+    {
+        AppSettings settings = new();
+        settings.Security.ConfirmFirstFingerprint = false;
+        settings.Security.FirstFingerprintDefaultMigrated = true;
+
+        settings.Normalize();
+
+        Assert.IsFalse(settings.Security.ConfirmFirstFingerprint);
+    }
+
+    /// <summary>
     /// 侧栏竖线从折叠里拆出来(#586)之前,开着折叠的人一直看得到这条线:迁移时线跟着折叠走,
     /// 升级后看到的侧栏和以前一模一样。
     /// </summary>

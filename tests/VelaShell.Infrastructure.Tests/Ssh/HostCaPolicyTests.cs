@@ -208,7 +208,7 @@ public sealed class HostCaPolicyTests : IDisposable
 
         SshHostKeyVerdict asked = await new VelaHostKeyPolicy(_store, AskingSettings(), prompt, alerts: null)
             .EvaluateAsync(Context(Key(keyFile)));
-        // 关着首次确认(出厂默认)时没见过的主机本来按 TOFU 直接记下 —— CA 管的主机也不行。
+        // 不问的那条路(没有确认弹窗可用)上,没见过的主机本来按 TOFU 直接记下 —— CA 管的主机也不行。
         SshHostKeyVerdict silent = await new VelaHostKeyPolicy(_store, null, null, null).EvaluateAsync(Context(Key(keyFile)));
 
         Assert.IsFalse(asked.IsAccepted);
