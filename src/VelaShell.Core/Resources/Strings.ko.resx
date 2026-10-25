@@ -7031,6 +7031,81 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="SshErr_FwdUnknown" xml:space="preserve">
     <value>포워딩된 연결 하나가 실패했습니다.</value>
   </data>
+  <data name="SshErr_FwdListenFailed" xml:space="preserve">
+    <value>{0}에서 수신 대기를 시작할 수 없습니다({1}).</value>
+  </data>
+  <data name="SshErr_FwdListenInUse" xml:space="preserve">
+    <value>{0}에서 수신 대기를 시작할 수 없습니다. 다른 프로그램이 이미 포트를 사용 중입니다.</value>
+  </data>
+  <data name="SshErr_FwdIpv6LoopbackInUse" xml:space="preserve">
+    <value>{0}에서 수신 대기를 시작할 수 없습니다. 다른 프로그램이 이 포트의 IPv6 루프백을 사용 중이라 ::1을 먼저 시도하는 클라이언트가 그쪽으로 연결되므로 포워딩을 시작하지 않았습니다. 다른 포트를 쓰거나 127.0.0.1에서만 수신 대기하세요.</value>
+  </data>
+  <data name="SshErr_FwdSocketPathExists" xml:space="preserve">
+    <value>{0}이(가) 이미 있습니다. 이전 실행에서 정리되지 않았거나 다른 사람의 소켓일 수 있습니다. 쓰지 않는 것이 확실하면 삭제하거나 기존 소켓 교체를 허용하세요.</value>
+  </data>
+  <data name="SshErr_FwdSocketPathTooLong" xml:space="preserve">
+    <value>소켓 경로가 너무 깁니다(Linux 107바이트, macOS 103바이트까지): {0}</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejected" xml:space="preserve">
+    <value>서버가 {0}에서 수신 대기를 거부했습니다. 흔한 원인: sshd_config의 AllowTcpForwarding no, GatewayPorts 없이 루프백이 아닌 주소에 바인딩, 또는 포트가 이미 사용 중.</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejectedPrivileged" xml:space="preserve">
+    <value>서버가 {0}에서 수신 대기를 거부했습니다. 흔한 원인: sshd_config의 AllowTcpForwarding no, GatewayPorts 없이 루프백이 아닌 주소에 바인딩, 또는 특권 포트(1024 미만).</value>
+  </data>
+  <data name="SshErr_FwdRemoteSocketListenRejected" xml:space="preserve">
+    <value>서버가 소켓 {0}에서 수신 대기를 거부했습니다. 흔한 원인: sshd_config의 AllowStreamLocalForwarding no, 경로가 이미 있음, 또는 디렉터리에 쓸 수 없음.</value>
+  </data>
+  <data name="SshErr_FwdNoBoundPortInReply" xml:space="preserve">
+    <value>동적 포트를 요청했지만 서버 응답에 실제 포트 번호가 없습니다.</value>
+  </data>
+  <data name="SshErr_FwdAgentForwardRejected" xml:space="preserve">
+    <value>서버가 agent 포워딩을 거부했습니다(보통 sshd_config의 AllowAgentForwarding no 때문입니다).</value>
+  </data>
+  <data name="SshErr_FwdLocalAgentUnavailable" xml:space="preserve">
+    <value>로컬 ssh-agent를 사용할 수 없어 agent 포워딩을 설정하지 않았습니다: {0}</value>
+  </data>
+  <data name="SshErr_FwdX11ForwardRejected" xml:space="preserve">
+    <value>서버가 X11 포워딩을 거부했습니다(보통 sshd_config의 X11Forwarding no 또는 서버에 xauth가 없기 때문입니다).</value>
+  </data>
+  <data name="SshErr_FwdNoX11Display" xml:space="preserve">
+    <value>로컬 X 디스플레이를 찾을 수 없습니다. DISPLAY가 설정되지 않았거나 형식을 인식할 수 없습니다.</value>
+  </data>
+  <data name="SshErr_FwdXAuthTempDirectoryFailed" xml:space="preserve">
+    <value>xauth용 임시 디렉터리를 만들 수 없습니다: {0}</value>
+  </data>
+  <data name="SshErr_FwdXAuthStartFailed" xml:space="preserve">
+    <value>xauth를 실행할 수 없습니다: {0}. Windows에는 보통 xauth가 없으므로 신뢰(-Y) X11 포워딩을 사용하세요.</value>
+  </data>
+  <data name="SshErr_FwdXAuthTimedOut" xml:space="preserve">
+    <value>xauth가 {0}초 안에 끝나지 않았습니다.</value>
+  </data>
+  <data name="SshErr_FwdXAuthFailed" xml:space="preserve">
+    <value>xauth가 실패했습니다(종료 코드 {0}). 비신뢰 X11 포워딩에는 이 컴퓨터의 xauth와 SECURITY 확장을 지원하는 X 서버가 필요합니다. 둘 다 없다면 신뢰(-Y)를 사용하세요. 다만 로컬 디스플레이를 원격에 완전히 넘기게 됩니다.</value>
+  </data>
+  <data name="SshErr_FwdXAuthSaid" xml:space="preserve">
+    <value>{0} xauth 출력: {1}</value>
+  </data>
+  <data name="SshErr_FwdXAuthNoCookie" xml:space="preserve">
+    <value>xauth가 실행됐지만 디스플레이 {0}의 cookie를 만들지 않았습니다.</value>
+  </data>
+  <data name="SshErr_FwdConfigForwardFailed" xml:space="preserve">
+    <value>포워딩 "{0}"을(를) 시작하지 못했습니다(ExitOnForwardFailure yes이므로 이미 시작한 포워딩은 모두 취소함): {1}</value>
+  </data>
+  <data name="SshErr_FwdUnmatchedChannel" xml:space="preserve">
+    <value>서버가 연 {0} 포워딩 채널과 일치하는 포워딩이 없습니다.</value>
+  </data>
+  <data name="SshErr_FwdX11Expired" xml:space="preserve">
+    <value>이 연결의 X11 포워딩이 모두 만료되어 새 X11 채널을 거부했습니다.</value>
+  </data>
+  <data name="SshErr_FwdChannelLimitReached" xml:space="preserve">
+    <value>동시에 열린 포워딩 채널이 한도 {0}개에 도달했습니다.</value>
+  </data>
+  <data name="SshErr_FwdLocalTargetUnreachable" xml:space="preserve">
+    <value>포워딩의 로컬 대상 {0}에 연결할 수 없습니다.</value>
+  </data>
+  <data name="SshErr_FwdStopped" xml:space="preserve">
+    <value>포워딩을 이쪽에서 중지했습니다.</value>
+  </data>
   <data name="SftpErr_NoSuchFile" xml:space="preserve">
     <value>파일 또는 디렉터리가 없습니다</value>
   </data>

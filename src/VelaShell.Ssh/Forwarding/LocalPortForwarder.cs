@@ -328,7 +328,11 @@ public sealed class LocalPortForwarder : PortForwarder
                         ? "同一端口的 IPv6 环回被别的进程占着 —— 先试 ::1 的客户端（把 localhost 先解析成 ::1 的那些）会连到它那里，" +
                           "所以不起这个转发。换一个端口，或者明确只听 127.0.0.1。"
                         : ""),
-                    ex);
+                    ex)
+                {
+                    FailureKind = SshForwardFailureKind.Ipv6LoopbackBindFailed,
+                    Endpoint = $"[::1]:{bound}",
+                };
             }
         }
     }
@@ -346,7 +350,11 @@ public sealed class LocalPortForwarder : PortForwarder
             throw new SshForwardException(SshFailureReason.ForwardBindFailed,
                 $"在 {new IPEndPoint(address, port)} 上起监听失败：{ex.SocketErrorCode}。" +
                 (port != 0 ? "端口可能已被占用。" : ""),
-                ex);
+                ex)
+            {
+                FailureKind = SshForwardFailureKind.ListenFailed,
+                Endpoint = new IPEndPoint(address, port).ToString(),
+            };
         }
     }
 
@@ -375,7 +383,11 @@ public sealed class LocalPortForwarder : PortForwarder
             if (!replaceExisting)
             {
                 throw new SshForwardException(SshFailureReason.ForwardBindFailed,
-                    $"{path} 已经存在 —— 多半是上一次没收拾干净，也可能是别人的套接字。确认无用后删掉它，或者打开「替换已有的套接字」。");
+                    $"{path} 已经存在 —— 多半是上一次没收拾干净，也可能是别人的套接字。确认无用后删掉它，或者打开「替换已有的套接字」。")
+                {
+                    FailureKind = SshForwardFailureKind.SocketPathExists,
+                    Endpoint = path,
+                };
             }
             File.Delete(path);
         }
@@ -388,7 +400,11 @@ public sealed class LocalPortForwarder : PortForwarder
         catch (ArgumentOutOfRangeException ex)
         {
             throw new SshForwardException(SshFailureReason.ForwardBindFailed,
-                $"套接字路径太长（{System.Text.Encoding.UTF8.GetByteCount(path)} 字节；Linux 上限 107、macOS 103）：{path}", ex);
+                $"套接字路径太长（{System.Text.Encoding.UTF8.GetByteCount(path)} 字节；Linux 上限 107、macOS 103）：{path}", ex)
+            {
+                FailureKind = SshForwardFailureKind.SocketPathTooLong,
+                Endpoint = path,
+            };
         }
 
         Socket listener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
@@ -416,7 +432,11 @@ public sealed class LocalPortForwarder : PortForwarder
                 DeleteSocketFile(path);
             }
             throw new SshForwardException(SshFailureReason.ForwardBindFailed,
-                $"在 {path} 上起监听失败：{(ex is SocketException se ? se.SocketErrorCode.ToString() : ex.Message)}。", ex);
+                $"在 {path} 上起监听失败：{(ex is SocketException se ? se.SocketErrorCode.ToString() : ex.Message)}。", ex)
+            {
+                FailureKind = SshForwardFailureKind.ListenFailed,
+                Endpoint = path,
+            };
         }
     }
 

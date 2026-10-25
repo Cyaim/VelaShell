@@ -298,6 +298,9 @@ public sealed class PortForwardTests
         SshForwardException error = Assert.ThrowsExactly<SshForwardException>(
             () => LocalPortForwarder.Start(harness.Connection, "t", 80, new LocalPortForwardOptions { BindPort = taken }));
         Assert.Contains("IPv6 环回被别的进程占着", error.Message);
+        Assert.AreEqual(SshForwardFailureKind.Ipv6LoopbackBindFailed, error.FailureKind);
+        Assert.AreEqual($"[::1]:{taken}", error.Endpoint);
+        Assert.AreEqual(SocketError.AddressAlreadyInUse, ((SocketException)error.InnerException!).SocketErrorCode, "界面据内层的错误码说「被占」");
 
         using Socket probe = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         probe.Bind(new IPEndPoint(IPAddress.Loopback, taken));   // IPv4 那个没留下
@@ -318,6 +321,8 @@ public sealed class PortForwardTests
                 harness.Connection, "t", 1, new LocalPortForwardOptions { BindPort = taken }));
 
         Assert.Contains("端口可能已被占用", error.Message);
+        Assert.AreEqual(SshForwardFailureKind.ListenFailed, error.FailureKind);
+        Assert.EndsWith($":{taken}", error.Endpoint);
     }
 
     // ------------------------------------------------------------ 动态转发
@@ -677,6 +682,9 @@ public sealed class PortForwardTests
 
         Assert.Contains("AllowTcpForwarding", error.Message);
         Assert.IsTrue(harness.Connection.IsAlive, "被拒绝不该连累会话");
+        Assert.AreEqual(SshForwardFailureKind.RemoteListenRejected, error.FailureKind);
+        Assert.AreEqual(9999, error.Port);
+        Assert.EndsWith(":9999", error.Endpoint);
     }
 
     // ------------------------------------------------------------ 直连隧道
@@ -1243,6 +1251,8 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
 
         // 失败消息要能指向下一步 —— sshd_config 的开关、路径已存在、目录不可写。
         Assert.Contains("AllowStreamLocalForwarding", error.Message);
+        Assert.AreEqual(SshForwardFailureKind.RemoteSocketListenRejected, error.FailureKind);
+        Assert.AreEqual("/tmp/b.sock", error.Endpoint);
     }
 
     [TestMethod]
@@ -1613,6 +1623,8 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
             SshForwardException exists = Assert.ThrowsExactly<SshForwardException>(() => LocalPortForwarder.Start(
                 harness.Connection, "h", 1, new LocalPortForwardOptions { ListenSocketPath = path }));
             Assert.AreEqual(SshFailureReason.ForwardBindFailed, exists.Reason);
+            Assert.AreEqual(SshForwardFailureKind.SocketPathExists, exists.FailureKind);
+            Assert.AreEqual(path, exists.Endpoint);
             Assert.AreEqual("someone else's", await File.ReadAllTextAsync(path, harness.Token));
 
             await using var replaced = LocalPortForwarder.Start(
@@ -1628,6 +1640,8 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
         SshForwardException longPath = Assert.ThrowsExactly<SshForwardException>(() => LocalPortForwarder.Start(
             harness.Connection, "h", 1, new LocalPortForwardOptions { ListenSocketPath = tooLong }));
         Assert.Contains("太长", longPath.Message);
+        Assert.AreEqual(SshForwardFailureKind.SocketPathTooLong, longPath.FailureKind);
+        Assert.AreEqual(tooLong, longPath.Endpoint);
     }
 
     // ------------------------------------------------------------ 计量与限速
@@ -1736,5 +1750,7 @@ SshProtocolNames.RequestStreamLocalForward, harness.Observed.GlobalRequests);
             async () => await SshConfigFile.StartForwardsAsync(harness.Connection, strict, cancellationToken: harness.Token));
         Assert.AreEqual(SshFailureReason.ForwardSetupFailed, failure.Reason);
         Assert.Contains("0 localhost:22", failure.Message);
+        Assert.AreEqual(SshForwardFailureKind.ConfigForwardFailed, failure.FailureKind);
+        Assert.Contains("0 localhost:22", failure.ConfigLine!);
     }
 }

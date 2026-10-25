@@ -65,7 +65,11 @@ public static partial class SshConfigFile
                         await forwarder.DisposeAsync().ConfigureAwait(false);
                     }
                     throw new SshForwardException(SshFailureReason.ForwardSetupFailed,
-                        $"「{PeerText.Sanitize(forward.Line, 200)}」没起来（ExitOnForwardFailure yes，已起的转发全部撤掉）：{ex.Message}", ex);
+                        $"「{PeerText.Sanitize(forward.Line, 200)}」没起来（ExitOnForwardFailure yes，已起的转发全部撤掉）：{ex.Message}", ex)
+                    {
+                        FailureKind = SshForwardFailureKind.ConfigForwardFailed,
+                        ConfigLine = forward.Line,
+                    };
                 }
                 onFailure?.Invoke(forward, ex);
             }

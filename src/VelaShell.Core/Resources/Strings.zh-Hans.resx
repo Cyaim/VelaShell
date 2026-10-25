@@ -7508,6 +7508,81 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshErr_FwdUnknown" xml:space="preserve">
     <value>一条转发连接失败了。</value>
   </data>
+  <data name="SshErr_FwdListenFailed" xml:space="preserve">
+    <value>在 {0} 上起不了监听({1})。</value>
+  </data>
+  <data name="SshErr_FwdListenInUse" xml:space="preserve">
+    <value>在 {0} 上起不了监听:端口已被别的程序占用。</value>
+  </data>
+  <data name="SshErr_FwdIpv6LoopbackInUse" xml:space="preserve">
+    <value>在 {0} 上起不了监听:同一端口的 IPv6 环回被别的程序占着 —— 先试 ::1 的客户端会连到它那里,所以不起这个转发。换一个端口,或者明确只听 127.0.0.1。</value>
+  </data>
+  <data name="SshErr_FwdSocketPathExists" xml:space="preserve">
+    <value>{0} 已经存在 —— 多半是上一次没收拾干净,也可能是别人的套接字。确认无用后删掉它,或者允许替换已有的套接字。</value>
+  </data>
+  <data name="SshErr_FwdSocketPathTooLong" xml:space="preserve">
+    <value>套接字路径太长(Linux 上限 107 字节、macOS 103):{0}</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejected" xml:space="preserve">
+    <value>服务器拒绝在 {0} 上开监听。常见原因是 sshd_config 里 AllowTcpForwarding no,或者要绑非环回地址而 GatewayPorts 没打开,又或者端口已被占用。</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejectedPrivileged" xml:space="preserve">
+    <value>服务器拒绝在 {0} 上开监听。常见原因是 sshd_config 里 AllowTcpForwarding no,或者要绑非环回地址而 GatewayPorts 没打开,又或者那是个特权端口(1024 以下)。</value>
+  </data>
+  <data name="SshErr_FwdRemoteSocketListenRejected" xml:space="preserve">
+    <value>服务器拒绝在 {0} 上开套接字监听。常见原因是 sshd_config 里 AllowStreamLocalForwarding no、那个路径已经存在,或者所在目录不可写。</value>
+  </data>
+  <data name="SshErr_FwdNoBoundPortInReply" xml:space="preserve">
+    <value>请求了动态端口,但服务器的应答里没有带回实际端口号。</value>
+  </data>
+  <data name="SshErr_FwdAgentForwardRejected" xml:space="preserve">
+    <value>服务器拒绝了 agent 转发(常见原因是 sshd_config 里 AllowAgentForwarding no)。</value>
+  </data>
+  <data name="SshErr_FwdLocalAgentUnavailable" xml:space="preserve">
+    <value>本机 ssh-agent 不可用,没有开 agent 转发:{0}</value>
+  </data>
+  <data name="SshErr_FwdX11ForwardRejected" xml:space="preserve">
+    <value>服务器拒绝了 X11 转发(常见原因是 sshd_config 里 X11Forwarding no,或者服务器没装 xauth)。</value>
+  </data>
+  <data name="SshErr_FwdNoX11Display" xml:space="preserve">
+    <value>拿不到本机的 X 显示:DISPLAY 没设或者格式不认识。</value>
+  </data>
+  <data name="SshErr_FwdXAuthTempDirectoryFailed" xml:space="preserve">
+    <value>建不了给 xauth 用的临时目录:{0}</value>
+  </data>
+  <data name="SshErr_FwdXAuthStartFailed" xml:space="preserve">
+    <value>跑不起来 xauth:{0}。Windows 上通常没有 xauth —— 那里请用受信任(-Y)的 X11 转发。</value>
+  </data>
+  <data name="SshErr_FwdXAuthTimedOut" xml:space="preserve">
+    <value>xauth 在 {0} 秒内没有返回。</value>
+  </data>
+  <data name="SshErr_FwdXAuthFailed" xml:space="preserve">
+    <value>xauth 失败(退出码 {0})。非受信任的 X11 转发需要本机有 xauth、且 X server 支持 SECURITY 扩展;都没有的话请用受信任(-Y),但要清楚那等于把本机显示完全交给远端。</value>
+  </data>
+  <data name="SshErr_FwdXAuthSaid" xml:space="preserve">
+    <value>{0}xauth 的输出:{1}</value>
+  </data>
+  <data name="SshErr_FwdXAuthNoCookie" xml:space="preserve">
+    <value>xauth 跑完了,但没有生成显示 {0} 的 cookie。</value>
+  </data>
+  <data name="SshErr_FwdConfigForwardFailed" xml:space="preserve">
+    <value>「{0}」没起来(ExitOnForwardFailure yes,已起的转发全部撤掉):{1}</value>
+  </data>
+  <data name="SshErr_FwdUnmatchedChannel" xml:space="preserve">
+    <value>服务器发来的 {0} 的转发通道对不上任何转发。</value>
+  </data>
+  <data name="SshErr_FwdX11Expired" xml:space="preserve">
+    <value>这条连接上的 X11 转发都已过期,新的 X11 通道被拒绝。</value>
+  </data>
+  <data name="SshErr_FwdChannelLimitReached" xml:space="preserve">
+    <value>同时打开的转发通道已达上限 {0}。</value>
+  </data>
+  <data name="SshErr_FwdLocalTargetUnreachable" xml:space="preserve">
+    <value>连不上转发的本机目标 {0}。</value>
+  </data>
+  <data name="SshErr_FwdStopped" xml:space="preserve">
+    <value>转发器已由本端停止。</value>
+  </data>
   <data name="SftpErr_NoSuchFile" xml:space="preserve">
     <value>文件或目录不存在</value>
   </data>

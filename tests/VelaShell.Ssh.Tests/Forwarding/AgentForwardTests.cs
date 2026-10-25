@@ -547,6 +547,7 @@ public sealed class AgentForwardTests
                 AgentForwardOptions.Default with { LocalConnector = harness.ConnectAgentAsync }, harness.Token));
 
         Assert.Contains("AllowAgentForwarding", error.Message);
+        Assert.AreEqual(SshForwardFailureKind.AgentForwardRejected, error.FailureKind);
 
         // 失败之后不能把处理器留在会话上 —— 否则服务端随后发来的
         // auth-agent 通道会被一个没人管的处理器接住。
@@ -587,6 +588,7 @@ public sealed class AgentForwardTests
                 harness.Connection, session, AgentForwardOptions.Default with { LocalConnector = NoAgent }, harness.Token));
 
         Assert.AreEqual(SshFailureReason.AgentNotRunning, error.Reason, "原因沿用 agent 那边的，宿主据此给出本地化的提示");
+        Assert.AreEqual(SshForwardFailureKind.LocalAgentUnavailable, error.FailureKind);
         Assert.AreEqual(0, harness.ChannelServer.Observation.AgentForwardRequests,
             "宣告了的话，远端的 SSH_AUTH_SOCK 就指向一个永远连不通的 agent");
 

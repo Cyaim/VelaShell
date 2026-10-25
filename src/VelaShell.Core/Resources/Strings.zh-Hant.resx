@@ -7508,6 +7508,81 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshErr_FwdUnknown" xml:space="preserve">
     <value>一條轉發連線失敗了。</value>
   </data>
+  <data name="SshErr_FwdListenFailed" xml:space="preserve">
+    <value>無法在 {0} 上開始監聽({1})。</value>
+  </data>
+  <data name="SshErr_FwdListenInUse" xml:space="preserve">
+    <value>無法在 {0} 上開始監聽:連接埠已被其他程式占用。</value>
+  </data>
+  <data name="SshErr_FwdIpv6LoopbackInUse" xml:space="preserve">
+    <value>無法在 {0} 上開始監聽:同一連接埠的 IPv6 回送位址被其他程式占用 —— 先嘗試 ::1 的用戶端會連到它那裡,所以不啟動這個轉發。請換一個連接埠,或明確只監聽 127.0.0.1。</value>
+  </data>
+  <data name="SshErr_FwdSocketPathExists" xml:space="preserve">
+    <value>{0} 已經存在 —— 多半是上一次沒清理乾淨,也可能是別人的通訊端。確認無用後刪掉它,或者允許取代既有的通訊端。</value>
+  </data>
+  <data name="SshErr_FwdSocketPathTooLong" xml:space="preserve">
+    <value>通訊端路徑太長(Linux 上限 107 位元組、macOS 103):{0}</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejected" xml:space="preserve">
+    <value>伺服器拒絕在 {0} 上開始監聽。常見原因是 sshd_config 裡 AllowTcpForwarding no,或者要綁定非回送位址而 GatewayPorts 沒開啟,又或者連接埠已被占用。</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejectedPrivileged" xml:space="preserve">
+    <value>伺服器拒絕在 {0} 上開始監聽。常見原因是 sshd_config 裡 AllowTcpForwarding no,或者要綁定非回送位址而 GatewayPorts 沒開啟,又或者那是特權連接埠(1024 以下)。</value>
+  </data>
+  <data name="SshErr_FwdRemoteSocketListenRejected" xml:space="preserve">
+    <value>伺服器拒絕在 {0} 上開始通訊端監聽。常見原因是 sshd_config 裡 AllowStreamLocalForwarding no、該路徑已經存在,或所在目錄無法寫入。</value>
+  </data>
+  <data name="SshErr_FwdNoBoundPortInReply" xml:space="preserve">
+    <value>請求了動態連接埠,但伺服器的回應中沒有帶回實際連接埠號。</value>
+  </data>
+  <data name="SshErr_FwdAgentForwardRejected" xml:space="preserve">
+    <value>伺服器拒絕了 agent 轉發(常見原因是 sshd_config 裡 AllowAgentForwarding no)。</value>
+  </data>
+  <data name="SshErr_FwdLocalAgentUnavailable" xml:space="preserve">
+    <value>本機 ssh-agent 無法使用,沒有開啟 agent 轉發:{0}</value>
+  </data>
+  <data name="SshErr_FwdX11ForwardRejected" xml:space="preserve">
+    <value>伺服器拒絕了 X11 轉發(常見原因是 sshd_config 裡 X11Forwarding no,或者伺服器沒安裝 xauth)。</value>
+  </data>
+  <data name="SshErr_FwdNoX11Display" xml:space="preserve">
+    <value>取得不到本機的 X 顯示:DISPLAY 沒有設定或格式無法辨識。</value>
+  </data>
+  <data name="SshErr_FwdXAuthTempDirectoryFailed" xml:space="preserve">
+    <value>無法建立給 xauth 用的暫存目錄:{0}</value>
+  </data>
+  <data name="SshErr_FwdXAuthStartFailed" xml:space="preserve">
+    <value>無法執行 xauth:{0}。Windows 上通常沒有 xauth —— 那裡請使用受信任(-Y)的 X11 轉發。</value>
+  </data>
+  <data name="SshErr_FwdXAuthTimedOut" xml:space="preserve">
+    <value>xauth 在 {0} 秒內沒有回應。</value>
+  </data>
+  <data name="SshErr_FwdXAuthFailed" xml:space="preserve">
+    <value>xauth 失敗(結束代碼 {0})。非受信任的 X11 轉發需要本機有 xauth,且 X server 支援 SECURITY 擴充;都沒有的話請使用受信任(-Y),但要清楚那等於把本機顯示完全交給遠端。</value>
+  </data>
+  <data name="SshErr_FwdXAuthSaid" xml:space="preserve">
+    <value>{0}xauth 的輸出:{1}</value>
+  </data>
+  <data name="SshErr_FwdXAuthNoCookie" xml:space="preserve">
+    <value>xauth 執行完畢,但沒有產生顯示 {0} 的 cookie。</value>
+  </data>
+  <data name="SshErr_FwdConfigForwardFailed" xml:space="preserve">
+    <value>「{0}」沒有啟動(ExitOnForwardFailure yes,已啟動的轉發全部撤除):{1}</value>
+  </data>
+  <data name="SshErr_FwdUnmatchedChannel" xml:space="preserve">
+    <value>伺服器送來的 {0} 轉發通道對不上任何轉發。</value>
+  </data>
+  <data name="SshErr_FwdX11Expired" xml:space="preserve">
+    <value>這條連線上的 X11 轉發都已過期,新的 X11 通道被拒絕。</value>
+  </data>
+  <data name="SshErr_FwdChannelLimitReached" xml:space="preserve">
+    <value>同時開啟的轉發通道已達上限 {0}。</value>
+  </data>
+  <data name="SshErr_FwdLocalTargetUnreachable" xml:space="preserve">
+    <value>無法連線到轉發的本機目標 {0}。</value>
+  </data>
+  <data name="SshErr_FwdStopped" xml:space="preserve">
+    <value>轉發已由本端停止。</value>
+  </data>
   <data name="SftpErr_NoSuchFile" xml:space="preserve">
     <value>檔案或目錄不存在</value>
   </data>

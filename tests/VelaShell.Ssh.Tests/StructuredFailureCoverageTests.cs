@@ -28,6 +28,7 @@ public sealed class StructuredFailureCoverageTests
         ("new SshPrivateKeyException(", "ProblemKind =", null),
         ("new SshCertificateException(", "ProblemKind =", null),
         ("new SshChannelException(", "FailureKind =", null),
+        ("new SshForwardException(", "FailureKind =", null),
         ("new SshConnectException(", "FailureKind =", ["HostKeyRejected", "HostKeyChanged", "ProxyRefused"]),
     ];
 

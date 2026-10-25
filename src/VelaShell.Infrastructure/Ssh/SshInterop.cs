@@ -112,8 +112,10 @@ internal static partial class SshInterop
     /// 没归类的(使用者自己构造的异常)才落到下面按原因码的那一层。
     /// </para>
     /// <para>
-    /// 配置不成立、端口占用这几类不翻:库的消息里带着具体的主机名、端口号,还没有结构化的出处,换成一句通用文案反而帮不上忙。
-    /// <see cref="SshFailureReason.ForwardSetupFailed" />(消息里是拿不到的 X 显示、xauth 的输出)同理;
+    /// 转发器起不来(端口占用 <see cref="SshFailureReason.ForwardBindFailed" />、X11 转发起不来 <see cref="SshFailureReason.ForwardSetupFailed" />、
+    /// 服务端拒绝监听……)按 <see cref="SshForwardException.FailureKind" /> 与监听端点、xauth 的退出码与输出说。
+    /// 配置不成立(<see cref="SshFailureReason.InvalidConfiguration" />,ssh_config 那一类)仍不翻:库的消息里带着具体的主机名、端口号,
+    /// 还没有结构化的出处,换成一句通用文案反而帮不上忙;代理握手里放不进请求的主机名、凭据超长已有种类,不在此列。
     /// <see cref="SshFailureReason.Unsupported" /> 除私钥 / 证书以外(消息里是不支持的算法、格式版本)同理。
     /// <see cref="SshFailureReason.HostKeyStoreFailed" /> 同理(消息里是 known_hosts 的路径与 IO 错误);
     /// 而且宿主的信任库不走库的 known_hosts,它只在调用方换用 <c>KnownHostsPolicy</c> 时才会出现。
@@ -128,6 +130,7 @@ internal static partial class SshInterop
         SshPrivateKeyException { ProblemKind: not SshKeyProblemKind.Unknown } key => LocalizeKeyProblem(key),
         SshCertificateException { ProblemKind: not SshKeyProblemKind.Unknown } certificate => LocalizeKeyProblem(certificate),
         SshConnectException { FailureKind: not SshConnectFailureKind.Unknown } connect => LocalizeConnect(connect),
+        SshForwardException { FailureKind: not SshForwardFailureKind.Unknown } forward => LocalizeForward(forward),
         // 重协商时密钥交换按首次交换的口径报的失败(验签失败、主机密钥类型不符),库把它包成「建好的连接断了」,原来那条在内层。
         SshConnectionClosedException
         {

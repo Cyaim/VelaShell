@@ -7031,6 +7031,81 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_FwdUnknown" xml:space="preserve">
     <value>転送中の接続が失敗しました。</value>
   </data>
+  <data name="SshErr_FwdListenFailed" xml:space="preserve">
+    <value>{0} で待ち受けを開始できません({1})。</value>
+  </data>
+  <data name="SshErr_FwdListenInUse" xml:space="preserve">
+    <value>{0} で待ち受けを開始できません。ポートは別のプログラムが使用中です。</value>
+  </data>
+  <data name="SshErr_FwdIpv6LoopbackInUse" xml:space="preserve">
+    <value>{0} で待ち受けを開始できません。このポートの IPv6 ループバックを別のプログラムが使用しており、::1 を先に試すクライアントがそちらに接続してしまうため、転送を開始しませんでした。別のポートを使うか、127.0.0.1 だけで待ち受けてください。</value>
+  </data>
+  <data name="SshErr_FwdSocketPathExists" xml:space="preserve">
+    <value>{0} は既に存在します。前回の後片付けが済んでいないか、他のユーザーのソケットの可能性があります。不要と確認できたら削除するか、既存ソケットの置き換えを許可してください。</value>
+  </data>
+  <data name="SshErr_FwdSocketPathTooLong" xml:space="preserve">
+    <value>ソケットのパスが長すぎます(上限は Linux で 107 バイト、macOS で 103 バイト): {0}</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejected" xml:space="preserve">
+    <value>サーバーが {0} での待ち受けを拒否しました。よくある原因: sshd_config の AllowTcpForwarding no、GatewayPorts が無効なままループバック以外のアドレスにバインドしようとした、またはポートが使用中。</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejectedPrivileged" xml:space="preserve">
+    <value>サーバーが {0} での待ち受けを拒否しました。よくある原因: sshd_config の AllowTcpForwarding no、GatewayPorts が無効なままループバック以外のアドレスにバインドしようとした、または特権ポート(1024 未満)です。</value>
+  </data>
+  <data name="SshErr_FwdRemoteSocketListenRejected" xml:space="preserve">
+    <value>サーバーがソケット {0} での待ち受けを拒否しました。よくある原因: sshd_config の AllowStreamLocalForwarding no、パスが既に存在する、またはディレクトリに書き込めない。</value>
+  </data>
+  <data name="SshErr_FwdNoBoundPortInReply" xml:space="preserve">
+    <value>動的ポートを要求しましたが、サーバーの応答に実際のポート番号が含まれていませんでした。</value>
+  </data>
+  <data name="SshErr_FwdAgentForwardRejected" xml:space="preserve">
+    <value>サーバーが agent 転送を拒否しました(多くは sshd_config の AllowAgentForwarding no が原因です)。</value>
+  </data>
+  <data name="SshErr_FwdLocalAgentUnavailable" xml:space="preserve">
+    <value>ローカルの ssh-agent を使用できないため、agent 転送を設定しませんでした: {0}</value>
+  </data>
+  <data name="SshErr_FwdX11ForwardRejected" xml:space="preserve">
+    <value>サーバーが X11 転送を拒否しました(多くは sshd_config の X11Forwarding no、またはサーバーに xauth がないことが原因です)。</value>
+  </data>
+  <data name="SshErr_FwdNoX11Display" xml:space="preserve">
+    <value>ローカルの X ディスプレイがありません。DISPLAY が設定されていないか、形式を認識できません。</value>
+  </data>
+  <data name="SshErr_FwdXAuthTempDirectoryFailed" xml:space="preserve">
+    <value>xauth 用の一時ディレクトリを作成できません: {0}</value>
+  </data>
+  <data name="SshErr_FwdXAuthStartFailed" xml:space="preserve">
+    <value>xauth を実行できません: {0}。Windows には通常 xauth がないため、信頼済み(-Y)の X11 転送を使ってください。</value>
+  </data>
+  <data name="SshErr_FwdXAuthTimedOut" xml:space="preserve">
+    <value>xauth が {0} 秒以内に終了しませんでした。</value>
+  </data>
+  <data name="SshErr_FwdXAuthFailed" xml:space="preserve">
+    <value>xauth が失敗しました(終了コード {0})。信頼されない X11 転送には、このコンピューターの xauth と SECURITY 拡張に対応した X サーバーが必要です。どちらもない場合は信頼済み(-Y)を使ってください。ただし、ローカルのディスプレイをリモートに完全に委ねることになります。</value>
+  </data>
+  <data name="SshErr_FwdXAuthSaid" xml:space="preserve">
+    <value>{0}xauth の出力: {1}</value>
+  </data>
+  <data name="SshErr_FwdXAuthNoCookie" xml:space="preserve">
+    <value>xauth は終了しましたが、ディスプレイ {0} の cookie を生成しませんでした。</value>
+  </data>
+  <data name="SshErr_FwdConfigForwardFailed" xml:space="preserve">
+    <value>転送「{0}」を開始できませんでした(ExitOnForwardFailure yes のため、開始済みの転送はすべて取り消しました): {1}</value>
+  </data>
+  <data name="SshErr_FwdUnmatchedChannel" xml:space="preserve">
+    <value>サーバーが開いた {0} の転送チャネルは、どの転送とも一致しません。</value>
+  </data>
+  <data name="SshErr_FwdX11Expired" xml:space="preserve">
+    <value>この接続の X11 転送はすべて期限切れのため、新しい X11 チャネルを拒否しました。</value>
+  </data>
+  <data name="SshErr_FwdChannelLimitReached" xml:space="preserve">
+    <value>同時に開いている転送チャネルが上限の {0} に達しました。</value>
+  </data>
+  <data name="SshErr_FwdLocalTargetUnreachable" xml:space="preserve">
+    <value>転送のローカル接続先 {0} に接続できません。</value>
+  </data>
+  <data name="SshErr_FwdStopped" xml:space="preserve">
+    <value>転送はこちら側で停止しました。</value>
+  </data>
   <data name="SftpErr_NoSuchFile" xml:space="preserve">
     <value>ファイルまたはディレクトリが存在しません</value>
   </data>

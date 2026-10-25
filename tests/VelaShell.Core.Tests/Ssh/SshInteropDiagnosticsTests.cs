@@ -94,6 +94,17 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
         AssertKeys(Enumerable.Range(0, 11).Select(static code => ($"REP {code}", (string?)SshInterop.Socks5ReplyKey(code))));
 
     [TestMethod]
+    public void 每一种转发器起不来都有五语言文案() =>
+        AssertKeys(Enum.GetValues<SshForwardFailureKind>().Where(static k => k != SshForwardFailureKind.Unknown)
+            .SelectMany(static k => new[]
+            {
+                (k.ToString(), SshInterop.ForwardFailureKey(k)),
+                ($"{k}(特权端口)", SshInterop.ForwardFailureKey(k, privilegedPort: true)),
+            })
+            .Append(("端口被占", "SshErr_FwdListenInUse"))
+            .Append(("xauth 的输出", "SshErr_FwdXAuthSaid")));
+
+    [TestMethod]
     public void 每一种转发连接失败都有五语言文案() =>
         AssertKeys(Enum.GetValues<ForwardErrorReason>().SelectMany(static r => new[]
         {
@@ -256,6 +267,37 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
             };
             AssertNoChinese(kind.ToString(), SshInterop.Localize(ex));
             AssertNoChinese($"{kind}(经 Translate)", SshInterop.Translate(ex)!.Message);
+        }
+    }
+
+    [TestMethod]
+    public void 英文界面下每一种转发器起不来都不透传中文()
+    {
+        UseEnglish();
+        foreach (SshForwardFailureKind kind in Enum.GetValues<SshForwardFailureKind>().Where(static k => k != SshForwardFailureKind.Unknown))
+        {
+            // 转述内层的两种:内层是库的中文消息(agent 没在跑、那一条转发绑不上),要按它的原因码说。
+            // xauth 跑不起来、临时目录建不了时转述 .NET 的消息(按系统语言),这里给一句英文的。
+            Exception inner = kind switch
+            {
+                SshForwardFailureKind.LocalAgentUnavailable or SshForwardFailureKind.ConfigForwardFailed =>
+                    new SshAgentException(SshFailureReason.AgentNotRunning, "中文原文"),
+                SshForwardFailureKind.XAuthTempDirectoryFailed or SshForwardFailureKind.XAuthStartFailed => new IOException("no such file"),
+                _ => new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.AddressAlreadyInUse),
+            };
+            SshForwardException ex = new(SshFailureReason.ForwardSetupFailed, "中文原文", inner)
+            {
+                FailureKind = kind,
+                Endpoint = "127.0.0.1:8080",
+                Port = 80,
+                Limit = 8,
+                Timeout = TimeSpan.FromSeconds(30),
+                DisplayName = "localhost:10",
+                ExitCode = 1,
+                ErrorOutput = "xauth: unable to open display",
+                ConfigLine = "LocalForward 8080 db:5432",
+            };
+            AssertNoChinese(kind.ToString(), SshInterop.Localize(ex));
         }
     }
 
@@ -586,6 +628,57 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
         Assert.AreEqual(
             $"{Strings.Format("SshErr_RekeyFailed", Strings.Format("SshErr_HostKeySignatureInvalid", "ssh-ed25519"))} [HostKeyRejected @ Rekeying]",
             SshInterop.Translate(closed)!.Message);
+    }
+
+    /// <summary>
+    /// 转发器起不来:端口被占说「被占」、别的套接字错误照错误码说;服务端拒绝监听特权端口时换一句;xauth 的输出清洗过才进文案;
+    /// 本机 agent 不可用转述 agent 那边按原因码的那句。曾经端口占用、X11 起不来直接透传库的中文。
+    /// </summary>
+    [TestMethod]
+    public void 转发器起不来按种类说()
+    {
+        SshForwardException inUse = new(SshFailureReason.ForwardBindFailed, "在 127.0.0.1:8080 上起监听失败。",
+            new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.AddressAlreadyInUse))
+        {
+            FailureKind = SshForwardFailureKind.ListenFailed,
+            Endpoint = "127.0.0.1:8080",
+        };
+        Assert.AreEqual($"{Strings.Format("SshErr_FwdListenInUse", "127.0.0.1:8080")} [ForwardBindFailed @ Open]", SshInterop.Localize(inUse));
+
+        SshForwardException denied = new(SshFailureReason.ForwardBindFailed, "x",
+            new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.AccessDenied))
+        {
+            FailureKind = SshForwardFailureKind.ListenFailed,
+            Endpoint = "0.0.0.0:80",
+        };
+        Assert.StartsWith(Strings.Format("SshErr_FwdListenFailed", "0.0.0.0:80", "AccessDenied"), SshInterop.Localize(denied));
+
+        SshForwardException privileged = new(SshFailureReason.ForwardRejected, "x")
+        {
+            FailureKind = SshForwardFailureKind.RemoteListenRejected,
+            Endpoint = "0.0.0.0:80",
+            Port = 80,
+        };
+        Assert.StartsWith(Strings.Format("SshErr_FwdRemoteListenRejectedPrivileged", "0.0.0.0:80"), SshInterop.Localize(privileged));
+
+        SshForwardException xauth = new(SshFailureReason.ForwardSetupFailed, "x")
+        {
+            FailureKind = SshForwardFailureKind.XAuthFailed,
+            ExitCode = 1,
+            ErrorOutput = "bad\u001b]0;x\u0007display",
+        };
+        Assert.AreEqual(
+            $"{Strings.Format("SshErr_FwdXAuthSaid", Strings.Format("SshErr_FwdXAuthFailed", "1"), "bad?]0;x?display")} [ForwardSetupFailed @ Open]",
+            SshInterop.Localize(xauth));
+
+        SshForwardException agent = new(SshFailureReason.AgentNotRunning, "本机 ssh-agent 不可用,没有请求 agent 转发:……",
+            new SshAgentException(SshFailureReason.AgentNotRunning, "找不到 ssh-agent。"))
+        {
+            FailureKind = SshForwardFailureKind.LocalAgentUnavailable,
+        };
+        Assert.AreEqual(
+            Strings.Format("SshErr_FwdLocalAgentUnavailable", $"{Strings.Get("SshErr_AgentNotRunning")} [AgentNotRunning @ Authenticating]"),
+            SshInterop.Localize(agent));
     }
 
     /// <summary>转发上没带异常的失败:按原因、目标与时限说;撞上限时说拒了几条。</summary>

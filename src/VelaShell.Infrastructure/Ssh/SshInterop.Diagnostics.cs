@@ -436,6 +436,89 @@ internal static partial class SshInterop
         _ => inner.Message,
     };
 
+    // ------------------------------------------------------------ 转发器起不来
+
+    /// <summary>转发器起不来的文案键;没归类时为 <see langword="null" />。远程监听被拒按端口是不是特权端口分开说。</summary>
+    internal static string? ForwardFailureKey(SshForwardFailureKind kind, bool privilegedPort = false) => kind switch
+    {
+        SshForwardFailureKind.ListenFailed => "SshErr_FwdListenFailed",
+        SshForwardFailureKind.Ipv6LoopbackBindFailed => "SshErr_FwdIpv6LoopbackInUse",
+        SshForwardFailureKind.SocketPathExists => "SshErr_FwdSocketPathExists",
+        SshForwardFailureKind.SocketPathTooLong => "SshErr_FwdSocketPathTooLong",
+        SshForwardFailureKind.RemoteListenRejected => privilegedPort ? "SshErr_FwdRemoteListenRejectedPrivileged" : "SshErr_FwdRemoteListenRejected",
+        SshForwardFailureKind.RemoteSocketListenRejected => "SshErr_FwdRemoteSocketListenRejected",
+        SshForwardFailureKind.NoBoundPortInReply => "SshErr_FwdNoBoundPortInReply",
+        SshForwardFailureKind.AgentForwardRejected => "SshErr_FwdAgentForwardRejected",
+        SshForwardFailureKind.LocalAgentUnavailable => "SshErr_FwdLocalAgentUnavailable",
+        SshForwardFailureKind.X11ForwardRejected => "SshErr_FwdX11ForwardRejected",
+        SshForwardFailureKind.NoX11Display => "SshErr_FwdNoX11Display",
+        SshForwardFailureKind.XAuthTempDirectoryFailed => "SshErr_FwdXAuthTempDirectoryFailed",
+        SshForwardFailureKind.XAuthStartFailed => "SshErr_FwdXAuthStartFailed",
+        SshForwardFailureKind.XAuthTimedOut => "SshErr_FwdXAuthTimedOut",
+        SshForwardFailureKind.XAuthFailed => "SshErr_FwdXAuthFailed",
+        SshForwardFailureKind.XAuthNoCookie => "SshErr_FwdXAuthNoCookie",
+        SshForwardFailureKind.ConfigForwardFailed => "SshErr_FwdConfigForwardFailed",
+        SshForwardFailureKind.UnmatchedForwardedChannel => "SshErr_FwdUnmatchedChannel",
+        SshForwardFailureKind.X11ForwardingExpired => "SshErr_FwdX11Expired",
+        SshForwardFailureKind.ChannelLimitReached => "SshErr_FwdChannelLimitReached",
+        SshForwardFailureKind.LocalTargetUnreachable => "SshErr_FwdLocalTargetUnreachable",
+        SshForwardFailureKind.Stopped => "SshErr_FwdStopped",
+        _ => null,
+    };
+
+    /// <summary>
+    /// 转发器起不来:按种类说哪一步、该查什么,带上监听的端点、xauth 的退出码与输出。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 端口占用(<see cref="SshFailureReason.ForwardBindFailed" />)曾经刻意不翻 —— 消息里有地址与端口,换成一句通用文案帮不上忙;
+    /// 现在地址在 <see cref="SshForwardException.Endpoint" />、套接字错误码在内层,照样说得具体。隧道面板仍在它那一层按配置说(TunnelService)。
+    /// </para>
+    /// <para>xauth 的输出库已清洗过;地址、路径、ssh_config 的原文与 X 显示名照样过一遍清洗再进文案。</para>
+    /// </remarks>
+    internal static string LocalizeForward(SshForwardException ex)
+    {
+        bool privileged = ex.Port is > 0 and < 1024;
+        if (ForwardFailureKey(ex.FailureKind, privileged) is not { } key)
+        {
+            return LocalizeByReason(ex);
+        }
+
+        string endpoint = PeerText.Sanitize(ex.Endpoint, 256);
+        string socketError = (ex.InnerException as System.Net.Sockets.SocketException)?.SocketErrorCode.ToString()
+            ?? ex.InnerException?.Message ?? ex.Reason.ToString();
+        bool inUse = ex.InnerException is System.Net.Sockets.SocketException { SocketErrorCode: System.Net.Sockets.SocketError.AddressAlreadyInUse };
+
+        string text = ex.FailureKind switch
+        {
+            // 被占才是「换端口 / 只听 127.0.0.1」那句建议;别的错误按普通的起不来说。
+            SshForwardFailureKind.ListenFailed when inUse => Strings.Format("SshErr_FwdListenInUse", endpoint),
+            SshForwardFailureKind.ListenFailed => Strings.Format(key, endpoint, socketError),
+            SshForwardFailureKind.Ipv6LoopbackBindFailed when !inUse => Strings.Format("SshErr_FwdListenFailed", endpoint, socketError),
+            SshForwardFailureKind.Ipv6LoopbackBindFailed or SshForwardFailureKind.SocketPathExists or SshForwardFailureKind.SocketPathTooLong
+                or SshForwardFailureKind.RemoteListenRejected or SshForwardFailureKind.RemoteSocketListenRejected
+                or SshForwardFailureKind.UnmatchedForwardedChannel or SshForwardFailureKind.LocalTargetUnreachable => Strings.Format(key, endpoint),
+            SshForwardFailureKind.LocalAgentUnavailable => Strings.Format(key, DescribeCause(ex.InnerException)),
+            SshForwardFailureKind.ConfigForwardFailed => Strings.Format(key, PeerText.Sanitize(ex.ConfigLine, 200), DescribeCause(ex.InnerException)),
+            SshForwardFailureKind.XAuthTempDirectoryFailed or SshForwardFailureKind.XAuthStartFailed =>
+                Strings.Format(key, ex.InnerException?.Message ?? "?"),
+            SshForwardFailureKind.XAuthTimedOut => Strings.Format(key,
+                ex.Timeout is { } t ? t.TotalSeconds.ToString("0", CultureInfo.InvariantCulture) : "?"),
+            SshForwardFailureKind.XAuthFailed => string.IsNullOrWhiteSpace(ex.ErrorOutput)
+                ? Strings.Format(key, ex.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "?")
+                : Strings.Format("SshErr_FwdXAuthSaid",
+                    Strings.Format(key, ex.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "?"), PeerText.SanitizeTail(ex.ErrorOutput, 1024)),
+            SshForwardFailureKind.XAuthNoCookie => Strings.Format(key, PeerText.Sanitize(ex.DisplayName, 128)),
+            SshForwardFailureKind.ChannelLimitReached => Strings.Format(key, ex.Limit?.ToString(CultureInfo.InvariantCulture) ?? "?"),
+            _ => Strings.Get(key),
+        };
+        return CarriesForwardCause(ex.FailureKind) ? text : $"{text} [{ex.Reason} @ {ex.Phase}]";
+    }
+
+    /// <summary>这两种在句子里转述内层(agent 那边、那一条转发自己)的原因,内层的那句已经带着 <c>[原因 @ 阶段]</c>。</summary>
+    private static bool CarriesForwardCause(SshForwardFailureKind kind) =>
+        kind is SshForwardFailureKind.LocalAgentUnavailable or SshForwardFailureKind.ConfigForwardFailed;
+
     // ------------------------------------------------------------ 转发的单条连接失败
 
     /// <summary>

@@ -308,7 +308,12 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
                 $"服务端拒绝在 {effective.BindAddress}:{effective.BindPort} 上开监听。" +
                 "常见原因是 sshd_config 里 AllowTcpForwarding no，" +
                 "或者要绑非环回地址而 GatewayPorts 没打开，" +
-                (effective.BindPort is > 0 and < 1024 ? "又或者那是个特权端口。" : "又或者端口已被占用。"));
+                (effective.BindPort is > 0 and < 1024 ? "又或者那是个特权端口。" : "又或者端口已被占用。"))
+            {
+                FailureKind = SshForwardFailureKind.RemoteListenRejected,
+                Endpoint = $"{effective.BindAddress}:{effective.BindPort}",
+                Port = effective.BindPort,
+            };
         }
 
         if (forwarder.BoundPort == 0)
@@ -318,7 +323,10 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
             // 而症状是「转发看起来建好了，但连过来的全被拒」。
             forwarder.Unregister();
             throw new SshForwardException(SshFailureReason.ProtocolError,
-                "请求了动态端口，但服务端的 REQUEST_SUCCESS 里没有带回实际端口号。");
+                "请求了动态端口，但服务端的 REQUEST_SUCCESS 里没有带回实际端口号。")
+            {
+                FailureKind = SshForwardFailureKind.NoBoundPortInReply,
+            };
         }
 
         forwarder.TrackConnection(connection);
@@ -371,14 +379,22 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
         {
             throw new SshForwardException(SshFailureReason.ForwardRejected,
                 $"服务端拒绝在 {effective.BindAddress}:{effective.BindPort} 上开监听（远程动态转发）。" +
-                "常见原因是 sshd_config 里 AllowTcpForwarding no，或者要绑非环回地址而 GatewayPorts 没打开，又或者端口已被占用。");
+                "常见原因是 sshd_config 里 AllowTcpForwarding no，或者要绑非环回地址而 GatewayPorts 没打开，又或者端口已被占用。")
+            {
+                FailureKind = SshForwardFailureKind.RemoteListenRejected,
+                Endpoint = $"{effective.BindAddress}:{effective.BindPort}",
+                Port = effective.BindPort,
+            };
         }
 
         if (forwarder.BoundPort == 0)
         {
             forwarder.Unregister();
             throw new SshForwardException(SshFailureReason.ProtocolError,
-                "请求了动态端口，但服务端的 REQUEST_SUCCESS 里没有带回实际端口号。");
+                "请求了动态端口，但服务端的 REQUEST_SUCCESS 里没有带回实际端口号。")
+            {
+                FailureKind = SshForwardFailureKind.NoBoundPortInReply,
+            };
         }
 
         forwarder.TrackConnection(connection);
@@ -435,7 +451,11 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
             throw new SshForwardException(SshFailureReason.ForwardRejected,
                 $"服务端拒绝在 {remoteSocketPath} 上开套接字监听。" +
                 "常见原因是 sshd_config 里 AllowStreamLocalForwarding no、" +
-                "那个路径已经存在，或者所在目录不可写。");
+                "那个路径已经存在，或者所在目录不可写。")
+            {
+                FailureKind = SshForwardFailureKind.RemoteSocketListenRejected,
+                Endpoint = remoteSocketPath,
+            };
         }
 
         forwarder.TrackConnection(connection);
@@ -512,7 +532,11 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
             if (!string.Equals(socketPath, RemoteSocketPath, StringComparison.Ordinal))
             {
                 throw new SshForwardException(
-                    SshFailureReason.ForwardRejected, $"没有匹配 {socketPath} 的远程套接字转发。");
+                    SshFailureReason.ForwardRejected, $"没有匹配 {socketPath} 的远程套接字转发。")
+                {
+                    FailureKind = SshForwardFailureKind.UnmatchedForwardedChannel,
+                    Endpoint = socketPath,
+                };
             }
         }
         else
@@ -526,7 +550,11 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
                 || bindPort != BoundPort)
             {
                 throw new SshForwardException(
-                    SshFailureReason.ForwardRejected, $"没有匹配 {bindAddress}:{bindPort} 的远程转发。");
+                    SshFailureReason.ForwardRejected, $"没有匹配 {bindAddress}:{bindPort} 的远程转发。")
+                {
+                    FailureKind = SshForwardFailureKind.UnmatchedForwardedChannel,
+                    Endpoint = $"{bindAddress}:{bindPort}",
+                };
             }
         }
 
@@ -535,7 +563,11 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
             // 〔spec 07 §八〕与本地转发同一条：计入 errors、发 ConnectionLimit 事件（每秒至多一次）。曾经只拒掉那条通道，不发事件也不计数。
             ReportConnectionLimit(_options.MaxConnections);
             throw new SshForwardException(
-                SshFailureReason.LimitExceeded, $"并发连接数已达上限 {_options.MaxConnections}。");
+                SshFailureReason.LimitExceeded, $"并发连接数已达上限 {_options.MaxConnections}。")
+            {
+                FailureKind = SshForwardFailureKind.ChannelLimitReached,
+                Limit = _options.MaxConnections,
+            };
         }
 
         // 动态转发的目标要等 SOCKS 握手才知道：先确认，握手在 HandleAsync 里跑。
@@ -583,7 +615,11 @@ public sealed class RemotePortForwarder : PortForwarder, IIncomingChannelHandler
 
             // 连不上本机目标：拒掉这一条，转发器继续跑。
             Report(ForwardErrorReason.TargetConnect, $"连不上本机目标 {target}：{ex.SocketErrorCode}。", ex, target);
-            throw new SshForwardException(ReasonFor(ex.SocketErrorCode), "连不上转发的本机目标。", ex);
+            throw new SshForwardException(ReasonFor(ex.SocketErrorCode), "连不上转发的本机目标。", ex)
+            {
+                FailureKind = SshForwardFailureKind.LocalTargetUnreachable,
+                Endpoint = target,
+            };
         }
         catch
         {

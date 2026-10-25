@@ -69,7 +69,10 @@ public abstract class PortForwarder : IAsyncDisposable
 
     /// <summary>本端在释放（子类的 <see cref="DisposeAsync"/> 一进来就调）。</summary>
     private protected void CompleteAsStopped() =>
-        _completion.TrySetResult(new SshForwardException(SshFailureReason.Aborted, "转发器已由本端停止。"));
+        _completion.TrySetResult(new SshForwardException(SshFailureReason.Aborted, "转发器已由本端停止。")
+        {
+            FailureKind = SshForwardFailureKind.Stopped,
+        });
 
     /// <summary>只给本库的派生类型用。</summary>
     /// <param name="kind">转发的形态。</param>
