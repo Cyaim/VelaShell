@@ -32,7 +32,8 @@ namespace VelaShell.Services;
 /// 冒号后面跟空白、不加引号的值遮到行尾(停在同一行的下一个键之前,判据见 <see cref="KeyValue" />);
 /// 几个不带口令字样的键:<c>tls.key</c> 一类、kubeconfig 的 <c>client-key-data</c>、<c>.dockerconfigjson</c>、Docker <c>config.json</c> 的 <c>"auth"</c>;
 /// <c>.netrc</c> 的 <c>password</c>(<c>machine … password …</c> 一行写完的,或分行写时单独一行的);
-/// <c>Bearer</c> / <c>Basic</c> 后面的凭据;PEM 私钥块(含 OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c>)的正文(写在一行里的,BEGIN 与 END 之间那段);
+/// <c>Bearer</c> / <c>Basic</c> 后面的凭据;PEM 私钥块(含 OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c>)的正文(写在一行里的,BEGIN 与 END 之间那段;
+/// 多行的只认 base64 正文行,一行不像私钥块里的行就当私钥块已经结束,见 <see cref="KeyLine" />);
 /// 几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、GitHub <c>ghp_…</c> 一类与 <c>github_pat_…</c>、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。
 /// 宁可多遮,不放过。
 /// </para>
@@ -121,7 +122,9 @@ public sealed partial class SessionOutputMasker
     /// <summary>扣着没放的原文(总在当前行里):写到一半的值,或者吞值时留着拼下一段的那几个字节。</summary>
     private string _held = string.Empty;
 
-    /// <summary>在多行私钥块里(上一行有 BEGIN 而没有 END):整行遮,直到出现 END 的那一行。</summary>
+    /// <summary>
+    /// 在多行私钥块里(上一行有 BEGIN 而没有 END):只遮正文行,直到出现 END 的那一行,或者来了一行私钥块里不会有的东西(见 <see cref="KeyLine" />)。
+    /// </summary>
     private bool _inPrivateKey;
 
     /// <summary>当前行处理过的部分里出现过 BEGIN、还没见到 END:后面到行尾都是私钥正文。</summary>
@@ -353,7 +356,14 @@ public sealed partial class SessionOutputMasker
     }
 
     /// <summary>
-    /// 多行私钥块里的一行:整行换成 <c>***</c>(行尾留着);出现 END 的那一行 END 照放、它前面的正文换成 <c>***</c>,之后回到平常。
+    /// 多行私钥块里的一行(上一行有 BEGIN 而没有 END)。只认私钥块里真会出现的几种行:
+    /// <list type="bullet">
+    /// <item>正文行(base64,可带 <c>cat -n</c> / <c>grep -n</c> / <c>grep -A</c> 加的行号、文件名前缀):正文换成 <c>***</c>,前缀、控制序列、行尾照放;</item>
+    /// <item>空行与 PEM / OpenPGP 的头部行(<c>Proc-Type:</c>、<c>DEK-Info:</c>、<c>Version:</c>、<c>Comment:</c>…):原样;</item>
+    /// <item>出现 END 的那一行:END 照放,它前面同一行的正文换成 <c>***</c>,之后回到平常。</item>
+    /// </list>
+    /// 别的行说明这并不是一个私钥块(<c>echo</c> 了一行 BEGIN、截断的输出):私钥块到此为止,这一行照平常处理 ——
+    /// 不然一行 BEGIN 就能让之后的整段录像变成一行行 <c>***</c>,提示符也被扣着等回车。
     /// </summary>
     private void KeyLine(string segment, bool complete, bool final, StringBuilder output)
     {
@@ -362,29 +372,61 @@ public sealed partial class SessionOutputMasker
             return;
         }
         Projection view = Projection.Of(segment, null);
-        if (FirstKeyEnd(view.Visible, view.Visible.Length) is { } end)
+        string visible = view.Visible;
+        if (FirstKeyEnd(visible, visible.Length) is { } end)
         {
             int endStart = view.RawStart(end.Index);
             int stop = view.RawEnd(end.Index + end.Length);
-            // END 前面同一行里还有正文(BBBB…-----END …):正文换成 ***,END 照放;只有缩进的照原样
-            bool hasBody = view.Visible.AsSpan(0, end.Index).IndexOfAnyExcept(' ', '\t', '\r') >= 0;
-            output.Append(hasBody ? Mask : segment[..endStart]).Append(segment, endStart, stop - endStart);
+            // END 前面同一行里还有正文(BBBB…-----END …):正文换成 ***,END 照放;只有缩进或行号、文件名前缀的照原样
+            int prefix = KeyLinePrefix(visible.AsSpan(0, end.Index));
+            bool hasBody = visible.AsSpan(prefix, end.Index - prefix).IndexOfAnyExcept(' ', '\t', '\r') >= 0;
+            if (hasBody)
+            {
+                AppendMaskedSpan(output, view, prefix, end.Index);
+            }
+            else
+            {
+                output.Append(segment, 0, endStart);
+            }
+            output.Append(segment, endStart, stop - endStart);
             _inPrivateKey = false;
             _inKeyBody = false;
             ResetContext(atLineStart: false);
-            _keyTail = KeyTail(view.Visible[..(end.Index + end.Length)]);
+            _keyTail = KeyTail(visible[..(end.Index + end.Length)]);
             Line(segment[stop..], complete, final, output);
             return;
         }
         if (complete)
         {
-            int body = segment.Length - (segment.EndsWith("\r\n", StringComparison.Ordinal) ? 2 : 1);
-            output.Append(body == 0 ? segment : Mask + segment[body..]);
+            int contentEnd = visible.Length - (visible.EndsWith("\r\n", StringComparison.Ordinal) ? 2 : 1);
+            switch (ClassifyKeyLine(visible.AsSpan(0, contentEnd), out int bodyStart))
+            {
+                case KeyLineKind.Body:
+                    AppendMaskedSpan(output, view, bodyStart, contentEnd);
+                    output.Append(segment, view.RawStart(contentEnd), segment.Length - view.RawStart(contentEnd));
+                    break;
+                case KeyLineKind.Kept:
+                    // 空行、头部行:照平常的规则过一遍(Comment 里也可能有口令),私钥块还在继续
+                    Line(segment, complete, final, output);
+                    _inPrivateKey = true;
+                    return;
+                default:
+                    _inPrivateKey = false;
+                    Line(segment, complete, final, output);
+                    return;
+            }
             ResetContext(atLineStart: true);
             _keyTail = string.Empty;
             return;
         }
-        // 还不知道是不是 END 那一行:整行扣着;收尾或者扣到上限就先遮,这一行剩下的吞到 END 或行尾为止
+        if (!MayBeKeyLine(visible))
+        {
+            // 已经看得出不是私钥块里的行(提示符里的 @ $ # > 一类):不扣,照平常处理
+            _inPrivateKey = false;
+            Line(segment, complete, final, output);
+            return;
+        }
+        // 还不知道是正文、头部还是 END 那一行:整行扣着;收尾或者扣到上限就先遮,这一行剩下的吞到 END 或行尾为止
         if (!final && segment.Length < MaxHeldBytes)
         {
             _held = segment;
@@ -394,6 +436,75 @@ public sealed partial class SessionOutputMasker
         _swallowing = ValueKind.KeyLine;
         Segment(segment, complete: false, final, output);
     }
+
+    /// <summary>
+    /// 可见文本 <c>[start, end)</c> 换成一个 <c>***</c>:原文里落在第一个非空白字符之前的控制序列放在它前面(颜色从正文起),
+    /// 其余的放在后面;<paramref name="start" /> 之前的原文(行号、文件名前缀)照放。
+    /// </summary>
+    private static void AppendMaskedSpan(StringBuilder output, Projection view, int start, int end)
+    {
+        int rawStart = start == 0 ? 0 : view.RawStart(start);
+        output.Append(view.Raw, 0, rawStart);
+        int text = view.Visible.AsSpan(start, end - start).IndexOfAnyExcept(' ', '\t', '\r');
+        int rawText = text < 0 ? view.RawStart(end) : view.RawStart(start + text);
+        int rawEnd = view.RawStart(end);
+        view.AppendHidden(output, rawStart, rawText);
+        output.Append(Mask);
+        view.AppendHidden(output, rawText, rawEnd);
+    }
+
+    /// <summary>私钥块里的一行是什么:正文(要遮)、空行或头部行(原样),还是别的(说明私钥块并没有继续)。</summary>
+    private enum KeyLineKind
+    {
+        Body,
+        Kept,
+        Other
+    }
+
+    /// <summary>
+    /// 一整行(不含行尾)在私钥块里算哪种。正文:可选的行号 / 文件名前缀之后是至少 4 个 base64 字符(可带 <c>=</c> 填充),
+    /// 或 OpenPGP 的校验行 <c>=XXXX</c>;前面的缩进不算前缀(连同正文一起遮,与没加这条判断时一样)。
+    /// </summary>
+    private static KeyLineKind ClassifyKeyLine(ReadOnlySpan<char> line, out int bodyStart)
+    {
+        bodyStart = 0;
+        ReadOnlySpan<char> trimmed = line.Trim(" \t\r");
+        if (trimmed.IsEmpty || KeyHeader().IsMatch(trimmed))
+        {
+            return KeyLineKind.Kept;
+        }
+        int prefix = KeyLinePrefix(line);
+        if (KeyBodyLine().IsMatch(line[prefix..]))
+        {
+            bodyStart = prefix;
+            return KeyLineKind.Body;
+        }
+        return KeyLineKind.Other;
+    }
+
+    /// <summary>行首的行号或文件名前缀(<c>cat -n</c> 的「  2\t」、<c>grep -n</c> 的「12:」、<c>grep -A</c> 的「./id_rsa-」)有多长;没有为 0。</summary>
+    private static int KeyLinePrefix(ReadOnlySpan<char> line)
+    {
+        foreach (ValueMatch match in KeyLineNumber().EnumerateMatches(line))
+        {
+            return match.Length;
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// 还没写完的一行有没有可能是私钥块里的行:以已知的头部名起头,或者只含 base64、行号与文件名前缀、END 标记里会有的字符。
+    /// 提示符(<c>ops@web-01:~$</c>、<c>PS C:\&gt;</c>)里的 <c>@ ~ $ # &gt; % \ [ ]</c> 一出现就不是。
+    /// </summary>
+    private static bool MayBeKeyLine(string visible)
+    {
+        ReadOnlySpan<char> text = visible.AsSpan().TrimStart(" \t");
+        return KeyHeader().IsMatch(text) || text.IndexOfAnyExcept(KeyLineChars) < 0;
+    }
+
+    /// <summary>私钥块里的行(正文、行号、文件名前缀、END 标记)会用到的字符。</summary>
+    private static readonly SearchValues<char> KeyLineChars =
+        SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=:-._ \t\r");
 
     /// <summary>
     /// 一行里要遮的片段(原文位置),按起点排好、重叠的并成一段。只要结尾落在 <paramref name="from" /> 之后的(之前的已经处理过了);
@@ -883,6 +994,22 @@ public sealed partial class SessionOutputMasker
     [GeneratedRegex(TokenStart + @"(?:(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_(?>[A-Za-z0-9]{30,})|github_pat_(?>[A-Za-z0-9_]{22,})|xox[abprs]-[A-Za-z0-9\-]{10,}|sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_])|(?:(?:AKIA|ASIA)[0-9A-Z]*|gh[pousr]_[A-Za-z0-9]*|github_pat_[A-Za-z0-9_]*|xox[abprs]-[A-Za-z0-9\-]*|sk-[A-Za-z0-9_\-]*)\z)",
         RegexOptions.CultureInvariant)]
     private static partial Regex PrefixedToken();
+
+    /// <summary>私钥块里的正文行(行号 / 文件名前缀之后):至少 4 个 base64 字符,可带 <c>=</c> 填充;或 OpenPGP 的校验行 <c>=XXXX</c>。</summary>
+    [GeneratedRegex(@"\A[ \t]*(?:[A-Za-z0-9+/]{4,}={0,2}|=[A-Za-z0-9+/]{4})[ \t\r]*\z", RegexOptions.CultureInvariant)]
+    private static partial Regex KeyBodyLine();
+
+    /// <summary>
+    /// 私钥块里一行行首的行号或文件名前缀:<c>cat -n</c> / <c>nl</c> 的「空白 + 数字 + 空白」,<c>grep -n</c> 的「数字:」,
+    /// 多个文件时 <c>grep</c> 的「文件名:」「文件名-」(上下文行用 -)及「文件名:数字:」。只有缩进的不算前缀。
+    /// </summary>
+    /// <remarks>base64 里没有 <c>:</c> 与 <c>-</c>,前缀不会吃进正文;只从行首配一次,至多回溯一遍,线性。</remarks>
+    [GeneratedRegex(@"\A[ \t]*(?:\d+[ \t]+|(?:[^ \t:]+[:\-])?\d+[:\-]|[^ \t:]+[:\-])", RegexOptions.CultureInvariant)]
+    private static partial Regex KeyLineNumber();
+
+    /// <summary>PEM(RFC 1421)与 OpenPGP 铠装(RFC 4880)私钥块里的头部行。</summary>
+    [GeneratedRegex(@"\A(?:Proc-Type|DEK-Info|Version|Comment|Hash|Charset|MessageID):", RegexOptions.CultureInvariant)]
+    private static partial Regex KeyHeader();
 
     /// <summary>PEM 私钥块的开头(<c>begin</c> 组)或结尾;OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c> 也算。</summary>
     [GeneratedRegex(@"-----(?:(?<begin>BEGIN)|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----", RegexOptions.CultureInvariant)]

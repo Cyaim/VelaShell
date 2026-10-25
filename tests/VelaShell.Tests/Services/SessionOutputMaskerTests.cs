@@ -165,7 +165,57 @@ public sealed class SessionOutputMaskerTests
         ["escaped-json-empty-value-then-token",
             "{\\\"password\\\":\\\"\\\",\\\"token\\\":\\\"xyz12345\\\"}\n",
             "{\\\"password\\\":\\\"\\\",\\\"token\\\":\\\"***\\\"}\n", "xyz12345"],
+        // 多行私钥块只认正文行:头部行、空行原样,上了色的正文只换正文、颜色序列照放
+        ["pem-encrypted-headers-and-colour",
+            "-----BEGIN RSA PRIVATE KEY-----\r\nProc-Type: 4,ENCRYPTED\r\nDEK-Info: AES-128-CBC,F0E1D2C3B4A59687\r\n\r\n"
+            + "\u001b[38;5;231mMIIEpAIBAAKCAQEAxyz0123456789abcdef\u001b[0m\r\n  \u001b[1mQUJDRA==\u001b[0m\r\n-----END RSA PRIVATE KEY-----\r\n",
+            "-----BEGIN RSA PRIVATE KEY-----\r\nProc-Type: 4,ENCRYPTED\r\nDEK-Info: AES-128-CBC,F0E1D2C3B4A59687\r\n\r\n"
+            + "\u001b[38;5;231m***\u001b[0m\r\n\u001b[1m***\u001b[0m\r\n-----END RSA PRIVATE KEY-----\r\n",
+            "MIIEpAIBAAKCAQEAxyz0123456789abcdef"],
+        // cat -n、grep -A 加的行号与文件名前缀照放,只遮正文
+        ["pem-with-line-numbers",
+            "     1\t-----BEGIN OPENSSH PRIVATE KEY-----\n     2\tb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAE\n     3\t-----END OPENSSH PRIVATE KEY-----\n",
+            "     1\t-----BEGIN OPENSSH PRIVATE KEY-----\n     2\t***\n     3\t-----END OPENSSH PRIVATE KEY-----\n",
+            "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAE"],
+        ["pem-in-grep-context",
+            "./id_rsa:-----BEGIN RSA PRIVATE KEY-----\n./id_rsa-MIIEowIBAAKCAQEA0123456789\n./id_rsa:-----END RSA PRIVATE KEY-----\n",
+            "./id_rsa:-----BEGIN RSA PRIVATE KEY-----\n./id_rsa-***\n./id_rsa:-----END RSA PRIVATE KEY-----\n",
+            "MIIEowIBAAKCAQEA0123456789"],
     ];
+
+    /// <summary>
+    /// 一行 BEGIN 不能让之后的录像失明:<c>echo</c> 了一行 BEGIN(或者输出被截断、没有 END),
+    /// 下一行不像私钥块里的行(提示符、普通输出)就当私钥块已经结束 —— 提示符当场放出,后面的输出原样。
+    /// </summary>
+    [TestMethod]
+    public void BeginMarkerWithoutABody_DoesNotBlindTheRestOfTheRecording()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("$ echo '-----BEGIN RSA PRIVATE KEY-----'\r\n-----BEGIN RSA PRIVATE KEY-----\r\n"));
+        _written.Clear();
+        masker.Write(Bytes("\u001b]0;ops@web-01: ~\u0007ops@web-01:~$ "));
+        Assert.AreEqual("\u001b]0;ops@web-01: ~\u0007ops@web-01:~$ ", Written, "提示符当场原样放出,不等回车");
+        masker.Write(Bytes("ls -l\r\ntotal 8\r\n-rw-r--r-- 1 ops ops 12 Oct 25 README.md\r\nops@web-01:~$ "));
+        Assert.AreEqual(
+            "\u001b]0;ops@web-01: ~\u0007ops@web-01:~$ ls -l\r\ntotal 8\r\n-rw-r--r-- 1 ops ops 12 Oct 25 README.md\r\nops@web-01:~$ ",
+            Written);
+        _written.Clear();
+
+        // 截断的私钥块(没有 END)之后的普通输出同理;正文行之前的那几行照遮
+        masker.Write(Bytes("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\nQyNTUxOQAAACD\n[1]+  Done   head -3 id\n"));
+        Assert.AreEqual("-----BEGIN OPENSSH PRIVATE KEY-----\n***\n***\n[1]+  Done   head -3 id\n", Written);
+    }
+
+    /// <summary>私钥块里的头部行照常过规则(OpenPGP 的 Comment 里也可能写着口令),过完私钥块还在继续。</summary>
+    [TestMethod]
+    public void HeaderLinesInsideAKeyBlock_StillGoThroughTheRules()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("-----BEGIN PGP PRIVATE KEY BLOCK-----\nVersion: GnuPG v2\nComment: passphrase=hunter2\n\nlQOYBGVxQ0EBCADabcd\n=AbCd\n-----END PGP PRIVATE KEY BLOCK-----\n"));
+        Assert.AreEqual(
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----\nVersion: GnuPG v2\nComment: passphrase=***\n\n***\n***\n-----END PGP PRIVATE KEY BLOCK-----\n",
+            Written);
+    }
 
     /// <summary>
     /// 先剥掉控制序列再匹配(<c>grep -i pass</c> 只高亮关键词的一部分、令牌与值被高亮切开):遮掉的那一段里夹着的序列
