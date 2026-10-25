@@ -175,6 +175,32 @@ public static class TransientFailure
     }
 
     /// <summary>
+    /// 服务端回 401:这把 Key 本身被拒(无效、吊销),换哪个模型都一样 —— 冷整把 Key。
+    /// 403 / 429 不算:可能只是这把 Key 用不了这一个型号(没开通)或这个型号单独限流,
+    /// 只冷这把 Key 用在这个模型上(见 <see cref="ProviderHealth.RecordKeyFailure" />),兄弟模型照常探。
+    /// </summary>
+    public static bool IsKeyRejected(Exception? exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            switch (current)
+            {
+                case AiSettingsStore.ApiKeySlotChangedException:
+                case ProviderConfigurationChangedException:
+                case OperationCanceledException:
+                    return false;
+                case HttpRequestException { StatusCode: { } status }:
+                    return (int)status == 401;
+                case AnthropicApiException { StatusCode: { } apiStatus } when apiStatus != 0:
+                    return (int)apiStatus == 401;
+                case System.ClientModel.ClientResultException { Status: > 0 } result:
+                    return result.Status == 401;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 这个异常值不值得把请求<b>换一家</b>再发。
     /// </summary>
     /// <remarks>

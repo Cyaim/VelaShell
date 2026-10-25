@@ -202,6 +202,57 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     [TestMethod]
+    [DataRow(403)]
+    [DataRow(401)]
+    public void KeyFailover_ModelScopedKeyFailureStillProbesASiblingModelOnTheSameKey(int status)
+    {
+        OnUi(async () =>
+        {
+            // 单 Key 供应商,链上 A → B 是同一家、同一把 Key 的两个型号。A 回 403(这把 Key 没开通 A,或 A 单独被拒):
+            // 只冷「这把 Key 用在 A 上」,B 照常探活、答上;A 回 401(Key 本身被拒)才冷整把 Key,B 不白探
+            using var endpoint = new KeyAuthStub((_, body) => body.Contains("\"model\":\"m-a\"", StringComparison.Ordinal)
+                ? (status, "{\"error\":{\"message\":\"denied\"}}") : (200, LifecycleAnswer));
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            AiProvider provider = StubProvider("single", endpoint.BaseUrl, "m-a");
+            var sibling = new AiModelConfig { Model = "m-b" };
+            provider.Models.Add(sibling);
+            var settings = new AiSettings
+            {
+                Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false,
+                FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }, new FailoverEntry { ModelId = sibling.Id }]
+            };
+            await store.SetApiKeyAsync(provider.Id, "key-a");
+            await store.SaveAsync(settings);
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("兄弟模型照常探");
+                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                    && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
+                ProviderHealth health = PanelHealth(panel);
+                int siblingRequests = endpoint.Requests.Count(r => r.Body.Contains("\"model\":\"m-b\"", StringComparison.Ordinal));
+                if (status == 403)
+                {
+                    Assert.AreEqual(2, siblingRequests, "B 先探活、再正式发送");
+                    Assert.AreEqual(sibling.Id, (await store.LoadAsync()).ActiveModelId, "换到兄弟模型答上并粘住");
+                    Assert.IsTrue(health.IsKeyCooling(provider.Id, provider.Models[0].Id));
+                    Assert.IsFalse(health.IsKeyCooling(provider.Id, sibling.Id));
+                    Assert.IsFalse(health.IsKeyCooling(provider.Id), "整把 Key 不冷");
+                }
+                else
+                {
+                    Assert.AreEqual(0, siblingRequests, "Key 本身被拒,兄弟模型不白探");
+                    Assert.IsTrue(health.IsKeyCooling(provider.Id));
+                    Assert.AreEqual(provider.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
+                }
+                Assert.IsTrue(endpoint.Requests.All(r => r.Auth == "Bearer key-a"));
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
     [DataRow(401)]
     [DataRow(403)]
     [DataRow(429)]
@@ -235,7 +286,8 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual(provider.Models[0].Id, reloaded.ActiveModelId);
                 Assert.AreEqual(secondId, reloaded.Providers[0].ActiveApiKeyId);
                 ProviderHealth health = PanelHealth(panel);
-                Assert.IsTrue(health.IsKeyCooling(provider.Id));
+                Assert.IsTrue(health.IsKeyCooling(provider.Id, provider.Models[0].Id));
+                Assert.AreEqual(status == 401, health.IsKeyCooling(provider.Id), "只有 401 冷整把 Key;403 / 429 只冷它用在这个模型上");
                 Assert.IsFalse(health.IsKeyCooling(secondId));
                 Assert.IsFalse(health.IsCooling(provider.Models[0].Id), "一把 Key 挂了不能连坐模型");
                 Assert.Contains("Conversation total: in 22 / out 10", ToolTip.GetTip(Find<TextBlock>(panel, "UsageText")) as string ?? "",

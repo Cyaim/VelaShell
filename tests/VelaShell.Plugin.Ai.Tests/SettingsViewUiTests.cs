@@ -5660,9 +5660,11 @@ public sealed partial class SettingsViewUiTests
                 health.RecordKey(provider.Id, false);
                 await WaitUntilAsync(() => KeyControl<TextBlock>(view, provider.Id, "ProviderKeyStatus").Text == loc["DotCooling"]);
                 Assert.IsTrue(focused.IsFocused);
-                var failed = (Dictionary<(bool IsKey, string Id), long>)typeof(ProviderHealth).GetField("_failedAt",
+                // 把唯一那条失败的时刻拨到冷却窗口之外(不依赖记录键的具体形状)
+                var failed = (System.Collections.IDictionary)typeof(ProviderHealth).GetField("_failedAt",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(health)!;
-                failed[(true, provider.Id)] = Environment.TickCount64 - (long)ProviderHealth.Cooldown.TotalMilliseconds - 1;
+                foreach (object entry in failed.Keys.Cast<object>().ToArray())
+                    failed[entry] = Environment.TickCount64 - (long)ProviderHealth.Cooldown.TotalMilliseconds - 1;
                 await WaitUntilAsync(() => KeyControl<TextBlock>(view, provider.Id, "ProviderKeyStatus").Text == loc["SetupKeyUntested"]);
                 Assert.AreSame(focused, KeyControl<Button>(view, provider.Id, "ProviderKeyEditButton"));
                 var timer = (DispatcherTimer)typeof(SettingsView).GetField("_keyLightTimer",

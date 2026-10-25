@@ -341,6 +341,9 @@ public sealed class TransientFailureTests
         {
             Assert.AreEqual(expected, TransientFailure.IsApiKeyFailure(error));
             Assert.AreEqual(expected, TransientFailure.IsApiKeyFailure(new InvalidOperationException("wrapped", error)));
+            // 只有 401 冷整把 Key;403 / 429 只冷这把 Key 用在那一个模型上
+            Assert.AreEqual(status == 401, TransientFailure.IsKeyRejected(error));
+            Assert.AreEqual(status == 401, TransientFailure.IsKeyRejected(new InvalidOperationException("wrapped", error)));
         }
     }
 

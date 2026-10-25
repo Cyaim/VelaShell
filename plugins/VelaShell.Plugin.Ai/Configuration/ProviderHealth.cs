@@ -13,6 +13,11 @@ namespace VelaShell.Plugin.Ai.Configuration;
 /// 只活在内存里:重启即清。它描述的是"此刻",跨会话记住一次陈年失败
 /// 只会让一个早已恢复的端点永远排不上号。
 /// </para>
+/// <para>
+/// Key 槽有两种冷却:<b>整把</b>(<see cref="RecordKey" />,401 —— 这把 Key 本身被拒,换哪个模型都一样)
+/// 与<b>只对一个模型</b>(<see cref="RecordKeyForModel" />,403 / 429 —— 可能只是这把 Key 用不了这一个型号、
+/// 或这个型号单独限流)。后者不连坐同一把 Key 下的兄弟模型:故障转移挑到它们时照常探活。
+/// </para>
 /// </remarks>
 public sealed class ProviderHealth
 {
@@ -22,16 +27,27 @@ public sealed class ProviderHealth
     /// </summary>
     public static readonly TimeSpan Cooldown = TimeSpan.FromSeconds(60);
 
+    /// <summary>一条健康记录记在谁头上:模型、整把 Key 槽,或「某把 Key 用在某个模型上」。</summary>
+    private enum Kind : byte
+    {
+        Model,
+        Key,
+        KeyForModel
+    }
+
+    /// <summary>记录的键;<see cref="Scope" /> 只对 <see cref="Kind.KeyForModel" /> 有值(模型 id)。三种互不共用键空间。</summary>
+    private readonly record struct Subject(Kind Kind, string Id, string Scope = "");
+
     /// <summary>失败时刻(<see cref="Environment.TickCount64" />,单调毫秒);没记过就没有这一项。</summary>
     /// <remarks>
     /// 用单调时钟而不是墙上时间:墙钟会被 NTP / 手动回拨,回拨多少秒,冷却就白拖多少秒 ——
     /// "刚才失败过"这个事实不因时钟怎么拨而改变。<see cref="Environment.TickCount64" />
     /// 只会随开机时间前进,回拨免疫。
     /// </remarks>
-    private readonly Dictionary<(bool IsKey, string Id), long> _failedAt = [];
+    private readonly Dictionary<Subject, long> _failedAt = [];
 
-    /// <summary>模型与 Key 槽分开记录接受的证据序号,成功也保留以挡住迟到旧失败。</summary>
-    private readonly Dictionary<(bool IsKey, string Id), long> _latestObservation = [];
+    /// <summary>每条记录接受的证据序号,成功也保留以挡住迟到旧失败。</summary>
+    private readonly Dictionary<Subject, long> _latestObservation = [];
     private long _observationId;
     private readonly Lock _gate = new();
 
@@ -69,19 +85,46 @@ public sealed class ProviderHealth
     /// </param>
     /// <param name="observationId">请求起跑时取的序号;null 表示结果完成时才排序。</param>
     public void Record(string? modelId, bool ok, int? evidenceVersion = null, long? observationId = null)
-        => RecordCore(modelId, false, ok, evidenceVersion, observationId);
-
-    /// <summary>记录固定 Key 槽的证据;与任何模型 ID 都不共用键空间。</summary>
-    public void RecordKey(string? keyId, bool ok, int? evidenceVersion = null, long? observationId = null)
-        => RecordCore(keyId, true, ok, evidenceVersion, observationId);
-
-    private void RecordCore(string? modelId, bool isKey, bool ok, int? evidenceVersion, long? observationId)
     {
+        if (string.IsNullOrEmpty(modelId)) return;
+        RecordCore([new Subject(Kind.Model, modelId)], ok, evidenceVersion, observationId);
+    }
+
+    /// <summary>记录整把 Key 槽的证据(401:这把 Key 本身被拒);与任何模型 ID 都不共用键空间。</summary>
+    public void RecordKey(string? keyId, bool ok, int? evidenceVersion = null, long? observationId = null)
+    {
+        if (string.IsNullOrEmpty(keyId)) return;
+        RecordCore([new Subject(Kind.Key, keyId)], ok, evidenceVersion, observationId);
+    }
+
+    /// <summary>
+    /// 记录某把 Key 用在某个模型上的结果。失败只冷这一对(403 / 429:可能只是这个型号没开通或单独限流),
+    /// 同一把 Key 下的兄弟模型照常可用;成功说明这把 Key 能用,整把的冷却与这一对的冷却一起解除。
+    /// </summary>
+    public void RecordKeyForModel(string? keyId, string? modelId, bool ok, int? evidenceVersion = null, long? observationId = null)
+    {
+        if (string.IsNullOrEmpty(keyId)) return;
         if (string.IsNullOrEmpty(modelId))
         {
+            RecordKey(keyId, ok, evidenceVersion, observationId);
             return;
         }
-        (bool isKey, string modelId) id = (isKey, modelId);
+        Subject pair = new(Kind.KeyForModel, keyId, modelId);
+        RecordCore(ok ? [pair, new Subject(Kind.Key, keyId)] : [pair], ok, evidenceVersion, observationId);
+    }
+
+    /// <summary>
+    /// 记一次 Key 槽的鉴权 / 额度失败:<paramref name="wholeKey" />(401,Key 本身被拒)冷整把 Key,
+    /// 否则(403 / 429)只冷这把 Key 用在 <paramref name="modelId" /> 上。
+    /// </summary>
+    public void RecordKeyFailure(string? keyId, string? modelId, bool wholeKey, int? evidenceVersion = null, long? observationId = null)
+    {
+        if (wholeKey) RecordKey(keyId, false, evidenceVersion, observationId);
+        else RecordKeyForModel(keyId, modelId, false, evidenceVersion, observationId);
+    }
+
+    private void RecordCore(Subject[] subjects, bool ok, int? evidenceVersion, long? observationId)
+    {
         lock (_gate)
         {
             if (evidenceVersion is { } version && version != _version)
@@ -89,57 +132,76 @@ public sealed class ProviderHealth
                 return; // 陈旧证据:配置已经换过一轮,这次成败不该落在新配置头上
             }
             long observed = observationId ?? ++_observationId;
-            if (_latestObservation.TryGetValue(id, out long latest) && observed < latest)
+            foreach (Subject subject in subjects)
             {
-                return; // 同一记录已有更新的证据,旧请求迟到也不能覆盖
-            }
-            _latestObservation[id] = observed;
-            if (ok)
-            {
-                _failedAt.Remove(id);
-            }
-            else
-            {
-                _failedAt[id] = Environment.TickCount64;
+                if (_latestObservation.TryGetValue(subject, out long latest) && observed < latest)
+                {
+                    continue; // 同一记录已有更新的证据,旧请求迟到也不能覆盖
+                }
+                _latestObservation[subject] = observed;
+                if (ok)
+                {
+                    _failedAt.Remove(subject);
+                }
+                else
+                {
+                    _failedAt[subject] = Environment.TickCount64;
+                }
             }
         }
     }
 
     /// <summary>指定模型是否仍在冷却中。</summary>
     public bool IsCooling(string? modelId)
-        => IsCoolingCore(modelId, false);
+        => !string.IsNullOrEmpty(modelId) && IsCoolingCore(new Subject(Kind.Model, modelId));
 
-    /// <summary>指定 Key 槽是否仍在冷却中。</summary>
-    public bool IsKeyCooling(string? keyId) => IsCoolingCore(keyId, true);
+    /// <summary>指定 Key 槽是否整把仍在冷却中(设置页 Key 行显示的就是这个)。</summary>
+    public bool IsKeyCooling(string? keyId)
+        => !string.IsNullOrEmpty(keyId) && IsCoolingCore(new Subject(Kind.Key, keyId));
 
-    private bool IsCoolingCore(string? modelId, bool isKey)
+    /// <summary>这把 Key 用在这个模型上是否仍在冷却中:整把在冷,或只对这个模型冷着。</summary>
+    public bool IsKeyCooling(string? keyId, string? modelId)
+        => IsKeyCooling(keyId)
+            || !string.IsNullOrEmpty(keyId) && !string.IsNullOrEmpty(modelId)
+            && IsCoolingCore(new Subject(Kind.KeyForModel, keyId, modelId));
+
+    private bool IsCoolingCore(Subject subject)
     {
-        if (string.IsNullOrEmpty(modelId))
-        {
-            return false;
-        }
         lock (_gate)
         {
-            return _failedAt.TryGetValue((isKey, modelId), out long at)
+            return _failedAt.TryGetValue(subject, out long at)
                    && Environment.TickCount64 - at < (long)Cooldown.TotalMilliseconds;
         }
     }
 
-    /// <summary>仅使一个模型的旧配置证据失效,保留其他记录及全局代数。</summary>
+    /// <summary>仅使一个模型的旧配置证据失效(连同各把 Key 用在它上面的记录),保留其他记录及全局代数。</summary>
     public void Invalidate(string? modelId)
-        => InvalidateCore(modelId, false);
-
-    /// <summary>仅使一个 Key 槽的旧配置证据失效。</summary>
-    public void InvalidateKey(string? keyId) => InvalidateCore(keyId, true);
-
-    private void InvalidateCore(string? modelId, bool isKey)
     {
         if (string.IsNullOrEmpty(modelId)) return;
+        InvalidateCore(subject => subject.Kind == Kind.Model && subject.Id == modelId
+            || subject.Kind == Kind.KeyForModel && subject.Scope == modelId, new Subject(Kind.Model, modelId));
+    }
+
+    /// <summary>仅使一个 Key 槽的旧配置证据失效(整把与用在各模型上的记录)。</summary>
+    public void InvalidateKey(string? keyId)
+    {
+        if (string.IsNullOrEmpty(keyId)) return;
+        InvalidateCore(subject => subject.Kind is Kind.Key or Kind.KeyForModel && subject.Id == keyId,
+            new Subject(Kind.Key, keyId));
+    }
+
+    private void InvalidateCore(Func<Subject, bool> matches, Subject primary)
+    {
         lock (_gate)
         {
-            (bool isKey, string modelId) id = (isKey, modelId);
-            _failedAt.Remove(id);
-            _latestObservation[id] = ++_observationId;
+            long observed = ++_observationId;
+            // 已有记录的一律挡住迟到的旧结果;主键哪怕还没记过也挡上(与原先一样)
+            foreach (Subject subject in _latestObservation.Keys.Where(matches).Append(primary).Distinct().ToArray())
+            {
+                _failedAt.Remove(subject);
+                _latestObservation[subject] = observed;
+            }
+            foreach (Subject subject in _failedAt.Keys.Where(matches).ToArray()) _failedAt.Remove(subject);
         }
     }
 

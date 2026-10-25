@@ -1046,7 +1046,8 @@ public sealed partial class ChatPanelViewUiTests
                 RaiseClick(probe);
                 Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count > 0 && probe.IsEnabled));
                 Assert.IsFalse(health.IsCooling(provider.Models[0].Id), "一把 Key 的鉴权失败不能跳过仍有备用 Key 的整个模型");
-                Assert.IsTrue(health.IsKeyCooling(provider.Id));
+                Assert.IsTrue(health.IsKeyCooling(provider.Id, provider.Models[0].Id));
+                Assert.AreEqual(statusCode == 401, health.IsKeyCooling(provider.Id), "只有 401 冷整把 Key;403 / 429 只冷它用在这个模型上");
                 Assert.IsFalse(health.IsKeyCooling(b));
                 Assert.AreSequenceEqual(["Bearer key-a"], endpoint.Requests.Select(request => request.Auth).ToArray());
             }

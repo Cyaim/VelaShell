@@ -29,6 +29,58 @@ public sealed class ProviderHealthTests
     }
 
     [TestMethod]
+    public void ModelScopedKeyFailure_CoolsOnlyThatModelsUseOfTheKey()
+    {
+        // 403 / 429:可能只是这把 Key 用不了这个型号,或这个型号单独限流 —— 兄弟模型照常可用
+        var health = new ProviderHealth();
+        health.RecordKeyFailure("key", "model-a", wholeKey: false);
+        Assert.IsTrue(health.IsKeyCooling("key", "model-a"));
+        Assert.IsFalse(health.IsKeyCooling("key", "model-b"), "同一把 Key 下的兄弟模型不受连坐");
+        Assert.IsFalse(health.IsKeyCooling("key"), "整把 Key 不算冷却(设置页的 Key 行不标红)");
+
+        // 401:Key 本身被拒,换哪个模型都一样
+        health.RecordKeyFailure("key", "model-a", wholeKey: true);
+        Assert.IsTrue(health.IsKeyCooling("key"));
+        Assert.IsTrue(health.IsKeyCooling("key", "model-b"));
+
+        // 这把 Key 在 model-b 上成功:整把解冻,model-a 上那一对仍冷着(那是它自己的证据)
+        health.RecordKeyForModel("key", "model-b", ok: true);
+        Assert.IsFalse(health.IsKeyCooling("key"));
+        Assert.IsFalse(health.IsKeyCooling("key", "model-b"));
+        Assert.IsTrue(health.IsKeyCooling("key", "model-a"));
+        health.RecordKeyForModel("key", "model-a", ok: true);
+        Assert.IsFalse(health.IsKeyCooling("key", "model-a"));
+    }
+
+    [TestMethod]
+    public void ModelScopedKeyEvidence_FollowsObservationOrderAndInvalidation()
+    {
+        var health = new ProviderHealth();
+        long earlier = health.BeginObservation();
+        long later = health.BeginObservation();
+        health.RecordKeyForModel("key", "model", ok: true, observationId: later);
+        health.RecordKeyFailure("key", "model", wholeKey: false, observationId: earlier);
+        Assert.IsFalse(health.IsKeyCooling("key", "model"), "先起跑的请求迟到失败不能盖掉较新的成功");
+
+        health.RecordKeyFailure("key", "model", wholeKey: false);
+        health.Invalidate("model");
+        Assert.IsFalse(health.IsKeyCooling("key", "model"), "模型规格变了,各把 Key 用在它上面的旧证据一并作废");
+        health.RecordKeyFailure("key", "model", wholeKey: false, observationId: later);
+        Assert.IsFalse(health.IsKeyCooling("key", "model"), "作废之前起跑的请求迟到也不能写回");
+
+        health.RecordKeyFailure("key", "other", wholeKey: false);
+        health.InvalidateKey("key");
+        Assert.IsFalse(health.IsKeyCooling("key", "other"));
+
+        health.RecordKeyFailure("key", "model", wholeKey: false);
+        int version = health.Version;
+        health.Clear();
+        Assert.IsFalse(health.IsKeyCooling("key", "model"));
+        health.RecordKeyFailure("key", "model", wholeKey: false, evidenceVersion: version);
+        Assert.IsFalse(health.IsKeyCooling("key", "model"), "改配置之前的证据丢弃");
+    }
+
+    [TestMethod]
     public void FailureStartsCoolingAndSuccessLiftsIt()
     {
         var health = new ProviderHealth();

@@ -1945,12 +1945,14 @@ public partial class SettingsView : UserControl
             row.Result = new KeyProbeResult(modelId, snapshot, error is null, DateTime.Now, error, version);
             if (error is null)
             {
-                if (slotId is not null) _health?.RecordKey(slotId, true, version, observation);
+                if (slotId is not null) _health?.RecordKeyForModel(slotId, modelId, true, version, observation);
                 _health?.Record(modelId, true, version, observation);
             }
             else if (TransientFailure.IsApiKeyFailure(error))
             {
-                if (slotId is not null) _health?.RecordKey(slotId, false, version, observation);
+                // 401 冷整把 Key;403 / 429 只冷这把 Key 用在所选的模型上,同一把 Key 下的其它模型不受连坐
+                if (slotId is not null)
+                    _health?.RecordKeyFailure(slotId, modelId, TransientFailure.IsKeyRejected(error), version, observation);
                 else _health?.Record(modelId, false, version, observation);
             }
         }
@@ -2748,13 +2750,13 @@ public partial class SettingsView : UserControl
             {
                 if (sentKeyId is not null && TransientFailure.IsApiKeyFailure(error))
                 {
-                    _health?.RecordKey(sentKeyId, false, healthEvidence, observationId);
+                    _health?.RecordKeyFailure(sentKeyId, candidate.Id, TransientFailure.IsKeyRejected(error), healthEvidence, observationId);
                 }
                 else
                 {
                     // 测通了就把这把 Key 的冷却一起解掉(逐 Key 检测与聊天回路都这么做),
                     // 否则刚通过的槽仍显示冷却,故障转移也照旧绕开它最多 60 秒
-                    if (ok && sentKeyId is not null) _health?.RecordKey(sentKeyId, true, healthEvidence, observationId);
+                    if (ok && sentKeyId is not null) _health?.RecordKeyForModel(sentKeyId, candidate.Id, true, healthEvidence, observationId);
                     _health?.Record(candidate.Id, ok, healthEvidence, observationId);
                 }
             }

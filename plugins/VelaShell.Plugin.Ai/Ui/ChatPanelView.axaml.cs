@@ -1965,7 +1965,7 @@ public partial class ChatPanelView : UserControl
                     _health.Record(current.Id, true, verifiedVersion, verifiedObservation);
                     if (selectedKeyId is { } successfulKey)
                     {
-                        _health.RecordKey(successfulKey, true, verifiedVersion, verifiedObservation);
+                        _health.RecordKeyForModel(successfulKey, current.Id, true, verifiedVersion, verifiedObservation);
                         ApiKeyTurnState? state = keyStates.GetValueOrDefault(current.Provider.Id);
                         if (state is { Balance: false } && !_detached && _health.Version == verifiedVersion
                             && _selectionEpoch == turnSelectionEpoch && _settings.ActiveModelId == current.Id
@@ -1994,7 +1994,8 @@ public partial class ChatPanelView : UserControl
                     bool changedKeyCandidate = false;
                     if (selectedKeyId is { } failedKey && CanPoolApiKeys(current) && TransientFailure.IsApiKeyFailure(ex))
                     {
-                        _health.RecordKey(failedKey, false, verifiedVersion, verifiedObservation);
+                        // 401 冷整把 Key;403 / 429 只冷这把 Key 用在这个模型上 —— 兄弟模型故障转移时照常探活
+                        _health.RecordKeyFailure(failedKey, current.Id, TransientFailure.IsKeyRejected(ex), verifiedVersion, verifiedObservation);
                         try
                         {
                             if (_store.ProviderConfigurationVersion(current.Provider) != verifiedProviderVersion)
@@ -2083,7 +2084,7 @@ public partial class ChatPanelView : UserControl
                     // 不切不等于没发生:这次失败仍是健康数据,不记的话下一轮仍会把这个
                     // 刚断流的接入当没试过的端上来。
                     if (selectedKeyId is { } key && TransientFailure.IsApiKeyFailure(ex))
-                        _health.RecordKey(key, false, verifiedVersion, verifiedObservation);
+                        _health.RecordKeyFailure(key, current.Id, TransientFailure.IsKeyRejected(ex), verifiedVersion, verifiedObservation);
                     else if (ex is not ProviderConfigurationChangedException and not AiSettingsStore.ApiKeySlotChangedException)
                         _health.Record(current.Id, false, verifiedVersion, verifiedObservation);
                     throw;
@@ -2394,7 +2395,7 @@ public partial class ChatPanelView : UserControl
                 int index = state.Balance ? (start + offset) % state.Slots.Length
                     : offset == 0 ? start : offset <= start ? offset - 1 : offset;
                 string id = state.Slots[index];
-                if (tried.Contains(id) || (pass == 0 && (automatic || state.Balance) && _health.IsKeyCooling(id)))
+                if (tried.Contains(id) || (pass == 0 && (automatic || state.Balance) && _health.IsKeyCooling(id, model.Id)))
                     continue;
                 try
                 {
@@ -2419,7 +2420,7 @@ public partial class ChatPanelView : UserControl
         HashSet<string> tried = state.TriedFor(model.Id);
         foreach (string id in state.Slots)
         {
-            if (!tried.Add(id) || _health.IsKeyCooling(id)) continue;
+            if (!tried.Add(id) || _health.IsKeyCooling(id, model.Id)) continue;
             try { return await _store.ResolveCredentialWithKeyIdAsync(model, keyId: id, cancellationToken: token); }
             catch (AiSettingsStore.ApiKeySlotChangedException) { }
         }
@@ -2453,7 +2454,7 @@ public partial class ChatPanelView : UserControl
 
             if (error is null)
             {
-                if (attempt.KeyId is { } key) _health.RecordKey(key, true, version, observation);
+                if (attempt.KeyId is { } key) _health.RecordKeyForModel(key, target.Id, true, version, observation);
                 return (attempt.Credential, probedModel, attempt.KeyId, providerVersion);
             }
             _context.Log.Warn($"Failover candidate {target.Id} failed probe: {error.Message}");
@@ -2462,7 +2463,7 @@ public partial class ChatPanelView : UserControl
                 _health.Record(target.Id, false, version, observation);
                 return null;
             }
-            _health.RecordKey(failedKey, false, version, observation);
+            _health.RecordKeyFailure(failedKey, target.Id, TransientFailure.IsKeyRejected(error), version, observation);
             selected = await NextApiKeyAsync(target, state, token);
             if (selected is null) _health.Record(target.Id, false, version, observation);
         }

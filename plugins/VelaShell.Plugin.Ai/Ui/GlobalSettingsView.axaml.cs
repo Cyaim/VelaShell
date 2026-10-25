@@ -655,8 +655,10 @@ public partial class GlobalSettingsView : UserControl
                 {
                     if (observed.KeyId is { } keyId)
                     {
-                        if (ok || TransientFailure.IsApiKeyFailure(error))
-                            _health?.RecordKey(keyId, ok, healthEvidence, observationId);
+                        // 成功解开这把 Key(整把与用在这个模型上);401 冷整把,403 / 429 只冷它用在这个模型上
+                        if (ok) _health?.RecordKeyForModel(keyId, model.Id, true, healthEvidence, observationId);
+                        else if (TransientFailure.IsApiKeyFailure(error))
+                            _health?.RecordKeyFailure(keyId, model.Id, TransientFailure.IsKeyRejected(error), healthEvidence, observationId);
                         if (ok || !TransientFailure.IsApiKeyFailure(error))
                             _health?.Record(model.Id, ok, healthEvidence, observationId);
                     }
