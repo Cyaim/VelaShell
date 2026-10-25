@@ -206,9 +206,9 @@ public sealed class ConnectionDiagnosticsServiceTests
                     await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes("SSH-2.0-DiagTest\r\n"), _stop.Token);
                 }
             }
-            catch (Exception ex) when (ex is OperationCanceledException or SocketException or IOException)
+            catch (Exception ex) when (ex is OperationCanceledException or SocketException or IOException or InvalidOperationException)
             {
-                // 测试结束。
+                // 测试结束。停止监听与下一次 Accept 之间的竞态在 macOS 上会抛 InvalidOperationException。
             }
         }
 
