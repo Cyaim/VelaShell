@@ -52,7 +52,7 @@ public sealed partial class RemoteTransferTests
             Assert.IsTrue(done.RemoteStopConfirmed);
             Assert.IsTrue(done.DestinationCommitConfirmedAbsent);
             // 拷贝之前就拒:一个字节都没往远端写,也就没有要清的远端临时文件。
-            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
             await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
         }
         finally { await WaitIdle(api); Directory.Delete(directory, true); }
@@ -102,7 +102,7 @@ public sealed partial class RemoteTransferTests
         var probed = new List<string>();
         string? snapshot = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
                 snapshot = ((FileStream)call.ArgAt<Stream>(1)).Name;
                 return Task.FromException(new IOException("stop after the snapshot"));
@@ -195,7 +195,7 @@ public sealed partial class RemoteTransferTests
     {
         string? hash = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
             { hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1))); });
         _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = hash }));

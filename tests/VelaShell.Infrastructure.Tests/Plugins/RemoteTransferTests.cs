@@ -1184,7 +1184,7 @@ public sealed partial class RemoteTransferTests
         var reply = NewSignal();
         string? hash = null;
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(async call =>
             { hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1))); });
         _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = hash }));
@@ -1369,10 +1369,10 @@ public sealed partial class RemoteTransferTests
             }
         }
         _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(call =>
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
                 temporary = call.ArgAt<string>(2);
-                return DrainSlowly(call.ArgAt<CancellationToken>(7));
+                return DrainSlowly(call.ArgAt<CancellationToken>(8));
             });
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
         _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
