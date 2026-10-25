@@ -100,6 +100,40 @@ public sealed class ConnectingDocumentViewUiTests
         });
     }
 
+    /// <summary>
+    /// 败在算法协商上、能一键放开时,失败卡片多出「放开这几个算法并重连」(与终端覆盖层同一颗按钮),
+    /// 点它把意图发给宿主;重试时(回到连接中)按钮收掉。
+    /// </summary>
+    [TestMethod]
+    public void FailedWithAlgorithmRemedy_ShowsTheAllowButton_AndRaisesTheRequest()
+    {
+        OnUi(() =>
+        {
+            var document = new ConnectingDocument(
+                new() { Name = "老交换机", Host = "10.0.0.2", Port = 22 }, "SFTP");
+            document.MarkFailed(
+                "算法谈不成",
+                new Infrastructure.Ssh.SshAlgorithmRemedy(
+                    Infrastructure.Ssh.SshAlgorithmKind.KeyExchange, ["diffie-hellman-group14-sha1"]));
+            int requests = 0;
+            document.AllowAlgorithmsRequested = () => requests++;
+
+            WithView(document, view =>
+            {
+                Button[] buttons = [.. VisibleOfType<Button>(view)];
+                Assert.HasCount(3, buttons, "放开算法、重新连接、关闭标签页。");
+                Button allow = buttons.Single(b => b.Name == "AllowAlgorithmsButton");
+                StringAssert.Contains(ToolTip.GetTip(allow) as string, "diffie-hellman-group14-sha1", "悬停说明点名加哪几个。");
+                allow.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                Assert.AreEqual(1, requests);
+
+                document.MarkConnecting();
+                Dispatcher.UIThread.RunJobs();
+                Assert.IsFalse(allow.IsEffectivelyVisible, "重试时按钮收掉。");
+            });
+        });
+    }
+
     private static IEnumerable<T> VisibleOfType<T>(Visual root) where T : Visual =>
         root.GetVisualDescendants().OfType<T>().Where(v => v.IsEffectivelyVisible);
 

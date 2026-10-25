@@ -13,9 +13,9 @@ public static class TransferLogService
 
     /// <summary>
     /// 解析配置的日志目录("~" 与相对路径均以用户目录为基准,见 <see cref="UserPathResolver" />);
-    /// 空则退回默认 ~/.velashell/logs。
+    /// 空则退回默认 ~/.velashell/logs。诊断包按它找传输记录(目录可以改到别处)。
     /// </summary>
-    private static string ResolveDirectory(string? configured) =>
+    internal static string ResolveDirectory(string? configured) =>
         UserPathResolver.Resolve(configured, SessionLogService.LogDirectory);
 
     /// <summary>向当天的 transfer 日志追加一条传输记录(写入失败静默忽略)。</summary>

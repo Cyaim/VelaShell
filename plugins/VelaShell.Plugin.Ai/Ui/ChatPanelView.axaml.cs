@@ -51,6 +51,7 @@ public partial class ChatPanelView : UserControl
     private readonly Loc _loc;
     private readonly AgentToolbox _toolbox;
     private readonly McpManager _mcp;
+    private readonly McpApproval _mcpApproval;
     private readonly ChatHistoryStore _historyStore;
 
     // ---------- 按会话分桶的对话 ----------
@@ -236,7 +237,9 @@ public partial class ChatPanelView : UserControl
             SessionIdProvider = CurrentToolSessionId,
             ApprovalHandler = RequestApprovalAsync
         };
-        _mcp = new McpManager(context) { ApprovalHandler = RequestApprovalAsync };
+        _mcp = new McpManager(context);
+        // 面板只有这一份:挡位由 ApplyApprovalMode 每轮开头推一次、中途改了再推(各对话共用同一个挡位设置)
+        _mcpApproval = new McpApproval(RequestApprovalAsync);
         // 必须在 InitializeComponent 之前:注册 Markdown 扩展(pipeline 只在渲染器构造时建一次),
         // 同时把 LiveMarkdown 各程序集拉进插件 ALC —— XAML 里的 avares://LiveMarkdown.*/ 靠
         // "已加载程序集按名查找"定位,插件依赖不在装载方探测路径上,没被引用过就找不到(勿调序)。
@@ -1434,6 +1437,8 @@ public partial class ChatPanelView : UserControl
         // "答上来了"与 failed 分开记:回复之后的入库/落盘失败不算"这一轮没跑成" ——
         // 新接入已经把话说完,此时回滚等于把它拽回一个已知坏的原站。
         bool answered = false;
+        // 这一轮的回答是被截断 / 过滤收尾的(照常完成):终止原因的文案键,收尾时附一句提示
+        string? truncation = null;
         ProviderCredential verifiedCredential = default;
         OAuthAccountSnapshot? verifiedAccount = null;
         long verifiedProviderVersion = _store.ProviderConfigurationVersion(provider.Provider);
@@ -1710,7 +1715,17 @@ public partial class ChatPanelView : UserControl
                         }
                     }
                     await ReadStreamAsync();
-                    if (TransientFailure.TerminalFailure(updates) is { } terminal) throw terminal;
+                    truncation = null;
+                    if (TransientFailure.TerminalFailure(updates) is { } terminal)
+                    {
+                        // 有正文的截断 / 过滤照常完成、附一句提示(#651 复审①)。Agent / 计划模式由 RecoveringChatClient
+                        // 按步骤判过(带工具调用的步骤不算);纯对话只有这一步,在这儿判
+                        if (terminal is not ModelResponseTerminatedException ended
+                            || (execution.TerminationNotice != ended.ReasonKey
+                                && !(mode == ChatMode.Chat && TransientFailure.IsTruncatedAnswer(updates))))
+                            throw terminal;
+                        truncation = ended.ReasonKey;
+                    }
                     if (!HasMeaningfulOutput(updates))
                     {
                         throw new HealthProbe.EmptyReplyException();
@@ -1809,7 +1824,7 @@ public partial class ChatPanelView : UserControl
                     if (mode == ChatMode.Agent && _settings.McpServers.Any(s => s.Enabled))
                     {
                         SetStatus(_loc["McpConnecting"]);
-                        (List<AITool> mcpTools, List<string> mcpErrors) = await _mcp.GetToolsAsync(_settings.McpServers, token);
+                        (List<AITool> mcpTools, List<string> mcpErrors) = await _mcp.GetToolsAsync(_settings.McpServers, _mcpApproval, token);
                         foreach (AITool tool in mcpTools)
                         {
                             tools.Add(tool);
@@ -1932,7 +1947,8 @@ public partial class ChatPanelView : UserControl
                             {
                                 StatusText.Classes.Add("retrying");
                             }
-                            SetStatus(_loc.F("Retrying", attempt + 1));
+                            // 空答不是连接失败,与 Agent / 计划模式的补试同一句提示(#651 复审③)
+                            SetStatus(_loc.F(ex is HealthProbe.EmptyReplyException ? "RetryingEmptyReply" : "Retrying", attempt + 1));
                             await Task.Delay(TimeSpan.FromMilliseconds(400 * (attempt + 1)), token);
                             bubble.ResetUnopenedContent();
                             updates.Clear(); // 前一次可能只有 role / usage 等不可见帧,不并进重试的回答
@@ -1949,7 +1965,7 @@ public partial class ChatPanelView : UserControl
                     _health.Record(current.Id, true, verifiedVersion, verifiedObservation);
                     if (selectedKeyId is { } successfulKey)
                     {
-                        _health.RecordKey(successfulKey, true, verifiedVersion, verifiedObservation);
+                        _health.RecordKeyForModel(successfulKey, current.Id, true, verifiedVersion, verifiedObservation);
                         ApiKeyTurnState? state = keyStates.GetValueOrDefault(current.Provider.Id);
                         if (state is { Balance: false } && !_detached && _health.Version == verifiedVersion
                             && _selectionEpoch == turnSelectionEpoch && _settings.ActiveModelId == current.Id
@@ -1978,7 +1994,8 @@ public partial class ChatPanelView : UserControl
                     bool changedKeyCandidate = false;
                     if (selectedKeyId is { } failedKey && CanPoolApiKeys(current) && TransientFailure.IsApiKeyFailure(ex))
                     {
-                        _health.RecordKey(failedKey, false, verifiedVersion, verifiedObservation);
+                        // 401 冷整把 Key;403 / 429 只冷这把 Key 用在这个模型上 —— 兄弟模型故障转移时照常探活
+                        _health.RecordKeyFailure(failedKey, current.Id, TransientFailure.IsKeyRejected(ex), verifiedVersion, verifiedObservation);
                         try
                         {
                             if (_store.ProviderConfigurationVersion(current.Provider) != verifiedProviderVersion)
@@ -2067,7 +2084,7 @@ public partial class ChatPanelView : UserControl
                     // 不切不等于没发生:这次失败仍是健康数据,不记的话下一轮仍会把这个
                     // 刚断流的接入当没试过的端上来。
                     if (selectedKeyId is { } key && TransientFailure.IsApiKeyFailure(ex))
-                        _health.RecordKey(key, false, verifiedVersion, verifiedObservation);
+                        _health.RecordKeyFailure(key, current.Id, TransientFailure.IsKeyRejected(ex), verifiedVersion, verifiedObservation);
                     else if (ex is not ProviderConfigurationChangedException and not AiSettingsStore.ApiKeySlotChangedException)
                         _health.Record(current.Id, false, verifiedVersion, verifiedObservation);
                     throw;
@@ -2101,6 +2118,11 @@ public partial class ChatPanelView : UserControl
                         TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt)));
             }
             HintIfThinkingWasNeverRequested(bubble, provider);
+            // 被截断 / 过滤的回答照常留着,后面附一句;工具之后补了「请继续」还是空的,说一句而不是报失败(#651 复审①②)
+            if ((truncation ?? execution.TerminationNotice) is { } reason)
+                AddNoticeCard(bubble, _loc[TransientFailure.TruncationNoticeKey(reason)]);
+            else if (execution.EmptyAfterTools)
+                AddNoticeCard(bubble, _loc["NoticeEmptyAfterTools"]);
             replyText = response.Text;
         }
         catch (OperationCanceledException)
@@ -2373,7 +2395,7 @@ public partial class ChatPanelView : UserControl
                 int index = state.Balance ? (start + offset) % state.Slots.Length
                     : offset == 0 ? start : offset <= start ? offset - 1 : offset;
                 string id = state.Slots[index];
-                if (tried.Contains(id) || (pass == 0 && (automatic || state.Balance) && _health.IsKeyCooling(id)))
+                if (tried.Contains(id) || (pass == 0 && (automatic || state.Balance) && _health.IsKeyCooling(id, model.Id)))
                     continue;
                 try
                 {
@@ -2398,7 +2420,7 @@ public partial class ChatPanelView : UserControl
         HashSet<string> tried = state.TriedFor(model.Id);
         foreach (string id in state.Slots)
         {
-            if (!tried.Add(id) || _health.IsKeyCooling(id)) continue;
+            if (!tried.Add(id) || _health.IsKeyCooling(id, model.Id)) continue;
             try { return await _store.ResolveCredentialWithKeyIdAsync(model, keyId: id, cancellationToken: token); }
             catch (AiSettingsStore.ApiKeySlotChangedException) { }
         }
@@ -2432,7 +2454,7 @@ public partial class ChatPanelView : UserControl
 
             if (error is null)
             {
-                if (attempt.KeyId is { } key) _health.RecordKey(key, true, version, observation);
+                if (attempt.KeyId is { } key) _health.RecordKeyForModel(key, target.Id, true, version, observation);
                 return (attempt.Credential, probedModel, attempt.KeyId, providerVersion);
             }
             _context.Log.Warn($"Failover candidate {target.Id} failed probe: {error.Message}");
@@ -2441,7 +2463,7 @@ public partial class ChatPanelView : UserControl
                 _health.Record(target.Id, false, version, observation);
                 return null;
             }
-            _health.RecordKey(failedKey, false, version, observation);
+            _health.RecordKeyFailure(failedKey, target.Id, TransientFailure.IsKeyRejected(error), version, observation);
             selected = await NextApiKeyAsync(target, state, token);
             if (selected is null) _health.Record(target.Id, false, version, observation);
         }
@@ -2844,7 +2866,7 @@ public partial class ChatPanelView : UserControl
     private void ApplyApprovalMode()
     {
         _toolbox.Approval = _settings.Approval;
-        _mcp.Approval = _settings.Approval;
+        _mcpApproval.Mode = _settings.Approval;
         switch (_settings.Approval)
         {
             case ApprovalMode.Bypass:
@@ -2932,6 +2954,24 @@ public partial class ChatPanelView : UserControl
     /// 它不是模型说的话,混排会让人分不清哪句是回答、哪句是故障。
     /// 没有气泡可挂(还没开口就炸了)时退回状态行,至少别把消息吞掉。
     /// </summary>
+    /// <summary>
+    /// 回答照常完成、但有话要交代(被截断、被过滤、工具之后模型没再开口):一张警示色的提示卡挂在这条回复里。
+    /// 与错误卡同理不混进正文 —— 它不是模型说的话。
+    /// </summary>
+    private void AddNoticeCard(AssistantBubble? bubble, string notice)
+    {
+        if (bubble is null)
+        {
+            SetStatus(notice);
+            return;
+        }
+        var stack = new StackPanel { Spacing = 6 };
+        stack.Children.Add(BuildCardHeader("Icon.triangle-alert", "VelaWarning", _loc["NoticeTitle"], null));
+        stack.Children.Add(new TextBlock { Name = "NoticeText", Classes = { "dim" }, Text = notice, TextWrapping = TextWrapping.Wrap });
+        bubble.AddCard(new Border { Classes = { "noticeCard" }, Child = stack });
+        RequestAutoScroll(force: true);
+    }
+
     private void AddErrorCard(AssistantBubble? bubble, string detail)
     {
         if (bubble is null)

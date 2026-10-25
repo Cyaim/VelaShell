@@ -46,6 +46,11 @@ public class ConnectionInfo
     public string? CertificatePath { get; init; }
 
     /// <summary>
+    /// 系统密钥库里那把钥的引用(用于 <see cref="AuthMethod.KeyStore" /> 认证)
+    /// </summary>
+    public SystemKeyReference? KeyStoreKey { get; init; }
+
+    /// <summary>
     /// 跳板主机(ProxyJump):先连它,再经它连到本机。递归嵌套即多段跳;
     /// 由工作流按 <c>SessionProfile.JumpHostProfileId</c> 链解析(带环检测)。null = 直连。
     /// 具体建链方式由 Infrastructure 决定(当前为 VelaShell.Ssh 的嵌套连接 + direct-tcpip 隧道)。
@@ -98,4 +103,26 @@ public class ConnectionInfo
     /// 只管主机指纹:登录凭据、动态码这类提示照旧(它们各有自己的取消处理)。跳板链上每一跳都按它办 —— 一条链共用一个策略。
     /// </remarks>
     public bool IsAutomaticReconnect { get; init; }
+
+    /// <summary>
+    /// 连接诊断的协议轨迹:非 null 时这条连接(连同跳板链上每一跳)挂上 SSH 库的报文旁路,把每个报文的元信息记进去。
+    /// <see langword="null" />(平常的连接)不挂旁路。
+    /// </summary>
+    /// <remarks>
+    /// 只看最外层这一份:跳板那几跳由装配那一层用同一份去记,每条记录标着是哪一跳。
+    /// 记的只有方向、类型、长度、序号、通道号,不要载荷(见 <see cref="Ssh.SshPacketTrace" />)。
+    /// </remarks>
+    public Ssh.SshPacketTrace? PacketTrace { get; init; }
+
+    /// <summary>
+    /// 这次连接是<b>没人看着的探测</b>(会话健康巡检):要人回答的一律不问 —— 主机指纹、动态码、Tailscale 复核,
+    /// 照拒绝 / 失败报回去,由结果窗口告诉用户哪几台要他亲自连一次。
+    /// </summary>
+    /// <remarks>
+    /// 比 <see cref="IsAutomaticReconnect" /> 更严:那边只管主机指纹,动态码框照旧(断线重连多半是用户自己的会话,值得问);
+    /// 巡检一次几十台,每台弹一个框就是一摞没人点的模态框。主机指纹被拦时的说法也不同 —— 没有「停止自动重连」这回事,
+    /// 第一次见到的主机也不记安全告警(用户点名要查的机器,没见过不算异常;指纹<b>变了</b>照记)。
+    /// 设置里关掉了「首次连接确认指纹」时照旧按 TOFU 记下,与手动连接同一个口径。
+    /// </remarks>
+    public bool IsUnattended { get; init; }
 }

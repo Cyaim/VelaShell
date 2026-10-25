@@ -6,13 +6,15 @@ using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
+using VelaShell.Core.Ssh;
 
 namespace VelaShell.Presentation.Services;
 
 /// <summary>
 /// 连接诊断中心的执行引擎(设计 RGXg1):按 DNS 解析 → TCP 建链 → SSH 握手 →
 /// 用户认证 四步逐项检测。配了跳板的会话,前三步针对链路第一跳(本机实际直连的主机),
-/// 认证步骤经 <see cref="IConnectionWorkflowService.TestConnectionAsync" /> 走完整跳板链。
+/// 认证步骤经 <see cref="IConnectionWorkflowService.TestConnectionAsync(SessionProfile, SshPacketTrace, CancellationToken)" /> 走完整跳板链,
+/// 并挂上 SSH 库的报文旁路记下协议轨迹(只有元信息,见 <see cref="SshPacketTrace" />;只在诊断时挂)。
 /// </summary>
 public sealed class ConnectionDiagnosticsService(
     ISessionRepository sessionRepository,
@@ -32,10 +34,26 @@ public sealed class ConnectionDiagnosticsService(
     /// <param name="progress">各步骤状态变更的进度回调,可为 null。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>汇总四步结果及问题标题/描述/修复建议的诊断报告。</returns>
-    public async Task<DiagnosticReport> DiagnoseAsync(
+    public Task<DiagnosticReport> DiagnoseAsync(
         SessionProfile profile,
         IProgress<DiagnosticStepUpdate>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        DiagnoseCoreAsync(profile, progress, unattended: false, verifyLogin: true, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<DiagnosticReport> DiagnoseUnattendedAsync(
+        SessionProfile profile,
+        bool verifyLogin,
+        IProgress<DiagnosticStepUpdate>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        DiagnoseCoreAsync(profile, progress, unattended: true, verifyLogin, cancellationToken);
+
+    private async Task<DiagnosticReport> DiagnoseCoreAsync(
+        SessionProfile profile,
+        IProgress<DiagnosticStepUpdate>? progress,
+        bool unattended,
+        bool verifyLogin,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
@@ -52,7 +70,10 @@ public sealed class ConnectionDiagnosticsService(
         DiagnosticStepUpdate[] results = [.. steps];
         string? issueTitle = null;
         string? issueDescription = null;
+        Exception? failure = null;
         var suggestions = new List<string>();
+        // 认证那一步的协议轨迹:只有诊断挂旁路,平常的连接与「测试连接」都不挂。
+        SshPacketTrace? packetTrace = null;
         if (chainError is not null)
         {
             // 跳板配置本身有问题(被删除/成环):四步都无从谈起,直接给出问题面板。
@@ -221,6 +242,11 @@ public sealed class ConnectionDiagnosticsService(
         {
             Publish(results[3] with { Status = DiagnosticStepStatus.Skipped, Detail = Strings.Get("DiagSvc_WaitFix") });
         }
+        else if (!verifyLogin)
+        {
+            // 巡检时用户关掉了「验证登录」:只查到 SSH 握手,不往服务器上登录。
+            Publish(results[3] with { Status = DiagnosticStepStatus.Skipped, Detail = Strings.Get("DiagSvc_LoginNotVerified") });
+        }
         else if (!HasStoredCredentials(profile))
         {
             // Tailscale SSH 没有密码/密钥可存,缺的只能是远端用户名:别叫用户去「保存凭据」。
@@ -236,7 +262,18 @@ public sealed class ConnectionDiagnosticsService(
         {
             Publish(results[3] with { Status = DiagnosticStepStatus.Running });
             stopwatch.Restart();
-            ConnectionTestResult test = await _connectionWorkflowService.TestConnectionAsync(profile, cancellationToken).ConfigureAwait(false);
+            ConnectionTestResult test;
+            if (unattended)
+            {
+                // 巡检(没人看着)那一路不弹任何框:要人回答的照拒绝 / 失败报回(见 ConnectionInfo.IsUnattended)。
+                // 协议轨迹只给诊断窗口看,巡检不挂旁路。
+                test = await _connectionWorkflowService.TestConnectionUnattendedAsync(profile, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                packetTrace = new SshPacketTrace();
+                test = await _connectionWorkflowService.TestConnectionAsync(profile, packetTrace, cancellationToken).ConfigureAwait(false);
+            }
             if (test.Success)
             {
                 Publish(results[3] with
@@ -249,6 +286,7 @@ public sealed class ConnectionDiagnosticsService(
             else
             {
                 string reason = Trim(test.ErrorMessage ?? Strings.Get("DiagSvc_UnknownError"));
+                failure = test.Error;
                 Publish(results[3] with
                 {
                     Status = DiagnosticStepStatus.Failed,
@@ -264,7 +302,10 @@ public sealed class ConnectionDiagnosticsService(
             Steps = results,
             IssueTitle = issueTitle,
             IssueDescription = issueDescription,
-            Suggestions = suggestions
+            Suggestions = suggestions,
+            PacketTrace = packetTrace?.Snapshot() ?? [],
+            PacketTraceDropped = packetTrace?.Dropped ?? 0,
+            Failure = failure
         };
 
         void Publish(DiagnosticStepUpdate update)
@@ -365,6 +406,8 @@ public sealed class ConnectionDiagnosticsService(
                                       && !string.IsNullOrEmpty(profile.PrivateKeyPath),
             // agent 那一路配置里本来就不存凭据:密钥在 agent 里,连接时现取。
             AuthMethod.Agent => true,
+            // 系统密钥库那一路只存钥的引用,私钥在密钥库里。
+            AuthMethod.KeyStore => profile.KeyStoreKey is not null,
             // Tailscale SSH 只要远端用户名,身份由本机已登录的 Tailscale 提供;check 模式的浏览器验证照常弹窗。
             AuthMethod.Tailscale => !string.IsNullOrWhiteSpace(profile.Username),
             _ => false
@@ -409,7 +452,7 @@ public sealed class ConnectionDiagnosticsService(
             {
                 yield return Strings.Get("DiagSvc_SuggestAgentKeys");
             }
-            else if (profile.AuthMethod is AuthMethod.PrivateKey or AuthMethod.Certificate)
+            else if (profile.AuthMethod is AuthMethod.PrivateKey or AuthMethod.Certificate or AuthMethod.KeyStore)
             {
                 yield return Strings.Get("DiagSvc_SuggestKeyMatch");
             }

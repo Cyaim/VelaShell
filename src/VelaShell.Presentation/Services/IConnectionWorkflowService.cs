@@ -1,4 +1,5 @@
 using VelaShell.Core.Models;
+using VelaShell.Core.Ssh;
 
 namespace VelaShell.Presentation.Services;
 
@@ -33,6 +34,23 @@ public interface IConnectionWorkflowService
 
     /// <summary>对指定配置执行连接测试,返回测试结果。</summary>
     Task<ConnectionTestResult> TestConnectionAsync(SessionProfile profile, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 同 <see cref="TestConnectionAsync(SessionProfile, CancellationToken)" />,并把这次连接(连同跳板链上每一跳)收发的每个报文的
+    /// 元信息记进 <paramref name="packetTrace" />(连接诊断的协议轨迹;不记内容)。
+    /// </summary>
+    /// <param name="profile">要测的配置。</param>
+    /// <param name="packetTrace">协议轨迹。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task<ConnectionTestResult> TestConnectionAsync(
+        SessionProfile profile, SshPacketTrace packetTrace, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 没人看着的连接测试(会话健康巡检):同 <see cref="TestConnectionAsync(SessionProfile, CancellationToken)" />,但要人回答的一律不问 ——
+    /// 主机指纹、动态码、Tailscale 复核照拒绝 / 失败报回(<see cref="ConnectionInfo.IsUnattended" />);
+    /// 插件配置不测。调用方的取消照原样抛出,不当成「连不上」。
+    /// </summary>
+    Task<ConnectionTestResult> TestConnectionUnattendedAsync(SessionProfile profile, CancellationToken cancellationToken = default);
 
     /// <summary>按指定配置建立 SSH 连接,返回已连接的会话。</summary>
     Task<SshSession> ConnectProfileAsync(SessionProfile profile, CancellationToken cancellationToken = default);

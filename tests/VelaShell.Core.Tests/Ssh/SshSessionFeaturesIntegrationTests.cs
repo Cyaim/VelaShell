@@ -283,6 +283,66 @@ public class SshSessionFeaturesIntegrationTests
         }
     }
 
+    /// <summary>
+    /// 系统密钥库认证在真 OpenSSH 上:当前用户软件密钥库里现建一把<b>不可导出</b>的 ECDSA 钥,公钥放进 authorized_keys,
+    /// 配置里只有它的引用 —— 登得上就说明签名是 CNG 密钥库做的(私钥读不进本进程)。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task KeyStoreAuthentication_LogsInWithANonExportableCngKey()
+    {
+        RequireContainer();
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("[SKIP] 系统密钥库(CNG)只有 Windows 有。");
+            return;
+        }
+
+        string keyName = "vela-keystore-it-" + Guid.NewGuid().ToString("N");
+        using CngKey cngKey = CngKey.Create(CngAlgorithm.ECDsaP256, keyName, new CngKeyCreationParameters
+        {
+            Provider = CngProvider.MicrosoftSoftwareKeyStorageProvider,
+            ExportPolicy = CngExportPolicies.None,
+            KeyUsage = CngKeyUsages.Signing,
+        });
+        try
+        {
+            string publicLine;
+            using (CngSshSigner probe = CngSshSigner.Open(keyName))
+            {
+                publicLine = probe.PublicKey.ToOpenSshFormat("vela-keystore-test");
+            }
+            await using (VelaSshClientWrapper setup = await ConnectAsync(null))
+            {
+                await setup.RunCommandAsync(
+                    $"mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{publicLine}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys");
+            }
+
+            SshConnectionAssembler.Assembled assembled = SshConnectionAssembler.Create(
+                new ConnectionInfo
+                {
+                    Host = TestHost,
+                    Port = TestPort,
+                    Username = TestUser,
+                    AuthMethod = AuthMethod.KeyStore,
+                    KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.SoftwareProvider, KeyName = keyName },
+                },
+                hostKey: null, settings: null, prompt: null, alerts: null, proxyResolver: null);
+            await using VelaSshClientWrapper ssh = new(assembled.Connect, assembled.ConnectTimeout);
+            await ssh.ConnectAsync(TestContext.CancellationToken);
+
+            Assert.AreEqual(TestUser, (await ssh.RunCommandAsync("whoami")).Trim());
+        }
+        finally
+        {
+            await using (VelaSshClientWrapper cleanup = await ConnectAsync(null))
+            {
+                await cleanup.RunCommandAsync("sed -i '/vela-keystore-test/d' ~/.ssh/authorized_keys");
+            }
+            cngKey.Delete();
+        }
+    }
+
     // ------------------------------------------------------------ 连接与 shell
 
     private async Task<VelaSshClientWrapper> ConnectAsync(SshSessionOptions? features, string user = TestUser)

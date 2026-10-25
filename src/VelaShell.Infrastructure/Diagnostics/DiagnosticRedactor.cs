@@ -14,8 +14,14 @@ namespace VelaShell.Infrastructure.Diagnostics;
 /// 「这一行和那一行说的是同一台机器」,却不知道是哪台。映射表不进包。
 /// </para>
 /// <para>
-/// 字面值匹配按词边界:<c>db1</c> 不会把 <c>db10</c> 或 <c>mydb1</c> 拆开。太短的值(两个字符以内)与
+/// 主机与用户名分两路认。<b>已知来源</b>(已存连接、最近连接、共享凭据,见构造函数)什么写法都认,单段的
+/// <c>db-prod-3</c> 也换;字面值匹配按词边界:<c>db1</c> 不会把 <c>db10</c> 或 <c>mydb1</c> 拆开。太短的值(两个字符以内)与
 /// <c>root</c>、<c>ubuntu</c> 这类人人都在用的登录名不换 —— 它们认不出是谁,换掉只会把日志弄得没法读。
+/// <b>通用规则</b>兜已知来源之外的(连接改过之前的旧主机、异常消息里的主机、别人的家目录),只认长相不会认错的几种:
+/// VelaShell 自己的断开日志行 <c>[SSH] 用户@主机:端口 closed</c>(格式是自己定的,两段都换);IPv4 / IPv6;
+/// 小写书写、以常见顶级域或内网后缀结尾的域名(判据见 <see cref="IsGenericHostName" />);
+/// <c>C:\Users\名</c>、<c>/home/名</c>、<c>/Users/名</c> 里的那一段名字。单段主机名、其余位置的用户名与文件名认不出来,
+/// 隐私说明里照实写了。
 /// </para>
 /// <para>
 /// 口令一类的规则与会话日志的遮盖(<c>SessionOutputMasker</c>)是同一个意图:名字里<b>带着</b> password / token / secret …
@@ -40,11 +46,49 @@ with(StringComparer.OrdinalIgnoreCase),         "root", "admin", "administrator"
 with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0",
     ];
 
+    /// <summary>家目录路径里那一段不是哪个人的名字:Windows 的公共 / 默认配置目录、macOS 的共享目录。</summary>
+    private static readonly HashSet<string> SharedProfileNames =
+    [
+with(StringComparer.OrdinalIgnoreCase),         "Public", "Default", "Default User", "All Users", "Shared", "Guest",
+    ];
+
+    /// <summary>
+    /// 通用域名规则认的顶级域与内网后缀(小写)。只收常见的那些,并刻意<b>不收</b>与文件扩展名撞车的
+    /// (<c>.sh</c>、<c>.md</c>、<c>.py</c>、<c>.rs</c>、<c>.pl</c>、<c>.pm</c>、<c>.so</c>、<c>.cc</c>、<c>.ps</c>、<c>.mo</c>、<c>.tf</c>、
+    /// <c>.am</c>、<c>.ac</c>、<c>.mk</c>、<c>.pro</c>,以及 gTLD 里的 <c>.zip</c>、<c>.mov</c>)—— 传输记录里满是 <c>deploy.sh</c>、
+    /// <c>backup.zip</c>,换成 <c>&lt;host-N&gt;</c> 只会让日志没法读。
+    /// </summary>
+    private static readonly HashSet<string> HostSuffixes =
+    [
+with(StringComparer.Ordinal),
+        // 通用顶级域
+        "com", "net", "org", "edu", "gov", "mil", "int", "info", "biz", "name", "io", "ai", "dev", "app", "cloud", "tech",
+        "online", "site", "xyz", "top", "vip", "club", "shop", "asia",
+        // 常见的国家与地区顶级域
+        "cn", "hk", "mo", "tw", "jp", "kr", "sg", "my", "th", "vn", "id", "ph", "in", "au", "nz", "uk", "ie", "de", "fr", "nl",
+        "be", "lu", "ch", "at", "it", "es", "pt", "se", "no", "dk", "fi", "is", "cz", "sk", "hu", "ro", "bg", "gr", "tr", "ru",
+        "ua", "kz", "il", "ae", "sa", "za", "br", "ar", "cl", "co", "mx", "us", "ca", "eu", "me", "tv", "ws",
+        // 内网与保留后缀
+        "local", "lan", "internal", "intranet", "corp", "home", "localdomain", "arpa", "test", "example",
+    ];
+
+    /// <summary>
+    /// VelaShell 自己联系的公共服务(更新与头像、资讯源、插件市场、IP 库下载页),连同它们的子域。
+    /// 它们不说明用户是谁,遮掉反而看不出是哪一路请求失败了。
+    /// </summary>
+    private static readonly string[] PublicServiceDomains = ["github.com", "githubusercontent.com", "easilynet.top", "db-ip.com"];
+
+    /// <summary>倒写域名的标识符(<c>com.velashell.app</c> 这类包标识、D-Bus 名)以这几段开头,不是主机。</summary>
+    private static readonly HashSet<string> ReverseDomainHeads = [with(StringComparer.Ordinal), "com", "org", "net", "io"];
+
     private readonly Regex? _literals;
     private readonly Dictionary<string, string> _literalTokens = [with(StringComparer.OrdinalIgnoreCase)];
     private readonly Dictionary<string, string> _ipTokens = [with(StringComparer.Ordinal)];
     private readonly (string Path, StringComparison Comparison)[] _homes;
     private readonly Dictionary<string, int> _counts = [with(StringComparer.Ordinal)];
+    private readonly HashSet<string> _notHosts = [with(StringComparer.OrdinalIgnoreCase)];
+    private int _hostTokens;
+    private int _userTokens;
 
     /// <summary>按已保存连接里的主机与用户名,以及本机的用户名、机器名与主目录建一个脱敏器。</summary>
     /// <param name="hosts">连接配置里的主机(含跳板机);IP 与域名都行。</param>
@@ -80,11 +124,10 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
 
         void AddLiterals(IEnumerable<string> values, string kind, List<string> into)
         {
-            int index = 0;
             foreach (string value in values.Select(value => value.Trim()).Where(Usable).Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 if (_literalTokens.ContainsKey(value)) continue;
-                Add(value, string.Create(CultureInfo.InvariantCulture, $"<{kind}-{++index}>"), into);
+                Add(value, NextToken(kind), into);
             }
         }
 
@@ -97,6 +140,19 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
 
     /// <summary>各类被换掉的次数(类别 → 次数);只有计数,不含原值。</summary>
     public IReadOnlyDictionary<string, int> Counts => _counts;
+
+    /// <summary>
+    /// 登记长得像域名、却不是主机的名字(插件 id,如 <c>velashell.ai</c>):通用域名规则不换它们。
+    /// 诊断包按插件清单与收进包的插件日志登记,调用方不用管。
+    /// </summary>
+    /// <param name="names">这些名字。</param>
+    public void KeepNames(IEnumerable<string> names)
+    {
+        foreach (string name in names)
+        {
+            if (!string.IsNullOrWhiteSpace(name)) _notHosts.Add(name.Trim());
+        }
+    }
 
     /// <summary>脱敏一段文本。</summary>
     public string Redact(string text)
@@ -148,6 +204,16 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
             return "<redacted>";
         });
 
+        // 断开日志行的格式是自己定的(SshDisconnectLog):「@」前是用户、「:端口 closed」前是主机,不靠猜。
+        // 先于字面值换:已知的值照样拿到自己那个占位符,不认识的(连接改过之前的旧主机、单段的主机名)也换掉
+        text = DisconnectLine().Replace(text, match =>
+        {
+            Group user = match.Groups["user"];
+            Group host = match.Groups["host"];
+            string maskedUser = user.Success ? MaskName(user.Value, "user") + "@" : string.Empty;
+            return match.Groups["head"].Value + maskedUser + MaskDisconnectHost(host.Value) + match.Groups["tail"].Value;
+        });
+
         if (_literals is not null)
         {
             text = _literals.Replace(text, match =>
@@ -163,6 +229,12 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
             Count("email");
             return "<email>";
         });
+        // 别人的家目录(远端路径、本机的其它账户):只换名字那一段,目录结构留着
+        text = WindowsUserPath().Replace(text, MaskPathUser);
+        text = UnixUserPath().Replace(text, MaskPathUser);
+        // 邮箱之后:邮箱的域名部分已随整个地址换成 <email>,这里不会把它拆成「名字@<host-N>」
+        text = GenericHostName().Replace(text, match =>
+            IsGenericHostName(match.Value, match.Groups["tld"].Value) ? MaskName(match.Value, "host") : match.Value);
         text = IPv4().Replace(text, match =>
         {
             string ip = match.Value;
@@ -185,6 +257,65 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
     {
         if (times <= 0) return;
         _counts[kind] = _counts.GetValueOrDefault(kind) + times;
+    }
+
+    /// <summary>下一个 <c>&lt;host-N&gt;</c> / <c>&lt;user-N&gt;</c>:已知来源与通用规则共用一套编号。</summary>
+    private string NextToken(string kind) => string.Create(CultureInfo.InvariantCulture,
+        $"<{kind}-{(kind == "host" ? ++_hostTokens : ++_userTokens)}>");
+
+    /// <summary>
+    /// 通用规则认出的一个主机或用户名换成占位符:已知来源里有它就用它那个,没有就新编一个并记下(同一个值在整个包里同一个占位符)。
+    /// 已经是占位符的、人人都在用的登录名、本机回环不换。不按长度挑:这几处的上下文已经说明了它是名字。
+    /// </summary>
+    private string MaskName(string value, string kind)
+    {
+        if (value.Length == 0 || value[0] == '<' && value[^1] == '>') return value;
+        if (kind == "user" ? CommonUserNames.Contains(value) : LoopbackHosts.Contains(value)) return value;
+        if (!_literalTokens.TryGetValue(value, out string? token))
+        {
+            token = NextToken(kind);
+            _literalTokens[value] = token;
+        }
+        Count(token.StartsWith("<host", StringComparison.Ordinal) ? "host" : "user");
+        return token;
+    }
+
+    /// <summary>断开日志行里的主机:IP 留给后面的 IP 规则(占位符是 <c>&lt;ip-N&gt;</c>),其余一律换;IPv6 的方括号留着。</summary>
+    private string MaskDisconnectHost(string host)
+    {
+        string inner = TrimBrackets(host);
+        if (!_literalTokens.ContainsKey(inner) && IPAddress.TryParse(inner, out _)) return host;
+        string masked = MaskName(inner, "host");
+        return host.StartsWith('[') ? $"[{masked}]" : masked;
+    }
+
+    /// <summary>家目录路径里那一段名字;公共 / 默认配置目录与 <c>%USERNAME%</c>、<c>$USER</c> 这类占位写法不换。</summary>
+    private string MaskPathUser(Match match)
+    {
+        string name = match.Groups["name"].Value;
+        if (SharedProfileNames.Contains(name) || name[0] is '%' or '$' or '.' or '~') return match.Value;
+        return match.Groups["prefix"].Value + MaskName(name, "user");
+    }
+
+    /// <summary>
+    /// 通用域名规则的判据(候选已由 <see cref="GenericHostName" /> 按字形挑出:全小写、至少两段、末段全是字母):
+    /// 末段是 <see cref="HostSuffixes" /> 里的顶级域或内网后缀;不是插件 id 这类已知不是主机的名字;
+    /// 不是 VelaShell 自己联系的公共服务;不是 <c>com.</c> / <c>org.</c> 开头、三段以上的倒写标识符。
+    /// </summary>
+    /// <remarks>
+    /// 只认小写:<c>System.Net</c>、<c>Avalonia.Base</c>、<c>README.md</c> 这些大小写混写的类型名与文件名一个都不碰,
+    /// 代价是大写书写的主机名(<c>DB1.CORP.EXAMPLE.COM</c>)认不出 —— 已存连接里的照样按已知来源换。
+    /// </remarks>
+    private bool IsGenericHostName(string value, string tld)
+    {
+        if (!HostSuffixes.Contains(tld) || _notHosts.Contains(value)) return false;
+        foreach (string domain in PublicServiceDomains)
+        {
+            if (value == domain || value.EndsWith("." + domain, StringComparison.Ordinal)) return false;
+        }
+        int firstDot = value.IndexOf('.');
+        bool reverseDomain = ReverseDomainHeads.Contains(value[..firstDot]) && value.IndexOf('.', firstDot + 1) > 0;
+        return !reverseDomain;
     }
 
     /// <summary>同一个地址换成同一个 <c>&lt;ip-N&gt;</c>。</summary>
@@ -262,12 +393,50 @@ with(StringComparer.OrdinalIgnoreCase),         "localhost", "127.0.0.1", "::1",
     private static partial Regex Email();
 
     /// <summary>
-    /// IPv4。句末的句号不挡(<c>closed by 10.0.0.5.</c>)。四段的版本号不是 IP:<c>Version=12.1.4.0</c>(崩溃记录里的程序集名)、
-    /// <c>v1.2.3.4</c>,以及启动横幅与崩溃记录开头的 <c>VelaShell 0.0.1.0</c>(见 <see cref="DiagnosticLog" />)。
+    /// IPv4:四段 0–255 的十进制。句末的句号不挡(<c>closed by 10.0.0.5.</c>)。
+    /// 四段的版本号不是 IP,判据是<b>上下文</b>,不是数字本身 —— 光秃秃的 <c>1.2.3.4</c> 分不出是哪一种,宁可当 IP 遮掉:
+    /// 前面紧挨着字母、数字、下划线或句点的(<c>v1.2.3.4</c>、<c>VelaShell_1.7.3.0_x64</c>、<c>1.1.2.3.4</c> 的后四段)、
+    /// 后面紧跟字母、数字、下划线或「.数字」的(<c>1.2.3.4.5</c>、<c>1.2.3.4rc</c>),
+    /// 前面是 <c>Version=</c> / <c>version:</c> / <c>Version </c>(崩溃记录里的程序集名)或 <c>VelaShell </c>(启动横幅与崩溃记录开头,
+    /// 见 <see cref="DiagnosticLog" />)的,都不算。
     /// </summary>
-    [GeneratedRegex(@"(?<![\d.]|[vV]|(?i:version)[ \t]{0,3}[=:]?[ \t]{0,3}|VelaShell )(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?!\d|\.\d)",
+    [GeneratedRegex(@"(?<![A-Za-z0-9_.]|(?i:version)[ \t]{0,3}[=:]?[ \t]{0,3}|VelaShell )(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![A-Za-z0-9_]|\.\d)",
         RegexOptions.CultureInvariant)]
     private static partial Regex IPv4();
+
+    /// <summary>
+    /// <c>SshDisconnectLog</c> 写的那一行:<c>[SSH] 用户@主机:端口 closed …</c>(没有用户时只有 <c>主机:端口</c>,IPv6 带方括号)。
+    /// 用户名里可以有 <c>@</c>(<c>alice@corp</c> 式的域账户),所以取最后一个 <c>@</c> 之前的整段。新旧两种写法
+    /// (<c>closed after 时长</c> / <c>closed (connected since 时刻)</c>)都认 —— 日志目录里留着升级之前 7 天的日志。
+    /// </summary>
+    [GeneratedRegex(@"(?<head>\[SSH\] )(?:(?<user>\S+)@)?(?<host>\[[^\]\s]+\]|[^\s\[\]@]+?)(?<tail>:[0-9]{1,5} closed\b)",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex DisconnectLine();
+
+    /// <summary>
+    /// Windows 的用户目录 <c>X:\Users\名字</c>(斜杠方向、<c>Users</c> 的大小写都不论)。名字里可以有空格(<c>John Smith</c>),
+    /// 但只有后面紧跟着下一级分隔符时才把空格算进去;否则只取到第一个空白为止。带空格的那一支限长 64,每个起点最多看几十个字符。
+    /// </summary>
+    [GeneratedRegex("""(?<prefix>(?<![A-Za-z0-9])[A-Za-z]:[\\/](?i:users)[\\/])(?<name>[^\\/:*?"<>|\r\n\t]{0,63}?[^\\/:*?"<>|\s](?=[\\/])|[^\\/:*?"<>|\s'`,;()\[\]{}]+)""",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex WindowsUserPath();
+
+    /// <summary>
+    /// Linux 的 <c>/home/名字</c>(含 Fedora Atomic 的 <c>/var/home/名字</c>)与 macOS 的 <c>/Users/名字</c>。
+    /// 前面紧挨着字母、数字的不算(<c>src/home/index</c>、<c>https://example.com/home/about</c> 是网址或相对路径,不是家目录)。
+    /// </summary>
+    [GeneratedRegex("""(?<prefix>(?<![A-Za-z0-9_.\-])(?:/var)?/(?:home|Users)/)(?<name>[^/\\\s:*?"<>|'`,;()\[\]{}]+)""",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex UnixUserPath();
+
+    /// <summary>
+    /// 域名形式的主机名候选:全小写、至少两段、每段 1–63 个字母数字与短横(不以短横开头或结尾)、末段 2–24 个字母;
+    /// 两头不挨着字母、数字、下划线、短横与句点(句末的句号不挡)。只是候选,是不是主机由 <see cref="IsGenericHostName" /> 判。
+    /// 候选只能从一串字符的开头起(前面挨着字母数字的位置都被挡掉),一串里的回退最多按段数退,耗时随长度线性。
+    /// </summary>
+    [GeneratedRegex(@"(?<![A-Za-z0-9_\-.])(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+(?<tld>[a-z]{2,24})(?![A-Za-z0-9_\-]|\.[A-Za-z0-9])",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex GenericHostName();
 
     /// <summary>
     /// 形似 IPv6 的一段:至少两个冒号,两头不挨着字母、数字与冒号(句末的句号不挡)。是不是真地址由 <see cref="IPAddress" /> 判;

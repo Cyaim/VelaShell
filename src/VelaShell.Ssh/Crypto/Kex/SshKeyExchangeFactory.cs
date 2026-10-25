@@ -32,6 +32,7 @@ internal static class SshKeyExchangeFactory
             [SshAlgorithmNames.DiffieHellmanGroup14Sha256] = static n => new DiffieHellmanGroupKeyExchange(n),
             [SshAlgorithmNames.DiffieHellmanGroupExchangeSha256] = static n => new DiffieHellmanGroupExchange(n),
             [SshAlgorithmNames.DiffieHellmanGroup16Sha512] = static n => new DiffieHellmanGroupKeyExchange(n),
+            [SshAlgorithmNames.DiffieHellmanGroup18Sha512] = static n => new DiffieHellmanGroupKeyExchange(n),
             [SshAlgorithmNames.DiffieHellmanGroup14Sha1] = static n => new DiffieHellmanGroupKeyExchange(n),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 

@@ -24,7 +24,7 @@ public sealed record LinuxUpdateLink(Uri Url, string? AssetName);
 public static class LinuxReleaseAsset
 {
     /// <summary>发布列表页;认不出安装方式时打开它(§172 的原行为)。</summary>
-    public const string ReleasesUrl = "https://github.com/joesdu/VelaShell/releases";
+    public const string ReleasesUrl = ReleasePage.ReleasesUrl;
 
     /// <summary>算出这一次该打开的地址。</summary>
     /// <param name="kind">当前的安装方式(<see cref="AppPackaging.LinuxInstall" />)。</param>

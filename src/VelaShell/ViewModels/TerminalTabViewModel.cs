@@ -3,6 +3,7 @@ using ReactiveUI;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
+using VelaShell.Core.OutputRules;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
@@ -55,6 +56,10 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
 
         // OSC 7:shell 上报当前工作目录 → 供「文件浏览器跟随终端目录」用。仅在 cwd 真正变化时向外播报。
         TerminalEmulator.WorkingDirectoryChanged += OnEmulatorWorkingDirectoryChanged;
+
+        // 输出规则的自动应答:命中判定(只在主屏、只看远端输出、冷却与上限)都在终端控件里做完了,
+        // 这里只管发 —— 与快捷命令同一条程序注入路径,同步输入频道转不转由规则决定。
+        TerminalEmulator.OutputTriggerFired += OnOutputTriggerFired;
 
         // 侧栏菜单的「重跑」(OSC 133 命令块):检查都在控件里做完了,发送交给这里 ——
         // 同步输入的转发与「程序注入」两个开关都在本视图模型上。
@@ -238,6 +243,8 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
             return;
         }
         Interlocked.Increment(ref _userInputs);
+        // 输出触发器要知道「这一行有人在敲」:转来的字被对端回显到光标行上,不是对端在提问。
+        (TerminalEmulator as VelaTerminalControl)?.NoteForwardedInput(data);
         Bridge?.SendRaw(data);
     }
 
@@ -715,6 +722,9 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         // 「已复制」回执的定时器可能还挂着:不取消的话它会在标签消失之后才回调。
         _copyFeedbackReset?.Dispose();
         _copyFeedbackReset = null;
+        _autoResponseNoticeReset?.Dispose();
+        _autoResponseNoticeReset = null;
+        TerminalEmulator.OutputTriggerFired -= OnOutputTriggerFired;
         // 立即标记为未连接:同步频道转发(WriteSyncInput)以 IsConnected 为闸门。
         // 频道内其他标签的输入可能与本标签的关闭并发,不复位 IsConnected 的话,
         // 转发会向已释放的桥写入而与释放竞争。
@@ -820,14 +830,29 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
         {
             return false;
         }
-        string payload = command.TrimEnd('\r', '\n');
+        SendProgrammatic(command.TrimEnd('\r', '\n'), submit, forwardToSyncChannel: false);
+        return true;
+    }
+
+    /// <summary>
+    /// 程序注入的唯一出口(快捷命令、重跑、自动应答):正文按会话字符集编码,多行走括号粘贴,
+    /// 末尾按需再按一次回车;整段期间标为程序注入(补全弹层不弹)。
+    /// </summary>
+    /// <param name="payload">正文(可以为空:自动应答「只按回车」)。</param>
+    /// <param name="submit">正文之后按回车。</param>
+    /// <param name="forwardToSyncChannel">
+    /// 是否经同步输入频道转发。快捷命令与重跑一律不转(前者自带多目标分发,后者只属于这一个终端);
+    /// 自动应答只有规则明确选了才转。
+    /// </param>
+    private void SendProgrammatic(string payload, bool submit, bool forwardToSyncChannel)
+    {
         bool multiline = QuickCommandText.IsMultiline(payload);
 
         // 快捷命令可能同时下发给同频道的多个标签,若再经同步频道转发,频道内
         // 每个标签都会收到重复注入;WriteInput 同步触发 TypedInput,压制窗口有效。
         // IsProgrammaticInput 同理:跟踪器仍需感知注入文本以保持行状态一致,
         // 但补全弹层不该把程序注入当作用户键入而弹出。
-        IsSyncForwardSuppressed = true;
+        IsSyncForwardSuppressed = !forwardToSyncChannel;
         IsProgrammaticInput = true;
         try
         {
@@ -836,7 +861,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
                 // 括号粘贴由终端按会话字符集编正文、按 ASCII 编标记,换行也由它统一成回车。
                 TerminalEmulator.WritePasteInput(payload);
             }
-            else
+            else if (payload.Length > 0)
             {
                 // 按会话字符集编码:快捷命令里可能带中文(路径、grep 的关键字),
                 // 写死 UTF-8 的话在 GBK 主机上送过去就是乱码。
@@ -854,7 +879,57 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
             IsSyncForwardSuppressed = false;
             IsProgrammaticInput = false;
         }
-        return true;
+    }
+
+    // ---- 输出规则的自动应答 -----------------------------------------------------
+
+    /// <summary>「已自动应答」提示停留的时长。</summary>
+    private static readonly TimeSpan AutoResponseNoticeDuration = TimeSpan.FromSeconds(4);
+
+    private IDisposable? _autoResponseNoticeReset;
+
+    /// <summary>
+    /// 终端上方的轻提示:「已自动应答:规则名」,或某条规则到了每分钟上限、暂停应答;null = 不显示。
+    /// </summary>
+    /// <remarks>自动发出去的字用户没敲过,不在界面上说一声,他只会看到 shell 里凭空多了一个 y。</remarks>
+    public string? AutoResponseNotice
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>
+    /// 一条自动应答规则命中:照它发送(或只提示到了上限)。
+    /// </summary>
+    /// <remarks>
+    /// 与快捷命令同一条程序注入路径(<see cref="SendProgrammatic" />):按会话字符集编码、回车按终端模式编、
+    /// 补全弹层不弹;同步输入频道默认不转,规则选了「转发」才转。没连着(断线、重连中)时什么都不发、也不提示。
+    /// </remarks>
+    private void OnOutputTriggerFired(OutputTriggerHit hit)
+    {
+        if (_disposed || !IsConnected)
+        {
+            return;
+        }
+        if (hit.RateLimited)
+        {
+            ShowAutoResponseNotice(Strings.Format("OutRule_NoticeRateLimited", hit.RuleName));
+            return;
+        }
+        string payload = hit.Response.TrimEnd('\r', '\n');
+        if (payload.Length == 0 && !hit.SendEnter)
+        {
+            return;
+        }
+        SendProgrammatic(payload, hit.SendEnter, hit.ForwardToSyncChannel);
+        ShowAutoResponseNotice(Strings.Format("OutRule_NoticeResponded", hit.RuleName));
+    }
+
+    private void ShowAutoResponseNotice(string text)
+    {
+        AutoResponseNotice = text;
+        _autoResponseNoticeReset?.Dispose();
+        _autoResponseNoticeReset = DispatcherTimer.RunOnce(() => AutoResponseNotice = null, AutoResponseNoticeDuration);
     }
 
     /// <summary>
@@ -1120,7 +1195,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
 
     /// <summary>那颗按钮的悬停说明:往哪一类清单里加哪几个。</summary>
     public string AlgorithmRemedyTip => AlgorithmRemedy is { } remedy
-        ? Strings.Format("SshAlgoFix_ButtonTip", SshAlgorithmPreferences.Label(remedy.Kind), string.Join(", ", remedy.Algorithms))
+        ? SshAlgorithmRemedyFlow.ButtonTip(remedy, SshAlgorithmRemedyFollowUp.Reconnect)
         : string.Empty;
 
     /// <summary>覆盖层上点了「放开这几个算法并重连」:由宿主确认、改配置、重连。</summary>

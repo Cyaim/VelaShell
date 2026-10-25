@@ -492,7 +492,7 @@ public sealed partial class ChatPanelViewUiTests
                 SuggestFollowUps = true,
                 PanelWidthPercent = 37,
                 DisabledBuiltinTools = "web_fetch",
-                WebSearch = new WebSearchOptions { SearxngBaseUrl = "https://original.example", MaxResults = 9, MaxFetchChars = 234567 }
+                WebSearch = new WebSearchOptions { Enabled = true, SearxngBaseUrl = "https://original.example", MaxResults = 9, MaxFetchChars = 234567 }
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;
@@ -1020,6 +1020,34 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     [TestMethod]
+    public void GlobalSettings_CrossAccountFailoverSwitchStartsOffAndIsSubmitted()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var settings = new AiSettings { Providers = [StubProvider("one", "http://127.0.0.1:9", "m")] };
+            AiSettings? submitted = null;
+            var view = new GlobalSettingsView(context, store, settings, new Loc("en"),
+                draft => { submitted = draft; return Task.CompletedTask; }, _ => { });
+            var window = new Window { Width = 640, Height = 700, Content = view };
+            window.Show();
+            try
+            {
+                await PumpAsync(5);
+                CheckBox across = FindIn<CheckBox>(view, "FailoverAcrossAccountsCheck");
+                Assert.IsFalse(across.IsChecked, "默认关:空链时不自动把对话发给同目录的另一个账号");
+                Assert.AreEqual(new Loc("en")["FailoverAcrossAccounts"], across.Content);
+                across.IsChecked = true;
+                RaiseClick(FindIn<Button>(view, "SaveButton"));
+                Assert.IsTrue(await WaitForAsync(() => submitted is not null));
+                Assert.IsTrue(submitted!.AutoFailoverAcrossAccounts);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
     [DataRow(401)]
     [DataRow(403)]
     [DataRow(429)]
@@ -1046,7 +1074,8 @@ public sealed partial class ChatPanelViewUiTests
                 RaiseClick(probe);
                 Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count > 0 && probe.IsEnabled));
                 Assert.IsFalse(health.IsCooling(provider.Models[0].Id), "一把 Key 的鉴权失败不能跳过仍有备用 Key 的整个模型");
-                Assert.IsTrue(health.IsKeyCooling(provider.Id));
+                Assert.IsTrue(health.IsKeyCooling(provider.Id, provider.Models[0].Id));
+                Assert.AreEqual(statusCode == 401, health.IsKeyCooling(provider.Id), "只有 401 冷整把 Key;403 / 429 只冷它用在这个模型上");
                 Assert.IsFalse(health.IsKeyCooling(b));
                 Assert.AreSequenceEqual(["Bearer key-a"], endpoint.Requests.Select(request => request.Auth).ToArray());
             }

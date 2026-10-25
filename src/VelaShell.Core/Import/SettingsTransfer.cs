@@ -226,10 +226,7 @@ public static class SettingsTransfer
         bool webhookUrlMissing = false;
         if (applied.Any(c => c.Id == SettingsCategories.Proxy) && file.Raw.ContainsKey("proxy"))
         {
-            if (string.IsNullOrEmpty(file.Typed.Proxy?.Password))
-            {
-                merged.Proxy.Password = SameProxy(merged.Proxy, current.Proxy) ? current.Proxy.Password : string.Empty;
-            }
+            KeepLocalProxyPassword(merged.Proxy, current.Proxy);
             // 只有 http / socks5 才读用户名密码(none / system 根本不消费它们)。
             proxyPasswordMissing = merged.Proxy.Type is "http" or "socks5"
                                    && merged.Proxy.Username.Length > 0
@@ -237,15 +234,62 @@ public static class SettingsTransfer
         }
         if (applied.Any(c => c.Id == SettingsCategories.Security) && file.Raw.ContainsKey("security"))
         {
-            if (string.IsNullOrEmpty(file.Typed.Security?.WebhookUrl))
-            {
-                merged.Security.WebhookUrl = current.Security.WebhookUrl;
-            }
+            KeepLocalWebhookUrl(merged.Security, current.Security);
             webhookUrlMissing = merged.Security.AlertWebhook && string.IsNullOrWhiteSpace(merged.Security.WebhookUrl);
         }
 
         merged.Normalize();
         return new SettingsImportMerge(merged, applied, proxyPasswordMissing, webhookUrlMissing);
+    }
+
+    /// <summary>
+    /// 去掉机密(<see cref="SettingsCategories.SecretFields" />:代理密码、告警 Webhook 地址)的一份副本 ——
+    /// 没设端到端口令的云同步推送前用。与 <see cref="Export" /> 同一份名单、同一种剔法:JSON 里拿掉,读回来是类型的默认值;
+    /// 名单里加了字段,这里跟着就不带,不用另记一处。
+    /// </summary>
+    /// <param name="settings">设置(不会被修改)。</param>
+    /// <returns>不带机密的副本。</returns>
+    public static AppSettings WithoutSecrets(AppSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        JsonObject node = ToNode(settings);
+        foreach ((string block, string field) in SettingsCategories.SecretFields)
+        {
+            (node[block] as JsonObject)?.Remove(field);
+        }
+        return node.Deserialize<AppSettings>(Options) ?? new AppSettings();
+    }
+
+    /// <summary>
+    /// 拉进来的设置里没带机密时保留本机的,规矩与导入(<see cref="Merge" />)相同:代理的类型、主机、端口、用户名都与本机相同
+    /// 才留本机密码 —— 指向另一台代理还留着,等于把本机密码交给那台代理;Webhook 地址一律留本机的。
+    /// 带着的(端到端加密的同步、旧版本推上去的明文)照用。云同步拉取时用。
+    /// </summary>
+    /// <param name="incoming">拉进来的那份(就地改)。</param>
+    /// <param name="local">本机当前的设置(不会被修改)。</param>
+    public static void KeepLocalSecrets(AppSettings incoming, AppSettings local)
+    {
+        ArgumentNullException.ThrowIfNull(incoming);
+        ArgumentNullException.ThrowIfNull(local);
+        KeepLocalProxyPassword(incoming.Proxy, local.Proxy);
+        KeepLocalWebhookUrl(incoming.Security, local.Security);
+    }
+
+    private static void KeepLocalProxyPassword(ProxyOptions incoming, ProxyOptions local)
+    {
+        if (string.IsNullOrEmpty(incoming.Password))
+        {
+            incoming.Password = SameProxy(incoming, local) ? local.Password : string.Empty;
+        }
+    }
+
+    // 导出与无口令同步从不带它,「对方没有」只说明没带,不说明要清空。
+    private static void KeepLocalWebhookUrl(SecurityOptions incoming, SecurityOptions local)
+    {
+        if (string.IsNullOrEmpty(incoming.WebhookUrl))
+        {
+            incoming.WebhookUrl = local.WebhookUrl;
+        }
     }
 
     /// <summary>按本文件的约定把设置写成 JSON 对象(键 camelCase,读取不分大小写)。</summary>

@@ -113,6 +113,16 @@ public sealed class SessionImportCandidate
     /// <summary>这条连接由文件给出了哪些字段(JSON 恒为 <see cref="SessionCsvColumns.All" />)。</summary>
     public SessionCsvColumns Columns { get; init; } = SessionCsvColumns.All;
 
+    /// <summary>
+    /// 文件里有没有这条连接的目录收藏字段(哪怕是空数组 <c>[]</c>)。CSV 没有这一列,恒为 false。
+    /// </summary>
+    /// <remarks>
+    /// 目录收藏功能之前导出的备份不带这个字段,而 <see cref="SessionProfile.DirectoryBookmarks" /> 有 <c>= []</c> 的初值,
+    /// 只看反序列化出来的对象分不清「文件没提」与「文件里就是空的」。没提的覆盖导入时保留本机的收藏,
+    /// 而不是拿一份旧备份把它清空(与 Gist 拉取同一口径)。
+    /// </remarks>
+    public bool HasDirectoryBookmarks { get; init; }
+
     /// <summary>致命问题(主机为空、端口非法…):有任何一条,这一行就不能导入。</summary>
     public List<string> Errors { get; } = [];
 

@@ -11,6 +11,7 @@ using Avalonia.Media.Immutable;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using VelaShell.Core.OutputRules;
 using VelaShell.Core.Ssh;
 using VelaShell.Terminal.Emulation;
 using VelaShell.Terminal.Input;
@@ -59,9 +60,17 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     // 因为可见行每一帧都会被重新扫描(光标闪烁、输出)。
     // 用 StringComparer.Ordinal 建表是为了能取到 span 备用查找(GetAlternateLookup):
     // 缓存命中路径因此不必先把行文本物化成 string 才查得了表 —— 只有 miss 时才建键。
-    private readonly Dictionary<string, IReadOnlyList<SemanticSpan>> _semanticSpanCache = [with(StringComparer.Ordinal)];
+    // 用户的输出规则(设置 → 输出规则)与内置语义高亮共用这张缓存:一次查表拿到两样,
+    // 规则只在新到 / 变了的行上跑一遍(miss),帧间不变的行一个正则都不跑。换规则集时整表清掉。
+    private readonly Dictionary<string, LineHighlights> _semanticSpanCache = [with(StringComparer.Ordinal)];
 
-    private readonly Dictionary<string, IReadOnlyList<SemanticSpan>>.AlternateLookup<ReadOnlySpan<char>> _semanticSpanCacheBySpan;
+    private readonly Dictionary<string, LineHighlights>.AlternateLookup<ReadOnlySpan<char>> _semanticSpanCacheBySpan;
+
+    /// <summary>一行文本的高亮命中:内置语义(互不重叠)与用户规则(未去重叠,逐列先到先得)。</summary>
+    private sealed record LineHighlights(IReadOnlyList<SemanticSpan> Semantic, OutputHighlightSpan[] User)
+    {
+        public static LineHighlights None { get; } = new([], []);
+    }
 
     // 侧栏文本(时间戳/行号/折叠标记)的 FormattedText 缓存:这些文本帧间高度重复
     // (行号在滚动稳定时完全不变),不缓存则每行每帧做一次文本塑形。
@@ -78,6 +87,10 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     private char[] _semanticLineChars = new char[256];
     private readonly List<int> _semanticColByChar = [];
     private SemanticKind?[] _semanticByColumn = [];
+
+    // 用户高亮的逐列映射:0 = 没有,否则是 OutputRules.Highlights 的下标 + 1。与 _semanticByColumn 同一套复用规矩。
+    private short[] _userRuleByColumn = [];
+    private readonly List<OutputHighlightSpan> _userSpanScratch = [];
 
     // ---- Glyph-run batching -------------------------------------------------
     // 每个可见行被绘制为少数几个 GlyphRun —— 每个连续且共享同一字体风格与前景色的
@@ -340,6 +353,155 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
 
     /// <summary>切换对默认颜色输出的客户端语义高亮。</summary>
     private bool SemanticHighlightingEnabled { get; } = true;
+
+    // ---- 用户输出规则:高亮 + 触发器(设置 → 输出规则) ----------------------
+
+    private readonly OutputTriggerScanner _triggerScanner = new();
+    private DispatcherTimer? _triggerTimer;
+
+    /// <summary>
+    /// 这个终端生效的用户输出规则(由宿主按全局 + 连接 / 分组挑好、编译好再下发)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 内容没变(指纹相同)时什么都不做:每次保存设置、每次换主题宿主都会对每个标签重设一遍,
+    /// 每次都清高亮缓存就等于每次都让全屏的行重跑一遍全部正则。
+    /// </para>
+    /// <para>
+    /// <b>与内置语义高亮的合成</b>:用户规则固定压在内置之上,逐项合成 —— 用户规则设了前景就用它的前景
+    /// (连程序显式设的 SGR 颜色一起盖掉:那是用户点名要标出来的字),没设前景时内置的语义着色照旧;
+    /// 背景、粗体同理只改规则设了的那几项。选区、搜索命中的底色仍压在最上面,否则选中之后看不出选了什么。
+    /// 用户规则之间按表里的顺序,排前面的赢。与内置一样只在主屏生效(全屏程序自带配色)。
+    /// </para>
+    /// </remarks>
+    public OutputRuleSet OutputRules
+    {
+        get;
+        set
+        {
+            value ??= OutputRuleSet.Empty;
+            if (ReferenceEquals(field, value) || field.Fingerprint == value.Fingerprint)
+            {
+                return;
+            }
+            bool highlightsChanged = field.HasHighlights || value.HasHighlights;
+            field = value;
+            _triggerScanner.Rules = value;
+            if (!value.HasTriggers)
+            {
+                _triggerTimer?.Stop();
+            }
+            if (highlightsChanged)
+            {
+                _semanticSpanCache.Clear();
+                InvalidateTerminal();
+            }
+        }
+    } = OutputRuleSet.Empty;
+
+    /// <summary>
+    /// 一条自动应答规则命中了一条等着输入的提示(UI 线程)。宿主照它发送应答并在终端上方提示;
+    /// <see cref="OutputTriggerHit.RateLimited" /> 为 true 时只提示、不发送。
+    /// </summary>
+    public event Action<OutputTriggerHit>? OutputTriggerFired;
+
+    /// <summary>触发器判定用的时钟(冷却、每分钟上限);测试换成可拨的。</summary>
+    internal TimeProvider TriggerClock { get; set; } = TimeProvider.System;
+
+    /// <summary>
+    /// 命中之后等对端安静多久再应答。一批输出恰好断在一行中间时,光标会短暂停在一行「像提示」的字上 ——
+    /// 等一小会儿,后面的字(多半是换行)到了,光标就离开了这一行,不会误答。测试置零。
+    /// </summary>
+    internal TimeSpan TriggerQuietDelay { get; set; } = TimeSpan.FromMilliseconds(300);
+
+    /// <summary>
+    /// 喂入<b>远端</b>输出(SSH / 本地 shell / 插件协议的对端)。与 <see cref="Feed(ReadOnlySpan{byte})" /> 的区别只有一处:
+    /// 喂完之后判一次输出触发器。宿主自己写进终端的提示语、本地回显、录制回放走 <see cref="Feed(byte[])" />,
+    /// 不会让触发器应答。
+    /// </summary>
+    /// <param name="data">远端发来的字节。</param>
+    public void FeedRemote(ReadOnlySpan<byte> data)
+    {
+        Emulator.Feed(data);
+        if (OutputRules.HasTriggers)
+        {
+            EvaluateTriggers();
+        }
+    }
+
+    /// <summary>
+    /// 判一次触发器:光标行上有命中就等对端安静(与冷却)之后再应答;新的输出一到,计时重来。
+    /// </summary>
+    private void EvaluateTriggers()
+    {
+        _triggerTimer?.Stop();
+        if (_triggerScanner.FindCandidate(Emulator) is not { } candidate)
+        {
+            return;
+        }
+        TimeSpan wait = _triggerScanner.WaitBeforeFiring(candidate, TriggerClock.GetUtcNow());
+        if (wait < TriggerQuietDelay)
+        {
+            wait = TriggerQuietDelay;
+        }
+        if (wait <= TimeSpan.Zero)
+        {
+            FirePendingTrigger();
+            return;
+        }
+        if (_triggerTimer is null)
+        {
+            _triggerTimer = new();
+            _triggerTimer.Tick += (_, _) =>
+            {
+                _triggerTimer.Stop();
+                FirePendingTrigger();
+            };
+        }
+        _triggerTimer.Interval = wait;
+        _triggerTimer.Start();
+    }
+
+    /// <summary>
+    /// 到点了:重新判一遍(这期间用户可能开始敲字、提示可能被擦掉),还命中就应答;冷却还没过就再约一次。
+    /// </summary>
+    private void FirePendingTrigger()
+    {
+        if (_triggerScanner.FindCandidate(Emulator) is not { } candidate)
+        {
+            return;
+        }
+        DateTimeOffset now = TriggerClock.GetUtcNow();
+        if (_triggerScanner.TryFire(candidate, now) is { } hit)
+        {
+            OutputTriggerFired?.Invoke(hit);
+            return;
+        }
+        if (_triggerScanner.WaitBeforeFiring(candidate, now) > TimeSpan.Zero)
+        {
+            EvaluateTriggers();
+        }
+    }
+
+    /// <summary>
+    /// 记一笔<b>不经本控件键入</b>、但同样是本地发出去的输入(同步输入频道里别的标签转来的)。
+    /// </summary>
+    /// <remarks>
+    /// 它直写 PTY,不走 <see cref="TypedInput" />,触发器本来看不见 —— 而对端会把这些字回显到光标行上:
+    /// 在频道里敲一句 <c>echo "(yes/no)"</c>,别的标签的触发器就会把自己的回显当成一次提问来答。
+    /// </remarks>
+    /// <param name="data">转来的字节。</param>
+    public void NoteForwardedInput(ReadOnlySpan<byte> data) => _triggerScanner.NoteTypedInput(data);
+
+    /// <summary>测试用:立刻判一次到点的触发器(不等计时器)。</summary>
+    internal void FirePendingTriggerForTest()
+    {
+        _triggerTimer?.Stop();
+        FirePendingTrigger();
+    }
+
+    /// <summary>测试用:是否有一次应答正在等对端安静 / 冷却。</summary>
+    internal bool HasPendingTriggerForTest => _triggerTimer?.IsEnabled == true;
 
     /// <summary>为 true 时,松开选区会自动将其复制到剪贴板。</summary>
     public bool CopyOnSelect { get; set; } = true;
@@ -865,6 +1027,8 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     /// </summary>
     private void SendTypedInput(byte[] data)
     {
+        // 先记再发:发出去的字(含触发器自己的应答)被回显回来时,触发器要已经知道「这一行有人在敲」。
+        _triggerScanner.NoteTypedInput(data);
         TypedInput?.Invoke(data);
         UserInput?.Invoke(data);
         EchoLocally(data);
@@ -988,6 +1152,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         Emulator.HostGeometryChanged -= OnHostGeometryChanged;
         _cursorBlinkTimer?.Stop();
         _cursorBlinkTimer = null;
+        _triggerTimer?.Stop(); // 等着应答的那一次不能在标签关掉之后才发出去。
     }
 
     /// <summary>
@@ -3207,9 +3372,14 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     {
         // 备用屏(vim/htop/less 等全屏程序)自带配色且行内容每帧都在变:语义扫描
         // 既无视觉价值又必然缓存 MISS(整行文本为键),是全屏 TUI 卡顿的头号来源,直接跳过。
-        SemanticKind?[]? semantic = SemanticHighlightingEnabled && !Emulator.IsAlternateScreen
-            ? ComputeSemanticColumns(line, cols)
-            : null;
+        // 用户输出规则与内置语义高亮同一条判据、同一张缓存(见 OutputRules 的说明)。
+        SemanticKind?[]? semantic = null;
+        short[]? userRules = null;
+        if (SemanticHighlightingEnabled && !Emulator.IsAlternateScreen)
+        {
+            ComputeHighlightColumns(line, cols, out semantic, out userRules);
+        }
+        IReadOnlyList<CompiledOutputRule> userHighlights = OutputRules.Highlights;
         // 本行落在各选区段内的列区间:逐行算一次,格子循环里只做区间比较 ——
         // 多段选区不会把渲染热路径变成 O(格 × 段)。
         int rowSpans = CollectRowSpans(spans, absoluteRow, cols);
@@ -3238,6 +3408,24 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
             if (inverse)
             {
                 (fg, bg) = (bg, fg);
+            }
+
+            // 用户高亮压在单元格自身颜色之上(显式 SGR 也盖),只改规则设了的那几项;
+            // 下面的选区 / 搜索底色再压在它上面。颜色只取调色板下标,跟着配色方案走。
+            bool userForeground = false;
+            if (userRules is not null && userRules[col] > 0)
+            {
+                OutputHighlightStyle style = userHighlights[userRules[col] - 1].Style;
+                if (style.HasForeground)
+                {
+                    fg = palette[style.Foreground];
+                    userForeground = true;
+                }
+                if (style.HasBackground)
+                {
+                    bg = palette[style.Background];
+                }
+                bold |= style.Bold;
             }
             if (rowSelectionMatches is not null)
             {
@@ -3287,7 +3475,11 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
                 && semantic[col] is { } kind
             )
             {
-                fg = SemanticColor(palette, kind);
+                // 用户规则设了前景的格不再套内置配色;URL / IP 的下划线照画 —— 它仍然能 Ctrl+点击。
+                if (!userForeground)
+                {
+                    fg = SemanticColor(palette, kind);
+                }
                 semanticUnderline = kind is SemanticKind.Url or SemanticKind.IpAddress;
             }
 
@@ -3298,7 +3490,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
             if (hasLinks && line.LinkAt(col) != 0)
             {
                 semanticUnderline = true;
-                if (!inverse && cell.Foreground.IsDefault)
+                if (!inverse && cell.Foreground.IsDefault && !userForeground)
                 {
                     fg = SemanticColor(palette, SemanticKind.Url);
                 }
@@ -3368,12 +3560,18 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     }
 
     /// <summary>
-    /// 为一行构建逐列的语义类别映射:重建行文本(把每个字符映射回其源列,
-    /// 使宽字符对齐),对其进行匹配,并标记每个区间覆盖的列。
-    /// 当该行无可高亮内容时返回 null。
+    /// 为一行构建逐列的高亮映射:重建行文本(把每个字符映射回其源列,使宽字符对齐),
+    /// 对其进行匹配(内置语义 + 用户规则,按行文本缓存),并标记每个区间覆盖的列。
+    /// 某一样一处都没命中时那一样给 null。
     /// </summary>
-    private SemanticKind?[]? ComputeSemanticColumns(TerminalRow line, int cols)
+    /// <param name="line">要画的行。</param>
+    /// <param name="cols">屏幕列数。</param>
+    /// <param name="semantic">内置语义的逐列类别。</param>
+    /// <param name="user">用户规则的逐列下标(0 = 无,否则 <c>OutputRules.Highlights</c> 下标 + 1)。</param>
+    private void ComputeHighlightColumns(TerminalRow line, int cols, out SemanticKind?[]? semantic, out short[]? user)
     {
+        semantic = null;
+        user = null;
         int lastNonBlank = -1;
         for (int i = 0; i < cols; i++)
         {
@@ -3384,7 +3582,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         }
         if (lastNonBlank < 0)
         {
-            return null;
+            return;
         }
         List<int> colByChar = _semanticColByChar;
         colByChar.Clear();
@@ -3412,41 +3610,65 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
             }
             length += written;
         }
-        IReadOnlyList<SemanticSpan> spans = SemanticSpansFor(_semanticLineChars.AsSpan(0, length));
-        if (spans.Count == 0)
-        {
-            return null;
-        }
+        LineHighlights matches = HighlightsFor(_semanticLineChars.AsSpan(0, length));
 
         // 复用成员缓冲(按需扩容):调用方只在渲染完当前行前读取,下一行覆写安全。
-        if (_semanticByColumn.Length < cols)
+        if (matches.Semantic.Count > 0)
         {
-            _semanticByColumn = new SemanticKind?[cols];
-        }
-        SemanticKind?[] byColumn = _semanticByColumn;
-        Array.Clear(byColumn, 0, cols);
-        foreach (SemanticSpan span in spans)
-        {
-            int end = Math.Min(span.End, colByChar.Count);
-            for (int ci = span.Start; ci < end; ci++)
+            if (_semanticByColumn.Length < cols)
             {
-                int c = colByChar[ci];
-                if (c >= 0 && c < cols)
+                _semanticByColumn = new SemanticKind?[cols];
+            }
+            SemanticKind?[] byColumn = _semanticByColumn;
+            Array.Clear(byColumn, 0, cols);
+            foreach (SemanticSpan span in matches.Semantic)
+            {
+                int end = Math.Min(span.End, colByChar.Count);
+                for (int ci = span.Start; ci < end; ci++)
                 {
-                    byColumn[c] = span.Kind;
+                    int c = colByChar[ci];
+                    if (c >= 0 && c < cols)
+                    {
+                        byColumn[c] = span.Kind;
+                    }
                 }
             }
+            semantic = byColumn;
         }
-        return byColumn;
+        if (matches.User.Length > 0)
+        {
+            if (_userRuleByColumn.Length < cols)
+            {
+                _userRuleByColumn = new short[cols];
+            }
+            short[] byColumn = _userRuleByColumn;
+            Array.Clear(byColumn, 0, cols);
+            // 命中按规则顺序收集,逐列先到先得 = 表里排前面的规则赢。
+            foreach (OutputHighlightSpan span in matches.User)
+            {
+                int end = Math.Min(span.Start + span.Length, colByChar.Count);
+                for (int ci = span.Start; ci < end; ci++)
+                {
+                    int c = colByChar[ci];
+                    if (c >= 0 && c < cols && byColumn[c] == 0)
+                    {
+                        byColumn[c] = (short)(span.RuleIndex + 1);
+                    }
+                }
+            }
+            user = byColumn;
+        }
     }
 
     /// <remarks>
     /// 查表走 span 备用查找:命中时(可见行帧间基本不变,这是绝大多数情况)一个字符串都不分配。
     /// 只有 miss 才 <c>ToString()</c> 建缓存键 —— 从"每行每帧一个 string"降到"每行内容变化一次"。
+    /// 用户规则跟着内置语义一起只在 miss 时跑,这正是「别拖慢逐格渲染」的那一半:规则再多,
+    /// 帧间不变的行一条都不跑(另一半是线性时间引擎,见 <c>OutputRuleCompiler</c>)。
     /// </remarks>
-    private IReadOnlyList<SemanticSpan> SemanticSpansFor(ReadOnlySpan<char> text)
+    private LineHighlights HighlightsFor(ReadOnlySpan<char> text)
     {
-        if (_semanticSpanCacheBySpan.TryGetValue(text, out IReadOnlyList<SemanticSpan>? cached))
+        if (_semanticSpanCacheBySpan.TryGetValue(text, out LineHighlights? cached))
         {
             return cached;
         }
@@ -3456,9 +3678,31 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         {
             _semanticSpanCache.Clear();
         }
-        IReadOnlyList<SemanticSpan> spans = SemanticMatcher.Match(text);
-        _semanticSpanCache[new(text)] = spans;
-        return spans;
+        IReadOnlyList<SemanticSpan> semantic = SemanticMatcher.Match(text);
+        OutputHighlightSpan[] user = [];
+        if (OutputRules.HasHighlights)
+        {
+            _userSpanScratch.Clear();
+            OutputRules.CollectHighlights(text, _userSpanScratch);
+            user = [.. _userSpanScratch];
+        }
+        LineHighlights matches = semantic.Count == 0 && user.Length == 0 ? LineHighlights.None : new(semantic, user);
+        _semanticSpanCache[new(text)] = matches;
+        HighlightMissCountForTest++;
+        return matches;
+    }
+
+    /// <summary>测试用:高亮缓存 miss(真的跑了一遍正则)的次数。</summary>
+    internal int HighlightMissCountForTest { get; private set; }
+
+    /// <summary>测试用:某一可见行某一列的用户高亮样式(按渲染同一条路径算);没有时为 null。</summary>
+    internal OutputHighlightStyle? UserHighlightAtForTest(int screenRow, int col)
+    {
+        TerminalRow line = Emulator.Screen.ActiveLine(screenRow);
+        ComputeHighlightColumns(line, Emulator.Columns, out _, out short[]? user);
+        return user is not null && col < user.Length && user[col] > 0
+            ? OutputRules.Highlights[user[col] - 1].Style
+            : null;
     }
 
     /// <summary>将语义类别映射到可主题化的 ANSI 颜色(遵循当前 .pen 调色板)。</summary>

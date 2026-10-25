@@ -1,6 +1,6 @@
 # VelaShell Privacy Policy / 隐私政策
 
-**Last updated / 最后更新:2026-10-24**
+**Last updated / 最后更新:2026-10-25**
 
 [English](#english) · [简体中文](#简体中文)
 
@@ -24,6 +24,10 @@ learns only what any web server learns from a plain download: your IP address an
 Clearing the address in Settings → General → Message centre stops it completely: not "less
 often", but never again.
 
+If you turn on web search in the AI assistant (it is **off by default**), the search words the
+model writes go through a second server the developer runs, a public SearXNG instance — see
+item 8 below.
+
 Every network connection VelaShell makes is listed in full below.
 
 ### Information we collect
@@ -44,10 +48,11 @@ computer unless you explicitly enable the optional sync feature described below.
 | The encryption key protecting the above | Same folder, generated on your device |
 | Known SSH host keys | Same folder |
 | Saved commands and snippets | Same folder |
-| Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; not included in sync) | Same folder |
+| Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; templates can travel with the optional cloud sync below, the layout at exit never does) | Same folder |
 | Session logs — raw terminal output, **off by default** | `logs` subfolder, auto-deleted after a retention period you set |
-| Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, duration, reason) | `logs` subfolder, auto-deleted after 7 days |
-| Audit log — connection results (`user@host:port`), host-key decisions, external logins, and changes to connection profiles (name and `user@host:port`), settings and shared credentials: which part changed, never passwords or setting values | `~/.velashell`; records older than the retention period you set (default 180 days) are deleted at startup |
+| Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, when it connected, reason) | `logs` subfolder, auto-deleted after 7 days |
+| Transfer records — one line per upload or download (local path, remote path, result; on by default, Settings → File transfer) — plus the external-editing log (`remote-edit.log`), the VcXsrv log (`vcxsrv.log`, Windows only) and each plugin's own log | `logs` subfolder (the transfer-record folder can be changed); transfer records are deleted after the retention period you set, `remote-edit.log` starts over at 1 MB, plugin logs rotate once at 1 MB |
+| Audit log — connection results (`user@host:port`), host-key decisions, external logins, and changes to connection profiles (name and `user@host:port`), settings and shared credentials: which part changed and where the change came from (local edit, cloud sync, import, login prompt), never passwords or setting values | `~/.velashell`; records older than the retention period you set (default 180 days) are deleted at startup |
 | Offline IP geolocation database, if you add one | `geoip` subfolder |
 | Plugins you manually install | `~/.velashell/plugins` |
 
@@ -75,6 +80,11 @@ VelaShell connects to the network only in these situations:
    address you enter. IP geolocation is resolved **entirely offline** against a database file
    stored on your computer; no address is ever sent to a lookup service. The world map is drawn
    from vector data bundled inside the application — no online map tiles are requested.
+   The **session health check** runs only when you start it (from a group or a multi-selection
+   in the explorer, or from the Command Palette) — never on a timer. For each connection you
+   picked it does what Connection Diagnostics does: a name lookup, a TCP connection, reading the
+   SSH version string and — when the connection has saved credentials and *Verify login* is on —
+   one login with those credentials that is closed right away. It goes only to those hosts.
 
 3. **The news feed — on by default.** VelaShell downloads
    <https://feeds.easilynet.top/feed.json> (a public file, https only) when it starts and then
@@ -104,23 +114,40 @@ VelaShell connects to the network only in these situations:
    they have updates without naming them. No account, no token, no install identifier: that server
    sees only your IP address. **This happens only when you open that window** — not at startup, not
    on a background timer. If you never open it, no request is ever made. A plugin package is
-   downloaded only after you click Update, and the digest the marketplace declares is verified
-   before it is installed.
+   downloaded only after you click Update, only over https, and only when the marketplace
+   declares its SHA-256 digest, which is verified before it is installed.
 
 6. **Contributor avatars.** Opening the About page loads contributor profile pictures from
    GitHub, which discloses your IP address to GitHub in the same way. If the request fails,
    placeholder initials are shown and nothing else is affected.
 
 7. **Cloud sync — off by default, entirely optional.** If you enable it, VelaShell stores your
-   settings, connection profiles, and snippets in a **secret GitHub Gist in your own GitHub
+   settings, connection profiles, snippets, and layout templates in a **secret GitHub Gist in your own GitHub
    account**, using a personal access token that you supply. The data goes to your GitHub
    account, never to us. You may additionally set an end-to-end encryption passphrase, in which
    case the payload is encrypted with AES-GCM on your device before upload and GitHub stores
    only ciphertext. Without that passphrase, saved passwords and private-key passphrases are
    never uploaded — neither those on connection profiles nor those of shared credentials; a
    shared credential travels only as its name, username, notes and key / certificate file
-   paths. You choose which categories to sync, and you can turn it off or delete the Gist at
-   any time.
+   paths, and the proxy password and alert webhook URL in your settings are left out as
+   well. Layout templates never contain passwords either: only the profile Id each tab points
+   to, how it opens, and the tab title at save time (often `user@host`). You choose which
+   categories to sync, and you can turn it off or delete the Gist at any time.
+
+8. **AI assistant web search — off by default.** The AI assistant plugin sends your questions,
+   and the context you let it read, to the model provider **you** configure; nothing goes there
+   until you add one. Separately, it can give the model two web tools, `web_search` and
+   `web_fetch`, but only after you tick "Let the assistant search and read the web" in its global
+   settings. With that on, the search words the model writes — in troubleshooting these are often
+   error messages, host names, or internal service names — are sent to the SearXNG instance set
+   right below that switch. **By default that is a public instance run by the developer,
+   <https://searxng.easilynet.top>**, which therefore sees those search words and your IP address;
+   it does not receive your conversation, your terminal output, or any identifier. You can point
+   the setting at your own SearXNG instance, or clear it to turn searching off. `web_fetch`
+   downloads the page the model names directly from your computer (private-network addresses
+   are blocked unless you allow them). When the model provider offers its own server-side
+   search and "prefer the provider's search" is on, the search happens on the provider's side
+   instead and follows that provider's policy.
 
 VelaShell does not download the IP geolocation database itself. If you want that optional
 feature, the application opens the DB-IP download page in your browser and you choose the
@@ -137,6 +164,9 @@ The only third parties that can receive anything are those you direct it to:
   own account. See the [GitHub Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-privacy-statement).
 - **DB-IP**, only if you choose to download their free offline database, and only through your
   own browser. See the [DB-IP privacy policy](https://db-ip.com/legal/privacy-policy).
+- **The AI model provider you configure** in the AI assistant plugin (and, if you enable web
+  search with provider-side search preferred, that provider's search), under that provider's
+  own policy.
 
 ### Security
 
@@ -151,11 +181,20 @@ like passwords, tokens or private keys (for example `PASSWORD=…`, `Bearer …`
 replaced with `***` before session logs and recordings are written (Settings → Security Audit); this is
 best-effort pattern matching, not a guarantee, and it does not change what you see on screen.
 
-“Export diagnostics…” on the About page writes a zip of the diagnostic logs, a version and platform
-summary and the plugin list **only to the location you choose**; nothing is uploaded. Host names,
-user names, local paths, IP and email addresses, and password- or token-like values are masked
-before writing, and settings, connection profiles and credentials are not included. Sending the
-file to anyone is up to you — you can open it and check it first.
+“Export diagnostics…” on the About page first lets you tick what to include, then writes a zip
+**only to the location you choose**; nothing is uploaded. The diagnostic logs, crash reports, a
+version and platform summary and the plugin list are always included. Transfer records, the
+external-editing log, the VcXsrv log and plugin logs contain local and remote paths and file names;
+they are unticked by default and only included when you tick them. Settings, connection profiles,
+session logs and credentials are never included. Before writing, VelaShell masks by rule: host and
+user names that appear in your saved connections, recent connections and shared credentials; the
+user and host in its own SSH disconnect log lines; IPv4 and IPv6 addresses other than loopback;
+lowercase domain names ending in a common top-level domain or internal suffix (such as `.com`,
+`.cn`, `.local`, `.internal`); the user name in `C:\Users\<name>`, `/home/<name>` and
+`/Users/<name>` paths; your local account name, machine name and home folder; email addresses; and
+password- or token-like values. It cannot recognise single-label host names that are not in those
+sources (such as `db-prod-3`), user names elsewhere (such as chat-app user ids), file names, or other
+path parts. Sending the file to anyone is up to you — open it and check it first.
 
 “Export” under Settings → General → Import/export settings writes only the categories you tick, again only
 to the file you choose. Network proxy and Security audit are unticked by default, and the proxy password
@@ -199,6 +238,9 @@ VelaShell 是一款开源的 SSH / SFTP 客户端,完全运行在你自己的计
 服务器能知道的,和任何网站从一次普通下载里能知道的一样多:你的 IP 地址与访问时间。
 在「设置 → 常规 → 消息中心」把地址清空即可彻底停止 —— 不是"少发一点",而是一个请求都不再发。
 
+若你在 AI 助手里打开了网络检索(**默认关闭**),模型写的检索词会经过开发者运营的第二台服务器 ——
+一个公共 SearXNG 实例,见下文第 8 条。
+
 VelaShell 发起的每一个网络连接,都完整列在下方。
 
 ### 我们收集的信息
@@ -219,10 +261,11 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 保护上述内容的加密密钥 | 同上,在你的设备上生成 |
 | 已知的 SSH 主机密钥 | 同上 |
 | 快捷命令与代码片段 | 同上 |
-| 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码,不参与同步) | 同上 |
+| 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码;模板可随下文的可选云同步上传,退出时布局从不上传) | 同上 |
 | 会话日志 —— 终端原始输出,**默认关闭** | `logs` 子目录,按你设定的保留天数自动清理 |
-| 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、时长、原因) | `logs` 子目录,7 天后自动清理 |
-| 审计日志 —— 连接成败(`用户@主机:端口`)、主机指纹的裁决、外部拉起的登录,以及连接配置(名称与 `用户@主机:端口`)、设置、共享凭据的改动:只记改了哪一块,不记密码与设置的值 | `~/.velashell`;启动时删掉超过保留期(默认 180 天,可设)的记录 |
+| 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、连上的时刻、原因) | `logs` 子目录,7 天后自动清理 |
+| 传输记录 —— 每次上传、下载一行(本机路径、远端路径、结果;默认开,设置 → 文件传输),以及外部编辑日志(`remote-edit.log`)、VcXsrv 日志(`vcxsrv.log`,仅 Windows)与各插件自己的日志 | `logs` 子目录(传输记录的目录可改);传输记录按你设定的保留天数清理,`remote-edit.log` 满 1 MB 重写,插件日志满 1 MB 轮转一份 |
+| 审计日志 —— 连接成败(`用户@主机:端口`)、主机指纹的裁决、外部拉起的登录,以及连接配置(名称与 `用户@主机:端口`)、设置、共享凭据的改动:只记改了哪一块与改动的来源(本机编辑、云同步、导入、登录框),不记密码与设置的值 | `~/.velashell`;启动时删掉超过保留期(默认 180 天,可设)的记录 |
 | 离线 IP 归属地数据库(如果你添加了) | `geoip` 子目录 |
 | 你手动安装的插件 | `~/.velashell/plugins` |
 
@@ -245,6 +288,9 @@ VelaShell 仅在以下情形联网:
 2. **你所诊断的主机。** Ping 与路由追踪向你输入的地址发送 ICMP/UDP 探测包。IP 归属地查询
    **完全离线**,基于保存在你计算机上的数据库文件完成,任何地址都不会被发往查询服务。
    世界地图由应用内置的矢量数据绘制,不请求任何在线地图瓦片。
+   **会话健康巡检**只在你点开时运行(资源管理器的分组或多选菜单、命令面板),从不定时运行。
+   它对你选中的每条连接做的事与「连接诊断」相同:解析主机名、建立 TCP 连接、读取 SSH 版本串;
+   连接保存了凭据且开着「验证登录」时,再用这份凭据登录一次并随即断开。它只连这些主机。
 
 3. **资讯源 —— 默认开启。** VelaShell 在启动时以及此后每隔几小时,下载一次
    <https://feeds.easilynet.top/feed.json>(公开文件,仅 https),把其中的安全资讯与公告
@@ -268,17 +314,29 @@ VelaShell 仅在以下情形联网:
    因为"它们有没有新版"这个问题,没办法在不说出是哪几个插件的前提下问出口。
    不带账号、不带令牌、不带任何安装标识符,那台服务器看到的只有你的 IP 地址。
    **只在你打开那个窗口时发生** —— 不在启动时,也不在后台定时发生;你不打开它,
-   一个请求都不会发出。插件包只有在你点了「更新」之后才会下载,装之前会核对商店声明的摘要。
+   一个请求都不会发出。插件包只有在你点了「更新」之后才会下载,只走 https,而且商店必须声明它的 SHA-256 摘要(没给就不下),装之前核对。
 
 6. **贡献者头像。** 打开"关于"页面会从 GitHub 加载贡献者头像,同样会向 GitHub 暴露你的
    IP 地址。请求失败时显示首字母占位图,不影响其他功能。
 
 7. **云同步 —— 默认关闭,完全可选。** 若你启用,VelaShell 会使用你自己提供的个人访问令牌,
-   把设置、连接配置与代码片段保存到**你自己 GitHub 账户下的一个 secret Gist** 中。数据进入
+   把设置、连接配置、代码片段与布局模板保存到**你自己 GitHub 账户下的一个 secret Gist** 中。数据进入
    的是你的 GitHub 账户,而非我们。你还可以额外设置端到端加密口令,此时载荷会在你的设备上
    用 AES-GCM 加密后再上传,GitHub 只能拿到密文。没设这个口令时,已保存的密码与私钥口令一律
    不上传 —— 连接配置上的与共享凭据里的都一样;共享凭据只带名称、用户名、备注与私钥 / 证书
-   文件路径。同步范围由你勾选,可随时关闭或删除该 Gist。
+   文件路径;设置里的代理密码与告警 Webhook 地址同样不上传。布局模板本来就不含密码,只有每个
+   标签指向的连接配置 Id、打开方式与保存时的标签标题(常常就是 `用户@主机`)。同步范围由你勾选,
+   可随时关闭或删除该 Gist。
+
+8. **AI 助手的网络检索 —— 默认关闭。** AI 助手插件把你的提问、以及你允许它读取的上下文,
+   发给**你自己**配置的模型供应商;一家都没配之前什么都不发。另外,它能给模型两个网络工具
+   `web_search` 与 `web_fetch`,但只有在你于它的全局设置里勾上「允许助手检索并阅读网页」之后才有。
+   打开后,模型写的检索词 —— 排障时常常是报错原文、主机名或内网服务名 —— 会发到那个开关下方
+   设置的 SearXNG 实例。**默认是开发者运营的公共实例 <https://searxng.easilynet.top>**,
+   它因此能看到这些检索词与你的 IP 地址;它收不到你的对话、终端输出或任何标识符。你可以把
+   这一项换成自行部署的 SearXNG 实例,或清空以关闭检索。`web_fetch` 从你的计算机直接去取
+   模型给出的网页(私网地址默认挡住,除非你放行)。模型供应商自带服务端检索、且勾了「优先用
+   供应商自带的检索」时,检索改在供应商那边进行,遵循该供应商的政策。
 
 VelaShell 不会自行下载 IP 归属地数据库。若你需要该可选功能,应用会在你的浏览器中打开 DB-IP
 的下载页面,由你手动选择下载好的文件。
@@ -294,6 +352,8 @@ VelaShell 不含任何第三方 SDK、追踪器或广告库。
   [GitHub 隐私声明](https://docs.github.com/site-policy/privacy-policies/github-privacy-statement)。
 - **DB-IP**,仅当你选择下载其免费离线数据库时,且全程通过你自己的浏览器。参见
   [DB-IP 隐私政策](https://db-ip.com/legal/privacy-policy)。
+- **你在 AI 助手插件里配置的模型供应商**(以及打开网络检索且优先用供应商检索时,该供应商的检索),
+  遵循该供应商自己的政策。
 
 ### 安全
 
@@ -305,9 +365,14 @@ VelaShell 不含任何第三方 SDK、追踪器或广告库。
 落盘前会把形如口令、令牌或私钥的值(比如 `PASSWORD=…`、`Bearer …`、PEM 私钥块)换成 `***`(设置 → 安全审计);
 这是按规则匹配、尽力而为,不是保证,也不改变屏幕上显示的内容。
 
-关于页的「导出诊断包…」把诊断日志、版本与平台概况和插件清单打成 zip,**只写到你选的位置**,不会上传。
-写入前会遮盖主机名、用户名、本机路径、IP 与邮箱地址,以及形如口令或令牌的值;设置、连接配置与凭据都不收。
-要不要发给别人由你决定,发之前可以先打开检查。
+关于页的「导出诊断包…」先让你勾选要收哪些,再打成 zip,**只写到你选的位置**,不会上传。诊断日志、崩溃记录、
+版本与平台概况和插件清单总会收进包;传输记录、外部编辑日志、VcXsrv 日志与插件日志里有本机与远端的路径和文件名,
+默认不勾,勾上了才收。设置、连接配置、会话日志与凭据都不收。写入前按规则遮盖:你的已保存连接、最近连接与共享凭据里
+出现过的主机名与用户名;VelaShell 自己的 SSH 断开日志行里的用户与主机;回环以外的 IPv4 与 IPv6 地址;小写书写、
+以常见顶级域或内网后缀(如 `.com`、`.cn`、`.local`、`.internal`)结尾的域名;`C:\Users\<名>`、`/home/<名>`、
+`/Users/<名>` 路径里的用户名;本机账户名、机器名与主目录;邮箱地址;形如口令或令牌的值。不在上述来源里的单段主机名
+(如 `db-prod-3`)、其它位置的用户名(如聊天软件的用户 id)、文件名与其余路径认不出来。要不要发给别人由你决定,
+发之前请先打开检查。
 
 设置 → 常规 →「设置导入/导出」的「导出」只把你勾选的分类写进你选的文件;网络代理与安全审计默认不勾,
 代理密码与告警 Webhook 地址无论勾选什么都不写进去。

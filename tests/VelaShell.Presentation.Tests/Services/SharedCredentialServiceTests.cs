@@ -169,6 +169,8 @@ public sealed class SharedCredentialServiceTests
         Assert.IsTrue(SharedCredentialService.IsCompatible(password, new() { ConnectionType = ConnectionType.FTP }));
         Assert.IsFalse(SharedCredentialService.IsCompatible(password,
             new() { ConnectionType = ConnectionType.FTP, Ftp = new() { Anonymous = true } }));
+        Assert.IsFalse(SharedCredentialService.IsCompatible(password, new() { AuthMethod = AuthMethod.KeyStore }),
+            "用系统密钥库的连接不挂共享凭据(与连接编辑框同一口径)");
     }
 
     /// <summary>与仓储同口径的内存实现:读出、存入都是副本。</summary>

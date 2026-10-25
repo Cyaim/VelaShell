@@ -90,6 +90,7 @@ public sealed class ProxyDialerTests
             async () => await ConnectAsync(DialerChain.Socks5("127.0.0.1", proxy.Port, new SshProxyCredentials(new string('a', 256), "s3cret"))));
 
         Assert.AreEqual(SshFailureReason.InvalidConfiguration, ex.Reason);
+        Assert.AreEqual(SshConnectFailureKind.Socks5CredentialsTooLong, ex.FailureKind);
     }
 
     /// <summary>主机名放不进 SOCKS5 请求（不是合法域名、超过 255 字节）：配置错误，代理根本没见到请求。</summary>
@@ -104,6 +105,8 @@ public sealed class ProxyDialerTests
                 () => Socks5Dialer.BuildConnectRequest(new SshEndPoint(host, 22)), host);
 
             Assert.AreEqual(SshFailureReason.InvalidConfiguration, ex.Reason, host);
+            Assert.AreEqual(SshConnectFailureKind.ProxyTargetNameInvalid, ex.FailureKind, host);
+            Assert.AreEqual(host, ex.Target, "放不进请求的那个名字原样交出");
         }
     }
 
@@ -116,7 +119,13 @@ public sealed class ProxyDialerTests
             async () => await ConnectAsync(DialerChain.Socks5("127.0.0.1", proxy.Port)));
 
         Assert.AreEqual(SshFailureReason.ProxyRefused, ex.Reason);
-        Assert.Contains("目标拒绝连接", ex.Message);
+        Assert.AreEqual($"SOCKS5 代理 127.0.0.1:{proxy.Port} 拒绝连接 {TargetHost}:22：目标拒绝连接（结果码 5）。", ex.Message);
+
+        // 界面按种类与参数说（宿主不解析上面那句中文）。
+        Assert.AreEqual(SshConnectFailureKind.Socks5ConnectRefused, ex.FailureKind);
+        Assert.AreEqual($"127.0.0.1:{proxy.Port}", ex.Via);
+        Assert.AreEqual($"{TargetHost}:22", ex.Target);
+        Assert.AreEqual(5, ex.ProxyReplyCode);
 
         // 从近到远：到代理成功，代理到目标失败。
         Assert.HasCount(2, ex.Hops);
@@ -167,12 +176,17 @@ public sealed class ProxyDialerTests
         Assert.Contains("SOCKS5 代理", ex.Message);
         Assert.AreEqual(SshDialKind.Tcp, ex.Hops.Single().Kind);
         Assert.IsFalse(ex.Hops.Single().Succeeded);
+        Assert.AreEqual(SshConnectFailureKind.ProxyConnectFailed, ex.FailureKind);
+        Assert.AreEqual($"127.0.0.1:{closedPort}", ex.Via);
 
         // 嵌套时外层沿用内层已经说清的原因：HTTP 代理连不上，经它到 SOCKS5 的外层照样是 ProxyUnreachable，跳信息指着 HTTP 代理那一跳。
         SshConnectException nested = await Assert.ThrowsExactlyAsync<SshConnectException>(
             async () => await ConnectAsync(DialerChain.Socks5("socks.internal", 1080, via: DialerChain.HttpConnect("127.0.0.1", closedPort))));
         Assert.AreEqual(SshFailureReason.ProxyUnreachable, nested.Reason);
         Assert.AreEqual($"127.0.0.1:{closedPort}", nested.Hops.Single().Target);
+        Assert.AreEqual(SshConnectFailureKind.ProxyConnectFailed, nested.FailureKind, "外层：连不上的是 SOCKS5 代理，原因在内层");
+        Assert.AreEqual("socks.internal:1080", nested.Via);
+        Assert.AreEqual(SshConnectFailureKind.ProxyConnectFailed, ((SshConnectException)nested.InnerException!).FailureKind);
     }
 
     [TestMethod]
@@ -241,6 +255,8 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
         Assert.AreEqual(SshFailureReason.InvalidConfiguration, error.Reason);
         Assert.IsFalse(error.IsRetryable);
         Assert.DoesNotContain("\n", error.Message, "消息里的主机名也要清掉控制字符");
+        Assert.AreEqual(SshConnectFailureKind.ProxyTargetNameInvalid, error.FailureKind);
+        Assert.AreEqual(host, error.Target, "原样交出，由显示的一方清洗");
     }
 
     [TestMethod]
@@ -291,7 +307,13 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
             async () => await ConnectAsync(DialerChain.HttpConnect("127.0.0.1", proxy.Port)));
 
         Assert.AreEqual(SshFailureReason.ProxyRefused, ex.Reason);
-        Assert.Contains("80/443", ex.Message);
+        Assert.AreEqual(
+            $"HTTP 代理 127.0.0.1:{proxy.Port} 拒绝连接 {TargetHost}:22：HTTP/1.1 403 Forbidden。" +
+            " 这个代理可能只放行 80/443 端口 —— 请改用 SOCKS5，或让 SSH 服务端在 443 上监听。", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.HttpConnectRefused, ex.FailureKind);
+        Assert.AreEqual(403, ex.ProxyReplyCode);
+        Assert.AreEqual("HTTP/1.1 403 Forbidden", ex.ProxyReply);
+        Assert.AreEqual($"{TargetHost}:22", ex.Target);
     }
 
     /// <summary>嵌套：经 HTTP 代理到达 SOCKS5 代理，再由它连目标。跳信息从近到远。</summary>
@@ -357,6 +379,13 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
         Assert.IsTrue(ex.Hops[0].Succeeded, "跳板本身是连上了的");
         Assert.AreEqual(SshDialKind.SshJump, ex.Hops[1].Kind);
         Assert.IsFalse(ex.Hops[1].Succeeded);
+
+        SshChannelException refusal = (SshChannelException)ex.InnerException!;
+        Assert.AreEqual($"跳板 jump.example:22 不肯转发到 {TargetHost}:22：{refusal.Message}", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.JumpForwardRefused, ex.FailureKind);
+        Assert.AreEqual("jump.example:22", ex.Via);
+        Assert.AreEqual($"{TargetHost}:22", ex.Target);
+        Assert.AreNotEqual(SshChannelFailureKind.Unknown, refusal.FailureKind, "跳板回的原因码在内层，带着种类");
     }
 
     /// <summary>
@@ -372,6 +401,9 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
 
         Assert.AreEqual(SshFailureReason.ClosedByPeer, ex.Reason);
         Assert.DoesNotContain("不肯转发", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.JumpForwardFailed, ex.FailureKind);
+        Assert.AreEqual("jump.example:22", ex.Via);
+        Assert.AreEqual($"{TargetHost}:22", ex.Target);
         Assert.HasCount(2, ex.Hops);
         Assert.IsTrue(ex.Hops[0].Succeeded, "跳板本身是连上了的");
         Assert.IsFalse(ex.Hops[1].Succeeded);
@@ -519,9 +551,11 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
             async () => await SshConnection.ConnectAsync(options));
 
         Assert.AreEqual(SshFailureReason.Timeout, ex.Reason);
-        Assert.Contains("跳板", ex.Message);
+        Assert.AreEqual("经跳板 jumper@jump.example:22 建连时超时（外层连接的计时器到点了；等人输入的时间不算在内）。", ex.Message);
         Assert.AreEqual(SshDialKind.SshJump, ex.Hops[^1].Kind);
         Assert.IsFalse(ex.Hops[^1].Succeeded);
+        Assert.AreEqual(SshConnectFailureKind.JumpConnectTimeout, ex.FailureKind);
+        Assert.AreEqual("jumper@jump.example:22", ex.Via);
     }
 
     /// <summary>
@@ -544,7 +578,12 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
 
         Assert.AreEqual(SshFailureReason.Timeout, ex.Reason);
         Assert.AreEqual(SshPhase.Dialing, ex.Phase);
-        Assert.Contains("代理握手", ex.Message);
+        Assert.AreEqual(
+            $"经SOCKS5 代理 proxy.example:1080 连 {TargetHost}:22 时在代理握手这一步超时：SOCKS5 代理 proxy.example:1080 接下了连接，却一直没有回应握手。",
+            ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.ProxyHandshakeTimeout, ex.FailureKind);
+        Assert.AreEqual("proxy.example:1080", ex.Via);
+        Assert.AreEqual($"{TargetHost}:22", ex.Target);
         Assert.HasCount(2, ex.Hops);
         Assert.IsTrue(ex.Hops[0].Succeeded, "到代理那一跳是通的");
         Assert.AreEqual(SshDialKind.Socks5, ex.Hops[1].Kind);
@@ -638,7 +677,171 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
         Assert.Contains("退出码 7", ex.Message);
         Assert.Contains(" END", ex.Message, "stderr 的末尾不该被截掉 —— 代理程序的失败原因常在最后一行");
         Assert.AreEqual(SshDialKind.ProxyCommand, ex.Hops[^1].Kind);
+        Assert.AreEqual(SshConnectFailureKind.ProxyCommandExited, ex.FailureKind);
+        Assert.AreEqual(7, ex.ProxyReplyCode);
+        Assert.EndsWith(" END", ex.ProxyReply);
+        Assert.AreEqual(command, ex.Via);
+        Assert.AreEqual($"{TargetHost}:22", ex.Target);
     }
+
+    // ------------------------------------------------------------ 代理应答的种类（界面按它说，库的原文不变）
+
+    [TestMethod]
+    public async Task SOCKS5对端不是SOCKS5时报版本不符并交出版本字节()
+    {
+        ISshTransportDialer proxy = DialerChain.Socks5("proxy.example", 1080, via: Scripted(async server =>
+        {
+            await server.ReadExactlyAsync(new byte[3]);
+            await server.WriteAsync("HT"u8.ToArray());
+        }));
+
+        SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
+            async () => await proxy.DialAsync(SshDialTarget.Direct(TargetHost, 22)));
+
+        Assert.AreEqual(SshFailureReason.ProxyRefused, ex.Reason);
+        Assert.AreEqual("proxy.example:1080 回的不是 SOCKS5（版本字节 0x48）—— 它可能是 HTTP 代理，或者根本不是代理。", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.Socks5VersionMismatch, ex.FailureKind);
+        Assert.AreEqual(0x48, ex.ProxyReplyCode);
+        Assert.AreEqual("proxy.example:1080", ex.Via);
+        Assert.HasCount(2, ex.Hops, "改写时跳信息照样补上");
+    }
+
+    [TestMethod]
+    [DataRow((byte)0x03, SshConnectFailureKind.Socks5UnexpectedMethod, false, DisplayName = "选了没提供的方法")]
+    [DataRow((byte)0xFF, SshConnectFailureKind.Socks5NoAcceptableMethod, true, DisplayName = "配了凭据却一个都不接受")]
+    public async Task SOCKS5认证方法谈不拢时按种类报(byte method, SshConnectFailureKind kind, bool withCredentials)
+    {
+        ISshTransportDialer proxy = DialerChain.Socks5(
+            "proxy.example", 1080, withCredentials ? new SshProxyCredentials("alice", "pw") : null,
+            via: Scripted(async server =>
+            {
+                byte[] head = new byte[2];
+                await server.ReadExactlyAsync(head);
+                await server.ReadExactlyAsync(new byte[head[1]]);
+                await server.WriteAsync(new byte[] { 5, method });
+            }));
+
+        SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
+            async () => await proxy.DialAsync(SshDialTarget.Direct(TargetHost, 22)));
+
+        Assert.AreEqual(SshFailureReason.ProxyRefused, ex.Reason);
+        Assert.AreEqual(kind, ex.FailureKind);
+        Assert.AreEqual(withCredentials
+            ? "SOCKS5 代理 proxy.example:1080 不接受我们提供的任何认证方法。"
+            : "SOCKS5 代理 proxy.example:1080 选了一个我们没提供的认证方法（0x03）—— 这是协议错误。", ex.Message);
+        if (!withCredentials)
+        {
+            Assert.AreEqual(3, ex.ProxyReplyCode);
+        }
+    }
+
+    [TestMethod]
+    public async Task SOCKS5应答的地址类型非法时交出那个字节()
+    {
+        ISshTransportDialer proxy = DialerChain.Socks5("proxy.example", 1080, via: Scripted(async server =>
+        {
+            await server.ReadExactlyAsync(new byte[3]);
+            await server.WriteAsync(new byte[] { 5, 0 });
+            byte[] request = new byte[4];
+            await server.ReadExactlyAsync(request);
+            await server.ReadExactlyAsync(new byte[1 + TargetHost.Length + 2]);
+            await server.WriteAsync(new byte[] { 5, 0, 0, 9 });
+        }));
+
+        SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
+            async () => await proxy.DialAsync(SshDialTarget.Direct(TargetHost, 22)));
+
+        Assert.AreEqual("SOCKS5 代理 proxy.example:1080 的应答里地址类型非法（0x09）。", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.Socks5InvalidAddressType, ex.FailureKind);
+        Assert.AreEqual(9, ex.ProxyReplyCode);
+    }
+
+    /// <summary>代理说到一半就断开：那是拒绝了我们、只是没说原因 —— 种类与经过的代理交出来，内层是那个 IO 异常。</summary>
+    [TestMethod]
+    public async Task 代理在握手中途断开时报中途断开()
+    {
+        ISshTransportDialer proxy = DialerChain.Socks5("proxy.example", 1080, via: Scripted(async server =>
+        {
+            await server.ReadExactlyAsync(new byte[3]);
+            await server.DisposeAsync();
+        }));
+
+        SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
+            async () => await proxy.DialAsync(SshDialTarget.Direct(TargetHost, 22)));
+
+        Assert.AreEqual(SshFailureReason.ProxyRefused, ex.Reason);
+        Assert.IsInstanceOfType<IOException>(ex.InnerException);
+        Assert.AreEqual(
+            $"经SOCKS5 代理 proxy.example:1080 连 {TargetHost}:22 失败：SOCKS5 代理在握手中途断开了连接（{ex.InnerException!.Message}）。",
+            ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.ProxyClosedDuringHandshake, ex.FailureKind);
+        Assert.AreEqual("proxy.example:1080", ex.Via);
+        Assert.AreEqual($"{TargetHost}:22", ex.Target);
+    }
+
+    [TestMethod]
+    public async Task HTTP代理回的不是HTTP时交出那一行原话()
+    {
+        ISshTransportDialer proxy = DialerChain.HttpConnect("proxy.example", 3128, via: Scripted(async server =>
+        {
+            byte[] buffer = new byte[4096];
+            int read = 0;
+            while (!Encoding.ASCII.GetString(buffer, 0, read).Contains("\r\n\r\n", StringComparison.Ordinal))
+            {
+                read += await server.ReadAsync(buffer.AsMemory(read));
+            }
+            await server.WriteAsync("SSH-2.0-OpenSSH_9.6\r\n\r\n"u8.ToArray());
+        }));
+
+        SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
+            async () => await proxy.DialAsync(SshDialTarget.Direct(TargetHost, 22)));
+
+        Assert.AreEqual("proxy.example:3128 回的不是 HTTP 响应（「SSH-2.0-OpenSSH_9.6」）—— 它可能是 SOCKS 代理，或者根本不是代理。", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.HttpProxyNotHttp, ex.FailureKind);
+        Assert.AreEqual("SSH-2.0-OpenSSH_9.6", ex.ProxyReply);
+        Assert.AreEqual("proxy.example:3128", ex.Via);
+    }
+
+    /// <summary>跳板本身连不上：外层说「连不上跳板 X」，原因码沿用那一跳的，那一跳自己的异常在内层。</summary>
+    [TestMethod]
+    public async Task 跳板本身连不上时报连不上跳板且原因在内层()
+    {
+        int closedPort = FindClosedPort();
+        SshConnectionOptions jump = new($"jumper@127.0.0.1:{closedPort}")
+        {
+            HostKeyPolicy = new DangerousAcceptAnyHostKeyPolicy(),
+            Credentials = [new PasswordCredential("hunter2")],
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+        };
+
+        SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
+            async () => await ConnectAsync(new SshJumpDialer(jump)));
+
+        SshException inner = (SshException)ex.InnerException!;
+        Assert.AreEqual(SshFailureReason.TcpRefused, ex.Reason, "原因码沿用那一跳的");
+        Assert.AreEqual($"连不上跳板 jumper@127.0.0.1:{closedPort}：{inner.Message}", ex.Message);
+        Assert.AreEqual(SshConnectFailureKind.JumpConnectFailed, ex.FailureKind);
+        Assert.AreEqual($"jumper@127.0.0.1:{closedPort}", ex.Via);
+        Assert.AreEqual(SshFailureReason.TcpRefused, inner.Reason);
+    }
+
+    /// <summary>一个只跑给定脚本的「代理」：拨号即连上，服务端那一头在后台照脚本说话（或者一声不吭就断）。</summary>
+    private static ISshTransportDialer Scripted(Func<Stream, Task> serve) =>
+        InMemoryTransport.CreateDialer((server, _, _) =>
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await serve(server);
+                }
+                catch (Exception)
+                {
+                    // 客户端先走了 —— 服务端这头的收尾不是被测对象。
+                }
+            }, CancellationToken.None);
+            return ValueTask.CompletedTask;
+        });
 
     // ------------------------------------------------------------ 脚手架
 

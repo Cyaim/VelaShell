@@ -12,13 +12,15 @@ namespace VelaShell.Infrastructure.Ssh;
 /// 类型与 SHA256 指纹从公钥 blob 解析(与 OpenSSH `ssh-keygen -lf` 口径一致)。
 /// </summary>
 /// <param name="sshDirectory">密钥目录;<see langword="null" /> 为 ~/.ssh。</param>
-/// <param name="connectAgent">连本机 agent;<see langword="null" /> 走与「SSH Agent」认证相同的端点与 3 秒上限。</param>
+/// <param name="connectAgent">
+/// 连 agent(参数是按连接指定的端点,<see langword="null" /> 为系统默认);<see langword="null" /> 走与「SSH Agent」认证相同的端点与 3 秒上限。
+/// </param>
 public sealed class SshKeyService(
     string? sshDirectory = null,
-    Func<CancellationToken, ValueTask<SshAgentClient>>? connectAgent = null) : ISshKeyService
+    Func<string?, CancellationToken, ValueTask<SshAgentClient>>? connectAgent = null) : ISshKeyService
 {
-    private readonly Func<CancellationToken, ValueTask<SshAgentClient>> _connectAgent =
-        connectAgent ?? SshConnectionAssembler.ConnectLocalAgentAsync;
+    private readonly Func<string?, CancellationToken, ValueTask<SshAgentClient>> _connectAgent =
+        connectAgent ?? (static (endpoint, ct) => SshAgentClient.ConnectAsync(SshAgentEndpoints.Resolve(endpoint), ct));
 
     private readonly string _sshDirectory = sshDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
 
@@ -377,11 +379,11 @@ public sealed class SshKeyService(
     /// 公钥行按 <c>类型 base64 注释</c> 拼出来,与 <c>ssh-add -L</c> 的输出同一格式 ——
     /// 连接配置里「只转发指定密钥」存的就是它。
     /// </remarks>
-    public async Task<List<SshKeyInfo>> ListAgentKeysAsync(CancellationToken cancellationToken = default)
+    public async Task<List<SshKeyInfo>> ListAgentKeysAsync(string? agentEndpoint = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            await using SshAgentClient agent = await _connectAgent(cancellationToken).ConfigureAwait(false);
+            await using SshAgentClient agent = await _connectAgent(agentEndpoint, cancellationToken).ConfigureAwait(false);
             IReadOnlyList<SshAgentIdentity> identities =
                 await agent.ListIdentitiesAsync(cancellationToken).ConfigureAwait(false);
 

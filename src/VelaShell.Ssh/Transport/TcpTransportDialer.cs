@@ -339,6 +339,11 @@ internal sealed class TcpTransportDialer : ISshTransportDialer, ISshDialKindSour
             // 借一个相近的原因码，宿主会照它翻成一句假话。
             _ => new SshConnectException(
                 SshFailureReason.Unknown, SshPhase.Dialing,
-                $"连 {endPoint} 失败：{ex.SocketErrorCode}。", ex),
+                $"连 {endPoint} 失败：{ex.SocketErrorCode}。", ex)
+            {
+                // 原因码说不清，种类与目标照样交出：界面按它与内层的错误码说，不透传这句中文。
+                FailureKind = SshConnectFailureKind.TcpConnectFailed,
+                Target = endPoint.ToString(),
+            },
         };
 }

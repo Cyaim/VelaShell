@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
@@ -88,10 +90,20 @@ internal static class SshConnectionAssembler
     {
         ArgumentNullException.ThrowIfNull(info);
 
+        // 没人在等(自动重连、健康巡检):要人裁决的主机指纹直接拒绝,Tailscale 复核也不开验证窗。
+        // 巡检更进一步,动态码框也不弹(见 ConnectionInfo.IsUnattended):换成一个谁都不问、直接谢绝的应答界面 ——
+        // 认得出的口令提示照样用已存的密码代答,动态码、改密码那一问谢绝、按「要人来」报回。
+        // 不能干脆不挂应答器:那样库自带的「密码兼答」会把密码也填进验证码那一轮,白白记一次动态码失败。
+        bool nobodyWaiting = info.IsAutomaticReconnect || info.IsUnattended;
+        if (info.IsUnattended)
+        {
+            keyboardPrompt = UnattendedKeyboardPrompt.Instance;
+        }
+
         // 链上每一跳共用同一个策略实例 —— 跳板与终点走同一套信任判定,自动重连时也一起不弹窗。
         IHostKeyPolicy policy = hostKey is null
             ? new DangerousAcceptAnyHostKeyPolicy()
-            : new VelaHostKeyPolicy(hostKey, settings, prompt, alerts, info.IsAutomaticReconnect);
+            : new VelaHostKeyPolicy(hostKey, settings, prompt, alerts, nobodyWaiting, unattended: info.IsUnattended);
 
         TimeSpan connectTimeout = ConnectTimeout(settings);
         SshServerBanners banners = new();
@@ -111,7 +123,8 @@ internal static class SshConnectionAssembler
             dialer = DialerChain.Jump(
                 new SshEndPoint(hop.Host, hop.Port),
                 (jump, ct) => ConnectAsync(hop, policy, settings, inner, connectTimeout, keyboardPrompt, banners,
-                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump, depth, route, ct));
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, nobodyWaiting, jump, depth, route,
+                    info.PacketTrace, ct));
         }
 
         ISshTransportDialer finalDialer = dialer;
@@ -121,11 +134,27 @@ internal static class SshConnectionAssembler
                 // 跳板按连上的先后记(最内一跳最先连上,也就是从近到远);重连时从头记。
                 route.Begin();
                 return ConnectAsync(info, policy, settings, finalDialer, connectTimeout, keyboardPrompt, banners,
-                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump: null, hopDepth: 0, route, ct);
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, nobodyWaiting, jump: null, hopDepth: 0, route,
+                    info.PacketTrace, ct);
             },
             connectTimeout,
             banners,
             route);
+    }
+
+    /// <summary>
+    /// 没人看着的探测(<see cref="VelaConnectionInfo.IsUnattended" />)用的 keyboard-interactive 界面:谁都不问,一律谢绝。
+    /// </summary>
+    /// <remarks>
+    /// 应答器照旧代答认得出的口令提示;轮到动态码、改密码这类要人回答的,它收到 <see langword="null" />(等同用户点了取消),
+    /// 库以 Aborted 结束,装配处报成「要你亲自连一次」。
+    /// </remarks>
+    private sealed class UnattendedKeyboardPrompt : IKeyboardInteractivePrompt
+    {
+        public static readonly UnattendedKeyboardPrompt Instance = new();
+
+        public Task<IReadOnlyList<string>?> AskAsync(KeyboardInteractiveRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>?>(null);
     }
 
     /// <summary>
@@ -161,6 +190,7 @@ internal static class SshConnectionAssembler
         SshJumpContext? jump,
         int hopDepth,
         SshRouteRecorder route,
+        SshPacketTrace? packetTrace,
         CancellationToken cancellationToken)
     {
         bool isTailscale = info.AuthMethod == AuthMethod.Tailscale;
@@ -278,8 +308,8 @@ internal static class SshConnectionAssembler
         {
             if (info.AuthMethod == AuthMethod.Agent)
             {
-                agent = await ConnectAgentAsync(cancellationToken).ConfigureAwait(false);
-                credentials = await AgentCredentialsAsync(agent, cancellationToken).ConfigureAwait(false);
+                agent = await ConnectAgentAsync(info, cancellationToken).ConfigureAwait(false);
+                credentials = await AgentCredentialsAsync(agent, cancellationToken, info).ConfigureAwait(false);
                 if (keyboard is not null)
                 {
                     credentials = [.. credentials, keyboard.ToCredential()];
@@ -305,6 +335,8 @@ internal static class SshConnectionAssembler
                 BannerHandler = isTailscale ? OnAuthenticationBannerAsync : OnBannerRefusingTailscaleCheckAsync,
                 DebugMessageHandler = banners.OnBannerAsync,
                 PreAuthBannerHandler = banners.OnPreAuthBannerAsync,
+                // 只有连接诊断给了轨迹才挂旁路;载荷不要(AllowPacketTapPayload 留着默认的 false)。
+                PacketTap = PacketTapFor(packetTrace, target),
             };
 
             SshConnection connection;
@@ -364,8 +396,11 @@ internal static class SshConnectionAssembler
                 // 认证期间会弹的框只有动态码框与「修改密码」框:库以 Aborted 结束,说明是应答回调抛了取消而调用方没取消
                 // —— 用户在框上点了取消,是「不连了」而不是认证失败(规格 08 §2.1)。
                 // 曾经库把这种取消报成认证超时,应答器只好自己记一笔、在这里按那一笔认回来。
-                throw new VelaSshAuthenticationCancelledException(
-                    Strings.Get(keyboard.PasswordChangeCancelled ? "SshErr_PasswordChangeCancelled" : "SshErr_KbdAuthCancelled"), ex);
+                // 巡检时谢绝的是那个不问人的界面:说成「要你亲自连一次」,而不是「已取消」。
+                string reasonKey = keyboardPrompt is UnattendedKeyboardPrompt
+                    ? keyboard.PasswordChangeCancelled ? "SshErr_PasswordChangeUnattended" : "SshErr_KbdAuthUnattended"
+                    : keyboard.PasswordChangeCancelled ? "SshErr_PasswordChangeCancelled" : "SshErr_KbdAuthCancelled";
+                throw new VelaSshAuthenticationCancelledException(Strings.Get(reasonKey), ex);
             }
             catch (SshAuthenticationException ex) when (jump is not null)
             {
@@ -387,7 +422,8 @@ internal static class SshConnectionAssembler
                     {
                         try
                         {
-                            await SshAgentKeyLoader.AddAsync(key, comment, ConnectLocalAgentAsync).ConfigureAwait(false);
+                            // 加进这条连接用的那个 agent(按连接指定了端点时就是它),与 OpenSSH 的 AddKeysToAgent 一致。
+                            await SshAgentKeyLoader.AddAsync(key, comment, ct => ConnectAgentAtAsync(info, ct)).ConfigureAwait(false);
                         }
                         finally
                         {
@@ -447,9 +483,31 @@ internal static class SshConnectionAssembler
         }
     }
 
+    /// <summary>
+    /// 这一跳的报文旁路:给了协议轨迹(连接诊断)才有,平常的连接为 <see langword="null" /> —— 库在收发循环上只多一次判空。
+    /// </summary>
+    /// <param name="trace">协议轨迹;<see langword="null" /> 不挂。</param>
+    /// <param name="hop">这一跳(<c>用户@主机:端口</c>),记进每一条。</param>
+    internal static IPacketTap? PacketTapFor(SshPacketTrace? trace, string hop) =>
+        trace is null ? null : new PacketTraceTap(trace, hop);
+
+    /// <summary>把库的报文旁路接到 Core 的协议轨迹上:只转元信息,<b>从不碰 <see cref="PacketTapRecord.Payload" /></b>。</summary>
+    private sealed class PacketTraceTap(SshPacketTrace trace, string hop) : IPacketTap
+    {
+        public void OnPacket(in PacketTapRecord record) =>
+            trace.Record(
+                hop,
+                record.Direction == PacketDirection.Outbound ? SshPacketDirection.Sent : SshPacketDirection.Received,
+                record.MessageNumber,
+                record.Length,
+                record.SequenceNumber,
+                record.ChannelNumber);
+    }
+
     /// <summary>释放这一次建连读出来的私钥签名器(释放时清零私钥)。</summary>
     /// <remarks>
     /// 只管本地读出的私钥(<see cref="InMemorySshSigner" />)与包着它的证书签名器(它会连同里面那把一起释放);
+    /// 系统密钥库的签名器(<see cref="CngSshSigner" />)也在这里释放 —— 释放的是密钥库句柄,私钥本来就不在本进程里。
     /// agent 的签名器不归这里 —— 它背后的连接由 agent 客户端管。
     /// 曾经从不释放:私钥材料在托管堆上一直留到 GC,证书读失败时已经读出的私钥也留在原处。
     /// </remarks>
@@ -462,12 +520,15 @@ internal static class SshConnectionAssembler
                 continue;
             }
 
-            if (signer is InMemorySshSigner or SshCertificateSigner)
+            // 系统密钥库的签名器释放的是密钥库句柄(私钥本来就不在本进程里)。
+            if (signer is InMemorySshSigner or SshCertificateSigner || IsCngSigner(signer))
             {
                 ((IDisposable)signer).Dispose();
             }
         }
     }
+
+    private static bool IsCngSigner(ISshSigner signer) => OperatingSystem.IsWindows() && signer is CngSshSigner;
 
     /// <summary>
     /// 这一跳的算法集:老算法开关与四个自定义清单(见 <see cref="SshAlgorithmPreferences" />),
@@ -480,7 +541,7 @@ internal static class SshConnectionAssembler
     /// </remarks>
     internal static SshAlgorithmSet Algorithms(VelaConnectionInfo info) => SshAlgorithmPreferences.Build(info.Ssh);
 
-    /// <summary>连本机 agent。</summary>
+    /// <summary>连本机系统默认的 agent(按连接指定了端点的见 <see cref="ConnectAgentAtAsync" />)。</summary>
     /// <remarks>
     /// Windows 上 agent 服务没起时命名管道根本不存在 —— 等它出现的时限在库里
     /// (<c>SshAgentClient.PipeConnectTimeout</c>),到点以 <see cref="SshFailureReason.AgentNotRunning" /> 报出,
@@ -494,16 +555,34 @@ internal static class SshConnectionAssembler
     internal static ValueTask<SshAgentClient> ConnectLocalAgentAsync(CancellationToken cancellationToken) =>
         SshAgentClient.ConnectAsync(endpoint: null, cancellationToken);
 
-    private static async ValueTask<SshAgentClient> ConnectAgentAsync(CancellationToken cancellationToken)
+    /// <summary>连这一跳用的 agent:配置里按连接指定了端点(<see cref="SshSessionOptions.AgentEndpoint" />)就连它,否则系统默认。</summary>
+    /// <remarks>开头的 <c>~</c> 在这里才展开(配置随云同步到别的机器,主目录不一样),见 <see cref="SshAgentEndpoints.Resolve" />。</remarks>
+    internal static ValueTask<SshAgentClient> ConnectAgentAtAsync(VelaConnectionInfo info, CancellationToken cancellationToken) =>
+        SshAgentClient.ConnectAsync(SshAgentEndpoints.Resolve(info.Ssh?.AgentEndpoint), cancellationToken);
+
+    private static async ValueTask<SshAgentClient> ConnectAgentAsync(VelaConnectionInfo info, CancellationToken cancellationToken)
     {
         try
         {
-            return await ConnectLocalAgentAsync(cancellationToken).ConfigureAwait(false);
+            return await ConnectAgentAtAsync(info, cancellationToken).ConfigureAwait(false);
         }
         catch (SshAgentException ex)
         {
-            throw new VelaSshAuthenticationException(Strings.Format("SshErr_AgentUnavailable", SshInterop.Localize(ex)), ex);
+            throw AgentUnavailable(info, ex);
         }
+    }
+
+    /// <summary>连不上 agent 的提示:按连接指定了端点时点名那个端点,「没在运行」也不再叫人去起 Windows 的 agent 服务 —— 那多半不是它。</summary>
+    private static VelaSshAuthenticationException AgentUnavailable(VelaConnectionInfo info, SshAgentException ex)
+    {
+        if (SshAgentEndpoints.Normalize(info.Ssh?.AgentEndpoint) is not { } endpoint)
+        {
+            return new(Strings.Format("SshErr_AgentUnavailable", SshInterop.Localize(ex)), ex);
+        }
+        string reason = ex.Reason == SshFailureReason.AgentNotRunning
+            ? Strings.Get("SshErr_AgentEndpointNotRunning")
+            : SshInterop.Localize(ex);
+        return new(Strings.Format("SshErr_AgentEndpointUnavailable", endpoint, reason), ex);
     }
 
     /// <summary>agent 里的每一把钥都作为一个候选凭据,由库按顺序逐把试。</summary>
@@ -511,8 +590,11 @@ internal static class SshConnectionAssembler
     /// agent 里一把钥都没有时直接说清楚,而不是把一个空凭据列表交给库 ——
     /// 那样用户拿到的是一句笼统的「认证方法已用尽」,看不出问题在本机。
     /// </remarks>
+    /// <param name="agent">连上的 agent。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="info">这一跳的连接信息(提示里点名按连接指定的端点);<see langword="null" /> 按系统默认的说法。</param>
     internal static async ValueTask<IReadOnlyList<SshCredential>> AgentCredentialsAsync(
-        SshAgentClient agent, CancellationToken cancellationToken)
+        SshAgentClient agent, CancellationToken cancellationToken, VelaConnectionInfo? info = null)
     {
         IReadOnlyList<SshCredential> credentials;
         try
@@ -522,11 +604,17 @@ internal static class SshConnectionAssembler
         catch (SshAgentException ex)
         {
             // 与连 agent 失败同一条提示、同样按原因码本地化;曾经这里直接塞库的消息(写给开发者看的中文)。
-            throw new VelaSshAuthenticationException(Strings.Format("SshErr_AgentUnavailable", SshInterop.Localize(ex)), ex);
+            throw info is null
+                ? new VelaSshAuthenticationException(Strings.Format("SshErr_AgentUnavailable", SshInterop.Localize(ex)), ex)
+                : AgentUnavailable(info, ex);
         }
-        return credentials.Count > 0
-            ? credentials
-            : throw new VelaSshAuthenticationException(Strings.Get("SshErr_AgentNoKeys"));
+        if (credentials.Count > 0)
+        {
+            return credentials;
+        }
+        throw new VelaSshAuthenticationException(SshAgentEndpoints.Normalize(info?.Ssh?.AgentEndpoint) is { } endpoint
+            ? Strings.Format("SshErr_AgentEndpointNoKeys", endpoint)
+            : Strings.Get("SshErr_AgentNoKeys"));
     }
 
     /// <summary>
@@ -616,11 +704,51 @@ internal static class SshConnectionAssembler
                     }
                 }
 
+            case AuthMethod.KeyStore:
+                {
+                    ISshSigner signer = await OpenKeyStoreSignerAsync(info, cancellationToken).ConfigureAwait(false);
+                    return [new PublicKeyCredential(signer, info.KeyStoreKey!.KeyName)];
+                }
+
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(info), info.AuthMethod, "Unsupported authentication method.");
         }
     }
+
+    /// <summary>
+    /// 打开系统密钥库里那把钥(SSH 库的 <see cref="CngSshSigner" />):私钥不出密钥库,签名交给它做。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 打开不弹框;TPM / 智能卡要 PIN 时由 Windows 在签名那一刻问(库先问服务端认不认这把钥再签,所以不认的钥不会白问一次 PIN)。
+    /// 放到线程池上打开:智能卡的密钥库打开一把钥可能要跟读卡器来回几趟。
+    /// </para>
+    /// <para>
+    /// 别的平台没有 CNG:配置可能是从 Windows 同步过来的,如实说「这台电脑上用不了」,而不是一句不知所云的认证失败。
+    /// 打不开(钥被删了、在别的电脑上、卡没插)由库报成 <see cref="SshPrivateKeyException" />(<see cref="SshKeyProblemKind.KeyStoreUnavailable" />),
+    /// 宿主按种类本地化(<c>SshErr_KeyStoreUnavailable</c>)。
+    /// </para>
+    /// </remarks>
+    private static async ValueTask<ISshSigner> OpenKeyStoreSignerAsync(VelaConnectionInfo info, CancellationToken cancellationToken)
+    {
+        if (info.KeyStoreKey is not { } key)
+        {
+            throw new VelaSshAuthenticationException(Strings.Get("Svc_KeyStoreKeyRequired"));
+        }
+        return await Task.Run<ISshSigner>(
+            () => OperatingSystem.IsWindows()
+                ? OpenCng(key)
+                : throw new VelaSshAuthenticationException(Strings.Format("SshErr_KeyStoreNotOnThisPlatform", key.KeyName)),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static CngSshSigner OpenCng(SystemKeyReference key) =>
+        CngSshSigner.Open(
+            key.KeyName,
+            new CngProvider(key.Provider),
+            key.MachineKey ? CngKeyOpenOptions.MachineKey : CngKeyOpenOptions.None);
 
     /// <summary>
     /// 读一把私钥。

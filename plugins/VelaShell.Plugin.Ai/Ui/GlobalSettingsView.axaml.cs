@@ -61,7 +61,7 @@ public partial class GlobalSettingsView : UserControl
     {
         SystemPromptBox, CompactContextCheck, SuggestFollowUpsCheck, WebEnabledCheck,
         WebSearxUrlBox, WebMaxResultsBox, WebNativeCheck, WebPrivateCheck, WebAllowedHostsBox
-    }.ToDictionary(control => control, ReadFormValue);
+    }.Append(FailoverAcrossAccountsCheck).ToDictionary(control => control, ReadFormValue);
 
     private static object? ReadFormValue(Control control) => control switch
     {
@@ -83,6 +83,7 @@ public partial class GlobalSettingsView : UserControl
         WebPrivateCheck.IsChecked = web.AllowPrivateNetwork;
         WebAllowedHostsBox.Text = web.AllowedPrivateHosts;
         UpdateWebVisibility();
+        FailoverAcrossAccountsCheck.IsChecked = _settings.AutoFailoverAcrossAccounts;
     }
 
     private async Task RecoverSettingsConflictAsync()
@@ -183,6 +184,8 @@ public partial class GlobalSettingsView : UserControl
         FailoverAddText.Text = _loc["SetupAdd"];
         Avalonia.Automation.AutomationProperties.SetName(FailoverAddCombo, _loc["FailoverAddModel"]);
         FailoverProbeAllText.Text = _loc["FailoverProbeAll"];
+        FailoverAcrossAccountsCheck.Content = _loc["FailoverAcrossAccounts"];
+        FailoverAcrossAccountsHintText.Text = _loc["FailoverAcrossAccountsHint"];
         RebuildFailover(); // 行上的按钮提示是本语言的,语言换了要跟着重建
         RefreshProbeStatusText();
 
@@ -655,8 +658,10 @@ public partial class GlobalSettingsView : UserControl
                 {
                     if (observed.KeyId is { } keyId)
                     {
-                        if (ok || TransientFailure.IsApiKeyFailure(error))
-                            _health?.RecordKey(keyId, ok, healthEvidence, observationId);
+                        // 成功解开这把 Key(整把与用在这个模型上);401 冷整把,403 / 429 只冷它用在这个模型上
+                        if (ok) _health?.RecordKeyForModel(keyId, model.Id, true, healthEvidence, observationId);
+                        else if (TransientFailure.IsApiKeyFailure(error))
+                            _health?.RecordKeyFailure(keyId, model.Id, TransientFailure.IsKeyRejected(error), healthEvidence, observationId);
                         if (ok || !TransientFailure.IsApiKeyFailure(error))
                             _health?.Record(model.Id, ok, healthEvidence, observationId);
                     }
@@ -798,7 +803,8 @@ public partial class GlobalSettingsView : UserControl
                     MaxResults = int.TryParse(WebMaxResultsBox.Text, out int count) ? count : _settings.WebSearch.MaxResults,
                     MaxFetchChars = _settings.WebSearch.MaxFetchChars
                 },
-                FailoverChain = [.. _chain.Select(entry => new FailoverEntry { ModelId = entry.ModelId })]
+                FailoverChain = [.. _chain.Select(entry => new FailoverEntry { ModelId = entry.ModelId })],
+                AutoFailoverAcrossAccounts = FailoverAcrossAccountsCheck.IsChecked == true
             };
             draft.WebSearch.Clamp();
             WebMaxResultsBox.Text = draft.WebSearch.MaxResults.ToString();

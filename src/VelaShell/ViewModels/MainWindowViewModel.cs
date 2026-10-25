@@ -14,6 +14,7 @@ using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Diagnostics;
 using VelaShell.Core.Ftp;
+using VelaShell.Core.Layouts;
 using VelaShell.Core.Localization;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
@@ -256,11 +257,14 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         ShortcutKeymapService? shortcutKeymap = null,
         ICredentialResolver? credentialResolver = null,
         ISharedCredentialRepository? sharedCredentials = null,
-        BackgroundUpdateDownload? backgroundUpdateDownload = null
+        BackgroundUpdateDownload? backgroundUpdateDownload = null,
+        IMasterKeyStatusSource? masterKeyStatus = null,
+        LayoutTemplateStore? layoutTemplateStore = null
     )
     {
         _credentialResolver = credentialResolver;
         _backgroundUpdateDownload = backgroundUpdateDownload;
+        _masterKeyStatus = masterKeyStatus;
         // 共享凭据被改名、删除(删除会把凭据拷回引用它的连接)之后,树上缓存的配置就旧了:
         // 带着一条已删除的引用去连,只会换来一个"凭据不存在"的登录框。
         sharedCredentials?.Changed += OnSharedCredentialsChanged;
@@ -370,7 +374,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         // 命名布局模板(以及「恢复会话」按上次的分屏还原):开标签一律走下面这几条既有的连接路径,
         // 缺凭据弹框、认证重试、证书确认都在它们里面,模板这边一处不重写。
         LayoutTemplates = new(
-            new LayoutTemplateStore(appDataStore),
+            // DI 里与云同步共用一个实例(本机改动推得出去、拉下来的界面看得见);单测不给时按文档库现建。
+            layoutTemplateStore ?? new LayoutTemplateStore(appDataStore),
             Layout,
             new LayoutDocumentOpener(
                 FindProfileForLayoutAsync,
@@ -983,7 +988,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 "session.new",
                 Strings.Get("Cmd_NewSshConnection"),
                 Strings.Get("CmdCat_Session"),
-                () => NewConnectionRequested?.Invoke(this, EventArgs.Empty),
+                () => _ = OpenNewConnectionAsync(),
                 Icon: "Icon.plus"
             )
         );
@@ -1130,6 +1135,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 )
             );
         }
+        Commands.Register(
+            new(
+                "tools.healthCheck",
+                Strings.Get("Cmd_HealthCheckAll"),
+                Strings.Get("CmdCat_Tools"),
+                () => _ = RequestHealthCheckForAllAsync(),
+                () => _sessionRepository is not null,
+                Icon: "Icon.activity"
+            )
+        );
         Commands.Register(
             new(
                 "tools.diagnostics",
@@ -1289,6 +1304,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 Strings.Get("Cmd_OpenLogs"),
                 Strings.Get("CmdCat_Actions"),
                 () => DiagnosticLog.OpenLogsDirectory(),
+                Icon: "Icon.folder-open"
+            )
+        );
+        // 消息中心里「外部编辑的改动没传回服务器」那几条的动作;没有草稿目录时灰掉。
+        Commands.Register(
+            new(
+                NotificationSources.OpenRemoteEditDraftsCommandId,
+                Strings.Get("Cmd_OpenRemoteEditDrafts"),
+                Strings.Get("CmdCat_Actions"),
+                () => RemoteEditDrafts.OpenDraftsFolder(RemoteEditSessionManager.TempRoot),
+                () => Directory.Exists(RemoteEditSessionManager.TempRoot),
                 Icon: "Icon.folder-open"
             )
         );
@@ -1724,6 +1750,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             : new(TransferResumeResult.Failed, browser.ErrorMessage);
     }
 
+    /// <summary>开着的独立文件标签(单栏、双栏远程)里的全部远端栏。终端侧栏的面板不在其中,它们在 <see cref="_fileBrowserCache" /> 里。</summary>
+    private IEnumerable<FileBrowserViewModel> DocumentFilePanes() =>
+        Layout.AllDocuments().OfType<SftpDocumentBase>().SelectMany(static document => document.Content.RemotePanes);
+
     /// <summary>已经连着这条配置、能直接拿来传文件的面板;没有返回 null。</summary>
     private FileBrowserViewModel? FindConnectedFileBrowser(Guid profileId)
     {
@@ -1855,8 +1885,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         return (text, $"{safeTitle}-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
     }
 
-    /// <summary>Ctrl+N / 菜单 / 命令面板“新建 SSH 连接” —— 由窗口打开新建连接弹窗。</summary>
-    public event EventHandler? NewConnectionRequested;
+    /// <summary>
+    /// Ctrl+N / 菜单 / 命令面板“新建 SSH 连接” —— 窗口注入的新建连接整条流程(弹框 → 保存 → 连接),走完才返回。
+    /// </summary>
+    /// <remarks>
+    /// 要能等它走完:标签条上的「+」在它外面挂着「落进这一格」的票据(<see cref="DockWorkspace.TargetNewDocumentsAt" />),
+    /// 流程结束才作废。未挂时(headless)什么都不做。
+    /// </remarks>
+    public Func<Task>? NewConnectionDialog { get; set; }
+
+    /// <summary>走一遍新建连接(<see cref="NewConnectionDialog" />);未挂时是空操作。</summary>
+    private Task OpenNewConnectionAsync() => NewConnectionDialog?.Invoke() ?? Task.CompletedTask;
 
     /// <summary>Ctrl+, / 菜单 / 侧边栏齿轮“打开设置” —— 由窗口打开设置窗口。</summary>
     public event EventHandler? SettingsRequested;
@@ -1870,6 +1909,26 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     /// <summary>工具菜单“连接诊断”(针对当前标签的配置)—— 由窗口打开诊断中心弹窗。</summary>
     public event Action<SessionProfile>? DiagnosticsRequested;
+
+    /// <summary>
+    /// 命令面板「会话健康巡检(全部连接)」:对库里全部连接做一次巡检,由窗口打开结果窗口。
+    /// 资源管理器的分组 / 多选菜单走 <c>SessionTreeViewModel.HealthCheckRequested</c>,落到同一扇窗。
+    /// </summary>
+    public event Action<IReadOnlyList<SessionProfile>>? HealthCheckRequested;
+
+    /// <summary>取库里全部连接(按名称排)交给 <see cref="HealthCheckRequested" />;库里一条都没有时什么都不做。</summary>
+    public async Task RequestHealthCheckForAllAsync()
+    {
+        if (_sessionRepository is not { } repository)
+        {
+            return;
+        }
+        List<SessionProfile> profiles = await repository.GetAllSessionsAsync().ConfigureAwait(true);
+        if (profiles.Count > 0)
+        {
+            HealthCheckRequested?.Invoke([.. profiles.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)]);
+        }
+    }
 
     /// <summary>
     /// 标签右键 / 命令面板「连接信息」—— 由窗口打开(或前置)这个标签的连接信息窗口,
@@ -1984,6 +2043,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <summary>启动检查发现新版本后的后台下载入口(设置 → 常规 → 自动下载更新);null = 只检查不下载(单测)。</summary>
     private readonly BackgroundUpdateDownload? _backgroundUpdateDownload;
 
+    /// <summary>本机加密密钥的解析结果(系统密钥链用不了、旧密钥没取到时投一条提示);null = 不投(单测)。</summary>
+    private readonly IMasterKeyStatusSource? _masterKeyStatus;
+
     /// <summary>
     /// 装配消息中心:面板、铃铛角标,以及两个内容来源(本地的更新检查 + 订阅的资讯源)。
     /// 无消息中心(单元测试)时整块跳过。
@@ -2048,11 +2110,66 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         {
             await center.LoadAsync().ConfigureAwait(true);
             Sidebar.NotificationUnreadCount = center.UnreadCount;
+            // 与更新检查并行:后者可能要后台下载好几分钟,密钥的提示不该排在它后面。
+            Task keyNotices = PublishMasterKeyNoticesAsync(center);
+            await PublishRemoteEditDraftsAsync(center).ConfigureAwait(true);
             await RefreshNotificationSourcesAsync(center, feed, updateService).ConfigureAwait(true);
+            await keyNotices.ConfigureAwait(true);
         }
         catch
         {
             // 载入/拉取失败时铃铛照常可用,只是没有新内容。
+        }
+    }
+
+    /// <summary>
+    /// 本机加密密钥有要用户知道的事(系统密钥链用不了、旧密钥没取到、密钥文件被换过)时投进消息中心。
+    /// </summary>
+    /// <remarks>
+    /// 密钥只在进程里解析一次,提示也只在启动这一轮投(资讯源的定时刷新不再投)。
+    /// 解析可能要等密钥链解锁,放到后台线程上等。整段吞异常:提示投不出去不该拦住铃铛,
+    /// 解析本身失败(数据目录写不进去)会在第一次读写机密时照样暴露。
+    /// </remarks>
+    private async Task PublishMasterKeyNoticesAsync(INotificationCenter center)
+    {
+        if (_masterKeyStatus is not { } source)
+        {
+            return;
+        }
+        try
+        {
+            MasterKeyStatus status = await Task.Run(source.GetKeyStatus).ConfigureAwait(true);
+            IReadOnlyList<NotificationItem> notices = NotificationSources.BuildMasterKeyNotifications(status, DateTime.UtcNow);
+            if (notices.Count > 0)
+            {
+                await center.PublishAsync(notices).ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"[Secrets] Master key notice could not be published: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 上次运行留下的外部编辑草稿(有或可能有没传回服务器的改动)一份一条投进消息中心;草稿已经不在的,撤掉它那一条。
+    /// </summary>
+    /// <remarks>
+    /// 只在启动时做一次:运行中留下的草稿当场就在文件面板报过位置(<c>Svc_RemoteEditDraftKept</c>),
+    /// 下次启动再在这里列。扫目录是磁盘 IO,放到线程池;正开着的编辑会话不算草稿。
+    /// </remarks>
+    internal static async Task PublishRemoteEditDraftsAsync(INotificationCenter center, string? root = null)
+    {
+        string draftsRoot = root ?? RemoteEditSessionManager.TempRoot;
+        string[] active = [.. RemoteEditSessionManager.ActiveSessions.Select(static s => Path.GetDirectoryName(s.LocalPath)!)];
+        IReadOnlyList<RemoteEditDraft> drafts = await Task.Run(() => RemoteEditDrafts.ListDrafts(draftsRoot, active)).ConfigureAwait(true);
+        foreach (string stale in NotificationSources.StaleRemoteEditDraftIds(center.Items, drafts))
+        {
+            await center.RemoveAsync(stale).ConfigureAwait(true);
+        }
+        if (drafts.Count > 0)
+        {
+            await center.PublishAsync(NotificationSources.BuildRemoteEditDraftNotifications(drafts)).ConfigureAwait(true);
         }
     }
 
@@ -2203,18 +2320,29 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     /// <summary>
     /// 标签条上的「+」(<c>DockWorkspaceControl.NewTabRequested</c>):在那一格里新开会话。
-    /// 走的就是 <c>Ctrl+T</c> 那条命令 <c>session.new</c>(新建连接对话框),落点交给停靠层的既有规则 ——
-    /// 这里只保证那一格是活动窗格(它有标签时),新标签便落进它。
     /// </summary>
     /// <param name="pane">按下「+」的那一格。</param>
-    public void OpenNewTabInPane(DockGroup pane)
+    public void OpenNewTabInPane(DockGroup pane) => _ = OpenNewTabInPaneAsync(pane);
+
+    /// <summary>
+    /// 「+」的整条流程:那一格先成为活动窗格,再走与 <c>Ctrl+T</c> 同一个新建连接对话框;
+    /// 连出来的标签<b>精确落进按下的那一格</b>,哪怕布局里另有空窗格(维护者 2026-10-25 定:按下的那格优先于空窗格)。
+    /// </summary>
+    /// <remarks>
+    /// 对话框与 <c>TryConnectProfileAsync</c> 一个参数都没加:流程外面挂一张「落进这一格」的票据
+    /// (<see cref="DockWorkspace.TargetNewDocumentsAt" />,与布局模板还原的槽位票据同一个思路),
+    /// 流程里建的第一个标签认领它;流程走完(连上、失败、取消、只按了「保存」)票据作废。
+    /// </remarks>
+    /// <param name="pane">按下「+」的那一格。</param>
+    public async Task OpenNewTabInPaneAsync(DockGroup pane)
     {
         ArgumentNullException.ThrowIfNull(pane);
         if (pane.ActiveDocument is { } active && !ReferenceEquals(Layout.ActiveDocument, active))
         {
             Layout.ActivateDocument(active);
         }
-        Commands.Execute("session.new");
+        using IDisposable target = Layout.TargetNewDocumentsAt(pane);
+        await OpenNewConnectionAsync().ConfigureAwait(true);
     }
 
     private void OnLayoutPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -3049,52 +3177,15 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         {
             return;
         }
-
-        SessionProfile? stored = null;
-        try
-        {
-            stored = await FindProfileAtHopAsync(profile, remedy.HopDepth).ConfigureAwait(true);
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException)
-        {
-            Toasts.Error(Strings.Format("SshAlgoFix_SaveFailed", ex.Message));
-            return;
-        }
-        if (remedy.HopDepth > 0 && stored is null)
-        {
-            // 跳板的配置找不到了(删了、链改了):不猜,让用户自己去改。
-            Toasts.Error(Strings.Format("SshAlgoFix_HopMissing", remedy.HopTarget ?? string.Empty));
-            return;
-        }
-        SessionProfile named = stored ?? profile;
-        string name = string.IsNullOrWhiteSpace(named.Name) ? HostAddress.FormatEndPoint(named.Host, named.Port) : named.Name;
-        string body = Strings.Format("SshAlgoFix_ConfirmBody", name, SshAlgorithmPreferences.Label(remedy.Kind),
-            string.Join(Environment.NewLine, remedy.Algorithms.Select(a => "  " + a)));
-        if (!await confirm(Strings.Get("SshAlgoFix_ConfirmTitle"), body).ConfigureAwait(true)
-            || tab.AlgorithmRemedy != remedy || tab.ConnectionStatus != SessionStatus.Disconnected)
+        if (await AlgorithmRemedies.ConfirmAndSaveAsync(
+                profile, remedy, SshAlgorithmRemedyFollowUp.Reconnect, (title, body, _) => confirm(title, body), message => Toasts.Error(message),
+                () => tab.AlgorithmRemedy == remedy && tab.ConnectionStatus == SessionStatus.Disconnected).ConfigureAwait(true)
+            is not { } applied)
         {
             return;
         }
-
-        if (stored is not null)
+        if (applied.Stored is not null)
         {
-            stored.Ssh = remedy.ApplyTo(stored.Ssh);
-            try
-            {
-                if (_connectionWorkflowService is { } workflow)
-                {
-                    await workflow.SaveProfileAsync(stored).ConfigureAwait(true);
-                }
-                else if (_sessionRepository is { } repository)
-                {
-                    await repository.SaveSessionAsync(stored).ConfigureAwait(true);
-                }
-            }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
-            {
-                Toasts.Error(Strings.Format("SshAlgoFix_SaveFailed", ex.Message));
-                return;
-            }
             _ = RefreshSessionTreeAsync();
         }
         if (remedy.HopDepth == 0)
@@ -3105,27 +3196,39 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     }
 
     /// <summary>
-    /// 库里那条配置:<paramref name="depth" /> 为 0 是这条本身,1 是它的跳板,2 是跳板的跳板……
-    /// 不在库里(临时配置)或链上断了时为 <see langword="null" />。
+    /// 独立 SFTP 文档(含双栏远程里的 SSH / SFTP 那一栏)失败卡片上的「放开这几个算法并重连」:
+    /// 与终端标签同一个确认框、同一套写法,确认后经卡片自己的「重新连接」重走一遍连接流程。
     /// </summary>
-    private async Task<SessionProfile?> FindProfileAtHopAsync(SessionProfile profile, int depth)
+    /// <param name="document">失败的占位标签。</param>
+    /// <param name="profile">这次没连上的那份配置(卡片上的「重新连接」用的就是它)。</param>
+    /// <param name="remedy">诊断点名的补救。</param>
+    private async Task AllowAlgorithmsAndRetryDocumentAsync(ConnectingDocument document, SessionProfile profile, SshAlgorithmRemedy remedy)
     {
-        if (_sessionRepository is not { } repository)
+        if (!document.HasError || document.AlgorithmRemedy != remedy || AllowAlgorithmsConfirmer is not { } confirm)
         {
-            return null;
+            return;
         }
-        SessionProfile? current = await repository.GetSessionAsync(profile.Id).ConfigureAwait(true);
-        HashSet<Guid> visited = [profile.Id];
-        for (int i = 0; i < depth; i++)
+        if (await AlgorithmRemedies.ConfirmAndSaveAsync(
+                profile, remedy, SshAlgorithmRemedyFollowUp.Reconnect, (title, body, _) => confirm(title, body), message => Toasts.Error(message),
+                () => document.HasError && document.AlgorithmRemedy == remedy).ConfigureAwait(true)
+            is not { } applied)
         {
-            if (current?.JumpHostProfileId is not { } next || !visited.Add(next))
-            {
-                return null;
-            }
-            current = await repository.GetSessionAsync(next).ConfigureAwait(true);
+            return;
         }
-        return current;
+        if (applied.Stored is not null)
+        {
+            _ = RefreshSessionTreeAsync();
+        }
+        if (remedy.HopDepth == 0)
+        {
+            // 改的是重试要用的那一份(失败卡片的「重新连接」拿它重走流程),理由同终端标签那条路径。
+            profile.Ssh = remedy.ApplyTo(profile.Ssh);
+        }
+        document.Retry();
     }
+
+    /// <summary>「放开这几个算法」各入口共用的那一段(找到要改的配置、确认、写库)。</summary>
+    private SshAlgorithmRemedyFlow AlgorithmRemedies => field ??= new(_sessionRepository, _connectionWorkflowService);
 
     /// <summary>
     /// 断线后的自动重连(倒计时到点、睡眠唤醒后的批量重连):同 <see cref="ReconnectTabAsync" />,
@@ -3553,9 +3656,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     {
         StopSessionLogging(tab);
 
-        // 会话断开后 SFTP 通道随之失效:驱逐缓存的文件面板并释放 SFTP 客户端。
-        // 重连会拿到新的 SessionId,面板届时按新会话重建。
-        CloseSftpForTab(tab);
+        // 会话断开后 SFTP 通道随之失效:驱逐缓存的文件面板、收掉它开出来的外部编辑会话并释放 SFTP 客户端。
+        // 重连会拿到新的 SessionId,面板届时按新会话重建(旧会话名下的编辑会话不会跟过去)。
+        _ = CloseSftpForTab(tab);
 
         // 不论主动断开还是远端掉线,都把底层 SSH 客户端一并拆掉;
         // 重连会新建会话,不受影响。
@@ -4131,7 +4234,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         StopSessionLogging(tab);
         // 防御性驱逐 SFTP 面板缓存:本路径(连接失败/取消)静默移除文档,不触发
         // DocumentClosed,若标签曾短暂连上过,缓存里的面板会悬挂。幂等,无缓存时空操作。
-        CloseSftpForTab(tab);
+        _ = CloseSftpForTab(tab);
         Layout.RemoveDocument(document);
         if (ReferenceEquals(ActiveTerminalTab, tab))
         {
@@ -4663,7 +4766,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
         /// <summary>连不上了:占位留在原地换成失败卡片(重新连接 / 关闭标签页)。</summary>
         /// <param name="message">面向用户的失败原因。</param>
-        public void Fail(string message) => Document.MarkFailed(message);
+        /// <param name="remedy">算法协商失败、能一键放开时给(见 <see cref="ConnectingDocument.AlgorithmRemedy" />)。</param>
+        public void Fail(string message, SshAlgorithmRemedy? remedy = null) => Document.MarkFailed(message, remedy);
 
         /// <summary>用户中途取消:撤掉占位标签(已被用户关掉时是空操作)。</summary>
         public void Abandon() => _owner.Layout.RemoveDocument(Document);
@@ -4749,6 +4853,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             FileTransfer,
             QueryDefaultEditorPathAsync,
             UpdateProfileBookmarksAsync);
+        WireDocumentPanesToSettings(sshViewModel);
         // 远端搜索走这条 SSH 连接的 exec 通道(FTP 与插件协议的文档没有,不挂)。
         sshViewModel.RemoteFiles.RemoteSearch = _remoteSearch;
         var document = new SftpDocument(sshViewModel);
@@ -4938,7 +5043,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         string message = DescribeConnectionError(error, profile);
         LastConnectionError = message;
         Toasts.Error(message);
-        ui.Fail(message);
+        // 败在算法协商上的同时带上一键补救(与终端标签同一份,见 SshAlgorithmRemedy)。只认 SSH / SFTP 配置:
+        // 那一跳的 SSH 连接就是按这份配置连的;插件工作台经 SSH 隧道连出去的那条不归它管,改错了配置更糟。
+        SshAlgorithmRemedy? remedy = profile.ConnectionType is ConnectionType.SSH or ConnectionType.SFTP
+            ? SshAlgorithmRemedy.Find(error)
+            : null;
+        ui.Fail(message, remedy);
+        if (remedy is not null)
+        {
+            ConnectingDocument document = ui.Document;
+            document.AllowAlgorithmsRequested = () => _ = AllowAlgorithmsAndRetryDocumentAsync(document, profile, remedy);
+        }
     }
 
     /// <summary>
@@ -4986,16 +5101,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             return null;
         }
         AppSettings settings = _latestSettings ?? await LoadSettingsSnapshotAsync().ConfigureAwait(true);
-        var document = new SftpDocument(
-            new SftpDocumentViewModel(
-                connection.Profile,
-                connection.SessionId,
-                connection.DisconnectAsync,
-                _sftpService,
-                settings.Transfer,
-                FileTransfer,
-                QueryDefaultEditorPathAsync,
-                UpdateProfileBookmarksAsync));
+        var ftpViewModel = new SftpDocumentViewModel(
+            connection.Profile,
+            connection.SessionId,
+            connection.DisconnectAsync,
+            _sftpService,
+            settings.Transfer,
+            FileTransfer,
+            QueryDefaultEditorPathAsync,
+            UpdateProfileBookmarksAsync);
+        WireDocumentPanesToSettings(ftpViewModel);
+        var document = new SftpDocument(ftpViewModel);
         if (tabTitle is not null)
         {
             document.Title = tabTitle;
@@ -5165,6 +5281,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 settings.Transfer,
                 FileTransfer,
                 QueryDefaultEditorPathAsync);
+            WireDocumentPanesToSettings(dualViewModel);
             // 两栏各自判断:是 SSH 会话的那一栏才出现「搜索」(见 FileBrowserViewModel.CanSearchRemote)。
             dualViewModel.LeftFiles.RemoteSearch = _remoteSearch;
             dualViewModel.RightFiles.RemoteSearch = _remoteSearch;
@@ -5283,6 +5400,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             FileTransfer,
             QueryDefaultEditorPathAsync,
             UpdateProfileBookmarksAsync);
+        WireDocumentPanesToSettings(viewModel);
         // 协议专属的右键菜单项:声明式,按下右键那一帧就能画出来。
         if (descriptor is { Actions.Count: > 0 })
         {
@@ -6372,13 +6490,20 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 // “显示隐藏文件”状态(设置审计 C-04:设置中心与工具栏共用一个来源)。
                 // 面板按会话缓存后,当前实例与全部缓存实例都要广播到。
                 FileBrowser.TransferOptions = settings.Transfer;
-                FileBrowser.ShowHiddenFiles = settings.Transfer.ShowHiddenFiles;
-                ApplyColumnVisibility(FileBrowser, settings.Transfer);
+                FileBrowser.ApplyDisplayOptions(settings.Transfer);
                 foreach (FileBrowserViewModel browser in _fileBrowserCache.Values)
                 {
                     browser.TransferOptions = settings.Transfer;
-                    browser.ShowHiddenFiles = settings.Transfer.ShowHiddenFiles;
-                    ApplyColumnVisibility(browser, settings.Transfer);
+                    browser.ApplyDisplayOptions(settings.Transfer);
+                }
+                // 独立文件标签(单栏、双栏远程)的远端栏同样换上新选项:它们打开时拿的是那一刻的设置,
+                // 不广播的话改了冲突策略、并发、重试次数、双击行为,开着的文件标签还照旧(差距分析 A7);
+                // 隐藏文件与列显示也在这里跟上 —— 在别的面板上切了,这里一起变(差距分析 A8)。
+                // 限速、保留时间戳、上传后落盘由 SftpService 每次传输现读设置,本来就跟得上。
+                foreach (FileBrowserViewModel pane in DocumentFilePanes())
+                {
+                    pane.TransferOptions = settings.Transfer;
+                    pane.ApplyDisplayOptions(settings.Transfer);
                 }
 
                 RevealActiveSessionInSidebar();
@@ -6553,18 +6678,20 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
     }
 
-    /// <summary>把设置里的列显示状态铺到某个文件浏览器面板(设置保存后广播用)。</summary>
-    private static void ApplyColumnVisibility(
-        FileBrowserViewModel browser,
-        TransferOptions transfer
-    )
+    /// <summary>
+    /// 文件标签(单栏、双栏远程)的远端栏挂上写回设置的回调:工具栏切「显示隐藏文件」、表头右键切列显示,
+    /// 与终端侧栏的面板一样写回 <c>Transfer</c>,保存后再由 <see cref="OnSettingsSaved" /> 广播给所有面板
+    /// (设置审计 C-04,差距分析 A8)。此前文件标签的面板不读也不写这两样:设置里开着隐藏文件,文件标签照样不显示;
+    /// 在文件标签里切了,也不留到下次。
+    /// 初始值由文档视图模型按打开时的设置铺好(<see cref="FileBrowserViewModel.ApplyDisplayOptions" />),这里只挂回调。
+    /// </summary>
+    private void WireDocumentPanesToSettings(ISftpDocumentContent content)
     {
-        browser.ShowSizeColumn = transfer.ShowSizeColumn;
-        browser.ShowPermissionsColumn = transfer.ShowPermissionsColumn;
-        browser.ShowOwnerColumn = transfer.ShowOwnerColumn;
-        browser.ShowGroupColumn = transfer.ShowGroupColumn;
-        browser.ShowTypeColumn = transfer.ShowTypeColumn;
-        browser.ShowModifiedColumn = transfer.ShowModifiedColumn;
+        foreach (FileBrowserViewModel pane in content.RemotePanes)
+        {
+            pane.ShowHiddenFilesToggled = PersistShowHiddenFiles;
+            pane.ColumnVisibilityToggled = PersistColumnVisibility;
+        }
     }
 
     /// <summary>
@@ -6931,8 +7058,11 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         // (会话若已建起就断掉),右下角圆环上那条「连接中」随之熄灭,也不再弹失败提示。
         CancelTabConnect(tab);
         StopSessionLogging(tab);
-        CloseSftpForTab(tab);
+        Task sidebarClosed = CloseSftpForTab(tab);
         await tab.DisposeAsync().ConfigureAwait(true);
+        // 侧栏面板开出来的外部编辑会话要赶在 SSH 断开之前把没传完的那一次传掉(理由同 SFTP 文档标签关闭),
+        // 所以等它收完再拆连接;没有编辑会话时它当场就完成了。
+        await sidebarClosed.ConfigureAwait(true);
         // Dispose 只拆终端传输;底层 SSH 客户端也要断开释放。
         TeardownSshSession(tab.SessionId);
 
@@ -6950,17 +7080,46 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 拆除正在关闭的标签对应会话的 SFTP 通道,并在浏览器当前绑定到该会话时将面板替换为空白占位。
     /// 面板仍在显示该会话时,取消绑定并隐藏 —— 关闭 SSH 标签不应留下一个活动的、可操作的 SFTP 面板(#22)。
     /// </summary>
-    private void CloseSftpForTab(TerminalTabViewModel tab)
+    /// <remarks>
+    /// 面板驱逐当场做完;返回的任务是收尾的后半段:先收掉这个面板开出来的外部编辑会话
+    /// (<see cref="RemoteEditSessionManager.CloseScopeAsync" />),再拆 SFTP 通道。以前侧栏这一路没人收,
+    /// watcher 一直挂到应用退出,对着的会话早就没了,之后每存一次都换来一次注定失败的上传。
+    /// 标签关闭时调用方等它收完才断 SSH;断线驱逐时连接已经没了,未传的改动照原口径留成草稿并提示位置。
+    /// 任务不会失败(两步各自兜住),不等它的调用方可以直接丢弃。
+    /// </remarks>
+    private Task CloseSftpForTab(TerminalTabViewModel tab)
     {
         if (_sftpService is null || tab.SessionId == Guid.Empty)
         {
-            return;
+            return Task.CompletedTask;
         }
         Guid closedSessionId = tab.SessionId;
 
         // 在拆除 SFTP 通道前先驱逐:使在飞的列举被取消,而非与客户端释放争抢
         // (否则 SSH.NET 会从 ListDirectory 内部抛 NRE)。
         EvictFileBrowser(closedSessionId);
-        _ = _sftpService.CloseSessionAsync(closedSessionId);
+        return CloseSidebarScopeAsync(_sftpService, closedSessionId);
+    }
+
+    /// <summary>侧栏面板的收尾后半段:外部编辑会话 → SFTP 通道,顺序与 SFTP 文档标签关闭相同。</summary>
+    private static async Task CloseSidebarScopeAsync(ISftpService sftp, Guid sessionId)
+    {
+        try
+        {
+            await RemoteEditSessionManager.CloseScopeAsync(sessionId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // 收尾不该挡住拆通道;草稿保不保由各会话自己的 Dispose 决定,这里只留痕。
+            System.Diagnostics.Trace.WriteLine($"[VelaShell] Remote edit scope close failed: {ex.Message}");
+        }
+        try
+        {
+            await sftp.CloseSessionAsync(sessionId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"[VelaShell] SFTP close failed: {ex.Message}");
+        }
     }
 }

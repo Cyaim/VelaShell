@@ -4,6 +4,7 @@ using VelaShell.Core.Credentials;
 using VelaShell.Core.Import;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
+using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
 
 namespace VelaShell.Infrastructure.Import;
@@ -22,8 +23,8 @@ public sealed record SshConfigExport(string Content, int Exported, int Skipped);
 /// <para>
 /// 一条 SSH / SFTP 连接一个 <c>Host</c> 块,别名取连接名(空白与 ssh_config 里另有含义的字符换成 <c>-</c>,重名加序号);
 /// 写的是导入那边认得的同一批关键字:<c>HostName</c> / <c>Port</c> / <c>User</c> / <c>IdentityFile</c> / <c>CertificateFile</c> /
-/// <c>ProxyJump</c>(跳板随导出范围一起带上,按别名引用)/ <c>Compression</c> / <c>ForwardAgent</c> / <c>ForwardX11</c> /
-/// 四个算法清单 / 三种转发(含 Unix 套接字,远程动态连同 <c>PermitRemoteOpen</c>)。<b>密码与口令从不写</b> —— ssh_config 本来就不存。
+/// <c>ProxyJump</c>(跳板随导出范围一起带上,按别名引用)/ <c>Compression</c> / <c>IdentityAgent</c> / <c>ForwardAgent</c>(按连接指定了 agent 端点时写端点)/ <c>ForwardX11</c>(连同 <c>ForwardX11Trusted</c>)/
+/// <c>ObscureKeystrokeTiming</c>(开着才写)/ 四个算法清单 / 三种转发(含 Unix 套接字,远程动态连同 <c>PermitRemoteOpen</c>)。<b>密码与口令从不写</b> —— ssh_config 本来就不存。
 /// </para>
 /// <para>
 /// 「放开老算法」在 ssh_config 里没有对应的开关:没写自定义清单的类别写成 <c>+老算法</c>;写了 <c>+</c> 的并成一条;
@@ -94,6 +95,12 @@ public static class SshConfigExporter
         {
             Line("CertificateFile", Quote(Portable(certificate, home)));
         }
+        if (auth == AuthMethod.KeyStore && session.KeyStoreKey is { } keyStoreKey)
+        {
+            // 系统密钥库的钥没有文件,OpenSSH 的 IdentityFile 用不了它:写成注释,看这份配置的人知道这台原来用的是哪把钥。
+            text.Append("    # ").Append(keyStoreKey.ToText())
+                .Append("  (VelaShell: a Windows key store key; OpenSSH cannot use it as an IdentityFile)\n");
+        }
 
         if (session.JumpHostProfileId is { } jump && aliases.TryGetValue(jump, out string? jumpAlias))
         {
@@ -106,14 +113,30 @@ public static class SshConfigExporter
             {
                 Line("Compression", "yes");
             }
+            // 按连接指定的 agent 端点:认证走 agent 时写成 IdentityAgent;转发时 ForwardAgent 直接写端点而不是 yes ——
+            // 两处都明写,读这份配置的人(与老版本的 ssh)不必去推「yes 转发的是哪个 agent」。端点只对 agent 认证与转发有意义,别的情形不写。
+            string? agentEndpoint = SshAgentEndpoints.Normalize(ssh.AgentEndpoint) is { } endpoint
+                ? Quote(SshAgentEndpoints.IsPipe(endpoint) ? endpoint : Portable(SshAgentEndpoints.Resolve(endpoint, home)!, home))
+                : null;
+            if (auth == AuthMethod.Agent && agentEndpoint is not null)
+            {
+                Line("IdentityAgent", agentEndpoint);
+            }
             if (ssh.AgentForwarding)
             {
-                Line("ForwardAgent", "yes");
+                Line("ForwardAgent", agentEndpoint ?? "yes");
             }
             if (ssh.X11Forwarding)
             {
+                // 信任级别一定明写:OpenSSH 没写时是非受信任,VelaShell 的默认是受信任,两边的默认不一样。
                 Line("ForwardX11", "yes");
                 Line("ForwardX11Trusted", ssh.X11Trusted ? "yes" : "no");
+            }
+            if (ssh.ObscureKeystrokeTiming)
+            {
+                // 关着的不写 `no`:这个关键字 OpenSSH 9.5 才有,更老的 ssh 读到不认识的关键字整份配置报错 ——
+                // 为了一项 VelaShell 没开的东西让每个 Host 块在老版本上都用不了,不划算;没写时新版 ssh 按它自己的默认(开)。
+                Line("ObscureKeystrokeTiming", "yes");
             }
             foreach ((SshAlgorithmKind kind, string keyword, string? spec) in new[]
                      {

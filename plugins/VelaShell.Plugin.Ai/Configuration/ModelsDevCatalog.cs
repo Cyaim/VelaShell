@@ -239,14 +239,32 @@ public sealed class ModelsDevCatalog(IPluginContext context)
         return !suffix.IsEmpty;
     }
 
+    /// <summary>
+    /// 冒号前只认这几个路由前缀(<c>global:deepseek-v4.1-flash-sg</c>)。按实际见到的写法扩充,与 <see cref="DeploymentLabels" /> 同一口径。
+    /// </summary>
+    /// <remarks>
+    /// 冒号同样是 Ollama「型号:标签」的分隔符(<c>phi4:latest</c>、<c>llama3:instruct</c>、<c>phi3:mini</c>)。
+    /// 以前按形状猜(冒号前不含 <c>-</c> / <c>.</c>、冒号后不是数字就剥),把型号剥掉、留下标签,
+    /// 再拿 <c>latest</c> 去配目录里别的型号的同名标签 —— 静默借来另一个模型的窗口与输出上限(#582 复审⑥)。
+    /// 两种错的代价不对称:认不出的前缀只是配不上目录、退回端点给的窗口(界面提示核实);剥错了却是悄悄用错规格。
+    /// </remarks>
+    private static readonly string[] RoutePrefixes = ["global"];
+
     private static ReadOnlySpan<char> BareModelId(string id)
     {
         ReadOnlySpan<char> bare = id.AsSpan(id.LastIndexOf('/') + 1);
         int colon = bare.IndexOf(':');
-        // 路由前缀在型号之前；Ollama 的 llama3.1:8b 等参数量标签不剥除。
-        return colon > 0 && !bare[..colon].Contains('-') && !bare[..colon].Contains('.')
-            && colon + 1 < bare.Length && !char.IsDigit(bare[colon + 1])
-                ? bare[(colon + 1)..] : bare;
+        if (colon > 0 && colon + 1 < bare.Length)
+        {
+            foreach (string prefix in RoutePrefixes)
+            {
+                if (bare[..colon].Equals(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return bare[(colon + 1)..];
+                }
+            }
+        }
+        return bare;
     }
 
     /// <summary>

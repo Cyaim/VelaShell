@@ -26,7 +26,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     /// <param name="session">已建立的 SSH 会话。</param>
     /// <param name="workflow">连接工作流服务,关闭文档时用它断开会话。</param>
     /// <param name="sftpService">底层 SFTP 服务,构造时会被包成本文档独占的串行化视图。</param>
-    /// <param name="transferOptions">设置 → 文件传输 的选项快照。</param>
+    /// <param name="transferOptions">设置 → 文件传输 的选项(打开时那一份;之后设置保存时宿主经 <see cref="ISftpDocumentContent.RemotePanes" /> 换上新的)。</param>
     /// <param name="transferSink">承载本文档所发起传输的浮动传输组件;为 null 时不上报进度。</param>
     /// <param name="getDefaultEditorPath">
     /// 解析「设置 → 文件传输 → 默认编辑器」的回调。独立 SFTP 标签与终端侧边栏的文件浏览器
@@ -68,7 +68,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
     /// <param name="sessionId">已建立的会话标识。</param>
     /// <param name="disconnectAsync">关闭文档时断开该会话的回调。</param>
     /// <param name="sftpService">底层远程文件服务,构造时会被包成本文档独占的串行化视图。</param>
-    /// <param name="transferOptions">设置 → 文件传输 的选项快照。</param>
+    /// <param name="transferOptions">设置 → 文件传输 的选项(打开时那一份;之后设置保存时宿主经 <see cref="ISftpDocumentContent.RemotePanes" /> 换上新的)。</param>
     /// <param name="transferSink">承载本文档所发起传输的浮动传输组件;为 null 时不上报进度。</param>
     /// <param name="getDefaultEditorPath">解析「默认编辑器」的回调。</param>
     /// <param name="updateBookmarksAsync">
@@ -108,6 +108,8 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
             // 取到 null 即照旧从登录工作目录起步。
             InitialRemotePath = profile.Ftp?.InitialRemotePath,
         };
+        // 「显示隐藏文件」与列显示按设置铺好,与终端侧栏的面板同一个来源(差距分析 A8);写回设置的回调由宿主建好之后再挂。
+        RemoteFiles.ApplyDisplayOptions(transferOptions);
         LocalFiles = new LocalFilePaneViewModel(transferOptions)
         {
             UploadSelectedAsync = () => UploadSelectedAsync()
@@ -731,6 +733,9 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
 
     /// <inheritdoc />
     public IReadOnlyList<Guid> SessionIds => [SessionId];
+
+    /// <inheritdoc />
+    public IReadOnlyList<FileBrowserViewModel> RemotePanes => [RemoteFiles];
     /// <summary>SFTP 文档标签页的显示标题。</summary>
     public string Title { get; }
     /// <summary>本地文件浏览器面板。</summary>

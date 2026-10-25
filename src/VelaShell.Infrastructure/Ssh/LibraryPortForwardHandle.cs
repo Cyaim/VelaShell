@@ -210,7 +210,9 @@ internal sealed class LibraryPortForwardHandle : IPortForwardHandle
             ChannelError?.Invoke(new VelaSshClientException(Strings.Get("TunnelSvc_TargetNotPermitted")));
             return;
         }
-        ChannelError?.Invoke(e.Exception ?? new VelaSshClientException($"{e.Reason}:{e.Message}"));
+        // 没带异常的那几种(撞并发上限、SOCKS 握手没完成、隧道在时限内没打开)按原因与事件上的参数用界面语言说;
+        // 曾经显示成「Reason:库的中文消息」。
+        ChannelError?.Invoke(e.Exception ?? new VelaSshClientException(SshInterop.LocalizeForwardError(e)));
     }
 
     /// <inheritdoc />

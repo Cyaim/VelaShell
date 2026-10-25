@@ -131,6 +131,15 @@ public class AppSettings
             Security.FingerprintChangeDefaultMigrated = true;
         }
 
+        // 首次连接的指纹确认从默认关改为默认开(见 SecurityOptions.ConfirmFirstFingerprint)。
+        // 老配置里的 false 绝大多数是从来没动过的旧默认值,少数是用户主动关的,两者分不清 ——
+        // 宁可让主动关过的人再关一次,也不让没动过的人继续首次即信任:只开这一次,打上标记后此后的选择都算数。
+        if (!Security.FirstFingerprintDefaultMigrated)
+        {
+            Security.ConfirmFirstFingerprint = true;
+            Security.FirstFingerprintDefaultMigrated = true;
+        }
+
         // 自动下载更新以前默认开、却没有界面也没人读(设置审计 R-03)。现在接上了运行时、默认关:
         // 存量配置里的 true 必然是旧默认值而不是用户选的(没有地方能选),只关这一次。
         if (!General.AutoDownloadUpdatesOptInMigrated)
@@ -191,6 +200,7 @@ public class AppSettings
             Shortcuts.Overrides.Remove(id);
         }
 
+        NormalizeOutputRules();
         ClampNumbers();
     }
 
@@ -209,6 +219,43 @@ public class AppSettings
     /// 两处对不上的话,会出现"设置页显示的值一保存就变"这种说不清的行为。
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 输出规则的规整:磁盘上的内容拦不住(手改的、同步来的、更新版本写的)。
+    /// </summary>
+    /// <remarks>
+    /// 只钳数值、丢空条目与超额的条目,不在这里判正则对不对 —— 那要编译,而判不过的规则留在表里、
+    /// 由编译那一步跳过并在设置页标出来,比载入时悄悄删掉更好:用户看得见是哪一条、为什么不生效。
+    /// 调色板下标越界的当「不改这一项」处理,而不是夹到 0 或 15 —— 夹出来的是一个用户没选过的颜色。
+    /// </remarks>
+    private void NormalizeOutputRules()
+    {
+        TerminalBehavior ??= new();
+        List<OutputRule> rules = [.. (TerminalBehavior.OutputRules ?? []).Where(rule => rule is not null)];
+        if (rules.Count > OutputRuleLimits.MaxRules)
+        {
+            rules.RemoveRange(OutputRuleLimits.MaxRules, rules.Count - OutputRuleLimits.MaxRules);
+        }
+        foreach (OutputRule rule in rules)
+        {
+            rule.Name ??= string.Empty;
+            rule.Pattern ??= string.Empty;
+            rule.Response ??= string.Empty;
+            rule.Scope ??= OutputRuleScopes.Global;
+            rule.Action ??= OutputRuleActions.Highlight;
+            if (rule.Foreground is < 0 or > OutputRuleLimits.MaxPaletteIndex)
+            {
+                rule.Foreground = null;
+            }
+            if (rule.Background is < 0 or > OutputRuleLimits.MaxPaletteIndex)
+            {
+                rule.Background = null;
+            }
+            rule.CooldownSeconds = Math.Clamp(rule.CooldownSeconds, 1, OutputRuleLimits.MaxCooldownSeconds);
+            rule.MaxPerMinute = Math.Clamp(rule.MaxPerMinute, 1, OutputRuleLimits.MaxPerMinuteCeiling);
+        }
+        TerminalBehavior.OutputRules = rules;
+    }
+
     private void ClampNumbers()
     {
         ScrollbackLines = Math.Clamp(ScrollbackLines, 100, 200_000);
@@ -465,7 +512,13 @@ public class GeneralOptions : ObservableOptions
     }
 
     // 隐私与安全
-    /// <summary>是否启用主密码保护本地凭据。</summary>
+    /// <summary>是否启用主密码保护本地凭据(可选主密码,尚未接线,界面已撤下 —— 设置审计 R-04)。</summary>
+    /// <remarks>
+    /// 主密码保护分两步走(维护者 2026-10-25 决定):第一步把本机加密密钥交给系统密钥链保管,已做
+    /// (macOS 钥匙串 / Secret Service,Windows 上密钥文件本来就以 DPAPI 包裹;见 <c>plan.md</c> 与 <c>MasterKeyResolver</c>);
+    /// 第二步才是这个开关 —— 可选主密码派生密钥、包裹本机密钥、启动解锁,设计见 velashell-docs 的主密码设计文档。
+    /// 在那之前这个字段没有消费者,也不要接到界面上。
+    /// </remarks>
     public bool MasterPasswordProtection
     {
         get;
@@ -967,6 +1020,20 @@ public class TerminalBehaviorOptions : ObservableOptions
         get;
         set => Set(ref field, value);
     } = true;
+
+    /// <summary>
+    /// 终端输出规则(设置 → 输出规则):用户自己的高亮与自动应答,共用一张表(见 <see cref="OutputRule" />)。
+    /// 出厂为空 —— 默认没有任何触发器;内置的语义高亮(URL / IP / 错误词…)不在这张表里,照旧生效。
+    /// </summary>
+    /// <remarks>
+    /// 放在终端这一块里而不是另起一块:导出 / 导入、审计按「终端」分类走,云同步随应用设置走,
+    /// 不必在 <see cref="SettingsCategories" /> 里再登记一类。整表替换才触发变更通知。
+    /// </remarks>
+    public List<OutputRule> OutputRules
+    {
+        get;
+        set => Set(ref field, value ?? []);
+    } = [];
 }
 
 /// <summary>设置 - 文件传输(设计 HGwa7)。</summary>
@@ -1199,6 +1266,11 @@ public class TransferOptions : ObservableOptions
     /// 刻意不做成"攒着等人点一下" —— 界面上没有任何手动上传的入口,那笔账就没有出口;
     /// 而收尾时若把它补传上去,开关写着"不自动上传"、关掉标签页却传了,那是骗人。
     /// 默认开启:这是这条链路存在的理由。生产机上不想手一抖就写过去的人才关它。
+    /// <para>
+    /// <b>只管外部编辑会话</b>(<c>RemoteEditSessionManager</c>:配置的编辑器、系统默认程序,含双击走这两种的情形)。
+    /// 内置编辑器(右键「打开」、双击选了内置编辑器)不经监视:用户点「保存」就是明确要写回,这个开关不拦 ——
+    /// 设置页的说明照这个口径写,别写成「一律不回传」。
+    /// </para>
     /// </remarks>
     public bool AutoUploadOnEdit
     {
@@ -1266,12 +1338,33 @@ public class SecurityOptions : ObservableOptions
         set => Set(ref field, value);
     } = DefaultAuditLogRetentionDays;
 
-    /// <summary>首次连接主机时是否需确认其指纹。</summary>
+    /// <summary>
+    /// 首次连接一台没见过的主机时,是否弹窗让用户核对指纹。默认开,与 OpenSSH 的
+    /// <c>StrictHostKeyChecking=ask</c> 一致;关掉就是首次使用即信任(TOFU):第一次见到的钥直接永久记下。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 早先默认关,而用户手册一直说首次连接会弹窗核对 —— 维护者 2026-10-25 定为改代码对齐手册。
+    /// TOFU 的问题在于第一次就是最该核对的时候:路上有人时,记下的正是冒名的那把钥,之后每次都「校验通过」。
+    /// </para>
+    /// <para>
+    /// 自动重连(断线倒计时、睡眠唤醒、隧道自动恢复)没有人在等,本该弹窗的一律直接拒绝、不弹
+    /// (<see cref="ConnectionInfo.IsAutomaticReconnect" />);用户手动重连时再核对。
+    /// 存量配置里的 <see langword="false" /> 统一打开一次,见 <see cref="FirstFingerprintDefaultMigrated" />。
+    /// </para>
+    /// </remarks>
     public bool ConfirmFirstFingerprint
     {
         get;
         set => Set(ref field, value);
-    }
+    } = true;
+
+    /// <summary>
+    /// <see cref="ConfirmFirstFingerprint" />「改为默认开启」的一次性迁移标记。
+    /// 存量配置里落盘的 <see langword="false" /> 分不清是用户选的还是旧默认值带的,
+    /// 于是统一打开一次并打上标记,之后完全听用户的(见 <see cref="AppSettings.Normalize" />)。
+    /// </summary>
+    public bool FirstFingerprintDefaultMigrated { get; set; }
 
     /// <summary>
     /// 主机指纹变化时是否**直接阻断**(不询问)。默认关闭:变更走确认弹窗,由用户当场裁决

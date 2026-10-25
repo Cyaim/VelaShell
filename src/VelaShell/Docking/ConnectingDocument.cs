@@ -5,6 +5,7 @@ using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Docking.Controls;
 using VelaShell.Docking.Model;
+using VelaShell.Infrastructure.Ssh;
 using VelaShell.Services;
 using VelaShell.Views;
 
@@ -137,11 +138,42 @@ public sealed class ConnectingDocument : DockDocument, IDockViewProvider
     /// <summary>重试这次连接(失败卡片的「重试」按钮)。</summary>
     public void Retry() => RetryRequested?.Invoke();
 
+    /// <summary>
+    /// 上一次败在算法协商上、而对端有本版实现了只是没放开的算法:失败卡片上的「放开这几个算法并重连」按它来。
+    /// 每次转入失败态时一并换掉(没有就是 <see langword="null" />),重试时清掉。
+    /// </summary>
+    public SshAlgorithmRemedy? AlgorithmRemedy
+    {
+        get;
+        private set
+        {
+            SetField(ref field, value);
+            OnPropertyChanged(nameof(HasAlgorithmRemedy));
+            OnPropertyChanged(nameof(AlgorithmRemedyTip));
+        }
+    }
+
+    /// <summary>失败卡片上要不要出「放开这几个算法并重连」。</summary>
+    public bool HasAlgorithmRemedy => AlgorithmRemedy is not null;
+
+    /// <summary>那颗按钮的悬停说明:往哪一类清单里加哪几个。</summary>
+    public string AlgorithmRemedyTip => AlgorithmRemedy is { } remedy
+        ? SshAlgorithmRemedyFlow.ButtonTip(remedy, SshAlgorithmRemedyFollowUp.Reconnect)
+        : string.Empty;
+
+    /// <summary>用户点了「放开这几个算法并重连」:由宿主确认、改配置、重试。</summary>
+    public Action? AllowAlgorithmsRequested { get; set; }
+
+    /// <summary>放开这几个算法并重连(失败卡片上的那颗按钮)。</summary>
+    public void AllowAlgorithms() => AllowAlgorithmsRequested?.Invoke();
+
     /// <summary>转入失败态:标签圆点变红,覆盖层换成失败卡片。</summary>
     /// <param name="message">面向用户的失败原因。</param>
-    public void MarkFailed(string message)
+    /// <param name="remedy">算法协商失败、且能一键放开对端那几个算法时给;失败卡片据此多一颗按钮。</param>
+    public void MarkFailed(string message, SshAlgorithmRemedy? remedy = null)
     {
         ErrorMessage = message;
+        AlgorithmRemedy = remedy;
         Status = SessionStatus.Error;
         RaiseOverlayChanged();
     }
@@ -150,6 +182,7 @@ public sealed class ConnectingDocument : DockDocument, IDockViewProvider
     public void MarkConnecting()
     {
         ErrorMessage = null;
+        AlgorithmRemedy = null;
         Status = SessionStatus.Connecting;
         RaiseOverlayChanged();
     }

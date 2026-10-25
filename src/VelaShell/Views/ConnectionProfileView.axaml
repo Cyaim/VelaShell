@@ -328,6 +328,18 @@
       <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
       <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
+    <!-- 系统密钥库那一把钥的位置、类型、指纹:等宽小字;存过却找不到的标警示色。 -->
+    <Style Selector="TextBlock.keystore-detail, TextBlock.field-detail">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize10}" />
+    </Style>
+    <Style Selector="TextBlock.field-detail">
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.keystore-detail.missing, TextBlock.field-detail.missing">
+      <Setter Property="Foreground" Value="{DynamicResource VelaWarning}" />
+    </Style>
     <!-- 勾选项:标题 + 缩进到标题左缘的说明(Fluent 勾选框 20 + 标题左边距 6)。 -->
     <Style Selector="CheckBox">
       <Setter Property="Padding" Value="0" />
@@ -793,7 +805,7 @@
                     </StackPanel>
                   </Grid>
 
-                  <!-- SSH/SFTP 认证独占一行,五种方式不挤压用户名。 -->
+                  <!-- SSH/SFTP 认证独占一行,六种方式不挤压用户名。 -->
                   <StackPanel IsVisible="{Binding ShowAuthMethodSelector}">
                     <TextBlock Classes="field-label" Text="{loc:Localize AuthMethodLabel}" />
                     <Border Height="32" Padding="3"
@@ -826,6 +838,13 @@
                                 Command="{Binding SelectAuthMethodCommand}"
                                 CommandParameter="{x:Static models:AuthMethod.Tailscale}"
                                 Content="{loc:Localize Profile_TailscaleAuth}" />
+                        <!-- 系统密钥库只有 Windows 有:别的平台不显示这一段(本来就是它的配置除外,见 ShowKeyStoreAuthOption)。 -->
+                        <Button Theme="{StaticResource AuthSegmentTheme}"
+                                Classes.selected="{Binding IsKeyStoreAuth}"
+                                IsVisible="{Binding ShowKeyStoreAuthOption}"
+                                Command="{Binding SelectAuthMethodCommand}"
+                                CommandParameter="{x:Static models:AuthMethod.KeyStore}"
+                                Content="{loc:Localize Profile_KeyStoreAuth}" />
                       </UniformGrid>
                     </Border>
                   </StackPanel>
@@ -942,6 +961,58 @@
 
                   <TextBlock Classes="field-hint" IsVisible="{Binding ShowTailscaleHint}"
                              Text="{loc:Localize Profile_TailscaleAuthHint}" />
+
+                  <!-- 系统密钥库:从证书存储 / TPM / 智能卡里选一把钥,配置里只存它的引用;
+                       「复制公钥」贴进服务器的 authorized_keys 才登得上。存过却找不到的那把照样列着并标明。 -->
+                  <StackPanel IsVisible="{Binding ShowKeyStoreFields}">
+                    <TextBlock Classes="field-label" Text="{loc:Localize Profile_KeyStoreKey}" />
+                    <TextBlock Classes="field-hint" IsVisible="{Binding KeyStoreUnsupportedHere}"
+                               Text="{loc:Localize Profile_KeyStoreUnsupported}" />
+                    <Grid ColumnDefinitions="*,8,Auto,8,Auto" IsVisible="{Binding !KeyStoreUnsupportedHere}">
+                      <ComboBox x:Name="SystemKeyCombo" Grid.Column="0" HorizontalAlignment="Stretch"
+                                ItemsSource="{Binding SystemKeyChoices}"
+                                SelectedItem="{Binding SelectedSystemKey}"
+                                PlaceholderText="{loc:Localize Profile_KeyStorePick}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate x:DataType="vm:SystemKeyChoice">
+                            <StackPanel Spacing="1" Margin="0,2">
+                              <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                              <TextBlock Text="{Binding Detail}" TextTrimming="CharacterEllipsis"
+                                         Classes.missing="{Binding IsMissing}" Classes="keystore-detail" />
+                            </StackPanel>
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                        <ComboBox.SelectionBoxItemTemplate>
+                          <DataTemplate x:DataType="vm:SystemKeyChoice">
+                            <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                          </DataTemplate>
+                        </ComboBox.SelectionBoxItemTemplate>
+                      </ComboBox>
+                      <Button Grid.Column="2" Theme="{StaticResource VelaOutlineButtonTheme}" Height="32" Width="32" Padding="0"
+                              Command="{Binding RefreshSystemKeysCommand}"
+                              AutomationProperties.Name="{loc:Localize Profile_KeyStoreRefresh}"
+                              ToolTip.Tip="{loc:Localize Profile_KeyStoreRefresh}">
+                        <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.refresh-cw}"
+                                       Foreground="{Binding $parent[Button].Foreground}" />
+                      </Button>
+                      <Button Grid.Column="4" Theme="{StaticResource VelaOutlineButtonTheme}" Height="32"
+                              Command="{Binding CopySystemKeyPublicKeyCommand}"
+                              ToolTip.Tip="{loc:Localize Profile_KeyStoreCopyPublicKeyTip}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.copy}"
+                                         Foreground="{Binding $parent[Button].Foreground}" />
+                          <TextBlock Text="{loc:Localize Profile_KeyStoreCopyPublicKey}" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </Button>
+                    </Grid>
+                    <TextBlock Classes="field-detail" Margin="0,4,0,0"
+                               Classes.missing="{Binding SelectedSystemKey.IsMissing, FallbackValue=False}"
+                               Text="{Binding SelectedSystemKey.Detail, FallbackValue={x:Null}}"
+                               IsVisible="{Binding SelectedSystemKey, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="field-hint" Margin="0,6,0,0" IsVisible="{Binding HasNoSystemKeys}"
+                               Text="{loc:Localize Profile_KeyStoreNoKeys}" />
+                    <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{loc:Localize Profile_KeyStoreHint}" />
+                  </StackPanel>
 
                   <!-- 记住密码 -->
                   <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ShowInlinePassword}">
@@ -1175,6 +1246,23 @@
                                IsVisible="{Binding SshAlgorithmsError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   </StackPanel>
                 </StackPanel>
+
+                <!-- 按连接指定 agent(ssh_config 的 IdentityAgent):认证与转发都用它,所以放在 SSH 与 SFTP 共有的这一页,
+                     而不是只有 SSH 才有的「转发」页。留空 = 系统默认;写法不对只提示、不拦保存(配置可能来自别的平台)。 -->
+                <StackPanel Spacing="12">
+                  <Grid ColumnDefinitions="Auto,*">
+                    <TextBlock Classes="section-title" Text="SSH Agent" />
+                    <Border Grid.Column="1" Classes="section-rule" />
+                  </Grid>
+                  <StackPanel>
+                    <TextBlock Classes="field-label" Text="{loc:Localize Profile_SshAgentEndpoint}" />
+                    <TextBox Text="{Binding SshAgentEndpoint}"
+                             PlaceholderText="{Binding SshAgentEndpointPlaceholder}" />
+                    <TextBlock Classes="field-error" Text="{Binding SshAgentEndpointError}"
+                               IsVisible="{Binding SshAgentEndpointError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{loc:Localize Profile_SshAgentEndpointHint}" />
+                  </StackPanel>
+                </StackPanel>
               </StackPanel>
 
               <!-- ============================== 转发(只有 SSH) ==============================
@@ -1349,6 +1437,28 @@
               </Panel>
             </Button>
           </Grid>
+          <!-- 「测试」败在算法协商上、而对端有本版实现了只是没放开的算法:与终端标签失败覆盖层同一颗按钮,
+               确认后改表单里的自定义算法清单(跳板那一跳改跳板自己的配置)并重新测试。描边 + 警示图标。 -->
+          <Button x:Name="AllowAlgorithmsButton"
+                  HorizontalAlignment="Left"
+                  Margin="23,2,0,0"
+                  IsVisible="{Binding HasAlgorithmRemedy}"
+                  Command="{Binding AllowAlgorithmsCommand}"
+                  Background="Transparent"
+                  BorderBrush="{DynamicResource VelaBorderSecondary}"
+                  BorderThickness="1"
+                  CornerRadius="4" Padding="12,4"
+                  ToolTip.Tip="{Binding AlgorithmRemedyTip}"
+                  AutomationProperties.Name="{loc:Localize SshAlgoFix_ButtonRetest}">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <pc:LucideIcon Width="12" Height="12"
+                             Data="{StaticResource Icon.triangle-alert}"
+                             Foreground="{DynamicResource VelaWarning}" VerticalAlignment="Center" />
+              <TextBlock Text="{loc:Localize SshAlgoFix_ButtonRetest}"
+                         Foreground="{DynamicResource VelaTextSecondary}"
+                         FontSize="{DynamicResource VelaFontSize11}" FontWeight="Medium" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
           <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ShowTestSuccess}">
             <pc:LucideIcon Width="13" Height="13" VerticalAlignment="Center"
                            Data="{StaticResource Icon.circle-check}"

@@ -86,7 +86,10 @@ public sealed partial class SftpFileSystem
                 serverMessage: "",
                 path,
                 SftpOperation.ExpandPath,
-                detail: "这台服务端既没有 expand-path@openssh.com 也没有 home-directory，展开不了 ~用户名");
+                detail: "这台服务端既没有 expand-path@openssh.com 也没有 home-directory，展开不了 ~用户名")
+            {
+                MissingExtensions = [SftpExtensionNames.ExpandPath, SftpExtensionNames.HomeDirectory],
+            };
         }
 
         return rest.Length == 0

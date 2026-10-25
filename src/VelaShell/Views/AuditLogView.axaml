@@ -6,8 +6,8 @@
         x:Class="VelaShell.Views.AuditLogView"
         x:DataType="vm:AuditLogViewModel"
         Title="{loc:Localize AuditLog_Title}"
-        Width="1040" Height="640"
-        MinWidth="880" MinHeight="420"
+        Width="1120" Height="640"
+        MinWidth="960" MinHeight="420"
         CanResize="True"
         WindowStartupLocation="CenterOwner">
 
@@ -224,12 +224,13 @@
         <Grid RowDefinitions="30,*">
           <Border Grid.Row="0" Padding="12,0,28,0"
                   BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="148,72,172,160,*,28">
+            <Grid ColumnDefinitions="148,72,172,84,160,*,28">
               <TextBlock Grid.Column="0" Classes="header" Text="{loc:Localize AuditLog_ColTime}" />
               <TextBlock Grid.Column="1" Classes="header" Text="{loc:Localize AuditLog_ColCategory}" />
               <TextBlock Grid.Column="2" Classes="header" Text="{loc:Localize AuditLog_ColAction}" />
-              <TextBlock Grid.Column="3" Classes="header" Text="{loc:Localize AuditLog_ColSession}" />
-              <TextBlock Grid.Column="4" Classes="header" Text="{loc:Localize AuditLog_ColDetail}" />
+              <TextBlock Grid.Column="3" Classes="header" Text="{loc:Localize AuditLog_ColSource}" />
+              <TextBlock Grid.Column="4" Classes="header" Text="{loc:Localize AuditLog_ColSession}" />
+              <TextBlock Grid.Column="5" Classes="header" Text="{loc:Localize AuditLog_ColDetail}" />
             </Grid>
           </Border>
           <TextBlock Grid.Row="1" Margin="12" TextWrapping="Wrap"
@@ -242,17 +243,20 @@
                    IsVisible="{Binding !IsEmpty}">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:AuditLogRow">
-                <Grid ColumnDefinitions="148,72,172,160,*,28">
+                <Grid ColumnDefinitions="148,72,172,84,160,*,28">
                   <TextBlock Grid.Column="0" Classes="cell mono" Text="{Binding TimeText}" />
                   <TextBlock Grid.Column="1" Classes="cell" Text="{Binding CategoryLabel}" />
                   <TextBlock Grid.Column="2" Classes="cell" Classes.problem="{Binding IsProblem}"
                              Text="{Binding ActionLabel}" ToolTip.Tip="{Binding Action}" />
-                  <TextBlock Grid.Column="3" Classes="cell" Text="{Binding SessionName}"
+                  <!-- 来源:配置类记录才有(本机编辑 / 云同步 / 导入 / 登录框),其余与旧记录显示 —。 -->
+                  <TextBlock Grid.Column="3" Classes="cell" Text="{Binding SourceLabel}"
+                             ToolTip.Tip="{Binding SourceLabel}" />
+                  <TextBlock Grid.Column="4" Classes="cell" Text="{Binding SessionName}"
                              ToolTip.Tip="{Binding SessionName}" />
-                  <TextBlock Grid.Column="4" Classes="cell mono" Text="{Binding Detail}"
+                  <TextBlock Grid.Column="5" Classes="cell mono" Text="{Binding Detail}"
                              ToolTip.Tip="{Binding Detail}" />
                   <!-- 打开这一行的连接配置:记录里带着配置 Id 才有;配置已删就灰着(提示写在悬停里)。 -->
-                  <Button Grid.Column="5" Classes="open-profile"
+                  <Button Grid.Column="6" Classes="open-profile"
                           IsVisible="{Binding HasProfile}"
                           IsEnabled="{Binding ProfileExists}"
                           Click="OpenProfile_Click"

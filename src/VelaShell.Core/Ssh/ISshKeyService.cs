@@ -99,5 +99,7 @@ public interface ISshKeyService
     /// <see cref="SshKeyInfo.Name" /> 是 agent 给的注释,<see cref="SshKeyInfo.PrivateKeyPath" /> 为空串。
     /// agent 没在运行、连不上时返回空列表而不是抛出 —— 候选里还有 ~/.ssh 下的钥可选。
     /// </remarks>
-    Task<List<SshKeyInfo>> ListAgentKeysAsync(CancellationToken cancellationToken = default);
+    /// <param name="agentEndpoint">这条连接指定的 agent 端点(<c>SshSessionOptions.AgentEndpoint</c>);<see langword="null" /> = 系统默认。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task<List<SshKeyInfo>> ListAgentKeysAsync(string? agentEndpoint = null, CancellationToken cancellationToken = default);
 }

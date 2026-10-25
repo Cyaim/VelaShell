@@ -20,6 +20,10 @@ namespace VelaShell.Infrastructure.Audit;
 /// <b>只记哪一块变了,不记值。</b>详情按写入时的界面语言写成一句话(与安全告警的详情同一口径),
 /// 机密字段只会以「登录凭据」这样的块名出现。
 /// </para>
+/// <para>
+/// <b>来源</b>(本机编辑 / 云同步 / 导入 / 登录框)不由这一层判断:落盘这一层看不出是谁调的,
+/// 由云同步、导入服务与登录框在调用前设 <see cref="AuditSourceScope" />,这里写记录时取当时的值。
+/// </para>
 /// </remarks>
 internal static class ConfigAudit
 {
@@ -28,7 +32,7 @@ internal static class ConfigAudit
 
     private static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    /// <summary>写一条记录;写不进去只留痕,不打断保存。</summary>
+    /// <summary>写一条记录,来源取当前流程的 <see cref="AuditSourceScope" />;写不进去只留痕,不打断保存。</summary>
     internal static async Task WriteAsync(IAuditLogService log, string category, string action, Guid? profileId, string detail)
     {
         try
@@ -39,7 +43,8 @@ internal static class ConfigAudit
                 Category = category,
                 Action = action,
                 ProfileId = profileId,
-                Detail = detail
+                Detail = detail,
+                Source = AuditSourceScope.Current
             }).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

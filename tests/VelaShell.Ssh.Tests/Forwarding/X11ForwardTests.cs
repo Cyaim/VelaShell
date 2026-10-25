@@ -13,6 +13,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using VelaShell.Ssh.Channels;
+using VelaShell.Ssh.Diagnostics;
 using VelaShell.Ssh.Forwarding;
 using VelaShell.Ssh.Protocol;
 using VelaShell.Ssh.Session;
@@ -65,6 +66,7 @@ public sealed class X11ForwardTests
                 fixture.Harness.Connection, fixture.Session, fixture.Options, fixture.Harness.Token));
 
         Assert.Contains("X11Forwarding", error.Message);
+        Assert.AreEqual(SshForwardFailureKind.X11ForwardRejected, error.FailureKind);
 
         // 处理器要摘干净 —— 不然服务端之后开的 x11 通道会被一个
         // 半挂的转发器接走。
@@ -601,13 +603,15 @@ public sealed class X11ForwardTests
     {
         await using Fixture fixture = await Fixture.StartAsync();
 
-        await Assert.ThrowsExactlyAsync<SshForwardException>(
+        SshForwardException error = await Assert.ThrowsExactlyAsync<SshForwardException>(
             async () => await fixture.Harness.Connection.ExecuteAsync(
                 "xclock",
                 new SshCommandOptions { X11Forwarding = UnrunnableXAuth(fixture.Options) },
                 fixture.Harness.Token));
 
         Assert.IsEmpty(fixture.Harness.Channels.Observation.Commands, "显式要求失败时命令不该被执行");
+        Assert.AreEqual(SshFailureReason.ForwardSetupFailed, error.Reason);
+        Assert.AreEqual(SshForwardFailureKind.XAuthStartFailed, error.FailureKind, "xauth 跑不起来：界面据此建议改用受信任");
     }
 
     /// <summary>非受信模式 + 一个不存在的 <c>xauth</c>：在本机这一侧就失败。</summary>

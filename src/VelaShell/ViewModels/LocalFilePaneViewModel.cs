@@ -227,6 +227,22 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         private set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
+    /// <summary>“名称”列表头的排序方向箭头(仅当前排序列显示,否则为空;与远端栏同一套字形)。</summary>
+    public string NameSortGlyph => GlyphFor("name");
+
+    /// <summary>“大小”列表头的排序方向箭头。</summary>
+    public string SizeSortGlyph => GlyphFor("size");
+
+    /// <summary>“修改时间”列表头的排序方向箭头。</summary>
+    public string ModifiedSortGlyph => GlyphFor("modified");
+
+    private string GlyphFor(string column) =>
+        SortColumn == column
+            ? SortDescending
+                ? " ▼"
+                : " ▲"
+            : string.Empty;
+
     /// <summary>加载配置的目录,失败时回退到用户主目录。</summary>
     public async Task LoadInitialAsync(CancellationToken cancellationToken = default)
     {
@@ -728,6 +744,9 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
             SortColumn = column;
             SortDescending = false;
         }
+        this.RaisePropertyChanged(nameof(NameSortGlyph));
+        this.RaisePropertyChanged(nameof(SizeSortGlyph));
+        this.RaisePropertyChanged(nameof(ModifiedSortGlyph));
         RebuildEntries(_entries.Where(entry => !entry.IsParentEntry));
     }
 

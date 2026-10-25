@@ -77,6 +77,6 @@ public static class RemoteRelay
             info.LastModified == default ? null : info.LastModified,
             progress,
             resumeOffset,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }

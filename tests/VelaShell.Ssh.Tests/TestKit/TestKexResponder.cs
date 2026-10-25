@@ -32,7 +32,7 @@ internal static class TestKexResponder
     {
         SshAlgorithmNames.Curve25519Sha256 or SshAlgorithmNames.Curve25519Sha256LibSsh => true,
         SshAlgorithmNames.EcdhSha2Nistp256 or SshAlgorithmNames.EcdhSha2Nistp384 or SshAlgorithmNames.EcdhSha2Nistp521 => true,
-        SshAlgorithmNames.DiffieHellmanGroup14Sha256 or SshAlgorithmNames.DiffieHellmanGroup16Sha512
+        SshAlgorithmNames.DiffieHellmanGroup14Sha256 or SshAlgorithmNames.DiffieHellmanGroup16Sha512 or SshAlgorithmNames.DiffieHellmanGroup18Sha512
             or SshAlgorithmNames.DiffieHellmanGroup14Sha1 => true,
         SshAlgorithmNames.DiffieHellmanGroupExchangeSha256 => true,
         SshAlgorithmNames.MlKem768X25519Sha256 => true,
@@ -55,6 +55,8 @@ internal static class TestKexResponder
             RespondDiffieHellman(clientPublicValue, DHStandardGroups.rfc3526_2048),
         SshAlgorithmNames.DiffieHellmanGroup16Sha512 =>
             RespondDiffieHellman(clientPublicValue, DHStandardGroups.rfc3526_4096),
+        SshAlgorithmNames.DiffieHellmanGroup18Sha512 =>
+            RespondDiffieHellman(clientPublicValue, DHStandardGroups.rfc3526_8192),
 
         SshAlgorithmNames.MlKem768X25519Sha256 =>
             RespondHybrid(clientPublicValue, kemPublicBytes: 1184, HashAlgorithmName.SHA256, MlKemEncapsulate),

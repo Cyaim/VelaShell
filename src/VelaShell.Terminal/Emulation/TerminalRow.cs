@@ -108,6 +108,16 @@ public sealed class TerminalRow(int columns)
     /// </remarks>
     public int InputEnd { get; set; } = -1;
 
+    /// <summary>
+    /// 以本行开头的逻辑行已经被输出触发器应答过(或者改列宽之前就在屏上):同一行不再应答第二次。
+    /// </summary>
+    /// <remarks>
+    /// 记在行上而不是另建一张按行对象索引的表,理由同 <see cref="Mark" />:行对象在滚动、清屏擦空、
+    /// 改列宽重排时会被复用,挂在行上的东西才能跟着「这一行没了」一起作废(<see cref="ClearMark" />)——
+    /// clear 之后同一个行对象上画出来的新提示,是新的一次提问。
+    /// </remarks>
+    internal bool TriggerSettled { get; set; }
+
     /// <summary>本行的单元格(列)数量。</summary>
     public int Columns { get; private set; } = columns;
 
@@ -680,6 +690,8 @@ public sealed class TerminalRow(int columns)
         ExitCode = null;
         InputStart = -1;
         InputEnd = -1;
+        // 整行作废 = 这是新的一行了:应答过不再算数(clear 之后同一个行对象画出来的新提示要能应答)。
+        TriggerSettled = false;
     }
 
     /// <summary>创建本行的深拷贝,保留单元格、wrapped 标志与时间戳。</summary>
@@ -694,6 +706,7 @@ public sealed class TerminalRow(int columns)
             ExitCode = ExitCode,
             InputStart = InputStart,
             InputEnd = InputEnd,
+            TriggerSettled = TriggerSettled,
             _cells = new TerminalCell[_cells.Length]
         };
         Array.Copy(_cells, clone._cells, _cells.Length);

@@ -9,6 +9,7 @@ using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using VelaShell.Controls.DependencyInjection;
 using VelaShell.Core.Data;
+using VelaShell.Core.Layouts;
 using VelaShell.Core.Localization;
 using VelaShell.Core.Models;
 using VelaShell.Core.Recording;
@@ -153,7 +154,7 @@ public class App : Application
             // 应用内自动更新:更新源 = 本仓库 GitHub Releases 的 latest.json 清单(无需自己架服务器),
             // 便携式原地换版,不限定安装位置。通道跟随设置页的 stable/preview 开关;
             // beta 阶段(尚无正式版)stable 通道自动放宽到最新预发布。
-            .AddSingleton(_ => new Services.Update.GitHubReleaseSource("https://github.com/joesdu/VelaShell"))
+            .AddSingleton(_ => new Services.Update.GitHubReleaseSource(global::VelaShell.Services.Update.ReleasePage.RepositoryUrl))
             .AddSingleton<Services.Update.IReleaseNotesSource>(sp =>
                 sp.GetRequiredService<Services.Update.GitHubReleaseSource>())
             .AddSingleton<IUpdateService>(sp => new UpdateService(
@@ -174,6 +175,23 @@ public class App : Application
         // 容器建完 ≠ 服务建完:这里注册的全是惰性单例,数据库要到第一次解析才真打开。
         // 所以这个点量的是 Avalonia 平台初始化 + XAML 加载 + 容器构造,不含 IO。
         StartupTrace.Mark("DI");
+        // 本机加密密钥在后台先解析好:macOS / Linux 上要问系统密钥链(D-Bus 往返,keyring 锁着时还要等用户解锁),
+        // 不能让第一个读写机密的调用方(会话树加载、插件信任库)替它在 UI 线程上干等。
+        // 解析失败(数据目录写不进去)不在这里报:第一次真用到机密时会照样抛出来。
+        if (_serviceProvider.GetService<IMasterKeyStatusSource>() is { } masterKey)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    _ = masterKey.GetKeyStatus();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"[Secrets] Master key warm-up failed: {ex.Message}");
+                }
+            });
+        }
         _themeService = _serviceProvider.GetRequiredService<IThemeService>();
 
         // 进程级默认代理:覆盖应用内全部 HttpClient(更新检查、Gist 同步、Webhook、
@@ -298,8 +316,11 @@ public class App : Application
                 SessionLogService.CleanupExpired(logRetentionDays);
                 TransferLogService.CleanupExpired(transferLogDirectory, transferLogRetentionDays);
                 // 内置编辑器崩溃留下的临时副本(关窗才删,进程没了就没人删):7 天没碰过的清掉。
-                // remote-edit 里刻意保留的回传失败草稿不在这里清,理由见 BuiltInEditTempFiles。
                 BuiltInEditTempFiles.SweepStale(BuiltInEditTempFiles.TempBase, DateTime.UtcNow);
+                // 外部编辑的副本按状态标记分:干净的同样 7 天后清;有未传改动的(含没有标记的旧副本)是草稿,
+                // 永不自动删,由消息中心列出来(见 RemoteEditDrafts 与 MainWindowViewModel.PublishRemoteEditDraftsAsync)。
+                RemoteEditDrafts.SweepStaleClean(RemoteEditSessionManager.TempRoot, DateTime.UtcNow,
+                    [.. RemoteEditSessionManager.ActiveSessions.Select(static s => Path.GetDirectoryName(s.LocalPath)!)]);
             });
 
             // 过期会话录制清理(随终端会话日志的保留天数)。
@@ -353,7 +374,8 @@ public class App : Application
                     syncService,
                     _serviceProvider.GetService<ISettingsService>(),
                     _serviceProvider.GetService<IQuickCommandRepository>(),
-                    markLocalChangedFirst: quickCommandLoad?.Migrated == true
+                    markLocalChangedFirst: quickCommandLoad?.Migrated == true,
+                    layoutTemplates: _serviceProvider.GetService<LayoutTemplateStore>()
                 );
             }
 
@@ -450,7 +472,8 @@ public class App : Application
         IGistSyncService syncService,
         ISettingsService? settingsService,
         IQuickCommandRepository? quickCommandRepository,
-        bool markLocalChangedFirst = false
+        bool markLocalChangedFirst = false,
+        LayoutTemplateStore? layoutTemplates = null
     )
     {
         _ = Task.Run(async () =>
@@ -484,6 +507,8 @@ public class App : Application
         settingsService?.SettingsSaved += _ => QueueAutoSyncUnlessApplyingRemote(syncService);
         quickCommandRepository?.Changed += (_, _) =>
                 QueueAutoSyncUnlessApplyingRemote(syncService);
+        // 布局模板只有本机的增删改报 Changed;同步合并写进来的报的是 SyncApplied,不会又触发一次推送。
+        layoutTemplates?.Changed += (_, _) => QueueAutoSyncUnlessApplyingRemote(syncService);
     }
 
     private void QueueAutoSyncUnlessApplyingRemote(IGistSyncService syncService)

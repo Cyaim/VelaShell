@@ -1,0 +1,406 @@
+using NSubstitute;
+using ReactiveUI.Primitives;
+using VelaShell.Core.Data;
+using VelaShell.Core.Models;
+using VelaShell.Core.Resources;
+using VelaShell.Core.Ssh;
+using VelaShell.Presentation.Services;
+using VelaShell.Presentation.ViewModels;
+using VelaShell.ViewModels;
+
+namespace VelaShell.Tests.ViewModels;
+
+/// <summary>
+/// 会话健康巡检:用户点开才跑、一次一批、并发有上限、可停、每台有期限;认证那一步不弹框(缺凭据记「需要凭据」,
+/// 要人回答的记「需要确认」);结果表列出每台的结论与卡在哪一步。
+/// </summary>
+[TestClass]
+[TestCategory("HealthCheck")]
+public sealed class SessionHealthCheckViewModelTests
+{
+    // ---- 归类 ----
+
+    [TestMethod]
+    public void Classify_AllStepsPassed_IsHealthy()
+    {
+        SessionHealthOutcome outcome = SessionHealthClassifier.Classify(Report(DiagnosticStepStatus.Success), 42);
+
+        Assert.AreEqual(SessionHealthStatus.Healthy, outcome.Status);
+        Assert.IsNull(outcome.Step);
+        Assert.AreEqual(42, outcome.ElapsedMs);
+    }
+
+    [TestMethod]
+    public void Classify_NoSavedCredentials_NeedsCredentials_NotAFailure()
+    {
+        SessionHealthOutcome outcome = SessionHealthClassifier.Classify(
+            Report(DiagnosticStepStatus.Warning, authDetail: Strings.Get("DiagSvc_NoCredsSkip")), 10);
+
+        Assert.AreEqual(SessionHealthStatus.NeedsCredentials, outcome.Status);
+        Assert.AreEqual("认证", outcome.Step);
+    }
+
+    [TestMethod]
+    public void Classify_LoginNotVerified_IsReachable()
+    {
+        SessionHealthOutcome outcome = SessionHealthClassifier.Classify(
+            Report(DiagnosticStepStatus.Skipped, authDetail: Strings.Get("DiagSvc_LoginNotVerified")), 10);
+
+        Assert.AreEqual(SessionHealthStatus.Reachable, outcome.Status);
+    }
+
+    [TestMethod]
+    public void Classify_TcpFailure_IsFailedAtThatStep_WithTheIssueAndTheReason()
+    {
+        DiagnosticReport report = new()
+        {
+            Steps =
+            [
+                new(0, "DNS", DiagnosticStepStatus.Success),
+                new(1, "TCP", DiagnosticStepStatus.Failed, "Connection refused"),
+                new(2, "SSH", DiagnosticStepStatus.Skipped),
+                new(3, "认证", DiagnosticStepStatus.Skipped),
+            ],
+            IssueTitle = "TCP 建链失败",
+        };
+
+        SessionHealthOutcome outcome = SessionHealthClassifier.Classify(report, 10);
+
+        Assert.AreEqual(SessionHealthStatus.Failed, outcome.Status);
+        Assert.AreEqual("TCP", outcome.Step);
+        StringAssert.Contains(outcome.Detail, "TCP 建链失败");
+        StringAssert.Contains(outcome.Detail, "Connection refused");
+    }
+
+    /// <summary>主机指纹待确认、动态码被谢绝、Tailscale 要复核:不是机器坏了,是巡检不替人回答。</summary>
+    [TestMethod]
+    public void Classify_ThingsOnlyAPersonCanAnswer_NeedAttention()
+    {
+        Exception[] failures =
+        [
+            new VelaSshHostKeyRejectedException("指纹待确认"),
+            new VelaSshAuthenticationCancelledException(Strings.Get("SshErr_KbdAuthUnattended")),
+            new VelaSshConnectionException("连不上", new VelaSshTailscaleAuthenticationException("要复核")),
+        ];
+        foreach (Exception failure in failures)
+        {
+            DiagnosticReport report = Report(DiagnosticStepStatus.Failed, failure: failure, issue: "认证失败");
+
+            Assert.AreEqual(SessionHealthStatus.NeedsAttention, SessionHealthClassifier.Classify(report, 1).Status, failure.Message);
+        }
+        Assert.AreEqual(SessionHealthStatus.Failed,
+            SessionHealthClassifier.Classify(Report(DiagnosticStepStatus.Failed, failure: new VelaSshAuthenticationException("密码不对"), issue: "认证失败"), 1).Status,
+            "密码不对就是连不上,不是待确认。");
+    }
+
+    [TestMethod]
+    public void Classify_BrokenJumpChain_IsFailedAtTheConfiguration()
+    {
+        DiagnosticReport report = new()
+        {
+            Steps = [.. Enumerable.Range(0, 4).Select(i => new DiagnosticStepUpdate(i, $"步骤 {i}", DiagnosticStepStatus.Skipped))],
+            IssueTitle = "跳板链配置错误",
+            IssueDescription = "跳板主机已被删除",
+        };
+
+        SessionHealthOutcome outcome = SessionHealthClassifier.Classify(report, 1);
+
+        Assert.AreEqual(SessionHealthStatus.Failed, outcome.Status);
+        Assert.AreEqual(Strings.Get("Health_StepConfiguration"), outcome.Step);
+        StringAssert.Contains(outcome.Detail, "跳板主机已被删除");
+    }
+
+    // ---- 一批的跑法 ----
+
+    [TestMethod]
+    public async Task Run_ChecksEveryRow_AtMostSixAtOnce_InTheGivenOrder()
+    {
+        IConnectionDiagnosticsService diagnostics = Substitute.For<IConnectionDiagnosticsService>();
+        int inFlight = 0;
+        int peak = 0;
+        var release = new TaskCompletionSource();
+        diagnostics.DiagnoseUnattendedAsync(Arg.Any<SessionProfile>(), Arg.Any<bool>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>())
+                   .Returns(async _ =>
+                   {
+                       int now = Interlocked.Increment(ref inFlight);
+                       InterlockedMax(ref peak, now);
+                       await release.Task;
+                       Interlocked.Decrement(ref inFlight);
+                       return Report(DiagnosticStepStatus.Success);
+                   });
+        var vm = new SessionHealthCheckViewModel(diagnostics);
+        List<SessionProfile> profiles = [.. Enumerable.Range(1, 10).Select(i => Ssh($"web-{i:00}"))];
+
+        Assert.IsTrue(vm.TryStart(profiles));
+        await WaitUntilAsync(() => Volatile.Read(ref inFlight) == SessionHealthCheckViewModel.Concurrency);
+        Assert.IsTrue(vm.IsRunning);
+        Assert.IsFalse(vm.TryStart([Ssh("other")]), "上一轮没查完时不接新的一批。");
+        Assert.AreEqual(Strings.Format("Health_SummaryRunning", 0, 10, Strings.Format("Health_Summary", 10, 0, 0, 0)), vm.Summary,
+            "查着时汇总前面带进度。");
+        release.SetResult();
+        await WaitUntilAsync(() => !vm.IsRunning);
+
+        Assert.AreEqual(SessionHealthCheckViewModel.Concurrency, Volatile.Read(ref peak), "最多六台同时查。");
+        Assert.AreSequenceEqual([.. profiles.Select(p => p.Name)], [.. vm.Rows.Select(r => r.Name)], "按给的顺序列。");
+        Assert.IsTrue(vm.Rows.All(r => r.Status == SessionHealthStatus.Healthy));
+        Assert.AreEqual(Strings.Format("Health_Summary", 10, 10, 0, 0), vm.Summary);
+    }
+
+    [TestMethod]
+    public async Task NonSshProfiles_AreListed_ButNeverProbed()
+    {
+        IConnectionDiagnosticsService diagnostics = Passing();
+        var vm = new SessionHealthCheckViewModel(diagnostics);
+        SessionProfile ftp = Ssh("files");
+        ftp.ConnectionType = ConnectionType.FTP;
+
+        vm.TryStart([Ssh("web"), ftp]);
+        await WaitUntilAsync(() => !vm.IsRunning);
+
+        Assert.AreEqual(SessionHealthStatus.Unsupported, vm.Rows[1].Status);
+        Assert.AreEqual(Strings.Get("Health_UnsupportedDetail"), vm.Rows[1].Detail);
+        await diagnostics.DidNotReceive().DiagnoseUnattendedAsync(ftp, Arg.Any<bool>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>());
+        await diagnostics.Received(1).DiagnoseUnattendedAsync(Arg.Any<SessionProfile>(), Arg.Any<bool>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    public async Task Stop_CancelsWhatIsStillRunningOrWaiting()
+    {
+        IConnectionDiagnosticsService diagnostics = Substitute.For<IConnectionDiagnosticsService>();
+        int started = 0;
+        diagnostics.DiagnoseUnattendedAsync(Arg.Any<SessionProfile>(), Arg.Any<bool>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>())
+                   .Returns(async call =>
+                   {
+                       Interlocked.Increment(ref started);
+                       await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+                       return Report(DiagnosticStepStatus.Success);
+                   });
+        var vm = new SessionHealthCheckViewModel(diagnostics);
+
+        vm.TryStart([.. Enumerable.Range(1, 8).Select(i => Ssh($"h{i}"))]);
+        await WaitUntilAsync(() => Volatile.Read(ref started) == SessionHealthCheckViewModel.Concurrency);
+        await vm.StopCommand.Execute().FirstAsync();
+        await WaitUntilAsync(() => !vm.IsRunning);
+
+        Assert.IsTrue(vm.Rows.All(r => r.Status == SessionHealthStatus.Cancelled), string.Join(", ", vm.Rows.Select(r => r.Status)));
+        Assert.AreEqual(SessionHealthCheckViewModel.Concurrency, Volatile.Read(ref started), "排着队的那两台没开始查。");
+        Assert.AreEqual(Strings.Get("Health_NotChecked"), vm.Rows[^1].Detail);
+    }
+
+    [TestMethod]
+    public async Task ASlowHost_TimesOut_WithoutHoldingUpTheOthers()
+    {
+        IConnectionDiagnosticsService diagnostics = Substitute.For<IConnectionDiagnosticsService>();
+        diagnostics.DiagnoseUnattendedAsync(Arg.Any<SessionProfile>(), Arg.Any<bool>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>())
+                   .Returns(async call =>
+                   {
+                       if (call.Arg<SessionProfile>().Name == "slow")
+                       {
+                           await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+                       }
+                       return Report(DiagnosticStepStatus.Success);
+                   });
+        var vm = new SessionHealthCheckViewModel(diagnostics, perHostTimeout: TimeSpan.FromMilliseconds(200));
+
+        vm.TryStart([Ssh("slow"), Ssh("fast")]);
+        await WaitUntilAsync(() => !vm.IsRunning);
+
+        Assert.AreEqual(SessionHealthStatus.TimedOut, vm.Rows[0].Status);
+        Assert.AreEqual(SessionHealthStatus.Healthy, vm.Rows[1].Status);
+        Assert.IsTrue(vm.Rows[0].IsProblem);
+    }
+
+    /// <summary>关掉「验证登录」:下一轮只查到 SSH 握手(交给诊断的是 false);开关在这次启动里记住。</summary>
+    [TestMethod]
+    public async Task VerifyLogin_Off_IsPassedToTheDiagnosis()
+    {
+        IConnectionDiagnosticsService diagnostics = Passing();
+        var vm = new SessionHealthCheckViewModel(diagnostics);
+        try
+        {
+            await vm.ToggleVerifyLoginCommand.Execute().FirstAsync();
+            Assert.IsFalse(vm.VerifyLogin);
+            Assert.IsFalse(new SessionHealthCheckViewModel(diagnostics).VerifyLogin, "关掉窗口再开沿用。");
+
+            vm.TryStart([Ssh("web")]);
+            await WaitUntilAsync(() => !vm.IsRunning);
+
+            await diagnostics.Received(1).DiagnoseUnattendedAsync(Arg.Any<SessionProfile>(), false, Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            vm.VerifyLogin = true;
+        }
+    }
+
+    [TestMethod]
+    public async Task ProblemsOnly_KeepsTheRowsThatNeedAttention_AndTheReportListsEveryRow()
+    {
+        IConnectionDiagnosticsService diagnostics = Substitute.For<IConnectionDiagnosticsService>();
+        diagnostics.DiagnoseUnattendedAsync(Arg.Any<SessionProfile>(), Arg.Any<bool>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>())
+                   .Returns(call => call.Arg<SessionProfile>().Name switch
+                   {
+                       "ok" => Report(DiagnosticStepStatus.Success),
+                       "nocreds" => Report(DiagnosticStepStatus.Warning),
+                       _ => Report(DiagnosticStepStatus.Failed, issue: "认证失败"),
+                   });
+        var vm = new SessionHealthCheckViewModel(diagnostics);
+        vm.TryStart([Ssh("ok"), Ssh("nocreds"), Ssh("broken")]);
+        await WaitUntilAsync(() => !vm.IsRunning);
+
+        await vm.ToggleProblemsOnlyCommand.Execute().FirstAsync();
+
+        Assert.AreSequenceEqual(["nocreds", "broken"], [.. vm.VisibleRows.Select(r => r.Name)]);
+        Assert.AreEqual(Strings.Format("Health_Summary", 3, 1, 1, 1), vm.Summary);
+        string report = vm.BuildReportText();
+        StringAssert.Contains(report, "ok\t");
+        StringAssert.Contains(report, "broken\t");
+        StringAssert.Contains(report, Strings.Get("Health_StatusFailed"));
+        Assert.HasCount(4, report.TrimEnd().Split('\n'), "表头 + 每台一行(过滤只管显示)。");
+    }
+
+    /// <summary>编辑过配置之后重查那一台:先从库里取最新的那份,只查它一台。</summary>
+    [TestMethod]
+    public async Task Recheck_ReloadsTheProfileFromTheStore_AndChecksOnlyThatRow()
+    {
+        IConnectionDiagnosticsService diagnostics = Passing();
+        SessionProfile web = Ssh("web");
+        SessionProfile db = Ssh("db");
+        ISessionRepository repository = Substitute.For<ISessionRepository>();
+        SessionProfile edited = web.Clone();
+        edited.Name = "web (改过)";
+        repository.GetSessionAsync(web.Id).Returns(edited);
+        var vm = new SessionHealthCheckViewModel(diagnostics, repository);
+        vm.TryStart([web, db]);
+        await WaitUntilAsync(() => !vm.IsRunning);
+        diagnostics.ClearReceivedCalls();
+
+        await vm.RecheckAsync(web.Id);
+
+        Assert.AreEqual("web (改过)", vm.Rows[0].Name);
+        await diagnostics.Received(1).DiagnoseUnattendedAsync(edited, Arg.Any<bool>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>());
+        await diagnostics.DidNotReceive().DiagnoseUnattendedAsync(db, Arg.Any<bool>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    public async Task RowActions_RaiseDiagnoseAndEditForThatProfile()
+    {
+        var vm = new SessionHealthCheckViewModel(Passing());
+        SessionProfile web = Ssh("web");
+        vm.TryStart([web]);
+        await WaitUntilAsync(() => !vm.IsRunning);
+        SessionProfile? diagnosed = null;
+        SessionProfile? edited = null;
+        vm.DiagnoseRequested += p => diagnosed = p;
+        vm.EditRequested += p => edited = p;
+
+        await vm.DiagnoseCommand.Execute(vm.Rows[0]).FirstAsync();
+        await vm.EditCommand.Execute(vm.Rows[0]).FirstAsync();
+
+        Assert.AreSame(web, diagnosed);
+        Assert.AreSame(web, edited);
+    }
+
+    // ---- 入口 ----
+
+    [TestMethod]
+    public async Task TreeMenus_RaiseTheHealthCheckRequest_ForTheGroupAndTheSelection()
+    {
+        ISessionRepository repository = Substitute.For<ISessionRepository>();
+        var group = new ServerGroup { Id = Guid.NewGuid(), Name = "web", SortOrder = 0 };
+        List<SessionProfile> sessions =
+        [
+            new() { Id = Guid.NewGuid(), Name = "web-1", Host = "a", GroupId = group.Id },
+            new() { Id = Guid.NewGuid(), Name = "web-2", Host = "b", GroupId = group.Id },
+            new() { Id = Guid.NewGuid(), Name = "db", Host = "c" }
+        ];
+        repository.GetAllGroupsAsync().Returns(Task.FromResult(new List<ServerGroup> { group }));
+        repository.GetAllSessionsAsync().Returns(Task.FromResult(sessions));
+        var tree = new SessionTreeViewModel(repository);
+        await tree.LoadCommand.Execute().FirstAsync();
+        List<IReadOnlyList<SessionProfile>> requests = [];
+        tree.HealthCheckRequested += requests.Add;
+
+        tree.SelectedNode = tree.Nodes.Single(static n => n.IsGroup);
+        await tree.HealthCheckGroupCommand.Execute().FirstAsync();
+        tree.SelectedNode = tree.Rows.Single(static r => r.Name == "web-2");
+        tree.ToggleMultiSelection(tree.Rows.Single(static r => r.Name == "db"));
+        await tree.HealthCheckSelectedCommand.Execute().FirstAsync();
+
+        Assert.AreSequenceEqual(["web-1", "web-2"], [.. requests[0].Select(static p => p.Name)], "整组");
+        Assert.AreSequenceEqual(["web-2", "db"], [.. requests[1].Select(static p => p.Name)], "多选,按树上的顺序");
+        Assert.AreEqual(Strings.Format("Tree_HealthCheckSelected", 2), tree.HealthCheckSelectedText);
+    }
+
+    [TestMethod]
+    public void CommandPalette_HealthChecksEverySavedConnection()
+    {
+        ISessionRepository repository = Substitute.For<ISessionRepository>();
+        repository.GetAllSessionsAsync().Returns(Task.FromResult(new List<SessionProfile> { Ssh("b-host"), Ssh("a-host") }));
+        var vm = new MainWindowViewModel(sessionRepository: repository);
+        IReadOnlyList<SessionProfile>? requested = null;
+        vm.HealthCheckRequested += profiles => requested = profiles;
+
+        Assert.IsTrue(vm.Commands.Execute("tools.healthCheck"));
+        SpinWait.SpinUntil(() => requested is not null, TimeSpan.FromSeconds(5));
+
+        Assert.IsNotNull(requested);
+        Assert.AreSequenceEqual(["a-host", "b-host"], [.. requested.Select(p => p.Name)]);
+    }
+
+    // ---- 辅助 ----
+
+    private static SessionProfile Ssh(string name) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = name,
+        Host = $"{name}.example.com",
+        Username = "root",
+        AuthMethod = AuthMethod.Password,
+        Password = "secret",
+    };
+
+    private static IConnectionDiagnosticsService Passing()
+    {
+        IConnectionDiagnosticsService diagnostics = Substitute.For<IConnectionDiagnosticsService>();
+        diagnostics.DiagnoseUnattendedAsync(Arg.Any<SessionProfile>(), Arg.Any<bool>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>())
+                   .Returns(_ => Report(DiagnosticStepStatus.Success));
+        return diagnostics;
+    }
+
+    private static DiagnosticReport Report(DiagnosticStepStatus auth, string? authDetail = null, Exception? failure = null, string? issue = null) => new()
+    {
+        Steps =
+        [
+            new(0, "DNS", DiagnosticStepStatus.Success),
+            new(1, "TCP", DiagnosticStepStatus.Success),
+            new(2, "SSH", DiagnosticStepStatus.Success),
+            new(3, "认证", auth, authDetail ?? failure?.Message),
+        ],
+        IssueTitle = issue,
+        Failure = failure,
+    };
+
+    private static void InterlockedMax(ref int target, int value)
+    {
+        int current;
+        do
+        {
+            current = Volatile.Read(ref target);
+            if (value <= current)
+            {
+                return;
+            }
+        }
+        while (Interlocked.CompareExchange(ref target, value, current) != current);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        for (int i = 0; i < 500 && !condition(); i++)
+        {
+            await Task.Delay(10);
+        }
+        Assert.IsTrue(condition(), "等了 5 秒条件仍不成立。");
+    }
+}

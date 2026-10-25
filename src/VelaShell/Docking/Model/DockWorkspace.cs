@@ -9,6 +9,9 @@ namespace VelaShell.Docking.Model;
 /// </summary>
 public sealed class DockWorkspace : DockElement
 {
+    /// <summary>当前异步流程里「新文档落进哪一格」的票据(见 <see cref="TargetNewDocumentsAt" />)。</summary>
+    private readonly AsyncLocal<TargetTicket?> _targetTicket = new();
+
     private DockNode _root;
 
     /// <summary>创建仅含主组的空工作区,主组即为初始布局树根。</summary>
@@ -229,20 +232,101 @@ public sealed class DockWorkspace : DockElement
 
     // ---- 增删与激活 ----
 
-    /// <summary>把文档放进最合适的窗格并激活(落点规则见 <see cref="TargetGroupForNewDocument" />)。</summary>
-    public void AddDocument(DockDocument document)
+    /// <summary>
+    /// 把文档放进窗格并激活:给了 <paramref name="target" />(且还在树上)就落进那一格,
+    /// 否则按默认规则(见 <see cref="TargetGroupForNewDocument" />)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 显式目标压过「空窗格优先」:标签条上的「+」是在说「在<b>这一格</b>里开」,
+    /// 布局里另有一块空窗格不改变这个意思(维护者 2026-10-25 定)。
+    /// </para>
+    /// <para>
+    /// 落点的先后:显式目标 &gt; 当前异步流程带着的票据(<see cref="TargetNewDocumentsAt" />)&gt;
+    /// <see cref="PlacementResolver" /> &gt; 默认规则。
+    /// </para>
+    /// </remarks>
+    /// <param name="document">新文档。</param>
+    /// <param name="target">落进哪一格;null = 不指定。</param>
+    public void AddDocument(DockDocument document, DockGroup? target = null)
     {
         ArgumentNullException.ThrowIfNull(document);
-        if (PlacementResolver?.Invoke(document) is { } placement && IsOnTree(placement.Group))
+        DockGroup? group = target is not null && IsOnTree(target) ? target : ClaimTargetTicket();
+        if (group is null && PlacementResolver?.Invoke(document) is { } placement && IsOnTree(placement.Group))
         {
             AddPlaced(document, placement);
             return;
         }
-        TargetGroupForNewDocument().Documents.Add(document);
+        (group ?? TargetGroupForNewDocument()).Documents.Add(document);
         // 先报"来了"再激活:订阅方(宿主的每标签接线)要在活动标签切过去之前就位,
         // 否则激活回调里读到的还是一个没接好线的标签。
         DocumentAdded?.Invoke(document);
         ActivateDocument(document);
+    }
+
+    /// <summary>
+    /// 让当前异步流程里建的<b>第一个</b>新文档落进 <paramref name="group" />(释放返回值即作废)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 标签条上的「+」先弹新建连接对话框、再走连接流程(凭据框、握手、证书确认……),标签是那些流程里
+    /// 很深的地方自己 <see cref="AddDocument" /> 出来的。与其给每一层都加一个「放到哪」的参数,
+    /// 不如在 <see cref="AsyncLocal{T}" /> 里带一张票:异步上下文顺着 <c>await</c> 传下去,对话框开多久都认得出是谁;
+    /// 别的流程(自动重连、还原布局模板)看不到这张票,不会被拐进这一格。
+    /// </para>
+    /// <para>
+    /// 一张票只用一次:连接流程里后建的东西(同一流程顺手开的第二个文档)照默认规则落。释放之后作废 ——
+    /// 流程里另起的后台任务会继承上下文,不能让它们在流程结束之后建的东西也落进这一格。
+    /// 那一格在流程途中被关掉了,就按默认规则落。
+    /// </para>
+    /// <para>
+    /// 必须在 <c>async</c> 方法里调用并在同一个方法里释放:<see cref="AsyncLocal{T}" /> 的改动跟着那个方法的执行上下文走,
+    /// 方法返回时自动退回调用方原来的样子。
+    /// </para>
+    /// </remarks>
+    /// <param name="group">落进哪一格。</param>
+    /// <returns>释放即作废票据。</returns>
+    public IDisposable TargetNewDocumentsAt(DockGroup group)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        TargetTicket? previous = _targetTicket.Value;
+        var ticket = new TargetTicket(group);
+        _targetTicket.Value = ticket;
+        return new TargetScope(this, ticket, previous);
+    }
+
+    /// <summary>取当前异步流程里还没用过、没作废的票据所指的那一格(用掉它);没有或那一格已不在树上时为 null。</summary>
+    private DockGroup? ClaimTargetTicket()
+    {
+        if (_targetTicket.Value is not { Used: false, Expired: false } ticket)
+        {
+            return null;
+        }
+        ticket.Used = true;
+        return IsOnTree(ticket.Group) ? ticket.Group : null;
+    }
+
+    /// <summary>一张「落进这一格」的票据。</summary>
+    private sealed class TargetTicket(DockGroup group)
+    {
+        public DockGroup Group { get; } = group;
+
+        public bool Used { get; set; }
+
+        public bool Expired { get; set; }
+    }
+
+    /// <summary>释放即作废票据,并把上下文退回发票之前的样子。</summary>
+    private sealed class TargetScope(DockWorkspace owner, TargetTicket ticket, TargetTicket? previous) : IDisposable
+    {
+        public void Dispose()
+        {
+            ticket.Expired = true;
+            if (ReferenceEquals(owner._targetTicket.Value, ticket))
+            {
+                owner._targetTicket.Value = previous;
+            }
+        }
     }
 
     /// <summary>按外部裁决放下新文档(见 <see cref="PlacementResolver" />)。</summary>
@@ -277,7 +361,7 @@ public sealed class DockWorkspace : DockElement
         }
     }
 
-    /// <summary>新文档的落点:空窗格 &gt; 正在用的窗格 &gt; 主组。</summary>
+    /// <summary>新文档的落点(没有显式目标时):空窗格 &gt; 正在用的窗格 &gt; 主组。</summary>
     /// <remarks>
     /// <para>
     /// <b>空窗格优先</b>:拆分只有一个标签的组会在原地留下一块写着"拖放标签到这里"的空面板,

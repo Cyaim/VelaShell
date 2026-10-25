@@ -41,6 +41,7 @@ public sealed class AgentConnectTests
             async () => await SshAgentClient.ConnectAsync(""));
 
         Assert.AreEqual(SshFailureReason.AgentNotRunning, error.Reason);
+        Assert.AreEqual(SshAgentFailureKind.NotRunning, error.FailureKind);
     }
 
     [TestMethod]
@@ -54,6 +55,8 @@ public sealed class AgentConnectTests
             async () => await SshAgentClient.ConnectAsync(missing));
 
         Assert.AreEqual(SshFailureReason.AgentNotRunning, error.Reason, error.Message);
+        Assert.AreEqual(SshAgentFailureKind.NotRunning, error.FailureKind);
+        Assert.AreEqual(missing, error.Endpoint);
     }
 
     [TestMethod]

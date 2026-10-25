@@ -132,7 +132,10 @@ public sealed class AgentForwarder : IIncomingChannelHandler, IAsyncDisposable
             if (!accepted)
             {
                 throw new SshForwardException(SshFailureReason.ForwardRejected,
-                    "服务端拒绝了 agent 转发请求。常见原因是 sshd_config 里 AllowAgentForwarding no。");
+                    "服务端拒绝了 agent 转发请求。常见原因是 sshd_config 里 AllowAgentForwarding no。")
+                {
+                    FailureKind = SshForwardFailureKind.AgentForwardRejected,
+                };
             }
 
             return forwarder;
@@ -163,7 +166,10 @@ public sealed class AgentForwarder : IIncomingChannelHandler, IAsyncDisposable
         {
             throw new SshForwardException(
                 ex is SshException agentFailure ? agentFailure.Reason : SshFailureReason.AgentUnavailable,
-                $"本机 ssh-agent 不可用，没有请求 agent 转发：{ex.Message}", ex);
+                $"本机 ssh-agent 不可用，没有请求 agent 转发：{ex.Message}", ex)
+            {
+                FailureKind = SshForwardFailureKind.LocalAgentUnavailable,
+            };
         }
     }
 
@@ -211,7 +217,11 @@ public sealed class AgentForwarder : IIncomingChannelHandler, IAsyncDisposable
         if (!_slots.Wait(0, CancellationToken.None))
         {
             throw new SshForwardException(SshFailureReason.LimitExceeded,
-                $"同时打开的 agent 通道已达上限 {_options.MaxConnections}。");
+                $"同时打开的 agent 通道已达上限 {_options.MaxConnections}。")
+            {
+                FailureKind = SshForwardFailureKind.ChannelLimitReached,
+                Limit = _options.MaxConnections,
+            };
         }
 
         try
@@ -231,7 +241,10 @@ public sealed class AgentForwarder : IIncomingChannelHandler, IAsyncDisposable
             // 消息会作为拒绝理由发给服务端 —— 只说「本机 agent 不可用」，本机的路径、管道名不往外送。
             throw new SshForwardException(
                 ex is SshException agentFailure ? agentFailure.Reason : SshFailureReason.AgentUnavailable,
-                "本机 ssh-agent 不可用。", ex);
+                "本机 ssh-agent 不可用。", ex)
+            {
+                FailureKind = SshForwardFailureKind.LocalAgentUnavailable,
+            };
         }
 
         // ⚠️ 窗口至少要装得下**一整条**最长的 agent 报文（长度前缀 + 256 KiB）。

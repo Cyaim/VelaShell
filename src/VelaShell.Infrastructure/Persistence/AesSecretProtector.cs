@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
 using VelaShell.Core.Data;
@@ -7,31 +5,46 @@ using VelaShell.Core.Data;
 namespace VelaShell.Infrastructure.Persistence;
 
 /// <summary>
-/// AES-256-GCM 敏感字段加密。密钥保存在本地密钥文件(首次使用时生成 32 字节随机密钥):
-/// Windows 上以 DPAPI(CurrentUser)密文落盘,其余平台明文 + 0600 权限;历史明文密钥会自动升级。
+/// AES-256-GCM 敏感字段加密。本机加密密钥由 <see cref="MasterKeyResolver" /> 解析:macOS / Linux 上交给系统密钥链保管
+/// (钥匙串 / Secret Service),用不了时回落到本地密钥文件(明文 + 0600);Windows 上本地密钥文件以 DPAPI(CurrentUser)包裹。
 /// 密文格式 <c>enc1:base64(nonce ‖ tag ‖ ciphertext)</c>;无前缀的输入视为历史明文。
 /// </summary>
-public sealed class AesSecretProtector : ISecretProtector
+/// <remarks>
+/// 解密时依次尝试解析出的每一把密钥(GCM 认证标签会如实说明是不是这一把),加密只用第一把 ——
+/// 密钥链暂时不可用的那几轮另起的本地密钥、旧版本另生成的密钥,都靠这一点在之后照样解得开。
+/// 密文格式因此不必带密钥编号,存量密文一字不改。
+/// </remarks>
+public sealed class AesSecretProtector : ISecretProtector, IMasterKeyStatusSource
 {
     private const string Prefix = "enc1:";
     private const int NonceSize = 12;
     private const int TagSize = 16;
 
-    private readonly Lazy<byte[]> _key;
+    private readonly Lazy<MasterKeyRing> _keys;
 
-    /// <summary>使用存储路径配置中的密钥文件位置构造保护器。</summary>
+    /// <summary>
+    /// 应用实际使用的保护器:数据根里的密钥文件 + 这个平台的系统密钥链(见 <see cref="MasterKeyStores.ForCurrentPlatform" />)。
+    /// </summary>
     public AesSecretProtector(VelaShellStoragePaths paths)
-        : this((paths ?? throw new ArgumentNullException(nameof(paths))).SecretKeyFile) { }
+        : this(new MasterKeyResolver((paths ?? throw new ArgumentNullException(nameof(paths))).SecretKeyFile,
+            MasterKeyStores.ForCurrentPlatform(paths.RootDirectory))) { }
 
-    /// <summary>使用指定密钥文件路径构造保护器;密钥在首次使用时惰性加载或生成。</summary>
+    /// <summary>
+    /// 只用指定的本地密钥文件、不碰系统密钥链的保护器(测试与工具用 —— 跑测试不该往开发机的钥匙串里写条目)。
+    /// 密钥在首次使用时惰性加载或生成。
+    /// </summary>
     public AesSecretProtector(string keyFilePath)
+        : this(new MasterKeyResolver(keyFilePath, store: null)) { }
+
+    /// <summary>用给定的解析器构造;密钥在首次使用(或首次查询 <see cref="GetKeyStatus" />)时解析一次。</summary>
+    public AesSecretProtector(MasterKeyResolver resolver)
     {
-        if (string.IsNullOrWhiteSpace(keyFilePath))
-        {
-            throw new ArgumentException(@"Key file path is required.", nameof(keyFilePath));
-        }
-        _key = new(() => LoadOrCreateKey(keyFilePath), LazyThreadSafetyMode.ExecutionAndPublication);
+        ArgumentNullException.ThrowIfNull(resolver);
+        _keys = new(resolver.Resolve, LazyThreadSafetyMode.ExecutionAndPublication);
     }
+
+    /// <inheritdoc />
+    public MasterKeyStatus GetKeyStatus() => _keys.Value.Status;
 
     /// <summary>加密明文并返回带 <c>enc1:</c> 前缀的密文;空值或已加密的输入原样返回。</summary>
     public string? Protect(string? plaintext)
@@ -44,7 +57,7 @@ public sealed class AesSecretProtector : ISecretProtector
         byte[] plainBytes = Encoding.UTF8.GetBytes(plaintext);
         byte[] cipher = new byte[plainBytes.Length];
         byte[] tag = new byte[TagSize];
-        using var aes = new AesGcm(_key.Value, TagSize);
+        using var aes = new AesGcm(_keys.Value.Current, TagSize);
         aes.Encrypt(nonce, plainBytes, cipher, tag);
         byte[] blob = new byte[NonceSize + TagSize + cipher.Length];
         nonce.CopyTo(blob, 0);
@@ -56,95 +69,52 @@ public sealed class AesSecretProtector : ISecretProtector
     /// <summary>解密带 <c>enc1:</c> 前缀的密文;无前缀的历史明文原样返回,解密失败时返回原始输入。</summary>
     public string? Unprotect(string? ciphertext)
     {
+        // 密钥不匹配或数据损坏:返回原文以避免连锁失败,连接时会以认证失败暴露;存回去时密文也不会丢。
+        return TryUnprotect(ciphertext, out string? plaintext) ? plaintext : ciphertext;
+    }
+
+    /// <inheritdoc />
+    public bool TryUnprotect(string? ciphertext, out string? plaintext)
+    {
+        plaintext = ciphertext;
         if (string.IsNullOrEmpty(ciphertext) || !ciphertext.StartsWith(Prefix, StringComparison.Ordinal))
         {
-            return ciphertext;
-        }
-        try
-        {
-            byte[] blob = Convert.FromBase64String(ciphertext[Prefix.Length..]);
-            if (blob.Length < NonceSize + TagSize)
-            {
-                return ciphertext;
-            }
-            Span<byte> nonce = blob.AsSpan(0, NonceSize);
-            Span<byte> tag = blob.AsSpan(NonceSize, TagSize);
-            Span<byte> cipher = blob.AsSpan(NonceSize + TagSize);
-            byte[] plain = new byte[cipher.Length];
-            using var aes = new AesGcm(_key.Value, TagSize);
-            aes.Decrypt(nonce, cipher, tag, plain);
-            return Encoding.UTF8.GetString(plain);
-        }
-        catch (Exception ex) when (ex is FormatException or CryptographicException)
-        {
-            // 密钥不匹配或数据损坏:返回原文以避免连锁失败,连接时会以认证失败暴露。
-            return ciphertext;
-        }
-    }
-
-    private static byte[] LoadOrCreateKey(string keyFilePath)
-    {
-        if (File.Exists(keyFilePath))
-        {
-            byte[] stored = File.ReadAllBytes(keyFilePath);
-
-            // Windows:密钥以 DPAPI(CurrentUser)密文落盘。历史版本可能是 32 字节明文,
-            // 解包失败时回退按明文处理,并顺带升级为 DPAPI 密文。
-            if (OperatingSystem.IsWindows())
-            {
-                if (TryDpapiUnprotect(stored, out byte[] unwrapped) && unwrapped.Length == 32)
-                {
-                    return unwrapped;
-                }
-                if (stored.Length == 32)
-                {
-                    WriteKey(keyFilePath, stored); // 明文 → DPAPI 密文迁移
-                    return stored;
-                }
-            }
-            else if (stored.Length == 32)
-            {
-                return stored;
-            }
-
-            // 文件在、却用不了(换了 Windows 账户 / 重装系统后 DPAPI 解不开,或者被截断):
-            // 先把它原样挪开再生成新密钥。直接覆盖的话,换回原账户、找回原密钥的那条路就被这里亲手堵死了,
-            // 连"密钥被换过"这件事本身都查无实据 —— 用它加密的连接口令与插件信任库会一并变成永远解不开的密文。
-            string aside = $"{keyFilePath}.unreadable-{DateTime.UtcNow:yyyyMMddHHmmss}";
-            File.Move(keyFilePath, aside, overwrite: true);
-            Trace.WriteLine($"[Secrets] {keyFilePath} could not be used; kept it as '{aside}' and generated a new key");
-        }
-        byte[] key = RandomNumberGenerator.GetBytes(32);
-        WriteKey(keyFilePath, key);
-        return key;
-    }
-
-    /// <summary>写入密钥:Windows 用 DPAPI(CurrentUser)包裹,其余平台明文 + 0600 权限。</summary>
-    private static void WriteKey(string keyFilePath, byte[] key)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(keyFilePath)!);
-        if (OperatingSystem.IsWindows())
-        {
-            byte[] wrapped = ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser);
-            File.WriteAllBytes(keyFilePath, wrapped);
-            return;
-        }
-        File.WriteAllBytes(keyFilePath, key);
-        File.SetUnixFileMode(keyFilePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static bool TryDpapiUnprotect(byte[] wrapped, out byte[] key)
-    {
-        try
-        {
-            key = ProtectedData.Unprotect(wrapped, null, DataProtectionScope.CurrentUser);
             return true;
         }
-        catch (CryptographicException)
+        byte[] blob;
+        try
         {
-            key = [];
+            blob = Convert.FromBase64String(ciphertext[Prefix.Length..]);
+        }
+        catch (FormatException)
+        {
+            plaintext = null;
             return false;
         }
+        if (blob.Length < NonceSize + TagSize)
+        {
+            plaintext = null;
+            return false;
+        }
+        ReadOnlySpan<byte> nonce = blob.AsSpan(0, NonceSize);
+        ReadOnlySpan<byte> tag = blob.AsSpan(NonceSize, TagSize);
+        ReadOnlySpan<byte> cipher = blob.AsSpan(NonceSize + TagSize);
+        byte[] plain = new byte[cipher.Length];
+        foreach (byte[] key in _keys.Value.Keys)
+        {
+            try
+            {
+                using var aes = new AesGcm(key, TagSize);
+                aes.Decrypt(nonce, cipher, tag, plain);
+                plaintext = Encoding.UTF8.GetString(plain);
+                return true;
+            }
+            catch (CryptographicException)
+            {
+                // 认证标签对不上:不是这一把,试下一把。
+            }
+        }
+        plaintext = null;
+        return false;
     }
 }

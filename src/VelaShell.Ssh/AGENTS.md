@@ -306,10 +306,13 @@ TFM、`LangVersion`、`Nullable` 由仓库根 `Directory.Build.props` 统一给�
   `ProxyTransportDialer` 用界面语言拼；认证的逐条尝试记录（`SshAuthAttempt.Details`）、通道失败（`SshChannelException.FailureKind`）、
   私钥 / 证书问题（`SshKeyProblemKind` 与 `Origin` 等属性）、主机证书问题（`KnownHostLookup.CertificateProblemDetail`）按结构化的出处翻
   （宿主 `SshInterop.Diagnostics.cs`；库里这几类抛出点有没有归类由 `StructuredFailureCoverageTests` 扫源码守着）。
-  仍是库的中文原文的有：建连时主机密钥被拒的几种（解析不了、类型与协商的不符、RSA 太短、签名验不过 —— 都是 `HostKeyRejected`，宿主却当成
-  `VelaHostKeyPolicy` 写的理由照用）、ssh_config 配置不成立与端口占用（`InvalidConfiguration` / `ForwardBindFailed`）、X11 转发起不来
-  （`ForwardSetupFailed`）、agent 不可用（`AgentUnavailable`）、代理握手的拒绝与超时（宿主拼进 `Msg_ProxyConnectFailed` 后半句的仍是库原文）、
-  跳板的「连不上跳板 X」、没有 `Exception` 的转发错误（`ForwardErrorEventArgs.Message`）、SFTP 扩展缺失的那段说明。
+  建连失败（`SshConnectException.FailureKind`：主机密钥是库自己拒的还是策略拒的、代理握手的应答码与状态行、哪一跳的跳板、冷门的 TCP 错误）、
+  转发器起不来（`SshForwardException.FailureKind`：端口占用、服务端拒绝监听、X11 / xauth）、agent（`SshAgentException.FailureKind`）、
+  SFTP 起不来与缺扩展（`SftpUnavailableException.FailureKind`、`SftpException.MissingExtensions`）、没带异常的转发错误
+  （`ForwardErrorEventArgs` 的 `Target` / `Timeout` / `Limit` / `RejectedCount`）同样按结构化的出处翻，扫描同样守着。
+  仍是库的中文原文的有：配置不成立（`InvalidConfiguration`：ssh_config 的 ProxyJump 成环 / 跳数超限、ProxyCommand 模板与代入、代理之外的配置校验）、
+  TLS 拨号失败（`TlsFailed`）、known_hosts 读写失败（`HostKeyStoreFailed`，宿主不走库的 known_hosts）、私钥 / 证书以外的 `Unsupported`
+  （不支持的算法、格式版本）、库自带的主机密钥策略（`KnownHostsPolicy` / `PinnedFingerprintHostKeyPolicy`）写的拒绝理由。
   要翻就先给它们加结构化的出处（枚举 / 属性），不要在宿主里解析句子。
 
 ---

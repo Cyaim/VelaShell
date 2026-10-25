@@ -30,12 +30,6 @@ public sealed class McpManager(IPluginContext context) : IAsyncDisposable
     private readonly Dictionary<string, Connection> _connections = [];
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    /// <summary>危险操作审批(与 AgentToolbox 共用同一交互)。未设置视为拒绝。</summary>
-    public Func<ApprovalRequest, Task<bool>>? ApprovalHandler { get; set; }
-
-    /// <summary>审批方式(与内置工具共用同一设置)。</summary>
-    public ApprovalMode Approval { get; set; } = ApprovalMode.Ask;
-
     /// <summary>把一条工具执行告警写进插件日志(供嵌套的工具包装器用,它拿不到 <c>context</c>)。</summary>
     internal void LogToolWarning(string message) => context.Log.Warn(message);
 
@@ -61,9 +55,16 @@ public sealed class McpManager(IPluginContext context) : IAsyncDisposable
     /// 汇集全部启用服务器的工具。逐服务器容错:单个失败不影响其余,
     /// 错误以 "<c>名称: 原因</c>" 文本返回给调用方展示。
     /// </summary>
+    /// <param name="servers">配置的服务器。</param>
+    /// <param name="approval">
+    /// 这一轮的审批上下文。工具包装器各自捕获传进来的这一份,<b>不读管理器上的共享状态</b>:
+    /// 连接跨轮次、跨聊天复用,IM 桥接里几个聊天的轮次会同时拿着同一个管理器(见 <see cref="McpApproval" />)。
+    /// </param>
+    /// <param name="cancellationToken">取消。</param>
     public async Task<(List<AITool> Tools, List<string> Errors)> GetToolsAsync(
-        IReadOnlyList<McpServerConfig> servers, CancellationToken cancellationToken)
+        IReadOnlyList<McpServerConfig> servers, McpApproval approval, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(approval);
         var tools = new List<AITool>();
         var errors = new List<string>();
         var usedNames = new HashSet<string>(StringComparer.Ordinal);
@@ -86,7 +87,7 @@ public sealed class McpManager(IPluginContext context) : IAsyncDisposable
                 {
                     if (existing.Client is not null)
                     {
-                        CollectTools(tools, usedNames, server, existing.Tools);
+                        CollectTools(tools, usedNames, server, existing.Tools, approval);
                         continue;
                     }
                     if (DateTimeOffset.UtcNow - existing.FailedAt < FailureRetryDelay)
@@ -108,7 +109,7 @@ public sealed class McpManager(IPluginContext context) : IAsyncDisposable
                     // 进程拉起/网络握手放线程池,避免占用 UI 线程
                     (connection.Client, connection.Tools) = await Task.Run(
                         () => ConnectAsync(server, cancellationToken), cancellationToken).ConfigureAwait(false);
-                    CollectTools(tools, usedNames, server, connection.Tools);
+                    CollectTools(tools, usedNames, server, connection.Tools, approval);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -240,7 +241,8 @@ public sealed class McpManager(IPluginContext context) : IAsyncDisposable
     /// 工具改名(前缀 = 服务器名,防多服务器同名冲突)并按只读注解决定是否包审批;
     /// 截断/清洗后仍撞名时追加序号(模型侧要求工具名唯一)。
     /// </summary>
-    private void CollectTools(List<AITool> sink, HashSet<string> usedNames, McpServerConfig server, IList<McpClientTool> tools)
+    private void CollectTools(List<AITool> sink, HashSet<string> usedNames, McpServerConfig server, IList<McpClientTool> tools,
+        McpApproval approval)
     {
         string prefix = McpConfigParser.SanitizeToolPrefix(server.Name);
         HashSet<string> disabled = new(
@@ -266,7 +268,7 @@ public sealed class McpManager(IPluginContext context) : IAsyncDisposable
             McpClientTool named = tool.WithName(name);
             // readOnlyHint 是远端服务器自己给出的建议性元数据,不能作为安全边界。恶意服务器
             // 完全可以把删除/上传工具伪装成只读;所有 MCP 工具统一经过本地审批策略。
-            sink.Add(new ApprovalGatedFunction(named, DisplayName(server), this));
+            sink.Add(new ApprovalGatedFunction(named, DisplayName(server), this, approval));
         }
     }
 
@@ -309,15 +311,16 @@ public sealed class McpManager(IPluginContext context) : IAsyncDisposable
     }
 
     /// <summary>非只读 MCP 工具的审批闸:批准后转调原工具,拒绝以文本告知模型。</summary>
-    private sealed class ApprovalGatedFunction(McpClientTool inner, string serverName, McpManager owner)
+    private sealed class ApprovalGatedFunction(McpClientTool inner, string serverName, McpManager owner, McpApproval approval)
         : DelegatingAIFunction(inner)
     {
         protected override async ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
         {
             // MCP 的 readOnlyHint 来自远端,只能用于展示,不能据此跳过本地审批。
-            if (owner.Approval != ApprovalMode.Bypass)
+            // 挡位与回调都取自造这个包装器的那一轮(approval),不读管理器:管理器是各轮、各聊天共用的
+            if (approval.Mode != ApprovalMode.Bypass)
             {
-                if (owner.ApprovalHandler is not { } handler)
+                if (approval.Handler is not { } handler)
                 {
                     return "No approval channel available; the call was not executed.";
                 }
@@ -381,4 +384,31 @@ public sealed class McpManager(IPluginContext context) : IAsyncDisposable
             }
         }
     }
+}
+
+/// <summary>
+/// 一轮的外部 MCP 审批上下文:这一轮用哪个审批回调、按什么挡位。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 以前这两样是 <see cref="McpManager" /> 上的两个可写属性,每轮开头写一次、工具调用时再去读。
+/// 管理器与它的连接是跨轮次复用的 —— IM 桥接里一个管理器服务所有聊天,而不同聊天的轮次会并发:
+/// 第二个聊天一开轮次就把属性改写成自己的,第一个聊天里还挂着的 MCP 调用随后拿着第二个聊天的回调
+/// 去要审批(审批卡发到了别的群),第二个聊天是「全部自动」时干脆不问就执行了(#652 复审)。
+/// 现在每轮造一份,由那一轮的工具包装器各自捕获,轮与轮之间没有共享的可写状态。
+/// </para>
+/// <para>
+/// <see cref="Mode" /> 仍可改写:聊天面板里一轮跑到一半改了审批挡位要当场生效(与内置工具一致),
+/// 面板自己持有一份、只在自己的轮次里用。
+/// </para>
+/// </remarks>
+/// <param name="handler">审批回调;null 视为没有审批通道(非全部自动时一律拒绝)。</param>
+/// <param name="mode">审批挡位。</param>
+public sealed class McpApproval(Func<ApprovalRequest, Task<bool>>? handler, ApprovalMode mode = ApprovalMode.Ask)
+{
+    /// <summary>审批回调(与 AgentToolbox 共用同一交互)。null 视为拒绝。</summary>
+    public Func<ApprovalRequest, Task<bool>>? Handler { get; } = handler;
+
+    /// <summary>审批挡位(与内置工具共用同一设置)。</summary>
+    public ApprovalMode Mode { get; set; } = mode;
 }

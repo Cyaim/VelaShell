@@ -113,6 +113,12 @@ public sealed class BridgeAgentRunner(
         // 代价是每轮多读一次 JSON,与一次模型调用比可以忽略;换来的是"面板里改了什么,
         // 桥接下一句就跟上"——换模型、重新登录、改 MCP 配置,都不必再去重启桥接。
         AiSettings ai = await store.LoadAsync(cancellationToken).ConfigureAwait(false);
+        // 桥接指定的模型被删掉了:拒绝并提示,不落到全局第一个模型 —— 那可能换了一家供应商、换了计费归属
+        // (#616–#636 复审③,维护者 2026-10-25 决定)。没指定(跟随面板)的照旧按面板走
+        if (!string.IsNullOrWhiteSpace(bridge.ModelId) && ai.FindModel(bridge.ModelId) is null)
+        {
+            return new BridgeTurn(loc["BridgeModelMissing"], "", TimeSpan.Zero, 0);
+        }
         if (ResolveModel(ai, bridge) is not { } model)
         {
             return new BridgeTurn(loc["BridgeNoModel"], "", TimeSpan.Zero, 0);
@@ -232,13 +238,12 @@ public sealed class BridgeAgentRunner(
                                 && NativeWebSearch.IsSupported(model.Protocol);
             if (mode != ChatMode.Chat)
             {
-                mcp.Approval = approval;
-                mcp.ApprovalHandler = approve;
                 IList<AITool> tools = toolbox.CreateTools(mode, nativeSearch, runScope);
                 if (mode == ChatMode.Agent && ai.McpServers.Any(s => s.Enabled))
                 {
-                    (List<AITool> mcpTools, List<string> errors) =
-                        await mcp.GetToolsAsync(ai.McpServers, cancellationToken).ConfigureAwait(false);
+                    // 审批上下文每轮一份:mcp 是所有聊天共用的,别的聊天的轮次可能正同时在跑
+                    (List<AITool> mcpTools, List<string> errors) = await mcp
+                        .GetToolsAsync(ai.McpServers, new McpApproval(approve, approval), cancellationToken).ConfigureAwait(false);
                     foreach (AITool tool in mcpTools)
                     {
                         tools.Add(tool);
@@ -332,8 +337,11 @@ public sealed class BridgeAgentRunner(
             {
                 await PersistAsync(conversation, "assistant", reply, cancellationToken).ConfigureAwait(false);
             }
+            // 被截断 / 过滤的回答照常送出,后面附一句;工具之后补了「请继续」还是空的,说一句而不是报失败(#651 复审①②)
+            string? notice = execution.TerminationNotice is { } reason ? loc[TransientFailure.TruncationNoticeKey(reason)]
+                : execution.EmptyAfterTools ? loc["NoticeEmptyAfterTools"] : null;
             return new BridgeTurn(
-                reply.Length > 0 ? reply : loc["BridgeEmptyReply"],
+                reply.Length > 0 ? notice is null ? reply : $"{reply}\n\n_{notice}_" : notice ?? loc["BridgeEmptyReply"],
                 modelLabel,
                 TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt),
                 toolCalls);

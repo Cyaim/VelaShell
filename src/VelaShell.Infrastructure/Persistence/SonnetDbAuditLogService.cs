@@ -9,10 +9,18 @@ namespace VelaShell.Infrastructure.Persistence;
 
 /// <summary>
 /// 基于 SonnetDB 时序 measurement <c>audit_log</c> 的审计日志
-/// (tags: category/action/profile_id;fields: detail)。
+/// (tags: category/action/profile_id/source;fields: detail)。
 /// </summary>
+/// <remarks>
+/// <c>source</c> 是后加的一列(配置类记录的来源)。新库建表时就声明了;老库的 schema 里没有它,
+/// SonnetDB 在第一次写入带这个 tag 的点时自动补上这一列(补上的列随库持久化)。在那之前
+/// SELECT 里点名一个不存在的列会报错,所以查询前先看 schema 里有没有,没有就不选、来源记为 null。
+/// </remarks>
 public sealed class SonnetDbAuditLogService(SonnetDbEngine engine) : IAuditLogService
 {
+    /// <summary>来源一列的列名。</summary>
+    internal const string SourceColumn = "source";
+
     private readonly SonnetDbEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
     /// <summary>将一条审计记录写入 SonnetDB 时序 measurement。</summary>
@@ -36,6 +44,10 @@ public sealed class SonnetDbAuditLogService(SonnetDbEngine engine) : IAuditLogSe
         if (entry.ProfileId is { } profileId)
         {
             tags["profile_id"] = profileId.ToString("D");
+        }
+        if (!string.IsNullOrEmpty(entry.Source))
+        {
+            tags[SourceColumn] = entry.Source;
         }
         var fields = new Dictionary<string, FieldValue>
         {
@@ -105,7 +117,11 @@ public sealed class SonnetDbAuditLogService(SonnetDbEngine engine) : IAuditLogSe
             parameters.AddNamed("to", upper.ToUnixTimeMilliseconds());
         }
         string where = conditions.Count == 0 ? string.Empty : " WHERE " + string.Join(" AND ", conditions);
-        SelectExecutionResult result = await _engine.QueryAsync($"SELECT time, category, action, profile_id, detail FROM {SonnetDbEngine.AuditLogMeasurement}{where} ORDER BY time DESC LIMIT {limit}",
+        // 老库在第一条带来源的记录写进来之前没有 source 这一列(见类注释),点名它会报「未知列」。
+        bool hasSource = (await _engine.GetMeasurementAsync(SonnetDbEngine.AuditLogMeasurement, cancellationToken).ConfigureAwait(false))
+                         ?.TryGetColumn(SourceColumn) is not null;
+        string columns = hasSource ? $"time, category, action, profile_id, detail, {SourceColumn}" : "time, category, action, profile_id, detail";
+        SelectExecutionResult result = await _engine.QueryAsync($"SELECT {columns} FROM {SonnetDbEngine.AuditLogMeasurement}{where} ORDER BY time DESC LIMIT {limit}",
                                            parameters, cancellationToken).ConfigureAwait(false);
         var entries = new List<AuditEntry>(result.Rows.Count);
         foreach (IReadOnlyList<object?> row in result.Rows)
@@ -125,7 +141,8 @@ public sealed class SonnetDbAuditLogService(SonnetDbEngine engine) : IAuditLogSe
                 Category = values.GetValueOrDefault("category")?.ToString() ?? string.Empty,
                 Action = values.GetValueOrDefault("action")?.ToString() ?? string.Empty,
                 ProfileId = Guid.TryParse(values.GetValueOrDefault("profile_id")?.ToString(), out Guid id) ? id : null,
-                Detail = values.GetValueOrDefault("detail")?.ToString() ?? string.Empty
+                Detail = values.GetValueOrDefault("detail")?.ToString() ?? string.Empty,
+                Source = values.GetValueOrDefault(SourceColumn)?.ToString() is { Length: > 0 } source ? source : null
             });
         }
         return entries;

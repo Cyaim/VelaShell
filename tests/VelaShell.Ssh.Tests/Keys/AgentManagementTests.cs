@@ -92,6 +92,7 @@ public sealed class AgentManagementTests
             async () => await rig.Client.RemoveAllIdentitiesAsync(rig.Token));
         Assert.AreEqual(Diagnostics.SshFailureReason.AgentRefused, refused.Reason);
         Assert.Contains("锁定", refused.Message);
+        Assert.AreEqual(SshAgentFailureKind.RemoveAllRefused, refused.FailureKind);
 
         Assert.IsFalse(await rig.Client.UnlockAsync("猜一个", rig.Token));
         Assert.IsTrue(await rig.Client.UnlockAsync("离开座位", rig.Token));

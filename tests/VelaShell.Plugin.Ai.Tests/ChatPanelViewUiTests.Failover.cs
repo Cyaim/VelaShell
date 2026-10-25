@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.AI;
 using VelaShell.Plugin.Ai.Auth;
@@ -201,6 +202,57 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     [TestMethod]
+    [DataRow(403)]
+    [DataRow(401)]
+    public void KeyFailover_ModelScopedKeyFailureStillProbesASiblingModelOnTheSameKey(int status)
+    {
+        OnUi(async () =>
+        {
+            // 单 Key 供应商,链上 A → B 是同一家、同一把 Key 的两个型号。A 回 403(这把 Key 没开通 A,或 A 单独被拒):
+            // 只冷「这把 Key 用在 A 上」,B 照常探活、答上;A 回 401(Key 本身被拒)才冷整把 Key,B 不白探
+            using var endpoint = new KeyAuthStub((_, body) => body.Contains("\"model\":\"m-a\"", StringComparison.Ordinal)
+                ? (status, "{\"error\":{\"message\":\"denied\"}}") : (200, LifecycleAnswer));
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            AiProvider provider = StubProvider("single", endpoint.BaseUrl, "m-a");
+            var sibling = new AiModelConfig { Model = "m-b" };
+            provider.Models.Add(sibling);
+            var settings = new AiSettings
+            {
+                Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false,
+                FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }, new FailoverEntry { ModelId = sibling.Id }]
+            };
+            await store.SetApiKeyAsync(provider.Id, "key-a");
+            await store.SaveAsync(settings);
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("兄弟模型照常探");
+                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                    && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
+                ProviderHealth health = PanelHealth(panel);
+                int siblingRequests = endpoint.Requests.Count(r => r.Body.Contains("\"model\":\"m-b\"", StringComparison.Ordinal));
+                if (status == 403)
+                {
+                    Assert.AreEqual(2, siblingRequests, "B 先探活、再正式发送");
+                    Assert.AreEqual(sibling.Id, (await store.LoadAsync()).ActiveModelId, "换到兄弟模型答上并粘住");
+                    Assert.IsTrue(health.IsKeyCooling(provider.Id, provider.Models[0].Id));
+                    Assert.IsFalse(health.IsKeyCooling(provider.Id, sibling.Id));
+                    Assert.IsFalse(health.IsKeyCooling(provider.Id), "整把 Key 不冷");
+                }
+                else
+                {
+                    Assert.AreEqual(0, siblingRequests, "Key 本身被拒,兄弟模型不白探");
+                    Assert.IsTrue(health.IsKeyCooling(provider.Id));
+                    Assert.AreEqual(provider.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
+                }
+                Assert.IsTrue(endpoint.Requests.All(r => r.Auth == "Bearer key-a"));
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
     [DataRow(401)]
     [DataRow(403)]
     [DataRow(429)]
@@ -234,7 +286,8 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual(provider.Models[0].Id, reloaded.ActiveModelId);
                 Assert.AreEqual(secondId, reloaded.Providers[0].ActiveApiKeyId);
                 ProviderHealth health = PanelHealth(panel);
-                Assert.IsTrue(health.IsKeyCooling(provider.Id));
+                Assert.IsTrue(health.IsKeyCooling(provider.Id, provider.Models[0].Id));
+                Assert.AreEqual(status == 401, health.IsKeyCooling(provider.Id), "只有 401 冷整把 Key;403 / 429 只冷它用在这个模型上");
                 Assert.IsFalse(health.IsKeyCooling(secondId));
                 Assert.IsFalse(health.IsCooling(provider.Models[0].Id), "一把 Key 挂了不能连坐模型");
                 Assert.Contains("Conversation total: in 22 / out 10", ToolTip.GetTip(Find<TextBlock>(panel, "UsageText")) as string ?? "",
@@ -486,7 +539,8 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 Assert.HasCount(1, endpoint.Requests);
-                Assert.AreEqual(owned ? "Bearer key-own" : "Bearer key-a", endpoint.Requests[0].Auth);
+                // 跨源覆盖又没自带 Key:供应商的 Key 一把都不跟去(主槽也不借),请求不带 Key
+                Assert.AreEqual(owned ? "Bearer key-own" : "Bearer not-needed", endpoint.Requests[0].Auth);
                 Assert.IsEmpty(home.Requests);
             }
             finally { panel.Detach(); window.Close(); }
@@ -1922,7 +1976,16 @@ public sealed partial class ChatPanelViewUiTests
                         FindIn<TextBox>(editor, "ProviderNameBox").Text = "renamed-beta";
                     }
                     RaiseClick(FindIn<Button>(editor, "SaveButton"));
-                    Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == "Saved."));
+                    if (change == "config")
+                    {
+                        // 订阅登录换到别的源:先在确认框里同意退出登录(旧地址签出的令牌不跟去新地址)
+                        Assert.IsTrue(await AcceptConfirmAsync(editor));
+                        Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == new Loc("en")["SetupSavedSignedOut"]));
+                    }
+                    else
+                    {
+                        Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == "Saved."));
+                    }
                     Assert.AreEqual(change == "config" ? newTarget.BaseUrl : change == "model" ? "m2" : "renamed-beta",
                         change == "config" ? (await store.LoadAsync()).Providers[0].BaseUrl
                         : change == "model" ? (await store.LoadAsync()).Providers[0].Models[0].Model
@@ -3267,6 +3330,113 @@ public sealed partial class ChatPanelViewUiTests
         });
     }
 
+    /// <summary>
+    /// #651 复审①(维护者 2026-10-25 决定):有正文的截断 / 过滤照常完成 —— 回答留着、附一张提示卡、不报错、不换站、
+    /// 不切回原站。改前整轮失败,故障转移之后还会把选择切回失败的那一站。
+    /// </summary>
+    [TestMethod]
+    [DataRow(ChatMode.Chat, "length")]
+    [DataRow(ChatMode.Agent, "content_filter")]
+    public void TruncatedAnswerWithText_IsKeptWithANotice(ChatMode mode, string reason)
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub($"data: {{\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{{\"index\":0,\"delta\":{{\"role\":\"assistant\",\"content\":\"半截回答\"}},\"finish_reason\":\"{reason}\"}}]}}\n\ndata: [DONE]\n\n");
+            await using var backup = new SseStub(LifecycleAnswer);
+            using var context = new TestPluginContext();
+            AiProvider first = StubProvider("terminal", endpoint.BaseUrl, "m");
+            AiProvider second = StubProvider("backup", backup.BaseUrl, "m");
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [first, second], ActiveModelId = first.Models[0].Id, SuggestFollowUps = false, Mode = mode,
+                Approval = ApprovalMode.Bypass, FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }]
+            });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("请回答");
+                StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.HasCount(1, endpoint.Requests);
+                Assert.IsEmpty(backup.Requests, "不换站");
+                Assert.AreEqual("半截回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
+                var loc = new Loc("en");
+                Assert.Contains(t => t.Name == "NoticeText" && t.Text == loc[reason == "length" ? "NoticeOutputLimit" : "NoticeFiltered"],
+                    messages.GetVisualDescendants().OfType<TextBlock>());
+                Assert.IsFalse(messages.GetVisualDescendants().OfType<Border>().Any(b => b.Classes.Contains("errorCard")), "不报错");
+                Assert.IsFalse(PanelHealth(panel).IsCooling(first.Models[0].Id));
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    /// <summary>
+    /// #651 复审②:工具调用之后的最终一步空答,补一句「请继续」重试一次;还是空的就照常收尾 ——
+    /// 附一张提示卡、不报错、不冷却。改前原样重发两次、整轮失败并冷却 60 秒。
+    /// </summary>
+    [TestMethod]
+    public void EmptyFinalStepAfterTools_EndsWithANoticeInsteadOfAFailureOrCooldown()
+    {
+        OnUi(async () =>
+        {
+            string call = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"list_sessions\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\n"
+                          + "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n"
+                          + "data: [DONE]\n\n";
+            await using var endpoint = new SseStub("", streamingReply: n => n == 1 ? call : "data: [DONE]\n\n");
+            using var context = new TestPluginContext();
+            AiProvider provider = StubProvider("agent", endpoint.BaseUrl, "m");
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [provider], ActiveModelId = provider.Models[0].Id, Mode = ChatMode.Agent,
+                Approval = ApprovalMode.Bypass, SuggestFollowUps = false
+            });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("看看有哪些会话");
+                StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.HasCount(3, endpoint.Requests, "工具一次、空答一次、补一句「请继续」再一次");
+                Assert.Contains(RecoveringChatClient.ContinueAfterTools, endpoint.Requests[2]);
+                Assert.Contains(t => t.Name == "NoticeText" && t.Text == new Loc("en")["NoticeEmptyAfterTools"],
+                    messages.GetVisualDescendants().OfType<TextBlock>());
+                Assert.IsFalse(messages.GetVisualDescendants().OfType<Border>().Any(b => b.Classes.Contains("errorCard")), "不报错");
+                Assert.IsFalse(PanelHealth(panel).IsCooling(provider.Models[0].Id), "不冷却");
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    /// <summary>#651 复审③:纯对话模式的外层补试遇到空回复,与 Agent / 计划模式说同一句「收到空回复」,不再说成连接失败。</summary>
+    [TestMethod]
+    public void ChatModeOuterRetry_OnAnEmptyReply_SaysEmptyReply()
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub("data: [DONE]\n\n", holdFirstStream: true, skipFirstStreams: 1, firstStreamContent: "回答");
+            using var context = new TestPluginContext();
+            AiProvider provider = StubProvider("chat", endpoint.BaseUrl, "m");
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [provider], ActiveModelId = provider.Models[0].Id, Mode = ChatMode.Chat, SuggestFollowUps = false
+            });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("你好");
+                TextBlock status = Find<TextBlock>(panel, "StatusText");
+                Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count == 2), "首次空答后原地补试");
+                await PumpAsync(5);
+                Assert.AreEqual(new Loc("en").F("RetryingEmptyReply", 1), status.Text, "端点答了空话,不能说成连接失败");
+                endpoint.Release();
+                StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.AreEqual("回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
+            }
+            finally { endpoint.Release(); panel.Detach(); window.Close(); }
+        });
+    }
+
     [TestMethod]
     public void EmptyAnswers_ThirdAttemptSucceedsWithoutFailover()
     {
@@ -3459,6 +3629,55 @@ public sealed partial class ChatPanelViewUiTests
                     "空回复不能说成网络/代理未连通");
                 Assert.AreEqual(first.Models[0].Id, (await store.LoadAsync()).ActiveModelId,
                     "没有一站真正答复时,不能粘住空回复的 B");
+            }
+            finally
+            {
+                panel.Detach();
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// #582 复审④:Responses 流以 <c>response.failed</c> / <c>error</c> 收尾时,面板不能把这一站记成"答上了"——
+    /// 先前那次失败的冷却要留着,界面摆出服务端的原话。
+    /// </summary>
+    /// <remarks>
+    /// <c>error</c> 事件被适配器转成 <see cref="ErrorContent" />,§223 的 <c>TransientFailure.TerminalFailure</c> 已把它抛成失败;
+    /// <c>response.failed</c> 却被转成一帧<b>没有内容</b>的更新,改前先吐半截正文再失败的流记成成功、冷却被解冻,
+    /// 一个字没吐的被当成空回复重试、报"空回复"。
+    /// </remarks>
+    [TestMethod]
+    [DataRow(ChatMode.Chat, "failed", false)]
+    [DataRow(ChatMode.Chat, "failed", true)]
+    [DataRow(ChatMode.Agent, "failed", true)]
+    [DataRow(ChatMode.Agent, "error", false)]
+    public void ResponsesErrorContent_IsNotRecordedAsSuccess(ChatMode mode, string kind, bool textFirst)
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub(HealthProbeTests.ResponsesErrorSse(kind, textFirst));
+            using var context = new TestPluginContext();
+            AiProvider provider = StubProvider("responses", endpoint.BaseUrl, "m");
+            provider.DefaultProtocol = ChatProtocol.OpenAiResponses;
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SuggestFollowUps = false,
+                Mode = mode
+            });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                ProviderHealth health = PanelHealth(panel);
+                health.Record(provider.Models[0].Id, false);
+                panel.SendExternal("hi");
+                Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count >= 1 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(health.IsCooling(provider.Models[0].Id), "服务端报错的一轮不能记成成功、解冻先前的冷却");
+                Assert.IsTrue(await WaitForAsync(() => Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants()
+                    .OfType<TextBlock>().Any(t => t.Text?.Contains("upstream exploded", StringComparison.Ordinal) == true)),
+                    "错误原文要摆给用户看");
             }
             finally
             {
@@ -3666,10 +3885,12 @@ public sealed partial class ChatPanelViewUiTests
                 FindIn<ListBox>(editor, "ProvidersList").SelectedIndex = 0;
                 await StageProviderApiKeyAsync(editor, "new-key");
                 FindIn<TextBox>(editor, "ProviderBaseUrlBox").Text = moved.BaseUrl;
-                // 换到另一台主机还留着一把备用 Key:先提示会清掉它,再点一次才保存
+                // 换到另一台主机还留着一把备用 Key:确认框先说会清掉它,点了确认才保存
                 RaiseClick(FindIn<Button>(editor, "SaveButton"));
-                Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == new Loc("en").F("SetupBaseUrlKeyResetConfirm", 1)));
-                RaiseClick(FindIn<Button>(editor, "SaveButton"));
+                ConfirmOverlay confirm = editor.GetLogicalDescendants().OfType<ConfirmOverlay>().Single();
+                Assert.IsTrue(await WaitForAsync(() => confirm.IsOpen));
+                Assert.AreEqual(new Loc("en").F("SetupBaseUrlKeyResetConfirm", 1), FindIn<TextBlock>(editor, "ConfirmMessage").Text);
+                RaiseClick(FindIn<Button>(editor, "ConfirmAcceptButton"));
                 Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == new Loc("en")["SetupSavedOtherKeysCleared"]));
                 original.Release();
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
@@ -3916,6 +4137,15 @@ public sealed partial class ChatPanelViewUiTests
     private static void RaiseClick(Control control)
         => control.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     /// <summary>按 Name 在任意控件树里找一个(面板那个同名助手只吃 ChatPanelView)。</summary>
+    /// <summary>等设置页的确认框弹出来并点「确认」;框没出现返回 false。</summary>
+    private static async Task<bool> AcceptConfirmAsync(SettingsView editor)
+    {
+        ConfirmOverlay confirm = editor.GetLogicalDescendants().OfType<ConfirmOverlay>().Single();
+        if (!await WaitForAsync(() => confirm.IsOpen)) return false;
+        RaiseClick(FindIn<Button>(editor, "ConfirmAcceptButton"));
+        return true;
+    }
+
     private static T FindIn<T>(Control root, string name) where T : Control
         => root.GetVisualDescendants().OfType<T>().FirstOrDefault(c => c.Name == name)
            ?? throw new InvalidOperationException($"没有叫 {name} 的 {typeof(T).Name}");

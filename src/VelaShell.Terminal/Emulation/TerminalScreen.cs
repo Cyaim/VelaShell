@@ -482,6 +482,16 @@ public sealed class TerminalScreen
         if (columns != Columns && MaxScrollback > 0)
         {
             ReflowResize(columns, rows, blank);
+            // 重排换了行对象,「这一行触发器答过了」的记号跟着丢了(见 TerminalRow.TriggerSettled):
+            // 屏上现有内容的行一律记成处理过,否则拖一下窗口边,那条已经答过的提示会被当成新的再答一遍。
+            // 空行不记 —— 启动时布局那一下重排的正是一整屏空行,记上了,之后写在这些行上的提示就永远答不上了。
+            foreach (TerminalRow line in _lines)
+            {
+                if (line.LastNonBlank() >= 0)
+                {
+                    line.TriggerSettled = true;
+                }
+            }
             return;
         }
 

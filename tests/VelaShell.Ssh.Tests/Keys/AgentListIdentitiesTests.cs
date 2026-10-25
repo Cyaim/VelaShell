@@ -73,6 +73,7 @@ public sealed class AgentListIdentitiesTests
         SshAgentException error = await Assert.ThrowsExactlyAsync<SshAgentException>(
             async () => await rig.Client.ListIdentitiesAsync(rig.Token));
         Assert.AreEqual(Diagnostics.SshFailureReason.AgentUnavailable, error.Reason);
+        Assert.AreEqual(SshAgentFailureKind.ConversationOutOfStep, error.FailureKind);
     }
 
     [TestMethod]
@@ -85,6 +86,7 @@ public sealed class AgentListIdentitiesTests
             async () => await WithScriptedReplyAsync(reply, client => client.ListIdentitiesAsync().AsTask()));
 
         Assert.AreEqual(Diagnostics.SshFailureReason.ProtocolError, error.Reason);
+        Assert.AreEqual(SshAgentFailureKind.MalformedReply, error.FailureKind);
     }
 
     /// <summary>agent 回了空报文、或者回的类型不是这条请求该有的：同样只报 SshAgentException，不把它当成应答去解。</summary>
@@ -97,10 +99,11 @@ public sealed class AgentListIdentitiesTests
     [DataRow(new byte[] { 6 }, true, DisplayName = "签名:回了 SUCCESS")]
     public async Task Agent回了空报文或类型不对时报SshAgentException(byte[] reply, bool sign)
     {
-        await Assert.ThrowsExactlyAsync<SshAgentException>(
+        SshAgentException error = await Assert.ThrowsExactlyAsync<SshAgentException>(
             async () => await WithScriptedReplyAsync(reply, client => sign
                 ? client.SignAsync(new byte[] { 1 }, new byte[] { 2 }, "ssh-ed25519").AsTask()
                 : client.ListIdentitiesAsync().AsTask()));
+        Assert.AreEqual(SshAgentFailureKind.MalformedReply, error.FailureKind);
     }
 
     [TestMethod]
@@ -127,7 +130,12 @@ public sealed class AgentListIdentitiesTests
             async () => await WithScriptedReplyAsync(reply, client => client.SignAsync(new byte[] { 1 }, new byte[] { 2 }, "rsa-sha2-512").AsTask()));
 
         Assert.AreEqual(Diagnostics.SshFailureReason.Unsupported, error.Reason);
-        Assert.Contains("ssh-rsa", error.Message);
+        Assert.AreEqual(
+            "ssh-agent 用 ssh-rsa 签了名，而请求的是 rsa-sha2-512 —— 这个 agent 多半太老，不认 SHA-2 的签名标志位。升级 agent，或者改用私钥文件。",
+            error.Message);
+        Assert.AreEqual(SshAgentFailureKind.SignatureAlgorithmMismatch, error.FailureKind);
+        Assert.AreEqual("ssh-rsa", error.SignedAlgorithm);
+        Assert.AreEqual("rsa-sha2-512", error.RequestedAlgorithm);
     }
 
     /// <summary>证书的签名算法名不带证书后缀：请求 rsa-sha2-512-cert-v01 时回 rsa-sha2-512 是对的。</summary>

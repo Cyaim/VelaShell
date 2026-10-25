@@ -81,6 +81,33 @@ public sealed class SessionCsvTests
         Assert.AreEqual(second.Id.ToString("D"), document.Candidates[2].JumpHostReference);
     }
 
+    /// <summary>
+    /// 系统密钥库的钥没有文件:私钥那一列写它的引用(<c>cng:密钥库/钥名</c>),认证方式写 <c>keystore</c>,导回来还是那把钥;
+    /// 写成别的样子的报错,而不是悄悄变成一条没有钥的配置。
+    /// </summary>
+    [TestMethod]
+    public void KeyStoreAuth_RoundTripsTheKeyReference()
+    {
+        var profile = new SessionProfile
+        {
+            Name = "tpm", Host = "10.0.0.12", Username = "ops", AuthMethod = AuthMethod.KeyStore,
+            KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy", MachineKey = true },
+        };
+
+        string csv = SessionCsv.Write(new SessionArchive { Sessions = [profile] });
+        SessionImportCandidate read = SessionCsv.Read("x.csv", csv).Candidates.Single();
+
+        Assert.Contains("keystore", csv);
+        Assert.Contains("cng-machine:Microsoft Platform Crypto Provider/deploy", csv);
+        Assert.IsTrue(read.IsValid, string.Join("; ", read.Errors));
+        Assert.AreEqual(AuthMethod.KeyStore, read.Profile.AuthMethod);
+        Assert.AreEqual(profile.KeyStoreKey, read.Profile.KeyStoreKey);
+        Assert.IsNull(read.Profile.PrivateKeyPath, "私钥那一列是引用,不是文件");
+
+        SessionImportCandidate bad = SessionCsv.Read("x.csv", $"{Header}\n,bad,,ssh,10.0.0.13,22,ops,keystore,,C:\\keys\\id,,,,\n").Candidates.Single();
+        Assert.IsFalse(bad.IsValid, "认证方式写了 keystore,私钥那一列却是文件路径:报错");
+    }
+
     [TestMethod]
     public void Write_EscapesFormulaLikeCells_AndReadUndoesIt()
     {

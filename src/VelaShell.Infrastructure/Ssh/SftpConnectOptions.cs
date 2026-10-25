@@ -1,5 +1,6 @@
 using System.Text;
 using VelaShell.Core.Models;
+using VelaShell.Core.Sftp;
 using VelaShell.Ssh.Sftp;
 
 namespace VelaShell.Infrastructure.Ssh;
@@ -35,21 +36,6 @@ internal static class SftpConnectOptions
     /// 没注册时取不到,同样退回默认。UTF-8 按代码页判,<c>utf8</c>、<c>UTF-8</c> 之类的别名都算。
     /// </remarks>
     /// <param name="name">字符集名(如 <c>GBK</c>)。</param>
-    internal static Encoding? ResolveFileNameEncoding(string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return null;
-        }
-        Encoding encoding;
-        try
-        {
-            encoding = Encoding.GetEncoding(name.Trim());
-        }
-        catch (ArgumentException)
-        {
-            return null;
-        }
-        return encoding.CodePage == Encoding.UTF8.CodePage ? null : encoding;
-    }
+    /// <remarks>规则本身在 Core 的 <see cref="RemoteFileNameEncoding" />:远端搜索解 exec 输出用的是同一条。</remarks>
+    internal static Encoding? ResolveFileNameEncoding(string? name) => RemoteFileNameEncoding.Resolve(name);
 }

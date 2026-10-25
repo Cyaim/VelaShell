@@ -144,6 +144,8 @@ public sealed class AgentAddIdentityTests
         Assert.Contains("锁定", error.Message);
         Assert.AreEqual(1, rig.Agent.AddRequests);
         Assert.IsEmpty(rig.Agent.Keys);
+        Assert.AreEqual(SshAgentFailureKind.AddRefused, error.FailureKind);
+        Assert.IsFalse(error.HasDestinationConstraints);
     }
 
     [TestMethod]

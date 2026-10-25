@@ -21,7 +21,14 @@ internal sealed partial class RemoteFsCapability
     /// 等待被取消、到期、断线或撤权打断后,给仍在跑的后端任务真正停下的有界宽限期:宽限期内停下了,才能确认停写、
     /// 清掉临时文件;仍没停才记 Unknown。测试可调短(与 <see cref="UseDiskSnapshot" /> 同一用意)。
     /// </summary>
-    internal TimeSpan StopGracePeriod { get; init; } = TimeSpan.FromSeconds(5);
+    /// <remarks>
+    /// 定 30 秒(原先 5 秒):SFTP 上传被取消时,文件流关闭前要先排空已经发出、还没确认的写入,再等 <c>CLOSE</c> 的应答,
+    /// SSH 库给这两步各 30 秒(<c>SftpOptions.CloseTimeout</c>)。慢链路上排空一窗在途写入常要十几秒,5 秒的宽限期
+    /// 一到就只能记「结果未知」、不敢清临时文件 —— 后端其实随后就合作地停了。取 30 秒盖住排空这一步;连 <c>CLOSE</c>
+    /// 也等满的链路已经接近断开,仍按未确认记 Unknown,后端真停下后照样清掉没提交过的临时文件。
+    /// 宽限期只在停止之后才开始算,正常传输不受影响;停止原因与终态的口径不变。
+    /// </remarks>
+    internal TimeSpan StopGracePeriod { get; init; } = TimeSpan.FromSeconds(30);
 
     private const int MaxRecords = 1024;
     private const int MaxActiveUploads = 32;
@@ -99,7 +106,7 @@ internal sealed partial class RemoteFsCapability
         try
         {
             RejectLinks(resolved);
-            VerifyOpenedPath(source, resolved);
+            VerifyOpenedSource(source.SafeFileHandle, resolved);
             // 打开前按路径查过类型,打开后再按句柄核一次:两次之间路径被换成设备也拦得住。
             if (!OperatingSystem.IsWindows() && source.SafeFileHandle.Type != FileHandleType.RegularFile)
                 throw new NotSupportedException("Only regular files can be uploaded.");
@@ -131,6 +138,7 @@ internal sealed partial class RemoteFsCapability
                     CreatedAt = now,
                     UpdatedAt = now,
                     DestinationCommitConfirmedAbsent = true,
+                    Phase = RemoteTransferPhase.Approval,
                 }, session, source, stop);
                 if (uploadPermissions is not null && !string.IsNullOrWhiteSpace(pluginId))
                     op._permission = uploadPermissions.CreateUploadLease(pluginId);
@@ -278,50 +286,6 @@ internal sealed partial class RemoteFsCapability
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetFinalPathNameByHandle(SafeFileHandle handle, StringBuilder path, uint length, uint flags);
-
-    [LibraryImport("libc", EntryPoint = "fcntl", SetLastError = true)]
-    private static partial int GetDarwinFilePath(SafeFileHandle handle, int command, [Out] byte[] path);
-
-    [LibraryImport("libc", EntryPoint = "fcntl", SetLastError = true)]
-    private static partial int GetDarwinArm64FilePath(SafeFileHandle handle, int command,
-        nint unused2, nint unused3, nint unused4, nint unused5, nint unused6, nint unused7, [Out] byte[] path);
-
-    private static void VerifyOpenedPath(FileStream source, string expected)
-    {
-        string actual;
-        if (OperatingSystem.IsWindows())
-        {
-            var path = new StringBuilder(32768);
-            uint length = GetFinalPathNameByHandle(source.SafeFileHandle, path, (uint)path.Capacity, 0);
-            if (length == 0 || length >= path.Capacity) throw new IOException("Cannot verify the opened source object.");
-            actual = path.ToString();
-            if (actual.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) actual = @"\\" + actual[8..];
-            else if (actual.StartsWith(@"\\?\", StringComparison.Ordinal)) actual = actual[4..];
-        }
-        else if (OperatingSystem.IsLinux())
-        {
-            actual = File.ResolveLinkTarget($"/proc/self/fd/{source.SafeFileHandle.DangerousGetHandle().ToInt64()}", false)?.FullName
-                ?? throw new IOException("Cannot verify the opened source object.");
-        }
-        else if (OperatingSystem.IsMacOS())
-        {
-            // Darwin sys/fcntl.h: F_GETPATH = 50;缓冲大于 MAXPATHLEN,失败时不降级路径检查。
-            byte[] path = new byte[4096];
-            // Apple arm64 的变参在栈上传递，填满 x2–x7 后将缓冲指针放到首个栈槽。
-            int result = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
-                ? GetDarwinArm64FilePath(source.SafeFileHandle, 50, 0, 0, 0, 0, 0, 0, path)
-                : GetDarwinFilePath(source.SafeFileHandle, 50, path);
-            if (result == -1)
-                throw new IOException("Cannot verify the opened source object.");
-            int end = Array.IndexOf(path, (byte)0);
-            if (end <= 0) throw new IOException("Cannot verify the opened source object.");
-            actual = new UTF8Encoding(false, true).GetString(path, 0, end);
-        }
-        else throw new PlatformNotSupportedException("Stable upload source verification is unavailable.");
-        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (!string.Equals(Path.GetFullPath(actual), expected, comparison))
-            throw new IOException("The opened source does not match the approved path.");
-    }
 
     internal static string ResolveUploadSource(string path)
     {
@@ -497,8 +461,7 @@ internal sealed partial class RemoteFsCapability
         bool slot = false, writing = false, committing = false, commitRejected = false, refused = false;
         Task? remoteWrite = null;
         Task? commitTask = null;
-        FileStream? diskSnapshot = null;
-        string? snapshotDirectory = null;
+        UploadSnapshot? diskSnapshot = null;
         // 速率按真正开始传输之后的耗时算:审批对话框、排队与快照准备都不算进去。
         var elapsed = new Stopwatch();
         using var execution = CancellationTokenSource.CreateLinkedTokenSource(op._stop.Token, op._permission?.Revocation ?? CancellationToken.None);
@@ -511,17 +474,19 @@ internal sealed partial class RemoteFsCapability
         Task heartbeat = TransferHeartbeatAsync(op, heartbeatStop.Token);
         try
         {
-            Update(op, s => s with { State = RemoteTransferState.Starting });
+            // 阶段与下载同一口径:等宿主确认时是 Approval,批准之后才进 Transfer。插件靠它分辨"还没批准"的任务 ——
+            // 用户停止或拒绝时撤掉的只是这些,排队的确认框不再一个个弹(已批准的照常传完)
+            Update(op, s => s with { State = RemoteTransferState.Starting, Phase = RemoteTransferPhase.Approval });
             if (uploadPermissions is null || op._permission is null || string.IsNullOrWhiteSpace(pluginId))
                 throw new PluginPermissionDeniedException("A trusted upload approval is required.");
             SshSession target = connections.GetSession(session) ?? throw new PluginSessionNotFoundException(Read(op).SessionId);
             string label = $"{target.ConnectionInfo.Username}@{target.ConnectionInfo.Host}:{target.ConnectionInfo.Port}";
             bool approved = await uploadPermissions.CheckUploadAsync(op._permission, pluginId, label, Read(op).LocalPath,
-                Read(op).RemotePath, options.Overwrite, ct).ConfigureAwait(false);
+                Read(op).RemotePath, options.Overwrite, op._sourceLength, ct).ConfigureAwait(false);
             if (!approved) throw new PluginPermissionDeniedException("The user denied this upload.");
             ct.ThrowIfCancellationRequested();
             ValidateSource(op);
-            Update(op, s => s with { State = RemoteTransferState.Queued });
+            Update(op, s => s with { State = RemoteTransferState.Queued, Phase = RemoteTransferPhase.Transfer });
             await _uploadSlots.WaitAsync(ct).ConfigureAwait(false);
             slot = true;
             ct.ThrowIfCancellationRequested();
@@ -541,63 +506,23 @@ internal sealed partial class RemoteFsCapability
             Stream uploadSource = op._source;
             if (UseDiskSnapshot)
             {
-                snapshotDirectory = Path.Combine(Path.GetTempPath(), "vela-upload-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)));
-                if (OperatingSystem.IsWindows()) Directory.CreateDirectory(snapshotDirectory);
-                else Directory.CreateDirectory(snapshotDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-                var snapshotOptions = new FileStreamOptions
-                {
-                    Mode = FileMode.CreateNew,
-                    Access = FileAccess.ReadWrite,
-                    Share = FileShare.None,
-                    BufferSize = 128 * 1024,
-                    Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose | FileOptions.SequentialScan,
-                };
-                if (!OperatingSystem.IsWindows()) snapshotOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-                diskSnapshot = new FileStream(Path.Combine(snapshotDirectory, "source"), snapshotOptions);
-                if (!OperatingSystem.IsWindows())
-                {
-                    // 快照是源文件的一份明文全拷贝,关闭即删只在正常释放时生效:宿主崩在中途就把它留在 $TMPDIR 里。
-                    // 打开之后立刻删掉文件与目录,数据靠打开着的描述符活着,进程一退由内核回收。删不掉就照旧等释放时清。
-                    try
-                    {
-                        File.Delete(diskSnapshot.Name);
-                        Directory.Delete(snapshotDirectory);
-                        snapshotDirectory = null;
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-                }
-                byte[] buffer = new byte[128 * 1024];
-                long last = Environment.TickCount64;
-                int count;
-                while ((count = await op._source.ReadAsync(buffer, ct).ConfigureAwait(false)) != 0)
-                {
-                    await diskSnapshot.WriteAsync(buffer.AsMemory(0, count), ct).ConfigureAwait(false);
-                    if (Environment.TickCount64 - last >= 100)
-                    {
-                        last = Environment.TickCount64;
-                        Update(op, s => s); // 准备阶段心跳,字节数仍专指远端已确认写入。
-                    }
-                }
-                await diskSnapshot.FlushAsync(ct).ConfigureAwait(false);
-                diskSnapshot.Position = 0;
-                op._source.Position = 0;
-                byte[] snapshotHash = await SHA256.HashDataAsync(diskSnapshot, ct).ConfigureAwait(false);
-                byte[] sourceHash = await SHA256.HashDataAsync(op._source, ct).ConfigureAwait(false);
-                if (!CryptographicOperations.FixedTimeEquals(snapshotHash, sourceHash)) throw new SourceChangedException();
-                diskSnapshot.Position = 0;
-                uploadSource = diskSnapshot;
+                diskSnapshot = await CreateUploadSnapshotAsync(op, ct).ConfigureAwait(false);
+                uploadSource = diskSnapshot.Stream;
             }
             ValidateSource(op);
             byte[] hash = await SHA256.HashDataAsync(uploadSource, ct).ConfigureAwait(false);
             uploadSource.Position = 0;
             ct.ThrowIfCancellationRequested();
+            // 覆盖上传:临时文件一建出来就按被替换文件的权限位(0777 那几位),写入期间不比它宽 —— 以前按 0644(减 umask)新建、
+            // 提交前才收窄,覆盖一个 0600 的文件时,写入的那段时间里同机的其他用户读得到新内容。提交时照旧按那一刻的目标补齐属主与全部位。
+            uint? createMode = options.Overwrite ? await ReadCreateModeAsync(session, destination, ct).ConfigureAwait(false) : null;
             Update(op, s => s with { State = RemoteTransferState.Running });
             elapsed.Start();
             writing = true;
             remoteWrite = sftp.UploadStreamAsync(session, uploadSource, temporary, op._sourceLength,
-                progress: new UploadProgressSink(op), cancellationToken: ct);
+                progress: new UploadProgressSink(op), createMode: createMode, cancellationToken: ct);
             await remoteWrite.WaitAsync(ct).ConfigureAwait(false);
-            Update(op, s => s with { TransferredBytes = s.TotalBytes, SpeedBytesPerSecond = null, EstimatedTimeRemaining = null });
+            Update(op, s => s with { Phase = RemoteTransferPhase.Verification, TransferredBytes = s.TotalBytes, SpeedBytesPerSecond = null, EstimatedTimeRemaining = null });
             // 优先服务端摘要;纯 SFTP 账号无 exec 时流式回读校验,不把满字节误报为已提交。
             byte[]? actual = null;
             try
@@ -619,6 +544,7 @@ internal sealed partial class RemoteFsCapability
             ValidateSource(op);
             DemandSnapshotAccess(op);
             ct.ThrowIfCancellationRequested();
+            Update(op, s => s with { Phase = RemoteTransferPhase.Commit });
             committing = true;
             commitTask = sftp.CommitUploadAsync(session, temporary, Read(op).RemotePath, options.Overwrite, commitWait.Token);
             await commitTask.WaitAsync(ct).ConfigureAwait(false);
@@ -660,7 +586,6 @@ internal sealed partial class RemoteFsCapability
                 }
                 finally
                 {
-                    if (snapshotDirectory is not null) { try { Directory.Delete(snapshotDirectory); } catch { } }
                     try { await op._source.DisposeAsync().ConfigureAwait(false); }
                     finally
                     {
@@ -721,6 +646,10 @@ internal sealed partial class RemoteFsCapability
         // 撤权优先于其它停止原因,与此前的口径一致:撤权后的到期不再记成到期。
         StopReason reason = op.PermissionRevoked ? StopReason.None : ReadStopReason(op);
         bool stopped = writeStopped && !commitUnknown;
+        // 断线记 Failed / session-disconnected,不记 Cancelled(#656 之前记的是取消):Cancelled 是「有人不要这次传输了」,
+        // 插件与模型按约定不会再发起;断线不是谁的意愿。走到这一分支说明写入已确认停下、提交没发出或被明确拒绝,
+        // 目标确认没被写入(DestinationCommitConfirmedAbsent),重连之后重新上传不会叠加副作用,当作普通失败交还调用方、
+        // 由它决定要不要重试是安全的。提交发出后没等到应答的断线不在这里:那是 commit-unknown / Unknown,不得自动重传。
         RemoteTransferState state = reason == StopReason.Timeout ? RemoteTransferState.TimedOut
             : !stopped ? RemoteTransferState.Unknown
             : op.PermissionRevoked || ex is PluginPermissionDeniedException ? RemoteTransferState.Failed
@@ -731,7 +660,8 @@ internal sealed partial class RemoteFsCapability
             : commitUnknown ? "commit-unknown"
             : StopCode(reason)
               ?? (commitRejected ? cause is NotSupportedException ? "not-supported" : "commit-rejected"
-                  : ex is SourceChangedException ? "source-changed" : "upload-failed");
+                  : ex is SourceChangedException ? "source-changed"
+                  : ex is InsufficientSnapshotSpaceException ? "insufficient-space" : "upload-failed");
         string message = op.PermissionRevoked ? "Upload authorization was revoked."
             : ex is PluginPermissionDeniedException ? "A trusted host upload approval was not granted."
             : commitUnknown ? "The destination commit could not be confirmed; do not retry automatically."
@@ -739,6 +669,7 @@ internal sealed partial class RemoteFsCapability
             : StopText(reason) is { } stop ? stop + "; the destination was not committed."
             : commitRejected ? "The destination commit was refused; the destination was not committed: " + DescribeCause(cause)
             : ex is SourceChangedException ? "The approved source changed; the destination was not committed."
+            : ex is InsufficientSnapshotSpaceException ? ex.Message + " Nothing was uploaded; the destination was not committed."
             : ex is InvalidDataException ? "Uploaded content verification failed."
             : "Upload failed: " + DescribeCause(cause);
         Update(op, s => s with
@@ -752,6 +683,24 @@ internal sealed partial class RemoteFsCapability
             ErrorMessage = message,
         });
         LogTransferEnd(op, state, code, cause);
+    }
+
+    /// <summary>覆盖上传的临时文件按什么权限位新建;读不出来就按服务端默认(改动之前的样子)。</summary>
+    /// <remarks>
+    /// 只是收窄写入期间的暴露面,不是安全提交的一环:提交时 <c>CommitUploadAsync</c> 照旧重新读目标的模式,读不到就拒绝提交。
+    /// 所以这里查不出来(没权限 stat、通道一时出错)不该让整次上传失败。
+    /// </remarks>
+    private async Task<uint?> ReadCreateModeAsync(Guid session, string destination, CancellationToken ct)
+    {
+        try
+        {
+            return await sftp.GetUploadCreateModeAsync(session, destination, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Trace.WriteLine($"[RemoteFs:{pluginId}] create mode for the upload temporary unknown: {PeerText.Sanitize(ex.Message)}");
+            return null;
+        }
     }
 
     /// <summary>
@@ -775,7 +724,10 @@ internal sealed partial class RemoteFsCapability
         return lifetime.IsCancellationRequested ? StopReason.Disposed : StopReason.Timeout;
     }
 
-    /// <summary>确认停下、又不是授权问题时按停止原因给的错误码;没有停止原因(真失败)时为 null。</summary>
+    /// <summary>
+    /// 确认停下、又不是授权问题时按停止原因给的错误码;没有停止原因(真失败)时为 null。
+    /// session-disconnected 配的终态是 Failed 而不是 Cancelled,理由见 <see cref="FailUpload" />(下载同一口径)。
+    /// </summary>
     private static string? StopCode(StopReason reason) => reason switch
     {
         StopReason.User => "cancelled",

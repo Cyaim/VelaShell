@@ -1,3 +1,4 @@
+using System.Text;
 using VelaShell.Core.Models;
 using VelaShell.Core.Ssh;
 
@@ -112,7 +113,9 @@ public sealed class RemoteSearchService(ISshConnectionService connections, TimeS
                 return new(cancellationToken.IsCancellationRequested ? RemoteSearchStatus.Cancelled : RemoteSearchStatus.ShellUnknown, 0);
         }
 
-        string command = RemoteSearch.BuildCommand(query, shell);
+        // 文件名按会话编码(与 SFTP 文件名同一个来源):GBK 服务器上的中文名才显示得对、点了选得中那一行。UTF-8 会话照旧。
+        Encoding? fileNameEncoding = RemoteFileNameEncoding.Resolve(info?.FileNameEncoding);
+        string command = RemoteSearch.BuildCommand(query, shell, fileNameEncoding);
         string root = RemoteSearch.NormalizeRoot(query.Root);
         using var timeout = new CancellationTokenSource(_timeLimit);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
@@ -121,11 +124,13 @@ public sealed class RemoteSearchService(ISshConnectionService connections, TimeS
         bool toolMissing = false;
         try
         {
-            RemoteCommandStreamResult result = await client.StreamCommandAsync(
+            // 按原始字节、只以换行分记录:按行解码会按 UTF-8 解、还把名字里的 \r 当成行尾(见 RemoteSearch 的类型说明)。
+            RemoteCommandStreamResult result = await client.StreamCommandRecordsAsync(
                 command,
-                includeStandardError: false,
-                async (_, line) =>
+                (byte)'\n',
+                async bytes =>
                 {
+                    string line = RemoteSearch.DecodeRecord(bytes.Span, fileNameEncoding);
                     if (RemoteSearch.IsToolMissingMarker(line))
                     {
                         toolMissing = true;

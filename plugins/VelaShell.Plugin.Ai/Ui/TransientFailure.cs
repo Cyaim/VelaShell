@@ -42,6 +42,32 @@ public static class TransientFailure
             && ReasoningPeek.TryRead(update.RawRepresentation, out string peeked)
             && !string.IsNullOrWhiteSpace(peeked)));
 
+    /// <summary>
+    /// 一步回复里有可见正文、又没有工具调用 —— 这时以输出上限 / 内容过滤 / 拒绝收尾的,是一段说到一半的回答,不是失败。
+    /// </summary>
+    /// <remarks>
+    /// §223 起这三种收尾一律整轮失败:桥接不再送出被截断的回答,面板故障转移后又切回失败的那一站(#651 复审①)。
+    /// 维护者 2026-10-25 决定:有正文就照常完成,附一句截断 / 过滤提示;一个字都没有的照旧报错、不重试、不换站。
+    /// 带工具调用的步骤不在此列:被截断的工具参数绝不能执行(那条仍按"工具调用步骤不完整"失败)。
+    /// </remarks>
+    internal static bool IsTruncatedAnswer(IEnumerable<ChatResponseUpdate> step)
+    {
+        bool text = false;
+        foreach (ChatResponseUpdate update in step)
+        {
+            foreach (AIContent content in update.Contents)
+            {
+                if (content is FunctionCallContent) return false;
+                if (content is TextContent { Text: { } value } && !string.IsNullOrWhiteSpace(value)) text = true;
+            }
+        }
+        return text;
+    }
+
+    /// <summary>截断 / 过滤收尾时附在回答后面的那句提示的文案键(由 <see cref="TerminalFailure" /> 给出的终止原因换算)。</summary>
+    internal static string TruncationNoticeKey(string reasonKey)
+        => reasonKey == "ErrorOutputLimit" ? "NoticeOutputLimit" : "NoticeFiltered";
+
     // 确定性终止不能当作空流重发,尤其不能借故障转移绕过拒绝。
     internal static Exception? TerminalFailure(IEnumerable<ChatResponseUpdate> updates)
     {
@@ -59,6 +85,12 @@ public static class TransientFailure
                 or OpenAI.Responses.StreamingResponseRefusalDoneUpdate
                 or OpenAI.Chat.StreamingChatCompletionUpdate { RefusalUpdate.Length: > 0 })
                 return new ModelResponseTerminatedException("ErrorModelRefusal");
+            // response.failed:M.E.AI 的适配器把它转成一帧没有任何内容的更新(不给 ErrorContent、也不抛)。
+            // 不在这里认出来,先吐了半截正文再失败的流会被当成答完了 —— 记成功、解冻冷却;
+            // 一个字没吐就失败的又被当成空回复,原样重试、报"空回复",服务端的原话丢了(#582 复审④)
+            if (update.RawRepresentation is OpenAI.Responses.StreamingResponseFailedUpdate failed)
+                return new InvalidOperationException(failed.Response?.Error?.Message is { Length: > 0 } message
+                    ? message : "The model response failed.");
 #pragma warning restore OPENAI001
             if (update.Contents.OfType<ErrorContent>().FirstOrDefault() is { } error)
                 return new InvalidOperationException(error.Message);
@@ -137,6 +169,32 @@ public static class TransientFailure
                     return (int)apiStatus is 401 or 403 or 429;
                 case System.ClientModel.ClientResultException { Status: > 0 } result:
                     return result.Status is 401 or 403 or 429;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 服务端回 401:这把 Key 本身被拒(无效、吊销),换哪个模型都一样 —— 冷整把 Key。
+    /// 403 / 429 不算:可能只是这把 Key 用不了这一个型号(没开通)或这个型号单独限流,
+    /// 只冷这把 Key 用在这个模型上(见 <see cref="ProviderHealth.RecordKeyFailure" />),兄弟模型照常探。
+    /// </summary>
+    public static bool IsKeyRejected(Exception? exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            switch (current)
+            {
+                case AiSettingsStore.ApiKeySlotChangedException:
+                case ProviderConfigurationChangedException:
+                case OperationCanceledException:
+                    return false;
+                case HttpRequestException { StatusCode: { } status }:
+                    return (int)status == 401;
+                case AnthropicApiException { StatusCode: { } apiStatus } when apiStatus != 0:
+                    return (int)apiStatus == 401;
+                case System.ClientModel.ClientResultException { Status: > 0 } result:
+                    return result.Status == 401;
             }
         }
         return false;

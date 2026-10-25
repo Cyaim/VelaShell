@@ -1,0 +1,137 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:VelaShell.ViewModels"
+        xmlns:pc="using:VelaShell.Controls.Controls"
+        xmlns:loc="using:VelaShell.Localization"
+        mc:Ignorable="d" d:DesignWidth="460"
+        x:Class="VelaShell.Views.DiagnosticExportView"
+        x:DataType="vm:DiagnosticExportViewModel"
+        Title="{loc:Localize DiagBundle_PickTitle}"
+        Width="460"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+  <!-- 导出诊断包(关于页):先勾要另外收进包的几类日志,再选保存位置。外壳与设置导出 / 导入的勾选框
+       (SettingsTransferView)同一规格:bg-surface 卡片、28px 标题栏、52px 按钮栏;动作按钮按 DESIGN.md §5.1 走两套共享主题。
+       可选的几类默认一个都不勾:每一项下面写明它带着什么,勾不勾由用户定。 -->
+
+  <Window.Styles>
+    <Style Selector="Button.caption">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Width" Value="27" />
+      <Setter Property="Height" Value="27" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.caption:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="Button.caption-close:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaDangerHover}" />
+    </Style>
+    <Style Selector="TextBlock.field-hint">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextTertiary}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </Window.Styles>
+
+  <Border Classes="window-card"
+          Background="{DynamicResource VelaBgSurface}"
+          BorderBrush="{DynamicResource VelaBorderSecondary}"
+          ClipToBounds="True">
+    <Grid RowDefinitions="Auto,Auto,52">
+
+      <!-- 标题栏(28,可拖动):图标 + 标题 | 关闭 -->
+      <Border Grid.Row="0" Classes="window-titlebar" Padding="20,0,0,0"
+              PointerPressed="Header_PointerPressed"
+              Background="Transparent"
+              BorderThickness="0,0,0,1"
+              BorderBrush="{DynamicResource VelaBorderPrimary}">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <pc:LucideIcon Grid.Column="0" Width="15" Height="15"
+                         Data="{StaticResource Icon.file-down}"
+                         Foreground="{DynamicResource VelaAccent}"
+                         VerticalAlignment="Center" Margin="0,0,10,0" />
+          <TextBlock Grid.Column="1" Text="{loc:Localize DiagBundle_PickTitle}"
+                     Foreground="{DynamicResource VelaTextPrimary}"
+                     FontSize="{DynamicResource VelaFontSize13}" FontWeight="SemiBold"
+                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          <Button Grid.Column="2" Classes="caption caption-close" VerticalAlignment="Top"
+                  AutomationProperties.Name="{loc:Localize Cancel}"
+                  Click="Cancel_Click">
+            <pc:LucideIcon Width="12" Height="12"
+                           Data="{StaticResource Icon.x}"
+                           Foreground="{DynamicResource VelaTextSecondary}" />
+          </Button>
+        </Grid>
+      </Border>
+
+      <StackPanel Grid.Row="1" Margin="20,16" Spacing="12">
+        <TextBlock Classes="field-hint" Text="{loc:Localize DiagBundle_PickSummary}" />
+
+        <!-- 可选的几类日志 -->
+        <Border Padding="12,8" CornerRadius="6"
+                Background="{DynamicResource VelaBgInput}"
+                BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="1"
+                IsVisible="{Binding HasItems}">
+          <ItemsControl x:Name="OptionList" ItemsSource="{Binding Items}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:DiagnosticExportItem">
+                <StackPanel Margin="0,3" Spacing="3">
+                  <CheckBox IsChecked="{Binding IsChecked}" MinHeight="0" Padding="6,0,0,0"
+                            AutomationProperties.Name="{Binding Label}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Text="{Binding Label}"
+                                 Foreground="{DynamicResource VelaTextPrimary}"
+                                 FontSize="{DynamicResource VelaFontSize12}" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding Size}"
+                                 Foreground="{DynamicResource VelaTextTertiary}"
+                                 FontSize="{DynamicResource VelaFontSize11}" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </CheckBox>
+                  <TextBlock Classes="field-hint" Margin="28,0,0,2" Text="{Binding Hint}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Border>
+        <TextBlock x:Name="NoOptionsText" Classes="field-hint" Text="{loc:Localize DiagBundle_PickNone}"
+                   IsVisible="{Binding !HasItems}" />
+      </StackPanel>
+
+      <!-- 按钮栏:取消 / 导出 -->
+      <Border Grid.Row="2" Padding="20,0"
+              BorderBrush="{DynamicResource VelaBorderPrimary}"
+              BorderThickness="0,1,0,0">
+        <StackPanel Orientation="Horizontal" Spacing="8"
+                    HorizontalAlignment="Right" VerticalAlignment="Center">
+          <Button x:Name="CancelButton"
+                  Theme="{DynamicResource VelaOutlineButtonTheme}"
+                  IsCancel="True"
+                  Content="{loc:Localize Cancel}"
+                  Click="Cancel_Click" />
+          <Button x:Name="ConfirmButton"
+                  Theme="{DynamicResource VelaAccentPillButtonTheme}"
+                  Height="28"
+                  IsDefault="True"
+                  Click="Confirm_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <pc:LucideIcon Width="13" Height="13"
+                             Data="{StaticResource Icon.file-down}"
+                             Foreground="{Binding $parent[Button].Foreground}" />
+              <TextBlock Text="{loc:Localize DiagBundle_PickConfirm}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Border>
+    </Grid>
+  </Border>
+</Window>

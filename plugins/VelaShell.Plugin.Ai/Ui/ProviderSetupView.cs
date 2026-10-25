@@ -139,13 +139,21 @@ public sealed class ProviderSetupView : UserControl
         // 两大段常驻文案只是把列表往下挤(用户验收时点名要删)。
         // 右侧留白拆成 10(根)+ 10(滚动区内):覆盖式滚动条贴着滚动区右缘画,
         // 全放根上它就压在卡片边上了(与「配置工具」同一处理)。
-        Content = new Border
+        // 最上面盖一层确认框:换源清 Key 这种会删东西的确认用独立的框,不再靠同一个按钮点两下
+        Content = new Panel
         {
-            Padding = new Thickness(20, 16, 20 - Gutter, 16),
-            Child = new ScrollViewer
+            Children =
             {
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = new Border { Padding = new Thickness(0, 0, Gutter, 0), Child = _rows }
+                new Border
+                {
+                    Padding = new Thickness(20, 16, 20 - Gutter, 16),
+                    Child = new ScrollViewer
+                    {
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                        Content = new Border { Padding = new Thickness(0, 0, Gutter, 0), Child = _rows }
+                    }
+                },
+                _confirm
             }
         };
 
@@ -213,9 +221,24 @@ public sealed class ProviderSetupView : UserControl
             {
                 continue;
             }
-            _newProviderEntry = _creatingProvider = false;
-            _focusedProviderId = _settings.Providers.Any(p => p.Id == providerId && p.CatalogId == catalogId)
+            string? focused = _settings.Providers.Any(p => p.Id == providerId && p.CatalogId == catalogId)
                 ? providerId : null;
+            // 复用窗口时与 StartNewProvider 同一道守卫:登录正跑着或草稿还没提交,只把窗口提到前面 ——
+            // Expand 先 Collapse,会掐掉浏览器那边正等着回调的登录、丢掉填到一半的表单(#616–#636 复审②)。
+            // 之后再点别的行按编辑处理(这个入口是来"管理"已有实例的)
+            if (_login is not null || _addingAnother || _addingKey || _newProviderDraft is not null)
+            {
+                _newProviderEntry = false;
+                return;
+            }
+            // 要管的这一份已经摆着:不重建,改到一半的字段留着
+            if (_openId == catalogId && row.Slot.IsVisible && focused is not null && focused == _focusedProviderId)
+            {
+                row.Card.BringIntoView();
+                return;
+            }
+            _newProviderEntry = _creatingProvider = false;
+            _focusedProviderId = focused;
             Expand(row);
             row.Card.BringIntoView();
             return;
@@ -408,8 +431,8 @@ public sealed class ProviderSetupView : UserControl
     private string? _primaryKeyId;
     private Task<string?> _primaryKeyBaseline = Task.FromResult<string?>(null);
 
-    /// <summary>两击确认换源清 Key 的第一击;换了表单就作废(<see cref="BuildDetail" />)。</summary>
-    private KeyResetPrompt? _pendingKeyReset;
+    /// <summary>换源清 Key 的确认框;换了表单就按取消收起(<see cref="BuildDetail" />)。</summary>
+    private readonly ConfirmOverlay _confirm = new() { Name = "SetupConfirm", ScrimCornerRadius = new CornerRadius(0, 0, 7, 7) };
     // 克隆的授权参数只属于完整的签发地址;同一主机的不同路径也可能是不同租户。
     private string? _oauthConfiguredBaseUrl;
     private string? _oauthSourceBaseUrl;
@@ -464,7 +487,7 @@ public sealed class ProviderSetupView : UserControl
         _newProviderDraft = existing is null || adding ? draft : null;
         _primaryKeyId = existing is not null && !adding ? existing.Id : null;
         _primaryKeyBaseline = Task.FromResult<string?>(null);
-        _pendingKeyReset = null;
+        _confirm.Dismiss();
         AiModelConfig model = draft.Models.Count > 0 ? draft.Models[0] : new AiModelConfig();
         Missing missing = MissingOf(entry, draft);
 
@@ -1294,6 +1317,7 @@ public sealed class ProviderSetupView : UserControl
             CatalogId = source.CatalogId,
             OAuth = source.OAuth?.Clone(),
             StoreResponses = source.StoreResponses,
+            CustomResponsesStore = source.CustomResponsesStore,
             AllowSystemMessages = source.AllowSystemMessages,
             UnsupportedParameters = source.UnsupportedParameters,
             Models = source.Models.Count > 0 ? [CloneModel(source.Models[0])] : []
@@ -1397,24 +1421,33 @@ public sealed class ProviderSetupView : UserControl
             if (!OwnsForm()) return;
             // 换源时旧主槽一律清掉,只有空白的那种不算一把 Key、不在清掉的名单里,也照清 —— 基线要看换没换源,不能只看名单
             bool movedOrigin = AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl);
-            // 地址换到别的源会清掉已存 Key:第一次只提示,同一地址再点一次才清 —— 而且只清这次提示列出的那几把
-            try
+            // 地址换到别的源会清掉已存 Key:先弹确认框列出要清的那几把,点了确认才清。框开着期间要清的有了变动,
+            // 存储层核对确认凭据再拒一次,换一句话再问 —— 框里没列的那把不会被一起清掉
+            IReadOnlyCollection<string>? confirmed = null;
+            while (true)
             {
-                cleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, draft, expectedProviderJson,
-                    replacement, keyId: keyId!, expectedKey: expectedKey,
-                    confirmedKeyReset: _pendingKeyReset?.For(provider, draft.BaseUrl), cancellationToken: _context.Shutdown);
+                try
+                {
+                    cleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, draft, expectedProviderJson,
+                        replacement, keyId: keyId!, expectedKey: expectedKey,
+                        confirmedKeyReset: confirmed, cancellationToken: _context.Shutdown);
+                    break;
+                }
+                catch (AiSettingsStore.ApiKeyResetRequiredException ex)
+                {
+                    if (!OwnsForm()) return;
+                    TextBlock resetProgress = _progress;
+                    bool accepted = await KeyResetPrompt.AskAsync(_confirm, provider, ex, confirmed is not null, _loc)
+                        .ConfigureAwait(true);
+                    if (!OwnsForm()) return;
+                    if (!accepted)
+                    {
+                        resetProgress.Text = _loc["SetupResetCancelled"];
+                        return;
+                    }
+                    confirmed = ex.Confirmation;
+                }
             }
-            catch (AiSettingsStore.ApiKeyResetRequiredException ex)
-            {
-                if (!OwnsForm()) return;
-                // 同一地址已经提示过还被拒:提示之后 Key 变了。换一句话说 —— 一字不差的提示看着像没点上,再点一下就把新存的那把清掉
-                string prompt = _pendingKeyReset?.For(provider, draft.BaseUrl) is null
-                    ? "SetupBaseUrlKeyResetConfirm" : "SetupBaseUrlKeyResetChanged";
-                _pendingKeyReset = new(provider, draft.BaseUrl, ex.Confirmation);
-                _progress.Text = _loc.F(prompt, ex.KeyCount);
-                return;
-            }
-            _pendingKeyReset = null;
             committedKey = replacement ?? (movedOrigin ? null : expectedKey);
             // 框里预填的是旧地址的 Key,已经清掉了,别让它还摆在那儿
             if (committedKey is null && ReferenceEquals(keyBox, _keyBox) && keyBox.Text == key)
@@ -1621,7 +1654,7 @@ public sealed class ProviderSetupView : UserControl
             else
             {
                 await _store.SaveProviderOAuthFormAsync(_settings, existing!, provider, expectedProviderJson,
-                    tokens, cancellation.Token).ConfigureAwait(true);
+                    tokens, cancellationToken: cancellation.Token).ConfigureAwait(true);
                 provider = existing!;
             }
             if (ReferenceEquals(_secondary, loginSecondary))
@@ -1700,6 +1733,7 @@ public sealed class ProviderSetupView : UserControl
             string? baselineJson = !_addingAnother && !_addingKey && _openId == entry.Id
                 && ReferenceEquals(Existing(entry), provider) ? _providerFormBaseline : null;
             AiProvider? baseline = baselineJson is null ? null : JsonSerializer.Deserialize<AiProvider>(baselineJson);
+            string? openedModel = baseline?.Models.FirstOrDefault()?.Model;
             List<string>? changedModels = _health is null ? null : [];
             string expectedProviderJson = JsonSerializer.Serialize(provider);
             AiProvider draft = JsonSerializer.Deserialize<AiProvider>(expectedProviderJson)!;
@@ -1714,6 +1748,7 @@ public sealed class ProviderSetupView : UserControl
                 && _providerFormBaseline == baselineJson)
             {
                 _providerFormBaseline = JsonSerializer.Serialize(baseline);
+                FollowPulledModel(openedModel, baseline.Models.FirstOrDefault()?.Model);
             }
 
             ModelsChanged?.Invoke();
@@ -1738,6 +1773,26 @@ public sealed class ProviderSetupView : UserControl
             }
         }
     }
+    /// <summary>
+    /// 拉取把首模型的型号改了(出厂的空型号对齐成清单里的头一个、下架的自动模型被清掉换了首位):
+    /// 用户没碰过的型号框跟上,输入基线一并改成新值。
+    /// </summary>
+    /// <remarks>
+    /// 只改提交基线不改框的话,框里还是旧值(自定义接入是空串)、输入基线也还是旧值 —— 表单看着没改过,
+    /// 再点一次保存,<see cref="ApplyForm" /> 把框里的旧值写回首模型,刚填进去的型号就没了(#582 复审⑤)。
+    /// 框被用户改过就不动它:那是草稿,保存时照用户写的落库(与 <see cref="FollowUntouchedFields" /> 同一条规矩)。
+    /// </remarks>
+    private void FollowPulledModel(string? opened, string? latest)
+    {
+        if (latest is null || opened == latest || _formInputBaseline is not { } inputs
+            || inputs.Model != opened || _modelBox.Text != opened)
+        {
+            return;
+        }
+        _modelBox.Text = latest;
+        _formInputBaseline = inputs with { Model = latest };
+    }
+
     // 目录只接纳自己实际改过的规格字段;网络期间的外部编辑不能混进表单基线。
     internal static void MergeCatalogue(AiProvider target, AiProvider before, AiProvider catalogue,
         AiProvider? baseline, List<string>? changedModels)

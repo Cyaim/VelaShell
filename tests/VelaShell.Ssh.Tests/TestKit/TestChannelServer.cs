@@ -1015,16 +1015,21 @@ internal sealed class TestChannelServer(SshPacketTransport transport, TestChanne
 
     private async Task OnGlobalRequestAsync(byte[] payload, CancellationToken cancellationToken)
     {
-        SshDataReader reader = new(new ReadOnlySequence<byte>(payload));
-        reader.ReadMessageNumber(SshMessageNumber.GlobalRequest);
-        string requestType = reader.ReadUtf8String(MaxField);
+        SshDataReader common = new(new ReadOnlySequence<byte>(payload));
+        common.ReadMessageNumber(SshMessageNumber.GlobalRequest);
+        string requestType = common.ReadUtf8String(MaxField);
         Observation.GlobalRequests.Add(requestType);
-        bool wantReply = reader.ReadBoolean();
+        bool wantReply = common.ReadBoolean();
+
+        // 请求特有的字段等钩子跑完再读,读取器却要在钩子之后另起一个:SshDataReader 是 ref struct,不能跨 await 存活 ——
+        // runtime-async 下编译器不报 CS4007,钩子真的挂起之后它回来是空的,往下读就截断(仓库根 AGENTS.md)。
+        ReadOnlySequence<byte> body = common.ReadRemaining();
         if (_script.BeforeGlobalReply is { } beforeReply)
         {
             await beforeReply(requestType);
         }
 
+        SshDataReader reader = new(body);
         if (requestType == "tcpip-forward" && _script.GrantRemoteForwardPort > 0)
         {
             string bindAddress = reader.ReadUtf8String(MaxField);

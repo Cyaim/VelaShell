@@ -176,6 +176,14 @@
                   <ComboBox x:Name="ProviderProtocolCombo" HorizontalAlignment="Stretch" />
                   <TextBlock x:Name="ProviderProtocolHintText" Classes="hint" />
                 </StackPanel>
+                <!-- 自定义接入的 Responses store 开关:默认关,只在用户自己接的端点上出现(目录里的具名供应商以目录为准) -->
+                <StackPanel x:Name="ProviderStorePanel" Classes="field" IsVisible="False">
+                  <CheckBox x:Name="ProviderStoreCheck" IsChecked="False"
+                            Theme="{StaticResource AiCheckBoxTheme}"
+                            FontSize="{DynamicResource VelaFontSize12}"
+                            Foreground="{DynamicResource VelaTextPrimary}" />
+                  <TextBlock x:Name="ProviderStoreHintText" Classes="hint" TextWrapping="Wrap" />
+                </StackPanel>
                 <!-- 鉴权二选一:填 Key 的看下面这块,订阅登录的换成状态 + 一个通往目录页的入口。
                      两块同时摆着会让人以为登录之后还得再填一把 Key。 -->
                 <!-- 填 Key 的这一刻正是用户最想知道"它会被存到哪儿"的时刻,徽章就贴在标签边上 -->
@@ -215,6 +223,9 @@
                             FontSize="{DynamicResource VelaFontSize12}"
                             Foreground="{DynamicResource VelaTextPrimary}" />
                   <TextBlock x:Name="BalanceApiKeysHintText" Classes="hint" TextWrapping="Wrap" />
+                  <!-- 哪些模型的覆盖地址跨源、又没自带 Key:它们不再借这里的 Key(迁移提示,点名) -->
+                  <TextBlock x:Name="CrossOriginModelsHintText" Classes="hint" TextWrapping="Wrap" IsVisible="False"
+                             Foreground="{DynamicResource VelaWarning}" />
                 </StackPanel>
 
                 <StackPanel x:Name="ProviderAuthPanel" Classes="field" IsVisible="False">
@@ -312,6 +323,13 @@
                       </Border>
                     </StackPanel>
                     <TextBlock x:Name="OwnKeyHintText" Classes="hint" />
+                    <!-- 覆盖地址与供应商不同源又没勾自带 Key:供应商的 Key 不跟去(以前借第 1 把)。
+                         存量配置升级上来就是这样,得在这儿说清楚,并给一个照旧用第 1 把的入口(只填进表单,保存才生效) -->
+                    <StackPanel x:Name="CrossOriginKeyPanel" IsVisible="False" Spacing="6" Margin="0,6,0,0">
+                      <TextBlock x:Name="CrossOriginKeyHintText" Classes="hint" Margin="0"
+                                 Foreground="{DynamicResource VelaWarning}" />
+                      <Button x:Name="CrossOriginKeyFillButton" Classes="host" HorizontalAlignment="Left" />
+                    </StackPanel>
                     <StackPanel x:Name="OwnKeyPanel" Margin="0,8,0,0">
                       <Grid ColumnDefinitions="*,6,Auto">
                         <TextBox x:Name="ApiKeyBox" PasswordChar="●" FontFamily="{DynamicResource VelaUiMonoFont}" />
@@ -480,5 +498,8 @@
         </StackPanel>
       </ScrollViewer>
     </Border>
+
+    <!-- 会删东西的确认(换源清 Key)用独立的确认框,盖住左右两栏;不再靠同一个按钮点两下 -->
+    <ui:ConfirmOverlay x:Name="KeyResetConfirm" Grid.ColumnSpan="2" ScrimCornerRadius="0,0,7,7" />
   </Grid>
 </UserControl>

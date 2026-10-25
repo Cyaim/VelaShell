@@ -64,6 +64,40 @@ public sealed class AlgorithmCatalogTests
         Assert.IsTrue(fips.HostKey.All(a => SshAlgorithmCatalog.IsImplemented(SshAlgorithmCategory.HostKey, a)));
     }
 
+    /// <summary>
+    /// 〔spec/00 §6.6〕与 RHEL 10.2 的 FIPS 加密策略给 OpenSSH 的清单（<c>/usr/share/crypto-policies/FIPS/openssh.txt</c>，
+    /// crypto-policies-20260216）比：密钥交换、主机密钥、MAC 是同一组，加密只多一个 <c>aes192-ctr</c>。顺序不比 —— 协商以客户端的为准。
+    /// 曾经少了群交换与 group18，注释却说「一致」。
+    /// </summary>
+    [TestMethod]
+    public void FIPS清单与RHEL的FIPS策略是同一组算法()
+    {
+        SshAlgorithmSet fips = SshAlgorithmSet.FipsApprovedOnly;
+        string[] rhelKex =
+        [
+            "mlkem768nistp256-sha256", "mlkem1024nistp384-sha384",
+            "ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521",
+            "diffie-hellman-group-exchange-sha256", "diffie-hellman-group14-sha256",
+            "diffie-hellman-group16-sha512", "diffie-hellman-group18-sha512",
+        ];
+        string[] rhelHostKey =
+        [
+            "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp256-cert-v01@openssh.com",
+            "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp384-cert-v01@openssh.com",
+            "ecdsa-sha2-nistp521", "ecdsa-sha2-nistp521-cert-v01@openssh.com",
+            "rsa-sha2-256", "rsa-sha2-256-cert-v01@openssh.com", "rsa-sha2-512", "rsa-sha2-512-cert-v01@openssh.com",
+        ];
+        string[] rhelMac = ["hmac-sha2-256-etm@openssh.com", "hmac-sha2-512-etm@openssh.com", "hmac-sha2-256", "hmac-sha2-512"];
+        string[] rhelCipher = ["aes256-gcm@openssh.com", "aes256-ctr", "aes128-gcm@openssh.com", "aes128-ctr"];
+
+        Assert.AreSequenceEqual(rhelKex.Order(StringComparer.Ordinal), fips.KeyExchange.Order(StringComparer.Ordinal));
+        Assert.AreSequenceEqual(rhelHostKey.Order(StringComparer.Ordinal), fips.HostKey.Order(StringComparer.Ordinal));
+        Assert.AreSequenceEqual(rhelMac.Order(StringComparer.Ordinal), fips.MacClientToServer.Order(StringComparer.Ordinal));
+        Assert.AreSequenceEqual(
+            rhelCipher.Append(SshAlgorithmNames.Aes192Ctr).Order(StringComparer.Ordinal),
+            fips.EncryptionClientToServer.Order(StringComparer.Ordinal));
+    }
+
     [TestMethod]
     public void 认得却没实现的一个都不在实现里()
     {

@@ -257,8 +257,6 @@ public partial class SettingsView : UserControl
     private ProviderKeyRowState? _savingKeyRow;
     private string? _pendingRemoveKeyId;
 
-    /// <summary>两击确认换源清 Key 的第一击;换了选择就作废(<see cref="ResetKeyEditor" />)。</summary>
-    private KeyResetPrompt? _pendingKeyReset;
 
     /// <summary>
     /// 供应商行每点一次「测试」领一个序号。未保存的跨源测试要先读已存 Key(按钮要到探活开始才置灰),
@@ -272,6 +270,7 @@ public partial class SettingsView : UserControl
     private bool _keyMutation;
     private bool _refreshingKeyRowsOnTick;
     private bool _settingBalance;
+    private bool _settingStore;
     private int _keyRowsRun;
 
     /// <summary>
@@ -348,7 +347,13 @@ public partial class SettingsView : UserControl
         };
         ProviderProtocolCombo.SelectionChanged += (_, _) => UpdateProtocolOnlyFields();
         ProtocolCombo.SelectionChanged += (_, _) => UpdateProtocolOnlyFields();
-        OwnKeyCheck.IsCheckedChanged += (_, _) => OwnKeyPanel.IsVisible = OwnKeyCheck.IsChecked == true;
+        OwnKeyCheck.IsCheckedChanged += (_, _) =>
+        {
+            OwnKeyPanel.IsVisible = OwnKeyCheck.IsChecked == true;
+            UpdateCrossOriginKeyHint();
+        };
+        BaseUrlBox.TextChanged += (_, _) => UpdateCrossOriginKeyHint();
+        CrossOriginKeyFillButton.Click += (_, _) => _ = FillCrossOriginKeyAsync();
         AddButton.Click += (_, _) => ProviderCatalogRequested?.Invoke(null);
         // 同目录多账号按左栏选中的实例定位,不是随目录 id 找最近一份。
         ManageSignInButton.Click += (_, _) => ProviderCatalogRequested?.Invoke(SelectedProvider?.Id);
@@ -363,6 +368,7 @@ public partial class SettingsView : UserControl
         ProviderProbeAllKeysButton.Click += (_, _) => OpenAllKeysModelPicker();
         ProviderAllKeysModelPicker.SelectionChanged += OnAllKeysModelSelected;
         BalanceApiKeysCheck.IsCheckedChanged += (_, _) => _ = SaveBalanceAsync();
+        ProviderStoreCheck.IsCheckedChanged += (_, _) => _ = SaveResponsesStoreAsync();
         // TextChanged 延后派发，不能判断赋值当刻是否来自装载/合并。
         MaxInputTokensBox.PropertyChanged += (_, change) =>
         {
@@ -407,6 +413,8 @@ public partial class SettingsView : UserControl
         Avalonia.Automation.AutomationProperties.SetName(ProviderAddApiKeyButton, _loc["SetupAddApiKey"]);
         BalanceApiKeysCheck.Content = _loc["SetupBalanceApiKeys"];
         BalanceApiKeysHintText.Text = _loc["SetupBalanceApiKeysHint"];
+        ProviderStoreCheck.Content = _loc["ProviderResponsesStore"];
+        ProviderStoreHintText.Text = _loc["ProviderResponsesStoreHint"];
         foreach (ProviderKeyRowState row in _keyRows) ApplyKeyRowLoc(row);
         RefreshAllKeysProbeControls();
         ProviderKeyBadgeText.Text = _loc["KeyEncrypted"];
@@ -424,6 +432,9 @@ public partial class SettingsView : UserControl
         ModelPickLabel.Text = _loc["ModelPick"];
         OwnKeyCheck.Content = _loc["OwnApiKey"];
         OwnKeyHintText.Text = _loc["OwnApiKeyHint"];
+        CrossOriginKeyHintText.Text = _loc["CrossOriginNoKeyHint"];
+        CrossOriginKeyFillButton.Content = _loc["CrossOriginUsePrimaryKey"];
+        if (SelectedProvider is { } shown && SelectedModel is null) UpdateCrossOriginModelsHint(shown);
         MaxTokensLabel.Text = _loc["MaxTokens"];
         MaxInputTokensLabel.Text = _loc["MaxInputTokens"];
         UpdateContextWindowHint();
@@ -713,7 +724,8 @@ public partial class SettingsView : UserControl
         ProviderApiKeyRows.Children.Clear();
         _keyDraft = null;
         _pendingRemoveKeyId = null;
-        _pendingKeyReset = null;
+        // 换了选择,框里问的那件事就不作数了:按取消收起
+        KeyResetConfirm.Dismiss();
         ProviderNewApiKeyBox.Text = "";
         ++_keyRowsRun;
     }
@@ -744,6 +756,7 @@ public partial class SettingsView : UserControl
             _settingBalance = true;
             try { BalanceApiKeysCheck.IsChecked = provider?.BalanceApiKeys ?? false; }
             finally { _settingBalance = false; }
+            ShowResponsesStore(provider);
             _loadedProviderName = ProviderNameBox.Text;
             _loadedProviderUrl = ProviderBaseUrlBox.Text;
             _loadedProviderProtocol = ProviderProtocolCombo.SelectedIndex;
@@ -832,6 +845,57 @@ public partial class SettingsView : UserControl
         ApiKeyBox.Text = "";
         _loadedModelForm = CaptureModelForm();
         UpdateContextWindowHint();
+        UpdateCrossOriginKeyHint();
+    }
+
+    /// <summary>
+    /// 模型表单此刻(含未保存的覆盖地址与勾选)是不是「跨源又不自带 Key」:是就说明请求不带 Key,
+    /// 并给出照旧用供应商第 1 把 Key 的入口。只对填 Key 的供应商成立(订阅登录不在这条口径里)。
+    /// </summary>
+    private void UpdateCrossOriginKeyHint()
+    {
+        string url = BaseUrlBox.Text?.Trim() ?? "";
+        CrossOriginKeyPanel.IsVisible = SelectedProvider is { Auth: AuthMethod.ApiKey } provider
+            && SelectedModel is not null && OwnKeyCheck.IsChecked != true
+            && AiSettingsStore.InheritsNoKeyAcrossOrigins(provider, new AiModelConfig { BaseUrlOverride = url });
+    }
+
+    /// <summary>供应商页点名:覆盖地址跨源、又没自带 Key 的模型(按已保存的配置)。</summary>
+    private void UpdateCrossOriginModelsHint(AiProvider provider)
+    {
+        List<string> names = [.. provider.Models
+            .Where(model => AiSettingsStore.InheritsNoKeyAcrossOrigins(provider, model))
+            .Select(model => string.IsNullOrWhiteSpace(model.DisplayName) ? _loc["Unnamed"] : model.DisplayName)];
+        CrossOriginModelsHintText.Text = names.Count == 0 ? "" : _loc.F("CrossOriginModelsNoKey", string.Join(", ", names));
+        CrossOriginModelsHintText.IsVisible = names.Count > 0;
+    }
+
+    /// <summary>
+    /// 「沿用供应商的第 1 把 Key」:勾上自带 Key、把供应商主槽此刻的 Key 填进表单 —— 只是草稿,点保存才落库,
+    /// 那时这把 Key 才算用户明确交给这个覆盖地址。主槽是空的就只勾上,请用户填这台服务器的 Key。
+    /// </summary>
+    private async Task FillCrossOriginKeyAsync()
+    {
+        if (SelectedProvider is not { Auth: AuthMethod.ApiKey } provider || SelectedModel is not { } model) return;
+        int run = _editorRun;
+        string? primary;
+        try { primary = await _store.GetApiKeyAsync(provider.Id); }
+        catch (Exception ex)
+        {
+            _context.Log.Warn($"Reading the primary Key of '{provider.Id}' failed: {ex.Message}");
+            if (run == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
+            return;
+        }
+        if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider) || !ReferenceEquals(SelectedModel, model)) return;
+        OwnKeyCheck.IsChecked = true;
+        if (string.IsNullOrWhiteSpace(primary))
+        {
+            StatusText.Text = _loc["CrossOriginPrimaryKeyMissing"];
+            ApiKeyBox.Focus();
+            return;
+        }
+        ApiKeyBox.Text = primary;
+        StatusText.Text = _loc["CrossOriginPrimaryKeyFilled"];
     }
 
     private void SetWindowText(string? text)
@@ -863,6 +927,8 @@ public partial class SettingsView : UserControl
             ? ""
             : string.IsNullOrWhiteSpace(model.DisplayName) ? _loc["Unnamed"] : model.DisplayName;
         BreadcrumbText.Text = model is null ? providerName : $"{providerName}  ›  {modelName}";
+        if (provider is not null && model is null) UpdateCrossOriginModelsHint(provider);
+        else CrossOriginModelsHintText.IsVisible = false;
         // 拉取是整家的事;端点或目录任意一条路可用就显示入口。
         PullModelsPanel.IsVisible = provider is not null && model is null
                                     && (!string.IsNullOrWhiteSpace(provider.BaseUrl)
@@ -1085,6 +1151,7 @@ public partial class SettingsView : UserControl
         _settingBalance = true;
         try { BalanceApiKeysCheck.IsChecked = provider.BalanceApiKeys; }
         finally { _settingBalance = false; }
+        ShowResponsesStore(provider);
         await RefreshProviderKeyRowsAsync(provider, run);
     }
     private sealed class ProviderKeyRowState(AiProvider provider, string id, string key)
@@ -1128,13 +1195,13 @@ public partial class SettingsView : UserControl
     private readonly record struct KeyRequestSnapshot(string ProviderId, string ProviderUrl, string? CatalogId,
         string ModelId, ChatProtocol Protocol, string Url, string Model, int MaxTokens, int MaxInputTokens, ReasoningLevel Reasoning,
         float? Temperature, float? TopP, string Stop, bool PromptCaching, string? SystemPrompt,
-        bool StoreResponses, bool AllowSystemMessages, string Unsupported, string KeyOwner, AuthMethod Auth)
+        bool StoreResponses, bool? CustomStore, bool AllowSystemMessages, string Unsupported, string KeyOwner, AuthMethod Auth)
     {
         public static KeyRequestSnapshot Capture(ResolvedModel model) => new(model.Provider.Id, model.Provider.BaseUrl,
             model.Provider.CatalogId, model.Id,
             model.Protocol, model.BaseUrl, model.Model, model.MaxTokens, model.MaxInputTokens, model.Reasoning,
             model.Temperature, model.TopP, model.StopSequences, model.PromptCaching, model.SystemPrompt,
-            model.Provider.StoreResponses, model.Provider.AllowSystemMessages,
+            model.Provider.StoreResponses, model.Provider.CustomResponsesStore, model.Provider.AllowSystemMessages,
             model.Provider.UnsupportedParameters, model.ApiKeyOwnerId, model.Provider.Auth);
     }
 
@@ -1150,6 +1217,7 @@ public partial class SettingsView : UserControl
         AdditionalApiKeyIds = [.. model.Provider.AdditionalApiKeyIds],
         ActiveApiKeyId = model.Provider.ActiveApiKeyId,
         StoreResponses = model.Provider.StoreResponses,
+        CustomResponsesStore = model.Provider.CustomResponsesStore,
         AllowSystemMessages = model.Provider.AllowSystemMessages,
         UnsupportedParameters = model.Provider.UnsupportedParameters
     }, new AiModelConfig
@@ -1196,6 +1264,9 @@ public partial class SettingsView : UserControl
             string? key = await _store.GetApiKeyAsync(id, token);
             if (!string.IsNullOrWhiteSpace(key)) keys.Add((id, key));
         }
+        // 移除第 1 把只清主槽的机密、槽还在(补充槽也还在):照样摆一行空的主槽,铅笔能把它填回去。
+        // 不摆的话「添加 API Key」只会在后面再加一个补充槽,第 1 把永远空着、再也填不回去
+        if (keys.Count > 0 && keys[0].Id != provider.Id) keys.Insert(0, (provider.Id, ""));
         if (token.IsCancellationRequested || refresh != _keyRowsRun || run != _editorRun
             || !ReferenceEquals(SelectedProvider, provider) || SelectedModel is not null
             || !_settings.Providers.Contains(provider) || provider.Auth != AuthMethod.ApiKey)
@@ -1368,11 +1439,13 @@ public partial class SettingsView : UserControl
                 ? $"{model.DisplayName} · {model.Id[..Math.Min(8, model.Id.Length)]}"
                 : model.DisplayName))];
     }
+    // 跨源覆盖的模型不借供应商的任何一把 Key(主槽也不借,见 AiSettingsStore.InheritsNoKeyAcrossOrigins),
+    // 拿哪一行的 Key 去测它都不是它真会发出的请求
     private static bool KeyModelEligible(ProviderKeyRowState row, AiModelConfig model)
         => !model.HasOwnApiKey && !string.IsNullOrWhiteSpace(model.Model)
-            && (row.Id == row.Provider.Id || AiSettingsStore.SameOrigin(
+            && AiSettingsStore.SameOrigin(
                 string.IsNullOrWhiteSpace(model.BaseUrlOverride) ? row.Provider.BaseUrl : model.BaseUrlOverride,
-                row.Provider.BaseUrl));
+                row.Provider.BaseUrl);
 
     private static bool HasKeyModels(ProviderKeyRowState row)
     {
@@ -1391,7 +1464,12 @@ public partial class SettingsView : UserControl
     private void ApplyKeyRowLoc(ProviderKeyRowState row)
     {
         string ordinal = _loc.F("SetupApiKeyOrdinal", row.Ordinal);
-        string summary = row.Revealed ? row.Key : row.Key.Length > 4 ? "●●●●" + row.Key[^4..] : "●●●●";
+        bool empty = string.IsNullOrWhiteSpace(row.Key);
+        string summary = empty ? _loc["SetupApiKeyEmptySlot"]
+            : row.Revealed ? row.Key : row.Key.Length > 4 ? "●●●●" + row.Key[^4..] : "●●●●";
+        // 空着的一行:没有可显示、可移除的 Key,只留铅笔把它填回去
+        row.Reveal.IsEnabled = !empty;
+        row.Remove.IsEnabled = !empty && !_keyMutation;
         string active = !row.Provider.BalanceApiKeys && CurrentProviderKeyId(row.Provider) == row.Id
             ? $" · {_loc["SetupApiKeyActive"]}" : "";
         row.Label.Text = $"{ordinal} · {summary}{active}";
@@ -1535,6 +1613,7 @@ public partial class SettingsView : UserControl
         _keyMutation = busy;
         ProviderAddApiKeyButton.IsEnabled = !busy;
         BalanceApiKeysCheck.IsEnabled = !busy;
+        ProviderStoreCheck.IsEnabled = !busy;
         SaveButton.IsEnabled = !busy && SelectedItem is not null;
         foreach (ProviderKeyRowState row in _keyRows)
         {
@@ -1631,19 +1710,69 @@ public partial class SettingsView : UserControl
         finally { SetKeyMutation(false); }
     }
 
+    /// <summary>
+    /// 自定义接入的 <c>store</c> 开关:只在用户自己接的端点上摆出来(目录里的具名供应商以目录为准),
+    /// 勾上 = 允许服务端存下这一轮,不勾(默认)= 发 <c>store: false</c>(#616–#636 复审①,维护者 2026-10-25 决定)。
+    /// </summary>
+    private void ShowResponsesStore(AiProvider? provider)
+    {
+        ProviderStorePanel.IsVisible = provider is not null && EndpointQuirks.HasCustomStoreSwitch(provider);
+        _settingStore = true;
+        try { ProviderStoreCheck.IsChecked = provider?.CustomResponsesStore == true; }
+        finally { _settingStore = false; }
+    }
+
+    /// <summary>勾选当场落库(与「轮流首发」同一套路):它改的是请求本身,落库会推进这一家的请求配置代次。</summary>
+    private async Task SaveResponsesStoreAsync()
+    {
+        if (_settingStore || _loadingEditor || _keyMutation || SelectedModel is not null
+            || SelectedProvider is not { } provider || !_settings.Providers.Contains(provider)
+            || !EndpointQuirks.HasCustomStoreSwitch(provider))
+        {
+            return;
+        }
+
+        bool? previous = provider.CustomResponsesStore;
+        bool value = ProviderStoreCheck.IsChecked == true;
+        if ((previous == true) == value) return;
+        int run = _editorRun;
+        provider.CustomResponsesStore = value;
+        SetKeyMutation(true);
+        try { await _store.SaveAsync(_settings); }
+        catch (Exception ex)
+        {
+            if (provider.CustomResponsesStore == value) provider.CustomResponsesStore = previous;
+            if (run == _editorRun)
+            {
+                ShowResponsesStore(provider);
+                if (ex is AiSettingsStore.ApiKeySlotChangedException) await RecoverSettingsConflictAsync(provider, null, run);
+                else StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
+            }
+        }
+        finally { SetKeyMutation(false); }
+    }
+
     private void CancelAllKeysProbe() => _allKeyProbeCts?.Cancel();
+
+    /// <summary>空着的主槽那一行(移除第 1 把之后留下的):可以填回去,但没有 Key 可测、可显示、可移除。</summary>
+    private static bool IsEmptyPrimary(ProviderKeyRowState row)
+        => row.Id == row.Provider.Id && string.IsNullOrWhiteSpace(row.Key);
+
+    /// <summary>「检测全部」要测的那几行:有 Key 的;空着的主槽不在其中。</summary>
+    private List<ProviderKeyRowState> ProbeableKeyRows => [.. _keyRows.Where(row => !string.IsNullOrWhiteSpace(row.Key))];
 
     private bool HasInvalidKeyRows()
     {
         foreach (ProviderKeyRowState row in _keyRows)
-            if (string.IsNullOrWhiteSpace(row.Key) || !KeyRowCurrent(row, _editorRun)) return true;
+            if (string.IsNullOrWhiteSpace(row.Key) && !IsEmptyPrimary(row) || !KeyRowCurrent(row, _editorRun)) return true;
         return false;
     }
 
     private bool AllKeysCanUse(AiModelConfig model)
     {
-        if (_keyRows.Count == 0) return false;
-        foreach (ProviderKeyRowState row in _keyRows)
+        List<ProviderKeyRowState> rows = ProbeableKeyRows;
+        if (rows.Count == 0) return false;
+        foreach (ProviderKeyRowState row in rows)
             if (!KeyModelEligible(row, model)) return false;
         return true;
     }
@@ -1707,15 +1836,16 @@ public partial class SettingsView : UserControl
 
         if (HasInvalidKeyRows()) { RefreshAllKeysProbeControls(); return; }
         if (ProviderDraftDirty(provider)) { StatusText.Text = _loc["SetupSaveProviderFirst"]; return; }
+        List<ProviderKeyRowState> probeable = ProbeableKeyRows;
         if (_settings.FindModel(modelId) is not { } model || !ReferenceEquals(model.Provider, provider)
-            || _keyRows.Count == 0 || _keyRows.Any(row => !KeyModelEligible(row, model.Config)))
+            || probeable.Count == 0 || probeable.Any(row => !KeyModelEligible(row, model.Config)))
         {
             return;
         }
 
         int editorRun = _editorRun, version = _health?.Version ?? 0;
         var snapshot = KeyRequestSnapshot.Capture(model);
-        (ProviderKeyRowState Row, string Key)[] rows = [.. _keyRows.Select(row => (Row: row, row.Key))];
+        (ProviderKeyRowState Row, string Key)[] rows = [.. probeable.Select(row => (Row: row, row.Key))];
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(_keyEditorCts.Token);
         _allKeyProbeCts = cts;
         foreach ((ProviderKeyRowState? row, string _) in rows)
@@ -1731,7 +1861,7 @@ public partial class SettingsView : UserControl
             foreach ((ProviderKeyRowState? row, string _) in rows)
             {
                 if (cts.IsCancellationRequested || _keyMutation || ProviderDraftDirty(provider)
-                    || version != (_health?.Version ?? 0) || _keyRows.Count != rows.Length
+                    || version != (_health?.Version ?? 0) || ProbeableKeyRows.Count != rows.Length
                     || rows.Any(entry => !KeyRowCurrent(entry.Row, editorRun) || entry.Row.Key != entry.Key)
                     || _settings.FindModel(modelId) is not { } live || snapshot != KeyRequestSnapshot.Capture(live))
                 {
@@ -1817,8 +1947,6 @@ public partial class SettingsView : UserControl
         RefreshKeyRowStatus(row);
         try
         {
-            // 主槽测跨源模型时解析器不认它是槽请求(KeyId 为 null):那边的成败说明的是覆盖地址,
-            // 不是这把 Key 在供应商自己源上的状态,不能拿去冷却或解冻 Key 槽(与 TestAsync 同一裁决)
             (ProviderCredential credential, string? slotId) = await _store.ResolveCredentialWithKeyIdAsync(live, keyId: row.Id, cancellationToken: token);
             if (credential.Value != row.Key) throw new AiSettingsStore.ApiKeySlotChangedException();
             if (string.IsNullOrWhiteSpace(credential.Value)
@@ -1834,12 +1962,14 @@ public partial class SettingsView : UserControl
             row.Result = new KeyProbeResult(modelId, snapshot, error is null, DateTime.Now, error, version);
             if (error is null)
             {
-                if (slotId is not null) _health?.RecordKey(slotId, true, version, observation);
+                if (slotId is not null) _health?.RecordKeyForModel(slotId, modelId, true, version, observation);
                 _health?.Record(modelId, true, version, observation);
             }
             else if (TransientFailure.IsApiKeyFailure(error))
             {
-                if (slotId is not null) _health?.RecordKey(slotId, false, version, observation);
+                // 401 冷整把 Key;403 / 429 只冷这把 Key 用在所选的模型上,同一把 Key 下的其它模型不受连坐
+                if (slotId is not null)
+                    _health?.RecordKeyFailure(slotId, modelId, TransientFailure.IsKeyRejected(error), version, observation);
                 else _health?.Record(modelId, false, version, observation);
             }
         }
@@ -2034,9 +2164,9 @@ public partial class SettingsView : UserControl
 
     // ---- 保存 ----
 
-    private void OnSaveClick(object? sender, RoutedEventArgs e) => _ = SaveAsync();
+    private void OnSaveClick(object? sender, RoutedEventArgs e) => _ = SaveAsync(null);
 
-    private async Task SaveAsync()
+    private async Task SaveAsync(KeyResetPrompt? confirmedKeyReset)
     {
         ProviderNavItem? before = SelectedItem;
         int run = _editorRun;
@@ -2066,7 +2196,8 @@ public partial class SettingsView : UserControl
         }
         if (item.Model is null)
         {
-            await SaveProviderFormAsync(item.Provider, run);
+            // 确认框里点了确认:带着这份确认从头再存一次(重新合并、重取基线),与以前第二击「保存」走的是同一条路
+            if (await SaveProviderFormAsync(item.Provider, run, confirmedKeyReset) is { } confirmed) await SaveAsync(confirmed);
             return;
         }
         AiModelConfig liveModel = item.Model;
@@ -2146,9 +2277,10 @@ public partial class SettingsView : UserControl
             if (run == _editorRun) StatusText.Text = $"{_loc["Error"]}: {ex.Message}";
         }
     }
-    private async Task SaveProviderFormAsync(AiProvider provider, int run)
+    /// <returns>确认框里点了确认、要带着这份确认重新提交时返回它;其余(保存完了、取消、出错)返回 null。</returns>
+    private async Task<KeyResetPrompt?> SaveProviderFormAsync(AiProvider provider, int run, KeyResetPrompt? confirmed)
     {
-        if (_keyMutation || !_settings.Providers.Contains(provider)) return;
+        if (_keyMutation || !_settings.Providers.Contains(provider)) return null;
         ProviderKeyRowState? draft = _keyDraft;
         Control? draftFocus = draft?.EditBox.IsFocused == true ? draft.EditBox : null;
         string? replacement = PendingProviderKey;
@@ -2156,7 +2288,7 @@ public partial class SettingsView : UserControl
             || provider.Auth != AuthMethod.ApiKey))
         {
             StatusText.Text = _loc["SetupConfigChanged"];
-            return;
+            return null;
         }
         string name = ProviderNameBox.Text?.Trim() ?? "";
         string url = ProviderBaseUrlBox.Text?.Trim() ?? "";
@@ -2165,6 +2297,7 @@ public partial class SettingsView : UserControl
         _savingKeyRow = draft;
         SetKeyMutation(true);
         IReadOnlyList<string> cleared = [];
+        bool signedOut = false;
         try
         {
             if (replacement is not null)
@@ -2173,7 +2306,7 @@ public partial class SettingsView : UserControl
                 if (run != _editorRun || !ReferenceEquals(_keyDraft, draft)
                     || !KeyRowCurrent(draft, run))
                 {
-                    return;
+                    return null;
                 }
 
                 if (draft.OriginalUrl != provider.BaseUrl || draft.OriginalProtocol != provider.DefaultProtocol
@@ -2185,7 +2318,7 @@ public partial class SettingsView : UserControl
             if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)
                 || SelectedModel is not null || !_settings.Providers.Contains(provider))
             {
-                return;
+                return null;
             }
 
             if (provider.Auth == AuthMethod.ApiKey)
@@ -2198,10 +2331,9 @@ public partial class SettingsView : UserControl
                 string keyId = replacement is null ? provider.Id : draft!.Id;
                 string? expectedKey = replacement is null ? await _store.GetApiKeyAsync(keyId)
                     : string.IsNullOrEmpty(draft!.OriginalKey) ? null : draft.OriginalKey;
-                if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return;
+                if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return null;
                 cleared = await _store.SaveProviderApiKeyFormAsync(_settings, provider, detached, expected, replacement,
-                    keyId: keyId, expectedKey: expectedKey, confirmedKeyReset: _pendingKeyReset?.For(provider, url));
-                _pendingKeyReset = null;
+                    keyId: keyId, expectedKey: expectedKey, confirmedKeyReset: confirmed?.For(provider, url));
             }
             else
             {
@@ -2210,7 +2342,9 @@ public partial class SettingsView : UserControl
                 detached.Name = name;
                 detached.BaseUrl = url;
                 detached.DefaultProtocol = protocol;
-                await _store.SaveProviderFormAsync(_settings, provider, detached, expected);
+                // 订阅登录的地址换到别的源:保存会退出登录、清掉跟着旧地址走的模型 Key,同样先弹确认框(见下面的 catch)
+                (cleared, signedOut) = await _store.SaveProviderFormAsync(_settings, provider, detached, expected,
+                    confirmed?.For(provider, url));
             }
             if (draft is not null)
             {
@@ -2219,7 +2353,7 @@ public partial class SettingsView : UserControl
                 draft.Revealed = false;
             }
             _onProvidersChanged();
-            if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return;
+            if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return null;
             _loadedProviderName = provider.Name;
             _loadedProviderUrl = provider.BaseUrl;
             _loadedProviderProtocol = (int)provider.DefaultProtocol;
@@ -2228,22 +2362,34 @@ public partial class SettingsView : UserControl
             try { ReloadList(provider.Id); }
             finally { _refreshingNav = false; }
             RefreshEditorContext(provider, null);
-            await RefreshProviderKeyRowsAsync(provider, run);
-            // 换源清了 Key 就一定要说:正编辑着另一把 Key 也照样盖掉,不能让「再点一次确认」还挂着
+            if (provider.Auth == AuthMethod.Subscription) await RefreshSubscriptionStatusAsync(provider);
+            else await RefreshProviderKeyRowsAsync(provider, run);
+            // 换源清了 Key 就一定要说:正编辑着另一把 Key 也照样盖掉
             if (run == _editorRun && (cleared.Count > 0 || _keyDraft is null || ReferenceEquals(_keyDraft, draft)))
-                StatusText.Text = SavedText(provider, cleared, replacement is not null);
+            {
+                StatusText.Text = signedOut
+                    ? _loc.WithClearedModelKeys(_loc["SetupSavedSignedOut"], KeyResetPrompt.ClearedModels(provider, cleared, _loc))
+                    : SavedText(provider, cleared, replacement is not null);
+            }
         }
         catch (ArgumentException) { if (run == _editorRun) StatusText.Text = _loc["SetupUniqueApiKey"]; }
         catch (AiSettingsStore.ApiKeySlotChangedException) { await RecoverSettingsConflictAsync(provider, null, run); }
         catch (AiSettingsStore.ApiKeyResetRequiredException ex)
         {
-            // 地址换到别的源会清掉已存 Key:第一次点只提示,同一地址再点一次才清 —— 而且只清这次提示列出的那几把
-            if (run != _editorRun) return;
-            // 同一地址已经提示过还被拒:提示之后 Key 变了。换一句话说 —— 一字不差的提示看着像没点上,再点一下就把新存的那把清掉
-            string prompt = _pendingKeyReset?.For(provider, url) is null
-                ? "SetupBaseUrlKeyResetConfirm" : "SetupBaseUrlKeyResetChanged";
-            _pendingKeyReset = new(provider, url, ex.Confirmation);
-            StatusText.Text = _loc.F(prompt, ex.KeyCount);
+            // 地址换到别的源会清掉已存 Key:弹确认框列出要清的那几把,点了确认才清(连点「保存」不算确认)。
+            // 已经确认过一次还被拒,是框开着期间要清的有了变动(别处又存了一把、同一个槽换了值):换一句话再问,
+            // 框里没列的那把不会被一起清掉。框开着时「保存」等按钮都锁着(SetKeyMutation),底下的页面也点不到
+            if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return null;
+            bool accepted = await KeyResetPrompt.AskAsync(KeyResetConfirm, provider, ex,
+                changed: confirmed?.For(provider, url) is not null, _loc);
+            if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider)) return null;
+            if (!accepted)
+            {
+                StatusText.Text = _loc["SetupResetCancelled"];
+                return null;
+            }
+            // 交回去重新走一遍保存(与以前第二击一样合并已保存的字段、重取基线),带着这一次的确认
+            return new KeyResetPrompt(provider, url, ex.Confirmation);
         }
         catch (Exception ex) { if (run == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex)); }
         finally
@@ -2256,6 +2402,7 @@ public partial class SettingsView : UserControl
                 draftFocus.Focus();
             }
         }
+        return null;
     }
 
     /// <summary>
@@ -2336,7 +2483,10 @@ public partial class SettingsView : UserControl
         int editorRun = _editorRun;
         ResolvedModel candidate;
         string? apiKeyOverride;
-        string? requestedKeyId = null;
+        // 这一击不带任何已存的凭据:地址换了源还没保存时属于旧地址的那些,以及跨源覆盖不借的供应商 Key。
+        // 定下来就不再读机密 —— 上面「拦不拦」读到的「没有」与发请求时再读一次的结果可能不一致
+        // (别处的换源提交写盘失败、回滚恢复 Key 时不推进配置版本号),只要不再读,就不会把恢复回来的旧 Key 带去新地址
+        bool keyless = false;
         string? overrideKeyId = null;
         // 探活结束时再校验本次请求的完整凭据与当下落库配置是否一致。
         // 等待期间可能换账号、刷新令牌或保存新的地址/Key。
@@ -2384,6 +2534,7 @@ public partial class SettingsView : UserControl
                 // 等于把一个实际能聊的接入白冷却 60 秒(review⑤)
                 CatalogId = provider.CatalogId,
                 StoreResponses = provider.StoreResponses,
+                CustomResponsesStore = provider.CustomResponsesStore,
                 AllowSystemMessages = provider.AllowSystemMessages,
                 UnsupportedParameters = provider.UnsupportedParameters,
                 // 订阅登录那家的凭据不在表单里,靠 Id 去机密存储取(见 ResolveCredentialAsync)
@@ -2412,7 +2563,7 @@ public partial class SettingsView : UserControl
             // 每一击领一个序号:下面读已存 Key 要等,读回来时已有更新的一击就让给它(见 _originKeyRead)
             int originKeyRead = ++_originKeyRead;
             // 地址换到别的源、还没保存:已存的 Key 属于旧地址,只许带表单里新填的那把去测。
-            // 只敲了空格不算新填:探活带的仍是空凭据,Anthropic 协议下 SDK 会改用本机环境变量里的那把
+            // 只敲了空格不算新填:探活带的仍是空凭据,与没填一样处理
             if (provider.Auth == AuthMethod.ApiKey && string.IsNullOrWhiteSpace(apiKeyOverride)
                 && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
                 && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl))
@@ -2434,8 +2585,8 @@ public partial class SettingsView : UserControl
                 }
                 else
                 {
-                    // 没有新填的 Key:只看探活真会带上的那一把 —— 自带 Key 的首模型是它自己那把,继承的只有主槽
-                    // (见 ResolvePrimaryCredentialForProbeAsync,补充槽不跟去)。它还在就请用户先填新 Key;没有(无鉴权接入)才照常测
+                    // 没有新填的 Key:只看保存之前它本会带上的那一把 —— 自带 Key 的首模型是它自己那把,继承的是主槽。
+                    // 它还在就请用户先填新 Key;没有(无鉴权接入)才照常测,而且照常测也不带任何已存的 Key(见 keyless)
                     long version = _store.ProviderConfigurationVersion(provider);
                     bool keyFollows;
                     try
@@ -2452,10 +2603,8 @@ public partial class SettingsView : UserControl
                     if (editorRun != _editorRun || originKeyRead != _originKeyRead) return;
                     // 读的期间这家的配置变了(别处存了 Key、改了模型):刚读到的已不作数,按有 Key 会跟过去处理
                     keyFollows |= _store.ProviderConfigurationVersion(provider) != version;
-                    // Anthropic 协议没有 Key 时,SDK 改用本机的 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN,一样会发往这个还没保存的地址
-                    keyFollows |= new ResolvedModel(draft, first).Protocol == ChatProtocol.AnthropicMessages
-                        && (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"))
-                            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN")));
+                    // 本机的 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN 不必算进来:没有 Key 时它们只发往官方 api.anthropic.com
+                    // (见 AiSettingsStore.CreateClient),新地址是官方的,那正是它们该去的地方;是别家就不会带上
                     if (keyFollows)
                     {
                         // 首模型自带 Key、又没有继承供应商 Key 的模型可换:「先填新 Key」只会换来「没有可用模型」,
@@ -2466,22 +2615,49 @@ public partial class SettingsView : UserControl
                     }
                 }
             }
+            // 订阅登录的地址换了源还没保存:旧地址签出的令牌(与首模型自带、跟着供应商地址走的那把 Key)不带去测。
+            // 还登着(或那把 Key 还在)就请用户先保存 —— 保存会退出登录,在新地址登录后再测;都没有就照常测,同样不带(见 keyless)
+            if (provider.Auth == AuthMethod.Subscription && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
+                && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl))
+            {
+                long version = _store.ProviderConfigurationVersion(provider);
+                bool credentialFollows;
+                try
+                {
+                    credentialFollows = first.HasOwnApiKey
+                        ? !string.IsNullOrWhiteSpace(await _store.GetApiKeyAsync(first.Id))
+                        : await _store.GetTokensAsync(provider.Id) is not null;
+                }
+                catch (Exception ex)
+                {
+                    _context.Log.Warn($"Reading the saved sign-in of '{provider.Id}' failed: {ex.Message}");
+                    if (editorRun == _editorRun && originKeyRead == _originKeyRead) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
+                    return;
+                }
+                if (editorRun != _editorRun || originKeyRead != _originKeyRead) return;
+                if (credentialFollows || _store.ProviderConfigurationVersion(provider) != version)
+                {
+                    StatusText.Text = _loc["SetupTestNeedsSaveSignIn"];
+                    return;
+                }
+            }
             candidate = new ResolvedModel(draft, first);
+            // 首模型跟着供应商地址走、地址又换了源:它会带上的已存凭据(主槽、它自带的那把、订阅登录的令牌)都属于旧地址
+            keyless = apiKeyOverride is null
+                && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
+                && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl);
 
             string EffectiveBaseUrl(AiModelConfig config)
                 => string.IsNullOrWhiteSpace(config.BaseUrlOverride) ? draft.BaseUrl : config.BaseUrlOverride;
             if (!first.HasOwnApiKey && provider.Auth == AuthMethod.ApiKey)
-            {
                 overrideKeyId = apiKeyOverride is not null ? _keyDraft?.Id : null;
-                if (apiKeyOverride is null && !AiSettingsStore.SameOrigin(draft.BaseUrl, provider.BaseUrl))
-                    requestedKeyId = provider.Id;
-            }
             compareId = first.Id; // 同上:拿哪份落库来比,探活跑完再定(见 SameAsSavedAsync)
         }
-        if (apiKeyOverride is null && !candidate.Config.HasOwnApiKey && provider.Auth == AuthMethod.ApiKey
-            && !AiSettingsStore.SameOrigin(candidate.BaseUrl, provider.BaseUrl))
+        // 覆盖地址与供应商不同源、继承供应商 Key 的模型:供应商的 Key 不跟去(主槽也不借),与保存之后的请求一致
+        // (见 AiSettingsStore.InheritsNoKeyAcrossOrigins)
+        if (apiKeyOverride is null && AiSettingsStore.InheritsNoKeyAcrossOrigins(provider, candidate.Config))
         {
-            requestedKeyId = provider.Id;
+            keyless = true;
         }
 
         candidate = FreezeProbeModel(candidate);
@@ -2510,20 +2686,17 @@ public partial class SettingsView : UserControl
         {
             await _store.ValidateProviderCredentialScopeAsync(provider);
             ResolvedModel saved = savedCredentialModel ?? throw new AiSettingsStore.ApiKeySlotChangedException();
-            if (apiKeyOverride is null)
+            if (keyless)
             {
-                if (requestedKeyId == provider.Id && provider.Auth == AuthMethod.ApiKey)
-                {
-                    sentCredential = await _store.ResolvePrimaryCredentialForProbeAsync(saved);
-                    sentKeyId = !string.IsNullOrWhiteSpace(sentCredential.Value)
-                        && AiSettingsStore.SameOrigin(candidate.BaseUrl, provider.BaseUrl) ? provider.Id : null;
-                }
-                else
-                {
-                    (sentCredential, sentKeyId) = candidate.Config.HasOwnApiKey == saved.Config.HasOwnApiKey
-                        ? await _store.ResolveCredentialWithKeyIdAsync(saved)
-                        : await _store.ResolveProviderCredentialWithKeyIdAsync(provider);
-                }
+                sentCredential = ProviderCredential.Key(null);
+                sentKeyId = null;
+            }
+            else if (apiKeyOverride is null)
+            {
+                // 自带 Key 的首模型带它自己那把;继承的按供应商这一层取(与新地址同源,上面已排除跨源)
+                (sentCredential, sentKeyId) = candidate.Config.HasOwnApiKey
+                    ? await _store.ResolveCredentialWithKeyIdAsync(saved)
+                    : await _store.ResolveProviderCredentialWithKeyIdAsync(provider);
             }
             else
             {
@@ -2594,13 +2767,13 @@ public partial class SettingsView : UserControl
             {
                 if (sentKeyId is not null && TransientFailure.IsApiKeyFailure(error))
                 {
-                    _health?.RecordKey(sentKeyId, false, healthEvidence, observationId);
+                    _health?.RecordKeyFailure(sentKeyId, candidate.Id, TransientFailure.IsKeyRejected(error), healthEvidence, observationId);
                 }
                 else
                 {
                     // 测通了就把这把 Key 的冷却一起解掉(逐 Key 检测与聊天回路都这么做),
                     // 否则刚通过的槽仍显示冷却,故障转移也照旧绕开它最多 60 秒
-                    if (ok && sentKeyId is not null) _health?.RecordKey(sentKeyId, true, healthEvidence, observationId);
+                    if (ok && sentKeyId is not null) _health?.RecordKeyForModel(sentKeyId, candidate.Id, true, healthEvidence, observationId);
                     _health?.Record(candidate.Id, ok, healthEvidence, observationId);
                 }
             }

@@ -34,7 +34,10 @@ public sealed partial class SftpFileSystem
                 serverMessage: "",
                 path,
                 SftpOperation.GetFileSystemInfo,
-                detail: "这台服务端没有 statvfs@openssh.com");
+                detail: "这台服务端没有 statvfs@openssh.com")
+            {
+                MissingExtensions = [SftpExtensionNames.StatVfs],
+            };
         }
 
         using SftpResponse response = await _pipeline.SendAsync(
@@ -120,7 +123,10 @@ public sealed partial class SftpFileSystem
                 serverMessage: "",
                 path: null,
                 SftpOperation.LookupNames,
-                detail: "这台服务端没有 users-groups-by-id@openssh.com");
+                detail: "这台服务端没有 users-groups-by-id@openssh.com")
+            {
+                MissingExtensions = [SftpExtensionNames.UsersGroupsById],
+            };
         }
 
         using SftpResponse response = await _pipeline.SendAsync(
@@ -192,7 +198,10 @@ public sealed partial class SftpFileSystem
                 serverMessage: "",
                 sourcePath,
                 SftpOperation.CopyData,
-                detail: "这台服务端没有 copy-data");
+                detail: "这台服务端没有 copy-data")
+            {
+                MissingExtensions = [SftpExtensionNames.CopyData],
+            };
         }
 
         await using SftpFileStream source = await OpenAsync(sourcePath, SftpOpenModes.Read, cancellationToken: cancellationToken)

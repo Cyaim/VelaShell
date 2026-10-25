@@ -150,6 +150,9 @@
   <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
     <value>删除连接配置</value>
   </data>
+  <data name="AuditLog_ActionProfilesUngrouped" xml:space="preserve">
+    <value>连接配置移回未分组</value>
+  </data>
   <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
     <value>设置变更</value>
   </data>
@@ -213,6 +216,9 @@
   <data name="AuditLog_ColProfileId" xml:space="preserve">
     <value>配置 Id</value>
   </data>
+  <data name="AuditLog_ColSource" xml:space="preserve">
+    <value>来源</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>共 {0} 条</value>
   </data>
@@ -224,6 +230,9 @@
   </data>
   <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
     <value>{0} 条连接在用</value>
+  </data>
+  <data name="AuditLog_DetailProfilesUngrouped" xml:space="preserve">
+    <value>分组「{0}」已删除,{1} 条连接配置移回未分组</value>
   </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>没有符合条件的记录。</value>
@@ -278,6 +287,18 @@
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>搜索主机、会话或详情</value>
+  </data>
+  <data name="AuditLog_SourceLocal" xml:space="preserve">
+    <value>本机编辑</value>
+  </data>
+  <data name="AuditLog_SourceCloudSync" xml:space="preserve">
+    <value>云同步</value>
+  </data>
+  <data name="AuditLog_SourceImport" xml:space="preserve">
+    <value>导入</value>
+  </data>
+  <data name="AuditLog_SourceLoginPrompt" xml:space="preserve">
+    <value>登录框</value>
   </data>
   <data name="AuditLog_Title" xml:space="preserve">
     <value>审计日志</value>
@@ -729,6 +750,15 @@
   <data name="SftpErr_Unavailable" xml:space="preserve">
     <value>服务器的 SFTP 子系统不可用(服务器可能没有启用 SFTP)。</value>
   </data>
+  <data name="SftpErr_VersionTooOld" xml:space="preserve">
+    <value>服务器只支持 SFTP v{0},至少需要 v3。</value>
+  </data>
+  <data name="SftpErr_VersionTooNew" xml:space="preserve">
+    <value>服务器回的 SFTP 版本是 v{0},而我们提供的是 v3 —— 它应当回两者中较小的那个。按 v3 去解析更高的版本会把文件属性读错,所以没有用这个会话。</value>
+  </data>
+  <data name="SftpErr_SessionClosed" xml:space="preserve">
+    <value>SFTP 会话已在本端关闭。</value>
+  </data>
   <data name="SftpErr_ServerExited" xml:space="preserve">
     <value>服务器的 sftp-server 没等 SFTP 建立就退出了(退出码 {0})</value>
   </data>
@@ -906,6 +936,12 @@
   <data name="Sftp_RefreshRemotePane" xml:space="preserve">
     <value>刷新远程栏</value>
   </data>
+  <data name="Sftp_GoUpLocalPane" xml:space="preserve">
+    <value>本地栏上一级</value>
+  </data>
+  <data name="Sftp_GoUpRemotePane" xml:space="preserve">
+    <value>远程栏上一级</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>跟随终端目录(同步到终端当前路径)</value>
   </data>
@@ -979,7 +1015,7 @@
     <value>无法确认服务器的 shell 类型（可能禁止了执行命令，或者账号只开放了 SFTP），没有发出搜索命令</value>
   </data>
   <data name="Sftp_SearchToolMissing" xml:space="preserve">
-    <value>服务器上没有 find 命令（按内容搜索时还需要 grep）</value>
+    <value>服务器上缺少 find、head 或 tr 命令（按内容搜索时还需要 grep）</value>
   </data>
   <data name="Sftp_SearchFailed" xml:space="preserve">
     <value>搜索失败：{0}</value>
@@ -1431,6 +1467,9 @@
   <data name="Cmd_ConnectionDiagnostics" xml:space="preserve">
     <value>连接诊断</value>
   </data>
+  <data name="Cmd_HealthCheckAll" xml:space="preserve">
+    <value>会话健康巡检(全部连接)</value>
+  </data>
   <data name="Cmd_ConnectionInfo" xml:space="preserve">
     <value>SSH 连接信息</value>
   </data>
@@ -1548,11 +1587,170 @@
   <data name="Diag_Steps" xml:space="preserve">
     <value>诊断步骤</value>
   </data>
+  <data name="Diag_TabResults" xml:space="preserve">
+    <value>诊断结果</value>
+  </data>
+  <data name="Diag_TabTrace" xml:space="preserve">
+    <value>协议轨迹</value>
+  </data>
+  <data name="Diag_TabTraceCount" xml:space="preserve">
+    <value>协议轨迹 · {0}</value>
+  </data>
+  <data name="Diag_TraceCopy" xml:space="preserve">
+    <value>复制协议轨迹</value>
+  </data>
+  <data name="Diag_TraceHint" xml:space="preserve">
+    <value>认证那一步连接时收发的每个报文:只记方向、类型、长度与序号,从不记内容。我们发出的认证报文连长度也不显示 —— 口令的长度能从它推出来。</value>
+  </data>
+  <data name="Diag_TraceEmpty" xml:space="preserve">
+    <value>这一轮没有走到 SSH 连接(前面的步骤没通过,或者没有可用的凭据),没有协议轨迹。</value>
+  </data>
+  <data name="Diag_TraceDropped" xml:space="preserve">
+    <value>另有 {0} 个报文超过记录上限,没有记下。</value>
+  </data>
+  <data name="Diag_TraceSent" xml:space="preserve">
+    <value>发</value>
+  </data>
+  <data name="Diag_TraceReceived" xml:space="preserve">
+    <value>收</value>
+  </data>
+  <data name="Diag_TraceChannel" xml:space="preserve">
+    <value>通道 {0}</value>
+  </data>
+  <data name="Diag_TraceKexMethod" xml:space="preserve">
+    <value>密钥交换方法专用</value>
+  </data>
+  <data name="Diag_TraceAuthMethod" xml:space="preserve">
+    <value>认证方法专用</value>
+  </data>
+  <data name="Diag_TraceLocalExtension" xml:space="preserve">
+    <value>本地扩展</value>
+  </data>
+  <data name="Diag_TraceUnassigned" xml:space="preserve">
+    <value>未分配</value>
+  </data>
+  <data name="Diag_TraceTextHeader" xml:space="preserve">
+    <value>协议轨迹(只有报文的元信息,不含内容;我们发出的认证报文不记长度)</value>
+  </data>
   <data name="Diag_TargetSummary" xml:space="preserve">
     <value>// 逐步分析 DNS、握手、认证与通道建立 — {0} ({1})</value>
   </data>
   <data name="Diag_Title" xml:space="preserve">
     <value>连接诊断</value>
+  </data>
+  <data name="Health_Title" xml:space="preserve">
+    <value>会话健康巡检</value>
+  </data>
+  <data name="Health_StatusPending" xml:space="preserve">
+    <value>等待</value>
+  </data>
+  <data name="Health_StatusChecking" xml:space="preserve">
+    <value>检查中…</value>
+  </data>
+  <data name="Health_StatusHealthy" xml:space="preserve">
+    <value>正常</value>
+  </data>
+  <data name="Health_StatusReachable" xml:space="preserve">
+    <value>可达</value>
+  </data>
+  <data name="Health_StatusNeedsCredentials" xml:space="preserve">
+    <value>需要凭据</value>
+  </data>
+  <data name="Health_StatusNeedsAttention" xml:space="preserve">
+    <value>需要确认</value>
+  </data>
+  <data name="Health_StatusFailed" xml:space="preserve">
+    <value>连不上</value>
+  </data>
+  <data name="Health_StatusTimedOut" xml:space="preserve">
+    <value>超时</value>
+  </data>
+  <data name="Health_StatusUnsupported" xml:space="preserve">
+    <value>不巡检</value>
+  </data>
+  <data name="Health_StatusCancelled" xml:space="preserve">
+    <value>已停止</value>
+  </data>
+  <data name="Health_StepConfiguration" xml:space="preserve">
+    <value>跳板配置</value>
+  </data>
+  <data name="Health_UnsupportedDetail" xml:space="preserve">
+    <value>只巡检 SSH / SFTP 连接</value>
+  </data>
+  <data name="Health_NotChecked" xml:space="preserve">
+    <value>没有检查</value>
+  </data>
+  <data name="Health_Stopped" xml:space="preserve">
+    <value>巡检被停下</value>
+  </data>
+  <data name="Health_TimedOutDetail" xml:space="preserve">
+    <value>超过 {0} 秒没查完</value>
+  </data>
+  <data name="Health_ElapsedMs" xml:space="preserve">
+    <value>{0} ms</value>
+  </data>
+  <data name="Health_Summary" xml:space="preserve">
+    <value>{0} 个连接 · 正常 {1} · 需要处理 {2} · 连不上 {3}</value>
+  </data>
+  <data name="Health_SummaryRunning" xml:space="preserve">
+    <value>已检查 {0} / {1} · {2}</value>
+  </data>
+  <data name="Health_ColStatus" xml:space="preserve">
+    <value>结论</value>
+  </data>
+  <data name="Health_ColName" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="Health_ColTarget" xml:space="preserve">
+    <value>目标</value>
+  </data>
+  <data name="Health_ColStep" xml:space="preserve">
+    <value>卡在哪一步</value>
+  </data>
+  <data name="Health_ColDetail" xml:space="preserve">
+    <value>说明</value>
+  </data>
+  <data name="Health_ColElapsed" xml:space="preserve">
+    <value>耗时</value>
+  </data>
+  <data name="Health_ProblemsOnlyOn" xml:space="preserve">
+    <value>只看有问题的:开</value>
+  </data>
+  <data name="Health_ProblemsOnlyOff" xml:space="preserve">
+    <value>只看有问题的:关</value>
+  </data>
+  <data name="Health_VerifyLoginOn" xml:space="preserve">
+    <value>验证登录:开</value>
+  </data>
+  <data name="Health_VerifyLoginOff" xml:space="preserve">
+    <value>验证登录:关</value>
+  </data>
+  <data name="Health_VerifyLoginTip" xml:space="preserve">
+    <value>开着时用已保存的凭据登录一次随即断开;关着时只查到 SSH 握手,不往服务器上登录。下一轮生效。</value>
+  </data>
+  <data name="Health_Stop" xml:space="preserve">
+    <value>停止巡检</value>
+  </data>
+  <data name="Health_Rerun" xml:space="preserve">
+    <value>重新巡检</value>
+  </data>
+  <data name="Health_Copy" xml:space="preserve">
+    <value>复制为文本</value>
+  </data>
+  <data name="Health_OpenDiagnostics" xml:space="preserve">
+    <value>连接诊断</value>
+  </data>
+  <data name="Health_EditProfile" xml:space="preserve">
+    <value>编辑配置</value>
+  </data>
+  <data name="Health_NoProblems" xml:space="preserve">
+    <value>没有要处理的连接</value>
+  </data>
+  <data name="Health_Hint" xml:space="preserve">
+    <value>只在你点开时运行:一次一批,最多 {0} 台同时查,每台最多 {1} 秒。不弹任何框:主机指纹待确认、要动态码或 Tailscale 复核的记为「需要确认」,没保存凭据的记为「需要凭据」—— 对它们请自己手动连一次。</value>
+  </data>
+  <data name="Health_StillRunning" xml:space="preserve">
+    <value>上一轮巡检还没结束,先停止或等它查完。</value>
   </data>
   <data name="DiagSvc_AuthFailed" xml:space="preserve">
     <value>身份验证失败</value>
@@ -1607,6 +1805,9 @@
   </data>
   <data name="DiagSvc_NoCredsSkip" xml:space="preserve">
     <value>未保存凭据,跳过认证测试</value>
+  </data>
+  <data name="DiagSvc_LoginNotVerified" xml:space="preserve">
+    <value>未验证登录(只查到 SSH 握手)</value>
   </data>
   <data name="DiagSvc_NonSshBanner" xml:space="preserve">
     <value>非 SSH 应答:{0}</value>
@@ -1805,6 +2006,60 @@
   </data>
   <data name="LayoutTemplate_Untitled" xml:space="preserve">
     <value>未命名标签页</value>
+  </data>
+  <data name="LayoutTemplate_Export" xml:space="preserve">
+    <value>导出…</value>
+  </data>
+  <data name="LayoutTemplate_Import" xml:space="preserve">
+    <value>导入…</value>
+  </data>
+  <data name="LayoutTemplate_ExportDialogTitle" xml:space="preserve">
+    <value>导出布局模板</value>
+  </data>
+  <data name="LayoutTemplate_ImportDialogTitle" xml:space="preserve">
+    <value>导入布局模板</value>
+  </data>
+  <data name="LayoutTemplate_FileType" xml:space="preserve">
+    <value>VelaShell 布局模板</value>
+  </data>
+  <data name="LayoutTemplate_NothingToExport" xml:space="preserve">
+    <value>还没有可导出的布局模板。</value>
+  </data>
+  <data name="LayoutTemplate_Exported" xml:space="preserve">
+    <value>已导出 {0} 个布局模板到 {1}。文件里只有连接配置的 Id 与打开方式,不含密码。</value>
+  </data>
+  <data name="LayoutTemplate_ExportFailed" xml:space="preserve">
+    <value>布局模板没有导出成功:{0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportFailed" xml:space="preserve">
+    <value>文件读取失败:{0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportInvalid" xml:space="preserve">
+    <value>这不是 VelaShell 的布局模板文件。</value>
+  </data>
+  <data name="LayoutTemplate_ImportEmpty" xml:space="preserve">
+    <value>文件里没有可用的布局模板。</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictTitle" xml:space="preserve">
+    <value>有模板已经存在</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictMessage" xml:space="preserve">
+    <value>文件里有 {0} 个模板与本机已有的是同一个或重名:{1}。替换本机的,还是另存为新模板、两份都留?</value>
+  </data>
+  <data name="LayoutTemplate_ImportReplace" xml:space="preserve">
+    <value>替换</value>
+  </data>
+  <data name="LayoutTemplate_ImportKeepBoth" xml:space="preserve">
+    <value>另存为新模板</value>
+  </data>
+  <data name="LayoutTemplate_Imported" xml:space="preserve">
+    <value>已导入 {0} 个布局模板。</value>
+  </data>
+  <data name="LayoutTemplate_ImportedMissing" xml:space="preserve">
+    <value>已导入 {0} 个布局模板;其中 {1} 个引用的连接本机没有,打开时会跳过那些标签页。</value>
+  </data>
+  <data name="LayoutTemplate_CopyName" xml:space="preserve">
+    <value>{0} ({1})</value>
   </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>所有标签页</value>
@@ -2154,6 +2409,9 @@
   </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>已停止自动重连 {0}：主机密钥 {1} 需要你确认，而自动重连不会弹窗询问。请手动重新连接，在弹出的窗口里核对指纹。</value>
+  </data>
+  <data name="Msg_HostKeyUnattendedBlocked" xml:space="preserve">
+    <value>巡检没有替你接受 {0} 的主机密钥 {1}:它需要你确认,而巡检不会弹窗询问。请手动连接一次,在弹出的窗口里核对指纹。</value>
   </data>
   <data name="Msg_ImportFailed" xml:space="preserve">
     <value>导入失败:{0}</value>
@@ -3750,6 +4008,12 @@
   <data name="SetSync_ScopeAppSettings" xml:space="preserve">
     <value>应用设置</value>
   </data>
+  <data name="SetSync_ScopeLayoutTemplates" xml:space="preserve">
+    <value>布局模板</value>
+  </data>
+  <data name="SetSync_ScopeLayoutTemplatesDesc" xml:space="preserve">
+    <value>// 单独一个文件,按模板逐个合并;模板只记连接配置的 Id,另一台设备上要有同一批连接(随连接配置同步)才打得开</value>
+  </data>
   <data name="SetSync_ScopeProfilesDesc" xml:space="preserve">
     <value>// 服务器连接、分组与端口转发隧道;本地独有的连接不会被云端删除</value>
   </data>
@@ -4228,6 +4492,234 @@
   <data name="SetVm_SectionTerminal" xml:space="preserve">
     <value>终端</value>
   </data>
+  <data name="SetVm_SectionOutputRules" xml:space="preserve">
+    <value>输出规则</value>
+  </data>
+  <data name="OutRule_Title" xml:space="preserve">
+    <value>输出规则</value>
+  </data>
+  <data name="OutRule_Subtitle" xml:space="preserve">
+    <value>用自己的正则给终端输出加高亮,或在提示出现时自动应答</value>
+  </data>
+  <data name="OutRule_Intro" xml:space="preserve">
+    <value>规则作用于 SSH 与本地终端的主屏(vim、htop 这类全屏程序自带配色,不受影响)。你的高亮压在内置语义高亮(网址、IP、错误词……)之上,内置高亮照常生效;你的规则之间,排在列表上面的优先。规则属于设置导出 / 导入里的「终端」分类,也随应用设置云同步。</value>
+  </data>
+  <data name="OutRule_SafetyNote" xml:space="preserve">
+    <value>自动应答只用于 yes / 回车 / 固定文本。规则里不要写口令:规则随设置保存并同步。需要输入密码时请用共享凭据 —— 遇到密码提示,终端里会弹出共享密码列表。会命中口令提示的规则不能设成自动应答。</value>
+  </data>
+  <data name="OutRule_ListSection" xml:space="preserve">
+    <value>规则</value>
+  </data>
+  <data name="OutRule_Add" xml:space="preserve">
+    <value>新建规则</value>
+  </data>
+  <data name="OutRule_EditTitle" xml:space="preserve">
+    <value>编辑规则</value>
+  </data>
+  <data name="OutRule_LimitReached" xml:space="preserve">
+    <value>最多 {0} 条规则。</value>
+  </data>
+  <data name="OutRule_Empty" xml:space="preserve">
+    <value>还没有规则。内置的语义高亮不受影响。</value>
+  </data>
+  <data name="OutRule_Enabled" xml:space="preserve">
+    <value>启用</value>
+  </data>
+  <data name="OutRule_MoveUp" xml:space="preserve">
+    <value>上移(优先级提高)</value>
+  </data>
+  <data name="OutRule_MoveDown" xml:space="preserve">
+    <value>下移</value>
+  </data>
+  <data name="OutRule_ActionHighlight" xml:space="preserve">
+    <value>高亮</value>
+  </data>
+  <data name="OutRule_ActionRespond" xml:space="preserve">
+    <value>自动应答</value>
+  </data>
+  <data name="OutRule_ScopeGlobal" xml:space="preserve">
+    <value>全局</value>
+  </data>
+  <data name="OutRule_ScopeGroup" xml:space="preserve">
+    <value>分组</value>
+  </data>
+  <data name="OutRule_ScopeProfile" xml:space="preserve">
+    <value>连接</value>
+  </data>
+  <data name="OutRule_ScopeGroupNamed" xml:space="preserve">
+    <value>分组:{0}</value>
+  </data>
+  <data name="OutRule_ScopeProfileNamed" xml:space="preserve">
+    <value>连接:{0}</value>
+  </data>
+  <data name="OutRule_ScopeMissing" xml:space="preserve">
+    <value>(已不存在)</value>
+  </data>
+  <data name="OutRule_ScopeTargetPlaceholder" xml:space="preserve">
+    <value>请选择…</value>
+  </data>
+  <data name="OutRule_Name" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="OutRule_NamePlaceholder" xml:space="preserve">
+    <value>自动应答提示里显示它;不填就显示正则</value>
+  </data>
+  <data name="OutRule_Pattern" xml:space="preserve">
+    <value>正则</value>
+  </data>
+  <data name="OutRule_PatternPlaceholder" xml:space="preserve">
+    <value>例如 ERROR|FATAL</value>
+  </data>
+  <data name="OutRule_PatternDesc" xml:space="preserve">
+    <value>.NET 正则,逐行匹配。为了不拖慢终端,规则一律用线性时间引擎:不支持反向引用与环视。</value>
+  </data>
+  <data name="OutRule_CaseSensitive" xml:space="preserve">
+    <value>区分大小写</value>
+  </data>
+  <data name="OutRule_Action" xml:space="preserve">
+    <value>动作</value>
+  </data>
+  <data name="OutRule_Scope" xml:space="preserve">
+    <value>作用范围</value>
+  </data>
+  <data name="OutRule_Foreground" xml:space="preserve">
+    <value>前景色</value>
+  </data>
+  <data name="OutRule_Background" xml:space="preserve">
+    <value>背景色</value>
+  </data>
+  <data name="OutRule_Bold" xml:space="preserve">
+    <value>加粗</value>
+  </data>
+  <data name="OutRule_HighlightDesc" xml:space="preserve">
+    <value>颜色取自终端配色方案的 ANSI 16 色,换主题、换配色方案时高亮跟着换。你设的前景色会盖过程序自己设的颜色;选区与搜索命中仍显示在最上面。</value>
+  </data>
+  <data name="OutRule_ColorNone" xml:space="preserve">
+    <value>不改</value>
+  </data>
+  <data name="OutRule_ColorBlack" xml:space="preserve">
+    <value>黑</value>
+  </data>
+  <data name="OutRule_ColorRed" xml:space="preserve">
+    <value>红</value>
+  </data>
+  <data name="OutRule_ColorGreen" xml:space="preserve">
+    <value>绿</value>
+  </data>
+  <data name="OutRule_ColorYellow" xml:space="preserve">
+    <value>黄</value>
+  </data>
+  <data name="OutRule_ColorBlue" xml:space="preserve">
+    <value>蓝</value>
+  </data>
+  <data name="OutRule_ColorMagenta" xml:space="preserve">
+    <value>品红</value>
+  </data>
+  <data name="OutRule_ColorCyan" xml:space="preserve">
+    <value>青</value>
+  </data>
+  <data name="OutRule_ColorWhite" xml:space="preserve">
+    <value>白</value>
+  </data>
+  <data name="OutRule_ColorBright" xml:space="preserve">
+    <value>亮{0}</value>
+  </data>
+  <data name="OutRule_Response" xml:space="preserve">
+    <value>发送</value>
+  </data>
+  <data name="OutRule_ResponsePlaceholder" xml:space="preserve">
+    <value>例如 yes;留空 = 只按回车</value>
+  </data>
+  <data name="OutRule_SendEnter" xml:space="preserve">
+    <value>再按回车</value>
+  </data>
+  <data name="OutRule_ResponseDesc" xml:space="preserve">
+    <value>只应答光标所在、正等着输入的那一行,等对端安静片刻后才发,每行只答一次;你正在这一行上打字时不应答。与快捷命令走同一条发送路径。</value>
+  </data>
+  <data name="OutRule_Cooldown" xml:space="preserve">
+    <value>冷却(秒)</value>
+  </data>
+  <data name="OutRule_CooldownDesc" xml:space="preserve">
+    <value>这条规则两次应答之间至少隔多久;更早出现的提示等冷却结束再答。</value>
+  </data>
+  <data name="OutRule_MaxPerMinute" xml:space="preserve">
+    <value>每分钟上限</value>
+  </data>
+  <data name="OutRule_MaxPerMinuteDesc" xml:space="preserve">
+    <value>到了上限就暂停应答,并在终端上方提示 —— 对端刷屏时不会被它刷发回去。</value>
+  </data>
+  <data name="OutRule_ForwardSync" xml:space="preserve">
+    <value>也转发给同步通道</value>
+  </data>
+  <data name="OutRule_ForwardSyncDesc" xml:space="preserve">
+    <value>默认关:通道里别的标签停在什么提示上这里不知道,它们自己的规则会各自应答。</value>
+  </data>
+  <data name="OutRule_Done" xml:space="preserve">
+    <value>完成</value>
+  </data>
+  <data name="OutRule_TestSection" xml:space="preserve">
+    <value>测试</value>
+  </data>
+  <data name="OutRule_TestDesc" xml:space="preserve">
+    <value>粘贴一段终端输出,看规则命中哪里。编辑框开着时只测正在编辑的这条,否则测列表里全部启用的规则。实际终端里自动应答只对光标所在、等着输入的那一行生效。</value>
+  </data>
+  <data name="OutRule_TestPlaceholder" xml:space="preserve">
+    <value>在这里粘贴输出…</value>
+  </data>
+  <data name="OutRule_TestSummary" xml:space="preserve">
+    <value>{0} 行里有 {1} 行命中</value>
+  </data>
+  <data name="OutRule_TestNoMatch" xml:space="preserve">
+    <value>没有命中</value>
+  </data>
+  <data name="OutRule_TestRespond" xml:space="preserve">
+    <value>自动应答「{0}」→ 发送 {1}</value>
+  </data>
+  <data name="OutRule_TestEnterKey" xml:space="preserve">
+    <value> [回车]</value>
+  </data>
+  <data name="OutRule_ErrPatternEmpty" xml:space="preserve">
+    <value>请填写正则。</value>
+  </data>
+  <data name="OutRule_ErrPatternTooLong" xml:space="preserve">
+    <value>正则不能超过 {0} 个字符。</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalid" xml:space="preserve">
+    <value>正则写法有误(第 {0} 个字符附近)。</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalidNoPos" xml:space="preserve">
+    <value>正则写法有误。</value>
+  </data>
+  <data name="OutRule_ErrPatternUnsupported" xml:space="preserve">
+    <value>不支持反向引用、环视、原子组与条件分支(规则一律用线性时间引擎,免得拖慢终端)。</value>
+  </data>
+  <data name="OutRule_ErrScopeTarget" xml:space="preserve">
+    <value>请选择这条规则作用的分组或连接。</value>
+  </data>
+  <data name="OutRule_ErrNoStyle" xml:space="preserve">
+    <value>前景色、背景色、加粗至少选一项。</value>
+  </data>
+  <data name="OutRule_ErrResponseEmpty" xml:space="preserve">
+    <value>应答为空时要勾上「再按回车」,否则什么都不会发送。</value>
+  </data>
+  <data name="OutRule_ErrResponseTooLong" xml:space="preserve">
+    <value>应答不能超过 {0} 个字符。</value>
+  </data>
+  <data name="OutRule_ErrResponseNotSingleLine" xml:space="preserve">
+    <value>应答只能是一行可见文字(回车用「再按回车」)。</value>
+  </data>
+  <data name="OutRule_ErrSecretPrompt" xml:space="preserve">
+    <value>这条规则会命中口令提示,不能用于自动应答。规则里不保存口令:遇到密码提示请用共享凭据 —— 终端里会弹出共享密码列表。</value>
+  </data>
+  <data name="OutRule_ErrUnknownKind" xml:space="preserve">
+    <value>这条规则来自更新的版本,这里不认识它的动作或作用范围,不生效。</value>
+  </data>
+  <data name="OutRule_NoticeResponded" xml:space="preserve">
+    <value>已自动应答:{0}</value>
+  </data>
+  <data name="OutRule_NoticeRateLimited" xml:space="preserve">
+    <value>「{0}」已到每分钟上限,暂停自动应答</value>
+  </data>
   <data name="SetVm_SectionTransfer" xml:space="preserve">
     <value>文件传输</value>
   </data>
@@ -4417,6 +4909,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Svc_CertificateKeyRequired" xml:space="preserve">
     <value>证书认证需要与证书匹配的私钥文件。</value>
   </data>
+  <data name="Svc_KeyStoreKeyRequired" xml:space="preserve">
+    <value>系统密钥库认证要先选一把钥。</value>
+  </data>
   <data name="Svc_ProfileNameRequired" xml:space="preserve">
     <value>请填写连接名称。</value>
   </data>
@@ -4459,6 +4954,18 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SyncSvc_GistNotFound" xml:space="preserve">
     <value>Gist 不存在或令牌无权访问(请检查 Gist Id 与令牌账号)。</value>
   </data>
+  <data name="SyncSvc_LayoutsFailed" xml:space="preserve">
+    <value>(布局模板这次没有同步:{0})</value>
+  </data>
+  <data name="SyncSvc_LayoutsLocked" xml:space="preserve">
+    <value>(布局模板这次跳过:云端那份是端到端加密的,本设备没设口令或口令不同)</value>
+  </data>
+  <data name="SyncSvc_LayoutsNewer" xml:space="preserve">
+    <value>(布局模板这次跳过:云端那份是更新版本的 VelaShell 写的,本设备升级之后才能同步)</value>
+  </data>
+  <data name="SyncSvc_LayoutsPushed" xml:space="preserve">
+    <value>(本机的布局模板改动也一并推上了云端)</value>
+  </data>
   <data name="SyncSvc_MissingPayload" xml:space="preserve">
     <value>云端数据缺少载荷。</value>
   </data>
@@ -4497,6 +5004,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="SyncSvc_TokenDecryptFailed" xml:space="preserve">
     <value>无法解密已存的 GitHub 令牌,请重新填写。</value>
+  </data>
+  <data name="SyncSvc_PassphraseDecryptFailed" xml:space="preserve">
+    <value>无法解密已存的同步口令,请重新填写。</value>
   </data>
   <data name="SyncSvc_TokenInvalid" xml:space="preserve">
     <value>GitHub 令牌无效或已过期,请重新生成(需 gist 权限)。</value>
@@ -5035,6 +5545,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>打开日志目录</value>
   </data>
+  <data name="Cmd_OpenRemoteEditDrafts" xml:space="preserve">
+    <value>打开外部编辑草稿文件夹</value>
+  </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>打开日志目录</value>
   </data>
@@ -5042,13 +5555,13 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
     <value>导出诊断包…</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
-    <value>收集日志、崩溃记录、版本与插件清单，去掉主机名、用户名、本机路径与 IP 后打成 zip 存到本机，不会上传。</value>
+    <value>收集诊断日志、崩溃记录、版本与插件清单（传输记录、插件日志等可另外勾选），按规则遮盖主机名、用户名、IP 等后打成 zip 存到本机，不会上传。遮盖认不全，发送前请先打开检查。</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
     <value>保存诊断包</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
-    <value>诊断包已保存到 {0}（{1} 份日志，敏感信息已遮盖）。没有发送到任何地方。</value>
+    <value>诊断包已保存到 {0}（{1} 份日志，已按规则遮盖）。没有发送到任何地方；发给别人之前请先打开检查。</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
     <value>诊断包保存失败：{0}</value>
@@ -5060,10 +5573,49 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
     <value>这个包只保存在你选的位置，VelaShell 没有上传它。发给别人之前可以先打开看看。</value>
   </data>
   <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
-    <value>不包含设置、连接配置与任何凭据。</value>
+    <value>不包含设置、连接配置、会话日志与任何凭据。传输记录、外部编辑日志、VcXsrv 日志与插件日志只在导出时勾选了才收（见上面的 optional logs）。</value>
   </data>
   <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
-    <value>已遮盖（主机名、用户名、本机路径、IP、邮箱、口令与令牌），各类替换次数：</value>
+    <value>已按规则遮盖：已存连接、最近连接与共享凭据里的主机名与用户名，IP 地址，小写书写、以常见顶级域或内网后缀结尾的域名，用户目录（C:\Users\…、/home/…、/Users/…）里的用户名，本机账户名、机器名与主目录，邮箱、口令与令牌。其它位置的单段主机名、用户名与文件名不在其列。各类替换次数：</value>
+  </data>
+  <data name="DiagBundle_PickTitle" xml:space="preserve">
+    <value>导出诊断包</value>
+  </data>
+  <data name="DiagBundle_PickSummary" xml:space="preserve">
+    <value>总会收进包：诊断日志（velashell-*.log）、崩溃记录、版本与平台概况、插件清单。下面几类日志里有本机与远端的路径和文件名，默认不收；勾上的同样按规则遮盖后进包。</value>
+  </data>
+  <data name="DiagBundle_PickNone" xml:space="preserve">
+    <value>没有其它可收的日志。</value>
+  </data>
+  <data name="DiagBundle_PickConfirm" xml:space="preserve">
+    <value>导出…</value>
+  </data>
+  <data name="DiagBundle_OptionTransfer" xml:space="preserve">
+    <value>传输记录</value>
+  </data>
+  <data name="DiagBundle_OptionTransferHint" xml:space="preserve">
+    <value>每次上传、下载一行：本机路径、远端路径与结果。</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEdit" xml:space="preserve">
+    <value>外部编辑日志（remote-edit.log）</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEditHint" xml:space="preserve">
+    <value>用外部编辑器打开、保存与回传远程文件的经过，含本机临时路径与远端路径。</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrv" xml:space="preserve">
+    <value>VcXsrv 日志（vcxsrv.log）</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrvHint" xml:space="preserve">
+    <value>Windows 上外部 X 服务器 VcXsrv 的输出。</value>
+  </data>
+  <data name="DiagBundle_OptionPlugin" xml:space="preserve">
+    <value>插件日志：{0}</value>
+  </data>
+  <data name="DiagBundle_OptionPluginHint" xml:space="preserve">
+    <value>这个插件自己写的日志、它的进程输出，以及宿主记下的激活、失败与崩溃。</value>
+  </data>
+  <data name="DiagBundle_OptionSize" xml:space="preserve">
+    <value>{0} 份 · {1}</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>上次异常退出</value>
@@ -5073,6 +5625,42 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Notify_CrashAction" xml:space="preserve">
     <value>打开日志目录</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedTitle" xml:space="preserve">
+    <value>本机加密密钥用不了,已换了一把新的</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedBody" xml:space="preserve">
+    <value>数据目录里的密钥文件解不开(换了系统账户、重装了系统,或者数据目录是从别的电脑拷来的),已原样改名保留为 {0}。之前保存的密码在这里解不开:连接时会提示重新输入,同步令牌与插件机密也要重新填写。回到原来的账户或电脑,凭这个文件仍能找回。</value>
+  </data>
+  <data name="Notify_MasterKeyMissingTitle" xml:space="preserve">
+    <value>系统密钥链里找不到之前的加密密钥</value>
+  </data>
+  <data name="Notify_MasterKeyMissingBody" xml:space="preserve">
+    <value>数据目录记着的加密密钥不在这台电脑的系统密钥链里 —— 数据目录可能是从别的电脑或账户拷来的,或者那一条被删掉了。用它加密的密码在这里解不开:连接时会提示重新输入;新保存的密码不受影响。</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableTitle" xml:space="preserve">
+    <value>系统密钥链暂时用不了</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableBody" xml:space="preserve">
+    <value>这次没能打开 {0}({1})。已保存的密码这次解不开,连接时会提示重新输入;它们没有丢,密钥链恢复后下次启动照常读取。这期间新保存的密码先用数据目录里的本地密钥加密,之后自动并入密钥链。</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackTitle" xml:space="preserve">
+    <value>加密密钥仍保存在数据目录里</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
+    <value>{0} 用不了({1}),本机加密密钥照旧保存在数据目录的密钥文件里(与之前相同)。密钥链可用之后,下次启动会自动迁过去。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
+    <value>外部编辑的改动没传回服务器</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBody" xml:space="preserve">
+    <value>{0}（{1}）的改动还留在本机的 {2}，没有传回服务器。手动上传或另存之后删掉这份副本即可；草稿不会被自动删除。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBodyUnknown" xml:space="preserve">
+    <value>本机的 {1} 里有一份外部编辑留下的副本（{0}），可能带着没传回服务器的改动。确认之后请自己删掉；草稿不会被自动删除。</value>
+  </data>
+  <data name="Notify_RemoteEditDraftAction" xml:space="preserve">
+    <value>打开所在文件夹</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>系统</value>
@@ -5599,11 +6187,23 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
     <value>{0} 没有导入：{1}</value>
   </data>
-  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
-    <value>ForwardAgent {0} 没有导入：VelaShell 只转发默认的 agent（SSH_AUTH_SOCK）。</value>
+  <data name="SshCfgImport_NoteAgentEndpointUnusable" xml:space="preserve">
+    <value>{0} 没有导入：这台电脑上用不了这个 agent 端点（别的平台的路径，或者不是完整路径）。</value>
   </data>
-  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
-    <value>IdentityAgent {0} 没有导入：VelaShell 只连默认的 agent（SSH_AUTH_SOCK）。</value>
+  <data name="SshCfgImport_NoteAgentVarUnset" xml:space="preserve">
+    <value>{0} 没有导入：环境变量 {1} 没有设。</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentConflict" xml:space="preserve">
+    <value>{0} 没有导入：它与登录用的 agent（IdentityAgent）不是同一个，而 VelaShell 一条连接的认证与转发只用一个 agent。</value>
+  </data>
+  <data name="SshCfgImport_NoteX11TrustedDefault" xml:space="preserve">
+    <value>没写 ForwardX11Trusted：按 VelaShell 的默认导入为受信任(-Y)，而 OpenSSH 这时用的是非受信任(-X)。要非受信任，在连接配置的 SSH 选项里取消「受信任(-Y)」，或在 config 里写上 ForwardX11Trusted no。</value>
+  </data>
+  <data name="SshCfgImport_NoteObscureInterval" xml:space="preserve">
+    <value>ObscureKeystrokeTiming {0}：按开启导入；VelaShell 的节拍固定为 {1} 毫秒。</value>
+  </data>
+  <data name="SshCfgImport_NoteValueInvalid" xml:space="preserve">
+    <value>{0} 没有导入：认不出这个值。</value>
   </data>
   <data name="SshCfgImport_NoteExtraIdentities" xml:space="preserve">
     <value>一条连接只用一把私钥，没有导入：{0}</value>
@@ -5676,7 +6276,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="PluginPermUpload_Title"><value>文件上传授权</value></data>
   <data name="PluginPermUpload_Message"><value>插件“{0}”请求读取本机文件并上传到 {1}。批准仅对当前任务有效，可在插件管理页撤销。</value></data>
-  <data name="PluginPermUpload_Preview"><value>本机源文件：{0}&#10;远端目标：{1}&#10;目标策略：{2}</value></data>
+  <data name="PluginPermUpload_Preview"><value>本机源文件：{0}&#10;大小：{3}&#10;远端目标：{1}&#10;目标策略：{2}</value></data>
   <data name="PluginPermUpload_Replace"><value>允许原子替换已有文件</value></data>
   <data name="PluginPermUpload_NoReplace"><value>不替换已有文件</value></data>
   <data name="PluginPermUpload_AllowOnce"><value>允许本次上传</value></data>
@@ -6011,8 +6611,20 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshAlgoFix_Button" xml:space="preserve">
     <value>放开这几个算法并重连</value>
   </data>
+  <data name="SshAlgoFix_ButtonRediagnose" xml:space="preserve">
+    <value>放开这几个算法并重新诊断</value>
+  </data>
+  <data name="SshAlgoFix_ButtonRetest" xml:space="preserve">
+    <value>放开这几个算法并重新测试</value>
+  </data>
   <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
     <value>在连接配置的自定义算法清单({0})里追加 {1}(排在默认之后),然后重连。</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRediagnose" xml:space="preserve">
+    <value>在连接配置的自定义算法清单({0})里追加 {1}(排在默认之后),然后重新诊断。</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRetest" xml:space="preserve">
+    <value>在 SSH 选项的自定义算法清单({0})里追加 {1}(排在默认之后),然后重新测试。</value>
   </data>
   <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
     <value>放开这几个算法?</value>
@@ -6024,8 +6636,31 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
 
 只加这几个,其余老算法照旧关着。它们比默认的弱,只在对端一个更新的都不支持时才会用上,只对没法升级的设备这样做。</value>
   </data>
+  <data name="SshAlgoFix_ConfirmBodyRediagnose" xml:space="preserve">
+    <value>将在连接「{0}」的 SSH 选项里,往{1}的自定义清单追加下面这几个算法,然后重新诊断:
+
+{2}
+
+只加这几个,其余老算法照旧关着。它们比默认的弱,只在对端一个更新的都不支持时才会用上,只对没法升级的设备这样做。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBodyRetest" xml:space="preserve">
+    <value>将在连接「{0}」的 SSH 选项里,往{1}的自定义清单追加下面这几个算法,然后重新测试:
+
+{2}
+
+只加这几个,其余老算法照旧关着。它们比默认的弱,只在对端一个更新的都不支持时才会用上,只对没法升级的设备这样做。</value>
+  </data>
+  <data name="SshAlgoFix_FormOnlyNote" xml:space="preserve">
+    <value>改的是这个表单里的清单,按「保存」或「连接」才会存下。</value>
+  </data>
   <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
     <value>放开并重连</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRediagnose" xml:space="preserve">
+    <value>放开并重新诊断</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRetest" xml:space="preserve">
+    <value>放开并重新测试</value>
   </data>
   <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
     <value>连接配置没能保存:{0}</value>
@@ -6276,7 +6911,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
 
 原因：{0}
 
-这通常是加密密钥（~/.velashell/secret.key）变了，例如切换了 Windows 账户、重装了系统，或数据目录是从别的电脑拷来的。如果能找回原来的密钥，请关闭 VelaShell 后把它放回去，不要重置。
+这通常是本机加密密钥变了或这次没取到，例如切换了 Windows 账户、重装了系统、数据目录是从别的电脑拷来的，或者系统密钥链这次没能打开（消息中心里写明了是哪一种）。如果能找回原来的密钥、或者密钥链恢复后就能读，请关闭 VelaShell 先处理那一头，不要重置。
 
 重置会新建一个空的信任库（读不出来的那份会留作备份）。已信任的发布者需要重新信任，已安装插件的防篡改收据也会丢失。重置后请重启 VelaShell，让已安装插件重新校验。</value>
   </data>
@@ -6822,7 +7457,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
     <value>双击文件时</value>
   </data>
   <data name="SetTransfer_DoubleClickActionDesc" xml:space="preserve">
-    <value>三种方式都会把本地副本的每次保存自动传回服务器</value>
+    <value>内置编辑器点保存即传回服务器；另外两种在「编辑后自动上传」开着时每次保存自动传回</value>
   </data>
   <data name="SetTransfer_DoubleClickSystem" xml:space="preserve">
     <value>系统默认程序</value>
@@ -6837,7 +7472,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
     <value>编辑后自动上传</value>
   </data>
   <data name="SetTransfer_AutoUploadOnEditDesc" xml:space="preserve">
-    <value>关闭后完全不监视本地副本，改动一律不回传</value>
+    <value>只管外部编辑器与系统默认程序：关闭后不监视它们的本地副本，改动不回传。内置编辑器点保存照样上传</value>
   </data>
   <data name="Sync_Title" xml:space="preserve">
     <value>目录同步</value>
@@ -7124,8 +7759,98 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshErr_TcpUnreachable" xml:space="preserve">
     <value>网络或主机不可达。</value>
   </data>
+  <data name="SshErr_TcpConnectFailed" xml:space="preserve">
+    <value>连不上 {0}({1})。</value>
+  </data>
   <data name="SshErr_ProxyAuthRequired" xml:space="preserve">
     <value>代理要求认证,但没有配置代理凭据。</value>
+  </data>
+  <data name="SshErr_ProxyConnectFailed" xml:space="preserve">
+    <value>连不上代理 {0}:{1}</value>
+  </data>
+  <data name="SshErr_ProxyHandshakeTimeout" xml:space="preserve">
+    <value>代理 {0} 接下了连接,却一直没有回应握手(要连 {1})。</value>
+  </data>
+  <data name="SshErr_ProxyClosedDuringHandshake" xml:space="preserve">
+    <value>代理 {0} 在握手中途断开了连接(要连 {1})—— 多半是拒绝了请求,只是没说原因。</value>
+  </data>
+  <data name="SshErr_ProxyTargetNameInvalid" xml:space="preserve">
+    <value>主机名 {0} 放不进代理请求:它不是合法的主机名,或者太长了。</value>
+  </data>
+  <data name="SshErr_Socks5CredentialsTooLong" xml:space="preserve">
+    <value>SOCKS5 代理的用户名与密码编码后都必须在 1–255 字节之间(RFC 1929)。</value>
+  </data>
+  <data name="SshErr_Socks5VersionMismatch" xml:space="preserve">
+    <value>{0} 回的不是 SOCKS5(版本字节 0x{1})—— 它可能是 HTTP 代理,或者根本不是代理。</value>
+  </data>
+  <data name="SshErr_Socks5NoAcceptableMethod" xml:space="preserve">
+    <value>SOCKS5 代理 {0} 不接受我们提供的任何认证方法。</value>
+  </data>
+  <data name="SshErr_Socks5UnexpectedMethod" xml:space="preserve">
+    <value>SOCKS5 代理 {0} 选了一个我们没提供的认证方法(0x{1})—— 这是协议错误。</value>
+  </data>
+  <data name="SshErr_Socks5InvalidAddressType" xml:space="preserve">
+    <value>SOCKS5 代理 {0} 的应答里地址类型非法(0x{1})。</value>
+  </data>
+  <data name="SshErr_Socks5ConnectRefused" xml:space="preserve">
+    <value>SOCKS5 代理 {0} 拒绝连接 {1}:{2}(应答码 {3})。</value>
+  </data>
+  <data name="SshErr_Socks5Reply1" xml:space="preserve">
+    <value>代理内部错误</value>
+  </data>
+  <data name="SshErr_Socks5Reply2" xml:space="preserve">
+    <value>代理的规则不允许这个连接</value>
+  </data>
+  <data name="SshErr_Socks5Reply3" xml:space="preserve">
+    <value>网络不可达</value>
+  </data>
+  <data name="SshErr_Socks5Reply4" xml:space="preserve">
+    <value>主机不可达</value>
+  </data>
+  <data name="SshErr_Socks5Reply5" xml:space="preserve">
+    <value>目标拒绝连接</value>
+  </data>
+  <data name="SshErr_Socks5Reply6" xml:space="preserve">
+    <value>TTL 过期</value>
+  </data>
+  <data name="SshErr_Socks5Reply7" xml:space="preserve">
+    <value>代理不支持 CONNECT 命令</value>
+  </data>
+  <data name="SshErr_Socks5Reply8" xml:space="preserve">
+    <value>代理不支持这种地址类型</value>
+  </data>
+  <data name="SshErr_Socks5ReplyOther" xml:space="preserve">
+    <value>未知错误</value>
+  </data>
+  <data name="SshErr_HttpProxyNotHttp" xml:space="preserve">
+    <value>{0} 回的不是 HTTP 响应(「{1}」)—— 它可能是 SOCKS 代理,或者根本不是代理。</value>
+  </data>
+  <data name="SshErr_HttpProxyResponseTooLarge" xml:space="preserve">
+    <value>HTTP 代理 {0} 的响应头超过了上限 —— 它可能不是一个 HTTP 代理。</value>
+  </data>
+  <data name="SshErr_HttpConnectRefused" xml:space="preserve">
+    <value>HTTP 代理 {0} 拒绝连接 {1}:{2}。</value>
+  </data>
+  <data name="SshErr_ProxyCommandExited" xml:space="preserve">
+    <value>ProxyCommand({0})在连上 {1} 之前就以退出码 {2} 结束了。</value>
+  </data>
+  <data name="SshErr_ProxyCommandSaid" xml:space="preserve">
+    <value>{0}它的输出:{1}</value>
+  </data>
+  <data name="SshErr_JumpConnectFailed" xml:space="preserve">
+    <value>连不上跳板 {0}:{1}</value>
+  </data>
+  <data name="SshErr_JumpConnectTimeout" xml:space="preserve">
+    <value>经跳板 {0} 建连时超时(等你输入的时间不算在内)。</value>
+  </data>
+  <data name="SshErr_JumpForwardRefused" xml:space="preserve">
+    <value>跳板 {0} 不肯转发到 {1}:{2}</value>
+  </data>
+  <data name="SshErr_JumpForwardFailed" xml:space="preserve">
+    <value>跳板 {0} 在转发到 {1} 时出了问题:{2}</value>
+  </data>
+  <data name="SshErr_JumpForwardTimeout" xml:space="preserve">
+    <value>跳板 {0} 转发到 {1} 时超时。</value>
   </data>
   <data name="SshErr_NotAnSshServer" xml:space="preserve">
     <value>对端不是 SSH 服务(没有收到合法的协议标识)。</value>
@@ -7135,6 +7860,24 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>服务器的主机密钥与已记录的不一致。</value>
+  </data>
+  <data name="SshErr_HostKeyMalformed" xml:space="preserve">
+    <value>服务器的主机密钥无法解析。</value>
+  </data>
+  <data name="SshErr_HostKeyAlgorithmMismatch" xml:space="preserve">
+    <value>服务器出示的是 {0} 密钥,与协商出的主机密钥算法 {1} 不匹配。</value>
+  </data>
+  <data name="SshErr_HostKeyTooShort" xml:space="preserve">
+    <value>服务器的 RSA 主机密钥只有 {0} 位,低于要求的 {1} 位。</value>
+  </data>
+  <data name="SshErr_HostKeySignatureInvalid" xml:space="preserve">
+    <value>服务器对密钥交换的签名({0})验证失败 —— 对端没有它所声称的那把主机私钥,可能有中间人。</value>
+  </data>
+  <data name="SshErr_HostKeyPolicyRejected" xml:space="preserve">
+    <value>主机密钥被主机密钥策略拒绝了。</value>
+  </data>
+  <data name="SshErr_RekeyFailed" xml:space="preserve">
+    <value>密钥重协商失败:{0}</value>
   </data>
   <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
     <value>服务器出示的是一张用户证书(Key ID「{0}」),不能用来证明主机身份。</value>
@@ -7172,8 +7915,14 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>已取消两步验证。</value>
   </data>
+  <data name="SshErr_KbdAuthUnattended" xml:space="preserve">
+    <value>服务器要求动态码一类的交互验证,巡检不替你回答;请手动连接一次。</value>
+  </data>
   <data name="SshErr_PasswordChangeCancelled" xml:space="preserve">
     <value>已取消修改密码。</value>
+  </data>
+  <data name="SshErr_PasswordChangeUnattended" xml:space="preserve">
+    <value>服务器要求先修改密码,巡检不替你改;请手动连接一次。</value>
   </data>
   <data name="SshPwdChange_Title" xml:space="preserve">
     <value>修改密码</value>
@@ -7204,6 +7953,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="SshErr_Disconnected" xml:space="preserve">
     <value>服务器结束了会话。</value>
+  </data>
+  <data name="SshErr_ConnectionFaulted" xml:space="preserve">
+    <value>连接因意外错误中断:{0}</value>
   </data>
   <data name="SshErr_KeyPassphraseRequired" xml:space="preserve">
     <value>私钥已加密,需要输入口令。</value>
@@ -7255,6 +8007,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
     <value>打不开系统密钥库里的这把钥,或者它用不了。</value>
+  </data>
+  <data name="SshErr_KeyStoreNotOnThisPlatform" xml:space="preserve">
+    <value>这条连接用 Windows 系统密钥库里的钥({0})签名,这台电脑上没有系统密钥库。请换一种认证方式。</value>
   </data>
   <data name="SshErr_CertFileUnreadable" xml:space="preserve">
     <value>读不了证书文件({0})。</value>
@@ -7337,6 +8092,114 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>服务器拒绝了转发请求。检查 sshd_config 里的 AllowAgentForwarding / AllowTcpForwarding / X11Forwarding。</value>
   </data>
+  <data name="SshErr_FwdAccept" xml:space="preserve">
+    <value>转发端口接受入站连接失败。</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimit" xml:space="preserve">
+    <value>并发连接数已达上限 {0},这一条被拒绝。</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimitMany" xml:space="preserve">
+    <value>并发连接数已达上限 {0},拒绝了 {1} 条(这类错误每秒至多报一次)。</value>
+  </data>
+  <data name="SshErr_FwdSocksTimeout" xml:space="preserve">
+    <value>SOCKS 握手在 {0} 秒内没有完成,这一条被关掉了。</value>
+  </data>
+  <data name="SshErr_FwdSocksInvalid" xml:space="preserve">
+    <value>SOCKS 握手非法或命令不支持,这一条被关掉了。</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenTimeout" xml:space="preserve">
+    <value>到 {0} 的隧道在 {1} 秒内没有打开(服务器还没应答),这一条被放弃了。</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenFailed" xml:space="preserve">
+    <value>到 {0} 的隧道打不开。</value>
+  </data>
+  <data name="SshErr_FwdTargetConnect" xml:space="preserve">
+    <value>连不上转发的目标 {0}。</value>
+  </data>
+  <data name="SshErr_FwdRelay" xml:space="preserve">
+    <value>到 {0} 的连接在搬运途中出错。</value>
+  </data>
+  <data name="SshErr_FwdSetupSkipped" xml:space="preserve">
+    <value>X11 或 agent 转发没有开成,会话照常启动。</value>
+  </data>
+  <data name="SshErr_FwdUnknown" xml:space="preserve">
+    <value>一条转发连接失败了。</value>
+  </data>
+  <data name="SshErr_FwdListenFailed" xml:space="preserve">
+    <value>在 {0} 上起不了监听({1})。</value>
+  </data>
+  <data name="SshErr_FwdListenInUse" xml:space="preserve">
+    <value>在 {0} 上起不了监听:端口已被别的程序占用。</value>
+  </data>
+  <data name="SshErr_FwdIpv6LoopbackInUse" xml:space="preserve">
+    <value>在 {0} 上起不了监听:同一端口的 IPv6 环回被别的程序占着 —— 先试 ::1 的客户端会连到它那里,所以不起这个转发。换一个端口,或者明确只听 127.0.0.1。</value>
+  </data>
+  <data name="SshErr_FwdSocketPathExists" xml:space="preserve">
+    <value>{0} 已经存在 —— 多半是上一次没收拾干净,也可能是别人的套接字。确认无用后删掉它,或者允许替换已有的套接字。</value>
+  </data>
+  <data name="SshErr_FwdSocketPathTooLong" xml:space="preserve">
+    <value>套接字路径太长(Linux 上限 107 字节、macOS 103):{0}</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejected" xml:space="preserve">
+    <value>服务器拒绝在 {0} 上开监听。常见原因是 sshd_config 里 AllowTcpForwarding no,或者要绑非环回地址而 GatewayPorts 没打开,又或者端口已被占用。</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejectedPrivileged" xml:space="preserve">
+    <value>服务器拒绝在 {0} 上开监听。常见原因是 sshd_config 里 AllowTcpForwarding no,或者要绑非环回地址而 GatewayPorts 没打开,又或者那是个特权端口(1024 以下)。</value>
+  </data>
+  <data name="SshErr_FwdRemoteSocketListenRejected" xml:space="preserve">
+    <value>服务器拒绝在 {0} 上开套接字监听。常见原因是 sshd_config 里 AllowStreamLocalForwarding no、那个路径已经存在,或者所在目录不可写。</value>
+  </data>
+  <data name="SshErr_FwdNoBoundPortInReply" xml:space="preserve">
+    <value>请求了动态端口,但服务器的应答里没有带回实际端口号。</value>
+  </data>
+  <data name="SshErr_FwdAgentForwardRejected" xml:space="preserve">
+    <value>服务器拒绝了 agent 转发(常见原因是 sshd_config 里 AllowAgentForwarding no)。</value>
+  </data>
+  <data name="SshErr_FwdLocalAgentUnavailable" xml:space="preserve">
+    <value>本机 ssh-agent 不可用,没有开 agent 转发:{0}</value>
+  </data>
+  <data name="SshErr_FwdX11ForwardRejected" xml:space="preserve">
+    <value>服务器拒绝了 X11 转发(常见原因是 sshd_config 里 X11Forwarding no,或者服务器没装 xauth)。</value>
+  </data>
+  <data name="SshErr_FwdNoX11Display" xml:space="preserve">
+    <value>拿不到本机的 X 显示:DISPLAY 没设或者格式不认识。</value>
+  </data>
+  <data name="SshErr_FwdXAuthTempDirectoryFailed" xml:space="preserve">
+    <value>建不了给 xauth 用的临时目录:{0}</value>
+  </data>
+  <data name="SshErr_FwdXAuthStartFailed" xml:space="preserve">
+    <value>跑不起来 xauth:{0}。Windows 上通常没有 xauth —— 那里请用受信任(-Y)的 X11 转发。</value>
+  </data>
+  <data name="SshErr_FwdXAuthTimedOut" xml:space="preserve">
+    <value>xauth 在 {0} 秒内没有返回。</value>
+  </data>
+  <data name="SshErr_FwdXAuthFailed" xml:space="preserve">
+    <value>xauth 失败(退出码 {0})。非受信任的 X11 转发需要本机有 xauth、且 X server 支持 SECURITY 扩展;都没有的话请用受信任(-Y),但要清楚那等于把本机显示完全交给远端。</value>
+  </data>
+  <data name="SshErr_FwdXAuthSaid" xml:space="preserve">
+    <value>{0}xauth 的输出:{1}</value>
+  </data>
+  <data name="SshErr_FwdXAuthNoCookie" xml:space="preserve">
+    <value>xauth 跑完了,但没有生成显示 {0} 的 cookie。</value>
+  </data>
+  <data name="SshErr_FwdConfigForwardFailed" xml:space="preserve">
+    <value>「{0}」没起来(ExitOnForwardFailure yes,已起的转发全部撤掉):{1}</value>
+  </data>
+  <data name="SshErr_FwdUnmatchedChannel" xml:space="preserve">
+    <value>服务器发来的 {0} 的转发通道对不上任何转发。</value>
+  </data>
+  <data name="SshErr_FwdX11Expired" xml:space="preserve">
+    <value>这条连接上的 X11 转发都已过期,新的 X11 通道被拒绝。</value>
+  </data>
+  <data name="SshErr_FwdChannelLimitReached" xml:space="preserve">
+    <value>同时打开的转发通道已达上限 {0}。</value>
+  </data>
+  <data name="SshErr_FwdLocalTargetUnreachable" xml:space="preserve">
+    <value>连不上转发的本机目标 {0}。</value>
+  </data>
+  <data name="SshErr_FwdStopped" xml:space="preserve">
+    <value>转发器已由本端停止。</value>
+  </data>
   <data name="SftpErr_NoSuchFile" xml:space="preserve">
     <value>文件或目录不存在</value>
   </data>
@@ -7361,11 +8224,17 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SftpErr_ServerSaid" xml:space="preserve">
     <value>{0}。服务器说:{1}</value>
   </data>
+  <data name="SftpErr_MissingExtension" xml:space="preserve">
+    <value>{0}。这台服务器没有 {1} 扩展。</value>
+  </data>
+  <data name="SftpErr_MissingPosixRename" xml:space="preserve">
+    <value>{0}。这台服务器没有 posix-rename@openssh.com,做不到原子覆盖式重命名。可以先删除目标再重命名,但那不是原子的 —— 中途失败会两个都没有。</value>
+  </data>
   <data name="Profile_AgentAuth" xml:space="preserve">
     <value>Agent</value>
   </data>
   <data name="Profile_AgentAuthHint" xml:space="preserve">
-    <value>用本机 ssh-agent 里的密钥签名,配置里不存任何凭据。Windows 上是「OpenSSH Authentication Agent」服务(先启动它,再用 ssh-add 加载密钥);其它系统用 SSH_AUTH_SOCK 指向的 agent。</value>
+    <value>用本机 ssh-agent 里的密钥签名,配置里不存任何凭据。Windows 上是「OpenSSH Authentication Agent」服务(先启动它,再用 ssh-add 加载密钥);其它系统用 SSH_AUTH_SOCK 指向的 agent。要用别的 agent(1Password、KeePassXC、gpg-agent 等),在「SSH 选项」里填 Agent 端点。</value>
   </data>
   <data name="Profile_SshFeatures" xml:space="preserve">
     <value>SSH 选项</value>
@@ -7399,6 +8268,30 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Profile_SshAgentForwardingHint" xml:space="preserve">
     <value>在这台服务器上继续 ssh 到下一跳时,用的是本机 agent 里的密钥,私钥不必拷到服务器上。会话期间,这台服务器上的 root 也能借你的 agent 签名 —— 只对信得过的机器开启。</value>
+  </data>
+  <data name="Profile_SshAgentEndpoint" xml:space="preserve">
+    <value>Agent 端点</value>
+  </data>
+  <data name="Profile_SshAgentEndpointHint" xml:space="preserve">
+    <value>留空用系统默认的 agent(SSH_AUTH_SOCK;Windows 上是 OpenSSH Authentication Agent 服务,它没在运行时用 Pageant)。填了就只连这一个:「SSH Agent」认证、agent 转发与「自动加载密钥到 Agent」都用它,相当于 ssh_config 的 IdentityAgent。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderWindows" xml:space="preserve">
+    <value>系统默认 —— 要指定就写命名管道 \\.\pipe\名字,或套接字的完整路径</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderUnix" xml:space="preserve">
+    <value>系统默认(SSH_AUTH_SOCK)—— 要指定就写套接字路径,如 ~/.1password/agent.sock</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNotSupported" xml:space="preserve">
+    <value>命名管道(\\.\pipe\…)只有 Windows 上有;这台电脑上要写 Unix 套接字的路径。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNameMissing" xml:space="preserve">
+    <value>\\.\pipe\ 后面要写管道名(不能再带斜杠)。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointNotFullPath" xml:space="preserve">
+    <value>要写完整路径(可以用 ~/ 开头);相对路径落在哪全看程序的当前目录。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointTooLong" xml:space="preserve">
+    <value>路径太长:Unix 套接字的路径最多 {0} 个字节。</value>
   </data>
   <data name="Profile_SshX11Forwarding" xml:space="preserve">
     <value>X11 转发(在本机显示远端图形界面)</value>
@@ -7445,6 +8338,54 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshErr_AgentNoKeys" xml:space="preserve">
     <value>本机 ssh-agent 里一把密钥都没有。请先加载,例如 ssh-add ~/.ssh/id_ed25519。</value>
   </data>
+  <data name="SshErr_AgentConnectFailed" xml:space="preserve">
+    <value>连不上 ssh-agent({0}):{1}</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUnreadable" xml:space="preserve">
+    <value>读不到 ssh-agent 命名管道({0})的属主,不能确认另一头是可信的 agent。</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUntrusted" xml:space="preserve">
+    <value>ssh-agent 命名管道({0})的属主是 {1},既不是当前用户也不是系统 —— 可能是别的用户抢先占了这个管道名,已拒绝连接。</value>
+  </data>
+  <data name="SshErr_AgentOutOfStep" xml:space="preserve">
+    <value>与 ssh-agent 的上一次问答中途被打断,这条连接上的问答已经错位,不能再用 —— 请重新连接 agent。</value>
+  </data>
+  <data name="SshErr_AgentClosedBeforeReply" xml:space="preserve">
+    <value>ssh-agent 在应答之前就断开了。</value>
+  </data>
+  <data name="SshErr_AgentCommunicationFailed" xml:space="preserve">
+    <value>与 ssh-agent 通信失败:{0}</value>
+  </data>
+  <data name="SshErr_AgentMalformedReply" xml:space="preserve">
+    <value>ssh-agent 的应答格式不对,或者不是这一问该回的。</value>
+  </data>
+  <data name="SshErr_AgentSignatureAlgorithmMismatch" xml:space="preserve">
+    <value>ssh-agent 用 {0} 签了名,而请求的是 {1} —— 这个 agent 多半太老,不认 SHA-2 的签名标志位。升级 agent,或者改用私钥文件。</value>
+  </data>
+  <data name="SshErr_AgentSignRefused" xml:space="preserve">
+    <value>ssh-agent 拒绝签名。常见原因:这把密钥已经不在 agent 里了,agent 配了确认(ssh-add -c)而没有批准,或者这把钥带目的地约束(ssh-add -h),不许用在这台主机、这个用户或这条转发路径上。</value>
+  </data>
+  <data name="SshErr_AgentAddRefused" xml:space="preserve">
+    <value>ssh-agent 拒绝加入这把密钥。常见原因:agent 不支持约束(有效期 / 逐次确认)、agent 已被锁定(ssh-add -x),或者 agent 不支持这种密钥类型。</value>
+  </data>
+  <data name="SshErr_AgentAddRefusedDestination" xml:space="preserve">
+    <value>ssh-agent 拒绝加入这把密钥。常见原因:agent 不支持约束(有效期 / 逐次确认)、agent 已被锁定(ssh-add -x),或者 agent 不支持这种密钥类型。 这次还带着目的地约束:agent 可能不支持它(restrict-destination-v00@openssh.com,OpenSSH 8.9 起才有;非 OpenSSH 的 agent 多半不支持)。</value>
+  </data>
+  <data name="SshErr_AgentRemoveAllRefused" xml:space="preserve">
+    <value>ssh-agent 拒绝清空。常见原因:agent 已被锁定(ssh-add -x)。</value>
+  </data>
+  <data name="SshErr_AgentRequestTooLarge" xml:space="preserve">
+    <value>要加入 agent 的密钥或目的地约束太大,超出了 agent 报文的长度上限(256 KiB)。</value>
+  </data>
+  <data name="SshErr_AgentEndpointUnavailable" xml:space="preserve">
+    <value>连不上这条连接指定的 ssh-agent({0}):{1}</value>
+  </data>
+  <data name="SshErr_AgentEndpointNotRunning" xml:space="preserve">
+    <value>端点不存在,或者没有程序在上面监听。确认提供它的程序(1Password、KeePassXC、gpg-agent 等)已经启动、路径没写错;要用系统默认的 agent,把连接配置「SSH 选项」里的 Agent 端点清空。</value>
+  </data>
+  <data name="SshErr_AgentEndpointNoKeys" xml:space="preserve">
+    <value>这条连接指定的 ssh-agent({0})里一把密钥都没有。</value>
+  </data>
   <data name="DiagSvc_SuggestAgentKeys" xml:space="preserve">
     <value>确认 ssh-agent 正在运行,并且加载了这台服务器认可的那把密钥:ssh-add -l 可列出已加载的密钥。</value>
   </data>
@@ -7456,6 +8397,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Ssh_AgentForwardConfirmEach" xml:space="preserve">
     <value> · 每次签名都要确认</value>
+  </data>
+  <data name="Ssh_AgentForwardEndpoint" xml:space="preserve">
+    <value> · agent:{0}</value>
   </data>
   <data name="AgentSign_Title" xml:space="preserve">
     <value>agent 签名请求</value>
@@ -8581,8 +9525,14 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Tree_OpenGroupSynced" xml:space="preserve">
     <value>打开全部并同步输入</value>
   </data>
+  <data name="Tree_HealthCheckGroup" xml:space="preserve">
+    <value>巡检这一组</value>
+  </data>
   <data name="Tree_OpenSelectedSynced" xml:space="preserve">
     <value>打开 {0} 个连接并同步输入</value>
+  </data>
+  <data name="Tree_HealthCheckSelected" xml:space="preserve">
+    <value>巡检 {0} 个连接</value>
   </data>
   <data name="Tree_SyncedNoTerminals" xml:space="preserve">
     <value>这些连接都开不出终端，没有可以同步输入的（SFTP、FTP 与工作台开出来的不是终端）。</value>
@@ -8658,6 +9608,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="SessImport_ErrBadAuth" xml:space="preserve">
     <value>无法识别的认证方式：{0}</value>
+  </data>
+  <data name="SessImport_ErrBadKeyStoreKey" xml:space="preserve">
+    <value>不是系统密钥库里钥的写法(应为 cng:密钥库/钥名):{0}</value>
   </data>
   <data name="SessImport_ErrAuthNotSupported" xml:space="preserve">
     <value>FTP 与插件协议只支持密码认证</value>
@@ -9075,6 +10028,48 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="PasswordFill_Invalid" xml:space="preserve"><value>密码包含控制字符或无法使用当前会话编码表示，未发送任何内容。</value></data>
   <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
   <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>使用本机已登录的 Tailscale 身份与远端系统用户名，无需 SSH 密码或密钥；服务器可能要求浏览器验证。</value></data>
+  <data name="Profile_KeyStoreAuth" xml:space="preserve">
+    <value>系统密钥库</value>
+  </data>
+  <data name="Profile_KeyStoreKey" xml:space="preserve">
+    <value>系统密钥库里的钥</value>
+  </data>
+  <data name="Profile_KeyStorePick" xml:space="preserve">
+    <value>选一把钥…</value>
+  </data>
+  <data name="Profile_KeyStoreRefresh" xml:space="preserve">
+    <value>重新列出(插上智能卡、刚建了钥之后)</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKey" xml:space="preserve">
+    <value>复制公钥</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKeyTip" xml:space="preserve">
+    <value>复制这把钥的 OpenSSH 公钥行。先把它加进服务器的 ~/.ssh/authorized_keys 才登得上。</value>
+  </data>
+  <data name="Profile_KeyStoreNoKeys" xml:space="preserve">
+    <value>没找到能用的钥。要 RSA 或 ECDSA(P-256 / P-384 / P-521)的钥,放在软件密钥库、TPM 或智能卡里。用企业 PKI 工具建一把 —— 要放进 TPM 的话,比如在 PowerShell 里用 New-SelfSignedCertificate -Provider "Microsoft Platform Crypto Provider" —— 建好后点刷新。</value>
+  </data>
+  <data name="Profile_KeyStoreHint" xml:space="preserve">
+    <value>私钥不出密钥库,配置里只存用哪一把;TPM、智能卡签名时可能要输 PIN。只在 Windows 上可用。</value>
+  </data>
+  <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
+    <value>这条配置用 Windows 系统密钥库里的钥签名,这台电脑上没有系统密钥库。要在这里连,换一种认证方式。</value>
+  </data>
+  <data name="Profile_KeyStoreKeyMissing" xml:space="preserve">
+    <value>这台电脑上找不到</value>
+  </data>
+  <data name="Profile_KeyStoreSoftware" xml:space="preserve">
+    <value>软件密钥库</value>
+  </data>
+  <data name="Profile_KeyStoreTpm" xml:space="preserve">
+    <value>TPM</value>
+  </data>
+  <data name="Profile_KeyStoreSmartCard" xml:space="preserve">
+    <value>智能卡</value>
+  </data>
+  <data name="Profile_KeyStoreMachine" xml:space="preserve">
+    <value>{0}(机器级)</value>
+  </data>
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH 使用本机 Tailscale 身份，不能保存为共享凭据。</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH 验证</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>服务器要求身份复核。请点击链接在浏览器中验证；服务器批准后，本次连接会自动继续。</value></data>

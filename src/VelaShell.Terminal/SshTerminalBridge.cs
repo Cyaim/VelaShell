@@ -944,12 +944,16 @@ public class SshTerminalBridge : IAsyncDisposable
     /// 把合批结果喂给模拟器:生产中的具体实现(VelaTerminalControl)走 span 直喂
     /// (复用缓冲零物化);其它 ITerminalEmulator 实现(测试替身)回退 byte[] 语义——
     /// 接口不宜引入 span 成员,ref struct 参数无法被常规 mock 框架替身化。
+    /// <para>
+    /// 走 <c>FeedRemote</c>:这里喂的是对端的输出,输出触发器(自动应答)只认这一路 ——
+    /// 宿主写进终端的提示语、本地回显、录制回放都不经过这里。
+    /// </para>
     /// </summary>
     private void FeedTerminal(byte[] buffer, int length)
     {
         if (_terminal is Rendering.VelaTerminalControl control)
         {
-            control.Feed(buffer.AsSpan(0, length));
+            control.FeedRemote(buffer.AsSpan(0, length));
         }
         else
         {

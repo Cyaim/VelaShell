@@ -135,9 +135,15 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
         {
             SftpFileSystem fs = EnsureConnected();
 
-            SftpFileStream remote = resumeOffset > 0
-                ? await fs.OpenAppendAsync(path, resumeOffset, cancellationToken: ct).ConfigureAwait(false)
-                : await fs.OpenWriteAsync(path, cancellationToken: ct).ConfigureAwait(false);
+            // 建文件时的权限位只在 OPEN 新建它的那一刻起作用(随 OPEN 的 ATTRS 发出,服务端减 umask);
+            // setuid / setgid / 粘滞位不在这里带 —— 属主还没对上,带了就是一个以上传者身份运行的 setuid 程序。
+            SftpFileStream remote = (resumeOffset > 0, options.CreateMode) switch
+            {
+                (true, { } mode) => await fs.OpenAppendAsync(path, resumeOffset, mode & 0x1FF, ct).ConfigureAwait(false),
+                (true, null) => await fs.OpenAppendAsync(path, resumeOffset, cancellationToken: ct).ConfigureAwait(false),
+                (false, { } mode) => await fs.OpenWriteAsync(path, mode & 0x1FF, cancellationToken: ct).ConfigureAwait(false),
+                (false, null) => await fs.OpenWriteAsync(path, cancellationToken: ct).ConfigureAwait(false),
+            };
             try
             {
                 if (resumeOffset > 0)
@@ -539,6 +545,10 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
     /// 返回的 <see cref="SftpFileStream" /> <b>本来就可 Seek</b>,不需要像上一版那样
     /// 显式打开两个互相独立的开关(<c>Seekable</c> + <c>CacheLength</c>)——
     /// 那两个开关缺一个,症状就是「上传一半取消后再传同一个文件必报错」。
+    /// <para>
+    /// 交出去的是 <see cref="TranslatingSftpStream" />:调用方在自己的循环里读写(续传下载、双栏中转、插件的流式读取),
+    /// 那些调用不经过这里的 <c>GuardedAsync</c>,断线时库的异常要在流上就翻成中立类型,失败重试才认得出是断线。
+    /// </para>
     /// </remarks>
     public Task<Stream> OpenAsync(string path, FileMode mode, FileAccess access, CancellationToken ct = default) =>
         GuardedAsync<Stream>(async () =>
@@ -550,7 +560,8 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
             if (mode == FileMode.Append)
             {
                 long end = await GetFileSizeAsync(path, ct).ConfigureAwait(false);
-                return await fs.OpenAppendAsync(path, Math.Max(0, end), cancellationToken: ct).ConfigureAwait(false);
+                return new TranslatingSftpStream(
+                    await fs.OpenAppendAsync(path, Math.Max(0, end), cancellationToken: ct).ConfigureAwait(false));
             }
 
             SftpOpenModes open = (canRead ? SftpOpenModes.Read : SftpOpenModes.None)
@@ -581,7 +592,7 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
                     throw;
                 }
             }
-            return stream;
+            return new TranslatingSftpStream(stream);
         }, ct);
 
     /// <inheritdoc />

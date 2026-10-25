@@ -182,6 +182,10 @@ public partial class ConnectionProfileView : Window
         // 剪贴板挂在 TopLevel 上,视图模型层够不着,由视图注入。赋值幂等:
         // 窗口重开也只是覆盖同一个委托,不会像事件订阅那样越接越多。
         viewModel.CopyToClipboard = CopyToClipboardAsync;
+        // 「放开这几个算法并重新测试」的确认框:与终端标签那颗按钮同一个框(同一个标题、同一种点名、警示样式),
+        // 以本对话框为属主。
+        viewModel.AllowAlgorithmsConfirmer = (title, body, action) =>
+            MessageDialog.ConfirmAsync(this, title, body, action, kind: MessageDialogKind.Warning);
         // 切页只改按钮前景色、不触发布局,滑动下划线必须由 VM 属性变化驱动。
         // 换协议也要盯:页签随之增减,选中那一页的按钮位置跟着挪(或者被收起、落回「常规」)。
         viewModel.PropertyChanged += (_, args) =>

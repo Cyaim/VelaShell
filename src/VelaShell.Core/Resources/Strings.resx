@@ -46,6 +46,9 @@
   <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
     <value>Profile deleted</value>
   </data>
+  <data name="AuditLog_ActionProfilesUngrouped" xml:space="preserve">
+    <value>Profiles moved to Ungrouped</value>
+  </data>
   <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
     <value>Settings changed</value>
   </data>
@@ -109,6 +112,9 @@
   <data name="AuditLog_ColProfileId" xml:space="preserve">
     <value>Profile ID</value>
   </data>
+  <data name="AuditLog_ColSource" xml:space="preserve">
+    <value>Source</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>{0} records</value>
   </data>
@@ -120,6 +126,9 @@
   </data>
   <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
     <value>used by {0} connection(s)</value>
+  </data>
+  <data name="AuditLog_DetailProfilesUngrouped" xml:space="preserve">
+    <value>group “{0}” deleted, {1} profile(s) moved to Ungrouped</value>
   </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>No matching records.</value>
@@ -174,6 +183,18 @@
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>Search host, session or detail</value>
+  </data>
+  <data name="AuditLog_SourceLocal" xml:space="preserve">
+    <value>Local edit</value>
+  </data>
+  <data name="AuditLog_SourceCloudSync" xml:space="preserve">
+    <value>Cloud sync</value>
+  </data>
+  <data name="AuditLog_SourceImport" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="AuditLog_SourceLoginPrompt" xml:space="preserve">
+    <value>Login prompt</value>
   </data>
   <data name="AuditLog_Title" xml:space="preserve">
     <value>Audit log</value>
@@ -675,6 +696,15 @@
   <data name="SftpErr_Unavailable" xml:space="preserve">
     <value>The server&apos;s SFTP subsystem is not available (SFTP may be disabled on the server).</value>
   </data>
+  <data name="SftpErr_VersionTooOld" xml:space="preserve">
+    <value>The server only supports SFTP v{0}; at least v3 is required.</value>
+  </data>
+  <data name="SftpErr_VersionTooNew" xml:space="preserve">
+    <value>The server answered with SFTP v{0} although v3 was offered; it should answer with the lower of the two. Reading a newer protocol as v3 would misread file attributes, so the session was not used.</value>
+  </data>
+  <data name="SftpErr_SessionClosed" xml:space="preserve">
+    <value>The SFTP session has already been closed on this side.</value>
+  </data>
   <data name="SftpErr_ServerExited" xml:space="preserve">
     <value>The server&apos;s sftp-server exited before SFTP could start (exit status {0})</value>
   </data>
@@ -853,6 +883,12 @@
   <data name="Sftp_RefreshRemotePane" xml:space="preserve">
     <value>Refresh remote pane</value>
   </data>
+  <data name="Sftp_GoUpLocalPane" xml:space="preserve">
+    <value>Go up (local pane)</value>
+  </data>
+  <data name="Sftp_GoUpRemotePane" xml:space="preserve">
+    <value>Go up (remote pane)</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>Follow terminal directory (sync to the terminal's current path)</value>
   </data>
@@ -926,7 +962,7 @@
     <value>Could not tell which shell the server runs (command execution may be disabled, or the account is SFTP-only), so no search command was sent</value>
   </data>
   <data name="Sftp_SearchToolMissing" xml:space="preserve">
-    <value>The server has no find (or, for a text search, no grep) command</value>
+    <value>The server is missing find, head or tr (or, for a text search, grep)</value>
   </data>
   <data name="Sftp_SearchFailed" xml:space="preserve">
     <value>Search failed: {0}</value>
@@ -1370,6 +1406,9 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   <data name="Cmd_ConnectionDiagnostics" xml:space="preserve">
     <value>Connection Diagnostics</value>
   </data>
+  <data name="Cmd_HealthCheckAll" xml:space="preserve">
+    <value>Session Health Check (All Connections)</value>
+  </data>
   <data name="Cmd_ConnectionInfo" xml:space="preserve">
     <value>SSH connection info</value>
   </data>
@@ -1442,8 +1481,167 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   <data name="Diag_Steps" xml:space="preserve">
     <value>Diagnostic steps</value>
   </data>
+  <data name="Diag_TabResults" xml:space="preserve">
+    <value>Results</value>
+  </data>
+  <data name="Diag_TabTrace" xml:space="preserve">
+    <value>Protocol trace</value>
+  </data>
+  <data name="Diag_TabTraceCount" xml:space="preserve">
+    <value>Protocol trace · {0}</value>
+  </data>
+  <data name="Diag_TraceCopy" xml:space="preserve">
+    <value>Copy protocol trace</value>
+  </data>
+  <data name="Diag_TraceHint" xml:space="preserve">
+    <value>Every packet of the authentication step's connection, with direction, type, length and sequence number only — never its contents. Authentication packets we send show no length either: a password's length could be read from it.</value>
+  </data>
+  <data name="Diag_TraceEmpty" xml:space="preserve">
+    <value>This run did not get as far as an SSH connection (an earlier step failed, or there are no saved credentials), so there is no protocol trace.</value>
+  </data>
+  <data name="Diag_TraceDropped" xml:space="preserve">
+    <value>{0} more packet(s) went past the recording limit and were not recorded.</value>
+  </data>
+  <data name="Diag_TraceSent" xml:space="preserve">
+    <value>out</value>
+  </data>
+  <data name="Diag_TraceReceived" xml:space="preserve">
+    <value>in</value>
+  </data>
+  <data name="Diag_TraceChannel" xml:space="preserve">
+    <value>ch {0}</value>
+  </data>
+  <data name="Diag_TraceKexMethod" xml:space="preserve">
+    <value>key exchange method</value>
+  </data>
+  <data name="Diag_TraceAuthMethod" xml:space="preserve">
+    <value>authentication method</value>
+  </data>
+  <data name="Diag_TraceLocalExtension" xml:space="preserve">
+    <value>local extension</value>
+  </data>
+  <data name="Diag_TraceUnassigned" xml:space="preserve">
+    <value>unassigned</value>
+  </data>
+  <data name="Diag_TraceTextHeader" xml:space="preserve">
+    <value>Protocol trace (packet metadata only, no contents; lengths of authentication packets we send are not recorded)</value>
+  </data>
   <data name="Diag_Title" xml:space="preserve">
     <value>Connection Diagnostics</value>
+  </data>
+  <data name="Health_Title" xml:space="preserve">
+    <value>Session Health Check</value>
+  </data>
+  <data name="Health_StatusPending" xml:space="preserve">
+    <value>Waiting</value>
+  </data>
+  <data name="Health_StatusChecking" xml:space="preserve">
+    <value>Checking…</value>
+  </data>
+  <data name="Health_StatusHealthy" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Health_StatusReachable" xml:space="preserve">
+    <value>Reachable</value>
+  </data>
+  <data name="Health_StatusNeedsCredentials" xml:space="preserve">
+    <value>Needs credentials</value>
+  </data>
+  <data name="Health_StatusNeedsAttention" xml:space="preserve">
+    <value>Needs you</value>
+  </data>
+  <data name="Health_StatusFailed" xml:space="preserve">
+    <value>Unreachable</value>
+  </data>
+  <data name="Health_StatusTimedOut" xml:space="preserve">
+    <value>Timed out</value>
+  </data>
+  <data name="Health_StatusUnsupported" xml:space="preserve">
+    <value>Not checked</value>
+  </data>
+  <data name="Health_StatusCancelled" xml:space="preserve">
+    <value>Stopped</value>
+  </data>
+  <data name="Health_StepConfiguration" xml:space="preserve">
+    <value>Jump host settings</value>
+  </data>
+  <data name="Health_UnsupportedDetail" xml:space="preserve">
+    <value>Only SSH / SFTP connections are checked</value>
+  </data>
+  <data name="Health_NotChecked" xml:space="preserve">
+    <value>Not checked</value>
+  </data>
+  <data name="Health_Stopped" xml:space="preserve">
+    <value>The health check was stopped</value>
+  </data>
+  <data name="Health_TimedOutDetail" xml:space="preserve">
+    <value>Not finished within {0} seconds</value>
+  </data>
+  <data name="Health_ElapsedMs" xml:space="preserve">
+    <value>{0} ms</value>
+  </data>
+  <data name="Health_Summary" xml:space="preserve">
+    <value>{0} connections · OK {1} · need attention {2} · unreachable {3}</value>
+  </data>
+  <data name="Health_SummaryRunning" xml:space="preserve">
+    <value>Checked {0} / {1} · {2}</value>
+  </data>
+  <data name="Health_ColStatus" xml:space="preserve">
+    <value>Result</value>
+  </data>
+  <data name="Health_ColName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Health_ColTarget" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="Health_ColStep" xml:space="preserve">
+    <value>Failed at</value>
+  </data>
+  <data name="Health_ColDetail" xml:space="preserve">
+    <value>Details</value>
+  </data>
+  <data name="Health_ColElapsed" xml:space="preserve">
+    <value>Time</value>
+  </data>
+  <data name="Health_ProblemsOnlyOn" xml:space="preserve">
+    <value>Show problems only: on</value>
+  </data>
+  <data name="Health_ProblemsOnlyOff" xml:space="preserve">
+    <value>Show problems only: off</value>
+  </data>
+  <data name="Health_VerifyLoginOn" xml:space="preserve">
+    <value>Verify login: on</value>
+  </data>
+  <data name="Health_VerifyLoginOff" xml:space="preserve">
+    <value>Verify login: off</value>
+  </data>
+  <data name="Health_VerifyLoginTip" xml:space="preserve">
+    <value>On: log in once with the saved credentials and disconnect right away. Off: check only up to the SSH handshake, without logging in to the server. Takes effect on the next run.</value>
+  </data>
+  <data name="Health_Stop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="Health_Rerun" xml:space="preserve">
+    <value>Run again</value>
+  </data>
+  <data name="Health_Copy" xml:space="preserve">
+    <value>Copy as text</value>
+  </data>
+  <data name="Health_OpenDiagnostics" xml:space="preserve">
+    <value>Connection diagnostics</value>
+  </data>
+  <data name="Health_EditProfile" xml:space="preserve">
+    <value>Edit connection</value>
+  </data>
+  <data name="Health_NoProblems" xml:space="preserve">
+    <value>No connection needs attention</value>
+  </data>
+  <data name="Health_Hint" xml:space="preserve">
+    <value>Runs only when you start it: one batch at a time, up to {0} hosts at once, at most {1} seconds each. Nothing pops up: hosts whose fingerprint needs confirming, that ask for a one-time code or a Tailscale re-check are marked "Needs you", and ones without saved credentials "Needs credentials" — connect to those once yourself.</value>
+  </data>
+  <data name="Health_StillRunning" xml:space="preserve">
+    <value>The previous health check is still running; stop it or wait for it to finish first.</value>
   </data>
   <data name="DiagSvc_AuthFailed" xml:space="preserve">
     <value>Authentication failed</value>
@@ -1498,6 +1696,9 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   </data>
   <data name="DiagSvc_NoCredsSkip" xml:space="preserve">
     <value>No saved credentials; authentication test skipped</value>
+  </data>
+  <data name="DiagSvc_LoginNotVerified" xml:space="preserve">
+    <value>Login not verified (checked up to the SSH handshake)</value>
   </data>
   <data name="DiagSvc_NonSshBanner" xml:space="preserve">
     <value>Non-SSH response: {0}</value>
@@ -1696,6 +1897,60 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   </data>
   <data name="LayoutTemplate_Untitled" xml:space="preserve">
     <value>Untitled tab</value>
+  </data>
+  <data name="LayoutTemplate_Export" xml:space="preserve">
+    <value>Export…</value>
+  </data>
+  <data name="LayoutTemplate_Import" xml:space="preserve">
+    <value>Import…</value>
+  </data>
+  <data name="LayoutTemplate_ExportDialogTitle" xml:space="preserve">
+    <value>Export layout templates</value>
+  </data>
+  <data name="LayoutTemplate_ImportDialogTitle" xml:space="preserve">
+    <value>Import layout templates</value>
+  </data>
+  <data name="LayoutTemplate_FileType" xml:space="preserve">
+    <value>VelaShell layout templates</value>
+  </data>
+  <data name="LayoutTemplate_NothingToExport" xml:space="preserve">
+    <value>There are no layout templates to export yet.</value>
+  </data>
+  <data name="LayoutTemplate_Exported" xml:space="preserve">
+    <value>Exported {0} layout template(s) to {1}. The file holds connection IDs and how each tab opens, no passwords.</value>
+  </data>
+  <data name="LayoutTemplate_ExportFailed" xml:space="preserve">
+    <value>The layout templates could not be exported: {0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportFailed" xml:space="preserve">
+    <value>The file could not be read: {0}</value>
+  </data>
+  <data name="LayoutTemplate_ImportInvalid" xml:space="preserve">
+    <value>This is not a VelaShell layout template file.</value>
+  </data>
+  <data name="LayoutTemplate_ImportEmpty" xml:space="preserve">
+    <value>The file contains no usable layout templates.</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictTitle" xml:space="preserve">
+    <value>Some templates already exist</value>
+  </data>
+  <data name="LayoutTemplate_ImportConflictMessage" xml:space="preserve">
+    <value>{0} template(s) in the file are the same as, or share a name with, templates you already have: {1}. Replace yours, or save the imported ones as new templates and keep both?</value>
+  </data>
+  <data name="LayoutTemplate_ImportReplace" xml:space="preserve">
+    <value>Replace</value>
+  </data>
+  <data name="LayoutTemplate_ImportKeepBoth" xml:space="preserve">
+    <value>Save as new</value>
+  </data>
+  <data name="LayoutTemplate_Imported" xml:space="preserve">
+    <value>Imported {0} layout template(s).</value>
+  </data>
+  <data name="LayoutTemplate_ImportedMissing" xml:space="preserve">
+    <value>Imported {0} layout template(s). {1} of them refer to connections that do not exist on this device; those tabs will be skipped when the template is opened.</value>
+  </data>
+  <data name="LayoutTemplate_CopyName" xml:space="preserve">
+    <value>{0} ({1})</value>
   </data>
   <data name="Dock_AllTabs" xml:space="preserve">
     <value>All Tabs</value>
@@ -2045,6 +2300,9 @@ Paste anyway?</value>
   </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>Auto-reconnect to {0} stopped: host key {1} needs your confirmation, and auto-reconnect never asks. Reconnect manually to check the fingerprint.</value>
+  </data>
+  <data name="Msg_HostKeyUnattendedBlocked" xml:space="preserve">
+    <value>The health check did not accept host key {1} of {0}: it needs your confirmation, and the health check never asks. Connect to it manually once to check the fingerprint.</value>
   </data>
   <data name="Msg_ImportFailed" xml:space="preserve">
     <value>Import failed: {0}</value>
@@ -3641,6 +3899,12 @@ Keep it somewhere only you control and delete it when you are done; do not put i
   <data name="SetSync_ScopeAppSettings" xml:space="preserve">
     <value>App settings</value>
   </data>
+  <data name="SetSync_ScopeLayoutTemplates" xml:space="preserve">
+    <value>Layout templates</value>
+  </data>
+  <data name="SetSync_ScopeLayoutTemplatesDesc" xml:space="preserve">
+    <value>// A separate file merged template by template; templates only record connection IDs, so another device needs the same connections (synced with connection profiles) to open them</value>
+  </data>
   <data name="SetSync_ScopeProfilesDesc" xml:space="preserve">
     <value>// Server connections, groups, and port-forwarding tunnels; connections that exist only locally are never deleted by the cloud</value>
   </data>
@@ -4119,6 +4383,234 @@ Rerun anyway?</value>
   <data name="SetVm_SectionTerminal" xml:space="preserve">
     <value>Terminal</value>
   </data>
+  <data name="SetVm_SectionOutputRules" xml:space="preserve">
+    <value>Output Rules</value>
+  </data>
+  <data name="OutRule_Title" xml:space="preserve">
+    <value>Output Rules</value>
+  </data>
+  <data name="OutRule_Subtitle" xml:space="preserve">
+    <value>Highlight terminal output with your own regular expressions, or answer prompts automatically</value>
+  </data>
+  <data name="OutRule_Intro" xml:space="preserve">
+    <value>Rules apply to the main screen of SSH and local terminals (full-screen programs such as vim and htop draw their own colors and are left alone). Your highlights sit above the built-in semantic highlighting (URLs, IP addresses, error words…), which keeps working; among your own rules, the one higher in the list wins. Rules are part of the Terminal category in settings export / import and travel with cloud sync of app settings.</value>
+  </data>
+  <data name="OutRule_SafetyNote" xml:space="preserve">
+    <value>Auto-answer is only for yes / Enter / fixed text. Never put a password into a rule: rules are saved with your settings and synced. When a password is needed, use Shared Credentials — the shared password list pops up at password prompts. Rules that would match a password prompt cannot be set to auto-answer.</value>
+  </data>
+  <data name="OutRule_ListSection" xml:space="preserve">
+    <value>Rules</value>
+  </data>
+  <data name="OutRule_Add" xml:space="preserve">
+    <value>New rule</value>
+  </data>
+  <data name="OutRule_EditTitle" xml:space="preserve">
+    <value>Edit rule</value>
+  </data>
+  <data name="OutRule_LimitReached" xml:space="preserve">
+    <value>At most {0} rules.</value>
+  </data>
+  <data name="OutRule_Empty" xml:space="preserve">
+    <value>No rules yet. The built-in semantic highlighting is not affected.</value>
+  </data>
+  <data name="OutRule_Enabled" xml:space="preserve">
+    <value>Enabled</value>
+  </data>
+  <data name="OutRule_MoveUp" xml:space="preserve">
+    <value>Move up (higher priority)</value>
+  </data>
+  <data name="OutRule_MoveDown" xml:space="preserve">
+    <value>Move down</value>
+  </data>
+  <data name="OutRule_ActionHighlight" xml:space="preserve">
+    <value>Highlight</value>
+  </data>
+  <data name="OutRule_ActionRespond" xml:space="preserve">
+    <value>Auto-answer</value>
+  </data>
+  <data name="OutRule_ScopeGlobal" xml:space="preserve">
+    <value>All terminals</value>
+  </data>
+  <data name="OutRule_ScopeGroup" xml:space="preserve">
+    <value>Group</value>
+  </data>
+  <data name="OutRule_ScopeProfile" xml:space="preserve">
+    <value>Connection</value>
+  </data>
+  <data name="OutRule_ScopeGroupNamed" xml:space="preserve">
+    <value>Group: {0}</value>
+  </data>
+  <data name="OutRule_ScopeProfileNamed" xml:space="preserve">
+    <value>Connection: {0}</value>
+  </data>
+  <data name="OutRule_ScopeMissing" xml:space="preserve">
+    <value>(no longer exists)</value>
+  </data>
+  <data name="OutRule_ScopeTargetPlaceholder" xml:space="preserve">
+    <value>Choose…</value>
+  </data>
+  <data name="OutRule_Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="OutRule_NamePlaceholder" xml:space="preserve">
+    <value>Shown in the auto-answer notice; defaults to the pattern</value>
+  </data>
+  <data name="OutRule_Pattern" xml:space="preserve">
+    <value>Pattern</value>
+  </data>
+  <data name="OutRule_PatternPlaceholder" xml:space="preserve">
+    <value>e.g. ERROR|FATAL</value>
+  </data>
+  <data name="OutRule_PatternDesc" xml:space="preserve">
+    <value>.NET regular expression, matched line by line. So that rules can never slow the terminal down, every rule runs on a linear-time engine: backreferences and lookarounds are not supported.</value>
+  </data>
+  <data name="OutRule_CaseSensitive" xml:space="preserve">
+    <value>Case sensitive</value>
+  </data>
+  <data name="OutRule_Action" xml:space="preserve">
+    <value>Action</value>
+  </data>
+  <data name="OutRule_Scope" xml:space="preserve">
+    <value>Applies to</value>
+  </data>
+  <data name="OutRule_Foreground" xml:space="preserve">
+    <value>Text color</value>
+  </data>
+  <data name="OutRule_Background" xml:space="preserve">
+    <value>Background</value>
+  </data>
+  <data name="OutRule_Bold" xml:space="preserve">
+    <value>Bold</value>
+  </data>
+  <data name="OutRule_HighlightDesc" xml:space="preserve">
+    <value>Colors are the ANSI 16 colors of the terminal color scheme, so highlights follow theme and scheme changes. Your text color overrides colors set by the program; selection and search highlights still show on top.</value>
+  </data>
+  <data name="OutRule_ColorNone" xml:space="preserve">
+    <value>Unchanged</value>
+  </data>
+  <data name="OutRule_ColorBlack" xml:space="preserve">
+    <value>Black</value>
+  </data>
+  <data name="OutRule_ColorRed" xml:space="preserve">
+    <value>Red</value>
+  </data>
+  <data name="OutRule_ColorGreen" xml:space="preserve">
+    <value>Green</value>
+  </data>
+  <data name="OutRule_ColorYellow" xml:space="preserve">
+    <value>Yellow</value>
+  </data>
+  <data name="OutRule_ColorBlue" xml:space="preserve">
+    <value>Blue</value>
+  </data>
+  <data name="OutRule_ColorMagenta" xml:space="preserve">
+    <value>Magenta</value>
+  </data>
+  <data name="OutRule_ColorCyan" xml:space="preserve">
+    <value>Cyan</value>
+  </data>
+  <data name="OutRule_ColorWhite" xml:space="preserve">
+    <value>White</value>
+  </data>
+  <data name="OutRule_ColorBright" xml:space="preserve">
+    <value>Bright {0}</value>
+  </data>
+  <data name="OutRule_Response" xml:space="preserve">
+    <value>Send</value>
+  </data>
+  <data name="OutRule_ResponsePlaceholder" xml:space="preserve">
+    <value>e.g. yes; leave empty to just press Enter</value>
+  </data>
+  <data name="OutRule_SendEnter" xml:space="preserve">
+    <value>Then press Enter</value>
+  </data>
+  <data name="OutRule_ResponseDesc" xml:space="preserve">
+    <value>Answers only the line the cursor is waiting on, after the remote has been quiet for a moment, and only once per line; nothing is sent while you are typing on that line. Sent the same way as Quick Commands.</value>
+  </data>
+  <data name="OutRule_Cooldown" xml:space="preserve">
+    <value>Cooldown (seconds)</value>
+  </data>
+  <data name="OutRule_CooldownDesc" xml:space="preserve">
+    <value>Minimum gap between two answers from this rule; a prompt that shows up sooner is answered when the cooldown ends.</value>
+  </data>
+  <data name="OutRule_MaxPerMinute" xml:space="preserve">
+    <value>At most per minute</value>
+  </data>
+  <data name="OutRule_MaxPerMinuteDesc" xml:space="preserve">
+    <value>When reached, this rule stops answering and a notice appears above the terminal, so a remote that floods prompts cannot make it flood answers back.</value>
+  </data>
+  <data name="OutRule_ForwardSync" xml:space="preserve">
+    <value>Also send to the sync input channel</value>
+  </data>
+  <data name="OutRule_ForwardSyncDesc" xml:space="preserve">
+    <value>Off by default: other tabs in the channel may be at different prompts, and their own rules answer for them.</value>
+  </data>
+  <data name="OutRule_Done" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="OutRule_TestSection" xml:space="preserve">
+    <value>Test</value>
+  </data>
+  <data name="OutRule_TestDesc" xml:space="preserve">
+    <value>Paste some terminal output to see what the rules match. While the editor is open only that rule is tested, otherwise all enabled rules. In a real terminal, auto-answer only acts on the line the cursor is waiting on.</value>
+  </data>
+  <data name="OutRule_TestPlaceholder" xml:space="preserve">
+    <value>Paste output here…</value>
+  </data>
+  <data name="OutRule_TestSummary" xml:space="preserve">
+    <value>{1} of {0} lines matched</value>
+  </data>
+  <data name="OutRule_TestNoMatch" xml:space="preserve">
+    <value>No matches</value>
+  </data>
+  <data name="OutRule_TestRespond" xml:space="preserve">
+    <value>Auto-answer &quot;{0}&quot; → sends {1}</value>
+  </data>
+  <data name="OutRule_TestEnterKey" xml:space="preserve">
+    <value> [Enter]</value>
+  </data>
+  <data name="OutRule_ErrPatternEmpty" xml:space="preserve">
+    <value>Enter a pattern.</value>
+  </data>
+  <data name="OutRule_ErrPatternTooLong" xml:space="preserve">
+    <value>The pattern may be at most {0} characters.</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalid" xml:space="preserve">
+    <value>The pattern is not valid (near character {0}).</value>
+  </data>
+  <data name="OutRule_ErrPatternInvalidNoPos" xml:space="preserve">
+    <value>The pattern is not valid.</value>
+  </data>
+  <data name="OutRule_ErrPatternUnsupported" xml:space="preserve">
+    <value>Backreferences, lookarounds, atomic groups and conditionals are not supported (rules run on a linear-time engine so they cannot slow the terminal down).</value>
+  </data>
+  <data name="OutRule_ErrScopeTarget" xml:space="preserve">
+    <value>Choose the group or connection this rule applies to.</value>
+  </data>
+  <data name="OutRule_ErrNoStyle" xml:space="preserve">
+    <value>Pick at least one of text color, background or bold.</value>
+  </data>
+  <data name="OutRule_ErrResponseEmpty" xml:space="preserve">
+    <value>With nothing to send, tick &quot;Then press Enter&quot; — otherwise nothing would be sent.</value>
+  </data>
+  <data name="OutRule_ErrResponseTooLong" xml:space="preserve">
+    <value>The answer may be at most {0} characters.</value>
+  </data>
+  <data name="OutRule_ErrResponseNotSingleLine" xml:space="preserve">
+    <value>The answer must be a single line of visible text (use &quot;Then press Enter&quot; for Enter).</value>
+  </data>
+  <data name="OutRule_ErrSecretPrompt" xml:space="preserve">
+    <value>This rule would match a password prompt, so it cannot auto-answer. Rules never hold passwords; at password prompts use Shared Credentials — the shared password list pops up there.</value>
+  </data>
+  <data name="OutRule_ErrUnknownKind" xml:space="preserve">
+    <value>This rule comes from a newer version; its action or scope is not recognized here, so it does not take effect.</value>
+  </data>
+  <data name="OutRule_NoticeResponded" xml:space="preserve">
+    <value>Auto-answered: {0}</value>
+  </data>
+  <data name="OutRule_NoticeRateLimited" xml:space="preserve">
+    <value>&quot;{0}&quot; hit its per-minute limit; auto-answer paused</value>
+  </data>
   <data name="SetVm_SectionTransfer" xml:space="preserve">
     <value>File Transfer</value>
   </data>
@@ -4310,6 +4802,9 @@ Overwrite it?</value>
   <data name="Svc_CertificateKeyRequired" xml:space="preserve">
     <value>Certificate authentication requires the private key matching the certificate.</value>
   </data>
+  <data name="Svc_KeyStoreKeyRequired" xml:space="preserve">
+    <value>Key store authentication needs a key chosen from the system key store.</value>
+  </data>
   <data name="Svc_ProfileNameRequired" xml:space="preserve">
     <value>Connection profile name is required.</value>
   </data>
@@ -4352,6 +4847,18 @@ Overwrite it?</value>
   <data name="SyncSvc_GistNotFound" xml:space="preserve">
     <value>The Gist does not exist or the token has no access (check the Gist Id and token account).</value>
   </data>
+  <data name="SyncSvc_LayoutsFailed" xml:space="preserve">
+    <value> (layout templates were not synced: {0})</value>
+  </data>
+  <data name="SyncSvc_LayoutsLocked" xml:space="preserve">
+    <value> (layout templates were skipped: the cloud copy is end-to-end encrypted, and this device has no passphrase or a different one)</value>
+  </data>
+  <data name="SyncSvc_LayoutsNewer" xml:space="preserve">
+    <value> (layout templates were skipped: the cloud copy was written by a newer VelaShell; update this device to sync them)</value>
+  </data>
+  <data name="SyncSvc_LayoutsPushed" xml:space="preserve">
+    <value> (local layout template changes were pushed as well)</value>
+  </data>
   <data name="SyncSvc_MissingPayload" xml:space="preserve">
     <value>Cloud data is missing its payload.</value>
   </data>
@@ -4390,6 +4897,9 @@ Overwrite it?</value>
   </data>
   <data name="SyncSvc_TokenDecryptFailed" xml:space="preserve">
     <value>Could not decrypt the stored GitHub token; please enter it again.</value>
+  </data>
+  <data name="SyncSvc_PassphraseDecryptFailed" xml:space="preserve">
+    <value>Could not decrypt the stored sync passphrase; please enter it again.</value>
   </data>
   <data name="SyncSvc_TokenInvalid" xml:space="preserve">
     <value>The GitHub token is invalid or expired; regenerate it (gist scope required).</value>
@@ -4902,6 +5412,9 @@ Overwrite it?</value>
   <data name="Cmd_OpenLogs" xml:space="preserve">
     <value>Open logs folder</value>
   </data>
+  <data name="Cmd_OpenRemoteEditDrafts" xml:space="preserve">
+    <value>Open external edit drafts folder</value>
+  </data>
   <data name="SetAbout_OpenLogs" xml:space="preserve">
     <value>Open logs folder</value>
   </data>
@@ -4909,13 +5422,13 @@ Overwrite it?</value>
     <value>Export diagnostics…</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
-    <value>Collects logs, crash reports, the version and the plugin list, masks host names, user names, local paths and IPs, and saves a zip on this computer. Nothing is uploaded.</value>
+    <value>Collects the diagnostic logs, crash reports, the version and the plugin list (transfer, plugin and a few other logs can be ticked as well), masks host names, user names, IPs and the like by rule, and saves a zip on this computer. Nothing is uploaded. The masking cannot catch everything, so open it and check before sending.</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
     <value>Save diagnostics</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
-    <value>Diagnostics saved to {0} ({1} log file(s), sensitive details masked). It has not been sent anywhere.</value>
+    <value>Diagnostics saved to {0} ({1} log file(s), masked by rule). It has not been sent anywhere; open it and check before sending it to anyone.</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
     <value>Could not save diagnostics: {0}</value>
@@ -4927,10 +5440,49 @@ Overwrite it?</value>
     <value>This bundle was only saved where you chose; VelaShell did not upload it. Feel free to open it and check before sending it to anyone.</value>
   </data>
   <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
-    <value>Settings, connection profiles and credentials are not included.</value>
+    <value>Settings, connection profiles, session logs and credentials are not included. Transfer records, the external-editing log, the VcXsrv log and plugin logs are only included when ticked at export (see optional logs above).</value>
   </data>
   <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
-    <value>Masked (host names, user names, local paths, IPs, emails, passwords and tokens), times replaced:</value>
+    <value>Masked by rule: host and user names from saved connections, recent connections and shared credentials; IP addresses; lowercase domain names ending in a common top-level domain or internal suffix; the user name in home folders (C:\Users\…, /home/…, /Users/…); the local account name, machine name and home folder; emails, passwords and tokens. Single-label host names, user names elsewhere and file names are not covered. Times replaced:</value>
+  </data>
+  <data name="DiagBundle_PickTitle" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
+  <data name="DiagBundle_PickSummary" xml:space="preserve">
+    <value>Always included: the diagnostic logs (velashell-*.log), crash reports, a version and platform summary, and the plugin list. The logs below contain local and remote paths and file names and are left out by default; ticked ones are masked by the same rules.</value>
+  </data>
+  <data name="DiagBundle_PickNone" xml:space="preserve">
+    <value>There are no other logs to include.</value>
+  </data>
+  <data name="DiagBundle_PickConfirm" xml:space="preserve">
+    <value>Export…</value>
+  </data>
+  <data name="DiagBundle_OptionTransfer" xml:space="preserve">
+    <value>Transfer records</value>
+  </data>
+  <data name="DiagBundle_OptionTransferHint" xml:space="preserve">
+    <value>One line per upload or download: local path, remote path and result.</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEdit" xml:space="preserve">
+    <value>External-editing log (remote-edit.log)</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEditHint" xml:space="preserve">
+    <value>How remote files were opened, saved and uploaded back with an external editor, including local temporary paths and remote paths.</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrv" xml:space="preserve">
+    <value>VcXsrv log (vcxsrv.log)</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrvHint" xml:space="preserve">
+    <value>Output of the external VcXsrv X server on Windows.</value>
+  </data>
+  <data name="DiagBundle_OptionPlugin" xml:space="preserve">
+    <value>Plugin log: {0}</value>
+  </data>
+  <data name="DiagBundle_OptionPluginHint" xml:space="preserve">
+    <value>What this plugin wrote to its log, its process output, and the activations, failures and crashes the host recorded.</value>
+  </data>
+  <data name="DiagBundle_OptionSize" xml:space="preserve">
+    <value>{0} file(s) · {1}</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>VelaShell closed unexpectedly last time</value>
@@ -4940,6 +5492,42 @@ Overwrite it?</value>
   </data>
   <data name="Notify_CrashAction" xml:space="preserve">
     <value>Open logs folder</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedTitle" xml:space="preserve">
+    <value>The local encryption key could not be used and was replaced</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedBody" xml:space="preserve">
+    <value>The key file in the data directory could not be unlocked (the system account changed, the system was reinstalled, or the data directory was copied from another computer). It was kept as {0}. Passwords saved earlier cannot be decrypted here: you will be asked for them again when connecting, and the sync token and plugin secrets need to be entered again too. Back on the original account or computer, that file can still recover them.</value>
+  </data>
+  <data name="Notify_MasterKeyMissingTitle" xml:space="preserve">
+    <value>A previous encryption key is not in the system keychain</value>
+  </data>
+  <data name="Notify_MasterKeyMissingBody" xml:space="preserve">
+    <value>The data directory refers to an encryption key that is not in this computer's system keychain. The data directory may have been copied from another computer or account, or the entry was deleted. Passwords encrypted with it cannot be decrypted here: you will be asked for them again when connecting. Newly saved passwords are not affected.</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableTitle" xml:space="preserve">
+    <value>The system keychain is unavailable right now</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableBody" xml:space="preserve">
+    <value>{0} could not be opened this time ({1}). Saved passwords cannot be decrypted during this run, so you will be asked for them when connecting. They are not lost: once the keychain is available again, the next start reads them as usual. Passwords saved in the meantime are encrypted with a local key in the data directory and moved into the keychain automatically later.</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackTitle" xml:space="preserve">
+    <value>The encryption key is still stored in the data directory</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
+    <value>{0} is not available ({1}), so the local encryption key stays in the key file in the data directory, as before. Once the keychain is available, the next start moves the key there automatically.</value>
+  </data>
+  <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
+    <value>External edit not uploaded</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBody" xml:space="preserve">
+    <value>Changes to {0} ({1}) are still only on this computer at {2} and were not uploaded. Upload or save them yourself, then delete this copy; drafts are never deleted automatically.</value>
+  </data>
+  <data name="Notify_RemoteEditDraftBodyUnknown" xml:space="preserve">
+    <value>An external-edit copy of {0} was left at {1} and may contain changes that were not uploaded. Check it, then delete it yourself; drafts are never deleted automatically.</value>
+  </data>
+  <data name="Notify_RemoteEditDraftAction" xml:space="preserve">
+    <value>Open folder</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>System</value>
@@ -5466,11 +6054,23 @@ Overwrite it?</value>
   <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
     <value>{0} not imported: {1}</value>
   </data>
-  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
-    <value>ForwardAgent {0} not imported: VelaShell forwards only the default agent (SSH_AUTH_SOCK).</value>
+  <data name="SshCfgImport_NoteAgentEndpointUnusable" xml:space="preserve">
+    <value>{0} not imported: that agent endpoint cannot be used on this computer (a path from another platform, or not a full path).</value>
   </data>
-  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
-    <value>IdentityAgent {0} not imported: VelaShell only uses the default agent (SSH_AUTH_SOCK).</value>
+  <data name="SshCfgImport_NoteAgentVarUnset" xml:space="preserve">
+    <value>{0} not imported: the environment variable {1} is not set.</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentConflict" xml:space="preserve">
+    <value>{0} not imported: it is a different agent from the one used to sign in (IdentityAgent), and a VelaShell connection uses a single agent for both.</value>
+  </data>
+  <data name="SshCfgImport_NoteX11TrustedDefault" xml:space="preserve">
+    <value>ForwardX11Trusted is not set: imported as trusted (-Y), VelaShell's default. OpenSSH would use untrusted forwarding (-X) here; to keep that, clear "Trusted (-Y)" in the connection's SSH options or add ForwardX11Trusted no.</value>
+  </data>
+  <data name="SshCfgImport_NoteObscureInterval" xml:space="preserve">
+    <value>ObscureKeystrokeTiming {0}: imported as on; VelaShell always sends on a fixed {1} ms interval.</value>
+  </data>
+  <data name="SshCfgImport_NoteValueInvalid" xml:space="preserve">
+    <value>{0} not imported: unrecognized value.</value>
   </data>
   <data name="SshCfgImport_NoteExtraIdentities" xml:space="preserve">
     <value>A connection uses one private key; not imported: {0}</value>
@@ -5502,7 +6102,7 @@ Overwrite it?</value>
   <data name="PluginPerm_Deny"><value>Deny</value></data>
   <data name="PluginPermUpload_Title"><value>File upload authorization</value></data>
   <data name="PluginPermUpload_Message"><value>Plugin "{0}" requests local file access and upload to {1}. Approval applies only to this task; it can be revoked from Plugin Manager.</value></data>
-  <data name="PluginPermUpload_Preview"><value>Local source: {0}&#10;Remote destination: {1}&#10;Destination policy: {2}</value></data>
+  <data name="PluginPermUpload_Preview"><value>Local source: {0}&#10;Size: {3}&#10;Remote destination: {1}&#10;Destination policy: {2}</value></data>
   <data name="PluginPermUpload_Replace"><value>Allow atomic replacement of an existing file</value></data>
   <data name="PluginPermUpload_NoReplace"><value>Do not replace an existing file</value></data>
   <data name="PluginPermUpload_AllowOnce"><value>Allow this upload</value></data>
@@ -5796,8 +6396,20 @@ Overwrite it?</value>
   <data name="SshAlgoFix_Button" xml:space="preserve">
     <value>Allow these algorithms and reconnect</value>
   </data>
+  <data name="SshAlgoFix_ButtonRediagnose" xml:space="preserve">
+    <value>Allow these algorithms and diagnose again</value>
+  </data>
+  <data name="SshAlgoFix_ButtonRetest" xml:space="preserve">
+    <value>Allow these algorithms and test again</value>
+  </data>
   <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
     <value>Appends {1} to the custom {0} list in the connection's SSH options (after the defaults), then reconnects.</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRediagnose" xml:space="preserve">
+    <value>Appends {1} to the custom {0} list in the connection's SSH options (after the defaults), then runs the diagnosis again.</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRetest" xml:space="preserve">
+    <value>Appends {1} to the custom {0} list in the SSH options (after the defaults), then tests again.</value>
   </data>
   <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
     <value>Allow these algorithms?</value>
@@ -5809,8 +6421,31 @@ Overwrite it?</value>
 
 Only these are added; the other legacy algorithms stay off. They are weaker than the defaults and are only used when the server offers nothing newer, so keep this for devices you cannot upgrade.</value>
   </data>
+  <data name="SshAlgoFix_ConfirmBodyRediagnose" xml:space="preserve">
+    <value>The following will be appended to the custom {1} list in the SSH options of connection "{0}", and the diagnosis will run again:
+
+{2}
+
+Only these are added; the other legacy algorithms stay off. They are weaker than the defaults and are only used when the server offers nothing newer, so keep this for devices you cannot upgrade.</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBodyRetest" xml:space="preserve">
+    <value>The following will be appended to the custom {1} list in the SSH options of connection "{0}", and the test will run again:
+
+{2}
+
+Only these are added; the other legacy algorithms stay off. They are weaker than the defaults and are only used when the server offers nothing newer, so keep this for devices you cannot upgrade.</value>
+  </data>
+  <data name="SshAlgoFix_FormOnlyNote" xml:space="preserve">
+    <value>This changes the list in this form only; it is stored when you click Save or Connect.</value>
+  </data>
   <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
     <value>Allow and reconnect</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRediagnose" xml:space="preserve">
+    <value>Allow and diagnose again</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRetest" xml:space="preserve">
+    <value>Allow and test again</value>
   </data>
   <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
     <value>Could not save the connection settings: {0}</value>
@@ -6048,7 +6683,7 @@ Trusting it will also trust future packages signed by the same key. Plugins can 
 
 Reason: {0}
 
-This usually means the encryption key (~/.velashell/secret.key) changed, for example after switching Windows accounts, reinstalling the system, or copying the data folder from another machine. If you can restore the original key, close VelaShell and put it back instead.
+This usually means the local encryption key changed or could not be obtained this time, for example after switching Windows accounts, reinstalling the system, copying the data folder from another machine, or when the system keychain could not be opened (the message center explains which). If the original key can be restored, or the keychain becomes available again, close VelaShell and fix that instead of resetting.
 
 Resetting creates an empty trust store (the unreadable one is kept as a backup). You will need to trust publishers again, and already installed plugins lose their tamper-detection receipts. Restart VelaShell afterwards so installed plugins are checked again.</value></data>
   <data name="PluginManager_TrustStoreReset" xml:space="preserve"><value>Reset trust store</value></data>
@@ -6350,7 +6985,7 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
     <value>Double-click a file</value>
   </data>
   <data name="SetTransfer_DoubleClickActionDesc" xml:space="preserve">
-    <value>All three open a local copy and upload it back on every save</value>
+    <value>The built-in editor uploads when you save; the other two upload every save while "Upload automatically after editing" is on</value>
   </data>
   <data name="SetTransfer_DoubleClickSystem" xml:space="preserve">
     <value>System default app</value>
@@ -6365,7 +7000,7 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
     <value>Upload automatically after editing</value>
   </data>
   <data name="SetTransfer_AutoUploadOnEditDesc" xml:space="preserve">
-    <value>Off: the local copy is not watched at all and nothing is sent back</value>
+    <value>Applies to the external editor and the system default app: when off, their local copy is not watched and nothing is sent back. Saving in the built-in editor always uploads</value>
   </data>
   <data name="Sync_Title" xml:space="preserve">
     <value>Synchronize Directories</value>
@@ -6652,8 +7287,98 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_TcpUnreachable" xml:space="preserve">
     <value>The network or host is unreachable.</value>
   </data>
+  <data name="SshErr_TcpConnectFailed" xml:space="preserve">
+    <value>Cannot connect to {0} ({1}).</value>
+  </data>
   <data name="SshErr_ProxyAuthRequired" xml:space="preserve">
     <value>The proxy requires authentication, but no proxy credentials are configured.</value>
+  </data>
+  <data name="SshErr_ProxyConnectFailed" xml:space="preserve">
+    <value>Cannot reach the proxy {0}: {1}</value>
+  </data>
+  <data name="SshErr_ProxyHandshakeTimeout" xml:space="preserve">
+    <value>The proxy {0} accepted the connection but never answered the handshake (connecting to {1}).</value>
+  </data>
+  <data name="SshErr_ProxyClosedDuringHandshake" xml:space="preserve">
+    <value>The proxy {0} closed the connection during the handshake (connecting to {1}). It most likely refused the request without saying why.</value>
+  </data>
+  <data name="SshErr_ProxyTargetNameInvalid" xml:space="preserve">
+    <value>The host name {0} cannot be put into a proxy request: it is not a valid host name, or it is too long.</value>
+  </data>
+  <data name="SshErr_Socks5CredentialsTooLong" xml:space="preserve">
+    <value>The SOCKS5 proxy user name and password must each be 1–255 bytes once encoded (RFC 1929).</value>
+  </data>
+  <data name="SshErr_Socks5VersionMismatch" xml:space="preserve">
+    <value>{0} did not answer as a SOCKS5 proxy (version byte 0x{1}). It may be an HTTP proxy, or not a proxy at all.</value>
+  </data>
+  <data name="SshErr_Socks5NoAcceptableMethod" xml:space="preserve">
+    <value>The SOCKS5 proxy {0} accepts none of the authentication methods offered.</value>
+  </data>
+  <data name="SshErr_Socks5UnexpectedMethod" xml:space="preserve">
+    <value>The SOCKS5 proxy {0} chose an authentication method that was not offered (0x{1}). This is a protocol error.</value>
+  </data>
+  <data name="SshErr_Socks5InvalidAddressType" xml:space="preserve">
+    <value>The SOCKS5 proxy {0} replied with an invalid address type (0x{1}).</value>
+  </data>
+  <data name="SshErr_Socks5ConnectRefused" xml:space="preserve">
+    <value>The SOCKS5 proxy {0} refused to connect to {1}: {2} (reply code {3}).</value>
+  </data>
+  <data name="SshErr_Socks5Reply1" xml:space="preserve">
+    <value>general proxy server failure</value>
+  </data>
+  <data name="SshErr_Socks5Reply2" xml:space="preserve">
+    <value>the proxy&apos;s rules do not allow this connection</value>
+  </data>
+  <data name="SshErr_Socks5Reply3" xml:space="preserve">
+    <value>network unreachable</value>
+  </data>
+  <data name="SshErr_Socks5Reply4" xml:space="preserve">
+    <value>host unreachable</value>
+  </data>
+  <data name="SshErr_Socks5Reply5" xml:space="preserve">
+    <value>the target refused the connection</value>
+  </data>
+  <data name="SshErr_Socks5Reply6" xml:space="preserve">
+    <value>TTL expired</value>
+  </data>
+  <data name="SshErr_Socks5Reply7" xml:space="preserve">
+    <value>the proxy does not support the CONNECT command</value>
+  </data>
+  <data name="SshErr_Socks5Reply8" xml:space="preserve">
+    <value>the proxy does not support this address type</value>
+  </data>
+  <data name="SshErr_Socks5ReplyOther" xml:space="preserve">
+    <value>unknown error</value>
+  </data>
+  <data name="SshErr_HttpProxyNotHttp" xml:space="preserve">
+    <value>{0} did not answer with an HTTP response ("{1}"). It may be a SOCKS proxy, or not a proxy at all.</value>
+  </data>
+  <data name="SshErr_HttpProxyResponseTooLarge" xml:space="preserve">
+    <value>The HTTP proxy {0} sent oversized response headers. It may not be an HTTP proxy.</value>
+  </data>
+  <data name="SshErr_HttpConnectRefused" xml:space="preserve">
+    <value>The HTTP proxy {0} refused to connect to {1}: {2}.</value>
+  </data>
+  <data name="SshErr_ProxyCommandExited" xml:space="preserve">
+    <value>ProxyCommand ({0}) exited with code {2} before connecting to {1}.</value>
+  </data>
+  <data name="SshErr_ProxyCommandSaid" xml:space="preserve">
+    <value>{0} It said: {1}</value>
+  </data>
+  <data name="SshErr_JumpConnectFailed" xml:space="preserve">
+    <value>Cannot connect to jump host {0}: {1}</value>
+  </data>
+  <data name="SshErr_JumpConnectTimeout" xml:space="preserve">
+    <value>Timed out while connecting through jump host {0} (time spent waiting for your input is not counted).</value>
+  </data>
+  <data name="SshErr_JumpForwardRefused" xml:space="preserve">
+    <value>Jump host {0} refused to forward to {1}: {2}</value>
+  </data>
+  <data name="SshErr_JumpForwardFailed" xml:space="preserve">
+    <value>Jump host {0} ran into a problem while forwarding to {1}: {2}</value>
+  </data>
+  <data name="SshErr_JumpForwardTimeout" xml:space="preserve">
+    <value>Timed out while jump host {0} was forwarding to {1}.</value>
   </data>
   <data name="SshErr_NotAnSshServer" xml:space="preserve">
     <value>The remote end is not an SSH server (no valid protocol identification was received).</value>
@@ -6663,6 +7388,24 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="SshErr_HostKeyChanged" xml:space="preserve">
     <value>The server&apos;s host key does not match the recorded one.</value>
+  </data>
+  <data name="SshErr_HostKeyMalformed" xml:space="preserve">
+    <value>The server&apos;s host key cannot be parsed.</value>
+  </data>
+  <data name="SshErr_HostKeyAlgorithmMismatch" xml:space="preserve">
+    <value>The server presented a {0} key, which does not match the negotiated host key algorithm {1}.</value>
+  </data>
+  <data name="SshErr_HostKeyTooShort" xml:space="preserve">
+    <value>The server&apos;s RSA host key has only {0} bits (at least {1} are required).</value>
+  </data>
+  <data name="SshErr_HostKeySignatureInvalid" xml:space="preserve">
+    <value>The server&apos;s signature over the key exchange ({0}) does not verify: it does not hold the host private key it claims to have. There may be a man-in-the-middle.</value>
+  </data>
+  <data name="SshErr_HostKeyPolicyRejected" xml:space="preserve">
+    <value>The host key was rejected by the host key policy.</value>
+  </data>
+  <data name="SshErr_RekeyFailed" xml:space="preserve">
+    <value>Key re-exchange failed: {0}</value>
   </data>
   <data name="SshErr_HostCertNotHostCertificate" xml:space="preserve">
     <value>The server presented a user certificate (Key ID "{0}"), which cannot prove a host&apos;s identity.</value>
@@ -6700,8 +7443,14 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>Two-step verification was cancelled.</value>
   </data>
+  <data name="SshErr_KbdAuthUnattended" xml:space="preserve">
+    <value>The server asks for interactive verification (a one-time code or similar); the health check does not answer it. Connect to it manually once.</value>
+  </data>
   <data name="SshErr_PasswordChangeCancelled" xml:space="preserve">
     <value>Password change was cancelled.</value>
+  </data>
+  <data name="SshErr_PasswordChangeUnattended" xml:space="preserve">
+    <value>The server requires a password change; the health check does not do that. Connect to it manually once.</value>
   </data>
   <data name="SshPwdChange_Title" xml:space="preserve">
     <value>Change password</value>
@@ -6732,6 +7481,9 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="SshErr_Disconnected" xml:space="preserve">
     <value>The server ended the session.</value>
+  </data>
+  <data name="SshErr_ConnectionFaulted" xml:space="preserve">
+    <value>The connection was interrupted by an unexpected error: {0}</value>
   </data>
   <data name="SshErr_KeyPassphraseRequired" xml:space="preserve">
     <value>The private key is encrypted and needs its passphrase.</value>
@@ -6783,6 +7535,9 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
     <value>The key cannot be opened from the system key store, or it cannot be used.</value>
+  </data>
+  <data name="SshErr_KeyStoreNotOnThisPlatform" xml:space="preserve">
+    <value>This connection signs with a key from a Windows key store ({0}), and this computer has no system key store. Choose another authentication method.</value>
   </data>
   <data name="SshErr_CertFileUnreadable" xml:space="preserve">
     <value>The certificate file cannot be read ({0}).</value>
@@ -6865,6 +7620,114 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_ForwardRejected" xml:space="preserve">
     <value>The server refused the forwarding request. Check AllowAgentForwarding / AllowTcpForwarding / X11Forwarding in sshd_config.</value>
   </data>
+  <data name="SshErr_FwdAccept" xml:space="preserve">
+    <value>Accepting an incoming connection on the forwarded port failed.</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimit" xml:space="preserve">
+    <value>The forward has reached its limit of {0} concurrent connections; a new connection was refused.</value>
+  </data>
+  <data name="SshErr_FwdConnectionLimitMany" xml:space="preserve">
+    <value>The forward has reached its limit of {0} concurrent connections; {1} connections were refused (this is reported at most once a second).</value>
+  </data>
+  <data name="SshErr_FwdSocksTimeout" xml:space="preserve">
+    <value>A SOCKS client did not finish its handshake within {0} seconds; the connection was closed.</value>
+  </data>
+  <data name="SshErr_FwdSocksInvalid" xml:space="preserve">
+    <value>A SOCKS client sent an invalid handshake or an unsupported command; the connection was closed.</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenTimeout" xml:space="preserve">
+    <value>The tunnel to {0} did not open within {1} seconds (the server has not answered yet); the connection was dropped.</value>
+  </data>
+  <data name="SshErr_FwdChannelOpenFailed" xml:space="preserve">
+    <value>The tunnel to {0} could not be opened.</value>
+  </data>
+  <data name="SshErr_FwdTargetConnect" xml:space="preserve">
+    <value>Cannot connect to the forward target {0}.</value>
+  </data>
+  <data name="SshErr_FwdRelay" xml:space="preserve">
+    <value>The connection to {0} broke off while relaying data.</value>
+  </data>
+  <data name="SshErr_FwdSetupSkipped" xml:space="preserve">
+    <value>X11 or agent forwarding could not be set up; the session started without it.</value>
+  </data>
+  <data name="SshErr_FwdUnknown" xml:space="preserve">
+    <value>A forwarded connection failed.</value>
+  </data>
+  <data name="SshErr_FwdListenFailed" xml:space="preserve">
+    <value>Cannot listen on {0} ({1}).</value>
+  </data>
+  <data name="SshErr_FwdListenInUse" xml:space="preserve">
+    <value>Cannot listen on {0}: the port is already in use by another program.</value>
+  </data>
+  <data name="SshErr_FwdIpv6LoopbackInUse" xml:space="preserve">
+    <value>Cannot listen on {0}: another program holds the IPv6 loopback of this port, and clients that try ::1 first would connect to it instead, so the forward was not started. Choose another port, or listen on 127.0.0.1 only.</value>
+  </data>
+  <data name="SshErr_FwdSocketPathExists" xml:space="preserve">
+    <value>{0} already exists: probably left over from an earlier run, or someone else&apos;s socket. Delete it once you are sure it is unused, or allow replacing an existing socket.</value>
+  </data>
+  <data name="SshErr_FwdSocketPathTooLong" xml:space="preserve">
+    <value>The socket path is too long (the limit is 107 bytes on Linux and 103 on macOS): {0}</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejected" xml:space="preserve">
+    <value>The server refused to listen on {0}. Common causes: AllowTcpForwarding no in sshd_config, GatewayPorts off while binding a non-loopback address, or the port is already in use.</value>
+  </data>
+  <data name="SshErr_FwdRemoteListenRejectedPrivileged" xml:space="preserve">
+    <value>The server refused to listen on {0}. Common causes: AllowTcpForwarding no in sshd_config, GatewayPorts off while binding a non-loopback address, or it is a privileged port (below 1024).</value>
+  </data>
+  <data name="SshErr_FwdRemoteSocketListenRejected" xml:space="preserve">
+    <value>The server refused to listen on the socket {0}. Common causes: AllowStreamLocalForwarding no in sshd_config, the path already exists, or its directory is not writable.</value>
+  </data>
+  <data name="SshErr_FwdNoBoundPortInReply" xml:space="preserve">
+    <value>A dynamic port was requested, but the server&apos;s reply did not include the port it actually opened.</value>
+  </data>
+  <data name="SshErr_FwdAgentForwardRejected" xml:space="preserve">
+    <value>The server refused agent forwarding (often AllowAgentForwarding no in sshd_config).</value>
+  </data>
+  <data name="SshErr_FwdLocalAgentUnavailable" xml:space="preserve">
+    <value>The local ssh-agent is unavailable, so agent forwarding was not set up: {0}</value>
+  </data>
+  <data name="SshErr_FwdX11ForwardRejected" xml:space="preserve">
+    <value>The server refused X11 forwarding (often X11Forwarding no in sshd_config, or xauth is not installed on the server).</value>
+  </data>
+  <data name="SshErr_FwdNoX11Display" xml:space="preserve">
+    <value>No local X display is available: DISPLAY is not set or not recognized.</value>
+  </data>
+  <data name="SshErr_FwdXAuthTempDirectoryFailed" xml:space="preserve">
+    <value>Cannot create a temporary directory for xauth: {0}</value>
+  </data>
+  <data name="SshErr_FwdXAuthStartFailed" xml:space="preserve">
+    <value>Cannot run xauth: {0}. Windows usually has no xauth; use Trusted (-Y) X11 forwarding there.</value>
+  </data>
+  <data name="SshErr_FwdXAuthTimedOut" xml:space="preserve">
+    <value>xauth did not return within {0} seconds.</value>
+  </data>
+  <data name="SshErr_FwdXAuthFailed" xml:space="preserve">
+    <value>xauth failed (exit code {0}). Untrusted X11 forwarding needs xauth on this computer and an X server with the SECURITY extension; otherwise use Trusted (-Y), which hands the local display over to the remote side completely.</value>
+  </data>
+  <data name="SshErr_FwdXAuthSaid" xml:space="preserve">
+    <value>{0} xauth said: {1}</value>
+  </data>
+  <data name="SshErr_FwdXAuthNoCookie" xml:space="preserve">
+    <value>xauth ran but produced no cookie for display {0}.</value>
+  </data>
+  <data name="SshErr_FwdConfigForwardFailed" xml:space="preserve">
+    <value>The forward "{0}" did not start (ExitOnForwardFailure yes; the forwards already started were removed): {1}</value>
+  </data>
+  <data name="SshErr_FwdUnmatchedChannel" xml:space="preserve">
+    <value>The server opened a forwarded channel for {0}, which matches no forward.</value>
+  </data>
+  <data name="SshErr_FwdX11Expired" xml:space="preserve">
+    <value>All X11 forwards on this connection have expired; new X11 channels are refused.</value>
+  </data>
+  <data name="SshErr_FwdChannelLimitReached" xml:space="preserve">
+    <value>The number of open forwarded channels reached its limit of {0}.</value>
+  </data>
+  <data name="SshErr_FwdLocalTargetUnreachable" xml:space="preserve">
+    <value>Cannot connect to the forward&apos;s local target {0}.</value>
+  </data>
+  <data name="SshErr_FwdStopped" xml:space="preserve">
+    <value>The forward was stopped locally.</value>
+  </data>
   <data name="SftpErr_NoSuchFile" xml:space="preserve">
     <value>No such file or directory</value>
   </data>
@@ -6889,11 +7752,17 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SftpErr_ServerSaid" xml:space="preserve">
     <value>{0}. Server said: {1}</value>
   </data>
+  <data name="SftpErr_MissingExtension" xml:space="preserve">
+    <value>{0}. The server does not provide the {1} extension.</value>
+  </data>
+  <data name="SftpErr_MissingPosixRename" xml:space="preserve">
+    <value>{0}. The server lacks posix-rename@openssh.com, so the target cannot be replaced atomically. Deleting the target first and then renaming works, but is not atomic: a failure in between leaves neither file.</value>
+  </data>
   <data name="Profile_AgentAuth" xml:space="preserve">
     <value>Agent</value>
   </data>
   <data name="Profile_AgentAuthHint" xml:space="preserve">
-    <value>Signs with the keys held by your local ssh-agent; nothing is stored in this profile. On Windows that is the &quot;OpenSSH Authentication Agent&quot; service (start it, then load keys with ssh-add); elsewhere the agent named by SSH_AUTH_SOCK.</value>
+    <value>Signs with the keys held by your local ssh-agent; nothing is stored in this profile. On Windows that is the "OpenSSH Authentication Agent" service (start it, then load keys with ssh-add); elsewhere the agent named by SSH_AUTH_SOCK. To use another agent (1Password, KeePassXC, gpg-agent…), set Agent endpoint under SSH options.</value>
   </data>
   <data name="Profile_SshFeatures" xml:space="preserve">
     <value>SSH options</value>
@@ -6927,6 +7796,30 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="Profile_SshAgentForwardingHint" xml:space="preserve">
     <value>Lets you ssh onward from this server with the keys in your local agent, without copying private keys to it. While the session is open, root on this server can use your agent to sign — only enable it for servers you trust.</value>
+  </data>
+  <data name="Profile_SshAgentEndpoint" xml:space="preserve">
+    <value>Agent endpoint</value>
+  </data>
+  <data name="Profile_SshAgentEndpointHint" xml:space="preserve">
+    <value>Leave empty for the system default agent (SSH_AUTH_SOCK; on Windows the OpenSSH Authentication Agent service, or Pageant when that service is not running). When set, this connection talks only to that agent: SSH agent authentication, agent forwarding and "Add keys to agent" all use it, like IdentityAgent in ssh_config.</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderWindows" xml:space="preserve">
+    <value>System default — or a named pipe \\.\pipe\name, or a socket's full path</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderUnix" xml:space="preserve">
+    <value>System default (SSH_AUTH_SOCK) — or a socket path such as ~/.1password/agent.sock</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNotSupported" xml:space="preserve">
+    <value>Named pipes (\\.\pipe\…) exist only on Windows; on this computer write the path of a Unix socket.</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNameMissing" xml:space="preserve">
+    <value>Write the pipe name after \\.\pipe\ (no further slashes).</value>
+  </data>
+  <data name="Profile_SshAgentEndpointNotFullPath" xml:space="preserve">
+    <value>Use a full path (it may start with ~/); where a relative path lands depends on the program's current directory.</value>
+  </data>
+  <data name="Profile_SshAgentEndpointTooLong" xml:space="preserve">
+    <value>Path too long: a Unix socket path can be at most {0} bytes.</value>
   </data>
   <data name="Profile_SshX11Forwarding" xml:space="preserve">
     <value>Forward X11 (show remote GUI windows locally)</value>
@@ -6973,6 +7866,54 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_AgentNoKeys" xml:space="preserve">
     <value>The local ssh-agent holds no keys. Load one first, e.g. ssh-add ~/.ssh/id_ed25519.</value>
   </data>
+  <data name="SshErr_AgentConnectFailed" xml:space="preserve">
+    <value>Cannot connect to ssh-agent at {0}: {1}</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUnreadable" xml:space="preserve">
+    <value>Cannot read the owner of the ssh-agent named pipe ({0}), so the other end cannot be confirmed to be a trusted agent.</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUntrusted" xml:space="preserve">
+    <value>The ssh-agent named pipe ({0}) is owned by {1}, which is neither the current user nor the system. Another user may have taken this pipe name first, so the connection was refused.</value>
+  </data>
+  <data name="SshErr_AgentOutOfStep" xml:space="preserve">
+    <value>An earlier exchange with ssh-agent was interrupted, so this connection is out of step and cannot be used. Reconnect to the agent.</value>
+  </data>
+  <data name="SshErr_AgentClosedBeforeReply" xml:space="preserve">
+    <value>ssh-agent closed the connection before replying.</value>
+  </data>
+  <data name="SshErr_AgentCommunicationFailed" xml:space="preserve">
+    <value>Communication with ssh-agent failed: {0}</value>
+  </data>
+  <data name="SshErr_AgentMalformedReply" xml:space="preserve">
+    <value>ssh-agent sent a malformed or unexpected reply.</value>
+  </data>
+  <data name="SshErr_AgentSignatureAlgorithmMismatch" xml:space="preserve">
+    <value>ssh-agent signed with {0} although {1} was requested. The agent is probably too old to support SHA-2 signature flags; update it, or use the private key file instead.</value>
+  </data>
+  <data name="SshErr_AgentSignRefused" xml:space="preserve">
+    <value>ssh-agent refused to sign. Common causes: the key is no longer in the agent, a confirmation (ssh-add -c) was not approved, or the key&apos;s destination constraints (ssh-add -h) do not allow this host, user or forwarding path.</value>
+  </data>
+  <data name="SshErr_AgentAddRefused" xml:space="preserve">
+    <value>ssh-agent refused to add the key. Common causes: the agent does not support constraints (lifetime / confirmation), it is locked (ssh-add -x), or it does not support this key type.</value>
+  </data>
+  <data name="SshErr_AgentAddRefusedDestination" xml:space="preserve">
+    <value>ssh-agent refused to add the key. Common causes: the agent does not support constraints (lifetime / confirmation), it is locked (ssh-add -x), or it does not support this key type. This request also carried destination constraints, which the agent may not support (restrict-destination-v00@openssh.com is only available from OpenSSH 8.9; agents other than OpenSSH mostly lack it).</value>
+  </data>
+  <data name="SshErr_AgentRemoveAllRefused" xml:space="preserve">
+    <value>ssh-agent refused to remove all keys. It is probably locked (ssh-add -x).</value>
+  </data>
+  <data name="SshErr_AgentRequestTooLarge" xml:space="preserve">
+    <value>The key or destination constraints are too large for an agent message (the limit is 256 KiB).</value>
+  </data>
+  <data name="SshErr_AgentEndpointUnavailable" xml:space="preserve">
+    <value>Cannot reach the ssh-agent this connection names ({0}): {1}</value>
+  </data>
+  <data name="SshErr_AgentEndpointNotRunning" xml:space="preserve">
+    <value>It does not exist or nothing is listening on it. Make sure the program that provides it (1Password, KeePassXC, gpg-agent…) is running and the path is right; to use the system default agent, clear Agent endpoint in the connection's SSH options.</value>
+  </data>
+  <data name="SshErr_AgentEndpointNoKeys" xml:space="preserve">
+    <value>The ssh-agent this connection names ({0}) holds no keys.</value>
+  </data>
   <data name="DiagSvc_SuggestAgentKeys" xml:space="preserve">
     <value>Check that ssh-agent is running and holds the key this server accepts: ssh-add -l lists the loaded keys.</value>
   </data>
@@ -6984,6 +7925,9 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="Ssh_AgentForwardConfirmEach" xml:space="preserve">
     <value> · every signature needs your approval</value>
+  </data>
+  <data name="Ssh_AgentForwardEndpoint" xml:space="preserve">
+    <value> · agent: {0}</value>
   </data>
   <data name="AgentSign_Title" xml:space="preserve">
     <value>Agent signature request</value>
@@ -8109,8 +9053,14 @@ Send anyway?</value>
   <data name="Tree_OpenGroupSynced" xml:space="preserve">
     <value>Open All with Synced Input</value>
   </data>
+  <data name="Tree_HealthCheckGroup" xml:space="preserve">
+    <value>Health-Check This Group</value>
+  </data>
   <data name="Tree_OpenSelectedSynced" xml:space="preserve">
     <value>Open {0} Connections with Synced Input</value>
+  </data>
+  <data name="Tree_HealthCheckSelected" xml:space="preserve">
+    <value>Health-Check {0} Connections</value>
   </data>
   <data name="Tree_SyncedNoTerminals" xml:space="preserve">
     <value>None of these connections opens a terminal, so there is nothing to sync input to (SFTP, FTP and workspaces are not terminals).</value>
@@ -8186,6 +9136,9 @@ Send anyway?</value>
   </data>
   <data name="SessImport_ErrBadAuth" xml:space="preserve">
     <value>Unknown authentication method: {0}</value>
+  </data>
+  <data name="SessImport_ErrBadKeyStoreKey" xml:space="preserve">
+    <value>Not a key store key reference (expected cng:&lt;key store&gt;/&lt;key name&gt;): {0}</value>
   </data>
   <data name="SessImport_ErrAuthNotSupported" xml:space="preserve">
     <value>FTP and plugin protocols only support password authentication</value>
@@ -8603,6 +9556,48 @@ Send anyway?</value>
   <data name="PasswordFill_Invalid" xml:space="preserve"><value>The password contains control characters or cannot be encoded for this session. Nothing was sent.</value></data>
   <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
   <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>Use the signed-in Tailscale identity and the remote system username. No SSH password or key is required; the server may request browser verification.</value></data>
+  <data name="Profile_KeyStoreAuth" xml:space="preserve">
+    <value>Key store</value>
+  </data>
+  <data name="Profile_KeyStoreKey" xml:space="preserve">
+    <value>Key in the system key store</value>
+  </data>
+  <data name="Profile_KeyStorePick" xml:space="preserve">
+    <value>Choose a key…</value>
+  </data>
+  <data name="Profile_KeyStoreRefresh" xml:space="preserve">
+    <value>List the keys again (after inserting a smart card or creating a key)</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKey" xml:space="preserve">
+    <value>Copy public key</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKeyTip" xml:space="preserve">
+    <value>Copies the key's OpenSSH public key line. Add it to the server's ~/.ssh/authorized_keys before signing in.</value>
+  </data>
+  <data name="Profile_KeyStoreNoKeys" xml:space="preserve">
+    <value>No usable key found. It must be an RSA or ECDSA (P-256 / P-384 / P-521) key in the software key store, the TPM or a smart card. Create one with your PKI tools — for the TPM, for example New-SelfSignedCertificate -Provider "Microsoft Platform Crypto Provider" in PowerShell — then refresh.</value>
+  </data>
+  <data name="Profile_KeyStoreHint" xml:space="preserve">
+    <value>The private key never leaves the key store; this profile stores only which key to use. The TPM or a smart card may ask for a PIN when signing. Windows only.</value>
+  </data>
+  <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
+    <value>This profile signs with a key from a Windows key store, which this computer does not have. To connect from here, choose another authentication method.</value>
+  </data>
+  <data name="Profile_KeyStoreKeyMissing" xml:space="preserve">
+    <value>not found on this computer</value>
+  </data>
+  <data name="Profile_KeyStoreSoftware" xml:space="preserve">
+    <value>Software key store</value>
+  </data>
+  <data name="Profile_KeyStoreTpm" xml:space="preserve">
+    <value>TPM</value>
+  </data>
+  <data name="Profile_KeyStoreSmartCard" xml:space="preserve">
+    <value>Smart card</value>
+  </data>
+  <data name="Profile_KeyStoreMachine" xml:space="preserve">
+    <value>{0} (machine)</value>
+  </data>
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH uses this device's Tailscale identity and cannot be stored as a shared credential.</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH verification</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>The server requires identity verification. Open the link in your browser. This connection will continue automatically when the server approves it.</value></data>

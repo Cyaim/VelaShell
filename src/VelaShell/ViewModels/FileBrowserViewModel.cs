@@ -946,6 +946,23 @@ public class FileBrowserViewModel : ReactiveObject
     /// </summary>
     public Action<string, bool>? ColumnVisibilityToggled { get; set; }
 
+    /// <summary>
+    /// 按设置铺「显示隐藏文件」与六个列开关(宿主建面板、设置保存后广播时用)。
+    /// 列开关的赋值照样会回调 <see cref="ColumnVisibilityToggled" />,宿主那边值没变就不落盘,所以不会来回写。
+    /// </summary>
+    /// <param name="transfer">设置 → 文件传输。</param>
+    public void ApplyDisplayOptions(TransferOptions transfer)
+    {
+        ArgumentNullException.ThrowIfNull(transfer);
+        ShowHiddenFiles = transfer.ShowHiddenFiles;
+        ShowSizeColumn = transfer.ShowSizeColumn;
+        ShowPermissionsColumn = transfer.ShowPermissionsColumn;
+        ShowOwnerColumn = transfer.ShowOwnerColumn;
+        ShowGroupColumn = transfer.ShowGroupColumn;
+        ShowTypeColumn = transfer.ShowTypeColumn;
+        ShowModifiedColumn = transfer.ShowModifiedColumn;
+    }
+
     // —— 表格几何:列关闭时宽度与拖拽条一并塌缩为 0,最小宽度同时放开(否则塌不到 0)——
 
     /// <summary>“大小”列在表格中的实际宽度。</summary>
@@ -1789,6 +1806,9 @@ public class FileBrowserViewModel : ReactiveObject
                     EditorCommand = editor,
                     OpenLocalAsync = OpenLocalFile,
                     AutoUpload = TransferOptions.AutoUploadOnEdit,
+                    // 写进副本旁边的状态标记:崩溃之后消息中心要说得出草稿是哪台机器上的哪个文件。
+                    Server = QueueOrigin?.ServerName ?? (string.IsNullOrEmpty(ServerDisplayName) ? null : ServerDisplayName),
+                    ProfileId = QueueOrigin?.ProfileId,
                     OnError = message => Dispatcher.UIThread.Post(() => ErrorMessage = message),
 
                     // 下载与回传都经传输浮窗(进度、限速、可取消)。

@@ -37,8 +37,8 @@ public enum TransferFailureKind
 /// 而漏重试一个临时错误,最坏也就是像改动前一样直接失败、面板上点一下「重试」。
 /// </para>
 /// <para>
-/// 已知的漏网之鱼:续传下载与双栏中转是直接读库交出来的流,断线时冒出来的是库自己的异常类型
-/// (没有经过翻译层),这里认不出,按不可重试处理。
+/// 续传下载与双栏中转是调用方自己在循环里读远端文件流:那条流上的失败同样在 Infrastructure 里翻成中立类型
+/// (<c>VelaSftpClientWrapper.OpenAsync</c> 交出的流包了一层翻译),这里一样认得出断线。
 /// </para>
 /// </remarks>
 public static class TransferRetryPolicy

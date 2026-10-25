@@ -10,7 +10,12 @@ namespace VelaShell.Core.Ssh;
 /// 关闭之前要求服务端落盘(SFTP 的 <c>fsync@openssh.com</c>,服务端不支持时跳过)。落盘失败算上传失败 ——
 /// 要了「断电也不能丢」却没做到,不能报成功。
 /// </param>
-public sealed record RemoteUploadOptions(long ResumeOffset = 0, DateTimeOffset? LastWriteTime = null, bool Fsync = false);
+/// <param name="CreateMode">
+/// 上传<b>新建</b>这个文件时用的权限位(只取 0777,服务端照常再减 umask);null = 服务端默认(0644 减 umask)。
+/// 文件已经存在时不改它的模式。覆盖上传的临时文件靠它一建出来就不比被替换的文件宽,而不是写完、提交前才收窄。
+/// </param>
+public sealed record RemoteUploadOptions(long ResumeOffset = 0, DateTimeOffset? LastWriteTime = null, bool Fsync = false,
+    uint? CreateMode = null);
 
 /// <summary>
 /// SFTP 客户端的库中立抽象(参见 <see cref="ISshClientWrapper" /> 的隔离说明):
@@ -147,6 +152,10 @@ public interface ISftpClientWrapper : IAsyncDisposable
     /// 需要显式开启相应选项。断点续传上传请改用带 <c>resumeOffset</c> 的
     /// <see cref="UploadAsync(Stream, string, long, Action{ulong}, CancellationToken)" /> 重载,
     /// 不要用 <see cref="FileMode.Append" /> 自行拼接。
+    /// </para>
+    /// <para>
+    /// 流上的读写、冲刷与关闭失败时<b>同样抛中立异常</b>(与本接口其它成员一个口径):调用方在自己的循环里读这条流
+    /// (续传下载、双栏中转),断线由失败重试按类型认出来,不能漏出底层库的异常类型。
     /// </para>
     /// </summary>
     Task<Stream> OpenAsync(string path, FileMode mode, FileAccess access, CancellationToken cancellationToken = default);

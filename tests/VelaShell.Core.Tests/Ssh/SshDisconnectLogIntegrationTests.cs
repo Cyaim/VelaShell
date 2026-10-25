@@ -48,7 +48,7 @@ public class SshDisconnectLogIntegrationTests
             {
                 // 预期:命令所在的连接被对端断开
             }
-            string peerLine = await log.WaitForAsync(line => line.StartsWith($"[SSH] {Target} closed after ", StringComparison.Ordinal)
+            string peerLine = await log.WaitForAsync(line => line.StartsWith($"[SSH] {Target} closed (connected since ", StringComparison.Ordinal)
                 && !line.EndsWith("closed locally", StringComparison.Ordinal));
             StringAssert.Contains(peerLine, "(Open)", "掉线发生在会话建立之后");
             await dropped.DisposeAsync();
@@ -58,7 +58,7 @@ public class SshDisconnectLogIntegrationTests
             Assert.AreEqual("testuser", (await closed.RunCommandAsync("whoami", TestContext.CancellationToken)).Trim());
             await closed.DisposeAsync();
             string localLine = await log.WaitForAsync(line => line.EndsWith("closed locally", StringComparison.Ordinal), skip: before);
-            StringAssert.StartsWith(localLine, $"[SSH] {Target} closed after ");
+            StringAssert.StartsWith(localLine, $"[SSH] {Target} closed (connected since ");
             TestContext.WriteLine(peerLine);
             TestContext.WriteLine(localLine);
         }

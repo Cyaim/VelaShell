@@ -1,8 +1,10 @@
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
+using VelaShell.Core.Import;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Infrastructure.Audit;
+using VelaShell.Infrastructure.Import;
 using VelaShell.Infrastructure.Persistence;
 
 namespace VelaShell.Infrastructure.Tests.Audit;
@@ -238,6 +240,153 @@ public sealed class ConfigAuditTests : IDisposable
 
         Assert.AreSame(settings, saved);
         Assert.AreEqual(19, service.CurrentSnapshot?.TerminalFontSize);
+    }
+
+    // ———————————————————— 来源 ————————————————————
+
+    [TestMethod]
+    public async Task Source_IsLocalByDefault_AndFollowsTheScope_IncludingNesting()
+    {
+        AuditedSessionRepository repo = Sessions();
+        var profile = new SessionProfile { Name = "web", Host = "10.0.0.1" };
+
+        await repo.SaveSessionAsync(profile);
+        Assert.AreEqual(AuditSources.Local, _audit.Single().Source, "没设作用域的保存记成本机编辑");
+
+        _audit.Entries.Clear();
+        using (AuditSourceScope.Enter(AuditSources.CloudSync))
+        {
+            profile.Host = "10.0.0.2";
+            await repo.SaveSessionAsync(profile);
+            using (AuditSourceScope.Enter(AuditSources.Import))
+            {
+                profile.Host = "10.0.0.3";
+                await repo.SaveSessionAsync(profile);
+            }
+            profile.Host = "10.0.0.4";
+            await repo.SaveSessionAsync(profile);
+        }
+        profile.Host = "10.0.0.5";
+        await repo.SaveSessionAsync(profile);
+
+        Assert.AreSequenceEqual(
+            [AuditSources.CloudSync, AuditSources.Import, AuditSources.CloudSync, AuditSources.Local],
+            [.. _audit.Entries.Select(e => e.Source)],
+            "嵌套的作用域退出后回到外层的来源,全部退出后回到本机");
+    }
+
+    /// <summary>
+    /// 用 AsyncLocal 而不是静态开关的原因:云同步在后台应用载荷的同时,用户在编辑框里手改的那一条不能记成「云同步」。
+    /// </summary>
+    [TestMethod]
+    public async Task Source_DoesNotLeakIntoAConcurrentFlow()
+    {
+        AuditedSessionRepository repo = Sessions();
+        var synced = new SessionProfile { Name = "synced", Host = "10.0.0.1" };
+        var edited = new SessionProfile { Name = "edited", Host = "10.0.0.2" };
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task sync = Task.Run(async () =>
+        {
+            using IDisposable _ = AuditSourceScope.Enter(AuditSources.CloudSync);
+            entered.SetResult();
+            await gate.Task;
+            await repo.SaveSessionAsync(synced);
+        });
+        await entered.Task;
+        await repo.SaveSessionAsync(edited); // 同步进行到一半时,本机的一次手改
+        gate.SetResult();
+        await sync;
+
+        Assert.AreEqual(AuditSources.Local, _audit.Entries.Single(e => e.ProfileId == edited.Id).Source);
+        Assert.AreEqual(AuditSources.CloudSync, _audit.Entries.Single(e => e.ProfileId == synced.Id).Source);
+        Assert.AreEqual(AuditSources.Local, AuditSourceScope.Current);
+    }
+
+    [TestMethod]
+    public async Task Source_SettingsAndCredentials_CarryTheScopeToo()
+    {
+        var settingsService = new AuditedSettingsService(new MemorySettingsService(), _audit);
+        AuditedSharedCredentialRepository credentials = Credentials(Sessions());
+        AppSettings settings = await settingsService.GetSettingsAsync();
+
+        using (AuditSourceScope.Enter(AuditSources.CloudSync))
+        {
+            settings.Theme = "light";
+            await settingsService.SaveSettingsAsync(settings);
+        }
+        using (AuditSourceScope.Enter(AuditSources.LoginPrompt))
+        {
+            await credentials.SaveAsync(new SharedCredential { Name = "ops", Username = "root", Password = "pw" });
+        }
+
+        Assert.AreSequenceEqual([AuditSources.CloudSync, AuditSources.LoginPrompt], [.. _audit.Entries.Select(e => e.Source)]);
+    }
+
+    /// <summary>导入连接文件:凭据与连接的每一条都记成「导入」,导入完回到本机。</summary>
+    [TestMethod]
+    public async Task Source_ConnectionFileImport_IsRecordedAsImport()
+    {
+        AuditedSessionRepository sessions = Sessions();
+        var service = new SessionArchiveService(sessions, Credentials(sessions));
+
+        SessionImportDocument document = service.Parse("template.csv", service.CreateCsvTemplate());
+        SessionFileImportOutcome outcome = await service.ImportAsync(await service.PlanAsync(document), new SessionImportOptions());
+
+        Assert.AreEqual(2, outcome.Created);
+        Assert.IsNotEmpty(_audit.Entries);
+        Assert.IsTrue(_audit.Entries.All(e => e.Source == AuditSources.Import),
+            string.Join(" | ", _audit.Entries.Select(e => $"{e.Action}: {e.Source}")));
+        Assert.AreEqual(AuditSources.Local, AuditSourceScope.Current);
+    }
+
+    /// <summary>从 Xshell / WinSCP / ssh_config 导入会话都经 <c>SessionImportWriter</c>:同样记成「导入」。</summary>
+    [TestMethod]
+    public async Task Source_SessionImportFromOtherTools_IsRecordedAsImport()
+    {
+        var service = new SshConfigImportService(Sessions());
+
+        await service.ImportAsync(
+            [new ImportedSession { Name = "prod", Host = "10.0.0.5" }, new ImportedSession { Name = "jump", Host = "10.0.0.6" }],
+            "ssh_config");
+
+        Assert.HasCount(2, _audit.Entries);
+        Assert.IsTrue(_audit.Entries.All(e => e.Source == AuditSources.Import));
+    }
+
+    // ———————————————————— 删除分组 ————————————————————
+
+    /// <summary>
+    /// 删除分组时组里还剩的配置被仓储移回未分组(内部批量改写,不经 SaveSessionAsync):记一条汇总,不逐条记;
+    /// 组里已经空了(会话树先删了组内连接)就不记。
+    /// </summary>
+    [TestMethod]
+    public async Task DeleteGroup_WithMembersLeft_RecordsOneSummary_EmptyGroupRecordsNothing()
+    {
+        AuditedSessionRepository repo = Sessions();
+        var group = new ServerGroup { Name = "生产" };
+        var empty = new ServerGroup { Name = "空组" };
+        await repo.SaveGroupAsync(group);
+        await repo.SaveGroupAsync(empty);
+        foreach (string host in new[] { "a", "b", "c" })
+        {
+            await repo.SaveSessionAsync(new SessionProfile { Name = host, Host = host, GroupId = group.Id });
+        }
+        await repo.SaveSessionAsync(new SessionProfile { Name = "other", Host = "o" });
+        _audit.Entries.Clear();
+
+        await repo.DeleteGroupAsync(empty.Id);
+        Assert.IsEmpty(_audit.Entries);
+
+        await repo.DeleteGroupAsync(group.Id);
+        AuditEntry entry = _audit.Single();
+        Assert.AreEqual(AuditCategories.Profile, entry.Category);
+        Assert.AreEqual(AuditActions.ProfilesUngrouped, entry.Action);
+        Assert.IsNull(entry.ProfileId);
+        Assert.AreEqual(Strings.Format("AuditLog_DetailProfilesUngrouped", "生产", 3), entry.Detail);
+        Assert.AreEqual(AuditSources.Local, entry.Source);
+        Assert.IsTrue((await repo.GetAllSessionsAsync()).All(p => p.GroupId is null), "配置照样移回了未分组");
     }
 
     private AuditedSessionRepository Sessions() => new(new SonnetDbSessionRepository(_engine, _protector), _audit);

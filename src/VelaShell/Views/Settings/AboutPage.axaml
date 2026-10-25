@@ -122,7 +122,7 @@
       <!-- 排障入口:发布版的 Trace 与崩溃记录都落在这个目录里,反馈问题时直接捞。 -->
       <Button Classes="dlg-outline" Content="{loc:Localize SetAbout_OpenLogs}"
               Command="{Binding OpenLogsDirectoryCommand}" />
-      <!-- 报障一键打包:日志、崩溃记录、版本与插件清单,脱敏后只存到本机,不上传。 -->
+      <!-- 报障打包:诊断日志、崩溃记录、版本与插件清单(其余几类日志先在勾选框里选,默认不勾),脱敏后只存到本机,不上传。 -->
       <Button x:Name="ExportDiagnosticsButton" Classes="dlg-outline" Content="{loc:Localize SetAbout_ExportDiagnostics}"
               Click="ExportDiagnostics_Click" ToolTip.Tip="{loc:Localize SetAbout_ExportDiagnosticsTip}" />
     </StackPanel>

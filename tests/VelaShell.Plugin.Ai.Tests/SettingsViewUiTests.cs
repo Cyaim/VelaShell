@@ -21,10 +21,53 @@ namespace VelaShell.Plugin.Ai.Tests;
 [TestCategory("Plugins")]
 public sealed partial class SettingsViewUiTests
 {
+    /// <summary>
+    /// 自定义接入有一个 store 开关,默认关、勾上当场落库(#616–#636 复审①,维护者 2026-10-25 决定);
+    /// 目录里的具名供应商(官方 openai)以目录为准,不摆这个开关。
+    /// </summary>
+    [TestMethod]
+    public void CustomEndpoint_HasAStoreSwitch_OffByDefault_AndTheOfficialEntryDoesNot()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            AiProvider custom = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            custom.BaseUrl = "https://relay.example/v1";
+            custom.DefaultProtocol = ChatProtocol.OpenAiResponses;
+            custom.Models[0].Model = "m";
+            custom.ModelsExpanded = false;
+            AiProvider official = ProviderCatalog.Find("openai")!.CreateProvider();
+            official.ModelsExpanded = false;
+            (Window window, SettingsView view, AiSettings settings, AiSettingsStore store) = await ShowAsync(context,
+                new AiSettings { Providers = [custom, official], ActiveModelId = custom.Models[0].Id });
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                StackPanel panel = view.GetControl<StackPanel>("ProviderStorePanel");
+                CheckBox check = view.GetControl<CheckBox>("ProviderStoreCheck");
+                Assert.IsTrue(panel.IsVisible, "自定义接入要摆出这个开关");
+                Assert.IsFalse(check.IsChecked, "默认关");
+                long version = store.ProviderConfigurationVersion(custom);
+
+                check.IsChecked = true;
+                await WaitUntilAsync(() => custom.CustomResponsesStore == true && check.IsEnabled);
+                Assert.IsTrue((await new AiSettingsStore(context).LoadAsync()).Providers[0].CustomResponsesStore, "勾上当场落库");
+                Assert.IsGreaterThan(version, store.ProviderConfigurationVersion(custom), "它改的是请求本身:推进请求配置代次");
+                Assert.IsFalse(EndpointQuirks.Of(custom) is { StoreResponses: false });
+
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 1;
+                await PumpAsync();
+                Assert.IsFalse(panel.IsVisible, "官方 openai 以目录为准,不摆开关");
+            }
+            finally { window.Close(); }
+        });
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public void Review_DraftModelInheritanceUsesOnlyPrimaryCredentialOnAnotherOrigin(bool savedOwnKey)
+    public void Review_DraftModelInheritanceSendsNoProviderKeyToAnotherOrigin(bool savedOwnKey)
     {
         OnUi(async () =>
         {
@@ -49,7 +92,8 @@ public sealed partial class SettingsViewUiTests
                 view.GetControl<CheckBox>("OwnKeyCheck").IsChecked = false;
                 view.GetControl<TextBox>("BaseUrlBox").Text = draftHost.BaseUrl;
                 await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
-                Assert.AreEqual("Bearer primary", draftHost.Authorizations.Single());
+                // 草稿改成继承、覆盖地址在别的服务器:与保存之后一样不借供应商的 Key(主槽也不借)
+                Assert.AreEqual("Bearer not-needed", draftHost.Authorizations.Single());
                 Assert.IsEmpty(original.Requests);
                 Assert.AreEqual(savedOwnKey, model.HasOwnApiKey);
                 Assert.IsNull(model.BaseUrlOverride);
@@ -60,7 +104,103 @@ public sealed partial class SettingsViewUiTests
     }
 
     [TestMethod]
-    public void BaseUrlToAnotherOrigin_SaveAsksOnceForThatAddressThenClearsSavedKeys()
+    public void CrossOriginOverride_ExistingModelIsFlaggedAndCanKeepUsingKeyOneInOneClick()
+    {
+        OnUi(async () =>
+        {
+            await using var providerHost = new SseStub(ProbeAnswerSse);
+            await using var elsewhereHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            // 存量配置:覆盖地址在别的服务器、继承供应商 Key 的模型(以前借第 1 把)
+            var elsewhere = new AiModelConfig { Name = "Elsewhere", Model = "m", BaseUrlOverride = elsewhereHost.BaseUrl };
+            var provider = new AiProvider
+            {
+                ModelsExpanded = true, BaseUrl = providerHost.BaseUrl,
+                Models = [new AiModelConfig { Model = "home" }, elsewhere]
+            };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = elsewhere.Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "primary");
+            await store.SaveAsync(settings);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                ListBox list = view.GetControl<ListBox>("ProvidersList");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                // 供应商页点名
+                list.SelectedIndex = 0;
+                await PumpAsync();
+                TextBlock listed = view.GetControl<TextBlock>("CrossOriginModelsHintText");
+                Assert.IsTrue(listed.IsVisible);
+                Assert.AreEqual(loc.F("CrossOriginModelsNoKey", "Elsewhere"), listed.Text);
+
+                // 模型页说明请求不带 Key;测试也不带
+                list.SelectedIndex = 2;
+                await PumpAsync();
+                Assert.IsTrue(view.GetControl<StackPanel>("CrossOriginKeyPanel").IsVisible);
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual("Bearer not-needed", elsewhereHost.Authorizations.Single(), "第 1 把不再跟去");
+
+                // 一键沿用第 1 把:只填进表单,保存才落库
+                Click(view.GetControl<Button>("CrossOriginKeyFillButton"));
+                await WaitUntilAsync(() => status.Text == loc["CrossOriginPrimaryKeyFilled"]);
+                Assert.IsTrue(view.GetControl<CheckBox>("OwnKeyCheck").IsChecked);
+                Assert.AreEqual("primary", view.GetControl<TextBox>("ApiKeyBox").Text);
+                Assert.IsFalse(view.GetControl<StackPanel>("CrossOriginKeyPanel").IsVisible);
+                Assert.IsFalse(elsewhere.HasOwnApiKey, "没保存之前什么都没落库");
+                Assert.IsNull(await store.GetApiKeyAsync(elsewhere.Id));
+
+                Click(view.GetControl<Button>("SaveButton"));
+                await WaitUntilAsync(() => status.Text == loc["Saved"]);
+                Assert.IsTrue(elsewhere.HasOwnApiKey);
+                Assert.AreEqual("primary", await store.GetApiKeyAsync(elsewhere.Id));
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual("Bearer primary", elsewhereHost.Authorizations[^1], "明确交给它之后才带");
+                Assert.IsEmpty(providerHost.Requests);
+
+                list.SelectedIndex = 0;
+                await PumpAsync();
+                Assert.IsFalse(view.GetControl<TextBlock>("CrossOriginModelsHintText").IsVisible);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void CrossOriginOverride_HintFollowsTheUnsavedDraft()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            var model = new AiModelConfig { Model = "m" };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://relay.example/v1", Models = [model] };
+            (Window window, SettingsView view, _, _) =
+                await ShowAsync(context, new AiSettings { Providers = [provider], ActiveModelId = model.Id });
+            try
+            {
+                StackPanel panel = view.GetControl<StackPanel>("CrossOriginKeyPanel");
+                TextBox url = view.GetControl<TextBox>("BaseUrlBox");
+                Assert.IsFalse(panel.IsVisible);
+                url.Text = "https://other.example/v1";
+                await PumpAsync();
+                Assert.IsTrue(panel.IsVisible, "草稿改到别的服务器就提示");
+                url.Text = "https://RELAY.example:443/v2";
+                await PumpAsync();
+                Assert.IsFalse(panel.IsVisible, "同源只换路径照旧借供应商的 Key");
+                url.Text = "https://other.example/v1";
+                view.GetControl<CheckBox>("OwnKeyCheck").IsChecked = true;
+                await PumpAsync();
+                Assert.IsFalse(panel.IsVisible, "勾了自带 Key 就不用提示");
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void BaseUrlToAnotherOrigin_SaveAsksInADialogThenClearsSavedKeys()
     {
         OnUi(async () =>
         {
@@ -85,20 +225,29 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 url.Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
-                Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl, "第一次只提示");
+                // 独立的确认框列出要清的把数;框开着时「保存」锁着,再点一下(连点)不算确认
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await WaitForConfirmAsync(view));
+                Assert.IsFalse(save.IsEnabled);
+                Click(save);
+                await PumpAsync();
+                Assert.IsTrue(ConfirmBox(view).IsOpen);
+                Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl, "没点确认就什么都不改");
                 Assert.AreEqual("old-primary", await store.GetApiKeyAsync(provider.Id));
 
-                // 提示之后地址又改了:确认作废,对新地址重新提示
-                url.Text = "https://third.example/v1";
-                status.Text = "";
-                Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
+                // 取消:地址与 Key 都不动,草稿留着
+                AnswerConfirm(view, accept: false);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupResetCancelled"]);
                 Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl);
                 Assert.AreEqual("old-extra", await store.GetApiKeyAsync(extra));
+                Assert.AreEqual(newHost.BaseUrl, url.Text);
 
+                // 换个地址再存:重新问,这次确认
+                url.Text = "https://third.example/v1";
                 Click(save);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await WaitForConfirmAsync(view));
+                AnswerConfirm(view, accept: true);
                 await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupSavedKeysCleared"]);
+
                 Assert.AreEqual("https://third.example/v1", provider.BaseUrl);
                 Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
                 Assert.IsNull(await store.GetApiKeyAsync(extra));
@@ -266,6 +415,199 @@ public sealed partial class SettingsViewUiTests
         });
     }
 
+    /// <summary>已登录的自定义 OAuth 供应商,另挂一个自带 Key、跟着供应商地址走的模型。</summary>
+    private static async Task<(AiSettingsStore Store, AiSettings Settings, AiProvider Provider, AiModelConfig Own)> SignedInCustomOAuthAsync(
+        TestPluginContext context, string baseUrl)
+    {
+        var store = new AiSettingsStore(context);
+        AiProvider provider = ProviderCatalog.Find("custom-oauth")!.CreateProvider();
+        provider.BaseUrl = baseUrl;
+        provider.ModelsExpanded = true;
+        provider.Models[0].Model = "m";
+        var own = new AiModelConfig { Name = "Own model", Model = "own", HasOwnApiKey = true };
+        provider.Models.Add(own);
+        var settings = new AiSettings { Providers = [provider] };
+        await store.SaveAsync(settings);
+        await store.SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "at-old", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1) });
+        await store.SetApiKeyAsync(own.Id, "own-old");
+        return (store, settings, provider, own);
+    }
+
+    [TestMethod]
+    public void SubscriptionBaseUrlToAnotherOrigin_SaveAsksThenSignsOutAndClearsModelKeys()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            (AiSettingsStore store, AiSettings settings, AiProvider provider, AiModelConfig own) =
+                await SignedInCustomOAuthAsync(context, oldHost.BaseUrl);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                Assert.IsTrue(view.GetControl<StackPanel>("ProviderAuthPanel").IsVisible, "前提:订阅登录的供应商页");
+                Button save = view.GetControl<Button>("SaveButton");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+
+                // 先说清:保存会退出登录、哪个模型自带的 Key 一起清;取消就什么都不动
+                Click(save);
+                string expected = loc["SetupBaseUrlSignOutConfirm"] + "\n" + loc.F("SetupBaseUrlKeyResetConfirmAlso", 1)
+                    + "\n" + loc.F("SetupBaseUrlKeyResetModels", "Own model");
+                Assert.AreEqual(expected, await WaitForConfirmAsync(view));
+                Assert.AreEqual(loc["SetupSignOutResetTitle"],
+                    ConfirmBox(view).GetLogicalDescendants().OfType<TextBlock>().Single(text => text.Name == "ConfirmTitle").Text);
+                AnswerConfirm(view, accept: false);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupResetCancelled"]);
+                Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl);
+                Assert.AreEqual("at-old", (await store.GetTokensAsync(provider.Id))?.AccessToken);
+                Assert.AreEqual("own-old", await store.GetApiKeyAsync(own.Id));
+
+                Click(save);
+                Assert.AreEqual(expected, await WaitForConfirmAsync(view));
+                AnswerConfirm(view, accept: true);
+                await WaitUntilAsync(() => save.IsEnabled
+                    && status.Text == loc["SetupSavedSignedOut"] + "\n" + loc.F("SetupModelKeysCleared", "Own model"));
+                Assert.AreEqual(newHost.BaseUrl, provider.BaseUrl);
+                Assert.IsNull(await store.GetTokensAsync(provider.Id), "旧地址签出的令牌不留");
+                Assert.IsNull(await store.GetApiKeyAsync(own.Id));
+                await WaitUntilAsync(() => view.GetControl<TextBlock>("ProviderAuthStatusText").Text == loc["SubscriptionNotSignedIn"]);
+                Assert.IsEmpty(oldHost.Requests);
+                Assert.IsEmpty(newHost.Requests);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void SubscriptionBaseUrlToAnotherOrigin_UnsavedTestNeverCarriesTheSignIn(bool signedIn)
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            (AiSettingsStore store, AiSettings settings, AiProvider provider, AiModelConfig own) =
+                await SignedInCustomOAuthAsync(context, oldHost.BaseUrl);
+            if (!signedIn) await store.ClearTokensAsync(provider.Id);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                if (signedIn)
+                {
+                    // 还登着:请用户先保存(会退出登录),在新地址登录后再测
+                    Assert.AreEqual(loc["SetupTestNeedsSaveSignIn"], view.GetControl<TextBlock>("StatusText").Text);
+                    Assert.IsEmpty(newHost.Requests);
+                }
+                else
+                {
+                    // 没登录:照常测,不带任何已存的凭据
+                    Assert.AreEqual("Bearer not-needed", newHost.Authorizations.Single(), view.GetControl<TextBlock>("StatusText").Text);
+                }
+                Assert.IsEmpty(oldHost.Requests);
+                Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl, "测试不落库");
+                Assert.AreEqual(signedIn ? "at-old" : null, (await store.GetTokensAsync(provider.Id))?.AccessToken);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void RemovedKeyOne_StillShowsAnEmptyPrimarySlotThatCanBeFilledBackIn()
+    {
+        OnUi(async () =>
+        {
+            await using var host = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = host.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "key-one");
+            string extra = await store.AddProviderApiKeyAsync(settings, provider, "key-two");
+            // 存量状态:第 1 把被移除过 —— 主槽只清了机密,槽还在,第 2 把留在补充槽
+            await store.RemoveProviderApiKeyAsync(settings, provider, provider.Id);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                Assert.IsTrue(HasKeyRow(view, provider.Id), "空着的主槽照样摆出来");
+                Assert.AreEqual(loc.F("SetupApiKeyOrdinal", 1) + " · " + loc["SetupApiKeyEmptySlot"],
+                    KeyControl<Button>(view, provider.Id, "ProviderKeyRevealButton").GetLogicalDescendants().OfType<TextBlock>().Single().Text);
+                Assert.AreEqual(loc["StatusNeedsKey"], KeyControl<TextBlock>(view, provider.Id, "ProviderKeyStatus").Text);
+                Assert.IsFalse(KeyControl<Button>(view, provider.Id, "ProviderKeyRevealButton").IsEnabled);
+                Assert.IsFalse(KeyControl<Button>(view, provider.Id, "ProviderKeyRemoveButton").IsEnabled, "没有 Key 可移除");
+                Assert.IsFalse(KeyControl<Button>(view, provider.Id, "ProviderKeyProbeButton").IsEnabled, "没有 Key 可测");
+                Assert.IsTrue(KeyControl<Button>(view, provider.Id, "ProviderKeyEditButton").IsEnabled);
+                Assert.IsTrue(view.GetControl<Button>("ProviderProbeAllKeysButton").IsEnabled, "空主槽不算坏行,检测全部照常可用(只测有 Key 的)");
+                Assert.IsFalse(view.GetControl<TextBlock>("ProviderAllKeysHintText").IsVisible);
+                Assert.IsTrue(HasKeyRow(view, extra));
+
+                // 铅笔填回第 1 把,保存:落进主槽,第 2 把照旧
+                EditProviderKey(view, provider.Id).Text = "key-one-again";
+                Click(view.GetControl<Button>("SaveButton"));
+                await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc["Saved"]);
+                Assert.AreEqual("key-one-again", await store.GetApiKeyAsync(provider.Id));
+                Assert.AreEqual("key-two", await store.GetApiKeyAsync(extra));
+                CollectionAssert.AreEqual(new[] { extra }, provider.AdditionalApiKeyIds.ToArray());
+                await WaitUntilAsync(() => KeyControl<Button>(view, provider.Id, "ProviderKeyRemoveButton").IsEnabled);
+                Assert.IsTrue(KeyControl<Button>(view, provider.Id, "ProviderKeyRevealButton").IsEnabled);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void ConfirmOverlay_DefaultsToCancel_AndEscapeReplacementOrDetachAllCancel()
+    {
+        OnUi(async () =>
+        {
+            var overlay = new ConfirmOverlay();
+            var below = new Button { Name = "Below" };
+            var window = new Window { Content = new Grid { Children = { below, overlay } }, Width = 600, Height = 400 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                Task<bool> first = overlay.AskAsync("title", "message", "Remove", "Cancel");
+                await PumpAsync();
+                Assert.IsTrue(overlay.IsVisible && overlay.IsOpen);
+                Button cancel = overlay.GetLogicalDescendants().OfType<Button>().Single(button => button.Name == "ConfirmCancelButton");
+                Assert.IsTrue(cancel.IsFocused, "会删东西的确认默认落在「取消」上:顺手一个回车不该把 Key 清掉");
+                // 同一时刻只问一件事:再问就把前一个按取消收掉
+                Task<bool> second = overlay.AskAsync("title", "again", "Remove", "Cancel");
+                Assert.IsFalse(await first);
+                overlay.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
+                Assert.IsFalse(await second, "Esc 等于取消");
+                Assert.IsFalse(overlay.IsVisible);
+                Task<bool> third = overlay.AskAsync("title", "detached", "Remove", "Cancel");
+                window.Content = null; // 视图被拆下(关窗、换页)
+                Assert.IsFalse(await third);
+                Task<bool> fourth = overlay.AskAsync("title", "accepted", "Remove", "Cancel");
+                Click(overlay.GetLogicalDescendants().OfType<Button>().Single(button => button.Name == "ConfirmAcceptButton"));
+                Assert.IsTrue(await fourth, "只有点框里的确认按钮才算确认");
+            }
+            finally { window.Close(); }
+        });
+    }
+
     [TestMethod]
     [DataRow("same-settings")]
     [DataRow("same-slot")]
@@ -293,9 +635,9 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 1));
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), await WaitForConfirmAsync(view));
 
-                // 提示「清 1 把」之后又存进一把:目录页走同一份设置(加一把,或给同一个槽换上新服务器的 Key);
+                // 确认框列着「清 1 把」的时候又存进一把:目录页走同一份设置(加一把,或给同一个槽换上新服务器的 Key);
                 // 另一个窗口写盘后这边冲突重载
                 string added = provider.Id;
                 if (where == "same-settings")
@@ -311,18 +653,25 @@ public sealed partial class SettingsViewUiTests
                     var external = new AiSettingsStore(context);
                     AiSettings other = await external.LoadAsync();
                     added = await external.AddProviderApiKeyAsync(other, other.Providers[0], "added-after-prompt");
-                    Click(save);
+                }
+                AnswerConfirm(view, accept: true);
+                if (where == "other-window")
+                {
                     await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupConfigChanged"]);
                     Assert.AreEqual(newHost.BaseUrl, view.GetControl<TextBox>("ProviderBaseUrlBox").Text, "草稿地址保留");
+                    Assert.AreEqual("added-after-prompt", await store.GetApiKeyAsync(added), "冲突时什么都不清");
+                    Click(save);
+                    Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await WaitForConfirmAsync(view));
                 }
-                Click(save);
-                // 换一句提示:同一个槽换了值时要清的把数不变,一字不差的提示看着像没点上,再点一下就把新存的那把清掉
-                await WaitUntilAsync(() => save.IsEnabled
-                    && status.Text == loc.F("SetupBaseUrlKeyResetChanged", where == "same-slot" ? 1 : 2));
+                else
+                {
+                    // 确认的只是框里那 1 把:要清的变了,存储层再拒一次,换一句话再问 —— 一字不差的框看着像没点上
+                    Assert.AreEqual(loc.F("SetupBaseUrlKeyResetChanged", where == "same-slot" ? 1 : 2), await WaitForConfirmAsync(view));
+                }
                 Assert.AreEqual("added-after-prompt", await store.GetApiKeyAsync(added), "旧的确认不能把它一起清掉");
                 Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl);
 
-                Click(save);
+                AnswerConfirm(view, accept: true);
                 await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupSavedKeysCleared"]);
                 Assert.IsNull(await store.GetApiKeyAsync(added));
                 Assert.AreEqual(newHost.BaseUrl, provider.BaseUrl);
@@ -357,8 +706,10 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
-                Click(save);
+                // 确认框里就点名:哪几个模型自带的 Key 会一起清
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2) + "\n" + loc.F("SetupBaseUrlKeyResetModels", "Own model"),
+                    await WaitForConfirmAsync(view));
+                AnswerConfirm(view, accept: true);
                 // 自带 Key 的模型不会改用供应商的新 Key:点名请用户各自重填
                 await WaitUntilAsync(() => save.IsEnabled
                     && status.Text == loc["SetupSavedKeysCleared"] + "\n" + loc.F("SetupModelKeysCleared", "Own model"));
@@ -396,8 +747,9 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
-                Click(save);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2) + "\n" + loc.F("SetupBaseUrlKeyResetModels", loc["Unnamed"]),
+                    await WaitForConfirmAsync(view));
+                AnswerConfirm(view, accept: true);
                 // 点名时与左栏一样叫「(未命名)」,不在冒号后面留一个空名字
                 await WaitUntilAsync(() => save.IsEnabled
                     && status.Text == loc["SetupSavedKeysCleared"] + "\n" + loc.F("SetupModelKeysCleared", loc["Unnamed"]));
@@ -433,16 +785,16 @@ public sealed partial class SettingsViewUiTests
                 TextBlock status = view.GetControl<TextBlock>("StatusText");
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 Click(save);
-                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc.F("SetupBaseUrlKeyResetConfirm", 2));
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await WaitForConfirmAsync(view));
 
-                // 确认的这一击写盘途中,用户点开了第二把 Key 的编辑框(保存期间别的行照样能编辑)
+                // 点了确认、写盘途中,用户点开了第二把 Key 的编辑框(保存期间别的行照样能编辑)
                 storage.Hold = true;
-                Click(save);
+                AnswerConfirm(view, accept: true);
                 await storage.Started.Task.WaitAsync(TimeSpan.FromSeconds(15));
                 EditProviderKey(view, extra);
                 storage.Release.TrySetResult();
                 await WaitUntilAsync(() => save.IsEnabled && provider.BaseUrl == newHost.BaseUrl);
-                // Key 已经清了:「再点一次确认」不能还挂着,否则看着像没生效
+                // Key 已经清了:保存结果要说出来,不能被别的状态盖住
                 Assert.AreEqual(loc["SetupSavedKeysCleared"], status.Text);
                 Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
                 Assert.IsNull(await store.GetApiKeyAsync(extra));
@@ -489,7 +841,7 @@ public sealed partial class SettingsViewUiTests
     [DataRow("ANTHROPIC_API_KEY")]
     [DataRow("ANTHROPIC_AUTH_TOKEN")]
     [DataRow(null)]
-    public void BaseUrlToAnotherOrigin_BlankKeyWithAnEmptyPrimaryStillGuardsTheMachineKey(string? variable)
+    public void BaseUrlToAnotherOrigin_BlankKeyWithAnEmptyPrimaryTestsWithoutTheMachineKey(string? variable)
     {
         OnUi(async () =>
         {
@@ -520,20 +872,15 @@ public sealed partial class SettingsViewUiTests
             {
                 view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
                 await PumpAsync();
-                // 主槽空着,只把第 2 把改成空格:探活不带任何已存的 Key,拦不拦只看本机环境变量 —— 设了就拦,没设照常测
+                // 主槽空着,只把第 2 把改成空格:探活不带任何已存的 Key。本机设了环境变量也照常测 ——
+                // 没有 Key 时它们只发往官方 api.anthropic.com,这台新主机拿不到
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 EditProviderKey(view, extra).Text = "   ";
                 await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
                 string? status = view.GetControl<TextBlock>("StatusText").Text;
-                if (variable is not null)
-                {
-                    Assert.AreEqual(new Loc("en")["SetupTestNeedsNewOriginKey"], status, string.Join(", ", newHost.Authorizations));
-                    Assert.IsEmpty(newHost.Requests);
-                }
-                else
-                {
-                    Assert.HasCount(1, newHost.Requests, status);
-                }
+                Assert.HasCount(1, newHost.Requests, status);
+                Assert.IsNull(newHost.Authorizations.Single(), "本机的 Key 不能跟去");
+                Assert.IsNull(newHost.RequestHeaders.Single()["x-api-key"]);
                 Assert.IsEmpty(oldHost.Requests);
             }
             finally
@@ -552,11 +899,11 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            // Anthropic 协议没有 Key 时 SDK 改用本机环境变量里的那把,同样会发去这个还没保存的地址:与已存的 Key 一样拦下
+            // 无鉴权的 Anthropic 接入换到另一台主机:本机环境变量里的 Key 只给官方主机,不会跟去,所以照常测、不带任何 Key
             (string? status, IReadOnlyList<string> oldRequests, IReadOnlyList<string> newRequests, IReadOnlyList<string?> sent) =
                 await TestKeylessAnthropicMoveAsync(variable);
-            Assert.AreEqual(new Loc("en")["SetupTestNeedsNewOriginKey"], status, string.Join(", ", sent));
-            Assert.IsEmpty(newRequests);
+            Assert.HasCount(1, newRequests, status);
+            Assert.IsNull(sent.Single(), "本机的 Key 不能发往这台主机");
             Assert.IsEmpty(oldRequests);
         });
     }
@@ -593,7 +940,7 @@ public sealed partial class SettingsViewUiTests
             {
                 view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
                 await PumpAsync();
-                // 主槽里改成只有空格:算不上新填的 Key。探活带的是空白凭据,SDK 会改用本机环境变量里的那把发去这个还没保存的地址
+                // 主槽里改成只有空格:算不上新填的 Key,按没填处理 —— 已存的旧主 Key 还在,照样请用户先填新 Key
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 EditProviderKey(view, provider.Id).Text = "   ";
                 await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
@@ -1542,7 +1889,7 @@ public sealed partial class SettingsViewUiTests
             try
             {
                 System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-                Task Save() => (Task)typeof(SettingsView).GetMethod("SaveAsync", flags)!.Invoke(view, null)!;
+                Task Save() => (Task)typeof(SettingsView).GetMethod("SaveAsync", flags)!.Invoke(view, [null])!;
                 await ((Task)typeof(SettingsView).GetField("_editorLoad", flags)!.GetValue(view)!).WaitAsync(TimeSpan.FromSeconds(15));
                 view.GetControl<TextBox>("ProviderNameBox").Text = "first draft";
                 TextBox key = EditProviderKey(view, first.Id);
@@ -2168,6 +2515,20 @@ public sealed partial class SettingsViewUiTests
         (Task)(typeof(SettingsView).GetMethod("TestAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
             ?? throw new InvalidOperationException("SettingsView.TestAsync is gone")).Invoke(view, null)!;
     private static void Click(Button button) => button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+
+    private static ConfirmOverlay ConfirmBox(Control view) => view.GetLogicalDescendants().OfType<ConfirmOverlay>().Single();
+
+    /// <summary>等确认框弹出来,返回框里的说明。</summary>
+    private static async Task<string?> WaitForConfirmAsync(Control view)
+    {
+        ConfirmOverlay box = ConfirmBox(view);
+        await WaitUntilAsync(() => box.IsOpen);
+        return box.GetLogicalDescendants().OfType<TextBlock>().Single(text => text.Name == "ConfirmMessage").Text;
+    }
+
+    /// <summary>点确认框里的「确认」或「取消」。</summary>
+    private static void AnswerConfirm(Control view, bool accept) => Click(ConfirmBox(view).GetLogicalDescendants()
+        .OfType<Button>().Single(button => button.Name == (accept ? "ConfirmAcceptButton" : "ConfirmCancelButton")));
 
     private static Border KeyRow(SettingsView view, string keyId) => view.GetLogicalDescendants()
         .OfType<Border>().Single(row => row.Name == "ProviderKeyRow" && (string?)row.Tag == keyId);
@@ -3986,7 +4347,7 @@ public sealed partial class SettingsViewUiTests
             {
                 await secrets.Started.WaitAsync(TimeSpan.FromSeconds(15));
                 var saving = (Task)typeof(SettingsView).GetMethod("SaveAsync",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(view, null)!;
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(view, [null])!;
                 Assert.IsFalse(saving.IsCompleted, "保存确实在等首次机密读取");
                 ListBox list = view.GetControl<ListBox>("ProvidersList");
                 var rows = (List<ProviderNavItem>)list.ItemsSource!;
@@ -4387,13 +4748,15 @@ public sealed partial class SettingsViewUiTests
                 Assert.IsNull(await store.GetApiKeyAsync(second));
                 Click(KeyControl<Button>(view, provider.Id, "ProviderKeyRemoveButton"));
                 Click(KeyControl<Button>(view, provider.Id, "ProviderKeyRemoveButton"));
-                await WaitUntilAsync(() => !HasKeyRow(view, provider.Id));
+                // 移除第 1 把只清主槽机密:第 3 把还在,这一行照样摆着(空着,能用铅笔填回去)
+                await WaitUntilAsync(() => KeyControl<TextBlock>(view, provider.Id, "ProviderKeyStatus").Text == new Loc("en")["StatusNeedsKey"]);
+                Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
                 Assert.AreEqual(provider.Id, settings.Providers.Single().Id);
                 Assert.AreEqual(model.Id, provider.Models.Single().Id);
                 Assert.AreEqual("sk-third-9012", (await store.ResolveCredentialAsync(settings.FindModel(model.Id)!)).Value);
                 Click(KeyControl<Button>(view, third, "ProviderKeyRemoveButton"));
                 Click(KeyControl<Button>(view, third, "ProviderKeyRemoveButton"));
-                await WaitUntilAsync(() => !HasKeyRow(view, third));
+                await WaitUntilAsync(() => !HasKeyRow(view, third) && !HasKeyRow(view, provider.Id));
                 view.GetControl<TextBox>("ProviderNewApiKeyBox").Text = "tiny";
                 Click(view.GetControl<Button>("ProviderAddApiKeyButton"));
                 await WaitUntilAsync(() => HasKeyRow(view, provider.Id));
@@ -5006,11 +5369,11 @@ public sealed partial class SettingsViewUiTests
                 Assert.AreEqual("Bearer additional-new", newEndpoint.Requests[0].Auth);
                 Assert.IsTrue(health.IsKeyCooling(b), "未落库的显式测试不得改共享健康");
                 Assert.AreEqual("additional-old", await store.GetApiKeyAsync(b));
-                // 换到另一台主机:先提示会清掉旧主槽那一把,再点一次才保存;新填的 Key 落进主槽、补充槽复位
+                // 换到另一台主机:先在确认框里说会清掉旧主槽那一把,确认才保存;新填的 Key 落进主槽、补充槽复位
                 Click(view.GetControl<Button>("SaveButton"));
-                await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc.F("SetupBaseUrlKeyResetConfirm", 1));
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), await WaitForConfirmAsync(view));
                 Assert.AreEqual(0, notifications); Assert.AreEqual(oldEndpoint.BaseUrl, provider.BaseUrl);
-                Click(view.GetControl<Button>("SaveButton"));
+                AnswerConfirm(view, accept: true);
                 await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc["SetupSavedOtherKeysCleared"]);
                 Assert.AreEqual(1, notifications); Assert.AreEqual(newEndpoint.BaseUrl, provider.BaseUrl);
                 Assert.AreEqual("additional-new", await new AiSettingsStore(context).GetApiKeyAsync(provider.Id));
@@ -5238,27 +5601,22 @@ public sealed partial class SettingsViewUiTests
             var window = new Window { Content = view, Width = 900, Height = 700 }; window.Show(); await PumpAsync();
             try
             {
+                // 跨源覆盖的模型不借供应商的任何一把 Key,主槽也不例外:哪一行的候选里都没有它;自带 Key、没填型号的也不在
                 Click(KeyControl<Button>(view, provider.Id, "ProviderKeyProbeButton"));
-                SelectKeyModel(view, provider.Id, cross.Id);
-                await WaitUntilAsync(() => other.Requests.Count == 1 && !IsKeyProbeRunning(KeyProbeState(view, provider.Id)));
-                Assert.AreEqual("Bearer primary", other.Authorizations.Single(), "主槽保留已保存模型覆盖地址的旧行为");
-                Click(KeyControl<Button>(view, extra, "ProviderKeyProbeButton"));
-                var choices = KeyControl<ComboBox>(view, extra, "ProviderKeyModelPicker").ItemsSource!.Cast<object>().ToList();
-                Assert.HasCount(2, choices);
-                Assert.AreNotEqual(choices[0].ToString(), choices[1].ToString(), "同名模型带短 ID 但绑定配置 ID");
-                Assert.IsEmpty(same.Requests); Assert.HasCount(1, other.Requests);
-                Assert.AreEqual(-1, KeyControl<ComboBox>(view, extra, "ProviderKeyModelPicker").SelectedIndex,
-                    "上次主槽检测的跨域模型不适用于补充 Key，必须重新选择而不是自动改测首模型");
-                SelectKeyModel(view, extra, b.Id);
-                await WaitUntilAsync(() => same.Requests.Count == 1 && !IsKeyProbeRunning(KeyProbeState(view, extra)));
+                var primaryChoices = KeyControl<ComboBox>(view, provider.Id, "ProviderKeyModelPicker").ItemsSource!.Cast<object>().ToList();
+                Assert.HasCount(2, primaryChoices);
+                Assert.AreNotEqual(primaryChoices[0].ToString(), primaryChoices[1].ToString(), "同名模型带短 ID 但绑定配置 ID");
+                SelectKeyModel(view, provider.Id, b.Id);
+                await WaitUntilAsync(() => same.Requests.Count == 1 && !IsKeyProbeRunning(KeyProbeState(view, provider.Id)));
                 Assert.Contains("\"model\":\"m2\"", same.Requests.Single());
-                Assert.AreEqual("Bearer additional", same.Authorizations.Single());
-                Click(KeyControl<Button>(view, provider.Id, "ProviderKeyProbeButton"));
-                Assert.HasCount(3, KeyControl<ComboBox>(view, provider.Id, "ProviderKeyModelPicker").ItemsSource!.Cast<object>().ToList());
-                await WaitUntilAsync(() => same.Requests.Count == 2 && !IsKeyProbeRunning(KeyProbeState(view, provider.Id)));
+                Assert.AreEqual("Bearer primary", same.Authorizations.Single());
+                // 补充槽:同样两项,按 ID 复用上次选的那个直接测
+                Click(KeyControl<Button>(view, extra, "ProviderKeyProbeButton"));
+                Assert.HasCount(2, KeyControl<ComboBox>(view, extra, "ProviderKeyModelPicker").ItemsSource!.Cast<object>().ToList());
+                await WaitUntilAsync(() => same.Requests.Count == 2 && !IsKeyProbeRunning(KeyProbeState(view, extra)));
                 Assert.Contains("\"model\":\"m2\"", same.Requests[1]);
-                Assert.AreEqual("Bearer primary", same.Authorizations[1], "同名模型必须按 ID 复用上次选择");
-                Assert.HasCount(1, other.Requests);
+                Assert.AreEqual("Bearer additional", same.Authorizations[1], "同名模型必须按 ID 复用上次选择");
+                Assert.IsEmpty(other.Requests, "跨源覆盖地址一次都不能被拿供应商的 Key 去测");
                 Assert.IsNull(provider.ActiveApiKeyId);
             }
             finally { window.Close(); }
@@ -5352,9 +5710,11 @@ public sealed partial class SettingsViewUiTests
                 health.RecordKey(provider.Id, false);
                 await WaitUntilAsync(() => KeyControl<TextBlock>(view, provider.Id, "ProviderKeyStatus").Text == loc["DotCooling"]);
                 Assert.IsTrue(focused.IsFocused);
-                var failed = (Dictionary<(bool IsKey, string Id), long>)typeof(ProviderHealth).GetField("_failedAt",
+                // 把唯一那条失败的时刻拨到冷却窗口之外(不依赖记录键的具体形状)
+                var failed = (System.Collections.IDictionary)typeof(ProviderHealth).GetField("_failedAt",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(health)!;
-                failed[(true, provider.Id)] = Environment.TickCount64 - (long)ProviderHealth.Cooldown.TotalMilliseconds - 1;
+                foreach (object entry in failed.Keys.Cast<object>().ToArray())
+                    failed[entry] = Environment.TickCount64 - (long)ProviderHealth.Cooldown.TotalMilliseconds - 1;
                 await WaitUntilAsync(() => KeyControl<TextBlock>(view, provider.Id, "ProviderKeyStatus").Text == loc["SetupKeyUntested"]);
                 Assert.AreSame(focused, KeyControl<Button>(view, provider.Id, "ProviderKeyEditButton"));
                 var timer = (DispatcherTimer)typeof(SettingsView).GetField("_keyLightTimer",

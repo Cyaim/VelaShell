@@ -33,4 +33,11 @@ public sealed class SftpUnavailableException : SshException
     /// 没说、或者不是这种失败时为 <see langword="null"/>。
     /// </summary>
     public string? ServerErrorOutput { get; init; }
+
+    /// <summary>具体是哪种情形 —— 界面按它说，不解析 <see cref="Exception.Message"/> 里的中文。</summary>
+    /// <remarks>库自己抛的都填；使用者自己构造、没填时是 <see cref="SftpUnavailableKind.Unknown"/>。</remarks>
+    public SftpUnavailableKind FailureKind { get; init; }
+
+    /// <summary>服务端在 <c>SSH_FXP_VERSION</c> 里回的版本（<see cref="SftpUnavailableKind.VersionTooOld"/> / <see cref="SftpUnavailableKind.VersionTooNew"/>）。</summary>
+    public uint? ServerVersion { get; init; }
 }

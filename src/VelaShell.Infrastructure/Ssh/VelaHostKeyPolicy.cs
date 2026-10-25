@@ -37,13 +37,18 @@ namespace VelaShell.Infrastructure.Ssh;
 /// 这是断线后的自动重连(<see cref="ConnectionInfo.IsAutomaticReconnect" />):本该弹窗问的一律拒绝,不弹。
 /// </param>
 /// <param name="timeProvider">验主机证书有效期用的时钟;<see langword="null" /> 用系统时钟。</param>
+/// <param name="unattended">
+/// 这是没人看着的探测(会话健康巡检,<see cref="ConnectionInfo.IsUnattended" />):与自动重连一样不问、直接拒绝,
+/// 但说法不同,第一次见到的主机也不记安全告警(指纹变了照记)。只在 <paramref name="automaticReconnect" /> 也为真时起作用。
+/// </param>
 internal sealed class VelaHostKeyPolicy(
     IHostKeyService hostKey,
     ISettingsService? settings,
     IHostKeyPrompt? prompt,
     ISecurityAlertService? alerts,
     bool automaticReconnect = false,
-    TimeProvider? timeProvider = null) : IHostKeyPolicy, IHostKeyTypePreference, IHostKeyRotationPolicy
+    TimeProvider? timeProvider = null,
+    bool unattended = false) : IHostKeyPolicy, IHostKeyTypePreference, IHostKeyRotationPolicy
 {
     /// <inheritdoc />
     /// <remarks>
@@ -301,8 +306,9 @@ internal sealed class VelaHostKeyPolicy(
         // 照样记一笔安全告警:指纹变了却没有人看到弹窗,审计里至少要留下这件事。
         if (askUser && automaticReconnect)
         {
-            string blocked = Strings.Format("Msg_HostKeyAutoReconnectBlocked", target, fingerprint);
-            if (alerts is not null)
+            string blocked = Strings.Format(unattended ? "Msg_HostKeyUnattendedBlocked" : "Msg_HostKeyAutoReconnectBlocked", target, fingerprint);
+            // 巡检时第一次见到的主机不算异常(用户点名要查的机器,只是还没亲自连过):不进安全告警;变了的照记。
+            if (alerts is not null && (!unattended || verification == HostKeyVerification.Changed))
             {
                 await alerts.RaiseAsync("hostkey-rejected", blocked).ConfigureAwait(false);
             }

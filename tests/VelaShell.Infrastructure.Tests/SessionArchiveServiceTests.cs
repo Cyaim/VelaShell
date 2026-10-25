@@ -143,6 +143,55 @@ public sealed class SessionArchiveServiceTests : IDisposable
         Assert.AreEqual("GBK", updated.Terminal!.Encoding, "CSV 表达不了的设置原样保留");
     }
 
+    /// <summary>
+    /// 覆盖导入一份目录收藏功能之前的 JSON 备份(连接里没有收藏字段):本机的收藏留着;
+    /// 文件里写着空数组的,才是真的清空 —— 与 Gist 拉取同一口径。
+    /// </summary>
+    [TestMethod]
+    public async Task OverwriteImport_OfABackupWithoutBookmarks_KeepsTheLocalOnes_ButAnEmptyFieldClearsThem()
+    {
+        (SessionArchiveService? service, SonnetDbSessionRepository? sessions, SonnetDbSharedCredentialRepository _, SonnetDbAppDataStore _) = Machine("bookmarks");
+        var profile = new SessionProfile { Name = "web", Host = "10.0.0.5", Username = "deploy" };
+        await sessions.SaveSessionAsync(profile);
+        SessionExportFile file = await service.ExportAsync([profile.Id], SessionFileFormat.Json, null);
+        // 备份导出之后才加的收藏(也就是用户在本机上的近况)。
+        _ = await sessions.UpdateDirectoryBookmarksAsync(profile.Id, list =>
+        {
+            list.Add(new RemoteDirectoryBookmark { Name = "app", LocalPath = @"C:\work", RemotePath = "/srv/app" });
+            return true;
+        });
+
+        string oldBackup = WithoutBookmarkField(SessionFileText.Decode(file.Content), "renamed-by-old-backup");
+        SessionFileImportOutcome outcome = await service.ImportAsync(
+            await service.PlanAsync(service.Parse("old.json", Encoding.UTF8.GetBytes(oldBackup))),
+            new SessionImportOptions { Conflict = SessionImportConflict.Overwrite });
+
+        Assert.AreEqual(1, outcome.Updated);
+        SessionProfile afterOld = (await sessions.GetAllSessionsAsync()).Single();
+        Assert.AreEqual("renamed-by-old-backup", afterOld.Name, "其余字段照样被备份覆盖");
+        Assert.AreEqual("/srv/app", afterOld.DirectoryBookmarks.Single().RemotePath, "旧备份没带收藏字段,却把本机的收藏清空了");
+
+        // 新版本导出的文件带着 "directoryBookmarks": [](导出那一刻确实没有收藏):覆盖就是清空。
+        Assert.Contains("\"directoryBookmarks\": []", SessionFileText.Decode(file.Content));
+        _ = await service.ImportAsync(
+            await service.PlanAsync(service.Parse("new.json", file.Content)),
+            new SessionImportOptions { Conflict = SessionImportConflict.Overwrite });
+        Assert.IsEmpty((await sessions.GetAllSessionsAsync()).Single().DirectoryBookmarks);
+    }
+
+    /// <summary>把一份导出文件改成旧版本的样子:连接里没有目录收藏字段;顺手改个名字,好看出覆盖确实发生了。</summary>
+    private static string WithoutBookmarkField(string json, string newName)
+    {
+        System.Text.Json.Nodes.JsonNode root = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        foreach (System.Text.Json.Nodes.JsonNode? session in root["sessions"]!.AsArray())
+        {
+            System.Text.Json.Nodes.JsonObject entry = session!.AsObject();
+            Assert.IsTrue(entry.Remove("directoryBookmarks"), "导出文件里本该有收藏字段");
+            entry["name"] = newName;
+        }
+        return root.ToJsonString();
+    }
+
     [TestMethod]
     public async Task Template_ImportsIntoAFreshStore()
     {

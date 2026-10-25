@@ -27,6 +27,7 @@ public sealed class ConnectionWorkflowServiceTests
     {
         ConnectionWorkflowService service = CreateService();
         SessionProfile profile = CreateProfile();
+        _sessionRepository.GetSessionAsync(profile.Id).Returns(profile);
         var session = new SshSession
         {
             ConnectionInfo = new()
@@ -47,6 +48,33 @@ public sealed class ConnectionWorkflowServiceTests
         await _sessionRepository.Received(1).SaveSessionAsync(profile);
     }
 
+    /// <summary>
+    /// 不在库里的是现搭的临时配置(外部拉起、「最近连接」重建的):连上之后不回写 —— 不进会话树,也就不随云同步上传;
+    /// 连接历史(最近连接,不含密码)与审计照记。
+    /// </summary>
+    [TestMethod]
+    public async Task ConnectProfileAsync_TemporaryProfileNotInRepository_IsNotSaved_ButStillRecorded()
+    {
+        IRecentConnectionService recent = Substitute.For<IRecentConnectionService>();
+        IAuditLogService audit = Substitute.For<IAuditLogService>();
+        var service = new ConnectionWorkflowService(_sessionRepository, _sshConnectionService, recent, audit);
+        SessionProfile temporary = CreateProfile("tester@localhost:22");
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns(new SshSession
+                             {
+                                 ConnectionInfo = new() { Host = temporary.Host, Port = 22, Username = temporary.Username, AuthMethod = AuthMethod.Password },
+                                 Status = SessionStatus.Connected
+                             });
+
+        await service.ConnectProfileAsync(temporary);
+        await service.ReconnectProfileAutomaticallyAsync(temporary);
+
+        await _sessionRepository.DidNotReceiveWithAnyArgs().SaveSessionAsync(default!);
+        await recent.Received(2).RecordAsync(Arg.Is<RecentConnectionEntry>(e =>
+            e.ProfileId == temporary.Id && e.Host == "localhost" && e.Username == "tester" && e.Success));
+        await audit.Received(2).WriteAsync(Arg.Is<AuditEntry>(e => e.Action == "connect" && e.ProfileId == temporary.Id));
+    }
+
     [TestMethod]
     public async Task TestConnectionAsync_WhenConnectFails_ReturnsFailureResult()
     {
@@ -57,6 +85,8 @@ public sealed class ConnectionWorkflowServiceTests
         ConnectionTestResult result = await service.TestConnectionAsync(profile);
         Assert.IsFalse(result.Success);
         Assert.AreEqual("boom", result.ErrorMessage);
+        // 原始异常一并交出:宿主要从异常链里认出「算法谈不成」才给得出一键放开。
+        Assert.IsInstanceOfType<InvalidOperationException>(result.Error);
     }
 
     /// <summary>
@@ -91,6 +121,74 @@ public sealed class ConnectionWorkflowServiceTests
     }
 
     /// <summary>
+    /// 巡检的连接测试按「没人看着」连:跳板链上每一跳都标上(要人回答的一律不问),连完随即断开;
+    /// 普通的「测试」一跳也不标。
+    /// </summary>
+    [TestMethod]
+    public async Task UnattendedTest_MarksEveryHop_AndDisconnects_ButTheOrdinaryTestDoesNot()
+    {
+        ConnectionWorkflowService service = CreateService();
+        SessionProfile jump = CreateProfile("bastion");
+        SessionProfile target = CreateProfile("web-01");
+        target.JumpHostProfileId = jump.Id;
+        _sessionRepository.GetSessionAsync(jump.Id).Returns(jump);
+        var connected = new List<ConnectionInfo>();
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns(call =>
+                             {
+                                 connected.Add((ConnectionInfo)call[0]);
+                                 return new SshSession { ConnectionInfo = connected[^1], Status = SessionStatus.Connected };
+                             });
+
+        ConnectionTestResult unattended = await service.TestConnectionUnattendedAsync(target);
+        ConnectionTestResult ordinary = await service.TestConnectionAsync(target);
+
+        Assert.IsTrue(unattended.Success);
+        Assert.IsTrue(ordinary.Success);
+        Assert.IsTrue(connected[0].IsUnattended);
+        Assert.IsTrue(connected[0].JumpHost!.IsUnattended);
+        Assert.IsFalse(connected[0].IsAutomaticReconnect, "巡检不是自动重连:那条会停掉自动重连、说法也不同。");
+        Assert.IsFalse(connected[1].IsUnattended);
+        Assert.IsFalse(connected[1].JumpHost!.IsUnattended);
+        await _sshConnectionService.Received(2).DisconnectAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>巡检被停下 / 单台到点:取消照原样抛出,不当成「这台连不上」。</summary>
+    [TestMethod]
+    public async Task UnattendedTest_CallerCancellation_Propagates()
+    {
+        ConnectionWorkflowService service = CreateService();
+        using var cts = new CancellationTokenSource();
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns<Task<SshSession>>(_ =>
+                             {
+                                 cts.Cancel();
+                                 throw new OperationCanceledException(cts.Token);
+                             });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => service.TestConnectionUnattendedAsync(CreateProfile(), cts.Token));
+    }
+
+    /// <summary>插件配置不测:插件的探针会开真会话、可能弹插件自己的框。</summary>
+    [TestMethod]
+    public async Task UnattendedTest_PluginProfile_IsNotProbed()
+    {
+        ConnectionWorkflowService service = CreateService();
+        int probes = 0;
+        service.PluginProbe = (_, _) =>
+        {
+            probes++;
+            return Task.CompletedTask;
+        };
+
+        ConnectionTestResult result = await service.TestConnectionUnattendedAsync(CreatePluginProfile());
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(0, probes);
+        await _sshConnectionService.DidNotReceive().ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// 会话的字符集(会话覆盖优先于全局)带进连接信息,SFTP 按它解读文件名;跳板那一跳不带(它不开 SFTP)。
     /// </summary>
     [TestMethod]
@@ -122,6 +220,37 @@ public sealed class ConnectionWorkflowServiceTests
         Assert.IsNotNull(connected);
         Assert.AreEqual(expected, connected.FileNameEncoding);
         Assert.IsNull(connected.JumpHost?.FileNameEncoding, "跳板只开隧道,不该带文件名编码");
+    }
+
+    /// <summary>
+    /// 诊断给的协议轨迹挂在最外层的连接信息上(装配那一层拿它记链上每一跳);跳板那一份不重复挂。
+    /// 平常的「测试连接」与连接都不挂 —— 报文旁路只在诊断时开。
+    /// </summary>
+    [TestMethod]
+    public async Task PacketTrace_IsCarriedOnlyByTheDiagnosticTest()
+    {
+        ConnectionWorkflowService service = CreateService();
+        SessionProfile jump = CreateProfile("bastion");
+        SessionProfile target = CreateProfile("web-01");
+        target.JumpHostProfileId = jump.Id;
+        _sessionRepository.GetSessionAsync(jump.Id).Returns(jump);
+        List<ConnectionInfo> connected = [];
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns(call =>
+                             {
+                                 connected.Add((ConnectionInfo)call[0]);
+                                 return new SshSession { ConnectionInfo = connected[^1], Status = SessionStatus.Connected };
+                             });
+        SshPacketTrace trace = new();
+
+        Assert.IsTrue((await service.TestConnectionAsync(target, trace)).Success);
+        Assert.IsTrue((await service.TestConnectionAsync(target)).Success);
+        await service.ConnectProfileAsync(target);
+
+        Assert.AreSame(trace, connected[0].PacketTrace);
+        Assert.IsNull(connected[0].JumpHost?.PacketTrace, "跳板那一跳由装配那一层用同一份记,不必再挂");
+        Assert.IsNull(connected[1].PacketTrace, "平常的测试连接不挂旁路");
+        Assert.IsNull(connected[2].PacketTrace, "平常的连接不挂旁路");
     }
 
     [TestMethod]

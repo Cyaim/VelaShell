@@ -485,7 +485,10 @@ public sealed class SonnetDbEngine : IDisposable
                 new("category", MeasurementColumnRole.Tag, FieldType.String),
                 new("action", MeasurementColumnRole.Tag, FieldType.String),
                 new("profile_id", MeasurementColumnRole.Tag, FieldType.String),
-                new("detail", MeasurementColumnRole.Field, FieldType.String)
+                new("detail", MeasurementColumnRole.Field, FieldType.String),
+                // 配置类记录的来源(本机 / 云同步 / 导入 / 登录框)。后加的列:老库没有它,
+                // 第一次写入带它的点时 SonnetDB 自动补列(SonnetDbAuditLogService 的类注释)。
+                new("source", MeasurementColumnRole.Tag, FieldType.String)
             ]),
 
             // 会话录制(设置 → 安全审计):终端原始输出按时间分块存储,

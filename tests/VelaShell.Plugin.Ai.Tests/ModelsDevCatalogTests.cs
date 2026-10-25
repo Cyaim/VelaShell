@@ -503,6 +503,32 @@ public sealed class ModelsDevCatalogTests
         Assert.AreEqual(0, spec.InputPrice, "模糊跨供应商匹配不能照抄另一供应商的价格");
     }
 
+    /// <summary>
+    /// #582 复审⑥:冒号也是 Ollama 的「型号:标签」分隔符。按形状猜路由前缀(冒号前不含 <c>-</c> / <c>.</c>、
+    /// 冒号后不是数字就剥)会把 <c>phi4:latest</c> 剥成 <c>latest</c>,再拿它去配目录里别的型号的同名标签 ——
+    /// 静默借来另一个模型的窗口与输出上限。改为只剥已知的路由前缀(<c>global:</c>),其余一律当作完整型号。
+    /// </summary>
+    [TestMethod]
+    [DataRow("phi4:latest", 65536, DisplayName = "phi4:latest 不能配上 gemma:latest")]
+    [DataRow("llama3:instruct", 65536, DisplayName = "llama3:instruct 不能配上 codellama:instruct")]
+    [DataRow("phi3:mini", 65536, DisplayName = "phi3:mini 不能配上 orca:mini")]
+    [DataRow("gemma:latest", 8192, DisplayName = "完整写法照样配得上")]
+    [DataRow("ollama/gemma:latest", 8192, DisplayName = "带供应商前缀的完整写法")]
+    [DataRow("global:deepseek-v4.1-flash", 1048576, DisplayName = "已知的路由前缀照剥")]
+    [DataRow("relay/GLOBAL:deepseek-v4.1-flash", 1048576, DisplayName = "路由前缀不分大小写")]
+    [DataRow("other:deepseek-v4.1-flash", 65536, DisplayName = "认不出的前缀不猜:退回端点窗口")]
+    public void Describe_OllamaTagsAreNotMistakenForRoutePrefixes(string id, int expected)
+    {
+        using var context = new TestPluginContext();
+        File.WriteAllText(Path.Combine(context.DataDirectory, "models-dev.json"), """
+            {"ollama":{"ollama/gemma:latest":{"ctx":8192},"ollama/codellama:instruct":{"ctx":16384},"ollama/orca:mini":{"ctx":4096}},
+             "deepseek":{"deepseek/deepseek-v4.1-flash":{"ctx":1048576}}}
+            """);
+        ModelSpec spec = new ModelsDevCatalog(context).Describe(null, [(id, 65536)]).Single();
+        Assert.AreEqual(id, spec.Id, "请求里发的仍是端点报上来的 id");
+        Assert.AreEqual(expected, spec.ContextTokens);
+    }
+
     [TestMethod]
     [DataRow(65536, 65536)]
     [DataRow(0, 128000)]

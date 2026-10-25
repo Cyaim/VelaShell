@@ -101,17 +101,21 @@ internal static partial class SshInterop
     /// 只翻有把握的那几类。<see cref="SshFailureReason.ProxyUnreachable" />、<see cref="SshFailureReason.ProxyRefused" />、
     /// <see cref="SshFailureReason.ProxyAuthRequired" /> 与 <see cref="SshFailureReason.ProxyAuthFailed" /> 不在其中:它们的消息是 <c>ProxyTransportDialer</c>
     /// 用界面语言拼的,带着「经哪个代理去哪」、换 SOCKS5 的提示,并且分得清「没配凭据」与「凭据不对」,
-    /// 比一句泛泛的「代理拒绝」有用得多。<see cref="SshFailureReason.HostKeyRejected" /> 同理:消息是
-    /// <c>VelaHostKeyPolicy</c> 用本地化文案写的拒绝理由(含新旧指纹)。认不出的原因照旧用原文。
+    /// 比一句泛泛的「代理拒绝」有用得多(后半句的代理应答按 <see cref="SshConnectException.FailureKind" /> 说)。
+    /// <see cref="SshFailureReason.HostKeyRejected" /> 由种类分开:策略拒的(<see cref="SshConnectFailureKind.HostKeyPolicyRejected" />)消息是
+    /// <c>VelaHostKeyPolicy</c> 用本地化文案写的拒绝理由(含新旧指纹),原样用;库自己验不过的几种按种类说。认不出的原因照旧用原文。
     /// </para>
     /// <para>
-    /// 通道失败、私钥 / 证书读不出来这几类,库给了比原因码更细的结构化出处(<see cref="SshChannelException.FailureKind" />、
-    /// <see cref="SshKeyProblemKind" /> 与路径、算法名、Key ID、两边的公钥),先按它们说(<c>SshInterop.Diagnostics.cs</c>);
+    /// 通道失败、私钥 / 证书读不出来、建连失败(主机密钥、代理握手、跳板)这几类,库给了比原因码更细的结构化出处
+    /// (<see cref="SshChannelException.FailureKind" />、<see cref="SshKeyProblemKind" /> 与路径、算法名、Key ID、两边的公钥,
+    /// <see cref="SshConnectException.FailureKind" /> 与经过的那一跳、代理的应答),先按它们说(<c>SshInterop.Diagnostics.cs</c>);
     /// 没归类的(使用者自己构造的异常)才落到下面按原因码的那一层。
     /// </para>
     /// <para>
-    /// 配置不成立、端口占用这几类不翻:库的消息里带着具体的主机名、端口号,还没有结构化的出处,换成一句通用文案反而帮不上忙。
-    /// <see cref="SshFailureReason.ForwardSetupFailed" />(消息里是拿不到的 X 显示、xauth 的输出)同理;
+    /// 转发器起不来(端口占用 <see cref="SshFailureReason.ForwardBindFailed" />、X11 转发起不来 <see cref="SshFailureReason.ForwardSetupFailed" />、
+    /// 服务端拒绝监听……)按 <see cref="SshForwardException.FailureKind" /> 与监听端点、xauth 的退出码与输出说。
+    /// 配置不成立(<see cref="SshFailureReason.InvalidConfiguration" />,ssh_config 那一类)仍不翻:库的消息里带着具体的主机名、端口号,
+    /// 还没有结构化的出处,换成一句通用文案反而帮不上忙;代理握手里放不进请求的主机名、凭据超长已有种类,不在此列。
     /// <see cref="SshFailureReason.Unsupported" /> 除私钥 / 证书以外(消息里是不支持的算法、格式版本)同理。
     /// <see cref="SshFailureReason.HostKeyStoreFailed" /> 同理(消息里是 known_hosts 的路径与 IO 错误);
     /// 而且宿主的信任库不走库的 known_hosts,它只在调用方换用 <c>KnownHostsPolicy</c> 时才会出现。
@@ -125,6 +129,19 @@ internal static partial class SshInterop
         SshChannelException { FailureKind: not SshChannelFailureKind.Unknown } channel => LocalizeChannel(channel),
         SshPrivateKeyException { ProblemKind: not SshKeyProblemKind.Unknown } key => LocalizeKeyProblem(key),
         SshCertificateException { ProblemKind: not SshKeyProblemKind.Unknown } certificate => LocalizeKeyProblem(certificate),
+        SshConnectException { FailureKind: not SshConnectFailureKind.Unknown } connect => LocalizeConnect(connect),
+        SshForwardException { FailureKind: not SshForwardFailureKind.Unknown } forward => LocalizeForward(forward),
+        SshAgentException { FailureKind: not SshAgentFailureKind.Unknown } agent => LocalizeAgent(agent),
+        // 重协商时密钥交换按首次交换的口径报的失败(验签失败、主机密钥类型不符),库把它包成「建好的连接断了」,原来那条在内层。
+        SshConnectionClosedException
+        {
+            Phase: SshPhase.Rekeying,
+            InnerException: SshConnectException { FailureKind: not SshConnectFailureKind.Unknown } rekey,
+        } => $"{Strings.Format("SshErr_RekeyFailed", DescribeConnectFailure(rekey))} [{ex.Reason} @ {ex.Phase}]",
+        // 会话因为一个意外的(不是 IO、帧格式、协议)异常判死:库把它包一层、原因码是 Unknown(说不清就报不知道),原异常在内层。
+        // 内层的类型名与消息(按系统语言)就是全部线索;曾经透传「连接因意外错误中断:…」这句中文。
+        SshConnectionClosedException { Reason: SshFailureReason.Unknown, InnerException: { } fault } =>
+            $"{Strings.Format("SshErr_ConnectionFaulted", $"{fault.GetType().Name}: {fault.Message}")} [{ex.Reason} @ {ex.Phase}]",
         _ => LocalizeByReason(ex),
     };
 
@@ -150,7 +167,7 @@ internal static partial class SshInterop
             SshFailureReason.KeyPassphraseIncorrect => "SshErr_KeyPassphraseIncorrect",
             SshFailureReason.AgentRefused => "SshErr_AgentRefused",
             // agent 没在跑:原因码足以说清下一步(把它起来)。库的消息里带着套接字路径 / 管道名,这里不需要。
-            // AgentUnavailable 不翻:它包括「管道属主不可信」(消息里有 SID)与各种 IO 错误,具体信息只在原文里。
+            // AgentUnavailable 按库的种类说(管道属主不可信带着 SID、连不上带着 IO 错误,见 LocalizeAgent);到这一层的是没归类的。
             SshFailureReason.AgentNotRunning => "SshErr_AgentNotRunning",
             SshFailureReason.ChannelRequestRejected => "SshErr_ChannelRequestRejected",
             SshFailureReason.ForwardRejected => "SshErr_ForwardRejected",
@@ -180,8 +197,25 @@ internal static partial class SshInterop
     }
 
     /// <summary>SFTP 子系统起不来:握手超时、「服务端没开 SFTP」与「sftp-server 没起来就退出了」分开说;别的原因(库内收尾)按原因码。</summary>
+    /// <remarks>
+    /// 版本不对、本端已经收工按库给的种类(<see cref="SftpUnavailableException.FailureKind" />)另说 —— 它们的原因码是
+    /// <see cref="SshFailureReason.Unsupported" /> / <see cref="SshFailureReason.ProtocolError" />,曾经一律说成「服务端没开 SFTP」。
+    /// </remarks>
     internal static string LocalizeUnavailable(SftpUnavailableException ex)
     {
+        string? kindKey = ex.FailureKind switch
+        {
+            SftpUnavailableKind.VersionTooOld => "SftpErr_VersionTooOld",
+            SftpUnavailableKind.VersionTooNew => "SftpErr_VersionTooNew",
+            SftpUnavailableKind.SessionClosed => "SftpErr_SessionClosed",
+            _ => null,
+        };
+        if (kindKey is not null)
+        {
+            string version = ex.ServerVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
+            return $"{Strings.Format(kindKey, version)} [{ex.Reason} @ {ex.Phase}]";
+        }
+
         if (ex.Reason == SshFailureReason.CommandFailed)
         {
             // 退出码与 sftp-server 在 stderr 上说的话都是结构化的(库已按对端文本清洗过),不解析消息句子。
@@ -260,8 +294,22 @@ internal static partial class SshInterop
         {
             text = Strings.Format("SftpErr_ServerSaid", text, PeerText.Sanitize(ex.ServerMessage));
         }
+        if (ex.MissingExtensions.Count > 0)
+        {
+            text = WithMissingExtensions(text, ex);
+        }
         return text;
     }
+
+    /// <summary>
+    /// 服务端缺的扩展(库在没宣告时自己报「不支持」,<see cref="SftpException.MissingExtensions" />)接在句子后面:说出是哪个;
+    /// 覆盖式改名(<see cref="SftpOperation.PosixRename" />,缺的是 posix-rename)另带「先删再改名不是原子的」那句提醒。
+    /// 曾经只在库的消息里,按状态码翻的时候丢了。扩展名是协议常量(本端名单里的),不来自对端。
+    /// </summary>
+    private static string WithMissingExtensions(string text, SftpException ex) =>
+        ex.Operation == SftpOperation.PosixRename
+            ? Strings.Format("SftpErr_MissingPosixRename", text)
+            : Strings.Format("SftpErr_MissingExtension", text, string.Join(" / ", ex.MissingExtensions));
 
     /// <summary>
     /// 私钥读不出来是**认证**失败的一种,而不是连接失败 —— 上层据此弹的是凭据对话框。

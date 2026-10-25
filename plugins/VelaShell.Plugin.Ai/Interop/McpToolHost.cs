@@ -81,8 +81,18 @@ internal sealed class McpToolHost : IAsyncDisposable
                 + "Accepts user@host:port, host:port or host.")
         };
         tools.AddRange(_toolbox.CreateTools(settings.Mode, runScope: _runScope).OfType<AIFunction>());
-        Tools = tools;
+        // 「对话」档一个工具都不给,与界面上的说法(纯对话:完全不给工具)一致(维护者 2026-10-25 决定)。
+        // 以前工具箱对 Chat 与 Agent 一视同仁,外部 agent 在这一档拿到的是全部工具、连 run_command 都在
+        Tools = settings.Mode == ChatMode.Chat ? [] : tools;
     }
+
+    /// <summary>initialize 回给外部 agent 的说明。</summary>
+    public string Instructions => Tools.Count == 0
+        ? $"VelaShell's external MCP server is in Chat mode, which exposes no tools. Mode: {_settings.Mode}. "
+          + "Ask the user to switch it to Plan (read-only) or Agent in VelaShell's AI collaboration settings if tools are needed."
+        : "Tools act on the SSH sessions the user has open in VelaShell. "
+          + "Call list_sessions first, then use_session to pick one. "
+          + Describe();
 
     /// <summary>按名字调一个工具,返回给模型看的文本。</summary>
     public async Task<string> CallAsync(string name, IDictionary<string, object?> arguments,

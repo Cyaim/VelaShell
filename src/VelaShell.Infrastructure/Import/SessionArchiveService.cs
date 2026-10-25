@@ -113,6 +113,8 @@ public sealed class SessionArchiveService(
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(options);
         SessionImportWriteSet writes = SessionImportPlanner.BuildWrites(plan, options);
+        // 这一批落的盘(凭据、连接)在审计里记成「导入」。
+        using IDisposable source = AuditSourceScope.Enter(AuditSources.Import);
 
         // 落盘顺序:凭据 → 分组 → 连接 → 隧道。连接引用前两者,反过来的话中途失败会留下一批
         // GroupId 指向不存在分组的连接 —— 资源管理器建树时找不到分组,它们就凭空消失了。
@@ -132,8 +134,18 @@ public sealed class SessionArchiveService(
         foreach (SessionProfile profile in writes.Sessions)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            // 整条覆盖:文件里的目录收藏是导出时带出来的,覆盖导入要用它(SaveSessionAsync 会保留本机的收藏)。
-            await _sessions.ReplaceSessionAsync(profile).ConfigureAwait(false);
+            if (writes.KeepStoredBookmarks.Contains(profile.Id))
+            {
+                // 文件里压根没有收藏字段(目录收藏功能之前导出的备份、CSV):不是这份备份清空了收藏。
+                // 整条覆盖会把本机的收藏一并抹掉,所以走 SaveSessionAsync —— 它在仓储锁内保留库里现存的收藏
+                // (本机没有这条配置时就是空列表)。与 Gist 拉取同一口径。
+                await _sessions.SaveSessionAsync(profile).ConfigureAwait(false);
+            }
+            else
+            {
+                // 字段在(哪怕是空数组):整条覆盖,文件里的目录收藏是导出时带出来的,覆盖导入要用它。
+                await _sessions.ReplaceSessionAsync(profile).ConfigureAwait(false);
+            }
         }
         if (dataStore is not null)
         {

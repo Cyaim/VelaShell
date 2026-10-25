@@ -98,7 +98,9 @@ internal static class DuplexRelay
     /// <param name="right">另一端（通常是 SSH 通道）。</param>
     /// <param name="onBytesFromLeft">左 → 右每搬一块的回调（计量用，可为空）。</param>
     /// <param name="onBytesFromRight">右 → 左每搬一块的回调。</param>
-    /// <param name="throttleFromLeft">左 → 右每读到一段、写出去之前等它（限速用，可为空）。</param>
+    /// <param name="throttleFromLeft">
+    /// 左 → 右每读到一段、写出去之前等它（限速用，可为空）：给它想搬的字节数，它等到额度够了、交回这一次能搬多少（1 到想搬的数）。
+    /// </param>
     /// <param name="throttleFromRight">右 → 左同上。</param>
     /// <param name="cancellationToken">取消令牌。取消按出错处理：两端一起中止。</param>
     /// <remarks>
@@ -117,8 +119,8 @@ internal static class DuplexRelay
         IRelayEndpoint right,
         Action<int>? onBytesFromLeft = null,
         Action<int>? onBytesFromRight = null,
-        Func<int, CancellationToken, ValueTask>? throttleFromLeft = null,
-        Func<int, CancellationToken, ValueTask>? throttleFromRight = null,
+        Func<int, CancellationToken, ValueTask<int>>? throttleFromLeft = null,
+        Func<int, CancellationToken, ValueTask<int>>? throttleFromRight = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(left);
@@ -153,12 +155,12 @@ internal static class DuplexRelay
     /// <param name="source">从这一端读。</param>
     /// <param name="destination">往这一端写。</param>
     /// <param name="onBytes">每搬一段调用一次。</param>
-    /// <param name="throttle">写出去之前等它（限速）；等的时候不再读，背压自然传回发送方。</param>
+    /// <param name="throttle">写出去之前等它（限速），它交回这一次能搬多少；等的时候不再读，背压自然传回发送方。</param>
     /// <param name="total">搬过的字节数，边搬边记 —— 出错收场时也是准的。</param>
     /// <param name="abort">两个方向共用的中止。</param>
     private static async Task PumpAsync(
         IRelayEndpoint source, IRelayEndpoint destination, Action<int>? onBytes,
-        Func<int, CancellationToken, ValueTask>? throttle, StrongBox<long> total, RelayAbort abort)
+        Func<int, CancellationToken, ValueTask<int>>? throttle, StrongBox<long> total, RelayAbort abort)
     {
         bool finished = false;
 
@@ -175,12 +177,20 @@ internal static class DuplexRelay
             {
                 ReadResult read = await source.Input.ReadAsync(cancellationToken).ConfigureAwait(false);
                 ReadOnlySequence<byte> buffer = read.Buffer;
+                bool tookAll = true;
 
                 if (!buffer.IsEmpty)
                 {
                     if (throttle is not null)
                     {
-                        await throttle((int)Math.Min(buffer.Length, int.MaxValue), cancellationToken).ConfigureAwait(false);
+                        // 〔velashell-docs/zh/ssh/spec/07 §5.1〕限着速时一段一段搬：每段不超过一块缓冲，也不超过限速放行的量（至多一秒额度）。
+                        // 通道那头一次能交出远比一块缓冲大的数据（机器忙时攒下的）；整块等完再整块写出，平均速率对，
+                        // 单次突发却成了好几秒的额度。没搬的留在读缓冲里（只推进到这一段的末尾），下一轮 ReadAsync 当场交回来 ——
+                        // 等的时候照样不读新的，背压不变。
+                        int wanted = (int)Math.Min(buffer.Length, BufferSize);
+                        int granted = await throttle(wanted, cancellationToken).ConfigureAwait(false);
+                        buffer = buffer.Slice(0, granted);
+                        tookAll = buffer.Length == read.Buffer.Length;
                     }
 
                     bool destinationDone = false;
@@ -222,7 +232,8 @@ internal static class DuplexRelay
 
                 source.Input.AdvanceTo(buffer.End);
 
-                if (read.IsCompleted)
+                // 读完了、而且这一轮读到的都搬了才算到头；限速只搬了一段时，剩下的下一轮接着搬。
+                if (read.IsCompleted && tookAll)
                 {
                     break;
                 }

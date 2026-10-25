@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
+using VelaShell.Core.Import;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Sync;
@@ -15,14 +16,16 @@ namespace VelaShell.Infrastructure.Sync;
 /// 智能方向:本地改动标记 × 远端 revision 比对;双端都改按“较新者胜”,
 /// 被覆盖的一方永远可从 Gist 修订历史恢复。
 /// </summary>
-public sealed class GistSyncService(
+public sealed partial class GistSyncService(
     ISettingsService settingsService,
     ISessionRepository sessionRepository,
     IAppDataStore appDataStore,
     IQuickCommandRepository quickCommandRepository,
     ISecretProtector secretProtector,
     Core.Services.IBackgroundActivityService? backgroundActivity = null,
-    ISharedCredentialRepository? sharedCredentials = null
+    ISharedCredentialRepository? sharedCredentials = null,
+    // 布局模板单独一个文件同步,整块逻辑在 GistSyncService.LayoutTemplates.cs。
+    Core.Layouts.LayoutTemplateStore? layoutTemplates = null
 ) : IGistSyncService
 {
     /// <summary>
@@ -169,9 +172,8 @@ public sealed class GistSyncService(
             {
                 return await PushCoreAsync(config, token, cancellationToken).ConfigureAwait(false);
             }
-            (string? content, string remoteVersion) = await GistApiClient
-                .GetFileAsync(token, config.GistId, GistFileName, cancellationToken)
-                .ConfigureAwait(false);
+            (string? content, string remoteVersion, string? remoteLayouts) =
+                await ReadGistAsync(token, config.GistId, revision: null, cancellationToken).ConfigureAwait(false);
             if (content is null)
             {
                 return await PushCoreAsync(config, token, cancellationToken).ConfigureAwait(false);
@@ -189,7 +191,9 @@ public sealed class GistSyncService(
             );
             if (!localChanged && !remoteChanged)
             {
-                return new(SyncAction.UpToDate, true, Strings.Get("SyncSvc_UpToDate"));
+                return await ReconcileLayoutTemplatesAsync(config, token, remoteLayouts,
+                    new(SyncAction.UpToDate, true, Strings.Get("SyncSvc_UpToDate")), allowUpload: true, cancellationToken)
+                    .ConfigureAwait(false);
             }
             if (localChanged && !remoteChanged)
             {
@@ -198,8 +202,9 @@ public sealed class GistSyncService(
             SyncEnvelope envelope = ParseEnvelope(content);
             if (!localChanged)
             {
-                return await ApplyRemoteAsync(config, envelope, remoteVersion, cancellationToken)
-                    .ConfigureAwait(false);
+                return await ReconcileLayoutTemplatesAsync(config, token, remoteLayouts,
+                    await ApplyRemoteAsync(config, envelope, remoteVersion, cancellationToken).ConfigureAwait(false),
+                    allowUpload: true, cancellationToken).ConfigureAwait(false);
             }
 
             // 双端都有改动:较新者胜(LWW);被覆盖的内容在 Gist 修订历史中可随时找回。
@@ -211,6 +216,9 @@ public sealed class GistSyncService(
                         remoteVersion,
                         cancellationToken
                     )
+                    .ConfigureAwait(false);
+                // 主载荷云端赢了,模板照样逐条合并:本机这一轮的模板改动不跟着输掉。
+                pulled = await ReconcileLayoutTemplatesAsync(config, token, remoteLayouts, pulled, allowUpload: true, cancellationToken)
                     .ConfigureAwait(false);
                 return pulled with
                 {
@@ -285,19 +293,22 @@ public sealed class GistSyncService(
             {
                 return SyncResult.Fail(Strings.Get("SyncSvc_NoGistBound"));
             }
-            (string? content, string version) = await GistApiClient
-                .GetFileAsync(Token(config), config.GistId, GistFileName, cancellationToken)
-                .ConfigureAwait(false);
+            string token = Token(config);
+            (string? content, string version, string? layouts) =
+                await ReadGistAsync(token, config.GistId, revision: null, cancellationToken).ConfigureAwait(false);
             if (content is null)
             {
                 return SyncResult.Fail(Strings.Get("SyncSvc_NoRemoteFile"));
             }
-            return await ApplyRemoteAsync(
+            SyncResult applied = await ApplyRemoteAsync(
                     config,
                     ParseEnvelope(content),
                     version,
                     cancellationToken
                 )
+                .ConfigureAwait(false);
+            // 「仅拉取」不推:本机多出来的模板改动留给下一次同步。
+            return await ReconcileLayoutTemplatesAsync(config, token, layouts, applied, allowUpload: false, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -406,15 +417,8 @@ public sealed class GistSyncService(
                 return SyncResult.Fail(Strings.Get("SyncSvc_NoGistNoRestore"));
             }
             string token = Token(config);
-            (string? content, _) = await GistApiClient
-                .GetFileAtRevisionAsync(
-                    token,
-                    config.GistId,
-                    version,
-                    GistFileName,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            (string? content, _, string? layouts) =
+                await ReadGistAsync(token, config.GistId, version, cancellationToken).ConfigureAwait(false);
             if (content is null)
             {
                 return SyncResult.Fail(Strings.Get("SyncSvc_RevisionNoFile"));
@@ -430,6 +434,8 @@ public sealed class GistSyncService(
             {
                 return applied;
             }
+            // 那个版本里的布局模板一并找回(删过、改过的也回来),随下面这次推送写回云端。
+            string? layoutsNote = await RestoreLayoutTemplatesAsync(config, layouts).ConfigureAwait(false);
 
             // 恢复即把该历史内容作为最新状态重新推送:版本链保持线性,任何一步都可再恢复。
             config = await GetSyncSettingsAsync(cancellationToken).ConfigureAwait(false);
@@ -442,7 +448,7 @@ public sealed class GistSyncService(
                     Strings.Format(
                         "SyncSvc_RestoredAndPushed",
                         version[..Math.Min(7, version.Length)]
-                    )
+                    ) + layoutsNote
                 )
                 : pushed;
         }
@@ -470,17 +476,20 @@ public sealed class GistSyncService(
     {
         string content = await BuildGistContentAsync(config, cancellationToken)
             .ConfigureAwait(false);
+        // 主载荷加上(合并过云端那份的)布局模板文件,同一次提交写上去。
+        Dictionary<string, string> files = await BuildUploadFilesAsync(config, token, content, cancellationToken)
+            .ConfigureAwait(false);
         string version;
         if (string.IsNullOrEmpty(config.GistId))
         {
             (config.GistId, version) = await GistApiClient
-                .CreateGistAsync(token, GistDescription, GistFileName, content, cancellationToken)
+                .CreateGistAsync(token, GistDescription, files, cancellationToken)
                 .ConfigureAwait(false);
         }
         else
         {
             version = await GistApiClient
-                .UpdateGistAsync(token, config.GistId, GistFileName, content, cancellationToken)
+                .UpdateGistAsync(token, config.GistId, files, cancellationToken)
                 .ConfigureAwait(false);
         }
         config.LastSyncAtUtc = DateTime.UtcNow;
@@ -504,7 +513,7 @@ public sealed class GistSyncService(
         if (config.SyncAppSettings)
         {
             AppSettings settings = await settingsService.GetSettingsAsync().ConfigureAwait(false);
-            payload.Settings = ScrubDeviceLocalFields(settings);
+            payload.Settings = WithoutSecretsUnlessEncrypted(ScrubDeviceLocalFields(settings), encrypted);
         }
         if (config.SyncProfiles)
         {
@@ -646,6 +655,10 @@ public sealed class GistSyncService(
         IsApplyingRemote = true;
         try
         {
+            // 这一段落的盘在审计里记成「云同步」(含恢复历史版本)。用来源作用域而不是 IsApplyingRemote:
+            // 同步在后台跑的同时用户手改的那一条不在这条异步流程里,仍记成本机编辑。
+            // 只罩住应用载荷这一段 —— 之后的 ProfilesApplied 通知里界面做的事不算同步带来的。
+            using IDisposable source = AuditSourceScope.Enter(AuditSources.CloudSync);
             if (config.SyncAppSettings && payload.Settings is not null)
             {
                 // 设备本地字段(窗口尺寸/开机自启/本机路径等)保留本机现值,其余采用云端。
@@ -784,9 +797,10 @@ public sealed class GistSyncService(
         return settings;
     }
 
-    /// <summary>拉取应用时同样保留本机的设备本地字段,云端值不覆盖。</summary>
+    /// <summary>拉取应用时同样保留本机的设备本地字段,云端值不覆盖;对方没带的机密也留本机的(<see cref="PreserveLocalSecrets" />)。</summary>
     private static void PreserveDeviceLocalFields(AppSettings incoming, AppSettings local)
     {
+        PreserveLocalSecrets(incoming, local);
         incoming.General.LaunchAtStartup = local.General.LaunchAtStartup;
         incoming.General.LastOpenProfileIds = local.General.LastOpenProfileIds;
         incoming.Appearance.LastWindowWidth = local.Appearance.LastWindowWidth;
@@ -801,6 +815,28 @@ public sealed class GistSyncService(
         incoming.Keys.DefaultKeyName = local.Keys.DefaultKeyName;
     }
 
+    // ———— 设置里的机密(代理密码、告警 Webhook 地址) ————
+
+    /// <summary>
+    /// 没设端到端口令时,推上去的设置去掉机密(名单是 <see cref="SettingsCategories.SecretFields" />,与设置导出同一份):
+    /// 与连接配置的密码同一条规矩 —— secret Gist 只是不被检索,知道链接就能读,而 Webhook 地址本身就是令牌。
+    /// </summary>
+    /// <remarks>
+    /// 设了口令照带:载荷在本机整份 AES-GCM 加密,GitHub 只拿到密文,连接配置的密码这时也随同步走;
+    /// 带机密换机本来就指着这条路(手册「推荐换机步骤」、<c>SettingsCategories.SecretFields</c> 的说明),
+    /// 加密了还剔掉,只是让人换台机器又得补填一遍。
+    /// </remarks>
+    private static AppSettings WithoutSecretsUnlessEncrypted(AppSettings settings, bool encrypted) =>
+        encrypted ? settings : SettingsTransfer.WithoutSecrets(settings);
+
+    /// <summary>
+    /// 拉到的设置没带机密(无口令的载荷,或对方本来就没填)时保留本机的,口径与设置导入相同:
+    /// 代理的类型、主机、端口、用户名都与本机相同才留本机密码,Webhook 地址一律留本机的。
+    /// 不论载荷加没加密都这样判 —— 与连接配置「载荷里密码为空就留本机的」一致。
+    /// </summary>
+    private static void PreserveLocalSecrets(AppSettings incoming, AppSettings local) =>
+        SettingsTransfer.KeepLocalSecrets(incoming, local);
+
     // ———— 小工具 ————
 
     private string? Validate(SyncSettings config)
@@ -812,14 +848,19 @@ public sealed class GistSyncService(
         return HasToken(config) ? null : Strings.Get("SyncSvc_NoToken");
     }
 
+    // 解不开(本机加密密钥这次没取到、数据目录从别的电脑拷来)时必须停下,不能把密文本身当令牌 / 口令用:
+    // 拿密文当端到端口令去加密上传,远端那份就成了别的设备谁也解不开的东西。
     private string Token(SyncSettings config) =>
-        secretProtector.Unprotect(config.ProtectedToken)
-        ?? throw new InvalidOperationException(Strings.Get("SyncSvc_TokenDecryptFailed"));
+        secretProtector.TryUnprotect(config.ProtectedToken, out string? token) && token is not null
+            ? token
+            : throw new InvalidOperationException(Strings.Get("SyncSvc_TokenDecryptFailed"));
 
     private string? Passphrase(SyncSettings config) =>
         string.IsNullOrEmpty(config.ProtectedPassphrase)
             ? null
-            : secretProtector.Unprotect(config.ProtectedPassphrase);
+            : secretProtector.TryUnprotect(config.ProtectedPassphrase, out string? passphrase)
+                ? passphrase
+                : throw new InvalidOperationException(Strings.Get("SyncSvc_PassphraseDecryptFailed"));
 
     internal static SyncEnvelope ParseEnvelope(string content) =>
         JsonSerializer.Deserialize<SyncEnvelope>(content, JsonOptions)

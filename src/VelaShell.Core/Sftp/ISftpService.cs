@@ -59,8 +59,13 @@ public interface ISftpService : IAsyncDisposable
     /// 所以此时 <paramref name="source" /> <b>必须可 Seek</b>,否则抛 <see cref="ArgumentException" />;
     /// 实现返回时源的位置不做保证。
     /// </para>
+    /// <para>
+    /// <paramref name="createMode" /> 不为 null 时,目标由这次上传新建的话就按这个权限位建(只取 0777,服务端照常再减 umask;
+    /// 已存在的文件不改模式)。覆盖上传的临时文件靠它一建出来就不比被替换的文件宽(见 <see cref="GetUploadCreateModeAsync" />)。
+    /// 没有权限位概念的后端(FTP、插件协议)忽略它。
+    /// </para>
     /// </summary>
-    Task UploadStreamAsync(Guid sessionId, Stream source, string remotePath, long length, DateTime? lastWriteTime = null, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, CancellationToken cancellationToken = default);
+    Task UploadStreamAsync(Guid sessionId, Stream source, string remotePath, long length, DateTime? lastWriteTime = null, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, uint? createMode = null, CancellationToken cancellationToken = default);
 
     /// <summary>将远端文件下载到给定本地路径,并报告传输进度。</summary>
     Task DownloadFileAsync(Guid sessionId, string remotePath, string localPath, IProgress<TransferProgress>? progress = null, long resumeOffset = 0, CancellationToken cancellationToken = default);
@@ -106,6 +111,19 @@ public interface ISftpService : IAsyncDisposable
     Task CheckUploadCommitAsync(Guid sessionId, string destinationPath, bool overwrite,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This backend cannot guarantee atomic upload commit.");
+
+    /// <summary>
+    /// 覆盖上传开写之前:临时文件该按什么权限位新建(交给 <see cref="UploadStreamAsync" /> 的 <c>createMode</c>)——
+    /// 被替换的普通文件此刻的 0777 那几位;读不到它的模式时按 0600(提交时 <see cref="CommitUploadAsync" /> 反正会拒绝)。
+    /// 目标不存在、不是普通文件、或后端没有权限位时为 null(按服务端默认新建,与新建上传一个口径)。
+    /// </summary>
+    /// <remarks>
+    /// 以前临时文件一律按 0644(减 umask)新建,要到提交前才把原文件的权限位带过去:覆盖一个 0600 的密钥文件时,
+    /// 写入的那段时间里同机的其他用户读得到新内容。setuid / setgid / 粘滞位不在建文件时带(属主还没对上),仍由提交补上。
+    /// 只是收窄写入期间的暴露面,提交时照旧按那一刻的目标重新核对、补齐属主与全部权限位。
+    /// </remarks>
+    Task<uint?> GetUploadCreateModeAsync(Guid sessionId, string destinationPath, CancellationToken cancellationToken = default)
+        => Task.FromResult<uint?>(null);
 
     /// <summary>
     /// 将远端文件或目录树复制到同一服务器的另一路径。单个文件采用先下载到本地临时文件再上传的方式;

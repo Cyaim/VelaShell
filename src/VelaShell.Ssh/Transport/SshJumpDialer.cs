@@ -91,7 +91,7 @@ internal sealed class SshJumpDialer : ISshTransportDialer, ISshDialKindSource
         {
             // 外层的计时器在跳板这一跳建连时到点了。原样当取消往外传的话，外层只知道自己在「拨号」，
             // 报出来的是「建立 TCP 连接超时」—— 可卡住的是跳板的握手。说清是哪一跳。
-            throw OuterTimeout(jump, $"经跳板 {_jumpName} 建连时超时", startedAt, ex);
+            throw OuterTimeout(jump, $"经跳板 {_jumpName} 建连时超时", startedAt, ex, SshConnectFailureKind.JumpConnectTimeout, _jumpName);
         }
         catch (SshAuthenticationException ex) when (ex.InnerException is not SshAuthenticationException)
         {
@@ -107,7 +107,7 @@ internal sealed class SshJumpDialer : ISshTransportDialer, ISshDialKindSource
                 ? [.. connect.Hops, DialHops.Hop(SshDialKind.SshJump, jump, succeeded: false, startedAt, ex.Message)]
                 : [DialHops.Hop(SshDialKind.SshJump, jump, succeeded: false, startedAt, ex.Message)];
 
-            throw DialHops.Rewrap(ex, $"连不上跳板 {_jumpName}：{ex.Message}", hops);
+            throw DialHops.Rewrap(ex, $"连不上跳板 {_jumpName}：{ex.Message}", hops, SshConnectFailureKind.JumpConnectFailed, _jumpName);
         }
 
         SshHopInfo reachedJump = DialHops.Hop(SshDialKind.SshJump, jump, succeeded: true, startedAt);
@@ -130,10 +130,14 @@ internal sealed class SshJumpDialer : ISshTransportDialer, ISshDialKindSource
             if (ex is OperationCanceledException canceled && target.Deadline is { IsExpired: true })
             {
                 SshConnectException timeout = OuterTimeout(
-                    target.EndPoint, $"跳板 {jump} 转发到 {target.EndPoint} 时超时", tunnelStartedAt, canceled);
+                    target.EndPoint, $"跳板 {jump} 转发到 {target.EndPoint} 时超时", tunnelStartedAt, canceled,
+                    SshConnectFailureKind.JumpForwardTimeout, jump.ToString(), target.EndPoint);
                 throw new SshConnectException(timeout.Reason, timeout.Phase, timeout.Message, ex)
                 {
                     Hops = [reachedJump, .. timeout.Hops],
+                    FailureKind = timeout.FailureKind,
+                    Via = timeout.Via,
+                    Target = timeout.Target,
                 };
             }
 
@@ -151,7 +155,8 @@ internal sealed class SshJumpDialer : ISshTransportDialer, ISshDialKindSource
             // 断线被说成了「跳板拒绝」。
             if (ex is not SshChannelException { Reason: SshFailureReason.ChannelOpenFailed })
             {
-                throw DialHops.Rewrap(ex, $"跳板 {jump} 在转发到 {target.EndPoint} 时出了问题：{detail}", hops);
+                throw DialHops.Rewrap(ex, $"跳板 {jump} 在转发到 {target.EndPoint} 时出了问题：{detail}", hops,
+                    SshConnectFailureKind.JumpForwardFailed, jump.ToString(), target.EndPoint);
             }
 
             throw new SshConnectException(
@@ -159,15 +164,22 @@ internal sealed class SshJumpDialer : ISshTransportDialer, ISshDialKindSource
                 $"跳板 {jump} 不肯转发到 {target.EndPoint}：{detail}", ex)
             {
                 Hops = hops,
+                FailureKind = SshConnectFailureKind.JumpForwardRefused,
+                Via = jump.ToString(),
+                Target = target.EndPoint.ToString(),
             };
         }
     }
 
     private static SshConnectException OuterTimeout(
-        SshEndPoint where, string message, long startedAt, OperationCanceledException inner) =>
+        SshEndPoint where, string message, long startedAt, OperationCanceledException inner,
+        SshConnectFailureKind kind, string via, SshEndPoint? target = null) =>
         new(SshFailureReason.Timeout, SshPhase.Dialing,
             $"{message}（外层连接的计时器到点了；等人输入的时间不算在内）。", inner)
         {
             Hops = [DialHops.Hop(SshDialKind.SshJump, where, succeeded: false, startedAt, "超时")],
+            FailureKind = kind,
+            Via = via,
+            Target = target?.ToString(),
         };
 }

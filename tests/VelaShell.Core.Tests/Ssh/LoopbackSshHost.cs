@@ -43,6 +43,9 @@ internal sealed class LoopbackSshHost : IAsyncDisposable
     /// <summary>本机的服务端开关。</summary>
     public TestSshServerOptions? Options { get; }
 
+    /// <summary>认证策略;<see langword="null" /> = 只收口令 <see cref="Password" />。公钥认证的用例在这里给出认的公钥。</summary>
+    public TestAuthPolicy? AuthPolicy { get; init; }
+
     /// <summary>当跳板时,隧道里那台目标的剧本与开关;<see langword="null" /> = 不肯转发。</summary>
     public (TestChannelScript Script, TestSshServerOptions? Options)? JumpTarget { get; init; }
 
@@ -93,19 +96,20 @@ internal sealed class LoopbackSshHost : IAsyncDisposable
                     },
                 };
             }
-            await ServeAsync(client.GetStream(), script, Options, _cts.Token);
+            await ServeAsync(client.GetStream(), script, Options, _cts.Token, AuthPolicy);
         }
     }
 
-    /// <summary>在一条流上当一回 SSH 服务端:握手、口令认证、按剧本应答通道,直到对端走掉。</summary>
+    /// <summary>在一条流上当一回 SSH 服务端:握手、认证(默认口令)、按剧本应答通道,直到对端走掉。</summary>
     public static async Task ServeAsync(
-        Stream stream, TestChannelScript script, TestSshServerOptions? options, CancellationToken cancellationToken)
+        Stream stream, TestChannelScript script, TestSshServerOptions? options, CancellationToken cancellationToken,
+        TestAuthPolicy? policy = null)
     {
         try
         {
             await using TestSshServer server = new(stream, options);
             TestSshServerHandshake handshake = await server.HandshakeAsync(cancellationToken);
-            TestAuthServer auth = new(server.Transport, handshake.ExchangeHash, new TestAuthPolicy { AcceptPassword = Password })
+            TestAuthServer auth = new(server.Transport, handshake.ExchangeHash, policy ?? new TestAuthPolicy { AcceptPassword = Password })
             {
                 SshServer = server,
             };

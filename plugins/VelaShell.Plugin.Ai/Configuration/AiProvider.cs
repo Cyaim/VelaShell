@@ -167,6 +167,25 @@ public sealed class AiProvider
     public bool StoreResponses { get; set; } = true;
 
     /// <summary>
+    /// 自定义接入(目录里的 <c>custom-*</c>,以及没有目录 id 的老配置)上用户勾的 <c>store</c>:
+    /// <see langword="true" /> = 允许服务端存下这一轮;<see langword="null" /> 或 <see langword="false" /> = 发 <c>store: false</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>默认关</b>(#616–#636 复审①,维护者 2026-10-25 决定)。#616 之后 Responses 的工具循环改成整段重放、
+    /// 不再按 id 续接服务端存着的那一轮,<c>store=true</c> 已经没有用处,却仍把含终端输出的上下文留在供应商侧。
+    /// 官方 openai 目录条目照旧(目录的脾气为准,见 <see cref="EndpointQuirks.Of" />)。
+    /// </para>
+    /// <para>
+    /// 单开一个可空字段而不复用 <see cref="StoreResponses" />:后者是建供应商时从目录抄来的出厂值,
+    /// 存量自定义接入身上都是 <see langword="true" />,却从来不是用户选的(以前没有这个开关,目录项也不读它)。
+    /// 用 <see langword="null" /> 表示"没动过",新默认值对存量配置同样生效,不必做迁移。
+    /// 中转站认不认 <c>store:false</c> 没法逐家验证,认不了的在设置页把它勾上即可。
+    /// </para>
+    /// </remarks>
+    public bool? CustomResponsesStore { get; set; }
+
+    /// <summary>
     /// 这一家收不收 <c>system</c> 角色的消息。
     /// </summary>
     /// <remarks>
@@ -552,6 +571,17 @@ public sealed class AiSettings
     public List<FailoverEntry> FailoverChain { get; set; } = [];
 
     /// <summary>
+    /// 链为空(或全是已删模型)时,自动发现可不可以换到同一目录下的<b>其它账号</b> ——
+    /// 另一个供应商实例就是另一把 Key 或另一次登录(公司与个人的 Copilot 就是两个实例)。
+    /// </summary>
+    /// <remarks>
+    /// 默认关:换过去就把这段对话整段发给另一个账号,计费与数据归属都跟着换了,得用户明确同意。
+    /// 关着时自动发现只在同一个供应商实例、同一份凭据下换(换了协议或地址的同一型号);
+    /// 显式排进链的条目不受它管(那是用户自己的安排)。存量配置没有这个字段,读上来就是关。
+    /// </remarks>
+    public bool AutoFailoverAcrossAccounts { get; set; }
+
+    /// <summary>
     /// 这一轮失败之后还能切去哪(按尝试顺序)。
     /// </summary>
     /// <remarks>
@@ -560,6 +590,8 @@ public sealed class AiSettings
     /// 链是空的、或链里一条都解析不出来(全是已删模型的死 id —— 删的时候全局设置窗口
     /// 没开着,没人修剪)才退回自动发现 —— 同一家真实目录(<see cref="AiProvider.CatalogId" />)、
     /// 同一厂商型号的其它接入,那正是"同一份模型多加了一份"的场景。
+    /// <b>换到另一个供应商实例(另一个账号)要 <see cref="AutoFailoverAcrossAccounts" /> 开着</b>,默认只在同一实例、
+    /// 同一份凭据下换。
     /// <b>自定义接入与 Azure OpenAI 不参与自动发现</b>:目录 id 为空、目录里的 custom-* 模板、
     /// 或 Azure OpenAI 的不同资源可能对应不同中转站或租户,即使模型名相同也不能擅自跨站;
     /// 要跨这些接入,显式排链。
@@ -593,7 +625,9 @@ public sealed class AiSettings
                             && !catalog.StartsWith("custom-", StringComparison.OrdinalIgnoreCase)
                             && !string.Equals(catalog, "azure-openai", StringComparison.OrdinalIgnoreCase)
                             && string.Equals(m.Provider.CatalogId, catalog, StringComparison.OrdinalIgnoreCase)
-                            && string.Equals(m.Model, failed.Model, StringComparison.OrdinalIgnoreCase))];
+                            && string.Equals(m.Model, failed.Model, StringComparison.OrdinalIgnoreCase)
+                            // 另一个实例 = 另一个账号:整段对话发给它要用户开了开关(企业与个人 Copilot 不能悄悄互相重放)
+                            && (AutoFailoverAcrossAccounts || SameAccount(m, failed)))];
         }
 
         var ordered = new List<ResolvedModel>();
@@ -606,6 +640,11 @@ public sealed class AiSettings
         }
         return ordered;
     }
+
+    /// <summary>同一个供应商实例、同一份凭据(都继承供应商的 Key 或登录):换过去不算换账号。</summary>
+    private static bool SameAccount(ResolvedModel a, ResolvedModel b)
+        => string.Equals(a.Provider.Id, b.Provider.Id, StringComparison.Ordinal)
+            && string.Equals(a.ApiKeyOwnerId, b.ApiKeyOwnerId, StringComparison.Ordinal);
 
     private static bool SameRequestEndpoint(string a, string b, ChatProtocol protocol)
     {

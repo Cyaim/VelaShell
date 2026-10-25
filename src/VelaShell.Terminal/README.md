@@ -36,7 +36,8 @@
 | `LocalEcho.cs` | 本地回显策略：把「即将发往主机的键入字节」翻译成「应当喂回终端显示的字节」。用于对端不回显的链路（Telnet 半双工、串口）或主机以 SRM 复位显式要求；SSH 默认关闭，否则远端回显叠加本地回显会出双字符。 |
 | `ScrollbackBuffer.cs` `TerminalLine.cs` | 回滚历史缓冲与逻辑行。 |
 | `BufferSearch.cs` `SearchMatch.cs` | 缓冲区文本搜索与匹配高亮。 |
-| `Semantics/SemanticMatcher.cs` | 语义识别（如 URL / 路径检测）。 |
+| `Semantics/SemanticMatcher.cs` | 语义识别（如 URL / 路径检测）。用户的输出规则高亮（Core 的 `OutputRuleSet`）与它共用渲染里那张按行文本的缓存，只在新到 / 变了的行上跑。 |
+| `Semantics/OutputTriggerScanner.cs` | 输出触发器（自动应答）的判定：远端输出（`VelaTerminalControl.FeedRemote`）之后只看主屏光标所在的逻辑行；本地在敲字时不答；同一行只答一次（`TerminalRow.TriggerSettled`）；每条规则的冷却与每分钟上限。发送由宿主做。 |
 | `Input/TerminalInputTracker.cs` | 输入焦点与按键跟踪。 |
 | `EchoSuppressor.cs` | 本地回显抑制（避免输入被双重显示）。 |
 | `SshTerminalBridge.cs` | 将 Core 的 SSH Shell 抽象桥接到终端引擎的 I/O。 |

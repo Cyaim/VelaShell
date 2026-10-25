@@ -1,4 +1,5 @@
 using NSubstitute;
+using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Notifications;
 using VelaShell.Core.Resources;
@@ -315,5 +316,89 @@ public sealed class NotificationSourcesTests
 
         Assert.IsNull(item);
         Assert.AreEqual(0, background.Calls);
+    }
+
+    // ———— 本机加密密钥(主密码保护第一步:密钥交给系统密钥链) ————
+
+    private static readonly DateTime Now = new(2026, 10, 25, 8, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>一切照常(包括这次顺利迁进了密钥链)不打扰 —— 用户无感是这一步的要求。</summary>
+    [TestMethod]
+    public void MasterKey_NothingToSay_WhenTheKeyIsInTheKeychain()
+    {
+        Assert.IsEmpty(NotificationSources.BuildMasterKeyNotifications(
+            new() { Protection = MasterKeyProtection.SystemKeychain, KeychainName = "Secret Service", Migrated = true }, Now));
+        Assert.IsEmpty(NotificationSources.BuildMasterKeyNotifications(
+            new() { Protection = MasterKeyProtection.UserBoundFile }, Now), "Windows 上 DPAPI 包裹的密钥文件就是常态");
+    }
+
+    /// <summary>密钥链暂时用不了:要说清已存的密码这次解不开、但没有丢,以及原因。</summary>
+    [TestMethod]
+    public void MasterKey_KeychainUnavailable_SaysTheSecretsAreNotLostAndWhy()
+    {
+        NotificationItem notice = Assert.ContainsSingle(NotificationSources.BuildMasterKeyNotifications(new()
+        {
+            Protection = MasterKeyProtection.PlainFile,
+            KeychainName = "Secret Service",
+            KeychainError = "Cannot autolaunch D-Bus without X11 $DISPLAY",
+            UnavailableKeyIds = ["0123456789abcdef0123456789abcdef"]
+        }, Now));
+
+        Assert.AreEqual(NotificationKind.System, notice.Kind);
+        Assert.AreEqual(NotificationSeverity.Warning, notice.Severity);
+        Assert.AreEqual(Strings.Get("Notify_MasterKeyUnavailableTitle"), notice.Title);
+        Assert.Contains("Cannot autolaunch D-Bus without X11 $DISPLAY", notice.Body!);
+        Assert.Contains("Secret Service", notice.Body!);
+        Assert.AreEqual("master-key:unavailable:20261025", notice.Id, "可能反复发生:按天去重,而不是每次启动都再亮一条");
+    }
+
+    /// <summary>条目不在(数据目录从别处拷来):提示重新输入密码;同一批编号只提示一次。</summary>
+    [TestMethod]
+    public void MasterKey_MissingEntry_IsReportedOncePerKey()
+    {
+        MasterKeyStatus status = new()
+        {
+            Protection = MasterKeyProtection.SystemKeychain,
+            KeychainName = "macOS Keychain",
+            MissingKeyIds = ["0123456789abcdef0123456789abcdef"]
+        };
+
+        NotificationItem today = Assert.ContainsSingle(NotificationSources.BuildMasterKeyNotifications(status, Now));
+        NotificationItem later = Assert.ContainsSingle(NotificationSources.BuildMasterKeyNotifications(status, Now.AddDays(3)));
+
+        Assert.AreEqual(Strings.Get("Notify_MasterKeyMissingTitle"), today.Title);
+        Assert.AreEqual(Strings.Get("Notify_MasterKeyMissingBody"), today.Body);
+        Assert.AreEqual(today.Id, later.Id, "消息中心按 id 去重:换了电脑这件事只说一次");
+    }
+
+    /// <summary>密钥文件被换过:说出原文件留在了哪,找回原账户 / 电脑时有据可查。</summary>
+    [TestMethod]
+    public void MasterKey_ReplacedKeyFile_NamesTheFileThatWasKept()
+    {
+        NotificationItem notice = Assert.ContainsSingle(NotificationSources.BuildMasterKeyNotifications(new()
+        {
+            Protection = MasterKeyProtection.UserBoundFile,
+            ReplacedKeyFile = Path.Combine("home", ".velashell", "secret.key.unreadable-20261025080000")
+        }, Now));
+
+        Assert.AreEqual(NotificationSeverity.Warning, notice.Severity);
+        Assert.Contains("secret.key.unreadable-20261025080000", notice.Body!);
+        Assert.AreEqual("master-key:replaced:secret.key.unreadable-20261025080000", notice.Id);
+    }
+
+    /// <summary>从没迁过、密钥链又用不了(没装 keyring 的机器):如实说密钥还在文件里,只说一次。</summary>
+    [TestMethod]
+    public void MasterKey_FileFallback_IsAnInfoNoticeShownOnce()
+    {
+        NotificationItem notice = Assert.ContainsSingle(NotificationSources.BuildMasterKeyNotifications(new()
+        {
+            Protection = MasterKeyProtection.PlainFile,
+            KeychainName = "Secret Service",
+            KeychainError = "libsecret-1.so.0 is not installed"
+        }, Now));
+
+        Assert.AreEqual(NotificationSeverity.Info, notice.Severity);
+        Assert.AreEqual("master-key:file-fallback", notice.Id);
+        Assert.Contains("libsecret-1.so.0 is not installed", notice.Body!);
     }
 }

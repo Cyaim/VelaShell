@@ -17,7 +17,8 @@ namespace VelaShell.Infrastructure.Import;
 /// OpenSSH <c>~/.ssh/config</c> 的 <see cref="ISessionImportService" /> 实现:定位配置文件、
 /// 按 OpenSSH 的取值规则解析每个主机别名(<c>HostName</c> / <c>Port</c> / <c>User</c> /
 /// <c>IdentityFile</c> / <c>CertificateFile</c> / <c>IdentityAgent</c> / <c>ProxyJump</c>、
-/// <c>KexAlgorithms</c> / <c>HostKeyAlgorithms</c> / <c>Ciphers</c> / <c>MACs</c> / <c>Compression</c> / <c>ForwardAgent</c>、
+/// <c>KexAlgorithms</c> / <c>HostKeyAlgorithms</c> / <c>Ciphers</c> / <c>MACs</c> / <c>Compression</c> / <c>ForwardAgent</c> /
+/// <c>ForwardX11</c> / <c>ForwardX11Trusted</c> / <c>ObscureKeystrokeTiming</c>、
 /// <c>LocalForward</c> / <c>RemoteForward</c> / <c>DynamicForward</c>),把选中的会话写入 <see cref="ISessionRepository" />。
 /// </summary>
 /// <remarks>
@@ -31,7 +32,8 @@ namespace VelaShell.Infrastructure.Import;
 /// 本身不是一台可连的机器;它们的选项会通过取值规则渗到具名别名上,这正是 OpenSSH 的语义。
 /// </para>
 /// <para>
-/// 映射不了的设置(端口 0 的转发、只有一头是套接字的远程转发、没写放行名单的远程动态转发、指定了别的 agent 套接字、本版没实现的算法)
+/// 映射不了的设置(端口 0 的转发、只有一头是套接字的远程转发、没写放行名单的远程动态转发、这台电脑上用不了的 agent 端点、
+/// 与认证用的不是同一个的转发 agent、本版没实现的算法)
 /// 不悄悄丢掉:写进 <see cref="ImportedSession.Notes" />,预览行里列给用户看。
 /// </para>
 /// </remarks>
@@ -101,11 +103,11 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
             // ~ 与 %d %u %h %r 由 SSH 库展开(与连接时读私钥同一套),宿主只把相对路径落到 ~/.ssh 下。
             List<string> identities = [.. options.ExpandIdentityFiles(user)
                 .Select(file => ResolveIdentityFile(file, baseDirectory)).OfType<string>()];
-            (string? keyPath, string? certificatePath, AuthMethod? auth) = MapCredentials(options, user, identities, baseDirectory, notes);
+            (string? keyPath, string? certificatePath, AuthMethod? auth, string? identityAgent) = MapCredentials(options, user, identities, baseDirectory, notes);
             string? jump = SshConfigFile.ParseProxyJump(options.ProxyJump) is [.., SshProxyJumpHop last]
                 ? last.Host
                 : null;
-            SshSessionOptions ssh = MapSshOptions(options, notes);
+            SshSessionOptions ssh = MapSshOptions(options, auth, identityAgent, notes);
             List<TunnelConfig> tunnels = MapForwards(options, notes);
 
             items.Add(new ImportedSession
@@ -148,7 +150,8 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
 
     /// <summary>
     /// 认证:<c>CertificateFile</c>(或 <c>IdentityFile</c> 旁边存在的 <c>-cert.pub</c>)→ 证书;<c>IdentityFile</c> → 私钥;
-    /// 两样都没有而 <c>IdentityAgent</c> 指着默认的 agent → SSH Agent;都不沾 → 交给写入器按密码处理。
+    /// 两样都没有而 <c>IdentityAgent</c> 指着默认的 agent、或这台电脑上用得了的别的端点 → SSH Agent(端点记进 SSH 选项);
+    /// 都不沾 → 交给写入器按密码处理。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -161,7 +164,7 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
     /// 写了多把私钥的只取一把,其余的如实列进预览。
     /// </para>
     /// </remarks>
-    private static (string? KeyPath, string? CertificatePath, AuthMethod? Auth) MapCredentials(
+    private static (string? KeyPath, string? CertificatePath, AuthMethod? Auth, string? IdentityAgent) MapCredentials(
         SshHostConfig options, string user, List<string> identities, string baseDirectory, List<string> notes)
     {
         string? certificate = options.ExpandCertificateFiles(user)
@@ -181,28 +184,69 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
             {
                 notes.Add(Strings.Get("SshCfgImport_NoteCertificateNoKey"));
             }
-            return (key, certificate, AuthMethod.Certificate);
+            return (key, certificate, AuthMethod.Certificate, IdentityAgentEndpoint(options, notes));
         }
 
         if (identities.Count > 0)
         {
             NoteExtraIdentities(identities, identities[0], notes);
-            return (identities[0], null, null);
+            return (identities[0], null, null, IdentityAgentEndpoint(options, notes));
         }
 
-        if (Value(options.First("IdentityAgent")) is { } agentSetting)
+        // 没有私钥与证书时,明写了 IdentityAgent(默认的那个,或这台电脑上用得了的别的端点)就按 SSH Agent 认证;
+        // none、环境变量没设、用不了的端点都不用 agent(后两种进说明),交给写入器按密码处理。
+        if (Value(options.First("IdentityAgent")) is not null
+            && ReadIdentityAgent(options, notes) is { Usable: true } agent)
         {
-            if (!options.TryGetIdentityAgent(out string? endpoint))
-            {
-                return (null, null, null);   // IdentityAgent none:不用 agent。
-            }
-            if (endpoint is null || IsDefaultAgent(endpoint))
-            {
-                return (null, null, AuthMethod.Agent);
-            }
-            notes.Add(Strings.Format("SshCfgImport_NoteIdentityAgentPath", agentSetting));
+            return (null, null, AuthMethod.Agent, agent.Endpoint);
         }
-        return (null, null, null);
+        return (null, null, null, null);
+    }
+
+    /// <summary>
+    /// 有私钥或证书时 <c>IdentityAgent</c> 不决定认证方式(VelaShell 一条连接只用一种),但 agent 转发要用它:
+    /// 与 OpenSSH 一致,<c>ForwardAgent yes</c> 转发的是 <c>IdentityAgent</c> 指的那个 agent。用不了的照样说明一句。
+    /// </summary>
+    private static string? IdentityAgentEndpoint(SshHostConfig options, List<string> notes) =>
+        Value(options.First("IdentityAgent")) is not null && ReadIdentityAgent(options, notes) is { Usable: true } agent
+            ? agent.Endpoint
+            : null;
+
+    /// <summary>
+    /// 读 <c>IdentityAgent</c>(写了的前提下):<c>SSH_AUTH_SOCK</c>、等于本机 <c>SSH_AUTH_SOCK</c> 的路径 → 默认的 agent(端点 <see langword="null" />);
+    /// 别的路径 / 命名管道,这台电脑上用得了 → 那个端点;<c>none</c> → 不用(<c>Usable</c> 为假,不说明);环境变量没设、端点用不了 → 不用,并说明。
+    /// </summary>
+    /// <remarks>路径里的 <c>~</c> 与 <c>%d %u %h %r</c>、<c>$环境变量</c> 由 SSH 库展开(<see cref="SshHostConfig.TryGetIdentityAgent" />)。</remarks>
+    private static (bool Usable, string? Endpoint) ReadIdentityAgent(SshHostConfig options, List<string> notes)
+    {
+        string setting = Value(options.First("IdentityAgent"))!;
+        if (!options.TryGetIdentityAgent(out string? endpoint))
+        {
+            if (setting.StartsWith('$'))
+            {
+                notes.Add(Strings.Format("SshCfgImport_NoteAgentVarUnset", $"IdentityAgent {setting}", setting[1..]));
+            }
+            return (false, null);   // IdentityAgent none:不用 agent。
+        }
+        return AgentEndpointFor(endpoint, $"IdentityAgent {setting}", notes);
+    }
+
+    /// <summary>
+    /// 一个 agent 端点落到连接配置里的样子:没有或就是本机 <c>SSH_AUTH_SOCK</c> → 系统默认(<see langword="null" />);
+    /// 这台电脑上用得了的(<see cref="SshAgentEndpoints.Check(string?)" />)→ 原样;用不了的(别的平台的路径、相对路径)→ 不用并说明。
+    /// </summary>
+    private static (bool Usable, string? Endpoint) AgentEndpointFor(string? endpoint, string line, List<string> notes)
+    {
+        if (SshAgentEndpoints.Normalize(endpoint) is not { } normalized || IsDefaultAgent(normalized))
+        {
+            return (true, null);
+        }
+        if (SshAgentEndpoints.Check(normalized) != SshAgentEndpointProblem.None)
+        {
+            notes.Add(Strings.Format("SshCfgImport_NoteAgentEndpointUnusable", line));
+            return (false, null);
+        }
+        return (true, normalized);
     }
 
     private static void NoteExtraIdentities(List<string> identities, string? used, List<string> notes)
@@ -215,10 +259,11 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
     }
 
     /// <summary>
-    /// 协议层选项:<c>Compression</c>、<c>ForwardAgent</c>,以及四个算法清单(§134 的自定义清单,写法本来就是 ssh_config 的
+    /// 协议层选项:<c>Compression</c>、<c>ForwardAgent</c>、<c>ForwardX11</c> / <c>ForwardX11Trusted</c>、<c>ObscureKeystrokeTiming</c>(后三个只认明写的值),
+    /// 以及四个算法清单(§134 的自定义清单,写法本来就是 ssh_config 的
     /// <c>+</c> / <c>-</c> / <c>^</c>,原样带过来;本版没实现的名字去掉,拼错的整条不导,都进预览)。
     /// </summary>
-    private static SshSessionOptions MapSshOptions(SshHostConfig options, List<string> notes)
+    private static SshSessionOptions MapSshOptions(SshHostConfig options, AuthMethod? auth, string? identityAgent, List<string> notes)
     {
         var ssh = new SshSessionOptions
         {
@@ -229,21 +274,181 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
             Macs = Algorithms(SshAlgorithmKind.Mac, "MACs", options.Macs, notes),
         };
 
-        // ForwardAgent:yes 转发默认的 agent;写的是别的 agent 套接字时不导 —— VelaShell 只转发默认的那个,
-        // 而配置作者特意给这台机器指了一个(多半是只装了几把钥的)agent,换成默认的等于多交出去几把钥。
+        MapAgent(options, ssh, auth, identityAgent, notes);
+
+        MapX11(options, ssh, notes);
+        MapObscureKeystrokeTiming(options, ssh, notes);
+        return ssh;
+    }
+
+    /// <summary>
+    /// agent 端点(<see cref="SshSessionOptions.AgentEndpoint" />)与 <c>ForwardAgent</c>:VelaShell 一条连接只用一个 agent,「SSH Agent」认证与转发共用。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ForwardAgent yes</c> 转发的是认证用的那个 agent —— 与 OpenSSH 一致(ssh_config(5):转发「到认证 agent 的连接」,
+    /// <c>IdentityAgent</c> 换掉的正是这个 agent)。<c>ForwardAgent &lt;路径&gt;</c> / <c>$变量</c> 指的就是那个 agent;
+    /// 与认证用的是同一个、或者这台机器认证不走 agent(私钥 / 证书)时照收,端点取它。
+    /// </para>
+    /// <para>
+    /// 〔决策〕认证走 agent、转发又指了<b>另一个</b> agent 时不导转发、说明一句,不换成认证用的那个:配置作者特意给转发指了一个
+    /// (多半是只装了几把钥的)agent,换掉等于多交出去几把钥。端点只在用得上时存(认证走 agent,或者开了转发)。
+    /// </para>
+    /// </remarks>
+    private static void MapAgent(SshHostConfig options, SshSessionOptions ssh, AuthMethod? auth, string? identityAgent, List<string> notes)
+    {
+        string? endpoint = identityAgent;
+        bool forwarding = false;
         string? forward = Value(options.First("ForwardAgent"));
         if (forward is not null && !string.Equals(forward, "no", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.Equals(forward, "yes", StringComparison.OrdinalIgnoreCase) || IsDefaultAgent(ResolveAgentValue(forward)))
+            string line = $"ForwardAgent {forward}";
+            string? value = ResolveAgentValue(forward);
+            if (string.Equals(forward, "yes", StringComparison.OrdinalIgnoreCase))
             {
-                ssh.AgentForwarding = true;
+                forwarding = true;
             }
-            else
+            else if (forward.StartsWith('$') && string.IsNullOrEmpty(value))
             {
-                notes.Add(Strings.Format("SshCfgImport_NoteForwardAgentPath", forward));
+                notes.Add(Strings.Format("SshCfgImport_NoteAgentVarUnset", line, forward[1..]));
+            }
+            else if (AgentEndpointFor(value, line, notes) is { Usable: true } target)
+            {
+                if (SameEndpoint(target.Endpoint, endpoint))
+                {
+                    forwarding = true;
+                }
+                else if (auth != AuthMethod.Agent)
+                {
+                    endpoint = target.Endpoint;
+                    forwarding = true;
+                }
+                else
+                {
+                    notes.Add(Strings.Format("SshCfgImport_NoteForwardAgentConflict", line));
+                }
             }
         }
-        return ssh;
+
+        ssh.AgentForwarding = forwarding;
+        ssh.AgentEndpoint = auth == AuthMethod.Agent || forwarding ? endpoint : null;
+    }
+
+    /// <summary>
+    /// 两个端点是不是同一个 agent:都是系统默认(<see langword="null" />)算同一个;否则展开 <c>~</c>、规范成完整路径再比
+    /// (库展开 <c>IdentityAgent</c> 的路径,<c>ForwardAgent</c> 的是原样,<c>~/a.sock</c> 与展开后的那个是同一个)。Windows 上不分大小写。
+    /// </summary>
+    private static bool SameEndpoint(string? a, string? b)
+    {
+        if (a is null || b is null)
+        {
+            return a is null && b is null;
+        }
+        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return string.Equals(Canonical(a), Canonical(b), comparison);
+
+        static string Canonical(string endpoint)
+        {
+            string resolved = SshAgentEndpoints.Resolve(endpoint)!;
+            if (SshAgentEndpoints.IsPipe(resolved))
+            {
+                return resolved;
+            }
+            try
+            {
+                return Path.GetFullPath(resolved);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return resolved;
+            }
+        }
+    }
+
+    /// <summary>
+    /// <c>ForwardX11</c> / <c>ForwardX11Trusted</c>:〔决策〕只认明写的 <c>yes</c> / <c>no</c>,没写的按 VelaShell 自己的默认
+    /// (不转发;转发时受信任,即 <see cref="SshSessionOptions.X11Trusted" /> 的默认)。
+    /// </summary>
+    /// <remarks>
+    /// OpenSSH 的 <c>ForwardX11Trusted</c> 默认 <c>no</c>(非受信任,<c>-X</c>),VelaShell 默认受信任(<c>-Y</c>,Windows 上的 X 服务器
+    /// 多半没有 SECURITY 扩展,非受信任模式用不了)。维护者 2026-10-25 定的口径是不按 OpenSSH 的默认换算 —— 于是只写了
+    /// <c>ForwardX11 yes</c> 的那台在 VelaShell 里是受信任的,与在 ssh 里不同:这一点进导入说明,不悄悄改信任级别。
+    /// 认不出的值(拼错)不导、说明一句,不当成 <c>no</c> 吞掉。
+    /// </remarks>
+    private static void MapX11(SshHostConfig options, SshSessionOptions ssh, List<string> notes)
+    {
+        bool? forward = YesNo(options, "ForwardX11", notes);
+        bool? trusted = YesNo(options, "ForwardX11Trusted", notes);
+        if (forward == true)
+        {
+            ssh.X11Forwarding = true;
+        }
+        if (trusted is { } value)
+        {
+            ssh.X11Trusted = value;
+        }
+        else if (ssh.X11Forwarding)
+        {
+            notes.Add(Strings.Get("SshCfgImport_NoteX11TrustedDefault"));
+        }
+    }
+
+    /// <summary>
+    /// <c>ObscureKeystrokeTiming</c>:〔决策〕只认明写的值 —— <c>yes</c> / <c>interval:N</c> 开、<c>no</c> 关,没写按 VelaShell 的默认(关)。
+    /// </summary>
+    /// <remarks>
+    /// OpenSSH 默认开,照抄它的默认会让导入的配置全部开着(§248 定的默认关,理由是带宽代价)。VelaShell 的节拍固定 20 毫秒
+    /// (OpenSSH <c>yes</c> 的值,不开放成可调):<c>interval:N</c> 按开启导入,N 不是 20 时说明一句。认不出的值不导、说明一句。
+    /// </remarks>
+    private static void MapObscureKeystrokeTiming(SshHostConfig options, SshSessionOptions ssh, List<string> notes)
+    {
+        if (Value(options.First("ObscureKeystrokeTiming")) is not { } value)
+        {
+            return;
+        }
+        if (string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase))
+        {
+            ssh.ObscureKeystrokeTiming = true;
+        }
+        else if (string.Equals(value, "no", StringComparison.OrdinalIgnoreCase))
+        {
+            ssh.ObscureKeystrokeTiming = false;
+        }
+        else if (value.StartsWith("interval:", StringComparison.OrdinalIgnoreCase)
+                 && int.TryParse(value["interval:".Length..], NumberStyles.None, CultureInfo.InvariantCulture, out int ms)
+                 && ms is >= 1 and <= 1000)
+        {
+            // 与库解析 ssh_config 时同一个范围(1–1000 毫秒)。
+            ssh.ObscureKeystrokeTiming = true;
+            int fixedMs = (int)VelaSshClientWrapper.KeystrokeObfuscationInterval.TotalMilliseconds;
+            if (ms != fixedMs)
+            {
+                notes.Add(Strings.Format("SshCfgImport_NoteObscureInterval", value, fixedMs));
+            }
+        }
+        else
+        {
+            notes.Add(Strings.Format("SshCfgImport_NoteValueInvalid", $"ObscureKeystrokeTiming {value}"));
+        }
+    }
+
+    /// <summary>明写的 <c>yes</c> / <c>no</c>(大小写不论);没写为 <see langword="null" />,认不出的也是 <see langword="null" /> 并说明一句。</summary>
+    private static bool? YesNo(SshHostConfig options, string keyword, List<string> notes)
+    {
+        if (Value(options.First(keyword)) is not { } value)
+        {
+            return null;
+        }
+        if (string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (string.Equals(value, "no", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        notes.Add(Strings.Format("SshCfgImport_NoteValueInvalid", $"{keyword} {value}"));
+        return null;
     }
 
     private static string? Algorithms(SshAlgorithmKind kind, string keyword, string? spec, List<string> notes)

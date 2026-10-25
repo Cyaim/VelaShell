@@ -156,8 +156,10 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
         DateTime? lastWriteTime = null,
         IProgress<TransferProgress>? progress = null,
         long resumeOffset = 0,
+        uint? createMode = null,
         CancellationToken cancellationToken = default)
     {
+        // createMode 不用:FTP 的 STOR 没有建文件时的权限位(权限由服务端的 umask 定),接口说明里写了后端可以忽略它。
         ArgumentNullException.ThrowIfNull(source);
         string fileName = GetRemoteFileName(remotePath);
         if (resumeOffset > 0)

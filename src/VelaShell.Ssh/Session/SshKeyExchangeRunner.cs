@@ -440,7 +440,11 @@ internal sealed class SshKeyExchangeRunner
         {
             throw new SshConnectException(
                 SshFailureReason.HostKeyRejected, SshPhase.KeyExchange,
-                $"服务端主机密钥无法解析：{ex.Message}", ex);
+                $"服务端主机密钥无法解析：{ex.Message}", ex)
+            {
+                FailureKind = SshConnectFailureKind.HostKeyMalformed,
+                HostKeyAlgorithm = negotiatedAlgorithm,
+            };
         }
 
         // 协商出的算法必须是这把密钥能用的。RSA 的三个签名算法名对应同一个密钥类型 ——
@@ -452,7 +456,12 @@ internal sealed class SshKeyExchangeRunner
         {
             throw new SshConnectException(
                 SshFailureReason.HostKeyRejected, SshPhase.KeyExchange,
-                $"服务端出示的是 {hostKey.KeyType} 密钥，与协商出的 {negotiatedAlgorithm} 不匹配。");
+                $"服务端出示的是 {hostKey.KeyType} 密钥，与协商出的 {negotiatedAlgorithm} 不匹配。")
+            {
+                FailureKind = SshConnectFailureKind.HostKeyAlgorithmMismatch,
+                HostKeyType = hostKey.KeyType,
+                HostKeyAlgorithm = negotiatedAlgorithm,
+            };
         }
 
         // RSA 长度检查放在**验签之前**：不给弱密钥任何计算资源。
@@ -461,7 +470,14 @@ internal sealed class SshKeyExchangeRunner
         {
             throw new SshConnectException(
                 SshFailureReason.HostKeyRejected, SshPhase.KeyExchange,
-                $"服务端的 RSA 主机密钥只有 {hostKey.KeyBits} 位，低于要求的 {_minimumRsaKeyBits} 位。");
+                $"服务端的 RSA 主机密钥只有 {hostKey.KeyBits} 位，低于要求的 {_minimumRsaKeyBits} 位。")
+            {
+                FailureKind = SshConnectFailureKind.HostKeyTooShort,
+                HostKeyType = hostKey.KeyType,
+                HostKeyAlgorithm = negotiatedAlgorithm,
+                HostKeyBits = hostKey.KeyBits,
+                MinimumHostKeyBits = _minimumRsaKeyBits,
+            };
         }
 
         if (!hostKey.VerifySignature(signature, exchangeHash, negotiatedAlgorithm))
@@ -469,7 +485,12 @@ internal sealed class SshKeyExchangeRunner
             throw new SshConnectException(
                 SshFailureReason.HostKeyRejected, SshPhase.KeyExchange,
                 $"服务端对交换哈希的签名验证失败（{negotiatedAlgorithm}，对端 {PeerText.Sanitize(peerVersion, 128)}）。" +
-                "这意味着对端没有它所声称的那把主机私钥 —— 可能有中间人。");
+                "这意味着对端没有它所声称的那把主机私钥 —— 可能有中间人。")
+            {
+                FailureKind = SshConnectFailureKind.HostKeySignatureInvalid,
+                HostKeyType = hostKey.KeyType,
+                HostKeyAlgorithm = negotiatedAlgorithm,
+            };
         }
 
         return hostKey;
@@ -551,12 +572,20 @@ internal sealed class SshKeyExchangeRunner
                     // 只认两种放行，其余（含 default 裁决）一律拒绝。
                     // 把策略给出的人话原样抛出去 —— 回调只能返回一个裁决，原因得由它自己带上，
                     // 否则用户拿到的只有一句「不受信任的对端」。
+                    // 种类标明「这句话是策略写的」：上面几种库自己验不过的，消息是库的中文，界面要按种类另说。
                     throw new SshConnectException(
                         verdict.Reason == SshFailureReason.HostKeyChanged
                             ? SshFailureReason.HostKeyChanged
                             : SshFailureReason.HostKeyRejected,
                         SshPhase.KeyExchange,
-                        verdict.Message ?? $"{context.Target} 的主机密钥被策略拒绝。");
+                        verdict.Message ?? $"{context.Target} 的主机密钥被策略拒绝。")
+                    {
+                        FailureKind = verdict.Message is null
+                            ? SshConnectFailureKind.HostKeyPolicyRejectedWithoutReason
+                            : SshConnectFailureKind.HostKeyPolicyRejected,
+                        HostKeyType = hostKey.KeyType,
+                        HostKeyAlgorithm = negotiated.HostKey,
+                    };
             }
         }
         finally

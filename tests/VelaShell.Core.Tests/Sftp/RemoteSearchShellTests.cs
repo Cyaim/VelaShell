@@ -115,19 +115,80 @@ public sealed class RemoteSearchShellTests
         Assert.HasCount(2, hits);
     }
 
-    private static async Task<List<RemoteSearchHit>> SearchAsync(RemoteSearchQuery query)
+    /// <summary>
+    /// 名字里带换行(与行尾的 <c>\r</c>)的文件与目录:各是一条结果,不被拆成两条;按内容找同样。
+    /// Windows 的文件系统不许名字里有这些字符,只在 Linux / macOS 上跑(BusyBox 在 Docker 用例里验)。
+    /// </summary>
+    [TestMethod]
+    public async Task NamesWithNewlines_AreOneHitEach_ByNameAndByContent()
+    {
+        RequireSh();
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("[SKIP] Windows 的文件系统不许名字里有换行与 \\r。");
+        }
+        string root = _root + "/newline";
+        (string created, int exit) = await Run(
+            "sh -c 'n=$(printf \"\\n_\"); n=${n%_}; r=$(printf \"\\r\"); mkdir -p \"$1/dir${n}x\" && " +
+            "printf \"needle\\n\" > \"$1/two${n}lines.txt\" && printf \"needle\\n\" > \"$1/plain.txt\" && printf \"x\\n\" > \"$1/cr${r}\"' fixture " +
+            RemoteSha256.Quote(root));
+        Assert.AreEqual(0, exit, created);
+
+        List<RemoteSearchHit> byName = await SearchAsync(new(root, "*"));
+        Assert.AreSequenceEqual(
+        [
+            new RemoteSearchHit(root + "/cr\r", false),
+            new RemoteSearchHit(root + "/dir\nx", true),
+            new RemoteSearchHit(root + "/plain.txt", false),
+            new RemoteSearchHit(root + "/two\nlines.txt", false),
+        ], byName);
+
+        List<RemoteSearchHit> byContent = await SearchAsync(new(root, null, "NEEDLE"));
+        Assert.AreSequenceEqual(
+            [new RemoteSearchHit(root + "/plain.txt", false), new RemoteSearchHit(root + "/two\nlines.txt", false)], byContent,
+            "带换行的名字逐个 grep,其余一批 grep -l");
+    }
+
+    /// <summary>
+    /// 裁掉了 <c>find -exec … {} +</c> 的极老 BusyBox:换一个不认 <c>+</c> 的 find 顶在 PATH 前面,
+    /// 按名字找退回原来的按行输出,结果照样对。
+    /// </summary>
+    [TestMethod]
+    public async Task FindWithoutExecPlus_FallsBackToLineOutput()
+    {
+        RequireSh();
+        string shim = _root + "/shim";
+        const string Script = "#!/bin/sh\ncase \" $* \" in *\" + \"*) echo \"find: unrecognized: +\" >&2; exit 1;; esac\nexec /usr/bin/find \"$@\"";
+        (string created, int exit) = await Run(
+            "sh -c 'mkdir -p \"$1\" && printf \"%s\\n\" \"$2\" > \"$1/find\" && chmod +x \"$1/find\"' shim " +
+            RemoteSha256.Quote(shim) + " " + RemoteSha256.Quote(Script));
+        Assert.AreEqual(0, exit, created);
+
+        List<RemoteSearchHit> hits = await SearchAsync(new(_root + "/app", "NGINX"), shim + ":");
+        Assert.AreSequenceEqual([new RemoteSearchHit(_root + "/app/nginx.conf", false)], hits);
+        List<RemoteSearchHit> dirs = await SearchAsync(new(_root + "/app", "logs"), shim + ":");
+        Assert.AreSequenceEqual([new RemoteSearchHit(_root + "/app/logs", true)], dirs);
+    }
+
+    private static void RequireSh()
     {
         if (_sh is null)
         {
             Assert.Inconclusive("[SKIP] 本机没有 POSIX sh(Windows 上要 Git for Windows)。");
         }
-        (string output, int exit) = await Run(RemoteSearch.BuildCommand(query, RemoteShellKind.PosixSh));
+    }
+
+    private static async Task<List<RemoteSearchHit>> SearchAsync(RemoteSearchQuery query, string pathPrefix = "")
+    {
+        RequireSh();
+        (string output, int exit) = await Run(RemoteSearch.BuildCommand(query, RemoteShellKind.PosixSh), pathPrefix);
         Assert.AreEqual(0, exit, output);
         var hits = new List<RemoteSearchHit>();
+        // 与服务一样:记录只按换行分,名字里的换行在记录里是 \0。
         foreach (string line in output.Split('\n'))
         {
             Assert.IsFalse(RemoteSearch.IsToolMissingMarker(line), "本机的 sh 应当有 find / grep");
-            if (RemoteSearch.TryParseHit(line, query.Root, out RemoteSearchHit hit))
+            if (RemoteSearch.TryParseHit(RemoteSearch.DecodeRecord(Encoding.UTF8.GetBytes(line), null), query.Root, out RemoteSearchHit hit))
             {
                 hits.Add(hit);
             }
@@ -137,7 +198,7 @@ public sealed class RemoteSearchShellTests
     }
 
     /// <summary>像 sshd 那样:登录 shell <c>-c</c> 整行命令。PATH 先放 /usr/bin,Windows 上才不会撞到 System32 的 find.exe。</summary>
-    private static async Task<(string Output, int ExitCode)> Run(string commandLine)
+    private static async Task<(string Output, int ExitCode)> Run(string commandLine, string pathPrefix = "")
     {
         var start = new ProcessStartInfo(_sh!)
         {
@@ -148,7 +209,7 @@ public sealed class RemoteSearchShellTests
             StandardOutputEncoding = Encoding.UTF8,
         };
         start.ArgumentList.Add("-c");
-        start.ArgumentList.Add("PATH=/usr/bin:/bin:$PATH; export PATH; " + commandLine);
+        start.ArgumentList.Add("PATH=" + pathPrefix + "/usr/bin:/bin:$PATH; export PATH; " + commandLine);
         using Process process = Process.Start(start)!;
         Task<string> stdout = process.StandardOutput.ReadToEndAsync();
         Task<string> stderr = process.StandardError.ReadToEndAsync();

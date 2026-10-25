@@ -650,8 +650,19 @@ public sealed class CommandJobRunScope : IAsyncDisposable
         if (_denialEndsRun)
         {
             Interlocked.Exchange(ref _executionDenied, 1);
+            // 拒绝是本轮的停止边界:之前发起、还排着等宿主确认的上传 / 下载一并撤掉,确认框不再一个个弹
+            _ = Transfers?.CancelUnapprovedAsync();
         }
     }
+
+    /// <summary>入口的停止(面板「停止」、IM 的 /stop 与轮次超时、对外 MCP 连接收尾)。</summary>
+    /// <remarks>
+    /// 只挂在入口传进来的令牌上:<see cref="_cancelSource" /> 在正常收尾时也会被取消(见 DisposeAsync),
+    /// 那时还在等宿主确认的上传是用户随后要去点的,不能撤。
+    /// </remarks>
+    private readonly CancellationTokenRegistration _stopRegistration;
+
+    private void OnStopped() => _ = Transfers?.CancelUnapprovedAsync();
     /// <summary>仍有不应自动请求模型的显式无限监控任务。</summary>
     public bool HasMonitoringJobs => !IsDisposed && _registry.HasMonitoringJobs(this);
 
@@ -665,6 +676,7 @@ public sealed class CommandJobRunScope : IAsyncDisposable
         RunId = runId;
         _authorize = authorize;
         _cancelSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetimeToken);
+        _stopRegistration = cancellationToken.Register(static state => ((CommandJobRunScope)state!).OnStopped(), this);
     }
 
     /// <summary>首个有限后台任务结束时唤醒,原子消费此刻所有已完成且未投递的快照。</summary>
@@ -685,6 +697,8 @@ public sealed class CommandJobRunScope : IAsyncDisposable
         {
             return;
         }
+        // 轮次收尾之后入口令牌再被取消(面板换会话、关面板)与这一轮已无关:排着的确认留给用户
+        await _stopRegistration.DisposeAsync().ConfigureAwait(false);
         await _registry.DisposeRunAsync(this).ConfigureAwait(false);
         if (Transfers is { } transfers) await transfers.DisposeAsync().ConfigureAwait(false);
         _cancelSource.Dispose();

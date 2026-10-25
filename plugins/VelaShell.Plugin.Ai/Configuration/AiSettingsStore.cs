@@ -36,14 +36,18 @@ public sealed class AiSettingsStore(IPluginContext context)
     /// <summary>设置快照已过期或选定 Key 槽已改变；保留草稿，重新加载后才能提交，不得换凭据重放。</summary>
     public sealed class ApiKeySlotChangedException() : InvalidOperationException("The selected API Key slot changed.");
 
-    /// <summary>表单把 Base URL 换到了另一个源,保存会清掉这家供应商已存的 Key;须经用户确认后重新提交。</summary>
+    /// <summary>表单把 Base URL 换到了另一个源,保存会清掉这家供应商已存的 Key(订阅登录的还要退出登录);须经用户确认后重新提交。</summary>
     /// <remarks>
-    /// 确认的是提示时列出的那几把:调用方把 <see cref="Confirmation" /> 原样交回。提示之后别处又存进一把、
-    /// 或同一个槽换了值,都不在确认之内,提交时会再拒绝一次,不会被一并清掉。
+    /// 确认的是提示时列出的那几把(以及那一份登录令牌):调用方把 <see cref="Confirmation" /> 原样交回。提示之后别处又存进一把、
+    /// 同一个槽换了值、或换了一次登录,都不在确认之内,提交时会再拒绝一次,不会被一并清掉。
     /// </remarks>
-    public sealed class ApiKeyResetRequiredException(IReadOnlyList<string> keyOwners, IReadOnlyList<string> confirmation)
-        : InvalidOperationException("The Base URL points to another origin; saved API Keys must be cleared first.")
+    public sealed class ApiKeyResetRequiredException(IReadOnlyList<string> keyOwners, IReadOnlyList<string> confirmation,
+        bool signsOut = false)
+        : InvalidOperationException("The Base URL points to another origin; saved credentials must be cleared first.")
     {
+        /// <summary>确认之后还要退出这家的订阅登录:旧地址签出的令牌不发往新地址,之后要在新地址重新登录。</summary>
+        public bool SignsOut { get; } = signsOut;
+
         /// <summary>确认后会被清掉的已存 Key 数。</summary>
         public int KeyCount => KeyOwners.Count;
 
@@ -110,6 +114,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         provider.CatalogId,
         provider.AdditionalApiKeyIds,
         provider.StoreResponses,
+        provider.CustomResponsesStore,
         provider.AllowSystemMessages,
         provider.UnsupportedParameters,
         Models = provider.Models.Select(model => new
@@ -229,6 +234,7 @@ public sealed class AiSettingsStore(IPluginContext context)
                 settings.McpServers = fresh.McpServers;
                 settings.WebSearch = fresh.WebSearch;
                 settings.FailoverChain = fresh.FailoverChain;
+                settings.AutoFailoverAcrossAccounts = fresh.AutoFailoverAcrossAccounts;
                 _providerKeys.SettingsBaselines.GetValue(settings, static _ => new()).Json
                     = _providerKeys.SettingsBaselines.GetValue(fresh, static _ => new()).Json;
                 _knownSettings = settings;
@@ -253,6 +259,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         target.AvailableModels = source.AvailableModels;
         target.ModelsExpanded = source.ModelsExpanded;
         target.StoreResponses = source.StoreResponses;
+        target.CustomResponsesStore = source.CustomResponsesStore;
         target.AllowSystemMessages = source.AllowSystemMessages;
         target.UnsupportedParameters = source.UnsupportedParameters;
         target.Models = [.. source.Models.Select(saved =>
@@ -328,13 +335,31 @@ public sealed class AiSettingsStore(IPluginContext context)
         => CommitProviderConfigurationAsync(settings, null, draft, null, apiKey, tokens, cancellationToken);
 
     /// <summary>原子提交订阅供应商的登录配置与新账号令牌，晚到的旧账号刷新不能覆盖新登录。</summary>
-    public Task SaveProviderOAuthFormAsync(AiSettings settings, AiProvider provider, AiProvider draft,
-        string expectedProviderJson, OAuthTokens tokens, CancellationToken cancellationToken = default)
-        => CommitProviderConfigurationAsync(settings, provider, draft, expectedProviderJson, null, tokens, cancellationToken);
+    /// <remarks>
+    /// 地址换到了另一个源:新令牌本来就是新地址签的,但模型自带、跟着供应商地址走的 Key 属于旧地址,
+    /// 要经 <paramref name="confirmedKeyReset" /> 确认后一并清掉(见 <see cref="SaveProviderFormAsync" />)。
+    /// 目录页对配齐了的订阅行不摆地址框,重新登录走不到这一步;这里是保底:没确认就拒绝,不悄悄留着旧 Key。
+    /// </remarks>
+    /// <returns>清掉的已存 Key 的归属者。</returns>
+    public async Task<IReadOnlyList<string>> SaveProviderOAuthFormAsync(AiSettings settings, AiProvider provider, AiProvider draft,
+        string expectedProviderJson, OAuthTokens tokens, IReadOnlyCollection<string>? confirmedKeyReset = null,
+        CancellationToken cancellationToken = default)
+        => (await CommitProviderConfigurationAsync(settings, provider, draft, expectedProviderJson, null, tokens,
+            cancellationToken, confirmedKeyReset).ConfigureAwait(false)).Cleared;
 
-    internal Task SaveProviderFormAsync(AiSettings settings, AiProvider provider, AiProvider draft,
-        string expectedProviderJson, CancellationToken cancellationToken = default)
-        => CommitProviderConfigurationAsync(settings, provider, draft, expectedProviderJson, null, null, cancellationToken);
+    /// <summary>提交供应商表单(名称、地址、协议);设置页给订阅登录的供应商用。</summary>
+    /// <remarks>
+    /// Base URL 换到另一个源时,旧地址签出的登录令牌不能跟着发过去:退出登录(删令牌、推进登录代次,
+    /// 在途的刷新与请求复验时都认得出来),模型自带、跟着供应商地址走的 Key 一并清掉。
+    /// 有东西要清就默认拒绝、抛 <see cref="ApiKeyResetRequiredException" />(<see cref="ApiKeyResetRequiredException.SignsOut" />
+    /// 说明会不会退出登录),调用方让用户确认后把确认凭据经 <paramref name="confirmedKeyReset" /> 交回。
+    /// </remarks>
+    /// <returns>清掉的已存 Key 的归属者,以及这次保存有没有退出登录。</returns>
+    internal async Task<(IReadOnlyList<string> Cleared, bool SignedOut)> SaveProviderFormAsync(AiSettings settings,
+        AiProvider provider, AiProvider draft, string expectedProviderJson,
+        IReadOnlyCollection<string>? confirmedKeyReset = null, CancellationToken cancellationToken = default)
+        => await CommitProviderConfigurationAsync(settings, provider, draft, expectedProviderJson, null, null,
+            cancellationToken, confirmedKeyReset).ConfigureAwait(false);
 
     /// <summary>仅保存分离的目录合并稿；JSON 落盘前不发布型号、规格、来源或请求代次，也不改写机密。</summary>
     internal async Task SaveProviderCatalogueAsync(AiSettings settings, AiProvider provider, AiProvider draft,
@@ -401,8 +426,9 @@ public sealed class AiSettingsStore(IPluginContext context)
         }
     }
 
-    private async Task CommitProviderConfigurationAsync(AiSettings settings, AiProvider? provider, AiProvider draft,
-        string? expectedProviderJson, string? apiKey, OAuthTokens? tokens, CancellationToken cancellationToken)
+    private async Task<(IReadOnlyList<string> Cleared, bool SignedOut)> CommitProviderConfigurationAsync(AiSettings settings,
+        AiProvider? provider, AiProvider draft, string? expectedProviderJson, string? apiKey, OAuthTokens? tokens,
+        CancellationToken cancellationToken, IReadOnlyCollection<string>? confirmedKeyReset = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(draft);
@@ -422,9 +448,13 @@ public sealed class AiSettingsStore(IPluginContext context)
         }
 
         await ProviderKeyGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        bool tokenGateHeld = false, keyWritten = false, tokenWritten = false, settingsWritten = false;
+        bool tokenGateHeld = false, keyWritten = false, tokenWritten = false, settingsWritten = false, resetWritten = false;
         string? oldKey = null, oldTokenJson = null;
         OAuthTokens? oldTokens = null;
+        // 换源时动过的机密:归属者 → 原值,失败时逐个恢复
+        Dictionary<string, string?> resetKeys = [with(StringComparer.Ordinal)];
+        List<(string Id, string Key)> cleared = [];
+        bool signOut = false;
         try
         {
             await ValidateSettingsBaselineAsync(settings, cancellationToken).ConfigureAwait(false);
@@ -459,16 +489,47 @@ public sealed class AiSettingsStore(IPluginContext context)
                 detached.Providers[settings.Providers.IndexOf(provider)] = frozen;
             }
 
-            _providerKeys.Updating[frozen.Id] = 0;
-            if (frozenTokens is not null)
+            // 地址换到别的源:跟着供应商地址走的已存 Key(主槽、补充槽、没填覆盖地址的模型自带 Key)属于旧地址;
+            // 订阅登录又没换来新令牌的(设置页只改了表单),旧地址签出的令牌也不能跟去 —— 退出登录。
+            // 先读、先核确认,一样都还没动;确认过的才清,失败逐个恢复
+            bool originChanged = provider is not null && MovesOrigin(provider.BaseUrl, frozen.BaseUrl);
+            signOut = originChanged && provider!.Auth == AuthMethod.Subscription && frozenTokens is null;
+            List<string> resetOwners = originChanged ? [.. KeysBoundToProviderOrigin(provider!)] : [];
+            foreach (string id in resetOwners)
+            {
+                string? saved = await context.Secrets.GetAsync(SecretName(id), cancellationToken).ConfigureAwait(false);
+                resetKeys[id] = saved;
+                if (!string.IsNullOrWhiteSpace(saved)) cleared.Add((id, saved));
+            }
+            if (frozenTokens is not null || signOut)
             {
                 // 全部嵌套提交遵循 KeyGate → TokenWriteGate；刷新只使用 TokenWriteGate。
                 await _providerKeys.TokenWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 tokenGateHeld = true;
                 oldTokenJson = await context.Secrets.GetAsync(TokenSecretName(frozen.Id), cancellationToken).ConfigureAwait(false);
                 oldTokens = await GetTokensAsync(frozen.Id, cancellationToken).ConfigureAwait(false);
+            }
+            signOut &= !string.IsNullOrEmpty(oldTokenJson); // 本来就没登录:没有令牌可退
+            RequireKeyResetConfirmed(cleared, confirmedKeyReset, signOut ? LoginResetToken(frozen.Id, oldTokenJson!) : null);
+
+            _providerKeys.Updating[frozen.Id] = 0;
+            foreach (string id in resetOwners) _providerKeys.Updating[id] = 0;
+            if (frozenTokens is not null)
+            {
                 tokenWritten = true;
                 await context.Secrets.SetAsync(TokenSecretName(frozen.Id), JsonSerializer.Serialize(frozenTokens), cancellationToken).ConfigureAwait(false);
+            }
+            else if (signOut)
+            {
+                // 缓存跟着机密一起清:提交期间别处(凭据解析先看 Updating 闸)不会拿到旧令牌;失败在 catch 里恢复
+                tokenWritten = true;
+                await context.Secrets.DeleteAsync(TokenSecretName(frozen.Id), cancellationToken).ConfigureAwait(false);
+                TokenCache[frozen.Id] = null;
+            }
+            if (resetOwners.Count > 0)
+            {
+                resetWritten = true;
+                foreach (string id in resetOwners) await SetApiKeyCoreAsync(id, null, cancellationToken).ConfigureAwait(false);
             }
             if (apiKey is not null)
             {
@@ -488,11 +549,23 @@ public sealed class AiSettingsStore(IPluginContext context)
                 TokenCache[frozen.Id] = frozenTokens;
                 _providerKeys.LoginVersions.AddOrUpdate(frozen.Id, 1, static (_, version) => version + 1);
             }
-            PublishProviderRequests(settings, detached, frozenTokens is not null ? provider : null,
+            else if (signOut)
+            {
+                // 推进登录代次:在途的令牌刷新回来对不上号就不写回,复验旧令牌的请求也会被拒(与退出登录同一条路)
+                _providerKeys.LoginVersions.AddOrUpdate(frozen.Id, 1, static (_, version) => version + 1);
+            }
+            PublishProviderRequests(settings, detached, frozenTokens is not null || signOut ? provider : null,
                 keyWritten && oldKey != (string.IsNullOrEmpty(apiKey) ? null : apiKey) ? frozen.Id : null);
+            // 清掉的模型 Key:别处设置里的同一供应商副本也一并作废
+            foreach ((string id, _) in cleared) PublishApiKeyChange(id);
+            return ([.. cleared.Select(item => item.Id)], signOut);
         }
         catch
         {
+            if (resetWritten)
+            {
+                foreach ((string id, string? saved) in resetKeys) await RestoreApiKeyCoreAsync(id, saved).ConfigureAwait(false);
+            }
             if (keyWritten) await RestoreApiKeyCoreAsync(frozen.Id, oldKey).ConfigureAwait(false);
             if (tokenWritten)
             {
@@ -507,6 +580,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         {
             if (tokenGateHeld) _providerKeys.TokenWriteGate.Release();
             _providerKeys.Updating.TryRemove(frozen.Id, out _);
+            foreach (string id in resetKeys.Keys) _providerKeys.Updating.TryRemove(id, out _);
             ProviderKeyGate.Release();
         }
     }
@@ -639,6 +713,7 @@ public sealed class AiSettingsStore(IPluginContext context)
             settings.SuggestFollowUps = detached.SuggestFollowUps;
             CopyEditableWebSearch(settings.WebSearch, detached.WebSearch);
             settings.FailoverChain = detached.FailoverChain;
+            settings.AutoFailoverAcrossAccounts = detached.AutoFailoverAcrossAccounts;
             PublishProviderRequests(settings, detached);
         }
         finally { ProviderKeyGate.Release(); }
@@ -651,6 +726,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         target.SuggestFollowUps = draft.SuggestFollowUps;
         CopyEditableWebSearch(target.WebSearch, draft.WebSearch);
         target.FailoverChain = [.. draft.FailoverChain.Where(entry => target.FindModel(entry.ModelId) is not null).Select(entry => new FailoverEntry { ModelId = entry.ModelId })];
+        target.AutoFailoverAcrossAccounts = draft.AutoFailoverAcrossAccounts;
     }
 
     private static void CopyEditableWebSearch(WebSearchOptions target, WebSearchOptions source)
@@ -1060,14 +1136,18 @@ public sealed class AiSettingsStore(IPluginContext context)
     internal static string KeyResetToken(string ownerId, string key)
         => ownerId + ":" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
 
-    // 确认的是提示时列出的那几把(归属者与值都算):别处又存进一把、或同一个槽换了值,都要重新问,不能连它一起清;
-    // 要清的变少了(提示后在主槽填了新 Key)仍在确认之内
-    private static void RequireKeyResetConfirmed(List<(string Id, string Key)> cleared, IReadOnlyCollection<string>? confirmed)
+    /// <summary>确认凭据里的登录令牌那一项:换了一次登录(令牌组变了),摘要就对不上,要重新问。</summary>
+    internal static string LoginResetToken(string providerId, string tokenJson) => KeyResetToken(TokenSecretName(providerId), tokenJson);
+
+    // 确认的是提示时列出的那几把(归属者与值都算)与那一份登录:别处又存进一把、同一个槽换了值、换了一次登录,
+    // 都要重新问,不能连它一起清;要清的变少了(提示后在主槽填了新 Key)仍在确认之内
+    private static void RequireKeyResetConfirmed(List<(string Id, string Key)> cleared, IReadOnlyCollection<string>? confirmed,
+        string? loginToken = null)
     {
-        if (cleared.Count == 0) return;
-        string[] tokens = [.. cleared.Select(item => KeyResetToken(item.Id, item.Key))];
+        if (cleared.Count == 0 && loginToken is null) return;
+        string[] tokens = [.. cleared.Select(item => KeyResetToken(item.Id, item.Key)), .. loginToken is null ? [] : new[] { loginToken }];
         if (confirmed is null || !tokens.All(token => confirmed.Contains(token, StringComparer.Ordinal)))
-            throw new ApiKeyResetRequiredException([.. cleared.Select(item => item.Id)], tokens);
+            throw new ApiKeyResetRequiredException([.. cleared.Select(item => item.Id)], tokens, signsOut: loginToken is not null);
     }
 
     private async Task ValidateUniqueKeyAsync(AiProvider provider, string key, string? exceptId,
@@ -1332,23 +1412,6 @@ public sealed class AiSettingsStore(IPluginContext context)
         AiProvider provider, string? keyId = null, CancellationToken cancellationToken = default)
         => ResolveSavedCredentialAsync(new ResolvedModel(provider, new AiModelConfig()), true, cancellationToken, keyId: keyId);
 
-    /// <summary>表单显式跨源探活只取已确认供应商的主槽；无主槽凭据的无鉴权接入仍可探测，不回落补充槽。</summary>
-    internal async Task<ProviderCredential> ResolvePrimaryCredentialForProbeAsync(ResolvedModel saved,
-        CancellationToken cancellationToken = default)
-    {
-        if (saved.Provider.Auth != AuthMethod.ApiKey || _providerKeys.Updating.ContainsKey(saved.Provider.Id))
-            throw new ApiKeySlotChangedException();
-        long version = ProviderConfigurationVersion(saved.Provider);
-        await ValidateCredentialScopeAsync(saved, false, cancellationToken).ConfigureAwait(false);
-        string? key = await GetApiKeyAsync(saved.Provider.Id, cancellationToken).ConfigureAwait(false);
-        if (_providerKeys.Updating.ContainsKey(saved.Provider.Id) || ProviderConfigurationVersion(saved.Provider) != version)
-            throw new ApiKeySlotChangedException();
-        await ValidateCredentialScopeAsync(saved, false, cancellationToken).ConfigureAwait(false);
-        if (_providerKeys.Updating.ContainsKey(saved.Provider.Id) || ProviderConfigurationVersion(saved.Provider) != version)
-            throw new ApiKeySlotChangedException();
-        return ProviderCredential.Key(key);
-    }
-
     internal async Task ValidateProviderCredentialScopeAsync(AiProvider provider, CancellationToken cancellationToken = default)
     {
         if (_providerKeys.Updating.ContainsKey(provider.Id)) throw new ApiKeySlotChangedException();
@@ -1435,10 +1498,14 @@ public sealed class AiSettingsStore(IPluginContext context)
         if (provider.Auth != AuthMethod.Subscription)
         {
             if (_providerKeys.Updating.ContainsKey(provider.Id)) throw new ApiKeySlotChangedException();
+            // 模型的覆盖地址与供应商不同源时,供应商的 Key(主槽也一样)都不跟去:那是给供应商自己那个地址的。
+            // 覆盖地址要 Key 就勾「自带 Key」填上;没勾就是不带 Key 的请求(设置页对这类模型给迁移提示)。
+            // 以前跨源时借主槽 —— 供应商换源之后,为新地址填的主 Key 会被发往这个旧覆盖地址(§217 留下的口径)
             bool sameOrigin = SameOrigin(model.BaseUrl, provider.BaseUrl);
+            bool crossOriginOverride = InheritsNoKeyAcrossOrigins(provider, model.Config);
             if (!string.IsNullOrEmpty(keyId))
             {
-                if (!ProviderApiKeyIds(provider).Contains(keyId, StringComparer.Ordinal)
+                if (crossOriginOverride || !ProviderApiKeyIds(provider).Contains(keyId, StringComparer.Ordinal)
                     || (!sameOrigin && keyId != provider.Id))
                 {
                     throw new ApiKeySlotChangedException();
@@ -1448,6 +1515,8 @@ public sealed class AiSettingsStore(IPluginContext context)
                 if (string.IsNullOrWhiteSpace(selected)) throw new ApiKeySlotChangedException();
                 return (ProviderCredential.Key(selected), sameOrigin ? keyId : null);
             }
+            if (crossOriginOverride) return (ProviderCredential.Key(null), null);
+            // 供应商自己的地址解析不出 origin(空着或写错)时照旧只用主槽,不进 Key 池
             if (!sameOrigin)
                 return (ProviderCredential.Key(await GetApiKeyAsync(provider.Id, cancellationToken).ConfigureAwait(false)), null);
             IEnumerable<string> ids = ProviderApiKeyIds(provider);
@@ -1481,6 +1550,16 @@ public sealed class AiSettingsStore(IPluginContext context)
         EnsureBuiltinOAuthCredentialDestination(model, bearer);
         return (bearer, null);
     }
+
+    /// <summary>
+    /// 填 Key 的供应商下,覆盖地址与供应商不同源、又没勾「自带 Key」的模型:请求不带任何 Key
+    /// (见 <see cref="ResolveCredentialCoreAsync" />)。以前这类模型借主槽,设置页据此给迁移提示。
+    /// </summary>
+    internal static bool InheritsNoKeyAcrossOrigins(AiProvider provider, AiModelConfig model)
+        => provider.Auth == AuthMethod.ApiKey && !model.HasOwnApiKey
+            && !string.IsNullOrWhiteSpace(model.BaseUrlOverride)
+            && !string.Equals(model.BaseUrlOverride, provider.BaseUrl, StringComparison.Ordinal)
+            && !SameOrigin(model.BaseUrlOverride, provider.BaseUrl);
 
     internal static bool SameOrigin(string? a, string? b)
         => Uri.TryCreate(a, UriKind.Absolute, out Uri? left)
@@ -1635,15 +1714,24 @@ public sealed class AiSettingsStore(IPluginContext context)
                     {
                         handlers.Add(new ExtraHeadersHandler(extra));
                     }
-                    // 属性为 init-only,按凭据形态分别构造:
-                    // 无凭据时留给 SDK 的环境变量回退;登录换来的短期令牌要走 AuthToken。
+                    // 属性为 init-only,按凭据形态分别构造:登录换来的短期令牌要走 AuthToken。
                     // 13.x 起 ApiKey 与 AuthToken 发出去都是 Authorization: Bearer,区别只在上面那个改写处理器挂不挂。
+                    // 没有凭据时,只有官方 api.anthropic.com 交给 SDK 去读本机的 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
+                    // (那两个变量本来就是给官方 API 的,只配环境变量直连官方是原设计);中转站、自行部署的网关、
+                    // 换源后还没填新 Key 的地址一律把两者显式置空 —— SDK 里每个属性只关掉自己那个变量,
+                    // 只置一个,另一个照样被读出来发过去(13.2.1 实测)。
                     bool noSdkRetries = callerCountsRetries && HasProviderKeyPool(provider);
-                    AnthropicClient anthropic = string.IsNullOrWhiteSpace(secret)
-                        ? new AnthropicClient { BaseUrl = baseUrl, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
-                        : credential.IsBearerToken
+                    AnthropicClient anthropic = !string.IsNullOrWhiteSpace(secret)
+                        ? credential.IsBearerToken
                             ? new AnthropicClient { BaseUrl = baseUrl, AuthToken = secret, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
-                            : new AnthropicClient { BaseUrl = baseUrl, ApiKey = secret, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null };
+                            : new AnthropicClient { BaseUrl = baseUrl, ApiKey = secret, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
+                        : IsOfficialAnthropicEndpoint(baseUrl)
+                            ? new AnthropicClient { BaseUrl = baseUrl, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
+                            : new AnthropicClient
+                            {
+                                BaseUrl = baseUrl, ApiKey = null, AuthToken = null, Handlers = handlers,
+                                MaxRetries = noSdkRetries ? 0 : null
+                            };
                     return anthropic.AsIChatClient(provider.Model, provider.MaxTokens);
                 }
 
@@ -1880,6 +1968,19 @@ public sealed class AiSettingsStore(IPluginContext context)
             throw new BuiltinOAuthHostMismatchException();
         }
     }
+
+    /// <summary>官方 Anthropic API 的主机:没有凭据时只有它可以用本机的环境变量(见 <see cref="CreateClient" />)。</summary>
+    private const string OfficialAnthropicHost = "api.anthropic.com";
+
+    /// <summary>
+    /// 是不是官方 Anthropic API(<c>https://api.anthropic.com</c>,默认端口)。
+    /// 只认 https 与默认端口:明文 http 或别的端口都不是那个端点,环境变量里的 Key 不往那儿送。
+    /// </summary>
+    internal static bool IsOfficialAnthropicEndpoint(string? url)
+        => Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+            && string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(uri.IdnHost, OfficialAnthropicHost, StringComparison.OrdinalIgnoreCase)
+            && uri.Port == 443;
 
     internal static string ClientBaseUrl(string endpoint, ChatProtocol protocol)
     {

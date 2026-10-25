@@ -260,7 +260,8 @@
     <!-- 隐私与安全 -->
     <TextBlock Classes="section-title" Text="{loc:Localize SetGeneral_PrivacySection}" />
     <!-- 主密码保护:密钥派生/解锁/凭据迁移未实现,暂不展示(设置审计 R-04);
-         当前凭据已用本机密钥(AES)加密存储。 -->
+         当前凭据已用本机加密密钥(AES)加密存储,密钥交给系统密钥链保管(第一步已做,见 plan.md;
+         Windows 上是 DPAPI 包裹的密钥文件,密钥链用不了时回落到文件)。主密码是第二步,见设计文档。 -->
     <Grid ColumnDefinitions="*,Auto">
       <StackPanel Spacing="2">
         <TextBlock Classes="row-label" Text="{loc:Localize SetGeneral_RememberPasswords}" />

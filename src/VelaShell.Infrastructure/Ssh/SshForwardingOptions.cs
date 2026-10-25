@@ -140,6 +140,8 @@ internal static class SshForwardingOptions
         return new AgentForwardOptions
         {
             FailureMode = ForwardFailureMode.Continue,
+            // 按连接指定了 agent 端点就转发它(与认证用同一个,ssh_config 的 IdentityAgent 也是这样);没指定交 null,库按系统默认。
+            AgentEndpoint = SshAgentEndpoints.Resolve(features.AgentEndpoint),
             AllowedKeys = allowed,
             ApproveSignature = features.AgentForwardConfirm
                 ? Confirmer(prompt, target, confirmTimeout ?? AgentConfirmTimeout, hostKeys)
@@ -158,6 +160,11 @@ internal static class SshForwardingOptions
         if (features is { AgentForwardConfirm: true })
         {
             text += Strings.Get("Ssh_AgentForwardConfirmEach");
+        }
+        if (SshAgentEndpoints.Normalize(features?.AgentEndpoint) is { } endpoint)
+        {
+            // 转发的不是系统默认的那个 agent:写出来,用户才知道远端借到的是哪一个。
+            text += Strings.Format("Ssh_AgentForwardEndpoint", endpoint);
         }
         return text;
     }

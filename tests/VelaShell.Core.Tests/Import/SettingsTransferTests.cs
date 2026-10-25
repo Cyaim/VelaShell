@@ -201,6 +201,77 @@ public sealed class SettingsTransferTests
         Assert.IsNull(SettingsTransfer.Parse("""{ "general": 5 }"""), "类型对不上");
     }
 
+    // ———— 无端到端口令的云同步:推送前剔机密、拉取时留本机的(与导出 / 导入同一份名单、同一套规矩) ————
+
+    /// <summary>名单里的每一项都不带,其余照旧;传进来的那份不动(它是本机正在用的设置)。</summary>
+    [TestMethod]
+    public void WithoutSecrets_DropsEverySecretField_AndKeepsTheRest()
+    {
+        AppSettings source = Configured();
+
+        AppSettings stripped = SettingsTransfer.WithoutSecrets(source);
+
+        JsonObject root = Node(stripped);
+        JsonObject defaults = Node(new AppSettings());
+        foreach ((string block, string field) in SettingsCategories.SecretFields)
+        {
+            Assert.IsTrue(JsonNode.DeepEquals(defaults[block]![field], root[block]![field]), $"{block}.{field} 应回到默认值");
+        }
+        Assert.AreEqual("proxy.example.com", stripped.Proxy.Host, "代理的地址账号不是机密,照常同步");
+        Assert.AreEqual("vela", stripped.Proxy.Username);
+        Assert.IsTrue(stripped.Security.AlertWebhook, "开关照带,只是地址不带");
+        Assert.AreSequenceEqual(["ssh://root@10.0.0.1:22"], stripped.Security.TrustedExternalLaunchTargets);
+        Assert.AreEqual(ProxyPassword, source.Proxy.Password, "不能改动本机那份");
+        Assert.AreEqual(WebhookUrl, source.Security.WebhookUrl);
+    }
+
+    /// <summary>
+    /// 守卫:名单里每一项拉取时都要有「没带就留本机的」规矩 —— 往 <see cref="SettingsCategories.SecretFields" /> 加了一项、
+    /// 却没在 <see cref="SettingsTransfer.KeepLocalSecrets" /> 里补上,无口令同步拉一次就把本机填的那项清空。
+    /// </summary>
+    [TestMethod]
+    public void KeepLocalSecrets_RestoresEverySecretField_ForTheSameProxy()
+    {
+        AppSettings local = Configured();
+        AppSettings incoming = SettingsTransfer.WithoutSecrets(Configured());
+
+        SettingsTransfer.KeepLocalSecrets(incoming, local);
+
+        JsonObject kept = Node(incoming);
+        JsonObject expected = Node(local);
+        foreach ((string block, string field) in SettingsCategories.SecretFields)
+        {
+            Assert.IsTrue(JsonNode.DeepEquals(expected[block]![field], kept[block]![field]), $"{block}.{field} 没有留住本机的值");
+        }
+    }
+
+    /// <summary>拉到的代理换了一台:本机密码不能交给它;Webhook 地址照旧留本机的。</summary>
+    [TestMethod]
+    public void KeepLocalSecrets_DropsTheProxyPassword_ForAnotherProxy()
+    {
+        AppSettings incoming = SettingsTransfer.WithoutSecrets(Configured());
+        incoming.Proxy.Port = 1081;
+
+        SettingsTransfer.KeepLocalSecrets(incoming, Configured());
+
+        Assert.AreEqual(string.Empty, incoming.Proxy.Password);
+        Assert.AreEqual(WebhookUrl, incoming.Security.WebhookUrl);
+    }
+
+    /// <summary>拉到的那份自己带着(端到端加密的同步、旧版本推上去的明文):照用,不拿本机的去顶。</summary>
+    [TestMethod]
+    public void KeepLocalSecrets_UsesTheSecretsTheIncomingCarries()
+    {
+        AppSettings incoming = Configured();
+        incoming.Proxy.Password = "from-the-other-device";
+        incoming.Security.WebhookUrl = "https://hooks.example.com/other";
+
+        SettingsTransfer.KeepLocalSecrets(incoming, Configured());
+
+        Assert.AreEqual("from-the-other-device", incoming.Proxy.Password);
+        Assert.AreEqual("https://hooks.example.com/other", incoming.Security.WebhookUrl);
+    }
+
     private static AppSettings Configured()
     {
         var settings = new AppSettings();
@@ -217,4 +288,8 @@ public sealed class SettingsTransferTests
         settings.Normalize();
         return settings;
     }
+
+    /// <summary>按导出文件的约定(camelCase)写成 JSON,拿名单里的分组 / 字段名去取值。</summary>
+    private static JsonObject Node(AppSettings settings) =>
+        JsonSerializer.SerializeToNode(settings, SettingsTransfer.Options)!.AsObject();
 }

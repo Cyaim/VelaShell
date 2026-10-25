@@ -60,6 +60,7 @@ dotnet test  VelaShell.slnx
 | [`plan.md`](plan.md)                                                             | **已经发生的事**:进展记录、当前架构、每次改动的来龙去脉。开发跟进以它为准                                                                            |
 | [`feature-plan.md`](feature-plan.md)                                             | **还没发生的事**:待办、候选特性、确认不做的清单(附理由)。⚠️ 两者分工是硬的 —— 做完了就从 `feature-plan.md` 划掉、在 `plan.md` 补一节;**不要在 `plan.md` 里留 TODO** |
 | `README.md` / `README.en.md` / `CONTRIBUTING*.md` / `SECURITY.md` / `PRIVACY.md` | GitHub 仓库门面与流程约定                                                                                                   |
+| `manual.md` / `manual.en.md`                                                     | 写给用户的使用手册,跟着发布版本走。**改了用户看得见的行为,就在同一个提交里改手册,中英两份一起改**;设计与开发文档仍在 velashell-docs(维护者 2026-10-25 定) |
 | `src/**/README.md`、`tests/**/README.md`                                          | 各工程自己的目录职责说明,跟着代码走                                                                                                 |
 | `src/VelaShell.Ssh/AGENTS.md` / `LICENSE` / `NOTICE.md`                           | SSH 库专属的开发约定(净室规程)、它自己的 MIT 授权与独立性声明 —— 服务的是「改这个库」,且许可证必须跟着代码走                                                              |
 | `src/VelaShell.XServer/AGENTS.md` / `LICENSE` / `NOTICE.md`                       | X11 服务端库的开发约定(同样的净室规程)、MIT 授权、独立性声明与内置字体的来源 —— 理由同上                                                                          |
@@ -90,6 +91,13 @@ Docker 与 `docker-compose.test.yml`,`CrossPlatformPublishTests` 需 `VELASHELL_
 跑下一条用例 —— 下一条若是 `Dispatch(…).GetAwaiter().GetResult()` 写法,就在 UI 线程上等 UI 线程,
 整套卡死(只在两种写法按这个顺序相邻时出现)。这两种写法都由 `tests/VelaShell.Tests/Design/HeadlessDispatchUsageTests`
 扫全部测试工程拦住,红了照它给的文件与行号改。
+- **`Span` / `ReadOnlySpan` 与任何 ref struct(`SshDataReader` 之类)都不许跨 `await` 存活**,哪怕编译通过。
+`Directory.Build.props` 开着 `runtime-async=on`,而这个模式下编译器**不报 CS4007**(.NET 11 RC2 的 Roslyn 5.12 实测):
+`await` 真挂起之后,那个 Span 回来是空的(长度 0)、读取器回来是默认值;同步完成时又是对的,于是表现成偶发失败。
+最容易踩的是**接收者先求值、实参里才 `await`** 的一行写法 —— `x.AsSpan().SequenceEqual(await …)`,连 `bytes.SequenceEqual(await …)`
+也算(C# 14 起它绑到 Span 的重载),`await` 真挂起时恒为 `false`。先 `await` 拿到结果再造 Span;ref struct 的读取器在第一个 `await`
+之前读完,或者 `await` 之后另起一个。拿不准时用 `dotnet build VelaShell.slnx --artifacts-path <临时目录> -p:Features=runtime-async=off`
+编一遍,报出来的 CS4007 就是这类问题。`ref` 局部变量跨 `await`(CS9217)两种模式都照报,不受影响。
 - **改 `src/VelaShell.Ssh/` 之前先读 [`src/VelaShell.Ssh/AGENTS.md`](src/VelaShell.Ssh/AGENTS.md)**。
 那是宿主的 SSH 库(2026-09-23 从 velashell-ssh 仓库并入,不单独发 NuGet),有一条宿主其余部分没有的
 **净室规程**:写实现时不许打开任何其它 SSH 实现的源码,实现依据只能是 RFC 与 velashell-docs 的

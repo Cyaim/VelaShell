@@ -54,6 +54,7 @@ internal sealed class SettingsPageHost(Panel host)
         SettingsSectionKey.General => new GeneralSettingsPage(),
         SettingsSectionKey.Appearance => new AppearanceSettingsPage(),
         SettingsSectionKey.Terminal => new TerminalSettingsPage(),
+        SettingsSectionKey.OutputRules => new OutputRulesPage(),
         SettingsSectionKey.Keys => new KeyManagementPage(),
         SettingsSectionKey.Credentials => new SharedCredentialsPage(),
         SettingsSectionKey.Shortcuts => new ShortcutsPage(),

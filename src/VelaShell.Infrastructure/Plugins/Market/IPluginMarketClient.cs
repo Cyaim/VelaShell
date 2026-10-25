@@ -31,7 +31,8 @@ public interface IPluginMarketClient
     /// <param name="progress">下载进度(0–100)。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <exception cref="InvalidOperationException">
-    /// 商店上没有这个版本,或者下载回来的字节与商店声明的摘要对不上。
+    /// 商店上没有这个版本;商店地址或下载地址不是 https;商店没给 SHA-256 摘要(没摘要就不下);
+    /// 或者下载回来的字节与商店声明的摘要对不上。
     /// </exception>
     Task DownloadAsync(
         string pluginId,

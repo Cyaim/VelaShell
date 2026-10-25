@@ -30,7 +30,7 @@ public class RemoteRelayTests
         byte[]? received = null;
         ISftpService target = Substitute.For<ISftpService>();
         target.UploadStreamAsync(TargetSession, Arg.Any<Stream>(), "/b/data.bin", payload.Length, mtime,
-                  Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+                  Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>())
               .Returns(call =>
               {
                   using var copy = new MemoryStream();
@@ -127,7 +127,7 @@ public class RemoteRelayTests
         await RemoteRelay.CopyFileAsync(source, SourceSession, "/a/x", target, TargetSession, "/b/x", resumeOffset: 4);
 
         await target.Received(1).UploadStreamAsync(TargetSession, Arg.Any<Stream>(), "/b/x", 10, Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>?>(), 4, Arg.Any<CancellationToken>());
+            Arg.Any<IProgress<TransferProgress>?>(), 4, Arg.Any<uint?>(), Arg.Any<CancellationToken>());
     }
 
     [TestMethod]
@@ -161,7 +161,7 @@ public class RemoteRelayTests
         await RemoteRelay.CopyFileAsync(source, SourceSession, "/a/x", target, TargetSession, "/b/x");
 
         await target.Received(1).UploadStreamAsync(TargetSession, Arg.Any<Stream>(), "/b/x", 10, Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>?>(), 0, Arg.Any<CancellationToken>());
+            Arg.Any<IProgress<TransferProgress>?>(), 0, Arg.Any<uint?>(), Arg.Any<CancellationToken>());
     }
 
     [TestMethod]

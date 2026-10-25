@@ -115,6 +115,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         IObservable<bool> hasMultiSelection = this.WhenAnyValue(x => x.HasMultiSelection);
         OpenSelectedCommand = ReactiveCommand.Create(RaiseOpenSelected, hasMultiSelection);
         OpenSelectedInSyncChannelCommand = ReactiveCommand.Create(RaiseOpenSelectedInSyncChannel, hasMultiSelection);
+        HealthCheckSelectedCommand = ReactiveCommand.Create(RaiseHealthCheckSelected, hasMultiSelection);
         DeleteSelectedCommand = ReactiveCommand.CreateFromTask(DeleteMultiSelectionAsync, hasMultiSelection);
         MoveSelectionToGroupCommand = ReactiveCommand.CreateFromTask<SessionTreeNodeViewModel>(MoveMultiSelectionToGroupAsync);
         BatchEditCommand = ReactiveCommand.Create(RaiseBatchEdit, hasMultiSelection);
@@ -124,6 +125,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         IObservable<bool> hasSelectedGroup = this.WhenAnyValue(x => x.SelectedNode).Select(node => node is { IsGroup: true });
         OpenGroupCommand = ReactiveCommand.Create(RaiseOpenGroup, hasSelectedGroup);
         OpenGroupInSyncChannelCommand = ReactiveCommand.Create(RaiseOpenGroupInSyncChannel, hasSelectedGroup);
+        HealthCheckGroupCommand = ReactiveCommand.Create(RaiseHealthCheckGroup, hasSelectedGroup);
         MoveGroupUpCommand = ReactiveCommand.CreateFromTask(
             () => MoveSelectedGroupByAsync(-1),
             this.WhenAnyValue(x => x.CanMoveSelectedGroupUp)
@@ -539,6 +541,9 @@ public sealed class SessionTreeViewModel : ReactiveObject
     /// <summary>多选菜单「打开 N 个连接并同步输入」的文案。</summary>
     public string OpenSelectedInSyncChannelText => Strings.Format("Tree_OpenSelectedSynced", _multiSelection.Count);
 
+    /// <summary>多选菜单「巡检 N 个连接」的文案。</summary>
+    public string HealthCheckSelectedText => Strings.Format("Tree_HealthCheckSelected", _multiSelection.Count);
+
     /// <summary>多选菜单「删除 N 个连接」的文案。</summary>
     public string DeleteSelectedText => Strings.Format("Tree_DeleteSelected", _multiSelection.Count);
 
@@ -675,6 +680,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         this.RaisePropertyChanged(nameof(ShowDualSftpUnsupportedHint));
         this.RaisePropertyChanged(nameof(OpenSelectedText));
         this.RaisePropertyChanged(nameof(OpenSelectedInSyncChannelText));
+        this.RaisePropertyChanged(nameof(HealthCheckSelectedText));
         this.RaisePropertyChanged(nameof(DeleteSelectedText));
     }
 
@@ -710,6 +716,12 @@ public sealed class SessionTreeViewModel : ReactiveObject
 
     /// <summary>分组菜单「打开全部并同步输入」,触发 <see cref="OpenManyInSyncChannelRequested" />。</summary>
     public ReactiveCommand<RxVoid, RxVoid> OpenGroupInSyncChannelCommand { get; }
+
+    /// <summary>多选菜单「巡检 N 个连接」,触发 <see cref="HealthCheckRequested" />。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> HealthCheckSelectedCommand { get; }
+
+    /// <summary>分组菜单「巡检这一组」,触发 <see cref="HealthCheckRequested" />。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> HealthCheckGroupCommand { get; }
 
     /// <summary>多选菜单「删除 N 个连接」(先经 <see cref="ConfirmDeleteSessions" /> 确认)。</summary>
     public ReactiveCommand<RxVoid, RxVoid> DeleteSelectedCommand { get; }
@@ -773,6 +785,12 @@ public sealed class SessionTreeViewModel : ReactiveObject
     /// 对一组机器批量下发命令。挑哪个频道、哪些连接开得出终端、要不要先确认,都由宿主定。
     /// </summary>
     public event Action<IReadOnlyList<SessionProfile>>? OpenManyInSyncChannelRequested;
+
+    /// <summary>
+    /// 对一批连接做会话健康巡检(分组菜单「巡检这一组」、多选菜单「巡检 N 个连接」):逐台跑四步诊断、出一张结果表。
+    /// 只由用户点菜单触发,宿主不定时调用。
+    /// </summary>
+    public event Action<IReadOnlyList<SessionProfile>>? HealthCheckRequested;
 
     /// <summary>多选菜单「批量修改」:由宿主打开批量修改对话框。</summary>
     public event Action<IReadOnlyList<SessionProfile>>? BatchEditRequested;
@@ -1157,6 +1175,7 @@ public sealed class SessionTreeViewModel : ReactiveObject
         }
         this.RaisePropertyChanged(nameof(OpenSelectedText));
         this.RaisePropertyChanged(nameof(OpenSelectedInSyncChannelText));
+        this.RaisePropertyChanged(nameof(HealthCheckSelectedText));
         this.RaisePropertyChanged(nameof(DeleteSelectedText));
     }
 
@@ -1399,6 +1418,15 @@ public sealed class SessionTreeViewModel : ReactiveObject
         }
     }
 
+    private void RaiseHealthCheckSelected()
+    {
+        List<SessionProfile> profiles = MultiSelectionProfiles();
+        if (profiles.Count > 0)
+        {
+            HealthCheckRequested?.Invoke(profiles);
+        }
+    }
+
     private void RaiseBatchEdit()
     {
         List<SessionProfile> profiles = MultiSelectionProfiles();
@@ -1486,6 +1514,14 @@ public sealed class SessionTreeViewModel : ReactiveObject
         if (SelectedGroupProfiles() is { Count: > 0 } profiles)
         {
             OpenManyInSyncChannelRequested?.Invoke(profiles);
+        }
+    }
+
+    private void RaiseHealthCheckGroup()
+    {
+        if (SelectedGroupProfiles() is { Count: > 0 } profiles)
+        {
+            HealthCheckRequested?.Invoke(profiles);
         }
     }
 

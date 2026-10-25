@@ -145,6 +145,27 @@ public sealed class SessionArchiveJsonTests
         Assert.AreEqual(new DateTime(2026, 10, 9, 8, 0, 0, DateTimeKind.Utc), document.ExportedAtUtc);
     }
 
+    /// <summary>系统密钥库的钥照原样往返(引用不是机密,明文写进文件);认证方式写成名字 <c>keyStore</c>。</summary>
+    [TestMethod]
+    public void RoundTrip_KeepsAKeyStoreReference()
+    {
+        SessionProfile tpm = new()
+        {
+            Name = "tpm", Host = "10.0.0.51", Username = "ops", AuthMethod = AuthMethod.KeyStore,
+            KeyStoreKey = new SystemKeyReference
+            {
+                Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy", MachineKey = true, PublicKey = "ecdsa-sha2-nistp256 AAAA deploy",
+            },
+        };
+
+        string json = SessionArchiveJson.Serialize(new SessionArchive { Sessions = [tpm] }, null);
+        SessionProfile read = SessionArchiveJson.Read("backup.json", json).Candidates.Single().Profile;
+
+        Assert.Contains("\"authMethod\": \"keyStore\"", json);
+        Assert.AreEqual(AuthMethod.KeyStore, read.AuthMethod);
+        Assert.AreEqual(tpm.KeyStoreKey, read.KeyStoreKey);
+    }
+
     [TestMethod]
     public void Serialize_WritesEnumsAsNames_AndReadAcceptsNumbersToo()
     {
@@ -186,6 +207,36 @@ public sealed class SessionArchiveJsonTests
         Assert.AreEqual("10.1.1.1", document.Candidates[0].Profile.Name, "没写名称就用主机");
         Assert.AreEqual(22, document.Candidates[0].Profile.Port);
         Assert.AreEqual(3306, document.Candidates[1].Profile.Port);
+    }
+
+    /// <summary>
+    /// 分得清「文件没提目录收藏」(目录收藏功能之前的备份、手写文件)与「文件里收藏就是空的」:
+    /// 反序列化出来的对象两种都是空列表,覆盖导入时前者要留本机的收藏。
+    /// </summary>
+    [TestMethod]
+    public void Read_TellsAMissingBookmarkFieldFromAnEmptyOne()
+    {
+        const string json = """
+            {
+              "sessions": [
+                { "name": "old-backup", "host": "10.0.0.1" },
+                { "name": "cleared", "host": "10.0.0.2", "directoryBookmarks": [] },
+                { "name": "hand-null", "host": "10.0.0.3", "directoryBookmarks": null },
+                { "name": "kept", "host": "10.0.0.4", "DirectoryBookmarks": [ { "localPath": "C:\\work", "remotePath": "/srv/app" } ] }
+              ]
+            }
+            """;
+
+        IReadOnlyList<SessionImportCandidate> candidates = SessionArchiveJson.Read("hand.json", json).Candidates;
+
+        Assert.AreSequenceEqual([false, true, false, true], candidates.Select(static c => c.HasDirectoryBookmarks).ToList());
+        Assert.IsTrue(candidates.All(static c => c.Profile.DirectoryBookmarks is not null), "收藏列表一律兜成非 null,后面的代码照常用");
+        Assert.AreEqual("/srv/app", candidates[3].Profile.DirectoryBookmarks.Single().RemotePath, "字段名不区分大小写,与其它字段一样");
+
+        // 只是读文件这一处:同一份选项写出去的文件照样带着收藏,别处用 Options 读出来的配置也不会是 null。
+        SessionProfile roundTrip = JsonSerializer.Deserialize<SessionProfile>(
+            JsonSerializer.Serialize(new SessionProfile { Host = "h" }, SessionArchiveJson.Options), SessionArchiveJson.Options)!;
+        Assert.IsNotNull(roundTrip.DirectoryBookmarks);
     }
 
     [TestMethod]

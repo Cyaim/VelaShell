@@ -140,6 +140,48 @@ public class SftpServiceTests
     }
 
     /// <summary>
+    /// 覆盖上传的临时文件按被替换文件的 0777 那几位新建(setuid / setgid / 粘滞位留给提交:属主还没对上);
+    /// 新文件、链接按服务端默认;是个条目却读不到模式时按 0600(提交反正会拒绝)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("100600", "600")]
+    [DataRow("100755", "755")]
+    [DataRow("106755", "755")]
+    [DataRow("101777", "777")]
+    [DataRow("120777", null)]
+    [DataRow(null, null)]
+    public async Task UploadCreateMode_IsTheReplacedRegularFilesPermissionBits(string? target, string? expected)
+    {
+        _sftpClient.GetLinkModeAsync("/target", Arg.Any<CancellationToken>())
+            .Returns(target is null ? null : new SftpFileMode(Octal(target), 1000, 1000));
+
+        uint? mode = await _sftpService.GetUploadCreateModeAsync(_sessionId, "/target");
+
+        Assert.AreEqual(expected is null ? null : Octal(expected), mode);
+    }
+
+    [TestMethod]
+    public async Task UploadCreateMode_UnknownModeOfAnExistingEntry_IsOwnerOnly()
+    {
+        _sftpClient.GetLinkModeAsync("/target", Arg.Any<CancellationToken>()).Returns(new SftpFileMode(null, null, null));
+
+        Assert.AreEqual(Octal("600"), await _sftpService.GetUploadCreateModeAsync(_sessionId, "/target"));
+    }
+
+    /// <summary>流式上传把新建权限位交给客户端:随 OPEN 一起发出,文件一建出来就是这个模式。</summary>
+    [TestMethod]
+    public async Task UploadStream_WithCreateMode_PassesItToTheClient()
+    {
+        using var source = new MemoryStream(new byte[4]);
+
+        await _sftpService.UploadStreamAsync(_sessionId, source, "/dir/.vela-up-1", 4, createMode: Octal("600"));
+
+        await _sftpClient.Received(1).UploadAsync(source, "/dir/.vela-up-1",
+            Arg.Is<RemoteUploadOptions>(o => o.CreateMode == Octal("600") && o.ResumeOffset == 0),
+            Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// 带不过去就只许收窄、不许放宽:目标存在却读不到它的模式,或服务端不许改临时文件的模式而它比目标宽,就拒绝提交,目标原样不动;
     /// 临时文件本来就不比目标宽(只是少了执行位)时照样提交。属主没报时不改属主(当成 0 等于把文件交给 root)。
     /// </summary>
@@ -1798,6 +1840,51 @@ public class SftpServiceTests
             Assert.IsGreaterThan(0d, reports[0].SpeedBytesPerSecond);
             Assert.IsLessThan(20_000d, reports[0].SpeedBytesPerSecond, "只下载 1000 字节,不应把已有的 190000 字节计入速度。");
             CollectionAssert.AreEqual(content, await File.ReadAllBytesAsync(localPath));
+        }
+        finally
+        {
+            File.Delete(localPath);
+        }
+    }
+
+    /// <summary>
+    /// 续传下载同样受「带宽限制」管。续传这条路自己从远端流搬字节,不经 <c>client.DownloadAsync</c>,
+    /// 原先漏包限速流:开着 1 MB/s 的限制,一续传就按链路全速跑。
+    /// </summary>
+    /// <remarks>
+    /// 只断言下界:续传部分比 1 MiB 多一点,按 1 MiB/s 整形至少要等将近一秒;不限速时内存流一下就拷完。
+    /// 机器忙只会让它更慢,不会让它误绿。
+    /// </remarks>
+    [TestMethod]
+    public async Task DownloadFileAsync_ResumeHonoursTheDownloadBandwidthLimit()
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            Transfer = { PreserveTimestamps = false, BandwidthLimitEnabled = true, DownloadLimitMBps = 1 },
+        });
+        var service = new SftpService(_connectionService, _ => _sftpClient, settings);
+        const int prefix = 100_000;
+        byte[] content = CreatePattern(prefix + (1024 * 1024) + (64 * 1024));
+        string localPath = Path.Combine(Path.GetTempPath(), $"vela-resume-limit-{Guid.NewGuid():N}.bin");
+        await File.WriteAllBytesAsync(localPath, content[..prefix]);
+        const string remotePath = "/home/user/limited.bin";
+        _sftpClient.GetEntryAsync(remotePath, Arg.Any<CancellationToken>())
+            .Returns(new SftpEntry { Name = "limited.bin", FullName = remotePath, Length = content.Length });
+        _sftpClient.OpenAsync(remotePath, FileMode.Open, FileAccess.Read, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream>(new MemoryStream(content, false)));
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            await service.DownloadFileAsync(_sessionId, remotePath, localPath, null, resumeOffset: prefix);
+            watch.Stop();
+
+            CollectionAssert.AreEqual(content, await File.ReadAllBytesAsync(localPath));
+            await _sftpClient.DidNotReceive().DownloadAsync(
+                Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>());
+            Assert.IsGreaterThanOrEqualTo(
+                600L, watch.ElapsedMilliseconds,
+                $"续传了 {content.Length - prefix} 字节、限速 1 MiB/s,却只用了 {watch.ElapsedMilliseconds} ms —— 续传分支没有限速。");
         }
         finally
         {

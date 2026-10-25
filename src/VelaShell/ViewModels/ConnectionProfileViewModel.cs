@@ -19,6 +19,7 @@ using VelaShell.Infrastructure.Ssh;
 using VelaShell.PluginSdk.Protocols;
 using VelaShell.Presentation.Services;
 using VelaShell.Security;
+using VelaShell.Services;
 
 namespace VelaShell.ViewModels;
 
@@ -93,6 +94,9 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private CredentialSourceOption _selectedCredentialSource;
     private AuthMethod _authMethod = AuthMethod.Password;
     private string? _certificatePath;
+    private SystemKeyReference? _keyStoreKey;
+    private readonly ISystemKeyStore? _systemKeyStore;
+    private bool _systemKeysLoaded;
     private ConnectionType _connectionType = ConnectionType.SSH;
     private FtpEncryptionMode _ftpEncryption = FtpEncryptionMode.Auto;
     private bool _ftpPassive = true;
@@ -137,6 +141,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private bool _sshAgentForwarding;
     private bool _sshAgentForwardRestrict;
     private bool _sshAgentForwardConfirm;
+    private string? _sshAgentEndpoint;
     private readonly List<string> _savedAgentForwardKeys = [];
     private bool _agentForwardKeysLoaded;
     private readonly ISshKeyService? _keyService;
@@ -181,9 +186,11 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         string? defaultPrivateKeyPath = null,
         PluginProtocolRegistry? protocolRegistry = null,
         ISshKeyService? keyService = null,
-        ISharedCredentialRepository? sharedCredentials = null)
+        ISharedCredentialRepository? sharedCredentials = null,
+        ISystemKeyStore? systemKeyStore = null)
     {
         _protocolRegistry = protocolRegistry;
+        _systemKeyStore = systemKeyStore;
         _keyService = keyService;
         _sharedCredentials = sharedCredentials;
         CredentialSources = [CredentialSourceOption.Inline()];
@@ -224,6 +231,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             _privateKeyPath = existing.PrivateKeyPath;
             _privateKeyPassphrase = existing.PrivateKeyPassphrase;
             _certificatePath = existing.CertificatePath;
+            _keyStoreKey = existing.KeyStoreKey;
             _credentialSource = existing.CredentialSource;
             _groupId = existing.GroupId;
             _isPasswordAuth = existing.AuthMethod == AuthMethod.Password;
@@ -266,6 +274,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 _sshAgentForwardRestrict = ssh.AgentForwardKeys is not null;
                 _savedAgentForwardKeys = ssh.AgentForwardKeys is { } keys ? [.. keys] : [];
                 _sshAgentForwardConfirm = ssh.AgentForwardConfirm;
+                _sshAgentEndpoint = ssh.AgentEndpoint;
                 _sshX11Forwarding = ssh.X11Forwarding;
                 _sshX11Display = ssh.X11Display;
                 _sshX11Trusted = ssh.X11Trusted;
@@ -292,7 +301,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 IsPasswordAuth = method == AuthMethod.Password;
                 IsKeyAuth = method == AuthMethod.PrivateKey;
                 IsCertAuth = method == AuthMethod.Certificate;
-                if (method == AuthMethod.Tailscale)
+                // 系统密钥库与 Tailscale 一样不走共享凭据:引用的材料在这台电脑的密钥库里,共享不了。
+                if (method is AuthMethod.Tailscale or AuthMethod.KeyStore)
                 {
                     _credentialSource = null;
                     _selectedCredentialSource = CredentialSources[0];
@@ -301,6 +311,13 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 this.RaisePropertyChanged(nameof(IsTailscaleAuth));
                 this.RaisePropertyChanged(nameof(ShowsPrivateKeyFields));
                 this.RaisePropertyChanged(nameof(IsAgentAuth));
+                this.RaisePropertyChanged(nameof(IsKeyStoreAuth));
+                this.RaisePropertyChanged(nameof(ShowKeyStoreFields));
+                this.RaisePropertyChanged(nameof(ShowKeyStoreAuthOption));
+                if (method == AuthMethod.KeyStore)
+                {
+                    _ = LoadSystemKeysAsync();
+                }
                 // 口令框也跟着认证方式显隐 —— 原先漏发了这一条,切到私钥页时口令框会留在原地。
                 this.RaisePropertyChanged(nameof(ShowPasswordField));
                 RaiseCredentialSourceDependents();
@@ -356,6 +373,9 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         ConnectCommand = ReactiveCommand.CreateFromTask(ConnectAsync, canExecute);
         CancelCommand = ReactiveCommand.Create(() => (SessionProfile?)null);
         TestConnectionCommand = ReactiveCommand.CreateFromTask(TestConnectionAsync, canExecute);
+        AllowAlgorithmsCommand = ReactiveCommand.CreateFromTask(
+            AllowAlgorithmsAndRetestAsync,
+            this.WhenAnyValue(x => x.AlgorithmRemedy, x => x.IsBusy, (remedy, busy) => remedy is not null && !busy));
         CopyErrorCommand = ReactiveCommand.CreateFromTask(CopyErrorAsync, this.WhenAnyValue(x => x.ErrorMessage, message => !string.IsNullOrWhiteSpace(message)));
         SelectConnectionTypeCommand = ReactiveCommand.Create<ConnectionType>(SelectConnectionType);
         SelectPluginProtocolCommand = ReactiveCommand.CreateFromTask<string>(SelectPluginProtocolAsync);
@@ -394,6 +414,10 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         NewSharedCredentialCommand = ReactiveCommand.CreateFromTask(NewSharedCredentialAsync);
         OpenPluginManagerCommand = ReactiveCommand.Create(() => OpenPluginManager?.Invoke());
         TogglePasswordVisibilityCommand = ReactiveCommand.Create(() => { ShowPassword = !ShowPassword; });
+        RefreshSystemKeysCommand = ReactiveCommand.CreateFromTask(
+            () => LoadSystemKeysAsync(force: true), this.WhenAnyValue(x => x.IsLoadingSystemKeys, loading => !loading));
+        CopySystemKeyPublicKeyCommand = ReactiveCommand.CreateFromTask(
+            CopySystemKeyPublicKeyAsync, this.WhenAnyValue(x => x.SelectedSystemKey, key => key?.PublicKeyLine is { Length: > 0 }));
     }
 
     /// <summary>连接显示名称;留空时保存时以 user@host 兜底。</summary>
@@ -924,8 +948,41 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             this.RaisePropertyChanged(nameof(HasError));
             // 换了一条错误(或清空)就收回上一条的「已复制」:那句回执是对具体那段文本说的。
             ErrorCopied = false;
+            // 一键放开是对上一次测试失败说的:错误换了(新一轮测试、保存失败),它也跟着作废。
+            AlgorithmRemedy = null;
         }
     }
+
+    /// <summary>
+    /// 上一次「测试」败在算法协商上、而对端有本版实现了只是没放开的算法:反馈条上的「放开这几个算法并重新测试」按它来。
+    /// </summary>
+    public SshAlgorithmRemedy? AlgorithmRemedy
+    {
+        get;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(HasAlgorithmRemedy));
+            this.RaisePropertyChanged(nameof(AlgorithmRemedyTip));
+        }
+    }
+
+    /// <summary>反馈条上要不要出「放开这几个算法并重新测试」。</summary>
+    public bool HasAlgorithmRemedy => AlgorithmRemedy is not null;
+
+    /// <summary>那颗按钮的悬停说明:往哪一类清单里加哪几个。</summary>
+    public string AlgorithmRemedyTip => AlgorithmRemedy is { } remedy
+        ? SshAlgorithmRemedyFlow.ButtonTip(remedy, SshAlgorithmRemedyFollowUp.Retest)
+        : string.Empty;
+
+    /// <summary>「放开这几个算法并重新测试」。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> AllowAlgorithmsCommand { get; }
+
+    /// <summary>
+    /// 视图注入的确认框(标题、正文、确认键文字;确认返回 true),与终端标签上那颗按钮问的是同一句。
+    /// 未挂时(headless)不改 —— 这一步会降低那条连接的安全性,没人点头不能做。
+    /// </summary>
+    public Func<string, string, string, Task<bool>>? AllowAlgorithmsConfirmer { get; set; }
 
     /// <summary>是否有可复制的错误信息 —— 复制按钮据此出现。</summary>
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
@@ -980,7 +1037,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         {
             // ComboBox 在 ItemsSource 重建的瞬间会回写一个 null,不能让它把引用清掉。
             if (value is null || ReferenceEquals(value, _selectedCredentialSource)
-                || (IsTailscaleAuth && value.Reference is not null))
+                || ((IsTailscaleAuth || IsKeyStoreAuth) && value.Reference is not null))
             {
                 return;
             }
@@ -1015,7 +1072,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     /// <summary>这种连接用不用得上凭据来源:匿名 FTP 与无凭据协议(Telnet)用不上。</summary>
     /// <remarks>与仓储在不在无关 —— 没有仓储只是选不了,已有的引用照样要存回去。</remarks>
-    private bool CredentialSourceApplies => ShowCredentialFields && !IsTailscaleAuth && !(IsFtpSelected && FtpAnonymous);
+    private bool CredentialSourceApplies =>
+        ShowCredentialFields && !IsTailscaleAuth && !IsKeyStoreAuth && !(IsFtpSelected && FtpAnonymous);
 
     /// <summary>认证方式分段按钮是否显示:用共享凭据时认证方式由凭据决定。</summary>
     public bool ShowAuthMethodSelector => RequiresSshAuth && !UsesSharedCredential;
@@ -1190,6 +1248,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         this.RaisePropertyChanged(nameof(ShowInlineKeyFields));
         this.RaisePropertyChanged(nameof(ShowAgentHint));
         this.RaisePropertyChanged(nameof(ShowTailscaleHint));
+        this.RaisePropertyChanged(nameof(ShowKeyStoreFields));
         this.RaisePropertyChanged(nameof(SharedCredentialProvidesUsername));
         this.RaisePropertyChanged(nameof(UsernamePlaceholder));
         this.RaisePropertyChanged(nameof(SharedCredentialSummary));
@@ -1303,7 +1362,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     /// <summary>「SSH 选项」页是否有非默认值。</summary>
     public bool IsSshOptionsSectionModified =>
-        _sshCompression || (SupportsPostAuthCommand && _sshObscureKeystrokeTiming) || _sshLegacyAlgorithms || _sshCustomAlgorithms;
+        _sshCompression || (SupportsPostAuthCommand && _sshObscureKeystrokeTiming) || _sshLegacyAlgorithms || _sshCustomAlgorithms
+        || !SshAgentEndpoints.IsDefault(_sshAgentEndpoint);
 
     /// <summary>「转发」页是否有非默认值。</summary>
     public bool IsForwardingSectionModified => _sshAgentForwarding || _sshX11Forwarding;
@@ -1404,7 +1464,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     }.ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> SshOptionsSectionInputs =
-        new[] { nameof(SshCompression), nameof(SshObscureKeystrokeTiming), nameof(SshLegacyAlgorithms), nameof(SshCustomAlgorithms) }
+        new[] { nameof(SshCompression), nameof(SshObscureKeystrokeTiming), nameof(SshLegacyAlgorithms), nameof(SshCustomAlgorithms), nameof(SshAgentEndpoint) }
             .ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> ForwardingSectionInputs =
@@ -1535,6 +1595,121 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     /// <summary>当前是否选了 Tailscale SSH 认证。</summary>
     public bool IsTailscaleAuth => AuthMethod == AuthMethod.Tailscale;
+
+    // ---- 系统密钥库(Windows CNG:证书存储、TPM、智能卡里导不出来的钥) ----
+
+    /// <summary>当前是否选了系统密钥库认证。</summary>
+    public bool IsKeyStoreAuth => AuthMethod == AuthMethod.KeyStore;
+
+    /// <summary>
+    /// 认证方式里要不要有「系统密钥库」那一段:只有 Windows 有;别的平台上不显示 ——
+    /// 除非这条配置本来就是它(从 Windows 同步过来),那就照样显示选中的那一段,而不是让它看起来像什么都没选。
+    /// </summary>
+    public bool ShowKeyStoreAuthOption => (_systemKeyStore?.IsSupported ?? OperatingSystem.IsWindows()) || IsKeyStoreAuth;
+
+    /// <summary>选钥那几栏是否显示(SSH / SFTP 且选了系统密钥库;它不走共享凭据)。</summary>
+    public bool ShowKeyStoreFields => RequiresSshAuth && IsKeyStoreAuth;
+
+    /// <summary>这台电脑没有系统密钥库(配置是从 Windows 同步过来的):选钥那一栏换成一句说明。</summary>
+    public bool KeyStoreUnsupportedHere => !(_systemKeyStore?.IsSupported ?? OperatingSystem.IsWindows());
+
+    /// <summary>密钥库里能用的钥;存过的那一把即使这台电脑上找不到也列着(标明找不到),免得打开再保存就悄悄丢了。</summary>
+    public ObservableCollection<SystemKeyChoice> SystemKeyChoices { get; } = [];
+
+    /// <summary>选中的钥。</summary>
+    public SystemKeyChoice? SelectedSystemKey
+    {
+        get;
+        set
+        {
+            // ComboBox 在 ItemsSource 重建的瞬间会回写一个 null,不能让它把选好的钥清掉。
+            if (value is null)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            _keyStoreKey = value.Reference;
+        }
+    }
+
+    /// <summary>正在列密钥库里的钥。</summary>
+    public bool IsLoadingSystemKeys
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>列完了,一把能用的都没有(也没有存过的):给一行怎么建钥的说明。</summary>
+    public bool HasNoSystemKeys
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>重新列一遍(插了智能卡、刚在 TPM 里建了钥之后)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> RefreshSystemKeysCommand { get; }
+
+    /// <summary>复制选中那把钥的公钥(OpenSSH 一行),贴进服务器的 authorized_keys。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> CopySystemKeyPublicKeyCommand { get; }
+
+    /// <summary>
+    /// 列密钥库里的钥:第一次选到系统密钥库(或打开一条本来就是它的配置)时列一次,之后只在点「刷新」时再列。
+    /// 存过的那一把排在最前,找到了就换成带证书主题、位置与指纹的那一行。
+    /// </summary>
+    internal async Task LoadSystemKeysAsync(bool force = false)
+    {
+        if ((_systemKeysLoaded && !force) || IsLoadingSystemKeys)
+        {
+            return;
+        }
+        _systemKeysLoaded = true;
+        IsLoadingSystemKeys = true;
+        IReadOnlyList<SystemKeyInfo> found = [];
+        try
+        {
+            if (_systemKeyStore is { IsSupported: true } store)
+            {
+                found = await store.ListKeysAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            // 列不出来就只剩存过的那一把,照样能保存。
+            System.Diagnostics.Trace.WriteLine($"[KeyStore] Listing keys failed: {ex.Message}");
+        }
+        finally
+        {
+            IsLoadingSystemKeys = false;
+        }
+
+        // 由界面线程上的属性 setter / 命令发起、全程不 ConfigureAwait(false),回到这里时仍在界面线程。
+        SystemKeyReference? current = _keyStoreKey;
+        List<SystemKeyChoice> choices = [.. found.Select(static key => SystemKeyChoice.Found(key))];
+        SystemKeyChoice? selected = current is null ? null : choices.FirstOrDefault(c => c.Matches(current));
+        if (current is not null && selected is null)
+        {
+            selected = SystemKeyChoice.Missing(current);
+            choices.Insert(0, selected);
+        }
+        SystemKeyChoices.Clear();
+        foreach (SystemKeyChoice choice in choices)
+        {
+            SystemKeyChoices.Add(choice);
+        }
+        HasNoSystemKeys = SystemKeyChoices.Count == 0;
+        if (selected is not null)
+        {
+            SelectedSystemKey = selected;
+        }
+    }
+
+    private async Task CopySystemKeyPublicKeyAsync()
+    {
+        if (CopyToClipboard is { } copy && SelectedSystemKey?.PublicKeyLine is { Length: > 0 } line)
+        {
+            await copy(line);
+        }
+    }
 
     /// <summary>认证方式分段按钮:点哪段切到哪种认证。</summary>
     public ReactiveCommand<AuthMethod, RxVoid> SelectAuthMethodCommand { get; }
@@ -1724,6 +1899,40 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         set => this.RaiseAndSetIfChanged(ref _sshAgentForwardConfirm, value);
     }
 
+    /// <summary>
+    /// 这条连接用哪个 ssh-agent(<see cref="SshSessionOptions.AgentEndpoint" />);空 = 系统默认。
+    /// 「SSH Agent」认证与 agent 转发都用它。
+    /// </summary>
+    public string? SshAgentEndpoint
+    {
+        get => _sshAgentEndpoint;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _sshAgentEndpoint, value);
+            this.RaisePropertyChanged(nameof(SshAgentEndpointError));
+        }
+    }
+
+    /// <summary>
+    /// 端点在这台机器上用不了的原因;没填或写得对时为 <see langword="null" />。
+    /// </summary>
+    /// <remarks>
+    /// 只提示、不拦保存:配置会随云同步到别的机器,在 macOS 上写的套接字路径拿到 Windows 上看就「不是完整路径」,
+    /// 为此让这边连别的字段都存不下去不合理;连不上时连接报错会点名这个端点。
+    /// </remarks>
+    public string? SshAgentEndpointError => SshAgentEndpoints.Check(_sshAgentEndpoint) switch
+    {
+        SshAgentEndpointProblem.PipeNotSupported => Strings.Get("Profile_SshAgentEndpointPipeNotSupported"),
+        SshAgentEndpointProblem.PipeNameMissing => Strings.Get("Profile_SshAgentEndpointPipeNameMissing"),
+        SshAgentEndpointProblem.NotFullPath => Strings.Get("Profile_SshAgentEndpointNotFullPath"),
+        SshAgentEndpointProblem.TooLong => Strings.Format("Profile_SshAgentEndpointTooLong", SshAgentEndpoints.MaxSocketPathBytes(OperatingSystem.IsMacOS())),
+        _ => null
+    };
+
+    /// <summary>端点输入框的占位文字:按平台给一个例子。</summary>
+    public static string SshAgentEndpointPlaceholder =>
+        Strings.Get(OperatingSystem.IsWindows() ? "Profile_SshAgentEndpointPlaceholderWindows" : "Profile_SshAgentEndpointPlaceholderUnix");
+
     /// <summary>「只转发指定密钥」的候选清单。</summary>
     public ObservableCollection<AgentForwardKeyChoice> AgentForwardKeyChoices { get; } = [];
 
@@ -1767,7 +1976,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         {
             try
             {
-                foreach (SshKeyInfo key in await keys.ListAgentKeysAsync())
+                // 按连接指定了 agent 端点时列的是那个 agent 里的钥(转发的就是它)。
+                foreach (SshKeyInfo key in await keys.ListAgentKeysAsync(SshAgentEndpoints.Normalize(_sshAgentEndpoint)))
                 {
                     discovered.Add((key.PublicKeyLine!, key.Name, Strings.Get("Profile_SshAgentKeySourceAgent")));
                 }
@@ -2151,6 +2361,11 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             {
                 throw new InvalidOperationException(Strings.Get("Profile_SshAgentForwardKeysEmpty"));
             }
+            // 选了系统密钥库却没选钥:存下去就是一条连不上的配置。
+            if (RequiresSshAuth && IsKeyStoreAuth && _keyStoreKey is null)
+            {
+                throw new InvalidOperationException(Strings.Get("Svc_KeyStoreKeyRequired"));
+            }
             SessionProfile profile = BuildProfile();
             if (_connectionWorkflowService is null)
             {
@@ -2194,11 +2409,49 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             ConnectionTestResult result = await _connectionWorkflowService.TestConnectionAsync(BuildProfile());
             LastTestSucceeded = result.Success;
             ErrorMessage = result.ErrorMessage;
+            // 败在算法协商上时给一键补救(与终端标签同一份计算);FTP 与插件协议不走 SSH,没有这回事。
+            AlgorithmRemedy = RequiresSshAuth ? SshAlgorithmRemedy.Find(result.Error) : null;
         }
         finally
         {
             EndBusy();
         }
+    }
+
+    /// <summary>
+    /// 反馈条上的「放开这几个算法并重新测试」:与终端标签同一个确认框、同一套写法,确认后重新测试。
+    /// </summary>
+    /// <remarks>
+    /// 终点那一跳就是正在编辑的这份:改的是表单里的自定义算法清单(展开它、把那一类写成补救后的样子),
+    /// 按「保存」或「连接」才存下 —— 不替用户把表单里别的未保存改动一起落盘。
+    /// 谈不成的是跳板时改跳板自己的配置并当场存下(表单里改不到别的配置),顺着表单里选的跳板往上数。
+    /// </remarks>
+    private async Task AllowAlgorithmsAndRetestAsync()
+    {
+        if (AlgorithmRemedy is not { } remedy || IsBusy || AllowAlgorithmsConfirmer is not { } confirm)
+        {
+            return;
+        }
+        SessionProfile profile = BuildProfile();
+        SshAlgorithmRemedyFlow remedies = new(_sessionRepository, _connectionWorkflowService);
+        if (await remedies.ConfirmAndSaveAsync(
+                profile, remedy, SshAlgorithmRemedyFollowUp.Retest, confirm, message => ErrorMessage = message,
+                () => AlgorithmRemedy == remedy && !IsBusy, formOnly: true)
+            is null)
+        {
+            return;
+        }
+        if (remedy.HopDepth == 0)
+        {
+            // 照表单此刻生效的清单(收起时不算数)算出补救后的四类,写回表单并展开:用户看得见改了什么。
+            SshSessionOptions next = remedy.ApplyTo(profile.Ssh);
+            SshCustomAlgorithms = true;
+            SshKexAlgorithms = next.KexAlgorithms;
+            SshHostKeyAlgorithms = next.HostKeyAlgorithms;
+            SshCiphers = next.Ciphers;
+            SshMacs = next.Macs;
+        }
+        await TestConnectionAsync();
     }
 
     /// <summary>
@@ -2291,11 +2544,13 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             Port = port,
             Username = Username.Trim(),
             AuthMethod = AuthMethod,
-            Password = IsTailscaleAuth ? null : SecureStringConvert.ToPlaintext(Password),
+            Password = IsTailscaleAuth || IsKeyStoreAuth ? null : SecureStringConvert.ToPlaintext(Password),
             RememberPassword = RememberPassword,
             PrivateKeyPath = PrivateKeyPath,
             PrivateKeyPassphrase = PrivateKeyPassphrase,
             CertificatePath = CertificatePath,
+            // 只在选的就是系统密钥库时存引用:切到别的认证方式还留着,就是一条看不见、切回来却突然生效的引用。
+            KeyStoreKey = RequiresSshAuth && IsKeyStoreAuth ? _keyStoreKey : null,
             GroupId = GroupId,
             IsPinned = _isPinned,
             LastConnectedAt = _lastConnectedAt,
@@ -2359,6 +2614,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             AgentForwarding = shell && _sshAgentForwarding,
             AgentForwardKeys = shell && _sshAgentForwarding ? SelectedAgentForwardKeys() : null,
             AgentForwardConfirm = shell && _sshAgentForwarding && _sshAgentForwardConfirm,
+            // SSH 与 SFTP 都存:SFTP 也能用 agent 认证。
+            AgentEndpoint = SshAgentEndpoints.Normalize(_sshAgentEndpoint),
             X11Forwarding = shell && _sshX11Forwarding,
             X11Display = shell && _sshX11Forwarding && !string.IsNullOrWhiteSpace(_sshX11Display)
                 ? _sshX11Display.Trim()

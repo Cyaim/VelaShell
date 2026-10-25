@@ -41,7 +41,6 @@ public static class SshAlgorithmCatalog
             [SshAlgorithmCategory.KeyExchange] = Array.AsReadOnly(
             [
                 "diffie-hellman-group1-sha1", "diffie-hellman-group-exchange-sha1",
-                "diffie-hellman-group18-sha512",
             ]),
             [SshAlgorithmCategory.HostKey] = Array.AsReadOnly(
             [

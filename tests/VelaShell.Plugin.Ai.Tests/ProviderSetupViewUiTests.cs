@@ -319,6 +319,36 @@ public sealed class ProviderSetupViewUiTests
         await WaitForEnabledAsync(primary);
     }
 
+    /// <summary>点主按钮,等确认框弹出来,返回框里的说明(按钮此时还锁着)。</summary>
+    private static async Task<string?> ClickPrimaryUntilConfirmAsync(ProviderSetupView view)
+    {
+        Click(Find<Button>(view, "SetupPrimaryButton"));
+        return await WaitForConfirmAsync(view);
+    }
+
+    private static ConfirmOverlay ConfirmBox(Control view) => view.GetLogicalDescendants().OfType<ConfirmOverlay>().Single();
+
+    private static async Task<string?> WaitForConfirmAsync(Control view)
+    {
+        ConfirmOverlay box = ConfirmBox(view);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+        while (!box.IsOpen)
+        {
+            await Task.Delay(5, timeout.Token);
+            Dispatcher.UIThread.RunJobs();
+        }
+        return box.GetLogicalDescendants().OfType<TextBlock>().Single(text => text.Name == "ConfirmMessage").Text;
+    }
+
+    /// <summary>点确认框里的「确认」或「取消」,等主按钮放开(这一轮提交收尾)。</summary>
+    private static async Task AnswerConfirmAsync(ProviderSetupView view, bool accept)
+    {
+        Click(ConfirmBox(view).GetLogicalDescendants().OfType<Button>()
+            .Single(button => button.Name == (accept ? "ConfirmAcceptButton" : "ConfirmCancelButton")));
+        await PumpAsync(2);
+        if (!ConfirmBox(view).IsOpen) await WaitForEnabledAsync(Find<Button>(view, "SetupPrimaryButton"));
+    }
+
     /// <summary>照用户的操作展开一行:真点在行上(命中测试、冒泡都真跑)。</summary>
     private static async Task ClickRowAsync(Window window, ProviderSetupView view, string entryId)
     {
@@ -1443,6 +1473,91 @@ public sealed class ProviderSetupViewUiTests
     }
 
     /// <summary>
+    /// 复用的目录窗口从设置页点「管理登录」(<see cref="ProviderSetupView.FocusEntry" />)过来:与「新增供应商」同一条规矩,
+    /// 登录在跑或草稿没提交时只把窗口提到前面,不掐登录、不丢草稿(#616–#636 复审②)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("draft")]
+    [DataRow("login")]
+    [DataRow("key-draft")]
+    public void ManageLoginAgain_KeepsTheRunningLoginAndTheUnsavedDraft(string pending)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            AiProvider other = ProviderCatalog.Find("deepseek")!.CreateProvider();
+            AiProvider keyed = ProviderCatalog.Find("groq")!.CreateProvider();
+            (Window window, ProviderSetupView view, _, _) =
+                await ShowAsync(context, new AiSettings { Providers = [other, keyed] });
+            try
+            {
+                if (pending == "draft")
+                {
+                    await ClickRowAsync(window, view, "custom-openai");
+                    Find<TextBox>(view, "SetupKeyBox").Text = "sk-half-filled";
+                }
+                else if (pending == "key-draft")
+                {
+                    view.FocusEntry(keyed.CatalogId, keyed.Id);
+                    await PumpAsync();
+                    Click(Find<Button>(view, "SetupAddAnotherButton"));
+                    await PumpAsync();
+                    Find<TextBox>(view, "SetupKeyBox").Text = "sk-second-key";
+                }
+                else
+                {
+                    await ClickRowAsync(window, view, "openrouter");
+                    Click(Find<Button>(view, "SetupPrimaryButton"));
+                    await PumpAsync(40);
+                }
+                TextBlock progress = Find<TextBlock>(view, "SetupProgressText");
+                string? progressText = progress.Text;
+
+                view.FocusEntry(other.CatalogId, other.Id);
+                await PumpAsync();
+
+                Assert.AreSame(progress, FindOrNull<TextBlock>(view, "SetupProgressText"), "正在进行的这一份不能被重建");
+                Assert.AreEqual(progressText, progress.Text);
+                if (pending == "draft") Assert.AreEqual("sk-half-filled", Find<TextBox>(view, "SetupKeyBox").Text);
+                else if (pending == "key-draft") Assert.AreEqual("sk-second-key", Find<TextBox>(view, "SetupKeyBox").Text);
+                else Assert.AreEqual("Cancel", (string?)Find<Button>(view, "SetupSecondaryButton").Content, "登录仍在等回调");
+            }
+            finally
+            {
+                view.CancelPendingLogin();
+                await PumpAsync();
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>复用窗口里已经摆着这一份的表单:再点一次「管理登录」不重建,填到一半的字段留着。</summary>
+    [TestMethod]
+    public void ManageLoginForTheShownProvider_DoesNotRebuildTheForm()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            AiProvider provider = ProviderCatalog.Find("deepseek")!.CreateProvider();
+            (Window window, ProviderSetupView view, _, _) = await ShowAsync(context, new AiSettings { Providers = [provider] });
+            try
+            {
+                view.FocusEntry(provider.CatalogId, provider.Id);
+                await PumpAsync();
+                TextBox name = Find<TextBox>(view, "SetupNameBox");
+                name.Text = "half-edited";
+
+                view.FocusEntry(provider.CatalogId, provider.Id);
+                await PumpAsync();
+
+                Assert.AreSame(name, Find<TextBox>(view, "SetupNameBox"));
+                Assert.AreEqual("half-edited", name.Text);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    /// <summary>
     /// 填 Key 的新建草稿自成一体(不带来源的 Key 与模型清单):来源实例在别处被删,
     /// 草稿照样能加成独立实例,不该以「来源已移除」拒绝。
     /// </summary>
@@ -1541,12 +1656,20 @@ public sealed class ProviderSetupViewUiTests
                 TextBlock progress = Find<TextBlock>(view, "SetupProgressText");
                 Assert.AreEqual("sk-first", Find<TextBox>(view, "SetupKeyBox").Text, "表单预填着旧地址的 Key");
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = newEndpoint.BaseUrl + "/v1";
-                await ClickPrimaryAsync(view);
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), progress.Text);
-                Assert.AreEqual(oldEndpoint.BaseUrl + "/v1", provider.BaseUrl, "第一次只提示");
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await ClickPrimaryUntilConfirmAsync(view));
+                Assert.AreEqual(oldEndpoint.BaseUrl + "/v1", provider.BaseUrl, "没点确认就什么都不改");
                 Assert.AreEqual("sk-first", await store.GetApiKeyAsync(provider.Id));
+                Assert.IsFalse(Find<Button>(view, "SetupPrimaryButton").IsEnabled, "框开着时主按钮锁着,连点不算确认");
 
-                await ClickPrimaryAsync(view);
+                // 先取消一次:什么都不改,草稿留着
+                await AnswerConfirmAsync(view, accept: false);
+                Assert.AreEqual(loc["SetupResetCancelled"], progress.Text);
+                Assert.AreEqual(oldEndpoint.BaseUrl + "/v1", provider.BaseUrl);
+                Assert.AreEqual("sk-first", await store.GetApiKeyAsync(provider.Id));
+                Assert.AreEqual(newEndpoint.BaseUrl + "/v1", Find<TextBox>(view, "SetupBaseUrlBox").Text);
+
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await ClickPrimaryUntilConfirmAsync(view));
+                await AnswerConfirmAsync(view, accept: true);
                 Assert.AreEqual(loc["SetupSavedKeysCleared"], progress.Text);
                 Assert.AreEqual(newEndpoint.BaseUrl + "/v1", provider.BaseUrl);
                 Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
@@ -1586,22 +1709,21 @@ public sealed class ProviderSetupViewUiTests
                 var loc = new Loc("en");
                 TextBlock progress = Find<TextBlock>(view, "SetupProgressText");
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = newEndpoint.BaseUrl + "/v1";
-                await ClickPrimaryAsync(view);
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), progress.Text);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), await ClickPrimaryUntilConfirmAsync(view));
 
-                // 提示之后另一个窗口给这一家加了 Key:这边冲突重载;旧的确认盖不住新加的那把,按最新的两把重新提示
+                // 确认框开着的时候另一个窗口给这一家加了 Key:点确认后这边冲突重载,什么都不清
                 var external = new AiSettingsStore(context);
                 AiSettings other = await external.LoadAsync();
                 string added = await external.AddProviderApiKeyAsync(other, other.Providers[0], "sk-added-elsewhere");
-                await ClickPrimaryAsync(view);
+                await AnswerConfirmAsync(view, accept: true);
                 Assert.AreEqual(loc["SetupConfigChanged"], progress.Text);
                 Assert.AreEqual(newEndpoint.BaseUrl + "/v1", Find<TextBox>(view, "SetupBaseUrlBox").Text, "草稿地址保留");
-                await ClickPrimaryAsync(view);
-                // 同一地址已经提示过:换一句话说 Key 变了,不与第一次的提示混成一样
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetChanged", 2), progress.Text);
                 Assert.AreEqual("sk-added-elsewhere", await store.GetApiKeyAsync(added), "旧的确认不能把它一起清掉");
 
-                await ClickPrimaryAsync(view);
+                // 再存:按最新的两把重新问
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await ClickPrimaryUntilConfirmAsync(view));
+                Assert.AreEqual("sk-added-elsewhere", await store.GetApiKeyAsync(added));
+                await AnswerConfirmAsync(view, accept: true);
                 Assert.AreEqual(loc["SetupSavedKeysCleared"], progress.Text);
                 Assert.IsNull(await store.GetApiKeyAsync(added));
                 Assert.AreEqual(newEndpoint.BaseUrl + "/v1", provider.BaseUrl);
@@ -1639,9 +1761,9 @@ public sealed class ProviderSetupViewUiTests
                 // 都不是「供应商的 Key 没了」
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = newEndpoint.BaseUrl + "/v1";
                 if (newProviderKey) Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
-                await ClickPrimaryAsync(view);
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), progress.Text);
-                await ClickPrimaryAsync(view);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1) + "\n" + loc.F("SetupBaseUrlKeyResetModels", "own-model"),
+                    await ClickPrimaryUntilConfirmAsync(view));
+                await AnswerConfirmAsync(view, accept: true);
                 Assert.AreEqual(newProviderKey ? "sk-new" : null, await store.GetApiKeyAsync(provider.Id));
                 Assert.IsNull(await store.GetApiKeyAsync(own.Id));
                 // 照常拉新地址的模型清单,点名提示仍在
@@ -1715,12 +1837,12 @@ public sealed class ProviderSetupViewUiTests
                 // 换到新主机并填好新 Key:只清模型自带的那把,保存后照常拉新地址的模型清单
                 Find<TextBox>(view, "SetupBaseUrlBox").Text = endpoint.BaseUrl + "/v1";
                 Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
-                await ClickPrimaryAsync(view);
-                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1), Find<TextBlock>(view, "SetupProgressText").Text);
+                Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 1) + "\n" + loc.F("SetupBaseUrlKeyResetModels", "own-model"),
+                    await ClickPrimaryUntilConfirmAsync(view));
 
-                // 确认的这一击写盘途中,用户打开了另一张卡片
+                // 点了确认、写盘途中,用户打开了另一张卡片
                 storage.Hold = true;
-                Click(Find<Button>(view, "SetupPrimaryButton"));
+                Click(ConfirmBox(view).GetLogicalDescendants().OfType<Button>().Single(button => button.Name == "ConfirmAcceptButton"));
                 await storage.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 view.FocusEntry("deepseek");
                 TextBlock other = Find<TextBlock>(view, "SetupProgressText");
@@ -2015,7 +2137,10 @@ public sealed class ProviderSetupViewUiTests
                 keyBox.Text = draftKey;
                 secrets.Fail = failure == "secret";
                 storage.Failure = failure;
-                await ClickPrimaryAsync(view);
+                // 换到了另一台主机:先确认清掉旧地址的补充槽。确认之后写机密 / 写 JSON 失败或被取消都要整个恢复;
+                // 新 Key 与补充槽那把相同在换源时不算重复(旧 Key 都要清),那一行改为在确认框里取消,同样什么都不改
+                Assert.AreEqual(new Loc("en").F("SetupBaseUrlKeyResetConfirm", 1), await ClickPrimaryUntilConfirmAsync(view));
+                await AnswerConfirmAsync(view, accept: failure != "duplicate");
 
                 Assert.AreEqual(original.BaseUrl + "/v1", provider.BaseUrl, "失败不能把旧凭据留在新端点");
                 Assert.AreEqual("original provider", provider.Name);
@@ -2738,6 +2863,62 @@ public sealed class ProviderSetupViewUiTests
             finally
             {
                 relay.Release();
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// #582 复审⑤:拉模型把首模型自动填成清单里的型号之后,型号框要跟上;再点保存不能把它写回空串。
+    /// </summary>
+    /// <remarks>
+    /// 自定义接入的出厂首模型型号是空的(规格来源也是空 id),拉到清单时由 <c>Materialise</c> 对齐成清单里的头一个。
+    /// 改前型号框还是空的,表单的输入基线也还是空 —— 用户什么都没改,再点一次保存,<c>ApplyForm</c>
+    /// 就把空的型号框写回首模型,刚填进去的型号没了。用户自己改过的型号框不在此列(见下一条用例)。
+    /// </remarks>
+    [TestMethod]
+    [DataRow("save", DisplayName = "保存后自动拉取")]
+    [DataRow("pull", DisplayName = "点「拉取模型」")]
+    public void PulledModels_RefreshTheUntouchedModelBoxAndSaveKeepsIt(string trigger)
+    {
+        OnUi(async () =>
+        {
+            using var endpoint = new HeldModelsEndpoint();
+            endpoint.Release();
+            using var context = new TestPluginContext();
+            AiProvider provider = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            provider.BaseUrl = endpoint.BaseUrl + "/v1";
+            Assert.AreEqual("", provider.Models[0].Model, "前提:出厂首模型的型号是空的");
+            (Window window, ProviderSetupView view, _, AiSettingsStore store) =
+                await ShowAsync(context, new AiSettings { Providers = [provider] }, focus: "custom-openai");
+            int pulls = 0;
+            view.ModelsChanged += () => pulls++;
+            try
+            {
+                Find<ToggleButton>(view, "SetupAdvancedToggle").IsChecked = true;
+                TextBox model = Find<TextBox>(view, "SetupModelBox");
+                Assert.AreEqual("", model.Text);
+                if (trigger == "save") await ClickPrimaryAsync(view);
+                else
+                {
+                    Button pull = Find<Button>(view, "SetupPullButton");
+                    Click(pull);
+                    await WaitForEnabledAsync(pull);
+                }
+                for (int i = 0; i < 400 && pulls == 0; i++) await PumpAsync(2);
+                Assert.IsGreaterThan(0, pulls, "清单应当已经拉到并落库");
+                await PumpAsync(2);
+                Assert.AreEqual("old-model", provider.Models[0].Model, "前提:拉取把首模型对齐到了清单里的型号");
+                Assert.AreSame(model, Find<TextBox>(view, "SetupModelBox"), "不该为此重建表单");
+                Assert.AreEqual("old-model", model.Text, "用户没碰过的型号框要跟上自动填入的型号");
+
+                await ClickPrimaryAsync(view);
+                Assert.AreEqual("old-model", provider.Models[0].Model, "再点保存不能把空的型号框写回去");
+                Assert.AreEqual("old-model", (await store.LoadAsync()).Providers.Single().Models[0].Model);
+            }
+            finally
+            {
+                await WaitForEnabledAsync(Find<Button>(view, "SetupPrimaryButton"));
                 window.Close();
             }
         });
@@ -3523,6 +3704,33 @@ public sealed class ProviderSetupViewUiTests
                 auth.Close();
                 await exchange.WaitAsync(TimeSpan.FromSeconds(5));
             }
+        });
+    }
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void ConfiguredSubscription_CatalogFormOffersNoAddressToMoveDuringRelogin(bool signedIn)
+    {
+        // 订阅登录的换源只能在设置页改地址(那里先问、再退出登录并清掉模型自带的旧 Key)。目录页给配齐了的订阅行
+        // 不摆地址框,重新登录换不了地址 —— 哪天要在这儿摆出地址框,得同样在登录之前先问(存储层也会拒绝没确认的换源提交)
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            AiProvider provider = ProviderCatalog.Find("custom-oauth")!.CreateProvider();
+            provider.BaseUrl = "https://gateway.example/v1";
+            provider.OAuth!.Flow = OAuthFlow.DeviceCode;
+            provider.OAuth.ClientId = "client";
+            provider.OAuth.DeviceCodeUrl = "https://login.example/device";
+            provider.OAuth.TokenUrl = "https://login.example/token";
+            if (signedIn) await new AiSettingsStore(context).SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "at" });
+            (Window window, ProviderSetupView view, _, _) = await ShowAsync(context, new AiSettings { Providers = [provider] });
+            try
+            {
+                view.FocusEntry("custom-oauth", provider.Id);
+                await PumpAsync();
+                Assert.IsNull(FindOrNull<TextBox>(view, "SetupBaseUrlBox"));
+            }
+            finally { window.Close(); }
         });
     }
     [TestMethod]

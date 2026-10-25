@@ -381,9 +381,7 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
                         protocolVersion = version,
                         capabilities = new { tools = new { listChanged = false } },
                         serverInfo = new { name = "velashell", title = "VelaShell", version = context.PluginVersion },
-                        instructions = "Tools act on the SSH sessions the user has open in VelaShell. "
-                                       + "Call list_sessions first, then use_session to pick one. "
-                                       + host.Describe()
+                        instructions = host.Instructions
                     }), cancellationToken).ConfigureAwait(false);
                     return;
                 }

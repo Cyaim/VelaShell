@@ -1,5 +1,6 @@
 using System.Text;
 using VelaShell.Core.Models;
+using VelaShell.Core.OutputRules;
 using VelaShell.Core.Resources;
 using VelaShell.Terminal;
 using VelaShell.Terminal.Rendering;
@@ -120,6 +121,10 @@ public static class TerminalSettingsApplier
         // 配色一律跟随全局:一条连接单独换一套颜色只会让同一个窗口里的标签各说各话,
         // 而"这台机器是生产"用标签颜色标出来就够了。
         control.PaletteOverrides = TerminalAppearanceMapper.BuildPaletteOverrides(settings.Appearance);
+
+        // 输出规则(高亮 + 自动应答):全局的,加上作用于这条连接或它所在分组的;本地终端只吃全局的。
+        // 正则按(正则, 大小写)只编一次、所有标签共用;内容没变时控件不清缓存(见 VelaTerminalControl.OutputRules)。
+        control.OutputRules = OutputRuleCompiler.Build(settings.TerminalBehavior.OutputRules, profile?.Id, profile?.GroupId);
     }
 
     /// <summary>

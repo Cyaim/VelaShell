@@ -73,6 +73,19 @@ public sealed class SshSessionOptions
     /// </remarks>
     public bool AgentForwardConfirm { get; set; }
 
+    /// <summary>
+    /// 这条连接用哪个 ssh-agent(ssh_config 的 <c>IdentityAgent</c>):Windows 命名管道 <c>\\.\pipe\名字</c>,或 Unix 域套接字的路径
+    /// (开头的 <c>~</c> 连接时展开)。<see langword="null" /> = 系统默认(<c>SSH_AUTH_SOCK</c> / Windows 的 OpenSSH agent 服务、Pageant)。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 「SSH Agent」认证、agent 转发与「自动加载密钥到 Agent」都用它 —— 与 OpenSSH 一致:<c>IdentityAgent</c> 指了别的 agent 时,
+    /// <c>ForwardAgent yes</c> 转发的也是那一个。跳板链上每一跳各用各的。写法与检查见 <see cref="Ssh.SshAgentEndpoints" />。
+    /// </para>
+    /// <para>SSH 与 SFTP 都存(SFTP 也能用 agent 认证);只填了它也不算「空」,否则配置页存回 null 就丢了。</para>
+    /// </remarks>
+    public string? AgentEndpoint { get; set; }
+
     /// <summary>把远端图形程序的窗口转发到本机的 X 服务器上显示(<c>ssh -X</c> / <c>-Y</c>)。</summary>
     public bool X11Forwarding { get; set; }
 
@@ -127,7 +140,7 @@ public sealed class SshSessionOptions
 
     /// <summary>一项都没开(X11 的两个附属字段在没开 X11 时不算数)。</summary>
     public bool IsEmpty => !Compression && !ObscureKeystrokeTiming && !AgentForwarding && !X11Forwarding && !LegacyAlgorithms
-                           && !HasCustomAlgorithms;
+                           && !HasCustomAlgorithms && Ssh.SshAgentEndpoints.IsDefault(AgentEndpoint);
 
     /// <summary>返回本对象的副本。</summary>
     /// <returns>与本实例等值的新实例。</returns>
@@ -139,6 +152,7 @@ public sealed class SshSessionOptions
             AgentForwarding = AgentForwarding,
             AgentForwardKeys = AgentForwardKeys is null ? null : [.. AgentForwardKeys],
             AgentForwardConfirm = AgentForwardConfirm,
+            AgentEndpoint = AgentEndpoint,
             X11Forwarding = X11Forwarding,
             X11Display = X11Display,
             X11Trusted = X11Trusted,

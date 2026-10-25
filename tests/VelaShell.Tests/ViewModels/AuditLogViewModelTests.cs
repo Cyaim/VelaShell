@@ -187,11 +187,44 @@ public sealed class AuditLogViewModelTests
         Assert.HasCount(3, lines, "表头 + 两行");
         Assert.StartsWith(Strings.Get("AuditLog_ColTime") + ",", lines[0]);
         Assert.EndsWith("\"'=HYPERLINK(\"\"http://evil\"\")\"", lines[1], "以 = 开头的详情补了单引号");
-        Assert.Contains($",connect,\"'@web, prod\",{WebId:D},", lines[2], "会话名以 @ 开头同样补单引号,带逗号的加引号");
+        Assert.Contains($",connect,,\"'@web, prod\",{WebId:D},", lines[2], "会话名以 @ 开头同样补单引号,带逗号的加引号;连接记录没有来源,那一栏留空");
         Assert.StartsWith(at.ToLocalTime().ToString("yyyy-MM-dd'T'HH:mm:sszzz", System.Globalization.CultureInfo.InvariantCulture), lines[2]);
 
         vm.CategoryIndex = 1;
         Assert.HasCount(2, vm.BuildCsv().Split("\r\n", StringSplitOptions.RemoveEmptyEntries), "导出的是筛出来的那些");
+    }
+
+    /// <summary>配置类记录带来源:界面一栏显示来源文字、CSV 带一列、关键字搜得到;没有来源的(连接类、旧记录)显示 —、CSV 留空。</summary>
+    [TestMethod]
+    public async Task Source_IsShown_Exported_AndSearchable()
+    {
+        IAuditLogService audit = Substitute.For<IAuditLogService>();
+        audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
+             .Returns(_ =>
+             [
+                 new AuditEntry { Category = "profile", Action = "profile-updated", Detail = "a", Source = AuditSources.CloudSync },
+                 new AuditEntry { Category = "credential", Action = "credential-updated", Detail = "b", Source = AuditSources.LoginPrompt },
+                 new AuditEntry { Category = "profile", Action = "profiles-ungrouped", Detail = "c", Source = AuditSources.Local },
+                 new AuditEntry { Category = "profile", Action = "profile-created", Detail = "d", Source = AuditSources.Import },
+                 new AuditEntry { Category = "connection", Action = "connect", Detail = "e" },
+             ]);
+        var vm = new AuditLogViewModel(audit);
+        await vm.LoadAsync(TestContext.CancellationToken);
+
+        Assert.AreSequenceEqual(
+        [
+            Strings.Get("AuditLog_SourceCloudSync"), Strings.Get("AuditLog_SourceLoginPrompt"), Strings.Get("AuditLog_SourceLocal"),
+            Strings.Get("AuditLog_SourceImport"), "—"
+        ], [.. vm.Rows.Select(r => r.SourceLabel)]);
+        Assert.AreEqual(Strings.Get("AuditLog_ActionProfilesUngrouped"), vm.Rows[2].ActionLabel);
+
+        string[] lines = vm.BuildCsv().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains($",{Strings.Get("AuditLog_ColActionCode")},{Strings.Get("AuditLog_ColSource")},{Strings.Get("AuditLog_ColSession")},", lines[0]);
+        Assert.Contains($",profile-updated,{Strings.Get("AuditLog_SourceCloudSync")},,", lines[1]);
+        Assert.Contains(",connect,,,", lines[5], "没有来源的记录那一栏留空,不写 —");
+
+        vm.SearchText = Strings.Get("AuditLog_SourceLoginPrompt");
+        Assert.AreEqual("b", vm.Rows.Single().Detail);
     }
 
     [TestMethod]

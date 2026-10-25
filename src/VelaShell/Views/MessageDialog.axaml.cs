@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Threading;
 using VelaShell.Core.Resources;
 
 namespace VelaShell.Views;
@@ -123,6 +124,8 @@ public partial class MessageDialog : Window
     /// <remarks>
     /// <c>cancelIsDefault</c> 给高风险确认(如 root 命令)用:回车与初始焦点都落在取消上 ——
     /// 这类弹窗可能在用户正往终端里打字时弹出,顺手的一个回车只能是拒绝(与 agent 签名确认框同一约定)。
+    /// <c>confirmDelay</c> 同为这类弹窗而设:窗口弹出后确认键先灰着这么久 —— 弹出那一瞬鼠标恰好落在确认键上,
+    /// 原本要点别处的那一下不能变成批准(#616–#636 复审④)。
     /// </remarks>
     public static Task<bool> ShowCustomAsync(Window owner,
         string title,
@@ -131,7 +134,8 @@ public partial class MessageDialog : Window
         string? cancelText = null,
         bool showCancel = true,
         MessageDialogKind kind = MessageDialogKind.Info,
-        bool cancelIsDefault = false)
+        bool cancelIsDefault = false,
+        TimeSpan confirmDelay = default)
     {
         var dialog = new MessageDialog();
         dialog.Configure(title, null, kind, confirmText ?? Strings.OK,
@@ -143,6 +147,12 @@ public partial class MessageDialog : Window
             dialog.ConfirmButton.IsDefault = false;
             dialog.CancelButton.IsDefault = true;
             dialog.Opened += (_, _) => dialog.CancelButton.Focus();
+        }
+        if (confirmDelay > TimeSpan.Zero)
+        {
+            // 从窗口真正打开起算,不从构造起算:属主窗口忙时 ShowDialog 到 Opened 之间也可能隔着几拍
+            dialog.ConfirmButton.IsEnabled = false;
+            dialog.Opened += (_, _) => DispatcherTimer.RunOnce(() => dialog.ConfirmButton.IsEnabled = true, confirmDelay);
         }
         return dialog.ShowDialog<bool>(owner);
     }

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
@@ -33,6 +34,27 @@ public static class SessionArchiveJson
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
+
+    /// <summary>
+    /// 读文件里的单条连接用的选项:与 <see cref="Options" /> 相同,外加一个修饰器 ——
+    /// 反序列化 <see cref="SessionProfile" /> 之前先把目录收藏置空,字段在(哪怕是 <c>[]</c>)才会被写回。
+    /// </summary>
+    /// <remarks>
+    /// 只挂在读连接这一处:<see cref="Options" /> 还用来写文件、读别的段,改它会让别处读出一个收藏为 null 的配置。
+    /// 做法与 <c>GistSyncService</c> 区分「旧客户端推上来的、根本不带收藏」的那个修饰器一致。
+    /// </remarks>
+    private static readonly JsonSerializerOptions SessionReadOptions = new(Options)
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { MarkMissingDirectoryBookmarks } },
+    };
+
+    private static void MarkMissingDirectoryBookmarks(JsonTypeInfo typeInfo)
+    {
+        if (typeInfo.Type == typeof(SessionProfile))
+        {
+            typeInfo.OnDeserializing = static profile => ((SessionProfile)profile).DirectoryBookmarks = null!;
+        }
+    }
 
     /// <summary>
     /// 返回一条连接可以写进文件的样子:去掉机密(密码、私钥口令、插件机密)与本机状态(上次连接时间)。
@@ -282,6 +304,7 @@ public static class SessionArchiveJson
                      && Guid.TryParse(idElement.GetString(), out _);
         SessionProfile? profile = null;
         string? error = null;
+        bool hasBookmarks = false;
         if (element.ValueKind != JsonValueKind.Object)
         {
             error = Strings.Get("SessImport_ErrNotAnObject");
@@ -290,7 +313,13 @@ public static class SessionArchiveJson
         {
             try
             {
-                profile = element.Deserialize<SessionProfile>(Options);
+                profile = element.Deserialize<SessionProfile>(SessionReadOptions);
+                if (profile is not null)
+                {
+                    // 修饰器先把收藏置空:还是 null 就是文件里没有这个字段(或手写成了 null),覆盖导入时留本机的。
+                    hasBookmarks = profile.DirectoryBookmarks is not null;
+                    profile.DirectoryBookmarks ??= [];
+                }
             }
             catch (JsonException ex)
             {
@@ -327,7 +356,8 @@ public static class SessionArchiveJson
             HasFileId = hasId,
             FileGroupId = fileGroupId,
             GroupName = fileGroupId is { } groupId && groupNames.TryGetValue(groupId, out string? groupName) ? groupName : null,
-            Columns = SessionCsvColumns.All
+            Columns = SessionCsvColumns.All,
+            HasDirectoryBookmarks = hasBookmarks
         };
         if (error is not null)
         {

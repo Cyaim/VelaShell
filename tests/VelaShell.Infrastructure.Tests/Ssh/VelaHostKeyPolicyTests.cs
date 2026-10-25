@@ -176,10 +176,8 @@ public sealed class VelaHostKeyPolicyTests
         IHostKeyService store = Substitute.For<IHostKeyService>();
         store.VerifyHostKeyAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(verification);
-        AppSettings snapshot = new();
-        snapshot.Security.ConfirmFirstFingerprint = true;   // 首次连接也要问 —— 不开它的话「没见过」本来就按 TOFU 记下，不问
-        ISettingsService settings = Substitute.For<ISettingsService>();
-        settings.CurrentSnapshot.Returns(snapshot);
+        // 首次连接也要问(出厂默认就开着,这里写明)—— 关掉它的话「没见过」按 TOFU 记下，不问
+        ISettingsService settings = SettingsWith(confirmFirstFingerprint: true);
         IHostKeyPrompt prompt = Substitute.For<IHostKeyPrompt>();
         ISecurityAlertService alerts = Substitute.For<ISecurityAlertService>();
 
@@ -203,7 +201,7 @@ public sealed class VelaHostKeyPolicyTests
         await alerts.Received(1).RaiseAsync("hostkey-rejected", Arg.Any<string>(), Arg.Any<object?>());
     }
 
-    /// <summary>自动重连只拦「本该问」的那些：不问的默认照旧 —— 关着「首次连接确认」时，没见过的主机照常按 TOFU 记下。</summary>
+    /// <summary>自动重连只拦「本该问」的那些：不问的默认照旧 —— 用户关了「首次连接确认」时，没见过的主机照常按 TOFU 记下。</summary>
     [TestMethod]
     public async Task 自动重连时不问的默认照旧()
     {
@@ -211,6 +209,7 @@ public sealed class VelaHostKeyPolicyTests
         store.VerifyHostKeyAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(HostKeyVerification.Unknown);
         IHostKeyPrompt prompt = Substitute.For<IHostKeyPrompt>();
+        ISettingsService settings = SettingsWith(confirmFirstFingerprint: false);
 
         using var signer = InMemorySshSigner.GenerateEd25519();
         SshHostKeyContext context = new()
@@ -222,9 +221,88 @@ public sealed class VelaHostKeyPolicyTests
         };
 
         SshHostKeyVerdict verdict =
-            await new VelaHostKeyPolicy(store, settings: null, prompt, alerts: null, automaticReconnect: true).EvaluateAsync(context);
+            await new VelaHostKeyPolicy(store, settings, prompt, alerts: null, automaticReconnect: true).EvaluateAsync(context);
 
         Assert.AreEqual(SshHostKeyDecision.AcceptAndPersist, verdict.Decision);
+        await prompt.DidNotReceiveWithAnyArgs().DecideAsync(default!, default, default!, default!, default, default, default, default);
+    }
+
+    /// <summary>
+    /// 出厂默认(维护者 2026-10-25 定,与 OpenSSH 的 ask 一致):没见过的主机先弹窗核对,用户点了永久信任才记下 ——
+    /// 不再是首次即信任。设置读不出来时(<see langword="null" />)同样按出厂默认。
+    /// </summary>
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task 出厂默认_没见过的主机先弹窗核对(bool withSettings)
+    {
+        IHostKeyService store = Substitute.For<IHostKeyService>();
+        store.VerifyHostKeyAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(HostKeyVerification.Unknown);
+        ISettingsService? settings = null;
+        if (withSettings)
+        {
+            AppSettings snapshot = new();
+            snapshot.Normalize();
+            settings = Substitute.For<ISettingsService>();
+            settings.CurrentSnapshot.Returns(snapshot);
+        }
+        IHostKeyPrompt prompt = Substitute.For<IHostKeyPrompt>();
+        prompt.DecideAsync(default!, default, default!, default!, default, default, default, default)
+            .ReturnsForAnyArgs(HostKeyDecision.TrustPermanently);
+
+        using var signer = InMemorySshSigner.GenerateEd25519();
+        SshHostKeyContext context = new()
+        {
+            Host = $"first-{Guid.NewGuid():N}.example",
+            Port = 22,
+            Key = signer.PublicKey,
+            NegotiatedAlgorithm = signer.PublicKey.KeyType,
+        };
+
+        SshHostKeyVerdict verdict = await new VelaHostKeyPolicy(store, settings, prompt, alerts: null).EvaluateAsync(context);
+
+        Assert.AreEqual(SshHostKeyDecision.AcceptAndPersist, verdict.Decision);
+        await prompt.Received(1).DecideAsync(
+            context.Host, 22, Arg.Any<string>(), signer.PublicKey.Sha256Fingerprint,
+            HostKeyVerification.Unknown, Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>());
+    }
+
+    /// <summary>出厂默认下的自动重连遇到没见过的主机:不弹窗,也不按 TOFU 悄悄记下,直接拒绝并记一笔告警。</summary>
+    [TestMethod]
+    public async Task 出厂默认_自动重连遇到没见过的主机直接拒绝()
+    {
+        IHostKeyService store = Substitute.For<IHostKeyService>();
+        store.VerifyHostKeyAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(HostKeyVerification.Unknown);
+        IHostKeyPrompt prompt = Substitute.For<IHostKeyPrompt>();
+        ISecurityAlertService alerts = Substitute.For<ISecurityAlertService>();
+
+        using var signer = InMemorySshSigner.GenerateEd25519();
+        SshHostKeyContext context = new()
+        {
+            Host = $"auto-default-{Guid.NewGuid():N}.example",
+            Port = 22,
+            Key = signer.PublicKey,
+            NegotiatedAlgorithm = signer.PublicKey.KeyType,
+        };
+
+        SshHostKeyVerdict verdict =
+            await new VelaHostKeyPolicy(store, settings: null, prompt, alerts, automaticReconnect: true).EvaluateAsync(context);
+
+        Assert.IsFalse(verdict.IsAccepted);
+        Assert.AreEqual(SshFailureReason.HostKeyRejected, verdict.Reason);
+        await prompt.DidNotReceiveWithAnyArgs().DecideAsync(default!, default, default!, default!, default, default, default, default);
+        await alerts.Received(1).RaiseAsync("hostkey-rejected", Arg.Any<string>(), Arg.Any<object?>());
+    }
+
+    private static ISettingsService SettingsWith(bool confirmFirstFingerprint)
+    {
+        AppSettings snapshot = new();
+        snapshot.Security.ConfirmFirstFingerprint = confirmFirstFingerprint;
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.CurrentSnapshot.Returns(snapshot);
+        return settings;
     }
 
     /// <summary>

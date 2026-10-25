@@ -21,6 +21,8 @@ namespace VelaShell.ViewModels;
 /// <param name="IsProblem">是否值得留意:连接失败、拒绝或接受了变更的主机指纹。</param>
 /// <param name="ProfileId">记录里带的配置 Id。</param>
 /// <param name="ProfileExists">那条配置载入时还在库里 —— 「打开配置」只对它可用。</param>
+/// <param name="Source">来源原值(<c>local</c> / <c>cloud-sync</c> …);连接、安全两类与旧记录为 null。</param>
+/// <param name="SourceLabel">来源的界面文字;没有来源时为 —。</param>
 public sealed record AuditLogRow(
     DateTimeOffset Timestamp,
     string Category,
@@ -31,7 +33,9 @@ public sealed record AuditLogRow(
     string Detail,
     bool IsProblem,
     Guid? ProfileId = null,
-    bool ProfileExists = false)
+    bool ProfileExists = false,
+    string? Source = null,
+    string SourceLabel = "—")
 {
     /// <summary>本地时间,精确到秒。</summary>
     public string TimeText => Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
@@ -159,7 +163,7 @@ public sealed class AuditLogViewModel : ReactiveObject
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    /// <summary>关键字:在事件、类别、会话名与详情里找(不区分大小写)。</summary>
+    /// <summary>关键字:在事件、类别、来源、会话名与详情里找(不区分大小写)。</summary>
     public string SearchText
     {
         get;
@@ -263,8 +267,21 @@ public sealed class AuditLogViewModel : ReactiveObject
             entry.Detail,
             IsProblem(entry.Action),
             entry.ProfileId,
-            exists);
+            exists,
+            entry.Source,
+            SourceLabel(entry.Source));
     }
+
+    /// <summary>来源的界面文字;没有来源(连接、安全两类,加这一栏之前的旧记录)为 —,认不出的原样返回。</summary>
+    internal static string SourceLabel(string? source) => source switch
+    {
+        null or "" => "—",
+        AuditSources.Local => Strings.Get("AuditLog_SourceLocal"),
+        AuditSources.CloudSync => Strings.Get("AuditLog_SourceCloudSync"),
+        AuditSources.Import => Strings.Get("AuditLog_SourceImport"),
+        AuditSources.LoginPrompt => Strings.Get("AuditLog_SourceLoginPrompt"),
+        _ => source,
+    };
 
     /// <summary>类别的界面文字;认不出的原样返回。</summary>
     internal static string CategoryLabel(string category) => category switch
@@ -290,6 +307,7 @@ public sealed class AuditLogViewModel : ReactiveObject
         AuditActions.ProfileCreated => Strings.Get("AuditLog_ActionProfileCreated"),
         AuditActions.ProfileUpdated => Strings.Get("AuditLog_ActionProfileUpdated"),
         AuditActions.ProfileDeleted => Strings.Get("AuditLog_ActionProfileDeleted"),
+        AuditActions.ProfilesUngrouped => Strings.Get("AuditLog_ActionProfilesUngrouped"),
         AuditActions.SettingsChanged => Strings.Get("AuditLog_ActionSettingsChanged"),
         AuditActions.CredentialCreated => Strings.Get("AuditLog_ActionCredentialCreated"),
         AuditActions.CredentialUpdated => Strings.Get("AuditLog_ActionCredentialUpdated"),
@@ -306,7 +324,8 @@ public sealed class AuditLogViewModel : ReactiveObject
     /// </summary>
     /// <remarks>
     /// 导出的是<b>眼前筛出来的那些</b>:要全部就先清掉筛选。表头随界面语言,时间写成带时区的本地时间
-    /// (<c>2026-10-24T09:30:00+08:00</c>),动作另给一列原值方便按代码过滤。详情里有远端主机的原话、
+    /// (<c>2026-10-24T09:30:00+08:00</c>),动作另给一列原值方便按代码过滤;来源一列写界面文字,
+    /// 没有来源的记录(连接、安全两类与旧记录)留空。详情里有远端主机的原话、
     /// 会话名来自别人给的连接文件 —— 单元格一律过 <see cref="CsvText.Cell" />,以 <c>= + - @</c> 开头的补单引号。
     /// </remarks>
     /// <returns>CSV 文本。</returns>
@@ -319,6 +338,7 @@ public sealed class AuditLogViewModel : ReactiveObject
             Strings.Get("AuditLog_ColCategory"),
             Strings.Get("AuditLog_ColAction"),
             Strings.Get("AuditLog_ColActionCode"),
+            Strings.Get("AuditLog_ColSource"),
             Strings.Get("AuditLog_ColSession"),
             Strings.Get("AuditLog_ColProfileId"),
             Strings.Get("AuditLog_ColDetail"),
@@ -331,6 +351,7 @@ public sealed class AuditLogViewModel : ReactiveObject
                 row.CategoryLabel,
                 row.ActionLabel,
                 row.Action,
+                row.Source is null ? string.Empty : row.SourceLabel,
                 row.ProfileExists ? row.SessionName : string.Empty,
                 row.ProfileId?.ToString("D") ?? string.Empty,
                 row.Detail,
@@ -410,7 +431,8 @@ public sealed class AuditLogViewModel : ReactiveObject
                     || row.Detail.Contains(keyword, StringComparison.OrdinalIgnoreCase)
                     || row.SessionName.Contains(keyword, StringComparison.OrdinalIgnoreCase)
                     || row.ActionLabel.Contains(keyword, StringComparison.OrdinalIgnoreCase)
-                    || row.CategoryLabel.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
+                    || row.CategoryLabel.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || (row.Source is not null && row.SourceLabel.Contains(keyword, StringComparison.OrdinalIgnoreCase))))
         ];
         Rows.Clear();
         foreach (AuditLogRow row in matches)

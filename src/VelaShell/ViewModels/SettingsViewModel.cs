@@ -86,6 +86,9 @@ public enum SettingsSectionKey
     /// <summary>终端。</summary>
     Terminal,
 
+    /// <summary>输出规则(用户的高亮与自动应答)。</summary>
+    OutputRules,
+
     /// <summary>密钥管理。</summary>
     Keys,
 
@@ -173,6 +176,8 @@ public partial class SettingsViewModel : ReactiveObject
     )
     {
         SharedCredentials = new(sharedCredentials, sharedCredentialService, sessionRepository);
+        // 输出规则页:色块与测试预览取当前配色方案的 16 色(随外观页的方案切换现取,见 RebuildPalette 的两处调用)。
+        OutputRules = new(sessionRepository, () => TerminalSchemeSwatches);
         _sessionRepository = sessionRepository;
         _sharedCredentialRepository = sharedCredentials;
         _pluginManager = pluginManager;
@@ -227,6 +232,7 @@ public partial class SettingsViewModel : ReactiveObject
                 HookAppearance(appearance);
                 // 套用配色方案走的是"整体替换 Appearance"那条路:取色器的色板要换成新方案的 16 色。
                 this.RaisePropertyChanged(nameof(TerminalSchemeSwatches));
+                OutputRules.RebuildPalette();
                 BroadcastPreview();
             });
 
@@ -601,6 +607,9 @@ public partial class SettingsViewModel : ReactiveObject
     /// <summary>云同步页(GitHub Gist 多端同步);无同步服务时为 null。</summary>
     public SyncViewModel? Sync { get; }
 
+    /// <summary>输出规则页(用户的高亮与自动应答)。</summary>
+    public OutputRulesViewModel OutputRules { get; }
+
     /// <summary>按设计 §14 构建的左侧导航分区。换语言时经 <see cref="BuildSections" /> 重建。</summary>
     public SettingsSection[] Sections { get; private set; } = BuildSections();
 
@@ -617,6 +626,10 @@ public partial class SettingsViewModel : ReactiveObject
             new(
                 Strings.Get("SetVm_SectionTerminal"),
                 "M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10zm-2-1h-6v-2h6v2zM7.5 17l-1.41-1.41L8.67 13l-2.59-2.59L7.5 9l4 4-4 4z"
+            ),
+            new(
+                Strings.Get("SetVm_SectionOutputRules"),
+                "M6 14l3 3v5h6v-5l3-3V9H6v5zm5-12h2v3h-2V2zM3.5 5.88l1.41-1.41 2.12 2.12L5.62 8 3.5 5.88zm13.46.71l2.12-2.12 1.41 1.41L18.38 8l-1.42-1.41z"
             ),
             new(
                 Strings.Get("SetVm_SectionKeys"),
@@ -905,18 +918,34 @@ public partial class SettingsViewModel : ReactiveObject
     } = string.Empty;
 
     /// <summary>
-    /// 把日志、崩溃记录、版本与插件清单脱敏后打成 zip,写到 <paramref name="path" />。只落本机,不上传。
+    /// 导出框里可以另外勾选的几类日志(传输记录、外部编辑日志、<c>vcxsrv.log</c>、各插件的日志),只列确有文件的。
+    /// 传输记录按「文件传输 → 日志目录」的设置去找,那个目录可以改到日志目录之外。
+    /// </summary>
+    public Task<IReadOnlyList<DiagnosticLogOption>> FindDiagnosticLogOptionsAsync() => FindDiagnosticLogOptionsAsync(DiagnosticLog.Directory);
+
+    /// <summary>同上,日志目录由调用方给(测试用)。</summary>
+    internal Task<IReadOnlyList<DiagnosticLogOption>> FindDiagnosticLogOptionsAsync(string? logs)
+    {
+        string transfer = TransferLogService.ResolveDirectory(Transfer.LogDirectory);
+        // 只是列目录,但传输记录的目录可能在网络盘上:不在界面线程上等它
+        return Task.Run(() => DiagnosticBundle.FindOptionalLogs(logs, transfer));
+    }
+
+    /// <summary>
+    /// 把诊断日志、崩溃记录、版本与插件清单,连同导出框里勾上的那几类日志(<paramref name="optional" />)脱敏后打成 zip,
+    /// 写到 <paramref name="path" />。只落本机,不上传。
     /// </summary>
     /// <remarks>
     /// 脱敏用的主机与用户名取自已保存的连接、最近连接与共享凭据的元数据(不解密任何机密),
-    /// 再加上本机的用户名、机器名与主目录(见 <see cref="DiagnosticRedactor" />)。
+    /// 再加上本机的用户名、机器名与主目录;已知来源之外的按通用规则遮(见 <see cref="DiagnosticRedactor" />)。
     /// </remarks>
-    public Task<DiagnosticBundleResult> ExportDiagnosticsAsync(string path, CancellationToken cancellationToken = default)
-        => ExportDiagnosticsAsync(path, DiagnosticLog.Directory, cancellationToken);
+    public Task<DiagnosticBundleResult> ExportDiagnosticsAsync(string path, IReadOnlyList<DiagnosticLogOption> optional,
+        CancellationToken cancellationToken = default)
+        => ExportDiagnosticsAsync(path, DiagnosticLog.Directory, optional, cancellationToken);
 
     /// <summary>同上,日志目录由调用方给(测试用:全局日志目录是进程级单例)。</summary>
     internal async Task<DiagnosticBundleResult> ExportDiagnosticsAsync(string path, string? logsDirectory,
-        CancellationToken cancellationToken = default)
+        IReadOnlyList<DiagnosticLogOption>? optional = null, CancellationToken cancellationToken = default)
     {
         List<string> hosts = [];
         List<string> users = [];
@@ -952,7 +981,7 @@ public partial class SettingsViewModel : ReactiveObject
                     plugin.Manifest?.HostMode.ToString(), plugin.IsDevelopment, plugin.Error))
             ];
         return await DiagnosticBundle.WriteAsync(path,
-            new DiagnosticBundleRequest(AppVersion, logsDirectory, plugins, redactor), cancellationToken).ConfigureAwait(false);
+            new DiagnosticBundleRequest(AppVersion, logsDirectory, plugins, redactor, optional), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>检查更新的状态提示文本。</summary>
@@ -2038,6 +2067,7 @@ public partial class SettingsViewModel : ReactiveObject
         await RefreshKnownHostsAsync();
         await HostTrust.RefreshAsync();
         await SharedCredentials.RefreshAsync();
+        await OutputRules.RefreshTargetsAsync();
         if (Snippets is not null)
         {
             await Snippets.LoadAsync();
@@ -2108,6 +2138,7 @@ public partial class SettingsViewModel : ReactiveObject
         General = settings.General;
         Appearance = settings.Appearance;
         TerminalBehavior = settings.TerminalBehavior;
+        OutputRules.Load(settings.TerminalBehavior.OutputRules);
         Transfer = settings.Transfer;
         Security = settings.Security;
         Keys = settings.Keys;
@@ -2223,6 +2254,7 @@ public partial class SettingsViewModel : ReactiveObject
         if (e.PropertyName is nameof(AppearanceOptions.AnsiNormal) or nameof(AppearanceOptions.AnsiBright))
         {
             this.RaisePropertyChanged(nameof(TerminalSchemeSwatches));
+            OutputRules.RebuildPalette();
         }
         if (e.PropertyName == nameof(AppearanceOptions.WindowOpacityPercent))
         {
@@ -2342,6 +2374,8 @@ public partial class SettingsViewModel : ReactiveObject
         target.General = General;
         target.Appearance = Appearance;
         target.TerminalBehavior = TerminalBehavior;
+        // 规则表由输出规则页单独编辑(列表是副本),写回时整表替换。
+        target.TerminalBehavior.OutputRules = OutputRules.ToModels();
         target.Transfer = Transfer;
         target.Security = Security;
         target.Keys = Keys;

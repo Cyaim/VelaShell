@@ -37,6 +37,9 @@ public sealed class X11Forwarder : IAsyncDisposable
     /// <summary><c>xauth</c> 最多跑多久。</summary>
     private static readonly TimeSpan XAuthTimeout = TimeSpan.FromSeconds(30);
 
+    /// <summary>xauth 的 stderr 进消息时最多留多少个字符（留末尾，出错的那一句通常在最后）。</summary>
+    private const int MaxXAuthErrorChars = 1024;
+
     private readonly X11ChannelRouter _router;
     private readonly X11ForwardOptions _options;
     private readonly byte[] _fakeCookie;
@@ -113,7 +116,10 @@ public sealed class X11Forwarder : IAsyncDisposable
             ?? X11Display.FromEnvironment()
             ?? throw new SshForwardException(SshFailureReason.ForwardSetupFailed,
                 "拿不到本机的 X 显示：DISPLAY 没设或者格式不认识。" +
-                "可以在 X11ForwardOptions.Display 里显式指定。");
+                "可以在 X11ForwardOptions.Display 里显式指定。")
+            {
+                FailureKind = SshForwardFailureKind.NoX11Display,
+            };
 
         byte[] realCookie = effective.LocalConnector is not null
             ? effective.LocalCookie.ToArray()
@@ -146,7 +152,10 @@ public sealed class X11Forwarder : IAsyncDisposable
             {
                 throw new SshForwardException(SshFailureReason.ForwardRejected,
                     "服务端拒绝了 X11 转发请求。常见原因是 sshd_config 里 X11Forwarding no，" +
-                    "或者服务端没装 xauth。");
+                    "或者服务端没装 xauth。")
+                {
+                    FailureKind = SshForwardFailureKind.X11ForwardRejected,
+                };
             }
 
             return forwarder;
@@ -379,7 +388,10 @@ public sealed class X11Forwarder : IAsyncDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            throw new SshForwardException(SshFailureReason.ForwardSetupFailed, $"建不了给 {xauth} 用的临时目录：{ex.Message}", ex);
+            throw new SshForwardException(SshFailureReason.ForwardSetupFailed, $"建不了给 {xauth} 用的临时目录：{ex.Message}", ex)
+            {
+                FailureKind = SshForwardFailureKind.XAuthTempDirectoryFailed,
+            };
         }
 
         string scratchFile = Path.Combine(scratch.FullName, "xauthfile");
@@ -415,7 +427,11 @@ public sealed class X11Forwarder : IAsyncDisposable
             return XAuthority.FindCookie(entries, display)
                 ?? entries.FirstOrDefault(static e => e.Name == XAuthority.MitMagicCookie1 && e.Data.Length > 0)?.Data.ToArray()
                 ?? throw new SshForwardException(SshFailureReason.ForwardSetupFailed,
-                    $"{xauth} generate 跑完了，但没有生成 {display.XAuthName} 的 cookie。");
+                    $"{xauth} generate 跑完了，但没有生成 {display.XAuthName} 的 cookie。")
+                {
+                    FailureKind = SshForwardFailureKind.XAuthNoCookie,
+                    DisplayName = display.XAuthName,
+                };
         }
         finally
         {
@@ -479,7 +495,10 @@ public sealed class X11Forwarder : IAsyncDisposable
         Process process;
         try
         {
-            process = Process.Start(start) ?? throw new SshForwardException(SshFailureReason.ForwardSetupFailed, $"启动 {xauth} 失败。");
+            process = Process.Start(start) ?? throw new SshForwardException(SshFailureReason.ForwardSetupFailed, $"启动 {xauth} 失败。")
+            {
+                FailureKind = SshForwardFailureKind.XAuthStartFailed,
+            };
         }
         catch (SshForwardException)
         {
@@ -489,7 +508,10 @@ public sealed class X11Forwarder : IAsyncDisposable
         {
             throw new SshForwardException(SshFailureReason.ForwardSetupFailed,
                 $"跑不起来 {xauth}：{ex.Message}。" +
-                "Windows 上通常没有 xauth —— 那里请用受信模式（IsTrusted = true）。", ex);
+                "Windows 上通常没有 xauth —— 那里请用受信模式（IsTrusted = true）。", ex)
+            {
+                FailureKind = SshForwardFailureKind.XAuthStartFailed,
+            };
         }
 
         using (process)
@@ -526,7 +548,11 @@ public sealed class X11Forwarder : IAsyncDisposable
                     throw;
                 }
 
-                throw new SshForwardException(SshFailureReason.ForwardSetupFailed, $"{xauth} generate 超过 {XAuthTimeout.TotalSeconds:0} 秒没有返回。");
+                throw new SshForwardException(SshFailureReason.ForwardSetupFailed, $"{xauth} generate 超过 {XAuthTimeout.TotalSeconds:0} 秒没有返回。")
+                {
+                    FailureKind = SshForwardFailureKind.XAuthTimedOut,
+                    Timeout = XAuthTimeout,
+                };
             }
 
             _ = await stdout.ConfigureAwait(false);
@@ -534,10 +560,18 @@ public sealed class X11Forwarder : IAsyncDisposable
 
             if (process.ExitCode != 0)
             {
+                // stderr 进消息之前清一遍、换行收成一行（与远端命令的 stderr 同一套，见 PeerText.SanitizeTail）：
+                // 它会被打到界面与日志上，一个换行就能伪造一行记录。曾经只 Trim。普通的一行输出清洗前后一字不变。
+                string said = PeerText.SanitizeTail(error, MaxXAuthErrorChars);
                 throw new SshForwardException(SshFailureReason.ForwardSetupFailed,
-                    $"{xauth} generate 失败（退出码 {process.ExitCode}）：{error.Trim()}。" +
+                    $"{xauth} generate 失败（退出码 {process.ExitCode}）：{said}。" +
                     "非受信 X11 转发需要本机有 xauth、且 X server 支持 SECURITY 扩展；" +
-                    "都没有的话请显式用受信模式（IsTrusted = true），但要清楚那等于把本机显示完全交给远端。");
+                    "都没有的话请显式用受信模式（IsTrusted = true），但要清楚那等于把本机显示完全交给远端。")
+                {
+                    FailureKind = SshForwardFailureKind.XAuthFailed,
+                    ExitCode = process.ExitCode,
+                    ErrorOutput = said.Length == 0 ? null : said,
+                };
             }
         }
     }

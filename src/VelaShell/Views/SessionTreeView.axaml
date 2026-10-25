@@ -32,6 +32,14 @@
                          Foreground="{DynamicResource VelaTextTertiary}" />
         </MenuItem.Icon>
       </MenuItem>
+      <!-- 会话健康巡检:对这几台逐台跑四步诊断,出一张「哪几台连不上」的表(不开终端、不弹框)。 -->
+      <MenuItem Header="{Binding HealthCheckSelectedText}"
+                Command="{Binding HealthCheckSelectedCommand}">
+        <MenuItem.Icon>
+          <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.activity}"
+                         Foreground="{DynamicResource VelaTextTertiary}" />
+        </MenuItem.Icon>
+      </MenuItem>
       <!-- 恰好两条时才有「在双栏 SFTP 中打开」(先选的在左栏,#524)。 -->
       <MenuItem Header="{loc:Localize Tree_OpenDualSftp}"
                 Command="{Binding OpenDualSftpCommand}"
@@ -264,6 +272,14 @@
                           Command="{Binding $parent[ListBox].((vm:SessionTreeViewModel)DataContext).OpenGroupInSyncChannelCommand}">
                   <MenuItem.Icon>
                     <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.link-2}"
+                                   Foreground="{DynamicResource VelaTextTertiary}" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <!-- 会话健康巡检:对整组逐台跑四步诊断,出一张「哪几台连不上」的表。 -->
+                <MenuItem Header="{loc:Localize Tree_HealthCheckGroup}"
+                          Command="{Binding $parent[ListBox].((vm:SessionTreeViewModel)DataContext).HealthCheckGroupCommand}">
+                  <MenuItem.Icon>
+                    <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.activity}"
                                    Foreground="{DynamicResource VelaTextTertiary}" />
                   </MenuItem.Icon>
                 </MenuItem>

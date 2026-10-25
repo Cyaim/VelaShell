@@ -112,6 +112,7 @@ public partial class LocalizedKeyUsageTests
         ["VelaTerminalControl.cs"] = "控件库自带的默认值,宿主下发设置时换成本地化文案",
         ["SessionCsvHeaderAliases.cs"] = "CSV 表头的中日韩别名:匹配用户自己做的表格里的列名,不是界面文案(#571)",
         ["QuickCommandVariableMemory.cs"] = "匹配用户起的占位名里的凭据字样(密码 / 令牌 / 验证码),这类的值不记;不是界面文案",
+        ["OutputRuleSecretGuard.cs"] = "匹配远端输出里的口令提示原文(密码 / 口令 / 验证码),拦下会对密码提示自动应答的规则;不是界面文案",
     };
 
     /// <summary>

@@ -65,9 +65,9 @@ public class DualSftpDocumentViewModelTests
 
         await sftp.Received(1).EnsureDirectoryAsync(Right, "/dir", Arg.Any<CancellationToken>());
         await sftp.Received(1).UploadStreamAsync(Right, Arg.Any<Stream>(), "/a.txt", 5, Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
         await sftp.Received(1).UploadStreamAsync(Right, Arg.Any<Stream>(), "/dir/b.txt", 7, Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
         // 中转不经本地文件:任何一次上传/下载本地文件的调用都说明字节落了盘。
         await sftp.DidNotReceiveWithAnyArgs().DownloadFileAsync(default, null!, null!);
         await sftp.DidNotReceiveWithAnyArgs().UploadFileAsync(default, null!, null!);
@@ -157,7 +157,7 @@ public class DualSftpDocumentViewModelTests
         await right.ReceiveFromPeerAsync([new(file)]);
 
         await sftp.Received(1).UploadStreamAsync(Right, Arg.Any<Stream>(), "/a.txt", 10, Arg.Any<DateTime?>(),
-            Arg.Any<IProgress<TransferProgress>?>(), 4, Arg.Any<CancellationToken>());
+            Arg.Any<IProgress<TransferProgress>?>(), 4, Arg.Any<uint?>(), Arg.Any<CancellationToken>());
     }
 
     [TestMethod]
@@ -227,7 +227,7 @@ public class DualSftpDocumentViewModelTests
 
     private static void FailWhileWriting(ISftpService sftp, string target) =>
         sftp.UploadStreamAsync(Right, Arg.Any<Stream>(), target, Arg.Any<long>(), Arg.Any<DateTime?>(),
-                Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+                Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new IOException("connection reset"));
 
     [TestMethod]

@@ -191,8 +191,9 @@ public partial class ReleaseNotesDialog : Window
             PublishedText.Text = notes?.PublishedAt is { } publishedAt
                 ? Strings.Format("ReleaseNotes_PublishedAt", publishedAt.ToLocalTime().ToString("d", CultureInfo.CurrentCulture))
                 : null;
-            // 发布页地址取清单中的 htmlUrl,不在这里另拼一份仓库地址;照样只放行 https。
-            _releaseUri = notes?.HtmlUrl is { } htmlUrl && IsAllowedLink(htmlUrl) ? new Uri(htmlUrl) : null;
+            // 发布页地址取清单中的 htmlUrl(那个版本自己的发布页),但只放行本仓库的 releases 页;缺失、不是 https、
+            // 别的站点或别的仓库一律退回本仓库的发布列表 —— 按钮写的是「前往发布页」,不能把人带到别处(#655 复审,维护者 2026-10-25 定)
+            _releaseUri = notes is null ? null : ReleasePage.Resolve(notes.HtmlUrl);
             GitHubButton.IsEnabled = _releaseUri != null;
             if (notes == null || string.IsNullOrWhiteSpace(notes.Body))
             {

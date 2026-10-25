@@ -120,6 +120,74 @@ public sealed class LocalFilePaneViewUiTests
         });
     }
 
+    /// <summary>
+    /// 本地栏的列标题点了要排序(差距分析 A2):视图模型的排序早就写好了,表头却是三个纯 TextBlock,点了什么也不发生。
+    /// 用真实的指针点击走一遍命中测试与绑定,而不是直接调命令。
+    /// </summary>
+    [TestMethod]
+    public async Task ClickingAColumnHeader_SortsTheLocalPaneAndShowsTheDirectionGlyph()
+    {
+        await _session.RunOnUiAsync(async () =>
+        {
+            using var root = new TempDirectory();
+            Directory.CreateDirectory(Path.Combine(root.Path, "z-dir"));
+            File.WriteAllText(Path.Combine(root.Path, "a-big.txt"), new string('x', 3000));
+            File.WriteAllText(Path.Combine(root.Path, "b-small.txt"), "x");
+            var accessible = new LocalRootEntry("~", root.Path, true, root.Path);
+            // 同上:必须早于 TempDirectory 释放,否则删目录的监视回调会污染 Dispatcher.UIThread。
+            using var viewModel = new LocalFilePaneViewModel(
+                new TransferOptions { LocalDownloadDirectory = root.Path },
+                rootProvider: new TestRootProvider(accessible));
+            await viewModel.LoadInitialAsync();
+
+            var view = new LocalFilePaneView { DataContext = viewModel };
+            var window = new Window { Width = 700, Height = 450, Content = view };
+            try
+            {
+                window.Show();
+                Pump(window);
+                Button sizeHeader = view.GetVisualDescendants().OfType<Button>()
+                    .Single(button => button.Classes.Contains("col-header") && Equals(button.CommandParameter, "size"));
+                Point center = sizeHeader.TranslatePoint(new Point(sizeHeader.Bounds.Width / 2, sizeHeader.Bounds.Height / 2), window)!.Value;
+
+                window.MouseDown(center, MouseButton.Left);
+                window.MouseUp(center, MouseButton.Left);
+                Pump(window);
+
+                Assert.AreEqual("size", viewModel.SortColumn);
+                Assert.IsFalse(viewModel.SortDescending);
+                Assert.AreEqual(" ▲", viewModel.SizeSortGlyph);
+                Assert.AreEqual(string.Empty, viewModel.NameSortGlyph);
+                CollectionAssert.AreEqual(
+                    new[] { "z-dir", "b-small.txt", "a-big.txt" },
+                    viewModel.Entries.Where(entry => !entry.IsParentEntry).Select(entry => entry.Name).ToArray(),
+                    "目录始终在前,文件按大小升序。");
+
+                window.MouseDown(center, MouseButton.Left);
+                window.MouseUp(center, MouseButton.Left);
+                Pump(window);
+
+                Assert.IsTrue(viewModel.SortDescending, "再点同一列翻转方向。");
+                Assert.AreEqual(" ▼", viewModel.SizeSortGlyph);
+                CollectionAssert.AreEqual(
+                    new[] { "z-dir", "a-big.txt", "b-small.txt" },
+                    viewModel.Entries.Where(entry => !entry.IsParentEntry).Select(entry => entry.Name).ToArray());
+                CollectionAssert.AreEquivalent(
+                    new[] { "name", "size", "modified" },
+                    view.GetVisualDescendants().OfType<Button>()
+                        .Where(button => button.Classes.Contains("col-header"))
+                        .Select(button => button.CommandParameter as string)
+                        .ToArray(),
+                    "三列都应可点。");
+            }
+            finally
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+        });
+    }
+
     private static Point FindWhitespacePoint(Control row)
     {
         double y = row.Bounds.Height / 2;

@@ -38,6 +38,10 @@ public sealed class SessionProfileCloneTests
             PrivateKeyPath = @"C:\keys\id_ed25519",
             PrivateKeyPassphrase = "phrase",
             CertificatePath = @"C:\keys\id_ed25519-cert.pub",
+            KeyStoreKey = new SystemKeyReference
+            {
+                Provider = SystemKeyReference.PlatformProvider, KeyName = "vela-tpm-key", MachineKey = true, PublicKey = "ecdsa-sha2-nistp256 AAAA"
+            },
             CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
             GroupId = Guid.NewGuid(),
             IsPinned = true,
@@ -77,6 +81,7 @@ public sealed class SessionProfileCloneTests
                 AgentForwarding = true,
                 AgentForwardKeys = ["SHA256:abc"],
                 AgentForwardConfirm = true,
+                AgentEndpoint = @"\\.\pipe\vela-clone-agent",
                 X11Forwarding = true,
                 X11Display = "localhost:10.0",
                 X11Trusted = false,

@@ -4,10 +4,14 @@ using System.Text;
 using Avalonia.Threading;
 using ReactiveUI;
 using ReactiveUI.Primitives;
+using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
+using VelaShell.Core.Ssh;
+using VelaShell.Infrastructure.Ssh;
 using VelaShell.Presentation.Services;
+using VelaShell.Services;
 
 namespace VelaShell.ViewModels;
 
@@ -95,20 +99,92 @@ public sealed class DiagnosticStepItemViewModel(int index, string name) : Reacti
     public void Reset() => Apply(new(Index, Name, DiagnosticStepStatus.Pending));
 }
 
+/// <summary>协议轨迹的一行:一个报文的时刻、方向、类型、长度、序号与通道号(没有内容)。</summary>
+public sealed class PacketTraceRowViewModel
+{
+    /// <summary>由一条轨迹记录生成一行。</summary>
+    /// <param name="entry">轨迹记录。</param>
+    /// <param name="hopHeader">跳板链上换到另一跳时,这一行上面写出那一跳;直连或同一跳为 <see langword="null" />。</param>
+    public PacketTraceRowViewModel(SshPacketTraceEntry entry, string? hopHeader)
+    {
+        Entry = entry;
+        HopHeader = hopHeader;
+    }
+
+    /// <summary>原始记录。</summary>
+    public SshPacketTraceEntry Entry { get; }
+
+    /// <summary>换到另一跳时的那一跳标题;不换时为 <see langword="null" />。</summary>
+    public string? HopHeader { get; }
+
+    /// <summary>有没有跳标题。</summary>
+    public bool HasHopHeader => HopHeader is not null;
+
+    /// <summary>从开始记录起的时刻,如 <c>+0.012s</c>。</summary>
+    public string Time => "+" + Entry.Elapsed.TotalSeconds.ToString("0.000", CultureInfo.InvariantCulture) + "s";
+
+    /// <summary>方向:箭头 + 「发」/「收」。</summary>
+    public string Direction => Entry.Direction == SshPacketDirection.Sent
+        ? "→ " + Strings.Get("Diag_TraceSent")
+        : "← " + Strings.Get("Diag_TraceReceived");
+
+    /// <summary>本机发出的(界面上换个颜色)。</summary>
+    public bool IsSent => Entry.Direction == SshPacketDirection.Sent;
+
+    /// <summary>消息类型:协议原名加编号;方法专用、扩展与没分配的编号给类别名。</summary>
+    public string Message => Describe(Entry.MessageNumber);
+
+    /// <summary>长度(字节);我们发出的认证报文不记,显示「—」。</summary>
+    public string Length => Entry.Length is { } length ? length.ToString("N0", CultureInfo.InvariantCulture) + " B" : "—";
+
+    /// <summary>这个方向上的报文序号。</summary>
+    public string Sequence => "#" + Entry.SequenceNumber.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>通道号;不是通道消息时为空串。</summary>
+    public string Channel => Entry.ChannelNumber is { } channel ? Strings.Format("Diag_TraceChannel", channel) : string.Empty;
+
+    /// <summary>消息编号的说法(协议原名不翻译;按编号段归类的那几种给本地化的类别名)。</summary>
+    /// <param name="number">消息编号。</param>
+    public static string Describe(byte number)
+    {
+        string name = SshMessageNames.Name(number) ?? SshMessageNames.RangeOf(number) switch
+        {
+            SshMessageRange.KeyExchangeMethod => Strings.Get("Diag_TraceKexMethod"),
+            SshMessageRange.AuthenticationMethod => Strings.Get("Diag_TraceAuthMethod"),
+            SshMessageRange.LocalExtension => Strings.Get("Diag_TraceLocalExtension"),
+            _ => Strings.Get("Diag_TraceUnassigned"),
+        };
+        return $"{name} ({number.ToString(CultureInfo.InvariantCulture)})";
+    }
+}
+
 /// <summary>连接诊断中心(设计 RGXg1):对一条连接配置逐步检测并给出问题与修复建议。</summary>
 public class ConnectionDiagnosticsViewModel : ReactiveObject
 {
     private readonly IConnectionDiagnosticsService _diagnosticsService;
-    private readonly SessionProfile _profile;
+    private readonly SshAlgorithmRemedyFlow _remedies;
     private DiagnosticReport? _lastReport;
+
+    /// <summary>
+    /// 诊断的那份配置。一键放开算法(终点那一跳)之后换成改过的一份副本 —— 不改调用方那一份:
+    /// 它可能是资源管理器缓存的对象,也可能是某个标签手里的那份。
+    /// </summary>
+    private SessionProfile _profile;
 
     /// <summary>创建连接诊断视图模型,绑定目标连接配置与诊断服务并初始化四个检测步骤。</summary>
     /// <param name="profile">要诊断的连接配置。</param>
     /// <param name="diagnosticsService">执行逐步诊断的服务。</param>
-    public ConnectionDiagnosticsViewModel(SessionProfile profile, IConnectionDiagnosticsService diagnosticsService)
+    /// <param name="sessionRepository">会话库:一键放开算法时找到并改写谈不成的那一跳的配置;为 null 时只改这次诊断用的副本。</param>
+    /// <param name="connectionWorkflowService">连接工作流:改过的配置经它落盘(按记住密码的策略写)。</param>
+    public ConnectionDiagnosticsViewModel(
+        SessionProfile profile,
+        IConnectionDiagnosticsService diagnosticsService,
+        ISessionRepository? sessionRepository = null,
+        IConnectionWorkflowService? connectionWorkflowService = null)
     {
         _profile = profile ?? throw new ArgumentNullException(nameof(profile));
         _diagnosticsService = diagnosticsService ?? throw new ArgumentNullException(nameof(diagnosticsService));
+        _remedies = new(sessionRepository, connectionWorkflowService);
         Steps =
         [
             new(0, Strings.Get("DiagSvc_StepDns")),
@@ -119,6 +195,11 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
         Suggestions = [];
         IObservable<bool> canRun = this.WhenAnyValue(x => x.IsBusy, busy => !busy);
         RunCommand = ReactiveCommand.CreateFromTask(RunAsync, canRun);
+        CopyPacketTraceCommand = ReactiveCommand.CreateFromTask(
+            CopyPacketTraceAsync, this.WhenAnyValue(x => x.HasPacketTrace));
+        AllowAlgorithmsCommand = ReactiveCommand.CreateFromTask(
+            AllowAlgorithmsAndRediagnoseAsync,
+            this.WhenAnyValue(x => x.AlgorithmRemedy, x => x.IsBusy, (remedy, busy) => remedy is not null && !busy));
     }
 
     /// <summary>标题栏副标题里的目标描述。</summary>
@@ -140,7 +221,11 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
     public bool IsBusy
     {
         get;
-        private set => this.RaiseAndSetIfChanged(ref field, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(ShowsNoPacketTrace));
+        }
     }
 
     /// <summary>诊断发现的问题标题,无问题时为空。</summary>
@@ -171,8 +256,170 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
         private set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
+    /// <summary>
+    /// 这一轮败在算法协商上、而对端有本版实现了只是没放开的算法:问题卡片上的「放开这几个算法并重新诊断」按它来。
+    /// 每轮诊断开始时清掉,结束时按这一轮的结果重算。
+    /// </summary>
+    public SshAlgorithmRemedy? AlgorithmRemedy
+    {
+        get;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(HasAlgorithmRemedy));
+            this.RaisePropertyChanged(nameof(AlgorithmRemedyTip));
+        }
+    }
+
+    /// <summary>问题卡片上要不要出「放开这几个算法并重新诊断」。</summary>
+    public bool HasAlgorithmRemedy => AlgorithmRemedy is not null;
+
+    /// <summary>那颗按钮的悬停说明:往哪一类清单里加哪几个。</summary>
+    public string AlgorithmRemedyTip => AlgorithmRemedy is { } remedy
+        ? SshAlgorithmRemedyFlow.ButtonTip(remedy, SshAlgorithmRemedyFollowUp.Rediagnose)
+        : string.Empty;
+
+    /// <summary>一键放开没成(跳板配置找不到、写不进库)时的原因,显示在按钮下面;下一次点或下一轮诊断时清掉。</summary>
+    public string? AlgorithmRemedyError
+    {
+        get;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(HasAlgorithmRemedyError));
+        }
+    }
+
+    /// <summary>是否有一键放开失败的原因要显示。</summary>
+    public bool HasAlgorithmRemedyError => !string.IsNullOrEmpty(AlgorithmRemedyError);
+
+    /// <summary>「放开这几个算法并重新诊断」(只在有补救、且不在诊断中时可点)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> AllowAlgorithmsCommand { get; }
+
+    /// <summary>
+    /// 窗口注入的确认框(标题、正文、确认键文字;确认返回 true),与终端标签上那颗按钮问的是同一句。
+    /// 未挂时(headless)不改配置 —— 这一步会降低那条连接的安全性,没人点头不能做。
+    /// </summary>
+    public Func<string, string, string, Task<bool>>? AllowAlgorithmsConfirmer { get; set; }
+
+    /// <summary>一键放开改写了库里的配置:窗口关掉之后宿主据此刷新资源管理器。</summary>
+    public bool ChangedStoredProfiles { get; private set; }
+
     /// <summary>是否已有可导出的诊断报告,用于导出按钮可用性。</summary>
     public bool CanExport => _lastReport is not null;
+
+    // ---- 协议轨迹(认证那一步的报文旁路;只有元信息) ----
+
+    /// <summary>认证那一步收发的报文,一行一个。</summary>
+    public ObservableCollection<PacketTraceRowViewModel> PacketTrace { get; } = [];
+
+    /// <summary>这一轮有没有协议轨迹。</summary>
+    public bool HasPacketTrace
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>右侧面板显示协议轨迹(<see langword="true" />)还是诊断结果。</summary>
+    public bool ShowsPacketTrace
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(ShowsResults));
+        }
+    }
+
+    /// <summary>右侧面板显示诊断结果(问题与建议)。</summary>
+    public bool ShowsResults
+    {
+        get => !ShowsPacketTrace;
+        set => ShowsPacketTrace = !value;
+    }
+
+    /// <summary>「协议轨迹」页签上的字:带上报文数。</summary>
+    public string PacketTraceTabTitle => PacketTrace.Count == 0
+        ? Strings.Get("Diag_TabTrace")
+        : Strings.Format("Diag_TabTraceCount", PacketTrace.Count);
+
+    /// <summary>超过记录上限没记的报文数的说明;没有时为 <see langword="null" />。</summary>
+    public string? PacketTraceDroppedText
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>这一轮没有走到 SSH 连接:轨迹页给一句说明,而不是一片空白。</summary>
+    public bool ShowsNoPacketTrace => !IsBusy && !HasPacketTrace;
+
+    /// <summary>复制协议轨迹(纯文本,与导出报告里的那一段相同)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> CopyPacketTraceCommand { get; }
+
+    /// <summary>写剪贴板;视图打开时接上(单测里换成记录)。</summary>
+    public Func<string, Task>? CopyToClipboard { get; set; }
+
+    private async Task CopyPacketTraceAsync()
+    {
+        if (CopyToClipboard is { } copy)
+        {
+            await copy(BuildPacketTraceText());
+        }
+    }
+
+    /// <summary>
+    /// 把一轮的轨迹摆成行:跳板链上不止一跳时,换到另一跳的那一行上面写出那一跳 —— 直连只有一跳,不写。
+    /// </summary>
+    private void ShowPacketTrace(DiagnosticReport report)
+    {
+        bool multiHop = report.PacketTrace.Select(static e => e.Hop).Distinct(StringComparer.Ordinal).Skip(1).Any();
+        string? previousHop = null;
+        foreach (SshPacketTraceEntry entry in report.PacketTrace)
+        {
+            string? header = multiHop && !string.Equals(entry.Hop, previousHop, StringComparison.Ordinal) ? entry.Hop : null;
+            previousHop = entry.Hop;
+            PacketTrace.Add(new PacketTraceRowViewModel(entry, header));
+        }
+        PacketTraceDroppedText = report.PacketTraceDropped > 0
+            ? Strings.Format("Diag_TraceDropped", report.PacketTraceDropped)
+            : null;
+        HasPacketTrace = PacketTrace.Count > 0;
+        this.RaisePropertyChanged(nameof(PacketTraceTabTitle));
+        this.RaisePropertyChanged(nameof(ShowsNoPacketTrace));
+    }
+
+    private void ClearPacketTrace()
+    {
+        PacketTrace.Clear();
+        PacketTraceDroppedText = null;
+        HasPacketTrace = false;
+        this.RaisePropertyChanged(nameof(PacketTraceTabTitle));
+    }
+
+    /// <summary>协议轨迹的纯文本:一行一个报文,只有元信息(复制与导出报告共用)。</summary>
+    public string BuildPacketTraceText()
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine(Strings.Get("Diag_TraceTextHeader"));
+        foreach (PacketTraceRowViewModel row in PacketTrace)
+        {
+            if (row.HopHeader is { } hop)
+            {
+                builder.AppendLine($"[{hop}]");
+            }
+            builder.Append($"{row.Time,-9} {row.Direction,-5} {row.Message,-32} {row.Length,10} {row.Sequence,-7}");
+            if (row.Channel.Length > 0)
+            {
+                builder.Append(' ').Append(row.Channel);
+            }
+            builder.AppendLine();
+        }
+        if (PacketTraceDroppedText is { } dropped)
+        {
+            builder.AppendLine(dropped);
+        }
+        return builder.ToString();
+    }
 
     /// <summary>导出文件名建议。</summary>
     public string SuggestedReportFileName => Strings.Format(
@@ -186,7 +433,10 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
         IssueTitle = null;
         IssueDescription = null;
         AllPassed = false;
+        AlgorithmRemedy = null;
+        AlgorithmRemedyError = null;
         Suggestions.Clear();
+        ClearPacketTrace();
         foreach (DiagnosticStepItemViewModel step in Steps)
         {
             step.Reset();
@@ -214,6 +464,9 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
                 Suggestions.Add(suggestion);
             }
             AllPassed = report.Success && Suggestions.Count == 0;
+            ShowPacketTrace(report);
+            // 协商在认证那一步(完整连接)才发生;那一步的原始异常里认得出「算法谈不成」。
+            AlgorithmRemedy = SshAlgorithmRemedy.Find(report.Failure);
             this.RaisePropertyChanged(nameof(CanExport));
         }
         catch (Exception ex)
@@ -225,6 +478,34 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// 问题卡片上的「放开这几个算法并重新诊断」:与终端标签同一个确认框、同一套写法(跳板上谈不成时改跳板自己的配置),
+    /// 确认后按改过的配置重新诊断一轮。
+    /// </summary>
+    private async Task AllowAlgorithmsAndRediagnoseAsync(CancellationToken cancellationToken)
+    {
+        if (AlgorithmRemedy is not { } remedy || IsBusy || AllowAlgorithmsConfirmer is not { } confirm)
+        {
+            return;
+        }
+        AlgorithmRemedyError = null;
+        if (await _remedies.ConfirmAndSaveAsync(
+                _profile, remedy, SshAlgorithmRemedyFollowUp.Rediagnose, confirm, message => AlgorithmRemedyError = message,
+                () => AlgorithmRemedy == remedy && !IsBusy).ConfigureAwait(true)
+            is not { } applied)
+        {
+            return;
+        }
+        ChangedStoredProfiles |= applied.Stored is not null;
+        if (remedy.HopDepth == 0)
+        {
+            SessionProfile updated = _profile.Clone();
+            updated.Ssh = remedy.ApplyTo(_profile.Ssh);
+            _profile = updated;
+        }
+        await RunAsync(cancellationToken).ConfigureAwait(true);
     }
 
     /// <summary>生成可保存的纯文本诊断报告(导出诊断报告按钮)。</summary>
@@ -280,6 +561,12 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
             {
                 builder.AppendLine(Strings.Format("Diag_ReportSuggestion", i + 1, Suggestions[i]));
             }
+        }
+        if (HasPacketTrace)
+        {
+            // 报告是拿去给别人看的:轨迹只有元信息(没有内容,我们发出的认证报文连长度也没有),整段附上。
+            builder.AppendLine(new('-', 48));
+            builder.Append(BuildPacketTraceText());
         }
         return builder.ToString();
     }
