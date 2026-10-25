@@ -568,6 +568,10 @@ public partial class FileBrowserView : UserControl
         ];
     }
 
+    /// <summary>
+    /// 「下载为…」的系统另存为对话框。同名时由对话框问「要替换吗」,而且<b>必须问</b>:
+    /// 视图模型把用户在这里点的「替换」当作这次的冲突决定,不再走「文件已存在时」策略(见 DownloadItemAsync)。
+    /// </summary>
     private async Task<string?> PickSavePathAsync(string suggestedName)
     {
         var top = TopLevel.GetTopLevel(this);
@@ -581,6 +585,7 @@ public partial class FileBrowserView : UserControl
                 Title = Strings.SaveToLocal,
                 SuggestedFileName = suggestedName,
                 SuggestedStartLocation = await ResolveDefaultDownloadFolderAsync(top),
+                ShowOverwritePrompt = true,
             }
         );
         return file?.TryGetLocalPath();

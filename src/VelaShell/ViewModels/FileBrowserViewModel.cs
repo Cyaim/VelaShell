@@ -1067,7 +1067,10 @@ public class FileBrowserViewModel : ReactiveObject
     /// <summary>在当前目录下新建符号链接(依次提示目标与名称;参数为右键所在行,用来预填目标)。</summary>
     public ReactiveCommand<RemoteFileInfoViewModel?, RxVoid> NewSymbolicLinkCommand { get; }
 
-    /// <summary>下载选中的单个文件或目录到本地(目录递归)。</summary>
+    /// <summary>
+    /// 下载单个文件或目录到本地(目录递归)。文件走系统「另存为」对话框(右键「下载为…」),
+    /// 对话框里的覆盖确认就是冲突决定;目录选一个本地文件夹。
+    /// </summary>
     public ReactiveCommand<RemoteFileInfoViewModel, RxVoid> DownloadItemCommand { get; }
 
     /// <summary>在同目录内重命名选中的条目(提示输入新名称)。</summary>
@@ -1184,7 +1187,10 @@ public class FileBrowserViewModel : ReactiveObject
     /// </summary>
     public Func<Task<IReadOnlyList<string>>>? PickLocalPathsForUpload { get; set; }
 
-    /// <summary>由视图设置:询问下载保存位置(参数 = 建议的文件名)。</summary>
+    /// <summary>
+    /// 由视图设置:询问下载保存位置(参数 = 建议的文件名)。选了已有的文件时,由对话框自己问「要替换吗」——
+    /// 返回的路径即视为用户已同意覆盖(「下载为…」不再走「文件已存在时」策略)。
+    /// </summary>
     public Func<string, Task<string?>>? PickSavePathForDownload { get; set; }
 
     /// <summary>由视图设置:为文件夹/批量下载选取本地目标文件夹。</summary>
@@ -2109,8 +2115,13 @@ public class FileBrowserViewModel : ReactiveObject
         {
             return;
         }
+        // 「下载为…」:落点与名字是用户在系统「另存为」对话框里挑的,同名时对话框也已经问过「要替换吗」——
+        // 那一下就是这次的冲突决定。所以既不走「文件已存在时」策略(「询问」会再弹一遍,「跳过 / 重命名」
+        // 还会推翻用户刚选定的名字),也不做续传探测(那里原有的同名文件是用户确认要替换掉的,不是这次的半截)。
+        // 其余照常:进浮窗、占全窗口名额、可取消、记进传输队列(断线停下之后「继续」从这次的半截接着传)。
         PlannedFileTransfer[] single = [new(TransferType.Download, localPath, file.FullPath)];
-        await RunTransferBatchAsync(single, ct);
+        ErrorMessage = null;
+        await ExecuteResolvedBatchAsync(single, new BatchConflictDecision { OverwriteAll = true }, settled: null, ct, persist: true);
     }
 
     /// <summary>

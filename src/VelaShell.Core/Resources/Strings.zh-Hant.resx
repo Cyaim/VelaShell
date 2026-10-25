@@ -927,6 +927,9 @@
   <data name="Download" xml:space="preserve">
     <value>下載</value>
   </data>
+  <data name="DownloadAs" xml:space="preserve">
+    <value>下載為…</value>
+  </data>
   <data name="Refresh" xml:space="preserve">
     <value>重新整理</value>
   </data>

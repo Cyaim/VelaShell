@@ -5,6 +5,7 @@
              xmlns:vm="using:VelaShell.ViewModels"
              xmlns:loc="using:VelaShell.Localization"
              xmlns:pc="using:VelaShell.Controls.Controls"
+             xmlns:conv="using:VelaShell.Converters"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="220"
              x:Class="VelaShell.Views.FileBrowserView"
              x:DataType="vm:FileBrowserViewModel">
@@ -681,6 +682,25 @@
                                 Command="{Binding $parent[ListBox].((vm:FileBrowserViewModel)DataContext).DownloadSelectedCommand}">
                         <MenuItem.Icon>
                           <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.download}"
+                                         Foreground="{DynamicResource VelaTextTertiary}" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                      <!-- 下载为…:系统「另存为」对话框里挑落点与名字。只给单个普通文件 —— 多选时「下载」作用于整个选区,
+                           这一项却只能落一个名字,摆着就是两个意思。对话框里的覆盖确认就是冲突决定(见 DownloadItemAsync)。 -->
+                      <MenuItem Name="DownloadAsMenuItem"
+                                Header="{loc:Localize DownloadAs}"
+                                Command="{Binding $parent[ListBox].((vm:FileBrowserViewModel)DataContext).DownloadItemCommand}"
+                                CommandParameter="{Binding}">
+                        <MenuItem.IsVisible>
+                          <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="IsRegularFile" />
+                            <Binding Path="$parent[ListBox].((vm:FileBrowserViewModel)DataContext).SelectedFiles.Count"
+                                     Converter="{x:Static conv:IntEqualsConverter.Instance}"
+                                     ConverterParameter="1" />
+                          </MultiBinding>
+                        </MenuItem.IsVisible>
+                        <MenuItem.Icon>
+                          <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.file-down}"
                                          Foreground="{DynamicResource VelaTextTertiary}" />
                         </MenuItem.Icon>
                       </MenuItem>

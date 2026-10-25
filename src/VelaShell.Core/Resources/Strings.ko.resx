@@ -1048,6 +1048,9 @@
   <data name="Download" xml:space="preserve">
     <value>다운로드</value>
   </data>
+  <data name="DownloadAs" xml:space="preserve">
+    <value>다른 이름으로 다운로드…</value>
+  </data>
   <data name="DualSftp_CannotReceive" xml:space="preserve">
     <value>{0}은(는) 다른 서버에서 스트리밍으로 보내는 파일을 받을 수 없습니다(플러그인이 스트림 업로드를 지원하지 않음).</value>
   </data>
