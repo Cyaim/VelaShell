@@ -2727,6 +2727,18 @@
   <data name="Sftp_GoUpRemotePane" xml:space="preserve">
     <value>원격 창에서 상위 폴더로</value>
   </data>
+  <data name="Sftp_BackLocalPane" xml:space="preserve">
+    <value>로컬 창에서 뒤로 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardLocalPane" xml:space="preserve">
+    <value>로컬 창에서 앞으로 (Alt+→)</value>
+  </data>
+  <data name="Sftp_BackRemotePane" xml:space="preserve">
+    <value>원격 창에서 뒤로 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardRemotePane" xml:space="preserve">
+    <value>원격 창에서 앞으로 (Alt+→)</value>
+  </data>
   <data name="RemoteForward" xml:space="preserve">
     <value>원격 포워딩</value>
   </data>
@@ -6811,6 +6823,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="Sc_FilterToList" xml:space="preserve">
     <value>필터 상자에서 파일 목록으로 이동</value>
+  </data>
+  <data name="Sc_NavigateBack" xml:space="preserve">
+    <value>이전 폴더로 돌아가기</value>
+  </data>
+  <data name="Sc_NavigateForward" xml:space="preserve">
+    <value>뒤로 가기 전 폴더로 앞으로 가기</value>
   </data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>편집기 닫기</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>프로세스 목록 새로 고침</value></data>

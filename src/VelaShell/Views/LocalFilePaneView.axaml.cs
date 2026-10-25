@@ -107,6 +107,15 @@ public partial class LocalFilePaneView : UserControl
                 vm.DeleteSelectedCommand.Execute().Subscribe(_ => { }, _ => { });
                 e.Handled = true;
                 return;
+            case FilePaneKeyAction.Back:
+                // 与按钮同一个命令、同样先问能不能执行:没有历史、或上一步还没走完时什么也不做。
+                FilePaneKeys.Run(vm.GoBackCommand);
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Forward:
+                FilePaneKeys.Run(vm.GoForwardCommand);
+                e.Handled = true;
+                return;
         }
     }
 

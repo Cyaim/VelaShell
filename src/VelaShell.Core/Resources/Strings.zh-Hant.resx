@@ -945,6 +945,18 @@
   <data name="Sftp_GoUpRemotePane" xml:space="preserve">
     <value>遠端欄上一層</value>
   </data>
+  <data name="Sftp_BackLocalPane" xml:space="preserve">
+    <value>本機欄返回 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardLocalPane" xml:space="preserve">
+    <value>本機欄前進 (Alt+→)</value>
+  </data>
+  <data name="Sftp_BackRemotePane" xml:space="preserve">
+    <value>遠端欄返回 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardRemotePane" xml:space="preserve">
+    <value>遠端欄前進 (Alt+→)</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>跟隨終端機目錄(同步到終端機目前路徑)</value>
   </data>
@@ -7201,6 +7213,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Sc_FilterToList" xml:space="preserve">
     <value>從篩選框回到檔案清單</value>
+  </data>
+  <data name="Sc_NavigateBack" xml:space="preserve">
+    <value>返回上一個目錄</value>
+  </data>
+  <data name="Sc_NavigateForward" xml:space="preserve">
+    <value>前進到返回之前的目錄</value>
   </data>
   <data name="Sc_CloseEditor" xml:space="preserve">
     <value>關閉編輯器</value>

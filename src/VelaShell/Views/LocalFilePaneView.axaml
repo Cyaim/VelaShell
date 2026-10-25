@@ -18,6 +18,13 @@
     <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
     </Style>
+    <!-- 后退 / 前进没有历史可走时淡下去;执行中禁用时不铺 Fluent 的灰底(同远端栏)。 -->
+    <Style Selector="Button.history-btn.unavailable">
+      <Setter Property="Opacity" Value="0.35" />
+    </Style>
+    <Style Selector="Button.history-btn:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
     <!-- 过滤框开关:与远端栏(FileBrowserView)同一种安静的图标开关,展开时图标染强调色。 -->
     <Style Selector="ToggleButton.pane-toggle">
       <Setter Property="Background" Value="Transparent" />
@@ -144,6 +151,25 @@
               <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.list-filter}"
                              Foreground="{Binding $parent[ToggleButton].Foreground}" />
             </ToggleButton>
+            <!-- 后退 / 前进(Alt+← / Alt+→),挨着上一级;提示语与读屏名与远程栏那两颗区分开。 -->
+            <Button x:Name="LocalBackButton"
+                    Classes="toolbar-btn history-btn" Classes.unavailable="{Binding !CanGoBack}"
+                    Width="24" Height="24" Padding="0"
+                    Command="{Binding GoBackCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_BackLocalPane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_BackLocalPane}">
+              <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.arrow-left}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
+            </Button>
+            <Button x:Name="LocalForwardButton"
+                    Classes="toolbar-btn history-btn" Classes.unavailable="{Binding !CanGoForward}"
+                    Width="24" Height="24" Padding="0"
+                    Command="{Binding GoForwardCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_ForwardLocalPane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_ForwardLocalPane}">
+              <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.arrow-right}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
+            </Button>
             <!-- 上一级与刷新同理:远程栏也有一颗,提示语与读屏名要分得出是哪一栏。 -->
             <Button x:Name="LocalGoUpButton"
                     Classes="toolbar-btn" Width="24" Height="24" Padding="0"

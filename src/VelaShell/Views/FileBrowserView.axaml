@@ -21,6 +21,14 @@
     <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
     </Style>
+    <!-- 后退 / 前进没有历史可走时淡下去(与标签条翻页钮同为 0.35)。命令执行中同样是禁用的,
+         Fluent 给禁用按钮铺的灰底会让它一按就闪一下灰,改成透明。 -->
+    <Style Selector="Button.history-btn.unavailable">
+      <Setter Property="Opacity" Value="0.35" />
+    </Style>
+    <Style Selector="Button.history-btn:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
     <!-- 「跟随终端目录」开关钮:安静图标钮,开启(checked)时图标染强调色;中和 Fluent ToggleButton
          默认选中背景,使外观与其它工具栏图标钮一致(仅颜色区分开/关)。 -->
     <Style Selector="ToggleButton.follow-terminal">
@@ -329,6 +337,30 @@
                                Data="{StaticResource Icon.eye-off}"
                                Foreground="{DynamicResource VelaTextTertiary}" />
               </Panel>
+            </Button>
+            <!-- 后退 / 前进(Alt+← / Alt+→):挨着上一级摆,三颗导航钮一组;没有历史可走时淡下去。
+                 提示语与读屏名照上一级、刷新的先例,与本地栏那两颗区分开。 -->
+            <Button x:Name="RemoteBackButton"
+                    Classes="toolbar-btn history-btn" Classes.unavailable="{Binding !CanGoBack}"
+                    Width="24" Height="24" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Command="{Binding GoBackCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_BackRemotePane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_BackRemotePane}">
+              <pc:LucideIcon Width="13" Height="13"
+                             Data="{StaticResource Icon.arrow-left}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
+            </Button>
+            <Button x:Name="RemoteForwardButton"
+                    Classes="toolbar-btn history-btn" Classes.unavailable="{Binding !CanGoForward}"
+                    Width="24" Height="24" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Command="{Binding GoForwardCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_ForwardRemotePane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_ForwardRemotePane}">
+              <pc:LucideIcon Width="13" Height="13"
+                             Data="{StaticResource Icon.arrow-right}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
             </Button>
             <!-- 上一级:与本地栏一样挨着刷新摆。此前远程栏只能双击「..」行回上级(差距分析 A5)。
                  提示语与读屏名同样要与本地栏那颗区分开。在 / 时命令什么也不做。 -->

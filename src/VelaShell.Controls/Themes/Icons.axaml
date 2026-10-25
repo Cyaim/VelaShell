@@ -47,6 +47,9 @@
   <!-- 资源管理器的分组上移 / 下移、按名称排序、全部折叠 / 展开,与连接文件的导入 / 导出 / CSV 模板(#571)。 -->
   <StreamGeometry x:Key="Icon.arrow-up">M5 12l7-7 7 7 M12 19V5</StreamGeometry>
   <StreamGeometry x:Key="Icon.arrow-down">M12 5v14 M19 12l-7 7-7-7</StreamGeometry>
+  <!-- 文件栏的后退 / 前进(Alt+← / Alt+→)。 -->
+  <StreamGeometry x:Key="Icon.arrow-left">M19 12H5 M12 19l-7-7 7-7</StreamGeometry>
+  <StreamGeometry x:Key="Icon.arrow-right">M5 12h14 M12 5l7 7-7 7</StreamGeometry>
   <StreamGeometry x:Key="Icon.arrow-down-a-z">M3 16l4 4 4-4 M7 20V4 M20 8h-5 M15 10V6.5a2.5 2.5 0 0 1 5 0V10 M15 14h5l-5 6h5</StreamGeometry>
   <!-- 文件栏头部的过滤框开关:三道由长到短的横线,与 search(去服务器上找)分得开 —— 过滤只藏眼前目录里的行。 -->
   <StreamGeometry x:Key="Icon.list-filter">M3 6h18 M7 12h10 M10 18h4</StreamGeometry>

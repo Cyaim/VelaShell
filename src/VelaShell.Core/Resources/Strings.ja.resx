@@ -2727,6 +2727,18 @@
   <data name="Sftp_GoUpRemotePane" xml:space="preserve">
     <value>リモートペインで上の階層へ</value>
   </data>
+  <data name="Sftp_BackLocalPane" xml:space="preserve">
+    <value>ローカルペインで戻る (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardLocalPane" xml:space="preserve">
+    <value>ローカルペインで進む (Alt+→)</value>
+  </data>
+  <data name="Sftp_BackRemotePane" xml:space="preserve">
+    <value>リモートペインで戻る (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardRemotePane" xml:space="preserve">
+    <value>リモートペインで進む (Alt+→)</value>
+  </data>
   <data name="RemoteForward" xml:space="preserve">
     <value>リモート転送</value>
   </data>
@@ -6811,6 +6823,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Sc_FilterToList" xml:space="preserve">
     <value>絞り込み欄からファイル一覧へ戻る</value>
+  </data>
+  <data name="Sc_NavigateBack" xml:space="preserve">
+    <value>前のフォルダーに戻る</value>
+  </data>
+  <data name="Sc_NavigateForward" xml:space="preserve">
+    <value>戻る前のフォルダーへ進む</value>
   </data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>エディターを閉じる</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>プロセス一覧を更新</value></data>

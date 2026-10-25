@@ -351,6 +351,9 @@ public static class ShortcutCatalog
                     // 头部工具条上可收起的过滤框(Views/FilePaneFilter)。
                     Item("Sc_FilterClear", ["Esc"], "Sc_NoteFilterFocused"),
                     Item("Sc_FilterToList", ["Enter"], "Sc_NoteFilterFocused"),
+                    // 焦点在文件栏里时,主窗口的 Alt+方向移焦把左右两个方向让给这两条(Views/FilePaneKeys)。
+                    Item("Sc_NavigateBack", [Alt, "←"], "Sc_NoteFilePaneFocused"),
+                    Item("Sc_NavigateForward", [Alt, "→"], "Sc_NoteFilePaneFocused"),
                 ]
             ),
             Group("Sc_GroupFileOperations",

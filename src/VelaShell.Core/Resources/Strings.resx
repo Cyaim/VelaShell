@@ -892,6 +892,18 @@
   <data name="Sftp_GoUpRemotePane" xml:space="preserve">
     <value>Go up (remote pane)</value>
   </data>
+  <data name="Sftp_BackLocalPane" xml:space="preserve">
+    <value>Back (local pane, Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardLocalPane" xml:space="preserve">
+    <value>Forward (local pane, Alt+→)</value>
+  </data>
+  <data name="Sftp_BackRemotePane" xml:space="preserve">
+    <value>Back (remote pane, Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardRemotePane" xml:space="preserve">
+    <value>Forward (remote pane, Alt+→)</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>Follow terminal directory (sync to the terminal's current path)</value>
   </data>
@@ -6816,6 +6828,12 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
   </data>
   <data name="Sc_FilterToList" xml:space="preserve">
     <value>Go from the filter box back to the file list</value>
+  </data>
+  <data name="Sc_NavigateBack" xml:space="preserve">
+    <value>Go back to the previous folder</value>
+  </data>
+  <data name="Sc_NavigateForward" xml:space="preserve">
+    <value>Go forward again</value>
   </data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>Close the editor</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>Refresh the process list</value></data>

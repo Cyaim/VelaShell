@@ -275,6 +275,86 @@ public sealed class FilePaneShortcutUiTests
         });
     }
 
+    // ---- 后退 / 前进 ----
+
+    [TestMethod]
+    public void RemotePane_AltLeftAndAltRight_WalkTheHistory_AndTheButtonsFollow()
+    {
+        RunWithRemotePane((window, list, vm, _, _) =>
+        {
+            Control view = list.FindAncestorOfType<FileBrowserView>()!;
+            Button back = Named<Button>(view, "RemoteBackButton");
+            Button forward = Named<Button>(view, "RemoteForwardButton");
+            Assert.IsTrue(back.Classes.Contains("unavailable"), "还没有历史:后退钮淡着。");
+
+            PumpUntil(vm.NavigateToAsync("/home/user/sub"));
+            Pump(window);
+            Assert.IsFalse(back.Classes.Contains("unavailable"));
+            FocusRow(window, list, 0);
+
+            Press(window, Key.Left, RawInputModifiers.Alt);
+            PumpWhile(window, () => vm.CurrentPath != "/home/user");
+            Assert.AreEqual("/home/user", vm.CurrentPath);
+            Assert.IsFalse(forward.Classes.Contains("unavailable"));
+
+            Click(window, forward);
+            PumpWhile(window, () => vm.CurrentPath != "/home/user/sub");
+            Assert.AreEqual("/home/user/sub", vm.CurrentPath, "前进钮与 Alt+→ 是同一个命令。");
+        });
+    }
+
+    [TestMethod]
+    public void LocalPane_AltLeft_GoesBack_ButNotFromThePathBox()
+    {
+        RunWithLocalPane((window, view, list, vm, root) =>
+        {
+            PumpUntil(vm.NavigateToAsync(Path.Combine(root, "sub")));
+            Pump(window);
+            FocusRow(window, list, 0);
+            Press(window, Key.L, RawInputModifiers.Control);
+            Assert.IsTrue(vm.IsPathEditing);
+
+            Press(window, Key.Left, RawInputModifiers.Alt);
+            Assert.AreEqual(Path.Combine(root, "sub"), vm.CurrentPath, "焦点在输入框里时 Alt+← 归输入框。");
+
+            Press(window, Key.Escape);
+            PumpWhile(window, () => FocusedItem(window) is null);
+            Press(window, Key.Left, RawInputModifiers.Alt);
+            PumpWhile(window, () => vm.CurrentPath != root);
+
+            Assert.AreEqual(root, vm.CurrentPath);
+        });
+    }
+
+    /// <summary>
+    /// 主窗口的 Alt+方向移焦走隧道、先于文件栏:焦点在文件栏里时它得让出左右两个方向,
+    /// 不然分屏时文件栏的后退 / 前进一按就变成了换窗格。上下两个方向、输入框里、文件栏以外照旧归移焦。
+    /// </summary>
+    [TestMethod]
+    public void PaneNavigation_YieldsAltLeftRight_OnlyWhileFocusIsInAFilePane()
+    {
+        RunWithRemotePane((window, list, vm, _, _) =>
+        {
+            Control view = list.FindAncestorOfType<FileBrowserView>()!;
+            Control row = list.ContainerFromIndex(1)!;
+            TextBox filter = Named<TextBox>(view, "FilterBox");
+
+            Assert.IsTrue(FilePaneKeys.OwnsPaneNavigationKey(Key(Avalonia.Input.Key.Left, row)));
+            Assert.IsTrue(FilePaneKeys.OwnsPaneNavigationKey(Key(Avalonia.Input.Key.Right, row)));
+            Assert.IsFalse(FilePaneKeys.OwnsPaneNavigationKey(Key(Avalonia.Input.Key.Up, row)), "上下照旧移焦。");
+            Assert.IsFalse(FilePaneKeys.OwnsPaneNavigationKey(Key(Avalonia.Input.Key.Left, filter)), "输入框里不接。");
+            Assert.IsFalse(FilePaneKeys.OwnsPaneNavigationKey(Key(Avalonia.Input.Key.Left, new Button())), "文件栏以外不接。");
+        });
+
+        static KeyEventArgs Key(Key key, object source) => new()
+        {
+            RoutedEvent = InputElement.KeyDownEvent,
+            Key = key,
+            KeyModifiers = KeyModifiers.Alt,
+            Source = source,
+        };
+    }
+
     // ---- 工具 ----
 
     private static T Named<T>(Control root, string name) where T : Control =>

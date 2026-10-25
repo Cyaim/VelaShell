@@ -20,11 +20,17 @@ internal enum FilePaneKeyAction
 
     /// <summary>删除选中的条目,先确认(Delete)。</summary>
     Delete,
+
+    /// <summary>后退到上一个待过的目录(Alt+←)。</summary>
+    Back,
+
+    /// <summary>前进(Alt+→)。</summary>
+    Forward,
 }
 
 /// <summary>
-/// 本地栏与远端栏共用的视图内按键,口径照资源管理器:F5 刷新、F2 重命名、Delete 删除(先确认),
-/// 与任务管理器的 F5 / Delete 一致。两栏共用这一份判定,免得两边各写一套、慢慢长歪。
+/// 本地栏与远端栏共用的视图内按键,口径照资源管理器:F5 刷新、F2 重命名、Delete 删除(先确认)、
+/// Alt+← / Alt+→ 后退 / 前进,与任务管理器的 F5 / Delete 一致。两栏共用这一份判定,免得两边各写一套、慢慢长歪。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,6 +42,11 @@ internal enum FilePaneKeyAction
 /// 焦点在输入框里(路径框、过滤框)时一律不接:Delete 在那里是删字,F2 / F5 也轮不到文件栏。
 /// F2 / Delete 还要焦点在文件列表里 —— 焦点在工具条按钮上按 Delete 删掉一批文件,谁也想不到。
 /// </para>
+/// <para>
+/// Alt+← / Alt+→ 在主窗口上另有一层意思:分屏时在窗格间移焦(<c>MainWindow.OnPaneNavigationKeyDown</c>,走隧道、先于这里)。
+/// 焦点在文件栏里时那一层让路(<see cref="OwnsPaneNavigationKey" />),左右两个方向归文件栏的后退 / 前进;
+/// Alt+↑ / Alt+↓ 照旧移焦。
+/// </para>
 /// </remarks>
 internal static class FilePaneKeys
 {
@@ -46,17 +57,43 @@ internal static class FilePaneKeys
     {
         ArgumentNullException.ThrowIfNull(e);
         ArgumentNullException.ThrowIfNull(list);
-        if (e.Handled || e.KeyModifiers != KeyModifiers.None || IsInTextBox(e.Source))
+        if (e.Handled || IsInTextBox(e.Source))
         {
             return FilePaneKeyAction.None;
         }
-        return e.Key switch
+        return (e.Key, e.KeyModifiers) switch
         {
-            Key.F5 => FilePaneKeyAction.Refresh,
-            Key.F2 when list.IsKeyboardFocusWithin => FilePaneKeyAction.Rename,
-            Key.Delete when list.IsKeyboardFocusWithin => FilePaneKeyAction.Delete,
+            (Key.F5, KeyModifiers.None) => FilePaneKeyAction.Refresh,
+            (Key.F2, KeyModifiers.None) when list.IsKeyboardFocusWithin => FilePaneKeyAction.Rename,
+            (Key.Delete, KeyModifiers.None) when list.IsKeyboardFocusWithin => FilePaneKeyAction.Delete,
+            (Key.Left, KeyModifiers.Alt) => FilePaneKeyAction.Back,
+            (Key.Right, KeyModifiers.Alt) => FilePaneKeyAction.Forward,
             _ => FilePaneKeyAction.None,
         };
+    }
+
+    /// <summary>
+    /// 主窗口的 Alt+方向移焦要不要给文件栏让路:焦点在本地栏或远端栏里(输入框除外)时,Alt+← / Alt+→ 归文件栏。
+    /// </summary>
+    /// <param name="e">主窗口隧道阶段收到的按键。</param>
+    public static bool OwnsPaneNavigationKey(KeyEventArgs e)
+    {
+        ArgumentNullException.ThrowIfNull(e);
+        return e.KeyModifiers == KeyModifiers.Alt
+            && e.Key is Key.Left or Key.Right
+            && e.Source is Visual source
+            && !IsInTextBox(source)
+            && (source.FindAncestorOfType<FileBrowserView>(includeSelf: true) is not null
+                || source.FindAncestorOfType<LocalFilePaneView>(includeSelf: true) is not null);
+    }
+
+    /// <summary>与按钮一样:先问命令能不能执行(没有历史、上一步还在走时不能),能才执行。</summary>
+    public static void Run(System.Windows.Input.ICommand command)
+    {
+        if (command.CanExecute(null))
+        {
+            command.Execute(null);
+        }
     }
 
     /// <summary>事件来源是不是在一个输入框里。</summary>

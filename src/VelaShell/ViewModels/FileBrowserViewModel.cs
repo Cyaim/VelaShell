@@ -114,6 +114,8 @@ public class FileBrowserViewModel : ReactiveObject
         CommitPathEditCommand = ReactiveCommand.CreateFromTask(CommitPathEditAsync);
         ActivateCommand = ReactiveCommand.CreateFromTask<RemoteFileInfoViewModel>(ActivateAsync);
         GoUpCommand = ReactiveCommand.CreateFromTask(GoUpAsync);
+        GoBackCommand = ReactiveCommand.CreateFromTask(() => GoBackAsync(), this.WhenAnyValue(x => x.CanGoBack));
+        GoForwardCommand = ReactiveCommand.CreateFromTask(() => GoForwardAsync(), this.WhenAnyValue(x => x.CanGoForward));
         RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAsync);
         LoadInitialCommand = ReactiveCommand.CreateFromTask(LoadInitialAsync);
         UploadCommand = ReactiveCommand.CreateFromTask(UploadAsync);
@@ -1481,8 +1483,14 @@ public class FileBrowserViewModel : ReactiveObject
                 : " ▲"
             : string.Empty;
 
-    /// <summary>导航到指定绝对路径的目录(面包屑点击等)。失败时保留原目录。</summary>
-    public async Task NavigateToAsync(string path, CancellationToken ct = default)
+    /// <summary>导航到指定绝对路径的目录(面包屑点击等)。失败时保留原目录。进了别的目录就记进后退历史。</summary>
+    public Task NavigateToAsync(string path, CancellationToken ct = default) =>
+        NavigateCoreAsync(path, recordHistory: true, ct);
+
+    /// <param name="path">目标目录。</param>
+    /// <param name="recordHistory">进了别的目录时要不要把原目录记进后退历史;后退 / 前进自己挪历史,传 false。</param>
+    /// <param name="ct">取消令牌。</param>
+    private async Task NavigateCoreAsync(string path, bool recordHistory, CancellationToken ct)
     {
         using LifetimeScope lifetime = LinkToLifetime(ct);
         long navigationVersion = Interlocked.Increment(ref _navigationVersion);
@@ -1529,11 +1537,17 @@ public class FileBrowserViewModel : ReactiveObject
             }
             _allFiles.Clear();
             _allFiles.AddRange(files.Select(f => new RemoteFileInfoViewModel(f)));
+            string previousPath = CurrentPath;
             CurrentPath = path;
             if (pathChanged)
             {
                 SelectedFiles.Clear();
                 ClearFilterForNewDirectory();
+                // 首次加载之前的 CurrentPath 只是占位(构造时的 "/"),用户没在那儿待过,不进历史。
+                if (recordHistory && HasLoaded)
+                {
+                    PushHistory(previousPath);
+                }
             }
             RebuildVisibleFiles();
             if (!pathChanged)
@@ -1908,6 +1922,79 @@ public class FileBrowserViewModel : ReactiveObject
             return;
         }
         await NavigateToAsync(RemotePath.Parent(CurrentPath), ct);
+    }
+
+    // ---- 后退 / 前进(Alt+← / Alt+→ 与工具条按钮)--------------------------------
+    //
+    // 每个面板各有一对历史栈,只活在这个实例里:断线重连后宿主建的是新面板,历史自然不留 ——
+    // 重连之后的会话可能已经换了一台机器(同名配置改过地址),旧路径未必还有意义。
+    // 凡是进了别的目录都记(面包屑、双击、上一级、手动输入、收藏、跟随终端、搜索定位),刷新同一目录不记。
+
+    /// <summary>历史栈的上限:够用,又不至于让一个开了一整天的面板无限长下去。</summary>
+    internal const int MaxHistory = 50;
+
+    private readonly List<string> _backHistory = [];
+    private readonly List<string> _forwardHistory = [];
+
+    /// <summary>有没有可以后退的目录。</summary>
+    public bool CanGoBack => _backHistory.Count > 0;
+
+    /// <summary>有没有可以前进的目录。</summary>
+    public bool CanGoForward => _forwardHistory.Count > 0;
+
+    /// <summary>后退到上一个待过的目录(Alt+←)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> GoBackCommand { get; }
+
+    /// <summary>前进到后退之前的目录(Alt+→)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> GoForwardCommand { get; }
+
+    /// <summary>进了别的目录:原目录压进后退栈,前进栈作废(与浏览器一样,从历史中间岔出去就没有「前进」了)。</summary>
+    private void PushHistory(string previous)
+    {
+        if (_backHistory.Count == 0 || !string.Equals(_backHistory[^1], previous, StringComparison.Ordinal))
+        {
+            _backHistory.Add(previous);
+            if (_backHistory.Count > MaxHistory)
+            {
+                _backHistory.RemoveAt(0);
+            }
+        }
+        _forwardHistory.Clear();
+        RaiseHistoryChanged();
+    }
+
+    private void RaiseHistoryChanged()
+    {
+        this.RaisePropertyChanged(nameof(CanGoBack));
+        this.RaisePropertyChanged(nameof(CanGoForward));
+    }
+
+    /// <summary>后退一步。目标目录进不去(刚被删、没权限)时照常报错,历史原样不动。</summary>
+    public Task GoBackAsync(CancellationToken ct = default) => MoveInHistoryAsync(_backHistory, _forwardHistory, ct);
+
+    /// <summary>前进一步;规则同 <see cref="GoBackAsync" />。</summary>
+    public Task GoForwardAsync(CancellationToken ct = default) => MoveInHistoryAsync(_forwardHistory, _backHistory, ct);
+
+    private async Task MoveInHistoryAsync(List<string> from, List<string> to, CancellationToken ct)
+    {
+        if (from.Count == 0)
+        {
+            return;
+        }
+        string target = from[^1];
+        string origin = CurrentPath;
+        await NavigateCoreAsync(target, recordHistory: false, ct);
+
+        // 只认「确实到了那儿」:失败、或者半路被另一次导航顶掉了,历史都不挪。
+        if (!string.Equals(CurrentPath, target, StringComparison.Ordinal)
+            || from.Count == 0
+            || !string.Equals(from[^1], target, StringComparison.Ordinal))
+        {
+            return;
+        }
+        from.RemoveAt(from.Count - 1);
+        to.Add(origin);
+        RaiseHistoryChanged();
     }
 
     private async Task RefreshAsync(CancellationToken ct = default) =>
