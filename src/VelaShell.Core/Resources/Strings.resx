@@ -853,6 +853,12 @@
   <data name="Sftp_RefreshRemotePane" xml:space="preserve">
     <value>Refresh remote pane</value>
   </data>
+  <data name="Sftp_GoUpLocalPane" xml:space="preserve">
+    <value>Go up (local pane)</value>
+  </data>
+  <data name="Sftp_GoUpRemotePane" xml:space="preserve">
+    <value>Go up (remote pane)</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>Follow terminal directory (sync to the terminal's current path)</value>
   </data>

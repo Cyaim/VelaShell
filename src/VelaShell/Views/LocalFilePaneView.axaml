@@ -101,8 +101,12 @@
                 </DataTemplate>
               </ComboBox.ItemTemplate>
             </ComboBox>
-            <Button Classes="toolbar-btn" Width="24" Height="24" Padding="0"
-                    Command="{Binding GoUpCommand}">
+            <!-- 上一级与刷新同理:远程栏也有一颗,提示语与读屏名要分得出是哪一栏。 -->
+            <Button x:Name="LocalGoUpButton"
+                    Classes="toolbar-btn" Width="24" Height="24" Padding="0"
+                    Command="{Binding GoUpCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_GoUpLocalPane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_GoUpLocalPane}">
               <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.corner-left-up}"
                              Foreground="{DynamicResource VelaTextTertiary}" />
             </Button>

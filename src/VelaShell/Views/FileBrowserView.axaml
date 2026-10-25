@@ -284,6 +284,18 @@
                                Foreground="{DynamicResource VelaTextTertiary}" />
               </Panel>
             </Button>
+            <!-- 上一级:与本地栏一样挨着刷新摆。此前远程栏只能双击「..」行回上级(差距分析 A5)。
+                 提示语与读屏名同样要与本地栏那颗区分开。在 / 时命令什么也不做。 -->
+            <Button x:Name="RemoteGoUpButton"
+                    Classes="toolbar-btn" Width="24" Height="24" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Command="{Binding GoUpCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_GoUpRemotePane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_GoUpRemotePane}">
+              <pc:LucideIcon Width="13" Height="13"
+                             Data="{StaticResource Icon.corner-left-up}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
+            </Button>
             <!-- 提示语与 AutomationProperties.Name 需与本地栏的刷新按钮区分开(见 LocalFilePaneView)。 -->
             <Button x:Name="RemoteRefreshButton"
                     Classes="toolbar-btn" Width="24" Height="24" Padding="0"

@@ -906,6 +906,12 @@
   <data name="Sftp_RefreshRemotePane" xml:space="preserve">
     <value>刷新远程栏</value>
   </data>
+  <data name="Sftp_GoUpLocalPane" xml:space="preserve">
+    <value>本地栏上一级</value>
+  </data>
+  <data name="Sftp_GoUpRemotePane" xml:space="preserve">
+    <value>远程栏上一级</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>跟随终端目录(同步到终端当前路径)</value>
   </data>

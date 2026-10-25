@@ -2466,6 +2466,12 @@
   <data name="Sftp_RefreshRemotePane" xml:space="preserve">
     <value>リモートペインを更新</value>
   </data>
+  <data name="Sftp_GoUpLocalPane" xml:space="preserve">
+    <value>ローカルペインで上の階層へ</value>
+  </data>
+  <data name="Sftp_GoUpRemotePane" xml:space="preserve">
+    <value>リモートペインで上の階層へ</value>
+  </data>
   <data name="RemoteForward" xml:space="preserve">
     <value>リモート転送</value>
   </data>

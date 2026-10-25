@@ -2466,6 +2466,12 @@
   <data name="Sftp_RefreshRemotePane" xml:space="preserve">
     <value>원격 창 새로 고침</value>
   </data>
+  <data name="Sftp_GoUpLocalPane" xml:space="preserve">
+    <value>로컬 창에서 상위 폴더로</value>
+  </data>
+  <data name="Sftp_GoUpRemotePane" xml:space="preserve">
+    <value>원격 창에서 상위 폴더로</value>
+  </data>
   <data name="RemoteForward" xml:space="preserve">
     <value>원격 포워딩</value>
   </data>

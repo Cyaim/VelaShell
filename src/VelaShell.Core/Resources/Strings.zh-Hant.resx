@@ -906,6 +906,12 @@
   <data name="Sftp_RefreshRemotePane" xml:space="preserve">
     <value>重新整理遠端欄</value>
   </data>
+  <data name="Sftp_GoUpLocalPane" xml:space="preserve">
+    <value>本機欄上一層</value>
+  </data>
+  <data name="Sftp_GoUpRemotePane" xml:space="preserve">
+    <value>遠端欄上一層</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>跟隨終端機目錄(同步到終端機目前路徑)</value>
   </data>
