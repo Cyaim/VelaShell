@@ -1055,6 +1055,16 @@ public sealed class FileTransferJobRegistryTests
             lock (_gate) Set(id, _snapshots[id] with { State = RemoteTransferState.Running, Phase = RemoteTransferPhase.Transfer });
         }
 
+        /// <summary>宿主这边已经批准,却还没唤醒插件的观察者 —— 插件手里的快照仍停在 Approval。</summary>
+        public void ApproveUnobserved(string id)
+        {
+            lock (_gate)
+                _snapshots[id] = _snapshots[id] with
+                {
+                    State = RemoteTransferState.Running, Phase = RemoteTransferPhase.Transfer, Sequence = _snapshots[id].Sequence + 1
+                };
+        }
+
         public void Deny(string id)
         {
             lock (_gate)
@@ -1118,6 +1128,35 @@ public sealed class FileTransferJobRegistryTests
             await WaitUntilAsync(() => host.State("t2") == RemoteTransferState.Cancelled && host.State("t3") == RemoteTransferState.Cancelled);
             Assert.AreEqual(RemoteTransferState.Running, host.State("t1"), "已批准的那一个照常传");
             Assert.IsFalse(run.HasUnknownOutcome, "撤掉的是还没开始的任务,结果是确定的");
+        }
+        finally { File.Delete(local); }
+    }
+
+    /// <summary>
+    /// 停止那一刻插件手里的快照落后一拍(宿主已经批准、观察者还没收到 Transfer 阶段):那一个照样不撤 ——
+    /// 撤之前先向宿主取最新的。以前按旧快照撤,用户刚批准的上传随停止一起被撤掉(负载下必现)。
+    /// </summary>
+    [TestMethod]
+    public async Task Stop_KeepsAnUploadTheHostApprovedBeforeThePluginSawIt()
+    {
+        using var context = new TestPluginContext();
+        string session = context.FakeSessions.AddConnected().SessionId;
+        var host = new ApprovalQueueHost(context);
+        await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
+        using var stop = new CancellationTokenSource();
+        await using CommandJobRunScope run = toolbox.BeginRun("owner", "run", cancellationToken: stop.Token);
+        string local = Source(1);
+        try
+        {
+            await UploadAsync(toolbox, run, session, local, "/tmp/a");
+            await UploadAsync(toolbox, run, session, local, "/tmp/b");
+            host.ApproveUnobserved("t1");
+
+            await stop.CancelAsync();
+
+            await WaitUntilAsync(() => host.State("t2") == RemoteTransferState.Cancelled);
+            Assert.AreEqual(RemoteTransferState.Running, host.State("t1"), "宿主已经批准的那一个不撤");
+            CollectionAssert.AreEqual(new[] { "t2" }, context.FakeRemoteFs.TransfersCancelled.Select(c => c.TransferId).ToArray());
         }
         finally { File.Delete(local); }
     }

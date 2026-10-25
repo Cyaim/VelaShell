@@ -541,8 +541,17 @@ public sealed class FileTransferJobRegistry
         lock (_gate) snapshot = job._snapshot;
         try
         {
-            RemoteTransferSnapshot cancelled = await _remoteFs.CancelTransferAsync(snapshot.TransferId,
-                snapshot.Generation, _lifetime).ConfigureAwait(false);
+            // 手里的快照可能落后一拍:宿主已经批准、观察者还没把 Transfer 阶段发布过来。按旧快照撤,
+            // 就把用户刚点过头的那一个也撤了 —— 先向宿主取一次最新的,已经过了确认的不撤。
+            // 取与撤之间仍有一个往返的空当;要彻底合上得由宿主提供「只在还等确认时才撤」的取消。
+            RemoteTransferSnapshot current = await _remoteFs.GetTransferAsync(snapshot.TransferId, _lifetime).ConfigureAwait(false);
+            if (!AwaitsApproval(current))
+            {
+                await PublishAsync(job, current).ConfigureAwait(false);
+                return;
+            }
+            RemoteTransferSnapshot cancelled = await _remoteFs.CancelTransferAsync(current.TransferId,
+                current.Generation, _lifetime).ConfigureAwait(false);
             await PublishAsync(job, cancelled).ConfigureAwait(false);
         }
         catch { /* 宿主可能已经收尾或撤权;观察者照常盯到终态。 */ }
