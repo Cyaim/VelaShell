@@ -10,11 +10,13 @@
              x:DataType="vm:SessionTreeViewModel">
 
   <!-- 资源管理器的过滤框:按名称 / 主机 / 标签 / 备注(及分组名)过滤会话树,规则在 SessionTreeFilter。
-       与快捷命令区的搜索框同一规格(26 高、10 号字),左边一枚放大镜,有字时右边一枚 × 一键清空。
+       与快捷命令区的搜索框、任务管理器 / 链路追踪 / 审计日志的搜索框同一高度(28,DESIGN.md §4.2),10 号字;
+       左边一枚放大镜,有字时右边一枚 × 一键清空。MinHeight 必须一起写:Fluent 的 TextBox 最小高度是 32,
+       只写 Height 会被它压过(原先写的 26 实际渲染成 32)。
        Esc 清空;过滤后只剩一条连接时 Enter 直接连它(见代码后台)。 -->
   <TextBox x:Name="FilterInput"
-           Height="26"
-           Padding="4,3,7,3"
+           Height="28" MinHeight="28"
+           Padding="4,0,7,0"
            FontSize="{DynamicResource VelaFontSize10}"
            Text="{Binding FilterText}"
            PlaceholderText="{loc:Localize Tree_FilterPlaceholder}"

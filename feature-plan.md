@@ -11,6 +11,10 @@
 > 转发的实时吞吐 / 连接快照 / 限速、远程动态转发与放行名单、Unix 域套接字转发(§244)、按键时序混淆(§248),其余仍没接。
 > 这次删掉的:`plan.md` §235 – §248 做完的条目(上一轮「建议的下一步」三条都在其中;模板那一条只剩发版);
 > 「三、文档待同步」里已由 velashell-docs 文档组同步的 9 行。新增的条目来自这一批各组记下的遗留与取舍。
+> **2026-10-25 再核一遍,删掉已经做完的**:协议 / 工作台插件模板(velashell-plugin-templates#11 已合入,模板包 2.0.2 已发到 NuGet);
+> 「Code scanning AI findings 一直失败」(#670 / #671 的检查里已经没有这一项)。改写成只留剩下部分的:终端内搜索(全部高亮、循环与计数早已有,只剩正则与大小写)、
+> 生态侧几处的 ③(docs 那半已改,只剩模板仓库)、「三」里的既有漂移(en dev-guide 的 §5.13 / §5.14 与 `cli.md` 断锚点已补)。其余各行仍未做:多数在等维护者拍板、发 SDK 或实机验收;
+> 可能被后来的提交顺手做掉的几行(AI 插件的只读放行与 `BareModelId`、SDK 的通知 / 版本比较 / `localFs`、`release.yml` 的 `+meta`)抽查了代码,仍成立。
 >
 > **全文分三部分，读法不同**：
 >
@@ -41,8 +45,8 @@
 
 | 部分 | 🔴 P0 | 🟠 P1 | 🟡 P2 | 🟢 P3 | 合计 |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| 一、欠账 | 1 | 3 | 17 | 23 | **44** |
-| 二、路线图 | — | 2 | 9 | 27 | **38** |
+| 一、欠账 | 1 | 3 | 17 | 22 | **43** |
+| 二、路线图 | — | 1 | 9 | 27 | **37** |
 | 三、文档待同步 | — | — | — | — | **3** |
 
 ---
@@ -126,7 +130,7 @@
 | ⏳ | 🟡 P2 | **AI 插件：#616–#636 复审留待定的几项** | 同出 `plan.md` §222：①自定义 Responses 接入默认 `store=true`，无状态重放之后已无用处，却仍把含终端输出的上下文留在供应商侧；改默认值会让存量接入多发一个 `store:false`，中转站认不认没验证；②复用窗口时「管理登录」（`FocusEntry`）同样会掐掉进行中的登录与未存的草稿；③桥接指定的模型被手动删掉后，`BridgeAgentRunner.ResolveModel` 静默落到全局第一个模型，可能换了一家；④root 审批框的「批准」没有延迟启用，弹出瞬间鼠标恰好点中的竞态还在；⑤SDK 的 `RpcConnection.WriteAsync` 把调用方的取消令牌传进流写入，取消落在写帧中途时理论上会写出半帧 | ①只对官方 openai 目录条目关掉，或给自定义接入一个可编辑开关；②照 `StartNewProvider` 的守卫；③回退时提示或拒绝，不跨供应商；④维护者定；⑤在 SDK 仓库修，⚠️ 按 `AGENTS.md` 的版本纪律走 |
 | ⏳ | 🟡 P2 | **四套版本比较口径** | `PluginManager.IsOlder`（丢掉预发布后缀）、`UpdateVersion`（完整 SemVer 子集）、CLI 的 `VersionOrder`、市场的 `SemVerComparer`（后两者按序数比预发布）—— `1.0.0-beta.10` 与 `1.0.0-beta.2` 谁新，四边能给出不同答案。更新路径已显式选用 `UpdateVersion`，**但那是绕不是修** | 把 `UpdateVersion` 抬进 `VelaShell.PluginSdk`，宿主 / CLI / 市场三边共用。⚠️ 要发 SDK，按 `AGENTS.md` 的版本纪律走 |
 | ⏳ | 🟡 P2 | **对外 MCP 的带外审批** | 对外 MCP 走 `AgentToolbox` 产出工具，那条路上没有审批界面，「询问」模式等于一律拒绝写操作 —— 这是刻意的（`plan.md` §33-四） | 可选增强：审批推到 IM 渠道或桌面通知，用户放行后再执行 |
-| ⏳ | 🟢 P3 | **模板组顺带查出的生态侧几处** | 做协议 / 工作台模板时(`plan.md` §247)查到、都不在本仓库:①SDK 测试替身 `RecordingProtocols` / `RecordingWorkspaces` 的注册句柄 Dispose 时按**实现实例**判断是不是自己那一份,宿主 `PluginProtocolRegistry` 按**注册条目**判断 —— 「同一个实例重注册、再 Dispose 旧句柄」在宿主里是空操作,在替身里会把新注册撤掉(Telnet / 串口 / S3 正是这种写法,只是没测换语言);②五个第一方插件都用了 2.0.4 的 `PluginIcon` / `PanelOptions.Icon`,Telnet、Redis、S3 没声明 `minSdkVersion`,串口声明 1.5.0,Docker 面板 2.0.0;③velashell-docs dev-guide §1 与模板仓库的 README / AGENTS / props 注释仍写着 `.Build` 在 velashell-plugin-cli(2026-09-11 已搬到 velashell-plugin-sdk),`VelaShell.Plugin.Templates.slnx` 还引用拆文档之前的 `docs/*.md` | ①在 velashell-plugin-sdk 修替身(版本号照那边的规矩由维护者定);②velashell-plugins 各插件补上 `minSdkVersion: 2.0.4`;③随下一个模板 / docs PR 改掉 |
+| ⏳ | 🟢 P3 | **模板组顺带查出的生态侧几处** | 做协议 / 工作台模板时(`plan.md` §247)查到、都不在本仓库:①SDK 测试替身 `RecordingProtocols` / `RecordingWorkspaces` 的注册句柄 Dispose 时按**实现实例**判断是不是自己那一份,宿主 `PluginProtocolRegistry` 按**注册条目**判断 —— 「同一个实例重注册、再 Dispose 旧句柄」在宿主里是空操作,在替身里会把新注册撤掉(Telnet / 串口 / S3 正是这种写法,只是没测换语言);②五个第一方插件都用了 2.0.4 的 `PluginIcon` / `PanelOptions.Icon`,Telnet、Redis、S3 没声明 `minSdkVersion`,串口声明 1.5.0,Docker 面板 2.0.0;③模板仓库的 `README.md` 与 `Directory.Build.props` 注释仍写着 `.Build` 在 velashell-plugin-cli(2026-09-11 已搬到 velashell-plugin-sdk;velashell-docs 那边已改),`VelaShell.Plugin.Templates.slnx` 还引用拆文档之前的 `docs/*.md` | ①在 velashell-plugin-sdk 修替身(版本号照那边的规矩由维护者定);②velashell-plugins 各插件补上 `minSdkVersion: 2.0.4`;③随下一个模板仓库的 PR 改掉 |
 | 💡 | 🟢 P3 | **插件更新检查的响应缓存** | 市场没装 OutputCache，`/api/plugins/latest` 每次都真查库；目前只在打开插件管理页时问一次，量很小 | 装 OutputCache + `ETag`，按 ids 组合缓存几分钟。**等真有量了再做**，别为不存在的负载先加一层缓存 |
 
 ### 🧪 测试与本机环境
@@ -136,7 +140,6 @@
 | 状态 | 优先级 | 项 | 现状 | 要做什么 |
 | :---: | :---: | --- | --- | --- |
 | ⏳ | 🟢 P3 | **渲染停顿需在 Windows 上重测(#648 复审)** | #648 的测量脚本原先没加主题,窗口里什么都不画,§219「0 次停顿、保温无收益」不能作数;脚本已修(§231),要在报障用户的 Windows 机器上重测,再定渲染停顿的优先级(WSL 互操作端口那一半已改,§233) | 重测 |
-| ⏳ | 🟢 P3 | **GitHub 的「Code scanning AI findings」一直失败** | GitHub 托管的 Copilot 任务，#562 之前就红、日志只有退出码，不在仓库的 CI 里（§166） | 在仓库设置里关掉或修好，别让 PR 上常驻一个红叉 |
 | ⏳ | 🟢 P3 | **runtime-async 下 Span 跨 await 的可疑失败** | `plan.md` §222 修更新下载时，`zip.AsSpan().SequenceEqual(await File.ReadAllBytesAsync(…))` 编译通过，却在全量运行里失败过一次；改成先 await 再比较后稳定，没坐实 | 写最小复现，确认是不是 runtime-async 的编译器或运行时问题；是的话报上游，并在 `AGENTS.md` 记一条 |
 
 ---
@@ -184,7 +187,7 @@
 | :---: | :---: | --- | --- | --- |
 | 💡 | 🟡 P2 | **终端输出的自定义高亮规则** | WindTerm | 语义高亮是编译期硬编码的 7 条（`SemanticMatcher` 的 `[GeneratedRegex]`：Url / Ip / Error / Warning / Success / Option / Number）。改成可注入规则表 + 设置 UI；注意别拖慢逐格渲染的热路径。**这张用户规则表可与「触发器」共用；录制与日志的输出遮盖（`plan.md` §220，`SessionOutputMasker`）目前是内置规则，有了规则表也可以让用户加自己的** |
 | 💡 | 🟢 P3 | **触发器 / 自动应答** | SecureCRT / Xshell | 全仓没有「输出匹配 → 自动发送」机制。expect 式：输出命中正则时自动发送响应（自动 yes、密码带外输入）。与上一行共用规则表，适合一起做 |
-| 💡 | 🟢 P3 | **终端内搜索的增强** | 各家都有 | 基础搜索已有（`MainWindowViewModel.TerminalSearchRequested`）。正则、大小写、全部高亮、上一个 / 下一个的循环计数 —— 按反馈再定 |
+| 💡 | 🟢 P3 | **终端内搜索:正则与区分大小写** | 各家都有 | 搜索条(`TerminalTabView` + `BufferSearch`)已有全部高亮、上一个 / 下一个循环与 `n/N` 计数;匹配固定是忽略大小写的字面串(`OrdinalIgnoreCase`)。正则与大小写开关按反馈再定,用户写的正则要防回溯卡死(带匹配超时,或用 `RegexOptions.NonBacktracking`) |
 | 💡 | 🟢 P3 | **命令块:认 OSC 633 的 `E`、核 fish 4.x 的 OSC 133** | VS Code | 「复制这条命令 / 重跑」(`plan.md` §245)是从屏幕上 B 到 C 之间切出来的;VS Code 的 OSC 633 `E;<命令行>` 由 shell 显式上报命令文本,认了就不必从屏幕切、多行与续行提示符的麻烦一并消失,但要处理 nonce 防伪(远端输出也能打出同样的序列)。fish 4.x 自带 OSC 133,宿主没验过 |
 | 💡 | 🟢 P3 | **Sixel / Kitty 图形协议** | MobaXterm / WezTerm | VT 引擎有 DCS 通道，缺的是图像解码 + 位图合成进自绘渲染。多日工作量，至今没有用户提过，**等真实需求** |
 
@@ -234,7 +237,6 @@
 
 | 状态 | 优先级 | 项 | 架构落点 |
 | :---: | :---: | --- | --- |
-| 🚧 | 🟠 P1 | **协议插件 / 工作台插件模板** | `velaplugin-protocol`(终端协议)/ `velaplugin-workspace`(工作台连接类型)已在 velashell-plugin-templates 做完(VelaShellLabs/velashell-plugin-templates#11,`plan.md` §247),各带测试工程与本机回显服务;两份 dev-guide 的 `PackageReference` 已用 `Set-Version.ps1 -DocsRoot` 同步到 2.0.9(VelaShellLabs/velashell-docs#147)。剩下:①连同 velashell-docs#147 一起合入;②**发一版模板包**(版本号发版时定;已发布的 2.0.1 带着 velaplugin-ui 面板一开就 NRE 的 bug)。文件协议(`IProtocolFileSystem`)暂不出模板:五个插件里只有 S3 一个,沉淀不出公共骨架 |
 | ⏳ | 🟡 P2 | **能力域补口：`localFs` / `net`** | `STATUS.md` 列为未开口。有了它插件才能做「本地文件 ↔ 远端」（如 DockerPanel 把容器里的文件拖到桌面）。⚠️ 开口就是**权限面变大**，必须同步进 `PluginPermissionGate` 的逐项授权，apiLevel 只增不改 |
 | ⏳ | 🟡 P2 | **插件往消息中心发通知** | SDK 的 `IUiApi` 只有 `ShowPanelAsync`，插件发不了通知；宿主侧的接口形状已按这个用途定好（`plan.md` §20）。要开放得改 velashell-plugin-sdk + 扩展隔离进程 IPC + 走 SDK 发版流程，是独立一批。⚠️ 消息中心只收「要留存、可回看」的东西，插件通知同样守这条边界 |
 | 💡 | 🟡 P2 | **插件互调 / 插件间事件** | AI 插件能调 DockerPanel 的能力，「让 agent 帮我看看那个容器为什么起不来」就通了。**先想清楚权限模型再设计接口** —— 插件 A 借 B 的手绕过自己没拿到的授权，是这类设计最容易出的洞 |
@@ -269,7 +271,7 @@
 | --- | --- | --- |
 | #652 用户手册 | 根目录 `manual.md` / `manual.en.md` 不在 AGENTS.md「留在本仓库的文档」清单里,内容又与 PRIVACY.md 重复,合并一天就已过时(§231 已更正 8 处) | 待维护者定:迁到 velashell-docs(zh / en 镜像)并从 README 链过去,或写进 AGENTS.md 的例外清单并约定随代码同步,或并入 PRIVACY.md 与 velashell-docs 后删除 |
 | `plan.md` §118 窗口外框 | 平台外框的文档已随 velashell-docs#70 合入；剩下的是**实机验收之后**把 `{zh,en}/host/architecture.md` 里「验收」那一段改成实测结论 | 等「跨平台实机验收」（一、窗口与外观） |
-| 文档组核对时查出的既有漂移(2026-10-24) | 与这一批改动无关、早就在的:①`en/templates/dev-guide.md` 缺 zh 的 §5.13 Protocols 与 §5.14 Workspaces(`plan.md` §247 的模板文档在 en 那边因此只能加到 §2 / §5.9 / §7);②`zh|en/cli/cli.md` 的 `#info` / `#unpack` 锚点是断的(标题生成的锚点是 `#info--unpack`);③`en/plugins/STATUS.md` 没有 zh 的「2026-08:协议能力域落地」一节;④`zh/sdk/release-process.md` §3 与 `zh/templates/release-process.md` §1 列的版本号落点仍是搬家前的 `docs/…` / `docs-en/…` 路径(en 译文照原样带着) | 未开始 |
+| 文档组核对时查出的既有漂移(2026-10-24) | 与这一批改动无关、早就在的(en dev-guide 缺的 §5.13 / §5.14 与 `cli.md` 的断锚点已随 velashell-docs#147 补上):①`en/plugins/STATUS.md` 没有 zh 的「2026-08:协议能力域落地」一节;②`zh|en/sdk/release-process.md` §3 列的版本号落点仍是搬家前的 `docs/sdk-reference.md` / `docs-en/sdk-reference.md`(实际由 `Set-Version.ps1` 写进 `zh|en/sdk/sdk-reference.md`;模板那份已改) | 未开始 |
 
 ---
 

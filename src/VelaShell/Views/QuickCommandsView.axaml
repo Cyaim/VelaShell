@@ -154,10 +154,12 @@
       </Grid>
     </Button>
 
-    <TextBox Grid.Row="1" Margin="8,0,8,5" Height="26"
+    <!-- 搜索框高 28,与资源管理器的过滤框、工具窗口的搜索框一致(DESIGN.md §4.2);MinHeight 一起写,
+         否则 Fluent 的最小高度 32 压过 Height。 -->
+    <TextBox Grid.Row="1" Margin="8,0,8,5" Height="28" MinHeight="28"
              Text="{Binding Library.SearchQuery}"
              PlaceholderText="{loc:Localize QuickCmd_Search}"
-             FontSize="{DynamicResource VelaFontSize10}" Padding="7,3" />
+             FontSize="{DynamicResource VelaFontSize10}" Padding="7,0" />
 
     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">

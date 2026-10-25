@@ -220,6 +220,7 @@ StatusBar (24px, bg-sidebar)
 | Tab item | 32px | Active: `VelaTabActiveBg` + 2px top accent; inactive: `VelaTabInactiveBg`. Width follows the title; when one row is too narrow the widest tabs shrink first (title ellipsis, icons and the end button untouched) down to 120px, then the strip scrolls. A pinned tab sorts first and shows a pin (click = unpin) where the close `x` would be |
 | Toolbar | 36px | Sidebar toolbar, file browser header |
 | Column header | 26px | `VelaBgSurface`, bottom 1px `VelaBorderPrimary` |
+| Search / filter box | 28px | One height for every search or filter box outside dialog forms: the explorer filter and the quick-command search in the sidebar (`VelaFontSize10`), the task manager / trace route / audit log search and the field rows of the remote-search and directory-sync windows (`VelaFontSize11`). Settings pages and the tunnel panel use 30px inputs, dialog forms 32px. ⚠️ Fluent gives `TextBox`, `ComboBox`, `CheckBox`, `RadioButton` and friends `MinHeight="32"`, and `MinHeight` beats `Height`: a lone `Height` below 32 renders at 32 — always set `MinHeight` with it (the path editors' 22px uses `MinHeight="0"`). `InputMinHeightTests` scans for a missing one |
 | File row | 28px | `padding:[0,14]`, bottom 1px `VelaBorderPrimary` |
 | Session group row | 30px | `padding:[0,12]` |
 | Session host row | 28px | `padding:[0,12,0,36]` (child indent) or `[0,12]` (root) |
@@ -443,7 +444,7 @@ The existing SFTP file browser is the primary reusable component for the dual-pa
 - Selected: `VelaBgActive` background, name switches to `VelaAccent` Medium
 - Multi-selected rows (Ctrl / Shift, #571): exactly the same treatment as the selected row (`.multimarked`) — they are all "selected"; the list control itself stays single-select
 - Hover: `VelaBgHover`
-- Filter box (`SessionTreeFilterBox`): pinned above the tree (it does not scroll with it), in the sidebar (margin `8,8,8,0`) and in the collapsed rail's flyout — same spec as the quick-command search box: 26px `TextBox`, `VelaFontSize10`, an 11px `search` icon in `VelaTextMuted` on the left, and while filtering an 18px transparent clear button with a 10px `x` in `VelaTextTertiary` on the right. Nothing matched: one `VelaTextMuted` 11px line where the rows would be. Group rows with matches are forced open while filtering; group rows cannot be dragged while filtering
+- Filter box (`SessionTreeFilterBox`): pinned above the tree (it does not scroll with it), in the sidebar (margin `8,8,8,0`) and in the collapsed rail's flyout — same spec as the quick-command search box: 28px `TextBox` (§4.2 search / filter box), `VelaFontSize10`, an 11px `search` icon in `VelaTextMuted` on the left, and while filtering an 18px transparent clear button with a 10px `x` in `VelaTextTertiary` on the right. Nothing matched: one `VelaTextMuted` 11px line where the rows would be. Group rows with matches are forced open while filtering; group rows cannot be dragged while filtering
 - Dragging a group row (#571): a 2px `VelaAccent` insertion line (`CornerRadius:1`) on the gap between groups, plus the shared drag ghost (`VelaBgActive` fill, `VelaAccent` 1px border, `VelaShadowWindow`). Sessions dragged into a group keep the old feedback (group row `droptarget` highlight, no insertion line — their position is by name)
 
 ### 5.5 Context Menus (global style in `DockStyles.axaml`)

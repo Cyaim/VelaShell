@@ -47,6 +47,22 @@ public sealed class SharedPasswordFillTests
     [DataRow("Username for 'https://git.example.com:8000':", false)]
     [DataRow("Password for 'https://git.example.com:8000': typed", false)]
     [DataRow("Password for 'https://a': 'b':", false)]
+    // sudo-rs(Ubuntu 25.10 起的默认 sudo):标签后面是 PAM 的原话,输错一次之后照样再问一遍。
+    [DataRow("[sudo: authenticate] Password:", true)]
+    [DataRow("[sudo: authenticate] Password: ", true)]
+    [DataRow("[sudo-rs: authenticate] Password:", true)]
+    [DataRow("[su: authenticate] Password:", true)]
+    [DataRow("[sudo: authenticate] 密码：", true)]
+    // 本地化的经典 sudo 把用户名放在前面;doas 把用户与主机括起来。
+    [DataRow("[sudo] joe 的密码：", true)]
+    [DataRow("[sudo] joe のパスワード:", true)]
+    [DataRow("[sudo] joe의 암호:", true)]
+    [DataRow("doas (joe@host) password:", true)]
+    // 标签只认 sudo 一族;别的方括号开头、标签后面不是口令的,都不算。
+    [DataRow("[joe@host ~] password:", false)]
+    [DataRow("[sudo: authenticate] Verification code:", false)]
+    [DataRow("[sudo: authenticate] Password: typed", false)]
+    [DataRow("sudo: Authentication failed, try again.", false)]
     public void PromptDetection_IsConservative(string line, bool expected) =>
         Assert.AreEqual(expected, InteractivePromptDetector.IsPasswordFillPrompt(line));
 
@@ -232,6 +248,46 @@ public sealed class SharedPasswordFillTests
             await repository.Received(1).GetPasswordAsync(metadata.Id);
             // 填完即收口:留着只会让人再点一次。
             Assert.IsFalse(view.PasswordPopupOpenForTest);
+        }
+        finally
+        {
+            restore.Dispose();
+            window.Close();
+        }
+    });
+
+    /// <summary>
+    /// sudo-rs(Ubuntu 25.10 起的默认 sudo)的提示是 <c>[sudo: authenticate] Password:</c>:原先只认经典 sudo 的
+    /// <c>[sudo] password for joe:</c>,列表不弹,只能从命令面板手动打开。手输错一次之后,sudo 先回一个换行,
+    /// 等完 PAM 的失败延迟再报错、再问一遍 —— 同一句提示,列表要再给一次。
+    /// </summary>
+    [TestMethod]
+    public Task Popup_OpensForSudoRsPrompt_AndAgainAfterAFailedAttempt() => Session.RunOnUiAsync(async () =>
+    {
+        using var control = new VelaTerminalControl();
+        await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
+        var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "joe", AuthMethod.Password, true);
+        var repository = Substitute.For<ISharedCredentialRepository>();
+        repository.ListMetadataAsync().Returns([metadata]);
+        (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
+        try
+        {
+            Dispatcher.UIThread.RunJobs();
+            using var frame = window.CaptureRenderedFrame();
+            control.Focus();
+            control.Feed("joe@p3tiny:~$ sudo apt update -y\r\n[sudo: authenticate] Password: "u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest, "sudo-rs 的口令提示应自动弹出共享密码列表。");
+            // 用户没点列表、自己敲了口令:收口,同一提示不再冒出来。
+            control.WriteTextInput("x");
+            Paint(window);
+            Assert.IsFalse(view.PasswordPopupOpenForTest);
+            // 回车后 sudo 先单独回一个换行,失败延迟过后报错并再问一遍。
+            control.Feed("\r\n"u8.ToArray());
+            Paint(window);
+            control.Feed("sudo: Authentication failed, try again.\r\n[sudo: authenticate] Password: "u8.ToArray());
+            Paint(window);
+            Assert.IsTrue(view.PasswordPopupOpenForTest, "输错之后的重新提示应再给一次列表。");
         }
         finally
         {
