@@ -202,7 +202,7 @@ public sealed class SessionOutputMaskerTests
             "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\n", null,
             "51NqZx8Lk3Jh6Gf2Ds9Ap4Ow7Ie1Ru5Ty0Mn3Bv6Cx8Za2Qs5Wd7Ef9Rg1Th4Yj6Uk8Il0Op3Lk5Jh7Gf9Ds2Ap4Ow6Ie8Ru0Ty"],
         ["google-api-key-in-url",
-            "GET /maps/api/geocode/json?address=Paris&key=AIzaSyA1b2C3d4E5f6G7h8I9j0K_l-MnOpQrStU 200\n", null, "SyA1b2C3d4E5f6G7h8I9j0K_l-MnOpQrStU"],
+            "GET /maps/api/geocode/json?address=Paris&key=AIzaSyTEST_FAKE_KEY_0000000000000000000 200\n", null, "SyTEST_FAKE_KEY_0000000000000000000"],
         ["npm-token", "token  npm_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8\n", null, "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"],
         ["pypi-token-on-the-command-line",
             "$ twine upload -u __token__ -p pypi-AgEIcHlwaS5vcmcCJGQ4ZmE1YjM2LTFhNmMtNGI0Yi05ZDJmLTNlOGY3YTZiNWM0ZAACKlszLCJ1cGxvYWQiXQ dist/*\r\n", null,
