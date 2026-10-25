@@ -347,27 +347,36 @@ public sealed class ConnectionWorkflowService(
         };
     }
 
-    /// <summary>取这一跳要用的凭据;没有解析器(单测、设计期)时原样返回。</summary>
+    /// <summary>取这一跳要用的凭据;没有解析器(单测、设计期)时用配置自己的。</summary>
     /// <remarks>
+    /// <para>
     /// 跳板那几跳取不到凭据时**不**抛 <see cref="CredentialProviderException" />,而是改抛一个普通的连接错误:
     /// 连接流程见到前者会退回登录框,可那个框问的是目标机的凭据 —— 拿用户填的目标机密码去顶跳板机,
     /// 只会换来又一次失败。跳板向来是不弹框的,这里维持原样,只把是哪一跳、为什么说清楚。
+    /// </para>
+    /// <para>
+    /// 配置自己存着的密码 / 私钥口令在这台设备上解不开时(<see cref="CredentialMaterial.HasUnreadableSecret(SessionProfile)" />)
+    /// 同样不拿它去登录:界面上的连接在这之前就已经先弹登录框了(<c>RequiresCredentials</c>),
+    /// 走到这里的是不弹框的那几条路(隧道、测试连接、巡检、跳板),给一句说得清的错误,而不是一次注定失败的认证。
+    /// </para>
     /// </remarks>
     private async Task<SessionProfile> ResolveHopCredentialAsync(SessionProfile profile, int depth, CancellationToken cancellationToken)
     {
-        if (credentialResolver is null)
-        {
-            return profile;
-        }
-        if (depth == 0)
-        {
-            return await credentialResolver.ResolveAsync(profile, cancellationToken).ConfigureAwait(false);
-        }
         try
         {
-            return await credentialResolver.ResolveAsync(profile, cancellationToken).ConfigureAwait(false);
+            SessionProfile effective = credentialResolver is null
+                ? profile
+                : await credentialResolver.ResolveAsync(profile, cancellationToken).ConfigureAwait(false);
+            if (CredentialMaterial.HasUnreadableSecret(effective))
+            {
+                throw new CredentialProviderException(
+                    CredentialFailure.UnreadableSecret,
+                    profile.CredentialSource?.ProviderId ?? string.Empty,
+                    Strings.Get("Cred_Failure_StoredSecretUnreadable"));
+            }
+            return effective;
         }
-        catch (CredentialProviderException ex)
+        catch (CredentialProviderException ex) when (depth > 0)
         {
             string name = string.IsNullOrWhiteSpace(profile.Name) ? profile.Host : profile.Name;
             throw new InvalidOperationException(Strings.Format("Svc_JumpCredentialFailed", name, ex.Message), ex);

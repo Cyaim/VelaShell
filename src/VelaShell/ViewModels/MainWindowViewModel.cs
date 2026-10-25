@@ -4315,13 +4315,21 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     /// <summary>缺少连接所需凭据(用户名/密码/私钥/证书)时需要先走登录验证流程。</summary>
     /// <remarks>
+    /// <para>
     /// 引用共享凭据的配置一律不先弹(#550):用户名与认证材料都由凭据提供(手输过的材料也算在内),
     /// 真缺了什么,解析时会以 <see cref="CredentialProviderException" /> 报出来,连接流程再退回登录框。
+    /// </para>
+    /// <para>
+    /// 存着的密码 / 私钥口令在这台设备上解不开(<see cref="CredentialMaterial.HasUnreadableSecret(SessionProfile)" />)
+    /// 也算缺:以前当成有密码,拿密文去试一次、认证失败了才弹框 —— 白白一次失败认证,还可能撞上 fail2ban。
+    /// 现在直接弹,登录框上说明为什么(第二轮第 20 条)。
+    /// </para>
     /// </remarks>
     private static bool RequiresCredentials(SessionProfile profile) =>
         profile.AuthMethod == AuthMethod.Tailscale
             ? string.IsNullOrWhiteSpace(profile.Username)
-            : profile.CredentialSource is null && RequiresInlineCredentials(profile);
+            : profile.CredentialSource is null
+              && (RequiresInlineCredentials(profile) || CredentialMaterial.HasUnreadableSecret(profile));
 
     private static bool RequiresInlineCredentials(SessionProfile profile) =>
         string.IsNullOrWhiteSpace(profile.Username)
@@ -6176,11 +6184,15 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 只有「填了用户名却没有口令」才是真的缺东西。
     /// </summary>
     private static bool RequiresPluginCredentials(SessionProfile profile, bool allowsAnonymous) =>
-        // 引用共享凭据的不先弹,理由同 RequiresCredentials。
+        // 引用共享凭据的不先弹,理由同 RequiresCredentials;存着的口令解不开也算缺,同样理由。
         profile.CredentialSource is null
         && (allowsAnonymous
-            ? !string.IsNullOrWhiteSpace(profile.Username) && string.IsNullOrEmpty(profile.Password)
-            : string.IsNullOrWhiteSpace(profile.Username) || string.IsNullOrEmpty(profile.Password));
+            ? !string.IsNullOrWhiteSpace(profile.Username) && MissingPassword(profile)
+            : string.IsNullOrWhiteSpace(profile.Username) || MissingPassword(profile));
+
+    /// <summary>没有能用的密码:空着,或者存着的那份在这台设备上解不开(FTP 与插件协议只认密码)。</summary>
+    private static bool MissingPassword(SessionProfile profile) =>
+        string.IsNullOrEmpty(profile.Password) || StoredSecret.IsUnreadable(profile.Password);
 
     /// <summary>
     /// 返回一份把服务器证书指纹记为已信任的配置副本。指纹写进协议自己声明的那个隐藏字段
@@ -6238,9 +6250,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <summary>FTP 缺少登录凭据时才需要弹登录框;匿名登录不需要用户名与口令。</summary>
     private static bool RequiresFtpCredentials(SessionProfile profile) =>
         profile.Ftp?.Anonymous != true &&
-        // 引用共享凭据的不先弹,理由同 RequiresCredentials。
+        // 引用共享凭据的不先弹,理由同 RequiresCredentials;存着的口令解不开也算缺。
         profile.CredentialSource is null &&
-        (string.IsNullOrWhiteSpace(profile.Username) || string.IsNullOrEmpty(profile.Password));
+        (string.IsNullOrWhiteSpace(profile.Username) || MissingPassword(profile));
 
     /// <summary>返回一份把服务器证书指纹记为已信任的配置副本。</summary>
     private static SessionProfile WithTrustedCertificate(SessionProfile profile, string thumbprint)

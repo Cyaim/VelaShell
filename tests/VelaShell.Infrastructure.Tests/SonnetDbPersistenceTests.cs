@@ -376,6 +376,41 @@ public sealed class SonnetDbPersistenceTests : IDisposable
         Assert.IsTrue(File.Exists(legacyFile + ".migrated.bak"));
     }
 
+    /// <summary>
+    /// 换了一把本机密钥(数据目录从别处拷来、系统密钥链这次没打开):载入的密码与口令原样是密文 ——
+    /// 存回去不丢(历史契约),连接前据此认出「解不开」(<see cref="CredentialMaterial.HasUnreadableSecret(SessionProfile)" />),
+    /// 不拿它去登录。钉住的是仓储与这条判定之间的约定:哪天改成解不开交回 null,这条会红。
+    /// </summary>
+    [TestMethod]
+    public async Task SessionRepository_WithAnotherKey_LoadsSecretsThatAreRecognisedAsUnreadable()
+    {
+        var profile = new SessionProfile
+        {
+            Name = "web", Host = "h", Username = "root", AuthMethod = AuthMethod.Password, Password = "s3cret"
+        };
+        var keyed = new SessionProfile
+        {
+            Name = "keyed", Host = "h", Username = "root", AuthMethod = AuthMethod.PrivateKey,
+            PrivateKeyPath = "/keys/id", PrivateKeyPassphrase = "pp"
+        };
+        await new SonnetDbSessionRepository(_engine, _protector).SaveSessionAsync(profile);
+        await new SonnetDbSessionRepository(_engine, _protector).SaveSessionAsync(keyed);
+
+        var otherKey = new AesSecretProtector(Path.Combine(_testDirectory, "other.key"));
+        var repo = new SonnetDbSessionRepository(_engine, otherKey);
+        SessionProfile loaded = (await repo.GetSessionAsync(profile.Id))!;
+        SessionProfile loadedKeyed = (await repo.GetSessionAsync(keyed.Id))!;
+
+        Assert.IsTrue(CredentialMaterial.HasUnreadableSecret(loaded));
+        Assert.IsTrue(CredentialMaterial.HasUnreadableSecret(loadedKeyed));
+        Assert.IsFalse(CredentialMaterial.HasUnreadableSecret((await new SonnetDbSessionRepository(_engine, _protector).GetSessionAsync(profile.Id))!),
+            "密钥对得上时载入的是明文");
+
+        await repo.SaveSessionAsync(loaded);
+        Assert.AreEqual("s3cret", (await new SonnetDbSessionRepository(_engine, _protector).GetSessionAsync(profile.Id))!.Password,
+            "解不开的那份存回去不丢");
+    }
+
     [TestMethod]
     public async Task SettingsService_SaveAndLoad_RoundTrips_AndRaisesEvent()
     {

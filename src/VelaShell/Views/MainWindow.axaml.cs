@@ -1827,8 +1827,27 @@ public partial class MainWindow : Window
 
         // 不在库里的临时配置(外部拉起、「最近连接」重建的):框上不给「记住密码」(存不下),改给「另存为连接」。
         bool temporary = await TemporaryConnectionPrompt.IsTemporaryAsync(services?.GetService<ISessionRepository>(), profile);
+        // 存着的密码在这台设备上解不开:说清为什么,原因照本机加密密钥的解析结果(启动时已在后台解析好,这里只是取结果)。
+        string? unreadableNotice = null;
+        if (UnreadableSecretPrompt.Applies(profile, credential))
+        {
+            MasterKeyStatus? keyStatus = null;
+            if (services?.GetService<IMasterKeyStatusSource>() is { } keys)
+            {
+                try
+                {
+                    keyStatus = await Task.Run(keys.GetKeyStatus);
+                }
+                catch (Exception ex)
+                {
+                    // 说不出原因就按「解不开」说,不影响弹框。
+                    Trace.WriteLine($"[Secrets] Master key status unavailable for the login prompt: {ex.Message}");
+                }
+            }
+            unreadableNotice = UnreadableSecretPrompt.Describe(profile.CredentialSource is null ? null : credential!.Name, keyStatus);
+        }
         AuthenticationDialogViewModel viewModel = SharedCredentialPrompt.CreateDialog(
-            profile, credential, knownFingerprint, sharedContext, temporary);
+            profile, credential, knownFingerprint, sharedContext, temporary, unreadableNotice);
         var dialog = new AuthenticationDialogView { DataContext = viewModel };
         AuthenticationResult? result = await dialog.ShowDialog<AuthenticationResult?>(this);
         if (result is null)

@@ -55,6 +55,47 @@ public sealed class InteractiveAuthFlowTests
         await workflow.Received(1).ConnectProfileAsync(Arg.Is<SessionProfile>(p => p.Password == "prompted-pass"), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// 存着的密码在这台设备上解不开(载入时仍是密文):直接弹登录框,不先拿密文去试一次 ——
+    /// 白白一次失败认证,还可能撞上 fail2ban(第二轮第 20 条)。
+    /// </summary>
+    [TestMethod]
+    public async Task UnreadableStoredPassword_PromptsBeforeAnyAttempt()
+    {
+        IConnectionWorkflowService? workflow = Substitute.For<IConnectionWorkflowService>();
+        ISshConnectionService? ssh = Substitute.For<ISshConnectionService>();
+        ISshClientWrapper? client = Substitute.For<ISshClientWrapper>();
+        IShellStreamWrapper? shell = Substitute.For<IShellStreamWrapper>();
+        shell.CanRead.Returns(false);
+        workflow.ConnectProfileAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>())
+                .Returns(args => CreateSession((SessionProfile)args[0]));
+        ssh.GetClient(Arg.Any<Guid>()).Returns(client);
+        client.CreateShellStreamAsync("xterm-256color", 120, 32, 0, 0, 4096, Arg.Any<IReadOnlyDictionary<TerminalMode, uint>?>(), Arg.Any<CancellationToken>()).Returns(shell);
+        var vm = new MainWindowViewModel(workflow, ssh, () => FakeTerminal.Emulator());
+        int prompted = 0;
+        vm.InteractiveAuthenticator = p =>
+        {
+            prompted++;
+            SessionProfile typed = p.Clone();
+            typed.Password = "typed-again";
+            return Task.FromResult<SessionProfile?>(typed);
+        };
+        var profile = new SessionProfile
+        {
+            Name = "P", Host = "h", Port = 22, Username = "root", AuthMethod = AuthMethod.Password,
+            Password = "enc1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        };
+
+        TerminalTabViewModel? tab = await vm.TryConnectProfileAsync(profile);
+
+        Assert.IsNotNull(tab);
+        Assert.AreEqual(1, prompted, "解不开就先问,而不是先拿密文去试");
+        await workflow.DidNotReceive().ConnectProfileAsync(
+            Arg.Is<SessionProfile>(p => p.Password != null && p.Password.StartsWith("enc1:", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+        await workflow.Received(1).ConnectProfileAsync(Arg.Is<SessionProfile>(p => p.Password == "typed-again"), Arg.Any<CancellationToken>());
+    }
+
     [TestMethod]
     public async Task PromptCancelled_ReturnsNull_WithoutError()
     {

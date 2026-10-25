@@ -1,6 +1,8 @@
 using NSubstitute;
+using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
+using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Presentation.Services;
 
@@ -151,6 +153,57 @@ public sealed class ConnectionWorkflowServiceTests
         Assert.IsFalse(connected[1].IsUnattended);
         Assert.IsFalse(connected[1].JumpHost!.IsUnattended);
         await _sshConnectionService.Received(2).DisconnectAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    // ———— 已存的密码在这台设备上解不开(第二轮第 20 条) ————
+
+    /// <summary>载入时没解开、仍是密文原样的那一份(见 <see cref="StoredSecret" />)。</summary>
+    private const string Undecryptable = "enc1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    /// <summary>
+    /// 存着的密码解不开:不拿密文去登录(白白一次失败认证,还可能撞上 fail2ban),报一个说得清的凭据错误 ——
+    /// 界面上的连接见到它退回登录框,隧道、测试连接这些不弹框的路给出这句原因。
+    /// </summary>
+    [TestMethod]
+    public async Task UnreadableStoredPassword_IsNeverSentToTheServer()
+    {
+        ConnectionWorkflowService service = CreateService();
+        SessionProfile profile = CreateProfile();
+        profile.Password = Undecryptable;
+
+        CredentialProviderException error = await Assert.ThrowsExactlyAsync<CredentialProviderException>(
+            () => service.ConnectProfileAsync(profile));
+        ConnectionTestResult test = await service.TestConnectionUnattendedAsync(profile);
+
+        Assert.AreEqual(CredentialFailure.UnreadableSecret, error.Kind);
+        Assert.AreEqual(Strings.Get("Cred_Failure_StoredSecretUnreadable"), error.Message);
+        Assert.IsFalse(test.Success);
+        Assert.AreEqual(Strings.Get("Cred_Failure_StoredSecretUnreadable"), test.ErrorMessage);
+        await _sshConnectionService.DidNotReceiveWithAnyArgs().ConnectAsync(default!, default);
+    }
+
+    /// <summary>私钥口令同理;跳板那一跳解不开时点名是哪一跳(跳板向来不弹框,问目标机的凭据也顶不了跳板)。</summary>
+    [TestMethod]
+    public async Task UnreadablePassphrase_OrJumpHostPassword_FailsBeforeConnecting()
+    {
+        ConnectionWorkflowService service = CreateService();
+        SessionProfile keyed = CreateProfile("keyed");
+        keyed.AuthMethod = AuthMethod.PrivateKey;
+        keyed.PrivateKeyPath = "/keys/id_ed25519";
+        keyed.PrivateKeyPassphrase = Undecryptable;
+        SessionProfile jump = CreateProfile("bastion");
+        jump.Password = Undecryptable;
+        SessionProfile target = CreateProfile("web-01");
+        target.JumpHostProfileId = jump.Id;
+        _sessionRepository.GetSessionAsync(jump.Id).Returns(jump);
+
+        await Assert.ThrowsExactlyAsync<CredentialProviderException>(() => service.ConnectProfileAsync(keyed));
+        InvalidOperationException viaJump = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => service.ConnectProfileAsync(target));
+
+        Assert.AreEqual(Strings.Format("Svc_JumpCredentialFailed", "bastion", Strings.Get("Cred_Failure_StoredSecretUnreadable")),
+            viaJump.Message);
+        await _sshConnectionService.DidNotReceiveWithAnyArgs().ConnectAsync(default!, default);
     }
 
     /// <summary>巡检被停下 / 单台到点:取消照原样抛出,不当成「这台连不上」。</summary>

@@ -8819,6 +8819,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Cred_Failure_MissingSecret" xml:space="preserve">
     <value>共有資格情報「{0}」にはこのデバイス上のパスワードや鍵がありません(エンドツーエンドのパスフレーズなしのクラウド同期では転送されません)。</value>
   </data>
+  <data name="Cred_Failure_StoredSecretUnreadable" xml:space="preserve">
+    <value>保存されたパスワード(または秘密鍵のパスフレーズ)はこのデバイスでは復号できません(ローカルの暗号化キーが変わったか、今回はシステムキーチェーンを開けませんでした)。そのためサインインには使っていません。もう一度入力してください。</value>
+  </data>
+  <data name="Cred_Failure_SharedSecretUnreadable" xml:space="preserve">
+    <value>共有資格情報「{0}」に保存されたパスワード(または秘密鍵のパスフレーズ)はこのデバイスでは復号できません(ローカルの暗号化キーが変わったか、今回はシステムキーチェーンを開けませんでした)。そのためサインインには使っていません。もう一度入力するか、「設定 → 共有資格情報」で入力し直してください。</value>
+  </data>
   <data name="Cred_Failure_UnsupportedAuth" xml:space="preserve">
     <value>共有資格情報「{0}」はパスワード方式ではありません。FTP とプラグイン接続はパスワードでのみサインインできます。</value>
   </data>
@@ -8833,6 +8839,21 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Auth_SharedMissing" xml:space="preserve">
     <value>この接続が参照している共有資格情報はもう存在しません。ここで入力した資格情報は今回のサインインにだけ使われます。保存するには、接続を編集して資格情報のソースを選び直してください。</value>
+  </data>
+  <data name="Auth_UnreadableSecretOwn" xml:space="preserve">
+    <value>この接続に保存されたパスワード(または秘密鍵のパスフレーズ)</value>
+  </data>
+  <data name="Auth_UnreadableSecretShared" xml:space="preserve">
+    <value>共有資格情報「{0}」に保存されたパスワード(または秘密鍵のパスフレーズ)</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeychainUnavailable" xml:space="preserve">
+    <value>{0}は今回復号できません: {1} を開けませんでした({2})。失われてはいません。{1} のロックを解除して VelaShell を再起動すれば通常どおり読み込めます。今回はここで入力してサインインすることもできます。</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeyMissing" xml:space="preserve">
+    <value>{0}はこのデバイスでは復号できません: 保存時に使ったローカルの暗号化キーがここにありません(データフォルダーを別の PC やアカウントからコピーした、キーチェーンの項目が削除された、またはキーファイルが置き換えられた可能性があります。メッセージセンターに説明があります)。もう一度入力して保存すれば、このデバイスで復号できる形で保存されます。</value>
+  </data>
+  <data name="Auth_UnreadableSecretUnknown" xml:space="preserve">
+    <value>{0}はこのデバイスでは復号できません(別のデバイスから同期またはコピーされたものか、壊れている可能性があります)。もう一度入力して保存すれば、このデバイスで復号できる形で保存されます。</value>
   </data>
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>共有資格情報「{0}」もあわせて更新({1} 件の接続で使用中)</value>

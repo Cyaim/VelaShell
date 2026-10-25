@@ -16,7 +16,7 @@ namespace VelaShell.Infrastructure.Persistence;
 /// </remarks>
 public sealed class AesSecretProtector : ISecretProtector, IMasterKeyStatusSource
 {
-    private const string Prefix = "enc1:";
+    private const string Prefix = StoredSecret.ProtectedPrefix;
     private const int NonceSize = 12;
     private const int TagSize = 16;
 

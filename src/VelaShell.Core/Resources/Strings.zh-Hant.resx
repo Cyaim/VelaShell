@@ -9296,6 +9296,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Cred_Failure_MissingSecret" xml:space="preserve">
     <value>共用憑證「{0}」在本機沒有密碼或金鑰(雲端同步未設端對端口令時不會帶上它們)。</value>
   </data>
+  <data name="Cred_Failure_StoredSecretUnreadable" xml:space="preserve">
+    <value>存著的密碼(或私鑰密碼短語)在這台裝置上解不開(本機加密金鑰換過,或系統金鑰鏈這次沒能開啟),沒有拿它去試登入。請重新輸入。</value>
+  </data>
+  <data name="Cred_Failure_SharedSecretUnreadable" xml:space="preserve">
+    <value>共用憑證「{0}」存著的密碼(或私鑰密碼短語)在這台裝置上解不開(本機加密金鑰換過,或系統金鑰鏈這次沒能開啟),沒有拿它去試登入。請重新輸入,或在「設定 → 共用憑證」裡重新填寫。</value>
+  </data>
   <data name="Cred_Failure_UnsupportedAuth" xml:space="preserve">
     <value>共用憑證「{0}」不是密碼類型;FTP 與外掛連線只能用密碼登入。</value>
   </data>
@@ -9310,6 +9316,21 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Auth_SharedMissing" xml:space="preserve">
     <value>這條連線參照的共用憑證已不存在。這裡輸入的憑證只用於這一次;要長期保存,請編輯這條連線,改選憑證來源。</value>
+  </data>
+  <data name="Auth_UnreadableSecretOwn" xml:space="preserve">
+    <value>這條連線存著的密碼(或私鑰密碼短語)</value>
+  </data>
+  <data name="Auth_UnreadableSecretShared" xml:space="preserve">
+    <value>共用憑證「{0}」存著的密碼(或私鑰密碼短語)</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeychainUnavailable" xml:space="preserve">
+    <value>{0}這次解不開:{1} 沒能開啟({2})。它沒有遺失 —— 解鎖 {1} 之後重新啟動 VelaShell 就能照常讀取;也可以先在這裡輸入,這一次照樣登入。</value>
+  </data>
+  <data name="Auth_UnreadableSecretKeyMissing" xml:space="preserve">
+    <value>{0}在這台裝置上解不開:加密它的本機金鑰不在這裡(資料目錄是從別的電腦或帳戶複製來的,或者金鑰項目被刪、金鑰檔被換過,訊息中心裡有說明)。請重新輸入並存下,存的就是這台裝置解得開的一份。</value>
+  </data>
+  <data name="Auth_UnreadableSecretUnknown" xml:space="preserve">
+    <value>{0}在這台裝置上解不開(可能是從別的裝置同步或複製來的,也可能已經損壞)。請重新輸入並存下,存的就是這台裝置解得開的一份。</value>
   </data>
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>同時更新共用憑證「{0}」({1} 條連線在用)</value>

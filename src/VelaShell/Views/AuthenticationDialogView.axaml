@@ -142,6 +142,21 @@
         </Grid>
       </Border>
 
+      <!-- 已存的密码 / 私钥口令在这台设备上解不开:说清是哪一份、为什么(本机加密密钥的解析结果)、怎么办。
+           不写这一句,用户只会以为自己记错了密码。 -->
+      <Border Padding="20,10" IsVisible="{Binding HasUnreadableSecretNotice}"
+              Background="{DynamicResource VelaBgActive}"
+              BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,1,0,0">
+        <Grid ColumnDefinitions="Auto,*">
+          <pc:LucideIcon Width="13" Height="13" VerticalAlignment="Top" Margin="0,1,10,0"
+                         Data="{StaticResource Icon.triangle-alert}"
+                         Foreground="{DynamicResource VelaWarning}" />
+          <TextBlock Grid.Column="1" Text="{Binding UnreadableSecretNotice}"
+                     Foreground="{DynamicResource VelaTextSecondary}"
+                     FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap" />
+        </Grid>
+      </Border>
+
       <!-- Body -->
       <StackPanel Margin="20,16" Spacing="14">
 
