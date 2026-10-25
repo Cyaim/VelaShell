@@ -101,6 +101,8 @@ public partial class FileBrowserView : UserControl
             vm.PromptConfigureEditor = PromptConfigureEditorAsync;
             vm.ConfirmOverwrite = ConfirmOverwriteAsync;
             vm.ConfirmRemoteOverwrite = ConfirmRemoteOverwriteAsync;
+            // 列宽跨重启记忆(全局一份,见 FilePaneLayoutMemory)。
+            FilePaneLayoutMemory.RestoreColumns(this, vm);
         };
 
         // 框选与跨栏拖放使用不相交的按下表面。终端模式没有拖放时,
@@ -281,6 +283,7 @@ public partial class FileBrowserView : UserControl
         if (e.ClickCount >= 2)
         {
             AutoFitColumnBySplitterTag(vm, tag);
+            FilePaneLayoutMemory.SaveColumns(vm);
             e.Handled = true;
             return;
         }
@@ -326,6 +329,10 @@ public partial class FileBrowserView : UserControl
         _activeSplitter = null;
         e.Pointer.Capture(null);
         e.Handled = true;
+        if (DataContext is FileBrowserViewModel vm)
+        {
+            FilePaneLayoutMemory.SaveColumns(vm);
+        }
     }
 
     private void AutoFitColumnBySplitterTag(FileBrowserViewModel vm, string tag)
