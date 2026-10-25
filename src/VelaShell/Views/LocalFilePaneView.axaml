@@ -58,6 +58,20 @@
       <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
       <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
     </Style>
+    <!-- 列标题按钮:与远端栏(FileBrowserView)同一规格,点击按该列排序,再点翻转方向。 -->
+    <Style Selector="Button.col-header">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.col-header:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
   </UserControl.Styles>
 
   <Border Background="{DynamicResource VelaBgSftpPanel}"
@@ -110,16 +124,32 @@
       <Border DockPanel.Dock="Top" Height="26" Padding="14,0,20,0"
               Background="{DynamicResource VelaBgContentHeader}"
               BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,0,1">
+        <!-- 三列都可点击排序(规则同远端栏:目录始终在前,再点同一列翻转方向,换列从升序开始)。 -->
         <Grid ColumnDefinitions="*,90,130">
-          <TextBlock Text="{loc:Localize FileName}" FontFamily="{DynamicResource VelaUiMonoFont}"
-                     FontSize="{DynamicResource VelaFontSize10}" LetterSpacing="1" Foreground="{DynamicResource VelaTextMuted}"
-                     VerticalAlignment="Center" />
-          <TextBlock Grid.Column="1" Text="{loc:Localize Size}" FontFamily="{DynamicResource VelaUiMonoFont}"
-                     FontSize="{DynamicResource VelaFontSize10}" LetterSpacing="1" Foreground="{DynamicResource VelaTextMuted}"
-                     VerticalAlignment="Center" />
-          <TextBlock Grid.Column="2" Text="{loc:Localize Modified}" FontFamily="{DynamicResource VelaUiMonoFont}"
-                     FontSize="{DynamicResource VelaFontSize10}" LetterSpacing="1" Foreground="{DynamicResource VelaTextMuted}"
-                     VerticalAlignment="Center" />
+          <Button Classes="col-header" Command="{Binding SortCommand}" CommandParameter="name">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock Text="{loc:Localize FileName}" FontFamily="{DynamicResource VelaUiMonoFont}"
+                         FontSize="{DynamicResource VelaFontSize10}" LetterSpacing="1" Foreground="{DynamicResource VelaTextMuted}" />
+              <TextBlock Text="{Binding NameSortGlyph}" FontFamily="{DynamicResource VelaUiMonoFont}"
+                         FontSize="{DynamicResource VelaFontSize10}" Foreground="{DynamicResource VelaAccent}" />
+            </StackPanel>
+          </Button>
+          <Button Grid.Column="1" Classes="col-header" Command="{Binding SortCommand}" CommandParameter="size">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock Text="{loc:Localize Size}" FontFamily="{DynamicResource VelaUiMonoFont}"
+                         FontSize="{DynamicResource VelaFontSize10}" LetterSpacing="1" Foreground="{DynamicResource VelaTextMuted}" />
+              <TextBlock Text="{Binding SizeSortGlyph}" FontFamily="{DynamicResource VelaUiMonoFont}"
+                         FontSize="{DynamicResource VelaFontSize10}" Foreground="{DynamicResource VelaAccent}" />
+            </StackPanel>
+          </Button>
+          <Button Grid.Column="2" Classes="col-header" Command="{Binding SortCommand}" CommandParameter="modified">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock Text="{loc:Localize Modified}" FontFamily="{DynamicResource VelaUiMonoFont}"
+                         FontSize="{DynamicResource VelaFontSize10}" LetterSpacing="1" Foreground="{DynamicResource VelaTextMuted}" />
+              <TextBlock Text="{Binding ModifiedSortGlyph}" FontFamily="{DynamicResource VelaUiMonoFont}"
+                         FontSize="{DynamicResource VelaFontSize10}" Foreground="{DynamicResource VelaAccent}" />
+            </StackPanel>
+          </Button>
         </Grid>
       </Border>
       <Border DockPanel.Dock="Top" IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
