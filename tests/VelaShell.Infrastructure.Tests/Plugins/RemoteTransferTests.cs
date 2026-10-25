@@ -778,13 +778,90 @@ public sealed partial class RemoteTransferTests
         try
         {
             for (int i = 0; i < 32; i++) starts.Add(await api.StartUploadAsync(_session.ToString(), file, "/target-" + i, new() { OperationId = "quota-" + i }));
-            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => api.StartUploadAsync(_session.ToString(), file, "/extra", new() { OperationId = "extra" }));
+            PluginTransferRejectedException quota = await Assert.ThrowsExactlyAsync<PluginTransferRejectedException>(() => api.StartUploadAsync(_session.ToString(), file, "/extra", new() { OperationId = "extra" }));
+            Assert.AreEqual(RemoteTransferRejectReason.QuotaExceeded, quota.Reason);
             Assert.AreEqual(starts[0].TransferId, (await api.StartUploadAsync(_session.ToString(), file, "/target-0", new() { OperationId = "quota-0" })).TransferId);
         }
         finally
         {
             api.Dispose(); release.TrySetResult(); await WaitIdle(api); File.Delete(file);
         }
+    }
+
+    /// <summary>
+    /// 登记之前就确定做不了的启动(源文件不在、所在目录不在)抛 SDK 2.1.3 的 <see cref="PluginTransferRejectedException" />:
+    /// 它不是 IOException,插件不会按「回执丢了」去重取;什么都没登记 —— 不弹确认框、不碰远端,
+    /// 文件补上之后用同一个 OperationId 再启动是一次新的登记,不撞「参数不符」。
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task MissingSourceIsRejectedBeforeRegistering_AndTheOperationIdStaysFree(bool missingDirectory)
+    {
+        string directory = NewDirectory("vela-missing-");
+        string file = missingDirectory ? Path.Combine(directory, "gone", "source") : Path.Combine(directory, "source");
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(PluginPermissionDecision.Deny);
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            PluginTransferRejectedException rejected = await Assert.ThrowsExactlyAsync<PluginTransferRejectedException>(
+                () => api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "retry-later" }));
+            Assert.AreEqual(RemoteTransferRejectReason.SourceNotFound, rejected.Reason);
+            Assert.DoesNotContain(directory, rejected.Message, "说明会转给模型,不带路径");
+            Assert.AreEqual(0, api.ActiveTransfers);
+            await prompt.DidNotReceive().RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            await File.WriteAllBytesAsync(file, new byte[8]);
+            RemoteTransferSnapshot started = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "retry-later" });
+            RemoteTransferSnapshot done = await Terminal(api, started.TransferId);
+            Assert.AreEqual("permission-denied", done.ErrorCode, "这次登记了、走到了确认框(被拒),证明前一次没占住回执");
+            await prompt.Received(1).RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+        }
+        finally { await WaitIdle(api); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>别的程序以拒读共享打开着源文件(Windows 的共享冲突):登记之前拒,原因是 SourceInUse,同样什么都没开始。</summary>
+    [TestMethod]
+    [OSCondition(OperatingSystems.Windows)]
+    public async Task SourceLockedByAnotherProgramIsRejectedAsInUse()
+    {
+        string file = CreateFile(8);
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads());
+        try
+        {
+            using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                PluginTransferRejectedException rejected = await Assert.ThrowsExactlyAsync<PluginTransferRejectedException>(
+                    () => api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "locked" }));
+                Assert.AreEqual(RemoteTransferRejectReason.SourceInUse, rejected.Reason);
+            }
+            Assert.AreEqual(0, api.ActiveTransfers);
+        }
+        finally { await WaitIdle(api); File.Delete(file); }
+    }
+
+    /// <summary>隔离插件经 RPC 收到的是同一个类型与原因(错误码 <c>transfer-rejected:&lt;原因&gt;</c>),不是一个泛泛的远端错误。</summary>
+    [TestMethod]
+    public async Task RejectionBeforeRegisteringCrossesThePipeWithItsReason()
+    {
+        await using var pair = await Pair.Open();
+        IRemoteFsApi fake = Substitute.For<IRemoteFsApi>();
+        fake.SupportsTransferOperations.Returns(true);
+        fake.StartUploadAsync("s", "local", "/remote", Arg.Any<RemoteUploadOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<RemoteTransferSnapshot>(new PluginTransferRejectedException(RemoteTransferRejectReason.SourceInUse, "locked")));
+        using PluginContext context = Context(fake);
+        using var router = new PluginCapabilityRouter(context, pair._host, "token", "1");
+        pair._host.SetRequestHandler(router.HandleRequestAsync);
+        HandshakeResponse? hello = await pair._plugin.RequestAsync<HandshakeResponse>(PluginRpc.Handshake,
+            new HandshakeRequest("token", "test.transfer", "1", [VelaPluginApi.Level]), TimeSpan.FromSeconds(5));
+        var proxy = new RpcRemoteFs(pair._plugin, hello!.SupportsTransferOperations);
+
+        PluginTransferRejectedException rejected = await Assert.ThrowsExactlyAsync<PluginTransferRejectedException>(
+            () => proxy.StartUploadAsync("s", "local", "/remote", new() { OperationId = "operation" }));
+        Assert.AreEqual(RemoteTransferRejectReason.SourceInUse, rejected.Reason);
     }
 
     /// <summary>

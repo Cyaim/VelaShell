@@ -52,9 +52,7 @@ internal sealed partial class RemoteFsCapability
             }
             if (!SupportsDownloadOperations) throw new PlatformNotSupportedException("Safe background download commit is unavailable on this platform.");
             Guid session = Resolve(sessionId);
-            if (_receipts.Count >= MaxRecords) throw new InvalidOperationException("Transfer operation receipt quota reached for this plugin lifetime.");
-            if (_transfers.Values.Count(op => !op._worker.IsCompleted) >= MaxActiveUploads)
-                throw new InvalidOperationException("Active transfer queue quota reached for this plugin.");
+            ThrowIfTransferQuotaReached("download");
             var stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
             if (options.Timeout is { } budget) stop.CancelAfter(budget);
             DateTimeOffset now = DateTimeOffset.UtcNow;

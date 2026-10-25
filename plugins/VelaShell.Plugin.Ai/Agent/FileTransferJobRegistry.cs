@@ -490,8 +490,24 @@ public sealed class FileTransferJobRegistry
         return !_jobs.TryGetValue(result.Result.TransferId, out Job? job) || !job._snapshot.IsTerminal;
     }
 
+    // 宿主的「启动前被拒」(PluginTransferRejectedException,SDK 2.1.3:源找不到、被占用、额度满)是宿主给的保证 ——
+    // 没登记、没生成 transferId、没读写任何内容。它刻意不是 IOException,ReceiveStartAsync 不会按「回执丢了」去重取。
     private static bool IsDefiniteRejection(Exception ex)
-        => ex is ArgumentException or NotSupportedException or UnauthorizedAccessException or PluginPermissionDeniedException;
+        => ex is ArgumentException or NotSupportedException or UnauthorizedAccessException or PluginPermissionDeniedException
+            or PluginTransferRejectedException;
+
+    /// <summary>
+    /// 宿主「启动前被拒」的原因,写给模型看:说清是什么、该不该再试。不带路径 —— 路径模型自己知道,
+    /// 宿主的说明也刻意不带。
+    /// </summary>
+    internal static string DescribeHostRejection(RemoteTransferRejectReason reason) => reason switch
+    {
+        RemoteTransferRejectReason.SourceNotFound => "the source file does not exist (it may have been moved or deleted). Check the path with the user before trying again.",
+        RemoteTransferRejectReason.SourceInUse => "the source file is open or locked by another program. Ask the user to close it; only then may you try again.",
+        RemoteTransferRejectReason.QuotaExceeded => "too many transfers are already queued or running for this plugin. Wait for them to finish before starting another.",
+        RemoteTransferRejectReason.InsufficientSpace => "there is not enough local disk space to prepare the transfer. Tell the user how much space is needed.",
+        _ => "the host gave no specific reason. Tell the user; do not retry automatically."
+    };
 
     internal bool HasActiveJobs(FileTransferRunScope scope)
     {
