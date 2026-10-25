@@ -505,6 +505,7 @@ internal sealed class TestSshServer : IAsyncDisposable
 
         bool isMpint = kexAlgorithm is SshAlgorithmNames.DiffieHellmanGroup14Sha256
             or SshAlgorithmNames.DiffieHellmanGroup16Sha512
+            or SshAlgorithmNames.DiffieHellmanGroup18Sha512
             or SshAlgorithmNames.DiffieHellmanGroup14Sha1
             or SshAlgorithmNames.DiffieHellmanGroupExchangeSha256;
 

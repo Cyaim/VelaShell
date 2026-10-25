@@ -3,12 +3,12 @@
 //
 // 规范依据(AGENTS.md §2 纪律 1):
 //   RFC 4253 §8    diffie-hellman-group14-sha1:e = g^x mod p,公钥与 K 都按 mpint
-//   RFC 8268 §3    diffie-hellman-group14-sha256 / group16-sha512
-//   RFC 3526 §3/§5 MODP 2048 位(group 14)与 4096 位(group 16)的群参数
+//   RFC 8268 §3    diffie-hellman-group14-sha256 / group16-sha512 / group18-sha512
+//   RFC 3526 §3/§5/§7 MODP 2048 位(group 14)、4096 位(group 16)与 8192 位(group 18)的群参数
 //   行为规格:      velashell-docs/zh/ssh/spec/03-key-exchange.md §3.4
 //
-// 群参数取自 BouncyCastle 的 DHStandardGroups —— 不手工抄写那两个大素数。
-// 4096 位素数抄错一个十六进制位不会报错,只会让协商静默失败,而且极难发现。
+// 群参数取自 BouncyCastle 的 DHStandardGroups —— 不手工抄写那几个大素数。
+// 4096 / 8192 位素数抄错一个十六进制位不会报错,只会让协商静默失败,而且极难发现。
 
 using System.Security.Cryptography;
 using Org.BouncyCastle.Crypto;
@@ -22,11 +22,11 @@ using BcBigInteger = Org.BouncyCastle.Math.BigInteger;
 namespace VelaShell.Ssh.Crypto.Kex;
 
 /// <summary>
-/// <c>diffie-hellman-group14-sha256</c> / <c>group16-sha512</c> / <c>group14-sha1</c>。
+/// <c>diffie-hellman-group14-sha256</c> / <c>group16-sha512</c> / <c>group18-sha512</c> / <c>group14-sha1</c>。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 有限域 DH。相对椭圆曲线，它的公钥与模幂都大一个数量级（2048 / 4096 位），
+/// 有限域 DH。相对椭圆曲线，它的公钥与模幂都大一个数量级（2048 / 4096 / 8192 位），
 /// 因此排在默认清单的最后 —— 但很多老设备只有它。
 /// </para>
 /// <para>
@@ -56,6 +56,11 @@ internal sealed class DiffieHellmanGroupKeyExchange : ISshKeyExchange
                 break;
             case SshAlgorithmNames.DiffieHellmanGroup16Sha512:
                 group = DHStandardGroups.rfc3526_4096;
+                HashAlgorithm = HashAlgorithmName.SHA512;
+                hashBits = 512;
+                break;
+            case SshAlgorithmNames.DiffieHellmanGroup18Sha512:
+                group = DHStandardGroups.rfc3526_8192;
                 HashAlgorithm = HashAlgorithmName.SHA512;
                 hashBits = 512;
                 break;

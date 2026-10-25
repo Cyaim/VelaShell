@@ -74,6 +74,9 @@ internal static class SshAlgorithmNames
     /// <summary>MODP 4096 位群 + SHA-512。RFC 8268。</summary>
     public const string DiffieHellmanGroup16Sha512 = "diffie-hellman-group16-sha512";
 
+    /// <summary>MODP 8192 位群 + SHA-512。RFC 8268。</summary>
+    public const string DiffieHellmanGroup18Sha512 = "diffie-hellman-group18-sha512";
+
     /// <summary>群由服务端现给（2048–8192 位）+ SHA-256。RFC 4419；一些老设备与加固过的服务端只开它。</summary>
     public const string DiffieHellmanGroupExchangeSha256 = "diffie-hellman-group-exchange-sha256";
 

@@ -269,15 +269,19 @@ public sealed class KeyExchangeTests
                  {
                      SshAlgorithmNames.DiffieHellmanGroup14Sha256,
                      SshAlgorithmNames.DiffieHellmanGroup16Sha512,
+                     SshAlgorithmNames.DiffieHellmanGroup18Sha512,
                  })
         {
             using DiffieHellmanGroupKeyExchange client = new(name);
             byte[] clientPublic = client.CreateClientPublicValue();
 
-            // 服务端用同一个群做一次 DH。
-            DHParameters group = name == SshAlgorithmNames.DiffieHellmanGroup14Sha256
-                ? DHStandardGroups.rfc3526_2048
-                : DHStandardGroups.rfc3526_4096;
+            // 服务端用同一个群（RFC 3526 §3 / §5 / §7）做一次 DH。
+            DHParameters group = name switch
+            {
+                SshAlgorithmNames.DiffieHellmanGroup14Sha256 => DHStandardGroups.rfc3526_2048,
+                SshAlgorithmNames.DiffieHellmanGroup16Sha512 => DHStandardGroups.rfc3526_4096,
+                _ => DHStandardGroups.rfc3526_8192,
+            };
             DHParameters parameters = new(group.P, group.G, null, 512);
 
             DHKeyPairGenerator generator = new();

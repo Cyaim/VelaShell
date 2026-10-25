@@ -140,6 +140,25 @@ public sealed class HandshakeTests
         }
     }
 
+    /// <summary>〔spec/00 §6.6〕FIPS 清单补上了群交换与 group18（与 RHEL 的 FIPS 策略一致）：只给其中一种的服务端也谈得成。</summary>
+    [TestMethod]
+    public async Task FIPS清单与只给群交换或group18的服务端谈得成()
+    {
+        foreach (string kex in new[] { SshAlgorithmNames.DiffieHellmanGroupExchangeSha256, SshAlgorithmNames.DiffieHellmanGroup18Sha512 })
+        {
+            (SshKeyExchangeResult client, TestSshServerHandshake server) = await HandshakeAsync(
+                SshAlgorithmSet.FipsApprovedOnly,
+                new TestSshServerOptions
+                {
+                    HostKeyType = SshAlgorithmNames.EcdsaSha2Nistp256,
+                    Algorithms = SshAlgorithmSet.FipsApprovedOnly with { KeyExchange = [kex] },
+                });
+
+            Assert.AreEqual(kex, client.Algorithms.KeyExchange, kex);
+            Assert.AreSequenceEqual(server.ExchangeHash, client.ExchangeHash, $"{kex}：交换哈希不一致");
+        }
+    }
+
     [TestMethod]
     public async Task 每一种主机密钥类型都能完成握手()
     {
