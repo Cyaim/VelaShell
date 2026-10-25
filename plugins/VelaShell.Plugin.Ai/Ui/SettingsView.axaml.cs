@@ -2240,6 +2240,8 @@ public partial class SettingsView : UserControl
         Dictionary<Control, object?> submittedForm = CaptureModelForm();
         int submittedWindowRevision = _windowEditRevision;
         string? submittedKey = model.HasOwnApiKey ? ApiKeyBox.Text : null;
+        string overrideUrl = model.BaseUrlOverride ?? "";
+        IReadOnlyList<string>? confirmedModelReset = confirmedKeyReset?.For(item.Provider, liveModel, overrideUrl);
         try
         {
             string? expectedKey = liveModel.HasOwnApiKey ? string.IsNullOrEmpty(_loadedKey) ? null : _loadedKey
@@ -2250,8 +2252,8 @@ public partial class SettingsView : UserControl
                 return;
             }
 
-            await _store.SaveModelFormAsync(_settings, item.Provider, liveModel, model, expectedModel,
-                submittedKey, expectedKey);
+            IReadOnlyList<string> cleared = await _store.SaveModelFormAsync(_settings, item.Provider, liveModel, model,
+                expectedModel, submittedKey, expectedKey, confirmedModelReset);
             _onProvidersChanged();
             if (run != _editorRun) return;
             _loadedModelForm = submittedForm;
@@ -2265,11 +2267,38 @@ public partial class SettingsView : UserControl
             finally { _refreshingNav = false; }
             await MergeSavedModelAsync(item.Provider, liveModel, run, Task.CompletedTask);
             if (run != _editorRun) return;
-            StatusText.Text = _loc["Saved"];
+            // 换源清了这一行自带的 Key 就如实说:它不会改用别的 Key,要为新地址重填
+            StatusText.Text = cleared.Count > 0 ? _loc["SetupSavedKeysCleared"] : _loc["Saved"];
         }
         catch (AiSettingsStore.ApiKeySlotChangedException)
         {
             await RecoverSettingsConflictAsync(item.Provider, liveModel, run);
+        }
+        catch (AiSettingsStore.ApiKeyResetRequiredException ex)
+        {
+            // 覆盖基地址换到了别的源,这一行自带的 Key 原样留着就会被发往新地址:与供应商那一层一样弹确认框,
+            // 点「清除并保存」才清(连点「保存」不算确认,框开着时它锁着)。确认过还被拒,是框开着期间这把 Key 换了值:换一句话再问
+            if (run != _editorRun || !ReferenceEquals(SelectedProvider, item.Provider)
+                || !ReferenceEquals(SelectedModel, liveModel))
+            {
+                return;
+            }
+            bool accepted;
+            SetKeyMutation(true);
+            try { accepted = await KeyResetPrompt.AskModelAsync(KeyResetConfirm, ex, changed: confirmedModelReset is not null, _loc); }
+            finally { SetKeyMutation(false); }
+            if (run != _editorRun || !ReferenceEquals(SelectedProvider, item.Provider)
+                || !ReferenceEquals(SelectedModel, liveModel))
+            {
+                return;
+            }
+            if (!accepted)
+            {
+                StatusText.Text = _loc["SetupResetCancelled"];
+                return;
+            }
+            // 带着这一次的确认从头再存一次(重新合并已保存的字段、重取基线),与供应商那一层同一条路
+            await SaveAsync(new KeyResetPrompt(item.Provider, overrideUrl, ex.Confirmation, liveModel));
         }
         catch (Exception ex)
         {
@@ -2510,6 +2539,14 @@ public partial class SettingsView : UserControl
             candidate = new ResolvedModel(provider, draft);
             // 独立 Key 用表单里的;继承的走供应商已保存的那把
             apiKeyOverride = draft.HasOwnApiKey ? ApiKeyBox.Text : null;
+            // 覆盖基地址把这个模型去的地址换到了别的源、还没保存:框里预填、没动过的那把已存自带 Key 是给旧地址的,
+            // 不带去测(与供应商那一层换源同一个口径;保存时也会先问再清)。换成新填的 Key 就测它,框空着就照常测、不带 Key
+            if (draft.HasOwnApiKey && !string.IsNullOrWhiteSpace(_loadedKey) && ApiKeyBox.Text == _loadedKey
+                && AiSettingsStore.MovesOrigin(new ResolvedModel(provider, model).BaseUrl, candidate.BaseUrl))
+            {
+                StatusText.Text = _loc["SetupTestNeedsNewOriginKey"];
+                return;
+            }
             // "表单 == 落库"的校验挪到探活跑完之后(见 SameAsSavedAsync)——
             // 这儿只记下要拿哪一份落库来比(按 id,比的时候重新查)。
             compareId = model.Id;

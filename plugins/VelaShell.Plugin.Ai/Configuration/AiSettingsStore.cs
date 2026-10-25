@@ -585,9 +585,18 @@ public sealed class AiSettingsStore(IPluginContext context)
         }
     }
 
-    internal async Task SaveModelFormAsync(AiSettings settings, AiProvider provider, AiModelConfig model,
+    /// <summary>提交模型表单与这个模型自带的 Key(<paramref name="apiKey" /> 为空即删掉)。</summary>
+    /// <remarks>
+    /// 覆盖基地址把这个模型实际去的地址(没填就是供应商的地址)换到另一个源时,已存的自带 Key 是给旧地址的,
+    /// 与供应商那一层换源(<see cref="SaveProviderApiKeyFormAsync" />)同一个口径:提交里原样带着那把旧 Key
+    /// (表单预填的没动过)就默认拒绝、抛 <see cref="ApiKeyResetRequiredException" />,调用方让用户确认后把确认凭据经
+    /// <paramref name="confirmedKeyReset" /> 交回,这次提交连同地址把那把 Key 清掉。同一次提交里换了一把新 Key,
+    /// 那把是给新地址的,照存不问;只改路径(同源)不动 Key。
+    /// </remarks>
+    /// <returns>清掉的已存 Key 的归属者(这个模型的 id;没清就是空)。</returns>
+    internal async Task<IReadOnlyList<string>> SaveModelFormAsync(AiSettings settings, AiProvider provider, AiModelConfig model,
         AiModelConfig draft, string expectedModelJson, string? apiKey, string? expectedKey,
-        CancellationToken cancellationToken = default)
+        IReadOnlyCollection<string>? confirmedKeyReset = null, CancellationToken cancellationToken = default)
     {
         await ProviderKeyGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool keyWritten = false, settingsWritten = false;
@@ -611,6 +620,16 @@ public sealed class AiSettingsStore(IPluginContext context)
 
             draft = JsonSerializer.Deserialize<AiModelConfig>(JsonSerializer.Serialize(draft))!;
             if (oldKey != expectedKey) throw new ApiKeySlotChangedException();
+            // 这个模型实际去的地址换了源,而已存的那把自带 Key 原样留着:它会被发往新地址。先问,确认过才清
+            // (按归属者与值核对:框开着期间别处换了这把 Key,就对不上、再问一次)
+            List<(string Id, string Key)> cleared = [];
+            if (!string.IsNullOrWhiteSpace(oldKey) && apiKey == oldKey
+                && MovesOrigin(new ResolvedModel(provider, model).BaseUrl, new ResolvedModel(provider, draft).BaseUrl))
+            {
+                cleared.Add((model.Id, oldKey));
+            }
+            RequireKeyResetConfirmed(cleared, confirmedKeyReset);
+            if (cleared.Count > 0) apiKey = null;
             if (draft.MaxInputTokens != model.MaxInputTokens)
             {
                 draft.DefaultContextWindow = false;
@@ -634,6 +653,7 @@ public sealed class AiSettingsStore(IPluginContext context)
             KeyCache[model.Id] = string.IsNullOrEmpty(apiKey) ? null : apiKey;
             PublishProviderRequests(settings, detached, changedKeyOwnerId:
                 oldKey != (string.IsNullOrEmpty(apiKey) ? null : apiKey) ? model.Id : null);
+            return [.. cleared.Select(item => item.Id)];
         }
         catch
         {
