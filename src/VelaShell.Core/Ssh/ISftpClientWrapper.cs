@@ -148,6 +148,10 @@ public interface ISftpClientWrapper : IAsyncDisposable
     /// <see cref="UploadAsync(Stream, string, long, Action{ulong}, CancellationToken)" /> 重载,
     /// 不要用 <see cref="FileMode.Append" /> 自行拼接。
     /// </para>
+    /// <para>
+    /// 流上的读写、冲刷与关闭失败时<b>同样抛中立异常</b>(与本接口其它成员一个口径):调用方在自己的循环里读这条流
+    /// (续传下载、双栏中转),断线由失败重试按类型认出来,不能漏出底层库的异常类型。
+    /// </para>
     /// </summary>
     Task<Stream> OpenAsync(string path, FileMode mode, FileAccess access, CancellationToken cancellationToken = default);
 
