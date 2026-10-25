@@ -17,6 +17,7 @@ using VelaShell.PluginSdk.RemoteExec;
 using VelaShell.PluginSdk.RemoteFs;
 using VelaShell.PluginSdk.RemoteTunnel;
 using VelaShell.PluginSdk.Sessions;
+using VelaShell.PluginSdk.Versioning;
 
 namespace VelaShell.Infrastructure.Plugins;
 
@@ -2097,27 +2098,19 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
     private bool IsHostOlderThan(string minHostVersion) => IsOlder(options.HostVersion, minHostVersion);
 
     /// <summary>
-    /// <paramref name="actual" /> 是否比 <paramref name="required" /> 老。
-    /// 预发布后缀被忽略(<c>1.1.0-beta</c> 视作 <c>1.1.0</c>):把 beta 判成"不够新"
-    /// 会让预览版宿主装不上为它写的插件,而那正是预览版存在的意义。
+    /// <paramref name="actual" /> 是否比 <paramref name="required" /> 老。装载闸的口径,与 CLI、商店共用 SDK 的
+    /// <see cref="SemanticVersion" />:只比数字段(<see cref="SemanticVersion.CompareCoreTo" />),预发布后缀被忽略
+    /// (<c>1.1.0-beta</c> 视作 <c>1.1.0</c>)—— 把 beta 判成"不够新"会让预览版宿主装不上为它写的插件,
+    /// 而那正是预览版存在的意义。第四段参与比较(<c>1.2.3.1</c> 高于 <c>1.2.3</c>,<c>1.2.3.0</c> 等于 <c>1.2.3</c>)。
     /// 任一侧解析不出版本号就放行 —— 拦下一个只是版本号写得怪的插件,损失大于收益。
     /// </summary>
     /// <param name="actual">实际版本。</param>
     /// <param name="required">要求的最低版本。</param>
     /// <returns>实际版本更老时为 true。</returns>
-    private static bool IsOlder(string actual, string required)
-    {
-        static Version? ParseNumeric(string v)
-        {
-            string numeric = v.Split('-', 2)[0];
-            if (!numeric.Contains('.'))
-            {
-                numeric += ".0";
-            }
-            return Version.TryParse(numeric, out Version? parsed) ? parsed : null;
-        }
-        return ParseNumeric(actual) is { } left && ParseNumeric(required) is { } right && left < right;
-    }
+    private static bool IsOlder(string actual, string required) =>
+        SemanticVersion.TryParse(actual, out SemanticVersion left)
+        && SemanticVersion.TryParse(required, out SemanticVersion right)
+        && left.CompareCoreTo(right) < 0;
 
     private async Task ActivateAsync(PluginRuntime runtime, CancellationToken cancellationToken)
     {

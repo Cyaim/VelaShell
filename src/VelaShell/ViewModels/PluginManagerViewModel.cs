@@ -5,7 +5,7 @@ using ReactiveUI;
 using VelaShell.Core.Resources;
 using VelaShell.Infrastructure.Plugins;
 using VelaShell.Infrastructure.Plugins.Market;
-using VelaShell.Services.Update;
+using VelaShell.PluginSdk.Versioning;
 
 namespace VelaShell.ViewModels;
 
@@ -545,8 +545,8 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
 
     /// <summary>把「商店上那一版」与「本地这一版」对起来:该不该升、升不升得上去。</summary>
     /// <remarks>
-    /// 版本比较走 <see cref="UpdateVersion" />(应用自更新用的那一套),**不是**
-    /// <c>PluginManager</c> 内部判 minHostVersion 的那个 IsOlder —— 后者整段丢掉预发布后缀,
+    /// 「哪个更新」按 <see cref="SemanticVersion.CompareTo" /> 的完整优先级比(与应用自更新、CLI、商店同一份),**不是**
+    /// <c>PluginManager</c> 装载闸用的 <see cref="SemanticVersion.CompareCoreTo" /> —— 后者只比数字段,
     /// 本地装着 <c>1.2.0-beta.1</c> 时它会认为商店上的 <c>1.2.0</c> 不算更新。
     /// </remarks>
     /// <param name="descriptor">本地插件。</param>
@@ -561,8 +561,8 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
             // 应用自带、开发期挂载、商店上查不到的,都没有"更新"这个动作。
             return (PluginUpdateState.Unknown, null, null);
         }
-        if (!UpdateVersion.TryParse(latest.Version, out UpdateVersion remote)
-            || !UpdateVersion.TryParse(manifest.Version, out UpdateVersion local)
+        if (!SemanticVersion.TryParse(latest.Version, out SemanticVersion remote)
+            || !SemanticVersion.TryParse(manifest.Version, out SemanticVersion local)
             || remote.CompareTo(local) <= 0)
         {
             return (PluginUpdateState.UpToDate, null, null);

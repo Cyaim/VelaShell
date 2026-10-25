@@ -83,6 +83,33 @@ public class PluginManagerTests
         Assert.AreEqual(PluginState.Discovered, byId["a.sdkok"].State);
     }
 
+    /// <summary>
+    /// minHostVersion 闸与 CLI、商店同一份口径(SDK 的 SemanticVersion.CompareCoreTo):只比数字段。
+    /// 预发布宿主装得上为同号正式版写的插件;<c>1.0.0.0</c> 与 <c>1.0.0</c> 相等(原先按 <see cref="Version" />
+    /// 比,第四段缺省是 -1,三段的宿主被判成比 <c>1.0.0.0</c> 老);带构建元数据的宿主版本照样参与比较(原先解析不出、一律放行)。
+    /// </summary>
+    [TestMethod]
+    [DataRow("1.1.0-beta.2", "1.1.0", PluginState.Discovered)]
+    [DataRow("1.0.0", "1.0.0.0", PluginState.Discovered)]
+    [DataRow("1.0.0", "1.0.0.1", PluginState.Incompatible)]
+    [DataRow("1.0.0+build.7", "1.0.1", PluginState.Incompatible)]
+    [DataRow("1.0.0+build.7", "1.0.0", PluginState.Discovered)]
+    [DataRow("not-a-version", "9.9.9", PluginState.Discovered)]
+    public void Discover_MinHostVersionComparesNumericSegmentsOnly(string hostVersion, string minHost, PluginState expected)
+    {
+        AddPlugin("gated", $$"""{ "id": "a.gated", "version": "1.0.0", "displayName": "G", "entry": "G.dll", "minHostVersion": "{{minHost}}" }""");
+
+        var manager = new PluginManager(new()
+        {
+            PluginRoots = [_root],
+            DataRootDirectory = _dataRoot,
+            HostVersion = hostVersion
+        });
+        manager.Discover();
+
+        Assert.AreEqual(expected, manager.Plugins.Single().State, manager.Plugins.Single().Error);
+    }
+
     [TestMethod]
     public void Discover_DirectoryNameNeedNotMatchId()
     {

@@ -1,5 +1,6 @@
 using VelaShell.Core.Models;
 using VelaShell.Core.Notifications;
+using VelaShell.Infrastructure.Notifications;
 
 namespace VelaShell.Core.Tests.Notifications;
 
@@ -13,7 +14,7 @@ public class AnnouncementFeedDocumentTests
 {
     private static readonly DateTime Now = new(2026, 8, 30, 12, 0, 0, DateTimeKind.Utc);
 
-    private static readonly FeedAudience Anyone = new("1.3.0", "win-x64", "zh-Hans");
+    private static readonly FeedAudience Anyone = new("1.3.0", "win-x64", "zh-Hans", HttpAnnouncementFeed.CompareVersions);
 
     /// <summary>一条完整的条目应被原样解析出来。</summary>
     [TestMethod]
@@ -137,7 +138,7 @@ public class AnnouncementFeedDocumentTests
         Assert.AreEqual("win", items[0].Id);
     }
 
-    /// <summary>按版本区间定向(含端点),预发布后缀不参与比较。</summary>
+    /// <summary>按版本区间定向(含端点)。</summary>
     [TestMethod]
     public void Parse_FiltersByVersionRange()
     {
@@ -151,10 +152,43 @@ public class AnnouncementFeedDocumentTests
         }
         """;
 
-        IReadOnlyList<NotificationItem> items = AnnouncementFeedDocument.Parse(json, new("1.3.0-beta.2", "win-x64", "zh-Hans"), Now);
+        IReadOnlyList<NotificationItem> items = AnnouncementFeedDocument.Parse(json, new("1.3.0-beta.2", "win-x64", "zh-Hans", HttpAnnouncementFeed.CompareVersions), Now);
 
         Assert.HasCount(1, items);
         Assert.AreEqual("in-range", items[0].Id);
+    }
+
+    /// <summary>
+    /// 版本定向与更新检查同一份 SemVer 口径:预发布版低于同号正式版(<c>1.4.0-beta.2</c> 还没有 1.4.0 的东西),
+    /// 预发布标识按数值比(<c>beta.10</c> 比 <c>beta.2</c> 新)。原先用 <see cref="Version" /> 丢掉后缀,这两条都判错。
+    /// </summary>
+    [TestMethod]
+    public void Parse_VersionRangeUsesSemVerPrecedence()
+    {
+        const string json = """
+        {
+          "items": [
+            { "id": "final-only", "title": "1.4.0 正式版起", "publishedAt": "2026-08-30T02:00:00Z", "minVersion": "1.4.0" },
+            { "id": "up-to-beta-9", "title": "beta.9 及以前", "publishedAt": "2026-08-30T02:00:00Z", "maxVersion": "1.4.0-beta.9" },
+            { "id": "from-beta-2", "title": "beta.2 起", "publishedAt": "2026-08-30T02:00:00Z", "minVersion": "1.4.0-beta.2" }
+          ]
+        }
+        """;
+
+        IReadOnlyList<NotificationItem> items = AnnouncementFeedDocument.Parse(json, new("1.4.0-beta.10", "win-x64", "zh-Hans", HttpAnnouncementFeed.CompareVersions), Now);
+
+        CollectionAssert.AreEqual(new[] { "from-beta-2" }, items.Select(i => i.Id).ToArray());
+    }
+
+    /// <summary>某一端写得解析不出,就当这一端没给 —— 不因为源端一处笔误把这条消息对所有人都藏起来。</summary>
+    [TestMethod]
+    public void Parse_IgnoresUnparseableVersionBound()
+    {
+        const string json = """
+        { "items": [{ "id": "typo", "title": "笔误", "publishedAt": "2026-08-30T02:00:00Z", "minVersion": "1.x", "maxVersion": "1.3.0" }] }
+        """;
+
+        Assert.HasCount(1, AnnouncementFeedDocument.Parse(json, Anyone, Now));
     }
 
     /// <summary>
