@@ -60,15 +60,19 @@ public sealed class RemoteEditDraftsTests
         {
             RemoteEditMarker? opened = RemoteEditDrafts.Read(directory);
             Assert.IsNotNull(opened);
-            Assert.AreEqual(RemoteEditDrafts.Clean, opened.State);
             Assert.AreEqual("app.conf", opened.FileName);
             Assert.AreEqual("/etc/app.conf", opened.RemotePath);
             Assert.AreEqual("prod-web", opened.Server);
             Assert.AreEqual(new FileInfo(localPath).Length, opened.Length);
-            Assert.IsEmpty(RemoteEditDrafts.ListDrafts(_root), "刚下载下来的副本与远端一致,不是草稿");
+            // macOS 的 FSEvents 可能在启用 watcher 后才投递初始创建事件;等这批保守回传落地再检查标记。
+            await WaitUntilAsync(() => !session.HasPendingChange && session.State == RemoteEditState.Watching
+                && RemoteEditDrafts.ListDrafts(_root).Count == 0);
+            Assert.IsEmpty(RemoteEditDrafts.ListDrafts(_root), "初始副本已与远端一致,不是草稿");
 
+            int beforeEdit = Volatile.Read(ref uploads);
             await File.WriteAllTextAsync(localPath, "edited once");
-            await WaitUntilAsync(() => Volatile.Read(ref uploads) == 1 && session.State == RemoteEditState.Watching);
+            await WaitUntilAsync(() => Volatile.Read(ref uploads) > beforeEdit && !session.HasPendingChange
+                && session.State == RemoteEditState.Watching && RemoteEditDrafts.Read(directory)?.State == RemoteEditDrafts.Clean);
             Assert.AreEqual(RemoteEditDrafts.Clean, RemoteEditDrafts.Read(directory)?.State, "传上去之后变回干净");
             Assert.AreEqual(new FileInfo(localPath).LastWriteTimeUtc, RemoteEditDrafts.Read(directory)?.LastWriteUtc,
                 "干净标记记的是传上去的那一份");

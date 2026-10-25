@@ -206,6 +206,10 @@ public sealed class ConnectionDiagnosticsServiceTests
                     await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes("SSH-2.0-DiagTest\r\n"), _stop.Token);
                 }
             }
+            catch (InvalidOperationException) when (_stop.IsCancellationRequested)
+            {
+                // Stop 与下一次 Accept 之间的竞态;只在主动收尾时忽略。
+            }
             catch (Exception ex) when (ex is OperationCanceledException or SocketException or IOException)
             {
                 // 测试结束。

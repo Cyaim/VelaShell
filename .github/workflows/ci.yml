@@ -108,8 +108,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: VelaShellLabs/velashell-docs
-          # 空串 = 默认分支(上一步没跑、没找到或失败时都是空的)。
-          ref: ${{ steps.docsref.outputs.ref }}
+          # dev 分支与宿主同步推进时，文档改动也落在 velashell-docs/dev；否则手动触发
+          # dev CI 会检出默认 main，看不到刚补的快捷键表。main 仍使用文档默认分支。
+          ref: ${{ steps.docsref.outputs.ref || (github.ref_name == 'dev' && 'dev' || '') }}
           path: velashell-docs
 
       # runner 镜像通常已带这些,列全是为了镜像换代时不至于悄悄少一个。
