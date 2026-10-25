@@ -145,6 +145,27 @@ public sealed class SessionArchiveJsonTests
         Assert.AreEqual(new DateTime(2026, 10, 9, 8, 0, 0, DateTimeKind.Utc), document.ExportedAtUtc);
     }
 
+    /// <summary>系统密钥库的钥照原样往返(引用不是机密,明文写进文件);认证方式写成名字 <c>keyStore</c>。</summary>
+    [TestMethod]
+    public void RoundTrip_KeepsAKeyStoreReference()
+    {
+        SessionProfile tpm = new()
+        {
+            Name = "tpm", Host = "10.0.0.51", Username = "ops", AuthMethod = AuthMethod.KeyStore,
+            KeyStoreKey = new SystemKeyReference
+            {
+                Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy", MachineKey = true, PublicKey = "ecdsa-sha2-nistp256 AAAA deploy",
+            },
+        };
+
+        string json = SessionArchiveJson.Serialize(new SessionArchive { Sessions = [tpm] }, null);
+        SessionProfile read = SessionArchiveJson.Read("backup.json", json).Candidates.Single().Profile;
+
+        Assert.Contains("\"authMethod\": \"keyStore\"", json);
+        Assert.AreEqual(AuthMethod.KeyStore, read.AuthMethod);
+        Assert.AreEqual(tpm.KeyStoreKey, read.KeyStoreKey);
+    }
+
     [TestMethod]
     public void Serialize_WritesEnumsAsNames_AndReadAcceptsNumbersToo()
     {
