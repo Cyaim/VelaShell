@@ -1662,7 +1662,8 @@ public partial class MainWindow : Window
         }
         var viewModel = new PluginManagerViewModel(manager,
             services.GetService<Infrastructure.Plugins.PluginPermissionGate>(),
-            services.GetService<Infrastructure.Plugins.Market.IPluginMarketClient>());
+            services.GetService<Infrastructure.Plugins.Market.IPluginMarketClient>(),
+            services.GetService<Infrastructure.Plugins.PluginNotificationService>());
         // 先占住槽位再去读布局:读的那一下里再点一次侧栏,只会激活这一扇,不会叠出第二扇。
         PluginManagerWindow window = new() { DataContext = viewModel };
         _pluginManagerWindow = window;

@@ -5416,6 +5416,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>시스템</value>
   </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>플러그인</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>{0}에서</value>
+  </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>{0}번째 탭으로</value>
   </data>
@@ -6112,6 +6118,15 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="PluginManager_Reload"><value>다시 로드</value></data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>로그 보기</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>알림 음소거</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>알림 음소거 해제</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>이 플러그인이 메시지 목록에 메시지를 추가하지 못하게 합니다. 이미 보낸 메시지는 메시지 목록에서 지울 때까지 남아 있고, 플러그인을 제거하면 함께 삭제됩니다.</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>플러그인 로그 · {0}</value>

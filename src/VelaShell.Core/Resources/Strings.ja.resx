@@ -5416,6 +5416,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>システム</value>
   </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>プラグイン</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>{0} から</value>
+  </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>{0} 番目のタブへ</value>
   </data>
@@ -6112,6 +6118,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginManager_Reload"><value>再読み込み</value></data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>ログを表示</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>通知をミュート</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>通知のミュートを解除</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>このプラグインがメッセージ一覧にメッセージを追加しないようにします。すでに届いたメッセージはメッセージ一覧で削除するまで残り、プラグインをアンインストールすると一緒に削除されます。</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>プラグインのログ · {0}</value>

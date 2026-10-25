@@ -5532,6 +5532,12 @@ Overwrite it?</value>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>System</value>
   </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>Plugin</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>from {0}</value>
+  </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>Go to tab {0}</value>
   </data>
@@ -6117,6 +6123,15 @@ Overwrite it?</value>
   <data name="PluginManager_Reload"><value>Reload</value></data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>View log</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>Mute notifications</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>Unmute notifications</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>Stop this plugin from adding messages to the Message Center. Messages it already posted stay until you remove them; uninstalling the plugin removes them.</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>Plugin log · {0}</value>

@@ -277,6 +277,7 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             TryDeleteDirectory(runtime.Descriptor.Directory);
             await PurgePluginDataAsync(pluginId).ConfigureAwait(false);
             await RemoveInstallReceiptAsync(pluginId).ConfigureAwait(false);
+            await ForgetNotificationsAsync(pluginId).ConfigureAwait(false);
             lock (_gate)
             {
                 _plugins.Remove(runtime);
@@ -1757,9 +1758,26 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
         return wait.IsCanceled;
     }
 
+    /// <summary>插件卸载:删掉它发进消息中心的消息与静音记录(插件不能自己撤回已发的消息,卸载是唯一的收尾)。</summary>
+    private async Task ForgetNotificationsAsync(string pluginId)
+    {
+        if (options.Notifications is not { } notifications)
+        {
+            return;
+        }
+        try
+        {
+            await notifications.ForgetPluginAsync(pluginId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log($"Could not remove notifications of '{pluginId}': {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// 卸载清理(蓝图 03 §7):插件目录已不存在(≠ 被 .disabled 禁用,禁用者仍在盘上、
-    /// 数据保留)即视为已卸载,其 SonnetDB 命名空间与数据目录整体删除。
+    /// 数据保留)即视为已卸载,其 SonnetDB 命名空间与数据目录整体删除,发进消息中心的消息一并删掉。
     /// </summary>
     private async Task PurgeUninstalledDataAsync()
     {
@@ -1769,6 +1787,17 @@ public sealed class PluginManager(PluginManagerOptions options) : IAsyncDisposab
             // 一切仍在盘上的插件都算"在装"(含 Invalid/Disabled/Incompatible —— 修好清单
             // 或重新启用后数据应仍在);Invalid 无清单者以目录名兜底。
             installed = [.. _plugins.Select(p => p.Descriptor.Id)];
+        }
+        if (options.Notifications is { } notifications)
+        {
+            try
+            {
+                await notifications.SweepUninstalledAsync(installed, _shutdown.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log($"Uninstalled-plugin notification sweep failed: {ex.Message}");
+            }
         }
         if (options.DataStore is { } dataStore)
         {

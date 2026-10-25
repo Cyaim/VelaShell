@@ -194,6 +194,37 @@ public class NotificationCenterTests
         Assert.HasCount(1, center.Items);
     }
 
+    /// <summary>投递报回这次真正新增了几条:同 id 已在的不算(插件通知靠它分辨「新发」与「早就发过」)。</summary>
+    [TestMethod]
+    public async Task Publish_ReportsHowManyItemsWereNew()
+    {
+        var center = new NotificationCenter();
+
+        Assert.AreEqual(2, await center.PublishAsync([Item("a"), Item("b")]));
+        Assert.AreEqual(1, await center.PublishAsync([Item("a"), Item("c")]));
+        Assert.AreEqual(0, await center.PublishAsync([Item("c")]));
+    }
+
+    /// <summary>按 id 前缀删(卸载插件时清它发的消息):只删前缀对得上的,按序数比较,返回删了几条。</summary>
+    [TestMethod]
+    public async Task RemoveByIdPrefix_RemovesOnlyMatchingItems()
+    {
+        var store = new InMemoryDataStore();
+        var center = new NotificationCenter(store);
+        await center.PublishAsync([Item("plugin:a.b:1"), Item("plugin:a.b:2"), Item("plugin:a.bc:3"), Item("PLUGIN:a.b:4"), Item("update:1")]);
+        int changes = 0;
+        center.Changed += () => Interlocked.Increment(ref changes);
+
+        Assert.AreEqual(2, await center.RemoveByIdPrefixAsync("plugin:a.b:"));
+        Assert.AreEqual(0, await center.RemoveByIdPrefixAsync("plugin:a.b:"));
+
+        CollectionAssert.AreEquivalent(new[] { "plugin:a.bc:3", "PLUGIN:a.b:4", "update:1" }, center.Items.Select(i => i.Id).ToArray());
+        Assert.AreEqual(1, changes, "什么都没删时不触发变更");
+        var reloaded = new NotificationCenter(store);
+        await reloaded.LoadAsync();
+        Assert.HasCount(3, reloaded.Items, "删掉的不在落盘里");
+    }
+
     /// <summary>把文档留在内存里的最小存储,用来验证"跨进程"的往返。</summary>
     private sealed class InMemoryDataStore : IAppDataStore
     {
@@ -234,7 +265,8 @@ public class NotificationCenterTests
                 PublishedAt = item.PublishedAt,
                 ExpiresAt = item.ExpiresAt,
                 IsRead = item.IsRead,
-                Link = item.Link
+                Link = item.Link,
+                Source = item.Source
             };
     }
 

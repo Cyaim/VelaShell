@@ -5665,6 +5665,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>系統</value>
   </data>
+  <data name="Notify_KindPlugin" xml:space="preserve">
+    <value>外掛程式</value>
+  </data>
+  <data name="Notify_Source" xml:space="preserve">
+    <value>來自 {0}</value>
+  </data>
   <data name="Cmd_GotoTab" xml:space="preserve">
     <value>跳到第 {0} 個標籤</value>
   </data>
@@ -6301,6 +6307,15 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="PluginManager_ViewLog" xml:space="preserve">
     <value>檢視日誌</value>
+  </data>
+  <data name="PluginManager_MuteNotifications" xml:space="preserve">
+    <value>靜音通知</value>
+  </data>
+  <data name="PluginManager_UnmuteNotifications" xml:space="preserve">
+    <value>恢復通知</value>
+  </data>
+  <data name="PluginManager_MuteNotificationsTip" xml:space="preserve">
+    <value>不再讓這個外掛程式往訊息中心裡發訊息。它已經發的留著，要刪在訊息中心裡刪；解除安裝外掛程式時一併刪除。</value>
   </data>
   <data name="PluginLog_Title" xml:space="preserve">
     <value>外掛日誌 · {0}</value>

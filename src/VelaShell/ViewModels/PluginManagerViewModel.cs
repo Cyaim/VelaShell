@@ -129,6 +129,23 @@ public sealed class PluginRowViewModel(PluginDescriptor descriptor, bool hasTerm
     /// <summary>是否可卸载(用户安装,非应用自带)。</summary>
     public bool CanUninstall { get; init; }
 
+    /// <summary>用户是否关掉了这个插件往消息中心发的通知。</summary>
+    public bool NotificationsMuted { get; init; }
+
+    /// <summary>
+    /// 是否摆出「静音通知 / 恢复通知」。只在它真往消息中心发过消息(列表里还有)或已经静音时出现:
+    /// 每一行都摆一个,对从不发通知的插件只是多一个看不懂的按钮。
+    /// </summary>
+    public bool CanToggleNotifications { get; init; }
+
+    /// <summary>静音开关的文案。</summary>
+    public string NotificationsToggleText =>
+        Strings.Get(NotificationsMuted ? "PluginManager_UnmuteNotifications" : "PluginManager_MuteNotifications");
+
+    /// <summary>静音开关的悬停说明。</summary>
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "XAML 绑定只解析实例成员。")]
+    public string NotificationsToggleTip => Strings.Get("PluginManager_MuteNotificationsTip");
+
     /// <summary>
     /// 安装时钉住的发布者公钥指纹;<see langword="null" /> = 这一条没有可核对的身份
     /// (应用自带、命令行旁装、或者装的就是个未签名的包)。
@@ -191,6 +208,7 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
     private readonly PluginManager _manager;
     private readonly PluginPermissionGate? _gate;
     private readonly IPluginMarketClient? _market;
+    private readonly PluginNotificationService? _notifications;
 
     /// <summary>上次问到的商店版本表(按插件 id)。每次刷新列表都拿它比对,不再重新外呼。</summary>
     private IReadOnlyDictionary<string, PluginMarketVersion> _latest =
@@ -278,12 +296,14 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
     /// <param name="market">
     /// 插件商店的只读客户端;缺席时整个更新检查不存在(headless 测试与离线部署走这条)。
     /// </param>
+    /// <param name="notifications">插件通知(静音开关);缺席时不显示静音入口。</param>
     public PluginManagerViewModel(PluginManager manager, PluginPermissionGate? gate,
-        IPluginMarketClient? market = null)
+        IPluginMarketClient? market = null, PluginNotificationService? notifications = null)
     {
         _manager = manager;
         _gate = gate;
         _market = market;
+        _notifications = notifications;
         _onChanged = () => Dispatcher.UIThread.Post(() => _ = ReloadAsync());
         // 等待调试器的隔离插件:把 pid 摆到管理页上。它同时进日志、落 pid 文件,
         // 但开发者此刻多半正开着这个页面,让他去翻日志属于本可以省掉的一步。
@@ -365,6 +385,18 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
             await _gate.RevokeAsync(row.Id).ConfigureAwait(false);
             await ReloadAsync().ConfigureAwait(false);
         }
+    }
+
+    /// <summary>静音或恢复某插件的通知(已经发进消息中心的那些不动,要删在消息中心里删)。</summary>
+    public async Task ToggleNotificationsAsync(PluginRowViewModel row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (_notifications is null || !row.CanToggleNotifications)
+        {
+            return;
+        }
+        await _notifications.SetMutedAsync(row.Id, !row.NotificationsMuted).ConfigureAwait(false);
+        await ReloadAsync().ConfigureAwait(false);
     }
 
     /// <summary>卸载某插件(用户安装的)。调用方已确认。</summary>
@@ -510,9 +542,12 @@ public sealed class PluginManagerViewModel : ReactiveObject, IDisposable
             bool uninstallable = _manager.IsUninstallable(descriptor.Id);
             string? pinned = await _manager.GetPinnedPublisherFingerprintAsync(descriptor.Id).ConfigureAwait(false);
             (PluginUpdateState state, string? available, string? blocker) = ResolveUpdate(descriptor, uninstallable);
+            bool muted = _notifications is not null && await _notifications.IsMutedAsync(descriptor.Id).ConfigureAwait(false);
             rows.Add(new(descriptor, grant)
             {
                 CanUninstall = uninstallable,
+                NotificationsMuted = muted,
+                CanToggleNotifications = _notifications is not null && (muted || _notifications.HasMessages(descriptor.Id)),
                 OpenSurfaces = _manager.GetOpenSurfaceCount(descriptor.Id),
                 PublisherFingerprint = pinned,
                 UpdateState = state,

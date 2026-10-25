@@ -14,12 +14,15 @@ namespace VelaShell.Services.Plugins;
 /// 在宿主 UI 线程调用内容工厂拿到插件自己创建的 Avalonia 控件,按
 /// <see cref="PanelOptions.DisplayMode" /> 呈现为停靠文档或独立窗口;
 /// 实例释放(插件停用)时全部关闭 —— 插件离场,宿主 UI 不残留。
+/// 往消息中心发通知转给共用的 <see cref="Infrastructure.Plugins.PluginNotificationService" />(隔离插件的
+/// <c>ui/notify</c> 经插件上下文也落到这里),发送方就是构造时绑定的插件 id。
 /// </summary>
 internal sealed class PluginUiApi(
     string pluginId,
     IPluginLogger log,
     Func<MainWindowViewModel?> mainViewModel,
-    IBackgroundActivityService? backgroundActivity = null)
+    IBackgroundActivityService? backgroundActivity = null,
+    Infrastructure.Plugins.PluginNotificationService? notifications = null)
     : IUiApi, Infrastructure.Plugins.IPluginSurfaceSource, IDisposable
 {
     private readonly Lock _gate = new();
@@ -88,6 +91,19 @@ internal sealed class PluginUiApi(
         };
         RaiseSurfacesChanged();
         return panel;
+    }
+
+    /// <inheritdoc />
+    public bool SupportsNotifications => notifications is not null;
+
+    /// <inheritdoc />
+    public Task<PluginNotificationOutcome> PostNotificationAsync(PluginNotification notification,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return notifications is null
+            ? throw new NotSupportedException("This host does not accept plugin notifications.")
+            : notifications.PostAsync(pluginId, notification, cancellationToken);
     }
 
     private void RaiseSurfacesChanged()
