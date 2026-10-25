@@ -13,6 +13,7 @@ public partial class SftpDocumentView : UserControl
     public SftpDocumentView()
     {
         InitializeComponent();
+        FilePaneLayoutMemory.AttachSplit(PaneGrid, PaneSplitter);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is SftpDocumentViewModel vm)

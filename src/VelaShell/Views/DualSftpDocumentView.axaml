@@ -76,14 +76,15 @@
                      TextTrimming="CharacterEllipsis" />
         </Grid>
       </Border>
-      <Grid MinWidth="564">
+      <!-- 分栏比例跨重启记忆(全局一份,两种文件标签共用,见 FilePaneLayoutMemory)。 -->
+      <Grid x:Name="PaneGrid" MinWidth="564">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" MinWidth="280" />
           <ColumnDefinition Width="4" />
           <ColumnDefinition Width="*" MinWidth="280" />
         </Grid.ColumnDefinitions>
         <views:FileBrowserView x:Name="LeftPane" Grid.Column="0" DataContext="{Binding LeftFiles}" />
-        <GridSplitter Grid.Column="1" Background="{DynamicResource VelaBorderPrimary}"
+        <GridSplitter x:Name="PaneSplitter" Grid.Column="1" Background="{DynamicResource VelaBorderPrimary}"
                       ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
         <views:FileBrowserView x:Name="RightPane" Grid.Column="2" DataContext="{Binding RightFiles}" />
       </Grid>

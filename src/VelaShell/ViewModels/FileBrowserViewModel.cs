@@ -114,6 +114,8 @@ public class FileBrowserViewModel : ReactiveObject
         CommitPathEditCommand = ReactiveCommand.CreateFromTask(CommitPathEditAsync);
         ActivateCommand = ReactiveCommand.CreateFromTask<RemoteFileInfoViewModel>(ActivateAsync);
         GoUpCommand = ReactiveCommand.CreateFromTask(GoUpAsync);
+        GoBackCommand = ReactiveCommand.CreateFromTask(() => GoBackAsync(), this.WhenAnyValue(x => x.CanGoBack));
+        GoForwardCommand = ReactiveCommand.CreateFromTask(() => GoForwardAsync(), this.WhenAnyValue(x => x.CanGoForward));
         RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAsync);
         LoadInitialCommand = ReactiveCommand.CreateFromTask(LoadInitialAsync);
         UploadCommand = ReactiveCommand.CreateFromTask(UploadAsync);
@@ -146,6 +148,8 @@ public class FileBrowserViewModel : ReactiveObject
         ShowTransfersCommand = ReactiveCommand.Create(() => TransferSink?.ShowPanel());
         OpenRemoteSearchCommand = ReactiveCommand.CreateFromTask<string?>(
             root => CanSearchRemote && ShowRemoteSearch is { } show ? show(root) : Task.CompletedTask);
+        OpenTerminalHereCommand = ReactiveCommand.CreateFromTask<string?>(
+            directory => OpenTerminalAt is { } open ? open(directory ?? CurrentPath) : Task.CompletedTask);
         ToggleVisibilityCommand = ReactiveCommand.Create(ToggleVisibility);
         ToggleHiddenFilesCommand = ReactiveCommand.Create(() =>
         {
@@ -364,6 +368,26 @@ public class FileBrowserViewModel : ReactiveObject
     public Func<string?, Task>? ShowRemoteSearch { get; set; }
 
     /// <summary>
+    /// 由宿主在 SSH 会话(连接类型为 SSH 的配置)的面板上挂:开一个连同一配置的终端标签,认证后 cd 进参数给的远端目录。
+    /// SFTP 专用配置、FTP、插件协议的面板不挂 —— 那里没有 shell 可开,右键里也就没有这一项。
+    /// </summary>
+    public Func<string, Task>? OpenTerminalAt
+    {
+        get;
+        set
+        {
+            field = value;
+            this.RaisePropertyChanged(nameof(CanOpenTerminalHere));
+        }
+    }
+
+    /// <summary>右键菜单里的「在此处打开终端」是否出现。</summary>
+    public bool CanOpenTerminalHere => OpenTerminalAt is not null;
+
+    /// <summary>「在此处打开终端」;参数是目录(目录行的右键菜单传它自己),null = 当前目录(空白处右键)。</summary>
+    public ReactiveCommand<string?, RxVoid> OpenTerminalHereCommand { get; }
+
+    /// <summary>
     /// 定位到一个远端条目之后触发(参数是已选中的那一行),视图据此把它滚进可见区。
     /// </summary>
     public event EventHandler<RemoteFileInfoViewModel>? RevealRequested;
@@ -398,6 +422,12 @@ public class FileBrowserViewModel : ReactiveObject
                                                       && !Files.Contains(f)))
         {
             ShowHiddenFiles = true;
+        }
+        // 就在当前目录里时不会换目录,过滤条件还在:它挡着那一行的话同样等于没定位。
+        if (_filterText.Length > 0 && _allFiles.Exists(f => string.Equals(f.FullPath, path, StringComparison.Ordinal)
+                                                            && !Files.Contains(f)))
+        {
+            FilterText = string.Empty;
         }
         if (Files.FirstOrDefault(f => !f.IsParentEntry && string.Equals(f.FullPath, path, StringComparison.Ordinal)) is not { } row)
         {
@@ -752,6 +782,59 @@ public class FileBrowserViewModel : ReactiveObject
             }
             this.RaiseAndSetIfChanged(ref field, value);
             RebuildVisibleFiles();
+        }
+    }
+
+    // ---- 当前目录过滤(头部工具条上可收起的过滤框)--------------------------------
+    //
+    // 只过滤显示:按「名字含有」(不分大小写)把不相干的行藏起来,不去服务器上找 —— 那是远端搜索的事。
+    // 藏起来的行不在 Files 里,于是全选、键入定位、下载、删除都只对着看得见的行;
+    // 换目录时清空(收藏、跟随终端、搜索定位进来的也算),免得进了新目录还对着上一个目录的筛选条件。
+
+    private string _filterText = string.Empty;
+
+    /// <summary>过滤框是否展开。收起即清空过滤 —— 收起来的框还在暗中藏行,只会让人以为文件丢了。</summary>
+    public bool IsFilterOpen
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            if (!value)
+            {
+                FilterText = string.Empty;
+            }
+        }
+    }
+
+    /// <summary>过滤框里的文字;空 = 不过滤。</summary>
+    public string FilterText
+    {
+        get => _filterText;
+        set
+        {
+            value ??= string.Empty;
+            if (string.Equals(_filterText, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref _filterText, value);
+            HashSet<string> selected = [.. SelectedFiles.Where(file => !file.IsParentEntry).Select(file => file.FullPath)];
+            RebuildVisibleFiles();
+            RestoreSelection(selected);
+        }
+    }
+
+    /// <summary>换了目录:过滤条件作废,框照旧开着,等着输新的。只清字、不重建,调用方接着会重建可见行。</summary>
+    private void ClearFilterForNewDirectory()
+    {
+        if (_filterText.Length > 0)
+        {
+            this.RaiseAndSetIfChanged(ref _filterText, string.Empty, nameof(FilterText));
         }
     }
 
@@ -1422,8 +1505,14 @@ public class FileBrowserViewModel : ReactiveObject
                 : " ▲"
             : string.Empty;
 
-    /// <summary>导航到指定绝对路径的目录(面包屑点击等)。失败时保留原目录。</summary>
-    public async Task NavigateToAsync(string path, CancellationToken ct = default)
+    /// <summary>导航到指定绝对路径的目录(面包屑点击等)。失败时保留原目录。进了别的目录就记进后退历史。</summary>
+    public Task NavigateToAsync(string path, CancellationToken ct = default) =>
+        NavigateCoreAsync(path, recordHistory: true, ct);
+
+    /// <param name="path">目标目录。</param>
+    /// <param name="recordHistory">进了别的目录时要不要把原目录记进后退历史;后退 / 前进自己挪历史,传 false。</param>
+    /// <param name="ct">取消令牌。</param>
+    private async Task NavigateCoreAsync(string path, bool recordHistory, CancellationToken ct)
     {
         using LifetimeScope lifetime = LinkToLifetime(ct);
         long navigationVersion = Interlocked.Increment(ref _navigationVersion);
@@ -1470,10 +1559,17 @@ public class FileBrowserViewModel : ReactiveObject
             }
             _allFiles.Clear();
             _allFiles.AddRange(files.Select(f => new RemoteFileInfoViewModel(f)));
+            string previousPath = CurrentPath;
             CurrentPath = path;
             if (pathChanged)
             {
                 SelectedFiles.Clear();
+                ClearFilterForNewDirectory();
+                // 首次加载之前的 CurrentPath 只是占位(构造时的 "/"),用户没在那儿待过,不进历史。
+                if (recordHistory && HasLoaded)
+                {
+                    PushHistory(previousPath);
+                }
             }
             RebuildVisibleFiles();
             if (!pathChanged)
@@ -1588,6 +1684,10 @@ public class FileBrowserViewModel : ReactiveObject
     {
         IEnumerable<RemoteFileInfoViewModel> visible =
             RemoteFileSort.ApplyHiddenFilter(_allFiles, ShowHiddenFiles);
+        if (_filterText.Length > 0)
+        {
+            visible = visible.Where(file => file.Name.Contains(_filterText, StringComparison.OrdinalIgnoreCase));
+        }
         var rebuilt = new List<RemoteFileInfoViewModel>();
         if (CurrentPath != "/")
         {
@@ -1844,6 +1944,79 @@ public class FileBrowserViewModel : ReactiveObject
             return;
         }
         await NavigateToAsync(RemotePath.Parent(CurrentPath), ct);
+    }
+
+    // ---- 后退 / 前进(Alt+← / Alt+→ 与工具条按钮)--------------------------------
+    //
+    // 每个面板各有一对历史栈,只活在这个实例里:断线重连后宿主建的是新面板,历史自然不留 ——
+    // 重连之后的会话可能已经换了一台机器(同名配置改过地址),旧路径未必还有意义。
+    // 凡是进了别的目录都记(面包屑、双击、上一级、手动输入、收藏、跟随终端、搜索定位),刷新同一目录不记。
+
+    /// <summary>历史栈的上限:够用,又不至于让一个开了一整天的面板无限长下去。</summary>
+    internal const int MaxHistory = 50;
+
+    private readonly List<string> _backHistory = [];
+    private readonly List<string> _forwardHistory = [];
+
+    /// <summary>有没有可以后退的目录。</summary>
+    public bool CanGoBack => _backHistory.Count > 0;
+
+    /// <summary>有没有可以前进的目录。</summary>
+    public bool CanGoForward => _forwardHistory.Count > 0;
+
+    /// <summary>后退到上一个待过的目录(Alt+←)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> GoBackCommand { get; }
+
+    /// <summary>前进到后退之前的目录(Alt+→)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> GoForwardCommand { get; }
+
+    /// <summary>进了别的目录:原目录压进后退栈,前进栈作废(与浏览器一样,从历史中间岔出去就没有「前进」了)。</summary>
+    private void PushHistory(string previous)
+    {
+        if (_backHistory.Count == 0 || !string.Equals(_backHistory[^1], previous, StringComparison.Ordinal))
+        {
+            _backHistory.Add(previous);
+            if (_backHistory.Count > MaxHistory)
+            {
+                _backHistory.RemoveAt(0);
+            }
+        }
+        _forwardHistory.Clear();
+        RaiseHistoryChanged();
+    }
+
+    private void RaiseHistoryChanged()
+    {
+        this.RaisePropertyChanged(nameof(CanGoBack));
+        this.RaisePropertyChanged(nameof(CanGoForward));
+    }
+
+    /// <summary>后退一步。目标目录进不去(刚被删、没权限)时照常报错,历史原样不动。</summary>
+    public Task GoBackAsync(CancellationToken ct = default) => MoveInHistoryAsync(_backHistory, _forwardHistory, ct);
+
+    /// <summary>前进一步;规则同 <see cref="GoBackAsync" />。</summary>
+    public Task GoForwardAsync(CancellationToken ct = default) => MoveInHistoryAsync(_forwardHistory, _backHistory, ct);
+
+    private async Task MoveInHistoryAsync(List<string> from, List<string> to, CancellationToken ct)
+    {
+        if (from.Count == 0)
+        {
+            return;
+        }
+        string target = from[^1];
+        string origin = CurrentPath;
+        await NavigateCoreAsync(target, recordHistory: false, ct);
+
+        // 只认「确实到了那儿」:失败、或者半路被另一次导航顶掉了,历史都不挪。
+        if (!string.Equals(CurrentPath, target, StringComparison.Ordinal)
+            || from.Count == 0
+            || !string.Equals(from[^1], target, StringComparison.Ordinal))
+        {
+            return;
+        }
+        from.RemoveAt(from.Count - 1);
+        to.Add(origin);
+        RaiseHistoryChanged();
     }
 
     private async Task RefreshAsync(CancellationToken ct = default) =>

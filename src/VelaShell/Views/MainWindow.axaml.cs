@@ -2032,7 +2032,9 @@ public partial class MainWindow : Window
         if (e.KeyModifiers != Avalonia.Input.KeyModifiers.Alt
             || DataContext is not MainWindowViewModel vm
             || !vm.Layout.HasMultipleGroups
-            || vm.RunCommand is null)
+            || vm.RunCommand is null
+            // 焦点在文件栏里时 Alt+← / Alt+→ 是那一栏的后退 / 前进(资源管理器口径),这里让路。
+            || FilePaneKeys.OwnsPaneNavigationKey(e))
         {
             return;
         }

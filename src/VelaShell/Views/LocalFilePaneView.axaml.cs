@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -72,16 +73,66 @@ public partial class LocalFilePaneView : UserControl
 
         // 手动输入路径(路径栏见 LocalPathBar)。Ctrl+L 走隧道,免得先被文件列表的键盘导航吃掉;
         // 登记在本地栏上,焦点在远端栏时由远端栏自己的 Ctrl+L 接。输入框收起后焦点回到列表。
+        // F5 / F2 / Delete 同一个处理器(见 FilePaneKeys)。
         AddHandler(KeyDownEvent, OnLocalPaneKeyDownTunnel, RoutingStrategies.Tunnel);
         PathBar.EditFinished += (_, _) => FileList.FocusSelectedOrFirstRow();
     }
 
     private void OnLocalPaneKeyDownTunnel(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control)
-            && DataContext is LocalFilePaneViewModel vm)
+        if (DataContext is not LocalFilePaneViewModel vm)
+        {
+            return;
+        }
+        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             vm.BeginPathEdit();
+            e.Handled = true;
+            return;
+        }
+
+        // F5 / F2 / Delete(资源管理器口径,见 FilePaneKeys)。走隧道:F2 / Delete 要赶在列表自己的键盘处理之前。
+        switch (FilePaneKeys.Classify(e, FileList))
+        {
+            case FilePaneKeyAction.Refresh:
+                vm.RefreshCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Rename when vm.SelectedEntries is [{ IsParentEntry: false } entry]:
+                vm.RenameCommand.Execute(entry).Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Delete:
+                // 删除命令自己会先弹确认,只选着 ".." 时什么也不做。
+                vm.DeleteSelectedCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Back:
+                // 与按钮同一个命令、同样先问能不能执行:没有历史、或上一步还没走完时什么也不做。
+                FilePaneKeys.Run(vm.GoBackCommand);
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Forward:
+                FilePaneKeys.Run(vm.GoForwardCommand);
+                e.Handled = true;
+                return;
+        }
+    }
+
+    /// <summary>用户点开过滤框就把焦点给它;程序改开关不抢焦点(与远端栏同一处理,见 FilePaneFilter)。</summary>
+    private void OnFilterToggleClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton { IsChecked: true })
+        {
+            FilePaneFilter.FocusWhenShown(FilterBox);
+        }
+    }
+
+    /// <summary>过滤框里:Esc 清空并收起,回车把焦点交回列表。</summary>
+    private void OnFilterBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is LocalFilePaneViewModel vm && FilePaneFilter.HandleKey(e, FileList, () => vm.IsFilterOpen = false))
+        {
             e.Handled = true;
         }
     }
@@ -117,12 +168,21 @@ public partial class LocalFilePaneView : UserControl
             danger: true);
     }
 
+    /// <summary>
+    /// 双击:目录(含 "..")进去;文件用系统默认程序打开,与远端栏双击文件对称(上传留给拖放、按钮与右键)。
+    /// </summary>
     private void OnFileDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (DataContext is LocalFilePaneViewModel vm && sender is ListBox list && list.SelectedItem is LocalFileEntry entry)
+        if (DataContext is not LocalFilePaneViewModel vm || sender is not ListBox { SelectedItem: LocalFileEntry entry })
+        {
+            return;
+        }
+        if (entry.IsDirectory)
         {
             vm.ActivateCommand.Execute(entry).Subscribe();
+            return;
         }
+        vm.OpenItemCommand.Execute(entry).Subscribe(_ => { }, _ => { });
     }
 
     /// <summary>

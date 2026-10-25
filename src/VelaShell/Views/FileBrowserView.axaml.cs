@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -100,6 +101,8 @@ public partial class FileBrowserView : UserControl
             vm.PromptConfigureEditor = PromptConfigureEditorAsync;
             vm.ConfirmOverwrite = ConfirmOverwriteAsync;
             vm.ConfirmRemoteOverwrite = ConfirmRemoteOverwriteAsync;
+            // 列宽跨重启记忆(全局一份,见 FilePaneLayoutMemory)。
+            FilePaneLayoutMemory.RestoreColumns(this, vm);
         };
 
         // 框选与跨栏拖放使用不相交的按下表面。终端模式没有拖放时,
@@ -141,7 +144,7 @@ public partial class FileBrowserView : UserControl
         AddHandler(PointerReleasedEvent, OnColumnSplitterReleased, RoutingStrategies.Tunnel);
 
         // Ctrl+L 切到手动输入路径(浏览器/文件管理器的通用手势)。走隧道,免得先被
-        // 文件列表的键盘导航吃掉。
+        // 文件列表的键盘导航吃掉。F5 / F2 / Delete 同一个处理器(见 FilePaneKeys)。
         AddHandler(KeyDownEvent, OnFileBrowserKeyDown, RoutingStrategies.Tunnel);
     }
 
@@ -149,11 +152,42 @@ public partial class FileBrowserView : UserControl
 
     private void OnFileBrowserKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control)
-            && DataContext is FileBrowserViewModel vm)
+        if (DataContext is not FileBrowserViewModel vm)
+        {
+            return;
+        }
+        if (e.Key == Key.L && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             vm.BeginPathEditCommand.Execute().Subscribe(_ => { }, _ => { });
             e.Handled = true;
+            return;
+        }
+
+        // F5 / F2 / Delete(资源管理器口径,见 FilePaneKeys)。删除进行中(遮罩挡着)不再接第二次。
+        switch (FilePaneKeys.Classify(e, FileList))
+        {
+            case FilePaneKeyAction.Refresh:
+                vm.RefreshCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Rename when !vm.IsLoading && vm.SelectedFiles is [{ IsParentEntry: false } file]:
+                vm.RenameCommand.Execute(file).Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Delete when !vm.IsLoading:
+                // 删除命令自己会先弹确认(带服务器名),只选着 ".." 时什么也不做。
+                vm.DeleteSelectedCommand.Execute().Subscribe(_ => { }, _ => { });
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Back:
+                // 与按钮同一个命令、同样先问能不能执行:没有历史、或上一步还没走完时什么也不做。
+                FilePaneKeys.Run(vm.GoBackCommand);
+                e.Handled = true;
+                return;
+            case FilePaneKeyAction.Forward:
+                FilePaneKeys.Run(vm.GoForwardCommand);
+                e.Handled = true;
+                return;
         }
     }
 
@@ -203,6 +237,26 @@ public partial class FileBrowserView : UserControl
         }
     }
 
+    // ---- 当前目录过滤 -----------------------------------------------------------
+
+    /// <summary>用户点开过滤框就把焦点给它(直接能打字);点收起时焦点留在开关上。程序改开关(切换面板)不抢焦点。</summary>
+    private void OnFilterToggleClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton { IsChecked: true })
+        {
+            FilePaneFilter.FocusWhenShown(FilterBox);
+        }
+    }
+
+    /// <summary>过滤框里:Esc 清空并收起,回车把焦点交回列表(过滤留着)。两者都不外溢到宿主。</summary>
+    private void OnFilterBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is FileBrowserViewModel vm && FilePaneFilter.HandleKey(e, FileList, () => vm.IsFilterOpen = false))
+        {
+            e.Handled = true;
+        }
+    }
+
     private void OnDirectoryChanged(object? sender, EventArgs e)
     {
         Dispatcher.UIThread.Post(
@@ -229,6 +283,7 @@ public partial class FileBrowserView : UserControl
         if (e.ClickCount >= 2)
         {
             AutoFitColumnBySplitterTag(vm, tag);
+            FilePaneLayoutMemory.SaveColumns(vm);
             e.Handled = true;
             return;
         }
@@ -274,6 +329,10 @@ public partial class FileBrowserView : UserControl
         _activeSplitter = null;
         e.Pointer.Capture(null);
         e.Handled = true;
+        if (DataContext is FileBrowserViewModel vm)
+        {
+            FilePaneLayoutMemory.SaveColumns(vm);
+        }
     }
 
     private void AutoFitColumnBySplitterTag(FileBrowserViewModel vm, string tag)

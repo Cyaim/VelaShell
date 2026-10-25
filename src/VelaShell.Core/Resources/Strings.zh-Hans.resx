@@ -945,6 +945,18 @@
   <data name="Sftp_GoUpRemotePane" xml:space="preserve">
     <value>远程栏上一级</value>
   </data>
+  <data name="Sftp_BackLocalPane" xml:space="preserve">
+    <value>本地栏后退 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardLocalPane" xml:space="preserve">
+    <value>本地栏前进 (Alt+→)</value>
+  </data>
+  <data name="Sftp_BackRemotePane" xml:space="preserve">
+    <value>远程栏后退 (Alt+←)</value>
+  </data>
+  <data name="Sftp_ForwardRemotePane" xml:space="preserve">
+    <value>远程栏前进 (Alt+→)</value>
+  </data>
   <data name="Sftp_FollowTerminal" xml:space="preserve">
     <value>跟随终端目录(同步到终端当前路径)</value>
   </data>
@@ -957,8 +969,17 @@
   <data name="Sftp_SearchOpen" xml:space="preserve">
     <value>搜索远端文件…</value>
   </data>
+  <data name="Sftp_FilterToggle" xml:space="preserve">
+    <value>过滤当前目录</value>
+  </data>
+  <data name="Sftp_FilterPlaceholder" xml:space="preserve">
+    <value>按名称过滤</value>
+  </data>
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>在此目录中搜索…</value>
+  </data>
+  <data name="Sftp_OpenTerminalHere" xml:space="preserve">
+    <value>在此处打开终端</value>
   </data>
   <data name="Sftp_SearchTitle" xml:space="preserve">
     <value>搜索远端文件</value>
@@ -7208,6 +7229,27 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Sc_EnterSelectedFolder" xml:space="preserve">
     <value>进入选中的文件夹</value>
   </data>
+  <data name="Sc_RefreshDirectory" xml:space="preserve">
+    <value>刷新当前目录</value>
+  </data>
+  <data name="Sc_RenameSelected" xml:space="preserve">
+    <value>重命名选中的条目</value>
+  </data>
+  <data name="Sc_DeleteSelected" xml:space="preserve">
+    <value>删除选中的条目(先确认)</value>
+  </data>
+  <data name="Sc_FilterClear" xml:space="preserve">
+    <value>清空并收起过滤框</value>
+  </data>
+  <data name="Sc_FilterToList" xml:space="preserve">
+    <value>从过滤框回到文件列表</value>
+  </data>
+  <data name="Sc_NavigateBack" xml:space="preserve">
+    <value>后退到上一个目录</value>
+  </data>
+  <data name="Sc_NavigateForward" xml:space="preserve">
+    <value>前进到后退之前的目录</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve">
     <value>关闭编辑器</value>
   </data>
@@ -7297,6 +7339,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Sc_NoteListFocused" xml:space="preserve">
     <value>仅在列表获得焦点时</value>
+  </data>
+  <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
+    <value>焦点在这一栏里时(输入框除外)</value>
+  </data>
+  <data name="Sc_NoteFilterFocused" xml:space="preserve">
+    <value>仅在过滤框获得焦点时</value>
   </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve">
     <value>应用启用鼠标上报时需要</value>

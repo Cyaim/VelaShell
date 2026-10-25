@@ -48,6 +48,7 @@ computer unless you explicitly enable the optional sync feature described below.
 | The encryption key protecting the above | Generated on your device. On macOS it is kept in the login keychain and on Linux in the Secret Service (gnome-keyring, KWallet and the like); the data folder only holds entry ids. If the system keychain is unavailable it is kept in the data folder (plain, readable only by you). On Windows it is kept in the data folder, bound to your Windows account with DPAPI |
 | Known SSH host keys | Same folder |
 | Saved commands and snippets | Same folder |
+| Window sizes and positions, plus the file panes' column widths and split ratio (one copy for all connections, not part of the settings) | Same folder |
 | Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; templates can travel with the optional cloud sync below, the layout at exit never does) | Same folder |
 | Session logs — raw terminal output, **off by default** | `logs` subfolder, auto-deleted after a retention period you set |
 | Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, when it connected, reason) | `logs` subfolder, auto-deleted after 7 days |
@@ -265,6 +266,7 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 保护上述内容的加密密钥 | 在你的设备上生成。macOS 上存进登录钥匙串,Linux 上存进 Secret Service(gnome-keyring、KWallet 等),数据目录里只留条目编号;系统密钥链用不了时存在数据目录里(明文,仅本人可读)。Windows 上存在数据目录里,以 DPAPI 绑定当前 Windows 用户 |
 | 已知的 SSH 主机密钥 | 同上 |
 | 快捷命令与代码片段 | 同上 |
+| 窗口的尺寸与位置,以及文件栏的列宽与分栏比例(所有连接共用一份,不在设置里) | 同上 |
 | 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码;模板可随下文的可选云同步上传,退出时布局从不上传) | 同上 |
 | 会话日志 —— 终端原始输出,**默认关闭** | `logs` 子目录,按你设定的保留天数自动清理 |
 | 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、连上的时刻、原因) | `logs` 子目录,7 天后自动清理 |

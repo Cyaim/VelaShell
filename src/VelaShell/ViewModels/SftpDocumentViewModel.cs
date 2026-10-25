@@ -210,6 +210,9 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         };
         string localPath = LocalFiles.CurrentPath;
         string remotePath = RemoteFiles.CurrentPath;
+        // 比较的是整个目录:任一栏的过滤框藏着行,结论就会把藏起来的那些说成「只有另一边有」。
+        LocalFiles.FilterText = string.Empty;
+        RemoteFiles.FilterText = string.Empty;
         // 远端栏隐藏了点文件时,本地栏的点文件也不参与 —— 否则每个 .git、.env 都会被标成「只有本地有」。
         bool includeHidden = RemoteFiles.ShowHiddenFiles;
         LocalFileEntry[] localEntries = [.. LocalFiles.Entries.Where(e => !e.IsParentEntry && (includeHidden || !e.Name.StartsWith('.')))];

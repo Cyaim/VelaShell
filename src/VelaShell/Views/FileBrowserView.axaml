@@ -21,6 +21,14 @@
     <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
     </Style>
+    <!-- 后退 / 前进没有历史可走时淡下去(与标签条翻页钮同为 0.35)。命令执行中同样是禁用的,
+         Fluent 给禁用按钮铺的灰底会让它一按就闪一下灰,改成透明。 -->
+    <Style Selector="Button.history-btn.unavailable">
+      <Setter Property="Opacity" Value="0.35" />
+    </Style>
+    <Style Selector="Button.history-btn:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
     <!-- 「跟随终端目录」开关钮:安静图标钮,开启(checked)时图标染强调色;中和 Fluent ToggleButton
          默认选中背景,使外观与其它工具栏图标钮一致(仅颜色区分开/关)。 -->
     <Style Selector="ToggleButton.follow-terminal">
@@ -43,6 +51,29 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
     <Style Selector="ToggleButton.follow-terminal:checked:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <!-- 过滤框开关:与「跟随终端目录」同一种安静的图标开关,展开时图标染强调色。 -->
+    <Style Selector="ToggleButton.pane-toggle">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextTertiary}" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:checked">
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:checked:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
     </Style>
     <Style Selector="Button.col-header">
@@ -243,6 +274,28 @@
                              Data="{StaticResource Icon.terminal}"
                              Foreground="{Binding $parent[ToggleButton].Foreground}" />
             </ToggleButton>
+            <!-- 当前目录过滤:只藏眼前目录里不相干的行(名字含有,不分大小写),不去服务器上找 —— 那是右边的搜索。
+                 框在开关左边,收起即清空;换目录时清空文字、框照旧开着。Esc 清空并收起,回车把焦点交回列表。 -->
+            <TextBox x:Name="FilterBox"
+                     IsVisible="{Binding IsFilterOpen}"
+                     Text="{Binding FilterText}"
+                     PlaceholderText="{loc:Localize Sftp_FilterPlaceholder}"
+                     AutomationProperties.Name="{loc:Localize Sftp_FilterPlaceholder}"
+                     Width="140" Height="22" MinHeight="0" Padding="6,0"
+                     VerticalAlignment="Center" VerticalContentAlignment="Center"
+                     FontFamily="{DynamicResource VelaUiMonoFont}"
+                     FontSize="{DynamicResource VelaFontSize11}"
+                     KeyDown="OnFilterBoxKeyDown" />
+            <ToggleButton x:Name="FilterToggle" Classes="pane-toggle" Width="24" Height="24" Padding="0"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                          IsChecked="{Binding IsFilterOpen}"
+                          Click="OnFilterToggleClick"
+                          ToolTip.Tip="{loc:Localize Sftp_FilterToggle}"
+                          AutomationProperties.Name="{loc:Localize Sftp_FilterToggle}">
+              <pc:LucideIcon Width="13" Height="13"
+                             Data="{StaticResource Icon.list-filter}"
+                             Foreground="{Binding $parent[ToggleButton].Foreground}" />
+            </ToggleButton>
             <!-- 远端搜索(find / grep,经 SSH exec 通道):只在有 SSH 连接的面板上出现,FTP 与插件协议没有 exec。 -->
             <Button Classes="toolbar-btn" Width="24" Height="24" Padding="0"
                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
@@ -284,6 +337,30 @@
                                Data="{StaticResource Icon.eye-off}"
                                Foreground="{DynamicResource VelaTextTertiary}" />
               </Panel>
+            </Button>
+            <!-- 后退 / 前进(Alt+← / Alt+→):挨着上一级摆,三颗导航钮一组;没有历史可走时淡下去。
+                 提示语与读屏名照上一级、刷新的先例,与本地栏那两颗区分开。 -->
+            <Button x:Name="RemoteBackButton"
+                    Classes="toolbar-btn history-btn" Classes.unavailable="{Binding !CanGoBack}"
+                    Width="24" Height="24" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Command="{Binding GoBackCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_BackRemotePane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_BackRemotePane}">
+              <pc:LucideIcon Width="13" Height="13"
+                             Data="{StaticResource Icon.arrow-left}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
+            </Button>
+            <Button x:Name="RemoteForwardButton"
+                    Classes="toolbar-btn history-btn" Classes.unavailable="{Binding !CanGoForward}"
+                    Width="24" Height="24" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Command="{Binding GoForwardCommand}"
+                    ToolTip.Tip="{loc:Localize Sftp_ForwardRemotePane}"
+                    AutomationProperties.Name="{loc:Localize Sftp_ForwardRemotePane}">
+              <pc:LucideIcon Width="13" Height="13"
+                             Data="{StaticResource Icon.arrow-right}"
+                             Foreground="{DynamicResource VelaTextTertiary}" />
             </Button>
             <!-- 上一级:与本地栏一样挨着刷新摆。此前远程栏只能双击「..」行回上级(差距分析 A5)。
                  提示语与读屏名同样要与本地栏那颗区分开。在 / 时命令什么也不做。 -->
@@ -564,6 +641,14 @@
                                  Foreground="{DynamicResource VelaTextTertiary}" />
                 </MenuItem.Icon>
               </MenuItem>
+              <!-- 开一个连同一配置的终端标签,cd 进当前目录;只在 SSH 会话的面板上出现(SFTP 专用配置、FTP、插件协议没有 shell)。 -->
+              <MenuItem Header="{loc:Localize Sftp_OpenTerminalHere}" Command="{Binding OpenTerminalHereCommand}"
+                        IsVisible="{Binding CanOpenTerminalHere}">
+                <MenuItem.Icon>
+                  <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.terminal}"
+                                 Foreground="{DynamicResource VelaTextTertiary}" />
+                </MenuItem.Icon>
+              </MenuItem>
               <Separator />
               <!-- 文件与文件夹合并为一个入口:选择器可混选,文件夹整棵传、文件直接传。 -->
               <MenuItem Header="{loc:Localize UploadHere}" Command="{Binding UploadCommand}">
@@ -652,6 +737,22 @@
                         </MenuItem.IsVisible>
                         <MenuItem.Icon>
                           <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.search}"
+                                         Foreground="{DynamicResource VelaTextTertiary}" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                      <!-- 在这个目录里开终端(cd 进它);只对目录、只在 SSH 会话的面板上出现。 -->
+                      <MenuItem Header="{loc:Localize Sftp_OpenTerminalHere}"
+                                Command="{Binding $parent[ListBox].((vm:FileBrowserViewModel)DataContext).OpenTerminalHereCommand}"
+                                CommandParameter="{Binding FullPath}">
+                        <MenuItem.IsVisible>
+                          <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="IsDirectory" />
+                            <Binding Path="!IsParentEntry" />
+                            <Binding Path="$parent[ListBox].((vm:FileBrowserViewModel)DataContext).CanOpenTerminalHere" />
+                          </MultiBinding>
+                        </MenuItem.IsVisible>
+                        <MenuItem.Icon>
+                          <pc:LucideIcon Width="13" Height="13" Data="{StaticResource Icon.terminal}"
                                          Foreground="{DynamicResource VelaTextTertiary}" />
                         </MenuItem.Icon>
                       </MenuItem>
