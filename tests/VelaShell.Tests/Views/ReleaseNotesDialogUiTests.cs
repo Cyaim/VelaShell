@@ -45,11 +45,11 @@ public sealed class ReleaseNotesDialogUiTests
             Assert.AreEqual(1, source.Calls);
             string body = "## What's Changed\n" + string.Join('\n', Enumerable.Range(0, 200).Select(i => $"* 更新 {i} by @joesdu in #{i}"));
             completion.SetResult(new ReleaseNotes("1.7.1", body, DateTimeOffset.Parse("2026-10-16T03:11:41Z"),
-                "https://github.com/owner/repo/releases/tag/1.7.1"));
+                "https://github.com/joesdu/VelaShell/releases/tag/1.7.1"));
             await WaitUntilAsync(() => dialog.FindControl<ScrollViewer>("NotesScroll")!.IsVisible);
             Assert.AreEqual("1.7.1", dialog.FindControl<SelectableTextBlock>("VersionText")!.Text);
             // 「在 GitHub 上查看」打开的是 API 给的发布页,而不是对话框里另拼的仓库地址。
-            Assert.AreEqual(new Uri("https://github.com/owner/repo/releases/tag/1.7.1"), dialog.ReleaseUri);
+            Assert.AreEqual(new Uri("https://github.com/joesdu/VelaShell/releases/tag/1.7.1"), dialog.ReleaseUri);
             MarkdownRenderer renderer = dialog.FindControl<MarkdownRenderer>("BodyMarkdown")!;
             renderer.SelectAll();
             Assert.Contains("What's Changed", renderer.SelectedText!);
@@ -121,19 +121,22 @@ public sealed class ReleaseNotesDialogUiTests
     });
 
     [TestMethod]
-    [DataRow("https://github.com/owner/repo/releases/tag/v1.7.1", true)]
-    [DataRow("http://github.com/owner/repo/releases/tag/v1.7.1", false)]
-    [DataRow("javascript:alert(1)", false)]
-    [DataRow(null, false)]
-    public Task GitHubButton_OnlyOffersHttpsReleasePage(string? htmlUrl, bool enabled) => _session.RunOnUiAsync(() =>
+    [DataRow("https://github.com/joesdu/VelaShell/releases/tag/v1.7.1", "https://github.com/joesdu/VelaShell/releases/tag/v1.7.1")]
+    [DataRow("https://github.com/owner/repo/releases/tag/v1.7.1", ReleasePage.ReleasesUrl)]
+    [DataRow("http://github.com/joesdu/VelaShell/releases/tag/v1.7.1", ReleasePage.ReleasesUrl)]
+    [DataRow("https://evil.example/joesdu/VelaShell/releases/tag/v1.7.1", ReleasePage.ReleasesUrl)]
+    [DataRow("javascript:alert(1)", ReleasePage.ReleasesUrl)]
+    [DataRow(null, ReleasePage.ReleasesUrl)]
+    public Task GitHubButton_OnlyOpensThisRepositorysReleasePages(string? htmlUrl, string expected) => _session.RunOnUiAsync(() =>
     {
+        // 清单里的链接不是本仓库的发布页时退回本仓库的发布列表:按钮照样能点,只是去不了别处
         var dialog = new ReleaseNotesDialog(new StubSource(_ =>
             Task.FromResult<ReleaseNotes?>(new("v1.7.1", "notes", null, htmlUrl))));
         dialog.Show();
         try
         {
-            Assert.AreEqual(enabled, dialog.FindControl<Button>("GitHubButton")!.IsEnabled);
-            Assert.AreEqual(enabled ? new Uri(htmlUrl!) : null, dialog.ReleaseUri);
+            Assert.IsTrue(dialog.FindControl<Button>("GitHubButton")!.IsEnabled);
+            Assert.AreEqual(new Uri(expected), dialog.ReleaseUri);
         }
         finally
         {
@@ -489,7 +492,7 @@ public sealed class ReleaseNotesDialogUiTests
         updates.CanSelfUpdate.Returns(selfUpdate);
         SettingsViewModel vm = new(Substitute.For<ISettingsService>(), Substitute.For<IThemeService>(), updateService: updates);
         var dialog = new ReleaseNotesDialog(new StubSource(_ => Task.FromResult<ReleaseNotes?>(
-            new("v2.0.0", "notes", HtmlUrl: "https://github.com/owner/repo/releases/tag/v2.0.0", Manifest: manifest))), vm);
+            new("v2.0.0", "notes", HtmlUrl: "https://github.com/joesdu/VelaShell/releases/tag/v2.0.0", Manifest: manifest))), vm);
         dialog.Show();
         try
         {
@@ -498,7 +501,7 @@ public sealed class ReleaseNotesDialogUiTests
             Assert.IsTrue(button.IsEnabled);
             Assert.AreEqual(Strings.Get(selfUpdate && !OperatingSystem.IsLinux()
                 ? "ReleaseNotes_UpdateNow" : "ReleaseNotes_OpenReleasePage"), button.Content);
-            Assert.AreEqual(new Uri("https://github.com/owner/repo/releases/tag/v2.0.0"), dialog.ReleaseUri);
+            Assert.AreEqual(new Uri("https://github.com/joesdu/VelaShell/releases/tag/v2.0.0"), dialog.ReleaseUri);
         }
         finally { dialog.Close(); }
     });

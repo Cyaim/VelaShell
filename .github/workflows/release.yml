@@ -86,7 +86,9 @@ env:
   PROJECT: src/VelaShell/VelaShell.csproj
   # 标签只能经环境变量进入脚本,不能把事件/手动输入拼进 shell 源码。
   TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
-  VERSION_TAG_PATTERN: '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+  # 不放行 SemVer 的构建元数据(+meta):版本号会原样进产物名(VelaShell-1.2.3+build.1-win-x64.zip),
+  # 应用内更新器只收字母、数字与 . - _ 组成的附件名(UpdateManifest),带「+」的那一版永远装不上(#655 复审,维护者 2026-10-25 定)。
+  VERSION_TAG_PATTERN: '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
 
 jobs:
   prepare-release:
@@ -102,6 +104,11 @@ jobs:
         run: |
           set -euo pipefail
           # 白名单同时排除选项注入、路径分隔符、换行和 shell 语法,保留 v 前缀与预发布标签。
+          # 带构建元数据的先单独报:只说「不是合法版本」的话,1.2.3+build.1 在 SemVer 里明明合法,看的人会摸不着头脑
+          if [[ "$TAG_NAME" == *+* ]]; then
+            echo '::error::Release 标签不能带构建元数据(「+」及其后面的部分):版本号会原样进产物名,应用内更新器不收带「+」的附件,这一版永远装不上。去掉「+…」重新打标签,如 v1.2.3 或 v1.2.3-beta.1'
+            exit 1
+          fi
           if [[ ! "$TAG_NAME" =~ $VERSION_TAG_PATTERN ]]; then
             echo '::error::Release 标签必须是合法版本,如 v1.2.3 或 1.2.3-beta.1'
             exit 1
