@@ -6431,7 +6431,7 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
     <value>Double-click a file</value>
   </data>
   <data name="SetTransfer_DoubleClickActionDesc" xml:space="preserve">
-    <value>All three open a local copy and upload it back on every save</value>
+    <value>The built-in editor uploads when you save; the other two upload every save while "Upload automatically after editing" is on</value>
   </data>
   <data name="SetTransfer_DoubleClickSystem" xml:space="preserve">
     <value>System default app</value>
@@ -6446,7 +6446,7 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
     <value>Upload automatically after editing</value>
   </data>
   <data name="SetTransfer_AutoUploadOnEditDesc" xml:space="preserve">
-    <value>Off: the local copy is not watched at all and nothing is sent back</value>
+    <value>Applies to the external editor and the system default app: when off, their local copy is not watched and nothing is sent back. Saving in the built-in editor always uploads</value>
   </data>
   <data name="Sync_Title" xml:space="preserve">
     <value>Synchronize Directories</value>

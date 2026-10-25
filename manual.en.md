@@ -400,9 +400,9 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Entry point and steps:** A remote file's **Open** action follows the built-in opening flow; **Open with default editor** uses the editor in File Transfer settings. Double-click behavior is configurable under remote editing, so it is not always the built-in editor.
 
-- Built-in opening accepts regular files up to 5 MB. It downloads into a dedicated temporary directory. `Ctrl+S` saves and uploads to the original path.
-- For external editing, configure the editor path first. VelaShell downloads a temporary copy, launches the editor, and watches saves according to automatic-upload settings, with approximately 600 ms debounce.
-- Check transfer results before closing the file tab. Closing the document finishes editing-session cleanup before disconnecting.
+- Built-in opening accepts regular files up to 5 MB. It downloads into a dedicated temporary directory. `Ctrl+S` saves and uploads to the original path. Saving always uploads; **Upload automatically after editing** does not apply here.
+- For external editing, configure the editor path first. VelaShell downloads a temporary copy, launches the editor, and watches saves according to **Upload automatically after editing**, with approximately 600 ms debounce. That setting only covers the external editor and the system default app: when it is off, the local copy is not watched and nothing is sent back.
+- Check transfer results before closing the tab. Closing a file tab or a terminal tab first uploads any save still pending in the editing sessions opened from that panel, then disconnects. When a terminal disconnects, its sidebar file panel is torn down and those editing sessions end with it; the connection is already gone, so changes not yet uploaded are kept as a draft with its location shown.
 
 **Result and how it works:** This is a local temporary copy plus remote write-back, not the local editor running on remote storage. An external editor's Save As is not guaranteed to update the original. Disconnection, crashes, permissions, or size limits can prevent upload. Temporary copies can contain sensitive content: built-in editor copies are deleted when the editor closes, and those left by a crash are removed in the background on the next start once untouched for 7 days. When an external-editor upload fails, the draft is **deliberately kept** and its location shown; such drafts are never cleaned up automatically, so delete them yourself once handled.
 
@@ -648,7 +648,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 | Section | Available controls and ranges | Caution |
 | --- | --- | --- |
 | Default Paths | Local download directory, default editor path/browse | Independent dual panes download to the current local directory; defaults are not forced destinations |
-| Remote Editing | Double-click system/built-in/default editor, auto-upload after editing | Saving a local temporary copy can write to production remotely |
+| Remote Editing | Double-click system/built-in/default editor, auto-upload after editing | Saving a local temporary copy can write to production remotely; auto-upload only covers the external editor and system default app, while saving in the built-in editor always uploads |
 | Transfer Behavior | Concurrency 1–16, preserve timestamps, fsync after upload, completion notices | fsync requires server support; higher concurrency is not always faster |
 | Conflict Handling | Ask/overwrite/skip/rename, hidden files, fast recursive deletion, resume, retry failed transfers 0–10 times | Fast deletion requires SSH exec and falls back to SFTP on failure; resume retains partial files; failed-temp cleanup is shown only when resume is disabled; only temporary failures such as disconnects and timeouts are retried |
 | Bandwidth Limits | Enable, upload/download MB/s, 0 unlimited | Limits application transfers, not other server applications |

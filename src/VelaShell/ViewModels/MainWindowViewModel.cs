@@ -3594,9 +3594,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     {
         StopSessionLogging(tab);
 
-        // 会话断开后 SFTP 通道随之失效:驱逐缓存的文件面板并释放 SFTP 客户端。
-        // 重连会拿到新的 SessionId,面板届时按新会话重建。
-        CloseSftpForTab(tab);
+        // 会话断开后 SFTP 通道随之失效:驱逐缓存的文件面板、收掉它开出来的外部编辑会话并释放 SFTP 客户端。
+        // 重连会拿到新的 SessionId,面板届时按新会话重建(旧会话名下的编辑会话不会跟过去)。
+        _ = CloseSftpForTab(tab);
 
         // 不论主动断开还是远端掉线,都把底层 SSH 客户端一并拆掉;
         // 重连会新建会话,不受影响。
@@ -4172,7 +4172,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         StopSessionLogging(tab);
         // 防御性驱逐 SFTP 面板缓存:本路径(连接失败/取消)静默移除文档,不触发
         // DocumentClosed,若标签曾短暂连上过,缓存里的面板会悬挂。幂等,无缓存时空操作。
-        CloseSftpForTab(tab);
+        _ = CloseSftpForTab(tab);
         Layout.RemoveDocument(document);
         if (ReferenceEquals(ActiveTerminalTab, tab))
         {
@@ -6985,8 +6985,11 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         // (会话若已建起就断掉),右下角圆环上那条「连接中」随之熄灭,也不再弹失败提示。
         CancelTabConnect(tab);
         StopSessionLogging(tab);
-        CloseSftpForTab(tab);
+        Task sidebarClosed = CloseSftpForTab(tab);
         await tab.DisposeAsync().ConfigureAwait(true);
+        // 侧栏面板开出来的外部编辑会话要赶在 SSH 断开之前把没传完的那一次传掉(理由同 SFTP 文档标签关闭),
+        // 所以等它收完再拆连接;没有编辑会话时它当场就完成了。
+        await sidebarClosed.ConfigureAwait(true);
         // Dispose 只拆终端传输;底层 SSH 客户端也要断开释放。
         TeardownSshSession(tab.SessionId);
 
@@ -7004,17 +7007,46 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// 拆除正在关闭的标签对应会话的 SFTP 通道,并在浏览器当前绑定到该会话时将面板替换为空白占位。
     /// 面板仍在显示该会话时,取消绑定并隐藏 —— 关闭 SSH 标签不应留下一个活动的、可操作的 SFTP 面板(#22)。
     /// </summary>
-    private void CloseSftpForTab(TerminalTabViewModel tab)
+    /// <remarks>
+    /// 面板驱逐当场做完;返回的任务是收尾的后半段:先收掉这个面板开出来的外部编辑会话
+    /// (<see cref="RemoteEditSessionManager.CloseScopeAsync" />),再拆 SFTP 通道。以前侧栏这一路没人收,
+    /// watcher 一直挂到应用退出,对着的会话早就没了,之后每存一次都换来一次注定失败的上传。
+    /// 标签关闭时调用方等它收完才断 SSH;断线驱逐时连接已经没了,未传的改动照原口径留成草稿并提示位置。
+    /// 任务不会失败(两步各自兜住),不等它的调用方可以直接丢弃。
+    /// </remarks>
+    private Task CloseSftpForTab(TerminalTabViewModel tab)
     {
         if (_sftpService is null || tab.SessionId == Guid.Empty)
         {
-            return;
+            return Task.CompletedTask;
         }
         Guid closedSessionId = tab.SessionId;
 
         // 在拆除 SFTP 通道前先驱逐:使在飞的列举被取消,而非与客户端释放争抢
         // (否则 SSH.NET 会从 ListDirectory 内部抛 NRE)。
         EvictFileBrowser(closedSessionId);
-        _ = _sftpService.CloseSessionAsync(closedSessionId);
+        return CloseSidebarScopeAsync(_sftpService, closedSessionId);
+    }
+
+    /// <summary>侧栏面板的收尾后半段:外部编辑会话 → SFTP 通道,顺序与 SFTP 文档标签关闭相同。</summary>
+    private static async Task CloseSidebarScopeAsync(ISftpService sftp, Guid sessionId)
+    {
+        try
+        {
+            await RemoteEditSessionManager.CloseScopeAsync(sessionId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // 收尾不该挡住拆通道;草稿保不保由各会话自己的 Dispose 决定,这里只留痕。
+            System.Diagnostics.Trace.WriteLine($"[VelaShell] Remote edit scope close failed: {ex.Message}");
+        }
+        try
+        {
+            await sftp.CloseSessionAsync(sessionId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"[VelaShell] SFTP close failed: {ex.Message}");
+        }
     }
 }

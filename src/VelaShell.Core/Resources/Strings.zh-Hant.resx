@@ -6903,7 +6903,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
     <value>按兩下檔案時</value>
   </data>
   <data name="SetTransfer_DoubleClickActionDesc" xml:space="preserve">
-    <value>三種方式都會把本機副本的每次儲存自動傳回伺服器</value>
+    <value>內建編輯器按儲存即傳回伺服器；另外兩種在「編輯後自動上傳」開著時每次儲存自動傳回</value>
   </data>
   <data name="SetTransfer_DoubleClickSystem" xml:space="preserve">
     <value>系統預設程式</value>
@@ -6918,7 +6918,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
     <value>編輯後自動上傳</value>
   </data>
   <data name="SetTransfer_AutoUploadOnEditDesc" xml:space="preserve">
-    <value>關閉後完全不監看本機副本，變更一律不回傳</value>
+    <value>只管外部編輯器與系統預設程式：關閉後不監看它們的本機副本，變更不回傳。內建編輯器按儲存照樣上傳</value>
   </data>
   <data name="Sync_Title" xml:space="preserve">
     <value>目錄同步</value>

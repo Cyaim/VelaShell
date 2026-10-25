@@ -6426,7 +6426,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
     <value>ファイルをダブルクリックしたとき</value>
   </data>
   <data name="SetTransfer_DoubleClickActionDesc" xml:space="preserve">
-    <value>いずれの方法でも、保存するたびにサーバーへ自動でアップロードされます</value>
+    <value>内蔵エディターは保存するとサーバーへ送り返します。ほかの 2 つは「編集後に自動アップロード」がオンのとき、保存するたびに自動で送り返します</value>
   </data>
   <data name="SetTransfer_DoubleClickSystem" xml:space="preserve">
     <value>システム既定のアプリ</value>
@@ -6441,7 +6441,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
     <value>編集後に自動アップロード</value>
   </data>
   <data name="SetTransfer_AutoUploadOnEditDesc" xml:space="preserve">
-    <value>オフの場合はローカルコピーを監視せず、変更を送り返しません</value>
+    <value>外部エディターとシステム既定のアプリが対象です。オフにするとそのローカルコピーを監視せず、変更を送り返しません。内蔵エディターは保存すると常にアップロードします</value>
   </data>
   <data name="Sync_Title" xml:space="preserve">
     <value>ディレクトリ同期</value>
