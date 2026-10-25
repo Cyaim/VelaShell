@@ -192,7 +192,7 @@ docker compose -f docker-compose.test.yml up -d
 | Content | Location |
 | --- | --- |
 | SonnetDB data directory (profiles / groups / settings / known_hosts / history / audit / recordings / plugin data) | `~/.velashell/sonnetdb` |
-| Credential encryption key (AES-256) | `~/.velashell/secret.key` |
+| Credential encryption key (AES-256) | macOS login keychain / Linux Secret Service (the data folder only keeps the entry ids in `~/.velashell/secret.key.ref`); on Windows, and when the system keychain is unavailable, `~/.velashell/secret.key` (bound to your Windows account with DPAPI on Windows), see [manual.en.md](manual.en.md) 17.3 |
 | Session logs (when enabled) and diagnostic logs | `~/.velashell/logs` |
 | Manually installed plugins (`.vpx`) | `~/.velashell/plugins` (first-party plugins live in the app's `plugins/`) |
 | Host self-registration (lets `vela-plugin` find the install) | `~/.velashell/host.json` |

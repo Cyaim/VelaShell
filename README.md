@@ -172,7 +172,7 @@ docker compose -f docker-compose.test.yml up -d
 | 内容 | 位置 |
 | --- | --- |
 | SonnetDB 数据目录（连接 / 分组 / 设置 / known_hosts / 历史 / 审计 / 录制 / 插件数据） | `~/.velashell/sonnetdb` |
-| 凭据加密密钥（AES-256） | `~/.velashell/secret.key` |
+| 凭据加密密钥（AES-256） | macOS 登录钥匙串 / Linux Secret Service（数据目录里只留条目编号 `~/.velashell/secret.key.ref`）；Windows 与系统密钥链用不了时是 `~/.velashell/secret.key`（Windows 上以 DPAPI 绑定当前用户），见 [manual.md](manual.md) 17.3 |
 | 会话日志（开启后）与诊断日志 | `~/.velashell/logs` |
 | 用户手动安装的插件（`.vpx`） | `~/.velashell/plugins`（第一方插件在程序目录的 `plugins/`） |
 | 宿主自登记（供 `vela-plugin` 定位） | `~/.velashell/host.json` |
