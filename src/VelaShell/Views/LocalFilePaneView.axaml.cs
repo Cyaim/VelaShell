@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -106,6 +107,24 @@ public partial class LocalFilePaneView : UserControl
                 vm.DeleteSelectedCommand.Execute().Subscribe(_ => { }, _ => { });
                 e.Handled = true;
                 return;
+        }
+    }
+
+    /// <summary>用户点开过滤框就把焦点给它;程序改开关不抢焦点(与远端栏同一处理,见 FilePaneFilter)。</summary>
+    private void OnFilterToggleClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton { IsChecked: true })
+        {
+            FilePaneFilter.FocusWhenShown(FilterBox);
+        }
+    }
+
+    /// <summary>过滤框里:Esc 清空并收起,回车把焦点交回列表。</summary>
+    private void OnFilterBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is LocalFilePaneViewModel vm && FilePaneFilter.HandleKey(e, FileList, () => vm.IsFilterOpen = false))
+        {
+            e.Handled = true;
         }
     }
 

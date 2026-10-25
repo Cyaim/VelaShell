@@ -399,6 +399,12 @@ public class FileBrowserViewModel : ReactiveObject
         {
             ShowHiddenFiles = true;
         }
+        // 就在当前目录里时不会换目录,过滤条件还在:它挡着那一行的话同样等于没定位。
+        if (_filterText.Length > 0 && _allFiles.Exists(f => string.Equals(f.FullPath, path, StringComparison.Ordinal)
+                                                            && !Files.Contains(f)))
+        {
+            FilterText = string.Empty;
+        }
         if (Files.FirstOrDefault(f => !f.IsParentEntry && string.Equals(f.FullPath, path, StringComparison.Ordinal)) is not { } row)
         {
             return false;
@@ -752,6 +758,59 @@ public class FileBrowserViewModel : ReactiveObject
             }
             this.RaiseAndSetIfChanged(ref field, value);
             RebuildVisibleFiles();
+        }
+    }
+
+    // ---- 当前目录过滤(头部工具条上可收起的过滤框)--------------------------------
+    //
+    // 只过滤显示:按「名字含有」(不分大小写)把不相干的行藏起来,不去服务器上找 —— 那是远端搜索的事。
+    // 藏起来的行不在 Files 里,于是全选、键入定位、下载、删除都只对着看得见的行;
+    // 换目录时清空(收藏、跟随终端、搜索定位进来的也算),免得进了新目录还对着上一个目录的筛选条件。
+
+    private string _filterText = string.Empty;
+
+    /// <summary>过滤框是否展开。收起即清空过滤 —— 收起来的框还在暗中藏行,只会让人以为文件丢了。</summary>
+    public bool IsFilterOpen
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            if (!value)
+            {
+                FilterText = string.Empty;
+            }
+        }
+    }
+
+    /// <summary>过滤框里的文字;空 = 不过滤。</summary>
+    public string FilterText
+    {
+        get => _filterText;
+        set
+        {
+            value ??= string.Empty;
+            if (string.Equals(_filterText, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref _filterText, value);
+            HashSet<string> selected = [.. SelectedFiles.Where(file => !file.IsParentEntry).Select(file => file.FullPath)];
+            RebuildVisibleFiles();
+            RestoreSelection(selected);
+        }
+    }
+
+    /// <summary>换了目录:过滤条件作废,框照旧开着,等着输新的。只清字、不重建,调用方接着会重建可见行。</summary>
+    private void ClearFilterForNewDirectory()
+    {
+        if (_filterText.Length > 0)
+        {
+            this.RaiseAndSetIfChanged(ref _filterText, string.Empty, nameof(FilterText));
         }
     }
 
@@ -1474,6 +1533,7 @@ public class FileBrowserViewModel : ReactiveObject
             if (pathChanged)
             {
                 SelectedFiles.Clear();
+                ClearFilterForNewDirectory();
             }
             RebuildVisibleFiles();
             if (!pathChanged)
@@ -1588,6 +1648,10 @@ public class FileBrowserViewModel : ReactiveObject
     {
         IEnumerable<RemoteFileInfoViewModel> visible =
             RemoteFileSort.ApplyHiddenFilter(_allFiles, ShowHiddenFiles);
+        if (_filterText.Length > 0)
+        {
+            visible = visible.Where(file => file.Name.Contains(_filterText, StringComparison.OrdinalIgnoreCase));
+        }
         var rebuilt = new List<RemoteFileInfoViewModel>();
         if (CurrentPath != "/")
         {

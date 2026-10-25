@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Threading;
@@ -221,7 +222,74 @@ public sealed class FilePaneShortcutUiTests
         });
     }
 
+    // ---- 过滤框 ----
+
+    [TestMethod]
+    public void RemotePane_FilterToggle_OpensAFocusedBox_TypingFilters_EscClearsAndReturnsToTheList()
+    {
+        RunWithRemotePane((window, list, vm, _, _) =>
+        {
+            Control view = list.FindAncestorOfType<FileBrowserView>()!;
+            TextBox box = Named<TextBox>(view, "FilterBox");
+            Assert.IsFalse(box.IsEffectivelyVisible, "过滤框默认收着。");
+
+            Click(window, Named<ToggleButton>(view, "FilterToggle"));
+            PumpWhile(window, () => !box.IsFocused);
+            Assert.IsTrue(vm.IsFilterOpen);
+            Assert.IsTrue(box.IsFocused, "点开就能直接打字。");
+
+            window.KeyTextInput("B.T");
+            Pump(window);
+            Assert.AreSequenceEqual(["..", "b.txt"], [.. vm.Files.Select(f => f.Name)], "名字含有、不分大小写。");
+            Assert.IsEmpty(vm.SelectedFiles, "在过滤框里打的字不是键入定位。");
+
+            Press(window, Key.Escape);
+            PumpWhile(window, () => FocusedItem(window) is null);
+
+            Assert.IsFalse(vm.IsFilterOpen);
+            Assert.AreEqual(string.Empty, vm.FilterText);
+            Assert.AreEqual(1 + 4, list.ItemCount);
+            Assert.IsNotNull(FocusedItem(window), "收起之后焦点回到列表。");
+        });
+    }
+
+    [TestMethod]
+    public void LocalPane_FilterBox_EnterKeepsTheFilter_AndHandsFocusToTheList()
+    {
+        RunWithLocalPane((window, view, list, vm, _) =>
+        {
+            TextBox box = Named<TextBox>(view, "FilterBox");
+            Click(window, Named<ToggleButton>(view, "FilterToggle"));
+            PumpWhile(window, () => !box.IsFocused);
+
+            window.KeyTextInput("a.");
+            Pump(window);
+            Press(window, Key.Delete);   // 在输入框里是删字,不是删文件
+            Press(window, Key.Enter);
+            PumpWhile(window, () => FocusedItem(window) is null);
+
+            Assert.AreEqual("a.", vm.FilterText);
+            Assert.AreSequenceEqual(["a.txt"], [.. vm.Entries.Where(e => !e.IsParentEntry).Select(e => e.Name)]);
+            Assert.IsTrue(vm.IsFilterOpen, "回车只是把焦点交回列表,过滤留着。");
+            Assert.IsNotNull(FocusedItem(window));
+        });
+    }
+
     // ---- 工具 ----
+
+    private static T Named<T>(Control root, string name) where T : Control =>
+        root.GetVisualDescendants().OfType<T>().Single(control => control.Name == name);
+
+    private static object? FocusedItem(Window window) =>
+        (window.FocusManager?.GetFocusedElement() as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext;
+
+    private static void Click(Window window, Control target)
+    {
+        Point center = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(center, MouseButton.Left);
+        window.MouseUp(center, MouseButton.Left);
+        Pump(window);
+    }
 
     private static void FocusRow(Window window, ListBox list, int index)
     {

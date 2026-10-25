@@ -5659,6 +5659,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Sftp_SearchOpen" xml:space="preserve">
     <value>원격 파일 검색…</value>
   </data>
+  <data name="Sftp_FilterToggle" xml:space="preserve">
+    <value>현재 폴더 필터</value>
+  </data>
+  <data name="Sftp_FilterPlaceholder" xml:space="preserve">
+    <value>이름으로 필터</value>
+  </data>
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>이 폴더에서 검색…</value>
   </data>
@@ -6800,6 +6806,12 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Sc_DeleteSelected" xml:space="preserve">
     <value>선택한 항목 삭제(먼저 확인)</value>
   </data>
+  <data name="Sc_FilterClear" xml:space="preserve">
+    <value>필터 상자를 비우고 닫기</value>
+  </data>
+  <data name="Sc_FilterToList" xml:space="preserve">
+    <value>필터 상자에서 파일 목록으로 이동</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>편집기 닫기</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>프로세스 목록 새로 고침</value></data>
   <data name="Sc_EndTask" xml:space="preserve"><value>선택한 프로세스 종료</value></data>
@@ -6832,6 +6844,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Sc_NoteListFocused" xml:space="preserve"><value>목록에 포커스가 있을 때만</value></data>
   <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
     <value>해당 창에 포커스가 있을 때만(입력란 제외)</value>
+  </data>
+  <data name="Sc_NoteFilterFocused" xml:space="preserve">
+    <value>필터 상자에 포커스가 있을 때만</value>
   </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve"><value>앱이 마우스 보고를 사용할 때 필요</value></data>
   <data name="Sc_NoteOptional" xml:space="preserve"><value>설정에서 끌 수 있음</value></data>

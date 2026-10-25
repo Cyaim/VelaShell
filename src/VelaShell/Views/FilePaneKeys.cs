@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace VelaShell.Views;
@@ -61,4 +62,42 @@ internal static class FilePaneKeys
     /// <summary>事件来源是不是在一个输入框里。</summary>
     internal static bool IsInTextBox(object? source) =>
         (source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) is not null;
+}
+
+/// <summary>两栏过滤框共用的焦点与按键处理。</summary>
+internal static class FilePaneFilter
+{
+    /// <summary>过滤框刚显现(还没参与布局,立刻 Focus 会落空):等到 Loaded 优先级再聚焦并全选。</summary>
+    public static void FocusWhenShown(TextBox box) =>
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (box.IsEffectivelyVisible)
+                {
+                    box.Focus();
+                    box.SelectAll();
+                }
+            },
+            DispatcherPriority.Loaded);
+
+    /// <summary>
+    /// 过滤框里的 Esc(清空并收起)与回车(过滤留着,焦点交回列表);处理了返回 true。
+    /// 焦点交回列表要等行重新实现出来(清空过滤会整批换行),所以推迟到 Loaded。
+    /// </summary>
+    /// <param name="e">过滤框收到的按键。</param>
+    /// <param name="list">这一栏的文件列表。</param>
+    /// <param name="close">收起过滤框(连带清空)。</param>
+    public static bool HandleKey(KeyEventArgs e, ListBox list, Action close)
+    {
+        if (e.KeyModifiers != KeyModifiers.None || e.Key is not (Key.Escape or Key.Enter))
+        {
+            return false;
+        }
+        if (e.Key == Key.Escape)
+        {
+            close();
+        }
+        Dispatcher.UIThread.Post(list.FocusSelectedOrFirstRow, DispatcherPriority.Loaded);
+        return true;
+    }
 }

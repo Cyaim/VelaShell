@@ -323,6 +323,11 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
             if (changed)
             {
                 SelectedEntries.Clear();
+                // 换了目录,过滤条件作废(框照旧开着);只清字,下面这次重建就按不过滤来。
+                if (_filterText.Length > 0)
+                {
+                    this.RaiseAndSetIfChanged(ref _filterText, string.Empty, nameof(FilterText));
+                }
             }
             RebuildEntries(listed);
             SyncSelectedRoot(canonical);
@@ -448,6 +453,13 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
             return;
         }
         IsPathEditing = false;
+
+        // 输入的文件就在当前目录里时不会换目录,过滤条件还在;它挡着那个文件就清掉,不然选不中。
+        if (fileName is not null && _filterText.Length > 0
+            && !Entries.Any(entry => !entry.IsParentEntry && string.Equals(entry.Name, fileName, PathComparison)))
+        {
+            FilterText = string.Empty;
+        }
 
         if (fileName is not null
             && Entries.FirstOrDefault(entry => !entry.IsParentEntry && string.Equals(entry.Name, fileName, PathComparison)) is { } file)
@@ -747,12 +759,65 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
         this.RaisePropertyChanged(nameof(NameSortGlyph));
         this.RaisePropertyChanged(nameof(SizeSortGlyph));
         this.RaisePropertyChanged(nameof(ModifiedSortGlyph));
-        RebuildEntries(_entries.Where(entry => !entry.IsParentEntry));
+        // 从完整列举重排,而不是从眼前的行:过滤藏起来的行不在 Entries 里,从那里重排就永远找不回来了。
+        RebuildEntries(_listing);
+    }
+
+    // ---- 当前目录过滤(与远端栏同一口径,见 FileBrowserViewModel.FilterText)----
+
+    /// <summary>当前目录的完整列举(过滤与排序之前),排序与过滤都从它重建可见行。</summary>
+    private List<LocalFileEntry> _listing = [];
+
+    private string _filterText = string.Empty;
+
+    /// <summary>过滤框是否展开。收起即清空过滤。</summary>
+    public bool IsFilterOpen
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref field, value);
+            if (!value)
+            {
+                FilterText = string.Empty;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 过滤框里的文字:按「名字含有」(不分大小写)只过滤显示,空 = 不过滤;换目录时清空。
+    /// 藏起来的行不在 <see cref="Entries" /> 里,全选、上传、删除都只对着看得见的行。
+    /// </summary>
+    public string FilterText
+    {
+        get => _filterText;
+        set
+        {
+            value ??= string.Empty;
+            if (string.Equals(_filterText, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+            this.RaiseAndSetIfChanged(ref _filterText, value);
+            HashSet<string> selected = SelectedEntries
+                .Where(entry => !entry.IsParentEntry)
+                .Select(entry => entry.FullPath)
+                .ToHashSet(PathComparisonComparer);
+            RebuildEntries(_listing);
+            RestoreSelection(selected);
+        }
     }
 
     private void RebuildEntries(IEnumerable<LocalFileEntry> entries)
     {
-        IEnumerable<LocalFileEntry> sorted = entries.Where(entry => !entry.IsParentEntry);
+        _listing = [.. entries.Where(entry => !entry.IsParentEntry)];
+        IEnumerable<LocalFileEntry> sorted = _filterText.Length == 0
+            ? _listing
+            : _listing.Where(entry => entry.Name.Contains(_filterText, StringComparison.OrdinalIgnoreCase));
         IOrderedEnumerable<LocalFileEntry> directories = sorted.OrderByDescending(entry => entry.IsDirectory);
         sorted = SortColumn switch
         {

@@ -904,6 +904,12 @@
   <data name="Sftp_SearchOpen" xml:space="preserve">
     <value>Search remote files…</value>
   </data>
+  <data name="Sftp_FilterToggle" xml:space="preserve">
+    <value>Filter this folder</value>
+  </data>
+  <data name="Sftp_FilterPlaceholder" xml:space="preserve">
+    <value>Filter by name</value>
+  </data>
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>Search in this folder…</value>
   </data>
@@ -6805,6 +6811,12 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
   <data name="Sc_DeleteSelected" xml:space="preserve">
     <value>Delete the selected items (asks first)</value>
   </data>
+  <data name="Sc_FilterClear" xml:space="preserve">
+    <value>Clear and close the filter box</value>
+  </data>
+  <data name="Sc_FilterToList" xml:space="preserve">
+    <value>Go from the filter box back to the file list</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>Close the editor</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>Refresh the process list</value></data>
   <data name="Sc_EndTask" xml:space="preserve"><value>End the selected process</value></data>
@@ -6837,6 +6849,9 @@ A routine key rotation and a hijacked publishing identity look exactly the same 
   <data name="Sc_NoteListFocused" xml:space="preserve"><value>Only while the list has focus</value></data>
   <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
     <value>Only while focus is in that file pane, outside its text boxes</value>
+  </data>
+  <data name="Sc_NoteFilterFocused" xml:space="preserve">
+    <value>Only while the filter box has focus</value>
   </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve"><value>Needed when the app enables mouse reporting</value></data>
   <data name="Sc_NoteOptional" xml:space="preserve"><value>Can be turned off in Settings</value></data>

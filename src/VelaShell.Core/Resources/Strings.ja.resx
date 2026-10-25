@@ -5659,6 +5659,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sftp_SearchOpen" xml:space="preserve">
     <value>リモートファイルを検索…</value>
   </data>
+  <data name="Sftp_FilterToggle" xml:space="preserve">
+    <value>このフォルダーを絞り込む</value>
+  </data>
+  <data name="Sftp_FilterPlaceholder" xml:space="preserve">
+    <value>名前で絞り込み</value>
+  </data>
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>このフォルダーで検索…</value>
   </data>
@@ -6800,6 +6806,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sc_DeleteSelected" xml:space="preserve">
     <value>選択した項目を削除(先に確認)</value>
   </data>
+  <data name="Sc_FilterClear" xml:space="preserve">
+    <value>絞り込み欄をクリアして閉じる</value>
+  </data>
+  <data name="Sc_FilterToList" xml:space="preserve">
+    <value>絞り込み欄からファイル一覧へ戻る</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve"><value>エディターを閉じる</value></data>
   <data name="Sc_RefreshProcesses" xml:space="preserve"><value>プロセス一覧を更新</value></data>
   <data name="Sc_EndTask" xml:space="preserve"><value>選択したプロセスを終了</value></data>
@@ -6832,6 +6844,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Sc_NoteListFocused" xml:space="preserve"><value>一覧にフォーカスがある場合のみ</value></data>
   <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
     <value>そのペインにフォーカスがある場合のみ(入力欄を除く)</value>
+  </data>
+  <data name="Sc_NoteFilterFocused" xml:space="preserve">
+    <value>絞り込み欄にフォーカスがある場合のみ</value>
   </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve"><value>アプリがマウス報告を有効にしている場合に必要</value></data>
   <data name="Sc_NoteOptional" xml:space="preserve"><value>設定でオフにできます</value></data>

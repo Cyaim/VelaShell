@@ -45,6 +45,29 @@
     <Style Selector="ToggleButton.follow-terminal:checked:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
     </Style>
+    <!-- 过滤框开关:与「跟随终端目录」同一种安静的图标开关,展开时图标染强调色。 -->
+    <Style Selector="ToggleButton.pane-toggle">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextTertiary}" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:checked">
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.pane-toggle:checked:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
     <Style Selector="Button.col-header">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -241,6 +264,28 @@
                           AutomationProperties.Name="{loc:Localize Sftp_FollowTerminal}">
               <pc:LucideIcon Width="13" Height="13"
                              Data="{StaticResource Icon.terminal}"
+                             Foreground="{Binding $parent[ToggleButton].Foreground}" />
+            </ToggleButton>
+            <!-- 当前目录过滤:只藏眼前目录里不相干的行(名字含有,不分大小写),不去服务器上找 —— 那是右边的搜索。
+                 框在开关左边,收起即清空;换目录时清空文字、框照旧开着。Esc 清空并收起,回车把焦点交回列表。 -->
+            <TextBox x:Name="FilterBox"
+                     IsVisible="{Binding IsFilterOpen}"
+                     Text="{Binding FilterText}"
+                     PlaceholderText="{loc:Localize Sftp_FilterPlaceholder}"
+                     AutomationProperties.Name="{loc:Localize Sftp_FilterPlaceholder}"
+                     Width="140" Height="22" MinHeight="0" Padding="6,0"
+                     VerticalAlignment="Center" VerticalContentAlignment="Center"
+                     FontFamily="{DynamicResource VelaUiMonoFont}"
+                     FontSize="{DynamicResource VelaFontSize11}"
+                     KeyDown="OnFilterBoxKeyDown" />
+            <ToggleButton x:Name="FilterToggle" Classes="pane-toggle" Width="24" Height="24" Padding="0"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                          IsChecked="{Binding IsFilterOpen}"
+                          Click="OnFilterToggleClick"
+                          ToolTip.Tip="{loc:Localize Sftp_FilterToggle}"
+                          AutomationProperties.Name="{loc:Localize Sftp_FilterToggle}">
+              <pc:LucideIcon Width="13" Height="13"
+                             Data="{StaticResource Icon.list-filter}"
                              Foreground="{Binding $parent[ToggleButton].Foreground}" />
             </ToggleButton>
             <!-- 远端搜索(find / grep,经 SSH exec 通道):只在有 SSH 连接的面板上出现,FTP 与插件协议没有 exec。 -->

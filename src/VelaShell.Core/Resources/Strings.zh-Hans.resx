@@ -957,6 +957,12 @@
   <data name="Sftp_SearchOpen" xml:space="preserve">
     <value>搜索远端文件…</value>
   </data>
+  <data name="Sftp_FilterToggle" xml:space="preserve">
+    <value>过滤当前目录</value>
+  </data>
+  <data name="Sftp_FilterPlaceholder" xml:space="preserve">
+    <value>按名称过滤</value>
+  </data>
   <data name="Sftp_SearchHere" xml:space="preserve">
     <value>在此目录中搜索…</value>
   </data>
@@ -7190,6 +7196,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Sc_DeleteSelected" xml:space="preserve">
     <value>删除选中的条目(先确认)</value>
   </data>
+  <data name="Sc_FilterClear" xml:space="preserve">
+    <value>清空并收起过滤框</value>
+  </data>
+  <data name="Sc_FilterToList" xml:space="preserve">
+    <value>从过滤框回到文件列表</value>
+  </data>
   <data name="Sc_CloseEditor" xml:space="preserve">
     <value>关闭编辑器</value>
   </data>
@@ -7282,6 +7294,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Sc_NoteFilePaneFocused" xml:space="preserve">
     <value>焦点在这一栏里时(输入框除外)</value>
+  </data>
+  <data name="Sc_NoteFilterFocused" xml:space="preserve">
+    <value>仅在过滤框获得焦点时</value>
   </data>
   <data name="Sc_NoteMouseReporting" xml:space="preserve">
     <value>应用启用鼠标上报时需要</value>

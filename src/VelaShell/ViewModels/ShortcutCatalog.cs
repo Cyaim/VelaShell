@@ -348,6 +348,9 @@ public static class ShortcutCatalog
                     Item("Sc_RefreshDirectory", ["F5"], "Sc_NoteFilePaneFocused"),
                     Item("Sc_RenameSelected", ["F2"], "Sc_NoteListFocused"),
                     Item("Sc_DeleteSelected", ["Delete"], "Sc_NoteListFocused"),
+                    // 头部工具条上可收起的过滤框(Views/FilePaneFilter)。
+                    Item("Sc_FilterClear", ["Esc"], "Sc_NoteFilterFocused"),
+                    Item("Sc_FilterToList", ["Enter"], "Sc_NoteFilterFocused"),
                 ]
             ),
             Group("Sc_GroupFileOperations",

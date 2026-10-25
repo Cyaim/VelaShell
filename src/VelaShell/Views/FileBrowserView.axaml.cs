@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -222,6 +223,26 @@ public partial class FileBrowserView : UserControl
         if (DataContext is FileBrowserViewModel { IsPathEditing: true } vm)
         {
             vm.CancelPathEditCommand.Execute().Subscribe(_ => { }, _ => { });
+        }
+    }
+
+    // ---- 当前目录过滤 -----------------------------------------------------------
+
+    /// <summary>用户点开过滤框就把焦点给它(直接能打字);点收起时焦点留在开关上。程序改开关(切换面板)不抢焦点。</summary>
+    private void OnFilterToggleClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton { IsChecked: true })
+        {
+            FilePaneFilter.FocusWhenShown(FilterBox);
+        }
+    }
+
+    /// <summary>过滤框里:Esc 清空并收起,回车把焦点交回列表(过滤留着)。两者都不外溢到宿主。</summary>
+    private void OnFilterBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is FileBrowserViewModel vm && FilePaneFilter.HandleKey(e, FileList, () => vm.IsFilterOpen = false))
+        {
+            e.Handled = true;
         }
     }
 
