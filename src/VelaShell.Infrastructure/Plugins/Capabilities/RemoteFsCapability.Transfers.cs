@@ -731,6 +731,10 @@ internal sealed partial class RemoteFsCapability
         // 撤权优先于其它停止原因,与此前的口径一致:撤权后的到期不再记成到期。
         StopReason reason = op.PermissionRevoked ? StopReason.None : ReadStopReason(op);
         bool stopped = writeStopped && !commitUnknown;
+        // 断线记 Failed / session-disconnected,不记 Cancelled(#656 之前记的是取消):Cancelled 是「有人不要这次传输了」,
+        // 插件与模型按约定不会再发起;断线不是谁的意愿。走到这一分支说明写入已确认停下、提交没发出或被明确拒绝,
+        // 目标确认没被写入(DestinationCommitConfirmedAbsent),重连之后重新上传不会叠加副作用,当作普通失败交还调用方、
+        // 由它决定要不要重试是安全的。提交发出后没等到应答的断线不在这里:那是 commit-unknown / Unknown,不得自动重传。
         RemoteTransferState state = reason == StopReason.Timeout ? RemoteTransferState.TimedOut
             : !stopped ? RemoteTransferState.Unknown
             : op.PermissionRevoked || ex is PluginPermissionDeniedException ? RemoteTransferState.Failed
@@ -803,7 +807,10 @@ internal sealed partial class RemoteFsCapability
         return lifetime.IsCancellationRequested ? StopReason.Disposed : StopReason.Timeout;
     }
 
-    /// <summary>确认停下、又不是授权问题时按停止原因给的错误码;没有停止原因(真失败)时为 null。</summary>
+    /// <summary>
+    /// 确认停下、又不是授权问题时按停止原因给的错误码;没有停止原因(真失败)时为 null。
+    /// session-disconnected 配的终态是 Failed 而不是 Cancelled,理由见 <see cref="FailUpload" />(下载同一口径)。
+    /// </summary>
     private static string? StopCode(StopReason reason) => reason switch
     {
         StopReason.User => "cancelled",

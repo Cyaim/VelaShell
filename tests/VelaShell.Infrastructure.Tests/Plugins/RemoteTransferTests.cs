@@ -1127,6 +1127,10 @@ public sealed partial class RemoteTransferTests
         finally { await WaitIdle(api); File.Delete(file); }
     }
 
+    /// <summary>
+    /// 断线、停用都取消同一个停止令牌,终态按登记的原因分类。确认停写之后的断线是 Failed / session-disconnected,
+    /// 不是 Cancelled:目标确认没写入,重连后重试是安全的,不该被当成「用户不要了」而不再发起。
+    /// </summary>
     [TestMethod]
     [DataRow("disconnect", RemoteTransferState.Failed, "session-disconnected")]
     [DataRow("dispose", RemoteTransferState.Cancelled, "plugin-stopped")]
@@ -1157,6 +1161,43 @@ public sealed partial class RemoteTransferTests
             Assert.IsTrue(done.DestinationCommitConfirmedAbsent);
         }
         finally { await WaitIdle(api); File.Delete(file); }
+    }
+
+    /// <summary>
+    /// 断线的另一种结局:提交已经发出、应答还没到时断线 —— 服务端可能已经改了名,目标是否写入无从确认,
+    /// 记 Unknown / commit-unknown,不能与「写入确认停下、目标确认没写入」的 Failed / session-disconnected(可安全重试,
+    /// 见上一条)混为一谈,也不清临时文件。
+    /// </summary>
+    [TestMethod]
+    public async Task DisconnectWhileCommitIsOutstandingIsUnknownNotARetryableFailure()
+    {
+        string file = CreateFile(8);
+        var committing = NewSignal();
+        var reply = NewSignal();
+        string? hash = null;
+        _sftp.UploadStreamAsync(_session, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(),
+            Arg.Any<IProgress<TransferProgress>>(), 0, Arg.Any<CancellationToken>()).Returns(async call =>
+            { hash = Convert.ToHexString(await SHA256.HashDataAsync(call.ArgAt<Stream>(1))); });
+        _sftp.ComputeSha256Async(_session, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?> { [call.ArgAt<IReadOnlyList<string>>(1)[0]] = hash }));
+        _sftp.CommitUploadAsync(_session, Arg.Any<string>(), "/target", false, Arg.Any<CancellationToken>())
+            .Returns(async _ => { committing.TrySetResult(); await reply.Task; });
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: AllowUploads()) { StopGracePeriod = UncooperativeGrace };
+        try
+        {
+            var start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "disconnect-commit" });
+            await committing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            _connections.SessionDisconnected += Raise.Event<Action<SshSession>>(_connections.GetSession(_session)!);
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual(RemoteTransferState.Unknown, done.State, done.ErrorMessage);
+            Assert.AreEqual("commit-unknown", done.ErrorCode);
+            Assert.IsFalse(done.RemoteStopConfirmed);
+            Assert.IsFalse(done.DestinationCommitConfirmedAbsent);
+            reply.TrySetResult();
+            await WaitIdle(api);
+            await _sftp.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IProgress<SftpDeleteProgress>>(), Arg.Any<CancellationToken>());
+        }
+        finally { reply.TrySetResult(); await WaitIdle(api); File.Delete(file); }
     }
 
     [TestMethod]

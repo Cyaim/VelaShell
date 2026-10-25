@@ -193,7 +193,8 @@ internal sealed partial class RemoteFsCapability
             }
             // 后端自己的失败原因比「等待被打断」有用。
             Exception cause = downloadWrite is { IsFaulted: true } ? downloadWrite.Exception!.InnerException ?? ex : ex;
-            // 撤权优先于其它停止原因;断线、停用不再被推断成到期或用户取消。
+            // 撤权优先于其它停止原因;断线、停用不再被推断成到期或用户取消。确认停写、临时文件清掉了的断线记
+            // Failed / session-disconnected 而不是 Cancelled:本地目标确认没被提交,重连后重新下载是安全的(与上传同一口径,见 FailUpload)。
             StopReason reason = op.PermissionRevoked ? StopReason.None : ReadStopReason(op);
             RemoteTransferState state = committed ? RemoteTransferState.Unknown : reason == StopReason.Timeout ? RemoteTransferState.TimedOut
                 : !cleaned ? RemoteTransferState.Unknown : op.PermissionRevoked || ex is PluginPermissionDeniedException ? RemoteTransferState.Failed
