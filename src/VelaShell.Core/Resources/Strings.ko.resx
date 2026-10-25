@@ -58,6 +58,9 @@
   <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
     <value>연결 설정 삭제</value>
   </data>
+  <data name="AuditLog_ActionProfilesUngrouped" xml:space="preserve">
+    <value>연결 설정을 그룹 없음으로 이동</value>
+  </data>
   <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
     <value>설정 변경</value>
   </data>
@@ -121,6 +124,9 @@
   <data name="AuditLog_ColProfileId" xml:space="preserve">
     <value>연결 설정 ID</value>
   </data>
+  <data name="AuditLog_ColSource" xml:space="preserve">
+    <value>출처</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>{0}건</value>
   </data>
@@ -132,6 +138,9 @@
   </data>
   <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
     <value>연결 {0}개에서 사용 중</value>
+  </data>
+  <data name="AuditLog_DetailProfilesUngrouped" xml:space="preserve">
+    <value>그룹 「{0}」 삭제, 연결 설정 {1}개를 그룹 없음으로 이동</value>
   </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>조건에 맞는 기록이 없습니다.</value>
@@ -186,6 +195,18 @@
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>호스트, 세션 또는 상세 내용 검색</value>
+  </data>
+  <data name="AuditLog_SourceLocal" xml:space="preserve">
+    <value>로컬 편집</value>
+  </data>
+  <data name="AuditLog_SourceCloudSync" xml:space="preserve">
+    <value>클라우드 동기화</value>
+  </data>
+  <data name="AuditLog_SourceImport" xml:space="preserve">
+    <value>가져오기</value>
+  </data>
+  <data name="AuditLog_SourceLoginPrompt" xml:space="preserve">
+    <value>로그인 창</value>
   </data>
   <data name="AuditLog_Title" xml:space="preserve">
     <value>감사 로그</value>

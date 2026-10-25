@@ -647,6 +647,10 @@ public sealed class GistSyncService(
         IsApplyingRemote = true;
         try
         {
+            // 这一段落的盘在审计里记成「云同步」(含恢复历史版本)。用来源作用域而不是 IsApplyingRemote:
+            // 同步在后台跑的同时用户手改的那一条不在这条异步流程里,仍记成本机编辑。
+            // 只罩住应用载荷这一段 —— 之后的 ProfilesApplied 通知里界面做的事不算同步带来的。
+            using IDisposable source = AuditSourceScope.Enter(AuditSources.CloudSync);
             if (config.SyncAppSettings && payload.Settings is not null)
             {
                 // 设备本地字段(窗口尺寸/开机自启/本机路径等)保留本机现值,其余采用云端。

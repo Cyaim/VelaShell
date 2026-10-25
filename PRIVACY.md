@@ -48,7 +48,7 @@ computer unless you explicitly enable the optional sync feature described below.
 | Session logs — raw terminal output, **off by default** | `logs` subfolder, auto-deleted after a retention period you set |
 | Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, when it connected, reason) | `logs` subfolder, auto-deleted after 7 days |
 | Transfer records — one line per upload or download (local path, remote path, result; on by default, Settings → File transfer) — plus the external-editing log (`remote-edit.log`), the VcXsrv log (`vcxsrv.log`, Windows only) and each plugin's own log | `logs` subfolder (the transfer-record folder can be changed); transfer records are deleted after the retention period you set, `remote-edit.log` starts over at 1 MB, plugin logs rotate once at 1 MB |
-| Audit log — connection results (`user@host:port`), host-key decisions, external logins, and changes to connection profiles (name and `user@host:port`), settings and shared credentials: which part changed, never passwords or setting values | `~/.velashell`; records older than the retention period you set (default 180 days) are deleted at startup |
+| Audit log — connection results (`user@host:port`), host-key decisions, external logins, and changes to connection profiles (name and `user@host:port`), settings and shared credentials: which part changed and where the change came from (local edit, cloud sync, import, login prompt), never passwords or setting values | `~/.velashell`; records older than the retention period you set (default 180 days) are deleted at startup |
 | Offline IP geolocation database, if you add one | `geoip` subfolder |
 | Plugins you manually install | `~/.velashell/plugins` |
 
@@ -234,7 +234,7 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 会话日志 —— 终端原始输出,**默认关闭** | `logs` 子目录,按你设定的保留天数自动清理 |
 | 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、连上的时刻、原因) | `logs` 子目录,7 天后自动清理 |
 | 传输记录 —— 每次上传、下载一行(本机路径、远端路径、结果;默认开,设置 → 文件传输),以及外部编辑日志(`remote-edit.log`)、VcXsrv 日志(`vcxsrv.log`,仅 Windows)与各插件自己的日志 | `logs` 子目录(传输记录的目录可改);传输记录按你设定的保留天数清理,`remote-edit.log` 满 1 MB 重写,插件日志满 1 MB 轮转一份 |
-| 审计日志 —— 连接成败(`用户@主机:端口`)、主机指纹的裁决、外部拉起的登录,以及连接配置(名称与 `用户@主机:端口`)、设置、共享凭据的改动:只记改了哪一块,不记密码与设置的值 | `~/.velashell`;启动时删掉超过保留期(默认 180 天,可设)的记录 |
+| 审计日志 —— 连接成败(`用户@主机:端口`)、主机指纹的裁决、外部拉起的登录,以及连接配置(名称与 `用户@主机:端口`)、设置、共享凭据的改动:只记改了哪一块与改动的来源(本机编辑、云同步、导入、登录框),不记密码与设置的值 | `~/.velashell`;启动时删掉超过保留期(默认 180 天,可设)的记录 |
 | 离线 IP 归属地数据库(如果你添加了) | `geoip` 子目录 |
 | 你手动安装的插件 | `~/.velashell/plugins` |
 

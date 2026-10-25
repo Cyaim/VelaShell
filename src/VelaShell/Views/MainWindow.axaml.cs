@@ -1768,6 +1768,8 @@ public partial class MainWindow : Window
         {
             try
             {
+                // 审计里记成「登录框」:改的是 N 条连接共用的凭据,事后要分得清是登录时顺手存的还是在设置页改的。
+                using IDisposable source = AuditSourceScope.Enter(AuditSources.LoginPrompt);
                 await repository.SaveAsync(updated);
             }
             catch (Exception ex) when (ex is IOException or InvalidOperationException)

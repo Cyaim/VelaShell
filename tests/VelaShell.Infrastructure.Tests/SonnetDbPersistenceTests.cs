@@ -1,3 +1,6 @@
+using SonnetDB.Catalog;
+using SonnetDB.Model;
+using SonnetDB.Storage.Format;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
@@ -728,6 +731,60 @@ public sealed class SonnetDbPersistenceTests : IDisposable
         Assert.AreSequenceEqual(["d16", "d14", "d12", "d10"], [.. connections.Select(e => e.Detail)]);
 
         Assert.IsEmpty(await service.QueryAsync(100, "x' OR '1'='1"));
+    }
+
+    /// <summary>来源一列原样存取;没写来源的记录(连接、安全两类)读回来是 null。</summary>
+    [TestMethod]
+    public async Task AuditLog_Source_RoundTrips()
+    {
+        var service = new SonnetDbAuditLogService(_engine);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        await service.WriteAsync(new() { Timestamp = now.AddMinutes(-2), Category = "connection", Action = "connect", Detail = "no-source" });
+        await service.WriteAsync(new() { Timestamp = now.AddMinutes(-1), Category = "profile", Action = "profile-updated", Detail = "synced", Source = AuditSources.CloudSync });
+
+        List<AuditEntry> entries = await service.QueryAsync(10);
+
+        Assert.AreEqual(AuditSources.CloudSync, entries.Single(e => e.Detail == "synced").Source);
+        Assert.IsNull(entries.Single(e => e.Detail == "no-source").Source);
+    }
+
+    /// <summary>
+    /// 老库的 audit_log 建表时没有 source 一列:在第一条带来源的记录写进来之前,查询不能因为点名未知列而报错;
+    /// 写进来之后(SonnetDB 自动补列)新记录带着来源、旧记录为 null,重开库之后照样。
+    /// </summary>
+    [TestMethod]
+    public async Task AuditLog_DatabaseCreatedBeforeTheSourceColumn_KeepsWorking()
+    {
+        string root = Path.Combine(_testDirectory, "legacy-audit");
+        var legacySchema = MeasurementSchema.Create(SonnetDbEngine.AuditLogMeasurement,
+        [
+            new("category", MeasurementColumnRole.Tag, FieldType.String),
+            new("action", MeasurementColumnRole.Tag, FieldType.String),
+            new("profile_id", MeasurementColumnRole.Tag, FieldType.String),
+            new("detail", MeasurementColumnRole.Field, FieldType.String)
+        ]);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        using (var engine = new SonnetDbEngine(root))
+        {
+            // 换成加 source 之前的那份表结构,模拟升级前就有的库。
+            await engine.DropMeasurementAsync(SonnetDbEngine.AuditLogMeasurement);
+            await engine.EnsureMeasurementAsync(legacySchema);
+            Assert.IsNull((await engine.GetMeasurementAsync(SonnetDbEngine.AuditLogMeasurement))!.TryGetColumn(SonnetDbAuditLogService.SourceColumn));
+            var service = new SonnetDbAuditLogService(engine);
+            await service.WriteAsync(new() { Timestamp = now.AddMinutes(-2), Category = "profile", Action = "profile-updated", Detail = "old" });
+
+            Assert.IsNull((await service.QueryAsync(10)).Single().Source, "还没有 source 一列时照常查得出来");
+
+            await service.WriteAsync(new() { Timestamp = now.AddMinutes(-1), Category = "profile", Action = "profile-updated", Detail = "new", Source = AuditSources.Import });
+            List<AuditEntry> both = await service.QueryAsync(10);
+            Assert.AreSequenceEqual([AuditSources.Import, null], [.. both.Select(e => e.Source)]);
+        }
+        using (var reopened = new SonnetDbEngine(root))
+        {
+            List<AuditEntry> entries = await new SonnetDbAuditLogService(reopened).QueryAsync(10);
+            Assert.AreSequenceEqual(["new", "old"], [.. entries.Select(e => e.Detail)]);
+            Assert.AreEqual(AuditSources.Import, entries[0].Source, "补上的列随库持久化");
+        }
     }
 
     [TestMethod]

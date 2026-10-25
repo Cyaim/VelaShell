@@ -39,6 +39,8 @@ internal static class SessionImportWriter
             return new SessionImportOutcome { Imported = 0, PasswordsRecovered = 0, GroupId = null };
         }
 
+        // 这一批落的盘在审计里记成「导入」(Xshell / WinSCP / ssh_config 都经过这里)。
+        using IDisposable source = AuditSourceScope.Enter(AuditSources.Import);
         List<ServerGroup> groups = await repository.GetAllGroupsAsync().ConfigureAwait(false);
         int nextSort = groups.Count == 0 ? 0 : groups.Max(static g => g.SortOrder) + 1;
         var group = new ServerGroup

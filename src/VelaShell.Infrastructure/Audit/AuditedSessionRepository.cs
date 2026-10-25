@@ -1,6 +1,7 @@
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
+using VelaShell.Core.Resources;
 
 namespace VelaShell.Infrastructure.Audit;
 
@@ -68,8 +69,28 @@ public sealed class AuditedSessionRepository(ISessionRepository inner, IAuditLog
     /// <inheritdoc />
     public Task SaveGroupAsync(ServerGroup group) => _inner.SaveGroupAsync(group);
 
-    /// <inheritdoc />
-    public Task DeleteGroupAsync(Guid id) => _inner.DeleteGroupAsync(id);
+    /// <summary>删除分组;组里还剩配置时(它们被仓储移回未分组)记一条汇总。</summary>
+    /// <remarks>
+    /// 移回未分组是仓储内部的批量改写,不经 <see cref="SaveSessionAsync" />,逐条的「修改连接配置」记不到它。
+    /// 这里只在删除前数一下、删完记一条「N 条配置移回未分组」(带分组名),而不是每条配置各记一条:
+    /// 那几条配置本身只是分组没了,一次删除就是一件事。会话树里删分组会先删掉组内的连接(那几次删除各有记录),
+    /// 走到这里时组里通常已经空了,这时不记。
+    /// </remarks>
+    public async Task DeleteGroupAsync(Guid id)
+    {
+        if (auditLog is null)
+        {
+            await _inner.DeleteGroupAsync(id).ConfigureAwait(false);
+            return;
+        }
+        (int members, string? groupName) = await CountMembersAsync(id).ConfigureAwait(false);
+        await _inner.DeleteGroupAsync(id).ConfigureAwait(false);
+        if (members > 0)
+        {
+            await ConfigAudit.WriteAsync(auditLog, AuditCategories.Profile, AuditActions.ProfilesUngrouped, null,
+                Strings.Format("AuditLog_DetailProfilesUngrouped", groupName ?? id.ToString("D"), members)).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>改了哪几块(资源键,按 名称 → 地址 → 登录凭据 → 其他 的顺序);一块都没改时为空。</summary>
     internal static List<string> ChangedAreas(SessionProfile before, SessionProfile after)
@@ -140,6 +161,28 @@ public sealed class AuditedSessionRepository(ISessionRepository inner, IAuditLog
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return (false, null);
+        }
+    }
+
+    /// <summary>
+    /// 这个分组里此刻有几条配置、分组叫什么;读不出来按 0 条算(宁可少记这条汇总,也不让删除失败)。
+    /// </summary>
+    private async Task<(int Members, string? GroupName)> CountMembersAsync(Guid groupId)
+    {
+        try
+        {
+            List<SessionProfile> profiles = await _inner.GetAllSessionsAsync().ConfigureAwait(false);
+            int members = profiles.Count(p => p.GroupId == groupId);
+            if (members == 0)
+            {
+                return (0, null);
+            }
+            List<ServerGroup> groups = await _inner.GetAllGroupsAsync().ConfigureAwait(false);
+            return (members, groups.FirstOrDefault(g => g.Id == groupId)?.Name);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return (0, null);
         }
     }
 

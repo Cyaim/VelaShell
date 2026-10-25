@@ -19,6 +19,12 @@ public class AuditEntry
 
     /// <summary>人类可读的详情。</summary>
     public string Detail { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 改动从哪来(<see cref="AuditSources" />):配置类记录(连接配置、设置、共享凭据)才有,
+    /// 写入那一刻取 <see cref="AuditSourceScope.Current" />;连接与安全两类、以及加这一栏之前的旧记录为 null。
+    /// </summary>
+    public string? Source { get; set; }
 }
 
 /// <summary>审计日志的类别(<see cref="AuditEntry.Category" />)。</summary>
@@ -51,6 +57,9 @@ public static class AuditActions
 
     /// <summary>删了一条连接配置。</summary>
     public const string ProfileDeleted = "profile-deleted";
+
+    /// <summary>删了一个分组,组里还剩的配置被移回未分组(一次删除一条汇总,详情带分组名与条数)。</summary>
+    public const string ProfilesUngrouped = "profiles-ungrouped";
 
     /// <summary>设置变了(详情是变了的分类)。</summary>
     public const string SettingsChanged = "settings-changed";

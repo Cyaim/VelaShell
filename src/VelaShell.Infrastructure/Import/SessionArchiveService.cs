@@ -113,6 +113,8 @@ public sealed class SessionArchiveService(
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(options);
         SessionImportWriteSet writes = SessionImportPlanner.BuildWrites(plan, options);
+        // 这一批落的盘(凭据、连接)在审计里记成「导入」。
+        using IDisposable source = AuditSourceScope.Enter(AuditSources.Import);
 
         // 落盘顺序:凭据 → 分组 → 连接 → 隧道。连接引用前两者,反过来的话中途失败会留下一批
         // GroupId 指向不存在分组的连接 —— 资源管理器建树时找不到分组,它们就凭空消失了。

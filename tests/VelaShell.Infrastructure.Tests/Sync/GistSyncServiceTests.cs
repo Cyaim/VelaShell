@@ -179,6 +179,53 @@ public sealed class GistSyncServiceTests
     }
 
     /// <summary>
+    /// 应用载荷时落的盘(设置、分组、凭据、连接)都在「云同步」来源作用域里,审计据此记来源;
+    /// 应用完退出作用域 —— 之后的 ProfilesApplied 通知里界面做的事不算同步带来的。
+    /// </summary>
+    [TestMethod]
+    public async Task Pull_AppliesThePayloadInsideTheCloudSyncSourceScope()
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        ISessionRepository sessions = Substitute.For<ISessionRepository>();
+        ISharedCredentialRepository credentials = Substitute.For<ISharedCredentialRepository>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        sessions.GetAllSessionsAsync().Returns([]);
+        credentials.GetAllAsync().Returns([]);
+        var seen = new List<string>();
+        settings.When(s => s.SaveSettingsAsync(Arg.Any<AppSettings>())).Do(_ => seen.Add("settings:" + AuditSourceScope.Current));
+        sessions.When(s => s.SaveGroupAsync(Arg.Any<ServerGroup>())).Do(_ => seen.Add("group:" + AuditSourceScope.Current));
+        credentials.When(c => c.SaveAsync(Arg.Any<SharedCredential>())).Do(_ => seen.Add("credential:" + AuditSourceScope.Current));
+        sessions.When(s => s.ReplaceSessionAsync(Arg.Any<SessionProfile>())).Do(_ => seen.Add("profile:" + AuditSourceScope.Current));
+        var service = new GistSyncService(settings, sessions, Substitute.For<IAppDataStore>(), Substitute.For<IQuickCommandRepository>(),
+            Substitute.For<ISecretProtector>(), sharedCredentials: credentials);
+        string? notifiedUnder = null;
+        service.ProfilesApplied += (_, _) => notifiedUnder = AuditSourceScope.Current;
+
+        SyncResult result = await service.ApplyRemoteAsync(
+            new SyncSettings { SyncAppSettings = true, SyncProfiles = true, SyncSnippets = false },
+            new SyncEnvelope
+            {
+                SchemaVersion = 3,
+                Payload = new SyncPayload
+                {
+                    SchemaVersion = 3,
+                    Settings = new AppSettings(),
+                    Groups = [new ServerGroup { Name = "g" }],
+                    SharedCredentials = [new SharedCredential { Name = "c" }],
+                    Profiles = [new SessionProfile { Name = "p", Host = "h", DirectoryBookmarks = [] }]
+                }
+            },
+            remoteVersion: "rev",
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Message);
+        string sync = AuditSources.CloudSync;
+        Assert.AreSequenceEqual([$"settings:{sync}", $"group:{sync}", $"credential:{sync}", $"profile:{sync}"], seen);
+        Assert.AreEqual(AuditSources.Local, notifiedUnder);
+        Assert.AreEqual(AuditSources.Local, AuditSourceScope.Current);
+    }
+
+    /// <summary>
     /// 旧版本客户端推上去的载荷没有 <c>directoryBookmarks</c> 字段:拉下来不能当成「收藏清空了」整条覆盖,
     /// 而要走保留库里现存收藏的 <see cref="ISessionRepository.SaveSessionAsync" />。
     /// </summary>

@@ -46,6 +46,9 @@
   <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
     <value>Profile deleted</value>
   </data>
+  <data name="AuditLog_ActionProfilesUngrouped" xml:space="preserve">
+    <value>Profiles moved to Ungrouped</value>
+  </data>
   <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
     <value>Settings changed</value>
   </data>
@@ -109,6 +112,9 @@
   <data name="AuditLog_ColProfileId" xml:space="preserve">
     <value>Profile ID</value>
   </data>
+  <data name="AuditLog_ColSource" xml:space="preserve">
+    <value>Source</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>{0} records</value>
   </data>
@@ -120,6 +126,9 @@
   </data>
   <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
     <value>used by {0} connection(s)</value>
+  </data>
+  <data name="AuditLog_DetailProfilesUngrouped" xml:space="preserve">
+    <value>group “{0}” deleted, {1} profile(s) moved to Ungrouped</value>
   </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>No matching records.</value>
@@ -174,6 +183,18 @@
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>Search host, session or detail</value>
+  </data>
+  <data name="AuditLog_SourceLocal" xml:space="preserve">
+    <value>Local edit</value>
+  </data>
+  <data name="AuditLog_SourceCloudSync" xml:space="preserve">
+    <value>Cloud sync</value>
+  </data>
+  <data name="AuditLog_SourceImport" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="AuditLog_SourceLoginPrompt" xml:space="preserve">
+    <value>Login prompt</value>
   </data>
   <data name="AuditLog_Title" xml:space="preserve">
     <value>Audit log</value>

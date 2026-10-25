@@ -58,6 +58,9 @@
   <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
     <value>接続設定を削除</value>
   </data>
+  <data name="AuditLog_ActionProfilesUngrouped" xml:space="preserve">
+    <value>接続設定を未分類に戻す</value>
+  </data>
   <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
     <value>設定を変更</value>
   </data>
@@ -121,6 +124,9 @@
   <data name="AuditLog_ColProfileId" xml:space="preserve">
     <value>接続設定 ID</value>
   </data>
+  <data name="AuditLog_ColSource" xml:space="preserve">
+    <value>発生元</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>{0} 件</value>
   </data>
@@ -132,6 +138,9 @@
   </data>
   <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
     <value>{0} 件の接続が使用中</value>
+  </data>
+  <data name="AuditLog_DetailProfilesUngrouped" xml:space="preserve">
+    <value>グループ「{0}」を削除、{1} 件の接続設定を未分類に戻しました</value>
   </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>条件に合う記録はありません。</value>
@@ -186,6 +195,18 @@
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>ホスト・セッション・詳細を検索</value>
+  </data>
+  <data name="AuditLog_SourceLocal" xml:space="preserve">
+    <value>ローカル編集</value>
+  </data>
+  <data name="AuditLog_SourceCloudSync" xml:space="preserve">
+    <value>クラウド同期</value>
+  </data>
+  <data name="AuditLog_SourceImport" xml:space="preserve">
+    <value>インポート</value>
+  </data>
+  <data name="AuditLog_SourceLoginPrompt" xml:space="preserve">
+    <value>認証ダイアログ</value>
   </data>
   <data name="AuditLog_Title" xml:space="preserve">
     <value>監査ログ</value>

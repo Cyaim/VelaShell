@@ -150,6 +150,9 @@
   <data name="AuditLog_ActionProfileDeleted" xml:space="preserve">
     <value>刪除連線設定</value>
   </data>
+  <data name="AuditLog_ActionProfilesUngrouped" xml:space="preserve">
+    <value>連線設定移回未分組</value>
+  </data>
   <data name="AuditLog_ActionSettingsChanged" xml:space="preserve">
     <value>設定變更</value>
   </data>
@@ -213,6 +216,9 @@
   <data name="AuditLog_ColProfileId" xml:space="preserve">
     <value>設定 Id</value>
   </data>
+  <data name="AuditLog_ColSource" xml:space="preserve">
+    <value>來源</value>
+  </data>
   <data name="AuditLog_Count" xml:space="preserve">
     <value>共 {0} 筆</value>
   </data>
@@ -224,6 +230,9 @@
   </data>
   <data name="AuditLog_DetailCredentialUsers" xml:space="preserve">
     <value>{0} 條連線在用</value>
+  </data>
+  <data name="AuditLog_DetailProfilesUngrouped" xml:space="preserve">
+    <value>分組「{0}」已刪除,{1} 條連線設定移回未分組</value>
   </data>
   <data name="AuditLog_Empty" xml:space="preserve">
     <value>沒有符合條件的紀錄。</value>
@@ -278,6 +287,18 @@
   </data>
   <data name="AuditLog_SearchPlaceholder" xml:space="preserve">
     <value>搜尋主機、工作階段或詳情</value>
+  </data>
+  <data name="AuditLog_SourceLocal" xml:space="preserve">
+    <value>本機編輯</value>
+  </data>
+  <data name="AuditLog_SourceCloudSync" xml:space="preserve">
+    <value>雲端同步</value>
+  </data>
+  <data name="AuditLog_SourceImport" xml:space="preserve">
+    <value>匯入</value>
+  </data>
+  <data name="AuditLog_SourceLoginPrompt" xml:space="preserve">
+    <value>登入框</value>
   </data>
   <data name="AuditLog_Title" xml:space="preserve">
     <value>稽核日誌</value>
