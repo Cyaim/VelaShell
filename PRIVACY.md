@@ -45,7 +45,7 @@ computer unless you explicitly enable the optional sync feature described below.
 | --- | --- |
 | Connection profiles (host, port, username), groups, and settings | `~/.velashell` |
 | Passwords and private-key passphrases you choose to save, including those of shared credentials (one username and password / key reused by many connections) and the network proxy password in your settings | Same folder, encrypted with AES-256 |
-| The encryption key protecting the above | Same folder, generated on your device |
+| The encryption key protecting the above | Generated on your device. On macOS it is kept in the login keychain and on Linux in the Secret Service (gnome-keyring, KWallet and the like); the data folder only holds entry ids. If the system keychain is unavailable it is kept in the data folder (plain, readable only by you). On Windows it is kept in the data folder, bound to your Windows account with DPAPI |
 | Known SSH host keys | Same folder |
 | Saved commands and snippets | Same folder |
 | Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; templates can travel with the optional cloud sync below, the layout at exit never does) | Same folder |
@@ -66,7 +66,9 @@ OpenSSH, Git, and other tools work without being duplicated. These files are rea
 written to on your device only.
 
 You can delete all of this at any time by removing the corresponding folder, or by using the
-in-app controls under Settings or Plugin Manager.
+in-app controls under Settings or Plugin Manager. The encryption key kept in the macOS keychain or
+the Linux Secret Service is not inside that folder: VelaShell only reads and writes the entries it
+created there, and you can delete them in Keychain Access or Seahorse (search for VelaShell).
 
 ### Network connections
 
@@ -171,8 +173,10 @@ The only third parties that can receive anything are those you direct it to:
 ### Security
 
 Saved passwords and passphrases are encrypted with AES-256 using a key generated on and stored
-on your device. Optional sync payloads can additionally be end-to-end encrypted with AES-GCM
-using a passphrase only you know.
+on your device. On macOS and Linux the key is held by the system keychain, so copying or backing up
+the data folder does not carry it along (unless the keychain was unavailable and the key stayed in
+the folder); on Windows it is bound to your account with DPAPI. Optional sync payloads can
+additionally be end-to-end encrypted with AES-GCM using a passphrase only you know.
 
 Please note that session logging, when you turn it on, records **raw terminal output**,
 which may include anything displayed on screen during a session. These logs are plain files on
@@ -258,7 +262,7 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | --- | --- |
 | 连接配置(主机、端口、用户名)、分组与应用设置 | `~/.velashell` |
 | 你选择保存的密码与私钥口令,包括共享凭据(多条连接共用的一套用户名与密码 / 密钥)里的,以及设置里的网络代理密码 | 同上,以 AES-256 加密 |
-| 保护上述内容的加密密钥 | 同上,在你的设备上生成 |
+| 保护上述内容的加密密钥 | 在你的设备上生成。macOS 上存进登录钥匙串,Linux 上存进 Secret Service(gnome-keyring、KWallet 等),数据目录里只留条目编号;系统密钥链用不了时存在数据目录里(明文,仅本人可读)。Windows 上存在数据目录里,以 DPAPI 绑定当前 Windows 用户 |
 | 已知的 SSH 主机密钥 | 同上 |
 | 快捷命令与代码片段 | 同上 |
 | 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码;模板可随下文的可选云同步上传,退出时布局从不上传) | 同上 |
@@ -276,7 +280,9 @@ VelaShell 还会**读取**你既有的 OpenSSH 配置(`~/.ssh` 下的密钥、`k
 会话导入时读取的 `config`),使你已经在 OpenSSH、Git 等工具中配置好的密钥无需重复配置即可使用。
 这些文件的读写全部发生在你的设备上。
 
-你可以随时删除对应目录,或通过设置、插件管理器中的相应功能清除这些数据。
+你可以随时删除对应目录,或通过设置、插件管理器中的相应功能清除这些数据。macOS 钥匙串与 Linux
+Secret Service 里的那把加密密钥不在这个目录里:VelaShell 在那里只读写它自己创建的条目,
+可在「钥匙串访问」或 Seahorse 里搜 VelaShell 删除。
 
 ### 网络连接
 
@@ -357,8 +363,9 @@ VelaShell 不含任何第三方 SDK、追踪器或广告库。
 
 ### 安全
 
-已保存的密码与口令使用 AES-256 加密,密钥在你的设备上生成并保存在本地。可选的同步载荷还可
-使用只有你知道的口令做 AES-GCM 端到端加密。
+已保存的密码与口令使用 AES-256 加密,密钥在你的设备上生成并保存在本地。macOS / Linux 上这把密钥
+由系统密钥链保管,复制或备份数据目录不会带走它(密钥链用不了、密钥留在数据目录里时除外);
+Windows 上它以 DPAPI 绑定当前用户。可选的同步载荷还可使用只有你知道的口令做 AES-GCM 端到端加密。
 
 请注意:会话日志功能一旦开启,会记录**终端原始输出**,其中可能包含会话期间显示在屏幕上的
 任何内容。这些日志是磁盘上的普通文件。在共用计算机上启用该功能前请考虑这一点。默认情况下,会话日志与录制

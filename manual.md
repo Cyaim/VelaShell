@@ -756,7 +756,7 @@ Tailscale 模式需本机已安装并登录 Tailscale，目标为 MagicDNS 名�
 
 **操作与结果：** 密码和私钥口令（包括共享凭据里的，以及网络代理设置里的代理密码）以 AES-256-GCM 加密保存在数据根；告警 Webhook 地址不算密码，在设置里是明文（它不随设置导出与无口令同步离开本机）；审计查看器可按类别、时间段与关键字筛选，把眼前筛出的记录导出为 CSV，并检查保留周期。若需分享，先去除主机/账号等不必要信息。
 
-**原理：** 本机 `secret.key` 是解密关键材料。Windows 还以当前用户 DPAPI 包裹密钥，换 Windows 账户/重装后原样复制通常不能解包；Linux/macOS 主要依赖密钥文件权限（0600），密钥本身没有额外口令包裹。掌握数据及可用密钥的本机进程可能读出秘密，这不是抵御已被攻陷设备的保险箱。
+**原理：** 本机加密密钥是解密关键材料。macOS 上它存在登录钥匙串里，Linux 上存在 Secret Service（gnome-keyring、KWallet 等）里，数据根只留一份 `secret.key.ref`，记着条目编号、不含密钥；从旧版本升级后第一次启动时，原来的 `secret.key` 自动迁进去，读回核对无误后才从数据根清零删掉。系统密钥链用不了时（没装 libsecret、没有桌面会话或会话总线、钥匙环锁着时取消了解锁框、macOS 钥匙串的提示框点了拒绝），密钥照旧以 `secret.key` 存在数据根（明文，0600），消息中心提示一次，密钥链能用之后的下次启动自动迁过去。已经迁进密钥链之后某次没能打开，已存的密码这一轮解不开，但没有丢：消息中心说明，恢复后的下次启动照常读取；这期间新存的密码先用数据根里的本地密钥加密，之后自动并入密钥链。Windows 上 `secret.key` 以当前用户 DPAPI 包裹，换 Windows 账户/重装后原样复制通常不能解包。macOS 的钥匙串条目对你这个用户的任何程序开放（与原先 0600 的密钥文件同级），Secret Service 解锁后同样对会话里的程序开放：它挡住的是拿走、备份、同步数据根，挡不住本机上以你的身份运行的程序。掌握数据及可用密钥的本机进程可能读出秘密，这不是抵御已被攻陷设备的保险箱。
 
 **注意：** 配置类审计只记哪一块变了、不记值；删除分组时组里还剩的连接被移回未分组，只记一条汇总（分组名与条数），不逐条记；日志与录制不能保证完整、不可删或不可篡改。主密码功能当前未接入，不能建议用户去找“设置主密码”来保护整个资料库。
 
@@ -770,9 +770,9 @@ Tailscale 模式需本机已安装并登录 Tailscale，目标为 MagicDNS 名�
 | 迁移应用偏好 | 常规 → 数据与存储 → 设置导入/导出 | **非加密 JSON**，只有应用设置、按分类勾选，不含连接/分组/密钥/片段；安全审计与网络代理默认不勾，代理密码与告警 Webhook 地址勾不勾都不写，换机需补填；仍可能含个人与网络配置（代理地址、外部登录信任目标、本机路径等） |
 | 迁移连接 | 资源管理器导出/导入连接文件 | JSON 可选口令加密含凭据；CSV 永不导出秘密；私钥文件需另备份 |
 | 多设备同步 | 设置 → 云同步 | 自己账户的 secret Gist，可选端到端加密；不是镜像删除本机资料的完整磁盘备份 |
-| 灾难恢复 | 停止应用后安全备份数据根及实际密钥文件 | 需保留解密条件；Windows DPAPI/账户限制使原样复制不等于跨机可用 |
+| 灾难恢复 | 停止应用后安全备份数据根及实际密钥文件 | 需保留解密条件：macOS/Linux 上本机加密密钥在系统密钥链里、不在数据根，要跟着登录钥匙串/钥匙环走（整机备份或系统迁移）；Windows 受 DPAPI/账户限制。只有数据根时，原样复制到别的电脑或账户解不开已存密码 |
 
-**敏感备份风险：** 数据根与 `secret.key` 一起泄露可能使凭据失守；私钥副本也能成为登录材料。备份应加密、限制访问并与导出口令分开保管。不要把 `~/.ssh`、秘密 JSON 或 Gist 口令提交到 Git，也不要发到聊天中求助。
+**敏感备份风险：** 数据根与 `secret.key` 一起泄露（macOS/Linux 回落到文件时，它就在数据根里）可能使凭据失守；私钥副本也能成为登录材料。备份应加密、限制访问并与导出口令分开保管。不要把 `~/.ssh`、秘密 JSON 或 Gist 口令提交到 Git，也不要发到聊天中求助。
 
 ### 17.2 配置与运行 Gist 同步
 
@@ -798,7 +798,7 @@ Tailscale 模式需本机已安装并登录 Tailscale，目标为 MagicDNS 名�
 | 内容 | 默认位置 | 备份时的作用与边界 |
 | --- | --- | --- |
 | 连接、分组、设置、信任记录、历史、审计、录制和插件存储 | `~/.velashell/sonnetdb` | 嵌入式数据库目录；备份前彻底退出应用，不能只挑一个文件热拷贝 |
-| 凭据解密密钥 | `~/.velashell/secret.key` | 恢复加密凭据所需，须加密保管；Windows 还受原用户 DPAPI 条件限制 |
+| 凭据解密密钥 | macOS：登录钥匙串，服务名 `com.velashell.master-key`（「钥匙串访问」里搜 VelaShell）；Linux：Secret Service，schema `com.velashell.MasterKey`（Seahorse「密码和密钥」里搜 VelaShell，或 `secret-tool search --all xdg:schema com.velashell.MasterKey`，输出里含密钥本身，别外传）；数据根里的 `~/.velashell/secret.key.ref` 只是条目清单。Windows 与回落时：`~/.velashell/secret.key` | 恢复加密凭据所需；删掉钥匙串条目或 `secret.key.ref`，已存的密码就解不开。卸载应用不会删钥匙串里的条目，要彻底清掉就在上述两处搜 VelaShell 删除。`secret.key` 的备份须加密保管（回落时它是明文）；Windows 还受原用户 DPAPI 条件限制 |
 | 会话、传输及应用诊断日志 | `~/.velashell/logs` | 可含输出和路径等敏感资料；具体传输日志目录可在设置中另指定 |
 | 用户安装的插件 | `~/.velashell/plugins` | 与程序目录随包提供的 `plugins/` 不同；迁移后核对兼容性与权限 |
 | 离线地理数据库 | `~/.velashell/geoip` | 可选资料，不是主机连接凭据 |
@@ -815,7 +815,7 @@ Tailscale 模式需本机已安装并登录 Tailscale，目标为 MagicDNS 名�
 3. 新机导入/拉取，补填代理密码与告警 Webhook 地址（走设了端到端口令的 Gist 同步时它们随同步过来，不必补填），恢复私钥文件并修正路径及权限；重新配置本机 Agent、外部编辑器、X Server、插件和 AI 接入等设备相关项。
 4. 核对一条测试连接的指纹和登录，再验证重要配置；旧机数据在确认恢复和组织保留要求前不要删除。
 
-**原理与注意：** Windows 原始数据根受当前用户 DPAPI 限制，跨账户/重装不能靠复制 `secret.key` 保证可解密。Store 与便携的数据隔离也需显式导入/同步。应用设置导出不含代理密码与 Webhook 地址、默认不带安全审计与网络代理两类，是预期脱敏，不是文件损坏。
+**原理与注意：** Windows 原始数据根受当前用户 DPAPI 限制，跨账户/重装不能靠复制 `secret.key` 保证可解密；macOS/Linux 上密钥在系统密钥链里、不在数据根，原样复制数据根到新电脑或别的账户同样解不开已存密码。这是有意的，换机请走第 1 步的连接 JSON 或设了端到端口令的 Gist 同步。已经直接拷过去了也不会出错：消息中心说明原因（Windows 上解不开的 `secret.key` 改名保留为 `secret.key.unreadable-时间戳`），连接时登录框弹出，重新输入并记住即可；旧电脑上的条目不受影响，那边的数据根照常解得开。Store 与便携的数据隔离也需显式导入/同步。应用设置导出不含代理密码与 Webhook 地址、默认不带安全审计与网络代理两类，是预期脱敏，不是文件损坏。
 
 <a id="plugins"></a>
 ## 18. 插件管理、可选协议与 Docker
@@ -957,7 +957,7 @@ Tailscale 模式需本机已安装并登录 Tailscale，目标为 MagicDNS 名�
 
 **入口与步骤：** 侧栏铃铛打开消息中心，可筛未读、全部标已读、清空，浮层位置可拖动并记忆，最多保留 200 条。点击通知链接前核对地址；只允许 HTTPS 链接。常规设置可控制更新消息、资讯源、间隔和运营消息。
 
-**结果与原理：** 更新、资讯、上次崩溃、上次运行留下的外部编辑草稿（没传回服务器的改动，见 9.4）、云同步拉到的设置开着 Webhook 告警却没有地址（见 17.2）和录制/安全异常等可在此提示；草稿那几条在草稿删掉之后的下次启动自动撤掉；消息中心不是远端邮件或服务器日志。官方资讯源默认启动及周期请求，清空 URL 后不再请求该来源；按平台、语言、版本的筛选在本地执行。清空通知不删除服务器资料，也不替代处理真正的安全事件。
+**结果与原理：** 更新、资讯、上次崩溃、上次运行留下的外部编辑草稿（没传回服务器的改动，见 9.4）、云同步拉到的设置开着 Webhook 告警却没有地址（见 17.2）、本机加密密钥的状况（仍留在数据根、系统密钥链这次没能打开、找不到之前的密钥、密钥文件用不了已换新，见 16.4、17.4）和录制/安全异常等可在此提示；草稿那几条在草稿删掉之后的下次启动自动撤掉；消息中心不是远端邮件或服务器日志。官方资讯源默认启动及周期请求，清空 URL 后不再请求该来源；按平台、语言、版本的筛选在本地执行。清空通知不删除服务器资料，也不替代处理真正的安全事件。
 
 ### 20.2 托盘、自启动与单实例
 
@@ -1030,7 +1030,7 @@ VelaShell.exe -f "C:\Temp\session.xsh"
 | 某中间路由跳丢包很高 | ICMP 限速/不响应，不一定业务丢包 | 看后续尤其终点及业务指标，不单凭一跳定故障 |
 | 录制缺尾段 | 未开启新连接录制、磁盘/队列故障或清理 | 看消息中心和存储空间，现有部分可回放；不宣称从未记录等于没发生 |
 | 设置导出后没连接/代理密码 | 设置 JSON 有意不含连接，从不写代理密码与 Webhook 地址，安全审计与网络代理两类默认不勾 | 用连接 JSON 或 Gist；导出/导入时按需勾上那两类，代理密码与 Webhook 地址新机补填 |
-| 复制资料库后密码解不开 | Windows DPAPI 账户/系统已变；或 macOS/Linux 的系统密钥链里没有那把密钥、这次没能打开 | 连接时登录框会直接弹出并说明原因（不再先拿解不开的密码去试登录）：密钥链暂时打不开的，解锁后重启即可照常读取；密钥不在的，重新输入并记住（共享凭据勾「同时更新共享凭据」）。隧道、测试连接、巡检这类不弹框的连接直接报「已存的密码解不开」。旧环境能解时重新加密导出/E2E同步；不能靠重新生成密钥找回原秘密 |
+| 复制资料库后密码解不开 | Windows DPAPI 账户/系统已变；或 macOS/Linux 的系统密钥链里没有那把密钥（数据根从别的电脑/账户拷来、条目被删）、这次没能打开（钥匙环锁着、没有桌面会话或会话总线） | 先看消息中心里那条系统消息。连接时登录框会直接弹出并说明原因（不再先拿解不开的密码去试登录）：密钥链暂时打不开的，解锁或换到有桌面会话的登录后重启即可照常读取，不必重新输入（Linux 上取消了钥匙环的解锁框，也可能显示成「找不到」，同样先解锁再重启）；密钥不在的，重新输入并记住（共享凭据勾「同时更新共享凭据」）。隧道、测试连接、巡检这类不弹框的连接直接报「已存的密码解不开」。旧环境能解时重新加密导出/E2E同步；不能靠重新生成密钥找回原秘密 |
 | Gist 成功但私钥不可用 | 仅同步了路径，文件没迁移 | 安全复制实际私钥/证书，修正路径和权限 |
 | 可选协议没出现 | 插件未装/停用/不兼容 | 看插件管理状态，装可信兼容包；不要当成核心内置功能 |
 | AI 401/模型不存在 | 供应商认证、额度、模型 ID/协议错误 | 在模型设置测试供应商与具体型号；区分模型与 IM 平台错误 |
@@ -1176,7 +1176,7 @@ VelaShell.exe -f "C:\Temp\session.xsh"
 | 终端、停靠、建议与同步输入 | `ViewModels/ShortcutCatalog.cs`、`Services/ShortcutKeymap.cs`、`KeyboardShortcutService.cs`、`CommandSuggestionProvider.cs`、`SyncInputCoordinator.cs`、`LocalShellCatalog.cs`；`src/VelaShell.Terminal/`；`src/VelaShell/Docking/` |
 | 文件、远程编辑与同步 | `ViewModels/SftpDocumentViewModel.cs`、`DualSftpDocumentViewModel.cs`、`FileBrowserViewModel.cs`、`DirectorySyncViewModel.cs`、`FileTransferViewModel.cs`；`Services/RemoteEditSessionManager.cs` |
 | 隧道、X11 与运维 | `ViewModels/TunnelPanelViewModel.cs`、`XServerToggleViewModel.cs`、`ProcessManagerViewModel.cs`、`ResourceMonitorWindowViewModel.cs`、`TraceRouteViewModel.cs`、`ConnectionDiagnosticsViewModel.cs`；`src/VelaShell.Infrastructure/Diagnostics/PingTraceRouteService.cs` |
-| 日志录制与数据保护 | `Services/SessionLogService.cs`、`SessionOutputMasker.cs`；`SessionRecorder.cs`、`RecordingPlayerViewModel.cs`；`src/VelaShell.Infrastructure/Persistence/VelaShellStoragePaths.cs`、`AesSecretProtector.cs` |
+| 日志录制与数据保护 | `Services/SessionLogService.cs`、`SessionOutputMasker.cs`；`SessionRecorder.cs`、`RecordingPlayerViewModel.cs`；`src/VelaShell.Infrastructure/Persistence/VelaShellStoragePaths.cs`、`AesSecretProtector.cs`、`MasterKeyResolver.cs`、`MasterKeyStores.cs` |
 | 设置、同步、插件、启动与更新 | `Views/Settings/*.axaml`、`ViewModels/SettingsViewModel.cs`、`PluginManagerViewModel.cs`；`Services/GistSyncService.cs`、`UpdateService.cs`、`ExternalLaunchCoordinator.cs`、`PluginPermissionGate.cs`；`src/VelaShell.Infrastructure/Startup/` |
 | AI/MCP/IM | `plugins/VelaShell.Plugin.Ai/AiPlugin.cs` 及其 `Ui/`、Agent 工具、MCP 客户端/服务端、Bridge 设置与实现 |
 | 可选协议/Docker | 相邻 `velashell-plugins` 仓库相应插件当前源码、清单和已核对用户说明；旧版本 README 的契约/版本断言不作为宿主行为依据 |
