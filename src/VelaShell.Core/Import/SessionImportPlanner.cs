@@ -378,6 +378,10 @@ public static class SessionImportPlanner
             {
                 Place(profile, target?.GroupId);
                 _result.Sessions.Add(profile);
+                if (!item.Candidate.HasDirectoryBookmarks)
+                {
+                    _ = _result.KeepStoredBookmarks.Add(profile.Id);
+                }
                 if (target is null)
                 {
                     _result.Created++;

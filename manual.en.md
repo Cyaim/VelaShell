@@ -410,7 +410,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Entry point and steps:** Navigate both panes to frequently used directories, then choose **Save current directories**. Use **Bookmarks** to select a saved pair and navigate both sides. Bookmarks can be edited or deleted.
 
-**Result and how it works:** Each connection stores local↔remote path pairs. Deleting a bookmark does not delete directories. Saved profiles retain bookmarks; temporary connections retain them for this run only. Dual-remote tabs do not offer these paired bookmarks. Adjust local paths after migration. Duplicating a profile copies the latest stored bookmarks; a Gist pull of a payload pushed by an older version without bookmarks keeps the local ones, and only an explicitly empty bookmark list clears them.
+**Result and how it works:** Each connection stores local↔remote path pairs. Deleting a bookmark does not delete directories. Saved profiles retain bookmarks; temporary connections retain them for this run only. Dual-remote tabs do not offer these paired bookmarks. Adjust local paths after migration. Duplicating a profile copies the latest stored bookmarks; a Gist pull of a payload pushed by an older version without bookmarks keeps the local ones, and only an explicitly empty bookmark list clears them. Overwriting from a JSON backup follows the same rule: a backup exported before directory bookmarks existed has no bookmark field and keeps the local ones; only an empty list in the file clears them.
 
 ### 9.6 Copy Between Two Remote Hosts
 

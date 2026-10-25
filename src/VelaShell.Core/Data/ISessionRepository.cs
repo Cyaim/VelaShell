@@ -29,7 +29,7 @@ public interface ISessionRepository
     /// 更新时 <see cref="SessionProfile.DirectoryBookmarks" /> 保留库里现存的那份,不取传入的:收藏只经
     /// <see cref="UpdateDirectoryBookmarksAsync" /> 修改。整条写回的调用方(连接成功、置顶、拖动分组、编辑配置、
     /// 证书信任……)手里多半是早先读出来的副本,按它写收藏会把别处刚加的收藏抹掉。
-    /// 要连收藏一起覆盖的(同步拉取、导入备份)用 <see cref="ReplaceSessionAsync" />。
+    /// 要连收藏一起覆盖的(同步拉取、导入备份,且载荷里确实带着收藏字段)用 <see cref="ReplaceSessionAsync" />。
     /// </remarks>
     Task SaveSessionAsync(SessionProfile session);
 

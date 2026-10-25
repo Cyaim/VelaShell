@@ -100,6 +100,12 @@ public sealed class SessionImportWriteSet
     /// <summary>要保存的连接(新建与覆盖)。</summary>
     public List<SessionProfile> Sessions { get; } = [];
 
+    /// <summary>
+    /// <see cref="Sessions" /> 里文件没带目录收藏字段的那几条(落盘后的 Id):写的时候保留库里现存的收藏,
+    /// 不拿文件那份(它只是初值 <c>[]</c>)覆盖。见 <see cref="SessionImportCandidate.HasDirectoryBookmarks" />。
+    /// </summary>
+    public HashSet<Guid> KeepStoredBookmarks { get; } = [];
+
     /// <summary>要写的隧道,键为落盘后的连接 Id。</summary>
     public Dictionary<Guid, List<TunnelConfig>> Tunnels { get; } = [];
 
