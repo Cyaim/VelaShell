@@ -16,22 +16,31 @@ namespace VelaShell.Services;
 /// <para>
 /// 按字节处理:每个字节按 Latin-1 映射成一个字符再匹配,规则全是 ASCII,换出来的也只有 ASCII,
 /// 终端编码是 UTF-8 还是 GBK 都原样往返;词边界也只按 ASCII 算(映射之后 UTF-8 的 0xAA、0xB5、0xBA、0xC0–0xFF 在 <c>\b</c> 眼里是字母,
-/// 紧挨着汉字的令牌就认不出了)。规则(大小写不敏感):
+/// 紧挨着汉字的令牌就认不出了)。
+/// </para>
+/// <para>
+/// <b>先剥掉控制序列再匹配</b>:规则跑在一行的「可见文本」上(<see cref="Projection" />)—— CSI 与两三字节的 ESC 序列不占位置,
+/// OSC / DCS 一类字符串序列的开头与 ST 结尾各留一个 ESC 作分界(标题里的内容照样过规则,却不会跟后面的提示符连成一个值),
+/// 匹配到的位置再映射回原文。于是 <c>grep --color</c> 把关键词或令牌从中间切开(<c>PASS ESC[m ESC[K WORD=</c>、<c>ghp_ESC[m ESC[K0123…</c>)、
+/// jq / bat 给分隔符与值分别上色,都与没上色的一样认。遮掉的那一段里夹着的控制序列原样留在 <c>***</c> 后面,回放时颜色与光标状态不乱。
+/// </para>
+/// <para>
+/// 规则(大小写不敏感):
 /// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 的
-/// <c>名字=值</c>、<c>名字: 值</c>(含 JSON 与 YAML 的写法、JSON 里转义过的 <c>\"名字\":</c>;名字与分隔符之间允许 <c>grep --color</c>
-/// 插进来的颜色序列,分隔符与值之间允许 jq、bat 这类工具给值上的色,以及 grep 高亮收尾的 <c>ESC[K</c>)只换值,双引号串认反斜杠转义,
-/// 到行尾都没收尾的引号串从引号之后遮到行尾,冒号后面跟空白、不加引号的值遮到行尾(停在同一行的下一个键之前,判据见 <see cref="KeyValue" />);
+/// <c>名字=值</c>、<c>名字: 值</c>(含 JSON 与 YAML 的写法、JSON 里转义过的 <c>\"名字\":</c>)只换值,双引号串认反斜杠转义,
+/// 到行尾都没收尾的引号串从引号之后遮到行尾,转义过的 JSON 串被外层的裸引号截断时遮到那个引号之前,
+/// 冒号后面跟空白、不加引号的值遮到行尾(停在同一行的下一个键之前,判据见 <see cref="KeyValue" />);
 /// 几个不带口令字样的键:<c>tls.key</c> 一类、kubeconfig 的 <c>client-key-data</c>、<c>.dockerconfigjson</c>、Docker <c>config.json</c> 的 <c>"auth"</c>;
 /// <c>.netrc</c> 的 <c>password</c>(<c>machine … password …</c> 一行写完的,或分行写时单独一行的);
 /// <c>Bearer</c> / <c>Basic</c> 后面的凭据;PEM 私钥块(含 OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c>)的正文(写在一行里的,BEGIN 与 END 之间那段);
 /// 几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、GitHub <c>ghp_…</c> 一类与 <c>github_pat_…</c>、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。
-/// 凭据与令牌紧跟在颜色序列后面也认。宁可多遮,不放过。
+/// 宁可多遮,不放过。
 /// </para>
 /// <para>
 /// 一段输出可能在任何字节处被切开,打字回显更是一个字节一段。当前行已经放出去的原文(大约最后 <see cref="MaxContextBytes" /> 字节)留作匹配上下文,
 /// 新到的字节接在它后面把全部规则(含私钥块的开头)重跑一遍,只改写值落在还没放出去的字节里的那些匹配 ——
-/// 名字、颜色序列、<c>Bea|rer</c>、<c>-----BEGI|N</c> 切在哪都认得出。上下文截断时不截在任何一个匹配的中间,吞掉的长值也不进上下文:
-/// 值里像「名字: 值」的字样不会被当成新的匹配、把后面真正的名字吞掉。私钥块的开头与结尾另按原文的最后几十个字节认。
+/// 名字、控制序列、<c>Bea|rer</c>、<c>-----BEGI|N</c> 切在哪都认得出。上下文截断时不截在任何一个匹配或控制序列的中间,吞掉的长值也不进上下文:
+/// 值里像「名字: 值」的字样不会被当成新的匹配、把后面真正的名字吞掉。私钥块的开头与结尾另按可见文本的最后几十个字符认。
 /// 名字与分隔符当场放出,只扣<b>值</b>,扣到值结束(空白、收尾的引号、行尾……)为止;
 /// 值还没开始的(<c>Password:</c>、<c>Password: </c> 这类等输入的提示)一个字节也不扣,vim、top 这类不换行的全屏程序也不受影响。
 /// 扣下的值有上限,超了先放一个 <c>***</c>,值剩下的部分照它自己的结束条件吞完,尾巴不会漏出去。
@@ -51,12 +60,18 @@ public sealed partial class SessionOutputMasker
 
     /// <summary>
     /// 当前行已放出去的部分大约留多少字节作匹配上下文:名字、分隔符、颜色序列都在这个范围里。
-    /// 截断点落在一个匹配中间时往前挪到它的开头(见 <see cref="Advance" />)。
+    /// 截断点落在一个匹配或控制序列中间时往前挪到它的开头(见 <see cref="Advance" />)。
     /// </summary>
     internal const int MaxContextBytes = 512;
 
-    /// <summary>认被切开的 <c>-----BEGIN/END … PRIVATE KEY-----</c> 要留的原文字节数(吞私钥正文时末尾也先留这么多不吞)。</summary>
+    /// <summary>认被切开的 <c>-----BEGIN/END … PRIVATE KEY-----</c> 要留的可见字符数(吞私钥正文时末尾也先留这么多不吞)。</summary>
     private const int MarkerTailBytes = 64;
+
+    /// <summary>
+    /// 一个 CSI / ESC 序列最长认多少字节;更长的当成坏序列,ESC 留在可见文本里(它是控制字符,值到它为止)。
+    /// 真实终端的序列远短于此;不设上限的话,一条被逐字节写来的超长序列会让上下文一直不能截断。
+    /// </summary>
+    private const int MaxSequenceBytes = 256;
 
     /// <summary>遮盖后的占位。</summary>
     private const string Mask = "***";
@@ -85,21 +100,22 @@ public sealed partial class SessionOutputMasker
     private readonly Action<byte[]> _sink;
     private readonly Lock _gate = new();
 
-    /// <summary>当前行已经放出去的原文(截在匹配与匹配之间,见 <see cref="Advance" />):只作匹配上下文,不再输出。</summary>
+    /// <summary>当前行已经放出去的原文(截在匹配与匹配之间、控制序列之外,见 <see cref="Advance" />):只作匹配上下文,不再输出。</summary>
     private string _context = string.Empty;
 
     /// <summary>
-    /// <c>Bearer</c> 与令牌从上下文的第几个字符起扫:截断过的上下文多留截断点前的一个字符,只给它们开头的「前面不是字母数字」看
-    /// (<c>xBearer …</c> 截成 <c>Bearer …</c> 不能凭空多出一个凭据)。
+    /// 上下文截断过时,截断点前的最后一个可见字符:只给 <c>Bearer</c> 与令牌开头的「前面不是字母数字」看
+    /// (<c>xBearer …</c> 截成 <c>Bearer …</c> 不能凭空多出一个凭据);<c>名字=值</c> 不看它,截在标识符中间时后半截照样当名字认。
+    /// 没截断过为 null。
     /// </summary>
-    private int _scanFrom;
+    private char? _contextPrev;
 
     /// <summary>
     /// 上下文是从当前行的行首起的(没截过,也不是吞完一个值或私钥块结尾之后在行中间重新起的):只认行首的规则(<see cref="NetrcLine" />)据此才用。
     /// </summary>
     private bool _contextAtLineStart = true;
 
-    /// <summary>当前行处理过的原文的最后 <see cref="MarkerTailBytes" /> 个字节:认私钥块的开头与结尾用。</summary>
+    /// <summary>当前行处理过的部分的最后 <see cref="MarkerTailBytes" /> 个可见字符:认私钥块的开头与结尾用。</summary>
     private string _keyTail = string.Empty;
 
     /// <summary>扣着没放的原文(总在当前行里):写到一半的值,或者吞值时留着拼下一段的那几个字节。</summary>
@@ -206,24 +222,23 @@ public sealed partial class SessionOutputMasker
             int end = SwallowEnd(segment, out int keep);
             if (end < 0)
             {
-                // 值还没完:吞掉;末尾几个字节先留着,下一段来了拼起来再看(收尾时一并丢掉)
-                Consume(segment[..^keep]);
+                // 值还没完:吞掉(里面的控制序列照放);末尾几个字节先留着,下一段来了拼起来再看(收尾时一并丢掉)
+                Consume(segment[..^keep], output);
                 _held = final ? string.Empty : segment[^keep..];
                 return;
             }
-            if ((_swallowing is ValueKind.DoubleQuoted or ValueKind.SingleQuoted) && segment[end] is not ('\r' or '\n'))
+            bool closingQuote = (_swallowing is ValueKind.DoubleQuoted or ValueKind.SingleQuoted) && segment[end] is not ('\r' or '\n');
+            Consume(segment[..end], output);
+            if (closingQuote)
             {
                 // 收尾的引号算在值里,由这里放出,遮完的样子是完整的 "***"
                 output.Append(segment[end]);
                 end++;
             }
-            Consume(segment[..end]);
             _swallowing = ValueKind.None;
             segment = segment[end..];
             // 上下文从值的结尾重新起:吞掉的值里像「名字: 值」的字样不能再拿来匹配
-            _context = string.Empty;
-            _scanFrom = 0;
-            _contextAtLineStart = false;
+            ResetContext(atLineStart: false);
         }
         if (_inPrivateKey)
         {
@@ -235,14 +250,23 @@ public sealed partial class SessionOutputMasker
         }
     }
 
+    /// <summary>上下文清空,从下一个字节重新攒(行首,或者吞完一个值、私钥块结尾之后的行中间)。</summary>
+    private void ResetContext(bool atLineStart)
+    {
+        _context = string.Empty;
+        _contextPrev = null;
+        _contextAtLineStart = atLineStart;
+    }
+
     /// <summary>平常的一行:上下文接上新到的一段跑全部规则,放出已经定了的部分;伸到末尾、后面可能还有的值扣下。</summary>
     private void Line(string segment, bool complete, bool final, StringBuilder output)
     {
         string line = _context + segment;
         int from = _context.Length;
+        Projection view = Projection.Of(line, _contextPrev);
         var markers = new List<(int End, bool Begin)>();
         var matches = new List<(int Start, int End)>();
-        List<Secret> secrets = FindSecrets(line, from, complete, markers, matches);
+        List<Secret> secrets = FindSecrets(view, from, complete, markers, matches);
         int pos = from;
         foreach (Secret secret in secrets)
         {
@@ -253,7 +277,7 @@ public sealed partial class SessionOutputMasker
             {
                 if (!final && line.Length - start < MaxHeldBytes)
                 {
-                    Advance(line, from, start, markers, matches);
+                    Advance(view, from, start, markers, matches);
                     _held = line[start..];
                     return;
                 }
@@ -261,12 +285,16 @@ public sealed partial class SessionOutputMasker
                 // 从伸到末尾的那个值自己的正文(引号之后)吞起,结束条件才对得上;前面的部分一并算作遮掉了
                 output.Append(secret.Start < from ? string.Empty : secret.Quote).Append(Mask);
                 int content = Math.Max(secret.ContentStart, from);
-                Advance(line, from, content, markers, matches);
+                view.AppendHidden(output, start, content);
+                Advance(view, from, content, markers, matches);
                 _swallowing = secret.Kind;
                 Segment(line[content..], complete: false, final, output);
                 return;
             }
-            output.Append(secret.Start < from ? Mask : secret.Quote + Mask + secret.Quote);
+            string quote = secret.Start < from ? string.Empty : secret.Quote;
+            output.Append(quote).Append(Mask);
+            view.AppendHidden(output, start, secret.End);
+            output.Append(quote);
             pos = secret.End;
         }
         output.Append(line, pos, line.Length - pos);
@@ -275,27 +303,25 @@ public sealed partial class SessionOutputMasker
             // 有 BEGIN 而到行尾都没见到 END:下一行起按私钥块整行遮
             _inPrivateKey = markers.Count > 0 ? markers[^1].Begin : _inKeyBody;
             _inKeyBody = false;
-            _context = string.Empty;
-            _scanFrom = 0;
-            _contextAtLineStart = true;
+            ResetContext(atLineStart: true);
             _keyTail = string.Empty;
         }
         else
         {
-            Advance(line, from, line.Length, markers, matches);
+            Advance(view, from, line.Length, markers, matches);
         }
     }
 
     /// <summary>
-    /// 当前行处理到 <paramref name="end" /> 为止:之前的原文留作上下文,原文也接进认私钥块用的尾巴,私钥块的开头与结尾记到这里为止。
+    /// 当前行处理到 <paramref name="end" /> 为止:之前的原文留作上下文,可见文本也接进认私钥块用的尾巴,私钥块的开头与结尾记到这里为止。
     /// </summary>
     /// <remarks>
     /// 上下文只留最后 <see cref="MaxContextBytes" /> 个字节左右,但截断点不能落在任何一个匹配(名字 … 值)的中间:
     /// 从一个长值的中间截起,值里像 <c>Password:"</c> 的字样会被当成新的名字与引号,把后面真正的名字吞进去当值,
     /// 真正的值就漏了。落在中间就往前挪到那个匹配的开头 —— 从那里重新扫,与整行一起扫的结果一致。
-    /// 截断点前再多留一个字符,见 <see cref="_scanFrom" />。
+    /// 也不能落在控制序列中间(剩下的半截会被当成可见文本)。截断点前的最后一个可见字符记到 <see cref="_contextPrev" />。
     /// </remarks>
-    private void Advance(string line, int from, int end, List<(int End, bool Begin)> markers, List<(int Start, int End)> matches)
+    private void Advance(Projection view, int from, int end, List<(int End, bool Begin)> markers, List<(int Start, int End)> matches)
     {
         foreach ((int markerEnd, bool begin) in markers)
         {
@@ -304,11 +330,11 @@ public sealed partial class SessionOutputMasker
                 _inKeyBody = begin;
             }
         }
-        int keep = Math.Max(_scanFrom, end - MaxContextBytes);
+        int keep = Math.Max(0, end - MaxContextBytes);
         for (bool moved = true; moved;)
         {
             moved = false;
-            foreach ((int start, int stop) in matches)
+            foreach ((int start, int stop) in matches.Concat(view.Hidden))
             {
                 if (start < keep && keep < stop)
                 {
@@ -317,15 +343,13 @@ public sealed partial class SessionOutputMasker
                 }
             }
         }
-        int contextStart = 0;
-        if (keep > _scanFrom)
+        if (keep > 0)
         {
-            contextStart = keep - 1;
-            _scanFrom = 1;
+            _contextPrev = view.LastVisibleBefore(keep);
+            _contextAtLineStart = false;
         }
-        _contextAtLineStart &= contextStart == 0;
-        _context = line[contextStart..end];
-        _keyTail = KeyTail(_keyTail + line[from..end]);
+        _context = view.Raw[keep..end];
+        _keyTail = KeyTail(_keyTail + view.VisibleBetween(from, end));
     }
 
     /// <summary>
@@ -337,18 +361,18 @@ public sealed partial class SessionOutputMasker
         {
             return;
         }
-        if (FirstKeyEnd(segment, segment.Length) is { } end)
+        Projection view = Projection.Of(segment, null);
+        if (FirstKeyEnd(view.Visible, view.Visible.Length) is { } end)
         {
-            int stop = end.Index + end.Length;
+            int endStart = view.RawStart(end.Index);
+            int stop = view.RawEnd(end.Index + end.Length);
             // END 前面同一行里还有正文(BBBB…-----END …):正文换成 ***,END 照放;只有缩进的照原样
-            bool hasBody = segment.AsSpan(0, end.Index).IndexOfAnyExcept(' ', '\t', '\r') >= 0;
-            output.Append(hasBody ? Mask : segment[..end.Index]).Append(segment, end.Index, end.Length);
+            bool hasBody = view.Visible.AsSpan(0, end.Index).IndexOfAnyExcept(' ', '\t', '\r') >= 0;
+            output.Append(hasBody ? Mask : segment[..endStart]).Append(segment, endStart, stop - endStart);
             _inPrivateKey = false;
             _inKeyBody = false;
-            _context = string.Empty;
-            _scanFrom = 0;
-            _contextAtLineStart = false;
-            _keyTail = KeyTail(segment[..stop]);
+            ResetContext(atLineStart: false);
+            _keyTail = KeyTail(view.Visible[..(end.Index + end.Length)]);
             Line(segment[stop..], complete, final, output);
             return;
         }
@@ -356,9 +380,7 @@ public sealed partial class SessionOutputMasker
         {
             int body = segment.Length - (segment.EndsWith("\r\n", StringComparison.Ordinal) ? 2 : 1);
             output.Append(body == 0 ? segment : Mask + segment[body..]);
-            _context = string.Empty;
-            _scanFrom = 0;
-            _contextAtLineStart = true;
+            ResetContext(atLineStart: true);
             _keyTail = string.Empty;
             return;
         }
@@ -374,83 +396,92 @@ public sealed partial class SessionOutputMasker
     }
 
     /// <summary>
-    /// 一行里要遮的片段,按起点排好、重叠的并成一段。只要结尾落在 <paramref name="from" /> 之后的(之前的已经处理过了);
+    /// 一行里要遮的片段(原文位置),按起点排好、重叠的并成一段。只要结尾落在 <paramref name="from" /> 之后的(之前的已经处理过了);
     /// 行还没完时伸到末尾的值记为未完(后面可能还有)。顺带记下 <paramref name="from" /> 之后才完整的私钥块开头与结尾,
-    /// 以及每个匹配从名字到值的整个范围(截上下文时用)。
+    /// 以及每个匹配从名字到值的整个范围(截上下文时用)。规则全跑在可见文本上,位置换算回原文。
     /// </summary>
-    private List<Secret> FindSecrets(string line, int from, bool complete, List<(int End, bool Begin)> markers, List<(int Start, int End)> matches)
+    private List<Secret> FindSecrets(Projection view, int from, bool complete, List<(int End, bool Begin)> markers, List<(int Start, int End)> matches)
     {
         var found = new List<Secret>();
-        for (Match match = AuthorizationScheme().Match(line, _scanFrom); match.Success; match = match.NextMatch())
+        string text = view.Visible;
+        int origin = view.Origin;
+        for (Match match = AuthorizationScheme().Match(text, origin); match.Success; match = match.NextMatch())
         {
-            matches.Add((match.Index, match.Index + match.Length));
+            matches.Add(view.RawRange(match.Index, match.Index + match.Length));
             Group value = match.Groups["value"];
-            Add(found, line, from, complete, value.Index, value.Index + value.Length, ValueKind.Credential, string.Empty, closed: false);
+            Add(found, view, from, complete, value.Index, value.Index + value.Length, ValueKind.Credential, string.Empty, closed: false);
         }
-        // 名字=值从上下文的第一个字符扫起:截断点落在一串标识符中间时,后半截照样当名字认(值是同一个);
-        // 认 Bearer 与令牌时截断点前那个字符只给开头的「前面不是字母数字」看,不当成能起头的位置
-        for (Match match = KeyValue().Match(line); match.Success; match = match.NextMatch())
+        // 名字=值从上下文的第一个可见字符扫起,而且看不见截断点前的那个字符(只给 Bearer 与令牌看):
+        // 截断点落在一串标识符中间时,后半截照样当名字认(值是同一个)
+        for (Match match = KeyValue().Match(text, origin, text.Length - origin); match.Success; match = match.NextMatch())
         {
-            matches.Add((match.Index, match.Index + match.Length));
+            matches.Add(view.RawRange(match.Index, match.Index + match.Length));
             Group value = match.Groups["value"];
-            char first = line[value.Index];
             if (match.Groups["rest"].Success)
             {
-                AddLineValue(found, line, from, complete, value.Index, value.Index + value.Length);
+                AddLineValue(found, view, from, complete, value.Index, value.Index + value.Length);
                 continue;
             }
-            string quote = first == '\\' && value.Length > 1 && line[value.Index + 1] == '"' ? "\\\""
+            char first = text[value.Index];
+            string quote = first == '\\' && value.Length > 1 && text[value.Index + 1] == '"' ? "\\\""
                 : first == '"' ? "\""
                 : first == '\'' ? "'"
                 : string.Empty;
             ValueKind kind = quote.Length == 0 ? ValueKind.Plain : quote == "'" ? ValueKind.SingleQuoted : ValueKind.DoubleQuoted;
             bool open = match.Groups["open"].Success;
             int valueEnd = value.Index + value.Length;
-            if (open && valueEnd < line.Length)
+            if ((open && valueEnd < text.Length) || match.Groups["bare"].Success)
             {
-                // 到行尾(\r 或 \n)都没收尾的引号串:引号之后遮到行尾,不跨行。开头的引号照放,也不凭空补一个收尾的引号 ——
-                // 与扣到上限、收尾时的样子(引号 + ***,照引号的结束条件吞到行尾)一致
-                Add(found, line, from, complete, value.Index + quote.Length, valueEnd, kind, string.Empty, closed: true);
+                // 到行尾(\r 或 \n)都没收尾的引号串:引号之后遮到行尾,不跨行。转义过的 JSON 串被外层的裸引号截断
+                // (截短的日志把里层的 JSON 切在半截):遮到那个裸引号之前 —— 它是外层串的收尾,不是值的一部分。
+                // 两种都是开头的引号照放,也不凭空补一个收尾的引号,与扣到上限、收尾时的样子(引号 + ***)一致
+                Add(found, view, from, complete, value.Index + quote.Length, valueEnd, kind, string.Empty, closed: true);
+                continue;
+            }
+            if (quote.Length > 0 && !open && value.Length == 2 * quote.Length)
+            {
+                // 空串(JSON 里转义过的 \"\"):没有可遮的
                 continue;
             }
             // 收了尾的引号串不会再长;没收尾的(open 那一支)与不加引号的,伸到末尾就是还没完
-            Add(found, line, from, complete, value.Index, valueEnd, kind, quote, closed: quote.Length > 0 && !open);
+            Add(found, view, from, complete, value.Index, valueEnd, kind, quote, closed: quote.Length > 0 && !open);
         }
-        for (Match match = PrefixedToken().Match(line, _scanFrom); match.Success; match = match.NextMatch())
+        for (Match match = PrefixedToken().Match(text, origin); match.Success; match = match.NextMatch())
         {
-            matches.Add((match.Index, match.Index + match.Length));
-            Add(found, line, from, complete, match.Index, match.Index + match.Length, ValueKind.Token, string.Empty, closed: false);
+            matches.Add(view.RawRange(match.Index, match.Index + match.Length));
+            Add(found, view, from, complete, match.Index, match.Index + match.Length, ValueKind.Token, string.Empty, closed: false);
         }
-        for (Match match = NetrcEntry().Match(line, _scanFrom); match.Success; match = match.NextMatch())
+        for (Match match = NetrcEntry().Match(text, origin); match.Success; match = match.NextMatch())
         {
-            matches.Add((match.Index, match.Index + match.Length));
+            matches.Add(view.RawRange(match.Index, match.Index + match.Length));
             Group value = match.Groups["value"];
-            Add(found, line, from, complete, value.Index, value.Index + value.Length, ValueKind.Word, string.Empty, closed: false);
+            Add(found, view, from, complete, value.Index, value.Index + value.Length, ValueKind.Word, string.Empty, closed: false);
         }
-        if (_contextAtLineStart && NetrcLine().Match(line) is { Success: true } netrc)
+        if (_contextAtLineStart && NetrcLine().Match(text) is { Success: true } netrc)
         {
             // 口令后面只能是空白与行尾:行还没完时停在口令或它后面的空白上,都要扣着等行尾(后面再来一个词就不算了)
-            matches.Add((netrc.Index, netrc.Index + netrc.Length));
+            matches.Add(view.RawRange(netrc.Index, netrc.Index + netrc.Length));
             Group value = netrc.Groups["value"];
-            Add(found, line, from, complete, value.Index, value.Index + value.Length, ValueKind.Word, string.Empty, closed: false,
+            Add(found, view, from, complete, value.Index, value.Index + value.Length, ValueKind.Word, string.Empty, closed: false,
                 openAt: netrc.Index + netrc.Length);
         }
 
-        // 私钥正文:BEGIN 之后到同一行的 END 为止,没有 END 就到行尾。开头与结尾按原文认(原文的尾巴接上新到的一段,
-        // 位置换算回 line 上);已经处理过的那部分里的 BEGIN 记在 _inKeyBody 上
-        string keyText = _keyTail + line[from..];
-        int shift = from - _keyTail.Length;
+        // 私钥正文:BEGIN 之后到同一行的 END 为止,没有 END 就到行尾。开头与结尾按可见文本认(之前处理过的尾巴接上新到的一段,
+        // 位置换算回可见文本、再换回原文);已经处理过的那部分里的 BEGIN 记在 _inKeyBody 上
+        int visibleFrom = view.VisibleIndexAt(from);
+        string keyText = _keyTail + text[visibleFrom..];
+        int shift = visibleFrom - _keyTail.Length;
         bool inBody = _inKeyBody;
-        int bodyStart = from;
+        int bodyStart = visibleFrom;
         for (Match match = PrivateKeyMarker().Match(keyText); match.Success; match = match.NextMatch())
         {
             int end = match.Index + match.Length + shift;
-            if (end <= from)
+            if (end <= visibleFrom)
             {
                 continue;
             }
             bool begin = match.Groups["begin"].Success;
-            markers.Add((end, begin));
+            markers.Add((view.RawEnd(end), begin));
             if (begin && !inBody)
             {
                 inBody = true;
@@ -458,59 +489,68 @@ public sealed partial class SessionOutputMasker
             }
             else if (!begin && inBody)
             {
-                AddKeyBody(found, line, from, complete, bodyStart, match.Index + shift);
+                AddKeyBody(found, view, from, complete, bodyStart, match.Index + shift);
                 inBody = false;
             }
         }
         if (inBody)
         {
-            int contentEnd = complete ? line.Length - (line.EndsWith("\r\n", StringComparison.Ordinal) ? 2 : 1) : line.Length;
-            AddKeyBody(found, line, from, complete, bodyStart, contentEnd);
+            int contentEnd = complete ? text.Length - (text.EndsWith("\r\n", StringComparison.Ordinal) ? 2 : 1) : text.Length;
+            AddKeyBody(found, view, from, complete, bodyStart, contentEnd);
         }
         return Merge(found);
     }
 
     /// <summary>
-    /// 记下一处要遮的片段(结尾落在 <paramref name="from" /> 之后才算)。<paramref name="openAt" /> 是「后面可能还有」的判据落在哪:
-    /// 默认是值的结尾(伸到已收到内容的末尾就是没完);值后面只能跟空白与行尾的(<see cref="NetrcLine" />、<see cref="ValueKind.LineValue" />)
+    /// 记下一处要遮的片段:<paramref name="start" /> / <paramref name="end" /> 是可见文本里的位置,存的是换算回原文的位置,
+    /// 结尾落在 <paramref name="from" />(原文)之后才算。<paramref name="openAt" /> 是「后面可能还有」的判据落在哪:
+    /// 默认是值的结尾(伸到可见文本的末尾就是没完);值后面只能跟空白与行尾的(<see cref="NetrcLine" />、<see cref="ValueKind.LineValue" />)
     /// 传那段空白的结尾。
     /// </summary>
-    private static void Add(List<Secret> found, string line, int from, bool complete, int start, int end, ValueKind kind, string quote, bool closed,
+    private static void Add(List<Secret> found, Projection view, int from, bool complete, int start, int end, ValueKind kind, string quote, bool closed,
         int openAt = -1)
     {
-        if (end > from && end > start)
+        if (end <= start)
         {
-            bool open = !complete && !closed && (openAt < 0 ? end : openAt) == line.Length;
-            found.Add(new Secret(start, end, kind, quote, Open: open, ContentStart: start + quote.Length));
+            return;
         }
+        int rawEnd = view.RawEnd(end);
+        if (rawEnd <= from)
+        {
+            return;
+        }
+        bool open = !complete && !closed && (openAt < 0 ? end : openAt) == view.Visible.Length;
+        int contentStart = start + quote.Length < end ? view.RawStart(start + quote.Length) : rawEnd;
+        found.Add(new Secret(view.RawStart(start), rawEnd, kind, quote, Open: open, ContentStart: contentStart));
     }
 
     /// <summary>
     /// <c>名字: 值</c> 里到行尾的值(<see cref="ValueKind.LineValue" />):尾随的空白不遮;停在下一个键前面的,紧挨着的逗号、分号留给那个键。
     /// 值后面到已收到内容的末尾都是空白时还不算完 —— 下一段可能接着是值的下一个词,也可能是下一个键。
     /// </summary>
-    private static void AddLineValue(List<Secret> found, string line, int from, bool complete, int start, int end)
+    private static void AddLineValue(List<Secret> found, Projection view, int from, bool complete, int start, int end)
     {
-        int after = line.AsSpan(end).IndexOfAnyExcept(' ', '\t');
-        after = after < 0 ? line.Length : end + after;
-        bool beforeKey = after > end && after < line.Length && line[after] is >= ' ' and not '\u007f' and not '#';
-        if (beforeKey && end - 1 > start && line[end - 1] is ',' or ';')
+        string text = view.Visible;
+        int after = text.AsSpan(end).IndexOfAnyExcept(' ', '\t');
+        after = after < 0 ? text.Length : end + after;
+        bool beforeKey = after > end && after < text.Length && text[after] is >= ' ' and not '\u007f' and not '#';
+        if (beforeKey && end - 1 > start && text[end - 1] is ',' or ';')
         {
             end--;
         }
-        Add(found, line, from, complete, start, end, ValueKind.LineValue, string.Empty, closed: false, openAt: after);
+        Add(found, view, from, complete, start, end, ValueKind.LineValue, string.Empty, closed: false, openAt: after);
     }
 
     /// <summary>
     /// 私钥正文,从 BEGIN 之后第一个非空白字符算起;只有空白的不算(BEGIN 那一行通常就是这样)。
     /// 开头的空白不遮:切开写入时它们先到、已经放出去了,一次写入也得是同一个结果。
     /// </summary>
-    private static void AddKeyBody(List<Secret> found, string line, int from, bool complete, int start, int end)
+    private static void AddKeyBody(List<Secret> found, Projection view, int from, bool complete, int start, int end)
     {
-        int text = end > start ? line.AsSpan(start, end - start).IndexOfAnyExcept(' ', '\t', '\r') : -1;
+        int text = end > start ? view.Visible.AsSpan(start, end - start).IndexOfAnyExcept(' ', '\t', '\r') : -1;
         if (text >= 0)
         {
-            Add(found, line, from, complete, start + text, end, ValueKind.KeyBody, string.Empty, closed: false);
+            Add(found, view, from, complete, start + text, end, ValueKind.KeyBody, string.Empty, closed: false);
         }
     }
 
@@ -547,16 +587,18 @@ public sealed partial class SessionOutputMasker
     }
 
     /// <summary>
-    /// 吞掉的那部分也算当前行处理过了:它不进上下文(值吞完时上下文从头起),只把原文接进认私钥块用的尾巴,
-    /// 里面的私钥块开头与结尾照记。
+    /// 吞掉的那部分也算当前行处理过了:它不进上下文(值吞完时上下文从头起),里面的控制序列照放(回放时颜色、光标状态不乱),
+    /// 可见文本接进认私钥块用的尾巴,里面的私钥块开头与结尾照记。
     /// </summary>
-    private void Consume(string text)
+    private void Consume(string text, StringBuilder output)
     {
         if (text.Length == 0)
         {
             return;
         }
-        string keyText = _keyTail + text;
+        Projection view = Projection.Of(text, null);
+        view.AppendHidden(output, 0, text.Length);
+        string keyText = _keyTail + view.Visible;
         if (!_inPrivateKey)
         {
             for (Match match = PrivateKeyMarker().Match(keyText); match.Success; match = match.NextMatch())
@@ -571,63 +613,91 @@ public sealed partial class SessionOutputMasker
     }
 
     /// <summary>
-    /// 正在吞的值在 <paramref name="text" /> 里到哪为止(结束它的那个字符不吞);-1 表示还没完,
-    /// 这时末尾 <paramref name="keep" /> 个字节先留着,下一段来了拼起来再看(切在半截的转义、被切开的 END)。
+    /// 正在吞的值在 <paramref name="text" /> 里到哪为止(原文位置,结束它的那个字符不吞);-1 表示还没完,
+    /// 这时末尾 <paramref name="keep" /> 个字节先留着,下一段来了拼起来再看(切在半截的转义、被切开的 END、没写完的控制序列)。
+    /// 结束条件与匹配时一样按可见文本判断:值中间夹着的颜色序列不会让它提前结束。
     /// </summary>
     private int SwallowEnd(string text, out int keep)
     {
-        keep = 0;
+        Projection view = Projection.Of(text, null);
+        string visible = view.Visible;
+        int end = -1;
+        int visibleKeep = 0;
         switch (_swallowing)
         {
             case ValueKind.Plain:
-                return text.AsSpan().IndexOfAny(PlainValueEnds);
+                end = visible.AsSpan().IndexOfAny(PlainValueEnds);
+                break;
             case ValueKind.Word:
-                return text.AsSpan().IndexOfAny(WordEnds);
+                end = visible.AsSpan().IndexOfAny(WordEnds);
+                break;
             case ValueKind.LineValue:
-                return LineValueEnd(text, out keep);
+                end = LineValueEnd(visible, out visibleKeep);
+                break;
             case ValueKind.Credential:
-                return text.AsSpan().IndexOfAnyExcept(CredentialChars);
+                end = visible.AsSpan().IndexOfAnyExcept(CredentialChars);
+                break;
             case ValueKind.Token:
-                return text.AsSpan().IndexOfAnyExcept(TokenChars);
+                end = visible.AsSpan().IndexOfAnyExcept(TokenChars);
+                break;
             case ValueKind.SingleQuoted:
-                return text.AsSpan().IndexOfAny('\'', '\r', '\n');
+                end = visible.AsSpan().IndexOfAny('\'', '\r', '\n');
+                break;
             case ValueKind.DoubleQuoted:
-                for (int i = 0; i < text.Length; i++)
-                {
-                    char c = text[i];
-                    if (c is '"' or '\r' or '\n')
-                    {
-                        return i;
-                    }
-                    if (c == '\\')
-                    {
-                        if (i + 1 == text.Length)
-                        {
-                            keep = 1;
-                            return -1;
-                        }
-                        if (text[i + 1] is not ('\r' or '\n'))
-                        {
-                            i++;
-                        }
-                    }
-                }
-                return -1;
+                end = DoubleQuotedEnd(visible, out visibleKeep);
+                break;
             default:
                 // 私钥正文:到 END 或行尾(\r\n / \n)为止;行中间的 \r 照吞
-                int newline = text.IndexOf('\n');
-                int lineEnd = newline > 0 && text[newline - 1] == '\r' ? newline - 1 : newline;
-                if (FirstKeyEnd(text, lineEnd < 0 ? text.Length : lineEnd) is { } end)
+                int newline = visible.IndexOf('\n');
+                int lineEnd = newline > 0 && visible[newline - 1] == '\r' ? newline - 1 : newline;
+                if (FirstKeyEnd(visible, lineEnd < 0 ? visible.Length : lineEnd) is { } marker)
                 {
-                    return end.Index;
+                    end = marker.Index;
                 }
-                if (lineEnd >= 0)
+                else if (lineEnd >= 0)
                 {
-                    return lineEnd;
+                    end = lineEnd;
                 }
-                keep = Math.Min(MarkerTailBytes, text.Length);
-                return -1;
+                else
+                {
+                    visibleKeep = Math.Min(MarkerTailBytes, visible.Length);
+                }
+                break;
         }
+        if (end >= 0)
+        {
+            keep = 0;
+            return view.RawStart(end);
+        }
+        keep = Math.Max(view.KeepFor(visibleKeep), view.PartialLength);
+        return -1;
+    }
+
+    /// <summary>双引号串吞到哪:不带转义的 <c>"</c> 或行尾;切在转义中间的反斜杠留着等下一段。</summary>
+    private static int DoubleQuotedEnd(string text, out int keep)
+    {
+        keep = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c is '"' or '\r' or '\n')
+            {
+                return i;
+            }
+            if (c == '\\')
+            {
+                if (i + 1 == text.Length)
+                {
+                    keep = 1;
+                    return -1;
+                }
+                if (text[i + 1] is not ('\r' or '\n'))
+                {
+                    i++;
+                }
+            }
+        }
+        return -1;
     }
 
     /// <summary>
@@ -736,15 +806,18 @@ public sealed partial class SessionOutputMasker
         return null;
     }
 
-    /// <summary>认私钥块用的原文只留最后 <see cref="MarkerTailBytes" /> 个字节。</summary>
+    /// <summary>认私钥块用的可见文本只留最后 <see cref="MarkerTailBytes" /> 个字符。</summary>
     private static string KeyTail(string text) => text.Length <= MarkerTailBytes ? text : text[^MarkerTailBytes..];
 
     /// <summary>
     /// <c>名字=值</c> / <c>名字: 值</c>:名字里带口令一类的词,值是引号串(双引号认反斜杠转义,含 JSON 里转义过的 <c>\"…\"</c>)
-    /// 或到空白、引号、逗号、分号、控制字符为止的一段。名字与分隔符之间允许颜色序列(<c>grep --color</c> 只给匹配到的名字上色),
-    /// 分隔符与值之间也允许(jq、bat 给值上色;grep 的高亮把分隔符一起框住时,后面跟的是 <c>ESC[m ESC[K</c>)。值为空的(<c>Password: </c> 提示)不动。
+    /// 或到空白、引号、逗号、分号、控制字符为止的一段。跑在可见文本上:颜色序列已经剥掉,名字、分隔符、值上不上色都一样。
+    /// 值为空的(<c>Password: </c> 提示)不动。
     /// 没收尾的引号串走 <c>open</c> 那一支:停在已收到内容的末尾的,调用方把它当成没完的值扣下;
     /// 停在行尾(<c>\r</c> 或 <c>\n</c>)的,从引号之后遮到行尾 —— 不然扣着的值等到换行就原文放了出去。
+    /// 转义过的 JSON 串(<c>\"…\"</c>)遇到裸引号就停(<c>bare</c> 组):在一个外层的 JSON 串里,裸引号只能是外层串的收尾
+    /// (截短的日志把里层的 JSON 切在半截,<c>"msg": "{\"password\":\"abc def", …</c>),不然值只遮到反斜杠、正文漏出去。
+    /// 只在没先遇到 <c>\"</c> 时才走到裸引号,所以 <c>\"password\":\"\",\"token\":\"x\"</c> 这样的空值不会把下一个键吞进去。
     /// <para>
     /// 不加引号的值:<c>名字=值</c> 到空白、引号、逗号、分号或控制字符为止(<c>.env</c>、shell、<c>k=v k=v</c> 的日志里空格就是值的边界);
     /// <c>名字: 值</c>(冒号后面跟着空白,YAML、HTTP 头、<c>kubectl describe</c> 的写法)走 <c>rest</c> 那一支,值里可以有空格,
@@ -765,10 +838,9 @@ public sealed partial class SessionOutputMasker
     /// 名字从一串标识符字符的开头算起,先找到第一个关键词、再把整串吃完,两步都是原子的,值的各支也互不重叠 —— 整条是线性的。
     /// 旧写法在关键词前后各挂一个可回溯的 <c>[A-Za-z0-9_.\-]*</c>,4 KB 的 <c>tokentoken…</c> 就能把它拖上半分钟。
     /// 转义过的 JSON 串里,<c>\\\"</c> 与 <c>\\\\</c> 是里层的转义,不算收尾。
-    /// 名字前面紧挨着颜色序列(<c>ESC[38;5;203mDB_PASSWORD</c>)不用另认:序列的收尾字节与前面的参数也是名字里允许的字符,一并算进名字,只换值。
     /// <c>rest</c> 一支按「词 + 空白」一段段吃,每段空白只在后面那个词的开头看一眼是不是键,词与空白都是原子的,也是线性的。
     /// </remarks>
-    [GeneratedRegex("""(?:(?<![A-Za-z0-9_.\-@])(?>[A-Za-z0-9_.\-]*?(?:password|passwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential|key[_\-]data|\.key|dockerconfigjson|dockercfg))(?>[A-Za-z0-9_.\-]*)|(?<exact>(?<=")auth(?=\\?")))(?:\\?["'])?(?>(?:\x1b\[[0-9;]*[A-Za-z])*[ \t]*)(?:(?<colon>:)|=)(?>(?:\x1b\[[0-9;]*[A-Za-z])*(?:(?<ws>[ \t])(?:[ \t]|\x1b\[[0-9;]*[A-Za-z])*)?)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))+\\"|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|(?(exact)(?!)|(?(colon)(?(ws)(?<rest>(?!\\?["'])(?>[^ \t\r\n\x00-\x1f\x7f]+)(?:(?>[ \t]+)(?!\#|["']?[A-Za-z_](?>[A-Za-z0-9_.\-]*)["']?[ \t]*(?::(?=[ \t\r\n])|=))(?>[^ \t\r\n\x00-\x1f\x7f]+))*)|[^ "',;\x00-\x1f\x7f]+)|[^ "',;\x00-\x1f\x7f]+)))""",
+    [GeneratedRegex("""(?:(?<![A-Za-z0-9_.\-@])(?>[A-Za-z0-9_.\-]*?(?:password|passwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential|key[_\-]data|\.key|dockerconfigjson|dockercfg))(?>[A-Za-z0-9_.\-]*)|(?<exact>(?<=")auth(?=\\?")))(?:\\?["'])?(?>[ \t]*)(?:(?<colon>:)|=)(?>(?<ws>[ \t]+)?)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*(?:\\"|(?<bare>(?=")))|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|(?(exact)(?!)|(?(colon)(?(ws)(?<rest>(?!\\?["'])(?>[^ \t\r\n\x00-\x1f\x7f]+)(?:(?>[ \t]+)(?!\#|["']?[A-Za-z_](?>[A-Za-z0-9_.\-]*)["']?[ \t]*(?::(?=[ \t\r\n])|=))(?>[^ \t\r\n\x00-\x1f\x7f]+))*)|[^ "',;\x00-\x1f\x7f]+)|[^ "',;\x00-\x1f\x7f]+)))""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex KeyValue();
 
@@ -792,15 +864,10 @@ public sealed partial class SessionOutputMasker
     private static partial Regex NetrcLine();
 
     /// <summary>
-    /// <c>Bearer</c> 与带前缀的令牌从哪起头:前面不是 ASCII 字母、数字或下划线(<c>xBearer</c>、<c>my_ghp_…</c> 不算),
-    /// 或者紧跟在一个终端控制序列后面 —— <c>ESC[0m</c>、<c>ESC[K</c> 的收尾字节是字母,只看前一个字符的话,
-    /// 上了色的令牌(bat、grep 的高亮,带色的日志)一个都认不出。CSI 与两字节的 ESC 序列都算,序列原样留在输出里。
+    /// <c>Bearer</c> 与带前缀的令牌从哪起头:前面不是 ASCII 字母、数字或下划线(<c>xBearer</c>、<c>my_ghp_…</c> 不算)。
+    /// 跑在可见文本上:颜色序列已经剥掉,上了色的令牌(bat、grep 的高亮,带色的日志)看的是序列前面那个可见字符。
     /// </summary>
-    /// <remarks>
-    /// 往回看的只是紧挨着的那一个序列,几类字符互不重叠,仍是线性的。上下文截断时把前面的序列切掉了也无妨:
-    /// 还要遮的令牌都在上下文的末尾(值没处理完的扣着,不进上下文),紧挨着它的序列总在留下的那几百字节里。
-    /// </remarks>
-    private const string TokenStart = @"(?:(?<![A-Za-z0-9_])|(?<=\x1b(?:\[[0-?]*[ -/]*[@-~]|[ -/]*[0-~])))";
+    private const string TokenStart = @"(?<![A-Za-z0-9_])";
 
     /// <summary><c>Bearer</c> / <c>Basic</c> 后面的凭据;已收到内容的末尾停在凭据里(哪怕还不够 8 个字符)也算,调用方据此扣下。</summary>
     /// <remarks>
@@ -822,8 +889,225 @@ public sealed partial class SessionOutputMasker
     private static partial Regex PrivateKeyMarker();
 
     /// <summary>
-    /// 一处要遮的片段 <c>[Start, End)</c>;<see cref="Open" /> 表示它伸到了已收到内容的末尾,后面可能还有。
+    /// 一处要遮的片段 <c>[Start, End)</c>(原文位置);<see cref="Open" /> 表示它伸到了已收到内容的末尾,后面可能还有。
     /// <see cref="Quote" /> 是遮完要留着的引号,<see cref="ContentStart" /> 是决定结尾的那个值的正文从哪开始(开头的引号之后)。
     /// </summary>
     private readonly record struct Secret(int Start, int End, ValueKind Kind, string Quote, bool Open, int ContentStart);
+
+    /// <summary>
+    /// 一段原文的可见文本:CSI(<c>ESC [ … 终止字节</c>)与两三字节的 ESC 序列(<c>ESC ( B</c>、<c>ESC 7</c>…)不占位置;
+    /// OSC / DCS / SOS / PM / APC 的开头(<c>ESC ]</c> 等)与 ST(<c>ESC \</c>)各换成一个 ESC 留在可见文本里作分界,
+    /// 字符串的内容照样可见(终端标题里的命令行也过规则);坏的、超长的序列 ESC 原样可见;末尾没写完的序列不占位置、长度记在 <see cref="PartialLength" />。
+    /// 其余字符(含 BEL 等别的控制字符,它们照旧是值的边界)原样。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Origin" /> 为 1 时可见文本的第 0 个字符是上下文截断点前的那个可见字符(只给 <c>Bearer</c> 与令牌的「前面不是字母数字」看),
+    /// 它不在这段原文里,位置记为 -1。位置表 <c>_map</c> 是递增的,原文 → 可见文本的换算用二分。
+    /// </remarks>
+    private sealed class Projection
+    {
+        private readonly int[] _map;
+        private readonly List<(int Start, int End)> _hidden;
+
+        private Projection(string raw, string visible, int[] map, int origin, List<(int Start, int End)> hidden, int partialLength)
+        {
+            Raw = raw;
+            Visible = visible;
+            _map = map;
+            Origin = origin;
+            _hidden = hidden;
+            PartialLength = partialLength;
+        }
+
+        /// <summary>原文。</summary>
+        public string Raw { get; }
+
+        /// <summary>可见文本。</summary>
+        public string Visible { get; }
+
+        /// <summary>可见文本里属于这段原文的部分从哪起(0,或者 1:前面补了截断点前的那个字符)。</summary>
+        public int Origin { get; }
+
+        /// <summary>不占位置的控制序列在原文里的范围(含末尾没写完的那一段)。</summary>
+        public IReadOnlyList<(int Start, int End)> Hidden => _hidden;
+
+        /// <summary>原文末尾没写完的控制序列有多长(0 表示没有):下一段来了才知道它是什么,要留着拼。</summary>
+        public int PartialLength { get; }
+
+        /// <summary>投影一段原文;<paramref name="previous" /> 是补在前面、只给令牌开头看的那个字符。</summary>
+        public static Projection Of(string raw, char? previous)
+        {
+            var visible = new StringBuilder(raw.Length + 1);
+            var map = new int[raw.Length + 1];
+            var hidden = new List<(int Start, int End)>();
+            int count = 0;
+            if (previous is { } prev)
+            {
+                visible.Append(prev);
+                map[count++] = -1;
+            }
+            int origin = count;
+            int partial = 0;
+            int i = 0;
+            while (i < raw.Length)
+            {
+                if (raw[i] != '\u001b')
+                {
+                    visible.Append(raw[i]);
+                    map[count++] = i;
+                    i++;
+                    continue;
+                }
+                switch (Sequence(raw, i, out int end))
+                {
+                    case SequenceKind.Hidden:
+                        hidden.Add((i, end));
+                        i = end;
+                        break;
+                    case SequenceKind.Partial:
+                        hidden.Add((i, raw.Length));
+                        partial = raw.Length - i;
+                        i = raw.Length;
+                        break;
+                    case SequenceKind.Boundary:
+                        visible.Append('\u001b');
+                        map[count++] = i;
+                        i = end;
+                        break;
+                    default:
+                        visible.Append('\u001b');
+                        map[count++] = i;
+                        i++;
+                        break;
+                }
+            }
+            Array.Resize(ref map, count);
+            return new Projection(raw, visible.ToString(), map, origin, hidden, partial);
+        }
+
+        /// <summary>可见文本第 <paramref name="index" /> 个字符在原文里从哪起。</summary>
+        public int RawStart(int index) => _map[index];
+
+        /// <summary>可见文本 <c>[…, end)</c> 在原文里到哪为止(最后一个字符之后)。</summary>
+        public int RawEnd(int end) => end <= Origin ? 0 : _map[end - 1] + 1;
+
+        /// <summary>可见文本的一段换算成原文的范围。</summary>
+        public (int Start, int End) RawRange(int start, int end) => (RawStart(start), RawEnd(end));
+
+        /// <summary>原文位置 <paramref name="raw" /> 处(或之后)第一个可见字符在可见文本里的位置;后面没有就是可见文本的长度。</summary>
+        public int VisibleIndexAt(int raw)
+        {
+            int lo = Origin;
+            int hi = _map.Length;
+            while (lo < hi)
+            {
+                int mid = (lo + hi) >>> 1;
+                if (_map[mid] < raw)
+                {
+                    lo = mid + 1;
+                }
+                else
+                {
+                    hi = mid;
+                }
+            }
+            return lo;
+        }
+
+        /// <summary>原文位置 <paramref name="raw" /> 之前的最后一个可见字符(含补在前面的那个);没有为 null。</summary>
+        public char? LastVisibleBefore(int raw)
+        {
+            int index = VisibleIndexAt(raw) - 1;
+            return index >= 0 ? Visible[index] : null;
+        }
+
+        /// <summary>原文 <c>[from, end)</c> 里的可见字符。</summary>
+        public string VisibleBetween(int from, int end)
+        {
+            int start = VisibleIndexAt(from);
+            int stop = VisibleIndexAt(end);
+            return stop > start ? Visible[start..stop] : string.Empty;
+        }
+
+        /// <summary>可见文本末尾 <paramref name="visibleCount" /> 个字符(连同它们后面的控制序列)在原文里占多少字节;再加上没写完的序列。</summary>
+        public int KeepFor(int visibleCount) =>
+            visibleCount <= 0 ? PartialLength : Raw.Length - _map[Visible.Length - visibleCount];
+
+        /// <summary>把原文 <c>[start, end)</c> 里不占位置的完整控制序列按原样接到 <paramref name="output" /> 上(遮掉的那段里的颜色、光标序列照放)。</summary>
+        public void AppendHidden(StringBuilder output, int start, int end)
+        {
+            int partialStart = Raw.Length - PartialLength;
+            foreach ((int s, int e) in _hidden)
+            {
+                if (s >= start && e <= end && (PartialLength == 0 || s != partialStart))
+                {
+                    output.Append(Raw, s, e - s);
+                }
+            }
+        }
+
+        /// <summary>
+        /// <paramref name="start" /> 处的 ESC 起头的是哪种序列,<paramref name="end" /> 是它之后的位置。
+        /// CSI:<c>ESC [</c>、参数 0x30–0x3F、中间字节 0x20–0x2F、终止字节 0x40–0x7E;字符串序列的开头 <c>ESC ] P X ^ _</c> 与 ST <c>ESC \</c>;
+        /// 其余 <c>ESC</c> + 中间字节 + 终止字节 0x30–0x7E。
+        /// </summary>
+        private static SequenceKind Sequence(string raw, int start, out int end)
+        {
+            end = start + 1;
+            if (end >= raw.Length)
+            {
+                return SequenceKind.Partial;
+            }
+            char next = raw[end];
+            if (next is ']' or 'P' or 'X' or '^' or '_' or '\\')
+            {
+                end++;
+                return SequenceKind.Boundary;
+            }
+            int i = end;
+            if (next == '[')
+            {
+                i++;
+                while (i < raw.Length && raw[i] is >= '\u0030' and <= '\u003f')
+                {
+                    i++;
+                }
+            }
+            while (i < raw.Length && raw[i] is >= '\u0020' and <= '\u002f')
+            {
+                i++;
+            }
+            if (i - start > MaxSequenceBytes)
+            {
+                return SequenceKind.Lone;
+            }
+            if (i >= raw.Length)
+            {
+                return SequenceKind.Partial;
+            }
+            char final = raw[i];
+            bool valid = next == '[' ? final is >= '\u0040' and <= '\u007e' : final is >= '\u0030' and <= '\u007e';
+            if (!valid)
+            {
+                return SequenceKind.Lone;
+            }
+            end = i + 1;
+            return SequenceKind.Hidden;
+        }
+
+        private enum SequenceKind
+        {
+            /// <summary>不占位置:CSI 与两三字节的 ESC 序列。</summary>
+            Hidden,
+
+            /// <summary>到原文末尾都没写完。</summary>
+            Partial,
+
+            /// <summary>字符串序列的开头或 ST:可见文本里留一个 ESC 作分界。</summary>
+            Boundary,
+
+            /// <summary>坏的或超长的:ESC 原样可见。</summary>
+            Lone
+        }
+    }
 }

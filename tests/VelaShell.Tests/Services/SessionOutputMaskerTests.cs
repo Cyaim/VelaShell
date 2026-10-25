@@ -130,7 +130,115 @@ public sealed class SessionOutputMaskerTests
         ["pgp-private-key-block",
             "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYBGVxQ0EBCADabcdefghijklmnop\n=AbCd\n-----END PGP PRIVATE KEY BLOCK-----\n",
             "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n***\n***\n-----END PGP PRIVATE KEY BLOCK-----\n", "lQOYBGVxQ0EBCADabcdefghijklmnop"],
+        // 先剥掉控制序列再匹配:grep 的高亮把关键词、令牌、值、Bearer 从中间切开,遮掉的那段里的序列原样留在 *** 后面
+        ["grep-highlight-splits-keyword",
+            "DB_\u001b[01;31m\u001b[KPASS\u001b[m\u001b[KWORD=hunter2\n", "DB_\u001b[01;31m\u001b[KPASS\u001b[m\u001b[KWORD=***\n", "hunter2"],
+        ["grep-highlight-splits-token",
+            "ghp_\u001b[01;31m\u001b[K0123\u001b[m\u001b[K456789abcdefghijABCDEFGHIJ0123\n", null, "456789abcdefghijABCDEFGHIJ0123"],
+        ["grep-highlight-splits-value",
+            "password=hun\u001b[01;31m\u001b[Kter\u001b[m\u001b[K2\n", "password=***\u001b[01;31m\u001b[K\u001b[m\u001b[K\n", "hunter2"],
+        ["colour-splits-bearer",
+            "Authorization: Bea\u001b[1mrer\u001b[0m eyJhbGciOiJIUzI1NiJ9.payload.sig\n",
+            "Authorization: Bea\u001b[1mrer\u001b[0m ***\n", "eyJhbGciOiJIUzI1NiJ9.payload.sig"],
+        // 终端标题(OSC)里的命令行照样过规则,标题的收尾不被值吞掉
+        ["osc-title-with-bearer",
+            "\u001b]0;curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig'\u0007$ ",
+            "\u001b]0;curl -H 'Authorization: Bearer ***'\u0007$ ", "eyJhbGciOiJIUzI1NiJ9.payload.sig"],
+        // 截断上下文时不截在控制序列中间,截断点前的可见字符照样给令牌开头看
+        ["long-line-then-coloured-token",
+            new string('Z', 600) + " \u001b[01;31m\u001b[Kghp_0123456789abcdefghijABCDEFGHIJ0123\u001b[m\u001b[K\n", null, "0123456789abcdefghijABCDEFGHIJ0123"],
+        ["long-line-then-keyword-split-by-colour",
+            new string('Z', 600) + " DB_\u001b[01;31m\u001b[KPASS\u001b[m\u001b[KWORD=hunter2\r\n",
+            new string('Z', 600) + " DB_\u001b[01;31m\u001b[KPASS\u001b[m\u001b[KWORD=***\r\n", "hunter2"],
+        // 凭据离 Bearer 五百多个空白:扣着凭据时截上下文,截断点会落在 Bearer 前面那个颜色序列的中间 —— 得挪到序列开头,
+        // 不然剩下的半截「m」紧挨着 Bearer,下一段就认不出了
+        ["bearer-far-from-its-token-after-colour",
+            "\u001b[1mBearer" + new string(' ', 505) + "eyJhbGciOiJIUzI1NiJ9.payload.sig\u001b[0m\n",
+            "\u001b[1mBearer" + new string(' ', 505) + "***\u001b[0m\n", "eyJhbGciOiJIUzI1NiJ9.payload.sig"],
+        // 截断点正好落在 xBearer 的 x 之后:截断点前的那个可见字符要记着,不能凭空多出一个凭据
+        ["bearer-inside-a-word-far-from-its-value",
+            "xBearer" + new string(' ', 506) + "abcdefghij\r\n", "xBearer" + new string(' ', 506) + "abcdefghij\r\n", ""],
+        // 转义过的 JSON 串被外层的裸引号截断:遮到那个引号之前;空值不把下一个键吞进去
+        ["escaped-json-cut-by-outer-quote",
+            "\"msg\": \"{\\\"password\\\":\\\"abc def\", \"user\": \"x\"\n",
+            "\"msg\": \"{\\\"password\\\":\\\"***\", \"user\": \"x\"\n", "abc def"],
+        ["escaped-json-empty-value-then-token",
+            "{\\\"password\\\":\\\"\\\",\\\"token\\\":\\\"xyz12345\\\"}\n",
+            "{\\\"password\\\":\\\"\\\",\\\"token\\\":\\\"***\\\"}\n", "xyz12345"],
     ];
+
+    /// <summary>
+    /// 先剥掉控制序列再匹配(<c>grep -i pass</c> 只高亮关键词的一部分、令牌与值被高亮切开):遮掉的那一段里夹着的序列
+    /// 原样接在 <c>***</c> 后面,回放时颜色照常复位;没被遮的部分逐字节原样。
+    /// </summary>
+    [TestMethod]
+    public void ControlSequencesInsideKeywordsTokensAndValues_AreSeenThrough()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("DB_\u001b[01;31m\u001b[KPASS\u001b[m\u001b[KWORD=hunter2\n"));
+        masker.Write(Bytes("\u001b[01;31m\u001b[Kpass\u001b[m\u001b[Kphrase: correct horse\n"));
+        masker.Write(Bytes("ghp_\u001b[01;31m\u001b[K0123\u001b[m\u001b[K456789abcdefghijABCDEFGHIJ0123\n"));
+        masker.Write(Bytes("password=hun\u001b[01;31m\u001b[Kter\u001b[m\u001b[K2 next\n"));
+        masker.Write(Bytes("token=\u001b(B\u001b[mabc\u001b7def\n"));
+        // OSC 的开头与 ST 是分界:值不会吞进标题,超链接(OSC 8)里的令牌照样从头认
+        masker.Write(Bytes("password=abc\u001b]0;title\u0007\n"));
+        masker.Write(Bytes("\u001b]8;;https://example.com\u001b\\ghp_0123456789abcdefghijABCDEFGHIJ0123\u001b]8;;\u001b\\\n"));
+        Assert.AreEqual(
+            "DB_\u001b[01;31m\u001b[KPASS\u001b[m\u001b[KWORD=***\n"
+            + "\u001b[01;31m\u001b[Kpass\u001b[m\u001b[Kphrase: ***\n"
+            + "***\u001b[01;31m\u001b[K\u001b[m\u001b[K\n"
+            + "password=***\u001b[01;31m\u001b[K\u001b[m\u001b[K next\n"
+            + "token=\u001b(B\u001b[m***\u001b7\n"
+            + "password=***\u001b]0;title\u0007\n"
+            + "\u001b]8;;https://example.com\u001b\\***\u001b]8;;\u001b\\\n",
+            Written);
+    }
+
+    /// <summary>
+    /// 控制序列在一段的末尾没写完(<c>ESC[01</c>):不知道它后面是不是还接着值,扣着的值继续扣;
+    /// 不在值里的照常放出,下一段把它补完。坏的序列(ESC 后面跟着控制字符)ESC 原样可见、是值的边界。
+    /// </summary>
+    [TestMethod]
+    public void UnfinishedOrBrokenSequences_AreHandled()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("password=hun\u001b[01"));
+        Assert.AreEqual("password=", Written, "序列还没写完:值可能还没完,扣着");
+        masker.Write(Bytes(";31mter2\n"));
+        Assert.AreEqual("password=***\u001b[01;31m\n", Written);
+        _written.Clear();
+
+        masker.Write(Bytes("ls \u001b[1"));
+        Assert.AreEqual("ls \u001b[1", Written, "不在值里:照常放出");
+        masker.Write(Bytes("mREADME\u001b[0m\n"));
+        Assert.AreEqual("ls \u001b[1mREADME\u001b[0m\n", Written);
+        _written.Clear();
+
+        masker.Write(Bytes("token=abc\u001b\rdef\n"));
+        Assert.AreEqual("token=***\u001b\rdef\n", Written, "坏序列的 ESC 是值的边界");
+    }
+
+    /// <summary>
+    /// <c>Password: </c> 的提示后面同一行接着 jq 的彩色输出(<c>read -p</c> 之后打印了一段 JSON):值一个字也不漏,
+    /// 换行与颜色序列都在。
+    /// </summary>
+    [TestMethod]
+    public void PromptFollowedByColouredJq_LeaksNothing()
+    {
+        string jq = "Password: " + Jq("\"hunter2\"");
+        string compact = "Password: \u001b[1;39m{\u001b[1;34m\"password\"\u001b[0m\u001b[1;39m:\u001b[0;32m\"hunter2\"\u001b[1;39m\u001b[1;39m}\u001b[0m\n";
+        foreach (string text in new[] { jq, compact })
+        {
+            string output = Run([Bytes(text)]);
+            Assert.DoesNotContain("hunter2", output);
+            Assert.AreEqual(text.Count(c => c == '\n'), output.Count(c => c == '\n'), "换行一个不少");
+            Assert.AreEqual(text.Count(c => c == '\u001b'), output.Count(c => c == '\u001b'), "颜色序列一个不少");
+            for (int at = 1; at < text.Length; at++)
+            {
+                Assert.DoesNotContain("hunter2", Run([Bytes(text[..at]), Bytes(text[at..])]), $"切在第 {at} 个字符");
+            }
+        }
+    }
 
     /// <summary>
     /// 新加的几条规则「不该遮的没遮」:证书与公钥、作为值出现的文件名、不是字符串的 <c>auth</c>、帮助文本与句子里的 <c>password</c>、
@@ -212,6 +320,13 @@ public sealed class SessionOutputMaskerTests
         masker.Write(Bytes(value[3000..] + "us"));
         masker.Write(Bytes("er: bob # note\n"));
         Assert.AreEqual("password: *** user: bob # note\n", Written, "吞的时候同一个判据:停在下一个键前面");
+        _written.Clear();
+
+        // 吞的时候末尾那半个键前面夹着颜色序列:留着拼下一段的是原文的整段(空白、序列、半个键),序列照放
+        masker.Write(Bytes("password: " + value[..3000]));
+        masker.Write(Bytes(value[3000..] + "\u001b[1mus"));
+        masker.Write(Bytes("er: bob\n"));
+        Assert.AreEqual("password: *** \u001b[1muser: bob\n", Written);
     }
 
     /// <summary><c>.netrc</c> 分行写的 <c>password</c> 只认行首的单独一行;后面再来一个词就不算(扣着的那一点原样放出)。</summary>
@@ -626,6 +741,11 @@ public sealed class SessionOutputMaskerTests
             ("扣着的到行尾的值", "passphrase: " + Repeat("ab ")[..4000]),
             ("netrc 连串", Repeat("machine a login b ") + "\r\n"),
             ("netrc 口令行", "password " + Repeat("a")),
+            ("只有颜色序列", Repeat("\u001b[1m")),
+            ("字符串序列开头连串", Repeat("\u001b]0;")),
+            ("ESC 连串", Repeat("\u001b")),
+            ("颜色序列切开的关键词连串", Repeat("pass\u001b[mword=")),
+            ("颜色序列切开的值", "password=" + Repeat("a\u001b[1m")),
         ];
         foreach ((string name, string text) in inputs)
         {
