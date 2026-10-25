@@ -5589,6 +5589,15 @@ Overwrite it?</value>
   <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
     <value>IdentityAgent {0} not imported: VelaShell only uses the default agent (SSH_AUTH_SOCK).</value>
   </data>
+  <data name="SshCfgImport_NoteX11TrustedDefault" xml:space="preserve">
+    <value>ForwardX11Trusted is not set: imported as trusted (-Y), VelaShell's default. OpenSSH would use untrusted forwarding (-X) here; to keep that, clear "Trusted (-Y)" in the connection's SSH options or add ForwardX11Trusted no.</value>
+  </data>
+  <data name="SshCfgImport_NoteObscureInterval" xml:space="preserve">
+    <value>ObscureKeystrokeTiming {0}: imported as on; VelaShell always sends on a fixed {1} ms interval.</value>
+  </data>
+  <data name="SshCfgImport_NoteValueInvalid" xml:space="preserve">
+    <value>{0} not imported: unrecognized value.</value>
+  </data>
   <data name="SshCfgImport_NoteExtraIdentities" xml:space="preserve">
     <value>A connection uses one private key; not imported: {0}</value>
   </data>

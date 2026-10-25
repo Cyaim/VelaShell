@@ -17,7 +17,8 @@ namespace VelaShell.Infrastructure.Import;
 /// OpenSSH <c>~/.ssh/config</c> 的 <see cref="ISessionImportService" /> 实现:定位配置文件、
 /// 按 OpenSSH 的取值规则解析每个主机别名(<c>HostName</c> / <c>Port</c> / <c>User</c> /
 /// <c>IdentityFile</c> / <c>CertificateFile</c> / <c>IdentityAgent</c> / <c>ProxyJump</c>、
-/// <c>KexAlgorithms</c> / <c>HostKeyAlgorithms</c> / <c>Ciphers</c> / <c>MACs</c> / <c>Compression</c> / <c>ForwardAgent</c>、
+/// <c>KexAlgorithms</c> / <c>HostKeyAlgorithms</c> / <c>Ciphers</c> / <c>MACs</c> / <c>Compression</c> / <c>ForwardAgent</c> /
+/// <c>ForwardX11</c> / <c>ForwardX11Trusted</c> / <c>ObscureKeystrokeTiming</c>、
 /// <c>LocalForward</c> / <c>RemoteForward</c> / <c>DynamicForward</c>),把选中的会话写入 <see cref="ISessionRepository" />。
 /// </summary>
 /// <remarks>
@@ -215,7 +216,8 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
     }
 
     /// <summary>
-    /// 协议层选项:<c>Compression</c>、<c>ForwardAgent</c>,以及四个算法清单(§134 的自定义清单,写法本来就是 ssh_config 的
+    /// 协议层选项:<c>Compression</c>、<c>ForwardAgent</c>、<c>ForwardX11</c> / <c>ForwardX11Trusted</c>、<c>ObscureKeystrokeTiming</c>(后三个只认明写的值),
+    /// 以及四个算法清单(§134 的自定义清单,写法本来就是 ssh_config 的
     /// <c>+</c> / <c>-</c> / <c>^</c>,原样带过来;本版没实现的名字去掉,拼错的整条不导,都进预览)。
     /// </summary>
     private static SshSessionOptions MapSshOptions(SshHostConfig options, List<string> notes)
@@ -243,7 +245,96 @@ public sealed class SshConfigImportService(ISessionRepository repository, IAppDa
                 notes.Add(Strings.Format("SshCfgImport_NoteForwardAgentPath", forward));
             }
         }
+
+        MapX11(options, ssh, notes);
+        MapObscureKeystrokeTiming(options, ssh, notes);
         return ssh;
+    }
+
+    /// <summary>
+    /// <c>ForwardX11</c> / <c>ForwardX11Trusted</c>:〔决策〕只认明写的 <c>yes</c> / <c>no</c>,没写的按 VelaShell 自己的默认
+    /// (不转发;转发时受信任,即 <see cref="SshSessionOptions.X11Trusted" /> 的默认)。
+    /// </summary>
+    /// <remarks>
+    /// OpenSSH 的 <c>ForwardX11Trusted</c> 默认 <c>no</c>(非受信任,<c>-X</c>),VelaShell 默认受信任(<c>-Y</c>,Windows 上的 X 服务器
+    /// 多半没有 SECURITY 扩展,非受信任模式用不了)。维护者 2026-10-25 定的口径是不按 OpenSSH 的默认换算 —— 于是只写了
+    /// <c>ForwardX11 yes</c> 的那台在 VelaShell 里是受信任的,与在 ssh 里不同:这一点进导入说明,不悄悄改信任级别。
+    /// 认不出的值(拼错)不导、说明一句,不当成 <c>no</c> 吞掉。
+    /// </remarks>
+    private static void MapX11(SshHostConfig options, SshSessionOptions ssh, List<string> notes)
+    {
+        bool? forward = YesNo(options, "ForwardX11", notes);
+        bool? trusted = YesNo(options, "ForwardX11Trusted", notes);
+        if (forward == true)
+        {
+            ssh.X11Forwarding = true;
+        }
+        if (trusted is { } value)
+        {
+            ssh.X11Trusted = value;
+        }
+        else if (ssh.X11Forwarding)
+        {
+            notes.Add(Strings.Get("SshCfgImport_NoteX11TrustedDefault"));
+        }
+    }
+
+    /// <summary>
+    /// <c>ObscureKeystrokeTiming</c>:〔决策〕只认明写的值 —— <c>yes</c> / <c>interval:N</c> 开、<c>no</c> 关,没写按 VelaShell 的默认(关)。
+    /// </summary>
+    /// <remarks>
+    /// OpenSSH 默认开,照抄它的默认会让导入的配置全部开着(§248 定的默认关,理由是带宽代价)。VelaShell 的节拍固定 20 毫秒
+    /// (OpenSSH <c>yes</c> 的值,不开放成可调):<c>interval:N</c> 按开启导入,N 不是 20 时说明一句。认不出的值不导、说明一句。
+    /// </remarks>
+    private static void MapObscureKeystrokeTiming(SshHostConfig options, SshSessionOptions ssh, List<string> notes)
+    {
+        if (Value(options.First("ObscureKeystrokeTiming")) is not { } value)
+        {
+            return;
+        }
+        if (string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase))
+        {
+            ssh.ObscureKeystrokeTiming = true;
+        }
+        else if (string.Equals(value, "no", StringComparison.OrdinalIgnoreCase))
+        {
+            ssh.ObscureKeystrokeTiming = false;
+        }
+        else if (value.StartsWith("interval:", StringComparison.OrdinalIgnoreCase)
+                 && int.TryParse(value["interval:".Length..], NumberStyles.None, CultureInfo.InvariantCulture, out int ms)
+                 && ms is >= 1 and <= 1000)
+        {
+            // 与库解析 ssh_config 时同一个范围(1–1000 毫秒)。
+            ssh.ObscureKeystrokeTiming = true;
+            int fixedMs = (int)VelaSshClientWrapper.KeystrokeObfuscationInterval.TotalMilliseconds;
+            if (ms != fixedMs)
+            {
+                notes.Add(Strings.Format("SshCfgImport_NoteObscureInterval", value, fixedMs));
+            }
+        }
+        else
+        {
+            notes.Add(Strings.Format("SshCfgImport_NoteValueInvalid", $"ObscureKeystrokeTiming {value}"));
+        }
+    }
+
+    /// <summary>明写的 <c>yes</c> / <c>no</c>(大小写不论);没写为 <see langword="null" />,认不出的也是 <see langword="null" /> 并说明一句。</summary>
+    private static bool? YesNo(SshHostConfig options, string keyword, List<string> notes)
+    {
+        if (Value(options.First(keyword)) is not { } value)
+        {
+            return null;
+        }
+        if (string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (string.Equals(value, "no", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        notes.Add(Strings.Format("SshCfgImport_NoteValueInvalid", $"{keyword} {value}"));
+        return null;
     }
 
     private static string? Algorithms(SshAlgorithmKind kind, string keyword, string? spec, List<string> notes)

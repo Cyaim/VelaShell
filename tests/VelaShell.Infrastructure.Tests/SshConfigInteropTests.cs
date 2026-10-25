@@ -122,6 +122,120 @@ public sealed class SshConfigInteropTests
         Assert.IsNull((await ScanOneAsync(config, "c")).Ssh, "一项都没开:存 null");
     }
 
+    /// <summary>
+    /// 维护者 2026-10-25 定的口径:<c>ForwardX11</c> / <c>ForwardX11Trusted</c> / <c>ObscureKeystrokeTiming</c> 只认明写的值,
+    /// 没写按 VelaShell 自己的默认 —— 不转发 X11、转发时受信任、不混淆按键时序。OpenSSH 的两个默认(非受信任、混淆开着)不换算过来;
+    /// 只写了 <c>ForwardX11 yes</c> 时信任级别与 ssh 不同,这一点进导入说明。认不出的值不导、说明一句。
+    /// </summary>
+    [TestMethod]
+    public async Task X11与按键时序混淆只认明写的值()
+    {
+        string config = WriteConfig(
+            """
+            Host x11plain
+                ForwardX11 yes
+            Host x11untrusted
+                ForwardX11 YES
+                ForwardX11Trusted no
+            Host x11trusted
+                ForwardX11 yes
+                ForwardX11Trusted yes
+            Host x11off
+                ForwardX11 no
+                ForwardX11Trusted no
+            Host obscure
+                ObscureKeystrokeTiming yes
+            Host obscureoff
+                ObscureKeystrokeTiming no
+            Host obscure20
+                ObscureKeystrokeTiming interval:20
+            Host obscure80
+                ObscureKeystrokeTiming interval:80
+            Host typo
+                ForwardX11 yess
+                ObscureKeystrokeTiming interval:0
+            Host plain
+                User nobody
+            """);
+
+        ImportedSession plain = await ScanOneAsync(config, "x11plain");
+        Assert.IsTrue(plain.Ssh?.X11Forwarding);
+        Assert.IsTrue(plain.Ssh?.X11Trusted, "没写 ForwardX11Trusted:按 VelaShell 的默认(受信任),不换算成 OpenSSH 的非受信任");
+        Assert.IsTrue(plain.Notes.Any(n => n.Contains("ForwardX11Trusted")), "信任级别与 ssh 不同,要说出来");
+
+        ImportedSession untrusted = await ScanOneAsync(config, "x11untrusted");
+        Assert.IsTrue(untrusted.Ssh?.X11Forwarding);
+        Assert.IsFalse(untrusted.Ssh?.X11Trusted ?? true);
+        Assert.IsEmpty(untrusted.Notes);
+
+        ImportedSession trusted = await ScanOneAsync(config, "x11trusted");
+        Assert.IsTrue(trusted.Ssh?.X11Forwarding);
+        Assert.IsTrue(trusted.Ssh?.X11Trusted);
+        Assert.IsEmpty(trusted.Notes);
+
+        Assert.IsNull((await ScanOneAsync(config, "x11off")).Ssh, "没开 X11 时信任级别不算数:一项都没开,存 null");
+
+        Assert.IsTrue((await ScanOneAsync(config, "obscure")).Ssh?.ObscureKeystrokeTiming);
+        Assert.IsNull((await ScanOneAsync(config, "obscureoff")).Ssh);
+        ImportedSession obscure20 = await ScanOneAsync(config, "obscure20");
+        Assert.IsTrue(obscure20.Ssh?.ObscureKeystrokeTiming);
+        Assert.IsEmpty(obscure20.Notes, "20 毫秒就是 VelaShell 的节拍,没什么要说的");
+        ImportedSession obscure80 = await ScanOneAsync(config, "obscure80");
+        Assert.IsTrue(obscure80.Ssh?.ObscureKeystrokeTiming, "interval:N 也是开");
+        Assert.IsTrue(obscure80.Notes.Any(n => n.Contains("interval:80")), "节拍固定 20 毫秒:不一样要说一声");
+
+        ImportedSession typo = await ScanOneAsync(config, "typo");
+        Assert.IsNull(typo.Ssh, "拼错的不当成 yes,也不当成 no 悄悄吞掉");
+        Assert.IsTrue(typo.Notes.Any(n => n.Contains("ForwardX11 yess")));
+        Assert.IsTrue(typo.Notes.Any(n => n.Contains("ObscureKeystrokeTiming interval:0")), "超出 1–1000 毫秒的节拍与库一样不认");
+
+        ImportedSession nothing = await ScanOneAsync(config, "plain");
+        Assert.IsNull(nothing.Ssh, "没写就按 VelaShell 的默认:OpenSSH 默认开着的按键时序混淆不跟着开");
+    }
+
+    /// <summary>
+    /// 导出与导入对称:X11 的信任级别一定明写(两边的默认不同);按键时序混淆开着才写 —— 关着的不写 <c>no</c>
+    /// (这个关键字 OpenSSH 9.5 才有,老版本读到不认识的关键字整份配置报错)。导出再导入,两项都回到原样。
+    /// </summary>
+    [TestMethod]
+    public async Task X11与按键时序混淆导出后读得回来()
+    {
+        SessionProfile on = new()
+        {
+            Name = "on", Host = "10.0.0.21",
+            Ssh = new SshSessionOptions { X11Forwarding = true, X11Trusted = false, ObscureKeystrokeTiming = true },
+        };
+        SessionProfile trusted = new()
+        {
+            Name = "trusted", Host = "10.0.0.22",
+            Ssh = new SshSessionOptions { X11Forwarding = true, X11Trusted = true },
+        };
+        SessionProfile off = new() { Name = "off", Host = "10.0.0.23", Ssh = new SshSessionOptions { Compression = true } };
+
+        SshConfigExport export = SshConfigExporter.Write(Archive(on, trusted, off));
+
+        SshHostConfig onHost = ReadBack(export, "on");
+        Assert.IsTrue(onHost.ForwardX11);
+        Assert.AreEqual("no", onHost.First("ForwardX11Trusted"));
+        Assert.AreEqual("yes", onHost.First("ObscureKeystrokeTiming"));
+        Assert.AreEqual("yes", ReadBack(export, "trusted").First("ForwardX11Trusted"), "受信任也要明写:OpenSSH 没写时是非受信任");
+        Assert.IsNull(ReadBack(export, "off").First("ObscureKeystrokeTiming"), "关着的不写,老版本 ssh 不认这个关键字");
+        Assert.IsNull(ReadBack(export, "off").First("ForwardX11"));
+
+        string path = WriteConfig(export.Content);
+        foreach (SessionProfile expected in new[] { on, trusted, off })
+        {
+            ImportedSession imported = await ScanOneAsync(path, expected.Name);
+            Assert.AreEqual(expected.Ssh!.X11Forwarding, imported.Ssh?.X11Forwarding ?? false, expected.Name);
+            if (expected.Ssh.X11Forwarding)
+            {
+                Assert.AreEqual(expected.Ssh.X11Trusted, imported.Ssh!.X11Trusted, expected.Name);
+            }
+            Assert.AreEqual(expected.Ssh.ObscureKeystrokeTiming, imported.Ssh?.ObscureKeystrokeTiming ?? false, expected.Name);
+            Assert.IsEmpty(imported.Notes, $"{expected.Name}:明写了信任级别,读回来没什么要说明的");
+        }
+    }
+
     // ------------------------------------------------------------ 导入:转发
 
     [TestMethod]

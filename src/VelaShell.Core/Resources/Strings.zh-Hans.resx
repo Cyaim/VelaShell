@@ -5722,6 +5722,15 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
     <value>IdentityAgent {0} 没有导入：VelaShell 只连默认的 agent（SSH_AUTH_SOCK）。</value>
   </data>
+  <data name="SshCfgImport_NoteX11TrustedDefault" xml:space="preserve">
+    <value>没写 ForwardX11Trusted：按 VelaShell 的默认导入为受信任(-Y)，而 OpenSSH 这时用的是非受信任(-X)。要非受信任，在连接配置的 SSH 选项里取消「受信任(-Y)」，或在 config 里写上 ForwardX11Trusted no。</value>
+  </data>
+  <data name="SshCfgImport_NoteObscureInterval" xml:space="preserve">
+    <value>ObscureKeystrokeTiming {0}：按开启导入；VelaShell 的节拍固定为 {1} 毫秒。</value>
+  </data>
+  <data name="SshCfgImport_NoteValueInvalid" xml:space="preserve">
+    <value>{0} 没有导入：认不出这个值。</value>
+  </data>
   <data name="SshCfgImport_NoteExtraIdentities" xml:space="preserve">
     <value>一条连接只用一把私钥，没有导入：{0}</value>
   </data>

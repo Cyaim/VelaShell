@@ -5584,6 +5584,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
     <value>IdentityAgent {0} はインポートしませんでした：VelaShell が使うのは既定のエージェント（SSH_AUTH_SOCK）だけです。</value>
   </data>
+  <data name="SshCfgImport_NoteX11TrustedDefault" xml:space="preserve">
+    <value>ForwardX11Trusted が書かれていないため、VelaShell の既定どおり信頼済み(-Y)としてインポートしました。OpenSSH ではこの場合は非信頼(-X)になります。非信頼にするには、接続設定の SSH オプションで「信頼済み(-Y)」をオフにするか、config に ForwardX11Trusted no を書いてください。</value>
+  </data>
+  <data name="SshCfgImport_NoteObscureInterval" xml:space="preserve">
+    <value>ObscureKeystrokeTiming {0}：オンとしてインポートしました。VelaShell の送信間隔は {1} ミリ秒固定です。</value>
+  </data>
+  <data name="SshCfgImport_NoteValueInvalid" xml:space="preserve">
+    <value>{0} はインポートしませんでした：値を認識できません。</value>
+  </data>
   <data name="SshCfgImport_NoteExtraIdentities" xml:space="preserve">
     <value>1 つの接続で使う秘密鍵は 1 つだけです。インポートしなかった鍵：{0}</value>
   </data>
