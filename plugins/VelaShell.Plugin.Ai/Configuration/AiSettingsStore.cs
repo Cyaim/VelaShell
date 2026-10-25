@@ -234,6 +234,7 @@ public sealed class AiSettingsStore(IPluginContext context)
                 settings.McpServers = fresh.McpServers;
                 settings.WebSearch = fresh.WebSearch;
                 settings.FailoverChain = fresh.FailoverChain;
+                settings.AutoFailoverAcrossAccounts = fresh.AutoFailoverAcrossAccounts;
                 _providerKeys.SettingsBaselines.GetValue(settings, static _ => new()).Json
                     = _providerKeys.SettingsBaselines.GetValue(fresh, static _ => new()).Json;
                 _knownSettings = settings;
@@ -712,6 +713,7 @@ public sealed class AiSettingsStore(IPluginContext context)
             settings.SuggestFollowUps = detached.SuggestFollowUps;
             CopyEditableWebSearch(settings.WebSearch, detached.WebSearch);
             settings.FailoverChain = detached.FailoverChain;
+            settings.AutoFailoverAcrossAccounts = detached.AutoFailoverAcrossAccounts;
             PublishProviderRequests(settings, detached);
         }
         finally { ProviderKeyGate.Release(); }
@@ -724,6 +726,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         target.SuggestFollowUps = draft.SuggestFollowUps;
         CopyEditableWebSearch(target.WebSearch, draft.WebSearch);
         target.FailoverChain = [.. draft.FailoverChain.Where(entry => target.FindModel(entry.ModelId) is not null).Select(entry => new FailoverEntry { ModelId = entry.ModelId })];
+        target.AutoFailoverAcrossAccounts = draft.AutoFailoverAcrossAccounts;
     }
 
     private static void CopyEditableWebSearch(WebSearchOptions target, WebSearchOptions source)

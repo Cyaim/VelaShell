@@ -131,6 +131,13 @@
             </Grid>
             <TextBlock x:Name="FailoverAddHintText" Classes="hint" IsVisible="False" />
             <TextBlock x:Name="FailoverStatusText" Classes="dim" TextWrapping="Wrap" />
+            <!-- 链为空时的自动发现能不能跨账号(另一个供应商实例):默认关,整段对话换账号发要用户明确同意 -->
+            <StackPanel>
+              <CheckBox x:Name="FailoverAcrossAccountsCheck" Theme="{StaticResource AiCheckBoxTheme}"
+                        FontSize="{DynamicResource VelaFontSize12}"
+                        Foreground="{DynamicResource VelaTextPrimary}" />
+              <TextBlock x:Name="FailoverAcrossAccountsHintText" Classes="hint" />
+            </StackPanel>
           </StackPanel>
         </Border>
 

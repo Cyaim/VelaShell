@@ -38,9 +38,16 @@ public sealed class FailoverChainTests
         if (otherProtocol) alternative.Protocol = ChatProtocol.OpenAiResponses;
         var settings = new AiSettings { Providers = [provider] };
         List<ResolvedModel> candidates = settings.FailoverCandidates(Resolved(settings, "a"));
-        if (ownKey || otherEndpoint || otherProtocol)
-            Assert.AreSequenceEqual(["b"], [.. candidates.Select(model => model.Id)]);
+        if (otherEndpoint || otherProtocol)
+            Assert.AreSequenceEqual(["b"], [.. candidates.Select(model => model.Id)], "同一份凭据换协议或地址不算换账号");
+        else if (ownKey)
+            Assert.IsEmpty(candidates, "模型自带的 Key 可能是另一个账号的:默认不自动换过去");
         else Assert.IsEmpty(candidates, "同端点、同协议、同凭据的重复模型不是备用接入");
+        settings.AutoFailoverAcrossAccounts = true;
+        if (ownKey)
+            Assert.AreSequenceEqual(["b"], [.. settings.FailoverCandidates(Resolved(settings, "a")).Select(model => model.Id)],
+                "开了跨账号开关才换到自带 Key 的那个");
+        settings.AutoFailoverAcrossAccounts = false;
         settings.FailoverChain = [new FailoverEntry { ModelId = "b" }];
         Assert.AreEqual("b", settings.FailoverCandidates(Resolved(settings, "a")).Single().Id,
             "显式排链仍尊重用户选择");
@@ -82,6 +89,9 @@ public sealed class FailoverChainTests
         AiProvider second = Provider("openai-2", "openai", ("b", "GPT-4O"));
         AiProvider other = Provider("anthropic", "anthropic", ("c", "gpt-4o"));
         var settings = new AiSettings { Providers = [first, second, other] };
+        Assert.IsEmpty(settings.FailoverCandidates(Resolved(settings, "a")),
+            "默认不跨账号:另一个 openai 实例是另一把 Key / 另一个账号,不自动把对话发过去");
+        settings.AutoFailoverAcrossAccounts = true;
 
         List<ResolvedModel> candidates = settings.FailoverCandidates(Resolved(settings, "a"));
 
@@ -89,6 +99,34 @@ public sealed class FailoverChainTests
         Assert.AreEqual("b", candidates[0].Id);
         Assert.IsEmpty(settings.FailoverCandidates(Resolved(settings, "c")),
             "没有目录 id 的自配接入与有目录 id 的互不相干");
+    }
+
+    [TestMethod]
+    public async Task EmptyChainCrossAccountDiscovery_IsOffForSavedConfigsAndPersistsWhenTurnedOn()
+    {
+        // 存量配置(没有这个字段)读上来就是关:企业与个人 Copilot 这样同目录的两个实例,空链时不再自动互相重放对话
+        using var context = new TestPluginContext();
+        AiProvider work = Provider("copilot-work", "github-copilot", ("a", "gpt-5"));
+        AiProvider personal = Provider("copilot-personal", "github-copilot", ("b", "gpt-5"));
+        var legacy = new AiSettings { Providers = [work, personal] };
+        var node = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(legacy))!.AsObject();
+        Assert.IsTrue(node.Remove(nameof(AiSettings.AutoFailoverAcrossAccounts)), "前提:模拟升级前没有这个字段的设置");
+        await context.Storage.SetAsync("settings", System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(node.ToJsonString()));
+
+        var store = new AiSettingsStore(context);
+        AiSettings loaded = await store.LoadAsync();
+        Assert.IsFalse(loaded.AutoFailoverAcrossAccounts);
+        Assert.IsEmpty(loaded.FailoverCandidates(Resolved(loaded, "a")), "默认不把对话自动发给另一个账号");
+        loaded.FailoverChain = [new FailoverEntry { ModelId = "b" }];
+        Assert.AreEqual("b", loaded.FailoverCandidates(Resolved(loaded, "a")).Single().Id, "显式排链不受开关影响");
+        loaded.FailoverChain = [];
+
+        // 全局设置页打开开关并保存:落盘、发布到共享设置,重新读回来仍是开
+        await store.SaveGlobalSettingsAsync(loaded, new AiSettings { AutoFailoverAcrossAccounts = true });
+        Assert.IsTrue(loaded.AutoFailoverAcrossAccounts);
+        Assert.AreEqual("b", loaded.FailoverCandidates(Resolved(loaded, "a")).Single().Id);
+        AiSettings reloaded = await new AiSettingsStore(new TestPluginContext { Storage = context.Storage, Secrets = context.Secrets }).LoadAsync();
+        Assert.IsTrue(reloaded.AutoFailoverAcrossAccounts);
     }
 
     [TestMethod]
@@ -117,7 +155,7 @@ public sealed class FailoverChainTests
             second.BaseUrl = "https://relay-b.example/v1";
             AiProvider official = Provider("openai-a", "openai", ("c", "gpt-4o"));
             AiProvider officialBackup = Provider("openai-b", "openai", ("d", "GPT-4O"));
-            var settings = new AiSettings { Providers = [first, second, official, officialBackup] };
+            var settings = new AiSettings { Providers = [first, second, official, officialBackup], AutoFailoverAcrossAccounts = true };
 
             Assert.IsEmpty(settings.FailoverCandidates(Resolved(settings, "a")),
                 $"{catalog} 的不同中转站同模型不能自动互切");
@@ -169,7 +207,8 @@ public sealed class FailoverChainTests
         var settings = new AiSettings
         {
             Providers = [first, second],
-            FailoverChain = [new FailoverEntry { ModelId = "deleted" }]
+            FailoverChain = [new FailoverEntry { ModelId = "deleted" }],
+            AutoFailoverAcrossAccounts = true
         };
 
         List<ResolvedModel> candidates = settings.FailoverCandidates(Resolved(settings, "b"));

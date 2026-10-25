@@ -571,6 +571,17 @@ public sealed class AiSettings
     public List<FailoverEntry> FailoverChain { get; set; } = [];
 
     /// <summary>
+    /// 链为空(或全是已删模型)时,自动发现可不可以换到同一目录下的<b>其它账号</b> ——
+    /// 另一个供应商实例就是另一把 Key 或另一次登录(公司与个人的 Copilot 就是两个实例)。
+    /// </summary>
+    /// <remarks>
+    /// 默认关:换过去就把这段对话整段发给另一个账号,计费与数据归属都跟着换了,得用户明确同意。
+    /// 关着时自动发现只在同一个供应商实例、同一份凭据下换(换了协议或地址的同一型号);
+    /// 显式排进链的条目不受它管(那是用户自己的安排)。存量配置没有这个字段,读上来就是关。
+    /// </remarks>
+    public bool AutoFailoverAcrossAccounts { get; set; }
+
+    /// <summary>
     /// 这一轮失败之后还能切去哪(按尝试顺序)。
     /// </summary>
     /// <remarks>
@@ -579,6 +590,8 @@ public sealed class AiSettings
     /// 链是空的、或链里一条都解析不出来(全是已删模型的死 id —— 删的时候全局设置窗口
     /// 没开着,没人修剪)才退回自动发现 —— 同一家真实目录(<see cref="AiProvider.CatalogId" />)、
     /// 同一厂商型号的其它接入,那正是"同一份模型多加了一份"的场景。
+    /// <b>换到另一个供应商实例(另一个账号)要 <see cref="AutoFailoverAcrossAccounts" /> 开着</b>,默认只在同一实例、
+    /// 同一份凭据下换。
     /// <b>自定义接入与 Azure OpenAI 不参与自动发现</b>:目录 id 为空、目录里的 custom-* 模板、
     /// 或 Azure OpenAI 的不同资源可能对应不同中转站或租户,即使模型名相同也不能擅自跨站;
     /// 要跨这些接入,显式排链。
@@ -612,7 +625,9 @@ public sealed class AiSettings
                             && !catalog.StartsWith("custom-", StringComparison.OrdinalIgnoreCase)
                             && !string.Equals(catalog, "azure-openai", StringComparison.OrdinalIgnoreCase)
                             && string.Equals(m.Provider.CatalogId, catalog, StringComparison.OrdinalIgnoreCase)
-                            && string.Equals(m.Model, failed.Model, StringComparison.OrdinalIgnoreCase))];
+                            && string.Equals(m.Model, failed.Model, StringComparison.OrdinalIgnoreCase)
+                            // 另一个实例 = 另一个账号:整段对话发给它要用户开了开关(企业与个人 Copilot 不能悄悄互相重放)
+                            && (AutoFailoverAcrossAccounts || SameAccount(m, failed)))];
         }
 
         var ordered = new List<ResolvedModel>();
@@ -625,6 +640,11 @@ public sealed class AiSettings
         }
         return ordered;
     }
+
+    /// <summary>同一个供应商实例、同一份凭据(都继承供应商的 Key 或登录):换过去不算换账号。</summary>
+    private static bool SameAccount(ResolvedModel a, ResolvedModel b)
+        => string.Equals(a.Provider.Id, b.Provider.Id, StringComparison.Ordinal)
+            && string.Equals(a.ApiKeyOwnerId, b.ApiKeyOwnerId, StringComparison.Ordinal);
 
     private static bool SameRequestEndpoint(string a, string b, ChatProtocol protocol)
     {

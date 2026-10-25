@@ -1020,6 +1020,34 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     [TestMethod]
+    public void GlobalSettings_CrossAccountFailoverSwitchStartsOffAndIsSubmitted()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            var settings = new AiSettings { Providers = [StubProvider("one", "http://127.0.0.1:9", "m")] };
+            AiSettings? submitted = null;
+            var view = new GlobalSettingsView(context, store, settings, new Loc("en"),
+                draft => { submitted = draft; return Task.CompletedTask; }, _ => { });
+            var window = new Window { Width = 640, Height = 700, Content = view };
+            window.Show();
+            try
+            {
+                await PumpAsync(5);
+                CheckBox across = FindIn<CheckBox>(view, "FailoverAcrossAccountsCheck");
+                Assert.IsFalse(across.IsChecked, "默认关:空链时不自动把对话发给同目录的另一个账号");
+                Assert.AreEqual(new Loc("en")["FailoverAcrossAccounts"], across.Content);
+                across.IsChecked = true;
+                RaiseClick(FindIn<Button>(view, "SaveButton"));
+                Assert.IsTrue(await WaitForAsync(() => submitted is not null));
+                Assert.IsTrue(submitted!.AutoFailoverAcrossAccounts);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
     [DataRow(401)]
     [DataRow(403)]
     [DataRow(429)]
