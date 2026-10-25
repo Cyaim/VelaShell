@@ -428,14 +428,18 @@ public sealed class AgentExecutionTests
         Assert.IsEmpty(events, "没补试过的步骤不发撤销通知");
     }
 
+    /// <summary>
+    /// 工具调用之后的最终一步空答:补一句「请继续」重试一次(#651 复审②,维护者 2026-10-25 决定),不再原样重发两次。
+    /// 补试的请求带着工具结果与那一句,工具本身不重跑;「请继续」只进这次请求、不进历史。
+    /// </summary>
     [TestMethod]
-    public async Task ToolCompleted_ThenEmptyStep_RetriesModelWithoutRepeatingTool()
+    public async Task ToolCompleted_ThenEmptyStep_NudgesOnceWithoutRepeatingTool()
     {
         int executed = 0, verified = 0;
         var wire = new Wire((n, _) => n switch
         {
             1 => [Call("one", "change"), End(ChatFinishReason.ToolCalls)],
-            2 or 3 => [End(ChatFinishReason.Stop)],
+            2 => [End(ChatFinishReason.Stop)],
             _ => [new(ChatRole.Assistant, "done"), End(ChatFinishReason.Stop)]
         });
         var execution = new AgentExecution("run");
@@ -443,13 +447,59 @@ public sealed class AgentExecutionTests
                 beforeRequest: _ => { verified++; return Task.CompletedTask; }), execution, "boundary",
                 delay: (_, _) => Task.CompletedTask)
             .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, 25)).Build();
-        await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "go")],
-            new() { Tools = [AIFunctionFactory.Create(() => { executed++; return "result"; }, "change")] })) { }
+        List<ChatResponseUpdate> updates = [];
+        await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "go")],
+            new() { Tools = [AIFunctionFactory.Create(() => { executed++; return "result"; }, "change")] })) updates.Add(update);
         Assert.AreEqual(1, executed);
-        Assert.AreEqual(4, verified);
-        Assert.HasCount(4, wire.Requests);
+        Assert.AreEqual(3, verified);
+        Assert.HasCount(3, wire.Requests);
+        Assert.AreEqual("done", updates.ToChatResponse().Text);
         foreach (var request in wire.Requests.Skip(1))
             Assert.HasCount(1, request.SelectMany(m => m.Contents).OfType<FunctionResultContent>());
+        Assert.AreEqual(RecoveringChatClient.ContinueAfterTools, wire.Requests[2][^1].Text, "补试的那次带上「请继续」");
+        Assert.DoesNotContain(RecoveringChatClient.ContinueAfterTools, wire.Requests[1].Select(m => m.Text));
+        Assert.IsFalse(execution.CompletedMessages.Any(m => m.Text == RecoveringChatClient.ContinueAfterTools), "那一句不进历史");
+        Assert.IsFalse(execution.EmptyAfterTools);
+    }
+
+    /// <summary>补了「请继续」还是空的:这一轮照常收尾(不抛、不记失败、不冷却),空的那一步不进历史。</summary>
+    [TestMethod]
+    public async Task ToolCompleted_ThenEmptyEvenAfterTheNudge_EndsTheTurnWithoutFailure()
+    {
+        int executed = 0;
+        var wire = new Wire((n, _) => n == 1 ? [Call("one", "change"), End(ChatFinishReason.ToolCalls)] : [Usage(5, 0), End(ChatFinishReason.Stop)]);
+        var execution = new AgentExecution("run");
+        using IChatClient client = new RecoveringChatClient(wire, execution, "boundary", delay: (_, _) => Task.CompletedTask)
+            .AsBuilder().UseFunctionInvocation(configure: c => execution.Configure(c, 25)).Build();
+        List<ChatResponseUpdate> updates = [];
+        await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "go")],
+            new() { Tools = [AIFunctionFactory.Create(() => { executed++; return "result"; }, "change")] })) updates.Add(update);
+        Assert.AreEqual(1, executed);
+        Assert.HasCount(3, wire.Requests, "补试只这一次");
+        Assert.IsTrue(execution.EmptyAfterTools);
+        Assert.IsFalse(execution.CompletedMessages.Any(m => m.Role == ChatRole.Assistant
+            && !m.Contents.Any(c => c is FunctionCallContent or TextContent)), "空的那一步不进历史");
+        Assert.AreEqual(10, updates.ToChatResponse().Usage?.InputTokenCount ?? 0, "两次空答的用量都照计");
+    }
+
+    /// <summary>
+    /// 以输出上限 / 内容过滤收尾、但有正文的回答照常完成并记下终止原因(#651 复审①,维护者 2026-10-25 决定);
+    /// 一个字都没有的照旧失败(见 <see cref="DeterministicFinish_IsNotRetried" />),带工具调用的截断步骤照旧不执行。
+    /// </summary>
+    [TestMethod]
+    [DataRow("length", "ErrorOutputLimit")]
+    [DataRow("content_filter", "ErrorModelRefusal")]
+    public async Task TruncatedAnswerWithText_CompletesWithANotice(string reason, string key)
+    {
+        var wire = new Wire((_, _) => [new(ChatRole.Assistant, "half an answer"), End(new ChatFinishReason(reason))]);
+        var execution = new AgentExecution("run");
+        using var client = new RecoveringChatClient(wire, execution, "boundary", delay: (_, _) => Task.CompletedTask);
+        List<ChatResponseUpdate> updates = [];
+        await foreach (var update in client.GetStreamingResponseAsync([new(ChatRole.User, "go")])) updates.Add(update);
+        Assert.AreEqual("half an answer", updates.ToChatResponse().Text);
+        Assert.AreEqual(key, execution.TerminationNotice);
+        Assert.HasCount(1, wire.Requests, "不重试");
+        Assert.AreEqual("half an answer", execution.CompletedMessages.Single(m => m.Role == ChatRole.Assistant).Text);
     }
 
     [TestMethod]

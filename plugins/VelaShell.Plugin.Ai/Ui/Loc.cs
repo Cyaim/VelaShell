@@ -237,6 +237,12 @@ public sealed class Loc(string locale)
         ["TestFail"] = ["Test failed: {0}", "测试失败:{0}", "測試失敗:{0}", "テスト失敗:{0}", "테스트 실패: {0}"],
         ["ErrorOutputLimit"] = ["The model reached its output limit. Increase the output limit or shorten the context; no automatic retry was made.", "模型已达到输出上限。请增大输出额度或缩短上下文；未自动重试。", "模型已達到輸出上限。請增大輸出額度或縮短上下文；未自動重試。", "モデルが出力上限に達しました。出力上限を増やすかコンテキストを短くしてください。自動再試行は行いませんでした。", "모델이 출력 한도에 도달했습니다. 출력 한도를 늘리거나 컨텍스트를 줄이세요. 자동으로 재시도하지 않았습니다."],
         ["ErrorModelRefusal"] = ["The model refused or filtered the response; no automatic retry was made.", "模型拒绝了请求或过滤了回复；未自动重试。", "模型拒絕了請求或過濾了回覆；未自動重試。", "モデルがリクエストを拒否したか応答をフィルタリングしました。自動再試行は行いませんでした。", "모델이 요청을 거부하거나 응답을 필터링했습니다. 자동으로 재시도하지 않았습니다."],
+        // 有正文的截断 / 过滤:回答照常保留,后面附这一句(#651 复审①)
+        ["NoticeTitle"] = ["Note", "提示", "提示", "注意", "참고"],
+        ["NoticeOutputLimit"] = ["This answer stopped at the model's output limit and may be incomplete. Ask it to continue, or raise the output limit.", "这段回答在模型的输出上限处停住了,可能不完整。可以让它接着说,或调大输出上限。", "這段回答在模型的輸出上限處停住了,可能不完整。可以讓它接著說,或調大輸出上限。", "この回答はモデルの出力上限で止まっており、不完全な可能性があります。続きを頼むか、出力上限を上げてください。", "이 답변은 모델의 출력 한도에서 멈춰 불완전할 수 있습니다. 이어서 말해 달라고 하거나 출력 한도를 높이세요."],
+        ["NoticeFiltered"] = ["The model or the provider's content filter cut this answer short; it may be incomplete.", "这段回答被模型或供应商的内容过滤中途截断了,可能不完整。", "這段回答被模型或供應商的內容過濾中途截斷了,可能不完整。", "この回答はモデルまたはプロバイダーのコンテンツフィルターで途中で打ち切られ、不完全な可能性があります。", "이 답변은 모델 또는 제공자의 콘텐츠 필터에 의해 중간에 잘려 불완전할 수 있습니다."],
+        // 工具都跑完了、补了一句「请继续」模型还是什么都没说(#651 复审②)
+        ["NoticeEmptyAfterTools"] = ["The tools finished, but the model did not say anything afterwards (even after being asked to continue). The tool results are shown above.", "工具已经执行完,但模型之后什么都没说(请它继续也没有)。工具结果见上面的卡片。", "工具已經執行完,但模型之後什麼都沒說(請它繼續也沒有)。工具結果見上面的卡片。", "ツールの実行は終わりましたが、その後モデルは何も返しませんでした(続きを頼んでも同じでした)。ツールの結果は上のカードにあります。", "도구 실행은 끝났지만 그 뒤로 모델이 아무 말도 하지 않았습니다(계속하라고 요청해도 마찬가지). 도구 결과는 위 카드에 있습니다."],
         ["ProbeEmptyReply"] = ["The endpoint replied with nothing.", "端点返回了空回复。", "端點回傳了空回覆。", "エンドポイントから空の応答が返りました。", "엔드포인트가 빈 응답을 반환했습니다."],
         ["Name"] = ["Name", "名称", "名稱", "名前", "이름"],
         ["Protocol"] = ["Protocol", "协议", "協議", "プロトコル", "프로토콜"],

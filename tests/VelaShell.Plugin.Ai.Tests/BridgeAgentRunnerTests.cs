@@ -290,6 +290,47 @@ public sealed class BridgeAgentRunnerTests
                + System.Text.Json.JsonSerializer.Serialize(text) + "},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
     }
 
+    /// <summary>
+    /// #651 复审①②(维护者 2026-10-25 决定):被截断的回答照常送进群里、附一句提示,而不是整轮报错;
+    /// 工具之后补了「请继续」模型还是空的,回一句说明而不是报失败。
+    /// </summary>
+    [TestMethod]
+    [DataRow("truncated")]
+    [DataRow("empty-after-tools")]
+    public async Task TruncatedOrEmptyFinal_IsDeliveredWithANoticeInsteadOfAFailure(string shape)
+    {
+        string call = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"list_sessions\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\n"
+                      + "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n"
+                      + "data: [DONE]\n\n";
+        string truncated = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"half an answer\"},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n";
+        await using var endpoint = new SseStub("", streamingReply: n => shape == "truncated" ? truncated : n == 1 ? call : "data: [DONE]\n\n");
+        using var context = new TestPluginContext();
+        var provider = new AiProvider
+        {
+            Name = "stub", BaseUrl = endpoint.BaseUrl,
+            DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
+            Models = [new AiModelConfig { Model = "m" }]
+        };
+        await new AiSettingsStore(context).SaveAsync(new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id });
+
+        BridgeTurn turn = await Create(context).RunAsync(new BridgeConversation("ch1", "chat-1"),
+            new BridgeSettings { Mode = shape == "truncated" ? ChatMode.Chat : ChatMode.Agent, Approval = ApprovalMode.Bypass },
+            Message(), Deny, English, null, null, CancellationToken.None);
+
+        if (shape == "truncated")
+        {
+            Assert.StartsWith("half an answer", turn.Text);
+            Assert.Contains(English["NoticeOutputLimit"], turn.Text);
+            Assert.HasCount(1, endpoint.Requests);
+        }
+        else
+        {
+            Assert.AreEqual(English["NoticeEmptyAfterTools"], turn.Text);
+            Assert.HasCount(3, endpoint.Requests, "工具一次、空答一次、补一句「请继续」再一次");
+            Assert.Contains(RecoveringChatClient.ContinueAfterTools, endpoint.Requests[2]);
+        }
+    }
+
     private static int FreePort()
     {
         var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);

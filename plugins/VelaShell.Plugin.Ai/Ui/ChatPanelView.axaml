@@ -560,14 +560,14 @@
     <!-- ===== 阻塞类卡片:审批与失败 =====
          两者都是"这一轮停在这儿了",与工具日志不是一个分量:左边一道 3px 语义色竖条,
          整张卡从工具卡的灰描边里拎出来。 -->
-    <Style Selector="Border.approvalCard, Border.errorCard, Border.approvedCard, Border.deniedCard, Border.steeringCard">
+    <Style Selector="Border.approvalCard, Border.errorCard, Border.approvedCard, Border.deniedCard, Border.steeringCard, Border.noticeCard">
       <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
       <Setter Property="BorderThickness" Value="3,0,0,0" />
       <Setter Property="CornerRadius" Value="4" />
       <Setter Property="Padding" Value="10,8" />
       <Setter Property="Margin" Value="0,6,0,0" />
     </Style>
-    <Style Selector="Border.approvalCard">
+    <Style Selector="Border.approvalCard, Border.noticeCard">
       <Setter Property="BorderBrush" Value="{DynamicResource VelaWarning}" />
     </Style>
     <Style Selector="Border.errorCard, Border.deniedCard">

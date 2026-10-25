@@ -1437,6 +1437,8 @@ public partial class ChatPanelView : UserControl
         // "答上来了"与 failed 分开记:回复之后的入库/落盘失败不算"这一轮没跑成" ——
         // 新接入已经把话说完,此时回滚等于把它拽回一个已知坏的原站。
         bool answered = false;
+        // 这一轮的回答是被截断 / 过滤收尾的(照常完成):终止原因的文案键,收尾时附一句提示
+        string? truncation = null;
         ProviderCredential verifiedCredential = default;
         OAuthAccountSnapshot? verifiedAccount = null;
         long verifiedProviderVersion = _store.ProviderConfigurationVersion(provider.Provider);
@@ -1713,7 +1715,17 @@ public partial class ChatPanelView : UserControl
                         }
                     }
                     await ReadStreamAsync();
-                    if (TransientFailure.TerminalFailure(updates) is { } terminal) throw terminal;
+                    truncation = null;
+                    if (TransientFailure.TerminalFailure(updates) is { } terminal)
+                    {
+                        // 有正文的截断 / 过滤照常完成、附一句提示(#651 复审①)。Agent / 计划模式由 RecoveringChatClient
+                        // 按步骤判过(带工具调用的步骤不算);纯对话只有这一步,在这儿判
+                        if (terminal is not ModelResponseTerminatedException ended
+                            || (execution.TerminationNotice != ended.ReasonKey
+                                && !(mode == ChatMode.Chat && TransientFailure.IsTruncatedAnswer(updates))))
+                            throw terminal;
+                        truncation = ended.ReasonKey;
+                    }
                     if (!HasMeaningfulOutput(updates))
                     {
                         throw new HealthProbe.EmptyReplyException();
@@ -1935,7 +1947,8 @@ public partial class ChatPanelView : UserControl
                             {
                                 StatusText.Classes.Add("retrying");
                             }
-                            SetStatus(_loc.F("Retrying", attempt + 1));
+                            // 空答不是连接失败,与 Agent / 计划模式的补试同一句提示(#651 复审③)
+                            SetStatus(_loc.F(ex is HealthProbe.EmptyReplyException ? "RetryingEmptyReply" : "Retrying", attempt + 1));
                             await Task.Delay(TimeSpan.FromMilliseconds(400 * (attempt + 1)), token);
                             bubble.ResetUnopenedContent();
                             updates.Clear(); // 前一次可能只有 role / usage 等不可见帧,不并进重试的回答
@@ -2104,6 +2117,11 @@ public partial class ChatPanelView : UserControl
                         TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt)));
             }
             HintIfThinkingWasNeverRequested(bubble, provider);
+            // 被截断 / 过滤的回答照常留着,后面附一句;工具之后补了「请继续」还是空的,说一句而不是报失败(#651 复审①②)
+            if ((truncation ?? execution.TerminationNotice) is { } reason)
+                AddNoticeCard(bubble, _loc[TransientFailure.TruncationNoticeKey(reason)]);
+            else if (execution.EmptyAfterTools)
+                AddNoticeCard(bubble, _loc["NoticeEmptyAfterTools"]);
             replyText = response.Text;
         }
         catch (OperationCanceledException)
@@ -2935,6 +2953,24 @@ public partial class ChatPanelView : UserControl
     /// 它不是模型说的话,混排会让人分不清哪句是回答、哪句是故障。
     /// 没有气泡可挂(还没开口就炸了)时退回状态行,至少别把消息吞掉。
     /// </summary>
+    /// <summary>
+    /// 回答照常完成、但有话要交代(被截断、被过滤、工具之后模型没再开口):一张警示色的提示卡挂在这条回复里。
+    /// 与错误卡同理不混进正文 —— 它不是模型说的话。
+    /// </summary>
+    private void AddNoticeCard(AssistantBubble? bubble, string notice)
+    {
+        if (bubble is null)
+        {
+            SetStatus(notice);
+            return;
+        }
+        var stack = new StackPanel { Spacing = 6 };
+        stack.Children.Add(BuildCardHeader("Icon.triangle-alert", "VelaWarning", _loc["NoticeTitle"], null));
+        stack.Children.Add(new TextBlock { Name = "NoticeText", Classes = { "dim" }, Text = notice, TextWrapping = TextWrapping.Wrap });
+        bubble.AddCard(new Border { Classes = { "noticeCard" }, Child = stack });
+        RequestAutoScroll(force: true);
+    }
+
     private void AddErrorCard(AssistantBubble? bubble, string detail)
     {
         if (bubble is null)

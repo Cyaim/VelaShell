@@ -42,6 +42,32 @@ public static class TransientFailure
             && ReasoningPeek.TryRead(update.RawRepresentation, out string peeked)
             && !string.IsNullOrWhiteSpace(peeked)));
 
+    /// <summary>
+    /// 一步回复里有可见正文、又没有工具调用 —— 这时以输出上限 / 内容过滤 / 拒绝收尾的,是一段说到一半的回答,不是失败。
+    /// </summary>
+    /// <remarks>
+    /// §223 起这三种收尾一律整轮失败:桥接不再送出被截断的回答,面板故障转移后又切回失败的那一站(#651 复审①)。
+    /// 维护者 2026-10-25 决定:有正文就照常完成,附一句截断 / 过滤提示;一个字都没有的照旧报错、不重试、不换站。
+    /// 带工具调用的步骤不在此列:被截断的工具参数绝不能执行(那条仍按"工具调用步骤不完整"失败)。
+    /// </remarks>
+    internal static bool IsTruncatedAnswer(IEnumerable<ChatResponseUpdate> step)
+    {
+        bool text = false;
+        foreach (ChatResponseUpdate update in step)
+        {
+            foreach (AIContent content in update.Contents)
+            {
+                if (content is FunctionCallContent) return false;
+                if (content is TextContent { Text: { } value } && !string.IsNullOrWhiteSpace(value)) text = true;
+            }
+        }
+        return text;
+    }
+
+    /// <summary>截断 / 过滤收尾时附在回答后面的那句提示的文案键(由 <see cref="TerminalFailure" /> 给出的终止原因换算)。</summary>
+    internal static string TruncationNoticeKey(string reasonKey)
+        => reasonKey == "ErrorOutputLimit" ? "NoticeOutputLimit" : "NoticeFiltered";
+
     // 确定性终止不能当作空流重发,尤其不能借故障转移绕过拒绝。
     internal static Exception? TerminalFailure(IEnumerable<ChatResponseUpdate> updates)
     {

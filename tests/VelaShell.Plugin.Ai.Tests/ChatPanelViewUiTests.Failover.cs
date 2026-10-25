@@ -3267,6 +3267,113 @@ public sealed partial class ChatPanelViewUiTests
         });
     }
 
+    /// <summary>
+    /// #651 复审①(维护者 2026-10-25 决定):有正文的截断 / 过滤照常完成 —— 回答留着、附一张提示卡、不报错、不换站、
+    /// 不切回原站。改前整轮失败,故障转移之后还会把选择切回失败的那一站。
+    /// </summary>
+    [TestMethod]
+    [DataRow(ChatMode.Chat, "length")]
+    [DataRow(ChatMode.Agent, "content_filter")]
+    public void TruncatedAnswerWithText_IsKeptWithANotice(ChatMode mode, string reason)
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub($"data: {{\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{{\"index\":0,\"delta\":{{\"role\":\"assistant\",\"content\":\"半截回答\"}},\"finish_reason\":\"{reason}\"}}]}}\n\ndata: [DONE]\n\n");
+            await using var backup = new SseStub(LifecycleAnswer);
+            using var context = new TestPluginContext();
+            AiProvider first = StubProvider("terminal", endpoint.BaseUrl, "m");
+            AiProvider second = StubProvider("backup", backup.BaseUrl, "m");
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [first, second], ActiveModelId = first.Models[0].Id, SuggestFollowUps = false, Mode = mode,
+                Approval = ApprovalMode.Bypass, FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }]
+            });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("请回答");
+                StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.HasCount(1, endpoint.Requests);
+                Assert.IsEmpty(backup.Requests, "不换站");
+                Assert.AreEqual("半截回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
+                var loc = new Loc("en");
+                Assert.Contains(t => t.Name == "NoticeText" && t.Text == loc[reason == "length" ? "NoticeOutputLimit" : "NoticeFiltered"],
+                    messages.GetVisualDescendants().OfType<TextBlock>());
+                Assert.IsFalse(messages.GetVisualDescendants().OfType<Border>().Any(b => b.Classes.Contains("errorCard")), "不报错");
+                Assert.IsFalse(PanelHealth(panel).IsCooling(first.Models[0].Id));
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    /// <summary>
+    /// #651 复审②:工具调用之后的最终一步空答,补一句「请继续」重试一次;还是空的就照常收尾 ——
+    /// 附一张提示卡、不报错、不冷却。改前原样重发两次、整轮失败并冷却 60 秒。
+    /// </summary>
+    [TestMethod]
+    public void EmptyFinalStepAfterTools_EndsWithANoticeInsteadOfAFailureOrCooldown()
+    {
+        OnUi(async () =>
+        {
+            string call = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"list_sessions\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\n"
+                          + "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n"
+                          + "data: [DONE]\n\n";
+            await using var endpoint = new SseStub("", streamingReply: n => n == 1 ? call : "data: [DONE]\n\n");
+            using var context = new TestPluginContext();
+            AiProvider provider = StubProvider("agent", endpoint.BaseUrl, "m");
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [provider], ActiveModelId = provider.Models[0].Id, Mode = ChatMode.Agent,
+                Approval = ApprovalMode.Bypass, SuggestFollowUps = false
+            });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("看看有哪些会话");
+                StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.HasCount(3, endpoint.Requests, "工具一次、空答一次、补一句「请继续」再一次");
+                Assert.Contains(RecoveringChatClient.ContinueAfterTools, endpoint.Requests[2]);
+                Assert.Contains(t => t.Name == "NoticeText" && t.Text == new Loc("en")["NoticeEmptyAfterTools"],
+                    messages.GetVisualDescendants().OfType<TextBlock>());
+                Assert.IsFalse(messages.GetVisualDescendants().OfType<Border>().Any(b => b.Classes.Contains("errorCard")), "不报错");
+                Assert.IsFalse(PanelHealth(panel).IsCooling(provider.Models[0].Id), "不冷却");
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    /// <summary>#651 复审③:纯对话模式的外层补试遇到空回复,与 Agent / 计划模式说同一句「收到空回复」,不再说成连接失败。</summary>
+    [TestMethod]
+    public void ChatModeOuterRetry_OnAnEmptyReply_SaysEmptyReply()
+    {
+        OnUi(async () =>
+        {
+            await using var endpoint = new SseStub("data: [DONE]\n\n", holdFirstStream: true, skipFirstStreams: 1, firstStreamContent: "回答");
+            using var context = new TestPluginContext();
+            AiProvider provider = StubProvider("chat", endpoint.BaseUrl, "m");
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [provider], ActiveModelId = provider.Models[0].Id, Mode = ChatMode.Chat, SuggestFollowUps = false
+            });
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                panel.SendExternal("你好");
+                TextBlock status = Find<TextBlock>(panel, "StatusText");
+                Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count == 2), "首次空答后原地补试");
+                await PumpAsync(5);
+                Assert.AreEqual(new Loc("en").F("RetryingEmptyReply", 1), status.Text, "端点答了空话,不能说成连接失败");
+                endpoint.Release();
+                StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.AreEqual("回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
+            }
+            finally { endpoint.Release(); panel.Detach(); window.Close(); }
+        });
+    }
+
     [TestMethod]
     public void EmptyAnswers_ThirdAttemptSucceedsWithoutFailover()
     {

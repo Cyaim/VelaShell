@@ -38,6 +38,15 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
     private static readonly HashSet<string> ObservationTools =
         [with(StringComparer.Ordinal), "task_status", "task_wait", "transfer_status", "transfer_wait"];
     internal bool HasToolCalls { get { lock (_gate) return _calls.Count > 0; } }
+
+    /// <summary>
+    /// 最后一步是一段以输出上限 / 内容过滤 / 拒绝收尾的回答(有正文、没有工具调用)时,终止原因的文案键;
+    /// 回答照常完成,面板与桥接据此附一句截断提示(见 <see cref="Ui.TransientFailure.IsTruncatedAnswer" />)。
+    /// </summary>
+    internal string? TerminationNotice { get; set; }
+
+    /// <summary>工具调用之后的最终一步补了一句「请继续」仍是空的:这一轮照常收尾,不算失败(面板与桥接附一句说明)。</summary>
+    internal bool EmptyAfterTools { get; set; }
     internal IReadOnlyList<ChatMessage> Checkpoint { get { lock (_gate) return [.. _checkpoint]; } }
 
     internal void Configure(FunctionInvokingChatClient client, int batchSize)
@@ -289,6 +298,11 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
     string continuationBoundary, Action<int, Exception>? retrying = null,
     Func<TimeSpan, CancellationToken, Task>? delay = null, Action? recovered = null) : DelegatingChatClient(inner)
 {
+    /// <summary>工具调用之后最终一步空答时补的那一句(只进补试的那次请求)。</summary>
+    internal const string ContinueAfterTools =
+        "Please continue. The tool results above are complete: tell the user what they show and what was done. "
+        + "Do not repeat tool calls that already ran.";
+
     public override async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages,
         ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -303,6 +317,7 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
     {
         List<ChatMessage> outgoing = [.. messages];
         execution.BeginStep(outgoing);
+        bool nudged = false;
         for (int attempt = 0; ; attempt++)
         {
             List<ChatResponseUpdate> buffered = [];
@@ -337,19 +352,37 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                     }
                 }
             }
-            failure = TransientFailure.TerminalFailure(buffered) ?? failure;
+            Exception? terminal = TransientFailure.TerminalFailure(buffered);
+            // 有正文的截断 / 过滤照常完成,附提示;一个字都没有的照旧按确定性终止失败(见 IsTruncatedAnswer)
+            string? notice = null;
+            if (failure is null && terminal is Ui.ModelResponseTerminatedException ended && TransientFailure.IsTruncatedAnswer(buffered))
+            {
+                notice = ended.ReasonKey;
+                terminal = null;
+            }
+            failure = terminal ?? failure;
             if (failure is null)
             {
                 var response = buffered.ToChatResponse();
+                bool emptyAfterTools = false;
                 if (!TransientFailure.HasMeaningfulOutput(buffered))
-                    failure = new HealthProbe.EmptyReplyException();
+                {
+                    // 工具调用之后的最终一步空答(#651 复审②,维护者 2026-10-25 决定):原样重发两次、整轮失败并冷却 60 秒
+                    // 都不对 —— 工具已经跑过,是模型没接着说。补一句「请继续」重试一次(见下面的 nudged);
+                    // 还是空的就照常收尾,不记失败、不冷却(面板与桥接附一句说明),工具结果都在卡片与历史里。
+                    if (nudged) emptyAfterTools = true;
+                    else failure = new HealthProbe.EmptyReplyException();
+                }
                 else if (response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Any()
                     && (response.FinishReason != ChatFinishReason.ToolCalls
                         || response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Any(c => c.Exception is not null)))
                     failure = new IOException("Incomplete model tool-call step; no tool was executed.");
-                else
+                if (failure is null)
                 {
-                    execution.CompleteStep(response);
+                    // 空的那一步不进历史:只含 role / usage 的 assistant 消息会被部分供应商拒收
+                    execution.CompleteStep(emptyAfterTools ? new ChatResponse(new List<ChatMessage>()) : response);
+                    if (emptyAfterTools) execution.EmptyAfterTools = true;
+                    if (notice is not null) execution.TerminationNotice = notice;
                     // 补试后这一步答上了:重试提示到此为止,不挂到整轮结束。
                     if (attempt > 0) recovered?.Invoke();
                     foreach (ChatResponseUpdate update in buffered)
@@ -404,6 +437,12 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                 outgoing.Add(new ChatMessage(ChatRole.User,
                     "The preceding response was interrupted. Continue from its last confirmed text. Do not repeat completed tool calls. Incomplete tool calls were not executed."));
                 yield return new ChatResponseUpdate(ChatRole.Assistant, continuationBoundary);
+            }
+            else if (failure is HealthProbe.EmptyReplyException && execution.HasToolCalls)
+            {
+                // 工具之后的空答只补试这一次,带上一句「请继续」(只进这次请求,不进历史);再空就照常收尾(见上)
+                outgoing.Add(new ChatMessage(ChatRole.User, ContinueAfterTools));
+                nudged = true;
             }
             await (delay ?? Task.Delay)(backoff, cancellationToken).ConfigureAwait(false);
         }

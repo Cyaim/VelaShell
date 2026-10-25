@@ -331,8 +331,11 @@ public sealed class BridgeAgentRunner(
             {
                 await PersistAsync(conversation, "assistant", reply, cancellationToken).ConfigureAwait(false);
             }
+            // 被截断 / 过滤的回答照常送出,后面附一句;工具之后补了「请继续」还是空的,说一句而不是报失败(#651 复审①②)
+            string? notice = execution.TerminationNotice is { } reason ? loc[TransientFailure.TruncationNoticeKey(reason)]
+                : execution.EmptyAfterTools ? loc["NoticeEmptyAfterTools"] : null;
             return new BridgeTurn(
-                reply.Length > 0 ? reply : loc["BridgeEmptyReply"],
+                reply.Length > 0 ? notice is null ? reply : $"{reply}\n\n_{notice}_" : notice ?? loc["BridgeEmptyReply"],
                 modelLabel,
                 TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt),
                 toolCalls);
