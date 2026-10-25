@@ -190,6 +190,23 @@ public sealed class SessionOutputMaskerTests
         ["token-exchange-type-after-the-token",
             "subject_token=eyJzdWIiOiJvcHMifQ subject_token_type=urn:ietf:params:oauth:token-type:jwt\n",
             "subject_token=*** subject_token_type=urn:ietf:params:oauth:token-type:jwt\n", "eyJzdWIiOiJvcHMifQ"],
+        // 补的前缀令牌(GitLab、Stripe、Google、npm、PyPI):不在任何「名字=值」里,只靠前缀认;可路由的 GitLab 令牌连同 . 后面的尾巴一起遮
+        ["gitlab-pat-in-remote-url",
+            "$ git remote set-url origin https://oauth2:glpat-Ab3dEf6hIj9kLm2nOp5q@gitlab.example.com/ops/app.git\r\n", null, "Ab3dEf6hIj9kLm2nOp5q"],
+        ["gitlab-routable-pat",
+            "created glpat-c2VjcmV0LXJvdXRhYmxlLXBheWxvYWQtMDEyMzQ1.01k3m9z2q (expires 2026-11-24)\n", null,
+            "c2VjcmV0LXJvdXRhYmxlLXBheWxvYWQtMDEyMzQ1.01k3m9z2q"],
+        ["stripe-secret-key-in-curl",
+            "$ curl https://api.stripe.com/v1/charges -u sk_live_Q9w8E7r6T5y4U3i2O1p0AsDf:\r\n", null, "Q9w8E7r6T5y4U3i2O1p0AsDf"],
+        ["stripe-restricted-key",
+            "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\n", null,
+            "51NqZx8Lk3Jh6Gf2Ds9Ap4Ow7Ie1Ru5Ty0Mn3Bv6Cx8Za2Qs5Wd7Ef9Rg1Th4Yj6Uk8Il0Op3Lk5Jh7Gf9Ds2Ap4Ow6Ie8Ru0Ty"],
+        ["google-api-key-in-url",
+            "GET /maps/api/geocode/json?address=Paris&key=AIzaSyA1b2C3d4E5f6G7h8I9j0K_l-MnOpQrStU 200\n", null, "SyA1b2C3d4E5f6G7h8I9j0K_l-MnOpQrStU"],
+        ["npm-token", "token  npm_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8\n", null, "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"],
+        ["pypi-token-on-the-command-line",
+            "$ twine upload -u __token__ -p pypi-AgEIcHlwaS5vcmcCJGQ4ZmE1YjM2LTFhNmMtNGI0Yi05ZDJmLTNlOGY3YTZiNWM0ZAACKlszLCJ1cGxvYWQiXQ dist/*\r\n", null,
+            "IcHlwaS5vcmcCJGQ4ZmE1YjM2LTFhNmMtNGI0Yi05ZDJmLTNlOGY3YTZiNWM0ZAACKlszLCJ1cGxvYWQiXQ"],
     ];
 
     /// <summary>
@@ -418,6 +435,55 @@ public sealed class SessionOutputMaskerTests
         SessionOutputMasker masker = NewMasker();
         masker.Write(Bytes(text));
         Assert.AreEqual(text, Written, "原样、当场放出");
+    }
+
+    /// <summary>
+    /// 补的前缀令牌「不该遮的没遮」:前缀后面短了、长了(定长的 <c>AIza</c>、<c>npm_</c>)、字符不对,前面挨着字母,
+    /// 可公开的 Stripe <c>pk_live_</c>,npm 脚本的环境变量,不以 macaroon 头 <c>AgE</c> 起头的 <c>pypi-</c> 包名。逐字节原样、当场放出。
+    /// </summary>
+    [TestMethod]
+    [DataRow("see glpat-xxxxxxxx in the docs\n")]
+    [DataRow("myglpat-Ab3dEf6hIj9kLm2nOp5q\n")]
+    [DataRow("pk_live_51Hx9k2LmNoPqRsTuVwXyZ0123456789 is the publishable key\n")]
+    [DataRow("use your sk_live_YOUR_SECRET_KEY here, never rk_live_xxxxxxxxxxxx\n")]
+    [DataRow("AIzaSyShortKey AIzaSyA1b2C3d4E5f6G7h8I9j0K_l-MnOpQrStUv\n")]
+    [DataRow("npm_config_cache=/home/ops/.npm npm_package_version=1.4.2 npm_lifecycle_event=build\n")]
+    [DataRow("npm_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8x\n")]
+    // 定长的令牌:已收到内容的末尾已经比定长还长,不会再长成令牌 —— 不扣着等
+    [DataRow("id AIzaSyA1b2C3d4E5f6G7h8I9j0K_l-MnOpQrStUvW")]
+    [DataRow("id npm_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8xy")]
+    [DataRow("Successfully installed pypi-attestations-0.0.21 pypi-simple-1.6.0\n")]
+    [DataRow("pypi-mirror-for-the-internal-artifact-registry-of-the-build-farm pypi-AgEshort\n")]
+    public void NewPrefixes_LeaveLookalikesAlone(string text)
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes(text));
+        Assert.AreEqual(text, Written, "原样、当场放出");
+    }
+
+    /// <summary>
+    /// 补的前缀令牌整串换成 <c>***</c>。可路由的 GitLab 令牌尾巴(<c>.</c> + 9 个小写字母数字)算在令牌里:已收到内容停在尾巴的半截时扣着,
+    /// 不先把正文遮掉、把 <c>.01</c> 放出去;句末的句号不是尾巴,照放。
+    /// </summary>
+    [TestMethod]
+    public void NewPrefixedTokens_AreMaskedWhole()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("a glpat-Ab3dEf6hIj9kLm2nOp5q b sk_live_Q9w8E7r6T5y4U3i2O1p0AsDf c AIzaSyA1b2C3d4E5f6G7h8I9j0K_l-MnOpQrStU"
+            + " d npm_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8 e pypi-AgEIcHlwaS5vcmcCJGQ4ZmE1YjM2LTFhNmMtNGI0Yi05ZDJmLTNlOGY3YTZiNWM0ZA\n"));
+        Assert.AreEqual("a *** b *** c *** d *** e ***\n", Written);
+        _written.Clear();
+
+        masker.Write(Bytes("x glpat-c2VjcmV0LXJvdXRhYmxlLXBheWxvYWQtMDEyMzQ1.01"));
+        Assert.AreEqual("x ", Written, "停在尾巴的半截:整个令牌扣着");
+        masker.Write(Bytes("k3m9z2q y\n"));
+        Assert.AreEqual("x *** y\n", Written);
+        _written.Clear();
+
+        masker.Write(Bytes("the token is glpat-Ab3dEf6hIj9kLm2nOp5q."));
+        Assert.AreEqual("the token is ", Written, "一个 . 也可能是尾巴的开头:扣着");
+        masker.Write(Bytes(" Rotate it.\n"));
+        Assert.AreEqual("the token is ***. Rotate it.\n", Written, "句号不是尾巴,照放");
     }
 
     /// <summary>
@@ -902,6 +968,13 @@ public sealed class SessionOutputMaskerTests
             ("颜色序列切开的值", "password=" + Repeat("a\u001b[1m")),
             ("非机密后缀连串", Repeat("token_type_") + "=x"),
             ("驼峰非机密后缀连串", Repeat("secretName.") + ": x"),
+            ("AIza 连串", Repeat("AIza_-") + "!"),
+            ("AIza 定长连串", Repeat("AIzaSyA1b2C3d4E5f6G7h8I9j0K_l-MnOpQrStU-") + "!"),
+            ("glpat 连串", Repeat("glpat-a.0") + "!"),
+            ("glpat 尾巴连串", Repeat("glpat-Ab3dEf6hIj9kLm2nOp5q.01k3m9z2q.")),
+            ("npm 连串", Repeat("npm_") + "!"),
+            ("Stripe 连串", Repeat("sk_live_-") + "!"),
+            ("pypi 连串", Repeat("pypi-AgE-pypi-") + "!"),
         ];
         foreach ((string name, string text) in inputs)
         {

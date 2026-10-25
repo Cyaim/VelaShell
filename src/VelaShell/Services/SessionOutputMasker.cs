@@ -35,7 +35,9 @@ namespace VelaShell.Services;
 /// <c>.netrc</c> 的 <c>password</c>(<c>machine … password …</c> 一行写完的,或分行写时单独一行的);
 /// <c>Bearer</c> / <c>Basic</c> 后面的凭据(Basic 只认解得开、带冒号的 base64,Bearer 不认纯字母又不够长的英文单词,见 <see cref="LooksLikeCredential" />);PEM 私钥块(含 OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c>)的正文(写在一行里的,BEGIN 与 END 之间那段;
 /// 多行的只认 base64 正文行,一行不像私钥块里的行就当私钥块已经结束,见 <see cref="KeyLine" />);
-/// 几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、GitHub <c>ghp_…</c> 一类与 <c>github_pat_…</c>、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。
+/// 几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、GitHub <c>ghp_…</c> 一类与 <c>github_pat_…</c>、GitLab <c>glpat-…</c>、
+/// Stripe <c>sk_live_…</c> / <c>rk_live_…</c>、Google <c>AIza…</c>、npm <c>npm_…</c>、PyPI <c>pypi-…</c>、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>;
+/// 前缀之后的长度与字符集各自卡住,见 <see cref="PrefixedToken" />)。
 /// 宁可多遮,不放过。
 /// </para>
 /// <para>
@@ -1064,9 +1066,34 @@ public sealed partial class SessionOutputMasker
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AuthorizationScheme();
 
-    /// <summary>自带前缀、不必看上下文就认得出的令牌;已收到内容的末尾停在一个前缀已齐的令牌里也算,调用方据此扣下。</summary>
-    /// <remarks>GitHub 细粒度令牌 <c>github_pat_…</c> 的正文里有下划线,单列一支。</remarks>
-    [GeneratedRegex(TokenStart + @"(?:(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_(?>[A-Za-z0-9]{30,})|github_pat_(?>[A-Za-z0-9_]{22,})|xox[abprs]-[A-Za-z0-9\-]{10,}|sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_])|(?:(?:AKIA|ASIA)[0-9A-Z]*|gh[pousr]_[A-Za-z0-9]*|github_pat_[A-Za-z0-9_]*|xox[abprs]-[A-Za-z0-9\-]*|sk-[A-Za-z0-9_\-]*)\z)",
+    /// <summary>
+    /// 自带前缀、不必看上下文就认得出的令牌;已收到内容的末尾停在一个前缀已齐、还可能长成令牌的串里也算,调用方据此扣下。
+    /// 前缀区分大小写,前缀之后的长度与字符集按各家的格式卡住(短了、字符不对的不算,收窄误报):
+    /// <list type="bullet">
+    /// <item>GitHub <c>gh[pousr]_</c> + 至少 30 个 <c>[A-Za-z0-9]</c>;细粒度令牌 <c>github_pat_</c> + 至少 22 个 <c>[A-Za-z0-9_]</c>(正文里有下划线);</item>
+    /// <item>GitLab 个人访问令牌 <c>glpat-</c> + 至少 20 个 <c>[A-Za-z0-9_-]</c>(老格式正好 20 个);可路由的新格式在正文后面再跟 <c>.</c> + 9 个 <c>[0-9a-z]</c>
+    /// (版本与校验码),一并遮掉 —— 已收到内容的末尾停在这段尾巴的半截(含只有一个 <c>.</c>)时不当成已经完了,扣着等下一段;</item>
+    /// <item>Stripe 密钥 <c>sk_live_</c> 与受限密钥 <c>rk_live_</c> + 至少 24 个 <c>[A-Za-z0-9]</c>(老格式正好 24 个,新格式近百个);
+    /// 可公开的 <c>pk_live_</c> 不认;</item>
+    /// <item>Google API key <c>AIza</c> + 正好 35 个 <c>[A-Za-z0-9_-]</c>;</item>
+    /// <item>npm 访问令牌 <c>npm_</c> + 正好 36 个 <c>[A-Za-z0-9]</c>(30 个随机字符 + 6 个校验字符)—— <c>npm_config_cache</c>、<c>npm_package_version</c>
+    /// 这类 npm 脚本的环境变量里有下划线,不会中;</item>
+    /// <item>PyPI 上传令牌 <c>pypi-AgE</c> + 至少 50 个 <c>[A-Za-z0-9_-]</c>:令牌是 base64url 编码的 macaroon,第二版二进制格式以版本 2、位置字段开头,
+    /// 编码出来总是 <c>AgE</c>(pypi.org 的是 <c>AgEIcHlwaS5vcmc</c>,TestPyPI 的是 <c>AgENdGVzdC5weXBpLm9yZw</c>)—— <c>pypi-attestations</c> 一类包名不会中;</item>
+    /// <item>AWS <c>AKIA</c> / <c>ASIA</c> + 正好 16 个 <c>[0-9A-Z]</c>;Slack <c>xox[abprs]-</c> + 至少 10 个 <c>[A-Za-z0-9-]</c>;OpenAI 式 <c>sk-</c> + 至少 20 个 <c>[A-Za-z0-9_-]</c>。</item>
+    /// </list>
+    /// 后面紧跟着字母、数字、下划线的不算(那是更长的一个词)。
+    /// </summary>
+    /// <remarks>
+    /// 线性:每个令牌从一串字符的开头起(<see cref="TokenStart" />),各支要么原子地吃完整串(<c>{n,}</c> 的几支,串够长就一定配上),要么定长。
+    /// 「还没写完」那一支对定长的令牌只认到定长为止(<c>AIza</c> 35 个、<c>npm_</c> 36 个):已经比定长还长的串不会再长成令牌,不扣,当场放出;
+    /// 顺带每个起点要看的字符也有了上限(<c>AIza</c> 的字符集里有 <c>-</c>,<c>-</c> 后面又能起头)。
+    /// </remarks>
+    [GeneratedRegex(TokenStart + @"(?:(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_(?>[A-Za-z0-9]{30,})|github_pat_(?>[A-Za-z0-9_]{22,})"
+        + @"|glpat-(?>[A-Za-z0-9_\-]{20,})(?:\.[0-9a-z]{9}|(?!\.[0-9a-z]{0,8}\z))|[rs]k_live_(?>[A-Za-z0-9]{24,})|AIza[A-Za-z0-9_\-]{35}|npm_[A-Za-z0-9]{36}"
+        + @"|pypi-AgE(?>[A-Za-z0-9_\-]{50,})|xox[abprs]-[A-Za-z0-9\-]{10,}|sk-[A-Za-z0-9_\-]{20,})(?![A-Za-z0-9_])"
+        + @"|(?:(?:AKIA|ASIA)[0-9A-Z]*|gh[pousr]_[A-Za-z0-9]*|github_pat_[A-Za-z0-9_]*|glpat-(?>[A-Za-z0-9_\-]*)(?:\.[0-9a-z]{0,9})?|[rs]k_live_[A-Za-z0-9]*"
+        + @"|AIza[A-Za-z0-9_\-]{0,35}|npm_[A-Za-z0-9]{0,36}|pypi-(?:AgE[A-Za-z0-9_\-]*|Ag?)?|xox[abprs]-[A-Za-z0-9\-]*|sk-[A-Za-z0-9_\-]*)\z)",
         RegexOptions.CultureInvariant)]
     private static partial Regex PrefixedToken();
 
