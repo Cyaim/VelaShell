@@ -339,6 +339,21 @@
                        Foreground="{DynamicResource VelaTextSecondary}"
                        FontSize="{DynamicResource VelaFontSize11}" />
           </CheckBox>
+
+          <!-- 临时连接(外部拉起、「最近连接」重建的,不在库里):不给「记住密码」,给「另存为连接」——
+               存成正式配置之后才记住密码。与认证方式无关,所以放在各方式的面板外面。 -->
+          <StackPanel IsVisible="{Binding IsTemporaryProfile}" Spacing="4">
+            <CheckBox IsChecked="{Binding SaveAsConnection}"
+                      Padding="0" MinHeight="0">
+              <TextBlock Text="{loc:Localize Auth_SaveAsConnection}"
+                         Margin="6,0,0,0"
+                         Foreground="{DynamicResource VelaTextSecondary}"
+                         FontSize="{DynamicResource VelaFontSize11}" />
+            </CheckBox>
+            <TextBlock Text="{loc:Localize Auth_SaveAsConnectionHint}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource VelaTextTertiary}"
+                       FontSize="{DynamicResource VelaFontSize10}" />
+          </StackPanel>
         </StackPanel>
       </StackPanel>
 

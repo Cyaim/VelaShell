@@ -8825,6 +8825,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>共有資格情報「{0}」もあわせて更新({1} 件の接続で使用中)</value>
   </data>
+  <data name="Auth_SaveAsConnection" xml:space="preserve">
+    <value>接続として保存</value>
+  </data>
+  <data name="Auth_SaveAsConnectionHint" xml:space="preserve">
+    <value>これは一時的な接続です(外部から起動されたもの、または「最近の接続」から再作成されたもの)。エクスプローラーには表示されず、ここで入力した資格情報は今回のサインインにだけ使われます。チェックすると接続として保存し(グループなし)、パスワードもあわせて保存します(一般設定の「パスワードを保存」がオンの場合)。</value>
+  </data>
+  <data name="Auth_SaveAsConnectionFailed" xml:space="preserve">
+    <value>接続として保存できませんでした: {0}。今回は一時的な接続のままサインインします。</value>
+  </data>
   <data name="Profile_CredSource" xml:space="preserve">
     <value>資格情報のソース</value>
   </data>

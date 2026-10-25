@@ -8830,6 +8830,15 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>Also update the shared credential “{0}” (used by {1} connections)</value>
   </data>
+  <data name="Auth_SaveAsConnection" xml:space="preserve">
+    <value>Save as a connection</value>
+  </data>
+  <data name="Auth_SaveAsConnectionHint" xml:space="preserve">
+    <value>This is a temporary connection (launched from outside VelaShell, or rebuilt from Recent Connections): it is not in the Explorer, and what you enter here is used for this sign-in only. Tick this to save it as a connection (ungrouped); the password is then remembered too, as long as "Remember passwords" is on in General settings.</value>
+  </data>
+  <data name="Auth_SaveAsConnectionFailed" xml:space="preserve">
+    <value>Could not save this as a connection: {0}. This sign-in goes ahead as a temporary connection.</value>
+  </data>
   <data name="Profile_CredSource" xml:space="preserve">
     <value>Credential source</value>
   </data>

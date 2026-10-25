@@ -9302,6 +9302,15 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>同时更新共享凭据「{0}」({1} 条连接在用)</value>
   </data>
+  <data name="Auth_SaveAsConnection" xml:space="preserve">
+    <value>另存为连接</value>
+  </data>
+  <data name="Auth_SaveAsConnectionHint" xml:space="preserve">
+    <value>这是一条临时连接(外部拉起的,或从「最近连接」重建的):不在资源管理器里,这里输入的凭据只用于这一次。勾上则存成一条连接(未分组),密码也随之记住(常规页的「记住密码」开着时)。</value>
+  </data>
+  <data name="Auth_SaveAsConnectionFailed" xml:space="preserve">
+    <value>没能存成连接:{0}。这一次照常以临时连接登录。</value>
+  </data>
   <data name="Profile_CredSource" xml:space="preserve">
     <value>凭据来源</value>
   </data>

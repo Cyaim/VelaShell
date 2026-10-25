@@ -17,9 +17,12 @@ namespace VelaShell.ViewModels;
 /// <param name="PrivateKeyPath">私钥文件路径(密钥认证时使用)。</param>
 /// <param name="PrivateKeyPassphrase">私钥口令短语(如私钥已加密)。</param>
 /// <param name="CertificatePath">OpenSSH 用户证书文件路径(证书认证时使用)。</param>
-/// <param name="RememberPassword">是否记住本次登录密码。</param>
+/// <param name="RememberPassword">是否记住本次登录密码。临时连接上只有「另存为连接」时才为 true。</param>
 /// <param name="UpdateSharedCredential">
 /// 是否把本次输入的凭据存回连接所引用的共享凭据(#550);连接没引用共享凭据时恒为 false。
+/// </param>
+/// <param name="SaveAsConnection">
+/// 是否把这条临时连接(外部拉起、「最近连接」重建的,不在库里)存成一条正式的连接配置;不是临时连接时恒为 false。
 /// </param>
 public sealed record AuthenticationResult(
     string Username,
@@ -29,7 +32,8 @@ public sealed record AuthenticationResult(
     string? PrivateKeyPassphrase,
     string? CertificatePath,
     bool RememberPassword,
-    bool UpdateSharedCredential = false);
+    bool UpdateSharedCredential = false,
+    bool SaveAsConnection = false);
 
 /// <summary>为什么一条引用共享凭据的连接又来问凭据(#550)。</summary>
 public enum SharedCredentialPromptReason
@@ -79,6 +83,9 @@ public class AuthenticationDialogViewModel : ReactiveObject
     /// <param name="initialMethod">初始选中的认证方式。</param>
     /// <param name="sharedCredential">连接引用了共享凭据时传入(#550);否则为 null。</param>
     /// <param name="connectionType">连接类型:只有 SSH / SFTP 有密码之外的认证方式可选。</param>
+    /// <param name="temporaryProfile">
+    /// 要连的是不在库里的临时配置(外部拉起、「最近连接」重建的):不给「记住密码」,改给「另存为连接」。
+    /// </param>
     public AuthenticationDialogViewModel(
         string host,
         int port,
@@ -86,12 +93,14 @@ public class AuthenticationDialogViewModel : ReactiveObject
         string? knownFingerprint = null,
         AuthMethod initialMethod = AuthMethod.Password,
         SharedCredentialPromptContext? sharedCredential = null,
-        ConnectionType connectionType = ConnectionType.SSH)
+        ConnectionType connectionType = ConnectionType.SSH,
+        bool temporaryProfile = false)
     {
         TargetText = host;
         _port = port;
         _username = username ?? string.Empty;
         SharedCredential = sharedCredential;
+        IsTemporaryProfile = temporaryProfile;
         // 凭据不完整时用户就是来补它的,默认存回去;被拒时可能只是这一台密码不同,
         // 默认不动 —— 勾错的代价是另外几十台一起连不上。
         UpdateSharedCredential = sharedCredential?.Reason == SharedCredentialPromptReason.Incomplete;
@@ -262,8 +271,25 @@ public class AuthenticationDialogViewModel : ReactiveObject
     /// <summary>
     /// 是否显示「记住密码」。引用共享凭据的连接不显示:手输的这一份只用于本次,
     /// 要长期保存就存回共享凭据(<see cref="UpdateSharedCredential" />)—— 连接自己不再存密码。
+    /// 临时连接也不显示:它不落库(plan.md §252),勾了也存不下,改给「另存为连接」(<see cref="SaveAsConnection" />)。
     /// </summary>
-    public bool ShowRememberPassword => !IsTailscaleMethod && SharedCredential is null;
+    public bool ShowRememberPassword => !IsTailscaleMethod && SharedCredential is null && !IsTemporaryProfile;
+
+    // ---- 临时连接:另存为连接 ----
+
+    /// <summary>要连的是不在库里的临时配置(外部拉起、「最近连接」重建的)。</summary>
+    public bool IsTemporaryProfile { get; }
+
+    /// <summary>
+    /// 是否把这条临时连接存成正式的连接配置(进资源管理器,未分组)。存成之后才记住密码 ——
+    /// 仍受「常规 → 隐私与安全 → 记住密码」总开关约束。默认不勾:外部拉起带来的本来就是一次性的东西。
+    /// </summary>
+    /// <remarks>与认证方式无关(用密钥、Tailscale 登录的也可以存),所以放在各认证方式的面板外面。</remarks>
+    public bool SaveAsConnection
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    }
 
     /// <summary>又来问凭据的原因说明;不必说明时为 null。</summary>
     public string? SharedCredentialNotice => SharedCredential is { Reason: SharedCredentialPromptReason.Unsupported }
@@ -365,8 +391,10 @@ public class AuthenticationDialogViewModel : ReactiveObject
             ShowsKeyFields ? PrivateKeyPath : null,
             ShowsKeyFields ? PrivateKeyPassphrase : null,
             IsCertificateMethod ? CertificatePath : null,
-            !IsTailscaleMethod && RememberPassword,
-            CanUpdateSharedCredential && UpdateSharedCredential);
+            // 临时连接:另存为连接才记住(存不进库的配置,记住了也落不了盘);其余照「记住密码」那一勾。
+            !IsTailscaleMethod && (IsTemporaryProfile ? SaveAsConnection : RememberPassword),
+            CanUpdateSharedCredential && UpdateSharedCredential,
+            IsTemporaryProfile && SaveAsConnection);
     }
 
     private static string Shorten(string fingerprint) => fingerprint.Length <= 24 ? fingerprint : $"{fingerprint[..12]}...{fingerprint[^4..]}";

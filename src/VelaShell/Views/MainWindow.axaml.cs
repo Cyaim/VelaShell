@@ -1825,8 +1825,10 @@ public partial class MainWindow : Window
             }
         }
 
+        // 不在库里的临时配置(外部拉起、「最近连接」重建的):框上不给「记住密码」(存不下),改给「另存为连接」。
+        bool temporary = await TemporaryConnectionPrompt.IsTemporaryAsync(services?.GetService<ISessionRepository>(), profile);
         AuthenticationDialogViewModel viewModel = SharedCredentialPrompt.CreateDialog(
-            profile, credential, knownFingerprint, sharedContext);
+            profile, credential, knownFingerprint, sharedContext, temporary);
         var dialog = new AuthenticationDialogView { DataContext = viewModel };
         AuthenticationResult? result = await dialog.ShowDialog<AuthenticationResult?>(this);
         if (result is null)
@@ -1855,6 +1857,23 @@ public partial class MainWindow : Window
             {
                 // 没存进去不影响这一次连接:副本上带着刚输的那一份。
                 Trace.WriteLine($"[Cred] Updating shared credential {updated.Id} failed: {ex.Message}");
+            }
+        }
+        if (result.SaveAsConnection && services?.GetService<IConnectionWorkflowService>() is { } workflow)
+        {
+            try
+            {
+                await TemporaryConnectionPrompt.SaveAsConnectionAsync(workflow, copy);
+                if (DataContext is MainWindowViewModel vm)
+                {
+                    await vm.RefreshSessionTreeAsync();
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
+            {
+                // 没存成不影响这一次连接:副本上带着刚输的凭据,照常去连,只是仍是一条临时连接。
+                Trace.WriteLine($"[Connect] Saving temporary profile {copy.Id} as a connection failed: {ex.Message}");
+                (DataContext as MainWindowViewModel)?.Toasts.Error(Strings.Format("Auth_SaveAsConnectionFailed", ex.Message));
             }
         }
         return copy;

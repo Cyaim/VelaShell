@@ -62,14 +62,15 @@ public static class SharedCredentialPrompt
 
     internal static AuthenticationDialogViewModel CreateDialog(
         SessionProfile profile, SharedCredential? credential, string? knownFingerprint,
-        SharedCredentialPromptContext? sharedContext)
+        SharedCredentialPromptContext? sharedContext, bool temporaryProfile = false)
     {
         bool fromCredential = profile.AuthMethod != AuthMethod.Tailscale
                               && credential is { AuthMethod: not AuthMethod.Tailscale }
                               && !CredentialMaterial.HasInline(profile);
         var viewModel = new AuthenticationDialogViewModel(profile.Host, profile.Port,
             InitialUsername(profile, credential), knownFingerprint,
-            fromCredential ? credential!.AuthMethod : profile.AuthMethod, sharedContext, profile.ConnectionType);
+            fromCredential ? credential!.AuthMethod : profile.AuthMethod, sharedContext, profile.ConnectionType,
+            temporaryProfile);
         if (fromCredential && credential!.AuthMethod is AuthMethod.PrivateKey or AuthMethod.Certificate)
         {
             viewModel.PrivateKeyPath = credential.PrivateKeyPath;

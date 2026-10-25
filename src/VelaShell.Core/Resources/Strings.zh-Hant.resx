@@ -9302,6 +9302,15 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Auth_UpdateShared" xml:space="preserve">
     <value>同時更新共用憑證「{0}」({1} 條連線在用)</value>
   </data>
+  <data name="Auth_SaveAsConnection" xml:space="preserve">
+    <value>另存為連線</value>
+  </data>
+  <data name="Auth_SaveAsConnectionHint" xml:space="preserve">
+    <value>這是一條臨時連線(由外部啟動的,或從「最近連線」重建的):不在資源總管裡,這裡輸入的憑證只用於這一次。勾選則存成一條連線(未分組),密碼也隨之記住(一般頁的「記住密碼」開啟時)。</value>
+  </data>
+  <data name="Auth_SaveAsConnectionFailed" xml:space="preserve">
+    <value>沒能存成連線:{0}。這一次照常以臨時連線登入。</value>
+  </data>
   <data name="Profile_CredSource" xml:space="preserve">
     <value>憑證來源</value>
   </data>
