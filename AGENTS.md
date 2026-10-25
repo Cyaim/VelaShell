@@ -139,3 +139,77 @@ Docker 与 `docker-compose.test.yml`,`CrossPlatformPublishTests` 需 `VELASHELL_
 - 创建PR的时候直接选择合并到main分支,但是在PR描述中必须写明本次PR的主要改动内容,以及是否涉及到文档的修改,如果涉及到文档的修改,请在PR描述中附上对应的文档链接。
 - **发布 Release 时避免重复触发发布流水线**：`.github/workflows/release.yml` 同时监听 `published` 与 `edited`。创建 Release 后，必须一次性写好标题与正文（包括对应 PR 链接），不要再通过编辑 Release 反复修正文案；每次编辑都会为同一标签新增一次 Actions 运行。若正文确需修改，先确认已有同标签运行已结束，再只编辑一次，并等待该次 `edited` 运行完成。发布前先检查同一标签是否已有 Release、标签和运行，避免重复创建、删除后重建或并发补发。
 - **Release 标题只填写版本号**：标题必须与标签一致（例如标签为 `1.7.4` 时标题填写 `1.7.4`），不要添加产品名或其他前后缀。创建 Release 时直接使用版本号作为标题，避免后续手动修改并再次触发发布流水线。
+- **Release 正文统一使用以下 Changelog 模板**：每次发版都按固定章节组织内容，使用 Emoji 区分功能领域；每项功能必须说明用户可感知的变化、适用范围或限制，并附上真实的 Git 提交短 ID 与对应 PR 链接。只引用本次版本范围内实际存在的提交 / PR，不要猜测、编造或只写笼统的「修复若干问题」。
+
+```markdown
+本次更新聚焦 <版本主题 1>、<版本主题 2> 与 <版本主题 3>，为 <目标用户 / 使用场景> 带来 <一句话总结>。
+
+## ✨ 重点更新
+
+- **<功能名称>**：<一句话说明对用户的直接价值>。
+  - <详细行为：用户在哪里可以使用、如何使用、默认行为是什么>
+  - <适用范围 / 限制 / 兼容性 / 安全边界>
+  - 变更：`<commit-sha>` · [PR #<number>](https://github.com/joesdu/VelaShell/pull/<number>)
+
+- **<功能名称>**：<一句话说明对用户的直接价值>。
+  - <详细行为>
+  - <适用范围或限制>
+  - 变更：`<commit-sha>` · [PR #<number>](https://github.com/joesdu/VelaShell/pull/<number>)
+
+## 🖥️ <功能领域一>
+
+### <子功能名称>
+
+- **<变化名称>**：<用户可感知的变化，以及与旧版本相比的差异>。
+  - <操作路径、配置项、默认值或触发条件>
+  - <边界行为、兼容性说明或不会改变的行为>
+  - 变更：`<commit-sha>` · [PR #<number>](https://github.com/joesdu/VelaShell/pull/<number>)
+
+### <子功能名称>
+
+- **<变化名称>**：<详细说明>。
+  - 变更：`<commit-sha>` · [PR #<number>](https://github.com/joesdu/VelaShell/pull/<number>)
+
+## 🔐 安全与隐私
+
+- **<安全改进>**：<说明保护了什么、何时生效，以及用户是否需要采取行动>。
+  - <迁移、回退、兼容性或已知限制>
+  - 变更：`<commit-sha>` · [PR #<number>](https://github.com/joesdu/VelaShell/pull/<number>)
+
+## 🐛 修复与稳定性
+
+- **<问题名称>**：<说明旧版本中的现象、触发条件和现在的修复结果>。
+  - 变更：`<commit-sha>` · [PR #<number>](https://github.com/joesdu/VelaShell/pull/<number>)
+
+## ⚠️ 升级说明 / 不兼容变更
+
+- <配置迁移、默认值变化、数据格式变化、插件 / SDK 要求或需要用户重新操作的事项>。
+- 没有需要用户注意的升级事项时，写：`无需要用户额外操作的不兼容变更。`
+
+## 📚 文档与生态
+
+- <用户手册、隐私说明、插件 SDK 或相关生态仓库的同步内容>。
+- 变更：`<commit-sha>` · [PR #<number>](https://github.com/joesdu/VelaShell/pull/<number>)
+
+## ✅ 验证
+
+- <构建命令与结果，例如 `dotnet build VelaShell.slnx -c Debug -warnaserror`：通过。>
+- <测试范围与结果：宿主 / 插件 / 协议互操作 / 本地化 / Headless UI / 跨平台 CI。>
+- <未运行或被环境跳过的验证必须明确写出原因，不要把跳过写成通过。>
+
+## 🔗 相关变更
+
+- [PR #<number>：<标题>](https://github.com/joesdu/VelaShell/pull/<number>)
+- `<commit-sha>`：<变更摘要>
+
+```
+
+Release Changelog 编写规则：
+
+1. 标题只写版本号，正文首段先给出本版本的一句话主题总结。
+2. 章节顺序固定为「重点更新 → 功能领域 → 安全与隐私 → 修复与稳定性 → 升级说明 → 文档与生态 → 验证 → 相关变更」；没有内容的章节可以省略，但不能改变剩余章节的顺序。
+3. 功能说明优先写用户收益，再写操作方式、默认值、适用范围、限制和兼容性；不要把内部实现细节当作唯一说明。
+4. 每个重要功能或修复至少附一个真实提交短 ID；涉及多个 PR 时，逐项列出对应 PR，不要只在文末堆一串无法对应的链接。
+5. PR 链接统一使用 `https://github.com/joesdu/VelaShell/pull/<number>`；跨仓库变更使用对应仓库的真实链接，并在文字中注明仓库名。
+6. 「验证」只填写实际执行过的构建、测试和 CI 结果；区分通过、失败和跳过，并保留失败或跳过原因。
+7. Release 创建时一次性填入版本号标题和完整正文，发布后不要为了格式问题反复编辑 Release，以免触发额外的 `edited` 发布流水线运行。
