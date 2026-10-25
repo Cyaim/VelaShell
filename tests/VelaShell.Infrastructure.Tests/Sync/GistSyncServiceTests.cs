@@ -295,7 +295,12 @@ public sealed class GistSyncServiceTests
         ISettingsService settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(_ => SettingsWithSecrets());
         ISecretProtector protector = Substitute.For<ISecretProtector>();
-        protector.Unprotect("protected-passphrase").Returns("correct horse battery staple");
+        // 同步口令经 TryUnprotect 取(解不开要拒绝推送,不能拿密文当口令),替身要按它配。
+        protector.TryUnprotect("protected-passphrase", out Arg.Any<string?>()).Returns(call =>
+        {
+            call[1] = "correct horse battery staple";
+            return true;
+        });
         var service = new GistSyncService(settings, Substitute.For<ISessionRepository>(), Substitute.For<IAppDataStore>(),
             Substitute.For<IQuickCommandRepository>(), protector);
 
