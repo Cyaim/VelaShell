@@ -237,8 +237,8 @@ public abstract class PortForwarder : IAsyncDisposable
                     _receivedMeter.Record(bytes);
                     ForwardMetrics.Bytes.Add(bytes, ForwardEvents.KindTag(Kind), ForwardEvents.DirectionReceived);
                 },
-                throttleFromLeft: _sendLimiter is { } send ? send.WaitAsync : null,
-                throttleFromRight: _receiveLimiter is { } receive ? receive.WaitAsync : null,
+                throttleFromLeft: _sendLimiter is { } send ? send.AcquireAsync : null,
+                throttleFromRight: _receiveLimiter is { } receive ? receive.AcquireAsync : null,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
             // 先减活跃数、再报「关了」：订阅者在事件里读到的 ActiveConnections 不该还算着这一条。

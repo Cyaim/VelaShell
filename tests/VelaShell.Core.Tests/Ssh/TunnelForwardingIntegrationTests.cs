@@ -41,8 +41,8 @@ public class TunnelForwardingIntegrationTests
     public TestContext TestContext { get; set; } = null!;
 
     /// <summary>
-    /// 限速真的生效:远端往一条限速 64 KB/s 的远程转发里灌 256 KB,本机这头收完要三秒上下(一秒的突发额度之后按速率补);
-    /// 搬运途中,速率与连接快照(来源、目标、到目前为止的字节数)也从库一路同步到了 <see cref="TunnelInfo" />。
+    /// 限速真的生效:远端往一条限速 64 KB/s 的远程转发里灌 256 KB,本机这头收完要三秒上下(一秒的突发额度之后按速率补),
+    /// 途中任何一段时间里多收的都不超过令牌桶的上限;速率与连接快照(来源、目标、到目前为止的字节数)也从库一路同步到了 <see cref="TunnelInfo" />。
     /// </summary>
     [TestMethod]
     [Timeout(60_000)]
@@ -75,8 +75,6 @@ public class TunnelForwardingIntegrationTests
         Task<long> drain = DrainAsync(accepted.GetStream());
 
         // 搬运途中:连接快照里有这一条,目标是本机的 sink。
-        // 不在固定时刻断言字节数:库的限速按一次读到的整块等(读到 200 KB 就先等三秒再整块写出、整块计数),
-        // 机器忙时数据会攒成大块到达,中途的读数是跳着走的 —— 平均速率才是限速的口径。
         // 本机 sink 先被连上、回连的通道随后才确认并开始搬运,所以等它进快照。
         await WaitForAsync(() =>
         {
@@ -86,12 +84,48 @@ public class TunnelForwardingIntegrationTests
         }, "搬运途中的连接应当出现在快照里、计进活跃数。");
         Assert.AreEqual($"127.0.0.1:{sinkPort}", tunnel.Connections.Single().Target);
 
+        // 搬完之前每 50 毫秒看一眼快照。库按一秒的额度放行、一段不超过一块缓冲(32 KiB),计数是一段一段往上走的:
+        // 任意两次读数之间多出来的,不超过「这段时间按速率补的 + 一秒的突发 + 读数那一刻正在写的一段」——
+        // 读数在两次取时刻之间,窗口取前一次的「之前」到后一次的「之后」,机器再忙也只会把窗口拉长、不会冤枉。
+        // 曾经按一次读到的整块等、整块写:机器忙时 200 KB 一块到达,先等三秒再一口气写出,计数从 0 跳到 200 KB。
+        List<(double Before, double After, long Bytes, double Rate)> samples = [];
+        while (!drain.IsCompleted)
+        {
+            double before = elapsed.Elapsed.TotalSeconds;
+            service.RefreshStatistics();
+            long bytes = tunnel.Connections.SingleOrDefault()?.BytesReceived ?? 0;
+            samples.Add((before, elapsed.Elapsed.TotalSeconds, bytes, tunnel.ReceivedBytesPerSecond));
+            await Task.Delay(50, TestContext.CancellationToken);
+        }
+
         long received = await drain;
         elapsed.Stop();
         StringAssert.Contains(await push, "PUSHED");
         Assert.AreEqual((long)payload, received);
-        Assert.IsGreaterThanOrEqualTo(2.0, elapsed.Elapsed.TotalSeconds,
-            $"64 KB/s 收 256 KB 至少要两秒多(一秒突发之后按速率补),实际 {elapsed.Elapsed.TotalSeconds:0.00} 秒 —— 限速没生效。");
+        Assert.IsGreaterThanOrEqualTo(2.9, elapsed.Elapsed.TotalSeconds,
+            $"64 KB/s 收 256 KB:一秒的突发之后还有 192 KB,至少三秒,实际 {elapsed.Elapsed.TotalSeconds:0.00} 秒 —— 限速没生效。");
+        Assert.IsTrue(samples.Any(s => s.Bytes is > 0 and < payload),
+            "搬运途中应当读得到已经收回、还没收完的字节数:" + string.Join(", ", samples.Select(s => s.Bytes)));
+        Assert.IsTrue(samples.Any(s => s.Bytes < payload && s.Rate > 0), "还没收完时速率就该有读数。");
+        const double rate = 64 * 1024;
+        const double segment = 32 * 1024;
+        // 定时器可能比高精度时钟早醒一个系统时钟周期(Windows 上约 16 ms),窗口按多 20 ms 算。
+        const double timerSlack = 0.02;
+        double closest = double.MaxValue;
+        for (int i = 0; i < samples.Count; i++)
+        {
+            for (int j = i + 1; j < samples.Count; j++)
+            {
+                double window = samples[j].After - samples[i].Before + timerSlack;
+                double allowed = (rate * window) + rate + segment;
+                long gained = samples[j].Bytes - samples[i].Bytes;
+                closest = Math.Min(closest, allowed - gained);
+                Assert.IsLessThanOrEqualTo(allowed, (double)gained,
+                    $"{samples[i].Before:0.00}–{samples[j].After:0.00} 秒之间多收了 {gained} 字节,"
+                    + $"超过令牌桶的上限 {allowed:0}:单次突发超过了一秒的额度。");
+            }
+        }
+        TestContext.WriteLine($"{samples.Count} 次读数,离令牌桶上限最近的一次还差 {closest:0} 字节。");
 
         // 收完了、本机这头还没关:这条连接仍在快照里,字节数与速率都已从库同步过来。
         await WaitForAsync(() =>

@@ -53,6 +53,29 @@ public sealed class ForwardRateTests
         Assert.AreNotEqual(TimeSpan.Zero, limiter.Reserve(1), "补满也只有一秒的量");
     }
 
+    /// <summary>
+    /// 要得再多，一次也只放行一秒的额度，剩下的下一次再要 —— 不是整块记账、整块等完再整块放行
+    /// （那样单次突发就是好几秒的额度）。要得比额度少时照要的给。
+    /// </summary>
+    [TestMethod]
+    public async Task 一次至多放行一秒的额度()
+    {
+        ManualTimeProvider time = new();
+        ByteRateLimiter limiter = new(1000, time);
+
+        ValueTask<int> first = limiter.AcquireAsync(5000, CancellationToken.None);
+        Assert.IsTrue(first.IsCompletedSuccessfully, "额度在手：当场放行");
+        Assert.AreEqual(1000, await first, "要五秒的量，只放一秒的");
+
+        Task<int> second = limiter.AcquireAsync(5000, CancellationToken.None).AsTask();
+        Assert.IsFalse(second.IsCompleted, "额度用完了：欠着、等一秒");
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.AreEqual(1000, await second.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        time.Advance(TimeSpan.FromSeconds(2));
+        Assert.AreEqual(300, await limiter.AcquireAsync(300, CancellationToken.None), "比额度少的照要的给");
+    }
+
     /// <summary>限速必须为正；不限给 null。</summary>
     [TestMethod]
     public void 限速参数不为正当场报()

@@ -7,9 +7,11 @@
 // 不必架一台真服务器就能验证。这一整个文件都不需要任何 SSH。
 
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.IO.Pipelines;
 using System.Text;
 using VelaShell.Ssh.Forwarding;
+using VelaShell.Ssh.Tests.TestKit;
 
 namespace VelaShell.Ssh.Tests.Forwarding;
 
@@ -357,5 +359,111 @@ public sealed class RelayTests
         Assert.AreEqual(1, left.AbortCount);
         Assert.AreEqual(1, right.AbortCount);
         Assert.AreEqual(0, left.SendCompletedCount + right.SendCompletedCount);
+    }
+
+    // ------------------------------------------------------------ 限速（spec/07 §5.1）
+
+    /// <summary>
+    /// 一次读到的大块（机器忙时通道里攒下的）切开搬：当场只写出一秒的额度，之后每秒一段 ——
+    /// 不是整块等完再整块写出。总共用的时间与整块等的一样：平均速率不变。
+    /// </summary>
+    [TestMethod]
+    public async Task 限速时大块切开搬_单次突发不超过一秒额度_平均速率不变()
+    {
+        const int rate = 4000;
+        const int payloadLength = 10 * rate;   // 十秒的量，搬运开始之前就整块到了
+        ManualTimeProvider time = new();
+        ByteRateLimiter limiter = new(rate, time);
+        FakeEndpoint left = new();
+        FakeEndpoint right = new();
+        ConcurrentQueue<int> writes = new();
+        long moved = 0;
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
+
+        await left.FeedAsync(new byte[payloadLength]);
+        left.FeedComplete();
+        right.FeedComplete();
+
+        Task<RelayResult> relay = DuplexRelay.RunAsync(
+            left, right,
+            onBytesFromLeft: n =>
+            {
+                writes.Enqueue(n);
+                Interlocked.Add(ref moved, n);
+            },
+            throttleFromLeft: limiter.AcquireAsync);
+        Task<byte[]> atRight = right.ReadAllReceivedAsync();
+
+        for (int second = 1; second < 10; second++)
+        {
+            // 放行一段、写出去，下一段就要等满一秒：等它睡下，再看这时写出了多少。
+            await time.WaitUntilArmedAsync(TimeSpan.FromSeconds(1), timeout.Token);
+            Assert.AreEqual((long)second * rate, Interlocked.Read(ref moved), $"第 {second} 段等额度时，前面每段一秒的额度都已写出");
+            time.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        Assert.HasCount(payloadLength, await atRight.WaitAsync(timeout.Token));
+        RelayResult result = await relay.WaitAsync(timeout.Token);
+        Assert.IsNull(result.Error);
+        Assert.AreEqual(payloadLength, result.BytesFromLeft);
+        Assert.IsTrue(writes.All(n => n <= rate), $"单次写出不超过一秒的额度：{string.Join(", ", writes)}");
+        Assert.AreEqual(TimeSpan.FromSeconds(9), time.GetElapsedTime(0), "十秒的量、一秒的突发：九秒搬完，与整块等的一样");
+    }
+
+    /// <summary>限速放得比一块缓冲还宽时也一块一块地搬：计数一块缓冲一跳，不随一次读到多少整块跳。</summary>
+    [TestMethod]
+    public async Task 限速时每段不超过一块缓冲()
+    {
+        ManualTimeProvider time = new();
+        ByteRateLimiter limiter = new(16 * DuplexRelay.BufferSize, time);
+        FakeEndpoint left = new();
+        FakeEndpoint right = new();
+        ConcurrentQueue<int> writes = new();
+        byte[] payload = new byte[6 * DuplexRelay.BufferSize];
+        Random.Shared.NextBytes(payload);
+
+        Task<RelayResult> relay = DuplexRelay.RunAsync(
+            left, right, onBytesFromLeft: writes.Enqueue, throttleFromLeft: limiter.AcquireAsync);
+        Task<byte[]> atRight = right.ReadAllReceivedAsync();
+        Task feed = Task.Run(async () =>
+        {
+            await left.FeedAsync(payload);
+            left.FeedComplete();
+            right.FeedComplete();
+        });
+
+        // 都在一秒的额度之内：时钟不必拨。
+        Assert.AreSequenceEqual(payload, await atRight.WaitAsync(TimeSpan.FromSeconds(10)));
+        await feed;
+        await relay.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.IsTrue(writes.All(n => n <= DuplexRelay.BufferSize), $"每段不超过一块缓冲：{string.Join(", ", writes)}");
+    }
+
+    /// <summary>等额度的时候取消：当场停下、两端中止，不等欠下的那几秒；只报放行过、写出去了的字节。</summary>
+    [TestMethod]
+    public async Task 限速等额度时取消当场停下()
+    {
+        const int rate = 4000;
+        ManualTimeProvider time = new();
+        ByteRateLimiter limiter = new(rate, time);
+        FakeEndpoint left = new();
+        FakeEndpoint right = new();
+        using CancellationTokenSource cts = new();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
+
+        await left.FeedAsync(new byte[10 * rate]);
+        Task<RelayResult> relay = DuplexRelay.RunAsync(
+            left, right, throttleFromLeft: limiter.AcquireAsync, cancellationToken: cts.Token);
+
+        // 第一段已经写出，第二段在等额度。
+        await time.WaitUntilArmedAsync(TimeSpan.FromSeconds(1), timeout.Token);
+        await cts.CancelAsync();
+
+        // 时钟一下没拨：是取消把它放出来的。
+        RelayResult result = await relay.WaitAsync(timeout.Token);
+        Assert.IsInstanceOfType<OperationCanceledException>(result.Error);
+        Assert.AreEqual(rate, result.BytesFromLeft, "只有放行的第一段写出去了");
+        Assert.AreEqual(1, left.AbortCount);
+        Assert.AreEqual(1, right.AbortCount);
     }
 }

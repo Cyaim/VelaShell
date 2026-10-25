@@ -25,16 +25,30 @@ internal sealed class ByteRateLimiter
         _time = time;
         _available = bytesPerSecond;
         _last = time.GetTimestamp();
+        MaxBurst = (int)Math.Min(bytesPerSecond, int.MaxValue);
     }
 
-    /// <summary>记下要搬 <paramref name="bytes"/> 字节，额度不够就等到够为止。</summary>
-    public async ValueTask WaitAsync(int bytes, CancellationToken cancellationToken)
+    /// <summary>一次最多放行多少字节：一秒的额度。</summary>
+    public int MaxBurst { get; }
+
+    /// <summary>
+    /// 想搬 <paramref name="wanted"/> 字节：至多放行一秒的额度，额度不够就等到够为止；返回这一次放行了多少（1 到 <paramref name="wanted"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 〔velashell-docs/zh/ssh/spec/07 §5.1〕一次读到的块比一秒额度大时，调用方只写出放行的那一段、剩下的下一轮再要 ——
+    /// 曾经整块记账、整块等完再整块写出：64 KB/s 的隧道一次读到 256 KB（机器忙时通道里攒下的），先什么都不写、等满三秒，
+    /// 再一口气写出 256 KB —— 平均速率对，单次突发却是额度的四倍，面板上的计数也跟着三秒一跳。
+    /// </remarks>
+    public async ValueTask<int> AcquireAsync(int wanted, CancellationToken cancellationToken)
     {
-        TimeSpan delay = Reserve(bytes);
+        ArgumentOutOfRangeException.ThrowIfLessThan(wanted, 1);
+        int granted = Math.Min(wanted, MaxBurst);
+        TimeSpan delay = Reserve(granted);
         if (delay > TimeSpan.Zero)
         {
             await Task.Delay(delay, _time, cancellationToken).ConfigureAwait(false);
         }
+        return granted;
     }
 
     /// <summary>记账并算出要等多久（测试直接看它）。</summary>
