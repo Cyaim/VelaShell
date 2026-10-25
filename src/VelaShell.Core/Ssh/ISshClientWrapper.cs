@@ -86,6 +86,29 @@ public interface ISshClientWrapper : IAsyncDisposable
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 在远端主机上执行命令,把<b>标准输出的原始字节</b>按 <paramref name="separator" /> 切成一条条交给回调
+    /// (不含分隔符、不解码、不认 <c>\r</c>);标准错误丢弃。进程结束后返回退出码与条数。
+    /// <para>
+    /// 给输出里是文件名的调用方用(远端搜索):文件名可能不是 UTF-8(GBK 服务器),也可能含 <c>\r</c>,
+    /// 按行解码的 <see cref="StreamCommandAsync" /> 在这两处都会把名字弄坏。取消、背压与
+    /// <see cref="StreamCommandAsync" /> 相同:取消时先向远端进程发 <c>TERM</c>,回调完成前不读下一条。
+    /// 一条超过 64 KiB 还没等到分隔符的整条丢弃(不是任何合法路径,只会把内存撑大)。
+    /// </para>
+    /// </summary>
+    /// <param name="commandText">命令行。</param>
+    /// <param name="separator">记录分隔字节。</param>
+    /// <param name="onRecord">逐条回调(在 I/O 线程上);交出的内存只在回调期间有效。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>退出码与条数。</returns>
+    Task<RemoteCommandStreamResult> StreamCommandRecordsAsync(
+        string commandText,
+        byte separator,
+        Func<ReadOnlyMemory<byte>, ValueTask> onRecord,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<RemoteCommandStreamResult>(
+            new NotSupportedException("This SSH client cannot stream raw command output."));
+
+    /// <summary>
     /// 在独立 PTY exec 通道受控提权；不支持的实现必须关闭失败，不降级为普通执行。
     /// <paramref name="onEvent" /> 与 <see cref="StreamCommandAsync" /> 的逐行回调一样逐条等待(背压)。
     /// </summary>

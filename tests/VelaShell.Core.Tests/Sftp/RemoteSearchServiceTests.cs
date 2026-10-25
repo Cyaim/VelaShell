@@ -1,3 +1,4 @@
+using System.Text;
 using NSubstitute;
 using VelaShell.Core.Sftp;
 using VelaShell.Core.Ssh;
@@ -41,8 +42,8 @@ public sealed class RemoteSearchServiceTests
         RemoteSearchOutcome outcome = await Service().SearchAsync(_session, new("/srv", "x"), _ => ValueTask.CompletedTask);
 
         Assert.AreEqual(RemoteSearchStatus.NotPosix, outcome.Status);
-        await _client.DidNotReceive().StreamCommandAsync(
-            Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>());
+        await _client.DidNotReceive().StreamCommandRecordsAsync(
+            Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<Func<ReadOnlyMemory<byte>, ValueTask>>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>探针没人回答(exec 被禁、只开 SFTP 的账号):说「判定不了」,同样不发。</summary>
@@ -55,8 +56,8 @@ public sealed class RemoteSearchServiceTests
         RemoteSearchOutcome outcome = await Service().SearchAsync(_session, new("/srv", "x"), _ => ValueTask.CompletedTask);
 
         Assert.AreEqual(RemoteSearchStatus.ShellUnknown, outcome.Status);
-        await _client.DidNotReceive().StreamCommandAsync(
-            Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>());
+        await _client.DidNotReceive().StreamCommandRecordsAsync(
+            Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<Func<ReadOnlyMemory<byte>, ValueTask>>(), Arg.Any<CancellationToken>());
     }
 
     [TestMethod]
@@ -91,7 +92,7 @@ public sealed class RemoteSearchServiceTests
         Assert.AreSequenceEqual([new RemoteSearchHit("/srv/app", true), new RemoteSearchHit("/srv/app/a.log", false)], hits);
         Assert.IsNotNull(sent);
         Assert.StartsWith("sh -c '", sent);
-        Assert.EndsWith(" '/srv' '*.log' '3'", sent, "向远端多要一条,用来判断截断");
+        Assert.Contains(" '/srv' '*.log' '3' ", sent, "向远端多要一条,用来判断截断");
     }
 
     [TestMethod]
@@ -137,11 +138,11 @@ public sealed class RemoteSearchServiceTests
     public async Task SlowRemote_TimesOut_KeepingWhatWasFound()
     {
         PosixProbe();
-        _client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
+        _client.StreamCommandRecordsAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<Func<ReadOnlyMemory<byte>, ValueTask>>(), Arg.Any<CancellationToken>())
                .Returns(async call =>
                {
-                   var onLine = call.Arg<Func<bool, string, ValueTask>>();
-                   await onLine(false, "f\t/srv/a.log");
+                   var onRecord = call.Arg<Func<ReadOnlyMemory<byte>, ValueTask>>();
+                   await onRecord("f\t/srv/a.log"u8.ToArray());
                    await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
                    return new RemoteCommandStreamResult(0, 1);
                });
@@ -157,7 +158,7 @@ public sealed class RemoteSearchServiceTests
     {
         PosixProbe();
         using var cts = new CancellationTokenSource();
-        _client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
+        _client.StreamCommandRecordsAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<Func<ReadOnlyMemory<byte>, ValueTask>>(), Arg.Any<CancellationToken>())
                .Returns(async call =>
                {
                    await cts.CancelAsync();
@@ -174,12 +175,43 @@ public sealed class RemoteSearchServiceTests
     public async Task ChannelError_IsFailedWithTheMessage()
     {
         PosixProbe();
-        _client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
+        _client.StreamCommandRecordsAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<Func<ReadOnlyMemory<byte>, ValueTask>>(), Arg.Any<CancellationToken>())
                .Returns<Task<RemoteCommandStreamResult>>(_ => throw new InvalidOperationException("channel open failed"));
 
         RemoteSearchOutcome outcome = await Service().SearchAsync(_session, new("/srv", "x"), _ => ValueTask.CompletedTask);
 
         Assert.AreEqual(new RemoteSearchOutcome(RemoteSearchStatus.Failed, 0, "channel open failed"), outcome);
+    }
+
+    /// <summary>
+    /// GBK 会话:结果按 GBK 解(与 SFTP 文件名同一个来源),名字里被换成 \0 的换行换回来;命令里的参数是 GBK 字节的八进制转义。
+    /// </summary>
+    [TestMethod]
+    public async Task LegacyEncodingSession_DecodesResultsInTheSessionEncoding_AndKeepsNewlinesInNames()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        Encoding gbk = Encoding.GetEncoding("GBK");
+        _connections.GetSession(_session).Returns(new Core.Models.SshSession
+        {
+            SessionId = _session,
+            ConnectionInfo = new() { Host = "gbk.invalid", Username = "joe", AuthMethod = Core.Models.AuthMethod.Password, FileNameEncoding = "GBK" },
+        });
+        PosixProbe();
+        string? sent = null;
+        StreamRecords(command => sent = command,
+            [.. "f\t/srv/"u8.ToArray(), .. gbk.GetBytes("中文报告.txt")],
+            [.. "d\t/srv/two"u8.ToArray(), 0, .. "lines"u8.ToArray()]);
+        var hits = new List<RemoteSearchHit>();
+
+        RemoteSearchOutcome outcome = await Service().SearchAsync(_session, new("/srv", "报告"), hit =>
+        {
+            hits.Add(hit);
+            return ValueTask.CompletedTask;
+        });
+
+        Assert.AreEqual(new RemoteSearchOutcome(RemoteSearchStatus.Completed, 2), outcome);
+        Assert.AreSequenceEqual([new RemoteSearchHit("/srv/中文报告.txt", false), new RemoteSearchHit("/srv/two\nlines", true)], hits);
+        Assert.DoesNotContain("报告", sent!, "GBK 会话里中文要编成 GBK 字节再转义,不能按 UTF-8 原样发");
     }
 
     private RemoteSearchService Service() => new(_connections);
@@ -189,15 +221,18 @@ public sealed class RemoteSearchServiceTests
                .Returns(new RemoteCommandResult(PosixAnswer, "", 0));
 
     private void StreamLines(Action<string> onCommand, params string[] lines) =>
-        _client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
+        StreamRecords(onCommand, [.. lines.Select(static line => Encoding.UTF8.GetBytes(line))]);
+
+    private void StreamRecords(Action<string> onCommand, params byte[][] records) =>
+        _client.StreamCommandRecordsAsync(Arg.Any<string>(), (byte)'\n', Arg.Any<Func<ReadOnlyMemory<byte>, ValueTask>>(), Arg.Any<CancellationToken>())
                .Returns(async call =>
                {
                    onCommand(call.ArgAt<string>(0));
-                   var onLine = call.Arg<Func<bool, string, ValueTask>>();
-                   foreach (string line in lines)
+                   var onRecord = call.Arg<Func<ReadOnlyMemory<byte>, ValueTask>>();
+                   foreach (byte[] record in records)
                    {
-                       await onLine(false, line);
+                       await onRecord(record);
                    }
-                   return new RemoteCommandStreamResult(0, lines.Length);
+                   return new RemoteCommandStreamResult(0, records.Length);
                });
 }

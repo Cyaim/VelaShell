@@ -137,6 +137,89 @@ public sealed class RemoteSearchDockerTests
         Assert.AreEqual(RemoteSearchStatus.Truncated, oneShort.Status);
     }
 
+    /// <summary>
+    /// 名字里带换行的文件与目录在 BusyBox 上各是一条结果(按 \0 分隔交给批处理、tr 对调之后 head 计数),按内容找同样;
+    /// BusyBox 的 grep 没有 -Z,带换行的名字逐个 grep -q。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    [DataRow("vela-ash")]
+    [DataRow("vela-fish")]
+    public async Task NamesWithNewlines_AreOneHitEach_OnBusyBox(string user)
+    {
+        RequireContainer();
+        string root = $"{Root}/newline-{user}";
+        // 夹具目录归 vela-bash(ClassInitialize 建的),别的账号只读:夹具照样由它建。
+        await using (VelaSshClientWrapper owner = await ConnectAsync("vela-bash", TestContext.CancellationToken))
+        {
+            RemoteCommandResult created = await owner.RunCommandDetailedAsync(
+                "sh -c 'n=$(printf \"\\n_\"); n=${n%_}; mkdir -p \"$1/dir${n}x\" && " +
+                "printf \"needle\\n\" > \"$1/two${n}lines.txt\" && printf \"needle\\n\" > \"$1/plain.txt\" && chmod -R a+rX \"$1\"' fixture " +
+                RemoteSha256.Quote(root), TestContext.CancellationToken);
+            Assert.AreEqual(0, created.ExitCode, created.StandardError);
+        }
+        await using VelaSshClientWrapper ssh = await ConnectAsync(user, TestContext.CancellationToken);
+        RemoteSearchService service = Service(ssh, user, out Guid session);
+
+        (RemoteSearchOutcome byName, List<RemoteSearchHit> names) = await SearchAsync(service, session, new(root, "*"));
+        Assert.AreEqual(RemoteSearchStatus.Completed, byName.Status, byName.Detail);
+        Assert.AreSequenceEqual(
+        [
+            new RemoteSearchHit(root + "/dir\nx", true),
+            new RemoteSearchHit(root + "/plain.txt", false),
+            new RemoteSearchHit(root + "/two\nlines.txt", false),
+        ], names);
+
+        (RemoteSearchOutcome byContent, List<RemoteSearchHit> content) = await SearchAsync(service, session, new(root, null, "NEEDLE"));
+        Assert.AreEqual(RemoteSearchStatus.Completed, byContent.Status, byContent.Detail);
+        Assert.AreSequenceEqual(
+            [new RemoteSearchHit(root + "/plain.txt", false), new RemoteSearchHit(root + "/two\nlines.txt", false)], content);
+
+        // 上限照样按条数算:名字里的换行不会让 head 多数一条。
+        (RemoteSearchOutcome limited, List<RemoteSearchHit> two) = await SearchAsync(service, session, new(root, "*", MaxResults: 2));
+        Assert.AreEqual(RemoteSearchStatus.Truncated, limited.Status);
+        Assert.HasCount(2, two);
+    }
+
+    /// <summary>
+    /// GBK 会话:GBK 字节的名字按会话编码显示成中文,从 GBK 名字的目录起找也找得到(参数编成 GBK 字节交给远端)。
+    /// UTF-8 会话下同一批名字显示不出中文 —— 这就是改动之前 GBK 服务器上的样子。
+    /// </summary>
+    [TestMethod]
+    [Timeout(60_000)]
+    public async Task GbkSession_ShowsGbkNamesAndSearchesFromAGbkDirectory()
+    {
+        RequireContainer();
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        System.Text.Encoding gbk = System.Text.Encoding.GetEncoding("GBK");
+        const string Directory = "中文目录";
+        const string File = "报告.txt";
+        await using VelaSshClientWrapper ssh = await ConnectAsync("vela-bash", TestContext.CancellationToken);
+        string root = $"{Root}/gbk";
+        RemoteCommandResult created = await ssh.RunCommandDetailedAsync(
+            "sh -c 'd=$(printf \"$2_\"); d=${d%_}; f=$(printf \"$3_\"); f=${f%_}; mkdir -p \"$1/$d\" && printf \"needle\\n\" > \"$1/$d/$f\"' fixture " +
+            RemoteSha256.Quote(root) + " " + RemoteSha256.Quote(Octal(gbk, Directory)) + " " + RemoteSha256.Quote(Octal(gbk, File)),
+            TestContext.CancellationToken);
+        Assert.AreEqual(0, created.ExitCode, created.StandardError);
+
+        RemoteSearchService gbkService = Service(ssh, "vela-bash", out Guid gbkSession, fileNameEncoding: "GBK");
+        (RemoteSearchOutcome outcome, List<RemoteSearchHit> hits) = await SearchAsync(gbkService, gbkSession, new(root, "报告"));
+        Assert.AreEqual(RemoteSearchStatus.Completed, outcome.Status, outcome.Detail);
+        Assert.AreSequenceEqual([new RemoteSearchHit($"{root}/{Directory}/{File}", false)], hits);
+
+        (_, List<RemoteSearchHit> fromGbkDirectory) = await SearchAsync(gbkService, gbkSession, new($"{root}/{Directory}", null, "needle"));
+        Assert.AreSequenceEqual([new RemoteSearchHit($"{root}/{Directory}/{File}", false)], fromGbkDirectory,
+            "从 GBK 名字的目录起找:目录名要编成 GBK 字节交给 find");
+
+        RemoteSearchService utf8Service = Service(ssh, "vela-bash", out Guid utf8Session);
+        (_, List<RemoteSearchHit> utf8) = await SearchAsync(utf8Service, utf8Session, new(root, "*.txt"));
+        Assert.HasCount(1, utf8);
+        Assert.DoesNotContain(Directory, utf8[0].Path, "UTF-8 会话照旧按 UTF-8 解:GBK 字节显示不出中文");
+    }
+
+    private static string Octal(System.Text.Encoding encoding, string value) =>
+        string.Concat(encoding.GetBytes(value).Select(static b => "\\" + Convert.ToString(b, 8).PadLeft(3, '0')));
+
     private async Task<(RemoteSearchOutcome Outcome, List<RemoteSearchHit> Hits)> SearchAsync(
         RemoteSearchService service, Guid session, RemoteSearchQuery query)
     {
@@ -153,7 +236,7 @@ public sealed class RemoteSearchDockerTests
         return (outcome, hits);
     }
 
-    private static RemoteSearchService Service(VelaSshClientWrapper ssh, string user, out Guid session)
+    private static RemoteSearchService Service(VelaSshClientWrapper ssh, string user, out Guid session, string? fileNameEncoding = null)
     {
         session = Guid.NewGuid();
         ISshConnectionService connections = Substitute.For<ISshConnectionService>();
@@ -161,7 +244,10 @@ public sealed class RemoteSearchDockerTests
         connections.GetSession(session).Returns(new SshSession
         {
             SessionId = session,
-            ConnectionInfo = new() { Host = TestHost, Port = TestPort, Username = user, AuthMethod = AuthMethod.Password },
+            ConnectionInfo = new()
+            {
+                Host = TestHost, Port = TestPort, Username = user, AuthMethod = AuthMethod.Password, FileNameEncoding = fileNameEncoding,
+            },
         });
         return new RemoteSearchService(connections);
     }

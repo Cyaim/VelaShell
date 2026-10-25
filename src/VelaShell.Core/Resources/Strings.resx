@@ -941,7 +941,7 @@
     <value>Could not tell which shell the server runs (command execution may be disabled, or the account is SFTP-only), so no search command was sent</value>
   </data>
   <data name="Sftp_SearchToolMissing" xml:space="preserve">
-    <value>The server has no find (or, for a text search, no grep) command</value>
+    <value>The server is missing find, head or tr (or, for a text search, grep)</value>
   </data>
   <data name="Sftp_SearchFailed" xml:space="preserve">
     <value>Search failed: {0}</value>

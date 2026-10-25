@@ -5204,7 +5204,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
     <value>サーバーのシェルの種類を判別できませんでした(コマンド実行が禁止されているか、SFTP 専用アカウントの可能性があります)。検索コマンドは送信していません</value>
   </data>
   <data name="Sftp_SearchToolMissing" xml:space="preserve">
-    <value>サーバーに find コマンドがありません(内容で検索する場合は grep も必要です)</value>
+    <value>サーバーに find、head、tr のいずれかのコマンドがありません(内容で検索する場合は grep も必要です)</value>
   </data>
   <data name="Sftp_SearchFailed" xml:space="preserve">
     <value>検索に失敗しました: {0}</value>

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO.Pipelines;
 using System.Text;
 using VelaShell.Core.Models;
@@ -326,17 +327,50 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
     /// 两条流**各自**按行读,合到一个回调里。不能先读完一条再读另一条 ——
     /// 那是经典死锁:对端在 stderr 上写满了缓冲区等你读,而你在 stdout 上等它写完。
     /// </remarks>
-    public async Task<RemoteCommandStreamResult> StreamCommandAsync(
+    public Task<RemoteCommandStreamResult> StreamCommandAsync(
         string commandText,
         bool includeStandardError,
         Func<bool, string, ValueTask> onLine,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(onLine);
+        return RunStreamingAsync(commandText, includeStandardError, async command =>
+        {
+            Task<long> stdout = PumpLinesAsync(command.StandardOutput, false, onLine, cancellationToken);
+            Task<long> stderr = includeStandardError
+                ? PumpLinesAsync(command.StandardError, true, onLine, cancellationToken)
+                : Task.FromResult(0L);
+
+            long[] counts = await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
+            return counts[0] + counts[1];
+        }, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<RemoteCommandStreamResult> StreamCommandRecordsAsync(
+        string commandText,
+        byte separator,
+        Func<ReadOnlyMemory<byte>, ValueTask> onRecord,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(onRecord);
+        return RunStreamingAsync(commandText, includeStandardError: false,
+            command => PumpRecordsAsync(command.StandardOutput, separator, onRecord, cancellationToken), cancellationToken);
+    }
+
+    /// <summary>
+    /// 两种流式执行共用的那一段:开 exec 通道(按需丢弃 stderr、补上连接级 X11 转发)、交给 <paramref name="pump" /> 读输出、
+    /// 等退出码;取消时先给远端进程发 TERM,库的异常翻成中立类型。
+    /// </summary>
+    private async Task<RemoteCommandStreamResult> RunStreamingAsync(
+        string commandText,
+        bool includeStandardError,
+        Func<SshCommand, Task<long>> pump,
+        CancellationToken cancellationToken)
+    {
         SshConnection connection = EnsureConnected();
 
         SshCommand? command = null;
-        long lines = 0;
 
         try
         {
@@ -357,13 +391,7 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
             command = await connection.ExecuteAsync(commandText, options, cancellationToken)
                 .ConfigureAwait(false);
 
-            Task<long> stdout = PumpLinesAsync(command.StandardOutput, false, onLine, cancellationToken);
-            Task<long> stderr = includeStandardError
-                ? PumpLinesAsync(command.StandardError, true, onLine, cancellationToken)
-                : Task.FromResult(0L);
-
-            long[] counts = await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
-            lines = counts[0] + counts[1];
+            long lines = await pump(command).ConfigureAwait(false);
 
             SshExitStatus result = await command.WaitAsync(cancellationToken).ConfigureAwait(false);
             return new(result.ExitCode ?? -1, lines);
@@ -491,6 +519,63 @@ public sealed class VelaSshClientWrapper : ISshClientWrapper
                         lines++;
                     }
                 }
+            }
+        }
+    }
+
+    /// <summary>一条记录最长多少字节;超过还没等到分隔符的整条丢弃(见 <see cref="ISshClientWrapper.StreamCommandRecordsAsync" />)。</summary>
+    internal const int MaxRecordBytes = 64 * 1024;
+
+    /// <summary>
+    /// 从一条管道里按分隔字节切记录,逐条回调原始字节。
+    /// </summary>
+    /// <remarks>
+    /// 直接在管道的缓冲区上找分隔符,不解码:调用方知道这些字节是什么编码(远端搜索按会话编码解文件名)。
+    /// 回调完成之前不推进管道 —— 交出的内存就是管道自己的缓冲区,推进之后它就作废了;背压也由此沿 SSH 窗口传回远端。
+    /// 末尾没有分隔符的那一段(进程最后一条没换行)照样交出。
+    /// </remarks>
+    internal static async Task<long> PumpRecordsAsync(
+        PipeReader reader, byte separator, Func<ReadOnlyMemory<byte>, ValueTask> onRecord, CancellationToken cancellationToken)
+    {
+        long records = 0;
+        bool discarding = false;
+        while (true)
+        {
+            ReadResult read = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+            ReadOnlySequence<byte> buffer = read.Buffer;
+            try
+            {
+                while (buffer.PositionOf(separator) is { } end)
+                {
+                    ReadOnlySequence<byte> record = buffer.Slice(0, end);
+                    buffer = buffer.Slice(buffer.GetPosition(1, end));
+                    if (discarding || record.Length > MaxRecordBytes)
+                    {
+                        // 超长的那一条(或它前面已经扔掉的那部分的尾巴):到这个分隔符为止都不要。
+                        discarding = false;
+                        continue;
+                    }
+                    await onRecord(record.IsSingleSegment ? record.First : record.ToArray()).ConfigureAwait(false);
+                    records++;
+                }
+                if (buffer.Length > MaxRecordBytes)
+                {
+                    discarding = true;
+                    buffer = buffer.Slice(buffer.End);
+                }
+                if (read.IsCompleted)
+                {
+                    if (!discarding && buffer.Length > 0)
+                    {
+                        await onRecord(buffer.ToArray()).ConfigureAwait(false);
+                        records++;
+                    }
+                    return records;
+                }
+            }
+            finally
+            {
+                reader.AdvanceTo(buffer.Start, buffer.End);
             }
         }
     }

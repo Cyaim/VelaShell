@@ -994,7 +994,7 @@
     <value>無法確認伺服器的 shell 類型（可能禁止了執行命令，或者帳號只開放了 SFTP），沒有送出搜尋命令</value>
   </data>
   <data name="Sftp_SearchToolMissing" xml:space="preserve">
-    <value>伺服器上沒有 find 命令（依內容搜尋時還需要 grep）</value>
+    <value>伺服器上缺少 find、head 或 tr 命令（依內容搜尋時還需要 grep）</value>
   </data>
   <data name="Sftp_SearchFailed" xml:space="preserve">
     <value>搜尋失敗：{0}</value>

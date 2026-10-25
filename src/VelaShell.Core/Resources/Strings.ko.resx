@@ -5204,7 +5204,7 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
     <value>서버의 셸 종류를 확인할 수 없습니다(명령 실행이 금지되었거나 SFTP 전용 계정일 수 있음). 검색 명령을 보내지 않았습니다</value>
   </data>
   <data name="Sftp_SearchToolMissing" xml:space="preserve">
-    <value>서버에 find 명령이 없습니다(내용으로 검색하려면 grep도 필요합니다)</value>
+    <value>서버에 find, head, tr 중 없는 명령이 있습니다(내용으로 검색하려면 grep도 필요합니다)</value>
   </data>
   <data name="Sftp_SearchFailed" xml:space="preserve">
     <value>검색 실패: {0}</value>
