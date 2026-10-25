@@ -34,10 +34,26 @@ public sealed class ConnectionDiagnosticsService(
     /// <param name="progress">各步骤状态变更的进度回调,可为 null。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>汇总四步结果及问题标题/描述/修复建议的诊断报告。</returns>
-    public async Task<DiagnosticReport> DiagnoseAsync(
+    public Task<DiagnosticReport> DiagnoseAsync(
         SessionProfile profile,
         IProgress<DiagnosticStepUpdate>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        DiagnoseCoreAsync(profile, progress, unattended: false, verifyLogin: true, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<DiagnosticReport> DiagnoseUnattendedAsync(
+        SessionProfile profile,
+        bool verifyLogin,
+        IProgress<DiagnosticStepUpdate>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        DiagnoseCoreAsync(profile, progress, unattended: true, verifyLogin, cancellationToken);
+
+    private async Task<DiagnosticReport> DiagnoseCoreAsync(
+        SessionProfile profile,
+        IProgress<DiagnosticStepUpdate>? progress,
+        bool unattended,
+        bool verifyLogin,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
@@ -226,6 +242,11 @@ public sealed class ConnectionDiagnosticsService(
         {
             Publish(results[3] with { Status = DiagnosticStepStatus.Skipped, Detail = Strings.Get("DiagSvc_WaitFix") });
         }
+        else if (!verifyLogin)
+        {
+            // 巡检时用户关掉了「验证登录」:只查到 SSH 握手,不往服务器上登录。
+            Publish(results[3] with { Status = DiagnosticStepStatus.Skipped, Detail = Strings.Get("DiagSvc_LoginNotVerified") });
+        }
         else if (!HasStoredCredentials(profile))
         {
             // Tailscale SSH 没有密码/密钥可存,缺的只能是远端用户名:别叫用户去「保存凭据」。
@@ -241,8 +262,18 @@ public sealed class ConnectionDiagnosticsService(
         {
             Publish(results[3] with { Status = DiagnosticStepStatus.Running });
             stopwatch.Restart();
-            packetTrace = new SshPacketTrace();
-            ConnectionTestResult test = await _connectionWorkflowService.TestConnectionAsync(profile, packetTrace, cancellationToken).ConfigureAwait(false);
+            ConnectionTestResult test;
+            if (unattended)
+            {
+                // 巡检(没人看着)那一路不弹任何框:要人回答的照拒绝 / 失败报回(见 ConnectionInfo.IsUnattended)。
+                // 协议轨迹只给诊断窗口看,巡检不挂旁路。
+                test = await _connectionWorkflowService.TestConnectionUnattendedAsync(profile, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                packetTrace = new SshPacketTrace();
+                test = await _connectionWorkflowService.TestConnectionAsync(profile, packetTrace, cancellationToken).ConfigureAwait(false);
+            }
             if (test.Success)
             {
                 Publish(results[3] with

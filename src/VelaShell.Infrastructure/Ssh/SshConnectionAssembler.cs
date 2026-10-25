@@ -90,10 +90,20 @@ internal static class SshConnectionAssembler
     {
         ArgumentNullException.ThrowIfNull(info);
 
+        // 没人在等(自动重连、健康巡检):要人裁决的主机指纹直接拒绝,Tailscale 复核也不开验证窗。
+        // 巡检更进一步,动态码框也不弹(见 ConnectionInfo.IsUnattended):换成一个谁都不问、直接谢绝的应答界面 ——
+        // 认得出的口令提示照样用已存的密码代答,动态码、改密码那一问谢绝、按「要人来」报回。
+        // 不能干脆不挂应答器:那样库自带的「密码兼答」会把密码也填进验证码那一轮,白白记一次动态码失败。
+        bool nobodyWaiting = info.IsAutomaticReconnect || info.IsUnattended;
+        if (info.IsUnattended)
+        {
+            keyboardPrompt = UnattendedKeyboardPrompt.Instance;
+        }
+
         // 链上每一跳共用同一个策略实例 —— 跳板与终点走同一套信任判定,自动重连时也一起不弹窗。
         IHostKeyPolicy policy = hostKey is null
             ? new DangerousAcceptAnyHostKeyPolicy()
-            : new VelaHostKeyPolicy(hostKey, settings, prompt, alerts, info.IsAutomaticReconnect);
+            : new VelaHostKeyPolicy(hostKey, settings, prompt, alerts, nobodyWaiting, unattended: info.IsUnattended);
 
         TimeSpan connectTimeout = ConnectTimeout(settings);
         SshServerBanners banners = new();
@@ -113,7 +123,7 @@ internal static class SshConnectionAssembler
             dialer = DialerChain.Jump(
                 new SshEndPoint(hop.Host, hop.Port),
                 (jump, ct) => ConnectAsync(hop, policy, settings, inner, connectTimeout, keyboardPrompt, banners,
-                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump, depth, route,
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, nobodyWaiting, jump, depth, route,
                     info.PacketTrace, ct));
         }
 
@@ -124,12 +134,27 @@ internal static class SshConnectionAssembler
                 // 跳板按连上的先后记(最内一跳最先连上,也就是从近到远);重连时从头记。
                 route.Begin();
                 return ConnectAsync(info, policy, settings, finalDialer, connectTimeout, keyboardPrompt, banners,
-                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump: null, hopDepth: 0, route,
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, nobodyWaiting, jump: null, hopDepth: 0, route,
                     info.PacketTrace, ct);
             },
             connectTimeout,
             banners,
             route);
+    }
+
+    /// <summary>
+    /// 没人看着的探测(<see cref="VelaConnectionInfo.IsUnattended" />)用的 keyboard-interactive 界面:谁都不问,一律谢绝。
+    /// </summary>
+    /// <remarks>
+    /// 应答器照旧代答认得出的口令提示;轮到动态码、改密码这类要人回答的,它收到 <see langword="null" />(等同用户点了取消),
+    /// 库以 Aborted 结束,装配处报成「要你亲自连一次」。
+    /// </remarks>
+    private sealed class UnattendedKeyboardPrompt : IKeyboardInteractivePrompt
+    {
+        public static readonly UnattendedKeyboardPrompt Instance = new();
+
+        public Task<IReadOnlyList<string>?> AskAsync(KeyboardInteractiveRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>?>(null);
     }
 
     /// <summary>
@@ -371,8 +396,11 @@ internal static class SshConnectionAssembler
                 // 认证期间会弹的框只有动态码框与「修改密码」框:库以 Aborted 结束,说明是应答回调抛了取消而调用方没取消
                 // —— 用户在框上点了取消,是「不连了」而不是认证失败(规格 08 §2.1)。
                 // 曾经库把这种取消报成认证超时,应答器只好自己记一笔、在这里按那一笔认回来。
-                throw new VelaSshAuthenticationCancelledException(
-                    Strings.Get(keyboard.PasswordChangeCancelled ? "SshErr_PasswordChangeCancelled" : "SshErr_KbdAuthCancelled"), ex);
+                // 巡检时谢绝的是那个不问人的界面:说成「要你亲自连一次」,而不是「已取消」。
+                string reasonKey = keyboardPrompt is UnattendedKeyboardPrompt
+                    ? keyboard.PasswordChangeCancelled ? "SshErr_PasswordChangeUnattended" : "SshErr_KbdAuthUnattended"
+                    : keyboard.PasswordChangeCancelled ? "SshErr_PasswordChangeCancelled" : "SshErr_KbdAuthCancelled";
+                throw new VelaSshAuthenticationCancelledException(Strings.Get(reasonKey), ex);
             }
             catch (SshAuthenticationException ex) when (jump is not null)
             {

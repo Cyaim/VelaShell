@@ -1467,6 +1467,9 @@
   <data name="Cmd_ConnectionDiagnostics" xml:space="preserve">
     <value>连接诊断</value>
   </data>
+  <data name="Cmd_HealthCheckAll" xml:space="preserve">
+    <value>会话健康巡检(全部连接)</value>
+  </data>
   <data name="Cmd_ConnectionInfo" xml:space="preserve">
     <value>SSH 连接信息</value>
   </data>
@@ -1635,6 +1638,120 @@
   <data name="Diag_Title" xml:space="preserve">
     <value>连接诊断</value>
   </data>
+  <data name="Health_Title" xml:space="preserve">
+    <value>会话健康巡检</value>
+  </data>
+  <data name="Health_StatusPending" xml:space="preserve">
+    <value>等待</value>
+  </data>
+  <data name="Health_StatusChecking" xml:space="preserve">
+    <value>检查中…</value>
+  </data>
+  <data name="Health_StatusHealthy" xml:space="preserve">
+    <value>正常</value>
+  </data>
+  <data name="Health_StatusReachable" xml:space="preserve">
+    <value>可达</value>
+  </data>
+  <data name="Health_StatusNeedsCredentials" xml:space="preserve">
+    <value>需要凭据</value>
+  </data>
+  <data name="Health_StatusNeedsAttention" xml:space="preserve">
+    <value>需要确认</value>
+  </data>
+  <data name="Health_StatusFailed" xml:space="preserve">
+    <value>连不上</value>
+  </data>
+  <data name="Health_StatusTimedOut" xml:space="preserve">
+    <value>超时</value>
+  </data>
+  <data name="Health_StatusUnsupported" xml:space="preserve">
+    <value>不巡检</value>
+  </data>
+  <data name="Health_StatusCancelled" xml:space="preserve">
+    <value>已停止</value>
+  </data>
+  <data name="Health_StepConfiguration" xml:space="preserve">
+    <value>跳板配置</value>
+  </data>
+  <data name="Health_UnsupportedDetail" xml:space="preserve">
+    <value>只巡检 SSH / SFTP 连接</value>
+  </data>
+  <data name="Health_NotChecked" xml:space="preserve">
+    <value>没有检查</value>
+  </data>
+  <data name="Health_Stopped" xml:space="preserve">
+    <value>巡检被停下</value>
+  </data>
+  <data name="Health_TimedOutDetail" xml:space="preserve">
+    <value>超过 {0} 秒没查完</value>
+  </data>
+  <data name="Health_ElapsedMs" xml:space="preserve">
+    <value>{0} ms</value>
+  </data>
+  <data name="Health_Summary" xml:space="preserve">
+    <value>{0} 个连接 · 正常 {1} · 需要处理 {2} · 连不上 {3}</value>
+  </data>
+  <data name="Health_SummaryRunning" xml:space="preserve">
+    <value>已检查 {0} / {1} · {2}</value>
+  </data>
+  <data name="Health_ColStatus" xml:space="preserve">
+    <value>结论</value>
+  </data>
+  <data name="Health_ColName" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="Health_ColTarget" xml:space="preserve">
+    <value>目标</value>
+  </data>
+  <data name="Health_ColStep" xml:space="preserve">
+    <value>卡在哪一步</value>
+  </data>
+  <data name="Health_ColDetail" xml:space="preserve">
+    <value>说明</value>
+  </data>
+  <data name="Health_ColElapsed" xml:space="preserve">
+    <value>耗时</value>
+  </data>
+  <data name="Health_ProblemsOnlyOn" xml:space="preserve">
+    <value>只看有问题的:开</value>
+  </data>
+  <data name="Health_ProblemsOnlyOff" xml:space="preserve">
+    <value>只看有问题的:关</value>
+  </data>
+  <data name="Health_VerifyLoginOn" xml:space="preserve">
+    <value>验证登录:开</value>
+  </data>
+  <data name="Health_VerifyLoginOff" xml:space="preserve">
+    <value>验证登录:关</value>
+  </data>
+  <data name="Health_VerifyLoginTip" xml:space="preserve">
+    <value>开着时用已保存的凭据登录一次随即断开;关着时只查到 SSH 握手,不往服务器上登录。下一轮生效。</value>
+  </data>
+  <data name="Health_Stop" xml:space="preserve">
+    <value>停止巡检</value>
+  </data>
+  <data name="Health_Rerun" xml:space="preserve">
+    <value>重新巡检</value>
+  </data>
+  <data name="Health_Copy" xml:space="preserve">
+    <value>复制为文本</value>
+  </data>
+  <data name="Health_OpenDiagnostics" xml:space="preserve">
+    <value>连接诊断</value>
+  </data>
+  <data name="Health_EditProfile" xml:space="preserve">
+    <value>编辑配置</value>
+  </data>
+  <data name="Health_NoProblems" xml:space="preserve">
+    <value>没有要处理的连接</value>
+  </data>
+  <data name="Health_Hint" xml:space="preserve">
+    <value>只在你点开时运行:一次一批,最多 {0} 台同时查,每台最多 {1} 秒。不弹任何框:主机指纹待确认、要动态码或 Tailscale 复核的记为「需要确认」,没保存凭据的记为「需要凭据」—— 对它们请自己手动连一次。</value>
+  </data>
+  <data name="Health_StillRunning" xml:space="preserve">
+    <value>上一轮巡检还没结束,先停止或等它查完。</value>
+  </data>
   <data name="DiagSvc_AuthFailed" xml:space="preserve">
     <value>身份验证失败</value>
   </data>
@@ -1688,6 +1805,9 @@
   </data>
   <data name="DiagSvc_NoCredsSkip" xml:space="preserve">
     <value>未保存凭据,跳过认证测试</value>
+  </data>
+  <data name="DiagSvc_LoginNotVerified" xml:space="preserve">
+    <value>未验证登录(只查到 SSH 握手)</value>
   </data>
   <data name="DiagSvc_NonSshBanner" xml:space="preserve">
     <value>非 SSH 应答:{0}</value>
@@ -2289,6 +2409,9 @@
   </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>已停止自动重连 {0}：主机密钥 {1} 需要你确认，而自动重连不会弹窗询问。请手动重新连接，在弹出的窗口里核对指纹。</value>
+  </data>
+  <data name="Msg_HostKeyUnattendedBlocked" xml:space="preserve">
+    <value>巡检没有替你接受 {0} 的主机密钥 {1}:它需要你确认,而巡检不会弹窗询问。请手动连接一次,在弹出的窗口里核对指纹。</value>
   </data>
   <data name="Msg_ImportFailed" xml:space="preserve">
     <value>导入失败:{0}</value>
@@ -7792,8 +7915,14 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>已取消两步验证。</value>
   </data>
+  <data name="SshErr_KbdAuthUnattended" xml:space="preserve">
+    <value>服务器要求动态码一类的交互验证,巡检不替你回答;请手动连接一次。</value>
+  </data>
   <data name="SshErr_PasswordChangeCancelled" xml:space="preserve">
     <value>已取消修改密码。</value>
+  </data>
+  <data name="SshErr_PasswordChangeUnattended" xml:space="preserve">
+    <value>服务器要求先修改密码,巡检不替你改;请手动连接一次。</value>
   </data>
   <data name="SshPwdChange_Title" xml:space="preserve">
     <value>修改密码</value>
@@ -9396,8 +9525,14 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Tree_OpenGroupSynced" xml:space="preserve">
     <value>打开全部并同步输入</value>
   </data>
+  <data name="Tree_HealthCheckGroup" xml:space="preserve">
+    <value>巡检这一组</value>
+  </data>
   <data name="Tree_OpenSelectedSynced" xml:space="preserve">
     <value>打开 {0} 个连接并同步输入</value>
+  </data>
+  <data name="Tree_HealthCheckSelected" xml:space="preserve">
+    <value>巡检 {0} 个连接</value>
   </data>
   <data name="Tree_SyncedNoTerminals" xml:space="preserve">
     <value>这些连接都开不出终端，没有可以同步输入的（SFTP、FTP 与工作台开出来的不是终端）。</value>

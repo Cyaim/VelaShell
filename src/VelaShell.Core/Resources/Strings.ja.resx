@@ -319,6 +319,9 @@
   <data name="Cmd_ConnectionDiagnostics" xml:space="preserve">
     <value>接続診断</value>
   </data>
+  <data name="Cmd_HealthCheckAll" xml:space="preserve">
+    <value>セッションのヘルスチェック(すべての接続)</value>
+  </data>
   <data name="Cmd_ConnectionInfo" xml:space="preserve">
     <value>SSH 接続情報</value>
   </data>
@@ -541,6 +544,120 @@
   <data name="Diag_Title" xml:space="preserve">
     <value>接続診断</value>
   </data>
+  <data name="Health_Title" xml:space="preserve">
+    <value>セッションのヘルスチェック</value>
+  </data>
+  <data name="Health_StatusPending" xml:space="preserve">
+    <value>待機中</value>
+  </data>
+  <data name="Health_StatusChecking" xml:space="preserve">
+    <value>確認中…</value>
+  </data>
+  <data name="Health_StatusHealthy" xml:space="preserve">
+    <value>正常</value>
+  </data>
+  <data name="Health_StatusReachable" xml:space="preserve">
+    <value>到達可能</value>
+  </data>
+  <data name="Health_StatusNeedsCredentials" xml:space="preserve">
+    <value>資格情報が必要</value>
+  </data>
+  <data name="Health_StatusNeedsAttention" xml:space="preserve">
+    <value>要確認</value>
+  </data>
+  <data name="Health_StatusFailed" xml:space="preserve">
+    <value>接続できない</value>
+  </data>
+  <data name="Health_StatusTimedOut" xml:space="preserve">
+    <value>タイムアウト</value>
+  </data>
+  <data name="Health_StatusUnsupported" xml:space="preserve">
+    <value>対象外</value>
+  </data>
+  <data name="Health_StatusCancelled" xml:space="preserve">
+    <value>停止</value>
+  </data>
+  <data name="Health_StepConfiguration" xml:space="preserve">
+    <value>踏み台の設定</value>
+  </data>
+  <data name="Health_UnsupportedDetail" xml:space="preserve">
+    <value>SSH / SFTP 接続のみ確認します</value>
+  </data>
+  <data name="Health_NotChecked" xml:space="preserve">
+    <value>未確認</value>
+  </data>
+  <data name="Health_Stopped" xml:space="preserve">
+    <value>ヘルスチェックを停止しました</value>
+  </data>
+  <data name="Health_TimedOutDetail" xml:space="preserve">
+    <value>{0} 秒以内に終わりませんでした</value>
+  </data>
+  <data name="Health_ElapsedMs" xml:space="preserve">
+    <value>{0} ms</value>
+  </data>
+  <data name="Health_Summary" xml:space="preserve">
+    <value>{0} 件の接続 · 正常 {1} · 要対応 {2} · 接続できない {3}</value>
+  </data>
+  <data name="Health_SummaryRunning" xml:space="preserve">
+    <value>確認済み {0} / {1} · {2}</value>
+  </data>
+  <data name="Health_ColStatus" xml:space="preserve">
+    <value>結果</value>
+  </data>
+  <data name="Health_ColName" xml:space="preserve">
+    <value>名前</value>
+  </data>
+  <data name="Health_ColTarget" xml:space="preserve">
+    <value>接続先</value>
+  </data>
+  <data name="Health_ColStep" xml:space="preserve">
+    <value>止まった段階</value>
+  </data>
+  <data name="Health_ColDetail" xml:space="preserve">
+    <value>詳細</value>
+  </data>
+  <data name="Health_ColElapsed" xml:space="preserve">
+    <value>所要時間</value>
+  </data>
+  <data name="Health_ProblemsOnlyOn" xml:space="preserve">
+    <value>問題のあるものだけ表示: オン</value>
+  </data>
+  <data name="Health_ProblemsOnlyOff" xml:space="preserve">
+    <value>問題のあるものだけ表示: オフ</value>
+  </data>
+  <data name="Health_VerifyLoginOn" xml:space="preserve">
+    <value>ログインを確認: オン</value>
+  </data>
+  <data name="Health_VerifyLoginOff" xml:space="preserve">
+    <value>ログインを確認: オフ</value>
+  </data>
+  <data name="Health_VerifyLoginTip" xml:space="preserve">
+    <value>オン: 保存済みの資格情報で一度ログインし、すぐに切断します。オフ: SSH ハンドシェイクまで確認し、サーバーにはログインしません。次回の実行から有効です。</value>
+  </data>
+  <data name="Health_Stop" xml:space="preserve">
+    <value>停止</value>
+  </data>
+  <data name="Health_Rerun" xml:space="preserve">
+    <value>再実行</value>
+  </data>
+  <data name="Health_Copy" xml:space="preserve">
+    <value>テキストとしてコピー</value>
+  </data>
+  <data name="Health_OpenDiagnostics" xml:space="preserve">
+    <value>接続診断</value>
+  </data>
+  <data name="Health_EditProfile" xml:space="preserve">
+    <value>接続を編集</value>
+  </data>
+  <data name="Health_NoProblems" xml:space="preserve">
+    <value>対応が必要な接続はありません</value>
+  </data>
+  <data name="Health_Hint" xml:space="preserve">
+    <value>開始したときだけ実行します: 一度に 1 バッチ、同時に最大 {0} 台、1 台あたり最大 {1} 秒。ダイアログは一切表示しません: フィンガープリントの確認、ワンタイムコード、Tailscale の再確認が必要なものは「要確認」、資格情報が保存されていないものは「資格情報が必要」とします。それらには一度手動で接続してください。</value>
+  </data>
+  <data name="Health_StillRunning" xml:space="preserve">
+    <value>前回のヘルスチェックがまだ実行中です。停止するか終わるまで待ってください。</value>
+  </data>
   <data name="DiagSvc_AuthFailed" xml:space="preserve">
     <value>認証に失敗しました</value>
   </data>
@@ -594,6 +711,9 @@
   </data>
   <data name="DiagSvc_NoCredsSkip" xml:space="preserve">
     <value>資格情報が保存されていないため、認証テストをスキップしました</value>
+  </data>
+  <data name="DiagSvc_LoginNotVerified" xml:space="preserve">
+    <value>ログインは確認していません(SSH ハンドシェイクまで)</value>
   </data>
   <data name="DiagSvc_NonSshBanner" xml:space="preserve">
     <value>SSH 以外の応答:{0}</value>
@@ -1846,6 +1966,9 @@
   </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>{0} への自動再接続を停止しました。ホストキー {1} の確認が必要ですが、自動再接続では確認ダイアログを表示しません。手動で再接続し、表示されるダイアログでフィンガープリントを確認してください。</value>
+  </data>
+  <data name="Msg_HostKeyUnattendedBlocked" xml:space="preserve">
+    <value>ヘルスチェックでは {0} のホストキー {1} を受け入れていません。確認が必要ですが、ヘルスチェックでは確認ダイアログを表示しません。一度手動で接続し、表示されるダイアログでフィンガープリントを確認してください。</value>
   </data>
   <data name="Msg_ImportFailed" xml:space="preserve">
     <value>インポートに失敗しました: {0}</value>
@@ -7315,8 +7438,14 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>2 段階認証をキャンセルしました。</value>
   </data>
+  <data name="SshErr_KbdAuthUnattended" xml:space="preserve">
+    <value>サーバーがワンタイムコードなどの対話型認証を求めています。ヘルスチェックでは応答しません。一度手動で接続してください。</value>
+  </data>
   <data name="SshErr_PasswordChangeCancelled" xml:space="preserve">
     <value>パスワードの変更をキャンセルしました。</value>
+  </data>
+  <data name="SshErr_PasswordChangeUnattended" xml:space="preserve">
+    <value>サーバーがパスワードの変更を求めています。ヘルスチェックでは変更しません。一度手動で接続してください。</value>
   </data>
   <data name="SshPwdChange_Title" xml:space="preserve">
     <value>パスワードの変更</value>
@@ -8919,8 +9048,14 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Tree_OpenGroupSynced" xml:space="preserve">
     <value>すべて開いて入力を同期</value>
   </data>
+  <data name="Tree_HealthCheckGroup" xml:space="preserve">
+    <value>このグループをヘルスチェック</value>
+  </data>
   <data name="Tree_OpenSelectedSynced" xml:space="preserve">
     <value>{0} 件の接続を開いて入力を同期</value>
+  </data>
+  <data name="Tree_HealthCheckSelected" xml:space="preserve">
+    <value>{0} 件の接続をヘルスチェック</value>
   </data>
   <data name="Tree_SyncedNoTerminals" xml:space="preserve">
     <value>これらの接続はどれもターミナルを開かないため、入力を同期できません(SFTP・FTP・ワークスペースはターミナルではありません)。</value>

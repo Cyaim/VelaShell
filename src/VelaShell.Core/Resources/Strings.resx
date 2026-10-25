@@ -1406,6 +1406,9 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   <data name="Cmd_ConnectionDiagnostics" xml:space="preserve">
     <value>Connection Diagnostics</value>
   </data>
+  <data name="Cmd_HealthCheckAll" xml:space="preserve">
+    <value>Session Health Check (All Connections)</value>
+  </data>
   <data name="Cmd_ConnectionInfo" xml:space="preserve">
     <value>SSH connection info</value>
   </data>
@@ -1526,6 +1529,120 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   <data name="Diag_Title" xml:space="preserve">
     <value>Connection Diagnostics</value>
   </data>
+  <data name="Health_Title" xml:space="preserve">
+    <value>Session Health Check</value>
+  </data>
+  <data name="Health_StatusPending" xml:space="preserve">
+    <value>Waiting</value>
+  </data>
+  <data name="Health_StatusChecking" xml:space="preserve">
+    <value>Checking…</value>
+  </data>
+  <data name="Health_StatusHealthy" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Health_StatusReachable" xml:space="preserve">
+    <value>Reachable</value>
+  </data>
+  <data name="Health_StatusNeedsCredentials" xml:space="preserve">
+    <value>Needs credentials</value>
+  </data>
+  <data name="Health_StatusNeedsAttention" xml:space="preserve">
+    <value>Needs you</value>
+  </data>
+  <data name="Health_StatusFailed" xml:space="preserve">
+    <value>Unreachable</value>
+  </data>
+  <data name="Health_StatusTimedOut" xml:space="preserve">
+    <value>Timed out</value>
+  </data>
+  <data name="Health_StatusUnsupported" xml:space="preserve">
+    <value>Not checked</value>
+  </data>
+  <data name="Health_StatusCancelled" xml:space="preserve">
+    <value>Stopped</value>
+  </data>
+  <data name="Health_StepConfiguration" xml:space="preserve">
+    <value>Jump host settings</value>
+  </data>
+  <data name="Health_UnsupportedDetail" xml:space="preserve">
+    <value>Only SSH / SFTP connections are checked</value>
+  </data>
+  <data name="Health_NotChecked" xml:space="preserve">
+    <value>Not checked</value>
+  </data>
+  <data name="Health_Stopped" xml:space="preserve">
+    <value>The health check was stopped</value>
+  </data>
+  <data name="Health_TimedOutDetail" xml:space="preserve">
+    <value>Not finished within {0} seconds</value>
+  </data>
+  <data name="Health_ElapsedMs" xml:space="preserve">
+    <value>{0} ms</value>
+  </data>
+  <data name="Health_Summary" xml:space="preserve">
+    <value>{0} connections · OK {1} · need attention {2} · unreachable {3}</value>
+  </data>
+  <data name="Health_SummaryRunning" xml:space="preserve">
+    <value>Checked {0} / {1} · {2}</value>
+  </data>
+  <data name="Health_ColStatus" xml:space="preserve">
+    <value>Result</value>
+  </data>
+  <data name="Health_ColName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Health_ColTarget" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="Health_ColStep" xml:space="preserve">
+    <value>Failed at</value>
+  </data>
+  <data name="Health_ColDetail" xml:space="preserve">
+    <value>Details</value>
+  </data>
+  <data name="Health_ColElapsed" xml:space="preserve">
+    <value>Time</value>
+  </data>
+  <data name="Health_ProblemsOnlyOn" xml:space="preserve">
+    <value>Show problems only: on</value>
+  </data>
+  <data name="Health_ProblemsOnlyOff" xml:space="preserve">
+    <value>Show problems only: off</value>
+  </data>
+  <data name="Health_VerifyLoginOn" xml:space="preserve">
+    <value>Verify login: on</value>
+  </data>
+  <data name="Health_VerifyLoginOff" xml:space="preserve">
+    <value>Verify login: off</value>
+  </data>
+  <data name="Health_VerifyLoginTip" xml:space="preserve">
+    <value>On: log in once with the saved credentials and disconnect right away. Off: check only up to the SSH handshake, without logging in to the server. Takes effect on the next run.</value>
+  </data>
+  <data name="Health_Stop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="Health_Rerun" xml:space="preserve">
+    <value>Run again</value>
+  </data>
+  <data name="Health_Copy" xml:space="preserve">
+    <value>Copy as text</value>
+  </data>
+  <data name="Health_OpenDiagnostics" xml:space="preserve">
+    <value>Connection diagnostics</value>
+  </data>
+  <data name="Health_EditProfile" xml:space="preserve">
+    <value>Edit connection</value>
+  </data>
+  <data name="Health_NoProblems" xml:space="preserve">
+    <value>No connection needs attention</value>
+  </data>
+  <data name="Health_Hint" xml:space="preserve">
+    <value>Runs only when you start it: one batch at a time, up to {0} hosts at once, at most {1} seconds each. Nothing pops up: hosts whose fingerprint needs confirming, that ask for a one-time code or a Tailscale re-check are marked "Needs you", and ones without saved credentials "Needs credentials" — connect to those once yourself.</value>
+  </data>
+  <data name="Health_StillRunning" xml:space="preserve">
+    <value>The previous health check is still running; stop it or wait for it to finish first.</value>
+  </data>
   <data name="DiagSvc_AuthFailed" xml:space="preserve">
     <value>Authentication failed</value>
   </data>
@@ -1579,6 +1696,9 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   </data>
   <data name="DiagSvc_NoCredsSkip" xml:space="preserve">
     <value>No saved credentials; authentication test skipped</value>
+  </data>
+  <data name="DiagSvc_LoginNotVerified" xml:space="preserve">
+    <value>Login not verified (checked up to the SSH handshake)</value>
   </data>
   <data name="DiagSvc_NonSshBanner" xml:space="preserve">
     <value>Non-SSH response: {0}</value>
@@ -2180,6 +2300,9 @@ Paste anyway?</value>
   </data>
   <data name="Msg_HostKeyAutoReconnectBlocked" xml:space="preserve">
     <value>Auto-reconnect to {0} stopped: host key {1} needs your confirmation, and auto-reconnect never asks. Reconnect manually to check the fingerprint.</value>
+  </data>
+  <data name="Msg_HostKeyUnattendedBlocked" xml:space="preserve">
+    <value>The health check did not accept host key {1} of {0}: it needs your confirmation, and the health check never asks. Connect to it manually once to check the fingerprint.</value>
   </data>
   <data name="Msg_ImportFailed" xml:space="preserve">
     <value>Import failed: {0}</value>
@@ -7320,8 +7443,14 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_KbdAuthCancelled" xml:space="preserve">
     <value>Two-step verification was cancelled.</value>
   </data>
+  <data name="SshErr_KbdAuthUnattended" xml:space="preserve">
+    <value>The server asks for interactive verification (a one-time code or similar); the health check does not answer it. Connect to it manually once.</value>
+  </data>
   <data name="SshErr_PasswordChangeCancelled" xml:space="preserve">
     <value>Password change was cancelled.</value>
+  </data>
+  <data name="SshErr_PasswordChangeUnattended" xml:space="preserve">
+    <value>The server requires a password change; the health check does not do that. Connect to it manually once.</value>
   </data>
   <data name="SshPwdChange_Title" xml:space="preserve">
     <value>Change password</value>
@@ -8924,8 +9053,14 @@ Send anyway?</value>
   <data name="Tree_OpenGroupSynced" xml:space="preserve">
     <value>Open All with Synced Input</value>
   </data>
+  <data name="Tree_HealthCheckGroup" xml:space="preserve">
+    <value>Health-Check This Group</value>
+  </data>
   <data name="Tree_OpenSelectedSynced" xml:space="preserve">
     <value>Open {0} Connections with Synced Input</value>
+  </data>
+  <data name="Tree_HealthCheckSelected" xml:space="preserve">
+    <value>Health-Check {0} Connections</value>
   </data>
   <data name="Tree_SyncedNoTerminals" xml:space="preserve">
     <value>None of these connections opens a terminal, so there is nothing to sync input to (SFTP, FTP and workspaces are not terminals).</value>

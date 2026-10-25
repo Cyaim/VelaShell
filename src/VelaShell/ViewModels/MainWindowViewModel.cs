@@ -1137,6 +1137,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         }
         Commands.Register(
             new(
+                "tools.healthCheck",
+                Strings.Get("Cmd_HealthCheckAll"),
+                Strings.Get("CmdCat_Tools"),
+                () => _ = RequestHealthCheckForAllAsync(),
+                () => _sessionRepository is not null,
+                Icon: "Icon.activity"
+            )
+        );
+        Commands.Register(
+            new(
                 "tools.diagnostics",
                 Strings.Get("Cmd_ConnectionDiagnostics"),
                 Strings.Get("CmdCat_Tools"),
@@ -1890,6 +1900,26 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     /// <summary>工具菜单“连接诊断”(针对当前标签的配置)—— 由窗口打开诊断中心弹窗。</summary>
     public event Action<SessionProfile>? DiagnosticsRequested;
+
+    /// <summary>
+    /// 命令面板「会话健康巡检(全部连接)」:对库里全部连接做一次巡检,由窗口打开结果窗口。
+    /// 资源管理器的分组 / 多选菜单走 <c>SessionTreeViewModel.HealthCheckRequested</c>,落到同一扇窗。
+    /// </summary>
+    public event Action<IReadOnlyList<SessionProfile>>? HealthCheckRequested;
+
+    /// <summary>取库里全部连接(按名称排)交给 <see cref="HealthCheckRequested" />;库里一条都没有时什么都不做。</summary>
+    public async Task RequestHealthCheckForAllAsync()
+    {
+        if (_sessionRepository is not { } repository)
+        {
+            return;
+        }
+        List<SessionProfile> profiles = await repository.GetAllSessionsAsync().ConfigureAwait(true);
+        if (profiles.Count > 0)
+        {
+            HealthCheckRequested?.Invoke([.. profiles.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)]);
+        }
+    }
 
     /// <summary>
     /// 标签右键 / 命令面板「连接信息」—— 由窗口打开(或前置)这个标签的连接信息窗口,

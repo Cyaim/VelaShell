@@ -80,6 +80,11 @@ VelaShell connects to the network only in these situations:
    address you enter. IP geolocation is resolved **entirely offline** against a database file
    stored on your computer; no address is ever sent to a lookup service. The world map is drawn
    from vector data bundled inside the application — no online map tiles are requested.
+   The **session health check** runs only when you start it (from a group or a multi-selection
+   in the explorer, or from the Command Palette) — never on a timer. For each connection you
+   picked it does what Connection Diagnostics does: a name lookup, a TCP connection, reading the
+   SSH version string and — when the connection has saved credentials and *Verify login* is on —
+   one login with those credentials that is closed right away. It goes only to those hosts.
 
 3. **The news feed — on by default.** VelaShell downloads
    <https://feeds.easilynet.top/feed.json> (a public file, https only) when it starts and then
@@ -283,6 +288,9 @@ VelaShell 仅在以下情形联网:
 2. **你所诊断的主机。** Ping 与路由追踪向你输入的地址发送 ICMP/UDP 探测包。IP 归属地查询
    **完全离线**,基于保存在你计算机上的数据库文件完成,任何地址都不会被发往查询服务。
    世界地图由应用内置的矢量数据绘制,不请求任何在线地图瓦片。
+   **会话健康巡检**只在你点开时运行(资源管理器的分组或多选菜单、命令面板),从不定时运行。
+   它对你选中的每条连接做的事与「连接诊断」相同:解析主机名、建立 TCP 连接、读取 SSH 版本串;
+   连接保存了凭据且开着「验证登录」时,再用这份凭据登录一次并随即断开。它只连这些主机。
 
 3. **资讯源 —— 默认开启。** VelaShell 在启动时以及此后每隔几小时,下载一次
    <https://feeds.easilynet.top/feed.json>(公开文件,仅 https),把其中的安全资讯与公告

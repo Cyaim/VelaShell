@@ -116,6 +116,38 @@ public sealed class ConnectionDiagnosticsServiceTests
         Assert.AreSame(error, report.Failure);
     }
 
+    /// <summary>巡检那一路:认证这一步走「没人看着」的测试,不走会弹框的那一个。</summary>
+    [TestMethod]
+    public async Task Unattended_UsesTheUnattendedTest()
+    {
+        await using SshBannerListener server = new();
+        SessionProfile profile = Tailscale(server.Port, "ops");
+        _workflow.TestConnectionUnattendedAsync(profile, Arg.Any<CancellationToken>()).Returns(new ConnectionTestResult(true));
+
+        DiagnosticReport report = await Service().DiagnoseUnattendedAsync(profile, verifyLogin: true);
+
+        Assert.AreEqual(DiagnosticStepStatus.Success, report.Steps[3].Status);
+        await _workflow.Received(1).TestConnectionUnattendedAsync(profile, Arg.Any<CancellationToken>());
+        await _workflow.DidNotReceive().TestConnectionAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>关掉「验证登录」:只查到 SSH 握手,不往服务器上登录;认证那一步记成跳过、不算问题。</summary>
+    [TestMethod]
+    public async Task Unattended_WithoutLogin_StopsAtTheHandshake()
+    {
+        await using SshBannerListener server = new();
+        SessionProfile profile = Tailscale(server.Port, "ops");
+
+        DiagnosticReport report = await Service().DiagnoseUnattendedAsync(profile, verifyLogin: false);
+
+        Assert.IsTrue(report.Success);
+        Assert.AreEqual(DiagnosticStepStatus.Success, report.Steps[2].Status);
+        Assert.AreEqual(DiagnosticStepStatus.Skipped, report.Steps[3].Status);
+        Assert.AreEqual(Strings.Get("DiagSvc_LoginNotVerified"), report.Steps[3].Detail);
+        await _workflow.DidNotReceive().TestConnectionUnattendedAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
+        await _workflow.DidNotReceive().TestConnectionAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
+    }
+
     private ConnectionDiagnosticsService Service() => new(_sessions, _workflow);
 
     private static SessionProfile Tailscale(int port, string username) => new()

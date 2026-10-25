@@ -113,4 +113,16 @@ public class ConnectionInfo
     /// 记的只有方向、类型、长度、序号、通道号,不要载荷(见 <see cref="Ssh.SshPacketTrace" />)。
     /// </remarks>
     public Ssh.SshPacketTrace? PacketTrace { get; init; }
+
+    /// <summary>
+    /// 这次连接是<b>没人看着的探测</b>(会话健康巡检):要人回答的一律不问 —— 主机指纹、动态码、Tailscale 复核,
+    /// 照拒绝 / 失败报回去,由结果窗口告诉用户哪几台要他亲自连一次。
+    /// </summary>
+    /// <remarks>
+    /// 比 <see cref="IsAutomaticReconnect" /> 更严:那边只管主机指纹,动态码框照旧(断线重连多半是用户自己的会话,值得问);
+    /// 巡检一次几十台,每台弹一个框就是一摞没人点的模态框。主机指纹被拦时的说法也不同 —— 没有「停止自动重连」这回事,
+    /// 第一次见到的主机也不记安全告警(用户点名要查的机器,没见过不算异常;指纹<b>变了</b>照记)。
+    /// 设置里关掉了「首次连接确认指纹」时照旧按 TOFU 记下,与手动连接同一个口径。
+    /// </remarks>
+    public bool IsUnattended { get; init; }
 }

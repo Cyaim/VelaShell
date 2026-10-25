@@ -67,6 +67,12 @@ public partial class MainWindow : Window
     /// <summary>每个标签至多一扇连接信息窗口,按标签去重(重连之后还是同一个标签、同一扇窗)。</summary>
     private readonly Dictionary<TerminalTabViewModel, SshConnectionInfoWindow> _connectionInfoWindows = [];
 
+    /// <summary>会话健康巡检窗口尺寸与位置在文档存储里的键。</summary>
+    private const string HealthCheckLayoutKey = "healthCheck";
+
+    /// <summary>开着的会话健康巡检窗口(全程至多一扇)。</summary>
+    private SessionHealthCheckWindow? _healthCheckWindow;
+
     private IDisposable? _fileBrowserVisibilitySub;
     private IDisposable? _sidebarCollapsedSub;
     private bool _forceClose;
@@ -510,6 +516,9 @@ public partial class MainWindow : Window
             // 标签右键 / 命令面板"连接信息":每个标签最多一扇窗,非模态。
             vm.ConnectionInfoRequested += tab =>
                 Dispatcher.UIThread.Post(() => FireAndForget.Run(() => OpenConnectionInfoAsync(vm, tab)));
+            // 命令面板「会话健康巡检(全部连接)」;资源管理器的分组 / 多选菜单在下面接,落到同一扇窗。
+            vm.HealthCheckRequested += profiles =>
+                Dispatcher.UIThread.Post(() => FireAndForget.Run(() => OpenHealthCheckAsync(profiles)));
 
             // 资源管理器树:右键连接/双击连接 + 右键编辑。
             if (vm.Sidebar.SessionTree is { } tree)
@@ -537,6 +546,9 @@ public partial class MainWindow : Window
                 // 连接诊断:对选中的配置打开诊断中心(设计 RGXg1)。
                 tree.DiagnoseRequested += profile =>
                     Dispatcher.UIThread.Post(() => FireAndForget.Run(() => OpenDiagnosticsDialogAsync(profile)));
+                // 分组「巡检这一组」/ 多选「巡检 N 个连接」:会话健康巡检。
+                tree.HealthCheckRequested += profiles =>
+                    Dispatcher.UIThread.Post(() => FireAndForget.Run(() => OpenHealthCheckAsync(profiles)));
 
                 // 断开连接:断开该配置所有已连接的终端标签(保留缓冲以便重连)。
                 // 必须按 Profile.Id 匹配——tab.SessionId 是 SSH 连接会话 ID,与配置 ID
@@ -1284,15 +1296,16 @@ public partial class MainWindow : Window
     internal Task EditProfileAsync(SessionProfile profile, Window owner) => OpenProfileDialogAsync(profile, owner);
 
     /// <summary>打开“新建连接”弹窗;传入 existing 时为编辑既有配置。<paramref name="owner" /> 为空时以主窗口为主人。</summary>
-    private async Task OpenProfileDialogAsync(SessionProfile? existing, Window? owner = null)
+    /// <returns>用户按了「保存」或「连接」(配置落了库)时为 true。</returns>
+    private async Task<bool> OpenProfileDialogAsync(SessionProfile? existing, Window? owner = null)
     {
         if (DataContext is not MainWindowViewModel mainWindowViewModel)
         {
-            return;
+            return false;
         }
         if (Application.Current is not App app || app.Services is null)
         {
-            return;
+            return false;
         }
 
         // 新建连接的默认端口与默认密钥(设置 → 常规 / 密钥管理)。
@@ -1335,7 +1348,7 @@ public partial class MainWindow : Window
         SessionProfile? profile = await dialog.ShowDialog<SessionProfile?>(owner ?? this);
         if (profile is null)
         {
-            return;
+            return false;
         }
 
         // 保存/连接均已持久化配置 —— 资源管理器树同步刷新。
@@ -1344,12 +1357,66 @@ public partial class MainWindow : Window
         // 仅“连接”按钮触发实际连接;“保存”只落库。
         if (!connectionProfileViewModel.ConnectAfterClose)
         {
-            return;
+            return true;
         }
 
         // TryConnectProfileAsync 永不抛异常 —— 连接失败已在标签页内以覆盖层提示(设计 yxjmg),
         // 不再弹全局框。
         await mainWindowViewModel.TryConnectProfileAsync(profile);
+        return true;
+    }
+
+    /// <summary>
+    /// 打开会话健康巡检(资源管理器的分组 / 多选菜单、命令面板):全程至多一扇窗,开着时换成这一批再巡检一轮;
+    /// 上一轮还没查完时不打断它,只把窗口前置并提示一句。
+    /// </summary>
+    /// <param name="profiles">要查的连接。</param>
+    private async Task OpenHealthCheckAsync(IReadOnlyList<SessionProfile> profiles)
+    {
+        if (profiles.Count == 0)
+        {
+            return;
+        }
+        if (_healthCheckWindow is { DataContext: SessionHealthCheckViewModel existing } open)
+        {
+            if (!existing.TryStart(profiles))
+            {
+                (DataContext as MainWindowViewModel)?.Toasts.Info(Strings.Get("Health_StillRunning"));
+            }
+            if (open.WindowState == WindowState.Minimized)
+            {
+                open.WindowState = WindowState.Normal;
+            }
+            open.Activate();
+            return;
+        }
+        if (Application.Current is not App { Services: { } services }
+            || services.GetService<IConnectionDiagnosticsService>() is not { } diagnostics)
+        {
+            return;
+        }
+        var viewModel = new SessionHealthCheckViewModel(diagnostics, services.GetService<ISessionRepository>());
+        var window = new SessionHealthCheckWindow { DataContext = viewModel };
+        _healthCheckWindow = window;
+        window.Closed += (_, _) => _healthCheckWindow = null;
+        // 行上的两个动作:弹框以巡检窗口为属主(它是非模态的,借主窗口弹会被它挡住)。
+        viewModel.DiagnoseRequested += profile =>
+            Dispatcher.UIThread.Post(() => FireAndForget.Run(() => OpenDiagnosticsDialogAsync(profile, window)));
+        viewModel.EditRequested += profile =>
+            Dispatcher.UIThread.Post(() => FireAndForget.Run(async () =>
+            {
+                // 改过配置就按新配置重查那一台;取消了不重查(不平白多一次外连)。
+                if (await OpenProfileDialogAsync(profile, window))
+                {
+                    await viewModel.RecheckAsync(profile.Id);
+                }
+            }));
+        if (services.GetService<WindowLayoutStore>() is { } layoutStore)
+        {
+            await layoutStore.RememberAsync(HealthCheckLayoutKey, window);
+        }
+        window.Show(this);
+        viewModel.TryStart(profiles);
     }
 
     /// <summary>

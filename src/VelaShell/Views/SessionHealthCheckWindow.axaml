@@ -1,0 +1,290 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:VelaShell.ViewModels"
+        xmlns:loc="using:VelaShell.Localization"
+        xmlns:pc="using:VelaShell.Controls.Controls"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="520"
+        x:Class="VelaShell.Views.SessionHealthCheckWindow"
+        x:DataType="vm:SessionHealthCheckViewModel"
+        Title="{loc:Localize Health_Title}"
+        Width="900" Height="520"
+        MinWidth="640" MinHeight="320"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner">
+
+  <!-- 会话健康巡检:一批已保存连接的四步诊断结果表。外框、标题栏与右下角缩放手柄照连接信息窗口;
+       窗口级动作(只看有问题的、验证登录、停止、重新巡检、复制为文本)放标题栏的动作图标组(DESIGN.md §4.2),
+       副标题是汇总。表头 26px、行 28px(DESIGN.md §4.2)。 -->
+
+  <Window.Styles>
+    <Style Selector="Button.caption">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Width" Value="27" />
+      <Setter Property="Height" Value="27" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.caption:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="Button.caption-close:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaDangerHover}" />
+    </Style>
+    <Style Selector="Button.row-action">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.row-action:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="TextBlock.header">
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize10}" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="TextBlock.cell">
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+    </Style>
+    <Style Selector="TextBlock.name">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+    <!-- 结论一列按状态着色:通过绿、要处理黄、连不上红、排队 / 不查 / 停下弱化、正在查强调色。 -->
+    <Style Selector="TextBlock.st-ok">
+      <Setter Property="Foreground" Value="{DynamicResource VelaStatusConnected}" />
+    </Style>
+    <Style Selector="TextBlock.st-warn">
+      <Setter Property="Foreground" Value="{DynamicResource VelaWarning}" />
+    </Style>
+    <Style Selector="TextBlock.st-fail">
+      <Setter Property="Foreground" Value="{DynamicResource VelaError}" />
+    </Style>
+    <Style Selector="TextBlock.st-muted">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+    </Style>
+    <Style Selector="TextBlock.st-running">
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+    </Style>
+  </Window.Styles>
+
+  <Border Classes="window-card"
+          Background="{DynamicResource VelaBgSurface}"
+          BorderBrush="{DynamicResource VelaBorderSecondary}"
+          ClipToBounds="True">
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+
+      <!-- 标题栏(28,可拖动,双击空白处最大化 / 还原):图标 + 标题 | 两个开关、停止、重新巡检、复制 | 最大化、关闭。 -->
+      <Border Grid.Row="0" Padding="20,0,0,0"
+              Classes="window-titlebar"
+              Background="Transparent"
+              PointerPressed="Header_PointerPressed"
+              DoubleTapped="Header_DoubleTapped">
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <DockPanel>
+            <Panel Classes="traffic-light-spacer" DockPanel.Dock="Left" />
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <pc:LucideIcon Width="15" Height="15" Data="{StaticResource Icon.activity}"
+                             Foreground="{DynamicResource VelaAccent}" VerticalAlignment="Center" />
+              <TextBlock Text="{loc:Localize Health_Title}"
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource VelaTextPrimary}"
+                         FontSize="{DynamicResource VelaFontSize13}" FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+          </DockPanel>
+          <StackPanel x:Name="TitleActions" Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                      VerticalAlignment="Center" Margin="12,0,10,0">
+            <!-- 只看有问题的:开着时图标转强调色,悬停提示第一行写当前状态。 -->
+            <Button x:Name="ProblemsOnlyButton" Theme="{StaticResource VelaTitleActionButtonTheme}"
+                    Command="{Binding ToggleProblemsOnlyCommand}"
+                    AutomationProperties.Name="{Binding ProblemsOnlyText}"
+                    ToolTip.Tip="{Binding ProblemsOnlyText}">
+              <Panel>
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.circle-alert}"
+                               Foreground="{DynamicResource VelaTextMuted}" IsVisible="{Binding !ShowProblemsOnly}" />
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.circle-alert}"
+                               Foreground="{DynamicResource VelaAccent}" IsVisible="{Binding ShowProblemsOnly}" />
+              </Panel>
+            </Button>
+            <!-- 验证登录:开着时走到认证那一步(用已保存的凭据登录一次随即断开),关着时只查到 SSH 握手;下一轮生效。 -->
+            <Button x:Name="VerifyLoginButton" Theme="{StaticResource VelaTitleActionButtonTheme}"
+                    Command="{Binding ToggleVerifyLoginCommand}"
+                    AutomationProperties.Name="{Binding VerifyLoginText}">
+              <ToolTip.Tip>
+                <StackPanel Spacing="2">
+                  <TextBlock Text="{Binding VerifyLoginText}" FontWeight="Medium" />
+                  <TextBlock Text="{loc:Localize Health_VerifyLoginTip}" />
+                </StackPanel>
+              </ToolTip.Tip>
+              <Panel>
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.key-round}"
+                               Foreground="{DynamicResource VelaTextMuted}" IsVisible="{Binding !VerifyLogin}" />
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.key-round}"
+                               Foreground="{DynamicResource VelaAccent}" IsVisible="{Binding VerifyLogin}" />
+              </Panel>
+            </Button>
+            <Button x:Name="StopButton" Theme="{StaticResource VelaTitleActionButtonTheme}"
+                    Command="{Binding StopCommand}"
+                    AutomationProperties.Name="{loc:Localize Health_Stop}"
+                    ToolTip.Tip="{loc:Localize Health_Stop}">
+              <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.square}"
+                             Foreground="{DynamicResource VelaTextMuted}" />
+            </Button>
+            <Button x:Name="RerunButton" Theme="{StaticResource VelaTitleActionButtonTheme}"
+                    Command="{Binding RerunCommand}"
+                    AutomationProperties.Name="{loc:Localize Health_Rerun}"
+                    ToolTip.Tip="{loc:Localize Health_Rerun}">
+              <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.refresh-cw}"
+                             Foreground="{DynamicResource VelaTextMuted}" />
+            </Button>
+            <Button x:Name="CopyButton" Theme="{StaticResource VelaTitleActionButtonTheme}"
+                    Command="{Binding CopyCommand}"
+                    AutomationProperties.Name="{loc:Localize Health_Copy}"
+                    ToolTip.Tip="{loc:Localize Health_Copy}">
+              <Panel>
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.copy}"
+                               Foreground="{DynamicResource VelaTextMuted}" IsVisible="{Binding !Copied}" />
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.circle-check}"
+                               Foreground="{DynamicResource VelaAccent}" IsVisible="{Binding Copied}" />
+              </Panel>
+            </Button>
+          </StackPanel>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
+            <Button Classes="caption window-caption" Click="Maximize_Click"
+                    ToolTip.Tip="{loc:Localize Recorder_MaximizeTip}">
+              <pc:LucideIcon Width="10" Height="10" Data="{StaticResource Icon.square}"
+                             Foreground="{DynamicResource VelaTextSecondary}" />
+            </Button>
+            <Button Classes="caption caption-close window-caption" Click="Close_Click">
+              <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.x}"
+                             Foreground="{DynamicResource VelaTextSecondary}" />
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- 副标题:汇总(查着时带进度)。同样可拖动。 -->
+      <Border Grid.Row="1" Padding="20,6"
+              BorderThickness="0,0,0,1"
+              BorderBrush="{DynamicResource VelaBorderPrimary}"
+              Background="Transparent"
+              PointerPressed="Header_PointerPressed">
+        <TextBlock x:Name="SummaryText" Text="{Binding Summary}"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource VelaTextMuted}"
+                   FontFamily="{DynamicResource VelaUiMonoFont}"
+                   FontSize="{DynamicResource VelaFontSize10}" TextTrimming="CharacterEllipsis" />
+      </Border>
+
+      <!-- 表头(26px)。 -->
+      <Border Grid.Row="2" Height="26" Padding="20,0,14,0"
+              Background="{DynamicResource VelaBgSurface}"
+              BorderThickness="0,0,0,1"
+              BorderBrush="{DynamicResource VelaBorderPrimary}">
+        <Grid ColumnDefinitions="110,1.2*,1.4*,120,2*,64,56" ColumnSpacing="8">
+          <TextBlock Grid.Column="0" Classes="header" Text="{loc:Localize Health_ColStatus}" />
+          <TextBlock Grid.Column="1" Classes="header" Text="{loc:Localize Health_ColName}" />
+          <TextBlock Grid.Column="2" Classes="header" Text="{loc:Localize Health_ColTarget}" />
+          <TextBlock Grid.Column="3" Classes="header" Text="{loc:Localize Health_ColStep}" />
+          <TextBlock Grid.Column="4" Classes="header" Text="{loc:Localize Health_ColDetail}" />
+          <TextBlock Grid.Column="5" Classes="header" Text="{loc:Localize Health_ColElapsed}" />
+        </Grid>
+      </Border>
+
+      <Panel Grid.Row="3">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <ItemsControl x:Name="RowsList" ItemsSource="{Binding VisibleRows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SessionHealthRowViewModel">
+                <Border Height="28" Padding="20,0,14,0"
+                        BorderThickness="0,0,0,1"
+                        BorderBrush="{DynamicResource VelaBorderPrimary}">
+                  <Grid ColumnDefinitions="110,1.2*,1.4*,120,2*,64,56" ColumnSpacing="8">
+                    <TextBlock Grid.Column="0" Classes="cell"
+                               Text="{Binding StatusText}"
+                               Classes.st-ok="{Binding IsHealthy}"
+                               Classes.st-warn="{Binding IsWarning}"
+                               Classes.st-fail="{Binding IsFailed}"
+                               Classes.st-muted="{Binding IsMuted}"
+                               Classes.st-running="{Binding IsChecking}" />
+                    <TextBlock Grid.Column="1" Classes="cell name" Text="{Binding Name}" ToolTip.Tip="{Binding Name}" />
+                    <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding Target}" ToolTip.Tip="{Binding Target}" />
+                    <TextBlock Grid.Column="3" Classes="cell" Text="{Binding Step}" ToolTip.Tip="{Binding Step}" />
+                    <TextBlock Grid.Column="4" Classes="cell" Text="{Binding Detail}" ToolTip.Tip="{Binding Detail}" />
+                    <TextBlock Grid.Column="5" Classes="cell mono" Text="{Binding ElapsedText}" />
+                    <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+                      <Button Classes="row-action"
+                              IsVisible="{Binding CanDiagnose}"
+                              Command="{Binding $parent[Window].((vm:SessionHealthCheckViewModel)DataContext).DiagnoseCommand}"
+                              CommandParameter="{Binding}"
+                              ToolTip.Tip="{loc:Localize Health_OpenDiagnostics}"
+                              AutomationProperties.Name="{loc:Localize Health_OpenDiagnostics}">
+                        <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.stethoscope}"
+                                       Foreground="{DynamicResource VelaTextTertiary}" />
+                      </Button>
+                      <Button Classes="row-action"
+                              Command="{Binding $parent[Window].((vm:SessionHealthCheckViewModel)DataContext).EditCommand}"
+                              CommandParameter="{Binding}"
+                              ToolTip.Tip="{loc:Localize Health_EditProfile}"
+                              AutomationProperties.Name="{loc:Localize Health_EditProfile}">
+                        <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.pencil}"
+                                       Foreground="{DynamicResource VelaTextTertiary}" />
+                      </Button>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+        <!-- 「只看有问题的」开着、查完了一个问题都没有:说一句,不留一片空白。 -->
+        <TextBlock Text="{loc:Localize Health_NoProblems}"
+                   IsVisible="{Binding ShowNoProblems}"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="{DynamicResource VelaTextMuted}"
+                   FontSize="{DynamicResource VelaFontSize12}" />
+      </Panel>
+
+      <!-- 底部说明:巡检做了什么、没做什么(只在点开时跑、不弹框)。 -->
+      <Border Grid.Row="4" Padding="20,8"
+              Background="{DynamicResource VelaBgInput}"
+              BorderThickness="0,1,0,0"
+              BorderBrush="{DynamicResource VelaBorderPrimary}">
+        <TextBlock Text="{Binding Hint}" TextWrapping="Wrap"
+                   Foreground="{DynamicResource VelaTextTertiary}"
+                   FontSize="{DynamicResource VelaFontSize10}" />
+      </Border>
+
+      <!-- 右下角缩放手柄(同连接信息窗口;系统自带边缘缩放时与最大化时由 WindowChrome 隐去)。 -->
+      <Border x:Name="ResizeGrip" Grid.Row="4" Width="20" Height="20" ZIndex="10"
+              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+              Background="Transparent" Cursor="BottomRightCorner"
+              PointerPressed="ResizeGrip_PointerPressed"
+              ToolTip.Tip="{loc:Localize Recorder_ResizeTip}">
+        <Path Data="M14,4 L4,14 M14,9 L9,14"
+              Stroke="{DynamicResource VelaTextMuted}" StrokeThickness="1.5"
+              Margin="0,0,3,3" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+      </Border>
+    </Grid>
+  </Border>
+</Window>

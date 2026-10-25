@@ -83,4 +83,18 @@ public interface IConnectionDiagnosticsService
         SessionProfile profile,
         IProgress<DiagnosticStepUpdate>? progress = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 没人看着的诊断(会话健康巡检):同样四步,认证那一步不弹任何框
+    /// (<see cref="IConnectionWorkflowService.TestConnectionUnattendedAsync" />);没保存凭据的照旧跳过、记成警告。
+    /// </summary>
+    /// <param name="profile">要诊断的配置。</param>
+    /// <param name="verifyLogin">是否走到认证那一步;为 false 时只查到 SSH 握手,不往服务器上登录。</param>
+    /// <param name="progress">各步骤状态变更的进度回调,可为 null。</param>
+    /// <param name="cancellationToken">取消令牌(停下巡检、单台到点);取消照原样抛出。</param>
+    Task<DiagnosticReport> DiagnoseUnattendedAsync(
+        SessionProfile profile,
+        bool verifyLogin,
+        IProgress<DiagnosticStepUpdate>? progress = null,
+        CancellationToken cancellationToken = default);
 }

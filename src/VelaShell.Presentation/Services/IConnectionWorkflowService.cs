@@ -45,6 +45,13 @@ public interface IConnectionWorkflowService
     Task<ConnectionTestResult> TestConnectionAsync(
         SessionProfile profile, SshPacketTrace packetTrace, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 没人看着的连接测试(会话健康巡检):同 <see cref="TestConnectionAsync(SessionProfile, CancellationToken)" />,但要人回答的一律不问 ——
+    /// 主机指纹、动态码、Tailscale 复核照拒绝 / 失败报回(<see cref="ConnectionInfo.IsUnattended" />);
+    /// 插件配置不测。调用方的取消照原样抛出,不当成「连不上」。
+    /// </summary>
+    Task<ConnectionTestResult> TestConnectionUnattendedAsync(SessionProfile profile, CancellationToken cancellationToken = default);
+
     /// <summary>按指定配置建立 SSH 连接,返回已连接的会话。</summary>
     Task<SshSession> ConnectProfileAsync(SessionProfile profile, CancellationToken cancellationToken = default);
 

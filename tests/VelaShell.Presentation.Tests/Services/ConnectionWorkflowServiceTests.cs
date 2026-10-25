@@ -121,6 +121,74 @@ public sealed class ConnectionWorkflowServiceTests
     }
 
     /// <summary>
+    /// 巡检的连接测试按「没人看着」连:跳板链上每一跳都标上(要人回答的一律不问),连完随即断开;
+    /// 普通的「测试」一跳也不标。
+    /// </summary>
+    [TestMethod]
+    public async Task UnattendedTest_MarksEveryHop_AndDisconnects_ButTheOrdinaryTestDoesNot()
+    {
+        ConnectionWorkflowService service = CreateService();
+        SessionProfile jump = CreateProfile("bastion");
+        SessionProfile target = CreateProfile("web-01");
+        target.JumpHostProfileId = jump.Id;
+        _sessionRepository.GetSessionAsync(jump.Id).Returns(jump);
+        var connected = new List<ConnectionInfo>();
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns(call =>
+                             {
+                                 connected.Add((ConnectionInfo)call[0]);
+                                 return new SshSession { ConnectionInfo = connected[^1], Status = SessionStatus.Connected };
+                             });
+
+        ConnectionTestResult unattended = await service.TestConnectionUnattendedAsync(target);
+        ConnectionTestResult ordinary = await service.TestConnectionAsync(target);
+
+        Assert.IsTrue(unattended.Success);
+        Assert.IsTrue(ordinary.Success);
+        Assert.IsTrue(connected[0].IsUnattended);
+        Assert.IsTrue(connected[0].JumpHost!.IsUnattended);
+        Assert.IsFalse(connected[0].IsAutomaticReconnect, "巡检不是自动重连:那条会停掉自动重连、说法也不同。");
+        Assert.IsFalse(connected[1].IsUnattended);
+        Assert.IsFalse(connected[1].JumpHost!.IsUnattended);
+        await _sshConnectionService.Received(2).DisconnectAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>巡检被停下 / 单台到点:取消照原样抛出,不当成「这台连不上」。</summary>
+    [TestMethod]
+    public async Task UnattendedTest_CallerCancellation_Propagates()
+    {
+        ConnectionWorkflowService service = CreateService();
+        using var cts = new CancellationTokenSource();
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns<Task<SshSession>>(_ =>
+                             {
+                                 cts.Cancel();
+                                 throw new OperationCanceledException(cts.Token);
+                             });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => service.TestConnectionUnattendedAsync(CreateProfile(), cts.Token));
+    }
+
+    /// <summary>插件配置不测:插件的探针会开真会话、可能弹插件自己的框。</summary>
+    [TestMethod]
+    public async Task UnattendedTest_PluginProfile_IsNotProbed()
+    {
+        ConnectionWorkflowService service = CreateService();
+        int probes = 0;
+        service.PluginProbe = (_, _) =>
+        {
+            probes++;
+            return Task.CompletedTask;
+        };
+
+        ConnectionTestResult result = await service.TestConnectionUnattendedAsync(CreatePluginProfile());
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(0, probes);
+        await _sshConnectionService.DidNotReceive().ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// 会话的字符集(会话覆盖优先于全局)带进连接信息,SFTP 按它解读文件名;跳板那一跳不带(它不开 SFTP)。
     /// </summary>
     [TestMethod]
