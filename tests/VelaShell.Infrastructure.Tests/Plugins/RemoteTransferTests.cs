@@ -199,10 +199,10 @@ public sealed partial class RemoteTransferTests
         var asking = NewSignal();
         var shown = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
-                CancellationToken token = call.ArgAt<CancellationToken>(5);
+                CancellationToken token = call.ArgAt<CancellationToken>(6);
                 shown.TrySetResult(token);
                 asking.TrySetResult();
                 await Task.Delay(Timeout.Infinite, token);
@@ -227,8 +227,8 @@ public sealed partial class RemoteTransferTests
             Assert.AreEqual(RemoteTransferState.Cancelled, firstDone.State, firstDone.ErrorMessage);
             Assert.IsTrue(firstDone.DestinationCommitConfirmedAbsent && secondDone.DestinationCommitConfirmedAbsent);
             await WaitIdle(api);
-            await prompt.Received(1).RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
-            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await prompt.Received(1).RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
         }
         finally { File.Delete(file); }
     }

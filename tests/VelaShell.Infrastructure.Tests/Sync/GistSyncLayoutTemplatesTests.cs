@@ -72,7 +72,12 @@ public sealed class GistSyncLayoutTemplatesTests
             Store = new MemoryStore();
             Templates = new LayoutTemplateStore(Store, time ?? new FixedTime(Now));
             ISecretProtector protector = Substitute.For<ISecretProtector>();
-            protector.Unprotect("protected-passphrase").Returns(passphrase);
+            // 同步口令经 TryUnprotect 取(解不开要拒绝推送),替身按它配。
+            protector.TryUnprotect("protected-passphrase", out Arg.Any<string?>()).Returns(call =>
+            {
+                call[1] = passphrase;
+                return true;
+            });
             Sync = new GistSyncService(Substitute.For<ISettingsService>(), Substitute.For<ISessionRepository>(), Store,
                 Substitute.For<IQuickCommandRepository>(), protector, layoutTemplates: supportsTemplates ? Templates : null);
             Config = new SyncSettings
