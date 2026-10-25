@@ -486,7 +486,8 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 Assert.HasCount(1, endpoint.Requests);
-                Assert.AreEqual(owned ? "Bearer key-own" : "Bearer key-a", endpoint.Requests[0].Auth);
+                // 跨源覆盖又没自带 Key:供应商的 Key 一把都不跟去(主槽也不借),请求不带 Key
+                Assert.AreEqual(owned ? "Bearer key-own" : "Bearer not-needed", endpoint.Requests[0].Auth);
                 Assert.IsEmpty(home.Requests);
             }
             finally { panel.Detach(); window.Close(); }

@@ -385,23 +385,63 @@ public sealed class AiSettingsStoreTests
     }
 
     [TestMethod]
-    public async Task Review_ExplicitPrimaryProbeAllowsEmptyPrimaryWithoutFallbackOrRelaxingSavedScope()
+    public async Task Review_EmptyPrimarySlotIsNotSelectableAndNotReplacedBySupplementary()
     {
         using var context = new TestPluginContext();
         var store = new AiSettingsStore(context);
         var provider = new AiProvider { BaseUrl = "https://confirmed.example", Models = [new AiModelConfig { Model = "m" }] };
         var settings = new AiSettings { Providers = [provider] };
         await store.AddProviderApiKeyAsync(settings, provider, "primary");
-        await store.AddProviderApiKeyAsync(settings, provider, "must-not-fallback");
+        string extra = await store.AddProviderApiKeyAsync(settings, provider, "supplementary");
         await store.RemoveProviderApiKeyAsync(settings, provider, provider.Id);
         ResolvedModel saved = settings.FindModel(provider.Models[0].Id)!;
         await Assert.ThrowsAsync<AiSettingsStore.ApiKeySlotChangedException>(() => store.ResolveCredentialWithKeyIdAsync(saved, keyId: provider.Id));
-        Assert.IsNull((await store.ResolvePrimaryCredentialForProbeAsync(saved)).Value, "显式跨源无鉴权测试不能改取补充槽");
-        var external = new AiSettingsStore(context);
-        AiSettings changed = await external.LoadAsync();
-        changed.Providers[0].BaseUrl = "https://changed.example";
-        await external.SaveAsync(changed);
-        await Assert.ThrowsAsync<AiSettingsStore.ApiKeySlotChangedException>(() => store.ResolvePrimaryCredentialForProbeAsync(saved));
+        // 不点名槽时,空着的主槽让位给补充槽(同源)
+        (ProviderCredential credential, string? keyId) = await store.ResolveCredentialWithKeyIdAsync(saved);
+        Assert.AreEqual("supplementary", credential.Value);
+        Assert.AreEqual(extra, keyId);
+    }
+
+    [TestMethod]
+    public async Task CrossOriginOverride_WithoutOwnKey_SendsNoProviderKey_AndExistingConfigLoadsThatWay()
+    {
+        // 存量配置:供应商有主槽与补充槽,一个模型的覆盖地址在别的服务器、继承供应商 Key(以前借主槽),
+        // 另一个只是同源换了路径。升级后读回来:跨源的那个不带任何 Key、点名任何槽都拒绝;同源的照旧走 Key 池
+        using var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var elsewhere = new AiModelConfig { Model = "elsewhere", BaseUrlOverride = "https://other.example/v1" };
+        var samePath = new AiModelConfig { Model = "path", BaseUrlOverride = "https://API.example:443/other" };
+        var provider = new AiProvider { BaseUrl = "https://api.example/v1", Models = [elsewhere, samePath] };
+        var settings = new AiSettings { Providers = [provider] };
+        await store.AddProviderApiKeyAsync(settings, provider, "primary");
+        string extra = await store.AddProviderApiKeyAsync(settings, provider, "supplementary");
+        await store.SaveAsync(settings);
+
+        var upgraded = new AiSettingsStore(new TestPluginContext { Storage = context.Storage, Secrets = context.Secrets });
+        AiSettings loaded = await upgraded.LoadAsync();
+        AiProvider owner = loaded.Providers.Single();
+        ResolvedModel crossOrigin = loaded.FindModel(elsewhere.Id)!;
+        Assert.IsTrue(AiSettingsStore.InheritsNoKeyAcrossOrigins(owner, crossOrigin.Config), "设置页据此给迁移提示");
+        (ProviderCredential none, string? noneId) = await upgraded.ResolveCredentialWithKeyIdAsync(crossOrigin);
+        Assert.IsNull(none.Value, "跨源覆盖不再借主槽");
+        Assert.IsNull(noneId);
+        await Assert.ThrowsAsync<AiSettingsStore.ApiKeySlotChangedException>(
+            () => upgraded.ResolveCredentialWithKeyIdAsync(crossOrigin, keyId: owner.Id));
+        await Assert.ThrowsAsync<AiSettingsStore.ApiKeySlotChangedException>(
+            () => upgraded.ResolveCredentialWithKeyIdAsync(crossOrigin, keyId: extra));
+
+        ResolvedModel sameOrigin = loaded.FindModel(samePath.Id)!;
+        Assert.IsFalse(AiSettingsStore.InheritsNoKeyAcrossOrigins(owner, sameOrigin.Config));
+        Assert.AreEqual("primary", (await upgraded.ResolveCredentialAsync(sameOrigin)).Value);
+
+        // 用户照迁移提示勾上自带 Key、沿用主槽那把:之后跨源请求带的就是它自己的 Key
+        string expected = System.Text.Json.JsonSerializer.Serialize(crossOrigin.Config);
+        AiModelConfig draft = System.Text.Json.JsonSerializer.Deserialize<AiModelConfig>(expected)!;
+        draft.HasOwnApiKey = true;
+        await upgraded.SaveModelFormAsync(loaded, owner, crossOrigin.Config, draft, expected, "primary", expectedKey: null);
+        ResolvedModel migrated = loaded.FindModel(elsewhere.Id)!;
+        Assert.IsFalse(AiSettingsStore.InheritsNoKeyAcrossOrigins(owner, migrated.Config));
+        Assert.AreEqual("primary", (await upgraded.ResolveCredentialAsync(migrated)).Value);
     }
 
     [TestMethod]
@@ -2079,9 +2119,10 @@ public sealed class AiSettingsStoreTests
         provider.ActiveApiKeyId = extra;
         await store.SaveAsync(settings);
         selected = await store.ResolveCredentialWithKeyIdAsync(model);
-        Assert.AreEqual("primary", selected.Credential.Value);
+        Assert.IsNull(selected.Credential.Value, "跨源覆盖不借供应商的 Key,主槽也不借");
         Assert.IsNull(selected.KeyId);
         await Assert.ThrowsAsync<AiSettingsStore.ApiKeySlotChangedException>(() => store.ResolveCredentialWithKeyIdAsync(model, keyId: extra));
+        await Assert.ThrowsAsync<AiSettingsStore.ApiKeySlotChangedException>(() => store.ResolveCredentialWithKeyIdAsync(model, keyId: provider.Id));
         config.BaseUrlOverride = "https://API.example:443/other";
         await store.SaveAsync(settings);
         model = new ResolvedModel(provider, config);

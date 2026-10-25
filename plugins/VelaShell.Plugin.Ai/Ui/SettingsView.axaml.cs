@@ -349,7 +349,13 @@ public partial class SettingsView : UserControl
         };
         ProviderProtocolCombo.SelectionChanged += (_, _) => UpdateProtocolOnlyFields();
         ProtocolCombo.SelectionChanged += (_, _) => UpdateProtocolOnlyFields();
-        OwnKeyCheck.IsCheckedChanged += (_, _) => OwnKeyPanel.IsVisible = OwnKeyCheck.IsChecked == true;
+        OwnKeyCheck.IsCheckedChanged += (_, _) =>
+        {
+            OwnKeyPanel.IsVisible = OwnKeyCheck.IsChecked == true;
+            UpdateCrossOriginKeyHint();
+        };
+        BaseUrlBox.TextChanged += (_, _) => UpdateCrossOriginKeyHint();
+        CrossOriginKeyFillButton.Click += (_, _) => _ = FillCrossOriginKeyAsync();
         AddButton.Click += (_, _) => ProviderCatalogRequested?.Invoke(null);
         // 同目录多账号按左栏选中的实例定位,不是随目录 id 找最近一份。
         ManageSignInButton.Click += (_, _) => ProviderCatalogRequested?.Invoke(SelectedProvider?.Id);
@@ -428,6 +434,9 @@ public partial class SettingsView : UserControl
         ModelPickLabel.Text = _loc["ModelPick"];
         OwnKeyCheck.Content = _loc["OwnApiKey"];
         OwnKeyHintText.Text = _loc["OwnApiKeyHint"];
+        CrossOriginKeyHintText.Text = _loc["CrossOriginNoKeyHint"];
+        CrossOriginKeyFillButton.Content = _loc["CrossOriginUsePrimaryKey"];
+        if (SelectedProvider is { } shown && SelectedModel is null) UpdateCrossOriginModelsHint(shown);
         MaxTokensLabel.Text = _loc["MaxTokens"];
         MaxInputTokensLabel.Text = _loc["MaxInputTokens"];
         UpdateContextWindowHint();
@@ -837,6 +846,57 @@ public partial class SettingsView : UserControl
         ApiKeyBox.Text = "";
         _loadedModelForm = CaptureModelForm();
         UpdateContextWindowHint();
+        UpdateCrossOriginKeyHint();
+    }
+
+    /// <summary>
+    /// 模型表单此刻(含未保存的覆盖地址与勾选)是不是「跨源又不自带 Key」:是就说明请求不带 Key,
+    /// 并给出照旧用供应商第 1 把 Key 的入口。只对填 Key 的供应商成立(订阅登录不在这条口径里)。
+    /// </summary>
+    private void UpdateCrossOriginKeyHint()
+    {
+        string url = BaseUrlBox.Text?.Trim() ?? "";
+        CrossOriginKeyPanel.IsVisible = SelectedProvider is { Auth: AuthMethod.ApiKey } provider
+            && SelectedModel is not null && OwnKeyCheck.IsChecked != true
+            && AiSettingsStore.InheritsNoKeyAcrossOrigins(provider, new AiModelConfig { BaseUrlOverride = url });
+    }
+
+    /// <summary>供应商页点名:覆盖地址跨源、又没自带 Key 的模型(按已保存的配置)。</summary>
+    private void UpdateCrossOriginModelsHint(AiProvider provider)
+    {
+        List<string> names = [.. provider.Models
+            .Where(model => AiSettingsStore.InheritsNoKeyAcrossOrigins(provider, model))
+            .Select(model => string.IsNullOrWhiteSpace(model.DisplayName) ? _loc["Unnamed"] : model.DisplayName)];
+        CrossOriginModelsHintText.Text = names.Count == 0 ? "" : _loc.F("CrossOriginModelsNoKey", string.Join(", ", names));
+        CrossOriginModelsHintText.IsVisible = names.Count > 0;
+    }
+
+    /// <summary>
+    /// 「沿用供应商的第 1 把 Key」:勾上自带 Key、把供应商主槽此刻的 Key 填进表单 —— 只是草稿,点保存才落库,
+    /// 那时这把 Key 才算用户明确交给这个覆盖地址。主槽是空的就只勾上,请用户填这台服务器的 Key。
+    /// </summary>
+    private async Task FillCrossOriginKeyAsync()
+    {
+        if (SelectedProvider is not { Auth: AuthMethod.ApiKey } provider || SelectedModel is not { } model) return;
+        int run = _editorRun;
+        string? primary;
+        try { primary = await _store.GetApiKeyAsync(provider.Id); }
+        catch (Exception ex)
+        {
+            _context.Log.Warn($"Reading the primary Key of '{provider.Id}' failed: {ex.Message}");
+            if (run == _editorRun) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
+            return;
+        }
+        if (run != _editorRun || !ReferenceEquals(SelectedProvider, provider) || !ReferenceEquals(SelectedModel, model)) return;
+        OwnKeyCheck.IsChecked = true;
+        if (string.IsNullOrWhiteSpace(primary))
+        {
+            StatusText.Text = _loc["CrossOriginPrimaryKeyMissing"];
+            ApiKeyBox.Focus();
+            return;
+        }
+        ApiKeyBox.Text = primary;
+        StatusText.Text = _loc["CrossOriginPrimaryKeyFilled"];
     }
 
     private void SetWindowText(string? text)
@@ -868,6 +928,8 @@ public partial class SettingsView : UserControl
             ? ""
             : string.IsNullOrWhiteSpace(model.DisplayName) ? _loc["Unnamed"] : model.DisplayName;
         BreadcrumbText.Text = model is null ? providerName : $"{providerName}  ›  {modelName}";
+        if (provider is not null && model is null) UpdateCrossOriginModelsHint(provider);
+        else CrossOriginModelsHintText.IsVisible = false;
         // 拉取是整家的事;端点或目录任意一条路可用就显示入口。
         PullModelsPanel.IsVisible = provider is not null && model is null
                                     && (!string.IsNullOrWhiteSpace(provider.BaseUrl)
@@ -1375,11 +1437,13 @@ public partial class SettingsView : UserControl
                 ? $"{model.DisplayName} · {model.Id[..Math.Min(8, model.Id.Length)]}"
                 : model.DisplayName))];
     }
+    // 跨源覆盖的模型不借供应商的任何一把 Key(主槽也不借,见 AiSettingsStore.InheritsNoKeyAcrossOrigins),
+    // 拿哪一行的 Key 去测它都不是它真会发出的请求
     private static bool KeyModelEligible(ProviderKeyRowState row, AiModelConfig model)
         => !model.HasOwnApiKey && !string.IsNullOrWhiteSpace(model.Model)
-            && (row.Id == row.Provider.Id || AiSettingsStore.SameOrigin(
+            && AiSettingsStore.SameOrigin(
                 string.IsNullOrWhiteSpace(model.BaseUrlOverride) ? row.Provider.BaseUrl : model.BaseUrlOverride,
-                row.Provider.BaseUrl));
+                row.Provider.BaseUrl);
 
     private static bool HasKeyModels(ProviderKeyRowState row)
     {
@@ -1867,8 +1931,6 @@ public partial class SettingsView : UserControl
         RefreshKeyRowStatus(row);
         try
         {
-            // 主槽测跨源模型时解析器不认它是槽请求(KeyId 为 null):那边的成败说明的是覆盖地址,
-            // 不是这把 Key 在供应商自己源上的状态,不能拿去冷却或解冻 Key 槽(与 TestAsync 同一裁决)
             (ProviderCredential credential, string? slotId) = await _store.ResolveCredentialWithKeyIdAsync(live, keyId: row.Id, cancellationToken: token);
             if (credential.Value != row.Key) throw new AiSettingsStore.ApiKeySlotChangedException();
             if (string.IsNullOrWhiteSpace(credential.Value)
@@ -2386,7 +2448,10 @@ public partial class SettingsView : UserControl
         int editorRun = _editorRun;
         ResolvedModel candidate;
         string? apiKeyOverride;
-        string? requestedKeyId = null;
+        // 这一击不带任何已存的凭据:地址换了源还没保存时属于旧地址的那些,以及跨源覆盖不借的供应商 Key。
+        // 定下来就不再读机密 —— 上面「拦不拦」读到的「没有」与发请求时再读一次的结果可能不一致
+        // (别处的换源提交写盘失败、回滚恢复 Key 时不推进配置版本号),只要不再读,就不会把恢复回来的旧 Key 带去新地址
+        bool keyless = false;
         string? overrideKeyId = null;
         // 探活结束时再校验本次请求的完整凭据与当下落库配置是否一致。
         // 等待期间可能换账号、刷新令牌或保存新的地址/Key。
@@ -2485,8 +2550,8 @@ public partial class SettingsView : UserControl
                 }
                 else
                 {
-                    // 没有新填的 Key:只看探活真会带上的那一把 —— 自带 Key 的首模型是它自己那把,继承的只有主槽
-                    // (见 ResolvePrimaryCredentialForProbeAsync,补充槽不跟去)。它还在就请用户先填新 Key;没有(无鉴权接入)才照常测
+                    // 没有新填的 Key:只看保存之前它本会带上的那一把 —— 自带 Key 的首模型是它自己那把,继承的是主槽。
+                    // 它还在就请用户先填新 Key;没有(无鉴权接入)才照常测,而且照常测也不带任何已存的 Key(见 keyless)
                     long version = _store.ProviderConfigurationVersion(provider);
                     bool keyFollows;
                     try
@@ -2516,21 +2581,22 @@ public partial class SettingsView : UserControl
                 }
             }
             candidate = new ResolvedModel(draft, first);
+            // 首模型跟着供应商地址走、地址又换了源:它会带上的已存 Key(主槽或它自带的那把)都属于旧地址
+            keyless = apiKeyOverride is null && provider.Auth == AuthMethod.ApiKey
+                && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
+                && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl);
 
             string EffectiveBaseUrl(AiModelConfig config)
                 => string.IsNullOrWhiteSpace(config.BaseUrlOverride) ? draft.BaseUrl : config.BaseUrlOverride;
             if (!first.HasOwnApiKey && provider.Auth == AuthMethod.ApiKey)
-            {
                 overrideKeyId = apiKeyOverride is not null ? _keyDraft?.Id : null;
-                if (apiKeyOverride is null && !AiSettingsStore.SameOrigin(draft.BaseUrl, provider.BaseUrl))
-                    requestedKeyId = provider.Id;
-            }
             compareId = first.Id; // 同上:拿哪份落库来比,探活跑完再定(见 SameAsSavedAsync)
         }
-        if (apiKeyOverride is null && !candidate.Config.HasOwnApiKey && provider.Auth == AuthMethod.ApiKey
-            && !AiSettingsStore.SameOrigin(candidate.BaseUrl, provider.BaseUrl))
+        // 覆盖地址与供应商不同源、继承供应商 Key 的模型:供应商的 Key 不跟去(主槽也不借),与保存之后的请求一致
+        // (见 AiSettingsStore.InheritsNoKeyAcrossOrigins)
+        if (apiKeyOverride is null && AiSettingsStore.InheritsNoKeyAcrossOrigins(provider, candidate.Config))
         {
-            requestedKeyId = provider.Id;
+            keyless = true;
         }
 
         candidate = FreezeProbeModel(candidate);
@@ -2559,20 +2625,17 @@ public partial class SettingsView : UserControl
         {
             await _store.ValidateProviderCredentialScopeAsync(provider);
             ResolvedModel saved = savedCredentialModel ?? throw new AiSettingsStore.ApiKeySlotChangedException();
-            if (apiKeyOverride is null)
+            if (keyless)
             {
-                if (requestedKeyId == provider.Id && provider.Auth == AuthMethod.ApiKey)
-                {
-                    sentCredential = await _store.ResolvePrimaryCredentialForProbeAsync(saved);
-                    sentKeyId = !string.IsNullOrWhiteSpace(sentCredential.Value)
-                        && AiSettingsStore.SameOrigin(candidate.BaseUrl, provider.BaseUrl) ? provider.Id : null;
-                }
-                else
-                {
-                    (sentCredential, sentKeyId) = candidate.Config.HasOwnApiKey == saved.Config.HasOwnApiKey
-                        ? await _store.ResolveCredentialWithKeyIdAsync(saved)
-                        : await _store.ResolveProviderCredentialWithKeyIdAsync(provider);
-                }
+                sentCredential = ProviderCredential.Key(null);
+                sentKeyId = null;
+            }
+            else if (apiKeyOverride is null)
+            {
+                // 自带 Key 的首模型带它自己那把;继承的按供应商这一层取(与新地址同源,上面已排除跨源)
+                (sentCredential, sentKeyId) = candidate.Config.HasOwnApiKey
+                    ? await _store.ResolveCredentialWithKeyIdAsync(saved)
+                    : await _store.ResolveProviderCredentialWithKeyIdAsync(provider);
             }
             else
             {

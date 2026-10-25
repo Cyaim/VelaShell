@@ -1334,23 +1334,6 @@ public sealed class AiSettingsStore(IPluginContext context)
         AiProvider provider, string? keyId = null, CancellationToken cancellationToken = default)
         => ResolveSavedCredentialAsync(new ResolvedModel(provider, new AiModelConfig()), true, cancellationToken, keyId: keyId);
 
-    /// <summary>表单显式跨源探活只取已确认供应商的主槽；无主槽凭据的无鉴权接入仍可探测，不回落补充槽。</summary>
-    internal async Task<ProviderCredential> ResolvePrimaryCredentialForProbeAsync(ResolvedModel saved,
-        CancellationToken cancellationToken = default)
-    {
-        if (saved.Provider.Auth != AuthMethod.ApiKey || _providerKeys.Updating.ContainsKey(saved.Provider.Id))
-            throw new ApiKeySlotChangedException();
-        long version = ProviderConfigurationVersion(saved.Provider);
-        await ValidateCredentialScopeAsync(saved, false, cancellationToken).ConfigureAwait(false);
-        string? key = await GetApiKeyAsync(saved.Provider.Id, cancellationToken).ConfigureAwait(false);
-        if (_providerKeys.Updating.ContainsKey(saved.Provider.Id) || ProviderConfigurationVersion(saved.Provider) != version)
-            throw new ApiKeySlotChangedException();
-        await ValidateCredentialScopeAsync(saved, false, cancellationToken).ConfigureAwait(false);
-        if (_providerKeys.Updating.ContainsKey(saved.Provider.Id) || ProviderConfigurationVersion(saved.Provider) != version)
-            throw new ApiKeySlotChangedException();
-        return ProviderCredential.Key(key);
-    }
-
     internal async Task ValidateProviderCredentialScopeAsync(AiProvider provider, CancellationToken cancellationToken = default)
     {
         if (_providerKeys.Updating.ContainsKey(provider.Id)) throw new ApiKeySlotChangedException();
@@ -1437,10 +1420,14 @@ public sealed class AiSettingsStore(IPluginContext context)
         if (provider.Auth != AuthMethod.Subscription)
         {
             if (_providerKeys.Updating.ContainsKey(provider.Id)) throw new ApiKeySlotChangedException();
+            // 模型的覆盖地址与供应商不同源时,供应商的 Key(主槽也一样)都不跟去:那是给供应商自己那个地址的。
+            // 覆盖地址要 Key 就勾「自带 Key」填上;没勾就是不带 Key 的请求(设置页对这类模型给迁移提示)。
+            // 以前跨源时借主槽 —— 供应商换源之后,为新地址填的主 Key 会被发往这个旧覆盖地址(§217 留下的口径)
             bool sameOrigin = SameOrigin(model.BaseUrl, provider.BaseUrl);
+            bool crossOriginOverride = InheritsNoKeyAcrossOrigins(provider, model.Config);
             if (!string.IsNullOrEmpty(keyId))
             {
-                if (!ProviderApiKeyIds(provider).Contains(keyId, StringComparer.Ordinal)
+                if (crossOriginOverride || !ProviderApiKeyIds(provider).Contains(keyId, StringComparer.Ordinal)
                     || (!sameOrigin && keyId != provider.Id))
                 {
                     throw new ApiKeySlotChangedException();
@@ -1450,6 +1437,8 @@ public sealed class AiSettingsStore(IPluginContext context)
                 if (string.IsNullOrWhiteSpace(selected)) throw new ApiKeySlotChangedException();
                 return (ProviderCredential.Key(selected), sameOrigin ? keyId : null);
             }
+            if (crossOriginOverride) return (ProviderCredential.Key(null), null);
+            // 供应商自己的地址解析不出 origin(空着或写错)时照旧只用主槽,不进 Key 池
             if (!sameOrigin)
                 return (ProviderCredential.Key(await GetApiKeyAsync(provider.Id, cancellationToken).ConfigureAwait(false)), null);
             IEnumerable<string> ids = ProviderApiKeyIds(provider);
@@ -1483,6 +1472,16 @@ public sealed class AiSettingsStore(IPluginContext context)
         EnsureBuiltinOAuthCredentialDestination(model, bearer);
         return (bearer, null);
     }
+
+    /// <summary>
+    /// 填 Key 的供应商下,覆盖地址与供应商不同源、又没勾「自带 Key」的模型:请求不带任何 Key
+    /// (见 <see cref="ResolveCredentialCoreAsync" />)。以前这类模型借主槽,设置页据此给迁移提示。
+    /// </summary>
+    internal static bool InheritsNoKeyAcrossOrigins(AiProvider provider, AiModelConfig model)
+        => provider.Auth == AuthMethod.ApiKey && !model.HasOwnApiKey
+            && !string.IsNullOrWhiteSpace(model.BaseUrlOverride)
+            && !string.Equals(model.BaseUrlOverride, provider.BaseUrl, StringComparison.Ordinal)
+            && !SameOrigin(model.BaseUrlOverride, provider.BaseUrl);
 
     internal static bool SameOrigin(string? a, string? b)
         => Uri.TryCreate(a, UriKind.Absolute, out Uri? left)

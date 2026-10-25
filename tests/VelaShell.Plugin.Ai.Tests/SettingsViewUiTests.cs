@@ -67,7 +67,7 @@ public sealed partial class SettingsViewUiTests
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public void Review_DraftModelInheritanceUsesOnlyPrimaryCredentialOnAnotherOrigin(bool savedOwnKey)
+    public void Review_DraftModelInheritanceSendsNoProviderKeyToAnotherOrigin(bool savedOwnKey)
     {
         OnUi(async () =>
         {
@@ -92,11 +92,108 @@ public sealed partial class SettingsViewUiTests
                 view.GetControl<CheckBox>("OwnKeyCheck").IsChecked = false;
                 view.GetControl<TextBox>("BaseUrlBox").Text = draftHost.BaseUrl;
                 await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
-                Assert.AreEqual("Bearer primary", draftHost.Authorizations.Single());
+                // 草稿改成继承、覆盖地址在别的服务器:与保存之后一样不借供应商的 Key(主槽也不借)
+                Assert.AreEqual("Bearer not-needed", draftHost.Authorizations.Single());
                 Assert.IsEmpty(original.Requests);
                 Assert.AreEqual(savedOwnKey, model.HasOwnApiKey);
                 Assert.IsNull(model.BaseUrlOverride);
                 Assert.AreEqual("saved-own", await store.GetApiKeyAsync(model.Id));
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void CrossOriginOverride_ExistingModelIsFlaggedAndCanKeepUsingKeyOneInOneClick()
+    {
+        OnUi(async () =>
+        {
+            await using var providerHost = new SseStub(ProbeAnswerSse);
+            await using var elsewhereHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            var store = new AiSettingsStore(context);
+            // 存量配置:覆盖地址在别的服务器、继承供应商 Key 的模型(以前借第 1 把)
+            var elsewhere = new AiModelConfig { Name = "Elsewhere", Model = "m", BaseUrlOverride = elsewhereHost.BaseUrl };
+            var provider = new AiProvider
+            {
+                ModelsExpanded = true, BaseUrl = providerHost.BaseUrl,
+                Models = [new AiModelConfig { Model = "home" }, elsewhere]
+            };
+            var settings = new AiSettings { Providers = [provider], ActiveModelId = elsewhere.Id };
+            await store.AddProviderApiKeyAsync(settings, provider, "primary");
+            await store.SaveAsync(settings);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                ListBox list = view.GetControl<ListBox>("ProvidersList");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                // 供应商页点名
+                list.SelectedIndex = 0;
+                await PumpAsync();
+                TextBlock listed = view.GetControl<TextBlock>("CrossOriginModelsHintText");
+                Assert.IsTrue(listed.IsVisible);
+                Assert.AreEqual(loc.F("CrossOriginModelsNoKey", "Elsewhere"), listed.Text);
+
+                // 模型页说明请求不带 Key;测试也不带
+                list.SelectedIndex = 2;
+                await PumpAsync();
+                Assert.IsTrue(view.GetControl<StackPanel>("CrossOriginKeyPanel").IsVisible);
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual("Bearer not-needed", elsewhereHost.Authorizations.Single(), "第 1 把不再跟去");
+
+                // 一键沿用第 1 把:只填进表单,保存才落库
+                Click(view.GetControl<Button>("CrossOriginKeyFillButton"));
+                await WaitUntilAsync(() => status.Text == loc["CrossOriginPrimaryKeyFilled"]);
+                Assert.IsTrue(view.GetControl<CheckBox>("OwnKeyCheck").IsChecked);
+                Assert.AreEqual("primary", view.GetControl<TextBox>("ApiKeyBox").Text);
+                Assert.IsFalse(view.GetControl<StackPanel>("CrossOriginKeyPanel").IsVisible);
+                Assert.IsFalse(elsewhere.HasOwnApiKey, "没保存之前什么都没落库");
+                Assert.IsNull(await store.GetApiKeyAsync(elsewhere.Id));
+
+                Click(view.GetControl<Button>("SaveButton"));
+                await WaitUntilAsync(() => status.Text == loc["Saved"]);
+                Assert.IsTrue(elsewhere.HasOwnApiKey);
+                Assert.AreEqual("primary", await store.GetApiKeyAsync(elsewhere.Id));
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual("Bearer primary", elsewhereHost.Authorizations[^1], "明确交给它之后才带");
+                Assert.IsEmpty(providerHost.Requests);
+
+                list.SelectedIndex = 0;
+                await PumpAsync();
+                Assert.IsFalse(view.GetControl<TextBlock>("CrossOriginModelsHintText").IsVisible);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void CrossOriginOverride_HintFollowsTheUnsavedDraft()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            var model = new AiModelConfig { Model = "m" };
+            var provider = new AiProvider { ModelsExpanded = true, BaseUrl = "https://relay.example/v1", Models = [model] };
+            (Window window, SettingsView view, _, _) =
+                await ShowAsync(context, new AiSettings { Providers = [provider], ActiveModelId = model.Id });
+            try
+            {
+                StackPanel panel = view.GetControl<StackPanel>("CrossOriginKeyPanel");
+                TextBox url = view.GetControl<TextBox>("BaseUrlBox");
+                Assert.IsFalse(panel.IsVisible);
+                url.Text = "https://other.example/v1";
+                await PumpAsync();
+                Assert.IsTrue(panel.IsVisible, "草稿改到别的服务器就提示");
+                url.Text = "https://RELAY.example:443/v2";
+                await PumpAsync();
+                Assert.IsFalse(panel.IsVisible, "同源只换路径照旧借供应商的 Key");
+                url.Text = "https://other.example/v1";
+                view.GetControl<CheckBox>("OwnKeyCheck").IsChecked = true;
+                await PumpAsync();
+                Assert.IsFalse(panel.IsVisible, "勾了自带 Key 就不用提示");
             }
             finally { window.Close(); }
         });
@@ -5276,27 +5373,22 @@ public sealed partial class SettingsViewUiTests
             var window = new Window { Content = view, Width = 900, Height = 700 }; window.Show(); await PumpAsync();
             try
             {
+                // 跨源覆盖的模型不借供应商的任何一把 Key,主槽也不例外:哪一行的候选里都没有它;自带 Key、没填型号的也不在
                 Click(KeyControl<Button>(view, provider.Id, "ProviderKeyProbeButton"));
-                SelectKeyModel(view, provider.Id, cross.Id);
-                await WaitUntilAsync(() => other.Requests.Count == 1 && !IsKeyProbeRunning(KeyProbeState(view, provider.Id)));
-                Assert.AreEqual("Bearer primary", other.Authorizations.Single(), "主槽保留已保存模型覆盖地址的旧行为");
-                Click(KeyControl<Button>(view, extra, "ProviderKeyProbeButton"));
-                var choices = KeyControl<ComboBox>(view, extra, "ProviderKeyModelPicker").ItemsSource!.Cast<object>().ToList();
-                Assert.HasCount(2, choices);
-                Assert.AreNotEqual(choices[0].ToString(), choices[1].ToString(), "同名模型带短 ID 但绑定配置 ID");
-                Assert.IsEmpty(same.Requests); Assert.HasCount(1, other.Requests);
-                Assert.AreEqual(-1, KeyControl<ComboBox>(view, extra, "ProviderKeyModelPicker").SelectedIndex,
-                    "上次主槽检测的跨域模型不适用于补充 Key，必须重新选择而不是自动改测首模型");
-                SelectKeyModel(view, extra, b.Id);
-                await WaitUntilAsync(() => same.Requests.Count == 1 && !IsKeyProbeRunning(KeyProbeState(view, extra)));
+                var primaryChoices = KeyControl<ComboBox>(view, provider.Id, "ProviderKeyModelPicker").ItemsSource!.Cast<object>().ToList();
+                Assert.HasCount(2, primaryChoices);
+                Assert.AreNotEqual(primaryChoices[0].ToString(), primaryChoices[1].ToString(), "同名模型带短 ID 但绑定配置 ID");
+                SelectKeyModel(view, provider.Id, b.Id);
+                await WaitUntilAsync(() => same.Requests.Count == 1 && !IsKeyProbeRunning(KeyProbeState(view, provider.Id)));
                 Assert.Contains("\"model\":\"m2\"", same.Requests.Single());
-                Assert.AreEqual("Bearer additional", same.Authorizations.Single());
-                Click(KeyControl<Button>(view, provider.Id, "ProviderKeyProbeButton"));
-                Assert.HasCount(3, KeyControl<ComboBox>(view, provider.Id, "ProviderKeyModelPicker").ItemsSource!.Cast<object>().ToList());
-                await WaitUntilAsync(() => same.Requests.Count == 2 && !IsKeyProbeRunning(KeyProbeState(view, provider.Id)));
+                Assert.AreEqual("Bearer primary", same.Authorizations.Single());
+                // 补充槽:同样两项,按 ID 复用上次选的那个直接测
+                Click(KeyControl<Button>(view, extra, "ProviderKeyProbeButton"));
+                Assert.HasCount(2, KeyControl<ComboBox>(view, extra, "ProviderKeyModelPicker").ItemsSource!.Cast<object>().ToList());
+                await WaitUntilAsync(() => same.Requests.Count == 2 && !IsKeyProbeRunning(KeyProbeState(view, extra)));
                 Assert.Contains("\"model\":\"m2\"", same.Requests[1]);
-                Assert.AreEqual("Bearer primary", same.Authorizations[1], "同名模型必须按 ID 复用上次选择");
-                Assert.HasCount(1, other.Requests);
+                Assert.AreEqual("Bearer additional", same.Authorizations[1], "同名模型必须按 ID 复用上次选择");
+                Assert.IsEmpty(other.Requests, "跨源覆盖地址一次都不能被拿供应商的 Key 去测");
                 Assert.IsNull(provider.ActiveApiKeyId);
             }
             finally { window.Close(); }

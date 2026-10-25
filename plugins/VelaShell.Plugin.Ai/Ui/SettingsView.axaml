@@ -223,6 +223,9 @@
                             FontSize="{DynamicResource VelaFontSize12}"
                             Foreground="{DynamicResource VelaTextPrimary}" />
                   <TextBlock x:Name="BalanceApiKeysHintText" Classes="hint" TextWrapping="Wrap" />
+                  <!-- 哪些模型的覆盖地址跨源、又没自带 Key:它们不再借这里的 Key(迁移提示,点名) -->
+                  <TextBlock x:Name="CrossOriginModelsHintText" Classes="hint" TextWrapping="Wrap" IsVisible="False"
+                             Foreground="{DynamicResource VelaWarning}" />
                 </StackPanel>
 
                 <StackPanel x:Name="ProviderAuthPanel" Classes="field" IsVisible="False">
@@ -320,6 +323,13 @@
                       </Border>
                     </StackPanel>
                     <TextBlock x:Name="OwnKeyHintText" Classes="hint" />
+                    <!-- 覆盖地址与供应商不同源又没勾自带 Key:供应商的 Key 不跟去(以前借第 1 把)。
+                         存量配置升级上来就是这样,得在这儿说清楚,并给一个照旧用第 1 把的入口(只填进表单,保存才生效) -->
+                    <StackPanel x:Name="CrossOriginKeyPanel" IsVisible="False" Spacing="6" Margin="0,6,0,0">
+                      <TextBlock x:Name="CrossOriginKeyHintText" Classes="hint" Margin="0"
+                                 Foreground="{DynamicResource VelaWarning}" />
+                      <Button x:Name="CrossOriginKeyFillButton" Classes="host" HorizontalAlignment="Left" />
+                    </StackPanel>
                     <StackPanel x:Name="OwnKeyPanel" Margin="0,8,0,0">
                       <Grid ColumnDefinitions="*,6,Auto">
                         <TextBox x:Name="ApiKeyBox" PasswordChar="●" FontFamily="{DynamicResource VelaUiMonoFont}" />
