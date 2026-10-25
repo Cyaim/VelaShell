@@ -4755,6 +4755,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Transfer_CancelRemainingTip" xml:space="preserve">
     <value>残りの転送をキャンセル</value>
   </data>
+  <data name="Transfer_CancelItemTip" xml:space="preserve">
+    <value>この項目をキャンセル(同じバッチの残りは続行)</value>
+  </data>
   <data name="Transfer_CollapseTip" xml:space="preserve">
     <value>折りたたむ(タスクはバックグラウンドで継続)</value>
   </data>
@@ -5577,6 +5580,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>{0} 回再試行しても失敗しました:{1}</value>
+  </data>
+  <data name="Transfer_Cancelled" xml:space="preserve">
+    <value>キャンセル済み</value>
   </data>
   <data name="Transfer_Paused" xml:space="preserve">
     <value>一時停止</value>

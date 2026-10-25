@@ -567,7 +567,7 @@ public class FileBrowserViewModelTests
     [TestCategory("FileBrowser")]
     public void ShowTransfers_ReopensTransferToast()
     {
-        var toast = new FileTransferViewModel(Substitute.For<ITransferManager>());
+        var toast = new FileTransferViewModel();
         _vm.TransferSink = toast;
         Assert.IsFalse(toast.IsPanelVisible);
         _vm.ShowTransfersCommand.Execute().Subscribe();

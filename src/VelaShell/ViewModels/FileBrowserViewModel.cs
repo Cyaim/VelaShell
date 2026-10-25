@@ -2469,7 +2469,7 @@ public class FileBrowserViewModel : ReactiveObject
 
     /// <summary>
     /// 执行一批已经过冲突与续传处理的传输:登记批次、按全窗口并发上限分派、收尾通知。
-    /// <paramref name="settled" /> 在每一项落定(完成/失败/跳过)后回调,取消时不回调。
+    /// <paramref name="settled" /> 在每一项落定(完成/失败/跳过,以及浮窗那一行的 × 单条取消)后回调,整批取消时不回调。
     /// </summary>
     /// <param name="resolved">要传的项。</param>
     /// <param name="conflictDecision">本批次的粘性冲突决定。</param>
@@ -2994,7 +2994,7 @@ public class FileBrowserViewModel : ReactiveObject
     /// <summary>
     /// 端到端执行一次传输:在传输浮窗中注册,将进度流式推送进去,
     /// 并落定最终状态。失败将行标红并返回;取消将行标为取消、清理本地部分文件,
-    /// 并传播取消使批量任务中止。
+    /// 并传播取消使批量任务中止。只停这一项(浮窗那一行的 ×)时不传播:返回已取消,这一批其余照传。
     /// </summary>
     private async Task<TransferStatus> RunTransferAsync(
         TransferType type,
@@ -3029,6 +3029,12 @@ public class FileBrowserViewModel : ReactiveObject
             // 失败后可从传输面板重试:闭包捕获本会话与路径(中转还有源端),重试时重新探测续传起点。
             item.RetryAsync = () => RetryTransferAsync(new(type, localPath, remotePath, Source: source));
         }
+        // 这一项自己的取消源,链在批次的上面:「全部取消」照样停得下它,浮窗那一行的 × 只停它。
+        // 下面凡是属于这一项的等待(传输本身、重试前的退避、续传探测、冲突改名)都吃它的令牌;
+        // 改名重传另起一行、另有自己的取消源,所以那一句仍传批次的令牌。
+        using var itemCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        CancellationToken itemCt = itemCts.Token;
+        item?.CancelItem = itemCts.Cancel;
         // 本次尝试的起点:续传时 > 0;自动重试会把它挪到这个文件自己已经传过去的地方。
         long offset = resumeOffset;
         var progress = new AttemptProgress(new Progress<TransferProgress>(p =>
@@ -3080,7 +3086,7 @@ public class FileBrowserViewModel : ReactiveObject
                         remotePath,
                         conflictDecision,
                         source,
-                        ct
+                        itemCt
                     );
                     if (action.Renamed is { } target)
                     {
@@ -3100,11 +3106,11 @@ public class FileBrowserViewModel : ReactiveObject
 
                 // 断线、超时这类临时失败:退避一会儿,在原会话上再试(权限、磁盘满、路径不存在、
                 // 服务端拒写不在此列,见 TransferRetryPolicy)。等待期间这一行显示「等待重试」,
-                // 全部取消照样能把它停下 —— 等待吃的是同一个取消令牌。
+                // 全部取消与这一行的 × 照样能把它停下 —— 等待吃的是这一项的取消令牌。
                 // 名额在等待期间不放:链路坏了的时候别的文件也传不动,放出去只是让它们也去撞一遍。
                 catch (Exception ex) when (retries < maxRetries
                                            && ex is not OperationCanceledException
-                                           && !ct.IsCancellationRequested
+                                           && !itemCt.IsCancellationRequested
                                            && !_lifetime.IsCancellationRequested
                                            && TransferRetryPolicy.Classify(ex) == TransferFailureKind.Transient)
                 {
@@ -3112,9 +3118,23 @@ public class FileBrowserViewModel : ReactiveObject
                     bool movedBytes = progress.MovedBytes;
                     long attemptStart = offset;
                     item?.MarkRetrying(retries, maxRetries);
-                    await RetryDelay(TransferRetryPolicy.DelayBeforeRetry(retries), ct);
-                    offset = await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, ct);
+                    await RetryDelay(TransferRetryPolicy.DelayBeforeRetry(retries), itemCt);
+                    offset = await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, itemCt);
                 }
+            }
+        }
+        // 只停这一项(浮窗那一行的 ×),批次没取消:这一项按已取消落定、不往上抛,这一批其余照传。
+        // 落定之后批次把它从传输队列里摘掉(见 ExecuteResolvedBatchAsync 的 Account),这一批以后
+        // 再停下、点「继续」时不会再传它。不只认 OperationCanceledException:取消把流关掉时,
+        // 底下冒出来的也可能是一个「通道已关闭」之类的异常 —— 那是取消的后果,不能算这个文件失败,
+        // 更不能当成断线把整批挂起。半截目标与整批取消一样,按「断点续传 / 清理半截文件」处理。
+        catch (Exception) when (itemCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            item?.Status = TransferStatus.Cancelled;
+            finalStatus = TransferStatus.Cancelled;
+            if (targetTouched)
+            {
+                await CleanupPartialTargetAsync(type, localPath, remotePath);
             }
         }
         catch (OperationCanceledException)
@@ -3149,6 +3169,8 @@ public class FileBrowserViewModel : ReactiveObject
         }
         finally
         {
+            // 落定了:摘掉 ×(取消源随方法返回释放,不能再让那一行去点它)。
+            item?.CancelItem = null;
             TransferSink?.NotifyTaskSettled();
 
             // 记录传输日志(设置 → 文件传输 → 日志记录)。中转的"本地"一列写源端,带上它是哪台机器 ——
@@ -3175,17 +3197,17 @@ public class FileBrowserViewModel : ReactiveObject
         Task TransferOnceAsync(long startAt) => type switch
         {
             TransferType.Upload =>
-                _sftpService.UploadFileAsync(_sessionId, localPath, remotePath, progress, startAt, ct),
+                _sftpService.UploadFileAsync(_sessionId, localPath, remotePath, progress, startAt, itemCt),
             // Copy:LocalPath = 远端源路径,RemotePath = 远端目标路径。
             TransferType.Copy =>
-                _sftpService.CopyAsync(_sessionId, localPath, remotePath, progress, ct),
+                _sftpService.CopyAsync(_sessionId, localPath, remotePath, progress, itemCt),
             // Relay:LocalPath = 另一栏会话上的源路径,RemotePath = 本会话上的目标路径。
             TransferType.Relay =>
                 RemoteRelay.CopyFileAsync(
                     source!.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
-                    progress, () => targetTouched = true, startAt, ct),
+                    progress, () => targetTouched = true, startAt, itemCt),
             _ =>
-                _sftpService.DownloadFileAsync(_sessionId, remotePath, localPath, progress, startAt, ct),
+                _sftpService.DownloadFileAsync(_sessionId, remotePath, localPath, progress, startAt, itemCt),
         };
     }
 
@@ -3985,7 +4007,7 @@ public class FileBrowserViewModel : ReactiveObject
     /// 进度、并发上限、取消、传输日志与普通传输完全共用。
     /// </summary>
     /// <param name="requests">要执行的传输(目标父目录须已存在)。</param>
-    /// <param name="settled">每项落定后回调,用于回写修改时间;取消时不回调。</param>
+    /// <param name="settled">每项落定后回调,用于回写修改时间;单条取消按已取消回调,整批取消时不回调。</param>
     /// <param name="ct">取消令牌。</param>
     /// <returns>false 表示被取消。</returns>
     internal Task<bool> RunSyncTransfersAsync(

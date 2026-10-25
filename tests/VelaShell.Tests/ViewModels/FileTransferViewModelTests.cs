@@ -11,16 +11,7 @@ namespace VelaShell.Tests.ViewModels;
 [TestClass]
 public class FileTransferViewModelTests
 {
-    private readonly ITransferManager _transferManager;
-    private readonly FileTransferViewModel _vm;
-
-    public FileTransferViewModelTests()
-    {
-        _transferManager = Substitute.For<ITransferManager>();
-        _transferManager.ActiveTransfers.Returns([]);
-        _transferManager.QueuedTransfers.Returns([]);
-        _vm = new(_transferManager);
-    }
+    private readonly FileTransferViewModel _vm = new();
 
     private static TransferTask CreateTask(
         TransferType type = TransferType.Upload,
@@ -82,19 +73,36 @@ public class FileTransferViewModelTests
 
     [TestMethod]
     [TestCategory("FileTransfer")]
-    public void CancelTransfer_UpdatesStatusToCancelled()
+    public void CancelTransfer_FiresTheRowsOwnCancelAndMarksItCancelled()
     {
-        // Arrange
         TransferTask task = CreateTask(status: TransferStatus.InProgress);
-        _transferManager.CancelTransferAsync(task.Id, Arg.Any<CancellationToken>())
-                        .Returns(Task.CompletedTask);
         _vm.AddTransfer(task);
+        TransferItemViewModel row = _vm.Transfers[0];
+        int fired = 0;
+        row.CancelItem = () => fired++;
+        Assert.IsTrue(row.CanCancel, "还在跑、挂着取消动作的行要有 ×");
 
-        // Act
         _vm.CancelTransferCommand.Execute(task.Id).Subscribe();
 
-        // Assert
-        Assert.AreEqual(TransferStatus.Cancelled, _vm.Transfers[0].Status);
+        Assert.AreEqual(1, fired, "× 要真的触发这一项的取消源,而不是只改行的状态");
+        Assert.AreEqual(TransferStatus.Cancelled, row.Status);
+        Assert.IsFalse(row.CanCancel, "取消之后 × 收起");
+        Assert.AreEqual(Strings.Get("Transfer_Cancelled"), row.ProgressText, "停在半截的百分比看着像还在传");
+    }
+
+    [TestMethod]
+    [TestCategory("FileTransfer")]
+    public void CancelTransfer_OnARowWithoutACancelHook_LeavesItAlone()
+    {
+        // 没挂取消动作的行(远程编辑的回传、已经落定的行):取消发不出去,就不能把它涂成「已取消」——
+        // 那正是改动前的伪取消:行上写着停了,传输还在跑。
+        TransferTask task = CreateTask(status: TransferStatus.InProgress);
+        _vm.AddTransfer(task);
+
+        _vm.CancelTransferCommand.Execute(task.Id).Subscribe();
+
+        Assert.AreEqual(TransferStatus.InProgress, _vm.Transfers[0].Status);
+        Assert.IsFalse(_vm.Transfers[0].CanCancel);
     }
 
     [TestMethod]
@@ -215,7 +223,7 @@ public class FileTransferViewModelTests
         // 那 100 行是在面板隐藏期间加进集合的,占着高度却画不出来。
         IAppDataStore store = Substitute.For<IAppDataStore>();
 
-        var vm = new FileTransferViewModel(_transferManager, store);
+        var vm = new FileTransferViewModel(store);
 
         Assert.IsEmpty(vm.Transfers, "启动时面板必须是空的 —— 任何一行都只能来自本次会话。");
         Assert.IsFalse(vm.IsPanelVisible);
@@ -250,7 +258,7 @@ public class FileTransferViewModelTests
         // 老版本已经把历史写进存储了;既然不再读它,启动时顺手清掉,别留废数据。
         IAppDataStore store = Substitute.For<IAppDataStore>();
 
-        _ = new FileTransferViewModel(_transferManager, store);
+        _ = new FileTransferViewModel(store);
 
         store.Received().DeleteAsync("transfer-history", "recent", Arg.Any<CancellationToken>());
     }
@@ -637,7 +645,7 @@ public class FileTransferViewModelTests
     public void PersistPanelPosition_WritesCurrentOffsetToStore()
     {
         IAppDataStore store = Substitute.For<IAppDataStore>();
-        var vm = new FileTransferViewModel(_transferManager, store)
+        var vm = new FileTransferViewModel(store)
         {
             PanelOffsetX = -320,
             PanelOffsetY = 180,
@@ -660,7 +668,7 @@ public class FileTransferViewModelTests
         store.GetAsync<PanelPosition>("ui-layout", "transfer-panel", Arg.Any<CancellationToken>())
              .Returns(new PanelPosition { OffsetX = -240, OffsetY = 96 });
 
-        var vm = new FileTransferViewModel(_transferManager, store);
+        var vm = new FileTransferViewModel(store);
 
         // 恢复是异步的,给它一次调度机会。
         await Task.Yield();
@@ -674,7 +682,7 @@ public class FileTransferViewModelTests
     [TestMethod]
     public void WithoutStore_PanelPositionDefaultsToAnchorAndPersistIsHarmless()
     {
-        var vm = new FileTransferViewModel(_transferManager);
+        var vm = new FileTransferViewModel();
 
         Assert.AreEqual(0, vm.PanelOffsetX);
         Assert.AreEqual(0, vm.PanelOffsetY);
@@ -735,7 +743,7 @@ public class FileTransferViewModelTests
         store.GetAsync<PanelPosition>("ui-layout", "transfer-panel", Arg.Any<CancellationToken>())
              .Returns<PanelPosition?>(_ => throw new InvalidOperationException("store offline"));
 
-        var vm = new FileTransferViewModel(_transferManager, store);
+        var vm = new FileTransferViewModel(store);
         await Task.Delay(50);
 
         Assert.AreEqual(0, vm.PanelOffsetX);

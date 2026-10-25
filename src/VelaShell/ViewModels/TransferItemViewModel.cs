@@ -58,6 +58,24 @@ public class TransferItemViewModel : ReactiveObject
     /// <summary>失败且有重试动作时,面板显示"重试"按钮。</summary>
     public bool CanRetry => IsFailed && RetryAsync is not null;
 
+    /// <summary>
+    /// 只停这一项的动作(浮窗那一行的 ×),由发起传输的浏览器视图模型在这一项开跑时挂上、落定时摘掉:
+    /// 触发的是这一项自己的取消源(链在批次的取消源上),同一批的其余文件照传。
+    /// 为 null 时这一行没有 ×—— 已经结束的行,或者不是文件面板发起的传输。
+    /// </summary>
+    public Action? CancelItem
+    {
+        get;
+        set
+        {
+            field = value;
+            this.RaisePropertyChanged(nameof(CanCancel));
+        }
+    }
+
+    /// <summary>还在跑(含排队、等待自动重试)且挂着取消动作时,行尾显示 ×。</summary>
+    public bool CanCancel => IsActive && CancelItem is not null;
+
     /// <summary>传输方向指示符:上传为 "↑",下载为 "↓",远端复制为 "⧉",两台远端之间中转为 "⇄"。</summary>
     public string Direction => _task.Type switch
     {
@@ -101,7 +119,9 @@ public class TransferItemViewModel : ReactiveObject
             this.RaisePropertyChanged(nameof(IsWaiting));
             this.RaisePropertyChanged(nameof(IsFailed));
             this.RaisePropertyChanged(nameof(IsCompleted));
+            this.RaisePropertyChanged(nameof(IsCancelled));
             this.RaisePropertyChanged(nameof(CanRetry));
+            this.RaisePropertyChanged(nameof(CanCancel));
             this.RaisePropertyChanged(nameof(ProgressText));
             this.RaisePropertyChanged(nameof(InfoLine));
         }
@@ -144,6 +164,9 @@ public class TransferItemViewModel : ReactiveObject
     /// <summary>指示任务是否已完成。</summary>
     public bool IsCompleted => _status == TransferStatus.Completed;
 
+    /// <summary>指示任务是否已取消(单条 ×、全部取消,或同名冲突时跳过)。</summary>
+    public bool IsCancelled => _status == TransferStatus.Cancelled;
+
     /// <summary>要传输的文件总字节数。</summary>
     public long TotalSize
     {
@@ -165,6 +188,8 @@ public class TransferItemViewModel : ReactiveObject
         TransferStatus.Failed => Strings.Get("Msg_Failed"),
         // 连接没了停下:不标红(不是这个文件的错),由浮窗上那一行「已暂停的批次」带着「继续」。
         TransferStatus.Paused => Strings.Get("Transfer_Paused"),
+        // 取消了就写「已取消」:停在半截的「37%」看着像还在传,点了 × 也看不出停没停。
+        TransferStatus.Cancelled => Strings.Get("Transfer_Cancelled"),
         // 失败了正等着自动重试:说清是第几次,免得看着像又回去排队了。
         TransferStatus.Queued when RetryAttempt > 0 => Strings.Format("Transfer_RetryWaiting", RetryAttempt, RetryLimit),
         // 排队中显示"等待中"而不是 0%:0% 看着像卡住,而它其实还没轮到。
@@ -200,9 +225,14 @@ public class TransferItemViewModel : ReactiveObject
                     _ => $"↓ {Strings.Get("Msg_Downloaded")}",
                 };
             }
-            else if (_status is TransferStatus.Failed or TransferStatus.Paused)
+            else if (_status is TransferStatus.Failed or TransferStatus.Paused or TransferStatus.Cancelled)
             {
-                action = _status == TransferStatus.Paused ? Strings.Get("Transfer_Paused") : Strings.Get("Msg_Failed");
+                action = _status switch
+                {
+                    TransferStatus.Paused => Strings.Get("Transfer_Paused"),
+                    TransferStatus.Cancelled => Strings.Get("Transfer_Cancelled"),
+                    _ => Strings.Get("Msg_Failed"),
+                };
             }
             return _status == TransferStatus.Completed
                        ? $"{FormatBytes(_totalSize)}  •  {Strings.Get("Msg_Completed")}  •  {action}"

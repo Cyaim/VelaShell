@@ -1,13 +1,13 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using NSubstitute;
 using VelaShell.Core.Localization;
 using VelaShell.Core.Models;
-using VelaShell.Core.Sftp;
+using VelaShell.Core.Resources;
 using VelaShell.Localization;
 using VelaShell.ViewModels;
 using VelaShell.Views;
@@ -98,6 +98,42 @@ public sealed class FileTransferPanelUiTests
         });
     }
 
+    /// <summary>
+    /// 行尾的 ×:还没落定、挂着取消动作的行才有;真指针点它触发的是这一项自己的取消动作,
+    /// 行落成「已取消」、× 收起。没挂取消动作的行(远程编辑的回传之类)不给 ×。
+    /// </summary>
+    [TestMethod]
+    public void TheRowCross_CancelsThatRowOnly_AndOnlyRowsWithACancelHookShowIt()
+    {
+        OnUi(() =>
+        {
+            using var fixture = Fixture.Show(2);
+            // 新的在上面:Transfers[0] 是第二条。
+            TransferItemViewModel hooked = fixture.ViewModel.Transfers[0];
+            TransferItemViewModel plain = fixture.ViewModel.Transfers[1];
+            int fired = 0;
+            hooked.CancelItem = () => fired++;
+            Dispatcher.UIThread.RunJobs();
+            fixture.Window.UpdateLayout();
+
+            Button cross = fixture.CancelButtonOf(hooked);
+            Assert.IsTrue(cross.IsEffectivelyVisible, "在传、挂着取消动作的行要有 ×");
+            Assert.IsFalse(fixture.CancelButtonOf(plain).IsEffectivelyVisible, "没挂取消动作的行不给 ×");
+            Assert.AreEqual(Strings.Get("Transfer_CancelItemTip"), ToolTip.GetTip(cross) as string);
+
+            Point center = cross.TranslatePoint(new Point(cross.Bounds.Width / 2, cross.Bounds.Height / 2), fixture.Window)!.Value;
+            fixture.Window.MouseDown(center, MouseButton.Left);
+            fixture.Window.MouseUp(center, MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+            fixture.Window.UpdateLayout();
+
+            Assert.AreEqual(1, fired);
+            Assert.AreEqual(TransferStatus.Cancelled, hooked.Status);
+            Assert.AreEqual(TransferStatus.InProgress, plain.Status, "只动点的那一行");
+            Assert.IsFalse(cross.IsEffectivelyVisible, "取消之后 × 收起");
+        });
+    }
+
     /// <summary>建窗口、灌 N 条进行中的传输、渲染一帧。</summary>
     private sealed class Fixture : IDisposable
     {
@@ -129,13 +165,10 @@ public sealed class FileTransferPanelUiTests
 
         public static Fixture Show(int transferCount)
         {
-            ITransferManager manager = Substitute.For<ITransferManager>();
-            manager.ActiveTransfers.Returns([]);
-            manager.QueuedTransfers.Returns([]);
 
             // 复刻真实时序:历史在构造期就已恢复满,而面板此刻还是收起的;
             // 直到某次传输开始才淡入 —— 行的实现发生在面板已经有尺寸之后。
-            var viewModel = new FileTransferViewModel(manager);
+            var viewModel = new FileTransferViewModel();
             for (int i = 0; i < transferCount; i++)
             {
                 viewModel.AddTransfer(new()
@@ -172,6 +205,11 @@ public sealed class FileTransferPanelUiTests
         [
             .. List.ItemsPanelRoot?.Children.Where(child => child.IsVisible) ?? []
         ];
+
+        /// <summary>某一行行尾的 ×。</summary>
+        public Button CancelButtonOf(TransferItemViewModel row) =>
+            View.GetVisualDescendants().OfType<Button>()
+                .Single(button => button.Name == "CancelItemButton" && ReferenceEquals(button.DataContext, row));
 
         public void Dispose() => Window.Close();
     }

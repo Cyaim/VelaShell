@@ -278,7 +278,7 @@ public sealed class AccessibleNameTests
 
     private static FileTransferViewModel BuildVisibleTransferPanel()
     {
-        var viewModel = new FileTransferViewModel(null);
+        var viewModel = new FileTransferViewModel();
         viewModel.AddTransfer(new TransferTask
         {
             Id = Guid.NewGuid(),

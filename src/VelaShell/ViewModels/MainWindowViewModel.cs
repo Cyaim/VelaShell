@@ -227,7 +227,6 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         ISettingsService? settingsService = null,
         ISessionRepository? sessionRepository = null,
         ISftpService? sftpService = null,
-        ITransferManager? transferManager = null,
         ITunnelService? tunnelService = null,
         ITunnelWorkflowService? tunnelWorkflowService = null,
         ISessionMetricsService? metricsService = null,
@@ -415,7 +414,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         _backgroundActivity = backgroundActivity;
         WireBackgroundActivity(backgroundActivity);
         _fileBrowser = new(null, Guid.Empty);
-        _fileTransfer = new(transferManager, appDataStore);
+        _fileTransfer = new(appDataStore);
         // 传输浮窗上「已暂停的批次」点「继续」:找回(或重新打开)那条连接接着传(见 ResumeQueuedTransfersAsync)。
         _fileTransfer.ResumeHandler = ResumeQueuedTransfersAsync;
         // 活动标签换人时要做的那几件事。挂在 ActiveTerminalTab 上而不是某个标签集合上:

@@ -4928,6 +4928,9 @@ Overwrite it?</value>
   <data name="Transfer_CancelRemainingTip" xml:space="preserve">
     <value>Cancel remaining transfers</value>
   </data>
+  <data name="Transfer_CancelItemTip" xml:space="preserve">
+    <value>Cancel this file (the rest of the batch keeps going)</value>
+  </data>
   <data name="Transfer_CollapseTip" xml:space="preserve">
     <value>Collapse (transfers continue in the background)</value>
   </data>
@@ -5693,6 +5696,9 @@ Overwrite it?</value>
   </data>
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>Still failing after {0} retries: {1}</value>
+  </data>
+  <data name="Transfer_Cancelled" xml:space="preserve">
+    <value>Cancelled</value>
   </data>
   <data name="Transfer_Paused" xml:space="preserve">
     <value>Paused</value>

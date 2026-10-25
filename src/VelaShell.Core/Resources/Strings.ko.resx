@@ -4755,6 +4755,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="Transfer_CancelRemainingTip" xml:space="preserve">
     <value>남은 전송 취소</value>
   </data>
+  <data name="Transfer_CancelItemTip" xml:space="preserve">
+    <value>이 항목 취소(같은 묶음의 나머지는 계속 전송)</value>
+  </data>
   <data name="Transfer_CollapseTip" xml:space="preserve">
     <value>접기 (작업은 백그라운드에서 계속됩니다)</value>
   </data>
@@ -5577,6 +5580,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>{0}회 재시도 후에도 실패: {1}</value>
+  </data>
+  <data name="Transfer_Cancelled" xml:space="preserve">
+    <value>취소됨</value>
   </data>
   <data name="Transfer_Paused" xml:space="preserve">
     <value>일시 중지됨</value>

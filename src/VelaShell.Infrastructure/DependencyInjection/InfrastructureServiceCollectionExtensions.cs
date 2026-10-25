@@ -252,7 +252,6 @@ public static class InfrastructureServiceCollectionExtensions
                 });
             }, settings);
         });
-        services.AddSingleton<ITransferManager, TransferManager>();
         services.AddSingleton<IGistSyncService>(sp => new Sync.GistSyncService(
             sp.GetRequiredService<ISettingsService>(), sp.GetRequiredService<ISessionRepository>(),
             sp.GetRequiredService<IAppDataStore>(), sp.GetRequiredService<IQuickCommandRepository>(),

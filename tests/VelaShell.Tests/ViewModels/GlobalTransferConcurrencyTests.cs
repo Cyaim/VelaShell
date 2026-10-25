@@ -31,7 +31,7 @@ public sealed class GlobalTransferConcurrencyTests
     public Task TwoPanelsUploadingAtOnce_StayWithinTheGlobalLimit() => OnUi(async () =>
     {
         const int limit = 2;
-        var sink = new FileTransferViewModel(null);
+        var sink = new FileTransferViewModel();
         var uploads = new ConcurrencyProbe();
 
         // 两个面板 = 两台服务器,各传到自己的目录。共用的只有传输浮窗(以及它里面的名额)。
@@ -61,7 +61,7 @@ public sealed class GlobalTransferConcurrencyTests
     public Task OnePanel_StillUsesTheFullLimit() => OnUi(async () =>
     {
         const int limit = 3;
-        var sink = new FileTransferViewModel(null);
+        var sink = new FileTransferViewModel();
         var uploads = new ConcurrencyProbe { HoldUntilConcurrent = limit };
 
         FileBrowserViewModel panel = CreatePanel(sink, uploads, limit);

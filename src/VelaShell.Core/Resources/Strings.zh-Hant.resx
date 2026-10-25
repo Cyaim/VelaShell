@@ -5035,6 +5035,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Transfer_CancelRemainingTip" xml:space="preserve">
     <value>取消剩餘傳輸</value>
   </data>
+  <data name="Transfer_CancelItemTip" xml:space="preserve">
+    <value>取消這一項(這一批其餘照傳)</value>
+  </data>
   <data name="Transfer_CollapseTip" xml:space="preserve">
     <value>收起(任務繼續於背景執行)</value>
   </data>
@@ -5826,6 +5829,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Transfer_FailedAfterRetries" xml:space="preserve">
     <value>重試 {0} 次後仍然失敗:{1}</value>
+  </data>
+  <data name="Transfer_Cancelled" xml:space="preserve">
+    <value>已取消</value>
   </data>
   <data name="Transfer_Paused" xml:space="preserve">
     <value>已暫停</value>
