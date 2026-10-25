@@ -2633,6 +2633,8 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 
 **文档**:velashell-docs `host/settings-audit`(新增一批:首次确认默认开与迁移标记;第十七批补一句无口令同步同样不带机密)、`host/交互与界面规格`(主机指纹确认一条写明默认开;设置窗口「安全审计」「云同步」两行)、`host/Xshell兼容登录`(§5 凭据处理、§6 风险表)(zh / en);仓库内 `manual.md` / `manual.en.md` 的 6.1、15.8、16.1、17.2、17.4、20.3 与 `PRIVACY.md` 云同步一条。
 
+**手册留在本仓库**(维护者 2026-10-25 定):`manual.md` / `manual.en.md` 是写给用户、跟着发布版本走的使用手册,列进 `AGENTS.md` 第三节「留在本仓库的文档」的例外表(21b49851),并写明「改了用户看得见的行为,就在同一个提交里改手册,中英两份一起改」;设计与开发文档仍在 velashell-docs。
+
 ## 253. 2026-10-25 主密码保护第一步:本机加密密钥交给系统密钥链(macOS 钥匙串 / Linux Secret Service,Windows 仍是 DPAPI)
 
 **来由**:`feature-plan.md` 🔴 P0「主密码保护」。维护者 2026-10-25 定:先把本机加密密钥改存系统密钥链(Windows DPAPI / macOS Keychain / Linux Secret Service),用户无感;可选主密码作为第二步,先写设计文档(velashell-docs),这一轮不实现。核对现状:`AesSecretProtector` 用 `~/.velashell/secret.key` 的 32 字节密钥做 AES-256-GCM(`enc1:` 前缀);Windows 上 `secret.key` 早已是 `ProtectedData.Protect(…, CurrentUser)` 的 DPAPI 密文,换账户、换电脑、拷走数据目录都解不开(域漫游配置文件例外);缺口在 macOS / Linux —— 32 字节明文 + 0600,拿到数据目录(拷走、备份、网盘同步)就能解开全部已存密码、共享凭据、Gist 令牌与同步口令、插件机密与插件信任库。
