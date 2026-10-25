@@ -1,4 +1,5 @@
 using VelaShell.Core.Models;
+using VelaShell.Core.Ssh;
 
 namespace VelaShell.Presentation.Services;
 
@@ -51,6 +52,15 @@ public sealed class DiagnosticReport
 
     /// <summary>针对所发现问题给出的修复建议列表。</summary>
     public IReadOnlyList<string> Suggestions { get; init; } = [];
+
+    /// <summary>
+    /// 认证那一步(完整连接,含跳板链)的协议轨迹:每个报文的方向、类型、长度、序号与通道号,<b>不含内容</b>。
+    /// 那一步没有走到 SSH 连接(前面的步骤没过、没有凭据、插件协议)时为空。
+    /// </summary>
+    public IReadOnlyList<SshPacketTraceEntry> PacketTrace { get; init; } = [];
+
+    /// <summary>超过记录上限、没记进 <see cref="PacketTrace" /> 的报文数。</summary>
+    public int PacketTraceDropped { get; init; }
 
     /// <summary>诊断是否整体成功(即未发现任何问题)。</summary>
     public bool Success => IssueTitle is null;

@@ -152,6 +152,37 @@ public sealed class ConnectionWorkflowServiceTests
         Assert.IsNull(connected.JumpHost?.FileNameEncoding, "跳板只开隧道,不该带文件名编码");
     }
 
+    /// <summary>
+    /// 诊断给的协议轨迹挂在最外层的连接信息上(装配那一层拿它记链上每一跳);跳板那一份不重复挂。
+    /// 平常的「测试连接」与连接都不挂 —— 报文旁路只在诊断时开。
+    /// </summary>
+    [TestMethod]
+    public async Task PacketTrace_IsCarriedOnlyByTheDiagnosticTest()
+    {
+        ConnectionWorkflowService service = CreateService();
+        SessionProfile jump = CreateProfile("bastion");
+        SessionProfile target = CreateProfile("web-01");
+        target.JumpHostProfileId = jump.Id;
+        _sessionRepository.GetSessionAsync(jump.Id).Returns(jump);
+        List<ConnectionInfo> connected = [];
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns(call =>
+                             {
+                                 connected.Add((ConnectionInfo)call[0]);
+                                 return new SshSession { ConnectionInfo = connected[^1], Status = SessionStatus.Connected };
+                             });
+        SshPacketTrace trace = new();
+
+        Assert.IsTrue((await service.TestConnectionAsync(target, trace)).Success);
+        Assert.IsTrue((await service.TestConnectionAsync(target)).Success);
+        await service.ConnectProfileAsync(target);
+
+        Assert.AreSame(trace, connected[0].PacketTrace);
+        Assert.IsNull(connected[0].JumpHost?.PacketTrace, "跳板那一跳由装配那一层用同一份记,不必再挂");
+        Assert.IsNull(connected[1].PacketTrace, "平常的测试连接不挂旁路");
+        Assert.IsNull(connected[2].PacketTrace, "平常的连接不挂旁路");
+    }
+
     [TestMethod]
     public async Task GetSavedProfilesAsync_ReturnsSortedProfiles()
     {

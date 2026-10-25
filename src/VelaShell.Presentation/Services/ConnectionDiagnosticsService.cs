@@ -6,13 +6,15 @@ using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
+using VelaShell.Core.Ssh;
 
 namespace VelaShell.Presentation.Services;
 
 /// <summary>
 /// 连接诊断中心的执行引擎(设计 RGXg1):按 DNS 解析 → TCP 建链 → SSH 握手 →
 /// 用户认证 四步逐项检测。配了跳板的会话,前三步针对链路第一跳(本机实际直连的主机),
-/// 认证步骤经 <see cref="IConnectionWorkflowService.TestConnectionAsync" /> 走完整跳板链。
+/// 认证步骤经 <see cref="IConnectionWorkflowService.TestConnectionAsync(SessionProfile, SshPacketTrace, CancellationToken)" /> 走完整跳板链,
+/// 并挂上 SSH 库的报文旁路记下协议轨迹(只有元信息,见 <see cref="SshPacketTrace" />;只在诊断时挂)。
 /// </summary>
 public sealed class ConnectionDiagnosticsService(
     ISessionRepository sessionRepository,
@@ -53,6 +55,8 @@ public sealed class ConnectionDiagnosticsService(
         string? issueTitle = null;
         string? issueDescription = null;
         var suggestions = new List<string>();
+        // 认证那一步的协议轨迹:只有诊断挂旁路,平常的连接与「测试连接」都不挂。
+        SshPacketTrace? packetTrace = null;
         if (chainError is not null)
         {
             // 跳板配置本身有问题(被删除/成环):四步都无从谈起,直接给出问题面板。
@@ -236,7 +240,8 @@ public sealed class ConnectionDiagnosticsService(
         {
             Publish(results[3] with { Status = DiagnosticStepStatus.Running });
             stopwatch.Restart();
-            ConnectionTestResult test = await _connectionWorkflowService.TestConnectionAsync(profile, cancellationToken).ConfigureAwait(false);
+            packetTrace = new SshPacketTrace();
+            ConnectionTestResult test = await _connectionWorkflowService.TestConnectionAsync(profile, packetTrace, cancellationToken).ConfigureAwait(false);
             if (test.Success)
             {
                 Publish(results[3] with
@@ -264,7 +269,9 @@ public sealed class ConnectionDiagnosticsService(
             Steps = results,
             IssueTitle = issueTitle,
             IssueDescription = issueDescription,
-            Suggestions = suggestions
+            Suggestions = suggestions,
+            PacketTrace = packetTrace?.Snapshot() ?? [],
+            PacketTraceDropped = packetTrace?.Dropped ?? 0
         };
 
         void Publish(DiagnosticStepUpdate update)

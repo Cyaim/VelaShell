@@ -16,6 +16,47 @@
   <!-- 连接诊断中心,布局对齐设计帧 RGXg1:标题栏(标题 + 导出 / 重新检测 + 关闭)、目标行,
        左侧诊断步骤面板,右侧发现问题 + 修复建议。 -->
 
+  <Window.Resources>
+    <!-- 右侧面板的两页(诊断结果 / 协议轨迹):选中的一页 VelaAccentDim 底 + VelaAccent 字,
+         与目录同步窗口的选项分段同一条半透明药丸规则(DESIGN.md §5.1)。RadioButton:两页互斥,点已选中的那页不会把它点掉。 -->
+    <ControlTheme x:Key="DiagPanelTabTheme" TargetType="RadioButton">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover">
+        <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+        <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+      </Style>
+      <Style Selector="^:checked">
+        <Setter Property="Background" Value="{DynamicResource VelaAccentDim}" />
+        <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+      </Style>
+      <!-- 焦点记号只给键盘导航:鼠标点完一页后描边一直挂着,看起来像卡住的高亮。 -->
+      <Style Selector="^:focus-visible">
+        <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+      </Style>
+    </ControlTheme>
+  </Window.Resources>
+
   <Window.Styles>
     <!-- 关闭键:27×27、无圆角,规格同主窗口的窗口键(与回放中心、资源监视同一套本地样式)。
          这是对话框,不挂 window-caption —— macOS 上没有红绿灯替它,× 要照常显示。 -->
@@ -34,6 +75,17 @@
     </Style>
     <Style Selector="Button.caption-close:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource VelaDangerHover}" />
+    </Style>
+    <!-- 协议轨迹的行:等宽小字,发出的那一列箭头用强调色,收到的用次要色。 -->
+    <Style Selector="Grid.trace-row TextBlock">
+      <Setter Property="FontFamily" Value="{DynamicResource VelaUiMonoFont}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize10}" />
+    </Style>
+    <Style Selector="TextBlock.trace-direction">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+    </Style>
+    <Style Selector="TextBlock.trace-direction.sent">
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
     </Style>
     <!-- 步骤行状态配色 -->
     <Style Selector="TextBlock.step-status">
@@ -173,74 +225,159 @@
           </DockPanel>
         </Border>
 
-        <!-- 发现问题 + 修复建议 (design issuePanel) -->
+        <!-- 右侧面板:「诊断结果」(发现问题 + 修复建议,design issuePanel)与「协议轨迹」两页,
+             头栏 34 高与左边「诊断步骤」那一栏对齐。窗口不可缩放,轨迹放进同一块面板而不是再往下加一栏。 -->
         <Border Grid.Column="2"
                 Background="{DynamicResource VelaBgPrimary}"
                 BorderBrush="{DynamicResource VelaBorderPrimary}"
-                BorderThickness="1" CornerRadius="6"
-                Padding="14,12">
-          <StackPanel Spacing="10">
-
-            <!-- 检测中占位 -->
-            <TextBlock Text="{loc:Localize Diag_Running}"
-                       IsVisible="{Binding IsBusy}"
-                       Foreground="{DynamicResource VelaTextMuted}"
-                       FontFamily="{DynamicResource VelaUiMonoFont}" FontSize="{DynamicResource VelaFontSize11}" />
-
-            <!-- 未发现问题 -->
-            <Border Background="{DynamicResource VelaBgSurface}"
-                    CornerRadius="6" Padding="12,10"
-                    IsVisible="{Binding AllPassed}">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <pc:LucideIcon Width="13" Height="13"
-                               Data="{StaticResource Icon.circle-check}"
-                               Foreground="{DynamicResource VelaStatusConnected}" VerticalAlignment="Center" />
-                <TextBlock Text="{loc:Localize Diag_AllPassed}"
-                           Foreground="{DynamicResource VelaStatusConnected}"
-                           FontSize="{DynamicResource VelaFontSize12}" FontWeight="Medium" VerticalAlignment="Center" />
-              </StackPanel>
+                BorderThickness="1" CornerRadius="6">
+          <DockPanel>
+            <Border DockPanel.Dock="Top" Height="34" Padding="8,0,6,0"
+                    BorderThickness="0,0,0,1"
+                    BorderBrush="{DynamicResource VelaBorderPrimary}">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <RadioButton x:Name="ResultsTab" Grid.Column="0" GroupName="DiagPanel"
+                             Theme="{StaticResource DiagPanelTabTheme}"
+                             IsChecked="{Binding ShowsResults}"
+                             Content="{loc:Localize Diag_TabResults}" />
+                <RadioButton x:Name="TraceTab" Grid.Column="1" GroupName="DiagPanel" Margin="4,0,0,0"
+                             Theme="{StaticResource DiagPanelTabTheme}"
+                             IsChecked="{Binding ShowsPacketTrace}"
+                             Content="{Binding PacketTraceTabTitle}" />
+                <Button x:Name="CopyTraceButton" Grid.Column="3"
+                        Theme="{StaticResource VelaTitleActionButtonTheme}"
+                        Command="{Binding CopyPacketTraceCommand}"
+                        IsVisible="{Binding ShowsPacketTrace}"
+                        AutomationProperties.Name="{loc:Localize Diag_TraceCopy}"
+                        ToolTip.Tip="{loc:Localize Diag_TraceCopy}">
+                  <pc:LucideIcon Width="12" Height="12"
+                                 Data="{StaticResource Icon.copy}"
+                                 Foreground="{DynamicResource VelaTextMuted}" />
+                </Button>
+              </Grid>
             </Border>
 
-            <!-- 问题卡片 (design issueCard) -->
-            <Border Background="{DynamicResource VelaBgSurface}"
-                    CornerRadius="6" Padding="12,10"
-                    IsVisible="{Binding HasIssue}">
-              <StackPanel Spacing="6">
+            <!-- 协议轨迹:一行一个报文(时刻、方向、类型、长度、序号、通道),没有任何内容。 -->
+            <DockPanel IsVisible="{Binding ShowsPacketTrace}" Margin="12,8,6,8">
+              <TextBlock DockPanel.Dock="Top" Margin="0,0,6,6"
+                         Text="{loc:Localize Diag_TraceHint}"
+                         Foreground="{DynamicResource VelaTextMuted}"
+                         FontSize="{DynamicResource VelaFontSize10}" TextWrapping="Wrap" />
+              <TextBlock DockPanel.Dock="Bottom" Margin="0,6,6,0"
+                         Text="{Binding PacketTraceDroppedText}"
+                         IsVisible="{Binding PacketTraceDroppedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                         Foreground="{DynamicResource VelaWarning}"
+                         FontSize="{DynamicResource VelaFontSize10}" TextWrapping="Wrap" />
+              <Panel>
+                <TextBlock Text="{loc:Localize Diag_TraceEmpty}"
+                           IsVisible="{Binding ShowsNoPacketTrace}"
+                           Margin="0,0,6,0"
+                           Foreground="{DynamicResource VelaTextMuted}"
+                           FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap" />
+                <ScrollViewer x:Name="TraceScroller" IsVisible="{Binding HasPacketTrace}"
+                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                  <ItemsControl ItemsSource="{Binding PacketTrace}" Grid.IsSharedSizeScope="True" Margin="0,0,14,0">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:PacketTraceRowViewModel">
+                        <StackPanel>
+                          <TextBlock Text="{Binding HopHeader}" IsVisible="{Binding HasHopHeader}"
+                                     Margin="0,4,0,2"
+                                     Foreground="{DynamicResource VelaTextSecondary}"
+                                     FontFamily="{DynamicResource VelaUiMonoFont}"
+                                     FontSize="{DynamicResource VelaFontSize10}" FontWeight="Medium"
+                                     TextTrimming="CharacterEllipsis" />
+                          <Grid Classes="trace-row">
+                            <Grid.ColumnDefinitions>
+                              <ColumnDefinition Width="Auto" SharedSizeGroup="TraceTime" />
+                              <ColumnDefinition Width="Auto" SharedSizeGroup="TraceDirection" />
+                              <ColumnDefinition Width="*" />
+                              <ColumnDefinition Width="Auto" SharedSizeGroup="TraceLength" />
+                              <ColumnDefinition Width="Auto" SharedSizeGroup="TraceSequence" />
+                              <ColumnDefinition Width="Auto" SharedSizeGroup="TraceChannel" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding Time}" Foreground="{DynamicResource VelaTextMuted}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Direction}" Margin="8,0,0,0"
+                                       Classes.sent="{Binding IsSent}" Classes="trace-direction" />
+                            <TextBlock Grid.Column="2" Text="{Binding Message}" Margin="8,0,0,0"
+                                       Foreground="{DynamicResource VelaTextPrimary}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="3" Text="{Binding Length}" Margin="8,0,0,0" HorizontalAlignment="Right"
+                                       Foreground="{DynamicResource VelaTextSecondary}" />
+                            <TextBlock Grid.Column="4" Text="{Binding Sequence}" Margin="8,0,0,0"
+                                       Foreground="{DynamicResource VelaTextMuted}" />
+                            <TextBlock Grid.Column="5" Text="{Binding Channel}" Margin="6,0,0,0"
+                                       Foreground="{DynamicResource VelaTextMuted}" />
+                          </Grid>
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </Panel>
+            </DockPanel>
+
+            <StackPanel Spacing="10" Margin="14,12" IsVisible="{Binding ShowsResults}">
+
+              <!-- 检测中占位 -->
+              <TextBlock Text="{loc:Localize Diag_Running}"
+                         IsVisible="{Binding IsBusy}"
+                         Foreground="{DynamicResource VelaTextMuted}"
+                         FontFamily="{DynamicResource VelaUiMonoFont}" FontSize="{DynamicResource VelaFontSize11}" />
+
+              <!-- 未发现问题 -->
+              <Border Background="{DynamicResource VelaBgSurface}"
+                      CornerRadius="6" Padding="12,10"
+                      IsVisible="{Binding AllPassed}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <pc:LucideIcon Width="13" Height="13"
-                                 Data="{StaticResource Icon.triangle-alert}"
-                                 Foreground="{DynamicResource VelaWarning}" VerticalAlignment="Center" />
-                  <TextBlock Foreground="{DynamicResource VelaWarning}"
-                             FontSize="{DynamicResource VelaFontSize12}" FontWeight="SemiBold" VerticalAlignment="Center">
-                    <Run Text="{loc:Localize Diag_IssueFound}" /><Run Text="{Binding IssueTitle}" />
-                  </TextBlock>
+                                 Data="{StaticResource Icon.circle-check}"
+                                 Foreground="{DynamicResource VelaStatusConnected}" VerticalAlignment="Center" />
+                  <TextBlock Text="{loc:Localize Diag_AllPassed}"
+                             Foreground="{DynamicResource VelaStatusConnected}"
+                             FontSize="{DynamicResource VelaFontSize12}" FontWeight="Medium" VerticalAlignment="Center" />
                 </StackPanel>
-                <TextBlock Text="{Binding IssueDescription}"
-                           Foreground="{DynamicResource VelaTextSecondary}"
-                           FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap" />
-              </StackPanel>
-            </Border>
+              </Border>
 
-            <!-- 修复建议 (design fixList) -->
-            <ItemsControl ItemsSource="{Binding Suggestions}"
-                          IsVisible="{Binding Suggestions.Count}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="x:String">
-                  <StackPanel Orientation="Horizontal" Spacing="8" Margin="2,0,0,8">
-                    <pc:LucideIcon Width="11" Height="11"
-                                   Data="{StaticResource Icon.info}"
-                                   Foreground="{DynamicResource VelaAccent}"
-                                   VerticalAlignment="Top" Margin="0,2,0,0" />
-                    <TextBlock Text="{Binding}"
-                               Foreground="{DynamicResource VelaTextPrimary}"
-                               FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap"
-                               MaxWidth="330" />
+              <!-- 问题卡片 (design issueCard) -->
+              <Border Background="{DynamicResource VelaBgSurface}"
+                      CornerRadius="6" Padding="12,10"
+                      IsVisible="{Binding HasIssue}">
+                <StackPanel Spacing="6">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <pc:LucideIcon Width="13" Height="13"
+                                   Data="{StaticResource Icon.triangle-alert}"
+                                   Foreground="{DynamicResource VelaWarning}" VerticalAlignment="Center" />
+                    <TextBlock Foreground="{DynamicResource VelaWarning}"
+                               FontSize="{DynamicResource VelaFontSize12}" FontWeight="SemiBold" VerticalAlignment="Center">
+                      <Run Text="{loc:Localize Diag_IssueFound}" /><Run Text="{Binding IssueTitle}" />
+                    </TextBlock>
                   </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                  <TextBlock Text="{Binding IssueDescription}"
+                             Foreground="{DynamicResource VelaTextSecondary}"
+                             FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
 
-          </StackPanel>
+              <!-- 修复建议 (design fixList) -->
+              <ItemsControl ItemsSource="{Binding Suggestions}"
+                            IsVisible="{Binding Suggestions.Count}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="2,0,0,8">
+                      <pc:LucideIcon Width="11" Height="11"
+                                     Data="{StaticResource Icon.info}"
+                                     Foreground="{DynamicResource VelaAccent}"
+                                     VerticalAlignment="Top" Margin="0,2,0,0" />
+                      <TextBlock Text="{Binding}"
+                                 Foreground="{DynamicResource VelaTextPrimary}"
+                                 FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap"
+                                 MaxWidth="330" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+            </StackPanel>
+          </DockPanel>
         </Border>
       </Grid>
     </DockPanel>

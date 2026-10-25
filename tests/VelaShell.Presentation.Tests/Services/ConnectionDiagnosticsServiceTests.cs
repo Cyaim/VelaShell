@@ -5,6 +5,7 @@ using NSubstitute;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
+using VelaShell.Core.Ssh;
 using VelaShell.Presentation.Services;
 
 namespace VelaShell.Presentation.Tests.Services;
@@ -22,12 +23,12 @@ public sealed class ConnectionDiagnosticsServiceTests
     {
         await using SshBannerListener server = new();
         SessionProfile profile = Tailscale(server.Port, "ops");
-        _workflow.TestConnectionAsync(profile, Arg.Any<CancellationToken>()).Returns(new ConnectionTestResult(true));
+        _workflow.TestConnectionAsync(profile, Arg.Any<SshPacketTrace>(), Arg.Any<CancellationToken>()).Returns(new ConnectionTestResult(true));
 
         DiagnosticReport report = await Service().DiagnoseAsync(profile);
 
         Assert.AreEqual(DiagnosticStepStatus.Success, report.Steps[3].Status);
-        await _workflow.Received(1).TestConnectionAsync(profile, Arg.Any<CancellationToken>());
+        await _workflow.Received(1).TestConnectionAsync(profile, Arg.Any<SshPacketTrace>(), Arg.Any<CancellationToken>());
         Assert.DoesNotContain(Strings.Get("DiagSvc_SuggestSaveCreds"), report.Suggestions);
     }
 
@@ -42,7 +43,7 @@ public sealed class ConnectionDiagnosticsServiceTests
         Assert.AreEqual(DiagnosticStepStatus.Warning, report.Steps[3].Status);
         Assert.AreEqual(Strings.Get("DiagSvc_TailscaleNoUsernameSkip"), report.Steps[3].Detail);
         Assert.AreSequenceEqual([Strings.Get("DiagSvc_SuggestTailscaleUsername")], [.. report.Suggestions]);
-        await _workflow.DidNotReceive().TestConnectionAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
+        await _workflow.DidNotReceive().TestConnectionAsync(Arg.Any<SessionProfile>(), Arg.Any<SshPacketTrace>(), Arg.Any<CancellationToken>());
     }
 
     [TestMethod]
@@ -51,13 +52,49 @@ public sealed class ConnectionDiagnosticsServiceTests
         await using SshBannerListener server = new();
         SessionProfile profile = Tailscale(server.Port, "ops");
         string reason = $"{Strings.Get("SshErr_TailscaleRejected")}\nops@127.0.0.1:{server.Port}";
-        _workflow.TestConnectionAsync(profile, Arg.Any<CancellationToken>()).Returns(new ConnectionTestResult(false, reason));
+        _workflow.TestConnectionAsync(profile, Arg.Any<SshPacketTrace>(), Arg.Any<CancellationToken>()).Returns(new ConnectionTestResult(false, reason));
 
         DiagnosticReport report = await Service().DiagnoseAsync(profile);
 
         Assert.AreEqual(DiagnosticStepStatus.Failed, report.Steps[3].Status);
         Assert.AreEqual(Strings.Get("DiagSvc_AuthFailed"), report.IssueTitle);
         Assert.AreSequenceEqual([Strings.Get("DiagSvc_SuggestTailscale")], [.. report.Suggestions]);
+    }
+
+    /// <summary>
+    /// 认证那一步挂上协议轨迹:诊断交给测试连接一份轨迹,连接期间记下的报文原样进报告;
+    /// 不走不挂轨迹的那个重载 —— 平常的「测试连接」不挂旁路,诊断才挂。
+    /// </summary>
+    [TestMethod]
+    public async Task AuthStep_RecordsAProtocolTraceIntoTheReport()
+    {
+        await using SshBannerListener server = new();
+        SessionProfile profile = Tailscale(server.Port, "ops");
+        _workflow.TestConnectionAsync(profile, Arg.Any<SshPacketTrace>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                SshPacketTrace trace = call.Arg<SshPacketTrace>();
+                trace.Record("ops@127.0.0.1:22", SshPacketDirection.Sent, 20, 1200, 0, null);
+                trace.Record("ops@127.0.0.1:22", SshPacketDirection.Received, 20, 900, 0, null);
+                return new ConnectionTestResult(true);
+            });
+
+        DiagnosticReport report = await Service().DiagnoseAsync(profile);
+
+        Assert.HasCount(2, report.PacketTrace);
+        Assert.AreEqual((SshPacketDirection.Sent, (byte)20, (int?)1200), (report.PacketTrace[0].Direction, report.PacketTrace[0].MessageNumber, report.PacketTrace[0].Length));
+        await _workflow.DidNotReceive().TestConnectionAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>没走到认证那一步(没有凭据):报告里没有轨迹,也没去连。</summary>
+    [TestMethod]
+    public async Task NoAuthStep_LeavesTheTraceEmpty()
+    {
+        await using SshBannerListener server = new();
+        DiagnosticReport report = await Service().DiagnoseAsync(Tailscale(server.Port, " "));
+
+        Assert.IsEmpty(report.PacketTrace);
+        Assert.AreEqual(0, report.PacketTraceDropped);
     }
 
     private ConnectionDiagnosticsService Service() => new(_sessions, _workflow);

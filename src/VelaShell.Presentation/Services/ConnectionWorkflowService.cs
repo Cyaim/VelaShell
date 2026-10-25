@@ -57,7 +57,19 @@ public sealed class ConnectionWorkflowService(
     /// 宁可明说"这种连接类型测不了",也不给一个假的失败原因。
     /// </para>
     /// </summary>
-    public async Task<ConnectionTestResult> TestConnectionAsync(SessionProfile profile, CancellationToken cancellationToken = default)
+    public Task<ConnectionTestResult> TestConnectionAsync(SessionProfile profile, CancellationToken cancellationToken = default) =>
+        TestConnectionCoreAsync(profile, packetTrace: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<ConnectionTestResult> TestConnectionAsync(
+        SessionProfile profile, SshPacketTrace packetTrace, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(packetTrace);
+        return TestConnectionCoreAsync(profile, packetTrace, cancellationToken);
+    }
+
+    private async Task<ConnectionTestResult> TestConnectionCoreAsync(
+        SessionProfile profile, SshPacketTrace? packetTrace, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(profile);
         if (profile.ConnectionType == ConnectionType.Plugin)
@@ -79,7 +91,9 @@ public sealed class ConnectionWorkflowService(
         try
         {
             SshSession session = await _sshConnectionService
-                                       .ConnectAsync(await BuildConnectionInfoAsync(profile, automaticReconnect: false, cancellationToken).ConfigureAwait(false), cancellationToken)
+                                       .ConnectAsync(
+                                           await BuildConnectionInfoAsync(profile, automaticReconnect: false, packetTrace, cancellationToken).ConfigureAwait(false),
+                                           cancellationToken)
                                        .ConfigureAwait(false);
             await _sshConnectionService.DisconnectAsync(session.SessionId, cancellationToken).ConfigureAwait(false);
             return new(true);
@@ -110,7 +124,7 @@ public sealed class ConnectionWorkflowService(
         {
             session = await _sshConnectionService
                             .ConnectAsync(
-                                await BuildConnectionInfoAsync(profile, automaticReconnect, cancellationToken).ConfigureAwait(false),
+                                await BuildConnectionInfoAsync(profile, automaticReconnect, packetTrace: null, cancellationToken).ConfigureAwait(false),
                                 cancellationToken)
                             .ConfigureAwait(false);
         }
@@ -230,11 +244,12 @@ public sealed class ConnectionWorkflowService(
     /// 把配置解析成连接信息;JumpHostProfileId 链递归展开为嵌套 JumpHost
     /// (最多 5 跳,带环检测)。跳板配置必须已保存凭据(或引用共享凭据),否则该跳认证会失败。
     /// </summary>
-    private async Task<ConnectionInfo> BuildConnectionInfoAsync(SessionProfile profile, bool automaticReconnect, CancellationToken cancellationToken)
+    private async Task<ConnectionInfo> BuildConnectionInfoAsync(
+        SessionProfile profile, bool automaticReconnect, SshPacketTrace? packetTrace, CancellationToken cancellationToken)
     {
         var visited = new HashSet<Guid> { profile.Id };
         string fileNameEncoding = await ResolveSessionEncodingAsync(profile).ConfigureAwait(false);
-        return await BuildChainAsync(profile, visited, 0, automaticReconnect, fileNameEncoding, cancellationToken).ConfigureAwait(false);
+        return await BuildChainAsync(profile, visited, 0, automaticReconnect, fileNameEncoding, packetTrace, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -260,7 +275,7 @@ public sealed class ConnectionWorkflowService(
 
     private async Task<ConnectionInfo> BuildChainAsync(
         SessionProfile profile, HashSet<Guid> visited, int depth, bool automaticReconnect, string? fileNameEncoding,
-        CancellationToken cancellationToken)
+        SshPacketTrace? packetTrace, CancellationToken cancellationToken)
     {
         // 每一跳各自解析自己引用的凭据(#550);解析出的明文只进 ConnectionInfo,不回写配置。
         SessionProfile effective = await ResolveHopCredentialAsync(profile, depth, cancellationToken).ConfigureAwait(false);
@@ -277,7 +292,7 @@ public sealed class ConnectionWorkflowService(
             }
             SessionProfile jumpProfile = await _sessionRepository.GetSessionAsync(jumpId).ConfigureAwait(false) ?? throw new InvalidOperationException(Strings.Get("Svc_JumpHostMissing"));
             // 跳板只开隧道、不开 SFTP:文件名编码只带在终点那一跳上。
-            jump = await BuildChainAsync(jumpProfile, visited, depth + 1, automaticReconnect, null, cancellationToken).ConfigureAwait(false);
+            jump = await BuildChainAsync(jumpProfile, visited, depth + 1, automaticReconnect, null, packetTrace: null, cancellationToken).ConfigureAwait(false);
         }
         return new()
         {
@@ -296,7 +311,9 @@ public sealed class ConnectionWorkflowService(
             FileNameEncoding = fileNameEncoding,
             JumpHost = jump,
             // 一条链共用一个主机指纹策略(由最外层这一跳决定),每一跳都标上只是让每份 ConnectionInfo 自己说得清。
-            IsAutomaticReconnect = automaticReconnect
+            IsAutomaticReconnect = automaticReconnect,
+            // 连接诊断的协议轨迹只挂在最外层这一份上(递归建跳板时不传),装配那一层拿它记链上的每一跳。
+            PacketTrace = packetTrace
         };
     }
 

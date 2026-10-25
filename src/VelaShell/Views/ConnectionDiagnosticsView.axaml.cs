@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using ReactiveUI.Primitives;
@@ -25,7 +26,17 @@ public partial class ConnectionDiagnosticsView : Window
     {
         if (DataContext is ConnectionDiagnosticsViewModel viewModel)
         {
+            // 「复制协议轨迹」写的是这扇窗口的剪贴板(视图模型够不着 TopLevel)。
+            viewModel.CopyToClipboard = CopyAsync;
             viewModel.RunCommand.Execute().Subscribe();
+        }
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        if (Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(text);
         }
     }
 

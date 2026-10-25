@@ -111,7 +111,8 @@ internal static class SshConnectionAssembler
             dialer = DialerChain.Jump(
                 new SshEndPoint(hop.Host, hop.Port),
                 (jump, ct) => ConnectAsync(hop, policy, settings, inner, connectTimeout, keyboardPrompt, banners,
-                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump, depth, route, ct));
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump, depth, route,
+                    info.PacketTrace, ct));
         }
 
         ISshTransportDialer finalDialer = dialer;
@@ -121,7 +122,8 @@ internal static class SshConnectionAssembler
                 // 跳板按连上的先后记(最内一跳最先连上,也就是从近到远);重连时从头记。
                 route.Begin();
                 return ConnectAsync(info, policy, settings, finalDialer, connectTimeout, keyboardPrompt, banners,
-                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump: null, hopDepth: 0, route, ct);
+                    tailscaleCheckPrompt, authenticationTimeout, tailscaleCheckTimeout, info.IsAutomaticReconnect, jump: null, hopDepth: 0, route,
+                    info.PacketTrace, ct);
             },
             connectTimeout,
             banners,
@@ -161,6 +163,7 @@ internal static class SshConnectionAssembler
         SshJumpContext? jump,
         int hopDepth,
         SshRouteRecorder route,
+        SshPacketTrace? packetTrace,
         CancellationToken cancellationToken)
     {
         bool isTailscale = info.AuthMethod == AuthMethod.Tailscale;
@@ -305,6 +308,8 @@ internal static class SshConnectionAssembler
                 BannerHandler = isTailscale ? OnAuthenticationBannerAsync : OnBannerRefusingTailscaleCheckAsync,
                 DebugMessageHandler = banners.OnBannerAsync,
                 PreAuthBannerHandler = banners.OnPreAuthBannerAsync,
+                // 只有连接诊断给了轨迹才挂旁路;载荷不要(AllowPacketTapPayload 留着默认的 false)。
+                PacketTap = PacketTapFor(packetTrace, target),
             };
 
             SshConnection connection;
@@ -446,6 +451,27 @@ internal static class SshConnectionAssembler
 
             DisposeOwnedSigners(credentials, except: handedToAgentLoader);
         }
+    }
+
+    /// <summary>
+    /// 这一跳的报文旁路:给了协议轨迹(连接诊断)才有,平常的连接为 <see langword="null" /> —— 库在收发循环上只多一次判空。
+    /// </summary>
+    /// <param name="trace">协议轨迹;<see langword="null" /> 不挂。</param>
+    /// <param name="hop">这一跳(<c>用户@主机:端口</c>),记进每一条。</param>
+    internal static IPacketTap? PacketTapFor(SshPacketTrace? trace, string hop) =>
+        trace is null ? null : new PacketTraceTap(trace, hop);
+
+    /// <summary>把库的报文旁路接到 Core 的协议轨迹上:只转元信息,<b>从不碰 <see cref="PacketTapRecord.Payload" /></b>。</summary>
+    private sealed class PacketTraceTap(SshPacketTrace trace, string hop) : IPacketTap
+    {
+        public void OnPacket(in PacketTapRecord record) =>
+            trace.Record(
+                hop,
+                record.Direction == PacketDirection.Outbound ? SshPacketDirection.Sent : SshPacketDirection.Received,
+                record.MessageNumber,
+                record.Length,
+                record.SequenceNumber,
+                record.ChannelNumber);
     }
 
     /// <summary>释放这一次建连读出来的私钥签名器(释放时清零私钥)。</summary>

@@ -1478,6 +1478,51 @@ If this keeps happening, close any other VelaShell windows and try again.</value
   <data name="Diag_Steps" xml:space="preserve">
     <value>Diagnostic steps</value>
   </data>
+  <data name="Diag_TabResults" xml:space="preserve">
+    <value>Results</value>
+  </data>
+  <data name="Diag_TabTrace" xml:space="preserve">
+    <value>Protocol trace</value>
+  </data>
+  <data name="Diag_TabTraceCount" xml:space="preserve">
+    <value>Protocol trace · {0}</value>
+  </data>
+  <data name="Diag_TraceCopy" xml:space="preserve">
+    <value>Copy protocol trace</value>
+  </data>
+  <data name="Diag_TraceHint" xml:space="preserve">
+    <value>Every packet of the authentication step's connection, with direction, type, length and sequence number only — never its contents. Authentication packets we send show no length either: a password's length could be read from it.</value>
+  </data>
+  <data name="Diag_TraceEmpty" xml:space="preserve">
+    <value>This run did not get as far as an SSH connection (an earlier step failed, or there are no saved credentials), so there is no protocol trace.</value>
+  </data>
+  <data name="Diag_TraceDropped" xml:space="preserve">
+    <value>{0} more packet(s) went past the recording limit and were not recorded.</value>
+  </data>
+  <data name="Diag_TraceSent" xml:space="preserve">
+    <value>out</value>
+  </data>
+  <data name="Diag_TraceReceived" xml:space="preserve">
+    <value>in</value>
+  </data>
+  <data name="Diag_TraceChannel" xml:space="preserve">
+    <value>ch {0}</value>
+  </data>
+  <data name="Diag_TraceKexMethod" xml:space="preserve">
+    <value>key exchange method</value>
+  </data>
+  <data name="Diag_TraceAuthMethod" xml:space="preserve">
+    <value>authentication method</value>
+  </data>
+  <data name="Diag_TraceLocalExtension" xml:space="preserve">
+    <value>local extension</value>
+  </data>
+  <data name="Diag_TraceUnassigned" xml:space="preserve">
+    <value>unassigned</value>
+  </data>
+  <data name="Diag_TraceTextHeader" xml:space="preserve">
+    <value>Protocol trace (packet metadata only, no contents; lengths of authentication packets we send are not recorded)</value>
+  </data>
   <data name="Diag_Title" xml:space="preserve">
     <value>Connection Diagnostics</value>
   </data>

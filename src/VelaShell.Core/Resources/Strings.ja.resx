@@ -490,6 +490,51 @@
   <data name="Diag_Steps" xml:space="preserve">
     <value>診断ステップ</value>
   </data>
+  <data name="Diag_TabResults" xml:space="preserve">
+    <value>診断結果</value>
+  </data>
+  <data name="Diag_TabTrace" xml:space="preserve">
+    <value>プロトコルトレース</value>
+  </data>
+  <data name="Diag_TabTraceCount" xml:space="preserve">
+    <value>プロトコルトレース · {0}</value>
+  </data>
+  <data name="Diag_TraceCopy" xml:space="preserve">
+    <value>プロトコルトレースをコピー</value>
+  </data>
+  <data name="Diag_TraceHint" xml:space="preserve">
+    <value>認証ステップの接続で送受信した各パケットの方向・種類・長さ・シーケンス番号だけを記録し、内容は一切記録しません。こちらが送る認証パケットは長さも表示しません(パスワードの長さが推測できるため)。</value>
+  </data>
+  <data name="Diag_TraceEmpty" xml:space="preserve">
+    <value>今回は SSH 接続まで進まなかったため(前のステップが失敗したか、使える資格情報がありません)、プロトコルトレースはありません。</value>
+  </data>
+  <data name="Diag_TraceDropped" xml:space="preserve">
+    <value>ほかに {0} 個のパケットが記録上限を超えたため記録していません。</value>
+  </data>
+  <data name="Diag_TraceSent" xml:space="preserve">
+    <value>送</value>
+  </data>
+  <data name="Diag_TraceReceived" xml:space="preserve">
+    <value>受</value>
+  </data>
+  <data name="Diag_TraceChannel" xml:space="preserve">
+    <value>ch {0}</value>
+  </data>
+  <data name="Diag_TraceKexMethod" xml:space="preserve">
+    <value>鍵交換方式固有</value>
+  </data>
+  <data name="Diag_TraceAuthMethod" xml:space="preserve">
+    <value>認証方式固有</value>
+  </data>
+  <data name="Diag_TraceLocalExtension" xml:space="preserve">
+    <value>ローカル拡張</value>
+  </data>
+  <data name="Diag_TraceUnassigned" xml:space="preserve">
+    <value>未割り当て</value>
+  </data>
+  <data name="Diag_TraceTextHeader" xml:space="preserve">
+    <value>プロトコルトレース(パケットのメタ情報のみ、内容なし。こちらが送る認証パケットは長さを記録しません)</value>
+  </data>
   <data name="Diag_TargetSummary" xml:space="preserve">
     <value>// DNS・ハンドシェイク・認証・チャネル確立を順に分析 — {0} ({1})</value>
   </data>

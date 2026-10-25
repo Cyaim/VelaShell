@@ -1584,6 +1584,51 @@
   <data name="Diag_Steps" xml:space="preserve">
     <value>诊断步骤</value>
   </data>
+  <data name="Diag_TabResults" xml:space="preserve">
+    <value>诊断结果</value>
+  </data>
+  <data name="Diag_TabTrace" xml:space="preserve">
+    <value>协议轨迹</value>
+  </data>
+  <data name="Diag_TabTraceCount" xml:space="preserve">
+    <value>协议轨迹 · {0}</value>
+  </data>
+  <data name="Diag_TraceCopy" xml:space="preserve">
+    <value>复制协议轨迹</value>
+  </data>
+  <data name="Diag_TraceHint" xml:space="preserve">
+    <value>认证那一步连接时收发的每个报文:只记方向、类型、长度与序号,从不记内容。我们发出的认证报文连长度也不显示 —— 口令的长度能从它推出来。</value>
+  </data>
+  <data name="Diag_TraceEmpty" xml:space="preserve">
+    <value>这一轮没有走到 SSH 连接(前面的步骤没通过,或者没有可用的凭据),没有协议轨迹。</value>
+  </data>
+  <data name="Diag_TraceDropped" xml:space="preserve">
+    <value>另有 {0} 个报文超过记录上限,没有记下。</value>
+  </data>
+  <data name="Diag_TraceSent" xml:space="preserve">
+    <value>发</value>
+  </data>
+  <data name="Diag_TraceReceived" xml:space="preserve">
+    <value>收</value>
+  </data>
+  <data name="Diag_TraceChannel" xml:space="preserve">
+    <value>通道 {0}</value>
+  </data>
+  <data name="Diag_TraceKexMethod" xml:space="preserve">
+    <value>密钥交换方法专用</value>
+  </data>
+  <data name="Diag_TraceAuthMethod" xml:space="preserve">
+    <value>认证方法专用</value>
+  </data>
+  <data name="Diag_TraceLocalExtension" xml:space="preserve">
+    <value>本地扩展</value>
+  </data>
+  <data name="Diag_TraceUnassigned" xml:space="preserve">
+    <value>未分配</value>
+  </data>
+  <data name="Diag_TraceTextHeader" xml:space="preserve">
+    <value>协议轨迹(只有报文的元信息,不含内容;我们发出的认证报文不记长度)</value>
+  </data>
   <data name="Diag_TargetSummary" xml:space="preserve">
     <value>// 逐步分析 DNS、握手、认证与通道建立 — {0} ({1})</value>
   </data>

@@ -1584,6 +1584,51 @@
   <data name="Diag_Steps" xml:space="preserve">
     <value>診斷步驟</value>
   </data>
+  <data name="Diag_TabResults" xml:space="preserve">
+    <value>診斷結果</value>
+  </data>
+  <data name="Diag_TabTrace" xml:space="preserve">
+    <value>協定軌跡</value>
+  </data>
+  <data name="Diag_TabTraceCount" xml:space="preserve">
+    <value>協定軌跡 · {0}</value>
+  </data>
+  <data name="Diag_TraceCopy" xml:space="preserve">
+    <value>複製協定軌跡</value>
+  </data>
+  <data name="Diag_TraceHint" xml:space="preserve">
+    <value>認證那一步連線時收發的每個封包:只記方向、類型、長度與序號,從不記內容。我們送出的認證封包連長度也不顯示 —— 密碼的長度能從它推出來。</value>
+  </data>
+  <data name="Diag_TraceEmpty" xml:space="preserve">
+    <value>這一輪沒有走到 SSH 連線(前面的步驟沒通過,或者沒有可用的憑證),沒有協定軌跡。</value>
+  </data>
+  <data name="Diag_TraceDropped" xml:space="preserve">
+    <value>另有 {0} 個封包超過記錄上限,沒有記下。</value>
+  </data>
+  <data name="Diag_TraceSent" xml:space="preserve">
+    <value>發</value>
+  </data>
+  <data name="Diag_TraceReceived" xml:space="preserve">
+    <value>收</value>
+  </data>
+  <data name="Diag_TraceChannel" xml:space="preserve">
+    <value>通道 {0}</value>
+  </data>
+  <data name="Diag_TraceKexMethod" xml:space="preserve">
+    <value>金鑰交換方法專用</value>
+  </data>
+  <data name="Diag_TraceAuthMethod" xml:space="preserve">
+    <value>認證方法專用</value>
+  </data>
+  <data name="Diag_TraceLocalExtension" xml:space="preserve">
+    <value>本機擴充</value>
+  </data>
+  <data name="Diag_TraceUnassigned" xml:space="preserve">
+    <value>未分配</value>
+  </data>
+  <data name="Diag_TraceTextHeader" xml:space="preserve">
+    <value>協定軌跡(只有封包的中繼資訊,不含內容;我們送出的認證封包不記長度)</value>
+  </data>
   <data name="Diag_TargetSummary" xml:space="preserve">
     <value>// 逐步分析 DNS、交握、認證與通道建立 — {0} ({1})</value>
   </data>

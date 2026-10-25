@@ -98,4 +98,14 @@ public class ConnectionInfo
     /// 只管主机指纹:登录凭据、动态码这类提示照旧(它们各有自己的取消处理)。跳板链上每一跳都按它办 —— 一条链共用一个策略。
     /// </remarks>
     public bool IsAutomaticReconnect { get; init; }
+
+    /// <summary>
+    /// 连接诊断的协议轨迹:非 null 时这条连接(连同跳板链上每一跳)挂上 SSH 库的报文旁路,把每个报文的元信息记进去。
+    /// <see langword="null" />(平常的连接)不挂旁路。
+    /// </summary>
+    /// <remarks>
+    /// 只看最外层这一份:跳板那几跳由装配那一层用同一份去记,每条记录标着是哪一跳。
+    /// 记的只有方向、类型、长度、序号、通道号,不要载荷(见 <see cref="Ssh.SshPacketTrace" />)。
+    /// </remarks>
+    public Ssh.SshPacketTrace? PacketTrace { get; init; }
 }
