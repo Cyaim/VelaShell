@@ -1012,6 +1012,25 @@
                     <TextBlock Classes="field-hint" Margin="0,6,0,0" IsVisible="{Binding HasNoSystemKeys}"
                                Text="{loc:Localize Profile_KeyStoreNoKeys}" />
                     <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{loc:Localize Profile_KeyStoreHint}" />
+                    <!-- 可选的用户证书:CA 给这把钥签了证书,就照「私钥 + 证书」那一路出示它(服务端认 CA,不必改 authorized_keys)。
+                         与证书认证共用 CertificatePath 与它的校验,留空不算错。 -->
+                    <StackPanel Margin="0,12,0,0" IsVisible="{Binding !KeyStoreUnsupportedHere}">
+                      <TextBlock Classes="field-label" Text="{loc:Localize Profile_KeyStoreCertificate}" />
+                      <Grid ColumnDefinitions="*,8,Auto">
+                        <TextBox Grid.Column="0" Text="{Binding CertificatePath}" />
+                        <Button Grid.Column="2" Theme="{StaticResource VelaOutlineButtonTheme}" Height="32"
+                                Click="BrowseCertificateFile_Click">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.folder-open}"
+                                           Foreground="{Binding $parent[Button].Foreground}" />
+                            <TextBlock Text="{loc:Localize BrowseKeyFile}" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </Button>
+                      </Grid>
+                      <TextBlock Classes="field-error" Text="{Binding CertificatePathError}"
+                                 IsVisible="{Binding CertificatePathError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{loc:Localize Profile_KeyStoreCertificateHint}" />
+                    </StackPanel>
                   </StackPanel>
 
                   <!-- 记住密码 -->

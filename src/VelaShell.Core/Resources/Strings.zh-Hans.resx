@@ -10052,6 +10052,12 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Profile_KeyStoreHint" xml:space="preserve">
     <value>私钥不出密钥库,配置里只存用哪一把;TPM、智能卡签名时可能要输 PIN。只在 Windows 上可用。</value>
   </data>
+  <data name="Profile_KeyStoreCertificate" xml:space="preserve">
+    <value>用户证书(可选)</value>
+  </data>
+  <data name="Profile_KeyStoreCertificateHint" xml:space="preserve">
+    <value>CA 给这把钥签发的 OpenSSH 用户证书(*-cert.pub,拿「复制公钥」得到的那一行去签)。配上之后按证书登录:服务端信任这个 CA(TrustedUserCAKeys)就行,不必把公钥加进 authorized_keys。留空就按公钥登录。</value>
+  </data>
   <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
     <value>这条配置用 Windows 系统密钥库里的钥签名,这台电脑上没有系统密钥库。要在这里连,换一种认证方式。</value>
   </data>

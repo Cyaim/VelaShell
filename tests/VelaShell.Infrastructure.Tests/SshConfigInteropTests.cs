@@ -718,6 +718,27 @@ public sealed class SshConfigInteropTests
 
         Assert.Contains("    # cng:Microsoft Platform Crypto Provider/deploy  (VelaShell:", export.Content);
         Assert.IsEmpty(ReadBack(export, "tpm").IdentityFiles);
+        Assert.IsNull(ReadBack(export, "tpm").First("CertificateFile"), "没配证书就不写");
+    }
+
+    /// <summary>系统密钥库配了证书:钥照旧写成注释,证书照证书认证的口径写 CertificateFile(主目录下写 ~/…)。</summary>
+    [TestMethod]
+    public void 系统密钥库配的证书写成CertificateFile()
+    {
+        string home = Path.Combine(Path.GetTempPath(), "home-for-export");
+        SessionProfile tpm = new()
+        {
+            Name = "tpm-ca", Host = "10.0.0.42", AuthMethod = AuthMethod.KeyStore,
+            KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy" },
+            CertificatePath = Path.Combine(home, ".ssh", "deploy-cert.pub"),
+        };
+
+        SshConfigExport export = SshConfigExporter.Write(Archive(tpm), home);
+
+        Assert.Contains("    # cng:Microsoft Platform Crypto Provider/deploy  (VelaShell:", export.Content);
+        SshHostConfig host = ReadBack(export, "tpm-ca");
+        Assert.IsEmpty(host.IdentityFiles, "钥在密钥库里,没有 IdentityFile 可写");
+        Assert.AreEqual("~/.ssh/deploy-cert.pub", host.First("CertificateFile"));
     }
 
     [TestMethod]

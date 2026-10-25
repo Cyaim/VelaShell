@@ -100,6 +100,12 @@ public static class SshConfigExporter
             // 系统密钥库的钥没有文件,OpenSSH 的 IdentityFile 用不了它:写成注释,看这份配置的人知道这台原来用的是哪把钥。
             text.Append("    # ").Append(keyStoreKey.ToText())
                 .Append("  (VelaShell: a Windows key store key; OpenSSH cannot use it as an IdentityFile)\n");
+            // 配了证书的照写 CertificateFile:证书是公开的文件,OpenSSH 从别处(agent、PKCS#11 的智能卡)拿到同一把钥时用得上;
+            // 拿不到那把钥时 ssh 不出示它。
+            if (session.CertificatePath is { Length: > 0 } keyStoreCertificate)
+            {
+                Line("CertificateFile", Quote(Portable(keyStoreCertificate, home)));
+            }
         }
 
         if (session.JumpHostProfileId is { } jump && aliases.TryGetValue(jump, out string? jumpAlias))

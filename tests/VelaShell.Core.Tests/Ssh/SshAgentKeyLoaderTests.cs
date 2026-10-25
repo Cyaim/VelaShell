@@ -240,4 +240,27 @@ public sealed class SshAgentKeyLoaderTests
         ConnectionInfo password = new() { Host = "h", Username = "u", AuthMethod = AuthMethod.Password };
         Assert.IsFalse(SshAgentKeyLoader.TryGetKeyToAdd(password, [new PasswordCredential("pw")], out _, out _));
     }
+
+    /// <summary>
+    /// 系统密钥库配了证书时凭据也是一个证书签名器,但钥在密钥库里导不出来:照样不往 agent 里加
+    /// (按认证方式判断,而不是看签名器长什么样)。这里拿 ssh-keygen 签的样本站在密钥库那把钥的位置上。
+    /// </summary>
+    [TestMethod]
+    public async Task KeyStoreAuthenticationWithACertificateOffersNoKey()
+    {
+        string fixtures = Path.Combine(AppContext.BaseDirectory, "Fixtures");
+        InMemorySshSigner key = await SshPrivateKeyFile.LoadAsync(Path.Combine(fixtures, "cert-ed25519"));
+        OpenSshCertificate certificate = await OpenSshCertificate.LoadAsync(Path.Combine(fixtures, "cert-ed25519-cert.pub"));
+        using var signer = SshCertificateSigner.Create(certificate, key);
+        ConnectionInfo info = new()
+        {
+            Host = "h",
+            Username = "u",
+            AuthMethod = AuthMethod.KeyStore,
+            KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy" },
+            CertificatePath = "C:/certs/deploy-cert.pub",
+        };
+
+        Assert.IsFalse(SshAgentKeyLoader.TryGetKeyToAdd(info, [new PublicKeyCredential(signer, info.CertificatePath)], out _, out _));
+    }
 }

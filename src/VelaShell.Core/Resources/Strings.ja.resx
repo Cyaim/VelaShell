@@ -9575,6 +9575,12 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Profile_KeyStoreHint" xml:space="preserve">
     <value>秘密鍵はキーストアの外に出ません。このプロファイルにはどの鍵を使うかだけを保存します。TPM やスマートカードは署名時に PIN を求めることがあります。Windows のみ。</value>
   </data>
+  <data name="Profile_KeyStoreCertificate" xml:space="preserve">
+    <value>ユーザー証明書(任意)</value>
+  </data>
+  <data name="Profile_KeyStoreCertificateHint" xml:space="preserve">
+    <value>CA がこの鍵に発行した OpenSSH ユーザー証明書(*-cert.pub。「公開鍵をコピー」で得た行に CA が署名したもの)。設定すると証明書でログインします。サーバーが CA を信頼していれば(TrustedUserCAKeys)よく、authorized_keys に公開鍵を追加する必要はありません。空欄なら公開鍵でログインします。</value>
+  </data>
   <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
     <value>このプロファイルは Windows のキーストアにある鍵で署名しますが、このコンピューターにはキーストアがありません。ここから接続するには別の認証方式を選んでください。</value>
   </data>

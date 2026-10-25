@@ -325,7 +325,9 @@ public partial class ConnectionProfileView : Window
             return;
         }
         viewModel.CertificatePath = path;
-        if (string.IsNullOrWhiteSpace(viewModel.PrivateKeyPath) && OpenSshCertificatePaths.InferPrivateKeyPath(path) is { } keyPath)
+        // 只有证书认证才按 <key>-cert.pub 的约定补私钥;系统密钥库那一路的钥在密钥库里,补一个私钥路径只会留下一个用不上的字段。
+        if (viewModel.IsCertAuth
+            && string.IsNullOrWhiteSpace(viewModel.PrivateKeyPath) && OpenSshCertificatePaths.InferPrivateKeyPath(path) is { } keyPath)
         {
             viewModel.PrivateKeyPath = keyPath;
         }

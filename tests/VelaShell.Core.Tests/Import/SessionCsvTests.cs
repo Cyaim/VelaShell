@@ -108,6 +108,28 @@ public sealed class SessionCsvTests
         Assert.IsFalse(bad.IsValid, "认证方式写了 keystore,私钥那一列却是文件路径:报错");
     }
 
+    /// <summary>系统密钥库配的证书照证书认证的口径写在 certificate 那一列,导回来还在;认证方式仍是 keystore。</summary>
+    [TestMethod]
+    public void KeyStoreAuth_RoundTripsTheOptionalCertificate()
+    {
+        var profile = new SessionProfile
+        {
+            Name = "tpm-ca", Host = "10.0.0.14", Username = "ops", AuthMethod = AuthMethod.KeyStore,
+            KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy" },
+            CertificatePath = @"C:\certs\deploy-cert.pub",
+        };
+
+        string csv = SessionCsv.Write(new SessionArchive { Sessions = [profile] });
+        SessionImportCandidate read = SessionCsv.Read("x.csv", csv).Candidates.Single();
+
+        Assert.Contains(@"C:\certs\deploy-cert.pub", csv);
+        Assert.IsTrue(read.IsValid, string.Join("; ", read.Errors));
+        Assert.AreEqual(AuthMethod.KeyStore, read.Profile.AuthMethod, "有证书也还是系统密钥库,不会被推成证书认证");
+        Assert.AreEqual(profile.KeyStoreKey, read.Profile.KeyStoreKey);
+        Assert.AreEqual(@"C:\certs\deploy-cert.pub", read.Profile.CertificatePath);
+        Assert.IsNull(read.Profile.PrivateKeyPath);
+    }
+
     [TestMethod]
     public void Write_EscapesFormulaLikeCells_AndReadUndoesIt()
     {

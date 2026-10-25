@@ -9580,6 +9580,12 @@ Send anyway?</value>
   <data name="Profile_KeyStoreHint" xml:space="preserve">
     <value>The private key never leaves the key store; this profile stores only which key to use. The TPM or a smart card may ask for a PIN when signing. Windows only.</value>
   </data>
+  <data name="Profile_KeyStoreCertificate" xml:space="preserve">
+    <value>User certificate (optional)</value>
+  </data>
+  <data name="Profile_KeyStoreCertificateHint" xml:space="preserve">
+    <value>An OpenSSH user certificate a CA issued for this key (*-cert.pub; have the CA sign the line that "Copy public key" gives you). With it you sign in by certificate: the server only needs to trust the CA (TrustedUserCAKeys) instead of listing the key in authorized_keys. Leave it empty to sign in with the public key.</value>
+  </data>
   <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
     <value>This profile signs with a key from a Windows key store, which this computer does not have. To connect from here, choose another authentication method.</value>
   </data>

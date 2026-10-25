@@ -49,7 +49,8 @@ public class SessionProfile
     public string? PrivateKeyPassphrase { get; set; }
 
     /// <summary>
-    /// OpenSSH 用户证书文件路径(<c>*-cert.pub</c>);仅在证书认证时使用,可为空。
+    /// OpenSSH 用户证书文件路径(<c>*-cert.pub</c>):证书认证时必填(配 <see cref="PrivateKeyPath" /> 那把私钥);
+    /// 系统密钥库认证时可选(配 <see cref="KeyStoreKey" /> 那把钥,有它就出示证书、没有就按公钥认证)。其它认证方式不用它。
     /// </summary>
     /// <remarks>
     /// 不加密落盘:证书是 CA 签发的公开凭证,和 <c>.pub</c> 公钥一样本就该给人看,

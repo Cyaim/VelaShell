@@ -49,6 +49,8 @@ public enum AuthMethod
     /// <remarks>
     /// 私钥从不离开密钥库 —— 签名交给密钥库做(SSH 库的 <c>CngSshSigner</c>),TPM 与智能卡可能在签名时要 PIN。
     /// 只有 Windows 有;同步到别的平台上的这种配置连接时如实报「这台电脑上没有系统密钥库」。不走共享凭据(与 Tailscale 一样)。
+    /// 可以选配一张 CA 给这把钥签的 OpenSSH 用户证书(<c>SessionProfile.CertificatePath</c>):配了就照证书认证那一路出示证书,
+    /// 服务端认的是 CA 而不是这把公钥;没配就是普通的公钥认证。
     /// </remarks>
     KeyStore = 5
 }

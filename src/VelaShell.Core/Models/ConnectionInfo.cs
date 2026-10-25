@@ -41,7 +41,8 @@ public class ConnectionInfo
     public string? PrivateKeyPassphrase { get; init; }
 
     /// <summary>
-    /// 获取或设置 OpenSSH 用户证书文件路径(用于证书认证);与 <see cref="PrivateKeyPath" /> 成对使用
+    /// 获取或设置 OpenSSH 用户证书文件路径:证书认证时与 <see cref="PrivateKeyPath" /> 成对使用;
+    /// <see cref="AuthMethod.KeyStore" /> 认证时可选,配的是 <see cref="KeyStoreKey" /> 那把钥的证书
     /// </summary>
     public string? CertificatePath { get; init; }
 

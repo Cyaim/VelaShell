@@ -450,6 +450,51 @@ public sealed class ConnectionProfileViewModelTests
     }
 
     /// <summary>
+    /// 系统密钥库可以选配一张证书(与证书认证共用同一个字段与校验):留空不算错(就是按公钥认证),
+    /// 填了就要文件在;存下的是钥的引用加证书路径。
+    /// </summary>
+    [TestMethod]
+    public async Task KeyStoreAuth_CertificateIsOptional_AndSavedWithTheReference()
+    {
+        var vm = new ConnectionProfileViewModel(systemKeyStore: KeyStore(true, StoreKey("tpm-key", SystemKeyReference.PlatformProvider)))
+        {
+            Host = "10.0.0.10",
+            Username = "ops",
+        };
+        vm.SelectAuthMethodCommand.Execute(AuthMethod.KeyStore).Subscribe();
+        await vm.LoadSystemKeysAsync();
+        vm.SelectedSystemKey = vm.SystemKeyChoices[0];
+
+        Assert.IsNull(vm.CertificatePathError, "系统密钥库的证书是可选的:留空就是按公钥认证");
+        vm.CertificatePath = Path.Combine(Path.GetTempPath(), $"vela-no-such-{Guid.NewGuid():N}-cert.pub");
+        Assert.AreEqual(Strings.Get("Profile_ErrCertMissing"), vm.CertificatePathError, "填了就要文件在");
+
+        string certificate = Path.Combine(Path.GetTempPath(), $"vela-keystore-{Guid.NewGuid():N}-cert.pub");
+        await File.WriteAllTextAsync(certificate, "ecdsa-sha2-nistp256-cert-v01@openssh.com AAAA test\n");
+        try
+        {
+            vm.CertificatePath = certificate;
+            Assert.IsNull(vm.CertificatePathError);
+
+            SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
+            Assert.IsNotNull(saved);
+            Assert.AreEqual(AuthMethod.KeyStore, saved.AuthMethod);
+            Assert.AreEqual("tpm-key", saved.KeyStoreKey?.KeyName);
+            Assert.AreEqual(certificate, saved.CertificatePath);
+            Assert.IsNull(saved.PrivateKeyPath, "钥在密钥库里,不配私钥文件");
+        }
+        finally
+        {
+            File.Delete(certificate);
+        }
+
+        // 证书认证那一路照旧:证书是必填的。
+        vm.CertificatePath = null;
+        vm.SelectAuthMethodCommand.Execute(AuthMethod.Certificate).Subscribe();
+        Assert.AreEqual(Strings.Get("Profile_ErrCertRequired"), vm.CertificatePathError);
+    }
+
+    /// <summary>
     /// 没有系统密钥库的平台上不显示这一段 —— 除非这条配置本来就是它(从 Windows 同步过来),
     /// 那就照样选中它、说明这台电脑上用不了,而不是让它看起来什么都没选。
     /// </summary>

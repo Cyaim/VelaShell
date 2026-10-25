@@ -10052,6 +10052,12 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Profile_KeyStoreHint" xml:space="preserve">
     <value>私鑰不出金鑰庫,設定裡只存用哪一把;TPM、智慧卡簽章時可能要輸入 PIN。只在 Windows 上可用。</value>
   </data>
+  <data name="Profile_KeyStoreCertificate" xml:space="preserve">
+    <value>使用者憑證(選填)</value>
+  </data>
+  <data name="Profile_KeyStoreCertificateHint" xml:space="preserve">
+    <value>CA 為這把金鑰簽發的 OpenSSH 使用者憑證(*-cert.pub,拿「複製公鑰」得到的那一行去簽)。設定之後以憑證登入:伺服器信任這個 CA(TrustedUserCAKeys)即可,不必把公鑰加進 authorized_keys。留空則以公鑰登入。</value>
+  </data>
   <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
     <value>這條設定用 Windows 系統金鑰庫裡的金鑰簽章,這台電腦上沒有系統金鑰庫。要在這裡連線,換一種認證方式。</value>
   </data>
