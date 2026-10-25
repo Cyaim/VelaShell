@@ -64,7 +64,7 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
     /// <param name="left">左栏的会话(资源管理器里先选中的那一条)。</param>
     /// <param name="right">右栏的会话。</param>
     /// <param name="sftpService">底层远程文件服务,两栏各包一层本文档独占的串行化视图。</param>
-    /// <param name="transferOptions">设置 → 文件传输 的选项快照。</param>
+    /// <param name="transferOptions">设置 → 文件传输 的选项(打开时那一份;之后设置保存时宿主经 <see cref="ISftpDocumentContent.RemotePanes" /> 换上新的)。</param>
     /// <param name="transferSink">承载本文档所发起传输的浮动传输组件;为 null 时不上报进度。</param>
     /// <param name="getDefaultEditorPath">解析「默认编辑器」的回调(理由见 <see cref="SftpDocumentViewModel" />)。</param>
     /// <exception cref="ArgumentException">两栏是同一条配置或同一个会话。</exception>
@@ -135,6 +135,9 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
 
     /// <inheritdoc />
     public IReadOnlyList<Guid> SessionIds => [_left.SessionId, _right.SessionId];
+
+    /// <inheritdoc />
+    public IReadOnlyList<FileBrowserViewModel> RemotePanes => [LeftFiles, RightFiles];
 
     /// <summary>把左栏选中的条目搬到右栏当前目录。</summary>
     public ReactiveCommand<RxVoid, RxVoid> CopyLeftToRightCommand { get; }

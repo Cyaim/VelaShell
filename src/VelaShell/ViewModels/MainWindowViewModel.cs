@@ -1724,6 +1724,10 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
             : new(TransferResumeResult.Failed, browser.ErrorMessage);
     }
 
+    /// <summary>开着的独立文件标签(单栏、双栏远程)里的全部远端栏。终端侧栏的面板不在其中,它们在 <see cref="_fileBrowserCache" /> 里。</summary>
+    private IEnumerable<FileBrowserViewModel> DocumentFilePanes() =>
+        Layout.AllDocuments().OfType<SftpDocumentBase>().SelectMany(static document => document.Content.RemotePanes);
+
     /// <summary>已经连着这条配置、能直接拿来传文件的面板;没有返回 null。</summary>
     private FileBrowserViewModel? FindConnectedFileBrowser(Guid profileId)
     {
@@ -6379,6 +6383,13 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                     browser.TransferOptions = settings.Transfer;
                     browser.ShowHiddenFiles = settings.Transfer.ShowHiddenFiles;
                     ApplyColumnVisibility(browser, settings.Transfer);
+                }
+                // 独立文件标签(单栏、双栏远程)的远端栏同样换上新选项:它们打开时拿的是那一刻的设置,
+                // 不广播的话改了冲突策略、并发、重试次数、双击行为,开着的文件标签还照旧(差距分析 A7)。
+                // 限速、保留时间戳、上传后落盘由 SftpService 每次传输现读设置,本来就跟得上。
+                foreach (FileBrowserViewModel pane in DocumentFilePanes())
+                {
+                    pane.TransferOptions = settings.Transfer;
                 }
 
                 RevealActiveSessionInSidebar();

@@ -25,6 +25,12 @@ public interface ISftpDocumentContent : INotifyPropertyChanged
     /// </summary>
     IReadOnlyList<Guid> SessionIds { get; }
 
+    /// <summary>
+    /// 本文档里的远端文件栏(单栏文档一栏,双栏远程文档两栏)。设置保存后宿主要把新的传输选项铺到它们身上 ——
+    /// 漏了的话,改了冲突策略、并发、重试次数,开着的文件标签还按打开那一刻的设置走。
+    /// </summary>
+    IReadOnlyList<FileBrowserViewModel> RemotePanes { get; }
+
     /// <summary>关闭文档:停掉在途工作、断开它持有的全部连接;只执行一次。</summary>
     /// <param name="cancellationToken">只取消调用方的等待,不中断关闭本身。</param>
     Task CloseAsync(CancellationToken cancellationToken = default);

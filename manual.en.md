@@ -654,7 +654,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 | Bandwidth Limits | Enable, upload/download MB/s, 0 unlimited | Limits application transfers, not other server applications |
 | Logging | Transfer logs, retention 1–365 days, directory | Paths/filenames can be sensitive; check access and disk space |
 
-**Mechanism:** New file sessions take a settings snapshot. Reopen a file tab if an existing one still has old behavior. Do not assume every parameter changes instantly during an important transfer.
+**Mechanism:** After you save, open file panes (the terminal side pane and single- or dual-pane file tabs) switch to the new options immediately; there is no need to reopen them. A batch that has already started is not reworked: its name conflicts were settled under the policy in effect when it started, and its concurrency limit stays at that value; the retry count applies from the next file on; bandwidth limits, timestamp preservation, and fsync after upload are read when each file starts.
 
 ### 15.8 Security Audit
 
