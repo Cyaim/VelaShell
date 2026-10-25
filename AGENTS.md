@@ -60,6 +60,7 @@ dotnet test  VelaShell.slnx
 | [`plan.md`](plan.md)                                                             | **已经发生的事**:进展记录、当前架构、每次改动的来龙去脉。开发跟进以它为准                                                                            |
 | [`feature-plan.md`](feature-plan.md)                                             | **还没发生的事**:待办、候选特性、确认不做的清单(附理由)。⚠️ 两者分工是硬的 —— 做完了就从 `feature-plan.md` 划掉、在 `plan.md` 补一节;**不要在 `plan.md` 里留 TODO** |
 | `README.md` / `README.en.md` / `CONTRIBUTING*.md` / `SECURITY.md` / `PRIVACY.md` | GitHub 仓库门面与流程约定                                                                                                   |
+| `manual.md` / `manual.en.md`                                                     | 写给用户的使用手册,跟着发布版本走。**改了用户看得见的行为,就在同一个提交里改手册,中英两份一起改**;设计与开发文档仍在 velashell-docs(维护者 2026-10-25 定) |
 | `src/**/README.md`、`tests/**/README.md`                                          | 各工程自己的目录职责说明,跟着代码走                                                                                                 |
 | `src/VelaShell.Ssh/AGENTS.md` / `LICENSE` / `NOTICE.md`                           | SSH 库专属的开发约定(净室规程)、它自己的 MIT 授权与独立性声明 —— 服务的是「改这个库」,且许可证必须跟着代码走                                                              |
 | `src/VelaShell.XServer/AGENTS.md` / `LICENSE` / `NOTICE.md`                       | X11 服务端库的开发约定(同样的净室规程)、MIT 授权、独立性声明与内置字体的来源 —— 理由同上                                                                          |
