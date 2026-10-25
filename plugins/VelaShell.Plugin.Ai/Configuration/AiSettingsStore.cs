@@ -1637,15 +1637,24 @@ public sealed class AiSettingsStore(IPluginContext context)
                     {
                         handlers.Add(new ExtraHeadersHandler(extra));
                     }
-                    // 属性为 init-only,按凭据形态分别构造:
-                    // 无凭据时留给 SDK 的环境变量回退;登录换来的短期令牌要走 AuthToken。
+                    // 属性为 init-only,按凭据形态分别构造:登录换来的短期令牌要走 AuthToken。
                     // 13.x 起 ApiKey 与 AuthToken 发出去都是 Authorization: Bearer,区别只在上面那个改写处理器挂不挂。
+                    // 没有凭据时,只有官方 api.anthropic.com 交给 SDK 去读本机的 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
+                    // (那两个变量本来就是给官方 API 的,只配环境变量直连官方是原设计);中转站、自行部署的网关、
+                    // 换源后还没填新 Key 的地址一律把两者显式置空 —— SDK 里每个属性只关掉自己那个变量,
+                    // 只置一个,另一个照样被读出来发过去(13.2.1 实测)。
                     bool noSdkRetries = callerCountsRetries && HasProviderKeyPool(provider);
-                    AnthropicClient anthropic = string.IsNullOrWhiteSpace(secret)
-                        ? new AnthropicClient { BaseUrl = baseUrl, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
-                        : credential.IsBearerToken
+                    AnthropicClient anthropic = !string.IsNullOrWhiteSpace(secret)
+                        ? credential.IsBearerToken
                             ? new AnthropicClient { BaseUrl = baseUrl, AuthToken = secret, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
-                            : new AnthropicClient { BaseUrl = baseUrl, ApiKey = secret, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null };
+                            : new AnthropicClient { BaseUrl = baseUrl, ApiKey = secret, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
+                        : IsOfficialAnthropicEndpoint(baseUrl)
+                            ? new AnthropicClient { BaseUrl = baseUrl, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
+                            : new AnthropicClient
+                            {
+                                BaseUrl = baseUrl, ApiKey = null, AuthToken = null, Handlers = handlers,
+                                MaxRetries = noSdkRetries ? 0 : null
+                            };
                     return anthropic.AsIChatClient(provider.Model, provider.MaxTokens);
                 }
 
@@ -1882,6 +1891,19 @@ public sealed class AiSettingsStore(IPluginContext context)
             throw new BuiltinOAuthHostMismatchException();
         }
     }
+
+    /// <summary>官方 Anthropic API 的主机:没有凭据时只有它可以用本机的环境变量(见 <see cref="CreateClient" />)。</summary>
+    private const string OfficialAnthropicHost = "api.anthropic.com";
+
+    /// <summary>
+    /// 是不是官方 Anthropic API(<c>https://api.anthropic.com</c>,默认端口)。
+    /// 只认 https 与默认端口:明文 http 或别的端口都不是那个端点,环境变量里的 Key 不往那儿送。
+    /// </summary>
+    internal static bool IsOfficialAnthropicEndpoint(string? url)
+        => Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+            && string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(uri.IdnHost, OfficialAnthropicHost, StringComparison.OrdinalIgnoreCase)
+            && uri.Port == 443;
 
     internal static string ClientBaseUrl(string endpoint, ChatProtocol protocol)
     {

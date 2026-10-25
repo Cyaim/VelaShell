@@ -2463,7 +2463,7 @@ public partial class SettingsView : UserControl
             // 每一击领一个序号:下面读已存 Key 要等,读回来时已有更新的一击就让给它(见 _originKeyRead)
             int originKeyRead = ++_originKeyRead;
             // 地址换到别的源、还没保存:已存的 Key 属于旧地址,只许带表单里新填的那把去测。
-            // 只敲了空格不算新填:探活带的仍是空凭据,Anthropic 协议下 SDK 会改用本机环境变量里的那把
+            // 只敲了空格不算新填:探活带的仍是空凭据,与没填一样处理
             if (provider.Auth == AuthMethod.ApiKey && string.IsNullOrWhiteSpace(apiKeyOverride)
                 && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
                 && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl))
@@ -2503,10 +2503,8 @@ public partial class SettingsView : UserControl
                     if (editorRun != _editorRun || originKeyRead != _originKeyRead) return;
                     // 读的期间这家的配置变了(别处存了 Key、改了模型):刚读到的已不作数,按有 Key 会跟过去处理
                     keyFollows |= _store.ProviderConfigurationVersion(provider) != version;
-                    // Anthropic 协议没有 Key 时,SDK 改用本机的 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN,一样会发往这个还没保存的地址
-                    keyFollows |= new ResolvedModel(draft, first).Protocol == ChatProtocol.AnthropicMessages
-                        && (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"))
-                            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN")));
+                    // 本机的 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN 不必算进来:没有 Key 时它们只发往官方 api.anthropic.com
+                    // (见 AiSettingsStore.CreateClient),新地址是官方的,那正是它们该去的地方;是别家就不会带上
                     if (keyFollows)
                     {
                         // 首模型自带 Key、又没有继承供应商 Key 的模型可换:「先填新 Key」只会换来「没有可用模型」,

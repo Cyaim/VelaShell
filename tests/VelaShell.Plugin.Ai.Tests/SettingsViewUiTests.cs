@@ -532,7 +532,7 @@ public sealed partial class SettingsViewUiTests
     [DataRow("ANTHROPIC_API_KEY")]
     [DataRow("ANTHROPIC_AUTH_TOKEN")]
     [DataRow(null)]
-    public void BaseUrlToAnotherOrigin_BlankKeyWithAnEmptyPrimaryStillGuardsTheMachineKey(string? variable)
+    public void BaseUrlToAnotherOrigin_BlankKeyWithAnEmptyPrimaryTestsWithoutTheMachineKey(string? variable)
     {
         OnUi(async () =>
         {
@@ -563,20 +563,15 @@ public sealed partial class SettingsViewUiTests
             {
                 view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
                 await PumpAsync();
-                // 主槽空着,只把第 2 把改成空格:探活不带任何已存的 Key,拦不拦只看本机环境变量 —— 设了就拦,没设照常测
+                // 主槽空着,只把第 2 把改成空格:探活不带任何已存的 Key。本机设了环境变量也照常测 ——
+                // 没有 Key 时它们只发往官方 api.anthropic.com,这台新主机拿不到
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 EditProviderKey(view, extra).Text = "   ";
                 await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
                 string? status = view.GetControl<TextBlock>("StatusText").Text;
-                if (variable is not null)
-                {
-                    Assert.AreEqual(new Loc("en")["SetupTestNeedsNewOriginKey"], status, string.Join(", ", newHost.Authorizations));
-                    Assert.IsEmpty(newHost.Requests);
-                }
-                else
-                {
-                    Assert.HasCount(1, newHost.Requests, status);
-                }
+                Assert.HasCount(1, newHost.Requests, status);
+                Assert.IsNull(newHost.Authorizations.Single(), "本机的 Key 不能跟去");
+                Assert.IsNull(newHost.RequestHeaders.Single()["x-api-key"]);
                 Assert.IsEmpty(oldHost.Requests);
             }
             finally
@@ -595,11 +590,11 @@ public sealed partial class SettingsViewUiTests
     {
         OnUi(async () =>
         {
-            // Anthropic 协议没有 Key 时 SDK 改用本机环境变量里的那把,同样会发去这个还没保存的地址:与已存的 Key 一样拦下
+            // 无鉴权的 Anthropic 接入换到另一台主机:本机环境变量里的 Key 只给官方主机,不会跟去,所以照常测、不带任何 Key
             (string? status, IReadOnlyList<string> oldRequests, IReadOnlyList<string> newRequests, IReadOnlyList<string?> sent) =
                 await TestKeylessAnthropicMoveAsync(variable);
-            Assert.AreEqual(new Loc("en")["SetupTestNeedsNewOriginKey"], status, string.Join(", ", sent));
-            Assert.IsEmpty(newRequests);
+            Assert.HasCount(1, newRequests, status);
+            Assert.IsNull(sent.Single(), "本机的 Key 不能发往这台主机");
             Assert.IsEmpty(oldRequests);
         });
     }
@@ -636,7 +631,7 @@ public sealed partial class SettingsViewUiTests
             {
                 view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
                 await PumpAsync();
-                // 主槽里改成只有空格:算不上新填的 Key。探活带的是空白凭据,SDK 会改用本机环境变量里的那把发去这个还没保存的地址
+                // 主槽里改成只有空格:算不上新填的 Key,按没填处理 —— 已存的旧主 Key 还在,照样请用户先填新 Key
                 view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
                 EditProviderKey(view, provider.Id).Text = "   ";
                 await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));

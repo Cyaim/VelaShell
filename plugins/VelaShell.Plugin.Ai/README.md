@@ -135,7 +135,7 @@ Key 新增不拉模型,OAuth 新账号和首次供应商配置保留原拉取流
 清掉自带 Key 的模型仍标着「自带 Key」,不会改用供应商的新 Key:保存后逐个点名,各自重填。
 只改路径(同 origin)不动 Key;填了覆盖地址的模型去的是自己的地址,不受影响。目前只覆盖 API Key 供应商。
 地址改到别的 origin 而没保存时,「测试」不带已存的 Key:填了新 Key 就用它(首模型自带 Key 时换一个继承供应商 Key、填了型号的同源模型来测),只敲空格不算填了;
-没填时先看测试本会带上的那把 —— 首模型自带的 Key,或供应商的主槽(探活只带主槽);Anthropic 协议下本机设了 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` 也算(SDK 没有 Key 时会改用它)。有就请用户先填新 Key(所有模型都自带 Key 时改为提示先保存、再给各模型填新 Key);一把都没有(无鉴权接入)就照常测。读已存 Key 期间配置被改就按「有」处理,连点只测一次。
+没填时先看测试本会带上的那把 —— 首模型自带的 Key,或供应商的主槽(探活只带主槽);本机的 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` 不算(没有 Key 时它们只发往官方主机,见下文「API Key 改回 `x-api-key`」一段)。有就请用户先填新 Key(所有模型都自带 Key 时改为提示先保存、再给各模型填新 Key);一把都没有(无鉴权接入)就照常测。读已存 Key 期间配置被改就按「有」处理,连点只测一次。
 目录页清掉供应商的 Key 之后不再自动拉模型,等填了新 Key 再拉;只清了模型自带的 Key 时照常拉新地址的模型清单,
 点名提示接在拉取结果后面。
 新供应商实例撞名自动加序号;更早的实例可在设置页逐个管理,包括按选中实例定向重新登录或退出。
@@ -381,13 +381,18 @@ GitHub Copilot 这三条走的是这一路 —— 因为**没有第二条路**:�
 的中转站于是一聊天就 401 —— 而拉模型清单那条请求是自己拼的(`x-api-key` + `anthropic-version: 2023-06-01`),
 照常能用,两边对不上。所以手填的 Key(含登录换回来的长期 Key)发出前恢复成 13 之前的样子:
 `x-api-key: <Key>`,不带 `Authorization`。只在 `Authorization` 恰好是 `Bearer <这把 Key>` 时改写;
-登录换来的短期令牌照旧走 `Authorization: Bearer`,没有凭据时由 SDK 读 `ANTHROPIC_API_KEY` /
-`ANTHROPIC_AUTH_TOKEN` 的那条路也不动。它排在账号附加头(`ExtraHeadersHandler`)**外层**:附加头后施加,
+登录换来的短期令牌照旧走 `Authorization: Bearer`。它排在账号附加头(`ExtraHeadersHandler`)**外层**:附加头后施加,
 用户明确配置的 `Authorization` / `x-api-key` 总是最后落定,不会被盖掉。`anthropic-version` 照 SDK 的发
 (13.x 为 `2026-10-21`)—— 请求体是按这个版本拼的。拉模型清单那条自己拼的请求如今跟着发同一个版本号
 (`EndpointModelCatalog.AnthropicVersion`,以前留在 `2023-06-01`;维护者 2026-10-25 决定),鉴权头本来就一致
 (Key 走 `x-api-key`、令牌走 Bearer)。`AnthropicWireTests` 抓真实请求头守着这几条,清单请求与聊天请求逐个头比对。
 思考档位(`thinking.budget_tokens` 还是交给适配器的 `Reasoning`)留给后续用真 Key 实测,这一轮不动。
+
+**没有凭据时只有官方主机回落本机环境变量。** 请求的基地址是 `https://api.anthropic.com`(默认端口)时,
+照旧交给 SDK 读 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`(只配环境变量、不填 Key 就能直连官方是原设计);
+别的地址(中转站、自行部署的网关、换源清掉 Key 之后还没填新 Key 的供应商、勾了自带 Key 却没填的模型)
+建客户端时把 `ApiKey` 与 `AuthToken` **一起**显式置空 —— SDK 里每个属性只关掉自己那个变量,
+只置一个,另一个照样被读出来发过去(13.2.1 实测)。明文 `http`、别的端口、带着官方名字的别家主机都不算官方。
 
 **判据取自请求体里的 `"stream":true`,不看响应的 `Content-Type`。** 第一版按
 `Content-Type == text/event-stream` 判断,在真实中转站上整个没生效 —— 它给流式响应贴的是

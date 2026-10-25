@@ -142,13 +142,121 @@ public sealed class AnthropicWireTests
     }
 
     [TestMethod]
-    public async Task NoCredential_LeavesTheSdkEnvironmentFallbackAlone()
+    [DataRow("ANTHROPIC_API_KEY", null)]
+    [DataRow(null, "ANTHROPIC_AUTH_TOKEN")]
+    [DataRow("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")]
+    public async Task NoCredential_OnAnotherHost_DoesNotSendTheMachineKey(string? apiKeyVariable, string? authTokenVariable)
     {
-        // 没有凭据时由 SDK 自己读 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN;那条路不归插件改写 ——
-        // 不论这台机器设没设这两个变量,都不该凭空冒出一个 x-api-key
+        // 没有凭据(供应商一把 Key 都没有、模型勾了自带 Key 却没填,或换源清掉 Key 还没填新的)时,
+        // 本机的 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN 只给官方主机:中转站一个字都拿不到。
+        // 两个变量各设一次:SDK 里 ApiKey 与 AuthToken 各自只关掉自己那个变量,漏掉一个另一个照样发出去
+        using var machine = new MachineAnthropicVariables(apiKeyVariable is null ? null : "machine-key",
+            authTokenVariable is null ? null : "machine-token");
+
         (NameValueCollection headers, _) = await SendAsync(ProviderCredential.Key(null));
 
+        Assert.IsNull(headers["Authorization"], "本机的 Key 不能发往第三方地址");
         Assert.IsNull(headers["x-api-key"]);
+    }
+
+    [TestMethod]
+    [DataRow("https://api.anthropic.com")]
+    [DataRow("https://api.anthropic.com/")]
+    [DataRow("https://API.Anthropic.com/v1")]
+    public void NoCredential_OnTheOfficialHost_StillUsesTheMachineKey(string baseUrl)
+    {
+        // 原设计:只在本机配环境变量、不填 Key,就能直连官方 API —— 这条用法不能被换源的护栏误伤
+        using var machine = new MachineAnthropicVariables("machine-key", null);
+        using var context = new TestPluginContext();
+
+        using IChatClient client = new AiSettingsStore(context).CreateClient(ModelFor(baseUrl), ProviderCredential.Key(null));
+
+        var sdk = (Anthropic.IAnthropicClient)client.GetService(typeof(Anthropic.IAnthropicClient))!;
+        Assert.AreEqual("machine-key", sdk.ApiKey, "官方主机照旧交给 SDK 去读环境变量");
+    }
+
+    [TestMethod]
+    public void NoCredential_OnTheOfficialHost_StillUsesTheMachineAuthToken()
+    {
+        using var machine = new MachineAnthropicVariables(null, "machine-token");
+        using var context = new TestPluginContext();
+
+        using IChatClient client = new AiSettingsStore(context)
+            .CreateClient(ModelFor("https://api.anthropic.com"), ProviderCredential.Key(null));
+
+        var sdk = (Anthropic.IAnthropicClient)client.GetService(typeof(Anthropic.IAnthropicClient))!;
+        Assert.AreEqual("machine-token", sdk.AuthToken);
+    }
+
+    [TestMethod]
+    [DataRow("http://api.anthropic.com")]
+    [DataRow("https://api.anthropic.com:8443")]
+    [DataRow("https://api.anthropic.com.relay.example")]
+    [DataRow("https://relay.example/anthropic")]
+    public void NoCredential_OnLookalikeHosts_ClearsBothMachineVariables(string baseUrl)
+    {
+        // 明文 http、别的端口、带着官方名字的别家主机都不是官方端点
+        using var machine = new MachineAnthropicVariables("machine-key", "machine-token");
+        using var context = new TestPluginContext();
+
+        using IChatClient client = new AiSettingsStore(context).CreateClient(ModelFor(baseUrl), ProviderCredential.Key(null));
+
+        var sdk = (Anthropic.IAnthropicClient)client.GetService(typeof(Anthropic.IAnthropicClient))!;
+        Assert.IsNull(sdk.ApiKey);
+        Assert.IsNull(sdk.AuthToken);
+    }
+
+    [TestMethod]
+    public async Task SavedConfiguration_OnlyTheOfficialProviderFallsBackToTheMachineKey()
+    {
+        // 存量配置:一家只配了环境变量的官方 Anthropic(从来没填过 Key),一家中转站的 Key 已随换源清掉、还没填新的。
+        // 升级之后读回来,前者照旧拿本机 Key 直连官方,后者不再把本机 Key 发往中转站
+        using var machine = new MachineAnthropicVariables("machine-key", "machine-token");
+        using var context = new TestPluginContext();
+        var official = new AiProvider
+        {
+            Name = "Anthropic", BaseUrl = "https://api.anthropic.com", DefaultProtocol = ChatProtocol.AnthropicMessages,
+            CatalogId = "anthropic", Models = [new AiModelConfig { Model = "claude-opus-5" }]
+        };
+        var relay = new AiProvider
+        {
+            Name = "Relay", BaseUrl = "https://relay.example", DefaultProtocol = ChatProtocol.AnthropicMessages,
+            Models = [new AiModelConfig { Model = "claude-opus-5" }, new AiModelConfig { Model = "own", HasOwnApiKey = true }]
+        };
+        await new AiSettingsStore(context).SaveAsync(new AiSettings { Providers = [official, relay] });
+
+        var store = new AiSettingsStore(context);
+        AiSettings loaded = await store.LoadAsync();
+        foreach (ResolvedModel model in loaded.ResolveModels())
+        {
+            ProviderCredential credential = await store.ResolveCredentialAsync(model);
+            Assert.IsTrue(string.IsNullOrEmpty(credential.Value), "这些模型都没有已存的 Key");
+            using IChatClient client = store.CreateClient(model, credential);
+            var sdk = (Anthropic.IAnthropicClient)client.GetService(typeof(Anthropic.IAnthropicClient))!;
+            bool isOfficial = model.Provider.Name == "Anthropic";
+            Assert.AreEqual(isOfficial ? "machine-key" : null, sdk.ApiKey, model.Provider.Name + "/" + model.Model);
+            // 两个都设时 SDK 只认 ANTHROPIC_API_KEY(那时 AuthToken 读回来本就是空),所以只断言别家两个都清了
+            if (!isOfficial) Assert.IsNull(sdk.AuthToken, model.Provider.Name + "/" + model.Model);
+        }
+    }
+
+    /// <summary>用例期间把本机的两个 Anthropic 环境变量设成给定值(null 为不设),结束时恢复原值。</summary>
+    private sealed class MachineAnthropicVariables : IDisposable
+    {
+        private readonly string? _apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        private readonly string? _authToken = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
+
+        public MachineAnthropicVariables(string? apiKey, string? authToken)
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", apiKey);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", authToken);
+        }
+
+        public void Dispose()
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", _apiKey);
+            Environment.SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", _authToken);
+        }
     }
 
     [TestMethod]
