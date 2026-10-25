@@ -419,6 +419,72 @@ public sealed class GistSyncServiceTests
             s.Proxy.Password == "rotated-on-the-other-device" && s.Security.WebhookUrl == "https://hooks.example.com/new"));
     }
 
+    // ———— 拉到「Webhook 告警开着、却没有地址」的设置:消息中心提示一次(第二轮第 17 条) ————
+
+    private static AppSettings WebhookOnWithoutUrl(string theme = "dark")
+    {
+        AppSettings remote = new() { Theme = theme };
+        remote.Security.AlertWebhook = true;
+        remote.Security.WebhookUrl = string.Empty;
+        return remote;
+    }
+
+    private static Task<SyncResult> PullSettingsAsync(GistSyncService service, SyncSettings config, AppSettings remote) =>
+        service.ApplyRemoteAsync(
+            config,
+            new SyncEnvelope { Payload = new SyncPayload { DeviceName = "laptop", UpdatedAtUtc = DateTime.UtcNow, Settings = remote } },
+            remoteVersion: "rev",
+            CancellationToken.None);
+
+    /// <summary>
+    /// 无口令同步不带 Webhook 地址、本机也没填:应用之后告警开着却发不出去。提示一次,同一份设置再拉不再提示;
+    /// 对方之后推了一份不同的设置、仍是这个情形,才再提示。记录随同步配置落盘。
+    /// </summary>
+    [TestMethod]
+    public async Task Pull_WebhookOnButNoUrlAnywhere_RaisesTheNoticeOncePerSettings()
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(_ => new AppSettings());
+        IAppDataStore store = Substitute.For<IAppDataStore>();
+        var service = new GistSyncService(settings, Substitute.For<ISessionRepository>(), store,
+            Substitute.For<IQuickCommandRepository>(), Substitute.For<ISecretProtector>());
+        List<string> notices = [];
+        service.WebhookUrlMissing += (_, fingerprint) => notices.Add(fingerprint);
+        SyncSettings config = SettingsOnly();
+
+        Assert.IsTrue((await PullSettingsAsync(service, config, WebhookOnWithoutUrl())).Success);
+        Assert.IsTrue((await PullSettingsAsync(service, config, WebhookOnWithoutUrl())).Success);
+
+        string first = Assert.ContainsSingle(notices, "同一份设置只提示一次");
+        Assert.AreEqual(first, config.WebhookUrlMissingNotice);
+        await store.Received().UpsertAsync("app_config", "sync",
+            Arg.Is<SyncSettings>(s => s.WebhookUrlMissingNotice == first), Arg.Any<CancellationToken>());
+
+        Assert.IsTrue((await PullSettingsAsync(service, config, WebhookOnWithoutUrl(theme: "light"))).Success);
+        Assert.HasCount(2, notices, "另一份设置、仍是这个情形:是一件新的事");
+        Assert.AreNotEqual(first, notices[1]);
+    }
+
+    /// <summary>本机填着地址(拉取时保留本机的)、或者告警本来就关着:什么都不提示。</summary>
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task Pull_WebhookUrlKeptLocally_OrAlertsOff_RaisesNothing(bool localHasUrl)
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(_ => localHasUrl ? SettingsWithSecrets() : new AppSettings());
+        var service = new GistSyncService(settings, Substitute.For<ISessionRepository>(), Substitute.For<IAppDataStore>(),
+            Substitute.For<IQuickCommandRepository>(), Substitute.For<ISecretProtector>());
+        bool raised = false;
+        service.WebhookUrlMissing += (_, _) => raised = true;
+        AppSettings remote = WebhookOnWithoutUrl();
+        remote.Security.AlertWebhook = localHasUrl;
+
+        Assert.IsTrue((await PullSettingsAsync(service, SettingsOnly(), remote)).Success);
+
+        Assert.IsFalse(raised);
+    }
+
     [TestMethod]
     public async Task Pull_RejectsAPayloadNewerThanItUnderstands()
     {

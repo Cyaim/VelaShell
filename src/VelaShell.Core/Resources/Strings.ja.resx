@@ -5407,6 +5407,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} を利用できないため({1})、ローカルの暗号化キーはこれまでどおりデータフォルダーのキーファイルに保存されています。キーチェーンが使えるようになると、次回の起動時に自動で移行します。</value>
   </data>
+  <data name="Notify_SyncWebhookMissingTitle" xml:space="preserve">
+    <value>Webhook アラートはオンですが、このデバイスには URL がありません</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingBody" xml:space="preserve">
+    <value>クラウド同期で取得した設定では「セキュリティ監査 → Webhook」がオンですが、このデバイスには Webhook URL が入力されていないため、セキュリティアラートが送信されません。同期パスフレーズを設定していないクラウド同期はこの URL を運びません(ボットの URL 自体がトークンです)。「設定 → セキュリティ監査」で入力してください。同じ設定についてのお知らせは一度だけです。</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingAction" xml:space="preserve">
+    <value>セキュリティ監査の設定へ</value>
+  </data>
   <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
     <value>外部エディターでの変更がサーバーに送り返されていません</value>
   </data>
@@ -5454,6 +5463,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Cmd_OpenAbout" xml:space="preserve">
     <value>バージョン情報を開く</value>
+  </data>
+  <data name="Cmd_OpenSecuritySettings" xml:space="preserve">
+    <value>セキュリティ監査の設定を開く</value>
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartup" xml:space="preserve">
     <value>起動時に更新を確認</value>

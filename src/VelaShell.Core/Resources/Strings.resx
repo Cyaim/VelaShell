@@ -5523,6 +5523,15 @@ Overwrite it?</value>
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} is not available ({1}), so the local encryption key stays in the key file in the data directory, as before. Once the keychain is available, the next start moves the key there automatically.</value>
   </data>
+  <data name="Notify_SyncWebhookMissingTitle" xml:space="preserve">
+    <value>Webhook alerts are on, but this device has no webhook URL</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingBody" xml:space="preserve">
+    <value>Settings pulled by cloud sync have Security &amp; Audit → Webhook turned on, but no webhook URL is filled in on this device, so security alerts are not being sent. Cloud sync without a sync passphrase never carries this URL (a bot URL is itself a token). Fill it in under Settings → Security &amp; Audit. You are told only once for the same settings.</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingAction" xml:space="preserve">
+    <value>Go to Security &amp; Audit</value>
+  </data>
   <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
     <value>External edit not uploaded</value>
   </data>
@@ -5570,6 +5579,9 @@ Overwrite it?</value>
   </data>
   <data name="Cmd_OpenAbout" xml:space="preserve">
     <value>Open About</value>
+  </data>
+  <data name="Cmd_OpenSecuritySettings" xml:space="preserve">
+    <value>Open Security &amp; Audit Settings</value>
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartup" xml:space="preserve">
     <value>Check for updates on startup</value>

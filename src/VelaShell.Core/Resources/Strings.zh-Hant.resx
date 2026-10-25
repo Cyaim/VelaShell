@@ -5656,6 +5656,15 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} 無法使用({1}),本機加密金鑰照舊儲存在資料目錄的金鑰檔案裡(與之前相同)。金鑰鏈可用之後,下次啟動會自動遷移過去。</value>
   </data>
+  <data name="Notify_SyncWebhookMissingTitle" xml:space="preserve">
+    <value>Webhook 告警開著,這台裝置上卻沒有位址</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingBody" xml:space="preserve">
+    <value>雲端同步拉下來的設定開著「安全稽核 → Webhook」,這台裝置上卻沒有填 Webhook 位址,安全告警發不出去。沒設同步口令的雲端同步不帶這個位址(機器人位址本身就是權杖),請在「設定 → 安全稽核」裡填上。同一份設定只提示這一次。</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingAction" xml:space="preserve">
+    <value>前往安全稽核設定</value>
+  </data>
   <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
     <value>外部編輯的變更沒傳回伺服器</value>
   </data>
@@ -5703,6 +5712,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Cmd_OpenAbout" xml:space="preserve">
     <value>開啟關於頁</value>
+  </data>
+  <data name="Cmd_OpenSecuritySettings" xml:space="preserve">
+    <value>開啟安全稽核設定</value>
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartup" xml:space="preserve">
     <value>啟動時檢查更新</value>

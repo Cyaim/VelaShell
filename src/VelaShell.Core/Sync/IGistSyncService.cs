@@ -12,6 +12,13 @@ public interface IGistSyncService
     /// </summary>
     event EventHandler? ProfilesApplied;
 
+    /// <summary>
+    /// 拉取应用的设置开着 Webhook 告警、这台设备上却没有 Webhook 地址时触发 —— 没设端到端口令的同步不带这个地址
+    /// (它本身就是令牌),本机也没填,告警就悄悄发不出去了。参数是那份设置的指纹:同一份设置只触发一次
+    /// (记在 <see cref="SyncSettings.WebhookUrlMissingNotice" />),订阅方拿它给消息去重。事件可能从后台线程触发。
+    /// </summary>
+    event EventHandler<string>? WebhookUrlMissing;
+
     /// <summary>正在把远端数据应用到本地(此期间的本地保存事件不算“本地改动”,防止拉取后立刻回推)。</summary>
     bool IsApplyingRemote { get; }
 

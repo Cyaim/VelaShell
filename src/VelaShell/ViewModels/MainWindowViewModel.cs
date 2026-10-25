@@ -319,6 +319,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         _protocolRegistry = protocolRegistry;
         _workspaceLauncher = workspaceLauncher;
         gistSyncService?.ProfilesApplied += OnSyncProfilesApplied;
+        gistSyncService?.WebhookUrlMissing += OnSyncWebhookUrlMissing;
         // 插件被停用/卸载 → 它名下的工作台文档已无人应答,走正常关闭路径撤掉标签页。
         workspaceLauncher?.SessionAbandoned += OnWorkspaceSessionAbandoned;
         // 新建连接对话框里的「测试」对插件连接类型没法拿 SSH 去试(那只会撞出一个
@@ -1297,6 +1298,16 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 Icon: "Icon.info"
             )
         );
+        // 安全审计页:消息中心里「云同步拉到的设置开着 Webhook 告警却没有地址」那一条的动作。
+        Commands.Register(
+            new(
+                NotificationSources.OpenSecuritySettingsCommandId,
+                Strings.Get("Cmd_OpenSecuritySettings"),
+                Strings.Get("CmdCat_Edit"),
+                () => SettingsSectionRequested?.Invoke(this, SettingsSectionKey.Security),
+                Icon: "Icon.shield"
+            )
+        );
         Commands.Register(
             new(
                 "app.logs.open",
@@ -2039,6 +2050,12 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     private INotificationCenter? _notificationCenter;
 
+    /// <summary>
+    /// 消息中心载入上次留下的消息(<see cref="INotificationCenter.LoadAsync" />)那一步;没有消息中心时为 null。
+    /// 后台来源(启动时的自动同步)要等它完了再投 —— 载入会整份换成存着的列表,赶在它前面投的会被盖掉。
+    /// </summary>
+    private Task? _notificationsLoaded;
+
     /// <summary>启动检查发现新版本后的后台下载入口(设置 → 常规 → 自动下载更新);null = 只检查不下载(单测)。</summary>
     private readonly BackgroundUpdateDownload? _backgroundUpdateDownload;
 
@@ -2107,7 +2124,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     {
         try
         {
-            await center.LoadAsync().ConfigureAwait(true);
+            _notificationsLoaded = center.LoadAsync();
+            await _notificationsLoaded.ConfigureAwait(true);
             Sidebar.NotificationUnreadCount = center.UnreadCount;
             // 与更新检查并行:后者可能要后台下载好几分钟,密钥的提示不该排在它后面。
             Task keyNotices = PublishMasterKeyNoticesAsync(center);
@@ -2770,6 +2788,48 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         _ = sender;
         _ = args;
         RxSchedulers.MainThreadScheduler.Schedule(() => _ = RefreshSessionTreeAsync());
+    }
+
+    /// <summary>
+    /// 云同步拉到「Webhook 告警开着、这台设备上却没有地址」的设置:投一条消息中心提示,带「前往安全审计设置」。
+    /// 同一份设置只来一次(服务按设置指纹去重并记在同步配置里),消息 id 也带着指纹。可能来自后台线程。
+    /// </summary>
+    /// <remarks>
+    /// 云同步本来是静默的(启动拉取、保存后防抖推送);设置导入遇到同样的情形会当场提示重填,
+    /// 同步这条路以前却只是静默留空,告警就这样悄悄停了(维护者 2026-10-25 定,第二轮第 17 条)。
+    /// </remarks>
+    private void OnSyncWebhookUrlMissing(object? sender, string fingerprint)
+    {
+        _ = sender;
+        if (_notificationCenter is not { } center)
+        {
+            return;
+        }
+        _ = PublishSyncNoticeAsync(center, NotificationSources.BuildSyncWebhookMissingNotification(fingerprint, DateTime.UtcNow));
+    }
+
+    /// <summary>等消息中心载入完上次的消息再投一条(整段吞异常:提示投不出去不该拦住同步)。</summary>
+    private async Task PublishSyncNoticeAsync(INotificationCenter center, NotificationItem item)
+    {
+        try
+        {
+            if (_notificationsLoaded is { } loaded)
+            {
+                await loaded.ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // 载入失败照投:铃铛照常可用,只是没有历史消息。
+        }
+        try
+        {
+            await center.PublishAsync([item]).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"[Sync] Notice could not be published: {ex.Message}");
+        }
     }
 
     /// <summary>

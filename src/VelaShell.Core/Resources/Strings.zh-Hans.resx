@@ -5656,6 +5656,15 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
     <value>{0} 用不了({1}),本机加密密钥照旧保存在数据目录的密钥文件里(与之前相同)。密钥链可用之后,下次启动会自动迁过去。</value>
   </data>
+  <data name="Notify_SyncWebhookMissingTitle" xml:space="preserve">
+    <value>Webhook 告警开着,这台设备上却没有地址</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingBody" xml:space="preserve">
+    <value>云同步拉下来的设置开着「安全审计 → Webhook」,这台设备上却没有填 Webhook 地址,安全告警发不出去。没设同步口令的云同步不带这个地址(机器人地址本身就是令牌),请在「设置 → 安全审计」里填上。同一份设置只提示这一次。</value>
+  </data>
+  <data name="Notify_SyncWebhookMissingAction" xml:space="preserve">
+    <value>前往安全审计设置</value>
+  </data>
   <data name="Notify_RemoteEditDraftTitle" xml:space="preserve">
     <value>外部编辑的改动没传回服务器</value>
   </data>
@@ -5703,6 +5712,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Cmd_OpenAbout" xml:space="preserve">
     <value>打开关于页</value>
+  </data>
+  <data name="Cmd_OpenSecuritySettings" xml:space="preserve">
+    <value>打开安全审计设置</value>
   </data>
   <data name="SetGeneral_CheckUpdatesOnStartup" xml:space="preserve">
     <value>启动时检查更新</value>

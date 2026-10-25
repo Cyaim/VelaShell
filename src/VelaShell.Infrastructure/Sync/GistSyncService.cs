@@ -93,6 +93,9 @@ public sealed partial class GistSyncService(
     /// <inheritdoc />
     public event EventHandler? ProfilesApplied;
 
+    /// <inheritdoc />
+    public event EventHandler<string>? WebhookUrlMissing;
+
     /// <summary>读取持久化的同步配置;不存在时返回默认 <see cref="SyncSettings"/>。</summary>
     public async Task<SyncSettings> GetSyncSettingsAsync(
         CancellationToken cancellationToken = default
@@ -652,6 +655,8 @@ public sealed partial class GistSyncService(
             );
         }
 
+        // 这次拉到的设置要提示「Webhook 告警开着却没有地址」时,那份设置的指纹;不用提示时为 null。
+        string? webhookNotice = null;
         IsApplyingRemote = true;
         try
         {
@@ -664,9 +669,16 @@ public sealed partial class GistSyncService(
                 // 设备本地字段(窗口尺寸/开机自启/本机路径等)保留本机现值,其余采用云端。
                 AppSettings local = await settingsService.GetSettingsAsync().ConfigureAwait(false);
                 AppSettings incoming = payload.Settings;
+                // 指纹取对方推上来的原样(保留本机字段之前):同一份设置不论拉几次都是同一个。
+                string fingerprint = SettingsFingerprint(incoming);
                 PreserveDeviceLocalFields(incoming, local);
                 incoming.Normalize();
                 await settingsService.SaveSettingsAsync(incoming).ConfigureAwait(false);
+                if (WebhookUrlMissingAfterPull(incoming) && config.WebhookUrlMissingNotice != fingerprint)
+                {
+                    config.WebhookUrlMissingNotice = fingerprint;
+                    webhookNotice = fingerprint;
+                }
             }
             if (config.SyncProfiles)
             {
@@ -758,6 +770,11 @@ public sealed partial class GistSyncService(
             config.LastLocalChangeAtUtc = null;
         }
         await SaveSyncSettingsAsync(config, cancellationToken).ConfigureAwait(false);
+        if (webhookNotice is not null)
+        {
+            // 记下「提示过」之后再通知:同步配置没存进去,下次拉到同一份还会再提示,而不是这次提示了、记录却丢了。
+            WebhookUrlMissing?.Invoke(this, webhookNotice);
+        }
         if (config.SyncProfiles)
         {
             // 仓储已经完整应用远端分组/Profile/隧道后再通知界面。同步通常在后台线程执行,
@@ -828,6 +845,17 @@ public sealed partial class GistSyncService(
     /// </remarks>
     private static AppSettings WithoutSecretsUnlessEncrypted(AppSettings settings, bool encrypted) =>
         encrypted ? settings : SettingsTransfer.WithoutSecrets(settings);
+
+    /// <summary>
+    /// 应用之后(本机的地址已经按 <see cref="PreserveLocalSecrets" /> 保留过)Webhook 告警开着、地址却是空的:
+    /// 告警发不出去,而云同步是静默的,不说一声用户不会知道。口径与设置导入的「需要重填 Webhook 地址」相同。
+    /// </summary>
+    private static bool WebhookUrlMissingAfterPull(AppSettings applied) =>
+        applied.Security.AlertWebhook && string.IsNullOrWhiteSpace(applied.Security.WebhookUrl);
+
+    /// <summary>拉到的那份设置的指纹(序列化后 SHA-256 的前 8 字节,十六进制):只用来认「是不是同一份设置」,记下的是它而不是设置本身。</summary>
+    private static string SettingsFingerprint(AppSettings settings) =>
+        Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions)).AsSpan(0, 8));
 
     /// <summary>
     /// 拉到的设置没带机密(无口令的载荷,或对方本来就没填)时保留本机的,口径与设置导入相同:
