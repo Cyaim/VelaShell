@@ -206,6 +206,134 @@ public sealed class GistSyncServiceTests
                + "\"username\":\"deploy\"" + bookmarks + "}]}}";
     }
 
+    // ———— 设置里的机密:代理密码、告警 Webhook 地址 ————
+
+    private const string ProxyPassword = "proxy-pass-should-not-reach-github";
+    private const string WebhookUrl = "https://oapi.dingtalk.com/robot/send?access_token=webhook-token-123";
+
+    private static AppSettings SettingsWithSecrets()
+    {
+        var settings = new AppSettings();
+        settings.Proxy.Type = "socks5";
+        settings.Proxy.Host = "proxy.corp.example";
+        settings.Proxy.Port = 1080;
+        settings.Proxy.Username = "vela";
+        settings.Proxy.Password = ProxyPassword;
+        settings.Security.AlertWebhook = true;
+        settings.Security.WebhookUrl = WebhookUrl;
+        settings.Normalize();
+        return settings;
+    }
+
+    private static SyncSettings SettingsOnly(string? protectedPassphrase = null) => new()
+    {
+        SyncAppSettings = true,
+        SyncProfiles = false,
+        SyncSnippets = false,
+        ProtectedPassphrase = protectedPassphrase,
+    };
+
+    /// <summary>
+    /// 没设端到端口令:设置照常同步,但代理密码与 Webhook 地址(本身就是令牌)不上传 —— 与连接配置的密码同一条规矩,
+    /// 名单取 §237 的 <see cref="SettingsCategories.SecretFields" />。
+    /// </summary>
+    [TestMethod]
+    public async Task Push_WithoutPassphrase_LeavesOutTheProxyPasswordAndWebhook()
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(_ => SettingsWithSecrets());
+        var service = new GistSyncService(settings, Substitute.For<ISessionRepository>(), Substitute.For<IAppDataStore>(),
+            Substitute.For<IQuickCommandRepository>(), Substitute.For<ISecretProtector>());
+
+        string content = await service.BuildGistContentAsync(SettingsOnly(), CancellationToken.None);
+
+        Assert.DoesNotContain(ProxyPassword, content, "无口令载荷不得带代理密码");
+        Assert.DoesNotContain("webhook-token-123", content, "无口令载荷不得带 Webhook 地址");
+        Assert.Contains("proxy.corp.example", content, "代理地址不是机密,照常同步");
+        SyncEnvelope envelope = GistSyncService.ParseEnvelope(content);
+        Assert.IsFalse(envelope.Encrypted);
+        Assert.IsTrue(envelope.Payload!.Settings!.Security.AlertWebhook, "开关照带");
+    }
+
+    /// <summary>设了口令:载荷整份加密,机密随同步走(带机密换机本来就走这条路);明文里看不到它们。</summary>
+    [TestMethod]
+    public async Task Push_WithPassphrase_CarriesThemInsideTheCiphertext()
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(_ => SettingsWithSecrets());
+        ISecretProtector protector = Substitute.For<ISecretProtector>();
+        protector.Unprotect("protected-passphrase").Returns("correct horse battery staple");
+        var service = new GistSyncService(settings, Substitute.For<ISessionRepository>(), Substitute.For<IAppDataStore>(),
+            Substitute.For<IQuickCommandRepository>(), protector);
+
+        string content = await service.BuildGistContentAsync(SettingsOnly("protected-passphrase"), CancellationToken.None);
+
+        Assert.DoesNotContain(ProxyPassword, content);
+        SyncEnvelope envelope = GistSyncService.ParseEnvelope(content);
+        Assert.IsTrue(envelope.Encrypted);
+        string plaintext = SyncCrypto.Decrypt(envelope.CipherText!, "correct horse battery staple");
+        Assert.Contains(ProxyPassword, plaintext);
+        Assert.Contains("webhook-token-123", plaintext);
+    }
+
+    /// <summary>
+    /// 拉到不带机密的设置:与设置导入同一口径 —— 代理的类型、主机、端口、用户名都与本机相同才留本机密码,
+    /// 换了一台代理就不留(本机密码不能交给别人的代理);Webhook 地址一律留本机的。
+    /// </summary>
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task Pull_SettingsWithoutSecrets_KeepTheLocalOnes(bool sameProxy)
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(_ => SettingsWithSecrets());
+        var service = new GistSyncService(settings, Substitute.For<ISessionRepository>(), Substitute.For<IAppDataStore>(),
+            Substitute.For<IQuickCommandRepository>(), Substitute.For<ISecretProtector>());
+        AppSettings remote = SettingsWithSecrets();
+        remote.Proxy.Password = string.Empty;
+        remote.Security.WebhookUrl = string.Empty;
+        remote.Theme = "light";
+        if (!sameProxy)
+        {
+            remote.Proxy.Host = "proxy.elsewhere.example";
+        }
+
+        SyncResult result = await service.ApplyRemoteAsync(
+            SettingsOnly(),
+            new SyncEnvelope { Payload = new SyncPayload { DeviceName = "laptop", UpdatedAtUtc = DateTime.UtcNow, Settings = remote } },
+            remoteVersion: "rev",
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Message);
+        await settings.Received(1).SaveSettingsAsync(Arg.Is<AppSettings>(s =>
+            s.Theme == "light"
+            && s.Proxy.Password == (sameProxy ? ProxyPassword : string.Empty)
+            && s.Security.WebhookUrl == WebhookUrl));
+    }
+
+    /// <summary>拉到的设置自己带着机密(加密载荷、旧版本推的明文):照用。</summary>
+    [TestMethod]
+    public async Task Pull_SettingsCarryingSecrets_UseTheIncomingOnes()
+    {
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(_ => SettingsWithSecrets());
+        var service = new GistSyncService(settings, Substitute.For<ISessionRepository>(), Substitute.For<IAppDataStore>(),
+            Substitute.For<IQuickCommandRepository>(), Substitute.For<ISecretProtector>());
+        AppSettings remote = SettingsWithSecrets();
+        remote.Proxy.Password = "rotated-on-the-other-device";
+        remote.Security.WebhookUrl = "https://hooks.example.com/new";
+
+        SyncResult result = await service.ApplyRemoteAsync(
+            SettingsOnly(),
+            new SyncEnvelope { Payload = new SyncPayload { DeviceName = "laptop", UpdatedAtUtc = DateTime.UtcNow, Settings = remote } },
+            remoteVersion: "rev",
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Message);
+        await settings.Received(1).SaveSettingsAsync(Arg.Is<AppSettings>(s =>
+            s.Proxy.Password == "rotated-on-the-other-device" && s.Security.WebhookUrl == "https://hooks.example.com/new"));
+    }
+
     [TestMethod]
     public async Task Pull_RejectsAPayloadNewerThanItUnderstands()
     {

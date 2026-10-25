@@ -119,7 +119,8 @@ VelaShell connects to the network only in these situations:
    only ciphertext. Without that passphrase, saved passwords and private-key passphrases are
    never uploaded — neither those on connection profiles nor those of shared credentials; a
    shared credential travels only as its name, username, notes and key / certificate file
-   paths. You choose which categories to sync, and you can turn it off or delete the Gist at
+   paths, and the proxy password and alert webhook URL in your settings are left out as
+   well. You choose which categories to sync, and you can turn it off or delete the Gist at
    any time.
 
 VelaShell does not download the IP geolocation database itself. If you want that optional
@@ -278,7 +279,8 @@ VelaShell 仅在以下情形联网:
    的是你的 GitHub 账户,而非我们。你还可以额外设置端到端加密口令,此时载荷会在你的设备上
    用 AES-GCM 加密后再上传,GitHub 只能拿到密文。没设这个口令时,已保存的密码与私钥口令一律
    不上传 —— 连接配置上的与共享凭据里的都一样;共享凭据只带名称、用户名、备注与私钥 / 证书
-   文件路径。同步范围由你勾选,可随时关闭或删除该 Gist。
+   文件路径;设置里的代理密码与告警 Webhook 地址同样不上传。同步范围由你勾选,可随时关闭
+   或删除该 Gist。
 
 VelaShell 不会自行下载 IP 归属地数据库。若你需要该可选功能,应用会在你的浏览器中打开 DB-IP
 的下载页面,由你手动选择下载好的文件。

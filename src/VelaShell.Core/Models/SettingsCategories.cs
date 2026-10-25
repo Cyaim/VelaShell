@@ -97,6 +97,8 @@ public static class SettingsCategories
     /// 代理密码是明文存的;告警 Webhook 地址本身就是令牌(钉钉、飞书、企业微信、Slack 的机器人地址里带着 key,
     /// 拿到地址就能往群里发消息)。导出文件的用途是备份、换机、贴给别人排查,三种都会让它离开本机;
     /// 带机密的跨设备迁移走云同步的端到端口令(§13-C)。导入时文件里没有这两项就保留本机已填的(见 <c>SettingsTransfer.Merge</c>)。
+    /// 没设端到端口令的云同步同样不带(推送前 <c>SettingsTransfer.WithoutSecrets</c>),拉取时按导入同一口径保留本机的
+    /// (<c>SettingsTransfer.KeepLocalSecrets</c>)。
     /// </remarks>
     public static IReadOnlyList<(string Block, string Field)> SecretFields { get; } =
     [

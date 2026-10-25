@@ -237,7 +237,7 @@ Tailscale mode requires Tailscale installed and signed in locally, a MagicDNS na
 
 **Result and how it works:** System proxy is the default. The setting affects SSH/SFTP/FTP and outgoing HTTP paths such as updates, Gist, feeds, and plugins running inside the main process (plugins running in their own process use the system default proxy; connection diagnostics resolve names locally and connect directly). In a jump-host chain, it affects the first outbound hop from this computer, not a separate proxy configuration on every host. DNS resolution location affects internal names and where name information is exposed.
 
-**Caution:** A proxy is not an SSH jump host. Reaching the target through HTTP/SOCKS5 does not grant server access. Per-connection proxy configuration is not currently available. In settings export the **Network Proxy** category is unchecked by default, and even when checked the proxy password is never written; re-enter it after importing on another device (on import, the locally saved password is kept only when the proxy type, host, port, and user name all match).
+**Caution:** A proxy is not an SSH jump host. Reaching the target through HTTP/SOCKS5 does not grant server access. Per-connection proxy configuration is not currently available. In settings export the **Network Proxy** category is unchecked by default, and even when checked the proxy password is never written; re-enter it after importing on another device (on import, the locally saved password is kept only when the proxy type, host, port, and user name all match). Gist sync without an end-to-end passphrase leaves the proxy password out too and keeps the local one on pull by the same rule; with a passphrase the whole payload is encrypted and the proxy password travels with it.
 
 ### 6.2 Multiple Jump Hosts
 
@@ -762,7 +762,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 5. Bind the other device with Gist ID, token/passphrase, then pull and inspect hosts, proxy, local paths, and credentials.
 6. Refresh version history to restore a revision when needed. Independently back up before important overwrites.
 
-**Result and how it works:** With a passphrase, AES-GCM encryption occurs locally before upload; GitHub stores ciphertext. Without one, connection/shared-credential passwords and private-key passphrases are removed, but hosts, usernames, notes, and key paths still upload. Pull upserts by ID; conflicts generally prefer newer data. Local-only connections are not deleted, some device settings remain local, and secret-free payloads do not erase existing local passwords.
+**Result and how it works:** With a passphrase, AES-GCM encryption occurs locally before upload; GitHub stores ciphertext. Without one, connection/shared-credential passwords and private-key passphrases are removed, as are the proxy password and alert Webhook URL in application settings (the same list settings export leaves out), but hosts, usernames, notes, key paths, and the proxy address still upload. Pull upserts by ID; conflicts generally prefer newer data. Local-only connections are not deleted, some device settings remain local, and secret-free payloads do not erase existing local passwords. When pulled settings lack the proxy password, the local one is kept only if the proxy type, host, port, and user name all match; the local Webhook URL is always kept.
 
 **Caution:** Sync is not a multiuser editing transaction, complete file backup, or recoverable server-side passphrase escrow. Syncing key paths does not copy keys. Check details such as bookmarks rather than assuming old payloads contain all current fields. Verify device-local items after historical restoration, not just the success notice.
 
@@ -787,7 +787,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 1. Export connection JSON (with a passphrase encrypting its credentials) plus application settings separately, or use Gist sync with an end-to-end passphrase.
 2. Encrypt and back up actual private keys/certificates and necessary public keys separately. Record original paths and purposes, not just path strings from profiles.
-3. Import/pull on the new machine, re-enter proxy passwords and alert Webhook URLs, restore keys, and correct paths/permissions. Reconfigure local Agent, external editor, X Server, plugins, AI access, and other device-specific items.
+3. Import/pull on the new machine, re-enter proxy passwords and alert Webhook URLs (Gist sync with an end-to-end passphrase brings them along, so no re-entry is needed), restore keys, and correct paths/permissions. Reconfigure local Agent, external editor, X Server, plugins, AI access, and other device-specific items.
 4. Verify a test connection's fingerprint/login, then important profiles. Do not delete old data before recovery is confirmed and retention obligations are met.
 
 **Mechanism and caution:** Current-user Windows DPAPI prevents assuming raw database/key copies work after account changes/reinstall. Explicit import/sync is also needed across Store/portable isolation. Missing proxy passwords and Webhook URLs, and the Security Audit and Network Proxy categories being unchecked by default, are intentional redaction in settings exports, not corruption.

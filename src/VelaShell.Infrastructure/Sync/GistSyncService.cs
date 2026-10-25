@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
+using VelaShell.Core.Import;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Sync;
@@ -504,7 +505,7 @@ public sealed class GistSyncService(
         if (config.SyncAppSettings)
         {
             AppSettings settings = await settingsService.GetSettingsAsync().ConfigureAwait(false);
-            payload.Settings = ScrubDeviceLocalFields(settings);
+            payload.Settings = WithoutSecretsUnlessEncrypted(ScrubDeviceLocalFields(settings), encrypted);
         }
         if (config.SyncProfiles)
         {
@@ -784,9 +785,10 @@ public sealed class GistSyncService(
         return settings;
     }
 
-    /// <summary>拉取应用时同样保留本机的设备本地字段,云端值不覆盖。</summary>
+    /// <summary>拉取应用时同样保留本机的设备本地字段,云端值不覆盖;对方没带的机密也留本机的(<see cref="PreserveLocalSecrets" />)。</summary>
     private static void PreserveDeviceLocalFields(AppSettings incoming, AppSettings local)
     {
+        PreserveLocalSecrets(incoming, local);
         incoming.General.LaunchAtStartup = local.General.LaunchAtStartup;
         incoming.General.LastOpenProfileIds = local.General.LastOpenProfileIds;
         incoming.Appearance.LastWindowWidth = local.Appearance.LastWindowWidth;
@@ -800,6 +802,28 @@ public sealed class GistSyncService(
         incoming.Transfer.LogDirectory = local.Transfer.LogDirectory;
         incoming.Keys.DefaultKeyName = local.Keys.DefaultKeyName;
     }
+
+    // ———— 设置里的机密(代理密码、告警 Webhook 地址) ————
+
+    /// <summary>
+    /// 没设端到端口令时,推上去的设置去掉机密(名单是 <see cref="SettingsCategories.SecretFields" />,与设置导出同一份):
+    /// 与连接配置的密码同一条规矩 —— secret Gist 只是不被检索,知道链接就能读,而 Webhook 地址本身就是令牌。
+    /// </summary>
+    /// <remarks>
+    /// 设了口令照带:载荷在本机整份 AES-GCM 加密,GitHub 只拿到密文,连接配置的密码这时也随同步走;
+    /// 带机密换机本来就指着这条路(手册「推荐换机步骤」、<c>SettingsCategories.SecretFields</c> 的说明),
+    /// 加密了还剔掉,只是让人换台机器又得补填一遍。
+    /// </remarks>
+    private static AppSettings WithoutSecretsUnlessEncrypted(AppSettings settings, bool encrypted) =>
+        encrypted ? settings : SettingsTransfer.WithoutSecrets(settings);
+
+    /// <summary>
+    /// 拉到的设置没带机密(无口令的载荷,或对方本来就没填)时保留本机的,口径与设置导入相同:
+    /// 代理的类型、主机、端口、用户名都与本机相同才留本机密码,Webhook 地址一律留本机的。
+    /// 不论载荷加没加密都这样判 —— 与连接配置「载荷里密码为空就留本机的」一致。
+    /// </summary>
+    private static void PreserveLocalSecrets(AppSettings incoming, AppSettings local) =>
+        SettingsTransfer.KeepLocalSecrets(incoming, local);
 
     // ———— 小工具 ————
 
