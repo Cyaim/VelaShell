@@ -105,6 +105,15 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
             .Append(("xauth 的输出", "SshErr_FwdXAuthSaid")));
 
     [TestMethod]
+    public void 每一种agent失败都有五语言文案() =>
+        AssertKeys(Enum.GetValues<SshAgentFailureKind>().Where(static k => k != SshAgentFailureKind.Unknown)
+            .SelectMany(static k => new[]
+            {
+                (k.ToString(), SshInterop.AgentFailureKey(k)),
+                ($"{k}(目的地约束)", SshInterop.AgentFailureKey(k, destinationConstraints: true)),
+            }));
+
+    [TestMethod]
     public void 每一种转发连接失败都有五语言文案() =>
         AssertKeys(Enum.GetValues<ForwardErrorReason>().SelectMany(static r => new[]
         {
@@ -298,6 +307,28 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
                 ConfigLine = "LocalForward 8080 db:5432",
             };
             AssertNoChinese(kind.ToString(), SshInterop.Localize(ex));
+        }
+    }
+
+    [TestMethod]
+    public void 英文界面下每一种agent失败都不透传中文()
+    {
+        UseEnglish();
+        foreach (SshAgentFailureKind kind in Enum.GetValues<SshAgentFailureKind>().Where(static k => k != SshAgentFailureKind.Unknown))
+        {
+            foreach (bool destination in new[] { false, true })
+            {
+                SshAgentException ex = new(SshFailureReason.AgentUnavailable, "中文原文", new IOException("pipe broken"))
+                {
+                    FailureKind = kind,
+                    Endpoint = @"\\.\pipe\openssh-ssh-agent",
+                    PipeOwner = "S-1-5-21-1-2-3-1001",
+                    RequestedAlgorithm = "rsa-sha2-512",
+                    SignedAlgorithm = "ssh-rsa",
+                    HasDestinationConstraints = destination,
+                };
+                AssertNoChinese($"{kind}/{destination}", SshInterop.Localize(ex));
+            }
         }
     }
 
@@ -679,6 +710,45 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
         Assert.AreEqual(
             Strings.Format("SshErr_FwdLocalAgentUnavailable", $"{Strings.Get("SshErr_AgentNotRunning")} [AgentNotRunning @ Authenticating]"),
             SshInterop.Localize(agent));
+    }
+
+    /// <summary>
+    /// agent:没在跑仍是原来那句(按原因码的文案,一字不变);管道属主不可信带上 SID;太老的 agent 签错算法时两个算法名清洗过才进文案。
+    /// 曾经 AgentUnavailable 与 agent 的 Unsupported 透传库的中文。
+    /// </summary>
+    [TestMethod]
+    public void agent失败按种类说()
+    {
+        SshAgentException notRunning = new(SshFailureReason.AgentNotRunning, "环境变量 SSH_AUTH_SOCK 没有设。")
+        {
+            FailureKind = SshAgentFailureKind.NotRunning,
+        };
+        Assert.AreEqual($"{Strings.Get("SshErr_AgentNotRunning")} [AgentNotRunning @ Authenticating]", SshInterop.Localize(notRunning));
+
+        SshAgentException untrusted = new(SshFailureReason.AgentUnavailable, "x")
+        {
+            FailureKind = SshAgentFailureKind.PipeOwnerUntrusted,
+            Endpoint = @"\\.\pipe\openssh-ssh-agent",
+            PipeOwner = "S-1-5-21-1-2-3-1001",
+        };
+        Assert.AreEqual(
+            $"{Strings.Format("SshErr_AgentPipeOwnerUntrusted", @"\\.\pipe\openssh-ssh-agent", "S-1-5-21-1-2-3-1001")} [AgentUnavailable @ Authenticating]",
+            SshInterop.Localize(untrusted));
+
+        SshAgentException mismatch = new(SshFailureReason.Unsupported, "x")
+        {
+            FailureKind = SshAgentFailureKind.SignatureAlgorithmMismatch,
+            RequestedAlgorithm = "rsa-sha2-512",
+            SignedAlgorithm = "ssh-rsa\u001b[2J",
+        };
+        Assert.StartsWith(Strings.Format("SshErr_AgentSignatureAlgorithmMismatch", "ssh-rsa?[2J", "rsa-sha2-512"), SshInterop.Localize(mismatch));
+
+        SshAgentException add = new(SshFailureReason.AgentRefused, "x")
+        {
+            FailureKind = SshAgentFailureKind.AddRefused,
+            HasDestinationConstraints = true,
+        };
+        Assert.StartsWith(Strings.Get("SshErr_AgentAddRefusedDestination"), SshInterop.Localize(add));
     }
 
     /// <summary>转发上没带异常的失败:按原因、目标与时限说;撞上限时说拒了几条。</summary>

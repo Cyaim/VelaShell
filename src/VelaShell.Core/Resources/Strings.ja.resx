@@ -7214,6 +7214,45 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_AgentNoKeys" xml:space="preserve">
     <value>ローカルの ssh-agent に鍵がありません。先に読み込んでください(例: ssh-add ~/.ssh/id_ed25519)。</value>
   </data>
+  <data name="SshErr_AgentConnectFailed" xml:space="preserve">
+    <value>ssh-agent({0})に接続できません: {1}</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUnreadable" xml:space="preserve">
+    <value>ssh-agent の名前付きパイプ({0})の所有者を読み取れないため、相手が信頼できる agent か確認できません。</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUntrusted" xml:space="preserve">
+    <value>ssh-agent の名前付きパイプ({0})の所有者は {1} で、現在のユーザーでもシステムでもありません。別のユーザーがこのパイプ名を先に取得した可能性があるため、接続を拒否しました。</value>
+  </data>
+  <data name="SshErr_AgentOutOfStep" xml:space="preserve">
+    <value>ssh-agent との前回のやり取りが途中で中断されたため、この接続は同期がずれて使えません。agent に接続し直してください。</value>
+  </data>
+  <data name="SshErr_AgentClosedBeforeReply" xml:space="preserve">
+    <value>ssh-agent が応答する前に接続を切断しました。</value>
+  </data>
+  <data name="SshErr_AgentCommunicationFailed" xml:space="preserve">
+    <value>ssh-agent との通信に失敗しました: {0}</value>
+  </data>
+  <data name="SshErr_AgentMalformedReply" xml:space="preserve">
+    <value>ssh-agent の応答の形式が不正か、想定外の応答です。</value>
+  </data>
+  <data name="SshErr_AgentSignatureAlgorithmMismatch" xml:space="preserve">
+    <value>ssh-agent は {1} を要求されたのに {0} で署名しました。この agent は古く、SHA-2 の署名フラグに対応していない可能性があります。agent を更新するか、秘密鍵ファイルを使ってください。</value>
+  </data>
+  <data name="SshErr_AgentSignRefused" xml:space="preserve">
+    <value>ssh-agent が署名を拒否しました。よくある原因: 鍵がもう agent にない、確認(ssh-add -c)が承認されなかった、または鍵の宛先制限(ssh-add -h)でこのホスト・ユーザー・転送経路が許可されていない。</value>
+  </data>
+  <data name="SshErr_AgentAddRefused" xml:space="preserve">
+    <value>ssh-agent が鍵の追加を拒否しました。よくある原因: agent が制約(有効期限 / 毎回の確認)に対応していない、ロックされている(ssh-add -x)、またはこの鍵の種類に対応していない。</value>
+  </data>
+  <data name="SshErr_AgentAddRefusedDestination" xml:space="preserve">
+    <value>ssh-agent が鍵の追加を拒否しました。よくある原因: agent が制約(有効期限 / 毎回の確認)に対応していない、ロックされている(ssh-add -x)、またはこの鍵の種類に対応していない。 今回は宛先制限も付いていました。agent が対応していない可能性があります(restrict-destination-v00@openssh.com は OpenSSH 8.9 以降。OpenSSH 以外の agent はほとんど未対応)。</value>
+  </data>
+  <data name="SshErr_AgentRemoveAllRefused" xml:space="preserve">
+    <value>ssh-agent がすべての鍵の削除を拒否しました。ロックされている(ssh-add -x)可能性があります。</value>
+  </data>
+  <data name="SshErr_AgentRequestTooLarge" xml:space="preserve">
+    <value>agent に追加する鍵または宛先制限が大きすぎ、agent メッセージの上限(256 KiB)を超えています。</value>
+  </data>
   <data name="DiagSvc_SuggestAgentKeys" xml:space="preserve">
     <value>ssh-agent が起動していて、このサーバーが受け付ける鍵が読み込まれているか確認してください(ssh-add -l で一覧表示できます)。</value>
   </data>

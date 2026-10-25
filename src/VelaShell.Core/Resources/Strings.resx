@@ -7219,6 +7219,45 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_AgentNoKeys" xml:space="preserve">
     <value>The local ssh-agent holds no keys. Load one first, e.g. ssh-add ~/.ssh/id_ed25519.</value>
   </data>
+  <data name="SshErr_AgentConnectFailed" xml:space="preserve">
+    <value>Cannot connect to ssh-agent at {0}: {1}</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUnreadable" xml:space="preserve">
+    <value>Cannot read the owner of the ssh-agent named pipe ({0}), so the other end cannot be confirmed to be a trusted agent.</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUntrusted" xml:space="preserve">
+    <value>The ssh-agent named pipe ({0}) is owned by {1}, which is neither the current user nor the system. Another user may have taken this pipe name first, so the connection was refused.</value>
+  </data>
+  <data name="SshErr_AgentOutOfStep" xml:space="preserve">
+    <value>An earlier exchange with ssh-agent was interrupted, so this connection is out of step and cannot be used. Reconnect to the agent.</value>
+  </data>
+  <data name="SshErr_AgentClosedBeforeReply" xml:space="preserve">
+    <value>ssh-agent closed the connection before replying.</value>
+  </data>
+  <data name="SshErr_AgentCommunicationFailed" xml:space="preserve">
+    <value>Communication with ssh-agent failed: {0}</value>
+  </data>
+  <data name="SshErr_AgentMalformedReply" xml:space="preserve">
+    <value>ssh-agent sent a malformed or unexpected reply.</value>
+  </data>
+  <data name="SshErr_AgentSignatureAlgorithmMismatch" xml:space="preserve">
+    <value>ssh-agent signed with {0} although {1} was requested. The agent is probably too old to support SHA-2 signature flags; update it, or use the private key file instead.</value>
+  </data>
+  <data name="SshErr_AgentSignRefused" xml:space="preserve">
+    <value>ssh-agent refused to sign. Common causes: the key is no longer in the agent, a confirmation (ssh-add -c) was not approved, or the key&apos;s destination constraints (ssh-add -h) do not allow this host, user or forwarding path.</value>
+  </data>
+  <data name="SshErr_AgentAddRefused" xml:space="preserve">
+    <value>ssh-agent refused to add the key. Common causes: the agent does not support constraints (lifetime / confirmation), it is locked (ssh-add -x), or it does not support this key type.</value>
+  </data>
+  <data name="SshErr_AgentAddRefusedDestination" xml:space="preserve">
+    <value>ssh-agent refused to add the key. Common causes: the agent does not support constraints (lifetime / confirmation), it is locked (ssh-add -x), or it does not support this key type. This request also carried destination constraints, which the agent may not support (restrict-destination-v00@openssh.com is only available from OpenSSH 8.9; agents other than OpenSSH mostly lack it).</value>
+  </data>
+  <data name="SshErr_AgentRemoveAllRefused" xml:space="preserve">
+    <value>ssh-agent refused to remove all keys. It is probably locked (ssh-add -x).</value>
+  </data>
+  <data name="SshErr_AgentRequestTooLarge" xml:space="preserve">
+    <value>The key or destination constraints are too large for an agent message (the limit is 256 KiB).</value>
+  </data>
   <data name="DiagSvc_SuggestAgentKeys" xml:space="preserve">
     <value>Check that ssh-agent is running and holds the key this server accepts: ssh-add -l lists the loaded keys.</value>
   </data>

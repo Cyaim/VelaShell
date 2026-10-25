@@ -7691,6 +7691,45 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshErr_AgentNoKeys" xml:space="preserve">
     <value>本机 ssh-agent 里一把密钥都没有。请先加载,例如 ssh-add ~/.ssh/id_ed25519。</value>
   </data>
+  <data name="SshErr_AgentConnectFailed" xml:space="preserve">
+    <value>连不上 ssh-agent({0}):{1}</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUnreadable" xml:space="preserve">
+    <value>读不到 ssh-agent 命名管道({0})的属主,不能确认另一头是可信的 agent。</value>
+  </data>
+  <data name="SshErr_AgentPipeOwnerUntrusted" xml:space="preserve">
+    <value>ssh-agent 命名管道({0})的属主是 {1},既不是当前用户也不是系统 —— 可能是别的用户抢先占了这个管道名,已拒绝连接。</value>
+  </data>
+  <data name="SshErr_AgentOutOfStep" xml:space="preserve">
+    <value>与 ssh-agent 的上一次问答中途被打断,这条连接上的问答已经错位,不能再用 —— 请重新连接 agent。</value>
+  </data>
+  <data name="SshErr_AgentClosedBeforeReply" xml:space="preserve">
+    <value>ssh-agent 在应答之前就断开了。</value>
+  </data>
+  <data name="SshErr_AgentCommunicationFailed" xml:space="preserve">
+    <value>与 ssh-agent 通信失败:{0}</value>
+  </data>
+  <data name="SshErr_AgentMalformedReply" xml:space="preserve">
+    <value>ssh-agent 的应答格式不对,或者不是这一问该回的。</value>
+  </data>
+  <data name="SshErr_AgentSignatureAlgorithmMismatch" xml:space="preserve">
+    <value>ssh-agent 用 {0} 签了名,而请求的是 {1} —— 这个 agent 多半太老,不认 SHA-2 的签名标志位。升级 agent,或者改用私钥文件。</value>
+  </data>
+  <data name="SshErr_AgentSignRefused" xml:space="preserve">
+    <value>ssh-agent 拒绝签名。常见原因:这把密钥已经不在 agent 里了,agent 配了确认(ssh-add -c)而没有批准,或者这把钥带目的地约束(ssh-add -h),不许用在这台主机、这个用户或这条转发路径上。</value>
+  </data>
+  <data name="SshErr_AgentAddRefused" xml:space="preserve">
+    <value>ssh-agent 拒绝加入这把密钥。常见原因:agent 不支持约束(有效期 / 逐次确认)、agent 已被锁定(ssh-add -x),或者 agent 不支持这种密钥类型。</value>
+  </data>
+  <data name="SshErr_AgentAddRefusedDestination" xml:space="preserve">
+    <value>ssh-agent 拒绝加入这把密钥。常见原因:agent 不支持约束(有效期 / 逐次确认)、agent 已被锁定(ssh-add -x),或者 agent 不支持这种密钥类型。 这次还带着目的地约束:agent 可能不支持它(restrict-destination-v00@openssh.com,OpenSSH 8.9 起才有;非 OpenSSH 的 agent 多半不支持)。</value>
+  </data>
+  <data name="SshErr_AgentRemoveAllRefused" xml:space="preserve">
+    <value>ssh-agent 拒绝清空。常见原因:agent 已被锁定(ssh-add -x)。</value>
+  </data>
+  <data name="SshErr_AgentRequestTooLarge" xml:space="preserve">
+    <value>要加入 agent 的密钥或目的地约束太大,超出了 agent 报文的长度上限(256 KiB)。</value>
+  </data>
   <data name="DiagSvc_SuggestAgentKeys" xml:space="preserve">
     <value>确认 ssh-agent 正在运行,并且加载了这台服务器认可的那把密钥:ssh-add -l 可列出已加载的密钥。</value>
   </data>

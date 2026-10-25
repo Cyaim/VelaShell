@@ -519,6 +519,55 @@ internal static partial class SshInterop
     private static bool CarriesForwardCause(SshForwardFailureKind kind) =>
         kind is SshForwardFailureKind.LocalAgentUnavailable or SshForwardFailureKind.ConfigForwardFailed;
 
+    // ------------------------------------------------------------ ssh-agent
+
+    /// <summary>agent 失败的文案键;没归类时为 <see langword="null" />。加钥被拒时带没带目的地约束分开说。</summary>
+    internal static string? AgentFailureKey(SshAgentFailureKind kind, bool destinationConstraints = false) => kind switch
+    {
+        SshAgentFailureKind.NotRunning => "SshErr_AgentNotRunning",
+        SshAgentFailureKind.ConnectFailed => "SshErr_AgentConnectFailed",
+        SshAgentFailureKind.PipeOwnerUnreadable => "SshErr_AgentPipeOwnerUnreadable",
+        SshAgentFailureKind.PipeOwnerUntrusted => "SshErr_AgentPipeOwnerUntrusted",
+        SshAgentFailureKind.ConversationOutOfStep => "SshErr_AgentOutOfStep",
+        SshAgentFailureKind.ClosedBeforeReply => "SshErr_AgentClosedBeforeReply",
+        SshAgentFailureKind.CommunicationFailed => "SshErr_AgentCommunicationFailed",
+        SshAgentFailureKind.MalformedReply => "SshErr_AgentMalformedReply",
+        SshAgentFailureKind.SignatureAlgorithmMismatch => "SshErr_AgentSignatureAlgorithmMismatch",
+        SshAgentFailureKind.SignRefused => "SshErr_AgentSignRefused",
+        SshAgentFailureKind.AddRefused => destinationConstraints ? "SshErr_AgentAddRefusedDestination" : "SshErr_AgentAddRefused",
+        SshAgentFailureKind.RemoveAllRefused => "SshErr_AgentRemoveAllRefused",
+        SshAgentFailureKind.RequestTooLarge => "SshErr_AgentRequestTooLarge",
+        _ => null,
+    };
+
+    /// <summary>
+    /// ssh-agent 的失败:没在跑、连不上、管道属主不可信、拒签 / 拒绝加钥、签名算法对不上(太老的 agent)……按种类说。
+    /// </summary>
+    /// <remarks>
+    /// 曾经 <see cref="SshFailureReason.AgentUnavailable" /> 与 agent 的 <see cref="SshFailureReason.Unsupported" /> 一律透传库的中文
+    /// (具体信息 —— SID、IO 错误、两个算法名 —— 只在句子里)。agent 回的算法名来自 agent,清洗之后才进文案;IO 错误的原话来自 .NET,按系统语言。
+    /// </remarks>
+    internal static string LocalizeAgent(SshAgentException ex)
+    {
+        if (AgentFailureKey(ex.FailureKind, ex.HasDestinationConstraints) is not { } key)
+        {
+            return LocalizeByReason(ex);
+        }
+
+        string endpoint = PeerText.Sanitize(ex.Endpoint, 256);
+        string text = ex.FailureKind switch
+        {
+            SshAgentFailureKind.ConnectFailed => Strings.Format(key, endpoint, ex.InnerException?.Message ?? "?"),
+            SshAgentFailureKind.CommunicationFailed => Strings.Format(key, ex.InnerException?.Message ?? "?"),
+            SshAgentFailureKind.PipeOwnerUnreadable => Strings.Format(key, endpoint),
+            SshAgentFailureKind.PipeOwnerUntrusted => Strings.Format(key, endpoint, ex.PipeOwner ?? "?"),
+            SshAgentFailureKind.SignatureAlgorithmMismatch => Strings.Format(key,
+                PeerText.Sanitize(ex.SignedAlgorithm, 64), PeerText.Sanitize(ex.RequestedAlgorithm, 64)),
+            _ => Strings.Get(key),
+        };
+        return $"{text} [{ex.Reason} @ {ex.Phase}]";
+    }
+
     // ------------------------------------------------------------ 转发的单条连接失败
 
     /// <summary>

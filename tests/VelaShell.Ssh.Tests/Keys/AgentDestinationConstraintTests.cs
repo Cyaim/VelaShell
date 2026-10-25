@@ -189,6 +189,8 @@ public sealed class AgentDestinationConstraintTests
 
         Assert.AreEqual(SshFailureReason.AgentRefused, error.Reason);
         Assert.Contains("目的地约束", error.Message);
+        Assert.AreEqual(SshAgentFailureKind.AddRefused, error.FailureKind);
+        Assert.IsTrue(error.HasDestinationConstraints, "界面据此点出 agent 可能不支持目的地约束");
         Assert.AreEqual(1, rig.Agent.AddRequests, "被拒就是被拒，不能退回去不带约束地加");
     }
 
@@ -211,6 +213,7 @@ public sealed class AgentDestinationConstraintTests
             await rig.Client.AddIdentityAsync(key, "k", new SshAgentKeyConstraints { AllowedHops = hops }, rig.Token));
 
         Assert.AreEqual(SshFailureReason.LimitExceeded, error.Reason);
+        Assert.AreEqual(SshAgentFailureKind.RequestTooLarge, error.FailureKind);
         Assert.AreEqual(0, rig.Agent.AddRequests);
     }
 

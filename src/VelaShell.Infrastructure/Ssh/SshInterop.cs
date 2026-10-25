@@ -131,6 +131,7 @@ internal static partial class SshInterop
         SshCertificateException { ProblemKind: not SshKeyProblemKind.Unknown } certificate => LocalizeKeyProblem(certificate),
         SshConnectException { FailureKind: not SshConnectFailureKind.Unknown } connect => LocalizeConnect(connect),
         SshForwardException { FailureKind: not SshForwardFailureKind.Unknown } forward => LocalizeForward(forward),
+        SshAgentException { FailureKind: not SshAgentFailureKind.Unknown } agent => LocalizeAgent(agent),
         // 重协商时密钥交换按首次交换的口径报的失败(验签失败、主机密钥类型不符),库把它包成「建好的连接断了」,原来那条在内层。
         SshConnectionClosedException
         {
@@ -162,7 +163,7 @@ internal static partial class SshInterop
             SshFailureReason.KeyPassphraseIncorrect => "SshErr_KeyPassphraseIncorrect",
             SshFailureReason.AgentRefused => "SshErr_AgentRefused",
             // agent 没在跑:原因码足以说清下一步(把它起来)。库的消息里带着套接字路径 / 管道名,这里不需要。
-            // AgentUnavailable 不翻:它包括「管道属主不可信」(消息里有 SID)与各种 IO 错误,具体信息只在原文里。
+            // AgentUnavailable 按库的种类说(管道属主不可信带着 SID、连不上带着 IO 错误,见 LocalizeAgent);到这一层的是没归类的。
             SshFailureReason.AgentNotRunning => "SshErr_AgentNotRunning",
             SshFailureReason.ChannelRequestRejected => "SshErr_ChannelRequestRejected",
             SshFailureReason.ForwardRejected => "SshErr_ForwardRejected",

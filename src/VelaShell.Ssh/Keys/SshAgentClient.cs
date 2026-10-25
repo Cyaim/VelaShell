@@ -172,7 +172,10 @@ public sealed class SshAgentClient : IAsyncDisposable
                     ? "找不到 ssh-agent。Windows 上它是一个服务，用" +
                       "「Get-Service ssh-agent」看状态，「Start-Service ssh-agent」起它。"
                     : "环境变量 SSH_AUTH_SOCK 没有设 —— 本机没有在跑 ssh-agent，" +
-                      "或者当前会话没继承到它。");
+                      "或者当前会话没继承到它。")
+            {
+                FailureKind = SshAgentFailureKind.NotRunning,
+            };
         }
 
         Stream stream = await OpenStreamAsync(actual, cancellationToken).ConfigureAwait(false);
@@ -227,17 +230,29 @@ public sealed class SshAgentClient : IAsyncDisposable
         {
             throw new SshAgentException(SshFailureReason.AgentNotRunning,
                 $"ssh-agent 的命名管道（{endpoint}）在 {PipeConnectTimeout.TotalSeconds:0} 秒内没有出现 —— agent 服务多半没在跑。" +
-                "用「Get-Service ssh-agent」看状态，「Start-Service ssh-agent」起它；用 PuTTY 的话开着 Pageant 也行。", ex);
+                "用「Get-Service ssh-agent」看状态，「Start-Service ssh-agent」起它；用 PuTTY 的话开着 Pageant 也行。", ex)
+            {
+                FailureKind = SshAgentFailureKind.NotRunning,
+                Endpoint = endpoint,
+            };
         }
         catch (SocketException ex) when (ex.SocketErrorCode is SocketError.AddressNotAvailable or SocketError.ConnectionRefused)
         {
             // 前者是套接字文件不在（ENOENT），后者是文件还在、没人监听 —— agent 退出时没删掉它。
             throw new SshAgentException(SshFailureReason.AgentNotRunning,
-                $"ssh-agent 的套接字（{endpoint}）不存在或没人监听 —— agent 多半已经退出：{ex.SocketErrorCode}。", ex);
+                $"ssh-agent 的套接字（{endpoint}）不存在或没人监听 —— agent 多半已经退出：{ex.SocketErrorCode}。", ex)
+            {
+                FailureKind = SshAgentFailureKind.NotRunning,
+                Endpoint = endpoint,
+            };
         }
         catch (Exception ex) when (ex is not SshAgentException and not OperationCanceledException)
         {
-            throw new SshAgentException(SshFailureReason.AgentUnavailable, $"连不上 ssh-agent（{endpoint}）：{ex.Message}", ex);
+            throw new SshAgentException(SshFailureReason.AgentUnavailable, $"连不上 ssh-agent（{endpoint}）：{ex.Message}", ex)
+            {
+                FailureKind = SshAgentFailureKind.ConnectFailed,
+                Endpoint = endpoint,
+            };
         }
     }
 
@@ -271,7 +286,11 @@ public sealed class SshAgentClient : IAsyncDisposable
                                        or System.Security.Principal.IdentityNotMappedException)
         {
             throw new SshAgentException(SshFailureReason.AgentUnavailable,
-                $"读不到 ssh-agent 命名管道（{endpoint}）的属主，不能确认另一头是可信的 agent：{ex.Message}", ex);
+                $"读不到 ssh-agent 命名管道（{endpoint}）的属主，不能确认另一头是可信的 agent：{ex.Message}", ex)
+            {
+                FailureKind = SshAgentFailureKind.PipeOwnerUnreadable,
+                Endpoint = endpoint,
+            };
         }
 
         using var current = System.Security.Principal.WindowsIdentity.GetCurrent();
@@ -279,7 +298,12 @@ public sealed class SshAgentClient : IAsyncDisposable
         {
             throw new SshAgentException(SshFailureReason.AgentUnavailable,
                 $"ssh-agent 命名管道（{endpoint}）的属主是 {owner?.Value ?? "（空）"}，" +
-                "既不是当前用户也不是系统 —— 可能是别的用户抢先占了这个管道名。已拒绝连接。");
+                "既不是当前用户也不是系统 —— 可能是别的用户抢先占了这个管道名。已拒绝连接。")
+            {
+                FailureKind = SshAgentFailureKind.PipeOwnerUntrusted,
+                Endpoint = endpoint,
+                PipeOwner = owner?.Value,
+            };
         }
     }
 
@@ -313,7 +337,10 @@ public sealed class SshAgentClient : IAsyncDisposable
 
     /// <summary>agent 的应答格式不对：曾经让解析层的 internal 异常原样漏出去，调用方只接 <see cref="SshAgentException"/>。</summary>
     private static SshAgentException Malformed(string what, SshWireFormatException inner) =>
-        new(SshFailureReason.ProtocolError, $"agent 回的{what}格式不对：{inner.Message}", inner);
+        new(SshFailureReason.ProtocolError, $"agent 回的{what}格式不对：{inner.Message}", inner)
+        {
+            FailureKind = SshAgentFailureKind.MalformedReply,
+        };
 
     private static List<SshAgentIdentity> ParseIdentities(byte[] response)
     {
@@ -322,7 +349,10 @@ public sealed class SshAgentClient : IAsyncDisposable
 
         if (type != SshAgentMessage.IdentitiesAnswer)
         {
-            throw new SshAgentException(SshFailureReason.ProtocolError, $"agent 回了 {type} 而不是身份列表。");
+            throw new SshAgentException(SshFailureReason.ProtocolError, $"agent 回了 {type} 而不是身份列表。")
+            {
+                FailureKind = SshAgentFailureKind.MalformedReply,
+            };
         }
 
         uint count = reader.ReadUInt32();
@@ -405,7 +435,12 @@ public sealed class SshAgentClient : IAsyncDisposable
         {
             throw new SshAgentException(SshFailureReason.Unsupported,
                 $"ssh-agent 用 {PeerText.Sanitize(signedWith, 64)} 签了名，而请求的是 {requested} —— " +
-                "这个 agent 多半太老，不认 SHA-2 的签名标志位。升级 agent，或者改用私钥文件。");
+                "这个 agent 多半太老，不认 SHA-2 的签名标志位。升级 agent，或者改用私钥文件。")
+            {
+                FailureKind = SshAgentFailureKind.SignatureAlgorithmMismatch,
+                RequestedAlgorithm = requested,
+                SignedAlgorithm = signedWith,
+            };
         }
         return signature;
     }
@@ -421,12 +456,18 @@ public sealed class SshAgentClient : IAsyncDisposable
             throw new SshAgentException(SshFailureReason.AgentRefused,
                 "ssh-agent 拒绝签名。常见原因：这把密钥已经不在 agent 里了，" +
                 "agent 配了确认（ssh-add -c）而使用者没有批准，" +
-                "或者这把钥带目的地约束（ssh-add -h），不许用在这台主机、这个用户或这条转发路径上。");
+                "或者这把钥带目的地约束（ssh-add -h），不许用在这台主机、这个用户或这条转发路径上。")
+            {
+                FailureKind = SshAgentFailureKind.SignRefused,
+            };
         }
 
         if (type != SshAgentMessage.SignResponse)
         {
-            throw new SshAgentException(SshFailureReason.ProtocolError, $"agent 回了 {type} 而不是签名。");
+            throw new SshAgentException(SshFailureReason.ProtocolError, $"agent 回了 {type} 而不是签名。")
+            {
+                FailureKind = SshAgentFailureKind.MalformedReply,
+            };
         }
 
         return reader.ReadStringAsArray(MaxMessageLength);
@@ -558,10 +599,17 @@ public sealed class SshAgentClient : IAsyncDisposable
                     (constraints?.AllowedHops is not null
                         ? "这次还带着目的地约束：agent 可能不支持它（restrict-destination-v00@openssh.com，OpenSSH 8.9 起才有；" +
                           "非 OpenSSH 的 agent 多半不支持）。"
-                        : ""));
+                        : ""))
+                {
+                    FailureKind = SshAgentFailureKind.AddRefused,
+                    HasDestinationConstraints = constraints?.AllowedHops is not null,
+                };
             }
 
-            throw new SshAgentException(SshFailureReason.ProtocolError, $"agent 回了 {response[0]} 而不是成功 / 失败。");
+            throw new SshAgentException(SshFailureReason.ProtocolError, $"agent 回了 {response[0]} 而不是成功 / 失败。")
+            {
+                FailureKind = SshAgentFailureKind.MalformedReply,
+            };
         }
         finally
         {
@@ -594,7 +642,10 @@ public sealed class SshAgentClient : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!await SucceededAsync(new[] { SshAgentMessage.RemoveAllIdentities }, "清空", cancellationToken).ConfigureAwait(false))
         {
-            throw new SshAgentException(SshFailureReason.AgentRefused, "ssh-agent 拒绝清空。常见原因：agent 已被锁定（ssh-add -x）。");
+            throw new SshAgentException(SshFailureReason.AgentRefused, "ssh-agent 拒绝清空。常见原因：agent 已被锁定（ssh-add -x）。")
+            {
+                FailureKind = SshAgentFailureKind.RemoveAllRefused,
+            };
         }
     }
 
@@ -644,7 +695,10 @@ public sealed class SshAgentClient : IAsyncDisposable
         {
             SshAgentMessage.Success => true,
             SshAgentMessage.Failure => false,
-            _ => throw new SshAgentException(SshFailureReason.ProtocolError, $"{what}：agent 回了 {response[0]} 而不是成功 / 失败。"),
+            _ => throw new SshAgentException(SshFailureReason.ProtocolError, $"{what}：agent 回了 {response[0]} 而不是成功 / 失败。")
+            {
+                FailureKind = SshAgentFailureKind.MalformedReply,
+            },
         };
     }
 
@@ -830,7 +884,11 @@ public sealed class SshAgentClient : IAsyncDisposable
             if (_outOfStep)
             {
                 throw new SshAgentException(SshFailureReason.AgentUnavailable,
-                    "与 ssh-agent 的上一次问答中途被打断（取消或出错），这条连接上的问答已经错位，不能再用 —— 请重新连接 agent。");
+                    "与 ssh-agent 的上一次问答中途被打断（取消或出错），这条连接上的问答已经错位，不能再用 —— 请重新连接 agent。")
+                {
+                    FailureKind = SshAgentFailureKind.ConversationOutOfStep,
+                    Endpoint = Endpoint,
+                };
             }
 
             byte[] header = new byte[4];
@@ -845,7 +903,10 @@ public sealed class SshAgentClient : IAsyncDisposable
 
             if (length is 0 or > MaxMessageLength)
             {
-                throw new SshAgentException(SshFailureReason.ProtocolError, $"agent 报文长度不合理：{length}。");
+                throw new SshAgentException(SshFailureReason.ProtocolError, $"agent 报文长度不合理：{length}。")
+                {
+                    FailureKind = SshAgentFailureKind.MalformedReply,
+                };
             }
 
             byte[] response = new byte[length];
@@ -855,11 +916,19 @@ public sealed class SshAgentClient : IAsyncDisposable
         }
         catch (EndOfStreamException ex)
         {
-            throw new SshAgentException(SshFailureReason.AgentUnavailable, "ssh-agent 在应答之前就断开了。", ex);
+            throw new SshAgentException(SshFailureReason.AgentUnavailable, "ssh-agent 在应答之前就断开了。", ex)
+            {
+                FailureKind = SshAgentFailureKind.ClosedBeforeReply,
+                Endpoint = Endpoint,
+            };
         }
         catch (IOException ex)
         {
-            throw new SshAgentException(SshFailureReason.AgentUnavailable, $"与 ssh-agent 通信失败：{ex.Message}", ex);
+            throw new SshAgentException(SshFailureReason.AgentUnavailable, $"与 ssh-agent 通信失败：{ex.Message}", ex)
+            {
+                FailureKind = SshAgentFailureKind.CommunicationFailed,
+                Endpoint = Endpoint,
+            };
         }
         finally
         {
@@ -923,7 +992,10 @@ public sealed class SshAgentClient : IAsyncDisposable
         {
             if (buffer.Length - WrittenCount < Math.Max(sizeHint, 1))
             {
-                throw new SshAgentException(SshFailureReason.LimitExceeded, "要加入 agent 的密钥或目的地约束太大，超出了 agent 报文的长度上限（256 KiB）。");
+                throw new SshAgentException(SshFailureReason.LimitExceeded, "要加入 agent 的密钥或目的地约束太大，超出了 agent 报文的长度上限（256 KiB）。")
+                {
+                    FailureKind = SshAgentFailureKind.RequestTooLarge,
+                };
             }
             return WrittenCount;
         }
