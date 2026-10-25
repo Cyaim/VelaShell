@@ -78,8 +78,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ISettingsService>(sp =>
         {
             VelaShellStoragePaths paths = sp.GetRequiredService<VelaShellStoragePaths>();
+            // 设置里的代理密码落盘前同样经 ISecretProtector 加密(与连接配置里的密码同一强度)。
             return new AuditedSettingsService(
-                new SonnetDbSettingsService(sp.GetRequiredService<SonnetDbEngine>(), [paths.RootDirectory]),
+                new SonnetDbSettingsService(sp.GetRequiredService<SonnetDbEngine>(), [paths.RootDirectory],
+                    sp.GetRequiredService<ISecretProtector>()),
                 sp.GetService<IAuditLogService>());
         });
         // 共享凭据(#550):连接配置只存引用,连接那一刻由解析器按来源取回。

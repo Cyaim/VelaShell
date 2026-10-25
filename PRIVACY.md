@@ -44,7 +44,7 @@ computer unless you explicitly enable the optional sync feature described below.
 | Data | Location |
 | --- | --- |
 | Connection profiles (host, port, username), groups, and settings | `~/.velashell` |
-| Passwords and private-key passphrases you choose to save, including those of shared credentials (one username and password / key reused by many connections) | Same folder, encrypted with AES-256 |
+| Passwords and private-key passphrases you choose to save, including those of shared credentials (one username and password / key reused by many connections) and the network proxy password in your settings | Same folder, encrypted with AES-256 |
 | The encryption key protecting the above | Same folder, generated on your device |
 | Known SSH host keys | Same folder |
 | Saved commands and snippets | Same folder |
@@ -257,7 +257,7 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 数据 | 位置 |
 | --- | --- |
 | 连接配置(主机、端口、用户名)、分组与应用设置 | `~/.velashell` |
-| 你选择保存的密码与私钥口令,包括共享凭据(多条连接共用的一套用户名与密码 / 密钥)里的 | 同上,以 AES-256 加密 |
+| 你选择保存的密码与私钥口令,包括共享凭据(多条连接共用的一套用户名与密码 / 密钥)里的,以及设置里的网络代理密码 | 同上,以 AES-256 加密 |
 | 保护上述内容的加密密钥 | 同上,在你的设备上生成 |
 | 已知的 SSH 主机密钥 | 同上 |
 | 快捷命令与代码片段 | 同上 |
