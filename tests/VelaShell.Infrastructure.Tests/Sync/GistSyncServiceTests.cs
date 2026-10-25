@@ -2,7 +2,9 @@ using NSubstitute;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
+using VelaShell.Core.Resources;
 using VelaShell.Core.Sync;
+using VelaShell.Infrastructure.Persistence;
 using VelaShell.Infrastructure.Sync;
 
 namespace VelaShell.Infrastructure.Tests.Sync;
@@ -98,6 +100,37 @@ public sealed class GistSyncServiceTests
             content, System.Text.Json.JsonSerializerOptions.Web)!;
         Assert.AreEqual(3, envelope.SchemaVersion, "用到共享凭据的载荷要让不认识它的旧客户端拒收");
         Assert.AreEqual(3, envelope.Payload!.SchemaVersion);
+    }
+
+    /// <summary>
+    /// 同步口令解不开(本机加密密钥这次没取到、数据目录从别的电脑拷来)时必须停下:
+    /// 拿密文本身当口令去加密上传,远端那份就成了别的设备谁也解不开的东西。
+    /// </summary>
+    [TestMethod]
+    public async Task Push_WithAnUndecryptablePassphrase_RefusesInsteadOfEncryptingWithTheCiphertext()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "velashell-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            ISessionRepository sessions = Substitute.For<ISessionRepository>();
+            sessions.GetAllSessionsAsync().Returns([]);
+            sessions.GetAllGroupsAsync().Returns([]);
+            var service = new GistSyncService(Substitute.For<ISettingsService>(), sessions, Substitute.For<IAppDataStore>(),
+                Substitute.For<IQuickCommandRepository>(), new AesSecretProtector(Path.Combine(directory, "secret.key")));
+            SyncSettings config = ProfilesOnly();
+            // 另一把密钥加密的口令:在这里解不开。
+            config.ProtectedPassphrase = new AesSecretProtector(Path.Combine(directory, "other.key")).Protect("e2e-passphrase");
+
+            InvalidOperationException ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+                () => service.BuildGistContentAsync(config, CancellationToken.None));
+
+            Assert.AreEqual(Strings.Get("SyncSvc_PassphraseDecryptFailed"), ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     /// <summary>没用这个功能的人,载荷版本不变,照旧与旧客户端互通。</summary>

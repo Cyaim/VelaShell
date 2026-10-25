@@ -4504,6 +4504,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SyncSvc_TokenDecryptFailed" xml:space="preserve">
     <value>無法解密已存的 GitHub 權杖,請重新填寫。</value>
   </data>
+  <data name="SyncSvc_PassphraseDecryptFailed" xml:space="preserve">
+    <value>無法解密已存的同步口令,請重新填寫。</value>
+  </data>
   <data name="SyncSvc_TokenInvalid" xml:space="preserve">
     <value>GitHub 權杖無效或已過期,請重新產生(需 gist 權限)。</value>
   </data>
@@ -5079,6 +5082,30 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Notify_CrashAction" xml:space="preserve">
     <value>開啟日誌目錄</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedTitle" xml:space="preserve">
+    <value>本機加密金鑰無法使用,已換了一把新的</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedBody" xml:space="preserve">
+    <value>資料目錄裡的金鑰檔案解不開(換了系統帳戶、重灌了系統,或者資料目錄是從別的電腦複製來的),已原樣改名保留為 {0}。之前儲存的密碼在這裡解不開:連線時會提示重新輸入,同步權杖與外掛機密也要重新填寫。回到原來的帳戶或電腦,憑這個檔案仍能找回。</value>
+  </data>
+  <data name="Notify_MasterKeyMissingTitle" xml:space="preserve">
+    <value>系統金鑰鏈裡找不到之前的加密金鑰</value>
+  </data>
+  <data name="Notify_MasterKeyMissingBody" xml:space="preserve">
+    <value>資料目錄記著的加密金鑰不在這台電腦的系統金鑰鏈裡 —— 資料目錄可能是從別的電腦或帳戶複製來的,或者那一筆被刪掉了。用它加密的密碼在這裡解不開:連線時會提示重新輸入;新儲存的密碼不受影響。</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableTitle" xml:space="preserve">
+    <value>系統金鑰鏈暫時無法使用</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableBody" xml:space="preserve">
+    <value>這次沒能開啟 {0}({1})。已儲存的密碼這次解不開,連線時會提示重新輸入;它們沒有遺失,金鑰鏈恢復後下次啟動照常讀取。這段期間新儲存的密碼先用資料目錄裡的本機金鑰加密,之後自動併入金鑰鏈。</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackTitle" xml:space="preserve">
+    <value>加密金鑰仍儲存在資料目錄裡</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
+    <value>{0} 無法使用({1}),本機加密金鑰照舊儲存在資料目錄的金鑰檔案裡(與之前相同)。金鑰鏈可用之後,下次啟動會自動遷移過去。</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>系統</value>
@@ -6282,7 +6309,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
 
 原因：{0}
 
-這通常是加密金鑰（~/.velashell/secret.key）變了，例如切換了 Windows 帳戶、重灌了系統，或資料目錄是從別的電腦複製來的。如果能找回原本的金鑰，請關閉 VelaShell 後把它放回去，不要重設。
+這通常是本機加密金鑰變了或這次沒取到，例如切換了 Windows 帳戶、重灌了系統、資料目錄是從別的電腦複製來的，或者系統金鑰鏈這次沒能開啟（訊息中心裡寫明了是哪一種）。如果能找回原本的金鑰、或者金鑰鏈恢復後就能讀，請關閉 VelaShell 先處理那一頭，不要重設。
 
 重設會新建一個空的信任庫（讀不出來的那份會保留作備份）。已信任的發行者需要重新信任，已安裝外掛的防竄改收據也會遺失。重設後請重新啟動 VelaShell，讓已安裝外掛重新驗證。</value>
   </data>

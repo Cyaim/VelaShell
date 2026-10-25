@@ -174,6 +174,23 @@ public class App : Application
         // 容器建完 ≠ 服务建完:这里注册的全是惰性单例,数据库要到第一次解析才真打开。
         // 所以这个点量的是 Avalonia 平台初始化 + XAML 加载 + 容器构造,不含 IO。
         StartupTrace.Mark("DI");
+        // 本机加密密钥在后台先解析好:macOS / Linux 上要问系统密钥链(D-Bus 往返,keyring 锁着时还要等用户解锁),
+        // 不能让第一个读写机密的调用方(会话树加载、插件信任库)替它在 UI 线程上干等。
+        // 解析失败(数据目录写不进去)不在这里报:第一次真用到机密时会照样抛出来。
+        if (_serviceProvider.GetService<IMasterKeyStatusSource>() is { } masterKey)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    _ = masterKey.GetKeyStatus();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"[Secrets] Master key warm-up failed: {ex.Message}");
+                }
+            });
+        }
         _themeService = _serviceProvider.GetRequiredService<IThemeService>();
 
         // 进程级默认代理:覆盖应用内全部 HttpClient(更新检查、Gist 同步、Webhook、

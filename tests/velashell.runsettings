@@ -18,4 +18,12 @@
     <!-- 单个测试的默认上限(毫秒);方法上显式的 [Timeout] 优先。 -->
     <TestTimeout>60000</TestTimeout>
   </MSTest>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <!-- 测试一律不碰系统密钥链(MasterKeyStores.DisableEnvironmentVariable):在 macOS / Linux 桌面上跑测试,
+           不该往开发者的钥匙串 / keyring 里写条目,也不该弹解锁框把整套用例卡住。
+           真密钥链的用例是另一类(SystemKeychain),要显式设 VELASHELL_KEYCHAIN_TESTS=1 才跑。 -->
+      <VELASHELL_NO_KEYCHAIN>1</VELASHELL_NO_KEYCHAIN>
+    </EnvironmentVariables>
+  </RunConfiguration>
 </RunSettings>

@@ -4206,6 +4206,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SyncSvc_TokenDecryptFailed" xml:space="preserve">
     <value>保存済みの GitHub トークンを復号できません。もう一度入力してください。</value>
   </data>
+  <data name="SyncSvc_PassphraseDecryptFailed" xml:space="preserve">
+    <value>保存済みの同期パスフレーズを復号できません。もう一度入力してください。</value>
+  </data>
   <data name="SyncSvc_TokenInvalid" xml:space="preserve">
     <value>GitHub トークンが無効または期限切れです。再生成してください(gist 権限が必要)。</value>
   </data>
@@ -4830,6 +4833,30 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Notify_CrashAction" xml:space="preserve">
     <value>ログフォルダーを開く</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedTitle" xml:space="preserve">
+    <value>ローカルの暗号化キーが使えないため、新しいキーに置き換えました</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedBody" xml:space="preserve">
+    <value>データフォルダーのキーファイルを開けませんでした(システムアカウントの変更、OS の再インストール、または別の PC からデータフォルダーをコピーした場合など)。元のファイルは {0} として残してあります。以前保存したパスワードはここでは復号できないため、接続時に再入力を求められます。同期トークンとプラグインの秘密情報も入力し直してください。元のアカウントや PC に戻れば、このファイルで復元できます。</value>
+  </data>
+  <data name="Notify_MasterKeyMissingTitle" xml:space="preserve">
+    <value>以前の暗号化キーがシステムのキーチェーンに見つかりません</value>
+  </data>
+  <data name="Notify_MasterKeyMissingBody" xml:space="preserve">
+    <value>データフォルダーが参照している暗号化キーが、この PC のシステムキーチェーンにありません。データフォルダーを別の PC やアカウントからコピーしたか、その項目が削除された可能性があります。そのキーで暗号化されたパスワードはここでは復号できず、接続時に再入力を求められます。新しく保存するパスワードには影響しません。</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableTitle" xml:space="preserve">
+    <value>システムのキーチェーンを一時的に利用できません</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableBody" xml:space="preserve">
+    <value>今回は {0} を開けませんでした({1})。保存済みのパスワードは今回は復号できないため、接続時に入力を求められます。失われてはいません。キーチェーンが使えるようになれば、次回の起動から通常どおり読み込めます。その間に保存したパスワードはデータフォルダー内のローカルキーで暗号化され、後で自動的にキーチェーンへ移されます。</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackTitle" xml:space="preserve">
+    <value>暗号化キーは引き続きデータフォルダーに保存されています</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
+    <value>{0} を利用できないため({1})、ローカルの暗号化キーはこれまでどおりデータフォルダーのキーファイルに保存されています。キーチェーンが使えるようになると、次回の起動時に自動で移行します。</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>システム</value>
@@ -6049,7 +6076,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
 
 原因：{0}
 
-多くの場合、暗号化キー（~/.velashell/secret.key）が変わったことが原因です。たとえば Windows アカウントの切り替え、OS の再インストール、別の PC からのデータフォルダーのコピーなどです。元のキーを復元できる場合は、リセットせずに VelaShell を終了してキーを戻してください。
+多くの場合、ローカルの暗号化キーが変わったか、今回は取得できなかったことが原因です。たとえば Windows アカウントの切り替え、OS の再インストール、別の PC からのデータフォルダーのコピー、またはシステムのキーチェーンを今回開けなかった場合です（どれに当たるかはメッセージセンターに表示されます）。元のキーを復元できる場合や、キーチェーンが使えるようになれば読める場合は、リセットせずに VelaShell を終了してそちらを先に対処してください。
 
 リセットすると空の信頼ストアが作成されます（読み込めなかったストアはバックアップとして残ります）。信頼済みの発行元は再度信頼する必要があり、インストール済みプラグインの改ざん検知用レシートも失われます。リセット後は VelaShell を再起動して、インストール済みプラグインを再検証してください。</value></data>
   <data name="PluginManager_TrustStoreReset" xml:space="preserve"><value>信頼ストアをリセット</value></data>

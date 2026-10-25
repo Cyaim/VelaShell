@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Notifications;
 using VelaShell.Core.Resources;
@@ -168,6 +169,62 @@ public static class NotificationSources
                 CommandId = "app.logs.open"
             }
         };
+    }
+
+    /// <summary>
+    /// 本机加密密钥的解析结果里有要用户知道的事时,攒成消息中心条目;一切照常(包括这次顺利迁进了密钥链)时为空。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 走消息中心而不是启动弹窗,理由同崩溃提示;但这几条关系到「已存的密码为什么解不开」,
+    /// 所以要留存可回看 —— 用户多半是连接时被要求重新输入密码,才回头来找原因。
+    /// </para>
+    /// <para>
+    /// id 决定提示几次:密钥文件被换过、某把密钥在密钥链里找不到,都是一次性的事,按文件名 / 编号去重,只提示一次;
+    /// 密钥链暂时用不了可能反复发生,按天去重;回落到文件是常态(没装 keyring 的机器),只提示一次。
+    /// </para>
+    /// </remarks>
+    /// <param name="status">解析结果。</param>
+    /// <param name="nowUtc">此刻(UTC)。</param>
+    /// <returns>要投的条目;没有则为空列表。</returns>
+    public static IReadOnlyList<NotificationItem> BuildMasterKeyNotifications(MasterKeyStatus status, DateTime nowUtc)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+        List<NotificationItem> notices = [];
+        if (status.ReplacedKeyFile is { } replaced)
+        {
+            string fileName = Path.GetFileName(replaced);
+            notices.Add(Notice($"master-key:replaced:{fileName}", NotificationSeverity.Warning,
+                "Notify_MasterKeyReplacedTitle", Strings.Format("Notify_MasterKeyReplacedBody", fileName), nowUtc));
+        }
+        if (status.MissingKeyIds.Count > 0)
+        {
+            notices.Add(Notice($"master-key:missing:{string.Join('+', status.MissingKeyIds)}", NotificationSeverity.Warning,
+                "Notify_MasterKeyMissingTitle", Strings.Get("Notify_MasterKeyMissingBody"), nowUtc));
+        }
+        if (status.UnavailableKeyIds.Count > 0)
+        {
+            notices.Add(Notice($"master-key:unavailable:{nowUtc:yyyyMMdd}", NotificationSeverity.Warning,
+                "Notify_MasterKeyUnavailableTitle",
+                Strings.Format("Notify_MasterKeyUnavailableBody", status.KeychainName ?? "", status.KeychainError ?? ""), nowUtc));
+        }
+        else if (status is { Protection: MasterKeyProtection.PlainFile, KeychainName: { } keychain, KeychainError: { } error })
+        {
+            notices.Add(Notice("master-key:file-fallback", NotificationSeverity.Info,
+                "Notify_MasterKeyFileFallbackTitle", Strings.Format("Notify_MasterKeyFileFallbackBody", keychain, error), nowUtc));
+        }
+        return notices;
+
+        static NotificationItem Notice(string id, NotificationSeverity severity, string titleKey, string body, DateTime publishedAt) =>
+            new()
+            {
+                Id = id,
+                Kind = NotificationKind.System,
+                Severity = severity,
+                Title = Strings.Get(titleKey),
+                Body = body,
+                PublishedAt = publishedAt
+            };
     }
 
     /// <summary>

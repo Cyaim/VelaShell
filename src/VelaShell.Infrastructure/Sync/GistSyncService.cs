@@ -836,14 +836,19 @@ public sealed class GistSyncService(
         return HasToken(config) ? null : Strings.Get("SyncSvc_NoToken");
     }
 
+    // 解不开(本机加密密钥这次没取到、数据目录从别的电脑拷来)时必须停下,不能把密文本身当令牌 / 口令用:
+    // 拿密文当端到端口令去加密上传,远端那份就成了别的设备谁也解不开的东西。
     private string Token(SyncSettings config) =>
-        secretProtector.Unprotect(config.ProtectedToken)
-        ?? throw new InvalidOperationException(Strings.Get("SyncSvc_TokenDecryptFailed"));
+        secretProtector.TryUnprotect(config.ProtectedToken, out string? token) && token is not null
+            ? token
+            : throw new InvalidOperationException(Strings.Get("SyncSvc_TokenDecryptFailed"));
 
     private string? Passphrase(SyncSettings config) =>
         string.IsNullOrEmpty(config.ProtectedPassphrase)
             ? null
-            : secretProtector.Unprotect(config.ProtectedPassphrase);
+            : secretProtector.TryUnprotect(config.ProtectedPassphrase, out string? passphrase)
+                ? passphrase
+                : throw new InvalidOperationException(Strings.Get("SyncSvc_PassphraseDecryptFailed"));
 
     internal static SyncEnvelope ParseEnvelope(string content) =>
         JsonSerializer.Deserialize<SyncEnvelope>(content, JsonOptions)

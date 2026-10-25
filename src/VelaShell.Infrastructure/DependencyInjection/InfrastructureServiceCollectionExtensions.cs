@@ -59,7 +59,11 @@ public static class InfrastructureServiceCollectionExtensions
         // 同时就已经开着了。没预热过(测试、设计期)就地新建,行为不变。
         services.AddSingleton(sp =>
             StartupWarmup.Claim(sp.GetRequiredService<VelaShellStoragePaths>()));
-        services.AddSingleton<ISecretProtector>(sp => new AesSecretProtector(sp.GetRequiredService<VelaShellStoragePaths>()));
+        // 敏感字段加密。本机加密密钥:macOS / Linux 交给系统密钥链(钥匙串 / Secret Service),用不了回落到数据目录的
+        // 密钥文件;Windows 上密钥文件以 DPAPI 包裹(MasterKeyResolver)。解析结果另以 IMasterKeyStatusSource 交给界面如实提示。
+        services.AddSingleton(sp => new AesSecretProtector(sp.GetRequiredService<VelaShellStoragePaths>()));
+        services.AddSingleton<ISecretProtector>(sp => sp.GetRequiredService<AesSecretProtector>());
+        services.AddSingleton<IMasterKeyStatusSource>(sp => sp.GetRequiredService<AesSecretProtector>());
         // 连接配置、设置、共享凭据三处仓储外面各套一层审计(Audit/):配置的增删改、设置变了哪几类、
         // 共享凭据改动与引用它的连接数都在落盘这一层记,不靠各个界面入口自己记。
         services.AddSingleton<ISessionRepository>(sp =>

@@ -474,7 +474,13 @@ public class GeneralOptions : ObservableOptions
     }
 
     // 隐私与安全
-    /// <summary>是否启用主密码保护本地凭据。</summary>
+    /// <summary>是否启用主密码保护本地凭据(可选主密码,尚未接线,界面已撤下 —— 设置审计 R-04)。</summary>
+    /// <remarks>
+    /// 主密码保护分两步走(维护者 2026-10-25 决定):第一步把本机加密密钥交给系统密钥链保管,已做
+    /// (macOS 钥匙串 / Secret Service,Windows 上密钥文件本来就以 DPAPI 包裹;见 <c>plan.md</c> 与 <c>MasterKeyResolver</c>);
+    /// 第二步才是这个开关 —— 可选主密码派生密钥、包裹本机密钥、启动解锁,设计见 velashell-docs 的主密码设计文档。
+    /// 在那之前这个字段没有消费者,也不要接到界面上。
+    /// </remarks>
     public bool MasterPasswordProtection
     {
         get;

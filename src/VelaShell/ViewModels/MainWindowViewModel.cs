@@ -256,11 +256,13 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         ShortcutKeymapService? shortcutKeymap = null,
         ICredentialResolver? credentialResolver = null,
         ISharedCredentialRepository? sharedCredentials = null,
-        BackgroundUpdateDownload? backgroundUpdateDownload = null
+        BackgroundUpdateDownload? backgroundUpdateDownload = null,
+        IMasterKeyStatusSource? masterKeyStatus = null
     )
     {
         _credentialResolver = credentialResolver;
         _backgroundUpdateDownload = backgroundUpdateDownload;
+        _masterKeyStatus = masterKeyStatus;
         // 共享凭据被改名、删除(删除会把凭据拷回引用它的连接)之后,树上缓存的配置就旧了:
         // 带着一条已删除的引用去连,只会换来一个"凭据不存在"的登录框。
         sharedCredentials?.Changed += OnSharedCredentialsChanged;
@@ -1988,6 +1990,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <summary>启动检查发现新版本后的后台下载入口(设置 → 常规 → 自动下载更新);null = 只检查不下载(单测)。</summary>
     private readonly BackgroundUpdateDownload? _backgroundUpdateDownload;
 
+    /// <summary>本机加密密钥的解析结果(系统密钥链用不了、旧密钥没取到时投一条提示);null = 不投(单测)。</summary>
+    private readonly IMasterKeyStatusSource? _masterKeyStatus;
+
     /// <summary>
     /// 装配消息中心:面板、铃铛角标,以及两个内容来源(本地的更新检查 + 订阅的资讯源)。
     /// 无消息中心(单元测试)时整块跳过。
@@ -2052,11 +2057,43 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         {
             await center.LoadAsync().ConfigureAwait(true);
             Sidebar.NotificationUnreadCount = center.UnreadCount;
+            // 与更新检查并行:后者可能要后台下载好几分钟,密钥的提示不该排在它后面。
+            Task keyNotices = PublishMasterKeyNoticesAsync(center);
             await RefreshNotificationSourcesAsync(center, feed, updateService).ConfigureAwait(true);
+            await keyNotices.ConfigureAwait(true);
         }
         catch
         {
             // 载入/拉取失败时铃铛照常可用,只是没有新内容。
+        }
+    }
+
+    /// <summary>
+    /// 本机加密密钥有要用户知道的事(系统密钥链用不了、旧密钥没取到、密钥文件被换过)时投进消息中心。
+    /// </summary>
+    /// <remarks>
+    /// 密钥只在进程里解析一次,提示也只在启动这一轮投(资讯源的定时刷新不再投)。
+    /// 解析可能要等密钥链解锁,放到后台线程上等。整段吞异常:提示投不出去不该拦住铃铛,
+    /// 解析本身失败(数据目录写不进去)会在第一次读写机密时照样暴露。
+    /// </remarks>
+    private async Task PublishMasterKeyNoticesAsync(INotificationCenter center)
+    {
+        if (_masterKeyStatus is not { } source)
+        {
+            return;
+        }
+        try
+        {
+            MasterKeyStatus status = await Task.Run(source.GetKeyStatus).ConfigureAwait(true);
+            IReadOnlyList<NotificationItem> notices = NotificationSources.BuildMasterKeyNotifications(status, DateTime.UtcNow);
+            if (notices.Count > 0)
+            {
+                await center.PublishAsync(notices).ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"[Secrets] Master key notice could not be published: {ex.Message}");
         }
     }
 

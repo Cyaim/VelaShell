@@ -4397,6 +4397,9 @@ Overwrite it?</value>
   <data name="SyncSvc_TokenDecryptFailed" xml:space="preserve">
     <value>Could not decrypt the stored GitHub token; please enter it again.</value>
   </data>
+  <data name="SyncSvc_PassphraseDecryptFailed" xml:space="preserve">
+    <value>Could not decrypt the stored sync passphrase; please enter it again.</value>
+  </data>
   <data name="SyncSvc_TokenInvalid" xml:space="preserve">
     <value>The GitHub token is invalid or expired; regenerate it (gist scope required).</value>
   </data>
@@ -4946,6 +4949,30 @@ Overwrite it?</value>
   </data>
   <data name="Notify_CrashAction" xml:space="preserve">
     <value>Open logs folder</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedTitle" xml:space="preserve">
+    <value>The local encryption key could not be used and was replaced</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedBody" xml:space="preserve">
+    <value>The key file in the data directory could not be unlocked (the system account changed, the system was reinstalled, or the data directory was copied from another computer). It was kept as {0}. Passwords saved earlier cannot be decrypted here: you will be asked for them again when connecting, and the sync token and plugin secrets need to be entered again too. Back on the original account or computer, that file can still recover them.</value>
+  </data>
+  <data name="Notify_MasterKeyMissingTitle" xml:space="preserve">
+    <value>A previous encryption key is not in the system keychain</value>
+  </data>
+  <data name="Notify_MasterKeyMissingBody" xml:space="preserve">
+    <value>The data directory refers to an encryption key that is not in this computer's system keychain. The data directory may have been copied from another computer or account, or the entry was deleted. Passwords encrypted with it cannot be decrypted here: you will be asked for them again when connecting. Newly saved passwords are not affected.</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableTitle" xml:space="preserve">
+    <value>The system keychain is unavailable right now</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableBody" xml:space="preserve">
+    <value>{0} could not be opened this time ({1}). Saved passwords cannot be decrypted during this run, so you will be asked for them when connecting. They are not lost: once the keychain is available again, the next start reads them as usual. Passwords saved in the meantime are encrypted with a local key in the data directory and moved into the keychain automatically later.</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackTitle" xml:space="preserve">
+    <value>The encryption key is still stored in the data directory</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
+    <value>{0} is not available ({1}), so the local encryption key stays in the key file in the data directory, as before. Once the keychain is available, the next start moves the key there automatically.</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>System</value>
@@ -6054,7 +6081,7 @@ Trusting it will also trust future packages signed by the same key. Plugins can 
 
 Reason: {0}
 
-This usually means the encryption key (~/.velashell/secret.key) changed, for example after switching Windows accounts, reinstalling the system, or copying the data folder from another machine. If you can restore the original key, close VelaShell and put it back instead.
+This usually means the local encryption key changed or could not be obtained this time, for example after switching Windows accounts, reinstalling the system, copying the data folder from another machine, or when the system keychain could not be opened (the message center explains which). If the original key can be restored, or the keychain becomes available again, close VelaShell and fix that instead of resetting.
 
 Resetting creates an empty trust store (the unreadable one is kept as a backup). You will need to trust publishers again, and already installed plugins lose their tamper-detection receipts. Restart VelaShell afterwards so installed plugins are checked again.</value></data>
   <data name="PluginManager_TrustStoreReset" xml:space="preserve"><value>Reset trust store</value></data>

@@ -4504,6 +4504,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SyncSvc_TokenDecryptFailed" xml:space="preserve">
     <value>无法解密已存的 GitHub 令牌,请重新填写。</value>
   </data>
+  <data name="SyncSvc_PassphraseDecryptFailed" xml:space="preserve">
+    <value>无法解密已存的同步口令,请重新填写。</value>
+  </data>
   <data name="SyncSvc_TokenInvalid" xml:space="preserve">
     <value>GitHub 令牌无效或已过期,请重新生成(需 gist 权限)。</value>
   </data>
@@ -5079,6 +5082,30 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="Notify_CrashAction" xml:space="preserve">
     <value>打开日志目录</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedTitle" xml:space="preserve">
+    <value>本机加密密钥用不了,已换了一把新的</value>
+  </data>
+  <data name="Notify_MasterKeyReplacedBody" xml:space="preserve">
+    <value>数据目录里的密钥文件解不开(换了系统账户、重装了系统,或者数据目录是从别的电脑拷来的),已原样改名保留为 {0}。之前保存的密码在这里解不开:连接时会提示重新输入,同步令牌与插件机密也要重新填写。回到原来的账户或电脑,凭这个文件仍能找回。</value>
+  </data>
+  <data name="Notify_MasterKeyMissingTitle" xml:space="preserve">
+    <value>系统密钥链里找不到之前的加密密钥</value>
+  </data>
+  <data name="Notify_MasterKeyMissingBody" xml:space="preserve">
+    <value>数据目录记着的加密密钥不在这台电脑的系统密钥链里 —— 数据目录可能是从别的电脑或账户拷来的,或者那一条被删掉了。用它加密的密码在这里解不开:连接时会提示重新输入;新保存的密码不受影响。</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableTitle" xml:space="preserve">
+    <value>系统密钥链暂时用不了</value>
+  </data>
+  <data name="Notify_MasterKeyUnavailableBody" xml:space="preserve">
+    <value>这次没能打开 {0}({1})。已保存的密码这次解不开,连接时会提示重新输入;它们没有丢,密钥链恢复后下次启动照常读取。这期间新保存的密码先用数据目录里的本地密钥加密,之后自动并入密钥链。</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackTitle" xml:space="preserve">
+    <value>加密密钥仍保存在数据目录里</value>
+  </data>
+  <data name="Notify_MasterKeyFileFallbackBody" xml:space="preserve">
+    <value>{0} 用不了({1}),本机加密密钥照旧保存在数据目录的密钥文件里(与之前相同)。密钥链可用之后,下次启动会自动迁过去。</value>
   </data>
   <data name="Notify_KindSystem" xml:space="preserve">
     <value>系统</value>
@@ -6282,7 +6309,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
 
 原因：{0}
 
-这通常是加密密钥（~/.velashell/secret.key）变了，例如切换了 Windows 账户、重装了系统，或数据目录是从别的电脑拷来的。如果能找回原来的密钥，请关闭 VelaShell 后把它放回去，不要重置。
+这通常是本机加密密钥变了或这次没取到，例如切换了 Windows 账户、重装了系统、数据目录是从别的电脑拷来的，或者系统密钥链这次没能打开（消息中心里写明了是哪一种）。如果能找回原来的密钥、或者密钥链恢复后就能读，请关闭 VelaShell 先处理那一头，不要重置。
 
 重置会新建一个空的信任库（读不出来的那份会留作备份）。已信任的发布者需要重新信任，已安装插件的防篡改收据也会丢失。重置后请重启 VelaShell，让已安装插件重新校验。</value>
   </data>
