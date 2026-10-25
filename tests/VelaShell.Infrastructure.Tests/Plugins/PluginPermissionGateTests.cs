@@ -92,6 +92,35 @@ public class PluginPermissionGateTests
         Assert.IsTrue(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", true, size, default));
     }
 
+    /// <summary>
+    /// 批准生效的回调只在真批准时调、而且在闸返回之前(登记批准的同一把锁里)调:调用方据此把任务阶段与
+    /// 「已批准」一起推进。拒绝、范围过宽都不调。
+    /// </summary>
+    [TestMethod]
+    [DataRow(PluginPermissionDecision.AllowOnce, true)]
+    [DataRow(PluginPermissionDecision.Deny, false)]
+    [DataRow(PluginPermissionDecision.AllowAlways, false)]
+    public async Task ApprovalCallbackRunsOnlyWhenApprovedAndBeforeTheGateReturns(PluginPermissionDecision decision, bool expected)
+    {
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(decision);
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(decision);
+        var gate = new PluginPermissionGate(null, prompt);
+        using UploadPermissionLease upload = gate.CreateUploadLease("p");
+        using DownloadPermissionLease download = gate.CreateDownloadLease("p");
+        int uploadCalls = 0, downloadCalls = 0;
+
+        bool uploadApproved = await gate.CheckUploadAsync(upload, "p", "target", "/local", "/remote", false, 8, default,
+            () => uploadCalls++);
+        bool downloadApproved = await gate.CheckDownloadAsync(download, "p", "target", "/remote", "/local", false, default,
+            () => downloadCalls++);
+
+        Assert.AreEqual(expected, uploadApproved);
+        Assert.AreEqual(expected, downloadApproved);
+        Assert.AreEqual(expected ? 1 : 0, uploadCalls);
+        Assert.AreEqual(expected ? 1 : 0, downloadCalls);
+    }
+
     [TestMethod]
     public async Task PendingUploadCanBeRevokedAndCancellationCallbackMayDisposeLease()
     {

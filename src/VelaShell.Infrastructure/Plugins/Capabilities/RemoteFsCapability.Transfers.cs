@@ -530,11 +530,10 @@ internal sealed partial class RemoteFsCapability
             SshSession target = connections.GetSession(session) ?? throw new PluginSessionNotFoundException(Read(op).SessionId);
             string label = $"{target.ConnectionInfo.Username}@{target.ConnectionInfo.Host}:{target.ConnectionInfo.Port}";
             bool approved = await uploadPermissions.CheckUploadAsync(op._permission, pluginId, label, Read(op).LocalPath,
-                Read(op).RemotePath, options.Overwrite, op._sourceLength, ct).ConfigureAwait(false);
+                Read(op).RemotePath, options.Overwrite, op._sourceLength, ct, () => EnterTransferPhase(op)).ConfigureAwait(false);
             if (!approved) throw new PluginPermissionDeniedException("The user denied this upload.");
-            ct.ThrowIfCancellationRequested();
+            ConfirmApprovedOrCancelled(op, ct);
             ValidateSource(op);
-            Update(op, s => s with { State = RemoteTransferState.Queued, Phase = RemoteTransferPhase.Transfer });
             await _uploadSlots.WaitAsync(ct).ConfigureAwait(false);
             slot = true;
             ct.ThrowIfCancellationRequested();
@@ -842,6 +841,42 @@ internal sealed partial class RemoteFsCapability
             // 先到者为准:死线已到或插件已停用时令牌早已取消,不改写成后来的原因。
             if (!op._stop.IsCancellationRequested && op._stopReason == StopReason.None) op._stopReason = reason;
             op._stop.Cancel();
+        }
+    }
+
+    /// <summary>
+    /// 批准生效的那一刻(授权闸登记批准的锁里,见 <see cref="PluginPermissionGate.CheckUploadAsync" /> 的 onApproved)
+    /// 把任务从「等确认」推进到「已批准、排队等传输槽」:<see cref="RemoteTransferState.Queued" /> + <see cref="RemoteTransferPhase.Transfer" />。
+    /// </summary>
+    /// <remarks>
+    /// 原先阶段要等批准的回执回到后台任务里才改(下载更晚,要等拿到传输槽),中间这段插件读到的仍是 Approval ——
+    /// AI 插件按「Approval 才撤」的口径在停止时撤掉等确认的任务,读到旧阶段就把用户刚批准的那个也撤了
+    /// (插件已改为撤前先 GetTransferAsync,但取到的还是 Approval,挡不住)。取消已经登记的不推进:
+    /// 那一项随后在 <see cref="ConfirmApprovedOrCancelled" /> 里以 Cancelled 收尾。
+    /// </remarks>
+    private static void EnterTransferPhase(UploadOperation op)
+    {
+        lock (op._gate)
+        {
+            if (op._snapshot.IsTerminal || op._snapshot.CancellationRequested || op._snapshot.Phase != RemoteTransferPhase.Approval) return;
+            Update(op, s => s with { State = RemoteTransferState.Queued, Phase = RemoteTransferPhase.Transfer });
+        }
+    }
+
+    /// <summary>
+    /// 批准之后、碰源文件与传输槽之前,在任务自己的锁里定下「传还是不传」:已经要求取消的(取消与批准几乎同时到)
+    /// 以 Cancelled 收尾、一个字节都不传;否则确保阶段已是 Transfer(授权闸没替我们推进时补上)。
+    /// 取消请求(<see cref="CancelTransferAsync" />)在同一把锁里登记意图并发出停止,所以两边只会有一个先后:
+    /// 取消先到就一个字节都不传(不会「撤了还在传」);批准先到,插件此后读到的就已经是 Transfer 阶段,
+    /// 不会再按「还在等确认」把它撤掉。插件读快照与发取消之间那一个往返的空当这里合不上,要 SDK 提供条件取消。
+    /// </summary>
+    private static void ConfirmApprovedOrCancelled(UploadOperation op, CancellationToken ct)
+    {
+        lock (op._gate)
+        {
+            if (op._snapshot.CancellationRequested) throw new OperationCanceledException(ct);
+            ct.ThrowIfCancellationRequested();
+            EnterTransferPhase(op);
         }
     }
 
