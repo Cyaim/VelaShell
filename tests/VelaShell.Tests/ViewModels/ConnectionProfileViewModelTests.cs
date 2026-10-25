@@ -367,6 +367,110 @@ public sealed class ConnectionProfileViewModelTests
         Assert.IsNull(cleared?.Ssh, "清空 = 系统默认,一项都没开时存 null");
     }
 
+    // ---- 系统密钥库 ----
+
+    private static SystemKeyInfo StoreKey(string name, string provider = SystemKeyReference.SoftwareProvider, string? subject = null) =>
+        new(new SystemKeyReference { Provider = provider, KeyName = name, PublicKey = $"ecdsa-sha2-nistp256 AAAA{name} {name}" },
+            "ecdsa-sha2-nistp256", 256, "SHA256:" + name, subject);
+
+    private static ISystemKeyStore KeyStore(bool supported, params SystemKeyInfo[] keys)
+    {
+        ISystemKeyStore store = Substitute.For<ISystemKeyStore>();
+        store.IsSupported.Returns(supported);
+        store.ListKeysAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<SystemKeyInfo>>(keys));
+        return store;
+    }
+
+    /// <summary>
+    /// 系统密钥库:选到这一段就列密钥库里的钥,选一把、存下的只是它的引用(不存密码、不挂共享凭据);
+    /// 没选钥不许保存;「复制公钥」复制那一把的 OpenSSH 公钥行。
+    /// </summary>
+    [TestMethod]
+    public async Task KeyStoreAuth_ListsTheKeys_AndSavesOnlyTheReference()
+    {
+        ISystemKeyStore store = KeyStore(true, StoreKey("soft-key"), StoreKey("tpm-key", SystemKeyReference.PlatformProvider, "Joe TPM"));
+        var vm = new ConnectionProfileViewModel(systemKeyStore: store)
+        {
+            Host = "10.0.0.7",
+            Username = "ops",
+            Password = SecureStringConvert.FromPlaintext("not-for-key-store"),
+        };
+        string? copied = null;
+        vm.CopyToClipboard = text =>
+        {
+            copied = text;
+            return Task.CompletedTask;
+        };
+        Assert.IsTrue(vm.ShowKeyStoreAuthOption);
+
+        vm.SelectAuthMethodCommand.Execute(AuthMethod.KeyStore).Subscribe();
+        await vm.LoadSystemKeysAsync();
+        Assert.IsTrue(vm.ShowKeyStoreFields);
+        Assert.HasCount(2, vm.SystemKeyChoices);
+        Assert.AreEqual("Joe TPM", vm.SystemKeyChoices[1].Title, "证书存储里有证书用这把钥时,拿证书主题当名字");
+
+        SessionProfile? refused = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.IsNull(refused, "没选钥不许保存");
+        Assert.AreEqual(Strings.Get("Svc_KeyStoreKeyRequired"), vm.ErrorMessage);
+
+        vm.SelectedSystemKey = vm.SystemKeyChoices[1];
+        await vm.CopySystemKeyPublicKeyCommand.Execute().FirstAsync();
+        Assert.AreEqual("ecdsa-sha2-nistp256 AAAAtpm-key tpm-key", copied);
+        SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.IsNotNull(saved);
+        Assert.AreEqual(AuthMethod.KeyStore, saved.AuthMethod);
+        Assert.AreEqual(SystemKeyReference.PlatformProvider, saved.KeyStoreKey?.Provider);
+        Assert.AreEqual("tpm-key", saved.KeyStoreKey?.KeyName);
+        Assert.IsNull(saved.Password, "系统密钥库不用密码:表单里留着的那个不存");
+        Assert.IsNull(saved.CredentialSource);
+
+        vm.SelectAuthMethodCommand.Execute(AuthMethod.Password).Subscribe();
+        SessionProfile? switched = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.IsNull(switched?.KeyStoreKey, "换了认证方式,引用不存 —— 不留看不见、切回来却生效的旧值");
+    }
+
+    /// <summary>存过的那一把这台电脑上找不到(别的电脑上建的、卡没插):照样列着、选中、标明找不到,打开再保存不丢。</summary>
+    [TestMethod]
+    public async Task KeyStoreAuth_KeepsASavedKeyThatIsNotHere()
+    {
+        SystemKeyReference saved = new() { Provider = SystemKeyReference.SmartCardProvider, KeyName = "card-key", PublicKey = "ssh-rsa AAAA card" };
+        var existing = new SessionProfile
+        {
+            Name = "card", Host = "10.0.0.8", Username = "ops", AuthMethod = AuthMethod.KeyStore, KeyStoreKey = saved,
+        };
+
+        var vm = new ConnectionProfileViewModel(existing, systemKeyStore: KeyStore(true, StoreKey("other")));
+        await vm.LoadSystemKeysAsync();
+
+        Assert.HasCount(2, vm.SystemKeyChoices);
+        Assert.IsTrue(vm.SelectedSystemKey?.IsMissing);
+        Assert.AreSame(vm.SystemKeyChoices[0], vm.SelectedSystemKey);
+        SessionProfile? again = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.AreEqual(saved, again?.KeyStoreKey);
+    }
+
+    /// <summary>
+    /// 没有系统密钥库的平台上不显示这一段 —— 除非这条配置本来就是它(从 Windows 同步过来),
+    /// 那就照样选中它、说明这台电脑上用不了,而不是让它看起来什么都没选。
+    /// </summary>
+    [TestMethod]
+    public void KeyStoreOption_IsHiddenWithoutAKeyStore_UnlessTheProfileUsesIt()
+    {
+        ISystemKeyStore none = KeyStore(false);
+        Assert.IsFalse(new ConnectionProfileViewModel(systemKeyStore: none).ShowKeyStoreAuthOption);
+
+        var synced = new ConnectionProfileViewModel(
+            new SessionProfile
+            {
+                Name = "from-windows", Host = "10.0.0.9", Username = "ops", AuthMethod = AuthMethod.KeyStore,
+                KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.SoftwareProvider, KeyName = "k" },
+            },
+            systemKeyStore: none);
+        Assert.IsTrue(synced.ShowKeyStoreAuthOption);
+        Assert.IsTrue(synced.IsKeyStoreAuth);
+        Assert.IsTrue(synced.KeyStoreUnsupportedHere);
+    }
+
     // 三把测试用公钥(随手拼的 ed25519 blob,只用来算指纹与去重,不参与任何签名)。
     private static string KeyLine(byte seed, string? comment = null)
     {

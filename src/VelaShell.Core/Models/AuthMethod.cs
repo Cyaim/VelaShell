@@ -41,5 +41,14 @@ public enum AuthMethod
     Agent,
 
     /// <summary>使用本机已登录的 Tailscale 身份,不提供 SSH 密码或密钥。</summary>
-    Tailscale = 4
+    Tailscale = 4,
+
+    /// <summary>
+    /// 用系统密钥库(Windows 的证书存储、TPM、智能卡)里一把导不出来的钥签名;配置里只存它的引用(<c>SessionProfile.KeyStoreKey</c>)。
+    /// </summary>
+    /// <remarks>
+    /// 私钥从不离开密钥库 —— 签名交给密钥库做(SSH 库的 <c>CngSshSigner</c>),TPM 与智能卡可能在签名时要 PIN。
+    /// 只有 Windows 有;同步到别的平台上的这种配置连接时如实报「这台电脑上没有系统密钥库」。不走共享凭据(与 Tailscale 一样)。
+    /// </remarks>
+    KeyStore = 5
 }

@@ -23,7 +23,7 @@ public sealed class SessionArchiveFieldTests
         nameof(SessionProfile.ConnectionType), nameof(SessionProfile.Id), nameof(SessionProfile.Name),
         nameof(SessionProfile.Host), nameof(SessionProfile.Port), nameof(SessionProfile.Username),
         nameof(SessionProfile.AuthMethod), nameof(SessionProfile.RememberPassword), nameof(SessionProfile.PrivateKeyPath),
-        nameof(SessionProfile.CertificatePath), nameof(SessionProfile.CredentialSource), nameof(SessionProfile.GroupId),
+        nameof(SessionProfile.CertificatePath), nameof(SessionProfile.KeyStoreKey), nameof(SessionProfile.CredentialSource), nameof(SessionProfile.GroupId),
         nameof(SessionProfile.IsPinned), nameof(SessionProfile.Tags), nameof(SessionProfile.Notes),
         nameof(SessionProfile.JumpHostProfileId), nameof(SessionProfile.PostAuthCommand),
         nameof(SessionProfile.PostAuthCommandDelaySeconds), nameof(SessionProfile.Ftp), nameof(SessionProfile.PluginProtocolId),

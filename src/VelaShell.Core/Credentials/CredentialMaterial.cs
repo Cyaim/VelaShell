@@ -28,6 +28,8 @@ public static class CredentialMaterial
         AuthMethod.PrivateKey => !string.IsNullOrWhiteSpace(profile.PrivateKeyPath),
         AuthMethod.Certificate => !string.IsNullOrWhiteSpace(profile.PrivateKeyPath)
                                   && !string.IsNullOrWhiteSpace(profile.CertificatePath),
+        // 系统密钥库的「材料」就是那把钥的引用;它不走共享凭据,有引用就算带着。
+        AuthMethod.KeyStore => profile.KeyStoreKey is not null,
         _ => false
     };
 
@@ -41,7 +43,7 @@ public static class CredentialMaterial
     /// <param name="profile">连接配置。</param>
     /// <returns>需要解析时为 true。</returns>
     public static bool NeedsResolution(SessionProfile profile) =>
-        profile.AuthMethod != AuthMethod.Tailscale && profile.CredentialSource is not null && !HasInline(profile);
+        profile.AuthMethod is not (AuthMethod.Tailscale or AuthMethod.KeyStore) && profile.CredentialSource is not null && !HasInline(profile);
 
     /// <summary>清掉配置上的认证材料(密码、私钥、口令、证书)。用户名与认证方式不动。</summary>
     /// <param name="profile">要清的配置(就地修改)。</param>

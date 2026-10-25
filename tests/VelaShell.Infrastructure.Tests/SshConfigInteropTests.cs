@@ -704,6 +704,22 @@ public sealed class SshConfigInteropTests
         Assert.IsEmpty(imported.Notes);
     }
 
+    /// <summary>系统密钥库的钥 OpenSSH 用不了(没有文件):不写 IdentityFile,写成一行注释说明原来用的是哪把钥;再导入时注释不被读回。</summary>
+    [TestMethod]
+    public void 系统密钥库的钥写成注释()
+    {
+        SessionProfile tpm = new()
+        {
+            Name = "tpm", Host = "10.0.0.41", AuthMethod = AuthMethod.KeyStore,
+            KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy" },
+        };
+
+        SshConfigExport export = SshConfigExporter.Write(Archive(tpm));
+
+        Assert.Contains("    # cng:Microsoft Platform Crypto Provider/deploy  (VelaShell:", export.Content);
+        Assert.IsEmpty(ReadBack(export, "tpm").IdentityFiles);
+    }
+
     [TestMethod]
     public void 别名去掉特殊字符_重名加序号()
     {

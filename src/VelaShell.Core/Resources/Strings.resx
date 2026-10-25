@@ -4391,6 +4391,9 @@ Overwrite it?</value>
   <data name="Svc_CertificateKeyRequired" xml:space="preserve">
     <value>Certificate authentication requires the private key matching the certificate.</value>
   </data>
+  <data name="Svc_KeyStoreKeyRequired" xml:space="preserve">
+    <value>Key store authentication needs a key chosen from the system key store.</value>
+  </data>
   <data name="Svc_ProfileNameRequired" xml:space="preserve">
     <value>Connection profile name is required.</value>
   </data>
@@ -7069,6 +7072,9 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
     <value>The key cannot be opened from the system key store, or it cannot be used.</value>
   </data>
+  <data name="SshErr_KeyStoreNotOnThisPlatform" xml:space="preserve">
+    <value>This connection signs with a key from a Windows key store ({0}), and this computer has no system key store. Choose another authentication method.</value>
+  </data>
   <data name="SshErr_CertFileUnreadable" xml:space="preserve">
     <value>The certificate file cannot be read ({0}).</value>
   </data>
@@ -8661,6 +8667,9 @@ Send anyway?</value>
   <data name="SessImport_ErrBadAuth" xml:space="preserve">
     <value>Unknown authentication method: {0}</value>
   </data>
+  <data name="SessImport_ErrBadKeyStoreKey" xml:space="preserve">
+    <value>Not a key store key reference (expected cng:&lt;key store&gt;/&lt;key name&gt;): {0}</value>
+  </data>
   <data name="SessImport_ErrAuthNotSupported" xml:space="preserve">
     <value>FTP and plugin protocols only support password authentication</value>
   </data>
@@ -9077,6 +9086,48 @@ Send anyway?</value>
   <data name="PasswordFill_Invalid" xml:space="preserve"><value>The password contains control characters or cannot be encoded for this session. Nothing was sent.</value></data>
   <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
   <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>Use the signed-in Tailscale identity and the remote system username. No SSH password or key is required; the server may request browser verification.</value></data>
+  <data name="Profile_KeyStoreAuth" xml:space="preserve">
+    <value>Key store</value>
+  </data>
+  <data name="Profile_KeyStoreKey" xml:space="preserve">
+    <value>Key in the system key store</value>
+  </data>
+  <data name="Profile_KeyStorePick" xml:space="preserve">
+    <value>Choose a key…</value>
+  </data>
+  <data name="Profile_KeyStoreRefresh" xml:space="preserve">
+    <value>List the keys again (after inserting a smart card or creating a key)</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKey" xml:space="preserve">
+    <value>Copy public key</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKeyTip" xml:space="preserve">
+    <value>Copies the key's OpenSSH public key line. Add it to the server's ~/.ssh/authorized_keys before signing in.</value>
+  </data>
+  <data name="Profile_KeyStoreNoKeys" xml:space="preserve">
+    <value>No usable key found. It must be an RSA or ECDSA (P-256 / P-384 / P-521) key in the software key store, the TPM or a smart card. Create one with your PKI tools — for the TPM, for example New-SelfSignedCertificate -Provider "Microsoft Platform Crypto Provider" in PowerShell — then refresh.</value>
+  </data>
+  <data name="Profile_KeyStoreHint" xml:space="preserve">
+    <value>The private key never leaves the key store; this profile stores only which key to use. The TPM or a smart card may ask for a PIN when signing. Windows only.</value>
+  </data>
+  <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
+    <value>This profile signs with a key from a Windows key store, which this computer does not have. To connect from here, choose another authentication method.</value>
+  </data>
+  <data name="Profile_KeyStoreKeyMissing" xml:space="preserve">
+    <value>not found on this computer</value>
+  </data>
+  <data name="Profile_KeyStoreSoftware" xml:space="preserve">
+    <value>Software key store</value>
+  </data>
+  <data name="Profile_KeyStoreTpm" xml:space="preserve">
+    <value>TPM</value>
+  </data>
+  <data name="Profile_KeyStoreSmartCard" xml:space="preserve">
+    <value>Smart card</value>
+  </data>
+  <data name="Profile_KeyStoreMachine" xml:space="preserve">
+    <value>{0} (machine)</value>
+  </data>
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH uses this device's Tailscale identity and cannot be stored as a shared credential.</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH verification</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>The server requires identity verification. Open the link in your browser. This connection will continue automatically when the server approves it.</value></data>

@@ -1322,7 +1322,9 @@ public partial class MainWindow : Window
             // 「只转发指定密钥」的候选:本机 agent 里的钥与 ~/.ssh 下的公钥。
             app.Services.GetService<ISshKeyService>(),
             // 「凭据来源」下拉的候选(#550)。
-            app.Services.GetService<ISharedCredentialRepository>()
+            app.Services.GetService<ISharedCredentialRepository>(),
+            // 「系统密钥库」认证的选钥列表(Windows 的证书存储、TPM、智能卡)。
+            app.Services.GetService<ISystemKeyStore>()
         )
         {
             // 协议栏底部「获取更多协议…」:插件管理器是非模态的,在那边启用的协议经注册表的

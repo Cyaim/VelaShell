@@ -95,6 +95,12 @@ public static class SshConfigExporter
         {
             Line("CertificateFile", Quote(Portable(certificate, home)));
         }
+        if (auth == AuthMethod.KeyStore && session.KeyStoreKey is { } keyStoreKey)
+        {
+            // 系统密钥库的钥没有文件,OpenSSH 的 IdentityFile 用不了它:写成注释,看这份配置的人知道这台原来用的是哪把钥。
+            text.Append("    # ").Append(keyStoreKey.ToText())
+                .Append("  (VelaShell: a Windows key store key; OpenSSH cannot use it as an IdentityFile)\n");
+        }
 
         if (session.JumpHostProfileId is { } jump && aliases.TryGetValue(jump, out string? jumpAlias))
         {

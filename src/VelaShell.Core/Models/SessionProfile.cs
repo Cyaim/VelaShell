@@ -58,6 +58,12 @@ public class SessionProfile
     public string? CertificatePath { get; set; }
 
     /// <summary>
+    /// 系统密钥库里那把钥的引用;仅在 <see cref="AuthMethod.KeyStore" /> 认证时使用,可为空。
+    /// </summary>
+    /// <remarks>引用不是机密(私钥在密钥库里出不来),明文落盘、随云同步。不可变的 record,复制时共享同一个实例无妨。</remarks>
+    public SystemKeyReference? KeyStoreKey { get; set; }
+
+    /// <summary>
     /// 凭据来源(#550):非 null 时认证材料不存在本条配置里,连接那一刻按引用去取
     /// (目前是设置 → 共享凭据里的一条)。null = 凭据就在本条配置上。
     /// </summary>
@@ -247,7 +253,8 @@ public class SessionProfile
             PrivateKeyPath = PrivateKeyPath,
             PrivateKeyPassphrase = PrivateKeyPassphrase,
             CertificatePath = CertificatePath,
-            // 引用是不可变的 record,共享同一个实例无妨。
+            // 两个引用都是不可变的 record,共享同一个实例无妨。
+            KeyStoreKey = KeyStoreKey,
             CredentialSource = CredentialSource,
             GroupId = GroupId,
             IsPinned = IsPinned,

@@ -305,6 +305,7 @@ public sealed class ConnectionWorkflowService(
             PrivateKeyPath = effective.PrivateKeyPath,
             PrivateKeyPassphrase = effective.PrivateKeyPassphrase,
             CertificatePath = effective.CertificatePath,
+            KeyStoreKey = effective.KeyStoreKey,
             // 会话级保活覆盖(F-06);null = 跟随全局。跳板链上每一跳各带各的。
             KeepAliveSeconds = effective.Terminal?.KeepAliveSeconds,
             Ssh = effective.Ssh?.Clone(),
@@ -382,6 +383,11 @@ public sealed class ConnectionWorkflowService(
         if (profile.AuthMethod == AuthMethod.PrivateKey && string.IsNullOrWhiteSpace(profile.PrivateKeyPath))
         {
             throw new ArgumentException(Strings.Get("Svc_PrivateKeyRequired"), nameof(profile));
+        }
+        // 系统密钥库那一路只要那把钥的引用(私钥在密钥库里,配置里本来就没有)。
+        if (profile.AuthMethod == AuthMethod.KeyStore && profile.KeyStoreKey is null)
+        {
+            throw new ArgumentException(Strings.Get("Svc_KeyStoreKeyRequired"), nameof(profile));
         }
         // 证书认证缺两样中的任意一样都连不上:证书标明"我是谁",私钥才是签名的那把。
         // 分两条消息而不是合成一句,是为了让用户知道该去补哪一个。

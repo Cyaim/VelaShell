@@ -92,7 +92,13 @@ public static class SessionCsv
                 // (改了名、本机重名)时导回去的连接还是原来的认证方式,而不是被推断成密码。
                 FormatAuth(session.AuthMethod),
                 string.Empty,
-                session.AuthMethod == AuthMethod.Tailscale ? string.Empty : session.PrivateKeyPath ?? string.Empty,
+                // 系统密钥库的钥没有文件:私钥那一列写它的引用(cng:密钥库/钥名),导回来才不会变成一条没有钥的配置。
+                session.AuthMethod switch
+                {
+                    AuthMethod.Tailscale => string.Empty,
+                    AuthMethod.KeyStore => session.KeyStoreKey?.ToText() ?? string.Empty,
+                    _ => session.PrivateKeyPath ?? string.Empty
+                },
                 session.AuthMethod == AuthMethod.Tailscale ? string.Empty : session.CertificatePath ?? string.Empty,
                 credential,
                 jumpHost,
@@ -215,6 +221,7 @@ public static class SessionCsv
         AuthMethod.Certificate => "certificate",
         AuthMethod.Agent => "agent",
         AuthMethod.Tailscale => "tailscale",
+        AuthMethod.KeyStore => "keystore",
         _ => "password"
     };
 
@@ -336,6 +343,19 @@ public static class SessionCsv
             errors.Add(Strings.Format("SessImport_ErrBadAuth", auth));
         }
         profile.AuthMethod = method;
+        if (method == AuthMethod.KeyStore)
+        {
+            // 私钥那一列是系统密钥库的引用,不是文件路径。
+            profile.PrivateKeyPath = null;
+            if (SystemKeyReference.TryParse(privateKey, out SystemKeyReference? keyStoreKey))
+            {
+                profile.KeyStoreKey = keyStoreKey;
+            }
+            else
+            {
+                errors.Add(Strings.Format("SessImport_ErrBadKeyStoreKey", privateKey));
+            }
+        }
         string credential = Cell(SessionCsvColumns.Credential);
         // Tailscale 使用本机身份,credential 列不能覆盖它,也不能绕过协议兼容检查。
         if (method == AuthMethod.Tailscale)
@@ -455,6 +475,9 @@ public static class SessionCsv
                 return true;
             case "tailscale":
                 method = AuthMethod.Tailscale;
+                return true;
+            case "keystore" or "systemkeystore" or "cng":
+                method = AuthMethod.KeyStore;
                 return true;
             default:
                 method = AuthMethod.Password;

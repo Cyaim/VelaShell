@@ -29,13 +29,14 @@ public sealed class SharedCredentialService(ISharedCredentialRepository credenti
         profile.CredentialSource is { } reference && reference.TryGetSharedId(out Guid id) ? id : null;
 
     /// <summary>
-    /// 这条凭据能不能给这条连接用:FTP 与插件协议只认密码,匿名 FTP 不发任何凭据。
+    /// 这条凭据能不能给这条连接用:FTP 与插件协议只认密码,匿名 FTP 不发任何凭据;
+    /// 用系统密钥库的连接不挂共享凭据(钥在这台电脑的密钥库里,共享不了;与连接编辑框同一口径)。
     /// </summary>
     /// <param name="credential">共享凭据。</param>
     /// <param name="profile">连接配置。</param>
     /// <returns>能用时为 true。</returns>
     public static bool IsCompatible(SharedCredential credential, SessionProfile profile) =>
-        CredentialCompatibility.Supports(profile, credential.AuthMethod);
+        profile.AuthMethod != AuthMethod.KeyStore && CredentialCompatibility.Supports(profile, credential.AuthMethod);
 
     /// <summary>每条共享凭据被多少条连接引用(没人引用的不在字典里)。</summary>
     /// <returns>凭据 Id → 引用数。</returns>

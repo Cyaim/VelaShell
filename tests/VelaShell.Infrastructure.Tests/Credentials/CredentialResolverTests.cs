@@ -209,6 +209,26 @@ public sealed class CredentialResolverTests
         Assert.AreSame(profile, await _resolver.ResolveAsync(profile));
     }
 
+    /// <summary>系统密钥库不走共享凭据:万一带着引用(手改的配置),不去取它,钥照用自己的。</summary>
+    [TestMethod]
+    public async Task KeyStore_IgnoresACredentialReference()
+    {
+        SharedCredential credential = Store(new() { Name = "ops", Username = "shared-user", Password = "shared-secret" });
+        SessionProfile profile = Referencing(credential);
+        profile.AuthMethod = AuthMethod.KeyStore;
+        profile.Username = "deploy";
+        profile.KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy" };
+
+        SessionProfile effective = await _resolver.ResolveAsync(profile);
+
+        Assert.AreEqual(AuthMethod.KeyStore, effective.AuthMethod);
+        Assert.AreEqual(profile.KeyStoreKey, effective.KeyStoreKey);
+        Assert.IsNull(effective.CredentialSource);
+        Assert.IsNull(effective.Password);
+        Assert.IsNotNull(profile.CredentialSource, "改的是副本");
+        await _repository.DidNotReceive().GetAsync(Arg.Any<Guid>());
+    }
+
     [TestMethod]
     [DataRow("")]
     [DataRow("deploy")]

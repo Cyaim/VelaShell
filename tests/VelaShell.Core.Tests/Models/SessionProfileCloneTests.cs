@@ -38,6 +38,10 @@ public sealed class SessionProfileCloneTests
             PrivateKeyPath = @"C:\keys\id_ed25519",
             PrivateKeyPassphrase = "phrase",
             CertificatePath = @"C:\keys\id_ed25519-cert.pub",
+            KeyStoreKey = new SystemKeyReference
+            {
+                Provider = SystemKeyReference.PlatformProvider, KeyName = "vela-tpm-key", MachineKey = true, PublicKey = "ecdsa-sha2-nistp256 AAAA"
+            },
             CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
             GroupId = Guid.NewGuid(),
             IsPinned = true,

@@ -4498,6 +4498,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Svc_CertificateKeyRequired" xml:space="preserve">
     <value>憑證驗證需要與憑證相符的私鑰檔案。</value>
   </data>
+  <data name="Svc_KeyStoreKeyRequired" xml:space="preserve">
+    <value>系統金鑰庫認證要先選一把金鑰。</value>
+  </data>
   <data name="Svc_ProfileNameRequired" xml:space="preserve">
     <value>請填寫連線名稱。</value>
   </data>
@@ -7541,6 +7544,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
     <value>無法從系統金鑰庫開啟這把金鑰,或它無法使用。</value>
   </data>
+  <data name="SshErr_KeyStoreNotOnThisPlatform" xml:space="preserve">
+    <value>這條連線用 Windows 系統金鑰庫裡的金鑰({0})簽章,這台電腦上沒有系統金鑰庫。請換一種認證方式。</value>
+  </data>
   <data name="SshErr_CertFileUnreadable" xml:space="preserve">
     <value>無法讀取憑證檔案({0})。</value>
   </data>
@@ -9133,6 +9139,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SessImport_ErrBadAuth" xml:space="preserve">
     <value>無法識別的驗證方式：{0}</value>
   </data>
+  <data name="SessImport_ErrBadKeyStoreKey" xml:space="preserve">
+    <value>不是系統金鑰庫裡金鑰的寫法(應為 cng:金鑰庫/金鑰名稱):{0}</value>
+  </data>
   <data name="SessImport_ErrAuthNotSupported" xml:space="preserve">
     <value>FTP 與外掛程式協定只支援密碼驗證</value>
   </data>
@@ -9549,6 +9558,48 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="PasswordFill_Invalid" xml:space="preserve"><value>密碼包含控制字元或無法以目前工作階段編碼表示，未傳送任何內容。</value></data>
   <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
   <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>使用本機已登入的 Tailscale 身分與遠端系統使用者名稱，無需 SSH 密碼或金鑰；伺服器可能要求瀏覽器驗證。</value></data>
+  <data name="Profile_KeyStoreAuth" xml:space="preserve">
+    <value>系統金鑰庫</value>
+  </data>
+  <data name="Profile_KeyStoreKey" xml:space="preserve">
+    <value>系統金鑰庫裡的金鑰</value>
+  </data>
+  <data name="Profile_KeyStorePick" xml:space="preserve">
+    <value>選一把金鑰…</value>
+  </data>
+  <data name="Profile_KeyStoreRefresh" xml:space="preserve">
+    <value>重新列出(插上智慧卡、剛建立金鑰之後)</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKey" xml:space="preserve">
+    <value>複製公鑰</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKeyTip" xml:space="preserve">
+    <value>複製這把金鑰的 OpenSSH 公鑰行。先把它加進伺服器的 ~/.ssh/authorized_keys 才登得上。</value>
+  </data>
+  <data name="Profile_KeyStoreNoKeys" xml:space="preserve">
+    <value>沒找到能用的金鑰。要 RSA 或 ECDSA(P-256 / P-384 / P-521)的金鑰,放在軟體金鑰庫、TPM 或智慧卡裡。用企業 PKI 工具建立一把 —— 要放進 TPM 的話,例如在 PowerShell 裡用 New-SelfSignedCertificate -Provider "Microsoft Platform Crypto Provider" —— 建好後點重新整理。</value>
+  </data>
+  <data name="Profile_KeyStoreHint" xml:space="preserve">
+    <value>私鑰不出金鑰庫,設定裡只存用哪一把;TPM、智慧卡簽章時可能要輸入 PIN。只在 Windows 上可用。</value>
+  </data>
+  <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
+    <value>這條設定用 Windows 系統金鑰庫裡的金鑰簽章,這台電腦上沒有系統金鑰庫。要在這裡連線,換一種認證方式。</value>
+  </data>
+  <data name="Profile_KeyStoreKeyMissing" xml:space="preserve">
+    <value>這台電腦上找不到</value>
+  </data>
+  <data name="Profile_KeyStoreSoftware" xml:space="preserve">
+    <value>軟體金鑰庫</value>
+  </data>
+  <data name="Profile_KeyStoreTpm" xml:space="preserve">
+    <value>TPM</value>
+  </data>
+  <data name="Profile_KeyStoreSmartCard" xml:space="preserve">
+    <value>智慧卡</value>
+  </data>
+  <data name="Profile_KeyStoreMachine" xml:space="preserve">
+    <value>{0}(電腦層級)</value>
+  </data>
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH 使用本機 Tailscale 身分，不能儲存為共用認證。</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH 驗證</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>伺服器要求身分複核。請點擊連結在瀏覽器中驗證；伺服器批准後，本次連線會自動繼續。</value></data>

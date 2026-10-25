@@ -313,6 +313,8 @@ public static class SessionImportPlanner
         if (columns.HasFlag(SessionCsvColumns.PrivateKey))
         {
             target.PrivateKeyPath = source.PrivateKeyPath;
+            // 系统密钥库的钥也写在这一列(cng:密钥库/钥名)。
+            target.KeyStoreKey = source.KeyStoreKey;
         }
         if (columns.HasFlag(SessionCsvColumns.Certificate))
         {

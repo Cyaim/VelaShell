@@ -189,6 +189,7 @@ The main window contains a title bar, Explorer, a docking document area, and a b
 | Certificate | Select an SSH certificate and matching private key | The certificate is not the private key. Selecting `-cert.pub` can infer a private-key path; verify existence and matching material |
 | Agent | Start/configure the local SSH Agent and add the required key | The Agent signs authentication requests. Entering a host does not automatically select Agent authentication or search your key directories |
 | Tailscale | Both ends must meet Tailscale SSH environment and authorization requirements | Access depends on identity and policy; this is not a passwordless bypass of server authorization |
+| Key store (Windows only) | Pick an RSA / ECDSA key from the certificate store, the TPM or a smart card, and add its public key (**Copy public key**) to the server's `authorized_keys` | The private key cannot be exported and never leaves the key store: Windows signs, and the profile stores only a reference to the key. The TPM or a smart card may ask for a PIN when signing. A computer without that key (a synced profile, a card not inserted) reports that it cannot open it; other platforms do not show this option, and it cannot use a shared credential |
 
 **Steps:** Establish what the server accepts, select the corresponding method and material, test, and connect. Enter interactive verification codes in the challenge dialog when requested. Cancelling stops authentication. Private-key, certificate, and Agent methods do not silently fall back to password authentication.
 

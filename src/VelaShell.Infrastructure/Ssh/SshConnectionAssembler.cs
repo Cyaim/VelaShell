@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
@@ -477,6 +479,7 @@ internal static class SshConnectionAssembler
     /// <summary>释放这一次建连读出来的私钥签名器(释放时清零私钥)。</summary>
     /// <remarks>
     /// 只管本地读出的私钥(<see cref="InMemorySshSigner" />)与包着它的证书签名器(它会连同里面那把一起释放);
+    /// 系统密钥库的签名器(<see cref="CngSshSigner" />)也在这里释放 —— 释放的是密钥库句柄,私钥本来就不在本进程里。
     /// agent 的签名器不归这里 —— 它背后的连接由 agent 客户端管。
     /// 曾经从不释放:私钥材料在托管堆上一直留到 GC,证书读失败时已经读出的私钥也留在原处。
     /// </remarks>
@@ -489,12 +492,15 @@ internal static class SshConnectionAssembler
                 continue;
             }
 
-            if (signer is InMemorySshSigner or SshCertificateSigner)
+            // 系统密钥库的签名器释放的是密钥库句柄(私钥本来就不在本进程里)。
+            if (signer is InMemorySshSigner or SshCertificateSigner || IsCngSigner(signer))
             {
                 ((IDisposable)signer).Dispose();
             }
         }
     }
+
+    private static bool IsCngSigner(ISshSigner signer) => OperatingSystem.IsWindows() && signer is CngSshSigner;
 
     /// <summary>
     /// 这一跳的算法集:老算法开关与四个自定义清单(见 <see cref="SshAlgorithmPreferences" />),
@@ -670,11 +676,51 @@ internal static class SshConnectionAssembler
                     }
                 }
 
+            case AuthMethod.KeyStore:
+                {
+                    ISshSigner signer = await OpenKeyStoreSignerAsync(info, cancellationToken).ConfigureAwait(false);
+                    return [new PublicKeyCredential(signer, info.KeyStoreKey!.KeyName)];
+                }
+
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(info), info.AuthMethod, "Unsupported authentication method.");
         }
     }
+
+    /// <summary>
+    /// 打开系统密钥库里那把钥(SSH 库的 <see cref="CngSshSigner" />):私钥不出密钥库,签名交给它做。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 打开不弹框;TPM / 智能卡要 PIN 时由 Windows 在签名那一刻问(库先问服务端认不认这把钥再签,所以不认的钥不会白问一次 PIN)。
+    /// 放到线程池上打开:智能卡的密钥库打开一把钥可能要跟读卡器来回几趟。
+    /// </para>
+    /// <para>
+    /// 别的平台没有 CNG:配置可能是从 Windows 同步过来的,如实说「这台电脑上用不了」,而不是一句不知所云的认证失败。
+    /// 打不开(钥被删了、在别的电脑上、卡没插)由库报成 <see cref="SshPrivateKeyException" />(<see cref="SshKeyProblemKind.KeyStoreUnavailable" />),
+    /// 宿主按种类本地化(<c>SshErr_KeyStoreUnavailable</c>)。
+    /// </para>
+    /// </remarks>
+    private static async ValueTask<ISshSigner> OpenKeyStoreSignerAsync(VelaConnectionInfo info, CancellationToken cancellationToken)
+    {
+        if (info.KeyStoreKey is not { } key)
+        {
+            throw new VelaSshAuthenticationException(Strings.Get("Svc_KeyStoreKeyRequired"));
+        }
+        return await Task.Run<ISshSigner>(
+            () => OperatingSystem.IsWindows()
+                ? OpenCng(key)
+                : throw new VelaSshAuthenticationException(Strings.Format("SshErr_KeyStoreNotOnThisPlatform", key.KeyName)),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static CngSshSigner OpenCng(SystemKeyReference key) =>
+        CngSshSigner.Open(
+            key.KeyName,
+            new CngProvider(key.Provider),
+            key.MachineKey ? CngKeyOpenOptions.MachineKey : CngKeyOpenOptions.None);
 
     /// <summary>
     /// 读一把私钥。

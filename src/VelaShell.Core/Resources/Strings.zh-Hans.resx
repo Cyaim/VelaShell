@@ -4498,6 +4498,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Svc_CertificateKeyRequired" xml:space="preserve">
     <value>证书认证需要与证书匹配的私钥文件。</value>
   </data>
+  <data name="Svc_KeyStoreKeyRequired" xml:space="preserve">
+    <value>系统密钥库认证要先选一把钥。</value>
+  </data>
   <data name="Svc_ProfileNameRequired" xml:space="preserve">
     <value>请填写连接名称。</value>
   </data>
@@ -7541,6 +7544,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshErr_KeyStoreUnavailable" xml:space="preserve">
     <value>打不开系统密钥库里的这把钥,或者它用不了。</value>
   </data>
+  <data name="SshErr_KeyStoreNotOnThisPlatform" xml:space="preserve">
+    <value>这条连接用 Windows 系统密钥库里的钥({0})签名,这台电脑上没有系统密钥库。请换一种认证方式。</value>
+  </data>
   <data name="SshErr_CertFileUnreadable" xml:space="preserve">
     <value>读不了证书文件({0})。</value>
   </data>
@@ -9133,6 +9139,9 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SessImport_ErrBadAuth" xml:space="preserve">
     <value>无法识别的认证方式：{0}</value>
   </data>
+  <data name="SessImport_ErrBadKeyStoreKey" xml:space="preserve">
+    <value>不是系统密钥库里钥的写法(应为 cng:密钥库/钥名):{0}</value>
+  </data>
   <data name="SessImport_ErrAuthNotSupported" xml:space="preserve">
     <value>FTP 与插件协议只支持密码认证</value>
   </data>
@@ -9549,6 +9558,48 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="PasswordFill_Invalid" xml:space="preserve"><value>密码包含控制字符或无法使用当前会话编码表示，未发送任何内容。</value></data>
   <data name="Profile_TailscaleAuth" xml:space="preserve"><value>Tailscale SSH</value></data>
   <data name="Profile_TailscaleAuthHint" xml:space="preserve"><value>使用本机已登录的 Tailscale 身份与远端系统用户名，无需 SSH 密码或密钥；服务器可能要求浏览器验证。</value></data>
+  <data name="Profile_KeyStoreAuth" xml:space="preserve">
+    <value>系统密钥库</value>
+  </data>
+  <data name="Profile_KeyStoreKey" xml:space="preserve">
+    <value>系统密钥库里的钥</value>
+  </data>
+  <data name="Profile_KeyStorePick" xml:space="preserve">
+    <value>选一把钥…</value>
+  </data>
+  <data name="Profile_KeyStoreRefresh" xml:space="preserve">
+    <value>重新列出(插上智能卡、刚建了钥之后)</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKey" xml:space="preserve">
+    <value>复制公钥</value>
+  </data>
+  <data name="Profile_KeyStoreCopyPublicKeyTip" xml:space="preserve">
+    <value>复制这把钥的 OpenSSH 公钥行。先把它加进服务器的 ~/.ssh/authorized_keys 才登得上。</value>
+  </data>
+  <data name="Profile_KeyStoreNoKeys" xml:space="preserve">
+    <value>没找到能用的钥。要 RSA 或 ECDSA(P-256 / P-384 / P-521)的钥,放在软件密钥库、TPM 或智能卡里。用企业 PKI 工具建一把 —— 要放进 TPM 的话,比如在 PowerShell 里用 New-SelfSignedCertificate -Provider "Microsoft Platform Crypto Provider" —— 建好后点刷新。</value>
+  </data>
+  <data name="Profile_KeyStoreHint" xml:space="preserve">
+    <value>私钥不出密钥库,配置里只存用哪一把;TPM、智能卡签名时可能要输 PIN。只在 Windows 上可用。</value>
+  </data>
+  <data name="Profile_KeyStoreUnsupported" xml:space="preserve">
+    <value>这条配置用 Windows 系统密钥库里的钥签名,这台电脑上没有系统密钥库。要在这里连,换一种认证方式。</value>
+  </data>
+  <data name="Profile_KeyStoreKeyMissing" xml:space="preserve">
+    <value>这台电脑上找不到</value>
+  </data>
+  <data name="Profile_KeyStoreSoftware" xml:space="preserve">
+    <value>软件密钥库</value>
+  </data>
+  <data name="Profile_KeyStoreTpm" xml:space="preserve">
+    <value>TPM</value>
+  </data>
+  <data name="Profile_KeyStoreSmartCard" xml:space="preserve">
+    <value>智能卡</value>
+  </data>
+  <data name="Profile_KeyStoreMachine" xml:space="preserve">
+    <value>{0}(机器级)</value>
+  </data>
   <data name="SharedCred_ErrTailscaleUnsupported" xml:space="preserve"><value>Tailscale SSH 使用本机 Tailscale 身份，不能保存为共享凭据。</value></data>
   <data name="Ssh_TailscaleCheckTitle" xml:space="preserve"><value>Tailscale SSH 验证</value></data>
   <data name="Ssh_TailscaleCheckWaiting" xml:space="preserve"><value>服务器要求身份复核。请点击链接在浏览器中验证；服务器批准后，本次连接会自动继续。</value></data>

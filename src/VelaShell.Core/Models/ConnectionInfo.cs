@@ -46,6 +46,11 @@ public class ConnectionInfo
     public string? CertificatePath { get; init; }
 
     /// <summary>
+    /// 系统密钥库里那把钥的引用(用于 <see cref="AuthMethod.KeyStore" /> 认证)
+    /// </summary>
+    public SystemKeyReference? KeyStoreKey { get; init; }
+
+    /// <summary>
     /// 跳板主机(ProxyJump):先连它,再经它连到本机。递归嵌套即多段跳;
     /// 由工作流按 <c>SessionProfile.JumpHostProfileId</c> 链解析(带环检测)。null = 直连。
     /// 具体建链方式由 Infrastructure 决定(当前为 VelaShell.Ssh 的嵌套连接 + direct-tcpip 隧道)。

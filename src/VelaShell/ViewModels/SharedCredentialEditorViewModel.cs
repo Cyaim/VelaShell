@@ -124,7 +124,8 @@ public sealed class SharedCredentialEditorViewModel : ReactiveObject
             Users.Add(new(profile, _originalUsers.Contains(profile.Id)));
         }
         // 能拿来复制的:凭据就存在连接自己身上的那些(引用了别的凭据的,复制过来也只是空的)。
-        foreach (SessionProfile profile in ordered.Where(static p => p.CredentialSource is null
+        // 系统密钥库的钥做不成共享凭据(在这台电脑的密钥库里),不列。
+        foreach (SessionProfile profile in ordered.Where(static p => p.CredentialSource is null && p.AuthMethod != AuthMethod.KeyStore
                                                                      && (CredentialMaterial.HasInline(p) || p.AuthMethod == AuthMethod.Agent)))
         {
             CopySources.Add(new(profile));

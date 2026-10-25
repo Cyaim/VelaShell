@@ -372,6 +372,8 @@ public sealed class ConnectionDiagnosticsService(
                                       && !string.IsNullOrEmpty(profile.PrivateKeyPath),
             // agent 那一路配置里本来就不存凭据:密钥在 agent 里,连接时现取。
             AuthMethod.Agent => true,
+            // 系统密钥库那一路只存钥的引用,私钥在密钥库里。
+            AuthMethod.KeyStore => profile.KeyStoreKey is not null,
             // Tailscale SSH 只要远端用户名,身份由本机已登录的 Tailscale 提供;check 模式的浏览器验证照常弹窗。
             AuthMethod.Tailscale => !string.IsNullOrWhiteSpace(profile.Username),
             _ => false
@@ -416,7 +418,7 @@ public sealed class ConnectionDiagnosticsService(
             {
                 yield return Strings.Get("DiagSvc_SuggestAgentKeys");
             }
-            else if (profile.AuthMethod is AuthMethod.PrivateKey or AuthMethod.Certificate)
+            else if (profile.AuthMethod is AuthMethod.PrivateKey or AuthMethod.Certificate or AuthMethod.KeyStore)
             {
                 yield return Strings.Get("DiagSvc_SuggestKeyMatch");
             }

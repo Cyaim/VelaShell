@@ -26,6 +26,13 @@ public sealed class CredentialResolver(IEnumerable<ICredentialProvider> provider
             CredentialMaterial.ClearTailscaleCredentials(copy);
             return copy;
         }
+        // 系统密钥库同样不走共享凭据:钥在这台电脑的密钥库里。万一带着引用(手改的配置),不去取它。
+        if (profile.AuthMethod == AuthMethod.KeyStore && profile.CredentialSource is not null)
+        {
+            SessionProfile copy = profile.Clone();
+            copy.CredentialSource = null;
+            return copy;
+        }
         // 本次在登录框里手输过的材料优先于引用(否则用户刚输的新密码会被引用里那份旧的盖掉)。
         // 但用户名可能仍要向引用去取:连接自己没填、一直跟着凭据走的那种 —— 登录框不会为了
         // 一次手输就把它钉在连接上(那会悄悄把"跟着凭据走"变成"覆盖")。

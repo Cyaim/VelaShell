@@ -127,6 +127,8 @@ public static class InfrastructureServiceCollectionExtensions
         });
         services.AddSingleton<ISessionRecordingStore, SonnetDbSessionRecordingStore>();
         services.AddSingleton<ISshKeyService>(_ => new SshKeyService());
+        // 系统密钥库(Windows CNG:软件密钥库、TPM、智能卡):连接配置里「系统密钥库」认证的选钥列表。
+        services.AddSingleton<ISystemKeyStore, SystemKeyStore>();
         services.AddSingleton<ISecurityAlertService>(sp => new SecurityAlertService(
             sp.GetRequiredService<ISettingsService>(), sp.GetService<IAuditLogService>()));
 
