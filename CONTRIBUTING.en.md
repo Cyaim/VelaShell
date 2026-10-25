@@ -109,7 +109,7 @@ Start with a verb, state the outcome rather than the process, keep it to one lin
 
 ## Pull requests
 
-> **There is no PR gate CI in this repository.** `.github/workflows/` contains only the release pipeline, which triggers when a Release is published. **Nothing automated will catch your mistakes** — correctness before merge rests entirely on what you ran locally.
+> **The PR gate is [`ci.yml`](.github/workflows/ci.yml)**: a Debug build (`-warnaserror`) and the test suite on windows / ubuntu / macos, plus a second build on ubuntu with `runtime-async=off` that scans for spans live across `await` (CS4007, see [`AGENTS.md`](AGENTS.md)). It does **not** run the `DockerIntegration` / `CrossPlatform` / `Interop` categories (they need Docker, a real sshd or a publish environment) — if you touch those areas, correctness before merge still rests on what you ran locally.
 
 Before opening a PR, verify yourself:
 

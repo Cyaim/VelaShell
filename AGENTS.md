@@ -97,7 +97,8 @@ Docker 与 `docker-compose.test.yml`,`CrossPlatformPublishTests` 需 `VELASHELL_
 最容易踩的是**接收者先求值、实参里才 `await`** 的一行写法 —— `x.AsSpan().SequenceEqual(await …)`,连 `bytes.SequenceEqual(await …)`
 也算(C# 14 起它绑到 Span 的重载),`await` 真挂起时恒为 `false`。先 `await` 拿到结果再造 Span;ref struct 的读取器在第一个 `await`
 之前读完,或者 `await` 之后另起一个。拿不准时用 `dotnet build VelaShell.slnx --artifacts-path <临时目录> -p:Features=runtime-async=off`
-编一遍,报出来的 CS4007 就是这类问题。`ref` 局部变量跨 `await`(CS9217)两种模式都照报,不受影响。
+编一遍,报出来的 CS4007 就是这类问题;CI 的 Linux 作业每次都这样编一遍(`.github/workflows/ci.yml`「扫 Span 跨 await」那一步),
+那一步红了就是这一类。`ref` 局部变量跨 `await`(CS9217)两种模式都照报,不受影响。
 - **改 `src/VelaShell.Ssh/` 之前先读 [`src/VelaShell.Ssh/AGENTS.md`](src/VelaShell.Ssh/AGENTS.md)**。
 那是宿主的 SSH 库(2026-09-23 从 velashell-ssh 仓库并入,不单独发 NuGet),有一条宿主其余部分没有的
 **净室规程**:写实现时不许打开任何其它 SSH 实现的源码,实现依据只能是 RFC 与 velashell-docs 的

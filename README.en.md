@@ -217,7 +217,7 @@ is produced only on CI's macOS runner; the `.AppImage` ([`build/appimage/`](buil
 
 | Pipeline | Trigger | What it does |
 | --- | --- | --- |
-| [`ci.yml`](.github/workflows/ci.yml) | push to `main` / every PR | windows + ubuntu + macos matrix, Debug build + full test suite, `-warnaserror` |
+| [`ci.yml`](.github/workflows/ci.yml) | push to `main` / every PR | windows + ubuntu + macos matrix, Debug build + full test suite, `-warnaserror`; on ubuntu a second build with `runtime-async=off` scans for spans live across `await` (CS4007) |
 | [`release.yml`](.github/workflows/release.yml) | a Release is published | Packages all three platforms in parallel and attaches `SHA256SUMS.txt` and the `latest.json` update manifest; also produces an **MSIX** for Microsoft Store submission |
 
 CI deliberately builds **Debug** (strong-name signing is Release-only, and PRs from forks and Dependabot cannot read

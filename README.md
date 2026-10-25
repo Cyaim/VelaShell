@@ -197,7 +197,7 @@ pwsh scripts/publish-all.ps1     # 一键产出全平台发布包 → publish/
 
 | 流水线 | 触发 | 做什么 |
 | --- | --- | --- |
-| [`ci.yml`](.github/workflows/ci.yml) | push `main` / 全部 PR | windows + ubuntu + macos 三平台矩阵，Debug 构建 + 全量测试，`-warnaserror` |
+| [`ci.yml`](.github/workflows/ci.yml) | push `main` / 全部 PR | windows + ubuntu + macos 三平台矩阵，Debug 构建 + 全量测试，`-warnaserror`；ubuntu 上另以 `runtime-async=off` 编一遍，扫 Span 跨 `await`（CS4007） |
 | [`release.yml`](.github/workflows/release.yml) | 发布 Release | 三平台并行打包，附上 `SHA256SUMS.txt` 与自动更新清单 `latest.json`；另打 **MSIX** 供 Microsoft Store 提交 |
 
 CI 刻意用 **Debug**（强名签名只在 Release 打开，fork 与 Dependabot 的 PR 拿不到仓库 secret），

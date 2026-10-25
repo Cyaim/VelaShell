@@ -110,7 +110,7 @@ fix/226-file-browser-manual-path
 
 ## Pull Request
 
-> **本仓库目前没有 PR 门禁 CI。** `.github/workflows/` 下只有发布流水线,它在 Release 发布时才触发。这意味着**没有任何自动检查会替你兜底** —— 合并前的正确性完全依赖你本地跑过。
+> **PR 门禁是 [`ci.yml`](.github/workflows/ci.yml)**:windows / ubuntu / macos 三平台 Debug 构建(`-warnaserror`)+ 测试,ubuntu 上另以 `runtime-async=off` 编一遍、扫 Span 跨 `await`(CS4007,见 [`AGENTS.md`](AGENTS.md))。它**不跑** `DockerIntegration` / `CrossPlatform` / `Interop` 三类(要 Docker、真 sshd 或发布环境)—— 动到这几块,合并前的正确性仍靠你本地跑过。
 
 提 PR 前请自己确认:
 
