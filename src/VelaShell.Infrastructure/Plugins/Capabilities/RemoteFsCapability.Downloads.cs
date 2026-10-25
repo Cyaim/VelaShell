@@ -116,7 +116,7 @@ internal sealed partial class RemoteFsCapability
             // 批准生效与阶段推进在授权闸的同一把锁里(见 EnterTransferPhase):已批准、在等传输槽的下载报 Transfer,
             // 插件停止时按「Approval 才撤」的口径不会再把它当成还在等确认的撤掉。
             if (!await uploadPermissions.CheckDownloadAsync(op._downloadPermission, pluginId, label, Read(op).RemotePath,
-                Read(op).LocalPath, options.Overwrite, ct, () => EnterTransferPhase(op)).ConfigureAwait(false))
+                Read(op).LocalPath, options.Overwrite, source.Size, ct, () => EnterTransferPhase(op)).ConfigureAwait(false))
                 throw new PluginPermissionDeniedException("The user denied this download.");
             ConfirmApprovedOrCancelled(op, ct);
             await _uploadSlots.WaitAsync(ct).ConfigureAwait(false);

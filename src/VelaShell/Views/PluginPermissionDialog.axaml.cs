@@ -60,12 +60,20 @@ public partial class PluginPermissionDialog : Window
 
     /// <summary>下载可信确认只批准当前任务，不授予其它路径或后续下载的永久权限。</summary>
     public static Task<PluginPermissionDecision> AskFileDownloadAsync(string pluginId, string sessionLabel,
-        string remotePath, string localPath, bool overwrite, CancellationToken cancellationToken = default)
+        string remotePath, string localPath, bool overwrite, long sizeBytes, CancellationToken cancellationToken = default)
         => ShowAsync(Strings.Get("PluginPermDownload_Title"),
             Strings.Format("PluginPermDownload_Message", EscapeUploadField(pluginId), EscapeUploadField(sessionLabel)),
-            Strings.Format("PluginPermDownload_Preview", EscapeUploadField(remotePath), EscapeUploadField(localPath),
-                Strings.Get(overwrite ? "PluginPermUpload_Replace" : "PluginPermUpload_NoReplace")),
+            DownloadPreview(remotePath, localPath, overwrite, sizeBytes),
             "Icon.download", uploadOnly: true, cancellationToken, downloadOnly: true);
+
+    /// <summary>
+    /// 下载确认的预览:远端源、大小、本机目标与覆盖策略,大小与上传同一个写法(见 <see cref="UploadPreview" />)。
+    /// 下载同样不设固定大小上限,几个 G 的文件落到本机盘上,用户点「允许」之前该看到它有多大。
+    /// 大小是审批之前对远端源 stat 到的那一个,传之前、传完都会再核对它没变。
+    /// </summary>
+    internal static string DownloadPreview(string remotePath, string localPath, bool overwrite, long sizeBytes) =>
+        Strings.Format("PluginPermDownload_Preview", EscapeUploadField(remotePath), EscapeUploadField(localPath),
+            Strings.Get(overwrite ? "PluginPermUpload_Replace" : "PluginPermUpload_NoReplace"), FormatPreviewSize(sizeBytes));
 
     /// <summary>上传可信确认只批准当前任务，不授予其它路径或后续上传的永久权限。</summary>
     public static Task<PluginPermissionDecision> AskFileUploadAsync(string pluginId, string sessionLabel,
@@ -79,12 +87,15 @@ public partial class PluginPermissionDialog : Window
     /// 上传确认的预览:源、大小、目标与覆盖策略。大小写成「约数 (精确字节数 B)」:不设固定大小上限之后,用户只能从这里
     /// 看出这次要传多大;精确数免得 1.0 GB 这类约数把差了几兆的两个文件说成一样。不足 1 KB 时约数本身就是精确的。
     /// </summary>
-    internal static string UploadPreview(string localPath, string remotePath, bool overwrite, long sizeBytes)
+    internal static string UploadPreview(string localPath, string remotePath, bool overwrite, long sizeBytes) =>
+        Strings.Format("PluginPermUpload_Preview", EscapeUploadField(localPath), EscapeUploadField(remotePath),
+            Strings.Get(overwrite ? "PluginPermUpload_Replace" : "PluginPermUpload_NoReplace"), FormatPreviewSize(sizeBytes));
+
+    /// <summary>确认框里的大小:约数加精确字节数(如 <c>5.0 GB (5,368,709,127 B)</c>),不足 1 KB 只写一个数。</summary>
+    private static string FormatPreviewSize(long sizeBytes)
     {
         string size = TransferItemViewModel.FormatBytes(sizeBytes);
-        if (sizeBytes >= 1024) size += " (" + sizeBytes.ToString("N0", CultureInfo.CurrentCulture) + " B)";
-        return Strings.Format("PluginPermUpload_Preview", EscapeUploadField(localPath), EscapeUploadField(remotePath),
-            Strings.Get(overwrite ? "PluginPermUpload_Replace" : "PluginPermUpload_NoReplace"), size);
+        return sizeBytes >= 1024 ? size + " (" + sizeBytes.ToString("N0", CultureInfo.CurrentCulture) + " B)" : size;
     }
 
     private static async Task<PluginPermissionDecision> ShowAsync(string title, string message, string preview,

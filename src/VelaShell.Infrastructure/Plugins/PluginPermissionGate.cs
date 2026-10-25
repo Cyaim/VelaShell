@@ -43,9 +43,12 @@ public interface IPluginPermissionPrompt
         string remotePath, bool overwrite, long sizeBytes, CancellationToken cancellationToken)
         => Task.FromResult(PluginPermissionDecision.Deny);
 
-    /// <summary>逐任务审批具体下载;仅 AllowOnce 有效,不授予其它文件或终端能力。</summary>
+    /// <summary>
+    /// 逐任务审批具体下载;仅 AllowOnce 有效,不授予其它文件或终端能力。<paramref name="sizeBytes" /> 是审批之前对远端源
+    /// stat 到的大小,确认框与上传一样照实显示(维护者 2026-10-25 定,第二轮第 27 条)。
+    /// </summary>
     Task<PluginPermissionDecision> RequestFileDownloadAsync(string pluginId, string sessionLabel, string remotePath,
-        string localPath, bool overwrite, CancellationToken cancellationToken)
+        string localPath, bool overwrite, long sizeBytes, CancellationToken cancellationToken)
         => Task.FromResult(PluginPermissionDecision.Deny);
 }
 
@@ -167,7 +170,8 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
     /// <summary>逐任务请求可信下载审批;仅 AllowOnce 有效,不复用上传、终端或开会话授权。</summary>
     /// <remarks><c>onApproved</c> 与 <see cref="CheckUploadAsync" /> 的同名参数一样:批准生效时在登记批准的同一把锁里调用。</remarks>
     public async Task<bool> CheckDownloadAsync(DownloadPermissionLease lease, string pluginId, string sessionLabel,
-        string remotePath, string localPath, bool overwrite, CancellationToken cancellationToken, Action? onApproved = null)
+        string remotePath, string localPath, bool overwrite, long sizeBytes, CancellationToken cancellationToken,
+        Action? onApproved = null)
     {
         if (prompt is null) return false;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lease.Revocation);
@@ -175,7 +179,8 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
         try
         {
             lock (_uploadGate) if (!_downloads.TryGetValue(pluginId, out HashSet<DownloadPermissionLease>? leases) || !leases.Contains(lease)) return false;
-            Task<PluginPermissionDecision> pending = prompt.RequestFileDownloadAsync(pluginId, sessionLabel, remotePath, localPath, overwrite, linked.Token);
+            Task<PluginPermissionDecision> pending = prompt.RequestFileDownloadAsync(pluginId, sessionLabel, remotePath, localPath,
+                overwrite, sizeBytes, linked.Token);
             PluginPermissionDecision decision;
             try { decision = await pending.WaitAsync(linked.Token).ConfigureAwait(false); }
             catch (OperationCanceledException)

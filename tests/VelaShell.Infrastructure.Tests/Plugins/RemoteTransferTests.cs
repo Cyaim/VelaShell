@@ -429,7 +429,7 @@ public sealed partial class RemoteTransferTests
         string leaf = Path.Combine(root, "vela-onedrive-probe-" + Guid.NewGuid().ToString("N"));
         Assert.AreEqual(leaf, RemoteFsCapability.ResolveUploadSource(leaf), ignoreCase: true);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", leaf, false, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.Deny);
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", leaf, false, Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.Deny);
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
         try
@@ -437,7 +437,7 @@ public sealed partial class RemoteTransferTests
             RemoteTransferSnapshot start = await api.StartDownloadAsync(_session.ToString(), "/source", leaf, new() { OperationId = "onedrive" });
             RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
             Assert.AreEqual("permission-denied", done.ErrorCode, done.ErrorMessage);
-            await prompt.Received(1).RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", leaf, false, Arg.Any<CancellationToken>());
+            await prompt.Received(1).RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", leaf, false, Arg.Any<long>(), Arg.Any<CancellationToken>());
         }
         finally { await WaitIdle(api); }
         Assert.IsFalse(File.Exists(leaf));
@@ -1922,13 +1922,35 @@ public sealed partial class RemoteTransferTests
         await WaitIdle(api);
     }
 
+    /// <summary>下载确认框收到的是审批之前对远端源 stat 到的大小(第二轮第 27 条:与上传一样写明文件大小)。</summary>
+    [TestMethod]
+    public async Task DownloadPromptIsGivenTheRemoteSourceSize()
+    {
+        const long size = 5L * 1024 * 1024 * 1024 + 7;
+        string directory = NewDirectory("vela-download-");
+        string path = Path.Combine(directory, "target");
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(PluginPermissionDecision.Deny);
+        _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(size));
+        using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
+        try
+        {
+            RemoteTransferSnapshot start = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "sized" });
+            RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
+            Assert.AreEqual("permission-denied", done.ErrorCode, done.ErrorMessage);
+            await prompt.Received(1).RequestFileDownloadAsync("test.transfer", Arg.Any<string>(), "/source", path, false, size, Arg.Any<CancellationToken>());
+        }
+        finally { await WaitIdle(api); Directory.Delete(directory, true); }
+    }
+
     [TestMethod]
     public async Task DownloadCommitsOnlyAfterVerificationAndProtectsExistingDestination()
     {
         string directory = NewDirectory("vela-download-");
         string path = Path.Combine(directory, "target");
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(new RemoteFileInfo { Name = "source", FullPath = "/source", Size = 3, LastModified = new DateTime(2026, 10, 1), Permissions = "-rw-------", IsDirectory = false, Owner = "user", Group = "user" });
         _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
@@ -2002,7 +2024,7 @@ public sealed partial class RemoteTransferTests
         string path = Path.Combine(directory, "target");
         await File.WriteAllBytesAsync(path, [9]);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, true, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, true, Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(new RemoteFileInfo { Name = "source", FullPath = "/source", Size = 3, LastModified = DateTime.UnixEpoch, Permissions = "-rw-------", IsDirectory = false, Owner = "user", Group = "user" });
         _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>()).Returns(async call => await call.ArgAt<Stream>(2).WriteAsync(new byte[] { 1 }));
         ConfigureRemoteDigest("/source", [1, 2, 3]);
@@ -2028,7 +2050,7 @@ public sealed partial class RemoteTransferTests
         string directory = NewDirectory("vela-download-cancel-");
         string path = Path.Combine(directory, "target");
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, false, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, false, Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(new RemoteFileInfo { Name = "source", FullPath = "/source", Size = 3, LastModified = DateTime.UnixEpoch, Permissions = "-rw-------", IsDirectory = false, Owner = "user", Group = "user" });
         var writing = NewSignal();
         var release = NewSignal();
@@ -2067,7 +2089,7 @@ public sealed partial class RemoteTransferTests
         string directory = NewDirectory("vela-download-race-");
         string path = Path.Combine(directory, fileName);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, overwrite, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, overwrite, Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
         RemoteFileInfo Info(int size) => new() { Name = "source", FullPath = "/source", Size = size, LastModified = DateTime.UnixEpoch, Permissions = "-rw-------", IsDirectory = false, Owner = "user", Group = "user" };
         int reads = 0;
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(Info(++reads >= 3 && sourceChanged ? 4 : 3)));
@@ -2111,7 +2133,7 @@ public sealed partial class RemoteTransferTests
         var asking = NewSignal();
         var decision = new TaskCompletionSource<PluginPermissionDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, false, Arg.Any<CancellationToken>())
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", path, false, Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(async _ => { asking.TrySetResult(); return await decision.Task; });
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
         var writing = NewSignal();
@@ -2175,7 +2197,7 @@ public sealed partial class RemoteTransferTests
         string user = Path.Combine(directory, "vela-download-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)));
         foreach (string file in new[] { orphan, live, lookalike, user }) await File.WriteAllBytesAsync(file, [7]);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(PluginPermissionDecision.Deny);
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(3));
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
@@ -2336,7 +2358,7 @@ public sealed partial class RemoteTransferTests
         string path = Path.Combine(directory, "target");
         byte[] content = new byte[64 * 1024];
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(async _ => { await Task.Delay(1500); return PluginPermissionDecision.AllowOnce; });
         _sftp.GetFileInfoAsync(_session, "/source", Arg.Any<CancellationToken>()).Returns(SourceInfo(content.Length));
         _sftp.DownloadStreamAsync(_session, "/source", Arg.Any<Stream>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<CancellationToken>())
@@ -2366,7 +2388,7 @@ public sealed partial class RemoteTransferTests
     private static IPluginPermissionPrompt AllowDownloads()
     {
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(PluginPermissionDecision.AllowOnce);
         return prompt;
     }

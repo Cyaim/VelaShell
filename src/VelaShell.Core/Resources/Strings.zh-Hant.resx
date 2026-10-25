@@ -6283,7 +6283,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="PluginPermDownload_Title"><value>檔案下載授權</value></data>
   <data name="PluginPermDownload_AllowOnce"><value>允許本次下載</value></data>
   <data name="PluginPermDownload_Message"><value>外掛「{0}」請求從 {1} 下載至本機檔案。核准僅對目前任務有效。</value></data>
-  <data name="PluginPermDownload_Preview"><value>遠端來源：{0}&#10;本機目標：{1}&#10;目標策略：{2}</value></data>
+  <data name="PluginPermDownload_Preview"><value>遠端來源：{0}&#10;大小：{3}&#10;本機目標：{1}&#10;目標策略：{2}</value></data>
   <data name="PluginPermSession_Title" xml:space="preserve">
     <value>連線請求</value>
   </data>
