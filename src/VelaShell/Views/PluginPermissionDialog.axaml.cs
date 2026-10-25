@@ -7,13 +7,14 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using VelaShell.Core.Resources;
 using VelaShell.Infrastructure.Plugins;
+using VelaShell.ViewModels;
 
 namespace VelaShell.Views;
 
 /// <summary>
 /// 插件敏感能力的授权弹窗:展示插件、目标与内容预览,给出
 /// 终端回写与开会话提供仅本次 / 本次运行 / 始终 / 拒绝四种选择。
-/// 文件上传仅允许批准当前任务或拒绝，预览固定的本地源、远端目标和覆盖策略。
+/// 文件上传仅允许批准当前任务或拒绝，预览固定的本地源、文件大小、远端目标和覆盖策略。
 /// </summary>
 public partial class PluginPermissionDialog : Window
 {
@@ -68,12 +69,23 @@ public partial class PluginPermissionDialog : Window
 
     /// <summary>上传可信确认只批准当前任务，不授予其它路径或后续上传的永久权限。</summary>
     public static Task<PluginPermissionDecision> AskFileUploadAsync(string pluginId, string sessionLabel,
-        string localPath, string remotePath, bool overwrite, CancellationToken cancellationToken = default)
+        string localPath, string remotePath, bool overwrite, long sizeBytes, CancellationToken cancellationToken = default)
         => ShowAsync(Strings.Get("PluginPermUpload_Title"),
             Strings.Format("PluginPermUpload_Message", EscapeUploadField(pluginId), EscapeUploadField(sessionLabel)),
-            Strings.Format("PluginPermUpload_Preview", EscapeUploadField(localPath), EscapeUploadField(remotePath),
-                Strings.Get(overwrite ? "PluginPermUpload_Replace" : "PluginPermUpload_NoReplace")),
+            UploadPreview(localPath, remotePath, overwrite, sizeBytes),
             "Icon.upload", uploadOnly: true, cancellationToken);
+
+    /// <summary>
+    /// 上传确认的预览:源、大小、目标与覆盖策略。大小写成「约数 (精确字节数 B)」:不设固定大小上限之后,用户只能从这里
+    /// 看出这次要传多大;精确数免得 1.0 GB 这类约数把差了几兆的两个文件说成一样。不足 1 KB 时约数本身就是精确的。
+    /// </summary>
+    internal static string UploadPreview(string localPath, string remotePath, bool overwrite, long sizeBytes)
+    {
+        string size = TransferItemViewModel.FormatBytes(sizeBytes);
+        if (sizeBytes >= 1024) size += " (" + sizeBytes.ToString("N0", CultureInfo.CurrentCulture) + " B)";
+        return Strings.Format("PluginPermUpload_Preview", EscapeUploadField(localPath), EscapeUploadField(remotePath),
+            Strings.Get(overwrite ? "PluginPermUpload_Replace" : "PluginPermUpload_NoReplace"), size);
+    }
 
     private static async Task<PluginPermissionDecision> ShowAsync(string title, string message, string preview,
         string iconKey, bool uploadOnly = false, CancellationToken cancellationToken = default, bool downloadOnly = false)

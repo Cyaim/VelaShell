@@ -61,7 +61,7 @@ public sealed class PluginPermissionDialogTests
             using var cancellation = new CancellationTokenSource();
             cancellation.Cancel();
             PluginPermissionDecision decision = await PluginPermissionDialog.AskFileUploadAsync(
-                "acme.plugin", "prod-1", "C:/source.bin", "/target.bin", false, cancellation.Token);
+                "acme.plugin", "prod-1", "C:/source.bin", "/target.bin", false, 1024, cancellation.Token);
             Assert.AreEqual(PluginPermissionDecision.Deny, decision);
         });
 
@@ -75,11 +75,32 @@ public sealed class PluginPermissionDialogTests
             {
                 if (lifetime is not null) lifetime.MainWindow = null;
                 PluginPermissionDecision decision = await PluginPermissionDialog.AskFileUploadAsync(
-                    "acme.plugin", "prod-1", "C:/source.bin", "/target.bin", false);
+                    "acme.plugin", "prod-1", "C:/source.bin", "/target.bin", false, 1024);
                 Assert.AreEqual(PluginPermissionDecision.Deny, decision);
             }
             finally { if (lifetime is not null) lifetime.MainWindow = previous; }
         });
+
+    /// <summary>
+    /// 上传确认的预览写明文件大小:约数加精确字节数(约数会把差了几兆的两个文件说成一样);不足 1 KB 时约数就是精确的,不重复。
+    /// 大小一行排在源文件之后、远端目标之前,五语的格式串都要带上它(格式参数个数由本地化守卫核对)。
+    /// </summary>
+    [TestMethod]
+    public void UploadPermission_PreviewShowsTheSourceSize()
+    {
+        const long size = 5L * 1024 * 1024 * 1024 + 7;
+        string large = PluginPermissionDialog.UploadPreview("/src.bin", "/dst.bin", false, size);
+        string expected = TransferItemViewModel.FormatBytes(size) + " (" + size.ToString("N0", System.Globalization.CultureInfo.CurrentCulture) + " B)";
+        Assert.Contains(expected, large);
+        string[] lines = large.Split('\n');
+        Assert.HasCount(4, lines);
+        Assert.Contains("\"/src.bin\"", lines[0]);
+        Assert.Contains(expected, lines[1]);
+        Assert.Contains("\"/dst.bin\"", lines[2]);
+        string small = PluginPermissionDialog.UploadPreview("/src.bin", "/dst.bin", true, 512);
+        Assert.Contains("512 B", small);
+        Assert.DoesNotContain("(512 B)", small);
+    }
 
     [TestMethod]
     public void UploadPermission_FieldsEscapeControlAndBidiWithoutChangingOrdinaryUnicode()

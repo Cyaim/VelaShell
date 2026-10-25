@@ -11,8 +11,8 @@ internal sealed class DialogPermissionPrompt : IPluginPermissionPrompt
         => PluginPermissionDialog.AskAsync(pluginId, sessionLabel, inputPreview);
 
     public Task<PluginPermissionDecision> RequestFileUploadAsync(string pluginId, string sessionLabel,
-        string localPath, string remotePath, bool overwrite, CancellationToken cancellationToken)
-        => PluginPermissionDialog.AskFileUploadAsync(pluginId, sessionLabel, localPath, remotePath, overwrite, cancellationToken);
+        string localPath, string remotePath, bool overwrite, long sizeBytes, CancellationToken cancellationToken)
+        => PluginPermissionDialog.AskFileUploadAsync(pluginId, sessionLabel, localPath, remotePath, overwrite, sizeBytes, cancellationToken);
 
     public Task<PluginPermissionDecision> RequestFileDownloadAsync(string pluginId, string sessionLabel,
         string remotePath, string localPath, bool overwrite, CancellationToken cancellationToken)

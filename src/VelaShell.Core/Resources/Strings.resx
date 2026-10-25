@@ -5598,7 +5598,7 @@ Overwrite it?</value>
   <data name="PluginPerm_Deny"><value>Deny</value></data>
   <data name="PluginPermUpload_Title"><value>File upload authorization</value></data>
   <data name="PluginPermUpload_Message"><value>Plugin "{0}" requests local file access and upload to {1}. Approval applies only to this task; it can be revoked from Plugin Manager.</value></data>
-  <data name="PluginPermUpload_Preview"><value>Local source: {0}&#10;Remote destination: {1}&#10;Destination policy: {2}</value></data>
+  <data name="PluginPermUpload_Preview"><value>Local source: {0}&#10;Size: {3}&#10;Remote destination: {1}&#10;Destination policy: {2}</value></data>
   <data name="PluginPermUpload_Replace"><value>Allow atomic replacement of an existing file</value></data>
   <data name="PluginPermUpload_NoReplace"><value>Do not replace an existing file</value></data>
   <data name="PluginPermUpload_AllowOnce"><value>Allow this upload</value></data>

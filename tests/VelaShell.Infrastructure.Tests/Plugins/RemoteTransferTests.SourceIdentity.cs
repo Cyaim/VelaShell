@@ -175,7 +175,7 @@ public sealed partial class RemoteTransferTests
     {
         string resolved = RemoteFsCapability.ResolveUploadSource(path);
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(PluginPermissionDecision.Deny);
         using var api = new RemoteFsCapability(_sftp, _connections, pluginId: "test.transfer", uploadPermissions: new(null, prompt));
         try
@@ -183,7 +183,7 @@ public sealed partial class RemoteTransferTests
             RemoteTransferSnapshot start = await api.StartUploadAsync(_session.ToString(), path, "/target", new() { OperationId = "variant-" + path });
             Assert.AreEqual(resolved, start.LocalPath);
             Assert.AreEqual("permission-denied", (await Terminal(api, start.TransferId)).ErrorCode);
-            await prompt.Received(1).RequestFileUploadAsync("test.transfer", Arg.Any<string>(), resolved, "/target", false, Arg.Any<CancellationToken>());
+            await prompt.Received(1).RequestFileUploadAsync("test.transfer", Arg.Any<string>(), resolved, "/target", false, Arg.Any<long>(), Arg.Any<CancellationToken>());
         }
         finally { await WaitIdle(api); }
     }

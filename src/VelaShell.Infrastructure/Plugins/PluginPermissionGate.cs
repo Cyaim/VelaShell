@@ -35,9 +35,12 @@ public interface IPluginPermissionPrompt
     Task<PluginPermissionDecision> RequestSessionOpenAsync(string pluginId, string target, string reason,
         CancellationToken cancellationToken);
 
-    /// <summary>逐任务审批具体上传;仅 AllowOnce 有效,不授予其它文件或终端能力。</summary>
+    /// <summary>
+    /// 逐任务审批具体上传;仅 AllowOnce 有效,不授予其它文件或终端能力。<paramref name="sizeBytes" /> 是已打开源句柄的长度,
+    /// 确认框照实显示 —— 不设固定大小上限之后,用户只能从这里看出这次要传多大(Linux / macOS 上还要同等大小的本机快照空间)。
+    /// </summary>
     Task<PluginPermissionDecision> RequestFileUploadAsync(string pluginId, string sessionLabel, string localPath,
-        string remotePath, bool overwrite, CancellationToken cancellationToken)
+        string remotePath, bool overwrite, long sizeBytes, CancellationToken cancellationToken)
         => Task.FromResult(PluginPermissionDecision.Deny);
 
     /// <summary>逐任务审批具体下载;仅 AllowOnce 有效,不授予其它文件或终端能力。</summary>
@@ -216,7 +219,7 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
 
     /// <summary>逐次请求可信上传审批,明确拒绝 Session/Always 扩大范围,不复用其它能力授权。</summary>
     public async Task<bool> CheckUploadAsync(UploadPermissionLease lease, string pluginId, string sessionLabel,
-        string localPath, string remotePath, bool overwrite, CancellationToken cancellationToken)
+        string localPath, string remotePath, bool overwrite, long sizeBytes, CancellationToken cancellationToken)
     {
         if (prompt is null) return false;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lease.Revocation);
@@ -228,7 +231,7 @@ public sealed class PluginPermissionGate(IAppDataStore? store, IPluginPermission
                 if (!_uploads.TryGetValue(pluginId, out HashSet<UploadPermissionLease>? leases) || !leases.Contains(lease)) return false;
             }
             Task<PluginPermissionDecision> pending = prompt.RequestFileUploadAsync(pluginId, sessionLabel, localPath,
-                remotePath, overwrite, linked.Token);
+                remotePath, overwrite, sizeBytes, linked.Token);
             PluginPermissionDecision decision;
             try { decision = await pending.WaitAsync(linked.Token).ConfigureAwait(false); }
             catch (OperationCanceledException)

@@ -61,7 +61,7 @@ public class PluginPermissionGateTests
         Assert.IsTrue(await gate.CheckTerminalWriteAsync("p", "target", "input", default));
         Assert.IsTrue(await gate.CheckSessionOpenAsync("p", "target", "reason", default));
         using var lease = gate.CreateUploadLease("p");
-        Assert.IsFalse(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", false, default));
+        Assert.IsFalse(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", false, 8, default));
     }
 
     [TestMethod]
@@ -70,14 +70,26 @@ public class PluginPermissionGateTests
         foreach (PluginPermissionDecision decision in new[] { PluginPermissionDecision.Deny, PluginPermissionDecision.AllowSession, PluginPermissionDecision.AllowAlways })
         {
             IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
-            prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(decision);
+            prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(decision);
             var gate = new PluginPermissionGate(null, prompt);
             using var lease = gate.CreateUploadLease("p");
-            Assert.IsFalse(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", false, default));
+            Assert.IsFalse(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", false, 8, default));
         }
         var missing = new PluginPermissionGate(null, null);
         using var absentLease = missing.CreateUploadLease("p");
-        Assert.IsFalse(await missing.CheckUploadAsync(absentLease, "p", "target", "/local", "/remote", false, default));
+        Assert.IsFalse(await missing.CheckUploadAsync(absentLease, "p", "target", "/local", "/remote", false, 8, default));
+    }
+
+    /// <summary>上传确认框拿到源句柄的长度照实显示(不设固定大小上限之后,用户只能从这里看出这次要传多大)。</summary>
+    [TestMethod]
+    public async Task UploadPromptIsGivenTheSourceSize()
+    {
+        const long size = 5L * 1024 * 1024 * 1024 + 7;
+        IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
+        prompt.RequestFileUploadAsync("p", "target", "/local", "/remote", true, size, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
+        var gate = new PluginPermissionGate(null, prompt);
+        using var lease = gate.CreateUploadLease("p");
+        Assert.IsTrue(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", true, size, default));
     }
 
     [TestMethod]

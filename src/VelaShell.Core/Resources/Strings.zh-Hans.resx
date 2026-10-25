@@ -5772,7 +5772,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   </data>
   <data name="PluginPermUpload_Title"><value>文件上传授权</value></data>
   <data name="PluginPermUpload_Message"><value>插件“{0}”请求读取本机文件并上传到 {1}。批准仅对当前任务有效，可在插件管理页撤销。</value></data>
-  <data name="PluginPermUpload_Preview"><value>本机源文件：{0}&#10;远端目标：{1}&#10;目标策略：{2}</value></data>
+  <data name="PluginPermUpload_Preview"><value>本机源文件：{0}&#10;大小：{3}&#10;远端目标：{1}&#10;目标策略：{2}</value></data>
   <data name="PluginPermUpload_Replace"><value>允许原子替换已有文件</value></data>
   <data name="PluginPermUpload_NoReplace"><value>不替换已有文件</value></data>
   <data name="PluginPermUpload_AllowOnce"><value>允许本次上传</value></data>

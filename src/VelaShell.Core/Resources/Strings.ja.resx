@@ -5593,7 +5593,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="PluginPerm_Deny"><value>拒否</value></data>
   <data name="PluginPermUpload_Title"><value>ファイルアップロードの許可</value></data>
   <data name="PluginPermUpload_Message"><value>プラグイン「{0}」がローカルファイルの読み取りと {1} へのアップロードを要求しています。許可はこのタスクのみ有効で、プラグイン管理で取り消せます。</value></data>
-  <data name="PluginPermUpload_Preview"><value>ローカルファイル: {0}&#10;リモート保存先: {1}&#10;保存先の方針: {2}</value></data>
+  <data name="PluginPermUpload_Preview"><value>ローカルファイル: {0}&#10;サイズ: {3}&#10;リモート保存先: {1}&#10;保存先の方針: {2}</value></data>
   <data name="PluginPermUpload_Replace"><value>既存ファイルのアトミックな置換を許可</value></data>
   <data name="PluginPermUpload_NoReplace"><value>既存ファイルを置換しない</value></data>
   <data name="PluginPermUpload_AllowOnce"><value>今回のアップロードを許可</value></data>

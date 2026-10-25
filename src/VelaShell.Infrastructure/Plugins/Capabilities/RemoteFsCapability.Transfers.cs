@@ -460,8 +460,7 @@ internal sealed partial class RemoteFsCapability
         bool slot = false, writing = false, committing = false, commitRejected = false, refused = false;
         Task? remoteWrite = null;
         Task? commitTask = null;
-        FileStream? diskSnapshot = null;
-        string? snapshotDirectory = null;
+        UploadSnapshot? diskSnapshot = null;
         // 速率按真正开始传输之后的耗时算:审批对话框、排队与快照准备都不算进去。
         var elapsed = new Stopwatch();
         using var execution = CancellationTokenSource.CreateLinkedTokenSource(op._stop.Token, op._permission?.Revocation ?? CancellationToken.None);
@@ -480,7 +479,7 @@ internal sealed partial class RemoteFsCapability
             SshSession target = connections.GetSession(session) ?? throw new PluginSessionNotFoundException(Read(op).SessionId);
             string label = $"{target.ConnectionInfo.Username}@{target.ConnectionInfo.Host}:{target.ConnectionInfo.Port}";
             bool approved = await uploadPermissions.CheckUploadAsync(op._permission, pluginId, label, Read(op).LocalPath,
-                Read(op).RemotePath, options.Overwrite, ct).ConfigureAwait(false);
+                Read(op).RemotePath, options.Overwrite, op._sourceLength, ct).ConfigureAwait(false);
             if (!approved) throw new PluginPermissionDeniedException("The user denied this upload.");
             ct.ThrowIfCancellationRequested();
             ValidateSource(op);
@@ -504,51 +503,8 @@ internal sealed partial class RemoteFsCapability
             Stream uploadSource = op._source;
             if (UseDiskSnapshot)
             {
-                snapshotDirectory = Path.Combine(Path.GetTempPath(), "vela-upload-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)));
-                if (OperatingSystem.IsWindows()) Directory.CreateDirectory(snapshotDirectory);
-                else Directory.CreateDirectory(snapshotDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-                var snapshotOptions = new FileStreamOptions
-                {
-                    Mode = FileMode.CreateNew,
-                    Access = FileAccess.ReadWrite,
-                    Share = FileShare.None,
-                    BufferSize = 128 * 1024,
-                    Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose | FileOptions.SequentialScan,
-                };
-                if (!OperatingSystem.IsWindows()) snapshotOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-                diskSnapshot = new FileStream(Path.Combine(snapshotDirectory, "source"), snapshotOptions);
-                if (!OperatingSystem.IsWindows())
-                {
-                    // 快照是源文件的一份明文全拷贝,关闭即删只在正常释放时生效:宿主崩在中途就把它留在 $TMPDIR 里。
-                    // 打开之后立刻删掉文件与目录,数据靠打开着的描述符活着,进程一退由内核回收。删不掉就照旧等释放时清。
-                    try
-                    {
-                        File.Delete(diskSnapshot.Name);
-                        Directory.Delete(snapshotDirectory);
-                        snapshotDirectory = null;
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-                }
-                byte[] buffer = new byte[128 * 1024];
-                long last = Environment.TickCount64;
-                int count;
-                while ((count = await op._source.ReadAsync(buffer, ct).ConfigureAwait(false)) != 0)
-                {
-                    await diskSnapshot.WriteAsync(buffer.AsMemory(0, count), ct).ConfigureAwait(false);
-                    if (Environment.TickCount64 - last >= 100)
-                    {
-                        last = Environment.TickCount64;
-                        Update(op, s => s); // 准备阶段心跳,字节数仍专指远端已确认写入。
-                    }
-                }
-                await diskSnapshot.FlushAsync(ct).ConfigureAwait(false);
-                diskSnapshot.Position = 0;
-                op._source.Position = 0;
-                byte[] snapshotHash = await SHA256.HashDataAsync(diskSnapshot, ct).ConfigureAwait(false);
-                byte[] sourceHash = await SHA256.HashDataAsync(op._source, ct).ConfigureAwait(false);
-                if (!CryptographicOperations.FixedTimeEquals(snapshotHash, sourceHash)) throw new SourceChangedException();
-                diskSnapshot.Position = 0;
-                uploadSource = diskSnapshot;
+                diskSnapshot = await CreateUploadSnapshotAsync(op, ct).ConfigureAwait(false);
+                uploadSource = diskSnapshot.Stream;
             }
             ValidateSource(op);
             byte[] hash = await SHA256.HashDataAsync(uploadSource, ct).ConfigureAwait(false);
@@ -626,7 +582,6 @@ internal sealed partial class RemoteFsCapability
                 }
                 finally
                 {
-                    if (snapshotDirectory is not null) { try { Directory.Delete(snapshotDirectory); } catch { } }
                     try { await op._source.DisposeAsync().ConfigureAwait(false); }
                     finally
                     {
@@ -701,7 +656,8 @@ internal sealed partial class RemoteFsCapability
             : commitUnknown ? "commit-unknown"
             : StopCode(reason)
               ?? (commitRejected ? cause is NotSupportedException ? "not-supported" : "commit-rejected"
-                  : ex is SourceChangedException ? "source-changed" : "upload-failed");
+                  : ex is SourceChangedException ? "source-changed"
+                  : ex is InsufficientSnapshotSpaceException ? "insufficient-space" : "upload-failed");
         string message = op.PermissionRevoked ? "Upload authorization was revoked."
             : ex is PluginPermissionDeniedException ? "A trusted host upload approval was not granted."
             : commitUnknown ? "The destination commit could not be confirmed; do not retry automatically."
@@ -709,6 +665,7 @@ internal sealed partial class RemoteFsCapability
             : StopText(reason) is { } stop ? stop + "; the destination was not committed."
             : commitRejected ? "The destination commit was refused; the destination was not committed: " + DescribeCause(cause)
             : ex is SourceChangedException ? "The approved source changed; the destination was not committed."
+            : ex is InsufficientSnapshotSpaceException ? ex.Message + " Nothing was uploaded; the destination was not committed."
             : ex is InvalidDataException ? "Uploaded content verification failed."
             : "Upload failed: " + DescribeCause(cause);
         Update(op, s => s with
