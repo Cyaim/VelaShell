@@ -582,6 +582,14 @@ public sealed class Loc(string locale)
         ["BridgeConcurrency"] = ["Concurrent turns", "并发轮次", "並發輪次", "同時実行ターン数", "동시 실행 턴 수"],
         ["BridgeModel"] = ["Model", "模型", "模型", "モデル", "모델"],
         ["BridgeModelFollow"] = ["Follow the chat panel", "跟随聊天面板", "跟隨聊天面板", "チャットパネルに従う", "채팅 패널을 따름"],
+        ["BridgeModelRemoved"] = ["Removed model — pick another", "已删除的模型(请重新选择)", "已刪除的模型(請重新選擇)", "削除されたモデル(選び直してください)", "삭제된 모델(다시 선택하세요)"],
+        ["BridgeModelRemovedHint"] = [
+            "The model this bridge is pinned to has been removed from VelaShell. Until you pick another one, the bot answers each message by asking for that — it does not switch to the chat panel's model or any other. Saving keeps the pin as it is.",
+            "桥接指定的模型已从 VelaShell 里删掉了。重新选一个之前,机器人收到消息只会回一句请重选,不会换成聊天面板的模型或别的模型;点保存也原样保留这个指定。",
+            "橋接指定的模型已從 VelaShell 裡刪掉了。重新選一個之前,機器人收到訊息只會回一句請重選,不會換成聊天面板的模型或別的模型;按儲存也原樣保留這個指定。",
+            "この連携に固定したモデルは VelaShell から削除されました。選び直すまで、ボットはメッセージを受けるたびに選び直しを求める返信だけを返し、チャットパネルのモデルや別のモデルには切り替えません。保存してもこの固定はそのまま残ります。",
+            "이 브리지에 지정한 모델이 VelaShell에서 삭제되었습니다. 다시 선택하기 전까지 봇은 메시지마다 다시 선택하라는 답장만 보내며, 채팅 패널의 모델이나 다른 모델로 바꾸지 않습니다. 저장해도 이 지정은 그대로 유지됩니다."
+        ],
         ["BridgeModelHint"] = [
             "Pin one so a failure names the right provider — an \"unauthorised\" from the model looks nothing like one from the chat platform, but both land in the same chat message.",
             "指定一个,出错时才知道该查哪家的密钥 —— 模型返回的「未授权」和 IM 平台返回的「未授权」是两回事,但在群里长得一模一样。",

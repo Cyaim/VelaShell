@@ -64,6 +64,9 @@
                 <StackPanel>
                   <TextBlock x:Name="BridgeModelLabel" Classes="label" />
                   <ComboBox x:Name="BridgeModelCombo" HorizontalAlignment="Stretch" />
+                  <!-- 指定的模型已被删掉:如实说明桥接会拒绝并请人重选,而不是显示成「跟随聊天面板」 -->
+                  <TextBlock x:Name="BridgeModelRemovedHint" Classes="hint" IsVisible="False"
+                             Foreground="{DynamicResource VelaWarning}" />
                   <TextBlock x:Name="BridgeModelHint" Classes="hint" />
                 </StackPanel>
 

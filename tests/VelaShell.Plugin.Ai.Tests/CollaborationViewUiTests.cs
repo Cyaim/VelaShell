@@ -495,6 +495,93 @@ public sealed class CollaborationViewUiTests
     }
 
     /// <summary>
+    /// 桥接指定的模型被删掉之后(维护者 2026-10-25 第二轮第 25 条):下拉如实显示「已删除的模型」并说明桥接会拒绝,
+    /// 点保存原样保留那个 id —— 以前显示成「跟随聊天面板」,保存(哪怕只改了别处)就静默改成了跟随。
+    /// 改选一个真模型存下之后,那一项从下拉里拿掉。
+    /// </summary>
+    [TestMethod]
+    public void BridgeModel_RemovedPinIsShownAsRemoved_AndSavingKeepsItUntilAnotherIsPicked()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            var first = new AiModelConfig { Name = "First", Model = "m1" };
+            var second = new AiModelConfig { Name = "Second", Model = "m2" };
+            var ai = new AiSettings
+            {
+                Providers = [new AiProvider { Name = "Relay", BaseUrl = "https://relay.example/v1", Models = [first, second] }],
+                ActiveModelId = first.Id
+            };
+            await new AiSettingsStore(context).SaveAsync(ai);
+            var bridgeStore = new BridgeSettingsStore(context);
+            await bridgeStore.SaveAsync(new BridgeSettings { ModelId = "removed-model-id" });
+            var loc = new Loc("en");
+            await WithViewAsync(context, async view =>
+            {
+                await PumpAsync();
+                ComboBox combo = view.FindControl<ComboBox>("BridgeModelCombo")!;
+                TextBlock hint = view.FindControl<TextBlock>("BridgeModelRemovedHint")!;
+                Assert.AreSequenceEqual(
+                    [loc["BridgeModelFollow"], "Relay / First", "Relay / Second", loc["BridgeModelRemoved"]],
+                    combo.Items.Cast<string>().ToList());
+                Assert.AreEqual(3, combo.SelectedIndex, "如实显示「已删除的模型」,不是「跟随聊天面板」");
+                Assert.IsTrue(hint.IsVisible);
+                Assert.AreEqual(loc["BridgeModelRemovedHint"], hint.Text);
+
+                // 只改了别的设置就保存:指定原样留着,桥接照旧拒绝并请人重选
+                view.FindControl<TextBox>("ConcurrencyBox")!.Text = "3";
+                view.FindControl<Button>("SaveButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await PumpAsync(40);
+                BridgeSettings saved = await bridgeStore.LoadAsync();
+                Assert.AreEqual("removed-model-id", saved.ModelId);
+                Assert.AreEqual(3, saved.MaxConcurrentTurns);
+
+                combo.SelectedIndex = 2;
+                await PumpAsync();
+                Assert.IsFalse(hint.IsVisible, "选了真模型就不再提示");
+                view.FindControl<Button>("SaveButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await PumpAsync(40);
+                Assert.AreEqual(second.Id, (await bridgeStore.LoadAsync()).ModelId);
+                Assert.AreSequenceEqual([loc["BridgeModelFollow"], "Relay / First", "Relay / Second"],
+                    combo.Items.Cast<string>().ToList());
+                Assert.AreEqual(2, combo.SelectedIndex);
+            });
+        });
+    }
+
+    /// <summary>指定的模型还在、或跟随聊天面板:下拉照旧,不多出「已删除的模型」那一项。</summary>
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void BridgeModel_ExistingPinOrFollowLoadsWithoutTheRemovedEntry(bool pinned)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            var first = new AiModelConfig { Name = "First", Model = "m1" };
+            var second = new AiModelConfig { Name = "Second", Model = "m2" };
+            await new AiSettingsStore(context).SaveAsync(new AiSettings
+            {
+                Providers = [new AiProvider { Name = "Relay", BaseUrl = "https://relay.example/v1", Models = [first, second] }],
+                ActiveModelId = first.Id
+            });
+            var bridgeStore = new BridgeSettingsStore(context);
+            await bridgeStore.SaveAsync(new BridgeSettings { ModelId = pinned ? second.Id : "  " });
+            await WithViewAsync(context, async view =>
+            {
+                await PumpAsync();
+                ComboBox combo = view.FindControl<ComboBox>("BridgeModelCombo")!;
+                Assert.AreEqual(3, combo.ItemCount);
+                Assert.AreEqual(pinned ? 2 : 0, combo.SelectedIndex, "空白 id 与桥接一样算跟随");
+                Assert.IsFalse(view.FindControl<TextBlock>("BridgeModelRemovedHint")!.IsVisible);
+                view.FindControl<Button>("SaveButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await PumpAsync(40);
+                Assert.AreEqual(pinned ? second.Id : null, (await bridgeStore.LoadAsync()).ModelId);
+            });
+        });
+    }
+
+    /// <summary>
     /// 对外 MCP 的范围:界面上勾的是名字,存下来的是已保存配置的 id。
     /// </summary>
     /// <remarks>
