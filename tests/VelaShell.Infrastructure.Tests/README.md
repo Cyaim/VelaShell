@@ -27,3 +27,10 @@
 ```bash
 dotnet test tests/VelaShell.Infrastructure.Tests/
 ```
+
+几条会动本机系统状态的用例默认报 Inconclusive 不跑,要手动打开:
+
+| 环境变量 | 用例 | 会做什么 |
+|----------|------|----------|
+| `VELASHELL_NET_USE_TESTS=1` | `Plugins/RemoteTransferTests.WindowsMappedDriveSourceIsTheSameFile`(仅 Windows) | `net use` 一个空闲盘符到本机的管理共享 `\\localhost\C$`(不记住,用完删掉) |
+| `VELASHELL_KEYCHAIN_TESTS=1` | `MasterKeyResolverTests.SystemKeychain_RoundTrip`(macOS / Linux 桌面) | 往当前用户的钥匙串 / keyring 里写一条再删掉 |
