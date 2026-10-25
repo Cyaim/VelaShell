@@ -14,8 +14,9 @@ namespace VelaShell.Services;
 /// <para>
 /// 这条路径与用户在界面里点「连接」有一处本质区别:目标和凭据都是**别人给的**。
 /// 所以它比界面路径多两道闸 —— 设置里的总开关,以及默认开启的确认弹窗;
-/// 并且请求里带的一次性密码只活在这次连接里:配置一律 <see cref="SessionProfile.RememberPassword" /> = false,
-/// 也从不写进会话仓储。
+/// 并且现搭的临时配置只活在本次运行:配置一律 <see cref="SessionProfile.RememberPassword" /> = false,
+/// 连接工作流只回写库里已有的配置,所以它不进会话树、不随云同步上传(标签页照常开、照常重连);
+/// 最近连接照记一条(那里本来就不存密码)。复用已保存的同目标配置时,照常更新那条配置的最近连接时间。
 /// </para>
 /// </summary>
 public sealed class ExternalLaunchCoordinator(
@@ -63,7 +64,7 @@ public sealed class ExternalLaunchCoordinator(
                 return;
             }
 
-            SessionProfile profile = await ResolveProfileAsync(request).ConfigureAwait(true);
+            SessionProfile profile = await ResolveProfileAsync(request, sessionRepository).ConfigureAwait(true);
             await AuditAsync(request).ConfigureAwait(true);
             _viewModel.Toasts.Info(Strings.Format("ExtLaunch_Connecting", request.DisplayTarget));
             // -newtab 给的名字只上标签:复用已保存的配置时也不改它的名称(那会随最近连接时间一起落盘)。
@@ -226,15 +227,19 @@ public sealed class ExternalLaunchCoordinator(
 
     /// <summary>
     /// 请求 → 会话配置。请求没带凭据时优先复用已保存的同目标配置(那里有用户自己存的密码/密钥,
-    /// 体验上等同于点侧边栏那一条);带了凭据的一律现搭一份临时配置,**不落盘**。
+    /// 体验上等同于点侧边栏那一条);带了凭据的、或找不到可复用的,现搭一份临时配置,**不落盘**
+    /// (新的 Id、不在库里,连接工作流因此不回写它)。
     /// </summary>
-    private async Task<SessionProfile> ResolveProfileAsync(ExternalLaunchRequest request)
+    /// <param name="request">外部来的登录请求。</param>
+    /// <param name="repository">会话仓储;为 <see langword="null" /> 时一律现搭临时配置。</param>
+    /// <returns>要连的配置。</returns>
+    internal static async Task<SessionProfile> ResolveProfileAsync(ExternalLaunchRequest request, ISessionRepository? repository)
     {
-        if (!request.HasCredentials && sessionRepository is not null)
+        if (!request.HasCredentials && repository is not null)
         {
             try
             {
-                List<SessionProfile> saved = await sessionRepository.GetAllSessionsAsync().ConfigureAwait(true);
+                List<SessionProfile> saved = await repository.GetAllSessionsAsync().ConfigureAwait(true);
                 SessionProfile? match = saved.FirstOrDefault(p =>
                     p.ConnectionType == request.ConnectionType
                     && string.Equals(p.Host, request.Host, StringComparison.OrdinalIgnoreCase)
@@ -266,7 +271,7 @@ public sealed class ExternalLaunchCoordinator(
             Password = request.Password,
             PrivateKeyPath = request.PrivateKeyPath,
             CertificatePath = request.CertificatePath,
-            // 一次性凭据的红线:既不勾「记住密码」,也不写进仓储 —— 它只活到这次连接结束。
+            // 一次性凭据的红线:既不勾「记住密码」,也不写进仓储 —— 它只活在这次运行的标签里。
             RememberPassword = false,
             Ftp = request.ConnectionType == ConnectionType.FTP
                 ? new FtpSettings

@@ -27,6 +27,7 @@ public sealed class ConnectionWorkflowServiceTests
     {
         ConnectionWorkflowService service = CreateService();
         SessionProfile profile = CreateProfile();
+        _sessionRepository.GetSessionAsync(profile.Id).Returns(profile);
         var session = new SshSession
         {
             ConnectionInfo = new()
@@ -45,6 +46,33 @@ public sealed class ConnectionWorkflowServiceTests
         Assert.AreSame(session, result);
         Assert.IsNotNull(profile.LastConnectedAt);
         await _sessionRepository.Received(1).SaveSessionAsync(profile);
+    }
+
+    /// <summary>
+    /// 不在库里的是现搭的临时配置(外部拉起、「最近连接」重建的):连上之后不回写 —— 不进会话树,也就不随云同步上传;
+    /// 连接历史(最近连接,不含密码)与审计照记。
+    /// </summary>
+    [TestMethod]
+    public async Task ConnectProfileAsync_TemporaryProfileNotInRepository_IsNotSaved_ButStillRecorded()
+    {
+        IRecentConnectionService recent = Substitute.For<IRecentConnectionService>();
+        IAuditLogService audit = Substitute.For<IAuditLogService>();
+        var service = new ConnectionWorkflowService(_sessionRepository, _sshConnectionService, recent, audit);
+        SessionProfile temporary = CreateProfile("tester@localhost:22");
+        _sshConnectionService.ConnectAsync(Arg.Any<ConnectionInfo>(), Arg.Any<CancellationToken>())
+                             .Returns(new SshSession
+                             {
+                                 ConnectionInfo = new() { Host = temporary.Host, Port = 22, Username = temporary.Username, AuthMethod = AuthMethod.Password },
+                                 Status = SessionStatus.Connected
+                             });
+
+        await service.ConnectProfileAsync(temporary);
+        await service.ReconnectProfileAutomaticallyAsync(temporary);
+
+        await _sessionRepository.DidNotReceiveWithAnyArgs().SaveSessionAsync(default!);
+        await recent.Received(2).RecordAsync(Arg.Is<RecentConnectionEntry>(e =>
+            e.ProfileId == temporary.Id && e.Host == "localhost" && e.Username == "tester" && e.Success));
+        await audit.Received(2).WriteAsync(Arg.Is<AuditEntry>(e => e.Action == "connect" && e.ProfileId == temporary.Id));
     }
 
     [TestMethod]

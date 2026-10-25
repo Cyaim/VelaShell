@@ -90,7 +90,9 @@ public sealed class ConnectionWorkflowService(
         }
     }
 
-    /// <summary>连接指定配置:成功后更新最近连接时间并持久化,同时记录连接历史与审计。</summary>
+    /// <summary>
+    /// 连接指定配置:成功后更新最近连接时间(只对库里已有的配置落盘;现搭的临时配置不落库),同时记录连接历史与审计。
+    /// </summary>
     public Task<SshSession> ConnectProfileAsync(SessionProfile profile, CancellationToken cancellationToken = default) =>
         ConnectProfileCoreAsync(profile, automaticReconnect: false, cancellationToken);
 
@@ -118,8 +120,14 @@ public sealed class ConnectionWorkflowService(
             throw;
         }
         profile.LastConnectedAt = DateTime.UtcNow;
-        // 存回去的是调用方那一份,不是解析出凭据的副本:凭据的明文到不了仓储(#550)。
-        await _sessionRepository.SaveSessionAsync(await WithPersistablePasswordAsync(profile).ConfigureAwait(false)).ConfigureAwait(false);
+        // 只回写库里已有的配置。不在库里的是现搭的临时配置 —— 外部拉起(Xshell 兼容登录)、「最近连接」里那条配置已删掉时重建的 ——
+        // 只活在本次运行:标签照常开、照常重连,但不进会话树,也就不随云同步上传。以前这里无条件保存,
+        // 一次性连接就这样落了库、跟着同步上了云;连着的标签所属的配置被删掉之后,一次重连也会把它写回来。
+        if (await _sessionRepository.GetSessionAsync(profile.Id).ConfigureAwait(false) is not null)
+        {
+            // 存回去的是调用方那一份,不是解析出凭据的副本:凭据的明文到不了仓储(#550)。
+            await _sessionRepository.SaveSessionAsync(await WithPersistablePasswordAsync(profile).ConfigureAwait(false)).ConfigureAwait(false);
+        }
         // 历史里记实际登录的用户名 —— 引用共享凭据的配置自己可以不填用户名。
         await RecordHistoryAsync(profile, session.ConnectionInfo.Username, startedAt, true).ConfigureAwait(false);
         return session;

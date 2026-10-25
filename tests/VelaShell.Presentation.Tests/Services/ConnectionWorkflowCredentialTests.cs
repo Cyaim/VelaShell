@@ -57,6 +57,7 @@ public sealed class ConnectionWorkflowCredentialTests
     public async Task ReferencingProfile_ConnectsWithResolvedCredential_AndSavesWithoutIt()
     {
         SessionProfile profile = Referencing();
+        _sessionRepository.GetSessionAsync(profile.Id).Returns(profile);   // 已保存的配置:连接成功后才回写
 
         await CreateService().ConnectProfileAsync(profile);
 
@@ -73,6 +74,7 @@ public sealed class ConnectionWorkflowCredentialTests
     public async Task ReferencingProfile_PassesValidationWithoutUsernameOrPassword()
     {
         SessionProfile profile = Referencing();
+        _sessionRepository.GetSessionAsync(profile.Id).Returns(profile);   // 已保存的配置:连接成功后才回写
 
         await CreateService().SaveProfileAsync(profile);
         await CreateService().ConnectProfileAsync(profile);
