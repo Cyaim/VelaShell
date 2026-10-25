@@ -181,6 +181,15 @@ public sealed class SessionOutputMaskerTests
             "./id_rsa:-----BEGIN RSA PRIVATE KEY-----\n./id_rsa-MIIEowIBAAKCAQEA0123456789\n./id_rsa:-----END RSA PRIVATE KEY-----\n",
             "./id_rsa:-----BEGIN RSA PRIVATE KEY-----\n./id_rsa-***\n./id_rsa:-----END RSA PRIVATE KEY-----\n",
             "MIIEowIBAAKCAQEA0123456789"],
+        // token / secret 后面跟着非机密后缀的名字不算:令牌本身照遮,同一段里说它的类型、名字、期限的原样(切在关键词与后缀之间也一样)
+        ["oauth-token-response",
+            "{\"access_token\":\"eyJhbGciOi.payload-1\",\"token_type\":\"Bearer\",\"expires_in\":3600,\"refresh_token\":\"r-1234567\"}\n",
+            "{\"access_token\":\"***\",\"token_type\":\"Bearer\",\"expires_in\":3600,\"refresh_token\":\"***\"}\n", "eyJhbGciOi.payload-1"],
+        ["k8s-secret-name-next-to-a-token",
+            "      secretName: tls-cert\n  token: dG9rZW4tdmFsdWU=\n", "      secretName: tls-cert\n  token: ***\n", "dG9rZW4tdmFsdWU="],
+        ["token-exchange-type-after-the-token",
+            "subject_token=eyJzdWIiOiJvcHMifQ subject_token_type=urn:ietf:params:oauth:token-type:jwt\n",
+            "subject_token=*** subject_token_type=urn:ietf:params:oauth:token-type:jwt\n", "eyJzdWIiOiJvcHMifQ"],
     ];
 
     /// <summary>
@@ -253,6 +262,52 @@ public sealed class SessionOutputMaskerTests
             + "Authorization: Bearer ***\n"
             + "max_tokens: {\"password\": \"***\"}\n",
             Written, "不成词的名字不算匹配,也不能把值里真正的口令一起跳过");
+    }
+
+    /// <summary>
+    /// token / secret 后面紧跟着非机密后缀(type、endpoint、name、count、limit、url、uri、expires、expiry、expiration、ttl,可带复数 s)的名字不是机密名:
+    /// OAuth 响应、OIDC 发现文档、Kubernetes 清单、Google 服务账号 JSON、大模型用量里的这些键逐字节原样、当场放出。
+    /// </summary>
+    [TestMethod]
+    [DataRow("token_type: Bearer\n")]
+    [DataRow("  \"token_type\": \"Bearer\",\n")]
+    [DataRow("TOKEN_TYPE=bearer\ntokenType: Bearer\n")]
+    [DataRow("issued_token_type: urn:ietf:params:oauth:token-type:access_token\n")]
+    [DataRow("token_type_hint=refresh_token\n")]
+    [DataRow("token_endpoint: https://idp.example.com/oauth2/token\n")]
+    [DataRow("  \"token_endpoint_auth_methods_supported\": [\"client_secret_basic\", \"private_key_jwt\"],\n")]
+    [DataRow("        secretName: tls-cert\n")]
+    [DataRow("SecretNames: [db, tls] secret_name=prod/db\n")]
+    [DataRow("token_count: 12 max_token_count=4096 \"token_limit\": 8192\n")]
+    [DataRow("  \"token_uri\": \"https://oauth2.googleapis.com/token\",\n")]
+    [DataRow("spring.security.oauth2.client.provider.okta.token-uri=https://example.okta.com/oauth2/v1/token tokenUrl=https://x/token\n")]
+    [DataRow("\"refresh_token_expires_in\": 15811200, \"client_secret_expires_at\": 0, \"token_expiry\": \"2026-10-25T10:00:00Z\"\n")]
+    [DataRow("secret_expiration: 2026-12-31 token_ttl: 768h\n")]
+    public void NonSecretSuffixes_AreNotSecretNames(string text)
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes(text));
+        Assert.AreEqual(text, Written, "原样、当场放出");
+    }
+
+    /// <summary>
+    /// 非机密后缀表只放过「说令牌属性」的那一处:令牌本身、表里没有的后缀(<c>secret_id</c>、<c>secret_key</c>、<c>secretValue</c>、<c>SecretString</c>)、
+    /// 同一个名字里后面又出现的关键词、后缀不成词的(<c>token_typed</c>)照遮;表只给 token 与 secret,password / credential 后面跟什么都照遮。
+    /// </summary>
+    [TestMethod]
+    public void NonSecretSuffixes_LeaveTheRealSecretsMasked()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("access_token: abc123 id_token=def456\n"));
+        masker.Write(Bytes("secret_id: 6a1d-77 secret_key=k1 secretValue: v1 \"SecretString\": \"s1\"\n"));
+        masker.Write(Bytes("secret_name_token=abc token_typed=def tokenNames_secret=ghi\n"));
+        masker.Write(Bytes("password_type: x credential_name: y\n"));
+        Assert.AreEqual(
+            "access_token: *** id_token=***\n"
+            + "secret_id: *** secret_key=*** secretValue: *** \"SecretString\": \"***\"\n"
+            + "secret_name_token=*** token_typed=*** tokenNames_secret=***\n"
+            + "password_type: *** credential_name: ***\n",
+            Written);
     }
 
     /// <summary>私钥块里的头部行照常过规则(OpenPGP 的 Comment 里也可能写着口令),过完私钥块还在继续。</summary>
@@ -845,6 +900,8 @@ public sealed class SessionOutputMaskerTests
             ("ESC 连串", Repeat("\u001b")),
             ("颜色序列切开的关键词连串", Repeat("pass\u001b[mword=")),
             ("颜色序列切开的值", "password=" + Repeat("a\u001b[1m")),
+            ("非机密后缀连串", Repeat("token_type_") + "=x"),
+            ("驼峰非机密后缀连串", Repeat("secretName.") + ": x"),
         ];
         foreach ((string name, string text) in inputs)
         {

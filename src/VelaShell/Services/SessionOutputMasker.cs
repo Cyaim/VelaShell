@@ -26,7 +26,8 @@ namespace VelaShell.Services;
 /// </para>
 /// <para>
 /// 规则(大小写不敏感):
-/// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 这几个词(要成词:<c>max_tokens</c>、<c>tokenizers</c> 不算,见 <see cref="KeyValue" />)的
+/// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 这几个词(要成词:<c>max_tokens</c>、<c>tokenizers</c> 不算;
+/// token 与 secret 后面跟着 type / endpoint / name / count 一类非机密后缀的也不算,<c>token_type</c>、<c>secretName</c>,见 <see cref="KeyValue" />)的
 /// <c>名字=值</c>、<c>名字: 值</c>(含 JSON 与 YAML 的写法、JSON 里转义过的 <c>\"名字\":</c>)只换值,双引号串认反斜杠转义,
 /// 到行尾都没收尾的引号串从引号之后遮到行尾,转义过的 JSON 串被外层的裸引号截断时遮到那个引号之前,
 /// 冒号后面跟空白、不加引号的值遮到行尾(停在同一行的下一个键之前,判据见 <see cref="KeyValue" />);
@@ -955,6 +956,33 @@ public sealed partial class SessionOutputMasker
     private static string KeyTail(string text) => text.Length <= MarkerTailBytes ? text : text[^MarkerTailBytes..];
 
     /// <summary>
+    /// 名字里一个词在这里结束(<see cref="KeyValue" /> 用,那条正则不区分大小写,这一段区分):紧跟在后面的不是同样大小写的字母 ——
+    /// <c>token_</c>、<c>tokenId</c>、<c>TOKEN_</c>、名字结尾都算,<c>tokens</c>、<c>tokenizer</c>、<c>TOKENS</c> 不算。
+    /// </summary>
+    private const string WordEnd = "(?-i:(?<=[a-z])(?![a-z])|(?<=[A-Z])(?![A-Za-z]))";
+
+    /// <summary>
+    /// token / secret 后面紧跟着这些词之一(分隔符 <c>_ - .</c> 之后,或驼峰的下一个词;可带复数 <c>s</c>,要成词)的,这一处不算关键词:
+    /// 名字说的是令牌或机密的某个属性,值不是它本身。只收公认不装机密的:
+    /// <list type="bullet">
+    /// <item><c>type</c>:OAuth 2.0 的 <c>token_type</c>(<c>Bearer</c> / <c>mac</c>,RFC 6749 §5.1)、令牌交换的 <c>subject_token_type</c> 一类(URN,RFC 8693)、
+    /// 吊销的 <c>token_type_hint</c>(RFC 7009),值是枚举出来的类型名;</item>
+    /// <item><c>endpoint</c>:OIDC 发现文档的 <c>token_endpoint</c>(URL)与 <c>token_endpoint_auth_methods_supported</c>(认证方式名的列表);</item>
+    /// <item><c>name</c>:Kubernetes 卷与 Ingress TLS 的 <c>secretName</c>、Terraform / 云 CLI 的 <c>secret_name</c>、<c>token_name</c>,值是引用机密的名字;</item>
+    /// <item><c>count</c> / <c>limit</c>:大模型接口与配置里的 <c>token_count</c>、<c>token_limit</c>,值是数;</item>
+    /// <item><c>url</c> / <c>uri</c>:令牌服务的地址 —— Google 服务账号 JSON 的 <c>token_uri</c>、Spring Security 的 <c>token-uri</c>、OAuth 客户端库的 <c>token_url</c>;</item>
+    /// <item><c>expires</c> / <c>expiry</c> / <c>expiration</c> / <c>ttl</c>:期限与时长 —— <c>refresh_token_expires_in</c>(GitHub)、
+    /// <c>client_secret_expires_at</c>(RFC 7591)、Google oauth2client 凭据文件的 <c>token_expiry</c>、Vault 的 <c>token_ttl</c>。</item>
+    /// </list>
+    /// 故意不收的:<c>id</c>(Vault AppRole 的 <c>secret_id</c> 本身就是机密)、<c>key</c>(<c>secret_key</c>)、<c>value</c> / <c>data</c> / <c>string</c>
+    /// (<c>secretValue</c>、<c>SecretString</c>)、<c>hash</c>(低熵口令的散列能离线猜)、<c>file</c> / <c>path</c>(值多半是路径,
+    /// 但只看关键词后面的第一个词,<c>token_file_content</c> 这样的名字就会漏)、<c>signing</c> / <c>encryption</c>(<c>token_signing_key</c>)。
+    /// 只给 token 与 secret:password、credential、api key 这几个词后面跟什么都照遮(维护者 2026-10-25 定的范围)。
+    /// </summary>
+    private const string NonSecretSuffix =
+        "(?:[_.\\-]|(?-i:(?=[A-Z])))(?:type|endpoint|name|count|limit|url|uri|expires|expiry|expiration|ttl)s?" + WordEnd;
+
+    /// <summary>
     /// <c>名字=值</c> / <c>名字: 值</c>:名字里带口令一类的词,值是引号串(双引号认反斜杠转义,含 JSON 里转义过的 <c>\"…\"</c>)
     /// 或到空白、引号、逗号、分号、控制字符为止的一段。跑在可见文本上:颜色序列已经剥掉,名字、分隔符、值上不上色都一样。
     /// 值为空的(<c>Password: </c> 提示)不动。
@@ -985,15 +1013,20 @@ public sealed partial class SessionOutputMasker
     /// 而 <c>max_tokens</c> 一类才是最常见的误遮。这条判断写在原子组里:第一个关键词不成词时接着找同一个名字里的下一个
     /// (<c>tokens_secret</c> 照样认),整个名字都不成立时这个位置就不算匹配 —— 不能先配上再丢弃,那样值里的真机密会被一起跳过。
     /// 冒号后面没有空白、值以 <c>~</c> 或 <c>/</c> 起头的也不算(<c>secret-box:~#</c> 这类没有 <c>用户@</c> 的提示符、<c>host:/path</c>)。
+    /// token 与 secret 后面紧跟着「非机密后缀」(<see cref="NonSecretSuffix" />:<c>token_type</c>、<c>token_endpoint</c>、<c>secretName</c>、<c>token_count</c>…)的,
+    /// 这一处也不算关键词 —— 名字说的是令牌的类型、地址、名字、数量、期限,值不是令牌本身。同样写在原子组里,接着找同一个名字里的下一个关键词
+    /// (<c>secret_name_token</c> 照遮)。
     /// </para>
     /// </summary>
     /// <remarks>
     /// 名字从一串标识符字符的开头算起,先找到第一个关键词、再把整串吃完,两步都是原子的,值的各支也互不重叠 —— 整条是线性的。
     /// 旧写法在关键词前后各挂一个可回溯的 <c>[A-Za-z0-9_.\-]*</c>,4 KB 的 <c>tokentoken…</c> 就能把它拖上半分钟。
+    /// 关键词后面看一眼后缀表也只看十几个字符,不改变线性。
     /// 转义过的 JSON 串里,<c>\\\"</c> 与 <c>\\\\</c> 是里层的转义,不算收尾。
     /// <c>rest</c> 一支按「词 + 空白」一段段吃,每段空白只在后面那个词的开头看一眼是不是键,词与空白都是原子的,也是线性的。
     /// </remarks>
-    [GeneratedRegex("""(?:(?<![A-Za-z0-9_.\-@])(?>[A-Za-z0-9_.\-]*?(?:(?:password|passwd|passphrase|secret|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential|key[_\-]data|\.key|dockerconfigjson|dockercfg)s?|token)(?-i:(?<=[a-z])(?![a-z])|(?<=[A-Z])(?![A-Za-z])))(?>[A-Za-z0-9_.\-]*)|(?<exact>(?<=")auth(?=\\?")))(?:\\?["'])?(?>[ \t]*)(?:(?<colon>:)|=)(?>(?<ws>[ \t]+)?)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*(?:\\"|(?<bare>(?=")))|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|(?(exact)(?!)|(?(colon)(?(ws)(?<rest>(?!\\?["'])(?>[^ \t\r\n\x00-\x1f\x7f]+)(?:(?>[ \t]+)(?!\#|["']?[A-Za-z_](?>[A-Za-z0-9_.\-]*)["']?[ \t]*(?::(?=[ \t\r\n])|=))(?>[^ \t\r\n\x00-\x1f\x7f]+))*)|(?![~/])[^ "',;\x00-\x1f\x7f]+)|[^ "',;\x00-\x1f\x7f]+)))""",
+    [GeneratedRegex("""(?:(?<![A-Za-z0-9_.\-@])(?>[A-Za-z0-9_.\-]*?(?:(?:password|passwd|passphrase|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential|key[_\-]data|\.key|dockerconfigjson|dockercfg)s?"""
+        + WordEnd + "|(?:secrets?|token)" + WordEnd + "(?!" + NonSecretSuffix + "))" + """)(?>[A-Za-z0-9_.\-]*)|(?<exact>(?<=")auth(?=\\?")))(?:\\?["'])?(?>[ \t]*)(?:(?<colon>:)|=)(?>(?<ws>[ \t]+)?)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*(?:\\"|(?<bare>(?=")))|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|(?(exact)(?!)|(?(colon)(?(ws)(?<rest>(?!\\?["'])(?>[^ \t\r\n\x00-\x1f\x7f]+)(?:(?>[ \t]+)(?!\#|["']?[A-Za-z_](?>[A-Za-z0-9_.\-]*)["']?[ \t]*(?::(?=[ \t\r\n])|=))(?>[^ \t\r\n\x00-\x1f\x7f]+))*)|(?![~/])[^ "',;\x00-\x1f\x7f]+)|[^ "',;\x00-\x1f\x7f]+)))""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex KeyValue();
 
