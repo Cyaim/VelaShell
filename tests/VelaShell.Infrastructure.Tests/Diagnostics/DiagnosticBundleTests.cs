@@ -257,13 +257,11 @@ public sealed class DiagnosticBundleTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Bundle_LeavesSessionTranscriptsOut()
+    public async Task Bundle_ByDefaultCollectsOnlyTheMainLogsAndCrashReports()
     {
-        // 会话日志(session-*.log)是终端原始输出,与诊断日志同在一个目录;隐私说明里它是单独一类,不进诊断包
-        await File.WriteAllTextAsync(Path.Combine(Logs, "velashell-20261019.log"), "[Startup] VelaShell\n");
-        await File.WriteAllTextAsync(Path.Combine(Logs, "crash-20261019-101010-000.txt"), "UnhandledException\n");
-        await File.WriteAllTextAsync(Path.Combine(Logs, "session-x.log"), "$ cat notes.txt\nprivate notes\n");
-        await File.WriteAllTextAsync(Path.Combine(Logs, "session-db1-20261019-101010.log"), "$ psql\n");
+        // 会话日志(session-*.log)是终端原始输出,隐私说明里它是单独一类,永远不进包;传输记录、外部编辑日志、
+        // vcxsrv.log 与按插件的日志满是路径与文件名,不勾就不收(维护者 2026-10-25 定)。目录里别的 .log 也不收
+        await WriteLogsOfEveryKindAsync();
         string zipPath = Path.Combine(_root, "bundle.zip");
 
         DiagnosticBundleResult result = await DiagnosticBundle.WriteAsync(zipPath, EmptyRequest());
@@ -273,6 +271,210 @@ public sealed class DiagnosticBundleTests : IDisposable
         CollectionAssert.AreEquivalent(
             new[] { "logs/velashell-20261019.log", "logs/crash-20261019-101010-000.txt", "summary.txt", "README.txt" },
             zip.Entries.Select(entry => entry.FullName).ToArray());
+        Assert.Contains("optional logs: (none)", Read(zip.GetEntry("README.txt")!));
+    }
+
+    [TestMethod]
+    public async Task FindOptionalLogs_ListsEachKindThatHasFilesAndGroupsEachPluginsRotatedLog()
+    {
+        await WriteLogsOfEveryKindAsync();
+        // 传输记录的目录可以改到别处:按设置里的那个目录找,日志目录里的旧记录不算
+        string transfers = Path.Combine(_root, "transfer-logs");
+        Directory.CreateDirectory(transfers);
+        await File.WriteAllTextAsync(Path.Combine(transfers, "transfer-20261020.log"), "UPLOAD\n");
+        await File.WriteAllTextAsync(Path.Combine(transfers, "transfer-20261021.log"), "DOWNLOAD\n");
+        File.SetLastWriteTimeUtc(Path.Combine(transfers, "transfer-20261020.log"), DateTime.UtcNow.AddDays(-1));
+
+        IReadOnlyList<DiagnosticLogOption> options = DiagnosticBundle.FindOptionalLogs(Logs, transfers);
+
+        Assert.AreSequenceEqual(["transfer", "remote-edit", "vcxsrv", "plugin:velashell.ai", "plugin:velashell.redis"],
+            [.. options.Select(option => option.Id)]);
+        Assert.AreSequenceEqual([Path.Combine(transfers, "transfer-20261021.log"), Path.Combine(transfers, "transfer-20261020.log")],
+            options[0].Files, "新的在前");
+        DiagnosticLogOption ai = options.Single(option => option.Id == "plugin:velashell.ai");
+        Assert.AreEqual(DiagnosticLogKind.Plugin, ai.Kind);
+        Assert.AreEqual("velashell.ai", ai.PluginId);
+        CollectionAssert.AreEquivalent(
+            new[] { Path.Combine(Logs, "plugins", "velashell.ai.log"), Path.Combine(Logs, "plugins", "velashell.ai.1.log") },
+            ai.Files.ToArray(), "轮转下来的那份归同一个插件");
+        Assert.AreEqual(ai.Files.Sum(file => new FileInfo(file).Length), ai.Bytes);
+
+        Assert.IsEmpty(DiagnosticBundle.FindOptionalLogs(Path.Combine(_root, "missing"), null), "目录不在就一类都没有");
+    }
+
+    [TestMethod]
+    public async Task Bundle_TickedLogsGoInMaskedAndUntickedOnesStayOut()
+    {
+        await WriteLogsOfEveryKindAsync();
+        IReadOnlyList<DiagnosticLogOption> options = DiagnosticBundle.FindOptionalLogs(Logs, Logs);
+        DiagnosticLogOption[] ticked = [.. options.Where(option => option.Id is "transfer" or "plugin:velashell.ai")];
+        var request = new DiagnosticBundleRequest("v1", Logs, [], new DiagnosticRedactor([], [], null, null, null), ticked);
+        string zipPath = Path.Combine(_root, "bundle.zip");
+
+        DiagnosticBundleResult result = await DiagnosticBundle.WriteAsync(zipPath, request);
+
+        Assert.AreEqual(5, result.LogFiles, "默认两份 + 传输记录一份 + 插件日志两份");
+        using ZipArchive zip = ZipFile.OpenRead(zipPath);
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "logs/velashell-20261019.log", "logs/crash-20261019-101010-000.txt", "logs/transfer-20261019.log",
+                "logs/plugins/velashell.ai.log", "logs/plugins/velashell.ai.1.log", "summary.txt", "README.txt"
+            },
+            zip.Entries.Select(entry => entry.FullName).ToArray(), "没勾的外部编辑日志、vcxsrv.log 与另一个插件的日志不进包");
+        string transfer = Read(zip.GetEntry("logs/transfer-20261019.log")!);
+        Assert.AreEqual("2026-10-19 10:10:10\tUPLOAD\tC:\\Users\\<user-1>\\Desktop\\app.tar.gz\t/home/<user-2>/app.tar.gz\tCOMPLETED\n", transfer,
+            "勾上的照样遮盖:别人的家目录换掉名字那一段,文件名留着");
+        string plugin = Read(zip.GetEntry("logs/plugins/velashell.ai.log")!);
+        Assert.AreEqual("[Plugin:velashell.ai] calling https://<host-1>/v1 from <ip-1>\n", plugin,
+            "插件 id 不是主机;插件连的私有地址照样遮");
+        Assert.Contains("optional logs: transfer, plugin:velashell.ai", Read(zip.GetEntry("README.txt")!));
+    }
+
+    /// <summary>日志目录里每一类各放一份:默认那两类、会话日志、三类可选日志、两个插件的日志(一个带轮转),外加一份不认识的。</summary>
+    private async Task WriteLogsOfEveryKindAsync()
+    {
+        await File.WriteAllTextAsync(Path.Combine(Logs, "velashell-20261019.log"), "[Startup] VelaShell\n");
+        await File.WriteAllTextAsync(Path.Combine(Logs, "crash-20261019-101010-000.txt"), "UnhandledException\n");
+        await File.WriteAllTextAsync(Path.Combine(Logs, "session-x.log"), "$ cat notes.txt\nprivate notes\n");
+        await File.WriteAllTextAsync(Path.Combine(Logs, "session-db1-20261019-101010.log"), "$ psql\n");
+        await File.WriteAllTextAsync(Path.Combine(Logs, "transfer-20261019.log"),
+            "2026-10-19 10:10:10\tUPLOAD\tC:\\Users\\bob\\Desktop\\app.tar.gz\t/home/deploy/app.tar.gz\tCOMPLETED\n");
+        await File.WriteAllTextAsync(Path.Combine(Logs, "remote-edit.log"), "[open] /home/deploy/.env\n");
+        await File.WriteAllTextAsync(Path.Combine(Logs, "vcxsrv.log"), "winInitMultiWindowWM\n");
+        await File.WriteAllTextAsync(Path.Combine(Logs, "other.log"), "someone else's log\n");
+        Directory.CreateDirectory(Path.Combine(Logs, "plugins"));
+        await File.WriteAllTextAsync(Path.Combine(Logs, "plugins", "velashell.ai.log"),
+            "[Plugin:velashell.ai] calling https://llm.corp.example.com/v1 from 10.1.2.3\n");
+        await File.WriteAllTextAsync(Path.Combine(Logs, "plugins", "velashell.ai.1.log"), "[Plugin:velashell.ai] older\n");
+        await File.WriteAllTextAsync(Path.Combine(Logs, "plugins", "velashell.redis.log"), "[Plugin:velashell.redis] ping\n");
+    }
+
+    [TestMethod]
+    public void Redactor_MasksBothHalvesOfTheDisconnectLineWhateverTheirShape()
+    {
+        // 断开日志行的格式是自己定的:单段的主机名、改过之前的旧主机、域账户式的用户名,不在已知来源里也换
+        var redactor = new DiagnosticRedactor(["db1.example.net"], ["deploy"], null, null, null);
+        string text = redactor.Redact(
+            "10:00:00.000 [07] [SSH] deploy@db1.example.net:22 closed (connected since 2026-10-24 09:00:00 +08:00): closed locally\n"
+            + "10:00:01.000 [07] [SSH] ops@old-db-3:2222 closed (connected since 2026-10-24 09:00:00 +08:00): KeepAliveTimeout(Open)\n"
+            + "10:00:02.000 [07] [SSH] alice@corp@bastion:22 closed after 00:05:00: closed locally\n"
+            + "10:00:03.000 [07] [SSH] root@[2001:db8::9]:22 closed (connected since 2026-10-24 09:00:00 +08:00): closed locally\n"
+            + "10:00:04.000 [07] [SSH] jump-7:22 closed (connected since 2026-10-24 09:00:00 +08:00): closed locally\n"
+            + "10:00:05.000 [07] [SSH] ops@10.0.0.5:22 closed (connected since 2026-10-24 09:00:00 +08:00): closed locally\n"
+            + "10:00:06.000 [07] later old-db-3 again\n");
+
+        Assert.Contains("[SSH] <user-1>@<host-1>:22 closed (connected since 2026-10-24 09:00:00 +08:00)", text, "已知的值用自己的占位符");
+        Assert.Contains("[SSH] <user-2>@<host-2>:2222 closed", text);
+        Assert.Contains("[SSH] <user-3>@<host-3>:22 closed after 00:05:00", text, "升级之前的旧写法也认;用户名取到最后一个 @");
+        Assert.Contains("[SSH] root@[<ip-2>]:22 closed", text, "root 不换;IP 交给 IP 规则(IPv4 那一轮先编号)");
+        Assert.Contains("[SSH] <host-4>:22 closed", text, "没有用户名时只有主机");
+        Assert.Contains("[SSH] <user-2>@<ip-1>:22 closed", text, "同一个用户名同一个占位符");
+        Assert.Contains("later old-db-3 again", text, "单段主机名离开那一行就认不出来了(隐私说明照实写了)");
+        foreach (string value in new[] { "db1.example.net", "deploy@", "ops@", "alice", "bastion", "jump-7", "2001:db8::9", "10.0.0.5" })
+        {
+            Assert.DoesNotContain(value, text);
+        }
+    }
+
+    [TestMethod]
+    public void Redactor_MasksLowercaseDomainNamesThatNoKnownSourceListed()
+    {
+        // 漏遮:已知来源之外的主机 —— 连接改过之前的旧主机、异常消息里的主机、插件连的私有地址
+        var redactor = new DiagnosticRedactor([], [], null, null, null);
+        string text = redactor.Redact(
+            "No such host is known. (db-prod-3.corp.example.com:22)\n"
+            + "proxy https://proxy.intranet.lan:3128/ failed; retry db-prod-3.corp.example.com.\n"
+            + "resolved nas.local and gitlab.internal, then a.b.c.mycompany.cn\n");
+
+        Assert.AreEqual(
+            "No such host is known. (<host-1>:22)\n"
+            + "proxy https://<host-2>:3128/ failed; retry <host-1>.\n"
+            + "resolved <host-3> and <host-4>, then <host-5>\n", text);
+        Assert.AreEqual(6, redactor.Counts["host"]);
+    }
+
+    [TestMethod]
+    public void Redactor_LeavesTypeNamesFileNamesPluginIdsAndPublicServicesAlone()
+    {
+        // 误遮:大小写混写的类型名与程序集名、文件名(扩展名与顶级域撞车的那些不收)、插件 id、倒写的包标识、
+        // VelaShell 自己联系的公共服务、看着像域名却以不认识的后缀结尾的
+        var redactor = new DiagnosticRedactor([], [], null, null, null);
+        redactor.KeepNames(["velashell.ai"]);
+        const string text =
+            "at System.Net.Sockets.Socket.Connect() in VelaShell.Infrastructure.Ssh.SshBackend; using System.IO; Avalonia.Base\n"
+            + "uploaded deploy.sh backup.zip notes.md main.rs script.py lib.so config.h.cc app.pro latest.json velashell-20261024.log\n"
+            + "[Plugin:velashell.ai] ready; velashell.redis loaded; bundle com.velashell.app; org.freedesktop.portal.desktop\n"
+            + "GET https://github.com/joesdu/VelaShell/releases/latest/download/latest.json via api.github.com, "
+            + "objects.githubusercontent.com, feeds.easilynet.top\n"
+            + "README.MD DB1.CORP.EXAMPLE.COM Example.Com x.community\n";
+
+        Assert.AreEqual(text, redactor.Redact(text));
+        Assert.IsEmpty(redactor.Counts);
+    }
+
+    [TestMethod]
+    public void Redactor_MasksTheUserNameInHomeFoldersButKeepsTheRestOfThePath()
+    {
+        var redactor = new DiagnosticRedactor([], ["deploy"], @"C:\Users\Alice", "Alice", null);
+        string text = redactor.Redact(
+            @"open C:\Users\Alice\notes and C:\Users\John Smith\AppData\x and c:/users/bob/y and C:\Users\carol" + "\n"
+            + "remote /home/deploy/app /home/eve/.ssh/config /var/home/frank/x /Users/grace/Library file:///home/eve/z\n"
+            + @"skip C:\Users\Public\Documents C:\Users\Default\x /Users/Shared/y /home/ubuntu/z C:\Users\%USERNAME%\w /home/$USER/v" + "\n"
+            + "urls https://example.org/home/about src/home/index /api/Users/42\n");
+
+        Assert.AreEqual(
+            @"open ~\notes and C:\Users\<user-2>\AppData\x and c:/users/<user-3>/y and C:\Users\<user-4>" + "\n"
+            + "remote /home/<user-1>/app /home/<user-5>/.ssh/config /var/home/<user-6>/x /Users/<user-7>/Library file:///home/<user-5>/z\n"
+            + @"skip C:\Users\Public\Documents C:\Users\Default\x /Users/Shared/y /home/ubuntu/z C:\Users\%USERNAME%\w /home/$USER/v" + "\n"
+            + "urls https://<host-1>/home/about src/home/index /api/Users/42\n", text,
+            "名字里可以有空格(后面紧跟着分隔符时);公共目录、常见登录名与占位写法不换;网址与相对路径里的 home 不是家目录");
+    }
+
+    [TestMethod]
+    public void Redactor_TellsVersionNumbersFromIPv4ByWhatSurroundsThem()
+    {
+        // 光秃秃的 1.2.3.4 分不出是版本号还是 IP,宁可当 IP 遮;前后紧挨着字母、数字、下划线或更多一段数字的,
+        // 以及 Version= / version: / VelaShell 后面的,都是版本号
+        var redactor = new DiagnosticRedactor([], [], null, null, null);
+        string text = redactor.Redact(
+            "bare 1.2.3.4 (5.6.7.8) host=9.9.9.9 [9.9.9.9]:22 to 9.9.9.9.\n"
+            + "v1.2.3.4 V1.2.3.4 VelaShell_1.7.3.0_x64.msix pkg-1.2.3.4rc 1.2.3.4.5 10.1.2.3.4 Version=12.1.4.0 version: 2.0.0.1 "
+            + "Version 3.1.0.0 VelaShell 0.0.1.0\n");
+
+        Assert.AreEqual(
+            "bare <ip-1> (<ip-2>) host=<ip-3> [<ip-3>]:22 to <ip-3>.\n"
+            + "v1.2.3.4 V1.2.3.4 VelaShell_1.7.3.0_x64.msix pkg-1.2.3.4rc 1.2.3.4.5 10.1.2.3.4 Version=12.1.4.0 version: 2.0.0.1 "
+            + "Version 3.1.0.0 VelaShell 0.0.1.0\n", text);
+    }
+
+    [TestMethod]
+    public void Redactor_StaysLinearOnLongRunsTheNewRulesLookAt()
+    {
+        // 新加的三条规则各给一种最坏的输入:一长串点分的小写字母(末段永远不是顶级域)、
+        // 用户目录后面一长串带空格却没有下一级分隔符的名字、断开日志行里一长串没有 @ 的用户名
+        static TimeSpan Fastest(string text)
+        {
+            TimeSpan best = TimeSpan.MaxValue;
+            for (int i = 0; i < 3; i++)
+            {
+                long start = Stopwatch.GetTimestamp();
+                _ = new DiagnosticRedactor([], [], null, null, null).Redact(text);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(start);
+                if (elapsed < best) best = elapsed;
+            }
+            return best;
+        }
+        static string Inputs(int length) =>
+            string.Concat(Enumerable.Repeat("ab.", length / 3)) + "1\n"
+            + @"C:\Users\" + string.Concat(Enumerable.Repeat("a ", length / 2)) + "\n"
+            + "[SSH] " + new string('u', length) + ":22 closed\n";
+
+        TimeSpan small = Fastest(Inputs(16 * 1024));
+        TimeSpan large = Fastest(Inputs(64 * 1024));
+
+        Assert.IsLessThan(TimeSpan.FromMilliseconds(500), small, $"16 KB 用了 {small}");
+        Assert.IsLessThan(small * 8 + TimeSpan.FromMilliseconds(50), large, $"16 KB 用了 {small},64 KB 用了 {large}:应随长度线性增长");
     }
 
     [TestMethod]

@@ -5060,13 +5060,13 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
     <value>匯出診斷包…</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
-    <value>收集日誌、當機記錄、版本與外掛清單，去掉主機名稱、使用者名稱、本機路徑與 IP 後打包成 zip 存到本機，不會上傳。</value>
+    <value>收集診斷日誌、當機記錄、版本與外掛清單（傳輸記錄、外掛日誌等可另外勾選），依規則遮蓋主機名稱、使用者名稱、IP 等後打包成 zip 存到本機，不會上傳。遮蓋無法面面俱到，傳送前請先開啟檢查。</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
     <value>儲存診斷包</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
-    <value>診斷包已儲存到 {0}（{1} 份日誌，敏感資訊已遮蓋）。沒有傳送到任何地方。</value>
+    <value>診斷包已儲存到 {0}（{1} 份日誌，已依規則遮蓋）。沒有傳送到任何地方；傳給別人之前請先開啟檢查。</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
     <value>診斷包儲存失敗：{0}</value>
@@ -5078,10 +5078,49 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
     <value>這個包只儲存在你選的位置，VelaShell 沒有上傳它。傳給別人之前可以先開啟看看。</value>
   </data>
   <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
-    <value>不包含設定、連線設定與任何憑證。</value>
+    <value>不包含設定、連線設定、工作階段日誌與任何憑證。傳輸記錄、外部編輯日誌、VcXsrv 日誌與外掛日誌只在匯出時勾選了才收（見上面的 optional logs）。</value>
   </data>
   <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
-    <value>已遮蓋（主機名稱、使用者名稱、本機路徑、IP、電子郵件、密碼與權杖），各類替換次數：</value>
+    <value>已依規則遮蓋：已存連線、最近連線與共用憑證裡的主機名稱與使用者名稱，IP 位址，小寫書寫、以常見頂級網域或內網尾碼結尾的網域名稱，使用者目錄（C:\Users\…、/home/…、/Users/…）裡的使用者名稱，本機帳戶名稱、電腦名稱與主目錄，電子郵件、密碼與權杖。其他位置的單段主機名稱、使用者名稱與檔案名稱不在其列。各類替換次數：</value>
+  </data>
+  <data name="DiagBundle_PickTitle" xml:space="preserve">
+    <value>匯出診斷包</value>
+  </data>
+  <data name="DiagBundle_PickSummary" xml:space="preserve">
+    <value>一定會收進包：診斷日誌（velashell-*.log）、當機記錄、版本與平台概況、外掛清單。下面幾類日誌含有本機與遠端的路徑和檔案名稱，預設不收；勾選的同樣依規則遮蓋後收進包。</value>
+  </data>
+  <data name="DiagBundle_PickNone" xml:space="preserve">
+    <value>沒有其他可收的日誌。</value>
+  </data>
+  <data name="DiagBundle_PickConfirm" xml:space="preserve">
+    <value>匯出…</value>
+  </data>
+  <data name="DiagBundle_OptionTransfer" xml:space="preserve">
+    <value>傳輸記錄</value>
+  </data>
+  <data name="DiagBundle_OptionTransferHint" xml:space="preserve">
+    <value>每次上傳、下載一行：本機路徑、遠端路徑與結果。</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEdit" xml:space="preserve">
+    <value>外部編輯日誌（remote-edit.log）</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEditHint" xml:space="preserve">
+    <value>用外部編輯器開啟、儲存與回傳遠端檔案的經過，含本機暫存路徑與遠端路徑。</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrv" xml:space="preserve">
+    <value>VcXsrv 日誌（vcxsrv.log）</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrvHint" xml:space="preserve">
+    <value>Windows 上外部 X 伺服器 VcXsrv 的輸出。</value>
+  </data>
+  <data name="DiagBundle_OptionPlugin" xml:space="preserve">
+    <value>外掛日誌：{0}</value>
+  </data>
+  <data name="DiagBundle_OptionPluginHint" xml:space="preserve">
+    <value>這個外掛自己寫的日誌、它的處理程序輸出，以及主程式記下的啟用、失敗與當機。</value>
+  </data>
+  <data name="DiagBundle_OptionSize" xml:space="preserve">
+    <value>{0} 份 · {1}</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>上次異常結束</value>

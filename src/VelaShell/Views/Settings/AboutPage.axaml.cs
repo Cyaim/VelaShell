@@ -51,12 +51,21 @@ public partial class AboutPage : UserControl
         }
     }
 
+    /// <summary>导出诊断包:先勾要另外收进包的几类日志(默认一个都不勾),再选保存位置。</summary>
     private void ExportDiagnostics_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
-        if (DataContext is not SettingsViewModel viewModel || TopLevel.GetTopLevel(this) is not { } top
+        if (DataContext is not SettingsViewModel viewModel || TopLevel.GetTopLevel(this) is not Window top
             || sender is not Button button)
         {
             return;
+        }
+        var picker = new DiagnosticExportView
+        {
+            DataContext = new DiagnosticExportViewModel(await viewModel.FindDiagnosticLogOptionsAsync())
+        };
+        if (await picker.ShowDialog<IReadOnlyList<DiagnosticLogOption>?>(top) is not { } optional)
+        {
+            return; // 取消了。
         }
         IStorageFile? file = await top.StorageProvider.SaveFilePickerAsync(new()
         {
@@ -69,18 +78,19 @@ public partial class AboutPage : UserControl
         {
             return; // 用户取消了,不算失败,也不用回显。
         }
-        await ExportDiagnosticsToAsync(viewModel, button, path);
+        await ExportDiagnosticsToAsync(viewModel, button, path, optional);
     });
 
-    /// <summary>选好位置之后的那一段:写包,结果回显在按钮下面。测试从这里进,绕开系统的保存对话框。</summary>
-    internal static async Task ExportDiagnosticsToAsync(SettingsViewModel viewModel, Button button, string path)
+    /// <summary>勾好、选好位置之后的那一段:写包,结果回显在按钮下面。测试从这里进,绕开勾选框与系统的保存对话框。</summary>
+    internal static async Task ExportDiagnosticsToAsync(SettingsViewModel viewModel, Button button, string path,
+        IReadOnlyList<DiagnosticLogOption> optional)
     {
         // 上一次的「已保存到 …」先清掉:这次还没出结果、或者失败了,都不能让旧路径留在页面上冒充这一次
         viewModel.DiagnosticsStatus = string.Empty;
         button.IsEnabled = false;
         try
         {
-            DiagnosticBundleResult result = await viewModel.ExportDiagnosticsAsync(path);
+            DiagnosticBundleResult result = await viewModel.ExportDiagnosticsAsync(path, optional);
             viewModel.DiagnosticsStatus = Strings.Format("SetAbout_ExportDiagnosticsDone", path, result.LogFiles);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

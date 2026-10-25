@@ -905,18 +905,34 @@ public partial class SettingsViewModel : ReactiveObject
     } = string.Empty;
 
     /// <summary>
-    /// 把日志、崩溃记录、版本与插件清单脱敏后打成 zip,写到 <paramref name="path" />。只落本机,不上传。
+    /// 导出框里可以另外勾选的几类日志(传输记录、外部编辑日志、<c>vcxsrv.log</c>、各插件的日志),只列确有文件的。
+    /// 传输记录按「文件传输 → 日志目录」的设置去找,那个目录可以改到日志目录之外。
+    /// </summary>
+    public Task<IReadOnlyList<DiagnosticLogOption>> FindDiagnosticLogOptionsAsync() => FindDiagnosticLogOptionsAsync(DiagnosticLog.Directory);
+
+    /// <summary>同上,日志目录由调用方给(测试用)。</summary>
+    internal Task<IReadOnlyList<DiagnosticLogOption>> FindDiagnosticLogOptionsAsync(string? logs)
+    {
+        string transfer = TransferLogService.ResolveDirectory(Transfer.LogDirectory);
+        // 只是列目录,但传输记录的目录可能在网络盘上:不在界面线程上等它
+        return Task.Run(() => DiagnosticBundle.FindOptionalLogs(logs, transfer));
+    }
+
+    /// <summary>
+    /// 把诊断日志、崩溃记录、版本与插件清单,连同导出框里勾上的那几类日志(<paramref name="optional" />)脱敏后打成 zip,
+    /// 写到 <paramref name="path" />。只落本机,不上传。
     /// </summary>
     /// <remarks>
     /// 脱敏用的主机与用户名取自已保存的连接、最近连接与共享凭据的元数据(不解密任何机密),
-    /// 再加上本机的用户名、机器名与主目录(见 <see cref="DiagnosticRedactor" />)。
+    /// 再加上本机的用户名、机器名与主目录;已知来源之外的按通用规则遮(见 <see cref="DiagnosticRedactor" />)。
     /// </remarks>
-    public Task<DiagnosticBundleResult> ExportDiagnosticsAsync(string path, CancellationToken cancellationToken = default)
-        => ExportDiagnosticsAsync(path, DiagnosticLog.Directory, cancellationToken);
+    public Task<DiagnosticBundleResult> ExportDiagnosticsAsync(string path, IReadOnlyList<DiagnosticLogOption> optional,
+        CancellationToken cancellationToken = default)
+        => ExportDiagnosticsAsync(path, DiagnosticLog.Directory, optional, cancellationToken);
 
     /// <summary>同上,日志目录由调用方给(测试用:全局日志目录是进程级单例)。</summary>
     internal async Task<DiagnosticBundleResult> ExportDiagnosticsAsync(string path, string? logsDirectory,
-        CancellationToken cancellationToken = default)
+        IReadOnlyList<DiagnosticLogOption>? optional = null, CancellationToken cancellationToken = default)
     {
         List<string> hosts = [];
         List<string> users = [];
@@ -952,7 +968,7 @@ public partial class SettingsViewModel : ReactiveObject
                     plugin.Manifest?.HostMode.ToString(), plugin.IsDevelopment, plugin.Error))
             ];
         return await DiagnosticBundle.WriteAsync(path,
-            new DiagnosticBundleRequest(AppVersion, logsDirectory, plugins, redactor), cancellationToken).ConfigureAwait(false);
+            new DiagnosticBundleRequest(AppVersion, logsDirectory, plugins, redactor, optional), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>检查更新的状态提示文本。</summary>

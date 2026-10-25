@@ -91,7 +91,7 @@ public sealed class AboutPageDiagnosticsUiTests
             var button = new Button();
 
             Task export = AboutPage.ExportDiagnosticsToAsync(viewModel, button,
-                Path.Combine(Path.GetTempPath(), $"velashell_diagexport_{Guid.NewGuid():N}.zip"));
+                Path.Combine(Path.GetTempPath(), $"velashell_diagexport_{Guid.NewGuid():N}.zip"), []);
 
             Assert.AreEqual("", viewModel.DiagnosticsStatus, "上一次的「已保存到 …」一开始就清掉,不留到这一次出结果");
             Assert.IsFalse(button.IsEnabled);

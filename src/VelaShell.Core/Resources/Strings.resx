@@ -4927,13 +4927,13 @@ Overwrite it?</value>
     <value>Export diagnostics…</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
-    <value>Collects logs, crash reports, the version and the plugin list, masks host names, user names, local paths and IPs, and saves a zip on this computer. Nothing is uploaded.</value>
+    <value>Collects the diagnostic logs, crash reports, the version and the plugin list (transfer, plugin and a few other logs can be ticked as well), masks host names, user names, IPs and the like by rule, and saves a zip on this computer. Nothing is uploaded. The masking cannot catch everything, so open it and check before sending.</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
     <value>Save diagnostics</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
-    <value>Diagnostics saved to {0} ({1} log file(s), sensitive details masked). It has not been sent anywhere.</value>
+    <value>Diagnostics saved to {0} ({1} log file(s), masked by rule). It has not been sent anywhere; open it and check before sending it to anyone.</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
     <value>Could not save diagnostics: {0}</value>
@@ -4945,10 +4945,49 @@ Overwrite it?</value>
     <value>This bundle was only saved where you chose; VelaShell did not upload it. Feel free to open it and check before sending it to anyone.</value>
   </data>
   <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
-    <value>Settings, connection profiles and credentials are not included.</value>
+    <value>Settings, connection profiles, session logs and credentials are not included. Transfer records, the external-editing log, the VcXsrv log and plugin logs are only included when ticked at export (see optional logs above).</value>
   </data>
   <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
-    <value>Masked (host names, user names, local paths, IPs, emails, passwords and tokens), times replaced:</value>
+    <value>Masked by rule: host and user names from saved connections, recent connections and shared credentials; IP addresses; lowercase domain names ending in a common top-level domain or internal suffix; the user name in home folders (C:\Users\…, /home/…, /Users/…); the local account name, machine name and home folder; emails, passwords and tokens. Single-label host names, user names elsewhere and file names are not covered. Times replaced:</value>
+  </data>
+  <data name="DiagBundle_PickTitle" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
+  <data name="DiagBundle_PickSummary" xml:space="preserve">
+    <value>Always included: the diagnostic logs (velashell-*.log), crash reports, a version and platform summary, and the plugin list. The logs below contain local and remote paths and file names and are left out by default; ticked ones are masked by the same rules.</value>
+  </data>
+  <data name="DiagBundle_PickNone" xml:space="preserve">
+    <value>There are no other logs to include.</value>
+  </data>
+  <data name="DiagBundle_PickConfirm" xml:space="preserve">
+    <value>Export…</value>
+  </data>
+  <data name="DiagBundle_OptionTransfer" xml:space="preserve">
+    <value>Transfer records</value>
+  </data>
+  <data name="DiagBundle_OptionTransferHint" xml:space="preserve">
+    <value>One line per upload or download: local path, remote path and result.</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEdit" xml:space="preserve">
+    <value>External-editing log (remote-edit.log)</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEditHint" xml:space="preserve">
+    <value>How remote files were opened, saved and uploaded back with an external editor, including local temporary paths and remote paths.</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrv" xml:space="preserve">
+    <value>VcXsrv log (vcxsrv.log)</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrvHint" xml:space="preserve">
+    <value>Output of the external VcXsrv X server on Windows.</value>
+  </data>
+  <data name="DiagBundle_OptionPlugin" xml:space="preserve">
+    <value>Plugin log: {0}</value>
+  </data>
+  <data name="DiagBundle_OptionPluginHint" xml:space="preserve">
+    <value>What this plugin wrote to its log, its process output, and the activations, failures and crashes the host recorded.</value>
+  </data>
+  <data name="DiagBundle_OptionSize" xml:space="preserve">
+    <value>{0} file(s) · {1}</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>VelaShell closed unexpectedly last time</value>

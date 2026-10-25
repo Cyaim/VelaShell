@@ -46,7 +46,8 @@ computer unless you explicitly enable the optional sync feature described below.
 | Saved commands and snippets | Same folder |
 | Layout templates, and — only when **Restore split layout** is on — the layout at exit: which saved connections and local shells were open and how the panes were arranged (no passwords; not included in sync) | Same folder |
 | Session logs — raw terminal output, **off by default** | `logs` subfolder, auto-deleted after a retention period you set |
-| Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, duration, reason) | `logs` subfolder, auto-deleted after 7 days |
+| Diagnostic logs — application events, crash reports, and one line per ended SSH connection (`user@host:port`, when it connected, reason) | `logs` subfolder, auto-deleted after 7 days |
+| Transfer records — one line per upload or download (local path, remote path, result; on by default, Settings → File transfer) — plus the external-editing log (`remote-edit.log`), the VcXsrv log (`vcxsrv.log`, Windows only) and each plugin's own log | `logs` subfolder (the transfer-record folder can be changed); transfer records are deleted after the retention period you set, `remote-edit.log` starts over at 1 MB, plugin logs rotate once at 1 MB |
 | Audit log — connection results (`user@host:port`), host-key decisions, external logins, and changes to connection profiles (name and `user@host:port`), settings and shared credentials: which part changed, never passwords or setting values | `~/.velashell`; records older than the retention period you set (default 180 days) are deleted at startup |
 | Offline IP geolocation database, if you add one | `geoip` subfolder |
 | Plugins you manually install | `~/.velashell/plugins` |
@@ -152,11 +153,20 @@ like passwords, tokens or private keys (for example `PASSWORD=…`, `Bearer …`
 replaced with `***` before session logs and recordings are written (Settings → Security Audit); this is
 best-effort pattern matching, not a guarantee, and it does not change what you see on screen.
 
-“Export diagnostics…” on the About page writes a zip of the diagnostic logs, a version and platform
-summary and the plugin list **only to the location you choose**; nothing is uploaded. Host names,
-user names, local paths, IP and email addresses, and password- or token-like values are masked
-before writing, and settings, connection profiles and credentials are not included. Sending the
-file to anyone is up to you — you can open it and check it first.
+“Export diagnostics…” on the About page first lets you tick what to include, then writes a zip
+**only to the location you choose**; nothing is uploaded. The diagnostic logs, crash reports, a
+version and platform summary and the plugin list are always included. Transfer records, the
+external-editing log, the VcXsrv log and plugin logs contain local and remote paths and file names;
+they are unticked by default and only included when you tick them. Settings, connection profiles,
+session logs and credentials are never included. Before writing, VelaShell masks by rule: host and
+user names that appear in your saved connections, recent connections and shared credentials; the
+user and host in its own SSH disconnect log lines; IPv4 and IPv6 addresses other than loopback;
+lowercase domain names ending in a common top-level domain or internal suffix (such as `.com`,
+`.cn`, `.local`, `.internal`); the user name in `C:\Users\<name>`, `/home/<name>` and
+`/Users/<name>` paths; your local account name, machine name and home folder; email addresses; and
+password- or token-like values. It cannot recognise single-label host names that are not in those
+sources (such as `db-prod-3`), user names elsewhere (such as chat-app user ids), file names, or other
+path parts. Sending the file to anyone is up to you — open it and check it first.
 
 “Export” under Settings → General → Import/export settings writes only the categories you tick, again only
 to the file you choose. Network proxy and Security audit are unticked by default, and the proxy password
@@ -222,7 +232,8 @@ VelaShell 发起的每一个网络连接,都完整列在下方。
 | 快捷命令与代码片段 | 同上 |
 | 布局模板,以及仅在开启「按上次的分屏恢复」时记下的退出时布局:开着哪些已保存的连接与本地 shell、窗格怎么排(不含密码,不参与同步) | 同上 |
 | 会话日志 —— 终端原始输出,**默认关闭** | `logs` 子目录,按你设定的保留天数自动清理 |
-| 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、时长、原因) | `logs` 子目录,7 天后自动清理 |
+| 诊断日志 —— 应用事件、崩溃记录,以及每条 SSH 连接结束时的一行(`用户@主机:端口`、连上的时刻、原因) | `logs` 子目录,7 天后自动清理 |
+| 传输记录 —— 每次上传、下载一行(本机路径、远端路径、结果;默认开,设置 → 文件传输),以及外部编辑日志(`remote-edit.log`)、VcXsrv 日志(`vcxsrv.log`,仅 Windows)与各插件自己的日志 | `logs` 子目录(传输记录的目录可改);传输记录按你设定的保留天数清理,`remote-edit.log` 满 1 MB 重写,插件日志满 1 MB 轮转一份 |
 | 审计日志 —— 连接成败(`用户@主机:端口`)、主机指纹的裁决、外部拉起的登录,以及连接配置(名称与 `用户@主机:端口`)、设置、共享凭据的改动:只记改了哪一块,不记密码与设置的值 | `~/.velashell`;启动时删掉超过保留期(默认 180 天,可设)的记录 |
 | 离线 IP 归属地数据库(如果你添加了) | `geoip` 子目录 |
 | 你手动安装的插件 | `~/.velashell/plugins` |
@@ -307,9 +318,14 @@ VelaShell 不含任何第三方 SDK、追踪器或广告库。
 落盘前会把形如口令、令牌或私钥的值(比如 `PASSWORD=…`、`Bearer …`、PEM 私钥块)换成 `***`(设置 → 安全审计);
 这是按规则匹配、尽力而为,不是保证,也不改变屏幕上显示的内容。
 
-关于页的「导出诊断包…」把诊断日志、版本与平台概况和插件清单打成 zip,**只写到你选的位置**,不会上传。
-写入前会遮盖主机名、用户名、本机路径、IP 与邮箱地址,以及形如口令或令牌的值;设置、连接配置与凭据都不收。
-要不要发给别人由你决定,发之前可以先打开检查。
+关于页的「导出诊断包…」先让你勾选要收哪些,再打成 zip,**只写到你选的位置**,不会上传。诊断日志、崩溃记录、
+版本与平台概况和插件清单总会收进包;传输记录、外部编辑日志、VcXsrv 日志与插件日志里有本机与远端的路径和文件名,
+默认不勾,勾上了才收。设置、连接配置、会话日志与凭据都不收。写入前按规则遮盖:你的已保存连接、最近连接与共享凭据里
+出现过的主机名与用户名;VelaShell 自己的 SSH 断开日志行里的用户与主机;回环以外的 IPv4 与 IPv6 地址;小写书写、
+以常见顶级域或内网后缀(如 `.com`、`.cn`、`.local`、`.internal`)结尾的域名;`C:\Users\<名>`、`/home/<名>`、
+`/Users/<名>` 路径里的用户名;本机账户名、机器名与主目录;邮箱地址;形如口令或令牌的值。不在上述来源里的单段主机名
+(如 `db-prod-3`)、其它位置的用户名(如聊天软件的用户 id)、文件名与其余路径认不出来。要不要发给别人由你决定,
+发之前请先打开检查。
 
 设置 → 常规 →「设置导入/导出」的「导出」只把你勾选的分类写进你选的文件;网络代理与安全审计默认不勾,
 代理密码与告警 Webhook 地址无论勾选什么都不写进去。

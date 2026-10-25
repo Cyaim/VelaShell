@@ -4811,13 +4811,13 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
     <value>診断パッケージを書き出す…</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
-    <value>ログ、クラッシュ記録、バージョン、プラグイン一覧を集め、ホスト名・ユーザー名・ローカルパス・IP を伏せて zip としてこのコンピューターに保存します。アップロードはしません。</value>
+    <value>診断ログ、クラッシュ記録、バージョン、プラグイン一覧を集め（転送記録やプラグインのログなどは追加で選べます）、ホスト名・ユーザー名・IP などを規則に従って伏せてから zip としてこのコンピューターに保存します。アップロードはしません。伏せ漏れがありうるので、送る前に中身を確認してください。</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
     <value>診断パッケージを保存</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
-    <value>診断パッケージを {0} に保存しました（ログ {1} 件、機密情報は伏せ済み）。どこにも送信していません。</value>
+    <value>診断パッケージを {0} に保存しました（ログ {1} 件、規則に従って伏せ済み）。どこにも送信していません。誰かに送る前に中身を確認してください。</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
     <value>診断パッケージを保存できませんでした: {0}</value>
@@ -4829,10 +4829,49 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
     <value>このパッケージは選んだ場所に保存しただけで、VelaShell はアップロードしていません。誰かに送る前に中身を確認できます。</value>
   </data>
   <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
-    <value>設定、接続設定、資格情報は含まれていません。</value>
+    <value>設定、接続設定、セッションログ、資格情報は含まれていません。転送記録、外部編集ログ、VcXsrv ログ、プラグインのログは、エクスポート時に選んだ場合だけ含まれます（上の optional logs を参照）。</value>
   </data>
   <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
-    <value>伏せた項目（ホスト名、ユーザー名、ローカルパス、IP、メールアドレス、パスワード、トークン）と置き換え回数:</value>
+    <value>規則に従って伏せた項目：保存済みの接続・最近の接続・共有資格情報にあるホスト名とユーザー名、IP アドレス、小文字で書かれ一般的なトップレベルドメインまたは社内向けサフィックスで終わるドメイン名、ユーザーフォルダー（C:\Users\…、/home/…、/Users/…）のユーザー名、このコンピューターのアカウント名・コンピューター名・ホームフォルダー、メールアドレス・パスワード・トークン。ほかの場所にある単一ラベルのホスト名、ユーザー名、ファイル名は対象外です。置き換え回数:</value>
+  </data>
+  <data name="DiagBundle_PickTitle" xml:space="preserve">
+    <value>診断パッケージのエクスポート</value>
+  </data>
+  <data name="DiagBundle_PickSummary" xml:space="preserve">
+    <value>常に含まれるもの：診断ログ（velashell-*.log）、クラッシュ記録、バージョンとプラットフォームの概要、プラグイン一覧。下のログにはローカルとリモートのパスやファイル名が含まれるため、既定では含めません。選んだものも同じ規則で伏せてから含めます。</value>
+  </data>
+  <data name="DiagBundle_PickNone" xml:space="preserve">
+    <value>ほかに含められるログはありません。</value>
+  </data>
+  <data name="DiagBundle_PickConfirm" xml:space="preserve">
+    <value>エクスポート…</value>
+  </data>
+  <data name="DiagBundle_OptionTransfer" xml:space="preserve">
+    <value>転送記録</value>
+  </data>
+  <data name="DiagBundle_OptionTransferHint" xml:space="preserve">
+    <value>アップロード・ダウンロードごとに 1 行：ローカルパス、リモートパス、結果。</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEdit" xml:space="preserve">
+    <value>外部編集ログ（remote-edit.log）</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEditHint" xml:space="preserve">
+    <value>外部エディターでリモートファイルを開き、保存し、書き戻した経緯。ローカルの一時パスとリモートパスを含みます。</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrv" xml:space="preserve">
+    <value>VcXsrv ログ（vcxsrv.log）</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrvHint" xml:space="preserve">
+    <value>Windows で使う外部 X サーバー VcXsrv の出力。</value>
+  </data>
+  <data name="DiagBundle_OptionPlugin" xml:space="preserve">
+    <value>プラグインのログ：{0}</value>
+  </data>
+  <data name="DiagBundle_OptionPluginHint" xml:space="preserve">
+    <value>このプラグイン自身が書いたログ、そのプロセスの出力、ホストが記録した有効化・失敗・クラッシュ。</value>
+  </data>
+  <data name="DiagBundle_OptionSize" xml:space="preserve">
+    <value>{0} 件 · {1}</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>前回、予期せず終了しました</value>

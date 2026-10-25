@@ -5060,13 +5060,13 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
     <value>导出诊断包…</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsTip" xml:space="preserve">
-    <value>收集日志、崩溃记录、版本与插件清单，去掉主机名、用户名、本机路径与 IP 后打成 zip 存到本机，不会上传。</value>
+    <value>收集诊断日志、崩溃记录、版本与插件清单（传输记录、插件日志等可另外勾选），按规则遮盖主机名、用户名、IP 等后打成 zip 存到本机，不会上传。遮盖认不全，发送前请先打开检查。</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDialogTitle" xml:space="preserve">
     <value>保存诊断包</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsDone" xml:space="preserve">
-    <value>诊断包已保存到 {0}（{1} 份日志，敏感信息已遮盖）。没有发送到任何地方。</value>
+    <value>诊断包已保存到 {0}（{1} 份日志，已按规则遮盖）。没有发送到任何地方；发给别人之前请先打开检查。</value>
   </data>
   <data name="SetAbout_ExportDiagnosticsFailed" xml:space="preserve">
     <value>诊断包保存失败：{0}</value>
@@ -5078,10 +5078,49 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
     <value>这个包只保存在你选的位置，VelaShell 没有上传它。发给别人之前可以先打开看看。</value>
   </data>
   <data name="DiagBundle_ReadMeExcluded" xml:space="preserve">
-    <value>不包含设置、连接配置与任何凭据。</value>
+    <value>不包含设置、连接配置、会话日志与任何凭据。传输记录、外部编辑日志、VcXsrv 日志与插件日志只在导出时勾选了才收（见上面的 optional logs）。</value>
   </data>
   <data name="DiagBundle_ReadMeRedacted" xml:space="preserve">
-    <value>已遮盖（主机名、用户名、本机路径、IP、邮箱、口令与令牌），各类替换次数：</value>
+    <value>已按规则遮盖：已存连接、最近连接与共享凭据里的主机名与用户名，IP 地址，小写书写、以常见顶级域或内网后缀结尾的域名，用户目录（C:\Users\…、/home/…、/Users/…）里的用户名，本机账户名、机器名与主目录，邮箱、口令与令牌。其它位置的单段主机名、用户名与文件名不在其列。各类替换次数：</value>
+  </data>
+  <data name="DiagBundle_PickTitle" xml:space="preserve">
+    <value>导出诊断包</value>
+  </data>
+  <data name="DiagBundle_PickSummary" xml:space="preserve">
+    <value>总会收进包：诊断日志（velashell-*.log）、崩溃记录、版本与平台概况、插件清单。下面几类日志里有本机与远端的路径和文件名，默认不收；勾上的同样按规则遮盖后进包。</value>
+  </data>
+  <data name="DiagBundle_PickNone" xml:space="preserve">
+    <value>没有其它可收的日志。</value>
+  </data>
+  <data name="DiagBundle_PickConfirm" xml:space="preserve">
+    <value>导出…</value>
+  </data>
+  <data name="DiagBundle_OptionTransfer" xml:space="preserve">
+    <value>传输记录</value>
+  </data>
+  <data name="DiagBundle_OptionTransferHint" xml:space="preserve">
+    <value>每次上传、下载一行：本机路径、远端路径与结果。</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEdit" xml:space="preserve">
+    <value>外部编辑日志（remote-edit.log）</value>
+  </data>
+  <data name="DiagBundle_OptionRemoteEditHint" xml:space="preserve">
+    <value>用外部编辑器打开、保存与回传远程文件的经过，含本机临时路径与远端路径。</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrv" xml:space="preserve">
+    <value>VcXsrv 日志（vcxsrv.log）</value>
+  </data>
+  <data name="DiagBundle_OptionVcXsrvHint" xml:space="preserve">
+    <value>Windows 上外部 X 服务器 VcXsrv 的输出。</value>
+  </data>
+  <data name="DiagBundle_OptionPlugin" xml:space="preserve">
+    <value>插件日志：{0}</value>
+  </data>
+  <data name="DiagBundle_OptionPluginHint" xml:space="preserve">
+    <value>这个插件自己写的日志、它的进程输出，以及宿主记下的激活、失败与崩溃。</value>
+  </data>
+  <data name="DiagBundle_OptionSize" xml:space="preserve">
+    <value>{0} 份 · {1}</value>
   </data>
   <data name="Notify_CrashTitle" xml:space="preserve">
     <value>上次异常退出</value>

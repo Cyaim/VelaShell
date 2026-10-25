@@ -58,4 +58,40 @@ public sealed class SettingsDiagnosticsExportTests : IDisposable
         StringAssert.Contains(log, "shared <user-3>");
         await shared.DidNotReceive().GetAllAsync();
     }
+
+    [TestMethod]
+    public async Task OptionalLogs_FollowTheTransferLogSettingAndOnlyTickedOnesAreExported()
+    {
+        // 传输记录按「文件传输 → 日志目录」去找(那里可以改到日志目录之外);插件日志按插件列出;只有勾上的进包
+        string logs = Path.Combine(_root, "logs");
+        string transfers = Path.Combine(_root, "elsewhere");
+        Directory.CreateDirectory(transfers);
+        Directory.CreateDirectory(Path.Combine(logs, "plugins"));
+        await File.WriteAllTextAsync(Path.Combine(logs, "velashell-20261019.log"), "[Startup] VelaShell\n");
+        await File.WriteAllTextAsync(Path.Combine(logs, "transfer-20261019.log"), "stale copy in the default folder\n");
+        await File.WriteAllTextAsync(Path.Combine(transfers, "transfer-20261019.log"), "UPLOAD\t/home/deployer7/a.txt\n");
+        await File.WriteAllTextAsync(Path.Combine(logs, "remote-edit.log"), "[open] /home/deployer7/.env\n");
+        await File.WriteAllTextAsync(Path.Combine(logs, "plugins", "velashell.ai.log"), "[Plugin:velashell.ai] ready\n");
+        ISettingsService settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(_ => Task.FromResult(new AppSettings()));
+        var viewModel = new SettingsViewModel(settings, new ThemeService(new AppSettings().Theme));
+        viewModel.Transfer.LogDirectory = transfers;
+
+        IReadOnlyList<DiagnosticLogOption> options = await viewModel.FindDiagnosticLogOptionsAsync(logs);
+
+        Assert.AreSequenceEqual(["transfer", "remote-edit", "plugin:velashell.ai"], [.. options.Select(option => option.Id)]);
+        Assert.AreSequenceEqual([Path.Combine(transfers, "transfer-20261019.log")], options[0].Files);
+
+        string zipPath = Path.Combine(_root, "bundle.zip");
+        DiagnosticBundleResult result = await viewModel.ExportDiagnosticsAsync(zipPath, logs,
+            [.. options.Where(option => option.Id != "remote-edit")]);
+
+        Assert.AreEqual(3, result.LogFiles);
+        using ZipArchive zip = ZipFile.OpenRead(zipPath);
+        CollectionAssert.AreEquivalent(
+            new[] { "logs/velashell-20261019.log", "logs/transfer-20261019.log", "logs/plugins/velashell.ai.log", "summary.txt", "README.txt" },
+            zip.Entries.Select(entry => entry.FullName).ToArray());
+        using var reader = new StreamReader(zip.GetEntry("logs/transfer-20261019.log")!.Open());
+        Assert.AreEqual("UPLOAD\t/home/<user-1>/a.txt\n", await reader.ReadToEndAsync(), "收的是设置里那个目录的那一份,照样遮盖");
+    }
 }
