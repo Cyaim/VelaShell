@@ -1175,6 +1175,23 @@
                                IsVisible="{Binding SshAlgorithmsError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   </StackPanel>
                 </StackPanel>
+
+                <!-- 按连接指定 agent(ssh_config 的 IdentityAgent):认证与转发都用它,所以放在 SSH 与 SFTP 共有的这一页,
+                     而不是只有 SSH 才有的「转发」页。留空 = 系统默认;写法不对只提示、不拦保存(配置可能来自别的平台)。 -->
+                <StackPanel Spacing="12">
+                  <Grid ColumnDefinitions="Auto,*">
+                    <TextBlock Classes="section-title" Text="SSH Agent" />
+                    <Border Grid.Column="1" Classes="section-rule" />
+                  </Grid>
+                  <StackPanel>
+                    <TextBlock Classes="field-label" Text="{loc:Localize Profile_SshAgentEndpoint}" />
+                    <TextBox Text="{Binding SshAgentEndpoint}"
+                             PlaceholderText="{Binding SshAgentEndpointPlaceholder}" />
+                    <TextBlock Classes="field-error" Text="{Binding SshAgentEndpointError}"
+                               IsVisible="{Binding SshAgentEndpointError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <TextBlock Classes="field-hint" Margin="0,6,0,0" Text="{loc:Localize Profile_SshAgentEndpointHint}" />
+                  </StackPanel>
+                </StackPanel>
               </StackPanel>
 
               <!-- ============================== 转发(只有 SSH) ==============================

@@ -137,6 +137,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private bool _sshAgentForwarding;
     private bool _sshAgentForwardRestrict;
     private bool _sshAgentForwardConfirm;
+    private string? _sshAgentEndpoint;
     private readonly List<string> _savedAgentForwardKeys = [];
     private bool _agentForwardKeysLoaded;
     private readonly ISshKeyService? _keyService;
@@ -266,6 +267,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 _sshAgentForwardRestrict = ssh.AgentForwardKeys is not null;
                 _savedAgentForwardKeys = ssh.AgentForwardKeys is { } keys ? [.. keys] : [];
                 _sshAgentForwardConfirm = ssh.AgentForwardConfirm;
+                _sshAgentEndpoint = ssh.AgentEndpoint;
                 _sshX11Forwarding = ssh.X11Forwarding;
                 _sshX11Display = ssh.X11Display;
                 _sshX11Trusted = ssh.X11Trusted;
@@ -1303,7 +1305,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     /// <summary>「SSH 选项」页是否有非默认值。</summary>
     public bool IsSshOptionsSectionModified =>
-        _sshCompression || (SupportsPostAuthCommand && _sshObscureKeystrokeTiming) || _sshLegacyAlgorithms || _sshCustomAlgorithms;
+        _sshCompression || (SupportsPostAuthCommand && _sshObscureKeystrokeTiming) || _sshLegacyAlgorithms || _sshCustomAlgorithms
+        || !SshAgentEndpoints.IsDefault(_sshAgentEndpoint);
 
     /// <summary>「转发」页是否有非默认值。</summary>
     public bool IsForwardingSectionModified => _sshAgentForwarding || _sshX11Forwarding;
@@ -1404,7 +1407,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     }.ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> SshOptionsSectionInputs =
-        new[] { nameof(SshCompression), nameof(SshObscureKeystrokeTiming), nameof(SshLegacyAlgorithms), nameof(SshCustomAlgorithms) }
+        new[] { nameof(SshCompression), nameof(SshObscureKeystrokeTiming), nameof(SshLegacyAlgorithms), nameof(SshCustomAlgorithms), nameof(SshAgentEndpoint) }
             .ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> ForwardingSectionInputs =
@@ -1724,6 +1727,40 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         set => this.RaiseAndSetIfChanged(ref _sshAgentForwardConfirm, value);
     }
 
+    /// <summary>
+    /// 这条连接用哪个 ssh-agent(<see cref="SshSessionOptions.AgentEndpoint" />);空 = 系统默认。
+    /// 「SSH Agent」认证与 agent 转发都用它。
+    /// </summary>
+    public string? SshAgentEndpoint
+    {
+        get => _sshAgentEndpoint;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _sshAgentEndpoint, value);
+            this.RaisePropertyChanged(nameof(SshAgentEndpointError));
+        }
+    }
+
+    /// <summary>
+    /// 端点在这台机器上用不了的原因;没填或写得对时为 <see langword="null" />。
+    /// </summary>
+    /// <remarks>
+    /// 只提示、不拦保存:配置会随云同步到别的机器,在 macOS 上写的套接字路径拿到 Windows 上看就「不是完整路径」,
+    /// 为此让这边连别的字段都存不下去不合理;连不上时连接报错会点名这个端点。
+    /// </remarks>
+    public string? SshAgentEndpointError => SshAgentEndpoints.Check(_sshAgentEndpoint) switch
+    {
+        SshAgentEndpointProblem.PipeNotSupported => Strings.Get("Profile_SshAgentEndpointPipeNotSupported"),
+        SshAgentEndpointProblem.PipeNameMissing => Strings.Get("Profile_SshAgentEndpointPipeNameMissing"),
+        SshAgentEndpointProblem.NotFullPath => Strings.Get("Profile_SshAgentEndpointNotFullPath"),
+        SshAgentEndpointProblem.TooLong => Strings.Format("Profile_SshAgentEndpointTooLong", SshAgentEndpoints.MaxSocketPathBytes(OperatingSystem.IsMacOS())),
+        _ => null
+    };
+
+    /// <summary>端点输入框的占位文字:按平台给一个例子。</summary>
+    public static string SshAgentEndpointPlaceholder =>
+        Strings.Get(OperatingSystem.IsWindows() ? "Profile_SshAgentEndpointPlaceholderWindows" : "Profile_SshAgentEndpointPlaceholderUnix");
+
     /// <summary>「只转发指定密钥」的候选清单。</summary>
     public ObservableCollection<AgentForwardKeyChoice> AgentForwardKeyChoices { get; } = [];
 
@@ -1767,7 +1804,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         {
             try
             {
-                foreach (SshKeyInfo key in await keys.ListAgentKeysAsync())
+                // 按连接指定了 agent 端点时列的是那个 agent 里的钥(转发的就是它)。
+                foreach (SshKeyInfo key in await keys.ListAgentKeysAsync(SshAgentEndpoints.Normalize(_sshAgentEndpoint)))
                 {
                     discovered.Add((key.PublicKeyLine!, key.Name, Strings.Get("Profile_SshAgentKeySourceAgent")));
                 }
@@ -2359,6 +2397,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             AgentForwarding = shell && _sshAgentForwarding,
             AgentForwardKeys = shell && _sshAgentForwarding ? SelectedAgentForwardKeys() : null,
             AgentForwardConfirm = shell && _sshAgentForwarding && _sshAgentForwardConfirm,
+            // SSH 与 SFTP 都存:SFTP 也能用 agent 认证。
+            AgentEndpoint = SshAgentEndpoints.Normalize(_sshAgentEndpoint),
             X11Forwarding = shell && _sshX11Forwarding,
             X11Display = shell && _sshX11Forwarding && !string.IsNullOrWhiteSpace(_sshX11Display)
                 ? _sshX11Display.Trim()

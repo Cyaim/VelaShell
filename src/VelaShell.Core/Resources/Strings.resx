@@ -5583,11 +5583,14 @@ Overwrite it?</value>
   <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
     <value>{0} not imported: {1}</value>
   </data>
-  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
-    <value>ForwardAgent {0} not imported: VelaShell forwards only the default agent (SSH_AUTH_SOCK).</value>
+  <data name="SshCfgImport_NoteAgentEndpointUnusable" xml:space="preserve">
+    <value>{0} not imported: that agent endpoint cannot be used on this computer (a path from another platform, or not a full path).</value>
   </data>
-  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
-    <value>IdentityAgent {0} not imported: VelaShell only uses the default agent (SSH_AUTH_SOCK).</value>
+  <data name="SshCfgImport_NoteAgentVarUnset" xml:space="preserve">
+    <value>{0} not imported: the environment variable {1} is not set.</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentConflict" xml:space="preserve">
+    <value>{0} not imported: it is a different agent from the one used to sign in (IdentityAgent), and a VelaShell connection uses a single agent for both.</value>
   </data>
   <data name="SshCfgImport_NoteX11TrustedDefault" xml:space="preserve">
     <value>ForwardX11Trusted is not set: imported as trusted (-Y), VelaShell's default. OpenSSH would use untrusted forwarding (-X) here; to keep that, clear "Trusted (-Y)" in the connection's SSH options or add ForwardX11Trusted no.</value>
@@ -7244,7 +7247,7 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
     <value>Agent</value>
   </data>
   <data name="Profile_AgentAuthHint" xml:space="preserve">
-    <value>Signs with the keys held by your local ssh-agent; nothing is stored in this profile. On Windows that is the &quot;OpenSSH Authentication Agent&quot; service (start it, then load keys with ssh-add); elsewhere the agent named by SSH_AUTH_SOCK.</value>
+    <value>Signs with the keys held by your local ssh-agent; nothing is stored in this profile. On Windows that is the "OpenSSH Authentication Agent" service (start it, then load keys with ssh-add); elsewhere the agent named by SSH_AUTH_SOCK. To use another agent (1Password, KeePassXC, gpg-agent…), set Agent endpoint under SSH options.</value>
   </data>
   <data name="Profile_SshFeatures" xml:space="preserve">
     <value>SSH options</value>
@@ -7278,6 +7281,30 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="Profile_SshAgentForwardingHint" xml:space="preserve">
     <value>Lets you ssh onward from this server with the keys in your local agent, without copying private keys to it. While the session is open, root on this server can use your agent to sign — only enable it for servers you trust.</value>
+  </data>
+  <data name="Profile_SshAgentEndpoint" xml:space="preserve">
+    <value>Agent endpoint</value>
+  </data>
+  <data name="Profile_SshAgentEndpointHint" xml:space="preserve">
+    <value>Leave empty for the system default agent (SSH_AUTH_SOCK; on Windows the OpenSSH Authentication Agent service, or Pageant when that service is not running). When set, this connection talks only to that agent: SSH agent authentication, agent forwarding and "Add keys to agent" all use it, like IdentityAgent in ssh_config.</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderWindows" xml:space="preserve">
+    <value>System default — or a named pipe \\.\pipe\name, or a socket's full path</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderUnix" xml:space="preserve">
+    <value>System default (SSH_AUTH_SOCK) — or a socket path such as ~/.1password/agent.sock</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNotSupported" xml:space="preserve">
+    <value>Named pipes (\\.\pipe\…) exist only on Windows; on this computer write the path of a Unix socket.</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNameMissing" xml:space="preserve">
+    <value>Write the pipe name after \\.\pipe\ (no further slashes).</value>
+  </data>
+  <data name="Profile_SshAgentEndpointNotFullPath" xml:space="preserve">
+    <value>Use a full path (it may start with ~/); where a relative path lands depends on the program's current directory.</value>
+  </data>
+  <data name="Profile_SshAgentEndpointTooLong" xml:space="preserve">
+    <value>Path too long: a Unix socket path can be at most {0} bytes.</value>
   </data>
   <data name="Profile_SshX11Forwarding" xml:space="preserve">
     <value>Forward X11 (show remote GUI windows locally)</value>
@@ -7363,6 +7390,15 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   <data name="SshErr_AgentRequestTooLarge" xml:space="preserve">
     <value>The key or destination constraints are too large for an agent message (the limit is 256 KiB).</value>
   </data>
+  <data name="SshErr_AgentEndpointUnavailable" xml:space="preserve">
+    <value>Cannot reach the ssh-agent this connection names ({0}): {1}</value>
+  </data>
+  <data name="SshErr_AgentEndpointNotRunning" xml:space="preserve">
+    <value>It does not exist or nothing is listening on it. Make sure the program that provides it (1Password, KeePassXC, gpg-agent…) is running and the path is right; to use the system default agent, clear Agent endpoint in the connection's SSH options.</value>
+  </data>
+  <data name="SshErr_AgentEndpointNoKeys" xml:space="preserve">
+    <value>The ssh-agent this connection names ({0}) holds no keys.</value>
+  </data>
   <data name="DiagSvc_SuggestAgentKeys" xml:space="preserve">
     <value>Check that ssh-agent is running and holds the key this server accepts: ssh-add -l lists the loaded keys.</value>
   </data>
@@ -7374,6 +7410,9 @@ Choose how much to clean up. Every option rebuilds the store so the space is gen
   </data>
   <data name="Ssh_AgentForwardConfirmEach" xml:space="preserve">
     <value> · every signature needs your approval</value>
+  </data>
+  <data name="Ssh_AgentForwardEndpoint" xml:space="preserve">
+    <value> · agent: {0}</value>
   </data>
   <data name="AgentSign_Title" xml:space="preserve">
     <value>Agent signature request</value>

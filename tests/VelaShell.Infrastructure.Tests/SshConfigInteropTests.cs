@@ -105,8 +105,6 @@ public sealed class SshConfigInteropTests
             Host a
                 Compression yes
                 ForwardAgent yes
-            Host b
-                ForwardAgent /tmp/some-other-agent.sock
             Host c
                 User nobody
             """);
@@ -114,12 +112,94 @@ public sealed class SshConfigInteropTests
         ImportedSession a = await ScanOneAsync(config, "a");
         Assert.IsTrue(a.Ssh?.Compression);
         Assert.IsTrue(a.Ssh?.AgentForwarding);
-
-        ImportedSession b = await ScanOneAsync(config, "b");
-        Assert.IsFalse(b.Ssh?.AgentForwarding ?? false, "指定了别的 agent:VelaShell 只转发默认的,换成默认的等于多交出几把钥");
-        Assert.IsTrue(b.Notes.Any(n => n.Contains("/tmp/some-other-agent.sock")));
+        Assert.IsNull(a.Ssh?.AgentEndpoint, "ForwardAgent yes 且没写 IdentityAgent:转发系统默认的 agent");
 
         Assert.IsNull((await ScanOneAsync(config, "c")).Ssh, "一项都没开:存 null");
+    }
+
+    /// <summary>本机用得了的套接字路径(正斜杠,ssh_config 里写 Windows 路径也这么写)。</summary>
+    private static string LocalAgentPath(string name) => Path.Combine(Path.GetTempPath(), name).Replace('\\', '/');
+
+    /// <summary>别的平台上的路径:这台电脑上用不了。</summary>
+    private static string ForeignAgentPath => OperatingSystem.IsWindows() ? "/run/user/1000/agent.sock" : "C:/agents/agent.sock";
+
+    /// <summary>
+    /// <c>IdentityAgent</c> / <c>ForwardAgent</c> 指向非默认的 agent:映射到连接的 agent 端点(一条连接只用一个,认证与转发共用)。
+    /// <c>ForwardAgent yes</c> 转发 <c>IdentityAgent</c> 指的那个(与 OpenSSH 一致);认证走 agent、转发又指了另一个时转发不导;
+    /// 认证不走 agent(私钥)时端点只给转发用;这台电脑上用不了的端点、没设的环境变量不导,都进说明。
+    /// </summary>
+    [TestMethod]
+    public async Task 非默认的agent端点映射到连接的agent端点()
+    {
+        string pinned = LocalAgentPath("vs-pinned.sock");
+        string other = LocalAgentPath("vs-other.sock");
+        string config = WriteConfig(
+            $"""
+            Host pinned
+                IdentityAgent {pinned}
+                ForwardAgent yes
+            Host pinnedfwd
+                IdentityAgent {pinned}
+                ForwardAgent {pinned}
+            Host conflict
+                IdentityAgent {pinned}
+                ForwardAgent {other}
+            Host keyfwd
+                IdentityFile /keys/id
+                ForwardAgent {other}
+            Host keyidentity
+                IdentityFile /keys/id
+                IdentityAgent {pinned}
+                ForwardAgent yes
+            Host keyonly
+                IdentityFile /keys/id
+                IdentityAgent {pinned}
+            Host foreign
+                IdentityAgent {ForeignAgentPath}
+            Host foreignfwd
+                ForwardAgent {ForeignAgentPath}
+            Host varunset
+                ForwardAgent $VS_NO_SUCH_AGENT_VARIABLE
+            """);
+
+        foreach (string alias in new[] { "pinned", "pinnedfwd" })
+        {
+            ImportedSession item = await ScanOneAsync(config, alias);
+            Assert.AreEqual(AuthMethod.Agent, item.AuthMethod, alias);
+            Assert.AreEqual(pinned, item.Ssh?.AgentEndpoint, alias);
+            Assert.IsTrue(item.Ssh?.AgentForwarding, $"{alias}:转发的就是认证用的那个");
+            Assert.IsEmpty(item.Notes, alias);
+        }
+
+        ImportedSession conflict = await ScanOneAsync(config, "conflict");
+        Assert.AreEqual(AuthMethod.Agent, conflict.AuthMethod);
+        Assert.AreEqual(pinned, conflict.Ssh?.AgentEndpoint, "认证用的那个留着");
+        Assert.IsFalse(conflict.Ssh?.AgentForwarding ?? false, "转发指了另一个:换成认证用的那个等于多交出几把钥,不导");
+        Assert.IsTrue(conflict.Notes.Any(n => n.Contains("ForwardAgent") && n.Contains(other)));
+
+        ImportedSession keyfwd = await ScanOneAsync(config, "keyfwd");
+        Assert.IsNull(keyfwd.AuthMethod, "私钥认证");
+        Assert.AreEqual(other, keyfwd.Ssh?.AgentEndpoint, "认证不走 agent:端点只给转发用");
+        Assert.IsTrue(keyfwd.Ssh?.AgentForwarding);
+
+        ImportedSession keyidentity = await ScanOneAsync(config, "keyidentity");
+        Assert.AreEqual(pinned, keyidentity.Ssh?.AgentEndpoint, "ForwardAgent yes 转发 IdentityAgent 指的那个");
+        Assert.IsTrue(keyidentity.Ssh?.AgentForwarding);
+
+        Assert.IsNull((await ScanOneAsync(config, "keyonly")).Ssh, "私钥认证、不转发:端点用不上,不存");
+
+        ImportedSession foreign = await ScanOneAsync(config, "foreign");
+        Assert.IsNull(foreign.AuthMethod);
+        Assert.IsNull(foreign.Ssh);
+        Assert.IsTrue(foreign.Notes.Any(n => n.Contains(ForeignAgentPath)), "别的平台的路径这台电脑上用不了:说一声");
+
+        ImportedSession foreignfwd = await ScanOneAsync(config, "foreignfwd");
+        Assert.IsNull(foreignfwd.Ssh);
+        Assert.IsTrue(foreignfwd.Notes.Any(n => n.Contains(ForeignAgentPath)));
+
+        ImportedSession varunset = await ScanOneAsync(config, "varunset");
+        Assert.IsNull(varunset.Ssh);
+        Assert.IsTrue(varunset.Notes.Any(n => n.Contains("VS_NO_SUCH_AGENT_VARIABLE")));
     }
 
     /// <summary>
@@ -452,8 +532,16 @@ public sealed class SshConfigInteropTests
         Assert.AreEqual(AuthMethod.Agent, (await ScanOneAsync(config, "agent")).AuthMethod);
         Assert.IsNull((await ScanOneAsync(config, "noagent")).AuthMethod);
         ImportedSession other = await ScanOneAsync(config, "otheragent");
-        Assert.IsNull(other.AuthMethod);
-        Assert.IsTrue(other.Notes.Any(n => n.Contains("some-unusual-agent.sock")));
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.IsNull(other.AuthMethod, "Linux 的套接字路径在 Windows 上用不了");
+            Assert.IsTrue(other.Notes.Any(n => n.Contains("some-unusual-agent.sock")));
+        }
+        else
+        {
+            Assert.AreEqual(AuthMethod.Agent, other.AuthMethod);
+            Assert.AreEqual("/run/user/1000/some-unusual-agent.sock", other.Ssh?.AgentEndpoint, "别的 agent:记成这条连接的 agent 端点");
+        }
         Assert.IsNull((await ScanOneAsync(config, "keyed")).AuthMethod, "写了私钥就按私钥:VelaShell 一条连接只用一种认证");
     }
 
@@ -559,6 +647,61 @@ public sealed class SshConfigInteropTests
         Assert.AreEqual((SshConfigForwardKind.Remote, 9090, "::1", 80), (forwards[1].Kind, forwards[1].ListenPort, forwards[1].TargetHost, forwards[1].TargetPort));
         Assert.AreEqual((SshConfigForwardKind.Dynamic, 1080), (forwards[2].Kind, forwards[2].ListenPort));
         Assert.DoesNotContain("Password", export.Content.Replace("# Passwords and passphrases are never written.", ""));
+    }
+
+    /// <summary>
+    /// 按连接指定的 agent 端点:认证走 agent 时写成 <c>IdentityAgent</c>,转发时 <c>ForwardAgent</c> 直接写端点(不写 yes);
+    /// 主目录下的套接字写成 <c>~/…</c>;端点用不上(私钥认证、不转发)的不写。导出再导入,端点与转发回到原样。
+    /// </summary>
+    [TestMethod]
+    public async Task agent端点导出后读得回来()
+    {
+        string home = Path.GetTempPath().TrimEnd('/', '\\');
+        string socket = Path.Combine(home, "agents", "deploy.sock");
+        SessionProfile agentAuth = new()
+        {
+            Name = "agentauth", Host = "10.0.0.31", AuthMethod = AuthMethod.Agent,
+            Ssh = new SshSessionOptions { AgentEndpoint = socket, AgentForwarding = true },
+        };
+        SessionProfile keyForward = new()
+        {
+            Name = "keyforward", Host = "10.0.0.32", AuthMethod = AuthMethod.PrivateKey, PrivateKeyPath = "/keys/id",
+            Ssh = new SshSessionOptions { AgentEndpoint = "~/agents/deploy.sock", AgentForwarding = true },
+        };
+        SessionProfile unused = new()
+        {
+            Name = "unused", Host = "10.0.0.33", AuthMethod = AuthMethod.PrivateKey, PrivateKeyPath = "/keys/id",
+            Ssh = new SshSessionOptions { AgentEndpoint = socket },
+        };
+        SessionProfile pipe = new()
+        {
+            Name = "pipe", Host = "10.0.0.34", AuthMethod = AuthMethod.Agent,
+            Ssh = new SshSessionOptions { AgentEndpoint = @"\\.\pipe\vela-pinned-agent" },
+        };
+
+        SshConfigExport export = SshConfigExporter.Write(Archive(agentAuth, keyForward, unused, pipe), home);
+
+        Assert.AreEqual("~/agents/deploy.sock", ReadBack(export, "agentauth").First("IdentityAgent"));
+        Assert.AreEqual("~/agents/deploy.sock", ReadBack(export, "agentauth").First("ForwardAgent"), "转发写端点,不写 yes");
+        Assert.IsNull(ReadBack(export, "keyforward").First("IdentityAgent"), "私钥认证:IdentityAgent 不写");
+        Assert.AreEqual("~/agents/deploy.sock", ReadBack(export, "keyforward").First("ForwardAgent"));
+        Assert.IsNull(ReadBack(export, "unused").First("IdentityAgent"), "端点用不上就不写");
+        Assert.IsNull(ReadBack(export, "unused").First("ForwardAgent"));
+        Assert.AreEqual(@"\\.\pipe\vela-pinned-agent", ReadBack(export, "pipe").First("IdentityAgent"), "命名管道原样写");
+
+        // 读回来:导出时把主目录写成了 ~,导入这边由库按真正的主目录展开 —— 这里改用真主目录下的路径核对往返。
+        string realHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        SessionProfile roundTrip = new()
+        {
+            Name = "roundtrip", Host = "10.0.0.35", AuthMethod = AuthMethod.Agent,
+            Ssh = new SshSessionOptions { AgentEndpoint = Path.Combine(realHome, "vs-agent.sock"), AgentForwarding = true },
+        };
+        string path = WriteConfig(SshConfigExporter.Write(Archive(roundTrip)).Content);
+        ImportedSession imported = await ScanOneAsync(path, "roundtrip");
+        Assert.AreEqual(AuthMethod.Agent, imported.AuthMethod);
+        Assert.AreEqual(Path.GetFullPath(Path.Combine(realHome, "vs-agent.sock")), Path.GetFullPath(imported.Ssh!.AgentEndpoint!));
+        Assert.IsTrue(imported.Ssh.AgentForwarding);
+        Assert.IsEmpty(imported.Notes);
     }
 
     [TestMethod]

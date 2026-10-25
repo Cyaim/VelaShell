@@ -5578,11 +5578,14 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
     <value>{0} はインポートしませんでした：{1}</value>
   </data>
-  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
-    <value>ForwardAgent {0} はインポートしませんでした：VelaShell が転送するのは既定のエージェント（SSH_AUTH_SOCK）だけです。</value>
+  <data name="SshCfgImport_NoteAgentEndpointUnusable" xml:space="preserve">
+    <value>{0} はインポートしませんでした：この agent エンドポイントはこのコンピューターでは使えません（別のプラットフォームのパス、またはフルパスではありません）。</value>
   </data>
-  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
-    <value>IdentityAgent {0} はインポートしませんでした：VelaShell が使うのは既定のエージェント（SSH_AUTH_SOCK）だけです。</value>
+  <data name="SshCfgImport_NoteAgentVarUnset" xml:space="preserve">
+    <value>{0} はインポートしませんでした：環境変数 {1} が設定されていません。</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentConflict" xml:space="preserve">
+    <value>{0} はインポートしませんでした：ログインに使う agent（IdentityAgent）とは別の agent ですが、VelaShell の接続は認証と転送に 1 つの agent しか使いません。</value>
   </data>
   <data name="SshCfgImport_NoteX11TrustedDefault" xml:space="preserve">
     <value>ForwardX11Trusted が書かれていないため、VelaShell の既定どおり信頼済み(-Y)としてインポートしました。OpenSSH ではこの場合は非信頼(-X)になります。非信頼にするには、接続設定の SSH オプションで「信頼済み(-Y)」をオフにするか、config に ForwardX11Trusted no を書いてください。</value>
@@ -7239,7 +7242,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
     <value>エージェント</value>
   </data>
   <data name="Profile_AgentAuthHint" xml:space="preserve">
-    <value>ローカルの ssh-agent にある鍵で署名します。このプロファイルには資格情報を保存しません。Windows では「OpenSSH Authentication Agent」サービス(起動してから ssh-add で鍵を読み込みます)、その他の OS では SSH_AUTH_SOCK が指す agent を使います。</value>
+    <value>ローカルの ssh-agent にある鍵で署名します。このプロファイルには資格情報を保存しません。Windows では「OpenSSH Authentication Agent」サービス(起動してから ssh-add で鍵を読み込みます)、その他の OS では SSH_AUTH_SOCK が指す agent を使います。別の agent(1Password、KeePassXC、gpg-agent など)を使うときは「SSH オプション」で Agent エンドポイントを指定します。</value>
   </data>
   <data name="Profile_SshFeatures" xml:space="preserve">
     <value>SSH オプション</value>
@@ -7273,6 +7276,30 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Profile_SshAgentForwardingHint" xml:space="preserve">
     <value>このサーバーからさらに ssh するとき、ローカル agent の鍵を使えるので秘密鍵をサーバーにコピーする必要がありません。セッション中はこのサーバーの root もあなたの agent で署名できるため、信頼できるサーバーでのみ有効にしてください。</value>
+  </data>
+  <data name="Profile_SshAgentEndpoint" xml:space="preserve">
+    <value>Agent エンドポイント</value>
+  </data>
+  <data name="Profile_SshAgentEndpointHint" xml:space="preserve">
+    <value>空欄ならシステム既定の agent(SSH_AUTH_SOCK。Windows では OpenSSH Authentication Agent サービス、それが動いていなければ Pageant)を使います。指定するとこの接続はその agent だけに接続し、「SSH Agent」認証、agent 転送、「鍵を Agent に自動で読み込む」のすべてがそれを使います(ssh_config の IdentityAgent に相当)。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderWindows" xml:space="preserve">
+    <value>システム既定 —— 指定するなら名前付きパイプ \\.\pipe\名前、またはソケットのフルパス</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderUnix" xml:space="preserve">
+    <value>システム既定(SSH_AUTH_SOCK)—— 指定するならソケットのパス(例: ~/.1password/agent.sock)</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNotSupported" xml:space="preserve">
+    <value>名前付きパイプ(\\.\pipe\…)は Windows にしかありません。このコンピューターでは Unix ソケットのパスを書いてください。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNameMissing" xml:space="preserve">
+    <value>\\.\pipe\ の後ろにパイプ名を書いてください(スラッシュは含められません)。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointNotFullPath" xml:space="preserve">
+    <value>フルパスを書いてください(~/ で始めても構いません)。相対パスの行き先はプログラムのカレントディレクトリ次第です。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointTooLong" xml:space="preserve">
+    <value>パスが長すぎます。Unix ソケットのパスは最大 {0} バイトです。</value>
   </data>
   <data name="Profile_SshX11Forwarding" xml:space="preserve">
     <value>X11 転送(リモートの GUI をローカルに表示)</value>
@@ -7358,6 +7385,15 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshErr_AgentRequestTooLarge" xml:space="preserve">
     <value>agent に追加する鍵または宛先制限が大きすぎ、agent メッセージの上限(256 KiB)を超えています。</value>
   </data>
+  <data name="SshErr_AgentEndpointUnavailable" xml:space="preserve">
+    <value>この接続が指定した ssh-agent({0})に接続できません: {1}</value>
+  </data>
+  <data name="SshErr_AgentEndpointNotRunning" xml:space="preserve">
+    <value>エンドポイントが存在しないか、待ち受けているプログラムがありません。提供元のプログラム(1Password、KeePassXC、gpg-agent など)が起動していること、パスが正しいことを確認してください。システム既定の agent を使うには、接続設定の「SSH オプション」で Agent エンドポイントを空にします。</value>
+  </data>
+  <data name="SshErr_AgentEndpointNoKeys" xml:space="preserve">
+    <value>この接続が指定した ssh-agent({0})には鍵がありません。</value>
+  </data>
   <data name="DiagSvc_SuggestAgentKeys" xml:space="preserve">
     <value>ssh-agent が起動していて、このサーバーが受け付ける鍵が読み込まれているか確認してください(ssh-add -l で一覧表示できます)。</value>
   </data>
@@ -7369,6 +7405,9 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   </data>
   <data name="Ssh_AgentForwardConfirmEach" xml:space="preserve">
     <value> · 署名のたびに確認</value>
+  </data>
+  <data name="Ssh_AgentForwardEndpoint" xml:space="preserve">
+    <value> · agent: {0}</value>
   </data>
   <data name="AgentSign_Title" xml:space="preserve">
     <value>agent 署名リクエスト</value>

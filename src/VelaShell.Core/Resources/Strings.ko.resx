@@ -5578,11 +5578,14 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
     <value>{0}은(는) 가져오지 않았습니다: {1}</value>
   </data>
-  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
-    <value>ForwardAgent {0}은(는) 가져오지 않았습니다: VelaShell은 기본 에이전트(SSH_AUTH_SOCK)만 포워딩합니다.</value>
+  <data name="SshCfgImport_NoteAgentEndpointUnusable" xml:space="preserve">
+    <value>{0}은(는) 가져오지 않았습니다: 이 컴퓨터에서는 이 agent 엔드포인트를 쓸 수 없습니다(다른 플랫폼의 경로이거나 전체 경로가 아님).</value>
   </data>
-  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
-    <value>IdentityAgent {0}은(는) 가져오지 않았습니다: VelaShell은 기본 에이전트(SSH_AUTH_SOCK)만 사용합니다.</value>
+  <data name="SshCfgImport_NoteAgentVarUnset" xml:space="preserve">
+    <value>{0}은(는) 가져오지 않았습니다: 환경 변수 {1}이(가) 설정되어 있지 않습니다.</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentConflict" xml:space="preserve">
+    <value>{0}은(는) 가져오지 않았습니다: 로그인에 쓰는 agent(IdentityAgent)와 다른 agent인데, VelaShell 연결은 인증과 포워딩에 agent 하나만 씁니다.</value>
   </data>
   <data name="SshCfgImport_NoteX11TrustedDefault" xml:space="preserve">
     <value>ForwardX11Trusted가 없어 VelaShell 기본값대로 신뢰(-Y)로 가져왔습니다. OpenSSH는 이 경우 비신뢰(-X)를 씁니다. 비신뢰로 하려면 연결 설정의 SSH 옵션에서 「신뢰(-Y)」를 끄거나 config에 ForwardX11Trusted no를 쓰세요.</value>
@@ -7239,7 +7242,7 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
     <value>에이전트</value>
   </data>
   <data name="Profile_AgentAuthHint" xml:space="preserve">
-    <value>로컬 ssh-agent에 있는 키로 서명하며, 이 프로필에는 자격 증명을 저장하지 않습니다. Windows에서는 &quot;OpenSSH Authentication Agent&quot; 서비스(서비스를 시작한 뒤 ssh-add로 키를 로드), 다른 OS에서는 SSH_AUTH_SOCK이 가리키는 agent를 사용합니다.</value>
+    <value>로컬 ssh-agent에 있는 키로 서명하며 이 프로필에는 자격 증명을 저장하지 않습니다. Windows에서는 「OpenSSH Authentication Agent」 서비스(먼저 시작한 뒤 ssh-add로 키를 불러오세요), 다른 OS에서는 SSH_AUTH_SOCK가 가리키는 agent를 사용합니다. 다른 agent(1Password, KeePassXC, gpg-agent 등)를 쓰려면 「SSH 옵션」에서 Agent 엔드포인트를 지정하세요.</value>
   </data>
   <data name="Profile_SshFeatures" xml:space="preserve">
     <value>SSH 옵션</value>
@@ -7273,6 +7276,30 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="Profile_SshAgentForwardingHint" xml:space="preserve">
     <value>이 서버에서 다음 서버로 ssh할 때 로컬 agent의 키를 사용하므로 개인 키를 서버에 복사할 필요가 없습니다. 세션 동안 이 서버의 root도 여러분의 agent로 서명할 수 있으므로 신뢰하는 서버에서만 켜세요.</value>
+  </data>
+  <data name="Profile_SshAgentEndpoint" xml:space="preserve">
+    <value>Agent 엔드포인트</value>
+  </data>
+  <data name="Profile_SshAgentEndpointHint" xml:space="preserve">
+    <value>비워 두면 시스템 기본 agent(SSH_AUTH_SOCK. Windows에서는 OpenSSH Authentication Agent 서비스, 그 서비스가 실행 중이 아니면 Pageant)를 씁니다. 지정하면 이 연결은 그 agent에만 연결하며 「SSH Agent」 인증, agent 포워딩, 「키를 Agent에 자동으로 불러오기」가 모두 그것을 씁니다(ssh_config의 IdentityAgent에 해당).</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderWindows" xml:space="preserve">
+    <value>시스템 기본값 —— 지정하려면 명명된 파이프 \\.\pipe\이름 또는 소켓의 전체 경로</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderUnix" xml:space="preserve">
+    <value>시스템 기본값(SSH_AUTH_SOCK) —— 지정하려면 소켓 경로(예: ~/.1password/agent.sock)</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNotSupported" xml:space="preserve">
+    <value>명명된 파이프(\\.\pipe\…)는 Windows에만 있습니다. 이 컴퓨터에서는 Unix 소켓 경로를 쓰세요.</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNameMissing" xml:space="preserve">
+    <value>\\.\pipe\ 뒤에 파이프 이름을 쓰세요(슬래시는 더 넣을 수 없습니다).</value>
+  </data>
+  <data name="Profile_SshAgentEndpointNotFullPath" xml:space="preserve">
+    <value>전체 경로를 쓰세요(~/로 시작해도 됩니다). 상대 경로는 프로그램의 현재 디렉터리에 따라 위치가 달라집니다.</value>
+  </data>
+  <data name="Profile_SshAgentEndpointTooLong" xml:space="preserve">
+    <value>경로가 너무 깁니다. Unix 소켓 경로는 최대 {0}바이트입니다.</value>
   </data>
   <data name="Profile_SshX11Forwarding" xml:space="preserve">
     <value>X11 전달(원격 GUI를 로컬에 표시)</value>
@@ -7358,6 +7385,15 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   <data name="SshErr_AgentRequestTooLarge" xml:space="preserve">
     <value>agent에 추가할 키 또는 대상 제한이 너무 커서 agent 메시지 한도(256 KiB)를 넘습니다.</value>
   </data>
+  <data name="SshErr_AgentEndpointUnavailable" xml:space="preserve">
+    <value>이 연결이 지정한 ssh-agent({0})에 연결할 수 없습니다: {1}</value>
+  </data>
+  <data name="SshErr_AgentEndpointNotRunning" xml:space="preserve">
+    <value>엔드포인트가 없거나 대기 중인 프로그램이 없습니다. 제공하는 프로그램(1Password, KeePassXC, gpg-agent 등)이 실행 중인지, 경로가 맞는지 확인하세요. 시스템 기본 agent를 쓰려면 연결 설정 「SSH 옵션」의 Agent 엔드포인트를 비우세요.</value>
+  </data>
+  <data name="SshErr_AgentEndpointNoKeys" xml:space="preserve">
+    <value>이 연결이 지정한 ssh-agent({0})에 키가 하나도 없습니다.</value>
+  </data>
   <data name="DiagSvc_SuggestAgentKeys" xml:space="preserve">
     <value>ssh-agent가 실행 중이고 이 서버가 허용하는 키가 로드되어 있는지 확인하세요(ssh-add -l로 로드된 키를 볼 수 있습니다).</value>
   </data>
@@ -7369,6 +7405,9 @@ Windows는 exe 전체 경로 또는 명령 이름(예: notepad), Linux는 명령
   </data>
   <data name="Ssh_AgentForwardConfirmEach" xml:space="preserve">
     <value> · 서명할 때마다 확인</value>
+  </data>
+  <data name="Ssh_AgentForwardEndpoint" xml:space="preserve">
+    <value> · agent: {0}</value>
   </data>
   <data name="AgentSign_Title" xml:space="preserve">
     <value>agent 서명 요청</value>

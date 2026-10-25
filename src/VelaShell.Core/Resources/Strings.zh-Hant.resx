@@ -5716,11 +5716,14 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshCfgImport_NoteAlgoSkipped" xml:space="preserve">
     <value>{0} 沒有匯入：{1}</value>
   </data>
-  <data name="SshCfgImport_NoteForwardAgentPath" xml:space="preserve">
-    <value>ForwardAgent {0} 沒有匯入：VelaShell 只轉送預設的 agent（SSH_AUTH_SOCK）。</value>
+  <data name="SshCfgImport_NoteAgentEndpointUnusable" xml:space="preserve">
+    <value>{0} 沒有匯入：這台電腦上用不了這個 agent 端點（其他平台的路徑，或者不是完整路徑）。</value>
   </data>
-  <data name="SshCfgImport_NoteIdentityAgentPath" xml:space="preserve">
-    <value>IdentityAgent {0} 沒有匯入：VelaShell 只連預設的 agent（SSH_AUTH_SOCK）。</value>
+  <data name="SshCfgImport_NoteAgentVarUnset" xml:space="preserve">
+    <value>{0} 沒有匯入：環境變數 {1} 沒有設定。</value>
+  </data>
+  <data name="SshCfgImport_NoteForwardAgentConflict" xml:space="preserve">
+    <value>{0} 沒有匯入：它與登入用的 agent（IdentityAgent）不是同一個，而 VelaShell 一條連線的認證與轉送只用一個 agent。</value>
   </data>
   <data name="SshCfgImport_NoteX11TrustedDefault" xml:space="preserve">
     <value>沒寫 ForwardX11Trusted：依 VelaShell 的預設匯入為受信任(-Y)，而 OpenSSH 這時用的是非受信任(-X)。要非受信任，在連線設定的 SSH 選項裡取消「受信任(-Y)」，或在 config 裡寫上 ForwardX11Trusted no。</value>
@@ -7716,7 +7719,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
     <value>Agent</value>
   </data>
   <data name="Profile_AgentAuthHint" xml:space="preserve">
-    <value>用本機 ssh-agent 裡的金鑰簽章,設定中不儲存任何憑據。Windows 上是「OpenSSH Authentication Agent」服務(先啟動它,再用 ssh-add 載入金鑰);其他系統使用 SSH_AUTH_SOCK 指向的 agent。</value>
+    <value>用本機 ssh-agent 裡的金鑰簽章,設定裡不儲存任何憑證。Windows 上是「OpenSSH Authentication Agent」服務(先啟動它,再用 ssh-add 載入金鑰);其他系統用 SSH_AUTH_SOCK 指向的 agent。要用別的 agent(1Password、KeePassXC、gpg-agent 等),在「SSH 選項」裡填 Agent 端點。</value>
   </data>
   <data name="Profile_SshFeatures" xml:space="preserve">
     <value>SSH 選項</value>
@@ -7750,6 +7753,30 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Profile_SshAgentForwardingHint" xml:space="preserve">
     <value>在這台伺服器上繼續 ssh 到下一跳時,使用本機 agent 裡的金鑰,私鑰不必複製到伺服器上。工作階段期間,這台伺服器上的 root 也能借用你的 agent 簽章 —— 只對信任的機器開啟。</value>
+  </data>
+  <data name="Profile_SshAgentEndpoint" xml:space="preserve">
+    <value>Agent 端點</value>
+  </data>
+  <data name="Profile_SshAgentEndpointHint" xml:space="preserve">
+    <value>留空用系統預設的 agent(SSH_AUTH_SOCK;Windows 上是 OpenSSH Authentication Agent 服務,它沒在執行時用 Pageant)。填了就只連這一個:「SSH Agent」認證、agent 轉送與「自動載入金鑰到 Agent」都用它,相當於 ssh_config 的 IdentityAgent。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderWindows" xml:space="preserve">
+    <value>系統預設 —— 要指定就寫具名管道 \\.\pipe\名稱,或通訊端的完整路徑</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPlaceholderUnix" xml:space="preserve">
+    <value>系統預設(SSH_AUTH_SOCK)—— 要指定就寫通訊端路徑,如 ~/.1password/agent.sock</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNotSupported" xml:space="preserve">
+    <value>具名管道(\\.\pipe\…)只有 Windows 上有;這台電腦上要寫 Unix 通訊端的路徑。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointPipeNameMissing" xml:space="preserve">
+    <value>\\.\pipe\ 後面要寫管道名稱(不能再帶斜線)。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointNotFullPath" xml:space="preserve">
+    <value>要寫完整路徑(可以用 ~/ 開頭);相對路徑落在哪全看程式的目前目錄。</value>
+  </data>
+  <data name="Profile_SshAgentEndpointTooLong" xml:space="preserve">
+    <value>路徑太長:Unix 通訊端的路徑最多 {0} 個位元組。</value>
   </data>
   <data name="Profile_SshX11Forwarding" xml:space="preserve">
     <value>X11 轉送(在本機顯示遠端圖形介面)</value>
@@ -7835,6 +7862,15 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshErr_AgentRequestTooLarge" xml:space="preserve">
     <value>要加入 agent 的金鑰或目的地限制太大,超出了 agent 訊息的長度上限(256 KiB)。</value>
   </data>
+  <data name="SshErr_AgentEndpointUnavailable" xml:space="preserve">
+    <value>連不上這條連線指定的 ssh-agent({0}):{1}</value>
+  </data>
+  <data name="SshErr_AgentEndpointNotRunning" xml:space="preserve">
+    <value>端點不存在,或者沒有程式在上面監聽。確認提供它的程式(1Password、KeePassXC、gpg-agent 等)已經啟動、路徑沒寫錯;要用系統預設的 agent,把連線設定「SSH 選項」裡的 Agent 端點清空。</value>
+  </data>
+  <data name="SshErr_AgentEndpointNoKeys" xml:space="preserve">
+    <value>這條連線指定的 ssh-agent({0})裡一把金鑰都沒有。</value>
+  </data>
   <data name="DiagSvc_SuggestAgentKeys" xml:space="preserve">
     <value>確認 ssh-agent 正在執行,並已載入這台伺服器認可的金鑰:ssh-add -l 可列出已載入的金鑰。</value>
   </data>
@@ -7846,6 +7882,9 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   </data>
   <data name="Ssh_AgentForwardConfirmEach" xml:space="preserve">
     <value> · 每次簽章都要確認</value>
+  </data>
+  <data name="Ssh_AgentForwardEndpoint" xml:space="preserve">
+    <value> · agent:{0}</value>
   </data>
   <data name="AgentSign_Title" xml:space="preserve">
     <value>agent 簽章請求</value>

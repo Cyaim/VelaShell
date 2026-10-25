@@ -278,8 +278,8 @@ internal static class SshConnectionAssembler
         {
             if (info.AuthMethod == AuthMethod.Agent)
             {
-                agent = await ConnectAgentAsync(cancellationToken).ConfigureAwait(false);
-                credentials = await AgentCredentialsAsync(agent, cancellationToken).ConfigureAwait(false);
+                agent = await ConnectAgentAsync(info, cancellationToken).ConfigureAwait(false);
+                credentials = await AgentCredentialsAsync(agent, cancellationToken, info).ConfigureAwait(false);
                 if (keyboard is not null)
                 {
                     credentials = [.. credentials, keyboard.ToCredential()];
@@ -387,7 +387,8 @@ internal static class SshConnectionAssembler
                     {
                         try
                         {
-                            await SshAgentKeyLoader.AddAsync(key, comment, ConnectLocalAgentAsync).ConfigureAwait(false);
+                            // 加进这条连接用的那个 agent(按连接指定了端点时就是它),与 OpenSSH 的 AddKeysToAgent 一致。
+                            await SshAgentKeyLoader.AddAsync(key, comment, ct => ConnectAgentAtAsync(info, ct)).ConfigureAwait(false);
                         }
                         finally
                         {
@@ -480,7 +481,7 @@ internal static class SshConnectionAssembler
     /// </remarks>
     internal static SshAlgorithmSet Algorithms(VelaConnectionInfo info) => SshAlgorithmPreferences.Build(info.Ssh);
 
-    /// <summary>连本机 agent。</summary>
+    /// <summary>连本机系统默认的 agent(按连接指定了端点的见 <see cref="ConnectAgentAtAsync" />)。</summary>
     /// <remarks>
     /// Windows 上 agent 服务没起时命名管道根本不存在 —— 等它出现的时限在库里
     /// (<c>SshAgentClient.PipeConnectTimeout</c>),到点以 <see cref="SshFailureReason.AgentNotRunning" /> 报出,
@@ -494,16 +495,34 @@ internal static class SshConnectionAssembler
     internal static ValueTask<SshAgentClient> ConnectLocalAgentAsync(CancellationToken cancellationToken) =>
         SshAgentClient.ConnectAsync(endpoint: null, cancellationToken);
 
-    private static async ValueTask<SshAgentClient> ConnectAgentAsync(CancellationToken cancellationToken)
+    /// <summary>连这一跳用的 agent:配置里按连接指定了端点(<see cref="SshSessionOptions.AgentEndpoint" />)就连它,否则系统默认。</summary>
+    /// <remarks>开头的 <c>~</c> 在这里才展开(配置随云同步到别的机器,主目录不一样),见 <see cref="SshAgentEndpoints.Resolve" />。</remarks>
+    internal static ValueTask<SshAgentClient> ConnectAgentAtAsync(VelaConnectionInfo info, CancellationToken cancellationToken) =>
+        SshAgentClient.ConnectAsync(SshAgentEndpoints.Resolve(info.Ssh?.AgentEndpoint), cancellationToken);
+
+    private static async ValueTask<SshAgentClient> ConnectAgentAsync(VelaConnectionInfo info, CancellationToken cancellationToken)
     {
         try
         {
-            return await ConnectLocalAgentAsync(cancellationToken).ConfigureAwait(false);
+            return await ConnectAgentAtAsync(info, cancellationToken).ConfigureAwait(false);
         }
         catch (SshAgentException ex)
         {
-            throw new VelaSshAuthenticationException(Strings.Format("SshErr_AgentUnavailable", SshInterop.Localize(ex)), ex);
+            throw AgentUnavailable(info, ex);
         }
+    }
+
+    /// <summary>连不上 agent 的提示:按连接指定了端点时点名那个端点,「没在运行」也不再叫人去起 Windows 的 agent 服务 —— 那多半不是它。</summary>
+    private static VelaSshAuthenticationException AgentUnavailable(VelaConnectionInfo info, SshAgentException ex)
+    {
+        if (SshAgentEndpoints.Normalize(info.Ssh?.AgentEndpoint) is not { } endpoint)
+        {
+            return new(Strings.Format("SshErr_AgentUnavailable", SshInterop.Localize(ex)), ex);
+        }
+        string reason = ex.Reason == SshFailureReason.AgentNotRunning
+            ? Strings.Get("SshErr_AgentEndpointNotRunning")
+            : SshInterop.Localize(ex);
+        return new(Strings.Format("SshErr_AgentEndpointUnavailable", endpoint, reason), ex);
     }
 
     /// <summary>agent 里的每一把钥都作为一个候选凭据,由库按顺序逐把试。</summary>
@@ -511,8 +530,11 @@ internal static class SshConnectionAssembler
     /// agent 里一把钥都没有时直接说清楚,而不是把一个空凭据列表交给库 ——
     /// 那样用户拿到的是一句笼统的「认证方法已用尽」,看不出问题在本机。
     /// </remarks>
+    /// <param name="agent">连上的 agent。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="info">这一跳的连接信息(提示里点名按连接指定的端点);<see langword="null" /> 按系统默认的说法。</param>
     internal static async ValueTask<IReadOnlyList<SshCredential>> AgentCredentialsAsync(
-        SshAgentClient agent, CancellationToken cancellationToken)
+        SshAgentClient agent, CancellationToken cancellationToken, VelaConnectionInfo? info = null)
     {
         IReadOnlyList<SshCredential> credentials;
         try
@@ -522,11 +544,17 @@ internal static class SshConnectionAssembler
         catch (SshAgentException ex)
         {
             // 与连 agent 失败同一条提示、同样按原因码本地化;曾经这里直接塞库的消息(写给开发者看的中文)。
-            throw new VelaSshAuthenticationException(Strings.Format("SshErr_AgentUnavailable", SshInterop.Localize(ex)), ex);
+            throw info is null
+                ? new VelaSshAuthenticationException(Strings.Format("SshErr_AgentUnavailable", SshInterop.Localize(ex)), ex)
+                : AgentUnavailable(info, ex);
         }
-        return credentials.Count > 0
-            ? credentials
-            : throw new VelaSshAuthenticationException(Strings.Get("SshErr_AgentNoKeys"));
+        if (credentials.Count > 0)
+        {
+            return credentials;
+        }
+        throw new VelaSshAuthenticationException(SshAgentEndpoints.Normalize(info?.Ssh?.AgentEndpoint) is { } endpoint
+            ? Strings.Format("SshErr_AgentEndpointNoKeys", endpoint)
+            : Strings.Get("SshErr_AgentNoKeys"));
     }
 
     /// <summary>

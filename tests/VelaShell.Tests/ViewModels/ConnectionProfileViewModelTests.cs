@@ -317,6 +317,56 @@ public sealed class ConnectionProfileViewModelTests
         Assert.IsNull(sftp.Ssh, "SFTP 配置没有交互式 shell,按键时序混淆不存。");
     }
 
+    /// <summary>
+    /// 按连接指定 agent 端点:回显、存回(去掉首尾空白;只填了它也不算空;SFTP 也存 —— SFTP 也能用 agent 认证),
+    /// 清空就是系统默认(存 null);写法不对只提示、不拦保存;「只转发指定密钥」的候选从那个 agent 里列。
+    /// </summary>
+    [TestMethod]
+    public async Task AgentEndpoint_RoundTrips_AndKeyChoicesComeFromThatAgent()
+    {
+        const string pipe = @"\\.\pipe\vela-pinned-agent";
+        ISshKeyService keys = Substitute.For<ISshKeyService>();
+        keys.ListAgentKeysAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns([]);
+        keys.ListAgentKeysAsync(pipe, Arg.Any<CancellationToken>())
+            .Returns([new SshKeyInfo("pinned-agent-key", "ED25519", "", "", KeyLine(4))]);
+        keys.ListKeysAsync(Arg.Any<CancellationToken>()).Returns([]);
+        var existing = new SessionProfile
+        {
+            Name = "deploy",
+            Host = "10.0.0.6",
+            Username = "ops",
+            AuthMethod = AuthMethod.Agent,
+            Ssh = new() { AgentEndpoint = pipe },
+        };
+
+        var vm = new ConnectionProfileViewModel(existing, keyService: keys);
+        Assert.AreEqual(pipe, vm.SshAgentEndpoint);
+        Assert.IsTrue(vm.IsSshOptionsSectionModified, "填了端点,「SSH 选项」页签上要有圆点");
+
+        SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.AreEqual(pipe, saved?.Ssh?.AgentEndpoint, "只填了端点也是「有」,不能存回 null");
+
+        vm.SshAgentForwarding = true;
+        vm.SshAgentForwardRestrict = true;
+        await vm.LoadAgentForwardKeysAsync();
+        Assert.AreEqual("pinned-agent-key", vm.AgentForwardKeyChoices.Single().Label, "转发的是这个 agent,候选也得从它里面列");
+
+        vm.SelectConnectionTypeCommand.Execute(ConnectionType.SFTP).Subscribe();
+        vm.SshAgentEndpoint = "  ~/agents/deploy.sock  ";
+        SessionProfile? sftp = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.AreEqual("~/agents/deploy.sock", sftp?.Ssh?.AgentEndpoint, "SFTP 也用 agent 认证:端点照存,~ 留到连接时展开");
+
+        vm.SshAgentEndpoint = "agents/relative.sock";
+        Assert.IsNotNull(vm.SshAgentEndpointError, "相对路径落在哪全看当前目录,要提示");
+        SessionProfile? relative = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.AreEqual("agents/relative.sock", relative?.Ssh?.AgentEndpoint, "只提示、不拦保存:配置可能是别的平台上写的");
+
+        vm.SshAgentEndpoint = "   ";
+        Assert.IsNull(vm.SshAgentEndpointError);
+        SessionProfile? cleared = await vm.SaveCommand.Execute().FirstAsync();
+        Assert.IsNull(cleared?.Ssh, "清空 = 系统默认,一项都没开时存 null");
+    }
+
     // 三把测试用公钥(随手拼的 ed25519 blob,只用来算指纹与去重,不参与任何签名)。
     private static string KeyLine(byte seed, string? comment = null)
     {
@@ -356,7 +406,7 @@ public sealed class ConnectionProfileViewModelTests
     public async Task AgentForwardRestriction_WithNothingSelected_CannotBeSaved()
     {
         ISshKeyService keys = Substitute.For<ISshKeyService>();
-        keys.ListAgentKeysAsync(Arg.Any<CancellationToken>())
+        keys.ListAgentKeysAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns([new SshKeyInfo("from-agent", "ED25519", "", "", KeyLine(2))]);
         keys.ListKeysAsync(Arg.Any<CancellationToken>()).Returns([]);
         var vm = new ConnectionProfileViewModel(keyService: keys)
@@ -386,7 +436,7 @@ public sealed class ConnectionProfileViewModelTests
     public async Task AgentForwardKeyChoices_MergeSavedAgentAndFileKeys()
     {
         ISshKeyService keys = Substitute.For<ISshKeyService>();
-        keys.ListAgentKeysAsync(Arg.Any<CancellationToken>()).Returns(
+        keys.ListAgentKeysAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(
         [
             new SshKeyInfo("C:/keys/work", "ED25519", "", "", KeyLine(1, "C:/keys/work")),
             new SshKeyInfo("C:/keys/home", "ED25519", "", "", KeyLine(2, "C:/keys/home")),

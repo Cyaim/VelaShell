@@ -77,6 +77,7 @@ public sealed class SessionProfileCloneTests
                 AgentForwarding = true,
                 AgentForwardKeys = ["SHA256:abc"],
                 AgentForwardConfirm = true,
+                AgentEndpoint = @"\\.\pipe\vela-clone-agent",
                 X11Forwarding = true,
                 X11Display = "localhost:10.0",
                 X11Trusted = false,

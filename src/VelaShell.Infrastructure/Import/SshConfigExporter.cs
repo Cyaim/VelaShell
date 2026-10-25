@@ -4,6 +4,7 @@ using VelaShell.Core.Credentials;
 using VelaShell.Core.Import;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
+using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
 
 namespace VelaShell.Infrastructure.Import;
@@ -22,7 +23,7 @@ public sealed record SshConfigExport(string Content, int Exported, int Skipped);
 /// <para>
 /// 一条 SSH / SFTP 连接一个 <c>Host</c> 块,别名取连接名(空白与 ssh_config 里另有含义的字符换成 <c>-</c>,重名加序号);
 /// 写的是导入那边认得的同一批关键字:<c>HostName</c> / <c>Port</c> / <c>User</c> / <c>IdentityFile</c> / <c>CertificateFile</c> /
-/// <c>ProxyJump</c>(跳板随导出范围一起带上,按别名引用)/ <c>Compression</c> / <c>ForwardAgent</c> / <c>ForwardX11</c>(连同 <c>ForwardX11Trusted</c>)/
+/// <c>ProxyJump</c>(跳板随导出范围一起带上,按别名引用)/ <c>Compression</c> / <c>IdentityAgent</c> / <c>ForwardAgent</c>(按连接指定了 agent 端点时写端点)/ <c>ForwardX11</c>(连同 <c>ForwardX11Trusted</c>)/
 /// <c>ObscureKeystrokeTiming</c>(开着才写)/ 四个算法清单 / 三种转发(含 Unix 套接字,远程动态连同 <c>PermitRemoteOpen</c>)。<b>密码与口令从不写</b> —— ssh_config 本来就不存。
 /// </para>
 /// <para>
@@ -106,9 +107,18 @@ public static class SshConfigExporter
             {
                 Line("Compression", "yes");
             }
+            // 按连接指定的 agent 端点:认证走 agent 时写成 IdentityAgent;转发时 ForwardAgent 直接写端点而不是 yes ——
+            // 两处都明写,读这份配置的人(与老版本的 ssh)不必去推「yes 转发的是哪个 agent」。端点只对 agent 认证与转发有意义,别的情形不写。
+            string? agentEndpoint = SshAgentEndpoints.Normalize(ssh.AgentEndpoint) is { } endpoint
+                ? Quote(SshAgentEndpoints.IsPipe(endpoint) ? endpoint : Portable(SshAgentEndpoints.Resolve(endpoint, home)!, home))
+                : null;
+            if (auth == AuthMethod.Agent && agentEndpoint is not null)
+            {
+                Line("IdentityAgent", agentEndpoint);
+            }
             if (ssh.AgentForwarding)
             {
-                Line("ForwardAgent", "yes");
+                Line("ForwardAgent", agentEndpoint ?? "yes");
             }
             if (ssh.X11Forwarding)
             {

@@ -485,6 +485,9 @@ public class SshSessionFeaturesTests
         Assert.IsFalse(new SshSessionOptions { X11Forwarding = true }.IsEmpty);
         // 只开了按键时序混淆也是「有」:当成空的话,配置页存回 null,这一项就悄悄没了。
         Assert.IsFalse(new SshSessionOptions { ObscureKeystrokeTiming = true }.IsEmpty);
+        // 只填了 agent 端点也是「有」:同理,存回 null 就丢了;空白等于没填(系统默认)。
+        Assert.IsFalse(new SshSessionOptions { AgentEndpoint = "~/.1password/agent.sock" }.IsEmpty);
+        Assert.IsTrue(new SshSessionOptions { AgentEndpoint = "  " }.IsEmpty);
     }
 
     /// <summary>
