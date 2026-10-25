@@ -17,14 +17,27 @@ namespace VelaShell.Plugin.Ai.Configuration;
 public sealed class WebSearchOptions
 {
     /// <summary>关掉就等于两个工具都不注册(与在"配置工具"里逐个取消勾选等价,只是一把总闸)。</summary>
-    public bool Enabled { get; set; } = true;
+    /// <remarks>
+    /// <para>
+    /// <b>默认关</b>(维护者 2026-10-25 决定,#652 复审③)。开着时模型写的检索词(运维场景里往往是报错原文、
+    /// 主机名、内网服务名)会发到 <see cref="DefaultInstance" /> —— VelaShell 运营的那台公共 SearXNG,
+    /// 而以前装完就是开着的,使用手册与 PRIVACY.md 都没提。现在要用户自己勾上,设置页、手册与 PRIVACY.md 都写明去向。
+    /// 供应商自带的服务端检索(<see cref="PreferProviderNative" />)与 <c>web_fetch</c> 同样挂在这把总闸下。
+    /// </para>
+    /// <para>
+    /// <b>存量配置不迁移</b>:设置是整份落盘的,升级前存下的 <c>true</c> 分不清是用户勾的还是出厂值,
+    /// 一律改成关会让一直在用检索的人突然"搜不了"、还找不到原因;设置页的说明从这个功能上线起就写着查询会经过那台实例。
+    /// 所以只有没存过这一项的配置(新装、或从没保存过 AI 设置)拿到新的默认值。
+    /// </para>
+    /// </remarks>
+    public bool Enabled { get; set; }
 
     /// <summary>
     /// VelaShell 提供的公共 SearXNG 实例,出厂默认值。
     /// </summary>
     /// <remarks>
-    /// <b>这是一个"能用就先用着"的默认,不是承诺。</b> 它让用户装完就有检索能力,
-    /// 不必先自己搭一台 —— 让人为了用个搜索去起 docker 容器,等于把功能藏起来。
+    /// <b>这是一个"能用就先用着"的默认,不是承诺。</b> 检索本身默认关(见 <see cref="Enabled" />);
+    /// 用户勾上之后不必先自己搭一台就能搜 —— 让人为了用个搜索去起 docker 容器,等于把功能藏起来。
     /// 但代价是所有人的查询都经过同一台机器:
     /// <list type="bullet">
     /// <item>查询内容对该实例可见(运维场景里那往往是报错信息、主机名、内网服务名),

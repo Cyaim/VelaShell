@@ -492,7 +492,7 @@ public sealed partial class ChatPanelViewUiTests
                 SuggestFollowUps = true,
                 PanelWidthPercent = 37,
                 DisabledBuiltinTools = "web_fetch",
-                WebSearch = new WebSearchOptions { SearxngBaseUrl = "https://original.example", MaxResults = 9, MaxFetchChars = 234567 }
+                WebSearch = new WebSearchOptions { Enabled = true, SearxngBaseUrl = "https://original.example", MaxResults = 9, MaxFetchChars = 234567 }
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             Window? host = null;

@@ -464,8 +464,16 @@ Base URL(`BaseUrlOverride`)。发请求 / 建客户端 / 算成本的代码只�
 | `stat_remote_path` 查存在/大小/时间 | `rename_remote_path` 改名 / 移动(备份用) |
 | `get_working_directory` 取 cwd | `upload_local_file` 本机 → 服务器 |
 | `system_overview` 一次取回系统概览 | `download_remote_file` 服务器 → 本机 |
-| `web_search` 检索网络(见「网页检索」) | `write_terminal` 敲进用户终端 |
+| `web_search` 检索网络(见下) | `write_terminal` 敲进用户终端 |
 | `web_fetch` 取一个网页转成文本 | |
+
+**网络检索默认关**(`WebSearchOptions.Enabled`,维护者 2026-10-25 决定):`web_search` / `web_fetch` 与供应商自带的服务端检索
+都挂在 AI 全局设置「允许助手检索并阅读网页」这把总闸下。打开后模型写的检索词(运维场景里常常是报错原文、主机名、内网服务名)
+发到设置里的 SearXNG 实例,出厂地址是 VelaShell 运营的公共实例 `https://searxng.easilynet.top`(可换成自行部署的,清空则只关检索、
+`web_fetch` 照用);`web_fetch` 从本机直接去取模型给出的网页(私网地址默认挡住)。以前装完就是开着的,手册与 PRIVACY.md 都没提;
+设置页、使用手册与 PRIVACY.md 现在都写明去向。**存量配置不迁移**:设置整份落盘,升级前存下的「开」分不清是用户勾的还是出厂值,
+一律改成关会让一直在用检索的人突然搜不了,所以只有没存过这一项的配置拿到新默认值。对外 MCP 服务不读这一项、用的就是默认值,
+所以那条路上同样不再给 `web_search` / `web_fetch`。
 
 三条设计约定:
 

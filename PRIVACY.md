@@ -1,6 +1,6 @@
 # VelaShell Privacy Policy / 隐私政策
 
-**Last updated / 最后更新:2026-10-24**
+**Last updated / 最后更新:2026-10-25**
 
 [English](#english) · [简体中文](#简体中文)
 
@@ -23,6 +23,10 @@ installation — no account, no identifier, no version, no list of your hosts �
 learns only what any web server learns from a plain download: your IP address and the time.
 Clearing the address in Settings → General → Message centre stops it completely: not "less
 often", but never again.
+
+If you turn on web search in the AI assistant (it is **off by default**), the search words the
+model writes go through a second server the developer runs, a public SearXNG instance — see
+item 8 below.
 
 Every network connection VelaShell makes is listed in full below.
 
@@ -125,6 +129,21 @@ VelaShell connects to the network only in these situations:
    to, how it opens, and the tab title at save time (often `user@host`). You choose which
    categories to sync, and you can turn it off or delete the Gist at any time.
 
+8. **AI assistant web search — off by default.** The AI assistant plugin sends your questions,
+   and the context you let it read, to the model provider **you** configure; nothing goes there
+   until you add one. Separately, it can give the model two web tools, `web_search` and
+   `web_fetch`, but only after you tick "Let the assistant search and read the web" in its global
+   settings. With that on, the search words the model writes — in troubleshooting these are often
+   error messages, host names, or internal service names — are sent to the SearXNG instance set
+   right below that switch. **By default that is a public instance run by the developer,
+   <https://searxng.easilynet.top>**, which therefore sees those search words and your IP address;
+   it does not receive your conversation, your terminal output, or any identifier. You can point
+   the setting at your own SearXNG instance, or clear it to turn searching off. `web_fetch`
+   downloads the page the model names directly from your computer (private-network addresses
+   are blocked unless you allow them). When the model provider offers its own server-side
+   search and "prefer the provider's search" is on, the search happens on the provider's side
+   instead and follows that provider's policy.
+
 VelaShell does not download the IP geolocation database itself. If you want that optional
 feature, the application opens the DB-IP download page in your browser and you choose the
 downloaded file manually.
@@ -140,6 +159,9 @@ The only third parties that can receive anything are those you direct it to:
   own account. See the [GitHub Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-privacy-statement).
 - **DB-IP**, only if you choose to download their free offline database, and only through your
   own browser. See the [DB-IP privacy policy](https://db-ip.com/legal/privacy-policy).
+- **The AI model provider you configure** in the AI assistant plugin (and, if you enable web
+  search with provider-side search preferred, that provider's search), under that provider's
+  own policy.
 
 ### Security
 
@@ -210,6 +232,9 @@ VelaShell 是一款开源的 SSH / SFTP 客户端,完全运行在你自己的计
 与你这台机器有关的东西(没有账号、没有标识符、没有版本号、没有你的主机列表),因此那台
 服务器能知道的,和任何网站从一次普通下载里能知道的一样多:你的 IP 地址与访问时间。
 在「设置 → 常规 → 消息中心」把地址清空即可彻底停止 —— 不是"少发一点",而是一个请求都不再发。
+
+若你在 AI 助手里打开了网络检索(**默认关闭**),模型写的检索词会经过开发者运营的第二台服务器 ——
+一个公共 SearXNG 实例,见下文第 8 条。
 
 VelaShell 发起的每一个网络连接,都完整列在下方。
 
@@ -295,6 +320,16 @@ VelaShell 仅在以下情形联网:
    标签指向的连接配置 Id、打开方式与保存时的标签标题(常常就是 `用户@主机`)。同步范围由你勾选,
    可随时关闭或删除该 Gist。
 
+8. **AI 助手的网络检索 —— 默认关闭。** AI 助手插件把你的提问、以及你允许它读取的上下文,
+   发给**你自己**配置的模型供应商;一家都没配之前什么都不发。另外,它能给模型两个网络工具
+   `web_search` 与 `web_fetch`,但只有在你于它的全局设置里勾上「允许助手检索并阅读网页」之后才有。
+   打开后,模型写的检索词 —— 排障时常常是报错原文、主机名或内网服务名 —— 会发到那个开关下方
+   设置的 SearXNG 实例。**默认是开发者运营的公共实例 <https://searxng.easilynet.top>**,
+   它因此能看到这些检索词与你的 IP 地址;它收不到你的对话、终端输出或任何标识符。你可以把
+   这一项换成自行部署的 SearXNG 实例,或清空以关闭检索。`web_fetch` 从你的计算机直接去取
+   模型给出的网页(私网地址默认挡住,除非你放行)。模型供应商自带服务端检索、且勾了「优先用
+   供应商自带的检索」时,检索改在供应商那边进行,遵循该供应商的政策。
+
 VelaShell 不会自行下载 IP 归属地数据库。若你需要该可选功能,应用会在你的浏览器中打开 DB-IP
 的下载页面,由你手动选择下载好的文件。
 
@@ -309,6 +344,8 @@ VelaShell 不含任何第三方 SDK、追踪器或广告库。
   [GitHub 隐私声明](https://docs.github.com/site-policy/privacy-policies/github-privacy-statement)。
 - **DB-IP**,仅当你选择下载其免费离线数据库时,且全程通过你自己的浏览器。参见
   [DB-IP 隐私政策](https://db-ip.com/legal/privacy-policy)。
+- **你在 AI 助手插件里配置的模型供应商**(以及打开网络检索且优先用供应商检索时,该供应商的检索),
+  遵循该供应商自己的政策。
 
 ### 安全
 

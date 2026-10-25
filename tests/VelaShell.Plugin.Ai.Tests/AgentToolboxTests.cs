@@ -38,7 +38,7 @@ public sealed class AgentToolboxTests
     public void CreateTools_ExposesExpectedToolSet()
     {
         using var context = new TestPluginContext();
-        var toolbox = new AgentToolbox(context);
+        var toolbox = new AgentToolbox(context) { WebSearch = new WebSearchOptions { Enabled = true } };
 
         string[] names = [.. toolbox.CreateTools(ChatMode.Agent).OfType<AIFunction>().Select(f => f.Name)];
 
@@ -53,7 +53,7 @@ public sealed class AgentToolboxTests
     public void CreateTools_InPlanMode_ExposesOnlyReadOnlyTools()
     {
         using var context = new TestPluginContext();
-        var toolbox = new AgentToolbox(context);
+        var toolbox = new AgentToolbox(context) { WebSearch = new WebSearchOptions { Enabled = true } };
 
         string[] names = [.. toolbox.CreateTools(ChatMode.Plan).OfType<AIFunction>().Select(f => f.Name)];
 
@@ -63,6 +63,26 @@ public sealed class AgentToolboxTests
             SequenceOrder.InAnyOrder);
         Assert.DoesNotContain("run_command", names, "计划模式不该能执行命令");
         Assert.DoesNotContain("write_remote_file", names, "计划模式不该能写文件");
+    }
+
+    /// <summary>
+    /// 网络检索默认关(维护者 2026-10-25 决定):开着时检索词会发到 VelaShell 运营的公共 SearXNG 实例,
+    /// 要用户自己勾上。升级前存下的开关原样保留(分不清是用户勾的还是出厂值),没存过的才拿新默认值。
+    /// </summary>
+    [TestMethod]
+    public async Task WebSearch_IsOffByDefault_ButAStoredChoiceIsKept()
+    {
+        Assert.IsFalse(new WebSearchOptions().Enabled);
+        using var context = new TestPluginContext();
+        string[] names = [.. new AgentToolbox(context).CreateTools(ChatMode.Agent).OfType<AIFunction>().Select(f => f.Name)];
+        Assert.DoesNotContain("web_search", names);
+        Assert.DoesNotContain("web_fetch", names);
+
+        await context.Storage.SetAsync("settings", System.Text.Json.JsonDocument.Parse("""{"Providers":[]}""").RootElement);
+        Assert.IsFalse((await new AiSettingsStore(context).LoadAsync()).WebSearch.Enabled, "没存过这一项:新默认值");
+        await context.Storage.SetAsync("settings", System.Text.Json.JsonDocument.Parse(
+            """{"Providers":[],"WebSearch":{"Enabled":true,"SearxngBaseUrl":"https://searxng.easilynet.top"}}""").RootElement);
+        Assert.IsTrue((await new AiSettingsStore(context).LoadAsync()).WebSearch.Enabled, "升级前存下的开着照旧开着");
     }
 
     /// <summary>网络检索的总闸关掉时,两个网络工具压根不注册。</summary>
@@ -87,7 +107,7 @@ public sealed class AgentToolboxTests
     public void CreateTools_WithNativeWebSearch_KeepsFetchButDropsSearch()
     {
         using var context = new TestPluginContext();
-        var toolbox = new AgentToolbox(context);
+        var toolbox = new AgentToolbox(context) { WebSearch = new WebSearchOptions { Enabled = true } };
 
         string[] names = [.. toolbox.CreateTools(ChatMode.Agent, nativeWebSearch: true).OfType<AIFunction>().Select(f => f.Name)];
 
@@ -106,7 +126,7 @@ public sealed class AgentToolboxTests
         using var context = new TestPluginContext();
         var toolbox = new AgentToolbox(context)
         {
-            WebSearch = new WebSearchOptions { SearxngBaseUrl = "" }
+            WebSearch = new WebSearchOptions { Enabled = true, SearxngBaseUrl = "" }
         };
 
         string[] names = [.. toolbox.CreateTools(ChatMode.Agent).OfType<AIFunction>().Select(f => f.Name)];

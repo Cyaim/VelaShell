@@ -842,7 +842,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 ### 19.1 Understand Data and Execution Boundaries First
 
-**Disclosure/write warning:** Questions, terminal context, referenced remote files, and tool results can leave your computer for a provider or relay; IM also traverses the chat platform. Remove keys, passwords, personal data, and business secrets, and choose providers according to organizational policy. Model responses/arguments may be wrong. Review approvals seriously; start production investigation in read-only/Plan mode.
+**Disclosure/write warning:** Questions, terminal context, referenced remote files, and tool results can leave your computer for a provider or relay; IM also traverses the chat platform. Web search (`web_search` / `web_fetch`) is **off by default**. Once you enable it in the AI global settings, the search words the model writes (often error messages, host names, internal service names) are sent to the SearXNG instance in that setting — by default a public instance run by VelaShell, `searxng.easilynet.top`; you can point it at your own instance or clear the address. `web_fetch` downloads the pages the model names directly from your computer. Remove keys, passwords, personal data, and business secrets, and choose providers according to organizational policy. Model responses/arguments may be wrong. Review approvals seriously; start production investigation in read-only/Plan mode.
 
 **Entry point and direction:** Search AI in the Command Palette for docked chat, a separate window, terminal explanation, or collaboration integration. Model/tool configuration is in chat; collaboration integration opens independently.
 
