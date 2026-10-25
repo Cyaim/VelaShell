@@ -164,6 +164,46 @@ public sealed class McpEndpointTests
         }
     }
 
+    /// <summary>
+    /// 挡位选「对话」时一个工具都不给(维护者 2026-10-25 决定:与界面「纯对话:完全不给工具」一致)。
+    /// 以前 Chat 档走的是 Agent 那一套,外部 agent 连上来拿到的是全部工具、包括 run_command。
+    /// </summary>
+    [TestMethod]
+    public async Task ToolsList_InChatMode_ExposesNoTools()
+    {
+        using var context = new TestPluginContext();
+        context.FakeSessions.AddConnected(host: "prod-1", username: "root");
+        (McpEndpoint endpoint, int port, string token) = await StartAsync(context, ChatMode.Chat);
+        await using (endpoint)
+        {
+            using HttpClient client = CreateClient(port, token);
+            using JsonDocument initialize = await RpcAsync(client, new
+            {
+                jsonrpc = "2.0", id = 1, method = "initialize",
+                @params = new { protocolVersion = "2025-06-18", clientInfo = new { name = "test", version = "1" } }
+            });
+            string instructions = initialize.RootElement.GetProperty("result").GetProperty("instructions").GetString()!;
+            Assert.DoesNotContain("list_sessions", instructions, "说明里不能叫外部 agent 去调一个不存在的工具");
+            Assert.Contains("no tools", instructions);
+            string sessionId = await InitializeAsync(client);
+
+            using JsonDocument document = await RpcAsync(client,
+                new { jsonrpc = "2.0", id = 2, method = "tools/list" }, sessionId);
+            Assert.AreEqual(0, document.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength());
+
+            using JsonDocument call = await RpcAsync(client, new
+            {
+                jsonrpc = "2.0", id = 3, method = "tools/call",
+                @params = new { name = "run_command", arguments = new { command = "id" } }
+            }, sessionId);
+            Assert.IsFalse(call.RootElement.TryGetProperty("result", out JsonElement result)
+                           && result.TryGetProperty("isError", out JsonElement isError) && !isError.GetBoolean(),
+                $"对话档下调工具必须失败:{call.RootElement}");
+            Assert.IsEmpty(context.FakeRemoteExec.Executed, "命令一条都不能跑");
+            Assert.IsEmpty(context.FakeRemoteExec.Streamed, "命令一条都不能跑");
+        }
+    }
+
     [TestMethod]
     public async Task ToolsList_InAgentMode_ExposesWriteTools()
     {

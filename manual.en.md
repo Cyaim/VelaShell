@@ -902,7 +902,7 @@ These are separate paths, not one switch. Closing chat does not necessarily disa
 
 **Scope:** Allowed servers default to unrestricted; choose selected-only and check saved profiles to restrict. A restricted empty selection permits no servers, not all servers. Select mode/approval before asking an external Agent to enumerate sessions or read terminals.
 
-**Key mechanism:** This direction has no interactive approval UI. **Ask each time means reject write operations**, not that a dialog awaits your click. Plan never registers write tools; Agent still follows approval policy. Read-only permits only recognized allowed reads. Side effects such as `open_session` require conditions such as **Agent + bypass**; the separate host plugin-session confirmation still applies. Connectivity is not write authorization.
+**Key mechanism:** This direction has no interactive approval UI. **Ask each time means reject write operations**, not that a dialog awaits your click. Chat mode exposes no tools at all (an external agent can connect but cannot call anything); Plan never registers write tools; Agent still follows approval policy. Read-only permits only recognized allowed reads. Side effects such as `open_session` require conditions such as **Agent + bypass**; the separate host plugin-session confirmation still applies. Connectivity is not write authorization.
 
 **Result and caution:** External Agents can call permitted session, terminal, command, and file tools. Listening is restricted to `127.0.0.1`, with no public-interface option. Disabling stops this entry; quitting VelaShell takes all collaboration integrations offline.
 
