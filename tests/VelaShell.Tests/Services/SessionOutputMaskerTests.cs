@@ -206,6 +206,55 @@ public sealed class SessionOutputMaskerTests
         Assert.AreEqual("-----BEGIN OPENSSH PRIVATE KEY-----\n***\n***\n[1]+  Done   head -3 id\n", Written);
     }
 
+    /// <summary>
+    /// 收窄误遮:关键词要成词(后面紧跟同样大小写的字母就不是这个词),主机名不是名字,<c>Basic</c> / <c>Bearer</c> 后面跟的是英文单词时不是凭据。
+    /// 逐字节原样、当场放出。
+    /// </summary>
+    [TestMethod]
+    [DataRow("max_tokens: 4096\n")]
+    [DataRow("  \"max_tokens\": 4096,\n")]
+    [DataRow("MAX_TOKENS=4096 num_tokens=12 total_tokens=40\n")]
+    [DataRow("tokenizers==0.15.0\n")]
+    [DataRow("passwordless: true\n")]
+    [DataRow("SECRETARY=alice\n")]
+    [DataRow("vault-secrets-01:~$ ")]
+    [DataRow("secret-box:~# ")]
+    [DataRow("rsync -av secret-host:/srv/data .\n")]
+    [DataRow("Basic configuration\n")]
+    [DataRow("\u001b[1mBasic settings\u001b[0m and Basic authentication\n")]
+    [DataRow("Bearer authentication is required\n")]
+    public void NarrowedRules_LeaveCommonWordsAlone(string text)
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes(text));
+        Assert.AreEqual(text, Written);
+    }
+
+    /// <summary>收窄之后照样要遮的:驼峰与全大写的名字、复数的机密文件名、同一个名字里后面的关键词、真正的 Basic / Bearer 凭据。</summary>
+    [TestMethod]
+    public void NarrowedRules_StillMaskTheRealThing()
+    {
+        SessionOutputMasker masker = NewMasker();
+        masker.Write(Bytes("GITHUB_TOKEN=abc secretKey=def authToken: ghi\n"));
+        masker.Write(Bytes("  credentials.json: ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIK\n"));
+        masker.Write(Bytes("  client_secrets.json: ewogICJ3ZWIiOiB7fQp9\n"));
+        masker.Write(Bytes("tokens_secret=xyz DB_PASSWORDS=a,b\n"));
+        masker.Write(Bytes("Authorization: Basic b3BzOmh1bnRlcjI=\n"));
+        masker.Write(Bytes("Authorization: Bearer abcdefghijklmnopqrstuvwxyz\n"));
+        masker.Write(Bytes("Authorization: Bearer abcd1234\n"));
+        masker.Write(Bytes("max_tokens: {\"password\": \"p4ss\"}\n"));
+        Assert.AreEqual(
+            "GITHUB_TOKEN=*** secretKey=*** authToken: ***\n"
+            + "  credentials.json: ***\n"
+            + "  client_secrets.json: ***\n"
+            + "tokens_secret=*** DB_PASSWORDS=***,b\n"
+            + "Authorization: Basic ***\n"
+            + "Authorization: Bearer ***\n"
+            + "Authorization: Bearer ***\n"
+            + "max_tokens: {\"password\": \"***\"}\n",
+            Written, "不成词的名字不算匹配,也不能把值里真正的口令一起跳过");
+    }
+
     /// <summary>私钥块里的头部行照常过规则(OpenPGP 的 Comment 里也可能写着口令),过完私钥块还在继续。</summary>
     [TestMethod]
     public void HeaderLinesInsideAKeyBlock_StillGoThroughTheRules()

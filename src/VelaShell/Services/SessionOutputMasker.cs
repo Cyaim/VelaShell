@@ -26,13 +26,13 @@ namespace VelaShell.Services;
 /// </para>
 /// <para>
 /// 规则(大小写不敏感):
-/// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 的
+/// 名字里带 password / passwd / passphrase / secret / token / api key / access key / private key / credential 这几个词(要成词:<c>max_tokens</c>、<c>tokenizers</c> 不算,见 <see cref="KeyValue" />)的
 /// <c>名字=值</c>、<c>名字: 值</c>(含 JSON 与 YAML 的写法、JSON 里转义过的 <c>\"名字\":</c>)只换值,双引号串认反斜杠转义,
 /// 到行尾都没收尾的引号串从引号之后遮到行尾,转义过的 JSON 串被外层的裸引号截断时遮到那个引号之前,
 /// 冒号后面跟空白、不加引号的值遮到行尾(停在同一行的下一个键之前,判据见 <see cref="KeyValue" />);
 /// 几个不带口令字样的键:<c>tls.key</c> 一类、kubeconfig 的 <c>client-key-data</c>、<c>.dockerconfigjson</c>、Docker <c>config.json</c> 的 <c>"auth"</c>;
 /// <c>.netrc</c> 的 <c>password</c>(<c>machine … password …</c> 一行写完的,或分行写时单独一行的);
-/// <c>Bearer</c> / <c>Basic</c> 后面的凭据;PEM 私钥块(含 OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c>)的正文(写在一行里的,BEGIN 与 END 之间那段;
+/// <c>Bearer</c> / <c>Basic</c> 后面的凭据(Basic 只认解得开、带冒号的 base64,Bearer 不认纯字母又不够长的英文单词,见 <see cref="LooksLikeCredential" />);PEM 私钥块(含 OpenPGP 的 <c>PGP PRIVATE KEY BLOCK</c>)的正文(写在一行里的,BEGIN 与 END 之间那段;
 /// 多行的只认 base64 正文行,一行不像私钥块里的行就当私钥块已经结束,见 <see cref="KeyLine" />);
 /// 几种自带前缀的令牌(AWS <c>AKIA…</c> / <c>ASIA…</c>、GitHub <c>ghp_…</c> 一类与 <c>github_pat_…</c>、Slack <c>xox?-…</c>、OpenAI 式 <c>sk-…</c>)。
 /// 宁可多遮,不放过。
@@ -520,6 +520,12 @@ public sealed partial class SessionOutputMasker
         {
             matches.Add(view.RawRange(match.Index, match.Index + match.Length));
             Group value = match.Groups["value"];
+            bool reachesEnd = value.Index + value.Length == text.Length;
+            if (!(reachesEnd && !complete) && !LooksLikeCredential(match.Groups["scheme"].ValueSpan, value.ValueSpan))
+            {
+                // Basic configuration、Bearer authentication 这类句子:不是凭据(还没写完的先扣着,写完了再判)
+                continue;
+            }
             Add(found, view, from, complete, value.Index, value.Index + value.Length, ValueKind.Credential, string.Empty, closed: false);
         }
         // 名字=值从上下文的第一个可见字符扫起,而且看不见截断点前的那个字符(只给 Bearer 与令牌看):
@@ -611,6 +617,34 @@ public sealed partial class SessionOutputMasker
         }
         return Merge(found);
     }
+
+    /// <summary>
+    /// <c>Basic</c> / <c>Bearer</c> 后面那个词像不像凭据。Basic 的凭据是 <c>用户:口令</c> 的 base64:长度是 4 的倍数、解得开、解出来带冒号 ——
+    /// <c>Basic configuration</c>、<c>Basic settings</c> 都过不了。Bearer 的令牌是不透明的,只排除纯字母、又不够长的英文单词
+    /// (<c>Bearer authentication</c>):带数字或 <c>. _ ~ + / - =</c>,或者有 20 个字符以上,就算。
+    /// </summary>
+    private static bool LooksLikeCredential(ReadOnlySpan<char> scheme, ReadOnlySpan<char> value)
+    {
+        if (scheme.Equals("basic", StringComparison.OrdinalIgnoreCase))
+        {
+            if (value.Length > 1024)
+            {
+                // 解码要一块缓冲:这么长的「词」不会是句子里的英文,当凭据遮
+                return true;
+            }
+            if (value.Length < 4 || value.Length % 4 != 0)
+            {
+                return false;
+            }
+            Span<byte> decoded = stackalloc byte[value.Length / 4 * 3];
+            return Convert.TryFromBase64Chars(value, decoded, out int written) && decoded[..written].Contains((byte)':');
+        }
+        return value.Length >= 20 || value.ContainsAnyExcept(Letters);
+    }
+
+    /// <summary>ASCII 字母。</summary>
+    private static readonly SearchValues<char> Letters =
+        SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
 
     /// <summary>
     /// 记下一处要遮的片段:<paramref name="start" /> / <paramref name="end" /> 是可见文本里的位置,存的是换算回原文的位置,
@@ -944,6 +978,14 @@ public sealed partial class SessionOutputMasker
     /// 值是引号串的那种(<c>exact</c> 组只配引号串的几支),<c>auth: true</c>、<c>"auth": {…}</c> 不动 —— 也不能先配上再丢弃:<c>{"password": …}</c> 会被这个配不上的值整段跳过。
     /// 名字紧跟在 <c>@</c> 后面的不算:那是 <c>用户@主机</c> 里的主机名(<c>ops@vault-secrets-01:~$</c>)。
     /// </para>
+    /// <para>
+    /// 名字里的关键词要是一个完整的词(收窄误遮):紧跟在后面的若是同一种大小写的字母(<c>max_tokens</c>、<c>tokenizers</c>、
+    /// <c>passwordless</c>、<c>SECRETARY</c>),就不是这个词;驼峰的下一个词(<c>secretKey</c>、<c>tokenId</c>)、数字、分隔符、名字结尾都算边界。
+    /// 复数的 <c>s</c> 除 token 以外都放过 —— <c>credentials.json</c>、<c>client_secrets.json</c> 是 Kubernetes Secret 里常见的机密文件名,
+    /// 而 <c>max_tokens</c> 一类才是最常见的误遮。这条判断写在原子组里:第一个关键词不成词时接着找同一个名字里的下一个
+    /// (<c>tokens_secret</c> 照样认),整个名字都不成立时这个位置就不算匹配 —— 不能先配上再丢弃,那样值里的真机密会被一起跳过。
+    /// 冒号后面没有空白、值以 <c>~</c> 或 <c>/</c> 起头的也不算(<c>secret-box:~#</c> 这类没有 <c>用户@</c> 的提示符、<c>host:/path</c>)。
+    /// </para>
     /// </summary>
     /// <remarks>
     /// 名字从一串标识符字符的开头算起,先找到第一个关键词、再把整串吃完,两步都是原子的,值的各支也互不重叠 —— 整条是线性的。
@@ -951,7 +993,7 @@ public sealed partial class SessionOutputMasker
     /// 转义过的 JSON 串里,<c>\\\"</c> 与 <c>\\\\</c> 是里层的转义,不算收尾。
     /// <c>rest</c> 一支按「词 + 空白」一段段吃,每段空白只在后面那个词的开头看一眼是不是键,词与空白都是原子的,也是线性的。
     /// </remarks>
-    [GeneratedRegex("""(?:(?<![A-Za-z0-9_.\-@])(?>[A-Za-z0-9_.\-]*?(?:password|passwd|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential|key[_\-]data|\.key|dockerconfigjson|dockercfg))(?>[A-Za-z0-9_.\-]*)|(?<exact>(?<=")auth(?=\\?")))(?:\\?["'])?(?>[ \t]*)(?:(?<colon>:)|=)(?>(?<ws>[ \t]+)?)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*(?:\\"|(?<bare>(?=")))|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|(?(exact)(?!)|(?(colon)(?(ws)(?<rest>(?!\\?["'])(?>[^ \t\r\n\x00-\x1f\x7f]+)(?:(?>[ \t]+)(?!\#|["']?[A-Za-z_](?>[A-Za-z0-9_.\-]*)["']?[ \t]*(?::(?=[ \t\r\n])|=))(?>[^ \t\r\n\x00-\x1f\x7f]+))*)|[^ "',;\x00-\x1f\x7f]+)|[^ "',;\x00-\x1f\x7f]+)))""",
+    [GeneratedRegex("""(?:(?<![A-Za-z0-9_.\-@])(?>[A-Za-z0-9_.\-]*?(?:(?:password|passwd|passphrase|secret|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential|key[_\-]data|\.key|dockerconfigjson|dockercfg)s?|token)(?-i:(?<=[a-z])(?![a-z])|(?<=[A-Z])(?![A-Za-z])))(?>[A-Za-z0-9_.\-]*)|(?<exact>(?<=")auth(?=\\?")))(?:\\?["'])?(?>[ \t]*)(?:(?<colon>:)|=)(?>(?<ws>[ \t]+)?)(?<value>"(?:[^"\\\r\n]|\\[^\r\n])+"|'[^'\r\n]+'|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*(?:\\"|(?<bare>(?=")))|(?<open>"(?:[^"\\\r\n]|\\[^\r\n])*\\?|'[^'\r\n]*|\\"(?:[^"\\\r\n]|\\[^"\\\r\n]|\\\\(?:[^"\\\r\n]|\\[^\r\n]))*\\{0,3})(?:\z|(?=[\r\n]))|(?(exact)(?!)|(?(colon)(?(ws)(?<rest>(?!\\?["'])(?>[^ \t\r\n\x00-\x1f\x7f]+)(?:(?>[ \t]+)(?!\#|["']?[A-Za-z_](?>[A-Za-z0-9_.\-]*)["']?[ \t]*(?::(?=[ \t\r\n])|=))(?>[^ \t\r\n\x00-\x1f\x7f]+))*)|(?![~/])[^ "',;\x00-\x1f\x7f]+)|[^ "',;\x00-\x1f\x7f]+)))""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex KeyValue();
 
@@ -985,7 +1027,7 @@ public sealed partial class SessionOutputMasker
     /// 本类的正则里空白一律只认 ASCII 的空格与制表符:按 Latin-1 映射后,UTF-8 的续字节 0x85、0xA0 会被 <c>\s</c> 当成空白,
     /// 值就会在一个汉字中间断开。
     /// </remarks>
-    [GeneratedRegex(TokenStart + @"(?:bearer|basic)(?>[ \t]+)(?<value>[A-Za-z0-9._~+/\-]{8,}=*|[A-Za-z0-9._~+/\-]+=*\z)",
+    [GeneratedRegex(TokenStart + @"(?<scheme>bearer|basic)(?>[ \t]+)(?<value>[A-Za-z0-9._~+/\-]{8,}=*|[A-Za-z0-9._~+/\-]+=*\z)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AuthorizationScheme();
 
