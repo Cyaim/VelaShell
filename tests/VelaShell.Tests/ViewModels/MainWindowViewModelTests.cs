@@ -373,11 +373,10 @@ public class MainWindowViewModelTests
     }
 
     /// <summary>
-    /// 标签条上的「+」:先让那一格成为活动窗格,再走 Ctrl+T 那条命令(新建连接),
-    /// 新标签于是按停靠层的落点规则落进那一格。
+    /// 标签条上的「+」:先让那一格成为活动窗格,再走与 Ctrl+T 同一个新建连接对话框。
     /// </summary>
     [TestMethod]
-    public void OpenNewTabInPane_ActivatesThatPane_ThenRunsTheCtrlTCommand()
+    public void OpenNewTabInPane_ActivatesThatPane_ThenOpensTheNewConnectionDialog()
     {
         var vm = new MainWindowViewModel();
         var left = new TerminalDocument(new TerminalTabViewModel(FakeTerminal.Emulator()));
@@ -387,12 +386,60 @@ public class MainWindowViewModelTests
         vm.Layout.SplitDocument(right, DockOrientation.Horizontal);
         Assert.AreSame(right, vm.Layout.ActiveDocument);
         int requested = 0;
-        vm.NewConnectionRequested += (_, _) => requested++;
+        vm.NewConnectionDialog = () =>
+        {
+            requested++;
+            return Task.CompletedTask;
+        };
 
         vm.OpenNewTabInPane(vm.Layout.PrimaryGroup);
 
         Assert.AreSame(left, vm.Layout.ActiveDocument, "按下「+」的那一格成了活动窗格");
-        Assert.AreEqual(1, requested, "与 Ctrl+T 同一条命令:打开新建连接");
+        Assert.AreEqual(1, requested, "打开新建连接");
+        Assert.IsTrue(vm.Commands.Execute("session.new"));
+        Assert.AreEqual(2, requested, "与 Ctrl+T 是同一个对话框");
+    }
+
+    /// <summary>
+    /// 「+」的精确落点:布局里另有一块空窗格时,连出来的标签照样落进按下「+」的那一格
+    /// (维护者 2026-10-25 定:按下的那格优先于空窗格)。新建连接对话框与连接流程一个参数都没加 ——
+    /// 票据顺着异步上下文传到连接流程里建标签的那一下。
+    /// </summary>
+    [TestMethod]
+    public async Task OpenNewTabInPane_TheNewTabLandsInThePressedPane_EvenWithAnEmptyPaneElsewhere()
+    {
+        IConnectionWorkflowService workflow = Substitute.For<IConnectionWorkflowService>();
+        workflow.ConnectProfileAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<SshSession>(new Core.Ssh.VelaSshConnectionException("连不上")));
+        var vm = new MainWindowViewModel(workflow, Substitute.For<Core.Ssh.ISshConnectionService>(), FakeTerminal.Emulator);
+        var left = new TerminalDocument(new TerminalTabViewModel(FakeTerminal.Emulator()));
+        var right = new TerminalDocument(new TerminalTabViewModel(FakeTerminal.Emulator()));
+        vm.Layout.AddDocument(left);
+        vm.Layout.AddDocument(right);
+        vm.Layout.SplitDocument(right, DockOrientation.Horizontal);
+        // 再拆一次只剩一个标签的右格:原地留下一块空窗格(默认规则会把新标签放进它)。
+        vm.Layout.SplitDocument(right, DockOrientation.Vertical);
+        DockGroup empty = vm.Layout.AllGroups().Single(g => g.Documents.Count == 0);
+        DockGroup pressed = vm.Layout.FindGroup(left)!;
+        SessionProfile profile = new() { Name = "web", Host = "web.example.com", Username = "root", AuthMethod = AuthMethod.Password, Password = "x" };
+        vm.NewConnectionDialog = async () =>
+        {
+            // 对话框是用户在点:流程真的让出过一次,票据还得认得出来。
+            await Task.Yield();
+            await vm.TryConnectProfileAsync(profile);
+        };
+
+        await vm.OpenNewTabInPaneAsync(pressed);
+
+        TerminalTabViewModel tab = vm.TerminalTabs.Single(t => t.Profile?.Host == profile.Host);
+        DockDocument document = vm.Layout.AllDocuments().Single(d => d is TerminalDocument { Terminal: var t } && ReferenceEquals(t, tab));
+        Assert.AreSame(pressed, vm.Layout.FindGroup(document), "落进按下「+」的那一格");
+        Assert.IsEmpty(empty.Documents, "空窗格不抢");
+
+        // 流程走完票据就作废:之后再开的(比如 Ctrl+T)照默认规则落进空窗格。
+        var later = new TerminalDocument(new TerminalTabViewModel(FakeTerminal.Emulator()));
+        vm.Layout.AddDocument(later);
+        Assert.AreSame(empty, vm.Layout.FindGroup(later));
     }
 
     [TestMethod]

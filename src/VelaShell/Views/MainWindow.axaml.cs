@@ -463,7 +463,8 @@ public partial class MainWindow : Window
             vm.XServer.ConfirmStopAsync = clients => MessageDialog.ConfirmAsync(
                 this, Strings.Get("XServer_StopConfirmTitle"), Strings.Format("XServer_StopConfirmMessage", clients),
                 Strings.Get("XServer_Stop"), Strings.Cancel, MessageDialogKind.Warning, danger: true);
-            vm.NewConnectionRequested += (_, _) => _ = OpenProfileDialogAsync(null);
+            // 新建连接整条流程(弹框 → 保存 → 连接):标签条的「+」要等它走完,所以交出去的是能等的那一个。
+            vm.NewConnectionDialog = () => OpenProfileDialogAsync(null);
             vm.SettingsRequested += (_, _) => _ = OpenSettingsAsync();
             vm.SettingsSectionRequested += (_, section) => _ = OpenSettingsAsync(section);
             vm.ExternalUrlRequested += (_, url) => _ = OpenExternalUrlAsync(url);

@@ -492,6 +492,139 @@ public class DockWorkspaceTests
         Assert.AreSequenceEqual([a], ws.PrimaryGroup.Documents.ToArray(), "另一半原样不动");
     }
 
+    // ---- 显式落点(标签条上的「+」) ----
+
+    /// <summary>布局:左格 [a]、一块空窗格、右格 [b](拆分只有一个标签的组会原地留下空窗格)。</summary>
+    private static (DockWorkspace Ws, DockGroup Left, DockGroup Empty) LayoutWithAnEmptyPane()
+    {
+        var ws = new DockWorkspace();
+        TestDocument a = NewDoc("a");
+        TestDocument b = NewDoc("b");
+        ws.AddDocument(a);
+        ws.AddDocument(b);
+        ws.SplitDocument(b, DockOrientation.Horizontal);
+        ws.SplitDocument(b, DockOrientation.Vertical);
+        return (ws, ws.FindGroup(a)!, ws.AllGroups().Single(g => g.Documents.Count == 0));
+    }
+
+    [TestMethod]
+    public void AddDocument_WithAnExplicitTarget_BeatsTheEmptyPane()
+    {
+        (DockWorkspace ws, DockGroup left, DockGroup empty) = LayoutWithAnEmptyPane();
+
+        TestDocument c = NewDoc("c");
+        ws.AddDocument(c, left);
+
+        Assert.AreSame(left, ws.FindGroup(c), "按下的那一格优先于空窗格");
+        Assert.AreSame(c, ws.ActiveDocument);
+        Assert.IsEmpty(empty.Documents);
+    }
+
+    [TestMethod]
+    public void AddDocument_WithATargetNoLongerOnTheTree_FallsBackToTheDefault()
+    {
+        (DockWorkspace ws, DockGroup left, DockGroup empty) = LayoutWithAnEmptyPane();
+        var gone = new DockGroup();
+
+        TestDocument c = NewDoc("c");
+        ws.AddDocument(c, gone);
+
+        Assert.AreSame(empty, ws.FindGroup(c));
+        Assert.HasCount(1, left.Documents);
+    }
+
+    /// <summary>
+    /// 票据顺着 <c>await</c> 传进流程深处那一下 <c>AddDocument</c>(连接流程一个参数都不加);只认第一个,释放即作废。
+    /// </summary>
+    [TestMethod]
+    public async Task TargetTicket_FlowsThroughAwaits_IsUsedOnce_AndExpiresOnDispose()
+    {
+        (DockWorkspace ws, DockGroup left, DockGroup empty) = LayoutWithAnEmptyPane();
+        TestDocument first = NewDoc("first");
+        TestDocument second = NewDoc("second");
+        TestDocument afterwards = NewDoc("afterwards");
+        Task? lingering = null;
+        var release = new TaskCompletionSource();
+
+        using (ws.TargetNewDocumentsAt(left))
+        {
+            await Task.Yield();
+            await Task.Run(() => { }); // 换个线程回来:异步上下文照样带着票据。
+            ws.AddDocument(first);
+            ws.AddDocument(second);
+            // 流程里另起的后台任务继承上下文,但它在流程结束之后才建的东西不该落进这一格。
+            lingering = Task.Run(async () =>
+            {
+                await release.Task;
+                ws.AddDocument(afterwards);
+            });
+        }
+        release.SetResult();
+        await lingering;
+
+        Assert.AreSame(left, ws.FindGroup(first), "第一个认领票据");
+        Assert.AreSame(empty, ws.FindGroup(second), "一张票只用一次,第二个照默认规则(填空窗格)");
+        Assert.AreNotSame(left, ws.FindGroup(afterwards), "释放之后作废");
+    }
+
+    /// <summary>
+    /// 流程里没建标签(对话框上只按了「保存」、取消了):票据随流程作废 ——
+    /// 流程里另起、之后才建东西的后台任务继承了上下文,也拿不到这张票。
+    /// </summary>
+    [TestMethod]
+    public async Task TargetTicket_LeftUnused_ExpiresWithTheFlow()
+    {
+        (DockWorkspace ws, DockGroup left, DockGroup empty) = LayoutWithAnEmptyPane();
+        TestDocument late = NewDoc("late");
+        var release = new TaskCompletionSource();
+        Task lingering;
+
+        using (ws.TargetNewDocumentsAt(left))
+        {
+            await Task.Yield();
+            lingering = Task.Run(async () =>
+            {
+                await release.Task;
+                ws.AddDocument(late);
+            });
+        }
+        release.SetResult();
+        await lingering;
+
+        Assert.AreSame(empty, ws.FindGroup(late), "流程结束之后建的照默认规则");
+    }
+
+    /// <summary>别的流程(自动重连、还原布局模板)看不到这张票,不会被拐进这一格。</summary>
+    [TestMethod]
+    public async Task TargetTicket_IsInvisibleToOtherFlows()
+    {
+        (DockWorkspace ws, DockGroup left, DockGroup empty) = LayoutWithAnEmptyPane();
+        var opened = new TaskCompletionSource();
+        var otherDone = new TaskCompletionSource();
+        TestDocument mine = NewDoc("mine");
+        TestDocument other = NewDoc("other");
+
+        Task plusFlow = PlusFlowAsync();
+        Task otherFlow = Task.Run(async () =>
+        {
+            await opened.Task;
+            ws.AddDocument(other);
+            otherDone.SetResult();
+        });
+        await Task.WhenAll(plusFlow, otherFlow);
+
+        Assert.AreSame(empty, ws.FindGroup(other), "没拿票的流程照默认规则");
+        Assert.AreSame(left, ws.FindGroup(mine));
+
+        async Task PlusFlowAsync()
+        {
+            using IDisposable ticket = ws.TargetNewDocumentsAt(left);
+            opened.SetResult();
+            await otherDone.Task;
+            ws.AddDocument(mine);
+        }
+    }
+
     // ---- 关闭窗格 / 最大化 / 平分 ----
 
     [TestMethod]

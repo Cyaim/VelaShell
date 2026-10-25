@@ -988,7 +988,7 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
                 "session.new",
                 Strings.Get("Cmd_NewSshConnection"),
                 Strings.Get("CmdCat_Session"),
-                () => NewConnectionRequested?.Invoke(this, EventArgs.Empty),
+                () => _ = OpenNewConnectionAsync(),
                 Icon: "Icon.plus"
             )
         );
@@ -1885,8 +1885,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         return (text, $"{safeTitle}-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
     }
 
-    /// <summary>Ctrl+N / 菜单 / 命令面板“新建 SSH 连接” —— 由窗口打开新建连接弹窗。</summary>
-    public event EventHandler? NewConnectionRequested;
+    /// <summary>
+    /// Ctrl+N / 菜单 / 命令面板“新建 SSH 连接” —— 窗口注入的新建连接整条流程(弹框 → 保存 → 连接),走完才返回。
+    /// </summary>
+    /// <remarks>
+    /// 要能等它走完:标签条上的「+」在它外面挂着「落进这一格」的票据(<see cref="DockWorkspace.TargetNewDocumentsAt" />),
+    /// 流程结束才作废。未挂时(headless)什么都不做。
+    /// </remarks>
+    public Func<Task>? NewConnectionDialog { get; set; }
+
+    /// <summary>走一遍新建连接(<see cref="NewConnectionDialog" />);未挂时是空操作。</summary>
+    private Task OpenNewConnectionAsync() => NewConnectionDialog?.Invoke() ?? Task.CompletedTask;
 
     /// <summary>Ctrl+, / 菜单 / 侧边栏齿轮“打开设置” —— 由窗口打开设置窗口。</summary>
     public event EventHandler? SettingsRequested;
@@ -2311,18 +2320,29 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
     /// <summary>
     /// 标签条上的「+」(<c>DockWorkspaceControl.NewTabRequested</c>):在那一格里新开会话。
-    /// 走的就是 <c>Ctrl+T</c> 那条命令 <c>session.new</c>(新建连接对话框),落点交给停靠层的既有规则 ——
-    /// 这里只保证那一格是活动窗格(它有标签时),新标签便落进它。
     /// </summary>
     /// <param name="pane">按下「+」的那一格。</param>
-    public void OpenNewTabInPane(DockGroup pane)
+    public void OpenNewTabInPane(DockGroup pane) => _ = OpenNewTabInPaneAsync(pane);
+
+    /// <summary>
+    /// 「+」的整条流程:那一格先成为活动窗格,再走与 <c>Ctrl+T</c> 同一个新建连接对话框;
+    /// 连出来的标签<b>精确落进按下的那一格</b>,哪怕布局里另有空窗格(维护者 2026-10-25 定:按下的那格优先于空窗格)。
+    /// </summary>
+    /// <remarks>
+    /// 对话框与 <c>TryConnectProfileAsync</c> 一个参数都没加:流程外面挂一张「落进这一格」的票据
+    /// (<see cref="DockWorkspace.TargetNewDocumentsAt" />,与布局模板还原的槽位票据同一个思路),
+    /// 流程里建的第一个标签认领它;流程走完(连上、失败、取消、只按了「保存」)票据作废。
+    /// </remarks>
+    /// <param name="pane">按下「+」的那一格。</param>
+    public async Task OpenNewTabInPaneAsync(DockGroup pane)
     {
         ArgumentNullException.ThrowIfNull(pane);
         if (pane.ActiveDocument is { } active && !ReferenceEquals(Layout.ActiveDocument, active))
         {
             Layout.ActivateDocument(active);
         }
-        Commands.Execute("session.new");
+        using IDisposable target = Layout.TargetNewDocumentsAt(pane);
+        await OpenNewConnectionAsync().ConfigureAwait(true);
     }
 
     private void OnLayoutPropertyChanged(object? sender, PropertyChangedEventArgs e)
