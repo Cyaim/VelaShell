@@ -1309,6 +1309,7 @@ public sealed class ProviderSetupView : UserControl
             CatalogId = source.CatalogId,
             OAuth = source.OAuth?.Clone(),
             StoreResponses = source.StoreResponses,
+            CustomResponsesStore = source.CustomResponsesStore,
             AllowSystemMessages = source.AllowSystemMessages,
             UnsupportedParameters = source.UnsupportedParameters,
             Models = source.Models.Count > 0 ? [CloneModel(source.Models[0])] : []

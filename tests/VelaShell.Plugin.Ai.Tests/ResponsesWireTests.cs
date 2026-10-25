@@ -211,6 +211,37 @@ public sealed class ResponsesWireTests
         Assert.Contains("\"instructions\"", body, $"实际请求体:{body}");
     }
 
+    /// <summary>
+    /// 自定义 Responses 接入默认发 <c>store:false</c>(#616–#636 复审①,维护者 2026-10-25 决定):工具循环早已整段重放,
+    /// 服务端存着的那一轮用不到,却把含终端输出的上下文留在了供应商那边。设置页勾上开关才不发;
+    /// 官方 openai 目录条目照旧(以目录为准,不发 store)。没有目录 id 的老配置同样算自定义。
+    /// </summary>
+    [TestMethod]
+    [DataRow("custom-openai", null, true, DisplayName = "自定义接入,没动过开关:发 store:false")]
+    [DataRow("custom-openai", true, false, DisplayName = "自定义接入,勾上了:不发")]
+    [DataRow("custom-oauth", false, true, DisplayName = "自定义 OAuth 接入,关着:发 store:false")]
+    [DataRow(null, null, true, DisplayName = "没有目录 id 的老配置:发 store:false")]
+    [DataRow("openai", null, false, DisplayName = "官方 openai:照旧不发")]
+    [DataRow("openai", false, false, DisplayName = "官方 openai 不看这个开关")]
+    public async Task CustomResponsesEndpoint_SendsStoreFalseUnlessTheSwitchIsOn(string? catalogId, bool? store, bool expectStoreFalse)
+    {
+        AiProvider provider = catalogId is null
+            ? new AiProvider { Name = "legacy", BaseUrl = "https://relay.example/v1", Models = [new AiModelConfig { Model = "m" }] }
+            : ProviderCatalog.Find(catalogId)!.CreateProvider();
+        provider.DefaultProtocol = ChatProtocol.OpenAiResponses;
+        provider.Models[0].Protocol = null;
+        provider.CustomResponsesStore = store;
+        var resolved = new ResolvedModel(provider, provider.Models[0]);
+        var options = new ChatOptions();
+        AiSettingsStore.ApplyEndpointQuirks(options, resolved);
+
+        string body = await WireBodyAsync([new ChatMessage(ChatRole.User, "hi")], options);
+
+        Assert.AreEqual(expectStoreFalse, body.Contains("\"store\":false", StringComparison.Ordinal), $"实际请求体:{body}");
+        if (!expectStoreFalse) Assert.DoesNotContain("\"store\"", body, $"实际请求体:{body}");
+        Assert.AreEqual(catalogId is null or "custom-openai" or "custom-oauth", EndpointQuirks.HasCustomStoreSwitch(provider));
+    }
+
     /// <summary>每一步都让模型调一次 <c>peek</c> 的 Responses 流(response id 是真的会被拿去续接的那种)。</summary>
     private const string FunctionCallSse =
         """
@@ -247,9 +278,11 @@ public sealed class ResponsesWireTests
             Name = "relay",
             BaseUrl = stub.BaseUrl,
             DefaultProtocol = ChatProtocol.OpenAiResponses,
-            Models = [new AiModelConfig { Model = "m" }]
+            Models = [new AiModelConfig { Model = "m" }],
+            // 真机上那一家开着 store;现在自定义接入默认关,要显式勾上才是同一份配置
+            CustomResponsesStore = true
         };
-        Assert.IsTrue(EndpointQuirks.Of(relay).StoreResponses, "前提:自定义供应商默认不关 store —— 正是真机上那一家的配置");
+        Assert.IsTrue(EndpointQuirks.Of(relay).StoreResponses, "前提:store 开着 —— 正是真机上那一家的配置");
         using IChatClient client = store.CreateClient(new ResolvedModel(relay, relay.Models[0]), ProviderCredential.Key("k"))
             .AsBuilder()
             .UseFunctionInvocation(configure: c => c.MaximumIterationsPerRequest = 1)
@@ -320,9 +353,10 @@ public sealed class ResponsesWireTests
             Name = "relay",
             BaseUrl = baseUrl,
             DefaultProtocol = ChatProtocol.OpenAiResponses,
-            Models = [new AiModelConfig { Model = "m" }]
+            Models = [new AiModelConfig { Model = "m" }],
+            CustomResponsesStore = true
         };
-        Assert.IsTrue(EndpointQuirks.Of(relay).StoreResponses, "前提:自定义供应商默认不关 store");
+        Assert.IsTrue(EndpointQuirks.Of(relay).StoreResponses, "前提:store 开着");
         using IChatClient client = store.CreateClient(new ResolvedModel(relay, relay.Models[0]), ProviderCredential.Key("k"))
             .AsBuilder()
             .UseFunctionInvocation(configure: c => c.MaximumIterationsPerRequest = 1)

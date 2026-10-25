@@ -176,6 +176,14 @@
                   <ComboBox x:Name="ProviderProtocolCombo" HorizontalAlignment="Stretch" />
                   <TextBlock x:Name="ProviderProtocolHintText" Classes="hint" />
                 </StackPanel>
+                <!-- 自定义接入的 Responses store 开关:默认关,只在用户自己接的端点上出现(目录里的具名供应商以目录为准) -->
+                <StackPanel x:Name="ProviderStorePanel" Classes="field" IsVisible="False">
+                  <CheckBox x:Name="ProviderStoreCheck" IsChecked="False"
+                            Theme="{StaticResource AiCheckBoxTheme}"
+                            FontSize="{DynamicResource VelaFontSize12}"
+                            Foreground="{DynamicResource VelaTextPrimary}" />
+                  <TextBlock x:Name="ProviderStoreHintText" Classes="hint" TextWrapping="Wrap" />
+                </StackPanel>
                 <!-- 鉴权二选一:填 Key 的看下面这块,订阅登录的换成状态 + 一个通往目录页的入口。
                      两块同时摆着会让人以为登录之后还得再填一把 Key。 -->
                 <!-- 填 Key 的这一刻正是用户最想知道"它会被存到哪儿"的时刻,徽章就贴在标签边上 -->

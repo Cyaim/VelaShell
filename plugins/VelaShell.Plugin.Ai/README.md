@@ -351,7 +351,13 @@ GitHub Copilot 这三条走的是这一路 —— 因为**没有第二条路**:�
 `previous_response_id` + 工具输出。中转站背后的上游(比如按号池分发的 Codex 后端)多半没存上一步,
 于是 Agent 模式下模型一调工具就 400(`previous_response_id is not available for this user` /
 `Upstream rejected the request`)。插件本来就自己管历史,所以把那个 id 抹掉,让循环每步整段重发;
-`store` 怎么发仍归上表的 `StoreResponses` 管。
+`store` 怎么发:目录里的具名供应商(含官方 openai、Codex)仍归上表的 `StoreResponses` 管;**用户自己接的端点**
+(目录的 `custom-*` 与没有目录 id 的老配置)看设置页供应商一栏的「允许服务端保存每一轮」(`AiProvider.CustomResponsesStore`),
+**默认关、发 `store:false`**(#616–#636 复审①,维护者 2026-10-25 决定)—— 整段重放之后服务端存的那一轮用不到,
+却把含终端输出的上下文留在了供应商那边。可空字段,没动过(含存量配置)就按关;中转站不认 `store:false` 时把它勾上。
+
+**桥接指定的模型被删掉后拒绝**(#616–#636 复审③,维护者 2026-10-25 决定):IM 回一句「桥接指定的模型已删,去协作接入里重选」,
+不再静默落到全局第一个模型(那可能是另一家、另一份计费)。没指定(跟随面板)的照旧按面板的选择走。
 
 **404 给排查方向,不替用户猜协议**(`Chat/ApiErrorText.cs`):聊天错误卡、模型测试、逐 Key 检测、
 全局全部检测的结果悬停与 IM 模型错误共用五语提示,先检查 Base URL / 模型 ID / 协议支持,

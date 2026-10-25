@@ -37,11 +37,18 @@ public sealed record EndpointQuirks(
     public static EndpointQuirks Of(AiProvider provider)
     {
         ArgumentNullException.ThrowIfNull(provider);
+        // store 在用户自己接的端点上跟着设置页的开关走、默认关(见 AiProvider.CustomResponsesStore);
+        // 目录里那些具名的供应商(含官方 openai)照旧以目录为准
+        bool customStore = provider.CustomResponsesStore == true;
         return ProviderCatalog.Find(provider.CatalogId) is { } entry
-            ? entry.Quirks
-            : new EndpointQuirks(provider.StoreResponses, provider.AllowSystemMessages,
-                provider.UnsupportedParameters);
+            ? entry.UserDefinedEndpoint ? entry.Quirks with { StoreResponses = customStore } : entry.Quirks
+            : new EndpointQuirks(customStore, provider.AllowSystemMessages, provider.UnsupportedParameters);
     }
+
+    /// <summary>这个供应商的 <c>store</c> 归不归设置页那个开关管(用户自己接的端点)。</summary>
+    /// <param name="provider">供应商。</param>
+    public static bool HasCustomStoreSwitch(AiProvider provider)
+        => ProviderCatalog.Find(provider.CatalogId) is not { } entry || entry.UserDefinedEndpoint;
 }
 
 /// <summary>
@@ -102,6 +109,12 @@ public sealed record ProviderCatalogEntry(
 
     /// <summary>这一条走的是订阅登录。</summary>
     public bool IsSubscription => Auth == AuthMethod.Subscription;
+
+    /// <summary>
+    /// 用户自己接的端点(「自定义」那几条:OpenAI / Anthropic 兼容与 OAuth):地址、协议都是用户定的,
+    /// 目录里没有一份可信的脾气可抄,<c>store</c> 由设置页的开关决定(见 <see cref="AiProvider.CustomResponsesStore" />)。
+    /// </summary>
+    public bool UserDefinedEndpoint => Id.StartsWith("custom-", StringComparison.Ordinal);
 
     /// <summary>
     /// 按这一条造一个供应商,并把目录 id 打上去 —— 界面据此知道"这一家已经加过了",

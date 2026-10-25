@@ -167,6 +167,25 @@ public sealed class AiProvider
     public bool StoreResponses { get; set; } = true;
 
     /// <summary>
+    /// 自定义接入(目录里的 <c>custom-*</c>,以及没有目录 id 的老配置)上用户勾的 <c>store</c>:
+    /// <see langword="true" /> = 允许服务端存下这一轮;<see langword="null" /> 或 <see langword="false" /> = 发 <c>store: false</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>默认关</b>(#616–#636 复审①,维护者 2026-10-25 决定)。#616 之后 Responses 的工具循环改成整段重放、
+    /// 不再按 id 续接服务端存着的那一轮,<c>store=true</c> 已经没有用处,却仍把含终端输出的上下文留在供应商侧。
+    /// 官方 openai 目录条目照旧(目录的脾气为准,见 <see cref="EndpointQuirks.Of" />)。
+    /// </para>
+    /// <para>
+    /// 单开一个可空字段而不复用 <see cref="StoreResponses" />:后者是建供应商时从目录抄来的出厂值,
+    /// 存量自定义接入身上都是 <see langword="true" />,却从来不是用户选的(以前没有这个开关,目录项也不读它)。
+    /// 用 <see langword="null" /> 表示"没动过",新默认值对存量配置同样生效,不必做迁移。
+    /// 中转站认不认 <c>store:false</c> 没法逐家验证,认不了的在设置页把它勾上即可。
+    /// </para>
+    /// </remarks>
+    public bool? CustomResponsesStore { get; set; }
+
+    /// <summary>
     /// 这一家收不收 <c>system</c> 角色的消息。
     /// </summary>
     /// <remarks>

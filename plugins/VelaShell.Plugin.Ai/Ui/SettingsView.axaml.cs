@@ -272,6 +272,7 @@ public partial class SettingsView : UserControl
     private bool _keyMutation;
     private bool _refreshingKeyRowsOnTick;
     private bool _settingBalance;
+    private bool _settingStore;
     private int _keyRowsRun;
 
     /// <summary>
@@ -363,6 +364,7 @@ public partial class SettingsView : UserControl
         ProviderProbeAllKeysButton.Click += (_, _) => OpenAllKeysModelPicker();
         ProviderAllKeysModelPicker.SelectionChanged += OnAllKeysModelSelected;
         BalanceApiKeysCheck.IsCheckedChanged += (_, _) => _ = SaveBalanceAsync();
+        ProviderStoreCheck.IsCheckedChanged += (_, _) => _ = SaveResponsesStoreAsync();
         // TextChanged 延后派发，不能判断赋值当刻是否来自装载/合并。
         MaxInputTokensBox.PropertyChanged += (_, change) =>
         {
@@ -407,6 +409,8 @@ public partial class SettingsView : UserControl
         Avalonia.Automation.AutomationProperties.SetName(ProviderAddApiKeyButton, _loc["SetupAddApiKey"]);
         BalanceApiKeysCheck.Content = _loc["SetupBalanceApiKeys"];
         BalanceApiKeysHintText.Text = _loc["SetupBalanceApiKeysHint"];
+        ProviderStoreCheck.Content = _loc["ProviderResponsesStore"];
+        ProviderStoreHintText.Text = _loc["ProviderResponsesStoreHint"];
         foreach (ProviderKeyRowState row in _keyRows) ApplyKeyRowLoc(row);
         RefreshAllKeysProbeControls();
         ProviderKeyBadgeText.Text = _loc["KeyEncrypted"];
@@ -744,6 +748,7 @@ public partial class SettingsView : UserControl
             _settingBalance = true;
             try { BalanceApiKeysCheck.IsChecked = provider?.BalanceApiKeys ?? false; }
             finally { _settingBalance = false; }
+            ShowResponsesStore(provider);
             _loadedProviderName = ProviderNameBox.Text;
             _loadedProviderUrl = ProviderBaseUrlBox.Text;
             _loadedProviderProtocol = ProviderProtocolCombo.SelectedIndex;
@@ -1085,6 +1090,7 @@ public partial class SettingsView : UserControl
         _settingBalance = true;
         try { BalanceApiKeysCheck.IsChecked = provider.BalanceApiKeys; }
         finally { _settingBalance = false; }
+        ShowResponsesStore(provider);
         await RefreshProviderKeyRowsAsync(provider, run);
     }
     private sealed class ProviderKeyRowState(AiProvider provider, string id, string key)
@@ -1128,13 +1134,13 @@ public partial class SettingsView : UserControl
     private readonly record struct KeyRequestSnapshot(string ProviderId, string ProviderUrl, string? CatalogId,
         string ModelId, ChatProtocol Protocol, string Url, string Model, int MaxTokens, int MaxInputTokens, ReasoningLevel Reasoning,
         float? Temperature, float? TopP, string Stop, bool PromptCaching, string? SystemPrompt,
-        bool StoreResponses, bool AllowSystemMessages, string Unsupported, string KeyOwner, AuthMethod Auth)
+        bool StoreResponses, bool? CustomStore, bool AllowSystemMessages, string Unsupported, string KeyOwner, AuthMethod Auth)
     {
         public static KeyRequestSnapshot Capture(ResolvedModel model) => new(model.Provider.Id, model.Provider.BaseUrl,
             model.Provider.CatalogId, model.Id,
             model.Protocol, model.BaseUrl, model.Model, model.MaxTokens, model.MaxInputTokens, model.Reasoning,
             model.Temperature, model.TopP, model.StopSequences, model.PromptCaching, model.SystemPrompt,
-            model.Provider.StoreResponses, model.Provider.AllowSystemMessages,
+            model.Provider.StoreResponses, model.Provider.CustomResponsesStore, model.Provider.AllowSystemMessages,
             model.Provider.UnsupportedParameters, model.ApiKeyOwnerId, model.Provider.Auth);
     }
 
@@ -1150,6 +1156,7 @@ public partial class SettingsView : UserControl
         AdditionalApiKeyIds = [.. model.Provider.AdditionalApiKeyIds],
         ActiveApiKeyId = model.Provider.ActiveApiKeyId,
         StoreResponses = model.Provider.StoreResponses,
+        CustomResponsesStore = model.Provider.CustomResponsesStore,
         AllowSystemMessages = model.Provider.AllowSystemMessages,
         UnsupportedParameters = model.Provider.UnsupportedParameters
     }, new AiModelConfig
@@ -1535,6 +1542,7 @@ public partial class SettingsView : UserControl
         _keyMutation = busy;
         ProviderAddApiKeyButton.IsEnabled = !busy;
         BalanceApiKeysCheck.IsEnabled = !busy;
+        ProviderStoreCheck.IsEnabled = !busy;
         SaveButton.IsEnabled = !busy && SelectedItem is not null;
         foreach (ProviderKeyRowState row in _keyRows)
         {
@@ -1624,6 +1632,48 @@ public partial class SettingsView : UserControl
                 _settingBalance = true;
                 try { BalanceApiKeysCheck.IsChecked = provider.BalanceApiKeys; }
                 finally { _settingBalance = false; }
+                if (ex is AiSettingsStore.ApiKeySlotChangedException) await RecoverSettingsConflictAsync(provider, null, run);
+                else StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
+            }
+        }
+        finally { SetKeyMutation(false); }
+    }
+
+    /// <summary>
+    /// 自定义接入的 <c>store</c> 开关:只在用户自己接的端点上摆出来(目录里的具名供应商以目录为准),
+    /// 勾上 = 允许服务端存下这一轮,不勾(默认)= 发 <c>store: false</c>(#616–#636 复审①,维护者 2026-10-25 决定)。
+    /// </summary>
+    private void ShowResponsesStore(AiProvider? provider)
+    {
+        ProviderStorePanel.IsVisible = provider is not null && EndpointQuirks.HasCustomStoreSwitch(provider);
+        _settingStore = true;
+        try { ProviderStoreCheck.IsChecked = provider?.CustomResponsesStore == true; }
+        finally { _settingStore = false; }
+    }
+
+    /// <summary>勾选当场落库(与「轮流首发」同一套路):它改的是请求本身,落库会推进这一家的请求配置代次。</summary>
+    private async Task SaveResponsesStoreAsync()
+    {
+        if (_settingStore || _loadingEditor || _keyMutation || SelectedModel is not null
+            || SelectedProvider is not { } provider || !_settings.Providers.Contains(provider)
+            || !EndpointQuirks.HasCustomStoreSwitch(provider))
+        {
+            return;
+        }
+
+        bool? previous = provider.CustomResponsesStore;
+        bool value = ProviderStoreCheck.IsChecked == true;
+        if ((previous == true) == value) return;
+        int run = _editorRun;
+        provider.CustomResponsesStore = value;
+        SetKeyMutation(true);
+        try { await _store.SaveAsync(_settings); }
+        catch (Exception ex)
+        {
+            if (provider.CustomResponsesStore == value) provider.CustomResponsesStore = previous;
+            if (run == _editorRun)
+            {
+                ShowResponsesStore(provider);
                 if (ex is AiSettingsStore.ApiKeySlotChangedException) await RecoverSettingsConflictAsync(provider, null, run);
                 else StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
             }
@@ -2384,6 +2434,7 @@ public partial class SettingsView : UserControl
                 // 等于把一个实际能聊的接入白冷却 60 秒(review⑤)
                 CatalogId = provider.CatalogId,
                 StoreResponses = provider.StoreResponses,
+                CustomResponsesStore = provider.CustomResponsesStore,
                 AllowSystemMessages = provider.AllowSystemMessages,
                 UnsupportedParameters = provider.UnsupportedParameters,
                 // 订阅登录那家的凭据不在表单里,靠 Id 去机密存储取(见 ResolveCredentialAsync)

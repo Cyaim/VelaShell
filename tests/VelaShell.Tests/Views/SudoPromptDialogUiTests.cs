@@ -81,6 +81,46 @@ public sealed class SudoPromptDialogUiTests
     }
 
     /// <summary>
+    /// 弹出那一瞬鼠标恰好落在「批准」上:批准键先灰着约 0.6 秒,那一下落空(#616–#636 复审④,维护者 2026-10-25 决定);
+    /// 时间一到就能点,取消从头到尾都能点。
+    /// </summary>
+    [TestMethod]
+    public void RootConfirmation_ApproveStaysDisabledBriefly_SoAClickAtPopUpNeverApproves()
+    {
+        _session.Dispatch(async () =>
+        {
+            Window owner = new();
+            owner.Show();
+            try
+            {
+                Task<bool> pending = SudoPromptDialog.ConfirmAsync(owner, new("plugin", "user@host"), "systemctl restart app", CancellationToken.None);
+                Dispatcher.UIThread.RunJobs();
+                Window dialog = owner.OwnedWindows.Single();
+                Button approve = dialog.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "ConfirmButton");
+                Button cancel = dialog.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "CancelButton");
+                Assert.IsFalse(approve.IsEnabled, "刚弹出时批准键不能点");
+                Assert.IsTrue(cancel.IsEnabled, "取消随时能点");
+                Assert.AreEqual(TimeSpan.FromMilliseconds(600), SudoPromptDialog.ApproveDelay);
+
+                var waited = System.Diagnostics.Stopwatch.StartNew();
+                while (!approve.IsEnabled && waited.Elapsed < TimeSpan.FromSeconds(10))
+                {
+                    await Task.Delay(20);
+                    Dispatcher.UIThread.RunJobs();
+                }
+                Assert.IsTrue(approve.IsEnabled, "到时间就能点");
+                Assert.IsGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(500), waited.Elapsed, "确实灰了一阵,不是一拍就亮");
+                Assert.IsFalse(pending.IsCompleted);
+                approve.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+                Assert.IsTrue(await pending);
+            }
+            finally { owner.Close(); }
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
     /// 审批框会在用户正往终端里打字时异步弹出(Bridge/MCP、免确认模式):回车与初始焦点都落在取消上,
     /// 顺手的一个回车只能拒绝,绝不能替用户批准一条 root 命令。
     /// </summary>

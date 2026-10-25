@@ -331,6 +331,40 @@ public sealed class BridgeAgentRunnerTests
         }
     }
 
+    /// <summary>
+    /// 桥接指定的模型被删掉后拒绝并提示,不静默落到全局第一个模型(#616–#636 复审③,维护者 2026-10-25 决定):
+    /// 那可能是另一家供应商、另一份计费。没指定(跟随面板)的照旧按面板的选择走。
+    /// </summary>
+    [TestMethod]
+    [DataRow(true, DisplayName = "指定的模型被删")]
+    [DataRow(false, DisplayName = "跟随面板")]
+    public async Task PinnedModelRemoved_RefusesInsteadOfFallingBackToAnotherProvider(bool pinned)
+    {
+        await using var other = new SseStub("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"from the other provider\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n");
+        using var context = new TestPluginContext();
+        var provider = new AiProvider
+        {
+            Name = "other", BaseUrl = other.BaseUrl,
+            DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
+            Models = [new AiModelConfig { Model = "m" }]
+        };
+        await new AiSettingsStore(context).SaveAsync(new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id });
+
+        BridgeTurn turn = await Create(context).RunAsync(new BridgeConversation("ch1", "chat-1"),
+            new BridgeSettings { Mode = ChatMode.Chat, ModelId = pinned ? "deleted-model-id" : null },
+            Message(), Deny, English, null, null, CancellationToken.None);
+
+        if (pinned)
+        {
+            Assert.AreEqual(English["BridgeModelMissing"], turn.Text);
+            Assert.IsEmpty(other.Requests, "一个请求都不能发到别家");
+        }
+        else
+        {
+            Assert.AreEqual("from the other provider", turn.Text);
+        }
+    }
+
     private static int FreePort()
     {
         var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);

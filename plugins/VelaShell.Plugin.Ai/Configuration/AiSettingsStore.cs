@@ -110,6 +110,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         provider.CatalogId,
         provider.AdditionalApiKeyIds,
         provider.StoreResponses,
+        provider.CustomResponsesStore,
         provider.AllowSystemMessages,
         provider.UnsupportedParameters,
         Models = provider.Models.Select(model => new
@@ -253,6 +254,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         target.AvailableModels = source.AvailableModels;
         target.ModelsExpanded = source.ModelsExpanded;
         target.StoreResponses = source.StoreResponses;
+        target.CustomResponsesStore = source.CustomResponsesStore;
         target.AllowSystemMessages = source.AllowSystemMessages;
         target.UnsupportedParameters = source.UnsupportedParameters;
         target.Models = [.. source.Models.Select(saved =>

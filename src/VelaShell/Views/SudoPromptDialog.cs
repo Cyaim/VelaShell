@@ -12,6 +12,9 @@ namespace VelaShell.Views;
 /// <summary>宿主专用 sudo 弹窗，不接受远端可伪造的来源或密码提示文字。</summary>
 public static class SudoPromptDialog
 {
+    /// <summary>root 确认框弹出后「批准」先灰着的时长(维护者 2026-10-25 定为约 0.6 秒):短到不碍事,长过一次手滑的点击。</summary>
+    internal static readonly TimeSpan ApproveDelay = TimeSpan.FromMilliseconds(600);
+
     /// <summary>单行命令超过这个长度（文本元素）就在命令框下注明行数与长度，提醒滚动看完。</summary>
     internal const int LongCommandLength = 400;
 
@@ -108,8 +111,10 @@ public static class SudoPromptDialog
             Dispatcher.UIThread.Post(() => (TopLevel.GetTopLevel(content) as Window)?.Close(false)));
         // 审批框会在 Bridge/MCP 或免确认模式下异步弹出，用户手上可能正往终端里敲回车：
         // 回车与初始焦点都落在取消上，批准必须是一次有意的点击或 Tab 过去再确认。
+        // 弹出那一瞬鼠标也可能正落在「批准」上:批准键先灰着一小会儿,原本点向别处的那一下落空(#616–#636 复审④)
         return await MessageDialog.ShowCustomAsync(owner, Strings.Get("Sudo_Title"), content,
-            Strings.Get("Sudo_Approve"), kind: MessageDialogKind.Warning, cancelIsDefault: true) && !cancellationToken.IsCancellationRequested;
+            Strings.Get("Sudo_Approve"), kind: MessageDialogKind.Warning, cancelIsDefault: true,
+            confirmDelay: ApproveDelay) && !cancellationToken.IsCancellationRequested;
     }
 
     /// <summary>支持 UTF-8 的遮罩输入，关闭或取出后清空控件及撤销记录。</summary>

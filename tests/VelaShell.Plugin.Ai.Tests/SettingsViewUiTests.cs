@@ -21,6 +21,49 @@ namespace VelaShell.Plugin.Ai.Tests;
 [TestCategory("Plugins")]
 public sealed partial class SettingsViewUiTests
 {
+    /// <summary>
+    /// 自定义接入有一个 store 开关,默认关、勾上当场落库(#616–#636 复审①,维护者 2026-10-25 决定);
+    /// 目录里的具名供应商(官方 openai)以目录为准,不摆这个开关。
+    /// </summary>
+    [TestMethod]
+    public void CustomEndpoint_HasAStoreSwitch_OffByDefault_AndTheOfficialEntryDoesNot()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            AiProvider custom = ProviderCatalog.Find("custom-openai")!.CreateProvider();
+            custom.BaseUrl = "https://relay.example/v1";
+            custom.DefaultProtocol = ChatProtocol.OpenAiResponses;
+            custom.Models[0].Model = "m";
+            custom.ModelsExpanded = false;
+            AiProvider official = ProviderCatalog.Find("openai")!.CreateProvider();
+            official.ModelsExpanded = false;
+            (Window window, SettingsView view, AiSettings settings, AiSettingsStore store) = await ShowAsync(context,
+                new AiSettings { Providers = [custom, official], ActiveModelId = custom.Models[0].Id });
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                StackPanel panel = view.GetControl<StackPanel>("ProviderStorePanel");
+                CheckBox check = view.GetControl<CheckBox>("ProviderStoreCheck");
+                Assert.IsTrue(panel.IsVisible, "自定义接入要摆出这个开关");
+                Assert.IsFalse(check.IsChecked, "默认关");
+                long version = store.ProviderConfigurationVersion(custom);
+
+                check.IsChecked = true;
+                await WaitUntilAsync(() => custom.CustomResponsesStore == true && check.IsEnabled);
+                Assert.IsTrue((await new AiSettingsStore(context).LoadAsync()).Providers[0].CustomResponsesStore, "勾上当场落库");
+                Assert.IsGreaterThan(version, store.ProviderConfigurationVersion(custom), "它改的是请求本身:推进请求配置代次");
+                Assert.IsFalse(EndpointQuirks.Of(custom) is { StoreResponses: false });
+
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 1;
+                await PumpAsync();
+                Assert.IsFalse(panel.IsVisible, "官方 openai 以目录为准,不摆开关");
+            }
+            finally { window.Close(); }
+        });
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

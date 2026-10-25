@@ -113,6 +113,12 @@ public sealed class BridgeAgentRunner(
         // 代价是每轮多读一次 JSON,与一次模型调用比可以忽略;换来的是"面板里改了什么,
         // 桥接下一句就跟上"——换模型、重新登录、改 MCP 配置,都不必再去重启桥接。
         AiSettings ai = await store.LoadAsync(cancellationToken).ConfigureAwait(false);
+        // 桥接指定的模型被删掉了:拒绝并提示,不落到全局第一个模型 —— 那可能换了一家供应商、换了计费归属
+        // (#616–#636 复审③,维护者 2026-10-25 决定)。没指定(跟随面板)的照旧按面板走
+        if (!string.IsNullOrWhiteSpace(bridge.ModelId) && ai.FindModel(bridge.ModelId) is null)
+        {
+            return new BridgeTurn(loc["BridgeModelMissing"], "", TimeSpan.Zero, 0);
+        }
         if (ResolveModel(ai, bridge) is not { } model)
         {
             return new BridgeTurn(loc["BridgeNoModel"], "", TimeSpan.Zero, 0);
