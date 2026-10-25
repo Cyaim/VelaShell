@@ -415,6 +415,118 @@ public sealed partial class SettingsViewUiTests
         });
     }
 
+    /// <summary>已登录的自定义 OAuth 供应商,另挂一个自带 Key、跟着供应商地址走的模型。</summary>
+    private static async Task<(AiSettingsStore Store, AiSettings Settings, AiProvider Provider, AiModelConfig Own)> SignedInCustomOAuthAsync(
+        TestPluginContext context, string baseUrl)
+    {
+        var store = new AiSettingsStore(context);
+        AiProvider provider = ProviderCatalog.Find("custom-oauth")!.CreateProvider();
+        provider.BaseUrl = baseUrl;
+        provider.ModelsExpanded = true;
+        provider.Models[0].Model = "m";
+        var own = new AiModelConfig { Name = "Own model", Model = "own", HasOwnApiKey = true };
+        provider.Models.Add(own);
+        var settings = new AiSettings { Providers = [provider] };
+        await store.SaveAsync(settings);
+        await store.SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "at-old", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1) });
+        await store.SetApiKeyAsync(own.Id, "own-old");
+        return (store, settings, provider, own);
+    }
+
+    [TestMethod]
+    public void SubscriptionBaseUrlToAnotherOrigin_SaveAsksThenSignsOutAndClearsModelKeys()
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            (AiSettingsStore store, AiSettings settings, AiProvider provider, AiModelConfig own) =
+                await SignedInCustomOAuthAsync(context, oldHost.BaseUrl);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                Assert.IsTrue(view.GetControl<StackPanel>("ProviderAuthPanel").IsVisible, "前提:订阅登录的供应商页");
+                Button save = view.GetControl<Button>("SaveButton");
+                TextBlock status = view.GetControl<TextBlock>("StatusText");
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+
+                // 先说清:保存会退出登录、哪个模型自带的 Key 一起清;取消就什么都不动
+                Click(save);
+                string expected = loc["SetupBaseUrlSignOutConfirm"] + "\n" + loc.F("SetupBaseUrlKeyResetConfirmAlso", 1)
+                    + "\n" + loc.F("SetupBaseUrlKeyResetModels", "Own model");
+                Assert.AreEqual(expected, await WaitForConfirmAsync(view));
+                Assert.AreEqual(loc["SetupSignOutResetTitle"],
+                    ConfirmBox(view).GetLogicalDescendants().OfType<TextBlock>().Single(text => text.Name == "ConfirmTitle").Text);
+                AnswerConfirm(view, accept: false);
+                await WaitUntilAsync(() => save.IsEnabled && status.Text == loc["SetupResetCancelled"]);
+                Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl);
+                Assert.AreEqual("at-old", (await store.GetTokensAsync(provider.Id))?.AccessToken);
+                Assert.AreEqual("own-old", await store.GetApiKeyAsync(own.Id));
+
+                Click(save);
+                Assert.AreEqual(expected, await WaitForConfirmAsync(view));
+                AnswerConfirm(view, accept: true);
+                await WaitUntilAsync(() => save.IsEnabled
+                    && status.Text == loc["SetupSavedSignedOut"] + "\n" + loc.F("SetupModelKeysCleared", "Own model"));
+                Assert.AreEqual(newHost.BaseUrl, provider.BaseUrl);
+                Assert.IsNull(await store.GetTokensAsync(provider.Id), "旧地址签出的令牌不留");
+                Assert.IsNull(await store.GetApiKeyAsync(own.Id));
+                await WaitUntilAsync(() => view.GetControl<TextBlock>("ProviderAuthStatusText").Text == loc["SubscriptionNotSignedIn"]);
+                Assert.IsEmpty(oldHost.Requests);
+                Assert.IsEmpty(newHost.Requests);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void SubscriptionBaseUrlToAnotherOrigin_UnsavedTestNeverCarriesTheSignIn(bool signedIn)
+    {
+        OnUi(async () =>
+        {
+            await using var oldHost = new SseStub(ProbeAnswerSse);
+            await using var newHost = new SseStub(ProbeAnswerSse);
+            using var context = new TestPluginContext();
+            (AiSettingsStore store, AiSettings settings, AiProvider provider, AiModelConfig own) =
+                await SignedInCustomOAuthAsync(context, oldHost.BaseUrl);
+            if (!signedIn) await store.ClearTokensAsync(provider.Id);
+            var loc = new Loc("en");
+            var view = new SettingsView(context, store, settings, loc, () => { });
+            var window = new Window { Content = view, Width = 900, Height = 700 };
+            window.Show(); await PumpAsync();
+            try
+            {
+                view.GetControl<ListBox>("ProvidersList").SelectedIndex = 0;
+                await PumpAsync();
+                view.GetControl<TextBox>("ProviderBaseUrlBox").Text = newHost.BaseUrl;
+                await StartTestAsync(view).WaitAsync(TimeSpan.FromSeconds(15));
+                if (signedIn)
+                {
+                    // 还登着:请用户先保存(会退出登录),在新地址登录后再测
+                    Assert.AreEqual(loc["SetupTestNeedsSaveSignIn"], view.GetControl<TextBlock>("StatusText").Text);
+                    Assert.IsEmpty(newHost.Requests);
+                }
+                else
+                {
+                    // 没登录:照常测,不带任何已存的凭据
+                    Assert.AreEqual("Bearer not-needed", newHost.Authorizations.Single(), view.GetControl<TextBlock>("StatusText").Text);
+                }
+                Assert.IsEmpty(oldHost.Requests);
+                Assert.AreEqual(oldHost.BaseUrl, provider.BaseUrl, "测试不落库");
+                Assert.AreEqual(signedIn ? "at-old" : null, (await store.GetTokensAsync(provider.Id))?.AccessToken);
+            }
+            finally { window.Close(); }
+        });
+    }
+
     [TestMethod]
     public void ConfirmOverlay_DefaultsToCancel_AndEscapeReplacementOrDetachAllCancel()
     {

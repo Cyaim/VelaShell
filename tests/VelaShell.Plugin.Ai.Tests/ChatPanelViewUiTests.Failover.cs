@@ -1924,7 +1924,16 @@ public sealed partial class ChatPanelViewUiTests
                         FindIn<TextBox>(editor, "ProviderNameBox").Text = "renamed-beta";
                     }
                     RaiseClick(FindIn<Button>(editor, "SaveButton"));
-                    Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == "Saved."));
+                    if (change == "config")
+                    {
+                        // 订阅登录换到别的源:先在确认框里同意退出登录(旧地址签出的令牌不跟去新地址)
+                        Assert.IsTrue(await AcceptConfirmAsync(editor));
+                        Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == new Loc("en")["SetupSavedSignedOut"]));
+                    }
+                    else
+                    {
+                        Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == "Saved."));
+                    }
                     Assert.AreEqual(change == "config" ? newTarget.BaseUrl : change == "model" ? "m2" : "renamed-beta",
                         change == "config" ? (await store.LoadAsync()).Providers[0].BaseUrl
                         : change == "model" ? (await store.LoadAsync()).Providers[0].Models[0].Model
@@ -4076,6 +4085,15 @@ public sealed partial class ChatPanelViewUiTests
     private static void RaiseClick(Control control)
         => control.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     /// <summary>按 Name 在任意控件树里找一个(面板那个同名助手只吃 ChatPanelView)。</summary>
+    /// <summary>等设置页的确认框弹出来并点「确认」;框没出现返回 false。</summary>
+    private static async Task<bool> AcceptConfirmAsync(SettingsView editor)
+    {
+        ConfirmOverlay confirm = editor.GetLogicalDescendants().OfType<ConfirmOverlay>().Single();
+        if (!await WaitForAsync(() => confirm.IsOpen)) return false;
+        RaiseClick(FindIn<Button>(editor, "ConfirmAcceptButton"));
+        return true;
+    }
+
     private static T FindIn<T>(Control root, string name) where T : Control
         => root.GetVisualDescendants().OfType<T>().FirstOrDefault(c => c.Name == name)
            ?? throw new InvalidOperationException($"没有叫 {name} 的 {typeof(T).Name}");

@@ -2278,6 +2278,7 @@ public partial class SettingsView : UserControl
         _savingKeyRow = draft;
         SetKeyMutation(true);
         IReadOnlyList<string> cleared = [];
+        bool signedOut = false;
         try
         {
             if (replacement is not null)
@@ -2322,7 +2323,9 @@ public partial class SettingsView : UserControl
                 detached.Name = name;
                 detached.BaseUrl = url;
                 detached.DefaultProtocol = protocol;
-                await _store.SaveProviderFormAsync(_settings, provider, detached, expected);
+                // 订阅登录的地址换到别的源:保存会退出登录、清掉跟着旧地址走的模型 Key,同样先弹确认框(见下面的 catch)
+                (cleared, signedOut) = await _store.SaveProviderFormAsync(_settings, provider, detached, expected,
+                    confirmed?.For(provider, url));
             }
             if (draft is not null)
             {
@@ -2340,10 +2343,15 @@ public partial class SettingsView : UserControl
             try { ReloadList(provider.Id); }
             finally { _refreshingNav = false; }
             RefreshEditorContext(provider, null);
-            await RefreshProviderKeyRowsAsync(provider, run);
+            if (provider.Auth == AuthMethod.Subscription) await RefreshSubscriptionStatusAsync(provider);
+            else await RefreshProviderKeyRowsAsync(provider, run);
             // 换源清了 Key 就一定要说:正编辑着另一把 Key 也照样盖掉
             if (run == _editorRun && (cleared.Count > 0 || _keyDraft is null || ReferenceEquals(_keyDraft, draft)))
-                StatusText.Text = SavedText(provider, cleared, replacement is not null);
+            {
+                StatusText.Text = signedOut
+                    ? _loc.WithClearedModelKeys(_loc["SetupSavedSignedOut"], KeyResetPrompt.ClearedModels(provider, cleared, _loc))
+                    : SavedText(provider, cleared, replacement is not null);
+            }
         }
         catch (ArgumentException) { if (run == _editorRun) StatusText.Text = _loc["SetupUniqueApiKey"]; }
         catch (AiSettingsStore.ApiKeySlotChangedException) { await RecoverSettingsConflictAsync(provider, null, run); }
@@ -2588,9 +2596,35 @@ public partial class SettingsView : UserControl
                     }
                 }
             }
+            // 订阅登录的地址换了源还没保存:旧地址签出的令牌(与首模型自带、跟着供应商地址走的那把 Key)不带去测。
+            // 还登着(或那把 Key 还在)就请用户先保存 —— 保存会退出登录,在新地址登录后再测;都没有就照常测,同样不带(见 keyless)
+            if (provider.Auth == AuthMethod.Subscription && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
+                && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl))
+            {
+                long version = _store.ProviderConfigurationVersion(provider);
+                bool credentialFollows;
+                try
+                {
+                    credentialFollows = first.HasOwnApiKey
+                        ? !string.IsNullOrWhiteSpace(await _store.GetApiKeyAsync(first.Id))
+                        : await _store.GetTokensAsync(provider.Id) is not null;
+                }
+                catch (Exception ex)
+                {
+                    _context.Log.Warn($"Reading the saved sign-in of '{provider.Id}' failed: {ex.Message}");
+                    if (editorRun == _editorRun && originKeyRead == _originKeyRead) StatusText.Text = _loc.F("TestFail", KeyErrorText(ex));
+                    return;
+                }
+                if (editorRun != _editorRun || originKeyRead != _originKeyRead) return;
+                if (credentialFollows || _store.ProviderConfigurationVersion(provider) != version)
+                {
+                    StatusText.Text = _loc["SetupTestNeedsSaveSignIn"];
+                    return;
+                }
+            }
             candidate = new ResolvedModel(draft, first);
-            // 首模型跟着供应商地址走、地址又换了源:它会带上的已存 Key(主槽或它自带的那把)都属于旧地址
-            keyless = apiKeyOverride is null && provider.Auth == AuthMethod.ApiKey
+            // 首模型跟着供应商地址走、地址又换了源:它会带上的已存凭据(主槽、它自带的那把、订阅登录的令牌)都属于旧地址
+            keyless = apiKeyOverride is null
                 && string.IsNullOrWhiteSpace(first.BaseUrlOverride)
                 && AiSettingsStore.MovesOrigin(provider.BaseUrl, draft.BaseUrl);
 

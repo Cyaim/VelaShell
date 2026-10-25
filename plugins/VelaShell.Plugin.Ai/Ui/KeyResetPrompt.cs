@@ -17,19 +17,27 @@ internal sealed record KeyResetPrompt(AiProvider Provider, string Url, IReadOnly
     public IReadOnlyList<string>? For(AiProvider provider, string url)
         => ReferenceEquals(Provider, provider) && Url == url ? Confirmation : null;
 
-    /// <summary>弹确认框:换源要清掉这些已存的 Key。点确认返回 true。</summary>
+    /// <summary>弹确认框:换源要清掉这些已存的 Key(订阅登录的还要退出登录)。点确认返回 true。</summary>
     /// <param name="overlay">视图上的确认框。</param>
     /// <param name="provider">换源的供应商。</param>
-    /// <param name="reset">存储层的拒绝(要清谁)。</param>
+    /// <param name="reset">存储层的拒绝(要清谁、要不要退出登录)。</param>
     /// <param name="changed">已经确认过一次、提交时又被拒(框开着期间 Key 变了)。</param>
     /// <param name="loc">文案。</param>
     public static Task<bool> AskAsync(ConfirmOverlay overlay, AiProvider provider,
         AiSettingsStore.ApiKeyResetRequiredException reset, bool changed, Loc loc)
     {
-        string message = loc.F(changed ? "SetupBaseUrlKeyResetChanged" : "SetupBaseUrlKeyResetConfirm", reset.KeyCount);
+        // 退出登录那一种:旧地址签出的令牌不发往新地址,之后要在新地址重新登录;正在用这家的对话会中断,一并说清
+        string message = reset.SignsOut
+            ? loc["SetupBaseUrlSignOutConfirm"]
+                + (reset.KeyCount > 0 ? "\n" + loc.F("SetupBaseUrlKeyResetConfirmAlso", reset.KeyCount) : "")
+            : loc.F(changed ? "SetupBaseUrlKeyResetChanged" : "SetupBaseUrlKeyResetConfirm", reset.KeyCount);
         List<string> models = ClearedModels(provider, reset.KeyOwners, loc);
         if (models.Count > 0) message += "\n" + loc.F("SetupBaseUrlKeyResetModels", string.Join(", ", models));
-        return overlay.AskAsync(loc["SetupKeyResetTitle"], message, loc["SetupKeyResetAccept"], loc["Cancel"]);
+        return overlay.AskAsync(
+            loc[reset.SignsOut ? "SetupSignOutResetTitle" : "SetupKeyResetTitle"],
+            message,
+            loc[reset.SignsOut ? "SetupSignOutAccept" : "SetupKeyResetAccept"],
+            loc["Cancel"]);
     }
 
     /// <summary>

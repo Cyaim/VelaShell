@@ -1654,7 +1654,7 @@ public sealed class ProviderSetupView : UserControl
             else
             {
                 await _store.SaveProviderOAuthFormAsync(_settings, existing!, provider, expectedProviderJson,
-                    tokens, cancellation.Token).ConfigureAwait(true);
+                    tokens, cancellationToken: cancellation.Token).ConfigureAwait(true);
                 provider = existing!;
             }
             if (ReferenceEquals(_secondary, loginSecondary))

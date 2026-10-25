@@ -537,7 +537,9 @@ public sealed partial class ChatPanelViewUiTests
                 await PumpAsync(5);
                 FindIn<TextBox>(editor, "ProviderBaseUrlBox").Text = moved.BaseUrl;
                 RaiseClick(FindIn<Button>(editor, "SaveButton"));
-                Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == "Saved."));
+                // 订阅登录换到别的源:同意退出登录 —— 正在准备凭据的那一轮随之作废(换备用站或报配置已变)
+                Assert.IsTrue(await AcceptConfirmAsync(editor));
+                Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == new Loc("en")["SetupSavedSignedOut"]));
                 Assert.AreEqual(moved.BaseUrl, (await store.LoadAsync()).Providers[0].BaseUrl);
                 var loc = (Loc)typeof(ChatPanelView).GetField("_loc", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(panel)!;
                 loc.Switch("zh-Hans");

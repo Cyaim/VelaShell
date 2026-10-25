@@ -3707,6 +3707,33 @@ public sealed class ProviderSetupViewUiTests
         });
     }
     [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void ConfiguredSubscription_CatalogFormOffersNoAddressToMoveDuringRelogin(bool signedIn)
+    {
+        // 订阅登录的换源只能在设置页改地址(那里先问、再退出登录并清掉模型自带的旧 Key)。目录页给配齐了的订阅行
+        // 不摆地址框,重新登录换不了地址 —— 哪天要在这儿摆出地址框,得同样在登录之前先问(存储层也会拒绝没确认的换源提交)
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            AiProvider provider = ProviderCatalog.Find("custom-oauth")!.CreateProvider();
+            provider.BaseUrl = "https://gateway.example/v1";
+            provider.OAuth!.Flow = OAuthFlow.DeviceCode;
+            provider.OAuth.ClientId = "client";
+            provider.OAuth.DeviceCodeUrl = "https://login.example/device";
+            provider.OAuth.TokenUrl = "https://login.example/token";
+            if (signedIn) await new AiSettingsStore(context).SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "at" });
+            (Window window, ProviderSetupView view, _, _) = await ShowAsync(context, new AiSettings { Providers = [provider] });
+            try
+            {
+                view.FocusEntry("custom-oauth", provider.Id);
+                await PumpAsync();
+                Assert.IsNull(FindOrNull<TextBox>(view, "SetupBaseUrlBox"));
+            }
+            finally { window.Close(); }
+        });
+    }
+    [TestMethod]
     [DataRow("secret")]
     [DataRow("json")]
     [DataRow("cancel")]

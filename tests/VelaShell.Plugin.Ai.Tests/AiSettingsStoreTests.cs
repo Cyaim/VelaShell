@@ -246,6 +246,8 @@ public sealed class AiSettingsStoreTests
     [DataRow("create-key")]
     [DataRow("create-oauth")]
     [DataRow("relogin")]
+    [DataRow("oauth-form")]
+    [DataRow("oauth-form-late")]
     [DataRow("set")]
     [DataRow("delete")]
     [DataRow("delete-token")]
@@ -266,7 +268,7 @@ public sealed class AiSettingsStoreTests
         var secrets = new MutateThenFailSecrets(source.Secrets);
         using var context = new TestPluginContext { Secrets = secrets };
         var store = new AiSettingsStore(context);
-        bool subscription = operation is "create-oauth" or "relogin" or "tokens" or "clear-tokens";
+        bool subscription = operation is "create-oauth" or "relogin" or "oauth-form" or "oauth-form-late" or "tokens" or "clear-tokens";
         var model = new AiModelConfig { Model = "old-model", HasOwnApiKey = operation is "model-form" or "delete-model" or "delete-model-token" };
         string slot = Guid.NewGuid().ToString("N");
         var provider = new AiProvider
@@ -303,7 +305,10 @@ public sealed class AiSettingsStoreTests
         AiModelConfig modelDraft = System.Text.Json.JsonSerializer.Deserialize<AiModelConfig>(modelExpected)!;
         modelDraft.BaseUrlOverride = newHost.BaseUrl;
         secrets.FailNextMutation = true;
-        secrets.SkipMutationsBeforeFailure = operation is "delete-token" or "delete-provider-token" or "delete-model-token" ? 1 : 0;
+        secrets.SkipMutationsBeforeFailure = operation is "delete-token" or "delete-provider-token" or "delete-model-token"
+            or "oauth-form-late" ? 1 : 0;
+        // 换源时跟着供应商地址走的旧 Key(主槽与补充槽)与登录令牌都要经确认才清
+        string[] originReset = [AiSettingsStore.KeyResetToken(provider.Id, "primary-old"), AiSettingsStore.KeyResetToken(slot, "extra-old")];
         Task Mutation() => operation switch
         {
             // 换源:主槽写新 Key、补充槽一并清掉,写到一半抛错要把每一把都恢复
@@ -312,7 +317,10 @@ public sealed class AiSettingsStoreTests
             "model-form" => store.SaveModelFormAsync(settings, provider, model, modelDraft, modelExpected, "key-new", "model-old"),
             "create-key" => store.CreateProviderAsync(settings, created, "key-new"),
             "create-oauth" => store.CreateProviderAsync(settings, created, tokens: newTokens),
-            "relogin" => store.SaveProviderOAuthFormAsync(settings, provider, draft, expected, newTokens),
+            "relogin" => store.SaveProviderOAuthFormAsync(settings, provider, draft, expected, newTokens, confirmedKeyReset: originReset),
+            // 设置页换源保存订阅供应商:退出登录(先删令牌),再清旧 Key;删令牌时或清第一把 Key 时抛错都要整个恢复
+            "oauth-form" or "oauth-form-late" => store.SaveProviderFormAsync(settings, provider, draft, expected,
+                confirmedKeyReset: [.. originReset, AiSettingsStore.LoginResetToken(provider.Id, oldTokenJson)]),
             "set" => store.SetApiKeyAsync(provider.Id, "key-new"),
             "delete" or "delete-token" => store.DeleteApiKeyAsync(provider.Id),
             "add" => store.AddProviderApiKeyAsync(settings, provider, "key-new"),
@@ -400,6 +408,137 @@ public sealed class AiSettingsStoreTests
         (ProviderCredential credential, string? keyId) = await store.ResolveCredentialWithKeyIdAsync(saved);
         Assert.AreEqual("supplementary", credential.Value);
         Assert.AreEqual(extra, keyId);
+    }
+
+    /// <summary>已经登录的自定义订阅供应商:主模型继承登录,另一个模型自带 Key(没填覆盖地址,跟着供应商地址走)。</summary>
+    private static async Task<(TestPluginContext Context, AiSettingsStore Store, AiSettings Settings, AiProvider Provider,
+        AiModelConfig Own, string TokenJson)> SignedInSubscriptionAsync(string baseUrl)
+    {
+        var context = new TestPluginContext();
+        var store = new AiSettingsStore(context);
+        var own = new AiModelConfig { Name = "Own", Model = "own", HasOwnApiKey = true };
+        var provider = new AiProvider
+        {
+            BaseUrl = baseUrl,
+            Auth = AuthMethod.Subscription,
+            OAuth = new OAuthConfig { Credential = OAuthCredential.AccessToken },
+            Models = [new AiModelConfig { Model = "m" }, own]
+        };
+        var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
+        await store.SaveAsync(settings);
+        await store.SaveTokensAsync(provider.Id, new OAuthTokens
+        {
+            AccessToken = "old-token", RefreshToken = "old-refresh", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        });
+        await store.SetApiKeyAsync(own.Id, "old-own");
+        string tokenJson = (await context.Secrets.GetAsync("oauth:" + provider.Id))!;
+        return (context, store, settings, provider, own, tokenJson);
+    }
+
+    [TestMethod]
+    public async Task SubscriptionOriginChange_AsksThenSignsOutAndClearsTheModelKeys()
+    {
+        (TestPluginContext context, AiSettingsStore store, AiSettings settings, AiProvider provider, AiModelConfig own, string tokenJson) =
+            await SignedInSubscriptionAsync("https://login.example/v1");
+        using TestPluginContext owned = context;
+        string expected = System.Text.Json.JsonSerializer.Serialize(provider);
+        AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
+        draft.BaseUrl = "https://elsewhere.example/v1";
+        long epoch = store.ProviderConfigurationVersion(provider), login = store.TokenLoginVersion(provider.Id);
+
+        // 没确认:一样都不动,并说清会退出登录、要清哪把模型 Key
+        var reset = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(
+            () => store.SaveProviderFormAsync(settings, provider, draft, expected));
+        Assert.IsTrue(reset.SignsOut);
+        CollectionAssert.AreEqual(new[] { own.Id }, reset.KeyOwners.ToArray());
+        Assert.AreEqual("https://login.example/v1", provider.BaseUrl);
+        Assert.AreEqual("old-token", (await store.GetTokensAsync(provider.Id))?.AccessToken);
+        Assert.AreEqual("old-own", await store.GetApiKeyAsync(own.Id));
+
+        // 确认之后换了一次登录(令牌组变了):旧的确认不算数,再拒一次
+        await store.SaveTokensAsync(provider.Id, new OAuthTokens { AccessToken = "relogged", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1) });
+        await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(
+            () => store.SaveProviderFormAsync(settings, provider, draft, expected, reset.Confirmation));
+        Assert.AreEqual("relogged", (await store.GetTokensAsync(provider.Id))?.AccessToken);
+        reset = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(
+            () => store.SaveProviderFormAsync(settings, provider, draft, expected));
+        Assert.AreNotEqual(tokenJson, await context.Secrets.GetAsync("oauth:" + provider.Id), "前提:确实换了一份令牌");
+        epoch = store.ProviderConfigurationVersion(provider);
+        login = store.TokenLoginVersion(provider.Id);
+
+        (IReadOnlyList<string> cleared, bool signedOut) = await store.SaveProviderFormAsync(settings, provider, draft, expected, reset.Confirmation);
+        CollectionAssert.AreEqual(new[] { own.Id }, cleared.ToArray());
+        Assert.IsTrue(signedOut);
+        Assert.AreEqual("https://elsewhere.example/v1", provider.BaseUrl);
+        Assert.IsNull(await context.Secrets.GetAsync("oauth:" + provider.Id), "旧地址签出的令牌不留");
+        Assert.IsNull(await store.GetTokensAsync(provider.Id));
+        Assert.IsNull(await store.GetApiKeyAsync(own.Id));
+        Assert.IsTrue(own.HasOwnApiKey, "仍标着自带 Key,不悄悄改用登录");
+        Assert.IsGreaterThan(epoch, store.ProviderConfigurationVersion(provider), "在途请求复验时认得出配置变了");
+        Assert.AreEqual(login + 1, store.TokenLoginVersion(provider.Id), "在途的令牌刷新回来对不上号,不会把旧令牌写回");
+        // 新地址上:没有任何凭据会被带出去,登录后才有
+        foreach (ResolvedModel model in settings.ResolveModels())
+            Assert.IsNull((await store.ResolveCredentialAsync(model)).Value, model.Model);
+        // 已存的配置照样读得回来
+        AiProvider reloaded = (await new AiSettingsStore(new TestPluginContext { Storage = context.Storage, Secrets = context.Secrets })
+            .LoadAsync()).Providers.Single();
+        Assert.AreEqual("https://elsewhere.example/v1", reloaded.BaseUrl);
+    }
+
+    [TestMethod]
+    [DataRow("same-origin")]
+    [DataRow("signed-out")]
+    public async Task SubscriptionFormSave_NeedsNoConfirmationWhenNothingWouldLeave(string scenario)
+    {
+        (TestPluginContext context, AiSettingsStore store, AiSettings settings, AiProvider provider, AiModelConfig own, _) =
+            await SignedInSubscriptionAsync("https://login.example/v1");
+        using TestPluginContext owned = context;
+        if (scenario == "signed-out")
+        {
+            await store.ClearTokensAsync(provider.Id);
+            await store.SetApiKeyAsync(own.Id, null);
+        }
+        string expected = System.Text.Json.JsonSerializer.Serialize(provider);
+        AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
+        // 同源只改路径与大小写不算换源;已经退出登录、模型也没 Key 时换源没有东西可清
+        draft.BaseUrl = scenario == "same-origin" ? "https://LOGIN.example:443/v2" : "https://elsewhere.example/v1";
+
+        (IReadOnlyList<string> cleared, bool signedOut) = await store.SaveProviderFormAsync(settings, provider, draft, expected);
+        Assert.IsEmpty(cleared);
+        Assert.IsFalse(signedOut);
+        Assert.AreEqual(draft.BaseUrl, provider.BaseUrl);
+        if (scenario == "same-origin")
+        {
+            Assert.AreEqual("old-token", (await store.GetTokensAsync(provider.Id))?.AccessToken, "同源不退出登录");
+            Assert.AreEqual("old-own", await store.GetApiKeyAsync(own.Id));
+        }
+    }
+
+    [TestMethod]
+    public async Task SubscriptionRelogin_OnAnotherOrigin_NeedsConfirmationAndClearsModelKeys()
+    {
+        (TestPluginContext context, AiSettingsStore store, AiSettings settings, AiProvider provider, AiModelConfig own, _) =
+            await SignedInSubscriptionAsync("https://login.example/v1");
+        using TestPluginContext owned = context;
+        string expected = System.Text.Json.JsonSerializer.Serialize(provider);
+        AiProvider draft = System.Text.Json.JsonSerializer.Deserialize<AiProvider>(expected)!;
+        draft.BaseUrl = "https://elsewhere.example/v1";
+        var fresh = new OAuthTokens { AccessToken = "new-token", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1) };
+
+        // 没确认就交上去:拒绝,登录换来的新令牌不落盘;要清的只有模型自带的旧 Key(新令牌是新地址签的,不算「清」,也不退出登录)
+        var preview = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(
+            () => store.SaveProviderOAuthFormAsync(settings, provider, draft, expected, fresh));
+        Assert.IsFalse(preview.SignsOut);
+        CollectionAssert.AreEqual(new[] { own.Id }, preview.KeyOwners.ToArray());
+        Assert.AreEqual("old-token", (await store.GetTokensAsync(provider.Id))?.AccessToken);
+        Assert.AreEqual("old-own", await store.GetApiKeyAsync(own.Id));
+
+        IReadOnlyList<string> cleared = await store.SaveProviderOAuthFormAsync(settings, provider, draft, expected, fresh,
+            confirmedKeyReset: preview.Confirmation);
+        CollectionAssert.AreEqual(new[] { own.Id }, cleared.ToArray());
+        Assert.AreEqual("new-token", (await store.GetTokensAsync(provider.Id))?.AccessToken);
+        Assert.IsNull(await store.GetApiKeyAsync(own.Id), "模型自带的旧 Key 不跟去新地址");
+        Assert.AreEqual("https://elsewhere.example/v1", provider.BaseUrl);
     }
 
     [TestMethod]
