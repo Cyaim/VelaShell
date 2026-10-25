@@ -4,11 +4,14 @@ using System.Text;
 using Avalonia.Threading;
 using ReactiveUI;
 using ReactiveUI.Primitives;
+using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Infrastructure.Ssh;
 using VelaShell.Presentation.Services;
+using VelaShell.Services;
 
 namespace VelaShell.ViewModels;
 
@@ -159,16 +162,29 @@ public sealed class PacketTraceRowViewModel
 public class ConnectionDiagnosticsViewModel : ReactiveObject
 {
     private readonly IConnectionDiagnosticsService _diagnosticsService;
-    private readonly SessionProfile _profile;
+    private readonly SshAlgorithmRemedyFlow _remedies;
     private DiagnosticReport? _lastReport;
+
+    /// <summary>
+    /// 诊断的那份配置。一键放开算法(终点那一跳)之后换成改过的一份副本 —— 不改调用方那一份:
+    /// 它可能是资源管理器缓存的对象,也可能是某个标签手里的那份。
+    /// </summary>
+    private SessionProfile _profile;
 
     /// <summary>创建连接诊断视图模型,绑定目标连接配置与诊断服务并初始化四个检测步骤。</summary>
     /// <param name="profile">要诊断的连接配置。</param>
     /// <param name="diagnosticsService">执行逐步诊断的服务。</param>
-    public ConnectionDiagnosticsViewModel(SessionProfile profile, IConnectionDiagnosticsService diagnosticsService)
+    /// <param name="sessionRepository">会话库:一键放开算法时找到并改写谈不成的那一跳的配置;为 null 时只改这次诊断用的副本。</param>
+    /// <param name="connectionWorkflowService">连接工作流:改过的配置经它落盘(按记住密码的策略写)。</param>
+    public ConnectionDiagnosticsViewModel(
+        SessionProfile profile,
+        IConnectionDiagnosticsService diagnosticsService,
+        ISessionRepository? sessionRepository = null,
+        IConnectionWorkflowService? connectionWorkflowService = null)
     {
         _profile = profile ?? throw new ArgumentNullException(nameof(profile));
         _diagnosticsService = diagnosticsService ?? throw new ArgumentNullException(nameof(diagnosticsService));
+        _remedies = new(sessionRepository, connectionWorkflowService);
         Steps =
         [
             new(0, Strings.Get("DiagSvc_StepDns")),
@@ -181,6 +197,9 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
         RunCommand = ReactiveCommand.CreateFromTask(RunAsync, canRun);
         CopyPacketTraceCommand = ReactiveCommand.CreateFromTask(
             CopyPacketTraceAsync, this.WhenAnyValue(x => x.HasPacketTrace));
+        AllowAlgorithmsCommand = ReactiveCommand.CreateFromTask(
+            AllowAlgorithmsAndRediagnoseAsync,
+            this.WhenAnyValue(x => x.AlgorithmRemedy, x => x.IsBusy, (remedy, busy) => remedy is not null && !busy));
     }
 
     /// <summary>标题栏副标题里的目标描述。</summary>
@@ -236,6 +255,55 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
         get;
         private set => this.RaiseAndSetIfChanged(ref field, value);
     }
+
+    /// <summary>
+    /// 这一轮败在算法协商上、而对端有本版实现了只是没放开的算法:问题卡片上的「放开这几个算法并重新诊断」按它来。
+    /// 每轮诊断开始时清掉,结束时按这一轮的结果重算。
+    /// </summary>
+    public SshAlgorithmRemedy? AlgorithmRemedy
+    {
+        get;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(HasAlgorithmRemedy));
+            this.RaisePropertyChanged(nameof(AlgorithmRemedyTip));
+        }
+    }
+
+    /// <summary>问题卡片上要不要出「放开这几个算法并重新诊断」。</summary>
+    public bool HasAlgorithmRemedy => AlgorithmRemedy is not null;
+
+    /// <summary>那颗按钮的悬停说明:往哪一类清单里加哪几个。</summary>
+    public string AlgorithmRemedyTip => AlgorithmRemedy is { } remedy
+        ? SshAlgorithmRemedyFlow.ButtonTip(remedy, SshAlgorithmRemedyFollowUp.Rediagnose)
+        : string.Empty;
+
+    /// <summary>一键放开没成(跳板配置找不到、写不进库)时的原因,显示在按钮下面;下一次点或下一轮诊断时清掉。</summary>
+    public string? AlgorithmRemedyError
+    {
+        get;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(HasAlgorithmRemedyError));
+        }
+    }
+
+    /// <summary>是否有一键放开失败的原因要显示。</summary>
+    public bool HasAlgorithmRemedyError => !string.IsNullOrEmpty(AlgorithmRemedyError);
+
+    /// <summary>「放开这几个算法并重新诊断」(只在有补救、且不在诊断中时可点)。</summary>
+    public ReactiveCommand<RxVoid, RxVoid> AllowAlgorithmsCommand { get; }
+
+    /// <summary>
+    /// 窗口注入的确认框(标题、正文、确认键文字;确认返回 true),与终端标签上那颗按钮问的是同一句。
+    /// 未挂时(headless)不改配置 —— 这一步会降低那条连接的安全性,没人点头不能做。
+    /// </summary>
+    public Func<string, string, string, Task<bool>>? AllowAlgorithmsConfirmer { get; set; }
+
+    /// <summary>一键放开改写了库里的配置:窗口关掉之后宿主据此刷新资源管理器。</summary>
+    public bool ChangedStoredProfiles { get; private set; }
 
     /// <summary>是否已有可导出的诊断报告,用于导出按钮可用性。</summary>
     public bool CanExport => _lastReport is not null;
@@ -365,6 +433,8 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
         IssueTitle = null;
         IssueDescription = null;
         AllPassed = false;
+        AlgorithmRemedy = null;
+        AlgorithmRemedyError = null;
         Suggestions.Clear();
         ClearPacketTrace();
         foreach (DiagnosticStepItemViewModel step in Steps)
@@ -395,6 +465,8 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
             }
             AllPassed = report.Success && Suggestions.Count == 0;
             ShowPacketTrace(report);
+            // 协商在认证那一步(完整连接)才发生;那一步的原始异常里认得出「算法谈不成」。
+            AlgorithmRemedy = SshAlgorithmRemedy.Find(report.Failure);
             this.RaisePropertyChanged(nameof(CanExport));
         }
         catch (Exception ex)
@@ -406,6 +478,34 @@ public class ConnectionDiagnosticsViewModel : ReactiveObject
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// 问题卡片上的「放开这几个算法并重新诊断」:与终端标签同一个确认框、同一套写法(跳板上谈不成时改跳板自己的配置),
+    /// 确认后按改过的配置重新诊断一轮。
+    /// </summary>
+    private async Task AllowAlgorithmsAndRediagnoseAsync(CancellationToken cancellationToken)
+    {
+        if (AlgorithmRemedy is not { } remedy || IsBusy || AllowAlgorithmsConfirmer is not { } confirm)
+        {
+            return;
+        }
+        AlgorithmRemedyError = null;
+        if (await _remedies.ConfirmAndSaveAsync(
+                _profile, remedy, SshAlgorithmRemedyFollowUp.Rediagnose, confirm, message => AlgorithmRemedyError = message,
+                () => AlgorithmRemedy == remedy && !IsBusy).ConfigureAwait(true)
+            is not { } applied)
+        {
+            return;
+        }
+        ChangedStoredProfiles |= applied.Stored is not null;
+        if (remedy.HopDepth == 0)
+        {
+            SessionProfile updated = _profile.Clone();
+            updated.Ssh = remedy.ApplyTo(_profile.Ssh);
+            _profile = updated;
+        }
+        await RunAsync(cancellationToken).ConfigureAwait(true);
     }
 
     /// <summary>生成可保存的纯文本诊断报告(导出诊断报告按钮)。</summary>

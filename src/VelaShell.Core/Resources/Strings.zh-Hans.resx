@@ -6488,8 +6488,20 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="SshAlgoFix_Button" xml:space="preserve">
     <value>放开这几个算法并重连</value>
   </data>
+  <data name="SshAlgoFix_ButtonRediagnose" xml:space="preserve">
+    <value>放开这几个算法并重新诊断</value>
+  </data>
+  <data name="SshAlgoFix_ButtonRetest" xml:space="preserve">
+    <value>放开这几个算法并重新测试</value>
+  </data>
   <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
     <value>在连接配置的自定义算法清单({0})里追加 {1}(排在默认之后),然后重连。</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRediagnose" xml:space="preserve">
+    <value>在连接配置的自定义算法清单({0})里追加 {1}(排在默认之后),然后重新诊断。</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRetest" xml:space="preserve">
+    <value>在 SSH 选项的自定义算法清单({0})里追加 {1}(排在默认之后),然后重新测试。</value>
   </data>
   <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
     <value>放开这几个算法?</value>
@@ -6501,8 +6513,31 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
 
 只加这几个,其余老算法照旧关着。它们比默认的弱,只在对端一个更新的都不支持时才会用上,只对没法升级的设备这样做。</value>
   </data>
+  <data name="SshAlgoFix_ConfirmBodyRediagnose" xml:space="preserve">
+    <value>将在连接「{0}」的 SSH 选项里,往{1}的自定义清单追加下面这几个算法,然后重新诊断:
+
+{2}
+
+只加这几个,其余老算法照旧关着。它们比默认的弱,只在对端一个更新的都不支持时才会用上,只对没法升级的设备这样做。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBodyRetest" xml:space="preserve">
+    <value>将在连接「{0}」的 SSH 选项里,往{1}的自定义清单追加下面这几个算法,然后重新测试:
+
+{2}
+
+只加这几个,其余老算法照旧关着。它们比默认的弱,只在对端一个更新的都不支持时才会用上,只对没法升级的设备这样做。</value>
+  </data>
+  <data name="SshAlgoFix_FormOnlyNote" xml:space="preserve">
+    <value>改的是这个表单里的清单,按「保存」或「连接」才会存下。</value>
+  </data>
   <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
     <value>放开并重连</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRediagnose" xml:space="preserve">
+    <value>放开并重新诊断</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRetest" xml:space="preserve">
+    <value>放开并重新测试</value>
   </data>
   <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
     <value>连接配置没能保存:{0}</value>

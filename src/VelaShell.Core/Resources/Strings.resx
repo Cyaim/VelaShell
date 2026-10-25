@@ -6273,8 +6273,20 @@ Overwrite it?</value>
   <data name="SshAlgoFix_Button" xml:space="preserve">
     <value>Allow these algorithms and reconnect</value>
   </data>
+  <data name="SshAlgoFix_ButtonRediagnose" xml:space="preserve">
+    <value>Allow these algorithms and diagnose again</value>
+  </data>
+  <data name="SshAlgoFix_ButtonRetest" xml:space="preserve">
+    <value>Allow these algorithms and test again</value>
+  </data>
   <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
     <value>Appends {1} to the custom {0} list in the connection's SSH options (after the defaults), then reconnects.</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRediagnose" xml:space="preserve">
+    <value>Appends {1} to the custom {0} list in the connection's SSH options (after the defaults), then runs the diagnosis again.</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRetest" xml:space="preserve">
+    <value>Appends {1} to the custom {0} list in the SSH options (after the defaults), then tests again.</value>
   </data>
   <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
     <value>Allow these algorithms?</value>
@@ -6286,8 +6298,31 @@ Overwrite it?</value>
 
 Only these are added; the other legacy algorithms stay off. They are weaker than the defaults and are only used when the server offers nothing newer, so keep this for devices you cannot upgrade.</value>
   </data>
+  <data name="SshAlgoFix_ConfirmBodyRediagnose" xml:space="preserve">
+    <value>The following will be appended to the custom {1} list in the SSH options of connection "{0}", and the diagnosis will run again:
+
+{2}
+
+Only these are added; the other legacy algorithms stay off. They are weaker than the defaults and are only used when the server offers nothing newer, so keep this for devices you cannot upgrade.</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBodyRetest" xml:space="preserve">
+    <value>The following will be appended to the custom {1} list in the SSH options of connection "{0}", and the test will run again:
+
+{2}
+
+Only these are added; the other legacy algorithms stay off. They are weaker than the defaults and are only used when the server offers nothing newer, so keep this for devices you cannot upgrade.</value>
+  </data>
+  <data name="SshAlgoFix_FormOnlyNote" xml:space="preserve">
+    <value>This changes the list in this form only; it is stored when you click Save or Connect.</value>
+  </data>
   <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
     <value>Allow and reconnect</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRediagnose" xml:space="preserve">
+    <value>Allow and diagnose again</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRetest" xml:space="preserve">
+    <value>Allow and test again</value>
   </data>
   <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
     <value>Could not save the connection settings: {0}</value>

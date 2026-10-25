@@ -54,6 +54,7 @@ public sealed class ConnectionDiagnosticsService(
         DiagnosticStepUpdate[] results = [.. steps];
         string? issueTitle = null;
         string? issueDescription = null;
+        Exception? failure = null;
         var suggestions = new List<string>();
         // 认证那一步的协议轨迹:只有诊断挂旁路,平常的连接与「测试连接」都不挂。
         SshPacketTrace? packetTrace = null;
@@ -254,6 +255,7 @@ public sealed class ConnectionDiagnosticsService(
             else
             {
                 string reason = Trim(test.ErrorMessage ?? Strings.Get("DiagSvc_UnknownError"));
+                failure = test.Error;
                 Publish(results[3] with
                 {
                     Status = DiagnosticStepStatus.Failed,
@@ -271,7 +273,8 @@ public sealed class ConnectionDiagnosticsService(
             IssueDescription = issueDescription,
             Suggestions = suggestions,
             PacketTrace = packetTrace?.Snapshot() ?? [],
-            PacketTraceDropped = packetTrace?.Dropped ?? 0
+            PacketTraceDropped = packetTrace?.Dropped ?? 0,
+            Failure = failure
         };
 
         void Publish(DiagnosticStepUpdate update)

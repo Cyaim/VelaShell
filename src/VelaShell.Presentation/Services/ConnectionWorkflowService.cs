@@ -100,7 +100,7 @@ public sealed class ConnectionWorkflowService(
         }
         catch (Exception ex)
         {
-            return new(false, ex.Message);
+            return new(false, ex.Message, ex);
         }
     }
 

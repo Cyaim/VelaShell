@@ -1195,7 +1195,7 @@ public class TerminalTabViewModel : TabViewModel, IAsyncDisposable, INestedShell
 
     /// <summary>那颗按钮的悬停说明:往哪一类清单里加哪几个。</summary>
     public string AlgorithmRemedyTip => AlgorithmRemedy is { } remedy
-        ? Strings.Format("SshAlgoFix_ButtonTip", SshAlgorithmPreferences.Label(remedy.Kind), string.Join(", ", remedy.Algorithms))
+        ? SshAlgorithmRemedyFlow.ButtonTip(remedy, SshAlgorithmRemedyFollowUp.Reconnect)
         : string.Empty;
 
     /// <summary>覆盖层上点了「放开这几个算法并重连」:由宿主确认、改配置、重连。</summary>

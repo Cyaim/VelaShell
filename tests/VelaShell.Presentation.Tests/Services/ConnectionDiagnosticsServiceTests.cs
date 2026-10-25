@@ -97,6 +97,25 @@ public sealed class ConnectionDiagnosticsServiceTests
         Assert.AreEqual(0, report.PacketTraceDropped);
     }
 
+    /// <summary>
+    /// 认证那一步(完整连接)失败时,报告带上原始异常:协商就发生在这一步,
+    /// 诊断窗口据它给出「放开这几个算法并重新诊断」,健康巡检据它分出要人确认的那一类。
+    /// </summary>
+    [TestMethod]
+    public async Task AuthenticationStepFailure_CarriesTheOriginalException()
+    {
+        await using SshBannerListener server = new();
+        SessionProfile profile = Tailscale(server.Port, "ops");
+        var error = new InvalidOperationException("算法谈不成");
+        _workflow.TestConnectionAsync(profile, Arg.Any<SshPacketTrace>(), Arg.Any<CancellationToken>())
+                 .Returns(new ConnectionTestResult(false, error.Message, error));
+
+        DiagnosticReport report = await Service().DiagnoseAsync(profile);
+
+        Assert.AreEqual(DiagnosticStepStatus.Failed, report.Steps[3].Status);
+        Assert.AreSame(error, report.Failure);
+    }
+
     private ConnectionDiagnosticsService Service() => new(_sessions, _workflow);
 
     private static SessionProfile Tailscale(int port, string username) => new()

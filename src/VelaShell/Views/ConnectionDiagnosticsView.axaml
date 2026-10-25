@@ -354,6 +354,32 @@
                   <TextBlock Text="{Binding IssueDescription}"
                              Foreground="{DynamicResource VelaTextSecondary}"
                              FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap" />
+                  <!-- 算法协商失败、而对端有本版实现了只是没放开的算法:与终端标签失败覆盖层同一颗按钮,
+                       确认后改配置并重新诊断一轮。描边 + 警示图标:它会降低这条连接的安全性。 -->
+                  <Button x:Name="AllowAlgorithmsButton"
+                          HorizontalAlignment="Left"
+                          Margin="0,4,0,0"
+                          IsVisible="{Binding HasAlgorithmRemedy}"
+                          Command="{Binding AllowAlgorithmsCommand}"
+                          Background="Transparent"
+                          BorderBrush="{DynamicResource VelaBorderSecondary}"
+                          BorderThickness="1"
+                          CornerRadius="4" Padding="12,5"
+                          ToolTip.Tip="{Binding AlgorithmRemedyTip}"
+                          AutomationProperties.Name="{loc:Localize SshAlgoFix_ButtonRediagnose}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                      <pc:LucideIcon Width="12" Height="12"
+                                     Data="{StaticResource Icon.triangle-alert}"
+                                     Foreground="{DynamicResource VelaWarning}" VerticalAlignment="Center" />
+                      <TextBlock Text="{loc:Localize SshAlgoFix_ButtonRediagnose}"
+                                 Foreground="{DynamicResource VelaTextSecondary}"
+                                 FontSize="{DynamicResource VelaFontSize11}" FontWeight="Medium" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                  <TextBlock Text="{Binding AlgorithmRemedyError}"
+                             IsVisible="{Binding HasAlgorithmRemedyError}"
+                             Foreground="{DynamicResource VelaError}"
+                             FontSize="{DynamicResource VelaFontSize11}" TextWrapping="Wrap" />
                 </StackPanel>
               </Border>
 

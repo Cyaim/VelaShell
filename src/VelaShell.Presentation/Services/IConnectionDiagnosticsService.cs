@@ -62,6 +62,15 @@ public sealed class DiagnosticReport
     /// <summary>超过记录上限、没记进 <see cref="PacketTrace" /> 的报文数。</summary>
     public int PacketTraceDropped { get; init; }
 
+    /// <summary>
+    /// 认证那一步(完整连接)失败时的原始异常;没走到这一步、或者走通了时为 <see langword="null" />。
+    /// </summary>
+    /// <remarks>
+    /// 协商在这一步才发生:宿主据它认出「算法谈不成」并给出一键放开(<c>SshAlgorithmRemedy</c>),
+    /// 会话健康巡检据它分出「主机密钥待确认」这一类要人来处理的失败。
+    /// </remarks>
+    public Exception? Failure { get; init; }
+
     /// <summary>诊断是否整体成功(即未发现任何问题)。</summary>
     public bool Success => IssueTitle is null;
 }

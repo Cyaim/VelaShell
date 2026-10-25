@@ -6268,8 +6268,20 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="SshAlgoFix_Button" xml:space="preserve">
     <value>これらのアルゴリズムを許可して再接続</value>
   </data>
+  <data name="SshAlgoFix_ButtonRediagnose" xml:space="preserve">
+    <value>これらのアルゴリズムを許可して再診断</value>
+  </data>
+  <data name="SshAlgoFix_ButtonRetest" xml:space="preserve">
+    <value>これらのアルゴリズムを許可して再テスト</value>
+  </data>
   <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
     <value>接続設定のカスタムアルゴリズム一覧({0})の既定の後ろに {1} を追加して再接続します。</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRediagnose" xml:space="preserve">
+    <value>接続設定のカスタムアルゴリズム一覧({0})の既定の後ろに {1} を追加して再診断します。</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRetest" xml:space="preserve">
+    <value>SSH オプションのカスタムアルゴリズム一覧({0})の既定の後ろに {1} を追加して再テストします。</value>
   </data>
   <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
     <value>これらのアルゴリズムを許可しますか?</value>
@@ -6281,8 +6293,31 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
 
 追加するのはこれらだけで、ほかの古いアルゴリズムは無効のままです。既定より弱く、相手が新しいものを何も提供しないときだけ使われます。更新できない機器に限って使ってください。</value>
   </data>
+  <data name="SshAlgoFix_ConfirmBodyRediagnose" xml:space="preserve">
+    <value>接続「{0}」の SSH オプションで、{1}のカスタム一覧に次のアルゴリズムを追加して再診断します:
+
+{2}
+
+追加するのはこれらだけで、ほかの古いアルゴリズムは無効のままです。既定より弱く、相手が新しいものを何も提供しないときだけ使われます。更新できない機器に限って使ってください。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBodyRetest" xml:space="preserve">
+    <value>接続「{0}」の SSH オプションで、{1}のカスタム一覧に次のアルゴリズムを追加して再テストします:
+
+{2}
+
+追加するのはこれらだけで、ほかの古いアルゴリズムは無効のままです。既定より弱く、相手が新しいものを何も提供しないときだけ使われます。更新できない機器に限って使ってください。</value>
+  </data>
+  <data name="SshAlgoFix_FormOnlyNote" xml:space="preserve">
+    <value>変更するのはこのフォームの一覧だけです。「保存」か「接続」を押したときに保存されます。</value>
+  </data>
   <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
     <value>許可して再接続</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRediagnose" xml:space="preserve">
+    <value>許可して再診断</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRetest" xml:space="preserve">
+    <value>許可して再テスト</value>
   </data>
   <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
     <value>接続設定を保存できませんでした: {0}</value>

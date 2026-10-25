@@ -28,6 +28,10 @@ public partial class ConnectionDiagnosticsView : Window
         {
             // 「复制协议轨迹」写的是这扇窗口的剪贴板(视图模型够不着 TopLevel)。
             viewModel.CopyToClipboard = CopyAsync;
+            // 「放开这几个算法并重新诊断」的确认框以本窗口为属主(诊断窗口是模态的,主窗口这时点不到);
+            // 与终端标签那颗按钮同一个框:同一个标题、同一种点名、警示样式。
+            viewModel.AllowAlgorithmsConfirmer = (title, body, action) =>
+                MessageDialog.ConfirmAsync(this, title, body, action, kind: MessageDialogKind.Warning);
             viewModel.RunCommand.Execute().Subscribe();
         }
     }

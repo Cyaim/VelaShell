@@ -22,6 +22,8 @@ public partial class ConnectingDocumentView : UserControl
 
     private void Retry_Click(object? sender, RoutedEventArgs e) => Document?.Retry();
 
+    private void AllowAlgorithms_Click(object? sender, RoutedEventArgs e) => Document?.AllowAlgorithms();
+
     /// <summary>
     /// 关闭这个占位标签。走工作区的 <see cref="DockWorkspace.RequestClose" />(与标签上的 × 同一条路),
     /// 而不是自己去调宿主 —— 关闭前的确认闸挂在工作区那一层。

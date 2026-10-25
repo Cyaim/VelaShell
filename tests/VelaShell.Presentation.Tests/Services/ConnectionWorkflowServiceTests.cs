@@ -85,6 +85,8 @@ public sealed class ConnectionWorkflowServiceTests
         ConnectionTestResult result = await service.TestConnectionAsync(profile);
         Assert.IsFalse(result.Success);
         Assert.AreEqual("boom", result.ErrorMessage);
+        // 原始异常一并交出:宿主要从异常链里认出「算法谈不成」才给得出一键放开。
+        Assert.IsInstanceOfType<InvalidOperationException>(result.Error);
     }
 
     /// <summary>

@@ -6488,8 +6488,20 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="SshAlgoFix_Button" xml:space="preserve">
     <value>放開這幾個演算法並重新連線</value>
   </data>
+  <data name="SshAlgoFix_ButtonRediagnose" xml:space="preserve">
+    <value>放開這幾個演算法並重新診斷</value>
+  </data>
+  <data name="SshAlgoFix_ButtonRetest" xml:space="preserve">
+    <value>放開這幾個演算法並重新測試</value>
+  </data>
   <data name="SshAlgoFix_ButtonTip" xml:space="preserve">
     <value>在連線設定的自訂演算法清單({0})裡追加 {1}(排在預設之後),然後重新連線。</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRediagnose" xml:space="preserve">
+    <value>在連線設定的自訂演算法清單({0})裡追加 {1}(排在預設之後),然後重新診斷。</value>
+  </data>
+  <data name="SshAlgoFix_ButtonTipRetest" xml:space="preserve">
+    <value>在 SSH 選項的自訂演算法清單({0})裡追加 {1}(排在預設之後),然後重新測試。</value>
   </data>
   <data name="SshAlgoFix_ConfirmTitle" xml:space="preserve">
     <value>放開這幾個演算法?</value>
@@ -6501,8 +6513,31 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
 
 只加這幾個,其餘舊演算法照舊關著。它們比預設的弱,只在對端一個更新的都不支援時才會用上,只對無法升級的裝置這樣做。</value>
   </data>
+  <data name="SshAlgoFix_ConfirmBodyRediagnose" xml:space="preserve">
+    <value>將在連線「{0}」的 SSH 選項裡,往{1}的自訂清單追加下面這幾個演算法,然後重新診斷:
+
+{2}
+
+只加這幾個,其餘舊演算法照舊關著。它們比預設的弱,只在對端一個更新的都不支援時才會用上,只對無法升級的裝置這樣做。</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmBodyRetest" xml:space="preserve">
+    <value>將在連線「{0}」的 SSH 選項裡,往{1}的自訂清單追加下面這幾個演算法,然後重新測試:
+
+{2}
+
+只加這幾個,其餘舊演算法照舊關著。它們比預設的弱,只在對端一個更新的都不支援時才會用上,只對無法升級的裝置這樣做。</value>
+  </data>
+  <data name="SshAlgoFix_FormOnlyNote" xml:space="preserve">
+    <value>改的是這個表單裡的清單,按「儲存」或「連線」才會存下。</value>
+  </data>
   <data name="SshAlgoFix_ConfirmAction" xml:space="preserve">
     <value>放開並重新連線</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRediagnose" xml:space="preserve">
+    <value>放開並重新診斷</value>
+  </data>
+  <data name="SshAlgoFix_ConfirmActionRetest" xml:space="preserve">
+    <value>放開並重新測試</value>
   </data>
   <data name="SshAlgoFix_SaveFailed" xml:space="preserve">
     <value>連線設定沒能儲存:{0}</value>

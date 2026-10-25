@@ -1511,17 +1511,26 @@ public partial class MainWindow : Window
     }
 
     /// <summary>打开连接诊断中心(设计 RGXg1):打开即自动执行一轮四步检测。</summary>
-    private async Task OpenDiagnosticsDialogAsync(SessionProfile profile)
+    /// <param name="profile">要诊断的配置。</param>
+    /// <param name="owner">对话框的属主;为 null 时是主窗口(会话健康巡检的结果窗口打开时传它自己)。</param>
+    private async Task OpenDiagnosticsDialogAsync(SessionProfile profile, Window? owner = null)
     {
         if (Application.Current is not App app || app.Services?.GetService<IConnectionDiagnosticsService>() is not { } diagnosticsService)
         {
             return;
         }
-        var dialog = new ConnectionDiagnosticsView
+        var viewModel = new ConnectionDiagnosticsViewModel(
+            profile,
+            diagnosticsService,
+            app.Services.GetService<ISessionRepository>(),
+            app.Services.GetService<IConnectionWorkflowService>());
+        var dialog = new ConnectionDiagnosticsView { DataContext = viewModel };
+        await dialog.ShowDialog(owner ?? this);
+        // 在诊断窗口里一键放开过算法:库里的配置改了,资源管理器缓存的那份要换新。
+        if (viewModel.ChangedStoredProfiles && DataContext is MainWindowViewModel mainWindowViewModel)
         {
-            DataContext = new ConnectionDiagnosticsViewModel(profile, diagnosticsService),
-        };
-        await dialog.ShowDialog(this);
+            await mainWindowViewModel.RefreshSessionTreeAsync();
+        }
     }
 
     /// <summary>打开设置窗口(设计 §14):DI 单例 VM,打开时重新加载持久化设置。</summary>

@@ -3127,52 +3127,15 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         {
             return;
         }
-
-        SessionProfile? stored = null;
-        try
-        {
-            stored = await FindProfileAtHopAsync(profile, remedy.HopDepth).ConfigureAwait(true);
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException)
-        {
-            Toasts.Error(Strings.Format("SshAlgoFix_SaveFailed", ex.Message));
-            return;
-        }
-        if (remedy.HopDepth > 0 && stored is null)
-        {
-            // 跳板的配置找不到了(删了、链改了):不猜,让用户自己去改。
-            Toasts.Error(Strings.Format("SshAlgoFix_HopMissing", remedy.HopTarget ?? string.Empty));
-            return;
-        }
-        SessionProfile named = stored ?? profile;
-        string name = string.IsNullOrWhiteSpace(named.Name) ? HostAddress.FormatEndPoint(named.Host, named.Port) : named.Name;
-        string body = Strings.Format("SshAlgoFix_ConfirmBody", name, SshAlgorithmPreferences.Label(remedy.Kind),
-            string.Join(Environment.NewLine, remedy.Algorithms.Select(a => "  " + a)));
-        if (!await confirm(Strings.Get("SshAlgoFix_ConfirmTitle"), body).ConfigureAwait(true)
-            || tab.AlgorithmRemedy != remedy || tab.ConnectionStatus != SessionStatus.Disconnected)
+        if (await AlgorithmRemedies.ConfirmAndSaveAsync(
+                profile, remedy, SshAlgorithmRemedyFollowUp.Reconnect, (title, body, _) => confirm(title, body), message => Toasts.Error(message),
+                () => tab.AlgorithmRemedy == remedy && tab.ConnectionStatus == SessionStatus.Disconnected).ConfigureAwait(true)
+            is not { } applied)
         {
             return;
         }
-
-        if (stored is not null)
+        if (applied.Stored is not null)
         {
-            stored.Ssh = remedy.ApplyTo(stored.Ssh);
-            try
-            {
-                if (_connectionWorkflowService is { } workflow)
-                {
-                    await workflow.SaveProfileAsync(stored).ConfigureAwait(true);
-                }
-                else if (_sessionRepository is { } repository)
-                {
-                    await repository.SaveSessionAsync(stored).ConfigureAwait(true);
-                }
-            }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
-            {
-                Toasts.Error(Strings.Format("SshAlgoFix_SaveFailed", ex.Message));
-                return;
-            }
             _ = RefreshSessionTreeAsync();
         }
         if (remedy.HopDepth == 0)
@@ -3183,27 +3146,39 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     }
 
     /// <summary>
-    /// 库里那条配置:<paramref name="depth" /> 为 0 是这条本身,1 是它的跳板,2 是跳板的跳板……
-    /// 不在库里(临时配置)或链上断了时为 <see langword="null" />。
+    /// 独立 SFTP 文档(含双栏远程里的 SSH / SFTP 那一栏)失败卡片上的「放开这几个算法并重连」:
+    /// 与终端标签同一个确认框、同一套写法,确认后经卡片自己的「重新连接」重走一遍连接流程。
     /// </summary>
-    private async Task<SessionProfile?> FindProfileAtHopAsync(SessionProfile profile, int depth)
+    /// <param name="document">失败的占位标签。</param>
+    /// <param name="profile">这次没连上的那份配置(卡片上的「重新连接」用的就是它)。</param>
+    /// <param name="remedy">诊断点名的补救。</param>
+    private async Task AllowAlgorithmsAndRetryDocumentAsync(ConnectingDocument document, SessionProfile profile, SshAlgorithmRemedy remedy)
     {
-        if (_sessionRepository is not { } repository)
+        if (!document.HasError || document.AlgorithmRemedy != remedy || AllowAlgorithmsConfirmer is not { } confirm)
         {
-            return null;
+            return;
         }
-        SessionProfile? current = await repository.GetSessionAsync(profile.Id).ConfigureAwait(true);
-        HashSet<Guid> visited = [profile.Id];
-        for (int i = 0; i < depth; i++)
+        if (await AlgorithmRemedies.ConfirmAndSaveAsync(
+                profile, remedy, SshAlgorithmRemedyFollowUp.Reconnect, (title, body, _) => confirm(title, body), message => Toasts.Error(message),
+                () => document.HasError && document.AlgorithmRemedy == remedy).ConfigureAwait(true)
+            is not { } applied)
         {
-            if (current?.JumpHostProfileId is not { } next || !visited.Add(next))
-            {
-                return null;
-            }
-            current = await repository.GetSessionAsync(next).ConfigureAwait(true);
+            return;
         }
-        return current;
+        if (applied.Stored is not null)
+        {
+            _ = RefreshSessionTreeAsync();
+        }
+        if (remedy.HopDepth == 0)
+        {
+            // 改的是重试要用的那一份(失败卡片的「重新连接」拿它重走流程),理由同终端标签那条路径。
+            profile.Ssh = remedy.ApplyTo(profile.Ssh);
+        }
+        document.Retry();
     }
+
+    /// <summary>「放开这几个算法」各入口共用的那一段(找到要改的配置、确认、写库)。</summary>
+    private SshAlgorithmRemedyFlow AlgorithmRemedies => field ??= new(_sessionRepository, _connectionWorkflowService);
 
     /// <summary>
     /// 断线后的自动重连(倒计时到点、睡眠唤醒后的批量重连):同 <see cref="ReconnectTabAsync" />,
@@ -4741,7 +4716,8 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
 
         /// <summary>连不上了:占位留在原地换成失败卡片(重新连接 / 关闭标签页)。</summary>
         /// <param name="message">面向用户的失败原因。</param>
-        public void Fail(string message) => Document.MarkFailed(message);
+        /// <param name="remedy">算法协商失败、能一键放开时给(见 <see cref="ConnectingDocument.AlgorithmRemedy" />)。</param>
+        public void Fail(string message, SshAlgorithmRemedy? remedy = null) => Document.MarkFailed(message, remedy);
 
         /// <summary>用户中途取消:撤掉占位标签(已被用户关掉时是空操作)。</summary>
         public void Abandon() => _owner.Layout.RemoveDocument(Document);
@@ -5017,7 +4993,17 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
         string message = DescribeConnectionError(error, profile);
         LastConnectionError = message;
         Toasts.Error(message);
-        ui.Fail(message);
+        // 败在算法协商上的同时带上一键补救(与终端标签同一份,见 SshAlgorithmRemedy)。只认 SSH / SFTP 配置:
+        // 那一跳的 SSH 连接就是按这份配置连的;插件工作台经 SSH 隧道连出去的那条不归它管,改错了配置更糟。
+        SshAlgorithmRemedy? remedy = profile.ConnectionType is ConnectionType.SSH or ConnectionType.SFTP
+            ? SshAlgorithmRemedy.Find(error)
+            : null;
+        ui.Fail(message, remedy);
+        if (remedy is not null)
+        {
+            ConnectingDocument document = ui.Document;
+            document.AllowAlgorithmsRequested = () => _ = AllowAlgorithmsAndRetryDocumentAsync(document, profile, remedy);
+        }
     }
 
     /// <summary>

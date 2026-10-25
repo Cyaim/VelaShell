@@ -1437,6 +1437,28 @@
               </Panel>
             </Button>
           </Grid>
+          <!-- 「测试」败在算法协商上、而对端有本版实现了只是没放开的算法:与终端标签失败覆盖层同一颗按钮,
+               确认后改表单里的自定义算法清单(跳板那一跳改跳板自己的配置)并重新测试。描边 + 警示图标。 -->
+          <Button x:Name="AllowAlgorithmsButton"
+                  HorizontalAlignment="Left"
+                  Margin="23,2,0,0"
+                  IsVisible="{Binding HasAlgorithmRemedy}"
+                  Command="{Binding AllowAlgorithmsCommand}"
+                  Background="Transparent"
+                  BorderBrush="{DynamicResource VelaBorderSecondary}"
+                  BorderThickness="1"
+                  CornerRadius="4" Padding="12,4"
+                  ToolTip.Tip="{Binding AlgorithmRemedyTip}"
+                  AutomationProperties.Name="{loc:Localize SshAlgoFix_ButtonRetest}">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <pc:LucideIcon Width="12" Height="12"
+                             Data="{StaticResource Icon.triangle-alert}"
+                             Foreground="{DynamicResource VelaWarning}" VerticalAlignment="Center" />
+              <TextBlock Text="{loc:Localize SshAlgoFix_ButtonRetest}"
+                         Foreground="{DynamicResource VelaTextSecondary}"
+                         FontSize="{DynamicResource VelaFontSize11}" FontWeight="Medium" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
           <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ShowTestSuccess}">
             <pc:LucideIcon Width="13" Height="13" VerticalAlignment="Center"
                            Data="{StaticResource Icon.circle-check}"
