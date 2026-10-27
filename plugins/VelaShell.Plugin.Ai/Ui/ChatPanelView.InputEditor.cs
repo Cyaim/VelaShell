@@ -187,7 +187,11 @@ public partial class ChatPanelView
             {
                 if (text[i] is not ('@' or '#')) continue;
                 if (!FileReference.TryFindCompletedReferenceAt(text, i, out int length, out _)
-                    && !TryImageMentionAt(text, i, out length, out _)) continue;
+                    && !TryImageMentionAt(text, i, out length, out _))
+                {
+                    continue;
+                }
+
                 ChangeLinePart(line.Offset + i, line.Offset + i + length, element =>
                 {
                     element.TextRunProperties.SetForegroundBrush(foreground);

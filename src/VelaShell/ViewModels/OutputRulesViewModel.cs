@@ -174,7 +174,6 @@ public sealed class OutputRulesViewModel : ReactiveObject
     /// <summary>新建。</summary>
     public ReactiveCommand<RxVoid, RxVoid> AddCommand { get; }
 
-
     /// <summary>编辑框「完成」:写回列表(校验不过时不可点)。</summary>
     public ReactiveCommand<RxVoid, RxVoid> CommitEditCommand { get; }
 

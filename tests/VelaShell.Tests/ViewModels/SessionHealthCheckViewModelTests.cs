@@ -68,8 +68,8 @@ public sealed class SessionHealthCheckViewModelTests
 
         Assert.AreEqual(SessionHealthStatus.Failed, outcome.Status);
         Assert.AreEqual("TCP", outcome.Step);
-        StringAssert.Contains(outcome.Detail, "TCP 建链失败");
-        StringAssert.Contains(outcome.Detail, "Connection refused");
+        Assert.Contains("TCP 建链失败", outcome.Detail);
+        Assert.Contains("Connection refused", outcome.Detail);
     }
 
     /// <summary>主机指纹待确认、动态码被谢绝、Tailscale 要复核:不是机器坏了,是巡检不替人回答。</summary>
@@ -107,7 +107,7 @@ public sealed class SessionHealthCheckViewModelTests
 
         Assert.AreEqual(SessionHealthStatus.Failed, outcome.Status);
         Assert.AreEqual(Strings.Get("Health_StepConfiguration"), outcome.Step);
-        StringAssert.Contains(outcome.Detail, "跳板主机已被删除");
+        Assert.Contains("跳板主机已被删除", outcome.Detail);
     }
 
     // ---- 一批的跑法 ----
@@ -253,9 +253,9 @@ public sealed class SessionHealthCheckViewModelTests
         Assert.AreSequenceEqual(["nocreds", "broken"], [.. vm.VisibleRows.Select(r => r.Name)]);
         Assert.AreEqual(Strings.Format("Health_Summary", 3, 1, 1, 1), vm.Summary);
         string report = vm.BuildReportText();
-        StringAssert.Contains(report, "ok\t");
-        StringAssert.Contains(report, "broken\t");
-        StringAssert.Contains(report, Strings.Get("Health_StatusFailed"));
+        Assert.Contains("ok\t", report);
+        Assert.Contains("broken\t", report);
+        Assert.Contains(Strings.Get("Health_StatusFailed"), report);
         Assert.HasCount(4, report.TrimEnd().Split('\n'), "表头 + 每台一行(过滤只管显示)。");
     }
 

@@ -244,7 +244,7 @@ public sealed class RemoteSearchShellTests
             {
                 continue;
             }
-            for (DirectoryInfo? up = new DirectoryInfo(directory); up is not null && roots.Count < 64; up = up.Parent)
+            for (var up = new DirectoryInfo(directory); up is not null && roots.Count < 64; up = up.Parent)
             {
                 roots.Add(up.FullName);
             }

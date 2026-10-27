@@ -425,7 +425,7 @@ public sealed class RelayTests
         Task<RelayResult> relay = DuplexRelay.RunAsync(
             left, right, onBytesFromLeft: writes.Enqueue, throttleFromLeft: limiter.AcquireAsync);
         Task<byte[]> atRight = right.ReadAllReceivedAsync();
-        Task feed = Task.Run(async () =>
+        var feed = Task.Run(async () =>
         {
             await left.FeedAsync(payload);
             left.FeedComplete();

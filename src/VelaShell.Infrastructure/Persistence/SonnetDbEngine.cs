@@ -39,10 +39,10 @@ public sealed class SonnetDbEngine : IDisposable
     /// <summary>会话录制元数据文档集合名。</summary>
     public const string RecordingsCollection = "recordings";
     /// <summary>
-    /// 传输队列快照文档集合名(断线 / 重启后待继续的传输,见 <see cref="VelaShell.Core.Sftp.TransferQueueJournal" />):
+    /// 传输队列快照文档集合名(断线 / 重启后待继续的传输,见 <see cref="Core.Sftp.TransferQueueJournal" />):
     /// 与 recordings 同一种形状 —— 建库时创建,一份文档一个键。名字以 Core 的常量为准,两边不各写一份。
     /// </summary>
-    public const string TransferQueueCollection = VelaShell.Core.Sftp.TransferQueueJournal.Collection;
+    public const string TransferQueueCollection = Core.Sftp.TransferQueueJournal.Collection;
     /// <summary>共享凭据文档集合名(#550;密码与私钥口令加密落盘)。</summary>
     public const string SharedCredentialsCollection = "shared_credentials";
 

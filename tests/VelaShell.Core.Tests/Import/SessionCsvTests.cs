@@ -90,7 +90,10 @@ public sealed class SessionCsvTests
     {
         var profile = new SessionProfile
         {
-            Name = "tpm", Host = "10.0.0.12", Username = "ops", AuthMethod = AuthMethod.KeyStore,
+            Name = "tpm",
+            Host = "10.0.0.12",
+            Username = "ops",
+            AuthMethod = AuthMethod.KeyStore,
             KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy", MachineKey = true },
         };
 
@@ -114,7 +117,10 @@ public sealed class SessionCsvTests
     {
         var profile = new SessionProfile
         {
-            Name = "tpm-ca", Host = "10.0.0.14", Username = "ops", AuthMethod = AuthMethod.KeyStore,
+            Name = "tpm-ca",
+            Host = "10.0.0.14",
+            Username = "ops",
+            AuthMethod = AuthMethod.KeyStore,
             KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy" },
             CertificatePath = @"C:\certs\deploy-cert.pub",
         };
@@ -353,10 +359,18 @@ public sealed class SessionCsvTests
         var jump = new SessionProfile { Name = "jump", Host = "jump" };
         var profile = new SessionProfile
         {
-            Name = "tail", Host = "tail", Username = "deploy", ConnectionType = type,
-            AuthMethod = AuthMethod.Tailscale, Password = "stale-password", PrivateKeyPath = "/stale-key",
-            PrivateKeyPassphrase = "stale-phrase", CertificatePath = "/stale-cert", RememberPassword = true,
-            CredentialSource = CredentialReference.ForShared(credential.Id), JumpHostProfileId = jump.Id
+            Name = "tail",
+            Host = "tail",
+            Username = "deploy",
+            ConnectionType = type,
+            AuthMethod = AuthMethod.Tailscale,
+            Password = "stale-password",
+            PrivateKeyPath = "/stale-key",
+            PrivateKeyPassphrase = "stale-phrase",
+            CertificatePath = "/stale-cert",
+            RememberPassword = true,
+            CredentialSource = CredentialReference.ForShared(credential.Id),
+            JumpHostProfileId = jump.Id
         };
 
         string csv = SessionCsv.Write(new SessionArchive { Sessions = [profile, jump], SharedCredentials = [credential] });

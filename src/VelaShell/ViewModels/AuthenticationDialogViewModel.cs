@@ -308,14 +308,14 @@ public class AuthenticationDialogViewModel : ReactiveObject
     public string? SharedCredentialNotice => SharedCredential is { Reason: SharedCredentialPromptReason.Unsupported }
         ? Strings.Get("SharedCred_ErrTailscaleUnsupported")
         : IsTailscaleMethod ? null : SharedCredential switch
-    {
-        { Reason: SharedCredentialPromptReason.Rejected } shared =>
-            Strings.Format("Auth_SharedRejected", shared.CredentialName),
-        { Reason: SharedCredentialPromptReason.Incomplete } shared =>
-            Strings.Format("Auth_SharedIncomplete", shared.CredentialName),
-        { Reason: SharedCredentialPromptReason.Missing } => Strings.Get("Auth_SharedMissing"),
-        _ => null
-    };
+        {
+            { Reason: SharedCredentialPromptReason.Rejected } shared =>
+                Strings.Format("Auth_SharedRejected", shared.CredentialName),
+            { Reason: SharedCredentialPromptReason.Incomplete } shared =>
+                Strings.Format("Auth_SharedIncomplete", shared.CredentialName),
+            { Reason: SharedCredentialPromptReason.Missing } => Strings.Get("Auth_SharedMissing"),
+            _ => null
+        };
 
     /// <summary>是否显示原因说明条。</summary>
     public bool HasSharedCredentialNotice => SharedCredentialNotice is not null;
@@ -335,7 +335,7 @@ public class AuthenticationDialogViewModel : ReactiveObject
     /// <summary>能否把本次输入存回共享凭据:凭据还在才能存。</summary>
     public bool CanUpdateSharedCredential =>
         !IsTailscaleMethod && SharedCredential is
-            { Reason: not (SharedCredentialPromptReason.Missing or SharedCredentialPromptReason.Unsupported) };
+        { Reason: not (SharedCredentialPromptReason.Missing or SharedCredentialPromptReason.Unsupported) };
 
     /// <summary>「同时更新共享凭据」勾选框的文案(带凭据名与引用它的连接数)。</summary>
     public string UpdateSharedCredentialText => SharedCredential is { } shared

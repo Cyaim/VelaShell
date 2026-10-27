@@ -315,7 +315,7 @@ public static class KnownHostsInterop
         }
         try
         {
-            SshPublicKey decoded = SshPublicKey.Decode(Convert.FromBase64String(host.HostKey));
+            var decoded = SshPublicKey.Decode(Convert.FromBase64String(host.HostKey));
             if (!SonnetDbHostKeyService.SameFingerprint(host.Fingerprint, decoded.Sha256Fingerprint))
             {
                 return false;

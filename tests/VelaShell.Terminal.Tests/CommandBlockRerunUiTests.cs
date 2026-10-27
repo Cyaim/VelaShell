@@ -39,7 +39,7 @@ public sealed class CommandBlockRerunUiTests
             CursorBlink = false
         };
         var sent = new List<byte[]>();
-        control.TypedInput += bytes => sent.Add(bytes);
+        control.TypedInput += sent.Add;
         var window = new Window { Width = 700, Height = 400, Content = control };
         window.Show();
         Dispatcher.UIThread.RunJobs();
@@ -182,7 +182,7 @@ public sealed class CommandBlockRerunUiTests
 
             Click(Item(control.BuildGutterContextMenu(0), 1));
 
-            CollectionAssert.AreEqual(new[] { "ls -la" }, requested, "交给宿主的是不带回车的命令文本。");
+            Assert.AreSequenceEqual(["ls -la"], requested, "交给宿主的是不带回车的命令文本。");
             Assert.IsEmpty(sent);
             window.Close();
         });
@@ -224,7 +224,7 @@ public sealed class CommandBlockRerunUiTests
 
             Click(Item(control.BuildGutterContextMenu(0), 1));
 
-            CollectionAssert.AreEqual(new[] { "for i in 1 2; do\necho $i\ndone" }, asked);
+            Assert.AreSequenceEqual(["for i in 1 2; do\necho $i\ndone"], asked);
             Assert.IsEmpty(sent, "用户取消了,一个字节都不发。");
             window.Close();
         });

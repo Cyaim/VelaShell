@@ -74,7 +74,7 @@ public sealed class DockLayoutTemplateTests
     {
         public Dictionary<Guid, SessionProfile> Profiles { get; } = [];
 
-        public HashSet<string> Shells { get; } = new(StringComparer.Ordinal) { "pwsh" };
+        public HashSet<string> Shells { get; } = [with(StringComparer.Ordinal), "pwsh"];
 
         /// <summary>这些配置的标签要等闸门放行才建出来(模拟先弹凭据框)。</summary>
         public Dictionary<Guid, TaskCompletionSource> Delays { get; } = [];
@@ -231,7 +231,7 @@ public sealed class DockLayoutTemplateTests
         LayoutOpenRequest[] kinds = [.. opener.Requests];
         Assert.AreSequenceEqual(
             [LayoutDocumentKind.Files, LayoutDocumentKind.Terminal, LayoutDocumentKind.Workspace, LayoutDocumentKind.LocalShell],
-            kinds.Select(r => r.Kind).ToArray(),
+            [.. kinds.Select(r => r.Kind)],
             "按模板顺序发起,各自带着自己的类型");
     }
 
@@ -258,7 +258,7 @@ public sealed class DockLayoutTemplateTests
         LayoutNode captured = DockLayoutSnapshot.Capture(workspace, Describe)!;
 
         Assert.IsFalse(captured.IsSplit, "右边那格只有插件面板,去掉之后分栏只剩一个子节点,提上来");
-        Assert.AreEqual(1, captured.Documents.Count);
+        Assert.HasCount(1, captured.Documents);
     }
 
     // ---- 后到的标签 ----
@@ -345,7 +345,7 @@ public sealed class DockLayoutTemplateTests
                 new LayoutMissingDocument("future", LayoutMissingReason.Unsupported),
                 new LayoutMissingDocument("fish", LayoutMissingReason.ShellUnavailable),
             ],
-            result.Missing.ToArray());
+            [.. result.Missing]);
         var root = (DockSplit)workspace.Root;
         Assert.HasCount(2, root.Children);
         var survivor = (DockGroup)root.Children[1];
@@ -426,7 +426,7 @@ public sealed class DockLayoutTemplateTests
         Assert.AreSame(right, request.SecondProfile);
         Assert.AreSequenceEqual(
             [LayoutMissingReason.ProfileDeleted, LayoutMissingReason.Unsupported],
-            result.Missing.Select(m => m.Reason).ToArray());
+            [.. result.Missing.Select(m => m.Reason)]);
     }
 
     // ---- 模型层的落点裁决 ----

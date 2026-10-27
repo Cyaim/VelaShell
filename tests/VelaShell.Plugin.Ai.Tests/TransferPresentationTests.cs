@@ -10,8 +10,17 @@ public sealed class TransferPresentationTests
     [TestMethod]
     public void LargeCountsAndUnknownOrEmptyTotals_DoNotInventSuccess()
     {
-        var snapshot = new RemoteTransferSnapshot { TransferId = "t", OperationId = "op", SessionId = "s", LocalPath = "source", RemotePath = "/target", State = RemoteTransferState.Running,
-            TransferredBytes = 5_000_000_000, TotalBytes = 10_000_000_000 };
+        var snapshot = new RemoteTransferSnapshot
+        {
+            TransferId = "t",
+            OperationId = "op",
+            SessionId = "s",
+            LocalPath = "source",
+            RemotePath = "/target",
+            State = RemoteTransferState.Running,
+            TransferredBytes = 5_000_000_000,
+            TotalBytes = 10_000_000_000
+        };
         Assert.AreEqual(50d, TransferPresentation.Percent(snapshot));
         Assert.Contains(5_000_000_000L.ToString("N0"), TransferPresentation.Text(new Loc("en"), snapshot));
         Assert.IsNull(TransferPresentation.Percent(snapshot with { TotalBytes = -1 }));
@@ -23,14 +32,26 @@ public sealed class TransferPresentationTests
     [TestMethod]
     public void FullBytesRequireExplicitSucceeded_AndFinalizingDoesNotClaimZeroEta()
     {
-        var snapshot = new RemoteTransferSnapshot { TransferId = "t", OperationId = "op", SessionId = "s", LocalPath = "source", RemotePath = "/target", State = RemoteTransferState.Running, TotalBytes = 10,
-            TransferredBytes = 10, EstimatedTimeRemaining = TimeSpan.Zero };
+        var snapshot = new RemoteTransferSnapshot
+        {
+            TransferId = "t",
+            OperationId = "op",
+            SessionId = "s",
+            LocalPath = "source",
+            RemotePath = "/target",
+            State = RemoteTransferState.Running,
+            TotalBytes = 10,
+            TransferredBytes = 10,
+            EstimatedTimeRemaining = TimeSpan.Zero
+        };
         var loc = new Loc("en");
         Assert.Contains(loc["TransferFinalizing"], TransferPresentation.Text(loc, snapshot));
         Assert.Contains(loc["TransferEtaUnknown"], TransferPresentation.Text(loc, snapshot));
-        foreach (var state in new[] { RemoteTransferState.Unknown, RemoteTransferState.Failed,
+        foreach (RemoteTransferState state in new[] { RemoteTransferState.Unknown, RemoteTransferState.Failed,
                      RemoteTransferState.Cancelled, RemoteTransferState.TimedOut })
+        {
             Assert.AreNotEqual("TransferSucceeded", TransferPresentation.StateKey(snapshot with { State = state }));
+        }
     }
 
     /// <summary>
@@ -41,9 +62,18 @@ public sealed class TransferPresentationTests
     public void UnsuccessfulTerminalTransfer_ShowsAShortSanitizedCause()
     {
         var loc = new Loc("en");
-        var failed = new RemoteTransferSnapshot { TransferId = "t", OperationId = "op", SessionId = "s", LocalPath = "target", RemotePath = "/source",
-            Direction = RemoteTransferDirection.Download, State = RemoteTransferState.Failed, TotalBytes = 10,
-            ErrorMessage = "Cannot lock the destination\r\ndirectory chain.\u001b‮" };
+        var failed = new RemoteTransferSnapshot
+        {
+            TransferId = "t",
+            OperationId = "op",
+            SessionId = "s",
+            LocalPath = "target",
+            RemotePath = "/source",
+            Direction = RemoteTransferDirection.Download,
+            State = RemoteTransferState.Failed,
+            TotalBytes = 10,
+            ErrorMessage = "Cannot lock the destination\r\ndirectory chain.\u001b‮"
+        };
         string text = TransferPresentation.Text(loc, failed);
         Assert.Contains(loc["TransferFailed"], text);
         Assert.Contains("Cannot lock the destination directory chain.", text);

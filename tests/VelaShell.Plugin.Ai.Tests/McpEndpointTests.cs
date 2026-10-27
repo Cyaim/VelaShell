@@ -179,7 +179,9 @@ public sealed class McpEndpointTests
             using HttpClient client = CreateClient(port, token);
             using JsonDocument initialize = await RpcAsync(client, new
             {
-                jsonrpc = "2.0", id = 1, method = "initialize",
+                jsonrpc = "2.0",
+                id = 1,
+                method = "initialize",
                 @params = new { protocolVersion = "2025-06-18", clientInfo = new { name = "test", version = "1" } }
             });
             string instructions = initialize.RootElement.GetProperty("result").GetProperty("instructions").GetString()!;
@@ -193,7 +195,9 @@ public sealed class McpEndpointTests
 
             using JsonDocument call = await RpcAsync(client, new
             {
-                jsonrpc = "2.0", id = 3, method = "tools/call",
+                jsonrpc = "2.0",
+                id = 3,
+                method = "tools/call",
                 @params = new { name = "run_command", arguments = new { command = "id" } }
             }, sessionId);
             Assert.IsFalse(call.RootElement.TryGetProperty("result", out JsonElement result)

@@ -410,7 +410,7 @@ public class TunnelService(
         // 其余的按原因码本地化(库的消息是写给开发者看的中文),不认识的才显示原文。
         for (Exception? e = ex; e is not null; e = e.InnerException)
         {
-            if (e is VelaShell.Ssh.Diagnostics.SshException ssh)
+            if (e is SshException ssh)
             {
                 return Ssh.SshInterop.Localize(ssh);
             }
@@ -506,7 +506,7 @@ public class TunnelService(
         Exception? innermost = null;
         for (Exception? e = ex; e is not null; e = e.InnerException)
         {
-            bindFailed |= e is VelaShell.Ssh.Diagnostics.SshException { Reason: SshFailureReason.ForwardBindFailed };
+            bindFailed |= e is SshException { Reason: SshFailureReason.ForwardBindFailed };
             socket ??= e as SocketException;
             innermost = e;
         }
@@ -518,7 +518,7 @@ public class TunnelService(
         {
             string detail = socket is not null
                 ? socket.SocketErrorCode.ToString()
-                : innermost is not null && innermost is not VelaShell.Ssh.Diagnostics.SshException ? innermost.Message : string.Empty;
+                : innermost is not null and not VelaShell.Ssh.Diagnostics.SshException ? innermost.Message : string.Empty;
             return detail.Length == 0
                 ? Strings.Format("TunnelSvc_LocalSocketBindFailedNoDetail", path)
                 : Strings.Format("TunnelSvc_LocalSocketBindFailed", path, detail);

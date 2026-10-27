@@ -57,7 +57,7 @@ public sealed class TunnelConfigPersistenceTests
     public void ArchiveFile_RoundTripsTheNewFields()
     {
         string json = JsonSerializer.Serialize(Sample(), SessionArchiveJson.Options);
-        StringAssert.Contains(json, "\"remoteDynamicForward\"", "导出文件里的类型写名字。");
+        Assert.Contains("\"remoteDynamicForward\"", json, "导出文件里的类型写名字。");
 
         AssertSameAsSample(JsonSerializer.Deserialize<List<TunnelConfig>>(json, SessionArchiveJson.Options)!);
     }

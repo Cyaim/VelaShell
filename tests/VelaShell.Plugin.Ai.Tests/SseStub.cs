@@ -212,7 +212,7 @@ public sealed class SseStub : IAsyncDisposable
                             _bodies.Add(body);
                             _authorizations.Add(context.Request.Headers["Authorization"]);
                             _accountIds.Add(context.Request.Headers["chatgpt-account-id"]);
-                            _headers.Add(new NameValueCollection(context.Request.Headers));
+                            _headers.Add([with(context.Request.Headers)]);
                         }
                         _request.TrySetResult(body);
                         bool wantsStream = body.Contains("\"stream\":true", StringComparison.Ordinal);

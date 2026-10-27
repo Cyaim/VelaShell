@@ -35,10 +35,7 @@ public sealed class TypeAheadSearchTests
     }
 
     [TestMethod]
-    public void TheSyntheticParentRow_IsNeverMatched()
-    {
-        Assert.AreEqual(-1, TypeAheadSearch.FindMatch(Names, -1, "."));
-    }
+    public void TheSyntheticParentRow_IsNeverMatched() => Assert.AreEqual(-1, TypeAheadSearch.FindMatch(Names, -1, "."));
 
     [TestMethod]
     public void NoMatch_ReturnsMinusOne()
@@ -56,10 +53,7 @@ public sealed class TypeAheadSearchTests
     }
 
     [TestMethod]
-    public void ASingleCharacter_StaysOnTheOnlyMatch()
-    {
-        Assert.AreEqual(5, TypeAheadSearch.FindMatch(Names, 5, "g"));
-    }
+    public void ASingleCharacter_StaysOnTheOnlyMatch() => Assert.AreEqual(5, TypeAheadSearch.FindMatch(Names, 5, "g"));
 
     [TestMethod]
     public void QuicklyRepeatingOneLetter_CyclesThroughTheItemsStartingWithIt()

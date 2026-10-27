@@ -517,7 +517,7 @@ public sealed class ConnectionProfileViewUiTests
                 TextBox username = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Text == "ops");
                 Assert.IsTrue(tailscale.IsEffectivelyVisible);
                 Assert.IsTrue(tailscale.IsTabStop);
-                Control segments = (Control)tailscale.GetVisualParent()!;
+                var segments = (Control)tailscale.GetVisualParent()!;
                 Assert.IsGreaterThanOrEqualTo(username.Bounds.Width, segments.Bounds.Width, "认证分段应使用用户名下方的全宽行");
                 Assert.IsGreaterThanOrEqualTo(username.TranslatePoint(default, window)!.Value.Y + username.Bounds.Height, tailscale.TranslatePoint(default, window)!.Value.Y);
 

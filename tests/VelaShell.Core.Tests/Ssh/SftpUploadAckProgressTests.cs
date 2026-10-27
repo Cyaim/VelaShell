@@ -59,7 +59,7 @@ public sealed class SftpUploadAckProgressTests
         {
             Assert.IsGreaterThanOrEqualTo(reported[i - 1], reported[i], "进度不能回退。");
         }
-        CollectionAssert.AreEqual(data, harness.SftpServer.Nodes[RemotePath].Content.ToArray());
+        Assert.AreSequenceEqual(data, [.. harness.SftpServer.Nodes[RemotePath].Content]);
     }
 
     private static async Task EventuallyAsync(Func<bool> condition)

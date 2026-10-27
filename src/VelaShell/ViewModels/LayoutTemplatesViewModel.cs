@@ -393,7 +393,7 @@ public sealed class LayoutTemplatesViewModel : ReactiveObject
         }
 
         LayoutTemplate[] before = [.. _templates];
-        Dictionary<Guid, LayoutTemplate?> conflicts = incoming.ToDictionary(t => t.Id, t => ConflictOf(t, before));
+        var conflicts = incoming.ToDictionary(t => t.Id, t => ConflictOf(t, before));
         bool keepBoth = false;
         if (conflicts.Values.Any(existing => existing is not null))
         {

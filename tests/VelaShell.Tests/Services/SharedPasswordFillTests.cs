@@ -4,7 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
-using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using NSubstitute;
 using VelaShell.Core.Credentials;
@@ -74,8 +74,8 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         control.SetEncoding(Encoding.Unicode);
         control.Feed("Password:"u8.ToArray());
-        var repository = Substitute.For<ISharedCredentialRepository>();
-        Guid id = Guid.NewGuid();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
+        var id = Guid.NewGuid();
         repository.GetPasswordAsync(id).Returns("口令!42");
         int typed = 0;
         control.TypedInput += _ => typed++;
@@ -99,7 +99,7 @@ public sealed class SharedPasswordFillTests
         await DrainWritesAsync(tab);
         // 正文按会话字符集编码,后面紧跟 Enter 键的字节(与真按 Enter 一样不转码);
         // 同一次写出,用户选完顺手敲的字符插不到密码与回车之间。
-        CollectionAssert.AreEqual((byte[])[.. Encoding.Unicode.GetBytes("口令!42"), (byte)'\r'], writes.ToArray());
+        Assert.AreSequenceEqual((byte[])[.. Encoding.Unicode.GetBytes("口令!42"), (byte)'\r'], [.. writes]);
         await shell.Received(1).WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
         Assert.AreEqual(0, typed);
         await DrainWritesAsync(peer);
@@ -119,14 +119,14 @@ public sealed class SharedPasswordFillTests
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         control.Feed("\e[20hPassword:"u8.ToArray());
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.GetPasswordAsync(Arg.Any<Guid>()).Returns("secret");
         List<byte> writes = CaptureWrites(shell);
         using var request = new SharedPasswordFillRequest(tab, () => true);
         Assert.AreEqual(PasswordFillResult.Queued, await request.FillAsync(repository, Guid.NewGuid()));
         await DrainWritesAsync(tab);
         Assert.AreEqual("secret\r\n", Encoding.UTF8.GetString([.. writes]));
-        CollectionAssert.AreEqual(control.EncodeEnterKey(), "\r\n"u8.ToArray());
+        Assert.AreSequenceEqual(control.EncodeEnterKey(), "\r\n"u8.ToArray());
     });
 
     [TestMethod]
@@ -141,7 +141,7 @@ public sealed class SharedPasswordFillTests
         control.SetEncoding(Encoding.ASCII);
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.GetPasswordAsync(Arg.Any<Guid>()).Returns(password);
         using var request = new SharedPasswordFillRequest(tab, () => true);
         Assert.AreEqual(PasswordFillResult.InvalidPassword, await request.FillAsync(repository, Guid.NewGuid()));
@@ -163,7 +163,7 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.GetPasswordAsync(Arg.Any<Guid>()).Returns(pending.Task);
         bool active = true;
@@ -198,7 +198,7 @@ public sealed class SharedPasswordFillTests
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "production", "admin", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns(
         [
             metadata,
@@ -227,9 +227,8 @@ public sealed class SharedPasswordFillTests
             // 展开列表只读元数据;滤掉非密码认证与没有口令的条目。
             await repository.Received(1).ListMetadataAsync();
             await repository.DidNotReceive().GetPasswordAsync(Arg.Any<Guid>());
-            CollectionAssert.AreEqual(
-                new[] { "production", "旧库无口令" },
-                view.PasswordItemsForTest.Select(item => item.Name).ToArray());
+            Assert.AreSequenceEqual(
+                ["production", "旧库无口令"], [.. view.PasswordItemsForTest.Select(item => item.Name)]);
             // 锚在光标行本身:列表落在提示行下沿之下,不遮住用户可能正在手敲的那一行,也不漂到别处。
             Rect anchor = view.PasswordPlacementRectForTest;
             Rect cursor = control.GetCursorRect();
@@ -267,13 +266,13 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "joe", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([metadata]);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
         {
             Dispatcher.UIThread.RunJobs();
-            using var frame = window.CaptureRenderedFrame();
+            using WriteableBitmap? frame = window.CaptureRenderedFrame();
             control.Focus();
             control.Feed("joe@p3tiny:~$ sudo apt update -y\r\n[sudo: authenticate] Password: "u8.ToArray());
             Paint(window);
@@ -303,13 +302,13 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([metadata]);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
         {
             Dispatcher.UIThread.RunJobs();
-            using var frame = window.CaptureRenderedFrame();
+            using WriteableBitmap? frame = window.CaptureRenderedFrame();
             // 终端没焦点:按键会去别处,不能弹出只走鼠标的列表。
             control.Feed("Password:"u8.ToArray());
             Paint(window);
@@ -361,7 +360,7 @@ public sealed class SharedPasswordFillTests
     {
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns(
         [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
@@ -401,7 +400,7 @@ public sealed class SharedPasswordFillTests
     {
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns(
         [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
@@ -434,7 +433,7 @@ public sealed class SharedPasswordFillTests
     {
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns(
         [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
@@ -470,7 +469,7 @@ public sealed class SharedPasswordFillTests
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([metadata]);
         repository.GetPasswordAsync(metadata.Id).Returns("secret");
         List<byte> writes = CaptureWrites(shell);
@@ -521,7 +520,7 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true)]);
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
@@ -563,7 +562,7 @@ public sealed class SharedPasswordFillTests
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([metadata]);
         repository.GetPasswordAsync(metadata.Id).Returns("secret");
         List<byte> writes = CaptureWrites(shell);
@@ -600,7 +599,7 @@ public sealed class SharedPasswordFillTests
     {
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns(
         [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
@@ -636,7 +635,7 @@ public sealed class SharedPasswordFillTests
     {
         using var control = new VelaTerminalControl();
         await using var tab = new TerminalTabViewModel(control, Shell()) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns(Task.FromException<List<SharedCredentialMetadata>>(new IOException("database is locked")));
         (Window window, TerminalTabView view, IDisposable restore) = ShowTerminal(tab, repository);
         try
@@ -665,7 +664,7 @@ public sealed class SharedPasswordFillTests
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var prod = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
         var staging = new SharedCredentialMetadata(Guid.NewGuid(), "staging", "ops", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([prod, staging]);
         repository.GetPasswordAsync(staging.Id).Returns("secret");
         List<byte> writes = CaptureWrites(shell);
@@ -715,7 +714,7 @@ public sealed class SharedPasswordFillTests
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([metadata]);
         repository.GetPasswordAsync(metadata.Id).Returns("secret");
         List<byte> writes = CaptureWrites(shell);
@@ -752,7 +751,7 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns(
         [
             new(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true),
@@ -785,7 +784,7 @@ public sealed class SharedPasswordFillTests
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([metadata]);
         var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.GetPasswordAsync(metadata.Id).Returns(pending.Task);
@@ -829,7 +828,7 @@ public sealed class SharedPasswordFillTests
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([metadata]);
         var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.GetPasswordAsync(metadata.Id).Returns(pending.Task);
@@ -878,7 +877,7 @@ public sealed class SharedPasswordFillTests
         IShellStreamWrapper shell = Shell();
         await using var tab = new TerminalTabViewModel(control, shell) { ConnectionStatus = SessionStatus.Connected };
         var metadata = new SharedCredentialMetadata(Guid.NewGuid(), "prod", "admin", AuthMethod.Password, true);
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         repository.ListMetadataAsync().Returns([metadata]);
         var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.GetPasswordAsync(metadata.Id).Returns(pending.Task);
@@ -916,7 +915,7 @@ public sealed class SharedPasswordFillTests
         using var control = new VelaTerminalControl();
         IShellStreamWrapper oldShell = Shell();
         await using var tab = new TerminalTabViewModel(control, oldShell) { ConnectionStatus = SessionStatus.Connected };
-        var repository = Substitute.For<ISharedCredentialRepository>();
+        ISharedCredentialRepository repository = Substitute.For<ISharedCredentialRepository>();
         var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.GetPasswordAsync(Arg.Any<Guid>()).Returns(pending.Task);
         using var request = new SharedPasswordFillRequest(tab, () => true);
@@ -938,7 +937,7 @@ public sealed class SharedPasswordFillTests
         using var otherControl = new VelaTerminalControl();
         await using var otherTab = new TerminalTabViewModel(otherControl, Shell());
         var main = new MainWindowViewModel();
-        var active = typeof(MainWindowViewModel).GetProperty(nameof(MainWindowViewModel.ActiveTerminalTab))!;
+        System.Reflection.PropertyInfo active = typeof(MainWindowViewModel).GetProperty(nameof(MainWindowViewModel.ActiveTerminalTab))!;
         active.SetValue(main, tab);
         var view = new TerminalTabView { DataContext = tab };
         var input = new TextBox();
@@ -979,7 +978,7 @@ public sealed class SharedPasswordFillTests
 
     private static IShellStreamWrapper Shell()
     {
-        var shell = Substitute.For<IShellStreamWrapper>();
+        IShellStreamWrapper shell = Substitute.For<IShellStreamWrapper>();
         shell.CanRead.Returns(false);
         shell.CanWrite.Returns(true);
         shell.WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
@@ -1017,7 +1016,7 @@ public sealed class SharedPasswordFillTests
     private static void Paint(Window window)
     {
         Dispatcher.UIThread.RunJobs();
-        using var frame = window.CaptureRenderedFrame();
+        using WriteableBitmap? frame = window.CaptureRenderedFrame();
     }
 
     /// <summary>经真实输入管线按一次键:落到聚焦的终端,先过视图的隧道键位。</summary>

@@ -40,7 +40,7 @@ public sealed class ConfirmOverlay : Panel
         IsVisible = false;
         ZIndex = 100;
 
-        var scrim = _scrim = new Border { Name = "ConfirmScrim" };
+        Border scrim = _scrim = new Border { Name = "ConfirmScrim" };
         scrim[!Border.BackgroundProperty] = new DynamicResourceExtension("VelaScrim");
         // 点在遮罩上不关框:要么点「取消」,要么按 Esc —— 误点一下外面不该被当成任何一种选择
         scrim.PointerPressed += (_, e) => e.Handled = true;

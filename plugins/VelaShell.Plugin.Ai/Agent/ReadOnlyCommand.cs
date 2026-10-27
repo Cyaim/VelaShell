@@ -257,7 +257,11 @@ public static class ReadOnlyCommand
                             if (value != "-") return false;
                             toStdout = true;
                         }
-                        else if (!WgetValue(value)) return false;
+                        else if (!WgetValue(value))
+                        {
+                            return false;
+                        }
+
                         continue;
                     default:
                         return false;
@@ -279,7 +283,11 @@ public static class ReadOnlyCommand
                         if (value != "-") return false;
                         toStdout = true;
                     }
-                    else if (!WgetValue(value)) return false;
+                    else if (!WgetValue(value))
+                    {
+                        return false;
+                    }
+
                     break;
                 }
                 continue;

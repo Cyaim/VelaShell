@@ -11,7 +11,7 @@ using FireAndForget = VelaShell.Services.FireAndForget;
 namespace VelaShell.Views;
 
 /// <summary>
-/// 审计日志窗口(设置 → 安全审计 → 查看审计日志),非模态;数据与筛选全在 <see cref="ViewModels.AuditLogViewModel" />。
+/// 审计日志窗口(设置 → 安全审计 → 查看审计日志),非模态;数据与筛选全在 <see cref="AuditLogViewModel" />。
 /// </summary>
 public partial class AuditLogView : Window
 {
@@ -102,7 +102,7 @@ public partial class AuditLogView : Window
     {
         if (e.Key == Key.Escape)
         {
-            if (DataContext is ViewModels.AuditLogViewModel { SearchText.Length: > 0 } vm)
+            if (DataContext is AuditLogViewModel { SearchText.Length: > 0 } vm)
             {
                 vm.SearchText = string.Empty;
             }

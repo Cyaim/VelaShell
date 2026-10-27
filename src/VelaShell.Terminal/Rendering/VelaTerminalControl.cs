@@ -142,12 +142,11 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
 
     // 选区匹配只是一层视觉标记,不能变成真实多选区或覆盖 Ctrl+F 的命中状态。
     private string? _selectionMatchQuery;
-    private IReadOnlyList<BufferSearchHit> _selectionMatches = [];
     private Dictionary<int, List<BufferSearchHit>>? _selectionMatchRows;
     private bool _selectionMatchesDirty;
     private int _selectionMatchScreenGeneration;
 
-    internal IReadOnlyList<BufferSearchHit> SelectionMatchesForTest => _selectionMatches;
+    internal IReadOnlyList<BufferSearchHit> SelectionMatchesForTest { get; private set; } = [];
     internal int SelectionMatchRefreshCountForTest { get; private set; }
 
     // 查询只有一个字(双击选中的变量 i 一类整词):命中也只认整词,否则屏上每个词里的 i 都会亮。
@@ -157,7 +156,7 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
     {
         _selectionMatchQuery = null;
         _selectionMatchWholeWord = false;
-        _selectionMatches = [];
+        SelectionMatchesForTest = [];
         _selectionMatchRows = null;
         _selectionMatchesDirty = false;
         _selectionMatchScreenGeneration = 0;
@@ -227,17 +226,17 @@ public sealed partial class VelaTerminalControl : Control, ITerminalEmulator
         }
         _selectionMatchesDirty = false;
         SelectionMatchRefreshCountForTest++;
-        _selectionMatches = BufferSearch.FindVisible(screen, _selectionMatchQuery, _screenToAbs);
+        SelectionMatchesForTest = BufferSearch.FindVisible(screen, _selectionMatchQuery, _screenToAbs);
         if (_selectionMatchWholeWord)
         {
-            _selectionMatches = [.. _selectionMatches.Where(hit =>
+            SelectionMatchesForTest = [.. SelectionMatchesForTest.Where(hit =>
             {
                 TerminalRow line = screen.ViewLine(hit.Row);
                 return !IsWordCell(line, hit.StartCol - 1) && !IsWordCell(line, hit.StartCol + hit.Length);
             })];
         }
         _selectionMatchRows = [];
-        foreach (BufferSearchHit hit in _selectionMatches)
+        foreach (BufferSearchHit hit in SelectionMatchesForTest)
         {
             if (!_selectionMatchRows.TryGetValue(hit.Row, out List<BufferSearchHit>? row))
             {

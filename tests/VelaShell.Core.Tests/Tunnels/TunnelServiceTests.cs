@@ -407,7 +407,7 @@ public class TunnelServiceTests
     public async Task CreateRemoteDynamicForwardAsync_RejectsAMissingOrBadAllowList()
     {
         TunnelService service = CreateService();
-        TunnelConfig Config(IReadOnlyList<string>? permit) => new()
+        static TunnelConfig Config(IReadOnlyList<string>? permit) => new()
         {
             Type = TunnelType.RemoteDynamicForward,
             Name = "socks-back",
@@ -502,7 +502,7 @@ public class TunnelServiceTests
         _mockClientWrapper.StartPortForwardAsync(Arg.Do<PortForwardRequest>(requests.Add), Arg.Any<CancellationToken>())
                           .Returns(Substitute.For<IPortForwardHandle>());
         TunnelService service = CreateService();
-        TunnelConfig Config(string? local, string? remote) => new()
+        static TunnelConfig Config(string? local, string? remote) => new()
         {
             Type = TunnelType.RemoteForward,
             Name = "agent",

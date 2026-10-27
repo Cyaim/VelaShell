@@ -26,7 +26,7 @@ namespace VelaShell.Infrastructure.Ssh;
 public sealed record SshAlgorithmRemedy(SshAlgorithmKind Kind, IReadOnlyList<string> Algorithms, int HopDepth = 0, string? HopTarget = null)
 {
     /// <summary>跳板上谈不成时记下是哪一跳:库会把它包进「连不上跳板」的异常里往外传,对象本身不变。</summary>
-    private static readonly ConditionalWeakTable<SshNegotiationException, HopTag> HopTags = new();
+    private static readonly ConditionalWeakTable<SshNegotiationException, HopTag> HopTags = [];
 
     private sealed record HopTag(int Depth, string Target);
 

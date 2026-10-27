@@ -115,7 +115,7 @@ public class DirectoryComparerTests
     [TestMethod]
     public void DayPrecision_IsTruncatedInTheServersCalendar()
     {
-        TimeSpan offset = TimeSpan.FromHours(14);
+        var offset = TimeSpan.FromHours(14);
         var listed = new DateTime(2025, 12, 2, 0, 0, 0, DateTimeKind.Unspecified);
         SyncItem remote = File("old.tar", 10, SyncTime.ToUtc(listed, offset)) with
         {

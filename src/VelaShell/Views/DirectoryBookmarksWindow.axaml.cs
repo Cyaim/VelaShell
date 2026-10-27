@@ -1,9 +1,9 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using FireAndForget = VelaShell.Services.FireAndForget;
 using VelaShell.Core.Models;
 using VelaShell.ViewModels;
+using FireAndForget = VelaShell.Services.FireAndForget;
 
 namespace VelaShell.Views;
 

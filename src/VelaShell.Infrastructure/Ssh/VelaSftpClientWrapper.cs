@@ -433,7 +433,7 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
             }
             catch (SftpException ex) when (ex.IsNotFound)
             {
-                return (SftpFileMode?)null;
+                return null;
             }
         }, ct);
 

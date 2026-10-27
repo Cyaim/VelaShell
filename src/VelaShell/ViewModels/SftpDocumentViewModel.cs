@@ -121,7 +121,7 @@ public sealed class SftpDocumentViewModel : ReactiveObject, ISftpDocumentContent
         LocalFiles.ConfirmDelete = message => ConfirmLocalDelete?.Invoke(message) ?? Task.FromResult(false);
         CompareDirectoriesCommand = ReactiveCommand.CreateFromTask(CompareDirectoriesAsync);
         OpenSyncCommand = ReactiveCommand.CreateFromTask(OpenSyncAsync);
-        AddBookmarkCommand = ReactiveCommand.CreateFromTask(() => AddBookmarkAsync());
+        AddBookmarkCommand = ReactiveCommand.CreateFromTask(AddBookmarkAsync);
         ApplyBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(ApplyBookmarkAsync);
         EditBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(item => EditBookmarkAsync(item));
         DeleteBookmarkCommand = ReactiveCommand.CreateFromTask<DirectoryBookmarkViewModel>(item => DeleteBookmarkAsync(item));

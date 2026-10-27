@@ -50,7 +50,7 @@ public sealed class LayoutDocumentOpenerTests
     {
         await Opener().OpenAsync(new(kind, Profile("p", type)));
 
-        Assert.AreSequenceEqual([expected], _calls.ToArray());
+        Assert.AreSequenceEqual([expected], [.. _calls]);
     }
 
     [TestMethod]
@@ -64,6 +64,6 @@ public sealed class LayoutDocumentOpenerTests
         await opener.OpenAsync(new(LayoutDocumentKind.LocalShell));
         await opener.OpenAsync(new(LayoutDocumentKind.Terminal));
 
-        Assert.AreSequenceEqual(["dual:r:l", "shell:wsl"], _calls.ToArray());
+        Assert.AreSequenceEqual(["dual:r:l", "shell:wsl"], [.. _calls]);
     }
 }

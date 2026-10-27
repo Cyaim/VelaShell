@@ -1,5 +1,5 @@
-using Avalonia.Headless;
 using System.Collections.Concurrent;
+using Avalonia.Headless;
 using NSubstitute;
 using ReactiveUI;
 using ReactiveUI.Primitives;
@@ -9,8 +9,8 @@ using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
 using VelaShell.Core.Tunnels;
 using VelaShell.Presentation.Services;
-using VelaShell.ViewModels;
 using VelaShell.Tests.TestSupport;
+using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
 
@@ -857,7 +857,7 @@ public class TunnelPanelViewModelTests
     [TestCategory("TunnelUI")]
     public void TunnelItemViewModel_RemoteDynamic_Display()
     {
-        TunnelInfo Info(IReadOnlyList<string> permit) => new()
+        static TunnelInfo Info(IReadOnlyList<string> permit) => new()
         {
             Id = Guid.NewGuid(),
             Config = new()
@@ -1001,7 +1001,7 @@ public class TunnelPanelViewModelTests
     [TestCategory("TunnelUI")]
     public void TunnelItemViewModel_UnixSocket_Display()
     {
-        TunnelInfo Info(TunnelType type, string? local, string? remote) => new()
+        static TunnelInfo Info(TunnelType type, string? local, string? remote) => new()
         {
             Id = Guid.NewGuid(),
             Config = new()
@@ -1627,25 +1627,25 @@ public class TunnelPanelViewModelTests
                 await vm.OpenAsync(second.Id);
                 TunnelItemViewModel paused = vm.Tunnels.Single();
                 vm.RefreshLiveState();
-                Assert.AreSequenceEqual(new[] { true }, secondAttempts);
+                Assert.AreSequenceEqual([true], secondAttempts);
                 Assert.IsFalse(paused.IsBusy, "同步认证拒绝应已完成暂停和收尾。");
                 Assert.AreEqual(Strings.Get("SshErr_TailscaleCheckRequired"), vm.ErrorMessage);
 
                 firstAuthentication.TrySetResult(_sessionId);
                 await startup.WaitAsync(TimeSpan.FromSeconds(10));
-                Assert.AreSequenceEqual(new[] { true }, secondAttempts, "启动遍历轮到已暂停服务器时不得再认证。");
+                Assert.AreSequenceEqual([true], secondAttempts, "启动遍历轮到已暂停服务器时不得再认证。");
                 vm.RefreshLiveState();
-                Assert.AreSequenceEqual(new[] { true }, secondAttempts, "后续普通刷新仍须尊重暂停。");
+                Assert.AreSequenceEqual([true], secondAttempts, "后续普通刷新仍须尊重暂停。");
                 Assert.AreSame(paused, vm.Tunnels.Single());
                 await _workflowService.DidNotReceive().CreateTunnelAsync(second.Id, Arg.Any<TunnelConfig>(), Arg.Any<CancellationToken>());
 
                 await vm.StartTunnelCommand.Execute(paused.Id).FirstAsync();
-                Assert.AreSequenceEqual(new[] { true, false }, secondAttempts, "显式手动启动必须允许重新认证。");
+                Assert.AreSequenceEqual([true, false], secondAttempts, "显式手动启动必须允许重新认证。");
                 Assert.IsTrue(vm.Tunnels.Single().IsActive);
                 Guid manualTunnelId = vm.Tunnels.Single().Id;
                 secondAlive = false;
                 vm.RefreshLiveState();
-                Assert.AreSequenceEqual(new[] { true, false, true }, secondAttempts, "手动成功后应恢复普通断线重连。");
+                Assert.AreSequenceEqual([true, false, true], secondAttempts, "手动成功后应恢复普通断线重连。");
                 Assert.IsTrue(vm.Tunnels.Single().IsActive);
                 Assert.AreNotEqual(manualTunnelId, vm.Tunnels.Single().Id);
             }

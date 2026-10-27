@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using ReactiveUI;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
@@ -45,51 +46,53 @@ public sealed record TransferResumeOutcome(TransferResumeResult Result, string? 
 /// </remarks>
 public sealed class PausedTransferBatchViewModel : ReactiveObject
 {
-    private PausedTransferBatch _batch;
     private bool _isResuming;
     private bool _profileMissing;
-    private string? _lastError;
 
     /// <summary>以队列里的一批与停下的原因构造。</summary>
     public PausedTransferBatchViewModel(PausedTransferBatch batch, PausedBatchReason reason)
     {
-        _batch = batch ?? throw new ArgumentNullException(nameof(batch));
+        Batch = batch ?? throw new ArgumentNullException(nameof(batch));
         Reason = reason;
     }
 
     /// <summary>队列里的批次 Id。</summary>
-    public Guid BatchId => _batch.BatchId;
+    public Guid BatchId => Batch.BatchId;
 
     /// <summary>此刻还没传完的项。</summary>
-    public PausedTransferBatch Batch => _batch;
+    public PausedTransferBatch Batch { get; private set; }
 
     /// <summary>停下的原因。</summary>
     public PausedBatchReason Reason { get; }
 
     /// <summary>剩几个文件。</summary>
-    public int RemainingCount => _batch.Items.Count;
+    public int RemainingCount => Batch.Items.Count;
 
     /// <summary>只剩一个文件时就是它的名字,否则是「N 个文件」。</summary>
-    public string Title => _batch.Items.Count == 1
-        ? Path.GetFileName(_batch.Items[0].Type == TransferType.Upload ? _batch.Items[0].LocalPath : _batch.Items[0].RemotePath)
-        : Strings.Format("Transfer_PausedFiles", _batch.Items.Count);
+    public string Title => Batch.Items.Count == 1
+        ? Path.GetFileName(Batch.Items[0].Type == TransferType.Upload ? Batch.Items[0].LocalPath : Batch.Items[0].RemotePath)
+        : Strings.Format("Transfer_PausedFiles", Batch.Items.Count);
 
     /// <summary>方向:全是上传 "↑",全是下载 "↓",混着的 "⇅"。</summary>
     public string Direction =>
-        _batch.Items.All(static i => i.Type == TransferType.Upload) ? "↑"
-        : _batch.Items.All(static i => i.Type == TransferType.Download) ? "↓"
+        Batch.Items.All(static i => i.Type == TransferType.Upload) ? "↑"
+        : Batch.Items.All(static i => i.Type == TransferType.Download) ? "↓"
         : "⇅";
 
     /// <summary>第二行:方向、服务器、此刻的状态。</summary>
-    public string Detail => $"{Direction} {_batch.Origin.ServerName}  •  {StatusText}";
+    public string Detail => $"{Direction} {Batch.Origin.ServerName}  •  {StatusText}";
 
     /// <summary>此刻的状态说明。</summary>
-    public string StatusText =>
+    [AllowNull]
+    public string StatusText
+    {
+        get =>
         _isResuming ? Strings.Get("Transfer_PausedResuming")
         : _profileMissing ? Strings.Get("Transfer_PausedProfileMissing")
-        : _lastError is { } error ? Strings.Format("Transfer_PausedResumeFailed", error)
+        : field is { } error ? Strings.Format("Transfer_PausedResumeFailed", error)
         : Reason == PausedBatchReason.Restored ? Strings.Get("Transfer_PausedRestored")
-        : Strings.Get("Transfer_PausedInterrupted");
+        : Strings.Get("Transfer_PausedInterrupted"); private set;
+    }
 
     /// <summary>「继续」可不可点:正在连的时候不行,配置没了也不行(那只能放弃)。</summary>
     public bool CanResume => !_isResuming && !_profileMissing;
@@ -103,7 +106,7 @@ public sealed class PausedTransferBatchViewModel : ReactiveObject
             this.RaiseAndSetIfChanged(ref _isResuming, value);
             if (value)
             {
-                _lastError = null;
+                StatusText = null;
             }
             RaiseStatus();
         }
@@ -115,7 +118,7 @@ public sealed class PausedTransferBatchViewModel : ReactiveObject
         ArgumentNullException.ThrowIfNull(outcome);
         _isResuming = false;
         _profileMissing = outcome.Result == TransferResumeResult.ProfileMissing;
-        _lastError = outcome.Result == TransferResumeResult.Failed ? outcome.Message : null;
+        StatusText = outcome.Result == TransferResumeResult.Failed ? outcome.Message : null;
         this.RaisePropertyChanged(nameof(IsResuming));
         RaiseStatus();
     }
@@ -123,7 +126,7 @@ public sealed class PausedTransferBatchViewModel : ReactiveObject
     /// <summary>剩下的项变了(另一部分已经交出去之类):换成新的快照。</summary>
     public void Refresh(PausedTransferBatch batch)
     {
-        _batch = batch ?? throw new ArgumentNullException(nameof(batch));
+        Batch = batch ?? throw new ArgumentNullException(nameof(batch));
         this.RaisePropertyChanged(nameof(Batch));
         this.RaisePropertyChanged(nameof(RemainingCount));
         this.RaisePropertyChanged(nameof(Title));

@@ -361,7 +361,7 @@ public sealed class HandshakeTests
     [TestMethod]
     public async Task 主机密钥解析不了时按种类拒绝()
     {
-        using TestHostKey real = TestHostKey.Create(SshAlgorithmNames.SshEd25519);
+        using var real = TestHostKey.Create(SshAlgorithmNames.SshEd25519);
         SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
             async () => await HandshakeAsync(serverOptions: new TestSshServerOptions { HostKey = new TruncatedBlobHostKey(real) }));
 

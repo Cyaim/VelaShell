@@ -76,9 +76,12 @@ internal sealed partial class RemoteFsCapability
                 long needed = op._sourceLength + SnapshotHeadroom;
                 long? free = SnapshotFreeSpace is { } probe ? probe(directory) : AvailableBytes(directory);
                 if (free is { } available && available < needed)
+                {
                     throw new InsufficientSnapshotSpaceException(
                         $"Not enough free space for the upload snapshot on the {(sameVolume ? "source file's" : "temporary directory's")} volume: "
                         + $"{needed} bytes needed (the {op._sourceLength}-byte file plus {SnapshotHeadroom} bytes headroom), {available} bytes free.");
+                }
+
                 byte[] buffer = new byte[128 * 1024];
                 long last = Environment.TickCount64;
                 int count;

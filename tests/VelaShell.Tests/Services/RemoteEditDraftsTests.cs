@@ -147,11 +147,11 @@ public sealed class RemoteEditDraftsTests
         NotificationItem first = items[0];
         Assert.AreEqual(NotificationSources.RemoteEditDraftIdPrefix + "0000000a", first.Id, "id 跟着草稿子目录:每次启动重投都去重、保住已读");
         Assert.AreEqual(NotificationKind.System, first.Kind);
-        Assert.IsTrue(DateTime.UtcNow - first.PublishedAt < TimeSpan.FromMinutes(1), "发布时间取发现它的时刻:几个月前的草稿也排在最上面,不会一投进来就沉底");
+        Assert.IsLessThan(TimeSpan.FromMinutes(1), DateTime.UtcNow - first.PublishedAt, "发布时间取发现它的时刻:几个月前的草稿也排在最上面,不会一投进来就沉底");
         Assert.AreEqual(NotificationSources.OpenRemoteEditDraftsCommandId, first.Link?.CommandId);
-        StringAssert.Contains(first.Body, "prod-web:/etc/app.conf");
-        StringAssert.Contains(first.Body, known.LocalPath);
-        StringAssert.Contains(items[1].Body, unknown.LocalPath);
+        Assert.Contains("prod-web:/etc/app.conf", first.Body);
+        Assert.Contains(known.LocalPath, first.Body);
+        Assert.Contains(unknown.LocalPath, items[1].Body);
 
         NotificationItem gone = items[1];
         NotificationItem unrelated = new() { Id = "update:2.0", Kind = NotificationKind.Update, Title = "u", PublishedAt = Now };

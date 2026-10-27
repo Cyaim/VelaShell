@@ -148,7 +148,7 @@ public class PluginInstallUninstallTests
 
         Assert.Contains("'1.0.0-beta.1'", ex.Message);
         Assert.IsFalse(Directory.Exists(Path.Combine(_userRoot, "acme.loose")));
-        Assert.IsFalse(manager.Plugins.Any(p => p.Id == "acme.loose"));
+        Assert.DoesNotContain(p => p.Id == "acme.loose", manager.Plugins);
         await manager.DisposeAsync();
     }
 

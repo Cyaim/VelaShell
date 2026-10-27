@@ -132,11 +132,19 @@ public partial class PluginPermissionDialog : Window
         result.Append('"');
         foreach (char c in value)
         {
-            if (c is '\\' or '"') result.Append('\\').Append(c);
+            if (c is '\\' or '"')
+            {
+                result.Append('\\').Append(c);
+            }
             else if (char.GetUnicodeCategory(c) is UnicodeCategory.Control or UnicodeCategory.Format
                      or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator)
+            {
                 result.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
-            else result.Append(c);
+            }
+            else
+            {
+                result.Append(c);
+            }
         }
         return result.Append('"').ToString();
     }

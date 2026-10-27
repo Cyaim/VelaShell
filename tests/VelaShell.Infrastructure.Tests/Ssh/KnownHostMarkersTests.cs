@@ -68,10 +68,7 @@ public sealed class KnownHostMarkersTests
     [DataRow("[*.example]:2222")]
     [DataRow("10.0.0.?")]
     [DataRow("fe80::1%eth0")]
-    public void 合法的模式照收(string patterns)
-    {
-        Assert.IsTrue(KnownHostMarkers.TryCreate(patterns, Fixture("hostcert-ca.pub"), null, out _, out string? error), error);
-    }
+    public void 合法的模式照收(string patterns) => Assert.IsTrue(KnownHostMarkers.TryCreate(patterns, Fixture("hostcert-ca.pub"), null, out _, out string? error), error);
 
     [TestMethod]
     [DataRow("")]

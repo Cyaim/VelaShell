@@ -36,10 +36,7 @@ public sealed class SudoKernelTests
     }
 
     [TestMethod]
-    public void UnknownIsSafeDefaultOutcome()
-    {
-        Assert.AreEqual(SudoExecutionOutcome.Unknown, Enum.GetValues<SudoExecutionOutcome>()[0]);
-    }
+    public void UnknownIsSafeDefaultOutcome() => Assert.AreEqual(SudoExecutionOutcome.Unknown, Enum.GetValues<SudoExecutionOutcome>()[0]);
 
     private const string LoginShellPrefix = "exec /bin/sh -c 'eval \"$(printf %b \"";
     private const string LoginShellSuffix = "\")\"'";
@@ -84,20 +81,20 @@ public sealed class SudoKernelTests
         SudoExecutionResult result = await SudoCommandExecutor.ExecuteAsync(null!, "id\0; rm -rf /", new("plugin", "joe@host"),
             prompt, _ => ValueTask.CompletedTask, CancellationToken.None);
         Assert.AreEqual(SudoExecutionOutcome.NotSupported, result.Outcome);
-        Assert.AreEqual(0, prompt.Calls);
+        Assert.AreEqual(0, prompt._calls);
     }
 
     private sealed class RecordingPrompt : ISudoPrompt
     {
-        internal int Calls;
+        internal int _calls;
         public Task<bool> ConfirmAsync(SudoExecutionContext context, string command, CancellationToken cancellationToken)
         {
-            Calls++;
+            _calls++;
             return Task.FromResult(true);
         }
         public Task<SudoPassword?> RequestPasswordAsync(SudoExecutionContext context, string command, int attempt, CancellationToken cancellationToken)
         {
-            Calls++;
+            _calls++;
             return Task.FromResult<SudoPassword?>(null);
         }
     }

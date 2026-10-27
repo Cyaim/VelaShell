@@ -2,8 +2,8 @@ using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
-using AvaloniaEdit;
 using Avalonia.VisualTree;
+using AvaloniaEdit;
 using Microsoft.Extensions.AI;
 using VelaShell.Plugin.Ai.Chat;
 using VelaShell.Plugin.Ai.Configuration;
@@ -30,8 +30,10 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("images", endpoint.BaseUrl + "/v1", "gpt-image-2");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id,
-                Mode = mode, SuggestFollowUps = true
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                Mode = mode,
+                SuggestFollowUps = true
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -70,8 +72,10 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider text = StubProvider("backup", backup.BaseUrl, "m");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [image, text], ActiveModelId = image.Models[0].Id,
-                Mode = ChatMode.Agent, FailoverChain = [new FailoverEntry { ModelId = text.Models[0].Id }]
+                Providers = [image, text],
+                ActiveModelId = image.Models[0].Id,
+                Mode = ChatMode.Agent,
+                FailoverChain = [new FailoverEntry { ModelId = text.Models[0].Id }]
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -95,8 +99,8 @@ public sealed partial class ChatPanelViewUiTests
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
-                var clipboard = window.Clipboard!;
-                var editor = Find<TextEditor>(panel, "InputBox");
+                IClipboard clipboard = window.Clipboard!;
+                TextEditor editor = Find<TextEditor>(panel, "InputBox");
                 using var source = new MemoryStream(Convert.FromBase64String(GeneratedPng));
                 using var bitmap = new Bitmap(source);
                 await clipboard.SetBitmapAsync(bitmap);

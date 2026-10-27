@@ -42,7 +42,7 @@ public static class SshConfigExporter
         string home = homeDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
         List<SessionProfile> sessions = [.. archive.Sessions.Where(static s => s.ConnectionType is ConnectionType.SSH or ConnectionType.SFTP)];
-        HashSet<string> used = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> used = [with(StringComparer.OrdinalIgnoreCase)];
         Dictionary<Guid, string> aliases = [];
         foreach (SessionProfile session in sessions)
         {
@@ -215,26 +215,26 @@ public static class SshConfigExporter
                     break;
 
                 case TunnelType.RemoteDynamicForward:
-                {
-                    string forward = Endpoint(tunnel.RemoteHost, tunnel.RemotePort);
-                    if (tunnel.PermitRemoteOpen is not { Count: > 0 } rules)
                     {
-                        Skipped($"RemoteForward {forward}", "VelaShell: no PermitRemoteOpen allow list");
+                        string forward = Endpoint(tunnel.RemoteHost, tunnel.RemotePort);
+                        if (tunnel.PermitRemoteOpen is not { Count: > 0 } rules)
+                        {
+                            Skipped($"RemoteForward {forward}", "VelaShell: no PermitRemoteOpen allow list");
+                        }
+                        else if (permit is null || permit.SequenceEqual(rules, StringComparer.OrdinalIgnoreCase))
+                        {
+                            permit ??= rules;
+                            Line("RemoteForward", forward);
+                        }
+                        else
+                        {
+                            Skipped($"RemoteForward {forward}",
+                                $"VelaShell: its PermitRemoteOpen ({string.Join(' ', rules)}) differs; ssh_config allows one list per host");
+                        }
+                        break;
                     }
-                    else if (permit is null || permit.SequenceEqual(rules, StringComparer.OrdinalIgnoreCase))
-                    {
-                        permit ??= rules;
-                        Line("RemoteForward", forward);
-                    }
-                    else
-                    {
-                        Skipped($"RemoteForward {forward}",
-                            $"VelaShell: its PermitRemoteOpen ({string.Join(' ', rules)}) differs; ssh_config allows one list per host");
-                    }
-                    break;
-                }
 
-                // 别的隧道类型 ssh_config 这三个关键字表达不了,不写。
+                    // 别的隧道类型 ssh_config 这三个关键字表达不了,不写。
             }
         }
 

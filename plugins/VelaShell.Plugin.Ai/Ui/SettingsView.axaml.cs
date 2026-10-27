@@ -257,7 +257,6 @@ public partial class SettingsView : UserControl
     private ProviderKeyRowState? _savingKeyRow;
     private string? _pendingRemoveKeyId;
 
-
     /// <summary>
     /// 供应商行每点一次「测试」领一个序号。未保存的跨源测试要先读已存 Key(按钮要到探活开始才置灰),
     /// 读回来时已有更新的一击(连点、改了地址或新填了 Key 再点、换到别家再点),就让给那一击,免得测两次或测旧表单。

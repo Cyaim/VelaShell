@@ -117,7 +117,10 @@ internal sealed partial class RemoteFsCapability
             // 插件停止时按「Approval 才撤」的口径不会再把它当成还在等确认的撤掉。
             if (!await uploadPermissions.CheckDownloadAsync(op._downloadPermission, pluginId, label, Read(op).RemotePath,
                 Read(op).LocalPath, options.Overwrite, source.Size, ct, () => EnterTransferPhase(op)).ConfigureAwait(false))
+            {
                 throw new PluginPermissionDeniedException("The user denied this download.");
+            }
+
             ConfirmApprovedOrCancelled(op, ct);
             await _uploadSlots.WaitAsync(ct).ConfigureAwait(false);
             slot = true;
@@ -325,7 +328,10 @@ internal sealed partial class RemoteFsCapability
                 string? actual = FinalPath(handle);
                 if (actual is null || !string.Equals(Path.TrimEndingDirectorySeparator(actual), Path.TrimEndingDirectorySeparator(path), StringComparison.OrdinalIgnoreCase)
                     || IsLink(handle))
+                {
                     throw new IOException("Destination directory identity cannot be verified.");
+                }
+
                 _directories.Add(handle);
                 _parent = Path.TrimEndingDirectorySeparator(actual);
             }
@@ -347,7 +353,10 @@ internal sealed partial class RemoteFsCapability
                     string name = Path.GetFileName(path);
                     if (name.Length != TemporaryPrefix.Length + 48 || !name.StartsWith(TemporaryPrefix, StringComparison.Ordinal)
                         || !name[TemporaryPrefix.Length..].All(char.IsAsciiHexDigitUpper))
+                    {
                         continue;
+                    }
+
                     using SafeFileHandle orphan = CreateFileW(path, 0x00010000, 0, 0, 3, 0x00200000, 0);
                     if (!orphan.IsInvalid) MarkForDeletion(orphan);
                 }

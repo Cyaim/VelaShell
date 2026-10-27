@@ -9,6 +9,7 @@ using Anthropic;
 using Anthropic.Models.Messages;
 using Microsoft.Extensions.AI;
 using OpenAI;
+using OpenAI.Images;
 using VelaShell.Plugin.Ai.Auth;
 using VelaShell.Plugin.Ai.Chat;
 using VelaShell.PluginSdk;
@@ -1125,7 +1126,11 @@ public sealed class AiSettingsStore(IPluginContext context)
             {
                 foreach ((string id, string? saved) in resetKeys) await RestoreApiKeyCoreAsync(id, saved);
             }
-            else if (secretWritten) await RestoreApiKeyCoreAsync(ownerId, oldKey);
+            else if (secretWritten)
+            {
+                await RestoreApiKeyCoreAsync(ownerId, oldKey);
+            }
+
             if (settingsWritten) await SaveSettingsCoreAsync(settings, CancellationToken.None);
             throw;
         }
@@ -1700,7 +1705,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         if (!IsImageModel(model)) throw new ArgumentException("The selected model is not an image model.", nameof(model));
         ProviderCredential credential = await ResolveCredentialAsync(model, cancellationToken: token).ConfigureAwait(false);
         EnsureBuiltinOAuthCredentialDestination(model, credential);
-        var client = CreateOpenAiClient(model, credential, callerCountsRetries: false, noRetries: true).GetImageClient(model.Model);
+        ImageClient client = CreateOpenAiClient(model, credential, callerCountsRetries: false, noRetries: true).GetImageClient(model.Model);
         return await new ImageGenerationService(client, model.Model, model.Model.StartsWith("dall-e-", StringComparison.OrdinalIgnoreCase))
             .GenerateAsync(prompt, inputs, token).ConfigureAwait(false);
     }
@@ -1766,7 +1771,10 @@ public sealed class AiSettingsStore(IPluginContext context)
                             ? new AnthropicClient { BaseUrl = baseUrl, Handlers = handlers, MaxRetries = noSdkRetries ? 0 : null }
                             : new AnthropicClient
                             {
-                                BaseUrl = baseUrl, ApiKey = null, AuthToken = null, Handlers = handlers,
+                                BaseUrl = baseUrl,
+                                ApiKey = null,
+                                AuthToken = null,
+                                Handlers = handlers,
                                 MaxRetries = noSdkRetries ? 0 : null
                             };
                     return anthropic.AsIChatClient(provider.Model, provider.MaxTokens);

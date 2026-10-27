@@ -91,8 +91,8 @@ public static class SessionHealthClassifier
         {
             // 巡检里的「已取消认证」只可能是那个不问人的界面谢绝了动态码 / 改密码(见 SshConnectionAssembler)。
             if (current is VelaSshHostKeyRejectedException or VelaSshAuthenticationCancelledException
-                || current is VelaSshTailscaleAuthenticationException { RequiresUserAction: true }
-                || current is SshException { Reason: SshFailureReason.TwoFactorRequired or SshFailureReason.PasswordExpired })
+                or VelaSshTailscaleAuthenticationException { RequiresUserAction: true }
+                or SshException { Reason: SshFailureReason.TwoFactorRequired or SshFailureReason.PasswordExpired })
             {
                 return true;
             }
@@ -109,10 +109,7 @@ public sealed class SessionHealthRowViewModel : ReactiveObject
 {
     /// <summary>建一行(排队中)。</summary>
     /// <param name="profile">要查的配置。</param>
-    public SessionHealthRowViewModel(SessionProfile profile)
-    {
-        Profile = profile ?? throw new ArgumentNullException(nameof(profile));
-    }
+    public SessionHealthRowViewModel(SessionProfile profile) => Profile = profile ?? throw new ArgumentNullException(nameof(profile));
 
     /// <summary>要查的那份配置(重查之前从库里换成最新的)。</summary>
     public SessionProfile Profile

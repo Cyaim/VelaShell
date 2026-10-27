@@ -1,10 +1,10 @@
+using System.Reflection;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
-using VelaShell.Plugin.Ai.Chat;
-using System.Reflection;
 using Avalonia.VisualTree;
+using VelaShell.Plugin.Ai.Chat;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
 using VelaShell.PluginSdk.Testing;
@@ -34,8 +34,8 @@ public sealed partial class ChatPanelViewUiTests
                 var original = (Image)view.Children.OfType<ScrollViewer>().Single().Content!;
                 Assert.IsInstanceOfType<Bitmap>(original.Source);
                 Assert.AreEqual(Avalonia.Media.Stretch.Uniform, original.Stretch);
-                Assert.IsTrue(opened.Options.WindowWidth < 1000);
-                Assert.IsTrue(opened.Options.WindowHeight < 800);
+                Assert.IsLessThan(1000, opened.Options.WindowWidth);
+                Assert.IsLessThan(800, opened.Options.WindowHeight);
                 host = Host(view);
                 await PumpAsync(3);
                 host.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape, Source = host });
@@ -57,7 +57,7 @@ public sealed partial class ChatPanelViewUiTests
                 MethodInfo preview = typeof(ChatPanelView.AssistantBubble).GetMethod("OpenImagePreview", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 preview.Invoke(bubble, [new ChatGeneratedImage(new string('a', 32) + ".png", "image/png")]);
                 await PumpAsync(3);
-                Assert.AreEqual(before, context.FakeUi.Panels.Count);
+                Assert.HasCount(before, context.FakeUi.Panels);
             }
             finally { host?.Close(); panel.Detach(); window.Close(); }
         });
@@ -80,11 +80,11 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("draw a cat");
                 Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count > 0
                     && !Find<Button>(panel, "StopButton").IsVisible));
-                var image = Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants()
+                Image image = Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants()
                     .OfType<Image>().Single(i => i.Source is not null);
                 var overlay = (Grid)image.Parent!;
-                var actions = overlay.Children.OfType<StackPanel>().Single();
-                var buttons = actions.Children.OfType<Button>().ToArray();
+                StackPanel actions = overlay.Children.OfType<StackPanel>().Single();
+                Button[] buttons = [.. actions.Children.OfType<Button>()];
                 Assert.HasCount(2, buttons);
                 Assert.AreEqual(Avalonia.Layout.HorizontalAlignment.Right, actions.HorizontalAlignment);
                 Assert.AreEqual(Avalonia.Layout.VerticalAlignment.Bottom, actions.VerticalAlignment);
@@ -96,9 +96,9 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.IsInstanceOfType<Viewbox>(button.Content, "操作只显示图标，不能再退回文字按钮");
                     Assert.AreEqual(34d, button.Bounds.Width);
                     Assert.AreEqual(34d, button.Bounds.Height);
-                    var surface = button.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Surface");
+                    Border surface = button.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Surface");
                     Assert.AreEqual(new Avalonia.CornerRadius(17), surface.CornerRadius);
-                    Assert.IsTrue(surface.Opacity < 1, "只有圆形底面半透明，不应出现不透明底板");
+                    Assert.IsLessThan(1, surface.Opacity, "只有圆形底面半透明，不应出现不透明底板");
                     var icon = (Avalonia.Controls.Shapes.Path)((Viewbox)button.Content!).Child!;
                     Assert.IsNotNull(icon.Data);
                     string key = button.Name == "ImageSaveAction" ? "AiIcon.image-down" : "AiIcon.fullscreen";

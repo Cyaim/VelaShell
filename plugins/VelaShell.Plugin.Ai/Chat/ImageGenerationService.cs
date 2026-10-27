@@ -47,14 +47,17 @@ internal sealed class ImageGenerationService(ImageClient client, string model, b
         using var stream = new MemoryStream();
         await multipart.CopyToAsync(stream, token).ConfigureAwait(false);
         stream.Position = 0;
-        using BinaryContent body = BinaryContent.Create(stream);
+        using var body = BinaryContent.Create(stream);
         ClientResult result = await client.GenerateImageEditsAsync(body, multipart.Headers.ContentType!.ToString(),
             new RequestOptions { CancellationToken = token }).ConfigureAwait(false);
-        using JsonDocument json = JsonDocument.Parse(result.GetRawResponse().Content.ToMemory());
+        using var json = JsonDocument.Parse(result.GetRawResponse().Content.ToMemory());
         if (!json.RootElement.TryGetProperty("data", out JsonElement data) || data.GetArrayLength() == 0
             || !data[0].TryGetProperty("b64_json", out JsonElement encoded) || encoded.ValueKind != JsonValueKind.String
             || string.IsNullOrEmpty(encoded.GetString()))
+        {
             throw new InvalidOperationException("The image endpoint did not return image bytes.");
+        }
+
         return new DataContent(Convert.FromBase64String(encoded.GetString()!), "image/png");
     }
 }

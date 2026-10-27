@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 using NSubstitute;
 using VelaShell.Infrastructure.Plugins;
 using VelaShell.Infrastructure.Plugins.Capabilities;
@@ -27,7 +28,7 @@ public sealed partial class RemoteTransferTests
         try
         {
             await CreateHardLink(alias, original);
-            using var opened = File.OpenHandle(original);
+            using SafeFileHandle opened = File.OpenHandle(original);
             RemoteFsCapability.VerifyOpenedSource(opened, RemoteFsCapability.ResolveUploadSource(alias));
             RemoteFsCapability.VerifyOpenedSource(opened, RemoteFsCapability.ResolveUploadSource(original));
             // 内容一样、名字挨着,仍是另一个文件。
@@ -55,7 +56,7 @@ public sealed partial class RemoteTransferTests
             if (OperatingSystem.IsWindows()) await RunTool("cmd.exe", "/c", "mklink", "/J", alias, real);
             else Directory.CreateSymbolicLink(alias, real);
             Assert.IsNotNull(new DirectoryInfo(alias).LinkTarget, "链接没建出来");
-            using var opened = File.OpenHandle(file);
+            using SafeFileHandle opened = File.OpenHandle(file);
             RemoteFsCapability.VerifyOpenedSource(opened, file);
             Assert.ThrowsExactly<NotSupportedException>(() => RemoteFsCapability.VerifyOpenedSource(opened, Path.Combine(alias, "file")));
             string leaf = Path.Combine(directory, "leaf");

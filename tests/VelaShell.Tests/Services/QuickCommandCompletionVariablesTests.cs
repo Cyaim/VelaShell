@@ -199,7 +199,7 @@ public sealed class QuickCommandCompletionVariablesTests
 
     private static IShellStreamWrapper Shell(out List<byte> writes)
     {
-        var shell = Substitute.For<IShellStreamWrapper>();
+        IShellStreamWrapper shell = Substitute.For<IShellStreamWrapper>();
         shell.CanRead.Returns(false);
         shell.CanWrite.Returns(true);
         var captured = new List<byte>();

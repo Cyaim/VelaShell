@@ -553,7 +553,7 @@ public class MainWindowViewModelTests
     public void SyncWebhookUrlMissing_PublishesOneNoticeToTheMessageCenter()
     {
         IGistSyncService syncService = Substitute.For<IGistSyncService>();
-        var center = new VelaShell.Infrastructure.Notifications.NotificationCenter();
+        var center = new Infrastructure.Notifications.NotificationCenter();
         var vm = new MainWindowViewModel(gistSyncService: syncService, notificationCenter: center);
 
         syncService.WebhookUrlMissing += Raise.Event<EventHandler<string>>(syncService, "0123456789abcdef");
@@ -568,7 +568,7 @@ public class MainWindowViewModelTests
             center.Items.Where(item => item.Id.StartsWith(NotificationSources.SyncWebhookMissingIdPrefix, StringComparison.Ordinal)),
             "同一份设置只留一条");
         Assert.AreEqual(NotificationSources.OpenSecuritySettingsCommandId, notice.Link?.CommandId);
-        Assert.IsTrue(vm.Commands.All.Any(command => command.Id == NotificationSources.OpenSecuritySettingsCommandId),
+        Assert.Contains(command => command.Id == NotificationSources.OpenSecuritySettingsCommandId, vm.Commands.All,
             "消息上的动作要有对应的命令,否则点了没反应");
     }
 

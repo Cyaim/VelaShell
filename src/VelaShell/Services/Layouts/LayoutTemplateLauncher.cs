@@ -264,7 +264,7 @@ public sealed class LayoutTemplateLauncher
 
         public List<Slot> Slots { get; } = [];
 
-        public Dictionary<DockDocument, Slot> Placed { get; } = new(ReferenceEqualityComparer.Instance);
+        public Dictionary<DockDocument, Slot> Placed { get; } = [with(ReferenceEqualityComparer.Instance)];
     }
 
     /// <summary>模板里的一个标签位。</summary>

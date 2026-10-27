@@ -65,7 +65,7 @@ public sealed class TerminalTabRerunTests
 
         _vm.TryRerunCommand("make");
 
-        CollectionAssert.AreEqual(new[] { (true, true), (true, true) }, flags);
+        Assert.AreSequenceEqual([(true, true), (true, true)], flags);
         Assert.IsFalse(_vm.IsSyncForwardSuppressed, "发完要放开,否则用户接下来的键入也不转发了。");
         Assert.IsFalse(_vm.IsProgrammaticInput);
     }

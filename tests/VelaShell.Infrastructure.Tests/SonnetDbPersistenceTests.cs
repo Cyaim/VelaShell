@@ -1,5 +1,4 @@
 using SonnetDB.Catalog;
-using SonnetDB.Model;
 using SonnetDB.Storage.Format;
 using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
@@ -275,10 +274,18 @@ public sealed class SonnetDbPersistenceTests : IDisposable
         var repo = new SonnetDbSessionRepository(_engine, _protector);
         var profile = new SessionProfile
         {
-            Name = "tail", Host = "tail", Username = "deploy", ConnectionType = type,
-            AuthMethod = AuthMethod.Tailscale, Password = "stale-password", PrivateKeyPath = "/stale-key",
-            PrivateKeyPassphrase = "stale-phrase", CertificatePath = "/stale-cert", RememberPassword = true,
-            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()), JumpHostProfileId = Guid.NewGuid()
+            Name = "tail",
+            Host = "tail",
+            Username = "deploy",
+            ConnectionType = type,
+            AuthMethod = AuthMethod.Tailscale,
+            Password = "stale-password",
+            PrivateKeyPath = "/stale-key",
+            PrivateKeyPassphrase = "stale-phrase",
+            CertificatePath = "/stale-cert",
+            RememberPassword = true,
+            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
+            JumpHostProfileId = Guid.NewGuid()
         };
 
         await repo.SaveSessionAsync(profile);
@@ -309,10 +316,17 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     {
         var profile = new SessionProfile
         {
-            Name = "tail", Host = "tail", Username = "deploy", AuthMethod = AuthMethod.Tailscale,
-            Password = "enc1:invalid", PrivateKeyPath = "/old-key", PrivateKeyPassphrase = "enc1:invalid",
-            CertificatePath = "/old-cert", RememberPassword = true,
-            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()), JumpHostProfileId = Guid.NewGuid()
+            Name = "tail",
+            Host = "tail",
+            Username = "deploy",
+            AuthMethod = AuthMethod.Tailscale,
+            Password = "enc1:invalid",
+            PrivateKeyPath = "/old-key",
+            PrivateKeyPassphrase = "enc1:invalid",
+            CertificatePath = "/old-cert",
+            RememberPassword = true,
+            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
+            JumpHostProfileId = Guid.NewGuid()
         };
         await _engine.WithCollectionAsync<object?>(SonnetDbEngine.ProfilesCollection, store =>
         {
@@ -386,12 +400,20 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     {
         var profile = new SessionProfile
         {
-            Name = "web", Host = "h", Username = "root", AuthMethod = AuthMethod.Password, Password = "s3cret"
+            Name = "web",
+            Host = "h",
+            Username = "root",
+            AuthMethod = AuthMethod.Password,
+            Password = "s3cret"
         };
         var keyed = new SessionProfile
         {
-            Name = "keyed", Host = "h", Username = "root", AuthMethod = AuthMethod.PrivateKey,
-            PrivateKeyPath = "/keys/id", PrivateKeyPassphrase = "pp"
+            Name = "keyed",
+            Host = "h",
+            Username = "root",
+            AuthMethod = AuthMethod.PrivateKey,
+            PrivateKeyPath = "/keys/id",
+            PrivateKeyPassphrase = "pp"
         };
         await new SonnetDbSessionRepository(_engine, _protector).SaveSessionAsync(profile);
         await new SonnetDbSessionRepository(_engine, _protector).SaveSessionAsync(keyed);
@@ -814,12 +836,10 @@ public sealed class SonnetDbPersistenceTests : IDisposable
             List<AuditEntry> both = await service.QueryAsync(10);
             Assert.AreSequenceEqual([AuditSources.Import, null], [.. both.Select(e => e.Source)]);
         }
-        using (var reopened = new SonnetDbEngine(root))
-        {
-            List<AuditEntry> entries = await new SonnetDbAuditLogService(reopened).QueryAsync(10);
-            Assert.AreSequenceEqual(["new", "old"], [.. entries.Select(e => e.Detail)]);
-            Assert.AreEqual(AuditSources.Import, entries[0].Source, "补上的列随库持久化");
-        }
+        using var reopened = new SonnetDbEngine(root);
+        List<AuditEntry> entries = await new SonnetDbAuditLogService(reopened).QueryAsync(10);
+        Assert.AreSequenceEqual(["new", "old"], [.. entries.Select(e => e.Detail)]);
+        Assert.AreEqual(AuditSources.Import, entries[0].Source, "补上的列随库持久化");
     }
 
     [TestMethod]

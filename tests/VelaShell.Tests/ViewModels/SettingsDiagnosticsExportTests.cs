@@ -53,9 +53,9 @@ public sealed class SettingsDiagnosticsExportTests : IDisposable
         {
             Assert.DoesNotContain(value, log, $"包里不能出现 {value}");
         }
-        StringAssert.Contains(log, "[SSH] <user-1>@<host-1>:22 连接结束");
-        StringAssert.Contains(log, "[SSH] <user-2>@<host-2>:2222 连接结束");
-        StringAssert.Contains(log, "shared <user-3>");
+        Assert.Contains("[SSH] <user-1>@<host-1>:22 连接结束", log);
+        Assert.Contains("[SSH] <user-2>@<host-2>:2222 连接结束", log);
+        Assert.Contains("shared <user-3>", log);
         await shared.DidNotReceive().GetAllAsync();
     }
 
@@ -88,9 +88,8 @@ public sealed class SettingsDiagnosticsExportTests : IDisposable
 
         Assert.AreEqual(3, result.LogFiles);
         using ZipArchive zip = ZipFile.OpenRead(zipPath);
-        CollectionAssert.AreEquivalent(
-            new[] { "logs/velashell-20261019.log", "logs/transfer-20261019.log", "logs/plugins/velashell.ai.log", "summary.txt", "README.txt" },
-            zip.Entries.Select(entry => entry.FullName).ToArray());
+        Assert.AreSequenceEqual(
+            ["logs/velashell-20261019.log", "logs/transfer-20261019.log", "logs/plugins/velashell.ai.log", "summary.txt", "README.txt"], [.. zip.Entries.Select(entry => entry.FullName)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
         using var reader = new StreamReader(zip.GetEntry("logs/transfer-20261019.log")!.Open());
         Assert.AreEqual("UPLOAD\t/home/<user-1>/a.txt\n", await reader.ReadToEndAsync(), "收的是设置里那个目录的那一份,照样遮盖");
     }

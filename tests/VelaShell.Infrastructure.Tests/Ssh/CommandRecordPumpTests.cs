@@ -23,16 +23,16 @@ public sealed class CommandRecordPumpTests
 
         Assert.HasCount(4, records);
         Assert.AreEqual("f\t/a\r", Encoding.ASCII.GetString(records[0]), "\\r 是内容,不是行尾");
-        CollectionAssert.AreEqual(new byte[] { (byte)'d', (byte)'\t', (byte)'/', (byte)'b', 0, (byte)'c' }, records[1]);
+        Assert.AreSequenceEqual(new byte[] { (byte)'d', (byte)'\t', (byte)'/', (byte)'b', 0, (byte)'c' }, records[1]);
         byte[] expected = [(byte)'f', (byte)'\t', (byte)'/', .. gbk];
-        CollectionAssert.AreEqual(expected, records[2], "跨分段的记录拼得起来,字节原样");
+        Assert.AreSequenceEqual(expected, records[2], "跨分段的记录拼得起来,字节原样");
         Assert.AreEqual("tail", Encoding.ASCII.GetString(records[3]), "最后一条没有分隔符也交出");
     }
 
     [TestMethod]
     public async Task ARecordLongerThanTheCap_IsDroppedWhole()
     {
-        byte[] huge = Enumerable.Repeat((byte)'x', VelaSshClientWrapper.MaxRecordBytes + 10).ToArray();
+        byte[] huge = [.. Enumerable.Repeat((byte)'x', VelaSshClientWrapper.MaxRecordBytes + 10)];
         List<byte[]> records = await PumpAsync([
             "ok\n"u8.ToArray(),
             huge[..(huge.Length / 2)],

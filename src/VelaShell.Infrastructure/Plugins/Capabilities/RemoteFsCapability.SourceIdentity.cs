@@ -72,7 +72,10 @@ internal sealed partial class RemoteFsCapability
             return a.VolumeSerialNumber == b.VolumeSerialNumber && a.FileIdLow == b.FileIdLow && a.FileIdHigh == b.FileIdHigh;
         if (!GetFileInformationByHandle(left, out ByHandleFileInformation c) || !GetFileInformationByHandle(right, out ByHandleFileInformation d)
             || !ValidFileIndex(c) || !ValidFileIndex(d))
+        {
             throw new IOException("Cannot verify the opened source object.");
+        }
+
         return c.VolumeSerialNumber == d.VolumeSerialNumber && c.FileIndexHigh == d.FileIndexHigh && c.FileIndexLow == d.FileIndexLow;
 
         static bool ValidFileIndex(ByHandleFileInformation info)

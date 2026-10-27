@@ -66,7 +66,11 @@ public sealed class MainWindowCaptureTests
 
         var profile = new SessionProfile
         {
-            Name = "web-01", Host = "web-01", Username = "ops", AuthMethod = AuthMethod.Password, Password = "pw"
+            Name = "web-01",
+            Host = "web-01",
+            Username = "ops",
+            AuthMethod = AuthMethod.Password,
+            Password = "pw"
         };
         var session = new SshSession
         {

@@ -189,7 +189,7 @@ public class RemoteExecCapabilityTests
     [TestMethod]
     public async Task SudoAsync_CarriesTrustedSourceAndMergedEventsWithoutExposingCredentials()
     {
-        Guid id = Guid.NewGuid();
+        var id = Guid.NewGuid();
         ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
         client.IsConnected.Returns(true);
         ISshConnectionService connections = Substitute.For<ISshConnectionService>();
@@ -241,7 +241,7 @@ public class RemoteExecCapabilityTests
     [DataRow(true)]
     public async Task SudoAsync_SharesOrdinaryStreamLimitAndPropagatesLifetimeCancellation(bool shutdownRequested)
     {
-        Guid id = Guid.NewGuid();
+        var id = Guid.NewGuid();
         ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
         client.IsConnected.Returns(true);
         ISshConnectionService connections = Substitute.For<ISshConnectionService>();
@@ -276,7 +276,7 @@ public class RemoteExecCapabilityTests
     [TestMethod]
     public async Task SudoAsync_MissingExitCodeStaysUnknown()
     {
-        Guid id = Guid.NewGuid();
+        var id = Guid.NewGuid();
         ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
         client.IsConnected.Returns(true);
         ISshConnectionService connections = Substitute.For<ISshConnectionService>();

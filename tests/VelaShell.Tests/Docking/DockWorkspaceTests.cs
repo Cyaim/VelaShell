@@ -605,7 +605,7 @@ public class DockWorkspaceTests
         TestDocument other = NewDoc("other");
 
         Task plusFlow = PlusFlowAsync();
-        Task otherFlow = Task.Run(async () =>
+        var otherFlow = Task.Run(async () =>
         {
             await opened.Task;
             ws.AddDocument(other);

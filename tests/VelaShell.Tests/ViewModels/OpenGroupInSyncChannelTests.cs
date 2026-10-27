@@ -52,8 +52,8 @@ public sealed class OpenGroupInSyncChannelTests
         Assert.AreEqual(SyncInputChannel.A, busy.SyncChannel, "已经开着的标签不动");
         // 浮层按新旧排,失败提示与汇总都在里面;汇总是那条说了频道的。
         string summary = vm.Toasts.Toasts.Select(static t => t.Message).Single(m => m.Contains(Strings.Format("Tree_SyncedDone", 3, SyncInputChannel.B), StringComparison.Ordinal));
-        StringAssert.Contains(summary, Strings.Format("Tree_SyncedDone", 3, SyncInputChannel.B));
-        StringAssert.Contains(summary, Strings.Format("Tree_SyncedNotConnected", 3), "没连上的要说出来:握手期间敲的命令它们收不到");
+        Assert.Contains(Strings.Format("Tree_SyncedDone", 3, SyncInputChannel.B), summary);
+        Assert.Contains(Strings.Format("Tree_SyncedNotConnected", 3), summary, "没连上的要说出来:握手期间敲的命令它们收不到");
     }
 
     [TestMethod]

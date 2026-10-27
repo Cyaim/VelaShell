@@ -77,7 +77,7 @@ internal static class FilePaneLayoutMemory
         {
             return;
         }
-        Dictionary<string, double> widths = new(StringComparer.Ordinal);
+        Dictionary<string, double> widths = [with(StringComparer.Ordinal)];
         foreach (string column in (string[])["name", "size", "permissions", "owner", "group", "type"])
         {
             widths[column] = pane.GetColumnWidth(column).Value;

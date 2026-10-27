@@ -172,8 +172,10 @@ public sealed class McpEndpoint(IPluginContext context, McpServerSettingsStore s
         _cts?.Dispose();
         _cts = null;
         foreach (string id in _sessions.Keys)
+        {
             if (_sessions.TryRemove(id, out McpToolHost? host))
                 await host.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private async Task AcceptLoopAsync(HttpListener listener, CancellationToken cancellationToken)

@@ -96,8 +96,8 @@ public class ExecutionOperationsTests
         await b.DrainAsync();
         release.TrySetResult();
         await drain;
-        CollectionAssert.AreEqual(new[] { 1, 2 }, received.Where(v => v.Op == "a").Select(v => v.Value).ToArray());
-        CollectionAssert.AreEqual(new long[] { 1, 2 }, received.Where(v => v.Op == "a").Select(v => v.Sequence).ToArray());
+        Assert.AreSequenceEqual([1, 2], [.. received.Where(v => v.Op == "a").Select(v => v.Value)]);
+        Assert.AreSequenceEqual([1, 2], received.Where(v => v.Op == "a").Select(v => v.Sequence).ToArray());
         Assert.ThrowsExactly<InvalidOperationException>(() => a.Report(4));
     }
 

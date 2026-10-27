@@ -58,8 +58,8 @@ public sealed class BridgeAgentRunner(
             scopes = [.. _transferCleanupScopes]; _transferCleanupScopes.Clear();
         }
         stopping.Cancel(); stopping.Dispose();
-        foreach (var observer in observers) observer.Dispose();
-        foreach (var scope in scopes) _ = CancelAsync(scope);
+        foreach (BridgeTransferObserver observer in observers) observer.Dispose();
+        foreach (FileTransferRunScope scope in scopes) _ = CancelAsync(scope);
         async Task CancelAsync(FileTransferRunScope scope)
         {
             try { await scope.CancelAllAsync().ConfigureAwait(false); }
@@ -174,21 +174,27 @@ public sealed class BridgeAgentRunner(
                 ResolvedModel? candidate = latest.FindModel(model.Id);
                 if (candidate is null || candidate.BaseUrl != endpoint || candidate.Model != modelName
                     || store.ProviderConfigurationVersion(model.Provider) != providerVersion)
+                {
                     throw new ProviderConfigurationChangedException();
+                }
+
                 ProviderCredential credential = await store.ResolveCredentialAsync(candidate, cancellationToken: token).ConfigureAwait(false);
                 bool same = credential.Value == fixedCredential.Value && credential.IsBearerToken == fixedCredential.IsBearerToken
                     && credential.BaseUrl == fixedCredential.BaseUrl
                     && (credential.Headers ?? []).SequenceEqual(fixedCredential.Headers ?? []);
                 if (!same)
                 {
-                    var renewed = await store.GetTokenSnapshotAsync(model.Provider.Id, token).ConfigureAwait(false);
+                    (OAuthTokens? Tokens, long Version) renewed = await store.GetTokenSnapshotAsync(model.Provider.Id, token).ConfigureAwait(false);
                     bool sameAccount = account.Tokens?.AccountId is { Length: > 0 } id
                         ? renewed.Tokens?.AccountId == id
                         : renewed.Version == account.Version;
                     if (!credential.IsBearerToken || !fixedCredential.IsBearerToken || !sameAccount
                         || credential.BaseUrl != fixedCredential.BaseUrl
                         || !(credential.Headers ?? []).SequenceEqual(fixedCredential.Headers ?? []))
+                    {
                         throw new ProviderConfigurationChangedException();
+                    }
+
                     steering.ReplaceInnerClient(store.CreateClient(candidate, credential, callerCountsRetries: true));
                     fixedCredential = credential;
                     account = renewed;

@@ -85,9 +85,9 @@ public sealed class SshAgentEndpointTests
     [Timeout(60_000)]
     public async Task Agent认证用连接指定的端点_不碰SSH_AUTH_SOCK()
     {
-        using ECDsa ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using InMemorySshSigner signer = SshPrivateKeyFile.Parse(ecdsa.ExportPkcs8PrivateKeyPem());
-        await using SocketAgent agent = SocketAgent.Start(signer);
+        await using var agent = SocketAgent.Start(signer);
         using EnvironmentScope _ = new("SSH_AUTH_SOCK", Path.Combine(Path.GetTempPath(), $"vs-no-agent-{Guid.NewGuid():N}"[..40] + ".sock"));
         await using LoopbackSshHost host = new()
         {
@@ -115,7 +115,7 @@ public sealed class SshAgentEndpointTests
         VelaSshAuthenticationException ex = await Assert.ThrowsAsync<VelaSshAuthenticationException>(
             async () => await ConnectAsync(AgentInfo(host.Port, missing)));
 
-        StringAssert.Contains(ex.Message, missing);
+        Assert.Contains(missing, ex.Message);
         Assert.DoesNotContain(Strings.Get("SshErr_AgentNotRunning"), ex.Message, "那条提示讲的是 Windows 的 agent 服务,对指定的端点是误导");
         Assert.AreEqual(0, host.Accepted, "agent 连不上就不去连服务器");
     }
@@ -125,7 +125,7 @@ public sealed class SshAgentEndpointTests
     [Timeout(60_000)]
     public async Task 指定的agent里没有钥时提示点名那个端点()
     {
-        await using SocketAgent agent = SocketAgent.Start(signer: null);
+        await using var agent = SocketAgent.Start(signer: null);
         await using LoopbackSshHost host = new();
 
         VelaSshAuthenticationException ex = await Assert.ThrowsAsync<VelaSshAuthenticationException>(
@@ -146,7 +146,7 @@ public sealed class SshAgentEndpointTests
 
         Assert.AreEqual(Path.Combine(home, "agents/deploy.sock"), pinned?.AgentEndpoint, "~ 在连接那一刻展开");
         Assert.IsNull(fallback?.AgentEndpoint, "没指定交 null:库按系统默认");
-        StringAssert.Contains(SshForwardingOptions.DescribeAgent(features, pinned!), "~/agents/deploy.sock");
+        Assert.Contains("~/agents/deploy.sock", SshForwardingOptions.DescribeAgent(features, pinned!));
         Assert.DoesNotContain("agent:", SshForwardingOptions.DescribeAgent(null, fallback!).Replace("ssh-agent", ""));
     }
 

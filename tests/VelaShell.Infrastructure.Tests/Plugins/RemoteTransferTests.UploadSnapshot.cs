@@ -37,8 +37,8 @@ public sealed partial class RemoteTransferTests
             RemoteTransferSnapshot start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "space-" + margin });
             RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
             await WaitIdle(api);
-            CollectionAssert.AreEqual(new[] { directory }, probed, "查的是源文件所在的卷");
-            CollectionAssert.AreEqual(new[] { file }, Directory.GetFileSystemEntries(directory), "快照不留在源目录里");
+            Assert.AreSequenceEqual([directory], probed, "查的是源文件所在的卷");
+            Assert.AreSequenceEqual([file], Directory.GetFileSystemEntries(directory), "快照不留在源目录里");
             if (succeeds)
             {
                 Assert.IsTrue(done.IsSuccess, $"{done.State}: {done.ErrorMessage}");
@@ -81,7 +81,7 @@ public sealed partial class RemoteTransferTests
             await WaitIdle(api);
             if (!OperatingSystem.IsMacOS() && done.ErrorCode == "insufficient-space") Assert.Inconclusive("临时目录所在的文件系统不支持克隆。");
             Assert.IsTrue(done.IsSuccess, $"{done.State}: {done.ErrorMessage}");
-            CollectionAssert.AreEqual(new[] { file }, Directory.GetFileSystemEntries(directory));
+            Assert.AreSequenceEqual([file], Directory.GetFileSystemEntries(directory));
         }
         finally { await WaitIdle(api); Directory.Delete(directory, true); }
     }
@@ -138,7 +138,7 @@ public sealed partial class RemoteTransferTests
                     Assert.AreEqual(temporary, Path.GetDirectoryName(snapshot));
                 }
             }
-            CollectionAssert.AreEqual(new[] { Path.GetTempPath(), Path.GetTempPath() }, probed);
+            Assert.AreSequenceEqual([Path.GetTempPath(), Path.GetTempPath()], probed);
         }
         finally
         {
@@ -185,7 +185,7 @@ public sealed partial class RemoteTransferTests
             }
             Assert.IsTrue(File.Exists(lookalike), "名字只是相像的文件被删了");
             if (linked) Assert.IsFalse(File.Exists(link) || new FileInfo(link).LinkTarget is not null, "同形的符号链接没删");
-            CollectionAssert.AreEqual(new byte[] { 3 }, await File.ReadAllBytesAsync(victim), "链接指向的文件被动了");
+            Assert.AreSequenceEqual(new byte[] { 3 }, await File.ReadAllBytesAsync(victim), "链接指向的文件被动了");
         }
         finally { await WaitIdle(api); Directory.Delete(directory, true); }
     }

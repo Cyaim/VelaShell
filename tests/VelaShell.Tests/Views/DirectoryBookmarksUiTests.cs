@@ -97,7 +97,7 @@ public sealed class DirectoryBookmarksUiTests
 
             string?[] headers = [.. menu.Items.OfType<MenuItem>().Select(static i => i.Header).OfType<TextBlock>().Select(static t => t.Text)];
             Assert.HasCount(3, headers, "应用、编辑、删除三项的标题都带用户数据,都不能交给访问键解析");
-            StringAssert.Contains(headers[0], "/srv/my_app");
+            Assert.Contains("/srv/my_app", headers[0]);
             Assert.IsTrue(headers.All(static h => h!.Contains("my_app", StringComparison.Ordinal)));
         }
         finally

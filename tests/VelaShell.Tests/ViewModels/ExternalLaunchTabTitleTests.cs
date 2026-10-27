@@ -55,7 +55,7 @@ public sealed class ExternalLaunchTabTitleTests
             vm.Layout.AllDocuments().OfType<TerminalDocument>().Single().Title,
             "标签条画的是文档的标题,它在建文档时从终端抄一次");
         Assert.AreEqual("JMS-7f3a@192.168.1.1:2222", profile.Name, "配置本身不改名:复用已保存的配置时这会随最近连接时间一起落盘");
-        StringAssert.Contains(tab.ConnectionSummary, "JMS-7f3a@192.168.1.1:2222", "状态栏照旧说真连到了哪");
+        Assert.Contains("JMS-7f3a@192.168.1.1:2222", tab.ConnectionSummary, "状态栏照旧说真连到了哪");
 
         vm.CloseTerminalTab(tab);
         Assert.IsNull(await connecting);

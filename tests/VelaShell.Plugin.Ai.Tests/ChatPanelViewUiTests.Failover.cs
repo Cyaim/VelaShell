@@ -219,7 +219,9 @@ public sealed partial class ChatPanelViewUiTests
             provider.Models.Add(sibling);
             var settings = new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id, SuggestFollowUps = false,
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                SuggestFollowUps = false,
                 FailoverChain = [new FailoverEntry { ModelId = provider.Models[0].Id }, new FailoverEntry { ModelId = sibling.Id }]
             };
             await store.SetApiKeyAsync(provider.Id, "key-a");
@@ -3312,7 +3314,9 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider second = StubProvider("backup", backup.BaseUrl, "m");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id, SuggestFollowUps = false,
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                SuggestFollowUps = false,
                 FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }]
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
@@ -3348,8 +3352,12 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider second = StubProvider("backup", backup.BaseUrl, "m");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id, SuggestFollowUps = false, Mode = mode,
-                Approval = ApprovalMode.Bypass, FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }]
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                SuggestFollowUps = false,
+                Mode = mode,
+                Approval = ApprovalMode.Bypass,
+                FailoverChain = [new FailoverEntry { ModelId = second.Models[0].Id }]
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -3363,7 +3371,7 @@ public sealed partial class ChatPanelViewUiTests
                 var loc = new Loc("en");
                 Assert.Contains(t => t.Name == "NoticeText" && t.Text == loc[reason == "length" ? "NoticeOutputLimit" : "NoticeFiltered"],
                     messages.GetVisualDescendants().OfType<TextBlock>());
-                Assert.IsFalse(messages.GetVisualDescendants().OfType<Border>().Any(b => b.Classes.Contains("errorCard")), "不报错");
+                Assert.DoesNotContain(b => b.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>(), "不报错");
                 Assert.IsFalse(PanelHealth(panel).IsCooling(first.Models[0].Id));
             }
             finally { panel.Detach(); window.Close(); }
@@ -3387,8 +3395,11 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("agent", endpoint.BaseUrl, "m");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id, Mode = ChatMode.Agent,
-                Approval = ApprovalMode.Bypass, SuggestFollowUps = false
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                Mode = ChatMode.Agent,
+                Approval = ApprovalMode.Bypass,
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -3400,7 +3411,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.Contains(RecoveringChatClient.ContinueAfterTools, endpoint.Requests[2]);
                 Assert.Contains(t => t.Name == "NoticeText" && t.Text == new Loc("en")["NoticeEmptyAfterTools"],
                     messages.GetVisualDescendants().OfType<TextBlock>());
-                Assert.IsFalse(messages.GetVisualDescendants().OfType<Border>().Any(b => b.Classes.Contains("errorCard")), "不报错");
+                Assert.DoesNotContain(b => b.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>(), "不报错");
                 Assert.IsFalse(PanelHealth(panel).IsCooling(provider.Models[0].Id), "不冷却");
             }
             finally { panel.Detach(); window.Close(); }
@@ -3418,7 +3429,10 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider provider = StubProvider("chat", endpoint.BaseUrl, "m");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [provider], ActiveModelId = provider.Models[0].Id, Mode = ChatMode.Chat, SuggestFollowUps = false
+                Providers = [provider],
+                ActiveModelId = provider.Models[0].Id,
+                Mode = ChatMode.Chat,
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -3457,7 +3471,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0));
                 Assert.HasCount(3, endpoint.Requests);
                 Assert.IsNotEmpty(AnswerRenderers(messages));
-                Assert.IsFalse(messages.GetVisualDescendants().OfType<Border>().Any(b => b.Classes.Contains("errorCard")));
+                Assert.DoesNotContain(b => b.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
             }
             finally { panel.Detach(); window.Close(); }
         });

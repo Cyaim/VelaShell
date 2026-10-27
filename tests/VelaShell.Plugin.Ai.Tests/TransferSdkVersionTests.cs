@@ -24,7 +24,7 @@ public sealed class TransferSdkVersionTests
         Assert.AreEqual(host, ReadVersion(tests, "PackageVersion", "VelaShell.PluginSdk.Testing"));
         Assert.AreEqual(host, ReadVersion(Path.Combine(plugin, "VelaShell.Plugin.Ai.csproj"),
             "PackageReference", "VelaShell.PluginSdk"));
-        using JsonDocument manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(plugin, "plugin.json")),
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(plugin, "plugin.json")),
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
         Assert.AreEqual(host, manifest.RootElement.GetProperty("minSdkVersion").GetString(),
             "新插件必须拒载旧契约程序集，不能仅靠能力位避免缺少类型。");

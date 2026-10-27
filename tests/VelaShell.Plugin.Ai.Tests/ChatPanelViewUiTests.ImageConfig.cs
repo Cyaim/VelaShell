@@ -27,7 +27,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 await PumpAsync(5);
-                var combo = FindIn<ComboBox>(view, "ImageModelCombo");
+                ComboBox combo = FindIn<ComboBox>(view, "ImageModelCombo");
                 Assert.AreEqual(3, combo.ItemCount);
                 Assert.Contains("Second", combo.SelectedItem!.ToString());
                 provider.Models.Remove(first);

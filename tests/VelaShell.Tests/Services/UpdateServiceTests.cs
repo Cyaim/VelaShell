@@ -599,7 +599,7 @@ public class UpdateServiceTests : IDisposable
         {
             Assert.Inconclusive("Explicit downloads require a self-updating platform.");
         }
-        UpdateManifest manifest = UpdateManifest.Parse("""
+        var manifest = UpdateManifest.Parse("""
             { "version": "3.0.0", "tag": "3.0.0",
               "assets": { "solaris-sparc": { "name": "archive.zip", "sha256": "abc", "size": 1 } } }
             """);

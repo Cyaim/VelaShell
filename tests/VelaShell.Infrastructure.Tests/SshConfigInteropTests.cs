@@ -89,12 +89,12 @@ public sealed class SshConfigInteropTests
         Assert.IsNull(legacy.Ssh?.KexAlgorithms, "只写了没实现的:留个空前缀等于什么都没写");
         Assert.AreEqual("-hmac-sha1", legacy.Ssh?.Macs);
         Assert.AreEqual("^ssh-ed25519,rsa-sha2-512", legacy.Ssh?.HostKeyAlgorithms);
-        Assert.IsTrue(legacy.Notes.Any(n => n.Contains("Ciphers") && n.Contains("aes128-cbc")));
-        Assert.IsTrue(legacy.Notes.Any(n => n.Contains("KexAlgorithms") && n.Contains("diffie-hellman-group1-sha1")));
+        Assert.Contains(n => n.Contains("Ciphers") && n.Contains("aes128-cbc"), legacy.Notes);
+        Assert.Contains(n => n.Contains("KexAlgorithms") && n.Contains("diffie-hellman-group1-sha1"), legacy.Notes);
 
         ImportedSession typo = await ScanOneAsync(config, "typo");
         Assert.IsNull(typo.Ssh?.Ciphers);
-        Assert.IsTrue(typo.Notes.Any(n => n.Contains("Ciphers") && n.Contains("aes256-ctrr")));
+        Assert.Contains(n => n.Contains("Ciphers") && n.Contains("aes256-ctrr"), typo.Notes);
     }
 
     [TestMethod]
@@ -175,7 +175,7 @@ public sealed class SshConfigInteropTests
         Assert.AreEqual(AuthMethod.Agent, conflict.AuthMethod);
         Assert.AreEqual(pinned, conflict.Ssh?.AgentEndpoint, "认证用的那个留着");
         Assert.IsFalse(conflict.Ssh?.AgentForwarding ?? false, "转发指了另一个:换成认证用的那个等于多交出几把钥,不导");
-        Assert.IsTrue(conflict.Notes.Any(n => n.Contains("ForwardAgent") && n.Contains(other)));
+        Assert.Contains(n => n.Contains("ForwardAgent") && n.Contains(other), conflict.Notes);
 
         ImportedSession keyfwd = await ScanOneAsync(config, "keyfwd");
         Assert.IsNull(keyfwd.AuthMethod, "私钥认证");
@@ -191,15 +191,15 @@ public sealed class SshConfigInteropTests
         ImportedSession foreign = await ScanOneAsync(config, "foreign");
         Assert.IsNull(foreign.AuthMethod);
         Assert.IsNull(foreign.Ssh);
-        Assert.IsTrue(foreign.Notes.Any(n => n.Contains(ForeignAgentPath)), "别的平台的路径这台电脑上用不了:说一声");
+        Assert.Contains(n => n.Contains(ForeignAgentPath), foreign.Notes, "别的平台的路径这台电脑上用不了:说一声");
 
         ImportedSession foreignfwd = await ScanOneAsync(config, "foreignfwd");
         Assert.IsNull(foreignfwd.Ssh);
-        Assert.IsTrue(foreignfwd.Notes.Any(n => n.Contains(ForeignAgentPath)));
+        Assert.Contains(n => n.Contains(ForeignAgentPath), foreignfwd.Notes);
 
         ImportedSession varunset = await ScanOneAsync(config, "varunset");
         Assert.IsNull(varunset.Ssh);
-        Assert.IsTrue(varunset.Notes.Any(n => n.Contains("VS_NO_SUCH_AGENT_VARIABLE")));
+        Assert.Contains(n => n.Contains("VS_NO_SUCH_AGENT_VARIABLE"), varunset.Notes);
     }
 
     /// <summary>
@@ -241,7 +241,7 @@ public sealed class SshConfigInteropTests
         ImportedSession plain = await ScanOneAsync(config, "x11plain");
         Assert.IsTrue(plain.Ssh?.X11Forwarding);
         Assert.IsTrue(plain.Ssh?.X11Trusted, "没写 ForwardX11Trusted:按 VelaShell 的默认(受信任),不换算成 OpenSSH 的非受信任");
-        Assert.IsTrue(plain.Notes.Any(n => n.Contains("ForwardX11Trusted")), "信任级别与 ssh 不同,要说出来");
+        Assert.Contains(n => n.Contains("ForwardX11Trusted"), plain.Notes, "信任级别与 ssh 不同,要说出来");
 
         ImportedSession untrusted = await ScanOneAsync(config, "x11untrusted");
         Assert.IsTrue(untrusted.Ssh?.X11Forwarding);
@@ -262,12 +262,12 @@ public sealed class SshConfigInteropTests
         Assert.IsEmpty(obscure20.Notes, "20 毫秒就是 VelaShell 的节拍,没什么要说的");
         ImportedSession obscure80 = await ScanOneAsync(config, "obscure80");
         Assert.IsTrue(obscure80.Ssh?.ObscureKeystrokeTiming, "interval:N 也是开");
-        Assert.IsTrue(obscure80.Notes.Any(n => n.Contains("interval:80")), "节拍固定 20 毫秒:不一样要说一声");
+        Assert.Contains(n => n.Contains("interval:80"), obscure80.Notes, "节拍固定 20 毫秒:不一样要说一声");
 
         ImportedSession typo = await ScanOneAsync(config, "typo");
         Assert.IsNull(typo.Ssh, "拼错的不当成 yes,也不当成 no 悄悄吞掉");
-        Assert.IsTrue(typo.Notes.Any(n => n.Contains("ForwardX11 yess")));
-        Assert.IsTrue(typo.Notes.Any(n => n.Contains("ObscureKeystrokeTiming interval:0")), "超出 1–1000 毫秒的节拍与库一样不认");
+        Assert.Contains(n => n.Contains("ForwardX11 yess"), typo.Notes);
+        Assert.Contains(n => n.Contains("ObscureKeystrokeTiming interval:0"), typo.Notes, "超出 1–1000 毫秒的节拍与库一样不认");
 
         ImportedSession nothing = await ScanOneAsync(config, "plain");
         Assert.IsNull(nothing.Ssh, "没写就按 VelaShell 的默认:OpenSSH 默认开着的按键时序混淆不跟着开");
@@ -282,12 +282,14 @@ public sealed class SshConfigInteropTests
     {
         SessionProfile on = new()
         {
-            Name = "on", Host = "10.0.0.21",
+            Name = "on",
+            Host = "10.0.0.21",
             Ssh = new SshSessionOptions { X11Forwarding = true, X11Trusted = false, ObscureKeystrokeTiming = true },
         };
         SessionProfile trusted = new()
         {
-            Name = "trusted", Host = "10.0.0.22",
+            Name = "trusted",
+            Host = "10.0.0.22",
             Ssh = new SshSessionOptions { X11Forwarding = true, X11Trusted = true },
         };
         SessionProfile off = new() { Name = "off", Host = "10.0.0.23", Ssh = new SshSessionOptions { Compression = true } };
@@ -349,8 +351,8 @@ public sealed class SshConfigInteropTests
         Assert.AreEqual((TunnelType.DynamicForward, "127.0.0.1", 1081u), (tunnels[4].Type, tunnels[4].LocalHost, tunnels[4].LocalPort));
         Assert.AreEqual("0.0.0.0", tunnels[5].LocalHost);
 
-        Assert.IsTrue(fw.Notes.Any(n => n.Contains("LocalForward 0 db:5432")), "端口 0(连接时才定的端口)在隧道里没有对应的写法");
-        Assert.IsTrue(fw.Notes.Any(n => n.Contains("LocalForward 8443")), "写错的那一行不连累别的行");
+        Assert.Contains(n => n.Contains("LocalForward 0 db:5432"), fw.Notes, "端口 0(连接时才定的端口)在隧道里没有对应的写法");
+        Assert.Contains(n => n.Contains("LocalForward 8443"), fw.Notes, "写错的那一行不连累别的行");
     }
 
     [TestMethod]
@@ -400,17 +402,17 @@ public sealed class SshConfigInteropTests
 
         Assert.HasCount(5, tunnels);
         Assert.AreEqual((TunnelType.LocalForward, listen, "/var/run/docker.sock"), (tunnels[0].Type, tunnels[0].LocalSocketPath, tunnels[0].RemoteSocketPath));
-        Assert.AreEqual((2375u, (string?)null, "/var/run/docker.sock"), (tunnels[1].LocalPort, tunnels[1].LocalSocketPath, tunnels[1].RemoteSocketPath));
-        Assert.AreEqual(("db", 5432u, (string?)null), (tunnels[2].RemoteHost, tunnels[2].RemotePort, tunnels[2].RemoteSocketPath));
+        Assert.AreEqual((2375u, null, "/var/run/docker.sock"), (tunnels[1].LocalPort, tunnels[1].LocalSocketPath, tunnels[1].RemoteSocketPath));
+        Assert.AreEqual(("db", 5432u, null), (tunnels[2].RemoteHost, tunnels[2].RemotePort, tunnels[2].RemoteSocketPath));
         Assert.AreEqual(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "vs-import-home.sock"),
             tunnels[3].LocalSocketPath, "开头的 ~ 展开成主目录");
         TunnelConfig remote = tunnels[4];
         Assert.AreEqual((TunnelType.RemoteForward, back, "/tmp/app.sock"), (remote.Type, remote.LocalSocketPath, remote.RemoteSocketPath),
             "远程转发:服务器上监听的套接字进 RemoteSocketPath,本机要连的进 LocalSocketPath");
 
-        Assert.IsTrue(sock.Notes.Any(n => n.Contains("sub/relative.sock")), "相对路径落在哪全看程序的当前目录");
-        Assert.IsTrue(sock.Notes.Any(n => n.Contains("/tmp/x.sock localhost:80")), "远程转发只有一头是套接字");
-        Assert.IsTrue(sock.Notes.Any(n => n.Contains("RemoteForward 9000")), "远程转发只有一头是套接字");
+        Assert.Contains(n => n.Contains("sub/relative.sock"), sock.Notes, "相对路径落在哪全看程序的当前目录");
+        Assert.Contains(n => n.Contains("/tmp/x.sock localhost:80"), sock.Notes, "远程转发只有一头是套接字");
+        Assert.Contains(n => n.Contains("RemoteForward 9000"), sock.Notes, "远程转发只有一头是套接字");
     }
 
     /// <summary>
@@ -456,9 +458,9 @@ public sealed class SshConfigInteropTests
         {
             ImportedSession skipped = await ScanOneAsync(config, alias);
             Assert.IsNull(skipped.Tunnels, alias);
-            Assert.IsTrue(skipped.Notes.Any(n => n.Contains("RemoteForward")), alias);
+            Assert.Contains(n => n.Contains("RemoteForward"), skipped.Notes, alias);
         }
-        Assert.IsTrue((await ScanOneAsync(config, "typo")).Notes.Any(n => n.Contains("\"localhost\"") || n.Contains("「localhost」")),
+        Assert.Contains(n => n.Contains("\"localhost\"") || n.Contains("「localhost」"), (await ScanOneAsync(config, "typo")).Notes,
             "点名写错的那一条");
     }
 
@@ -481,7 +483,7 @@ public sealed class SshConfigInteropTests
         Assert.AreEqual(AuthMethod.Certificate, cert.AuthMethod);
         Assert.AreEqual(Path.GetFullPath("/keys/deploy-cert.pub"), cert.CertificatePath);
         Assert.AreEqual(Path.GetFullPath("/keys/deploy"), cert.PrivateKeyPath, "与证书同名的那把,不是第一把");
-        Assert.IsTrue(cert.Notes.Any(n => n.Contains("other")), "另一把私钥没导入,说一声");
+        Assert.Contains(n => n.Contains("other"), cert.Notes, "另一把私钥没导入,说一声");
 
         ImportedSession certOnly = await ScanOneAsync(config, "certonly");
         Assert.AreEqual(AuthMethod.Certificate, certOnly.AuthMethod);
@@ -535,7 +537,7 @@ public sealed class SshConfigInteropTests
         if (OperatingSystem.IsWindows())
         {
             Assert.IsNull(other.AuthMethod, "Linux 的套接字路径在 Windows 上用不了");
-            Assert.IsTrue(other.Notes.Any(n => n.Contains("some-unusual-agent.sock")));
+            Assert.Contains(n => n.Contains("some-unusual-agent.sock"), other.Notes);
         }
         else
         {
@@ -660,22 +662,32 @@ public sealed class SshConfigInteropTests
         string socket = Path.Combine(home, "agents", "deploy.sock");
         SessionProfile agentAuth = new()
         {
-            Name = "agentauth", Host = "10.0.0.31", AuthMethod = AuthMethod.Agent,
+            Name = "agentauth",
+            Host = "10.0.0.31",
+            AuthMethod = AuthMethod.Agent,
             Ssh = new SshSessionOptions { AgentEndpoint = socket, AgentForwarding = true },
         };
         SessionProfile keyForward = new()
         {
-            Name = "keyforward", Host = "10.0.0.32", AuthMethod = AuthMethod.PrivateKey, PrivateKeyPath = "/keys/id",
+            Name = "keyforward",
+            Host = "10.0.0.32",
+            AuthMethod = AuthMethod.PrivateKey,
+            PrivateKeyPath = "/keys/id",
             Ssh = new SshSessionOptions { AgentEndpoint = "~/agents/deploy.sock", AgentForwarding = true },
         };
         SessionProfile unused = new()
         {
-            Name = "unused", Host = "10.0.0.33", AuthMethod = AuthMethod.PrivateKey, PrivateKeyPath = "/keys/id",
+            Name = "unused",
+            Host = "10.0.0.33",
+            AuthMethod = AuthMethod.PrivateKey,
+            PrivateKeyPath = "/keys/id",
             Ssh = new SshSessionOptions { AgentEndpoint = socket },
         };
         SessionProfile pipe = new()
         {
-            Name = "pipe", Host = "10.0.0.34", AuthMethod = AuthMethod.Agent,
+            Name = "pipe",
+            Host = "10.0.0.34",
+            AuthMethod = AuthMethod.Agent,
             Ssh = new SshSessionOptions { AgentEndpoint = @"\\.\pipe\vela-pinned-agent" },
         };
 
@@ -693,7 +705,9 @@ public sealed class SshConfigInteropTests
         string realHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         SessionProfile roundTrip = new()
         {
-            Name = "roundtrip", Host = "10.0.0.35", AuthMethod = AuthMethod.Agent,
+            Name = "roundtrip",
+            Host = "10.0.0.35",
+            AuthMethod = AuthMethod.Agent,
             Ssh = new SshSessionOptions { AgentEndpoint = Path.Combine(realHome, "vs-agent.sock"), AgentForwarding = true },
         };
         string path = WriteConfig(SshConfigExporter.Write(Archive(roundTrip)).Content);
@@ -710,7 +724,9 @@ public sealed class SshConfigInteropTests
     {
         SessionProfile tpm = new()
         {
-            Name = "tpm", Host = "10.0.0.41", AuthMethod = AuthMethod.KeyStore,
+            Name = "tpm",
+            Host = "10.0.0.41",
+            AuthMethod = AuthMethod.KeyStore,
             KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy" },
         };
 
@@ -728,7 +744,9 @@ public sealed class SshConfigInteropTests
         string home = Path.Combine(Path.GetTempPath(), "home-for-export");
         SessionProfile tpm = new()
         {
-            Name = "tpm-ca", Host = "10.0.0.42", AuthMethod = AuthMethod.KeyStore,
+            Name = "tpm-ca",
+            Host = "10.0.0.42",
+            AuthMethod = AuthMethod.KeyStore,
             KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy" },
             CertificatePath = Path.Combine(home, ".ssh", "deploy-cert.pub"),
         };
@@ -789,17 +807,17 @@ public sealed class SshConfigInteropTests
 
     private static TunnelConfig Tunnel(TunnelType type, string localHost = "127.0.0.1", uint localPort = 0, string remoteHost = "",
         uint remotePort = 0, string? localSocket = null, string? remoteSocket = null, IReadOnlyList<string>? permit = null) => new()
-    {
-        Type = type,
-        Name = "",
-        LocalHost = localHost,
-        LocalPort = localPort,
-        RemoteHost = remoteHost,
-        RemotePort = remotePort,
-        LocalSocketPath = localSocket,
-        RemoteSocketPath = remoteSocket,
-        PermitRemoteOpen = permit,
-    };
+        {
+            Type = type,
+            Name = "",
+            LocalHost = localHost,
+            LocalPort = localPort,
+            RemoteHost = remoteHost,
+            RemotePort = remotePort,
+            LocalSocketPath = localSocket,
+            RemoteSocketPath = remoteSocket,
+            PermitRemoteOpen = permit,
+        };
 
     /// <summary>
     /// 套接字与远程动态的往返:导出的 ssh_config 再经「会话导入」读回来,隧道与原来的一样。

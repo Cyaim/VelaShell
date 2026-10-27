@@ -59,11 +59,9 @@ public class TileGridMathTests
     }
 
     [TestMethod]
-    public void IndicesInRect_SkipsTheEmptyCellsOfAPartialLastRow()
-    {
+    public void IndicesInRect_SkipsTheEmptyCellsOfAPartialLastRow() =>
         // 4 列 6 项:第二行只有 4、5 两格,矩形盖到右下角的空位也不该凭空多出 6、7。
         Assert.AreSequenceEqual([0, 1, 2, 3, 4, 5], [.. TileGridMath.IndicesInRect(10, 50, 390, 150, W, H, 4, 6)]);
-    }
 
     [TestMethod]
     public void IndicesInRect_IsEmptyRightOfTheLastColumnAndBelowTheLastRow()
@@ -74,11 +72,9 @@ public class TileGridMathTests
     }
 
     [TestMethod]
-    public void IndicesInRect_WithOneColumn_BehavesLikeTheRowBand()
-    {
+    public void IndicesInRect_WithOneColumn_BehavesLikeTheRowBand() =>
         // 列表视图是一格占满整行:矩形只要横向碰到这一列,结果就只由上下两边决定。
         Assert.AreSequenceEqual([1, 2, 3], [.. TileGridMath.IndicesInRect(20, 30, 900, 100, 880, 28, 1, 7)]);
-    }
 
     [TestMethod]
     public void Navigate_LeftRightStepThroughTheRowAndContinueOnTheNextOne()

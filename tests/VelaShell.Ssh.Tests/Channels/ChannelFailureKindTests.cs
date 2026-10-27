@@ -26,12 +26,12 @@ public sealed class ChannelFailureKindTests
     [DataRow(SshProtocolNames.ChannelSession, 99u, SshChannelFailureKind.OpenRejected, "服务端拒绝打开通道，原因码 99。")]
     public void 每个原因码都归了类且原文不变(string channelType, uint code, SshChannelFailureKind kind, string advice)
     {
-        SshChannelException plain = SshChannelException.FromOpenFailure(channelType, code, "");
+        var plain = SshChannelException.FromOpenFailure(channelType, code, "");
         Assert.AreEqual(kind, plain.FailureKind);
         Assert.AreEqual(channelType, plain.ChannelType);
         Assert.AreEqual(advice, plain.Message);
 
-        SshChannelException said = SshChannelException.FromOpenFailure(channelType, code, "nope");
+        var said = SshChannelException.FromOpenFailure(channelType, code, "nope");
         Assert.AreEqual($"{advice} 服务端说：nope", said.Message);
         Assert.AreEqual("nope", said.PeerDescription);
     }

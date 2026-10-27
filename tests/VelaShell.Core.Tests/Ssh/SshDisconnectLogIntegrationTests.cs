@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net.Sockets;
 using VelaShell.Core.Models;
-using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Ssh;
 
 namespace VelaShell.Core.Tests.Ssh;
@@ -50,7 +49,7 @@ public class SshDisconnectLogIntegrationTests
             }
             string peerLine = await log.WaitForAsync(line => line.StartsWith($"[SSH] {Target} closed (connected since ", StringComparison.Ordinal)
                 && !line.EndsWith("closed locally", StringComparison.Ordinal));
-            StringAssert.Contains(peerLine, "(Open)", "掉线发生在会话建立之后");
+            Assert.Contains("(Open)", peerLine, "掉线发生在会话建立之后");
             await dropped.DisposeAsync();
 
             int before = log.Lines.Count;

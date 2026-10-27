@@ -478,7 +478,7 @@ public sealed class CommandJobRegistryTests
         await using var toolbox = new AgentToolbox(context) { SessionIdProvider = () => session };
         AIFunction function = toolbox.CreateTools(ChatMode.Agent).OfType<AIFunction>().Single(f => f.Name == "system_overview");
         string result = (await function.InvokeAsync([], CancellationToken.None))!.ToString()!;
-        using JsonDocument json = JsonDocument.Parse(result);
+        using var json = JsonDocument.Parse(result);
         Assert.AreEqual("stdout", json.RootElement.GetProperty("stdout").GetString());
         Assert.AreEqual("stderr", json.RootElement.GetProperty("stderr").GetString());
         Assert.AreEqual(7, json.RootElement.GetProperty("exitCode").GetInt32());
@@ -580,7 +580,7 @@ public sealed class CommandJobRegistryTests
             ["command"] = "foreground",
             ["waitSeconds"] = 0
         }, CancellationToken.None))!.ToString()!;
-        using JsonDocument json = JsonDocument.Parse(running);
+        using var json = JsonDocument.Parse(running);
         string id = json.RootElement.GetProperty("taskId").GetString()!;
         var args = new AIFunctionArguments { ["taskId"] = id };
         string foreign = (await toolsB.Single(f => f.Name == "task_status").InvokeAsync(args, CancellationToken.None))!.ToString()!;

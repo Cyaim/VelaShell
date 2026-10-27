@@ -121,7 +121,7 @@ public sealed class RemoteSearchViewModelTests
                .Returns(async call =>
                {
                    asked = call.Arg<RemoteSearchQuery>();
-                   var onHit = call.Arg<Func<RemoteSearchHit, ValueTask>>();
+                   Func<RemoteSearchHit, ValueTask> onHit = call.Arg<Func<RemoteSearchHit, ValueTask>>();
                    await onHit(new("/srv/app/logs", true));
                    await onHit(new("/srv/app/nginx.conf", false));
                    return new RemoteSearchOutcome(RemoteSearchStatus.Completed, 2);

@@ -26,15 +26,20 @@ internal sealed class ImagePreviewView : Grid
     {
         _pixels = bitmap.PixelSize;
         _screenScaling = screenScaling > 0 ? screenScaling : 1;
-        RowDefinitions = new RowDefinitions("*,Auto");
+        RowDefinitions = [with("*,Auto")];
         _image = new Image
         {
-            Name = "FullImage", Source = bitmap, Stretch = Stretch.Uniform,
-            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+            Name = "FullImage",
+            Source = bitmap,
+            Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
         };
         _scroll = new ScrollViewer
         {
-            Name = "ImageViewport", Content = _image, Padding = new Thickness(8),
+            Name = "ImageViewport",
+            Content = _image,
+            Padding = new Thickness(8),
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
@@ -43,8 +48,10 @@ internal sealed class ImagePreviewView : Grid
         _percentage[!TextBlock.FontSizeProperty] = new DynamicResourceExtension("VelaFontSize11");
         var toolbar = new StackPanel
         {
-            Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center,
-            Spacing = 8, Margin = new Thickness(8, 4),
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Spacing = 8,
+            Margin = new Thickness(8, 4),
             Children =
             {
                 Action("−", loc["ImageZoomOut"], () => SetZoom(_zoom / 1.25)),
@@ -112,7 +119,7 @@ internal sealed class ImagePreviewView : Grid
         _percentage.Text = (_zoom * 100).ToString("0.#", CultureInfo.CurrentCulture) + "%";
     }
 
-    private static Button Action(string text, string description, System.Action action)
+    private static Button Action(string text, string description, Action action)
     {
         var button = new Button { Content = text };
         button[!ThemeProperty] = new DynamicResourceExtension("VelaOutlineButtonTheme");

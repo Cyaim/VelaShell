@@ -1471,10 +1471,13 @@ public sealed class ProviderSetupView : UserControl
         // 清掉的是供应商自己的 Key 槽而又没填新的;只清了模型自带的 Key 不算(照常拉模型,见下)
         bool keysGone = cleared.Count > clearedModels.Count && committedKey is null;
         if (ReferenceEquals(keyBox, _keyBox))
+        {
             _progress.Text = created ? _loc["SetupAdded"]
                 : _loc.WithClearedModelKeys(keysGone ? _loc["SetupSavedKeysCleared"]
                     : cleared.Count > clearedModels.Count ? _loc["SetupSavedOtherKeysCleared"]
                     : _loc["Saved"], clearedModels);
+        }
+
         await RefreshStatusAsync().ConfigureAwait(true);
         ProviderChanged?.Invoke(provider.Id);
         // 「再添加一个」跟着落库就露出 —— 按钮收尾(PrimaryAsync 的 finally)要等下面这次

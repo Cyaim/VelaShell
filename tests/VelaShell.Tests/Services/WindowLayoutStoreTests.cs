@@ -31,8 +31,12 @@ public sealed class WindowLayoutStoreTests
     {
         OnUi(() =>
         {
-            var window = new Window { Width = 900, Height = 600 };
-            window.Position = new(-1500, 120);   // 左边副屏:负坐标是正当的位置
+            var window = new Window
+            {
+                Width = 900,
+                Height = 600,
+                Position = new(-1500, 120)   // 左边副屏:负坐标是正当的位置
+            };
 
             WindowLayout layout = WindowLayoutStore.Capture(window, view: null, previous: null);
 
@@ -50,9 +54,13 @@ public sealed class WindowLayoutStoreTests
     {
         OnUi(() =>
         {
-            var window = new Window { Width = 900, Height = 600 };
-            window.Position = new(0, 0);
-            window.WindowState = WindowState.Maximized;
+            var window = new Window
+            {
+                Width = 900,
+                Height = 600,
+                Position = new(0, 0),
+                WindowState = WindowState.Maximized
+            };
             WindowLayout previous = new() { Width = 800, Height = 500, X = 300, Y = 200 };
 
             WindowLayout layout = WindowLayoutStore.Capture(window, view: null, previous);

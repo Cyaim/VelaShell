@@ -43,12 +43,12 @@ public sealed class FilePaneShortcutUiTests
         {
             FocusRow(window, list, 1);
             File.WriteAllText(Path.Combine(root, "late.txt"), "x");
-            Assert.IsFalse(vm.Entries.Any(entry => entry.Name == "late.txt"), "前提:监视关掉了,不按 F5 就不会出现。");
+            Assert.DoesNotContain(entry => entry.Name == "late.txt", vm.Entries, "前提:监视关掉了,不按 F5 就不会出现。");
 
             Press(window, Key.F5);
             PumpWhile(window, () => !vm.Entries.Any(entry => entry.Name == "late.txt"));
 
-            Assert.IsTrue(vm.Entries.Any(entry => entry.Name == "late.txt"));
+            Assert.Contains(entry => entry.Name == "late.txt", vm.Entries);
         });
     }
 
@@ -196,7 +196,7 @@ public sealed class FilePaneShortcutUiTests
             PumpWhile(window, () => sftp.ReceivedCalls().All(call => call.GetMethodInfo().Name != nameof(ISftpService.DeleteAsync)));
 
             Assert.IsNotNull(asked, "删之前先问。");
-            StringAssert.Contains(asked, "b.txt");
+            Assert.Contains("b.txt", asked);
             sftp.Received().DeleteAsync(sessionId, "/home/user/b.txt", Arg.Any<IProgress<SftpDeleteProgress>?>(), Arg.Any<CancellationToken>());
         });
     }

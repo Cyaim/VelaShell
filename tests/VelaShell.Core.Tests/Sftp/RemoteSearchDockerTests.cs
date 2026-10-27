@@ -191,7 +191,7 @@ public sealed class RemoteSearchDockerTests
     {
         RequireContainer();
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-        System.Text.Encoding gbk = System.Text.Encoding.GetEncoding("GBK");
+        var gbk = System.Text.Encoding.GetEncoding("GBK");
         const string Directory = "中文目录";
         const string File = "报告.txt";
         await using VelaSshClientWrapper ssh = await ConnectAsync("vela-bash", TestContext.CancellationToken);
@@ -246,7 +246,11 @@ public sealed class RemoteSearchDockerTests
             SessionId = session,
             ConnectionInfo = new()
             {
-                Host = TestHost, Port = TestPort, Username = user, AuthMethod = AuthMethod.Password, FileNameEncoding = fileNameEncoding,
+                Host = TestHost,
+                Port = TestPort,
+                Username = user,
+                AuthMethod = AuthMethod.Password,
+                FileNameEncoding = fileNameEncoding,
             },
         });
         return new RemoteSearchService(connections);

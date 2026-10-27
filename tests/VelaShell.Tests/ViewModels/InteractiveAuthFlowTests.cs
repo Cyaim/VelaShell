@@ -3,7 +3,6 @@ using NSubstitute;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
-using VelaShell.Docking;
 using VelaShell.Presentation.Services;
 using VelaShell.Tests.TestSupport;
 using VelaShell.ViewModels;
@@ -82,7 +81,11 @@ public sealed class InteractiveAuthFlowTests
         };
         var profile = new SessionProfile
         {
-            Name = "P", Host = "h", Port = 22, Username = "root", AuthMethod = AuthMethod.Password,
+            Name = "P",
+            Host = "h",
+            Port = 22,
+            Username = "root",
+            AuthMethod = AuthMethod.Password,
             Password = "enc1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         };
 
@@ -159,12 +162,16 @@ public sealed class InteractiveAuthFlowTests
     {
         await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(InteractiveAuthFlowTests).Assembly).RunOnUiAsync(async () =>
         {
-            var workflow = Substitute.For<IConnectionWorkflowService>();
-            var ssh = Substitute.For<ISshConnectionService>();
+            IConnectionWorkflowService workflow = Substitute.For<IConnectionWorkflowService>();
+            ISshConnectionService ssh = Substitute.For<ISshConnectionService>();
             var profile = new SessionProfile
             {
-                Name = "target", Host = "target", Username = "root", Password = "target-password",
-                AuthMethod = AuthMethod.Password, JumpHostProfileId = Guid.NewGuid()
+                Name = "target",
+                Host = "target",
+                Username = "root",
+                Password = "target-password",
+                AuthMethod = AuthMethod.Password,
+                JumpHostProfileId = Guid.NewGuid()
             };
             string reason = $"ops@jump:22: {Strings.Get(resource)}";
             workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
@@ -202,7 +209,7 @@ public sealed class InteractiveAuthFlowTests
     {
         await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(InteractiveAuthFlowTests).Assembly).RunOnUiAsync(async () =>
         {
-            var workflow = Substitute.For<IConnectionWorkflowService>();
+            IConnectionWorkflowService workflow = Substitute.For<IConnectionWorkflowService>();
             var profile = new SessionProfile { Host = "tail", Username = "ops", AuthMethod = AuthMethod.Tailscale };
             workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
                 .Returns(Task.FromException<SshSession>(new VelaSshAuthenticationCancelledException("cancelled")));
@@ -228,10 +235,10 @@ public sealed class InteractiveAuthFlowTests
     {
         await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(InteractiveAuthFlowTests).Assembly).RunOnUiAsync(async () =>
         {
-            var workflow = Substitute.For<IConnectionWorkflowService>();
-            var ssh = Substitute.For<ISshConnectionService>();
-            var client = Substitute.For<ISshClientWrapper>();
-            var shell = Substitute.For<IShellStreamWrapper>();
+            IConnectionWorkflowService workflow = Substitute.For<IConnectionWorkflowService>();
+            ISshConnectionService ssh = Substitute.For<ISshConnectionService>();
+            ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
+            IShellStreamWrapper shell = Substitute.For<IShellStreamWrapper>();
             shell.CanRead.Returns(false);
             ssh.GetClient(Arg.Any<Guid>()).Returns(client);
             client.CreateShellStreamAsync("xterm-256color", 120, 32, 0, 0, 4096,

@@ -72,8 +72,8 @@ public sealed class XServerPanelViewTests
                 (retained.Foreground as Avalonia.Media.ISolidColorBrush)?.Color, "Retain 状态用警告色");
 
             // 信任级别:每一行各标一个(ssh -X 来的 XTerm 非受信,本机的 xclock 受信);非受信的用信息色,一列里分得出来。
-            Assert.AreEqual(1, texts.Count(t => t == Core.Resources.Strings.Get("XServer_PanelUntrusted")), "非受信的那一行");
-            Assert.AreEqual(1, texts.Count(t => t == Core.Resources.Strings.Get("XServer_PanelTrusted")), "受信的那一行");
+            Assert.ContainsSingle(t => t == Core.Resources.Strings.Get("XServer_PanelUntrusted"), texts, "非受信的那一行");
+            Assert.ContainsSingle(t => t == Core.Resources.Strings.Get("XServer_PanelTrusted"), texts, "受信的那一行");
             TextBlock untrusted = view.GetVisualDescendants().OfType<TextBlock>()
                 .Single(t => t.IsEffectivelyVisible && t.Text == Core.Resources.Strings.Get("XServer_PanelUntrusted"));
             Assert.IsTrue(window.TryFindResource("VelaInfo", window.ActualThemeVariant, out object? info));

@@ -121,7 +121,10 @@ public sealed class FileTransferJobRegistry
                 scope._uncertainStart = true;
         }
         finally { lock (_gate) scope._pendingStarts--; }
-        if (failure is null) completion.TrySetResult(result!);
+        if (failure is null)
+        {
+            completion.TrySetResult(result!);
+        }
         else
         {
             completion.TrySetException(failure);
@@ -160,7 +163,9 @@ public sealed class FileTransferJobRegistry
                 _jobs.Add(snapshot.TransferId, job);
             }
             else if (!ReferenceEquals(job._scope, scope))
+            {
                 throw new InvalidOperationException("Transfer identity conflict.");
+            }
         }
         try
         {
@@ -444,8 +449,11 @@ public sealed class FileTransferJobRegistry
 
     internal bool HasRunningTransfers(FileTransferRunScope scope)
     {
-        lock (_gate) return scope._pendingStarts > 0
+        lock (_gate)
+        {
+            return scope._pendingStarts > 0
             || _jobs.Values.Any(j => ReferenceEquals(j._scope, scope) && NeedsCleanup(j._snapshot));
+        }
     }
 
     /// <summary>
@@ -455,8 +463,11 @@ public sealed class FileTransferJobRegistry
     /// </summary>
     internal bool HasUnfinishedTransfers(FileTransferRunScope scope)
     {
-        lock (_gate) return scope._pendingStarts > 0
+        lock (_gate)
+        {
+            return scope._pendingStarts > 0
             || _jobs.Values.Any(j => ReferenceEquals(j._scope, scope) && !j._withheld && !j._snapshot.IsTerminal);
+        }
     }
 
     /// <summary>
@@ -579,17 +590,23 @@ public sealed class FileTransferJobRegistry
 
     internal bool HasDeniedExecution(FileTransferRunScope scope)
     {
-        lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope)
+        lock (_gate)
+        {
+            return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope)
             && j._snapshot.State == RemoteTransferState.Failed && j._snapshot.ErrorCode == "permission-denied");
+        }
     }
 
     internal bool HasUnknownOutcome(FileTransferRunScope scope)
     {
         if (scope._uncertainStart) return true;
         // 观察暂不可确认只记在那一项上:观察者退避重试拿回新鲜快照就撤掉,结论回到宿主的权威状态。
-        lock (_gate) return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope)
+        lock (_gate)
+        {
+            return _jobs.Values.Any(j => ReferenceEquals(j._scope, scope)
             && (j._withheld || j._monitoringFailed || j._snapshot.State == RemoteTransferState.Unknown
                 || (j._snapshot.State == RemoteTransferState.TimedOut && !j._snapshot.RemoteStopConfirmed)));
+        }
     }
 
     internal async Task<IReadOnlyList<RemoteTransferSnapshot>> WaitForCompletionAsync(FileTransferRunScope scope,

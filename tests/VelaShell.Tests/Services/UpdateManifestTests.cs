@@ -43,12 +43,12 @@ public class UpdateManifestTests
     public void Parse_AdditionalReleaseNotes_DoesNotChangeUpdateAssets(string notes)
     {
         string json = SampleJson.Insert(SampleJson.LastIndexOf('}'), $", \"releaseNotes\": {notes}");
-        UpdateManifest original = UpdateManifest.Parse(SampleJson);
-        UpdateManifest extended = UpdateManifest.Parse(json);
+        var original = UpdateManifest.Parse(SampleJson);
+        var extended = UpdateManifest.Parse(json);
 
         Assert.AreEqual(original.Version, extended.Version);
         Assert.AreEqual(original.Tag, extended.Tag);
-        CollectionAssert.AreEquivalent(original.Assets.ToArray(), extended.Assets.ToArray());
+        Assert.AreSequenceEqual([.. original.Assets], [.. extended.Assets], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
     }
 
     [TestMethod]
@@ -96,15 +96,15 @@ public class UpdateManifestTests
     public void Parse_JsonElement_SurvivesDocumentDisposalAndMatchesStringEntryPoint()
     {
         UpdateManifest fromElement;
-        using (JsonDocument document = JsonDocument.Parse(SampleJson))
+        using (var document = JsonDocument.Parse(SampleJson))
         {
             fromElement = UpdateManifest.Parse(document.RootElement);
         }
-        UpdateManifest fromString = UpdateManifest.Parse(SampleJson);
+        var fromString = UpdateManifest.Parse(SampleJson);
 
         Assert.AreEqual(fromString.Version, fromElement.Version);
         Assert.AreEqual(fromString.Tag, fromElement.Tag);
-        CollectionAssert.AreEquivalent(fromString.Assets.ToArray(), fromElement.Assets.ToArray());
+        Assert.AreSequenceEqual([.. fromString.Assets], [.. fromElement.Assets], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
         Assert.AreEqual(fromElement.Assets["win-x64"], fromElement.Assets["WIN-X64"]);
     }
 
@@ -129,7 +129,7 @@ public class UpdateManifestTests
             Assert.IsTrue(dictionary.IsReadOnly);
             Assert.ThrowsExactly<NotSupportedException>(() => dictionary[rid] = new("changed.zip", "bad", 0));
             Assert.ThrowsExactly<NotSupportedException>(() => dictionary.Remove(rid));
-            Assert.ThrowsExactly<NotSupportedException>(() => dictionary.Clear());
+            Assert.ThrowsExactly<NotSupportedException>(dictionary.Clear);
         }
         Assert.AreEqual(original, manifest.Assets[rid]);
         Assert.AreEqual(original, manifest.Assets[rid.ToUpperInvariant()]);
@@ -159,7 +159,7 @@ public class UpdateManifestTests
     {
         string? rid = UpdateManifest.CurrentRid();
         Assert.IsNotNull(rid);
-        UpdateManifest manifest = UpdateManifest.Parse($$"""
+        var manifest = UpdateManifest.Parse($$"""
             {"version":"1.7.1","tag":"v1.7.1","assets":{"unsupported-rid":
              {"name":"pkg.zip","sha256":"{{new string('a', 64)}}","size":100} } }
             """);
@@ -204,7 +204,7 @@ public class UpdateManifestTests
     [TestCategory("Update")]
     public void Parse_HistoricalLooseFields_RemainAcceptedButCannotBeInstalled()
     {
-        UpdateManifest manifest = UpdateManifest.Parse("""
+        var manifest = UpdateManifest.Parse("""
             {"version":"historical","tag":"v1","assets":{"WIN-X64":{"name":"../pkg.zip","sha256":"short"}}}
             """);
         Assert.AreEqual("historical", manifest.Version);

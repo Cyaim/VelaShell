@@ -889,7 +889,7 @@ public sealed class LocalFilePaneViewModel : ReactiveObject, IDisposable
                 return;
             }
             this.RaiseAndSetIfChanged(ref _filterText, value);
-            HashSet<string> selected = SelectedEntries
+            var selected = SelectedEntries
                 .Where(entry => !entry.IsParentEntry)
                 .Select(entry => entry.FullPath)
                 .ToHashSet(PathComparisonComparer);

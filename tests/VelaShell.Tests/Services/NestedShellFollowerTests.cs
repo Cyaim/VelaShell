@@ -26,7 +26,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession();
         int probes = 0;
-        using var follower = Create(session, _ =>
+        using NestedShellFollower follower = Create(session, _ =>
         {
             probes++;
             return Task.FromResult<ForegroundShell?>(NestedBash);
@@ -36,7 +36,7 @@ public sealed class NestedShellFollowerTests
         await follower.Completion.WaitAsync(Wait);
 
         Assert.AreEqual(1, probes);
-        CollectionAssert.AreEqual(new[] { (RemoteShellKind.Bash, 7L) }, session.Injections);
+        Assert.AreSequenceEqual([(RemoteShellKind.Bash, 7L)], session.Injections);
 
         // 同一个 shell 里接着回车:补过了就不再补,哪怕它一直不上报(比如那其实是个我们认错的 shell)。
         follower.OnLineSubmitted();
@@ -53,7 +53,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession();
         ForegroundShell next = NestedBash;
-        using var follower = Create(session, _ => Task.FromResult<ForegroundShell?>(next));
+        using NestedShellFollower follower = Create(session, _ => Task.FromResult<ForegroundShell?>(next));
 
         follower.OnLineSubmitted();
         await follower.Completion.WaitAsync(Wait);
@@ -61,9 +61,8 @@ public sealed class NestedShellFollowerTests
         follower.OnLineSubmitted();
         await follower.Completion.WaitAsync(Wait);
 
-        CollectionAssert.AreEqual(
-            new[] { RemoteShellKind.Bash, RemoteShellKind.Zsh },
-            session.Injections.Select(i => i.Kind).ToArray());
+        Assert.AreSequenceEqual(
+            [RemoteShellKind.Bash, RemoteShellKind.Zsh], [.. session.Injections.Select(i => i.Kind)]);
     }
 
     /// <summary>回车之后等到了上报 = 前台是装过钩子的 shell:平时绝大多数回车都走这条,连 exec 都不该开。</summary>
@@ -72,7 +71,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession();
         int probes = 0;
-        using var follower = Create(session, _ =>
+        using NestedShellFollower follower = Create(session, _ =>
         {
             probes++;
             return Task.FromResult<ForegroundShell?>(NestedBash);
@@ -94,7 +93,7 @@ public sealed class NestedShellFollowerTests
     public async Task ForcedLine_ProbesEvenAfterReport()
     {
         var session = new FakeSession();
-        using var follower = Create(session, _ => Task.FromResult<ForegroundShell?>(NestedBash));
+        using NestedShellFollower follower = Create(session, _ => Task.FromResult<ForegroundShell?>(NestedBash));
 
         follower.OnLineSubmitted(force: true);
         session.WorkingDirectoryReports++;
@@ -111,7 +110,7 @@ public sealed class NestedShellFollowerTests
     public async Task ForcedLine_SurvivesBeingSupersededBeforeProbing()
     {
         var session = new FakeSession { LastOutputUtc = DateTime.UtcNow.AddHours(1) };
-        using var follower = Create(session, _ => Task.FromResult<ForegroundShell?>(NestedBash));
+        using NestedShellFollower follower = Create(session, _ => Task.FromResult<ForegroundShell?>(NestedBash));
 
         follower.OnLineSubmitted(force: true);
         follower.OnLineSubmitted();
@@ -128,7 +127,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession();
         ForegroundShell? answer = new ForegroundShell(31, 31, RemoteShellKind.Bash);
-        using var follower = Create(session, _ => Task.FromResult(answer));
+        using NestedShellFollower follower = Create(session, _ => Task.FromResult(answer));
 
         follower.OnLineSubmitted();
         await follower.Completion.WaitAsync(Wait);
@@ -145,7 +144,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession { LastOutputUtc = DateTime.UtcNow.AddHours(1) };
         int probes = 0;
-        using var follower = Create(session, _ =>
+        using NestedShellFollower follower = Create(session, _ =>
         {
             probes++;
             return Task.FromResult<ForegroundShell?>(NestedBash);
@@ -165,7 +164,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession { OutputAlwaysFresh = true };
         int probes = 0;
-        using var follower = Create(session, _ =>
+        using NestedShellFollower follower = Create(session, _ =>
         {
             probes++;
             return Task.FromResult<ForegroundShell?>(NestedBash);
@@ -183,7 +182,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession { IsAlternateScreen = true };
         int probes = 0;
-        using var follower = Create(session, _ =>
+        using NestedShellFollower follower = Create(session, _ =>
         {
             probes++;
             return Task.FromResult<ForegroundShell?>(NestedBash);
@@ -201,7 +200,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession();
         int probes = 0;
-        using var follower = Create(session, _ =>
+        using NestedShellFollower follower = Create(session, _ =>
         {
             probes++;
             return Task.FromResult<ForegroundShell?>(NestedBash);
@@ -220,7 +219,7 @@ public sealed class NestedShellFollowerTests
     public async Task OutputDuringProbe_DiscardsAnswer()
     {
         var session = new FakeSession();
-        using var follower = Create(session, _ =>
+        using NestedShellFollower follower = Create(session, _ =>
         {
             session.LastOutputUtc = DateTime.UtcNow;
             return Task.FromResult<ForegroundShell?>(NestedBash);
@@ -241,7 +240,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession();
         bool interfere = true;
-        using var follower = Create(session, _ =>
+        using NestedShellFollower follower = Create(session, _ =>
         {
             if (interfere)
             {
@@ -293,7 +292,7 @@ public sealed class NestedShellFollowerTests
     {
         var session = new FakeSession();
         int probes = 0;
-        var follower = Create(session, _ =>
+        NestedShellFollower follower = Create(session, _ =>
         {
             probes++;
             return Task.FromResult<ForegroundShell?>(NestedBash);
@@ -316,8 +315,6 @@ public sealed class NestedShellFollowerTests
     /// <summary>终端会话替身:几样状态都能从用例里直接拨。</summary>
     private sealed class FakeSession : INestedShellSession
     {
-        private DateTime _lastOutputUtc = DateTime.UtcNow.AddHours(-1);
-
         public List<(RemoteShellKind Kind, long Generation)> Injections { get; } = [];
 
         public int RefusedInjections { get; private set; }
@@ -330,9 +327,9 @@ public sealed class NestedShellFollowerTests
 
         public DateTime LastOutputUtc
         {
-            get => OutputAlwaysFresh ? DateTime.UtcNow : _lastOutputUtc;
-            set => _lastOutputUtc = value;
-        }
+            get => OutputAlwaysFresh ? DateTime.UtcNow : field;
+            set;
+        } = DateTime.UtcNow.AddHours(-1);
 
         public long InputGeneration { get; set; } = 7;
 

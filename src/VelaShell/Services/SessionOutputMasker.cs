@@ -269,7 +269,7 @@ public sealed partial class SessionOutputMasker
     {
         string line = _context + segment;
         int from = _context.Length;
-        Projection view = Projection.Of(line, _contextPrev);
+        var view = Projection.Of(line, _contextPrev);
         var markers = new List<(int End, bool Begin)>();
         var matches = new List<(int Start, int End)>();
         List<Secret> secrets = FindSecrets(view, from, complete, markers, matches);
@@ -374,7 +374,7 @@ public sealed partial class SessionOutputMasker
         {
             return;
         }
-        Projection view = Projection.Of(segment, null);
+        var view = Projection.Of(segment, null);
         string visible = view.Visible;
         if (FirstKeyEnd(visible, visible.Length) is { } end)
         {
@@ -744,7 +744,7 @@ public sealed partial class SessionOutputMasker
         {
             return;
         }
-        Projection view = Projection.Of(text, null);
+        var view = Projection.Of(text, null);
         view.AppendHidden(output, 0, text.Length);
         string keyText = _keyTail + view.Visible;
         if (!_inPrivateKey)
@@ -767,7 +767,7 @@ public sealed partial class SessionOutputMasker
     /// </summary>
     private int SwallowEnd(string text, out int keep)
     {
-        Projection view = Projection.Of(text, null);
+        var view = Projection.Of(text, null);
         string visible = view.Visible;
         int end = -1;
         int visibleKeep = 0;
@@ -862,7 +862,7 @@ public sealed partial class SessionOutputMasker
             char c = text[i];
             if (c is not (' ' or '\t'))
             {
-                if (c < ' ' || c == '\u007f')
+                if (c is < ' ' or '\u007f')
                 {
                     return i;
                 }
@@ -1167,7 +1167,7 @@ public sealed partial class SessionOutputMasker
         public static Projection Of(string raw, char? previous)
         {
             var visible = new StringBuilder(raw.Length + 1);
-            var map = new int[raw.Length + 1];
+            int[] map = new int[raw.Length + 1];
             var hidden = new List<(int Start, int End)>();
             int count = 0;
             if (previous is { } prev)

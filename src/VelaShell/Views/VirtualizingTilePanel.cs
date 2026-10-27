@@ -44,7 +44,6 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel
     private readonly Dictionary<object, Stack<Control>> _recyclePool = [];
 
     private Rect _viewport;
-    private int _columns = 1;
     private double _tileWidth;
     private (int First, int Last) _realizedRange = (-1, -1);
     private bool _isInLayout;
@@ -78,7 +77,7 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel
     }
 
     /// <summary>上一次测量得出的每行格数(列表时恒为 1)。</summary>
-    public int Columns => _columns;
+    public int Columns { get; private set; } = 1;
 
     private bool IsList => !double.IsFinite(ItemWidth) || ItemWidth <= 0;
 
@@ -91,7 +90,7 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel
     internal IReadOnlyList<int> IndicesInRect(Point corner1, Point corner2) =>
         TileGridMath.IndicesInRect(
             corner1.X, corner1.Y, corner2.X, corner2.Y,
-            _tileWidth, TileHeight, _columns, Items.Count);
+            _tileWidth, TileHeight, Columns, Items.Count);
 
     /// <inheritdoc />
     protected override Size MeasureOverride(Size availableSize)
@@ -101,7 +100,7 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel
             ? availableSize.Width
             : _viewport.Width > 0 ? _viewport.Width : 0;
         _tileWidth = IsList ? width : ItemWidth;
-        _columns = IsList ? 1 : TileGridMath.Columns(width, ItemWidth);
+        Columns = IsList ? 1 : TileGridMath.Columns(width, ItemWidth);
         var tileSize = new Size(_tileWidth, TileHeight);
 
         _isInLayout = true;
@@ -132,8 +131,8 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel
             _isInLayout = false;
         }
 
-        int rows = TileGridMath.Rows(items.Count, _columns);
-        return new(IsList ? width : Math.Max(width, _columns * _tileWidth), rows * TileHeight);
+        int rows = TileGridMath.Rows(items.Count, Columns);
+        return new(IsList ? width : Math.Max(width, Columns * _tileWidth), rows * TileHeight);
     }
 
     /// <inheritdoc />
@@ -226,7 +225,7 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel
             return from;
         }
         int pageRows = _viewport.Height > 0 ? (int)Math.Floor(_viewport.Height / TileHeight) : 1;
-        int target = TileGridMath.Navigate(fromIndex, direction, _columns, count, pageRows, wrap);
+        int target = TileGridMath.Navigate(fromIndex, direction, Columns, count, pageRows, wrap);
         if (target < 0)
         {
             return null;
@@ -323,7 +322,7 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel
 
     private Rect TileRect(int index)
     {
-        int columns = Math.Max(1, _columns);
+        int columns = Math.Max(1, Columns);
         return new((index % columns) * _tileWidth, (index / columns) * TileHeight, _tileWidth, TileHeight);
     }
 
@@ -341,7 +340,7 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel
             top = 0;
             bottom = InitialRealizeHeight;
         }
-        return TileGridMath.IndexRange(top, bottom, TileHeight, _columns, count);
+        return TileGridMath.IndexRange(top, bottom, TileHeight, Columns, count);
     }
 
     private void OnEffectiveViewportChanged(object? sender, EffectiveViewportChangedEventArgs e)

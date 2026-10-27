@@ -198,7 +198,7 @@ public sealed class AuthenticationTests
     /// </summary>
     private static void AssertKinds(SshAuthAttempt attempt, params SshAuthDetailKind[] kinds)
     {
-        Assert.AreSequenceEqual(kinds, attempt.Details.Select(static d => d.Kind).ToArray(), attempt.ToString());
+        Assert.AreSequenceEqual(kinds, [.. attempt.Details.Select(static d => d.Kind)], attempt.ToString());
         Assert.AreEqual(SshAuthDetail.Render(attempt.Details), attempt.Detail);
     }
 
@@ -1444,7 +1444,7 @@ SshAlgorithmNames.SshRsa, run.Observation.PublicKeySignatureAlgorithms, "默认�
         {
             AssertKinds(attempt, SshAuthDetailKind.PrincipalNotListed);
         }
-        Assert.AreSequenceEqual(["joe", "deploy"], attempt.Details[^1].Principals.ToArray());
+        Assert.AreSequenceEqual(["joe", "deploy"], [.. attempt.Details[^1].Principals]);
         Assert.AreEqual("alice", attempt.Details[^1].UserName);
     }
 

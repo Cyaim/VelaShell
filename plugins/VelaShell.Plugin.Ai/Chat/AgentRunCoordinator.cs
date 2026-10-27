@@ -46,7 +46,7 @@ internal sealed class AgentRunCoordinator(CommandJobRunScope jobs, AgentExecutio
                     yield return update;
                 }
             }
-            ChatResponse response = updates.ToChatResponse();
+            var response = updates.ToChatResponse();
             context.AddRange(response.Messages);
             if (atBatchBoundary)
             {
@@ -118,7 +118,9 @@ internal sealed class AgentRunCoordinator(CommandJobRunScope jobs, AgentExecutio
                 throw new AgentPausedException("ExecutionDenied");
             if (completed.Any(job => job.State == CommandJobState.Unknown)
                 || jobs.Transfers?.HasUnknownOutcome == true)
+            {
                 throw new AgentPausedException("TaskUnknown");
+            }
         }
     }
 }

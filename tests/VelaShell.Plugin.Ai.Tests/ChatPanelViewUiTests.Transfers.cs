@@ -1,14 +1,15 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Avalonia;
-using Avalonia.LogicalTree;
 using Avalonia.Controls;
-using VelaShell.Tests.TestSupport;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 using VelaShell.Plugin.Ai.Agent;
 using VelaShell.Plugin.Ai.Ui;
 using VelaShell.PluginSdk.RemoteFs;
+using VelaShell.PluginSdk.Sessions;
 using VelaShell.PluginSdk.Testing;
+using VelaShell.Tests.TestSupport;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
@@ -21,14 +22,25 @@ public sealed partial class ChatPanelViewUiTests
         (Window window, ChatPanelView panel) = await ShowAsync(context);
         try
         {
-            var scope = FileTransferJobRegistry.For(context).BeginRun("owner", "run");
+            FileTransferRunScope scope = FileTransferJobRegistry.For(context).BeginRun("owner", "run");
             var card = new ChatPanelView.ToolCard(panel, "upload_local_file", "{}");
             card.ShowTransfer(scope, "t");
             window.Content = card.Root;
-            var snapshot = new RemoteTransferSnapshot { TransferId = "t", OperationId = "op", SessionId = "s", LocalPath = "source", RemotePath = "/target", State = RemoteTransferState.Running,
-                Generation = 1, Sequence = 1, TransferredBytes = 5_000_000_000, TotalBytes = 10_000_000_000 };
+            var snapshot = new RemoteTransferSnapshot
+            {
+                TransferId = "t",
+                OperationId = "op",
+                SessionId = "s",
+                LocalPath = "source",
+                RemotePath = "/target",
+                State = RemoteTransferState.Running,
+                Generation = 1,
+                Sequence = 1,
+                TransferredBytes = 5_000_000_000,
+                TotalBytes = 10_000_000_000
+            };
             card.UpdateTransfer(new("owner", "run", "t", "", "", snapshot));
-            var bar = card.Root.GetVisualDescendants().OfType<ProgressBar>().Single();
+            ProgressBar bar = card.Root.GetVisualDescendants().OfType<ProgressBar>().Single();
             Assert.AreEqual(50d, bar.Value);
             Assert.IsFalse(bar.IsIndeterminate);
             Assert.IsTrue(card.Root.GetVisualDescendants().OfType<Button>().Single().IsVisible);
@@ -56,8 +68,7 @@ public sealed partial class ChatPanelViewUiTests
             window.Content = card.Root;
             card.Complete(AgentToolbox.FormatTransfer(new RemoteTransferSnapshot
             { TransferId = "t", OperationId = "op", SessionId = "s", LocalPath = "source", RemotePath = "/target", State = RemoteTransferState.Running, TotalBytes = 10, TransferredBytes = 10 }));
-            Assert.IsTrue(card.Root.GetVisualDescendants().OfType<TextBlock>()
-                .Any(t => t.Text == new Loc("en")["TransferHistorical"]));
+            Assert.Contains(t => t.Text == new Loc("en")["TransferHistorical"], card.Root.GetVisualDescendants().OfType<TextBlock>());
             Assert.IsFalse(card.Root.GetVisualDescendants().OfType<Button>().Single().IsVisible);
         }
         finally { panel.Detach(); window.Close(); }
@@ -96,9 +107,20 @@ public sealed partial class ChatPanelViewUiTests
     public Task Binding_KeepsOriginalBubble_MultipleCardsAndRunIsolation() => HeadlessUi.RunOnUiAsync(_session, async () =>
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
-        var snapshot = new RemoteTransferSnapshot { TransferId = "t", OperationId = "op", SessionId = session.SessionId, LocalPath = "source", RemotePath = "/target",
-            State = RemoteTransferState.Running, Generation = 1, Sequence = 1, TotalBytes = 100, TransferredBytes = 10 };
+        SessionInfo session = context.FakeSessions.AddConnected();
+        var snapshot = new RemoteTransferSnapshot
+        {
+            TransferId = "t",
+            OperationId = "op",
+            SessionId = session.SessionId,
+            LocalPath = "source",
+            RemotePath = "/target",
+            State = RemoteTransferState.Running,
+            Generation = 1,
+            Sequence = 1,
+            TotalBytes = 100,
+            TransferredBytes = 10
+        };
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, _) => Task.FromResult(snapshot);
         context.FakeRemoteFs.GetTransferHandler = (_, _) => Task.FromResult(snapshot);
@@ -107,7 +129,7 @@ public sealed partial class ChatPanelViewUiTests
         (Window window, ChatPanelView panel) = await ShowAsync(context);
         try
         {
-            var scope = FileTransferJobRegistry.For(context).BeginRun("owner", "run");
+            FileTransferRunScope scope = FileTransferJobRegistry.For(context).BeginRun("owner", "run");
             var bubble = new ChatPanelView.AssistantBubble(panel);
             using var binding = new ChatPanelView.TransferBinding(panel, scope, bubble);
             await scope.StartAsync(session.SessionId, "source", "/target", "op", false, CancellationToken.None);
@@ -118,15 +140,13 @@ public sealed partial class ChatPanelViewUiTests
             Assert.IsFalse(binding.Bind(new(panel, "other_tool", "{}"), AgentToolbox.FormatTransfer(snapshot)));
             var other = new StackPanel();
             window.Content = other;
-            var end = snapshot with { State = RemoteTransferState.Succeeded, Sequence = 2, TransferredBytes = 100 };
+            RemoteTransferSnapshot end = snapshot with { State = RemoteTransferState.Succeeded, Sequence = 2, TransferredBytes = 100 };
             scope.Publish(new("owner", "run", "t", "", "", snapshot, MonitoringUnavailable: true));
             await PumpAsync();
-            Assert.IsTrue(upload.Root.GetLogicalDescendants().OfType<TextBlock>()
-                .Any(t => t.Text == new Loc("en")["TransferMonitoringUnavailable"]));
+            Assert.Contains(t => t.Text == new Loc("en")["TransferMonitoringUnavailable"], upload.Root.GetLogicalDescendants().OfType<TextBlock>());
             scope.Publish(new("owner", "run", "t", "", "", snapshot));
             await PumpAsync();
-            Assert.IsFalse(upload.Root.GetLogicalDescendants().OfType<TextBlock>()
-                .Any(t => t.Text == new Loc("en")["TransferMonitoringUnavailable"]));
+            Assert.DoesNotContain(t => t.Text == new Loc("en")["TransferMonitoringUnavailable"], upload.Root.GetLogicalDescendants().OfType<TextBlock>());
             scope.Publish(new("wrong-owner", "run", "t", "", "", end));
             await PumpAsync(3);
             Assert.IsTrue(upload.Root.GetLogicalDescendants().OfType<Button>().Single().IsVisible);
@@ -138,8 +158,7 @@ public sealed partial class ChatPanelViewUiTests
             wait.TrySetResult(end);
             scope.Publish(new("owner", "run", "t", "", "", null, true));
             await PumpAsync(3);
-            Assert.IsTrue(upload.Root.GetLogicalDescendants().OfType<TextBlock>()
-                .Any(t => t.Text == new Loc("en")["TransferWithheld"]));
+            Assert.Contains(t => t.Text == new Loc("en")["TransferWithheld"], upload.Root.GetLogicalDescendants().OfType<TextBlock>());
         }
         finally { panel.Detach(); window.Close(); }
     });
@@ -151,7 +170,7 @@ public sealed partial class ChatPanelViewUiTests
     public Task LinkDownload_WithoutDownloadSupport_FailsBeforeTheSavePicker() => HeadlessUi.RunOnUiAsync(_session, async () =>
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         context.FakeRemoteFs.AddFile(session.SessionId, "/srv/report.pdf", new byte[8]);
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.SupportsDownloadOperations = false;
@@ -175,9 +194,20 @@ public sealed partial class ChatPanelViewUiTests
     public Task LinkCard_CancelReachesAnUnconfirmedTerminalDownload() => HeadlessUi.RunOnUiAsync(_session, async () =>
     {
         using var context = new TestPluginContext();
-        var unknown = new RemoteTransferSnapshot { TransferId = "t", OperationId = "op", SessionId = "s", LocalPath = "/tmp/report.pdf",
-            RemotePath = "/srv/report.pdf", Direction = RemoteTransferDirection.Download, State = RemoteTransferState.Unknown,
-            RemoteStopConfirmed = false, Generation = 3, Sequence = 4, TotalBytes = 10 };
+        var unknown = new RemoteTransferSnapshot
+        {
+            TransferId = "t",
+            OperationId = "op",
+            SessionId = "s",
+            LocalPath = "/tmp/report.pdf",
+            RemotePath = "/srv/report.pdf",
+            Direction = RemoteTransferDirection.Download,
+            State = RemoteTransferState.Unknown,
+            RemoteStopConfirmed = false,
+            Generation = 3,
+            Sequence = 4,
+            TotalBytes = 10
+        };
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.SupportsDownloadOperations = true;
         context.FakeRemoteFs.StartDownloadHandler = (_, _, _, _, _) => Task.FromResult(unknown);
@@ -212,14 +242,22 @@ public sealed partial class ChatPanelViewUiTests
     public Task LinkDownload_ToAnExistingFileTheUserChoseToReplace_AsksTheHostToOverwrite() => HeadlessUi.RunOnUiAsync(_session, async () =>
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         var never = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.SupportsDownloadOperations = true;
         context.FakeRemoteFs.StartDownloadHandler = (id, remote, local, options, _) => Task.FromResult(new RemoteTransferSnapshot
         {
-            TransferId = options.OperationId, OperationId = options.OperationId, SessionId = id, LocalPath = local, RemotePath = remote,
-            Direction = RemoteTransferDirection.Download, State = RemoteTransferState.Running, Generation = 1, Sequence = 1, TotalBytes = 8
+            TransferId = options.OperationId,
+            OperationId = options.OperationId,
+            SessionId = id,
+            LocalPath = local,
+            RemotePath = remote,
+            Direction = RemoteTransferDirection.Download,
+            State = RemoteTransferState.Running,
+            Generation = 1,
+            Sequence = 1,
+            TotalBytes = 8
         });
         context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => never.Task.WaitAsync(ct);
         string folder = Path.Combine(context.DataDirectory, "saved");
@@ -247,7 +285,7 @@ public sealed partial class ChatPanelViewUiTests
     public Task LinkScope_AuthorizationDoesNotCaptureThePanel() => HeadlessUi.RunOnUiAsync(_session, async () =>
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         (Window window, ChatPanelView panel) = await ShowAsync(context);
         try
         {

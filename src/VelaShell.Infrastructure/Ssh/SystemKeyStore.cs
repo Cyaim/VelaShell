@@ -69,7 +69,7 @@ public sealed partial class SystemKeyStore : ISystemKeyStore
         CngKeyOpenOptions options = CngKeyOpenOptions.Silent | (machine ? CngKeyOpenOptions.MachineKey : CngKeyOpenOptions.None);
         try
         {
-            using CngSshSigner signer = CngSshSigner.Open(name, new CngProvider(provider), options);
+            using var signer = CngSshSigner.Open(name, new CngProvider(provider), options);
             string? subject = subjects?.GetValueOrDefault((provider, name, machine));
             return new SystemKeyInfo(
                 new SystemKeyReference
@@ -205,7 +205,7 @@ public sealed partial class SystemKeyStore : ISystemKeyStore
             {
                 return null;
             }
-            CryptKeyProvInfo* info = (CryptKeyProvInfo*)data;
+            var info = (CryptKeyProvInfo*)data;
             string? container = Marshal.PtrToStringUni(info->ContainerName);
             string? provider = Marshal.PtrToStringUni(info->ProviderName);
             return info->ProviderType == 0 && container is { Length: > 0 } && provider is { Length: > 0 }

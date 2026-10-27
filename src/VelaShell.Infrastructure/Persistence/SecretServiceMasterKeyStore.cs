@@ -225,7 +225,7 @@ internal sealed unsafe partial class SecretServiceMasterKeyStore : IMasterKeySto
 
     private static string ErrorText(nint error)
     {
-        GError* e = (GError*)error;
+        var e = (GError*)error;
         return $"{Marshal.PtrToStringUTF8((nint)e->Message) ?? "unknown error"} (GError {e->Domain}/{e->Code})";
     }
 
@@ -255,7 +255,7 @@ internal sealed unsafe partial class SecretServiceMasterKeyStore : IMasterKeySto
     /// </summary>
     private static nint BuildSchema()
     {
-        SecretSchema* schema = (SecretSchema*)NativeMemory.AllocZeroed((nuint)sizeof(SecretSchema));
+        var schema = (SecretSchema*)NativeMemory.AllocZeroed((nuint)sizeof(SecretSchema));
         schema->Name = Marshal.StringToCoTaskMemUTF8(SchemaName);
         schema->Flags = 0; // SECRET_SCHEMA_NONE:按 schema 名匹配(xdg:schema)
         schema->Attributes[0] = new() { Name = Marshal.StringToCoTaskMemUTF8(KeyIdAttribute), Type = SchemaAttributeString };

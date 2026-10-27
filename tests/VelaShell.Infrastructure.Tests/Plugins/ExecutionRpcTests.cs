@@ -110,7 +110,7 @@ public class ExecutionRpcTests
         pair.Host.SetRequestHandler(async (method, payload, _) =>
         {
             if (method == "probe") { return "alive"; }
-            var request = payload!.Value.Deserialize<ExecSudoStreamRequest>()!;
+            ExecSudoStreamRequest request = payload!.Value.Deserialize<ExecSudoStreamRequest>()!;
             await pair.Host.NotifyAsync(PluginRpc.ExecSudoEvent,
                 new ExecSudoEventNotification(request.OperationId, 1, new(SudoExecEventKind.Output, Text: "one")));
             Assert.AreEqual(request.OperationId, await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5)));
@@ -177,7 +177,7 @@ public class ExecutionRpcTests
         });
         pair.Host.SetRequestHandler(async (_, payload, ct) =>
         {
-            var request = payload!.Value.Deserialize<ExecStreamRequest>()!;
+            ExecStreamRequest request = payload!.Value.Deserialize<ExecStreamRequest>()!;
             await using ExecutionOperations.Operation operation = operations.Register(request.OperationId!, ct);
             registered.TrySetResult();
             try { await Task.Delay(Timeout.InfiniteTimeSpan, operation.Token); }
@@ -207,7 +207,7 @@ public class ExecutionRpcTests
         pair.Plugin.SetOrderedNotificationHandler(PluginRpc.ExecOutput,
             payload => proxy.OnOutput(payload!.Value.Deserialize<ExecOutputNotification>()!));
 
-        Guid sessionId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
         ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
         client.IsConnected.Returns(true);
         client.StreamCommandAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Func<bool, string, ValueTask>>(), Arg.Any<CancellationToken>())
@@ -263,7 +263,7 @@ public class ExecutionRpcTests
         pair.Host.SetRequestHandler(async (method, payload, ct) =>
         {
             if (method != PluginRpc.ExecStream) { return null; }
-            var request = payload!.Value.Deserialize<ExecStreamRequest>()!;
+            ExecStreamRequest request = payload!.Value.Deserialize<ExecStreamRequest>()!;
             await using ExecutionOperations.Operation operation = operations.Register(request.OperationId!, ct);
             // 取消通知与请求在宿主上各自走线程池,两种先后都可能;最终必须是已取消。
             try { await Task.Delay(TimeSpan.FromSeconds(5), operation.Token); }

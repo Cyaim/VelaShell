@@ -91,7 +91,7 @@ public sealed class LayoutDocumentDescriberTests
             Status = SessionStatus.Connected,
         };
         var sftpDocument = new SftpDocument(new SftpDocumentViewModel(
-            ssh, session, Substitute.For<VelaShell.Presentation.Services.IConnectionWorkflowService>(), sftp, new TransferOptions()));
+            ssh, session, Substitute.For<Presentation.Services.IConnectionWorkflowService>(), sftp, new TransferOptions()));
         SessionProfile left = Profile("left", ConnectionType.SFTP), right = Profile("right", ConnectionType.FTP);
         var dual = new DualSftpDocument(new DualSftpDocumentViewModel(
             new(left, Guid.NewGuid(), null, (_, _) => Task.CompletedTask),

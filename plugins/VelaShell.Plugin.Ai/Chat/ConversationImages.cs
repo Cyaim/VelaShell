@@ -20,8 +20,12 @@ internal sealed class ConversationImages(GeneratedImageStore images)
     internal DataContent Load(string id)
     {
         ChatGeneratedImage reference;
-        lock (_gate) reference = _known.GetValueOrDefault(id)
+        lock (_gate)
+        {
+            reference = _known.GetValueOrDefault(id)
             ?? throw new ArgumentException("This image was not provided in the current conversation.");
+        }
+
         return images.Load(reference);
     }
 
@@ -95,7 +99,10 @@ internal sealed class ImageToolTurn(ConversationImages conversation, GeneratedIm
             if (verified.ImageModelId != modelId || latest is null
                 || latest.Model != model.Model || latest.Protocol != model.Protocol
                 || latest.BaseUrl != model.BaseUrl || latest.ApiKeyOwnerId != model.ApiKeyOwnerId)
+            {
                 throw new InvalidOperationException("Image generation settings changed during approval. Send a new request.");
+            }
+
             DataContent output = await store.GenerateImageAsync(model, prompt, inputs, token).ConfigureAwait(false);
             ChatGeneratedImage reference = images.Save(output);
             conversation.Register(reference);

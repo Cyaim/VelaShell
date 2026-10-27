@@ -151,10 +151,16 @@ public sealed class SessionArchiveJsonTests
     {
         SessionProfile tpm = new()
         {
-            Name = "tpm", Host = "10.0.0.51", Username = "ops", AuthMethod = AuthMethod.KeyStore,
+            Name = "tpm",
+            Host = "10.0.0.51",
+            Username = "ops",
+            AuthMethod = AuthMethod.KeyStore,
             KeyStoreKey = new SystemKeyReference
             {
-                Provider = SystemKeyReference.PlatformProvider, KeyName = "deploy", MachineKey = true, PublicKey = "ecdsa-sha2-nistp256 AAAA deploy",
+                Provider = SystemKeyReference.PlatformProvider,
+                KeyName = "deploy",
+                MachineKey = true,
+                PublicKey = "ecdsa-sha2-nistp256 AAAA deploy",
             },
             // 系统密钥库可选配的证书:与证书认证同一个字段,照样往返。
             CertificatePath = @"C:\certs\deploy-cert.pub",
@@ -352,10 +358,17 @@ public sealed class SessionArchiveJsonTests
     {
         var tail = new SessionProfile
         {
-            Name = "tail", Host = "tail", Username = "deploy", AuthMethod = AuthMethod.Tailscale,
-            Password = "stale-password", PrivateKeyPath = "/stale-key", PrivateKeyPassphrase = "stale-phrase",
-            CertificatePath = "/stale-cert", CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
-            RememberPassword = true, JumpHostProfileId = Guid.NewGuid()
+            Name = "tail",
+            Host = "tail",
+            Username = "deploy",
+            AuthMethod = AuthMethod.Tailscale,
+            Password = "stale-password",
+            PrivateKeyPath = "/stale-key",
+            PrivateKeyPassphrase = "stale-phrase",
+            CertificatePath = "/stale-cert",
+            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
+            RememberPassword = true,
+            JumpHostProfileId = Guid.NewGuid()
         };
         var ordinary = new SessionProfile { Name = "password", Host = "ordinary", Password = "keep-secret" };
         var archive = new SessionArchive { Sessions = [tail, ordinary] };

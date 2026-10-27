@@ -82,7 +82,6 @@ internal sealed class NestedShellFollower : IDisposable
     private readonly HashSet<int> _injected = [];
 
     private Trigger? _pending;
-    private Task _loop = Task.CompletedTask;
 
     /// <summary>
     /// 循环在不在跑。与 <see cref="_pending" /> 在同一把锁里起落:循环决定退出与新的一行到来是同一个临界区,
@@ -118,10 +117,12 @@ internal sealed class NestedShellFollower : IDisposable
         {
             lock (_gate)
             {
-                return _loop;
+                return field;
             }
         }
-    }
+
+        private set;
+    } = Task.CompletedTask;
 
     /// <summary>
     /// 有一行交给了前台程序。
@@ -148,7 +149,7 @@ internal sealed class NestedShellFollower : IDisposable
             if (!_running)
             {
                 _running = true;
-                _loop = Task.Run(RunAsync);
+                Completion = Task.Run(RunAsync);
             }
         }
     }

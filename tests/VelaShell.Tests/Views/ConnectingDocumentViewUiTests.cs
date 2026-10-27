@@ -123,7 +123,7 @@ public sealed class ConnectingDocumentViewUiTests
                 Button[] buttons = [.. VisibleOfType<Button>(view)];
                 Assert.HasCount(3, buttons, "放开算法、重新连接、关闭标签页。");
                 Button allow = buttons.Single(b => b.Name == "AllowAlgorithmsButton");
-                StringAssert.Contains(ToolTip.GetTip(allow) as string, "diffie-hellman-group14-sha1", "悬停说明点名加哪几个。");
+                Assert.Contains("diffie-hellman-group14-sha1", ToolTip.GetTip(allow) as string, "悬停说明点名加哪几个。");
                 allow.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 Assert.AreEqual(1, requests);
 

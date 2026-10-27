@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NSubstitute;
-using VelaShell.Core.Credentials;
 using VelaShell.Core.Data;
 using VelaShell.Core.Layouts;
 using VelaShell.Core.Sync;
@@ -151,7 +150,7 @@ public sealed class GistSyncLayoutTemplatesTests
         Assert.AreEqual(layoutsAfterNewPush, gist[GistSyncService.LayoutTemplatesFileName], "旧客户端碰不到旁边的模板文件");
         var fresh = new Device("new-laptop");
         Assert.IsNull(await fresh.PullAsync(gist));
-        Assert.AreSequenceEqual(new[] { "机房 A", "机房 B" }, await fresh.NamesAsync());
+        Assert.AreSequenceEqual(["机房 A", "机房 B"], await fresh.NamesAsync());
     }
 
     [TestMethod]
@@ -164,7 +163,7 @@ public sealed class GistSyncLayoutTemplatesTests
         await desktop.PushAsync(gist);
 
         Assert.DoesNotContain("rack-A", gist[SyncFile], "在主载荷里就会被旧客户端整份推回时抹掉(名字特意用 ASCII:同步的 JSON 会把中文转义掉)");
-        StringAssert.Contains(gist[GistSyncService.LayoutTemplatesFileName], "rack-A");
+        Assert.Contains("rack-A", gist[GistSyncService.LayoutTemplatesFileName]);
     }
 
     [TestMethod]
@@ -188,10 +187,10 @@ public sealed class GistSyncLayoutTemplatesTests
         gist[SyncFile] = await old.Sync.BuildGistContentAsync(old.Config, CancellationToken.None);
         await laptop.PullAsync(gist);
 
-        Assert.AreSequenceEqual(new[] { "keep" }, await laptop.NamesAsync(), "墓碑在旧客户端不碰的那个文件里,删除照样传到");
+        Assert.AreSequenceEqual(["keep"], await laptop.NamesAsync(), "墓碑在旧客户端不碰的那个文件里,删除照样传到");
         await laptop.PushAsync(gist);
         await desktop.PullAsync(gist);
-        Assert.AreSequenceEqual(new[] { "keep" }, await desktop.NamesAsync(), "笔记本再推一次也不会把删掉的那个加回来");
+        Assert.AreSequenceEqual(["keep"], await desktop.NamesAsync(), "笔记本再推一次也不会把删掉的那个加回来");
     }
 
     [TestMethod]
@@ -207,8 +206,8 @@ public sealed class GistSyncLayoutTemplatesTests
         await laptop.PushAsync(gist); // 后推的这台先把云端那份合进来再写
 
         await desktop.PullAsync(gist);
-        Assert.AreSequenceEqual(new[] { "desk", "lap" }, await desktop.NamesAsync());
-        Assert.AreSequenceEqual(new[] { "desk", "lap" }, await laptop.NamesAsync());
+        Assert.AreSequenceEqual(["desk", "lap"], await desktop.NamesAsync());
+        Assert.AreSequenceEqual(["desk", "lap"], await laptop.NamesAsync());
     }
 
     [TestMethod]
@@ -241,7 +240,7 @@ public sealed class GistSyncLayoutTemplatesTests
         Assert.DoesNotContain("root@", file, "标签标题(常常就是用户@主机)也在密文里");
         var laptop = new Device("laptop", passphrase: "correct horse");
         Assert.IsNull(await laptop.PullAsync(gist));
-        Assert.AreSequenceEqual(new[] { "rack-A" }, await laptop.NamesAsync());
+        Assert.AreSequenceEqual(["rack-A"], await laptop.NamesAsync());
     }
 
     [TestMethod]
@@ -262,7 +261,7 @@ public sealed class GistSyncLayoutTemplatesTests
         Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("SyncSvc_LayoutsLocked"), note);
         Assert.IsNull(await other.Sync.BuildLayoutTemplatesUploadAsync(other.Config, file, CancellationToken.None),
             "读不了就不写:不能拿本机的明文盖掉别人加了密的那份");
-        Assert.AreSequenceEqual(new[] { "mine" }, await other.NamesAsync());
+        Assert.AreSequenceEqual(["mine"], await other.NamesAsync());
     }
 
     [TestMethod]
@@ -315,7 +314,7 @@ public sealed class GistSyncLayoutTemplatesTests
         await laptop.PullAsync(gist);
 
         Assert.AreEqual(before, gist[GistSyncService.LayoutTemplatesFileName]);
-        Assert.AreSequenceEqual(new[] { "lap" }, await laptop.NamesAsync());
+        Assert.AreSequenceEqual(["lap"], await laptop.NamesAsync());
     }
 
     [TestMethod]
@@ -333,7 +332,7 @@ public sealed class GistSyncLayoutTemplatesTests
         Assert.IsNull(await desktop.Sync.RestoreLayoutTemplatesAsync(desktop.Config, revision));
         string? pushed = await desktop.Sync.BuildLayoutTemplatesUploadAsync(desktop.Config, current, CancellationToken.None);
 
-        Assert.AreSequenceEqual(new[] { "prod" }, await desktop.NamesAsync());
+        Assert.AreSequenceEqual(["prod"], await desktop.NamesAsync());
         Assert.AreEqual("prod", desktop.Sync.ReadLayoutTemplatesFile(desktop.Config, pushed).State!.Templates.Single().Name,
             "恢复之后的推送胜过云端那块墓碑");
     }

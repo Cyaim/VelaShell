@@ -50,7 +50,7 @@ public class SftpCommitModeIntegrationTests
             await using var sftp = new VelaSftpClientWrapper(
                 async ct => await SftpFileSystem.ConnectAsync(inner, cancellationToken: ct));
             await sftp.ConnectAsync(CancellationToken.None);
-            Guid sessionId = Guid.NewGuid();
+            var sessionId = Guid.NewGuid();
             ISshConnectionService connections = Substitute.For<ISshConnectionService>();
             connections.GetSession(sessionId).Returns(new SshSession
             {
@@ -109,7 +109,7 @@ public class SftpCommitModeIntegrationTests
             await using var sftp = new VelaSftpClientWrapper(
                 async ct => await SftpFileSystem.ConnectAsync(inner, cancellationToken: ct));
             await sftp.ConnectAsync(CancellationToken.None);
-            Guid sessionId = Guid.NewGuid();
+            var sessionId = Guid.NewGuid();
             ISshConnectionService connections = Substitute.For<ISshConnectionService>();
             connections.GetSession(sessionId).Returns(new SshSession
             {

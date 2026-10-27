@@ -180,22 +180,28 @@ public sealed class WorkspaceConnectionFailureTests
         await HeadlessUnitTestSession.GetOrStartForAssembly(typeof(WorkspaceConnectionFailureTests).Assembly).RunOnUiAsync(async () =>
         {
             var registry = new PluginProtocolRegistry();
-            var provider = Substitute.For<IWorkspaceProvider>();
+            IWorkspaceProvider provider = Substitute.For<IWorkspaceProvider>();
             registry.RegisterWorkspace(WorkspaceId, new()
             {
-                Id = WorkspaceId, DisplayName = "Acme Cache", DefaultPort = 6379,
+                Id = WorkspaceId,
+                DisplayName = "Acme Cache",
+                DefaultPort = 6379,
                 Features = WorkspaceFeatures.AnonymousAccess | WorkspaceFeatures.SshTunnel,
                 Fields = [new ProtocolSettingField { Key = "jump", Label = "Jump", Kind = ProtocolSettingKind.SshSession }]
             }, provider);
             var jump = new SessionProfile { Name = "jump", Host = "tail", Username = "ops", AuthMethod = AuthMethod.Tailscale };
             var profile = new SessionProfile
             {
-                Name = "cache", Host = "cache", Port = 6379, ConnectionType = ConnectionType.Plugin,
-                PluginProtocolId = WorkspaceId, PluginSettings = new() { ["jump"] = jump.Id.ToString() }
+                Name = "cache",
+                Host = "cache",
+                Port = 6379,
+                ConnectionType = ConnectionType.Plugin,
+                PluginProtocolId = WorkspaceId,
+                PluginSettings = new() { ["jump"] = jump.Id.ToString() }
             };
-            var repository = Substitute.For<ISessionRepository>();
+            ISessionRepository repository = Substitute.For<ISessionRepository>();
             repository.GetAllSessionsAsync().Returns([jump]);
-            var workflow = Substitute.For<IConnectionWorkflowService>();
+            IConnectionWorkflowService workflow = Substitute.For<IConnectionWorkflowService>();
             string reason = "ops@tail:22: 当前跳的 Tailscale SSH 授权被拒绝";
             Exception failure = cancelled
                 ? new VelaSshAuthenticationCancelledException("cancelled")

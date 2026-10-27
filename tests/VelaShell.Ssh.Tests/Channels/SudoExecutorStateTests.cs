@@ -13,18 +13,18 @@ public sealed class SudoExecutorStateTests
 {
     private sealed class Prompt : ISudoPrompt
     {
-        internal int Requests;
-        internal Func<CancellationToken, Task<SudoPassword?>> Answer = _ => Task.FromResult<SudoPassword?>(new("密碼é🙂".AsSpan()));
-        internal TaskCompletionSource Asked = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal TaskCompletionSource Cancelled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal int _requests;
+        internal Func<CancellationToken, Task<SudoPassword?>> _answer = _ => Task.FromResult<SudoPassword?>(new("密碼é🙂".AsSpan()));
+        internal TaskCompletionSource _asked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource _cancelled = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task<bool> ConfirmAsync(SudoExecutionContext context, string command, CancellationToken cancellationToken) => Task.FromResult(true);
 
         public Task<SudoPassword?> RequestPasswordAsync(SudoExecutionContext context, string command, int attempt, CancellationToken cancellationToken)
         {
-            Interlocked.Increment(ref Requests);
-            Asked.TrySetResult();
-            return Answer(cancellationToken);
+            Interlocked.Increment(ref _requests);
+            _asked.TrySetResult();
+            return _answer(cancellationToken);
         }
     }
 
@@ -114,7 +114,7 @@ public sealed class SudoExecutorStateTests
         SudoExecutionResult result = await SudoCommandExecutor.ExecuteAsync(host.Connection, "id", new("plugin", "joe@test"),
             prompt, Collect(events), host.Token);
         Assert.AreEqual("密碼é🙂\n", sentPassword);
-        Assert.AreEqual(1, prompt.Requests);
+        Assert.AreEqual(1, prompt._requests);
         Assert.Contains(entry => entry.State == SudoExecutionState.Running, events);
         string text = string.Concat(events.Select(entry => entry.Text));
         Assert.Contains("漢🙂", text);
@@ -128,10 +128,10 @@ public sealed class SudoExecutorStateTests
     public async Task EofRevokesPendingPasswordUiAndNeverWritesItsLateAnswer()
     {
         Prompt prompt = new();
-        prompt.Answer = async ct =>
+        prompt._answer = async ct =>
         {
             try { await Task.Delay(Timeout.InfiniteTimeSpan, ct); }
-            catch (OperationCanceledException) { prompt.Cancelled.TrySetResult(); throw; }
+            catch (OperationCanceledException) { prompt._cancelled.TrySetResult(); throw; }
             return null;
         };
         await using TestSshServerHost host = await TestSshServerHost.StartAsync(new TestChannelScript
@@ -139,14 +139,14 @@ public sealed class SudoExecutorStateTests
             ExecHandler = async (command, _, output, ct) =>
             {
                 await SendFragmentedAsync(output, Marker(command, "READY") + Marker(command, "AUTH"), ct);
-                await prompt.Asked.Task.WaitAsync(ct);
+                await prompt._asked.Task.WaitAsync(ct);
                 // 结束处理器使现有输出泵发送 EOF/CLOSE；不阻塞客户端读取泵。
             }
         });
         SudoExecutionResult result = await SudoCommandExecutor.ExecuteAsync(host.Connection, "id", new("plugin", "joe@test"),
             prompt, _ => ValueTask.CompletedTask, host.Token);
-        await prompt.Cancelled.Task.WaitAsync(host.Token);
-        Assert.AreEqual(1, prompt.Requests);
+        await prompt._cancelled.Task.WaitAsync(host.Token);
+        Assert.AreEqual(1, prompt._requests);
         Assert.IsEmpty(host.Channels.Observation.StandardInput);
         Assert.AreNotEqual(SudoExecutionOutcome.Exited, result.Outcome);
     }
@@ -154,11 +154,13 @@ public sealed class SudoExecutorStateTests
     [TestMethod]
     public async Task PolicyDenialEchoingCommandNeverBecomesAStartedCommand()
     {
-        Prompt prompt = new();
-        prompt.Answer = async ct =>
+        Prompt prompt = new()
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
-            return null;
+            _answer = async ct =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return null;
+            }
         };
         await using TestSshServerHost host = await TestSshServerHost.StartAsync(new TestChannelScript
         {
@@ -194,7 +196,7 @@ public sealed class SudoExecutorStateTests
         });
         List<SudoExecutionEvent> events = [];
         await SudoCommandExecutor.ExecuteAsync(host.Connection, "id", new("plugin", "joe@test"), prompt, Collect(events), host.Token);
-        Assert.AreEqual(0, prompt.Requests);
+        Assert.AreEqual(0, prompt._requests);
         Assert.Contains(entry => entry.State == SudoExecutionState.Running, events);
         Assert.IsEmpty(host.Channels.Observation.StandardInput);
     }
@@ -246,13 +248,13 @@ public sealed class SudoExecutorStateTests
             ExecHandler = async (command, _, output, ct) =>
             {
                 await SendFragmentedAsync(output, Marker(command, "READY") + Marker(command, "AUTH"), ct);
-                await prompt.Asked.Task.WaitAsync(ct);
+                await prompt._asked.Task.WaitAsync(ct);
                 await SendFragmentedAsync(output, Marker(command, "START") + "started", ct);
                 await Task.Delay(Timeout.InfiniteTimeSpan, ct);
             }
         });
-        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(host.Token);
-        prompt.Answer = async ct =>
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(host.Token);
+        prompt._answer = async ct =>
         {
             await using CancellationTokenRegistration revoked = ct.Register(() =>
             {

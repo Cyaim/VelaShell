@@ -65,7 +65,7 @@ public sealed class SystemKeyStoreTests
         {
             return;
         }
-        using TestKey key = TestKey.Create();
+        using var key = TestKey.Create();
 
         IReadOnlyList<SystemKeyInfo> keys = await new SystemKeyStore().ListKeysAsync(TestContext.CancellationToken);
 
@@ -91,7 +91,7 @@ public sealed class SystemKeyStoreTests
         {
             return;
         }
-        using TestKey key = TestKey.Create();
+        using var key = TestKey.Create();
         await using LoopbackSshHost host = new()
         {
             AuthPolicy = new TestAuthPolicy
@@ -117,7 +117,7 @@ public sealed class SystemKeyStoreTests
         {
             return;
         }
-        using TestKey key = TestKey.Create();
+        using var key = TestKey.Create();
         string certificatePath = Path.Combine(Path.GetTempPath(), $"vela-keystore-{Guid.NewGuid():N}-cert.pub");
         (string line, byte[] blob) = key.UserCertificate("joe");
         await File.WriteAllTextAsync(certificatePath, line + "\n", TestContext.CancellationToken);
@@ -152,8 +152,8 @@ public sealed class SystemKeyStoreTests
         {
             return;
         }
-        using TestKey key = TestKey.Create();
-        using TestKey other = TestKey.Create();
+        using var key = TestKey.Create();
+        using var other = TestKey.Create();
         string certificatePath = Path.Combine(Path.GetTempPath(), $"vela-keystore-{Guid.NewGuid():N}-cert.pub");
         await File.WriteAllTextAsync(certificatePath, other.UserCertificate("joe").Line + "\n", TestContext.CancellationToken);
         try
@@ -188,7 +188,7 @@ public sealed class SystemKeyStoreTests
         VelaSshAuthenticationException ex = await Assert.ThrowsAsync<VelaSshAuthenticationException>(
             async () => await ConnectAsync(KeyStoreInfo(host.Port, "vela-no-such-key-" + Guid.NewGuid().ToString("N"))));
 
-        StringAssert.Contains(ex.Message, Strings.Get("SshErr_KeyStoreUnavailable"));
+        Assert.Contains(Strings.Get("SshErr_KeyStoreUnavailable"), ex.Message);
         Assert.AreEqual(0, host.Accepted, "钥打不开就不去连服务器");
     }
 
@@ -200,7 +200,7 @@ public sealed class SystemKeyStoreTests
         {
             return;
         }
-        using TestKey key = TestKey.Create();
+        using var key = TestKey.Create();
         string subject = "VelaShell key store test " + Guid.NewGuid().ToString("N")[..8];
         using X509Certificate2 certificate = key.SelfSignedCertificate(subject);
         using X509Store store = new(StoreName.My, StoreLocation.CurrentUser);
@@ -283,7 +283,7 @@ public sealed class SystemKeyStoreTests
         public static TestKey Create()
         {
             string name = "vela-keystore-test-" + Guid.NewGuid().ToString("N");
-            CngKey key = CngKey.Create(CngAlgorithm.ECDsaP256, name, new CngKeyCreationParameters
+            var key = CngKey.Create(CngAlgorithm.ECDsaP256, name, new CngKeyCreationParameters
             {
                 Provider = CngProvider.MicrosoftSoftwareKeyStorageProvider,
                 ExportPolicy = CngExportPolicies.None,
@@ -308,7 +308,7 @@ public sealed class SystemKeyStoreTests
         {
             using ECDsaCng subject = new(_key);
             ECParameters parameters = subject.ExportParameters(includePrivateParameters: false);
-            using ECDsa ca = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            using var ca = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
             using MemoryStream blob = new();

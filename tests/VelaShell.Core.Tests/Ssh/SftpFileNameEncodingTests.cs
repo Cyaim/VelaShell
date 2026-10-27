@@ -60,7 +60,7 @@ public sealed class SftpFileNameEncodingTests
     [TestMethod]
     public async Task GbkSession_ListsOpensAndDeletesGbkNames()
     {
-        Encoding gbk = Encoding.GetEncoding("GBK");
+        var gbk = Encoding.GetEncoding("GBK");
         await using Harness harness = await Harness.StartAsync(SftpConnectOptions.For(Info("GBK")));
         string serverKey = harness.AddRawNameFile(gbk.GetBytes(ChineseName), Content);
 
@@ -74,7 +74,7 @@ public sealed class SftpFileNameEncodingTests
         {
             using var copy = new MemoryStream();
             await stream.CopyToAsync(copy);
-            CollectionAssert.AreEqual(Content, copy.ToArray());
+            Assert.AreSequenceEqual(Content, copy.ToArray());
         }
 
         await harness.Sftp.DeleteFileAsync(entry.FullName);
@@ -85,7 +85,7 @@ public sealed class SftpFileNameEncodingTests
     [TestMethod]
     public async Task Utf8Session_KeepsTheLosslessRoundTrip()
     {
-        Encoding gbk = Encoding.GetEncoding("GBK");
+        var gbk = Encoding.GetEncoding("GBK");
         await using Harness harness = await Harness.StartAsync(SftpConnectOptions.For(Info("UTF-8")));
         string serverKey = harness.AddRawNameFile(gbk.GetBytes(ChineseName), Content);
 
@@ -97,7 +97,7 @@ public sealed class SftpFileNameEncodingTests
         {
             using var copy = new MemoryStream();
             await stream.CopyToAsync(copy);
-            CollectionAssert.AreEqual(Content, copy.ToArray());
+            Assert.AreSequenceEqual(Content, copy.ToArray());
         }
         await harness.Sftp.DeleteFileAsync(entry.FullName);
         Assert.IsFalse(harness.Server.Nodes.ContainsKey(serverKey));

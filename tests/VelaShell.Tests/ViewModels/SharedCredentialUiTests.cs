@@ -1,3 +1,4 @@
+using System.Security;
 using NSubstitute;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Credentials;
@@ -295,7 +296,7 @@ public sealed class SharedCredentialUiTests
         credential.AuthMethod = AuthMethod.Tailscale;
         SessionProfile profile = Referencing(credential);
         profile.AuthMethod = method;
-        var context = SharedCredentialPrompt.BuildContext(profile, credential, 2);
+        SharedCredentialPromptContext context = SharedCredentialPrompt.BuildContext(profile, credential, 2);
         AuthenticationDialogViewModel vm = SharedCredentialPrompt.CreateDialog(profile, credential, null, context);
 
         Assert.AreEqual(string.Empty, vm.Username);
@@ -310,7 +311,7 @@ public sealed class SharedCredentialUiTests
 
         vm.Username = credential.Username;
         await vm.NextCommand.Execute().FirstAsync();
-        using var password = SecureStringConvert.FromPlaintext("typed");
+        using SecureString? password = SecureStringConvert.FromPlaintext("typed");
         vm.Password = password;
         vm.PrivateKeyPath = "/typed-key";
         vm.UpdateSharedCredential = true;

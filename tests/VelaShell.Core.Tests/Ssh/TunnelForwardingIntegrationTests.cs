@@ -71,7 +71,7 @@ public class TunnelForwardingIntegrationTests
         Task<string> push = ssh.RunCommandAsync(
             $"head -c {payload} /dev/zero > /dev/tcp/127.0.0.1/{serverPort} && echo PUSHED");
         using TcpClient accepted = await sink.AcceptTcpClientAsync(TestContext.CancellationToken);
-        Stopwatch elapsed = Stopwatch.StartNew();
+        var elapsed = Stopwatch.StartNew();
         Task<long> drain = DrainAsync(accepted.GetStream());
 
         // 搬运途中:连接快照里有这一条,目标是本机的 sink。
@@ -100,13 +100,13 @@ public class TunnelForwardingIntegrationTests
 
         long received = await drain;
         elapsed.Stop();
-        StringAssert.Contains(await push, "PUSHED");
-        Assert.AreEqual((long)payload, received);
+        Assert.Contains("PUSHED", await push);
+        Assert.AreEqual(payload, received);
         Assert.IsGreaterThanOrEqualTo(2.9, elapsed.Elapsed.TotalSeconds,
             $"64 KB/s 收 256 KB:一秒的突发之后还有 192 KB,至少三秒,实际 {elapsed.Elapsed.TotalSeconds:0.00} 秒 —— 限速没生效。");
-        Assert.IsTrue(samples.Any(s => s.Bytes is > 0 and < payload),
+        Assert.Contains(s => s.Bytes is > 0 and < payload, samples,
             "搬运途中应当读得到已经收回、还没收完的字节数:" + string.Join(", ", samples.Select(s => s.Bytes)));
-        Assert.IsTrue(samples.Any(s => s.Bytes < payload && s.Rate > 0), "还没收完时速率就该有读数。");
+        Assert.Contains(s => s.Bytes < payload && s.Rate > 0, samples, "还没收完时速率就该有读数。");
         const double rate = 64 * 1024;
         const double segment = 32 * 1024;
         // 定时器可能比高精度时钟早醒一个系统时钟周期(Windows 上约 16 ms),窗口按多 20 ms 算。
@@ -120,7 +120,7 @@ public class TunnelForwardingIntegrationTests
                 double allowed = (rate * window) + rate + segment;
                 long gained = samples[j].Bytes - samples[i].Bytes;
                 closest = Math.Min(closest, allowed - gained);
-                Assert.IsLessThanOrEqualTo(allowed, (double)gained,
+                Assert.IsLessThanOrEqualTo(allowed, gained,
                     $"{samples[i].Before:0.00}–{samples[j].After:0.00} 秒之间多收了 {gained} 字节,"
                     + $"超过令牌桶的上限 {allowed:0}:单次突发超过了一秒的额度。");
             }
@@ -174,14 +174,14 @@ public class TunnelForwardingIntegrationTests
         string allowed = await ssh.RunCommandAsync(SocksClientScript(serverPort, echoPort, "ping"));
         await serve.WaitAsync(TimeSpan.FromSeconds(10), TestContext.CancellationToken);
 
-        StringAssert.Contains(allowed, "M=05 00", $"SOCKS 方法协商没过。远端输出:\n{allowed}");
-        StringAssert.Contains(allowed, "R=05 00", $"名单里的目标应当回成功。远端输出:\n{allowed}");
-        StringAssert.Contains(allowed, "D=PING", $"数据没有经本机的目标原样回来。远端输出:\n{allowed}");
+        Assert.Contains("M=05 00", allowed, $"SOCKS 方法协商没过。远端输出:\n{allowed}");
+        Assert.Contains("R=05 00", allowed, $"名单里的目标应当回成功。远端输出:\n{allowed}");
+        Assert.Contains("D=PING", allowed, $"数据没有经本机的目标原样回来。远端输出:\n{allowed}");
         Assert.IsNull(tunnel.LastError);
 
         // 被拒之后通道随即关掉:不再往里写(写一个关掉的套接字,bash 会吃 SIGPIPE)。
         string refused = await ssh.RunCommandAsync(SocksClientScript(serverPort, echoPort == 65535 ? 1 : echoPort + 1, payload: null));
-        StringAssert.Contains(refused, "R=05 02", $"名单外的目标应当回「规则不允许」。远端输出:\n{refused}");
+        Assert.Contains("R=05 02", refused, $"名单外的目标应当回「规则不允许」。远端输出:\n{refused}");
         await WaitForAsync(() => tunnel.LastError is not null, "被拒的那一条应当记到隧道行上。");
         Assert.AreEqual(Strings.Get("TunnelSvc_TargetNotPermitted"), tunnel.LastError);
     }

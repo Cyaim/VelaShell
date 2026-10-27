@@ -10,6 +10,8 @@ using System.Security.Cryptography;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
 using Org.BouncyCastle.Security;
+using VelaShell.Ssh.Auth;
+using VelaShell.Ssh.HostKeys;
 using VelaShell.Ssh.Protocol;
 
 namespace VelaShell.Ssh.Tests.TestKit;
@@ -48,11 +50,10 @@ internal abstract class TestHostKey : IDisposable
     /// <param name="presentedBlob">出示的 <c>K_S</c>。出示证书时签名仍由证书里那把钥来做。</param>
     /// <param name="algorithms">宣告的主机密钥算法名。</param>
     public static TestHostKey FromSigner(
-        global::VelaShell.Ssh.Auth.ISshSigner signer, byte[] presentedBlob, IReadOnlyList<string> algorithms) =>
+        ISshSigner signer, byte[] presentedBlob, IReadOnlyList<string> algorithms) =>
         new SignerHostKey(signer, presentedBlob, algorithms);
 
-    private sealed class SignerHostKey(
-        global::VelaShell.Ssh.Auth.ISshSigner signer, byte[] blob, IReadOnlyList<string> algorithms) : TestHostKey
+    private sealed class SignerHostKey(ISshSigner signer, byte[] blob, IReadOnlyList<string> algorithms) : TestHostKey
     {
         public override string KeyType => signer.PublicKey.KeyType;
 
@@ -62,7 +63,7 @@ internal abstract class TestHostKey : IDisposable
 
         // 证书的签名 blob 里写的是普通算法名（OpenSSH PROTOCOL.certkeys）。
         public override byte[] Sign(ReadOnlySpan<byte> data, string algorithm) =>
-            signer.SignAsync(data.ToArray(), global::VelaShell.Ssh.HostKeys.SshPublicKey.StripCertificateSuffix(algorithm))
+            signer.SignAsync(data.ToArray(), SshPublicKey.StripCertificateSuffix(algorithm))
                 .AsTask().GetAwaiter().GetResult();
     }
 

@@ -36,10 +36,8 @@ public sealed class TransferQueueJournalTests
         PausedTransferBatch batch = restored.Single();
         Assert.AreEqual(id, batch.BatchId);
         Assert.AreEqual(Origin, batch.Origin);
-        CollectionAssert.AreEqual(
-            new[] { "/srv/f1.bin", "/srv/f2.bin", "/srv/f4.bin" },
-            batch.Items.Select(i => i.RemotePath).ToArray(),
-            "落定的项不再出现,剩下的保持原来的先后");
+        Assert.AreSequenceEqual(
+            ["/srv/f1.bin", "/srv/f2.bin", "/srv/f4.bin"], [.. batch.Items.Select(i => i.RemotePath)], "落定的项不再出现,剩下的保持原来的先后");
         Assert.IsTrue(batch.Items.All(i => i.Type == TransferType.Upload));
     }
 

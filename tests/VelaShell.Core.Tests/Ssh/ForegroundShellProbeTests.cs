@@ -277,7 +277,7 @@ public class ForegroundShellProbeTests
     [TestMethod]
     public async Task DetectAsync_WhenExecFails_ReturnsNull()
     {
-        var client = Substitute.For<ISshClientWrapper>();
+        ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
         client.RunCommandDetailedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("channel open failed"));
 
@@ -287,7 +287,7 @@ public class ForegroundShellProbeTests
     [TestMethod]
     public async Task DetectAsync_ParsesCommandOutput()
     {
-        var client = Substitute.For<ISshClientWrapper>();
+        ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
         client.RunCommandDetailedAsync(ForegroundShellProbe.Command, Arg.Any<CancellationToken>())
             .Returns(new RemoteCommandResult(Ancestors + "P 31 30 31 34816 41 \nP 41 31 41 34816 41 -bash \n", "", 0));
 

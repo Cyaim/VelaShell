@@ -141,7 +141,7 @@ public sealed class RemoteSearchServiceTests
         _client.StreamCommandRecordsAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<Func<ReadOnlyMemory<byte>, ValueTask>>(), Arg.Any<CancellationToken>())
                .Returns(async call =>
                {
-                   var onRecord = call.Arg<Func<ReadOnlyMemory<byte>, ValueTask>>();
+                   Func<ReadOnlyMemory<byte>, ValueTask> onRecord = call.Arg<Func<ReadOnlyMemory<byte>, ValueTask>>();
                    await onRecord("f\t/srv/a.log"u8.ToArray());
                    await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
                    return new RemoteCommandStreamResult(0, 1);
@@ -190,7 +190,7 @@ public sealed class RemoteSearchServiceTests
     public async Task LegacyEncodingSession_DecodesResultsInTheSessionEncoding_AndKeepsNewlinesInNames()
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        Encoding gbk = Encoding.GetEncoding("GBK");
+        var gbk = Encoding.GetEncoding("GBK");
         _connections.GetSession(_session).Returns(new Core.Models.SshSession
         {
             SessionId = _session,
@@ -228,7 +228,7 @@ public sealed class RemoteSearchServiceTests
                .Returns(async call =>
                {
                    onCommand(call.ArgAt<string>(0));
-                   var onRecord = call.Arg<Func<ReadOnlyMemory<byte>, ValueTask>>();
+                   Func<ReadOnlyMemory<byte>, ValueTask> onRecord = call.Arg<Func<ReadOnlyMemory<byte>, ValueTask>>();
                    foreach (byte[] record in records)
                    {
                        await onRecord(record);

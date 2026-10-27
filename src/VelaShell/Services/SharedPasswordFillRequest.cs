@@ -146,7 +146,7 @@ internal sealed class SharedPasswordFillRequest : IDisposable
             byte[] bytes;
             try
             {
-                Encoding encoding = (Encoding)_control.SessionEncoding.Clone();
+                var encoding = (Encoding)_control.SessionEncoding.Clone();
                 encoding.EncoderFallback = EncoderFallback.ExceptionFallback;
                 byte[] secret = encoding.GetBytes(password);
                 // 选中即提交:正文后面紧跟一次回车(与此刻按 Enter 发出的字节相同,换行模式下是 CR LF),

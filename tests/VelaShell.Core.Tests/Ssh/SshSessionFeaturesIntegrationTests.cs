@@ -299,7 +299,7 @@ public class SshSessionFeaturesIntegrationTests
         }
 
         string keyName = "vela-keystore-it-" + Guid.NewGuid().ToString("N");
-        using CngKey cngKey = CngKey.Create(CngAlgorithm.ECDsaP256, keyName, new CngKeyCreationParameters
+        using var cngKey = CngKey.Create(CngAlgorithm.ECDsaP256, keyName, new CngKeyCreationParameters
         {
             Provider = CngProvider.MicrosoftSoftwareKeyStorageProvider,
             ExportPolicy = CngExportPolicies.None,
@@ -308,7 +308,7 @@ public class SshSessionFeaturesIntegrationTests
         try
         {
             string publicLine;
-            using (CngSshSigner probe = CngSshSigner.Open(keyName))
+            using (var probe = CngSshSigner.Open(keyName))
             {
                 publicLine = probe.PublicKey.ToOpenSshFormat("vela-keystore-test");
             }

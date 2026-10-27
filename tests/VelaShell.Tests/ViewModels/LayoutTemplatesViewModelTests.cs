@@ -202,7 +202,7 @@ public sealed class LayoutTemplatesViewModelTests
         Assert.IsTrue(saved.IsPinned, "固定状态跟着存");
         Assert.AreEqual("prompt:" + VelaShell.Core.Resources.Strings.Format("LayoutTemplate_DefaultName", 1), scene.Dialogs.Asked[0]);
         Assert.IsTrue(scene.Store.Rows.ContainsKey((LayoutTemplateStore.Collection, item.Template.Id.ToString("D"))));
-        StringAssert.Contains(LastToast(scene), "quick", "没存进去的那个点名说出来");
+        Assert.Contains("quick", LastToast(scene), "没存进去的那个点名说出来");
 
         // 另起一个视图模型重新读一遍:列表来自库,不只是内存。
         var reloaded = new LayoutTemplatesViewModel(
@@ -264,11 +264,11 @@ public sealed class LayoutTemplatesViewModelTests
 
         scene.Dialogs.Names.Enqueue("Alpha");
         Assert.IsFalse(await scene.ViewModel.RenameAsync(beta));
-        StringAssert.Contains(LastToast(scene), "alpha");
+        Assert.Contains("alpha", LastToast(scene));
 
         scene.Dialogs.Names.Enqueue("gamma");
         Assert.IsTrue(await scene.ViewModel.RenameAsync(beta));
-        Assert.AreSequenceEqual(["alpha", "gamma"], scene.ViewModel.Templates.Select(t => t.Name).ToArray());
+        Assert.AreSequenceEqual(["alpha", "gamma"], [.. scene.ViewModel.Templates.Select(t => t.Name)]);
         Assert.AreEqual(beta.Template.Id, scene.ViewModel.Templates.Single(t => t.Name == "gamma").Template.Id);
     }
 
@@ -304,7 +304,7 @@ public sealed class LayoutTemplatesViewModelTests
 
         Assert.IsTrue(scene.Dialogs.Asked.Last().StartsWith("danger:", StringComparison.Ordinal));
         Assert.IsFalse(scene.ViewModel.HasTemplates);
-        Assert.IsFalse(scene.Store.Rows.Keys.Any(key => key.Collection == LayoutTemplateStore.Collection));
+        Assert.DoesNotContain(key => key.Collection == LayoutTemplateStore.Collection, scene.Store.Rows.Keys);
         Assert.AreEqual(item.Template.Id.ToString("D"), scene.Store.Rows.Keys.Single().Id, "只留一块墓碑,同步靠它把删除传出去");
         Assert.HasCount(1, scene.Workspace.AllDocuments().ToList(), "删模板不碰开着的标签");
     }
@@ -321,7 +321,7 @@ public sealed class LayoutTemplatesViewModelTests
 
         Assert.IsFalse(scene.ViewModel.HasTemplates);
         Assert.IsTrue(scene.Toasts.Toasts.First().IsError);
-        StringAssert.Contains(LastToast(scene), "disk full");
+        Assert.Contains("disk full", LastToast(scene));
     }
 
     [TestMethod]
@@ -341,7 +341,7 @@ public sealed class LayoutTemplatesViewModelTests
         Assert.AreEqual(1, result.Opened);
         Assert.AreEqual("web", scene.Workspace.AllDocuments().Single().Title);
         string toast = LastToast(scene);
-        StringAssert.Contains(toast, VelaShell.Core.Resources.Strings.Format("LayoutTemplate_MissingProfile", "db"));
+        Assert.Contains(VelaShell.Core.Resources.Strings.Format("LayoutTemplate_MissingProfile", "db"), toast);
     }
 
     [TestMethod]
@@ -358,7 +358,7 @@ public sealed class LayoutTemplatesViewModelTests
 
         Assert.IsNull(await scene.ViewModel.OpenAsync(scene.ViewModel.Templates.Single()));
 
-        Assert.IsFalse(scene.Workspace.AllDocuments().OfType<RestoredDocument>().Any());
+        Assert.IsEmpty(scene.Workspace.AllDocuments().OfType<RestoredDocument>());
     }
 
     // ---- 导出 / 导入 ----
@@ -401,8 +401,8 @@ public sealed class LayoutTemplatesViewModelTests
         {
             Assert.IsTrue(await desktop.ViewModel.ExportAsync());
             string json = await File.ReadAllTextAsync(desktop.Dialogs.FilePath);
-            StringAssert.Contains(json, LayoutTemplateFile.FormatId);
-            StringAssert.Contains(LastToast(desktop), desktop.Dialogs.FilePath);
+            Assert.Contains(LayoutTemplateFile.FormatId, json);
+            Assert.Contains(desktop.Dialogs.FilePath, LastToast(desktop));
 
             Scene laptop = NewScene();
             foreach (SessionProfile profile in desktop.Opener.Profiles.Values)
@@ -416,7 +416,7 @@ public sealed class LayoutTemplatesViewModelTests
             LayoutTemplateItemViewModel imported = laptop.ViewModel.Templates.Single();
             Assert.AreEqual((prod.Template.Id, "prod", 2), (imported.Template.Id, imported.Name, imported.DocumentCount));
             Assert.AreEqual(VelaShell.Core.Resources.Strings.Format("LayoutTemplate_Imported", 1), LastToast(laptop));
-            Assert.IsFalse(laptop.Dialogs.Asked.Any(a => a.StartsWith("choose:", StringComparison.Ordinal)), "没有冲突就不问");
+            Assert.DoesNotContain(a => a.StartsWith("choose:", StringComparison.Ordinal), laptop.Dialogs.Asked, "没有冲突就不问");
         }
         finally
         {
@@ -480,15 +480,15 @@ public sealed class LayoutTemplatesViewModelTests
             int? imported = await scene.ViewModel.ImportAsync();
 
             string choose = scene.Dialogs.Asked.Single(a => a.StartsWith("choose:", StringComparison.Ordinal));
-            StringAssert.Contains(choose, "prod");
-            StringAssert.Contains(choose, "DB");
+            Assert.Contains("prod", choose);
+            Assert.Contains("DB", choose);
             Assert.DoesNotContain("fresh", choose, "不冲突的不点名");
             string[] names = [.. scene.ViewModel.Templates.Select(t => t.Name)];
             switch (answer)
             {
                 case 0:
                     Assert.AreEqual(3, imported);
-                    Assert.AreSequenceEqual(new[] { "DB", "fresh", "prod" }, names);
+                    Assert.AreSequenceEqual(["DB", "fresh", "prod"], names);
                     LayoutTemplate replacedById = scene.ViewModel.Templates.Single(t => t.Name == "prod").Template;
                     Assert.AreEqual((prod.Template.Id, 2), (replacedById.Id, LayoutTree.Documents(replacedById.Root).Count()));
                     LayoutTemplate replacedByName = scene.ViewModel.Templates.Single(t => t.Name == "DB").Template;
@@ -497,15 +497,15 @@ public sealed class LayoutTemplatesViewModelTests
                     break;
                 case 1:
                     Assert.AreEqual(3, imported);
-                    Assert.AreSequenceEqual(new[] { "db", "DB (2)", "fresh", "prod", "prod (2)" }, names);
-                    Assert.AreEqual(1, LayoutTree.Documents(scene.ViewModel.Templates.Single(t => t.Name == "prod").Template.Root).Count(),
+                    Assert.AreSequenceEqual(["db", "DB (2)", "fresh", "prod", "prod (2)"], names);
+                    Assert.HasCount(1, LayoutTree.Documents(scene.ViewModel.Templates.Single(t => t.Name == "prod").Template.Root),
                         "本机原来那份不动");
                     Assert.AreNotEqual(prod.Template.Id, scene.ViewModel.Templates.Single(t => t.Name == "prod (2)").Template.Id);
                     break;
                 default:
                     Assert.IsNull(imported);
-                    Assert.AreSequenceEqual(new[] { "db", "prod" }, names);
-                    Assert.AreEqual(rowsBefore, scene.Store.Rows.Count, "取消:一条都不写");
+                    Assert.AreSequenceEqual(["db", "prod"], names);
+                    Assert.HasCount(rowsBefore, scene.Store.Rows, "取消:一条都不写");
                     break;
             }
         }
@@ -638,7 +638,7 @@ public sealed class LayoutTemplatesViewModelTests
         settings.General.RestoreLayoutOnStartup = true;
         persist.Invoke(window, [settings]);
         Assert.IsTrue(store.Rows.ContainsKey(key));
-        StringAssert.Contains(store.Rows[key], "\"title\":\"web\"");
+        Assert.Contains("\"title\":\"web\"", store.Rows[key]);
 
         settings.General.RestoreLayoutOnStartup = false;
         persist.Invoke(window, [settings]);

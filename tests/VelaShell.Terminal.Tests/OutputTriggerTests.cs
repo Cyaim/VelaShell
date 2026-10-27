@@ -3,8 +3,8 @@ using Avalonia.Input;
 using Avalonia.Threading;
 using NSubstitute;
 using VelaShell.Core.Models;
-using VelaShell.Core.Ssh;
 using VelaShell.Core.OutputRules;
+using VelaShell.Core.Ssh;
 using VelaShell.Terminal.Rendering;
 
 namespace VelaShell.Terminal.Tests;

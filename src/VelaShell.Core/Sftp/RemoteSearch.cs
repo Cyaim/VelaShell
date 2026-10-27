@@ -265,7 +265,7 @@ public static class RemoteSearch
     {
         var strict = (Encoding)encoding.Clone();
         strict.EncoderFallback = EncoderFallback.ExceptionFallback;
-        var escaped = new string[values.Length];
+        string[] escaped = new string[values.Length];
         for (int i = 0; i < values.Length; i++)
         {
             if (values[i] is not { } value)

@@ -58,7 +58,7 @@ public class SftpServiceTests
     [TestMethod]
     public async Task AMissingOrDisconnectedSession_IsReportedAsUnavailable()
     {
-        Guid unknown = Guid.NewGuid();
+        var unknown = Guid.NewGuid();
         _connectionService.GetSession(unknown).Returns((SshSession?)null);
 
         await Assert.ThrowsExactlyAsync<RemoteSessionUnavailableException>(() => _sftpService.ListDirectoryAsync(unknown, "/"));
@@ -1059,7 +1059,7 @@ public class SftpServiceTests
                 ? _sftpService.UploadStreamAsync(_sessionId, source, remotePath, 100, progress: progress)
                 : _sftpService.UploadFileAsync(_sessionId, localPath, remotePath, progress));
 
-            Assert.AreEqual(1, reports.Count(static p => p.BytesTransferred == 100));
+            Assert.ContainsSingle(static p => p.BytesTransferred == 100, reports);
             Assert.AreEqual(100, reports[^1].Percentage);
         }
         finally
@@ -1808,7 +1808,7 @@ public class SftpServiceTests
         var reports = new List<TransferProgress>();
         await _sftpService.DownloadStreamAsync(_sessionId, path, destination, new SynchronousProgress<TransferProgress>(reports.Add));
         Assert.IsTrue(destination.CanWrite);
-        CollectionAssert.AreEqual(content, destination.ToArray());
+        Assert.AreSequenceEqual(content, destination.ToArray());
         Assert.AreEqual(content.LongLength, reports[^1].BytesTransferred, "Final count is actual bytes, not the advertised source length.");
         await _sftpClient.Received(1).OpenAsync(path, FileMode.Open, FileAccess.Read, Arg.Any<CancellationToken>());
     }
@@ -1839,7 +1839,7 @@ public class SftpServiceTests
             Assert.AreEqual(100, reports[^1].Percentage);
             Assert.IsGreaterThan(0d, reports[0].SpeedBytesPerSecond);
             Assert.IsLessThan(20_000d, reports[0].SpeedBytesPerSecond, "只下载 1000 字节,不应把已有的 190000 字节计入速度。");
-            CollectionAssert.AreEqual(content, await File.ReadAllBytesAsync(localPath));
+            Assert.AreSequenceEqual(content, await File.ReadAllBytesAsync(localPath));
         }
         finally
         {
@@ -1879,7 +1879,7 @@ public class SftpServiceTests
             await service.DownloadFileAsync(_sessionId, remotePath, localPath, null, resumeOffset: prefix);
             watch.Stop();
 
-            CollectionAssert.AreEqual(content, await File.ReadAllBytesAsync(localPath));
+            Assert.AreSequenceEqual(content, await File.ReadAllBytesAsync(localPath));
             await _sftpClient.DidNotReceive().DownloadAsync(
                 Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>());
             Assert.IsGreaterThanOrEqualTo(

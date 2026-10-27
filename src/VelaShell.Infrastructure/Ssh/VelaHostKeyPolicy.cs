@@ -252,30 +252,30 @@ internal sealed class VelaHostKeyPolicy(
                 return SshHostKeyVerdict.Accept;
 
             case KnownHostStatus.CertificateInvalid:
-            {
-                System.Diagnostics.Trace.WriteLine($"[VelaShell] host certificate rejected for {target}: {authority.CertificateProblem}");
-                // 哪一条不合格由库按 spec 03 §5.5 的顺序判定并交出结构化的出处,界面语言的那句与其它入口共用一套文案
-                // (SshInterop.LocalizeHostCertificateProblem)。库的约定是这个结论一定带着出处;万一没有,只能照它的原文说。
-                string problem = authority.CertificateProblemDetail is { } detail
-                    ? SshInterop.LocalizeHostCertificateProblem(detail)
-                    : authority.CertificateProblem ?? "";
-                string invalid = Strings.Format("Msg_HostCertInvalid", target, problem,
-                    FingerprintOf(context.Key.Certificate?.SignatureKey));
-                await RaiseAsync("hostkey-rejected", invalid).ConfigureAwait(false);
-                return SshHostKeyVerdict.Reject(invalid);
-            }
+                {
+                    System.Diagnostics.Trace.WriteLine($"[VelaShell] host certificate rejected for {target}: {authority.CertificateProblem}");
+                    // 哪一条不合格由库按 spec 03 §5.5 的顺序判定并交出结构化的出处,界面语言的那句与其它入口共用一套文案
+                    // (SshInterop.LocalizeHostCertificateProblem)。库的约定是这个结论一定带着出处;万一没有,只能照它的原文说。
+                    string problem = authority.CertificateProblemDetail is { } detail
+                        ? SshInterop.LocalizeHostCertificateProblem(detail)
+                        : authority.CertificateProblem ?? "";
+                    string invalid = Strings.Format("Msg_HostCertInvalid", target, problem,
+                        FingerprintOf(context.Key.Certificate?.SignatureKey));
+                    await RaiseAsync("hostkey-rejected", invalid).ConfigureAwait(false);
+                    return SshHostKeyVerdict.Reject(invalid);
+                }
 
             case KnownHostStatus.OtherKeyTypesKnown:
-            {
-                // 这台主机由 CA 管:出示的是普通钥,或者别的 CA 签的证书,而这把钥又没有单独记着。
-                string patterns = authority.ConflictingEntries
-                    .Where(entry => entry.IsCertificateAuthority)
-                    .Select(entry => string.Join(',', entry.Patterns))
-                    .FirstOrDefault() ?? "*";
-                string unvouched = Strings.Format("Msg_HostCaUnvouched", target, patterns, fingerprint);
-                await RaiseAsync("hostkey-rejected", unvouched).ConfigureAwait(false);
-                return SshHostKeyVerdict.RejectChanged(unvouched);
-            }
+                {
+                    // 这台主机由 CA 管:出示的是普通钥,或者别的 CA 签的证书,而这把钥又没有单独记着。
+                    string patterns = authority.ConflictingEntries
+                        .Where(entry => entry.IsCertificateAuthority)
+                        .Select(entry => string.Join(',', entry.Patterns))
+                        .FirstOrDefault() ?? "*";
+                    string unvouched = Strings.Format("Msg_HostCaUnvouched", target, patterns, fingerprint);
+                    await RaiseAsync("hostkey-rejected", unvouched).ConfigureAwait(false);
+                    return SshHostKeyVerdict.RejectChanged(unvouched);
+                }
         }
 
         // 变更时把旧指纹取出来,弹窗与错误文案都要摆它 —— 用户靠两把对照才判断得了

@@ -41,7 +41,6 @@ public sealed class RemoteSearchResultViewModel(RemoteSearchHit hit)
 public sealed class RemoteSearchViewModel : ReactiveObject, IDisposable
 {
     private readonly IRemoteSearchService _service;
-    private readonly FileBrowserViewModel _pane;
     private readonly Func<Action, Task> _onUi;
     private CancellationTokenSource? _cts;
     private bool _disposed;
@@ -53,7 +52,7 @@ public sealed class RemoteSearchViewModel : ReactiveObject, IDisposable
     public RemoteSearchViewModel(IRemoteSearchService service, FileBrowserViewModel pane, Func<Action, Task>? onUi = null)
     {
         _service = service ?? throw new ArgumentNullException(nameof(service));
-        _pane = pane ?? throw new ArgumentNullException(nameof(pane));
+        Pane = pane ?? throw new ArgumentNullException(nameof(pane));
         _onUi = onUi ?? (action => Dispatcher.UIThread.InvokeAsync(action).GetTask());
         Root = pane.CurrentPath;
         StatusText = Strings.Format("Sftp_SearchHint", RemoteSearch.DefaultMaxResults, (int)RemoteSearchService.DefaultTimeLimit.TotalSeconds);
@@ -63,10 +62,10 @@ public sealed class RemoteSearchViewModel : ReactiveObject, IDisposable
     }
 
     /// <summary>结果在哪个面板里定位(视图据此认出「这个面板已经开着一扇搜索窗口」)。</summary>
-    internal FileBrowserViewModel Pane => _pane;
+    internal FileBrowserViewModel Pane { get; }
 
     /// <summary>服务器名(窗口标题里点明是哪一台)。</summary>
-    public string ServerName => _pane.ServerDisplayName;
+    public string ServerName => Pane.ServerDisplayName;
 
     /// <summary>从哪个目录找起(远端绝对路径)。</summary>
     public string Root
@@ -158,7 +157,7 @@ public sealed class RemoteSearchViewModel : ReactiveObject, IDisposable
         try
         {
             outcome = await _service.SearchAsync(
-                _pane.SessionId,
+                Pane.SessionId,
                 query,
                 hit => new ValueTask(_onUi(() =>
                 {
@@ -208,7 +207,7 @@ public sealed class RemoteSearchViewModel : ReactiveObject, IDisposable
         {
             return;
         }
-        await _pane.RevealAsync(result.Path, result.IsDirectory);
+        await Pane.RevealAsync(result.Path, result.IsDirectory);
     }
 
     /// <summary>窗口关了:停下还在跑的搜索。</summary>

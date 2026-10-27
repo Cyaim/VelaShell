@@ -177,7 +177,7 @@ public class AnnouncementFeedDocumentTests
 
         IReadOnlyList<NotificationItem> items = AnnouncementFeedDocument.Parse(json, new("1.4.0-beta.10", "win-x64", "zh-Hans", HttpAnnouncementFeed.CompareVersions), Now);
 
-        CollectionAssert.AreEqual(new[] { "from-beta-2" }, items.Select(i => i.Id).ToArray());
+        Assert.AreSequenceEqual(["from-beta-2"], [.. items.Select(i => i.Id)]);
     }
 
     /// <summary>某一端写得解析不出,就当这一端没给 —— 不因为源端一处笔误把这条消息对所有人都藏起来。</summary>

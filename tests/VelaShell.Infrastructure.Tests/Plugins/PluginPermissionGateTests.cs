@@ -60,7 +60,7 @@ public class PluginPermissionGateTests
         var gate = new PluginPermissionGate(new MemoryStore(), prompt);
         Assert.IsTrue(await gate.CheckTerminalWriteAsync("p", "target", "input", default));
         Assert.IsTrue(await gate.CheckSessionOpenAsync("p", "target", "reason", default));
-        using var lease = gate.CreateUploadLease("p");
+        using UploadPermissionLease lease = gate.CreateUploadLease("p");
         Assert.IsFalse(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", false, 8, default));
     }
 
@@ -72,11 +72,11 @@ public class PluginPermissionGateTests
             IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
             prompt.RequestFileUploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(decision);
             var gate = new PluginPermissionGate(null, prompt);
-            using var lease = gate.CreateUploadLease("p");
+            using UploadPermissionLease lease = gate.CreateUploadLease("p");
             Assert.IsFalse(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", false, 8, default));
         }
         var missing = new PluginPermissionGate(null, null);
-        using var absentLease = missing.CreateUploadLease("p");
+        using UploadPermissionLease absentLease = missing.CreateUploadLease("p");
         Assert.IsFalse(await missing.CheckUploadAsync(absentLease, "p", "target", "/local", "/remote", false, 8, default));
     }
 
@@ -88,7 +88,7 @@ public class PluginPermissionGateTests
         IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
         prompt.RequestFileUploadAsync("p", "target", "/local", "/remote", true, size, Arg.Any<CancellationToken>()).Returns(PluginPermissionDecision.AllowOnce);
         var gate = new PluginPermissionGate(null, prompt);
-        using var lease = gate.CreateUploadLease("p");
+        using UploadPermissionLease lease = gate.CreateUploadLease("p");
         Assert.IsTrue(await gate.CheckUploadAsync(lease, "p", "target", "/local", "/remote", true, size, default));
     }
 
@@ -137,9 +137,9 @@ public class PluginPermissionGateTests
     public async Task PendingUploadCanBeRevokedAndCancellationCallbackMayDisposeLease()
     {
         var gate = new PluginPermissionGate(null, null);
-        var first = gate.CreateUploadLease("p");
-        var second = gate.CreateUploadLease("p");
-        using var callback = first.Revocation.Register(() => first.Dispose());
+        UploadPermissionLease first = gate.CreateUploadLease("p");
+        UploadPermissionLease second = gate.CreateUploadLease("p");
+        using CancellationTokenRegistration callback = first.Revocation.Register(first.Dispose);
         Assert.IsTrue(await gate.HasGrantAsync("p"), "尚待审批任务也可在管理页撤销。");
         Task revoked = gate.RevokeAsync("p");
         Assert.IsTrue(first.IsRevoked);
@@ -158,11 +158,11 @@ public class PluginPermissionGateTests
             IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
             prompt.RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<long>(), Arg.Any<CancellationToken>()).Returns(decision);
             var gate = new PluginPermissionGate(null, prompt);
-            using var lease = gate.CreateDownloadLease("p");
+            using DownloadPermissionLease lease = gate.CreateDownloadLease("p");
             Assert.IsFalse(await gate.CheckDownloadAsync(lease, "p", "real-session", "/source", "destination", false, 3, default));
         }
         var noPrompt = new PluginPermissionGate(null, null);
-        using var pending = noPrompt.CreateDownloadLease("p");
+        using DownloadPermissionLease pending = noPrompt.CreateDownloadLease("p");
         Assert.IsFalse(await noPrompt.CheckDownloadAsync(pending, "p", "session", "/source", "target", false, 3, default));
         Assert.IsTrue(await noPrompt.HasGrantAsync("p"));
         await noPrompt.RevokeAsync("p");

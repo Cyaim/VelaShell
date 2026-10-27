@@ -115,7 +115,7 @@ public class AuditLogViewUiTests
     {
         OnUi(() =>
         {
-            Guid alive = Guid.NewGuid();
+            var alive = Guid.NewGuid();
             IAuditLogService audit = Substitute.For<IAuditLogService>();
             audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
                  .Returns(_ =>

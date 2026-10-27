@@ -49,10 +49,8 @@ public sealed class TransferQueuePersistenceTests : IDisposable
 
             Assert.AreEqual(id, batch.BatchId);
             Assert.AreEqual(origin, batch.Origin);
-            CollectionAssert.AreEqual(
-                items.Where((_, i) => i != 1).ToArray(),
-                batch.Items.ToArray(),
-                "方向、路径(含中文与空格)与先后都原样读回,落定的那一项不在");
+            Assert.AreSequenceEqual(
+                [.. items.Where((_, i) => i != 1)], [.. batch.Items], "方向、路径(含中文与空格)与先后都原样读回,落定的那一项不在");
 
             journal.Drop(id);
             await journal.FlushAsync();

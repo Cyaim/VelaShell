@@ -21,7 +21,7 @@ public sealed class RemoteSearchEncodingTests
     [TestMethod]
     public void DecodeRecord_UsesTheSessionEncoding_AndRestoresNewlines()
     {
-        Encoding gbk = Encoding.GetEncoding("GBK");
+        var gbk = Encoding.GetEncoding("GBK");
         byte[] record = [.. "f\t/srv/"u8.ToArray(), .. gbk.GetBytes(Chinese), 0, .. "x.txt"u8.ToArray()];
 
         Assert.AreEqual("f\t/srv/" + Chinese + "\nx.txt", RemoteSearch.DecodeRecord(record, gbk));
@@ -47,7 +47,7 @@ public sealed class RemoteSearchEncodingTests
     [TestMethod]
     public void BuildCommand_LegacyEncoding_PassesUserInputAsOctalEscapesOfTheSessionBytes()
     {
-        Encoding gbk = Encoding.GetEncoding("GBK");
+        var gbk = Encoding.GetEncoding("GBK");
         string command = RemoteSearch.BuildCommand(new("/srv/" + Chinese, Chinese, Chinese + "'$(id)"), RemoteShellKind.Bash, gbk);
 
         Assert.DoesNotContain(Chinese, command, "中文不能原样进命令(exec 请求只能是 UTF-8,远端要的是 GBK 字节)");
@@ -63,7 +63,7 @@ public sealed class RemoteSearchEncodingTests
     [TestMethod]
     public void BuildCommand_InputTheSessionEncodingCannotHold_FallsBackToPlainArguments()
     {
-        Encoding gbk = Encoding.GetEncoding("GBK");
+        var gbk = Encoding.GetEncoding("GBK");
         string command = RemoteSearch.BuildCommand(new("/srv", "😀"), RemoteShellKind.PosixSh, gbk);
 
         Assert.Contains(" '*😀*' ", command);

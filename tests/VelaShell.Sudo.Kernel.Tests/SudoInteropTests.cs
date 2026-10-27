@@ -32,16 +32,16 @@ public sealed class SudoInteropTests
 
     private sealed class Prompt(bool approve = true, params string?[] answers) : ISudoPrompt
     {
-        internal int Approvals;
-        internal int Requests;
+        internal int _approvals;
+        internal int _requests;
         public Task<bool> ConfirmAsync(SudoExecutionContext context, string command, CancellationToken cancellationToken)
         {
-            Approvals++;
+            _approvals++;
             return Task.FromResult(approve);
         }
         public Task<SudoPassword?> RequestPasswordAsync(SudoExecutionContext context, string command, int attempt, CancellationToken cancellationToken)
         {
-            Requests++;
+            _requests++;
             string? answer = answers.Length >= attempt ? answers[attempt - 1] : null;
             return Task.FromResult(answer is null ? null : new SudoPassword(answer.AsSpan()));
         }
@@ -49,10 +49,10 @@ public sealed class SudoInteropTests
 
     private sealed class Tap : IPacketTap
     {
-        internal readonly List<string> Payloads = [];
+        internal readonly List<string> _payloads = [];
         public void OnPacket(in PacketTapRecord record)
         {
-            lock (Payloads) { if (!record.Payload.IsEmpty) { Payloads.Add(Encoding.UTF8.GetString(record.Payload)); } }
+            lock (_payloads) { if (!record.Payload.IsEmpty) { _payloads.Add(Encoding.UTF8.GetString(record.Payload)); } }
         }
     }
 
@@ -94,7 +94,7 @@ public sealed class SudoInteropTests
         Action<SudoExecutionEvent, SshConnection>? observe = null, CancellationToken cancellationToken = default)
     {
         Tap tap = new();
-        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(25));
         await using SshConnection connection = await SshConnection.ConnectAsync(new SshConnectionOptions("sudoer", "127.0.0.1", Port)
         {
@@ -111,9 +111,9 @@ public sealed class SudoInteropTests
                 observe?.Invoke(entry, connection);
                 return ValueTask.CompletedTask;
             }, deadline.Token);
-        lock (tap.Payloads)
+        lock (tap._payloads)
         {
-            string payloads = string.Concat(tap.Payloads);
+            string payloads = string.Concat(tap._payloads);
             Assert.DoesNotContain(Password, payloads);
             Assert.DoesNotContain("VELA_AUTH_", payloads);
             Assert.DoesNotContain("VELA_READY_", payloads);
@@ -155,7 +155,7 @@ public sealed class SudoInteropTests
         await ConfigureAsync("sudoer ALL=(ALL) NOPASSWD: ALL", $"usermod -s {loginShell} sudoer\n");
         const string command = """printf '%s|' 'a\\b' "it's" 'bang!' "$(id -u)" """ + "\nprintf '漢🙂'";
         Prompt prompt = new(true);
-        var (result, output, _) = await ExecuteAsync(prompt, command);
+        (SudoExecutionResult? result, string? output, Tap _) = await ExecuteAsync(prompt, command);
         TestContext.WriteLine($"{loginShell}: outcome={result.Outcome}, exit={result.ExitCode}, output={output}");
         Assert.AreEqual(SudoExecutionOutcome.Exited, result.Outcome);
         Assert.AreEqual(0, result.ExitCode);
@@ -168,15 +168,15 @@ public sealed class SudoInteropTests
         RequireEnvironment();
         await ConfigureAsync("Defaults:sudoer requiretty\nsudoer ALL=(ALL) ALL");
         Prompt prompt = new(true, Password);
-        var (result, output, _) = await ExecuteAsync(prompt, "id -u; printf '漢🙂'; printf 'err' >&2; exit 7");
-        TestContext.WriteLine($"Outcome={result.Outcome}, exit={result.ExitCode}, password prompts={prompt.Requests}, output={output}");
+        (SudoExecutionResult? result, string? output, Tap _) = await ExecuteAsync(prompt, "id -u; printf '漢🙂'; printf 'err' >&2; exit 7");
+        TestContext.WriteLine($"Outcome={result.Outcome}, exit={result.ExitCode}, password prompts={prompt._requests}, output={output}");
         Assert.AreEqual(SudoExecutionOutcome.Exited, result.Outcome);
         Assert.AreEqual(7, result.ExitCode);
         Assert.Contains("0", output);
         Assert.Contains("漢🙂", output);
         Assert.Contains("err", output);
-        Assert.AreEqual(1, prompt.Approvals);
-        Assert.AreEqual(1, prompt.Requests);
+        Assert.AreEqual(1, prompt._approvals);
+        Assert.AreEqual(1, prompt._requests);
     }
 
     [TestMethod]
@@ -185,16 +185,16 @@ public sealed class SudoInteropTests
         RequireEnvironment();
         await ConfigureAsync("sudoer ALL=(ALL) NOPASSWD: ALL");
         Prompt prompt = new(true);
-        var (result, output, _) = await ExecuteAsync(prompt, "id -u; test ! -t 0");
+        (SudoExecutionResult? result, string? output, Tap _) = await ExecuteAsync(prompt, "id -u; test ! -t 0");
         Assert.AreEqual(SudoExecutionOutcome.Exited, result.Outcome);
         Assert.AreEqual(0, result.ExitCode);
         Assert.Contains("0", output);
-        Assert.AreEqual(1, prompt.Approvals);
-        Assert.AreEqual(0, prompt.Requests);
+        Assert.AreEqual(1, prompt._approvals);
+        Assert.AreEqual(0, prompt._requests);
         Prompt denied = new(false);
-        var rejected = await ExecuteAsync(denied, "exit 99");
+        (SudoExecutionResult Result, string Output, Tap Tap) rejected = await ExecuteAsync(denied, "exit 99");
         Assert.AreEqual(SudoExecutionOutcome.AuthenticationCancelled, rejected.Result.Outcome);
-        Assert.AreEqual(0, denied.Requests);
+        Assert.AreEqual(0, denied._requests);
     }
 
     [TestMethod]
@@ -203,13 +203,13 @@ public sealed class SudoInteropTests
         RequireEnvironment();
         await ConfigureAsync("Defaults:sudoer passwd_tries=3\nsudoer ALL=(ALL) ALL");
         Prompt prompt = new(true, "incorrect", Password);
-        var result = await ExecuteAsync(prompt, "id -u");
+        (SudoExecutionResult Result, string Output, Tap Tap) result = await ExecuteAsync(prompt, "id -u");
         Assert.AreEqual(SudoExecutionOutcome.Exited, result.Result.Outcome);
-        Assert.AreEqual(2, prompt.Requests);
+        Assert.AreEqual(2, prompt._requests);
         Prompt wrong = new(true, "incorrect", "incorrect", "incorrect", Password);
-        var failed = await ExecuteAsync(wrong, "id -u");
+        (SudoExecutionResult Result, string Output, Tap Tap) failed = await ExecuteAsync(wrong, "id -u");
         Assert.AreNotEqual(SudoExecutionOutcome.Exited, failed.Result.Outcome);
-        Assert.AreEqual(3, wrong.Requests);
+        Assert.AreEqual(3, wrong._requests);
     }
 
     [TestMethod]
@@ -219,10 +219,10 @@ public sealed class SudoInteropTests
         await ConfigureAsync("sudoer ALL=(root) NOPASSWD: /usr/bin/id");
         Prompt prompt = new(true, Password);
         bool running = false;
-        var result = await ExecuteAsync(prompt, "id -u", (entry, _) => running |= entry.State == SudoExecutionState.Running);
-        TestContext.WriteLine($"Restricted policy result: outcome={result.Result.Outcome}, exit={result.Result.ExitCode}, prompts={prompt.Requests}, output={result.Output}");
+        (SudoExecutionResult Result, string Output, Tap Tap) result = await ExecuteAsync(prompt, "id -u", (entry, _) => running |= entry.State == SudoExecutionState.Running);
+        TestContext.WriteLine($"Restricted policy result: outcome={result.Result.Outcome}, exit={result.Result.ExitCode}, prompts={prompt._requests}, output={result.Output}");
         Assert.AreNotEqual(SudoExecutionOutcome.Exited, result.Result.Outcome,
-            $"Restricted policy outcome={result.Result.Outcome}, exit={result.Result.ExitCode}, prompts={prompt.Requests}, output={result.Output}");
+            $"Restricted policy outcome={result.Result.Outcome}, exit={result.Result.ExitCode}, prompts={prompt._requests}, output={result.Output}");
         Assert.IsFalse(running, "sudoers 拒绝诊断回显的 argv 不能被当成启动标记");
         Assert.AreEqual(string.Empty, result.Output, "认证阶段的拒绝诊断不能进入插件输出");
         Assert.DoesNotContain("0\n", result.Output);
@@ -234,12 +234,12 @@ public sealed class SudoInteropTests
         RequireEnvironment();
         await ConfigureAsync("sudoer ALL=(ALL) ALL");
         Prompt prompt = new(true, Password, "SHOULD_NOT_SEND");
-        var result = await ExecuteAsync(prompt,
+        (SudoExecutionResult Result, string Output, Tap Tap) result = await ExecuteAsync(prompt,
             "printf '[sudo] password: VELA_AUTH_fake'; read value && exit 99; printf 'stdin-closed'");
         Assert.AreEqual(SudoExecutionOutcome.Exited, result.Result.Outcome);
         Assert.AreEqual(0, result.Result.ExitCode);
         Assert.Contains("stdin-closed", result.Output);
-        Assert.AreEqual(1, prompt.Requests);
+        Assert.AreEqual(1, prompt._requests);
     }
 
     [TestMethod]
@@ -249,7 +249,7 @@ public sealed class SudoInteropTests
         await ConfigureAsync("sudoer ALL=(ALL) NOPASSWD: ALL");
         Task? disconnect = null;
         Prompt prompt = new(true);
-        var result = await ExecuteAsync(prompt, "printf running; sleep 10; printf SHOULD_NOT_COMPLETE", (entry, connection) =>
+        (SudoExecutionResult Result, string Output, Tap Tap) result = await ExecuteAsync(prompt, "printf running; sleep 10; printf SHOULD_NOT_COMPLETE", (entry, connection) =>
         {
             if (entry.State == SudoExecutionState.Running)
             {
@@ -258,7 +258,7 @@ public sealed class SudoInteropTests
         });
         if (disconnect is not null) { await disconnect; }
         Assert.AreEqual(SudoExecutionOutcome.Unknown, result.Result.Outcome);
-        Assert.AreEqual(1, prompt.Approvals);
+        Assert.AreEqual(1, prompt._approvals);
         Assert.DoesNotContain("SHOULD_NOT_COMPLETE", result.Output);
     }
 
@@ -267,14 +267,14 @@ public sealed class SudoInteropTests
     {
         RequireEnvironment();
         await ConfigureAsync("sudoer ALL=(ALL) NOPASSWD: ALL");
-        Stopwatch elapsed = Stopwatch.StartNew();
-        var first = await ExecuteAsync(new Prompt(true), "printf begin; sleep 2; printf done; printf stderr >&2; exit 9");
+        var elapsed = Stopwatch.StartNew();
+        (SudoExecutionResult Result, string Output, Tap Tap) first = await ExecuteAsync(new Prompt(true), "printf begin; sleep 2; printf done; printf stderr >&2; exit 9");
         Assert.AreEqual(SudoExecutionOutcome.Exited, first.Result.Outcome);
         Assert.AreEqual(9, first.Result.ExitCode);
         Assert.Contains("begindone", first.Output);
         Assert.Contains("stderr", first.Output);
         Assert.IsGreaterThanOrEqualTo(TimeSpan.FromSeconds(2), elapsed.Elapsed);
-        var next = await ExecuteAsync(new Prompt(true), "printf after-completion");
+        (SudoExecutionResult Result, string Output, Tap Tap) next = await ExecuteAsync(new Prompt(true), "printf after-completion");
         Assert.AreEqual(0, next.Result.ExitCode);
         Assert.Contains("after-completion", next.Output);
     }
@@ -284,7 +284,7 @@ public sealed class SudoInteropTests
     {
         RequireEnvironment();
         await ConfigureAsync("Defaults:sudoer runas_default=nobody\nsudoer ALL=(ALL) NOPASSWD: ALL");
-        var result = await ExecuteAsync(new Prompt(true), "id -u");
+        (SudoExecutionResult Result, string Output, Tap Tap) result = await ExecuteAsync(new Prompt(true), "id -u");
         Assert.AreEqual(SudoExecutionOutcome.Exited, result.Result.Outcome);
         Assert.AreEqual("0", result.Output.Trim());
     }
@@ -310,7 +310,7 @@ public sealed class SudoInteropTests
         RequireEnvironment();
         await ConfigureAsync("sudoer ALL=(ALL) ALL");
         Prompt prompt = new(true, (string?)null);
-        var result = await ExecuteAsync(prompt, "printf SHOULD_NOT_RUN");
+        (SudoExecutionResult Result, string Output, Tap Tap) result = await ExecuteAsync(prompt, "printf SHOULD_NOT_RUN");
         Assert.AreEqual(SudoExecutionOutcome.AuthenticationCancelled, result.Result.Outcome);
         Assert.DoesNotContain("SHOULD_NOT_RUN", result.Output);
     }

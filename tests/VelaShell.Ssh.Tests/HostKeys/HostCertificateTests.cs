@@ -182,7 +182,7 @@ public sealed class HostCertificateTests
             lookup.CertificateProblem);
         AssertProblem(lookup, HostCertificateProblemKind.HostNotListed);
         Assert.AreEqual("other.example", lookup.CertificateProblemDetail!.Host);
-        Assert.AreSequenceEqual(cert.ValidPrincipals.ToArray(), lookup.CertificateProblemDetail.Principals.ToArray());
+        Assert.AreSequenceEqual([.. cert.ValidPrincipals], [.. lookup.CertificateProblemDetail.Principals]);
     }
 
     [TestMethod]

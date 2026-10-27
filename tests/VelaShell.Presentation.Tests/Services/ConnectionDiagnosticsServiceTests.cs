@@ -82,7 +82,7 @@ public sealed class ConnectionDiagnosticsServiceTests
         DiagnosticReport report = await Service().DiagnoseAsync(profile);
 
         Assert.HasCount(2, report.PacketTrace);
-        Assert.AreEqual((SshPacketDirection.Sent, (byte)20, (int?)1200), (report.PacketTrace[0].Direction, report.PacketTrace[0].MessageNumber, report.PacketTrace[0].Length));
+        Assert.AreEqual((SshPacketDirection.Sent, (byte)20, 1200), (report.PacketTrace[0].Direction, report.PacketTrace[0].MessageNumber, report.PacketTrace[0].Length));
         await _workflow.DidNotReceive().TestConnectionAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
     }
 
@@ -158,8 +158,12 @@ public sealed class ConnectionDiagnosticsServiceTests
         await using SshBannerListener server = new();
         var profile = new SessionProfile
         {
-            Name = "web", Host = "127.0.0.1", Port = server.Port, Username = "root",
-            AuthMethod = AuthMethod.Password, Password = "enc1:AAAAAAAAAAAAAAAAAAAAAAAA"
+            Name = "web",
+            Host = "127.0.0.1",
+            Port = server.Port,
+            Username = "root",
+            AuthMethod = AuthMethod.Password,
+            Password = "enc1:AAAAAAAAAAAAAAAAAAAAAAAA"
         };
 
         DiagnosticReport report = await Service().DiagnoseAsync(profile);

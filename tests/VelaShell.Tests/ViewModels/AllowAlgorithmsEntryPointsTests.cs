@@ -50,8 +50,8 @@ public sealed class AllowAlgorithmsEntryPointsTests
         ConnectingDocument card = vm.Layout.AllDocuments().OfType<ConnectingDocument>().Single();
         Assert.IsTrue(card.HasError);
         Assert.IsTrue(card.HasAlgorithmRemedy, "SFTP 配置败在协商上:失败卡片也要给按钮。");
-        CollectionAssert.AreEqual(new[] { Group14Sha1 }, card.AlgorithmRemedy!.Algorithms.ToArray());
-        StringAssert.Contains(card.AlgorithmRemedyTip, Group14Sha1);
+        Assert.AreSequenceEqual([Group14Sha1], [.. card.AlgorithmRemedy!.Algorithms]);
+        Assert.Contains(Group14Sha1, card.AlgorithmRemedyTip);
 
         // 用户在确认框上取消:什么都不改、不重试。
         string? body = null;
@@ -62,7 +62,7 @@ public sealed class AllowAlgorithmsEntryPointsTests
         };
         card.AllowAlgorithms();
         await WaitUntilAsync(() => body is not null);
-        StringAssert.Contains(body, Group14Sha1);
+        Assert.Contains(Group14Sha1, body);
         await workflow.DidNotReceive().SaveProfileAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
         Assert.HasCount(1, kexAtConnect, "取消了就不重试。");
 
@@ -75,7 +75,7 @@ public sealed class AllowAlgorithmsEntryPointsTests
             Arg.Is<SessionProfile>(p => p.Id == profile.Id && p.Password == null
                                         && p.Ssh!.KexAlgorithms == "+" + Group14Sha1 && !p.Ssh.LegacyAlgorithms),
             Arg.Any<CancellationToken>());
-        CollectionAssert.AreEqual(new[] { null, "+" + Group14Sha1 }, kexAtConnect, "重试拿的是改过的那份。");
+        Assert.AreSequenceEqual([null, "+" + Group14Sha1], kexAtConnect, "重试拿的是改过的那份。");
         await WaitUntilAsync(() => card.HasError);
         Assert.IsFalse(card.HasAlgorithmRemedy, "这一次败在别处:按钮跟着收掉。");
     }
@@ -112,7 +112,7 @@ public sealed class AllowAlgorithmsEntryPointsTests
 
         await vm.RunCommand.Execute().FirstAsync();
         Assert.IsTrue(vm.HasAlgorithmRemedy, "认证那一步败在协商上:问题卡片上要给按钮。");
-        StringAssert.Contains(vm.AlgorithmRemedyTip, Group14Sha1);
+        Assert.Contains(Group14Sha1, vm.AlgorithmRemedyTip);
 
         string? action = null;
         vm.AllowAlgorithmsConfirmer = (_, _, confirmText) =>
@@ -150,7 +150,7 @@ public sealed class AllowAlgorithmsEntryPointsTests
         await vm.AllowAlgorithmsCommand.Execute().FirstAsync();
 
         Assert.IsTrue(vm.HasAlgorithmRemedyError);
-        StringAssert.Contains(vm.AlgorithmRemedyError, "jumper@bastion:22");
+        Assert.Contains("jumper@bastion:22", vm.AlgorithmRemedyError);
         await workflow.DidNotReceive().SaveProfileAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
         await diagnostics.Received(1).DiagnoseAsync(Arg.Any<SessionProfile>(), Arg.Any<IProgress<DiagnosticStepUpdate>?>(), Arg.Any<CancellationToken>());
     }
@@ -181,7 +181,7 @@ public sealed class AllowAlgorithmsEntryPointsTests
         await vm.AllowAlgorithmsCommand.Execute().FirstAsync();
 
         Assert.AreEqual(Strings.Get("SshAlgoFix_ConfirmActionRetest"), action);
-        StringAssert.Contains(body, Strings.Get("SshAlgoFix_FormOnlyNote"), "改的是表单:确认框要说清按保存才存下。");
+        Assert.Contains(Strings.Get("SshAlgoFix_FormOnlyNote"), body, "改的是表单:确认框要说清按保存才存下。");
         Assert.IsTrue(vm.SshCustomAlgorithms, "自定义清单展开:用户看得见改了什么。");
         Assert.AreEqual("+" + Group14Sha1, vm.SshKexAlgorithms);
         Assert.IsFalse(vm.SshLegacyAlgorithms, "⚠️ 不能顺手把整组老算法都打开。");
@@ -219,7 +219,7 @@ public sealed class AllowAlgorithmsEntryPointsTests
         };
         await vm.AllowAlgorithmsCommand.Execute().FirstAsync();
 
-        StringAssert.Contains(body, "Bastion", "确认框说的是要改哪一条配置。");
+        Assert.Contains("Bastion", body, "确认框说的是要改哪一条配置。");
         Assert.IsFalse(body!.Contains(Strings.Get("SshAlgoFix_FormOnlyNote"), StringComparison.Ordinal), "跳板那一跳当场存下,不是只改表单。");
         await workflow.Received(1).SaveProfileAsync(
             Arg.Is<SessionProfile>(p => p.Id == jump.Id && p.Ssh!.KexAlgorithms == "+" + Group14Sha1), Arg.Any<CancellationToken>());
@@ -321,7 +321,6 @@ public sealed class AllowAlgorithmsEntryPointsTests
             AuthMethod = AuthMethod.Password,
             Password = SecureStringConvert.FromPlaintext("secret"),
         };
-
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

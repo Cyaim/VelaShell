@@ -1,9 +1,9 @@
+using System.Reflection;
 using System.Text.Json;
 using Avalonia.Controls;
 using Avalonia.VisualTree;
-using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Chat;
-using System.Reflection;
+using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
 using VelaShell.PluginSdk.Testing;
 
@@ -14,7 +14,10 @@ public sealed partial class ChatPanelViewUiTests
     private static string ImageToolCall(string name, string arguments) =>
         "data: " + JsonSerializer.Serialize(new
         {
-            id = "image-call", @object = "chat.completion.chunk", created = 1, model = "chat-model",
+            id = "image-call",
+            @object = "chat.completion.chunk",
+            created = 1,
+            model = "chat-model",
             choices = new[] { new { index = 0, delta = new { tool_calls = new[] {
                 new { index = 0, id = "image-call-1", type = "function", function = new { name, arguments } }
             } }, finish_reason = "tool_calls" } }
@@ -37,8 +40,11 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider image = StubProvider("images", images.BaseUrl + "/v1", "gpt-image-2");
             await store.SaveAsync(new AiSettings
             {
-                Providers = [text, image], ActiveModelId = text.Models[0].Id,
-                ImageModelId = image.Models[0].Id, Mode = mode, Approval = ApprovalMode.Bypass,
+                Providers = [text, image],
+                ActiveModelId = text.Models[0].Id,
+                ImageModelId = image.Models[0].Id,
+                Mode = mode,
+                Approval = ApprovalMode.Bypass,
                 SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
@@ -53,7 +59,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.Contains("generate_image", chat.Requests[0].Body);
                 Assert.Contains("image_generation_result", chat.Requests[1].Body);
                 if (mode == ChatMode.Chat) Assert.DoesNotContain("run_command", chat.Requests[0].Body);
-                using JsonDocument request = JsonDocument.Parse(images.Requests[0].Body);
+                using var request = JsonDocument.Parse(images.Requests[0].Body);
                 Assert.AreEqual("A blue cat with the discussed striped scarf", request.RootElement.GetProperty("prompt").GetString());
             }
             finally { panel.Detach(); window.Close(); }
@@ -76,8 +82,15 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             AiProvider text = StubProvider("chat", chat.BaseUrl, "chat-model");
             AiProvider image = StubProvider("images", images.BaseUrl + "/v1", "gpt-image-2");
-            await store.SaveAsync(new AiSettings { Providers = [text, image], ActiveModelId = text.Models[0].Id,
-                ImageModelId = image.Models[0].Id, Mode = ChatMode.Chat, Approval = ApprovalMode.Bypass, SuggestFollowUps = false });
+            await store.SaveAsync(new AiSettings
+            {
+                Providers = [text, image],
+                ActiveModelId = text.Models[0].Id,
+                ImageModelId = image.Models[0].Id,
+                Mode = ChatMode.Chat,
+                Approval = ApprovalMode.Bypass,
+                SuggestFollowUps = false
+            });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
@@ -110,8 +123,15 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             AiProvider text = StubProvider("chat", chat.BaseUrl, "chat-model");
             AiProvider image = StubProvider("images", images.BaseUrl + "/v1", "gpt-image-2");
-            await store.SaveAsync(new AiSettings { Providers = [text, image], ActiveModelId = text.Models[0].Id,
-                ImageModelId = image.Models[0].Id, Mode = ChatMode.Chat, Approval = ApprovalMode.Bypass, SuggestFollowUps = false });
+            await store.SaveAsync(new AiSettings
+            {
+                Providers = [text, image],
+                ActiveModelId = text.Models[0].Id,
+                ImageModelId = image.Models[0].Id,
+                Mode = ChatMode.Chat,
+                Approval = ApprovalMode.Bypass,
+                SuggestFollowUps = false
+            });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
@@ -136,8 +156,15 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             AiProvider text = StubProvider("chat", chat.BaseUrl, "chat-model");
             AiProvider image = StubProvider("images", images.BaseUrl + "/v1", "gpt-image-2");
-            await store.SaveAsync(new AiSettings { Providers = [text, image], ActiveModelId = text.Models[0].Id,
-                ImageModelId = image.Models[0].Id, Mode = ChatMode.Chat, Approval = ApprovalMode.ReadOnlyAuto, SuggestFollowUps = false });
+            await store.SaveAsync(new AiSettings
+            {
+                Providers = [text, image],
+                ActiveModelId = text.Models[0].Id,
+                ImageModelId = image.Models[0].Id,
+                Mode = ChatMode.Chat,
+                Approval = ApprovalMode.ReadOnlyAuto,
+                SuggestFollowUps = false
+            });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
@@ -166,8 +193,14 @@ public sealed partial class ChatPanelViewUiTests
             var store = new AiSettingsStore(context);
             AiProvider text = StubProvider("chat", chat.BaseUrl, "chat-model");
             AiProvider image = StubProvider("images", "http://127.0.0.1:1/v1", "gpt-image-2");
-            await store.SaveAsync(new AiSettings { Providers = [text, image], ActiveModelId = text.Models[0].Id,
-                ImageModelId = image.Models[0].Id, Mode = ChatMode.Plan, SuggestFollowUps = false });
+            await store.SaveAsync(new AiSettings
+            {
+                Providers = [text, image],
+                ActiveModelId = text.Models[0].Id,
+                ImageModelId = image.Models[0].Id,
+                Mode = ChatMode.Plan,
+                SuggestFollowUps = false
+            });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {

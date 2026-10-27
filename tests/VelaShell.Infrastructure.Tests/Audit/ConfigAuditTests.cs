@@ -81,7 +81,7 @@ public sealed class ConfigAuditTests : IDisposable
         await repo.SaveSessionAsync(profile);
 
         AuditEntry entry = _audit.Single();
-        StringAssert.Contains(entry.Detail, Strings.Get("AuditLog_AreaCredentials"));
+        Assert.Contains(Strings.Get("AuditLog_AreaCredentials"), entry.Detail);
         Assert.DoesNotContain(Secret, entry.Detail);
     }
 
@@ -112,7 +112,10 @@ public sealed class ConfigAuditTests : IDisposable
         AuditedSessionRepository repo = Sessions();
         var profile = new SessionProfile
         {
-            Name = "edge", Host = "10.0.0.9", Username = "root", CredentialSource = CredentialReference.ForShared(Guid.NewGuid())
+            Name = "edge",
+            Host = "10.0.0.9",
+            Username = "root",
+            CredentialSource = CredentialReference.ForShared(Guid.NewGuid())
         };
         await repo.SaveSessionAsync(profile);
         _audit.Entries.Clear();
@@ -287,7 +290,7 @@ public sealed class ConfigAuditTests : IDisposable
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        Task sync = Task.Run(async () =>
+        var sync = Task.Run(async () =>
         {
             using IDisposable _ = AuditSourceScope.Enter(AuditSources.CloudSync);
             entered.SetResult();

@@ -19,15 +19,19 @@ public sealed class ImageGenerationServiceTests
         var listener = new HttpListener();
         listener.Prefixes.Add($"http://127.0.0.1:{port}/");
         listener.Start();
-        var provider = new AiProvider { BaseUrl = $"http://127.0.0.1:{port}/v1", DefaultProtocol = ChatProtocol.OpenAiImages,
-            Models = [new AiModelConfig { Model = "image-2" }] };
+        var provider = new AiProvider
+        {
+            BaseUrl = $"http://127.0.0.1:{port}/v1",
+            DefaultProtocol = ChatProtocol.OpenAiImages,
+            Models = [new AiModelConfig { Model = "image-2" }]
+        };
         return (listener, new ResolvedModel(provider, provider.Models[0]));
     }
 
     [TestMethod]
     public async Task GenerateUsesGenerationsEndpoint()
     {
-        var (listener, model) = Listen();
+        (HttpListener? listener, ResolvedModel? model) = Listen();
         using (listener)
         using (var context = new TestPluginContext())
         {
@@ -37,21 +41,21 @@ public sealed class ImageGenerationServiceTests
             Assert.AreEqual("/v1/images/generations", request.Request.Url!.AbsolutePath);
             using var reader = new StreamReader(request.Request.InputStream);
             string body = await reader.ReadToEndAsync();
-            StringAssert.Contains(body, "draw a cat");
-            StringAssert.Contains(body, "image-2");
+            Assert.Contains("draw a cat", body);
+            Assert.Contains("image-2", body);
             byte[] reply = Encoding.UTF8.GetBytes("{\"created\":1,\"data\":[{\"b64_json\":\"AQID\"}]}");
             request.Response.ContentLength64 = reply.Length;
             request.Response.ContentType = "application/json";
             await request.Response.OutputStream.WriteAsync(reply);
             request.Response.Close();
-            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, (await task).Data.ToArray());
+            Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, (await task).Data.ToArray());
         }
     }
 
     [TestMethod]
     public async Task EditSendsMultipartAndReturnsImage()
     {
-        var (listener, model) = Listen();
+        (HttpListener? listener, ResolvedModel? model) = Listen();
         using (listener)
         using (var context = new TestPluginContext())
         {
@@ -65,29 +69,29 @@ public sealed class ImageGenerationServiceTests
             StringAssert.StartsWith(request.Request.ContentType!, "multipart/form-data;");
             using var reader = new StreamReader(request.Request.InputStream, Encoding.Latin1);
             string body = await reader.ReadToEndAsync();
-            StringAssert.Contains(body, "image-2");
-            StringAssert.Contains(body, "change color");
-            StringAssert.Contains(body, "image[]");
-            StringAssert.Contains(body, "image/png");
-            StringAssert.Contains(body, "image/jpeg");
+            Assert.Contains("image-2", body);
+            Assert.Contains("change color", body);
+            Assert.Contains("image[]", body);
+            Assert.Contains("image/png", body);
+            Assert.Contains("image/jpeg", body);
             byte[] reply = Encoding.UTF8.GetBytes("{\"created\":1,\"data\":[{\"b64_json\":\"AQID\"}]}");
             request.Response.ContentType = "application/json";
             request.Response.ContentLength64 = reply.Length;
             await request.Response.OutputStream.WriteAsync(reply);
             request.Response.Close();
-            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, (await task).Data.ToArray());
+            Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, (await task).Data.ToArray());
         }
     }
 
     [TestMethod]
     public async Task EditDoesNotRetryAndCancellationPropagates()
     {
-        var (listener, model) = Listen();
+        (HttpListener? listener, ResolvedModel? model) = Listen();
         using (listener)
         using (var context = new TestPluginContext())
         {
             var store = new AiSettingsStore(context);
-            var inputs = new[] { new DataContent(new byte[] { 1 }, "image/png") };
+            DataContent[] inputs = [new DataContent(new byte[] { 1 }, "image/png")];
             Task<DataContent> task = store.GenerateImageAsync(model, "edit", inputs, CancellationToken.None);
             HttpListenerContext request = await listener.GetContextAsync().WaitAsync(TimeSpan.FromSeconds(10));
             request.Response.StatusCode = 429;
@@ -107,13 +111,17 @@ public sealed class ImageGenerationServiceTests
     [TestMethod]
     public async Task RejectsNonImageAndInvalidInputs()
     {
-        var (listener, model) = Listen();
+        (HttpListener? listener, ResolvedModel? model) = Listen();
         using (listener)
         using (var context = new TestPluginContext())
         {
             var store = new AiSettingsStore(context);
-            var textProvider = new AiProvider { BaseUrl = model.BaseUrl, DefaultProtocol = ChatProtocol.OpenAiResponses,
-                Models = [new AiModelConfig { Model = "text-model" }] };
+            var textProvider = new AiProvider
+            {
+                BaseUrl = model.BaseUrl,
+                DefaultProtocol = ChatProtocol.OpenAiResponses,
+                Models = [new AiModelConfig { Model = "text-model" }]
+            };
             var textModel = new ResolvedModel(textProvider, textProvider.Models[0]);
             await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.GenerateImageAsync(textModel, "draw", null, CancellationToken.None));
             await Assert.ThrowsExactlyAsync<ArgumentException>(() => store.GenerateImageAsync(model, "edit", [new DataContent(new byte[] { 1 }, "image/gif")], CancellationToken.None));

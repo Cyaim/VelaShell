@@ -13,10 +13,7 @@ public sealed class TailscaleSshCheckDialogService(Func<Window?> ownerProvider)
     private readonly Dictionary<Guid, WaitingWindow> _windows = [];
 
     /// <summary>显示/更新立即返回;结束通知在窗口关闭、取消注册解除后返回。</summary>
-    public async Task HandleAsync(TailscaleSshCheckNotification notification)
-    {
-        await Dispatcher.UIThread.InvokeAsync(() => HandleOnUiAsync(notification));
-    }
+    public async Task HandleAsync(TailscaleSshCheckNotification notification) => await Dispatcher.UIThread.InvokeAsync(() => HandleOnUiAsync(notification));
 
     private async Task HandleOnUiAsync(TailscaleSshCheckNotification notification)
     {

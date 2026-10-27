@@ -123,7 +123,7 @@ public sealed class MasterKeyResolverTests
 
         bool[] migrated = [.. Enumerable.Range(0, 3).Select(_ => Protector(store).GetKeyStatus().Migrated)];
 
-        CollectionAssert.AreEqual(new[] { true, false, false }, migrated);
+        Assert.AreSequenceEqual([true, false, false], migrated);
         Assert.AreEqual(1, store.SaveCount, "同一把密钥只写一次");
         Assert.ContainsSingle(ReferencedIds());
         Assert.ContainsSingle(store.Entries);
@@ -248,11 +248,11 @@ public sealed class MasterKeyResolverTests
         MasterKeyStatus status = degraded.GetKeyStatus();
         Assert.IsFalse(degraded.TryUnprotect(oldCipher, out _), "这一轮旧密文解不开 ……");
         Assert.AreEqual(oldCipher, degraded.Unprotect(oldCipher), "…… 但原样交回,存回去也不会丢");
-        CollectionAssert.AreEqual(new[] { oldId }, status.UnavailableKeyIds.ToArray());
+        Assert.AreSequenceEqual([oldId], [.. status.UnavailableKeyIds]);
         Assert.IsTrue(status.HasUnreadableSecrets);
         string newCipher = degraded.Protect("new-password")!;
         Assert.IsTrue(File.Exists(_keyFile), "新密码先用本地临时密钥加密");
-        CollectionAssert.AreEqual(new[] { oldId }, ReferencedIds(), "清单里的旧编号原样留着");
+        Assert.AreSequenceEqual([oldId], ReferencedIds(), "清单里的旧编号原样留着");
 
         // 密钥链回来了。
         store.Unavailable = null;
@@ -290,7 +290,7 @@ public sealed class MasterKeyResolverTests
         AesSecretProtector protector = Protector(elsewhere);
         MasterKeyStatus status = protector.GetKeyStatus();
 
-        CollectionAssert.AreEqual(new[] { oldId }, status.MissingKeyIds.ToArray(), "如实报告「找不到」,界面据此提示重新输入");
+        Assert.AreSequenceEqual([oldId], [.. status.MissingKeyIds], "如实报告「找不到」,界面据此提示重新输入");
         Assert.IsFalse(protector.TryUnprotect(oldCipher, out _), "拷走的数据目录在别处解不开 —— 这正是这一步的目的");
         Assert.AreEqual("fresh", Protector(elsewhere).Unprotect(protector.Protect("fresh")), "新保存的密码照常可用");
         Assert.IsFalse(File.Exists(_keyFile), "新密钥进了那边的密钥链,不落明文文件");
@@ -310,7 +310,7 @@ public sealed class MasterKeyResolverTests
 
         AesSecretProtector protector = Protector(store: null);
 
-        CollectionAssert.AreEqual(new[] { oldId }, protector.GetKeyStatus().MissingKeyIds.ToArray());
+        Assert.AreSequenceEqual([oldId], [.. protector.GetKeyStatus().MissingKeyIds]);
         Assert.IsFalse(protector.TryUnprotect(oldCipher, out _));
         Assert.AreEqual("fresh", protector.Unprotect(protector.Protect("fresh")));
         Assert.IsTrue(File.Exists(_keyFile));
@@ -474,10 +474,7 @@ public sealed class MasterKeyResolverTests
 
     [TestMethod]
     [OSCondition(ConditionMode.Exclude, OperatingSystems.OSX)]
-    public void MacKeychain_OnOtherPlatforms_IsUnavailable()
-    {
-        Assert.AreEqual(MasterKeyStoreStatus.Unavailable, new MacKeychainMasterKeyStore().Load(new string('a', 32)).Status);
-    }
+    public void MacKeychain_OnOtherPlatforms_IsUnavailable() => Assert.AreEqual(MasterKeyStoreStatus.Unavailable, new MacKeychainMasterKeyStore().Load(new string('a', 32)).Status);
 
     [TestMethod]
     public void DisabledByEnvironment_ReportsTheReason()

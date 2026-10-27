@@ -38,10 +38,7 @@ public sealed class HostAddressTests
     [DataRow("host:")]
     [DataRow(":22")]
     [DataRow("host:ssh")]
-    public void TrySplit_RejectsMalformedText(string text)
-    {
-        Assert.IsFalse(HostAddress.TrySplit(text, out _, out _));
-    }
+    public void TrySplit_RejectsMalformedText(string text) => Assert.IsFalse(HostAddress.TrySplit(text, out _, out _));
 
     [TestMethod]
     public void TrySplit_UnbracketedIpv6_IsNeverCutAtTheLastColon()
@@ -63,10 +60,7 @@ public sealed class HostAddressTests
     [DataRow("[2001:db8::1]:22", "[2001:db8::1]:22")]
     [DataRow("[]", "[]")]
     [DataRow(null, "")]
-    public void Normalize_StripsOnlyBracketsThatWrapTheWholeAddress(string? text, string expected)
-    {
-        Assert.AreEqual(expected, HostAddress.Normalize(text));
-    }
+    public void Normalize_StripsOnlyBracketsThatWrapTheWholeAddress(string? text, string expected) => Assert.AreEqual(expected, HostAddress.Normalize(text));
 
     [TestMethod]
     public void Format_BracketsIpv6_AndLeavesOthersAlone()

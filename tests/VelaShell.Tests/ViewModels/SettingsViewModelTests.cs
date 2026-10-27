@@ -186,8 +186,10 @@ public class SettingsViewModelTests
                 ready = target;
                 return Task.CompletedTask;
             });
-        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates);
-        vm.UpdateChannelIndex = 1;
+        SettingsViewModel vm = new(_settingsService, _themeService, updateService: updates)
+        {
+            UpdateChannelIndex = 1
+        };
         List<string?> changed = [];
         vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
@@ -569,8 +571,8 @@ public class SettingsViewModelTests
         Assert.IsNull(vm.ReadyUpdate);
         Assert.IsFalse(vm.UpdateReady);
         Assert.IsFalse(vm.IsUpdating);
-        Assert.IsTrue(changed.Any(change => change is (nameof(SettingsViewModel.ReadyUpdate), true, false)));
-        Assert.IsTrue(changed.Any(change => change is (nameof(SettingsViewModel.UpdateReady), true, false)));
+        Assert.Contains(change => change is (nameof(SettingsViewModel.ReadyUpdate), true, false), changed);
+        Assert.Contains(change => change is (nameof(SettingsViewModel.UpdateReady), true, false), changed);
         Assert.AreEqual(Strings.Get("SetAbout_RepairDone"), vm.UpdateStatus);
     }
 
