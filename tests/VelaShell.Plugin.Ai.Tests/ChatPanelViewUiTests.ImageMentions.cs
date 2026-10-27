@@ -1,0 +1,127 @@
+using System.Reflection;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
+using Avalonia.Input;
+using AvaloniaEdit;
+using VelaShell.Plugin.Ai.Configuration;
+using VelaShell.Plugin.Ai.Ui;
+using VelaShell.PluginSdk.Testing;
+
+namespace VelaShell.Plugin.Ai.Tests;
+
+public sealed partial class ChatPanelViewUiTests
+{
+    private static async Task<ChatPanelView> ImageMentionPanel(TestPluginContext context)
+    {
+        var store = new AiSettingsStore(context);
+        AiProvider chat = StubProvider("chat", "http://127.0.0.1:1/v1", "text");
+        AiProvider image = StubProvider("image", "http://127.0.0.1:1/v1", "gpt-image-2");
+        await store.SaveAsync(new AiSettings { Providers = [chat, image], ActiveModelId = chat.Models[0].Id,
+            ImageModelId = image.Models[0].Id, Mode = ChatMode.Chat, SuggestFollowUps = false });
+        return new ChatPanelView(context, store);
+    }
+
+    [TestMethod]
+    public void ImageMention_NoSshSessionShowsToolsAndInsertsAtomicToken()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            ChatPanelView panel = await ImageMentionPanel(context);
+            var window = new Window { Width = 800, Height = 600, Content = panel };
+            window.Show();
+            try
+            {
+                await PumpAsync();
+                TextEditor input = Find<TextEditor>(panel, "InputBox");
+                input.TextArea.Focus();
+                input.Text = "@";
+                input.CaretOffset = 1;
+                await PumpAsync();
+                Assert.IsTrue(Find<Popup>(panel, "FilePopup").IsOpen);
+                Assert.HasCount(2, Find<StackPanel>(panel, "FileList").Children);
+                window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                Assert.AreEqual("@imagegen ", input.Text);
+                Assert.IsFalse(Find<Popup>(panel, "FilePopup").IsOpen);
+                window.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.None);
+                Assert.AreEqual("", input.Text);
+                input.Text = "@imagee";
+                input.CaretOffset = input.Text.Length;
+                await PumpAsync();
+                Assert.HasCount(1, Find<StackPanel>(panel, "FileList").Children);
+                window.KeyPressQwerty(PhysicalKey.Tab, RawInputModifiers.None);
+                Assert.AreEqual("@imageedit ", input.Text);
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void ComposerTriggers_SeparateImageToolsFromRemoteFiles()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            var session = context.FakeSessions.AddConnected();
+            context.FakeRemoteFs.AddFile(session.SessionId, "/etc/hosts", "127.0.0.1"u8.ToArray());
+            ChatPanelView panel = await ImageMentionPanel(context);
+            var window = new Window { Width = 800, Height = 600, Content = panel };
+            window.Show();
+            try
+            {
+                await PumpAsync();
+                TextEditor input = Find<TextEditor>(panel, "InputBox");
+                input.TextArea.Focus();
+                Type(input, "@i");
+                await PumpAsync();
+                Assert.HasCount(2, Find<StackPanel>(panel, "FileList").Children);
+                Assert.AreEqual(0, context.FakeRemoteFs.ListDirectoryCalls);
+                Type(input, "#/etc/ho");
+                await PumpAsync();
+                Assert.HasCount(1, Find<StackPanel>(panel, "FileList").Children);
+                window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                Assert.AreEqual("#/etc/hosts ", input.Text);
+                int listings = context.FakeRemoteFs.ListDirectoryCalls;
+                Type(input, "@/etc/hosts");
+                await PumpAsync();
+                Assert.IsFalse(Find<Popup>(panel, "FilePopup").IsOpen);
+                Assert.AreEqual(listings, context.FakeRemoteFs.ListDirectoryCalls);
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void ImageMention_ExpandsAsToolIntentNotRemoteFileAndRespectsPlanMode()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            ChatPanelView panel = await ImageMentionPanel(context);
+            var window = new Window { Content = panel };
+            window.Show();
+            try
+            {
+                await PumpAsync();
+                MethodInfo resolve = typeof(ChatPanelView).GetMethod("ResolveAttachmentsAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+                var task = (Task<(string Text, IReadOnlyList<string> Attached, IReadOnlyList<string> Failed)>)resolve.Invoke(panel,
+                    ["@imagegen draw a cat", CancellationToken.None])!;
+                var result = await task;
+                Assert.Contains("Use generate_image", result.Text);
+                Assert.Contains("draw a cat", result.Text);
+                Assert.IsEmpty(result.Attached);
+                Assert.IsEmpty(result.Failed);
+                PanelSettings(panel).Mode = ChatMode.Plan;
+                await Assert.ThrowsAsync<InvalidOperationException>(async () => await (Task)resolve.Invoke(panel,
+                    ["@imageedit change background", CancellationToken.None])!);
+                TextEditor input = Find<TextEditor>(panel, "InputBox");
+                input.Text = "@";
+                input.CaretOffset = 1;
+                await PumpAsync();
+                Assert.IsFalse(Find<Popup>(panel, "FilePopup").IsOpen);
+            }
+            finally { panel.Detach(); window.Close(); }
+        });
+    }
+}

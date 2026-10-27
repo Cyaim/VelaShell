@@ -459,7 +459,7 @@ public sealed class ProviderSetupView : UserControl
 
     /// <summary>协议下拉的标签,顺序 = <see cref="ChatProtocol" /> 枚举。</summary>
     private static readonly string[] ProtocolLabels =
-        ["OpenAI Chat Completions", "OpenAI Responses", "Anthropic Messages"];
+        ["OpenAI Chat Completions", "OpenAI Responses", "Anthropic Messages", "OpenAI Images"];
 
     private StackPanel BuildDetail(Row row)
     {

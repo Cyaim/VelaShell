@@ -354,6 +354,7 @@ public partial class ChatPanelView
     /// <summary>面板关闭时把这几个窗口一并带走,别留在屏幕上。</summary>
     private void CloseDialogs()
     {
+        CloseImagePreviews();
         _ = _settingsPanel?.CloseAsync();
         _ = _globalSettingsPanel?.CloseAsync();
         _globalSettingsPanel = null;

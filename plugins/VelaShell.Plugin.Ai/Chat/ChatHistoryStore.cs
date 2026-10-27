@@ -25,6 +25,9 @@ public sealed record ChatEntry(string Role, string Text, DateTimeOffset At, Chat
 /// <param name="Result">返回值(超长已截断)。</param>
 public sealed record ChatToolCall(string Name, string Arguments, string Result);
 
+/// <summary>生成图片的相对文件名与媒体类型。</summary>
+public sealed record ChatGeneratedImage(string FileName, string MediaType);
+
 /// <summary>
 /// 一条 assistant 回复除正文以外的东西。单独存 —— 翻回旧会话时,
 /// 光看到"干净的一问一答"是不够的:Agent 到底动了什么手,恰恰是最该留档的部分。
@@ -34,15 +37,17 @@ public sealed record ChatToolCall(string Name, string Arguments, string Result);
 /// <param name="Thinking">思考过程原文(超长已截断)。</param>
 /// <param name="ThinkingMs">思考耗时(毫秒);0 表示没记。</param>
 /// <param name="Tools">这一轮调用过的工具。</param>
+/// <param name="Images">这一轮生成的图片引用。</param>
 public sealed record ChatTurnMeta(
     string Model = "",
     long ElapsedMs = 0,
     string Thinking = "",
     long ThinkingMs = 0,
-    IReadOnlyList<ChatToolCall>? Tools = null)
+    IReadOnlyList<ChatToolCall>? Tools = null,
+    IReadOnlyList<ChatGeneratedImage>? Images = null)
 {
     /// <summary>这一轮有没有值得存的东西 —— 全空就别白占一行。</summary>
-    public bool HasContent => Model.Length > 0 || ElapsedMs > 0 || Thinking.Length > 0 || Tools is { Count: > 0 };
+    public bool HasContent => Model.Length > 0 || ElapsedMs > 0 || Thinking.Length > 0 || Tools is { Count: > 0 } || Images is { Count: > 0 };
 }
 
 /// <summary>
@@ -210,7 +215,8 @@ public sealed class ChatHistoryStore(IPluginContext context)
                     .. (meta.Tools ?? []).Take(MaxToolCalls)
                        .Select(t => new StoredTool(t.Name, Truncate(t.Arguments, MaxToolResultChars),
                            Truncate(t.Result, MaxToolResultChars)))
-                ]);
+                ],
+                [.. (meta.Images ?? []).Where(GeneratedImageStore.IsValidReference).Take(GeneratedImageStore.MaxImagesPerTurn)]);
             await series.WriteAsync(new(_clock.Next(),
                 new Dictionary<string, string> { [ConversationTag] = conversationId },
                 new Dictionary<string, TimeSeriesValue>
@@ -471,7 +477,8 @@ public sealed class ChatHistoryStore(IPluginContext context)
                 }
                 result[(int)point.Integer("seq")] = new ChatTurnMeta(
                     stored.Model ?? "", stored.ElapsedMs, stored.Thinking ?? "", stored.ThinkingMs,
-                    [.. (stored.Tools ?? []).Select(t => new ChatToolCall(t.Name ?? "", t.Arguments ?? "", t.Result ?? ""))]);
+                    [.. (stored.Tools ?? []).Select(t => new ChatToolCall(t.Name ?? "", t.Arguments ?? "", t.Result ?? ""))],
+                    stored.Images is null ? null : [.. stored.Images.Where(GeneratedImageStore.IsValidReference).Take(GeneratedImageStore.MaxImagesPerTurn)]);
             }
         }
         catch (Exception ex)
@@ -483,7 +490,8 @@ public sealed class ChatHistoryStore(IPluginContext context)
     }
 
     // 落盘用的形状(与对外的记录分开:对外那套将来可以改,存量 JSON 不受影响)
-    private sealed record StoredMeta(string? Model, long ElapsedMs, string? Thinking, long ThinkingMs, StoredTool[]? Tools);
+    private sealed record StoredMeta(string? Model, long ElapsedMs, string? Thinking, long ThinkingMs, StoredTool[]? Tools,
+        ChatGeneratedImage[]? Images = null);
 
     private sealed record StoredTool(string? Name, string? Arguments, string? Result);
 

@@ -2981,3 +2981,21 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **集成后的全量**(覆盖 §250 – §269 全部):本地 dev @ 1a61038c,Debug 全解决方案 `-warnaserror` 0 警告;按 CI 口径 `scripts/ci/run-tests.sh`(排除 DockerIntegration / CrossPlatform / Interop,AI 插件三组 headless UI 分进程),14 个测试进程合计 **10240 通过 / 0 失败 / 54 跳过**(跳过的都是平台条件早退)—— `VelaShell.Tests` 3044、Core 1397、Infrastructure 1076、Ssh 1449、Terminal 638、RenderTests 9、XServer 528、Presentation 103、Controls 31、Sudo.Kernel 11、Plugin.Ai 1251 + 309 + 198 + 196。Docker 端到端这一轮集成之后没跑(各组自己跑过的写在各节里);只在 Windows 上跑,macOS / Linux 等推上去之后的 CI。
 
 **文档**:velashell-docs `host/交互与界面规格` §4B.1「+」、`host/dock-replacement-plan` §2.3 `AddDocument`(zh / en);仓库内 `manual.md` / `manual.en.md` §8.1。
+
+## 270. 2026-10-27 AI 插件:对话内作图与编辑、图片存档与剪贴板输入
+
+**来由**:手动添加 `gpt-image-2` 后图片不能显示并报空回复。原请求装配没有 Images 通道,回复渲染与非空判断也不处理图片;另补用户要求的剪贴板图片输入。
+
+**改动**:底层 `OpenAiImages`、生成预览与存档保留;交互改成全局设置选择默认图片模型 `ImageModelId`,聊天模型使用 `generate_image` / `edit_image` 调用 `/images/generations` / `/images/edits`,不切顶栏聊天模型。聊天仅开放图片工具、计划不开放、Agent可用;图片失败不自动重发或换服务,工具账本复用已完成CallId。图片ID只在所属对话有效,输入附件与生成图存档后可多轮编辑和历史续图,模型不能借工具读任意本地路径。Ask/ReadOnlyAuto显示模型、目标、参考图数量与提示词审批,Bypass按既有语义跳过。默认模型失效明确报错、不偷偷fallback。原直接选图片模型文生图仍兼容;生成字节/类型/数量限制、探活不收费、保存按钮与剪贴板4件/5MiB不变,IM本轮不接图片工具。仅借鉴cc-haha能力分层,未复制其代码或提示词。
+
+**验证**:对话作图集成全量回归 1999 条通过、0 失败、0 跳过;图片/剪贴板/设置页/五语定向回归 232 条通过;最后补工具回执 JSON 类型防护后核心定向回归 19 条通过。宿主颜色令牌与 HeadlessDispatch 门禁 13 条通过。插件 Debug 非增量 `-warnaserror` 构建 0 警告/0 错误,双语手册与开发文档相对文件链接检查通过。额外启用 `EnforceCodeStyleInBuild` 时仍受未改动传输字段的 IDE0044 与既有 Anthropic 初始化格式 IDE0055 阻塞,新增文件的格式问题已修正。真实计费端点、系统剪贴板及跨平台 GUI 未实测。
+
+**文档**:仓库 `manual.md` / `manual.en.md` §19.3,velashell-docs `zh|en/plugins/11-automation-and-ai.md` §1.9。
+
+## 271. 2026-10-28 AI 输入入口分离与图片悬浮操作
+
+**改动**:图片右下角同格 Grid 悬浮两个独立34px圆形图标浮钮（Lucide `image-down` 保存、`fullscreen` 大图）,无文字与共用底板;仅圆形表面半透明、图标保持清晰,悬停加深与键盘焦点环跟主题。原保存字节和选择器逻辑不变。预览走宿主二级窗口,按源PixelSize/屏幕缩放计算物理像素1:1,初始窗口贴合图片并限屏幕工作区;大图等比缩小完整显示、小图不放大。底部显示百分比,提供＋/−、100%、适应窗口,Ctrl滚轮/双击切换,适应模式随窗口改变重新计算,手动放大后可滚动。Esc/关闭退出;面板 Detach/视觉树移除与迟到打开都关闭并释放资源,加载失败提示而不崩对话。输入前缀按维护者后续要求分离为 `@` 工具(`@imagegen` / `@imageedit`)、`#` 远端文件、`/` 本地命令;不兼容旧 `@/路径`。工具菜单无 SSH 也可用且不探测供应商,保留自然对话生图;井号支持路径补全/引号/芯片/整块删除。命令目前仅 `/clear` 新建但不删历史、`/resume` 历史选择或按ID恢复/标题筛选、`/help`,未知命令留本地、忙态不换会话;不宣称完整Claude Code CLI兼容。文件补全在工作目录await后补代次校验,防旧请求覆盖新工具/命令菜单。
+
+**验证**:插件全量 2006 通过/0失败/0跳过;新语法、预览、自然作图与五语定向31通过,颜色令牌/HeadlessDispatch门禁13通过。圆形图标浮钮调整后定向16通过（断言无文字/无共用底板、34px圆形、底面透明度、两枚Lucide几何与弹窗行为）,Debug非增量 `-warnaserror` 0警告/0错误;预览尺寸/缩放改动后另16条定向通过（包含横竖大图、高DPI、初始尺寸、实际比例、100%/适应切换与视口变化）,主题/HeadlessDispatch13条通过;未重复全量。真实GUI/系统剪贴板和计费供应商未实测。
+
+**文档**:手册中英§19.3、插件README;velashell-docs 中英 `plugins/11-automation-and-ai.md` §1.9 与 STATUS。

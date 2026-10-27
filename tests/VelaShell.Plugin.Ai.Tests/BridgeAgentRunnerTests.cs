@@ -34,6 +34,22 @@ public sealed class BridgeAgentRunnerTests
     }
 
     [TestMethod]
+    public async Task ImageModel_IsRejectedBeforeAnyBillableRequest()
+    {
+        using var context = new TestPluginContext();
+        var provider = new AiProvider
+        {
+            BaseUrl = "http://127.0.0.1:1/v1", DefaultProtocol = ChatProtocol.OpenAiImages,
+            Models = [new AiModelConfig { Model = "image-2" }]
+        };
+        await new AiSettingsStore(context).SaveAsync(new AiSettings
+        { Providers = [provider], ActiveModelId = provider.Models[0].Id });
+        BridgeTurn turn = await Create(context).RunAsync(new BridgeConversation("ch1", "chat-1"),
+            new BridgeSettings(), Message(), Deny, English, null, null, CancellationToken.None);
+        Assert.AreEqual(English["ImageDesktopOnly"], turn.Text);
+    }
+
+    [TestMethod]
     public async Task EmptyModelSteps_ExhaustSharedRecovery_WithLocalizedError()
     {
         await using var endpoint = new SseStub("data: [DONE]\n\n");

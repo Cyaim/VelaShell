@@ -81,9 +81,30 @@ public partial class ChatPanelView
     {
         string text = InputBox.Text ?? "";
         int caret = Math.Clamp(InputBox.CaretOffset, 0, text.Length);
-        if (!FileReference.TryFindToken(text, caret, out int start, out _, out string reference))
+        if (TryShowCommandPicker(text, caret)) return;
+        bool toolToken = TryFindToolToken(text, caret, out int toolStart, out string toolQuery);
+        int start;
+        string reference;
+        if (toolToken)
+        {
+            start = toolStart;
+            reference = toolQuery;
+        }
+        else if (!FileReference.TryFindToken(text, caret, out start, out _, out reference))
         {
             CloseFilePicker();
+            return;
+        }
+        _fileTokenStart = start;
+        int generation = ++_pickerGeneration;
+        _commandCandidates.Clear();
+        UpdateImageMentionCandidates(toolToken ? reference : "/");
+        if (toolToken)
+        {
+            _fileCandidates.Clear();
+            _fileIndex = 0;
+            if (_imageMentionCandidates.Count > 0) RenderFileCandidates("");
+            else CloseFilePicker();
             return;
         }
         if (SelectedSessionId is not { } sessionId)
@@ -91,14 +112,13 @@ public partial class ChatPanelView
             CloseFilePicker();
             return;
         }
-        _fileTokenStart = start;
-        int generation = ++_pickerGeneration;
 
         _fileCts ??= new();
         CancellationToken cancellationToken = _fileCts.Token;
         try
         {
             string cwd = await ResolveWorkingDirectoryAsync(sessionId, cancellationToken);
+            if (generation != _pickerGeneration) return;
             (string directory, string filter) = FileReference.Split(reference, cwd);
 
             // 只是过滤词变了(用户在同一个目录里接着敲文件名)——缓存里就有,本地筛,不碰网络。
@@ -184,12 +204,13 @@ public partial class ChatPanelView
     private void RenderFileCandidates(string directory)
     {
         FileList.Children.Clear();
-        FilePopupHeader.Text = _fileCandidates.Count == 0
-            ? _loc.F("FilePickerEmpty", directory)
-            : _loc.F("FilePickerHeader", directory);
+        FilePopupHeader.Text = _imageMentionCandidates.Count > 0 ? _loc["ImageMentionHeader"]
+            : _fileCandidates.Count == 0 ? _loc.F("FilePickerEmpty", directory) : _loc.F("FilePickerHeader", directory);
+        for (int i = 0; i < _imageMentionCandidates.Count; i++)
+            FileList.Children.Add(BuildImageMentionRow(_imageMentionCandidates[i], i));
         for (int i = 0; i < _fileCandidates.Count; i++)
         {
-            FileList.Children.Add(BuildCandidateRow(_fileCandidates[i], i));
+            FileList.Children.Add(BuildCandidateRow(_fileCandidates[i], i + _imageMentionCandidates.Count));
         }
         FilePopup.IsOpen = true;
         // 弹层不接管键盘:万一它抢到了焦点,立刻还给输入框,否则用户就打不了字了
@@ -262,14 +283,14 @@ public partial class ChatPanelView
     {
         switch (e.Key)
         {
-            case Key.Down or Key.Up when _fileCandidates.Count > 0:
+            case Key.Down or Key.Up when PickerCandidateCount > 0:
                 _fileIndex = e.Key == Key.Down
-                    ? (_fileIndex + 1) % _fileCandidates.Count
-                    : (_fileIndex - 1 + _fileCandidates.Count) % _fileCandidates.Count;
+                    ? (_fileIndex + 1) % PickerCandidateCount
+                    : (_fileIndex - 1 + PickerCandidateCount) % PickerCandidateCount;
                 HighlightCandidate();
                 e.Handled = true;
                 return true;
-            case Key.Enter or Key.Tab when _fileCandidates.Count > 0:
+            case Key.Enter or Key.Tab when PickerCandidateCount > 0:
                 AcceptCandidate(_fileIndex);
                 e.Handled = true;
                 return true;
@@ -289,6 +310,17 @@ public partial class ChatPanelView
     /// </summary>
     private void AcceptCandidate(int index)
     {
+        if (_commandCandidates.Count > 0)
+        {
+            AcceptCommand(index);
+            return;
+        }
+        if (index >= 0 && index < _imageMentionCandidates.Count)
+        {
+            AcceptImageMention(index);
+            return;
+        }
+        index -= _imageMentionCandidates.Count;
         if (index < 0 || index >= _fileCandidates.Count || _fileTokenStart < 0)
         {
             return;
@@ -303,8 +335,8 @@ public partial class ChatPanelView
         string path = entry.IsDirectory ? entry.FullPath.TrimEnd('/') + "/" : entry.FullPath;
         bool quote = FileReference.NeedsQuoting(path);
         string replacement = quote
-            ? entry.IsDirectory ? $"@\"{path}" : $"@\"{path}\" "
-            : entry.IsDirectory ? $"@{path}" : $"@{path} ";
+            ? entry.IsDirectory ? $"#\"{path}" : $"#\"{path}\" "
+            : entry.IsDirectory ? $"#{path}" : $"#{path} ";
 
         _pickerSuspended = true;
         try
@@ -335,6 +367,8 @@ public partial class ChatPanelView
         _pickerGeneration++;
         FilePopup.IsOpen = false;
         _fileCandidates.Clear();
+        _imageMentionCandidates.Clear();
+        _commandCandidates.Clear();
         _fileTokenStart = -1;
     }
 
@@ -360,6 +394,25 @@ public partial class ChatPanelView
         }
         int caret = Math.Clamp(InputBox.CaretOffset, 0, text.Length);
         int start, end;
+        int mentionEnd = caret > 0 && text[caret - 1] == ' ' ? caret - 1 : caret;
+        int mentionStart = mentionEnd > 0 ? text.LastIndexOf('@', mentionEnd - 1) : -1;
+        if (e.Key == Key.Back && TryImageMentionAt(text, mentionStart, out int mentionLength, out _)
+            && mentionStart + mentionLength == mentionEnd)
+        {
+            InputBox.Document.Remove(mentionStart, caret - mentionStart);
+            InputBox.CaretOffset = mentionStart;
+            CloseFilePicker();
+            e.Handled = true;
+            return true;
+        }
+        if (e.Key == Key.Delete && TryImageMentionAt(text, caret, out int nextLength, out _))
+        {
+            int count = nextLength + (caret + nextLength < text.Length && text[caret + nextLength] == ' ' ? 1 : 0);
+            InputBox.Document.Remove(caret, count);
+            CloseFilePicker();
+            e.Handled = true;
+            return true;
+        }
         if (e.Key == Key.Back)
         {
             if (!FileReference.TryFindCompletedReferenceBefore(text, caret, out start))
@@ -397,7 +450,7 @@ public partial class ChatPanelView
     /// <summary>光标处若正好起头一条已完成引用,返回它的右边界(含尾空格);否则 -1。</summary>
     private static int FindCompletedReferenceEnd(string text, int caret)
     {
-        if (caret >= text.Length || text[caret] != '@')
+        if (caret >= text.Length || text[caret] != '#')
         {
             return -1;
         }
@@ -448,6 +501,8 @@ public partial class ChatPanelView
     private async Task<(string ModelText, IReadOnlyList<string> Attached, IReadOnlyList<string> Failed)>
         ResolveAttachmentsAsync(string text, CancellationToken cancellationToken)
     {
+        text = ExpandImageMentions(text, out bool imageMentioned);
+        if (imageMentioned && !CanMentionImages) throw new InvalidOperationException(_loc["ImageMentionUnavailable"]);
         List<string> references = FileReference.Parse(text);
         if (references.Count == 0)
         {

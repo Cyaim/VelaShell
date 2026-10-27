@@ -33,6 +33,7 @@ public partial class ChatPanelView
 
         // ---------- 历史与上下文 ----------
         public List<ChatMessage> History { get; } = [];
+        public ConversationImages? Images;
         public int TurnHistoryStart;
         public string ConversationId = ChatHistoryStore.NewConversationId();
         public DateTimeOffset ConversationStartedAt = DateTimeOffset.UtcNow;

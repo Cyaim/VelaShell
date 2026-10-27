@@ -123,6 +123,10 @@ public sealed class BridgeAgentRunner(
         {
             return new BridgeTurn(loc["BridgeNoModel"], "", TimeSpan.Zero, 0);
         }
+        if (AiSettingsStore.IsImageModel(model))
+        {
+            return new BridgeTurn(loc["ImageDesktopOnly"], "", TimeSpan.Zero, 0);
+        }
         ChatMode mode = conversation.ModeOverride ?? grant?.Mode ?? bridge.Mode;
         ApprovalMode approval = grant?.Approval ?? bridge.Approval;
         // 不限范围时这里是 null,于是"全部"与"没有范围这回事"走同一条路(见 SessionScope.Resolve)

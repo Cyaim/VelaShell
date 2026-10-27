@@ -3,10 +3,10 @@ using System.Text;
 namespace VelaShell.Plugin.Ai.Chat;
 
 /// <summary>
-/// 输入框里 <c>@</c> 文件引用的语法(与界面无关的纯逻辑,便于单测)。
-/// 规则:<c>@</c> 必须在行首或空白之后;含空格的路径写成 <c>@"…"</c>,
+/// 输入框里 <c>#</c> 文件引用的语法(与界面无关的纯逻辑,便于单测)。
+/// 规则:<c>#</c> 必须在行首或空白之后;含空格的路径写成 <c>#"…"</c>,
 /// 目录下钻期间开引号可以一直敞着(还没输完);只认绝对路径与 <c>~</c> 开头,
-/// 因此 <c>@someone</c> 这类提及不会被误当成文件。
+/// 因此 <c>#someone</c> 这类提及不会被误当成文件。
 /// </summary>
 public static class FileReference
 {
@@ -15,9 +15,9 @@ public static class FileReference
     /// </summary>
     /// <param name="text">输入框全文。</param>
     /// <param name="caret">光标位置。</param>
-    /// <param name="start"><c>@</c> 在全文中的下标。</param>
-    /// <param name="quoted">是否是 <c>@"</c> 形式。</param>
-    /// <param name="token"><c>@</c>(与开引号)之后到光标之间的内容。</param>
+    /// <param name="start"><c>#</c> 在全文中的下标。</param>
+    /// <param name="quoted">是否是 <c>#"</c> 形式。</param>
+    /// <param name="token"><c>#</c>(与开引号)之后到光标之间的内容。</param>
     /// <returns>光标是否正处在一次引用里。</returns>
     public static bool TryFindToken(string text, int caret, out int start, out bool quoted, out string token)
     {
@@ -34,8 +34,8 @@ public static class FileReference
             }
             if (c == '"')
             {
-                // token 里唯一允许的引号是 @" 的开引号(下钻含空格路径时它一直敞着)
-                if (i >= 1 && text[i - 1] == '@' && (i - 1 == 0 || char.IsWhiteSpace(text[i - 2])))
+                // token 里唯一允许的引号是 #" 的开引号(下钻含空格路径时它一直敞着)
+                if (i >= 1 && text[i - 1] == '#' && (i - 1 == 0 || char.IsWhiteSpace(text[i - 2])))
                 {
                     start = i - 1;
                     quoted = true;
@@ -43,7 +43,7 @@ public static class FileReference
                 }
                 return false;
             }
-            if (c == '@' && (i == 0 || char.IsWhiteSpace(text[i - 1])))
+            if (c == '#' && (i == 0 || char.IsWhiteSpace(text[i - 1])))
             {
                 start = i;
                 break;
@@ -67,21 +67,21 @@ public static class FileReference
     /// </summary>
     /// <remarks>
     /// 这正是 Claude Code / OpenCode 里选中文件后显示成一枚芯片的交互:块是原子的。
-    /// 除了顺手,它还直接决定性能:啃字符会让每一次退格都变成一次新的 <c>@</c> 目录列举
+    /// 除了顺手,它还直接决定性能:啃字符会让每一次退格都变成一次新的 <c>#</c> 目录列举
     /// (每次都要发 SFTP 请求、并取消上一次),长路径退格因此又卡又刷屏。
     ///
     /// "已完成"的判据只有两种形态,和 <c>AcceptCandidate</c> 落笔的形态一一对应:
     /// <list type="bullet">
-    ///   <item>带闭合引号:<c>@"/var/log/sys log"</c>(可再跟一个尾空格)</item>
-    ///   <item>不带引号、以一个尾空格收尾:<c>@/var/log/syslog␣</c></item>
+    ///   <item>带闭合引号:<c>#"/var/log/sys log"</c>(可再跟一个尾空格)</item>
+    ///   <item>不带引号、以一个尾空格收尾:<c>#/var/log/syslog␣</c></item>
     /// </list>
     /// 还在敲、尚未落定的 token(既没闭引号也没尾空格)不算块 —— 那时退格照常一个字符,
     /// 用户正在改自己刚打错的那几位。路径同样必须以 <c>/</c> 或 <c>~</c> 开头,
-    /// 于是 <c>@某人 </c> 这类提及不会被整段吞掉。
+    /// 于是 <c>#某人 </c> 这类提及不会被整段吞掉。
     /// </remarks>
     /// <param name="text">输入框全文。</param>
     /// <param name="caret">光标位置(块的右边界)。</param>
-    /// <param name="start">块在全文中的起始下标(<c>@</c> 所在处)。</param>
+    /// <param name="start">块在全文中的起始下标(<c>#</c> 所在处)。</param>
     /// <returns>光标左侧是否正好是一条已完成引用。</returns>
     public static bool TryFindCompletedReferenceBefore(string text, int caret, out int start)
     {
@@ -113,15 +113,15 @@ public static class FileReference
             }
             if (quoted)
             {
-                // 引号形态:一路回扫到开引号 @" 为止,中间允许空格
+                // 引号形态:一路回扫到开引号 #" 为止,中间允许空格
                 if (c == '"')
                 {
-                    return i >= 1 && text[i - 1] == '@' && IsReferenceStart(text, i - 1)
+                    return i >= 1 && text[i - 1] == '#' && IsReferenceStart(text, i - 1)
                         && Accept(text, i - 1, i + 1, end - 1, ref start);
                 }
                 continue;
             }
-            if (c == '@')
+            if (c == '#')
             {
                 return IsReferenceStart(text, i) && Accept(text, i, i + 1, end, ref start);
             }
@@ -149,7 +149,7 @@ public static class FileReference
         }
     }
 
-    /// <summary><c>@</c> 只有在行首或空白之后才起头一条引用(邮箱、@某人 里的 @ 不算)。</summary>
+    /// <summary><c>#</c> 只有在行首或空白之后才起头一条引用(邮箱、#某人 里的 # 不算)。</summary>
     private static bool IsReferenceStart(string text, int at) => at == 0 || char.IsWhiteSpace(text[at - 1]);
 
     /// <summary>
@@ -162,14 +162,14 @@ public static class FileReference
     /// 光标可以正常停在芯片后面。
     /// </remarks>
     /// <param name="text">全文。</param>
-    /// <param name="index">待判定的位置(应当是 <c>@</c>)。</param>
-    /// <param name="length">引用本体长度(<c>@</c> 起,含闭引号,不含收尾空白)。</param>
+    /// <param name="index">待判定的位置(应当是 <c>#</c>)。</param>
+    /// <param name="length">引用本体长度(<c>#</c> 起,含闭引号,不含收尾空白)。</param>
     /// <param name="path">引用到的远端路径(不含引号)。</param>
     public static bool TryFindCompletedReferenceAt(string text, int index, out int length, out string path)
     {
         length = 0;
         path = "";
-        if (index < 0 || index >= text.Length || text[index] != '@' || !IsReferenceStart(text, index))
+        if (index < 0 || index >= text.Length || text[index] != '#' || !IsReferenceStart(text, index))
         {
             return false;
         }
@@ -232,7 +232,7 @@ public static class FileReference
         var paths = new List<string>();
         for (int i = 0; i < text.Length; i++)
         {
-            if (text[i] != '@' || (i > 0 && !char.IsWhiteSpace(text[i - 1])))
+            if (text[i] != '#' || (i > 0 && !char.IsWhiteSpace(text[i - 1])))
             {
                 continue;
             }
@@ -258,7 +258,7 @@ public static class FileReference
                 path = text[start..end];
                 i = end;
             }
-            // 句末标点不属于路径(“看看 @/etc/hosts。”)
+            // 句末标点不属于路径(“看看 #/etc/hosts。”)
             path = path.TrimEnd('.', ',', ';', ':', ')');
             if ((path.StartsWith('/') || path.StartsWith('~')) && !paths.Contains(path, StringComparer.Ordinal))
             {
@@ -285,7 +285,7 @@ public static class FileReference
     }
 
     /// <summary>
-    /// 把文本里每条<b>已完成</b>引用的长路径换成短名(<c>@/root/abc.txt</c> → <c>@abc.txt</c>),
+    /// 把文本里每条<b>已完成</b>引用的长路径换成短名(<c>#/root/abc.txt</c> → <c>#abc.txt</c>),
     /// 供消息气泡显示 —— 用户在输入框里看到的就是短名,发出去后不该突然变回长路径。
     /// </summary>
     /// <remarks>送给模型的那份文本不走这里:模型需要完整路径。</remarks>
@@ -294,9 +294,9 @@ public static class FileReference
         var builder = new StringBuilder(text.Length);
         for (int i = 0; i < text.Length; i++)
         {
-            if (text[i] == '@' && TryFindCompletedReferenceAt(text, i, out int length, out string path))
+            if (text[i] == '#' && TryFindCompletedReferenceAt(text, i, out int length, out string path))
             {
-                builder.Append('@').Append(DisplayName(path));
+                builder.Append('#').Append(DisplayName(path));
                 i += length - 1;
                 continue;
             }
@@ -315,15 +315,15 @@ public static class FileReference
 
     /// <summary>
     /// 未加引号的路径到哪儿为止:空白,或任何 CJK/全角/表情区字符(U+2E80 以上)。
-    /// 中文句子里的「@/etc/hosts,然后…」标点后不带空格,不在这里断开就会把整句吞进路径;
-    /// 代价是<b>非 ASCII 的路径必须写成 <c>@"…"</c></b> —— 补全插入时会自动加引号。
+    /// 中文句子里的「#/etc/hosts,然后…」标点后不带空格,不在这里断开就会把整句吞进路径;
+    /// 代价是<b>非 ASCII 的路径必须写成 <c>#"…"</c></b> —— 补全插入时会自动加引号。
     /// </summary>
     public static bool IsTokenBreak(char c) => char.IsWhiteSpace(c) || c >= '\u2E80';
 
-    /// <summary>该路径在插入输入框时是否需要 <c>@"…"</c> 包裹(含空格或非 ASCII)。</summary>
+    /// <summary>该路径在插入输入框时是否需要 <c>#"…"</c> 包裹(含空格或非 ASCII)。</summary>
     public static bool NeedsQuoting(string path) => path.Any(IsTokenBreak);
 
-    /// <summary>位置 <paramref name="index" /> 是否落在一个未闭合的 <c>@"</c> 引用里。</summary>
+    /// <summary>位置 <paramref name="index" /> 是否落在一个未闭合的 <c>#"</c> 引用里。</summary>
     private static bool HasOpenQuote(string text, int index)
     {
         for (int i = index; i >= 1; i--)
@@ -332,7 +332,7 @@ public static class FileReference
             {
                 return false;
             }
-            if (text[i] == '"' && text[i - 1] == '@' && (i - 1 == 0 || char.IsWhiteSpace(text[i - 2])))
+            if (text[i] == '"' && text[i - 1] == '#' && (i - 1 == 0 || char.IsWhiteSpace(text[i - 2])))
             {
                 return true;
             }

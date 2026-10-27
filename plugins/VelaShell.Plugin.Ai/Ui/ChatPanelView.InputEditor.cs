@@ -122,7 +122,7 @@ public partial class ChatPanelView
             int endOffset = CurrentContext.VisualLine.LastDocumentLine.EndOffset;
             for (int offset = startOffset; offset < endOffset; offset++)
             {
-                if (CurrentContext.Document.GetCharAt(offset) != '@')
+                if (CurrentContext.Document.GetCharAt(offset) is not ('@' or '#'))
                 {
                     continue;
                 }
@@ -141,7 +141,8 @@ public partial class ChatPanelView
             {
                 return null;
             }
-            return new FormattedTextElement("@" + FileReference.DisplayName(path), length);
+            char trigger = CurrentContext.Document.GetCharAt(offset);
+            return new FormattedTextElement(trigger + FileReference.DisplayName(path), length);
         }
 
         /// <summary>读取 <paramref name="offset" /> 处的引用(按整行取文本,规则与发送/删除同源)。</summary>
@@ -151,6 +152,12 @@ public partial class ChatPanelView
             path = "";
             DocumentLine line = CurrentContext.Document.GetLineByOffset(offset);
             string text = CurrentContext.Document.GetText(line);
+            if (TryImageMentionAt(text, offset - line.Offset, out int mentionLength, out _))
+            {
+                length = mentionLength;
+                path = text.Substring(offset - line.Offset + 1, mentionLength - 1);
+                return true;
+            }
             if (!FileReference.TryFindCompletedReferenceAt(text, offset - line.Offset, out int len, out string found))
             {
                 return false;
@@ -178,11 +185,9 @@ public partial class ChatPanelView
             IBrush background = owner.ResolveBrush("VelaAccentDim", Color.FromArgb(0x30, 0xBD, 0x93, 0xF9));
             for (int i = 0; i < text.Length; i++)
             {
-                if (text[i] != '@'
-                    || !FileReference.TryFindCompletedReferenceAt(text, i, out int length, out _))
-                {
-                    continue;
-                }
+                if (text[i] is not ('@' or '#')) continue;
+                if (!FileReference.TryFindCompletedReferenceAt(text, i, out int length, out _)
+                    && !TryImageMentionAt(text, i, out length, out _)) continue;
                 ChangeLinePart(line.Offset + i, line.Offset + i + length, element =>
                 {
                     element.TextRunProperties.SetForegroundBrush(foreground);

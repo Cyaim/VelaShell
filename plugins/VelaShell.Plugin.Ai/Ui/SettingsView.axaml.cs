@@ -117,7 +117,7 @@ public sealed class ProviderNavItem(
 public partial class SettingsView : UserControl
 {
     private static readonly string[] ProtocolLabels =
-        ["OpenAI Chat Completions", "OpenAI Responses", "Anthropic Messages"];
+        ["OpenAI Chat Completions", "OpenAI Responses", "Anthropic Messages", "OpenAI Images"];
 
     /// <summary>思考档位下拉的文案键,顺序与 <see cref="ReasoningLevel" /> 一一对应。</summary>
     private static readonly string[] ReasoningKeys =
@@ -1932,6 +1932,11 @@ public partial class SettingsView : UserControl
             return;
         }
 
+        if (AiSettingsStore.IsImageModel(live))
+        {
+            StatusText.Text = _loc["ImageProbeSkipped"];
+            return;
+        }
         CancelKeyProbe(row);
         int run = row.ProbeRun;
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_keyEditorCts.Token, batchToken);
@@ -2698,6 +2703,11 @@ public partial class SettingsView : UserControl
         }
 
         candidate = FreezeProbeModel(candidate);
+        if (AiSettingsStore.IsImageModel(candidate))
+        {
+            StatusText.Text = _loc["ImageProbeSkipped"];
+            return;
+        }
         ResolvedModel? savedCredentialModel = _settings.FindModel(compareId);
         KeyRequestSnapshot? savedRequest = savedCredentialModel is null ? null : KeyRequestSnapshot.Capture(savedCredentialModel);
         long savedProviderVersion = _store.ProviderConfigurationVersion(provider);

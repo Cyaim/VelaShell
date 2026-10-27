@@ -83,7 +83,7 @@ public partial class ChatPanelView
         OAuthAccountSnapshot? verifiedAccount, long verifiedProviderVersion, string? selectedKeyId)
     {
         Conversation conversation = Cur;
-        if (!_settings.SuggestFollowUps || replyText.Trim().Length == 0
+        if (AiSettingsStore.IsImageModel(provider) || !_settings.SuggestFollowUps || replyText.Trim().Length == 0
             || conversation.ConversationId != conversationId || !IsForeground || Busy)
         {
             return;

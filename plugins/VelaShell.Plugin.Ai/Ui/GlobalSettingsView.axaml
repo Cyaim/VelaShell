@@ -45,6 +45,15 @@
           </StackPanel>
         </Border>
 
+        <TextBlock x:Name="SectionImageTitle" Classes="section-title" Margin="0,6,0,0" />
+        <Border Classes="section">
+          <StackPanel Spacing="6">
+            <TextBlock x:Name="ImageModelLabel" Classes="label" />
+            <ComboBox x:Name="ImageModelCombo" FontSize="{DynamicResource VelaFontSize12}" />
+            <TextBlock x:Name="ImageModelHintText" Classes="hint" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
         <!-- ═══ 网络检索 ═══ -->
         <TextBlock x:Name="SectionWebTitle" Classes="section-title" Margin="0,6,0,0" />
         <Border Classes="section">

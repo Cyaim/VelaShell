@@ -57,16 +57,37 @@ public partial class GlobalSettingsView : UserControl
 
     private void ConfirmProviderRequests() => _confirmedProviderRequests = [.. _settings.Providers.Select(provider => (provider.Id, provider, _store.ProviderConfigurationVersion(provider)))];
 
+    private sealed record ImageModelOption(string? Id, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    private string? SelectedImageModelId => (ImageModelCombo.SelectedItem as ImageModelOption)?.Id;
+
+    private void RebuildImageModels(string? selectedId)
+    {
+        var options = new List<ImageModelOption> { new(null, _loc["ImageGenerationNone"]) };
+        options.AddRange(_settings.ResolveModels().Where(AiSettingsStore.IsImageModel)
+            .Select(model => new ImageModelOption(model.Id,
+                string.IsNullOrWhiteSpace(model.ProviderName) ? model.Name : $"{model.ProviderName} · {model.Name}")));
+        if (selectedId is not null && options.All(option => option.Id != selectedId))
+            options.Add(new ImageModelOption(selectedId, _loc.F("ImageGenerationMissing", selectedId)));
+        ImageModelCombo.ItemsSource = options;
+        ImageModelCombo.SelectedItem = options.First(option => option.Id == selectedId);
+    }
+
     private Dictionary<Control, object?> CaptureForm() => new Control[]
     {
         SystemPromptBox, CompactContextCheck, SuggestFollowUpsCheck, WebEnabledCheck,
-        WebSearxUrlBox, WebMaxResultsBox, WebNativeCheck, WebPrivateCheck, WebAllowedHostsBox
+        WebSearxUrlBox, WebMaxResultsBox, WebNativeCheck, WebPrivateCheck, WebAllowedHostsBox,
+        ImageModelCombo
     }.Append(FailoverAcrossAccountsCheck).ToDictionary(control => control, ReadFormValue);
 
     private static object? ReadFormValue(Control control) => control switch
     {
         TextBox text => text.Text,
         CheckBox check => check.IsChecked,
+        ComboBox combo => (combo.SelectedItem as ImageModelOption)?.Id,
         _ => null
     };
 
@@ -84,6 +105,7 @@ public partial class GlobalSettingsView : UserControl
         WebAllowedHostsBox.Text = web.AllowedPrivateHosts;
         UpdateWebVisibility();
         FailoverAcrossAccountsCheck.IsChecked = _settings.AutoFailoverAcrossAccounts;
+        RebuildImageModels(_settings.ImageModelId);
     }
 
     private async Task RecoverSettingsConflictAsync()
@@ -115,6 +137,7 @@ public partial class GlobalSettingsView : UserControl
         {
             if (control is TextBox text) text.Text = (string?)value;
             else if (control is CheckBox check) check.IsChecked = (bool?)value;
+            else if (control == ImageModelCombo) RebuildImageModels((string?)value);
         }
         if (!chainEdited)
         {
@@ -165,6 +188,12 @@ public partial class GlobalSettingsView : UserControl
         CompactContextHintText.Text = _loc["CompactContextHint"];
         SuggestFollowUpsCheck.Content = _loc["SuggestFollowUps"];
         SuggestFollowUpsHintText.Text = _loc["SuggestFollowUpsHint"];
+
+        SectionImageTitle.Text = _loc["SecImageGeneration"];
+        ImageModelLabel.Text = _loc["ImageGenerationModel"];
+        ImageModelHintText.Text = _loc["ImageGenerationHint"];
+        Avalonia.Automation.AutomationProperties.SetName(ImageModelCombo, _loc["ImageGenerationModel"]);
+        RebuildImageModels(SelectedImageModelId);
 
         SectionWebTitle.Text = _loc["SecWebSearch"];
         WebEnabledCheck.Content = _loc["WebEnabled"];
@@ -251,6 +280,7 @@ public partial class GlobalSettingsView : UserControl
             InvalidateProbeResults();
             ConfirmProviderRequests();
         }
+        RebuildImageModels(SelectedImageModelId);
         _chain.RemoveAll(e => _settings.FindModel(e.ModelId) is null);
         // 自动剔除死 ID 不是用户编辑；只同步这些删除，不吸收其它窗口的新链。
         _loadedChain = [.. _loadedChain.Where(id => _settings.FindModel(id) is not null)];
@@ -594,7 +624,7 @@ public partial class GlobalSettingsView : UserControl
             {
                 token.ThrowIfCancellationRequested();
                 ResolvedModel? model = _settings.FindModel(entry.ModelId);
-                if (model is null)
+                if (model is null || AiSettingsStore.IsImageModel(model))
                 {
                     continue;
                 }
@@ -789,6 +819,7 @@ public partial class GlobalSettingsView : UserControl
         {
             var draft = new AiSettings
             {
+                ImageModelId = SelectedImageModelId,
                 SystemPrompt = string.IsNullOrWhiteSpace(SystemPromptBox.Text) ? null : SystemPromptBox.Text,
                 CompactContext = CompactContextCheck.IsChecked == true,
                 SuggestFollowUps = SuggestFollowUpsCheck.IsChecked == true,

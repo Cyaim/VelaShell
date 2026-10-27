@@ -44,6 +44,11 @@ public static class HealthProbe
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(model);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (AiSettingsStore.IsImageModel(model))
+        {
+            return (new NotSupportedException("Image models cannot be tested without generating a potentially billable image."), "");
+        }
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(Timeout);
         UsageDetails? usage = null;

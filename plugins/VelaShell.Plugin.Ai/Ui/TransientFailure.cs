@@ -37,6 +37,7 @@ public static class TransientFailure
             TextContent text => !string.IsNullOrWhiteSpace(text.Text),
             TextReasoningContent reasoning => !string.IsNullOrWhiteSpace(reasoning.Text),
             FunctionCallContent or FunctionResultContent or ErrorContent => true,
+            DataContent data => data.HasTopLevelMediaType("image") && !data.Data.IsEmpty,
             _ => false
         }) || (ReasoningPeek.IsBlank(update)
             && ReasoningPeek.TryRead(update.RawRepresentation, out string peeked)

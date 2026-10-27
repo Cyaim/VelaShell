@@ -247,7 +247,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 TextEditor input = Find<TextEditor>(panel, "InputBox");
                 input.TextArea.Focus();
-                input.Text = "看看 @/etc/host";
+                input.Text = "看看 #/etc/host";
                 input.CaretOffset = input.Text.Length;
                 await PumpAsync();
 
@@ -259,7 +259,7 @@ public sealed partial class ChatPanelViewUiTests
                 window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
                 await PumpAsync();
 
-                Assert.AreEqual("看看 @/etc/hostname ", input.Text, "回车插入完整路径并补空格收尾");
+                Assert.AreEqual("看看 #/etc/hostname ", input.Text, "回车插入完整路径并补空格收尾");
                 Assert.IsFalse(popup.IsOpen, "选中文件后弹层收起");
                 Assert.IsEmpty(Find<StackPanel>(panel, "MessagesPanel").Children, "补全不该顺手把消息发出去");
             }
@@ -335,7 +335,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 TextEditor input = Find<TextEditor>(panel, "InputBox");
                 input.TextArea.Focus();
-                Type(input, "看看 @/etc/");
+                Type(input, "看看 #/etc/");
                 await PumpAsync();
 
                 Assert.IsTrue(Find<Popup>(panel, "FilePopup").IsOpen);
@@ -381,7 +381,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 TextEditor input = Find<TextEditor>(panel, "InputBox");
                 input.TextArea.Focus();
-                Type(input, "看看 @/etc/hostname ");
+                Type(input, "看看 #/etc/hostname ");
                 await PumpAsync();
                 int listings = context.FakeRemoteFs.ListDirectoryCalls;
 
@@ -395,11 +395,11 @@ public sealed partial class ChatPanelViewUiTests
                     "退格不该再引发列目录:删完已经不在引用里了");
 
                 // 还在敲、没落定的 token 仍按字符退格(用户在改自己刚打错的那几位)
-                Type(input, "看看 @/etc/hostn");
+                Type(input, "看看 #/etc/hostn");
                 await PumpAsync();
                 window.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.None);
                 await PumpAsync();
-                Assert.AreEqual("看看 @/etc/host", input.Text, "未落定的引用照常一个字符一个字符退");
+                Assert.AreEqual("看看 #/etc/host", input.Text, "未落定的引用照常一个字符一个字符退");
             }
             finally
             {
@@ -427,19 +427,19 @@ public sealed partial class ChatPanelViewUiTests
             {
                 TextEditor input = Find<TextEditor>(panel, "InputBox");
                 input.TextArea.Focus();
-                Type(input, "看看 @/root/abc.txt 这个");
+                Type(input, "看看 #/root/abc.txt 这个");
                 await PumpAsync();
                 input.TextArea.TextView.EnsureVisualLines();
 
-                Assert.AreEqual("看看 @/root/abc.txt 这个", input.Text, "文档里仍是全路径");
+                Assert.AreEqual("看看 #/root/abc.txt 这个", input.Text, "文档里仍是全路径");
                 List<FormattedTextElement> chips = ChipsOf(input);
                 Assert.HasCount(1, chips, "落定的引用应被替换成一枚芯片元素");
-                Assert.AreEqual("@/root/abc.txt".Length, chips[0].DocumentLength, "芯片正好覆盖整条引用");
+                Assert.AreEqual("#/root/abc.txt".Length, chips[0].DocumentLength, "芯片正好覆盖整条引用");
                 Assert.AreEqual(1, chips[0].VisualLength,
                     "芯片只占一个视觉列:光标整枚跨过,与整块退格的语义一致");
 
                 // 还在敲、没落定的那条不做芯片:那时用户要看清自己敲的每个字符
-                Type(input, "看看 @/root/ab");
+                Type(input, "看看 #/root/ab");
                 await PumpAsync(5);
                 input.TextArea.TextView.EnsureVisualLines();
                 Assert.IsEmpty(ChipsOf(input));
@@ -476,7 +476,7 @@ public sealed partial class ChatPanelViewUiTests
                 input.TextArea.TextView.EnsureVisualLines();
                 double plain = input.TextArea.TextView.VisualLines[0].Height;
 
-                Type(input, "@/root/.bashrc 为我简单解释下这个文件的内容");
+                Type(input, "#/root/.bashrc 为我简单解释下这个文件的内容");
                 await PumpAsync(5);
                 input.TextArea.TextView.EnsureVisualLines();
                 double withChip = input.TextArea.TextView.VisualLines[0].Height;
@@ -518,7 +518,7 @@ public sealed partial class ChatPanelViewUiTests
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
-                panel.SendExternal("@/root/.bashrc 为我**简单**解释下这个文件");
+                panel.SendExternal("#/root/.bashrc 为我**简单**解释下这个文件");
                 await PumpAsync();
 
                 Border bubble = Find<StackPanel>(panel, "MessagesPanel").Children

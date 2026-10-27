@@ -23,6 +23,48 @@
   <StreamGeometry x:Key="AiIcon.pencil">M16 3l5 5 M4 15l12-12a2 2 0 0 1 5 5L9 20l-6 1 1-6Z</StreamGeometry>
   <StreamGeometry x:Key="AiIcon.minus">M5 12h14</StreamGeometry>
 
+  <StreamGeometry x:Key="AiIcon.image-down">M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21 M14 19l3 3v-5.5 M17 22l3-3 M11 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0</StreamGeometry>
+  <StreamGeometry x:Key="AiIcon.fullscreen">M3 7V5a2 2 0 0 1 2-2h2 M17 3h2a2 2 0 0 1 2 2v2 M21 17v2a2 2 0 0 1-2 2h-2 M7 21H5a2 2 0 0 1-2-2v-2 M8 8h8a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z</StreamGeometry>
+
+  <!-- Independent circular image actions: only the surface fades, never the icon. -->
+  <ControlTheme x:Key="AiImageFloatingActionTheme" TargetType="Button">
+    <Setter Property="Width" Value="34" />
+    <Setter Property="Height" Value="34" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="17" />
+    <Setter Property="Background" Value="{DynamicResource VelaBgSurface}" />
+    <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource VelaBorderSecondary}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid>
+          <Border Name="PART_Surface" CornerRadius="17" Opacity="0.25"
+                  Background="{TemplateBinding Background}" />
+          <Border Name="PART_FocusRing" CornerRadius="17" BorderThickness="1"
+                  BorderBrush="{DynamicResource VelaAccent}" IsVisible="False" />
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover /template/ Border#PART_Surface">
+      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Border#PART_FocusRing">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="^:pressed /template/ Border#PART_Surface">
+      <Setter Property="Opacity" Value="0.85" />
+      <Setter Property="Background" Value="{DynamicResource VelaBgActive}" />
+    </Style>
+  </ControlTheme>
+
   <!-- 设置页左栏的两层层级:供应商 = 云,模型 = 方块 -->
   <StreamGeometry x:Key="AiIcon.cloud">M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z</StreamGeometry>
   <StreamGeometry x:Key="AiIcon.box">M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z M3.3 7l8.7 5 8.7-5 M12 22V12</StreamGeometry>

@@ -282,7 +282,7 @@ internal static class EndpointModelCatalog
 
     /// <summary>按子串认的非聊天模型(足够长、不会误伤)。</summary>
     private static readonly string[] NonChatWords =
-        ["embedding", "rerank", "whisper", "moderation", "dall-e", "gpt-image", "stable-diffusion", "midjourney"];
+        ["embedding", "rerank", "whisper", "moderation", "stable-diffusion", "midjourney"];
 
     /// <summary>按整段认的非聊天模型(太短,当子串会误伤)。</summary>
     private static readonly string[] NonChatSegments = ["embed", "tts", "stt", "ocr", "asr"];
