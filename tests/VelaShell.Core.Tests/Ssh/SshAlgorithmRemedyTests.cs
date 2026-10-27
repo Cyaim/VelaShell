@@ -81,7 +81,7 @@ public sealed class SshAlgorithmRemedyTests
         Assert.IsNotNull(remedy);
         Assert.AreEqual(SshAlgorithmKind.KeyExchange, remedy.Kind);
         // group1 本版没实现(放开也没用),curve25519 我们本来就报了:只剩 group14-sha1,且只一次。
-        CollectionAssert.AreEqual(new[] { Group14Sha1 }, remedy.Algorithms.ToArray());
+        Assert.AreSequenceEqual([Group14Sha1], [.. remedy.Algorithms]);
         Assert.AreEqual(0, remedy.HopDepth);
         Assert.IsNull(remedy.HopTarget);
     }
@@ -108,9 +108,9 @@ public sealed class SshAlgorithmRemedyTests
 
         SshAlgorithmRemedy remedy = SshAlgorithmRemedy.Find(failure)!;
         Assert.IsNotNull(remedy, failure.ToString());
-        CollectionAssert.AreEqual(new[] { Group14Sha1 }, remedy.Algorithms.ToArray());
+        Assert.AreSequenceEqual([Group14Sha1], [.. remedy.Algorithms]);
         Assert.AreEqual(0, remedy.HopDepth);
-        StringAssert.Contains(failure.Message, Strings.Format("Ssh_AlgoMismatchEnable", Group14Sha1), "诊断点名的与按钮写进去的是同一组。");
+        Assert.Contains(Strings.Format("Ssh_AlgoMismatchEnable", Group14Sha1), failure.Message, "诊断点名的与按钮写进去的是同一组。");
 
         await using VelaSshClientWrapper connected = await ConnectAsync(Info(host.Port, remedy.ApplyTo(info.Ssh)));
         Assert.AreEqual(Group14Sha1, connected.GetConnectionDetails()!.Algorithms.KeyExchange);
@@ -133,7 +133,7 @@ public sealed class SshAlgorithmRemedyTests
         Assert.IsNotNull(remedy, failure.ToString());
         Assert.AreEqual(1, remedy.HopDepth);
         Assert.AreEqual($"jumper@127.0.0.1:{jump.Port}", remedy.HopTarget);
-        CollectionAssert.AreEqual(new[] { Group14Sha1 }, remedy.Algorithms.ToArray());
+        Assert.AreSequenceEqual([Group14Sha1], [.. remedy.Algorithms]);
 
         await using VelaSshClientWrapper connected =
             await ConnectAsync(TargetVia(Info(jump.Port, remedy.ApplyTo(jumpInfo.Ssh), user: "jumper")));

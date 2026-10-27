@@ -13,8 +13,12 @@ public sealed class OpenAiImageTests
 {
     private static ResolvedModel Model(string url, string name, ChatProtocol protocol)
     {
-        var provider = new AiProvider { BaseUrl = url, DefaultProtocol = protocol,
-            Models = [new AiModelConfig { Model = name }] };
+        var provider = new AiProvider
+        {
+            BaseUrl = url,
+            DefaultProtocol = protocol,
+            Models = [new AiModelConfig { Model = name }]
+        };
         return new ResolvedModel(provider, provider.Models[0]);
     }
 
@@ -26,8 +30,8 @@ public sealed class OpenAiImageTests
         Assert.IsTrue(AiSettingsStore.IsImageModel(Model("http://localhost/v1", "image-2", ChatProtocol.OpenAiImages)));
         Assert.IsFalse(AiSettingsStore.IsImageModel(Model("http://localhost/v1", "image-2", ChatProtocol.OpenAiResponses)));
         Assert.IsFalse(AiSettingsStore.IsImageModel(Model("http://localhost/v1", "gpt-image-2", ChatProtocol.AnthropicMessages)));
-        var models = EndpointModelCatalog.Parse("{\"data\":[{\"id\":\"gpt-image-2\"},{\"id\":\"dall-e-3\"},{\"id\":\"text-embedding-3\"}]}");
-        Assert.AreEqual(2, models.Count);
+        IReadOnlyList<(string Id, int ContextTokens)> models = EndpointModelCatalog.Parse("{\"data\":[{\"id\":\"gpt-image-2\"},{\"id\":\"dall-e-3\"},{\"id\":\"text-embedding-3\"}]}");
+        Assert.HasCount(2, models);
     }
 
     [TestMethod]
@@ -60,7 +64,7 @@ public sealed class OpenAiImageTests
         Assert.AreEqual("Bearer test-key", request.Request.Headers["Authorization"]);
         Assert.AreEqual("present", request.Request.Headers["x-test-header"]);
         using var reader = new StreamReader(request.Request.InputStream);
-        using JsonDocument body = JsonDocument.Parse(await reader.ReadToEndAsync());
+        using var body = JsonDocument.Parse(await reader.ReadToEndAsync());
         Assert.AreEqual("draw a cat", body.RootElement.GetProperty("prompt").GetString());
         Assert.AreEqual("image-2", body.RootElement.GetProperty("model").GetString());
         byte[] reply = Encoding.UTF8.GetBytes("{\"created\":1,\"data\":[{\"b64_json\":\"AQID\"}]}");
@@ -71,7 +75,7 @@ public sealed class OpenAiImageTests
         ChatResponse response = await responseTask;
         DataContent image = response.Messages.Single().Contents.OfType<DataContent>().Single();
         Assert.AreEqual("image/png", image.MediaType);
-        CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, image.Data.ToArray());
+        Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, image.Data.ToArray());
     }
 
     [TestMethod]

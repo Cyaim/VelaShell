@@ -88,7 +88,7 @@ public sealed class SshKeyManagerViewModelTests
     private static ISshKeyService Service()
     {
         ISshKeyService service = Substitute.For<ISshKeyService>();
-        service.ListKeysAsync(Arg.Any<CancellationToken>()).Returns(new List<SshKeyInfo> { Key });
+        service.ListKeysAsync(Arg.Any<CancellationToken>()).Returns([Key]);
         return service;
     }
 }

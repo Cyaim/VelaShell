@@ -116,7 +116,8 @@ public sealed partial class SettingsViewUiTests
             var elsewhere = new AiModelConfig { Name = "Elsewhere", Model = "m", BaseUrlOverride = elsewhereHost.BaseUrl };
             var provider = new AiProvider
             {
-                ModelsExpanded = true, BaseUrl = providerHost.BaseUrl,
+                ModelsExpanded = true,
+                BaseUrl = providerHost.BaseUrl,
                 Models = [new AiModelConfig { Model = "home" }, elsewhere]
             };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = elsewhere.Id };
@@ -703,7 +704,7 @@ public sealed partial class SettingsViewUiTests
                 await WaitUntilAsync(() => view.GetControl<TextBlock>("StatusText").Text == loc["Saved"]);
                 Assert.AreEqual("key-one-again", await store.GetApiKeyAsync(provider.Id));
                 Assert.AreEqual("key-two", await store.GetApiKeyAsync(extra));
-                CollectionAssert.AreEqual(new[] { extra }, provider.AdditionalApiKeyIds.ToArray());
+                Assert.AreSequenceEqual([extra], [.. provider.AdditionalApiKeyIds]);
                 await WaitUntilAsync(() => KeyControl<Button>(view, provider.Id, "ProviderKeyRemoveButton").IsEnabled);
                 Assert.IsTrue(KeyControl<Button>(view, provider.Id, "ProviderKeyRevealButton").IsEnabled);
             }
@@ -2826,7 +2827,10 @@ public sealed partial class SettingsViewUiTests
             using var context = new TestPluginContext();
             var claude = new AiModelConfig
             {
-                Model = "claude-opus-5", Protocol = ChatProtocol.AnthropicMessages, Temperature = 0.3f, TopP = 0.9f
+                Model = "claude-opus-5",
+                Protocol = ChatProtocol.AnthropicMessages,
+                Temperature = 0.3f,
+                TopP = 0.9f
             };
             var provider = new AiProvider
             {

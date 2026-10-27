@@ -129,7 +129,7 @@ public class DirectoryTreeScannerTests
             Remote("/old.tar", isDirectory: false, new(2025, 1, 2, 0, 0, 0, DateTimeKind.Unspecified)),
             Remote("/mlsd.txt", isDirectory: false, new(2026, 9, 1, 10, 30, 7, DateTimeKind.Utc)),
         ]);
-        TimeSpan offset = TimeSpan.FromHours(8);
+        var offset = TimeSpan.FromHours(8);
 
         SyncTree tree = await DirectoryTreeScanner.ScanRemoteAsync(
             sftp, session, "/", SyncFileMask.Empty, inferPrecision: true, serverClockOffset: offset);

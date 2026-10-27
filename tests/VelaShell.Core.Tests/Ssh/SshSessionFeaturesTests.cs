@@ -519,7 +519,7 @@ public class SshSessionFeaturesTests
             object? actual = property.GetValue(copy);
             if (expected is List<string> list)
             {
-                CollectionAssert.AreEqual(list, (List<string>)actual!, property.Name);
+                Assert.AreSequenceEqual(list, (List<string>)actual!, property.Name);
                 Assert.AreNotSame(expected, actual, $"{property.Name} 要深拷贝");
             }
             else

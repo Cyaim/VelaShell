@@ -105,7 +105,6 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private readonly int _ftpMaxConnections = new FtpSettings().MaxConnections;
     private string? _ftpInitialRemotePath;
     private int? _ftpServerUtcOffsetMinutes;
-    private IReadOnlyList<FtpTimeZoneOption>? _ftpTimeZoneOptions;
     private Guid? _groupId;
     private string _host = string.Empty;
     private bool _isCertAuth;
@@ -2178,7 +2177,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// 首次读取时才建,那时配置里现存的值已经载入(不在表里的也会被插进去,见 <see cref="FtpTimeZoneOption.Build" />)。
     /// </summary>
     public IReadOnlyList<FtpTimeZoneOption> FtpTimeZoneOptions =>
-        _ftpTimeZoneOptions ??= FtpTimeZoneOption.Build(_ftpServerUtcOffsetMinutes);
+        field ??= FtpTimeZoneOption.Build(_ftpServerUtcOffsetMinutes);
 
     /// <summary>
     /// 选中的服务器时区:目录比较与同步按它换算 LIST 的时间(见 <see cref="FtpSettings.ServerUtcOffsetMinutes" />)。

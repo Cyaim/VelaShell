@@ -79,7 +79,7 @@ public sealed class QuickCommandVariableMemory
         string key = KeyFor(commandId, commandText);
         if (!_values.TryGetValue(key, out Dictionary<string, string>? remembered))
         {
-            remembered = new(StringComparer.Ordinal);
+            remembered = [with(StringComparer.Ordinal)];
         }
         foreach (QuickCommandVariable variable in template.Variables)
         {

@@ -109,9 +109,9 @@ public sealed class SshPacketTraceTests
         IReadOnlyList<SshPacketTraceEntry> entries = trace.Snapshot();
         string hop = $"joe@127.0.0.1:{host.Port}";
         Assert.IsTrue(entries.All(e => e.Hop == hop));
-        Assert.IsTrue(entries.Any(static e => e is { Direction: SshPacketDirection.Sent, MessageNumber: 20 }), "发出的 KEXINIT");
-        Assert.IsTrue(entries.Any(static e => e is { Direction: SshPacketDirection.Received, MessageNumber: 20 }), "收到的 KEXINIT");
-        Assert.IsTrue(entries.Any(static e => e is { Direction: SshPacketDirection.Sent, MessageNumber: 21 }), "NEWKEYS");
+        Assert.Contains(static e => e is { Direction: SshPacketDirection.Sent, MessageNumber: 20 }, entries, "发出的 KEXINIT");
+        Assert.Contains(static e => e is { Direction: SshPacketDirection.Received, MessageNumber: 20 }, entries, "收到的 KEXINIT");
+        Assert.Contains(static e => e is { Direction: SshPacketDirection.Sent, MessageNumber: 21 }, entries, "NEWKEYS");
         SshPacketTraceEntry[] requests = [.. entries.Where(static e => e is { Direction: SshPacketDirection.Sent, MessageNumber: 50 })];
         Assert.IsNotEmpty(requests, "认证请求");
         Assert.IsTrue(requests.All(static e => e.Length is null), "口令认证请求的长度不记");
@@ -146,8 +146,8 @@ public sealed class SshPacketTraceTests
         }
 
         string[] hops = [.. trace.Snapshot().Select(static e => e.Hop).Distinct()];
-        CollectionAssert.AreEquivalent(new[] { $"jumper@127.0.0.1:{jump.Port}", "joe@target.internal:22" }, hops);
-        Assert.IsTrue(trace.Snapshot().Any(static e => e is { Hop: "joe@target.internal:22", MessageNumber: 52 }), "终点那一跳的认证成功");
+        Assert.AreSequenceEqual([$"jumper@127.0.0.1:{jump.Port}", "joe@target.internal:22"], hops, Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+        Assert.Contains(static e => e is { Hop: "joe@target.internal:22", MessageNumber: 52 }, trace.Snapshot(), "终点那一跳的认证成功");
     }
 
     /// <summary>手拨的时钟(只管时间戳)。</summary>

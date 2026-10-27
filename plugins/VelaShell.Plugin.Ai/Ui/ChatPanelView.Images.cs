@@ -1,16 +1,16 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
-using Avalonia.Automation;
 using Avalonia.Markup.Xaml.MarkupExtensions;
-using VelaShell.PluginSdk.Ui;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Microsoft.Extensions.AI;
-using VelaShell.Plugin.Ai.Chat;
 using VelaShell.Plugin.Ai.Agent;
+using VelaShell.Plugin.Ai.Chat;
 using VelaShell.Plugin.Ai.Configuration;
+using VelaShell.PluginSdk.Ui;
 
 namespace VelaShell.Plugin.Ai.Ui;
 
@@ -149,9 +149,9 @@ public partial class ChatPanelView
                 try { Decode(); }
                 catch (Exception ex) { _owner._context.Log.Warn($"Decoding generated image failed: {ex.Message}"); }
             };
-            var save = ImageAction("ImageSaveAction", "AiIcon.image-down", _owner._loc["SaveGeneratedImage"]);
+            Button save = ImageAction("ImageSaveAction", "AiIcon.image-down", _owner._loc["SaveGeneratedImage"]);
             save.Click += async (_, _) => await SaveImageAsync(reference);
-            var full = ImageAction("ImageFullScreenAction", "AiIcon.fullscreen", _owner._loc["ViewFullImage"]);
+            Button full = ImageAction("ImageFullScreenAction", "AiIcon.fullscreen", _owner._loc["ViewFullImage"]);
             full.Click += (_, _) => OpenImagePreview(reference);
             var actions = new StackPanel
             {

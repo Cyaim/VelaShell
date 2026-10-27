@@ -141,9 +141,9 @@ public class SelectionContrastTests
     [TestMethod]
     public void ReadableOnSelection_PushesTowardTheSideItIsAlreadyOn()
     {
-        Rgba grey = Rgba.FromRgb(0x80, 0x80, 0x80);
-        Rgba slightlyBrighter = Rgba.FromRgb(0x90, 0x90, 0x90);
-        Rgba slightlyDarker = Rgba.FromRgb(0x70, 0x70, 0x70);
+        var grey = Rgba.FromRgb(0x80, 0x80, 0x80);
+        var slightlyBrighter = Rgba.FromRgb(0x90, 0x90, 0x90);
+        var slightlyDarker = Rgba.FromRgb(0x70, 0x70, 0x70);
 
         Assert.IsGreaterThan(SelectionContrast.Brightness(slightlyBrighter),
             SelectionContrast.Brightness(SelectionContrast.ReadableOnSelection(slightlyBrighter, grey)));
@@ -151,8 +151,8 @@ public class SelectionContrastTests
             SelectionContrast.Brightness(SelectionContrast.ReadableOnSelection(slightlyDarker, grey)));
 
         // 选区底贴着黑:往暗里推到纯黑也只有 1.2:1,只能提亮。
-        Rgba nearlyBlack = Rgba.FromRgb(0x10, 0x10, 0x10);
-        Rgba darkFill = Rgba.FromRgb(0x18, 0x18, 0x18);
+        var nearlyBlack = Rgba.FromRgb(0x10, 0x10, 0x10);
+        var darkFill = Rgba.FromRgb(0x18, 0x18, 0x18);
         Assert.IsGreaterThan(SelectionContrast.Brightness(darkFill),
             SelectionContrast.Brightness(SelectionContrast.ReadableOnSelection(nearlyBlack, darkFill)));
     }
@@ -167,7 +167,7 @@ public class SelectionContrastTests
     {
         var failures = new List<string>();
         int collided = 0;
-        foreach (VelaShell.Core.Models.TerminalColorScheme scheme in VelaShell.Core.Models.TerminalColorScheme.BuiltIn)
+        foreach (Core.Models.TerminalColorScheme scheme in VelaShell.Core.Models.TerminalColorScheme.BuiltIn)
         {
             Rgba fill = SelectionContrast.Fill(Parse(scheme.Selection), Parse(scheme.Background));
             double fillBrightness = SelectionContrast.Brightness(fill);

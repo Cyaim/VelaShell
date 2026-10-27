@@ -12,7 +12,7 @@ public sealed class SessionOutputMaskerTests
 {
     private readonly List<byte[]> _written = [];
 
-    private SessionOutputMasker NewMasker() => new(chunk => _written.Add(chunk));
+    private SessionOutputMasker NewMasker() => new(_written.Add);
 
     private string Written => Encoding.Latin1.GetString([.. _written.SelectMany(chunk => chunk)]);
 
@@ -793,7 +793,7 @@ public sealed class SessionOutputMaskerTests
         Assert.AreEqual("新的一个***是新的\n", Encoding.UTF8.GetString(_written[1]));
         Assert.AreEqual("改为Bearer ***\n", Encoding.UTF8.GetString(_written[2]));
         byte[] latin1Neighbours = [0xB5, .. "***"u8, 0xFF, (byte)'\n'];
-        CollectionAssert.AreEqual(latin1Neighbours, _written[3]);
+        Assert.AreSequenceEqual(latin1Neighbours, _written[3]);
     }
 
     /// <summary>
@@ -845,7 +845,7 @@ public sealed class SessionOutputMaskerTests
         _written.Clear();
         masker.Write(Bytes("\u001b]0;ops@vault-secrets-01: ~\u0007ops@vault-secrets-01:~$ "));
         string replay = Written;
-        Assert.AreEqual(1, replay.Count(c => c == '\u0007'), "标题收尾的 BEL 还在");
+        Assert.ContainsSingle(c => c == '\u0007', replay, "标题收尾的 BEL 还在");
         Assert.StartsWith("ops@vault-secrets-01:", replay[(replay.IndexOf('\u0007') + 1)..], "BEL 之后紧接着就是提示符,标题在原处结束");
     }
 
@@ -886,7 +886,7 @@ public sealed class SessionOutputMaskerTests
         byte[] utf8 = Bytes("部署完成 ✓ password=秘密\n");
         masker.Write(gbk);
         masker.Write(utf8);
-        CollectionAssert.AreEqual(gbk, _written[0], "GBK 字节原样往返");
+        Assert.AreSequenceEqual(gbk, _written[0], "GBK 字节原样往返");
         Assert.AreEqual("部署完成 ✓ password=***\n", Encoding.UTF8.GetString(_written[1]), "值是非 ASCII 也整段遮掉,别处的多字节字符不受影响");
     }
 
@@ -980,7 +980,7 @@ public sealed class SessionOutputMaskerTests
         {
             var masker = new SessionOutputMasker(_ => { });
             var watch = Stopwatch.StartNew();
-            Task work = Task.Run(() =>
+            var work = Task.Run(() =>
             {
                 masker.Write(Encoding.Latin1.GetBytes(text));
                 masker.Flush();

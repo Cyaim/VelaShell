@@ -49,7 +49,7 @@ public class SftpUploadProgressIntegrationTests
                 await client.Sftp.UploadAsync(prefix, path);
             }
             var clock = Stopwatch.StartNew();
-            using var source = new ObservedSource(data, () => relay.StartSlowUpload());
+            using var source = new ObservedSource(data, relay.StartSlowUpload);
             var samples = new ConcurrentQueue<Sample>();
             Task upload = client.Sftp.UploadAsync(source, path, prefixLength,
                 bytes => samples.Enqueue(new(clock.Elapsed.TotalSeconds, bytes, source.Eof.IsCompleted)));
@@ -101,7 +101,7 @@ public class SftpUploadProgressIntegrationTests
         await using Client client = await Client.ConnectAsync(settings, relay.Port);
         string path = NewPath();
         byte[] data = MakeData(SuffixLength);
-        using var source = new ObservedSource(data, () => relay.StartSlowUpload());
+        using var source = new ObservedSource(data, relay.StartSlowUpload);
         using var cancel = new CancellationTokenSource();
         var samples = new ConcurrentQueue<Sample>();
         Task upload = client.Sftp.UploadAsync(source, path,
@@ -148,19 +148,19 @@ public class SftpUploadProgressIntegrationTests
         await using Client client = await Client.ConnectAsync(settings, relay.Port);
         string path = NewPath();
         byte[] data = MakeData(SuffixLength);
-        using var source = new ObservedSource(data, () => relay.StartSlowUpload());
+        using var source = new ObservedSource(data, relay.StartSlowUpload);
         var samples = new ConcurrentQueue<Sample>();
         Task upload = client.Sftp.UploadAsync(source, path, bytes => samples.Enqueue(new(0, bytes, source.Eof.IsCompleted)));
         try
         {
             await source.Eof.WaitAsync(TimeSpan.FromSeconds(15));
             relay.ReleaseSlowly();
-            await EventuallyAsync(() => samples.Any(s => s.Bytes > 0 && s.Bytes < SuffixLength / 2));
+            await EventuallyAsync(() => samples.Any(s => s.Bytes is > 0 and < (SuffixLength / 2)));
             relay.HoldReplies();
             // Allow any bytes already forwarded and the 200ms Flush sampler to settle before cutting the link.
             await Task.Delay(500);
             ulong last = samples.Last().Bytes;
-            Assert.IsTrue(last > 0 && last < SuffixLength);
+            Assert.IsTrue(last is > 0 and < SuffixLength);
             relay.Abort();
             VelaSftpTransferInterruptedException error = await Assert.ThrowsAsync<VelaSftpTransferInterruptedException>(
                 () => upload.WaitAsync(TimeSpan.FromSeconds(10)));
@@ -200,7 +200,7 @@ public class SftpUploadProgressIntegrationTests
         await using Client client = await Client.ConnectAsync(settings, relay.Port);
         string path = NewPath();
         byte[] data = MakeData(SuffixLength);
-        using var source = new ObservedSource(data, () => relay.StartSlowUpload());
+        using var source = new ObservedSource(data, relay.StartSlowUpload);
         var expected = new InvalidOperationException("Controlled Flush progress callback failure.");
         var samples = new ConcurrentQueue<Sample>();
         int flushCallbacks = 0;
@@ -273,7 +273,7 @@ public class SftpUploadProgressIntegrationTests
         using var actual = new MemoryStream();
         await sftp.DownloadAsync(path, actual);
         Assert.AreEqual(expected.Length, actual.Length);
-        CollectionAssert.AreEqual(SHA256.HashData(expected), SHA256.HashData(actual.ToArray()), "Remote content, including resume prefix, must match.");
+        Assert.AreSequenceEqual(SHA256.HashData(expected), SHA256.HashData(actual.ToArray()), "Remote content, including resume prefix, must match.");
     }
 
     private static async Task DeleteQuietlyAsync(VelaSftpClientWrapper sftp, string path)

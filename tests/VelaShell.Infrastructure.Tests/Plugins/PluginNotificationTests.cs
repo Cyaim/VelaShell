@@ -183,14 +183,13 @@ public sealed class PluginNotificationTests
 
         await service.ForgetPluginAsync(PluginId);
 
-        CollectionAssert.AreEquivalent(new[] { "plugin:acme.backup2:c", "plugin:gone.plugin:d", "update:9.9.9" },
-            center.Items.Select(i => i.Id).ToArray(), "前缀带冒号:acme.backup 不会顺手删掉 acme.backup2 的");
+        Assert.AreSequenceEqual(["plugin:acme.backup2:c", "plugin:gone.plugin:d", "update:9.9.9"], [.. center.Items.Select(i => i.Id)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "前缀带冒号:acme.backup 不会顺手删掉 acme.backup2 的");
         Assert.IsFalse(await service.IsMutedAsync(PluginId), "重装之后从头来过");
         Assert.IsFalse(service.HasMessages(PluginId));
 
         await service.SweepUninstalledAsync(new HashSet<string>(StringComparer.Ordinal) { "acme.backup2" });
 
-        CollectionAssert.AreEquivalent(new[] { "plugin:acme.backup2:c", "update:9.9.9" }, center.Items.Select(i => i.Id).ToArray());
+        Assert.AreSequenceEqual(["plugin:acme.backup2:c", "update:9.9.9"], [.. center.Items.Select(i => i.Id)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
     }
 
     /// <summary>
@@ -202,7 +201,7 @@ public sealed class PluginNotificationTests
     {
         var center = new NotificationCenter();
         var service = new PluginNotificationService(center, displayNameOf: _ => "Acme Backup");
-        await using var pair = await Pair.Open();
+        await using Pair pair = await Pair.Open();
         using PluginContext context = Context(new NotifyingUi(PluginId, service));
         using var router = new PluginCapabilityRouter(context, pair._host, "token", "1");
         pair._host.SetRequestHandler(router.HandleRequestAsync);
@@ -221,7 +220,7 @@ public sealed class PluginNotificationTests
         Assert.AreEqual("Acme Backup", item.Source);
 
         int calls = 0;
-        await using var legacy = await Pair.Open();
+        await using Pair legacy = await Pair.Open();
         legacy._host.SetRequestHandler((_, _, _) => { calls++; return Task.FromResult<object?>(null); });
         var old = new PluginHostUi(PluginId, new CollectingLogger(), legacy._plugin, supportsNotifications: false);
         Assert.IsFalse(old.SupportsNotifications);
@@ -233,7 +232,7 @@ public sealed class PluginNotificationTests
     [TestMethod]
     public async Task HandshakeDoesNotAdvertiseNotificationsWhenTheHostCannotTakeThem()
     {
-        await using var pair = await Pair.Open();
+        await using Pair pair = await Pair.Open();
         using PluginContext context = Context(new FakeUi { SupportsNotifications = false });
         using var router = new PluginCapabilityRouter(context, pair._host, "token", "1");
         pair._host.SetRequestHandler(router.HandleRequestAsync);

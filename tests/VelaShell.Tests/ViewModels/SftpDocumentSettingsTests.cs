@@ -7,7 +7,6 @@ using VelaShell.Core.Sftp;
 using VelaShell.Core.Ssh;
 using VelaShell.Docking;
 using VelaShell.Presentation.Services;
-using VelaShell.Tests.TestSupport;
 using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
@@ -40,7 +39,7 @@ public sealed class SftpDocumentSettingsTests
         var vm = new MainWindowViewModel(settingsService: settingsService);
         using var temp = new TempDirectory();
         var opened = new TransferOptions { LocalDownloadDirectory = temp.Path, ConflictPolicy = "ask" };
-        await using OpenFileTabs tabs = OpenFileTabs.Add(vm, opened);
+        await using var tabs = OpenFileTabs.Add(vm, opened);
 
         var saved = new AppSettings
         {
@@ -72,7 +71,7 @@ public sealed class SftpDocumentSettingsTests
             ShowOwnerColumn = false,
             ShowModifiedColumn = false,
         };
-        await using OpenFileTabs tabs = OpenFileTabs.Add(vm, opened);
+        await using var tabs = OpenFileTabs.Add(vm, opened);
 
         foreach (FileBrowserViewModel pane in tabs.Panes)
         {
@@ -90,7 +89,7 @@ public sealed class SftpDocumentSettingsTests
         ISettingsService settingsService = Substitute.For<ISettingsService>();
         var vm = new MainWindowViewModel(settingsService: settingsService);
         using var temp = new TempDirectory();
-        await using OpenFileTabs tabs = OpenFileTabs.Add(vm, new TransferOptions { LocalDownloadDirectory = temp.Path });
+        await using var tabs = OpenFileTabs.Add(vm, new TransferOptions { LocalDownloadDirectory = temp.Path });
 
         var saved = new AppSettings { Transfer = { ShowHiddenFiles = true, ShowTypeColumn = false } };
         settingsService.SettingsSaved += Raise.Event<Action<AppSettings>>(saved);

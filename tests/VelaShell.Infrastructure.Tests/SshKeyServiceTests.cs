@@ -282,7 +282,7 @@ public sealed class SshKeyServiceTests : IDisposable
     {
         Directory.CreateDirectory(_external);
         string path = Path.Combine(_external, "locked");
-        using (InMemorySshSigner key = InMemorySshSigner.GenerateEd25519())
+        using (var key = InMemorySshSigner.GenerateEd25519())
         {
             await File.WriteAllTextAsync(path, SshPrivateKeyFile.Format(key, "correct horse".AsSpan(), "test"));
             await File.WriteAllTextAsync(path + ".pub", key.PublicKey.ToOpenSshFormat("test") + "\n");
@@ -302,7 +302,7 @@ public sealed class SshKeyServiceTests : IDisposable
         Directory.CreateDirectory(_external);
         string path = Path.Combine(_external, "locked_alone");
         string fingerprint;
-        using (InMemorySshSigner key = InMemorySshSigner.GenerateEd25519())
+        using (var key = InMemorySshSigner.GenerateEd25519())
         {
             await File.WriteAllTextAsync(path, SshPrivateKeyFile.Format(key, "pw".AsSpan(), "test"));
             fingerprint = key.PublicKey.Sha256Fingerprint;
@@ -368,7 +368,7 @@ public sealed class SshKeyServiceTests : IDisposable
 
         await _service.ExportPrivateKeyAsync(key, target);
 
-        CollectionAssert.AreEqual(await File.ReadAllBytesAsync(key.PrivateKeyPath), await File.ReadAllBytesAsync(target));
+        Assert.AreSequenceEqual(await File.ReadAllBytesAsync(key.PrivateKeyPath), await File.ReadAllBytesAsync(target));
     }
 
     [TestMethod]

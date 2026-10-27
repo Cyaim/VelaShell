@@ -3,6 +3,7 @@ using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using ReactiveUI;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
@@ -35,7 +36,7 @@ public class TailscaleSshCheckViewTests
             try
             {
                 var service = new TailscaleSshCheckDialogService(() => owner);
-                Guid id = Guid.NewGuid();
+                var id = Guid.NewGuid();
                 int cancelled = 0;
                 TailscaleSshCheckNotification start = Start(id, U1, () => cancelled++, lifetime.Token);
                 await service.HandleAsync(start).WaitAsync(TimeSpan.FromSeconds(5));
@@ -91,7 +92,7 @@ public class TailscaleSshCheckViewTests
                 var service = new TailscaleSshCheckDialogService(() => owner);
                 Guid a = Guid.NewGuid(), b = Guid.NewGuid();
                 int aCancelled = 0, bCancelled = 0;
-                var aStart = Start(a, U1, () => aCancelled++, aToken.Token);
+                TailscaleSshCheckNotification aStart = Start(a, U1, () => aCancelled++, aToken.Token);
                 await service.HandleAsync(aStart);
                 var aWindow = (TailscaleSshCheckView)owner.OwnedWindows.Single();
                 var aVm = (TailscaleSshCheckViewModel)aWindow.DataContext!;
@@ -137,9 +138,9 @@ public class TailscaleSshCheckViewTests
             try
             {
                 int cancelled = 0;
-                Guid id = Guid.NewGuid();
+                var id = Guid.NewGuid();
                 var service = new TailscaleSshCheckDialogService(() => owner);
-                var start = Start(id, U1, () => cancelled++, lifetime.Token);
+                TailscaleSshCheckNotification start = Start(id, U1, () => cancelled++, lifetime.Token);
                 await service.HandleAsync(start);
                 var vm = (TailscaleSshCheckViewModel)owner.OwnedWindows.Single().DataContext!;
                 await Task.Run(lifetime.Cancel);
@@ -171,12 +172,12 @@ public class TailscaleSshCheckViewTests
             try
             {
                 var service = new TailscaleSshCheckDialogService(() => owner);
-                Guid id = Guid.NewGuid();
+                var id = Guid.NewGuid();
                 int cancelled = 0;
                 await service.HandleAsync(Start(id, U1, () => cancelled++, lifetime.Token));
                 var window = (TailscaleSshCheckView)owner.OwnedWindows.Single();
                 var vm = (TailscaleSshCheckViewModel)window.DataContext!;
-                Guid otherId = Guid.NewGuid();
+                var otherId = Guid.NewGuid();
                 int otherCancelled = 0;
                 await service.HandleAsync(Start(otherId, U2, () => otherCancelled++, CancellationToken.None));
                 Window other = owner.OwnedWindows.Single(w => w != window);
@@ -227,7 +228,7 @@ public class TailscaleSshCheckViewTests
             owner.Show();
             using var lifetime = new CancellationTokenSource();
             var service = new TailscaleSshCheckDialogService(() => owner);
-            Guid id = Guid.NewGuid();
+            var id = Guid.NewGuid();
             int cancelled = 0;
             await service.HandleAsync(Start(id, U1, () => cancelled++, lifetime.Token));
             var window = (TailscaleSshCheckView)owner.OwnedWindows.Single();
@@ -256,11 +257,11 @@ public class TailscaleSshCheckViewTests
             var owner = new Window();
             owner.Show();
             using var lifetime = new CancellationTokenSource();
-            EventHandler<WindowClosingEventArgs> keepOpen = (_, e) => e.Cancel = true;
+            static void keepOpen(object? _, WindowClosingEventArgs e) => e.Cancel = true;
             try
             {
                 var service = new TailscaleSshCheckDialogService(() => owner);
-                Guid id = Guid.NewGuid();
+                var id = Guid.NewGuid();
                 int cancelled = 0;
                 await service.HandleAsync(Start(id, U1, () => cancelled++, lifetime.Token));
                 var window = (TailscaleSshCheckView)owner.OwnedWindows.Single();
@@ -297,7 +298,7 @@ public class TailscaleSshCheckViewTests
             try
             {
                 var service = new TailscaleSshCheckDialogService(() => owner);
-                Guid id = Guid.NewGuid();
+                var id = Guid.NewGuid();
                 DateTimeOffset expiresAt = DateTimeOffset.Now.AddMinutes(30);
                 await service.HandleAsync(Start(id, U1, () => { }, lifetime.Token) with { ExpiresAt = expiresAt });
                 var window = (TailscaleSshCheckView)owner.OwnedWindows.Single();
@@ -375,13 +376,13 @@ public class TailscaleSshCheckViewTests
                 vm.UpdateVerificationUri(U2);
                 Assert.IsEmpty(opened, "显示/更新链接绝不能自动打开浏览器。");
                 await vm.OpenBrowserCommand.Execute().FirstAsync();
-                Assert.AreSequenceEqual(new[] { U2 }, opened);
+                Assert.AreSequenceEqual([U2], opened);
                 Assert.AreEqual(Strings.Get("Ssh_TailscaleCheckOpenFailed"), vm.ErrorMessage);
                 Assert.IsTrue(window.FindControl<TextBlock>("OperationError")!.IsVisible);
                 Assert.IsTrue(window.IsVisible);
                 Assert.IsFalse(vm.IsCompleted);
                 await vm.CopyLinkCommand.Execute().FirstAsync();
-                Assert.AreSequenceEqual(new[] { U2.AbsoluteUri }, copied);
+                Assert.AreSequenceEqual([U2.AbsoluteUri], copied);
                 Assert.AreEqual(Strings.Get("Ssh_TailscaleCheckCopyFailed"), vm.ErrorMessage);
                 Assert.DoesNotContain("VELA_UI_SECRET", vm.ErrorMessage);
                 Assert.AreEqual(0, cancelled);
@@ -407,22 +408,22 @@ public class TailscaleSshCheckViewTests
                 uri => { opened.Add(uri); return browser.Task; },
                 text => { copied.Add(text); return clipboard.Task; }, () => cancelled++);
 
-            var firstOpen = vm.OpenBrowserCommand.Execute().FirstAsync();
+            Task<RxVoid> firstOpen = vm.OpenBrowserCommand.Execute().FirstAsync();
             vm.UpdateVerificationUri(U2);
             browser.SetException(new InvalidOperationException(U1.AbsoluteUri));
             await firstOpen;
             Assert.AreEqual(string.Empty, vm.ErrorMessage, "U1 的迟到错误不能盖过 U2。");
-            Assert.AreSequenceEqual(new[] { U1 }, opened);
+            Assert.AreSequenceEqual([U1], opened);
 
-            var copy = vm.CopyLinkCommand.Execute().FirstAsync();
+            Task<RxVoid> copy = vm.CopyLinkCommand.Execute().FirstAsync();
             vm.UpdateVerificationUri(U1);
             clipboard.SetException(new InvalidOperationException(U2.AbsoluteUri));
             await copy;
             Assert.AreEqual(string.Empty, vm.ErrorMessage);
-            Assert.AreSequenceEqual(new[] { U2.AbsoluteUri }, copied);
+            Assert.AreSequenceEqual([U2.AbsoluteUri], copied);
 
             browser = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            var lastOpen = vm.OpenBrowserCommand.Execute().FirstAsync();
+            Task<RxVoid> lastOpen = vm.OpenBrowserCommand.Execute().FirstAsync();
             vm.Complete();
             browser.SetResult(false);
             await lastOpen;
@@ -466,7 +467,7 @@ public class TailscaleSshCheckViewTests
 
     private static void AssertCommandsDisabled(TailscaleSshCheckViewModel vm)
     {
-        foreach (var command in new[] { vm.OpenBrowserCommand, vm.CopyLinkCommand, vm.CancelCommand })
+        foreach (ReactiveCommand<RxVoid, RxVoid>? command in new[] { vm.OpenBrowserCommand, vm.CopyLinkCommand, vm.CancelCommand })
         {
             bool canExecute = true;
             using IDisposable subscription = command.CanExecute.Subscribe(value => canExecute = value);

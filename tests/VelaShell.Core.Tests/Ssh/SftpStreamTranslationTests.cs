@@ -56,7 +56,7 @@ public sealed class SftpStreamTranslationTests
         await Assert.ThrowsExactlyAsync<VelaSshConnectionException>(() => stream.ReadAsync(new byte[4], 0, 4, CancellationToken.None));
         await Assert.ThrowsExactlyAsync<VelaSshConnectionException>(async () => await stream.WriteAsync(new byte[4].AsMemory()));
         await Assert.ThrowsExactlyAsync<VelaSshConnectionException>(() => stream.WriteAsync(new byte[4], 0, 4, CancellationToken.None));
-        await Assert.ThrowsExactlyAsync<VelaSshConnectionException>(() => stream.FlushAsync());
+        await Assert.ThrowsExactlyAsync<VelaSshConnectionException>(stream.FlushAsync);
         Assert.ThrowsExactly<VelaSshConnectionException>(() => stream.Seek(0, SeekOrigin.Begin));
         // CopyToAsync / 哈希走的是 ReadAsync(Memory) —— 同一条路。
         await Assert.ThrowsExactlyAsync<VelaSshConnectionException>(() => stream.CopyToAsync(Stream.Null));

@@ -39,8 +39,8 @@ public sealed partial class ChatPanelViewUiTests
                 Image image = view.GetVisualDescendants().OfType<Image>().Single();
                 TextBlock percentage = view.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "ImageZoomPercentage");
                 ScrollViewer viewport = view.GetVisualDescendants().OfType<ScrollViewer>().Single(v => v.Name == "ImageViewport");
-                Assert.IsTrue(image.Width <= viewport.Bounds.Width);
-                Assert.IsTrue(image.Height <= viewport.Bounds.Height);
+                Assert.IsLessThanOrEqualTo(viewport.Bounds.Width, image.Width);
+                Assert.IsLessThanOrEqualTo(viewport.Bounds.Height, image.Height);
                 Assert.AreEqual(1.6, image.Width / image.Height, 0.001);
                 Assert.AreNotEqual("100%", percentage.Text);
                 RaiseClick(view.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "100%")));
@@ -50,12 +50,12 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual(1000d / window.RenderScaling, image.Height);
                 RaiseClick(view.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, loc["ImageFitWindow"])));
                 await PumpAsync(3);
-                Assert.IsTrue(image.Width <= viewport.Bounds.Width);
+                Assert.IsLessThanOrEqualTo(viewport.Bounds.Width, image.Width);
                 window.Width = 480;
                 window.Height = 360;
                 await PumpAsync(5);
-                Assert.IsTrue(image.Width <= viewport.Bounds.Width);
-                Assert.IsTrue(image.Height <= viewport.Bounds.Height);
+                Assert.IsLessThanOrEqualTo(viewport.Bounds.Width, image.Width);
+                Assert.IsLessThanOrEqualTo(viewport.Bounds.Height, image.Height);
             }
             finally { view.ReleaseImage(); window.Close(); }
         });

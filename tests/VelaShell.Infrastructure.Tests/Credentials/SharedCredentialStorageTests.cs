@@ -94,13 +94,18 @@ public sealed class SharedCredentialStorageTests : IDisposable
         var repo = new SonnetDbSharedCredentialRepository(_engine, protector);
         var beta = new SharedCredential
         {
-            Name = "Beta", Username = "admin", Password = "beta-password",
+            Name = "Beta",
+            Username = "admin",
+            Password = "beta-password",
             PrivateKeyPassphrase = "beta-passphrase"
         };
         var alpha = new SharedCredential
         {
-            Name = "alpha", Username = "root", AuthMethod = AuthMethod.PrivateKey,
-            PrivateKeyPath = "/key", PrivateKeyPassphrase = "alpha-passphrase"
+            Name = "alpha",
+            Username = "root",
+            AuthMethod = AuthMethod.PrivateKey,
+            PrivateKeyPath = "/key",
+            PrivateKeyPassphrase = "alpha-passphrase"
         };
         var empty = new SharedCredential { Name = "charlie", Username = "guest", Password = string.Empty };
         await repo.SaveAsync(beta);
@@ -110,16 +115,15 @@ public sealed class SharedCredentialStorageTests : IDisposable
         List<SharedCredentialMetadata> metadata = await repo.ListMetadataAsync();
 
         Assert.AreSequenceEqual(
-            new SharedCredentialMetadata[]
-            {
+            [
                 new(alpha.Id, "alpha", "root", AuthMethod.PrivateKey, false),
                 new(beta.Id, "Beta", "admin", AuthMethod.Password, true),
                 new(empty.Id, "charlie", "guest", AuthMethod.Password, false)
-            }, metadata);
+            ], metadata);
         Assert.AreEqual(0, protector.UnprotectCalls, "枚举元数据不应解密任何字段,包括空字段");
         // 白名单同时钉住返回类型的形状,防止以后给摘要添回密码或私钥口令。
         Assert.AreSequenceEqual(
-            new[] { "AuthMethod", "HasPassword", "Id", "Name", "Username" },
+            ["AuthMethod", "HasPassword", "Id", "Name", "Username"],
             [.. typeof(SharedCredentialMetadata).GetProperties().Select(p => p.Name).Order(StringComparer.Ordinal)]);
     }
 
@@ -130,16 +134,20 @@ public sealed class SharedCredentialStorageTests : IDisposable
         var repo = new SonnetDbSharedCredentialRepository(_engine, protector);
         var selected = new SharedCredential
         {
-            Name = "selected", Password = "selected-password", PrivateKeyPassphrase = "selected-passphrase"
+            Name = "selected",
+            Password = "selected-password",
+            PrivateKeyPassphrase = "selected-passphrase"
         };
         await repo.SaveAsync(new SharedCredential
         {
-            Name = "other", Password = "other-password", PrivateKeyPassphrase = "other-passphrase"
+            Name = "other",
+            Password = "other-password",
+            PrivateKeyPassphrase = "other-passphrase"
         });
         await repo.SaveAsync(selected);
         string rawJson = await _engine.WithCollectionAsync(
             SonnetDbEngine.SharedCredentialsCollection, store => store.Get(selected.Id.ToString("D"))!.Json);
-        using JsonDocument stored = JsonDocument.Parse(rawJson);
+        using var stored = JsonDocument.Parse(rawJson);
         string ciphertext = stored.RootElement.GetProperty("password").GetString()!;
         Assert.StartsWith("enc1:", ciphertext);
         Assert.AreNotEqual(selected.Password, ciphertext);
@@ -148,7 +156,7 @@ public sealed class SharedCredentialStorageTests : IDisposable
 
         Assert.AreEqual("selected-password", password);
         Assert.AreEqual(1, protector.UnprotectCalls, "不得解密私钥口令或其他凭据");
-        Assert.AreSequenceEqual(new[] { ciphertext }, protector.UnprotectedValues);
+        Assert.AreSequenceEqual([ciphertext], protector.UnprotectedValues);
     }
 
     [TestMethod]
@@ -175,7 +183,9 @@ public sealed class SharedCredentialStorageTests : IDisposable
         var repo = new SonnetDbSharedCredentialRepository(_engine, protector);
         var credential = new SharedCredential
         {
-            Name = "empty", Password = password, PrivateKeyPassphrase = "must-stay-encrypted"
+            Name = "empty",
+            Password = password,
+            PrivateKeyPassphrase = "must-stay-encrypted"
         };
         await repo.SaveAsync(credential);
 
@@ -193,8 +203,12 @@ public sealed class SharedCredentialStorageTests : IDisposable
         var repo = new SonnetDbSharedCredentialRepository(_engine, protector);
         var credential = new SharedCredential
         {
-            Name = "not-password", AuthMethod = authMethod, Password = "unused-password",
-            PrivateKeyPath = "/key", PrivateKeyPassphrase = "must-stay-encrypted", CertificatePath = "/cert"
+            Name = "not-password",
+            AuthMethod = authMethod,
+            Password = "unused-password",
+            PrivateKeyPath = "/key",
+            PrivateKeyPassphrase = "must-stay-encrypted",
+            CertificatePath = "/cert"
         };
         await repo.SaveAsync(credential);
 
@@ -217,7 +231,7 @@ public sealed class SharedCredentialStorageTests : IDisposable
         await Assert.ThrowsExactlyAsync<CryptographicException>(() => repo.GetPasswordAsync(credential.Id));
 
         Assert.AreEqual(1, protector.UnprotectCalls);
-        Assert.AreSequenceEqual(new[] { ciphertext }, protector.UnprotectedValues);
+        Assert.AreSequenceEqual([ciphertext], protector.UnprotectedValues);
     }
 
     [TestMethod]
@@ -236,7 +250,7 @@ public sealed class SharedCredentialStorageTests : IDisposable
         await Assert.ThrowsExactlyAsync<CryptographicException>(() => repo.GetPasswordAsync(credential.Id));
 
         Assert.AreEqual(1, protector.UnprotectCalls);
-        Assert.AreSequenceEqual(new[] { tampered }, protector.UnprotectedValues);
+        Assert.AreSequenceEqual([tampered], protector.UnprotectedValues);
     }
 
     [TestMethod]
@@ -261,13 +275,13 @@ public sealed class SharedCredentialStorageTests : IDisposable
         await repo.SaveAsync(credential);
         string rawJson = await _engine.WithCollectionAsync(
             SonnetDbEngine.SharedCredentialsCollection, store => store.Get(credential.Id.ToString("D"))!.Json);
-        using JsonDocument stored = JsonDocument.Parse(rawJson);
+        using var stored = JsonDocument.Parse(rawJson);
         Assert.AreEqual(ciphertext, stored.RootElement.GetProperty("password").GetString());
         Assert.AreNotEqual(plaintext, ciphertext);
 
         Assert.AreEqual(plaintext, await repo.GetPasswordAsync(credential.Id), "不能仅因解密结果以 enc1: 开头就拒绝");
         Assert.AreEqual(1, protector.UnprotectCalls);
-        Assert.AreSequenceEqual(new[] { ciphertext }, protector.UnprotectedValues);
+        Assert.AreSequenceEqual([ciphertext], protector.UnprotectedValues);
     }
 
     /// <summary>

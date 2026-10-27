@@ -52,7 +52,7 @@ public sealed class SettingsCategoriesTests
     [TestMethod]
     public void SecretStateAndMigrationFields_AllExist()
     {
-        var json = JsonSerializer.SerializeToElement(new AppSettings(), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        JsonElement json = JsonSerializer.SerializeToElement(new AppSettings(), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         foreach ((string block, string field) in SettingsCategories.SecretFields
                      .Concat(SettingsCategories.StateFields)
                      .Concat(SettingsCategories.MigrationFields))

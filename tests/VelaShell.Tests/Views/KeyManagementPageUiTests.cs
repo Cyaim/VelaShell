@@ -69,7 +69,7 @@ public sealed class KeyManagementPageUiTests
     {
         var key = new SshKeyInfo("id_ed25519", "ED25519", "SHA256:abc", "/home/u/.ssh/id_ed25519", "ssh-ed25519 AAAA u@h");
         ISshKeyService keys = Substitute.For<ISshKeyService>();
-        keys.ListKeysAsync(Arg.Any<CancellationToken>()).Returns(new List<SshKeyInfo> { key });
+        keys.ListKeysAsync(Arg.Any<CancellationToken>()).Returns([key]);
         OnKeyManagementPage((selector, _) =>
         {
             KeyManagementPage page = selector.GetVisualAncestors().OfType<KeyManagementPage>().First();

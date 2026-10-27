@@ -39,7 +39,7 @@ public sealed class SshConnectionDetailsTests
         Assert.AreEqual("ssh-ed25519", details.Algorithms.HostKey);
         Assert.IsFalse(string.IsNullOrEmpty(details.Algorithms.EncryptionClientToServer));
         Assert.AreEqual("none", details.Algorithms.CompressionClientToServer);
-        Assert.IsTrue(details.Timings.Total > TimeSpan.Zero);
+        Assert.IsGreaterThan(TimeSpan.Zero, details.Timings.Total);
         Assert.IsGreaterThan(0L, details.BytesSent);
         Assert.IsGreaterThan(0L, details.PacketsReceived);
         Assert.AreEqual(0, details.RekeyCount);
@@ -81,7 +81,7 @@ public sealed class SshConnectionDetailsTests
         Assert.IsFalse(string.IsNullOrEmpty(hop.Encryption));
         Assert.AreEqual("password", hop.AuthenticationMethod);
         Assert.IsTrue(hop.IsAlive);
-        CollectionAssert.AreEqual(new[] { "target.internal:22" }, jump.TunnelTargets, "目标名交给跳板解析。");
+        Assert.AreSequenceEqual(["target.internal:22"], jump.TunnelTargets, "目标名交给跳板解析。");
     }
 
     /// <summary>同一份装配连第二次(重连):跳板从头记,不在上一次的记录后面接着加。</summary>

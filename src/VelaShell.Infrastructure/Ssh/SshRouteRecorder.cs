@@ -22,7 +22,6 @@ internal sealed class SshRouteRecorder
 {
     private readonly Lock _gate = new();
     private List<RecordedHop> _hops = [];
-    private string? _proxy;
 
     /// <summary>一台连上了的跳板。</summary>
     /// <param name="Info">这一跳的连接信息。</param>
@@ -35,7 +34,7 @@ internal sealed class SshRouteRecorder
         lock (_gate)
         {
             _hops = [];
-            _proxy = null;
+            Proxy = null;
         }
     }
 
@@ -58,7 +57,7 @@ internal sealed class SshRouteRecorder
         string scheme = route.Kind == ProxyKind.Socks5 ? "socks5" : "http";
         lock (_gate)
         {
-            _proxy = $"{scheme} {HostAddress.FormatEndPoint(route.Host, route.Port)}";
+            Proxy = $"{scheme} {HostAddress.FormatEndPoint(route.Host, route.Port)}";
         }
     }
 
@@ -81,8 +80,10 @@ internal sealed class SshRouteRecorder
         {
             lock (_gate)
             {
-                return _proxy;
+                return field;
             }
         }
+
+        private set;
     }
 }

@@ -1674,7 +1674,7 @@ public sealed class SftpTests
                 "/home/joe/hard.txt", "/home/joe/orig.txt", harness.Token));
 
         Assert.IsTrue(error.IsUnsupported);
-        Assert.AreSequenceEqual(new[] { SftpExtensionNames.HardLink }, error.MissingExtensions.ToArray());
+        Assert.AreSequenceEqual([SftpExtensionNames.HardLink], [.. error.MissingExtensions]);
     }
 
     // ------------------------------------------------------------ uid / gid 翻成名字
@@ -1714,7 +1714,7 @@ public sealed class SftpTests
         SftpException error = await Assert.ThrowsExactlyAsync<SftpException>(async () =>
             await harness.Sftp.LookupUserAndGroupNamesAsync([0], [0], harness.Token));
         Assert.IsTrue(error.IsUnsupported);
-        Assert.AreSequenceEqual(new[] { SftpExtensionNames.UsersGroupsById }, error.MissingExtensions.ToArray());
+        Assert.AreSequenceEqual([SftpExtensionNames.UsersGroupsById], [.. error.MissingExtensions]);
 
         uint[] tooMany = [.. Enumerable.Range(0, SftpFileSystem.MaxIdsPerLookup + 1).Select(i => (uint)i)];
         await Assert.ThrowsExactlyAsync<ArgumentException>(async () =>
@@ -1774,7 +1774,7 @@ public sealed class SftpTests
             await harness.Sftp.CopyFileAsync("/home/joe/src.txt", "/home/joe/dst.txt", cancellationToken: harness.Token));
 
         Assert.IsTrue(error.IsUnsupported);
-        Assert.AreSequenceEqual(new[] { SftpExtensionNames.CopyData }, error.MissingExtensions.ToArray());
+        Assert.AreSequenceEqual([SftpExtensionNames.CopyData], [.. error.MissingExtensions]);
         Assert.IsFalse(await harness.Sftp.ExistsAsync("/home/joe/dst.txt", harness.Token));
     }
 
@@ -1837,7 +1837,7 @@ public sealed class SftpTests
             await harness.Sftp.SetLinkAttributesAsync("/home/joe/link", SftpFileAttributes.WithPermissions(0x1FF), harness.Token));
 
         Assert.IsTrue(error.IsUnsupported);
-        Assert.AreSequenceEqual(new[] { SftpExtensionNames.LSetStat }, error.MissingExtensions.ToArray());
+        Assert.AreSequenceEqual([SftpExtensionNames.LSetStat], [.. error.MissingExtensions]);
     }
 
     // ------------------------------------------------------------ 展开 ~
@@ -1883,7 +1883,7 @@ public sealed class SftpTests
             async () => await harness.Sftp.ExpandPathAsync("~alice", harness.Token));
         Assert.IsTrue(error.IsUnsupported);
         Assert.AreEqual(SftpOperation.ExpandPath, error.Operation);
-        Assert.AreSequenceEqual(new[] { SftpExtensionNames.ExpandPath, SftpExtensionNames.HomeDirectory }, error.MissingExtensions.ToArray());
+        Assert.AreSequenceEqual([SftpExtensionNames.ExpandPath, SftpExtensionNames.HomeDirectory], [.. error.MissingExtensions]);
     }
 
     // ------------------------------------------------------------ 文件系统用量
@@ -1919,7 +1919,7 @@ public sealed class SftpTests
 
         Assert.IsTrue(error.IsUnsupported);
         Assert.AreEqual(SftpOperation.GetFileSystemInfo, error.Operation);
-        Assert.AreSequenceEqual(new[] { SftpExtensionNames.StatVfs }, error.MissingExtensions.ToArray());
+        Assert.AreSequenceEqual([SftpExtensionNames.StatVfs], [.. error.MissingExtensions]);
         Assert.AreEqual("", error.ServerMessage, "服务端没说话：说明不进 ServerMessage");
     }
 
@@ -1982,7 +1982,7 @@ public sealed class SftpTests
         // 「先删再改名」不是原子的 —— 中途失败会两个都没有。
         Assert.IsTrue(error.IsUnsupported);
         Assert.Contains("不是原子的", error.Message);
-        Assert.AreSequenceEqual(new[] { SftpExtensionNames.PosixRename }, error.MissingExtensions.ToArray());
+        Assert.AreSequenceEqual([SftpExtensionNames.PosixRename], [.. error.MissingExtensions]);
         Assert.IsFalse(harness.Sftp.Capabilities.HasPosixRename);
     }
 

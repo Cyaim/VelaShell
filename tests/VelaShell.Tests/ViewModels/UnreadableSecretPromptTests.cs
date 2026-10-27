@@ -23,13 +23,19 @@ public sealed class UnreadableSecretPromptTests
         var plain = new SessionProfile { Name = "p", Host = "h", Username = "root", Password = "typed" };
         var keyed = new SessionProfile
         {
-            Name = "p", Host = "h", Username = "root", AuthMethod = AuthMethod.PrivateKey,
-            PrivateKeyPath = "/keys/id", PrivateKeyPassphrase = Undecryptable
+            Name = "p",
+            Host = "h",
+            Username = "root",
+            AuthMethod = AuthMethod.PrivateKey,
+            PrivateKeyPath = "/keys/id",
+            PrivateKeyPassphrase = Undecryptable
         };
         var shared = new SharedCredential { Name = "ops", Username = "root", Password = Undecryptable };
         var referencing = new SessionProfile
         {
-            Name = "p", Host = "h", CredentialSource = CredentialReference.ForShared(shared.Id)
+            Name = "p",
+            Host = "h",
+            CredentialSource = CredentialReference.ForShared(shared.Id)
         };
 
         Assert.IsTrue(UnreadableSecretPrompt.Applies(own, null));

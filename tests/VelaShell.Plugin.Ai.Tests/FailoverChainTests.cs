@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.PluginSdk.Testing;
 
@@ -45,8 +46,11 @@ public sealed class FailoverChainTests
         else Assert.IsEmpty(candidates, "同端点、同协议、同凭据的重复模型不是备用接入");
         settings.AutoFailoverAcrossAccounts = true;
         if (ownKey)
+        {
             Assert.AreSequenceEqual(["b"], [.. settings.FailoverCandidates(Resolved(settings, "a")).Select(model => model.Id)],
                 "开了跨账号开关才换到自带 Key 的那个");
+        }
+
         settings.AutoFailoverAcrossAccounts = false;
         settings.FailoverChain = [new FailoverEntry { ModelId = "b" }];
         Assert.AreEqual("b", settings.FailoverCandidates(Resolved(settings, "a")).Single().Id,
@@ -109,7 +113,7 @@ public sealed class FailoverChainTests
         AiProvider work = Provider("copilot-work", "github-copilot", ("a", "gpt-5"));
         AiProvider personal = Provider("copilot-personal", "github-copilot", ("b", "gpt-5"));
         var legacy = new AiSettings { Providers = [work, personal] };
-        var node = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(legacy))!.AsObject();
+        JsonObject node = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(legacy))!.AsObject();
         Assert.IsTrue(node.Remove(nameof(AiSettings.AutoFailoverAcrossAccounts)), "前提:模拟升级前没有这个字段的设置");
         await context.Storage.SetAsync("settings", System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(node.ToJsonString()));
 

@@ -39,7 +39,8 @@ public sealed class BridgeAgentRunnerTests
         using var context = new TestPluginContext();
         var provider = new AiProvider
         {
-            BaseUrl = "http://127.0.0.1:1/v1", DefaultProtocol = ChatProtocol.OpenAiImages,
+            BaseUrl = "http://127.0.0.1:1/v1",
+            DefaultProtocol = ChatProtocol.OpenAiImages,
             Models = [new AiModelConfig { Model = "image-2" }]
         };
         await new AiSettingsStore(context).SaveAsync(new AiSettings
@@ -56,7 +57,8 @@ public sealed class BridgeAgentRunnerTests
         using var context = new TestPluginContext();
         var provider = new AiProvider
         {
-            Name = "empty", BaseUrl = endpoint.BaseUrl,
+            Name = "empty",
+            BaseUrl = endpoint.BaseUrl,
             DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
             Models = [new AiModelConfig { Model = "m" }]
         };
@@ -87,7 +89,8 @@ public sealed class BridgeAgentRunnerTests
         using var context = new TestPluginContext();
         var provider = new AiProvider
         {
-            Name = "blank", BaseUrl = endpoint.BaseUrl,
+            Name = "blank",
+            BaseUrl = endpoint.BaseUrl,
             DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
             Models = [new AiModelConfig { Model = "m" }]
         };
@@ -104,8 +107,8 @@ public sealed class BridgeAgentRunnerTests
         Assert.AreEqual(endpoint.Requests[0], endpoint.Requests[1], "补试请求必须与首次相同");
         Assert.AreEqual(endpoint.Requests[0], endpoint.Requests[2], "补试请求必须与首次相同");
         string boundary = loc["ContinuationBoundary"].Trim();
-        Assert.IsFalse(progress.Any(text => text.Contains(boundary, StringComparison.Ordinal)), "群里不能看到续接边界");
-        Assert.IsFalse(conversation.History.Any(m => m.Text.Contains(boundary, StringComparison.Ordinal)), "历史不能记下续接边界");
+        Assert.DoesNotContain(text => text.Contains(boundary, StringComparison.Ordinal), progress, "群里不能看到续接边界");
+        Assert.DoesNotContain(m => m.Text.Contains(boundary, StringComparison.Ordinal), conversation.History, "历史不能记下续接边界");
     }
 
     /// <summary>
@@ -208,8 +211,15 @@ public sealed class BridgeAgentRunnerTests
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.StartUploadHandler = (_, source, target, options, _) => Task.FromResult(new RemoteTransferSnapshot
         {
-            TransferId = "transfer", OperationId = options.OperationId, SessionId = "session", LocalPath = source, RemotePath = target,
-            State = RemoteTransferState.Unknown, RemoteStopConfirmed = false, Sequence = 1, Generation = 1
+            TransferId = "transfer",
+            OperationId = options.OperationId,
+            SessionId = "session",
+            LocalPath = source,
+            RemotePath = target,
+            State = RemoteTransferState.Unknown,
+            RemoteStopConfirmed = false,
+            Sequence = 1,
+            Generation = 1
         });
         FileTransferRunScope scope = FileTransferJobRegistry.For(context).BeginRun("owner", "run");
         int released = 0;
@@ -255,7 +265,8 @@ public sealed class BridgeAgentRunnerTests
         await using var second = new SseStub("", streamingReply: n => n == 1 ? call : Answer("second done"));
         AiProvider Provider(string name, SseStub stub) => new()
         {
-            Name = name, BaseUrl = stub.BaseUrl,
+            Name = name,
+            BaseUrl = stub.BaseUrl,
             DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
             Models = [new AiModelConfig { Model = "m" }]
         };
@@ -323,7 +334,8 @@ public sealed class BridgeAgentRunnerTests
         using var context = new TestPluginContext();
         var provider = new AiProvider
         {
-            Name = "stub", BaseUrl = endpoint.BaseUrl,
+            Name = "stub",
+            BaseUrl = endpoint.BaseUrl,
             DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
             Models = [new AiModelConfig { Model = "m" }]
         };
@@ -360,7 +372,8 @@ public sealed class BridgeAgentRunnerTests
         using var context = new TestPluginContext();
         var provider = new AiProvider
         {
-            Name = "other", BaseUrl = other.BaseUrl,
+            Name = "other",
+            BaseUrl = other.BaseUrl,
             DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
             Models = [new AiModelConfig { Model = "m" }]
         };

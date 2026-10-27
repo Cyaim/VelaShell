@@ -116,9 +116,9 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
 
     [TestMethod]
     public void 每一种转发连接失败都有五语言文案() =>
-        AssertKeys(Enum.GetValues<ForwardErrorReason>().SelectMany(static r => new[]
+        AssertKeys(Enum.GetValues<ForwardErrorReason>().SelectMany(static r => new (string What, string? Key)[]
         {
-            ($"{r}", (string?)SshInterop.ForwardErrorKey(r)),
+            ($"{r}", SshInterop.ForwardErrorKey(r)),
             ($"{r}(超时)", SshInterop.ForwardErrorKey(r, timedOut: true)),
             ($"{r}(多条)", SshInterop.ForwardErrorKey(r, many: true)),
         }));
@@ -518,7 +518,7 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
     [TestMethod]
     public void 通道失败按种类给建议并带上服务端原话()
     {
-        SshChannelException ex = SshChannelException.FromOpenFailure("direct-tcpip", 1, "no\u001b[2J");
+        var ex = SshChannelException.FromOpenFailure("direct-tcpip", 1, "no\u001b[2J");
 
         Exception? translated = SshInterop.Translate(ex);
 
@@ -581,8 +581,8 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
     [TestMethod]
     public void 证书与私钥不配对时摆出两边的指纹()
     {
-        using InMemorySshSigner certified = InMemorySshSigner.GenerateEd25519();
-        using InMemorySshSigner other = InMemorySshSigner.GenerateEd25519();
+        using var certified = InMemorySshSigner.GenerateEd25519();
+        using var other = InMemorySshSigner.GenerateEd25519();
         SshCertificateException ex = new(SshFailureReason.KeyMismatch, "证书里的公钥与这把私钥不是一对。")
         {
             ProblemKind = SshKeyProblemKind.CertificateKeyMismatch,
@@ -780,7 +780,7 @@ public sealed partial class SshInteropDiagnosticsTests : IDisposable
     /// 曾经 AgentUnavailable 与 agent 的 Unsupported 透传库的中文。
     /// </summary>
     [TestMethod]
-    public void agent失败按种类说()
+    public void Agent失败按种类说()
     {
         SshAgentException notRunning = new(SshFailureReason.AgentNotRunning, "环境变量 SSH_AUTH_SOCK 没有设。")
         {

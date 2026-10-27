@@ -102,7 +102,7 @@ public sealed class TransferRetryPolicyTests
     {
         double[] seconds = [.. Enumerable.Range(1, 8).Select(n => TransferRetryPolicy.DelayBeforeRetry(n).TotalSeconds)];
 
-        CollectionAssert.AreEqual(new double[] { 1, 2, 4, 8, 16, 30, 30, 30 }, seconds);
+        Assert.AreSequenceEqual([1, 2, 4, 8, 16, 30, 30, 30], seconds);
         Assert.AreEqual(TimeSpan.Zero, TransferRetryPolicy.DelayBeforeRetry(0));
         Assert.AreEqual(TransferRetryPolicy.MaxDelay, TransferRetryPolicy.DelayBeforeRetry(int.MaxValue));
     }

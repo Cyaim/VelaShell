@@ -46,15 +46,10 @@ public sealed class ReleasePageTests
     [DataRow("https://github.com/joesdu/VelaShell/releases?next=https://evil.example", "带查询串")]
     [DataRow("https://github.com/joesdu/VelaShell/releases#x", "带片段")]
     [DataRow("https://xn--gthub-n4a.com/joesdu/VelaShell/releases", "形近的国际化域名")]
-    public void AnythingElse_FallsBackToThisRepositorysReleaseList(string? url, string why)
-    {
-        Assert.AreEqual(new Uri(ReleasePage.ReleasesUrl), ReleasePage.Resolve(url), why);
-    }
+    public void AnythingElse_FallsBackToThisRepositorysReleaseList(string? url, string why) => Assert.AreEqual(new Uri(ReleasePage.ReleasesUrl), ReleasePage.Resolve(url), why);
 
     [TestMethod]
-    public void TheFallbackItselfPassesTheCheck()
-    {
+    public void TheFallbackItselfPassesTheCheck() =>
         // 退回的那个地址自己也要过得了判定,否则改了仓库地址之后按钮会在两个地址之间各说各话
         Assert.AreEqual(ReleasePage.ReleasesUrl, ReleasePage.TryGetRepositoryReleasePage(ReleasePage.ReleasesUrl)?.AbsoluteUri);
-    }
 }

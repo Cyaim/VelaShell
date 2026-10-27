@@ -13,8 +13,6 @@ public sealed class TailscaleSshCheckViewModel : ReactiveObject
     private readonly Func<string, Task> _copyLink;
     private readonly Action _cancel;
     private Uri _verificationUri;
-    private string _errorMessage = string.Empty;
-    private bool _isCompleted;
     private int _uriRevision;
 
     /// <summary>创建单次认证跳的等待状态;不会自动打开链接。</summary>
@@ -61,15 +59,15 @@ public sealed class TailscaleSshCheckViewModel : ReactiveObject
     /// <summary>不包含链接或平台异常的本地化操作错误。</summary>
     public string ErrorMessage
     {
-        get => _errorMessage;
-        private set => this.RaiseAndSetIfChanged(ref _errorMessage, value);
-    }
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    } = string.Empty;
 
     /// <summary>结束后旧命令失效。</summary>
     public bool IsCompleted
     {
-        get => _isCompleted;
-        private set => this.RaiseAndSetIfChanged(ref _isCompleted, value);
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     /// <summary>由用户主动打开当前链接。</summary>

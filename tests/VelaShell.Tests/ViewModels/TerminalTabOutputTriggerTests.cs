@@ -44,11 +44,10 @@ public sealed class TerminalTabOutputTriggerTests
             _terminal.WriteInput(Arg.Is<byte[]>(b => b.SequenceEqual(Encoding.UTF8.GetBytes("yes"))));
             _terminal.WriteKeyInput(Key.Enter, KeyModifiers.None);
         });
-        CollectionAssert.AreEqual(new[] { (true, true), (true, true) }, flags,
-            "默认不进同步输入频道;整段标成程序注入,补全弹层不弹。");
+        Assert.AreSequenceEqual([(true, true), (true, true)], flags, "默认不进同步输入频道;整段标成程序注入,补全弹层不弹。");
         Assert.IsFalse(_vm.IsSyncForwardSuppressed);
         Assert.IsFalse(_vm.IsProgrammaticInput);
-        StringAssert.Contains(_vm.AutoResponseNotice, "host key", "终端上方要说一声是哪条规则答的。");
+        Assert.Contains("host key", _vm.AutoResponseNotice, "终端上方要说一声是哪条规则答的。");
     }
 
     [TestMethod]
@@ -96,7 +95,7 @@ public sealed class TerminalTabOutputTriggerTests
 
         _terminal.DidNotReceive().WriteInput(Arg.Any<byte[]>());
         _terminal.DidNotReceive().WriteKeyInput(Arg.Any<Key>(), Arg.Any<KeyModifiers>());
-        StringAssert.Contains(_vm.AutoResponseNotice, "host key");
+        Assert.Contains("host key", _vm.AutoResponseNotice);
     }
 
     [TestMethod]

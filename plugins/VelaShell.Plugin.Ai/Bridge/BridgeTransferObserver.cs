@@ -6,7 +6,6 @@ namespace VelaShell.Plugin.Ai.Bridge;
 /// <summary>脱离短工具/模型调用的本地进度观察，不追加模型或历史消息帧。</summary>
 internal sealed class BridgeTransferObserver : IDisposable
 {
-    private readonly FileTransferRunScope _scope;
     private readonly Loc _loc;
     private readonly Action<string> _progress;
     private readonly Action<string> _report;
@@ -17,12 +16,12 @@ internal sealed class BridgeTransferObserver : IDisposable
     private long _lastProgress;
     private string _text = "";
     private readonly Dictionary<string, bool> _terminal = [];
-    internal FileTransferRunScope Scope => _scope;
+    internal FileTransferRunScope Scope { get; }
 
     internal BridgeTransferObserver(FileTransferRunScope scope, Loc loc, Action<string> progress,
         Action<string> report, Action<BridgeTransferObserver> remove)
     {
-        _scope = scope; _loc = loc; _progress = progress; _report = report; _remove = remove;
+        Scope = scope; _loc = loc; _progress = progress; _report = report; _remove = remove;
         _subscription = scope.Subscribe(OnProgress);
     }
 
@@ -30,7 +29,7 @@ internal sealed class BridgeTransferObserver : IDisposable
 
     private void OnProgress(FileTransferJobUpdate update)
     {
-        if (update.OwnerId != _scope.OwnerId || update.RunId != _scope.RunId) return;
+        if (update.OwnerId != Scope.OwnerId || update.RunId != Scope.RunId) return;
         string? progress = null, report = null;
         bool dispose;
         lock (_gate)
@@ -70,7 +69,7 @@ internal sealed class BridgeTransferObserver : IDisposable
     // (与桌面 TransferBinding.Drain 同一条规则)。停止未确认的 Unknown/TimedOut 是终态,却一直算 HasRunningTransfers ——
     // Finish 只看后者的话,订阅连同那几个闭包要一直挂到桥接重载。
     private bool Drained() => _finished
-        && (!_scope.HasRunningTransfers || (_terminal.Count > 0 && _terminal.Values.All(t => t)));
+        && (!Scope.HasRunningTransfers || (_terminal.Count > 0 && _terminal.Values.All(t => t)));
 
     public void Dispose()
     {

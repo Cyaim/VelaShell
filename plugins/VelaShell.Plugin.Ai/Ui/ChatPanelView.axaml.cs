@@ -627,7 +627,6 @@ public partial class ChatPanelView : UserControl
                 Resources[key] = brush;
             }
         }
-
     }
 
     /// <summary>Markdown 链接点击:只放行 http/https,交给宿主的默认浏览器打开。</summary>
@@ -1514,8 +1513,11 @@ public partial class ChatPanelView : UserControl
             bool usesToolLoop = !AiSettingsStore.IsImageModel(provider) && (mode != ChatMode.Chat || imageToolsEnabled);
             ApprovalMode imageApproval = _settings.Approval;
             if (imageToolsEnabled)
+            {
                 bubble.ImageTools = ImagesFor(conv).BeginTurn(_store, imageModelId!,
                     (detail, ct) => ApproveImageAsync(runScope, imageApproval, detail, ct), token);
+            }
+
             ReasoningLevel? turnOverride = provider.ReasoningOverride;
             ResolvedModel WithTurn(ResolvedModel model)
                 => model.WithReasoning(model.ReasoningAdjustable ? turnOverride : ReasoningLevel.Default);
@@ -1745,7 +1747,10 @@ public partial class ChatPanelView : UserControl
                         if (terminal is not ModelResponseTerminatedException ended
                             || (execution.TerminationNotice != ended.ReasonKey
                                 && !(mode == ChatMode.Chat && TransientFailure.IsTruncatedAnswer(updates))))
+                        {
                             throw terminal;
+                        }
+
                         truncation = ended.ReasonKey;
                     }
                     if (!HasMeaningfulOutput(updates))
@@ -2179,10 +2184,15 @@ public partial class ChatPanelView : UserControl
                 History.AddRange(execution.InterruptedHistory(partial));
                 int interruptedSequence = await PersistAsync("assistant", partial);
                 if (interruptedSequence >= 0 && bubble is { HasImages: true })
+                {
                     await _historyStore.AppendMetaAsync(ConversationId, interruptedSequence,
                         bubble.Snapshot(modelLabel, TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt)));
+                }
             }
-            else await SettleUnfinishedTurnAsync(bubble);
+            else
+            {
+                await SettleUnfinishedTurnAsync(bubble);
+            }
         }
         catch (Exception ex)
         {
@@ -2214,10 +2224,15 @@ public partial class ChatPanelView : UserControl
                 History.AddRange(execution.InterruptedHistory(partial));
                 int interruptedSequence = await PersistAsync("assistant", partial);
                 if (interruptedSequence >= 0 && bubble is { HasImages: true })
+                {
                     await _historyStore.AppendMetaAsync(ConversationId, interruptedSequence,
                         bubble.Snapshot(modelLabel, TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt)));
+                }
             }
-            else await SettleUnfinishedTurnAsync(bubble);
+            else
+            {
+                await SettleUnfinishedTurnAsync(bubble);
+            }
         }
         finally
         {

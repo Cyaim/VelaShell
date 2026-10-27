@@ -720,8 +720,8 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsFalse(Find<Button>(panel, "StopButton").IsVisible);
                 var history = new ChatHistoryStore(context);
                 await history.InitAsync();
-                var sessions = await history.ListSessionsAsync();
-                var entries = await history.LoadAsync(sessions.Single().Id);
+                IReadOnlyList<ChatSessionSummary> sessions = await history.ListSessionsAsync();
+                IReadOnlyList<ChatEntry> entries = await history.LoadAsync(sessions.Single().Id);
                 Assert.Contains(e => e.Role == "assistant" && e.Text == "partial", entries);
             }
             finally { stub.Release(); await panel.DetachAsync(); window.Close(); }

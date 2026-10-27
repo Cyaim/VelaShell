@@ -543,10 +543,7 @@ public sealed class LocalFilePaneViewModelTests
     }
 
     [TestMethod]
-    public void ResolvePathInput_StripsTheQuotesThatExplorersCopyAsPathAdds()
-    {
-        Assert.AreEqual(Fake("Books", "123"), LocalFilePaneViewModel.ResolvePathInput($"  \"{Fake("Books", "123")}\"  ", FakeRoot));
-    }
+    public void ResolvePathInput_StripsTheQuotesThatExplorersCopyAsPathAdds() => Assert.AreEqual(Fake("Books", "123"), LocalFilePaneViewModel.ResolvePathInput($"  \"{Fake("Books", "123")}\"  ", FakeRoot));
 
     [TestMethod]
     public void ResolvePathInput_ResolvesRelativePathsAgainstTheCurrentDirectory()

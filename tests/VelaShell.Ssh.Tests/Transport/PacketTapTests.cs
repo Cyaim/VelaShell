@@ -157,7 +157,7 @@ public sealed class PacketTapTests
         await connection.RunAsync("normal", cancellationToken: TestContext.CancellationToken);
         lock (tap.Records) { Assert.Contains(record => record.PayloadLength > 0, tap.Records); }
         await connection.DisposeAsync();
-        Assert.ThrowsExactly<ObjectDisposedException>(() => connection.SuppressSensitivePayload());
+        Assert.ThrowsExactly<ObjectDisposedException>(connection.SuppressSensitivePayload);
         await second.DisposeAsync();
         await lifetime.CancelAsync();
         await Task.WhenAll(servers);

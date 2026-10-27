@@ -673,8 +673,15 @@ public sealed class BridgeRouterTests
             harness.Context.FakeRemoteFs.SupportsTransferOperations = true;
             harness.Context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(started = new RemoteTransferSnapshot
             {
-                TransferId = "transfer", OperationId = options.OperationId, SessionId = id, LocalPath = source, RemotePath = target,
-                State = RemoteTransferState.Running, Sequence = 1, Generation = 1, TotalBytes = 7
+                TransferId = "transfer",
+                OperationId = options.OperationId,
+                SessionId = id,
+                LocalPath = source,
+                RemotePath = target,
+                State = RemoteTransferState.Running,
+                Sequence = 1,
+                Generation = 1,
+                TotalBytes = 7
             });
             harness.Context.FakeRemoteFs.GetTransferHandler = (_, _) => Task.FromResult(started!);
             harness.Context.FakeRemoteFs.WaitTransferHandler = (_, _, _, ct) => finish.Task.WaitAsync(ct);
@@ -692,7 +699,8 @@ public sealed class BridgeRouterTests
             });
             AiProvider provider = new()
             {
-                Name = "stub", BaseUrl = endpoint.BaseUrl,
+                Name = "stub",
+                BaseUrl = endpoint.BaseUrl,
                 DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
                 Models = [new AiModelConfig { Model = "m" }]
             };

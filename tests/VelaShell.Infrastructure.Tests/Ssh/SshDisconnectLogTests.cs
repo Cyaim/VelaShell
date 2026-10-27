@@ -32,9 +32,9 @@ public sealed class SshDisconnectLogTests
         };
         string line = SshDisconnectLog.Describe("ops@[2001:db8::1]:2222", reason, ConnectedAt.ToOffset(TimeSpan.FromHours(-4.5)));
         StringAssert.StartsWith(line, "[SSH] ops@[2001:db8::1]:2222 closed (connected since 2026-10-23 21:45:30 -04:30): ClosedByPeer(Open)");
-        StringAssert.Contains(line, "peer DISCONNECT ByApplication(11)");
-        StringAssert.Contains(line, "\"idle timeout [SSH] fake line?[31m\"", "换行收成一个空格,其余控制字符照库的规矩换成 ?");
-        StringAssert.Contains(line, " - 对端断开了连接");
+        Assert.Contains("peer DISCONNECT ByApplication(11)", line);
+        Assert.Contains("\"idle timeout [SSH] fake line?[31m\"", line, "换行收成一个空格,其余控制字符照库的规矩换成 ?");
+        Assert.Contains(" - 对端断开了连接", line);
         Assert.DoesNotContain("\n", line);
         Assert.DoesNotContain("\r", line);
         Assert.DoesNotContain("\u001b", line);
@@ -50,7 +50,7 @@ public sealed class SshDisconnectLogTests
             PeerDescription = "bye\u2028[SSH] fake line\u2029\u202Eevil\u202C \u2066x\u2069"
         };
         string line = SshDisconnectLog.Describe("u@h:22", reason, ConnectedAt);
-        StringAssert.Contains(line, "\"bye [SSH] fake line ?evil? ?x?\"");
+        Assert.Contains("\"bye [SSH] fake line ?evil? ?x?\"", line);
         foreach (char c in "\u2028\u2029\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069")
         {
             Assert.DoesNotContain(c.ToString(), line);

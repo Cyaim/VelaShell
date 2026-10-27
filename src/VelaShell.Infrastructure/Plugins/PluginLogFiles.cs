@@ -37,7 +37,7 @@ public sealed class PluginLogFiles(string directory, long maxBytes = PluginLogFi
     public const int DefaultTailBytes = 256 * 1024;
 
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, long> _sizes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _sizes = [with(StringComparer.Ordinal)];
 
     /// <summary>插件日志目录。</summary>
     public string Directory { get; } = directory;

@@ -838,7 +838,8 @@ public class GitHubReleaseSourceTests : IDisposable
             }
             Assert.IsEmpty(request.Headers.IfNoneMatch);
             return NotesResponse(tag, tag[1..], etag);
-        })) { ReleaseNotesCacheDuration = TimeSpan.Zero };
+        }))
+        { ReleaseNotesCacheDuration = TimeSpan.Zero };
 
         ReleaseNotes? latest = await source.GetLatestReleaseNotesAsync();
         ReleaseNotes? current = await source.GetReleaseNotesForVersionAsync("v1.7.1");
@@ -868,7 +869,8 @@ public class GitHubReleaseSourceTests : IDisposable
             return calls == 2
                 ? new(HttpStatusCode.OK) { Content = new StringContent(badJson) }
                 : new(HttpStatusCode.NotModified);
-        })) { ReleaseNotesCacheDuration = TimeSpan.Zero };
+        }))
+        { ReleaseNotesCacheDuration = TimeSpan.Zero };
 
         ReleaseNotes? original = await source.GetLatestReleaseNotesAsync();
         if (badJson == "invalid")
@@ -940,7 +942,7 @@ public class GitHubReleaseSourceTests : IDisposable
             Assert.AreSequenceEqual(["v3.0.0", "v1.0.0", "v2.0.0", "v1.0.0"], [.. notes.Select(note => note!.Tag)]);
             Assert.AreSame(notes[1], notes[3]);
             Assert.HasCount(3, urls);
-            Assert.AreEqual(3, urls.Distinct(StringComparer.Ordinal).Count());
+            Assert.HasCount(3, urls.Distinct(StringComparer.Ordinal));
         }
         finally
         {

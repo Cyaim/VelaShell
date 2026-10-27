@@ -33,7 +33,7 @@ public sealed class LayoutTreeTests
 
         LayoutNode pruned = LayoutTree.Prune(root, d => d != b, dropped)!;
 
-        Assert.AreSequenceEqual([b], dropped.ToArray());
+        Assert.AreSequenceEqual([b], [.. dropped]);
         Assert.HasCount(2, pruned.Children);
         LayoutNode hoisted = pruned.Children[1];
         Assert.IsFalse(hoisted.IsSplit, "只剩 c 的分栏被它自己替换");

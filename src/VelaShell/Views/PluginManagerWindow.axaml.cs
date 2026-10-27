@@ -97,7 +97,7 @@ public partial class PluginManagerWindow : Window
     }
 
     /// <summary>每个插件至多一扇日志窗口,按插件 id 去重;关掉插件管理窗口时一并关掉(它们以本窗口为属主)。</summary>
-    private readonly Dictionary<string, PluginLogWindow> _logWindows = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PluginLogWindow> _logWindows = [with(StringComparer.Ordinal)];
 
     private void ViewLog_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {

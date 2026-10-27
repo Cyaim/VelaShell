@@ -996,7 +996,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             return refused;
         }
         var info = new FileInfo(full);
-        (long Length, DateTime Written) approved = (info.Length, info.LastWriteTimeUtc);
+        (long length, DateTime written) = (info.Length, info.LastWriteTimeUtc);
         if (!await ApproveAsync(new ApprovalRequest("send_file", $"{info.Name}  ({info.Length} bytes)\n→ this chat"),
                 cancellationToken).ConfigureAwait(false))
         {
@@ -1009,7 +1009,7 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             return late;
         }
         info = new FileInfo(full);
-        if (info.Length != approved.Length || info.LastWriteTimeUtc != approved.Written)
+        if (info.Length != length || info.LastWriteTimeUtc != written)
         {
             return "Refused: the file changed while the send was waiting for approval, so it is no longer the one the user "
                    + "approved. Check transfer_status, then call send_file again to ask for a fresh approval.";
@@ -1279,7 +1279,10 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         var info = new FileInfo(localPath);
         if (!await ApproveAsync(new ApprovalRequest("upload_local_file",
                 $"{localPath}\n→ {remotePath} ({info.Length} bytes, overwrite={overwrite})"), cancellationToken).ConfigureAwait(false))
+        {
             return "The user DENIED this upload. Do not retry; ask the user how to proceed.";
+        }
+
         CommandJobRunScope run = CurrentRun;
         string identity = InvocationIdentity.Value ?? Guid.NewGuid().ToString("N");
         string operationId = FileTransferJobRegistry.StableOperationId(run.OwnerId, run.RunId, "upload:" + identity);
@@ -1288,8 +1291,11 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             RemoteTransferSnapshot snapshot = await run.Transfers!.StartAsync(id, localPath, remotePath,
                 operationId, overwrite, cancellationToken).ConfigureAwait(false);
             if (!snapshot.IsTerminal && info.Length <= 1024 * 1024 && waitSeconds > 0)
+            {
                 snapshot = await run.Transfers.WaitAsync(snapshot.TransferId,
                     TimeSpan.FromSeconds(Math.Clamp(waitSeconds, 0, 2)), cancellationToken).ConfigureAwait(false);
+            }
+
             return FormatTransfer(snapshot);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -1357,7 +1363,10 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
         {
             if (!await ApproveAsync(new ApprovalRequest("transfer_cancel",
                 $"Cancel transfer {transferId}, generation={expectedGeneration}"), cancellationToken).ConfigureAwait(false))
+            {
                 return "The user DENIED cancelling this transfer. Do not retry.";
+            }
+
             await CurrentRun.Transfers!.CancelAsync(transferId, expectedGeneration, cancellationToken).ConfigureAwait(false);
             return JsonSerializer.Serialize(new
             {
@@ -1386,7 +1395,10 @@ public sealed class AgentToolbox(IPluginContext context) : IAsyncDisposable
             if (id is null) return error!;
             if (!await ApproveAsync(new ApprovalRequest("transfer_resume",
                 $"{prior.LocalPath}\n→ {prior.RemotePath} (generation={expectedGeneration}, target={id})"), cancellationToken).ConfigureAwait(false))
+            {
                 return "The user DENIED this resume. Do not retry.";
+            }
+
             string identity = InvocationIdentity.Value ?? Guid.NewGuid().ToString("N");
             string operationId = FileTransferJobRegistry.StableOperationId(CurrentRun.OwnerId, CurrentRun.RunId, "resume:" + identity);
             return FormatTransfer(await CurrentRun.Transfers.ResumeAsync(transferId, new RemoteTransferResumeOptions

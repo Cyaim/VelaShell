@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using VelaShell.Plugin.Ai.Chat;
 
 namespace VelaShell.Plugin.Ai.Ui;
 
@@ -96,8 +97,8 @@ public partial class ChatPanelView
             CloseFilePicker();
             if (query.Length > 0)
             {
-                var sessions = await _historyStore.ListSessionsAsync();
-                var selected = sessions.FirstOrDefault(session => session.Id.Equals(query, StringComparison.Ordinal));
+                IReadOnlyList<ChatSessionSummary> sessions = await _historyStore.ListSessionsAsync();
+                ChatSessionSummary? selected = sessions.FirstOrDefault(session => session.Id.Equals(query, StringComparison.Ordinal));
                 if (selected is not null) { ClearAttachments(); await LoadConversationAsync(selected); return true; }
             }
             ClearAttachments();

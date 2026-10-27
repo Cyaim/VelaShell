@@ -1,5 +1,5 @@
-using ReactiveUI.Primitives;
 using NSubstitute;
+using ReactiveUI.Primitives;
 using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Services;
@@ -111,7 +111,7 @@ public sealed class OutputRulesViewModelTests
         vm.Move(vm.Rules[0], -1); // 已在最前,不动
         vm.Delete(vm.Rules[0]);
 
-        CollectionAssert.AreEqual(new[] { "c", "b" }, vm.ToModels().Select(r => r.Name).ToArray());
+        Assert.AreSequenceEqual(["c", "b"], [.. vm.ToModels().Select(r => r.Name)]);
     }
 
     [TestMethod]
@@ -151,7 +151,7 @@ public sealed class OutputRulesViewModelTests
 
         vm.DraftScopeTarget = vm.ScopeTargets.Single();
         await vm.CommitEditCommand.Execute().FirstAsync();
-        StringAssert.Contains(vm.Rules[0].ScopeText, "prod");
+        Assert.Contains("prod", vm.Rules[0].ScopeText);
     }
 
     [TestMethod]
@@ -173,7 +173,7 @@ public sealed class OutputRulesViewModelTests
         Assert.HasCount(1, vm.TestResults, "编辑框开着:只测草稿。");
         Assert.AreEqual("2", vm.TestResults[0].LineNumber);
         Assert.IsTrue(vm.TestResults[0].HasRespondNote);
-        StringAssert.Contains(vm.TestResults[0].RespondNote, "Y");
+        Assert.Contains("Y", vm.TestResults[0].RespondNote);
     }
 
     [TestMethod]
@@ -211,6 +211,6 @@ public sealed class OutputRulesViewModelTests
         await vm.SaveCommand.Execute().FirstAsync();
 
         Assert.IsNotNull(saved);
-        CollectionAssert.AreEqual(new[] { "WARN", "ERROR" }, saved.TerminalBehavior.OutputRules.Select(r => r.Pattern).ToArray());
+        Assert.AreSequenceEqual(["WARN", "ERROR"], [.. saved.TerminalBehavior.OutputRules.Select(r => r.Pattern)]);
     }
 }

@@ -29,8 +29,6 @@ public readonly record struct SshAuthAttempt(
     string? Detail = null,
     string? SignatureAlgorithm = null)
 {
-    private readonly IReadOnlyList<SshAuthDetail>? _details;
-
     /// <summary><see cref="Detail"/> 的结构化出处：这一步的几条说明，按出现顺序。没有说明时为空。</summary>
     /// <remarks>
     /// 〔velashell-docs/zh/ssh/spec/04 §3.4〕界面要用别的语言显示尝试记录时按这里的 <see cref="SshAuthDetail.Kind"/> 与参数拼，
@@ -38,8 +36,8 @@ public readonly record struct SshAuthAttempt(
     /// </remarks>
     public IReadOnlyList<SshAuthDetail> Details
     {
-        get => _details ?? [];
-        init => _details = value;
+        get => field ?? [];
+        init;
     }
 
     /// <summary>

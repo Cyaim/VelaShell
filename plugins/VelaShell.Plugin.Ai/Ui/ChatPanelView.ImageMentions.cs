@@ -39,7 +39,10 @@ public partial class ChatPanelView
         {
             string label = _loc[name == GenerateImageMention ? "ImageMentionGenerate" : "ImageMentionEdit"];
             if (query.Length == 0 || name[1..].Contains(query, StringComparison.OrdinalIgnoreCase)
-                || label.Contains(query, StringComparison.OrdinalIgnoreCase)) _imageMentionCandidates.Add(name);
+                || label.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                _imageMentionCandidates.Add(name);
+            }
         }
     }
 
@@ -117,7 +120,10 @@ public partial class ChatPanelView
                     : "[Use generate_image for this request, incorporating the relevant visual requirements from this conversation.]");
                 i += length;
             }
-            else expanded.Append(text[i++]);
+            else
+            {
+                expanded.Append(text[i++]);
+            }
         }
         return mentioned ? expanded.ToString() : text;
     }

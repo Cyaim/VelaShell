@@ -5,6 +5,7 @@ using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Interop;
 using VelaShell.PluginSdk;
 using VelaShell.PluginSdk.RemoteFs;
+using VelaShell.PluginSdk.Sessions;
 using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
@@ -77,7 +78,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task LargeUpload_ReturnsReceipt_AndRequestCancellationOrDisposeDoesNotCancelHost()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         var finish = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         RemoteTransferSnapshot? snapshot = null;
         context.FakeRemoteFs.SupportsTransferOperations = true;
@@ -92,7 +93,7 @@ public sealed class FileTransferJobRegistryTests
         {
             string receipt = await Call(toolbox, run, "upload_local_file", new()
             { ["localPath"] = local, ["remotePath"] = "/tmp/large", ["sessionId"] = session.SessionId });
-            using JsonDocument json = JsonDocument.Parse(receipt);
+            using var json = JsonDocument.Parse(receipt);
             Assert.AreEqual("transfer", json.RootElement.GetProperty("transfer_id").GetString());
             Assert.IsTrue(json.RootElement.GetProperty("stillRunning").GetBoolean());
             Assert.HasCount(1, context.FakeRemoteFs.UploadsStarted);
@@ -161,7 +162,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task Completion_IsDeliveredOnce_AndStatusConsumesTerminal()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         var finish = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         RemoteTransferSnapshot? snapshot = null;
         context.FakeRemoteFs.SupportsTransferOperations = true;
@@ -195,7 +196,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task TwoRuns_CannotReadEachOthersTransfer_AndLargeDownloadStartsInBackground()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.SupportsDownloadOperations = true;
         context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(
@@ -224,7 +225,7 @@ public sealed class FileTransferJobRegistryTests
                 ["remotePath"] = "/tmp/large",
                 ["sessionId"] = session.SessionId
             });
-            using JsonDocument downloadJson = JsonDocument.Parse(download);
+            using var downloadJson = JsonDocument.Parse(download);
             Assert.AreEqual("Download", downloadJson.RootElement.GetProperty("direction").GetString());
             Assert.AreEqual("download-transfer", downloadJson.RootElement.GetProperty("transfer_id").GetString());
             Assert.IsTrue(downloadJson.RootElement.GetProperty("stillRunning").GetBoolean());
@@ -250,7 +251,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task DeniedUpload_DoesNotStart_AndUnknownNeverResumes()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(
             Running(id, source, target, options.OperationId) with { State = RemoteTransferState.Unknown });
@@ -295,7 +296,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task WaitFailure_FallsBackToGetRunning_ThenKeepsWatchingUntilCompletion()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         var finish = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         RemoteTransferSnapshot? snapshot = null;
         int waits = 0;
@@ -320,7 +321,7 @@ public sealed class FileTransferJobRegistryTests
             finish.SetResult(snapshot! with { State = RemoteTransferState.Succeeded, Sequence = 2 });
             Assert.AreEqual(RemoteTransferState.Succeeded,
                 (await completed.WaitAsync(TimeSpan.FromSeconds(5)))[0].State);
-            Assert.IsTrue(waits >= 2);
+            Assert.IsGreaterThanOrEqualTo(2, waits);
         }
         finally { File.Delete(local); }
     }
@@ -329,7 +330,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task UiPeek_DoesNotConsumeTerminal_AndFullBytesAreNotSuccess()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         var finish = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         RemoteTransferSnapshot? snapshot = null;
         context.FakeRemoteFs.SupportsTransferOperations = true;
@@ -364,7 +365,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task MonitorFailure_DoesNotForgeHostSequence_AndStillAllowsExplicitCleanup()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         RemoteTransferSnapshot? snapshot = null;
         bool recover = false;
         context.FakeRemoteFs.SupportsTransferOperations = true;
@@ -427,7 +428,7 @@ public sealed class FileTransferJobRegistryTests
             : Task.FromResult(snapshot! with { State = RemoteTransferState.Succeeded, Sequence = 2, RemoteStopConfirmed = true });
         context.FakeRemoteFs.GetTransferHandler = (_, _) => Volatile.Read(ref offline)
             ? Task.FromException<RemoteTransferSnapshot>(new IOException("offline")) : Task.FromResult(snapshot!);
-        FileTransferJobRegistry registry = FileTransferJobRegistry.For(context);
+        var registry = FileTransferJobRegistry.For(context);
         FileTransferRunScope scope = registry.BeginRun("owner", "run");
         var unavailable = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var succeeded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -564,7 +565,7 @@ public sealed class FileTransferJobRegistryTests
             hidden.TrySetResult();
         });
         await scope.StartAsync("private-session", "private-source", "private-destination", "operation", false, default);
-        revoked.SetException(new PluginSdk.PluginPermissionDeniedException("Upload authorization was revoked."));
+        revoked.SetException(new PluginPermissionDeniedException("Upload authorization was revoked."));
         RemoteTransferSnapshot withheld = (await scope.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5)))[0];
         await hidden.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.IsTrue(scope.HasUnknownOutcome);
@@ -607,7 +608,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task LostStartReceipt_BlocksAutomaticSideEffects_AndUsesStableCallIdentity()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         context.FakeRemoteFs.SupportsTransferOperations = true;
         context.FakeRemoteFs.StartUploadHandler = (_, _, _, _, _) =>
             Task.FromException<RemoteTransferSnapshot>(new IOException("receipt lost"));
@@ -643,7 +644,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task McpUpload_ReturnsQuickly_AndActiveTransferSurvivesCallTimeout()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         var finish = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         RemoteTransferSnapshot? snapshot = null;
         context.FakeRemoteFs.SupportsTransferOperations = true;
@@ -689,7 +690,7 @@ public sealed class FileTransferJobRegistryTests
             ["sessionId"] = session
         });
         Assert.IsTrue(Directory.Exists(folder), receipt);
-        using JsonDocument json = JsonDocument.Parse(receipt);
+        using var json = JsonDocument.Parse(receipt);
         Assert.AreEqual("Running", json.RootElement.GetProperty("state").GetString(), receipt);
         Assert.AreEqual(Path.Combine(folder, "app.log"), json.RootElement.GetProperty("snapshot").GetProperty("LocalPath").GetString());
         finish.TrySetResult(StartDownloadLikeHost(session, "/var/log/app.log", Path.Combine(folder, "app.log"), "done") with
@@ -745,7 +746,7 @@ public sealed class FileTransferJobRegistryTests
             string first = await Call(toolbox, run, "download_remote_file", args);
             string second = await Call(toolbox, run, "download_remote_file", args);
             Assert.DoesNotContain("Failed", first);
-            using JsonDocument json = JsonDocument.Parse(first);
+            using var json = JsonDocument.Parse(first);
             Assert.AreEqual("Unknown", json.RootElement.GetProperty("state").GetString());
             Assert.IsTrue(run.HasUnknownOutcome);
             Assert.HasCount(2, context.FakeRemoteFs.DownloadsStarted, "回执丢失只用相同 OperationId 重取一次;重复调用复用原账本");
@@ -761,7 +762,7 @@ public sealed class FileTransferJobRegistryTests
         using var context = new TestPluginContext();
         string session = DownloadableHost(context);
         context.FakeRemoteFs.StartDownloadHandler = (_, _, _, _, _) => Task.FromException<RemoteTransferSnapshot>(
-            new PluginSdk.PluginPermissionDeniedException("Download permission was not granted."));
+            new PluginPermissionDeniedException("Download permission was not granted."));
         await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
         await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
         string result = await Call(toolbox, run, "download_remote_file", new()
@@ -895,7 +896,7 @@ public sealed class FileTransferJobRegistryTests
         context.FakeRemoteFs.StartUploadHandler = (id, source, target, options, _) => Task.FromResult(
             Running(id, source, target, options.OperationId) with
             { TransferId = options.OperationId, State = RemoteTransferState.Succeeded, RemoteStopConfirmed = true });
-        FileTransferJobRegistry registry = FileTransferJobRegistry.For(context);
+        var registry = FileTransferJobRegistry.For(context);
         await using var toolbox = new AgentToolbox(context) { Approval = ApprovalMode.Bypass };
         await using CommandJobRunScope run = toolbox.BeginRun("owner", "run");
         string local = Source(1);
@@ -998,7 +999,7 @@ public sealed class FileTransferJobRegistryTests
     public async Task ResumeThatCannotProceed_LeavesTheTerminalStateForTheCompletionNotification()
     {
         using var context = new TestPluginContext();
-        var session = context.FakeSessions.AddConnected();
+        SessionInfo session = context.FakeSessions.AddConnected();
         var never = new TaskCompletionSource<RemoteTransferSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         RemoteTransferSnapshot? snapshot = null;
         context.FakeRemoteFs.SupportsTransferOperations = true;
@@ -1075,9 +1076,16 @@ public sealed class FileTransferJobRegistryTests
                     string id = $"t{++_next}";
                     _snapshots[id] = new RemoteTransferSnapshot
                     {
-                        TransferId = id, OperationId = options.OperationId, SessionId = session, LocalPath = local, RemotePath = remote,
-                        State = RemoteTransferState.Starting, Phase = RemoteTransferPhase.Approval,
-                        Sequence = 1, Generation = 1, TotalBytes = 1
+                        TransferId = id,
+                        OperationId = options.OperationId,
+                        SessionId = session,
+                        LocalPath = local,
+                        RemotePath = remote,
+                        State = RemoteTransferState.Starting,
+                        Phase = RemoteTransferPhase.Approval,
+                        Sequence = 1,
+                        Generation = 1,
+                        TotalBytes = 1
                     };
                     _changed[id] = new(TaskCreationOptions.RunContinuationsAsynchronously);
                     return Task.FromResult(_snapshots[id]);
@@ -1118,20 +1126,28 @@ public sealed class FileTransferJobRegistryTests
         public void ApproveUnobserved(string id)
         {
             lock (_gate)
+            {
                 _snapshots[id] = _snapshots[id] with
                 {
-                    State = RemoteTransferState.Running, Phase = RemoteTransferPhase.Transfer, Sequence = _snapshots[id].Sequence + 1
+                    State = RemoteTransferState.Running,
+                    Phase = RemoteTransferPhase.Transfer,
+                    Sequence = _snapshots[id].Sequence + 1
                 };
+            }
         }
 
         public void Deny(string id)
         {
             lock (_gate)
+            {
                 Set(id, _snapshots[id] with
                 {
-                    State = RemoteTransferState.Failed, RemoteStopConfirmed = true,
-                    ErrorCode = "permission-denied", ErrorMessage = "A trusted host upload approval was not granted."
+                    State = RemoteTransferState.Failed,
+                    RemoteStopConfirmed = true,
+                    ErrorCode = "permission-denied",
+                    ErrorMessage = "A trusted host upload approval was not granted."
                 });
+            }
         }
 
         public RemoteTransferState State(string id) { lock (_gate) return _snapshots[id].State; }
@@ -1150,7 +1166,7 @@ public sealed class FileTransferJobRegistryTests
     {
         string receipt = await Call(toolbox, run, "upload_local_file", new()
         { ["localPath"] = local, ["remotePath"] = remote, ["sessionId"] = session });
-        StringAssert.Contains(receipt, "transfer_id", receipt);
+        Assert.Contains("transfer_id", receipt, receipt);
     }
 
     private static async Task WaitUntilAsync(Func<bool> done)
@@ -1215,7 +1231,7 @@ public sealed class FileTransferJobRegistryTests
 
             await WaitUntilAsync(() => host.State("t2") == RemoteTransferState.Cancelled);
             Assert.AreEqual(RemoteTransferState.Running, host.State("t1"), "宿主已经批准的那一个不撤");
-            CollectionAssert.AreEqual(new[] { "t2" }, context.FakeRemoteFs.TransfersCancelled.Select(c => c.TransferId).ToArray());
+            Assert.AreSequenceEqual(["t2"], [.. context.FakeRemoteFs.TransfersCancelled.Select(c => c.TransferId)]);
         }
         finally { File.Delete(local); }
     }

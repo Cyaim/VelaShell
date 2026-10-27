@@ -77,21 +77,30 @@ public static class TransientFailure
             if (update.FinishReason is { } reason
                 && (reason == ChatFinishReason.Length || reason == ChatFinishReason.ContentFilter
                     || reason.Value == "refusal"))
+            {
                 return new ModelResponseTerminatedException(reason == ChatFinishReason.Length ? "ErrorOutputLimit" : "ErrorModelRefusal");
+            }
 #pragma warning disable OPENAI001 // Responses API 在 OpenAI SDK 中标记为实验性
             if (update.RawRepresentation is OpenAI.Responses.StreamingResponseIncompleteUpdate incomplete)
+            {
                 return new ModelResponseTerminatedException(incomplete.Response.IncompleteStatusDetails?.Reason
                     == OpenAI.Responses.ResponseIncompleteStatusReason.MaxOutputTokens ? "ErrorOutputLimit" : "ErrorModelRefusal");
+            }
+
             if (update.RawRepresentation is OpenAI.Responses.StreamingResponseRefusalDeltaUpdate
                 or OpenAI.Responses.StreamingResponseRefusalDoneUpdate
                 or OpenAI.Chat.StreamingChatCompletionUpdate { RefusalUpdate.Length: > 0 })
+            {
                 return new ModelResponseTerminatedException("ErrorModelRefusal");
+            }
             // response.failed:M.E.AI 的适配器把它转成一帧没有任何内容的更新(不给 ErrorContent、也不抛)。
             // 不在这里认出来,先吐了半截正文再失败的流会被当成答完了 —— 记成功、解冻冷却;
             // 一个字没吐就失败的又被当成空回复,原样重试、报"空回复",服务端的原话丢了(#582 复审④)
             if (update.RawRepresentation is OpenAI.Responses.StreamingResponseFailedUpdate failed)
+            {
                 return new InvalidOperationException(failed.Response?.Error?.Message is { Length: > 0 } message
                     ? message : "The model response failed.");
+            }
 #pragma warning restore OPENAI001
             if (update.Contents.OfType<ErrorContent>().FirstOrDefault() is { } error)
                 return new InvalidOperationException(error.Message);

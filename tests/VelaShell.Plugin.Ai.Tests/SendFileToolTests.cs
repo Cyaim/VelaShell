@@ -372,10 +372,15 @@ public sealed class SendFileToolTests
                 ApprovalHandler = async _ =>
                 {
                     if (change == "download")
+                    {
                         await FileTransferJobRegistry.For(context).BeginRun("another-chat", "run")
                             .StartDownloadAsync(session, "/var/log/app.log", path, "late", false, CancellationToken.None);
+                    }
                     else
+                    {
                         File.WriteAllText(path, "a different and longer file than the one on the approval card");
+                    }
+
                     return true;
                 },
                 FileSender = (p, _) =>

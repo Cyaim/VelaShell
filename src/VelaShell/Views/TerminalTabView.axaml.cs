@@ -1,8 +1,5 @@
 using System.ComponentModel;
 using System.Text;
-using Microsoft.Extensions.DependencyInjection;
-using VelaShell.Core.Credentials;
-using VelaShell.Core.Data;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -11,7 +8,10 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI.Primitives;
+using VelaShell.Core.Credentials;
+using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Services;
@@ -1231,15 +1231,9 @@ public partial class TerminalTabView : UserControl
         // 切到其他应用时收起补全弹层——Popup 是独立顶层窗口,不主动关就会
         // 悬浮在别的程序上面。
         _hostWindow = TopLevel.GetTopLevel(this) as Window;
-        if (_passwordHost is not null)
-        {
-            _passwordHost.PropertyChanged -= OnPasswordHostChanged;
-        }
+        _passwordHost?.PropertyChanged -= OnPasswordHostChanged;
         _passwordHost = _hostWindow?.DataContext as MainWindowViewModel;
-        if (_passwordHost is not null)
-        {
-            _passwordHost.PropertyChanged += OnPasswordHostChanged;
-        }
+        _passwordHost?.PropertyChanged += OnPasswordHostChanged;
         _hostWindow?.Deactivated += OnHostWindowDeactivated;
         // 重新激活时兜底恢复:系统截图覆盖层(Win+Shift+S)偶尔不触发 Deactivated,
         // 弹层就会保持打开、把焦点困在自己的顶层窗口里,导致终端"输入死亡、内容被
@@ -1324,11 +1318,8 @@ public partial class TerminalTabView : UserControl
         _hostWindow?.Deactivated -= OnHostWindowDeactivated;
         _hostWindow?.Activated -= OnHostWindowActivated;
         _hostWindow = null;
-        if (_passwordHost is not null)
-        {
-            _passwordHost.PropertyChanged -= OnPasswordHostChanged;
-            _passwordHost = null;
-        }
+        _passwordHost?.PropertyChanged -= OnPasswordHostChanged;
+        _passwordHost = null;
         if (_termControl is not null)
         {
             _termControl.OutputUpdated -= OnPasswordOutputUpdated;

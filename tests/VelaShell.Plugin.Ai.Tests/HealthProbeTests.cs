@@ -149,8 +149,13 @@ public sealed class HealthProbeTests
     {
         string response = JsonSerializer.Serialize(new
         {
-            id = "resp_1", @object = "response", created_at = 1, status = "incomplete", model = "m",
-            output = Array.Empty<object>(), incomplete_details = new { reason },
+            id = "resp_1",
+            @object = "response",
+            created_at = 1,
+            status = "incomplete",
+            model = "m",
+            output = Array.Empty<object>(),
+            incomplete_details = new { reason },
             usage = new { input_tokens = 1, output_tokens = 1, total_tokens = 2 }
         });
         await using var endpoint = new SseStub($"event: response.incomplete\ndata: {{\"type\":\"response.incomplete\",\"sequence_number\":1,\"response\":{response}}}\n\n");
@@ -170,8 +175,13 @@ public sealed class HealthProbeTests
     {
         string response = JsonSerializer.Serialize(new
         {
-            id = "resp_1", @object = "response", created_at = 1, status = "incomplete", model = "m",
-            output = Array.Empty<object>(), incomplete_details = new { reason }
+            id = "resp_1",
+            @object = "response",
+            created_at = 1,
+            status = "incomplete",
+            model = "m",
+            output = Array.Empty<object>(),
+            incomplete_details = new { reason }
         });
         string sse = reason == "refusal"
             ? "event: response.refusal.delta\ndata: {\"type\":\"response.refusal.delta\",\"sequence_number\":1,\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"No\"}\n\n"
@@ -182,7 +192,7 @@ public sealed class HealthProbeTests
             ProviderCredential.Key("test-key"));
         using var client = new Chat.RecoveringChatClient(inner, new("run"), "boundary", delay: (_, _) => Task.CompletedTask);
         await Assert.ThrowsAsync<Ui.ModelResponseTerminatedException>(async () =>
-        { await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "hi")])) { } });
+        { await foreach (ChatResponseUpdate _ in client.GetStreamingResponseAsync([new(ChatRole.User, "hi")])) { } });
         Assert.HasCount(1, endpoint.Requests);
     }
 
@@ -217,7 +227,7 @@ public sealed class HealthProbeTests
             ProviderCredential.Key("test-key"));
         using var client = new Chat.RecoveringChatClient(inner, new("run"), "boundary", delay: (_, _) => Task.CompletedTask);
         InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        { await foreach (var _ in client.GetStreamingResponseAsync([new(ChatRole.User, "hi")])) { } });
+        { await foreach (ChatResponseUpdate _ in client.GetStreamingResponseAsync([new(ChatRole.User, "hi")])) { } });
         Assert.Contains("upstream exploded", failure.Message);
     }
 

@@ -97,9 +97,9 @@ internal static class SudoCommandExecutor
         SshShell? shell = null;
         bool running = false;
         long chunks = 0;
-        using CancellationTokenSource authentication = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, connection.Disconnected);
+        using var authentication = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, connection.Disconnected);
         authentication.CancelAfter(AuthenticationTimeout);
-        using CancellationTokenSource passwordLifetime = CancellationTokenSource.CreateLinkedTokenSource(authentication.Token);
+        using var passwordLifetime = CancellationTokenSource.CreateLinkedTokenSource(authentication.Token);
         Task<SudoPassword?>? pendingPassword = null;
         Task<string?>? pendingRead = null;
         try

@@ -186,10 +186,17 @@ public sealed class CredentialModelTests
     {
         var profile = new SessionProfile
         {
-            Username = "ops", AuthMethod = method, ConnectionType = ConnectionType.SFTP,
-            Password = "pw", PrivateKeyPath = "/k", PrivateKeyPassphrase = "phrase", CertificatePath = "/c",
-            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()), RememberPassword = true,
-            JumpHostProfileId = Guid.NewGuid(), Port = 2222
+            Username = "ops",
+            AuthMethod = method,
+            ConnectionType = ConnectionType.SFTP,
+            Password = "pw",
+            PrivateKeyPath = "/k",
+            PrivateKeyPassphrase = "phrase",
+            CertificatePath = "/c",
+            CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
+            RememberPassword = true,
+            JumpHostProfileId = Guid.NewGuid(),
+            Port = 2222
         };
         SessionProfile original = profile.Clone();
 

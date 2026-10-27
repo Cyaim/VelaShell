@@ -27,7 +27,8 @@ public sealed class AesSecretProtector : ISecretProtector, IMasterKeyStatusSourc
     /// </summary>
     public AesSecretProtector(VelaShellStoragePaths paths)
         : this(new MasterKeyResolver((paths ?? throw new ArgumentNullException(nameof(paths))).SecretKeyFile,
-            MasterKeyStores.ForCurrentPlatform(paths.RootDirectory))) { }
+            MasterKeyStores.ForCurrentPlatform(paths.RootDirectory)))
+    { }
 
     /// <summary>
     /// 只用指定的本地密钥文件、不碰系统密钥链的保护器(测试与工具用 —— 跑测试不该往开发机的钥匙串里写条目)。
@@ -67,11 +68,9 @@ public sealed class AesSecretProtector : ISecretProtector, IMasterKeyStatusSourc
     }
 
     /// <summary>解密带 <c>enc1:</c> 前缀的密文;无前缀的历史明文原样返回,解密失败时返回原始输入。</summary>
-    public string? Unprotect(string? ciphertext)
-    {
+    public string? Unprotect(string? ciphertext) =>
         // 密钥不匹配或数据损坏:返回原文以避免连锁失败,连接时会以认证失败暴露;存回去时密文也不会丢。
-        return TryUnprotect(ciphertext, out string? plaintext) ? plaintext : ciphertext;
-    }
+        TryUnprotect(ciphertext, out string? plaintext) ? plaintext : ciphertext;
 
     /// <inheritdoc />
     public bool TryUnprotect(string? ciphertext, out string? plaintext)

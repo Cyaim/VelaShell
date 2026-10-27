@@ -42,8 +42,8 @@ public sealed class TransferRetryTests
 
         await rig.DownloadAsync();
 
-        Assert.AreEqual(3, rig.DownloadCalls().Count, "失败两次、第三次成功");
-        CollectionAssert.AreEqual(new[] { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2) }, rig.Delays, "翻倍退避");
+        Assert.HasCount(3, rig.DownloadCalls(), "失败两次、第三次成功");
+        Assert.AreSequenceEqual([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)], rig.Delays, "翻倍退避");
         Assert.AreEqual(TransferStatus.Completed, rig.Sink.Transfers.Single().Status);
         Assert.IsNull(rig.Browser.ErrorMessage);
     });
@@ -59,7 +59,7 @@ public sealed class TransferRetryTests
 
         await rig.DownloadAsync();
 
-        Assert.AreEqual(3, rig.DownloadCalls().Count, "首次 + 重试 2 次");
+        Assert.HasCount(3, rig.DownloadCalls(), "首次 + 重试 2 次");
         Assert.AreEqual(TransferStatus.Failed, rig.Sink.Transfers.Single().Status);
         Assert.AreEqual(Strings.Format("Transfer_FailedAfterRetries", 2, failure.Message), rig.Browser.ErrorMessage);
     });
@@ -74,7 +74,7 @@ public sealed class TransferRetryTests
 
         await rig.DownloadAsync();
 
-        Assert.AreEqual(1, rig.DownloadCalls().Count);
+        Assert.HasCount(1, rig.DownloadCalls());
         Assert.IsEmpty(rig.Delays);
         Assert.AreEqual("连接被重置", rig.Browser.ErrorMessage, "没重试过就不提重试");
     });
@@ -100,7 +100,7 @@ public sealed class TransferRetryTests
 
         await rig.DownloadAsync();
 
-        Assert.AreEqual(1, rig.DownloadCalls().Count, "永久性失败再试也一样");
+        Assert.HasCount(1, rig.DownloadCalls(), "永久性失败再试也一样");
         Assert.IsEmpty(rig.Delays);
         Assert.AreEqual(TransferStatus.Failed, rig.Sink.Transfers.Single().Status);
     });
@@ -120,7 +120,7 @@ public sealed class TransferRetryTests
 
         await rig.DownloadAsync();
 
-        CollectionAssert.AreEqual(new long[] { 0, 40 }, rig.DownloadCalls().Select(c => c.Offset).ToArray());
+        Assert.AreSequenceEqual([0, 40], rig.DownloadCalls().Select(c => c.Offset).ToArray());
         Assert.AreEqual(TransferStatus.Completed, rig.Sink.Transfers.Single().Status);
     });
 
@@ -139,7 +139,7 @@ public sealed class TransferRetryTests
 
         await rig.DownloadAsync();
 
-        CollectionAssert.AreEqual(new long[] { 0, 0 }, rig.DownloadCalls().Select(c => c.Offset).ToArray());
+        Assert.AreSequenceEqual([0, 0], rig.DownloadCalls().Select(c => c.Offset).ToArray());
     });
 
     /// <summary>
@@ -164,7 +164,7 @@ public sealed class TransferRetryTests
 
         await rig.DownloadAsync();
 
-        CollectionAssert.AreEqual(new long[] { 0, 0 }, rig.DownloadCalls().Select(c => c.Offset).ToArray());
+        Assert.AreSequenceEqual([0, 0], rig.DownloadCalls().Select(c => c.Offset).ToArray());
     });
 
     /// <summary>等待重试期间,行上写明是第几次重试(而不是像又回去排队了)。</summary>
@@ -207,7 +207,7 @@ public sealed class TransferRetryTests
         rig.Sink.CancelAllCommand.Execute().Subscribe();
         await download.WaitAsync(TimeSpan.FromSeconds(10));
 
-        Assert.AreEqual(1, rig.DownloadCalls().Count);
+        Assert.HasCount(1, rig.DownloadCalls());
         Assert.AreEqual(TransferStatus.Cancelled, rig.Sink.Transfers.Single().Status);
     });
 

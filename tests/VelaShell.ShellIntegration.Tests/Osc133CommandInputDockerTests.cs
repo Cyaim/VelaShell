@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
-using Osc133Snippets = VelaShell.Core.Models.ShellIntegration;
 using VelaShell.Terminal.Emulation;
 using VelaShell.Terminal.Semantics;
+using Osc133Snippets = VelaShell.Core.Models.ShellIntegration;
 
 namespace VelaShell.ShellIntegration.Tests;
 
@@ -102,7 +102,7 @@ public sealed class Osc133CommandInputDockerTests
         List<CommandInput> commands = harness.Inspect(Commands);
         TestContext.WriteLine("--- 屏幕 ---\n" + harness.Screen);
         TestContext.WriteLine("--- 原始输出 ---\n" + ShellIntegrationHarness.Escape(harness.Raw));
-        CollectionAssert.AreEqual(expected, commands.Select(c => c.Text).ToArray(), $"{user}:切出来的命令不对。");
+        Assert.AreSequenceEqual(expected, [.. commands.Select(c => c.Text)], $"{user}:切出来的命令不对。");
         Assert.IsTrue(commands[^1].CanRerun, $"{user}:续行提示符末尾带了 B,多行命令应当能重跑。");
 
         // 像用户拖窗口那样改宽度:本地重排 + 远端收到 SIGWINCH 重画提示符。切出来的文本必须一字不差。
@@ -110,10 +110,8 @@ public sealed class Osc133CommandInputDockerTests
         {
             harness.Resize(cols, 40);
             harness.WaitForOutputIdle();
-            CollectionAssert.AreEqual(
-                expected,
-                harness.Inspect(Commands).Select(c => c.Text).ToArray(),
-                $"{user}:改到 {cols} 列后切出来的命令变了。\n{harness.Screen}");
+            Assert.AreSequenceEqual(
+                expected, [.. harness.Inspect(Commands).Select(c => c.Text)], $"{user}:改到 {cols} 列后切出来的命令变了。\n{harness.Screen}");
         }
         harness.WaitFor(() => harness.Inspect(CommandBlocks.IsIdleAtPrompt), "改完尺寸仍停在空提示符上");
     }

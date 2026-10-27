@@ -230,7 +230,7 @@ public sealed class DockTabStripPlacementUiTests
             Assert.IsFalse(plus.IsVisible, "没人接的「+」点了什么也不会发生,不该摆出来");
             Assert.AreEqual(default, group.TabScrollViewer.Margin, "也不该为它让出位置");
 
-            void Handler(DockGroup _)
+            static void Handler(DockGroup _)
             {
             }
             dock.NewTabRequested += Handler;

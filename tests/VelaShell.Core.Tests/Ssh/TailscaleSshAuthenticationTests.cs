@@ -88,7 +88,7 @@ public sealed class TailscaleSshAuthenticationTests
         await using Harness harness = new(authenticationTimeout: outcome == "timeout" ? TimeSpan.FromSeconds(2) : null);
         await using Round round = harness.Start(Check(uri, approve));
         using CancellationTokenSource caller = new();
-        Stopwatch elapsed = Stopwatch.StartNew();
+        var elapsed = Stopwatch.StartNew();
         Task<SshSession> connecting = harness.ConnectAsync(caller.Token);
         TailscaleSshCheckNotification shown = await harness.NextAsync();
         AssertShown(harness, shown, uri);
@@ -111,13 +111,13 @@ public sealed class TailscaleSshAuthenticationTests
         else if (outcome == "button")
         {
             Assert.IsInstanceOfType<VelaSshAuthenticationCancelledException>(failure);
-            StringAssert.Contains(failure.Message, Strings.Get(resource));
+            Assert.Contains(Strings.Get(resource), failure.Message);
             Assert.IsNull(failure.InnerException, "用户取消不能保留携带服务端原文的原始异常链。");
         }
         else
         {
             Assert.IsInstanceOfType<VelaSshTailscaleAuthenticationException>(failure);
-            StringAssert.Contains(failure.Message, Strings.Get(resource));
+            Assert.Contains(Strings.Get(resource), failure.Message);
             Assert.IsNull(failure.InnerException, "不能保留携带服务端原文的原始异常链。");
             Assert.IsTrue(((VelaSshTailscaleAuthenticationException)failure).RequiresUserAction, "出现过验证链接的失败要人重新验证。");
         }
@@ -148,14 +148,14 @@ public sealed class TailscaleSshAuthenticationTests
         VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
             async () => await harness.ConnectAsync());
 
-        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleRejected"));
+        Assert.Contains(Strings.Get("SshErr_TailscaleRejected"), failure.Message);
         Assert.IsNull(failure.InnerException);
         Assert.IsTrue(failure.RequiresUserAction, "服务端明确拒绝,再试多少次结果都一样。");
         Assert.AreSequenceEqual([SshProtocolNames.AuthNone], (await round.Ready.Task.WaitAsync(Deadline)).Observation.RequestedMethods);
         Assert.IsFalse(harness.Notifications.Reader.TryRead(out _));
         Assert.IsEmpty(harness.Service.Sessions);
         Assert.IsFalse(await round.Succeeded.Task.WaitAsync(Deadline));
-        StringAssert.Contains(harness.Notices(), LegalNotice);
+        Assert.Contains(LegalNotice, harness.Notices());
     }
 
     [TestMethod]
@@ -169,7 +169,7 @@ public sealed class TailscaleSshAuthenticationTests
         VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
             async () => await harness.ConnectAsync().WaitAsync(Deadline));
 
-        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleCheckUiUnavailable"));
+        Assert.Contains(Strings.Get("SshErr_TailscaleCheckUiUnavailable"), failure.Message);
         Assert.IsNull(failure.InnerException);
         Assert.IsFalse(harness.Notifications.Reader.TryRead(out _));
         Assert.IsEmpty(harness.Service.Sessions);
@@ -199,8 +199,13 @@ public sealed class TailscaleSshAuthenticationTests
         TaskCompletionSource<bool> approve = NewSignal<bool>();
         await using Harness harness = new(profile: port => new ConnectionInfo
         {
-            Host = "127.0.0.1", Port = targetPort, Username = "target-user", AuthMethod = AuthMethod.Password,
-            Password = "target-password", IsAutomaticReconnect = automatic, KeepAliveSeconds = 0,
+            Host = "127.0.0.1",
+            Port = targetPort,
+            Username = "target-user",
+            AuthMethod = AuthMethod.Password,
+            Password = "target-password",
+            IsAutomaticReconnect = automatic,
+            KeepAliveSeconds = 0,
             JumpHost = ProfileFor(port)
         });
         await using Round round = harness.Start(Check(VerificationUri(), approve));
@@ -214,7 +219,7 @@ public sealed class TailscaleSshAuthenticationTests
         }
         VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
             async () => await connecting.WaitAsync(Deadline));
-        StringAssert.Contains(failure.Message, Strings.Get(automatic ? "SshErr_TailscaleCheckRequired" : "SshErr_TailscaleRejected"));
+        Assert.Contains(Strings.Get(automatic ? "SshErr_TailscaleCheckRequired" : "SshErr_TailscaleRejected"), failure.Message);
         if (shown is not null)
         {
             await harness.ExpectEndAsync(shown);
@@ -233,12 +238,19 @@ public sealed class TailscaleSshAuthenticationTests
         int targetPort = ((IPEndPoint)target.LocalEndpoint).Port;
         await using Harness harness = new(profile: port => new ConnectionInfo
         {
-            Host = "127.0.0.1", Port = targetPort, Username = "tailscale-target", AuthMethod = AuthMethod.Tailscale,
+            Host = "127.0.0.1",
+            Port = targetPort,
+            Username = "tailscale-target",
+            AuthMethod = AuthMethod.Tailscale,
             KeepAliveSeconds = 0,
             JumpHost = new ConnectionInfo
             {
-                Host = "127.0.0.1", Port = port, Username = "password-jump", AuthMethod = AuthMethod.Password,
-                Password = "wrong-password", KeepAliveSeconds = 0
+                Host = "127.0.0.1",
+                Port = port,
+                Username = "password-jump",
+                AuthMethod = AuthMethod.Password,
+                Password = "wrong-password",
+                KeepAliveSeconds = 0
             }
         });
         await using Round round = harness.Start(new TestAuthPolicy
@@ -253,8 +265,8 @@ public sealed class TailscaleSshAuthenticationTests
         VelaSshAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshAuthenticationException>(
             async () => await harness.ConnectAsync());
 
-        StringAssert.Contains(failure.Message, Strings.Format("SshErr_AuthExhausted", SshProtocolNames.AuthPassword));
-        StringAssert.Contains(failure.Message, $"password-jump@127.0.0.1:{harness.Port}");
+        Assert.Contains(Strings.Format("SshErr_AuthExhausted", SshProtocolNames.AuthPassword), failure.Message);
+        Assert.Contains($"password-jump@127.0.0.1:{harness.Port}", failure.Message);
         Assert.DoesNotContain("tailscale-target", failure.Message);
         Assert.DoesNotContain($"127.0.0.1:{targetPort}", failure.Message);
         Assert.IsFalse(target.Pending(), "普通跳板认证失败后不能拨号 Tailscale 目标。");
@@ -265,7 +277,7 @@ public sealed class TailscaleSshAuthenticationTests
         TestAuthObservation observation = (await round.Ready.Task.WaitAsync(Deadline)).Observation;
         Assert.AreSequenceEqual([SshProtocolNames.AuthNone, SshProtocolNames.AuthPassword], observation.RequestedMethods);
         Assert.AreSequenceEqual(["password-jump"], observation.UserNames);
-        StringAssert.Contains(harness.Notices(), LegalNotice);
+        Assert.Contains(LegalNotice, harness.Notices());
     }
 
     [TestMethod]
@@ -302,7 +314,7 @@ public sealed class TailscaleSshAuthenticationTests
         }
         await harness.ExpectEndAsync(shown);
         string notices = harness.Notices();
-        StringAssert.Contains(notices, LegalNotice);
+        Assert.Contains(LegalNotice, notices);
         AssertNoSecret(token, notices, harness.Log.Text, exceptionText, shown.ToString());
     }
 
@@ -322,8 +334,8 @@ public sealed class TailscaleSshAuthenticationTests
         await AssertConnectedAsync(harness, round, session);
         Assert.IsFalse(harness.Notifications.Reader.TryRead(out _));
         string notices = harness.Notices();
-        StringAssert.Contains(notices, $"Pre-auth: {LegalNotice}");
-        StringAssert.Contains(notices, $"Debug: {LegalNotice}");
+        Assert.Contains($"Pre-auth: {LegalNotice}", notices);
+        Assert.Contains($"Debug: {LegalNotice}", notices);
         AssertNoSecret(uri[(uri.LastIndexOf('/') + 1)..], notices, harness.Log.Text);
         await harness.DisconnectAsync(session);
     }
@@ -457,7 +469,7 @@ public sealed class TailscaleSshAuthenticationTests
         }
         Assert.IsFalse(harness.Notifications.Reader.TryRead(out _), "重复 U1 不应留下额外的显示通知。");
         string notices = harness.Notices();
-        StringAssert.Contains(notices, LegalNotice);
+        Assert.Contains(LegalNotice, notices);
         AssertNoSecret(firstUri[(firstUri.LastIndexOf('/') + 1)..], notices, harness.Log.Text, exceptionText, first.ToString(), updated.ToString());
         AssertNoSecret(secondUri[(secondUri.LastIndexOf('/') + 1)..], notices, harness.Log.Text, exceptionText, first.ToString(), updated.ToString());
     }
@@ -492,7 +504,7 @@ public sealed class TailscaleSshAuthenticationTests
             else
             {
                 Assert.IsInstanceOfType<VelaSshTailscaleAuthenticationException>(failure);
-                StringAssert.Contains(failure.Message, Strings.Get(outcome == "timeout" ? "SshErr_TailscaleCheckTimeout" : "SshErr_TailscaleRejected"));
+                Assert.Contains(Strings.Get(outcome == "timeout" ? "SshErr_TailscaleCheckTimeout" : "SshErr_TailscaleRejected"), failure.Message);
             }
             Assert.IsNull(failure.InnerException);
             await harness.ExpectEndAsync(old);
@@ -521,7 +533,7 @@ public sealed class TailscaleSshAuthenticationTests
         {
             VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
                 async () => await harness.ConnectAsync());
-            StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleCheckRequired"));
+            Assert.Contains(Strings.Get("SshErr_TailscaleCheckRequired"), failure.Message);
             Assert.IsNull(failure.InnerException);
             Assert.IsFalse(harness.Notifications.Reader.TryRead(out _));
             Assert.IsEmpty(harness.Service.Sessions);
@@ -610,13 +622,13 @@ public sealed class TailscaleSshAuthenticationTests
         await using Round round = harness.Start(Check($"{LegalNotice}\n{uri}", approve));
         VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
             async () => await harness.ConnectAsync().WaitAsync(Deadline));
-        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleCheckUiUnavailable"));
+        Assert.Contains(Strings.Get("SshErr_TailscaleCheckUiUnavailable"), failure.Message);
         Assert.IsNull(failure.InnerException);
         TailscaleSshCheckNotification shown = await harness.NextAsync();
         Assert.AreEqual(uri, shown.VerificationUri?.OriginalString);
         await harness.ExpectEndAsync(shown);
         string notices = harness.Notices();
-        StringAssert.Contains(notices, LegalNotice);
+        Assert.Contains(LegalNotice, notices);
         AssertNoSecret(uri[(uri.LastIndexOf('/') + 1)..], failure.ToString(), harness.Log.Text, notices, shown.ToString());
         Assert.IsEmpty(harness.Service.Sessions);
     }
@@ -641,13 +653,13 @@ public sealed class TailscaleSshAuthenticationTests
         await entered.Task.WaitAsync(Deadline);
         VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
             async () => await connecting.WaitAsync(Deadline));
-        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleAuthTimeout"));
+        Assert.Contains(Strings.Get("SshErr_TailscaleAuthTimeout"), failure.Message);
         Assert.IsNull(failure.InnerException);
         Assert.IsFalse(failure.RequiresUserAction, "没等到链接的超时与别的认证方式一样照常退避重试。");
         Assert.IsFalse(harness.Notifications.Reader.TryRead(out _));
         Assert.IsEmpty(harness.Service.Sessions);
         string notices = harness.Notices();
-        StringAssert.Contains(notices, LegalNotice);
+        Assert.Contains(LegalNotice, notices);
         AssertNoSecret(token, failure.ToString(), harness.Log.Text, notices);
     }
 
@@ -697,7 +709,7 @@ public sealed class TailscaleSshAuthenticationTests
 
         VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
             async () => await connecting.WaitAsync(Deadline));
-        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleCheckFailed"));
+        Assert.Contains(Strings.Get("SshErr_TailscaleCheckFailed"), failure.Message);
         Assert.IsFalse(failure.RequiresUserAction, "连接被重置不是授权结论,要照常退避重试,而不是永久暂停。");
         Assert.IsFalse(harness.Notifications.Reader.TryRead(out _));
         Assert.IsEmpty(harness.Service.Sessions);
@@ -733,9 +745,9 @@ public sealed class TailscaleSshAuthenticationTests
 
         VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
             async () => await connecting.WaitAsync(Deadline));
-        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleRejected"), "真实的拒绝是横幅 + DISCONNECT,不能报成笼统的验证失败。");
-        StringAssert.Contains(failure.Message, Strings.Format("SshErr_TailscaleServerMessage", "").TrimEnd());
-        StringAssert.Contains(failure.Message, Denial);
+        Assert.Contains(Strings.Get("SshErr_TailscaleRejected"), failure.Message, "真实的拒绝是横幅 + DISCONNECT,不能报成笼统的验证失败。");
+        Assert.Contains(Strings.Format("SshErr_TailscaleServerMessage", "").TrimEnd(), failure.Message);
+        Assert.Contains(Denial, failure.Message);
         Assert.DoesNotContain("https://", failure.Message, "服务端说明里的链接不能借应用的失败提示出现。");
         Assert.DoesNotContain("\u001b", failure.Message);
         Assert.DoesNotContain(LegalNotice, failure.Message, "验证链接之前的横幅不是拒绝的理由。");
@@ -765,14 +777,14 @@ public sealed class TailscaleSshAuthenticationTests
         });
         // 库开头那条 none 探测被 check 模式的服务端挂起等批准;链接在横幅里。
         await using Round round = harness.Start(Check($"To authenticate, visit: {uri}", approve));
-        Stopwatch elapsed = Stopwatch.StartNew();
+        var elapsed = Stopwatch.StartNew();
 
         VelaSshTailscaleAuthenticationException failure = await Assert.ThrowsExactlyAsync<VelaSshTailscaleAuthenticationException>(
             async () => await harness.ConnectAsync());
 
         Assert.IsLessThan(Deadline, elapsed.Elapsed, "不能干等到认证期限。");
-        StringAssert.Contains(failure.Message, Strings.Get("SshErr_TailscaleAuthMethodRequired"));
-        StringAssert.Contains(failure.Message, $"ops@127.0.0.1:{harness.Port}");
+        Assert.Contains(Strings.Get("SshErr_TailscaleAuthMethodRequired"), failure.Message);
+        Assert.Contains($"ops@127.0.0.1:{harness.Port}", failure.Message);
         Assert.IsTrue(failure.RequiresUserAction, "要改认证方式才连得上,后台重试没有意义。");
         Assert.IsFalse(harness.Notifications.Reader.TryRead(out _), "密码配置不弹 Tailscale 验证窗。");
         Assert.AreSequenceEqual([SshProtocolNames.AuthNone], (await round.Ready.Task.WaitAsync(Deadline)).Observation.RequestedMethods,
@@ -789,7 +801,7 @@ public sealed class TailscaleSshAuthenticationTests
         TailscaleAuthDeadline deadline = new(new SlowHostKeyPolicy(decision.Task), attempt,
             guard: TimeSpan.FromMilliseconds(200), checkWait: TimeSpan.FromSeconds(30));
 
-        using TestHostKey hostKey = TestHostKey.Create(SshAlgorithmNames.SshEd25519);
+        using var hostKey = TestHostKey.Create(SshAlgorithmNames.SshEd25519);
         ValueTask<SshHostKeyVerdict> evaluating = deadline.EvaluateAsync(new SshHostKeyContext
         {
             Host = "node",
@@ -828,17 +840,26 @@ public sealed class TailscaleSshAuthenticationTests
     private static string VerificationUri() => $"https://login.tailscale.com/a/{Guid.NewGuid():N}";
     private static TestAuthPolicy Accept() => new()
     {
-        RequiredMethods = [SshProtocolNames.AuthNone], OfferedMethods = []
+        RequiredMethods = [SshProtocolNames.AuthNone],
+        OfferedMethods = []
     };
     private static TestAuthPolicy Check(string banner, TaskCompletionSource<bool> approve) => Accept() with
     {
-        BannersBeforeSuccess = [banner], BeforeSuccess = ct => approve.Task.WaitAsync(ct)
+        BannersBeforeSuccess = [banner],
+        BeforeSuccess = ct => approve.Task.WaitAsync(ct)
     };
     private static ConnectionInfo ProfileFor(int port, bool automatic = false) => new()
     {
-        Host = "127.0.0.1", Port = port, Username = "tailscale-user", AuthMethod = AuthMethod.Tailscale,
-        Password = "stale-password", PrivateKeyPath = "missing-stale-key", PrivateKeyPassphrase = "stale-passphrase",
-        CertificatePath = "missing-stale-certificate", IsAutomaticReconnect = automatic, KeepAliveSeconds = 0
+        Host = "127.0.0.1",
+        Port = port,
+        Username = "tailscale-user",
+        AuthMethod = AuthMethod.Tailscale,
+        Password = "stale-password",
+        PrivateKeyPath = "missing-stale-key",
+        PrivateKeyPassphrase = "stale-passphrase",
+        CertificatePath = "missing-stale-certificate",
+        IsAutomaticReconnect = automatic,
+        KeepAliveSeconds = 0
     };
     private static void AssertShown(Harness harness, TailscaleSshCheckNotification notification, string uri)
     {

@@ -17,8 +17,21 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
     private readonly Dictionary<string, Invocation> _calls = [with(StringComparer.Ordinal)];
     private readonly List<ChatMessage> _checkpoint = [];
     private readonly List<ChatMessage> _completed = [];
-    internal IReadOnlyList<ChatMessage> CompletedMessages { get { lock (_gate) return [.. _completed]; } }
-    internal IReadOnlyList<ChatMessage> Notifications { get { lock (_gate) return _completed.Where(m => m.Role == ChatRole.User).ToList(); } }
+    internal IReadOnlyList<ChatMessage> CompletedMessages
+    {
+        get
+        {
+            lock (_gate) return [.. _completed];
+        }
+    }
+    internal IReadOnlyList<ChatMessage> Notifications
+    {
+        get
+        {
+            lock (_gate)
+                return [.. _completed.Where(m => m.Role == ChatRole.User)];
+        }
+    }
     private int _batchSteps;
     private int _batchSize = 25;
     private Exception? _paused;
@@ -41,7 +54,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
 
     /// <summary>
     /// 最后一步是一段以输出上限 / 内容过滤 / 拒绝收尾的回答(有正文、没有工具调用)时,终止原因的文案键;
-    /// 回答照常完成,面板与桥接据此附一句截断提示(见 <see cref="Ui.TransientFailure.IsTruncatedAnswer" />)。
+    /// 回答照常完成,面板与桥接据此附一句截断提示(见 <see cref="TransientFailure.IsTruncatedAnswer" />)。
     /// </summary>
     internal string? TerminationNotice { get; set; }
 
@@ -82,7 +95,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
                 }
                 return new ValueTask<object?>(previous.Result.WaitAsync(token));
             }
-            if (_lastCall == signature) _repeated++; else { _lastCall = signature; _lastObservation = null; _repeated = 0; }
+            if (_lastCall == signature) { _repeated++; } else { _lastCall = signature; _lastObservation = null; _repeated = 0; }
             if (_repeated >= 3)
             {
                 _paused = new AgentPausedException("NoProgress");
@@ -197,7 +210,7 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
             // 正文采用用户看到的一份,已完成步骤只保留工具配对与后台终态,避免重复正文。
             List<ChatMessage> result = [];
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            Dictionary<string, FunctionResultContent> results = _completed.SelectMany(m => m.Contents)
+            var results = _completed.SelectMany(m => m.Contents)
                 .OfType<FunctionResultContent>().GroupBy(c => c.CallId, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
             foreach (ChatMessage message in _completed)
@@ -237,7 +250,11 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
         {
             Type type = parameter.ParameterType;
             if (parameter.Name is not { } name || type == typeof(CancellationToken)
-                || type == typeof(AIFunctionArguments) || type == typeof(IServiceProvider)) continue;
+                || type == typeof(AIFunctionArguments) || type == typeof(IServiceProvider))
+            {
+                continue;
+            }
+
             if (!arguments.TryGetValue(name, out object? value))
             {
                 if (!parameter.HasDefaultValue) return $"the required argument '{name}' is missing.";
@@ -279,7 +296,10 @@ internal sealed class AgentExecution(string runId, Func<bool>? hasUnknownOutcome
             foreach (JsonElement item in value.EnumerateArray()) WriteCanonical(writer, item);
             writer.WriteEndArray();
         }
-        else value.WriteTo(writer);
+        else
+        {
+            value.WriteTo(writer);
+        }
     }
 }
 
@@ -355,7 +375,7 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
             Exception? terminal = TransientFailure.TerminalFailure(buffered);
             // 有正文的截断 / 过滤照常完成,附提示;一个字都没有的照旧按确定性终止失败(见 IsTruncatedAnswer)
             string? notice = null;
-            if (failure is null && terminal is Ui.ModelResponseTerminatedException ended && TransientFailure.IsTruncatedAnswer(buffered))
+            if (failure is null && terminal is ModelResponseTerminatedException ended && TransientFailure.IsTruncatedAnswer(buffered))
             {
                 notice = ended.ReasonKey;
                 terminal = null;
@@ -376,11 +396,14 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                 else if (response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Any()
                     && (response.FinishReason != ChatFinishReason.ToolCalls
                         || response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Any(c => c.Exception is not null)))
+                {
                     failure = new IOException("Incomplete model tool-call step; no tool was executed.");
+                }
+
                 if (failure is null)
                 {
                     // 空的那一步不进历史:只含 role / usage 的 assistant 消息会被部分供应商拒收
-                    execution.CompleteStep(emptyAfterTools ? new ChatResponse(new List<ChatMessage>()) : response);
+                    execution.CompleteStep(emptyAfterTools ? new ChatResponse([]) : response);
                     if (emptyAfterTools) execution.EmptyAfterTools = true;
                     if (notice is not null) execution.TerminationNotice = notice;
                     // 补试后这一步答上了:重试提示到此为止,不挂到整轮结束。
@@ -396,7 +419,10 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
                                 metadata.RawRepresentation = null;
                                 yield return metadata;
                             }
-                            else yield return update;
+                            else
+                            {
+                                yield return update;
+                            }
                         }
                         else
                         {
@@ -421,10 +447,10 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
             }
             cancellationToken.ThrowIfCancellationRequested();
             if (attempt >= 2 || !TransientFailure.IsTransient(failure))
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure!).Throw();
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
             // 先算等待:Retry-After 超出预算就此暂停,不能先报「正在重试」、再写一道永远等不到续写的续接边界。
-            TimeSpan backoff = RetryAfter(failure!) ?? TimeSpan.FromMilliseconds(400 * (attempt + 1));
-            retrying?.Invoke(attempt + 1, failure!);
+            TimeSpan backoff = RetryAfter(failure) ?? TimeSpan.FromMilliseconds(400 * (attempt + 1));
+            retrying?.Invoke(attempt + 1, failure);
             string snippet = partial.ToString();
             // 空答(只有空白也算空答)原样重发,不写续接边界;连接中断等其余补试照旧:收到过正文就续接。
             // 断线前只收到空白同理:没有可续的正文,只含空白的 assistant 消息还会被部分供应商拒收。
@@ -456,7 +482,11 @@ internal sealed class RecoveringChatClient(IChatClient inner, AgentExecution exe
             string? text = current.Data["Retry-After"] as string;
             if (current is System.ClientModel.ClientResultException result
                 && result.GetRawResponse() is { } response
-                && response.Headers.TryGetValue("Retry-After", out string? header)) text = header;
+                && response.Headers.TryGetValue("Retry-After", out string? header))
+            {
+                text = header;
+            }
+
             if (text is null) continue;
             TimeSpan? wait = double.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out double seconds) && seconds >= 0
                 ? TimeSpan.FromSeconds(seconds)

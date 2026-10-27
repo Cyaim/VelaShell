@@ -121,14 +121,13 @@ public class Osc133CommandInputTests
         RunCommand(e, "true", "");
         FreshPrompt(e);
         List<string?> before = AllCommands(e);
-        CollectionAssert.AreEqual(
-            new[] { "ls -la", "echo a-fairly-long-argument-that-wraps-somewhere", "cd 中文目录/很长很长的子目录名字", "true", null },
-            before);
+        Assert.AreSequenceEqual(
+            ["ls -la", "echo a-fairly-long-argument-that-wraps-somewhere", "cd 中文目录/很长很长的子目录名字", "true", null], before);
 
         foreach (int cols in new[] { 9, 13, 80, 17, 30 })
         {
             e.Resize(cols, 8);
-            CollectionAssert.AreEqual(before, AllCommands(e), $"改到 {cols} 列后切出来的命令变了。");
+            Assert.AreSequenceEqual(before, AllCommands(e), $"改到 {cols} 列后切出来的命令变了。");
         }
     }
 
@@ -252,12 +251,12 @@ public class Osc133CommandInputTests
         Feed(e, "\e[7m%\e[27m" + new string(' ', 19) + "\r \r" + D(0) + "\r\e[0m\e[J" + A + "% " + B + "ls\r\n" + C + "a b\r\n" + D(0));
         FreshPrompt(e);
         List<string?> before = AllCommands(e);
-        CollectionAssert.AreEqual(new[] { "printf hi", "ls", null }, before);
+        Assert.AreSequenceEqual(["printf hi", "ls", null], before);
 
         foreach (int cols in new[] { 9, 31, 20 })
         {
             e.Resize(cols, 10);
-            CollectionAssert.AreEqual(before, AllCommands(e), $"改到 {cols} 列后。");
+            Assert.AreSequenceEqual(before, AllCommands(e), $"改到 {cols} 列后。");
         }
     }
 
@@ -358,7 +357,7 @@ public class Osc133CommandInputTests
 
         string text = InputOfBlockAt(e, 0)!.Text;
         Assert.AreEqual("ls31m -la", text);
-        Assert.IsFalse(text.Any(ch => ch < 0x20 || ch is >= '\u007f' and <= '\u009f'));
+        Assert.DoesNotContain(ch => ch is < (char)0x20 or >= '\u007f' and <= '\u009f', text);
     }
 
     [TestMethod]

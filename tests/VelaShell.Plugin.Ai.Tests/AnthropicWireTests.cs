@@ -215,12 +215,17 @@ public sealed class AnthropicWireTests
         using var context = new TestPluginContext();
         var official = new AiProvider
         {
-            Name = "Anthropic", BaseUrl = "https://api.anthropic.com", DefaultProtocol = ChatProtocol.AnthropicMessages,
-            CatalogId = "anthropic", Models = [new AiModelConfig { Model = "claude-opus-5" }]
+            Name = "Anthropic",
+            BaseUrl = "https://api.anthropic.com",
+            DefaultProtocol = ChatProtocol.AnthropicMessages,
+            CatalogId = "anthropic",
+            Models = [new AiModelConfig { Model = "claude-opus-5" }]
         };
         var relay = new AiProvider
         {
-            Name = "Relay", BaseUrl = "https://relay.example", DefaultProtocol = ChatProtocol.AnthropicMessages,
+            Name = "Relay",
+            BaseUrl = "https://relay.example",
+            DefaultProtocol = ChatProtocol.AnthropicMessages,
             Models = [new AiModelConfig { Model = "claude-opus-5" }, new AiModelConfig { Model = "own", HasOwnApiKey = true }]
         };
         await new AiSettingsStore(context).SaveAsync(new AiSettings { Providers = [official, relay] });

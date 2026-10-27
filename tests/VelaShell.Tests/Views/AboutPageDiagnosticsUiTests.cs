@@ -51,7 +51,7 @@ public sealed class AboutPageDiagnosticsUiTests
                 Assert.AreEqual(Strings.Get("SetAbout_ExportDiagnostics"), export.Content);
                 Assert.AreEqual(Strings.Get("SetAbout_ExportDiagnosticsTip"), ToolTip.GetTip(export));
                 var row = (StackPanel)export.GetVisualParent()!;
-                Assert.IsTrue(row.Children.OfType<Button>().Any(button => Equals(button.Content, Strings.Get("SetAbout_OpenLogs"))),
+                Assert.Contains(button => Equals(button.Content, Strings.Get("SetAbout_OpenLogs")), row.Children.OfType<Button>(),
                     "和「打开日志目录」放在同一排");
 
                 string done = Strings.Format("SetAbout_ExportDiagnosticsDone", @"C:\Downloads\velashell-diagnostics.zip", 3);

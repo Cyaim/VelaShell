@@ -59,8 +59,8 @@ public sealed class LayoutTemplateMergeTests
 
         LayoutTemplateMergeResult result = LayoutTemplateMerge.Merge(State([mine]), State([theirs]), Now);
 
-        Assert.AreSequenceEqual(new[] { "机房 A", "机房 B" }, result.Merged.Templates.Select(t => t.Name).ToArray());
-        Assert.AreSequenceEqual(new[] { theirs.Id }, result.LocalUpserts.Select(t => t.Id).ToArray(), "本机只需要收下对方那一个");
+        Assert.AreSequenceEqual(["机房 A", "机房 B"], [.. result.Merged.Templates.Select(t => t.Name)]);
+        Assert.AreSequenceEqual([theirs.Id], [.. result.LocalUpserts.Select(t => t.Id)], "本机只需要收下对方那一个");
         Assert.IsTrue(result.RemoteChanged, "云端也缺本机那一个");
     }
 
@@ -74,7 +74,7 @@ public sealed class LayoutTemplateMergeTests
 
         LayoutTemplateMergeResult result = LayoutTemplateMerge.Merge(local, remote, Now);
 
-        Assert.AreSequenceEqual(new[] { "a-local", "b-remote" }, result.Merged.Templates.Select(t => t.Name).ToArray(),
+        Assert.AreSequenceEqual(["a-local", "b-remote"], [.. result.Merged.Templates.Select(t => t.Name)],
             "不是整份较新者胜:a 本机改得晚、b 云端改得晚,各留各的");
         Assert.AreEqual("b-remote", result.LocalUpserts.Single().Name);
         Assert.IsTrue(result.RemoteChanged, "a 的新版本要推上去");
@@ -129,8 +129,7 @@ public sealed class LayoutTemplateMergeTests
         LayoutTemplateMergeResult result = LayoutTemplateMerge.Merge(State([mine]), State([theirs]), Now);
 
         Assert.HasCount(2, result.Merged.Templates);
-        CollectionAssert.AreEquivalent(new[] { "prod", "PROD" }, result.Merged.Templates.Select(t => t.Name).ToArray(),
-            "两套不同的分屏碰巧同名:不合并、不改名,用户自己分辨");
+        Assert.AreSequenceEqual(["prod", "PROD"], [.. result.Merged.Templates.Select(t => t.Name)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "两套不同的分屏碰巧同名:不合并、不改名,用户自己分辨");
     }
 
     [TestMethod]

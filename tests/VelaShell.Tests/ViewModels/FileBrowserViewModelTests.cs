@@ -1118,10 +1118,9 @@ public class FileBrowserViewModelTests
 
             await _sftpService.Received(1).DownloadFileAsync(
                 _sessionId, remote.FullPath, target, Arg.Any<IProgress<TransferProgress>?>(), 0, Arg.Any<CancellationToken>());
-            Assert.AreEqual(
-                1,
-                _sftpService.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(ISftpService.DownloadFileAsync)),
-                "只下这一份,落在用户选的名字上");
+            Assert.ContainsSingle(
+c => c.GetMethodInfo().Name == nameof(ISftpService.DownloadFileAsync),
+                _sftpService.ReceivedCalls(), "只下这一份,落在用户选的名字上");
         }
         finally
         {

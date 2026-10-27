@@ -6,6 +6,7 @@ using Avalonia.Input;
 using AvaloniaEdit;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
+using VelaShell.PluginSdk.Sessions;
 using VelaShell.PluginSdk.Testing;
 
 namespace VelaShell.Plugin.Ai.Tests;
@@ -17,8 +18,14 @@ public sealed partial class ChatPanelViewUiTests
         var store = new AiSettingsStore(context);
         AiProvider chat = StubProvider("chat", "http://127.0.0.1:1/v1", "text");
         AiProvider image = StubProvider("image", "http://127.0.0.1:1/v1", "gpt-image-2");
-        await store.SaveAsync(new AiSettings { Providers = [chat, image], ActiveModelId = chat.Models[0].Id,
-            ImageModelId = image.Models[0].Id, Mode = ChatMode.Chat, SuggestFollowUps = false });
+        await store.SaveAsync(new AiSettings
+        {
+            Providers = [chat, image],
+            ActiveModelId = chat.Models[0].Id,
+            ImageModelId = image.Models[0].Id,
+            Mode = ChatMode.Chat,
+            SuggestFollowUps = false
+        });
         return new ChatPanelView(context, store);
     }
 
@@ -63,7 +70,7 @@ public sealed partial class ChatPanelViewUiTests
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            var session = context.FakeSessions.AddConnected();
+            SessionInfo session = context.FakeSessions.AddConnected();
             context.FakeRemoteFs.AddFile(session.SessionId, "/etc/hosts", "127.0.0.1"u8.ToArray());
             ChatPanelView panel = await ImageMentionPanel(context);
             var window = new Window { Width = 800, Height = 600, Content = panel };
@@ -107,11 +114,11 @@ public sealed partial class ChatPanelViewUiTests
                 MethodInfo resolve = typeof(ChatPanelView).GetMethod("ResolveAttachmentsAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
                 var task = (Task<(string Text, IReadOnlyList<string> Attached, IReadOnlyList<string> Failed)>)resolve.Invoke(panel,
                     ["@imagegen draw a cat", CancellationToken.None])!;
-                var result = await task;
-                Assert.Contains("Use generate_image", result.Text);
-                Assert.Contains("draw a cat", result.Text);
-                Assert.IsEmpty(result.Attached);
-                Assert.IsEmpty(result.Failed);
+                (string Text, IReadOnlyList<string> Attached, IReadOnlyList<string> Failed) = await task;
+                Assert.Contains("Use generate_image", Text);
+                Assert.Contains("draw a cat", Text);
+                Assert.IsEmpty(Attached);
+                Assert.IsEmpty(Failed);
                 PanelSettings(panel).Mode = ChatMode.Plan;
                 await Assert.ThrowsAsync<InvalidOperationException>(async () => await (Task)resolve.Invoke(panel,
                     ["@imageedit change background", CancellationToken.None])!);

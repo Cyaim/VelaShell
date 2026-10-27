@@ -148,7 +148,7 @@ public sealed class AuditLogViewModelTests
         var now = new DateTimeOffset(2026, 10, 24, 12, 0, 0, TimeSpan.Zero);
         IAuditLogService audit = Substitute.For<IAuditLogService>();
         audit.QueryAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
-             .Returns(_ => new List<AuditEntry>());
+             .Returns(_ => []);
         var vm = new AuditLogViewModel(audit, timeProvider: new FixedTime(now, TimeZoneInfo.Utc));
         await vm.LoadAsync(TestContext.CancellationToken);
 

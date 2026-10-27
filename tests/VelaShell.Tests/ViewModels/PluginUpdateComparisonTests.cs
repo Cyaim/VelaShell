@@ -23,8 +23,5 @@ public class PluginUpdateComparisonTests
     [DataRow("1.0.0", "1.0.0-beta.01", PluginUpdateState.Unknown, DisplayName = "本地版本号排不了序:不报有新版")]
     [DataRow("2147483648.0.0", "1.0.0", PluginUpdateState.Unknown, DisplayName = "商店版本号超出范围:不当成正式版")]
     [DataRow(null, "1.0.0", PluginUpdateState.Unknown)]
-    public void CompareForUpdate_UsesFullSemVerPrecedence(string? remote, string local, PluginUpdateState? expected)
-    {
-        Assert.AreEqual(expected, PluginManagerViewModel.CompareForUpdate(remote, local));
-    }
+    public void CompareForUpdate_UsesFullSemVerPrecedence(string? remote, string local, PluginUpdateState? expected) => Assert.AreEqual(expected, PluginManagerViewModel.CompareForUpdate(remote, local));
 }

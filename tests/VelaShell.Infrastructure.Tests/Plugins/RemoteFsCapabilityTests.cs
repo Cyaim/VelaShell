@@ -35,13 +35,28 @@ public sealed class RemoteFsCapabilityTests
     {
         RemoteFileInfo link = new()
         {
-            Name = "current", FullPath = "/srv/current", Size = 0, Permissions = "lrwxrwxrwx", IsDirectory = true,
-            IsSymbolicLink = true, LinkTarget = "releases/42", LastModified = DateTime.UnixEpoch, Owner = "joe", Group = "joe"
+            Name = "current",
+            FullPath = "/srv/current",
+            Size = 0,
+            Permissions = "lrwxrwxrwx",
+            IsDirectory = true,
+            IsSymbolicLink = true,
+            LinkTarget = "releases/42",
+            LastModified = DateTime.UnixEpoch,
+            Owner = "joe",
+            Group = "joe"
         };
         RemoteFileInfo file = new()
         {
-            Name = "a.txt", FullPath = "/srv/a.txt", Size = 3, Permissions = "-rw-r--r--", IsDirectory = false,
-            LinkTarget = "stale", LastModified = DateTime.UnixEpoch, Owner = "joe", Group = "joe"
+            Name = "a.txt",
+            FullPath = "/srv/a.txt",
+            Size = 3,
+            Permissions = "-rw-r--r--",
+            IsDirectory = false,
+            LinkTarget = "stale",
+            LastModified = DateTime.UnixEpoch,
+            Owner = "joe",
+            Group = "joe"
         };
         _sftp.ListDirectoryAsync(_sessionId, "/srv", Arg.Any<CancellationToken>()).Returns([link, file]);
         _sftp.GetFileInfoAsync(_sessionId, "/srv/current", Arg.Any<CancellationToken>()).Returns(link);
@@ -109,7 +124,7 @@ public sealed class RemoteFsCapabilityTests
             .UploadFileAsync(_sessionId.ToString(), "local.bin", "/remote.bin", plugin));
         await Task.Delay(150);
 
-        Assert.IsFalse(plugin.Frames.Any(static f => f.TransferredBytes >= f.TotalBytes));
+        Assert.DoesNotContain(static f => f.TransferredBytes >= f.TotalBytes, plugin.Frames);
     }
 
     private static async Task EventuallyAsync(Func<bool> condition)

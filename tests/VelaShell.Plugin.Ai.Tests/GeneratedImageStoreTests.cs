@@ -49,7 +49,7 @@ public sealed class GeneratedImageStoreTests
     {
         using var context = new TestPluginContext();
         var images = new GeneratedImageStore(context.DataDirectory);
-        var refs = Enumerable.Range(0, 5).Select(_ => images.Save(new DataContent(Png, "image/png"))).ToArray();
+        ChatGeneratedImage[] refs = [.. Enumerable.Range(0, 5).Select(_ => images.Save(new DataContent(Png, "image/png")))];
         var store = new ChatHistoryStore(context);
         await store.InitAsync();
         string id = ChatHistoryStore.NewConversationId();

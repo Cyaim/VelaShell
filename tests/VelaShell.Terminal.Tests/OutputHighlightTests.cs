@@ -1,6 +1,7 @@
 using System.Text;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using VelaShell.Core.Models;
 using VelaShell.Core.OutputRules;
@@ -47,7 +48,7 @@ public sealed class OutputHighlightTests
     private static void Paint(Window window)
     {
         Dispatcher.UIThread.RunJobs();
-        using var frame = window.CaptureRenderedFrame();
+        using WriteableBitmap? frame = window.CaptureRenderedFrame();
     }
 
     [TestMethod]

@@ -240,7 +240,7 @@ public sealed class PluginNotificationService(
             {
                 return raced;
             }
-            HashSet<string> set = new(StringComparer.Ordinal);
+            HashSet<string> set = [with(StringComparer.Ordinal)];
             if (store is not null)
             {
                 try

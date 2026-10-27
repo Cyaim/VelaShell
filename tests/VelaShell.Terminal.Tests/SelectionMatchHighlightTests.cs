@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using VelaShell.Terminal.Rendering;
 
@@ -53,7 +54,7 @@ public sealed class SelectionMatchHighlightTests
         Run("foo \r\nfoo \r\nfoo", (window, control) =>
         {
             Drag(window, control, (0, 0), (0, 4));
-            CollectionAssert.AreEqual(new[] { 0, 1 }, control.SelectionMatchesForTest.Select(hit => hit.Row).ToArray());
+            Assert.AreSequenceEqual([0, 1], [.. control.SelectionMatchesForTest.Select(hit => hit.Row)]);
         });
 
     /// <summary>
@@ -66,9 +67,8 @@ public sealed class SelectionMatchHighlightTests
         {
             Drag(window, control, (0, 0), (0, 30));
             Assert.AreEqual("error: disk full", control.GetSelectedText());
-            CollectionAssert.AreEqual(
-                new[] { new BufferSearchHit(0, 0, 16), new BufferSearchHit(1, 5, 16) },
-                control.SelectionMatchesForTest.ToArray());
+            Assert.AreSequenceEqual(
+                [new BufferSearchHit(0, 0, 16), new BufferSearchHit(1, 5, 16)], [.. control.SelectionMatchesForTest]);
         });
 
     [TestMethod]
@@ -87,9 +87,8 @@ public sealed class SelectionMatchHighlightTests
             window.MouseUp(point, MouseButton.Left);
             Paint(window);
             Assert.AreEqual("a", control.GetSelectedText());
-            CollectionAssert.AreEqual(
-                new[] { new BufferSearchHit(0, 4, 1), new BufferSearchHit(0, 8, 1) },
-                control.SelectionMatchesForTest.ToArray());
+            Assert.AreSequenceEqual(
+                [new BufferSearchHit(0, 4, 1), new BufferSearchHit(0, 8, 1)], [.. control.SelectionMatchesForTest]);
         });
 
     /// <summary>双击一个被自动换行折开的词(#517):查询接上折行,命中也认跨折行的那一处。</summary>
@@ -107,9 +106,8 @@ public sealed class SelectionMatchHighlightTests
             window.MouseUp(point, MouseButton.Left);
             Paint(window);
             Assert.AreEqual("abcdef", control.GetSelectedText());
-            CollectionAssert.AreEqual(
-                new[] { new BufferSearchHit(0, cols - 2, 2), new BufferSearchHit(1, 0, 4), new BufferSearchHit(2, 0, 6) },
-                control.SelectionMatchesForTest.ToArray());
+            Assert.AreSequenceEqual(
+                [new BufferSearchHit(0, cols - 2, 2), new BufferSearchHit(1, 0, 4), new BufferSearchHit(2, 0, 6)], [.. control.SelectionMatchesForTest]);
         });
 
     [TestMethod]
@@ -117,9 +115,8 @@ public sealed class SelectionMatchHighlightTests
         Run("中e\u0301 中e\u0301", (window, control) =>
         {
             Drag(window, control, (0, 0), (0, 3));
-            CollectionAssert.AreEqual(
-                new[] { new BufferSearchHit(0, 0, 3), new BufferSearchHit(0, 4, 3) },
-                control.SelectionMatchesForTest.ToArray());
+            Assert.AreSequenceEqual(
+                [new BufferSearchHit(0, 0, 3), new BufferSearchHit(0, 4, 3)], [.. control.SelectionMatchesForTest]);
         });
 
     [TestMethod]
@@ -359,6 +356,6 @@ public sealed class SelectionMatchHighlightTests
     private static void Paint(Window window)
     {
         Dispatcher.UIThread.RunJobs();
-        using var frame = window.CaptureRenderedFrame();
+        using WriteableBitmap? frame = window.CaptureRenderedFrame();
     }
 }

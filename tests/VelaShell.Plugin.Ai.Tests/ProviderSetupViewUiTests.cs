@@ -1683,7 +1683,7 @@ public sealed class ProviderSetupViewUiTests
                 Find<TextBox>(view, "SetupKeyBox").Text = "sk-new";
                 await ClickPrimaryAsync(view);
                 Assert.AreEqual("sk-new", await store.GetApiKeyAsync(provider.Id));
-                Assert.IsTrue(newEndpoint.Authorizations.All(header => header is null || header == "Bearer sk-new"),
+                Assert.IsTrue(newEndpoint.Authorizations.All(header => header is null or "Bearer sk-new"),
                     string.Join(", ", newEndpoint.Authorizations));
             }
             finally { window.Close(); }
@@ -2898,7 +2898,10 @@ public sealed class ProviderSetupViewUiTests
                 Find<ToggleButton>(view, "SetupAdvancedToggle").IsChecked = true;
                 TextBox model = Find<TextBox>(view, "SetupModelBox");
                 Assert.AreEqual("", model.Text);
-                if (trigger == "save") await ClickPrimaryAsync(view);
+                if (trigger == "save")
+                {
+                    await ClickPrimaryAsync(view);
+                }
                 else
                 {
                     Button pull = Find<Button>(view, "SetupPullButton");

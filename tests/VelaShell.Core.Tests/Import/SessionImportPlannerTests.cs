@@ -739,8 +739,13 @@ public sealed class SessionImportPlannerTests
     {
         var incoming = new SessionProfile
         {
-            Name = "tail", Host = "tail", Username = "deploy", Password = "legacy-password",
-            PrivateKeyPath = "/legacy-key", PrivateKeyPassphrase = "legacy-phrase", CertificatePath = "/legacy-cert",
+            Name = "tail",
+            Host = "tail",
+            Username = "deploy",
+            Password = "legacy-password",
+            PrivateKeyPath = "/legacy-key",
+            PrivateKeyPassphrase = "legacy-phrase",
+            CertificatePath = "/legacy-cert",
             RememberPassword = true
         };
         const string passphrase = "archive-passphrase";

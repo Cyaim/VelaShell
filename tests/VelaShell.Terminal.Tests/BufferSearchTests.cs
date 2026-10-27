@@ -184,7 +184,7 @@ public class BufferSearchTests
 
         IReadOnlyList<BufferSearchHit> hits = BufferSearch.FindVisible(e.Screen, "NEEDLE", [0, 3, -1]);
 
-        CollectionAssert.AreEqual(new[] { 0, 3 }, hits.Select(hit => hit.Row).ToArray());
+        Assert.AreSequenceEqual([0, 3], [.. hits.Select(hit => hit.Row)]);
         Assert.HasCount(5, BufferSearch.FindAll(e.Screen, "needle"));
     }
 
@@ -209,13 +209,11 @@ public class BufferSearchTests
         e.Feed(Encoding.UTF8.GetBytes("xxxxx abcdef\r\nabcdef"));
         Assert.IsTrue(e.Screen.ViewLine(0).Wrapped, "前提:第 0 行确实是自动换行折下去的。");
 
-        CollectionAssert.AreEqual(
-            new[] { new BufferSearchHit(0, 6, 2), new BufferSearchHit(1, 0, 4), new BufferSearchHit(2, 0, 6) },
-            BufferSearch.FindVisible(e.Screen, "ABCDEF", [0, 1, 2, 3]).ToArray());
+        Assert.AreSequenceEqual(
+            [new BufferSearchHit(0, 6, 2), new BufferSearchHit(1, 0, 4), new BufferSearchHit(2, 0, 6)], [.. BufferSearch.FindVisible(e.Screen, "ABCDEF", [0, 1, 2, 3])]);
         // 视口里不相邻(折叠藏掉了第 1 行)就不接。
-        CollectionAssert.AreEqual(
-            new[] { new BufferSearchHit(2, 0, 6) },
-            BufferSearch.FindVisible(e.Screen, "abcdef", [0, 2, 3]).ToArray());
+        Assert.AreSequenceEqual(
+            [new BufferSearchHit(2, 0, 6)], [.. BufferSearch.FindVisible(e.Screen, "abcdef", [0, 2, 3])]);
         Assert.HasCount(1, BufferSearch.FindAll(e.Screen, "abcdef"));
     }
 
@@ -224,8 +222,8 @@ public class BufferSearchTests
     {
         TerminalEmulator e = Feed("hidden", "中e\u0301 中e\u0301");
         IReadOnlyList<BufferSearchHit> hits = BufferSearch.FindVisible(e.Screen, "中E\u0301", [1]);
-        CollectionAssert.AreEqual(
-            new[] { new BufferSearchHit(1, 0, 3), new BufferSearchHit(1, 4, 3) }, hits.ToArray());
+        Assert.AreSequenceEqual(
+            [new BufferSearchHit(1, 0, 3), new BufferSearchHit(1, 4, 3)], [.. hits]);
     }
 
     /// <summary>之前只断言了第一个命中的列 —— 而错位恰恰只在宽字符之后的那个命中上现形。</summary>

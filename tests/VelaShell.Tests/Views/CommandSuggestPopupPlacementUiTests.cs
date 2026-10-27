@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using NSubstitute;
 using VelaShell.Core.Models;
@@ -80,7 +81,7 @@ public sealed class CommandSuggestPopupPlacementUiTests
         public static Task<Harness> ShowAsync()
         {
             var control = new VelaTerminalControl();
-            var shell = Substitute.For<IShellStreamWrapper>();
+            IShellStreamWrapper shell = Substitute.For<IShellStreamWrapper>();
             shell.CanRead.Returns(false);
             shell.CanWrite.Returns(true);
             shell.WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
@@ -131,7 +132,7 @@ public sealed class CommandSuggestPopupPlacementUiTests
         private static void Paint(Window window)
         {
             Dispatcher.UIThread.RunJobs();
-            using var frame = window.CaptureRenderedFrame();
+            using WriteableBitmap? frame = window.CaptureRenderedFrame();
         }
 
         public async ValueTask DisposeAsync()

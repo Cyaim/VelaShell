@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
-using ReactiveUI.Primitives;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -12,10 +11,11 @@ using LiveMarkdown.Avalonia;
 using Markdig;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using ReactiveUI.Primitives;
 using TextMateSharp.Grammars;
 using VelaShell.Core.Resources;
-using VelaShell.Services;
 using VelaShell.PluginSdk.Versioning;
+using VelaShell.Services;
 using VelaShell.Services.Update;
 using VelaShell.ViewModels;
 
@@ -34,7 +34,6 @@ public partial class ReleaseNotesDialog : Window
     private bool _downloading;
     private CancellationTokenSource? _request;
     private bool _closed;
-    private Uri? _releaseUri;
     private readonly List<IDisposable> _skinSubscriptions = [];
 
     /// <summary>
@@ -98,7 +97,7 @@ public partial class ReleaseNotesDialog : Window
     }
 
     /// <summary>「在 GitHub 上查看」要打开的发布页;没有可用地址时为 null。</summary>
-    internal Uri? ReleaseUri => _releaseUri;
+    internal Uri? ReleaseUri { get; private set; }
 
     /// <inheritdoc />
     protected override void OnOpened(EventArgs e)
@@ -125,7 +124,7 @@ public partial class ReleaseNotesDialog : Window
         StatusText.IsVisible = false;
         ReleaseHeader.IsVisible = false;
         GitHubButton.IsEnabled = false;
-        _releaseUri = null;
+        ReleaseUri = null;
         NotesScroll.IsVisible = false;
         RetryButton.IsVisible = false;
         CheckStatusText.IsVisible = false;
@@ -194,8 +193,8 @@ public partial class ReleaseNotesDialog : Window
                 : null;
             // 发布页地址取清单中的 htmlUrl(那个版本自己的发布页),但只放行本仓库的 releases 页;缺失、不是 https、
             // 别的站点或别的仓库一律退回本仓库的发布列表 —— 按钮写的是「前往发布页」,不能把人带到别处(#655 复审,维护者 2026-10-25 定)
-            _releaseUri = notes is null ? null : ReleasePage.Resolve(notes.HtmlUrl);
-            GitHubButton.IsEnabled = _releaseUri != null;
+            ReleaseUri = notes is null ? null : ReleasePage.Resolve(notes.HtmlUrl);
+            GitHubButton.IsEnabled = ReleaseUri != null;
             if (notes == null || string.IsNullOrWhiteSpace(notes.Body))
             {
                 StatusText.Text = Strings.Get(notes == null
@@ -242,10 +241,7 @@ public partial class ReleaseNotesDialog : Window
     {
         _closed = true;
         _request?.Cancel();
-        if (_updates != null)
-        {
-            _updates.PropertyChanged -= OnUpdateStateChanged;
-        }
+        _updates?.PropertyChanged -= OnUpdateStateChanged;
         foreach (IDisposable subscription in _skinSubscriptions)
         {
             subscription.Dispose();
@@ -314,7 +310,7 @@ public partial class ReleaseNotesDialog : Window
             return;
         }
         bool manual = !_updates.CanSelfUpdate || OperatingSystem.IsLinux();
-        UpdateButton.IsVisible = !manual || _releaseUri != null;
+        UpdateButton.IsVisible = !manual || ReleaseUri != null;
         UpdateButton.IsEnabled = !_updates.IsUpdating;
         UpdateButton.Content = Strings.Get(manual ? "ReleaseNotes_OpenReleasePage"
             : IsDisplayedUpdateReady() ? "SetAbout_RestartToUpdate" : "ReleaseNotes_UpdateNow");
@@ -349,7 +345,7 @@ public partial class ReleaseNotesDialog : Window
         }
         if (!_updates.CanSelfUpdate || OperatingSystem.IsLinux())
         {
-            if (_releaseUri is { } uri)
+            if (ReleaseUri is { } uri)
             {
                 await Launcher.LaunchUriAsync(uri);
             }
@@ -384,7 +380,7 @@ public partial class ReleaseNotesDialog : Window
 
     private void GitHub_Click(object? sender, RoutedEventArgs e) => FireAndForget.Run(async () =>
     {
-        if (_releaseUri is { } uri)
+        if (ReleaseUri is { } uri)
         {
             await Launcher.LaunchUriAsync(uri);
         }

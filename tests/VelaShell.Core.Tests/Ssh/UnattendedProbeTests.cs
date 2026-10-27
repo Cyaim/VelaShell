@@ -34,9 +34,9 @@ public sealed class UnattendedProbeTests
         Exception failure = await Assert.ThrowsAsync<Exception>(
             () => ConnectAsync(Info(server.Port, unattended: true), store, settings, prompt, alerts));
 
-        Assert.IsTrue(Chain(failure).Any(e => e is VelaSshHostKeyRejectedException), failure.ToString());
+        Assert.Contains(e => e is VelaSshHostKeyRejectedException, Chain(failure), failure.ToString());
         // 说的是巡检没替你接受,不是「停止自动重连」(取两句文案在第一个占位符之前的那一段比)。
-        StringAssert.Contains(failure.ToString(), Strings.Get("Msg_HostKeyUnattendedBlocked").Split('{')[0]);
+        Assert.Contains(Strings.Get("Msg_HostKeyUnattendedBlocked").Split('{')[0], failure.ToString());
         Assert.IsFalse(failure.ToString().Contains(Strings.Get("Msg_HostKeyAutoReconnectBlocked").Split('{')[0], StringComparison.Ordinal));
         await prompt.DidNotReceiveWithAnyArgs().DecideAsync(default!, default, default!, default!, default, default, default, default);
         await alerts.DidNotReceiveWithAnyArgs().RaiseAsync(default!, default!, default);
@@ -95,12 +95,12 @@ public sealed class UnattendedProbeTests
         Exception failure = await Assert.ThrowsAsync<Exception>(
             () => ConnectAsync(Info(server.Port, unattended: true), keyboardPrompt: keyboard));
 
-        Assert.IsTrue(Chain(failure).Any(e => e is VelaSshAuthenticationCancelledException), failure.ToString());
-        StringAssert.Contains(failure.Message, Strings.Get("SshErr_KbdAuthUnattended"));
+        Assert.Contains(e => e is VelaSshAuthenticationCancelledException, Chain(failure), failure.ToString());
+        Assert.Contains(Strings.Get("SshErr_KbdAuthUnattended"), failure.Message);
         await keyboard.DidNotReceiveWithAnyArgs().AskAsync(default!, default);
         await server.WaitForSessionAsync();
         Assert.HasCount(1, server.KeyboardAnswers, "只答了口令那一轮。");
-        CollectionAssert.AreEqual(new[] { Password }, server.KeyboardAnswers[0].ToArray());
+        Assert.AreSequenceEqual([Password], [.. server.KeyboardAnswers[0]]);
     }
 
     // ---- 辅助 ----

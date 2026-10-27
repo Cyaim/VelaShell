@@ -99,7 +99,7 @@ internal sealed class RemoteExecCapability(ISshConnectionService connections, st
             Interlocked.Decrement(ref _activeStreams);
             throw new InvalidOperationException("This plugin has reached its streaming command limit.");
         }
-        using CancellationTokenSource lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, shutdown);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, shutdown);
         if (options?.Timeout is { } timeout && timeout > TimeSpan.Zero)
         {
             lifetime.CancelAfter(timeout);

@@ -436,7 +436,11 @@ public sealed class ConnectionProfileViewModelTests
         SystemKeyReference saved = new() { Provider = SystemKeyReference.SmartCardProvider, KeyName = "card-key", PublicKey = "ssh-rsa AAAA card" };
         var existing = new SessionProfile
         {
-            Name = "card", Host = "10.0.0.8", Username = "ops", AuthMethod = AuthMethod.KeyStore, KeyStoreKey = saved,
+            Name = "card",
+            Host = "10.0.0.8",
+            Username = "ops",
+            AuthMethod = AuthMethod.KeyStore,
+            KeyStoreKey = saved,
         };
 
         var vm = new ConnectionProfileViewModel(existing, systemKeyStore: KeyStore(true, StoreKey("other")));
@@ -507,7 +511,10 @@ public sealed class ConnectionProfileViewModelTests
         var synced = new ConnectionProfileViewModel(
             new SessionProfile
             {
-                Name = "from-windows", Host = "10.0.0.9", Username = "ops", AuthMethod = AuthMethod.KeyStore,
+                Name = "from-windows",
+                Host = "10.0.0.9",
+                Username = "ops",
+                AuthMethod = AuthMethod.KeyStore,
                 KeyStoreKey = new SystemKeyReference { Provider = SystemKeyReference.SoftwareProvider, KeyName = "k" },
             },
             systemKeyStore: none);

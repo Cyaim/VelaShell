@@ -27,7 +27,7 @@ public class QuickCommandVariableMemoryTests
     public void RememberedValues_ArePrefilledForTheSameCommandOnly()
     {
         var memory = new QuickCommandVariableMemory();
-        Guid logs = Guid.NewGuid();
+        var logs = Guid.NewGuid();
         memory.Remember(logs, Logs.Text, Logs, new Dictionary<string, string> { ["pod"] = "web-1", ["ns"] = "prod" });
 
         IReadOnlyDictionary<string, string> again = memory.Prefill(logs, Logs.Text, Logs);
@@ -54,10 +54,14 @@ public class QuickCommandVariableMemoryTests
         // 询问框是明文输入框:预填一个口令就等于把它摆在屏幕上。
         var template = QuickCommandTemplate.Parse("mysql -u {{user}} -p{{password}} --token={{api_token}} --otp={{OTP}} {{db_密码}}");
         var memory = new QuickCommandVariableMemory();
-        Guid id = Guid.NewGuid();
+        var id = Guid.NewGuid();
         memory.Remember(id, template.Text, template, new Dictionary<string, string>
         {
-            ["user"] = "app", ["password"] = "s3cret", ["api_token"] = "t0k", ["OTP"] = "123456", ["db_密码"] = "x"
+            ["user"] = "app",
+            ["password"] = "s3cret",
+            ["api_token"] = "t0k",
+            ["OTP"] = "123456",
+            ["db_密码"] = "x"
         });
 
         IReadOnlyDictionary<string, string> initial = memory.Prefill(id, template.Text, template);
@@ -75,7 +79,7 @@ public class QuickCommandVariableMemoryTests
     public void BlankAnswer_ForgetsTheOldValue_SoTheDefaultComesBack()
     {
         var memory = new QuickCommandVariableMemory();
-        Guid id = Guid.NewGuid();
+        var id = Guid.NewGuid();
         memory.Remember(id, Logs.Text, Logs, new Dictionary<string, string> { ["pod"] = "web-1", ["ns"] = "prod" });
 
         memory.Remember(id, Logs.Text, Logs, new Dictionary<string, string> { ["pod"] = "web-2", ["ns"] = "  " });
@@ -89,7 +93,7 @@ public class QuickCommandVariableMemoryTests
     public void OldestCommand_IsDroppedPastTheCap()
     {
         var memory = new QuickCommandVariableMemory();
-        Guid first = Guid.NewGuid();
+        var first = Guid.NewGuid();
         memory.Remember(first, Logs.Text, Logs, new Dictionary<string, string> { ["pod"] = "web-1" });
         for (int i = 0; i < QuickCommandVariableMemory.MaxCommands; i++)
         {

@@ -27,7 +27,7 @@ public sealed class LocalFilePaneNewFileTests
             string created = Path.Combine(root, "notes.txt");
             Assert.IsTrue(File.Exists(created), "名字两头的空白去掉。");
             Assert.AreEqual(0, new FileInfo(created).Length);
-            Assert.IsTrue(vm.Entries.Any(entry => entry.Name == "notes.txt"), "建完刷新,新文件就在列表里。");
+            Assert.Contains(entry => entry.Name == "notes.txt", vm.Entries, "建完刷新,新文件就在列表里。");
             Assert.IsNull(vm.ErrorMessage);
         }
         finally

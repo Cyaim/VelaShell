@@ -19,7 +19,7 @@ public sealed class HttpListenerExtensionsTests
     public async Task Accept_ReturnsTheIncomingRequest()
     {
         using HttpListener listener = StartListener(out string baseUrl);
-        using var client = LoopbackClient();
+        using HttpClient client = LoopbackClient();
         Task<HttpListenerContext?> accept = listener.AcceptAsync(CancellationToken.None);
         Task<HttpResponseMessage> request = client.GetAsync(baseUrl + "/hello");
 
@@ -62,14 +62,14 @@ public sealed class HttpListenerExtensionsTests
     [TestMethod]
     public async Task StopRacingTheNextAccept_LoopAlwaysExits()
     {
-        using var client = LoopbackClient();
+        using HttpClient client = LoopbackClient();
         for (int round = 0; round < 200; round++)
         {
             HttpListener listener = StartListener(out string baseUrl);
             using var stop = new CancellationTokenSource();
             var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            Task loop = Task.Run(async () =>
+            var loop = Task.Run(async () =>
             {
                 while (await listener.AcceptAsync(stop.Token) is { } context)
                 {

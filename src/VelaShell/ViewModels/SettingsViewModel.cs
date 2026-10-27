@@ -268,7 +268,7 @@ public partial class SettingsViewModel : ReactiveObject
         ResetCommand = ReactiveCommand.Create(ResetToDefaults);
         SetAccentCommand = ReactiveCommand.Create<string>(hex => AccentColor = hex);
         ClearHistoryCommand = ReactiveCommand.CreateFromTask(ClearHistoryAsync);
-        var canUpdate = this.WhenAnyValue(x => x.IsUpdating, busy => !busy);
+        IObservable<bool> canUpdate = this.WhenAnyValue(x => x.IsUpdating, busy => !busy);
         CheckUpdatesCommand = ReactiveCommand.CreateFromTask(CheckForUpdatesAsync, canUpdate);
         RestartToUpdateCommand = ReactiveCommand.CreateFromTask(RestartToUpdateAsync, canUpdate);
         RepairUpdateCommand = ReactiveCommand.CreateFromTask(RepairUpdateStateAsync, canUpdate);

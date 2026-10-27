@@ -396,7 +396,7 @@ public sealed class AuditLogViewModel : ReactiveObject
 
     private static DateTimeOffset LocalMidnight(DateTime date, TimeZoneInfo zone)
     {
-        DateTime local = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
+        var local = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
         return new DateTimeOffset(local, zone.GetUtcOffset(local));
     }
 

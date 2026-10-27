@@ -10,6 +10,7 @@ using VelaShell.Infrastructure.Ssh;
 using VelaShell.Ssh.Crypto;
 using VelaShell.Ssh.Diagnostics;
 using VelaShell.Ssh.HostKeys;
+using VelaShell.Ssh.Keys;
 
 namespace VelaShell.Infrastructure.Tests.Ssh;
 
@@ -139,7 +140,7 @@ public sealed class HostCaPolicyTests : IDisposable
 
     private static OpenSshCertificateView CertificateOf(string fileName)
     {
-        var certificate = Key(fileName).Certificate!;
+        OpenSshCertificate certificate = Key(fileName).Certificate!;
         return new(certificate.KeyId, certificate.ValidPrincipals, certificate.ValidAfterTime, certificate.ValidBeforeTime);
     }
 

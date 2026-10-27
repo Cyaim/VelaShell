@@ -1,12 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using VelaShell.Core.Resources;
 using VelaShell.Infrastructure.Diagnostics;
 using VelaShell.Services.Update;
 using VelaShell.ViewModels;
-using Avalonia.Interactivity;
 using FireAndForget = VelaShell.Services.FireAndForget;
 
 namespace VelaShell.Views.Settings;

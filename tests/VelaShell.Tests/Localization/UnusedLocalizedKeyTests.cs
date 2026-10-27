@@ -69,7 +69,7 @@ public partial class UnusedLocalizedKeyTests
         HashSet<string> defined = DefinedKeys();
         string[] missing =
         [
-            .. Enum.GetNames<VelaShell.Infrastructure.Plugins.PluginState>()
+            .. Enum.GetNames<Infrastructure.Plugins.PluginState>()
                 .Select(state => $"PluginState_{state}")
                 .Where(key => !defined.Contains(key))
         ];

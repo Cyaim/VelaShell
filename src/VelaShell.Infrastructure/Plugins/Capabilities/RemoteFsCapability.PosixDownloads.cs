@@ -334,7 +334,9 @@ internal sealed partial class RemoteFsCapability
                 else if ((RuntimeInformation.ProcessArchitecture == Architecture.X64
                     ? DarwinFStatAtInode64(Fd(directory), name, buffer, AtSymlinkNoFollow)
                     : DarwinFStatAt(Fd(directory), name, buffer, AtSymlinkNoFollow)) == 0)
+                {
                     return BitConverter.ToUInt16(buffer, 4);
+                }
             }
             catch (EntryPointNotFoundException ex) { throw new PlatformNotSupportedException("Safe download requires statx / fstatat.", ex); }
             int error = Marshal.GetLastPInvokeError();

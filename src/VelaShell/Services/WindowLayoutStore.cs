@@ -71,15 +71,13 @@ public sealed class WindowLayoutStore(IAppDataStore? store)
 
     /// <summary>文件栏几何在 windowLayout 集合里的键(见 <see cref="FilePaneLayout" />)。</summary>
     private const string FilePanesKey = "filePanes";
-
-    private FilePaneLayout? _filePanes;
     private Task<FilePaneLayout>? _filePanesLoad;
 
     /// <summary>
     /// 已经读进内存的文件栏几何;还没读过(或第一次读库还没回来)时为 null。
     /// 视图建好时同步套用它,免得每开一个文件栏都先按出厂宽度画一帧再跳。
     /// </summary>
-    public FilePaneLayout? FilePanes => _filePanes;
+    public FilePaneLayout? FilePanes { get; private set; }
 
     /// <summary>读文件栏几何:只在第一次读库,之后都用内存里那份(改动经 <see cref="SaveFilePanesAsync" /> 先改内存)。</summary>
     public Task<FilePaneLayout> LoadFilePanesAsync() => _filePanesLoad ??= LoadFilePanesCoreAsync();
@@ -98,7 +96,7 @@ public sealed class WindowLayoutStore(IAppDataStore? store)
                 // 记不住列宽不值得打扰用户:读不出来就按出厂宽度。
             }
         }
-        return _filePanes ??= stored ?? new FilePaneLayout();
+        return FilePanes ??= stored ?? new FilePaneLayout();
     }
 
     /// <summary>改一处文件栏几何,写回存储;失败静默忽略。</summary>

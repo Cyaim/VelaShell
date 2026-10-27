@@ -33,16 +33,16 @@ public sealed class LayoutTemplateFileTests
 
         string json = LayoutTemplateFile.Export([a, b], new DateTime(2026, 10, 25, 1, 2, 3, DateTimeKind.Utc));
 
-        using (JsonDocument doc = JsonDocument.Parse(json))
+        using (var doc = JsonDocument.Parse(json))
         {
             JsonElement header = doc.RootElement.GetProperty(SettingsTransfer.HeaderProperty);
             Assert.AreEqual(LayoutTemplateFile.FormatId, header.GetProperty("format").GetString());
             Assert.AreEqual(LayoutTemplateFile.CurrentVersion, header.GetProperty("version").GetInt32());
             Assert.AreEqual(2, header.GetProperty("count").GetInt32());
         }
-        StringAssert.Contains(json, "机房 A", "中文原样写,不转义成 \\u");
+        Assert.Contains("机房 A", json, "中文原样写,不转义成 \\u");
         IReadOnlyList<LayoutTemplate> back = LayoutTemplateFile.Parse(json)!;
-        Assert.AreSequenceEqual(new[] { a.Id, b.Id }, back.Select(t => t.Id).ToArray(), "Id 跟着走:同一个模板导到另一台同步设备上还是同一个");
+        Assert.AreSequenceEqual([a.Id, b.Id], [.. back.Select(t => t.Id)], "Id 跟着走:同一个模板导到另一台同步设备上还是同一个");
         Assert.AreEqual(a.UpdatedAt, back[0].UpdatedAt);
         Assert.AreEqual(0.3, back[0].Root!.Children[0].Proportion);
         Assert.IsNull(back[0].Root!.Children[1].Proportion);
@@ -69,10 +69,10 @@ public sealed class LayoutTemplateFileTests
         string again = LayoutTemplateFile.Export([template], DateTime.UtcNow);
 
         Assert.AreEqual(4, template.SchemaVersion, "版本更高也尽力读");
-        StringAssert.Contains(again, "\"color\": \"teal\"", "模板上不认识的字段原样写回去");
-        StringAssert.Contains(again, "\"glow\": true", "节点上的也是");
-        StringAssert.Contains(again, "\"beam\": 3", "标签上的也是");
-        StringAssert.Contains(again, "hologram", "不认识的标签类型留着,打开时才跳过");
+        Assert.Contains("\"color\": \"teal\"", again, "模板上不认识的字段原样写回去");
+        Assert.Contains("\"glow\": true", again, "节点上的也是");
+        Assert.Contains("\"beam\": 3", again, "标签上的也是");
+        Assert.Contains("hologram", again, "不认识的标签类型留着,打开时才跳过");
     }
 
     [TestMethod]

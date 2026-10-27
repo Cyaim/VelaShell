@@ -1,9 +1,4 @@
 using System.Net;
-using NSubstitute;
-using VelaShell.Core.Services;
-using VelaShell.Core.Data;
-using VelaShell.Services;
-using VelaShell.ViewModels;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -14,9 +9,14 @@ using Avalonia.VisualTree;
 using LiveMarkdown.Avalonia;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using NSubstitute;
+using VelaShell.Core.Data;
 using VelaShell.Core.Resources;
+using VelaShell.Core.Services;
+using VelaShell.Services;
 using VelaShell.Services.Update;
 using VelaShell.Tests.TestSupport;
+using VelaShell.ViewModels;
 using VelaShell.Views;
 using VelaShell.Views.Settings;
 
@@ -478,7 +478,7 @@ public sealed class ReleaseNotesDialogUiTests
     [DataRow(true)]
     public Task NewRelease_ActionReflectsInstallationMode(bool selfUpdate) => _session.RunOnUiAsync(() =>
     {
-        UpdateManifest manifest = UpdateManifest.Parse(System.Text.Json.JsonSerializer.Serialize(new
+        var manifest = UpdateManifest.Parse(System.Text.Json.JsonSerializer.Serialize(new
         {
             version = "2.0.0",
             tag = "v2.0.0",
@@ -510,7 +510,7 @@ public sealed class ReleaseNotesDialogUiTests
     [OSCondition(OperatingSystems.Windows | OperatingSystems.OSX)]
     public Task UpdateButton_ReadyTargetRestarts_FailedDownloadCanRetry() => _session.RunOnUiAsync(async () =>
     {
-        UpdateManifest manifest = UpdateManifest.Parse(System.Text.Json.JsonSerializer.Serialize(new
+        var manifest = UpdateManifest.Parse(System.Text.Json.JsonSerializer.Serialize(new
         {
             version = "2.0.0",
             tag = "v2.0.0",
@@ -560,7 +560,7 @@ public sealed class ReleaseNotesDialogUiTests
     public Task UpdateClick_DownloadsDisplayedSnapshot_ContinuesAfterClose() => _session.RunOnUiAsync(async () =>
     {
         string rid = UpdateManifest.CurrentRid()!;
-        UpdateManifest manifest = UpdateManifest.Parse($$$"""
+        var manifest = UpdateManifest.Parse($$$"""
             {"version":"2.0.0","tag":"v2.0.0","assets":{"{{{rid}}}":{"name":"package.zip","sha256":"{{{new string('a', 64)}}}","size":12} } }
             """);
         IUpdateService updates = Substitute.For<IUpdateService>();

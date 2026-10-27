@@ -28,7 +28,7 @@ public sealed partial class RemoteTransferTests
         string path = Path.Combine(directory, "target");
         try
         {
-            PosixTarget target = PosixTarget.Open(path, overwrite: false);
+            var target = PosixTarget.Open(path, overwrite: false);
             target.UseLinkCommit = linkFallback;
             FileStream sink = target.CreateTemporary();
             await sink.WriteAsync(new byte[] { 1, 2, 3 });
@@ -38,8 +38,8 @@ public sealed partial class RemoteTransferTests
             Assert.AreEqual("Atomic download commit was rejected.", rejected.Message);
             Assert.AreEqual(17, Assert.IsInstanceOfType<Win32Exception>(rejected.InnerException).NativeErrorCode);   // EEXIST,两边同值
             await target.DisposeAsync();
-            CollectionAssert.AreEqual(new byte[] { 9 }, await File.ReadAllBytesAsync(path));
-            CollectionAssert.AreEqual(new[] { path }, Directory.GetFiles(directory));
+            Assert.AreSequenceEqual(new byte[] { 9 }, await File.ReadAllBytesAsync(path));
+            Assert.AreSequenceEqual([path], Directory.GetFiles(directory));
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -56,17 +56,17 @@ public sealed partial class RemoteTransferTests
         string reference = Path.Combine(directory, "reference");
         try
         {
-            PosixTarget target = PosixTarget.Open(path, overwrite: false);
+            var target = PosixTarget.Open(path, overwrite: false);
             target.UseLinkCommit = linkFallback;
             FileStream sink = target.CreateTemporary();
             await sink.WriteAsync(new byte[] { 1, 2, 3 });
             target.Commit(false);
             await target.DisposeAsync();
-            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(path));
+            Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(path));
             // 新建的下载与别的程序新建的文件一样,按 0666 交 umask 收窄。
             await File.WriteAllBytesAsync(reference, []);
             Assert.AreEqual(File.GetUnixFileMode(reference), File.GetUnixFileMode(path));
-            CollectionAssert.AreEquivalent(new[] { path, reference }, Directory.GetFiles(directory));
+            Assert.AreSequenceEqual([path, reference], Directory.GetFiles(directory), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -84,7 +84,7 @@ public sealed partial class RemoteTransferTests
         File.SetUnixFileMode(path, (UnixFileMode)oldMode);
         try
         {
-            PosixTarget target = PosixTarget.Open(path, overwrite: true);
+            var target = PosixTarget.Open(path, overwrite: true);
             FileStream sink = target.CreateTemporary();
             string temporary = Directory.GetFiles(directory).Single(file => file != path);
             // 传输期间的临时文件不比被替换的文件更宽。
@@ -92,9 +92,9 @@ public sealed partial class RemoteTransferTests
             await sink.WriteAsync(new byte[] { 1, 2, 3 });
             target.Commit(true);
             await target.DisposeAsync();
-            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(path));
+            Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(path));
             Assert.AreEqual((UnixFileMode)expectedMode, File.GetUnixFileMode(path));
-            CollectionAssert.AreEqual(new[] { path }, Directory.GetFiles(directory));
+            Assert.AreSequenceEqual([path], Directory.GetFiles(directory));
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -142,7 +142,7 @@ public sealed partial class RemoteTransferTests
         Assert.AreEqual("Safe download currently requires a local file system.", ex.Message);
         IPluginPermissionPrompt prompt = AllowDownloads();
         using RemoteFsCapability api = DownloadApi(prompt);
-        var start = await api.StartDownloadAsync(_session.ToString(), "/source", "/proc/sys/vela-download-target", new() { OperationId = "procfs" });
+        RemoteTransferSnapshot start = await api.StartDownloadAsync(_session.ToString(), "/source", "/proc/sys/vela-download-target", new() { OperationId = "procfs" });
         RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
         await WaitIdle(api);
         Assert.AreEqual(RemoteTransferState.Failed, done.State, done.ErrorMessage);
@@ -169,14 +169,14 @@ public sealed partial class RemoteTransferTests
         using RemoteFsCapability api = DownloadApi(prompt);
         try
         {
-            var start = await api.StartDownloadAsync(_session.ToString(), "/source", requested, new() { OperationId = "resolved" });
+            RemoteTransferSnapshot start = await api.StartDownloadAsync(_session.ToString(), "/source", requested, new() { OperationId = "resolved" });
             RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
             await WaitIdle(api);
             // 审批框与快照给的都是实际落盘的位置,不是插件递来的别名。
             Assert.AreEqual(RemoteTransferState.Succeeded, done.State, done.ErrorMessage);
             Assert.AreEqual(resolved, done.LocalPath);
             await prompt.Received(1).RequestFileDownloadAsync(Arg.Any<string>(), Arg.Any<string>(), "/source", resolved, false, Arg.Any<long>(), Arg.Any<CancellationToken>());
-            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(resolved));
+            Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(resolved));
         }
         finally { await WaitIdle(api); Directory.Delete(Path.Combine(root, "alias")); Directory.Delete(root, true); }
     }
@@ -189,7 +189,7 @@ public sealed partial class RemoteTransferTests
         Directory.CreateDirectory(Path.Combine(root, "a", "b"));
         try
         {
-            PosixTarget target = PosixTarget.Open(Path.Combine(root, "a", "b", "target"), overwrite: false);
+            var target = PosixTarget.Open(Path.Combine(root, "a", "b", "target"), overwrite: false);
             // 审批之后祖先被改名,原路径上又换进一个同名的新目录:提交仍相对钉住的 fd,落进原来那个目录。
             Directory.Move(Path.Combine(root, "a"), Path.Combine(root, "moved"));
             Directory.CreateDirectory(Path.Combine(root, "a", "b"));
@@ -197,9 +197,9 @@ public sealed partial class RemoteTransferTests
             await sink.WriteAsync(new byte[] { 1, 2, 3 });
             target.Commit(false);
             await target.DisposeAsync();
-            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(Path.Combine(root, "moved", "b", "target")));
+            Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(Path.Combine(root, "moved", "b", "target")));
             Assert.IsEmpty(Directory.GetFileSystemEntries(Path.Combine(root, "a", "b")));
-            CollectionAssert.AreEqual(new[] { Path.Combine(root, "moved", "b", "target") }, Directory.GetFiles(Path.Combine(root, "moved", "b")));
+            Assert.AreSequenceEqual([Path.Combine(root, "moved", "b", "target")], Directory.GetFiles(Path.Combine(root, "moved", "b")));
         }
         finally { Directory.Delete(root, true); }
     }
@@ -221,14 +221,14 @@ public sealed partial class RemoteTransferTests
         try
         {
             // 另一条下载正在写:它的临时文件锁在它手里。
-            PosixTarget live = PosixTarget.Open(Path.Combine(directory, "live"), overwrite: false);
+            var live = PosixTarget.Open(Path.Combine(directory, "live"), overwrite: false);
             FileStream sink = live.CreateTemporary();
             await sink.WriteAsync(new byte[] { 1 });
             string busy = Directory.GetFiles(directory, ".vela-download-*").Single(file => file != stale && file != unrelated);
             // 第一次 Open 已经清过:遗留的普通文件删掉;同形的链接与 Windows 一样删的是链接本身,不跟随、不碰它指向的文件。
             Assert.IsFalse(File.Exists(stale));
             Assert.IsFalse(File.Exists(linked));
-            CollectionAssert.AreEqual(new byte[] { 5 }, await File.ReadAllBytesAsync(outside));
+            Assert.AreSequenceEqual(new byte[] { 5 }, await File.ReadAllBytesAsync(outside));
             await File.WriteAllBytesAsync(stale, [7]);
             await PosixTarget.Open(Path.Combine(directory, "other"), overwrite: false).DisposeAsync();
             Assert.IsFalse(File.Exists(stale));
@@ -236,7 +236,7 @@ public sealed partial class RemoteTransferTests
             Assert.IsTrue(File.Exists(unrelated));
             live.Commit(false);
             await live.DisposeAsync();
-            CollectionAssert.AreEqual(new byte[] { 1 }, await File.ReadAllBytesAsync(Path.Combine(directory, "live")));
+            Assert.AreSequenceEqual(new byte[] { 1 }, await File.ReadAllBytesAsync(Path.Combine(directory, "live")));
             // 与临时文件同形的名字不能当目标:否则下一次清扫会把它当遗留删掉。
             Assert.AreEqual("Invalid destination name.", Assert.ThrowsExactly<IOException>(() => PosixTarget.Open(stale, overwrite: true)).Message);
         }
@@ -251,7 +251,7 @@ public sealed partial class RemoteTransferTests
         string path = Path.Combine(directory, "target");
         try
         {
-            PosixTarget target = PosixTarget.Open(path, overwrite: false);
+            var target = PosixTarget.Open(path, overwrite: false);
             Assert.IsEmpty(Directory.GetFiles(directory), "Open pins and checks without creating content.");
             FileStream sink = target.CreateTemporary();
             await sink.WriteAsync(new byte[] { 1, 2, 3 });
@@ -289,7 +289,7 @@ public sealed partial class RemoteTransferTests
         using RemoteFsCapability api = DownloadApi();
         try
         {
-            var start = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "cleanup" });
+            RemoteTransferSnapshot start = await api.StartDownloadAsync(_session.ToString(), "/source", path, new() { OperationId = "cleanup" });
             RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
             await WaitIdle(api);
             Assert.AreEqual(RemoteTransferState.Unknown, done.State, done.ErrorMessage);

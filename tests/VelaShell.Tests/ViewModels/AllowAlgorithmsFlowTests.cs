@@ -29,7 +29,7 @@ public sealed class AllowAlgorithmsFlowTests
         await h.Vm.ReconnectTabAsync(h.Tab);
 
         Assert.IsTrue(h.Tab.HasAlgorithmRemedy, "协商失败、对端有可放开的算法:覆盖层要给按钮。");
-        CollectionAssert.AreEqual(new[] { Group14Sha1 }, h.Tab.AlgorithmRemedy!.Algorithms.ToArray());
+        Assert.AreSequenceEqual([Group14Sha1], [.. h.Tab.AlgorithmRemedy!.Algorithms]);
         Assert.IsTrue(await h.Tab.AllowAlgorithmsCommand.CanExecute.FirstAsync());
 
         // 用户在确认框上取消:配置一个字都不改,也不重连。
@@ -40,8 +40,8 @@ public sealed class AllowAlgorithmsFlowTests
             return Task.FromResult(false);
         };
         await h.Vm.AllowAlgorithmsAndReconnectAsync(h.Tab);
-        StringAssert.Contains(body, Group14Sha1, "确认框要点名写进去的是哪几个。");
-        StringAssert.Contains(body, "Prod");
+        Assert.Contains(Group14Sha1, body, "确认框要点名写进去的是哪几个。");
+        Assert.Contains("Prod", body);
         Assert.IsNull(h.Tab.Profile!.Ssh);
         await h.Workflow.DidNotReceive().SaveProfileAsync(Arg.Any<SessionProfile>(), Arg.Any<CancellationToken>());
         Assert.AreEqual(SessionStatus.Disconnected, h.Tab.ConnectionStatus);
@@ -114,7 +114,7 @@ public sealed class AllowAlgorithmsFlowTests
 
         await h.Vm.AllowAlgorithmsAndReconnectAsync(h.Tab);
 
-        StringAssert.Contains(body, "Bastion", "确认框说的是要改哪一条配置。");
+        Assert.Contains("Bastion", body, "确认框说的是要改哪一条配置。");
         await h.Workflow.Received(1).SaveProfileAsync(
             Arg.Is<SessionProfile>(p => p.Id == jump.Id && p.Ssh!.KexAlgorithms == "+" + Group14Sha1), Arg.Any<CancellationToken>());
         await h.Workflow.DidNotReceive().SaveProfileAsync(Arg.Is<SessionProfile>(p => p.Id == h.Profile.Id), Arg.Any<CancellationToken>());

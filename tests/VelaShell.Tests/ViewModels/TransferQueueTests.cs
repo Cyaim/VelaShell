@@ -1,6 +1,5 @@
 using Avalonia.Headless;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Data;
 using VelaShell.Core.DirectorySync;
@@ -39,9 +38,9 @@ public sealed class TransferQueueTests
 
         await rig.DownloadAsync("a", "b", "c");
 
-        CollectionAssert.AreEqual(new[] { "/srv/a.bin", "/srv/b.bin" }, rig.Downloaded(rig.First).ToArray(), "c 不再开始");
+        Assert.AreSequenceEqual(["/srv/a.bin", "/srv/b.bin"], [.. rig.Downloaded(rig.First)], "c 不再开始");
         PausedTransferBatchViewModel paused = rig.Sink.PausedBatches.Single();
-        CollectionAssert.AreEqual(new[] { "/srv/b.bin", "/srv/c.bin" }, paused.Batch.Items.Select(i => i.RemotePath).ToArray());
+        Assert.AreSequenceEqual(["/srv/b.bin", "/srv/c.bin"], [.. paused.Batch.Items.Select(i => i.RemotePath)]);
         Assert.AreEqual(PausedBatchReason.Interrupted, paused.Reason);
         Assert.AreEqual(Strings.Format("Transfer_PausedFiles", 2), paused.Title);
         Assert.IsTrue(paused.CanResume);
@@ -71,9 +70,9 @@ public sealed class TransferQueueTests
 
         await rig.DownloadAsync("a", "b", "c");
 
-        CollectionAssert.AreEqual(new[] { "/srv/a.bin", "/srv/b.bin", "/srv/c.bin" }, rig.Downloaded(rig.First).ToArray());
+        Assert.AreSequenceEqual(["/srv/a.bin", "/srv/b.bin", "/srv/c.bin"], [.. rig.Downloaded(rig.First)]);
         Assert.IsEmpty(rig.Sink.PausedBatches);
-        Assert.AreEqual(1, rig.Sink.Transfers.Count(t => t.Status == TransferStatus.Failed));
+        Assert.ContainsSingle(t => t.Status == TransferStatus.Failed, rig.Sink.Transfers);
     });
 
     /// <summary>不知道来自哪条连接的面板(占位面板之类)不记队列:断线照旧是失败,恢复时无处可连。</summary>
@@ -86,8 +85,8 @@ public sealed class TransferQueueTests
         await rig.DownloadAsync("a", "b", "c");
 
         Assert.IsEmpty(rig.Sink.PausedBatches);
-        Assert.AreEqual(3, rig.Downloaded(rig.First).Count, "没有队列可停,剩下的照旧逐个去试");
-        Assert.IsTrue(rig.Sink.Transfers.Any(t => t.Status == TransferStatus.Failed));
+        Assert.HasCount(3, rig.Downloaded(rig.First), "没有队列可停,剩下的照旧逐个去试");
+        Assert.Contains(t => t.Status == TransferStatus.Failed, rig.Sink.Transfers);
     });
 
     /// <summary>
@@ -106,7 +105,7 @@ public sealed class TransferQueueTests
         // 按规划时定下的覆盖整份重传,不再弹同名冲突框。
         await File.WriteAllBytesAsync(Path.Combine(rig.Directory, "c.bin"), new byte[100]);
         // 重连之后是一个新会话、一个新面板(终端标签重连就是这样)。
-        Guid second = Guid.NewGuid();
+        var second = Guid.NewGuid();
         rig.Remote(second, "/srv/b.bin", 100);
         rig.Remote(second, "/srv/c.bin", 100);
         FileBrowserViewModel reconnected = rig.Panel(second);
@@ -126,10 +125,8 @@ public sealed class TransferQueueTests
         rig.Sink.ResumePausedBatchCommand.Execute(paused.BatchId).Subscribe();
         Assert.AreEqual(TransferResumeResult.Started, (await done.Task.WaitAsync(TimeSpan.FromSeconds(10))).Result);
 
-        CollectionAssert.AreEqual(
-            new[] { ("/srv/b.bin", 10L), ("/srv/c.bin", 0L) },
-            rig.DownloadCalls(second).ToArray(),
-            "b 从本地那 10 字节接着下,c 整份下(不按冲突策略跳过)");
+        Assert.AreSequenceEqual(
+            [("/srv/b.bin", 10L), ("/srv/c.bin", 0L)], [.. rig.DownloadCalls(second)], "b 从本地那 10 字节接着下,c 整份下(不按冲突策略跳过)");
         Assert.IsEmpty(rig.Sink.PausedBatches);
         Assert.IsNull(rig.Sink.Journal.Snapshot(paused.BatchId));
     });
@@ -242,12 +239,10 @@ public sealed class TransferQueueTests
         Assert.IsTrue(bToken.IsCancellationRequested, "停的是 b 自己那一次传输,不只是行上改个字");
         Assert.AreEqual(TransferStatus.Cancelled, b.Status);
         Assert.IsFalse(b.CanCancel);
-        CollectionAssert.AreEqual(new[] { "/srv/a.bin", "/srv/b.bin", "/srv/c.bin" }, rig.Downloaded(rig.First).ToArray(),
-            "b 停下之后这一批接着传 c(c 断线,整批才停)");
+        Assert.AreSequenceEqual(["/srv/a.bin", "/srv/b.bin", "/srv/c.bin"], [.. rig.Downloaded(rig.First)], "b 停下之后这一批接着传 c(c 断线,整批才停)");
         Assert.AreEqual(TransferStatus.Completed, rig.Row("a.bin").Status);
         PausedTransferBatchViewModel paused = rig.Sink.PausedBatches.Single();
-        CollectionAssert.AreEqual(new[] { "/srv/c.bin", "/srv/d.bin" }, paused.Batch.Items.Select(i => i.RemotePath).ToArray(),
-            "取消了的 b 不再记在队列里,「继续」不会再传它");
+        Assert.AreSequenceEqual(["/srv/c.bin", "/srv/d.bin"], [.. paused.Batch.Items.Select(i => i.RemotePath)], "取消了的 b 不再记在队列里,「继续」不会再传它");
     });
 
     /// <summary>
@@ -285,7 +280,7 @@ public sealed class TransferQueueTests
         // c 断线,整批停下:队列里只剩 c —— a 取消了、b 传完了,都已摘掉。
         // 要是 a 的取消漏成整批取消,这一批就被当成「不要了」整个从队列里删掉,这一行根本不会出现。
         PausedTransferBatchViewModel paused = rig.Sink.PausedBatches.Single();
-        CollectionAssert.AreEqual(new[] { "/srv/c.bin" }, paused.Batch.Items.Select(i => i.RemotePath).ToArray());
+        Assert.AreSequenceEqual(["/srv/c.bin"], [.. paused.Batch.Items.Select(i => i.RemotePath)]);
         Assert.IsFalse(rig.Sink.IsBatchActive, "停一项不该让批次挂在那里收不了尾");
     });
 
@@ -351,7 +346,7 @@ public sealed class TransferQueueTests
             CancellationToken.None);
 
         Assert.IsEmpty(rig.Sink.PausedBatches);
-        Assert.IsTrue(rig.Sink.Transfers.Any(t => t.Status == TransferStatus.Failed));
+        Assert.Contains(t => t.Status == TransferStatus.Failed, rig.Sink.Transfers);
     });
 
     /// <summary>

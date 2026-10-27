@@ -12,6 +12,7 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using VelaShell.Ssh.Crypto;
+using VelaShell.Ssh.Crypto.Kex;
 using VelaShell.Ssh.Protocol;
 using VelaShell.Ssh.Transport;
 
@@ -349,8 +350,7 @@ internal sealed class TestSshServer : IAsyncDisposable
             : TestKexResponder.Respond(negotiated.KeyExchange, clientPublic);
 
         // ④ 算交换哈希并签名。
-        using global::VelaShell.Ssh.Crypto.Kex.ISshKeyExchange shape =
-            global::VelaShell.Ssh.Crypto.Kex.SshKeyExchangeFactory.Create(negotiated.KeyExchange);
+        using ISshKeyExchange shape = SshKeyExchangeFactory.Create(negotiated.KeyExchange);
 
         byte[] hostKeyBlob = KeyFor(isInitial).PublicKeyBlob;
         byte[] exchangeHash = SshExchangeHash.Compute(shape.HashAlgorithm, new SshExchangeHashInput
@@ -381,7 +381,7 @@ internal sealed class TestSshServer : IAsyncDisposable
         byte[] onWire = isInitial && _options.MangleServerPublicValue is { } mangle
             ? mangle([.. response.ServerPublicValue])
             : response.ServerPublicValue;
-        if (shape.PublicValueEncoding == global::VelaShell.Ssh.Crypto.Kex.SshKexValueEncoding.Mpint)
+        if (shape.PublicValueEncoding == SshKexValueEncoding.Mpint)
         {
             replyWriter.WriteMpint(onWire);
         }

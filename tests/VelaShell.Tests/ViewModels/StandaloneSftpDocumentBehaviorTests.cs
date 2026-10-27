@@ -155,10 +155,10 @@ public sealed class StandaloneSftpDocumentBehaviorTests
     {
         await _session.RunOnUiAsync(async () =>
         {
-            var workflow = Substitute.For<IConnectionWorkflowService>();
-            var ssh = Substitute.For<ISshConnectionService>();
-            var client = Substitute.For<ISshClientWrapper>();
-            var sftp = Substitute.For<ISftpService>();
+            IConnectionWorkflowService workflow = Substitute.For<IConnectionWorkflowService>();
+            ISshConnectionService ssh = Substitute.For<ISshConnectionService>();
+            ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
+            ISftpService sftp = Substitute.For<ISftpService>();
             SessionProfile left = CreateSftpProfile();
             SessionProfile tail = CreateSftpProfile();
             tail.Host = "tail";

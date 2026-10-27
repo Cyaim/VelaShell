@@ -428,7 +428,9 @@ public sealed class AiSettingsStoreTests
         await store.SaveAsync(settings);
         await store.SaveTokensAsync(provider.Id, new OAuthTokens
         {
-            AccessToken = "old-token", RefreshToken = "old-refresh", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+            AccessToken = "old-token",
+            RefreshToken = "old-refresh",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
         });
         await store.SetApiKeyAsync(own.Id, "old-own");
         string tokenJson = (await context.Secrets.GetAsync("oauth:" + provider.Id))!;
@@ -447,10 +449,10 @@ public sealed class AiSettingsStoreTests
         long epoch = store.ProviderConfigurationVersion(provider), login = store.TokenLoginVersion(provider.Id);
 
         // 没确认:一样都不动,并说清会退出登录、要清哪把模型 Key
-        var reset = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(
+        AiSettingsStore.ApiKeyResetRequiredException reset = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(
             () => store.SaveProviderFormAsync(settings, provider, draft, expected));
         Assert.IsTrue(reset.SignsOut);
-        CollectionAssert.AreEqual(new[] { own.Id }, reset.KeyOwners.ToArray());
+        Assert.AreSequenceEqual([own.Id], [.. reset.KeyOwners]);
         Assert.AreEqual("https://login.example/v1", provider.BaseUrl);
         Assert.AreEqual("old-token", (await store.GetTokensAsync(provider.Id))?.AccessToken);
         Assert.AreEqual("old-own", await store.GetApiKeyAsync(own.Id));
@@ -467,7 +469,7 @@ public sealed class AiSettingsStoreTests
         login = store.TokenLoginVersion(provider.Id);
 
         (IReadOnlyList<string> cleared, bool signedOut) = await store.SaveProviderFormAsync(settings, provider, draft, expected, reset.Confirmation);
-        CollectionAssert.AreEqual(new[] { own.Id }, cleared.ToArray());
+        Assert.AreSequenceEqual([own.Id], [.. cleared]);
         Assert.IsTrue(signedOut);
         Assert.AreEqual("https://elsewhere.example/v1", provider.BaseUrl);
         Assert.IsNull(await context.Secrets.GetAsync("oauth:" + provider.Id), "旧地址签出的令牌不留");
@@ -526,16 +528,16 @@ public sealed class AiSettingsStoreTests
         var fresh = new OAuthTokens { AccessToken = "new-token", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1) };
 
         // 没确认就交上去:拒绝,登录换来的新令牌不落盘;要清的只有模型自带的旧 Key(新令牌是新地址签的,不算「清」,也不退出登录)
-        var preview = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(
+        AiSettingsStore.ApiKeyResetRequiredException preview = await Assert.ThrowsAsync<AiSettingsStore.ApiKeyResetRequiredException>(
             () => store.SaveProviderOAuthFormAsync(settings, provider, draft, expected, fresh));
         Assert.IsFalse(preview.SignsOut);
-        CollectionAssert.AreEqual(new[] { own.Id }, preview.KeyOwners.ToArray());
+        Assert.AreSequenceEqual([own.Id], [.. preview.KeyOwners]);
         Assert.AreEqual("old-token", (await store.GetTokensAsync(provider.Id))?.AccessToken);
         Assert.AreEqual("old-own", await store.GetApiKeyAsync(own.Id));
 
         IReadOnlyList<string> cleared = await store.SaveProviderOAuthFormAsync(settings, provider, draft, expected, fresh,
             confirmedKeyReset: preview.Confirmation);
-        CollectionAssert.AreEqual(new[] { own.Id }, cleared.ToArray());
+        Assert.AreSequenceEqual([own.Id], [.. cleared]);
         Assert.AreEqual("new-token", (await store.GetTokensAsync(provider.Id))?.AccessToken);
         Assert.IsNull(await store.GetApiKeyAsync(own.Id), "模型自带的旧 Key 不跟去新地址");
         Assert.AreEqual("https://elsewhere.example/v1", provider.BaseUrl);

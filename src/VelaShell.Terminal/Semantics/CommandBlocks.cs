@@ -308,7 +308,7 @@ public static class CommandBlocks
     }
 
     /// <summary>C0、DEL 与 C1 控制字符。</summary>
-    private static bool IsControl(int rune) => rune < 0x20 || rune is >= 0x7F and <= 0x9F;
+    private static bool IsControl(int rune) => rune is < 0x20 or >= 0x7F and <= 0x9F;
 
     /// <summary>
     /// 对端 shell 此刻是不是停在一条<b>空的</b>新提示符上 —— 「重跑」只在这时才往终端里打字。

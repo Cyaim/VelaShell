@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -8,7 +9,6 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using NSubstitute;
-using System.Runtime.CompilerServices;
 using VelaShell.Core.Models;
 using VelaShell.Core.Sftp;
 using VelaShell.Tests.TestSupport;
@@ -164,10 +164,8 @@ public sealed class LocalFilePaneViewUiTests
                 Assert.IsFalse(viewModel.SortDescending);
                 Assert.AreEqual(" ▲", viewModel.SizeSortGlyph);
                 Assert.AreEqual(string.Empty, viewModel.NameSortGlyph);
-                CollectionAssert.AreEqual(
-                    new[] { "z-dir", "b-small.txt", "a-big.txt" },
-                    viewModel.Entries.Where(entry => !entry.IsParentEntry).Select(entry => entry.Name).ToArray(),
-                    "目录始终在前,文件按大小升序。");
+                Assert.AreSequenceEqual(
+                    ["z-dir", "b-small.txt", "a-big.txt"], [.. viewModel.Entries.Where(entry => !entry.IsParentEntry).Select(entry => entry.Name)], "目录始终在前,文件按大小升序。");
 
                 window.MouseDown(center, MouseButton.Left);
                 window.MouseUp(center, MouseButton.Left);
@@ -175,16 +173,13 @@ public sealed class LocalFilePaneViewUiTests
 
                 Assert.IsTrue(viewModel.SortDescending, "再点同一列翻转方向。");
                 Assert.AreEqual(" ▼", viewModel.SizeSortGlyph);
-                CollectionAssert.AreEqual(
-                    new[] { "z-dir", "a-big.txt", "b-small.txt" },
-                    viewModel.Entries.Where(entry => !entry.IsParentEntry).Select(entry => entry.Name).ToArray());
-                CollectionAssert.AreEquivalent(
-                    new[] { "name", "size", "modified" },
-                    view.GetVisualDescendants().OfType<Button>()
+                Assert.AreSequenceEqual(
+                    ["z-dir", "a-big.txt", "b-small.txt"], [.. viewModel.Entries.Where(entry => !entry.IsParentEntry).Select(entry => entry.Name)]);
+                Assert.AreSequenceEqual(
+                    ["name", "size", "modified"], view.GetVisualDescendants().OfType<Button>()
                         .Where(button => button.Classes.Contains("col-header"))
                         .Select(button => button.CommandParameter as string)
-                        .ToArray(),
-                    "三列都应可点。");
+                        .ToArray(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "三列都应可点。");
             }
             finally
             {
@@ -221,7 +216,7 @@ public sealed class LocalFilePaneViewUiTests
             {
                 DataContext = new FileBrowserViewModel(Substitute.For<ISftpService>(), Guid.NewGuid()) { IsVisible = true },
             };
-            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
+            var grid = new Grid { ColumnDefinitions = [with("*,*")] };
             Grid.SetColumn(remote, 1);
             grid.Children.Add(local);
             grid.Children.Add(remote);
@@ -244,10 +239,8 @@ public sealed class LocalFilePaneViewUiTests
                 Assert.AreEqual(DragDropEffects.None, DragOver(window, overLocal, systemFiles, effect), "系统文件拖进本地栏:不显示可放下");
                 window.DragDrop(overLocal, RawDragEventType.Drop, systemFiles, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
                 Pump(window);
-                CollectionAssert.AreEquivalent(
-                    new[] { "keep.txt" },
-                    Directory.GetFileSystemEntries(root.Path).Select(Path.GetFileName).ToArray(),
-                    "松手也不复制");
+                Assert.AreSequenceEqual(
+                    ["keep.txt"], Directory.GetFileSystemEntries(root.Path).Select(Path.GetFileName).ToArray(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "松手也不复制");
 
                 Assert.AreEqual(DragDropEffects.Copy, DragOver(window, overRemote, systemFiles, effect), "系统文件拖进远端栏照旧是上传");
                 window.DragDrop(overRemote, RawDragEventType.DragLeave, systemFiles, DragDropEffects.Copy, RawInputModifiers.None);

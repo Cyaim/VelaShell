@@ -59,7 +59,7 @@ public static class OutputRuleTester
         for (int i = 0; i < testedLines; i++)
         {
             string line = lines[i].TrimEnd('\r');
-            OutputRule?[] owner = new OutputRule?[line.Length];
+            var owner = new OutputRule?[line.Length];
             bool any = false;
             foreach ((OutputRule rule, Regex regex) in highlights)
             {

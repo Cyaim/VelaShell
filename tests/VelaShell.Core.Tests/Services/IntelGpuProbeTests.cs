@@ -69,7 +69,7 @@ public sealed class IntelGpuProbeTests
         Assert.AreEqual(16384000L * 1024, integrated.MemTotalBytes);
         Assert.IsTrue(integrated.ClientScopedUtil);
         GpuUsageCounter counters = before.GpuUsageCounters.Single(c => c.Card == "card0");
-        CollectionAssert.AreEquivalent(new[] { "7", "9" }, counters.Engines.Select(e => e.Client).Distinct().ToArray());
+        Assert.AreSequenceEqual(["7", "9"], [.. counters.Engines.Select(e => e.Client).Distinct()], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
         Assert.AreEqual(1000.0, counters.UptimeSeconds);
 
         GpuDevice discrete = before.Gpus.Single(g => g.Card == "card1");
@@ -98,9 +98,9 @@ public sealed class IntelGpuProbeTests
             await RunAsync(shell, prefix, shim, Rooted(SessionMetrics.StaticCommand, root)));
 
         GpuCardInfo[] drm = [.. info.GpuCards.Where(c => c.HasDrm)];
-        CollectionAssert.AreEqual(new[] { "card0", "card1" }, drm.Select(c => c.Card).ToArray());
-        CollectionAssert.AreEqual(new[] { "i915", "xe" }, drm.Select(c => c.Driver).ToArray());
-        CollectionAssert.AreEqual(new[] { Integrated, Discrete }, drm.Select(c => c.Slot).ToArray());
+        Assert.AreSequenceEqual(["card0", "card1"], [.. drm.Select(c => c.Card)]);
+        Assert.AreSequenceEqual(["i915", "xe"], [.. drm.Select(c => c.Driver)]);
+        Assert.AreSequenceEqual([Integrated, Discrete], [.. drm.Select(c => c.Slot)]);
         // 直通进来、宿主没装驱动的卡:驱动留空,不能把 sysfs 的链接名 "driver" 当成驱动
         GpuCardInfo unbound = info.GpuCards.Single(c => c.Slot == Unbound);
         Assert.IsFalse(unbound.HasDrm);

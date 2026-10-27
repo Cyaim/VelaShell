@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using VelaShell.Core.Layouts;
 using VelaShell.Infrastructure.Persistence;
 
@@ -86,7 +87,7 @@ public sealed class LayoutTemplateStoreTests
             var store = new LayoutTemplateStore(new SonnetDbAppDataStore(engine));
             IReadOnlyList<LayoutTemplate> loaded = await store.LoadAllAsync();
 
-            Assert.AreSequenceEqual(["机房 2", "机房 10"], loaded.Select(t => t.Name).ToArray(), "自然顺序:2 在 10 前面");
+            Assert.AreSequenceEqual(["机房 2", "机房 10"], [.. loaded.Select(t => t.Name)], "自然顺序:2 在 10 前面");
             LayoutTemplate back = loaded[1];
             Assert.AreEqual(ten.Id, back.Id);
             Assert.AreEqual(ten.CreatedAt, back.CreatedAt);
@@ -104,10 +105,10 @@ public sealed class LayoutTemplateStoreTests
             LayoutDocument[] actual = [.. LayoutTree.Documents(back.Root)];
             Assert.AreSequenceEqual(
                 expected.Select(d => (d.Kind, d.ProfileId, d.SecondProfileId, d.ShellId, d.Title, d.IsPinned, d.IsActive)).ToArray(),
-                actual.Select(d => (d.Kind, d.ProfileId, d.SecondProfileId, d.ShellId, d.Title, d.IsPinned, d.IsActive)).ToArray());
+                [.. actual.Select(d => (d.Kind, d.ProfileId, d.SecondProfileId, d.ShellId, d.Title, d.IsPinned, d.IsActive))]);
 
             await store.DeleteAsync(two.Id);
-            Assert.AreSequenceEqual([ten.Id], (await store.LoadAllAsync()).Select(t => t.Id).ToArray());
+            Assert.AreSequenceEqual([ten.Id], [.. (await store.LoadAllAsync()).Select(t => t.Id)]);
         }
     }
 
@@ -122,7 +123,7 @@ public sealed class LayoutTemplateStoreTests
         await store.SaveLastSessionAsync(session);
 
         Assert.IsEmpty(await store.LoadAllAsync(), "退出时的布局不混进命名模板的列表");
-        Assert.AreEqual(4, LayoutTree.Documents((await store.LoadLastSessionAsync())!.Root).Count());
+        Assert.HasCount(4, LayoutTree.Documents((await store.LoadLastSessionAsync())!.Root));
 
         await store.SaveLastSessionAsync(null);
         Assert.IsNull(await store.LoadLastSessionAsync());
@@ -182,7 +183,7 @@ public sealed class LayoutTemplateStoreTests
 
         Assert.IsTrue(result.RemoteChanged, "云端缺本机的 keep");
         IReadOnlyList<LayoutTemplate> after = await store.LoadAllAsync();
-        Assert.AreSequenceEqual(new[] { "from laptop", "keep" }, after.Select(t => t.Name).ToArray());
+        Assert.AreSequenceEqual(["from laptop", "keep"], [.. after.Select(t => t.Name)]);
         Assert.AreEqual(doomed.Id, (await store.LoadSyncStateAsync()).Tombstones.Single().Id);
         Assert.AreEqual((0, 1), (changed, applied), "同步写进来的不算本机改动,否则会再触发一次推送");
 
@@ -210,7 +211,7 @@ public sealed class LayoutTemplateStoreTests
         loaded.Name = "renamed here";
         await store.SaveAsync(loaded);
 
-        var raw = (await data.GetAsync<System.Text.Json.Nodes.JsonObject>(LayoutTemplateStore.Collection, id.ToString("D")))!;
+        JsonObject raw = (await data.GetAsync<JsonObject>(LayoutTemplateStore.Collection, id.ToString("D")))!;
         Assert.AreEqual("renamed here", (string?)raw["name"]);
         Assert.AreEqual("teal", (string?)raw["color"], "这一版改过、存过,新版本加的字段还在 —— 同步出去也不会被它抹掉");
         Assert.IsTrue((bool)raw["root"]!["glow"]!);

@@ -218,11 +218,16 @@ internal sealed partial class RemoteFsCapability
     private void ThrowIfTransferQuotaReached(string queue)
     {
         if (_receipts.Count >= MaxRecords)
+        {
             throw new PluginTransferRejectedException(RemoteTransferRejectReason.QuotaExceeded,
                 "Transfer operation receipt quota reached for this plugin lifetime.");
+        }
+
         if (_transfers.Values.Count(op => !op._worker.IsCompleted) >= MaxActiveUploads)
+        {
             throw new PluginTransferRejectedException(RemoteTransferRejectReason.QuotaExceeded,
                 $"Active {queue} queue quota reached for this plugin; wait for running transfers to finish.");
+        }
     }
 
     public Task<RemoteTransferSnapshot> GetTransferAsync(string transferId, CancellationToken cancellationToken = default)
@@ -323,7 +328,10 @@ internal sealed partial class RemoteFsCapability
         {
             if (part == ".") continue;
             if (part == "..") { if (parts.Count == 0) throw new ArgumentException("Destination escapes root."); parts.RemoveAt(parts.Count - 1); }
-            else parts.Add(part);
+            else
+            {
+                parts.Add(part);
+            }
         }
         if (parts.Count == 0) throw new ArgumentException("Destination must name a file.", nameof(path));
         return "/" + string.Join('/', parts);
@@ -604,7 +612,10 @@ internal sealed partial class RemoteFsCapability
             if (backend is { IsCompleted: false })
                 await Task.WhenAny(backend, Task.Delay(StopGracePeriod)).ConfigureAwait(false);
             // 提交应答赶在宽限期内到了:成功就是成功,取消不宣称回滚。
-            if (commitTask is { IsCompletedSuccessfully: true }) Succeed();
+            if (commitTask is { IsCompletedSuccessfully: true })
+            {
+                Succeed();
+            }
             else
             {
                 // 后端自己的失败原因比「等待被打断」有用;同步抛出的提交失败就是 ex 本身。
@@ -665,8 +676,10 @@ internal sealed partial class RemoteFsCapability
                 catch
                 {
                     if (cleanupTask is not null)
+                    {
                         _ = cleanupTask.ContinueWith(static task => _ = task.Exception, CancellationToken.None,
                             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                    }
                 }
             }
         }
@@ -826,7 +839,9 @@ internal sealed partial class RemoteFsCapability
                     if (op._snapshot.IsTerminal) return;
                     if (op._snapshot.State == RemoteTransferState.Starting
                         || op._snapshot.State == RemoteTransferState.Running && op._snapshot.TransferredBytes == op._snapshot.TotalBytes)
+                    {
                         Update(op, s => s);
+                    }
                 }
             }
         }
@@ -889,9 +904,13 @@ internal sealed partial class RemoteFsCapability
     private void OnTransferSessionDisconnected(SshSession session)
     {
         lock (_transfersGate)
+        {
             foreach (UploadOperation op in _transfers.Values)
+            {
                 if (!op._worker.IsCompleted && op._session == session.SessionId)
                     RequestStop(op, StopReason.Disconnected);
+            }
+        }
     }
 
     public void Dispose()

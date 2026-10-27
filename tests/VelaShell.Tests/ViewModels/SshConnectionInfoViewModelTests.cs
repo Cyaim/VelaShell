@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ReactiveUI.Primitives;
@@ -72,10 +73,8 @@ public sealed class SshConnectionInfoViewModelTests
         var vm = new SshConnectionInfoViewModel("prod", Sample);
 
         Assert.IsTrue(vm.HasDetails);
-        CollectionAssert.AreEqual(
-            new[] { "SshInfo_SecPeer", "SshInfo_SecAlgorithms", "SshInfo_SecAuth", "SshInfo_SecTiming", "SshInfo_SecTraffic" }
-                .Select(Strings.Get).ToArray(),
-            vm.Sections.Select(s => s.Title).ToArray());
+        Assert.AreSequenceEqual(
+            [.. new[] { "SshInfo_SecPeer", "SshInfo_SecAlgorithms", "SshInfo_SecAuth", "SshInfo_SecTiming", "SshInfo_SecTraffic" }.Select(Strings.Get)], [.. vm.Sections.Select(s => s.Title)]);
         Assert.AreEqual("SSH-2.0-OpenSSH_9.6p1", ValueOf(vm, "SshInfo_SecPeer", "SshInfo_PeerVersion"));
         Assert.AreEqual("SHA256:abcdEFGH", ValueOf(vm, "SshInfo_SecPeer", "SshInfo_Fingerprint"));
         Assert.AreEqual(Strings.Format("SshInfo_HostKeyValue", "ssh-ed25519", 256), ValueOf(vm, "SshInfo_SecPeer", "SshInfo_HostKey"));
@@ -124,14 +123,14 @@ public sealed class SshConnectionInfoViewModelTests
 
         string text = vm.BuildText();
 
-        StringAssert.Contains(text, vm.Subtitle);
-        StringAssert.Contains(text, $"[{Strings.Get("SshInfo_SecAlgorithms")}]");
-        StringAssert.Contains(text, $"  {Strings.Get("Ssh_AlgoKindKex")}: mlkem768x25519-sha256");
-        StringAssert.Contains(text, $"[{vm.ChannelsTitle}]");
-        StringAssert.Contains(text, "#0  session");
-        StringAssert.Contains(text, $"[{Strings.Get("SshInfo_SecRoute")}]");
-        StringAssert.Contains(text, $"2. jumper@bastion:22  SSH-2.0-OpenSSH_8.0");
-        StringAssert.Contains(text, $"({Strings.Get("SshInfo_HopDown")})");
+        Assert.Contains(vm.Subtitle, text);
+        Assert.Contains($"[{Strings.Get("SshInfo_SecAlgorithms")}]", text);
+        Assert.Contains($"  {Strings.Get("Ssh_AlgoKindKex")}: mlkem768x25519-sha256", text);
+        Assert.Contains($"[{vm.ChannelsTitle}]", text);
+        Assert.Contains("#0  session", text);
+        Assert.Contains($"[{Strings.Get("SshInfo_SecRoute")}]", text);
+        Assert.Contains($"2. jumper@bastion:22  SSH-2.0-OpenSSH_8.0", text);
+        Assert.Contains($"({Strings.Get("SshInfo_HopDown")})", text);
     }
 
     [TestMethod]
@@ -195,7 +194,7 @@ public sealed class SshConnectionInfoViewModelTests
         {
             window.Show();
             Dispatcher.UIThread.RunJobs();
-            using var frame = window.CaptureRenderedFrame();
+            using WriteableBitmap? frame = window.CaptureRenderedFrame();
 
             Button copy = window.FindControl<Button>("CopyButton")!;
             Button refresh = window.FindControl<Button>("RefreshButton")!;
@@ -243,7 +242,7 @@ public sealed class SshConnectionInfoViewModelTests
         main.ConnectionInfoRequested += requested.Add;
         main.OpenConnectionInfo(ssh);
         main.OpenConnectionInfo(plugin);
-        CollectionAssert.AreEqual(new[] { ssh }, requested);
+        Assert.AreSequenceEqual([ssh], requested);
         // 没有 SSH 会话服务(或标签断着)时面板如实说没有连着,而不是抛。
         SshConnectionInfoViewModel panel = main.CreateConnectionInfo(ssh);
         Assert.AreEqual("prod", panel.SessionName);

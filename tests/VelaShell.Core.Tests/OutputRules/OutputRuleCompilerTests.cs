@@ -14,6 +14,12 @@ namespace VelaShell.Core.Tests.OutputRules;
 [TestCategory("OutputRules")]
 public sealed class OutputRuleCompilerTests
 {
+    private static readonly JsonSerializerOptions SettingsJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
+
     private static OutputRule Highlight(string pattern, int? foreground = 1) =>
         new() { Name = "h", Pattern = pattern, Action = OutputRuleActions.Highlight, Foreground = foreground };
 
@@ -29,7 +35,7 @@ public sealed class OutputRuleCompilerTests
         // 线性时间引擎下它和普通正则一样快。
         OutputRuleValidation result = OutputRuleCompiler.TryCompile("(a+)+$", caseSensitive: true, out Regex? regex);
         Assert.IsTrue(result.IsValid);
-        Assert.IsTrue((regex!.Options & RegexOptions.NonBacktracking) != 0);
+        Assert.IsTrue(regex!.Options.HasFlag(RegexOptions.NonBacktracking));
         string line = new string('a', 20_000) + "!";
 
         var watch = Stopwatch.StartNew();
@@ -140,9 +146,8 @@ public sealed class OutputRuleCompilerTests
 
         set.CollectHighlights("disk full, disk", spans);
 
-        CollectionAssert.AreEqual(
-            new[] { new OutputHighlightSpan(0, 4, 0), new OutputHighlightSpan(11, 4, 0), new OutputHighlightSpan(5, 4, 1) },
-            spans);
+        Assert.AreSequenceEqual(
+            [new OutputHighlightSpan(0, 4, 0), new OutputHighlightSpan(11, 4, 0), new OutputHighlightSpan(5, 4, 1)], spans);
     }
 
     // ———— 自动应答:不许碰口令 ————
@@ -172,11 +177,9 @@ public sealed class OutputRuleCompilerTests
         Assert.IsTrue(OutputRuleCompiler.Validate(Respond(pattern)).IsValid, OutputRuleCompiler.Validate(Respond(pattern)).Error.ToString());
 
     [TestMethod]
-    public void HighlightRule_MayMentionPasswords()
-    {
+    public void HighlightRule_MayMentionPasswords() =>
         // 高亮不发送任何东西:把日志里的 "password" 标红是正当用法。
         Assert.IsTrue(OutputRuleCompiler.Validate(Highlight("password")).IsValid);
-    }
 
     [TestMethod]
     public void RespondRule_ResponseMustBeShortSingleLineText()
@@ -208,8 +211,8 @@ public sealed class OutputRuleCompilerTests
     [TestMethod]
     public void Build_PicksGlobal_PlusThisProfile_PlusThisGroup_InTableOrder()
     {
-        Guid profile = Guid.NewGuid();
-        Guid group = Guid.NewGuid();
+        var profile = Guid.NewGuid();
+        var group = Guid.NewGuid();
         OutputRule global = Highlight("global");
         OutputRule forProfile = Highlight("profile");
         forProfile.Scope = OutputRuleScopes.Profile;
@@ -228,8 +231,8 @@ public sealed class OutputRuleCompilerTests
         OutputRuleSet set = OutputRuleCompiler.Build(rules, profile, group);
         OutputRuleSet local = OutputRuleCompiler.Build(rules, null, null);
 
-        CollectionAssert.AreEqual(new[] { "group", "global", "profile" }, set.Highlights.Select(r => r.Regex.ToString()).ToArray());
-        CollectionAssert.AreEqual(new[] { "global" }, local.Highlights.Select(r => r.Regex.ToString()).ToArray(), "本地终端只吃全局规则。");
+        Assert.AreSequenceEqual(["group", "global", "profile"], [.. set.Highlights.Select(r => r.Regex.ToString())]);
+        Assert.AreSequenceEqual(["global"], [.. local.Highlights.Select(r => r.Regex.ToString())], "本地终端只吃全局规则。");
     }
 
     [TestMethod]
@@ -291,13 +294,12 @@ public sealed class OutputRuleCompilerTests
 
         IReadOnlyList<SettingsCategory> changed = SettingsCategories.Changed(before, after);
 
-        CollectionAssert.AreEqual(new[] { SettingsCategories.Terminal }, changed.Select(c => c.Id).ToArray());
+        Assert.AreSequenceEqual([SettingsCategories.Terminal], [.. changed.Select(c => c.Id)]);
     }
 
     [TestMethod]
     public void Rules_RoundTripThroughTheSettingsJson()
     {
-        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
         var settings = new AppSettings();
         OutputRule rule = Respond(@"\[Y/n\]", "Y");
         rule.Scope = OutputRuleScopes.Group;
@@ -306,7 +308,7 @@ public sealed class OutputRuleCompilerTests
         rule.ForwardToSyncChannel = true;
         settings.TerminalBehavior.OutputRules = [rule, Highlight("ERROR")];
 
-        AppSettings copy = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings, options), options)!;
+        AppSettings copy = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings, SettingsJsonOptions), SettingsJsonOptions)!;
         copy.Normalize();
 
         Assert.HasCount(2, copy.TerminalBehavior.OutputRules);
@@ -324,7 +326,7 @@ public sealed class OutputRuleCompilerTests
     public void OldSettings_WithoutRules_LoadAsAnEmptyTable()
     {
         AppSettings settings = JsonSerializer.Deserialize<AppSettings>("""{"terminalBehavior":{"lineHeight":1.2}}""",
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+            SettingsJsonOptions)!;
         settings.Normalize();
 
         Assert.IsEmpty(settings.TerminalBehavior.OutputRules, "默认没有任何规则 —— 也就没有任何触发器。");

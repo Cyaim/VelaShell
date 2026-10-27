@@ -1,7 +1,6 @@
 using System.Text;
 using VelaShell.Infrastructure.Plugins;
 using VelaShell.Infrastructure.Plugins.Capabilities;
-using VelaShell.PluginSdk;
 using VelaShell.PluginSdk.Logging;
 using VelaShell.TestPlugin;
 

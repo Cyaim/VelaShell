@@ -2,13 +2,13 @@ using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Media;
 using Avalonia.Headless;
+using Avalonia.Media;
 using VelaShell.Core.Resources;
 using VelaShell.Infrastructure.Plugins;
 using VelaShell.Tests.TestSupport;
-using VelaShell.Views;
 using VelaShell.ViewModels;
+using VelaShell.Views;
 
 namespace VelaShell.Tests.Views;
 
@@ -73,12 +73,12 @@ public sealed class PluginPermissionDialogTests
             Window? previous = lifetime?.MainWindow;
             try
             {
-                if (lifetime is not null) lifetime.MainWindow = null;
+                lifetime?.MainWindow = null;
                 PluginPermissionDecision decision = await PluginPermissionDialog.AskFileUploadAsync(
                     "acme.plugin", "prod-1", "C:/source.bin", "/target.bin", false, 1024);
                 Assert.AreEqual(PluginPermissionDecision.Deny, decision);
             }
-            finally { if (lifetime is not null) lifetime.MainWindow = previous; }
+            finally { lifetime?.MainWindow = previous; }
         });
 
     /// <summary>
@@ -142,8 +142,8 @@ public sealed class PluginPermissionDialogTests
             try
             {
                 dialog.ConfigureUploadOnly();
-                var preview = dialog.FindControl<SelectableTextBlock>("PreviewText")!;
-                var scroll = dialog.FindControl<ScrollViewer>("PreviewScroll")!;
+                SelectableTextBlock preview = dialog.FindControl<SelectableTextBlock>("PreviewText")!;
+                ScrollViewer scroll = dialog.FindControl<ScrollViewer>("PreviewScroll")!;
                 preview.Text = new string('x', 10_000);
                 Assert.AreEqual(TextWrapping.NoWrap, preview.TextWrapping);
                 Assert.AreEqual(240d, scroll.MaxHeight);

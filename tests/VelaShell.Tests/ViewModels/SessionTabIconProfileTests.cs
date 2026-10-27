@@ -15,8 +15,12 @@ public class SessionTabIconProfileTests
     [TestMethod]
     public async Task PickedIcon_IsSaved_AndRestoredOnEdit()
     {
-        var vm = new ConnectionProfileViewModel { Host = "10.0.0.2", Username = "dba" };
-        vm.TabIcon = "database";
+        var vm = new ConnectionProfileViewModel
+        {
+            Host = "10.0.0.2",
+            Username = "dba",
+            TabIcon = "database"
+        };
 
         SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
 
@@ -41,8 +45,12 @@ public class SessionTabIconProfileTests
     [TestMethod]
     public async Task FollowProtocol_StoresNothing()
     {
-        var vm = new ConnectionProfileViewModel { Host = "10.0.0.2", Username = "dba" };
-        vm.TabIcon = "database";
+        var vm = new ConnectionProfileViewModel
+        {
+            Host = "10.0.0.2",
+            Username = "dba",
+            TabIcon = "database"
+        };
         vm.TabIcon = null;
 
         SessionProfile? saved = await vm.SaveCommand.Execute().FirstAsync();
@@ -62,10 +70,7 @@ public class SessionTabIconProfileTests
     }
 
     [TestMethod]
-    public void TabIconAlone_IsAnOverride()
-    {
-        Assert.IsFalse(new TerminalOverrides { TabIcon = "flame" }.IsEmpty, "只挑了图标也不能被当成「没有覆盖」存成 null");
-    }
+    public void TabIconAlone_IsAnOverride() => Assert.IsFalse(new TerminalOverrides { TabIcon = "flame" }.IsEmpty, "只挑了图标也不能被当成「没有覆盖」存成 null");
 
     [TestMethod]
     public void Catalog_HasUniqueIdsAndNameKeys()

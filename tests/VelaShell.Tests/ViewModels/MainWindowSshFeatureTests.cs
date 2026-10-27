@@ -469,7 +469,7 @@ public sealed class MainWindowSshFeatureTests
     {
         await RunOnReconnectUiAsync(async () =>
         {
-            var (vm, workflow, settings, profile) = CreateReconnectConsumer();
+            (MainWindowViewModel? vm, IConnectionWorkflowService? workflow, ISettingsService? settings, SessionProfile? profile) = CreateReconnectConsumer();
             string checkReason = $"ops@jump:22: {Strings.Get("SshErr_TailscaleCheckRequired")}";
             bool requiresCheck = true;
             workflow.ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>())
@@ -511,7 +511,7 @@ public sealed class MainWindowSshFeatureTests
                 Assert.IsFalse(fresh.AuthenticationRequiresUserAction);
                 Assert.AreEqual(SessionStatus.Connected, fresh.ConnectionStatus);
                 fresh.MarkConnectionFailed("网络故障:代理变更对照标签");
-                var changed = ReconnectSettings("system");
+                AppSettings changed = ReconnectSettings("system");
                 settings.GetSettingsAsync().Returns(changed);
                 settings.SettingsSaved += Raise.Event<Action<AppSettings>>(changed);
                 await PassQueuedReconnectDeadlineAsync();
@@ -571,7 +571,7 @@ public sealed class MainWindowSshFeatureTests
     {
         await RunOnReconnectUiAsync(async () =>
         {
-            var (vm, workflow, _, profile) = CreateReconnectConsumer();
+            (MainWindowViewModel? vm, IConnectionWorkflowService? workflow, ISettingsService _, SessionProfile? profile) = CreateReconnectConsumer();
             TerminalTabViewModel? tab = await vm.TryConnectProfileAsync(profile);
             Assert.IsNotNull(tab);
             try
@@ -610,7 +610,7 @@ public sealed class MainWindowSshFeatureTests
     {
         await RunOnReconnectUiAsync(async () =>
         {
-            var (vm, workflow, _, profile) = CreateReconnectConsumer();
+            (MainWindowViewModel? vm, IConnectionWorkflowService? workflow, ISettingsService _, SessionProfile? profile) = CreateReconnectConsumer();
             string transient = $"ops@jump:22: {Strings.Get("SshErr_TailscaleAuthTimeout")}";
             bool fail = true;
             workflow.ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>())
@@ -647,7 +647,7 @@ public sealed class MainWindowSshFeatureTests
     {
         await RunOnReconnectUiAsync(async () =>
         {
-            var (vm, workflow, _, profile) = CreateReconnectConsumer();
+            (MainWindowViewModel? vm, IConnectionWorkflowService? workflow, ISettingsService _, SessionProfile? profile) = CreateReconnectConsumer();
             string transient = $"ops@jump:22: {Strings.Get("SshErr_TailscaleCheckFailed")}";
             workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>())
                 .Returns(Task.FromException<SshSession>(new VelaSshTailscaleAuthenticationException(transient, requiresUserAction: false)));
@@ -677,10 +677,10 @@ public sealed class MainWindowSshFeatureTests
 
     private static (MainWindowViewModel Vm, IConnectionWorkflowService Workflow, ISettingsService Settings, SessionProfile Profile) CreateReconnectConsumer()
     {
-        var workflow = Substitute.For<IConnectionWorkflowService>();
-        var ssh = Substitute.For<ISshConnectionService>();
-        var client = Substitute.For<ISshClientWrapper>();
-        var shell = Substitute.For<IShellStreamWrapper>();
+        IConnectionWorkflowService workflow = Substitute.For<IConnectionWorkflowService>();
+        ISshConnectionService ssh = Substitute.For<ISshConnectionService>();
+        ISshClientWrapper client = Substitute.For<ISshClientWrapper>();
+        IShellStreamWrapper shell = Substitute.For<IShellStreamWrapper>();
         shell.CanRead.Returns(true);
         shell.ReadAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(async args =>
@@ -691,12 +691,16 @@ public sealed class MainWindowSshFeatureTests
         ssh.GetClient(Arg.Any<Guid>()).Returns(client);
         client.CreateShellStreamAsync("xterm-256color", 120, 32, 0, 0, 4096,
             Arg.Any<IReadOnlyDictionary<TerminalMode, uint>?>(), Arg.Any<CancellationToken>()).Returns(shell);
-        var settings = Substitute.For<ISettingsService>();
+        ISettingsService settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(ReconnectSettings("none"));
         var profile = new SessionProfile
         {
-            Name = "target", Host = "target", Username = "root", AuthMethod = AuthMethod.Password,
-            Password = "target-password", JumpHostProfileId = Guid.NewGuid()
+            Name = "target",
+            Host = "target",
+            Username = "root",
+            AuthMethod = AuthMethod.Password,
+            Password = "target-password",
+            JumpHostProfileId = Guid.NewGuid()
         };
         workflow.ConnectProfileAsync(profile, Arg.Any<CancellationToken>()).Returns(_ => ConnectedSession(profile));
         workflow.ReconnectProfileAutomaticallyAsync(profile, Arg.Any<CancellationToken>()).Returns(_ => ConnectedSession(profile));
@@ -717,7 +721,8 @@ public sealed class MainWindowSshFeatureTests
 
     private static SshSession ConnectedSession(SessionProfile profile) => new()
     {
-        SessionId = Guid.NewGuid(), Status = SessionStatus.Connected,
+        SessionId = Guid.NewGuid(),
+        Status = SessionStatus.Connected,
         ConnectionInfo = new() { Host = profile.Host, Port = profile.Port, Username = profile.Username, AuthMethod = profile.AuthMethod }
     };
 
@@ -731,7 +736,7 @@ public sealed class MainWindowSshFeatureTests
     private static Task RunOnReconnectUiAsync(Func<Task> body) =>
         HeadlessUnitTestSession.GetOrStartForAssembly(typeof(MainWindowSshFeatureTests).Assembly).RunOnUiAsync(async () =>
         {
-            var previous = RxSchedulers.MainThreadScheduler;
+            ISequencer previous = RxSchedulers.MainThreadScheduler;
             try
             {
                 RxSchedulers.MainThreadScheduler = new AvaloniaScheduler(Dispatcher.UIThread);

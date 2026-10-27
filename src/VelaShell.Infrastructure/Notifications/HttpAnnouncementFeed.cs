@@ -127,7 +127,7 @@ public sealed class HttpAnnouncementFeed(
     /// </summary>
     private static string? EntryVersion()
     {
-        Assembly? entry = Assembly.GetEntryAssembly();
+        var entry = Assembly.GetEntryAssembly();
         return entry?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
                ?? entry?.GetName().Version?.ToString(3);
     }

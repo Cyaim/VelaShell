@@ -45,15 +45,20 @@ public sealed partial class ChatPanelView
         FileTransferRunScope[] scopes = [.. _transferCleanupScopes];
         _transferCleanupScopes.Clear();
         foreach (FileTransferRunScope scope in scopes)
+        {
             try { await scope.CancelAllAsync(); }
             catch (Exception ex) { _context.Log.Warn($"AI transfer cleanup failed: {ex.Message}"); }
+        }
+
         LinkTransferBinding[] linkBindings = [.. _linkTransferBindings];
         foreach (LinkTransferBinding binding in linkBindings) binding.Dispose();
         FileTransferRunScope[] links = [.. _linkTransferScopes];
         _linkTransferScopes.Clear();
         foreach (FileTransferRunScope scope in links)
+        {
             try { await scope.CancelAllAsync(); }
             catch (Exception ex) { _context.Log.Warn($"AI link transfer cleanup failed: {ex.Message}"); }
+        }
     }
 
     private sealed class LinkTransferBinding : IDisposable
@@ -65,9 +70,9 @@ public sealed partial class ChatPanelView
         private readonly IDisposable _subscription;
         private readonly DispatcherTimer _timer;
         private FileTransferJobUpdate? _latest;
-        private ProgressBar _bar;
-        private TextBlock _text;
-        private Button _cancel;
+        private readonly ProgressBar _bar;
+        private readonly TextBlock _text;
+        private readonly Button _cancel;
         private bool _disposed;
 
         internal LinkTransferBinding(ChatPanelView owner, FileTransferRunScope scope, string transferId, string localPath)
@@ -183,9 +188,13 @@ public sealed partial class ChatPanelView
             try
             {
                 using var json = JsonDocument.Parse(result);
-                if (!json.RootElement.TryGetProperty("snapshot", out var element)
-                    || !json.RootElement.TryGetProperty("transfer_id", out _)) return false;
-                var snapshot = element.Deserialize<RemoteTransferSnapshot>();
+                if (!json.RootElement.TryGetProperty("snapshot", out JsonElement element)
+                    || !json.RootElement.TryGetProperty("transfer_id", out _))
+                {
+                    return false;
+                }
+
+                RemoteTransferSnapshot? snapshot = element.Deserialize<RemoteTransferSnapshot>();
                 if (snapshot is null) return false;
                 ShowTransfer(null, snapshot.TransferId);
                 UpdateTransfer(new("", "", snapshot.TransferId, "", "", snapshot));
@@ -216,7 +225,7 @@ public sealed partial class ChatPanelView
                 return;
             }
             if (_transferWithheld) return;
-            var snapshot = update.Snapshot;
+            RemoteTransferSnapshot snapshot = update.Snapshot;
             _transferSnapshot = snapshot;
             _result = AgentToolbox.FormatTransfer(snapshot);
             _transferText.Text = update.MonitoringUnavailable ? _owner._loc["TransferMonitoringUnavailable"]
@@ -262,10 +271,14 @@ public sealed partial class ChatPanelView
             lock (_gate)
             {
                 if (_disposed) return;
-                if (_latest.TryGetValue(update.TransferId, out var old)
+                if (_latest.TryGetValue(update.TransferId, out FileTransferJobUpdate? old)
                     && old.Snapshot is { } previous && update.Snapshot is { } next
                     && (next.Generation < previous.Generation || next.Sequence < previous.Sequence
-                        || (next.Sequence == previous.Sequence && update.MonitoringUnavailable == old.MonitoringUnavailable))) return;
+                        || (next.Sequence == previous.Sequence && update.MonitoringUnavailable == old.MonitoringUnavailable)))
+                {
+                    return;
+                }
+
                 _latest[update.TransferId] = update;
             }
             Dispatcher.UIThread.Post(() =>
@@ -282,10 +295,13 @@ public sealed partial class ChatPanelView
             try
             {
                 using var json = JsonDocument.Parse(result);
-                if (!json.RootElement.TryGetProperty("transfer_id", out var id)
+                if (!json.RootElement.TryGetProperty("transfer_id", out JsonElement id)
                     || id.ValueKind != JsonValueKind.String || id.GetString() is not { Length: > 0 } transferId)
+                {
                     return false;
-                if (!_cards.TryGetValue(transferId, out var cards)) _cards[transferId] = cards = [];
+                }
+
+                if (!_cards.TryGetValue(transferId, out List<ToolCard>? cards)) _cards[transferId] = cards = [];
                 if (!cards.Contains(card)) cards.Add(card);
                 card.ShowTransfer(Scope, transferId);
                 // Peek复验归属和授权，但不消费模型的完成续接通知。
@@ -312,11 +328,17 @@ public sealed partial class ChatPanelView
             if (_disposed) return;
             FileTransferJobUpdate[] updates;
             lock (_gate) updates = [.. _latest.Values];
-            foreach (var update in updates)
-                if (_cards.TryGetValue(update.TransferId, out var cards))
-                    foreach (var card in cards) card.UpdateTransfer(update);
+            foreach (FileTransferJobUpdate update in updates)
+            {
+                if (_cards.TryGetValue(update.TransferId, out List<ToolCard>? cards))
+                    foreach (ToolCard card in cards) card.UpdateTransfer(update);
+            }
+
             if (_finished && (!Scope.HasRunningTransfers
-                || (updates.Length > 0 && updates.All(u => u.Withheld || (u.Snapshot?.IsTerminal == true && !u.MonitoringUnavailable))))) Dispose();
+                || (updates.Length > 0 && updates.All(u => u.Withheld || (u.Snapshot?.IsTerminal == true && !u.MonitoringUnavailable)))))
+            {
+                Dispose();
+            }
         }
 
         public void Finish() { _finished = true; Drain(); }

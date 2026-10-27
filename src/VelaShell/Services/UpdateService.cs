@@ -350,7 +350,7 @@ public class UpdateService : IUpdateService
     {
         for (int reconnects = 0; ; reconnects++)
         {
-            using CancellationTokenSource watchdog = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            using var watchdog = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             watchdog.CancelAfter(DownloadStallTimeout);
             try
             {

@@ -380,7 +380,7 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
         Assert.AreEqual(SshDialKind.SshJump, ex.Hops[1].Kind);
         Assert.IsFalse(ex.Hops[1].Succeeded);
 
-        SshChannelException refusal = (SshChannelException)ex.InnerException!;
+        var refusal = (SshChannelException)ex.InnerException!;
         Assert.AreEqual($"跳板 jump.example:22 不肯转发到 {TargetHost}:22：{refusal.Message}", ex.Message);
         Assert.AreEqual(SshConnectFailureKind.JumpForwardRefused, ex.FailureKind);
         Assert.AreEqual("jump.example:22", ex.Via);
@@ -817,7 +817,7 @@ $"Proxy-Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob
         SshConnectException ex = await Assert.ThrowsExactlyAsync<SshConnectException>(
             async () => await ConnectAsync(new SshJumpDialer(jump)));
 
-        SshException inner = (SshException)ex.InnerException!;
+        var inner = (SshException)ex.InnerException!;
         Assert.AreEqual(SshFailureReason.TcpRefused, ex.Reason, "原因码沿用那一跳的");
         Assert.AreEqual($"连不上跳板 jumper@127.0.0.1:{closedPort}：{inner.Message}", ex.Message);
         Assert.AreEqual(SshConnectFailureKind.JumpConnectFailed, ex.FailureKind);

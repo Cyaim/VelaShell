@@ -180,8 +180,7 @@ public sealed class TunnelPanelUiTests
                 Control hostBlock = endpoints.Children[1];
                 Assert.IsFalse(endpoints.Children[0].IsVisible, "远程动态转发用不上本地端口。");
                 Assert.AreEqual(0d, hostBlock.TranslatePoint(new(0, 0), endpoints)!.Value.X, 0.5, "主机栏顶到最左,不留空列。");
-                Assert.IsTrue(view.GetVisualDescendants().OfType<TextBlock>()
-                                  .Any(t => t.IsEffectivelyVisible && t.Text == Strings.Format("Tunnel_PermitRemoteOpenInvalid", "intranet")));
+                Assert.Contains(t => t.IsEffectivelyVisible && t.Text == Strings.Format("Tunnel_PermitRemoteOpenInvalid", "intranet"), view.GetVisualDescendants().OfType<TextBlock>());
                 SaveFrame(window, "tunnel-panel-remote-dynamic-ja.png");
                 window.Close();
             }
@@ -294,7 +293,7 @@ public sealed class TunnelPanelUiTests
                 TextBlock traffic = view.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "TrafficLine");
                 Assert.IsTrue(traffic.IsEffectivelyVisible);
                 Assert.AreEqual(item.TrafficText, traffic.Text);
-                StringAssert.Contains(traffic.Text, Strings.Format("Tunnel_RateLimit", "512.0 KB"));
+                Assert.Contains(Strings.Format("Tunnel_RateLimit", "512.0 KB"), traffic.Text);
                 Button toggle = view.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "ConnectionsToggle");
                 Assert.IsTrue(toggle.IsEffectivelyVisible);
                 ItemsControl list = view.GetVisualDescendants().OfType<ItemsControl>().Single(c => c.Name == "ConnectionList");
@@ -309,8 +308,7 @@ public sealed class TunnelPanelUiTests
                                       .Where(t => t.Contains('→'))];
                 Assert.HasCount(TunnelItemViewModel.MaxListedConnections, routes);
                 Assert.AreEqual("127.0.0.1:51001 → [2001:db8::10]:443", routes[0]);
-                Assert.IsTrue(view.GetVisualDescendants().OfType<TextBlock>()
-                                  .Any(t => t.IsEffectivelyVisible && t.Text == Strings.Format("Tunnel_ConnectionsMore", 2)));
+                Assert.Contains(t => t.IsEffectivelyVisible && t.Text == Strings.Format("Tunnel_ConnectionsMore", 2), view.GetVisualDescendants().OfType<TextBlock>());
                 SaveFrame(window, "tunnel-panel-connections-zh.png");
                 window.Close();
             }
