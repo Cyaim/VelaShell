@@ -229,6 +229,7 @@ public sealed class AiSettingsStore(IPluginContext context)
                 settings.AutoApproveCommands = fresh.AutoApproveCommands;
                 settings.SystemPrompt = fresh.SystemPrompt;
                 settings.SuggestFollowUps = fresh.SuggestFollowUps;
+                settings.ImageModelId = fresh.ImageModelId;
                 settings.CompactContext = fresh.CompactContext;
                 settings.PanelWidthPercent = fresh.PanelWidthPercent;
                 settings.McpServers = fresh.McpServers;
@@ -731,6 +732,7 @@ public sealed class AiSettingsStore(IPluginContext context)
             settings.SystemPrompt = detached.SystemPrompt;
             settings.CompactContext = detached.CompactContext;
             settings.SuggestFollowUps = detached.SuggestFollowUps;
+            settings.ImageModelId = detached.ImageModelId;
             CopyEditableWebSearch(settings.WebSearch, detached.WebSearch);
             settings.FailoverChain = detached.FailoverChain;
             settings.AutoFailoverAcrossAccounts = detached.AutoFailoverAcrossAccounts;
@@ -744,6 +746,7 @@ public sealed class AiSettingsStore(IPluginContext context)
         target.SystemPrompt = draft.SystemPrompt;
         target.CompactContext = draft.CompactContext;
         target.SuggestFollowUps = draft.SuggestFollowUps;
+        target.ImageModelId = draft.ImageModelId;
         CopyEditableWebSearch(target.WebSearch, draft.WebSearch);
         target.FailoverChain = [.. draft.FailoverChain.Where(entry => target.FindModel(entry.ModelId) is not null).Select(entry => new FailoverEntry { ModelId = entry.ModelId })];
         target.AutoFailoverAcrossAccounts = draft.AutoFailoverAcrossAccounts;
@@ -1689,14 +1692,23 @@ public sealed class AiSettingsStore(IPluginContext context)
         return CreateClient(provider, credential);
     }
 
+    /// <summary>Generate or edit one image using the selected image model and its current credentials.</summary>
+    public async Task<DataContent> GenerateImageAsync(ResolvedModel model, string prompt,
+        IReadOnlyList<DataContent>? inputs, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (!IsImageModel(model)) throw new ArgumentException("The selected model is not an image model.", nameof(model));
+        ProviderCredential credential = await ResolveCredentialAsync(model, cancellationToken: token).ConfigureAwait(false);
+        EnsureBuiltinOAuthCredentialDestination(model, credential);
+        var client = CreateOpenAiClient(model, credential, callerCountsRetries: false, noRetries: true).GetImageClient(model.Model);
+        return await new ImageGenerationService(client, model.Model, model.Model.StartsWith("dall-e-", StringComparison.OrdinalIgnoreCase))
+            .GenerateAsync(prompt, inputs, token).ConfigureAwait(false);
+    }
+
     /// <summary>使用已经解析并固定的凭据建客户端,避免候选地址与后读到的新 Key 错配。</summary>
     /// <param name="provider">已解出继承链的模型。</param>
     /// <param name="credential">已固定的凭据。</param>
-    /// <param name="callerCountsRetries">
-    /// 调用方自己按 Key 槽计数重试(聊天回路、逐槽探活)时为 true:多槽供应商这时关掉 SDK 的隐式重试,
-    /// 免得一次 429 被乘成好几次 HTTP。桥接、后续提问等没有换槽逻辑的一次性请求保持 SDK 默认重试 ——
-    /// 否则加第二把 Key 反而让它们碰到一次抖动就直接失败。
-    /// </param>
+    /// <param name="callerCountsRetries">调用方自己按 Key 槽计数重试时关闭多槽供应商的 SDK 隐式重试。</param>
     internal IChatClient CreateClient(ResolvedModel provider, ProviderCredential credential, bool callerCountsRetries = false)
     {
         ArgumentNullException.ThrowIfNull(provider);
@@ -1704,6 +1716,11 @@ public sealed class AiSettingsStore(IPluginContext context)
         // OpenAI 系协议无论 Key 还是 access token 都走 Authorization: Bearer,一条路即可;
         // Anthropic 分岔(Key 是 x-api-key,令牌是 Bearer —— SDK 13.x 一律发 Bearer,Key 由插件改回),见下。
         string? secret = credential.Value;
+        if (IsImageModel(provider))
+        {
+            return new OpenAiImageChatClient(CreateOpenAiClient(provider, credential, callerCountsRetries, noRetries: true)
+                .GetImageClient(provider.Model), provider.Model.StartsWith("dall-e-", StringComparison.OrdinalIgnoreCase));
+        }
         switch (provider.Protocol)
         {
             case ChatProtocol.OpenAiChatCompletions:
@@ -2017,11 +2034,17 @@ public sealed class AiSettingsStore(IPluginContext context)
             && SameOrigin(model.BaseUrl, model.Provider.BaseUrl)
             && ProviderApiKeyIds(model.Provider).Skip(1).Any();
 
-    private OpenAIClient CreateOpenAiClient(ResolvedModel provider, ProviderCredential credential, bool callerCountsRetries)
+    internal static bool IsImageModel(ResolvedModel model)
+        => model.Protocol == ChatProtocol.OpenAiImages
+            || (model.Protocol is ChatProtocol.OpenAiChatCompletions or ChatProtocol.OpenAiResponses
+                && (model.Model.StartsWith("gpt-image-", StringComparison.OrdinalIgnoreCase)
+                    || model.Model.StartsWith("dall-e-", StringComparison.OrdinalIgnoreCase)));
+
+    private OpenAIClient CreateOpenAiClient(ResolvedModel provider, ProviderCredential credential, bool callerCountsRetries, bool noRetries = false)
     {
         var options = new OpenAIClientOptions { Endpoint = new Uri(ClientBaseUrl(EndpointOf(provider, credential), provider.Protocol)) };
         // 多槽的重试由聊天回路统一计数;SDK 隐式重试会把一次 429 重试乘成多次 HTTP。
-        if (callerCountsRetries && HasProviderKeyPool(provider)) options.RetryPolicy = NoSdkRetries;
+        if (noRetries || (callerCountsRetries && HasProviderKeyPool(provider))) options.RetryPolicy = NoSdkRetries;
         if (credential.Headers is { Count: > 0 } headers)
         {
             options.AddPolicy(new ExtraHeadersPolicy(headers), PipelinePosition.PerCall);

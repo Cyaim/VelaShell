@@ -1,6 +1,9 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using AvaloniaEdit;
 using Microsoft.Extensions.AI;
 
 namespace VelaShell.Plugin.Ai.Ui;
@@ -33,6 +36,7 @@ public partial class ChatPanelView
     }
 
     private readonly List<LocalAttachment> _attachments = [];
+    private bool _pasteTextFallback;
 
     /// <summary>接上拖放与 <c>+</c> 按钮。</summary>
     private void SetUpAttachments()
@@ -41,6 +45,72 @@ public partial class ChatPanelView
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
         AttachButton.Click += (_, _) => _ = PickFilesAsync();
+        InputBox.TextArea.CommandBindings.Insert(0, new RoutedCommandBinding(
+            ApplicationCommands.Paste,
+            (_, e) =>
+            {
+                if (_pasteTextFallback) return;
+                e.Handled = true;
+                _ = PasteClipboardAsync();
+            },
+            (_, e) =>
+            {
+                if (_pasteTextFallback) return;
+                e.CanExecute = !InputBox.IsReadOnly;
+                e.Handled = true;
+            }));
+    }
+
+    private async Task PasteClipboardAsync()
+    {
+        try
+        {
+            if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+            using IAsyncDataTransfer? data = await clipboard.TryGetDataAsync();
+            Bitmap? bitmap = data is null ? null : await data.TryGetBitmapAsync();
+            if (_detached || InputBox.IsReadOnly) return;
+            if (bitmap is not null)
+            {
+                AddClipboardImage(bitmap);
+                return;
+            }
+            if (!_detached && !InputBox.IsReadOnly)
+            {
+                // Let AvaloniaEdit preserve its normal selection, undo and line-ending handling.
+                _pasteTextFallback = true;
+                try { ApplicationCommands.Paste.Execute(null, InputBox.TextArea); }
+                finally { _pasteTextFallback = false; }
+            }
+        }
+        catch (Exception ex)
+        {
+            _context.Log.Warn($"Pasting clipboard content failed: {ex.Message}");
+            StatusText.Text = _loc["AttachFailed"];
+        }
+    }
+
+    private void AddClipboardImage(Bitmap bitmap)
+    {
+        if (_attachments.Count >= MaxLocalAttachments)
+        {
+            StatusText.Text = _loc.F("AttachLimit", MaxLocalAttachments);
+            return;
+        }
+        // Avoid encoding an unbounded clipboard bitmap before applying the attachment limit.
+        if ((long)bitmap.PixelSize.Width * bitmap.PixelSize.Height > 25_000_000)
+        {
+            StatusText.Text = _loc.F("AttachTooBig", MaxAttachmentBytes / 1024 / 1024);
+            return;
+        }
+        using var buffer = new MemoryStream();
+        bitmap.Save(buffer, PngBitmapEncoderOptions.Default);
+        if (buffer.Length > MaxAttachmentBytes)
+        {
+            StatusText.Text = _loc.F("AttachTooBig", MaxAttachmentBytes / 1024 / 1024);
+            return;
+        }
+        _attachments.Add(new LocalAttachment(_loc["ClipboardImage"] + ".png", "image/png", buffer.ToArray(), ""));
+        RenderAttachmentChips();
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)

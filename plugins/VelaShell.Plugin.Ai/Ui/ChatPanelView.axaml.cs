@@ -53,6 +53,7 @@ public partial class ChatPanelView : UserControl
     private readonly McpManager _mcp;
     private readonly McpApproval _mcpApproval;
     private readonly ChatHistoryStore _historyStore;
+    private readonly GeneratedImageStore _generatedImages;
 
     // ---------- 按会话分桶的对话 ----------
     // 每台机器(顶栏下拉选中的会话;""=不绑机器的通用对话)各持一份 Conversation。
@@ -225,6 +226,7 @@ public partial class ChatPanelView : UserControl
         _store = store;
         _loc = new Loc(context.Host.Locale);
         _historyStore = new ChatHistoryStore(context);
+        _generatedImages = new GeneratedImageStore(context.DataDirectory);
         // 至少要有一份对话在手(不绑机器的通用对话):任何代理到 Cur 的读写都得有落点。
         // 连上机器后顶栏下拉一选,就切到对应机器那一份(见 SwitchConversation)。
         _active = NewConversation("");
@@ -1352,6 +1354,16 @@ public partial class ChatPanelView : UserControl
         await _initTask;
         if (_detached) return;
         text = text.Trim();
+        if (fromUser && prepared is null && await TryRunLocalCommandAsync(text)) return;
+        if (fromUser && prepared is null)
+        {
+            _ = ExpandImageMentions(text, out bool requestedImages);
+            if (requestedImages && !CanMentionImages)
+            {
+                SetStatus(_loc["ImageMentionUnavailable"]);
+                return;
+            }
+        }
         // 记下这一轮属于哪份对话:通常就是正显示的这份;后台续跑的下一轮(队列排空)沿用原来那份。
         // 置进 _turnScope 后,这条方法(及它 await 出去的整条流水线)所有代理都落到这份上,
         // 而不是"此刻正显示的那份"—— 这就是切走之后它还能把话答完、且不串台的关键。
@@ -1474,10 +1486,13 @@ public partial class ChatPanelView : UserControl
                 // 本地附件并进这一轮:图片作为视觉输入,文本附件接在正文后面
                 userMessage = new ChatMessage(ChatRole.User, BuildUserContents(modelText));
             }
+            List<ChatGeneratedImage> attachedImages = RegisterInputImages(userMessage);
             // 这一轮往历史里加的第一条 —— 一个字都没换来时要按它整批撤回(见 SettleUnfinishedTurnAsync)
             TurnHistoryStart = History.Count;
             History.Add(userMessage);
-            await PersistAsync("user", display);
+            int userSequence = await PersistAsync("user", display);
+            if (userSequence >= 0 && attachedImages.Count > 0)
+                await _historyStore.AppendMetaAsync(ConversationId, userSequence, new ChatTurnMeta(Images: attachedImages));
             ClearAttachments();
             bubble = new AssistantBubble(this);
             BindTransfers(runScope, bubble);
@@ -1494,6 +1509,13 @@ public partial class ChatPanelView : UserControl
             // 中途有人改了模式下拉,也不该把正在跑的这一轮升格成 Agent:那会让同一轮
             // 前后带的工具不一致,甚至给本该只读的对话补上能动手的。
             ChatMode mode = _settings.Mode;
+            string? imageModelId = _settings.ImageModelId;
+            bool imageToolsEnabled = mode != ChatMode.Plan && imageModelId is not null && !AiSettingsStore.IsImageModel(provider);
+            bool usesToolLoop = !AiSettingsStore.IsImageModel(provider) && (mode != ChatMode.Chat || imageToolsEnabled);
+            ApprovalMode imageApproval = _settings.Approval;
+            if (imageToolsEnabled)
+                bubble.ImageTools = ImagesFor(conv).BeginTurn(_store, imageModelId!,
+                    (detail, ct) => ApproveImageAsync(runScope, imageApproval, detail, ct), token);
             ReasoningLevel? turnOverride = provider.ReasoningOverride;
             ResolvedModel WithTurn(ResolvedModel model)
                 => model.WithReasoning(model.ReasoningAdjustable ? turnOverride : ReasoningLevel.Default);
@@ -1807,18 +1829,20 @@ public partial class ChatPanelView : UserControl
                 // 检索优先走供应商自带的服务端工具:它跑在模型那一侧,不经本机,结果自带引用。
                 // 但只有 Anthropic Messages 与 OpenAI Responses 认这套,其余协议(Chat Completions、
                 // Ollama、多数中转站)解不出来,回落到插件自带的 web_search。用户可以在全局设置里关掉。
-                bool nativeSearch = mode != ChatMode.Chat
+                bool nativeSearch = !AiSettingsStore.IsImageModel(current) && mode != ChatMode.Chat
                                     && _settings.WebSearch.Enabled
                                     && _settings.WebSearch.PreferProviderNative
                                     && NativeWebSearch.IsSupported(current.Protocol);
                 // 纯对话模式不给任何工具;计划模式只给只读工具(见 AgentToolbox.CreateTools)
-                if (mode != ChatMode.Chat)
+                if (usesToolLoop)
                 {
                     ApplyApprovalMode(); // 挡位推给工具箱与 MCP(中途再改也会经这条路重推)
                     _toolbox.DisabledTools = new HashSet<string>(
                         SplitLines(_settings.DisabledBuiltinTools) ?? [], StringComparer.OrdinalIgnoreCase);
                     _toolbox.WebSearch = _settings.WebSearch;
-                    IList<AITool> tools = _toolbox.CreateTools(mode, nativeSearch, runScope);
+                    IList<AITool> tools = mode == ChatMode.Chat ? [] : _toolbox.CreateTools(mode, nativeSearch, runScope);
+                    if (bubble.ImageTools is { } imageTools)
+                        foreach (AITool tool in imageTools.CreateTools()) tools.Add(tool);
                     // 计划模式下不接 MCP:那些工具的副作用由第三方服务器说了算,插件无从判断,
                     // 而"计划"的承诺是这一步不动任何东西。
                     if (mode == ChatMode.Agent && _settings.McpServers.Any(s => s.Enabled))
@@ -1872,7 +1896,7 @@ public partial class ChatPanelView : UserControl
                 }
 
                 // MCP 结束后完整复验，而非仅比较 BaseUrl：摘要不能使用已切账号的旧 inner。
-                if (mode == ChatMode.Chat && await RefreshBeforeSendAsync())
+                if (!usesToolLoop && mode == ChatMode.Chat && await RefreshBeforeSendAsync())
                 {
                     client.Dispose();
                     client = null!;
@@ -1890,14 +1914,21 @@ public partial class ChatPanelView : UserControl
                     AiSettingsStore.ApplyReasoning(options, current);
                     AiSettingsStore.ApplyEndpointQuirks(options, current);
                 }
-                await CompactIfNeededAsync(current, async cancellationToken =>
+                if (!AiSettingsStore.IsImageModel(current))
                 {
-                    await VerifyFixedRequestAsync(cancellationToken);
-                    return Steering!.RequestClient;
-                }, token);
+                    await CompactIfNeededAsync(current, async cancellationToken =>
+                    {
+                        await VerifyFixedRequestAsync(cancellationToken);
+                        return Steering!.RequestClient;
+                    }, token);
+                }
                 // 装配上下文:摘要 + 近几轮原文,按窗口裁剪并把相邻同角色的消息并起来(见 ContextBuilder)
                 RequestContext request = ContextBuilder.Build(
-                    BuildSystemPrompt(current, mode, nativeSearch), History, current.MaxInputTokens, current.MaxTokens,
+                    BuildSystemPrompt(current, mode, nativeSearch) + (imageToolsEnabled
+                        ? "\nImage tools are available. For explicit image creation requests, use generate_image with a standalone prompt incorporating the relevant conversation details. " +
+                          "For changes to an existing image use edit_image with its exact conversation image ID. Do not claim success before the tool succeeds. " +
+                          "Never automatically retry failed image operations. Do not include unrelated terminal content or secrets in image prompts.\n" + ImagesFor(conv).Describe()
+                        : ""), History, current.MaxInputTokens, current.MaxTokens,
                     ContextSummary, SummarizedThrough);
                 requestMessages = request.Messages;
                 DroppedFromContext = request.DroppedMessages;
@@ -1938,7 +1969,7 @@ public partial class ChatPanelView : UserControl
                             await StreamOnceAsync();
                             break;
                         }
-                        catch (Exception ex) when (mode == ChatMode.Chat && attempt < (ex is HealthProbe.EmptyReplyException ? 2 : StreamRetries) && !execution.HasToolCalls && !HasMeaningfulOutput(updates)
+                        catch (Exception ex) when (!AiSettingsStore.IsImageModel(current) && mode == ChatMode.Chat && attempt < (ex is HealthProbe.EmptyReplyException ? 2 : StreamRetries) && !execution.HasToolCalls && !HasMeaningfulOutput(updates)
                                                    && !token.IsCancellationRequested && TransientFailure.IsTransient(ex))
                         {
                             _context.Log.Warn($"Stream failed before any content (attempt {attempt + 1}): {ex.Message}");
@@ -1988,7 +2019,7 @@ public partial class ChatPanelView : UserControl
                     }
                     break; // 这一站答上了
                 }
-                catch (Exception ex) when (!execution.HasToolCalls && !HasMeaningfulOutput(updates)
+                catch (Exception ex) when (!AiSettingsStore.IsImageModel(current) && !execution.HasToolCalls && !HasMeaningfulOutput(updates)
                                            && !token.IsCancellationRequested && TransientFailure.IsWorthSwitching(ex))
                 {
                     bool changedKeyCandidate = false;
@@ -2107,9 +2138,11 @@ public partial class ChatPanelView : UserControl
             // 兜底补齐插话:送达回调的 Post 可能还排在队里没跑到,而它必须排在
             // 这一轮的回复之前进历史与库(顺序:原消息 → 插话 → 回复)。
             await CommitSteeringAsync(conv);
-            if (mode == ChatMode.Chat) History.AddMessages(response);
+            if (!usesToolLoop) History.AddMessages(response);
             else History.AddRange(execution.CompletedMessages);
-            int sequence = await PersistAsync("assistant", response.Text);
+            string persistedReply = string.IsNullOrWhiteSpace(response.Text) && bubble.HasImages
+                ? _loc["GeneratedImage"] : response.Text;
+            int sequence = await PersistAsync("assistant", persistedReply);
             if (sequence >= 0 && bubble is not null)
             {
                 // 思考、工具调用、模型、耗时另存一行 —— 翻回旧会话时这些才是"Agent 做了什么"的证据
@@ -2117,6 +2150,8 @@ public partial class ChatPanelView : UserControl
                     bubble.Snapshot(modelLabel,
                         TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt)));
             }
+            if (bubble is { HasImages: true })
+                History.Add(new ChatMessage(ChatRole.Assistant, $"Generated image IDs: {string.Join(", ", bubble.ImageIds)}"));
             HintIfThinkingWasNeverRequested(bubble, provider);
             // 被截断 / 过滤的回答照常留着,后面附一句;工具之后补了「请继续」还是空的,说一句而不是报失败(#651 复审①②)
             if ((truncation ?? execution.TerminationNotice) is { } reason)
@@ -2140,8 +2175,12 @@ public partial class ChatPanelView : UserControl
             if (execution.HasToolCalls)
             {
                 string partial = bubble?.ReplyText.Trim() ?? "";
+                if (partial.Length == 0 && bubble is { HasImages: true }) partial = _loc["GeneratedImage"];
                 History.AddRange(execution.InterruptedHistory(partial));
-                await PersistAsync("assistant", partial);
+                int interruptedSequence = await PersistAsync("assistant", partial);
+                if (interruptedSequence >= 0 && bubble is { HasImages: true })
+                    await _historyStore.AppendMetaAsync(ConversationId, interruptedSequence,
+                        bubble.Snapshot(modelLabel, TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt)));
             }
             else await SettleUnfinishedTurnAsync(bubble);
         }
@@ -2171,8 +2210,12 @@ public partial class ChatPanelView : UserControl
             if (execution.HasToolCalls)
             {
                 string partial = bubble?.ReplyText.Trim() ?? "";
+                if (partial.Length == 0 && bubble is { HasImages: true }) partial = _loc["GeneratedImage"];
                 History.AddRange(execution.InterruptedHistory(partial));
-                await PersistAsync("assistant", partial);
+                int interruptedSequence = await PersistAsync("assistant", partial);
+                if (interruptedSequence >= 0 && bubble is { HasImages: true })
+                    await _historyStore.AppendMetaAsync(ConversationId, interruptedSequence,
+                        bubble.Snapshot(modelLabel, TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt)));
             }
             else await SettleUnfinishedTurnAsync(bubble);
         }
@@ -2297,7 +2340,7 @@ public partial class ChatPanelView : UserControl
         foreach (ResolvedModel candidate in _settings.FailoverCandidates(failed, triedThisTurn))
         {
             ResolvedModel target = WithTurn(candidate);
-            if (_health.IsCooling(target.Id)) continue;
+            if (AiSettingsStore.IsImageModel(target) || _health.IsCooling(target.Id)) continue;
             long candidateProviderVersion = _store.ProviderConfigurationVersion(target.Provider);
             OAuthAccountSnapshot issuerBeforeResolve = CaptureOAuthIssuer(target.Provider);
             for (int round = 0; round < 2; round++)
@@ -2457,6 +2500,7 @@ public partial class ChatPanelView : UserControl
                 if (attempt.KeyId is { } key) _health.RecordKeyForModel(key, target.Id, true, version, observation);
                 return (attempt.Credential, probedModel, attempt.KeyId, providerVersion);
             }
+            if (error is NotSupportedException && AiSettingsStore.IsImageModel(target)) return null;
             _context.Log.Warn($"Failover candidate {target.Id} failed probe: {error.Message}");
             if (attempt.KeyId is not { } failedKey || !TransientFailure.IsApiKeyFailure(error))
             {
@@ -2627,7 +2671,7 @@ public partial class ChatPanelView : UserControl
     /// </remarks>
     private void HintIfThinkingWasNeverRequested(AssistantBubble? bubble, ResolvedModel provider)
     {
-        if (ThinkingHintShown || bubble is null || bubble.HasThinking
+        if (AiSettingsStore.IsImageModel(provider) || ThinkingHintShown || bubble is null || bubble.HasThinking
             || provider.Reasoning != ReasoningLevel.Default)
         {
             return;
@@ -2655,6 +2699,9 @@ public partial class ChatPanelView : UserControl
                     break;
                 case TextContent textContent:
                     bubble.AppendText(textContent.Text);
+                    break;
+                case DataContent image when image.HasTopLevelMediaType("image"):
+                    bubble.AddImage(image);
                     break;
                 case FunctionCallContent call:
                     bubble.AddToolCall(call.CallId, call.Name, SerializeArguments(call.Arguments));
@@ -2726,7 +2773,7 @@ public partial class ChatPanelView : UserControl
             "Help the user with servers, shell commands, log analysis and DevOps questions. Be concise and practical. " +
             "Format responses in Markdown. " +
             $"Respond in the user's language (UI locale: {_context.Host.Locale}). " +
-            "The user can attach remote files to a message with @path; their content is included verbatim after the message.";
+            "The user can attach remote files to a message with #path; their content is included verbatim after the message.";
         // 服务端检索没有工具声明摆在模型面前,不点破它就以为自己不能联网,
         // 张口就是"我无法访问互联网"。自定义提示词那两条路上不加 —— 与本方法的既有约定一致。
         prompt += nativeWebSearch ? " " + NativeWebSearch.SystemHint : "";
@@ -2742,6 +2789,9 @@ public partial class ChatPanelView : UserControl
                 "You must NOT change anything, and no tool that could change anything is available to you. " +
                 "Produce a concrete, ordered plan: what to check, what to change, the exact commands you would run, what could go wrong, and how to roll back. " +
                 "End by telling the user to switch to Agent mode if they want you to carry it out.",
+            _ when _settings.ImageModelId is not null =>
+                " You may use the configured image tools when the user explicitly requests creating or editing an image. " +
+                "You have no server-operation tools in chat mode. Do not claim you inspected or changed a server.",
             _ =>
                 " You have no tools in this mode: answer from the conversation itself. " +
                 "If something genuinely needs to be checked on the server, say so and suggest switching to Agent mode rather than guessing."
@@ -2792,6 +2842,7 @@ public partial class ChatPanelView : UserControl
     {
         Cts?.Cancel();
         History.Clear();
+        Cur.Images = null;
         ClearQueuedMessages(); // 排着的插话是给上一段对话的,换会话就作废
         MessagesPanel.Children.Clear();
         ResetMessageWindow();
@@ -3250,7 +3301,7 @@ public partial class ChatPanelView : UserControl
     /// Markdown 段落与工具卡片,末尾是"复制整段 | 时间 · 模型"的元信息条。
     /// 版式对齐 GitHub Copilot 的回复块。
     /// </summary>
-    internal sealed class AssistantBubble
+    internal sealed partial class AssistantBubble
     {
         private readonly ChatPanelView _owner;
         private readonly StackPanel _stack;
@@ -3283,7 +3334,8 @@ public partial class ChatPanelView : UserControl
             (long)elapsed.TotalMilliseconds,
             _thinkingText.ToString(),
             (long)(_thinkingElapsed?.TotalMilliseconds ?? 0),
-            [.. _toolCards.Values.Select(c => c.Snapshot())]);
+            [.. _toolCards.Values.Select(c => c.Snapshot())],
+            [.. _images]);
 
         /// <summary>从历史回放:先摆思考,再摆工具卡,最后才是正文(与直播时的先后一致)。</summary>
         public void Restore(ChatTurnMeta meta)
@@ -3304,6 +3356,7 @@ public partial class ChatPanelView : UserControl
                 AddToolCall(id, tool.Name, tool.Arguments);
                 CompleteToolCall(id, tool.Result);
             }
+            RestoreImages(meta);
         }
 
         public AssistantBubble(ChatPanelView owner)
@@ -3456,6 +3509,7 @@ public partial class ChatPanelView : UserControl
 
         public void CompleteToolCall(string callId, string result)
         {
+            ShowToolImage(result);
             if (_toolCards.TryGetValue(callId, out ToolCard? card))
             {
                 if (Transfers?.Bind(card, result) != true) card.Complete(result);

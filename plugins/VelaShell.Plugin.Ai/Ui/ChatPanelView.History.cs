@@ -189,6 +189,7 @@ public partial class ChatPanelView
             Cts?.Cancel();
             IReadOnlyList<ChatEntry> entries = await _historyStore.LoadAsync(session.Id);
             History.Clear();
+            Cur.Images = null;
             MessagesPanel.Children.Clear();
             ResetUsage();
             AlwaysApproved.Clear(); // 放行记忆只在同一段对话里有效
@@ -207,7 +208,10 @@ public partial class ChatPanelView
                 if (entry.Role == "user")
                 {
                     AddUserBubble(entry.Text);
-                    History.Add(new(ChatRole.User, entry.Text));
+                    string imageNote = entry.Meta?.Images is { Count: > 0 } inputImages
+                        ? "\nAttached image IDs: " + string.Join(", ", inputImages.Select(image => image.FileName)) : "";
+                    History.Add(new(ChatRole.User, entry.Text + imageNote));
+                    foreach (ChatGeneratedImage image in entry.Meta?.Images ?? []) ImagesFor(Cur).Register(image);
                 }
                 else
                 {
@@ -223,7 +227,9 @@ public partial class ChatPanelView
                         entry.Meta?.Model,
                         entry.At.ToLocalTime(),
                         entry.Meta is { ElapsedMs: > 0 } m ? TimeSpan.FromMilliseconds(m.ElapsedMs) : null);
-                    History.Add(new(ChatRole.Assistant, entry.Text));
+                    string imageNote = entry.Meta?.Images is { Count: > 0 } generatedImages
+                        ? "\nGenerated image IDs: " + string.Join(", ", generatedImages.Select(image => image.FileName)) : "";
+                    History.Add(new(ChatRole.Assistant, entry.Text + imageNote));
                 }
             }
             TrimMessageWindow();

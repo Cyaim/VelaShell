@@ -163,9 +163,9 @@ public sealed class EndpointModelCatalogTests
     }
 
     [TestMethod]
-    public void Parse_DropsTheModelsThatCannotChat()
+    public void Parse_KeepsImageModelsButDropsUnsupportedModalities()
     {
-        // /models 把一家的全部模型都报上来,包括向量、语音、画图、审核那些
+        // /models 也报图片模型;图片接口可用,向量、语音与审核仍不支持。
         IReadOnlyList<(string Id, int ContextTokens)> ids = EndpointModelCatalog.Parse("""
             {"data":[
               {"id":"gpt-5"},
@@ -179,7 +179,7 @@ public sealed class EndpointModelCatalogTests
             ]}
             """);
 
-        Assert.AreEqual("gpt-5", ids.Single().Id);
+        Assert.AreSequenceEqual(["dall-e-3", "gpt-5"], [.. ids.Select(model => model.Id)]);
     }
 
     [TestMethod]

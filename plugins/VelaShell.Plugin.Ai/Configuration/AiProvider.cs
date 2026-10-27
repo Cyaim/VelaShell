@@ -13,7 +13,10 @@ public enum ChatProtocol
     OpenAiResponses,
 
     /// <summary>Anthropic Messages 协议(Claude 官方及 Anthropic 兼容中转站)。</summary>
-    AnthropicMessages
+    AnthropicMessages,
+
+    /// <summary>OpenAI Images 兼容的文生图接口。</summary>
+    OpenAiImages
 }
 
 /// <summary>对话模式:决定这一轮给不给模型工具、给哪些。</summary>
@@ -499,6 +502,9 @@ public sealed class AiSettings
         }
         ActiveProviderId = null;
     }
+
+    /// <summary>对话作图绑定的模型 id；null 表示关闭，不自动回落到其他模型。</summary>
+    public string? ImageModelId { get; set; }
 
     /// <summary>自定义系统提示词(空 = 用内置默认)。</summary>
     public string? SystemPrompt { get; set; }
