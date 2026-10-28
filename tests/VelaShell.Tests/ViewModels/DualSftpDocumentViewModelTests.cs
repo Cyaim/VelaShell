@@ -35,6 +35,15 @@ public class DualSftpDocumentViewModelTests
         ISftpService sftp = Substitute.For<ISftpService>();
         sftp.ListDirectoryAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult(new List<RemoteFileInfo>()));
+        sftp.UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(async call =>
+        {
+            Stream input = call.ArgAt<Stream>(1);
+            if (call.ArgAt<long>(6) > 0)
+            {
+                input.Seek(call.ArgAt<long>(6), SeekOrigin.Begin);
+            }
+            await input.CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(8));
+        });
         options ??= new() { ConflictPolicy = "overwrite", ResumeEnabled = false };
         var left = new FileBrowserViewModel(sftp, Left) { ServerDisplayName = "alpha", TransferOptions = options };
         var right = new FileBrowserViewModel(sftp, Right) { ServerDisplayName = "beta", TransferOptions = options };
@@ -68,7 +77,10 @@ public class DualSftpDocumentViewModelTests
             Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
         await sftp.Received(1).UploadStreamAsync(Right, Arg.Any<Stream>(), "/dir/b.txt", 7, Arg.Any<DateTime?>(),
             Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
-        // 中转不经本地文件:任何一次上传/下载本地文件的调用都说明字节落了盘。
+        await sftp.Received(1).OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>());
+        await sftp.Received(1).OpenReadAsync(Left, nested.FullPath, Arg.Any<CancellationToken>());
+        await sftp.DidNotReceiveWithAnyArgs().DownloadStreamAsync(default, null!, null!);
+        // SFTP 中转不经本地文件:任何一次上传/下载本地文件的调用都说明字节落了盘。
         await sftp.DidNotReceiveWithAnyArgs().DownloadFileAsync(default, null!, null!);
         await sftp.DidNotReceiveWithAnyArgs().UploadFileAsync(default, null!, null!);
         Assert.IsNull(right.ErrorMessage);
@@ -142,6 +154,117 @@ public class DualSftpDocumentViewModelTests
     }
 
     [TestMethod]
+    [DataRow(0)]
+    [DataRow(4)]
+    public async Task ReceiveFromPeer_ShortSourceFailsInsteadOfCompleting_AndCleansPartialTarget(int bytes)
+    {
+        // 可 seek 源仍走原上传路径:不能用新增的顺序源预读行为取代这条半截目标清理回归。
+        (ISftpService sftp, _, FileBrowserViewModel right) =
+            PanePair(new() { ConflictPolicy = "overwrite", ResumeEnabled = false, AutoCleanTempFiles = true, TransferMaxRetries = 0 });
+        RemoteFileInfo file = Entry("/src/a.txt", 10);
+        Readable(sftp, Left, file);
+        sftp.OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream>(new MemoryStream(new byte[bytes])));
+        right.TransferSink = new FileTransferViewModel();
+
+        await right.ReceiveFromPeerAsync([new(file)]);
+
+        Assert.HasCount(1, right.TransferSink.Transfers);
+        Assert.AreEqual(TransferStatus.Failed, right.TransferSink.Transfers[0].Status);
+        await sftp.Received(1).DeleteAsync(Right, "/a.txt", Arg.Any<IProgress<SftpDeleteProgress>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestMethod]
+    [DataRow(0, false)]
+    [DataRow(4, false)]
+    [DataRow(10, true)]
+    public async Task ReceiveFromPeer_SmallSequentialSourceFailure_NeverUploadsOrDeletesExistingTarget(int bytes, bool failCompletion)
+    {
+        (ISftpService sftp, _, FileBrowserViewModel right) = PanePair(new()
+        {
+            ConflictPolicy = "overwrite", ResumeEnabled = false, AutoCleanTempFiles = true, TransferMaxRetries = 0,
+        });
+        RemoteFileInfo file = Entry("/src/a.txt", 10);
+        sftp.ListDirectoryAsync(Right, "/", Arg.Any<CancellationToken>()).Returns([Entry("/a.txt", 23)]);
+        sftp.GetFileInfoAsync(Left, file.FullPath, Arg.Any<CancellationToken>()).Returns(file);
+        var source = new SequentialSource(new byte[bytes], failCompletion);
+        sftp.OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Stream>(source));
+        right.TransferSink = new FileTransferViewModel();
+
+        await right.ReceiveFromPeerAsync([new(file)]);
+
+        Assert.HasCount(1, right.TransferSink.Transfers);
+        Assert.AreEqual(TransferStatus.Failed, right.TransferSink.Transfers[0].Status);
+        Assert.IsTrue(source.Disposed, "小顺序源失败也必须释放,包括源 completion 失败的情况。");
+        await sftp.Received(1).OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>());
+        await sftp.DidNotReceiveWithAnyArgs().UploadStreamAsync(default, null!, null!, 0);
+        await sftp.DidNotReceiveWithAnyArgs().DeleteAsync(default, null!);
+    }
+
+    /// <summary>与 FTP 数据流一样只准顺序读;释放时可模拟最终回复失败,不能用可 seek 的 MemoryStream 替代。</summary>
+    private sealed class SequentialSource(byte[] data, bool failCompletion) : Stream
+    {
+        private readonly MemoryStream _input = new(data, writable: false);
+        public bool Disposed { get; private set; }
+        public override bool CanRead => !Disposed;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => data.LongLength;
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => _input.Read(buffer, offset, count);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            _input.ReadAsync(buffer, cancellationToken);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException();
+        protected override void Dispose(bool disposing)
+        {
+            if (Disposed) return;
+            Disposed = true;
+            if (disposing) _input.Dispose();
+            base.Dispose(disposing);
+            if (disposing && failCompletion) throw new IOException("FTP completion refused.");
+        }
+    }
+
+    [TestMethod]
+    public async Task ReceiveFromPeer_RetryDiagnosticsCaptureAnEarlySourceFailureEvenWhenItRecovers()
+    {
+        string logDirectory = Path.Combine(Path.GetTempPath(), "vela-relay-retry-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            (ISftpService sftp, _, FileBrowserViewModel right) = PanePair(new()
+            {
+                ConflictPolicy = "overwrite", ResumeEnabled = false, TransferMaxRetries = 1,
+                TransferLogging = true, LogDirectory = logDirectory,
+            });
+            RemoteFileInfo file = Entry("/src/a.txt", 10);
+            Readable(sftp, Left, file);
+            sftp.OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>()).Returns(
+                _ => Task.FromResult<Stream>(new MemoryStream([])),
+                _ => Task.FromResult<Stream>(new MemoryStream(new byte[10])));
+            right.RetryDelay = (_, _) => Task.CompletedTask;
+            right.TransferSink = new FileTransferViewModel();
+
+            await right.ReceiveFromPeerAsync([new(file)]);
+
+            Assert.AreEqual(TransferStatus.Completed, right.TransferSink.Transfers.Single().Status);
+            await sftp.Received(2).OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>());
+            string log = File.ReadAllText(Directory.GetFiles(logDirectory, "transfer-*.log").Single());
+            string diagnostic = log.Split('\n').Single(line => line.Contains("ATTEMPT_FAILED", StringComparison.Ordinal));
+            StringAssert.Contains(diagnostic, "stage=source-length");
+            StringAssert.Contains(diagnostic, "expected=10,actual=0");
+            StringAssert.Contains(diagnostic, "retry=True");
+            Assert.IsFalse(diagnostic.Contains(file.FullPath, StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(logDirectory)) Directory.Delete(logDirectory, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task ReceiveFromPeer_WithAPartialTarget_ResumesFromIt()
     {
         // 上一次中转在目标上留下了 4 字节,源有 10 字节:从 4 接着传(真正的起点由目标端再核实),
@@ -173,6 +296,22 @@ public class DualSftpDocumentViewModelTests
         await right.ReceiveFromPeerAsync([new(file)]);
 
         await sftp.DidNotReceiveWithAnyArgs().UploadStreamAsync(default, null!, null!, 0);
+    }
+
+    [TestMethod]
+    [DataRow(ConnectionType.FTP, ConnectionType.SFTP)]
+    [DataRow(ConnectionType.SSH, ConnectionType.FTP)]
+    [DataRow(ConnectionType.SFTP, ConnectionType.Plugin)]
+    public async Task OnlyFtpPanes_UseStagedRelaySources(ConnectionType leftType, ConnectionType rightType)
+    {
+        await using var vm = new DualSftpDocumentViewModel(
+            new(Profile("alpha", leftType), Left, null, (_, _) => Task.CompletedTask),
+            new(Profile("beta", rightType), Right, null, (_, _) => Task.CompletedTask),
+            Substitute.For<ISftpService>(), new TransferOptions());
+        await vm.InitialLoadTask;
+
+        Assert.AreEqual(leftType == ConnectionType.FTP, vm.LeftFiles.UseStagedRelaySource);
+        Assert.AreEqual(rightType == ConnectionType.FTP, vm.RightFiles.UseStagedRelaySource);
     }
 
     [TestMethod]

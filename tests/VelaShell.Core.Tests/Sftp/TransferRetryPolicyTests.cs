@@ -28,6 +28,7 @@ public sealed class TransferRetryPolicyTests
         [new IOException("无法从传输连接中读取数据", new SocketException((int)SocketError.ConnectionAborted))],
         [new IOException("读到一半断掉了")],
         [new EndOfStreamException()],
+        [new RemoteTransferLengthException("/source", 1024, 0)],
     ];
 
     public static IEnumerable<object[]> PermanentFailures =>

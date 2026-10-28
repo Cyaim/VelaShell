@@ -127,6 +127,18 @@ public class TransferItemViewModel : ReactiveObject
         }
     }
 
+    /// <summary>中转源尚在下载/确认完成;只展示阶段,不计入目标传输字节。</summary>
+    internal bool IsPreparingSource
+    {
+        get;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(ProgressText));
+            this.RaisePropertyChanged(nameof(InfoLine));
+        }
+    }
+
     /// <summary>自动重试到了第几次(0 = 还没重试过)。</summary>
     public int RetryAttempt { get; private set; }
 
@@ -190,6 +202,7 @@ public class TransferItemViewModel : ReactiveObject
         TransferStatus.Paused => Strings.Get("Transfer_Paused"),
         // 取消了就写「已取消」:停在半截的「37%」看着像还在传,点了 × 也看不出停没停。
         TransferStatus.Cancelled => Strings.Get("Transfer_Cancelled"),
+        _ when IsActive && IsPreparingSource => Strings.Get("Transfer_PreparingSource"),
         // 失败了正等着自动重试:说清是第几次,免得看着像又回去排队了。
         TransferStatus.Queued when RetryAttempt > 0 => Strings.Format("Transfer_RetryWaiting", RetryAttempt, RetryLimit),
         // 排队中显示"等待中"而不是 0%:0% 看着像卡住,而它其实还没轮到。
@@ -202,6 +215,10 @@ public class TransferItemViewModel : ReactiveObject
     {
         get
         {
+            if (IsActive && IsPreparingSource)
+            {
+                return $"{Direction} {Strings.Get("Transfer_PreparingSource")}";
+            }
             // 还没轮到的项:只说"等待中"。照常拼"0 B / 0 B • 0 B/s • ↑ 上传中"既不真实
             // (它没在上传),也让人以为传输卡死了。
             if (_status == TransferStatus.Queued)

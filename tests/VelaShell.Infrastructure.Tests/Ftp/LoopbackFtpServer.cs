@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -94,6 +95,36 @@ internal sealed class LoopbackFtpServer : IDisposable
     /// 复刻「服务器在 UTC+0、客户端在 UTC+8」这类整体错位的场景。MLSD 不受它影响(那边恒为 UTC)。
     /// </summary>
     public TimeSpan? ListClockOffset { get; set; }
+
+    /// <summary>按远端路径控制 RETR 的数据和最终回复;默认不注入故障。</summary>
+    public Func<string, ReadFault?>? ReadFaultForPath { get; set; }
+
+    /// <summary>按路径与当前 TYPE I 状态控制 SIZE 回复;null 使用磁盘长度。</summary>
+    public Func<string, bool, string?>? SizeReplyForPath { get; set; }
+
+    /// <summary>按路径覆盖 LIST/MLST/MLSD 中的长度,独立于 SIZE 与 RETR。</summary>
+    public Func<string, long, long>? ListingSizeForPath { get; set; }
+
+    public ConcurrentDictionary<string, int> RetrCounts { get; } = new(StringComparer.Ordinal);
+    public ConcurrentDictionary<string, int> SizeCounts { get; } = new(StringComparer.Ordinal);
+    public ConcurrentQueue<(string Path, bool Binary)> SizeRequests { get; } = new();
+    public int TypeCommands;
+    public ConcurrentQueue<long> RestartOffsets { get; } = new();
+
+    internal sealed class ReadFault
+    {
+        public TaskCompletionSource DataOpened { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource DataSent { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AllowData { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AllowReply { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool HoldData { get; init; }
+        public bool HoldReply { get; init; }
+        public bool CloseControl { get; init; }
+        public int? DataLimit { get; init; }
+        public bool ResetData { get; init; }
+        public string? RejectRetr { get; init; }
+        public string? Reply { get; init; } = "226 Transfer complete";
+    }
 
     private int _liveSessions;
     private int _liveTransfers;
@@ -276,8 +307,12 @@ internal sealed class LoopbackFtpServer : IDisposable
                     await writer.WriteLineAsync($"213 Modify={argument[..gap]}; {argument[(gap + 1)..]}").ConfigureAwait(false);
                     return true;
                 }
-            case "OPTS":
             case "TYPE":
+                Interlocked.Increment(ref TypeCommands);
+                state.Binary = argument.Equals("I", StringComparison.OrdinalIgnoreCase);
+                await writer.WriteLineAsync("200 OK").ConfigureAwait(false);
+                return true;
+            case "OPTS":
             case "NOOP":
                 await writer.WriteLineAsync("200 OK").ConfigureAwait(false);
                 return true;
@@ -293,6 +328,7 @@ internal sealed class LoopbackFtpServer : IDisposable
                 return true;
             case "REST":
                 state.RestartOffset = long.TryParse(argument, out long offset) ? offset : 0;
+                RestartOffsets.Enqueue(state.RestartOffset);
                 await writer.WriteLineAsync("350 Restarting").ConfigureAwait(false);
                 return true;
             case "PASV":
@@ -307,10 +343,14 @@ internal sealed class LoopbackFtpServer : IDisposable
                 return true;
             case "SIZE":
                 {
-                    string path = Local(Normalize(state, argument));
-                    await writer.WriteLineAsync(File.Exists(path)
+                    string remote = Normalize(state, argument);
+                    string path = Local(remote);
+                    SizeCounts.AddOrUpdate(remote, 1, static (_, count) => count + 1);
+                    SizeRequests.Enqueue((remote, state.Binary));
+                    string? reply = SizeReplyForPath?.Invoke(remote, state.Binary);
+                    await writer.WriteLineAsync(reply ?? (File.Exists(path)
                         ? $"213 {new FileInfo(path).Length}"
-                        : "550 Not found").ConfigureAwait(false);
+                        : "550 Not found")).ConfigureAwait(false);
                     return true;
                 }
             case "MDTM":
@@ -322,8 +362,7 @@ internal sealed class LoopbackFtpServer : IDisposable
                     return true;
                 }
             case "RETR":
-                await SendFileAsync(state, argument, writer).ConfigureAwait(false);
-                return true;
+                return await SendFileAsync(state, argument, writer).ConfigureAwait(false);
             case "STOR":
             case "APPE":
                 await ReceiveFileAsync(state, argument, writer, append: command == "APPE").ConfigureAwait(false);
@@ -443,7 +482,7 @@ internal sealed class LoopbackFtpServer : IDisposable
         foreach (string file in Directory.GetFiles(local))
         {
             var info = new FileInfo(file);
-            payload.Append(namesOnly ? info.Name : FormatEntry(info.Name, info.Length, ListClock(info.LastWriteTimeUtc), isDirectory: false)).Append("\r\n");
+            payload.Append(namesOnly ? info.Name : FormatEntry(info.Name, ListingSize(file, info.Length), ListClock(info.LastWriteTimeUtc), isDirectory: false)).Append("\r\n");
         }
         await writer.WriteLineAsync("150 Opening data connection").ConfigureAwait(false);
         await using (Stream data = await state.AcceptDataAsync().ConfigureAwait(false))
@@ -455,27 +494,65 @@ internal sealed class LoopbackFtpServer : IDisposable
         await writer.WriteLineAsync("226 Transfer complete").ConfigureAwait(false);
     }
 
-    private async Task SendFileAsync(SessionState state, string argument, StreamWriter writer)
+    private async Task<bool> SendFileAsync(SessionState state, string argument, StreamWriter writer)
     {
-        string path = Local(Normalize(state, argument));
+        string remote = Normalize(state, argument);
+        string path = Local(remote);
         if (!File.Exists(path))
         {
             await writer.WriteLineAsync("550 Not found").ConfigureAwait(false);
-            return;
+            return true;
+        }
+        RetrCounts.AddOrUpdate(remote, 1, static (_, count) => count + 1);
+        ReadFault? fault = ReadFaultForPath?.Invoke(remote);
+        if (fault?.RejectRetr is { } rejection)
+        {
+            state.CloseData();
+            await writer.WriteLineAsync(rejection).ConfigureAwait(false);
+            return true;
         }
         await writer.WriteLineAsync("150 Opening data connection").ConfigureAwait(false);
         await using (Stream data = await state.AcceptDataAsync().ConfigureAwait(false))
         await using (FileStream source = File.OpenRead(path))
         {
+            fault?.DataOpened.TrySetResult();
+            if (fault is { HoldData: true })
+            {
+                await fault.AllowData.Task.WaitAsync(_cts.Token).ConfigureAwait(false);
+            }
             if (state.RestartOffset > 0 && state.RestartOffset <= source.Length)
             {
                 source.Seek(state.RestartOffset, SeekOrigin.Begin);
             }
-            await source.CopyToAsync(data).ConfigureAwait(false);
+            if (fault?.DataLimit is int limit)
+            {
+                byte[] bytes = new byte[limit];
+                int read = await source.ReadAsync(bytes, _cts.Token).ConfigureAwait(false);
+                await data.WriteAsync(bytes.AsMemory(0, read), _cts.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                await source.CopyToAsync(data, _cts.Token).ConfigureAwait(false);
+            }
+            if (fault is { ResetData: true }) ((DataStream)data).Reset();
         }
         state.RestartOffset = 0;
         state.CloseData();
-        await writer.WriteLineAsync("226 Transfer complete").ConfigureAwait(false);
+        fault?.DataSent.TrySetResult();
+        if (fault is { HoldReply: true })
+        {
+            await fault.AllowReply.Task.WaitAsync(_cts.Token).ConfigureAwait(false);
+        }
+        if (fault is { CloseControl: true })
+        {
+            return false;
+        }
+        string? reply = fault is null ? "226 Transfer complete" : fault.Reply;
+        if (reply is not null)
+        {
+            await writer.WriteLineAsync(reply).ConfigureAwait(false);
+        }
+        return true;
     }
 
     private async Task ReceiveFileAsync(SessionState state, string argument, StreamWriter writer, bool append)
@@ -543,13 +620,16 @@ internal sealed class LoopbackFtpServer : IDisposable
         await writer.WriteLineAsync("226 Transfer complete").ConfigureAwait(false);
     }
 
+    private long ListingSize(string localPath, long length) =>
+        ListingSizeForPath?.Invoke("/" + Path.GetRelativePath(Root, localPath).Replace('\\', '/'), length) ?? length;
+
     /// <summary>MLSD / MLST 的事实串;<c>modify</c> 按 RFC 3659 恒为 UTC。</summary>
-    private static string MachineFacts(string localPath)
+    private string MachineFacts(string localPath)
     {
         string modify = File.GetLastWriteTimeUtc(localPath).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
         return Directory.Exists(localPath)
             ? $"type=dir;modify={modify};"
-            : $"type=file;size={new FileInfo(localPath).Length};modify={modify};";
+            : $"type=file;size={ListingSize(localPath, new FileInfo(localPath).Length)};modify={modify};";
     }
 
     /// <summary>Unix 风格的 LIST 行:权限、链接数、属主、属组、大小、时间、名称。</summary>
@@ -594,6 +674,8 @@ internal sealed class LoopbackFtpServer : IDisposable
     {
         public string WorkingDirectory { get; set; } = "/";
         public long RestartOffset { get; set; }
+        // RFC 959 新控制连接默认 TYPE A;不假定客户端的 LIST 一定使用 ASCII。
+        public bool Binary { get; set; }
         public string? RenameFrom { get; set; }
         public TcpListener? DataListener { get; set; }
 
@@ -615,6 +697,12 @@ internal sealed class LoopbackFtpServer : IDisposable
     private sealed class DataStream(TcpClient client) : Stream
     {
         private readonly NetworkStream _inner = client.GetStream();
+
+        public void Reset()
+        {
+            client.Client.LingerState = new LingerOption(true, 0);
+            client.Close();
+        }
 
         public override bool CanRead => _inner.CanRead;
         public override bool CanSeek => false;

@@ -240,6 +240,43 @@ public class SftpUploadProgressIntegrationTests
         }
     }
 
+    [TestMethod]
+    [TestCategory("DockerIntegration")]
+    [Timeout(60_000)]
+    [DataRow(1)]
+    [DataRow(3)]
+    public async Task Upload_MixedSizeBatch_FirstAttemptsAndHashes_AgainstRealOpenSsh(int concurrency)
+    {
+        Settings settings = RequireSettings();
+        await using Client client = await Client.ConnectAsync(settings, settings.Port);
+        int[] sizes = [0, 1, 17, 1023, BlockSize - 1, BlockSize, BlockSize + 1, 256 * 1024 + 17];
+        var files = Enumerable.Range(0, 80).Select(i =>
+            (Path: NewPath(), Data: MakeData(sizes[i % sizes.Length]))).ToArray();
+        int attempts = 0;
+        try
+        {
+            await Parallel.ForEachAsync(files, new ParallelOptions { MaxDegreeOfParallelism = concurrency }, async (file, ct) =>
+            {
+                Interlocked.Increment(ref attempts);
+                using var source = new MemoryStream(file.Data, writable: false);
+                await client.Sftp.UploadAsync(source, file.Path, ct: ct);
+            });
+            Assert.AreEqual(files.Length, attempts, "Every file must succeed on its first attempt, without retries.");
+            foreach (var file in files)
+            {
+                await VerifyDataAsync(client.Sftp, file.Path, file.Data);
+            }
+            TestContext.WriteLine($"EXECUTED target=OpenSSH concurrency={concurrency} files={files.Length} attempts={attempts} hashes=verified");
+        }
+        finally
+        {
+            foreach (var file in files)
+            {
+                await DeleteQuietlyAsync(client.Sftp, file.Path);
+            }
+        }
+    }
+
     private sealed record Settings(string User, string Password, int Port);
     private readonly record struct Sample(double Seconds, ulong Bytes, bool AfterEof);
 

@@ -1209,7 +1209,7 @@ PR #516 的 windows-latest 报 4 条 IDE0055，ubuntu 通过，本地不报。**
 - **连接与文档**:`OpenDualSftpDocumentAsync` 依次连两条,**任一条没连上就整体回滚**;`DualSftpDocument` 两栏各一个 `FileBrowserViewModel`(基类 `SftpDocumentBase`),两条连接归文档所有、关闭一起断,状态灯取较差的一条;启动恢复会话不恢复双栏。
 - **中转**:`ISftpService.UploadStreamAsync` + `Core/Sftp/RemoteRelay`(先 stat 源再开读流喂给目标),`TransferType.Relay` 走原有传输管线,冲突检查同上传。⚠️ **源在开始写之前就读不到时不清理目标** —— 否则「清理半截文件」会删掉用户原有的同名文件。
 - **取消不再被报成「中断,可续传」**:`VelaSftpClientWrapper.UploadAsync` 用 `await using` 包远端流,取消时在途 WRITE 被记成写入失败、关流异常把真正的取消顶掉;改为照发 CLOSE、吞掉关流异常、如实抛 `OperationCanceledException`。⚠️ 这条路径没有自动化用例。
-- **中转断点续传**:口径同上传,源须可 Seek(源是 SFTP 才传续传点),尾部对不上抛 `VelaSftpResumeMismatchException`;FTP 目标交给 FluentFTP 的 Resume。半截文件与上传一致(开着续传就保留)。
+- **中转断点续传（本节当时的实现）**:口径同上传,源须可 Seek（当时仅 SFTP 源传续传点）,尾部对不上抛 `VelaSftpResumeMismatchException`;FTP 目标交给 FluentFTP 的 Resume。半截文件与上传一致(开着续传就保留)。2026-10-28 的 FTP/FTPS 完整缓存也可 seek,可参与目标尾校验续传,但不保证所有目标支持,见 §276。
 - **比较目录**:两栏当前层按大小与修改时间比较(FTP 按推断出的时间精度);不做 SHA-256,也不提供同步窗口(那套按「本地 ↔ 远端」设计,剩余项见 feature-plan.md)。
 - **否决在 A 上 `scp` / `rsync` 直连 B**:要在 A 上持有 B 的凭据或转发 agent、A 要能直连 B、B 的指纹要在 A 上被信任,失败原因多在第三台机器上,用户无从排查。
 - 插件协议这次挡在外;SDK 新增可选接口 `IProtocolStreamUpload`(只增不改,`apiLevel` 不变,velashell-plugin-sdk#28),宿主接入见 §129。
@@ -3007,3 +3007,68 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **改动**:原用例先等 `DrainAsync` 完成并验证原始 `IOException`,再检查回调次数;直接运行异步生产者到背压等待点,去掉用延时猜测启动时机。新增受控阻塞失败回调的用例,明确验证生产者可在回调完成前收到原始错误、Drain 必须等回调结束。生产实现不变:普通流与 sudo 流本已在 finally 中等 Drain,不把测试的过早断言改成新的生产时序约束。
 
 **验证**:Windows 下队列用例 5/5、执行队列与 RPC 相关回归 21/21 通过,0 跳过;两个失败用例重复 30 轮共 60/60 通过。Infrastructure 测试集按 CI 类别过滤运行:1133 通过、0 失败、30 跳过,跳过涉及平台限定、系统密钥链及外部工具/文件系统环境。测试工程及依赖 Debug `-warnaserror` 构建 0 警告/0 错误。未在 Ubuntu/macOS 本机重跑,新增用例无平台过滤,沿用已有三平台 CI 矩阵。不改用户行为、接口或配置,无需修改双语手册与 velashell-docs。
+
+## 273. 2026-10-28 FTP → SFTP 批量中转的完成回复与长度门禁
+
+**来由**:Ctrl 多选 FTP / SSH 后打开双远端文件列表,批量传输 2000 多个文件时出现部分 0B。核实 FluentFTP 55.1.0 后发现其数据流 `DisposeAsync` 不消费最终 FTP 回复,原封装却直接归还连接;中转又把提前 EOF 当正常结束,没有核对源 stat 的正长度。已确认这些代码缺陷,不把它们未经用户服务器复现就说成全部故障的唯一原因。
+
+**改动**:FTP 读流统一独占完成回复消费,关闭数据资源后核实 226/250 才归池;异常、取消、提前弃读、无回复或负回复剔除连接,租约与混合同步/异步释放均幂等,失败路径也归还名额。中转校验已知正长度、兼容 seek 尾部核实与安全回退,源收尾成功前只报已确认字节、不发最终 100%;保留重试记账、原始异常及迟到进度语义。0 仍兼容空/未知大小,不改 SDK 或通用流上传契约;本轮（§273）未增加落盘缓存、原子替换或全文件哈希保证。后续 §276 改为 FTP/FTPS 完整缓存,§277 又将全部文件统一到 `UserPathResolver.Home/.velashell/temp`,不能将本节的无落盘描述用于当前 FTP 中转。新增错误五语齐全,失败目标沿用现有续传/清理设置。
+
+**验证**:修复前 6 项核心回归确定失败;修复后 RemoteRelay 31/31、双栏入口/失败状态/本地化 31/31。Windows 上完整解决方案 Debug `-warnaserror` 0 警告/0 错误;按非外部环境类别过滤的 Core 回归 1413 通过/7 跳过、宿主 3146 通过/9 跳过（随后补正重试记账与 seek-EOF 边界,定向 31 项再次通过）。FTP 定向 56/56,含真实 loopback FTP → RemoteRelay → SftpService（mock SFTP client 目标）,分别以 1/3 并发传 2000 个不同文件,逐文件长度与 SHA-256 全匹配,连接分别复用 1/3 条。Infrastructure 非外部环境全量 1151 通过/30 跳过;独立验证的 Core 对抗探针 71/71、FTP 非压力回归 57/57。跳过不计为已验证,未连接用户生产服务器,未验证真实 Linux SFTP 或 FTPS 端到端。
+
+**文档**:手册中英 §9.6;velashell-docs 中英双栏差距分析 §8.1。既有 0B 文件不会自动恢复,须核对源后重新传输。
+
+## 274. 2026-10-28 FTP 中转频繁重试续查:长度口径与真实写入回归
+
+**来由**:用户实测 §273 后不少文件在刚开始/仍0B时进入自动重试、速度下降。该文案仅表示错误被分类为瞬态,不证明网络断线。上轮2000文件目标为 mock,没有覆盖真实 SFTP 首WRITE/Flush/CLOSE;本轮明确补足协议链覆盖,不把可控复现认作用户服务器现场证据。
+
+**已证缺陷与改动**:7个修复前失败用例证明TYPE A SIZE可把实际14B报为17B,LIST/MLST可把实际6B报为23B,未知SIZE仍被列表显示值冒充精确长度。FTP同租约先确保Binary再SIZE,非目录stat统一该口径;按公开TYPE状态只在必要时切换,OpenRead传正长度或-1禁止库隐式重查。未知时stat沿既有0口径、流内-1,不提供未知长度下“0B+服务端谎报完成”的检测保证。可信长度的早EOF、负/缺完成回复继续失败,不改全局重试与并发。
+
+真实SFTP协议红测另复现源错被目标CLOSE拒绝盖掉的3种场景;上传保留原源异常类型/实例,通过`VelaSftpUploadFailureDetails`附加收尾后的durable与中立cleanup异常,SftpService继续消费精确续传水位。长度错误带结构化预期/实际字节;开启传输日志后,每次失败尝试在退避前写ATTEMPT_FAILED类型链/HResult/数值/目标cleanup类型,不记录异常消息、原始服务端正文或额外路径,重试成功也保留诊断。聚合异常有界遍历。既有最终传输记录仍含用户选择记录的路径,不是声称整个日志无路径。
+
+**验证**:FTP修复前7/7红测;修复后61/61通过（43非压力、4组2000文件×原始/混合元数据×并发1/3、14support）,逐文件RETR=1/SIZE=2、TYPE次数仅连接数、大小/SHA-256一致。真实FTP→RemoteRelay→SftpService→实际VelaSftpClientWrapper→TestSftpServer完整协议链每并发1/3各2000文件首试成功,逐文件RETR=1、目标OPEN各1、哈希正确/无句柄泄漏;它是SSH/SFTP协议测试端,不是OpenSSH。首WRITE延迟ACK时保留0B直至确认,没有额外WRITE重试;拒写、CLOSE错、双错与精确续传定向覆盖。扩展212通过/8个OpenSSH环境用例跳过。最终Core非外部全量1431通过/7跳过、Infrastructure全量1164通过/30跳过;宿主全量3150通过/9跳过（之后补聚合日志测试,最终定向45/45（含独立审查发现后补正的8/9/10层异常链截断标记））,solution Debug `-warnaserror` 0警告/0错误。Docker可用但无运行容器且未配置测试凭据,未擅自启动,未验证真实Linux/FTPS。用户现场实际根因仍需更新构建后的每次重试诊断确认,不宣称本机协议绿测代表现场已彻底解决。
+
+**文档**:手册中英§9.6与velashell-docs中英双栏差距分析§8.1,说明binary SIZE、未知大小限制和每次重试的安全诊断。
+
+## 275. 2026-10-28 双端顺序源的4MiB内存预读缓冲
+
+**历史范围**:本节记录完整缓存方案之前的预读实现与当轮验证,不作为 §276 的测试结果。FTP/FTPS 源现由 §276 的高级下载与完整缓存路径替代;本节的有界预读仍适用于插件非 seek 源,「无磁盘中转」不再适用于 FTP/FTPS。
+
+**来由**:用户再次实测仍有源端正长度但actual=0的中断,要求先增加缓冲再测试。原256KiB搬运块是同循环读写,不能独立吸收两端速度波动;缓冲不承诺修复真实空读取,也不取消完整性检查。
+
+**改动**:不可Seek、非续传源使用内部`BufferedRelayReadStream`,256KiB固定块×16槽,4MiB预算涵盖producer/排队/consumer持块,独立生产任务预读、满时背压、空时等待。已知正长度≤4MiB先全部缓存并校验EOF,源Dispose（含FTP最终回复）成功后才writing/上传;更大或未知源首块成功后边读边写,未知真实空也先完成源收尾。目标实际消费量单独核对,不把预读完当上传完。可Seek源与续传走原路径。取消/源错/目标失败时cancel→join→清零归还全部块,取消回调抛错也不跳过清理,源只关闭一次,首错误和最终进度门禁保持。无磁盘中转/新配置/SDK改动,默认并发3预算约12MiB（不含SFTP原写窗口）。
+
+**验证**:Core Relay定向49/49,覆盖4MiB−1/等于/+1、unknown、独立预读与持consumer半块时总预算4MiB、满队列取消/目标失败、源后续读错、取消callback抛错后全部归还清零、目标提前返回、同步Span读取与seek续传。实际FTP→RemoteRelay→实际SFTP wrapper→协议端25/25,含8MiB+97/未知长度、源最终回复失败不OPEN、小文件源租约在target前归还及2000文件并发1/3每文件RETR/OPEN一次与哈希一致。最终Core非外部全量1458通过/7跳过、宿主3158通过/9跳过、Infrastructure1170通过/30跳过。通过的是协议测试端,未运行真实Linux OpenSSH/FTPS,未访问生产或启动Docker。
+
+**文档**:手册中英§9.6和velashell-docs中英双栏规格§8.1说明容量、预验后写、缓存释放和源空读限制；当前 FTP/FTPS 口径已由 §276 更新。
+
+## 276. 2026-10-28 FTP/FTPS 双端中转改为完整缓存（本轮文档 completed）
+
+**来由与证据边界**:按批准方案,FTP/FTPS 源不再经低级读流边读边上传,改用高级下载先完成源阶段。既有代码缺陷与受控复现已记录在 §273–§275,但没有用户真实现场的唯一根因确认,不把缓存调整写成已彻底修复现场故障,也不声称本轮测过真实 OpenSSH。
+
+**本轮完成的文档变更**:手册中英 §3/§9.6、velashell-docs 中英双栏规格 §8.1–§8.2 已同步批准行为；§128、§273、§275 的旧续传/不落盘口径加上历史范围说明。此记录仅确认文档部分 completed,不替代实现验收或测试结论。
+
+- **FTP/FTPS source**:双远端任一侧作为源均走高级 `DownloadStream` → 完整 cache → Upload。缓存位置以 §277 的统一口径为准：全部文件（含空文件）使用 `UserPathResolver.Home/.velashell/temp` 下随机命名、独占打开、`DeleteOnClose` 临时文件,不再按 ≤4 MiB 内存、large/unknown 系统临时目录分流。源完整 download、缓存 `Flush`、适用的 length 核验与 final reply 全部成功才 touch target,失败前不得打开/截断/写入或清理原目标文件。
+- **生命周期**:同一 `Run` 内自动 target retry 复用成功 cache,只有 source prepare 失败的自动重试才重新 prepare。手动 retry 开新 Run；冲突 rename、最终失败、取消、成功均清理 cache,不跨运行保留。远端半截文件仍按原续传/清理设置处理,不是本地缓存的保留策略。
+- **不变与续传边界**:SFTP → SFTP 原有 stream/seek resume 不变,插件非 seek 源保留 4 MiB 有界预读 buffer。FTP 完整 cache 可 seek,可以参与 target 尾校验续传,但仍需目标协议/实现及设置支持,不宣称所有目标支持。
+- **进度、错误与完整性**:下载准备显示独立阶段,不计 target ACK；本地缓存磁盘失败归为永久错误。unknown SIZE 下没有可信长度,不能证明无短读或源本应非空,final reply 成功也不能排除服务端谎报完成。无全文件哈希或原子替换保证。
+- **server direct 答复**:普通 SFTP 无通用跨服务器复制；SSH 一端执行 `scp` / `sftp` / `rsync` 需服务器互通、工具、凭据及 host key 校验,FXP 受两端服务支持、安全策略与网络条件限制。本次不实现、不转发凭据或 agent。
+
+**最终验证记录（维护者提供的实际执行结果）**:本次文档收口未重新运行构建或测试,以下按执行范围与 snapshot 分开记录,不把旧结果或未完成的运行算作最新通过。
+
+- **最新构建与宿主**:完整 solution `-warnaserror` 构建 0 警告/0 错误；宿主定向 63/63 通过,完整非 Docker 测试 3173 通过/12 跳过。
+- **Core 定向**:staged cache 与旧 relay 回归 87/87 通过；`runtime-async=off` 下同组 87/87 通过。
+- **FTP 最后修正后的回归**:`Noop=false`、`NavigateManual` 与 readonly guard 修正后,focused 33/33 通过、0 跳过；这是定向回归,不是全量 pressure 重跑。独立 readonly 回归 2/2 通过。
+- **新 staged wire**:12/12 通过、0 跳过。链路为实际 loopback FTP → Staged → 实际 SFTP wrapper → `TestSftpServer` memory-wire,不是 mock 目标,也不是 OpenSSH。并发 1/3 各传 2000 个文件,每文件 RETR=1、每组目标 OPEN=2000,逐文件哈希全部一致。目标首次 WRITE 拒绝后,复用同一 cache 换用另一个健康 Harness 上传成功,源 RETR 仍为 1；这是**目标替换后的缓存复用**,不是同一目标会话的恢复验证。源最终回复为 426/451 时,小文件、大文件及未知长度场景的目标 OPEN 均为 0。TRX：`G:/velashell-labs/artifacts/staged-wire-final/results/staged-wire.trx`。
+- **上一 snapshot,不冒充最新全量**:Core 全量 1496 通过/7 跳过、Infrastructure 全量 1197 通过/30 跳过属于 FTP 上述最后修正之前的 snapshot,不作为修正后全量结果。
+- **未通过与环境边界**:`runtime-async=off` 的 FTP 运行遇到 Socket 10048,不计为通过,也不能由 Core 同模式 87/87 替代。跳过不计为已验证。未测试真实 OpenSSH 或生产服务器；本轮结果没有证明用户现场根因,不宣称现场故障已彻底解决。
+
+## 277. 2026-10-28 FTP/FTPS 双端缓存统一用户目录
+
+**本轮事实**:按用户要求,`StagedRelaySource.CreateStorage` 已删除生产内存分支,所有文件统一写入用户目录缓存。同步手册中英 §9.6、velashell-docs 中英双栏规格 §8.1–§8.2；保留现有完整性检查、上传重试复用与清理机制。
+
+- 双远端任一侧作为 FTP/FTPS 源时,全部文件（含空文件、小文件、大文件、unknown）统一缓存到 `UserPathResolver.Home/.velashell/temp` 下随机命名、独占打开、带 `DeleteOnClose` 的文件；不再使用 ≤4 MiB 内存缓存或 large/unknown 系统临时目录。
+- 完整下载、缓存 `Flush`、适用的长度校验及最终完成确认全部成功后才允许上传并触碰目标；同一 `Run` 的自动 upload retry 复用已准备好的缓存。成功、最终失败或取消均释放缓存、关闭删除；手动重试为新 Run,不保留旧缓存。SFTP 原有 stream/seek 与插件有界预读路径不变。
+- 磁盘缓存变更不等于已根治用户报告的约 2% 失败；未知 SIZE 的完整性限制与真实服务器互操作的证据边界不变。
+
+**本轮验证**:Windows Debug 暂存与原中转定向测试 94/94 通过（45 项暂存、49 项 RemoteRelay）,覆盖各大小真实文件存储、正确目录、独占及成功/失败/取消删除。完整 solution `--no-restore -warnaserror` 构建 0 警告、0 错误；`TestCategory=StagedWire` 12/12 通过（含并发 1/3 各 2000 文件的 RETR 次数、长度及 SHA-256）,宿主重试/双栏/本地化定向 63/63 通过,均无跳过。Unix 0700/0600 分支未实机运行,未验证真实 OpenSSH 或生产服务器；不将可控协议测试通过等同于现场约 2% 失败已消除。

@@ -708,6 +708,15 @@
   <data name="SftpErr_ServerExited" xml:space="preserve">
     <value>The server&apos;s sftp-server exited before SFTP could start (exit status {0})</value>
   </data>
+  <data name="FtpSvc_ReadCompletionFailed" xml:space="preserve">
+    <value>The FTP server did not confirm that the transfer completed: {0} {1}</value>
+  </data>
+  <data name="FtpSvc_ReadCompletionTimeout" xml:space="preserve">
+    <value>Timed out waiting for the FTP server to confirm that the transfer completed.</value>
+  </data>
+  <data name="SftpSvc_RelayLengthMismatch" xml:space="preserve">
+    <value>Transfer incomplete: {0}. Expected {1} bytes, but read {2} bytes. The source may have changed or the connection ended early.</value>
+  </data>
   <data name="SftpSvc_ResumeUnverifiable" xml:space="preserve">
     <value>Cannot verify where to resume {0} (the source cannot be read back, or the target cannot resume), so it is handled as a same-name conflict.</value>
   </data>
@@ -9740,4 +9749,10 @@ Send anyway?</value>
   <data name="DiagSvc_TailscaleNoUsernameSkip" xml:space="preserve"><value>No remote username; authentication test skipped</value></data>
   <data name="DiagSvc_SuggestTailscaleUsername" xml:space="preserve"><value>Tailscale SSH needs only the remote system username. Enter it in the edit dialog to run the authentication test.</value></data>
   <data name="DiagSvc_SuggestTailscale" xml:space="preserve"><value>Make sure this device is signed in to Tailscale, the remote username is correct, and the tailnet SSH policy allows this user. If the server asks for browser verification, complete it in the verification window.</value></data>
+  <data name="Transfer_PreparingSource" xml:space="preserve">
+    <value>Downloading the source file to a local cache…</value>
+  </data>
+  <data name="Relay_CacheFailed" xml:space="preserve">
+    <value>Unable to access the local transfer cache. Check free disk space and temporary-directory permissions before retrying.</value>
+  </data>
 </root>

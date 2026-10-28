@@ -2419,9 +2419,12 @@ public class FileBrowserViewModel : ReactiveObject
     /// </summary>
     public bool AcceptsStreamedUploads { get; init; } = true;
 
+    /// <summary>本栏作为中转源时先完整下载并确认完成;仅内建 FTP 栏启用。</summary>
+    internal bool UseStagedRelaySource { get; init; }
+
     /// <summary>
     /// 把另一栏(<see cref="DualPeer" />)选中的条目搬进本栏当前目录:文件夹递归,冲突策略、并发上限、
-    /// 进度、取消、失败重试、断点续传与普通上传完全共用;字节经本机内存流式中转,不落盘。
+    /// 进度、取消、失败重试、断点续传与普通上传完全共用;FTP 源先完整缓存,其它源保持流式中转。
     /// </summary>
     /// <param name="entries">另一栏里的条目(上级目录行会被忽略)。</param>
     /// <param name="ct">取消令牌。</param>
@@ -2443,7 +2446,7 @@ public class FileBrowserViewModel : ReactiveObject
         {
             return;
         }
-        var source = new RelaySource(peer._sftpService, peer._sessionId, peer.ServerDisplayName);
+        var source = new RelaySource(peer._sftpService, peer._sessionId, peer.ServerDisplayName, peer.UseStagedRelaySource);
         string destination = CurrentPath;
         try
         {
@@ -3245,6 +3248,8 @@ public class FileBrowserViewModel : ReactiveObject
             ? TransferRetryPolicy.Clamp(TransferOptions.TransferMaxRetries)
             : 0;
         int retries = 0;
+        // 一次运行内复用已确认完成的源;手动重试/改名另起运行,不跨运行保留缓存。
+        StagedRelaySource? stagedSource = null;
         try
         {
             while (true)
@@ -3298,12 +3303,18 @@ public class FileBrowserViewModel : ReactiveObject
                                            && !_lifetime.IsCancellationRequested
                                            && TransferRetryPolicy.Classify(ex) == TransferFailureKind.Transient)
                 {
+                    if (TransferOptions.TransferLogging)
+                    {
+                        TransferLogService.AppendFailure(TransferOptions.LogDirectory, task.Id, type,
+                            retries + 1, offset, progress.MovedBytes, willRetry: true, ex);
+                    }
                     retries++;
                     bool movedBytes = progress.MovedBytes;
                     long attemptStart = offset;
                     item?.MarkRetrying(retries, maxRetries);
                     await RetryDelay(TransferRetryPolicy.DelayBeforeRetry(retries), itemCt);
-                    offset = await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, itemCt);
+                    offset = await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, itemCt,
+                        hasStagedSource: stagedSource is not null);
                 }
             }
         }
@@ -3333,6 +3344,11 @@ public class FileBrowserViewModel : ReactiveObject
         }
         catch (Exception ex)
         {
+            if (TransferOptions.TransferLogging)
+            {
+                TransferLogService.AppendFailure(TransferOptions.LogDirectory, task.Id, type,
+                    retries + 1, offset, progress.MovedBytes, willRetry: false, ex);
+            }
             // 连接没了(或临时失败重试用完了):记进传输队列的批次里,这不算这个文件失败 ——
             // 换一条连接就能接着传。面板拆掉之后冒出来的任何失败都按这一类算:那是会话被关掉,不是文件的问题。
             TransferFailureKind kind = _lifetime.IsCancellationRequested
@@ -3353,6 +3369,19 @@ public class FileBrowserViewModel : ReactiveObject
         }
         finally
         {
+            // 缓存释放失败不能覆盖原始异常/取消,也不能把已完成改成失败或阻止行的收尾。
+            try
+            {
+                if (stagedSource is not null)
+                {
+                    await stagedSource.DisposeAsync();
+                }
+            }
+            catch (Exception)
+            {
+                // 传输结果已落定;清理仅尽力而为,不把路径或服务器消息写入日志。
+            }
+            stagedSource = null;
             // 落定了:摘掉 ×(取消源随方法返回释放,不能再让那一行去点它)。
             item?.CancelItem = null;
             TransferSink?.NotifyTaskSettled();
@@ -3386,13 +3415,36 @@ public class FileBrowserViewModel : ReactiveObject
             TransferType.Copy =>
                 _sftpService.CopyAsync(_sessionId, localPath, remotePath, progress, itemCt),
             // Relay:LocalPath = 另一栏会话上的源路径,RemotePath = 本会话上的目标路径。
-            TransferType.Relay =>
-                RemoteRelay.CopyFileAsync(
-                    source!.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
-                    progress, () => targetTouched = true, startAt, itemCt),
+            TransferType.Relay => TransferRelayAsync(startAt),
             _ =>
                 _sftpService.DownloadFileAsync(_sessionId, remotePath, localPath, progress, startAt, itemCt),
         };
+
+        async Task TransferRelayAsync(long startAt)
+        {
+            if (!source!.UseStagedRelaySource)
+            {
+                await RemoteRelay.CopyFileAsync(
+                    source.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
+                    progress, () => targetTouched = true, startAt, itemCt);
+                return;
+            }
+            if (stagedSource is null)
+            {
+                item?.IsPreparingSource = true;
+                try
+                {
+                    // 准备没有目标进度,也绝不能标记 targetTouched。失败时不缓存半成品。
+                    stagedSource = await StagedRelaySource.PrepareAsync(source.Service, source.SessionId, localPath, itemCt);
+                }
+                finally
+                {
+                    item?.IsPreparingSource = false;
+                }
+            }
+            await stagedSource.UploadAsync(_sftpService, _sessionId, remotePath,
+                progress, () => targetTouched = true, startAt, itemCt);
+        }
     }
 
     /// <summary>
@@ -3421,7 +3473,8 @@ public class FileBrowserViewModel : ReactiveObject
         RelaySource? source,
         long attemptStart,
         bool movedBytes,
-        CancellationToken ct
+        CancellationToken ct,
+        bool hasStagedSource = false
     )
     {
         if (!TransferOptions.ResumeEnabled)
@@ -3431,6 +3484,12 @@ public class FileBrowserViewModel : ReactiveObject
         if (!movedBytes)
         {
             return attemptStart;
+        }
+        if (hasStagedSource)
+        {
+            // 源已成为本次运行的不可变快照,不能再用原远端文件的大小/存在性判断续传。
+            // 非零只表示请求核实;真实起点、尾部比对与 durable 截断仍由 UploadStreamAsync 处理。
+            return Math.Max(0, await GetRemoteFileSizeAsync(remotePath, [], ct));
         }
         PlannedFileTransfer? resumed = await TryResumeAsync(new(type, localPath, remotePath, Source: source), [], ct);
         return resumed?.ResumeOffset ?? 0;
@@ -4226,7 +4285,7 @@ public class FileBrowserViewModel : ReactiveObject
     );
 
     /// <summary>中转传输的源端:另一栏的文件服务、会话与显示名(日志与传输面板用)。</summary>
-    private sealed record RelaySource(ISftpService Service, Guid SessionId, string DisplayName);
+    private sealed record RelaySource(ISftpService Service, Guid SessionId, string DisplayName, bool UseStagedRelaySource = false);
 }
 
 /// <summary>目录同步交给传输管道的一项:方向、本地路径、远端路径。</summary>

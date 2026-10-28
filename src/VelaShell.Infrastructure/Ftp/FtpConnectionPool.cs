@@ -245,17 +245,25 @@ internal sealed class FtpConnectionPool(
     /// 归还连接。已经掉线的连接**不放回池子** —— 否则它会被反复租出去、每次都要先失败再重连,
     /// 断线后的每一个操作都得多等一个连接超时。
     /// </summary>
-    private void Return(AsyncFtpClient client)
+    private void Return(AsyncFtpClient client, bool invalidated)
     {
-        if (_disposed || !client.IsConnected)
+        try
         {
+            lock (_sync)
+            {
+                if (!_disposed && !invalidated && client.IsConnected)
+                {
+                    _idle.Add(client);
+                    return;
+                }
+            }
             Forget(client);
         }
-        else
+        finally
         {
-            _idle.Add(client);
+            // 即使连接销毁失败,租约占用的并发名额也必须恰好归还一次。
+            _gate.Release();
         }
-        _gate.Release();
     }
 
     /// <summary>把一条已经不可用的连接从池中剔除(不再归还给 <see cref="_idle" />)。</summary>
@@ -265,26 +273,30 @@ internal sealed class FtpConnectionPool(
         {
             _all.Remove(client);
         }
+        // 状态失同步时不能发 QUIT:它会再消费一条未知回复,甚至等待整个控制读超时。
+        client.Config.DisconnectWithQuit = false;
         client.Dispose();
     }
 
     /// <summary>一次连接租借;释放即归还池中。</summary>
     internal sealed class Lease(FtpConnectionPool pool, AsyncFtpClient client) : IDisposable
     {
-        private bool _returned;
+        private int _returned;
+        private int _invalidated;
 
         /// <summary>租到的连接。</summary>
         public AsyncFtpClient Client { get; } = client;
 
-        /// <summary>归还连接。</summary>
+        /// <summary>协议状态不再可信;即使 socket 仍连接也不得复用。须在归还前调用。</summary>
+        public void Invalidate() => Interlocked.Exchange(ref _invalidated, 1);
+
+        /// <summary>原子幂等归还连接。</summary>
         public void Dispose()
         {
-            if (_returned)
+            if (Interlocked.Exchange(ref _returned, 1) == 0)
             {
-                return;
+                pool.Return(Client, Volatile.Read(ref _invalidated) != 0);
             }
-            _returned = true;
-            pool.Return(Client);
         }
     }
 }

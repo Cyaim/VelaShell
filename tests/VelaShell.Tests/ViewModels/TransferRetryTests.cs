@@ -1,12 +1,14 @@
 using Avalonia.Headless;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using NSubstitute.Extensions;
 using ReactiveUI.Primitives;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Sftp;
 using VelaShell.Core.Ssh;
 using VelaShell.Tests.TestSupport;
+using VelaShell.Services;
 using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
@@ -230,6 +232,478 @@ public sealed class TransferRetryTests
             Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
         Assert.AreEqual(TransferStatus.Completed, rig.Sink.Transfers.Single().Status);
     });
+
+    [TestMethod]
+    public Task AttemptDiagnostics_RecordsRecoveredFailuresWithoutLeakingMessagesOrPaths() => OnUi(async () =>
+    {
+        using var rig = new Rig(retries: 2);
+        rig.Browser.TransferOptions.TransferLogging = true;
+        rig.Browser.TransferOptions.LogDirectory = rig.Directory;
+        rig.Sftp.DownloadFileAsync(rig.SessionId, RemoteFile, Arg.Any<string>(), Arg.Any<IProgress<TransferProgress>?>(),
+                Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException(new RemoteTransferLengthException("/secret/token=private-path", 1024, 0)),
+                _ => Task.CompletedTask);
+
+        await rig.DownloadAsync();
+
+        string log = File.ReadAllText(System.IO.Directory.GetFiles(rig.Directory, "transfer-*.log").Single());
+        string diagnostic = log.Split('\n').Single(line => line.Contains("ATTEMPT_FAILED", StringComparison.Ordinal));
+        StringAssert.Contains(diagnostic, "attempt=1");
+        StringAssert.Contains(diagnostic, "retry=True");
+        StringAssert.Contains(diagnostic, nameof(RemoteTransferLengthException));
+        StringAssert.Contains(diagnostic, "expected=1024,actual=0");
+        Assert.IsFalse(diagnostic.Contains("secret", StringComparison.Ordinal));
+        Assert.IsFalse(diagnostic.Contains("private-path", StringComparison.Ordinal));
+        Assert.IsFalse(diagnostic.Contains(RemoteFile, StringComparison.Ordinal));
+        Assert.AreEqual(TransferStatus.Completed, rig.Sink.Transfers.Single().Status);
+    });
+
+    [TestMethod]
+    public Task AttemptDiagnostics_RespectsLoggingDisabled() => OnUi(async () =>
+    {
+        using var rig = new Rig(retries: 1);
+        rig.Browser.TransferOptions.LogDirectory = rig.Directory;
+        rig.Sftp.DownloadFileAsync(rig.SessionId, RemoteFile, Arg.Any<string>(), Arg.Any<IProgress<TransferProgress>?>(),
+                Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new IOException("password=do-not-log"));
+
+        await rig.DownloadAsync();
+
+        Assert.IsEmpty(System.IO.Directory.GetFiles(rig.Directory, "transfer-*.log"));
+    });
+
+    [TestMethod]
+    public void AttemptDiagnostics_RecordsNestedTypesAndDurableBytesWithoutServerText()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vela-attempt-log-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var failure = new VelaSftpTransferInterruptedException("token=private-server-response", 4096,
+                new IOException("/private/location", new TimeoutException("password=secret")));
+            new VelaSftpUploadFailureDetails(2048, new VelaSftpPermissionDeniedException("/private/cleanup token=secret"))
+                .AttachTo(failure);
+            TransferLogService.AppendFailure(directory, Guid.NewGuid(), TransferType.Relay, 2, 1024, true, false, failure);
+
+            string log = File.ReadAllText(System.IO.Directory.GetFiles(directory, "transfer-*.log").Single());
+            StringAssert.Contains(log, "durable=4096,refused=False");
+            StringAssert.Contains(log, nameof(TimeoutException));
+            StringAssert.Contains(log, "targetDurable=2048");
+            StringAssert.Contains(log, "cleanup=VelaSftpPermissionDeniedException");
+            StringAssert.Contains(log, "retry=False");
+            Assert.IsFalse(log.Contains("private", StringComparison.Ordinal));
+            Assert.IsFalse(log.Contains("secret", StringComparison.Ordinal));
+            Assert.IsFalse(log.Contains("token=", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void AttemptDiagnostics_CacheFailureIsPermanentAndLocal_WithoutLeakingMessages()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vela-cache-log-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var timeout = new TimeoutException("password=private-cache-secret");
+            var io = new IOException("/private/cache/location token=private-cache-token", timeout);
+            var failure = new RelayCacheException("write", io);
+            Assert.AreEqual(TransferFailureKind.Permanent, TransferRetryPolicy.Classify(failure),
+                "本地缓存错误不能被内层可重试的超时误判为链路故障。");
+
+            TransferLogService.AppendFailure(directory, Guid.NewGuid(), TransferType.Relay, 1, 0, false, false, failure);
+
+            string log = File.ReadAllText(System.IO.Directory.GetFiles(directory, "transfer-*.log").Single());
+            StringAssert.Contains(log, "ATTEMPT_FAILED");
+            StringAssert.Contains(log, "kind=Permanent");
+            StringAssert.Contains(log, "stage=local-cache");
+            StringAssert.Contains(log, "retry=False");
+            StringAssert.Contains(log, nameof(RelayCacheException));
+            StringAssert.Contains(log, nameof(IOException));
+            StringAssert.Contains(log, nameof(TimeoutException));
+            foreach (string message in new[] { failure.Message, io.Message, timeout.Message })
+            {
+                Assert.IsFalse(log.Contains(message, StringComparison.Ordinal), "诊断不能输出任何一层异常消息。");
+            }
+            Assert.IsFalse(log.Contains("/private/cache/location", StringComparison.Ordinal));
+            Assert.IsFalse(log.Contains("private-cache-secret", StringComparison.Ordinal));
+            Assert.IsFalse(log.Contains("private-cache-token", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void AttemptDiagnostics_RecordsAggregateBranchesButNeverMessages()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vela-attempt-aggregate-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var error = new AggregateException("token=secret",
+                new IOException("/private/source"), new VelaSftpPermissionDeniedException("password=secret"));
+            TransferLogService.AppendFailure(directory, Guid.NewGuid(), TransferType.Relay, 1, 0, false, false, error);
+
+            string log = File.ReadAllText(System.IO.Directory.GetFiles(directory, "transfer-*.log").Single());
+            StringAssert.Contains(log, nameof(IOException));
+            StringAssert.Contains(log, nameof(VelaSftpPermissionDeniedException));
+            StringAssert.Contains(log, "kind=Permanent");
+            Assert.IsFalse(log.Contains("secret", StringComparison.Ordinal));
+            Assert.IsFalse(log.Contains("private", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(8, false)]
+    [DataRow(9, false)]
+    [DataRow(10, false)]
+    [DataRow(9, true)]
+    public void AttemptDiagnostics_MarksTruncatedExceptionChains(int count, bool aggregate)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vela-attempt-boundary-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Exception error = new IOException("private");
+            if (aggregate)
+            {
+                error = new AggregateException(Enumerable.Range(1, count - 1).Select(_ => new IOException("private")));
+            }
+            else
+            {
+                for (int i = 1; i < count; i++) error = new IOException("private", error);
+            }
+            TransferLogService.AppendFailure(directory, Guid.NewGuid(), TransferType.Relay, 1, 0, false, false, error);
+
+            string log = File.ReadAllText(System.IO.Directory.GetFiles(directory, "transfer-*.log").Single());
+            Assert.AreEqual(count > 8, log.Contains("truncated=True", StringComparison.Ordinal));
+            Assert.IsFalse(log.Contains("private", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task StagedRelay_TargetRetryReusesReadySource_EvenIfOriginalChanges(bool resume) => OnUi(async () =>
+    {
+        var rig = new RelayRig(resume: resume);
+        var inputs = new List<Stream>();
+        var offsets = new List<long>();
+        rig.Sftp.Configure().UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(async call =>
+        {
+            Stream input = call.ArgAt<Stream>(1);
+            inputs.Add(input);
+            offsets.Add(call.ArgAt<long>(6));
+            Assert.IsTrue(input.CanSeek);
+            Assert.IsFalse(rig.Item.IsPreparingSource);
+            Assert.AreEqual(10L, call.ArgAt<long>(3));
+            if (inputs.Count == 1)
+            {
+                Assert.AreEqual(0L, input.Position);
+                input.Seek(4, SeekOrigin.Begin);
+                call.ArgAt<IProgress<TransferProgress>?>(5)?.Report(RelayRig.Progress(4));
+                rig.Sftp.ExistsAsync(rig.TargetId, "/a.bin", Arg.Any<CancellationToken>()).Returns(true);
+                rig.Sftp.GetFileInfoAsync(rig.TargetId, "/a.bin", Arg.Any<CancellationToken>()).Returns(Remote(4));
+                // 已缓存后原源消失:自动续传不能重新 stat 它,更不能重新下载。
+                rig.Sftp.GetFileInfoAsync(rig.SourceId, RemoteFile, Arg.Any<CancellationToken>())
+                    .ThrowsAsync(new FileNotFoundException("source moved"));
+                throw new VelaSftpTransferInterruptedException("target interrupted", 4);
+            }
+            Assert.AreEqual(0L, input.Position, "每次上传必须重置缓存,尾部核验仍交给目标服务。");
+            if (resume)
+            {
+                input.Seek(2, SeekOrigin.Begin);
+                Assert.AreEqual(2, input.ReadByte(), "续传尾部必须可重新读取缓存。");
+            }
+            input.Seek(call.ArgAt<long>(6), SeekOrigin.Begin);
+            await input.CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(8));
+        });
+
+        await rig.RunAsync();
+
+        Assert.AreEqual(TransferStatus.Completed, rig.Item.Status);
+        Assert.AreSequenceEqual(resume ? new long[] { 0, 4 } : [0L, 0L], offsets.ToArray());
+        Assert.AreEqual(1, rig.Downloads);
+        Assert.AreEqual(1, rig.Delays);
+        Assert.IsTrue(inputs.All(input => !input.CanRead), "运行结束必须释放上传所用缓存。");
+        Assert.IsNull(rig.Item.CancelItem);
+        await rig.Sftp.Received(1).GetFileInfoAsync(rig.SourceId, RemoteFile, Arg.Any<CancellationToken>());
+        await rig.Sftp.DidNotReceiveWithAnyArgs().OpenReadAsync(default, null!);
+    });
+
+    [TestMethod]
+    public Task StagedRelay_PreparationDoesNotAuthorizeResumeOfUntouchedTarget() => OnUi(async () =>
+    {
+        var rig = new RelayRig(resume: true);
+        var offsets = new List<long>();
+        rig.Sftp.Configure().UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(async call =>
+        {
+            offsets.Add(call.ArgAt<long>(6));
+            if (offsets.Count == 1)
+            {
+                // 下载源已经完成,但上传还没有确认任何字节。后来出现的目标不是本次写出的。
+                rig.Sftp.ExistsAsync(rig.TargetId, "/a.bin", Arg.Any<CancellationToken>()).Returns(true);
+                rig.Sftp.GetFileInfoAsync(rig.TargetId, "/a.bin", Arg.Any<CancellationToken>()).Returns(Remote(4));
+                throw new TimeoutException("target not ready");
+            }
+            await call.ArgAt<Stream>(1).CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(8));
+        });
+
+        await rig.RunAsync();
+
+        Assert.AreEqual(TransferStatus.Completed, rig.Item.Status);
+        Assert.AreEqual(1, rig.Downloads);
+        Assert.AreSequenceEqual(new long[] { 0, 0 }, offsets.ToArray());
+        await rig.Sftp.DidNotReceive().GetFileInfoAsync(rig.TargetId, "/a.bin", Arg.Any<CancellationToken>());
+    });
+
+    [TestMethod]
+    public Task StagedRelay_PrepareFailureRedownloads_WithoutCountingSourceProgress() => OnUi(async () =>
+    {
+        var rig = new RelayRig();
+        var destinations = new List<Stream>();
+        rig.Sftp.Configure().DownloadStreamAsync(default, null!, null!).ReturnsForAnyArgs(async call =>
+        {
+            Stream destination = call.ArgAt<Stream>(2);
+            destinations.Add(destination);
+            Assert.IsTrue(rig.Item.IsPreparingSource);
+            Assert.AreEqual(Strings.Get("Transfer_PreparingSource"), rig.Item.ProgressText);
+            Assert.AreEqual(0L, rig.Item.TransferredBytes);
+            Assert.AreEqual(0, rig.Uploads);
+            await destination.WriteAsync(RelayRig.Data, call.ArgAt<CancellationToken>(4));
+            call.ArgAt<IProgress<TransferProgress>?>(3)?.Report(RelayRig.Progress(10));
+            if (destinations.Count == 1) throw new TimeoutException("source completion failed");
+        });
+
+        await rig.RunAsync();
+
+        Assert.AreEqual(2, rig.Downloads);
+        Assert.AreEqual(1, rig.Uploads);
+        Assert.AreEqual(TransferStatus.Completed, rig.Item.Status);
+        Assert.AreNotSame(destinations[0], destinations[1]);
+        Assert.IsTrue(destinations.All(stream => !stream.CanWrite));
+        Assert.IsFalse(rig.Item.IsPreparingSource);
+        Assert.IsNull(rig.Item.CancelItem);
+        await rig.Sftp.DidNotReceiveWithAnyArgs().DeleteAsync(default, null!);
+    });
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task StagedRelay_SourceFailureNeverTouchesExistingTarget(bool resume) => OnUi(async () =>
+    {
+        var rig = new RelayRig(resume: resume);
+        var errors = new List<string?>();
+        bool refreshedAfterFailure = false;
+        Stream? prepareDestination = null;
+        rig.Target.PropertyChanged += (_, change) =>
+        {
+            if (change.PropertyName == nameof(FileBrowserViewModel.ErrorMessage))
+                errors.Add(rig.Target.ErrorMessage);
+        };
+        rig.Sftp.ListDirectoryAsync(rig.TargetId, "/", Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            if (rig.Sink.Transfers.SingleOrDefault()?.Status == TransferStatus.Failed)
+                refreshedAfterFailure = true;
+            return Task.FromResult(new List<RemoteFileInfo> { Remote(4) });
+        });
+        rig.Sftp.GetFileInfoAsync(rig.TargetId, "/a.bin", Arg.Any<CancellationToken>()).Returns(Remote(4));
+        rig.Sftp.Configure().DownloadStreamAsync(default, null!, null!)
+            .ReturnsForAnyArgs(call =>
+            {
+                prepareDestination = call.ArgAt<Stream>(2);
+                return Task.FromException(new UnauthorizedAccessException("source denied"));
+            });
+
+        await rig.RunAsync();
+
+        Assert.AreEqual(TransferStatus.Failed, rig.Item.Status);
+        // RunTransferAsync 确实报告源错误;ReceiveFromPeerAsync 末尾的 RefreshAsync →
+        // NavigateCoreAsync 会清掉面板错误,但不能清掉已经落定的传输失败状态。
+        Assert.AreSequenceEqual(new string?[] { "source denied", null }, errors.ToArray());
+        Assert.IsTrue(refreshedAfterFailure, "确认清错来自传输落定后的目录刷新,而非未执行下载。");
+        Assert.IsNull(rig.Target.ErrorMessage);
+        Assert.IsNotNull(prepareDestination, "源下载 mock 必须实际执行。");
+        Assert.IsFalse(prepareDestination.CanWrite, "失败的源准备缓存必须释放。");
+        await rig.Sftp.Received(1).DownloadStreamAsync(rig.SourceId, RemoteFile, Arg.Any<Stream>(),
+            Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<CancellationToken>());
+        Assert.AreEqual(1, rig.Downloads);
+        Assert.AreEqual(0, rig.Uploads);
+        Assert.AreEqual(0, rig.Delays);
+        Assert.IsNull(rig.Item.CancelItem);
+        Assert.IsFalse(rig.Item.IsPreparingSource);
+        await rig.Sftp.DidNotReceiveWithAnyArgs().DeleteAsync(default, null!);
+    });
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task StagedRelay_CancellationCleansCacheAndItem(bool duringUpload) => OnUi(async () =>
+    {
+        var rig = new RelayRig();
+        Stream? cache = null;
+        var started = new TaskCompletionSource();
+        if (duringUpload)
+        {
+            rig.Sftp.Configure().UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(async call =>
+            {
+                cache = call.ArgAt<Stream>(1);
+                started.SetResult();
+                await Task.Delay(Timeout.Infinite, call.ArgAt<CancellationToken>(8));
+            });
+        }
+        else
+        {
+            rig.Sftp.Configure().DownloadStreamAsync(default, null!, null!).ReturnsForAnyArgs(async call =>
+            {
+                cache = call.ArgAt<Stream>(2);
+                await cache.WriteAsync(RelayRig.Data, call.ArgAt<CancellationToken>(4));
+                started.SetResult();
+                await Task.Delay(Timeout.Infinite, call.ArgAt<CancellationToken>(4));
+            });
+        }
+        Task run = rig.RunAsync();
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.IsNotNull(rig.Item.CancelItem);
+        rig.Item.CancelItem();
+        await run.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.AreEqual(TransferStatus.Cancelled, rig.Item.Status);
+        Assert.IsNotNull(cache);
+        Assert.IsFalse(duringUpload ? cache.CanRead : cache.CanWrite);
+        Assert.IsNull(rig.Item.CancelItem);
+        Assert.IsFalse(rig.Item.IsPreparingSource);
+        Assert.AreEqual(0, rig.Delays);
+        await rig.Sftp.Received(duringUpload ? 1 : 0).DeleteAsync(rig.TargetId, "/a.bin",
+            Arg.Any<IProgress<SftpDeleteProgress>?>(), Arg.Any<CancellationToken>());
+    });
+
+    [TestMethod]
+    public Task StagedRelay_ManualRetryPreparesANewSource() => OnUi(async () =>
+    {
+        var rig = new RelayRig();
+        rig.Sftp.Configure().UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(
+            _ => Task.FromException(new UnauthorizedAccessException("target denied")),
+            call => call.ArgAt<Stream>(1).CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(8)));
+        await rig.RunAsync();
+        TransferItemViewModel failed = rig.Item;
+        Assert.AreEqual(TransferStatus.Failed, failed.Status);
+        Assert.IsNotNull(failed.RetryAsync);
+
+        await failed.RetryAsync();
+
+        Assert.AreEqual(2, rig.Downloads);
+        Assert.AreEqual(2, rig.Uploads);
+        Assert.HasCount(2, rig.Sink.Transfers);
+        Assert.AreEqual(1, rig.Sink.Transfers.Count(item => item.Status == TransferStatus.Completed));
+    });
+
+    [TestMethod]
+    public Task StagedRelay_RenamedRetryPreparesANewSource() => OnUi(async () =>
+    {
+        var rig = new RelayRig(resume: true);
+        rig.Target.TransferOptions.ConflictPolicy = "rename";
+        rig.Sftp.ListDirectoryAsync(rig.TargetId, "/", Arg.Any<CancellationToken>()).Returns([Remote(4)]);
+        rig.Sftp.GetFileInfoAsync(rig.TargetId, "/a.bin", Arg.Any<CancellationToken>()).Returns(Remote(4));
+        var paths = new List<string>();
+        Stream? firstInput = null;
+        rig.Sftp.Configure().UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(async call =>
+        {
+            paths.Add(call.ArgAt<string>(2));
+            if (paths.Count == 1)
+            {
+                firstInput = call.ArgAt<Stream>(1);
+                Assert.AreEqual(4L, call.ArgAt<long>(6));
+                throw new VelaSftpResumeMismatchException("tail differs");
+            }
+            Assert.IsNotNull(firstInput);
+            Assert.IsFalse(firstInput.CanRead, "改名的新运行开始前必须释放旧缓存。");
+            Assert.AreEqual(0L, call.ArgAt<long>(6));
+            await call.ArgAt<Stream>(1).CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(8));
+        });
+
+        await rig.RunAsync();
+
+        Assert.AreEqual(2, rig.Downloads);
+        Assert.HasCount(2, paths);
+        Assert.AreNotEqual(paths[0], paths[1]);
+        Assert.AreEqual(1, rig.Sink.Transfers.Count(item => item.Status == TransferStatus.Completed));
+        Assert.AreEqual(1, rig.Sink.Transfers.Count(item => item.Status == TransferStatus.Cancelled));
+        Assert.IsTrue(rig.Sink.Transfers.All(item => item.CancelItem is null));
+        await rig.Sftp.DidNotReceiveWithAnyArgs().DeleteAsync(default, null!);
+    });
+
+    [TestMethod]
+    public Task StagedRelay_CacheFailureIsPermanent_EvenWithTransientInnerError() => OnUi(async () =>
+    {
+        var rig = new RelayRig();
+        var failure = new RelayCacheException("write", new IOException("cache failed", new TimeoutException()));
+        rig.Sftp.Configure().DownloadStreamAsync(default, null!, null!)
+            .ReturnsForAnyArgs(_ => Task.FromException(failure));
+
+        await rig.RunAsync();
+
+        Assert.AreEqual(TransferFailureKind.Permanent, TransferRetryPolicy.Classify(failure));
+        Assert.AreEqual(TransferStatus.Failed, rig.Item.Status);
+        Assert.AreEqual(1, rig.Downloads);
+        Assert.AreEqual(0, rig.Uploads);
+        Assert.AreEqual(0, rig.Delays);
+        Assert.IsNull(rig.Item.CancelItem);
+        await rig.Sftp.DidNotReceiveWithAnyArgs().DeleteAsync(default, null!);
+    });
+
+    private sealed class RelayRig
+    {
+        public static readonly byte[] Data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        public Guid SourceId { get; } = Guid.NewGuid();
+        public Guid TargetId { get; } = Guid.NewGuid();
+        public ISftpService Sftp { get; } = Substitute.For<ISftpService>();
+        public FileTransferViewModel Sink { get; } = new();
+        public FileBrowserViewModel Target { get; }
+        public TransferItemViewModel Item => Sink.Transfers.Single();
+        public int Delays { get; private set; }
+        public int Downloads => Sftp.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(ISftpService.DownloadStreamAsync));
+        public int Uploads => Sftp.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(ISftpService.UploadStreamAsync));
+
+        public RelayRig(bool resume = false)
+        {
+            Sftp.ListDirectoryAsync(default, null!).ReturnsForAnyArgs(_ => Task.FromResult(new List<RemoteFileInfo>()));
+            Sftp.GetFileInfoAsync(SourceId, RemoteFile, Arg.Any<CancellationToken>()).Returns(Remote(10));
+            Sftp.DownloadStreamAsync(default, null!, null!).ReturnsForAnyArgs(call =>
+                call.ArgAt<Stream>(2).WriteAsync(Data, call.ArgAt<CancellationToken>(4)).AsTask());
+            Sftp.UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(call =>
+                call.ArgAt<Stream>(1).CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(8)));
+            var source = new FileBrowserViewModel(Sftp, SourceId) { UseStagedRelaySource = true };
+            Target = new FileBrowserViewModel(Sftp, TargetId)
+            {
+                DualPeer = source,
+                TransferSink = Sink,
+                TransferOptions = new()
+                {
+                    ConflictPolicy = "overwrite", ResumeEnabled = resume, AutoCleanTempFiles = true,
+                    TransferMaxRetries = 2, TransferLogging = false, NotifyOnComplete = false,
+                },
+                RetryDelay = (_, _) => { Delays++; return Task.CompletedTask; },
+            };
+            source.DualPeer = Target;
+        }
+
+        public Task RunAsync() => Target.ReceiveFromPeerAsync([new(Remote(10))]);
+        public static TransferProgress Progress(long bytes) => new()
+        {
+            FileName = "a.bin", BytesTransferred = bytes, TotalBytes = 10, Percentage = (int)(bytes * 10),
+            SpeedBytesPerSecond = 0, EstimatedTimeRemaining = TimeSpan.Zero,
+        };
+    }
 
     private static Task OnUi(Func<Task> body) => _session.RunOnUiAsync(body);
 

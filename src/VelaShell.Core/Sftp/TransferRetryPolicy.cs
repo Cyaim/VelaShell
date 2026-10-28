@@ -127,6 +127,9 @@ public static class TransferRetryPolicy
         // —— 网络层。
         TimeoutException or SocketException => TransferFailureKind.Transient,
 
+        // —— 本地中转缓存错误不是链路故障,即使内层看似可重试也不能重复下载撞磁盘。
+        RelayCacheException => TransferFailureKind.Permanent,
+
         // —— 本地文件系统。
         UnauthorizedAccessException => TransferFailureKind.Permanent,
         FileNotFoundException or DirectoryNotFoundException or PathTooLongException or DriveNotFoundException =>

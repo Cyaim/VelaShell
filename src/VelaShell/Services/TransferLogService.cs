@@ -1,5 +1,7 @@
 using System.Text;
 using VelaShell.Core.Models;
+using VelaShell.Core.Sftp;
+using VelaShell.Core.Ssh;
 
 namespace VelaShell.Services;
 
@@ -47,6 +49,75 @@ public static class TransferLogService
         catch
         {
             // 日志失败不影响传输本身。
+        }
+    }
+
+    /// <summary>每次失败尝试的安全诊断。刻意不写异常消息、文件路径、主机或服务端回复正文。</summary>
+    public static void AppendFailure(string? configuredDirectory, Guid transferId, TransferType type,
+        int attempt, long startOffset, bool movedBytes, bool willRetry, Exception error)
+    {
+        try
+        {
+            string dir = ResolveDirectory(configuredDirectory);
+            Directory.CreateDirectory(dir);
+            string file = Path.Combine(dir, $"transfer-{DateTime.Now:yyyyMMdd}.log");
+            var details = new List<string>();
+            // 只允许固定格式的类型标识和数值;异常消息可能带服务器路径、口令或私有协议字段。
+            var pending = new Queue<Exception>();
+            var seen = new HashSet<Exception>(ReferenceEqualityComparer.Instance);
+            pending.Enqueue(error);
+            while (seen.Count < 8 && pending.TryDequeue(out Exception? current))
+            {
+                if (!seen.Add(current)) continue;
+                if (current is AggregateException aggregate)
+                {
+                    foreach (Exception child in aggregate.InnerExceptions.Take(8)) pending.Enqueue(child);
+                }
+                else if (current.InnerException is { } nested)
+                {
+                    pending.Enqueue(nested);
+                }
+                string name = new(current.GetType().Name.Where(c => char.IsAsciiLetterOrDigit(c) || c == '_').Take(100).ToArray());
+                details.Add($"{name}:0x{current.HResult:X8}");
+                if (current is RemoteTransferLengthException length)
+                {
+                    details.Add($"expected={length.ExpectedBytes},actual={length.ActualBytes}");
+                }
+                if (current is VelaSftpTransferInterruptedException interrupted)
+                {
+                    details.Add($"durable={interrupted.DurableLength},refused={interrupted.RefusedByServer}");
+                }
+                if (VelaSftpUploadFailureDetails.Get(current) is { } target)
+                {
+                    details.Add($"targetDurable={target.DurableLength}");
+                    if (target.CleanupException is { } cleanup)
+                    {
+                        string cleanupName = new(cleanup.GetType().Name.Where(c => char.IsAsciiLetterOrDigit(c) || c == '_').Take(100).ToArray());
+                        details.Add($"cleanup={cleanupName}:0x{cleanup.HResult:X8}");
+                    }
+                }
+            }
+            if (pending.Count > 0) details.Add("truncated=True");
+            string stage = error switch
+            {
+                RelayCacheException => "local-cache",
+                RemoteTransferLengthException => "source-length",
+                VelaSftpTransferInterruptedException => "target-write-or-close",
+                VelaShell.Core.Ftp.VelaFtpClientException => "ftp-operation",
+                _ => "transfer",
+            };
+            string line = string.Join('\t', DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                "ATTEMPT_FAILED", transferId.ToString("N"), type.ToString().ToUpperInvariant(), $"stage={stage}",
+                $"attempt={attempt}", $"start={startOffset}", $"moved={movedBytes}", $"retry={willRetry}",
+                $"kind={TransferRetryPolicy.Classify(error)}", string.Join(';', details)) + Environment.NewLine;
+            lock (Gate)
+            {
+                File.AppendAllText(file, line, Encoding.UTF8);
+            }
+        }
+        catch
+        {
+            // 与最终传输记录一样,日志失败不影响传输。
         }
     }
 

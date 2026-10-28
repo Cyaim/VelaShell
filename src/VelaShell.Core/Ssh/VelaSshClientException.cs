@@ -81,6 +81,28 @@ public class VelaSftpTransferInterruptedException(string message, long durableLe
     public bool RefusedByServer { get; init; }
 }
 
+/// <summary>
+/// 上传主错误之外的目标收尾结果。附在原异常上,不改变源错误的类型、实例与重试分类。
+/// </summary>
+/// <param name="DurableLength">收尾之后目标从开头起连续收到 WRITE 成功确认的字节数。</param>
+/// <param name="CleanupException">目标收尾的中立异常;收尾成功时为 null。不是本次上传的主错误。</param>
+public sealed record VelaSftpUploadFailureDetails(long DurableLength, Exception? CleanupException)
+{
+    /// <summary>把目标结果附到主异常,主异常仍是调用方应处理的原因。</summary>
+    public void AttachTo(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        exception.Data[typeof(VelaSftpUploadFailureDetails)] = this;
+    }
+
+    /// <summary>读取上传失败的目标收尾结果;不是此类失败时为 null。</summary>
+    public static VelaSftpUploadFailureDetails? Get(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception.Data[typeof(VelaSftpUploadFailureDetails)] as VelaSftpUploadFailureDetails;
+    }
+}
+
 /// <summary>SFTP 路径不存在(SSH_FX_NO_SUCH_FILE)。</summary>
 public class VelaSftpPathNotFoundException(string message, Exception? innerException = null) : VelaSftpOperationException(message, innerException);
 

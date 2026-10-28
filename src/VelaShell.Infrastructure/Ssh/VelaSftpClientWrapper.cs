@@ -193,10 +193,25 @@ public sealed class VelaSftpClientWrapper(Func<CancellationToken, ValueTask<Sftp
                 await CloseQuietlyAsync(remote).ConfigureAwait(false);
                 throw new OperationCanceledException(ct);
             }
-            catch (Exception)
+            catch (Exception primary)
             {
-                // 真失败:与原先 await using 的行为一致 —— 关流报出的「中断 + 精确的已确认字节数」若有,就由它往外报。
-                await remote.DisposeAsync().ConfigureAwait(false);
+                // 源读取 / 回调可能先失败,CLOSE 的拒绝或在途 WRITE 的中断不能盖掉主错误。
+                // 仍然排空并归还句柄,在收尾后采样水位(不足一块的尾巴可能到关闭才真正发出)。
+                Exception? cleanup = null;
+                try
+                {
+                    await remote.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    cleanup = SshInterop.Translate(ex, ct) ?? ex;
+                }
+                Exception failure = SshInterop.Translate(primary, ct) ?? primary;
+                new VelaSftpUploadFailureDetails(remote.DurableLength, cleanup).AttachTo(failure);
+                if (!ReferenceEquals(failure, primary))
+                {
+                    throw failure;
+                }
                 throw;
             }
             await remote.DisposeAsync().ConfigureAwait(false);
