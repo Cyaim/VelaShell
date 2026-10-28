@@ -51,9 +51,15 @@ public sealed partial class RemoteTransferTests
         {
             foreach (bool approved in new[] { false, true })
             {
+                TaskCompletionSource asking = NewSignal();
+                var decision = new TaskCompletionSource<PluginPermissionDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
                 IPluginPermissionPrompt prompt = Substitute.For<IPluginPermissionPrompt>();
                 prompt.RequestFileUploadAsync("test.manager", Arg.Any<string>(), RemoteFsCapability.ResolveUploadSource(file), "/target", false, Arg.Any<long>(), Arg.Any<CancellationToken>())
-                    .Returns(PluginPermissionDecision.AllowOnce);
+                    .Returns(async call =>
+                    {
+                        asking.TrySetResult();
+                        return await decision.Task.WaitAsync(call.ArgAt<CancellationToken>(6));
+                    });
                 await using var manager = new PluginManager(new()
                 {
                     PluginRoots = [],
@@ -70,9 +76,17 @@ public sealed partial class RemoteTransferTests
                 using var context = (PluginContext)typeof(PluginManager).GetMethod("CreateContext", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(manager, [manifest, runtime])!;
                 var api = (RemoteFsCapability)context.RemoteFs;
                 RemoteTransferSnapshot start = await api.StartUploadAsync(_session.ToString(), file, "/target", new() { OperationId = "manager" });
+                Assert.AreEqual(RemoteTransferPhase.Approval, start.Phase, "回执就在等宿主确认");
+                if (approved)
+                {
+                    // 先观察待审批状态再放行,不让即时同意与启动回执争抢后台调度。
+                    await asking.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    Assert.AreEqual(RemoteTransferPhase.Approval, (await api.GetTransferAsync(start.TransferId)).Phase);
+                    await _sftp.DidNotReceive().UploadStreamAsync(Arg.Any<Guid>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<DateTime?>(), Arg.Any<IProgress<TransferProgress>>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>());
+                    decision.SetResult(PluginPermissionDecision.AllowOnce);
+                }
                 RemoteTransferSnapshot done = await Terminal(api, start.TransferId);
                 Assert.AreEqual(approved ? RemoteTransferState.Succeeded : RemoteTransferState.Failed, done.State, done.ErrorMessage);
-                Assert.AreEqual(RemoteTransferPhase.Approval, start.Phase, "回执就在等宿主确认");
                 Assert.AreEqual(approved ? RemoteTransferPhase.Commit : RemoteTransferPhase.Approval, done.Phase,
                     "批准之后走完传输、校验与提交;被拒的停在确认阶段");
                 Assert.IsTrue(done.RemoteStopConfirmed);
