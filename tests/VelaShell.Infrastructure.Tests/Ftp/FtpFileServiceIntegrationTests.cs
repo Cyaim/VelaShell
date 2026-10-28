@@ -1149,8 +1149,11 @@ public class FtpFileServiceIntegrationTests
         _server.ReadFaultForPath = _ => new() { DataLimit = 7, ResetData = reset, Reply = "426 Interrupted" };
         Guid session = await OpenAsync(maxConnections: 1);
         using var storage = new MemoryStream();
-        await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() => ((ISftpService)_service)
+        RemoteTransferLengthException error = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() => ((ISftpService)_service)
             .DownloadStreamAsync(session, "/producer.bin", new SequentialDestination(storage)));
+        Assert.IsTrue(error.ExpectedBytes == payload.Length);
+        Assert.AreEqual(7L, error.ActualBytes);
+        Assert.IsTrue(storage.CanWrite, "A remote failure must not close the caller-owned destination.");
         Assert.AreEqual(1, _server.RetrCounts["/producer.bin"]);
         Assert.AreEqual(7, storage.Length);
         Assert.IsEmpty(_server.RestartOffsets);

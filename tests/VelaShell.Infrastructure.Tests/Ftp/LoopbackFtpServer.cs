@@ -162,6 +162,9 @@ internal sealed class LoopbackFtpServer : IDisposable
     {
         using (client)
         {
+            // Preliminary and completion replies are separate small writes. Do not let
+            // Nagle wait for Linux's delayed ACK between them on the control connection.
+            client.NoDelay = true;
             var state = new SessionState();
             NetworkStream stream = client.GetStream();
             using var reader = new StreamReader(stream, Encoding.UTF8, false, 1024, true);

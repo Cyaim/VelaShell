@@ -3072,3 +3072,12 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - 磁盘缓存变更不等于已根治用户报告的约 2% 失败；未知 SIZE 的完整性限制与真实服务器互操作的证据边界不变。
 
 **本轮验证**:Windows Debug 暂存与原中转定向测试 94/94 通过（45 项暂存、49 项 RemoteRelay）,覆盖各大小真实文件存储、正确目录、独占及成功/失败/取消删除。完整 solution `--no-restore -warnaserror` 构建 0 警告、0 错误；`TestCategory=StagedWire` 12/12 通过（含并发 1/3 各 2000 文件的 RETR 次数、长度及 SHA-256）,宿主重试/双栏/本地化定向 63/63 通过,均无跳过。Unix 0700/0600 分支未实机运行,未验证真实 OpenSSH 或生产服务器；不将可控协议测试通过等同于现场约 2% 失败已消除。
+
+## 278. 2026-10-29 FTP 跨平台 CI 失败修复
+
+**定位**：[CI 40725204631](https://github.com/joesdu/VelaShell/actions/runs/40725204631) 三平台构建均成功；Ubuntu 五条 2000 文件串行回归超过默认 60 秒，macOS 一条 reset/426 回归将长度错误误报为通用 FTP 操作错误。
+
+- **Linux 超时根因**：环回 FTP 夹具的控制连接未禁用 Nagle，150/226 两次小回复与延迟 ACK 叠加约 40 ms/文件。WSL Debian 原串行 2000 文件耗时 88 秒、并发 3 耗时 29 秒；仅设置夹具控制连接 `NoDelay=true` 后降到约 1 秒/0.5 秒。保留原 60 秒默认超时、2000 文件规模和每文件 RETR/OPEN/哈希断言，不以放宽超时掩盖根因。
+- **426 完整性诊断**：`DownloadStreamAsync` 在异常分支识别嵌套 `FtpCommandException(426)`，仅在 binary SIZE 已知且实际字节数不符时报告 `RemoteTransferLengthException`。本地写入错误、取消优先级以及 busy retry 保持不变；失败租约仍丢弃。reset/EOF 回归补充预期/实际字节数和目标流保持打开的断言。
+- **验证记录**：最终补丁在 Linux 的 `TestCategory=Ftp` 为 110/110 通过；Windows 该分类修复后曾 110/110 通过。两平台 `SftpUploadAckProgressTests` 各 37/37 通过，均 0 跳过。Windows 连续多轮批量运行出现 Socket 10048（地址占用），一次定向运行两项失败，后续全分类重跑也再现；保留失败结果，不将最新 Windows 回归称为全绿，也未声称已解决该地址占用问题。最终 `dotnet build VelaShell.slnx --no-restore -warnaserror --nologo -v:q` 为 0 警告/0 错误；新增断言曾触发 MSTEST0017，已修正后重建。未在 macOS 本机重跑，未验证真实 FTP/OpenSSH 服务器，也未推送或重跑远端 CI。
+- **文档**：用户手册中英 §9.6 与 velashell-docs 中英双栏规格 §8.1 同步异常分类边界；这是既有完整性门禁的纠正，不宣称用户现场故障已全部解决。

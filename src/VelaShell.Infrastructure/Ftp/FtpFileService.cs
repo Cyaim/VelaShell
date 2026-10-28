@@ -256,13 +256,14 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
         {
             FtpConnectionPool.Lease? lease = null;
             bool failed = false;
+            long expected = -1;
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 lease = await RentAsync(sessionId, cancellationToken).ConfigureAwait(false);
                 AsyncFtpClient client = lease.Client;
                 ((IBoundedDownloadClient)client).DownloadBudget = budget;
-                long expected = await GetBinaryFileSizeAsync(client, path, cancellationToken).ConfigureAwait(false);
+                expected = await GetBinaryFileSizeAsync(client, path, cancellationToken).ConfigureAwait(false);
                 output.ExpectedLength = expected;
                 // 55.1 (f051d642): progress != null makes DownloadFileInternal stop at SIZE,
                 // hiding excess data. Read to EOF instead; our sink supplies progress and length checks.
@@ -306,6 +307,11 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
                     continue;
                 }
                 if (ex is RemoteTransferLengthException) throw;
+                // A reset can make FluentFTP throw while closing the data stream instead of
+                // returning false. Preserve the short-transfer diagnosis for a 426 reply too.
+                if (expected >= 0 && output.BytesWritten != expected
+                    && HasAbortedTransferReply(ex))
+                    throw new RemoteTransferLengthException(path, expected, output.BytesWritten);
                 throw Fault(sessionId, ex, "download");
             }
             finally
@@ -321,6 +327,15 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
                 }
             }
         }
+    }
+
+    private static bool HasAbortedTransferReply(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is FtpCommandException { CompletionCode: "426" }) return true;
+        }
+        return false;
     }
 
     /// <inheritdoc />
