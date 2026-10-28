@@ -1,4 +1,8 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text;
+using NSubstitute;
+using VelaShell.Core.Ssh;
 using VelaShell.Core.DirectorySync;
 using VelaShell.Core.Ftp;
 using VelaShell.Core.Models;
@@ -117,7 +121,7 @@ public class FtpFileServiceIntegrationTests
         await using (Stream stream = await _service.OpenReadAsync(sessionId, "/log.txt"))
         {
             Assert.IsFalse(stream.CanSeek, "FTP 数据流不可 Seek —— 这正是不能实现 ISftpClientWrapper 的原因。");
-            using var reader = new StreamReader(stream);
+            using var reader = new StreamReader(stream, leaveOpen: true);
             content = await reader.ReadToEndAsync();
         }
 
@@ -442,6 +446,901 @@ public class FtpFileServiceIntegrationTests
 
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() =>
             _service.ComputeSha256Async(sessionId, ["/a.txt"], TestContext.CancellationToken));
+    }
+
+    [TestMethod]
+    public async Task OpenRead_TypeDependentSize_UsesBinarySizeOnceOnFirstLease()
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("one\ntwo\nthree\n");
+        await File.WriteAllBytesAsync(Path.Combine(_root, "text.txt"), payload);
+        _server.SizeReplyForPath = (_, binary) => $"213 {payload.Length + (binary ? 0 : 3)}";
+        Guid session = await OpenAsync(maxConnections: 1);
+
+        await using (Stream stream = await _service.OpenReadAsync(session, "/text.txt"))
+        {
+            Assert.AreEqual(payload.Length, stream.Length, "TYPE A 的 SIZE 不能成为 Binary RETR 的精确长度。");
+            using var received = new MemoryStream();
+            await stream.CopyToAsync(received);
+            Assert.AreSequenceEqual(payload, received.ToArray());
+        }
+        Assert.AreEqual(1, _server.RetrCounts["/text.txt"], "首次必须成功,不能靠重试修正 TYPE 状态。");
+        Assert.AreEqual(1, _server.SizeCounts["/text.txt"], "OpenRead 不得重复 SIZE。");
+        Assert.AreEqual(1, _server.TypeCommands, "公开 TYPE 缓存应阻止 OpenRead 再发 TYPE。");
+        Assert.IsTrue(_server.SizeRequests.All(request => request.Binary));
+        Assert.AreEqual(1, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task GetFileInfo_ListingSizeDiffersFromBinarySize_RelaySucceedsWithoutRetry(bool mlsd)
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("a\nb\nc\n");
+        await File.WriteAllBytesAsync(Path.Combine(_root, "text.txt"), payload);
+        _server.SupportsMlsd = mlsd;
+        _server.ListingSizeForPath = (_, length) => length + 17;
+        _server.SizeReplyForPath = (_, binary) => $"213 {payload.Length + (binary ? 0 : 3)}";
+        Guid session = await OpenAsync(maxConnections: 1);
+        RemoteFileInfo stat = await _service.GetFileInfoAsync(session, "/text.txt");
+        Assert.AreEqual(payload.Length, stat.Size, "Relay stat 应优先使用 Binary SIZE,而非 LIST/MLST 大小。");
+        var (target, targetSession, received) = CreateRelayTarget();
+
+        await RemoteRelay.CopyFileAsync(_service, session, "/text.txt", target, targetSession, "/text.txt");
+
+        Assert.AreSequenceEqual(payload, received["/text.txt"]);
+        Assert.AreEqual(1, _server.RetrCounts["/text.txt"]);
+        Assert.AreEqual(1, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow("500 SIZE unsupported")]
+    [DataRow("502 SIZE not implemented")]
+    [DataRow("550 Size unavailable")]
+    [DataRow("213 -1")]
+    public async Task GetFileInfo_UnknownSize_DoesNotTrustListingAndRelayReadsToEof(string sizeReply)
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("unknown\nlength\n");
+        await File.WriteAllBytesAsync(Path.Combine(_root, "text.txt"), payload);
+        _server.SupportsMlsd = true;
+        _server.ListingSizeForPath = (_, length) => length + 100;
+        _server.SizeReplyForPath = (_, _) => sizeReply;
+        Guid session = await OpenAsync(maxConnections: 1);
+        RemoteFileInfo stat = await _service.GetFileInfoAsync(session, "/text.txt");
+        Assert.AreEqual(0, stat.Size, "无可信 SIZE 时沿用非正长未知策略,不能把 LIST 大小当精确值。");
+        await using (Stream stream = await _service.OpenReadAsync(session, "/text.txt"))
+        {
+            Assert.AreEqual(-1, stream.Length, "流内部须区分未知长度与已知空文件。");
+            await stream.CopyToAsync(Stream.Null);
+        }
+        var (target, targetSession, received) = CreateRelayTarget();
+        await RemoteRelay.CopyFileAsync(_service, session, "/text.txt", target, targetSession, "/text.txt");
+        Assert.AreSequenceEqual(payload, received["/text.txt"]);
+        Assert.AreEqual(2, _server.RetrCounts["/text.txt"], "一次直接读加一次 relay,各自仅一次 RETR。");
+        Assert.AreEqual(1, _server.AcceptedConnections);
+    }
+
+    private static (SftpService Service, Guid Session, ConcurrentDictionary<string, byte[]> Received) CreateRelayTarget()
+    {
+        Guid session = Guid.NewGuid();
+        ISshConnectionService connections = Substitute.For<ISshConnectionService>();
+        ISftpClientWrapper client = Substitute.For<ISftpClientWrapper>();
+        client.IsConnected.Returns(true);
+        connections.GetSession(session).Returns(new SshSession
+        {
+            SessionId = session,
+            ConnectionInfo = new() { Host = "mock-target", Username = "u", AuthMethod = AuthMethod.Password },
+            Status = SessionStatus.Connected,
+        });
+        var received = new ConcurrentDictionary<string, byte[]>();
+        client.UploadAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<RemoteUploadOptions>(),
+                Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                using var output = new MemoryStream();
+                await call.ArgAt<Stream>(0).CopyToAsync(output, call.ArgAt<CancellationToken>(4));
+                Assert.IsTrue(received.TryAdd(call.ArgAt<string>(1), output.ToArray()));
+            });
+        return (new SftpService(connections, _ => client), session, received);
+    }
+
+    [TestMethod]
+    public async Task OpenRead_AsyncDispose_WaitsFor226BeforeReturningTheOnlyLease()
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "a.txt"), "first payload");
+        var fault = new LoopbackFtpServer.ReadFault { HoldReply = true };
+        _server.ReadFaultForPath = _ => fault;
+        Guid session = await OpenAsync(maxConnections: 1);
+        Stream stream = await _service.OpenReadAsync(session, "/a.txt");
+        await stream.CopyToAsync(Stream.Null);
+        await fault.DataSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task closing = stream.DisposeAsync().AsTask();
+        Task<RemoteFileInfo> next = _service.GetFileInfoAsync(session, "/a.txt");
+        try
+        {
+            Assert.IsFalse(closing.IsCompleted, "纯 async disposal 必须等最终 226,不能仅关闭数据 socket 后归池。");
+            Assert.IsFalse(next.IsCompleted, "226 尚未消费时租约必须仍独占。");
+        }
+        finally
+        {
+            fault.AllowReply.TrySetResult();
+            await closing.WaitAsync(TimeSpan.FromSeconds(10));
+            await next.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        Assert.AreEqual(1, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow("426 Transfer aborted", false)]
+    [DataRow("451 Local error", false)]
+    [DataRow("150 Not a completion", false)]
+    [DataRow(null, false)]
+    [DataRow(null, true)]
+    public async Task OpenRead_InvalidCompletion_FailsAndReplacesConnection(string? reply, bool closeControl)
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "a.txt"), "payload");
+        _server.ReadFaultForPath = _ => new() { Reply = reply, CloseControl = closeControl };
+        Guid session = await OpenAsync(maxConnections: 1);
+        // 不增加生产配置入口:只缩短这个测试的控制读超时,生产默认仍为 30 秒。
+        var pools = (ConcurrentDictionary<Guid, FtpConnectionPool>)typeof(FtpFileService)
+            .GetField("_sessions", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(_service)!;
+        using (FtpConnectionPool.Lease lease = await pools[session].RentAsync(TestContext.CancellationToken))
+        {
+            lease.Client.Config.ReadTimeout = 250;
+        }
+        Stream stream = await _service.OpenReadAsync(session, "/a.txt");
+        await stream.CopyToAsync(Stream.Null);
+        await Assert.ThrowsAsync<VelaFtpClientException>(() => stream.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10)),
+            "负回复、非完成回复、缺失回复和空回复都必须作为 FTP 失败返回,不能仅由测试超时打断。");
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/a.txt", Encoding.UTF8.GetBytes("payload"));
+        Assert.AreEqual(2, _server.AcceptedConnections, "IsConnected 仍为 true 也不能复用未同步的控制连接。");
+    }
+
+    [TestMethod]
+    [DataRow("426 Transfer aborted")]
+    [DataRow(null)]
+    public async Task OpenRead_UnknownSizeAndZeroData_StillRequiresSuccessfulCompletion(string? reply)
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "a.txt"), "nonempty source");
+        _server.SupportsMlsd = true;
+        _server.SizeReplyForPath = (_, _) => "550 Size unavailable";
+        _server.ReadFaultForPath = _ => new() { DataLimit = 0, Reply = reply };
+        Guid session = await OpenAsync(maxConnections: 1);
+        var pools = (ConcurrentDictionary<Guid, FtpConnectionPool>)typeof(FtpFileService)
+            .GetField("_sessions", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(_service)!;
+        using (FtpConnectionPool.Lease lease = await pools[session].RentAsync(TestContext.CancellationToken))
+        {
+            lease.Client.Config.ReadTimeout = 250;
+        }
+        var (target, targetSession, _) = CreateRelayTarget();
+
+        await Assert.ThrowsAsync<VelaFtpClientException>(() => RemoteRelay.CopyFileAsync(
+            _service, session, "/a.txt", target, targetSession, "/a.txt").WaitAsync(TimeSpan.FromSeconds(10)));
+
+        Assert.AreEqual(1, _server.RetrCounts["/a.txt"]);
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/a.txt", Encoding.UTF8.GetBytes("nonempty source"));
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow("426 Transfer aborted", false)]
+    [DataRow("451 Local error", false)]
+    [DataRow("150 Not a completion", false)]
+    [DataRow(null, false)]
+    [DataRow(null, true)]
+    public async Task Relay_SmallSourceInvalidCompletion_FailsBeforeWritingAndReleasesLease(string? reply, bool closeControl)
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("complete data, failed completion");
+        await File.WriteAllBytesAsync(Path.Combine(_root, "a.txt"), payload);
+        _server.SupportsMlsd = true;
+        _server.ReadFaultForPath = _ => new() { Reply = reply, CloseControl = closeControl };
+        Guid session = await OpenAsync(maxConnections: 1);
+        var pools = (ConcurrentDictionary<Guid, FtpConnectionPool>)typeof(FtpFileService)
+            .GetField("_sessions", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(_service)!;
+        using (FtpConnectionPool.Lease lease = await pools[session].RentAsync(TestContext.CancellationToken))
+        {
+            lease.Client.Config.ReadTimeout = 250;
+        }
+        var (target, targetSession, received) = CreateRelayTarget();
+        bool writing = false;
+
+        await Assert.ThrowsAsync<VelaFtpClientException>(() => RemoteRelay.CopyFileAsync(
+            _service, session, "/a.txt", target, targetSession, "/a.txt", writing: () => writing = true)
+            .WaitAsync(TimeSpan.FromSeconds(10)));
+
+        Assert.IsFalse(writing, "完整字节不等于源成功:最终回复必须先验证,否则会破坏已有目标。");
+        Assert.IsEmpty(received);
+        Assert.AreEqual(1, _server.RetrCounts["/a.txt"]);
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/a.txt", payload);
+        Assert.AreEqual(2, _server.AcceptedConnections, "失败 completion 必须丢弃连接,但归还唯一租约名额。");
+    }
+
+    [TestMethod]
+    public async Task Relay_SmallSource_ReturnsOnlyFtpLeaseBeforeCallingUpload()
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("buffered before upload");
+        await File.WriteAllBytesAsync(Path.Combine(_root, "a.txt"), payload);
+        _server.SupportsMlsd = true;
+        Guid session = await OpenAsync(maxConnections: 1);
+        ISftpService target = Substitute.For<ISftpService>();
+        byte[]? received = null;
+        bool writing = false;
+        target.UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(async call =>
+        {
+            Assert.IsTrue(writing);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            // 上传入口立即复用源会话的唯一租约:未等 226/Dispose 就调用目标时,这里会卡住并失败。
+            RemoteFileInfo stat = await _service.GetFileInfoAsync(session, "/a.txt", timeout.Token);
+            Assert.AreEqual(payload.LongLength, stat.Size);
+            using var output = new MemoryStream();
+            await call.ArgAt<Stream>(1).CopyToAsync(output, timeout.Token);
+            received = output.ToArray();
+        });
+
+        await RemoteRelay.CopyFileAsync(_service, session, "/a.txt", target, Guid.NewGuid(), "/a.txt",
+            writing: () => writing = true).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.IsNotNull(received);
+        Assert.AreSequenceEqual(payload, received);
+        Assert.AreEqual(1, _server.RetrCounts["/a.txt"]);
+        Assert.AreEqual(1, _server.AcceptedConnections, "预读并确认成功后应复用原连接,不增加连接来躲过租约泄漏。");
+        await target.ReceivedWithAnyArgs(1).UploadStreamAsync(default, null!, null!, 0);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task OpenRead_EarlyAndMixedRepeatedDispose_DoesNotLeakOrReuseConnection(bool synchronous)
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "a.txt"), new string('a', 8192));
+        Guid session = await OpenAsync(maxConnections: 1);
+        Stream stream = await _service.OpenReadAsync(session, "/a.txt");
+        Assert.AreEqual(1, await stream.ReadAsync(new byte[1]));
+        if (synchronous)
+        {
+            stream.Dispose();
+        }
+        else
+        {
+            await stream.DisposeAsync();
+        }
+        await Task.WhenAll(Enumerable.Range(0, 16).Select(i => Task.Run(async () =>
+        {
+            if (i % 2 == 0) stream.Dispose();
+            else await stream.DisposeAsync();
+        })));
+        await AssertReadableAsync(session, "/a.txt", Encoding.UTF8.GetBytes(new string('a', 8192)));
+        Assert.AreEqual(2, _server.AcceptedConnections, "提前弃读必须丢弃连接并归还唯一名额。");
+        Stream held = await _service.OpenReadAsync(session, "/a.txt");
+        Task<Stream> waiting = _service.OpenReadAsync(session, "/a.txt");
+        try
+        {
+            Assert.IsFalse(waiting.IsCompleted, "重复 Dispose 不能多释放名额,突破单连接上限。");
+            await held.CopyToAsync(Stream.Null);
+        }
+        finally
+        {
+            await held.DisposeAsync();
+        }
+        await using Stream next = await waiting.WaitAsync(TimeSpan.FromSeconds(10));
+        await next.CopyToAsync(Stream.Null);
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    public async Task OpenRead_CancelledRead_PreservesCancellationAndReleasesLease()
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "a.txt"), "payload");
+        var fault = new LoopbackFtpServer.ReadFault { HoldData = true, Reply = "426 Aborted" };
+        _server.ReadFaultForPath = _ => fault;
+        Guid session = await OpenAsync(maxConnections: 1);
+        Stream stream = await _service.OpenReadAsync(session, "/a.txt");
+        await fault.DataOpened.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource();
+        Task<int> read = stream.ReadAsync(new byte[16], cancellation.Token).AsTask();
+        cancellation.Cancel();
+        try
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(5)));
+            await stream.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            fault.AllowData.TrySetResult();
+        }
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/a.txt", Encoding.UTF8.GetBytes("payload"));
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    public async Task OpenRead_CancelDuringCompletion_DiscardsConnectionAndPreservesCancellation()
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "a.txt"), "payload");
+        var fault = new LoopbackFtpServer.ReadFault { HoldReply = true };
+        _server.ReadFaultForPath = _ => fault;
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var cancellation = new CancellationTokenSource();
+        Stream stream = await _service.OpenReadAsync(session, "/a.txt", cancellation.Token);
+        await stream.CopyToAsync(Stream.Null);
+        Task closing = stream.DisposeAsync().AsTask();
+        cancellation.Cancel();
+        try
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(() => closing.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+        finally
+        {
+            fault.AllowReply.TrySetResult();
+        }
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/a.txt", Encoding.UTF8.GetBytes("payload"));
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow(0, "226 Transfer complete")]
+    [DataRow(7, "226 Transfer complete")]
+    [DataRow(7, "426 Truncated")]
+    public async Task OpenRead_TruncatedData_PreservesReadErrorAndDiscardsLease(int delivered, string reply)
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "a.txt"), new string('a', 1024));
+        _server.ReadFaultForPath = _ => new() { DataLimit = delivered, Reply = reply };
+        Guid session = await OpenAsync(maxConnections: 1);
+        Stream stream = await _service.OpenReadAsync(session, "/a.txt");
+        RemoteTransferLengthException error = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() => stream.CopyToAsync(Stream.Null));
+        Assert.AreEqual(1024, error.ExpectedBytes);
+        Assert.AreEqual(delivered, error.ActualBytes);
+        Assert.AreEqual(VelaShell.Core.Resources.Strings.Format("SftpSvc_RelayLengthMismatch", "/a.txt", 1024, delivered), error.Message);
+        await stream.DisposeAsync();
+        stream.Dispose();
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/a.txt", Encoding.UTF8.GetBytes(new string('a', 1024)));
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(7)]
+    public async Task OpenRead_RelayWithPositiveStatButTruncatedData_CannotReportSuccess(int delivered)
+    {
+        byte[] payload = Payload(42);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "a.bin"), payload);
+        _server.SupportsMlsd = true;
+        _server.ReadFaultForPath = _ => new() { DataLimit = delivered, Reply = "426 Truncated" };
+        Guid session = await OpenAsync(maxConnections: 1);
+        Guid targetSession = Guid.NewGuid();
+        ISshConnectionService connections = Substitute.For<ISshConnectionService>();
+        ISftpClientWrapper client = Substitute.For<ISftpClientWrapper>();
+        client.IsConnected.Returns(true);
+        connections.GetSession(targetSession).Returns(new SshSession
+        {
+            SessionId = targetSession,
+            ConnectionInfo = new() { Host = "mock-target", Username = "u", AuthMethod = AuthMethod.Password },
+            Status = SessionStatus.Connected,
+        });
+        client.UploadAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<RemoteUploadOptions>(),
+                Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>())
+            .Returns(async call => await call.ArgAt<Stream>(0).CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(4)));
+        var target = new SftpService(connections, _ => client);
+        bool writing = false;
+        RemoteTransferLengthException error = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() => RemoteRelay.CopyFileAsync(
+            _service, session, "/a.bin", target, targetSession, "/a.bin", writing: () => writing = true));
+        Assert.IsFalse(writing, "正长度小顺序源必须先通过完整预读和长度验证,才允许触碰目标。");
+        await client.DidNotReceiveWithAnyArgs().UploadAsync(null!, null!, (RemoteUploadOptions)null!, null, default);
+        Assert.AreEqual(1, _server.RetrCounts["/a.bin"]);
+        Assert.IsTrue(error.ExpectedBytes == payload.LongLength);
+        Assert.AreEqual(delivered, error.ActualBytes);
+        Assert.AreEqual(VelaShell.Core.Resources.Strings.Format(
+            "SftpSvc_RelayLengthMismatch", "/a.bin", payload.Length, delivered), error.Message);
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/a.bin", payload);
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task OpenRead_EmptyFileAnd250Completion_MixedDisposeIsIdempotent(bool synchronous)
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "empty"), []);
+        _server.ReadFaultForPath = _ => new() { Reply = "250 Transfer complete" };
+        Guid session = await OpenAsync(maxConnections: 1);
+        Stream stream = await _service.OpenReadAsync(session, "/empty");
+        await stream.CopyToAsync(Stream.Null);
+        if (synchronous) stream.Dispose();
+        else await stream.DisposeAsync();
+        stream.Dispose();
+        await stream.DisposeAsync();
+        await AssertReadableAsync(session, "/empty", []);
+        Assert.AreEqual(1, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    public async Task OpenRead_ConcurrentMixedDispose_WaitsForTheSameCompletion()
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "a.txt"), "payload");
+        var fault = new LoopbackFtpServer.ReadFault { HoldReply = true };
+        _server.ReadFaultForPath = _ => fault;
+        Guid session = await OpenAsync(maxConnections: 1);
+        Stream stream = await _service.OpenReadAsync(session, "/a.txt");
+        await stream.CopyToAsync(Stream.Null);
+        Task closing = stream.DisposeAsync().AsTask();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task syncClosing = Task.Run(() => { entered.SetResult(); stream.Dispose(); });
+        await entered.Task;
+        try
+        {
+            Assert.IsFalse(closing.IsCompleted);
+            Assert.IsFalse(syncClosing.IsCompleted);
+        }
+        finally
+        {
+            fault.AllowReply.TrySetResult();
+            await Task.WhenAll(closing, syncClosing).WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/a.txt", Encoding.UTF8.GetBytes("payload"));
+        Assert.AreEqual(1, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow(1, false)]
+    [DataRow(3, false)]
+    [DataRow(1, true)]
+    [DataRow(3, true)]
+    public async Task OpenRead_Relay2000DistinctFiles_LengthAndHashMatch(int concurrency, bool mixedMetadata)
+    {
+        const int count = 2000;
+        for (int i = 0; i < count; i++)
+        {
+            await File.WriteAllBytesAsync(Path.Combine(_root, $"f{i}.bin"), RelayPayload(i, mixedMetadata), TestContext.CancellationToken);
+        }
+        _server.SupportsMlsd = true;
+        if (mixedMetadata)
+        {
+            _server.ListingSizeForPath = (_, length) => length + 31;
+            _server.SizeReplyForPath = (path, binary) =>
+            {
+                int index = int.Parse(Path.GetFileNameWithoutExtension(path).AsSpan(1));
+                if (index % 5 == 0) return "550 Size unavailable";
+                return $"213 {RelayPayload(index, true).Length + (binary ? 0 : 7)}";
+            };
+        }
+        Guid sourceSession = await OpenAsync(maxConnections: concurrency);
+        Guid targetSession = Guid.NewGuid();
+        ISshConnectionService connections = Substitute.For<ISshConnectionService>();
+        ISftpClientWrapper client = Substitute.For<ISftpClientWrapper>();
+        client.IsConnected.Returns(true);
+        connections.GetSession(targetSession).Returns(new SshSession
+        {
+            SessionId = targetSession,
+            ConnectionInfo = new() { Host = "mock-target", Username = "u", AuthMethod = AuthMethod.Password },
+            Status = SessionStatus.Connected,
+        });
+        var received = new ConcurrentDictionary<string, byte[]>();
+        client.UploadAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<RemoteUploadOptions>(),
+                Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                using var target = new MemoryStream();
+                await call.ArgAt<Stream>(0).CopyToAsync(target, call.ArgAt<CancellationToken>(4));
+                Assert.IsTrue(received.TryAdd(call.ArgAt<string>(1), target.ToArray()));
+            });
+        var targetService = new SftpService(connections, _ => client);
+        await Parallel.ForEachAsync(Enumerable.Range(0, count),
+            new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = TestContext.CancellationToken },
+            async (i, token) => await RemoteRelay.CopyFileAsync(_service, sourceSession, $"/f{i}.bin",
+                targetService, targetSession, $"/f{i}.bin", cancellationToken: token));
+        Assert.HasCount(count, received);
+        for (int i = 0; i < count; i++)
+        {
+            byte[] expected = RelayPayload(i, mixedMetadata);
+            byte[] actual = received[$"/f{i}.bin"];
+            Assert.AreEqual(1, _server.RetrCounts[$"/f{i}.bin"], $"f{i}.bin 应首次成功,不得重试 RETR");
+            Assert.AreEqual(2, _server.SizeCounts[$"/f{i}.bin"], $"f{i}.bin stat/open 各一次 SIZE,OpenRead 不得隐式重查");
+            Assert.AreEqual(expected.Length, actual.Length, $"f{i}.bin length");
+            Assert.AreSequenceEqual(SHA256.HashData(expected), SHA256.HashData(actual), $"f{i}.bin SHA-256");
+        }
+        Assert.IsLessThanOrEqualTo(concurrency, _server.AcceptedConnections);
+        if (concurrency == 1) Assert.AreEqual(1, _server.AcceptedConnections);
+        Assert.IsTrue(_server.SizeRequests.All(request => request.Binary));
+        Assert.AreEqual(_server.AcceptedConnections, _server.TypeCommands, "默认 Binary listing 每连接只需一次 TYPE,不得每文件盲发。");
+        TestContext.WriteLine($"Relayed {count} distinct files; concurrency={concurrency}; mixedMetadata={mixedMetadata}; FTP connections={_server.AcceptedConnections}; TYPE commands={_server.TypeCommands}; each RETR=1; each SIZE=2; all lengths/SHA-256 match.");
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(7)]
+    public async Task DownloadStream_ReadOnlyDestination_RejectsBeforeRentOrRetr(int length)
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), new byte[length]);
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var destination = new MemoryStream([], writable: false);
+        ArgumentException error = await Assert.ThrowsExactlyAsync<ArgumentException>(() => ((ISftpService)_service)
+            .DownloadStreamAsync(session, "/producer.bin", destination));
+        Assert.AreEqual("destination", error.ParamName);
+        Assert.IsEmpty(_server.RetrCounts);
+        Assert.IsEmpty(_server.SizeRequests);
+        Assert.AreEqual(1, _server.AcceptedConnections);
+        Assert.IsTrue(destination.CanRead, "Validation must not close the caller-owned stream.");
+
+        // An unavailable session must not hide the argument error: validation precedes renting.
+        error = await Assert.ThrowsExactlyAsync<ArgumentException>(() => ((ISftpService)_service)
+            .DownloadStreamAsync(Guid.NewGuid(), "/producer.bin", destination));
+        Assert.AreEqual("destination", error.ParamName);
+        Assert.IsEmpty(_server.RetrCounts);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    [DataRow(8193)]
+    public async Task DownloadStream_MatchesOpenRead_FromSameSourceAndKeepsDestinationOpen(int length)
+    {
+        byte[] payload = new byte[length];
+        new Random(17).NextBytes(payload);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), payload);
+        _server.SizeReplyForPath = (_, binary) => $"213 {length + (binary ? 0 : 17)}";
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var destination = new MemoryStream();
+        await ((ISftpService)_service).DownloadStreamAsync(session, "/producer.bin", destination);
+        Assert.IsTrue(destination.CanWrite);
+        Assert.AreSequenceEqual(payload, destination.ToArray());
+        await AssertReadableAsync(session, "/producer.bin", payload);
+        Assert.AreEqual(2, _server.RetrCounts["/producer.bin"]);
+        Assert.AreEqual(1, _server.AcceptedConnections);
+        Assert.IsTrue(_server.SizeRequests.All(request => request.Binary));
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(7)]
+    public async Task DownloadStream_ShortDataEvenWith226_FailsLengthAndDiscardsLease(int delivered)
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), Payload(42));
+        _server.ReadFaultForPath = _ => new() { DataLimit = delivered };
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var destination = new MemoryStream();
+        RemoteTransferLengthException error = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(
+            () => ((ISftpService)_service).DownloadStreamAsync(session, "/producer.bin", destination));
+        Assert.IsTrue(error.ExpectedBytes == Payload(42).Length);
+        Assert.AreEqual(delivered, error.ActualBytes);
+        Assert.IsTrue(destination.CanWrite);
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/producer.bin", Payload(42));
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow("426 Transfer aborted", false)]
+    [DataRow("451 Local error", false)]
+    [DataRow("150 Not a completion", false)]
+    [DataRow(null, false)]
+    [DataRow(null, true)]
+    public async Task DownloadStream_InvalidCompletion_FailsAndDiscardsLease(string? reply, bool closeControl)
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), Payload(42));
+        _server.ReadFaultForPath = _ => new() { Reply = reply, CloseControl = closeControl };
+        Guid session = await OpenAsync(maxConnections: 1);
+        await SetProducerTimeoutAsync(session);
+        using var destination = new MemoryStream();
+        await Assert.ThrowsAsync<VelaFtpClientException>(() => ((ISftpService)_service)
+            .DownloadStreamAsync(session, "/producer.bin", destination).WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.IsTrue(destination.CanWrite);
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/producer.bin", Payload(42));
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task DownloadStream_CancellationDuringDataOrCompletion_DiscardsLease(bool completion)
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), Payload(42));
+        var fault = new LoopbackFtpServer.ReadFault { HoldData = !completion, HoldReply = completion };
+        _server.ReadFaultForPath = _ => fault;
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var cancellation = new CancellationTokenSource();
+        using var destination = new MemoryStream();
+        Task download = ((ISftpService)_service).DownloadStreamAsync(session, "/producer.bin", destination,
+            cancellationToken: cancellation.Token);
+        try
+        {
+            await (completion ? fault.DataSent.Task : fault.DataOpened.Task).WaitAsync(TimeSpan.FromSeconds(5));
+            cancellation.Cancel();
+            await Assert.ThrowsAsync<OperationCanceledException>(() => download.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.IsTrue(destination.CanWrite);
+        }
+        finally
+        {
+            fault.AllowData.TrySetResult();
+            fault.AllowReply.TrySetResult();
+        }
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/producer.bin", Payload(42));
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(false, true)]
+    [DataRow(true, false)]
+    [DataRow(true, true)]
+    public async Task DownloadStream_UnknownLengthAndNonSeekableDestination_ReadsToEof(bool empty, bool nonSeekable)
+    {
+        byte[] payload = empty ? [] : Payload(99);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), payload);
+        _server.SizeReplyForPath = (_, _) => "550 Size unavailable";
+        _server.ReadFaultForPath = _ => new() { Reply = "250 Transfer complete" };
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var storage = new MemoryStream();
+        Stream destination = nonSeekable ? new SequentialDestination(storage) : storage;
+        await ((ISftpService)_service).DownloadStreamAsync(session, "/producer.bin", destination);
+        Assert.AreSequenceEqual(payload, storage.ToArray());
+        Assert.IsTrue(destination.CanWrite);
+        await AssertReadableAsync(session, "/producer.bin", payload);
+        Assert.AreEqual(1, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(7)]
+    public async Task DownloadStream_UnderreportedSize_RejectsExcessData(int reported)
+    {
+        byte[] payload = Payload(42);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), payload);
+        _server.SizeReplyForPath = (_, _) => $"213 {reported}";
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var destination = new MemoryStream();
+        var error = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() => ((ISftpService)_service)
+            .DownloadStreamAsync(session, "/producer.bin", destination));
+        Assert.IsTrue(error.ExpectedBytes == reported);
+        Assert.AreEqual(payload.Length, error.ActualBytes);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task DownloadStream_BusyCompletion_ReplaysOnlySeekableDestination(bool nonSeekable)
+    {
+        byte[] payload = Payload(42);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), payload);
+        _server.ReadFaultForPath = _ => _server.RetrCounts["/producer.bin"] == 1
+            ? new() { Reply = "450 Transfer busy" } : null;
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var storage = new MemoryStream();
+        storage.Write([11, 22, 33]); // caller-owned prefix must not be overwritten by a whole-file retry
+        Stream destination = nonSeekable ? new SequentialDestination(storage) : storage;
+        Task download = ((ISftpService)_service).DownloadStreamAsync(session, "/producer.bin", destination);
+        if (nonSeekable) await Assert.ThrowsAsync<VelaFtpClientException>(() => download);
+        else await download;
+        Assert.AreSequenceEqual(new byte[] { 11, 22, 33 }.Concat(payload).ToArray(), storage.ToArray());
+        Assert.AreEqual(nonSeekable ? 1 : 2, _server.RetrCounts["/producer.bin"]);
+        Assert.IsTrue(destination.CanWrite);
+    }
+
+    [TestMethod]
+    public async Task DownloadStream_BusyBeforeData_RetriesWithoutAppendingAndHasBoundedBudget()
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), Payload(42));
+        _server.ReadFaultForPath = _ => new() { RejectRetr = "450 Transfer busy" };
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var storage = new MemoryStream();
+        await Assert.ThrowsAsync<VelaFtpClientException>(() => ((ISftpService)_service)
+            .DownloadStreamAsync(session, "/producer.bin", new SequentialDestination(storage)));
+        Assert.AreEqual(3, _server.RetrCounts["/producer.bin"]);
+        Assert.AreEqual(0, storage.Length);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task DownloadStream_DataResetOrEof_RemainsAnIntegrityFailure(bool reset)
+    {
+        byte[] payload = Payload(42);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), payload);
+        _server.ReadFaultForPath = _ => new() { DataLimit = 7, ResetData = reset, Reply = "426 Interrupted" };
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var storage = new MemoryStream();
+        await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() => ((ISftpService)_service)
+            .DownloadStreamAsync(session, "/producer.bin", new SequentialDestination(storage)));
+        Assert.AreEqual(1, _server.RetrCounts["/producer.bin"]);
+        Assert.AreEqual(7, storage.Length);
+        Assert.IsEmpty(_server.RestartOffsets);
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/producer.bin", payload);
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    public async Task DownloadStream_LocalIOException_IsPreservedAndInternalRestRetriesAreBounded()
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), Payload(42));
+        // Deterministic IOException fault, not a claim that the user's remote server sent this fault.
+        // 55.1 catches sink IOException in the same block as data reads and attempts REST.
+        _server.ReadFaultForPath = _ => new() { Reply = "426 Interrupted" };
+        Guid session = await OpenAsync(maxConnections: 1);
+        var expected = new IOException("Unexpected EOF: injected local write failure");
+        using var destination = new FailedDestination(expected);
+        IOException actual = await Assert.ThrowsExactlyAsync<IOException>(() => ((ISftpService)_service)
+            .DownloadStreamAsync(session, "/producer.bin", destination).WaitAsync(TimeSpan.FromSeconds(15)));
+        Assert.AreSame(expected, actual);
+        Assert.AreEqual(3, _server.RetrCounts["/producer.bin"]);
+        Assert.AreEqual(1, destination.Writes, "A failed sink must not be called again by internal retries.");
+        Assert.IsTrue(destination.CanWrite);
+        _server.ReadFaultForPath = null;
+        await AssertReadableAsync(session, "/producer.bin", Payload(42));
+        Assert.AreEqual(2, _server.AcceptedConnections);
+    }
+
+    [TestMethod]
+    public async Task FluentFtp551_KnownLengthShortRead_RestResumesWithoutSeekingDestination()
+    {
+        byte[] payload = Payload(42);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), payload);
+        _server.ReadFaultForPath = _ => _server.RetrCounts["/producer.bin"] == 1
+            ? new() { DataLimit = 7, Reply = "426 Interrupted" } : null;
+        using var client = new FluentFTP.AsyncFtpClient("127.0.0.1", "deploy", "secret123", _server.Port);
+        await client.Connect(TestContext.CancellationToken);
+        using var storage = new MemoryStream();
+        bool ok = await client.DownloadStream(new SequentialDestination(storage), "/producer.bin",
+            progress: new Progress<FluentFTP.FtpProgress>(), token: TestContext.CancellationToken);
+        Assert.IsTrue(ok);
+        Assert.AreSequenceEqual(payload, storage.ToArray());
+        Assert.AreSequenceEqual(new long[] { 7 }, _server.RestartOffsets.ToArray());
+        Assert.AreEqual(2, _server.RetrCounts["/producer.bin"]);
+        Assert.AreEqual("226", client.LastReply.Code);
+        Assert.AreEqual("RETR /producer.bin", client.LastReply.Command);
+    }
+
+    [TestMethod]
+    [DataRow(1)]
+    [DataRow(3)]
+    public async Task DownloadStream_2000DistinctFiles_SingleRetrAndCorrectHash(int concurrency)
+    {
+        const int count = 2000;
+        for (int i = 0; i < count; i++)
+            await File.WriteAllBytesAsync(Path.Combine(_root, $"p{i}.bin"), RelayPayload(i, true));
+        Guid session = await OpenAsync(maxConnections: concurrency);
+        await Parallel.ForEachAsync(Enumerable.Range(0, count),
+            new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = TestContext.CancellationToken },
+            async (i, token) =>
+            {
+                using var storage = new MemoryStream();
+                await ((ISftpService)_service).DownloadStreamAsync(session, $"/p{i}.bin", new SequentialDestination(storage), cancellationToken: token);
+                Assert.AreSequenceEqual(SHA256.HashData(RelayPayload(i, true)), SHA256.HashData(storage.ToArray()));
+                Assert.AreEqual(1, _server.RetrCounts[$"/p{i}.bin"]);
+            });
+        Assert.IsLessThanOrEqualTo(concurrency, _server.AcceptedConnections);
+        Assert.IsTrue(_server.SizeRequests.All(request => request.Binary));
+    }
+
+    [TestMethod]
+    public async Task DownloadStream_HeldCompletion_KeepsLeaseWithoutEnablingNoopDaemon()
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), Payload(42));
+        var fault = new LoopbackFtpServer.ReadFault { HoldReply = true };
+        _server.ReadFaultForPath = _ => fault;
+        Guid session = await OpenAsync(maxConnections: 1);
+        using var storage = new MemoryStream();
+        Task download = ((ISftpService)_service).DownloadStreamAsync(session, "/producer.bin", storage);
+        await fault.DataSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task<string> next = _service.GetWorkingDirectoryAsync(session);
+        try
+        {
+            Assert.IsFalse(download.IsCompleted);
+            Assert.IsFalse(next.IsCompleted);
+        }
+        finally { fault.AllowReply.TrySetResult(); }
+        await download.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreEqual("/", await next);
+        Assert.AreEqual(1, _server.AcceptedConnections);
+        var pools = (ConcurrentDictionary<Guid, FtpConnectionPool>)typeof(FtpFileService)
+            .GetField("_sessions", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(_service)!;
+        using FtpConnectionPool.Lease lease = await pools[session].RentAsync(TestContext.CancellationToken);
+        Assert.AreEqual(new FluentFTP.FtpConfig().NoopInterval, lease.Client.Config.NoopInterval);
+        Assert.IsFalse(lease.Client.Config.Noop);
+        Assert.IsNull(lease.Client.Status.NoopDaemonTask);
+        Assert.AreEqual(FluentFTP.FtpNavigate.Manual, lease.Client.Config.Navigate);
+    }
+
+    [TestMethod]
+    public void FluentFtp551_ZeroNoopInterval_IsClampedNotDisabled()
+    {
+        var config = new FluentFTP.FtpConfig { NoopInterval = 0 };
+        Assert.AreEqual(1000, config.NoopInterval, "55.1 setter contradicts its XML comment; zero is not a disable switch.");
+        Assert.IsFalse(config.Noop, "Connect must not start the daemon with the default configuration.");
+    }
+
+    [TestMethod]
+    [DataRow(false, "226 Transfer complete", "RETR /producer.bin")]
+    [DataRow(false, "250 Transfer complete", "RETR /producer.bin")]
+    [DataRow(false, "150 Not a completion", "RETR /producer.bin")]
+    [DataRow(true, "226 Transfer complete", "RETR /producer.bin, after IOException")]
+    public async Task FluentFtp551_DownloadReplyCommand_IsAttributedByLibrary(bool shortRead, string reply, string command)
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "producer.bin"), Payload(42));
+        _server.ReadFaultForPath = _ => new() { DataLimit = shortRead ? 7 : null, Reply = reply };
+        using var client = new FluentFTP.AsyncFtpClient("127.0.0.1", "deploy", "secret123", _server.Port);
+        await client.Connect(TestContext.CancellationToken);
+        using var destination = new MemoryStream();
+        bool ok = await client.DownloadStream(destination, "/producer.bin",
+            progress: shortRead ? new Progress<FluentFTP.FtpProgress>() : null, token: TestContext.CancellationToken);
+        Assert.IsTrue(ok, "Dependency evidence: even preliminary 150 and short data plus 226 can return true.");
+        Assert.AreEqual(reply[..3], client.LastReply.Code);
+        Assert.AreEqual(command, client.LastReply.Command);
+        Assert.AreEqual(shortRead ? 7 : Payload(42).Length, destination.Length);
+    }
+
+    private sealed class FailedDestination(IOException failure) : MemoryStream
+    {
+        public int Writes { get; private set; }
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            Writes++;
+            return ValueTask.FromException(failure);
+        }
+    }
+
+    private sealed class SequentialDestination(Stream inner) : Stream
+    {
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => inner.CanWrite;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() => inner.Flush();
+        public override Task FlushAsync(CancellationToken cancellationToken) => inner.FlushAsync(cancellationToken);
+        public override void Write(byte[] buffer, int offset, int count) => inner.Write(buffer, offset, count);
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            inner.WriteAsync(buffer, offset, count, cancellationToken);
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
+            inner.WriteAsync(buffer, cancellationToken);
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+    }
+
+    private async Task SetProducerTimeoutAsync(Guid session)
+    {
+        var pools = (ConcurrentDictionary<Guid, FtpConnectionPool>)typeof(FtpFileService)
+            .GetField("_sessions", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(_service)!;
+        using FtpConnectionPool.Lease lease = await pools[session].RentAsync(TestContext.CancellationToken);
+        lease.Client.Config.ReadTimeout = 250;
+    }
+
+    private static byte[] RelayPayload(int index, bool mixedMetadata) => !mixedMetadata ? Payload(index) : (index % 4) switch
+    {
+        0 => [],
+        1 => [(byte)index],
+        2 => Encoding.UTF8.GetBytes($"file-{index}\n" + new string('t', index % 2048) + "\nend\n"),
+        _ => Payload(index),
+    };
+
+    private static byte[] Payload(int index)
+    {
+        byte[] bytes = new byte[64 + index % 1024];
+        new Random(index).NextBytes(bytes);
+        BitConverter.TryWriteBytes(bytes.AsSpan(), index);
+        return bytes;
+    }
+
+    private async Task AssertReadableAsync(Guid session, string path, byte[] expected)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using Stream stream = await _service.OpenReadAsync(session, path, timeout.Token);
+        using var target = new MemoryStream();
+        await stream.CopyToAsync(target, timeout.Token);
+        Assert.AreSequenceEqual(expected, target.ToArray());
     }
 
     /// <summary>MSTest 注入的测试上下文(取消令牌)。</summary>

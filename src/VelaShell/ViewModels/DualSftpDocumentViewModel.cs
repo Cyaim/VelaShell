@@ -38,7 +38,7 @@ public sealed record DualSftpEndpoint(
 }
 
 /// <summary>
-/// 「远程 + 远程」双栏文件标签:两栏各连一台机器,文件经本机内存流式中转(不落盘),
+/// 「远程 + 远程」双栏文件标签:两栏各连一台机器,文件经本机中转(FTP 源先完整缓存),
 /// 目录比较两边都在远端。由资源管理器里 Ctrl 选中两条连接后的「在双栏 SFTP 中打开」建出。
 /// </summary>
 /// <remarks>
@@ -259,6 +259,7 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
             GetDefaultEditorPath = getDefaultEditorPath,
             InitialRemotePath = profile.Ftp?.InitialRemotePath,
             AcceptsStreamedUploads = endpoint.AcceptsStreamedUploads,
+            UseStagedRelaySource = profile.ConnectionType == ConnectionType.FTP,
         };
         // 「显示隐藏文件」与列显示按设置铺好(与单栏文档同一口径,差距分析 A8);写回设置的回调由宿主建好之后再挂。
         pane.ApplyDisplayOptions(transferOptions);

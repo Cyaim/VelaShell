@@ -10,6 +10,7 @@ using FluentFTP.Proxy.AsyncProxy;
 using VelaShell.Core.Ftp;
 using VelaShell.Core.Models;
 using VelaShell.Core.Net;
+using VelaShell.Core.Resources;
 using VelaShell.Core.Sftp;
 using VelaShell.Infrastructure.Net;
 using CoreDataMode = VelaShell.Core.Models.FtpDataConnectionMode;
@@ -238,6 +239,88 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
                 throw new VelaFtpOperationException($"FTP download of {fileName} failed.");
             }
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task DownloadStreamAsync(Guid sessionId, string remotePath, Stream destination,
+        IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        if (!destination.CanWrite) throw new ArgumentException("Destination stream must be writable.", nameof(destination));
+        ArgumentException.ThrowIfNullOrWhiteSpace(remotePath);
+        string path = NormalizePath(remotePath);
+        long start = destination.CanSeek ? destination.Position : 0;
+        var budget = new DownloadBudget();
+        var output = new DownloadDestination(destination, progress, GetRemoteFileName(path));
+        for (int attempt = 0; ; attempt++)
+        {
+            FtpConnectionPool.Lease? lease = null;
+            bool failed = false;
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                lease = await RentAsync(sessionId, cancellationToken).ConfigureAwait(false);
+                AsyncFtpClient client = lease.Client;
+                ((IBoundedDownloadClient)client).DownloadBudget = budget;
+                long expected = await GetBinaryFileSizeAsync(client, path, cancellationToken).ConfigureAwait(false);
+                output.ExpectedLength = expected;
+                // 55.1 (f051d642): progress != null makes DownloadFileInternal stop at SIZE,
+                // hiding excess data. Read to EOF instead; our sink supplies progress and length checks.
+                client.LastReplies.Clear();
+                bool ok = await client.DownloadStream(output, path, token: cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                output.ThrowIfFailed(); // the library can swallow an IOException from the destination
+                if (expected >= 0 && output.BytesWritten != expected)
+                    throw new RemoteTransferLengthException(path, expected, output.BytesWritten);
+                // DownloadFileInternal already consumes the final reply, including its earlySuccess path.
+                // bool alone accepts a null code and preliminary replies. Never issue a second GetReply.
+                // f051d642: Execute sets LastCommandExecuted; ProcessGetReply copies it to Command
+                // (MaskCommand only masks USER/PASS). IOException earlySuccess adds a suffix.
+                // Noop=false and Navigate=Manual are pinned before Connect below, so no daemon
+                // or auto-restore PWD/CWD can replace this reply. Command is library attribution,
+                // not a server-supplied transfer identifier; length and completion code remain required.
+                FtpReply reply = client.LastReply;
+                if (!ok || reply.Code is not ("226" or "250") || reply.Command?.StartsWith("RETR ", StringComparison.Ordinal) != true)
+                    throw new VelaFtpOperationException(Strings.Format("FtpSvc_ReadCompletionFailed", reply.Code, reply.Message));
+                return;
+            }
+            catch (Exception ex)
+            {
+                failed = true;
+                lease?.Invalidate();
+                output.ThrowIfFailed();
+                cancellationToken.ThrowIfCancellationRequested();
+                // All outer busy retries AND internal REST resumes share one RETR budget (3 total).
+                // Non-seekable plugin sinks remain supported, but cannot replay already delivered bytes.
+                if (attempt < MaxBusyRetries && budget.Opens < DownloadBudget.MaxOpens
+                    && FluentFtpInterop.IsConcurrencyRejection(ex)
+                    && (output.BytesWritten == 0 || destination.CanSeek)
+                    && LimitSessionToSingleConnection(sessionId))
+                {
+                    if (output.BytesWritten > 0)
+                    {
+                        destination.Position = start;
+                        destination.SetLength(start);
+                    }
+                    output.ResetCount();
+                    continue;
+                }
+                if (ex is RemoteTransferLengthException) throw;
+                throw Fault(sessionId, ex, "download");
+            }
+            finally
+            {
+                if (lease is not null)
+                {
+                    ((IBoundedDownloadClient)lease.Client).DownloadBudget = null;
+                    try { lease.Dispose(); }
+                    catch (Exception cleanup) when (failed && cleanup is not OutOfMemoryException)
+                    {
+                        // Failed data/completion/local writes remain the primary error, even if disposal fails.
+                    }
+                }
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -516,7 +599,15 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
         {
             FtpListItem? item = await lease.Client.GetObjectInfo(path, true, cancellationToken).ConfigureAwait(false)
                                 ?? throw new VelaFtpPathNotFoundException($"FTP path not found: {path}");
-            return await MapAsync(lease.Client, item, cancellationToken).ConfigureAwait(false);
+            RemoteFileInfo mapped = await MapAsync(lease.Client, item, cancellationToken).ConfigureAwait(false);
+            if (!mapped.IsDirectory)
+            {
+                // LIST/MLST 的大小不保证与 Binary RETR 同口径。仅单文件 stat 补 SIZE,
+                // 不给目录列表逐个查询;未知时用 0 沿用上层「非正长不做精确校验」的策略。
+                long length = await GetBinaryFileSizeAsync(lease.Client, path, cancellationToken).ConfigureAwait(false);
+                return Map(item, size: Math.Max(0, length));
+            }
+            return mapped;
         }
         catch (Exception ex)
         {
@@ -530,15 +621,32 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
         FtpConnectionPool.Lease lease = await RentAsync(sessionId, cancellationToken).ConfigureAwait(false);
         try
         {
+            string path = NormalizePath(remotePath);
+            long length = await GetBinaryFileSizeAsync(lease.Client, path, cancellationToken).ConfigureAwait(false);
+            // FluentFTP 55.1 在 OpenRead 内先 SIZE 再 TYPE。先在同一租约切 Binary,
+            // 再传已知正长或 -1 禁止库重复查询(0 会触发查询,包括已知空文件)。
             Stream inner = await lease.Client
-                .OpenRead(NormalizePath(remotePath), FtpDataType.Binary, 0L, 0L, token: cancellationToken)
+                .OpenRead(path, FtpDataType.Binary, 0L, length > 0 ? length : -1L, token: cancellationToken)
                 .ConfigureAwait(false);
-            // 数据连接的生命周期就是这个流的生命周期:必须等调用方释放流,才能把连接还回池子。
-            return new LeasedStream(inner, lease);
+            // FluentFTP 55.1:读失败也会内部 CloseAsync。断开其控制连接引用,确保最终回复
+            // 只有 LeasedStream 一个消费者;不能再由 CloseDataStreamInternal 隐式读取/吞超时。
+            if (inner is FtpDataStream data)
+            {
+                data.ControlConnection = null!;
+            }
+            return new LeasedStream(inner, lease, remotePath, length, cancellationToken);
         }
         catch (Exception ex)
         {
-            lease.Dispose();
+            lease.Invalidate();
+            try
+            {
+                lease.Dispose();
+            }
+            catch (Exception cleanup) when (cleanup is not OutOfMemoryException)
+            {
+                // 保留打开数据连接时的原始失败。
+            }
             throw Fault(sessionId, ex, "open");
         }
     }
@@ -705,6 +813,13 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
             ReadTimeout = 30_000,
             DataConnectionConnectTimeout = 15_000,
             DataConnectionReadTimeout = 30_000,
+            // 55.1/f051d642: NoopInterval=0 is clamped to 1000, NOT disabled.
+            // Connect starts the daemon only when Noop=true. Pin the existing false default
+            // before connecting, rather than racing a live daemon when a lease is rented.
+            Noop = false,
+            // DownloadFileInternal can issue PWD/CWD after RETR in SemiAuto mode, replacing
+            // LastReply. Keep the existing Manual default explicit for completion attribution.
+            Navigate = FtpNavigate.Manual,
         };
         AsyncFtpClient client = await CreateClientAsync(info, route, config, cancellationToken).ConfigureAwait(false);
         client.ValidateCertificate += (_, e) => probe.Validate(e);
@@ -766,7 +881,7 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
     {
         if (route.Kind == ProxyKind.None)
         {
-            return new AsyncFtpClient(info.Host, info.EffectiveUsername, info.EffectivePassword, info.Port, config);
+            return new BoundedFtpClient(info.Host, info.EffectiveUsername, info.EffectivePassword, info.Port, config);
         }
         string ftpHost = route.ProxyDns
             ? info.Host
@@ -781,8 +896,8 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
             FtpCredentials = new NetworkCredential(info.EffectiveUsername, info.EffectivePassword),
         };
         AsyncFtpClient client = route.Kind == ProxyKind.Http
-            ? new AsyncFtpClientHttp11Proxy(profile)
-            : new AsyncFtpClientSocks5Proxy(profile);
+            ? new BoundedHttpFtpClient(profile)
+            : new BoundedSocksFtpClient(profile);
         client.Config = config;
         return client;
     }
@@ -795,6 +910,21 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
             CoreEncryption.Implicit => FluentFTP.FtpEncryptionMode.Implicit,
             _ => FluentFTP.FtpEncryptionMode.Auto,
         };
+
+    /// <summary>SIZE 取决于当前 TYPE;调用期间由同一租约独占控制连接。负值表示未知。</summary>
+    private static async Task<long> GetBinaryFileSizeAsync(AsyncFtpClient client, string path, CancellationToken cancellationToken)
+    {
+        // 55.1 的 SetDataTypeAsync 是 protected;只在公开状态尚非 Binary 时发等价命令。
+        // 成功后同步公开缓存,避免 OpenRead 内再次 TYPE;重连由库重置此状态。
+        if (client.Status.CurrentDataType != FtpDataType.Binary)
+        {
+            FtpReply reply = await client.Execute("TYPE I", cancellationToken).ConfigureAwait(false);
+            if (!reply.Success) throw new FtpCommandException(reply);
+            client.Status.CurrentDataType = FtpDataType.Binary;
+        }
+        long length = await client.GetFileSize(path, -1, cancellationToken).ConfigureAwait(false);
+        return length >= 0 ? length : -1;
+    }
 
     /// <summary>把 FluentFTP 的进度回调翻译成 VelaShell 的传输进度快照。</summary>
     private static Progress<FtpProgress>? MapProgress(IProgress<TransferProgress>? progress, string fileName, long totalBytes) =>
@@ -834,12 +964,12 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
     /// 属主/属组直接取服务器给的**名字**(FTP 没有 UID/GID),因此整条绕开了 SFTP 那边
     /// 靠 SSH exec 跑 <c>getent passwd</c> 的身份翻译。服务器不给时留空,由界面自行留白。
     /// </summary>
-    private static RemoteFileInfo Map(FtpListItem item, bool linkIsDirectory = false) =>
+    private static RemoteFileInfo Map(FtpListItem item, bool linkIsDirectory = false, long? size = null) =>
         new()
         {
             Name = item.Name ?? string.Empty,
             FullPath = item.FullName ?? string.Empty,
-            Size = item.Size < 0 ? 0 : item.Size,
+            Size = size ?? Math.Max(0, item.Size),
             IsDirectory = item.Type == FtpObjectType.Directory || (item.Type == FtpObjectType.Link && linkIsDirectory),
             IsSymbolicLink = item.Type == FtpObjectType.Link,
             LinkTarget = item.Type == FtpObjectType.Link && !string.IsNullOrEmpty(item.LinkTarget) ? item.LinkTarget : null,
@@ -957,28 +1087,82 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
     /// 绑定了一次连接租借的只读流:调用方释放流时连同把连接还回池子。
     /// FTP 的数据连接与流同生共死,不能像 SFTP 那样先还连接再慢慢读。
     /// </summary>
-    private sealed class LeasedStream(Stream inner, FtpConnectionPool.Lease lease) : Stream
+    private sealed class LeasedStream(Stream inner, FtpConnectionPool.Lease lease, string remotePath, long length, CancellationToken openToken) : Stream
     {
-        public override bool CanRead => inner.CanRead;
+        private readonly Lock _closeSync = new();
+        private readonly long _length = length;
+        private Task? _closing;
+        private long _bytesRead;
+        private bool _eof;
+        private bool _readFailed;
+
+        public override bool CanRead => _closing is null && inner.CanRead;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
-        public override long Length => inner.Length;
+        public override long Length => _length;
 
         public override long Position
         {
-            get => inner.Position;
+            get => _bytesRead;
             set => throw new NotSupportedException("FTP data streams are sequential.");
         }
 
-        public override void Flush() => inner.Flush();
+        public override void Flush() { }
 
-        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+        private int TrackRead(int read, int requested)
+        {
+            _bytesRead += read;
+            if (requested > 0 && read == 0)
+            {
+                _eof = true;
+                if (_length > 0 && _bytesRead != _length)
+                {
+                    throw new RemoteTransferLengthException(remotePath, _length, _bytesRead);
+                }
+            }
+            return read;
+        }
 
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-            inner.ReadAsync(buffer, cancellationToken);
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            ObjectDisposedException.ThrowIf(_closing is not null, this);
+            try
+            {
+                openToken.ThrowIfCancellationRequested();
+                return TrackRead(inner.Read(buffer, offset, count), count);
+            }
+            catch (Exception ex)
+            {
+                _readFailed = true;
+                lease.Invalidate();
+                CloseOnceAsync().GetAwaiter().GetResult();
+                if (ex is IOException or OperationCanceledException) throw;
+                throw FluentFtpInterop.Translate(ex, "read");
+            }
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ObjectDisposedException.ThrowIf(_closing is not null, this);
+            try
+            {
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(openToken, cancellationToken);
+                linked.Token.ThrowIfCancellationRequested();
+                int read = await inner.ReadAsync(buffer, linked.Token).ConfigureAwait(false);
+                return TrackRead(read, buffer.Length);
+            }
+            catch (Exception ex)
+            {
+                _readFailed = true;
+                lease.Invalidate();
+                await CloseOnceAsync().ConfigureAwait(false);
+                if (ex is IOException or OperationCanceledException) throw;
+                throw FluentFtpInterop.Translate(ex, "read");
+            }
+        }
 
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            inner.ReadAsync(buffer, offset, count, cancellationToken);
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
 
         public override long Seek(long offset, SeekOrigin origin) =>
             throw new NotSupportedException("FTP data streams are not seekable.");
@@ -987,21 +1171,194 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
 
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
+        private Task CloseOnceAsync()
+        {
+            lock (_closeSync)
+            {
+                return _closing ??= CloseCoreAsync();
+            }
+        }
+
+        private async Task CloseCoreAsync()
+        {
+            // 未读完不尝试排空/ABOR:直接丢弃控制连接,避免收尾盖掉调用方的失败。
+            bool abandoned = !_eof && !(_length > 0 && _bytesRead == _length);
+            bool discard = abandoned || _readFailed || openToken.IsCancellationRequested;
+            if (discard) lease.Invalidate();
+            // 沿用控制通道超时;即使调用方配置无限等待,收尾也最多等默认的 30 秒。
+            int timeout = lease.Client.Config.ReadTimeout;
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(openToken);
+            deadline.CancelAfter(timeout > 0 ? timeout : 30_000);
+            Exception? failure = null;
+            bool verified = false;
+            try
+            {
+                // 只关闭数据资源一次。绝不调用 FtpDataStream.CloseAsync 或 base.DisposeAsync。
+                // FluentFTP 的读失败路径可能已经关闭数据 socket,不再二次关闭。
+                if (inner is not FtpSocketStream { IsDisposed: true })
+                {
+                    await inner.DisposeAsync().AsTask().WaitAsync(deadline.Token).ConfigureAwait(false);
+                }
+                if (!discard)
+                {
+                    // 租约仍独占;GetReply 可能返回空 Code 而不抛超时,必须显式检查。
+                    FtpReply reply = await lease.Client.GetReply(deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false);
+                    if (reply.Code is not ("226" or "250"))
+                    {
+                        throw new VelaFtpOperationException(Strings.Format("FtpSvc_ReadCompletionFailed", reply.Code, reply.Message));
+                    }
+                    verified = true;
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                lease.Invalidate();
+                if (!discard)
+                {
+                    failure = openToken.IsCancellationRequested
+                        ? new OperationCanceledException(openToken)
+                        : deadline.IsCancellationRequested
+                            ? new VelaFtpConnectionException(Strings.Get("FtpSvc_ReadCompletionTimeout"), ex)
+                            : FluentFtpInterop.Translate(ex, "read completion");
+                }
+            }
+            finally
+            {
+                // 包括致命异常在内,只有明确验证完成的连接才有资格回到空闲池。
+                if (!verified) lease.Invalidate();
+                try
+                {
+                    lease.Dispose();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    if (!discard && failure is null) failure = FluentFtpInterop.Translate(ex, "read cleanup");
+                }
+            }
+            if (failure is not null) throw failure;
+        }
+
         protected override void Dispose(bool disposing)
         {
-            if (disposing)
-            {
-                inner.Dispose();
-                lease.Dispose();
-            }
+            if (disposing) CloseOnceAsync().GetAwaiter().GetResult();
             base.Dispose(disposing);
         }
 
-        public override async ValueTask DisposeAsync()
+        public override ValueTask DisposeAsync()
         {
-            await inner.DisposeAsync().ConfigureAwait(false);
-            lease.Dispose();
-            await base.DisposeAsync().ConfigureAwait(false);
+            GC.SuppressFinalize(this);
+            return new ValueTask(CloseOnceAsync());
+        }
+    }
+
+    // 55.1 ResumeDownloadAsync has no retry limit and ignores Config.RetryAttempts.
+    // Guard its public virtual OpenReadInternal hook, not log text or private reflection.
+    // The budget is installed only for DownloadStreamAsync; legacy OpenRead is unchanged.
+    private sealed class DownloadBudget
+    {
+        public const int MaxOpens = 3;
+        public int Opens { get; private set; }
+        public void Opening()
+        {
+            if (Opens >= MaxOpens)
+                throw new VelaFtpOperationException(Strings.Format("FtpSvc_ReadCompletionFailed", "RETR", "retry-limit"));
+            Opens++;
+        }
+    }
+
+    private interface IBoundedDownloadClient
+    {
+        DownloadBudget? DownloadBudget { get; set; }
+    }
+
+    private sealed class BoundedFtpClient(string host, string user, string password, int port, FtpConfig config)
+        : AsyncFtpClient(host, user, password, port, config), IBoundedDownloadClient
+    {
+        public DownloadBudget? DownloadBudget { get; set; }
+        public override Task<Stream> OpenReadInternal(string path, FtpDataType type, long fileLen, long restart,
+            bool ignoreStaleData, CancellationToken token = default)
+        {
+            DownloadBudget?.Opening();
+            return base.OpenReadInternal(path, type, fileLen, restart, ignoreStaleData, token);
+        }
+    }
+
+    private sealed class BoundedHttpFtpClient(FtpProxyProfile profile)
+        : AsyncFtpClientHttp11Proxy(profile), IBoundedDownloadClient
+    {
+        public DownloadBudget? DownloadBudget { get; set; }
+        public override Task<Stream> OpenReadInternal(string path, FtpDataType type, long fileLen, long restart,
+            bool ignoreStaleData, CancellationToken token = default)
+        {
+            DownloadBudget?.Opening();
+            return base.OpenReadInternal(path, type, fileLen, restart, ignoreStaleData, token);
+        }
+    }
+
+    private sealed class BoundedSocksFtpClient(FtpProxyProfile profile)
+        : AsyncFtpClientSocks5Proxy(profile), IBoundedDownloadClient
+    {
+        public DownloadBudget? DownloadBudget { get; set; }
+        public override Task<Stream> OpenReadInternal(string path, FtpDataType type, long fileLen, long restart,
+            bool ignoreStaleData, CancellationToken token = default)
+        {
+            DownloadBudget?.Opening();
+            return base.OpenReadInternal(path, type, fileLen, restart, ignoreStaleData, token);
+        }
+    }
+
+    /// <summary>Leave-open, sequential sink. Preserve local failures even when FluentFTP catches IOException.</summary>
+    private sealed class DownloadDestination(Stream inner, IProgress<TransferProgress>? progress, string fileName) : Stream
+    {
+        private Exception? _failure;
+        public long ExpectedLength { get; set; }
+        public long BytesWritten { get; private set; }
+        public void ResetCount() => BytesWritten = 0;
+        public void ThrowIfFailed()
+        {
+            if (_failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(_failure).Throw();
+        }
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => inner.CanWrite;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => BytesWritten; set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) =>
+            WriteAsync(buffer, offset, count, CancellationToken.None).GetAwaiter().GetResult();
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ThrowIfFailed();
+            try
+            {
+                await inner.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
+                BytesWritten += buffer.Length;
+                progress?.Report(new TransferProgress
+                {
+                    FileName = fileName,
+                    BytesTransferred = BytesWritten,
+                    TotalBytes = Math.Max(0, ExpectedLength),
+                    Percentage = ExpectedLength > 0 ? (int)Math.Min(100, BytesWritten * 100.0 / ExpectedLength) : 0,
+                    SpeedBytesPerSecond = 0,
+                    EstimatedTimeRemaining = TimeSpan.Zero,
+                });
+            }
+            catch (Exception ex)
+            {
+                _failure = ex;
+                throw;
+            }
+        }
+        public override void Flush() => FlushAsync(CancellationToken.None).GetAwaiter().GetResult();
+        public override async Task FlushAsync(CancellationToken cancellationToken)
+        {
+            ThrowIfFailed();
+            try { await inner.FlushAsync(cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) { _failure = ex; throw; }
         }
     }
 

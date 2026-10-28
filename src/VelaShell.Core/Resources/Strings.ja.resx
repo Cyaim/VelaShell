@@ -1504,6 +1504,15 @@
   <data name="SftpErr_ServerExited" xml:space="preserve">
     <value>サーバーの sftp-server が SFTP の開始前に終了しました(終了コード {0})</value>
   </data>
+  <data name="FtpSvc_ReadCompletionFailed" xml:space="preserve">
+    <value>FTP サーバーが転送の完了を確認しませんでした：{0} {1}</value>
+  </data>
+  <data name="FtpSvc_ReadCompletionTimeout" xml:space="preserve">
+    <value>FTP サーバーによる転送完了の確認を待機中にタイムアウトしました。</value>
+  </data>
+  <data name="SftpSvc_RelayLengthMismatch" xml:space="preserve">
+    <value>転送が不完全です：{0}。想定は {1} バイト、実際の読み取りは {2} バイトです。転送元が変更されたか、接続が途中で終了した可能性があります。</value>
+  </data>
   <data name="SftpSvc_ResumeUnverifiable" xml:space="preserve">
     <value>{0} の再開位置を確認できないため(転送元を読み戻せないか、転送先が再開に対応していません)、同名の競合として処理します。</value>
   </data>
@@ -9735,4 +9744,10 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="DiagSvc_TailscaleNoUsernameSkip" xml:space="preserve"><value>リモートのユーザー名が未入力のため、認証テストをスキップしました</value></data>
   <data name="DiagSvc_SuggestTailscaleUsername" xml:space="preserve"><value>Tailscale SSH に必要なのはリモートのシステムユーザー名だけです。編集ウィンドウで入力すると認証テストを実行できます。</value></data>
   <data name="DiagSvc_SuggestTailscale" xml:space="preserve"><value>この端末が Tailscale にログインしていること、リモートのユーザー名が正しいこと、tailnet の SSH ポリシーがこのユーザーを許可していることを確認してください。ブラウザーでの確認を求められた場合は、確認ウィンドウで完了してください。</value></data>
+  <data name="Transfer_PreparingSource" xml:space="preserve">
+    <value>転送元ファイルをローカルキャッシュにダウンロード中…</value>
+  </data>
+  <data name="Relay_CacheFailed" xml:space="preserve">
+    <value>ローカル転送キャッシュにアクセスできません。ディスクの空き容量と一時ディレクトリのアクセス権を確認してから再試行してください。</value>
+  </data>
 </root>

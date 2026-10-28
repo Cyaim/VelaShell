@@ -5,13 +5,13 @@ using VelaShell.Core.Ssh;
 namespace VelaShell.Core.Sftp;
 
 /// <summary>
-/// 两个远端会话之间的文件中转:源端顺序读,目标端边收边写,中间只经过本机内存。
+/// 两个远端会话之间的文件中转:可定位源直接读取,顺序源以最多 4 MiB 内存缓冲,不落盘。
 /// </summary>
 /// <remarks>
 /// <para>
 /// SFTP / FTP 协议本身都没有「服务器到服务器」的复制原语(FTP 的 FXP 各家服务器几乎都禁了),
 /// 所以数据一定要过本机。这里做到的是<b>不落盘</b>:不像同会话复制那样先整份下载到临时文件再上传,
-/// 两段是同时进行的,耗时约等于较慢那一段,而不是两段之和。
+/// 已知不超过 4 MiB 的顺序源先完整缓存并确认源关闭成功,其余顺序源以有界预读重叠两段传输。
 /// </para>
 /// <para>
 /// 源与目标可以是不同的协议(SFTP、FTP、插件的文件协议两两组合),两端都只经 <see cref="ISftpService" />。
@@ -59,24 +59,276 @@ public static class RemoteRelay
         // 先 stat:进度要一个分母,「保留时间戳」要源文件的修改时间;顺带把"源已经不在了"
         // 挡在打开流之前,报出来的是那条路径找不到,而不是一条读到一半断掉的流。
         RemoteFileInfo info = await source.GetFileInfoAsync(sourceSessionId, sourcePath, cancellationToken).ConfigureAwait(false);
-        await using Stream stream = await source.OpenReadAsync(sourceSessionId, sourcePath, cancellationToken).ConfigureAwait(false);
-        if (resumeOffset > 0 && !stream.CanSeek)
+        Stream stream = await source.OpenReadAsync(sourceSessionId, sourcePath, cancellationToken).ConfigureAwait(false);
+        var completion = progress is null ? null : new CompletionProgress(progress);
+        BufferedRelayReadStream? buffered = null;
+        bool sourceClosed = false;
+        async Task CloseSourceAsync()
         {
-            // 续传点是按「目标比源短」探出来的,那个短文件是不是上一次的半截,得回到源里比对尾部才知道 ——
-            // 源回不了头(FTP 的数据连接、多数插件协议)就核实不了。悄悄整份重传等于不经询问覆盖一个
-            // 可能与此无关的同名文件,所以按「对不上」报:调用方会把它交回同名冲突策略。
-            // 此时目标还没被碰过(writing 没有回调)。
-            throw new VelaSftpResumeMismatchException(Strings.Format("SftpSvc_ResumeUnverifiable", targetPath));
+            // Mark before awaiting: a failed FTP final reply must not cause a
+            // second close attempt, either here or in the exception cleanup.
+            sourceClosed = true;
+            await stream.DisposeAsync().ConfigureAwait(false);
         }
-        writing?.Invoke();
-        await target.UploadStreamAsync(
-            targetSessionId,
-            stream,
-            targetPath,
-            Math.Max(0, info.Size),
-            info.LastModified == default ? null : info.LastModified,
-            progress,
-            resumeOffset,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (resumeOffset > 0 && !stream.CanSeek)
+            {
+                // FTP 的顺序流核实不了目标半截是否来自源,仍交回原有冲突策略,不能悄悄覆盖。
+                throw new VelaSftpResumeMismatchException(Strings.Format("SftpSvc_ResumeUnverifiable", targetPath));
+            }
+            CheckedReadStream? checkedSource = null;
+            Stream uploadSource;
+            if (!stream.CanSeek && resumeOffset == 0)
+            {
+                bool cacheEntireFile = info.Size is > 0 and <= BufferedRelayReadStream.MemoryBudget;
+                buffered = new BufferedRelayReadStream(stream, info.Size, sourcePath, cacheEntireFile, cancellationToken);
+                await buffered.WaitUntilReadyAsync().ConfigureAwait(false);
+                if (cacheEntireFile || buffered.IsEmpty)
+                {
+                    // Small files and genuinely empty unknown sources are safe to
+                    // upload only after the source's final protocol reply succeeds.
+                    await CloseSourceAsync().ConfigureAwait(false);
+                }
+                uploadSource = buffered;
+            }
+            else
+            {
+                checkedSource = new CheckedReadStream(stream, info.Size, sourcePath);
+                uploadSource = checkedSource;
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            writing?.Invoke();
+            await target.UploadStreamAsync(
+                targetSessionId,
+                uploadSource,
+                targetPath,
+                Math.Max(0, info.Size),
+                info.LastModified == default ? null : info.LastModified,
+                completion,
+                resumeOffset,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (buffered is not null)
+            {
+                await buffered.VerifyCompleteAsync(cancellationToken).ConfigureAwait(false);
+                await buffered.StopAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                await checkedSource!.VerifyCompleteAsync(cancellationToken).ConfigureAwait(false);
+            }
+            if (!sourceClosed)
+            {
+                await CloseSourceAsync().ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // 目标或源读取已失败:源端仍须还连接,但收尾失败不能覆盖原始错误/取消。
+            try
+            {
+                if (buffered is not null)
+                {
+                    await buffered.StopAsync().ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                System.Diagnostics.Trace.WriteLine($"[VelaShell] Relay buffer cleanup failed: {ex.GetType().Name}");
+            }
+            try
+            {
+                if (!sourceClosed)
+                {
+                    await CloseSourceAsync().ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                System.Diagnostics.Trace.WriteLine($"[VelaShell] Relay source cleanup failed: {ex.GetType().Name}");
+            }
+            throw;
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        completion?.Complete();
     }
+
+    internal sealed class CompletionProgress(IProgress<TransferProgress> inner) : IProgress<TransferProgress>
+    {
+        private readonly Lock _sync = new();
+        private TransferProgress? _completion;
+        private bool _succeeded;
+        private bool _reported;
+
+        public void Report(TransferProgress value)
+        {
+            lock (_sync)
+            {
+                if (_reported)
+                {
+                    return;
+                }
+                if (value.Percentage >= 100 || (value.TotalBytes > 0 && value.BytesTransferred >= value.TotalBytes))
+                {
+                    _completion = value;
+                    if (!_succeeded)
+                    {
+                        // 字节确认仍用于重试起点记账,只是收尾成功前不显示完成。
+                        inner.Report(new TransferProgress
+                        {
+                            FileName = value.FileName,
+                            BytesTransferred = value.BytesTransferred,
+                            TotalBytes = value.TotalBytes,
+                            Percentage = 99,
+                            SpeedBytesPerSecond = value.SpeedBytesPerSecond,
+                            EstimatedTimeRemaining = value.EstimatedTimeRemaining,
+                        });
+                    }
+                    ReportCompletion();
+                }
+                else
+                {
+                    inner.Report(value);
+                }
+            }
+        }
+
+        public void Complete()
+        {
+            lock (_sync)
+            {
+                _succeeded = true;
+                ReportCompletion();
+            }
+        }
+
+        private void ReportCompletion()
+        {
+            // FTP 目标通过 Progress<T> 异步上报,最后一帧也可能晚于上传方法返回。
+            if (_succeeded && !_reported && _completion is { } value)
+            {
+                _reported = true;
+                inner.Report(value);
+            }
+        }
+    }
+
+    // 不拥有 inner。按当前位置而非累计读取量校验,续传尾部比对的重复读取不算作额外传输。
+    internal sealed class CheckedReadStream(Stream inner, long expectedLength, string path, bool requireFullConsumption = false) : Stream
+    {
+        private long _position;
+        private long _consumedPrefix;
+        private bool _eof;
+
+        public override bool CanRead => inner.CanRead;
+        public override bool CanSeek => inner.CanSeek;
+        public override bool CanWrite => false;
+        public override long Length => inner.Length;
+        public override long Position
+        {
+            get => inner.CanSeek ? inner.Position : _position;
+            set => Seek(value, SeekOrigin.Begin);
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            int read = inner.Read(buffer, offset, count);
+            CheckRead(read, count);
+            return read;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            int read = inner.Read(buffer);
+            CheckRead(read, buffer.Length);
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            int read = await inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            CheckRead(read, buffer.Length);
+            return read;
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            int read = await inner.ReadAsync(buffer, offset, count, cancellationToken).ConfigureAwait(false);
+            CheckRead(read, count);
+            return read;
+        }
+
+        private void CheckRead(int read, int requested)
+        {
+            if (requested == 0)
+            {
+                return;
+            }
+            long position = inner.CanSeek ? inner.Position : _position + read;
+            if (read > 0)
+            {
+                if (requireFullConsumption && position - read <= _consumedPrefix)
+                {
+                    _consumedPrefix = Math.Max(_consumedPrefix, position);
+                }
+                _position = position;
+            }
+            _eof = read == 0;
+            if (expectedLength > 0 && (position > expectedLength || (_eof && position != expectedLength)))
+            {
+                throw LengthMismatch();
+            }
+        }
+
+        public async Task VerifyCompleteAsync(CancellationToken cancellationToken)
+        {
+            if (expectedLength <= 0)
+            {
+                return;
+            }
+            if (_position != expectedLength)
+            {
+                throw LengthMismatch();
+            }
+            // Staged, non-resumed uploads must consume the whole snapshot, not just
+            // seek to the final byte. The original streaming path retains its contract.
+            if (requireFullConsumption && _consumedPrefix != expectedLength)
+            {
+                throw new RemoteTransferLengthException(path, expectedLength, _consumedPrefix);
+            }
+            // 有的上传实现只读 length 个字节便返回,再探一次 EOF,避免源增长或 FTP 未读完就归池。
+            if (!_eof)
+            {
+                if (inner.CanSeek)
+                {
+                    inner.Seek(_position, SeekOrigin.Begin);
+                }
+                await ReadAsync(new byte[1], cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private RemoteTransferLengthException LengthMismatch() => new(path, expectedLength, _position);
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            long position = inner.Seek(offset, origin);
+            _eof = false;
+            return position;
+        }
+
+        public override void Flush() { }
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+}
+
+/// <summary>中转的可信源长度与实际读取量不一致;数值可安全写入重试诊断,不必记录带路径的消息。</summary>
+public sealed class RemoteTransferLengthException(string path, long expectedBytes, long actualBytes)
+    : IOException(Strings.Format("SftpSvc_RelayLengthMismatch", path, expectedBytes, actualBytes))
+{
+    /// <summary>可信元数据给出的预期字节数。</summary>
+    public long ExpectedBytes { get; } = expectedBytes;
+    /// <summary>源流实际读取的字节数。</summary>
+    public long ActualBytes { get; } = actualBytes;
 }

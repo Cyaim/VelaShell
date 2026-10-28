@@ -762,6 +762,15 @@
   <data name="SftpErr_ServerExited" xml:space="preserve">
     <value>伺服器的 sftp-server 沒等 SFTP 建立就結束了(結束代碼 {0})</value>
   </data>
+  <data name="FtpSvc_ReadCompletionFailed" xml:space="preserve">
+    <value>FTP 伺服器未確認傳輸完成：{0} {1}</value>
+  </data>
+  <data name="FtpSvc_ReadCompletionTimeout" xml:space="preserve">
+    <value>等待 FTP 伺服器確認傳輸完成時逾時。</value>
+  </data>
+  <data name="SftpSvc_RelayLengthMismatch" xml:space="preserve">
+    <value>傳輸不完整：{0}。預期 {1} 位元組，實際讀取 {2} 位元組。來源檔案可能已變更，或連線提前結束。</value>
+  </data>
   <data name="SftpSvc_ResumeUnverifiable" xml:space="preserve">
     <value>無法核實 {0} 的續傳起點(來源端不能回讀,或目標端不支援續傳),依同名衝突處理。</value>
   </data>
@@ -10212,4 +10221,10 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="DiagSvc_TailscaleNoUsernameSkip" xml:space="preserve"><value>未填寫遠端使用者名稱，跳過驗證測試</value></data>
   <data name="DiagSvc_SuggestTailscaleUsername" xml:space="preserve"><value>Tailscale SSH 只需要遠端系統使用者名稱；在編輯視窗填寫後即可測試驗證。</value></data>
   <data name="DiagSvc_SuggestTailscale" xml:space="preserve"><value>確認本機已登入 Tailscale、遠端使用者名稱正確，且 tailnet 的 SSH 原則允許此使用者；伺服器要求瀏覽器驗證時，請在彈出的驗證視窗中完成。</value></data>
+  <data name="Transfer_PreparingSource" xml:space="preserve">
+    <value>正在下載來源檔案到本機快取…</value>
+  </data>
+  <data name="Relay_CacheFailed" xml:space="preserve">
+    <value>無法存取本機傳輸快取。請檢查磁碟剩餘空間及暫存目錄權限後重試。</value>
+  </data>
 </root>

@@ -177,9 +177,9 @@ public class SftpService : ISftpService
                 await UploadAsync(client, fileStream, remotePath, resumeOffset,
                     preserveTimestamps ? new DateTimeOffset(fileInfo.LastWriteTimeUtc) : null, fsync, onBytes, createMode: null, cancellationToken).ConfigureAwait(false);
             }
-            catch (VelaSftpTransferInterruptedException interrupted)
+            catch (Exception failure)
             {
-                RememberDurable(sessionId, remotePath, interrupted);
+                RememberDurable(sessionId, remotePath, failure);
                 throw;
             }
 
@@ -248,9 +248,9 @@ public class SftpService : ISftpService
             {
                 await UploadAsync(client, input, remotePath, resumeOffset, keepTime, fsync, onBytes, createMode, cancellationToken).ConfigureAwait(false);
             }
-            catch (VelaSftpTransferInterruptedException interrupted)
+            catch (Exception failure)
             {
-                RememberDurable(sessionId, remotePath, interrupted);
+                RememberDurable(sessionId, remotePath, failure);
                 throw;
             }
             reporter.Complete();
@@ -1109,8 +1109,16 @@ public class SftpService : ISftpService
         _durableUploads.TryRemove((sessionId, remotePath), out long durable) ? durable : null;
 
     /// <summary>记下这次被打断的上传精确落盘到了哪里,供下一次续传用。</summary>
-    private void RememberDurable(Guid sessionId, string remotePath, VelaSftpTransferInterruptedException interrupted) =>
-        _durableUploads[(sessionId, remotePath)] = interrupted.DurableLength;
+    private void RememberDurable(Guid sessionId, string remotePath, Exception failure)
+    {
+        // 源先失败时主异常不再被目标收尾异常替换,但目标的精确确认水位仍要留给续传。
+        long? durable = VelaSftpUploadFailureDetails.Get(failure)?.DurableLength
+            ?? (failure as VelaSftpTransferInterruptedException)?.DurableLength;
+        if (durable is { } length)
+        {
+            _durableUploads[(sessionId, remotePath)] = length;
+        }
+    }
 
     /// <summary>
     /// 核实一次下载的续传起点,理由同 <see cref="ResolveUploadResumeAsync(ISftpClientWrapper, string, string, long, long?, CancellationToken)" />:

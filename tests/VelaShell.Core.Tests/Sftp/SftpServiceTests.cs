@@ -1630,7 +1630,9 @@ public class SftpServiceTests
     /// 上一次被打断时库交出了精确的续传点(DurableLength):续传从那里接着传,不按远端长度盲退一个在途窗口。
     /// </summary>
     [TestMethod]
-    public async Task UploadFileAsync_ResumeAfterInterruption_UsesTheExactDurableLength()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task UploadFileAsync_ResumeAfterInterruption_UsesTheExactDurableLength(bool sourceFailure)
     {
         string localPath = Path.GetTempFileName();
         byte[] content = CreatePattern(500_000);
@@ -1644,11 +1646,17 @@ public class SftpServiceTests
         _sftpClient.OpenAsync(remotePath, FileMode.Open, FileAccess.Read, Arg.Any<CancellationToken>())
                    .Returns(_ => Task.FromResult<Stream>(new MemoryStream(content[..(int)remoteLength], false)));
 
-        // 第一次上传中途断了:库报出精确的续传点。
+        // 源先失败时仍保留目标的精确续传点,不能让目标收尾覆盖它。
+        Exception failure = sourceFailure ? new IOException("source") : new VelaSftpTransferInterruptedException("中断", durable);
+        if (sourceFailure)
+        {
+            new VelaSftpUploadFailureDetails(durable, new VelaSftpPermissionDeniedException("close")).AttachTo(failure);
+        }
         _sftpClient.UploadAsync(Arg.Any<Stream>(), remotePath, Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>())
-                   .Returns(Task.FromException(new VelaSftpTransferInterruptedException("中断", durable)));
-        await Assert.ThrowsExactlyAsync<VelaSftpTransferInterruptedException>(
+                   .Returns(Task.FromException(failure));
+        Exception actual = await Assert.ThrowsAsync<Exception>(
             () => _sftpService.UploadFileAsync(_sessionId, localPath, remotePath));
+        Assert.AreSame(failure, actual);
 
         // 续传:从 280_000 接着传,而不是 300_000 - 64 KiB。
         await _sftpService.UploadFileAsync(_sessionId, localPath, remotePath, null, resumeOffset: 1);
