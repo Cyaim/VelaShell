@@ -51,6 +51,9 @@ internal sealed class LoopbackFtpServer : IDisposable
     /// <summary>已接受的控制连接数(用于断言连接池确实开了多条连接)。</summary>
     public int AcceptedConnections;
 
+    /// <summary>已创建的被动监听器数:每条控制连接最多一个,不能随文件数增长。</summary>
+    public int PassiveListenersCreated;
+
     /// <summary>
     /// 同一时刻允许的控制连接数上限;超出的连接一律以 <c>421</c> 顶回去(连欢迎语都不给)。
     /// <para>
@@ -162,7 +165,10 @@ internal sealed class LoopbackFtpServer : IDisposable
     {
         using (client)
         {
-            var state = new SessionState();
+            // Preliminary and completion replies are separate small writes. Do not let
+            // Nagle wait for Linux's delayed ACK between them on the control connection.
+            client.NoDelay = true;
+            using var state = new SessionState(_cts.Token);
             NetworkStream stream = client.GetStream();
             using var reader = new StreamReader(stream, Encoding.UTF8, false, 1024, true);
             using var writer = new StreamWriter(stream, new UTF8Encoding(false), 1024, true) { AutoFlush = true, NewLine = "\r\n" };
@@ -443,13 +449,19 @@ internal sealed class LoopbackFtpServer : IDisposable
         }
     }
 
-    private static async Task OpenPassiveAsync(SessionState state, StreamWriter writer, bool extended)
+    private async Task OpenPassiveAsync(SessionState state, StreamWriter writer, bool extended)
     {
         state.CloseData();
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        state.DataListener = listener;
-        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        // Keep one passive port per control session. Allocating a fresh listener for every
+        // transfer exhausts Windows' dynamic ports while previous sockets are in TIME_WAIT.
+        if (state.DataListener is null)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            state.DataListener = listener;
+            Interlocked.Increment(ref PassiveListenersCreated);
+        }
+        int port = ((IPEndPoint)state.DataListener.LocalEndpoint).Port;
         if (extended)
         {
             await writer.WriteLineAsync($"229 Entering Extended Passive Mode (|||{port}|)").ConfigureAwait(false);
@@ -670,7 +682,7 @@ internal sealed class LoopbackFtpServer : IDisposable
     private string Local(string remote) =>
         Path.GetFullPath(Path.Combine(Root, remote.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
 
-    private sealed class SessionState
+    private sealed class SessionState(CancellationToken cancellationToken) : IDisposable
     {
         public string WorkingDirectory { get; set; } = "/";
         public long RestartOffset { get; set; }
@@ -682,12 +694,23 @@ internal sealed class LoopbackFtpServer : IDisposable
         public async Task<Stream> AcceptDataAsync()
         {
             TcpListener listener = DataListener ?? throw new InvalidOperationException("No PASV/EPSV issued.");
-            TcpClient client = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+            TcpClient client = await listener.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
             return new DataStream(client);
         }
 
         public void CloseData()
         {
+            // A rejected RETR/STOR can leave a connected client in the accept queue.
+            // Discard it without releasing the session's passive port.
+            while (DataListener is { } listener && listener.Pending())
+            {
+                listener.AcceptTcpClient().Dispose();
+            }
+        }
+
+        public void Dispose()
+        {
+            CloseData();
             DataListener?.Stop();
             DataListener = null;
         }

@@ -948,6 +948,8 @@ public class FtpFileServiceIntegrationTests
             Assert.AreSequenceEqual(SHA256.HashData(expected), SHA256.HashData(actual), $"f{i}.bin SHA-256");
         }
         Assert.IsLessThanOrEqualTo(concurrency, _server.AcceptedConnections);
+        Assert.AreEqual(_server.AcceptedConnections, _server.PassiveListenersCreated,
+            "Passive listeners must be bounded by control sessions, not by the number of files.");
         if (concurrency == 1) Assert.AreEqual(1, _server.AcceptedConnections);
         Assert.IsTrue(_server.SizeRequests.All(request => request.Binary));
         Assert.AreEqual(_server.AcceptedConnections, _server.TypeCommands, "默认 Binary listing 每连接只需一次 TYPE,不得每文件盲发。");
@@ -1149,8 +1151,11 @@ public class FtpFileServiceIntegrationTests
         _server.ReadFaultForPath = _ => new() { DataLimit = 7, ResetData = reset, Reply = "426 Interrupted" };
         Guid session = await OpenAsync(maxConnections: 1);
         using var storage = new MemoryStream();
-        await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() => ((ISftpService)_service)
+        RemoteTransferLengthException error = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() => ((ISftpService)_service)
             .DownloadStreamAsync(session, "/producer.bin", new SequentialDestination(storage)));
+        Assert.IsTrue(error.ExpectedBytes == payload.Length);
+        Assert.AreEqual(7L, error.ActualBytes);
+        Assert.IsTrue(storage.CanWrite, "A remote failure must not close the caller-owned destination.");
         Assert.AreEqual(1, _server.RetrCounts["/producer.bin"]);
         Assert.AreEqual(7, storage.Length);
         Assert.IsEmpty(_server.RestartOffsets);
@@ -1219,6 +1224,8 @@ public class FtpFileServiceIntegrationTests
                 Assert.AreEqual(1, _server.RetrCounts[$"/p{i}.bin"]);
             });
         Assert.IsLessThanOrEqualTo(concurrency, _server.AcceptedConnections);
+        Assert.AreEqual(_server.AcceptedConnections, _server.PassiveListenersCreated,
+            "Passive listeners must be bounded by control sessions, not by the number of files.");
         Assert.IsTrue(_server.SizeRequests.All(request => request.Binary));
     }
 
