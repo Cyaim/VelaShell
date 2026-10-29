@@ -11,21 +11,22 @@ namespace VelaShell.Infrastructure.Tests;
 [TestClass]
 public sealed class SonnetDbPersistenceTests : IDisposable
 {
-    private readonly SonnetDbEngine _engine;
+    private SonnetDbEngine? _engine;
     private readonly AesSecretProtector _protector;
     private readonly string _testDirectory;
+
+    private SonnetDbEngine Engine => _engine ??= new(Path.Combine(_testDirectory, "sonnetdb"));
 
     public SonnetDbPersistenceTests()
     {
         _testDirectory = Path.Combine(Path.GetTempPath(), $"velashell_sndbtest_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDirectory);
-        _engine = new(Path.Combine(_testDirectory, "sonnetdb"));
         _protector = new(Path.Combine(_testDirectory, "secret.key"));
     }
 
     public void Dispose()
     {
-        _engine.Dispose();
+        _engine?.Dispose();
         if (Directory.Exists(_testDirectory))
         {
             Directory.Delete(_testDirectory, true);
@@ -35,7 +36,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SessionRepository_SaveAndLoad_RoundTrips()
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var group = new ServerGroup { Name = "生产环境", SortOrder = 1 };
         var profile = new SessionProfile
         {
@@ -64,7 +65,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SessionRepository_SftpProfile_RoundTripsThroughProtectedDocument()
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var profile = new SessionProfile
         {
             Name = "files",
@@ -89,7 +90,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SessionRepository_PostAuthCommand_RoundTripsPerProfile()
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var bastion = new SessionProfile
         {
             Name = "bastion",
@@ -126,7 +127,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SessionRepository_Notes_RoundTripWithLineBreaks()
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var noted = new SessionProfile
         {
             Name = "bastion",
@@ -150,7 +151,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SessionRepository_SaveFromAStaleCopy_KeepsStoredBookmarks()
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var profile = new SessionProfile { Name = "files", Host = "10.0.0.1", Username = "ops", Password = "secret" };
         await repo.SaveSessionAsync(profile);
         SessionProfile staleCopy = profile.Clone();
@@ -173,7 +174,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SessionRepository_Replace_OverwritesBookmarksToo()
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var profile = new SessionProfile
         {
             Name = "files",
@@ -199,7 +200,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SessionRepository_UpdateBookmarks_ChangesOnlyTheBookmarks()
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var profile = new SessionProfile { Name = "files", Host = "10.0.0.1", Port = 2222, Username = "ops", Password = "secret" };
         await repo.SaveSessionAsync(profile);
         var bookmark = new RemoteDirectoryBookmark { Name = "logs", LocalPath = "/tmp/logs", RemotePath = "/var/log" };
@@ -234,12 +235,12 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     {
         var profileId = Guid.NewGuid();
         string json = $$"""{"id":"{{profileId}}","name":"legacy","host":"legacy.example.com","username":"ops","authMethod":0}""";
-        await _engine.WithCollectionAsync<object?>(SonnetDbEngine.ProfilesCollection, store =>
+        await Engine.WithCollectionAsync<object?>(SonnetDbEngine.ProfilesCollection, store =>
         {
             store.Upsert(profileId.ToString("D"), json);
             return null;
         });
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
 
         SessionProfile loaded = (await repo.GetSessionAsync(profileId))!;
 
@@ -249,7 +250,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SessionRepository_Password_IsEncryptedAtRest()
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var profile = new SessionProfile
         {
             Name = "n",
@@ -258,7 +259,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
             Password = "plaintext-pass",
         };
         await repo.SaveSessionAsync(profile);
-        string rawJson = await _engine.WithCollectionAsync(
+        string rawJson = await Engine.WithCollectionAsync(
             SonnetDbEngine.ProfilesCollection,
             store => store.Get(profile.Id.ToString("D"))!.Json
         );
@@ -271,7 +272,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [DataRow(ConnectionType.SFTP)]
     public async Task SessionRepository_Tailscale_SaveAndLoadDoesNotPersistStaleMaterials(ConnectionType type)
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var profile = new SessionProfile
         {
             Name = "tail",
@@ -289,7 +290,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
         };
 
         await repo.SaveSessionAsync(profile);
-        string rawJson = await _engine.WithCollectionAsync(SonnetDbEngine.ProfilesCollection,
+        string rawJson = await Engine.WithCollectionAsync(SonnetDbEngine.ProfilesCollection,
             store => store.Get(profile.Id.ToString("D"))!.Json);
         SessionProfile loaded = (await repo.GetSessionAsync(profile.Id))!;
 
@@ -328,12 +329,12 @@ public sealed class SonnetDbPersistenceTests : IDisposable
             CredentialSource = CredentialReference.ForShared(Guid.NewGuid()),
             JumpHostProfileId = Guid.NewGuid()
         };
-        await _engine.WithCollectionAsync<object?>(SonnetDbEngine.ProfilesCollection, store =>
+        await Engine.WithCollectionAsync<object?>(SonnetDbEngine.ProfilesCollection, store =>
         {
             store.Upsert(profile.Id.ToString("D"), SonnetDbJson.Serialize(profile));
             return null;
         });
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
 
         SessionProfile single = (await repo.GetSessionAsync(profile.Id))!;
         SessionProfile all = (await repo.GetAllSessionsAsync()).Single();
@@ -355,7 +356,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SessionRepository_DeleteGroup_DetachesSessions()
     {
-        var repo = new SonnetDbSessionRepository(_engine, _protector);
+        var repo = new SonnetDbSessionRepository(Engine, _protector);
         var group = new ServerGroup { Name = "g" };
         var profile = new SessionProfile
         {
@@ -381,7 +382,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
             legacyFile,
             $$"""{"groups":[{"id":"{{Guid.NewGuid()}}","name":"旧分组","sortOrder":0,"sessions":[]}],"sessions":[{"id":"{{legacyId}}","name":"legacy","host":"1.2.3.4","port":22,"username":"ops","authMethod":0,"password":"oldpass","tags":[]}]}"""
         );
-        var repo = new SonnetDbSessionRepository(_engine, _protector, legacyFile);
+        var repo = new SonnetDbSessionRepository(Engine, _protector, legacyFile);
         List<SessionProfile> sessions = await repo.GetAllSessionsAsync();
         Assert.HasCount(1, sessions);
         Assert.AreEqual("legacy", sessions[0].Name);
@@ -415,28 +416,28 @@ public sealed class SonnetDbPersistenceTests : IDisposable
             PrivateKeyPath = "/keys/id",
             PrivateKeyPassphrase = "pp"
         };
-        await new SonnetDbSessionRepository(_engine, _protector).SaveSessionAsync(profile);
-        await new SonnetDbSessionRepository(_engine, _protector).SaveSessionAsync(keyed);
+        await new SonnetDbSessionRepository(Engine, _protector).SaveSessionAsync(profile);
+        await new SonnetDbSessionRepository(Engine, _protector).SaveSessionAsync(keyed);
 
         var otherKey = new AesSecretProtector(Path.Combine(_testDirectory, "other.key"));
-        var repo = new SonnetDbSessionRepository(_engine, otherKey);
+        var repo = new SonnetDbSessionRepository(Engine, otherKey);
         SessionProfile loaded = (await repo.GetSessionAsync(profile.Id))!;
         SessionProfile loadedKeyed = (await repo.GetSessionAsync(keyed.Id))!;
 
         Assert.IsTrue(CredentialMaterial.HasUnreadableSecret(loaded));
         Assert.IsTrue(CredentialMaterial.HasUnreadableSecret(loadedKeyed));
-        Assert.IsFalse(CredentialMaterial.HasUnreadableSecret((await new SonnetDbSessionRepository(_engine, _protector).GetSessionAsync(profile.Id))!),
+        Assert.IsFalse(CredentialMaterial.HasUnreadableSecret((await new SonnetDbSessionRepository(Engine, _protector).GetSessionAsync(profile.Id))!),
             "密钥对得上时载入的是明文");
 
         await repo.SaveSessionAsync(loaded);
-        Assert.AreEqual("s3cret", (await new SonnetDbSessionRepository(_engine, _protector).GetSessionAsync(profile.Id))!.Password,
+        Assert.AreEqual("s3cret", (await new SonnetDbSessionRepository(Engine, _protector).GetSessionAsync(profile.Id))!.Password,
             "解不开的那份存回去不丢");
     }
 
     [TestMethod]
     public async Task SettingsService_SaveAndLoad_RoundTrips_AndRaisesEvent()
     {
-        var service = new SonnetDbSettingsService(_engine);
+        var service = new SonnetDbSettingsService(Engine);
         AppSettings? observed = null;
         service.SettingsSaved += s => observed = s;
         AppSettings settings = await service.GetSettingsAsync();
@@ -456,7 +457,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task SettingsService_PersistsNestedOptionGroups()
     {
-        var service = new SonnetDbSettingsService(_engine);
+        var service = new SonnetDbSettingsService(Engine);
         AppSettings settings = await service.GetSettingsAsync();
         settings.General.AutoReconnect = false;
         settings.General.ReconnectIntervalSeconds = 15;
@@ -495,7 +496,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task HostKeyService_TrustAndVerify_Works()
     {
-        var service = new SonnetDbHostKeyService(_engine);
+        var service = new SonnetDbHostKeyService(Engine);
         Assert.AreEqual(
             HostKeyVerification.Unknown,
             await service.VerifyHostKeyAsync("host1", 22, "ssh-ed25519", "SHA256:abc")
@@ -520,7 +521,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task HostKeyService_KeepsOneRecordPerKeyType()
     {
-        var service = new SonnetDbHostKeyService(_engine);
+        var service = new SonnetDbHostKeyService(Engine);
         await service.TrustHostKeyAsync("multi", 22, "ssh-rsa", "SHA256:rsa");
         Assert.AreEqual(HostKeyVerification.Changed, await service.VerifyHostKeyAsync("multi", 22, "ssh-ed25519", "SHA256:ed"),
             "记着钥、却没有这一种:仍是变更,由用户决定");
@@ -549,13 +550,13 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     public async Task HostKeyService_LegacySingleRecord_IsMigratedPerKeyType()
     {
         KnownHost legacy = new() { Host = "legacy2", Port = 2200, KeyType = "ssh-rsa", Fingerprint = "SHA256:rsa" };
-        await _engine.WithCollectionAsync<object?>(SonnetDbEngine.KnownHostsCollection, store =>
+        await Engine.WithCollectionAsync<object?>(SonnetDbEngine.KnownHostsCollection, store =>
         {
             store.Upsert("legacy2:2200", SonnetDbJson.Serialize(legacy));
             return null;
         });
 
-        var service = new SonnetDbHostKeyService(_engine);
+        var service = new SonnetDbHostKeyService(Engine);
         Assert.AreEqual(HostKeyVerification.Trusted, await service.VerifyHostKeyAsync("legacy2", 2200, "ssh-rsa", "SHA256:rsa"));
 
         await service.TrustHostKeyAsync("legacy2", 2200, "ssh-ed25519", "SHA256:ed");
@@ -572,7 +573,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task HostKeyService_LegacyBareFingerprint_StillVerifiesAsTrusted()
     {
-        var service = new SonnetDbHostKeyService(_engine);
+        var service = new SonnetDbHostKeyService(Engine);
         await service.TrustHostKeyAsync("legacy", 22, "PublicKey", "kmYcvdi2Y9bXAbc+/Def");
 
         Assert.AreEqual(
@@ -593,7 +594,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task HostKeyService_FindKnownHost_ReturnsRecordedFingerprint()
     {
-        var service = new SonnetDbHostKeyService(_engine);
+        var service = new SonnetDbHostKeyService(Engine);
         Assert.IsNull(await service.FindKnownHostAsync("host2", 2222));
 
         await service.TrustHostKeyAsync("host2", 2222, "ssh-ed25519", "SHA256:old");
@@ -609,7 +610,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task RecentConnections_RecordAndQuery_DedupesAndOrdersByTimeDesc()
     {
-        var service = new SonnetDbRecentConnectionService(_engine);
+        var service = new SonnetDbRecentConnectionService(Engine);
         var profileId = Guid.NewGuid();
         DateTimeOffset now = DateTimeOffset.UtcNow;
         await service.RecordAsync(
@@ -681,7 +682,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task RecentConnections_InvalidConnectionType_FallsBackToSsh()
     {
-        await _engine.WritePointAsync(
+        await Engine.WritePointAsync(
             SonnetDbEngine.ConnHistoryMeasurement,
             DateTimeOffset.UtcNow,
             new Dictionary<string, string>
@@ -698,7 +699,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
             }
         );
 
-        RecentConnectionEntry entry = (await new SonnetDbRecentConnectionService(_engine).GetRecentAsync(1)).Single();
+        RecentConnectionEntry entry = (await new SonnetDbRecentConnectionService(Engine).GetRecentAsync(1)).Single();
 
         Assert.AreEqual(ConnectionType.SSH, entry.ConnectionType);
     }
@@ -706,7 +707,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task RecentConnections_ConnectionTypeBeyondInt32Range_FallsBackToSsh()
     {
-        await _engine.WritePointAsync(
+        await Engine.WritePointAsync(
             SonnetDbEngine.ConnHistoryMeasurement,
             DateTimeOffset.UtcNow,
             new Dictionary<string, string>
@@ -723,7 +724,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
             }
         );
 
-        RecentConnectionEntry entry = (await new SonnetDbRecentConnectionService(_engine).GetRecentAsync(1)).Single();
+        RecentConnectionEntry entry = (await new SonnetDbRecentConnectionService(Engine).GetRecentAsync(1)).Single();
 
         Assert.AreEqual(ConnectionType.SSH, entry.ConnectionType);
     }
@@ -735,7 +736,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task AuditLog_DeleteOlderThan_KeepsWhatIsInsideTheWindow()
     {
-        var service = new SonnetDbAuditLogService(_engine);
+        var service = new SonnetDbAuditLogService(Engine);
         DateTimeOffset now = DateTimeOffset.UtcNow;
         await service.WriteAsync(new() { Timestamp = now.AddDays(-400), Category = "connection", Action = "connect", Detail = "old" });
         await service.WriteAsync(new() { Timestamp = now.AddDays(-10), Category = "connection", Action = "connect", Detail = "recent" });
@@ -752,7 +753,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task RecentConnections_DeleteOlderThan_KeepsRecentOnes()
     {
-        var service = new SonnetDbRecentConnectionService(_engine);
+        var service = new SonnetDbRecentConnectionService(Engine);
         DateTimeOffset now = DateTimeOffset.UtcNow;
         await service.RecordAsync(new() { Name = "ancient", Host = "a", Username = "u", ConnectedAt = now.AddDays(-365), Success = true });
         await service.RecordAsync(new() { Name = "fresh", Host = "b", Username = "u", ConnectedAt = now.AddDays(-1), Success = true });
@@ -770,7 +771,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task AuditLog_Query_HonoursTheTimeRange()
     {
-        var service = new SonnetDbAuditLogService(_engine);
+        var service = new SonnetDbAuditLogService(Engine);
         DateTimeOffset start = new(2026, 7, 1, 0, 0, 0, TimeSpan.Zero);
         string[] actions = ["connect", "connect-failed", "profile-updated"];
         for (int day = 0; day < 30; day++)
@@ -794,7 +795,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task AuditLog_Source_RoundTrips()
     {
-        var service = new SonnetDbAuditLogService(_engine);
+        var service = new SonnetDbAuditLogService(Engine);
         DateTimeOffset now = DateTimeOffset.UtcNow;
         await service.WriteAsync(new() { Timestamp = now.AddMinutes(-2), Category = "connection", Action = "connect", Detail = "no-source" });
         await service.WriteAsync(new() { Timestamp = now.AddMinutes(-1), Category = "profile", Action = "profile-updated", Detail = "synced", Source = AuditSources.CloudSync });
@@ -845,7 +846,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task AuditLog_WriteAndQuery_FiltersByCategory()
     {
-        var service = new SonnetDbAuditLogService(_engine);
+        var service = new SonnetDbAuditLogService(Engine);
         await service.WriteAsync(
             new()
             {
@@ -884,7 +885,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task AppDataStore_UpsertGetDelete_Works()
     {
-        var store = new SonnetDbAppDataStore(_engine);
+        var store = new SonnetDbAppDataStore(Engine);
         await store.UpsertAsync("ui_config", "layout", new TestDoc { Value = "docked" });
         TestDoc? loaded = await store.GetAsync<TestDoc>("ui_config", "layout");
         Assert.IsNotNull(loaded);
@@ -897,7 +898,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task QuickCommands_V1Document_MigratesToV2AndCreatesBackup()
     {
-        var store = new SonnetDbAppDataStore(_engine);
+        var store = new SonnetDbAppDataStore(Engine);
         await store.UpsertAsync(
             "quick_commands",
             "commands",
@@ -985,7 +986,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
             {"commands":[{"name":"legacy","category":"Custom","commandText":"uptime","description":"old"}]}
             """
         );
-        var store = new SonnetDbAppDataStore(_engine);
+        var store = new SonnetDbAppDataStore(Engine);
         var repository = new SonnetDbQuickCommandRepository(store, legacyPath);
 
         QuickCommandLoadResult result = await repository.LoadAsync();
@@ -999,7 +1000,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task QuickCommands_NewerSchema_IsNotOverwritten()
     {
-        var store = new SonnetDbAppDataStore(_engine);
+        var store = new SonnetDbAppDataStore(Engine);
         await store.UpsertAsync(
             "quick_commands",
             "commands",
@@ -1019,7 +1020,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task QuickCommands_SyncV1_MigratesCategoriesAndIgnoresBuiltIns()
     {
-        var store = new SonnetDbAppDataStore(_engine);
+        var store = new SonnetDbAppDataStore(Engine);
         var repository = new SonnetDbQuickCommandRepository(store);
 
         await repository.ApplySyncAsync(
@@ -1056,7 +1057,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task QuickCommands_SyncV2_RoundTripsGroupsSortAndCompatibilityCategory()
     {
-        var store = new SonnetDbAppDataStore(_engine);
+        var store = new SonnetDbAppDataStore(Engine);
         var repository = new SonnetDbQuickCommandRepository(store);
         var groupId = Guid.NewGuid();
         var commandId = Guid.NewGuid();
@@ -1103,7 +1104,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task QuickCommands_SyncV2_InvalidGroupFallsBackToDefault()
     {
-        var repository = new SonnetDbQuickCommandRepository(new SonnetDbAppDataStore(_engine));
+        var repository = new SonnetDbQuickCommandRepository(new SonnetDbAppDataStore(Engine));
         await repository.ApplySyncAsync(
             new()
             {
@@ -1128,7 +1129,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task QuickCommands_SyncNewerSchema_RejectsWithoutOverwritingLocalData()
     {
-        var repository = new SonnetDbQuickCommandRepository(new SonnetDbAppDataStore(_engine));
+        var repository = new SonnetDbQuickCommandRepository(new SonnetDbAppDataStore(Engine));
         await repository.SaveAsync(
             new()
             {
@@ -1154,7 +1155,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task QuickCommands_OverlayAndOrder_RoundTripThroughStorageAndSync()
     {
-        var store = new SonnetDbAppDataStore(_engine);
+        var store = new SonnetDbAppDataStore(Engine);
         var repository = new SonnetDbQuickCommandRepository(store);
         QuickCommand hidden = QuickCommandCatalog.BuiltIns[0];
         QuickCommand overridden = QuickCommandCatalog.BuiltIns[1];
@@ -1228,7 +1229,7 @@ public sealed class SonnetDbPersistenceTests : IDisposable
     [TestMethod]
     public async Task QuickCommands_DocumentFromBefore555_LoadsWithoutRepair()
     {
-        var store = new SonnetDbAppDataStore(_engine);
+        var store = new SonnetDbAppDataStore(Engine);
         await store.UpsertAsync(
             "quick_commands",
             "commands",

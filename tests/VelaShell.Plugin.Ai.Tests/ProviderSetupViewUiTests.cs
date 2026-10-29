@@ -414,6 +414,7 @@ public sealed class ProviderSetupViewUiTests
     private sealed class HeldModelsEndpoint : IDisposable
     {
         private readonly HttpListener _listener;
+        private readonly CancellationTokenSource _shutdown = new();
         private readonly TaskCompletionSource _requested = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly string _response;
@@ -431,19 +432,23 @@ public sealed class ProviderSetupViewUiTests
 
         private async Task ServeAsync()
         {
+            CancellationToken shutdown = _shutdown.Token;
             try
             {
-                HttpListenerContext request = await _listener.GetContextAsync();
-                Authorization = request.Request.Headers["Authorization"];
-                _requested.TrySetResult();
-                await _released.Task;
-                byte[] payload = Encoding.UTF8.GetBytes(_response);
-                request.Response.ContentType = "application/json";
-                request.Response.ContentLength64 = payload.Length;
-                await request.Response.OutputStream.WriteAsync(payload);
-                request.Response.Close();
+                // 保存供应商也会刷新清单,放行后仍需应答同一用例中的后续请求。
+                while (await _listener.AcceptAsync(shutdown) is { } request)
+                {
+                    Authorization = request.Request.Headers["Authorization"];
+                    _requested.TrySetResult();
+                    await _released.Task;
+                    byte[] payload = Encoding.UTF8.GetBytes(_response);
+                    request.Response.ContentType = "application/json";
+                    request.Response.ContentLength64 = payload.Length;
+                    await request.Response.OutputStream.WriteAsync(payload, shutdown);
+                    request.Response.Close();
+                }
             }
-            catch (Exception)
+            catch (Exception) when (shutdown.IsCancellationRequested)
             {
                 // 测试收尾会关闭可能仍在等待的端点。
             }
@@ -452,8 +457,10 @@ public sealed class ProviderSetupViewUiTests
         public void Release() => _released.TrySetResult();
         public void Dispose()
         {
+            _shutdown.Cancel();
             _released.TrySetCanceled();
             _listener.Close();
+            _shutdown.Dispose();
         }
     }
 
@@ -2916,6 +2923,7 @@ public sealed class ProviderSetupViewUiTests
                 Assert.AreEqual("old-model", model.Text, "用户没碰过的型号框要跟上自动填入的型号");
 
                 await ClickPrimaryAsync(view);
+                Assert.AreEqual(2, pulls, "再次保存应完成第二次模型清单刷新,不能靠请求超时才返回");
                 Assert.AreEqual("old-model", provider.Models[0].Model, "再点保存不能把空的型号框写回去");
                 Assert.AreEqual("old-model", (await store.LoadAsync()).Providers.Single().Models[0].Model);
             }

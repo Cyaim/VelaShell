@@ -122,13 +122,14 @@ public sealed class BridgeAgentRunnerTests
     /// 而同一刻面板一切正常。
     /// <para>
     /// 用例做法:<b>先</b>造好 runner,<b>之后</b>才往库里写供应商。第一轮必须说"没配模型",
-    /// 第二轮必须已经看得见它 —— 报错里带的模型名就是证据(端点指向一个必然连不上的地址,
-    /// 所以第二轮一定失败,但失败的原因得是"连不上",不是"没模型")。
+    /// 第二轮必须已经看得见它 —— 报错里带的模型名就是证据(环回端点回 401,
+    /// 所以第二轮一定失败,但失败的原因得是服务商拒绝,不是"没模型")。
     /// </para>
     /// </remarks>
     [TestMethod]
     public async Task RunAsync_RereadsTheAiSettingsEveryTurn()
     {
+        await using var endpoint = new ErrorStub();
         using var context = new TestPluginContext();
         var store = new AiSettingsStore(context);
         BridgeAgentRunner runner = Create(context);
@@ -147,8 +148,7 @@ public sealed class BridgeAgentRunnerTests
                 {
                     Id = "p1",
                     Name = "Local",
-                    // 127.0.0.1:1 上不会有人监听,于是这一轮必定连不上 —— 我们要的正是这个
-                    BaseUrl = "http://127.0.0.1:1/v1",
+                    BaseUrl = endpoint.BaseUrl + "/v1",
                     DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
                     Models = [new AiModelConfig { Id = "m1", Model = "probe" }]
                 }
@@ -161,6 +161,7 @@ public sealed class BridgeAgentRunnerTests
 
         // 报错里带着模型名 = 它确实读到了刚写进去的那份设置
         Assert.Contains("Local / probe", error.Message);
+        Assert.IsGreaterThan(0, endpoint.Requests, "必须实际调用新配置的供应商");
     }
 
     /// <summary>
@@ -173,6 +174,7 @@ public sealed class BridgeAgentRunnerTests
     [TestMethod]
     public async Task RunAsync_NamesTheModelWhenTheProviderRejectsTheCall()
     {
+        await using var endpoint = new ErrorStub();
         using var context = new TestPluginContext();
         await new AiSettingsStore(context).SaveAsync(new AiSettings
         {
@@ -182,7 +184,7 @@ public sealed class BridgeAgentRunnerTests
                 {
                     Id = "p1",
                     Name = "Acme",
-                    BaseUrl = "http://127.0.0.1:1/v1",
+                    BaseUrl = endpoint.BaseUrl + "/v1",
                     DefaultProtocol = ChatProtocol.OpenAiChatCompletions,
                     Models = [new AiModelConfig { Id = "m1", Model = "x", Name = "some-model" }]
                 }
@@ -195,6 +197,7 @@ public sealed class BridgeAgentRunnerTests
                 new BridgeSettings { Mode = ChatMode.Chat }, Message(), Deny, English, null, null, CancellationToken.None));
 
         Assert.StartsWith("Acme / some-model:", error.Message);
+        Assert.IsGreaterThan(0, endpoint.Requests, "必须实际收到供应商的拒绝响应");
     }
 
     /// <summary>
