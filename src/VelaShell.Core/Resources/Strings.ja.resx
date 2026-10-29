@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
+  <data name="SftpSvc_RelayCommitUnconfirmed" xml:space="preserve">
+    <value>リモートファイルの確定結果を確認できませんでした。自動再試行を停止しました。再試行する前に、転送先と残っている可能性のある .vela-relay-* ファイルを確認してください。</value>
+  </data>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
   </resheader>

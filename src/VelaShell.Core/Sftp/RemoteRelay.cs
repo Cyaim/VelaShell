@@ -54,6 +54,127 @@ public static class RemoteRelay
         long resumeOffset = 0,
         CancellationToken cancellationToken = default)
     {
+        CompletionProgress? completion = await CopyFileCoreAsync(source, sourceSessionId, sourcePath, target, targetSessionId, targetPath,
+            progress, writing, resumeOffset, cancellationToken, requireFullConsumption: false).ConfigureAwait(false);
+        completion?.Complete();
+    }
+
+    /// <summary>
+    /// 先把字节写到目标端同目录的临时文件,待源流完成确认后再提交到正式路径。
+    /// <para>
+    /// 只有目标后端能保证提交语义时才返回 <see langword="true" />。不支持时在打开源流前返回
+    /// <see langword="false" />,让调用方选择兼容的回退策略。这样 FTP→SFTP 大文件不需要在本机
+    /// 落一份完整缓存,而 SFTP 的 POSIX rename 仍保证正式文件不会暴露半截内容。
+    /// </para>
+    /// </summary>
+    public static async Task<bool> TryCopyFileWithRemoteCommitAsync(
+        ISftpService source,
+        Guid sourceSessionId,
+        string sourcePath,
+        ISftpService target,
+        Guid targetSessionId,
+        string targetPath,
+        IProgress<TransferProgress>? progress = null,
+        Action? streamingStarted = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(target);
+        // Holding a source lease while renting a target lease from the same session
+        // can deadlock a single-connection backend. Keep that case on the staged path.
+        if (sourceSessionId == targetSessionId) return false;
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            await target.CheckUploadCommitAsync(targetSessionId, targetPath, overwrite: true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+
+        if (await target.ExistsAsync(targetSessionId, targetPath, cancellationToken).ConfigureAwait(false))
+        {
+            RemoteFileInfo destination = await target.GetFileInfoAsync(targetSessionId, targetPath, cancellationToken)
+                .ConfigureAwait(false);
+            // Legacy upload follows a link. Replacing that link changes semantics and
+            // could create a readable temporary for a protected referent.
+            if (destination.IsSymbolicLink) return false;
+        }
+        uint? createMode = await target.GetUploadCreateModeAsync(targetSessionId, targetPath, cancellationToken)
+            .ConfigureAwait(false);
+        streamingStarted?.Invoke();
+        string temporaryPath = CreateTemporaryPath(targetPath);
+        bool commitStarted = false;
+        bool writing = false;
+        try
+        {
+            CompletionProgress? completion = await CopyFileCoreAsync(
+                source, sourceSessionId, sourcePath, target, targetSessionId, temporaryPath,
+                progress, () => writing = true, resumeOffset: 0, cancellationToken, requireFullConsumption: true, createMode)
+                .ConfigureAwait(false);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            // Commit cannot be rolled back by cancellation. Bound the wait, but report
+            // an ambiguous failure separately so callers never automatically replay it.
+            using var commitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            commitStarted = true;
+            try
+            {
+                await target.CommitUploadAsync(targetSessionId, temporaryPath, targetPath, overwrite: true,
+                    commitTimeout.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                bool definiteRejection = ex is NotSupportedException
+                    or (VelaSftpOperationException and not VelaSftpTransferInterruptedException);
+                // A definite refusal means no commit was performed; delete the
+                // staged file. Network/timeout failures remain ambiguous.
+                if (definiteRejection)
+                {
+                    commitStarted = false;
+                    throw;
+                }
+                throw new RemoteRelayCommitException(ex);
+            }
+            completion?.Complete();
+            return true;
+        }
+        catch
+        {
+            if (writing && !commitStarted)
+            {
+                try
+                {
+                    using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await target.DeleteAsync(targetSessionId, temporaryPath, cancellationToken: cleanup.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception cleanupFailure) when (cleanupFailure is not OutOfMemoryException)
+                {
+                    System.Diagnostics.Trace.WriteLine(
+                        $"[VelaShell] Relay temporary cleanup failed: {cleanupFailure.GetType().Name}");
+                }
+            }
+            throw;
+        }
+    }
+
+    private static async Task<CompletionProgress?> CopyFileCoreAsync(
+        ISftpService source,
+        Guid sourceSessionId,
+        string sourcePath,
+        ISftpService target,
+        Guid targetSessionId,
+        string targetPath,
+        IProgress<TransferProgress>? progress,
+        Action? writing,
+        long resumeOffset,
+        CancellationToken cancellationToken,
+        bool requireFullConsumption,
+        uint? createMode = null)
+    {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(target);
         // 先 stat:进度要一个分母,「保留时间戳」要源文件的修改时间;顺带把"源已经不在了"
@@ -62,6 +183,7 @@ public static class RemoteRelay
         Stream stream = await source.OpenReadAsync(sourceSessionId, sourcePath, cancellationToken).ConfigureAwait(false);
         var completion = progress is null ? null : new CompletionProgress(progress);
         BufferedRelayReadStream? buffered = null;
+        CheckedReadStream? checkedSource = null;
         bool sourceClosed = false;
         async Task CloseSourceAsync()
         {
@@ -77,9 +199,10 @@ public static class RemoteRelay
                 // FTP 的顺序流核实不了目标半截是否来自源,仍交回原有冲突策略,不能悄悄覆盖。
                 throw new VelaSftpResumeMismatchException(Strings.Format("SftpSvc_ResumeUnverifiable", targetPath));
             }
-            CheckedReadStream? checkedSource = null;
             Stream uploadSource;
-            if (!stream.CanSeek && resumeOffset == 0)
+            // A fresh remote commit must consume every byte even if a future source
+            // happens to expose seeking; do not inherit the legacy resume exemptions.
+            if (requireFullConsumption || (!stream.CanSeek && resumeOffset == 0))
             {
                 bool cacheEntireFile = info.Size is > 0 and <= BufferedRelayReadStream.MemoryBudget;
                 buffered = new BufferedRelayReadStream(stream, info.Size, sourcePath, cacheEntireFile, cancellationToken);
@@ -107,6 +230,7 @@ public static class RemoteRelay
                 info.LastModified == default ? null : info.LastModified,
                 completion,
                 resumeOffset,
+                createMode,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (buffered is not null)
@@ -151,7 +275,19 @@ public static class RemoteRelay
             throw;
         }
         cancellationToken.ThrowIfCancellationRequested();
-        completion?.Complete();
+        if (requireFullConsumption && completion is not null)
+        {
+            long bytes = buffered?.ConsumedBytes ?? checkedSource?.BytesRead ?? Math.Max(0, info.Size);
+            completion.SetCompletion(info.Name, bytes);
+        }
+        return completion;
+    }
+
+    private static string CreateTemporaryPath(string destinationPath)
+    {
+        int slash = destinationPath.LastIndexOf('/');
+        string directory = slash >= 0 ? destinationPath[..(slash + 1)] : string.Empty;
+        return $"{directory}.vela-relay-{Guid.NewGuid():N}";
     }
 
     internal sealed class CompletionProgress(IProgress<TransferProgress> inner) : IProgress<TransferProgress>
@@ -203,6 +339,22 @@ public static class RemoteRelay
             }
         }
 
+        public void SetCompletion(string fileName, long bytesTransferred)
+        {
+            lock (_sync)
+            {
+                _completion = new TransferProgress
+                {
+                    FileName = fileName,
+                    BytesTransferred = bytesTransferred,
+                    TotalBytes = bytesTransferred,
+                    Percentage = 100,
+                    SpeedBytesPerSecond = 0,
+                    EstimatedTimeRemaining = TimeSpan.Zero,
+                };
+            }
+        }
+
         private void ReportCompletion()
         {
             // FTP 目标通过 Progress<T> 异步上报,最后一帧也可能晚于上传方法返回。
@@ -220,6 +372,8 @@ public static class RemoteRelay
         private long _position;
         private long _consumedPrefix;
         private bool _eof;
+
+        public long BytesRead => _position;
 
         public override bool CanRead => inner.CanRead;
         public override bool CanSeek => inner.CanSeek;
@@ -322,6 +476,10 @@ public static class RemoteRelay
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }
+
+/// <summary>提交未确认;不得根据内层网络异常自动重放或清理正式目标。</summary>
+public sealed class RemoteRelayCommitException(Exception innerException)
+    : IOException(Strings.Get("SftpSvc_RelayCommitUnconfirmed"), innerException);
 
 /// <summary>中转的可信源长度与实际读取量不一致;数值可安全写入重试诊断,不必记录带路径的消息。</summary>
 public sealed class RemoteTransferLengthException(string path, long expectedBytes, long actualBytes)

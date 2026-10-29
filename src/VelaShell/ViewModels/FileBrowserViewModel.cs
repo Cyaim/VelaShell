@@ -3250,6 +3250,7 @@ public class FileBrowserViewModel : ReactiveObject
         int retries = 0;
         // 一次运行内复用已确认完成的源;手动重试/改名另起运行,不跨运行保留缓存。
         StagedRelaySource? stagedSource = null;
+        bool remoteCommitRelay = false;
         try
         {
             while (true)
@@ -3313,7 +3314,7 @@ public class FileBrowserViewModel : ReactiveObject
                     long attemptStart = offset;
                     item?.MarkRetrying(retries, maxRetries);
                     await RetryDelay(TransferRetryPolicy.DelayBeforeRetry(retries), itemCt);
-                    offset = await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, itemCt,
+                    offset = remoteCommitRelay ? 0 : await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, itemCt,
                         hasStagedSource: stagedSource is not null);
                 }
             }
@@ -3323,7 +3324,7 @@ public class FileBrowserViewModel : ReactiveObject
         // 再停下、点「继续」时不会再传它。不只认 OperationCanceledException:取消把流关掉时,
         // 底下冒出来的也可能是一个「通道已关闭」之类的异常 —— 那是取消的后果,不能算这个文件失败,
         // 更不能当成断线把整批挂起。半截目标与整批取消一样,按「断点续传 / 清理半截文件」处理。
-        catch (Exception) when (itemCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is not RemoteRelayCommitException && itemCts.IsCancellationRequested && !ct.IsCancellationRequested)
         {
             item?.Status = TransferStatus.Cancelled;
             finalStatus = TransferStatus.Cancelled;
@@ -3429,6 +3430,17 @@ public class FileBrowserViewModel : ReactiveObject
                     progress, () => targetTouched = true, startAt, itemCt);
                 return;
             }
+
+            // FTP/FTPS 源的读取流只有在 DisposeAsync 收到最终传输回复后才算完成。
+            // 目标支持安全提交时，先把有界内存流直接写到目标同目录的临时文件，
+            // 源确认完成后再原子发布；这样大文件不需要在本机落一份完整缓存。
+            if (stagedSource is null && startAt == 0 && await RemoteRelay.TryCopyFileWithRemoteCommitAsync(
+                    source.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
+                    progress, () => remoteCommitRelay = true, itemCt))
+            {
+                return;
+            }
+
             if (stagedSource is null)
             {
                 item?.IsPreparingSource = true;

@@ -66,6 +66,18 @@ public sealed class SerializedSftpService(ISftpService inner, Guid sessionId) : 
     /// <summary>重命名远端条目的串行化透传。</summary>
     public Task RenameAsync(Guid sessionId, string oldPath, string newPath, CancellationToken cancellationToken = default) => ExecuteAsync(sessionId, token => _inner.RenameAsync(sessionId, oldPath, newPath, token), cancellationToken);
 
+    /// <summary>上传提交属于传输收尾,不排在耗时的目录删除或哈希操作之后;仍计入在途。</summary>
+    public Task CommitUploadAsync(Guid sessionId, string temporaryPath, string destinationPath, bool overwrite, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(sessionId, token => _inner.CommitUploadAsync(sessionId, temporaryPath, destinationPath, overwrite, token), cancellationToken, serialize: false);
+
+    /// <summary>上传提交预检的串行化透传。</summary>
+    public Task CheckUploadCommitAsync(Guid sessionId, string destinationPath, bool overwrite, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(sessionId, token => _inner.CheckUploadCommitAsync(sessionId, destinationPath, overwrite, token), cancellationToken);
+
+    /// <summary>获取上传临时文件权限的串行化透传。</summary>
+    public Task<uint?> GetUploadCreateModeAsync(Guid sessionId, string destinationPath, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(sessionId, token => _inner.GetUploadCreateModeAsync(sessionId, destinationPath, token), cancellationToken);
+
     /// <summary>远端复制的透传;内部是"下载到临时文件再上传",同属传输,不占串行闸。</summary>
     public Task CopyAsync(Guid sessionId, string sourcePath, string destPath, IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default) => ExecuteAsync(sessionId, token => _inner.CopyAsync(sessionId, sourcePath, destPath, progress, token), cancellationToken, serialize: false);
 
