@@ -28,7 +28,6 @@ public sealed class TransferRetryPolicyTests
         [new IOException("无法从传输连接中读取数据", new SocketException((int)SocketError.ConnectionAborted))],
         [new IOException("读到一半断掉了")],
         [new EndOfStreamException()],
-        [new RemoteTransferLengthException("/source", 1024, 0)],
     ];
 
     public static IEnumerable<object[]> PermanentFailures =>
@@ -44,6 +43,8 @@ public sealed class TransferRetryPolicyTests
         [new VelaFtpPermissionDeniedException("550")],
         [new VelaFtpPathNotFoundException("550 not found")],
         [new VelaFtpAuthenticationException("530")],
+        // 源的实际字节数与元数据对不上:重试几次还是同一份数据,别再拿几次机会去撞同一堵墙。
+        [new RemoteTransferLengthException("/source", 1024, 0)],
         [new PluginProtocolAuthenticationException("凭据无效")],
         [new PluginProtocolUnavailableException("s3", "插件被停用")],
         [new UnauthorizedAccessException("本地无权限")],

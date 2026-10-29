@@ -76,6 +76,16 @@ internal sealed class LoopbackFtpServer : IDisposable
     public int RejectedTransfers;
 
     /// <summary>
+    /// 同一时刻允许的 RETR 数上限;超出的那次**不回 425/450,直接复位数据连接**。
+    /// 复刻不少服务器的真实做法 —— 客户端只看到 ConnectionReset,一个字节都读不到。
+    /// 0 = 不限(默认)。
+    /// </summary>
+    public int MaxConcurrentRetrieves { get; set; }
+
+    /// <summary>被 <see cref="MaxConcurrentRetrieves" /> 静默掐断的 RETR 次数。</summary>
+    public int RejectedRetrieves;
+
+    /// <summary>
     /// 是否实现 <c>MFMT</c>(设置修改时间)。默认 true;置 false 复刻只会 RFC 959 那一套的老服务器
     /// —— 命令落进 default 分支回 <c>500</c>,客户端应当据此报「不支持」。
     /// </summary>
@@ -125,6 +135,11 @@ internal sealed class LoopbackFtpServer : IDisposable
         public bool CloseControl { get; init; }
         public int? DataLimit { get; init; }
         public bool ResetData { get; init; }
+        /// <summary>
+        /// 发完 <see cref="DataLimit" /> 个字节后**不复位、也不给 226**,直接让数据流正常结束
+        /// (纯短读);置 true 与 <see cref="ResetData" /> 互斥。
+        /// </summary>
+        public bool TruncateSilently { get; init; }
         public string? RejectRetr { get; init; }
         public string? Reply { get; init; } = "226 Transfer complete";
     }
@@ -161,8 +176,7 @@ internal sealed class LoopbackFtpServer : IDisposable
         }
     }
 
-    private async Task HandleClientAsync(TcpClient client)
-    {
+    private async Task HandleClientAsync(TcpClient client)    {
         using (client)
         {
             // Preliminary and completion replies are separate small writes. Do not let
@@ -523,6 +537,34 @@ internal sealed class LoopbackFtpServer : IDisposable
             await writer.WriteLineAsync(rejection).ConfigureAwait(false);
             return true;
         }
+        // 「一次只让下一个」的服务器在并发时的另一种形态:不回 425/450,直接把数据连接复位。
+        // 客户端看到的只有 ConnectionReset,一个字节都读不到 —— 批量中转里 actual=0 成片就是它。
+        int live = Interlocked.Increment(ref _liveTransfers);
+        try
+        {
+            if (MaxConcurrentRetrieves > 0 && live > MaxConcurrentRetrieves)
+            {
+                Interlocked.Increment(ref RejectedRetrieves);
+                await writer.WriteLineAsync("150 Opening data connection").ConfigureAwait(false);
+                await using (Stream rejected = await state.AcceptDataAsync().ConfigureAwait(false))
+                {
+                    ((DataStream)rejected).Reset();
+                }
+                state.CloseData();
+                state.RestartOffset = 0;
+                await writer.WriteLineAsync("226 Transfer complete").ConfigureAwait(false);
+                return true;
+            }
+            return await SendFileCoreAsync(state, path, fault, writer).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _liveTransfers);
+        }
+    }
+
+    private async Task<bool> SendFileCoreAsync(SessionState state, string path, ReadFault? fault, StreamWriter writer)
+    {
         await writer.WriteLineAsync("150 Opening data connection").ConfigureAwait(false);
         await using (Stream data = await state.AcceptDataAsync().ConfigureAwait(false))
         await using (FileStream source = File.OpenRead(path))

@@ -249,13 +249,16 @@ public sealed class TransferRetryTests
         string log = File.ReadAllText(System.IO.Directory.GetFiles(rig.Directory, "transfer-*.log").Single());
         string diagnostic = log.Split('\n').Single(line => line.Contains("ATTEMPT_FAILED", StringComparison.Ordinal));
         StringAssert.Contains(diagnostic, "attempt=1");
-        StringAssert.Contains(diagnostic, "retry=True");
+        // 长度不符是永久失败:诊断照样留一条,但如实标成不会再自动重试。
+        StringAssert.Contains(diagnostic, "retry=False");
+        StringAssert.Contains(diagnostic, "kind=Permanent");
         StringAssert.Contains(diagnostic, nameof(RemoteTransferLengthException));
         StringAssert.Contains(diagnostic, "expected=1024,actual=0");
         Assert.IsFalse(diagnostic.Contains("secret", StringComparison.Ordinal));
         Assert.IsFalse(diagnostic.Contains("private-path", StringComparison.Ordinal));
         Assert.IsFalse(diagnostic.Contains(RemoteFile, StringComparison.Ordinal));
-        Assert.AreEqual(TransferStatus.Completed, rig.Sink.Transfers.Single().Status);
+        Assert.AreEqual(TransferStatus.Failed, rig.Sink.Transfers.Single().Status,
+            "长度不符不再重试,这一项直接按失败落定。");
     });
 
     [TestMethod]
@@ -730,7 +733,7 @@ public sealed class TransferRetryTests
         public int Downloads => Sftp.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(ISftpService.DownloadStreamAsync));
         public int Uploads => Sftp.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(ISftpService.UploadStreamAsync));
 
-        public RelayRig(bool resume = false)
+        public RelayRig(bool resume = false, bool streamed = false, bool staged = true)
         {
             Sftp.ListDirectoryAsync(default, null!).ReturnsForAnyArgs(_ => Task.FromResult(new List<RemoteFileInfo>()));
             Sftp.CheckUploadCommitAsync(default, null!, false).ReturnsForAnyArgs(
@@ -740,7 +743,12 @@ public sealed class TransferRetryTests
                 call.ArgAt<Stream>(2).WriteAsync(Data, call.ArgAt<CancellationToken>(4)).AsTask());
             Sftp.UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(call =>
                 call.ArgAt<Stream>(1).CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(8)));
-            var source = new FileBrowserViewModel(Sftp, SourceId) { UseStagedRelaySource = true };
+            var source = new FileBrowserViewModel(Sftp, SourceId)
+            {
+                // 旧路径(整份缓存)与流管道各自显式选一条,免得用例靠默认值决定它验的是哪条。
+                UseStagedRelaySource = staged,
+                UseStreamedRelay = streamed,
+            };
             Target = new FileBrowserViewModel(Sftp, TargetId)
             {
                 DualPeer = source,

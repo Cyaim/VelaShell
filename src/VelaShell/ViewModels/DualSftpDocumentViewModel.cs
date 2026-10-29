@@ -236,6 +236,19 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
     /// <summary>异步释放:等同于关闭文档。</summary>
     public async ValueTask DisposeAsync() => await CloseAsync().ConfigureAwait(false);
 
+    /// <summary>FTP 源的中转走流管道(见 <see cref="FileBrowserViewModel.UseStreamedRelay" />)。</summary>
+    /// <remarks>生产恒为 <see langword="true" />;关掉它能回到整份缓存的旧路径(验证用)。</remarks>
+    internal static bool IsStreamingRelayEnabled { get; set; } = true;
+
+    /// <summary>
+    /// FTP 源的中转改为整份缓存到本地再上传(改动之前的做法)。
+    /// </summary>
+    /// <remarks>
+    /// 生产为 <see langword="false" />。留着它是为了把旧路径留住:万一某个服务器上流管道仍然出问题,
+    /// 用户至少还有一条已知可行的退路,而不是只能等我们发版。
+    /// </remarks>
+    internal static bool IsStagedRelayEnabled { get; set; }
+
     private static FileBrowserViewModel CreatePane(
         SerializedSftpService sftp,
         DualSftpEndpoint endpoint,
@@ -259,7 +272,11 @@ public sealed class DualSftpDocumentViewModel : ReactiveObject, ISftpDocumentCon
             GetDefaultEditorPath = getDefaultEditorPath,
             InitialRemotePath = profile.Ftp?.InitialRemotePath,
             AcceptsStreamedUploads = endpoint.AcceptsStreamedUploads,
-            UseStagedRelaySource = profile.ConnectionType == ConnectionType.FTP,
+            // FTP / FTPS 的数据连接是顺序的、通常还慢:作为中转源时走流管道,而不是先整份缓存到本地
+            // (那等于把同一个文件完整下载一遍,一个字节都还没写到目标)。旧路径仍可经 RemoteRelay 的内部开关验证。
+            UseStreamedRelay = IsStreamingRelayEnabled && profile.ConnectionType is ConnectionType.FTP,
+            // 流管道不解决问题时的兜底:整份缓存路径仍在,只是默认不再用它。
+            UseStagedRelaySource = IsStagedRelayEnabled && profile.ConnectionType is ConnectionType.FTP,
         };
         // 「显示隐藏文件」与列显示按设置铺好(与单栏文档同一口径,差距分析 A8);写回设置的回调由宿主建好之后再挂。
         pane.ApplyDisplayOptions(transferOptions);

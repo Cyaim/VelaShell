@@ -16,7 +16,7 @@ namespace VelaShell.Infrastructure.Tests.Ftp;
 /// <see cref="LoopbackFtpServer" />(进程内、纯明文)跑登录、列目录、传输与目录操作。
 /// <para>
 /// 这里验证的是 Mock 验不到的那一段:PASV/EPSV 数据连接、Unix LIST 输出到
-/// <see cref="RemoteFileInfo" /> 的解析、以及连接池在并发下真的开了多条控制连接。
+/// <see cref="RemoteFileInfo" /> 的解析、以及并发请求只复用一条控制连接。
 /// FTPS 与 TLS 会话复用需要真实服务器(见 docs/FTP客户端可行性调研.md 第五节风险 1),不在此列。
 /// </para>
 /// </summary>
@@ -161,14 +161,17 @@ public class FtpFileServiceIntegrationTests
     }
 
     [TestMethod]
-    public async Task ConcurrentTransfers_UseSeparatePooledConnections()
+    [DataRow(1)]
+    [DataRow(3)]
+    [DataRow(16)]
+    public async Task ConcurrentTransfers_ReuseSingleConnection_EvenWithLegacyLimit(int maxConnections)
     {
-        // FTP 一条控制连接同时只能跑一条命令:并发传输必须落到不同连接上,否则会互相打架。
+        // 旧配置即使允许多连接,并发请求也必须排队,不能先撞到服务端限制再降级。
         for (int i = 0; i < 4; i++)
         {
             await File.WriteAllTextAsync(Path.Combine(_root, $"f{i}.txt"), new string((char)('a' + i), 2048));
         }
-        Guid sessionId = await OpenAsync(maxConnections: 3);
+        Guid sessionId = await OpenAsync(maxConnections: maxConnections);
         string outDir = Path.Combine(Path.GetTempPath(), $"vela-ftp-out-{Guid.NewGuid():N}");
         Directory.CreateDirectory(outDir);
         try
@@ -180,13 +183,37 @@ public class FtpFileServiceIntegrationTests
             {
                 Assert.AreEqual(2048, new FileInfo(Path.Combine(outDir, $"f{i}.txt")).Length);
             }
-            Assert.IsGreaterThan(1, _server.AcceptedConnections, "并发传输应开出不止一条控制连接。");
-            Assert.IsLessThanOrEqualTo(3, _server.AcceptedConnections, "连接数不得超过 MaxConnections。");
+            Assert.AreEqual(1, _server.AcceptedConnections, "FTP 必须始终复用一条控制连接,不能按旧配置开多客户端。");
         }
         finally
         {
             Directory.Delete(outDir, true);
         }
+    }
+
+    [TestMethod]
+    public async Task OpenRead_QueuesTransfersAndMetadata_UntilStreamIsDisposed()
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "held.txt"), "held", TestContext.CancellationToken);
+        Guid sessionId = await OpenAsync(maxConnections: 4);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        Task<List<RemoteFileInfo>> listing;
+        Task upload;
+        using var source = new MemoryStream(new byte[] { 1, 2, 3 });
+        await using (Stream input = await _service.OpenReadAsync(sessionId, "/held.txt", timeout.Token))
+        {
+            listing = _service.ListDirectoryAsync(sessionId, "/", timeout.Token);
+            upload = _service.UploadStreamAsync(sessionId, source, "/queued.bin", source.Length,
+                cancellationToken: timeout.Token);
+            Assert.IsFalse(listing.IsCompleted, "目录刷新必须等待正在使用的唯一连接。");
+            Assert.IsFalse(upload.IsCompleted, "上传不能为绕过下载租约而开启第二个客户端。");
+            await input.CopyToAsync(Stream.Null, timeout.Token);
+        }
+        await Task.WhenAll(listing, upload).WaitAsync(timeout.Token);
+        byte[] uploaded = await File.ReadAllBytesAsync(Path.Combine(_root, "queued.bin"), timeout.Token);
+        Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, uploaded);
+        Assert.AreEqual(1, _server.AcceptedConnections);
     }
 
     [TestMethod]

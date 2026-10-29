@@ -3113,3 +3113,19 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - 2000 文件回归增加被动监听器数量必须等于控制连接数量的断言，确保夹具不会随文件数线性分配端口；未降低文件数量、并发度或完整性断言。
 
 **验证**：Windows Debug 下 `FtpFileServiceIntegrationTests` 定向全类 88/88 通过；此前重复运行失败用例的三轮各 2/2 通过；`dotnet build VelaShell.slnx -c Debug --no-restore --nologo -warnaserror` 通过，0 警告、0 错误；基础设施工程完整测试 110/110 通过，0 跳过。未执行远端 CI 重跑。
+
+## 282. 2026-10-30 FTP 单连接串行与双向流式中转核查
+
+- FTP/FTPS 连接池的实际租约上限固定为 1，而非只修改默认值；旧 `MaxConnections` 仍序列化与拷贝，但不能再让同一会话开启多个客户端。上传、下载和元数据操作共用该串行队列，SFTP 并发不变。此限制按会话生效，不是全应用按主机合并连接。
+- FTP→SFTP 安全提交路径经 `SourcePolledStream` 的有界 `Pipe` 边读边写；源短读时复用当前段剩余空间，修复每次申请整块导致内存分配远超有效字节背压阈值的问题。SFTP→FTP 直接从源流上传，无本地整文件暂存；不支持安全提交、符号链接、同会话及 FTP 源续传等兼容性回退继续保留。
+- 回归补充旧连接上限 1/3/16 均只创建一个客户端、读流占用期间上传与目录刷新排队、真实 SFTP 包装层→环回 FTP 的空文件/分块边界/超过 4 MiB 文件及并发请求 1/3 的长度与 SHA-256 核对。修正测试读流向副本写数据的错误与取消异常类型的过严断言；源最终回复失败时不要求目标消费管道内尚未交付的全部数据，但必须不提交正式文件。
+
+**验证**：最终 Windows Debug 核心定向 197/197、FTP 定向 119/119、宿主双栏与重试定向 60/60 通过，均 0 跳过；完整解决方案 `--no-restore -warnaserror` 构建通过，0 警告/0 错误。此前运行出现过测试主机栈溢出、短读内存分配耗尽和两处断言失败，未计作通过；修正后上述套件串行重跑通过。手册与 velashell-docs 中英同步。未执行完整测试集、真实 FTP/FTPS/OpenSSH、生产复测或跨平台 CI；不能据此断言现场服务端问题已消除。
+
+## 283. 2026-10-30 Windows CI 文件补全测试等待条件修复
+
+- [CI 40919256763](https://github.com/joesdu/VelaShell/actions/runs/40919256763) 的 Windows 作业仅 `FilePicker_ListsEachDirectoryOnce_WhileTheFilterKeepsChanging` 失败，断言时文件补全弹层尚未打开；同次 Linux、macOS 作业成功。失败属于 AI 插件 UI 测试，与本次 FTP 改动无直接调用关系。
+- 原用例在输入后固定泵约 300 ms；补全需要异步解析工作目录、180 ms 防抖与 UI 调度，经过固定时长不代表弹层已经打开。改为复用现有 `WaitForAsync` 等待弹层打开，保留约 15 秒超时，以及列目录恰好一次、连续过滤不重复列目录、最终只剩匹配文件的断言。
+- 仅调整测试同步条件，不改变产品行为、接口、配置或 CI 流程，无需同步用户手册或 velashell-docs。修复前本地单用例通过，未在本地复现原 CI 的偶发失败。
+
+**验证**：Windows Debug 下 `dotnet test tests\VelaShell.Plugin.Ai.Tests\VelaShell.Plugin.Ai.Tests.csproj -c Debug --no-restore --nologo -warnaserror --filter FullyQualifiedName~ChatPanelViewUiTests` 构建及整组 329/329 通过，0 跳过；整组运行期间另起进程重复运行原失败用例 5 轮，均通过。`git diff --check` 通过。未推送改动或重跑远端 CI，未在本机验证 Linux、macOS。

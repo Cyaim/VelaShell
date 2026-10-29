@@ -69,6 +69,36 @@ internal static class FluentFtpInterop
         return false;
     }
 
+    /// <summary>
+    /// 数据连接刚建起来就被对方断掉,而且这条流一个字节都没读出来。
+    /// </summary>
+    /// <remarks>
+    /// 不少服务器(默认 <c>max_per_ip</c> 很小的 vsftpd / proftpd、Windows IIS 的
+    /// «同时连接的客户端数» 上限)在并发被拒时**不返回 425/450**,而是把数据连接直接复位 ——
+    /// 客户端看到的只有一条 <see cref="System.Net.Sockets.SocketException" />(10054 / ConnectionReset)。
+    /// 措辞与应答码都看不出「并发」,所以只能靠事实判断:RETR 之后立刻断、并且一个字节都没拿到。
+    /// <para>
+    /// 这也是「批量传输里成片的 <c>actual=0</c>」的成因:识别不出来的话,它只会被当成临时失败
+    /// 反复重试,每次重试又开一条同样会被拒的连接。
+    /// </para>
+    /// </remarks>
+    public static bool LooksLikeRejectedDataConnection(Exception? ex, bool receivedAnyBytes)
+    {
+        if (receivedAnyBytes)
+        {
+            return false;
+        }
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is System.Net.Sockets.SocketException
+                or FtpCommandException { CompletionCode: "425" or "426" or "450" or "451" })
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static readonly string[] ConcurrencyKeywords =
     [
         "too many", "maximum number", "max clients", "connection limit", "already connected",

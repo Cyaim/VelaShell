@@ -67,6 +67,10 @@ internal sealed class BufferedRelayReadStream : Stream
         long produced = 0;
         byte[]? rented = null;
         bool slotHeld = false;
+        // 「整份缓存」只在长度可信时成立。长度未知(-1:服务器不支持 SIZE)时按不可信处理:
+        // 否则 limit 算成负数,一块都不读就直接报 EOF,一个非空的源会被当成空文件传过去,
+        // 目标收到 0 字节。这类源改走有界预读,EOF 由真正读到的 0 决定。
+        cacheEntireFile = cacheEntireFile && _expectedLength > 0;
         try
         {
             while (true)

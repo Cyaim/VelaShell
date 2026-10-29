@@ -124,6 +124,11 @@ public static class TransferRetryPolicy
         PluginProtocolAuthenticationException or PluginProtocolCertificateException or PluginProtocolUnavailableException =>
             TransferFailureKind.Permanent,
 
+        // —— 传输开始之后才发现源与元数据对不上:重试几次还是同一份数据,别再拿几次机会去撞同一堵墙。
+        // 以前落进下面的裸 IOException 兜底被当成「临时」,于是同一份文件连传四次、每次都在同一个字节停下
+        // (传输日志里成片的 source-length),用户看到的就是「大量失败 + 大量重试」。
+        RemoteTransferLengthException => TransferFailureKind.Permanent,
+
         // —— 网络层。
         TimeoutException or SocketException => TransferFailureKind.Transient,
 

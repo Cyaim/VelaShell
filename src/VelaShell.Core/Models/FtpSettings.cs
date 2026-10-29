@@ -57,10 +57,12 @@ public sealed class FtpSettings
     public string? TrustedCertificateThumbprint { get; set; }
 
     /// <summary>
-    /// 该会话允许的最大并发连接数(1 条跑元数据 + 其余跑传输)。
-    /// FTP 一条控制连接同一时刻只能跑一条命令,并发传输必须靠多连接,与 SFTP 的多路复用不同。
+    /// 旧配置保留的最大控制连接数;当前 FTP / FTPS 每个会话固定只使用一条控制连接。
+    /// FTP 不能在同一控制连接上多路复用,所有元数据操作与传输都排队独占该连接,
+    /// 避免部分服务器因多客户端同时传输而拒绝或复位数据连接。
+    /// 此字段继续参与序列化与拷贝以兼容旧配置,但调大不会增加实际并发。
     /// </summary>
-    public int MaxConnections { get; set; } = 4;
+    public int MaxConnections { get; set; } = 1;
 
     /// <summary>
     /// 连上后远程面板默认打开的目录;null / 空 = 沿用旧行为(登录工作目录,再回退根目录)。
