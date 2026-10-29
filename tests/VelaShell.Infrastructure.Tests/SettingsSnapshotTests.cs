@@ -12,19 +12,20 @@ namespace VelaShell.Infrastructure.Tests;
 [TestClass]
 public sealed class SettingsSnapshotTests : IDisposable
 {
-    private readonly SonnetDbEngine _engine;
+    private SonnetDbEngine? _engine;
     private readonly string _testDirectory;
+
+    private SonnetDbEngine Engine => _engine ??= new(Path.Combine(_testDirectory, "sonnetdb"));
 
     public SettingsSnapshotTests()
     {
         _testDirectory = Path.Combine(Path.GetTempPath(), $"velashell_snapshot_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDirectory);
-        _engine = new(Path.Combine(_testDirectory, "sonnetdb"));
     }
 
     public void Dispose()
     {
-        _engine.Dispose();
+        _engine?.Dispose();
         if (Directory.Exists(_testDirectory))
         {
             Directory.Delete(_testDirectory, true);
@@ -34,7 +35,7 @@ public sealed class SettingsSnapshotTests : IDisposable
     [TestMethod]
     public async Task CurrentSnapshot_IsNullBeforeFirstLoad_ThenTracksTheLoadedSettings()
     {
-        var service = new SonnetDbSettingsService(_engine);
+        var service = new SonnetDbSettingsService(Engine);
         Assert.IsNull(service.CurrentSnapshot, "还没读过任何设置时不应该凭空有快照");
 
         AppSettings loaded = await service.GetSettingsAsync();
@@ -45,7 +46,7 @@ public sealed class SettingsSnapshotTests : IDisposable
     [TestMethod]
     public async Task CurrentSnapshot_IsReplacedOnSave_WithANewInstance()
     {
-        var service = new SonnetDbSettingsService(_engine);
+        var service = new SonnetDbSettingsService(Engine);
         AppSettings settings = await service.GetSettingsAsync();
         AppSettings? before = service.CurrentSnapshot;
 
@@ -62,7 +63,7 @@ public sealed class SettingsSnapshotTests : IDisposable
     {
         // 快照从 JSON 重新反序列化,而不是直接引用调用方传进来的对象:
         // 否则调用方保存后继续改自己那份,会把所有只读调用方看到的共享快照一起改掉。
-        var service = new SonnetDbSettingsService(_engine);
+        var service = new SonnetDbSettingsService(Engine);
         AppSettings settings = await service.GetSettingsAsync();
         settings.TerminalFontSize = 14;
         await service.SaveSettingsAsync(settings);
@@ -75,7 +76,7 @@ public sealed class SettingsSnapshotTests : IDisposable
     [TestMethod]
     public async Task MutatingTheResultOfGetSettingsAsync_DoesNotTouchTheSnapshot()
     {
-        var service = new SonnetDbSettingsService(_engine);
+        var service = new SonnetDbSettingsService(Engine);
         await service.GetSettingsAsync();
         int original = service.CurrentSnapshot!.TerminalFontSize;
 
@@ -89,7 +90,7 @@ public sealed class SettingsSnapshotTests : IDisposable
     [TestMethod]
     public async Task GetSnapshotAsync_LoadsOnce_ThenStopsHittingTheStore()
     {
-        var service = new SonnetDbSettingsService(_engine);
+        var service = new SonnetDbSettingsService(Engine);
 
         AppSettings first = await service.GetSnapshotAsync();
         AppSettings second = await service.GetSnapshotAsync();
@@ -135,7 +136,7 @@ public sealed class SettingsSnapshotTests : IDisposable
     [TestMethod]
     public async Task GetSnapshotBlocking_ReusesTheSnapshotOnceLoaded()
     {
-        var service = new SonnetDbSettingsService(_engine);
+        var service = new SonnetDbSettingsService(Engine);
         await service.GetSettingsAsync();
 
         AppSettings blocking = service.GetSnapshotBlocking();

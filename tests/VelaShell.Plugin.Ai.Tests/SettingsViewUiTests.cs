@@ -903,13 +903,16 @@ public sealed partial class SettingsViewUiTests
         {
             await using var oldHost = new SseStub(ProbeAnswerSse);
             await using var newHost = new SseStub(ProbeAnswerSse);
-            var storage = new AiSettingsStoreTests.FailingStorage(new InMemoryStorage());
-            using var context = new TestPluginContext { Storage = storage };
-            var store = new AiSettingsStore(context);
+            using var source = new TestPluginContext();
             var provider = new AiProvider { ModelsExpanded = true, BaseUrl = oldHost.BaseUrl, Models = [new AiModelConfig { Model = "m" }] };
             var settings = new AiSettings { Providers = [provider], ActiveModelId = provider.Models[0].Id };
-            await store.AddProviderApiKeyAsync(settings, provider, "old-primary");
-            string extra = await store.AddProviderApiKeyAsync(settings, provider, "old-extra");
+            var sourceStore = new AiSettingsStore(source);
+            await sourceStore.AddProviderApiKeyAsync(settings, provider, "old-primary");
+            string extra = await sourceStore.AddProviderApiKeyAsync(settings, provider, "old-extra");
+            var secrets = new DelayedSecrets(source.Secrets, $"apikey:{provider.Id}", delayMutation: true);
+            using var context = new TestPluginContext { Secrets = secrets };
+            var store = new AiSettingsStore(context);
+            await store.SaveAsync(settings);
             var loc = new Loc("en");
             var view = new SettingsView(context, store, settings, loc, () => { });
             var window = new Window { Content = view, Width = 900, Height = 700 };
@@ -924,19 +927,19 @@ public sealed partial class SettingsViewUiTests
                 Click(save);
                 Assert.AreEqual(loc.F("SetupBaseUrlKeyResetConfirm", 2), await WaitForConfirmAsync(view));
 
-                // 点了确认、写盘途中,用户点开了第二把 Key 的编辑框(保存期间别的行照样能编辑)
-                storage.Hold = true;
+                // 暂停在删除机密之前;写设置时 Key 已经删除,定时刷新可能已移除第二行。
                 AnswerConfirm(view, accept: true);
-                await storage.Started.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                await secrets.Started.WaitAsync(TimeSpan.FromSeconds(15));
+                await PumpAsync(240); // 跨过一秒的 Key 行刷新周期,确认行仍可编辑。
                 EditProviderKey(view, extra);
-                storage.Release.TrySetResult();
+                secrets.Release();
                 await WaitUntilAsync(() => save.IsEnabled && provider.BaseUrl == newHost.BaseUrl);
                 // Key 已经清了:保存结果要说出来,不能被别的状态盖住
                 Assert.AreEqual(loc["SetupSavedKeysCleared"], status.Text);
                 Assert.IsNull(await store.GetApiKeyAsync(provider.Id));
                 Assert.IsNull(await store.GetApiKeyAsync(extra));
             }
-            finally { storage.Release.TrySetResult(); window.Close(); }
+            finally { secrets.Release(); window.Close(); }
         });
     }
 

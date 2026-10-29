@@ -3129,3 +3129,38 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - 仅调整测试同步条件，不改变产品行为、接口、配置或 CI 流程，无需同步用户手册或 velashell-docs。修复前本地单用例通过，未在本地复现原 CI 的偶发失败。
 
 **验证**：Windows Debug 下 `dotnet test tests\VelaShell.Plugin.Ai.Tests\VelaShell.Plugin.Ai.Tests.csproj -c Debug --no-restore --nologo -warnaserror --filter FullyQualifiedName~ChatPanelViewUiTests` 构建及整组 329/329 通过，0 跳过；整组运行期间另起进程重复运行原失败用例 5 轮，均通过。`git diff --check` 通过。未推送改动或重跑远端 CI，未在本机验证 Linux、macOS。
+
+## 284. 2026-10-30 CI 耗时核查与测试夹具等待修复
+
+**运行数据**：对比 [CI 40804220762](https://github.com/joesdu/VelaShell/actions/runs/40804220762) 与 [CI 40926974730](https://github.com/joesdu/VelaShell/actions/runs/40926974730)，Windows 的构建从 148 秒增至 252 秒，测试步骤从 246 秒增至 502 秒；新运行三平台均成功，Windows 约 14 分钟、macOS 约 11 分钟、Ubuntu 约 8 分钟。测试进程彼此重叠，不能把各工程或用例累计时长当成流水线总时长。
+
+- Windows TRX 中有耗时记录的用例仅从 10723 条增至 10739 条。44 条数据库持久化用例累计从 23.6 秒增至 104.2 秒，8 条时间序列用例从 3.7 秒增至 47.2 秒，8 条设置快照用例从 2.4 秒增至 30.3 秒；这些测试、数据库依赖版本及构建配置在两个提交间没有变化。数据表明不能只把增时归因于新增 FTP 用例或上节的单处 UI 等待修复，运行环境对耗时有显著影响，但未隔离出 CPU、磁盘或并发争用各自的贡献。
+- CI 未启用 NuGet 包缓存；新 Windows 构建日志中的还原阶段约 73 秒。CI 还包含 SDK 安装，Linux 额外执行 `runtime-async=off` 构建；SSH 测试已有 CI 两个 worker、本地按 CPU 核数运行的区别。因此，本地全量测试与远端整条流水线不属于同一计时场景。本次没有调整工作流、测试范围、分析器或依赖版本。
+
+**已修复的确定性浪费**：
+
+- `HeldModelsEndpoint` 原先只应答一次，`PulledModels_RefreshTheUntouchedModelBoxAndSaveKeepsIt` 的第二次保存会再次拉模型清单，实际等待 30 秒 HTTP 超时后才返回。夹具改为持续应答，沿用可取消的监听接收工具收尾；原用例增加第二次清单刷新完成的断言。只加断言时两个 DataRow 均失败（预期两次通知、实际一次），修复夹具后通过。
+- 桥接的「每轮重新读设置」「报错点名模型」用例改用现有 `ErrorStub` 返回真实 HTTP 401，替代固定未监听端口，保留原有错误文本断言并核对确实发出了请求。避免为验证提示文案等待连接失败及重试；不改变产品的连接超时或重试行为。
+- 数据库持久化和设置快照夹具按需创建每用例引擎，清理时仅释放已创建实例，消除 6 次无用建库。用例隔离、真实持久化、测试规模和断言保持不变；时间序列测试没有改动。
+
+**验证**：Windows Debug 下，同一组 4 条 HTTP 用例修复前累计约 115.0 秒、修复后约 5.7 秒；随后 `dotnet test tests\VelaShell.Plugin.Ai.Tests\VelaShell.Plugin.Ai.Tests.csproj -c Debug --no-build --no-restore --nologo --filter 'FullyQualifiedName~ProviderSetupViewUiTests|FullyQualifiedName~BridgeAgentRunnerTests'` 整组 213/213 通过，0 跳过。`dotnet test tests\VelaShell.Infrastructure.Tests\VelaShell.Infrastructure.Tests.csproj --no-restore --filter 'FullyQualifiedName~SonnetDbPersistenceTests|FullyQualifiedName~PluginTimeSeriesTests|FullyQualifiedName~SettingsSnapshotTests'` 前后均 60/60 通过，0 跳过；6 条直接受影响用例累计从 1.487 秒降至 0.590 秒，单次测量含环境波动。`git diff --check` 通过。只改测试夹具，不涉及用户行为或开发流程契约，无需同步手册或 velashell-docs。
+
+两份改动涉及的测试工程均执行 `dotnet build <工程路径> -c Debug --no-restore --nologo -warnaserror -v quiet` 并通过，0 警告、0 错误；AI 工程出现 MSBuild 服务器连接不可用的信息后，已自动回退到进程内构建成功。
+
+**边界**：未执行本轮修改后的远端 CI、Linux/macOS 测试或完整解决方案测试。FTP 断线状态三条本地基线均通过、约 13 秒，未贸然缩短产品默认超时或更改该夹具。消除无效等待不等于远端总时长会减少同样的累计秒数，也不能据此保证流水线恢复到 7 分钟。
+
+## 285. 2026-10-30 Windows Key 行刷新与 Ubuntu 连续保存测试竞态
+
+[CI 40932299892](https://github.com/joesdu/VelaShell/actions/runs/40932299892) 的 macOS 作业成功，Windows 与 Ubuntu 各有一条测试失败，均不在上一节修改的用例内。
+
+- Windows 的 `BaseUrlToAnotherOrigin_ClearedStatusReplacesThePromptWhileAnotherKeyIsBeingEdited` 暂停在设置写盘阶段，但此时机密已经删除；一秒一次的 Key 行刷新会移除第二行，随后点击编辑抛出 `Sequence contains no matching element`。在旧用例暂停后泵 1.2 秒，已在本机复现同一异常与调用点。改用已有 `DelayedSecrets` 在删除主槽机密之前暂停，跨过一次刷新周期再编辑第二行，之后释放保存；继续严格断言换源清除提示与两把 Key 均已删除。
+- Ubuntu 的 `ConsecutiveSaves_AreEachUploaded` 在等待第二次上传时实际已记录三次上传。原夹具直接覆盖写文件，截断、写入可产生多个 Changed 事件；下一次写入又可能赶上上一轮上传的收尾循环，不能据一次逻辑保存假定恰好一个文件事件。改用已有的「临时文件写完后原子替换」夹具，让 watcher 只看到完整文件的替换。累计上传次数仍严格等于 1、2、3，最终内容仍严格按 first、second、third 排列；没有放宽数量断言。覆盖写、防抖合并和上传收尾的既有用例继续保留。
+- 只修复测试夹具及同步阶段，不调整产品实现、超时、重试或 CI 工作流，不涉及手册与 velashell-docs 契约同步。
+
+**验证**：Windows Debug 下，下列最终验证均通过，0 跳过：
+
+- `dotnet test tests\VelaShell.Plugin.Ai.Tests\VelaShell.Plugin.Ai.Tests.csproj -c Debug --no-restore --nologo -warnaserror --filter FullyQualifiedName~BaseUrlToAnotherOrigin_ClearedStatusReplacesThePromptWhileAnotherKeyIsBeingEdited -v quiet`：构建及原失败用例通过；随后以 `--no-build` 独立进程重复 5 轮均通过。
+- `dotnet test tests\VelaShell.Plugin.Ai.Tests\VelaShell.Plugin.Ai.Tests.csproj -c Debug --no-build --no-restore --nologo --filter FullyQualifiedName~SettingsViewUiTests`：198/198 通过。
+- `dotnet test tests\VelaShell.Tests\VelaShell.Tests.csproj -c Debug --no-restore --nologo -warnaserror --filter FullyQualifiedName~RemoteEditSessionManagerTests -v quiet`：构建及整组 17/17 通过；连续保存用例以 `--no-build --filter FullyQualifiedName~ConsecutiveSaves_AreEachUploaded` 独立进程重复 10 轮均通过。
+
+未在本机运行 Linux/macOS、完整解决方案或 Docker/Interop/发布验证；Ubuntu 的原始额外上传在本机基线单次运行未复现，跨平台结果需由新提交的 CI 确认。
