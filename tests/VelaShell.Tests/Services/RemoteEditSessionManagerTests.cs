@@ -76,9 +76,10 @@ public sealed class RemoteEditSessionManagerTests
     {
         using var fixture = new SessionFixture();
 
-        await fixture.SaveAndWaitForUploadAsync("first", 1);
-        await fixture.SaveAndWaitForUploadAsync("second", 2);
-        await fixture.SaveAndWaitForUploadAsync("third", 3);
+        // 原子替换只通知完整文件,避免覆盖写的截断/写入事件在上一轮上传收尾时分别触发回传。
+        await fixture.AtomicSaveAndWaitForUploadAsync("first", 1);
+        await fixture.AtomicSaveAndWaitForUploadAsync("second", 2);
+        await fixture.AtomicSaveAndWaitForUploadAsync("third", 3);
 
         Assert.AreSequenceEqual(
             ["first", "second", "third"], fixture.UploadedContents, "保存了三次,远端只拿到了其中一部分 —— 这就是 #396 报的那个形态。");
@@ -365,13 +366,6 @@ public sealed class RemoteEditSessionManagerTests
         {
             await File.WriteAllTextAsync(LocalPath, content);
             await WaitForPendingAsync();
-        }
-
-        /// <summary>存一次并等这次回传真的落地(按累计上传次数判定,不靠固定延时)。</summary>
-        public async Task SaveAndWaitForUploadAsync(string content, int expectedUploads)
-        {
-            await File.WriteAllTextAsync(LocalPath, content);
-            await WaitForUploadCountAsync(expectedUploads);
         }
 
         /// <summary>按"安全保存"的方式落盘:写临时文件再替换掉原文件。</summary>

@@ -3148,3 +3148,19 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 两份改动涉及的测试工程均执行 `dotnet build <工程路径> -c Debug --no-restore --nologo -warnaserror -v quiet` 并通过，0 警告、0 错误；AI 工程出现 MSBuild 服务器连接不可用的信息后，已自动回退到进程内构建成功。
 
 **边界**：未执行本轮修改后的远端 CI、Linux/macOS 测试或完整解决方案测试。FTP 断线状态三条本地基线均通过、约 13 秒，未贸然缩短产品默认超时或更改该夹具。消除无效等待不等于远端总时长会减少同样的累计秒数，也不能据此保证流水线恢复到 7 分钟。
+
+## 285. 2026-10-30 Windows Key 行刷新与 Ubuntu 连续保存测试竞态
+
+[CI 40932299892](https://github.com/joesdu/VelaShell/actions/runs/40932299892) 的 macOS 作业成功，Windows 与 Ubuntu 各有一条测试失败，均不在上一节修改的用例内。
+
+- Windows 的 `BaseUrlToAnotherOrigin_ClearedStatusReplacesThePromptWhileAnotherKeyIsBeingEdited` 暂停在设置写盘阶段，但此时机密已经删除；一秒一次的 Key 行刷新会移除第二行，随后点击编辑抛出 `Sequence contains no matching element`。在旧用例暂停后泵 1.2 秒，已在本机复现同一异常与调用点。改用已有 `DelayedSecrets` 在删除主槽机密之前暂停，跨过一次刷新周期再编辑第二行，之后释放保存；继续严格断言换源清除提示与两把 Key 均已删除。
+- Ubuntu 的 `ConsecutiveSaves_AreEachUploaded` 在等待第二次上传时实际已记录三次上传。原夹具直接覆盖写文件，截断、写入可产生多个 Changed 事件；下一次写入又可能赶上上一轮上传的收尾循环，不能据一次逻辑保存假定恰好一个文件事件。改用已有的「临时文件写完后原子替换」夹具，让 watcher 只看到完整文件的替换。累计上传次数仍严格等于 1、2、3，最终内容仍严格按 first、second、third 排列；没有放宽数量断言。覆盖写、防抖合并和上传收尾的既有用例继续保留。
+- 只修复测试夹具及同步阶段，不调整产品实现、超时、重试或 CI 工作流，不涉及手册与 velashell-docs 契约同步。
+
+**验证**：Windows Debug 下，下列最终验证均通过，0 跳过：
+
+- `dotnet test tests\VelaShell.Plugin.Ai.Tests\VelaShell.Plugin.Ai.Tests.csproj -c Debug --no-restore --nologo -warnaserror --filter FullyQualifiedName~BaseUrlToAnotherOrigin_ClearedStatusReplacesThePromptWhileAnotherKeyIsBeingEdited -v quiet`：构建及原失败用例通过；随后以 `--no-build` 独立进程重复 5 轮均通过。
+- `dotnet test tests\VelaShell.Plugin.Ai.Tests\VelaShell.Plugin.Ai.Tests.csproj -c Debug --no-build --no-restore --nologo --filter FullyQualifiedName~SettingsViewUiTests`：198/198 通过。
+- `dotnet test tests\VelaShell.Tests\VelaShell.Tests.csproj -c Debug --no-restore --nologo -warnaserror --filter FullyQualifiedName~RemoteEditSessionManagerTests -v quiet`：构建及整组 17/17 通过；连续保存用例以 `--no-build --filter FullyQualifiedName~ConsecutiveSaves_AreEachUploaded` 独立进程重复 10 轮均通过。
+
+未在本机运行 Linux/macOS、完整解决方案或 Docker/Interop/发布验证；Ubuntu 的原始额外上传在本机基线单次运行未复现，跨平台结果需由新提交的 CI 确认。
