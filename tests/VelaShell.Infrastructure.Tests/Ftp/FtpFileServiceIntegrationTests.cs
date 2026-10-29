@@ -948,6 +948,8 @@ public class FtpFileServiceIntegrationTests
             Assert.AreSequenceEqual(SHA256.HashData(expected), SHA256.HashData(actual), $"f{i}.bin SHA-256");
         }
         Assert.IsLessThanOrEqualTo(concurrency, _server.AcceptedConnections);
+        Assert.AreEqual(_server.AcceptedConnections, _server.PassiveListenersCreated,
+            "Passive listeners must be bounded by control sessions, not by the number of files.");
         if (concurrency == 1) Assert.AreEqual(1, _server.AcceptedConnections);
         Assert.IsTrue(_server.SizeRequests.All(request => request.Binary));
         Assert.AreEqual(_server.AcceptedConnections, _server.TypeCommands, "默认 Binary listing 每连接只需一次 TYPE,不得每文件盲发。");
@@ -1222,6 +1224,8 @@ public class FtpFileServiceIntegrationTests
                 Assert.AreEqual(1, _server.RetrCounts[$"/p{i}.bin"]);
             });
         Assert.IsLessThanOrEqualTo(concurrency, _server.AcceptedConnections);
+        Assert.AreEqual(_server.AcceptedConnections, _server.PassiveListenersCreated,
+            "Passive listeners must be bounded by control sessions, not by the number of files.");
         Assert.IsTrue(_server.SizeRequests.All(request => request.Binary));
     }
 
