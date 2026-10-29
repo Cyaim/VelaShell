@@ -242,7 +242,7 @@ public class DualSftpDocumentViewModelTests
             RemoteFileInfo file = Entry("/src/a.txt", 10);
             Readable(sftp, Left, file);
             sftp.OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>()).Returns(
-                _ => Task.FromResult<Stream>(new MemoryStream([])),
+                _ => Task.FromResult<Stream>(new ThrowOnReadStream()),
                 _ => Task.FromResult<Stream>(new MemoryStream(new byte[10])));
             right.RetryDelay = (_, _) => Task.CompletedTask;
             right.TransferSink = new FileTransferViewModel();
@@ -253,10 +253,65 @@ public class DualSftpDocumentViewModelTests
             await sftp.Received(2).OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>());
             string log = File.ReadAllText(Directory.GetFiles(logDirectory, "transfer-*.log").Single());
             string diagnostic = log.Split('\n').Single(line => line.Contains("ATTEMPT_FAILED", StringComparison.Ordinal));
-            StringAssert.Contains(diagnostic, "stage=source-length");
-            StringAssert.Contains(diagnostic, "expected=10,actual=0");
+            // 源读不出来是链路问题:记一条诊断,并如实标出它会自动重试。
+            StringAssert.Contains(diagnostic, "stage=transfer");
             StringAssert.Contains(diagnostic, "retry=True");
+            StringAssert.Contains(diagnostic, "kind=Transient");
             Assert.IsFalse(diagnostic.Contains(file.FullPath, StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(logDirectory)) Directory.Delete(logDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>一读就断的源(FTP 数据连接被对端关掉的形态)。</summary>
+    private sealed class ThrowOnReadStream : Stream
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            ValueTask.FromException<int>(new IOException("connection reset"));
+        public override int Read(byte[] buffer, int offset, int count) => throw new IOException("connection reset");
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() { }
+    }
+
+    /// <summary>
+    /// 源与元数据长度对不上不算「临时」:重试还是同一份数据。以前它归成临时,
+    /// 一份这种文件要连撞满设置里的次数才报错 —— 传输日志里成片的 source-length。
+    /// </summary>
+    [TestMethod]
+    public async Task ReceiveFromPeer_LengthMismatch_IsReportedOnceAndNeverRetried()
+    {
+        string logDirectory = Path.Combine(Path.GetTempPath(), "vela-relay-length-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            (ISftpService sftp, _, FileBrowserViewModel right) = PanePair(new()
+            {
+                ConflictPolicy = "overwrite", ResumeEnabled = false, TransferMaxRetries = 3,
+                TransferLogging = true, LogDirectory = logDirectory,
+            });
+            RemoteFileInfo file = Entry("/src/a.txt", 10);
+            Readable(sftp, Left, file);
+            sftp.OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>()).Returns(
+                _ => Task.FromResult<Stream>(new MemoryStream([])));
+            right.RetryDelay = (_, _) => throw new AssertFailedException("长度不符不该进入重试等待。");
+            right.TransferSink = new FileTransferViewModel();
+
+            await right.ReceiveFromPeerAsync([new(file)]);
+
+            Assert.AreEqual(TransferStatus.Failed, right.TransferSink.Transfers.Single().Status);
+            await sftp.Received(1).OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>());
+            string log = File.ReadAllText(Directory.GetFiles(logDirectory, "transfer-*.log").Single());
+            Assert.AreEqual(1, log.Split('\n').Count(line => line.Contains("ATTEMPT_FAILED", StringComparison.Ordinal)),
+                "只尝试一次,不再自动重试。");
+            StringAssert.Contains(log, "kind=Permanent");
         }
         finally
         {
@@ -302,7 +357,7 @@ public class DualSftpDocumentViewModelTests
     [DataRow(ConnectionType.FTP, ConnectionType.SFTP)]
     [DataRow(ConnectionType.SSH, ConnectionType.FTP)]
     [DataRow(ConnectionType.SFTP, ConnectionType.Plugin)]
-    public async Task OnlyFtpPanes_UseStagedRelaySources(ConnectionType leftType, ConnectionType rightType)
+    public async Task OnlyFtpPanes_UseStreamedRelaySources(ConnectionType leftType, ConnectionType rightType)
     {
         await using var vm = new DualSftpDocumentViewModel(
             new(Profile("alpha", leftType), Left, null, (_, _) => Task.CompletedTask),
@@ -310,8 +365,12 @@ public class DualSftpDocumentViewModelTests
             Substitute.For<ISftpService>(), new TransferOptions());
         await vm.InitialLoadTask;
 
-        Assert.AreEqual(leftType == ConnectionType.FTP, vm.LeftFiles.UseStagedRelaySource);
-        Assert.AreEqual(rightType == ConnectionType.FTP, vm.RightFiles.UseStagedRelaySource);
+        // FTP / FTPS 的数据连接是顺序的:作为中转源时走流管道,而不是整份缓存到本地。
+        Assert.AreEqual(leftType == ConnectionType.FTP, vm.LeftFiles.UseStreamedRelay);
+        Assert.AreEqual(rightType == ConnectionType.FTP, vm.RightFiles.UseStreamedRelay);
+        // 旧的整份缓存路径默认不再启用,但实现留着(见 DualSftpDocumentViewModel.IsStagedRelayEnabled)。
+        Assert.IsFalse(vm.LeftFiles.UseStagedRelaySource);
+        Assert.IsFalse(vm.RightFiles.UseStagedRelaySource);
     }
 
     [TestMethod]

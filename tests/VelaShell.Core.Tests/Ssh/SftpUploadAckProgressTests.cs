@@ -308,6 +308,64 @@ public sealed class SftpUploadAckProgressTests
     }
 
     [TestMethod]
+    [DataRow(1)]
+    [DataRow(3)]
+    public async Task Relay_ActualSftpToFtp_StreamsFilesWithOneFtpConnection(int concurrency)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"vela-sftp-ftp-wire-{Guid.NewGuid():N}");
+        var server = new LoopbackFtpServer(root) { SupportsMlsd = true, MaxConcurrentSessions = 1 };
+        await using var ftp = new FtpFileService();
+        await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
+        Guid sourceSession = Guid.NewGuid();
+        await using SftpService source = CreateService(harness.Sftp, sourceSession);
+        int[] sizes = [0, 1, BlockSize - 1, BlockSize, BlockSize + 1, RelayBufferBudget + 97];
+        var files = sizes.Select((size, i) =>
+            (Name: $"reverse-{i}.bin", Data: RandomNumberGenerator.GetBytes(size))).ToArray();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        try
+        {
+            foreach (var file in files)
+            {
+                harness.SftpServer.AddFile("/home/joe/" + file.Name, file.Data, 0x180);
+            }
+            Guid targetSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
+            {
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
+                // A legacy profile must not create multiple clients, even for concurrent relays.
+                Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 4 },
+            }, deadline.Token);
+            await Parallel.ForEachAsync(files, new ParallelOptions
+            {
+                MaxDegreeOfParallelism = concurrency,
+                CancellationToken = deadline.Token,
+            }, async (file, ct) =>
+            {
+                await RemoteRelay.CopyFileAsync(source, sourceSession, "/home/joe/" + file.Name,
+                    ftp, targetSession, "/" + file.Name, cancellationToken: ct);
+            });
+            foreach (var file in files)
+            {
+                byte[] actual = await File.ReadAllBytesAsync(Path.Combine(root, file.Name), deadline.Token);
+                Assert.AreEqual(file.Data.Length, actual.Length, file.Name);
+                Assert.AreSequenceEqual(SHA256.HashData(file.Data), SHA256.HashData(actual), file.Name);
+            }
+            Assert.AreEqual(1, server.AcceptedConnections, "Reverse relays must queue on the only FTP client.");
+            Assert.AreEqual(files.Length, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open),
+                "Each SFTP source must be opened once, without a retry or staging download.");
+            Assert.AreEqual(0, harness.SftpServer.OpenHandleCount);
+        }
+        finally
+        {
+            await ftp.DisposeAsync();
+            server.Dispose();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public async Task RemoteCommit_LargeFtpSource_PublishesOnlyAfterFinalReply(bool failCompletion)
@@ -387,7 +445,8 @@ public sealed class SftpUploadAckProgressTests
                 "SftpSvc_RelayLengthMismatch", "/source.bin", 97, delivered), failure.Message);
             Assert.IsNull(VelaSftpUploadFailureDetails.Get(failure),
                 "预读失败未上传,不能生成目标 durable/cleanup 详情,更不能让 CLOSE 拒绝替换长度主错误。");
-            Assert.AreEqual(TransferFailureKind.Transient, TransferRetryPolicy.Classify(failure));
+            Assert.AreEqual(TransferFailureKind.Permanent, TransferRetryPolicy.Classify(failure),
+                "源与元数据对不上不是链路故障:重试几次还是同一份数据,不该再连撞四次。");
             Assert.AreEqual(1, server.RetrCounts["/source.bin"]);
             Assert.AreEqual(0, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open));
             Assert.IsFalse(harness.SftpServer.Nodes.ContainsKey(RemotePath));
@@ -436,7 +495,8 @@ public sealed class SftpUploadAckProgressTests
             Assert.AreEqual((long)harness.SftpServer.Nodes[RemotePath].Content.Count, details.DurableLength,
                 "成功 WRITE ACK 的持久长度仍需保留,源错误与 CLOSE 错误不能令它归零或虚增。");
             Assert.IsInstanceOfType<VelaSftpPermissionDeniedException>(details.CleanupException);
-            Assert.AreEqual(TransferFailureKind.Transient, TransferRetryPolicy.Classify(failure));
+            Assert.AreEqual(TransferFailureKind.Permanent, TransferRetryPolicy.Classify(failure),
+                "源与元数据对不上重试无益;以前归成「临时」,同一份文件要白撞四次。");
             Assert.AreEqual(1, server.RetrCounts["/source.bin"]);
             Assert.AreEqual(1, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open));
             Assert.AreEqual(0, harness.SftpServer.OpenHandleCount);

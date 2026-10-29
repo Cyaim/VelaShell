@@ -2423,6 +2423,11 @@ public class FileBrowserViewModel : ReactiveObject
     internal bool UseStagedRelaySource { get; init; }
 
     /// <summary>
+    /// FTP/FTPS 源优先经有界流管道写入远端临时文件;目标不支持安全提交或需要续传时回退完整缓存。
+    /// </summary>
+    internal bool UseStreamedRelay { get; init; }
+
+    /// <summary>
     /// 把另一栏(<see cref="DualPeer" />)选中的条目搬进本栏当前目录:文件夹递归,冲突策略、并发上限、
     /// 进度、取消、失败重试、断点续传与普通上传完全共用;FTP 源先完整缓存,其它源保持流式中转。
     /// </summary>
@@ -2446,7 +2451,7 @@ public class FileBrowserViewModel : ReactiveObject
         {
             return;
         }
-        var source = new RelaySource(peer._sftpService, peer._sessionId, peer.ServerDisplayName, peer.UseStagedRelaySource);
+        var source = new RelaySource(peer._sftpService, peer._sessionId, peer.ServerDisplayName, peer.UseStagedRelaySource, peer.UseStreamedRelay);
         string destination = CurrentPath;
         try
         {
@@ -3224,6 +3229,9 @@ public class FileBrowserViewModel : ReactiveObject
         item?.CancelItem = itemCts.Cancel;
         // 本次尝试的起点:续传时 > 0;自动重试会把它挪到这个文件自己已经传过去的地方。
         long offset = resumeOffset;
+        // 进入本方法时的起点:一次「一个字节都没动」的失败之后照原样重试,既不是 0(那会整份重传),
+        // 也不是上次探测出来的位置(目标没被碰过,那份半截与本次无关)。
+        long transferCheckpoint = resumeOffset;
         var progress = new AttemptProgress(new Progress<TransferProgress>(p =>
         {
             item?.UpdateProgress(p);
@@ -3314,8 +3322,15 @@ public class FileBrowserViewModel : ReactiveObject
                     long attemptStart = offset;
                     item?.MarkRetrying(retries, maxRetries);
                     await RetryDelay(TransferRetryPolicy.DelayBeforeRetry(retries), itemCt);
-                    offset = remoteCommitRelay ? 0 : await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, itemCt,
-                        hasStagedSource: stagedSource is not null);
+                    // 这一次一个字节都没动过(打开就失败、目标根本没被碰):目标上那份东西不是这次传出来的,
+                    // 没有半截可接。以前这里照样去做一次续传探测(它自己会 stat 再把远端截到探测点),
+                    // 一次打开失败就白白多出几轮往返 —— 传输日志里成片的 start=0 moved=False 就是它们。
+                    offset = !movedBytes
+                        ? transferCheckpoint
+                        : remoteCommitRelay
+                            ? 0
+                            : await NextRetryOffsetAsync(type, localPath, remotePath, source, attemptStart, movedBytes, itemCt,
+                                hasStagedSource: stagedSource is not null);
                 }
             }
         }
@@ -3423,38 +3438,38 @@ public class FileBrowserViewModel : ReactiveObject
 
         async Task TransferRelayAsync(long startAt)
         {
-            if (!source!.UseStagedRelaySource)
+            // 每次尝试重新读取源元数据;流式重试会重新下载,不能沿用上次内容的长度或时间。
+            if (source!.UseStagedRelaySource || source.UseStreamedRelay)
             {
-                await RemoteRelay.CopyFileAsync(
-                    source.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
+                // 目标支持安全提交时，先把有界内存流直接写到目标同目录的临时文件，
+                // 源确认完成后再原子发布；这样大文件不需要在本机落一份完整缓存。
+                if (stagedSource is null && startAt == 0 && await RemoteRelay.TryCopyFileWithRemoteCommitAsync(
+                        source.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
+                        progress, () => remoteCommitRelay = true, itemCt))
+                {
+                    return;
+                }
+
+                if (stagedSource is null)
+                {
+                    item?.IsPreparingSource = true;
+                    try
+                    {
+                        // 准备没有目标进度,也绝不能标记 targetTouched。失败时不缓存半成品。
+                        stagedSource = await StagedRelaySource.PrepareAsync(source.Service, source.SessionId, localPath, itemCt);
+                    }
+                    finally
+                    {
+                        item?.IsPreparingSource = false;
+                    }
+                }
+                await stagedSource.UploadAsync(_sftpService, _sessionId, remotePath,
                     progress, () => targetTouched = true, startAt, itemCt);
                 return;
             }
 
-            // FTP/FTPS 源的读取流只有在 DisposeAsync 收到最终传输回复后才算完成。
-            // 目标支持安全提交时，先把有界内存流直接写到目标同目录的临时文件，
-            // 源确认完成后再原子发布；这样大文件不需要在本机落一份完整缓存。
-            if (stagedSource is null && startAt == 0 && await RemoteRelay.TryCopyFileWithRemoteCommitAsync(
-                    source.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
-                    progress, () => remoteCommitRelay = true, itemCt))
-            {
-                return;
-            }
-
-            if (stagedSource is null)
-            {
-                item?.IsPreparingSource = true;
-                try
-                {
-                    // 准备没有目标进度,也绝不能标记 targetTouched。失败时不缓存半成品。
-                    stagedSource = await StagedRelaySource.PrepareAsync(source.Service, source.SessionId, localPath, itemCt);
-                }
-                finally
-                {
-                    item?.IsPreparingSource = false;
-                }
-            }
-            await stagedSource.UploadAsync(_sftpService, _sessionId, remotePath,
+            await RemoteRelay.CopyFileAsync(
+                source.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
                 progress, () => targetTouched = true, startAt, itemCt);
         }
     }
@@ -4297,7 +4312,12 @@ public class FileBrowserViewModel : ReactiveObject
     );
 
     /// <summary>中转传输的源端:另一栏的文件服务、会话与显示名(日志与传输面板用)。</summary>
-    private sealed record RelaySource(ISftpService Service, Guid SessionId, string DisplayName, bool UseStagedRelaySource = false);
+    private sealed record RelaySource(
+        ISftpService Service,
+        Guid SessionId,
+        string DisplayName,
+        bool UseStagedRelaySource = false,
+        bool UseStreamedRelay = false);
 }
 
 /// <summary>目录同步交给传输管道的一项:方向、本地路径、远端路径。</summary>

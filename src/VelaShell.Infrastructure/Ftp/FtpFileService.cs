@@ -30,7 +30,7 @@ namespace VelaShell.Infrastructure.Ftp;
 /// 而 FluentFTP 的数据流 <c>CanSeek == false</c>、<c>Seek()</c> 直接抛异常,根本满足不了。
 /// </para>
 /// </summary>
-public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftpService, IFtpSessionService
+public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftpService, IFtpSessionService, RemoteRelay.IFtpSourceRejectionSignal
 {
     private readonly ConcurrentDictionary<Guid, FtpConnectionPool> _sessions = new();
 
@@ -271,6 +271,9 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
                 bool ok = await client.DownloadStream(output, path, token: cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 output.ThrowIfFailed(); // the library can swallow an IOException from the destination
+                // SIZE 不可用时 expected = -1:跳过长度核对,由下面的 226/250 完成回复把关。
+                // 以前这里只在「长短相同」时才算通过,于是不支持 SIZE 的服务器上一份完整的下载也被判失败,
+                // 白重试满设置里的次数。
                 if (expected >= 0 && output.BytesWritten != expected)
                     throw new RemoteTransferLengthException(path, expected, output.BytesWritten);
                 // DownloadFileInternal already consumes the final reply, including its earlySuccess path.
@@ -631,7 +634,12 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
     }
 
     /// <inheritdoc />
-    public async Task<Stream> OpenReadAsync(Guid sessionId, string remotePath, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    /// <inheritdoc />
+    public Task<Stream> OpenReadAsync(Guid sessionId, string remotePath, CancellationToken cancellationToken = default) =>
+        OpenReadOnceAsync(sessionId, remotePath, cancellationToken);
+
+    private async Task<Stream> OpenReadOnceAsync(Guid sessionId, string remotePath, CancellationToken cancellationToken)
     {
         string path = NormalizePath(remotePath);
         for (int attempt = 0; ; attempt++)
@@ -651,6 +659,18 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
                 }
                 return new LeasedStream(inner, lease, remotePath, length, cancellationToken);
             }
+            catch (RejectedDataConnectionException) when (attempt < MaxBusyRetries && LimitSessionToSingleConnection(sessionId))
+            {
+                // 数据连接一个字节都没给就被关掉:服务器大概在拒绝并发。收成单连接再开一次,
+                // 这一次会排队等前一个传输结束,而不是立刻又撞上同一个上限。
+                lease.Invalidate();
+                try { lease.Dispose(); }
+                catch (Exception cleanup) when (cleanup is not OutOfMemoryException)
+                {
+                    // Preserve the original failure.
+                }
+                continue;
+            }
             catch (Exception ex)
             {
                 lease.Invalidate();
@@ -662,7 +682,10 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
                 cancellationToken.ThrowIfCancellationRequested();
                 // No bytes have escaped to a caller yet. Release the failed lease before
                 // queueing behind the active transfer on a server allowing only one RETR.
-                if (attempt < MaxBusyRetries && FluentFtpInterop.IsConcurrencyRejection(ex)
+                // 两种拒绝都算:明确说「忙」的,和数据连接刚建起来就被复位、一个字节都没给的。
+                if (attempt < MaxBusyRetries
+                    && (FluentFtpInterop.IsConcurrencyRejection(ex)
+                        || FluentFtpInterop.LooksLikeRejectedDataConnection(ex, receivedAnyBytes: false))
                     && LimitSessionToSingleConnection(sessionId))
                 {
                     continue;
@@ -738,6 +761,15 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
     /// 这里管的是"连接开得出来,但服务器不让同时跑第二个**传输**"(数据通道被拒)。
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 跑一次传输。服务器以「忙 / 连接数超限 / 一次只能传一个」拒绝时,把该会话就地收成
+    /// 单连接并**重试一次** —— 这一次会排队等那条唯一的连接空下来,于是批量传输自然变成串行。
+    /// <para>
+    /// 拒绝有两种形态:明确回 <c>421/425/450</c> 或「busy」字样(措辞可见),
+    /// 以及数据连接刚建起来就被复位、一个字节都没读到(措辞不可见,只能按事实判断)。
+    /// 后者是批量传输里 `actual=0` 成片的真正来源,以前认不出来,于是每次重试都在撞同一个上限。
+    /// </para>
+    /// </summary>
     private async Task RunTransferAsync(
         Guid sessionId,
         string operation,
@@ -755,7 +787,8 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
             catch (Exception ex) when (
                 attempt < MaxBusyRetries
                 && !cancellationToken.IsCancellationRequested
-                && FluentFtpInterop.IsConcurrencyRejection(ex)
+                && (FluentFtpInterop.IsConcurrencyRejection(ex)
+                    || FluentFtpInterop.LooksLikeRejectedDataConnection(ex, receivedAnyBytes: false))
                 && LimitSessionToSingleConnection(sessionId))
             {
                 // 落到下一轮循环重试:这一次会排队等那条唯一的连接空下来。
@@ -783,6 +816,10 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
         pool.LimitToSingleConnection();
         return true;
     }
+
+    /// <inheritdoc />
+    void RemoteRelay.IFtpSourceRejectionSignal.LimitToSingleConnection(Guid sessionId) =>
+        LimitSessionToSingleConnection(sessionId);
 
     private async Task<FtpConnectionPool.Lease> RentAsync(Guid sessionId, CancellationToken cancellationToken)
     {
@@ -1101,6 +1138,13 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
         }
     }
 
+    /// <summary>
+    /// 数据连接在 RETR 之后、任何字节到达之前就被关闭。并发被拒时不少服务器就是这种形态
+    /// (直接复位,不给 425/450),所以这不是「文件坏了」,而是「这次没轮到」——
+    /// 上层据此把会话收成单连接后重试,而不是判成内容不符。
+    /// </summary>
+    public sealed class RejectedDataConnectionException(string message, Exception? innerException = null)
+        : VelaFtpConnectionException(message, innerException);
     /// <summary>未通过校验的证书信息。</summary>
     private sealed record CertificateFailure(string Thumbprint, string Subject, string Issuer, DateTimeOffset ExpiresOn, string PolicyErrors);
 
@@ -1112,6 +1156,7 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
     {
         private readonly Lock _closeSync = new();
         private readonly long _length = length;
+        private readonly string _remotePath = remotePath;
         private Task? _closing;
         private long _bytesRead;
         private bool _eof;
@@ -1136,13 +1181,33 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
             if (requested > 0 && read == 0)
             {
                 _eof = true;
+                // SIZE 与实际读出量对不上是真问题,但这里只报给调用方「传输不完整」这一件事:
+                // 内容完整性交给 226 最终回复;这个异常只为让上层给出可读的诊断与重试判断。
                 if (_length > 0 && _bytesRead != _length)
                 {
-                    throw new RemoteTransferLengthException(remotePath, _length, _bytesRead);
+                    // 一个字节都没抓到就结束。两种可能:数据连接被服务器掐掉(并发被拒时不少服务器
+                    // 直接复位、不给 425/450),或者服务器正常结束了数据流但文件确实比元数据短。
+                    // 只有「读取过程中真的出现过错误」才判为前者并允许重开;正常 EOF 仍是长度不符。
+                    if (_bytesRead == 0 && _readFailed)
+                    {
+                        // 根本没有数据到达,而且读取过程本身就失败了:数据连接被服务器掐掉
+                        // (并发被拒时不少服务器直接复位,不给 425/450),不是文件内容不符。
+                        throw new RemoteTransferLengthException(_remotePath, _length, 0, RejectedByServer: true);
+                    }
+                    if (_bytesRead == 0)
+                    {
+                        // 没有失败、也没有数据:服务器正常结束了数据流。文件确实比元数据短,重开无益。
+                        throw new RemoteTransferLengthException(_remotePath, _length, 0, RejectedByServer: false);
+                    }
+                    throw LengthMismatch();
                 }
             }
             return read;
         }
+
+        /// <summary>长度不符:这是一次不完整的读取,不是「长度未知」—— 后者在 OpenReadAsync 里已按 -1 表达。</summary>
+        private RemoteTransferLengthException LengthMismatch() =>
+            new(_remotePath, _length, _bytesRead);
 
         public override int Read(byte[] buffer, int offset, int count)
         {
@@ -1203,7 +1268,12 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
         private async Task CloseCoreAsync()
         {
             // 未读完不尝试排空/ABOR:直接丢弃控制连接,避免收尾盖掉调用方的失败。
-            bool abandoned = !_eof && !(_length > 0 && _bytesRead == _length);
+            // 这里有两条不同的事实,不能混成一条:
+            //  · 调用方把 SIZE 说有的字节都读走了(只是没探到 EOF):控制通道状态仍然可信,照常收 226;
+            //  · 调用方在中途就放手了:数据通道还有没读的字节,不能排空也不能复用。
+            // 长度只是信封:没读到 EOF、而且 SIZE 说还有没读的字节,才算调用方中途弃读。
+            bool lengthSatisfied = _length > 0 && _bytesRead >= _length;
+            bool abandoned = !_eof && !lengthSatisfied;
             bool discard = abandoned || _readFailed || openToken.IsCancellationRequested;
             if (discard) lease.Invalidate();
             // 沿用控制通道超时;即使调用方配置无限等待,收尾也最多等默认的 30 秒。

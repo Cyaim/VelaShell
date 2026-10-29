@@ -86,7 +86,7 @@ public class RemoteRelayCommitTests
     {
         const int size = 4 * 1024 * 1024 + 1;
         var original = new IOException("source final reply");
-        var stream = new TrackingStream(new byte[size], sequential: true, closeError: original);
+        var stream = new TrackingStream(new byte[size], sequential: true, closeError: original, chunk: 1);
         (ISftpService source, ISftpService target) = Services(stream, size);
         string? uploaded = null;
         long received = 0;
@@ -94,15 +94,26 @@ public class RemoteRelayCommitTests
         {
             uploaded = call.ArgAt<string>(2);
             using var sink = new MemoryStream();
-            await call.ArgAt<Stream>(1).CopyToAsync(sink);
-            received = sink.Length;
+            try
+            {
+                // 一次只给 4 KiB:像 FTP 数据流,读循环会一块一块灌。
+                await call.ArgAt<Stream>(1).CopyToAsync(sink);
+            }
+            finally
+            {
+                // 无论上传是否先收工,这里都要拿到"源被取走了多少":失败时 CopyToAsync 会先抛。
+                received = sink.Length;
+            }
             Assert.IsFalse(stream.Closed);
         });
 
         Exception actual = await Assert.ThrowsExactlyAsync<IOException>(() =>
             RemoteRelay.TryCopyFileWithRemoteCommitAsync(source, SourceSession, SourcePath, target, TargetSession, TargetPath).WaitAsync(TimeSpan.FromSeconds(15)));
         Assert.AreSame(original, actual);
-        Assert.AreEqual((long)size, received);
+        Assert.AreEqual((long)size, stream.Position, "源端必须完整读取后才遇到最终回复失败。");
+        Assert.IsGreaterThan(0L, received);
+        Assert.IsLessThanOrEqualTo((long)size, received,
+            "管道完成失败时可丢弃尚未交给目标的缓冲;不要求目标收到全部字节。");
         Assert.IsTrue(stream.Closed);
         Assert.IsNotNull(uploaded);
         Assert.AreNotEqual(TargetPath, uploaded);
@@ -232,10 +243,14 @@ public class RemoteRelayCommitTests
     [TestMethod]
     public async Task UnknownSequentialSource_EarlyReturningUploaderCannotCommit()
     {
+        // 长度未知(SIZE 没问到)时,上传必须先真正读完源、并等源自己的收尾成功,才谈得上提交。
+        // 上传端一个字节都不取就返回,那条链(以及 FTP 的最终回复)根本没跑过 —— 不能提交。
         (ISftpService source, ISftpService target) = Services(new TrackingStream(new byte[17], sequential: true), 0);
-        target.UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(Task.CompletedTask);
-        await Assert.ThrowsAsync<IOException>(() => RemoteRelay.TryCopyFileWithRemoteCommitAsync(
+        // 上传端不取字节就返回,而源自己以失败收尾 —— 上传的"成功"是假的。
+        target.UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(_ => Task.CompletedTask);
+        Exception failure = await Assert.ThrowsExactlyAsync<IOException>(() => RemoteRelay.TryCopyFileWithRemoteCommitAsync(
             source, SourceSession, SourcePath, target, TargetSession, TargetPath));
+        Assert.IsFalse(failure is OperationCanceledException, "那是一次失败的传输,不是取消。");
         await target.DidNotReceiveWithAnyArgs().CommitUploadAsync(default, null!, null!, false);
     }
 
@@ -357,10 +372,16 @@ public class RemoteRelayCommitTests
         public void Report(TransferProgress value) => Items.Add(value);
     }
 
-    private sealed class TrackingStream(byte[] bytes, bool sequential = false, Exception? closeError = null) : MemoryStream(bytes)
+    private sealed class TrackingStream(byte[] data, bool sequential = false, Exception? closeError = null, int chunk = int.MaxValue) : MemoryStream(data)
     {
         public bool Closed { get; private set; }
         public override bool CanSeek => !sequential && base.CanSeek;
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(base.Read(buffer.Span[..Math.Min(buffer.Length, chunk)]));
+        }
+
         public override ValueTask DisposeAsync()
         {
             Closed = true;

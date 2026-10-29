@@ -7,15 +7,13 @@ namespace VelaShell.Infrastructure.Ftp;
 /// <summary>
 /// 一条 FTP 会话持有的连接池。
 /// <para>
-/// **为什么必须有池**:FTP 一条控制连接同一时刻只能跑一条命令(FluentFTP 内部也是这么加锁的),
-/// 而 SFTP 是在一条 SSH 连接上多路复用、天然可并发 —— <c>SerializedSftpService</c> 正是基于后者
-/// 才敢让传输不占串行闸。若 FTP 也共用一条连接,「传输期间刷新目录」会直接报错,
-/// 用户设置的最大并发传输数也会被悄悄压回 1。
+/// FTP 一条控制连接同一时刻只能跑一条命令,与 SFTP 在 SSH 连接上多路复用不同。
+/// 每个会话固定只租出一条连接,元数据操作与传输一起排队,避免不支持多客户端并发的服务器
+/// 拒绝或复位数据连接。旧配置中的 <c>MaxConnections</c> 不再影响实际并发。
 /// </para>
 /// <para>
-/// 池的形状很简单:一个可收紧的并发闸(<see cref="AdjustableConcurrencyGate" />)+ 一袋空闲连接。
-/// 租借时优先复用空闲连接,发现掉线就地重连;归还时放回袋子。
-/// 初始上限取 <see cref="Core.Models.FtpSettings.MaxConnections" />。
+/// 池的形状很简单:一个并发上限固定为 1 的闸(<see cref="AdjustableConcurrencyGate" />)
+/// + 一袋空闲连接。租借时优先复用空闲连接,发现掉线就地重连;归还时放回袋子。
 /// </para>
 /// <para>
 /// **上限会自己往下调**:不少 FTP 服务器(尤其是设了 <c>MaxClientsPerIP=1</c> 或"一次只允许一个传输"
@@ -33,7 +31,7 @@ internal sealed class FtpConnectionPool(
     private readonly ConcurrentBag<AsyncFtpClient> _idle = [];
     private readonly List<AsyncFtpClient> _all = [];
     private readonly Lock _sync = new();
-    private readonly AdjustableConcurrencyGate _gate = new(Math.Max(1, info.Settings.MaxConnections));
+    private readonly AdjustableConcurrencyGate _gate = new(1);
     private bool _disposed;
 
     /// <summary>一次租借最多退化重排几次(见 <see cref="RentAsync" />)。</summary>
@@ -121,13 +119,20 @@ internal sealed class FtpConnectionPool(
     private async Task<Lease> OpenLeaseAsync(CancellationToken cancellationToken)
     {
         AsyncFtpClient? client = null;
+        bool reused = false;
         try
         {
             // 新建连接同样要翻译异常:服务器没了的时候这里抛的是裸 SocketException,
             // 不翻译就会越过 Infrastructure 边界直接甩到界面上。
-            client = _idle.TryTake(out AsyncFtpClient? pooled)
-                ? pooled
-                : await CreateAsync(cancellationToken).ConfigureAwait(false);
+            if (_idle.TryTake(out AsyncFtpClient? pooled))
+            {
+                client = pooled;
+                reused = true;
+            }
+            else
+            {
+                client = await CreateAsync(cancellationToken).ConfigureAwait(false);
+            }
 
             // 空闲期间可能被服务器按 idle timeout 踢掉(FTP 服务器普遍很短),这里就地重连。
             if (!client.IsConnected)
@@ -135,6 +140,24 @@ internal sealed class FtpConnectionPool(
                 await client.Connect(cancellationToken).ConfigureAwait(false);
             }
             return new Lease(this, client);
+        }
+        catch (Exception ex) when (reused && client is not null && !cancellationToken.IsCancellationRequested)
+        {
+            // 复用来的连接连同它的登录状态都已经不可用(最常见的是服务端已经按空闲超时
+            // 关掉了它,socket 看上去还连着,第一条命令才暴露)。就地重连对一条状态未知的
+            // 连接并不可靠 —— 换成一条全新的连接再试一次。以前这一步把失败直接甩给上层,
+            // 每次空闲掉线都要白耗一次传输重试名额。
+            Forget(client);
+            AsyncFtpClient fresh;
+            try
+            {
+                fresh = await CreateAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception createFailure)
+            {
+                throw new AggregateException(ex, createFailure);
+            }
+            return new Lease(this, fresh);
         }
         catch
         {

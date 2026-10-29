@@ -60,7 +60,6 @@ public class RemoteRelayTests
 
         await Assert.ThrowsExactlyAsync<FileNotFoundException>(() => RemoteRelay.CopyFileAsync(
             source, SourceSession, "/a/gone.txt", target, TargetSession, "/b/gone.txt", writing: () => writing = true));
-
         Assert.IsFalse(writing);
         await target.DidNotReceiveWithAnyArgs().UploadStreamAsync(default, null!, null!, 0);
     }
@@ -251,6 +250,32 @@ public class RemoteRelayTests
         Assert.AreEqual((long)streamLength, error.ActualBytes);
         Assert.IsFalse(writing, "Small source length checks must precede target writes.");
         await target.DidNotReceiveWithAnyArgs().UploadStreamAsync(default, null!, null!, 0);
+    }
+
+    /// <summary>
+    /// 长度未知(-1:服务器不支持 SIZE)的源不能被当成空文件。以前整份缓存分支把 limit 算成负数,
+    /// 一块都不读就报 EOF,目标收到 0 字节 —— 这正是 FTP→SFTP 中转成片失败的那种形态。
+    /// </summary>
+    [TestMethod]
+    [DataRow(7)]
+    [DataRow(4 * 1024 * 1024 + 5)]
+    public async Task CopyFile_UnknownSourceLength_TransfersEveryByte(int streamLength)
+    {
+        (ISftpService source, ISftpService target) = RelayServices(-1, new SequentialStream(new byte[streamLength]));
+        long received = -1;
+        target.UploadStreamAsync(TargetSession, Arg.Any<Stream>(), "/b/x", Arg.Any<long>(), Arg.Any<DateTime?>(),
+                Arg.Any<IProgress<TransferProgress>?>(), Arg.Any<long>(), Arg.Any<uint?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                using var sink = new MemoryStream();
+                await call.ArgAt<Stream>(1).CopyToAsync(sink);
+                received = sink.Length;
+            });
+
+        await RemoteRelay.CopyFileAsync(source, SourceSession, "/a/x", target, TargetSession, "/b/x")
+            .WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.AreEqual((long)streamLength, received, "长度未知时以源的 EOF 为准,一个字节都不能少。");
     }
 
     [TestMethod]
