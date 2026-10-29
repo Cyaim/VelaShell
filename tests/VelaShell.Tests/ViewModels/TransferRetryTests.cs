@@ -661,6 +661,62 @@ public sealed class TransferRetryTests
         await rig.Sftp.DidNotReceiveWithAnyArgs().DeleteAsync(default, null!);
     });
 
+    [TestMethod]
+    public Task RemoteCommitRelay_RetryRestartsSourceAndNeverResumesOrDeletesFinalTarget() => OnUi(async () =>
+    {
+        var rig = new RelayRig(resume: true);
+        rig.Sftp.Configure().CheckUploadCommitAsync(default, null!, false).ReturnsForAnyArgs(Task.CompletedTask);
+        rig.Sftp.OpenReadAsync(rig.SourceId, RemoteFile, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream>(new MemoryStream(RelayRig.Data)));
+        var paths = new List<string>();
+        rig.Sftp.Configure().UploadStreamAsync(default, null!, null!, 0).ReturnsForAnyArgs(async call =>
+        {
+            paths.Add(call.ArgAt<string>(2));
+            Assert.AreEqual(0L, call.ArgAt<long>(6));
+            await call.ArgAt<Stream>(1).CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(8));
+            call.ArgAt<IProgress<TransferProgress>?>(5)?.Report(RelayRig.Progress(10));
+            if (paths.Count == 1) throw new TimeoutException("upload interrupted");
+        });
+
+        await rig.RunAsync();
+
+        Assert.AreEqual(TransferStatus.Completed, rig.Item.Status);
+        Assert.AreEqual(0, rig.Downloads);
+        Assert.AreEqual(1, rig.Delays);
+        Assert.HasCount(2, paths);
+        Assert.AreNotEqual(paths[0], paths[1]);
+        Assert.IsTrue(paths.All(path => path.StartsWith("/.vela-relay-", StringComparison.Ordinal)));
+        await rig.Sftp.Received(2).OpenReadAsync(rig.SourceId, RemoteFile, Arg.Any<CancellationToken>());
+        await rig.Sftp.Received(1).DeleteAsync(rig.TargetId, paths[0], Arg.Any<IProgress<SftpDeleteProgress>?>(), Arg.Any<CancellationToken>());
+        await rig.Sftp.DidNotReceive().DeleteAsync(rig.TargetId, "/a.bin", Arg.Any<IProgress<SftpDeleteProgress>?>(), Arg.Any<CancellationToken>());
+        await rig.Sftp.Received(1).CommitUploadAsync(rig.TargetId, paths[1], "/a.bin", true, Arg.Any<CancellationToken>());
+        await rig.Sftp.DidNotReceive().GetFileInfoAsync(rig.TargetId, "/a.bin", Arg.Any<CancellationToken>());
+    });
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task RemoteCommitRelay_UnconfirmedCommitNeverRetriesOrCleansFinalTarget(bool cancel) => OnUi(async () =>
+    {
+        var rig = new RelayRig();
+        rig.Sftp.Configure().CheckUploadCommitAsync(default, null!, false).ReturnsForAnyArgs(Task.CompletedTask);
+        rig.Sftp.OpenReadAsync(rig.SourceId, RemoteFile, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream>(new MemoryStream(RelayRig.Data)));
+        rig.Sftp.CommitUploadAsync(default, null!, null!, false).ReturnsForAnyArgs(_ =>
+        {
+            if (cancel) rig.Item.CancelItem!();
+            return Task.FromException(new TimeoutException("commit reply missing"));
+        });
+
+        await rig.RunAsync();
+
+        Assert.AreEqual(TransferStatus.Failed, rig.Item.Status);
+        Assert.AreEqual(0, rig.Delays);
+        Assert.AreEqual(0, rig.Downloads);
+        Assert.AreEqual(1, rig.Uploads);
+        await rig.Sftp.DidNotReceiveWithAnyArgs().DeleteAsync(default, null!);
+    });
+
     private sealed class RelayRig
     {
         public static readonly byte[] Data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -677,6 +733,8 @@ public sealed class TransferRetryTests
         public RelayRig(bool resume = false)
         {
             Sftp.ListDirectoryAsync(default, null!).ReturnsForAnyArgs(_ => Task.FromResult(new List<RemoteFileInfo>()));
+            Sftp.CheckUploadCommitAsync(default, null!, false).ReturnsForAnyArgs(
+                _ => Task.FromException(new NotSupportedException("No atomic commit")));
             Sftp.GetFileInfoAsync(SourceId, RemoteFile, Arg.Any<CancellationToken>()).Returns(Remote(10));
             Sftp.DownloadStreamAsync(default, null!, null!).ReturnsForAnyArgs(call =>
                 call.ArgAt<Stream>(2).WriteAsync(Data, call.ArgAt<CancellationToken>(4)).AsTask());

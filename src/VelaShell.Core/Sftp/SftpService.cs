@@ -401,6 +401,9 @@ public class SftpService : ISftpService
     /// <summary>删除远端文件或目录;目录按深度优先递归删除子项,并逐条回报删除进度。</summary>
     public async Task DeleteAsync(Guid sessionId, string remotePath, IProgress<SftpDeleteProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        // Deletion abandons this upload identity even if remote cleanup later fails.
+        // A future upload must verify the remote file rather than reuse a stale hint.
+        _ = TakeDurableHint(sessionId, remotePath);
         ISftpClientWrapper client = await GetOrCreateSftpClientAsync(sessionId, cancellationToken).ConfigureAwait(false);
 
         // 一次 stat 同时回答"存在吗"和"是不是目录";旧实现是 Exists + 列举整个父目录两趟。

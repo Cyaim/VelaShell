@@ -95,7 +95,7 @@ public static class TransferRetryPolicy
     private static TransferFailureKind? ClassifyOne(Exception ex) => ex switch
     {
         // 用户取消不该走到这里;万一走到了,绝不能把取消当成可以重来的失败。
-        OperationCanceledException => TransferFailureKind.Permanent,
+        OperationCanceledException or RemoteRelayCommitException => TransferFailureKind.Permanent,
 
         AggregateException aggregate => ClassifyAggregate(aggregate),
 

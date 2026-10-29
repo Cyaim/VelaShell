@@ -33,6 +33,8 @@ internal sealed class BufferedRelayReadStream : Stream
     private bool _stopped;
     private readonly bool _cacheEntireFile;
 
+    internal long ConsumedBytes => _consumed;
+
     internal bool IsEmpty { get; private set; }
 
     internal BufferedRelayReadStream(Stream source, long expectedLength, string path, bool cacheEntireFile,

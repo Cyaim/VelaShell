@@ -237,9 +237,11 @@ public sealed class SftpUploadAckProgressTests
     }
 
     [TestMethod]
-    [DataRow(1)]
-    [DataRow(3)]
-    public async Task Relay_FtpToActualSftpWrapper_2000FilesEachRetrievedAndOpenedOnce(int concurrency)
+    [DataRow(1, false)]
+    [DataRow(3, false)]
+    [DataRow(1, true)]
+    [DataRow(3, true)]
+    public async Task Relay_FtpToActualSftpWrapper_2000FilesEachRetrievedAndOpenedOnce(int concurrency, bool remoteCommit)
     {
         string root = Path.Combine(Path.GetTempPath(), $"vela-ftp-sftp-wire-{Guid.NewGuid():N}");
         var server = new LoopbackFtpServer(root) { SupportsMlsd = true };
@@ -273,8 +275,16 @@ public sealed class SftpUploadAckProgressTests
             }, async (file, ct) =>
             {
                 Interlocked.Increment(ref attempts);
-                await RemoteRelay.CopyFileAsync(ftp, sourceSession, "/" + file.Name,
-                    target, targetSession, "/home/joe/" + file.Name, cancellationToken: ct);
+                if (remoteCommit)
+                {
+                    Assert.IsTrue(await RemoteRelay.TryCopyFileWithRemoteCommitAsync(ftp, sourceSession, "/" + file.Name,
+                        target, targetSession, "/home/joe/" + file.Name, cancellationToken: ct));
+                }
+                else
+                {
+                    await RemoteRelay.CopyFileAsync(ftp, sourceSession, "/" + file.Name,
+                        target, targetSession, "/home/joe/" + file.Name, cancellationToken: ct);
+                }
             });
             Assert.AreEqual(files.Length, attempts, "No retry loop is involved: every transfer must succeed first time.");
             Assert.AreEqual(files.Length, server.RetrCounts.Count);
@@ -288,6 +298,51 @@ public sealed class SftpUploadAckProgressTests
             Assert.AreEqual(files.Length, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open),
                 "The SFTP target must be opened exactly once per file, without truncating retries.");
             Assert.AreEqual(0, harness.SftpServer.OpenHandleCount);
+        }
+        finally
+        {
+            await ftp.DisposeAsync();
+            server.Dispose();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task RemoteCommit_LargeFtpSource_PublishesOnlyAfterFinalReply(bool failCompletion)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"vela-relay-commit-{Guid.NewGuid():N}");
+        var server = new LoopbackFtpServer(root)
+        {
+            SupportsMlsd = true,
+            ReadFaultForPath = _ => new() { Reply = failCompletion ? "426 Transfer failed" : "226 Transfer complete" },
+        };
+        await using var ftp = new FtpFileService();
+        await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
+        Guid targetSession = Guid.NewGuid();
+        await using SftpService target = CreateService(harness.Sftp, targetSession);
+        byte[] original = [1, 2, 3];
+        harness.SftpServer.AddFile(RemotePath, original, 0x180);
+        byte[] payload = RandomNumberGenerator.GetBytes(RelayBufferBudget + 97);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        try
+        {
+            await File.WriteAllBytesAsync(Path.Combine(root, "source.bin"), payload, deadline.Token);
+            Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
+            {
+                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 1 },
+            }, deadline.Token);
+            Task<bool> copy = RemoteRelay.TryCopyFileWithRemoteCommitAsync(ftp, sourceSession, "/source.bin",
+                target, targetSession, RemotePath, cancellationToken: deadline.Token);
+            if (failCompletion) await Assert.ThrowsAsync<Exception>(() => copy);
+            else Assert.IsTrue(await copy);
+            byte[] actual = [.. harness.SftpServer.Nodes[RemotePath].Content];
+            Assert.AreSequenceEqual(failCompletion ? original : payload, actual);
+            Assert.IsFalse(harness.SftpServer.Nodes.Keys.Any(path => path.Contains(".vela-relay-", StringComparison.Ordinal)));
+            Assert.AreEqual(0, harness.SftpServer.OpenHandleCount);
+            Assert.AreEqual(1, server.RetrCounts["/source.bin"]);
         }
         finally
         {

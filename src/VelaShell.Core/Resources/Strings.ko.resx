@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
+  <data name="SftpSvc_RelayCommitUnconfirmed" xml:space="preserve">
+    <value>원격 파일의 커밋 결과를 확인하지 못했습니다. 자동 재시도를 중지했습니다. 다시 시도하기 전에 대상 파일과 남아 있을 수 있는 .vela-relay-* 파일을 확인하세요.</value>
+  </data>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
   </resheader>

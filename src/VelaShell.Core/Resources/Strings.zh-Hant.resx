@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
+  <data name="SftpSvc_RelayCommitUnconfirmed" xml:space="preserve">
+    <value>未能確認遠端檔案提交結果。已停止自動重試；再次重試前請檢查目標檔案及可能殘留的 .vela-relay-* 檔案。</value>
+  </data>
   <!-- 
     Microsoft ResX Schema 
     

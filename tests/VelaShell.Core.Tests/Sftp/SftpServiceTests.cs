@@ -1069,6 +1069,23 @@ public class SftpServiceTests
     }
 
     [TestMethod]
+    public async Task Delete_AbandonedUpload_DiscardsDurableHintEvenIfRemoteCleanupFails()
+    {
+        const string path = "/.vela-relay-abandoned";
+        _sftpClient.UploadAsync(Arg.Any<Stream>(), path, Arg.Any<Action<ulong>?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new VelaSftpTransferInterruptedException("interrupted", 2)));
+        using var source = new MemoryStream(new byte[4]);
+        await Assert.ThrowsExactlyAsync<VelaSftpTransferInterruptedException>(() =>
+            _sftpService.UploadStreamAsync(_sessionId, source, path, 4));
+        var field = typeof(SftpService).GetField("_durableUploads", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var hints = (System.Collections.Concurrent.ConcurrentDictionary<(Guid, string), long>)field.GetValue(_sftpService)!;
+        Assert.IsTrue(hints.ContainsKey((_sessionId, path)));
+        _sftpClient.GetEntryAsync(path, Arg.Any<CancellationToken>()).ThrowsAsync(new IOException("cleanup disconnected"));
+        await Assert.ThrowsExactlyAsync<IOException>(() => _sftpService.DeleteAsync(_sessionId, path));
+        Assert.IsFalse(hints.ContainsKey((_sessionId, path)));
+    }
+
+    [TestMethod]
     public async Task Upload_FailureBeforeLastAck_DoesNotInvent100Percent()
     {
         await using var source = new MemoryStream(new byte[100]);

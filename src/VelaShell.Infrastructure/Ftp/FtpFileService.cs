@@ -633,36 +633,42 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
     /// <inheritdoc />
     public async Task<Stream> OpenReadAsync(Guid sessionId, string remotePath, CancellationToken cancellationToken = default)
     {
-        FtpConnectionPool.Lease lease = await RentAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        try
+        string path = NormalizePath(remotePath);
+        for (int attempt = 0; ; attempt++)
         {
-            string path = NormalizePath(remotePath);
-            long length = await GetBinaryFileSizeAsync(lease.Client, path, cancellationToken).ConfigureAwait(false);
-            // FluentFTP 55.1 在 OpenRead 内先 SIZE 再 TYPE。先在同一租约切 Binary,
-            // 再传已知正长或 -1 禁止库重复查询(0 会触发查询,包括已知空文件)。
-            Stream inner = await lease.Client
-                .OpenRead(path, FtpDataType.Binary, 0L, length > 0 ? length : -1L, token: cancellationToken)
-                .ConfigureAwait(false);
-            // FluentFTP 55.1:读失败也会内部 CloseAsync。断开其控制连接引用,确保最终回复
-            // 只有 LeasedStream 一个消费者;不能再由 CloseDataStreamInternal 隐式读取/吞超时。
-            if (inner is FtpDataStream data)
-            {
-                data.ControlConnection = null!;
-            }
-            return new LeasedStream(inner, lease, remotePath, length, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            lease.Invalidate();
+            FtpConnectionPool.Lease lease = await RentAsync(sessionId, cancellationToken).ConfigureAwait(false);
             try
             {
-                lease.Dispose();
+                long length = await GetBinaryFileSizeAsync(lease.Client, path, cancellationToken).ConfigureAwait(false);
+                // Query binary SIZE on this lease; -1 avoids the library querying again for empty files.
+                Stream inner = await lease.Client
+                    .OpenRead(path, FtpDataType.Binary, 0L, length > 0 ? length : -1L, token: cancellationToken)
+                    .ConfigureAwait(false);
+                // LeasedStream alone consumes the final reply, including after read failure.
+                if (inner is FtpDataStream data)
+                {
+                    data.ControlConnection = null!;
+                }
+                return new LeasedStream(inner, lease, remotePath, length, cancellationToken);
             }
-            catch (Exception cleanup) when (cleanup is not OutOfMemoryException)
+            catch (Exception ex)
             {
-                // 保留打开数据连接时的原始失败。
+                lease.Invalidate();
+                try { lease.Dispose(); }
+                catch (Exception cleanup) when (cleanup is not OutOfMemoryException)
+                {
+                    // Preserve the original open failure.
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                // No bytes have escaped to a caller yet. Release the failed lease before
+                // queueing behind the active transfer on a server allowing only one RETR.
+                if (attempt < MaxBusyRetries && FluentFtpInterop.IsConcurrencyRejection(ex)
+                    && LimitSessionToSingleConnection(sessionId))
+                {
+                    continue;
+                }
+                throw Fault(sessionId, ex, "open");
             }
-            throw Fault(sessionId, ex, "open");
         }
     }
 

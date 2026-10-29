@@ -266,6 +266,40 @@ public class FtpFileServiceIntegrationTests
         }
     }
 
+    [TestMethod]
+    [DataRow("425 Can't open data connection")]
+    [DataRow("450 Transfer busy")]
+    public async Task OpenRead_BusyBeforeReturningStream_DowngradesAndRetries(string reply)
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "busy-read.bin"), new byte[] { 1, 2, 3 }, TestContext.CancellationToken);
+        int opens = 0;
+        _server.ReadFaultForPath = _ => Interlocked.Increment(ref opens) == 1
+            ? new LoopbackFtpServer.ReadFault { RejectRetr = reply } : null;
+        Guid session = await OpenAsync(maxConnections: 3);
+        await using (Stream input = await _service.OpenReadAsync(session, "/busy-read.bin", TestContext.CancellationToken))
+        {
+            using var output = new MemoryStream();
+            await input.CopyToAsync(output, TestContext.CancellationToken);
+            Assert.AreSequenceEqual(new byte[] { 1, 2, 3 }, output.ToArray());
+        }
+        Assert.AreEqual(2, opens);
+    }
+
+    [TestMethod]
+    public async Task OpenRead_PersistentBusy_HasBoundedRetry()
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_root, "busy-read.bin"), new byte[] { 1 }, TestContext.CancellationToken);
+        int opens = 0;
+        _server.ReadFaultForPath = _ =>
+        {
+            Interlocked.Increment(ref opens);
+            return new LoopbackFtpServer.ReadFault { RejectRetr = "450 Transfer busy" };
+        };
+        Guid session = await OpenAsync(maxConnections: 3);
+        await Assert.ThrowsAsync<Exception>(() => _service.OpenReadAsync(session, "/busy-read.bin", TestContext.CancellationToken));
+        Assert.AreEqual(3, opens);
+    }
+
     /// <summary>
     /// 另一类服务器:控制连接随便开,但**一次只让传一个文件**(第二个 STOR 直接 450)。
     /// 池那条自适应看不到这种拒绝(连接开得出来),得由传输层收紧后重试。

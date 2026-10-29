@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
+  <data name="SftpSvc_RelayCommitUnconfirmed" xml:space="preserve">
+    <value>The remote file commit was not confirmed. Automatic retry is disabled; check the destination and any .vela-relay-* file before retrying.</value>
+  </data>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
   </resheader>
