@@ -336,9 +336,8 @@ public sealed partial class ChatPanelViewUiTests
                 TextEditor input = Find<TextEditor>(panel, "InputBox");
                 input.TextArea.Focus();
                 Type(input, "看看 #/etc/");
-                await PumpAsync();
-
-                Assert.IsTrue(Find<Popup>(panel, "FilePopup").IsOpen);
+                Assert.IsTrue(await WaitForAsync(() => Find<Popup>(panel, "FilePopup").IsOpen),
+                    "应等到目录补全弹层打开后再检查列目录次数");
                 int afterFirstListing = context.FakeRemoteFs.ListDirectoryCalls;
                 Assert.AreEqual(1, afterFirstListing, "进到一个目录只列一次");
 
