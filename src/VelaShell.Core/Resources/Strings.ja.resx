@@ -2348,6 +2348,21 @@
   <data name="Profile_MoreProtocols" xml:space="preserve">
     <value>プロトコルを追加…</value>
   </data>
+  <data name="Profile_PickTypeHeading" xml:space="preserve">
+    <value>接続の種類を選択</value>
+  </data>
+  <data name="Profile_Next" xml:space="preserve">
+    <value>次へ</value>
+  </data>
+  <data name="Profile_Back" xml:space="preserve">
+    <value>戻る</value>
+  </data>
+  <data name="Profile_TypeLabel" xml:space="preserve">
+    <value>種類</value>
+  </data>
+  <data name="Profile_ChangeType" xml:space="preserve">
+    <value>変更</value>
+  </data>
   <data name="Profile_SecTarget" xml:space="preserve">
     <value>接続先</value>
   </data>

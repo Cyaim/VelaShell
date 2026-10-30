@@ -53,6 +53,38 @@ public partial class ConnectionProfileView : Window
         {
             formContent.AddHandler(RequestBringIntoViewEvent, OnFormRequestBringIntoView);
         }
+        // 双击类型卡片 = 选中并下一步。挂在卡片列表上(卡片是模板生成的,逐个挂要跟着集合增删)。
+        // 连已处理的也收:卡片内容里哪个控件先把这次双击标成已处理,也不该吞掉「下一步」。
+        TypeCardsList.AddHandler(DoubleTappedEvent, OnTypeCardDoubleTapped, handledEventsToo: true);
+    }
+
+    /// <summary>双击卡片:选中它并直接进表单(等于单击 + 「下一步」)。</summary>
+    private void OnTypeCardDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is not ConnectionProfileViewModel viewModel
+            || (e.Source as Visual)?.FindAncestorOfType<Button>(includeSelf: true)?.DataContext
+                is not PluginTypeCardViewModel card)
+        {
+            return;
+        }
+        viewModel.ConfirmTypeCardCommand.Execute(card.Value).Subscribe();
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// 进到卡片那一屏时把焦点放到选中的那张上:键盘用户接着就能 Tab / Space 选别的。
+    /// 不走 Tab 式聚焦 —— 那会挂上 :focus-visible 的描边,鼠标点进来的人看到的是一圈卡住的高亮。
+    /// </summary>
+    private void FocusSelectedTypeCard()
+    {
+        if (DataContext is not ConnectionProfileViewModel { IsPickingType: true })
+        {
+            return;
+        }
+        TypeCardsList.GetVisualDescendants()
+            .OfType<Button>()
+            .FirstOrDefault(button => button.DataContext is PluginTypeCardViewModel { IsSelected: true })
+            ?.Focus();
     }
 
     /// <summary>
@@ -194,6 +226,11 @@ public partial class ConnectionProfileView : Window
                 or nameof(ConnectionProfileViewModel.ConnectionType))
             {
                 UpdateSectionTabIndicator();
+            }
+            // 卡片要等这一轮布局把它们建出来才聚焦得到,推迟到布局之后。
+            if (args.PropertyName is nameof(ConnectionProfileViewModel.IsPickingType) && viewModel.IsPickingType)
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(FocusSelectedTypeCard, Avalonia.Threading.DispatcherPriority.Loaded);
             }
         };
         UpdateSectionTabIndicator();

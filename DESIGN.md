@@ -346,6 +346,29 @@ Guarded by `DialogButtonStyleTests`.
 - A click writes back and closes the flyout. The list is `SessionTabIcons` in Core (ids are lucide names, every one must
   exist in `Icons.axaml`); each cell's tooltip and automation name is the icon's localized name.
 
+#### Type tile (`TypeTileTheme` in `ConnectionProfileView.axaml`)
+- The connection dialog's "choose a type" step: when one plugin tab carries several connection types (database:
+  MySQL / PostgreSQL / SQLite …), a new connection first picks a tile, then goes on to the form. Copied from
+  `ProtoItemTheme` (the protocol rail item), so the two read as one family.
+- Container: a `WrapPanel`, `ItemWidth:112`, 8px between tiles and between rows, outer margin `[24,20]`. Above it the
+  heading (`Profile_PickTypeHeading`) in 13px Medium `VelaTextPrimary`, 12px above the first row.
+- Tile: a `Button`, 112×88, `CornerRadius:4`, 1px `VelaBorderPrimary`, `Transparent` fill. Content is a vertically
+  centered stack: a 24px icon in `VelaTextSecondary` (the plugin's own icon, or `Icon.plug` when it has none — the
+  protocol rail's fallback), 6px gap, the name in 11px `VelaTextPrimary`, centered, one line with an ellipsis.
+- Hover: `VelaBgHover` fill; icon and name `VelaTextPrimary`.
+- Selected (`.selected`): `VelaBgActive` fill, `VelaAccent` border, icon and name `VelaAccent`, name Medium.
+- Keyboard focus (`:focus-visible`): `VelaAccent` border, 2px (same as `IconPickerField`).
+- No disabled state — a tile is never greyed out. No brush transitions (§6.1: the resting fill is `Transparent`).
+- A click selects; a double click selects and moves on (same as **Next**); Space / Enter on a focused tile selects.
+- Footer: the type step shows **Cancel** (`VelaOutlineButtonTheme`) and **Next** (`VelaAccentPillButtonTheme`,
+  `IsDefault`, `Icon.arrow-right`); the endpoint preview on the left is hidden — there is no endpoint yet. The form of a
+  new connection puts **Back** (`VelaOutlineButtonTheme`, `Icon.arrow-left`) in front of Test / Save / Connect. All 28
+  high. Arrows rather than chevrons: the sign-in dialog's Back / Next already carry arrows (same action, same icon, §5.1).
+- Form header: one row above every section — the label (`Profile_TypeLabel`) in 11px `VelaTextTertiary`, the current
+  type in 12px Medium `VelaTextPrimary`; editing a saved connection adds a 3px `VelaTextMuted` dot and a
+  `RailLinkTheme` **Change** link back to the tiles. No colon between label and value: it differs per language
+  ("类型：" / "Type:"), and a literal in XAML would be wrong in all but one.
+
 #### StatusDot (`Ellipse`)
 - 7x7 circle, fill driven by connection state
 - Classes: `.dot` (default=disconnected), `.dot.connected` (`VelaStatusConnected`), `.dot.connecting` (`VelaStatusConnecting`)

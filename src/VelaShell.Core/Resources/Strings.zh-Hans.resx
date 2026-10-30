@@ -2761,6 +2761,21 @@
   <data name="Profile_MoreProtocols" xml:space="preserve">
     <value>获取更多协议…</value>
   </data>
+  <data name="Profile_PickTypeHeading" xml:space="preserve">
+    <value>选择连接类型</value>
+  </data>
+  <data name="Profile_Next" xml:space="preserve">
+    <value>下一步</value>
+  </data>
+  <data name="Profile_Back" xml:space="preserve">
+    <value>上一步</value>
+  </data>
+  <data name="Profile_TypeLabel" xml:space="preserve">
+    <value>类型</value>
+  </data>
+  <data name="Profile_ChangeType" xml:space="preserve">
+    <value>更换</value>
+  </data>
   <data name="Profile_SecTarget" xml:space="preserve">
     <value>连接目标</value>
   </data>

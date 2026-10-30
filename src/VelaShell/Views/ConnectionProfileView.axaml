@@ -8,6 +8,8 @@
         xmlns:models="clr-namespace:VelaShell.Core.Models;assembly=VelaShell.Core"
         xmlns:loc="using:VelaShell.Localization"
         xmlns:pc="using:VelaShell.Controls.Controls"
+        xmlns:conv="using:VelaShell.Converters"
+        xmlns:services="using:VelaShell.Services"
         mc:Ignorable="d" d:DesignWidth="792" d:DesignHeight="696"
         x:Class="VelaShell.Views.ConnectionProfileView"
         x:DataType="vm:ConnectionProfileViewModel"
@@ -69,6 +71,53 @@
       <!-- 焦点记号只给键盘导航(:focus-visible):鼠标点完一项后描边一直挂着,看起来像卡住的高亮。 -->
       <Style Selector="^:focus-visible">
         <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+      </Style>
+    </ControlTheme>
+
+    <!-- 「选类型」那一屏的磁贴(DESIGN.md §5.2 Type tile)。从 ProtoItemTheme 复制改:固定 112×88、竖排内容。
+         常态边框是 VelaBorderPrimary 而不是 Transparent,同样不挂画刷过渡(#577,理由见 ProtoItemTheme)。
+         图标跟按钮前景(常态 VelaTextSecondary);名字常态 VelaTextPrimary,由 Window.Styles 里的 type-tile-name 给。 -->
+    <ControlTheme x:Key="TypeTileTheme" TargetType="Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource VelaBorderPrimary}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Width" Value="112" />
+      <Setter Property="Height" Value="88" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusAdorner" Value="{x:Null}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Foreground="{TemplateBinding Foreground}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover">
+        <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+        <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      </Style>
+      <Style Selector="^.selected">
+        <Setter Property="Background" Value="{DynamicResource VelaBgActive}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+        <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+      </Style>
+      <!-- 焦点记号只给键盘导航(:focus-visible),与 IconPickerField 的格子一样加粗到 2px。 -->
+      <Style Selector="^:focus-visible">
+        <Setter Property="BorderBrush" Value="{DynamicResource VelaAccent}" />
+        <Setter Property="BorderThickness" Value="2" />
       </Style>
     </ControlTheme>
 
@@ -292,6 +341,40 @@
     </Style>
     <Style Selector="Button.selected TextBlock.proto-kind">
       <Setter Property="Foreground" Value="{DynamicResource VelaTextSecondary}" />
+    </Style>
+
+    <!-- 「选类型」那一屏(DESIGN.md §5.2 Type tile):标题、磁贴上的名字。
+         名字常态就是 VelaTextPrimary(图标弱一档,跟按钮前景);选中时与图标一起转 accent 并加粗。 -->
+    <Style Selector="TextBlock.type-picker-heading">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize13}" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+    <Style Selector="TextBlock.type-tile-name">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="MaxLines" Value="1" />
+    </Style>
+    <Style Selector="Button.type-tile.selected TextBlock.type-tile-name">
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <!-- 表单顶部「类型 X · 更换」:标签弱、值强;不写冒号字面量 —— 各语言的冒号不一样。 -->
+    <Style Selector="TextBlock.type-header-label">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextTertiary}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.type-header-value">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextPrimary}" />
+      <Setter Property="FontSize" Value="{DynamicResource VelaFontSize12}" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
     <!-- 表单:分节标题(小号大写感的标题 + 一条延伸到右边的细线) -->
@@ -589,8 +672,9 @@
 
         <Grid Grid.Column="1" RowDefinitions="Auto,*">
 
-          <!-- 分页页签:哪几页出现由协议决定,「常规」恒在 -->
+          <!-- 分页页签:哪几页出现由协议决定,「常规」恒在。选类型那一屏没有表单,页签条一起收起。 -->
           <Border Grid.Row="0" Height="40" Padding="18,0"
+                  IsVisible="{Binding !IsPickingType}"
                   BorderThickness="0,0,0,1"
                   BorderBrush="{DynamicResource VelaBorderPrimary}">
             <Panel x:Name="SectionTabsPanel" VerticalAlignment="Bottom">
@@ -668,12 +752,33 @@
                那个开关的含义是【常驻展开】,一打开右侧就顶着一条带滑道和两端箭头的粗滚动条。
                本主题的未激活态本来就是一根可见的 2px 细条,截断照样看得见。 -->
           <ScrollViewer x:Name="FormScroll" Grid.Row="1"
+                        IsVisible="{Binding !IsPickingType}"
                         VerticalScrollBarVisibility="Auto"
                         HorizontalScrollBarVisibility="Disabled">
-            <Panel Margin="24,20">
+            <Grid Margin="24,20" RowDefinitions="Auto,*">
+
+              <!-- 表头「类型 X · 更换」:一个页签承载几种连接类型时(数据库:MySQL / PostgreSQL / SQLite),
+                   类型在卡片那一屏选定,表单里那一行下拉不再出现,由这一行替代(决策 D11)。
+                   放在各分页之上,哪一页都看得见。「更换」只在编辑态:新建时回卡片走页脚的「上一步」。
+                   各分页叠在第 1 行,靠 IsVisible 切换(原先的 Panel 叠放,只是多了表头这一行)。 -->
+              <StackPanel x:Name="TypeHeader" Grid.Row="0" Orientation="Horizontal" Spacing="8"
+                          MinHeight="24" Margin="0,0,0,20"
+                          IsVisible="{Binding ShowTypeHeader}">
+                <TextBlock Classes="type-header-label" Text="{loc:Localize Profile_TypeLabel}" />
+                <TextBlock x:Name="TypeHeaderValue" Classes="type-header-value" Text="{Binding CurrentTypeLabel}" />
+                <Ellipse Width="3" Height="3" VerticalAlignment="Center"
+                         Fill="{DynamicResource VelaTextMuted}"
+                         IsVisible="{Binding ShowChangeTypeLink}" />
+                <Button x:Name="ChangeTypeLink" Theme="{StaticResource RailLinkTheme}"
+                        Height="24" Padding="6,0" HorizontalAlignment="Left"
+                        IsVisible="{Binding ShowChangeTypeLink}"
+                        Command="{Binding ChangeTypeCommand}">
+                  <TextBlock Text="{loc:Localize Profile_ChangeType}" VerticalAlignment="Center" />
+                </Button>
+              </StackPanel>
 
               <!-- ============================== 常规 ============================== -->
-              <StackPanel Spacing="24" IsVisible="{Binding IsGeneralSection}">
+              <StackPanel Grid.Row="1" Spacing="24" IsVisible="{Binding IsGeneralSection}">
 
                 <!-- 连接目标 -->
                 <StackPanel Spacing="12">
@@ -1105,7 +1210,7 @@
               </StackPanel>
 
               <!-- ============================== 终端(只有 SSH) ============================== -->
-              <StackPanel Spacing="24" IsVisible="{Binding IsTerminalSection}">
+              <StackPanel Grid.Row="1" Spacing="24" IsVisible="{Binding IsTerminalSection}">
                 <!-- 本条配置专属的「认证后执行命令」。与设置 → 终端 → 会话那条全局命令是两件事:
                      那条对所有终端生效,这条只跟着这一条配置走。
                      命令与延迟同排:延迟只有配了命令才有意义,拆开会让人以为它是独立开关。 -->
@@ -1190,7 +1295,7 @@
 
               <!-- ============================== SSH 选项(SSH 与 SFTP) ==============================
                    各项默认全关(按键时序混淆与 OpenSSH 不同,理由是带宽代价),每项下面一行灰字说清「什么时候该开」。 -->
-              <StackPanel Spacing="24" IsVisible="{Binding IsSshOptionsSection}">
+              <StackPanel Grid.Row="1" Spacing="24" IsVisible="{Binding IsSshOptionsSection}">
                 <StackPanel Spacing="12">
                   <Grid ColumnDefinitions="Auto,*">
                     <TextBlock Classes="section-title" Text="{loc:Localize Profile_SecTransport}" />
@@ -1286,7 +1391,7 @@
 
               <!-- ============================== 转发(只有 SSH) ==============================
                    两个转发只挂在交互式 shell 上:开错了是把本机能力借给远端,每项的灰字说清代价。 -->
-              <StackPanel Spacing="24" IsVisible="{Binding IsForwardingSection}">
+              <StackPanel Grid.Row="1" Spacing="24" IsVisible="{Binding IsForwardingSection}">
                 <StackPanel Spacing="12">
                   <Grid ColumnDefinitions="Auto,*">
                     <TextBlock Classes="section-title" Text="SSH Agent" />
@@ -1385,7 +1490,7 @@
               </StackPanel>
 
               <!-- ============================== 高级(FTP / 插件) ============================== -->
-              <StackPanel Spacing="12" IsVisible="{Binding IsAdvancedSection}">
+              <StackPanel Grid.Row="1" Spacing="12" IsVisible="{Binding IsAdvancedSection}">
                 <!-- FTP / FTPS 的「默认打开路径」:上传目标常年是同一个目录,而 FTP 给的登录工作目录
                      往往就是根,每连一次手点四五层是纯粹的重复劳动。 -->
                 <StackPanel IsVisible="{Binding IsFtpSelected}">
@@ -1408,7 +1513,49 @@
                 <ItemsControl IsVisible="{Binding IsPluginSelected}"
                               ItemsSource="{Binding PluginFields}" ItemTemplate="{StaticResource PluginFieldRow}" />
               </StackPanel>
-            </Panel>
+            </Grid>
+          </ScrollViewer>
+
+          <!-- 选类型那一屏(DESIGN.md §5.2 Type tile):与表单同级、占满页签条加表单的位置。
+               单击只选(SelectTypeCard),双击 = 选中并下一步(代码后置挂 DoubleTapped → ConfirmTypeCard);
+               卡片是 Button,Tab 顺序就是候选项顺序,Space / Enter 在卡片上 = 选中。 -->
+          <ScrollViewer x:Name="TypePickerPanel" Grid.Row="0" Grid.RowSpan="2"
+                        IsVisible="{Binding IsPickingType}"
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="24,20" Spacing="12">
+              <TextBlock Classes="type-picker-heading" Text="{loc:Localize Profile_PickTypeHeading}" />
+              <ItemsControl x:Name="TypeCardsList" ItemsSource="{Binding TypeCards}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel ItemWidth="112" ItemSpacing="8" LineSpacing="8" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PluginTypeCardViewModel">
+                    <Button Theme="{StaticResource TypeTileTheme}" Classes="type-tile"
+                            Tag="{Binding Value}"
+                            Classes.selected="{Binding IsSelected}"
+                            AutomationProperties.Name="{Binding Label}"
+                            Command="{Binding $parent[ItemsControl].((vm:ConnectionProfileViewModel)DataContext).SelectTypeCardCommand}"
+                            CommandParameter="{Binding Value}">
+                      <StackPanel Spacing="6" VerticalAlignment="Center">
+                        <!-- 插件自报的图标;没给(或解析不了)就是协议栏同款的通用插头。
+                             DataContext 收窄到 TabIcon,理由同 WorkspaceDockTabItem。 -->
+                        <pc:LucideIcon Width="24" Height="24" HorizontalAlignment="Center"
+                                       DataContext="{Binding Icon, Converter={x:Static conv:PluginIconToTabIconConverter.Instance}}"
+                                       x:DataType="services:TabIcon"
+                                       Data="{Binding Geometry}"
+                                       ViewBoxSize="{Binding ViewBoxSize}"
+                                       Fill="{Binding Fill}"
+                                       Foreground="{Binding $parent[Button].Foreground}" />
+                        <TextBlock Classes="type-tile-name" Text="{Binding Label}" />
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
           </ScrollViewer>
         </Grid>
       </Grid>
@@ -1489,13 +1636,20 @@
       </Border>
 
       <!-- 页脚:左边是连接目标预览(随输入实时更新,填完一眼就能核对要连的是哪),
-           右边是测试 / 保存(描边)与连接(强调药丸,DESIGN.md §5.1)。 -->
+           右边是测试 / 保存(描边)与连接(强调药丸,DESIGN.md §5.1)。
+           选类型那一屏换成 [取消][下一步]、预览收起(还没有端点);新建的表单在测试前多一个 [上一步]。
+           按钮各自绑 IsVisible 而不是收起外层:IsDefault 的按钮只看自己的 IsVisible,收外层的话 Enter 照样触发它。 -->
       <Border Grid.Row="3" Height="52" Padding="20,0"
               BorderThickness="0,1,0,0"
               BorderBrush="{DynamicResource VelaBorderPrimary}">
         <Grid ColumnDefinitions="*,16,Auto">
-          <Grid Grid.Column="0" ColumnDefinitions="Auto,*" VerticalAlignment="Center"
-                IsVisible="{Binding EndpointPreview, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <Grid Grid.Column="0" x:Name="EndpointPreviewRow" ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+            <Grid.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="EndpointPreview" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+                <Binding Path="IsPickingType" Converter="{x:Static BoolConverters.Not}" />
+              </MultiBinding>
+            </Grid.IsVisible>
             <Panel Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">
               <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.square-terminal}"
                              Foreground="{DynamicResource VelaTextMuted}" IsVisible="{Binding IsSshSelected}" />
@@ -1519,14 +1673,35 @@
           </Grid>
 
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-            <Button Theme="{StaticResource VelaOutlineButtonTheme}" Command="{Binding TestConnectionCommand}">
+            <!-- 上一步:只在新建、且已经从卡片走到了表单(编辑态回卡片走表头的「更换」)。
+                 箭头与登录对话框的「上一步 / 下一步」同一种字形(DESIGN.md §5.1 同一动作同一图标)。 -->
+            <Button x:Name="BackButton" Theme="{StaticResource VelaOutlineButtonTheme}"
+                    IsVisible="{Binding ShowBackButton}"
+                    Command="{Binding BackCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.arrow-left}"
+                               Foreground="{Binding $parent[Button].Foreground}" />
+                <TextBlock Text="{loc:Localize Profile_Back}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <!-- 卡片那一屏的取消 = 关闭对话框(决策 D10;编辑态点了「更换」再取消也是关闭)。 -->
+            <Button x:Name="PickTypeCancelButton" Theme="{StaticResource VelaOutlineButtonTheme}"
+                    IsVisible="{Binding IsPickingType}"
+                    Command="{Binding CancelCommand}">
+              <TextBlock Text="{loc:Localize Cancel}" VerticalAlignment="Center" />
+            </Button>
+            <Button x:Name="TestButton" Theme="{StaticResource VelaOutlineButtonTheme}"
+                    IsVisible="{Binding !IsPickingType}"
+                    Command="{Binding TestConnectionCommand}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.zap}"
                                Foreground="{Binding $parent[Button].Foreground}" />
                 <TextBlock Text="{loc:Localize Profile_Test}" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
-            <Button Theme="{StaticResource VelaOutlineButtonTheme}" Command="{Binding SaveCommand}">
+            <Button x:Name="SaveButton" Theme="{StaticResource VelaOutlineButtonTheme}"
+                    IsVisible="{Binding !IsPickingType}"
+                    Command="{Binding SaveCommand}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.save}"
                                Foreground="{Binding $parent[Button].Foreground}" />
@@ -1537,11 +1712,26 @@
                     Height="28" Padding="16,0"
                     FontSize="{DynamicResource VelaFontSize11}" FontWeight="Medium"
                     VerticalContentAlignment="Center"
+                    IsVisible="{Binding !IsPickingType}"
                     Command="{Binding ConnectCommand}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.plug}"
                                Foreground="{Binding $parent[Button].Foreground}" />
                 <TextBlock Text="{loc:Localize Connect}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <!-- 下一步:对话框级 Enter(IsDefault)。只在卡片那一屏可见、可用。 -->
+            <Button x:Name="NextButton" Theme="{StaticResource VelaAccentPillButtonTheme}"
+                    Height="28" Padding="16,0"
+                    FontSize="{DynamicResource VelaFontSize11}" FontWeight="Medium"
+                    VerticalContentAlignment="Center"
+                    IsDefault="True"
+                    IsVisible="{Binding IsPickingType}"
+                    Command="{Binding NextCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <pc:LucideIcon Width="12" Height="12" Data="{StaticResource Icon.arrow-right}"
+                               Foreground="{Binding $parent[Button].Foreground}" />
+                <TextBlock Text="{loc:Localize Profile_Next}" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
           </StackPanel>

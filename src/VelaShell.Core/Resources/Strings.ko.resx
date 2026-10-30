@@ -2348,6 +2348,21 @@
   <data name="Profile_MoreProtocols" xml:space="preserve">
     <value>프로토콜 더 보기…</value>
   </data>
+  <data name="Profile_PickTypeHeading" xml:space="preserve">
+    <value>연결 유형 선택</value>
+  </data>
+  <data name="Profile_Next" xml:space="preserve">
+    <value>다음</value>
+  </data>
+  <data name="Profile_Back" xml:space="preserve">
+    <value>이전</value>
+  </data>
+  <data name="Profile_TypeLabel" xml:space="preserve">
+    <value>유형</value>
+  </data>
+  <data name="Profile_ChangeType" xml:space="preserve">
+    <value>변경</value>
+  </data>
   <data name="Profile_SecTarget" xml:space="preserve">
     <value>연결 대상</value>
   </data>

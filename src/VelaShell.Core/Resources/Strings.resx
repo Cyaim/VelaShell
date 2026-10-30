@@ -2652,6 +2652,21 @@ Paste anyway?</value>
   <data name="Profile_MoreProtocols" xml:space="preserve">
     <value>Get more protocols…</value>
   </data>
+  <data name="Profile_PickTypeHeading" xml:space="preserve">
+    <value>Choose a connection type</value>
+  </data>
+  <data name="Profile_Next" xml:space="preserve">
+    <value>Next</value>
+  </data>
+  <data name="Profile_Back" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="Profile_TypeLabel" xml:space="preserve">
+    <value>Type</value>
+  </data>
+  <data name="Profile_ChangeType" xml:space="preserve">
+    <value>Change</value>
+  </data>
   <data name="Profile_SecTarget" xml:space="preserve">
     <value>Destination</value>
   </data>
