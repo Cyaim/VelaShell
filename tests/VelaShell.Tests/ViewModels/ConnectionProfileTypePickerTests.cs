@@ -631,6 +631,141 @@ public sealed class ConnectionProfileTypePickerTests
         }
     }
 
+    /// <summary>
+    /// <b>编辑态点「更换」看一眼、类型没换就「下一步」:已存的端口不能被改</b>(R-b)。
+    /// <para>
+    /// 已存的是 PostgreSQL@3306(3306 恰好是页签默认端口,会被当成"还是默认值")。
+    /// 编辑态回表单的唯一路就是「下一步」(D10),要是这一下也按变体刷新端口,
+    /// 用户只是点开「更换」看了一眼,3306 就静默变成了 5432,保存即落盘。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task TypePicker_EditingProfile_ChangeTypeThenNext_SameType_KeepsTheSavedPort()
+    {
+        PluginProtocolRegistry registry = Registry(out IDisposable handle);
+        using (handle)
+        {
+            var vm = new ConnectionProfileViewModel(ExistingPostgres(3306), protocolRegistry: registry);
+            await vm.PendingPluginLoad;
+            Assert.AreEqual(3306, vm.Port, "前置条件:装载不改已存的端口。");
+
+            await vm.ChangeTypeCommand.Execute().FirstAsync();
+            await vm.NextCommand.Execute().FirstAsync();
+
+            Assert.AreEqual(ConnectionProfileStep.Form, vm.Step);
+            Assert.AreEqual("postgresql", Row(vm, DialectKey).Text);
+            Assert.AreEqual(3306, vm.Port, "类型没换,「更换 → 下一步」却把已存的端口改了。");
+        }
+    }
+
+    /// <summary>
+    /// <b>新建时手填了 3306,「上一步 → 下一步」类型没换:手填的端口不能被改</b>(R-b)。
+    /// <para>
+    /// 3306 是页签默认端口,判定上算"还是默认值";类型已经确认过,这一下不该再按变体刷新。
+    /// 用例 6 用的是 15432(不是任何默认值),测不出这一条。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task TypePicker_BackThenNext_SameType_KeepsAHandTypedDefaultPort()
+    {
+        PluginProtocolRegistry registry = Registry(out IDisposable handle);
+        using (handle)
+        {
+            ConnectionProfileViewModel vm = await NewOnDbTabAsync(registry);
+            await vm.SelectTypeCardCommand.Execute("postgresql").FirstAsync();
+            await vm.NextCommand.Execute().FirstAsync();
+            Assert.AreEqual(5432, vm.Port, "前置条件:端口已经跟到 5432。");
+
+            vm.Port = 3306;
+            await vm.BackCommand.Execute().FirstAsync();
+            await vm.NextCommand.Execute().FirstAsync();
+
+            Assert.AreEqual(ConnectionProfileStep.Form, vm.Step);
+            Assert.AreEqual(3306, vm.Port, "类型没换,「上一步 → 下一步」却把手填的 3306 改成了变体端口。");
+        }
+    }
+
+    /// <summary>
+    /// <b>卡片阶段的「取消」= 关对话框</b>(T6 / D10):新建停在卡片上、编辑态点了「更换」之后,
+    /// 取消都可用、都返回 null(视图收到 null 就关);不写任何值、不退回表单。
+    /// </summary>
+    [TestMethod]
+    public async Task TypePicker_Cancel_OnTheCards_ClosesTheDialog()
+    {
+        PluginProtocolRegistry registry = Registry(out IDisposable handle);
+        using (handle)
+        {
+            ConnectionProfileViewModel vm = await NewOnDbTabAsync(registry);
+            await vm.SelectTypeCardCommand.Execute("postgresql").FirstAsync();
+
+            Assert.IsTrue(await vm.CancelCommand.CanExecute.FirstAsync(), "新建的卡片阶段,「取消」必须可用。");
+            Assert.IsNull(await vm.CancelCommand.Execute().FirstAsync(), "取消要返回 null,对话框据此关闭。");
+            Assert.AreEqual(ConnectionProfileStep.PickType, vm.Step, "取消不是「回表单」(D10)。");
+            Assert.AreEqual("mysql", Row(vm, DialectKey).Text, "取消不该把卡片上的选择写进变体字段。");
+            Assert.AreEqual(3306, vm.Port, "取消不该碰端口。");
+
+            var editing = new ConnectionProfileViewModel(ExistingPostgres(5432), protocolRegistry: registry);
+            await editing.PendingPluginLoad;
+            await editing.ChangeTypeCommand.Execute().FirstAsync();
+            await editing.SelectTypeCardCommand.Execute("mysql").FirstAsync();
+            Assert.IsTrue(editing.IsPickingType, "前置条件:编辑态点了「更换」停在卡片上。");
+
+            Assert.IsTrue(await editing.CancelCommand.CanExecute.FirstAsync(), "编辑态「更换」之后,「取消」必须可用。");
+            Assert.IsNull(await editing.CancelCommand.Execute().FirstAsync(), "编辑态点了更换再取消,也是关闭(D10)。");
+            Assert.AreEqual(ConnectionProfileStep.PickType, editing.Step, "取消不是「回表单」(D10)。");
+            Assert.AreEqual("postgresql", Row(editing, DialectKey).Text, "取消不该改已存的类型。");
+            Assert.AreEqual(5432, editing.Port, "取消不该碰端口。");
+        }
+    }
+
+    /// <summary>
+    /// <b>变体字段是「常规」页唯一的插件字段时,那一节整节收起</b>(⚠️3):
+    /// 那一行已由表头替代,剩下的只会是一个有标题、没内容的空节。
+    /// 同理,标了「高级」的变体字段不计入「高级」页签上的字段数。
+    /// </summary>
+    [TestMethod]
+    public async Task TypePicker_VariantFieldIsTheOnlyGeneralField_CollapsesThePluginSection()
+    {
+        static WorkspaceDescriptor OnlyDialect(bool advanced) => new()
+        {
+            Id = DbId,
+            DisplayName = "数据库",
+            DefaultPort = 3306,
+            Fields =
+            [
+                new()
+                {
+                    Key = DialectKey,
+                    Label = "数据库类型",
+                    Kind = ProtocolSettingKind.Choice,
+                    DefaultValue = "mysql",
+                    IsAdvanced = advanced,
+                    Choices = [new("mysql", "MySQL"), new("postgresql", "PostgreSQL")]
+                }
+            ],
+            VariantKey = DialectKey
+        };
+
+        var registry = new PluginProtocolRegistry();
+        using (registry.RegisterWorkspace(DbId, OnlyDialect(advanced: false), new NoopWorkspace()))
+        {
+            ConnectionProfileViewModel vm = await NewOnDbTabAsync(registry);
+            Assert.IsTrue(vm.IsPickingType, "前置条件:这一页签出卡片。");
+            Assert.IsFalse(vm.ShowPluginGeneralFields, "卡片阶段:「常规」页的插件那一节只剩标题。");
+
+            await vm.NextCommand.Execute().FirstAsync();
+            Assert.IsTrue(vm.ShowTypeHeader, "前置条件:已进表单、表头替代了那一行。");
+            Assert.IsFalse(vm.ShowPluginGeneralFields, "表单阶段:「常规」页的插件那一节只剩标题。");
+        }
+
+        using (registry.RegisterWorkspace(DbId, OnlyDialect(advanced: true), new NoopWorkspace()))
+        {
+            ConnectionProfileViewModel vm = await NewOnDbTabAsync(registry);
+            Assert.IsTrue(vm.IsPickingType, "前置条件:这一页签出卡片。");
+            Assert.IsFalse(vm.HasAdvancedBadge, "被卡片替代的那一行不该计入「高级」页签的字段数。");
+        }
+    }
+
     /// <summary>编辑用的已存配置:PostgreSQL,主机 db.internal,库 orders。</summary>
     private static SessionProfile ExistingPostgres(int port) => new()
     {

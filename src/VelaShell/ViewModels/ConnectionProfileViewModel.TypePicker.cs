@@ -210,9 +210,10 @@ public partial class ConnectionProfileViewModel
     /// T3:「下一步」。把选中的类型写进变体字段那一行,进表单。
     /// <para>
     /// 写进那一行会经由 <c>OnPluginFieldChanged</c> 让字段显隐与变体形态跟着变。
-    /// <b>但值没变时不会有那一路</b>,所以这里无论值变没变都显式按变体刷新一次
+    /// <b>但值没变时不会有那一路</b>,所以新建、且这一页签还没确认过类型时,值没变也显式按变体刷新一次
     /// (主机标签、凭据、端口):选 PostgreSQL → 切到 SSH → 点回数据库,下拉还是 PostgreSQL,
     /// 端口却已经回到页签默认的 3306 —— 只靠字段变化就停在 3306 上了。
+    /// 已确认过的类型(「上一步」回来、编辑态「更换」)没换就不刷新:那时的端口是用户的,不是窗口留下的。
     /// 端口照常只在「还是某个协议的默认值」时跟随,用户手填的 13306 不动。
     /// </para>
     /// <para>其它已填的值(主机、用户名、各字段)一律不动。</para>
@@ -229,7 +230,15 @@ public partial class ConnectionProfileViewModel
         {
             row.Text = value;
         }
-        ApplyPluginVariant(followPort: true);
+        // 只在「新建、且这一页签还没确认过类型」时补这一下 —— 那个窗口(PG → SSH → 点回来)只出现在这里:
+        // 换协议会清掉确认,「上一步」不清,编辑态从不经装载进卡片。
+        // 编辑态点「更换」看一眼再「下一步」、或新建时手填了 3306 再「上一步 / 下一步」,类型没换,
+        // 无条件刷新就会把已存 / 手填的 3306 当成"还是默认值"改成 5432。
+        // 判断必须在 `_typeConfirmed = true` 之前。值真变了的那一路照旧经 OnPluginFieldChanged 跟随端口。
+        if (!IsEditing && !_typeConfirmed)
+        {
+            ApplyPluginVariant(followPort: true);
+        }
         _typeConfirmed = true;
         Step = ConnectionProfileStep.Form;
         SelectedSection = ConnectionProfileSection.General;
