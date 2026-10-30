@@ -2,6 +2,7 @@ using System.Reflection;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
 using VelaShell.Plugin.Ai.Chat;
@@ -64,6 +65,73 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void GeneratedImage_CopyFromChatOrPreviewRetainsIndependentBitmapsAfterClosing(bool fromPreview)
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            Window? host = null;
+            try
+            {
+                var bubble = new ChatPanelView.AssistantBubble(panel);
+                Find<StackPanel>(panel, "MessagesPanel").Children.Add(bubble.Root);
+                bubble.AddImage(new Microsoft.Extensions.AI.DataContent(Convert.FromBase64String(GeneratedPng), "image/png"));
+                await PumpAsync(3);
+                Control root = bubble.Root;
+                string buttonName = "ImageCopyAction";
+                if (fromPreview)
+                {
+                    RaiseClick(root.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "ImageFullScreenAction"));
+                    await PumpAsync(5);
+                    root = (ImagePreviewView)context.FakeUi.LastPanel.CreateContent();
+                    host = Host(root);
+                    buttonName = "ImagePreviewCopyAction";
+                }
+                await window.Clipboard!.SetTextAsync("old clipboard");
+                RaiseClick(root.GetVisualDescendants().OfType<Button>().Single(b => b.Name == buttonName));
+                Assert.IsTrue(await WaitForAsync(() => Find<TextBlock>(panel, "StatusText").Text == new Loc("en")["Copied"]));
+                panel.Detach();
+                await PumpAsync(3);
+                host?.Close();
+                host = null;
+                Bitmap? previous = null;
+                for (int i = 0; i < 2; i++)
+                {
+                    using Bitmap? copied = await window.Clipboard.TryGetBitmapAsync();
+                    Assert.IsNotNull(copied, "关闭视图后复制仍必须提供图片格式，而不是文件路径或文字");
+                    Assert.AreNotSame(previous, copied, "每次读取应获取独立位图，不能复用已经释放的图片");
+                    previous = copied;
+                }
+                Assert.IsNull(await window.Clipboard.TryGetTextAsync());
+            }
+            finally { await window.Clipboard!.ClearAsync(); host?.Close(); panel.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void GeneratedImage_CopyMissingImagePreservesClipboardAndReportsError()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            (Window window, ChatPanelView panel) = await ShowAsync(context);
+            try
+            {
+                await window.Clipboard!.SetTextAsync("keep clipboard");
+                var bubble = new ChatPanelView.AssistantBubble(panel);
+                MethodInfo copy = typeof(ChatPanelView.AssistantBubble).GetMethod("CopyImageAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                await (Task)copy.Invoke(bubble, [new ChatGeneratedImage(new string('a', 32) + ".png", "image/png"), panel])!;
+                Assert.AreEqual("keep clipboard", await window.Clipboard.TryGetTextAsync());
+                Assert.IsTrue(Find<TextBlock>(panel, "StatusText").Text?.StartsWith(new Loc("en")["Error"] + ":", StringComparison.Ordinal) == true);
+            }
+            finally { await window.Clipboard!.ClearAsync(); panel.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
     public void GeneratedImage_ActionsOverlayImageAndAreAccessible()
     {
         OnUi(async () =>
@@ -85,7 +153,7 @@ public sealed partial class ChatPanelViewUiTests
                 var overlay = (Grid)image.Parent!;
                 StackPanel actions = overlay.Children.OfType<StackPanel>().Single();
                 Button[] buttons = [.. actions.Children.OfType<Button>()];
-                Assert.HasCount(2, buttons);
+                Assert.HasCount(3, buttons);
                 Assert.AreEqual(Avalonia.Layout.HorizontalAlignment.Right, actions.HorizontalAlignment);
                 Assert.AreEqual(Avalonia.Layout.VerticalAlignment.Bottom, actions.VerticalAlignment);
                 foreach (Button button in buttons)
@@ -101,7 +169,12 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.IsLessThan(1, surface.Opacity, "只有圆形底面半透明，不应出现不透明底板");
                     var icon = (Avalonia.Controls.Shapes.Path)((Viewbox)button.Content!).Child!;
                     Assert.IsNotNull(icon.Data);
-                    string key = button.Name == "ImageSaveAction" ? "AiIcon.image-down" : "AiIcon.fullscreen";
+                    string key = button.Name switch
+                    {
+                        "ImageCopyAction" => "AiIcon.copy",
+                        "ImageSaveAction" => "AiIcon.image-down",
+                        _ => "AiIcon.fullscreen"
+                    };
                     Assert.IsTrue(panel.TryFindResource(key, out object? geometry));
                     Assert.AreSame(geometry, icon.Data);
                     Assert.AreEqual(1d, button.Opacity, "图标本身不跟着底面一起变透明");
