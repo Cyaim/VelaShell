@@ -51,7 +51,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("按我们刚才讨论的画一只猫");
-                Assert.IsTrue(await WaitForAsync(() => chat.Requests.Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => chat.Requests.Count > 0 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, images.Requests);
                 Assert.HasCount(2, chat.Requests);
                 Assert.AreEqual(text.Models[0].Id, PanelSettings(panel).ActiveModelId);
@@ -95,14 +95,14 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("画一只猫");
-                Assert.IsTrue(await WaitForAsync(() => images.Requests.Count == 1 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => images.Requests.Count == 1 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 var history = new ChatHistoryStore(context);
                 await history.InitAsync();
                 ChatSessionSummary saved = (await history.ListSessionsAsync()).Single();
                 imageId = (await history.LoadAsync(saved.Id)).Single(e => e.Role == "assistant").Meta!.Images!.Single().FileName;
                 await (Task)typeof(ChatPanelView).GetMethod("LoadConversationAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(panel, [saved])!;
                 panel.SendExternal("把刚才那张背景改白，猫保持不变");
-                Assert.IsTrue(await WaitForAsync(() => images.Requests.Count == 2 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => images.Requests.Count == 2 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.Contains("name=\"image[]\"", images.Requests[1].Body);
                 Assert.Contains("Keep the cat unchanged", images.Requests[1].Body);
                 Assert.HasCount(2, Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants().OfType<Image>().Where(i => i.Source is not null).ToList());
@@ -136,7 +136,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("画一只猫");
-                Assert.IsTrue(await WaitForAsync(() => images.Requests.Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => images.Requests.Count > 0 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, images.Requests);
                 Assert.HasCount(1, chat.Requests);
                 Assert.AreEqual(text.Models[0].Id, PanelSettings(panel).ActiveModelId);
@@ -175,7 +175,7 @@ public sealed partial class ChatPanelViewUiTests
                 Button deny = Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants().OfType<Button>()
                     .Single(button => Equals(button.Content, loc["Deny"]));
                 RaiseClick(deny);
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.IsEmpty(images.Requests);
                 Assert.HasCount(1, chat.Requests);
             }
@@ -205,7 +205,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("计划一下绘图步骤");
-                Assert.IsTrue(await WaitForAsync(() => chat.Requests.Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => chat.Requests.Count > 0 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.DoesNotContain("generate_image", chat.Requests[0].Body);
                 Assert.DoesNotContain("edit_image", chat.Requests[0].Body);
             }

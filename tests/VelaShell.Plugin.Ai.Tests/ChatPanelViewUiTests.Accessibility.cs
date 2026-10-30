@@ -49,7 +49,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual(defaultWindow == false ? "" : beforeLoc[defaultWindow == true ? "ContextWindowDefaultHint" : "ContextWindowUnverifiedHint"],
                     AutomationProperties.GetHelpText(modelPicker));
                 panel.SendExternal("show context usage");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && (ToolTip.GetTip(Find<TextBlock>(panel, "UsageText"))?.ToString() ?? "").Contains("Conversation total: in 5 / out 2")));
                 string tip = ToolTip.GetTip(Find<TextBlock>(panel, "UsageText"))?.ToString() ?? "";
                 var loc = new Loc("en");

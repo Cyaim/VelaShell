@@ -40,7 +40,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 panel.SendExternal("draw a cat");
                 Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count > 0
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.HasCount(1, messages.GetVisualDescendants().OfType<Image>().Where(i => i.Source is not null).ToList());
                 Assert.HasCount(1, endpoint.Requests, "纯图片不应判空、生成摘要或后续提问");
@@ -82,7 +82,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 panel.SendExternal("draw a cat");
                 Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count > 0
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, endpoint.Requests);
                 Assert.IsEmpty(backup.Requests);
             }

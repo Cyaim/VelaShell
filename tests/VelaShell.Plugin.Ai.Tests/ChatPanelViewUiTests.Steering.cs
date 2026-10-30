@@ -56,7 +56,7 @@ public sealed partial class ChatPanelViewUiTests
 
     /// <summary>
     /// 处理中按回车 = 排队,不是被吞掉:输入框当场清空、上方多出一枚可撤回的芯片,
-    /// 发送键仍在(换成「排队」)而不是被停止键顶掉。等这一轮答完,排队的那句自己发出去。
+    /// 发送键切换为停止,回车仍可排队。等这一轮答完,排队的那句自己发出去。
     /// </summary>
     [TestMethod]
     public void EnterWhileBusy_QueuesTheMessage_AndSendsItWhenTheTurnEnds()
@@ -69,10 +69,9 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("看看日志");
-                Button stop = Find<Button>(panel, "StopButton");
-                Assert.IsTrue(await WaitForAsync(() => stop.IsVisible, maxRounds: 60), "这一轮该跑起来了");
+                Assert.IsTrue(await WaitForAsync(() => Find<Viewbox>(panel, "StopIcon").IsVisible, maxRounds: 60), "这一轮该跑起来了");
                 Assert.IsTrue(Find<Button>(panel, "SendButton").IsVisible,
-                    "忙的时候发送键也得留着 —— 它此刻是「排队」");
+                    "忙时统一按钮保留,此时用于停止");
                 // 停止键亮起只说明这一轮开跑了。SteeringChatClient 每次发请求前都会把队列取空 ——
                 // 回车若赶在第一次请求发出之前,那句话会被并进第一次请求,而不是排着等下一轮。
                 Assert.IsTrue(await WaitForAsync(() => stub.Requests.Count >= 1, maxRounds: 120),
@@ -125,8 +124,8 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("看看日志");
-                Button stop = Find<Button>(panel, "StopButton");
-                Assert.IsTrue(await WaitForAsync(() => stop.IsVisible, maxRounds: 60), "这一轮该跑起来了");
+                Button stop = Find<Button>(panel, "SendButton");
+                Assert.IsTrue(await WaitForAsync(() => Find<Viewbox>(panel, "StopIcon").IsVisible, maxRounds: 60), "这一轮该跑起来了");
                 // 请求是 stub 那一头记的:界面亮起停止键只说明这一轮开跑了,不代表请求已经落到 stub。
                 // 先等它真的记上,下面「只发了一次」才是在断已发生的事实(macOS runner 上就是这么挂的)。
                 Assert.IsTrue(await WaitForAsync(() => stub.Requests.Count >= 1, maxRounds: 120),
@@ -144,6 +143,10 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => input.Text.Contains("算了,先看磁盘"), maxRounds: 120),
                     "停掉之后那句该回到输入框");
                 Assert.IsFalse(Find<WrapPanel>(panel, "QueuedBar").IsVisible, "回到输入框了就不该还排着");
+                Assert.IsTrue(Find<Viewbox>(panel, "SendIcon").IsVisible);
+                Assert.IsFalse(Find<Viewbox>(panel, "StopIcon").IsVisible);
+                Assert.AreEqual(new VelaShell.Plugin.Ai.Ui.Loc("en")["Send"],
+                    Avalonia.Automation.AutomationProperties.GetName(stop));
                 Assert.HasCount(1, stub.Requests, "停掉之后不许再自动发一次");
             }
             finally
@@ -166,7 +169,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("看看日志");
-                Assert.IsTrue(await WaitForAsync(() => Find<Button>(panel, "StopButton").IsVisible, maxRounds: 60));
+                Assert.IsTrue(await WaitForAsync(() => Find<Viewbox>(panel, "StopIcon").IsVisible, maxRounds: 60));
                 // 必须等第一次请求真的落到 stub 再按回车:SteeringChatClient 每次发请求前都会把队列取空,
                 // 回车若赶在请求发出之前,那句话就并进了第一次请求,芯片根本不会出现(macOS runner 上就是这么挂的)。
                 Assert.IsTrue(await WaitForAsync(() => stub.Requests.Count >= 1, maxRounds: 120),
@@ -188,7 +191,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsFalse(queued.IsVisible, "撤回之后这一行就该收掉");
                 // 撤回完成,这才让这一轮答完 —— 队里已经没人,不该再发第二次
                 stub.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible, maxRounds: 200),
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible, maxRounds: 200),
                     "这一轮该正常答完");
                 await PumpAsync(20);
                 Assert.HasCount(1, stub.Requests, "撤回了就不该再发出去");
@@ -259,7 +262,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.Contains("STEERING_MARKER", first.Requests[0]);
                 first.Release();
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(failover ? 3 : 2, first.Requests, "持续空白最多补试两次,补试成功立即停止");
                 Assert.IsTrue(first.Requests.All(body => body.Contains("STEERING_MARKER", StringComparison.Ordinal)),
                     "重试不得丢失已送达的插话上下文");

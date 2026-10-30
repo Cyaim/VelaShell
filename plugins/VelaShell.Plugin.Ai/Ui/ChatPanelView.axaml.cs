@@ -250,8 +250,11 @@ public partial class ChatPanelView : UserControl
         ConfigureMarkdown();
         ApplyLoc();
 
-        SendButton.Click += (_, _) => _ = SendAsync(InputBox.Text ?? "");
-        StopButton.Click += (_, _) => Cts?.Cancel();
+        SendButton.Click += (_, _) =>
+        {
+            if (Busy) Cts?.Cancel();
+            else _ = SendAsync(InputBox.Text ?? "");
+        };
         ChatScroll.ScrollChanged += OnChatScrollChanged;
         // 跳到末尾:点一下回到最新一条,并恢复"粘底"(此后新消息继续跟着走)。
         // 先乐观隐藏,真正滚到底后 ScrollChanged 会再确认一次。
@@ -515,8 +518,6 @@ public partial class ChatPanelView : UserControl
         SyncSendButton(); // 发送键的文案与输入框提示随"忙不忙"变,取词收在一处
         Avalonia.Automation.AutomationProperties.SetName(AttachButton, _loc["AttachLocal"]);
         ToolTip.SetTip(AttachButton, _loc["AttachLocal"]);
-        Avalonia.Automation.AutomationProperties.SetName(StopButton, _loc["Stop"]);
-        ToolTip.SetTip(StopButton, _loc["Stop"]);
         ToolTip.SetTip(ModelButton, _loc["Model"]);
         UpdateUsageText();
         // 代码块头部按钮的提示藏在 LiveMarkdown 的 ControlTemplate 里,只能经 DynamicResource 灌进去
@@ -710,12 +711,12 @@ public partial class ChatPanelView : UserControl
         EmptyStateHost.Children.Clear();
         BuildEmptyState(noProvider);
         // 起手示例现在长在空状态里,输入框上方那排药丸留给<b>对话开始之后</b>的后续提问。
-        // 两处同时摆着同样的三条,只是重复。
+        // 两处同时摆着同样的起手示例,只是重复。
         ClearSuggestions();
     }
 
     /// <summary>
-    /// 摆空状态:图标 + 标题 + 说明 + 三条示例。两版只差"要不要引导去配模型" ——
+    /// 摆空状态:图标 + 标题 + 说明 + 起手示例。两版只差"要不要引导去配模型" ——
     /// 没配的多一枚「添加模型接入」,而且点示例是<b>填进输入框</b>(这会儿还没有模型能答);
     /// 配好的点一下直接发出去。
     /// </summary>
@@ -760,7 +761,8 @@ public partial class ChatPanelView : UserControl
         foreach ((string icon, string text) in (ReadOnlySpan<(string, string)>)
                  [("Icon.terminal", _loc["Starter1"]),
                   ("Icon.hard-drive", _loc["Starter2"]),
-                  ("Icon.network", _loc["Starter3"])])
+                  ("Icon.network", _loc["Starter3"]),
+                  ("AiIcon.virus", _loc["Starter4"])])
         {
             var grid = new Grid { ColumnDefinitions = [with("Auto,*")] };
             grid.Children.Add(new Decorator
@@ -1277,7 +1279,6 @@ public partial class ChatPanelView : UserControl
         {
             return;
         }
-        StopButton.IsVisible = busy;
         SyncSendButton();
         SetBusyGlow(busy);
     }
@@ -1285,8 +1286,10 @@ public partial class ChatPanelView : UserControl
     /// <summary>发送键与输入框提示按"忙不忙"取词(语言切换与忙闲切换都经这里)。</summary>
     private void SyncSendButton()
     {
-        Avalonia.Automation.AutomationProperties.SetName(SendButton, _loc[Busy ? "Queue" : "Send"]);
-        ToolTip.SetTip(SendButton, _loc[Busy ? "QueueTip" : "Send"]);
+        Avalonia.Automation.AutomationProperties.SetName(SendButton, _loc[Busy ? "Stop" : "Send"]);
+        ToolTip.SetTip(SendButton, _loc[Busy ? "Stop" : "Send"]);
+        SendIcon.IsVisible = !Busy;
+        StopIcon.IsVisible = Busy;
         InputPlaceholder.Text = _loc[Busy ? "InputPlaceholderBusy" : "InputPlaceholder"];
     }
 

@@ -147,7 +147,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 panel.SendExternal("draw a cat");
                 Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count > 0
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Image image = Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants()
                     .OfType<Image>().Single(i => i.Source is not null);
                 var overlay = (Grid)image.Parent!;

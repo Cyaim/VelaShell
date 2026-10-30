@@ -13,7 +13,7 @@ namespace VelaShell.Plugin.Ai.Tests;
 
 public sealed partial class ChatPanelViewUiTests
 {
-    private static async Task<ChatPanelView> ImageMentionPanel(TestPluginContext context)
+    private static async Task<ChatPanelView> ImageMentionPanel(TestPluginContext context, bool configured = true)
     {
         var store = new AiSettingsStore(context);
         AiProvider chat = StubProvider("chat", "http://127.0.0.1:1/v1", "text");
@@ -22,7 +22,7 @@ public sealed partial class ChatPanelViewUiTests
         {
             Providers = [chat, image],
             ActiveModelId = chat.Models[0].Id,
-            ImageModelId = image.Models[0].Id,
+            ImageModelId = configured ? image.Models[0].Id : null,
             Mode = ChatMode.Chat,
             SuggestFollowUps = false
         });
@@ -30,12 +30,14 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     [TestMethod]
-    public void ImageMention_NoSshSessionShowsToolsAndInsertsAtomicToken()
+    [DataRow(true)]
+    [DataRow(false)]
+    public void ImageMention_NoSshSessionShowsToolsAndInsertsAtomicToken(bool configured)
     {
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
-            ChatPanelView panel = await ImageMentionPanel(context);
+            ChatPanelView panel = await ImageMentionPanel(context, configured);
             var window = new Window { Width = 800, Height = 600, Content = panel };
             window.Show();
             try
@@ -51,6 +53,14 @@ public sealed partial class ChatPanelViewUiTests
                 window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
                 Assert.AreEqual("@imagegen ", input.Text);
                 Assert.IsFalse(Find<Popup>(panel, "FilePopup").IsOpen);
+                if (!configured)
+                {
+                    Assert.AreEqual(new Loc("en")["ImageMentionUnavailable"], Find<TextBlock>(panel, "StatusText").Text);
+                    PressEnter(input);
+                    await PumpAsync();
+                    Assert.AreEqual("@imagegen ", input.Text);
+                    Assert.IsFalse(Find<Viewbox>(panel, "StopIcon").IsVisible);
+                }
                 window.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.None);
                 Assert.AreEqual("", input.Text);
                 input.Text = "@imagee";

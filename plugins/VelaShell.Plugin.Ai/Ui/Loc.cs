@@ -453,6 +453,7 @@ public sealed class Loc(string locale)
         ["Starter1"] = ["Explain the latest terminal output", "解释刚才的终端输出", "解釋剛才的終端輸出", "直前のターミナル出力を説明して", "방금 터미널 출력을 설명해줘"],
         ["Starter2"] = ["Check this server's disk usage", "看看这台服务器的磁盘占用", "看看這台伺服器的磁碟佔用", "このサーバーのディスク使用量を確認して", "이 서버의 디스크 사용량을 확인해줘"],
         ["Starter3"] = ["Which services are listening on ports?", "有哪些服务在监听端口?", "有哪些服務在監聽連接埠?", "どのサービスがポートを待ち受けている?", "어떤 서비스가 포트를 열고 있어?"],
+        ["Starter4"] = ["Check this server for suspicious programs", "检测服务器上是否存在可疑程序", "檢查伺服器上是否存在可疑程式", "このサーバーに不審なプログラムがないか確認して", "이 서버에 의심스러운 프로그램이 있는지 확인해줘"],
         // 上下文压缩
         ["Compacting"] = ["Compacting earlier context…", "正在压缩早期上下文…", "正在壓縮早期上下文…", "以前の文脈を圧縮中…", "이전 문맥을 압축하는 중…"],
         ["Compacted"] = ["Compacted {0} earlier messages — click to read the digest", "已把早期 {0} 条消息压缩成摘要 —— 点开可读", "已把早期 {0} 則訊息壓縮成摘要 —— 點開可讀", "以前のメッセージ {0} 件を要約に圧縮しました(クリックで表示)", "이전 메시지 {0}개를 요약으로 압축했습니다(클릭하면 표시)"],

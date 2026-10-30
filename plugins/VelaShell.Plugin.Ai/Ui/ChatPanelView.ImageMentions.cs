@@ -34,7 +34,9 @@ public partial class ChatPanelView
     private void UpdateImageMentionCandidates(string query)
     {
         _imageMentionCandidates.Clear();
-        if (!CanMentionImages || query.Contains('/') || query.Contains('~')) return;
+        if (_settings.Mode == ChatMode.Plan
+            || ActiveProviderForRequest is { } chat && AiSettingsStore.IsImageModel(chat)
+            || query.Contains('/') || query.Contains('~')) return;
         foreach (string name in new[] { GenerateImageMention, EditImageMention })
         {
             string label = _loc[name == GenerateImageMention ? "ImageMentionGenerate" : "ImageMentionEdit"];
@@ -84,6 +86,7 @@ public partial class ChatPanelView
         }
         finally { _pickerSuspended = false; }
         CloseFilePicker();
+        if (!CanMentionImages) SetStatus(_loc["ImageMentionUnavailable"]);
         InputBox.TextArea.Focus();
     }
 
