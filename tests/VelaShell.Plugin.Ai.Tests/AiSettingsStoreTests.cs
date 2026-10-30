@@ -2722,6 +2722,19 @@ public sealed class AiSettingsStoreTests
     }
 
     [TestMethod]
+    [DataRow(ReasoningLevel.ExtraHigh, 32768)]
+    [DataRow(ReasoningLevel.Max, 65536)]
+    public void ApplyReasoning_Anthropic_ExtendedLevelsUseLargerBudgets(ReasoningLevel level, int budget)
+    {
+        var options = new ChatOptions();
+        AiSettingsStore.ApplyReasoning(options, Provider(ChatProtocol.AnthropicMessages, level, maxTokens: 131072));
+        var raw = (Anthropic.Models.Messages.MessageCreateParams)options.RawRepresentationFactory!(new StubChatClient())!;
+        var thinking = (Anthropic.Models.Messages.ThinkingConfigEnabled)raw.Thinking!.Value!;
+        Assert.AreEqual(budget, thinking.BudgetTokens);
+        Assert.IsLessThan(raw.MaxTokens, thinking.BudgetTokens);
+    }
+
+    [TestMethod]
     public void ApplyReasoning_Anthropic_Off_SendsDisabledThinking()
     {
         var options = new ChatOptions();

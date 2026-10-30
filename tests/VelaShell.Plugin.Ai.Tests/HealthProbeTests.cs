@@ -631,6 +631,35 @@ public sealed class HealthProbeTests
     }
 
     [TestMethod]
+    [DataRow(ChatProtocol.OpenAiChatCompletions, ReasoningLevel.ExtraHigh, "xhigh")]
+    [DataRow(ChatProtocol.OpenAiChatCompletions, ReasoningLevel.Max, "max")]
+    [DataRow(ChatProtocol.OpenAiResponses, ReasoningLevel.ExtraHigh, "xhigh")]
+    [DataRow(ChatProtocol.OpenAiResponses, ReasoningLevel.Max, "max")]
+    public async Task ExtendedReasoning_ReachesTheNativeRequest(ChatProtocol protocol, ReasoningLevel level, string effort)
+    {
+        using var endpoint = new ProbeEndpoint(_ =>
+            (HttpStatusCode.BadRequest, """{"error":{"message":"unsupported effort","type":"invalid_request_error"}}"""));
+        using var context = new TestPluginContext();
+        ResolvedModel model = ModelFor(endpoint.BaseUrl, protocol).WithReasoning(level);
+        model.Provider.StoreResponses = false;
+
+        (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), model);
+        string body = await endpoint.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(5));
+        using JsonDocument request = JsonDocument.Parse(body);
+        JsonElement root = request.RootElement;
+        Assert.IsNotNull(error, "服务端对不支持档位的拒绝应继续报告");
+        if (protocol == ChatProtocol.OpenAiResponses)
+        {
+            Assert.AreEqual(effort, root.GetProperty("reasoning").GetProperty("effort").GetString());
+            Assert.IsFalse(root.GetProperty("store").GetBoolean(), "禁用存储不能覆盖思考配置");
+        }
+        else
+        {
+            Assert.AreEqual(effort, root.GetProperty("reasoning_effort").GetString());
+        }
+    }
+
+    [TestMethod]
     [DataRow("temperature")]
     [DataRow("top_p")]
     [DataRow("stop")]
