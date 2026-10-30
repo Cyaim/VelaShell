@@ -61,6 +61,7 @@ dotnet test  VelaShell.slnx
 | [`feature-plan.md`](feature-plan.md)                                             | **还没发生的事**:待办、候选特性、确认不做的清单(附理由)。⚠️ 两者分工是硬的 —— 做完了就从 `feature-plan.md` 划掉、在 `plan.md` 补一节;**不要在 `plan.md` 里留 TODO** |
 | `README.md` / `README.en.md` / `CONTRIBUTING*.md` / `SECURITY.md` / `PRIVACY.md` | GitHub 仓库门面与流程约定                                                                                                   |
 | `manual.md` / `manual.en.md`                                                     | 写给用户的使用手册,跟着发布版本走。**改了用户看得见的行为,就在同一个提交里改手册,中英两份一起改**;设计与开发文档仍在 velashell-docs(维护者 2026-10-25 定) |
+| [`changelogs/`](changelogs/) 下的 `release-notes-<版本号>.md`                     | 每个版本的完整 Release 正文,与 GitHub Release 保持一致并纳入版本控制,留在宿主仓库供发版与历史追溯使用                                  |
 | `src/**/README.md`、`tests/**/README.md`                                          | 各工程自己的目录职责说明,跟着代码走                                                                                                 |
 | `src/VelaShell.Ssh/AGENTS.md` / `LICENSE` / `NOTICE.md`                           | SSH 库专属的开发约定(净室规程)、它自己的 MIT 授权与独立性声明 —— 服务的是「改这个库」,且许可证必须跟着代码走                                                              |
 | `src/VelaShell.XServer/AGENTS.md` / `LICENSE` / `NOTICE.md`                       | X11 服务端库的开发约定(同样的净室规程)、MIT 授权、独立性声明与内置字体的来源 —— 理由同上                                                                          |
@@ -213,3 +214,4 @@ Release Changelog 编写规则：
 5. PR 链接统一使用 `https://github.com/joesdu/VelaShell/pull/<number>`；跨仓库变更使用对应仓库的真实链接，并在文字中注明仓库名。
 6. 「验证」只填写实际执行过的构建、测试和 CI 结果；区分通过、失败和跳过，并保留失败或跳过原因。
 7. Release 创建时一次性填入版本号标题和完整正文，发布后不要为了格式问题反复编辑 Release，以免触发额外的 `edited` 发布流水线运行。
+8. **Release 更新日志必须归档到本仓库的 `changelogs/release-notes-<版本号>.md`**（例如 `changelogs/release-notes-1.7.5.md`），并提交到版本控制。每次发版先完成并核对该文件，再直接使用文件内容作为 GitHub Release 的完整正文，确保归档与线上内容一致；在会话或临时目录中起草的文件必须移动到此目录，不能只留在临时目录或 GitHub Release 页面。
