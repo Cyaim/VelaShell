@@ -47,6 +47,10 @@ namespace VelaShell.ViewModels;
 /// 动态候选项的来源:协议实现自己(它同时实现了 <see cref="IProtocolChoiceSource" />)。
 /// 没实现就是 null —— 此时动态下拉退化成只有兜底列表的普通下拉,不报错。
 /// </param>
+/// <param name="VariantKey">
+/// 由哪个字段选择变体;null 表示这个连接类型没有变体。见 <see cref="WorkspaceDescriptor.VariantKey" />。
+/// </param>
+/// <param name="Variants">变体表(仅工作台形态有)。</param>
 internal sealed record PluginConnectionForm(
     PluginConnectionKind Kind,
     string? HostLabel,
@@ -61,13 +65,88 @@ internal sealed record PluginConnectionForm(
     ProtocolSettingKind HostKind = ProtocolSettingKind.Text,
     IReadOnlyList<ProtocolSettingChoice>? HostChoices = null,
     bool HostAllowsCustomValue = false,
-    IProtocolChoiceSource? ChoiceSource = null)
+    IProtocolChoiceSource? ChoiceSource = null,
+    string? VariantKey = null,
+    IReadOnlyList<WorkspaceVariant>? Variants = null)
 {
     /// <summary>主机栏是否渲染成下拉(静态或动态)。</summary>
     public bool HostIsChoice => HostKind is ProtocolSettingKind.Choice or ProtocolSettingKind.DynamicChoice;
 
     /// <summary>主机栏的候选项是否要向插件现取(并给出刷新按钮)。</summary>
     public bool HostIsDynamic => HostKind == ProtocolSettingKind.DynamicChoice;
+
+    /// <summary>
+    /// 按当前表单取值套用变体,得到**这一刻**该显示的表单形态。
+    /// <para>
+    /// 返回的仍是一个 <see cref="PluginConnectionForm" />,于是视图模型里所有读它的地方
+    /// (三格标签、匿名判定、要不要显示凭据与端口)一行都不用改 —— 变体在这里就被抹平了。
+    /// </para>
+    /// <para>
+    /// <b>字段表不随变体变</b>:字段的显隐由 <see cref="ProtocolSettingField.VisibleWhen" /> 管,
+    /// 两者用的是同一个键。在这里再删一遍字段会把已存的值一起弄丢(见 VisibleWhen 的存取语义)。
+    /// </para>
+    /// </summary>
+    /// <param name="lookup">按键取当前值。</param>
+    /// <returns>套用变体之后的表单;没有变体或一个都对不上时返回自身。</returns>
+    public PluginConnectionForm ForVariant(Func<string, string?> lookup)
+    {
+        ArgumentNullException.ThrowIfNull(lookup);
+        if (VariantKey is not { Length: > 0 } key || Variants is not { Count: > 0 } variants)
+        {
+            return this;
+        }
+        string current = lookup(key) ?? string.Empty;
+        WorkspaceVariant? variant = null;
+        for (int i = 0; i < variants.Count; i++)
+        {
+            if (string.Equals(variants[i].Value, current, StringComparison.Ordinal))
+            {
+                variant = variants[i];
+                break;
+            }
+        }
+        if (variant is null)
+        {
+            return this;
+        }
+        WorkspaceFeatures? features = variant.Features;
+        return this with
+        {
+            HostLabel = variant.HostLabel ?? HostLabel,
+            HostPlaceholder = variant.HostPlaceholder ?? HostPlaceholder,
+            UsernameLabel = variant.UsernameLabel ?? UsernameLabel,
+            PasswordLabel = variant.PasswordLabel ?? PasswordLabel,
+            // 变体的能力位是**整体替换**,不是按位合并(见 WorkspaceVariant.Features):
+            // 四格全部按变体重算,"这一档没有端点"与"切回去又有了"由同一次覆盖负责,不会粘住。
+            AllowsAnonymous = features is { } f ? WorkspaceVariants.AllowsAnonymous(f) : AllowsAnonymous,
+            SupportsSshTunnel = features?.HasFlag(WorkspaceFeatures.SshTunnel) ?? SupportsSshTunnel,
+            ShowsCredentials = features is { } g ? !g.HasFlag(WorkspaceFeatures.NoCredentials) : ShowsCredentials,
+            ShowsPort = features is { } h ? !h.HasFlag(WorkspaceFeatures.NoEndpoint) : ShowsPort
+        };
+    }
+
+    /// <summary>
+    /// 各变体声明的默认端口。
+    /// <para>
+    /// 宿主用它判断"用户有没有手填过端口" —— 少算变体那几个,
+    /// 换方言时端口就不会跟随(5432 不在任何一张页签默认端口表里,会被当成用户手填的)。
+    /// </para>
+    /// </summary>
+    /// <returns>变体默认端口(没声明端口的变体不出现)。</returns>
+    public IEnumerable<int> VariantPorts()
+    {
+        if (Variants is not { Count: > 0 } variants)
+        {
+            yield break;
+        }
+        for (int i = 0; i < variants.Count; i++)
+        {
+            if (variants[i].DefaultPort is { } port)
+            {
+                yield return port;
+            }
+        }
+    }
 
     /// <summary>从协议描述转换。</summary>
     /// <param name="descriptor">协议描述。</param>
@@ -107,10 +186,14 @@ internal sealed record PluginConnectionForm(
             descriptor.UsernameLabel,
             descriptor.PasswordLabel,
             descriptor.Fields,
-            descriptor.Features.HasFlag(WorkspaceFeatures.AnonymousAccess),
+            // NoCredentials 蕴含匿名:没有凭据这回事(SQLite 就是个文件),
+            // 就不能拿"用户名没填"把连接按钮堵死。与打开会话前的判定共用一条。
+            WorkspaceVariants.AllowsAnonymous(descriptor.Features),
             descriptor.Features.HasFlag(WorkspaceFeatures.SshTunnel),
             ShowsCredentials: !descriptor.Features.HasFlag(WorkspaceFeatures.NoCredentials),
             // SQLite / DuckDB 这类"就是磁盘上一个文件"的方言:端口那一栏收起,
             // 主机那一栏改标成「数据库文件」装路径。
-            ShowsPort: !descriptor.Features.HasFlag(WorkspaceFeatures.NoEndpoint));
+            ShowsPort: !descriptor.Features.HasFlag(WorkspaceFeatures.NoEndpoint),
+            VariantKey: descriptor.VariantKey,
+            Variants: descriptor.Variants);
 }

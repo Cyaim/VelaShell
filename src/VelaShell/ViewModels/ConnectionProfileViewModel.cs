@@ -17,6 +17,7 @@ using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Plugins.Protocols;
 using VelaShell.Infrastructure.Ssh;
 using VelaShell.PluginSdk.Protocols;
+using VelaShell.PluginSdk.Workspaces;
 using VelaShell.Presentation.Services;
 using VelaShell.Security;
 using VelaShell.Services;
@@ -158,6 +159,10 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private readonly PluginProtocolRegistry? _protocolRegistry;
     private string? _pluginProtocolId;
     private PluginConnectionForm? _pluginForm;
+    // 套用变体**之前**的那份。变体是随字段值实时切换的,每次都要从这份原始形态重新套,
+    // 否则连着切两次方言就会把上一次的改写叠在下一次上面(SQLite 的"数据库文件"标签
+    // 会粘在随后选中的 MySQL 上)。
+    private PluginConnectionForm? _pluginBaseForm;
 
     /// <summary>编辑既有配置时读入的插件设置;表单还没渲染出来就保存的话原样带回。</summary>
     private Dictionary<string, string>? _pluginStored;
@@ -404,7 +409,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         if (_connectionType == ConnectionType.Plugin && _pluginProtocolId is { Length: > 0 } existingProtocol)
         {
             // 编辑既有插件协议配置:进对话框就把表单渲染出来(会触发该插件的惰性激活)。
-            _ = SelectPluginProtocolAsync(existingProtocol);
+            // 不等它(构造函数不能等),但把这次装载留在 PendingPluginLoad 上,用例据此等装载完成。
+            PendingPluginLoad = SelectPluginProtocolAsync(existingProtocol);
         }
         BrowseKeyFileCommand = ReactiveCommand.Create(() => { });
         BrowseCertificateFileCommand = ReactiveCommand.Create(() => { });
@@ -662,6 +668,15 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         get;
         private set => this.RaiseAndSetIfChanged(ref field, value);
     }
+
+    /// <summary>
+    /// 编辑既有插件配置时,构造函数里发起的那次表单装载;新建配置时为已完成的任务。
+    /// <para>
+    /// 只给用例用:装载是异步的(可能触发插件惰性激活),而"打开一条已存配置时表单长什么样"
+    /// 必须在装载完成后才能判定。等它而不是轮询 <see cref="PluginFields" />。
+    /// </para>
+    /// </summary>
+    internal Task PendingPluginLoad { get; } = Task.CompletedTask;
 
     /// <summary>
     /// 目标主机地址(主机名或 IP)。协议可以改写它承载的东西 —— 串口在这一栏装设备名
@@ -2733,6 +2748,14 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                            or nameof(PluginProtocolFieldViewModel.SelectedChoice))
         {
             ApplyPluginFieldVisibility();
+            // 选变体的那个字段变了,连接框本身也要跟着换形态(端口、三格标签、要不要凭据)。
+            // 只在**它**变时才做:别的字段变一次就重算一遍标签是白费的通知。
+            if (sender is PluginProtocolFieldViewModel changed
+                && _pluginBaseForm?.VariantKey is { Length: > 0 } key
+                && string.Equals(changed.Key, key, StringComparison.Ordinal))
+            {
+                ApplyPluginVariant(followPort: true);
+            }
         }
     }
 
@@ -2798,16 +2821,21 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         // 界面上再没有任何途径把它切回口令。
         NormalizeAuthMethodForProtocol();
         // 端口跟随用与内建协议**同一套**判定(它已把插件协议的默认端口一并算进「用户没手填过」)。
+        // **目标端口先算好再写一次**:当前变体声明了端口就用它,否则用页签的默认端口。
+        // 若直接写页签默认值,"选了 PostgreSQL(5432)再点一次同一个页签"会先被改写成 3306、
+        // 然后从下面的早退处返回 —— 下拉仍是 PostgreSQL,端口框却成了 3306。
+        // 换了协议时 _pluginBaseForm 还是上一个协议的,它的变体表与这个页签无关,不能拿来算。
         PluginProtocolTabViewModel? tab = PluginProtocols.FirstOrDefault(p => p.Id == protocolId);
         if (tab is not null && IsProtocolDefaultPort(Port))
         {
-            Port = tab.DefaultPort;
+            Port = (switchedProtocol ? null : CurrentVariantDefaultPort()) ?? tab.DefaultPort;
         }
         if (switchedProtocol)
         {
             // 真的换了协议:上一个协议的字段与已存值都不能留,否则等激活的这段时间里
             // 表单还是旧协议的样子,此时保存会把 A 的键值写进 B 的配置。
             ClearPluginFields();
+            _pluginBaseForm = null;
             _pluginForm = null;
             _pluginStored = null;
             _pluginStoredSecrets = null;
@@ -2855,6 +2883,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 return;
             }
             applied = true;
+            _pluginBaseForm = form;
             _pluginForm = form;
             _loadedProtocolId = protocolId;
             // 插件被禁用/装载失败:表单是空的,而 AllowsAnonymous 随之为 false,
@@ -2883,6 +2912,12 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             // 也必须在表单成形后生效一次 —— 少了这句,「主节点名」会在独立形态下先露出来,
             // 直到用户碰一下别的字段才消失。
             ApplyPluginFieldVisibility();
+            // 变体同理,而且漏了它的后果更重:变体决定要不要凭据。
+            // 打开一条已存的 SQLite 配置时,方言字段一开始就是 sqlite 却从没触发过 setter,
+            // 于是表单停在**基础描述符**那一档 —— 用户名口令两栏冒出来,还被当成必填,
+            // 表现就是一个本地文件却非要我登录。
+            // followPort: false —— 此刻端口是从已存配置里读出来的,不能被变体的默认值盖掉。
+            ApplyPluginVariant(followPort: false);
             // 动态候选项现取一次。放在最后:它可能真的去枚举硬件(串口),
             // 而表单的其余部分不该等它 —— 取不到也只是下拉是空的,手输照旧可用。
             await LoadDynamicChoicesAsync().ConfigureAwait(true);
@@ -3100,6 +3135,13 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private void SelectConnectionType(ConnectionType connectionType)
     {
         ConnectionType previous = ConnectionType;
+        // **端口是不是"用户没手填过"必须在这里就定下来。** 下面切回内建协议那一支会把
+        // `_pluginBaseForm` 置空(三格标签只看它,不清就会留着上一个插件的措辞),
+        // 而 `IsProtocolDefaultPort` 要靠它才认得出**变体端口**。
+        // 等到方法末尾再判,5432 已经取不到变体信息、会被当成用户手填的值留下来 ——
+        // 那正是 IsProtocolDefaultPort 上那段注释("从 S3 切回 SSH 时端口停在 443")
+        // 要消灭的情形,被变体端口重新引了回来。
+        bool portWasDefault = IsProtocolDefaultPort(Port);
         ConnectionType = connectionType;
         if (connectionType != ConnectionType.Plugin)
         {
@@ -3113,6 +3155,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             StashPluginFieldValues();
             // 描述符也必须清:三格标签只看它、不看 ConnectionType,不清的话
             // 「S3 → SSH」之后主机那格会一直写着「服务端点」、用户名写着「Access Key ID」。
+            _pluginBaseForm = null;
             _pluginForm = null;
             ClearPluginFields();
             PluginUnavailable = false;
@@ -3124,7 +3167,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         }
         NormalizeAuthMethodForProtocol();
         // 端口跟随:仅当当前端口仍是**某个协议的默认值**时才改 —— 用户手填过的端口一律不动。
-        if (IsProtocolDefaultPort(Port))
+        // 用方法入口处算好的那个值,理由见上面那段长注。
+        if (portWasDefault)
         {
             Port = DefaultPortFor(ConnectionType);
         }
@@ -3140,6 +3184,58 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         {
             AuthMethodIndex = 0;
         }
+    }
+
+    /// <summary>
+    /// 按"选变体的那个字段"的当前取值,把连接框换成对应形态。
+    /// <para>
+    /// 三样东西跟着变:三格标签、要不要凭据/匿名/端口栏、以及默认端口。
+    /// <b>端口沿用与切页签完全相同的判定</b> —— 只有用户没手填过时才跟随,
+    /// 已经改成 13306 的不会被切回 3306(那是把用户的输入吃掉)。
+    /// </para>
+    /// <para>
+    /// <paramref name="followPort" /> 在**装载表单**那一路是 <see langword="false" />:
+    /// 那时端口是从已存配置里读出来的,不该被默认值盖掉。
+    /// </para>
+    /// </summary>
+    /// <param name="followPort">是否让端口跟随变体的默认值。</param>
+    private void ApplyPluginVariant(bool followPort)
+    {
+        if (_pluginBaseForm is not { VariantKey.Length: > 0 } baseForm)
+        {
+            return;
+        }
+        _pluginForm = baseForm.ForVariant(PluginFieldValue);
+        RaisePluginLabelsChanged();
+
+        if (followPort && CurrentVariantDefaultPort() is { } port && IsProtocolDefaultPort(Port))
+        {
+            Port = port;
+        }
+    }
+
+    /// <summary>
+    /// 当前选中的变体声明的默认端口。
+    /// </summary>
+    /// <returns>
+    /// 变体的 <see cref="WorkspaceVariant.DefaultPort" />;没有变体、一个都对不上、
+    /// 或对上的那一档没声明端口时为 <see langword="null" />(沿用页签的默认端口)。
+    /// </returns>
+    private int? CurrentVariantDefaultPort()
+    {
+        if (_pluginBaseForm is not { VariantKey: { Length: > 0 } key, Variants: { Count: > 0 } variants })
+        {
+            return null;
+        }
+        string current = PluginFieldValue(key) ?? string.Empty;
+        foreach (WorkspaceVariant variant in variants)
+        {
+            if (string.Equals(variant.Value, current, StringComparison.Ordinal))
+            {
+                return variant.DefaultPort;
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -3175,7 +3271,10 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// </summary>
     private bool IsProtocolDefaultPort(int port) =>
         port is 22 or FtpSettings.DefaultPort or FtpSettings.DefaultImplicitPort
-        || PluginProtocols.Any(protocol => protocol.DefaultPort == port);
+        || PluginProtocols.Any(protocol => protocol.DefaultPort == port)
+        // 变体的默认端口同样算"没手填过"。少算它们,换方言时端口就不跟随了 ——
+        // 因为 5432 不在任何一张页签默认端口表里,会被当成用户自己填的。
+        || (_pluginBaseForm?.VariantPorts().Contains(port) ?? false);
 
     private int DefaultPortFor(ConnectionType type) =>
         type switch
