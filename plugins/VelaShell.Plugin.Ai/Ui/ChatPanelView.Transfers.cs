@@ -271,10 +271,11 @@ public sealed partial class ChatPanelView
             lock (_gate)
             {
                 if (_disposed) return;
+                // 撤权先在合并队列里生效,避免 UI 刷新前被在途快照覆盖。
                 if (_latest.TryGetValue(update.TransferId, out FileTransferJobUpdate? old)
-                    && old.Snapshot is { } previous && update.Snapshot is { } next
-                    && (next.Generation < previous.Generation || next.Sequence < previous.Sequence
-                        || (next.Sequence == previous.Sequence && update.MonitoringUnavailable == old.MonitoringUnavailable)))
+                    && (old.Withheld || (old.Snapshot is { } previous && update.Snapshot is { } next
+                        && (next.Generation < previous.Generation || next.Sequence < previous.Sequence
+                            || (next.Sequence == previous.Sequence && update.MonitoringUnavailable == old.MonitoringUnavailable)))))
                 {
                     return;
                 }

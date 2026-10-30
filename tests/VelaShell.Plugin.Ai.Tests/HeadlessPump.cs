@@ -19,6 +19,18 @@ internal static class HeadlessPump
     private const int MillisecondsPerRound = 5;
     private const int MinimumPasses = 3;
 
+    public static async Task UntilAsync(Func<bool> condition,
+        [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(condition))] string? expression = null)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (!condition())
+        {
+            Assert.IsTrue(elapsed.Elapsed < TimeSpan.FromSeconds(15), $"UI condition did not become true: {expression}");
+            await Task.Delay(10);
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
     public static async Task RunAsync(int rounds)
     {
         long deadline = Stopwatch.GetTimestamp() + (Stopwatch.Frequency * rounds * MillisecondsPerRound / 1000);

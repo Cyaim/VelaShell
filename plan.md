@@ -3256,3 +3256,15 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **验证**：Windows Debug 下 `dotnet build VelaShell.slnx -c Debug --no-incremental --nologo -warnaserror` 0 警告、0 错误；`dotnet test tests/VelaShell.Tests -c Debug --no-build --nologo` 按 `ConnectionProfilePluginPagesTests`、`ConnectionProfileTypePickerTests`、`ConnectionProfileViewUiTests`、`ConnectionProfileViewModelTests`、`WorkspaceVariantCredentialTests`、`WorkspaceVariantsTests` 与 `LocalizedKeyUsageTests`、`UnusedLocalizedKeyTests`、`HeadlessDispatchUsageTests` 过滤，145 通过 / 0 失败 / 0 跳过。新增两条：`From_WorkspaceDescriptor_MapsPagesAndFieldPages`（`From()` 的映射、文件协议忽略 `Page`、不经测试接缝的真实装载出两个自定义页签、页键优先于 `IsAdvanced`）与 `TypeCards_UseTheVariantIcon_FallingBackToTheDescriptorIcon`。两处变异 —— `From(WorkspaceDescriptor)` 不映射 `Pages`、卡片不取变体图标 —— 分别使这两条用例失败。
 
 **边界**：只在 headless 下验证，未在真实应用里操作过；未运行 Linux / macOS 与完整解决方案测试。眼下还没有插件声明 `Pages` 或变体图标，现有插件的对话框外观不变；数据库插件声明「数据库」「SSL」两页与各方言图标后，用户才会看到。
+
+## 294. 2026-10-30 macOS CI：修正远程编辑状态等待竞态与 AI 传输卡片固定等待
+
+**证据**：运行 `41098306406` 的 macOS TRX 中，`Session_KeepsItsMarkerInStep_WithWhatTheRemoteHas` 报「等了 10 秒」，实际仅运行 28 毫秒。`WaitUntilAsync` 在循环条件中观察到干净状态退出，又在断言中读取一次；其间 FSEvents 投递初始文件事件，状态变脏，于是立即误报超时。较早运行 `41095953103` 的传输卡片用例则在恢复监控后仍读到「无法确认进度」：界面以 250ms 计时器合并更新，测试固定等约 300ms，调度余量不足。
+
+**修正**：远程编辑等待函数观察到条件成立就返回，按单调时钟限定 10 秒，超时附带条件表达式；成功上传的断言使用等待时取得的标记快照，避免重新读取会变化的标记。AI 增加带 15 秒上限的条件等待，持续泵 UI 调度器；传输卡片分别等待失联、恢复、成功和撤回状态，并同时检查绑定到同一传输的两张卡片。
+
+**扩大回归发现的产品竞态**：完整 ChatPanel 与传输注册表回归连续两轮都是 379 通过、1 失败，失败均在撤权卡片等待。后台完成通知可能在撤权之后、UI 刷新之前覆盖合并队列中的撤权状态，导致卡片根本没有机会隐藏信息。`TransferBinding` 现在在队列内也把撤权当作不可逆状态，丢弃后到快照，与 `ToolCard` 原有的隐藏逻辑保持一致。已有用例明确投递「撤权 → 迟到的完成快照 → 泵 UI」：产品修正前稳定失败，修正后作为回归验证。没有跳过 macOS 测试或更改 CI 流程。
+
+**验证**：Windows Debug `-warnaserror` 下外部编辑分类 26/26，通过故障用例独立重复 10 轮；AI 撤权竞态回归修正前稳定失败、修正后通过，完整 ChatPanel 与传输注册表 380/380 通过，故障用例再次独立重复 10 轮通过，均无跳过。GitHub 在本次 PR 创建时报告 Actions 服务降级，初次三个平台作业均排队；远端三平台结果以最终提交的 PR Checks 为准，此记录没有把排队记作通过。
+
+**文档**：`manual.md` / `manual.en.md` 同步补充撤权后原传输卡不再被迟到通知恢复信息的说明。修正恢复 velashell-docs `plugins/11-automation-and-ai.md` §1.6–1.7 既有的撤权后隐藏元数据约定，接口、配置和构建流程均未改变。

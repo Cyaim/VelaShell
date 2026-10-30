@@ -141,24 +141,32 @@ public sealed partial class ChatPanelViewUiTests
             var other = new StackPanel();
             window.Content = other;
             RemoteTransferSnapshot end = snapshot with { State = RemoteTransferState.Succeeded, Sequence = 2, TransferredBytes = 100 };
+            string unavailable = new Loc("en")["TransferMonitoringUnavailable"];
+            bool ShowsUnavailable(ChatPanelView.ToolCard card) => card.Root.GetLogicalDescendants().OfType<TextBlock>()
+                .Any(t => t.Text == unavailable);
             scope.Publish(new("owner", "run", "t", "", "", snapshot, MonitoringUnavailable: true));
-            await PumpAsync();
-            Assert.Contains(t => t.Text == new Loc("en")["TransferMonitoringUnavailable"], upload.Root.GetLogicalDescendants().OfType<TextBlock>());
+            await HeadlessPump.UntilAsync(() => ShowsUnavailable(upload) && ShowsUnavailable(status));
+            Assert.Contains(t => t.Text == unavailable, upload.Root.GetLogicalDescendants().OfType<TextBlock>());
             scope.Publish(new("owner", "run", "t", "", "", snapshot));
-            await PumpAsync();
-            Assert.DoesNotContain(t => t.Text == new Loc("en")["TransferMonitoringUnavailable"], upload.Root.GetLogicalDescendants().OfType<TextBlock>());
+            await HeadlessPump.UntilAsync(() => !ShowsUnavailable(upload) && !ShowsUnavailable(status));
+            Assert.DoesNotContain(t => t.Text == unavailable, upload.Root.GetLogicalDescendants().OfType<TextBlock>());
             scope.Publish(new("wrong-owner", "run", "t", "", "", end));
             await PumpAsync(3);
             Assert.IsTrue(upload.Root.GetLogicalDescendants().OfType<Button>().Single().IsVisible);
             scope.Publish(new("owner", "run", "t", "", "", end));
-            await PumpAsync(3);
+            await HeadlessPump.UntilAsync(() => !upload.Root.GetLogicalDescendants().OfType<Button>().Single().IsVisible
+                && !status.Root.GetLogicalDescendants().OfType<Button>().Single().IsVisible);
             Assert.IsFalse(upload.Root.GetLogicalDescendants().OfType<Button>().Single().IsVisible);
             Assert.IsFalse(status.Root.GetLogicalDescendants().OfType<Button>().Single().IsVisible);
             Assert.IsEmpty(other.Children, "进度不得写入切换后的当前消息容器");
             wait.TrySetResult(end);
             scope.Publish(new("owner", "run", "t", "", "", null, true));
-            await PumpAsync(3);
-            Assert.Contains(t => t.Text == new Loc("en")["TransferWithheld"], upload.Root.GetLogicalDescendants().OfType<TextBlock>());
+            // 撤权尚未刷到 UI 时,后台观察者仍可能投递已经取得的完成快照。
+            scope.Publish(new("owner", "run", "t", "source", "/target", end));
+            string withheld = new Loc("en")["TransferWithheld"];
+            await HeadlessPump.UntilAsync(() => upload.Root.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == withheld)
+                && status.Root.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == withheld));
+            Assert.Contains(t => t.Text == withheld, upload.Root.GetLogicalDescendants().OfType<TextBlock>());
         }
         finally { panel.Detach(); window.Close(); }
     });
