@@ -55,9 +55,6 @@
     <File Path="scripts/xserver/interop/Run-Client.ps1" />
     <File Path="scripts/xserver/interop/run-server.cs" />
   </Folder>
-  <Folder Name="/changelogs/">
-    <File Path="changelogs/release-notes-1.7.4.md" />
-  </Folder>
   <Folder Name="/mascot/">
     <File Path="mascot/cat-emblem.svg" />
     <File Path="mascot/character-sheet.png" />
