@@ -27,7 +27,11 @@ public partial class AiAssistantRegionView : UserControl
             // 下拉菜单在独立 PopupRoot 内,指针离开面板并不代表离开了插件的操作区域。
             if (State?.Content is { } content && content.GetVisualDescendants()
                     .Any(control => control is Popup { IsOpen: true } or ComboBox { IsDropDownOpen: true }
-                        or MenuItem { IsSubMenuOpen: true } or Control { ContextMenu.IsOpen: true })) return;
+                        or MenuItem { IsSubMenuOpen: true } or Control { ContextMenu.IsOpen: true }))
+            {
+                return;
+            }
+
             _hideTimer.Stop();
             if (State is { IsDocked: false }) State.Collapse();
         };

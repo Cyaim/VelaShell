@@ -99,7 +99,7 @@ public sealed class SharedPasswordFillTests
         await DrainWritesAsync(tab);
         // 正文按会话字符集编码,后面紧跟 Enter 键的字节(与真按 Enter 一样不转码);
         // 同一次写出,用户选完顺手敲的字符插不到密码与回车之间。
-        Assert.AreSequenceEqual((byte[])[.. Encoding.Unicode.GetBytes("口令!42"), (byte)'\r'], [.. writes]);
+        Assert.AreSequenceEqual([.. Encoding.Unicode.GetBytes("口令!42"), (byte)'\r'], [.. writes]);
         await shell.Received(1).WriteAsync(Arg.Any<byte[]>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
         Assert.AreEqual(0, typed);
         await DrainWritesAsync(peer);

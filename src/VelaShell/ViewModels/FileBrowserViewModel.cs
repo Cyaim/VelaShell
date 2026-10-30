@@ -3445,7 +3445,7 @@ public class FileBrowserViewModel : ReactiveObject
                 // 源确认完成后再原子发布；这样大文件不需要在本机落一份完整缓存。
                 if (stagedSource is null && startAt == 0 && await RemoteRelay.TryCopyFileWithRemoteCommitAsync(
                         source.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
-                        progress, () => remoteCommitRelay = true, itemCt))
+                        progress, () => remoteCommitRelay = true, cancellationToken: itemCt))
                 {
                     return;
                 }
@@ -3470,7 +3470,7 @@ public class FileBrowserViewModel : ReactiveObject
 
             await RemoteRelay.CopyFileAsync(
                 source.Service, source.SessionId, localPath, _sftpService, _sessionId, remotePath,
-                progress, () => targetTouched = true, startAt, itemCt);
+                progress, () => targetTouched = true, startAt, cancellationToken: itemCt);
         }
     }
 

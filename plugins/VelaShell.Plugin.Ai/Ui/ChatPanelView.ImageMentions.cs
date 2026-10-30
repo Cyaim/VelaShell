@@ -36,7 +36,11 @@ public partial class ChatPanelView
         _imageMentionCandidates.Clear();
         if (_settings.Mode == ChatMode.Plan
             || ActiveProviderForRequest is { } chat && AiSettingsStore.IsImageModel(chat)
-            || query.Contains('/') || query.Contains('~')) return;
+            || query.Contains('/') || query.Contains('~'))
+        {
+            return;
+        }
+
         foreach (string name in new[] { GenerateImageMention, EditImageMention })
         {
             string label = _loc[name == GenerateImageMention ? "ImageMentionGenerate" : "ImageMentionEdit"];

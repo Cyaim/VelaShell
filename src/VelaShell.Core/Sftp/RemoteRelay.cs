@@ -43,8 +43,8 @@ public static class RemoteRelay
     /// 见 <see cref="ISftpService.UploadStreamAsync" />)。源流不可 Seek(FTP 的数据流、多数插件协议)时核实不了,
     /// 抛 <see cref="VelaSftpResumeMismatchException" />,目标未被碰过。
     /// </param>
-    /// <param name="cancellationToken">取消令牌。</param>
     /// <param name="knownSource">调用方已经问到的源元数据;给了就不在源端再 stat 一次(FTP 上那是一次抢控制连接的往返)。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     public static async Task CopyFileAsync(
         ISftpService source,
         Guid sourceSessionId,
@@ -55,11 +55,12 @@ public static class RemoteRelay
         IProgress<TransferProgress>? progress = null,
         Action? writing = null,
         long resumeOffset = 0,
-        CancellationToken cancellationToken = default,
-        RelaySourceSnapshot? knownSource = null)
+        RelaySourceSnapshot? knownSource = null,
+        CancellationToken cancellationToken = default)
     {
         CompletionProgress? completion = await CopyFileCoreAsync(source, sourceSessionId, sourcePath, target, targetSessionId, targetPath,
-            progress, writing, resumeOffset, cancellationToken, requireFullConsumption: false, knownSource: knownSource).ConfigureAwait(false);
+            progress, writing, resumeOffset, requireFullConsumption: false, knownSource: knownSource,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         completion?.Complete();
     }
 
@@ -80,8 +81,8 @@ public static class RemoteRelay
         string targetPath,
         IProgress<TransferProgress>? progress = null,
         Action? streamingStarted = null,
-        CancellationToken cancellationToken = default,
-        RelaySourceSnapshot? knownSource = null)
+        RelaySourceSnapshot? knownSource = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(target);
@@ -119,8 +120,8 @@ public static class RemoteRelay
             // FTP 数据连接只负责尽快把字节吐进管道,SFTP 只负责从管道取走 —— 两边谁也不等谁。
             CompletionProgress? completion = await CopyFileCoreAsync(
                 source, sourceSessionId, sourcePath, target, targetSessionId, temporaryPath,
-                progress, () => writing = true, resumeOffset: 0, cancellationToken, requireFullConsumption: true, createMode,
-                piped: PipesSequentialSources, knownSource: knownSource)
+                progress, () => writing = true, resumeOffset: 0, requireFullConsumption: true, createMode,
+                piped: PipesSequentialSources, knownSource: knownSource, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -161,7 +162,7 @@ public static class RemoteRelay
                 }
                 catch (Exception cleanupFailure) when (cleanupFailure is not OutOfMemoryException)
                 {
-                    System.Diagnostics.Trace.WriteLine(
+                    Trace.WriteLine(
                         $"[VelaShell] Relay temporary cleanup failed: {cleanupFailure.GetType().Name}");
                 }
             }
@@ -179,11 +180,11 @@ public static class RemoteRelay
         IProgress<TransferProgress>? progress,
         Action? writing,
         long resumeOffset,
-        CancellationToken cancellationToken,
         bool requireFullConsumption,
         uint? createMode = null,
         bool piped = false,
-        RelaySourceSnapshot? knownSource = null)
+        RelaySourceSnapshot? knownSource = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(target);
@@ -205,7 +206,7 @@ public static class RemoteRelay
             : await source.GetFileInfoAsync(sourceSessionId, sourcePath, cancellationToken).ConfigureAwait(false);
         Stream stream = await source.OpenReadAsync(sourceSessionId, sourcePath, cancellationToken).ConfigureAwait(false);
         return await CopyFromStreamAsync(info, stream, target, targetSessionId, targetPath,
-            progress, writing, resumeOffset, cancellationToken, requireFullConsumption, createMode, piped).ConfigureAwait(false);
+            progress, writing, resumeOffset, requireFullConsumption, createMode, piped, cancellationToken).ConfigureAwait(false);
     }
     /// <summary>
     /// 源端在交出任何字节之前就被掐断时,中转会重开一次源流。重开之前需要先让后端「排队等前一个传输结束」,
@@ -226,12 +227,12 @@ public static class RemoteRelay
         IProgress<TransferProgress>? progress,
         Action? writing,
         long resumeOffset,
-        CancellationToken cancellationToken,
         bool requireFullConsumption,
         uint? createMode,
-        bool piped = false)
+        bool piped = false,
+        CancellationToken cancellationToken = default)
     {
-        var completion = progress is null ? null : new CompletionProgress(progress);
+        CompletionProgress? completion = progress is null ? null : new CompletionProgress(progress);
         BufferedRelayReadStream? buffered = null;
         if (piped && !stream.CanSeek)
         {
@@ -307,7 +308,7 @@ public static class RemoteRelay
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                System.Diagnostics.Trace.WriteLine($"[VelaShell] Relay buffer cleanup failed: {ex.GetType().Name}");
+                Trace.WriteLine($"[VelaShell] Relay buffer cleanup failed: {ex.GetType().Name}");
             }
             try
             {
@@ -318,7 +319,7 @@ public static class RemoteRelay
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                System.Diagnostics.Trace.WriteLine($"[VelaShell] Relay source cleanup failed: {ex.GetType().Name}");
+                Trace.WriteLine($"[VelaShell] Relay source cleanup failed: {ex.GetType().Name}");
             }
             throw;
         }
@@ -533,11 +534,10 @@ public static class RemoteRelay
     // 不拥有 inner。按当前位置而非累计读取量校验,续传尾部比对的重复读取不算作额外传输。
     internal sealed class CheckedReadStream(Stream inner, long expectedLength, string path, bool requireFullConsumption = false) : Stream
     {
-        private long _position;
         private long _consumedPrefix;
         private bool _eof;
 
-        public long BytesRead => _position;
+        public long BytesRead { get; private set; }
 
         public override bool CanRead => inner.CanRead;
         public override bool CanSeek => inner.CanSeek;
@@ -545,7 +545,7 @@ public static class RemoteRelay
         public override long Length => inner.Length;
         public override long Position
         {
-            get => inner.CanSeek ? inner.Position : _position;
+            get => inner.CanSeek ? inner.Position : BytesRead;
             set => Seek(value, SeekOrigin.Begin);
         }
 
@@ -572,7 +572,7 @@ public static class RemoteRelay
 
         public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
-            int read = await inner.ReadAsync(buffer, offset, count, cancellationToken).ConfigureAwait(false);
+            int read = await inner.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
             CheckRead(read, count);
             return read;
         }
@@ -583,14 +583,14 @@ public static class RemoteRelay
             {
                 return;
             }
-            long position = inner.CanSeek ? inner.Position : _position + read;
+            long position = inner.CanSeek ? inner.Position : BytesRead + read;
             if (read > 0)
             {
                 if (requireFullConsumption && position - read <= _consumedPrefix)
                 {
                     _consumedPrefix = Math.Max(_consumedPrefix, position);
                 }
-                _position = position;
+                BytesRead = position;
             }
             _eof = read == 0;
             if (expectedLength > 0 && (position > expectedLength || (_eof && position != expectedLength)))
@@ -605,7 +605,7 @@ public static class RemoteRelay
             {
                 return;
             }
-            if (_position != expectedLength)
+            if (BytesRead != expectedLength)
             {
                 throw LengthMismatch();
             }
@@ -620,13 +620,13 @@ public static class RemoteRelay
             {
                 if (inner.CanSeek)
                 {
-                    inner.Seek(_position, SeekOrigin.Begin);
+                    inner.Seek(BytesRead, SeekOrigin.Begin);
                 }
                 await ReadAsync(new byte[1], cancellationToken).ConfigureAwait(false);
             }
         }
 
-        private RemoteTransferLengthException LengthMismatch() => new(path, expectedLength, _position);
+        private RemoteTransferLengthException LengthMismatch() => new(path, expectedLength, BytesRead);
 
         public override long Seek(long offset, SeekOrigin origin)
         {
@@ -649,7 +649,7 @@ public sealed class RemoteRelayCommitException(Exception innerException)
 /// <param name="path">源路径(消息里用)。</param>
 /// <param name="expectedBytes">可信元数据给出的字节数。</param>
 /// <param name="actualBytes">实际读取(或交给目标)的字节数。</param>
-/// <param name="RejectedByServer">
+/// <param name="rejectedByServer">
 /// 一个字节都没读到就结束:数据连接在 RETR 之后被服务器掐断(并发被拒时不少服务器直接复位,
 /// 不给 425/450)。这类失败与「文件内容变了」无关,重开一次源流往往就能过去。
 /// </param>
@@ -658,7 +658,7 @@ public sealed class RemoteRelayCommitException(Exception innerException)
 /// 也能给出可读的诊断 —— 消息取不到不应该变成 NullReferenceException。
 /// </param>
 public sealed class RemoteTransferLengthException(
-    string path, long expectedBytes, long actualBytes, bool RejectedByServer = false, string? message = null)
+    string path, long expectedBytes, long actualBytes, bool rejectedByServer = false, string? message = null)
     : IOException(message ?? Strings.Format("SftpSvc_RelayLengthMismatch", path, expectedBytes, actualBytes))
 {
     /// <summary>可信元数据给出的预期字节数。</summary>
@@ -670,5 +670,5 @@ public sealed class RemoteTransferLengthException(
     /// 一个字节都没读到就结束:数据连接在 RETR 之后被服务器掐断(并发被拒时不少服务器直接复位,
     /// 不给 425/450)。这类失败与「文件内容变了」无关,重开一次源流往往就能过去。
     /// </summary>
-    public bool RejectedByServer { get; } = RejectedByServer;
+    public bool RejectedByServer { get; } = rejectedByServer;
 }

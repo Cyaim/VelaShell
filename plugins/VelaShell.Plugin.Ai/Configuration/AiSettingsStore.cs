@@ -10,6 +10,7 @@ using Anthropic.Models.Messages;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Images;
+using OpenAI.Responses;
 using VelaShell.Plugin.Ai.Auth;
 using VelaShell.Plugin.Ai.Chat;
 using VelaShell.PluginSdk;
@@ -1983,11 +1984,11 @@ public sealed class AiSettingsStore(IPluginContext context)
             return;
         }
 #pragma warning disable OPENAI001 // Responses API 在 OpenAI SDK 中标记为实验性
-        var previousFactory = options.RawRepresentationFactory;
+        Func<IChatClient, object?>? previousFactory = options.RawRepresentationFactory;
         options.RawRepresentationFactory = client =>
         {
-            var raw = previousFactory?.Invoke(client) as OpenAI.Responses.CreateResponseOptions
-                ?? new OpenAI.Responses.CreateResponseOptions();
+            CreateResponseOptions raw = previousFactory?.Invoke(client) as CreateResponseOptions
+                ?? new CreateResponseOptions();
             raw.StoredOutputEnabled = false;
             return raw;
         };

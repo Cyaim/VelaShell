@@ -73,7 +73,7 @@ public sealed class StreamedRelaySource(ISftpService service, Guid sessionId, st
                 return _snapshot;
             }
             RemoteFileInfo info = await Service.GetFileInfoAsync(SessionId, Path, cancellationToken).ConfigureAwait(false);
-            RelaySourceSnapshot snapshot = RelaySourceSnapshot.From(info);
+            var snapshot = RelaySourceSnapshot.From(info);
             Volatile.Write(ref _snapshot, snapshot);
             return snapshot;
         }

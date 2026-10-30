@@ -314,7 +314,10 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
                 // returning false. Preserve the short-transfer diagnosis for a 426 reply too.
                 if (expected >= 0 && output.BytesWritten != expected
                     && HasAbortedTransferReply(ex))
+                {
                     throw new RemoteTransferLengthException(path, expected, output.BytesWritten);
+                }
+
                 throw Fault(sessionId, ex, "download");
             }
             finally
@@ -1192,12 +1195,12 @@ public sealed class FtpFileService(IProxyResolver? proxyResolver = null) : ISftp
                     {
                         // 根本没有数据到达,而且读取过程本身就失败了:数据连接被服务器掐掉
                         // (并发被拒时不少服务器直接复位,不给 425/450),不是文件内容不符。
-                        throw new RemoteTransferLengthException(_remotePath, _length, 0, RejectedByServer: true);
+                        throw new RemoteTransferLengthException(_remotePath, _length, 0, rejectedByServer: true);
                     }
                     if (_bytesRead == 0)
                     {
                         // 没有失败、也没有数据:服务器正常结束了数据流。文件确实比元数据短,重开无益。
-                        throw new RemoteTransferLengthException(_remotePath, _length, 0, RejectedByServer: false);
+                        throw new RemoteTransferLengthException(_remotePath, _length, 0, rejectedByServer: false);
                     }
                     throw LengthMismatch();
                 }

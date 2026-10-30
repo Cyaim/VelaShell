@@ -129,7 +129,7 @@ public sealed class LayoutTemplateMergeTests
         LayoutTemplateMergeResult result = LayoutTemplateMerge.Merge(State([mine]), State([theirs]), Now);
 
         Assert.HasCount(2, result.Merged.Templates);
-        Assert.AreSequenceEqual(["prod", "PROD"], [.. result.Merged.Templates.Select(t => t.Name)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "两套不同的分屏碰巧同名:不合并、不改名,用户自己分辨");
+        Assert.AreSequenceEqual(["prod", "PROD"], [.. result.Merged.Templates.Select(t => t.Name)], SequenceOrder.InAnyOrder, "两套不同的分屏碰巧同名:不合并、不改名,用户自己分辨");
     }
 
     [TestMethod]

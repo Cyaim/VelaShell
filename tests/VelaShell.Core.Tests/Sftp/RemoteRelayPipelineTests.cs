@@ -1,5 +1,4 @@
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using VelaShell.Core.Models;
 using VelaShell.Core.Sftp;
 
@@ -130,19 +129,19 @@ public class RemoteRelayPipelineTests
             byte[] first4 = new byte[4096];
             int read = await call.ArgAt<Stream>(1).ReadAsync(first4, call.ArgAt<CancellationToken>(8));
             Console.WriteLine($"[target] read {read} bytes, throwing {targetFailure.GetType().Name}");
-            Assert.IsTrue(read > 0, "目标必须先真正从管道里取到字节。");
+            Assert.IsGreaterThan(0, read, "目标必须先真正从管道里取到字节。");
             anyByteTaken.TrySetResult();
             throw targetFailure;
         });
 
-        var failure = await Assert.ThrowsExactlyAsync<RemoteRelayCommitException>(() => RemoteRelay.TryCopyFileWithRemoteCommitAsync(
+        RemoteRelayCommitException failure = await Assert.ThrowsExactlyAsync<RemoteRelayCommitException>(() => RemoteRelay.TryCopyFileWithRemoteCommitAsync(
             source, SourceSession, "/a/data.bin", target, TargetSession, "/b/data.bin").WaitAsync(TimeSpan.FromSeconds(30)));
 
         Assert.IsTrue(anyByteTaken.Task.IsCompleted);
         Assert.AreSame(targetFailure, failure, "目标先失败:报出去的是目标的错误,不是源被叫停时的后果。");
         Assert.IsTrue(stream.Disposed, "目标失败之后源端仍须释放(还连接、还名额)。");
         // 源比管道大得多,目标取了一块就失败:源不可能把整份文件读完 —— 背压与"目标收工"真的停住了它。
-        Assert.IsTrue(stream.BytesRead < payload.Length, $"源应被停住,实际读了 {stream.BytesRead}/{payload.Length}。");
+        Assert.IsLessThan(payload.Length, stream.BytesRead, $"源应被停住,实际读了 {stream.BytesRead}/{payload.Length}。");
         await target.DidNotReceive().CommitUploadAsync(default, default!, default!, default, default);
     }
 
@@ -243,7 +242,7 @@ public class RemoteRelayPipelineTests
         Console.WriteLine("[target] about to read");
         int read = await call.ArgAt<Stream>(1).ReadAsync(first4, call.ArgAt<CancellationToken>(8));
         Console.WriteLine($"[target] read {read} bytes, throwing {failure.GetType().Name}");
-        Assert.IsTrue(read > 0, "目标必须先真正从管道里取到字节。");
+        Assert.IsGreaterThan(0, read, "目标必须先真正从管道里取到字节。");
         first?.TrySetResult();
         throw failure;
     }
@@ -281,9 +280,8 @@ public class RemoteRelayPipelineTests
     private sealed class TrackingStream(byte[] data, Exception? dispose = null, int chunk = int.MaxValue) : Stream
     {
         private readonly MemoryStream _inner = new(data);
-        private long _read;
 
-        public long BytesRead => _read;
+        public long BytesRead { get; private set; }
 
         public bool Disposed { get; private set; }
 
@@ -306,7 +304,7 @@ public class RemoteRelayPipelineTests
         public override int Read(byte[] buffer, int offset, int count)
         {
             int read = _inner.Read(buffer, offset, count);
-            _read += read;
+            BytesRead += read;
             return read;
         }
 
@@ -323,7 +321,7 @@ public class RemoteRelayPipelineTests
             // 模拟 FTP 数据流:一次读可以给不满 buffer,但不会超过 chunk。
             Memory<byte> slice = buffer[..Math.Min(buffer.Length, chunk)];
             int read = _inner.Read(slice.Span);
-            _read += read;
+            BytesRead += read;
             if (read == 0)
             {
                 EOF = true;

@@ -200,13 +200,13 @@ public class NotificationPanelViewModelTests
         var vm = new NotificationItemViewModel(plugin);
         var host = new NotificationItemViewModel(Item("update:1"));
 
-        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("Notify_KindPlugin"), vm.KindBadge);
+        Assert.AreEqual(Core.Resources.Strings.Get("Notify_KindPlugin"), vm.KindBadge);
         Assert.IsTrue(vm.HasSource);
-        Assert.AreEqual(VelaShell.Core.Resources.Strings.Format("Notify_Source", "Acme Backup"), vm.SourceText);
+        Assert.AreEqual(Core.Resources.Strings.Format("Notify_Source", "Acme Backup"), vm.SourceText);
         Assert.Contains("Acme Backup", vm.SourceText);
         Assert.IsFalse(host.HasSource);
         Assert.AreEqual(string.Empty, host.SourceText);
-        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("Notify_LinkOpen"), vm.LinkLabel, "插件没给动作文案时用通用的「查看」");
+        Assert.AreEqual(Core.Resources.Strings.Get("Notify_LinkOpen"), vm.LinkLabel, "插件没给动作文案时用通用的「查看」");
 
         NotificationCenter center = await SeededCenterAsync(plugin);
         string? invoked = null;

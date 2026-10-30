@@ -113,7 +113,7 @@ public sealed class FailoverChainTests
         AiProvider work = Provider("copilot-work", "github-copilot", ("a", "gpt-5"));
         AiProvider personal = Provider("copilot-personal", "github-copilot", ("b", "gpt-5"));
         var legacy = new AiSettings { Providers = [work, personal] };
-        JsonObject node = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(legacy))!.AsObject();
+        JsonObject node = JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(legacy))!.AsObject();
         Assert.IsTrue(node.Remove(nameof(AiSettings.AutoFailoverAcrossAccounts)), "前提:模拟升级前没有这个字段的设置");
         await context.Storage.SetAsync("settings", System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(node.ToJsonString()));
 

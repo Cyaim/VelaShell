@@ -89,7 +89,7 @@ public sealed class SettingsDiagnosticsExportTests : IDisposable
         Assert.AreEqual(3, result.LogFiles);
         using ZipArchive zip = ZipFile.OpenRead(zipPath);
         Assert.AreSequenceEqual(
-            ["logs/velashell-20261019.log", "logs/transfer-20261019.log", "logs/plugins/velashell.ai.log", "summary.txt", "README.txt"], [.. zip.Entries.Select(entry => entry.FullName)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+            ["logs/velashell-20261019.log", "logs/transfer-20261019.log", "logs/plugins/velashell.ai.log", "summary.txt", "README.txt"], [.. zip.Entries.Select(entry => entry.FullName)], SequenceOrder.InAnyOrder);
         using var reader = new StreamReader(zip.GetEntry("logs/transfer-20261019.log")!.Open());
         Assert.AreEqual("UPLOAD\t/home/<user-1>/a.txt\n", await reader.ReadToEndAsync(), "收的是设置里那个目录的那一份,照样遮盖");
     }

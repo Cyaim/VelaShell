@@ -73,7 +73,7 @@ public sealed class StagedRelaySource : IAsyncDisposable
             _cache.Position = 0;
             long length = _cache.Length;
             using var input = new RemoteRelay.CheckedReadStream(_cache, length, _sourcePath, requireFullConsumption: resumeOffset <= 0);
-            var completion = progress is null ? null : new RemoteRelay.CompletionProgress(progress);
+            RemoteRelay.CompletionProgress? completion = progress is null ? null : new RemoteRelay.CompletionProgress(progress);
             cancellationToken.ThrowIfCancellationRequested();
             writing?.Invoke();
             await target.UploadStreamAsync(targetSessionId, input, targetPath, length, _mtime,

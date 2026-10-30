@@ -48,7 +48,7 @@ public class UpdateManifestTests
 
         Assert.AreEqual(original.Version, extended.Version);
         Assert.AreEqual(original.Tag, extended.Tag);
-        Assert.AreSequenceEqual([.. original.Assets], [.. extended.Assets], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual([.. original.Assets], [.. extended.Assets], SequenceOrder.InAnyOrder);
     }
 
     [TestMethod]
@@ -104,7 +104,7 @@ public class UpdateManifestTests
 
         Assert.AreEqual(fromString.Version, fromElement.Version);
         Assert.AreEqual(fromString.Tag, fromElement.Tag);
-        Assert.AreSequenceEqual([.. fromString.Assets], [.. fromElement.Assets], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual([.. fromString.Assets], [.. fromElement.Assets], SequenceOrder.InAnyOrder);
         Assert.AreEqual(fromElement.Assets["win-x64"], fromElement.Assets["WIN-X64"]);
     }
 

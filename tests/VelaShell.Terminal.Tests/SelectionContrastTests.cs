@@ -167,7 +167,7 @@ public class SelectionContrastTests
     {
         var failures = new List<string>();
         int collided = 0;
-        foreach (Core.Models.TerminalColorScheme scheme in VelaShell.Core.Models.TerminalColorScheme.BuiltIn)
+        foreach (Core.Models.TerminalColorScheme scheme in Core.Models.TerminalColorScheme.BuiltIn)
         {
             Rgba fill = SelectionContrast.Fill(Parse(scheme.Selection), Parse(scheme.Background));
             double fillBrightness = SelectionContrast.Brightness(fill);

@@ -34,7 +34,7 @@ public class StagedRelaySourceTests
             await sink.WriteAsync(bytes.AsMemory(), call.ArgAt<CancellationToken>(4));
             downloaded = true;
         });
-        await using var staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
+        await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
         var progress = new RecordingProgress();
         ISftpService target = Target(async input =>
         {
@@ -42,7 +42,7 @@ public class StagedRelaySourceTests
             Assert.IsTrue(input.CanSeek);
             Assert.IsFalse(input.CanWrite);
             Assert.AreEqual(0L, input.Position);
-            Assert.AreEqual((long)payloadLength, input.Length);
+            Assert.AreEqual(payloadLength, input.Length);
             Assert.ThrowsExactly<NotSupportedException>(() => input.WriteByte(3));
             using var copy = new MemoryStream();
             await input.CopyToAsync(copy);
@@ -55,7 +55,7 @@ public class StagedRelaySourceTests
             writing = true;
         });
         Assert.IsTrue(writing);
-        Assert.AreEqual(1, progress.Items.Count(p => p.Percentage == 100));
+        Assert.ContainsSingle(p => p.Percentage == 100, progress.Items);
         await target.Received(1).UploadStreamAsync(TargetSession, Arg.Any<Stream>(), "/target", payloadLength, Mtime,
             Arg.Any<IProgress<TransferProgress>?>(), 0, null, Arg.Any<CancellationToken>());
         await source.DidNotReceiveWithAnyArgs().OpenReadAsync(default, null!);
@@ -79,10 +79,10 @@ public class StagedRelaySourceTests
             file = AssertUserTempFile(sink);
             await sink.WriteAsync(Payload(payloadLength));
         });
-        var error = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() =>
+        RemoteTransferLengthException error = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() =>
             StagedRelaySource.PrepareAsync(source, SourceSession, "/source"));
-        Assert.IsTrue(error.ExpectedBytes == stat);
-        Assert.AreEqual((long)payloadLength, error.ActualBytes);
+        Assert.AreEqual(stat, error.ExpectedBytes);
+        Assert.AreEqual(payloadLength, error.ActualBytes);
         Assert.IsNotNull(file);
         Assert.IsFalse(File.Exists(file.Name));
     }
@@ -99,9 +99,9 @@ public class StagedRelaySourceTests
         });
         ISftpService target = Target(_ => Task.CompletedTask);
         bool writing = false;
-        var error = await Assert.ThrowsExactlyAsync<IOException>(async () =>
+        IOException error = await Assert.ThrowsExactlyAsync<IOException>(async () =>
         {
-            await using var staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
+            await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
             await staged.UploadAsync(target, TargetSession, "/target", writing: () => writing = true);
         });
         Assert.AreSame(original, error);
@@ -115,14 +115,14 @@ public class StagedRelaySourceTests
     public async Task Upload_FailureKeepsCacheAndSecondAttemptResetsWithoutDownloading(int stat)
     {
         ISftpService source = Source(stat, Payload(10));
-        await using var staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
+        await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
         var original = new IOException("target failed");
         ISftpService first = Target(async input =>
         {
             await input.ReadExactlyAsync(new byte[3]);
             throw original;
         });
-        var error = await Assert.ThrowsExactlyAsync<IOException>(() => staged.UploadAsync(first, TargetSession, "/target"));
+        IOException error = await Assert.ThrowsExactlyAsync<IOException>(() => staged.UploadAsync(first, TargetSession, "/target"));
         Assert.AreSame(original, error);
         ISftpService second = Target(async input =>
         {
@@ -140,7 +140,7 @@ public class StagedRelaySourceTests
     [DataRow(3)]
     public async Task Upload_EarlyReturnAndSeekOnlyCannotReportSuccess(int mode)
     {
-        await using var staged = await StagedRelaySource.PrepareAsync(Source(0, Payload(10)), SourceSession, "/source");
+        await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(Source(0, Payload(10)), SourceSession, "/source");
         ISftpService target = Target(async input =>
         {
             if (mode == 1) await input.ReadExactlyAsync(new byte[1]);
@@ -157,14 +157,14 @@ public class StagedRelaySourceTests
         });
         var progress = new RecordingProgress();
         await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() => staged.UploadAsync(target, TargetSession, "/target", progress));
-        Assert.IsFalse(progress.Items.Any(p => p.Percentage == 100));
-        Assert.IsTrue(progress.Items.Any(p => p.Percentage == 99 && p.BytesTransferred == 10));
+        Assert.DoesNotContain(p => p.Percentage == 100, progress.Items);
+        Assert.Contains(p => p.Percentage == 99 && p.BytesTransferred == 10, progress.Items);
     }
 
     [TestMethod]
     public async Task Upload_SeekForTailVerificationDoesNotCountRepeatedReadsOrFinalSeek()
     {
-        await using var staged = await StagedRelaySource.PrepareAsync(Source(10, Payload(10)), SourceSession, "/source");
+        await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(Source(10, Payload(10)), SourceSession, "/source");
         ISftpService target = Target(async input =>
         {
             input.Seek(2, SeekOrigin.Begin);
@@ -180,17 +180,17 @@ public class StagedRelaySourceTests
     public async Task Upload_CancellationWithholdsCompletionAndCacheCanBeRetried()
     {
         using var cts = new CancellationTokenSource();
-        await using var staged = await StagedRelaySource.PrepareAsync(Source(10, Payload(10)), SourceSession, "/source");
+        await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(Source(10, Payload(10)), SourceSession, "/source");
         var progress = new RecordingProgress();
         ISftpService target = Target(async input =>
         {
             await input.CopyToAsync(Stream.Null);
             cts.Cancel();
         });
-        var error = await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+        OperationCanceledException error = await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
             staged.UploadAsync(target, TargetSession, "/target", progress, cancellationToken: cts.Token));
         Assert.AreEqual(cts.Token, error.CancellationToken);
-        Assert.IsFalse(progress.Items.Any(p => p.Percentage == 100));
+        Assert.DoesNotContain(p => p.Percentage == 100, progress.Items);
         await staged.UploadAsync(Target(input => input.CopyToAsync(Stream.Null)), TargetSession, "/target");
     }
 
@@ -212,11 +212,11 @@ public class StagedRelaySourceTests
             Assert.AreEqual(0L, file.Length);
             await sink.WriteAsync(Payload(payloadLength));
         });
-        await using var staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
+        await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
         Assert.IsNotNull(file);
         Assert.IsTrue(File.Exists(file.Name), "Prepare must retain the completed snapshot for upload/retry.");
-        Assert.AreEqual((long)payloadLength, file.Length);
-        Assert.ThrowsExactly<IOException>(() => { using var other = File.OpenRead(file.Name); });
+        Assert.AreEqual(payloadLength, file.Length);
+        Assert.ThrowsExactly<IOException>(() => { using FileStream other = File.OpenRead(file.Name); });
         await staged.UploadAsync(Target(input => input.CopyToAsync(Stream.Null)), TargetSession, "/target");
         Assert.IsTrue(File.Exists(file.Name));
         await staged.DisposeAsync();
@@ -254,13 +254,13 @@ public class StagedRelaySourceTests
         });
         if (cancel)
         {
-            var error = await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            OperationCanceledException error = await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
                 StagedRelaySource.PrepareAsync(source, SourceSession, "/source", cts.Token));
             Assert.AreEqual(cts.Token, error.CancellationToken);
         }
         else
         {
-            var error = await Assert.ThrowsExactlyAsync<IOException>(() => StagedRelaySource.PrepareAsync(source, SourceSession, "/source"));
+            IOException error = await Assert.ThrowsExactlyAsync<IOException>(() => StagedRelaySource.PrepareAsync(source, SourceSession, "/source"));
             Assert.AreSame(original, error);
         }
         Assert.IsNotNull(file);
@@ -275,7 +275,7 @@ public class StagedRelaySourceTests
         var file = (FileStream)Storage(sink);
         Assert.AreEqual(Path.Combine(UserPathResolver.Home, ".velashell", "temp"), Path.GetDirectoryName(file.Name));
         Assert.IsTrue(File.Exists(file.Name));
-        Assert.ThrowsExactly<IOException>(() => { using var other = File.OpenRead(file.Name); });
+        Assert.ThrowsExactly<IOException>(() => { using FileStream other = File.OpenRead(file.Name); });
         if (!OperatingSystem.IsWindows())
             Assert.AreEqual(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(file.Name));
         return file;
@@ -296,7 +296,7 @@ public class StagedRelaySourceTests
             sink.Flush();
             return Task.CompletedTask;
         });
-        await using var staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
+        await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
         await staged.UploadAsync(Target(input =>
         {
             byte[] bytes = new byte[3];
@@ -347,7 +347,7 @@ public class StagedRelaySourceTests
             Assert.ThrowsExactly<NotSupportedException>(() => destination.SetLength(1));
             await destination.WriteAsync(new byte[] { 7 });
         });
-        await using var staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
+        await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
         Assert.IsNotNull(destination);
         Assert.IsFalse(destination.CanWrite);
         Assert.ThrowsExactly<NotSupportedException>(() => destination.WriteByte(8));
@@ -367,16 +367,16 @@ public class StagedRelaySourceTests
         if (operation is "write" or "flush")
         {
             storage.Fail = operation;
-            var error = await Assert.ThrowsExactlyAsync<RelayCacheException>(() => PrepareWithStorage(source, () => storage));
+            RelayCacheException error = await Assert.ThrowsExactlyAsync<RelayCacheException>(() => PrepareWithStorage(source, () => storage));
             Assert.AreSame(storage.Error, error.InnerException);
             Assert.AreEqual(operation, error.Operation);
             Assert.IsTrue(storage.Disposed);
         }
         else
         {
-            await using var staged = await PrepareWithStorage(source, () => storage);
+            await using StagedRelaySource staged = await PrepareWithStorage(source, () => storage);
             storage.Fail = operation;
-            var error = await Assert.ThrowsExactlyAsync<RelayCacheException>(() => staged.UploadAsync(
+            RelayCacheException error = await Assert.ThrowsExactlyAsync<RelayCacheException>(() => staged.UploadAsync(
                 Target(input => input.CopyToAsync(Stream.Null)), TargetSession, "/target"));
             Assert.AreSame(storage.Error, error.InnerException);
             Assert.AreEqual(operation, error.Operation);
@@ -388,7 +388,7 @@ public class StagedRelaySourceTests
     {
         ISftpService source = Source(0, []);
         var original = new UnauthorizedAccessException("private path");
-        var error = await Assert.ThrowsExactlyAsync<RelayCacheException>(() => PrepareWithStorage(source, () => throw original));
+        RelayCacheException error = await Assert.ThrowsExactlyAsync<RelayCacheException>(() => PrepareWithStorage(source, () => throw original));
         Assert.AreSame(original, error.InnerException);
         Assert.AreEqual("create", error.Operation);
         Assert.DoesNotContain("private path", error.Message);
@@ -402,7 +402,7 @@ public class StagedRelaySourceTests
         ISftpService source = Source(3, [1, 2, 3]);
         var original = new OperationCanceledException();
         source.DownloadStreamAsync(default, null!, null!).ReturnsForAnyArgs(Task.FromException(original));
-        var error = await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => PrepareWithStorage(source, () => storage));
+        OperationCanceledException error = await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => PrepareWithStorage(source, () => storage));
         Assert.AreSame(original, error);
         Assert.IsTrue(storage.Disposed);
     }
@@ -414,7 +414,7 @@ public class StagedRelaySourceTests
     {
         byte[] payload = Payload(100);
         ISftpService source = Source(100, payload);
-        await using var staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
+        await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(source, SourceSession, "/source");
         ISshConnectionService connections = Substitute.For<ISshConnectionService>();
         ISftpClientWrapper client = Substitute.For<ISftpClientWrapper>();
         client.IsConnected.Returns(true);
@@ -480,20 +480,26 @@ public class StagedRelaySourceTests
         public override ValueTask DisposeAsync()
         {
             Disposed = true;
-            base.Dispose();
+            Dispose();
             return FailDispose ? ValueTask.FromException(Error) : ValueTask.CompletedTask;
         }
     }
 
-    private static byte[] Payload(int size) => Enumerable.Range(0, size).Select(i => (byte)(i * 31)).ToArray();
+    private static byte[] Payload(int size) => [.. Enumerable.Range(0, size).Select(i => (byte)(i * 31))];
 
     private static ISftpService Source(long stat, byte[] payload)
     {
         ISftpService source = Substitute.For<ISftpService>();
         source.GetFileInfoAsync(SourceSession, "/source", Arg.Any<CancellationToken>()).Returns(new RemoteFileInfo
         {
-            Name = "source", FullPath = "/source", Size = stat, LastModified = Mtime,
-            Permissions = "-rw-------", Owner = "u", Group = "g", IsDirectory = false,
+            Name = "source",
+            FullPath = "/source",
+            Size = stat,
+            LastModified = Mtime,
+            Permissions = "-rw-------",
+            Owner = "u",
+            Group = "g",
+            IsDirectory = false,
         });
         source.DownloadStreamAsync(default, null!, null!).ReturnsForAnyArgs(async call =>
             await call.ArgAt<Stream>(2).WriteAsync(payload.AsMemory(), call.ArgAt<CancellationToken>(4)));
@@ -508,8 +514,12 @@ public class StagedRelaySourceTests
             await consume(call.ArgAt<Stream>(1));
             call.ArgAt<IProgress<TransferProgress>?>(5)?.Report(new TransferProgress
             {
-                FileName = "target", TotalBytes = call.ArgAt<long>(3), BytesTransferred = call.ArgAt<long>(3),
-                Percentage = 100, SpeedBytesPerSecond = 0, EstimatedTimeRemaining = TimeSpan.Zero,
+                FileName = "target",
+                TotalBytes = call.ArgAt<long>(3),
+                BytesTransferred = call.ArgAt<long>(3),
+                Percentage = 100,
+                SpeedBytesPerSecond = 0,
+                EstimatedTimeRemaining = TimeSpan.Zero,
             });
         });
         return target;

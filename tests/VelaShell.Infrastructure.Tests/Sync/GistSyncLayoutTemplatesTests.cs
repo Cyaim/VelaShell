@@ -258,7 +258,7 @@ public sealed class GistSyncLayoutTemplatesTests
             await other.Sync.MergeRemoteLayoutTemplatesAsync(other.Config, file, CancellationToken.None);
 
         Assert.IsNull(merge);
-        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("SyncSvc_LayoutsLocked"), note);
+        Assert.AreEqual(Core.Resources.Strings.Get("SyncSvc_LayoutsLocked"), note);
         Assert.IsNull(await other.Sync.BuildLayoutTemplatesUploadAsync(other.Config, file, CancellationToken.None),
             "读不了就不写:不能拿本机的明文盖掉别人加了密的那份");
         Assert.AreSequenceEqual(["mine"], await other.NamesAsync());
@@ -278,7 +278,7 @@ public sealed class GistSyncLayoutTemplatesTests
             await desktop.Sync.MergeRemoteLayoutTemplatesAsync(desktop.Config, newer, CancellationToken.None);
 
         Assert.IsNull(merge);
-        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("SyncSvc_LayoutsNewer"), note);
+        Assert.AreEqual(Core.Resources.Strings.Get("SyncSvc_LayoutsNewer"), note);
         Assert.IsNull(await desktop.Sync.BuildLayoutTemplatesUploadAsync(desktop.Config, newer, CancellationToken.None),
             "写回去就是拿旧形状盖掉新版本的数据");
     }

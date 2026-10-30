@@ -1605,7 +1605,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     /// <summary>跟协议时图标字段上画的那枚(按当前选的协议;插件协议是通用插头)。</summary>
     public string? TabIconDefaultKey =>
-        Services.ConnectionIcon.ResourceKeyFor(new SessionProfile { ConnectionType = ConnectionType });
+        ConnectionIcon.ResourceKeyFor(new SessionProfile { ConnectionType = ConnectionType });
 
     /// <summary>
     /// 本条配置专属的「认证后执行命令」(「终端」页);留空 = 不执行。

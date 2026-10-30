@@ -247,7 +247,7 @@ public class RemoteRelayTests
         RemoteTransferLengthException error = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() =>
             RemoteRelay.CopyFileAsync(source, SourceSession, "/a/x", target, TargetSession, "/b/x", writing: () => writing = true));
         Assert.AreEqual(10L, error.ExpectedBytes);
-        Assert.AreEqual((long)streamLength, error.ActualBytes);
+        Assert.AreEqual(streamLength, error.ActualBytes);
         Assert.IsFalse(writing, "Small source length checks must precede target writes.");
         await target.DidNotReceiveWithAnyArgs().UploadStreamAsync(default, null!, null!, 0);
     }
@@ -275,7 +275,7 @@ public class RemoteRelayTests
         await RemoteRelay.CopyFileAsync(source, SourceSession, "/a/x", target, TargetSession, "/b/x")
             .WaitAsync(TimeSpan.FromSeconds(20));
 
-        Assert.AreEqual((long)streamLength, received, "长度未知时以源的 EOF 为准,一个字节都不能少。");
+        Assert.AreEqual(streamLength, received, "长度未知时以源的 EOF 为准,一个字节都不能少。");
     }
 
     [TestMethod]
@@ -308,8 +308,8 @@ public class RemoteRelayTests
         await Assert.ThrowsAsync<IOException>(() =>
             RemoteRelay.CopyFileAsync(source, SourceSession, "/a/x", target, TargetSession, "/b/x", progress));
 
-        Assert.IsFalse(progress.Items.Any(p => p.Percentage == 100), "FTP 最终回复确认前不能发布成功进度。");
-        Assert.IsTrue(progress.Items.Any(p => p.BytesTransferred == 10 && p.Percentage < 100), "确认字节必须保留,供失败重试探测目标起点。");
+        Assert.DoesNotContain(p => p.Percentage == 100, progress.Items, "FTP 最终回复确认前不能发布成功进度。");
+        Assert.Contains(p => p.BytesTransferred == 10 && p.Percentage < 100, progress.Items, "确认字节必须保留,供失败重试探测目标起点。");
     }
 
     [TestMethod]
@@ -327,7 +327,7 @@ public class RemoteRelayTests
 
         await RemoteRelay.CopyFileAsync(source, SourceSession, "/a/x", target, TargetSession, "/b/x", progress);
 
-        Assert.AreEqual(1, progress.Items.Count(p => p.Percentage == 100));
+        Assert.ContainsSingle(p => p.Percentage == 100, progress.Items);
     }
 
     [TestMethod]
@@ -367,8 +367,12 @@ public class RemoteRelayTests
         Assert.IsNotNull(delayed);
         var final = new TransferProgress
         {
-            FileName = "x", BytesTransferred = 10, TotalBytes = 10, Percentage = 100,
-            SpeedBytesPerSecond = 0, EstimatedTimeRemaining = TimeSpan.Zero,
+            FileName = "x",
+            BytesTransferred = 10,
+            TotalBytes = 10,
+            Percentage = 100,
+            SpeedBytesPerSecond = 0,
+            EstimatedTimeRemaining = TimeSpan.Zero,
         };
         delayed.Report(final);
         delayed.Report(final);
@@ -517,7 +521,7 @@ public class RemoteRelayTests
                 }
                 received += count;
             }
-            Assert.AreEqual((long)size, received);
+            Assert.AreEqual(size, received);
         });
 
         await RemoteRelay.CopyFileAsync(source, SourceSession, "/a/x", target, TargetSession, "/b/x", writing: () =>
@@ -745,7 +749,7 @@ public class RemoteRelayTests
         public override byte[] Rent(int minimumLength)
         {
             Assert.AreEqual(256 * 1024, minimumLength);
-            var buffer = new byte[minimumLength];
+            byte[] buffer = new byte[minimumLength];
             lock (_sync)
             {
                 _outstanding.Add(buffer);
@@ -821,8 +825,12 @@ public class RemoteRelayTests
                 await call.ArgAt<Stream>(1).CopyToAsync(Stream.Null, call.ArgAt<CancellationToken>(8));
                 call.ArgAt<IProgress<TransferProgress>?>(5)?.Report(new TransferProgress
                 {
-                    FileName = "x", BytesTransferred = expected, TotalBytes = expected, Percentage = 100,
-                    SpeedBytesPerSecond = 0, EstimatedTimeRemaining = TimeSpan.Zero,
+                    FileName = "x",
+                    BytesTransferred = expected,
+                    TotalBytes = expected,
+                    Percentage = 100,
+                    SpeedBytesPerSecond = 0,
+                    EstimatedTimeRemaining = TimeSpan.Zero,
                 });
             });
         return (source, target);

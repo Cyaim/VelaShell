@@ -85,9 +85,9 @@ public sealed class SftpUploadAckProgressTests
         IOException actual = await Assert.ThrowsExactlyAsync<IOException>(
             () => harness.Sftp.UploadAsync(source, RemotePath).WaitAsync(Deadline));
         Assert.AreSame(expected, actual);
-        VelaSftpUploadFailureDetails? details = VelaSftpUploadFailureDetails.Get(actual);
+        var details = VelaSftpUploadFailureDetails.Get(actual);
         Assert.IsNotNull(details);
-        Assert.AreEqual((long)prefixLength, details.DurableLength, "Sample after close flushes even a buffered short tail.");
+        Assert.AreEqual(prefixLength, details.DurableLength, "Sample after close flushes even a buffered short tail.");
         Assert.IsInstanceOfType<VelaSftpPermissionDeniedException>(details.CleanupException);
         Assert.AreEqual(TransferFailureKind.Transient, TransferRetryPolicy.Classify(actual));
         Assert.AreEqual(0, harness.SftpServer.OpenHandleCount, "Source failure must still return the target handle.");
@@ -106,7 +106,7 @@ public sealed class SftpUploadAckProgressTests
         VelaSshConnectionException actual = await Assert.ThrowsExactlyAsync<VelaSshConnectionException>(
             () => harness.Sftp.UploadAsync(source, RemotePath).WaitAsync(Deadline));
         Assert.AreSame(primary, actual.InnerException);
-        VelaSftpUploadFailureDetails? details = VelaSftpUploadFailureDetails.Get(actual);
+        var details = VelaSftpUploadFailureDetails.Get(actual);
         Assert.IsNotNull(details, "The outer GuardedAsync must not translate twice and lose attached details.");
         Assert.AreEqual(17L, details.DurableLength);
         Assert.IsInstanceOfType<VelaSftpPermissionDeniedException>(details.CleanupException);
@@ -163,7 +163,7 @@ public sealed class SftpUploadAckProgressTests
         VelaSftpPermissionDeniedException failure = await Assert.ThrowsExactlyAsync<VelaSftpPermissionDeniedException>(
             () => harness.Sftp.UploadAsync(source, RemotePath).WaitAsync(Deadline));
         Assert.AreEqual(TransferFailureKind.Permanent, TransferRetryPolicy.Classify(failure));
-        Assert.AreEqual(17, harness.SftpServer.Nodes[RemotePath].Content.Count);
+        Assert.HasCount(17, harness.SftpServer.Nodes[RemotePath].Content);
         Assert.AreEqual(0, harness.SftpServer.OpenHandleCount);
     }
 
@@ -176,7 +176,7 @@ public sealed class SftpUploadAckProgressTests
         IOException actual = await Assert.ThrowsExactlyAsync<IOException>(
             () => harness.Sftp.UploadAsync(source, RemotePath).WaitAsync(Deadline));
         Assert.AreSame(expected, actual);
-        VelaSftpUploadFailureDetails? details = VelaSftpUploadFailureDetails.Get(actual);
+        var details = VelaSftpUploadFailureDetails.Get(actual);
         Assert.IsNotNull(details);
         Assert.AreEqual(0L, details.DurableLength);
         Assert.IsInstanceOfType<VelaSftpTransferInterruptedException>(details.CleanupException);
@@ -188,7 +188,7 @@ public sealed class SftpUploadAckProgressTests
     public async Task Upload_ServiceRemembersSourceFailureDurable_AndResumesExactly()
     {
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
-        Guid sessionId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
         await using SftpService service = CreateService(harness.Sftp, sessionId);
         byte[] data = RandomNumberGenerator.GetBytes(BlockSize + 97);
         var expected = new IOException("Controlled source failure after prefix.");
@@ -196,12 +196,12 @@ public sealed class SftpUploadAckProgressTests
         IOException failure = await Assert.ThrowsExactlyAsync<IOException>(
             () => service.UploadStreamAsync(sessionId, broken, RemotePath, data.Length));
         Assert.AreSame(expected, failure);
-        Assert.AreEqual((long)BlockSize, VelaSftpUploadFailureDetails.Get(failure)?.DurableLength);
+        Assert.AreEqual(BlockSize, VelaSftpUploadFailureDetails.Get(failure)?.DurableLength);
         Assert.IsNull(VelaSftpUploadFailureDetails.Get(failure)?.CleanupException);
 
         using var resumed = new ObservedSource(data);
         await service.UploadStreamAsync(sessionId, resumed, RemotePath, data.Length, resumeOffset: 1);
-        Assert.AreEqual((long)BlockSize, resumed.LastDataReadOffset,
+        Assert.AreEqual(BlockSize, resumed.LastDataReadOffset,
             "After reading the prefix for verification, upload must seek to the exact hint, not back off the in-flight window.");
         Assert.AreSequenceEqual(SHA256.HashData(data), SHA256.HashData([.. harness.SftpServer.Nodes[RemotePath].Content]));
     }
@@ -212,11 +212,11 @@ public sealed class SftpUploadAckProgressTests
     public async Task Upload_MixedSizeBatch_FirstAttemptsSucceedAndHashesMatch(int concurrency)
     {
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
-        Guid sessionId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
         await using SftpService service = CreateService(harness.Sftp, sessionId);
         int[] sizes = [0, 1, 17, 1023, BlockSize - 1, BlockSize, BlockSize + 1, 256 * 1024 + 17];
-        var files = Enumerable.Range(0, 2000).Select(i =>
-            (Path: $"/home/joe/batch-{i}.bin", Data: RandomNumberGenerator.GetBytes(sizes[i % sizes.Length]))).ToArray();
+        (string Path, byte[] Data)[] files = [.. Enumerable.Range(0, 2000).Select(i =>
+            (Path: $"/home/joe/batch-{i}.bin", Data: RandomNumberGenerator.GetBytes(sizes[i % sizes.Length])))];
         int attempts = 0;
         await Parallel.ForEachAsync(files, new ParallelOptions { MaxDegreeOfParallelism = concurrency }, async (file, ct) =>
         {
@@ -225,7 +225,7 @@ public sealed class SftpUploadAckProgressTests
             await service.UploadStreamAsync(sessionId, source, file.Path, file.Data.Length, cancellationToken: ct);
         }).WaitAsync(TimeSpan.FromSeconds(60));
         Assert.AreEqual(files.Length, attempts, "No automatic retry or second attempt is used by this batch.");
-        foreach (var file in files)
+        foreach ((string Path, byte[] Data) file in files)
         {
             using var actual = new MemoryStream();
             await harness.Sftp.DownloadAsync(file.Path, actual);
@@ -247,15 +247,15 @@ public sealed class SftpUploadAckProgressTests
         var server = new LoopbackFtpServer(root) { SupportsMlsd = true };
         await using var ftp = new FtpFileService();
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
-        Guid targetSession = Guid.NewGuid();
+        var targetSession = Guid.NewGuid();
         await using SftpService target = CreateService(harness.Sftp, targetSession);
         int[] sizes = [0, 1, 17, 1023, BlockSize - 1, BlockSize, BlockSize + 1, 256 * 1024 + 17];
-        var files = Enumerable.Range(0, 2000).Select(i =>
-            (Name: $"relay-{i}.bin", Data: RandomNumberGenerator.GetBytes(sizes[i % sizes.Length]))).ToArray();
+        (string Name, byte[] Data)[] files = [.. Enumerable.Range(0, 2000).Select(i =>
+            (Name: $"relay-{i}.bin", Data: RandomNumberGenerator.GetBytes(sizes[i % sizes.Length])))];
         using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         try
         {
-            foreach (var file in files)
+            foreach ((string Name, byte[] Data) file in files)
             {
                 await File.WriteAllBytesAsync(Path.Combine(root, file.Name), file.Data, deadline.Token);
             }
@@ -287,12 +287,12 @@ public sealed class SftpUploadAckProgressTests
                 }
             });
             Assert.AreEqual(files.Length, attempts, "No retry loop is involved: every transfer must succeed first time.");
-            Assert.AreEqual(files.Length, server.RetrCounts.Count);
-            foreach (var file in files)
+            Assert.HasCount(files.Length, server.RetrCounts);
+            foreach ((string Name, byte[] Data) file in files)
             {
                 Assert.AreEqual(1, server.RetrCounts["/" + file.Name], "RETR must not be retried.");
                 byte[] actual = [.. harness.SftpServer.Nodes["/home/joe/" + file.Name].Content];
-                Assert.AreEqual(file.Data.Length, actual.Length, file.Name);
+                Assert.HasCount(file.Data.Length, actual, file.Name);
                 Assert.AreSequenceEqual(SHA256.HashData(file.Data), SHA256.HashData(actual), file.Name);
             }
             Assert.AreEqual(files.Length, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open),
@@ -316,15 +316,15 @@ public sealed class SftpUploadAckProgressTests
         var server = new LoopbackFtpServer(root) { SupportsMlsd = true, MaxConcurrentSessions = 1 };
         await using var ftp = new FtpFileService();
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
-        Guid sourceSession = Guid.NewGuid();
+        var sourceSession = Guid.NewGuid();
         await using SftpService source = CreateService(harness.Sftp, sourceSession);
         int[] sizes = [0, 1, BlockSize - 1, BlockSize, BlockSize + 1, RelayBufferBudget + 97];
-        var files = sizes.Select((size, i) =>
-            (Name: $"reverse-{i}.bin", Data: RandomNumberGenerator.GetBytes(size))).ToArray();
+        (string Name, byte[] Data)[] files = [.. sizes.Select((size, i) =>
+            (Name: $"reverse-{i}.bin", Data: RandomNumberGenerator.GetBytes(size)))];
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         try
         {
-            foreach (var file in files)
+            foreach ((string Name, byte[] Data) file in files)
             {
                 harness.SftpServer.AddFile("/home/joe/" + file.Name, file.Data, 0x180);
             }
@@ -346,10 +346,10 @@ public sealed class SftpUploadAckProgressTests
                 await RemoteRelay.CopyFileAsync(source, sourceSession, "/home/joe/" + file.Name,
                     ftp, targetSession, "/" + file.Name, cancellationToken: ct);
             });
-            foreach (var file in files)
+            foreach ((string Name, byte[] Data) file in files)
             {
                 byte[] actual = await File.ReadAllBytesAsync(Path.Combine(root, file.Name), deadline.Token);
-                Assert.AreEqual(file.Data.Length, actual.Length, file.Name);
+                Assert.HasCount(file.Data.Length, actual, file.Name);
                 Assert.AreSequenceEqual(SHA256.HashData(file.Data), SHA256.HashData(actual), file.Name);
             }
             Assert.AreEqual(1, server.AcceptedConnections, "Reverse relays must queue on the only FTP client.");
@@ -378,7 +378,7 @@ public sealed class SftpUploadAckProgressTests
         };
         await using var ftp = new FtpFileService();
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
-        Guid targetSession = Guid.NewGuid();
+        var targetSession = Guid.NewGuid();
         await using SftpService target = CreateService(harness.Sftp, targetSession);
         byte[] original = [1, 2, 3];
         harness.SftpServer.AddFile(RemotePath, original, 0x180);
@@ -389,7 +389,10 @@ public sealed class SftpUploadAckProgressTests
             await File.WriteAllBytesAsync(Path.Combine(root, "source.bin"), payload, deadline.Token);
             Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
             {
-                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
                 Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 1 },
             }, deadline.Token);
             Task<bool> copy = RemoteRelay.TryCopyFileWithRemoteCommitAsync(ftp, sourceSession, "/source.bin",
@@ -398,7 +401,7 @@ public sealed class SftpUploadAckProgressTests
             else Assert.IsTrue(await copy);
             byte[] actual = [.. harness.SftpServer.Nodes[RemotePath].Content];
             Assert.AreSequenceEqual(failCompletion ? original : payload, actual);
-            Assert.IsFalse(harness.SftpServer.Nodes.Keys.Any(path => path.Contains(".vela-relay-", StringComparison.Ordinal)));
+            Assert.DoesNotContain(path => path.Contains(".vela-relay-", StringComparison.Ordinal), harness.SftpServer.Nodes.Keys);
             Assert.AreEqual(0, harness.SftpServer.OpenHandleCount);
             Assert.AreEqual(1, server.RetrCounts["/source.bin"]);
         }
@@ -427,21 +430,24 @@ public sealed class SftpUploadAckProgressTests
         {
             FailCloseWith = SftpStatusCode.PermissionDenied,
         });
-        Guid targetSession = Guid.NewGuid();
+        var targetSession = Guid.NewGuid();
         await using SftpService target = CreateService(harness.Sftp, targetSession);
         try
         {
             await File.WriteAllBytesAsync(Path.Combine(root, "source.bin"), new byte[97]);
             Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
             {
-                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
                 Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 1 },
             });
             RemoteTransferLengthException failure = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(
                 () => RemoteRelay.CopyFileAsync(ftp, sourceSession, "/source.bin", target, targetSession, RemotePath).WaitAsync(Deadline));
             Assert.AreEqual(97L, failure.ExpectedBytes);
-            Assert.AreEqual((long)delivered, failure.ActualBytes);
-            Assert.AreEqual(VelaShell.Core.Resources.Strings.Format(
+            Assert.AreEqual(delivered, failure.ActualBytes);
+            Assert.AreEqual(Core.Resources.Strings.Format(
                 "SftpSvc_RelayLengthMismatch", "/source.bin", 97, delivered), failure.Message);
             Assert.IsNull(VelaSftpUploadFailureDetails.Get(failure),
                 "预读失败未上传,不能生成目标 durable/cleanup 详情,更不能让 CLOSE 拒绝替换长度主错误。");
@@ -473,32 +479,35 @@ public sealed class SftpUploadAckProgressTests
         };
         await using var ftp = new FtpFileService();
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions { FailCloseWith = SftpStatusCode.PermissionDenied });
-        Guid targetSession = Guid.NewGuid();
+        var targetSession = Guid.NewGuid();
         await using SftpService target = CreateService(harness.Sftp, targetSession);
         try
         {
             await File.WriteAllBytesAsync(Path.Combine(root, "source.bin"), new byte[expected]);
             Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
             {
-                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
                 Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 1 },
             });
             RemoteTransferLengthException failure = await Assert.ThrowsExactlyAsync<RemoteTransferLengthException>(() =>
                 RemoteRelay.CopyFileAsync(ftp, sourceSession, "/source.bin", target, targetSession, RemotePath).WaitAsync(Deadline));
-            Assert.AreEqual((long)expected, failure.ExpectedBytes);
-            Assert.AreEqual((long)delivered, failure.ActualBytes);
-            Assert.AreEqual(VelaShell.Core.Resources.Strings.Format(
+            Assert.AreEqual(expected, failure.ExpectedBytes);
+            Assert.AreEqual(delivered, failure.ActualBytes);
+            Assert.AreEqual(Core.Resources.Strings.Format(
                 "SftpSvc_RelayLengthMismatch", "/source.bin", expected, delivered), failure.Message);
-            VelaSftpUploadFailureDetails? details = VelaSftpUploadFailureDetails.Get(failure);
+            var details = VelaSftpUploadFailureDetails.Get(failure);
             Assert.IsNotNull(details, "超过预算的大源应在预读全部完成前进入真实目标上传。");
-            Assert.IsTrue(details.DurableLength > 0 && details.DurableLength <= delivered);
-            Assert.AreEqual((long)harness.SftpServer.Nodes[RemotePath].Content.Count, details.DurableLength,
+            Assert.IsTrue(details.DurableLength is > 0 and <= delivered);
+            Assert.AreEqual(harness.SftpServer.Nodes[RemotePath].Content.Count, details.DurableLength,
                 "成功 WRITE ACK 的持久长度仍需保留,源错误与 CLOSE 错误不能令它归零或虚增。");
             Assert.IsInstanceOfType<VelaSftpPermissionDeniedException>(details.CleanupException);
             Assert.AreEqual(TransferFailureKind.Permanent, TransferRetryPolicy.Classify(failure),
                 "源与元数据对不上重试无益;以前归成「临时」,同一份文件要白撞四次。");
             Assert.AreEqual(1, server.RetrCounts["/source.bin"]);
-            Assert.AreEqual(1, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open));
+            Assert.ContainsSingle(t => t == SftpMessageType.Open, harness.SftpServer.ReceivedTypes);
             Assert.AreEqual(0, harness.SftpServer.OpenHandleCount);
         }
         finally
@@ -527,7 +536,7 @@ public sealed class SftpUploadAckProgressTests
         if (unknownSize) server.SizeReplyForPath = (_, _) => "550 Size unavailable";
         await using var ftp = new FtpFileService();
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
-        Guid targetSession = Guid.NewGuid();
+        var targetSession = Guid.NewGuid();
         await using SftpService target = CreateService(harness.Sftp, targetSession);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         Task? relay = null;
@@ -537,7 +546,10 @@ public sealed class SftpUploadAckProgressTests
             await File.WriteAllBytesAsync(Path.Combine(root, "source.bin"), data, cancellation.Token);
             Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
             {
-                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
                 Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 1 },
             }, cancellation.Token);
             int writing = 0;
@@ -559,11 +571,11 @@ public sealed class SftpUploadAckProgressTests
             fault.AllowReply.TrySetResult();
             await relay.WaitAsync(cancellation.Token);
             byte[] actual = [.. harness.SftpServer.Nodes[RemotePath].Content];
-            Assert.AreEqual(data.Length, actual.Length);
+            Assert.HasCount(data.Length, actual);
             Assert.AreSequenceEqual(SHA256.HashData(data), SHA256.HashData(actual));
             Assert.AreEqual(1, Volatile.Read(ref writing));
             Assert.AreEqual(1, server.RetrCounts["/source.bin"]);
-            Assert.AreEqual(1, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open));
+            Assert.ContainsSingle(t => t == SftpMessageType.Open, harness.SftpServer.ReceivedTypes);
             Assert.AreEqual(0, harness.SftpServer.OpenHandleCount);
         }
         finally
@@ -594,14 +606,17 @@ public sealed class SftpUploadAckProgressTests
         };
         await using var ftp = new FtpFileService();
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions { FailCloseWith = SftpStatusCode.PermissionDenied });
-        Guid targetSession = Guid.NewGuid();
+        var targetSession = Guid.NewGuid();
         await using SftpService target = CreateService(harness.Sftp, targetSession);
         try
         {
             await File.WriteAllBytesAsync(Path.Combine(root, "source.bin"), new byte[97]);
             Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
             {
-                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
                 Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 1 },
             });
             bool writing = false;
@@ -637,19 +652,22 @@ public sealed class SftpUploadAckProgressTests
         var server = new LoopbackFtpServer(root) { SupportsMlsd = true };
         await using var ftp = new FtpFileService();
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
-        Guid targetSession = Guid.NewGuid();
+        var targetSession = Guid.NewGuid();
         await using SftpService target = CreateService(harness.Sftp, targetSession);
         int[] sizes = [0, 1, 17, 1023, BlockSize - 1, BlockSize, BlockSize + 1, 256 * 1024 + 17];
-        var files = Enumerable.Range(0, 2000).Select(i =>
-            (Name: $"staged-{i}.bin", Data: RandomNumberGenerator.GetBytes(sizes[i % sizes.Length]))).ToArray();
+        (string Name, byte[] Data)[] files = [.. Enumerable.Range(0, 2000).Select(i =>
+            (Name: $"staged-{i}.bin", Data: RandomNumberGenerator.GetBytes(sizes[i % sizes.Length])))];
         using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         try
         {
-            foreach (var file in files)
+            foreach ((string Name, byte[] Data) file in files)
                 await File.WriteAllBytesAsync(Path.Combine(root, file.Name), file.Data, deadline.Token);
             Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
             {
-                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
                 Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = concurrency },
             }, deadline.Token);
             int attempts = 0;
@@ -660,7 +678,7 @@ public sealed class SftpUploadAckProgressTests
                 CancellationToken = deadline.Token,
             }, async (file, ct) =>
             {
-                await using var staged = await StagedRelaySource.PrepareAsync(ftp, sourceSession, "/" + file.Name, ct);
+                await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(ftp, sourceSession, "/" + file.Name, ct);
                 Assert.IsFalse(harness.SftpServer.Nodes.ContainsKey("/home/joe/" + file.Name),
                     "Preparation must not create this file on the target.");
                 Interlocked.Increment(ref attempts);
@@ -669,12 +687,12 @@ public sealed class SftpUploadAckProgressTests
             });
             Assert.AreEqual(files.Length, attempts, "Exactly one explicit upload attempt per prepared cache, no retry loop.");
             Assert.AreEqual(files.Length, writing);
-            Assert.AreEqual(files.Length, server.RetrCounts.Count);
-            foreach (var file in files)
+            Assert.HasCount(files.Length, server.RetrCounts);
+            foreach ((string Name, byte[] Data) file in files)
             {
                 Assert.AreEqual(1, server.RetrCounts["/" + file.Name], file.Name);
                 byte[] actual = [.. harness.SftpServer.Nodes["/home/joe/" + file.Name].Content];
-                Assert.AreEqual(file.Data.Length, actual.Length, file.Name);
+                Assert.HasCount(file.Data.Length, actual, file.Name);
                 Assert.AreSequenceEqual(SHA256.HashData(file.Data), SHA256.HashData(actual), file.Name);
             }
             Assert.AreEqual(2000, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open),
@@ -702,8 +720,8 @@ public sealed class SftpUploadAckProgressTests
             RejectWritesWith = SftpStatusCode.PermissionDenied,
         });
         await using Harness replacement = await Harness.StartAsync(new TestSftpOptions());
-        Guid rejectedSession = Guid.NewGuid();
-        Guid replacementSession = Guid.NewGuid();
+        var rejectedSession = Guid.NewGuid();
+        var replacementSession = Guid.NewGuid();
         await using SftpService rejectedTarget = CreateService(rejected.Sftp, rejectedSession);
         await using SftpService replacementTarget = CreateService(replacement.Sftp, replacementSession);
         using var deadline = new CancellationTokenSource(Deadline);
@@ -713,18 +731,21 @@ public sealed class SftpUploadAckProgressTests
             await File.WriteAllBytesAsync(Path.Combine(root, "source.bin"), data, deadline.Token);
             Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
             {
-                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
                 Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 1 },
             }, deadline.Token);
-            await using var staged = await StagedRelaySource.PrepareAsync(ftp, sourceSession, "/source.bin", deadline.Token);
+            await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(ftp, sourceSession, "/source.bin", deadline.Token);
             VelaSftpTransferInterruptedException failure = await Assert.ThrowsExactlyAsync<VelaSftpTransferInterruptedException>(
                 () => staged.UploadAsync(rejectedTarget, rejectedSession, RemotePath, cancellationToken: deadline.Token));
             Assert.IsTrue(failure.RefusedByServer);
             Assert.AreEqual(0L, failure.DurableLength);
             Assert.AreEqual(TransferFailureKind.Permanent, TransferRetryPolicy.Classify(failure));
             Assert.AreEqual(1, rejected.SftpServer.WriteCount);
-            Assert.AreEqual(0, rejected.SftpServer.Nodes[RemotePath].Content.Count);
-            Assert.AreEqual(1, rejected.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open));
+            Assert.IsEmpty(rejected.SftpServer.Nodes[RemotePath].Content);
+            Assert.ContainsSingle(t => t == SftpMessageType.Open, rejected.SftpServer.ReceivedTypes);
             Assert.AreEqual(0, rejected.SftpServer.OpenHandleCount);
             Assert.AreEqual(1, server.RetrCounts["/source.bin"]);
 
@@ -733,13 +754,13 @@ public sealed class SftpUploadAckProgressTests
             await staged.UploadAsync(replacementTarget, replacementSession, RemotePath,
                 resumeOffset: 0, cancellationToken: deadline.Token);
             byte[] actual = [.. replacement.SftpServer.Nodes[RemotePath].Content];
-            Assert.AreEqual(data.Length, actual.Length);
+            Assert.HasCount(data.Length, actual);
             Assert.AreSequenceEqual(SHA256.HashData(data), SHA256.HashData(actual));
-            Assert.AreEqual(1, server.RetrCounts.Count);
+            Assert.HasCount(1, server.RetrCounts);
             Assert.AreEqual(1, server.RetrCounts["/source.bin"], "Reusing the prepared cache must not download the source again.");
             Assert.AreEqual(1, rejected.SftpServer.WriteCount, "The rejected target is not retried.");
             Assert.AreEqual(1, replacement.SftpServer.WriteCount);
-            Assert.AreEqual(1, replacement.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open));
+            Assert.ContainsSingle(t => t == SftpMessageType.Open, replacement.SftpServer.ReceivedTypes);
             Assert.AreEqual(0, replacement.SftpServer.OpenHandleCount);
         }
         finally
@@ -770,7 +791,7 @@ public sealed class SftpUploadAckProgressTests
         if (unknownSize) server.SizeReplyForPath = (_, _) => "550 Size unavailable";
         await using var ftp = new FtpFileService();
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
-        Guid targetSession = Guid.NewGuid();
+        var targetSession = Guid.NewGuid();
         await using SftpService target = CreateService(harness.Sftp, targetSession);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
@@ -778,14 +799,17 @@ public sealed class SftpUploadAckProgressTests
             await File.WriteAllBytesAsync(Path.Combine(root, "source.bin"), RandomNumberGenerator.GetBytes(size), deadline.Token);
             Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
             {
-                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
                 Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 1 },
             }, deadline.Token);
             bool prepared = false;
             bool writing = false;
             VelaFtpClientException failure = await Assert.ThrowsAsync<VelaFtpClientException>(async () =>
             {
-                await using var staged = await StagedRelaySource.PrepareAsync(ftp, sourceSession, "/source.bin", deadline.Token);
+                await using StagedRelaySource staged = await StagedRelaySource.PrepareAsync(ftp, sourceSession, "/source.bin", deadline.Token);
                 prepared = true;
                 await staged.UploadAsync(target, targetSession, RemotePath,
                     writing: () => writing = true, cancellationToken: deadline.Token);
@@ -820,7 +844,7 @@ public sealed class SftpUploadAckProgressTests
         if (unknownSize) server.SizeReplyForPath = (_, _) => "550 Size unavailable";
         await using var ftp = new FtpFileService();
         await using Harness harness = await Harness.StartAsync(new TestSftpOptions());
-        Guid targetSession = Guid.NewGuid();
+        var targetSession = Guid.NewGuid();
         await using SftpService target = CreateService(harness.Sftp, targetSession);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         Task<StagedRelaySource>? preparation = null;
@@ -830,7 +854,10 @@ public sealed class SftpUploadAckProgressTests
             await File.WriteAllBytesAsync(Path.Combine(root, "source.bin"), data, deadline.Token);
             Guid sourceSession = await ftp.OpenSessionAsync(new FtpConnectionInfo
             {
-                Host = "127.0.0.1", Port = server.Port, Username = "deploy", Password = "secret123",
+                Host = "127.0.0.1",
+                Port = server.Port,
+                Username = "deploy",
+                Password = "secret123",
                 Settings = new FtpSettings { EncryptionMode = FtpEncryptionMode.None, MaxConnections = 1 },
             }, deadline.Token);
             RemoteFileInfo info = await ftp.GetFileInfoAsync(sourceSession, "/source.bin", deadline.Token);
@@ -841,16 +868,16 @@ public sealed class SftpUploadAckProgressTests
             Assert.AreEqual(0, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open));
             Assert.IsFalse(harness.SftpServer.Nodes.ContainsKey(RemotePath));
             fault.AllowReply.TrySetResult();
-            await using var staged = await preparation.WaitAsync(deadline.Token);
+            await using StagedRelaySource staged = await preparation.WaitAsync(deadline.Token);
             int writing = 0;
             await staged.UploadAsync(target, targetSession, RemotePath,
                 writing: () => writing++, cancellationToken: deadline.Token);
             byte[] actual = [.. harness.SftpServer.Nodes[RemotePath].Content];
-            Assert.AreEqual(data.Length, actual.Length);
+            Assert.HasCount(data.Length, actual);
             Assert.AreSequenceEqual(SHA256.HashData(data), SHA256.HashData(actual));
             Assert.AreEqual(1, writing);
             Assert.AreEqual(1, server.RetrCounts["/source.bin"]);
-            Assert.AreEqual(1, harness.SftpServer.ReceivedTypes.Count(t => t == SftpMessageType.Open));
+            Assert.ContainsSingle(t => t == SftpMessageType.Open, harness.SftpServer.ReceivedTypes);
             Assert.AreEqual(0, harness.SftpServer.OpenHandleCount);
         }
         finally
@@ -862,7 +889,7 @@ public sealed class SftpUploadAckProgressTests
                 try
                 {
                     // Also dispose a cache produced just as an assertion/cancellation failed.
-                    var staged = await preparation.WaitAsync(Deadline);
+                    StagedRelaySource staged = await preparation.WaitAsync(Deadline);
                     await staged.DisposeAsync();
                 }
                 catch (Exception) { /* Preserve the test failure while finishing preparation before fixture teardown. */ }

@@ -25,7 +25,7 @@ internal static class HeadlessPump
         var elapsed = Stopwatch.StartNew();
         while (!condition())
         {
-            Assert.IsTrue(elapsed.Elapsed < TimeSpan.FromSeconds(15), $"UI condition did not become true: {expression}");
+            Assert.IsLessThan(TimeSpan.FromSeconds(15), elapsed.Elapsed, $"UI condition did not become true: {expression}");
             await Task.Delay(10);
             Dispatcher.UIThread.RunJobs();
         }

@@ -44,7 +44,7 @@ public partial class PluginLogWindow : Window
             return;
         }
         // 插件还没写过日志时目录可能还不存在:建出来再打开,免得系统文件管理器报「找不到」。
-        System.IO.Directory.CreateDirectory(directory);
+        Directory.CreateDirectory(directory);
         await Launcher.LaunchDirectoryInfoAsync(new(directory));
     });
 

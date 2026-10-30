@@ -124,19 +124,14 @@ public sealed class ConnectionProfileTypePickerTests
 
             Assert.AreEqual(ConnectionProfileStep.PickType, vm.Step, "新建、页签带类型选择:应先停在卡片上。");
             Assert.IsTrue(vm.IsPickingType);
-            CollectionAssert.AreEqual(
-                new[] { "mysql", "postgresql", "sqlite" },
-                vm.TypeCards.Select(c => c.Value).ToArray(),
-                "卡片顺序要与候选项一致。");
-            CollectionAssert.AreEqual(
-                new[] { "MySQL", "PostgreSQL", "SQLite" },
-                vm.TypeCards.Select(c => c.Label).ToArray());
+            Assert.AreSequenceEqual(
+                ["mysql", "postgresql", "sqlite"], [.. vm.TypeCards.Select(c => c.Value)], "卡片顺序要与候选项一致。");
+            Assert.AreSequenceEqual(
+                ["MySQL", "PostgreSQL", "SQLite"], [.. vm.TypeCards.Select(c => c.Label)]);
             Assert.IsTrue(vm.TypeCards.All(c => ReferenceEquals(c.Icon, DbIcon)), "变体没给图标:卡片图标 = 工作台图标。");
             Assert.AreEqual("mysql", vm.SelectedTypeValue, "默认值那一档要预选。");
-            CollectionAssert.AreEqual(
-                new[] { true, false, false },
-                vm.TypeCards.Select(c => c.IsSelected).ToArray(),
-                "只有预选的那张卡片是高亮的。");
+            Assert.AreSequenceEqual(
+                [true, false, false], [.. vm.TypeCards.Select(c => c.IsSelected)], "只有预选的那张卡片是高亮的。");
             Assert.IsTrue(await vm.NextCommand.CanExecute.FirstAsync(), "预选了一档,「下一步」应立即可用。");
             Assert.IsFalse(vm.ShowTypeHeader, "还在卡片上,表头不出现。");
             Assert.IsFalse(vm.ShowBackButton, "卡片阶段没有「上一步」。");
@@ -160,10 +155,8 @@ public sealed class ConnectionProfileTypePickerTests
 
             Assert.IsTrue(vm.IsPickingType, "单击不该离开卡片。");
             Assert.AreEqual("postgresql", vm.SelectedTypeValue);
-            CollectionAssert.AreEqual(
-                new[] { false, true, false },
-                vm.TypeCards.Select(c => c.IsSelected).ToArray(),
-                "高亮要跟着换过去,上一张要灭掉。");
+            Assert.AreSequenceEqual(
+                [false, true, false], [.. vm.TypeCards.Select(c => c.IsSelected)], "高亮要跟着换过去,上一张要灭掉。");
             Assert.AreEqual("mysql", Row(vm, DialectKey).Text, "点「下一步」之前不该写进变体字段。");
             Assert.AreEqual(3306, vm.Port, "点「下一步」之前端口不该跟着变。");
         }
@@ -337,7 +330,7 @@ public sealed class ConnectionProfileTypePickerTests
 
             await vm.SelectPluginProtocolCommand.Execute(DbId).FirstAsync();
             Assert.IsTrue(vm.IsPickingType, "换过协议再回来,类型要重新选。");
-            Assert.AreEqual(3, vm.TypeCards.Count);
+            Assert.HasCount(3, vm.TypeCards);
 
             await vm.SelectConnectionTypeCommand.Execute(ConnectionType.SSH).FirstAsync();
             Assert.AreEqual(ConnectionProfileStep.Form, vm.Step, "内建协议没有卡片。");
@@ -361,13 +354,13 @@ public sealed class ConnectionProfileTypePickerTests
 
             await vm.SelectPluginProtocolCommand.Execute(DbId).FirstAsync();
             Assert.IsTrue(vm.IsPickingType, "重复点同一页签、还没确认:应留在卡片上。");
-            Assert.AreEqual(3, vm.TypeCards.Count);
+            Assert.HasCount(3, vm.TypeCards);
             Assert.IsNotNull(vm.SelectedTypeValue, "卡片上要有预选,「下一步」才可用。");
 
             await vm.SelectConnectionTypeCommand.Execute(ConnectionType.SSH).FirstAsync();
             await vm.SelectPluginProtocolCommand.Execute(DbId).FirstAsync();
             Assert.IsTrue(vm.IsPickingType, "点去 SSH 又点回来、还没确认:应回到卡片。");
-            Assert.AreEqual(3, vm.TypeCards.Count);
+            Assert.HasCount(3, vm.TypeCards);
         }
     }
 
@@ -413,7 +406,7 @@ public sealed class ConnectionProfileTypePickerTests
             Assert.IsFalse(vm.ShowBackButton, "编辑态没有「上一步」。");
             Assert.IsFalse(await vm.BackCommand.CanExecute.FirstAsync());
             Assert.IsTrue(await vm.ChangeTypeCommand.CanExecute.FirstAsync());
-            Assert.AreEqual(3, vm.TypeCards.Count, "卡片要提前建好,「更换」才有东西可选。");
+            Assert.HasCount(3, vm.TypeCards, "卡片要提前建好,「更换」才有东西可选。");
         }
     }
 
@@ -776,7 +769,7 @@ public sealed class ConnectionProfileTypePickerTests
     [TestMethod]
     public async Task TypeCards_UseTheVariantIcon_FallingBackToTheDescriptorIcon()
     {
-        PluginIcon mysqlIcon = PluginIcon.Stroked("M12 3a9 9 0 1 0 0 18");
+        var mysqlIcon = PluginIcon.Stroked("M12 3a9 9 0 1 0 0 18");
         WorkspaceDescriptor descriptor = DbDescriptor() with
         {
             Variants =
@@ -791,9 +784,8 @@ public sealed class ConnectionProfileTypePickerTests
         {
             ConnectionProfileViewModel vm = await NewOnDbTabAsync(registry);
             Assert.IsTrue(vm.IsPickingType, "前置条件:这一页签出卡片。");
-            CollectionAssert.AreEqual(
-                new[] { "mysql", "postgresql", "sqlite" },
-                vm.TypeCards.Select(c => c.Value).ToArray());
+            Assert.AreSequenceEqual(
+                ["mysql", "postgresql", "sqlite"], [.. vm.TypeCards.Select(c => c.Value)]);
             Assert.AreSame(mysqlIcon, vm.TypeCards[0].Icon, "变体自带图标就用它。");
             Assert.AreSame(DbIcon, vm.TypeCards[1].Icon, "变体没给图标:退回工作台图标。");
             Assert.AreSame(DbIcon, vm.TypeCards[2].Icon, "候选项在变体表里没有对应项:同样退回工作台图标。");

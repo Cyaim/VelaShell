@@ -7,8 +7,8 @@ using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Sftp;
 using VelaShell.Core.Ssh;
-using VelaShell.Tests.TestSupport;
 using VelaShell.Services;
+using VelaShell.Tests.TestSupport;
 using VelaShell.ViewModels;
 
 namespace VelaShell.Tests.ViewModels;
@@ -246,7 +246,7 @@ public sealed class TransferRetryTests
 
         await rig.DownloadAsync();
 
-        string log = File.ReadAllText(System.IO.Directory.GetFiles(rig.Directory, "transfer-*.log").Single());
+        string log = File.ReadAllText(Directory.GetFiles(rig.Directory, "transfer-*.log").Single());
         string diagnostic = log.Split('\n').Single(line => line.Contains("ATTEMPT_FAILED", StringComparison.Ordinal));
         StringAssert.Contains(diagnostic, "attempt=1");
         // 长度不符是永久失败:诊断照样留一条,但如实标成不会再自动重试。
@@ -272,7 +272,7 @@ public sealed class TransferRetryTests
 
         await rig.DownloadAsync();
 
-        Assert.IsEmpty(System.IO.Directory.GetFiles(rig.Directory, "transfer-*.log"));
+        Assert.IsEmpty(Directory.GetFiles(rig.Directory, "transfer-*.log"));
     });
 
     [TestMethod]
@@ -287,7 +287,7 @@ public sealed class TransferRetryTests
                 .AttachTo(failure);
             TransferLogService.AppendFailure(directory, Guid.NewGuid(), TransferType.Relay, 2, 1024, true, false, failure);
 
-            string log = File.ReadAllText(System.IO.Directory.GetFiles(directory, "transfer-*.log").Single());
+            string log = File.ReadAllText(Directory.GetFiles(directory, "transfer-*.log").Single());
             StringAssert.Contains(log, "durable=4096,refused=False");
             StringAssert.Contains(log, nameof(TimeoutException));
             StringAssert.Contains(log, "targetDurable=2048");
@@ -299,7 +299,7 @@ public sealed class TransferRetryTests
         }
         finally
         {
-            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, recursive: true);
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
     }
 
@@ -317,7 +317,7 @@ public sealed class TransferRetryTests
 
             TransferLogService.AppendFailure(directory, Guid.NewGuid(), TransferType.Relay, 1, 0, false, false, failure);
 
-            string log = File.ReadAllText(System.IO.Directory.GetFiles(directory, "transfer-*.log").Single());
+            string log = File.ReadAllText(Directory.GetFiles(directory, "transfer-*.log").Single());
             StringAssert.Contains(log, "ATTEMPT_FAILED");
             StringAssert.Contains(log, "kind=Permanent");
             StringAssert.Contains(log, "stage=local-cache");
@@ -335,7 +335,7 @@ public sealed class TransferRetryTests
         }
         finally
         {
-            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, recursive: true);
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
     }
 
@@ -349,7 +349,7 @@ public sealed class TransferRetryTests
                 new IOException("/private/source"), new VelaSftpPermissionDeniedException("password=secret"));
             TransferLogService.AppendFailure(directory, Guid.NewGuid(), TransferType.Relay, 1, 0, false, false, error);
 
-            string log = File.ReadAllText(System.IO.Directory.GetFiles(directory, "transfer-*.log").Single());
+            string log = File.ReadAllText(Directory.GetFiles(directory, "transfer-*.log").Single());
             StringAssert.Contains(log, nameof(IOException));
             StringAssert.Contains(log, nameof(VelaSftpPermissionDeniedException));
             StringAssert.Contains(log, "kind=Permanent");
@@ -358,7 +358,7 @@ public sealed class TransferRetryTests
         }
         finally
         {
-            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, recursive: true);
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
     }
 
@@ -383,13 +383,13 @@ public sealed class TransferRetryTests
             }
             TransferLogService.AppendFailure(directory, Guid.NewGuid(), TransferType.Relay, 1, 0, false, false, error);
 
-            string log = File.ReadAllText(System.IO.Directory.GetFiles(directory, "transfer-*.log").Single());
+            string log = File.ReadAllText(Directory.GetFiles(directory, "transfer-*.log").Single());
             Assert.AreEqual(count > 8, log.Contains("truncated=True", StringComparison.Ordinal));
             Assert.IsFalse(log.Contains("private", StringComparison.Ordinal));
         }
         finally
         {
-            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, recursive: true);
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
     }
 
@@ -434,7 +434,7 @@ public sealed class TransferRetryTests
         await rig.RunAsync();
 
         Assert.AreEqual(TransferStatus.Completed, rig.Item.Status);
-        Assert.AreSequenceEqual(resume ? new long[] { 0, 4 } : [0L, 0L], offsets.ToArray());
+        Assert.AreSequenceEqual(resume ? [0, 4] : [0L, 0L], offsets.ToArray());
         Assert.AreEqual(1, rig.Downloads);
         Assert.AreEqual(1, rig.Delays);
         Assert.IsTrue(inputs.All(input => !input.CanRead), "运行结束必须释放上传所用缓存。");
@@ -465,7 +465,7 @@ public sealed class TransferRetryTests
 
         Assert.AreEqual(TransferStatus.Completed, rig.Item.Status);
         Assert.AreEqual(1, rig.Downloads);
-        Assert.AreSequenceEqual(new long[] { 0, 0 }, offsets.ToArray());
+        Assert.AreSequenceEqual([0, 0], offsets.ToArray());
         await rig.Sftp.DidNotReceive().GetFileInfoAsync(rig.TargetId, "/a.bin", Arg.Any<CancellationToken>());
     });
 
@@ -532,7 +532,7 @@ public sealed class TransferRetryTests
         Assert.AreEqual(TransferStatus.Failed, rig.Item.Status);
         // RunTransferAsync 确实报告源错误;ReceiveFromPeerAsync 末尾的 RefreshAsync →
         // NavigateCoreAsync 会清掉面板错误,但不能清掉已经落定的传输失败状态。
-        Assert.AreSequenceEqual(new string?[] { "source denied", null }, errors.ToArray());
+        Assert.AreSequenceEqual(["source denied", null], [.. errors]);
         Assert.IsTrue(refreshedAfterFailure, "确认清错来自传输落定后的目录刷新,而非未执行下载。");
         Assert.IsNull(rig.Target.ErrorMessage);
         Assert.IsNotNull(prepareDestination, "源下载 mock 必须实际执行。");
@@ -607,7 +607,7 @@ public sealed class TransferRetryTests
         Assert.AreEqual(2, rig.Downloads);
         Assert.AreEqual(2, rig.Uploads);
         Assert.HasCount(2, rig.Sink.Transfers);
-        Assert.AreEqual(1, rig.Sink.Transfers.Count(item => item.Status == TransferStatus.Completed));
+        Assert.ContainsSingle(item => item.Status == TransferStatus.Completed, rig.Sink.Transfers);
     });
 
     [TestMethod]
@@ -639,8 +639,8 @@ public sealed class TransferRetryTests
         Assert.AreEqual(2, rig.Downloads);
         Assert.HasCount(2, paths);
         Assert.AreNotEqual(paths[0], paths[1]);
-        Assert.AreEqual(1, rig.Sink.Transfers.Count(item => item.Status == TransferStatus.Completed));
-        Assert.AreEqual(1, rig.Sink.Transfers.Count(item => item.Status == TransferStatus.Cancelled));
+        Assert.ContainsSingle(item => item.Status == TransferStatus.Completed, rig.Sink.Transfers);
+        Assert.ContainsSingle(item => item.Status == TransferStatus.Cancelled, rig.Sink.Transfers);
         Assert.IsTrue(rig.Sink.Transfers.All(item => item.CancelItem is null));
         await rig.Sftp.DidNotReceiveWithAnyArgs().DeleteAsync(default, null!);
     });
@@ -755,8 +755,12 @@ public sealed class TransferRetryTests
                 TransferSink = Sink,
                 TransferOptions = new()
                 {
-                    ConflictPolicy = "overwrite", ResumeEnabled = resume, AutoCleanTempFiles = true,
-                    TransferMaxRetries = 2, TransferLogging = false, NotifyOnComplete = false,
+                    ConflictPolicy = "overwrite",
+                    ResumeEnabled = resume,
+                    AutoCleanTempFiles = true,
+                    TransferMaxRetries = 2,
+                    TransferLogging = false,
+                    NotifyOnComplete = false,
                 },
                 RetryDelay = (_, _) => { Delays++; return Task.CompletedTask; },
             };
@@ -766,8 +770,12 @@ public sealed class TransferRetryTests
         public Task RunAsync() => Target.ReceiveFromPeerAsync([new(Remote(10))]);
         public static TransferProgress Progress(long bytes) => new()
         {
-            FileName = "a.bin", BytesTransferred = bytes, TotalBytes = 10, Percentage = (int)(bytes * 10),
-            SpeedBytesPerSecond = 0, EstimatedTimeRemaining = TimeSpan.Zero,
+            FileName = "a.bin",
+            BytesTransferred = bytes,
+            TotalBytes = 10,
+            Percentage = (int)(bytes * 10),
+            SpeedBytesPerSecond = 0,
+            EstimatedTimeRemaining = TimeSpan.Zero,
         };
     }
 

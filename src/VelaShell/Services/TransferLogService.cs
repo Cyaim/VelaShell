@@ -77,7 +77,7 @@ public static class TransferLogService
                 {
                     pending.Enqueue(nested);
                 }
-                string name = new(current.GetType().Name.Where(c => char.IsAsciiLetterOrDigit(c) || c == '_').Take(100).ToArray());
+                string name = new([.. current.GetType().Name.Where(c => char.IsAsciiLetterOrDigit(c) || c == '_').Take(100)]);
                 details.Add($"{name}:0x{current.HResult:X8}");
                 if (current is RemoteTransferLengthException length)
                 {
@@ -92,7 +92,7 @@ public static class TransferLogService
                     details.Add($"targetDurable={target.DurableLength}");
                     if (target.CleanupException is { } cleanup)
                     {
-                        string cleanupName = new(cleanup.GetType().Name.Where(c => char.IsAsciiLetterOrDigit(c) || c == '_').Take(100).ToArray());
+                        string cleanupName = new([.. cleanup.GetType().Name.Where(c => char.IsAsciiLetterOrDigit(c) || c == '_').Take(100)]);
                         details.Add($"cleanup={cleanupName}:0x{cleanup.HResult:X8}");
                     }
                 }
@@ -103,7 +103,7 @@ public static class TransferLogService
                 RelayCacheException => "local-cache",
                 RemoteTransferLengthException => "source-length",
                 VelaSftpTransferInterruptedException => "target-write-or-close",
-                VelaShell.Core.Ftp.VelaFtpClientException => "ftp-operation",
+                Core.Ftp.VelaFtpClientException => "ftp-operation",
                 _ => "transfer",
             };
             string line = string.Join('\t', DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),

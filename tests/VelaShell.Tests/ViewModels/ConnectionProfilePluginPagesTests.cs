@@ -75,7 +75,7 @@ public sealed class ConnectionProfilePluginPagesTests
 
     /// <summary>此刻看得见的行,按集合顺序。</summary>
     private static string[] VisibleRows(ConnectionProfileViewModel vm) =>
-        vm.PluginFields.Where(f => f.IsRowVisible).Select(f => f.Key).ToArray();
+        [.. vm.PluginFields.Where(f => f.IsRowVisible).Select(f => f.Key)];
 
     private static PluginPageTabViewModel Tab(ConnectionProfileViewModel vm, string key) =>
         vm.PluginPages.Single(tab => tab.Key == key);
@@ -123,7 +123,7 @@ public sealed class ConnectionProfilePluginPagesTests
             Assert.AreEqual(PluginFormPage.AdvancedKey, Row(vm, "timeout").PageKey);
 
             Assert.IsTrue(vm.IsGeneralSection);
-            CollectionAssert.AreEqual(new[] { "charset" }, VisibleRows(vm), "「常规」页只有没页键、也没标高级的字段。");
+            Assert.AreSequenceEqual(["charset"], VisibleRows(vm), "「常规」页只有没页键、也没标高级的字段。");
             Assert.IsTrue(vm.ShowPluginGeneralFields);
             Assert.IsTrue(vm.ShowPluginPageTabs);
             Assert.IsTrue(vm.PluginPages.All(tab => tab.HasVisibleFields && !tab.IsSelected), "两页都有东西;还没点进去,一个都不亮。");
@@ -133,26 +133,27 @@ public sealed class ConnectionProfilePluginPagesTests
             Assert.IsTrue(vm.IsPluginPageSection);
             Assert.IsFalse(vm.IsGeneralSection);
             Assert.AreEqual(DatabasePage, vm.SelectedPluginPageKey);
-            CollectionAssert.AreEqual(new[] { "database", "schema" }, VisibleRows(vm), "「数据库」页只有它自己的两行。");
+            Assert.AreSequenceEqual(["database", "schema"], VisibleRows(vm), "「数据库」页只有它自己的两行。");
             Assert.IsTrue(Tab(vm, DatabasePage).IsSelected);
             Assert.IsFalse(Tab(vm, SslPage).IsSelected);
 
             // 自定义页之间切换:分页没变(都是 PluginPage),行与高亮也得跟着换。
             vm.SelectPluginPageCommand.Execute(SslPage).Subscribe();
             Assert.AreEqual(SslPage, vm.SelectedPluginPageKey);
-            CollectionAssert.AreEqual(new[] { "sslMode" }, VisibleRows(vm));
+            Assert.AreSequenceEqual(["sslMode"], VisibleRows(vm));
             Assert.IsFalse(Tab(vm, DatabasePage).IsSelected);
             Assert.IsTrue(Tab(vm, SslPage).IsSelected);
 
             vm.SelectSectionCommand.Execute(ConnectionProfileSection.Advanced).Subscribe();
             Assert.IsTrue(vm.IsAdvancedSection);
             Assert.IsFalse(vm.IsPluginPageSection);
-            CollectionAssert.AreEqual(new[] { "timeout" }, VisibleRows(vm), "「高级」页只有标了高级、又没页键的字段。");
+            Assert.AreSequenceEqual(["timeout"], VisibleRows(vm), "「高级」页只有标了高级、又没页键的字段。");
             Assert.IsTrue(vm.PluginPages.All(tab => !tab.IsSelected), "离开自定义页,自定义页签都不亮。");
             Assert.AreEqual("1", vm.AdvancedBadge);
 
             vm.SelectSectionCommand.Execute(ConnectionProfileSection.General).Subscribe();
-            CollectionAssert.AreEqual(new[] { "charset" }, VisibleRows(vm));        }
+            Assert.AreSequenceEqual(["charset"], VisibleRows(vm));
+        }
     }
 
     /// <summary>
@@ -198,15 +199,16 @@ public sealed class ConnectionProfilePluginPagesTests
             Assert.IsFalse(vm.ShowPluginGeneralFields, "「常规」页没有插件字段,那一节连标题一起收起。");
 
             vm.SelectSectionCommand.Execute(ConnectionProfileSection.Advanced).Subscribe();
-            CollectionAssert.AreEqual(new[] { "timeout", "poolSize" }, VisibleRows(vm), "进了自定义页的不在「高级」上重复出现。");
+            Assert.AreSequenceEqual(["timeout", "poolSize"], VisibleRows(vm), "进了自定义页的不在「高级」上重复出现。");
 
             vm.SelectPluginPageCommand.Execute(DatabasePage).Subscribe();
-            CollectionAssert.AreEqual(new[] { "database", "connectAs" }, VisibleRows(vm));
+            Assert.AreSequenceEqual(["database", "connectAs"], VisibleRows(vm));
 
             Row(vm, "connectAs").Text = "sysdba";
             Assert.IsFalse(vm.IsAdvancedSectionModified, "自定义页上的字段改了值,不给「高级」点圆点。");
             Row(vm, "timeout").Text = "30";
-            Assert.IsTrue(vm.IsAdvancedSectionModified, "「高级」页自己的字段改了值,圆点照旧亮。");        }
+            Assert.IsTrue(vm.IsAdvancedSectionModified, "「高级」页自己的字段改了值,圆点照旧亮。");
+        }
     }
 
     /// <summary>
@@ -239,7 +241,7 @@ public sealed class ConnectionProfilePluginPagesTests
             ConnectionProfileViewModel vm = await OpenAsync(registry, form);
             vm.SelectPluginPageCommand.Execute(SslPage).Subscribe();
             Assert.IsTrue(vm.IsPluginPageSection, "前提:停在「SSL」页上。");
-            CollectionAssert.AreEqual(new[] { "sslMode", "sslCa" }, VisibleRows(vm));
+            Assert.AreSequenceEqual(["sslMode", "sslCa"], VisibleRows(vm));
 
             Row(vm, "useSsl").Toggle = false;
 
@@ -249,14 +251,15 @@ public sealed class ConnectionProfilePluginPagesTests
             Assert.IsTrue(vm.IsGeneralSection, "停在被收起的那一页上,落回「常规」。");
             Assert.IsFalse(vm.IsPluginPageSection);
             Assert.IsTrue(vm.PluginPages.All(tab => !tab.IsSelected));
-            CollectionAssert.AreEqual(new[] { "useSsl" }, VisibleRows(vm));
+            Assert.AreSequenceEqual(["useSsl"], VisibleRows(vm));
 
             vm.SelectPluginPageCommand.Execute(SslPage).Subscribe();
             Assert.IsTrue(vm.IsGeneralSection, "收起的页签点不进去。");
 
             Row(vm, "useSsl").Toggle = true;
             Assert.IsTrue(Tab(vm, SslPage).HasVisibleFields, "条件重新成立,页签回来。");
-            Assert.IsTrue(vm.IsGeneralSection, "页签回来不等于把人拽过去。");        }
+            Assert.IsTrue(vm.IsGeneralSection, "页签回来不等于把人拽过去。");
+        }
     }
 
     /// <summary>
@@ -291,7 +294,7 @@ public sealed class ConnectionProfilePluginPagesTests
         Assert.AreEqual(PluginFormPage.AdvancedKey, noPages.PageKeyFor(tuned));
 
         // 描述符没声明分页、字段没填页键:两个 From() 都不填分页,行为与今天一样。
-        PluginConnectionForm fromDescriptor = PluginConnectionForm.From(new WorkspaceDescriptor
+        var fromDescriptor = PluginConnectionForm.From(new WorkspaceDescriptor
         {
             Id = PagedId,
             DisplayName = "数据库",
@@ -307,15 +310,16 @@ public sealed class ConnectionProfilePluginPagesTests
             ConnectionProfileViewModel vm = await OpenAsync(registry, form);
             Assert.AreEqual(PluginFormPage.GeneralKey, Row(vm, "plain").PageKey);
             Assert.AreEqual(PluginFormPage.AdvancedKey, Row(vm, "tuned").PageKey);
-            CollectionAssert.AreEqual(new[] { "plain" }, VisibleRows(vm), "不认识的页键落回「常规」,照样看得见。");
+            Assert.AreSequenceEqual(["plain"], VisibleRows(vm), "不认识的页键落回「常规」,照样看得见。");
             Assert.AreEqual("1", vm.AdvancedBadge, "标了高级的那一个照旧算进「高级」。");
-            CollectionAssert.AreEqual(new[] { DatabasePage }, vm.PluginPages.Select(tab => tab.Key).ToArray());
+            Assert.AreSequenceEqual([DatabasePage], [.. vm.PluginPages.Select(tab => tab.Key)]);
 
             ConnectionProfileViewModel plainVm = await OpenAsync(registry, Form([plain, tuned], null, null));
             Assert.IsEmpty(plainVm.PluginPages, "没声明分页就没有自定义页签。");
             Assert.IsFalse(plainVm.ShowPluginPageTabs, "整组收起,「高级」不挪位置。");
-            CollectionAssert.AreEqual(new[] { "plain" }, VisibleRows(plainVm));
-            Assert.AreEqual("1", plainVm.AdvancedBadge);        }
+            Assert.AreSequenceEqual(["plain"], VisibleRows(plainVm));
+            Assert.AreEqual("1", plainVm.AdvancedBadge);
+        }
     }
 
     /// <summary>
@@ -349,15 +353,15 @@ public sealed class ConnectionProfilePluginPagesTests
                 });
             ConnectionProfileViewModel vm = await OpenAsync(registry, form);
 
-            CollectionAssert.AreEqual(new[] { SslPage, DatabasePage }, vm.PluginPages.Select(tab => tab.Key).ToArray(),
-                "页签按分页的声明顺序;宿主自己的键与重复的键不多出页签。");
-            CollectionAssert.AreEqual(new[] { "SSL", "数据库" }, vm.PluginPages.Select(tab => tab.Label).ToArray());
+            Assert.AreSequenceEqual([SslPage, DatabasePage], [.. vm.PluginPages.Select(tab => tab.Key)], "页签按分页的声明顺序;宿主自己的键与重复的键不多出页签。");
+            Assert.AreSequenceEqual(["SSL", "数据库"], [.. vm.PluginPages.Select(tab => tab.Label)]);
 
             vm.SelectPluginPageCommand.Execute(SslPage).Subscribe();
-            CollectionAssert.AreEqual(new[] { "sslCert", "sslMode" }, VisibleRows(vm), "页里的行按字段的声明顺序。");
+            Assert.AreSequenceEqual(["sslCert", "sslMode"], VisibleRows(vm), "页里的行按字段的声明顺序。");
             vm.SelectPluginPageCommand.Execute(DatabasePage).Subscribe();
-            CollectionAssert.AreEqual(new[] { "database", "schema" }, VisibleRows(vm));
-            Assert.AreEqual(1, vm.PluginPages.Count(tab => tab.IsSelected), "任何时候最多亮一个。");        }
+            Assert.AreSequenceEqual(["database", "schema"], VisibleRows(vm));
+            Assert.ContainsSingle(tab => tab.IsSelected, vm.PluginPages, "任何时候最多亮一个。");
+        }
     }
 
     /// <summary>
@@ -385,16 +389,14 @@ public sealed class ConnectionProfilePluginPagesTests
             ]
         };
 
-        PluginConnectionForm form = PluginConnectionForm.From(descriptor);
-        CollectionAssert.AreEqual(
-            new[] { new PluginFormPage(DatabasePage, "数据库"), new PluginFormPage(SslPage, "SSL") },
-            form.Pages!.ToArray(),
-            "分页按声明顺序,键与文案原样映射。");
+        var form = PluginConnectionForm.From(descriptor);
+        Assert.AreSequenceEqual(
+            [new PluginFormPage(DatabasePage, "数据库"), new PluginFormPage(SslPage, "SSL")], [.. form.Pages!], "分页按声明顺序,键与文案原样映射。");
         Assert.HasCount(2, form.FieldPages!, "只有填了 Page 的字段进字典。");
         Assert.AreEqual(DatabasePage, form.FieldPages!["database"]);
         Assert.AreEqual(SslPage, form.FieldPages!["sslMode"]);
 
-        PluginConnectionForm files = PluginConnectionForm.From(new ProtocolDescriptor
+        var files = PluginConnectionForm.From(new ProtocolDescriptor
         {
             Id = "test.files",
             DisplayName = "文件",
@@ -410,20 +412,19 @@ public sealed class ConnectionProfilePluginPagesTests
             var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
             await vm.SelectPluginProtocolCommand.Execute(PagedId).FirstAsync();
 
-            CollectionAssert.AreEqual(new[] { DatabasePage, SslPage }, vm.PluginPages.Select(tab => tab.Key).ToArray(),
-                "描述符声明了两页,出两个自定义页签。");
-            CollectionAssert.AreEqual(new[] { "数据库", "SSL" }, vm.PluginPages.Select(tab => tab.Label).ToArray());
+            Assert.AreSequenceEqual([DatabasePage, SslPage], [.. vm.PluginPages.Select(tab => tab.Key)], "描述符声明了两页,出两个自定义页签。");
+            Assert.AreSequenceEqual(["数据库", "SSL"], [.. vm.PluginPages.Select(tab => tab.Label)]);
             Assert.AreEqual(DatabasePage, Row(vm, "database").PageKey);
             Assert.AreEqual(SslPage, Row(vm, "sslMode").PageKey, "页键优先于 IsAdvanced。");
             Assert.AreEqual(PluginFormPage.GeneralKey, Row(vm, "charset").PageKey);
             Assert.AreEqual(PluginFormPage.AdvancedKey, Row(vm, "timeout").PageKey);
-            CollectionAssert.AreEqual(new[] { "charset" }, VisibleRows(vm), "「常规」页只剩没页键、没标高级的字段。");
+            Assert.AreSequenceEqual(["charset"], VisibleRows(vm), "「常规」页只剩没页键、没标高级的字段。");
             Assert.AreEqual("1", vm.AdvancedBadge, "进了「SSL」页的那一项不算进「高级」。");
 
             vm.SelectPluginPageCommand.Execute(DatabasePage).Subscribe();
-            CollectionAssert.AreEqual(new[] { "database" }, VisibleRows(vm));
+            Assert.AreSequenceEqual(["database"], VisibleRows(vm));
             vm.SelectPluginPageCommand.Execute(SslPage).Subscribe();
-            CollectionAssert.AreEqual(new[] { "sslMode" }, VisibleRows(vm));
+            Assert.AreSequenceEqual(["sslMode"], VisibleRows(vm));
         }
     }
 }

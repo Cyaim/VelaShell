@@ -66,7 +66,7 @@ public sealed partial class RemoteTransferTests
             // 新建的下载与别的程序新建的文件一样,按 0666 交 umask 收窄。
             await File.WriteAllBytesAsync(reference, []);
             Assert.AreEqual(File.GetUnixFileMode(reference), File.GetUnixFileMode(path));
-            Assert.AreSequenceEqual([path, reference], Directory.GetFiles(directory), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+            Assert.AreSequenceEqual([path, reference], Directory.GetFiles(directory), SequenceOrder.InAnyOrder);
         }
         finally { Directory.Delete(directory, true); }
     }
