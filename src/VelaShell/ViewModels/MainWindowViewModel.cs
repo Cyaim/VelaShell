@@ -903,6 +903,9 @@ public class MainWindowViewModel : ReactiveObject, Services.Plugins.ITerminalRes
     /// <summary>VelaDock 工作区:承载终端文档(标签可拖拽重排、拆分分屏)。</summary>
     public DockWorkspace Layout { get; }
 
+    /// <summary>右侧 AI 专属区,独立于文档标签与终端分屏。</summary>
+    public AiAssistantRegionViewModel AiAssistant { get; } = new();
+
     /// <summary>命名布局模板:把当前分屏存成模板、打开模板,以及「恢复会话」按上次的分屏还原。</summary>
     public LayoutTemplatesViewModel LayoutTemplates { get; }
 

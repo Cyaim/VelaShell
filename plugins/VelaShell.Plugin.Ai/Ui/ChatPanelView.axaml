@@ -714,19 +714,18 @@
          模型选择与 Agent 开关不在这里 —— 它们跟着输入框走(见下方 InputToolbar),
          与 GitHub Copilot 一致:决定"这条消息怎么发"的东西,应当挨着输入框。 -->
     <Grid x:Name="TopBar" DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
-      <!-- 会话选择器铺满剩下的宽度(右侧四枚图标钮是定宽的):主机名越长越该给它地方,
-           而不是让它先被截断。选中项前面那颗点是连接状态,由 ItemTemplate 画。 -->
-      <ComboBox x:Name="SessionCombo" HorizontalAlignment="Stretch" MinWidth="110">
+      <ComboBox x:Name="SessionCombo" HorizontalAlignment="Left" HorizontalContentAlignment="Stretch"
+                MinWidth="70" MaxWidth="220" Margin="0,0,6,0">
         <ComboBox.ItemTemplate>
           <DataTemplate x:DataType="ui:SessionNavItem">
-            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <Grid ColumnDefinitions="6,*" ColumnSpacing="6" VerticalAlignment="Center">
               <Ellipse Width="6" Height="6" Fill="{Binding Dot}" VerticalAlignment="Center" />
-              <TextBlock Text="{Binding Text}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            </StackPanel>
+              <TextBlock Grid.Column="1" Text="{Binding Text}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </Grid>
           </DataTemplate>
         </ComboBox.ItemTemplate>
       </ComboBox>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
         <ToggleButton x:Name="HistoryToggle" Theme="{StaticResource AiChipToggleTheme}" Width="30" Padding="0">
           <Viewbox Width="13" Height="13">
             <Path Width="24" Height="24" Data="{DynamicResource Icon.history}"

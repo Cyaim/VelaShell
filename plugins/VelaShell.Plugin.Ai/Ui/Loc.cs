@@ -74,6 +74,8 @@ public sealed class Loc(string locale)
         ["ImageDesktopOnly"] = ["Image generation is currently available in the desktop chat panel only. Choose a text model for the IM bridge.", "作图目前仅支持桌面聊天面板，请为 IM 桥接选择文本模型。", "作圖目前僅支援桌面聊天面板，請為 IM 橋接選擇文字模型。", "画像生成は現在デスクトップチャットのみ対応しています。IM ブリッジにはテキストモデルを選択してください。", "이미지 생성은 현재 데스크톱 채팅에서만 지원합니다. IM 브리지에는 텍스트 모델을 선택하세요."],
         ["ClipboardImage"] = ["Clipboard image", "剪贴板图片", "剪貼簿圖片", "クリップボード画像", "클립보드 이미지"],
         ["GeneratedImage"] = ["Generated image", "生成的图片", "產生的圖片", "生成された画像", "생성된 이미지"],
+        ["CopyGeneratedImage"] = ["Copy image", "复制图片", "複製圖片", "画像をコピー", "이미지 복사"],
+        ["ImageClipboardUnavailable"] = ["The image clipboard is unavailable.", "图片剪贴板不可用。", "圖片剪貼簿無法使用。", "画像クリップボードを利用できません。", "이미지 클립보드를 사용할 수 없습니다."],
         ["SaveGeneratedImage"] = ["Save image…", "保存图片…", "儲存圖片…", "画像を保存…", "이미지 저장…"],
         ["GeneratedImageUnavailable"] = ["The generated image could not be loaded or saved. It may be missing, too large or in an unsupported format.", "无法加载或保存生成的图片，文件可能已丢失、过大或格式不受支持。", "無法載入或儲存產生的圖片，檔案可能已遺失、過大或格式不受支援。", "生成画像を読み込みまたは保存できません。ファイルが存在しない、大きすぎる、または非対応の形式です。", "생성된 이미지를 불러오거나 저장할 수 없습니다. 파일이 없거나 너무 크거나 지원하지 않는 형식일 수 있습니다."],
         ["ImageProbeSkipped"] = ["Image models are not health-checked to avoid generating a billable image. Send a drawing prompt to test this model.", "图片模型不做健康检查，以免探测时生成图片并计费。请发送绘图提示词来验证。", "圖片模型不做健康檢查，以免探測時產生圖片並計費。請傳送繪圖提示詞來驗證。", "課金対象の画像生成を避けるため、画像モデルの接続テストは行いません。描画プロンプトを送信して確認してください。", "이미지 생성 과금을 방지하기 위해 이미지 모델의 상태 검사를 건너뜁니다. 그리기 프롬프트를 보내 확인하세요."],
@@ -515,7 +517,7 @@ public sealed class Loc(string locale)
         ["McpConnecting"] = ["Connecting MCP servers…", "正在连接 MCP 服务器…", "正在連接 MCP 伺服器…", "MCP サーバーに接続中…", "MCP 서버 연결 중…"],
         ["ExplainPrompt"] = ["Explain the following terminal output. Point out any errors and suggest fixes:\n", "请解释以下终端输出,指出其中的错误并给出可能的解决办法:\n", "請解釋以下終端輸出,指出其中的錯誤並給出可能的解決辦法:\n", "以下のターミナル出力を説明し、エラーがあれば指摘して解決策を提案してください:\n", "다음 터미널 출력을 설명하고, 오류를 지적하고 해결 방법을 제안해 주세요:\n"],
         ["NoConnectedSession"] = ["No connected session.", "没有已连接的会话。", "沒有已連接的會話。", "接続中のセッションがありません。", "연결된 세션이 없습니다."],
-        ["CmdChat"] = ["AI: Open Chat (Tab)", "AI:打开聊天(标签页)", "AI:開啟聊天(標籤頁)", "AI:チャットを開く(タブ)", "AI: 채팅 열기(탭)"],
+        ["CmdChat"] = ["AI: Open Assistant", "AI:打开助手", "AI:開啟助手", "AI:アシスタントを開く", "AI: 도우미 열기"],
         ["CmdChatWindow"] = ["AI: Open Chat (Window)", "AI:打开聊天(窗口)", "AI:開啟聊天(視窗)", "AI:チャットを開く(ウィンドウ)", "AI: 채팅 열기(창)"],
         ["CmdExplain"] = ["AI: Explain Terminal Output", "AI:解释终端输出", "AI:解釋終端輸出", "AI:ターミナル出力を説明", "AI: 터미널 출력 설명"],
         // 回复头部的阶段芯片:辉光只说明"在动",这几个字说明"在干什么"

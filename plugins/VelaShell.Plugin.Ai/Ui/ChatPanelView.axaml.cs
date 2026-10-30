@@ -1181,12 +1181,8 @@ public partial class ChatPanelView : UserControl
             ? name
             : $"{s.Username}@{s.Host}";
 
-    /// <summary>记住用户拖分割条拖出来的侧栏宽度(百分比,宿主在拖动结束时通知一次)。</summary>
-    /// <remarks>
-    /// <b>必须改这份在内存里的 <c>_settings</c>,不能绕过面板直接往库里写。</b>
-    /// 面板持有整份设置,任何一次改动(换模式、改审批、勾工具、存接入)都是把这份整体覆盖回去 ——
-    /// 背着它写库的话,下一次这类操作就会拿旧的宽度把刚记下的值盖掉,表现就是"拖了不算数"。
-    /// </remarks>
+    /// <summary>保留旧版宽度配置的合并写入入口;AI 专属区域不调用它。</summary>
+    /// <remarks>更新面板持有的配置快照,避免随后的设置保存覆盖此值。</remarks>
     public void RememberPanelWidth(int percent)
     {
         if (_settings.PanelWidthPercent == percent)

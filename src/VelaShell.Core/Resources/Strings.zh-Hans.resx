@@ -10248,4 +10248,7 @@ Windows 填 exe 完整路径或命令名(如 notepad);Linux 填命令名(如 ged
   <data name="Relay_CacheFailed" xml:space="preserve">
     <value>无法访问本机传输缓存。请检查磁盘剩余空间及临时目录权限后重试。</value>
   </data>
+  <data name="AiRegion_Pin" xml:space="preserve"><value>固定 / 自动隐藏 AI 助手</value></data>
+  <data name="AiRegion_Collapse" xml:space="preserve"><value>折叠 AI 助手（保留对话）</value></data>
+  <data name="AiRegion_Hide" xml:space="preserve"><value>隐藏 AI 助手</value></data>
 </root>
