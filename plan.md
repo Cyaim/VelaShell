@@ -3164,3 +3164,25 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - `dotnet test tests\VelaShell.Tests\VelaShell.Tests.csproj -c Debug --no-restore --nologo -warnaserror --filter FullyQualifiedName~RemoteEditSessionManagerTests -v quiet`：构建及整组 17/17 通过；连续保存用例以 `--no-build --filter FullyQualifiedName~ConsecutiveSaves_AreEachUploaded` 独立进程重复 10 轮均通过。
 
 未在本机运行 Linux/macOS、完整解决方案或 Docker/Interop/发布验证；Ubuntu 的原始额外上传在本机基线单次运行未复现，跨平台结果需由新提交的 CI 确认。
+
+## 286. 2026-10-30 连接对话框：工作台变体与「先选类型 → 下一步」步骤
+
+**起因**：数据库插件（`velashell.sql`）把 MySQL / PostgreSQL / SQL Server / Oracle / SQLite 声明成同一个工作台的五个变体（`WorkspaceDescriptor.VariantKey` / `Variants`），但宿主一直没有读变体：切到 PostgreSQL 时端口仍是 3306，SQLite 照样要填端口和账号；方言下拉作为插件字段只能排在主机 / 端口 / 凭据之后，落在表单最底下。参照常见数据库客户端的连接类型网格，改成先选类型、再填表单。
+
+**变体读取**：
+
+- `PluginConnectionForm` 带上 `VariantKey` / `Variants`，`ForVariant` 按变体覆盖默认端口、主机 / 用户名 / 密码标签与能力位（`Features` 整体替换，照 SDK 语义）。端口只在当前值是某个变体或页签的默认值时跟随，按「算目标」处理，不先改写再还原；手填的端口不动；切到另一个插件页签时不沿用上一个页签的变体端口；编辑已存配置装载时不跟随。
+- 新增 `WorkspaceVariants.EffectiveFeatures` / `AllowsAnonymous`：配置里缺变体键时回落到字段默认值，与 launcher 的取值链一致。`MainWindowViewModel` 的匿名判定与隧道判定两处改走它，`NoCredentials` 视作匿名。
+
+**类型选择步骤**：
+
+- 出卡片的条件由宿主判定：`VariantKey` 指向的字段是 Choice、不隐藏、不可手输、至少两个候选。只在新建且类型尚未确认时进入卡片阶段；Redis / S3 / Telnet 等没有变体的连接类型行为不变。
+- 卡片阶段：分页条与表单收起，右侧按 Choices 顺序排磁贴（名字取 Choice 的 Label，图标暂用工作台图标），预选字段当前值。单击选中；双击或在卡片上按 Enter 选中并进入下一步；Space 只选中。页脚为 [取消][下一步]，取消即关闭对话框。
+- 表单阶段：顶部一行「类型 X」，变体下拉那一行不再显示；新建时页脚多一个 [上一步]，编辑时表头带「更换」。上一步 / 更换不清除任何已填值；只有新建且类型尚未确认（例如从别的协议切回来）时，下一步才强制按变体刷新一次端口。
+- 磁贴规格写进 `DESIGN.md` §5.2「Type tile」；5 个新文案键五份 resx 齐全；`manual.md` / `manual.en.md` §4.1 同步。
+
+**插件字段分页按页键**：内部模型 `PluginFormPage` 与字段的 `PageKey` 取代「`IsAdvanced` 二分」，页签条可以在「常规」与「高级」之间插入插件自定义页：页键优先于 `IsAdvanced`；未知页键回落默认位置；一页字段全不可见时页签收起，停在该页会落回「常规」；自定义页不做徽标、改动圆点与自动展开；没有自定义页时整组隐藏。本节两个 `From()` 都不填页，现有表单行为不变。数据来源是 velashell-plugin-sdk 的新契约 `WorkspaceDescriptor.Pages` / `ProtocolSettingField.Page` / `WorkspaceVariant.Icon`（可用版本待发版），SDK 发版后另开 PR 接上。
+
+**验证**：Windows Debug 下 `dotnet build VelaShell.slnx -c Debug --no-incremental --nologo -warnaserror` 0 警告、0 错误；`dotnet test tests/VelaShell.Tests -c Debug --no-build --nologo` 3229 通过 / 0 失败 / 19 跳过（改动前 3181 / 0 / 19）。新增 `ConnectionProfileTypePickerTests`、`ConnectionProfilePluginPagesTests`、`WorkspaceVariantCredentialTests`、`WorkspaceVariantsTests`，以及 `ConnectionProfileViewUiTests` 中的 headless 用例。端口跟随、装载不跟随、匿名判定、强制刷新条件、取消、卡片上 Enter 等关键判定都做过变异，均能使对应用例失败。
+
+**边界**：只在 headless 下渲染与截图，未在真实应用里操作过；未运行 Linux / macOS 与完整解决方案测试。五张卡片暂时共用工作台图标；「数据库 / SSL」等插件自定义页要等 SDK 发版后接入。
