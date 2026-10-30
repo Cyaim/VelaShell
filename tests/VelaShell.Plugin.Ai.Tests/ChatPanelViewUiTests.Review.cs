@@ -176,7 +176,7 @@ public sealed partial class ChatPanelViewUiTests
                 external = await externalStore.LoadAsync(); external.Providers[0].BaseUrl = target.BaseUrl;
                 await externalStore.SaveAsync(external); await store.ReloadIntoAsync(live);
                 target.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, target.Requests, "首请求已经发送,但不能给B槽重新授权旧历史,连探活都跳过");
                 Assert.IsEmpty(other.Requests);
                 Assert.IsNull(live.Providers[0].ActiveApiKeyId);
@@ -364,7 +364,7 @@ public sealed partial class ChatPanelViewUiTests
                 }
                 toolGate.Set();
                 target.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, context.FakeRemoteExec.Executed, "工具副作用只执行一次");
                 Assert.IsEmpty(backup.Requests, "工具已执行后禁止故障重放,连备份探活都不做");
                 Assert.AreEqual(change == "renew" ? 2 : 1, target.FormalRequests,
@@ -406,7 +406,7 @@ public sealed partial class ChatPanelViewUiTests
                 live.ActiveApiKeyId = null;
                 await store.SaveAsync(PanelSettings(panel));
                 target.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(3, target.Requests, "固定槽仍可完成原回合");
                 Assert.IsNull(live.ActiveApiKeyId, "ABA手选仍拥有选择权");
                 Assert.IsNull((await store.LoadAsync()).Providers[0].ActiveApiKeyId);
@@ -444,9 +444,9 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("private-history");
                 Assert.IsTrue(await WaitForAsync(() => candidate.Held.Task.IsCompleted));
                 await store.SetApiKeyAsync(second.Id, "changed-key");
-                if (cancel) Click(panel, "StopButton");
+                if (cancel) Click(panel, "SendButton");
                 candidate.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, candidate.Requests);
                 Assert.DoesNotContain("private-history", candidate.Requests[0].Body);
                 List<Border> errors = [.. Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants().OfType<Border>()
@@ -576,12 +576,12 @@ public sealed partial class ChatPanelViewUiTests
                     panel.SendExternal("private-history-" + i);
                     int completed = i + 1;
                     Assert.IsTrue(await WaitForAsync(() => Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == completed
-                        && !Find<Button>(panel, "StopButton").IsVisible));
+                        && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 }
                 armed = true;
                 panel.SendExternal("第五轮压缩必须在真正出境处再验");
                 Assert.IsTrue(await WaitForAsync(() => Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 5
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.IsTrue(changed, "已在装配复验后、实际摘要出境前同步换凭据");
                 if (change == "renew")
                 {

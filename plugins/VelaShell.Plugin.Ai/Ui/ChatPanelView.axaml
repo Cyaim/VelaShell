@@ -456,7 +456,7 @@
     <Style Selector="ListBox#ProviderList ListBoxItem">
       <Setter Property="Theme" Value="{StaticResource AiModelMenuItemTheme}" />
     </Style>
-    <Style Selector="Button#ModelButton:focus-visible, Button#AttachButton:focus-visible, Button#StopButton:focus-visible">
+    <Style Selector="Button#ModelButton:focus-visible, Button#AttachButton:focus-visible">
       <Setter Property="Background" Value="{DynamicResource VelaAccentDim}" />
     </Style>
     <Style Selector="Grid#InputStatusBar ComboBox">
@@ -828,7 +828,7 @@
         <Panel>
           <ae:TextEditor x:Name="InputBox"
                          WordWrap="True"
-                         MinHeight="66"
+                         MinHeight="82"
                          MaxHeight="220"
                          ShowLineNumbers="False"
                          HorizontalScrollBarVisibility="Disabled"
@@ -838,7 +838,7 @@
                      VerticalAlignment="Top" TextWrapping="Wrap" />
         </Panel>
 
-        <Grid x:Name="InputToolbar" Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="6,0,5,5">
+        <Grid x:Name="InputToolbar" Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto" Margin="6,0,5,5">
           <Button x:Name="AttachButton" Theme="{StaticResource AiGhostIconButtonTheme}" Margin="0,0,4,0">
             <Viewbox Width="13" Height="13">
               <Path Width="24" Height="24" Data="{StaticResource AiIcon.plus}"
@@ -904,19 +904,18 @@
             </Button>
             </Grid>
           <ComboBox x:Name="ModeCombo" Grid.Column="2" Width="76" MinWidth="0" Margin="4,0,0,0" />
-          <Button x:Name="StopButton" Grid.Column="3" Theme="{StaticResource AiGhostIconButtonTheme}"
-                  Width="22" Margin="4,0,0,0" Padding="0" IsVisible="False">
-            <Viewbox Width="12" Height="12">
-              <Path Width="24" Height="24" Data="{StaticResource AiIcon.square}"
-                    Stroke="{DynamicResource VelaError}" StrokeThickness="2" StrokeJoin="Round" />
-            </Viewbox>
-          </Button>
-          <Button x:Name="SendButton" Grid.Column="4" Theme="{DynamicResource VelaAccentPillButtonTheme}"
+          <Button x:Name="SendButton" Grid.Column="3" Theme="{DynamicResource VelaAccentPillButtonTheme}"
                   Width="22" MinWidth="0" Margin="4,0,0,0" Padding="0">
-            <Viewbox Width="15" Height="15">
-              <Path Width="24" Height="24" Data="{StaticResource AiIcon.arrow-up}"
-                    Stroke="{DynamicResource VelaAccent}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
-            </Viewbox>
+            <Panel>
+              <Viewbox x:Name="SendIcon" Width="15" Height="15">
+                <Path Width="24" Height="24" Data="{StaticResource AiIcon.arrow-up}"
+                      Stroke="{DynamicResource VelaAccent}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
+              </Viewbox>
+              <Viewbox x:Name="StopIcon" Width="12" Height="12" IsVisible="False">
+                <Path Width="24" Height="24" Data="{StaticResource AiIcon.square}"
+                      Stroke="{DynamicResource VelaError}" StrokeThickness="2" StrokeJoin="Round" />
+              </Viewbox>
+            </Panel>
           </Button>
         </Grid>
       </Grid>

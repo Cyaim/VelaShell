@@ -519,7 +519,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 Assert.IsEmpty(target.Requests, "请求配置已保存变化,旧轮不能重新授权后发送");
                 panel.SendExternal("按新能力重新发起");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible && target.Requests.Count == 1));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible && target.Requests.Count == 1));
                 Assert.Contains("\"stream\":true", target.Requests[0]);
                 Assert.DoesNotContain("reasoning_effort", target.Requests[0], "显式新轮按当前能力装配");
             }

@@ -150,9 +150,9 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.IsTrue(modeOrigin.X + modePicker.Bounds.Width <= sendOrigin.X);
                     Assert.AreEqual(20, Find<Grid>(panel, "InputStatusBar").Bounds.Height);
                     double actionHeight = Find<Button>(panel, "AttachButton").Bounds.Height;
-                    foreach (string action in new[] { "ModelButton", "ToolsButton", "ModeCombo", "SendButton", "StopButton" })
+                    foreach (string action in new[] { "ModelButton", "ToolsButton", "ModeCombo", "SendButton" })
                         Assert.AreEqual(actionHeight, Find<Control>(panel, action).Bounds.Height, action);
-                    foreach (string name in new[] { "AttachButton", "ModelButton", "ModelSummary", "ReasoningSummary", "SendButton", "StopButton", "ToolsButton", "ModeCombo", "ApprovalCombo" })
+                    foreach (string name in new[] { "AttachButton", "ModelButton", "ModelSummary", "ReasoningSummary", "SendButton", "ToolsButton", "ModeCombo", "ApprovalCombo" })
                     {
                         Control control = Find<Control>(panel, name);
                         if (!control.IsVisible) continue;
@@ -164,7 +164,7 @@ public sealed partial class ChatPanelViewUiTests
                     }
                 }
                 Button send = Find<Button>(panel, "SendButton");
-                Assert.AreEqual(new Loc("en")["Queue"], AutomationProperties.GetName(send));
+                Assert.AreEqual(new Loc("en")["Stop"], AutomationProperties.GetName(send));
                 Assert.IsEmpty(send.GetVisualDescendants().OfType<TextBlock>(), "发送按钮只显示向上箭头");
                 await ClickComposerControlAsync(window, Find<Button>(panel, "ModelButton"));
                 Assert.IsTrue(Find<Popup>(panel, "ModelPopup").IsOpen);

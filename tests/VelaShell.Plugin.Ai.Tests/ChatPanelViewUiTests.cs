@@ -103,12 +103,21 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsFalse(Find<DockPanel>(panel, "HistoryHost").IsVisible);
                 Assert.IsTrue(Find<ToggleButton>(panel, "HistoryToggle").IsEnabled, "时序能力可用时历史按钮应可点");
                 // 裸测试宿主里一个供应商都没配。这时中部摆的是空状态(图标 + 标题 + 说明 +
-                // 「添加模型接入」按钮 + 三条示例),而不是状态行里一句陈述 —— 第一次打开面板的人
+                // 「添加模型接入」按钮 + 起手示例),而不是状态行里一句陈述 —— 第一次打开面板的人
                 // 需要的是下一步动作。面板仍不自动弹窗:它可能是随宿主启动一起开的。
                 Assert.IsTrue(Find<ScrollViewer>(panel, "ChatScroll").IsVisible);
                 StackPanel empty = Find<StackPanel>(panel, "EmptyStateHost");
                 Assert.IsTrue(empty.IsVisible, "没配模型时中部要摆空状态");
                 Assert.IsNotEmpty(empty.Children.OfType<Button>().ToList(), "空状态得给一个可点的主按钮");
+                List<Border> examples = [.. empty.Children.OfType<Border>()];
+                Assert.HasCount(4, examples);
+                Border suspiciousPrograms = examples[3];
+                suspiciousPrograms.RaiseEvent(new PointerPressedEventArgs(suspiciousPrograms, new Pointer(0, PointerType.Mouse, true),
+                    suspiciousPrograms, default, 0, new PointerPointProperties(), KeyModifiers.None));
+                Assert.AreEqual(new Loc(context.Host.Locale)["Starter4"], Find<TextEditor>(panel, "InputBox").Text,
+                    "未配置模型时点击检查可疑程序应填入输入框");
+                Assert.IsTrue(empty.IsVisible, "未配置模型时不应发送提示或退出空状态");
+                Find<TextEditor>(panel, "InputBox").Text = "";
                 Assert.IsEmpty(Find<TextBlock>(panel, "StatusText").Text ?? "", "空状态接手之后,状态行不再重复说一遍");
                 // 审批下拉的三档:形状与颜色挂在数据项上,而这些颜色取自宿主令牌 ——
                 // 这个测试宿主一个 Vela 令牌都不给,正是"画笔解析不出来"的那种环境。
@@ -573,7 +582,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsNotNull(Find<ComboBox>(panel, "ApprovalCombo"));
 
                 TextEditor input = Find<TextEditor>(panel, "InputBox");
-                Assert.IsGreaterThanOrEqualTo(66, input.Bounds.Height,
+                Assert.IsGreaterThanOrEqualTo(82, input.Bounds.Height,
                     "输入框默认要有多行的余量,写长提示词不必先撑开");
             }
             finally
@@ -717,7 +726,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("late must never revive after detach");
                 await PumpAsync(3);
                 Assert.HasCount(1, stub.Requests);
-                Assert.IsFalse(Find<Button>(panel, "StopButton").IsVisible);
+                Assert.IsFalse(Find<Viewbox>(panel, "StopIcon").IsVisible);
                 var history = new ChatHistoryStore(context);
                 await history.InitAsync();
                 IReadOnlyList<ChatSessionSummary> sessions = await history.ListSessionsAsync();
@@ -979,10 +988,12 @@ public sealed partial class ChatPanelViewUiTests
     /// <summary>
     /// 空会话的起手提示长在<b>居中的空状态里</b>(本地文案,不请求模型),点一下就发出去。
     /// 输入框上方那排药丸只留给对话开始<b>之后</b>由模型给的后续提问 ——
-    /// 两处同时摆着同样三条只是重复(用户实测反馈)。
+    /// 两处同时摆着同样的起手示例只是重复(用户实测反馈)。
     /// </summary>
     [TestMethod]
-    public void EmptyState_OffersStarterPrompts_AndClickingOneSendsIt()
+    [DataRow(0)]
+    [DataRow(3)]
+    public void EmptyState_OffersStarterPrompts_AndClickingOneSendsIt(int exampleIndex)
     {
         OnUi(async () =>
         {
@@ -1011,9 +1022,13 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsFalse(Find<WrapPanel>(panel, "SuggestionBar").IsVisible,
                     "起手示例在空状态里了,输入框上方不该再重复一排");
                 List<Border> examples = [.. empty.Children.OfType<Border>()];
-                Assert.HasCount(3, examples);
+                Assert.HasCount(4, examples);
+                Assert.AreEqual(new Loc(context.Host.Locale)["Starter4"],
+                    examples[3].GetVisualDescendants().OfType<TextBlock>().Single().Text);
+                Assert.IsNotNull(examples[3].GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Single().Data,
+                    "可疑程序检查的 virus 图标在没有宿主图标资源时也应显示");
 
-                Border chip = examples[0];
+                Border chip = examples[exampleIndex];
                 string prompt = chip.GetVisualDescendants().OfType<TextBlock>().First().Text!;
                 chip.RaiseEvent(new PointerPressedEventArgs(chip, new Pointer(0, PointerType.Mouse, true),
                     chip, default, 0, new PointerPointProperties(), KeyModifiers.None));

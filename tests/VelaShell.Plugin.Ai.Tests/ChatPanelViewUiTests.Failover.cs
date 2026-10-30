@@ -41,19 +41,19 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("首发坏 Key,然后探活健康 Key");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 Assert.AreSequenceEqual(["Bearer key-a", "Bearer key-b", "Bearer key-b"], endpoint.Requests.Select(r => r.Auth).ToArray());
                 Assert.AreEqual(second, (await store.LoadAsync()).Providers[0].ActiveApiKeyId);
                 PanelHealth(panel).RecordKey(provider.Id, true);
                 panel.SendExternal("探活 B 不能吞掉下一轮应使用的 B");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 2));
                 Assert.AreEqual("Bearer key-b", endpoint.Requests[^1].Auth);
                 Assert.HasCount(4, endpoint.Requests, "下一轮只发一次正式请求,探活没有推进首发游标");
                 PanelHealth(panel).RecordKey(provider.Id, false);
                 panel.SendExternal("轮转绕过当前冷却的 A");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 3));
                 Assert.HasCount(5, endpoint.Requests);
                 Assert.AreEqual("Bearer key-b", endpoint.Requests[^1].Auth);
@@ -89,7 +89,7 @@ public sealed partial class ChatPanelViewUiTests
                 live.Providers[0].BalanceApiKeys = !initiallyBalanced;
                 await store.SaveAsync(live);
                 endpoint.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.AreEqual(initiallyBalanced ? null : second, (await store.LoadAsync()).Providers[0].ActiveApiKeyId,
                     "本轮是否粘住取决于开跑快照,不是探活返回时的新开关");
             }
@@ -128,7 +128,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("B 探活的模型故障不能误诊整个 Key 池");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 Assert.AreSequenceEqual(probeStatus == 200
                     ? ["Bearer key-a", "Bearer key-b", "Bearer key-b"] : ["Bearer key-a", "Bearer key-b"],
@@ -189,9 +189,9 @@ public sealed partial class ChatPanelViewUiTests
                         renderer.MarkdownBuilder.ToString().Contains("已经回答", StringComparison.Ordinal))),
                         "必须由真实 UI 消费到正文,不能把服务端 Flush 当成 SDK 已解析");
                 }
-                Assert.IsTrue(Find<Button>(panel, "StopButton").IsVisible, "首事件之后流仍挂在显式闸门上");
+                Assert.IsTrue(Find<Viewbox>(panel, "StopIcon").IsVisible, "首事件之后流仍挂在显式闸门上");
                 endpoint.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 Assert.HasCount(1, endpoint.Requests);
                 Assert.AreEqual("Bearer key-a", endpoint.Authorizations[0]);
@@ -230,7 +230,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("兄弟模型照常探");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 ProviderHealth health = PanelHealth(panel);
                 int siblingRequests = endpoint.Requests.Count(r => r.Body.Contains("\"model\":\"m-b\"", StringComparison.Ordinal));
@@ -275,7 +275,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("同模型先换 Key");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 string[] expected = status == 429
                     ? ["Bearer key-a", "Bearer key-a", "Bearer key-b", "Bearer key-b"]
@@ -295,7 +295,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.Contains("Conversation total: in 22 / out 10", ToolTip.GetTip(Find<TextBlock>(panel, "UsageText")) as string ?? "",
                     "探活与正式回答的实际用量各入账一次");
                 panel.SendExternal("下一轮粘住健康 Key");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 2));
                 Assert.HasCount(expected.Length + 1, endpoint.Requests);
                 Assert.AreEqual("Bearer key-b", endpoint.Requests[^1].Auth);
@@ -362,7 +362,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("全池失败才换模型");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 Assert.AreSequenceEqual(["Bearer key-a", "Bearer key-b", "Bearer key-c", "Bearer key-d", "Bearer key-d"], endpoint.Requests.Select(r => r.Auth).ToArray());
                 ProviderHealth health = PanelHealth(panel);
@@ -409,7 +409,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("错误分类不能因 Key 池扩大请求");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 Assert.IsTrue(endpoint.Requests.All(r => r.Auth == "Bearer key-a"));
                 Assert.IsFalse(PanelHealth(panel).IsKeyCooling(first.Id));
@@ -447,7 +447,7 @@ public sealed partial class ChatPanelViewUiTests
                 {
                     panel.SendExternal("均摊第" + turn + "轮");
                     int count = turn;
-                    Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                    Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                         && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == count));
                 }
                 (string? Auth, string Body)[] formal = [.. endpoint.Requests.Where(r => !r.Body.Contains("Reply with exactly:", StringComparison.Ordinal))];
@@ -458,7 +458,7 @@ public sealed partial class ChatPanelViewUiTests
                 live.Providers[0].BalanceApiKeys = false;
                 await store.SaveAsync(live); // 不清冷却,下一轮才读取新开关。
                 panel.SendExternal("关闭均摊后回到原 active");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 4));
                 Assert.AreEqual("Bearer key-b", endpoint.Requests[^1].Auth);
             }
@@ -501,11 +501,11 @@ public sealed partial class ChatPanelViewUiTests
                 }
                 else
                 {
-                    Click(panel, "StopButton");
+                    Click(panel, "SendButton");
                 }
 
                 endpoint.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(2, endpoint.Requests, "已试的槽改值/删除,或用户取消后绝不隐式改用另一槽发送历史");
                 Assert.IsNull((await store.LoadAsync()).Providers[0].ActiveApiKeyId);
                 Assert.IsFalse(PanelHealth(panel).IsCooling(provider.Models[0].Id), "配置失效/取消不是模型失败证据");
@@ -538,7 +538,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("独立/跨源凭据不能借用其它 Key");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                     && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 Assert.HasCount(1, endpoint.Requests);
                 // 跨源覆盖又没自带 Key:供应商的 Key 一把都不跟去(主槽也不借),请求不带 Key
@@ -642,7 +642,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual("↑11 ↓5", usage.Text, "探活只能累计，不能充当正文的上一轮上下文");
                 Assert.Contains("Conversation total: in 11 / out 5", ToolTip.GetTip(usage) as string ?? "");
                 storage.Release.TrySetResult();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(2, healthy.Requests, "一次探活与一次正式流");
                 Assert.Contains("11/100", usage.Text ?? "", "占窗只取正式回复的输入");
                 Assert.Contains("Conversation total: in 22 / out 10", ToolTip.GetTip(usage) as string ?? "",
@@ -687,7 +687,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 panel.SendExternal("失败探活的用量不能丢");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.AreEqual(disconnect ? 1 : 2, empty?.Requests.Count ?? truncated!.Requests, "空探活补试一次,断流不额外补试,均不发送正式流");
                 Assert.HasCount(2, healthy.Requests, "下一站一次探活、一次正式回复");
                 TextBlock usage = Find<TextBlock>(panel, "UsageText");
@@ -731,11 +731,11 @@ public sealed partial class ChatPanelViewUiTests
                 if (reset)
                 {
                     Click(panel, "NewChatButton");
-                    Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible),
+                    Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible),
                         "先让旧探活的取消收尾，避免把新消息排进旧轮次");
                     Find<ListBox>(panel, "ProviderList").SelectedIndex = 1;
                     panel.SendExternal("新会话自己的用量");
-                    Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
+                    Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible
                         && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
                 }
                 else
@@ -745,7 +745,7 @@ public sealed partial class ChatPanelViewUiTests
 
                 healthy.Release();
                 Assert.IsTrue(await WaitForAsync(() => reset
-                    ? !Find<Button>(panel, "StopButton").IsVisible
+                    ? !Find<Viewbox>(panel, "StopIcon").IsVisible
                     : Footers(original).Count == 1));
                 await PumpAsync();
                 TextBlock usage = Find<TextBlock>(panel, "UsageText");
@@ -1012,7 +1012,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => heldB.Requests.Count == 2 && models.SelectedIndex == 1));
                 Assert.Contains("\"stream\":true", heldB.Requests[0]);
                 Assert.Contains("\"stream\":true", heldB.Requests[1]);
-                Assert.IsTrue(Find<Button>(panel, "StopButton").IsVisible, "B 已探通，正式流在无正文 role 帧后挂起");
+                Assert.IsTrue(Find<Viewbox>(panel, "StopIcon").IsVisible, "B 已探通，正式流在无正文 role 帧后挂起");
 
                 Click(panel, "SettingsButton");
                 await PumpAsync(5);
@@ -1032,7 +1032,7 @@ public sealed partial class ChatPanelViewUiTests
                 await SaveAddressAsync(2, broken.BaseUrl); // B 变坏；真实保存通知清掉旧健康缓存
                 sessions.SelectedIndex = 1;
                 panel.SendExternal("对话1由C回答");
-                Assert.IsTrue(await WaitForAsync(() => models.SelectedIndex == 2 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => models.SelectedIndex == 2 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(2, healthyC.Requests, "对话1确实探活C并由C正式回答");
                 Assert.AreEqual("回答", AnswerRenderers(Find<StackPanel>(panel, "MessagesPanel")).Single().MarkdownBuilder.ToString());
 
@@ -1040,14 +1040,14 @@ public sealed partial class ChatPanelViewUiTests
                 await SaveAddressAsync(4, broken.BaseUrl); // C 变坏；B 重新健康且清掉失败冷却
                 sessions.SelectedIndex = 2;
                 panel.SendExternal("对话2由B回答");
-                Assert.IsTrue(await WaitForAsync(() => models.SelectedIndex == 1 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => models.SelectedIndex == 1 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(2, healthyB.Requests, "对话2确实探活B并由B正式回答");
                 Assert.AreEqual("回答", AnswerRenderers(Find<StackPanel>(panel, "MessagesPanel")).Single().MarkdownBuilder.ToString());
 
                 sessions.SelectedIndex = 0;
-                Assert.IsTrue(Find<Button>(panel, "StopButton").IsVisible, "旧对话0仍在原B端点挂起");
-                Click(panel, "StopButton");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(Find<Viewbox>(panel, "StopIcon").IsVisible, "旧对话0仍在原B端点挂起");
+                Click(panel, "SendButton");
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.AreEqual(b.Models[0].Id, (await store.LoadAsync()).ActiveModelId,
                     "较新的自动B→C→B拥有选择，旧A→B取消不得回滚成A");
                 Assert.AreEqual(1, models.SelectedIndex);
@@ -1200,7 +1200,7 @@ public sealed partial class ChatPanelViewUiTests
 
                 storage.TargetModelId = a.Models[0].Id;
                 sessions.SelectedIndex = 1;
-                Click(panel, "StopButton");
+                Click(panel, "SendButton");
                 sessions.SelectedIndex = 0;
                 Assert.IsTrue(await WaitForAsync(() => storage.Started.Task.IsCompleted), "取消后的回滚保存已挂住");
                 Assert.AreEqual(0, models.SelectedIndex, "回滚保存尚未完成也须已显示原站 A");
@@ -1456,7 +1456,7 @@ public sealed partial class ChatPanelViewUiTests
 
                 oldTarget.Release();
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
-                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible),
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Viewbox>(panel, "StopIcon").IsVisible),
                     "已选槽改值后旧轮次安全结算,不能隐式重新选择并重放历史");
                 Assert.AreEqual("Bearer old-key", oldTarget.Authorizations[0], "旧探活仅带原先的 Key");
                 Assert.HasCount(1, oldTarget.Requests, "旧端点只收到固定旧 Key 的探活,不再发摘要或正式历史");
@@ -1521,7 +1521,7 @@ public sealed partial class ChatPanelViewUiTests
 
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1
-                    && !Find<Button>(panel, "StopButton").IsVisible), "能力保存后旧回合应安全结束,不得重探新配置");
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible), "能力保存后旧回合应安全结束,不得重探新配置");
                 Assert.HasCount(1, target.Requests, "旧回合只允许已经发出的 High 探活");
                 Assert.Contains("reasoning_effort", target.Requests[0], "原先探活须按开跑时的 High");
                 Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
@@ -1530,7 +1530,7 @@ public sealed partial class ChatPanelViewUiTests
                 Find<ComboBox>(panel, "ReasoningCombo").SelectedIndex = (int)ReasoningLevel.High;
                 panel.SendExternal("新回合使用已保存的无思考能力配置");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 2
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(3, target.Requests, "新用户回合才能按新能力探活并正式回答");
                 Assert.DoesNotContain("reasoning_effort", target.Requests[1]);
                 Assert.DoesNotContain("reasoning_effort", target.Requests[2]);
@@ -1596,7 +1596,7 @@ public sealed partial class ChatPanelViewUiTests
                 target.Release();
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1
-                    && !Find<Button>(panel, "StopButton").IsVisible), "能力保存后旧回合不获准重探或发送");
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible), "能力保存后旧回合不获准重探或发送");
                 Assert.HasCount(1, target.Requests, "旧回合只保留原先无 High 的探活");
                 Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                 Assert.AreEqual(first.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
@@ -1604,7 +1604,7 @@ public sealed partial class ChatPanelViewUiTests
                 Find<ComboBox>(panel, "ReasoningCombo").SelectedIndex = (int)ReasoningLevel.High;
                 panel.SendExternal("新回合使用已保存的思考能力");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 2
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(3, target.Requests, "新用户回合才发送新能力的 High 探活与正式流");
                 Assert.Contains("reasoning_effort", target.Requests[1]);
                 Assert.Contains("reasoning_effort", target.Requests[2]);
@@ -1670,14 +1670,14 @@ public sealed partial class ChatPanelViewUiTests
                 target.Release();
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1
-                    && !Find<Button>(panel, "StopButton").IsVisible), "型号保存后旧回合应拒绝新配置并安全结束");
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible), "型号保存后旧回合应拒绝新配置并安全结束");
                 Assert.HasCount(1, target.Requests, "旧回合只允许已发出的旧型号探活,不得发新型号探活或历史");
                 Assert.Contains(card => card.Classes.Contains("errorCard"), messages.GetVisualDescendants().OfType<Border>());
                 Assert.AreEqual(first.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
 
                 panel.SendExternal("新用户回合请用已保存的新型号回答");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 2
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(3, target.Requests, "新回合先探活新型号,再发正式请求");
                 Assert.Contains("\"model\":\"new-model\"", target.Requests[1]);
                 Assert.Contains("\"model\":\"new-model\"", target.Requests[2]);
@@ -1742,7 +1742,7 @@ public sealed partial class ChatPanelViewUiTests
                 oldTarget.Release();
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1
-                    && !Find<Button>(panel, "StopButton").IsVisible), "连续编辑后旧回合应安全结束,不能再等新站探活");
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible), "连续编辑后旧回合应安全结束,不能再等新站探活");
                 Assert.HasCount(1, oldTarget.Requests, "旧站仅收到保存前已发出的探活");
                 Assert.IsEmpty(secondTarget.Requests, "第一次地址保存也不得授权旧回合重探第二站");
                 Assert.IsEmpty(thirdTarget.Requests, "第二次地址保存不得授权旧回合向第三站发探活或历史");
@@ -1751,7 +1751,7 @@ public sealed partial class ChatPanelViewUiTests
 
                 panel.SendExternal("新用户回合使用最终保存的第三站");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 2
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, oldTarget.Requests);
                 Assert.IsEmpty(secondTarget.Requests, "后续新回合也不应使用已经被覆盖的中间地址");
                 Assert.HasCount(2, thirdTarget.Requests, "新回合才可在最终地址探活并正式回答");
@@ -1819,7 +1819,7 @@ public sealed partial class ChatPanelViewUiTests
                 oldTarget.Release();
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1
-                    && !Find<Button>(panel, "StopButton").IsVisible), "令牌更新后旧回合必须完成或安全失败,不能等未经授权的新端点");
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible), "令牌更新后旧回合必须完成或安全失败,不能等未经授权的新端点");
                 Assert.AreEqual("Bearer old-token", oldTarget.Authorizations[0]);
                 Assert.IsEmpty(newTarget.Requests, "相同账号身份也不能授权旧回合向新来源发送探活、摘要或历史");
                 if (moveEndpoint)
@@ -1830,7 +1830,7 @@ public sealed partial class ChatPanelViewUiTests
 
                     panel.SendExternal("新用户回合使用更新后的订阅端点");
                     Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 2
-                        && !Find<Button>(panel, "StopButton").IsVisible));
+                        && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                     Assert.HasCount(1, oldTarget.Requests, "新回合不能把新令牌发回旧端点");
                     Assert.HasCount(2, newTarget.Requests, "新用户回合才在新的令牌端点探活并正式回答");
                     Assert.AreSequenceEqual(["Bearer new-token", "Bearer new-token"], newTarget.Authorizations);
@@ -1996,7 +1996,7 @@ public sealed partial class ChatPanelViewUiTests
 
                 stub.Release();
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count >= 5
-                    && !Find<Button>(panel, "StopButton").IsVisible),
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible),
                     "摘要后应结束本轮:同端点续期继续发送,配置变更或令牌移到不可信来源则安全拒绝");
                 Assert.HasCount(summaryIndex + 1 + (change is "moved" or "config" or "model" ? 0 : 1), stub.Requests,
                     "目标变更后不能把新凭据发到旧站");
@@ -2015,7 +2015,7 @@ public sealed partial class ChatPanelViewUiTests
                 {
                     panel.SendExternal("新用户回合使用订阅的新端点");
                     Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count >= 6
-                        && !Find<Button>(panel, "StopButton").IsVisible));
+                        && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                     Assert.HasCount(summaryIndex + 1, stub.Requests, "新的用户回合不能带新令牌回到旧端点");
                     Assert.Contains(body => body.Contains("\"stream\":true", StringComparison.Ordinal), newTarget.Requests,
                         "新用户回合才可向新端点发送正式消息");
@@ -2108,7 +2108,7 @@ public sealed partial class ChatPanelViewUiTests
                 summaryGate.Set();
 
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count >= 5
-                    && !Find<Button>(panel, "StopButton").IsVisible), "摘要后同端点续期应答完,不可信来源变更应安全拒绝");
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible), "摘要后同端点续期应答完,不可信来源变更应安全拒绝");
                 Assert.AreEqual("Bearer old", oldTarget.Authorizations[5]);
                 Assert.DoesNotContain("\"stream\":true", oldTarget.Requests[5]);
                 Assert.IsEmpty(renewedTarget.Requests, "摘要期间的同账号令牌地址移动不能授权旧回合向新来源探活或发送历史");
@@ -2123,7 +2123,7 @@ public sealed partial class ChatPanelViewUiTests
 
                     panel.SendExternal("新回合");
                     Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count >= 6
-                        && !Find<Button>(panel, "StopButton").IsVisible));
+                        && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                     Assert.HasCount(6, oldTarget.Requests, "新回合也不能把续期令牌带回旧站");
                     Assert.AreEqual(2, renewedTarget.Requests.Count(body => body.Contains("\"stream\":true", StringComparison.Ordinal)),
                         "新用户回合在新端点先探活、后真实回答");
@@ -2208,7 +2208,7 @@ public sealed partial class ChatPanelViewUiTests
                     panel.SendExternal($"历史第{turn}条问题");
                     int finished = turn;
                     Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count >= finished
-                        && !Find<Button>(panel, "StopButton").IsVisible));
+                        && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 }
                 Find<ListBox>(panel, "ProviderList").SelectedIndex = 0;
                 if (mcpWait) Find<ComboBox>(panel, "ModeCombo").SelectedIndex = (int)ChatMode.Agent;
@@ -2258,7 +2258,7 @@ public sealed partial class ChatPanelViewUiTests
                 oldTarget.Release();
 
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count >= 5
-                    && !Find<Button>(panel, "StopButton").IsVisible, 1200));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible, 1200));
                 Assert.HasCount(beforeChange, oldTarget.Requests, "B 旧客户端不再收到摘要或正式正文,也不得原地重探新 Key");
                 Assert.IsTrue(oldTarget.Authorizations.All(value => value == "Bearer old-key"));
                 Assert.IsEmpty(newTarget.Requests, "保存后未经探活的新地址和 Key 绝不接收本轮历史或正式正文");
@@ -3077,11 +3077,11 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("请回答");
                 Assert.IsTrue(await WaitForAsync(() => candidate.Requests.Count == 1));
                 Assert.AreEqual(loc.F("FailoverProbing", second.Models[0].DisplayName), Find<TextBlock>(panel, "StatusText").Text);
-                Assert.IsTrue(Find<Button>(panel, "StopButton").IsVisible);
-                Assert.IsTrue(Find<Button>(panel, "StopButton").IsEnabled);
+                Assert.IsTrue(Find<Viewbox>(panel, "StopIcon").IsVisible);
+                Assert.IsTrue(Find<Button>(panel, "SendButton").IsEnabled);
                 Assert.Contains("Reply with exactly:", candidate.Requests[0], "候选挂起的是探活而非正式回答");
-                Click(panel, "StopButton");
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Click(panel, "SendButton");
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 candidate.Release();
                 await PumpAsync(10);
                 Assert.HasCount(1, candidate.Requests, "停止后迟到的探活不得启动正式请求");
@@ -3129,7 +3129,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("请回答");
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.IsEmpty(foreign.Requests, "内置 OAuth Key 不得发往异站，连探活也不许发");
                 Assert.IsEmpty(foreign.Authorizations);
                 if (useBackup)
@@ -3187,7 +3187,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("请回答");
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(3, empty.Requests, "首站正式空白回复只允许原地重试两次");
                 Assert.HasCount(2, backup.Requests, "备用一次探活一次正式回复");
                 Assert.AreEqual(second.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
@@ -3232,7 +3232,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("请回答");
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0
-                    && !Find<Button>(panel, "StopButton").IsVisible));
+                    && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(3, empty.Requests, "工具循环内的空白步骤同样最多原地补试两次");
                 Assert.AreEqual(empty.Requests[0], empty.Requests[1], "纯空白不是已确认正文,补试必须原样重发");
                 Assert.AreEqual(empty.Requests[0], empty.Requests[2], "纯空白不是已确认正文,补试必须原样重发");
@@ -3284,11 +3284,11 @@ public sealed partial class ChatPanelViewUiTests
             {
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
                 panel.SendExternal("先建立真实历史上下文");
-                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.Contains("50/100", Find<TextBlock>(panel, "UsageText").Text ?? "");
                 Find<ListBox>(panel, "ProviderList").SelectedIndex = 1;
                 panel.SendExternal("空流失败后备用不报告用量");
-                Assert.IsTrue(await WaitForAsync(() => backup.Requests.Count == 2 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => backup.Requests.Count == 2 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(3, failed.Requests, "失败元数据流有限重试两次");
                 Assert.AreEqual("回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
                 TextBlock usage = Find<TextBlock>(panel, "UsageText");
@@ -3364,7 +3364,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 panel.SendExternal("请回答");
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
-                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, endpoint.Requests);
                 Assert.IsEmpty(backup.Requests, "不换站");
                 Assert.AreEqual("半截回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
@@ -3406,7 +3406,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 panel.SendExternal("看看有哪些会话");
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
-                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(3, endpoint.Requests, "工具一次、空答一次、补一句「请继续」再一次");
                 Assert.Contains(RecoveringChatClient.ContinueAfterTools, endpoint.Requests[2]);
                 Assert.Contains(t => t.Name == "NoticeText" && t.Text == new Loc("en")["NoticeEmptyAfterTools"],
@@ -3444,7 +3444,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual(new Loc("en").F("RetryingEmptyReply", 1), status.Text, "端点答了空话,不能说成连接失败");
                 endpoint.Release();
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
-                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.AreEqual("回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
             }
             finally { endpoint.Release(); panel.Detach(); window.Close(); }
@@ -3525,12 +3525,12 @@ public sealed partial class ChatPanelViewUiTests
                 endpoint.Release();
                 Assert.IsTrue(await WaitForAsync(() => toolStarted.Task.IsCompleted), "补试的这一步答出了工具调用");
                 await PumpAsync(5);
-                Assert.IsTrue(Find<Button>(panel, "StopButton").IsVisible, "前提:整轮仍在跑");
+                Assert.IsTrue(Find<Viewbox>(panel, "StopIcon").IsVisible, "前提:整轮仍在跑");
                 Assert.AreEqual("", status.Text ?? "", "补试的这一步答上即撤掉重试提示,不能挂到整轮结束");
 
                 toolGate.Set();
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
-                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count > 0 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(3, endpoint.Requests);
                 Assert.HasCount(1, context.FakeRemoteExec.Executed);
                 Assert.AreEqual("回答", AnswerRenderers(messages).Last().MarkdownBuilder.ToString());
@@ -3687,7 +3687,7 @@ public sealed partial class ChatPanelViewUiTests
                 ProviderHealth health = PanelHealth(panel);
                 health.Record(provider.Models[0].Id, false);
                 panel.SendExternal("hi");
-                Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count >= 1 && !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => endpoint.Requests.Count >= 1 && !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.IsTrue(health.IsCooling(provider.Models[0].Id), "服务端报错的一轮不能记成成功、解冻先前的冷却");
                 Assert.IsTrue(await WaitForAsync(() => Find<StackPanel>(panel, "MessagesPanel").GetVisualDescendants()
                     .OfType<TextBlock>().Any(t => t.Text?.Contains("upstream exploded", StringComparison.Ordinal) == true)),
@@ -3841,9 +3841,9 @@ public sealed partial class ChatPanelViewUiTests
                 FindIn<TextBox>(editor, "ProviderBaseUrlBox").Text = moved.BaseUrl;
                 RaiseClick(FindIn<Button>(editor, "SaveButton"));
                 Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == "Saved."));
-                if (cancel) Click(panel, "StopButton");
+                if (cancel) Click(panel, "SendButton");
                 original.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, original.Requests, "开口后断流或取消都不可原地重试");
                 Assert.AreEqual("Bearer old-key", original.Authorizations.Single());
                 Assert.IsEmpty(moved.Requests, "新地址和 Key 不得接收旧轮次的重放");
@@ -3907,7 +3907,7 @@ public sealed partial class ChatPanelViewUiTests
                 RaiseClick(FindIn<Button>(editor, "ConfirmAcceptButton"));
                 Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(editor, "StatusText").Text == new Loc("en")["SetupSavedOtherKeysCleared"]));
                 original.Release();
-                Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
+                Assert.IsTrue(await WaitForAsync(() => !Find<Viewbox>(panel, "StopIcon").IsVisible));
                 Assert.HasCount(1, context.FakeRemoteExec.Executed, "配置变化和可切换鉴权失败不得重放已执行工具");
                 Assert.AreEqual(2, original.FormalRequests, "工具流与工具结果续流各一次,不能换另一把 Key 重放");
                 Assert.IsEmpty(moved.Requests, "已产生工具副作用的旧轮次不得发送给新配置");
