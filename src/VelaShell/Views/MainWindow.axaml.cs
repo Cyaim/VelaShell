@@ -201,8 +201,12 @@ public partial class MainWindow : Window
         {
             HookFileBrowserVisibility();
             HookSidebarCollapsed();
+            RestoreAiRegion();
+            UpdateAiRegionSize();
             ApplyKeymap(_keymapService?.Current ?? ShortcutKeymap.Default);
         };
+        ContentAreaGrid.SizeChanged += (_, _) => UpdateAiRegionSize();
+        SidebarHost.SizeChanged += (_, _) => UpdateAiRegionSize();
         // 全局键位按当前键位表登记(设置 → 快捷键可改键、解绑),设置保存后整表重建。
         _keymapService = ShortcutKeymapService.Resolve();
         if (_keymapService is { } keymapService)
@@ -240,7 +244,25 @@ public partial class MainWindow : Window
         ArgumentNullException.ThrowIfNull(settings);
         _settings = settings;
         ApplyWindowAppearance(settings);
+        RestoreAiRegion();
         _startupAppearanceApplied = true;
+    }
+
+    private void RestoreAiRegion()
+    {
+        if (DataContext is MainWindowViewModel vm && _settings is { } settings)
+            vm.AiAssistant.Restore(settings.Appearance.AiPanelWidth, settings.Appearance.AiPanelPinned);
+    }
+
+    private void UpdateAiRegionSize()
+    {
+        if (DataContext is MainWindowViewModel vm)
+        {
+            double width = ContentAreaGrid.Bounds.Width;
+            // 固定时保留主区 400px 和两条 5px 分隔;浮层只扣除边条与抓取区。
+            vm.AiAssistant.SetAvailableWidth(width - SidebarHost.Bounds.Width - 410,
+                Math.Max(0, width - AiAssistantRegionViewModel.RailWidth - 5));
+        }
     }
 
     // ---- 原生窗口效果 ----------------------------------------------------------
@@ -611,6 +633,10 @@ public partial class MainWindow : Window
                 if (appearanceChanged)
                 {
                     ApplyWindowAppearance(loadedSettings);
+                }
+                if (!_startupAppearanceApplied)
+                {
+                    RestoreAiRegion();
                 }
                 // 键位表的服务可能早于设置载入就建好了(那时只能给出厂键位),这里补一次。
                 _keymapService?.Update(_settings.Shortcuts);
@@ -1099,7 +1125,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// 退出时的状态记忆:窗口位置/尺寸/最大化(启动时窗口状态 = 记住上次)与
-    /// 已连接会话的配置 id(恢复会话)。同步等待,本地写入很快。
+    /// 已连接会话的配置 id(恢复会话),以及独立记忆的 AI 宽度与固定偏好。同步等待,本地写入很快。
     /// </summary>
     private void PersistWindowBounds(AppSettings? settings)
     {
@@ -1120,12 +1146,13 @@ public partial class MainWindow : Window
         }
         bool rememberWindow = settings.Appearance.StartupWindowState == "remember";
         bool rememberSessions = settings.General.RestoreSessionsOnStartup;
-        if (!rememberWindow && !rememberSessions)
-        {
-            return;
-        }
         try
         {
+            if (DataContext is MainWindowViewModel aiViewModel)
+            {
+                settings.Appearance.AiPanelWidth = aiViewModel.AiAssistant.PreferredWidth;
+                settings.Appearance.AiPanelPinned = aiViewModel.AiAssistant.IsPinned;
+            }
             if (rememberWindow)
             {
                 _placement.SaveTo(settings.Appearance);

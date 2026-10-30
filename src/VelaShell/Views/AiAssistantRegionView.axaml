@@ -1,0 +1,65 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:VelaShell.ViewModels"
+             xmlns:pc="using:VelaShell.Controls.Controls"
+             xmlns:loc="using:VelaShell.Localization"
+             x:Class="VelaShell.Views.AiAssistantRegionView"
+             x:DataType="vm:AiAssistantRegionViewModel"
+             Width="{Binding DisplayWidth}" IsVisible="{Binding IsVisible}">
+  <UserControl.Styles>
+    <Style Selector="ToggleButton#PinButton:checked /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource VelaBgHover}" />
+    </Style>
+    <Style Selector="ToggleButton#PinButton pc|LucideIcon">
+      <Setter Property="Foreground" Value="{DynamicResource VelaTextMuted}" />
+    </Style>
+    <Style Selector="ToggleButton#PinButton:checked pc|LucideIcon">
+      <Setter Property="Foreground" Value="{DynamicResource VelaAccent}" />
+    </Style>
+  </UserControl.Styles>
+  <Grid ColumnDefinitions="Auto,Auto">
+    <Grid IsVisible="{Binding ShowPane}" ColumnDefinitions="5,Auto">
+      <Border x:Name="ResizeHandle" Background="Transparent" Cursor="SizeWestEast"
+              PointerPressed="ResizePressed" PointerMoved="ResizeMoved" PointerReleased="ResizeReleased" PointerCaptureLost="ResizeCaptureLost">
+        <Border Width="1" HorizontalAlignment="Center" Background="{DynamicResource VelaBorderPrimary}" />
+      </Border>
+      <Border Grid.Column="1" Width="{Binding PaneWidth}" Background="{DynamicResource VelaBgSidebar}"
+              BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="28,*">
+          <Grid ColumnDefinitions="*,Auto" Background="{DynamicResource VelaBgSidebar}">
+            <Grid ColumnDefinitions="14,*" ColumnSpacing="6" Margin="10,0,4,0">
+              <pc:LucideIcon x:Name="TitleIcon" Width="14" Height="14" VerticalAlignment="Center"
+                             Data="{DynamicResource Icon.sparkles}" Foreground="{DynamicResource VelaAccent}" />
+              <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center"
+                         FontSize="12" Foreground="{DynamicResource VelaTextPrimary}" TextTrimming="CharacterEllipsis" />
+            </Grid>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+              <ToggleButton x:Name="PinButton" Theme="{DynamicResource VelaTitleActionButtonTheme}"
+                            IsChecked="{Binding IsPinned, Mode=OneWay}"
+                            ToolTip.Tip="{loc:Localize AiRegion_Pin}" AutomationProperties.Name="{loc:Localize AiRegion_Pin}" Click="PinClicked">
+                <pc:LucideIcon Width="12" Height="12" Data="{DynamicResource Icon.pin}" />
+              </ToggleButton>
+              <Button x:Name="CollapseButton" Theme="{DynamicResource VelaTitleActionButtonTheme}"
+                      ToolTip.Tip="{loc:Localize AiRegion_Collapse}" AutomationProperties.Name="{loc:Localize AiRegion_Collapse}" Click="CollapseClicked">
+                <pc:LucideIcon Width="12" Height="12" Data="{DynamicResource Icon.chevron-right}" Foreground="{DynamicResource VelaTextMuted}" />
+              </Button>
+              <Button x:Name="HideButton" Theme="{DynamicResource VelaTitleActionButtonTheme}"
+                      ToolTip.Tip="{loc:Localize AiRegion_Hide}" AutomationProperties.Name="{loc:Localize AiRegion_Hide}" Click="HideClicked">
+                <pc:LucideIcon Width="12" Height="12" Data="{DynamicResource Icon.x}" Foreground="{DynamicResource VelaTextMuted}" />
+              </Button>
+            </StackPanel>
+          </Grid>
+          <ContentControl x:Name="PluginContent" Grid.Row="1" Content="{Binding Content}" />
+        </Grid>
+      </Border>
+    </Grid>
+    <Border Grid.Column="1" IsVisible="{Binding ShowRail}" Width="32"
+            Background="{DynamicResource VelaBgSidebar}" BorderBrush="{DynamicResource VelaBorderPrimary}" BorderThickness="1,0,0,0">
+      <Button x:Name="ExpandButton" Theme="{DynamicResource VelaTitleActionButtonTheme}"
+              HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,4,0,0"
+              ToolTip.Tip="{Binding Title}" AutomationProperties.Name="{Binding Title}" Click="ExpandClicked">
+        <pc:LucideIcon Width="14" Height="14" Data="{DynamicResource Icon.sparkles}" Foreground="{DynamicResource VelaAccent}" />
+      </Button>
+    </Border>
+  </Grid>
+</UserControl>

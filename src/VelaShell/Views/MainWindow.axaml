@@ -89,8 +89,10 @@
 
     <!-- 外壳:内容 + 状态栏 + 命令面板覆盖层 -->
     <Grid Grid.Row="1" RowDefinitions="*,Auto">
-    <!-- Row 0: Content area (sidebar + main) -->
-    <Grid Grid.Row="0">
+    <!-- AI 的固定占位与浮层共用一个内容容器;资源管理器换边仍只操作内部三列。 -->
+    <Grid Grid.Row="0" x:Name="ContentAreaGrid" ColumnDefinitions="*,Auto">
+    <Border Grid.Column="1" Width="{Binding AiAssistant.ReservedWidth}" />
+    <Grid>
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="260" MinWidth="180" MaxWidth="520" />
         <ColumnDefinition Width="5" />
@@ -132,6 +134,10 @@
         <views:FileBrowserView Grid.Row="2" DataContext="{Binding FileBrowser}" />
 
       </Grid>
+    </Grid>
+
+    <views:AiAssistantRegionView Grid.ColumnSpan="2" DataContext="{Binding AiAssistant}"
+                                 HorizontalAlignment="Right" ZIndex="10" />
     </Grid>
 
     <!-- Row 1: Status bar (design frame gzmsb) -->

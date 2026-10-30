@@ -27,6 +27,8 @@ internal sealed class PluginPanel : IPluginPanel
     private readonly PluginDocument? _document;
     private readonly DockWorkspace? _workspace;
     private readonly PluginPanelWindow? _window;
+    private readonly ViewModels.AiAssistantRegionViewModel? _aiRegion;
+    private readonly Control? _aiContent;
     private readonly Action<DockDocument>? _onDocumentRemoved;
     private DockGroup? _watchedGroup;
     private int _closed;
@@ -42,6 +44,17 @@ internal sealed class PluginPanel : IPluginPanel
 
     /// <inheritdoc />
     public event Action<double>? PlacementRatioChanged;
+
+    /// <summary>AI 专属区形态,隐藏和折叠不关闭句柄。</summary>
+    public PluginPanel(string pluginId, IPluginLogger log, PanelOptions options, Control content,
+        ViewModels.AiAssistantRegionViewModel region)
+    {
+        _pluginId = pluginId;
+        _log = log;
+        _aiRegion = region;
+        _aiContent = content;
+        region.Attach(content, options.Title);
+    }
 
     /// <summary>停靠文档形态。调用方须在 UI 线程构造。</summary>
     public PluginPanel(string pluginId, IPluginLogger log, PanelOptions options, Control content, DockWorkspace workspace)
@@ -227,6 +240,11 @@ internal sealed class PluginPanel : IPluginPanel
                     _workspace.RemoveDocument(_document); // 程序性撤除;DocumentRemoved 挂点统一触发 NotifyClosed
                 }
                 _window?.Close();
+                if (_aiRegion is not null && _aiContent is not null)
+                {
+                    _aiRegion.Detach(_aiContent);
+                    NotifyClosed();
+                }
             }).GetTask().ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -251,6 +269,7 @@ internal sealed class PluginPanel : IPluginPanel
                 {
                     _workspace.ActivateDocument(_document);
                 }
+                if (IsOpen) _aiRegion?.Activate();
                 if (_window is not null)
                 {
                     if (_window.WindowState == WindowState.Minimized)

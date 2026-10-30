@@ -10233,4 +10233,7 @@ Windows 填 exe 完整路徑或命令名稱(如 notepad);Linux 填命令名稱(�
   <data name="Relay_CacheFailed" xml:space="preserve">
     <value>無法存取本機傳輸快取。請檢查磁碟剩餘空間及暫存目錄權限後重試。</value>
   </data>
+  <data name="AiRegion_Pin" xml:space="preserve"><value>固定 / 自動隱藏 AI 助手</value></data>
+  <data name="AiRegion_Collapse" xml:space="preserve"><value>摺疊 AI 助手（保留對話）</value></data>
+  <data name="AiRegion_Hide" xml:space="preserve"><value>隱藏 AI 助手</value></data>
 </root>
