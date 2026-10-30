@@ -9,9 +9,9 @@ namespace VelaShell.Tests.ViewModels;
 /// <summary>
 /// 连接对话框里插件字段按**页键**分页:「常规」、插件声明的自定义页(「数据库」「SSL」……)、「高级」。
 /// <para>
-/// 第一期 SDK 还没有分页契约,两个 <c>PluginConnectionForm.From()</c> 都不填分页,
-/// 这里直接 new 一份合成的 <see cref="PluginConnectionForm" />,经 <c>PluginFormOverride</c> 喂给视图模型 ——
+/// 机制与边界情况的用例直接 new 一份合成的 <see cref="PluginConnectionForm" />,经 <c>PluginFormOverride</c> 喂给视图模型 ——
 /// 其余路径(插件注册表、惰性装载、字段进集合、显示条件、变体)与真实装载一样。
+/// SDK 契约(<c>WorkspaceDescriptor.Pages</c>、字段的 <c>Page</c>)到内部模型的映射另有一条走真实装载的用例。
 /// </para>
 /// <para>纯视图模型用例:不起界面。</para>
 /// </summary>
@@ -263,7 +263,7 @@ public sealed class ConnectionProfilePluginPagesTests
     /// <b>页键不在分页表里:按没填处理,落回 IsAdvanced 决定的默认位置</b>(决策 D5)。
     /// <para>
     /// 不报错、不吞字段 —— 与显示条件引用不存在的键同一态度:用户总还找得到它。
-    /// 没声明分页的表单(第一期两个 <c>From()</c> 都是这样)没有自定义页签,整组收起。
+    /// 没声明分页的表单(没声明分页的描述符经 <c>From()</c> 就是这样)没有自定义页签,整组收起。
     /// </para>
     /// </summary>
     [TestMethod]
@@ -290,7 +290,7 @@ public sealed class ConnectionProfilePluginPagesTests
         Assert.AreEqual(PluginFormPage.GeneralKey, noPages.PageKeyFor(placed));
         Assert.AreEqual(PluginFormPage.AdvancedKey, noPages.PageKeyFor(tuned));
 
-        // 第一期的两个 From() 不填分页:行为与今天一样。
+        // 描述符没声明分页、字段没填页键:两个 From() 都不填分页,行为与今天一样。
         PluginConnectionForm fromDescriptor = PluginConnectionForm.From(new WorkspaceDescriptor
         {
             Id = PagedId,
@@ -358,5 +358,72 @@ public sealed class ConnectionProfilePluginPagesTests
             vm.SelectPluginPageCommand.Execute(DatabasePage).Subscribe();
             CollectionAssert.AreEqual(new[] { "database", "schema" }, VisibleRows(vm));
             Assert.AreEqual(1, vm.PluginPages.Count(tab => tab.IsSelected), "任何时候最多亮一个。");        }
+    }
+
+    /// <summary>
+    /// <b>SDK 的分页契约经 <c>From()</c> 进内部模型:描述符的 Pages 成页签,字段的 Page 定落在哪一页</b>。
+    /// <para>
+    /// 不经 <c>PluginFormOverride</c>,走真实装载(注册表 → <c>PluginConnectionForm.From</c> → 视图模型)。
+    /// 文件协议没有分页列表:字段上填了 Page 也被忽略,照旧按 IsAdvanced 落位。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task From_WorkspaceDescriptor_MapsPagesAndFieldPages()
+    {
+        var descriptor = new WorkspaceDescriptor
+        {
+            Id = PagedId,
+            DisplayName = "数据库",
+            DefaultPort = 3306,
+            Pages = [new ProtocolSettingPage(DatabasePage, "数据库"), new ProtocolSettingPage(SslPage, "SSL")],
+            Fields =
+            [
+                new() { Key = "charset", Label = "字符集" },
+                new() { Key = "database", Label = "默认数据库", Page = DatabasePage },
+                new() { Key = "sslMode", Label = "SSL 模式", Page = SslPage, IsAdvanced = true },
+                new() { Key = "timeout", Label = "连接超时", Kind = ProtocolSettingKind.Integer, IsAdvanced = true }
+            ]
+        };
+
+        PluginConnectionForm form = PluginConnectionForm.From(descriptor);
+        CollectionAssert.AreEqual(
+            new[] { new PluginFormPage(DatabasePage, "数据库"), new PluginFormPage(SslPage, "SSL") },
+            form.Pages!.ToArray(),
+            "分页按声明顺序,键与文案原样映射。");
+        Assert.HasCount(2, form.FieldPages!, "只有填了 Page 的字段进字典。");
+        Assert.AreEqual(DatabasePage, form.FieldPages!["database"]);
+        Assert.AreEqual(SslPage, form.FieldPages!["sslMode"]);
+
+        PluginConnectionForm files = PluginConnectionForm.From(new ProtocolDescriptor
+        {
+            Id = "test.files",
+            DisplayName = "文件",
+            Fields = [new() { Key = "database", Label = "默认数据库", Page = DatabasePage }]
+        });
+        Assert.IsNull(files.Pages, "文件协议没有分页列表。");
+        Assert.IsNull(files.FieldPages, "文件协议字段上的 Page 被忽略。");
+        Assert.AreEqual(PluginFormPage.GeneralKey, files.PageKeyFor(files.Fields[0]));
+
+        var registry = new PluginProtocolRegistry();
+        using (registry.RegisterWorkspace(PagedId, descriptor, new NoopWorkspace()))
+        {
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+            await vm.SelectPluginProtocolCommand.Execute(PagedId).FirstAsync();
+
+            CollectionAssert.AreEqual(new[] { DatabasePage, SslPage }, vm.PluginPages.Select(tab => tab.Key).ToArray(),
+                "描述符声明了两页,出两个自定义页签。");
+            CollectionAssert.AreEqual(new[] { "数据库", "SSL" }, vm.PluginPages.Select(tab => tab.Label).ToArray());
+            Assert.AreEqual(DatabasePage, Row(vm, "database").PageKey);
+            Assert.AreEqual(SslPage, Row(vm, "sslMode").PageKey, "页键优先于 IsAdvanced。");
+            Assert.AreEqual(PluginFormPage.GeneralKey, Row(vm, "charset").PageKey);
+            Assert.AreEqual(PluginFormPage.AdvancedKey, Row(vm, "timeout").PageKey);
+            CollectionAssert.AreEqual(new[] { "charset" }, VisibleRows(vm), "「常规」页只剩没页键、没标高级的字段。");
+            Assert.AreEqual("1", vm.AdvancedBadge, "进了「SSL」页的那一项不算进「高级」。");
+
+            vm.SelectPluginPageCommand.Execute(DatabasePage).Subscribe();
+            CollectionAssert.AreEqual(new[] { "database" }, VisibleRows(vm));
+            vm.SelectPluginPageCommand.Execute(SslPage).Subscribe();
+            CollectionAssert.AreEqual(new[] { "sslMode" }, VisibleRows(vm));
+        }
     }
 }

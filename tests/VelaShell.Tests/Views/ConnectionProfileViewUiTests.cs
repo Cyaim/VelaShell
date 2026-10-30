@@ -957,7 +957,7 @@ public sealed class ConnectionProfileViewUiTests
 
     /// <summary>
     /// 模拟 MySQL 的合成表单:类型(出卡片)、「数据库」页放默认库与 schema、「SSL」页放 SSL 档位、
-    /// 「高级」放连接超时。第一期 SDK 没有分页契约,经 <c>PluginFormOverride</c> 喂进去。
+    /// 「高级」放连接超时。经 <c>PluginFormOverride</c> 喂进去,界面用例不依赖插件描述符的写法。
     /// </summary>
     private static PluginConnectionForm PagedMySqlForm() =>
         new(PluginConnectionKind.Workspace,

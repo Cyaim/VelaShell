@@ -14,7 +14,8 @@ namespace VelaShell.ViewModels;
 /// </para>
 /// <para>
 /// 自定义页只是页签加一份行:不做「高级」那几样宿主专属行为(数量徽标、改过值的圆点)。
-/// 第一期两个 <c>PluginConnectionForm.From()</c> 都不填分页,<see cref="PluginPages" /> 恒空,对话框与今天一样。
+/// 分页来自 <c>WorkspaceDescriptor.Pages</c> 与字段的 <c>Page</c>(经 <c>PluginConnectionForm.From()</c>);
+/// 没声明分页的连接类型 <see cref="PluginPages" /> 为空,对话框与没有这套机制时一样。
 /// </para>
 /// </summary>
 public partial class ConnectionProfileViewModel
@@ -47,8 +48,8 @@ public partial class ConnectionProfileViewModel
     /// <summary>
     /// 测试接缝:插件表单解析出来之后、渲染之前换一份。
     /// <para>
-    /// 第一期 SDK 还没有分页契约,两个 <c>From()</c> 都不填 <see cref="PluginConnectionForm.Pages" />,
-    /// 分页机制只能用合成表单测;生产代码不设它。只作用于构造之后的装载 —— 编辑态在构造函数里就装载了,
+    /// 分页机制的边界情况(未知页键、宿主键、重复键)用合成表单测更直接;生产代码不设它。
+    /// 只作用于构造之后的装载 —— 编辑态在构造函数里就装载了,
     /// 对象初始化器赶不上那一次。
     /// </para>
     /// </summary>

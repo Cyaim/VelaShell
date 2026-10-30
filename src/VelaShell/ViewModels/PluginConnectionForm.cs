@@ -53,13 +53,15 @@ namespace VelaShell.ViewModels;
 /// <param name="Variants">变体表(仅工作台形态有)。</param>
 /// <param name="Icon">
 /// 连接类型自报的图标(仅工作台形态有,取 <see cref="WorkspaceDescriptor.Icon" />);
-/// 「选类型」卡片第一期用它,null 时界面画通用插件图标。
+/// 「选类型」卡片上变体没给 <see cref="WorkspaceVariant.Icon" /> 时退回它,再为 null 时界面画通用插件图标。
 /// </param>
 /// <param name="Pages">
 /// 介于「常规」与「高级」之间的自定义分页(「数据库」「SSL」……),按声明顺序成页签;null / 空表示没有。
-/// 第一期两个 <c>From()</c> 都不填 —— SDK 还没有对应的契约,表单与今天一模一样。
+/// 工作台形态取 <see cref="WorkspaceDescriptor.Pages" />;文件协议没有分页列表,恒为 null。
 /// </param>
-/// <param name="FieldPages">字段键 → 所属分页的键;见 <see cref="PageKeyFor" />。</param>
+/// <param name="FieldPages">
+/// 字段键 → 所属分页的键(取各字段的 <see cref="ProtocolSettingField.Page" />);见 <see cref="PageKeyFor" />。
+/// </param>
 internal sealed record PluginConnectionForm(
     PluginConnectionKind Kind,
     string? HostLabel,
@@ -233,7 +235,13 @@ internal sealed record PluginConnectionForm(
         }
     }
 
-    /// <summary>从协议描述转换。</summary>
+    /// <summary>
+    /// 从协议描述转换。
+    /// <para>
+    /// 不填 <see cref="Pages" /> / <see cref="FieldPages" />:<see cref="ProtocolDescriptor" /> 没有分页列表,
+    /// 文件协议的字段上 <see cref="ProtocolSettingField.Page" /> 被忽略(照 SDK 契约),字段照旧按 IsAdvanced 落位。
+    /// </para>
+    /// </summary>
     /// <param name="descriptor">协议描述。</param>
     /// <param name="handler">
     /// 该协议的实现(文件系统或终端)。只用来问一件事:它认不认
@@ -281,7 +289,54 @@ internal sealed record PluginConnectionForm(
             ShowsPort: !descriptor.Features.HasFlag(WorkspaceFeatures.NoEndpoint),
             VariantKey: descriptor.VariantKey,
             Variants: descriptor.Variants,
-            Icon: descriptor.Icon);
+            Icon: descriptor.Icon,
+            Pages: PagesOf(descriptor.Pages),
+            FieldPages: FieldPagesOf(descriptor.Fields));
+
+    /// <summary>
+    /// SDK 的分页声明 → 内部模型,顺序不变。没声明(空列表)记为 null,与「没有自定义页」同一个值。
+    /// <para>
+    /// 宿主自己的键(general / advanced)与重复键不在这里筛:建页签时统一跳过,口径只留一处。
+    /// </para>
+    /// </summary>
+    /// <param name="pages">描述符的 <see cref="WorkspaceDescriptor.Pages" />。</param>
+    /// <returns>内部分页表;没有时为 null。</returns>
+    private static PluginFormPage[]? PagesOf(IReadOnlyList<ProtocolSettingPage>? pages)
+    {
+        if (pages is not { Count: > 0 })
+        {
+            return null;
+        }
+        var result = new PluginFormPage[pages.Count];
+        for (int i = 0; i < pages.Count; i++)
+        {
+            result[i] = new PluginFormPage(pages[i].Key, pages[i].Label);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 填了 <see cref="ProtocolSettingField.Page" /> 的字段 → 字段键到页键的字典(序数比较);一个都没填时为 null。
+    /// <para>
+    /// 页键在不在分页表里不在这里判:<see cref="PageKeyFor" /> 把不认识的键按没填处理(SDK 契约:不报错)。
+    /// 字段键重复时只认第一次,不因插件声明有误抛异常把整个表单弄没。
+    /// </para>
+    /// </summary>
+    /// <param name="fields">描述符的字段表。</param>
+    /// <returns>字段键 → 页键;没有字段声明分页时为 null。</returns>
+    private static Dictionary<string, string>? FieldPagesOf(IReadOnlyList<ProtocolSettingField> fields)
+    {
+        Dictionary<string, string>? result = null;
+        for (int i = 0; i < fields.Count; i++)
+        {
+            if (fields[i] is { Page: { } page } field)
+            {
+                result ??= new Dictionary<string, string>(StringComparer.Ordinal);
+                result.TryAdd(field.Key, page);
+            }
+        }
+        return result;
+    }
 }
 
 /// <summary>

@@ -166,13 +166,33 @@ public partial class ConnectionProfileViewModel
             SelectedTypeValue = null;
             return;
         }
-        // 第一期:卡片图标都用连接类型自报的那一个(null 由界面画通用插件图标)。
-        PluginSdk.PluginIcon? icon = _pluginBaseForm?.Icon;
+        // 卡片图标:同 Value 变体自带的那一个 → 连接类型自报的那一个 → null(界面画通用插件图标)。
+        PluginSdk.PluginIcon? fallback = _pluginBaseForm?.Icon;
         foreach (ProtocolSettingChoice choice in picker.Choices)
         {
-            TypeCards.Add(new(choice.Value, choice.Label, icon));
+            TypeCards.Add(new(choice.Value, choice.Label, VariantIcon(choice.Value) ?? fallback));
         }
         MarkSelectedType(PluginFieldValue(picker.Key));
+    }
+
+    /// <summary>
+    /// 变体表里 <c>Value</c> 与 <paramref name="value" /> 相同(序数比较)那一项的图标;
+    /// 没有这一项、或它没给图标时为 null。
+    /// </summary>
+    private PluginSdk.PluginIcon? VariantIcon(string value)
+    {
+        if (_pluginBaseForm?.Variants is not { Count: > 0 } variants)
+        {
+            return null;
+        }
+        for (int i = 0; i < variants.Count; i++)
+        {
+            if (string.Equals(variants[i].Value, value, StringComparison.Ordinal))
+            {
+                return variants[i].Icon;
+            }
+        }
+        return null;
     }
 
     /// <summary>改选中值,并让各卡片的高亮跟着走。</summary>

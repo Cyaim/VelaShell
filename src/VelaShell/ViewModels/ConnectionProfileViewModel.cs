@@ -2942,7 +2942,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 return;
             }
             applied = true;
-            // 测试接缝(见 PluginFormOverride):第一期 SDK 给不出分页,用例经它喂合成表单。
+            // 测试接缝(见 PluginFormOverride):分页的边界情况由用例经它喂合成表单。
             if (form is not null && PluginFormOverride is { } overrideForm)
             {
                 form = overrideForm(form);

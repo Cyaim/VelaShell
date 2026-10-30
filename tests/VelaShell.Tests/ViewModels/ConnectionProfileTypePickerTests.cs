@@ -25,7 +25,7 @@ public sealed class ConnectionProfileTypePickerTests
     private const string DialectKey = "dialect";
     private const string DatabaseKey = "database";
 
-    /// <summary>卡片图标:第一期取工作台描述符自报的那一个。</summary>
+    /// <summary>工作台描述符自报的图标:变体没给图标时,卡片退回它。</summary>
     private static readonly PluginIcon DbIcon = PluginIcon.Stroked("M4 4h16v16H4z");
 
     private sealed class NoopWorkspace : IWorkspaceProvider
@@ -112,7 +112,7 @@ public sealed class ConnectionProfileTypePickerTests
 
     /// <summary>
     /// <b>新建连接点进数据库页签:先出卡片,默认那一档已经选中,「下一步」立即可用</b>(决策 D8)。
-    /// <para>卡片顺序、名字取自变体字段的候选项;图标第一期是工作台自报的那一个。</para>
+    /// <para>卡片顺序、名字取自变体字段的候选项;这里的变体都没给图标,卡片图标是工作台自报的那一个。</para>
     /// </summary>
     [TestMethod]
     public async Task TypePicker_NewProfile_ShowsCards_WithTheDefaultPreselected()
@@ -131,7 +131,7 @@ public sealed class ConnectionProfileTypePickerTests
             CollectionAssert.AreEqual(
                 new[] { "MySQL", "PostgreSQL", "SQLite" },
                 vm.TypeCards.Select(c => c.Label).ToArray());
-            Assert.IsTrue(vm.TypeCards.All(c => ReferenceEquals(c.Icon, DbIcon)), "第一期卡片图标 = 工作台图标。");
+            Assert.IsTrue(vm.TypeCards.All(c => ReferenceEquals(c.Icon, DbIcon)), "变体没给图标:卡片图标 = 工作台图标。");
             Assert.AreEqual("mysql", vm.SelectedTypeValue, "默认值那一档要预选。");
             CollectionAssert.AreEqual(
                 new[] { true, false, false },
@@ -763,6 +763,49 @@ public sealed class ConnectionProfileTypePickerTests
             ConnectionProfileViewModel vm = await NewOnDbTabAsync(registry);
             Assert.IsTrue(vm.IsPickingType, "前置条件:这一页签出卡片。");
             Assert.IsFalse(vm.HasAdvancedBadge, "被卡片替代的那一行不该计入「高级」页签的字段数。");
+        }
+    }
+
+    /// <summary>
+    /// <b>卡片图标:同 Value 变体自带的那一个 → 工作台描述符的图标 → null(模板画通用插件图标)</b>。
+    /// <para>
+    /// MySQL 变体自带图标;PostgreSQL 的变体没给图标、SQLite 在变体表里没有对应项,两张都退回工作台图标。
+    /// 工作台自己也没给图标时,这两张是 null,由模板画通用插头;变体自带的照旧。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task TypeCards_UseTheVariantIcon_FallingBackToTheDescriptorIcon()
+    {
+        PluginIcon mysqlIcon = PluginIcon.Stroked("M12 3a9 9 0 1 0 0 18");
+        WorkspaceDescriptor descriptor = DbDescriptor() with
+        {
+            Variants =
+            [
+                new() { Value = "mysql", DefaultPort = 3306, Icon = mysqlIcon },
+                new() { Value = "postgresql", DefaultPort = 5432 }
+            ]
+        };
+
+        var registry = new PluginProtocolRegistry();
+        using (registry.RegisterWorkspace(DbId, descriptor, new NoopWorkspace()))
+        {
+            ConnectionProfileViewModel vm = await NewOnDbTabAsync(registry);
+            Assert.IsTrue(vm.IsPickingType, "前置条件:这一页签出卡片。");
+            CollectionAssert.AreEqual(
+                new[] { "mysql", "postgresql", "sqlite" },
+                vm.TypeCards.Select(c => c.Value).ToArray());
+            Assert.AreSame(mysqlIcon, vm.TypeCards[0].Icon, "变体自带图标就用它。");
+            Assert.AreSame(DbIcon, vm.TypeCards[1].Icon, "变体没给图标:退回工作台图标。");
+            Assert.AreSame(DbIcon, vm.TypeCards[2].Icon, "候选项在变体表里没有对应项:同样退回工作台图标。");
+        }
+
+        using (registry.RegisterWorkspace(DbId, descriptor with { Icon = null }, new NoopWorkspace()))
+        {
+            ConnectionProfileViewModel vm = await NewOnDbTabAsync(registry);
+            Assert.IsTrue(vm.IsPickingType, "前置条件:这一页签出卡片。");
+            Assert.AreSame(mysqlIcon, vm.TypeCards[0].Icon, "工作台没给图标,不影响变体自带的。");
+            Assert.IsNull(vm.TypeCards[1].Icon, "两头都没有:null,由模板画通用插件图标。");
+            Assert.IsNull(vm.TypeCards[2].Icon);
         }
     }
 

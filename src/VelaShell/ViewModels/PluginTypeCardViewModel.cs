@@ -10,7 +10,7 @@ namespace VelaShell.ViewModels;
 /// <param name="label">卡片上的名字(<c>ProtocolSettingChoice.Label</c>)。</param>
 /// <param name="icon">
 /// 卡片图标;null 时界面画协议栏同款的通用插件图标。
-/// 第一期取工作台描述符的图标(几张卡片同一个图标),变体自带图标要等 SDK。
+/// 取同 <c>Value</c> 变体的 <c>WorkspaceVariant.Icon</c>,没给就退回工作台描述符的图标。
 /// </param>
 public sealed class PluginTypeCardViewModel(string value, string label, PluginIcon? icon) : ReactiveObject
 {
