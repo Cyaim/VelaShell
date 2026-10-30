@@ -353,8 +353,9 @@ Guarded by `DialogButtonStyleTests`.
 - Container: a `WrapPanel`, `ItemWidth:112`, 8px between tiles and between rows, outer margin `[24,20]`. Above it the
   heading (`Profile_PickTypeHeading`) in 13px Medium `VelaTextPrimary`, 12px above the first row.
 - Tile: a `Button`, 112×88, `CornerRadius:4`, 1px `VelaBorderPrimary`, `Transparent` fill. Content is a vertically
-  centered stack: a 24px icon in `VelaTextSecondary` (the plugin's own icon, or `Icon.plug` when it has none — the
-  protocol rail's fallback), 6px gap, the name in 11px `VelaTextPrimary`, centered, one line with an ellipsis.
+  centered stack: a 24px icon in `VelaTextSecondary` (the variant's own icon, `WorkspaceVariant.Icon`; without one,
+  the workspace's icon, `WorkspaceDescriptor.Icon`; without that either, `Icon.plug` — the protocol rail's
+  fallback), 6px gap, the name in 11px `VelaTextPrimary`, centered, one line with an ellipsis.
 - Hover: `VelaBgHover` fill; icon and name `VelaTextPrimary`.
 - Selected (`.selected`): `VelaBgActive` fill, `VelaAccent` border, icon and name `VelaAccent`, name Medium.
 - Keyboard focus (`:focus-visible`): `VelaAccent` border, 2px (same as `IconPickerField`).
