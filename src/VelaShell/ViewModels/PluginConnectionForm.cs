@@ -51,6 +51,10 @@ namespace VelaShell.ViewModels;
 /// 由哪个字段选择变体;null 表示这个连接类型没有变体。见 <see cref="WorkspaceDescriptor.VariantKey" />。
 /// </param>
 /// <param name="Variants">变体表(仅工作台形态有)。</param>
+/// <param name="Icon">
+/// 连接类型自报的图标(仅工作台形态有,取 <see cref="WorkspaceDescriptor.Icon" />);
+/// 「选类型」卡片第一期用它,null 时界面画通用插件图标。
+/// </param>
 internal sealed record PluginConnectionForm(
     PluginConnectionKind Kind,
     string? HostLabel,
@@ -67,10 +71,52 @@ internal sealed record PluginConnectionForm(
     bool HostAllowsCustomValue = false,
     IProtocolChoiceSource? ChoiceSource = null,
     string? VariantKey = null,
-    IReadOnlyList<WorkspaceVariant>? Variants = null)
+    IReadOnlyList<WorkspaceVariant>? Variants = null,
+    PluginSdk.PluginIcon? Icon = null)
 {
     /// <summary>主机栏是否渲染成下拉(静态或动态)。</summary>
     public bool HostIsChoice => HostKind is ProtocolSettingKind.Choice or ProtocolSettingKind.DynamicChoice;
+
+    /// <summary>
+    /// 新建连接时要不要先出一屏「选类型」的卡片(见 <see cref="TypePickerField" />)。
+    /// </summary>
+    public bool HasTypePicker => TypePickerField is not null;
+
+    /// <summary>
+    /// 选变体的那个字段 —— 前提是它能画成卡片;不能时为 null,表单与没有卡片时一样。
+    /// <para>
+    /// 能画成卡片 = 封闭的静态下拉、至少两个候选、用户看得见:
+    /// <see cref="ProtocolSettingKind.Choice" />、非 <see cref="ProtocolSettingField.IsHidden" />、
+    /// 非 <see cref="ProtocolSettingField.AllowsCustomValue" />、<c>Choices.Count &gt;= 2</c>。
+    /// 动态下拉(候选是现取的)、可手输的(值不在表里正是它的意义)、只有一个候选的(没得选),
+    /// 做成卡片都说不通。这是宿主的规则,不是 SDK 开关。
+    /// </para>
+    /// <para>
+    /// <see cref="Variants" /> 可以为空:变体字段只用来驱动 <c>VisibleWhen</c> 时卡片照出。
+    /// </para>
+    /// </summary>
+    public ProtocolSettingField? TypePickerField
+    {
+        get
+        {
+            if (VariantKey is not { Length: > 0 } key)
+            {
+                return null;
+            }
+            for (int i = 0; i < Fields.Count; i++)
+            {
+                ProtocolSettingField candidate = Fields[i];
+                if (string.Equals(candidate.Key, key, StringComparison.Ordinal))
+                {
+                    return candidate is { Kind: ProtocolSettingKind.Choice, IsHidden: false, AllowsCustomValue: false }
+                           && candidate.Choices.Count >= 2
+                        ? candidate
+                        : null;
+                }
+            }
+            return null;
+        }
+    }
 
     /// <summary>主机栏的候选项是否要向插件现取(并给出刷新按钮)。</summary>
     public bool HostIsDynamic => HostKind == ProtocolSettingKind.DynamicChoice;
@@ -195,5 +241,6 @@ internal sealed record PluginConnectionForm(
             // 主机那一栏改标成「数据库文件」装路径。
             ShowsPort: !descriptor.Features.HasFlag(WorkspaceFeatures.NoEndpoint),
             VariantKey: descriptor.VariantKey,
-            Variants: descriptor.Variants);
+            Variants: descriptor.Variants,
+            Icon: descriptor.Icon);
 }

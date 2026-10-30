@@ -193,6 +193,9 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         ISharedCredentialRepository? sharedCredentials = null,
         ISystemKeyStore? systemKeyStore = null)
     {
+        // 最先定:编辑态下构造函数末尾那次表单装载可能同步跑完(插件已注册时没有真正的让出点),
+        // 装载完成时定步骤(T1)要读它。
+        IsEditing = existing is not null;
         _protocolRegistry = protocolRegistry;
         _systemKeyStore = systemKeyStore;
         _keyService = keyService;
@@ -387,6 +390,36 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         RefreshHostChoicesCommand = ReactiveCommand.CreateFromTask(
             RefreshHostChoicesAsync,
             this.WhenAnyValue(x => x.IsHostRefreshing, refreshing => !refreshing));
+        // 「选类型」这一步的命令(见 ConnectionProfileViewModel.TypePicker.cs)。
+        // 方法体里另有同样的守卫:canExecute 只管按钮灰不灰,直接 Execute 不看它。
+        SelectTypeCardCommand = ReactiveCommand.Create<string>(
+            SelectTypeCard,
+            this.WhenAnyValue(x => x.IsPickingType));
+        ConfirmTypeCardCommand = ReactiveCommand.Create<string>(
+            ConfirmTypeCard,
+            this.WhenAnyValue(x => x.IsPickingType, x => x.IsBusy, (picking, busy) => picking && !busy));
+        NextCommand = ReactiveCommand.Create(
+            ConfirmTypeStep,
+            this.WhenAnyValue(x => x.IsPickingType, x => x.SelectedTypeValue, x => x.IsBusy,
+                (picking, selected, busy) => picking && selected is not null && !busy));
+        BackCommand = ReactiveCommand.Create(
+            () =>
+            {
+                if (ShowBackButton)
+                {
+                    ReturnToTypeStep();
+                }
+            },
+            this.WhenAnyValue(x => x.ShowBackButton, x => x.IsBusy, (show, busy) => show && !busy));
+        ChangeTypeCommand = ReactiveCommand.Create(
+            () =>
+            {
+                if (ShowChangeTypeLink)
+                {
+                    ReturnToTypeStep();
+                }
+            },
+            this.WhenAnyValue(x => x.ShowChangeTypeLink, x => x.IsBusy, (show, busy) => show && !busy));
         // 表单是插件异步装载出来的,字段进集合的那一刻就得带上当前所在的分页 ——
         // 只在切换分页时下发是不够的(先渲染后切页,「常规」页会把高级字段全画出来)。
         // 必须在下面那句可能触发装载的 SelectPluginProtocolAsync 之前接线。
@@ -1350,11 +1383,11 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     public bool HasAdvancedBadge => AdvancedPluginFieldCount > 0;
 
     /// <summary>当前适用的插件高级字段数(显示条件不成立的不算:点进去也看不到它)。</summary>
-    private int AdvancedPluginFieldCount => PluginFields.Count(f => f.IsAdvanced && IsApplicable(f));
+    private int AdvancedPluginFieldCount => PluginFields.Count(f => f.IsAdvanced && IsFormRow(f));
 
     /// <summary>「常规」页上有没有插件字段要画(没有时连带那一节的标题一起收起)。</summary>
     public bool ShowPluginGeneralFields =>
-        IsPluginSelected && (IsPluginLoading || PluginFields.Any(f => !f.IsAdvanced && IsApplicable(f)));
+        IsPluginSelected && (IsPluginLoading || PluginFields.Any(f => !f.IsAdvanced && IsFormRow(f)));
 
     /// <summary>「常规」页上插件字段那一节的标题,如「S3 设置」。</summary>
     public string PluginSectionTitle =>
@@ -2688,7 +2721,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         bool advancedPage = SelectedSection == ConnectionProfileSection.Advanced;
         foreach (PluginProtocolFieldViewModel field in PluginFields)
         {
-            field.IsRowVisible = IsApplicable(field) && field.IsAdvanced == advancedPage;
+            // 出卡片时变体字段那一行永不显示:表头「类型:X」替代它(决策 D11)。
+            field.IsRowVisible = IsFormRow(field) && field.IsAdvanced == advancedPage;
         }
         this.RaisePropertyChanged(nameof(AdvancedBadge));
         this.RaisePropertyChanged(nameof(HasAdvancedBadge));
@@ -2701,6 +2735,13 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// <summary>字段声明的显示条件此刻是否成立(没声明条件即恒成立)。</summary>
     private bool IsApplicable(PluginProtocolFieldViewModel field) =>
         field.Field.VisibleWhen is not { } condition || condition.IsSatisfiedBy(PluginFieldValue);
+
+    /// <summary>
+    /// 这一行会不会画在表单里:显示条件成立,且不是被「选类型」卡片替代掉的变体字段。
+    /// 行可见性、「常规」页那一节在不在、「高级」页签上的字段数用的是同一条判定 ——
+    /// 否则变体字段是「常规」页唯一的字段时,会留下一个只有标题的空节。
+    /// </summary>
+    private bool IsFormRow(PluginProtocolFieldViewModel field) => IsApplicable(field) && !IsTypePickerRow(field);
 
     /// <summary>
     /// 字段进出集合时接线/退订,并重算一次可见性。
@@ -2755,6 +2796,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 && string.Equals(changed.Key, key, StringComparison.Ordinal))
             {
                 ApplyPluginVariant(followPort: true);
+                // 表头「类型:X」读的就是这个字段。
+                this.RaisePropertyChanged(nameof(CurrentTypeLabel));
             }
         }
     }
@@ -2839,6 +2882,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             _pluginForm = null;
             _pluginStored = null;
             _pluginStoredSecrets = null;
+            // T5:上一个页签的卡片与"类型已确认"不能带到这个页签上。
+            ResetTypeStep();
         }
         else if (_pluginForm is not null
                  && string.Equals(_loadedProtocolId, protocolId, StringComparison.Ordinal))
@@ -2846,6 +2891,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             // 重复点当前页签:表单已经渲染好了,直接返回。
             // 走下去会 PluginFields.Clear() 把用户填了一半的内容复位。
             RaisePluginLabelsChanged();
+            // T1:类型还没确认过就回到卡片(表单还在,步骤按同一条规则重定)。
+            EnterStepForLoadedForm();
             return;
         }
         if (_protocolRegistry is not { } registry)
@@ -2918,6 +2965,9 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             // 表现就是一个本地文件却非要我登录。
             // followPort: false —— 此刻端口是从已存配置里读出来的,不能被变体的默认值盖掉。
             ApplyPluginVariant(followPort: false);
+            // T1:表单成形、变体已套上,定步骤 —— 新建且页签出卡片就先选类型。
+            // 只在这条已确认不是陈旧续体的路径上做:上面的早退处不碰步骤。
+            EnterStepForLoadedForm();
             // 动态候选项现取一次。放在最后:它可能真的去枚举硬件(串口),
             // 而表单的其余部分不该等它 —— 取不到也只是下拉是空的,手输照旧可用。
             await LoadDynamicChoicesAsync().ConfigureAwait(true);
@@ -3160,6 +3210,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             ClearPluginFields();
             PluginUnavailable = false;
             RaisePluginLabelsChanged();
+            // T5:内建协议没有卡片;再点回来时由装载完成的 T1 重新定步骤。
+            ResetTypeStep();
         }
         if (previous == ConnectionType)
         {
